@@ -26,7 +26,7 @@ class Messenger;
 
 namespace tablet {
 
-class ChangeConfigTransactionContext;
+class ChangeConfigTransactionState;
 class TabletStatusPB;
 class TabletStatusListener;
 
@@ -69,7 +69,7 @@ class TabletPeer : public consensus::ReplicaTransactionFactory {
   // The caller is expected to build and pass a TrasactionContext that points
   // to the RPC WriteRequest, WriteResponse, RpcContext and to the tablet's
   // MvccManager.
-  Status SubmitWrite(WriteTransactionContext *tx_ctx);
+  Status SubmitWrite(WriteTransactionState *tx_state);
 
   // Called by the tablet service to start an alter schema transaction.
   //
@@ -82,7 +82,7 @@ class TabletPeer : public consensus::ReplicaTransactionFactory {
   // The AlterSchema operation is taking the tablet component lock in exclusive mode
   // meaning that no other operation on the tablet can be executed while the
   // AlterSchema is in progress.
-  Status SubmitAlterSchema(AlterSchemaTransactionContext *tx_ctx);
+  Status SubmitAlterSchema(AlterSchemaTransactionState *tx_state);
 
   // Called by the tablet service to start a change config transaction.
   //
@@ -91,13 +91,13 @@ class TabletPeer : public consensus::ReplicaTransactionFactory {
   //
   // If the returned Status is OK, the response to the master will be sent
   // asynchronously.
-  Status SubmitChangeConfig(ChangeConfigTransactionContext* tx_ctx);
+  Status SubmitChangeConfig(ChangeConfigTransactionState* tx_state);
 
   void GetTabletStatusPB(TabletStatusPB* status_pb_out) const;
 
   // Used by consensus to create and start a new ReplicaTransaction.
   virtual Status StartReplicaTransaction(
-      gscoped_ptr<consensus::ConsensusContext> context) OVERRIDE;
+      gscoped_ptr<consensus::ConsensusRound> context) OVERRIDE;
 
   consensus::Consensus* consensus() { return consensus_.get(); }
 

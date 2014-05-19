@@ -27,22 +27,22 @@ class WriteResponsePB;
 namespace tablet {
 class Tablet;
 
-class WriteTransactionContext;
+class WriteTransactionState;
 
 // Decodes the row operations and sets up a client error if something fails.
 Status CreatePreparedInsertsAndMutates(Tablet* tablet,
-                                       WriteTransactionContext* tx_ctx,
+                                       WriteTransactionState* tx_state,
                                        const Schema& client_schema,
                                        const RowOperationsPB& ops_pb);
 
 // Return a row that is the Projection of the 'user_row_ptr' on the 'tablet_schema'.
 // The 'tablet_schema' pointer will be referenced by the returned row, so must
 // remain valid as long as the row.
-// The returned ConstContiguousRow is added to the AutoReleasePool of the 'tx_ctx'.
+// The returned ConstContiguousRow is added to the AutoReleasePool of the 'tx_state'.
 // No projection is performed if the two schemas are the same.
 //
 // TODO: this is now only used by the testing code path
-const ConstContiguousRow* ProjectRowForInsert(WriteTransactionContext* tx_ctx,
+const ConstContiguousRow* ProjectRowForInsert(WriteTransactionState* tx_state,
                                               const Schema* tablet_schema,
                                               const RowProjector& row_projector,
                                               const uint8_t *user_row_ptr);
@@ -50,10 +50,10 @@ const ConstContiguousRow* ProjectRowForInsert(WriteTransactionContext* tx_ctx,
 
 
 // Return a mutation that is the Projection of the 'user_mutation' on the 'tablet_schema'.
-// The returned RowChangeList's data is added to the AutoReleasePool of the 'tx_ctx'.
+// The returned RowChangeList's data is added to the AutoReleasePool of the 'tx_state'.
 // No projection is performed if the two schemas are the same.
-// TODO: use the tx_ctx's arena instead.
-RowChangeList ProjectMutation(WriteTransactionContext *tx_ctx,
+// TODO: use the tx_state's arena instead.
+RowChangeList ProjectMutation(WriteTransactionState *tx_state,
                               const DeltaProjector& delta_projector,
                               const RowChangeList &user_mutation);
 

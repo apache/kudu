@@ -315,7 +315,7 @@ class LocalTestPeerProxyFactory : public PeerProxyFactory {
 
 class TestTransaction : public ReplicaCommitContinuation {
  public:
-  TestTransaction(ThreadPool* pool, gscoped_ptr<ConsensusContext> context)
+  TestTransaction(ThreadPool* pool, gscoped_ptr<ConsensusRound> context)
     : context_(context.Pass()),
       pool_(pool) {}
 
@@ -341,7 +341,7 @@ class TestTransaction : public ReplicaCommitContinuation {
     LOG(FATAL) << "TestTransaction aborted with status: " << status.ToString();
   }
 
-  gscoped_ptr<ConsensusContext> context_;
+  gscoped_ptr<ConsensusRound> context_;
  private:
   ThreadPool* pool_;
 };
@@ -354,7 +354,7 @@ class TestTransactionFactory : public ReplicaTransactionFactory {
     thread_pool_.Init();
   }
 
-  Status StartReplicaTransaction(gscoped_ptr<ConsensusContext> context) {
+  Status StartReplicaTransaction(gscoped_ptr<ConsensusRound> context) {
     TestTransaction* txn = new TestTransaction(&thread_pool_, context.Pass());
     txn->context_->SetReplicaCommitContinuation(txn);
     std::tr1::shared_ptr<FutureCallback> commit_clbk(

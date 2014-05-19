@@ -35,9 +35,9 @@ using kudu::metadata::QuorumPeerPB;
 using kudu::tablet::TabletStatusPB;
 using kudu::rpc::RpcContext;
 using kudu::tablet::TabletPeer;
-using kudu::tablet::AlterSchemaTransactionContext;
-using kudu::tablet::ChangeConfigTransactionContext;
-using kudu::tablet::WriteTransactionContext;
+using kudu::tablet::AlterSchemaTransactionState;
+using kudu::tablet::ChangeConfigTransactionState;
+using kudu::tablet::WriteTransactionState;
 using kudu::tablet::TransactionCompletionCallback;
 using std::tr1::shared_ptr;
 using std::vector;
@@ -213,14 +213,14 @@ void TabletServiceImpl::AlterSchema(const AlterSchemaRequestPB* req,
     return;
   }
 
-  AlterSchemaTransactionContext *tx_ctx =
-    new AlterSchemaTransactionContext(tablet_peer.get(), req, resp);
+  AlterSchemaTransactionState *tx_state =
+    new AlterSchemaTransactionState(tablet_peer.get(), req, resp);
 
-  tx_ctx->set_completion_callback(gscoped_ptr<TransactionCompletionCallback>(
+  tx_state->set_completion_callback(gscoped_ptr<TransactionCompletionCallback>(
       new RpcTransactionCompletionCallback(context, resp)).Pass());
 
   // Submit the alter schema op. The RPC will be responded to asynchronously.
-  Status s = tablet_peer->SubmitAlterSchema(tx_ctx);
+  Status s = tablet_peer->SubmitAlterSchema(tx_state);
   if (PREDICT_FALSE(!s.ok())) {
     SetupErrorAndRespond(resp->mutable_error(), s,
                          TabletServerErrorPB::UNKNOWN_ERROR,
@@ -298,14 +298,14 @@ void TabletServiceImpl::ChangeConfig(const ChangeConfigRequestPB* req,
   shared_ptr<TabletPeer> tablet_peer;
   if (!LookupTabletOrRespond(req->tablet_id(), &tablet_peer, resp, context)) return;
 
-  ChangeConfigTransactionContext *tx_ctx =
-    new ChangeConfigTransactionContext(tablet_peer.get(), req, resp);
+  ChangeConfigTransactionState *tx_state =
+    new ChangeConfigTransactionState(tablet_peer.get(), req, resp);
 
-  tx_ctx->set_completion_callback(gscoped_ptr<TransactionCompletionCallback>(
+  tx_state->set_completion_callback(gscoped_ptr<TransactionCompletionCallback>(
       new RpcTransactionCompletionCallback(context, resp)).Pass());
 
   // Submit the change config op. The RPC will be responded to asynchronously.
-  Status s = tablet_peer->SubmitChangeConfig(tx_ctx);
+  Status s = tablet_peer->SubmitChangeConfig(tx_state);
   if (PREDICT_FALSE(!s.ok())) {
     SetupErrorAndRespond(resp->mutable_error(), s,
                          TabletServerErrorPB::UNKNOWN_ERROR,
@@ -332,8 +332,8 @@ void TabletServiceImpl::Write(const WriteRequestPB* req,
     }
   }
 
-  WriteTransactionContext *tx_ctx =
-    new WriteTransactionContext(tablet_peer.get(), req, resp);
+  WriteTransactionState *tx_state =
+    new WriteTransactionState(tablet_peer.get(), req, resp);
 
   // if the consistency mode is set to CLIENT_PROPAGATED and the client
   // sent us a timestamp, decode it and set it in the transaction context.
@@ -344,7 +344,7 @@ void TabletServiceImpl::Write(const WriteRequestPB* req,
     if (req->has_propagated_timestamp()) {
       Timestamp ts(req->propagated_timestamp());
       if (PREDICT_TRUE(s.ok())) {
-        tx_ctx->set_client_propagated_timestamp(ts);
+        tx_state->set_client_propagated_timestamp(ts);
         // update the clock with the client's timestamp
         s = server_->clock()->Update(ts);
       }
@@ -358,11 +358,11 @@ void TabletServiceImpl::Write(const WriteRequestPB* req,
 
   }
 
-  tx_ctx->set_completion_callback(gscoped_ptr<TransactionCompletionCallback>(
+  tx_state->set_completion_callback(gscoped_ptr<TransactionCompletionCallback>(
       new RpcTransactionCompletionCallback(context, resp)).Pass());
 
   // Submit the write. The RPC will be responded to asynchronously.
-  Status s = tablet_peer->SubmitWrite(tx_ctx);
+  Status s = tablet_peer->SubmitWrite(tx_state);
   if (PREDICT_FALSE(!s.ok())) {
     SetupErrorAndRespond(resp->mutable_error(), s,
                          TabletServerErrorPB::UNKNOWN_ERROR,

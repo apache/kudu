@@ -16,7 +16,7 @@ namespace tablet {
 
 using base::subtle::Barrier_AtomicIncrement;
 using consensus::Consensus;
-using consensus::ConsensusContext;
+using consensus::ConsensusRound;
 using consensus::ReplicateMsg;
 using consensus::CommitMsg;
 using rpc::RpcContext;
@@ -37,9 +37,9 @@ Transaction::Transaction(TaskExecutor* prepare_executor,
 
 Status Transaction::CommitWait() {
   MonoTime before = MonoTime::Now(MonoTime::FINE);
-  DCHECK(tx_ctx()->external_consistency_mode() == COMMIT_WAIT);
-  RETURN_NOT_OK(tx_ctx()->tablet_peer()->clock()->WaitUntilAfter(tx_ctx()->timestamp()));
-  tx_ctx()->mutable_metrics()->commit_wait_duration_usec =
+  DCHECK(tx_state()->external_consistency_mode() == COMMIT_WAIT);
+  RETURN_NOT_OK(tx_state()->tablet_peer()->clock()->WaitUntilAfter(tx_state()->timestamp()));
+  tx_state()->mutable_metrics()->commit_wait_duration_usec =
       MonoTime::Now(MonoTime::FINE).GetDeltaSince(before).ToMicroseconds();
   return Status::OK();
 }
@@ -71,9 +71,9 @@ Status LeaderTransaction::Execute() {
 
   gscoped_ptr<ReplicateMsg> replicate_msg;
   NewReplicateMsg(&replicate_msg);
-  gscoped_ptr<ConsensusContext> context(consensus_->NewContext(replicate_msg.Pass(),
-                                                               prepare_finished_callback_,
-                                                               commit_finished_callback_));
+  gscoped_ptr<ConsensusRound> context(consensus_->NewRound(replicate_msg.Pass(),
+                                                           prepare_finished_callback_,
+                                                           commit_finished_callback_));
   // persist the message through consensus, asynchronously
   Status s;
   {
@@ -90,7 +90,7 @@ Status LeaderTransaction::Execute() {
     return s;
   }
 
-  tx_ctx()->set_consensus_ctx(context.Pass());
+  tx_state()->set_consensus_round(context.Pass());
 
   // submit the prepare task
   shared_ptr<Future> prepare_task_future;
@@ -107,7 +107,7 @@ Status LeaderTransaction::Execute() {
 
 void LeaderTransaction::GetOpId(consensus::OpId* op_id) const {
   boost::lock_guard<simple_spinlock> lock(state_lock_);
-  op_id->CopyFrom(tx_ctx()->op_id());
+  op_id->CopyFrom(tx_state()->op_id());
 }
 
 void LeaderTransaction::PrepareSucceeded() {
@@ -152,11 +152,11 @@ void LeaderTransaction::HandlePrepareFailure() {
   prepare_finished_calls_ = 2;
 
   // set the error on the completion callback
-  tx_ctx()->completion_callback()->set_error(prepare_status_);
+  tx_state()->completion_callback()->set_error(prepare_status_);
 
   // If there is no consensus context nothing got done so just reply to the client.
-  if (tx_ctx()->consensus_ctx() == NULL) {
-    tx_ctx()->completion_callback()->TransactionCompleted();
+  if (tx_state()->consensus_round() == NULL) {
+    tx_state()->completion_callback()->TransactionCompleted();
     txn_tracker_->Release(this);
     return;
   }
@@ -164,27 +164,27 @@ void LeaderTransaction::HandlePrepareFailure() {
   gscoped_ptr<CommitMsg> commit(new CommitMsg());
   PrepareFailedPreCommitHooks(&commit);
 
-  // ConsensusContext will own this pointer and dispose of it when it is no longer
+  // ConsensusRound will own this pointer and dispose of it when it is no longer
   // required.
-  Status s = tx_ctx()->consensus_ctx()->Commit(commit.Pass());
+  Status s = tx_state()->consensus_round()->Commit(commit.Pass());
   if (!s.ok()) {
     LOG(ERROR) << "Could not commit transaction abort message. Status: " << s.ToString();
     // we couldn't commit the prepare failure either, which means the commit callback
     // will never be called, so we need to notify the caller here.
-    tx_ctx()->completion_callback()->TransactionCompleted();
+    tx_state()->completion_callback()->TransactionCompleted();
   }
 }
 
 void LeaderTransaction::ApplySucceeded() {
   UpdateMetrics();
-  tx_ctx()->completion_callback()->TransactionCompleted();
+  tx_state()->completion_callback()->TransactionCompleted();
   txn_tracker_->Release(this);
 }
 
 void LeaderTransaction::ApplyFailed(const Status& abort_reason) {
   //TODO use an application level error status here with better error details.
-  tx_ctx()->completion_callback()->set_error(abort_reason);
-  tx_ctx()->completion_callback()->TransactionCompleted();
+  tx_state()->completion_callback()->set_error(abort_reason);
+  tx_state()->completion_callback()->TransactionCompleted();
   txn_tracker_->Release(this);
 }
 

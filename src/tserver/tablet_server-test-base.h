@@ -173,10 +173,10 @@ class TabletServerTest : public KuduTest {
 
   // Inserts 'num_rows' test rows directly into the tablet (i.e not via RPC)
   void InsertTestRowsDirect(uint64_t start_row, uint64_t num_rows) {
-    tablet::WriteTransactionContext tx_ctx;
+    tablet::WriteTransactionState tx_state;
     for (uint64_t i = 0; i < num_rows; i++) {
-      CHECK_OK(tablet_peer_->tablet()->InsertForTesting(&tx_ctx, BuildTestRow(start_row + i)));
-      tx_ctx.Reset();
+      CHECK_OK(tablet_peer_->tablet()->InsertForTesting(&tx_state, BuildTestRow(start_row + i)));
+      tx_state.Reset();
     }
   }
 

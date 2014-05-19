@@ -126,14 +126,14 @@ class TabletPeerTest : public KuduTabletTest {
 
   Status ExecuteWriteAndRollLog(TabletPeer* tablet_peer, const WriteRequestPB& req) {
     WriteResponsePB resp;
-    WriteTransactionContext* tx_ctx =
-        new WriteTransactionContext(tablet_peer, &req, &resp);
+    WriteTransactionState* tx_state =
+        new WriteTransactionState(tablet_peer, &req, &resp);
 
     CountDownLatch rpc_latch(1);
-    tx_ctx->set_completion_callback(gscoped_ptr<TransactionCompletionCallback>(
+    tx_state->set_completion_callback(gscoped_ptr<TransactionCompletionCallback>(
         new LatchTransactionCompletionCallback<WriteResponsePB>(&rpc_latch, &resp)).Pass());
 
-    CHECK_OK(tablet_peer->SubmitWrite(tx_ctx));
+    CHECK_OK(tablet_peer->SubmitWrite(tx_state));
     rpc_latch.Wait();
     CHECK(StatusFromPB(resp.error().status()).ok())
         << "\nReq:\n" << req.DebugString() << "Resp:\n" << resp.DebugString();
@@ -202,13 +202,13 @@ class DelayedApplyTransaction : public LeaderWriteTransaction {
   DelayedApplyTransaction(CountDownLatch* apply_started,
                           CountDownLatch* apply_continue,
                           TransactionTracker* txn_tracker,
-                          WriteTransactionContext* tx_ctx,
+                          WriteTransactionState* tx_state,
                           Consensus* consensus,
                           TaskExecutor* prepare_executor,
                           TaskExecutor* apply_executor,
                           simple_spinlock& prepare_replicate_lock)
     : LeaderWriteTransaction(txn_tracker,
-                             tx_ctx,
+                             tx_state,
                              consensus,
                              prepare_executor,
                              apply_executor,
@@ -349,17 +349,17 @@ TEST_F(TabletPeerTest, TestActiveTransactionPreventsLogGC) {
     // Long-running mutation.
     ASSERT_STATUS_OK(GenerateSequentialDeleteRequest(&req));
     WriteResponsePB resp;
-    WriteTransactionContext* tx_ctx =
-      new WriteTransactionContext(tablet_peer_.get(), &req, &resp);
+    WriteTransactionState* tx_state =
+      new WriteTransactionState(tablet_peer_.get(), &req, &resp);
 
-    tx_ctx->set_completion_callback(gscoped_ptr<TransactionCompletionCallback>(
+    tx_state->set_completion_callback(gscoped_ptr<TransactionCompletionCallback>(
           new LatchTransactionCompletionCallback<WriteResponsePB>(&rpc_latch, &resp)).Pass());
 
     DelayedApplyTransaction* transaction = new DelayedApplyTransaction(
         &apply_started,
         &apply_continue,
         &tablet_peer_->txn_tracker_,
-        tx_ctx,
+        tx_state,
         tablet_peer_->consensus(),
         tablet_peer_->prepare_executor_.get(),
         tablet_peer_->apply_executor_.get(),

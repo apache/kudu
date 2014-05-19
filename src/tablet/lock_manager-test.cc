@@ -25,8 +25,8 @@ DEFINE_int32(num_iterations, 1000, "number of iterations per client thread");
 namespace kudu {
 namespace tablet {
 
-static const TransactionContext* kFakeTransaction =
-  reinterpret_cast<TransactionContext*>(0xdeadbeef);
+static const TransactionState* kFakeTransaction =
+  reinterpret_cast<TransactionState*>(0xdeadbeef);
 
 class LockManagerTest : public KuduTest {
  public:
@@ -123,7 +123,7 @@ class LmTestThread {
 
   void Run() {
     tid_ = Env::Default()->gettid();
-    const TransactionContext* my_txn = reinterpret_cast<TransactionContext*>(tid_);
+    const TransactionState* my_txn = reinterpret_cast<TransactionState*>(tid_);
 
     std::sort(keys_.begin(), keys_.end());
     for (int i = 0; i < FLAGS_num_iterations; i++) {

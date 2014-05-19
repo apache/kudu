@@ -114,7 +114,7 @@ class MultiThreadedTabletTest : public TabletTestBase<SETUP> {
           uint32_t new_val = old_val + 1;
           update_buf.clear();
           RowChangeListEncoder(schema_, &update_buf).AddColumnUpdate(col_idx, &new_val);
-          WriteTransactionContext dummy;
+          WriteTransactionState dummy;
           CHECK_OK(tablet_->MutateRowForTesting(&dummy, rb.row(), schema_,
                                                 RowChangeList(update_buf)));
 
@@ -267,8 +267,8 @@ class MultiThreadedTabletTest : public TabletTestBase<SETUP> {
     while (running_insert_count_.count() > 0) {
       for (int i = 0; i < 100; i++) {
         this->InsertTestRows(tid, 1, iteration++);
-        WriteTransactionContext tx_ctx;
-        CHECK_OK(this->DeleteTestRow(&tx_ctx, tid));
+        WriteTransactionState tx_state;
+        CHECK_OK(this->DeleteTestRow(&tx_state, tid));
       }
     }
   }
@@ -280,10 +280,10 @@ class MultiThreadedTabletTest : public TabletTestBase<SETUP> {
   void StubbornlyUpdateSameRowThread(int tid) {
     uint32_t iteration = 0;
     while (running_insert_count_.count() > 0) {
-      WriteTransactionContext tx_ctx;
+      WriteTransactionState tx_state;
       for (int i = 0; i < 100; i++) {
-        tx_ctx.Reset();
-        Status s = this->UpdateTestRow(&tx_ctx, tid, iteration++);
+        tx_state.Reset();
+        Status s = this->UpdateTestRow(&tx_state, tid, iteration++);
         if (!s.ok() && !s.IsNotFound()) {
           // We expect "not found", but not any other errors.
           CHECK_OK(s);

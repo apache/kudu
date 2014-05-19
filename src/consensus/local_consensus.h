@@ -38,7 +38,7 @@ class LocalConsensus : public Consensus {
   virtual Status Start(const metadata::QuorumPB& initial_quorum,
                        gscoped_ptr<metadata::QuorumPB>* running_quorum) OVERRIDE;
 
-  virtual Status Replicate(ConsensusContext* context) OVERRIDE;
+  virtual Status Replicate(ConsensusRound* context) OVERRIDE;
 
   metadata::QuorumPeerPB::Role role() const {
     return metadata::QuorumPeerPB::LEADER;
@@ -65,7 +65,7 @@ class LocalConsensus : public Consensus {
     return quorum_;
   }
 
-  virtual Status Commit(ConsensusContext* context) OVERRIDE;
+  virtual Status Commit(ConsensusRound* context) OVERRIDE;
 
  private:
 

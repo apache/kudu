@@ -21,23 +21,23 @@ namespace tablet {
 
 // Transaction Context for the AlterSchema operation.
 // Keeps track of the Transaction states (request, result, ...)
-class AlterSchemaTransactionContext : public TransactionContext {
+class AlterSchemaTransactionState : public TransactionState {
  public:
-  explicit AlterSchemaTransactionContext(const tserver::AlterSchemaRequestPB* request)
-    : TransactionContext(NULL),
-      schema_(NULL),
-      request_(request),
-      response_(NULL) {
+  explicit AlterSchemaTransactionState(const tserver::AlterSchemaRequestPB* request)
+      : TransactionState(NULL),
+        schema_(NULL),
+        request_(request),
+        response_(NULL) {
   }
 
-  ~AlterSchemaTransactionContext() {
+  ~AlterSchemaTransactionState() {
     release_component_lock();
   }
 
-  AlterSchemaTransactionContext(TabletPeer* tablet_peer,
-                                const tserver::AlterSchemaRequestPB* request,
-                                tserver::AlterSchemaResponsePB* response)
-      : TransactionContext(tablet_peer),
+  AlterSchemaTransactionState(TabletPeer* tablet_peer,
+                              const tserver::AlterSchemaRequestPB* request,
+                              tserver::AlterSchemaResponsePB* response)
+      : TransactionState(tablet_peer),
         schema_(NULL),
         request_(request),
         response_(response) {
@@ -77,7 +77,7 @@ class AlterSchemaTransactionContext : public TransactionContext {
   }
 
  private:
-  DISALLOW_COPY_AND_ASSIGN(AlterSchemaTransactionContext);
+  DISALLOW_COPY_AND_ASSIGN(AlterSchemaTransactionState);
 
   const Schema* schema_;
   const tserver::AlterSchemaRequestPB *request_;
@@ -89,7 +89,7 @@ class AlterSchemaTransactionContext : public TransactionContext {
 class LeaderAlterSchemaTransaction : public LeaderTransaction {
  public:
   LeaderAlterSchemaTransaction(TransactionTracker *txn_tracker,
-                               AlterSchemaTransactionContext* tx_ctx,
+                               AlterSchemaTransactionState* tx_state,
                                consensus::Consensus* consensus,
                                TaskExecutor* prepare_executor,
                                TaskExecutor* apply_executor,
@@ -112,12 +112,12 @@ class LeaderAlterSchemaTransaction : public LeaderTransaction {
   // Actually commits the transaction.
   virtual void ApplySucceeded();
 
-  virtual AlterSchemaTransactionContext* tx_ctx() OVERRIDE { return tx_ctx_.get(); }
-  virtual const AlterSchemaTransactionContext* tx_ctx() const OVERRIDE { return tx_ctx_.get(); }
+  virtual AlterSchemaTransactionState* tx_state() OVERRIDE { return tx_state_.get(); }
+  virtual const AlterSchemaTransactionState* tx_state() const OVERRIDE { return tx_state_.get(); }
 
  private:
 
-  gscoped_ptr<AlterSchemaTransactionContext> tx_ctx_;
+  gscoped_ptr<AlterSchemaTransactionState> tx_state_;
   DISALLOW_COPY_AND_ASSIGN(LeaderAlterSchemaTransaction);
 };
 

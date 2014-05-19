@@ -151,31 +151,31 @@ class RaftConsensusTest : public KuduTest {
     return NULL;
   }
 
-  Status AppendDummyMessage(RaftConsensus* peer, gscoped_ptr<ConsensusContext>* ctx) {
+  Status AppendDummyMessage(RaftConsensus* peer, gscoped_ptr<ConsensusRound>* round) {
     gscoped_ptr<ReplicateMsg> msg(new ReplicateMsg());
     msg->set_op_type(NO_OP);
     msg->mutable_no_op();
     shared_ptr<FutureCallback> replicate_clbk(new LatchCallback);
     shared_ptr<FutureCallback> commit_clbk(new LatchCallback);
-    ctx->reset(peer->NewContext(msg.Pass(), replicate_clbk, commit_clbk));
-    RETURN_NOT_OK(peer->Replicate(ctx->get()));
+    round->reset(peer->NewRound(msg.Pass(), replicate_clbk, commit_clbk));
+    RETURN_NOT_OK(peer->Replicate(round->get()));
     return Status::OK();
   }
 
-  Status CommitDummyMessage(ConsensusContext* ctx) {
+  Status CommitDummyMessage(ConsensusRound* round) {
     gscoped_ptr<CommitMsg> msg(new CommitMsg());
     msg->set_op_type(NO_OP);
     msg->set_timestamp(clock_->Now().ToUint64());
-    ctx->Commit(msg.Pass());
+    round->Commit(msg.Pass());
     return Status::OK();
   }
 
-  Status WaitForReplicate(ConsensusContext* ctx) {
-    return down_cast<LatchCallback*, FutureCallback>(ctx->replicate_callback().get())->Wait();
+  Status WaitForReplicate(ConsensusRound* round) {
+    return down_cast<LatchCallback*, FutureCallback>(round->replicate_callback().get())->Wait();
   }
-  Status TimedWaitForReplicate(ConsensusContext* ctx, const MonoDelta& delta) {
+  Status TimedWaitForReplicate(ConsensusRound* round, const MonoDelta& delta) {
     return down_cast<LatchCallback*, FutureCallback>(
-        ctx->replicate_callback().get())->TimedWait(delta);
+        round->replicate_callback().get())->TimedWait(delta);
   }
 
   void WaitForReplicateIfNotAlreadyPresent(const OpId& to_wait_for, RaftConsensus* replica) {
@@ -349,16 +349,16 @@ TEST_F(RaftConsensusTest, TestFollowersReplicateAndCommitMessage) {
   ASSERT_STATUS_OK(BuildQuorum(3));
 
   OpId last_op_id;
-  gscoped_ptr<ConsensusContext> ctx;
-  ASSERT_STATUS_OK(AppendDummyMessage(GetLeader(), &ctx));
-  ASSERT_STATUS_OK(WaitForReplicate(ctx.get()));
-  last_op_id.CopyFrom(ctx->id());
+  gscoped_ptr<ConsensusRound> round;
+  ASSERT_STATUS_OK(AppendDummyMessage(GetLeader(), &round));
+  ASSERT_STATUS_OK(WaitForReplicate(round.get()));
+  last_op_id.CopyFrom(round->id());
 
   // Wait for the followers replicate the operations.
   WaitForReplicateIfNotAlreadyPresent(last_op_id, GetFollower(0));
   WaitForReplicateIfNotAlreadyPresent(last_op_id, GetFollower(1));
   // Commit the operation
-  ASSERT_STATUS_OK(CommitDummyMessage(ctx.get()));
+  ASSERT_STATUS_OK(CommitDummyMessage(round.get()));
 
   // Wait for the followers commit the operations.
   WaitForCommitIfNotAlreadyPresent(last_op_id, GetFollower(0), 0);
@@ -378,14 +378,14 @@ TEST_F(RaftConsensusTest, TestFollowersReplicateAndCommitSequence) {
   // (to account for the initial configuration op).
   OpId last_op_id;
 
-  vector<ConsensusContext*> contexts;
+  vector<ConsensusRound*> contexts;
   ElementDeleter deleter(&contexts);
   for (int i = 0; i < seq_size; i++) {
-    gscoped_ptr<ConsensusContext> ctx;
-    ASSERT_STATUS_OK(AppendDummyMessage(GetLeader(), &ctx));
-    ASSERT_STATUS_OK(WaitForReplicate(ctx.get()));
-    last_op_id.CopyFrom(ctx->id());
-    contexts.push_back(ctx.release());
+    gscoped_ptr<ConsensusRound> round;
+    ASSERT_STATUS_OK(AppendDummyMessage(GetLeader(), &round));
+    ASSERT_STATUS_OK(WaitForReplicate(round.get()));
+    last_op_id.CopyFrom(round->id());
+    contexts.push_back(round.release());
   }
 
   // Wait for the followers replicate the operations.
@@ -393,8 +393,8 @@ TEST_F(RaftConsensusTest, TestFollowersReplicateAndCommitSequence) {
   WaitForReplicateIfNotAlreadyPresent(last_op_id, GetFollower(1));
 
   // Commit the operations, but wait for the replicates to finish first
-  BOOST_FOREACH(ConsensusContext* ctx, contexts) {
-    ASSERT_STATUS_OK(CommitDummyMessage(ctx));
+  BOOST_FOREACH(ConsensusRound* round, contexts) {
+    ASSERT_STATUS_OK(CommitDummyMessage(round));
   }
 
   // Wait for the followers commit the operations.
@@ -407,7 +407,7 @@ TEST_F(RaftConsensusTest, TestConsensusContinuesIfAMinorityFallsBehind) {
   ASSERT_STATUS_OK(BuildQuorum(3));
 
   OpId last_replicate;
-  vector<ConsensusContext*> contexts;
+  vector<ConsensusRound*> contexts;
   ElementDeleter deleter(&contexts);
   {
     // lock one of the replicas down by obtaining the state lock
@@ -418,13 +418,13 @@ TEST_F(RaftConsensusTest, TestConsensusContinuesIfAMinorityFallsBehind) {
 
     // replicate and commit 10 messages
     for (int i = 0; i < 10; i++) {
-      gscoped_ptr<ConsensusContext> ctx;
-      ASSERT_STATUS_OK(AppendDummyMessage(GetLeader(), &ctx));
-      last_replicate.CopyFrom(ctx->id());
+      gscoped_ptr<ConsensusRound> round;
+      ASSERT_STATUS_OK(AppendDummyMessage(GetLeader(), &round));
+      last_replicate.CopyFrom(round->id());
       // if the locked replica was stopping consensus we would hang here
-      WaitForReplicate(ctx.get());
-      CommitDummyMessage(ctx.get());
-      contexts.push_back(ctx.release());
+      WaitForReplicate(round.get());
+      CommitDummyMessage(round.get());
+      contexts.push_back(round.release());
     }
     // Follower 1 should be fine (Were we to wait for follower0's replicate
     // this would hang here). We know he must have replicated but make sure
@@ -444,7 +444,7 @@ TEST_F(RaftConsensusTest, TestConsensusStopsIfAMajorityFallsBehind) {
 
   OpId last_op_id;
 
-  gscoped_ptr<ConsensusContext> ctx;
+  gscoped_ptr<ConsensusRound> round;
   {
     // lock two of the replicas down by obtaining the state locks
     // and never letting them go.
@@ -457,15 +457,15 @@ TEST_F(RaftConsensusTest, TestConsensusStopsIfAMajorityFallsBehind) {
     follower1_rs->LockForRead(&lock1);
 
     // Append a single message to the queue
-    ASSERT_STATUS_OK(AppendDummyMessage(GetLeader(), &ctx));
-    last_op_id.CopyFrom(ctx->id());
+    ASSERT_STATUS_OK(AppendDummyMessage(GetLeader(), &round));
+    last_op_id.CopyFrom(round->id());
     // This should timeout.
-    Status status = TimedWaitForReplicate(ctx.get(), MonoDelta::FromMilliseconds(500));
+    Status status = TimedWaitForReplicate(round.get(), MonoDelta::FromMilliseconds(500));
     ASSERT_TRUE(status.IsTimedOut());
   }
   // After we release the locks the operation should replicate to all replicas
   // and we commit.
-  CommitDummyMessage(ctx.get());
+  CommitDummyMessage(round.get());
   // Assert that everything was ok
   WaitForReplicateIfNotAlreadyPresent(last_op_id, GetFollower(0));
   WaitForReplicateIfNotAlreadyPresent(last_op_id, GetFollower(1));
@@ -484,25 +484,25 @@ TEST_F(RaftConsensusTest, TestReplicasHandleCommunicationErrors) {
   // Append a dummy message, make sure it gets to everyone (if both
   // replicas get the commit the leader is guaranteed to also
   // have gotten it)
-  gscoped_ptr<ConsensusContext> ctx;
-  ASSERT_STATUS_OK(AppendDummyMessage(GetLeader(), &ctx));
+  gscoped_ptr<ConsensusRound> round;
+  ASSERT_STATUS_OK(AppendDummyMessage(GetLeader(), &round));
 
-  last_op_id = ctx->id();
+  last_op_id = round->id();
 
-  ASSERT_STATUS_OK(CommitDummyMessage(ctx.get()));
+  ASSERT_STATUS_OK(CommitDummyMessage(round.get()));
   WaitForCommitIfNotAlreadyPresent(last_op_id, GetFollower(0), 0);
   WaitForCommitIfNotAlreadyPresent(last_op_id, GetFollower(1), 1);
 
   // Append a sequence of messages, and keep injecting errors into the
   // replica proxies.
-  vector<ConsensusContext*> contexts;
+  vector<ConsensusRound*> contexts;
   ElementDeleter deleter(&contexts);
   for (int i = 0; i < 100; i++) {
-    gscoped_ptr<ConsensusContext> ctx;
-    ASSERT_STATUS_OK(AppendDummyMessage(GetLeader(), &ctx));
-    ASSERT_STATUS_OK(CommitDummyMessage(ctx.get()));
-    last_op_id.CopyFrom(ctx->id());
-    contexts.push_back(ctx.release());
+    gscoped_ptr<ConsensusRound> round;
+    ASSERT_STATUS_OK(AppendDummyMessage(GetLeader(), &round));
+    ASSERT_STATUS_OK(CommitDummyMessage(round.get()));
+    last_op_id.CopyFrom(round->id());
+    contexts.push_back(round.release());
 
     // inject comm faults
     if (i % 2 == 0) {

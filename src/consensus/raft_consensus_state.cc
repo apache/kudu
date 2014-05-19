@@ -186,7 +186,7 @@ Status ReplicaState::WaitForOustandingApplies() {
   return Status::OK();
 }
 
-Status ReplicaState::TriggerPrepareUnlocked(gscoped_ptr<ConsensusContext> context) {
+Status ReplicaState::TriggerPrepareUnlocked(gscoped_ptr<ConsensusRound> context) {
   if (PREDICT_FALSE(state_ != kRunning)) {
     return Status::IllegalState("Cannot trigger prepare. Replica is not in kRunning state.");
   }
@@ -199,7 +199,7 @@ Status ReplicaState::TriggerApplyUnlocked(gscoped_ptr<OperationPB> leader_commit
   if (PREDICT_FALSE(state_ != kRunning)) {
     return Status::IllegalState("Cannot trigger apply. Replica is not in kRunning state.");
   }
-  ConsensusContext* context = FindPtrOrNull(pending_txns_,
+  ConsensusRound* context = FindPtrOrNull(pending_txns_,
                                             leader_commit_op->commit().commited_op_id());
   if (in_flight_commits_.empty()) {
     all_committed_before_id_.CopyFrom(leader_commit_op->id());

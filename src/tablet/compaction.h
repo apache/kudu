@@ -13,7 +13,7 @@
 namespace kudu {
 namespace tablet {
 struct CompactionInputRow;
-class WriteTransactionContext;
+class WriteTransactionState;
 
 // Interface for an input feeding into a compaction or flush.
 class CompactionInput {

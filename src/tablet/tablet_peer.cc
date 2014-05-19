@@ -33,7 +33,7 @@ namespace kudu {
 namespace tablet {
 
 using consensus::Consensus;
-using consensus::ConsensusContext;
+using consensus::ConsensusRound;
 using consensus::ConsensusOptions;
 using consensus::LocalConsensus;
 using consensus::OpId;
@@ -175,12 +175,12 @@ Status TabletPeer::CheckRunning() const {
   return Status::OK();
 }
 
-Status TabletPeer::SubmitWrite(WriteTransactionContext *tx_ctx) {
+Status TabletPeer::SubmitWrite(WriteTransactionState *tx_state) {
   RETURN_NOT_OK(CheckRunning());
 
   // TODO keep track of the transaction somewhere so that we can cancel transactions
   // when we change leaders and/or want to quiesce a tablet.
-  LeaderWriteTransaction* transaction = new LeaderWriteTransaction(&txn_tracker_, tx_ctx,
+  LeaderWriteTransaction* transaction = new LeaderWriteTransaction(&txn_tracker_, tx_state,
                                                                    consensus_.get(),
                                                                    prepare_executor_.get(),
                                                                    apply_executor_.get(),
@@ -189,13 +189,13 @@ Status TabletPeer::SubmitWrite(WriteTransactionContext *tx_ctx) {
   return transaction->Execute();
 }
 
-Status TabletPeer::SubmitAlterSchema(AlterSchemaTransactionContext *tx_ctx) {
+Status TabletPeer::SubmitAlterSchema(AlterSchemaTransactionState *tx_state) {
   RETURN_NOT_OK(CheckRunning());
 
   // TODO keep track of the transaction somewhere so that we can cancel transactions
   // when we change leaders and/or want to quiesce a tablet.
   LeaderAlterSchemaTransaction* transaction =
-    new LeaderAlterSchemaTransaction(&txn_tracker_, tx_ctx, consensus_.get(),
+    new LeaderAlterSchemaTransaction(&txn_tracker_, tx_state, consensus_.get(),
                                      prepare_executor_.get(),
                                      apply_executor_.get(),
                                      &prepare_replicate_lock_);
@@ -203,13 +203,13 @@ Status TabletPeer::SubmitAlterSchema(AlterSchemaTransactionContext *tx_ctx) {
   return transaction->Execute();
 }
 
-Status TabletPeer::SubmitChangeConfig(ChangeConfigTransactionContext *tx_ctx) {
+Status TabletPeer::SubmitChangeConfig(ChangeConfigTransactionState *tx_state) {
   RETURN_NOT_OK(CheckRunning());
 
   // TODO keep track of the transaction somewhere so that we can cancel transactions
   // when we change leaders and/or want to quiesce a tablet.
   LeaderChangeConfigTransaction* transaction =
-      new LeaderChangeConfigTransaction(&txn_tracker_, tx_ctx,
+      new LeaderChangeConfigTransaction(&txn_tracker_, tx_state,
                                         consensus_.get(),
                                         prepare_executor_.get(),
                                         apply_executor_.get(),
@@ -219,7 +219,7 @@ Status TabletPeer::SubmitChangeConfig(ChangeConfigTransactionContext *tx_ctx) {
   return transaction->Execute();
 }
 
-Status TabletPeer::StartReplicaTransaction(gscoped_ptr<ConsensusContext> ctx) {
+Status TabletPeer::StartReplicaTransaction(gscoped_ptr<ConsensusRound> ctx) {
   return Status::NotSupported("Replica transactions are not supported with local consensus.");
 }
 

@@ -15,7 +15,7 @@ class Status;
 
 namespace tablet {
 class TabletPeer;
-class TransactionContext;
+class TransactionState;
 } // namespace tablet
 
 namespace tserver {

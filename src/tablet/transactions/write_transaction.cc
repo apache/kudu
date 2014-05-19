@@ -29,7 +29,7 @@ using tserver::WriteResponsePB;
 using boost::bind;
 
 LeaderWriteTransaction::LeaderWriteTransaction(TransactionTracker *txn_tracker,
-                                               WriteTransactionContext* tx_ctx,
+                                               WriteTransactionState* tx_state,
                                                consensus::Consensus* consensus,
                                                TaskExecutor* prepare_executor,
                                                TaskExecutor* apply_executor,
@@ -39,20 +39,20 @@ LeaderWriteTransaction::LeaderWriteTransaction(TransactionTracker *txn_tracker,
                     prepare_executor,
                     apply_executor,
                     prepare_replicate_lock),
-  tx_ctx_(tx_ctx) {
+  tx_state_(tx_state) {
 }
 
 void LeaderWriteTransaction::NewReplicateMsg(gscoped_ptr<ReplicateMsg>* replicate_msg) {
   replicate_msg->reset(new ReplicateMsg);
   (*replicate_msg)->set_op_type(WRITE_OP);
-  (*replicate_msg)->mutable_write_request()->CopyFrom(*tx_ctx()->request());
+  (*replicate_msg)->mutable_write_request()->CopyFrom(*tx_state()->request());
 }
 
 Status LeaderWriteTransaction::Prepare() {
   TRACE("PREPARE: Starting");
 
-  const WriteRequestPB* req = tx_ctx_->request();
-  Tablet* tablet = tx_ctx_->tablet_peer()->tablet();
+  const WriteRequestPB* req = tx_state_->request();
+  Tablet* tablet = tx_state_->tablet_peer()->tablet();
 
   // Decode everything first so that we give up if something major is wrong.
   Schema client_schema;
@@ -62,31 +62,31 @@ Status LeaderWriteTransaction::Prepare() {
     // TODO: we have this kind of code a lot - add a new SchemaFromPB variant which
     // does this check inline.
     Status s = Status::InvalidArgument("User requests should not have Column IDs");
-    tx_ctx_->completion_callback()->set_error(s, TabletServerErrorPB::INVALID_SCHEMA);
+    tx_state_->completion_callback()->set_error(s, TabletServerErrorPB::INVALID_SCHEMA);
     return s;
   }
   Status s = CreatePreparedInsertsAndMutates(tablet,
-                                             tx_ctx_.get(),
+                                             tx_state_.get(),
                                              client_schema,
                                              req->row_operations());
 
   // Now that we've prepared set the transaction timestamp (by initiating the
   // mvcc transaction). Doing this here allows us to wait the least possible
   // time if we're using commit wait.
-  Timestamp timestamp = tx_ctx_->start_mvcc_tx();
+  Timestamp timestamp = tx_state_->start_mvcc_tx();
   TRACE("PREPARE: finished. Timestamp: $0", server::HybridClock::GetPhysicalValue(timestamp));
   return s;
 }
 
 void LeaderWriteTransaction::PrepareFailedPreCommitHooks(gscoped_ptr<CommitMsg>* commit_msg) {
   // Release all row locks (no effect if no locks were acquired).
-  tx_ctx_->release_row_locks();
+  tx_state_->release_row_locks();
 
   commit_msg->reset(new CommitMsg());
   (*commit_msg)->set_op_type(OP_ABORT);
-  (*commit_msg)->mutable_write_response()->CopyFrom(*tx_ctx_->response());
-  (*commit_msg)->mutable_result()->CopyFrom(tx_ctx_->Result());
-  (*commit_msg)->set_timestamp(tx_ctx_->timestamp().ToUint64());
+  (*commit_msg)->mutable_write_response()->CopyFrom(*tx_state_->response());
+  (*commit_msg)->mutable_result()->CopyFrom(tx_state_->Result());
+  (*commit_msg)->set_timestamp(tx_state_->timestamp().ToUint64());
 }
 
 // FIXME: Since this is called as a void in a thread-pool callback,
@@ -94,23 +94,23 @@ void LeaderWriteTransaction::PrepareFailedPreCommitHooks(gscoped_ptr<CommitMsg>*
 Status LeaderWriteTransaction::Apply() {
   TRACE("APPLY: Starting");
 
-  Tablet* tablet = tx_ctx_->tablet_peer()->tablet();
+  Tablet* tablet = tx_state_->tablet_peer()->tablet();
 
   int i = 0;
   Status s;
-  BOOST_FOREACH(const PreparedRowWrite *row, tx_ctx_->rows()) {
+  BOOST_FOREACH(const PreparedRowWrite *row, tx_state_->rows()) {
     switch (row->write_type()) {
       case PreparedRowWrite::INSERT: {
-        s = tablet->InsertUnlocked(tx_ctx(), row);
+        s = tablet->InsertUnlocked(tx_state(), row);
         break;
       }
       case PreparedRowWrite::MUTATE: {
-        s = tablet->MutateRowUnlocked(tx_ctx(), row);
+        s = tablet->MutateRowUnlocked(tx_state(), row);
         break;
       }
     }
     if (PREDICT_FALSE(!s.ok())) {
-      WriteResponsePB::PerRowErrorPB* error = tx_ctx_->response()->add_per_row_errors();
+      WriteResponsePB::PerRowErrorPB* error = tx_state_->response()->add_per_row_errors();
       error->set_row_index(i);
       StatusToPB(s, error->mutable_error());
     }
@@ -121,7 +121,7 @@ Status LeaderWriteTransaction::Apply() {
   // calculate the latest that the prepare timestamp could be and wait
   // until now.earliest > prepare_latest. Only after this are the locks
   // released.
-  if (tx_ctx_->external_consistency_mode() == COMMIT_WAIT) {
+  if (tx_state_->external_consistency_mode() == COMMIT_WAIT) {
     TRACE("APPLY: Commit Wait.");
     // If we can't commit wait and have already applied we might have consistency
     // issues if we still reply to the client that the operation was a success.
@@ -133,18 +133,18 @@ Status LeaderWriteTransaction::Apply() {
   TRACE("APPLY: Releasing row locks");
 
   // Perform early lock release after we've applied all changes
-  tx_ctx_->release_row_locks();
+  tx_state_->release_row_locks();
 
   gscoped_ptr<CommitMsg> commit(new CommitMsg());
-  commit->mutable_result()->CopyFrom(tx_ctx_->Result());
+  commit->mutable_result()->CopyFrom(tx_state_->Result());
   commit->set_op_type(WRITE_OP);
-  commit->set_timestamp(tx_ctx_->timestamp().ToUint64());
-  tx_ctx_->response()->set_write_timestamp(tx_ctx_->timestamp().ToUint64());
+  commit->set_timestamp(tx_state_->timestamp().ToUint64());
+  tx_state_->response()->set_write_timestamp(tx_state_->timestamp().ToUint64());
 
   TRACE("APPLY: finished, triggering COMMIT");
 
-  RETURN_NOT_OK(tx_ctx_->consensus_ctx()->Commit(commit.Pass()));
-  // NB: do not use tx_ctx_ after this point, because the commit may have
+  RETURN_NOT_OK(tx_state_->consensus_round()->Commit(commit.Pass()));
+  // NB: do not use tx_state_ after this point, because the commit may have
   // succeeded, in which case the context may have been torn down.
   return Status::OK();
 }
@@ -153,24 +153,24 @@ void LeaderWriteTransaction::ApplySucceeded() {
   // Now that all of the changes have been applied and the commit is durable
   // make the changes visible to readers.
   TRACE("WriteCommitCallback: making edits visible");
-  tx_ctx()->commit();
+  tx_state()->commit();
   LeaderTransaction::ApplySucceeded();
 }
 
 void LeaderWriteTransaction::UpdateMetrics() {
   // Update tablet server metrics.
-  TabletMetrics* metrics = tx_ctx_->tablet_peer()->tablet()->metrics();
+  TabletMetrics* metrics = tx_state_->tablet_peer()->tablet()->metrics();
   if (metrics) {
     // TODO: should we change this so it's actually incremented by the
     // Tablet code itself instead of this wrapper code?
-    metrics->rows_inserted->IncrementBy(tx_ctx_->metrics().successful_inserts);
-    metrics->rows_updated->IncrementBy(tx_ctx_->metrics().successful_updates);
-    if (tx_ctx()->external_consistency_mode() == COMMIT_WAIT) {
-      metrics->commit_wait_duration->Increment(tx_ctx_->metrics().commit_wait_duration_usec);
+    metrics->rows_inserted->IncrementBy(tx_state_->metrics().successful_inserts);
+    metrics->rows_updated->IncrementBy(tx_state_->metrics().successful_updates);
+    if (tx_state()->external_consistency_mode() == COMMIT_WAIT) {
+      metrics->commit_wait_duration->Increment(tx_state_->metrics().commit_wait_duration_usec);
     }
     uint64_t op_duration_usec =
         MonoTime::Now(MonoTime::FINE).GetDeltaSince(start_time_).ToMicroseconds();
-    switch (tx_ctx()->external_consistency_mode()) {
+    switch (tx_state()->external_consistency_mode()) {
       case NO_CONSISTENCY:
         metrics->write_op_duration_no_consistency->Increment(op_duration_usec);
         break;
@@ -184,7 +184,7 @@ void LeaderWriteTransaction::UpdateMetrics() {
   }
 }
 
-Status WriteTransactionContext::AddInsert(const Timestamp &timestamp, int64_t mrs_id) {
+Status WriteTransactionState::AddInsert(const Timestamp &timestamp, int64_t mrs_id) {
   if (PREDICT_TRUE(mvcc_tx_.get() != NULL)) {
     DCHECK_EQ(mvcc_tx_->timestamp(), timestamp)
         << "tx_id doesn't match the id of the ongoing transaction";
@@ -195,13 +195,13 @@ Status WriteTransactionContext::AddInsert(const Timestamp &timestamp, int64_t mr
   return Status::OK();
 }
 
-void WriteTransactionContext::AddFailedOperation(const Status &status) {
+void WriteTransactionState::AddFailedOperation(const Status &status) {
   OperationResultPB* insert = result_pb_.add_ops();
   StatusToPB(status, insert->mutable_failed_status());
   failed_operations_++;
 }
 
-Status WriteTransactionContext::AddMutation(const Timestamp &timestamp,
+Status WriteTransactionState::AddMutation(const Timestamp &timestamp,
                                             gscoped_ptr<OperationResultPB> result) {
   if (PREDICT_FALSE(mvcc_tx_.get() != NULL)) {
     DCHECK_EQ(mvcc_tx_->timestamp(), timestamp)
@@ -212,7 +212,7 @@ Status WriteTransactionContext::AddMutation(const Timestamp &timestamp,
   return Status::OK();
 }
 
-Timestamp WriteTransactionContext::start_mvcc_tx() {
+Timestamp WriteTransactionState::start_mvcc_tx() {
   DCHECK(mvcc_tx_.get() == NULL) << "Mvcc transaction already started/set.";
   // if the consistency mode is set to COMMIT_WAIT instruct
   // ScopedTransaction to obtain the latest possible clock value
@@ -226,14 +226,14 @@ Timestamp WriteTransactionContext::start_mvcc_tx() {
   return mvcc_tx_->timestamp();
 }
 
-void WriteTransactionContext::set_current_mvcc_tx(gscoped_ptr<ScopedTransaction> mvcc_tx) {
+void WriteTransactionState::set_current_mvcc_tx(gscoped_ptr<ScopedTransaction> mvcc_tx) {
   DCHECK(mvcc_tx_.get() == NULL) << "Mvcc transaction already started/set.";
   DCHECK(external_consistency_mode() != COMMIT_WAIT);
   mvcc_tx_.reset(mvcc_tx.release());
   set_timestamp(mvcc_tx_->timestamp());
 }
 
-void WriteTransactionContext::commit() {
+void WriteTransactionState::commit() {
   if (mvcc_tx_.get() != NULL) {
     // commit the transaction
     mvcc_tx_->Commit();
@@ -243,12 +243,12 @@ void WriteTransactionContext::commit() {
   release_row_locks();
 }
 
-void WriteTransactionContext::release_row_locks() {
+void WriteTransactionState::release_row_locks() {
   // free the row locks
   STLDeleteElements(&rows_);
 }
 
-void WriteTransactionContext::Reset() {
+void WriteTransactionState::Reset() {
   commit();
   result_pb_.Clear();
   tx_metrics_.Reset();

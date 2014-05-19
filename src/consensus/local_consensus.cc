@@ -76,20 +76,20 @@ Status LocalConsensus::Start(const metadata::QuorumPB& initial_quorum,
   state_ = kConfiguring;
 
   TRACE("Replicating initial config");
-  gscoped_ptr<ConsensusContext> ctx(NewContext(replicate_msg.Pass(),
+  gscoped_ptr<ConsensusRound> round(NewRound(replicate_msg.Pass(),
                                                replicate_clbk,
                                                commit_clbk));
-  RETURN_NOT_OK(Replicate(ctx.get()));
+  RETURN_NOT_OK(Replicate(round.get()));
   RETURN_NOT_OK(replicate_clbk->Wait());
 
   TRACE("Committing local config");
   ChangeConfigResponsePB resp;
   gscoped_ptr<CommitMsg> commit_msg(new CommitMsg);
   commit_msg->set_op_type(CHANGE_CONFIG_OP);
-  commit_msg->mutable_commited_op_id()->CopyFrom(ctx->replicate_op()->id());
+  commit_msg->mutable_commited_op_id()->CopyFrom(round->replicate_op()->id());
   commit_msg->mutable_change_config_response()->CopyFrom(resp);
   commit_msg->set_timestamp(clock_->Now().ToUint64());
-  RETURN_NOT_OK(ctx->Commit(commit_msg.Pass()));
+  RETURN_NOT_OK(round->Commit(commit_msg.Pass()));
 
 
   RETURN_NOT_OK(commit_clbk->Wait());
@@ -102,7 +102,7 @@ Status LocalConsensus::Start(const metadata::QuorumPB& initial_quorum,
   return Status::OK();
 }
 
-Status LocalConsensus::Replicate(ConsensusContext* context) {
+Status LocalConsensus::Replicate(ConsensusRound* context) {
   DCHECK_GE(state_, kConfiguring);
 
   LogEntryBatch* reserved_entry_batch;
@@ -132,7 +132,7 @@ Status LocalConsensus::Update(const ConsensusRequestPB* request,
   return Status::NotSupported("LocalConsensus does not support Update() calls.");
 }
 
-Status LocalConsensus::Commit(ConsensusContext* context) {
+Status LocalConsensus::Commit(ConsensusRound* context) {
 
   OperationPB* commit_op = DCHECK_NOTNULL(context->commit_op());
   DCHECK(commit_op->has_commit()) << "A commit operation must have a commit.";
@@ -149,8 +149,8 @@ Status LocalConsensus::Commit(ConsensusContext* context) {
 
     // The commit callback is the very last thing to execute in a transaction
     // so it needs to free all resources. We need release it from the
-    // ConsensusContext or we'd get a cycle. (callback would free the
-    // TransactionContext which would free the ConsensusContext, which in turn
+    // ConsensusRound or we'd get a cycle. (callback would free the
+    // TransactionState which would free the ConsensusRound, which in turn
     // would try to free the callback).
     commit_clbk = context->commit_callback();
     context->release_commit_callback();

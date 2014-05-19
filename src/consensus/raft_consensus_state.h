@@ -48,7 +48,7 @@ class ReplicaState {
   typedef boost::unique_lock<simple_spinlock> UniqueLock;
 
   typedef std::tr1::unordered_map<consensus::OpId,
-                                  ConsensusContext*,
+                                  ConsensusRound*,
                                   log::OpIdHashFunctor,
                                   log::OpIdEqualsFunctor> OpIdToContextMap;
 
@@ -126,7 +126,7 @@ class ReplicaState {
   const std::string& GetLeaderUuidUnlocked();
 
   // Triggers a Prepare() in the bound replica_operation_factory_
-  Status TriggerPrepareUnlocked(gscoped_ptr<ConsensusContext> context);
+  Status TriggerPrepareUnlocked(gscoped_ptr<ConsensusRound> context);
 
   // Triggers a Apply() in the bound 'replica_operation_factory_'..
   Status TriggerApplyUnlocked(gscoped_ptr<OperationPB> leader_commit_op);

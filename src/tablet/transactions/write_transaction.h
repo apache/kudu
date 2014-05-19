@@ -48,11 +48,11 @@ class ScopedRowLock;
 // on the WAL.
 //
 // NOTE: this class isn't thread safe.
-class WriteTransactionContext : public TransactionContext {
+class WriteTransactionState : public TransactionState {
 
  public:
-  WriteTransactionContext()
-      : TransactionContext(NULL),
+  WriteTransactionState()
+      : TransactionState(NULL),
         failed_operations_(0),
         request_(NULL),
         response_(NULL),
@@ -61,10 +61,10 @@ class WriteTransactionContext : public TransactionContext {
   }
 
   // ctor used by the LEADER replica
-  WriteTransactionContext(TabletPeer* tablet_peer,
-                          const tserver::WriteRequestPB *request,
-                          tserver::WriteResponsePB *response)
-      : TransactionContext(tablet_peer),
+  WriteTransactionState(TabletPeer* tablet_peer,
+                        const tserver::WriteRequestPB *request,
+                        tserver::WriteResponsePB *response)
+      : TransactionState(tablet_peer),
         failed_operations_(0),
         request_(request),
         response_(response),
@@ -74,9 +74,9 @@ class WriteTransactionContext : public TransactionContext {
   }
 
   // ctor used by FOLLOWER/LEARNER replicas
-  WriteTransactionContext(TabletPeer* tablet_peer,
-                          const tserver::WriteRequestPB *request)
-      : TransactionContext(tablet_peer),
+  WriteTransactionState(TabletPeer* tablet_peer,
+                        const tserver::WriteRequestPB *request)
+      : TransactionState(tablet_peer),
         failed_operations_(0),
         request_(request),
         response_(NULL),
@@ -84,22 +84,22 @@ class WriteTransactionContext : public TransactionContext {
         mvcc_tx_(NULL) {
   }
 
-  // Adds an applied insert to this TransactionContext, including the
+  // Adds an applied insert to this TransactionState, including the
   // id of the MemRowSet to which it was applied.
   Status AddInsert(const Timestamp &tx_id,
                    int64_t mrs_id);
 
-  // Adds a failed operation to this TransactionContext, including the status
+  // Adds a failed operation to this TransactionState, including the status
   // explaining why the operation failed.
   void AddFailedOperation(const Status &status);
 
-  // Adds an applied mutation to this TransactionContext, including the
+  // Adds an applied mutation to this TransactionState, including the
   // tablet id, the mvcc transaction id, the mutation that was applied
   // and the delta stores that were mutated.
   Status AddMutation(const Timestamp &tx_id,
                      gscoped_ptr<OperationResultPB> result);
 
-  // Adds a missed mutation to this TransactionContext.
+  // Adds a missed mutation to this TransactionState.
   // Missed mutations are the ones that are applied on Phase 2 of compaction
   // and reflect updates to the old DeltaMemStore that were not yet present
   // in the new DeltaMemStore.
@@ -136,11 +136,11 @@ class WriteTransactionContext : public TransactionContext {
 
   // Starts an Mvcc transaction, the ScopedTransaction will not commit until
   // commit_mvcc_tx is called. To be able to start an Mvcc transaction this
-  // TransactionContext must have a hold on the MvccManager.
+  // TransactionState must have a hold on the MvccManager.
   Timestamp start_mvcc_tx();
 
   // Allows to set the current Mvcc transaction externally when
-  // this TransactionContext doesn't have a handle to MvccManager.
+  // this TransactionState doesn't have a handle to MvccManager.
   void set_current_mvcc_tx(gscoped_ptr<ScopedTransaction> mvcc_tx);
 
   // Commits the Mvcc transaction and releases the component lock. After
@@ -162,7 +162,7 @@ class WriteTransactionContext : public TransactionContext {
 
   // Sets the component lock for this transaction. The lock will not be
   // unlocked unless either release_locks() or Reset() is called or this
-  // TransactionContext is destroyed.
+  // TransactionState is destroyed.
   void set_component_lock(gscoped_ptr<boost::shared_lock<rw_semaphore> > lock) {
     component_lock_.reset(lock.release());
   }
@@ -174,17 +174,17 @@ class WriteTransactionContext : public TransactionContext {
   // Releases all the row locks acquired by this transaction.
   void release_row_locks();
 
-  // Resets this TransactionContext, releasing all locks, destroying all prepared
+  // Resets this TransactionState, releasing all locks, destroying all prepared
   // writes, clearing the transaction result _and_ committing the current Mvcc
   // transaction.
   void Reset();
 
-  ~WriteTransactionContext() {
+  ~WriteTransactionState() {
     Reset();
   }
 
  private:
-  DISALLOW_COPY_AND_ASSIGN(WriteTransactionContext);
+  DISALLOW_COPY_AND_ASSIGN(WriteTransactionState);
 
   TxResultPB result_pb_;
   int32_t failed_operations_;
@@ -252,18 +252,18 @@ class WriteTransactionContext : public TransactionContext {
 //    Prepare() complete. When PrepareSucceeded() is is called twice (independently
 //    of who finishes first) Apply() is called, asynchronously.
 //
-// 5) When Apply() starts execution the TransactionContext must have been
+// 5) When Apply() starts execution the TransactionState must have been
 //    passed all the PreparedRowWrites (each containing a row lock) and the
 //    'component_lock'. Apply() starts the mvcc transaction and calls
 //    Tablet::InsertUnlocked/Tablet::MutateUnlocked with each of the
 //    PreparedRowWrites. Apply() keeps track of any single row errors
 //    that might have occurred while inserting/mutating and sets those in
-//    WriteResponse. TransactionContext is passed with each insert/mutate
+//    WriteResponse. TransactionState is passed with each insert/mutate
 //    to keep track of which in-memory stores were mutated.
 //    After all the inserts/mutates are performed Apply() releases row
 //    locks (see 'Implementation Techniques for Main Memory Database Systems',
 //    DeWitt et. al.). It then readies the CommitMsg with the TXResultPB in
-//    transaction context and calls ConsensusContext::Commit() which will
+//    transaction context and calls ConsensusRound::Commit() which will
 //    in turn trigger a commit of the consensus system.
 //
 // 6) After the consensus system deems the CommitMsg committed (which might
@@ -276,7 +276,7 @@ class WriteTransactionContext : public TransactionContext {
 class LeaderWriteTransaction : public LeaderTransaction {
  public:
   LeaderWriteTransaction(TransactionTracker *txn_tracker,
-                         WriteTransactionContext* tx_ctx,
+                         WriteTransactionState* tx_state,
                          consensus::Consensus* consensus,
                          TaskExecutor* prepare_executor,
                          TaskExecutor* apply_executor,
@@ -320,11 +320,11 @@ class LeaderWriteTransaction : public LeaderTransaction {
 
   virtual void UpdateMetrics();
 
-  virtual WriteTransactionContext* tx_ctx() OVERRIDE { return tx_ctx_.get(); }
-  virtual const WriteTransactionContext* tx_ctx() const OVERRIDE { return tx_ctx_.get(); }
+  virtual WriteTransactionState* tx_state() OVERRIDE { return tx_state_.get(); }
+  virtual const WriteTransactionState* tx_state() const OVERRIDE { return tx_state_.get(); }
 
  protected:
-  gscoped_ptr<WriteTransactionContext> tx_ctx_;
+  gscoped_ptr<WriteTransactionState> tx_state_;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(LeaderWriteTransaction);

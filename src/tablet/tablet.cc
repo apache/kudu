@@ -59,7 +59,7 @@ using kudu::MaintenanceManager;
 using consensus::Consensus;
 using consensus::OperationPB;
 using consensus::CommitMsg;
-using consensus::ConsensusContext;
+using consensus::ConsensusRound;
 using consensus::OpId;
 using log::MaximumOpId;
 using log::OpIdAnchorRegistry;
@@ -188,7 +188,7 @@ Status Tablet::NewRowIterator(const Schema &projection,
   return Status::OK();
 }
 
-Status Tablet::CreatePreparedInsert(const WriteTransactionContext* tx_ctx,
+Status Tablet::CreatePreparedInsert(const WriteTransactionState* tx_state,
                                     const ConstContiguousRow* row,
                                     gscoped_ptr<PreparedRowWrite>* row_write) {
   gscoped_ptr<tablet::RowSetKeyProbe> probe(new tablet::RowSetKeyProbe(*row));
@@ -198,7 +198,7 @@ Status Tablet::CreatePreparedInsert(const WriteTransactionContext* tx_ctx,
   }
 
   gscoped_ptr<ScopedRowLock> row_lock(new ScopedRowLock(&lock_manager_,
-                                                        tx_ctx,
+                                                        tx_state,
                                                         probe->encoded_key_slice(),
                                                         LockManager::LOCK_EXCLUSIVE));
   row_write->reset(new PreparedRowWrite(row, probe.Pass(), row_lock.Pass()));
@@ -208,10 +208,10 @@ Status Tablet::CreatePreparedInsert(const WriteTransactionContext* tx_ctx,
   return Status::OK();
 }
 
-Status Tablet::InsertForTesting(WriteTransactionContext *tx_ctx,
+Status Tablet::InsertForTesting(WriteTransactionState *tx_state,
                                 const ConstContiguousRow& row) {
   CHECK(open_) << "must Open() first!";
-  DCHECK(tx_ctx) << "you must have a transaction context";
+  DCHECK(tx_state) << "you must have a transaction context";
 
   DCHECK_KEY_PROJECTION_SCHEMA_EQ(key_schema_, row.schema());
 
@@ -220,7 +220,7 @@ Status Tablet::InsertForTesting(WriteTransactionContext *tx_ctx,
 
   gscoped_ptr<boost::shared_lock<rw_semaphore> > lock(
       new boost::shared_lock<rw_semaphore>(component_lock_));
-  tx_ctx->set_component_lock(lock.Pass());
+  tx_state->set_component_lock(lock.Pass());
 
   // Convert the client row to a server row (with IDs)
   // TODO: We have now three places where we do the projection (RPC, Tablet, Bootstrap)
@@ -232,33 +232,33 @@ Status Tablet::InsertForTesting(WriteTransactionContext *tx_ctx,
     RETURN_NOT_OK(schema_->VerifyProjectionCompatibility(row.schema()));
     RETURN_NOT_OK(row_projector.Init());
   }
-  const ConstContiguousRow* proj_row = ProjectRowForInsert(tx_ctx, schema_.get(),
+  const ConstContiguousRow* proj_row = ProjectRowForInsert(tx_state, schema_.get(),
                                                            row_projector, row.row_data());
 
   gscoped_ptr<PreparedRowWrite> row_write;
-  RETURN_NOT_OK(CreatePreparedInsert(tx_ctx, proj_row, &row_write));
-  tx_ctx->add_prepared_row(row_write.Pass());
+  RETURN_NOT_OK(CreatePreparedInsert(tx_state, proj_row, &row_write));
+  tx_state->add_prepared_row(row_write.Pass());
 
   gscoped_ptr<ScopedTransaction> mvcc_tx(new ScopedTransaction(&mvcc_));
-  tx_ctx->set_current_mvcc_tx(mvcc_tx.Pass());
+  tx_state->set_current_mvcc_tx(mvcc_tx.Pass());
 
-  // Create a "fake" OpId and set it in the TransactionContext for anchoring.
-  tx_ctx->mutable_op_id()->CopyFrom(MaximumOpId());
+  // Create a "fake" OpId and set it in the TransactionState for anchoring.
+  tx_state->mutable_op_id()->CopyFrom(MaximumOpId());
 
-  Status s = InsertUnlocked(tx_ctx, tx_ctx->rows()[0]);
-  tx_ctx->commit();
+  Status s = InsertUnlocked(tx_state, tx_state->rows()[0]);
+  tx_state->commit();
   return s;
 }
 
-Status Tablet::InsertUnlocked(WriteTransactionContext *tx_ctx,
+Status Tablet::InsertUnlocked(WriteTransactionState *tx_state,
                               const PreparedRowWrite* insert) {
   CHECK(open_) << "must Open() first!";
-  // make sure that the WriteTransactionContext has the component lock and that
+  // make sure that the WriteTransactionState has the component lock and that
   // there the PreparedRowWrite has the row lock.
-  DCHECK(tx_ctx->component_lock()) << "WriteTransactionContext must hold the component lock.";
+  DCHECK(tx_state->component_lock()) << "WriteTransactionState must hold the component lock.";
   DCHECK(insert->row_lock()) << "PreparedRowWrite must hold the row lock.";
   DCHECK_KEY_PROJECTION_SCHEMA_EQ(key_schema_, insert->row()->schema());
-  DCHECK(tx_ctx->op_id().IsInitialized()) << "TransactionContext OpId needed for anchoring";
+  DCHECK(tx_state->op_id().IsInitialized()) << "TransactionState OpId needed for anchoring";
 
   ProbeStats stats;
 
@@ -278,32 +278,32 @@ Status Tablet::InsertUnlocked(WriteTransactionContext *tx_ctx,
         if (metrics_) {
           metrics_->insertions_failed_dup_key->Increment();
         }
-        tx_ctx->AddFailedOperation(s);
+        tx_state->AddFailedOperation(s);
         return s;
       }
     }
   }
 
-  Timestamp ts = tx_ctx->timestamp();
+  Timestamp ts = tx_state->timestamp();
 
   // TODO: the Insert() call below will re-encode the key, which is a
   // waste. Should pass through the KeyProbe structure perhaps.
 
   // Now try to insert into memrowset. The memrowset itself will return
   // AlreadyPresent if it has already been inserted there.
-  Status s = memrowset_->Insert(ts, *insert->row(), tx_ctx->op_id());
+  Status s = memrowset_->Insert(ts, *insert->row(), tx_state->op_id());
   if (PREDICT_TRUE(s.ok())) {
-    RETURN_NOT_OK(tx_ctx->AddInsert(ts, memrowset_->mrs_id()));
+    RETURN_NOT_OK(tx_state->AddInsert(ts, memrowset_->mrs_id()));
   } else {
     if (s.IsAlreadyPresent() && metrics_) {
       metrics_->insertions_failed_dup_key->Increment();
     }
-    tx_ctx->AddFailedOperation(s);
+    tx_state->AddFailedOperation(s);
   }
   return s;
 }
 
-Status Tablet::CreatePreparedMutate(const WriteTransactionContext* tx_ctx,
+Status Tablet::CreatePreparedMutate(const WriteTransactionState* tx_state,
                                     const ConstContiguousRow* row_key,
                                     const RowChangeList& changelist,
                                     gscoped_ptr<PreparedRowWrite>* row_write) {
@@ -314,7 +314,7 @@ Status Tablet::CreatePreparedMutate(const WriteTransactionContext* tx_ctx,
   }
 
   gscoped_ptr<ScopedRowLock> row_lock(new ScopedRowLock(&lock_manager_,
-                                                        tx_ctx,
+                                                        tx_state,
                                                         probe->encoded_key_slice(),
                                                         LockManager::LOCK_EXCLUSIVE));
   row_write->reset(new PreparedRowWrite(row_key, changelist, probe.Pass(), row_lock.Pass()));
@@ -324,15 +324,15 @@ Status Tablet::CreatePreparedMutate(const WriteTransactionContext* tx_ctx,
   return Status::OK();
 }
 
-Status Tablet::MutateRowForTesting(WriteTransactionContext *tx_ctx,
+Status Tablet::MutateRowForTesting(WriteTransactionState *tx_state,
                                    const ConstContiguousRow& row_key,
                                    const Schema& update_schema,
                                    const RowChangeList& update) {
   // TODO: use 'probe' when calling UpdateRow on each rowset.
   DCHECK_SCHEMA_EQ(key_schema_, row_key.schema());
   DCHECK_KEY_PROJECTION_SCHEMA_EQ(key_schema_, update_schema);
-  DCHECK(tx_ctx) << "you must have a transaction context";
-  CHECK(tx_ctx->rows().empty()) << "WriteTransactionContext must have no PreparedRowWrites.";
+  DCHECK(tx_state) << "you must have a transaction context";
+  CHECK(tx_state->rows().empty()) << "WriteTransactionState must have no PreparedRowWrites.";
 
   // The order of the next three steps is critical!
   //
@@ -382,7 +382,7 @@ Status Tablet::MutateRowForTesting(WriteTransactionContext *tx_ctx,
 
   gscoped_ptr<boost::shared_lock<rw_semaphore> > lock(
       new boost::shared_lock<rw_semaphore>(component_lock_));
-  tx_ctx->set_component_lock(lock.Pass());
+  tx_state->set_component_lock(lock.Pass());
 
   // Convert the client RowChangeList to a server RowChangeList (with IDs)
   // TODO: We have now three places where we do the projection (RPC, Tablet, Bootstrap)
@@ -395,27 +395,27 @@ Status Tablet::MutateRowForTesting(WriteTransactionContext *tx_ctx,
     RETURN_NOT_OK(update_schema.GetProjectionMapping(*schema_.get(), &delta_projector));
   }
 
-  RowChangeList changelist = ProjectMutation(tx_ctx, delta_projector, update);
+  RowChangeList changelist = ProjectMutation(tx_state, delta_projector, update);
 
   gscoped_ptr<PreparedRowWrite> row_write;
-  RETURN_NOT_OK(CreatePreparedMutate(tx_ctx, &row_key, changelist, &row_write));
-  tx_ctx->add_prepared_row(row_write.Pass());
+  RETURN_NOT_OK(CreatePreparedMutate(tx_state, &row_key, changelist, &row_write));
+  tx_state->add_prepared_row(row_write.Pass());
 
   gscoped_ptr<ScopedTransaction> mvcc_tx(new ScopedTransaction(&mvcc_));
-  tx_ctx->set_current_mvcc_tx(mvcc_tx.Pass());
+  tx_state->set_current_mvcc_tx(mvcc_tx.Pass());
 
-  // Create a "fake" OpId and set it in the TransactionContext for anchoring.
-  tx_ctx->mutable_op_id()->CopyFrom(MaximumOpId());
+  // Create a "fake" OpId and set it in the TransactionState for anchoring.
+  tx_state->mutable_op_id()->CopyFrom(MaximumOpId());
 
-  Status s = MutateRowUnlocked(tx_ctx, tx_ctx->rows()[0]);
-  tx_ctx->commit();
+  Status s = MutateRowUnlocked(tx_state, tx_state->rows()[0]);
+  tx_state->commit();
   return s;
 }
 
-Status Tablet::MutateRowUnlocked(WriteTransactionContext *tx_ctx,
+Status Tablet::MutateRowUnlocked(WriteTransactionState *tx_state,
                                  const PreparedRowWrite* mutate) {
-  DCHECK(tx_ctx != NULL) << "you must have a WriteTransactionContext";
-  DCHECK(tx_ctx->op_id().IsInitialized()) << "TransactionContext OpId needed for anchoring";
+  DCHECK(tx_state != NULL) << "you must have a WriteTransactionState";
+  DCHECK(tx_state->op_id().IsInitialized()) << "TransactionState OpId needed for anchoring";
 
   gscoped_ptr<OperationResultPB> result(new OperationResultPB());
 
@@ -429,12 +429,12 @@ Status Tablet::MutateRowUnlocked(WriteTransactionContext *tx_ctx,
     s = Status::InvalidArgument("User may not specify REINSERT mutations");
   }
   if (!s.ok()) {
-    tx_ctx->AddFailedOperation(s);
+    tx_state->AddFailedOperation(s);
     return s;
   }
 
 
-  Timestamp ts = tx_ctx->timestamp();
+  Timestamp ts = tx_state->timestamp();
 
   ProbeStats stats;
   // Submit the stats before returning from this function
@@ -444,15 +444,15 @@ Status Tablet::MutateRowUnlocked(WriteTransactionContext *tx_ctx,
   s = memrowset_->MutateRow(ts,
                             *mutate->probe(),
                             mutate->changelist(),
-                            tx_ctx->op_id(),
+                            tx_state->op_id(),
                             &stats,
                             result.get());
   if (s.ok()) {
-    RETURN_NOT_OK(tx_ctx->AddMutation(ts, result.Pass()));
+    RETURN_NOT_OK(tx_state->AddMutation(ts, result.Pass()));
     return s;
   }
   if (!s.IsNotFound()) {
-    tx_ctx->AddFailedOperation(s);
+    tx_state->AddFailedOperation(s);
     return s;
   }
 
@@ -464,20 +464,20 @@ Status Tablet::MutateRowUnlocked(WriteTransactionContext *tx_ctx,
   vector<RowSet *> to_check;
   rowsets_->FindRowSetsWithKeyInRange(mutate->probe()->encoded_key_slice(), &to_check);
   BOOST_FOREACH(RowSet *rs, to_check) {
-    s = rs->MutateRow(ts, *mutate->probe(), mutate->changelist(), tx_ctx->op_id(),
+    s = rs->MutateRow(ts, *mutate->probe(), mutate->changelist(), tx_state->op_id(),
                       &stats, result.get());
     if (s.ok()) {
-      RETURN_NOT_OK(tx_ctx->AddMutation(ts, result.Pass()));
+      RETURN_NOT_OK(tx_state->AddMutation(ts, result.Pass()));
       return s;
     }
     if (!s.IsNotFound()) {
-      tx_ctx->AddFailedOperation(s);
+      tx_state->AddFailedOperation(s);
       return s;
     }
   }
 
   s = Status::NotFound("key not found");
-  tx_ctx->AddFailedOperation(s);
+  tx_state->AddFailedOperation(s);
   return s;
 }
 
@@ -696,7 +696,7 @@ Status Tablet::FlushInternal(const RowSetsInCompaction& input,
   return Status::OK();
 }
 
-Status Tablet::CreatePreparedAlterSchema(AlterSchemaTransactionContext *tx_ctx,
+Status Tablet::CreatePreparedAlterSchema(AlterSchemaTransactionState *tx_state,
                                          const Schema* schema) {
   if (!key_schema_.KeyEquals(*schema)) {
     return Status::InvalidArgument("Schema keys cannot be altered",
@@ -711,13 +711,13 @@ Status Tablet::CreatePreparedAlterSchema(AlterSchemaTransactionContext *tx_ctx,
   // Alter schema must run when no reads/writes are in progress.
   // However, compactions and flushes can continue to run in parallel
   // with the schema change,
-  tx_ctx->acquire_component_lock(component_lock_);
-  tx_ctx->set_schema(schema);
+  tx_state->acquire_component_lock(component_lock_);
+  tx_state->set_schema(schema);
   return Status::OK();
 }
 
-Status Tablet::AlterSchema(AlterSchemaTransactionContext *tx_ctx) {
-  DCHECK(key_schema_.KeyEquals(*DCHECK_NOTNULL(tx_ctx->schema()))) <<
+Status Tablet::AlterSchema(AlterSchemaTransactionState *tx_state) {
+  DCHECK(key_schema_.KeyEquals(*DCHECK_NOTNULL(tx_state->schema()))) <<
     "Schema keys cannot be altered";
 
   RowSetsInCompaction input;
@@ -725,21 +725,21 @@ Status Tablet::AlterSchema(AlterSchemaTransactionContext *tx_ctx) {
   {
     // If the current version >= new version, there is nothing to do.
     DCHECK(component_lock_.is_locked());
-    bool same_schema = schema_->Equals(*tx_ctx->schema());
-    if (metadata_->schema_version() >= tx_ctx->schema_version()) {
+    bool same_schema = schema_->Equals(*tx_state->schema());
+    if (metadata_->schema_version() >= tx_state->schema_version()) {
       LOG(INFO) << "Already running schema version " << metadata_->schema_version()
-                << " got alter request for version " << tx_ctx->schema_version();
+                << " got alter request for version " << tx_state->schema_version();
       return Status::OK();
     }
 
     LOG(INFO) << "Alter schema from " << schema_->ToString()
               << " version " << metadata_->schema_version()
-              << " to " << tx_ctx->schema()->ToString()
-              << " version " << tx_ctx->schema_version();
-    schema_.reset(new Schema(*tx_ctx->schema()));
-    metadata_->SetSchema(*schema_, tx_ctx->schema_version());
-    if (tx_ctx->has_new_table_name()) {
-      metadata_->SetTableName(tx_ctx->new_table_name());
+              << " to " << tx_state->schema()->ToString()
+              << " version " << tx_state->schema_version();
+    schema_.reset(new Schema(*tx_state->schema()));
+    metadata_->SetSchema(*schema_, tx_state->schema_version());
+    if (tx_state->has_new_table_name()) {
+      metadata_->SetTableName(tx_state->new_table_name());
     }
 
     // If the current schema and the new one are equal, there is nothing to do.
@@ -762,11 +762,11 @@ Status Tablet::AlterSchema(AlterSchemaTransactionContext *tx_ctx) {
 
   // Tablet::component_lock_ is acquired in CreatePreparedAlterSchema()
   CHECK(component_lock_.is_write_locked());
-  tx_ctx->release_component_lock();
+  tx_state->release_component_lock();
 
   // Flush the old MemRowSet
   boost::lock_guard<boost::mutex> lock(rowsets_flush_lock_);
-  return FlushInternal(input, old_ms, *tx_ctx->schema());
+  return FlushInternal(input, old_ms, *tx_state->schema());
 }
 
 void Tablet::SetCompactionHooksForTests(

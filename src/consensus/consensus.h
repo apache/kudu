@@ -28,7 +28,7 @@ class QuorumPeerPB;
 namespace consensus {
 
 // forward declarations
-class ConsensusContext;
+class ConsensusRound;
 class ReplicaTransactionFactory;
 
 struct ConsensusOptions {
@@ -70,11 +70,11 @@ class Consensus {
   virtual Status Start(const metadata::QuorumPB& initial_quorum,
                        gscoped_ptr<metadata::QuorumPB>* running_quorum) = 0;
 
-  // Creates a new ConsensusContext, the entity that owns all the data
+  // Creates a new ConsensusRound, the entity that owns all the data
   // structures required for a consensus round, such as the ReplicateMsg
-  // (and later on the CommitMsg). ConsensusContext will also point to and
+  // (and later on the CommitMsg). ConsensusRound will also point to and
   // increase the reference count for the provided callbacks.
-  ConsensusContext* NewContext(
+  ConsensusRound* NewRound(
       gscoped_ptr<ReplicateMsg> entry,
       const std::tr1::shared_ptr<FutureCallback>& repl_callback,
       const std::tr1::shared_ptr<FutureCallback>& commit_callback);
@@ -91,14 +91,14 @@ class Consensus {
   //             |<---------------ACK------------------+
   //             |                                     |
   //     3)      +--+                                  |
-  //           <----+ ctx.replicate_callback()         |
+  //           <----+ round.replicate_callback()         |
   //             |                                     |
   //     4)   -->| Commit()                            |
   //             |                                     |
   //     5)      +--+                                  |
   //             |<-+ commit                           |
   //             |                                     |
-  //     6)      +--+ ctx.commit_callback()            |
+  //     6)      +--+ round.commit_callback()            |
   //        Res<----+                                  |
   //             |                                     |
   //             |                                     |
@@ -119,7 +119,7 @@ class Consensus {
   // 7) Leader eventually sends commit message to the quorum.
   //
   // This method can only be called on the leader, i.e. role() == LEADER
-  virtual Status Replicate(ConsensusContext* context) = 0;
+  virtual Status Replicate(ConsensusRound* context) = 0;
 
   // Messages sent from LEADER to FOLLOWERS and LEARNERS to update their
   // state machines.
@@ -158,11 +158,11 @@ class Consensus {
   // Stops running the consensus algorithm.
   virtual void Shutdown() = 0;
  protected:
-  friend class ConsensusContext;
+  friend class ConsensusRound;
 
   // Called by Consensus context to complete the commit of a consensus
   // round.
-  virtual Status Commit(ConsensusContext* ctx) = 0;
+  virtual Status Commit(ConsensusRound* round) = 0;
 
   // Fault hooks for tests. In production code this will always be null.
   std::tr1::shared_ptr<ConsensusFaultHooks> fault_hooks_;
@@ -220,7 +220,7 @@ class ReplicaCommitContinuation {
 // Replica transactions execute the following way:
 //
 // - When a ReplicateMsg is first received from the leader, the Consensus
-//   instance creates the ConsensusContext and calls StartReplicaTransaction().
+//   instance creates the ConsensusRound and calls StartReplicaTransaction().
 //   This will trigger the Prepare(). At the same time replica consensus
 //   instance immediately stores the ReplicateMsg in the Log. Once the replicate
 //   message is stored in stable storage an ACK is sent to the leader (i.e. the
@@ -235,26 +235,26 @@ class ReplicaCommitContinuation {
 //   on stable storage and the replica transaction to finish.
 class ReplicaTransactionFactory {
  public:
-  virtual Status StartReplicaTransaction(gscoped_ptr<ConsensusContext> context) = 0;
+  virtual Status StartReplicaTransaction(gscoped_ptr<ConsensusRound> context) = 0;
   virtual ~ReplicaTransactionFactory() {}
 };
 
 // Context for a consensus round on the LEADER side, typically created as an
 // out-parameter of Consensus::Append.
-class ConsensusContext {
+class ConsensusRound {
  public:
   // Ctor used for leader transactions. Leader transactions can and must specify the
   // callbacks prior to initiating the consensus round.
-  ConsensusContext(Consensus* consensus,
-                   gscoped_ptr<OperationPB> replicate_op,
-                   const std::tr1::shared_ptr<FutureCallback>& replicate_callback,
-                   const std::tr1::shared_ptr<FutureCallback>& commit_callback);
+  ConsensusRound(Consensus* consensus,
+                 gscoped_ptr<OperationPB> replicate_op,
+                 const std::tr1::shared_ptr<FutureCallback>& replicate_callback,
+                 const std::tr1::shared_ptr<FutureCallback>& commit_callback);
 
   // Ctor used for follower/learner transactions. These transactions do not use the
   // replicate callback and the commit callback is set later, after the transaction
   // is actually started.
-  ConsensusContext(Consensus* consensus,
-                   gscoped_ptr<OperationPB> replicate_op);
+  ConsensusRound(Consensus* consensus,
+                 gscoped_ptr<OperationPB> replicate_op);
 
   OperationPB* replicate_op() {
     return replicate_op_.get();
@@ -268,7 +268,7 @@ class ConsensusContext {
 
   Status Commit(gscoped_ptr<CommitMsg> commit);
 
-  void SetCommitCallback(std::tr1::shared_ptr<FutureCallback>& commit_clbk) {
+  void SetCommitCallback(const std::tr1::shared_ptr<FutureCallback>& commit_clbk) {
     commit_callback_ = commit_clbk;
   }
 

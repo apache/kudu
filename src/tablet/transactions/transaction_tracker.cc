@@ -28,7 +28,7 @@ void TransactionTracker::Add(Transaction *txn) {
 void TransactionTracker::Release(Transaction *txn) {
   boost::lock_guard<simple_spinlock> l(lock_);
   if (PREDICT_FALSE(pending_txns_.erase(txn) != 1)) {
-    LOG(FATAL) << "Could not remove pending transaction from map: " << txn->tx_ctx()->ToString();
+    LOG(FATAL) << "Could not remove pending transaction from map: " << txn->tx_state()->ToString();
   }
 }
 

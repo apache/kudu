@@ -46,8 +46,8 @@ void LocalLineItemDAO::Init() {
 
 void LocalLineItemDAO::WriteLine(const PartialRow& row) {
   // TODO: This code should use InsertUnlocked().
-  CHECK_OK(tablet_->InsertForTesting(&tx_ctx_, row.as_contiguous_row()));
-  tx_ctx_.Reset();
+  CHECK_OK(tablet_->InsertForTesting(&tx_state_, row.as_contiguous_row()));
+  tx_state_.Reset();
 }
 
 void LocalLineItemDAO::MutateLine(const PartialRow& row) {

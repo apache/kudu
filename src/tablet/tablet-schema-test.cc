@@ -44,8 +44,8 @@ class TestTabletSchema : public KuduTabletTest {
     RowBuilder rb(schema);
     rb.AddUint32(key);
     rb.AddUint32(key);
-    WriteTransactionContext tx_ctx;
-    ASSERT_STATUS_OK(tablet_->InsertForTesting(&tx_ctx, rb.row()));
+    WriteTransactionState tx_state;
+    ASSERT_STATUS_OK(tablet_->InsertForTesting(&tx_state, rb.row()));
   }
 
   void DeleteRow(const Schema& schema, size_t key) {
@@ -54,8 +54,8 @@ class TestTabletSchema : public KuduTabletTest {
     faststring buf;
     RowChangeListEncoder mutation(schema, &buf);
     mutation.SetToDelete();
-    WriteTransactionContext tx_ctx;
-    ASSERT_STATUS_OK(tablet_->MutateRowForTesting(&tx_ctx, rb.row(), schema,
+    WriteTransactionState tx_state;
+    ASSERT_STATUS_OK(tablet_->MutateRowForTesting(&tx_state, rb.row(), schema,
                                                   mutation.as_changelist()));
   }
 
@@ -65,8 +65,8 @@ class TestTabletSchema : public KuduTabletTest {
     faststring buf;
     RowChangeListEncoder mutation(schema, &buf);
     mutation.AddColumnUpdate(col_idx, &new_val);
-    WriteTransactionContext tx_ctx;
-    ASSERT_STATUS_OK(tablet_->MutateRowForTesting(&tx_ctx, rb.row(), schema,
+    WriteTransactionState tx_state;
+    ASSERT_STATUS_OK(tablet_->MutateRowForTesting(&tx_state, rb.row(), schema,
                                                   mutation.as_changelist()));
   }
 
@@ -276,8 +276,8 @@ TEST_F(TestTabletSchema, TestModifyEmptyMemRowSet) {
   rb.AddUint32(2);
   rb.AddUint32(2);
   rb.AddUint32(2);
-  WriteTransactionContext tx_ctx;
-  ASSERT_STATUS_OK(tablet_->InsertForTesting(&tx_ctx, rb.row()));
+  WriteTransactionState tx_state;
+  ASSERT_STATUS_OK(tablet_->InsertForTesting(&tx_state, rb.row()));
   MutateRow(s2, /* key= */ 2, /* col_idx= */ 0, /* new_val= */ 2);
   //MutateRow(s2, /* key= */ 1, /* col_idx= */ 2, /* new_val= */ 2);
 

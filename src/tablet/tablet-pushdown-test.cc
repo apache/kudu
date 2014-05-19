@@ -48,19 +48,19 @@ class TabletPushdownTest : public KuduTabletTest,
       nrows = 100000;
     }
 
-    WriteTransactionContext tx_ctx;
+    WriteTransactionState tx_state;
     for (uint64_t i = 0; i < nrows; i++) {
       rb.Reset();
       rb.AddUint32(i);
       rb.AddUint32(i * 10);
       rb.AddString(StringPrintf("%08ld", i));
 
-      ASSERT_STATUS_OK_FAST(tablet_->InsertForTesting(&tx_ctx, rb.row()));
+      ASSERT_STATUS_OK_FAST(tablet_->InsertForTesting(&tx_state, rb.row()));
 
       if (i == 205 && GetParam() == SPLIT_MEMORY_DISK) {
         ASSERT_STATUS_OK(tablet_->Flush());
       }
-      tx_ctx.Reset();
+      tx_state.Reset();
     }
 
     if (GetParam() == ALL_ON_DISK) {

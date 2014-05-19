@@ -16,7 +16,7 @@
 
 namespace kudu { namespace tablet {
 
-class TransactionContext;
+class TransactionState;
 
 // ============================================================================
 //  LockTable
@@ -69,7 +69,7 @@ class LockEntry {
   faststring key_buf_;
 
   // The transaction currently holding the lock
-  const TransactionContext* holder_;
+  const TransactionState* holder_;
 };
 
 class LockTable {
@@ -246,7 +246,7 @@ void LockTable::Resize() {
 // ============================================================================
 
 ScopedRowLock::ScopedRowLock(LockManager *manager,
-                             const TransactionContext* tx,
+                             const TransactionState* tx,
                              const Slice &key,
                              LockManager::LockMode mode)
   : manager_(DCHECK_NOTNULL(manager)),
@@ -285,7 +285,7 @@ LockManager::~LockManager() {
 }
 
 LockManager::LockStatus LockManager::Lock(const Slice& key,
-                                          const TransactionContext* tx,
+                                          const TransactionState* tx,
                                           LockManager::LockMode mode,
                                           LockEntry** entry) {
   *entry = locks_->GetLockEntry(key);
@@ -328,7 +328,7 @@ LockManager::LockStatus LockManager::Lock(const Slice& key,
 }
 
 LockManager::LockStatus LockManager::TryLock(const Slice& key,
-                                             const TransactionContext* tx,
+                                             const TransactionState* tx,
                                              LockManager::LockMode mode,
                                              LockEntry **entry) {
   *entry = locks_->GetLockEntry(key);

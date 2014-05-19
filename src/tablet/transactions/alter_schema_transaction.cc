@@ -25,7 +25,7 @@ using tserver::AlterSchemaResponsePB;
 using boost::bind;
 
 LeaderAlterSchemaTransaction::LeaderAlterSchemaTransaction(TransactionTracker *txn_tracker,
-                                               AlterSchemaTransactionContext* tx_ctx,
+                                               AlterSchemaTransactionState* tx_state,
                                                consensus::Consensus* consensus,
                                                TaskExecutor* prepare_executor,
                                                TaskExecutor* apply_executor,
@@ -35,13 +35,13 @@ LeaderAlterSchemaTransaction::LeaderAlterSchemaTransaction(TransactionTracker *t
                     prepare_executor,
                     apply_executor,
                     prepare_replicate_lock),
-  tx_ctx_(tx_ctx) {
+  tx_state_(tx_state) {
 }
 
 void LeaderAlterSchemaTransaction::NewReplicateMsg(gscoped_ptr<ReplicateMsg>* replicate_msg) {
   replicate_msg->reset(new ReplicateMsg);
   (*replicate_msg)->set_op_type(ALTER_SCHEMA_OP);
-  (*replicate_msg)->mutable_alter_schema_request()->CopyFrom(*tx_ctx()->request());
+  (*replicate_msg)->mutable_alter_schema_request()->CopyFrom(*tx_state()->request());
 }
 
 Status LeaderAlterSchemaTransaction::Prepare() {
@@ -49,47 +49,47 @@ Status LeaderAlterSchemaTransaction::Prepare() {
 
   // Decode schema
   gscoped_ptr<Schema> schema(new Schema);
-  Status s = SchemaFromPB(tx_ctx_->request()->schema(), schema.get());
+  Status s = SchemaFromPB(tx_state_->request()->schema(), schema.get());
   if (!s.ok()) {
-    tx_ctx_->completion_callback()->set_error(s, TabletServerErrorPB::INVALID_SCHEMA);
+    tx_state_->completion_callback()->set_error(s, TabletServerErrorPB::INVALID_SCHEMA);
     return s;
   }
 
-  Tablet* tablet = tx_ctx_->tablet_peer()->tablet();
-  RETURN_NOT_OK(tablet->CreatePreparedAlterSchema(tx_ctx(), schema.get()));
+  Tablet* tablet = tx_state_->tablet_peer()->tablet();
+  RETURN_NOT_OK(tablet->CreatePreparedAlterSchema(tx_state(), schema.get()));
 
   // now that we've acquired the locks set the transaction timestamp
-  tx_ctx_->set_timestamp(tx_ctx_->tablet_peer()->clock()->Now());
+  tx_state_->set_timestamp(tx_state_->tablet_peer()->clock()->Now());
 
-  tx_ctx_->AddToAutoReleasePool(schema.release());
+  tx_state_->AddToAutoReleasePool(schema.release());
 
   TRACE("PREPARE ALTER-SCHEMA: finished");
   return s;
 }
 
 void LeaderAlterSchemaTransaction::PrepareFailedPreCommitHooks(gscoped_ptr<CommitMsg>* commit_msg) {
-  tx_ctx_->release_component_lock();
+  tx_state_->release_component_lock();
 
   commit_msg->reset(new CommitMsg());
   (*commit_msg)->set_op_type(OP_ABORT);
-  (*commit_msg)->mutable_alter_schema_response()->CopyFrom(*tx_ctx_->response());
-  (*commit_msg)->set_timestamp(tx_ctx_->timestamp().ToUint64());
+  (*commit_msg)->mutable_alter_schema_response()->CopyFrom(*tx_state_->response());
+  (*commit_msg)->set_timestamp(tx_state_->timestamp().ToUint64());
 }
 
 Status LeaderAlterSchemaTransaction::Apply() {
   TRACE("APPLY ALTER-SCHEMA: Starting");
 
-  Tablet* tablet = tx_ctx_->tablet_peer()->tablet();
-  RETURN_NOT_OK(tablet->AlterSchema(tx_ctx()));
+  Tablet* tablet = tx_state_->tablet_peer()->tablet();
+  RETURN_NOT_OK(tablet->AlterSchema(tx_state()));
 
   gscoped_ptr<CommitMsg> commit(new CommitMsg());
   commit->set_op_type(ALTER_SCHEMA_OP);
-  commit->set_timestamp(tx_ctx_->timestamp().ToUint64());
+  commit->set_timestamp(tx_state_->timestamp().ToUint64());
 
   TRACE("APPLY ALTER-SCHEMA: finished, triggering COMMIT");
 
-  RETURN_NOT_OK(tx_ctx_->consensus_ctx()->Commit(commit.Pass()));
-  // NB: do not use tx_ctx_ after this point, because the commit may have
+  RETURN_NOT_OK(tx_state_->consensus_round()->Commit(commit.Pass()));
+  // NB: do not use tx_state_ after this point, because the commit may have
   // succeeded, in which case the context may have been torn down.
   return Status::OK();
 }
@@ -98,7 +98,7 @@ void LeaderAlterSchemaTransaction::ApplySucceeded() {
   // Now that all of the changes have been applied and the commit is durable
   // make the changes visible to readers.
   TRACE("AlterSchemaCommitCallback: making edits visible");
-  tx_ctx()->commit();
+  tx_state()->commit();
   LeaderTransaction::ApplySucceeded();
 }
 

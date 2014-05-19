@@ -30,7 +30,7 @@ namespace tablet {
 class TabletPeer;
 class TransactionTracker;
 
-// All metrics associated with a TransactionContext.
+// All metrics associated with a Transaction.
 struct TransactionMetrics {
   TransactionMetrics();
   void Reset();
@@ -42,7 +42,7 @@ struct TransactionMetrics {
 // A parent class for the callback that gets called when transactions
 // complete.
 //
-// This must be set in the TransactionContext if the transaction initiator is to
+// This must be set in the TransactionState if the transaction initiator is to
 // be notified of when a transaction completes. The callback belongs to the
 // transaction context and is deleted along with it.
 //
@@ -109,19 +109,19 @@ class LatchTransactionCompletionCallback : public TransactionCompletionCallback 
 };
 
 
-class TransactionContext {
+class TransactionState {
  public:
-  // Sets the ConsensusContext for this transaction, if this transaction is
+  // Sets the ConsensusRound for this transaction, if this transaction is
   // being executed through the consensus system.
-  void set_consensus_ctx(gscoped_ptr<consensus::ConsensusContext> consensus_ctx) {
-    consensus_ctx_.reset(consensus_ctx.release());
-    op_id_ = consensus_ctx_->id();
+  void set_consensus_round(gscoped_ptr<consensus::ConsensusRound> consensus_round) {
+    consensus_round_.reset(consensus_round.release());
+    op_id_ = consensus_round_->id();
   }
 
-  // Returns the ConsensusContext being used, if this transaction is being
+  // Returns the ConsensusRound being used, if this transaction is being
   // executed through the consensus system or NULL if it's not.
-  consensus::ConsensusContext* consensus_ctx() {
-    return consensus_ctx_.get();
+  consensus::ConsensusRound* consensus_round() {
+    return consensus_round_.get();
   }
 
   TabletPeer* tablet_peer() const { return tablet_peer_; }
@@ -190,7 +190,7 @@ class TransactionContext {
   }
 
  protected:
-  explicit TransactionContext(TabletPeer* tablet_peer)
+  explicit TransactionState(TabletPeer* tablet_peer)
       : tablet_peer_(tablet_peer),
         completion_clbk_(new TransactionCompletionCallback()),
         arena_(32*1024, 4*1024*1024),
@@ -218,7 +218,7 @@ class TransactionContext {
   // This OpId stores the canonical "anchor" OpId for this transaction.
   consensus::OpId op_id_;
 
-  gscoped_ptr<consensus::ConsensusContext> consensus_ctx_;
+  gscoped_ptr<consensus::ConsensusRound> consensus_round_;
 
   // The defined consistency mode for this transaction.
   ExternalConsistencyMode external_consistency_mode_;
@@ -237,9 +237,9 @@ class Transaction : public base::RefCountedThreadSafe<Transaction> {
   // Starts the execution of a transaction.
   virtual Status Execute() = 0;
 
-  // Returns the TransactionContext for this transaction.
-  virtual TransactionContext* tx_ctx() = 0;
-  virtual const TransactionContext* tx_ctx() const = 0;
+  // Returns the TransactionState for this transaction.
+  virtual TransactionState* tx_state() = 0;
+  virtual const TransactionState* tx_state() const = 0;
 
   // Get the OpId of the transaction.
   // If unassigned, returns an uninitialized OpId.
@@ -371,7 +371,7 @@ class LeaderTransaction : public Transaction {
   simple_spinlock* prepare_replicate_lock_;
 
   // Lock per LeaderTransaction that protects state that may be accessed by
-  // other threads. At time of writing, that is only the TransactionContext's
+  // other threads. At time of writing, that is only the TransactionState's
   // OpId assigned at Consensus::Append() time.
   mutable simple_spinlock state_lock_;
 

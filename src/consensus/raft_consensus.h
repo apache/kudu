@@ -52,7 +52,7 @@ class RaftConsensus : public Consensus {
   virtual Status Start(const metadata::QuorumPB& initial_quorum,
                        gscoped_ptr<metadata::QuorumPB>* running_quorum) OVERRIDE;
 
-  virtual Status Replicate(ConsensusContext* context) OVERRIDE;
+  virtual Status Replicate(ConsensusRound* context) OVERRIDE;
 
   virtual Status Update(const ConsensusRequestPB* request,
                         ConsensusResponsePB* response) OVERRIDE;
@@ -92,7 +92,7 @@ class RaftConsensus : public Consensus {
   virtual ~RaftConsensus();
 
  protected:
-  virtual Status Commit(ConsensusContext* context) OVERRIDE;
+  virtual Status Commit(ConsensusRound* context) OVERRIDE;
 
  private:
   friend class ReplicaState;
@@ -111,11 +111,11 @@ class RaftConsensus : public Consensus {
 
   // A leader commit, which appends to the message queue. Must be called
   // after LockForCommit().
-  Status LeaderCommitUnlocked(ConsensusContext* context, OperationPB* commit_op);
+  Status LeaderCommitUnlocked(ConsensusRound* context, OperationPB* commit_op);
 
   // A replica commit, which just stores in the local log. Must be called
   // after LockForCommit().
-  Status ReplicaCommitUnlocked(ConsensusContext* context, OperationPB* commit_op);
+  Status ReplicaCommitUnlocked(ConsensusRound* context, OperationPB* commit_op);
 
   // Updates 'peers_' according to the new quorum config.
   Status CreateOrUpdatePeersUnlocked();

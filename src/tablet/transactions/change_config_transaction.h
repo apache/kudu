@@ -17,18 +17,19 @@ class Consensus;
 namespace tablet {
 
 // Transaction Context for the change config operation.
-class ChangeConfigTransactionContext : public TransactionContext {
+class ChangeConfigTransactionState : public TransactionState {
  public:
-  explicit ChangeConfigTransactionContext(const tserver::ChangeConfigRequestPB* request)
-    : TransactionContext(NULL),
+  explicit ChangeConfigTransactionState(TabletPeer* tablet_peer,
+                                        const tserver::ChangeConfigRequestPB* request)
+    : TransactionState(tablet_peer),
       request_(request),
       response_(NULL) {
   }
 
-  ChangeConfigTransactionContext(TabletPeer* tablet_peer,
+  ChangeConfigTransactionState(TabletPeer* tablet_peer,
                                  const tserver::ChangeConfigRequestPB* request,
                                  tserver::ChangeConfigResponsePB* response)
-      : TransactionContext(tablet_peer),
+      : TransactionState(tablet_peer),
         request_(request),
         response_(response) {
   }
@@ -50,12 +51,12 @@ class ChangeConfigTransactionContext : public TransactionContext {
     release_config_sem();
   }
 
-  ~ChangeConfigTransactionContext() {
+  ~ChangeConfigTransactionState() {
     release_config_sem();
   }
 
  private:
-  DISALLOW_COPY_AND_ASSIGN(ChangeConfigTransactionContext);
+  DISALLOW_COPY_AND_ASSIGN(ChangeConfigTransactionState);
 
   const tserver::ChangeConfigRequestPB *request_;
   tserver::ChangeConfigResponsePB *response_;
@@ -66,7 +67,7 @@ class ChangeConfigTransactionContext : public TransactionContext {
 class LeaderChangeConfigTransaction : public LeaderTransaction {
  public:
   LeaderChangeConfigTransaction(TransactionTracker *txn_tracker,
-                                ChangeConfigTransactionContext* tx_ctx,
+                                ChangeConfigTransactionState* tx_state,
                                 consensus::Consensus* consensus,
                                 TaskExecutor* prepare_executor,
                                 TaskExecutor* apply_executor,
@@ -87,12 +88,12 @@ class LeaderChangeConfigTransaction : public LeaderTransaction {
   // Actually commits the transaction.
   virtual void ApplySucceeded();
 
-  virtual ChangeConfigTransactionContext* tx_ctx() OVERRIDE { return tx_ctx_.get(); }
-  virtual const ChangeConfigTransactionContext* tx_ctx() const OVERRIDE { return tx_ctx_.get(); }
+  virtual ChangeConfigTransactionState* tx_state() OVERRIDE { return tx_state_.get(); }
+  virtual const ChangeConfigTransactionState* tx_state() const OVERRIDE { return tx_state_.get(); }
 
  private:
 
-  gscoped_ptr<ChangeConfigTransactionContext> tx_ctx_;
+  gscoped_ptr<ChangeConfigTransactionState> tx_state_;
   DISALLOW_COPY_AND_ASSIGN(LeaderChangeConfigTransaction);
   Semaphore* config_sem_;
 };

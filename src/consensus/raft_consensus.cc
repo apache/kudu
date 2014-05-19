@@ -185,7 +185,7 @@ Status RaftConsensus::PushConfigurationToPeersUnlocked() {
   return Status::OK();
 }
 
-Status RaftConsensus::Replicate(ConsensusContext* context) {
+Status RaftConsensus::Replicate(ConsensusRound* context) {
 
   RETURN_NOT_OK(ExecuteHook(PRE_REPLICATE));
 
@@ -222,7 +222,7 @@ Status RaftConsensus::Replicate(ConsensusContext* context) {
 // could go lockless for the replica version, since the id is already assigned
 // and replicas are supposed to execute the commits in the same order as the
 // leader anyway.
-Status RaftConsensus::Commit(ConsensusContext* context) {
+Status RaftConsensus::Commit(ConsensusRound* context) {
   RETURN_NOT_OK(ExecuteHook(PRE_COMMIT));
   DCHECK_NOTNULL(context->commit_op());
 
@@ -254,7 +254,7 @@ OperationStatusTracker* RaftConsensus::CreateLeaderOnlyOperationStatusUnlocked(
                                      commit_callback);
 }
 
-Status RaftConsensus::LeaderCommitUnlocked(ConsensusContext* context,
+Status RaftConsensus::LeaderCommitUnlocked(ConsensusRound* context,
                                            OperationPB* commit_op) {
   // entry for the CommitMsg
   state_->NewIdUnlocked(commit_op->mutable_id());
@@ -264,8 +264,8 @@ Status RaftConsensus::LeaderCommitUnlocked(ConsensusContext* context,
 
   // the commit callback is the very last thing to execute in a transaction
   // so it needs to free all resources. We need release it from the
-  // ConsensusContext or we'd get a cycle. (callback would free the
-  // TransactionContext which would free the ConsensusContext, which in turn
+  // ConsensusRound or we'd get a cycle. (callback would free the
+  // TransactionState which would free the ConsensusRound, which in turn
   // would try to free the callback).
   shared_ptr<FutureCallback> commit_clbk = context->release_commit_callback();
 
@@ -285,7 +285,7 @@ Status RaftConsensus::LeaderCommitUnlocked(ConsensusContext* context,
   SignalRequestToPeers();
   return Status::OK();
 }
-Status RaftConsensus::ReplicaCommitUnlocked(ConsensusContext* context,
+Status RaftConsensus::ReplicaCommitUnlocked(ConsensusRound* context,
                                             OperationPB* commit_op) {
 
   if (VLOG_IS_ON(1)) {
@@ -384,7 +384,7 @@ Status RaftConsensus::UpdateReplica(const ConsensusRequestPB* request,
 
       // For replicas we build a consensus context with the op in the request
       // and two latch callbacks.
-      gscoped_ptr<ConsensusContext> context(new ConsensusContext(this, op_copy.Pass()));
+      gscoped_ptr<ConsensusRound> context(new ConsensusRound(this, op_copy.Pass()));
       CHECK_OK(state_->TriggerPrepareUnlocked(context.Pass()));
     }
 

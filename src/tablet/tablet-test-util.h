@@ -78,10 +78,10 @@ class KuduTabletTest : public KuduTest {
     tserver::AlterSchemaRequestPB req;
     req.set_schema_version(tablet_->metadata()->schema_version() + 1);
 
-    AlterSchemaTransactionContext tx_ctx(&req);
-    ASSERT_STATUS_OK(tablet_->CreatePreparedAlterSchema(&tx_ctx, &schema));
-    ASSERT_STATUS_OK(tablet_->AlterSchema(&tx_ctx));
-    tx_ctx.commit();
+    AlterSchemaTransactionState tx_state(&req);
+    ASSERT_STATUS_OK(tablet_->CreatePreparedAlterSchema(&tx_state, &schema));
+    ASSERT_STATUS_OK(tablet_->AlterSchema(&tx_state));
+    tx_state.commit();
   }
 
  protected:
@@ -114,9 +114,9 @@ class KuduRowSetTest : public KuduTabletTest {
 };
 
 // Helper to get the last mutation result on the transaction context.
-static inline const OperationResultPB& last_mutation(const WriteTransactionContext &tx_ctx) {
-  CHECK_GE(tx_ctx.Result().ops_size(), 1);
-  return tx_ctx.Result().ops(tx_ctx.Result().ops_size() - 1);
+static inline const OperationResultPB& last_mutation(const WriteTransactionState &tx_state) {
+  CHECK_GE(tx_state.Result().ops_size(), 1);
+  return tx_state.Result().ops(tx_state.Result().ops_size() - 1);
 }
 
 static inline Status IterateToStringList(RowwiseIterator *iter,

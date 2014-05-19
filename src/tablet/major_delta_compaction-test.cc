@@ -61,30 +61,30 @@ class TestMajorDeltaCompaction : public KuduRowSetTest {
   }
 
   void WriteTestTablet(int nrows) {
-    WriteTransactionContext tx_ctx;
+    WriteTransactionState tx_state;
     RowBuilder rb(schema_);
 
     for (int i = 0; i < nrows; i++) {
       rb.Reset();
-      tx_ctx.Reset();
+      tx_state.Reset();
       rb.AddString(StringPrintf("hello %08d", i));
       rb.AddUint32(i * 2);
       rb.AddString(StringPrintf("a %08d", i * 2));
       rb.AddUint32(i * 10);
       rb.AddString(StringPrintf("b %08d", i * 10));
-      ASSERT_STATUS_OK_FAST(tablet_->InsertForTesting(&tx_ctx, rb.row()));
+      ASSERT_STATUS_OK_FAST(tablet_->InsertForTesting(&tx_state, rb.row()));
     }
   }
 
   void UpdateRows(int nrows, bool even) {
-    WriteTransactionContext tx_ctx;
+    WriteTransactionState tx_state;
     faststring update_buf;
     RowChangeListEncoder update(schema_, &update_buf);
     RowBuilder rb(schema_.CreateKeyProjection());
     for (int idx = 0; idx < nrows; idx++) {
       if ((idx % 2 == 0) == even) {
         string key_str = StringPrintf("hello %08d",  idx);
-        tx_ctx.Reset();
+        tx_state.Reset();
         rb.Reset();
         rb.AddString(key_str);
         uint32_t col1_val = idx * 3;
@@ -94,7 +94,7 @@ class TestMajorDeltaCompaction : public KuduRowSetTest {
         update.AddColumnUpdate(3, &col3_val);
         update.AddColumnUpdate(4, &col4_val);
         ASSERT_STATUS_OK(tablet_->MutateRowForTesting(
-            &tx_ctx, rb.row(), schema_, RowChangeList(update_buf)));
+            &tx_state, rb.row(), schema_, RowChangeList(update_buf)));
       }
     }
   }

@@ -8,10 +8,10 @@ namespace consensus {
 
 using std::tr1::shared_ptr;
 
-ConsensusContext::ConsensusContext(Consensus* consensus,
-                                   gscoped_ptr<OperationPB> replicate_op,
-                                   const std::tr1::shared_ptr<FutureCallback>& replicate_callback,
-                                   const std::tr1::shared_ptr<FutureCallback>& commit_callback)
+ConsensusRound::ConsensusRound(Consensus* consensus,
+                               gscoped_ptr<OperationPB> replicate_op,
+                               const std::tr1::shared_ptr<FutureCallback>& replicate_callback,
+                               const std::tr1::shared_ptr<FutureCallback>& commit_callback)
     : consensus_(consensus),
       replicate_op_(replicate_op.Pass()),
       replicate_callback_(replicate_callback),
@@ -19,29 +19,30 @@ ConsensusContext::ConsensusContext(Consensus* consensus,
       continuation_(NULL) {
 }
 
-ConsensusContext::ConsensusContext(Consensus* consensus,
-                                   gscoped_ptr<OperationPB> replicate_op)
+ConsensusRound::ConsensusRound(Consensus* consensus,
+                               gscoped_ptr<OperationPB> replicate_op)
     : consensus_(consensus),
       replicate_op_(replicate_op.Pass()),
       continuation_(NULL) {
 }
 
-Status ConsensusContext::Commit(gscoped_ptr<CommitMsg> commit) {
+Status ConsensusRound::Commit(gscoped_ptr<CommitMsg> commit) {
   commit_op_.reset(new OperationPB());
   if (leader_commit_op_.get() != NULL) {
     commit_op_->mutable_id()->CopyFrom(leader_commit_op_->id());
+    commit->set_timestamp(leader_commit_op_->commit().timestamp());
   }
   commit_op_->set_allocated_commit(commit.release());
   commit_op_->mutable_commit()->mutable_commited_op_id()->CopyFrom(replicate_op_->id());
   return consensus_->Commit(this);
 }
 
-ConsensusContext* Consensus::NewContext(gscoped_ptr<ReplicateMsg> entry,
-                             const std::tr1::shared_ptr<FutureCallback>& repl_callback,
-                             const std::tr1::shared_ptr<FutureCallback>& commit_callback) {
+ConsensusRound* Consensus::NewRound(gscoped_ptr<ReplicateMsg> entry,
+                                    const std::tr1::shared_ptr<FutureCallback>& repl_callback,
+                                    const std::tr1::shared_ptr<FutureCallback>& commit_callback) {
   gscoped_ptr<OperationPB> op(new OperationPB());
   op->set_allocated_replicate(entry.release());
-  return new ConsensusContext(this, op.Pass(), repl_callback, commit_callback);
+  return new ConsensusRound(this, op.Pass(), repl_callback, commit_callback);
 }
 
 void Consensus::SetFaultHooks(const std::tr1::shared_ptr<ConsensusFaultHooks>& hooks) {

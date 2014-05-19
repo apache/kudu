@@ -36,7 +36,7 @@ class CompositePushdownTest : public KuduTabletTest {
 
     uint32_t nrows = 10 * 12 * 28;
     int i = 0;
-    WriteTransactionContext tx_ctx;
+    WriteTransactionState tx_state;
     for (uint16_t year = 2000; year <= 2010; year++) {
       for (uint8_t month = 1; month <= 12; month++) {
         for (uint8_t day = 1; day <= 28; day++) {
@@ -45,8 +45,8 @@ class CompositePushdownTest : public KuduTabletTest {
           rb.AddUint8(month);
           rb.AddUint8(day);
           rb.AddString(StringPrintf("%d/%02d/%02d", year, month, day));
-          tx_ctx.Reset();
-          ASSERT_STATUS_OK_FAST(tablet_->InsertForTesting(&tx_ctx, rb.row()));
+          tx_state.Reset();
+          ASSERT_STATUS_OK_FAST(tablet_->InsertForTesting(&tx_state, rb.row()));
 
           if (i == nrows * 9 / 10) {
             ASSERT_STATUS_OK(tablet_->Flush());

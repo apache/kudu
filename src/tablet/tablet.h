@@ -45,7 +45,7 @@ namespace tablet {
 using std::string;
 using std::tr1::shared_ptr;
 
-class AlterSchemaTransactionContext;
+class AlterSchemaTransactionState;
 class CompactionPolicy;
 class MemRowSet;
 class MvccSnapshot;
@@ -53,7 +53,7 @@ class PreparedRowWrite;
 class RowSetsInCompaction;
 class RowSetTree;
 struct TabletMetrics;
-class WriteTransactionContext;
+class WriteTransactionState;
 
 class Tablet {
  public:
@@ -90,7 +90,7 @@ class Tablet {
   // can make the PreparedRowWrite own the row and can revert to passing just
   // the raw row data, but right now we need to pass the built ConstContinuousRow
   // as there are cases where row is passed as a reference (old API).
-  Status CreatePreparedInsert(const WriteTransactionContext* tx_ctx,
+  Status CreatePreparedInsert(const WriteTransactionState* tx_state,
                               const ConstContiguousRow* row,
                               gscoped_ptr<PreparedRowWrite>* row_write);
 
@@ -106,12 +106,12 @@ class Tablet {
   // Returns Status::AlreadyPresent() if an entry with the same key is already
   // present in the tablet.
   // Returns Status::OK unless allocation fails.
-  Status InsertForTesting(WriteTransactionContext *tx_ctx, const ConstContiguousRow& row);
+  Status InsertForTesting(WriteTransactionState *tx_state, const ConstContiguousRow& row);
 
   // A version of Insert that does not acquire locks and instead assumes that
   // they were already acquired. Requires that handles for the relevant locks
   // and Mvcc transaction are present in the transaction context.
-  Status InsertUnlocked(WriteTransactionContext *tx_ctx,
+  Status InsertUnlocked(WriteTransactionState *tx_state,
                         const PreparedRowWrite* insert);
 
   // Creates a PreparedRowWrite with write_type() MUTATE, acquires the row lock
@@ -122,7 +122,7 @@ class Tablet {
   // can make the PreparedRowWrite own the row and can revert to passing just
   // the raw row data, but right now we need to pass the built ConstContinuousRow
   // as there are cases where row is passed as a reference (old API).
-  Status CreatePreparedMutate(const WriteTransactionContext* tx_ctx,
+  Status CreatePreparedMutate(const WriteTransactionState* tx_state,
                               const ConstContiguousRow* row_key,
                               const RowChangeList& changelist,
                               gscoped_ptr<PreparedRowWrite>* row_write);
@@ -133,7 +133,7 @@ class Tablet {
   //
   // If the row does not exist in this tablet, returns
   // Status::NotFound().
-  Status MutateRowForTesting(WriteTransactionContext *tx_ctx,
+  Status MutateRowForTesting(WriteTransactionState *tx_state,
                              const ConstContiguousRow& row_key,
                              const Schema& update_schema,
                              const RowChangeList& update);
@@ -141,7 +141,7 @@ class Tablet {
   // A version of MutateRow that does not acquire locks and instead assumes
   // they were already acquired. Requires that handles for the relevant locks
   // and Mvcc transaction are present in the transaction context.
-  Status MutateRowUnlocked(WriteTransactionContext *tx_ctx,
+  Status MutateRowUnlocked(WriteTransactionState *tx_state,
                            const PreparedRowWrite* mutate);
 
   // Create a new row iterator which yields the rows as of the current MVCC
@@ -167,7 +167,7 @@ class Tablet {
   // key mismatch, or missing IDs)
   // The "tablet lock" (component_lock_) will be taken in exclusive mode to
   // prevent concurrent operations (e.g. Insert, MutateRow, ...)
-  Status CreatePreparedAlterSchema(AlterSchemaTransactionContext *tx_ctx,
+  Status CreatePreparedAlterSchema(AlterSchemaTransactionState *tx_state,
                                    const Schema* schema);
 
   // Apply the Schema of the specified transaction.
@@ -175,7 +175,7 @@ class Tablet {
   //
   // The component lock acquired in exclusive mode by CreatePreparedAlterSchema()
   // will be released when the schema is replaced in every RowSet.
-  Status AlterSchema(AlterSchemaTransactionContext* tx_ctx);
+  Status AlterSchema(AlterSchemaTransactionState* tx_state);
 
   // Flags to change the behavior of compaction.
   enum CompactFlag {
