@@ -132,6 +132,23 @@ Status TabletPeer::Start(const QuorumPB& quorum) {
   return Status::OK();
 }
 
+const metadata::QuorumPeerPB::Role TabletPeer::role() const {
+  if (tablet_ == NULL) {
+    return metadata::QuorumPeerPB::NON_PARTICIPANT;
+  }
+  QuorumPB latest_config = tablet_->metadata()->Quorum();
+  if (!latest_config.IsInitialized()) {
+    return metadata::QuorumPeerPB::NON_PARTICIPANT;
+  } else {
+    BOOST_FOREACH(const QuorumPeerPB& peer, latest_config.peers()) {
+      if (peer.permanent_uuid() == quorum_peer_.permanent_uuid()) {
+        return peer.role();
+      }
+    }
+    return metadata::QuorumPeerPB::NON_PARTICIPANT;
+  }
+}
+
 void TabletPeer::Shutdown() {
   {
     boost::lock_guard<simple_spinlock> lock(internal_state_lock_);

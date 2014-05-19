@@ -114,11 +114,11 @@ class TabletPeer : public consensus::ReplicaTransactionFactory {
     return state_;
   }
 
-  const metadata::QuorumPeerPB::Role role() const {
-    if (consensus_)
-      return consensus_->role();
-    return metadata::QuorumPeerPB::NON_PARTICIPANT;
-  }
+  // Returns the current role of this peer as accepted by the last configuration
+  // round, that is the role which is set in the tablet metadata's quorum.
+  // If this peer hasn't yet finished the configuration round this will return
+  // NON_PARTICIPANT.
+  const metadata::QuorumPeerPB::Role role() const;
 
   TabletStatusListener* status_listener() const {
     return status_listener_.get();
