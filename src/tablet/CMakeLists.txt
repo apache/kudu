@@ -32,11 +32,18 @@ PROTOBUF_GENERATE_CPP(TABLET_PROTO_SRCS TABLET_PROTO_HDRS
   PROTO_FILES tablet.proto)
 
 add_library(tablet_proto ${TABLET_PROTO_SRCS} ${TABLET_PROTO_HDRS})
-add_dependencies(tablet_proto kudu_common)
+add_dependencies(tablet_proto
+  kudu_common)
 
 set(TABLET_SRCS ${TABLET_SRCS} ${TABLET_PROTO_SRCS})
 add_library(tablet ${TABLET_SRCS})
-target_link_libraries(tablet kudu_common cfile gutil server_common kudu_util consensus)
+target_link_libraries(tablet
+  kudu_common
+  cfile
+  gutil
+  server_common
+  kudu_util
+  consensus)
 
 set(KUDU_TEST_LINK_LIBS tablet ${KUDU_MIN_TEST_LIBS})
 ADD_KUDU_TEST(tablet-test)
@@ -63,5 +70,5 @@ ADD_KUDU_TEST(transactions/transaction_tracker-test)
 ADD_KUDU_TEST(tablet_peer-test)
 
 # Some tests don't have dependencies on other tablet stuff
-set(KUDU_TEST_LINK_LIBS kudu_util gutil ${KUDU_DEP_LIBS} ${KUDU_MIN_TEST_LIBS} )
+set(KUDU_TEST_LINK_LIBS kudu_util gutil ${KUDU_MIN_TEST_LIBS})
 ADD_KUDU_TEST(cbtree-test RUN_SERIAL true)

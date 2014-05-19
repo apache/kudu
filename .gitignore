@@ -1,7 +1,5 @@
 *.pb.cc
 *.pb.h
-*.a
-*.o
 
 Makefile
 CMakeFiles

@@ -3,10 +3,22 @@
 #include <gtest/gtest.h>
 #include <glog/logging.h>
 
-#include "gutil/synchronization_profiling.h"
 #include "gutil/spinlock.h"
 #include "util/test_util.h"
 #include "util/trace.h"
+
+// Can't include gutil/synchronization_profiling.h directly as it'll
+// declare a weak symbol directly in this unit test, which the runtime
+// linker will prefer over equivalent strong symbols for some reason. By
+// declaring the symbol without providing an empty definition, the strong
+// symbols are chosen when provided via shared libraries.
+//
+// Further reading:
+// - http://stackoverflow.com/questions/20658809/dynamic-loading-and-weak-symbol-resolution
+// - http://notmysock.org/blog/php/weak-symbols-arent.html
+namespace gutil {
+extern void SubmitSpinLockProfileData(const void *, int64);
+} // namespace gutil
 
 namespace kudu {
 

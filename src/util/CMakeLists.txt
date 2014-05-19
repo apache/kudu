@@ -53,22 +53,28 @@ PROTOBUF_GENERATE_CPP(HISTOGRAM_PROTO_SRCS HISTOGRAM_PROTO_HDRS
   SOURCE_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/..
   BINARY_ROOT ${CMAKE_CURRENT_BINARY_DIR}/..
   PROTO_FILES histogram.proto)
-ADD_LIBRARY(histogram_proto ${HISTOGRAM_PROTO_SRCS} ${HISTOGRAM_PROTO_HDRS})
-target_link_libraries(histogram_proto protobuf)
+add_library(histogram_proto ${HISTOGRAM_PROTO_SRCS} ${HISTOGRAM_PROTO_HDRS})
+target_link_libraries(histogram_proto
+  protobuf)
 
 # TODO: we don't really need to link agaist libcurl, since it's only used by # tests.
-target_link_libraries(kudu_util ${CURL_LIBRARIES})
-target_link_libraries(kudu_util ${Boost_LIBRARIES})
-target_link_libraries(kudu_util crcutil)
-target_link_libraries(kudu_util gutil)
-target_link_libraries(kudu_util histogram_proto)
-target_link_libraries(kudu_util protobuf)
-target_link_libraries(kudu_util rt)
+target_link_libraries(kudu_util
+  ${CURL_LIBRARIES}
+  ${Boost_LIBRARIES}
+  crcutil
+  gutil
+  histogram_proto
+  protobuf
+  glog
+  rt)
 
 add_library(kudu_test_main test_main.cc)
-target_link_libraries(kudu_test_main gflags glog gtest)
+target_link_libraries(kudu_test_main
+  gflags
+  glog
+  gtest)
 
-set(KUDU_TEST_LINK_LIBS kudu_util gutil ${KUDU_DEP_LIBS} ${KUDU_MIN_TEST_LIBS} )
+set(KUDU_TEST_LINK_LIBS kudu_util gutil ${KUDU_MIN_TEST_LIBS})
 ADD_KUDU_TEST(bit-util-test)
 ADD_KUDU_TEST(bitmap-test)
 ADD_KUDU_TEST(blocking_queue-test)
@@ -119,11 +125,13 @@ PROTOBUF_GENERATE_CPP(JSONWRITER_TEST_PROTO_SRCS JSONWRITER_TEST_PROTO_HDRS
   SOURCE_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/..
   BINARY_ROOT ${CMAKE_CURRENT_BINARY_DIR}/..
   PROTO_FILES jsonwriter_test.proto)
-ADD_LIBRARY(jsonwriter_test_proto ${JSONWRITER_TEST_PROTO_SRCS} ${JSONWRITER_TEST_PROTO_HDRS})
-target_link_libraries(jsonwriter_test_proto protobuf)
+add_library(jsonwriter_test_proto ${JSONWRITER_TEST_PROTO_SRCS} ${JSONWRITER_TEST_PROTO_HDRS})
+target_link_libraries(jsonwriter_test_proto
+  protobuf)
 
 ADD_KUDU_TEST(jsonwriter-test)
-target_link_libraries(jsonwriter-test jsonwriter_test_proto)
+target_link_libraries(jsonwriter-test
+  jsonwriter_test_proto)
 
 add_executable(protoc-gen-insertions protoc-gen-insertions.cc)
-target_link_libraries(protoc-gen-insertions gutil protobuf protoc glog gflags)
+target_link_libraries(protoc-gen-insertions gutil protobuf protoc ${KUDU_BASE_LIBS})

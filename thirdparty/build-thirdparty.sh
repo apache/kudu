@@ -112,7 +112,7 @@ fi
 # build zlib
 if [ -n "$F_ALL" -o -n "$F_ZLIB" ]; then
   cd $ZLIB_DIR
-  ./configure --prefix=$PREFIX
+  CFLAGS=-fPIC ./configure --prefix=$PREFIX
   make -j$PARALLEL install
 fi
 

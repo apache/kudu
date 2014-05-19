@@ -12,7 +12,6 @@
 #include "gutil/strings/substitute.h"
 #include "util/status.h"
 #include "util/subprocess.h"
-#include "util/test_util.h"
 
 using kudu::Status;
 using std::string;

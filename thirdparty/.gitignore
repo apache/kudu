@@ -17,3 +17,4 @@ installed/
 install_manifest.txt
 .build-hash
 google-styleguide*
+*.a

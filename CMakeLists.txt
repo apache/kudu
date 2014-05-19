@@ -21,6 +21,10 @@ endif()
 #  - pthread: enable multithreaded malloc
 #  - -D__STDC_FORMAT_MACROS: for PRI* print format macros
 set(CXX_COMMON_FLAGS "-msse4.2 -Wall -Wno-sign-compare -Wno-deprecated -pthread -D__STDC_FORMAT_MACROS")
+
+# Allow linking of static libs into dynamic libs
+add_definitions(-fPIC)
+
 # compiler flags for different build types (run 'cmake -DCMAKE_BUILD_TYPE=<type> .')
 # For all builds:
 # For CMAKE_BUILD_TYPE=Debug
@@ -108,6 +112,24 @@ if ("${COMPILER_FAMILY}" STREQUAL "clang")
   endif()
 endif()
 
+# Sanity check linking option.
+if (NOT KUDU_LINK)
+  set(KUDU_LINK "a")
+elseif(NOT ("auto" MATCHES "^${KUDU_LINK}" OR
+            "dynamic" MATCHES "^${KUDU_LINK}" OR
+            "static" MATCHES "^${KUDU_LINK}"))
+  message(FATAL_ERROR "Unknown value for KUDU_LINK, must be auto|dynamic|static")
+else()
+  # Remove all but the first letter.
+  string(SUBSTRING "${KUDU_LINK}" 0 1 KUDU_LINK)
+endif()
+
+# Sanity check sanitizers; ASAN and TSAN imply static and dynamic linking
+# respectively, so we can't use both at once.
+if ("${KUDU_USE_ASAN}" AND "${KUDU_USE_TSAN}")
+  message(SEND_ERROR "Can only enable one of ASAN or TSAN at a time")
+endif()
+
 # Flag to enable clang address sanitizer
 # This will only build if clang is the chosen compiler
 if (${KUDU_USE_ASAN})
@@ -116,12 +138,19 @@ if (${KUDU_USE_ASAN})
     message(SEND_ERROR "Cannot use ASAN without clang or gcc >= 4.8")
   endif()
 
-  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsanitize=address -DADDRESS_SANITIZER")
-
   # Ensure static linking is on -- otherwise can run into llvm bug #56393:
   # http://www.mail-archive.com/gcc-bugs@gcc.gnu.org/msg386467.html
-  set(KUDU_STATIC_LINK ON)
-endif ()
+  if("${KUDU_LINK}" STREQUAL "a")
+    message("Using static linking for ASAN")
+    set(KUDU_LINK "s")
+  elseif("${KUDU_LINK}" STREQUAL "d")
+    message(SEND_ERROR "Cannot use ASAN with dynamic linking")
+  endif()
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsanitize=address -DADDRESS_SANITIZER")
+endif()
+
+# For any C code, use the same flags.
+set(CMAKE_C_FLAGS "${CMAKE_CXX_FLAGS}")
 
 # Flag to enable clang undefined behavior sanitizer
 # We explicitly don't enable all of the sanitizer flags:
@@ -145,9 +174,6 @@ if (${KUDU_USE_TSAN})
 
   add_definitions("-fsanitize=thread")
 
-  # thread sanitizer requires position independent executable
-  add_definitions("-fPIE")
-
   # Enables dynamic_annotations.h to actually generate code
   add_definitions("-DDYNAMIC_ANNOTATIONS_ENABLED")
 
@@ -160,6 +186,17 @@ if (${KUDU_USE_TSAN})
 
   # Some of the above also need to be passed to the linker.
   set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -pie -fsanitize=thread")
+
+  # Strictly speaking, TSAN doesn't require dynamic linking. But it does
+  # require all code to be position independent, and the easiest way to
+  # guarantee that is via dynamic linking (not all 3rd party archives are
+  # compiled with -fPIC e.g. boost).
+  if("${KUDU_LINK}" STREQUAL "a")
+    message("Using dynamic linking for TSAN")
+    set(KUDU_LINK "d")
+  elseif("${KUDU_LINK}" STREQUAL "s")
+    message(SEND_ERROR "Cannot use TSAN with static linking")
+  endif()
 endif()
 
 
@@ -173,12 +210,39 @@ if ("${KUDU_USE_UBSAN}" OR "${KUDU_USE_ASAN}" OR "${KUDU_USE_TSAN}")
   endif()
 endif()
 
-# Ensure static linking is on for asan -- otherwise can run into gcc bug #56393:
-# http://www.mail-archive.com/gcc-bugs@gcc.gnu.org/msg386467.html
-# We don't want to do this for TSAN, though, because dependencies like static boost
-# may not be linked with -fPIC.
-if (KUDU_USE_ASAN AND NOT KUDU_USE_TSAN)
-  set(KUDU_STATIC_LINK ON)
+# If we still don't know what kind of linking to perform, choose based on
+# build type (developers like fast builds).
+if ("${KUDU_LINK}" STREQUAL "a")
+  if ("${CMAKE_BUILD_TYPE}" STREQUAL "DEBUG" OR
+      "${CMAKE_BUILD_TYPE}" STREQUAL "FASTDEBUG")
+    message("Using dynamic linking for ${CMAKE_BUILD_TYPE} builds")
+    set(KUDU_LINK "d")
+  else()
+    message("Using static linking for ${CMAKE_BUILD_TYPE} builds")
+    set(KUDU_LINK "s")
+  endif()
+endif()
+
+# Are we using the gold linker? It doesn't work with dynamic linking as
+# weak symbols aren't properly overridden, causing tcmalloc to be omitted.
+#
+# See https://sourceware.org/bugzilla/show_bug.cgi?id=16979 for details.
+execute_process(COMMAND ${CMAKE_CXX_COMPILER} -Wl,--version OUTPUT_VARIABLE LINKER_OUTPUT)
+if (LINKER_OUTPUT MATCHES "gold")
+  if ("${KUDU_LINK}" STREQUAL "d")
+    message(SEND_ERROR "Cannot use gold with dynamic linking")
+  else()
+    message("Using gold linker")
+  endif()
+  set(KUDU_USING_GOLD 1)
+else()
+  message("Using ld linker")
+endif()
+
+# Having set KUDU_LINK due to build type and/or sanitizer, it's now safe to
+# act on its value.
+if ("${KUDU_LINK}" STREQUAL "d")
+  set(BUILD_SHARED_LIBS ON)
 endif()
 
 # Code coverage
@@ -203,9 +267,13 @@ FILE(MAKE_DIRECTORY ${BUILD_OUTPUT_ROOT_DIRECTORY})
 EXECUTE_PROCESS(COMMAND ln -T -sf ${BUILD_OUTPUT_ROOT_DIRECTORY}
   ${CMAKE_CURRENT_SOURCE_DIR}/build/latest)
 
-# where to put generated libraries
+# where to put generated archives (.a files)
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY "${BUILD_OUTPUT_ROOT_DIRECTORY}")
 set(ARCHIVE_OUTPUT_DIRECTORY "${BUILD_OUTPUT_ROOT_DIRECTORY}")
+
+# where to put generated libraries (.so files)
+set(CMAKE_LIBRARY_OUTPUT_DIRECTORY "${BUILD_OUTPUT_ROOT_DIRECTORY}")
+set(LIBRARY_OUTPUT_DIRECTORY "${BUILD_OUTPUT_ROOT_DIRECTORY}")
 
 # where to put generated binaries
 set(EXECUTABLE_OUTPUT_PATH "${BUILD_OUTPUT_ROOT_DIRECTORY}")
@@ -246,7 +314,7 @@ function(ADD_THIRDPARTY_LIB LIB_NAME)
     message(SEND_ERROR "Error: unrecognized arguments: ${ARG_UNPARSED_ARGUMENTS}")
   endif()
 
-  if((KUDU_STATIC_LINK AND ARG_STATIC_LIB) OR (NOT ARG_SHARED_LIB))
+  if(("${KUDU_LINK}" STREQUAL "s" AND ARG_STATIC_LIB) OR (NOT ARG_SHARED_LIB))
     if(NOT ARG_STATIC_LIB)
       message(FATAL_ERROR "No static or shared library provided for ${LIB_NAME}")
     endif()
@@ -273,13 +341,13 @@ set(LIBS ${LIBS} -lrt)
 ### Workaround for http://stackoverflow.com/questions/9948375/cmake-find-package-succeeds-but-returns-wrong-path
 set(Boost_NO_BOOST_CMAKE ON)
 
-if ("${KUDU_STATIC_LINK}")
+if ("${KUDU_LINK}" STREQUAL "s")
   set(Boost_USE_STATIC_LIBS ON)
 endif()
 
 find_package(Boost COMPONENTS filesystem thread system REQUIRED)
 include_directories(SYSTEM ${Boost_INCLUDE_DIR} )
-set(LIBS ${LIBS} ${Boost_LIBRARIES})
+set(KUDU_BASE_LIBS ${KUDU_BASE_LIBS} ${Boost_LIBRARIES})
 
 ## Cyrus SASL
 find_package(CyrusSASL REQUIRED)
@@ -294,7 +362,7 @@ include_directories(SYSTEM ${GLOG_INCLUDE_DIR})
 ADD_THIRDPARTY_LIB(glog
   STATIC_LIB "${GLOG_STATIC_LIB}"
   SHARED_LIB "${GLOG_LIBS}/libglog.so")
-set(LIBS ${LIBS} glog)
+set(KUDU_BASE_LIBS ${KUDU_BASE_LIBS} glog)
 
 ## GFlags
 find_package(GFlags REQUIRED)
@@ -302,7 +370,7 @@ include_directories(SYSTEM ${GFLAGS_INCLUDE_DIR})
 ADD_THIRDPARTY_LIB(gflags
   STATIC_LIB "${GFLAGS_STATIC_LIB}"
   SHARED_LIB "${GFLAGS_LIBS}/libgflags.so")
-set(LIBS ${LIBS} gflags)
+set(KUDU_BASE_LIBS ${KUDU_BASE_LIBS} gflags)
 
 ## GTest
 find_package(GTest REQUIRED)
@@ -358,10 +426,17 @@ ADD_THIRDPARTY_LIB(squeasel
   DEPS "${SQUEASEL_STATIC_LIB_DEPS}")
 
 ## Google PerfTools
-find_package( GPerf REQUIRED )
-if (NOT KUDU_USE_ASAN AND NOT KUDU_USE_TSAN)
-  set(LIBS ${LIBS} ${TCMALLOC_LIBRARY} ${PROFILER_LIBRARY})
+find_package(GPerf REQUIRED)
+if (NOT "${KUDU_USE_ASAN}" AND NOT "${KUDU_USE_TSAN}")
+  ADD_THIRDPARTY_LIB(tcmalloc
+    STATIC_LIB "${TCMALLOC_STATIC_LIB}"
+    SHARED_LIB "${TCMALLOC_LIBS}/libtcmalloc.so")
+  ADD_THIRDPARTY_LIB(profiler
+    STATIC_LIB "${PROFILER_STATIC_LIB}"
+    SHARED_LIB "${PROFILER_LIBS}/libprofiler.so")
+  set(KUDU_BASE_LIBS ${KUDU_BASE_LIBS} tcmalloc profiler)
   add_definitions("-DTCMALLOC_ENABLED")
+  set(KUDU_TCMALLOC_AVAILABLE 1)
 endif()
 
 ## curl
@@ -377,10 +452,7 @@ ADD_THIRDPARTY_LIB(crcutil
 ############################################################
 # Linker setup
 ############################################################
-set(KUDU_DEP_LIBS ${LIBS})
-set(KUDU_LINK_LIBS client master master_proto tserver tserver_proto tablet server_common server_process
-    krpc cfile kudu_common kudu_util gutil ${LIBS})
-set(KUDU_MIN_TEST_LIBS kudu_test_main)
+set(KUDU_MIN_TEST_LIBS kudu_test_main ${KUDU_BASE_LIBS})
 set(KUDU_TEST_LINK_LIBS ${KUDU_MIN_TEST_LIBS})
 
 ############################################################

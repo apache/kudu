@@ -26,15 +26,18 @@
 
 #include "gutil/map-util.h"
 #include "gutil/strings/split.h"
-#include "server/pprof-path-handlers.cc"
+#include "server/pprof-path-handlers.h"
 #include "server/webserver.h"
 #include "util/histogram.pb.h"
+#include "util/logging.h"
 #include "util/metrics.h"
 #include "util/jsonwriter.h"
 
 using boost::replace_all;
 using google::CommandlineFlagsIntoString;
+using std::ifstream;
 using std::string;
+using std::endl;
 
 DECLARE_bool(enable_process_lifetime_heap_profiling);
 DEFINE_int64(web_log_bytes, 1024 * 1024,
@@ -68,7 +71,7 @@ struct Tags {
 
 // Writes the last FLAGS_web_log_bytes of the INFO logfile to a webpage
 // Note to get best performance, set GLOG_logbuflevel=-1 to prevent log buffering
-static void LogsHandler(const Webserver::ArgumentMap& args, stringstream* output) {
+static void LogsHandler(const Webserver::ArgumentMap& args, std::stringstream* output) {
   bool as_text = (args.find("raw") != args.end());
   Tags tags(as_text);
   string logfile;
@@ -96,7 +99,7 @@ static void LogsHandler(const Webserver::ArgumentMap& args, stringstream* output
 }
 
 // Registered to handle "/flags", and prints out all command-line flags and their values
-static void FlagsHandler(const Webserver::ArgumentMap& args, stringstream* output) {
+static void FlagsHandler(const Webserver::ArgumentMap& args, std::stringstream* output) {
   bool as_text = (args.find("raw") != args.end());
   Tags tags(as_text);
   (*output) << tags.header << "Command-line Flags" << tags.end_header;
@@ -104,7 +107,7 @@ static void FlagsHandler(const Webserver::ArgumentMap& args, stringstream* outpu
 }
 
 // Registered to handle "/memz", and prints out memory allocation statistics.
-static void MemUsageHandler(const Webserver::ArgumentMap& args, stringstream* output) {
+static void MemUsageHandler(const Webserver::ArgumentMap& args, std::stringstream* output) {
   bool as_text = (args.find("raw") != args.end());
   Tags tags(as_text);
 

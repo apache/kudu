@@ -191,3 +191,41 @@ $ make ilint
 
 This will scan any file which is dirty in your working tree, or changed since the last
 gerrit-integrated upstream change in your git log.
+
+
+Improving build times
+------------------------------------------------------------
+
+The kudu build is compatible with ccache. Simply install your distro's ccache package,
+prepend /usr/lib/ccache to your PATH, and watch your object files get cached. Link
+times won't be affected, but you will see a noticeable improvement in compilation
+times. You may also want to increase the size of your cache using "ccache -M new_size".
+
+
+One of the major time sinks in the Kudu build is linking. GNU ld is historically
+quite slow at linking large C++ applications. The alternative linker 'gold' is much
+better at it. It's part of the binutils package in modern distros (try binutils-gold
+in older ones). To enable it, simply repoint the /usr/bin/ld symlink from ld.bfd to
+ld.gold.
+
+Note that gold doesn't handle weak symbol overrides properly (see
+https://sourceware.org/bugzilla/show_bug.cgi?id=16979 for details). As such, it cannot
+be used with shared objects (see below) because it'll cause tcmalloc's alternative
+malloc implementation to be ignored.
+
+
+Kudu can be built into shared objects, which, when used with ccache, can result in a
+dramatic build time improvement in the steady state (i.e. when the build tree is clean
+but all object files will be served from ccache). By default, debug and fastdebug will
+use dynamic linking, while other build types will use static linking. To enable
+dynamic linking explicitly, run:
+
+$ cmake -DKUDU_LINK=dynamic .
+
+Subsequent builds will create shared objects instead of archives and use them when
+linking the kudu binaries and unit tests. The full range of options for KUDU_LINK are
+"static", "dynamic", and "auto". The default is "auto" and only the first letter
+matters for the purpose of matching.
+
+Note that dynamic linking is incompatible with ASAN and static linking is incompatible
+with TSAN.

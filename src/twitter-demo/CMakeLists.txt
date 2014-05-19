@@ -11,19 +11,27 @@ else()
     insert_consumer.cc
     twitter_streamer.cc
     )
-  target_link_libraries(twitter_demo ${KUDU_LINK_LIBS} ${LIBOAUTH_LIBRARY} ${CURL_LIBRARIES})
+  target_link_libraries(twitter_demo
+    client
+    ${LIBOAUTH_LIBRARY}
+    ${CURL_LIBRARIES}
+    ${KUDU_BASE_LIBS})
 
   # Require that the tserver protobuf code is generated first
-  add_dependencies(twitter_demo tserver_proto)
+  add_dependencies(twitter_demo
+    tserver_proto)
 
   add_executable(ingest_firehose ingest_firehose.cc)
-  target_link_libraries(ingest_firehose twitter_demo)
+  target_link_libraries(ingest_firehose
+    twitter_demo)
 
   # Tests
   ADD_KUDU_TEST(oauth-test)
-  target_link_libraries(oauth-test twitter_demo)
+  target_link_libraries(oauth-test
+    twitter_demo)
 
   ADD_KUDU_TEST(parser-test)
-  target_link_libraries(parser-test twitter_demo)
+  target_link_libraries(parser-test
+    twitter_demo)
 
 endif() # library checks

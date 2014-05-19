@@ -6,12 +6,16 @@ set(INTEGRATION_TESTS_SRCS
 )
 
 add_library(integration-tests ${INTEGRATION_TESTS_SRCS})
-target_link_libraries(integration-tests tserver master client)
-add_dependencies(integration-tests kudu-tablet_server kudu-master)
+target_link_libraries(integration-tests
+  tserver
+  master
+  client)
+add_dependencies(integration-tests
+  kudu-tablet_server
+  kudu-master)
 
 # Tests
-set(KUDU_TEST_LINK_LIBS integration-tests ${KUDU_TEST_LINK_LIBS})
-
+set(KUDU_TEST_LINK_LIBS integration-tests ${KUDU_MIN_TEST_LIBS})
 ADD_KUDU_TEST(alter_table-test)
 ADD_KUDU_TEST(registration-test RESOURCE_LOCK "master-web-port")
 ADD_KUDU_TEST(raft_consensus-itest)

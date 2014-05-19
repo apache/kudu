@@ -33,8 +33,9 @@ add_library(gutil
 ./utf/rune.c
 )
 
-# clock_gettime() requires -lrt
-target_link_libraries(gutil rt)
+target_link_libraries(gutil
+  protobuf
+  rt) # clock_gettime() requires -lrt
 
 # Disable warnings which trigger a lot in the Google code:
 set_target_properties(gutil PROPERTIES

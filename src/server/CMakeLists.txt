@@ -6,7 +6,9 @@ PROTOBUF_GENERATE_CPP(METADATA_PROTO_SRCS METADATA_PROTO_HDRS
   PROTO_FILES metadata.proto)
 
 add_library(metadata_proto ${METADATA_PROTO_SRCS} ${METADATA_PROTO_HDRS})
-target_link_libraries(metadata_proto kudu_common_proto protobuf)
+target_link_libraries(metadata_proto
+  kudu_common_proto
+  protobuf)
 
 set(SERVER_COMMON_SRCS
   fsmanager.cc
@@ -18,7 +20,11 @@ set(SERVER_COMMON_SRCS
 )
 
 add_library(server_common ${SERVER_COMMON_SRCS})
-target_link_libraries(server_common kudu_common gutil kudu_util metadata_proto)
+target_link_libraries(server_common
+  kudu_common
+  gutil
+  kudu_util
+  metadata_proto)
 
 set(KUDU_TEST_LINK_LIBS server_common ${KUDU_MIN_TEST_LIBS})
 ADD_KUDU_TEST(fsmanager-test)
@@ -47,7 +53,19 @@ PROTOBUF_GENERATE_CPP(SERVER_BASE_PROTO_SRCS SERVER_BASE_PROTO_HDRS
   PROTO_FILES server_base.proto)
 
 add_library(server_process ${SERVER_PROCESS_SRCS} ${SERVER_BASE_PROTO_SRCS} ${SERVER_BASE_PROTO_HDRS})
-target_link_libraries(server_process server_common kudu_common gutil krpc kudu_util squeasel ${KUDU_DEP_LIBS})
+target_link_libraries(server_process
+  server_common
+  kudu_common
+  gutil
+  krpc
+  kudu_util
+  squeasel)
+
+# This module depends on tcmalloc and profiler directly, so need to make
+# sure that they get linked in the right order.
+if(${KUDU_TCMALLOC_AVAILABLE})
+  target_link_libraries(server_process tcmalloc profiler)
+endif()
 
 # Tests
 set(KUDU_TEST_LINK_LIBS server_process ${KUDU_MIN_TEST_LIBS})

@@ -6,14 +6,17 @@ PROTOBUF_GENERATE_CPP(RPC_HEADER_PROTO_SRCS RPC_HEADER_PROTO_HDRS
   BINARY_ROOT ${CMAKE_CURRENT_BINARY_DIR}/..
   PROTO_FILES rpc_header.proto)
 add_library(rpc_header_proto ${RPC_HEADER_PROTO_SRCS} ${RPC_HEADER_PROTO_HDRS})
-target_link_libraries(rpc_header_proto protobuf)
+target_link_libraries(rpc_header_proto
+  protobuf)
 
 PROTOBUF_GENERATE_CPP(RPC_INTROSPECTION_PROTO_SRCS RPC_INTROSPECTION_PROTO_HDRS
   SOURCE_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/..
   BINARY_ROOT ${CMAKE_CURRENT_BINARY_DIR}/..
   PROTO_FILES rpc_introspection.proto)
 add_library(rpc_introspection_proto ${RPC_INTROSPECTION_PROTO_SRCS} ${RPC_INTROSPECTION_PROTO_HDRS})
-target_link_libraries(rpc_introspection_proto rpc_header_proto protobuf)
+target_link_libraries(rpc_introspection_proto
+  rpc_header_proto
+  protobuf)
 
 ### RPC library
 add_library(krpc
@@ -53,7 +56,7 @@ set(RPC_LIBS krpc)
 ### RPC generator tool
 add_executable(protoc-gen-krpc protoc-gen-krpc.cc)
 target_link_libraries(protoc-gen-krpc
-    ${KUDU_DEP_LIBS}
+    ${KUDU_BASE_LIBS}
     protoc
     protobuf
     gutil
@@ -71,22 +74,13 @@ KRPC_GENERATE(RTEST_KRPC_SRCS RTEST_KRPC_HDRS
   BINARY_ROOT ${CMAKE_CURRENT_BINARY_DIR}/..
   PROTO_FILES rtest.proto)
 add_library(rtest_krpc ${RTEST_KRPC_SRCS} ${RTEST_KRPC_HDRS})
-target_link_libraries(rtest_krpc rtest_diff_package_proto)
+target_link_libraries(rtest_krpc
+  rtest_diff_package_proto)
 
 # Tests
-set(KUDU_TEST_LINK_LIBS krpc ${KUDU_DEP_LIBS} ${KUDU_MIN_TEST_LIBS})
-
+set(KUDU_TEST_LINK_LIBS rtest_krpc krpc ${KUDU_MIN_TEST_LIBS})
 ADD_KUDU_TEST(rpc-test)
-target_link_libraries(rpc-test rtest_krpc  krpc)
-
 ADD_KUDU_TEST(rpc-bench RUN_SERIAL true)
-target_link_libraries(rpc-bench rtest_krpc krpc)
-
 ADD_KUDU_TEST(rpc_stub-test)
-target_link_libraries(rpc_stub-test rtest_krpc krpc)
-
 ADD_KUDU_TEST(sasl_rpc-test)
-target_link_libraries(sasl_rpc-test rtest_krpc krpc)
-
 ADD_KUDU_TEST(mt-rpc-test RUN_SERIAL true)
-target_link_libraries(mt-rpc-test rtest_krpc krpc)
