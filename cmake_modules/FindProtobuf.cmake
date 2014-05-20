@@ -119,8 +119,12 @@ function(PROTOBUF_GENERATE_CPP SRCS HDRS)
     add_custom_command(
       OUTPUT "${PROTO_CC_OUT}" "${PROTO_H_OUT}"
       COMMAND  ${PROTOBUF_PROTOC_EXECUTABLE}
-      ARGS --cpp_out ${ARG_BINARY_ROOT} --proto_path ${ARG_SOURCE_ROOT} ${EXTRA_PROTO_PATH_ARGS} ${ABS_FIL}
-      DEPENDS ${ABS_FIL}
+      ARGS
+        --plugin=$<TARGET_FILE:protoc-gen-insertions>
+        --cpp_out ${ARG_BINARY_ROOT}
+        --insertions_out ${ARG_BINARY_ROOT}
+        --proto_path ${ARG_SOURCE_ROOT} ${EXTRA_PROTO_PATH_ARGS} ${ABS_FIL}
+      DEPENDS ${ABS_FIL} protoc-gen-insertions
       COMMENT "Running C++ protocol buffer compiler on ${FIL}"
       VERBATIM )
   endforeach()

@@ -120,3 +120,6 @@ target_link_libraries(jsonwriter_test_proto protobuf)
 
 ADD_KUDU_TEST(jsonwriter-test)
 target_link_libraries(jsonwriter-test jsonwriter_test_proto)
+
+add_executable(protoc-gen-insertions protoc-gen-insertions.cc)
+target_link_libraries(protoc-gen-insertions gutil protobuf protoc glog gflags)
