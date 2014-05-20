@@ -114,6 +114,9 @@ Status LeaderTransactionDriver::Execute(Transaction* transaction) {
 }
 
 void LeaderTransactionDriver::PrepareOrReplicateSucceeded() {
+  // TODO: this is an ugly hack so that the Release() call doesn't delete the
+  // object while we still hold the lock.
+  scoped_refptr<LeaderTransactionDriver> ref(this);
   boost::lock_guard<simple_spinlock> lock(lock_);
   prepare_finished_calls_++;
   if (prepare_finished_calls_ < 2) {
@@ -138,6 +141,9 @@ void LeaderTransactionDriver::PrepareOrReplicateSucceeded() {
 }
 
 void LeaderTransactionDriver::PrepareOrReplicateFailed(const Status& failure_reason) {
+  // TODO: this is an ugly hack so that the Release() call doesn't delete the
+  // object while we still hold the lock.
+  scoped_refptr<LeaderTransactionDriver> ref(this);
   boost::lock_guard<simple_spinlock> lock(lock_);
   transaction_status_ = failure_reason;
   prepare_finished_calls_++;
@@ -226,6 +232,9 @@ Status LeaderTransactionDriver::ApplyAndCommit() {
 }
 
 void LeaderTransactionDriver::ApplyAndCommitSucceeded() {
+  // TODO: this is an ugly hack so that the Release() call doesn't delete the
+  // object while we still hold the lock.
+  scoped_refptr<LeaderTransactionDriver> ref(this);
   boost::lock_guard<simple_spinlock> lock(lock_);
   transaction_->Finish();
   state()->completion_callback()->TransactionCompleted();
@@ -233,6 +242,9 @@ void LeaderTransactionDriver::ApplyAndCommitSucceeded() {
 }
 
 void LeaderTransactionDriver::ApplyOrCommitFailed(const Status& abort_reason) {
+  // TODO: this is an ugly hack so that the Release() call doesn't delete the
+  // object while we still hold the lock.
+  scoped_refptr<LeaderTransactionDriver> ref(this);
   boost::lock_guard<simple_spinlock> lock(lock_);
   prepare_finished_calls_ = 2;
 
