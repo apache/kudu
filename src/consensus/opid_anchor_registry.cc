@@ -44,6 +44,10 @@ Status OpIdAnchorRegistry::Unregister(OpIdAnchor* anchor) {
   return UnregisterUnlocked(anchor);
 }
 
+bool OpIdAnchorRegistry::IsRegistered(OpIdAnchor* anchor) const {
+  return anchor->is_registered;
+}
+
 Status OpIdAnchorRegistry::GetEarliestRegisteredOpId(OpId* op_id) {
   boost::lock_guard<simple_spinlock> l(lock_);
   OpIdMultiMap::iterator iter = op_ids_.begin();

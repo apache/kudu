@@ -45,6 +45,9 @@ class OpIdAnchorRegistry : public base::RefCountedThreadSafe<OpIdAnchorRegistry>
   // Note: anchor must be the original pointer passed to Register().
   Status Unregister(OpIdAnchor* anchor);
 
+  // Returns true if passed anchor is currently registered.
+  bool IsRegistered(OpIdAnchor* anchor) const;
+
   // Query the registry to find the earliest anchored OpId in the registry.
   // Returns Status::NotFound if no anchors are currently active.
   Status GetEarliestRegisteredOpId(consensus::OpId* op_id);
