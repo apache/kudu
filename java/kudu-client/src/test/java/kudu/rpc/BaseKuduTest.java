@@ -36,6 +36,7 @@ public class BaseKuduTest {
   private static boolean startCluster;
   private static String masterAddress;
   private static int masterPort;
+  private static String masterAddressAndPort;
 
   protected static final int DEFAULT_SLEEP = 10000;
   static final List<Thread> processInputPrinters = new ArrayList<Thread>();
@@ -51,6 +52,7 @@ public class BaseKuduTest {
     // the following props are set via kudu-client's pom
     masterAddress = System.getProperty(MASTER_ADDRESS);
     masterPort = Integer.parseInt(System.getProperty(MASTER_PORT));
+    masterAddressAndPort = masterAddress + ":" + masterPort;
     String flagsPath = System.getProperty(FLAGS_PATH);
     String baseDirPath = System.getProperty(BASE_DIR_PATH);
     startCluster = Boolean.parseBoolean(System.getProperty(START_CLUSTER));
@@ -239,6 +241,10 @@ public class BaseKuduTest {
 
   protected static String getMasterAddress() {
     return masterAddress;
+  }
+
+  protected static String getMasterAddressAndPort() {
+    return masterAddressAndPort;
   }
 
   /**
