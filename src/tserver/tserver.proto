@@ -145,7 +145,12 @@ message ListTabletsRequestPB {
 message ListTabletsResponsePB {
   optional TabletServerErrorPB error = 1;
 
-  repeated tablet.TabletStatusPB tablet_status = 2;
+  message StatusAndSchemaPB {
+    required tablet.TabletStatusPB tablet_status = 1;
+    required SchemaPB schema = 2;
+  }
+
+  repeated StatusAndSchemaPB status_and_schema = 2;
 }
 
 // A create tablet request.

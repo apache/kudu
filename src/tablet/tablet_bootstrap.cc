@@ -200,6 +200,7 @@ TabletStatusListener::TabletStatusListener(
       table_name_(meta.table_name()),
       start_key_(meta.start_key()),
       end_key_(meta.end_key()),
+      schema_(meta.schema()),
       last_status_("") {
 }
 

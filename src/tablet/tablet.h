@@ -351,6 +351,8 @@ class Tablet {
   Status GetMappedReadProjection(const Schema& projection,
                                  Schema *mapped_projection) const;
 
+  Status CheckRowInTablet(const tablet::RowSetKeyProbe& probe) const;
+
   shared_ptr<Schema> schema_;
   const Schema key_schema_;
   gscoped_ptr<metadata::TabletMetadata> metadata_;

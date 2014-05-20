@@ -6,6 +6,7 @@
 #include <tr1/memory>
 #include <string>
 
+#include "common/schema.h"
 #include "gutil/gscoped_ptr.h"
 #include "gutil/ref_counted.h"
 #include "util/status.h"
@@ -48,6 +49,8 @@ class TabletStatusListener {
 
   const std::string end_key() const { return end_key_; }
 
+  const Schema& schema() const { return schema_; }
+
   std::string last_status() const {
     boost::shared_lock<boost::shared_mutex> l(lock_);
     return last_status_;
@@ -60,6 +63,7 @@ class TabletStatusListener {
   const std::string table_name_;
   const std::string start_key_;
   const std::string end_key_;
+  const Schema schema_;
   std::string last_status_;
 
   DISALLOW_COPY_AND_ASSIGN(TabletStatusListener);

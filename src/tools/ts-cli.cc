@@ -8,7 +8,9 @@
 #include <tr1/memory>
 #include <iostream>
 
+#include "common/schema.h"
 #include "common/wire_protocol.h"
+#include "gutil/strings/human_readable.h"
 #include "tserver/tserver.pb.h"
 #include "tserver/tserver_service.proxy.h"
 #include "tserver/tablet_server.h"
@@ -58,6 +60,8 @@ const bool op_dummy = google::RegisterFlagValidator(&FLAGS_op, &ValidateOp);
 namespace kudu {
 namespace tools {
 
+typedef ListTabletsResponsePB::StatusAndSchemaPB StatusAndSchemaPB;
+
 class TsAdminClient {
  public:
   // Creates an admin client for host/port combination e.g.,
@@ -70,7 +74,7 @@ class TsAdminClient {
 
   // Sets 'tablets' a list of status information for all tablets on a
   // given tablet server.
-  Status ListTablets(std::vector<tablet::TabletStatusPB>* tablets);
+  Status ListTablets(std::vector<StatusAndSchemaPB>* tablets);
 
  private:
   std::string addr_;
@@ -108,7 +112,7 @@ Status TsAdminClient::Init() {
   return Status::OK();
 }
 
-Status TsAdminClient::ListTablets(vector<TabletStatusPB>* tablets) {
+Status TsAdminClient::ListTablets(vector<StatusAndSchemaPB>* tablets) {
   CHECK(initted_);
 
   ListTabletsRequestPB req;
@@ -121,7 +125,7 @@ Status TsAdminClient::ListTablets(vector<TabletStatusPB>* tablets) {
     return StatusFromPB(resp.error().status());
   }
 
-  tablets->assign(resp.tablet_status().begin(), resp.tablet_status().end());
+  tablets->assign(resp.status_and_schema().begin(), resp.status_and_schema().end());
 
   return Status::OK();
 }
@@ -138,10 +142,23 @@ static int TsCliMain(int argc, char** argv) {
 
   // TODO add other operations here...
   if (FLAGS_op == "list_tablets") {
-    vector<TabletStatusPB> tablets;
+    vector<StatusAndSchemaPB> tablets;
     CHECK_OK_PREPEND(client.ListTablets(&tablets), "Unable to list tablets on " + addr);
-    BOOST_FOREACH(const TabletStatusPB& tablet, tablets) {
-      std::cout << tablet.DebugString() << std::endl;
+    BOOST_FOREACH(const StatusAndSchemaPB& status_and_schema, tablets) {
+      Schema schema;
+      CHECK_OK(SchemaFromPB(status_and_schema.schema(), &schema));
+      TabletStatusPB ts = status_and_schema.tablet_status();
+      string state = metadata::TabletStatePB_Name(ts.state());
+      std::cout << "Tablet id: " << ts.tablet_id() << std::endl;
+      std::cout << "State: " << state;
+      std::cout << "Table name: " << ts.table_name() << std::endl;
+      std::cout << "Start key: " << schema.DebugEncodedRowKey(ts.start_key())
+                <<" End key: " << schema.DebugEncodedRowKey(ts.end_key()) << std::endl;
+      if (ts.has_estimated_on_disk_size()) {
+        std::cout << "Estimated on disk size: " <<
+            HumanReadableNumBytes::ToString(ts.estimated_on_disk_size());
+      }
+      std::cout << "Schema: " << schema.ToString() << std::endl;
     }
   } else {
     LOG(FATAL) << "Invalid op specified: " << FLAGS_op;

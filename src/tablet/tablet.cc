@@ -188,14 +188,25 @@ Status Tablet::NewRowIterator(const Schema &projection,
   return Status::OK();
 }
 
+Status Tablet::CheckRowInTablet(const tablet::RowSetKeyProbe& probe) const {
+  if (!probe.encoded_key().InRange(Slice(metadata_->start_key()),
+                                   Slice(metadata_->end_key()))) {
+    return Status::NotFound(
+        Substitute("Row not within tablet range. Tablet start key: '$0', end key: '$1'."
+                   "Probe key: '$2'",
+                   schema_->DebugEncodedRowKey(metadata_->start_key()),
+                   schema_->DebugEncodedRowKey(metadata_->end_key()),
+                   schema_->DebugEncodedRowKey(probe.encoded_key().encoded_key().ToString())));
+  }
+  return Status::OK();
+}
+
 Status Tablet::CreatePreparedInsert(const WriteTransactionState* tx_state,
                                     const ConstContiguousRow* row,
                                     gscoped_ptr<PreparedRowWrite>* row_write) {
   gscoped_ptr<tablet::RowSetKeyProbe> probe(new tablet::RowSetKeyProbe(*row));
-  if (!probe->encoded_key().InRange(Slice(metadata_->start_key()),
-                                    Slice(metadata_->end_key()))) {
-    return Status::NotFound("Row not within tablet range");
-  }
+
+  RETURN_NOT_OK(CheckRowInTablet(*probe));
 
   gscoped_ptr<ScopedRowLock> row_lock(new ScopedRowLock(&lock_manager_,
                                                         tx_state,
@@ -308,10 +319,8 @@ Status Tablet::CreatePreparedMutate(const WriteTransactionState* tx_state,
                                     const RowChangeList& changelist,
                                     gscoped_ptr<PreparedRowWrite>* row_write) {
   gscoped_ptr<tablet::RowSetKeyProbe> probe(new tablet::RowSetKeyProbe(*row_key));
-  if (!probe->encoded_key().InRange(Slice(metadata_->start_key()),
-                                    Slice(metadata_->end_key()))) {
-    return Status::NotFound("Row not within tablet range");
-  }
+
+  RETURN_NOT_OK(CheckRowInTablet(*probe));
 
   gscoped_ptr<ScopedRowLock> row_lock(new ScopedRowLock(&lock_manager_,
                                                         tx_state,

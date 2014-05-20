@@ -226,12 +226,14 @@ Status FsTool::PrintTabletMetaInternal(const string& master_block_path,
   gscoped_ptr<TabletMetadata> meta;
   RETURN_NOT_OK(LoadTabletMetadata(master_block_path, tablet_id, &meta));
 
-  std::cout << "Start key: '" << meta->start_key() <<"' End key: '" << meta->end_key() << "'"
-            << std::endl;
+  const Schema& schema = meta->schema();
+
+  std::cout << "Start key: " << schema.DebugEncodedRowKey(meta->start_key())
+            <<" End key: " << schema.DebugEncodedRowKey(meta->end_key()) << std::endl;
   std::cout << "Table name: " << meta->table_name()
             << " Table id: " << meta->table_id() << std::endl;
   std::cout << "Schema (version=" << meta->schema_version() << "): "
-            << meta->schema().ToString() << std::endl;
+            << schema.ToString() << std::endl;
   return Status::OK();
 }
 

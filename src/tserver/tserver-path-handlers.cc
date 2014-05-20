@@ -57,6 +57,7 @@ void TabletServerPathHandlers::HandleTabletsPage(const Webserver::ArgumentMap &a
     string id = status.tablet_id();
     string table_name = status.table_name();
     string tablet_id_or_link;
+    const Schema& schema = peer->status_listener()->schema();
     if (peer->tablet() != NULL) {
       tablet_id_or_link = Substitute("<a href=\"/tablet?id=$0\">$1</a>",
                                 UrlEncodeToString(id),
@@ -77,8 +78,8 @@ void TabletServerPathHandlers::HandleTabletsPage(const Webserver::ArgumentMap &a
                             "<th>$3</th><th>$4</th><th>$5</th></tr>\n",
                             EscapeForHtmlToString(table_name),
                             tablet_id_or_link,
-                            EscapeForHtmlToString(status.start_key()),
-                            EscapeForHtmlToString(status.end_key()),
+                            EscapeForHtmlToString(schema.DebugEncodedRowKey(status.start_key())),
+                            EscapeForHtmlToString(schema.DebugEncodedRowKey(status.end_key())),
                             state, n_bytes,
                             EscapeForHtmlToString(status.last_status()));
   }

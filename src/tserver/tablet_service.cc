@@ -14,6 +14,7 @@
 #include "gutil/stl_util.h"
 #include "gutil/strings/escaping.h"
 #include "rpc/rpc_context.h"
+#include "tablet/tablet_bootstrap.h"
 #include "tablet/tablet_peer.h"
 #include "tablet/tablet_metrics.h"
 #include "tablet/transactions/alter_schema_transaction.h"
@@ -32,7 +33,6 @@ using kudu::consensus::ConsensusRequestPB;
 using kudu::consensus::ConsensusResponsePB;
 using kudu::metadata::QuorumPB;
 using kudu::metadata::QuorumPeerPB;
-using kudu::tablet::TabletStatusPB;
 using kudu::rpc::RpcContext;
 using kudu::tablet::TabletPeer;
 using kudu::tablet::AlterSchemaTransactionState;
@@ -53,6 +53,8 @@ DEFINE_int32(tablet_server_scan_batch_size_rows, 100,
 
 namespace kudu {
 namespace tserver {
+
+typedef ListTabletsResponsePB::StatusAndSchemaPB StatusAndSchemaPB;
 
 static void SetupErrorAndRespond(TabletServerErrorPB* error,
                                  const Status& s,
@@ -420,10 +422,12 @@ void TabletServiceImpl::ListTablets(const ListTabletsRequestPB* req,
                                     rpc::RpcContext* context) {
   vector<shared_ptr<TabletPeer> > peers;
   server_->tablet_manager()->GetTabletPeers(&peers);
-  RepeatedPtrField<TabletStatusPB>* peer_status = resp->mutable_tablet_status();
+  RepeatedPtrField<StatusAndSchemaPB>* peer_status = resp->mutable_status_and_schema();
   BOOST_FOREACH(const shared_ptr<TabletPeer>& peer, peers) {
-    TabletStatusPB* status = peer_status->Add();
-    peer->GetTabletStatusPB(status);
+    StatusAndSchemaPB* status = peer_status->Add();
+    peer->GetTabletStatusPB(status->mutable_tablet_status());
+    CHECK_OK(SchemaToPB(peer->status_listener()->schema(),
+                        status->mutable_schema()));
   }
   context->RespondSuccess();
 }

@@ -127,8 +127,8 @@ void MasterPathHandlers::HandleTablePage(const Webserver::ArgumentMap &args,
     *output << Substitute(
         "<tr><th>$0</th><td>$1</td><td>$2</td><td>$3 $4</td></tr>\n",
         tablet->tablet_id(),
-        EscapeForHtmlToString(l.data().pb.start_key()),
-        EscapeForHtmlToString(l.data().pb.end_key()),
+        EscapeForHtmlToString(schema.DebugEncodedRowKey(l.data().pb.start_key())),
+        EscapeForHtmlToString(schema.DebugEncodedRowKey(l.data().pb.end_key())),
         SysTabletsEntryPB_State_Name(l.data().pb.state()).substr(12),
         EscapeForHtmlToString(l.data().pb.state_msg()));
   }
