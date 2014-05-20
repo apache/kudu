@@ -104,19 +104,19 @@ class LocalPeer : public PeerImpl {
 
     LogEntryBatch* reserved_entry_batch;
     vector<const OperationPB*> ops;
-    OpId* last_replicated = NULL;
-    OpId* last_committed = NULL;
-    OpId* last_received = NULL;
+    const OpId* last_replicated = NULL;
+    const OpId* last_committed = NULL;
+    const OpId* last_received = NULL;
     for (int i = 0; i < request_.ops_size(); i++) {
       OperationPB* op = request_.mutable_ops(i);
       ops.push_back(op);
-      last_received = op->mutable_id();
+      last_received = &op->id();
       if (op->has_replicate()) {
-        last_replicated = op->mutable_id();
+        last_replicated = &op->id();
         continue;
       }
       if (op->has_commit()) {
-        last_committed = op->mutable_id();
+        last_committed = &op->id();
         continue;
       }
     }
