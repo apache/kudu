@@ -248,6 +248,8 @@ class ColumnSchema {
   ColumnStorageAttributes attributes_;
 };
 
+class ContiguousRow;
+
 // The schema for a set of rows.
 //
 // A Schema is simply a set of columns, along with information about
@@ -437,7 +439,7 @@ class Schema {
     return DebugRowColumns(row, num_columns());
   }
 
-  // Stringify teh given row, which must have a schema which is
+  // Stringify the given row, which must have a schema which is
   // key-compatible with this one. Per above, this is not for use in
   // hot paths.
   template<class RowType>
@@ -445,6 +447,25 @@ class Schema {
     DCHECK_KEY_PROJECTION_SCHEMA_EQ(*this, row.schema());
     return DebugRowColumns(row, num_key_columns());
   }
+
+  // Decode the specified encoded key into 'row'.
+  // 'arena' is used for allocating indirect strings, but is unused
+  // for other datatypes.
+  // 'buffer' holds the data for 'row' and must be large enough to
+  // store the decoded key (that is >= to Schema::key_byte_size()).
+  //
+  // Note: it is the caller's responsibility to initialize 'buffer'
+  // and 'arena'.
+  void DecodeRowKey(const string& encoded_key, uint8_t* buffer,
+                    Arena* arena,
+                    gscoped_ptr<ContiguousRow>* row) const;
+
+  // Decode and stringify the given contiguous encoded row key in,
+  // order to, e.g., provide print human-readable information about a
+  // tablet's start and end keys.
+  //
+  // See also: DebugRowKey, DecodeRowKey.
+  string DebugEncodedRowKey(const string& encoded_key) const;
 
   // Compare two rows of this schema.
   template<class RowTypeA, class RowTypeB>

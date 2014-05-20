@@ -10,6 +10,7 @@
 #include "gutil/strings/strcat.h"
 #include "gutil/strings/substitute.h"
 #include "util/status.h"
+#include "common/row.h"
 
 namespace kudu {
 
@@ -227,6 +228,54 @@ string Schema::ToString() const {
   return StrCat("Schema [",
                 JoinStrings(col_strs, ", "),
                 "]");
+}
+
+void Schema::DecodeRowKey(const string& encoded_key,
+                          uint8_t* buffer,
+                          Arena* arena,
+                          gscoped_ptr<ContiguousRow>* row) const {
+  row->reset(new ContiguousRow(*this, buffer));
+
+  size_t offset = 0;
+  size_t remaining = encoded_key.length();
+  for (size_t col_idx = 0; col_idx < num_key_columns(); ++col_idx) {
+    const ColumnSchema& col = column(col_idx);
+    const KeyEncoder& key_encoder = GetKeyEncoder(col.type_info()->type());
+    if (num_key_columns() == 1) {
+      key_encoder.Decode(encoded_key,
+                         arena,
+                         (*row)->mutable_cell_ptr(col_idx));
+      break;
+    }
+    const char* str_data = encoded_key.c_str() + offset;
+    size_t key_slice_size;
+    if (col.type_info()->type() == STRING) {
+      bool is_last = col_idx == (num_key_columns() - 1);
+      Slice key_slice(str_data, remaining);
+      key_encoder.Decode(key_slice,
+                         is_last,
+                         arena,
+                         (*row)->mutable_cell_ptr(col_idx),
+                         &key_slice_size);
+    } else {
+      key_slice_size = col.type_info()->size();
+      Slice key_slice(str_data, key_slice_size);
+      key_encoder.Decode(key_slice,
+                         arena,
+                         (*row)->mutable_cell_ptr(col_idx));
+    }
+    remaining -= key_slice_size;
+    offset += key_slice_size;
+  }
+
+}
+
+string Schema::DebugEncodedRowKey(const string& encoded_key) const {
+  gscoped_ptr<uint8_t[]> data(new uint8_t[key_byte_size()]);
+  Arena arena(1024, 128 * 1024);
+  gscoped_ptr<ContiguousRow> row;
+  DecodeRowKey(encoded_key, data.get(), &arena, &row);
+  return DebugRowKey(*row);
 }
 
 // ============================================================================
