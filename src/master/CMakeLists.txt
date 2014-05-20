@@ -1,15 +1,11 @@
 # Copyright (c) 2013, Cloudera, inc.
 
-PROTOBUF_GENERATE_CPP(MASTER_PROTO_SRCS MASTER_PROTO_HDRS
-  SOURCE_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/..
-  BINARY_ROOT ${CMAKE_CURRENT_BINARY_DIR}/..
-  PROTO_FILES master.proto)
 KRPC_GENERATE(MASTER_KRPC_SRCS MASTER_KRPC_HDRS
   SOURCE_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/..
   BINARY_ROOT ${CMAKE_CURRENT_BINARY_DIR}/..
   PROTO_FILES master.proto)
 
-add_library(master_proto ${MASTER_PROTO_SRCS} ${MASTER_PROTO_HDRS} ${MASTER_KRPC_SRCS})
+add_library(master_proto ${MASTER_KRPC_SRCS} ${MASTER_KRPC_HDRS})
 target_link_libraries(master_proto metadata_proto wire_protocol_proto protobuf rpc_header_proto)
 
 set(MASTER_SRCS
