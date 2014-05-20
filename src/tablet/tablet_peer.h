@@ -144,6 +144,16 @@ class TabletPeer : public consensus::ReplicaTransactionFactory {
   // Used for selection of log segments to delete during Log GC.
   void GetEarliestNeededOpId(consensus::OpId* op_id) const;
 
+  const scoped_refptr<log::OpIdAnchorRegistry>& opid_anchor_registry() const {
+    return opid_anchor_registry_;
+  }
+
+  // Return a pointer to the Log.
+  // The Log is owned by TabletPeer and will be destroyed with TabletPeer.
+  log::Log* log() const {
+    return log_.get();
+  }
+
   server::Clock* clock() {
     return clock_.get();
   }
