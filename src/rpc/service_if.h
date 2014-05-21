@@ -33,6 +33,7 @@ class ServiceIf {
  public:
   virtual ~ServiceIf();
   virtual void Handle(InboundCall* incoming) = 0;
+  virtual void Shutdown();
   virtual std::string service_name() const = 0;
 
  protected:

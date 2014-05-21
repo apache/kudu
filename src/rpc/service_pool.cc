@@ -75,6 +75,8 @@ void ServicePool::Shutdown() {
   while (service_queue_.BlockingGet(&incoming)) {
     incoming.release()->RespondFailure(ErrorStatusPB::FATAL_SERVER_SHUTTING_DOWN, status);
   }
+
+  service_->Shutdown();
 }
 
 Status ServicePool::QueueInboundCall(gscoped_ptr<InboundCall> call) {
