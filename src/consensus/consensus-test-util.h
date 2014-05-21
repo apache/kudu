@@ -267,8 +267,6 @@ class LocalTestPeerProxy : public PeerProxy {
 // instances directly. We need a hook to make sure that, when an instance
 // is destroyed, proxies of other instances that point to it no longer
 // try to call methods on it, otherwise we get a SIGSEGV.
-// NOTE: Fault hooks in standalone tests (i.e. not using RaftConsensus)
-// should extend from this one.
 class UnsetConsensusOnDestroyHook : public Consensus::ConsensusFaultHooks {
  public:
    void AddPeerProxy(LocalTestPeerProxy* proxy) { proxies_.push_back(proxy); }
@@ -371,6 +369,191 @@ class TestTransactionFactory : public ReplicaTransactionFactory {
  private:
   ThreadPool thread_pool_;
 
+};
+
+// Consensus fault hooks impl. that simply counts the number of calls to
+// each method.
+// Allows passing another hook instance so that we can use both.
+// If non-null, the passed hook instance will be called first for all methods.
+class CounterHooks : public Consensus::ConsensusFaultHooks {
+ public:
+  explicit CounterHooks(const std::tr1::shared_ptr<Consensus::ConsensusFaultHooks>& current_hook)
+      : current_hook_(current_hook),
+        pre_start_calls_(0),
+        post_start_calls_(0),
+        pre_config_change_calls_(0),
+        post_config_change_calls_(0),
+        pre_replicate_calls_(0),
+        post_replicate_calls_(0),
+        pre_commit_calls_(0),
+        post_commit_calls_(0),
+        pre_update_calls_(0),
+        post_update_calls_(0),
+        pre_shutdown_calls_(0),
+        post_shutdown_calls_(0) {
+  }
+
+  virtual Status PreStart() {
+    if (current_hook_.get()) RETURN_NOT_OK(current_hook_->PreStart());
+    boost::lock_guard<simple_spinlock> lock(lock_);
+    pre_start_calls_++;
+    return Status::OK();
+  }
+
+  virtual Status PostStart() {
+    if (current_hook_.get()) RETURN_NOT_OK(current_hook_->PostStart());
+    boost::lock_guard<simple_spinlock> lock(lock_);
+    post_start_calls_++;
+    return Status::OK();
+  }
+
+  virtual Status PreConfigChange() {
+    if (current_hook_.get()) RETURN_NOT_OK(current_hook_->PreConfigChange());
+    boost::lock_guard<simple_spinlock> lock(lock_);
+    pre_config_change_calls_++;
+    return Status::OK();
+  }
+
+  virtual Status PostConfigChange() {
+    if (current_hook_.get()) RETURN_NOT_OK(current_hook_->PostConfigChange());
+    boost::lock_guard<simple_spinlock> lock(lock_);
+    post_config_change_calls_++;
+    return Status::OK();
+  }
+
+  virtual Status PreReplicate() {
+    if (current_hook_.get()) RETURN_NOT_OK(current_hook_->PreReplicate());
+    boost::lock_guard<simple_spinlock> lock(lock_);
+    pre_replicate_calls_++;
+    return Status::OK();
+  }
+
+  virtual Status PostReplicate() {
+    if (current_hook_.get()) RETURN_NOT_OK(current_hook_->PostReplicate());
+    boost::lock_guard<simple_spinlock> lock(lock_);
+    post_replicate_calls_++;
+    return Status::OK();
+  }
+
+  virtual Status PreCommit() {
+    if (current_hook_.get()) RETURN_NOT_OK(current_hook_->PreCommit());
+    boost::lock_guard<simple_spinlock> lock(lock_);
+    pre_commit_calls_++;
+    return Status::OK();
+  }
+
+  virtual Status PostCommit() {
+    if (current_hook_.get()) RETURN_NOT_OK(current_hook_->PostCommit());
+    boost::lock_guard<simple_spinlock> lock(lock_);
+    post_commit_calls_++;
+    return Status::OK();
+  }
+
+  virtual Status PreUpdate() {
+    if (current_hook_.get()) RETURN_NOT_OK(current_hook_->PreUpdate());
+    boost::lock_guard<simple_spinlock> lock(lock_);
+    pre_update_calls_++;
+    return Status::OK();
+  }
+
+  virtual Status PostUpdate() {
+    if (current_hook_.get()) RETURN_NOT_OK(current_hook_->PostUpdate());
+    boost::lock_guard<simple_spinlock> lock(lock_);
+    post_update_calls_++;
+    return Status::OK();
+  }
+
+  virtual Status PreShutdown() {
+    if (current_hook_.get()) RETURN_NOT_OK(current_hook_->PreShutdown());
+    boost::lock_guard<simple_spinlock> lock(lock_);
+    pre_shutdown_calls_++;
+    return Status::OK();
+  }
+
+  virtual Status PostShutdown() {
+    if (current_hook_.get()) RETURN_NOT_OK(current_hook_->PostShutdown());
+    boost::lock_guard<simple_spinlock> lock(lock_);
+    post_shutdown_calls_++;
+    return Status::OK();
+  }
+
+  int num_pre_start_calls() {
+    boost::lock_guard<simple_spinlock> lock(lock_);
+    return pre_start_calls_;
+  }
+
+  int num_post_start_calls() {
+    boost::lock_guard<simple_spinlock> lock(lock_);
+    return post_start_calls_;
+  }
+
+  int num_pre_config_change_calls() {
+    boost::lock_guard<simple_spinlock> lock(lock_);
+    return pre_config_change_calls_;
+  }
+
+  int num_post_config_change_calls() {
+    boost::lock_guard<simple_spinlock> lock(lock_);
+    return post_config_change_calls_;
+  }
+
+  int num_pre_replicate_calls() {
+    boost::lock_guard<simple_spinlock> lock(lock_);
+    return pre_replicate_calls_;
+  }
+
+  int num_post_replicate_calls() {
+    boost::lock_guard<simple_spinlock> lock(lock_);
+    return post_replicate_calls_;
+  }
+
+  int num_pre_commit_calls() {
+    boost::lock_guard<simple_spinlock> lock(lock_);
+    return pre_commit_calls_;
+  }
+
+  int num_post_commit_calls() {
+    boost::lock_guard<simple_spinlock> lock(lock_);
+    return post_commit_calls_;
+  }
+
+  int num_pre_update_calls() {
+    boost::lock_guard<simple_spinlock> lock(lock_);
+    return pre_update_calls_;
+  }
+
+  int num_post_update_calls() {
+    boost::lock_guard<simple_spinlock> lock(lock_);
+    return post_update_calls_;
+  }
+
+  int num_pre_shutdown_calls() {
+    boost::lock_guard<simple_spinlock> lock(lock_);
+    return pre_shutdown_calls_;
+  }
+
+  int num_post_shutdown_calls() {
+    boost::lock_guard<simple_spinlock> lock(lock_);
+    return post_shutdown_calls_;
+  }
+
+ private:
+  std::tr1::shared_ptr<Consensus::ConsensusFaultHooks> current_hook_;
+  int pre_start_calls_;
+  int post_start_calls_;
+  int pre_config_change_calls_;
+  int post_config_change_calls_;
+  int pre_replicate_calls_;
+  int post_replicate_calls_;
+  int pre_commit_calls_;
+  int post_commit_calls_;
+  int pre_update_calls_;
+  int post_update_calls_;
+  int pre_shutdown_calls_;
+  int post_shutdown_calls_;
+
+  // Lock that protects updates to the counters.
+  mutable simple_spinlock lock_;
 };
 
 }  // namespace consensus
