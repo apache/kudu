@@ -29,6 +29,7 @@ add_library(kudu_util
   path_util.cc
   pb_util.cc
   random_util.cc
+  resettable_heartbeater.cc
   rwc_lock.cc
   semaphore.cc
   slice.cc
@@ -93,6 +94,7 @@ ADD_KUDU_TEST(object_pool-test)
 ADD_KUDU_TEST(os-util-test)
 ADD_KUDU_TEST(pb_util-test)
 ADD_KUDU_TEST(random_util-test)
+ADD_KUDU_TEST(resettable_heartbeater-test)
 ADD_KUDU_TEST(rle-test)
 ADD_KUDU_TEST(rw_semaphore-test)
 ADD_KUDU_TEST(rwc_lock-test)
