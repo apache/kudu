@@ -26,7 +26,7 @@ import static org.junit.Assert.assertTrue;
 public class TestHybridTime extends BaseKuduTest {
 
   // Generate a unique table name
-  protected final static String tableName =
+  protected static final String TABLE_NAME =
     TestHybridTime.class.getName() + "-" + System.currentTimeMillis();
 
   protected static Schema schema = getSchema();
@@ -41,9 +41,9 @@ public class TestHybridTime extends BaseKuduTest {
     builder.addSplitKey(keyBuilder.addString("1"));
     builder.addSplitKey(keyBuilder.addString("2"));
     builder.addSplitKey(keyBuilder.addString("3"));
-    createTable(tableName, schema, builder);
+    createTable(TABLE_NAME, schema, builder);
 
-    table = openTable(tableName);
+    table = openTable(TABLE_NAME);
 
     // FIXME Hack: Scan all tablets so that we get them in cache
     // see: https://jira.cloudera.com/browse/KUDU-232

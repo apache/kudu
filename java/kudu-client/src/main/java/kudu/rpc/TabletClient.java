@@ -82,7 +82,7 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
 
   public static final byte RPC_CURRENT_VERSION = 9;
   /** Initial part of the header for 0.95 and up.  */
-  private final static byte[] RPC_HEADER = new byte[] { 'h', 'r', 'p', 'c',
+  private static final byte[] RPC_HEADER = new byte[] { 'h', 'r', 'p', 'c',
       RPC_CURRENT_VERSION,     // RPC version.
       0,
       0

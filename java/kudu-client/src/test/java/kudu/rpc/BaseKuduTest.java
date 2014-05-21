@@ -39,7 +39,7 @@ public class BaseKuduTest {
   private static String masterAddressAndPort;
 
   protected static final int DEFAULT_SLEEP = 10000;
-  static final List<Thread> processInputPrinters = new ArrayList<Thread>();
+  static final List<Thread> PROCESS_INPUT_PRINTERS = new ArrayList<Thread>();
   static Process master;
   static Process tabletServer;
   protected static KuduClient client;
@@ -111,7 +111,7 @@ public class BaseKuduTest {
     Thread thread = new Thread(printer);
     thread.setDaemon(true);
     thread.setName(command[0]);
-    processInputPrinters.add(thread);
+    PROCESS_INPUT_PRINTERS.add(thread);
     thread.start();
     return proc;
   }
@@ -146,7 +146,7 @@ public class BaseKuduTest {
         if (tabletServer != null) {
           tabletServer.destroy();
         }
-        for (Thread thread : processInputPrinters) {
+        for (Thread thread : PROCESS_INPUT_PRINTERS) {
           thread.interrupt();
         }
       }

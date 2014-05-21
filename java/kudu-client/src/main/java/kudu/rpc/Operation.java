@@ -47,7 +47,7 @@ public abstract class Operation extends KuduRpc implements KuduRpc.HasKey {
     private byte encodedByte;
   }
 
-  final static String METHOD = "Write";
+  static final String METHOD = "Write";
   final Schema schema;
   final List<Slice> strings;
   final int rowSize;

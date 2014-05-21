@@ -17,7 +17,7 @@ import static org.junit.Assert.*;
 
 public class TestKuduTableOutputFormat extends BaseKuduTest {
 
-  private final static String TABLE_NAME =
+  private static final String TABLE_NAME =
       TestKuduTableOutputFormat.class.getName() + "-" + System.currentTimeMillis();
 
   @BeforeClass
@@ -31,7 +31,7 @@ public class TestKuduTableOutputFormat extends BaseKuduTest {
 
     KuduTableOutputFormat<byte[]> output = new KuduTableOutputFormat<byte[]>();
     Configuration conf = new Configuration();
-    conf.set(KuduTableOutputFormat.MASTER_ADDRESS_KEY, getMasterAddress() + ":" + getMasterPort());
+    conf.set(KuduTableOutputFormat.MASTER_ADDRESS_KEY, getMasterAddressAndPort());
     conf.set(KuduTableOutputFormat.OUTPUT_TABLE_KEY, TABLE_NAME);
     output.setConf(conf);
 

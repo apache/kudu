@@ -33,7 +33,7 @@ import java.io.IOException;
  */
 public class HadoopTestingUtility {
 
-  private final Log LOG = LogFactory.getLog(HadoopTestingUtility.class);
+  private static final Log LOG = LogFactory.getLog(HadoopTestingUtility.class);
 
   private File testDir;
 

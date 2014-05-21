@@ -1,7 +1,6 @@
 // Copyright (c) 2014, Cloudera, inc.
 package kudu.mapreduce;
 
-import com.google.common.net.HostAndPort;
 import com.stumbleupon.async.Deferred;
 import kudu.rpc.KuduClient;
 import kudu.rpc.KuduSession;
@@ -47,7 +46,7 @@ public class KuduTableOutputFormat<KEY> extends OutputFormat<KEY,
    * their KuduTable without having a direct dependency on this class,
    * with the additional complexity that the output format cannot be shared between threads.
    */
-  private static final ConcurrentHashMap<String, KuduTableOutputFormat> multiton = new
+  private static final ConcurrentHashMap<String, KuduTableOutputFormat> MULTITON = new
       ConcurrentHashMap<String, KuduTableOutputFormat>();
 
   private Configuration conf = null;
@@ -77,13 +76,13 @@ public class KuduTableOutputFormat<KEY> extends OutputFormat<KEY,
     this.session = client.newSession();
     this.session.setTimeoutMillis(this.operationTimeoutMs);
     String multitonKey = String.valueOf(Thread.currentThread().getId());
-    assert(multiton.get(multitonKey) == null);
-    multiton.put(multitonKey, this);
+    assert(MULTITON.get(multitonKey) == null);
+    MULTITON.put(multitonKey, this);
     entries.set(MULTITON_KEY, multitonKey);
   }
 
   public static KuduTable getKuduTable(String multitonKey) {
-    return multiton.get(multitonKey).getKuduTable();
+    return MULTITON.get(multitonKey).getKuduTable();
   }
 
   public KuduTable getKuduTable() {

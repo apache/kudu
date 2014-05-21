@@ -27,10 +27,10 @@ import static org.junit.Assert.*;
 
 public class TestOutputFormatJob extends BaseKuduTest {
 
-  private final static String TABLE_NAME =
+  private static final String TABLE_NAME =
       TestOutputFormatJob.class.getName() + "-" + System.currentTimeMillis();
 
-  private static final HadoopTestingUtility hadoopUtil = new HadoopTestingUtility();
+  private static final HadoopTestingUtility HADOOP_UTIL = new HadoopTestingUtility();
 
   @BeforeClass
   public static void setUpBeforeClass() throws Exception {
@@ -43,7 +43,7 @@ public class TestOutputFormatJob extends BaseKuduTest {
     try {
       BaseKuduTest.tearDownAfterClass();
     } finally {
-      hadoopUtil.cleanup();
+      HADOOP_UTIL.cleanup();
     }
   }
 
@@ -51,13 +51,13 @@ public class TestOutputFormatJob extends BaseKuduTest {
   public void test() throws Exception {
     Configuration conf = new Configuration();
     String testHome =
-        hadoopUtil.setupAndGetTestDir(TestOutputFormatJob.class.getName(), conf).getAbsolutePath();
+        HADOOP_UTIL.setupAndGetTestDir(TestOutputFormatJob.class.getName(), conf).getAbsolutePath();
     String jobName = TestOutputFormatJob.class.getName();
     Job job = new Job(conf, jobName);
 
 
     // Create a 2 lines input file
-    File data = new File(testHome + "/data.txt");
+    File data = new File(testHome, "data.txt");
     writeDataFile(data);
     FileInputFormat.setInputPaths(job, data.toString());
 
@@ -67,8 +67,7 @@ public class TestOutputFormatJob extends BaseKuduTest {
     job.setMapperClass(mapperClass);
     job.setInputFormatClass(TextInputFormat.class);
     job.setNumReduceTasks(0);
-    KuduTableMapReduceUtil.initTableOutputFormat(job, getMasterAddress() + ":" + getMasterPort(),
-        TABLE_NAME,
+    KuduTableMapReduceUtil.initTableOutputFormat(job, getMasterAddressAndPort(), TABLE_NAME,
         DEFAULT_SLEEP, false);
 
     assertTrue("Test job did not end properly", job.waitForCompletion(true));

@@ -28,7 +28,7 @@ import static org.junit.Assert.*;
  */
 public class TestKuduSession extends BaseKuduTest {
   // Generate a unique table name
-  private final static String tableName =
+  private static final String TABLE_NAME =
       TestKuduSession.class.getName()+"-"+System.currentTimeMillis();
 
   private static Schema schema = getBasicSchema();
@@ -37,9 +37,9 @@ public class TestKuduSession extends BaseKuduTest {
   @BeforeClass
   public static void setUpBeforeClass() throws Exception {
     BaseKuduTest.setUpBeforeClass();
-    createTable(tableName, schema, new CreateTableBuilder());
+    createTable(TABLE_NAME, schema, new CreateTableBuilder());
 
-    table = openTable(tableName);
+    table = openTable(TABLE_NAME);
   }
 
 
@@ -185,17 +185,17 @@ public class TestKuduSession extends BaseKuduTest {
     atb.dropColumn("newtestaddint");
     submitAlterAndCheck(atb);
 
-    String newTableName = tableName+"new";
+    String newTableName = TABLE_NAME +"new";
 
     // rename our table
     atb = new AlterTableBuilder();
     atb.renameTable(newTableName);
-    submitAlterAndCheck(atb, tableName, newTableName);
+    submitAlterAndCheck(atb, TABLE_NAME, newTableName);
 
     // rename it back
     atb = new AlterTableBuilder();
-    atb.renameTable(tableName);
-    submitAlterAndCheck(atb, newTableName, tableName);
+    atb.renameTable(TABLE_NAME);
+    submitAlterAndCheck(atb, newTableName, TABLE_NAME);
 
     // try adding two columns, where one is nullable
     atb = new AlterTableBuilder();
@@ -208,7 +208,7 @@ public class TestKuduSession extends BaseKuduTest {
    * Helper method to submit an Alter and wait for it to happen, using the default table name
    */
   public static void submitAlterAndCheck(AlterTableBuilder atb) throws Exception {
-    submitAlterAndCheck(atb, tableName, tableName);
+    submitAlterAndCheck(atb, TABLE_NAME, TABLE_NAME);
   }
 
   public static void submitAlterAndCheck(AlterTableBuilder atb,

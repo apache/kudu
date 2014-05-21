@@ -20,7 +20,7 @@ import java.util.concurrent.atomic.AtomicLong;
  */
 public class RpcBenchmark {
 
-  private final static long DEFAULT_SLEEP = 5000;
+  private static final long DEFAULT_SLEEP = 5000;
 
   private static void test(String address, int port) throws Exception {
     KuduClient client = null;

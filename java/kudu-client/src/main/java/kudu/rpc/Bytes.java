@@ -764,7 +764,7 @@ public final class Bytes {
   public static final MemCmp MEMCMP = new MemCmp();
 
   /** {@link Comparator} for non-{@code null} byte arrays.  */
-  private final static class MemCmp implements Comparator<byte[]> {
+  private static final class MemCmp implements Comparator<byte[]> {
 
     private MemCmp() {  // Can't instantiate outside of this class.
     }

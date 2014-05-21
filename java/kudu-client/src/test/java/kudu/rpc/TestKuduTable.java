@@ -18,7 +18,7 @@ import java.util.NavigableMap;
 
 public class TestKuduTable extends BaseKuduTest {
 
-  private final static String baseTableName = TestKuduTable.class.getName();
+  private static final String BASE_TABLE_NAME = TestKuduTable.class.getName();
 
   private static Schema schema = getBasicSchema();
 
@@ -35,7 +35,7 @@ public class TestKuduTable extends BaseKuduTest {
    */
   @Test
   public void testGetLocations() throws Exception {
-    String table1 = baseTableName + System.currentTimeMillis();
+    String table1 = BASE_TABLE_NAME + System.currentTimeMillis();
 
     // Test a non-existing table
     try {
@@ -49,7 +49,7 @@ public class TestKuduTable extends BaseKuduTest {
     assertEquals(0, tablets.size());
 
     // Test with defaults
-    String tableWithDefault = baseTableName + "WithDefault" + System.currentTimeMillis();
+    String tableWithDefault = BASE_TABLE_NAME + "WithDefault" + System.currentTimeMillis();
     CreateTableBuilder builder = new CreateTableBuilder();
     List<ColumnSchema> columns = new ArrayList<ColumnSchema>(schema.getColumnCount());
     int defaultInt = 30;
@@ -110,7 +110,7 @@ public class TestKuduTable extends BaseKuduTest {
   }
 
   public KuduTable createTableWithSplitsAndTest(int splitsCount) throws Exception {
-    String tableName = baseTableName + System.currentTimeMillis();
+    String tableName = BASE_TABLE_NAME + System.currentTimeMillis();
     CreateTableBuilder builder = new CreateTableBuilder();
 
     if (splitsCount != 0) {

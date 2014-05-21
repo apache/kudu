@@ -664,7 +664,7 @@ public final class KuduScanner {
   /**
    *  Helper object that contains all the info sent by a TS afer a Scan request
    */
-  final static class Response {
+  static final class Response {
     /** The ID associated with the scanner that issued the request.  */
     private final byte[] scanner_id;
     /** The actual payload of the response.  */

@@ -14,7 +14,7 @@ import static org.junit.Assert.assertEquals;
 
 public class TestScannerMultiTablet extends BaseKuduTest {
   // Generate a unique table name
-  private final static String tableName =
+  private static final String TABLE_NAME =
       TestScannerMultiTablet.class.getName()+"-"+System.currentTimeMillis();
 
   private static Schema schema = getSchema();
@@ -29,9 +29,9 @@ public class TestScannerMultiTablet extends BaseKuduTest {
     builder.addSplitKey(keyBuilder.addString("1"));
     builder.addSplitKey(keyBuilder.addString("2"));
     builder.addSplitKey(keyBuilder.addString("3"));
-    createTable(tableName, schema, builder);
+    createTable(TABLE_NAME, schema, builder);
 
-    table = openTable(tableName);
+    table = openTable(TABLE_NAME);
   }
 
   @Test(timeout = 100000)

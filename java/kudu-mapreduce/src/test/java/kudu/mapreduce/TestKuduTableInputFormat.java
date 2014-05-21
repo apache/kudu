@@ -31,7 +31,7 @@ public class TestKuduTableInputFormat extends BaseKuduTest {
 
     KuduTableInputFormat input = new KuduTableInputFormat();
     Configuration conf = new Configuration();
-    conf.set(KuduTableInputFormat.MASTER_ADDRESS_KEY, getMasterAddress() + ":" + getMasterPort());
+    conf.set(KuduTableInputFormat.MASTER_ADDRESS_KEY, getMasterAddressAndPort());
     conf.set(KuduTableInputFormat.INPUT_TABLE_KEY, TABLE_NAME);
     input.setConf(conf);
 
