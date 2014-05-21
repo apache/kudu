@@ -11,6 +11,9 @@
 #include "gutil/stl_util.h"
 #include "server/metadata.h"
 
+DEFINE_int32(leader_heartbeat_interval_ms, 500,
+             "The LEADER's heartbeat interval to the replicas.");
+
 namespace kudu {
 namespace consensus {
 
@@ -175,11 +178,8 @@ Status RaftConsensus::PushConfigurationToPeersUnlocked() {
                         "Could not append change config commit req. to the queue");
 
   SignalRequestToPeers();
-  // FIXME Do this through heartbeats?
-  while (!commit_status->IsDone()) {
-    SignalRequestToPeers(true);
-    usleep(5000);
-  }
+  // Wait for the commit to complete
+  commit_status->Wait();
 
   LOG(INFO) << "A majority of peers have accepted the new configuration. Proceeding.";
   return Status::OK();

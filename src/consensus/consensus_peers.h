@@ -11,6 +11,7 @@
 #include "util/locks.h"
 #include "util/status.h"
 #include "util/countdown_latch.h"
+#include "util/resettable_heartbeater.h"
 
 namespace kudu {
 class HostPort;
@@ -38,6 +39,8 @@ class PeerImpl;
 class PeerMessageQueue;
 
 // A peer in consensus (local or remote).
+//
+// Leaders use peers to update the local Log and remote replicas.
 //
 // Peers are owned by the consensus implementation and do not keep
 // state aside from whether there are requests pending or if requests
@@ -132,6 +135,7 @@ class Peer {
                               gscoped_ptr<Peer>* peer);
 
  protected:
+  // ctor for the local peer
   Peer(const metadata::QuorumPeerPB& peer,
        const std::string& tablet_id,
        const std::string& leader_uuid,
@@ -139,6 +143,7 @@ class Peer {
        log::Log* log,
        const OpId& initial_op);
 
+  // ctor for a remote peer
   Peer(const metadata::QuorumPeerPB& peer,
        const std::string& tablet_id,
        const std::string& leader_uuid,
@@ -154,6 +159,12 @@ class Peer {
 
   // lock that protects Peer state changes
   mutable simple_spinlock peer_lock_;
+
+  // Heartbeater for remote peer implementations.
+  // This will send status only requests to the remote peers
+  // whenever we go more than 'FLAGS_leader_heartbeat_interval_ms'
+  // without sending actual data.
+  gscoped_ptr<ResettableHeartbeater> heartbeater_;
 
   enum State {
     kPeerCreated,

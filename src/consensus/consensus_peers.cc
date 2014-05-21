@@ -19,6 +19,8 @@
 DEFINE_int32(consensus_rpc_timeout_ms, 1000,
              "Timeout used for all consensus internal RPC comms.");
 
+DECLARE_int32(leader_heartbeat_interval_ms);
+
 namespace kudu {
 namespace consensus {
 
@@ -288,6 +290,7 @@ Peer::Peer(const metadata::QuorumPeerPB& peer_pb,
       queue_(queue),
       processing_(false),
       outstanding_req_latch_(0),
+      heartbeater_(NULL),
       state_(kPeerCreated) {
 }
 
@@ -301,6 +304,11 @@ Peer::Peer(const metadata::QuorumPeerPB& peer_pb,
       queue_(queue),
       processing_(false),
       outstanding_req_latch_(0),
+      heartbeater_(
+          new ResettableHeartbeater(peer_pb.permanent_uuid(),
+                                    MonoDelta::FromMilliseconds(
+                                        FLAGS_leader_heartbeat_interval_ms),
+                                    boost::bind(&Peer::SignalRequest, this, true))),
       state_(kPeerCreated) {
 }
 
@@ -309,6 +317,9 @@ Status Peer::Init() {
   OpId initial_id;
   RETURN_NOT_OK(peer_impl_->Init(&initial_id));
   RETURN_NOT_OK(queue_->TrackPeer(peer_pb_.permanent_uuid(), initial_id));
+  if (heartbeater_) {
+    RETURN_NOT_OK(heartbeater_->Start());
+  }
   state_ = kPeerIntitialized;
   return Status::OK();
 }
@@ -330,6 +341,12 @@ Status Peer::SignalRequest(bool send_status_only_if_queue_empty) {
   // message, if not just return.
   if (PREDICT_FALSE(peer_impl_->request()->ops_size() == 0 && !send_status_only_if_queue_empty)) {
     return Status::OK();
+  }
+
+  // If we're actually sending ops there's no need to heartbeat for a while,
+  // reset the heartbeater
+  if (PREDICT_FALSE(peer_impl_->request()->ops_size() == 0)) {
+    heartbeater_->Reset();
   }
 
   processing_ = peer_impl_->ProcessNextRequest();
@@ -377,6 +394,9 @@ void Peer::ProcessResponseError(const Status& status) {
 }
 
 void Peer::Close() {
+  if (heartbeater_) {
+    WARN_NOT_OK(heartbeater_->Stop(), "Could not stop heartbeater");
+  }
   {
     boost::lock_guard<simple_spinlock> lock(peer_lock_);
     // If the peer is already closed return.

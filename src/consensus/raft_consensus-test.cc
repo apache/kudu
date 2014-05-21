@@ -18,6 +18,8 @@
 #include "util/test_macros.h"
 #include "util/test_util.h"
 
+DECLARE_int32(leader_heartbeat_interval_ms);
+
 namespace kudu {
 
 namespace rpc {
@@ -128,6 +130,11 @@ class RaftConsensusTest : public KuduTest {
     RETURN_NOT_OK(BuildFsManagersAndLogs());
     BuildPeers();
     RETURN_NOT_OK(InitPeers());
+    return Status::OK();
+  }
+
+  Status BuildAndStartQuorum(int num) {
+    RETURN_NOT_OK(BuildQuorum(num));
     RETURN_NOT_OK(StartPeers());
     return Status::OK();
   }
@@ -347,7 +354,7 @@ class RaftConsensusTest : public KuduTest {
 
 // Tests Replicate/Commit a single message through the leader.
 TEST_F(RaftConsensusTest, TestFollowersReplicateAndCommitMessage) {
-  ASSERT_STATUS_OK(BuildQuorum(3));
+  ASSERT_STATUS_OK(BuildAndStartQuorum(3));
 
   OpId last_op_id;
   gscoped_ptr<ConsensusRound> round;
@@ -373,7 +380,7 @@ TEST_F(RaftConsensusTest, TestFollowersReplicateAndCommitSequence) {
 
   int seq_size = AllowSlowTests() ? 1000 : 100;
 
-  ASSERT_STATUS_OK(BuildQuorum(3));
+  ASSERT_STATUS_OK(BuildAndStartQuorum(3));
 
   // We'll append seq_size messages so we register the callback for op seq_size + 1
   // (to account for the initial configuration op).
@@ -405,7 +412,7 @@ TEST_F(RaftConsensusTest, TestFollowersReplicateAndCommitSequence) {
 }
 
 TEST_F(RaftConsensusTest, TestConsensusContinuesIfAMinorityFallsBehind) {
-  ASSERT_STATUS_OK(BuildQuorum(3));
+  ASSERT_STATUS_OK(BuildAndStartQuorum(3));
 
   OpId last_replicate;
   vector<ConsensusRound*> contexts;
@@ -441,7 +448,7 @@ TEST_F(RaftConsensusTest, TestConsensusContinuesIfAMinorityFallsBehind) {
 }
 
 TEST_F(RaftConsensusTest, TestConsensusStopsIfAMajorityFallsBehind) {
-  ASSERT_STATUS_OK(BuildQuorum(3));
+  ASSERT_STATUS_OK(BuildAndStartQuorum(3));
 
   OpId last_op_id;
 
@@ -478,7 +485,7 @@ TEST_F(RaftConsensusTest, TestConsensusStopsIfAMajorityFallsBehind) {
 // If some communication error happens the leader will resend the request to the
 // peers. This tests that the peers handle repeated requests.
 TEST_F(RaftConsensusTest, TestReplicasHandleCommunicationErrors) {
-  ASSERT_STATUS_OK(BuildQuorum(3));
+  ASSERT_STATUS_OK(BuildAndStartQuorum(3));
 
   OpId last_op_id;
 
@@ -523,6 +530,50 @@ TEST_F(RaftConsensusTest, TestReplicasHandleCommunicationErrors) {
   WaitForCommitIfNotAlreadyPresent(last_op_id, GetFollower(0), 0);
   WaitForCommitIfNotAlreadyPresent(last_op_id, GetFollower(1), 1);
   VerifyLogs();
+}
+
+// In this test we test the ability of the leader to send heartbeats
+// to replicas by simply pushing nothing after the configuration round
+// and still expecting for the replicas Update() hooks to be called.
+TEST_F(RaftConsensusTest, TestLeaderHeartbeats) {
+  ASSERT_STATUS_OK(BuildQuorum(3));
+  RaftConsensus* replica0 = GetFollower(0);
+  RaftConsensus* replica1 = GetFollower(1);
+
+  shared_ptr<CounterHooks> counter_hook_rpl0(
+      new CounterHooks(replica0->GetFaultHooks()));
+  shared_ptr<CounterHooks> counter_hook_rpl1(
+      new CounterHooks(replica1->GetFaultHooks()));
+
+  // Replace the default fault hooks on the replicas with counter hooks
+  // before we start the quorum.
+  replica0->SetFaultHooks(counter_hook_rpl0);
+  replica1->SetFaultHooks(counter_hook_rpl1);
+
+  ASSERT_STATUS_OK(StartPeers());
+
+  // Wait for the config round to get committed and count the number
+  // of update calls, calls after that will be heartbeats.
+  OpId config_round;
+  config_round.set_term(0);
+  config_round.set_index(1);
+  WaitForCommitIfNotAlreadyPresent(config_round, GetFollower(0), 0);
+  WaitForCommitIfNotAlreadyPresent(config_round, GetFollower(1), 1);
+
+  int repl0_init_count = counter_hook_rpl0->num_pre_update_calls();
+  int repl1_init_count = counter_hook_rpl1->num_pre_update_calls();
+
+  // Now wait for about 4 times the hearbeat period the counters
+  // should have increased 3/4 times.
+  usleep(FLAGS_leader_heartbeat_interval_ms * 4 * 1000);
+
+  int repl0_final_count = counter_hook_rpl0->num_pre_update_calls();
+  int repl1_final_count = counter_hook_rpl1->num_pre_update_calls();
+
+  ASSERT_GE(repl0_final_count - repl0_init_count, 3);
+  ASSERT_LE(repl0_final_count - repl0_init_count, 4);
+  ASSERT_GE(repl1_final_count - repl1_init_count, 3);
+  ASSERT_LE(repl1_final_count - repl1_init_count, 4);
 }
 
 }  // namespace consensus
