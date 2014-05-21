@@ -155,6 +155,8 @@ class Consensus {
 
   void SetFaultHooks(const std::tr1::shared_ptr<ConsensusFaultHooks>& hooks);
 
+  const std::tr1::shared_ptr<ConsensusFaultHooks>& GetFaultHooks() const;
+
   // Stops running the consensus algorithm.
   virtual void Shutdown() = 0;
  protected:

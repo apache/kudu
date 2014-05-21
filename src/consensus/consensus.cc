@@ -49,6 +49,10 @@ void Consensus::SetFaultHooks(const std::tr1::shared_ptr<ConsensusFaultHooks>& h
   fault_hooks_ = hooks;
 }
 
+const std::tr1::shared_ptr<Consensus::ConsensusFaultHooks>& Consensus::GetFaultHooks() const {
+  return fault_hooks_;
+}
+
 Status Consensus::ExecuteHook(HookPoint point) {
   if (PREDICT_FALSE(fault_hooks_.get() != NULL)) {
     switch (point) {
