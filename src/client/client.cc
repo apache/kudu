@@ -808,7 +808,7 @@ string KuduScanner::ToString() const {
   Slice start_key = start_key_ ? start_key_->encoded_key() : Slice("INF");
   Slice end_key = end_key_ ? end_key_->encoded_key() : Slice("INF");
   return strings::Substitute("$0: [$1,$2)", table_->name(),
-                             start_key.ToString(), end_key.ToString());
+                             start_key.ToDebugString(), end_key.ToDebugString());
 }
 
 Status KuduScanner::Open() {
