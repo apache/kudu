@@ -47,7 +47,7 @@ class EncodedKeyTest : public ::testing::Test {
   void ExpectRowKeyEq(const Schema& schema,
                       const string& exp_str,
                       const EncodedKey& key) {
-    EXPECT_EQ(exp_str, schema.DebugEncodedRowKey(key.encoded_key().ToString()));
+    EXPECT_EQ(exp_str, schema.DebugEncodedRowKey(key.encoded_key()));
   }
 
   template<DataType Type>

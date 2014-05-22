@@ -230,24 +230,23 @@ string Schema::ToString() const {
                 "]");
 }
 
-void Schema::DecodeRowKey(const string& encoded_key,
+void Schema::DecodeRowKey(Slice encoded_key,
                           uint8_t* buffer,
-                          Arena* arena,
-                          gscoped_ptr<ContiguousRow>* row) const {
-  row->reset(new ContiguousRow(*this, buffer));
+                          Arena* arena) const {
+  ContiguousRow row(*this, buffer);
 
   size_t offset = 0;
-  size_t remaining = encoded_key.length();
+  size_t remaining = encoded_key.size();
   for (size_t col_idx = 0; col_idx < num_key_columns(); ++col_idx) {
     const ColumnSchema& col = column(col_idx);
     const KeyEncoder& key_encoder = GetKeyEncoder(col.type_info()->type());
     if (num_key_columns() == 1) {
       key_encoder.Decode(encoded_key,
                          arena,
-                         (*row)->mutable_cell_ptr(col_idx));
+                         row.mutable_cell_ptr(col_idx));
       break;
     }
-    const char* str_data = encoded_key.c_str() + offset;
+    const uint8_t* str_data = encoded_key.data() + offset;
     size_t key_slice_size;
     if (col.type_info()->type() == STRING) {
       bool is_last = col_idx == (num_key_columns() - 1);
@@ -255,14 +254,14 @@ void Schema::DecodeRowKey(const string& encoded_key,
       key_encoder.Decode(key_slice,
                          is_last,
                          arena,
-                         (*row)->mutable_cell_ptr(col_idx),
+                         row.mutable_cell_ptr(col_idx),
                          &key_slice_size);
     } else {
       key_slice_size = col.type_info()->size();
       Slice key_slice(str_data, key_slice_size);
       key_encoder.Decode(key_slice,
                          arena,
-                         (*row)->mutable_cell_ptr(col_idx));
+                         row.mutable_cell_ptr(col_idx));
     }
     remaining -= key_slice_size;
     offset += key_slice_size;
@@ -270,12 +269,12 @@ void Schema::DecodeRowKey(const string& encoded_key,
 
 }
 
-string Schema::DebugEncodedRowKey(const string& encoded_key) const {
-  gscoped_ptr<uint8_t[]> data(new uint8_t[key_byte_size()]);
+string Schema::DebugEncodedRowKey(Slice encoded_key) const {
   Arena arena(1024, 128 * 1024);
-  gscoped_ptr<ContiguousRow> row;
-  DecodeRowKey(encoded_key, data.get(), &arena, &row);
-  return DebugRowKey(*row);
+  uint8_t* buf = reinterpret_cast<uint8_t*>(arena.AllocateBytes(key_byte_size()));
+  DecodeRowKey(encoded_key, buf, &arena);
+  ConstContiguousRow row(*this, buf);
+  return DebugRowKey(row);
 }
 
 // ============================================================================
