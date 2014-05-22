@@ -266,13 +266,15 @@ class TransactionCompletionCallback {
 // Helper to make async transactions, sync.
 // This is templated to accept any response PB that has a TabletServerError
 // 'error' field and to set the error before performing the latch countdown.
+// The callback does *not* take ownership of either latch or response.
 template<class ResponsePB>
 class LatchTransactionCompletionCallback : public TransactionCompletionCallback {
  public:
   explicit LatchTransactionCompletionCallback(CountDownLatch* latch,
                                               ResponsePB* response)
-  : latch_(latch),
-    response_(response) {}
+    : latch_(DCHECK_NOTNULL(latch)),
+      response_(DCHECK_NOTNULL(response)) {
+  }
 
   virtual void TransactionCompleted() {
     tserver::TabletServerErrorPB* error = response_->mutable_error();
