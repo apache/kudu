@@ -56,6 +56,7 @@ public class TestImportCsv extends BaseKuduTest {
       sb.append(col.getName());
       sb.append(",");
     }
+    sb.deleteCharAt(sb.length() - 1);
     String[] args = new String[] {sb.toString(), TABLE_NAME, data.toString(),
         getMasterAddressAndPort()};
 

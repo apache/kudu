@@ -76,6 +76,11 @@ public class CsvParser {
     if (tabOffsets.size() > maxColumnCount) {
       throw new BadCsvLineException("Excessive columns");
     }
+
+    if (tabOffsets.size() < maxColumnCount) {
+      throw new BadCsvLineException("Not enough columns");
+    }
+
     return new ParsedLine(tabOffsets, lineBytes);
   }
 
