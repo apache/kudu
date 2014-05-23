@@ -34,6 +34,18 @@
 //
 // TODO: Implement Meter, Timer.
 //
+// =================
+// Gauge vs. Counter
+// =================
+//
+// A Counter is a metric we expect to only monotonically increase. A
+// Gauge is a metric that can decrease and increase. Use a Gauge to
+// reflect a sample, e.g., the number of transaction in-flight at a
+// given time; use a Counter when considering a metric over time,
+// e.g., exposing the number of transactions processed since start to
+// produce a metric for the number of transactions processed over some
+// time period.
+//
 // =============
 // Example usage
 // =============
@@ -165,6 +177,7 @@ struct MetricUnit {
     kMilliseconds,
     kSeconds,
     kThreads,
+    kTransactions,
   };
   static const char* Name(Type unit);
 };

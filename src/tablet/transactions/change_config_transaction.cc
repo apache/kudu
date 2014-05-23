@@ -28,7 +28,7 @@ using tserver::TabletServerErrorPB;
 ChangeConfigTransaction::ChangeConfigTransaction(ChangeConfigTransactionState* tx_state,
                                                  DriverType type,
                                                  Semaphore* config_sem)
-    : Transaction(tx_state, type),
+    : Transaction(tx_state, type, Transaction::CHANGE_CONFIG_TXN),
       tx_state_(tx_state),
       config_sem_(config_sem) {
 }

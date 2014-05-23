@@ -68,7 +68,7 @@ TEST_F(TabletServerTest, TestInsert) {
   shared_ptr<TabletPeer> tablet;
   ASSERT_TRUE(mini_server_->server()->tablet_manager()->LookupTablet(kTabletId, &tablet));
   Counter* rows_inserted =
-      METRIC_rows_inserted.Instantiate(*tablet->tablet()->GetMetricContextForTests());
+      METRIC_rows_inserted.Instantiate(*tablet->tablet()->GetMetricContext());
   ASSERT_EQ(0, rows_inserted->value());
   tablet.reset();
 
@@ -167,7 +167,7 @@ TEST_F(TabletServerTest, TestExternalConsistencyModes_ClientPropagated) {
                                                              &tablet));
   Counter* rows_inserted =
       METRIC_rows_inserted.Instantiate(
-          *tablet->tablet()->GetMetricContextForTests());
+          *tablet->tablet()->GetMetricContext());
   ASSERT_EQ(0, rows_inserted->value());
 
   // get the current time
@@ -219,7 +219,7 @@ TEST_F(TabletServerTest, TestExternalConsistencyModes_CommitWait) {
                                                              &tablet));
   Counter* rows_inserted =
       METRIC_rows_inserted.Instantiate(
-          *tablet->tablet()->GetMetricContextForTests());
+          *tablet->tablet()->GetMetricContext());
   ASSERT_EQ(0, rows_inserted->value());
 
   // get current time, with and without error
@@ -280,9 +280,9 @@ TEST_F(TabletServerTest, TestInsertAndMutate) {
   shared_ptr<TabletPeer> tablet;
   ASSERT_TRUE(mini_server_->server()->tablet_manager()->LookupTablet(kTabletId, &tablet));
   Counter* rows_inserted =
-      METRIC_rows_inserted.Instantiate(*tablet->tablet()->GetMetricContextForTests());
+      METRIC_rows_inserted.Instantiate(*tablet->tablet()->GetMetricContext());
   Counter* rows_updated =
-      METRIC_rows_updated.Instantiate(*tablet->tablet()->GetMetricContextForTests());
+      METRIC_rows_updated.Instantiate(*tablet->tablet()->GetMetricContext());
   ASSERT_EQ(0, rows_inserted->value());
   ASSERT_EQ(0, rows_updated->value());
   tablet.reset();

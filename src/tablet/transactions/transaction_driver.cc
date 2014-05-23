@@ -34,6 +34,9 @@ TransactionDriver::TransactionDriver(TransactionTracker *txn_tracker,
       prepare_executor_(prepare_executor),
       apply_executor_(apply_executor),
       prepare_finished_calls_(0) {
+  // TODO ideally we should have the Transaction available *here*, as to avoid
+  // a call to IncrementCounters() in Execute (the respective DecrementCounters()
+  // call happens in TransactionTracker::Release()).
   txn_tracker_->Add(this);
 }
 
@@ -42,8 +45,16 @@ consensus::OpId TransactionDriver::GetOpId() {
   return op_id_copy_;
 }
 
-TransactionState* TransactionDriver::state() {
+const TransactionState* TransactionDriver::state() const {
   return transaction_ != NULL ? transaction_->state() : NULL;
+}
+
+TransactionState* TransactionDriver::mutable_state() {
+  return transaction_ != NULL ? transaction_->state() : NULL;
+}
+
+Transaction::TransactionType TransactionDriver::tx_type() const {
+  return transaction_->tx_type();
 }
 
 const std::tr1::shared_ptr<FutureCallback>& TransactionDriver::commit_finished_callback() {
@@ -64,6 +75,7 @@ LeaderTransactionDriver::LeaderTransactionDriver(TransactionTracker* txn_tracker
 }
 
 Status LeaderTransactionDriver::Execute(Transaction* transaction) {
+  txn_tracker_->IncrementCounters(transaction->tx_type());
 
   Status s;
   shared_ptr<Future> prepare_task_future;
@@ -80,7 +92,6 @@ Status LeaderTransactionDriver::Execute(Transaction* transaction) {
     // not get reordered internally in the consensus implementation.
     {
       boost::lock_guard<simple_spinlock> l(*prepare_replicate_lock_);
-
       gscoped_ptr<ReplicateMsg> replicate_msg;
       transaction_->NewReplicateMsg(&replicate_msg);
       gscoped_ptr<ConsensusRound> round(consensus_->NewRound(replicate_msg.Pass(),
@@ -96,7 +107,7 @@ Status LeaderTransactionDriver::Execute(Transaction* transaction) {
           op_id_copy_ = round->id();
         }
 
-        state()->set_consensus_round(round.Pass());
+        mutable_state()->set_consensus_round(round.Pass());
         s = prepare_executor_->Submit(boost::bind(&Transaction::Prepare, transaction_.get()),
                                       boost::bind(&Transaction::AbortPrepare, transaction_.get()),
                                       &prepare_task_future);
@@ -161,12 +172,12 @@ void LeaderTransactionDriver::HandlePrepareOrReplicateFailure() {
   prepare_finished_calls_ = 2;
 
   // set the error on the completion callback
-  DCHECK_NOTNULL(state())->completion_callback()->set_error(transaction_status_);
+  DCHECK_NOTNULL(mutable_state())->completion_callback()->set_error(transaction_status_);
 
   // If there is no consensus round nothing got done so just reply to the client.
-  if (state()->consensus_round() == NULL) {
+  if (mutable_state()->consensus_round() == NULL) {
     transaction_->Finish();
-    state()->completion_callback()->TransactionCompleted();
+    mutable_state()->completion_callback()->TransactionCompleted();
     txn_tracker_->Release(this);
     return;
   }
@@ -176,13 +187,13 @@ void LeaderTransactionDriver::HandlePrepareOrReplicateFailure() {
 
   // ConsensusRound will own this pointer and dispose of it when it is no longer
   // required.
-  Status s = state()->consensus_round()->Commit(commit.Pass());
+  Status s = mutable_state()->consensus_round()->Commit(commit.Pass());
   if (!s.ok()) {
     LOG(ERROR) << "Could not commit transaction abort message. Status: " << s.ToString();
     // we couldn't commit the prepare failure either, which means the commit callback
     // will never be called, so we need to notify the caller here.
     transaction_->Finish();
-    state()->completion_callback()->TransactionCompleted();
+    mutable_state()->completion_callback()->TransactionCompleted();
     txn_tracker_->Release(this);
   }
 }
@@ -205,7 +216,7 @@ Status LeaderTransactionDriver::ApplyAndCommit() {
     // calculate the latest that the prepare timestamp could be and wait
     // until now.earliest > prepare_latest. Only after this are the locks
     // released.
-    if (s.ok() && state()->external_consistency_mode() == COMMIT_WAIT) {
+    if (s.ok() && mutable_state()->external_consistency_mode() == COMMIT_WAIT) {
       TRACE("APPLY: Commit Wait.");
       // If we can't commit wait and have already applied we might have consistency
       // issues if we still reply to the client that the operation was a success.
@@ -216,7 +227,7 @@ Status LeaderTransactionDriver::ApplyAndCommit() {
 
     if (PREDICT_TRUE(s.ok())) {
       transaction_->PreCommit();
-      s = state()->consensus_round()->Commit(commit_msg.Pass());
+      s = mutable_state()->consensus_round()->Commit(commit_msg.Pass());
       if (PREDICT_TRUE(s.ok())) {
         transaction_->PostCommit();
       }
@@ -237,7 +248,7 @@ void LeaderTransactionDriver::ApplyAndCommitSucceeded() {
   scoped_refptr<LeaderTransactionDriver> ref(this);
   boost::lock_guard<simple_spinlock> lock(lock_);
   transaction_->Finish();
-  state()->completion_callback()->TransactionCompleted();
+  mutable_state()->completion_callback()->TransactionCompleted();
   txn_tracker_->Release(this);
 }
 
@@ -250,28 +261,29 @@ void LeaderTransactionDriver::ApplyOrCommitFailed(const Status& abort_reason) {
 
   //TODO use an application level error status here with better error details.
   transaction_status_ = abort_reason;
-  if (state() != NULL) {
+  if (mutable_state() != NULL) {
     // Submit the commit abort
     gscoped_ptr<CommitMsg> commit;
     transaction_->NewCommitAbortMessage(&commit);
     // Make sure to remove the commit callback since the transaction will
     // be disappearing when this method ends.
-    state()->consensus_round()->release_commit_callback();
-    WARN_NOT_OK(state()->consensus_round()->Commit(commit.Pass()),
+    mutable_state()->consensus_round()->release_commit_callback();
+    WARN_NOT_OK(mutable_state()->consensus_round()->Commit(commit.Pass()),
                 "Could not submit commit abort message.")
 
     transaction_->Finish();
-    state()->completion_callback()->set_error(abort_reason);
-    state()->completion_callback()->TransactionCompleted();
+    mutable_state()->completion_callback()->set_error(abort_reason);
+    mutable_state()->completion_callback()->TransactionCompleted();
   }
   txn_tracker_->Release(this);
 }
 
 Status LeaderTransactionDriver::CommitWait() {
   MonoTime before = MonoTime::Now(MonoTime::FINE);
-  DCHECK(state()->external_consistency_mode() == COMMIT_WAIT);
-  RETURN_NOT_OK(state()->tablet_peer()->clock()->WaitUntilAfter(state()->timestamp()));
-  state()->mutable_metrics()->commit_wait_duration_usec =
+  DCHECK(mutable_state()->external_consistency_mode() == COMMIT_WAIT);
+  RETURN_NOT_OK(
+      mutable_state()->tablet_peer()->clock()->WaitUntilAfter(mutable_state()->timestamp()));
+  mutable_state()->mutable_metrics()->commit_wait_duration_usec =
       MonoTime::Now(MonoTime::FINE).GetDeltaSince(before).ToMicroseconds();
   return Status::OK();
 }

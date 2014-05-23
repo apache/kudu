@@ -280,8 +280,8 @@ class Tablet {
   // May be NULL in unit tests, etc.
   TabletMetrics* metrics() { return metrics_.get(); }
 
-  // Return handle to the metric context of this tablet. For unit tests.
-  const MetricContext* GetMetricContextForTests() const { return metric_context_.get(); }
+  // Return handle to the metric context of this tablet.
+  const MetricContext* GetMetricContext() const { return metric_context_.get(); }
 
   // Return true if 'fname' is a valid filename for a tablet.
   static bool IsTabletFileName(const std::string& fname);

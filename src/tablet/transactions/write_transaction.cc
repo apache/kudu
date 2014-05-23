@@ -30,7 +30,7 @@ using tserver::WriteResponsePB;
 using boost::bind;
 
 WriteTransaction::WriteTransaction(WriteTransactionState* state, DriverType type)
-: Transaction(state, type),
+  : Transaction(state, type, Transaction::WRITE_TXN),
   state_(state) {
   start_time_ = MonoTime::Now(MonoTime::FINE);
 }

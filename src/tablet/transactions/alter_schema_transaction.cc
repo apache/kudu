@@ -26,7 +26,7 @@ using boost::bind;
 
 AlterSchemaTransaction::AlterSchemaTransaction(AlterSchemaTransactionState* state,
                                                DriverType type)
-    : Transaction(state, type),
+    : Transaction(state, type, Transaction::ALTER_SCHEMA_TXN),
       tx_state_(state) {
 }
 

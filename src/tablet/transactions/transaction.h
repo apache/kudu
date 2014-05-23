@@ -40,7 +40,13 @@ class Transaction {
     REPLICA
   };
 
-  Transaction(TransactionState* state, DriverType type);
+  enum TransactionType {
+    WRITE_TXN,
+    ALTER_SCHEMA_TXN,
+    CHANGE_CONFIG_TXN
+  };
+
+  Transaction(TransactionState* state, DriverType type, TransactionType tx_type);
 
   // Returns the TransactionState for this transaction.
   virtual TransactionState* state() { return state_; }
@@ -49,6 +55,9 @@ class Transaction {
   // Returns whether this transaction is being executed on the leader or on a
   // replica.
   DriverType type() const { return type_; }
+
+  // Returns this transaction's type.
+  TransactionType tx_type() const { return tx_type_; }
 
   // Builds the ReplicateMsg for this transaction.
   virtual void NewReplicateMsg(gscoped_ptr<consensus::ReplicateMsg>* replicate_msg) = 0;
@@ -100,6 +109,7 @@ class Transaction {
   // we can use base TransactionState methods on destructors.
   TransactionState* state_;
   DriverType type_;
+  const TransactionType tx_type_;
 };
 
 class TransactionState {

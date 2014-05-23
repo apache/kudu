@@ -111,6 +111,11 @@ Status TabletPeer::Init(const shared_ptr<Tablet>& tablet,
   // set consensus on the tablet to that it can store local state changes
   // in the log.
   tablet_->SetConsensus(consensus_.get());
+
+  if (tablet_->metrics() != NULL) {
+    txn_tracker_.StartInstrumentation(*tablet_->GetMetricContext());
+  }
+
   return Status::OK();
 }
 

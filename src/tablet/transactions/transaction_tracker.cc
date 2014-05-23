@@ -9,12 +9,30 @@
 
 #include "gutil/strings/substitute.h"
 #include "tablet/transactions/transaction_driver.h"
+#include "util/metrics.h"
 
 namespace kudu {
 namespace tablet {
 
+using boost::bind;
 using std::vector;
 using strings::Substitute;
+
+METRIC_DEFINE_gauge_uint64(all_transactions_inflight, MetricUnit::kTransactions,
+                           "Number of all transactions currently in-flight");
+METRIC_DEFINE_gauge_uint64(write_transactions_inflight, MetricUnit::kTransactions,
+                           "Number of write transactions currently in-flight");
+METRIC_DEFINE_gauge_uint64(alter_schema_transactions_inflight, MetricUnit::kTransactions,
+                           "Number of alter schema transactions currently in-flight");
+METRIC_DEFINE_gauge_uint64(change_config_transactions_inflight, MetricUnit::kTransactions,
+                           "Number of change config transactions currently in-flight");
+
+TransactionsInFlight::TransactionsInFlight()
+    : all_transactions_inflight(0),
+      write_transactions_inflight(0),
+      alter_schema_transactions_inflight(0),
+      change_config_transactions_inflight(0) {
+}
 
 TransactionTracker::TransactionTracker() {
 }
@@ -29,7 +47,43 @@ void TransactionTracker::Add(TransactionDriver *driver) {
   pending_txns_.insert(driver);
 }
 
+void TransactionTracker::IncrementCounters(Transaction::TransactionType tx_type) {
+  boost::lock_guard<simple_spinlock> l(lock_);
+  ++txns_in_flight_.all_transactions_inflight;
+  switch (tx_type) {
+    case Transaction::WRITE_TXN:
+      ++txns_in_flight_.write_transactions_inflight;
+      break;
+    case Transaction::ALTER_SCHEMA_TXN:
+      ++txns_in_flight_.alter_schema_transactions_inflight;
+      break;
+    case Transaction::CHANGE_CONFIG_TXN:
+      ++txns_in_flight_.change_config_transactions_inflight;
+      break;
+  }
+}
+
+void TransactionTracker::DecrementCounters(Transaction::TransactionType tx_type) {
+  boost::lock_guard<simple_spinlock> l(lock_);
+  --txns_in_flight_.all_transactions_inflight;
+  switch (tx_type) {
+    case Transaction::WRITE_TXN:
+      --txns_in_flight_.write_transactions_inflight;
+      break;
+    case Transaction::ALTER_SCHEMA_TXN:
+      --txns_in_flight_.alter_schema_transactions_inflight;
+      break;
+    case Transaction::CHANGE_CONFIG_TXN:
+      --txns_in_flight_.change_config_transactions_inflight;
+      break;
+  }
+}
+
 void TransactionTracker::Release(TransactionDriver *driver) {
+  if (driver->state() != NULL) {
+    DecrementCounters(driver->tx_type());
+  }
+
   boost::lock_guard<simple_spinlock> l(lock_);
   if (PREDICT_FALSE(pending_txns_.erase(driver) != 1)) {
     LOG(FATAL) << "Could not remove pending transaction from map: " << driver->ToString();
@@ -75,6 +129,36 @@ void TransactionTracker::WaitForAllToFinish() {
   }
 }
 
+void TransactionTracker::StartInstrumentation(const MetricContext& metric_context) {
+  METRIC_all_transactions_inflight.InstantiateFunctionGauge(
+      metric_context, bind(&TransactionTracker::NumAllTransactionsInFlight, this));
+  METRIC_write_transactions_inflight.InstantiateFunctionGauge(
+      metric_context, bind(&TransactionTracker::NumWriteTransactionsInFlight, this));
+  METRIC_alter_schema_transactions_inflight.InstantiateFunctionGauge(
+      metric_context, bind(&TransactionTracker::NumAlterSchemaTransactionsInFlight, this));
+  METRIC_change_config_transactions_inflight.InstantiateFunctionGauge(
+      metric_context, bind(&TransactionTracker::NumChangeConfigTransactionsInFlight, this));
+}
+
+uint64_t TransactionTracker::NumAllTransactionsInFlight() const {
+  boost::lock_guard<simple_spinlock> l(lock_);
+  return txns_in_flight_.all_transactions_inflight;
+}
+
+uint64_t TransactionTracker::NumWriteTransactionsInFlight() const {
+  boost::lock_guard<simple_spinlock> l(lock_);
+  return txns_in_flight_.write_transactions_inflight;
+}
+
+uint64_t TransactionTracker::NumAlterSchemaTransactionsInFlight() const {
+  boost::lock_guard<simple_spinlock> l(lock_);
+  return txns_in_flight_.all_transactions_inflight;
+}
+
+uint64_t TransactionTracker::NumChangeConfigTransactionsInFlight() const {
+  boost::lock_guard<simple_spinlock> l(lock_);
+  return txns_in_flight_.change_config_transactions_inflight;
+}
 
 }  // namespace tablet
 }  // namespace kudu

@@ -45,6 +45,13 @@ class TransactionDriver : public base::RefCountedThreadSafe<TransactionDriver> {
   virtual std::string ToString() const { return "TODO TransactionDriver ToString()."; }
 
   virtual ~TransactionDriver() {}
+
+  // Returns the type of the transaction being executed by this driver.
+  Transaction::TransactionType tx_type() const;
+
+  // Returns the state of the transaction being executed by this driver.
+  const TransactionState* state() const;
+
  protected:
   // Called when Transaction::Prepare() or Consensus::Replicate() complete.
   // When this method is called twice it proceeds to submit ApplyAndCommit().
@@ -66,8 +73,9 @@ class TransactionDriver : public base::RefCountedThreadSafe<TransactionDriver> {
   // This method will only be called once.
   virtual void ApplyOrCommitFailed(const Status& status) = 0;
 
-  // Returns the state of the transaction being executed by this driver.
-  TransactionState* state();
+  // Returns the mutable state of the transaction being executed by
+  // this driver.
+  TransactionState* mutable_state();
 
   TransactionTracker* txn_tracker_;
   consensus::Consensus* consensus_;

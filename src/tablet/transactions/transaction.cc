@@ -5,9 +5,10 @@
 namespace kudu {
 namespace tablet {
 
-Transaction::Transaction(TransactionState* state, DriverType type)
+Transaction::Transaction(TransactionState* state, DriverType type, TransactionType tx_type)
     : state_(state),
-      type_(type) {
+      type_(type),
+      tx_type_(tx_type) {
 }
 
 TransactionState::TransactionState(TabletPeer* tablet_peer)
