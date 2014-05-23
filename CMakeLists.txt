@@ -375,7 +375,9 @@ find_package(CURL REQUIRED)
 ## crcutil
 find_package(Crcutil REQUIRED)
 include_directories(SYSTEM ${CRCUTIL_INCLUDE_DIR})
-ADD_THIRDPARTY_LIB(crcutil STATIC_LIB "${CRCUTIL_STATIC_LIB}")
+ADD_THIRDPARTY_LIB(crcutil
+  STATIC_LIB "${CRCUTIL_STATIC_LIB}"
+  SHARED_LIB "${CRCUTIL_SHARED_LIB}")
 
 ############################################################
 # Linker setup

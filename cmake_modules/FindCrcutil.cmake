@@ -3,6 +3,7 @@
 #  CRCUTIL_INCLUDE_DIR, directory containing headers
 #  CRCUTIL_LIBS, directory containing crcutil libraries
 #  CRCUTIL_STATIC_LIB, path to libcrcutil.a
+#  CRCUTIL_SHARED_LIB, path to libcrcutil.so
 #  CRCUTIL_FOUND, whether crcutil has been found
 
 set(CRCUTIL_SEARCH_HEADER_PATHS
@@ -13,21 +14,20 @@ set(CRCUTIL_SEARCH_LIB_PATH
   ${THIRDPARTY_PREFIX}/lib
 )
 
-find_path(CRCUTIL_INCLUDE_DIR crcutil/interface.h PATHS
-  ${CRCUTIL_SEARCH_HEADER_PATHS}
-  # make sure we don't accidentally pick up a different version
-  NO_DEFAULT_PATH
-)
+find_path(CRCUTIL_INCLUDE_DIR crcutil/interface.h
+  PATHS ${CRCUTIL_SEARCH_HEADER_PATHS}
+  NO_DEFAULT_PATH)
 
-find_library(CRCUTIL_LIB_PATH NAMES libcrcutil.a PATHS
-  ${CRCUTIL_SEARCH_LIB_PATH}
-  NO_DEFAULT_PATH
-)
+find_library(CRCUTIL_LIB_PATH
+  NAMES crcutil
+  PATHS ${CRCUTIL_SEARCH_LIB_PATH}
+  NO_DEFAULT_PATH)
 
 if (CRCUTIL_INCLUDE_DIR AND CRCUTIL_LIB_PATH)
   set(CRCUTIL_FOUND TRUE)
   set(CRCUTIL_LIBS ${CRCUTIL_SEARCH_LIB_PATH})
   set(CRCUTIL_STATIC_LIB ${CRCUTIL_SEARCH_LIB_PATH}/libcrcutil.a)
+  set(CRCUTIL_SHARED_LIB ${CRCUTIL_SEARCH_LIB_PATH}/libcrcutil.so)
 else ()
   set(CRCUTIL_FOUND FALSE)
 endif ()
@@ -53,5 +53,6 @@ mark_as_advanced(
   CRCUTIL_INCLUDE_DIR
   CRCUTIL_LIBS
   CRCUTIL_STATIC_LIB
+  CRCUTIL_SHARED_LIB
 )
 

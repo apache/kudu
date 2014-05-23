@@ -66,5 +66,12 @@ GCOVR_DIR=$TP_DIR/gcovr-3.0
 CURL_VERSION=7.32.0
 CURL_DIR=$TP_DIR/curl-${CURL_VERSION}
 
-CRCUTIL_VERSION=1.0
+# Hash of the crcutil git revision to use.
+# (from http://github.mtv.cloudera.com/CDH/crcutil)
+#
+# To re-build this tarball use the following in the crcutil repo:
+#  export NAME=crcutil-$(git rev-parse HEAD)
+#  git archive HEAD --prefix=$NAME/ -o /tmp/$NAME.tar.gz
+#  s3cmd put -P /tmp/$NAME.tar.gz s3://cloudera-thirdparty-libs/$NAME.tar.gz
+CRCUTIL_VERSION=440ba7babeff77ffad992df3a10c767f184e946e
 CRCUTIL_DIR=$TP_DIR/crcutil-${CRCUTIL_VERSION}

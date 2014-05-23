@@ -136,26 +136,11 @@ if [ ! -d $CURL_DIR ]; then
   rm curl-${CURL_VERSION}.tar.gz
 fi
 
-# Check that the crcutil patch has been applied.
-# If you add or remove patches, bump the patchlevel below to ensure
-# that any new Jenkins builds pick up your patches.
-CRCUTIL_PATCHLEVEL=2
-if [ ! -f crcutil-${CRCUTIL_VERSION}/patchlevel-$CRCUTIL_PATCHLEVEL ]; then
-  echo It appears that the crcutil version we have is missing
-  echo the latest local patches. Removing it so we re-download it.
-  rm -Rf crcutil-${CRCUTIL_VERSION}
-fi
-
 if [ ! -d $CRCUTIL_DIR ]; then
   echo "Fetching crcutil"
   curl -O ${CLOUDFRONT_URL_PREFIX}/crcutil-${CRCUTIL_VERSION}.tar.gz
   tar xzf crcutil-${CRCUTIL_VERSION}.tar.gz
   rm crcutil-${CRCUTIL_VERSION}.tar.gz
-  pushd crcutil-${CRCUTIL_VERSION}
-  patch -p1 < $TP_DIR/patches/crcutil-0001-Librarify-crcutil.patch
-  patch -p1 < $TP_DIR/patches/crcutil-0002-Support-automake-1.14.patch
-  touch patchlevel-$CRCUTIL_PATCHLEVEL
-  popd
 fi
 
 echo "---------------"
