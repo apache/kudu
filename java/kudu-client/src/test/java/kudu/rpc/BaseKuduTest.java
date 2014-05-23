@@ -202,6 +202,33 @@ public class BaseKuduTest {
     return counter.get();
   }
 
+  private static final int[] KEYS = new int[] {10, 20, 30};
+  protected static KuduTable createFourTabletsTableWithNineRows(String tableName) throws
+      Exception {
+    CreateTableBuilder builder = new CreateTableBuilder();
+    KeyBuilder keyBuilder = new KeyBuilder(basicSchema);
+    for (int i : KEYS) {
+      builder.addSplitKey(keyBuilder.addInt(i));
+    }
+    createTable(tableName, basicSchema, builder);
+    KuduSession session = client.newSession();
+
+    // create a table with on empty tablet and 3 tablets of 3 rows each
+    KuduTable table = openTable(tableName);
+    for (int key1 : KEYS) {
+      for (int key2 = 1; key2 <= 3; key2++) {
+        Insert insert = table.newInsert();
+        insert.addInt(basicSchema.getColumn(0).getName(), key1 + key2);
+        insert.addInt(basicSchema.getColumn(1).getName(), 1);
+        insert.addInt(basicSchema.getColumn(2).getName(), 2);
+        insert.addString(basicSchema.getColumn(3).getName(), "a string");
+        session.apply(insert).join(DEFAULT_SLEEP);
+      }
+    }
+    session.close().join(DEFAULT_SLEEP);
+    return table;
+  }
+
   public static Schema getBasicSchema() {
     ArrayList<ColumnSchema> columns = new ArrayList<ColumnSchema>(4);
     columns.add(new ColumnSchema("key", INT32, true));

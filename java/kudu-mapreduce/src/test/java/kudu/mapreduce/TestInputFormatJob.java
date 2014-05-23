@@ -1,13 +1,8 @@
 // Copyright (c) 2014, Cloudera, inc.
 package kudu.mapreduce;
 
-import com.stumbleupon.async.Deferred;
 import kudu.rpc.BaseKuduTest;
-import kudu.rpc.CreateTableBuilder;
-import kudu.rpc.Insert;
-import kudu.rpc.KeyBuilder;
 import kudu.rpc.KuduScanner;
-import kudu.rpc.KuduSession;
 import kudu.rpc.KuduTable;
 import kudu.rpc.RowResult;
 import org.apache.hadoop.conf.Configuration;
@@ -33,17 +28,9 @@ public class TestInputFormatJob extends BaseKuduTest {
   /** Counter enumeration to count the actual rows. */
   private static enum Counters { ROWS }
 
-  private static final int[] KEYS = new int[] {10, 20, 30};
-
   @BeforeClass
   public static void setUpBeforeClass() throws Exception {
     BaseKuduTest.setUpBeforeClass();
-    CreateTableBuilder builder = new CreateTableBuilder();
-    KeyBuilder keyBuilder = new KeyBuilder(basicSchema);
-    for (int i : KEYS) {
-      builder.addSplitKey(keyBuilder.addInt(i));
-    }
-    createTable(TABLE_NAME, basicSchema, builder);
   }
 
   @AfterClass
@@ -58,22 +45,7 @@ public class TestInputFormatJob extends BaseKuduTest {
   @Test
   public void test() throws Exception {
 
-    KuduSession session = client.newSession();
-    session.setFlushMode(KuduSession.FlushMode.AUTO_FLUSH_SYNC);
-
-    // create a table with on empty tablet and 3 tablets of 3 rows each
-    KuduTable table = openTable(TABLE_NAME);
-    for (int key1 : KEYS) {
-      for (int key2 = 1; key2 <= 3; key2++) {
-        Insert insert = table.newInsert();
-        insert.addInt(basicSchema.getColumn(0).getName(), key1 + key2);
-        insert.addInt(basicSchema.getColumn(1).getName(), 1);
-        insert.addInt(basicSchema.getColumn(2).getName(), 2);
-        insert.addString(basicSchema.getColumn(3).getName(), "a string");
-        session.apply(insert).join(DEFAULT_SLEEP);
-      }
-    }
-    session.close().join(DEFAULT_SLEEP);
+    KuduTable table = createFourTabletsTableWithNineRows(TABLE_NAME);
 
     Configuration conf = new Configuration();
     HADOOP_UTIL.setupAndGetTestDir(TestInputFormatJob.class.getName(), conf).getAbsolutePath();
