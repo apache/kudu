@@ -137,5 +137,6 @@ cd java
 # src/main/java to target/generated-sources.
 git clean -df
 
-export TSAN_OPTIONS="$TSAN_OPTIONS suppressions=$ME/tsan-suppressions.txt history_size=7"
+set -x
+export TSAN_OPTIONS="$TSAN_OPTIONS suppressions=$ROOT/build-support/tsan-suppressions.txt history_size=7"
 mvn clean test
