@@ -66,7 +66,7 @@ public class TestImportCsv extends BaseKuduTest {
     assertEquals(1, job.getCounters().findCounter(ImportCsv.Counters.BAD_LINES).getValue());
 
     KuduScanner scanner = client.newScanner(openTable(TABLE_NAME), basicSchema);
-    assertEquals(3, countRowsInScan(scanner));
+    assertEquals(4, countRowsInScan(scanner));
   }
 
   private void writeCsvFile(File data) throws IOException {
@@ -76,6 +76,7 @@ public class TestImportCsv extends BaseKuduTest {
     fos.write("3\twait this is not an int\t7\tbad row\n".getBytes());
     // Test that we can handle floating points, treating them as ints. This is a valid line:
     fos.write("4\t0.10\t8\twe have a double but that's fine\n".getBytes());
+    fos.write("5\t9\t10\ttrailing separator isn't bad mkay?\t\n".getBytes());
     fos.close();
   }
 }

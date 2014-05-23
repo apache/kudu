@@ -71,7 +71,10 @@ public class CsvParser {
       throw new BadCsvLineException("No delimiter");
     }
 
-    tabOffsets.add(length);
+    // trailing separator shouldn't count as a column
+    if (lineBytes[length - 1] != separatorByte) {
+      tabOffsets.add(length);
+    }
 
     if (tabOffsets.size() > maxColumnCount) {
       throw new BadCsvLineException("Excessive columns");
