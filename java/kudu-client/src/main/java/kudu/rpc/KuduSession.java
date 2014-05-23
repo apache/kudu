@@ -98,8 +98,23 @@ public class KuduSession {
   private ExternalConsistencyMode consistencyMode;
   private long currentTimeout = 0;
 
+  /**
+   * The following two maps are to be handled together when batching is enabled. The first one is
+   * where the batching happens, the second one is where we keep track of what's been sent but
+   * hasn't come back yet. A batch cannot be in both maps at the same time. A batch cannot be
+   * added to the in flight map if there's already another batch for the same tablet. If this
+   * happens, and the batch in the first map is full, then we fail fast and send it back to the
+   * client.
+   * The second map stores Deferreds because KuduRpc.callback clears out the Deferred it contains
+   * (as a way to reset the RPC), so we want to store the Deferred that's with the RPC that's
+   * sent out.
+   */
   @GuardedBy("this")
-  private final Map <Slice, Batch> operations = new HashMap<Slice, Batch>();
+  private final Map<Slice, Batch> operations = new HashMap<Slice, Batch>();
+
+  @GuardedBy("this")
+  private final Map<Slice, Deferred<Object>> operationsInFlight = new HashMap<Slice,
+      Deferred<Object>>();
 
   /**
    * Package-private constructor meant to be used via KuduClient
@@ -189,15 +204,16 @@ public class KuduSession {
    * everything that was buffered at the time of the call has been flushed.
    */
   public Deferred<Object> flush() {
+    LOG.trace("Flushing all tablets");
     final ArrayList<Deferred<Object>> d =
         new ArrayList<Deferred<Object>>(operations.size());
-    Map<Slice, Batch> oldOperations = new HashMap<Slice, Batch>(operations.size());
+    // Make a copy of the map since we're going to remove objects within the iteration
+    HashMap<Slice, Batch> copyOfOps;
     synchronized (this) {
-      oldOperations.putAll(operations);
-      operations.clear();
+      copyOfOps = new HashMap<Slice, Batch>(operations);
     }
-    for (Batch inserts : oldOperations.values()) {
-      d.add(flushTablet(inserts));
+    for (Map.Entry<Slice, Batch> entry: copyOfOps.entrySet()) {
+      d.add(flushTablet(entry.getKey(), entry.getValue()));
     }
     return (Deferred) Deferred.group(d);
   }
@@ -277,7 +293,6 @@ public class KuduSession {
    * @return Deffered to track the operation
    */
   private Deferred<Object> addToBuffer(Slice tablet, Operation operation) {
-    Batch batchToSend = null;
     boolean scheduleFlush = false;
 
     // Fat lock but none of the operations will block
@@ -286,41 +301,42 @@ public class KuduSession {
 
       // doing + 1 to see if the current insert would push us over the limit
       // TODO obviously wrong, not same size thing
-      if (batch != null && (batch.ops.size() + 1) > mutationBufferSpace) {
+      if (batch != null && batch.ops.size() + 1 > mutationBufferSpace) {
         if (flushMode == FlushMode.MANUAL_FLUSH) {
           // TODO copy message from C++
           throw new NonRecoverableException("MANUAL_FLUSH is enabled but the buffer is too big");
         }
-        batchToSend = batch;
-        batch = null; // Set it to null so that a new one is put in operations
-        operations.remove(tablet);
+        flushTablet(tablet, batch);
+        if (operations.containsKey(tablet)) {
+          // This means we didn't flush because there was another batch in flight.
+          // We cannot continue here, we have to send this back to the client.
+          // This is our high watermark (TODO we'll need a low one).
+          throw new PleaseThrottleException("The RPC cannot be buffered because the current " +
+              "buffer is full and the previous buffer hasn't been flushed yet", null,
+              operation, operationsInFlight.get(tablet));
+        }
+        // Below will take care of creating the new batch and adding the operation.
+        batch = null;
       }
       if (batch == null) {
         // We found a tablet that needs batching, this is the only place where
         // we schedule a flush
         batch = new Batch(operation.getTable());
         batch.setExternalConsistencyMode(this.consistencyMode);
-        operations.put(tablet, batch);
+        Batch oldBatch = operations.put(tablet, batch);
+        assert (oldBatch == null);
         addBatchCallbacks(batch);
-        // If we forced flush, it means we already have an outstanding flush scheduled
-        // If we're unlucky it could be the very next thing that happens and we'd send
-        // only 1 row.
-        scheduleFlush = batchToSend == null;
+        scheduleFlush = true;
       }
       batch.ops.add(operation);
-    }
-    if (flushMode == FlushMode.AUTO_FLUSH_BACKGROUND && scheduleFlush) {
-      // Accumulated a first insert but we're not in manual mode,
-      // schedule the flush
-      LOG.debug("Scheduling a flush");
-      scheduleNextPeriodicFlush(tablet);
-    } else if (batchToSend != null) {
-      // Buffer space is too big, send to the tablet
-      if (LOG.isDebugEnabled()) {
-        LOG.debug("Going to force a flush since " + batchToSend.ops.size());
+      if (flushMode == FlushMode.AUTO_FLUSH_BACKGROUND && scheduleFlush) {
+        // Accumulated a first insert but we're not in manual mode,
+        // schedule the flush
+        LOG.trace("Scheduling a flush");
+        scheduleNextPeriodicFlush(tablet, batch);
       }
-      client.sendRpcToTablet(batchToSend);
     }
+
     // Get here if we accumulated an insert, regardless of if it scheduled
     // a flush
     return operation.getDeferred();
@@ -334,7 +350,7 @@ public class KuduSession {
     final class BatchCallback implements Callback<Object, Object> {
       // TODO add more handling
       public Object call(final Object response) {
-        //LOG.info("Got a InsertsBatch response for " + request.operations.size() + " rows");
+        LOG.trace("Got a InsertsBatch response for " + request.ops.size() + " rows");
         if (!(response instanceof Tserver.WriteResponsePB)) {
           throw new InvalidResponseException(Tserver.WriteResponsePB.class, response);
         }
@@ -381,7 +397,7 @@ public class KuduSession {
   /**
    * Schedules the next periodic flush of buffered edits.
    */
-  private void scheduleNextPeriodicFlush(Slice tablet) {
+  private void scheduleNextPeriodicFlush(Slice tablet, Batch batch) {
    /* if (interval > 0) { TODO ?
       // Since we often connect to many regions at the same time, we should
       // try to stagger the flushes to avoid flushing too many different
@@ -402,25 +418,101 @@ public class KuduSession {
           adj = (short) (interval / -2);
         }
       }*/
-    timer.newTimeout(new FlusherTask(tablet), interval, MILLISECONDS);
+    timer.newTimeout(new FlusherTask(tablet, batch), interval, MILLISECONDS);
   }
 
   /**
-   * Flushes the edits for the given tablet
+   * Flushes the edits for the given tablet. It will also check that the Batch we're flushing is
+   * the one that was requested. This is mostly done so that the FlusherTask doesn't trigger
+   * lots of small flushes under a write-heavy scenario where we're able to fill a Batch multiple
+   * times per interval.
+   *
+   * Also, if there's already a Batch in flight for the given tablet,
+   * the flush will be delayed and the returned Deferred will be chained to it.
    */
-  private Deferred<Object> flushTablet(Batch batch) {
-    if (batch != null && batch.ops.size() != 0) {
-      LOG.debug("Sending " + batch.ops.size());
+  private Deferred<Object> flushTablet(Slice tablet, Batch expectedBatch) {
+    assert (expectedBatch != null);
+
+    synchronized (this) {
+      // Check this first, no need to wait after anyone if the batch we were supposed to flush
+      // was already flushed.
+      if (operations.get(tablet) != expectedBatch) {
+        LOG.trace("Had to flush a tablet but it was already flushed: " + Bytes.getString(tablet));
+        return Deferred.fromResult(null);
+      }
+
+      if (operationsInFlight.containsKey(tablet)) {
+        LOG.trace("This tablet is already in flight, attaching a callback to retry later: " +
+            Bytes.getString(tablet));
+        return operationsInFlight.get(tablet).addBothDeferring(
+            new FlushRetryCallback(tablet, operations.get(tablet)));
+      }
+
+      Batch batch = operations.remove(tablet);
+      if (batch == null) {
+        LOG.trace("Had to flush a tablet but there was nothing to flush: " +
+            Bytes.getString(tablet));
+        return Deferred.fromResult(null);
+      }
+      Deferred<Object> oldBatch = operationsInFlight.put(tablet, batch.getDeferred());
+      assert (oldBatch == null);
       if (currentTimeout != 0) {
-        // The deadline tracker started when the Batch was created (in KuduRpc),
-        // but we may have waited for up to interval before getting here,
-        // so we reset tracker now before we actually send this rpc.
         batch.deadlineTracker.reset();
         batch.setTimeoutMillis(currentTimeout);
       }
-      return client.sendRpcToTablet(batch);
+      return client.sendRpcToTablet(batch).addBoth(new OpInFlightCallback(tablet));
     }
-    return null;
+  }
+
+
+  /**
+   * Simple callback so that we try to flush this tablet again if we were waiting on the previous
+   * Batch to finish.
+   */
+  class FlushRetryCallback implements Callback<Deferred<Object>, Object> {
+    private final Slice tablet;
+    private final Batch expectedBatch;
+    public FlushRetryCallback(Slice tablet, Batch expectedBatch) {
+      this.tablet = tablet;
+      this.expectedBatch = expectedBatch;
+    }
+
+    @Override
+    public Deferred<Object> call(Object o) throws Exception {
+      if (o instanceof Exception) {
+        LOG.warn("Encountered exception sending a batch to " + Bytes.getString(tablet),
+            (Exception) o);
+      }
+      synchronized (KuduSession.this) {
+        LOG.trace("Previous batch in flight is done, flushing this tablet again: " +
+            Bytes.getString(tablet));
+        return flushTablet(tablet, expectedBatch);
+      }
+    }
+  }
+
+  /**
+   * Simple callback that removes the tablet from the in flight operations map once it completed.
+   * TODO we're not handling errors.
+   */
+  class OpInFlightCallback implements Callback<Object, Object> {
+    private final Slice tablet;
+    public OpInFlightCallback(Slice tablet) {
+      this.tablet = tablet;
+    }
+
+    @Override
+    public Object call(Object o) throws Exception {
+      if (o instanceof Exception) {
+        LOG.warn("Encountered exception sending a batch to " + Bytes.getString(tablet),
+            (Exception) o);
+      }
+      synchronized (KuduSession.this) {
+        LOG.trace("Unmarking this tablet as in flight: " + Bytes.getString(tablet));
+        operationsInFlight.remove(tablet);
+      }
+      return o;
+    }
   }
 
   /**
@@ -428,23 +520,20 @@ public class KuduSession {
    */
   class FlusherTask implements TimerTask {
     final Slice tabletSlice;
+    final Batch expectedBatch;
 
-    FlusherTask(Slice tabletSlice) {
+    FlusherTask(Slice tabletSlice, Batch expectedBatch) {
       this.tabletSlice = tabletSlice;
+      this.expectedBatch = expectedBatch;
     }
 
     public void run(final Timeout timeout) {
-      LOG.debug("Flushing " + this.tabletSlice.toString(Charset.defaultCharset()));
-      // Copy the batch to a local variable and null it out.
-      final Batch inserts;
-      synchronized (KuduSession.this) {
-        inserts = operations.remove(tabletSlice);
-      }
-      flushTablet(inserts);
+      LOG.trace("Timed flushing: " + Bytes.getString(tabletSlice));
+      flushTablet(this.tabletSlice, this.expectedBatch);
     }
     public String toString() {
       return "flush commits of session " + KuduSession.this +
-          " for tabletSlice " + this.tabletSlice.toString(Charset.defaultCharset());
+          " for tabletSlice " + Bytes.getString(tabletSlice);
     }
   };
 }

@@ -28,6 +28,7 @@ package kudu.rpc;
 
 import com.google.protobuf.ByteString;
 import com.google.protobuf.ZeroCopyLiteralByteString;
+import kudu.util.Slice;
 import org.jboss.netty.buffer.ChannelBuffer;
 import org.jboss.netty.util.CharsetUtil;
 
@@ -919,6 +920,10 @@ public final class Bytes {
    */
   public static String getString(byte[] b) {
     return getString(b, 0, b.length);
+  }
+
+  public static String getString(Slice slice) {
+    return slice.toString(CharsetUtil.UTF_8);
   }
 
   /**

@@ -42,18 +42,6 @@ public class TestKuduSession extends BaseKuduTest {
     table = openTable(TABLE_NAME);
   }
 
-
-
-  @Before
-  public void setUp() throws Exception {
-
-  }
-
-  @After
-  public void tearDown() throws Exception {
-
-  }
-
   @Test(timeout = 100000)
   public void test() throws Exception {
 
@@ -168,6 +156,39 @@ public class TestKuduSession extends BaseKuduTest {
 
     // now scan those rows and make sure the column is null
     assertEquals(10, countNullColumns(40, 50));
+
+    // Test sending edits too fast
+    session.setFlushMode(KuduSession.FlushMode.AUTO_FLUSH_BACKGROUND);
+    session.setMutationBufferSpace(10);
+
+    // The buffer has a capacity of 10, we insert 21 rows, meaning we fill the first one,
+    // force flush, fill a second one before the first one could come back,
+    // and the 21st row will be sent back.
+    boolean gotException = false;
+    for (int i = 50; i < 71; i++) {
+      try {
+        session.apply(createInsert(i));
+      } catch (PleaseThrottleException ex) {
+        gotException = true;
+        assertEquals(70, i);
+        // Wait for the buffer to clear
+        ex.getDeferred().join(DEFAULT_SLEEP);
+        session.apply(ex.getFailedRpc());
+        session.flush().join(DEFAULT_SLEEP);
+      }
+    }
+    assertTrue(gotException);
+    assertEquals(21, countInRange(50, 71));
+
+    // Now test a more subtle issue, basically the race where we call flush from the client when
+    // there's a batch already in flight. We need to finish joining only when all the data is
+    // flushed.
+    for (int i = 71; i < 91; i++) {
+      session.apply(createInsert(i));
+    }
+    session.flush().join(DEFAULT_SLEEP);
+    // If we only waited after the in flight batch, there would be 10 rows here.
+    assertEquals(20, countInRange(71, 91));
 
     // Test Alter
     // Add a col
