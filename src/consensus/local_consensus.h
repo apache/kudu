@@ -61,6 +61,9 @@ class LocalConsensus : public Consensus {
   virtual Status Update(const ConsensusRequestPB* request,
                         ConsensusResponsePB* response) OVERRIDE;
 
+  virtual Status RequestVote(const VoteRequestPB* request,
+                             VoteResponsePB* response) OVERRIDE;
+
   metadata::QuorumPB CurrentQuorum() const {
     return quorum_;
   }

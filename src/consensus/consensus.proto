@@ -126,8 +126,47 @@ message ConsensusStatusPB {
   // been committed.
   required OpId safe_commit_watermark = 3;
 
+  // Whether this status contains the full list of replicate messages which are
+  // missing commits.
+  optional bool includes_pending_ops = 4 [default = false];
+
+  // Pending operations, i.e. replicate messages for which no
+  // commit message has been received from the previous LEADER.
+  // Filled when 'detailed' is true.
+  repeated OperationPB pending_ops = 5;
+
   // Per operation errors.
-  repeated PerOpErrorPB errors = 4;
+  repeated PerOpErrorPB errors = 6;
+}
+
+// A request from a CANDIDATE peer that wishes to become leader of
+// the quorum serving tablet with 'tablet_id'.
+message VoteRequestPB {
+  required string tablet_id = 1;
+
+  // the uuid of the sender peer
+  required bytes candidate_uuid = 2;
+
+  // The CANDIDATE node status so that the voter node can
+  // decide whether to vote for it as LEADER.
+  required ConsensusStatusPB candidate_status = 3;
+}
+
+// A response from a replica to a leader election request.
+// The replica will compare its status with the requestor
+// status and answer 'aye = true' if it deems the requestor
+// may become leader or 'aye = false' otherwise.
+message VoteResponsePB {
+
+  // A generic error message (such as tablet not found).
+  optional tserver.TabletServerErrorPB error = 1;
+
+  // True if this peer voted for the requestor, false otherwise.
+  required bool aye = 2;
+
+  // The remaining watermarks for the voter peer, set if 'aye = true'.
+  // This will be a detailed status.
+  optional ConsensusStatusPB status = 4;
 }
 
 // A consensus request message, the basic unit of a consensus round.
@@ -141,7 +180,7 @@ message ConsensusRequestPB {
 
 message ConsensusResponsePB {
   // A generic error message (such as tablet not found), per operation
-  // messages are sent along with the consensus status.
+  // error messages are sent along with the consensus status.
   optional tserver.TabletServerErrorPB error = 1;
   optional ConsensusStatusPB status = 3;
 }

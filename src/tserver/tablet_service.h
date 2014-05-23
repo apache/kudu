@@ -60,6 +60,10 @@ class TabletServiceImpl : public TabletServerServiceIf {
                                kudu::consensus::ConsensusResponsePB *resp,
                                ::kudu::rpc::RpcContext *context);
 
+  virtual void RequestConsensusVote(const kudu::consensus::VoteRequestPB* req,
+                                    kudu::consensus::VoteResponsePB* resp,
+                                    ::kudu::rpc::RpcContext* context);
+
  private:
   // Lookup the given tablet, ensuring that it both exists and is RUNNING.
   // If it is not, responds to the RPC associated with 'context' after setting

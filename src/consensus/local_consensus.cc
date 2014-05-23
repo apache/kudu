@@ -134,6 +134,11 @@ Status LocalConsensus::Update(const ConsensusRequestPB* request,
   return Status::NotSupported("LocalConsensus does not support Update() calls.");
 }
 
+Status LocalConsensus::RequestVote(const VoteRequestPB* request,
+                                   VoteResponsePB* response) {
+  return Status::NotSupported("LocalConsensus does not support RequestVote() calls.");
+}
+
 Status LocalConsensus::Commit(ConsensusRound* context) {
 
   OperationPB* commit_op = DCHECK_NOTNULL(context->commit_op());

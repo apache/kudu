@@ -29,5 +29,7 @@ service TabletServerService {
 
   rpc UpdateConsensus(kudu.consensus.ConsensusRequestPB) returns (kudu.consensus.ConsensusResponsePB);
 
+  rpc RequestConsensusVote(kudu.consensus.VoteRequestPB) returns (kudu.consensus.VoteResponsePB);
+
   rpc AlterSchema(AlterSchemaRequestPB) returns (AlterSchemaResponsePB);
 }

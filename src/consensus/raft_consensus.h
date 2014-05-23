@@ -58,6 +58,9 @@ class RaftConsensus : public Consensus {
   virtual Status Update(const ConsensusRequestPB* request,
                         ConsensusResponsePB* response) OVERRIDE;
 
+  virtual Status RequestVote(const VoteRequestPB* request,
+                             VoteResponsePB* response) OVERRIDE;
+
   virtual log::Log* log() { return log_; }
 
   virtual metadata::QuorumPeerPB::Role role() const OVERRIDE;

@@ -441,6 +441,11 @@ Status RaftConsensus::UpdateReplica(const ConsensusRequestPB* request,
   return Status::OK();
 }
 
+Status RaftConsensus::RequestVote(const VoteRequestPB* request,
+                                  VoteResponsePB* response) {
+  return Status::NotSupported("Not Implemented yet.");
+}
+
 void RaftConsensus::SignalRequestToPeers(bool force_if_queue_empty) {
   PeersMap::iterator iter = peers_.begin();
   for (; iter != peers_.end(); iter++) {

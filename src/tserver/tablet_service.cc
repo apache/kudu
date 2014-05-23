@@ -31,6 +31,8 @@
 
 using kudu::consensus::ConsensusRequestPB;
 using kudu::consensus::ConsensusResponsePB;
+using kudu::consensus::VoteRequestPB;
+using kudu::consensus::VoteResponsePB;
 using kudu::metadata::QuorumPB;
 using kudu::metadata::QuorumPeerPB;
 using kudu::rpc::RpcContext;
@@ -376,7 +378,7 @@ void TabletServiceImpl::Write(const WriteRequestPB* req,
 void TabletServiceImpl::UpdateConsensus(const ConsensusRequestPB* req,
                                         ConsensusResponsePB* resp,
                                         rpc::RpcContext* context) {
-  DVLOG(3) << "Received Consensus Execute RPC: " << req->DebugString();
+  DVLOG(3) << "Received Consensus Update RPC: " << req->DebugString();
 
   shared_ptr<TabletPeer> tablet_peer;
 
@@ -393,6 +395,35 @@ void TabletServiceImpl::UpdateConsensus(const ConsensusRequestPB* req,
   }
   // Submit the update directly to the TabletPeer's Consensus instance.
   Status s = tablet_peer->consensus()->Update(req, resp);
+  if (PREDICT_FALSE(!s.ok())) {
+    SetupErrorAndRespond(resp->mutable_error(), s,
+                         TabletServerErrorPB::UNKNOWN_ERROR,
+                         context);
+    return;
+  }
+  context->RespondSuccess();
+}
+
+void TabletServiceImpl::RequestConsensusVote(const VoteRequestPB* req,
+                                             VoteResponsePB* resp,
+                                             rpc::RpcContext* context) {
+  DVLOG(3) << "Received Consensus Request Vote RPC: " << req->DebugString();
+
+  shared_ptr<TabletPeer> tablet_peer;
+  if (!LookupTabletOrRespond(req->tablet_id(), &tablet_peer, resp, context))
+    return;
+
+  DCHECK(tablet_peer) << "Null tablet peer";
+
+  // Can't answer update requests if peer is not RUNNING
+  if (tablet_peer->state() != metadata::RUNNING) {
+    SetupErrorAndRespond(resp->mutable_error(),
+                         Status::NotFound("Tablet Peer not in RUNNING state"),
+                         TabletServerErrorPB::TABLET_NOT_RUNNING, context);
+    return;
+  }
+  // Submit the vote request directly to the consensus instance.
+  Status s = tablet_peer->consensus()->RequestVote(req, resp);
   if (PREDICT_FALSE(!s.ok())) {
     SetupErrorAndRespond(resp->mutable_error(), s,
                          TabletServerErrorPB::UNKNOWN_ERROR,

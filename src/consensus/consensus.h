@@ -141,6 +141,12 @@ class Consensus {
   virtual Status Update(const ConsensusRequestPB* request,
                         ConsensusResponsePB* response) = 0;
 
+  // Messages sent from CANDIDATEs to voting peers to request their vote
+  // in leader election.
+  virtual Status RequestVote(const VoteRequestPB* request,
+                             VoteResponsePB* response) = 0;
+
+
   // Returns the current quorum role of this instance.
   virtual metadata::QuorumPeerPB::Role role() const = 0;
 
