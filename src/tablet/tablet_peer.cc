@@ -59,13 +59,16 @@ using tserver::TabletServerErrorPB;
 // ============================================================================
 //  Tablet Peer
 // ============================================================================
-TabletPeer::TabletPeer(const TabletMetadata& meta)
-  : status_listener_(new TabletStatusListener(meta)),
+TabletPeer::TabletPeer(const TabletMetadata& meta,
+                       MarkDirtyCallback mark_dirty_clbk)
+  : tablet_id_(meta.oid()),
+    status_listener_(new TabletStatusListener(meta)),
     // prepare executor has a single thread as prepare must be done in order
     // of submission
     prepare_executor_(TaskExecutor::CreateNew("prepare exec", 1)),
     log_gc_executor_(TaskExecutor::CreateNew("log gc exec", 1)),
     log_gc_shutdown_latch_(1),
+    mark_dirty_clbk_(mark_dirty_clbk),
     config_sem_(1) {
   apply_executor_.reset(TaskExecutor::CreateNew("leader apply exec", base::NumCPUs()));
   state_ = metadata::BOOTSTRAPPING;
@@ -160,6 +163,10 @@ const metadata::QuorumPeerPB::Role TabletPeer::role() const {
     }
     return metadata::QuorumPeerPB::NON_PARTICIPANT;
   }
+}
+
+void TabletPeer::ConsensusStateChanged() {
+  mark_dirty_clbk_(this);
 }
 
 void TabletPeer::Shutdown() {
@@ -304,10 +311,6 @@ void TabletPeer::GetEarliestNeededOpId(consensus::OpId* min_op_id) const {
   if (!min_op_id->IsInitialized()) {
     min_op_id->CopyFrom(log::MinimumOpId());
   }
-}
-
-string TabletPeer::tablet_id() const {
-  return tablet_ != NULL ? tablet_->tablet_id() : "";
 }
 
 LeaderTransactionDriver* TabletPeer::NewLeaderTransactionDriver() {

@@ -79,6 +79,9 @@ Status ChangeConfigTransaction::Apply(gscoped_ptr<CommitMsg>* commit_msg) {
   tx_state_->tablet_peer()->tablet()->metadata()->SetQuorum(tx_state_->request()->new_config());
   RETURN_NOT_OK(tx_state_->tablet_peer()->tablet()->metadata()->Flush());
 
+  // Notify the peer that the consensus state (in this case the role) has changed.
+  tx_state_->tablet_peer()->ConsensusStateChanged();
+
   commit_msg->reset(new CommitMsg());
   (*commit_msg)->set_op_type(CHANGE_CONFIG_OP);
   (*commit_msg)->set_timestamp(tx_state_->timestamp().ToUint64());

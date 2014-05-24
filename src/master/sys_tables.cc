@@ -95,6 +95,10 @@ Status SysTable::CreateNew(FsManager *fs_manager) {
   return SetupTablet(metadata.Pass());
 }
 
+void SysTable::SysTableStateChanged(TabletPeer* tablet_peer) {
+  LOG(FATAL) << "TODO: state changes not handled for system tables";
+}
+
 Status SysTable::SetupTablet(gscoped_ptr<metadata::TabletMetadata> metadata) {
   shared_ptr<Tablet> tablet;
   gscoped_ptr<Log> log;
@@ -102,7 +106,11 @@ Status SysTable::SetupTablet(gscoped_ptr<metadata::TabletMetadata> metadata) {
 
   // TODO: handle crash mid-creation of tablet? do we ever end up with a
   // partially created tablet here?
-  tablet_peer_.reset(new TabletPeer(*metadata));
+  // TODO right now sys tables are hard coded to be single quorum, so the MarkDirty
+  // callback that allows to notify of state changes (such as consensus role changes)
+  // just points to SysTableStateChanged(), which currently LOG(FATAL)s.
+  tablet_peer_.reset(new TabletPeer(*metadata,
+                                    boost::bind(&SysTable::SysTableStateChanged, this, _1)));
   RETURN_NOT_OK(BootstrapTablet(metadata.Pass(),
                                 scoped_refptr<server::Clock>(master_->clock()),
                                 &metric_ctx_,

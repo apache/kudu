@@ -63,6 +63,8 @@ class SysTable {
   // Returns 'Status::OK()' if the WriteTranasction completed
   Status SyncWrite(const tserver::WriteRequestPB *req, tserver::WriteResponsePB *resp);
 
+  void SysTableStateChanged(tablet::TabletPeer* tablet_peer);
+
   // Table schema, without IDs, used to send messages to the TabletPeer
   Schema schema_;
   Schema key_schema_;

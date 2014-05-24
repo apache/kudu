@@ -67,7 +67,7 @@ class TabletPeerTest : public KuduTabletTest {
     ASSERT_STATUS_OK(builder.Build(&messenger_));
 
     // "Bootstrap" and start the TabletPeer.
-    tablet_peer_.reset(new TabletPeer(*tablet_->metadata()));
+    tablet_peer_.reset(new TabletPeer(*tablet_->metadata(), NULL));
     QuorumPeerPB quorum_peer;
     quorum_peer.set_permanent_uuid("test1");
     quorum_peer.set_role(QuorumPeerPB::LEADER);

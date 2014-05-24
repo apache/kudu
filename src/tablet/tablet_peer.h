@@ -28,9 +28,14 @@ namespace tablet {
 
 class ChangeConfigTransactionState;
 class LeaderTransactionDriver;
+class TabletPeer;
 class TabletStatusPB;
 class TabletStatusListener;
 class TransactionDriver;
+
+// A function def. for the callback that allows TabletPeer to notify
+// that something has changed internally, e.g. a consensus role change.
+typedef boost::function<void(TabletPeer*)> MarkDirtyCallback;
 
 // A peer in a tablet quorum, which coordinates writes to tablets.
 // Each time Write() is called this class appends a new entry to a replicated
@@ -40,7 +45,8 @@ class TransactionDriver;
 class TabletPeer : public consensus::ReplicaTransactionFactory {
  public:
 
-  explicit TabletPeer(const metadata::TabletMetadata& meta);
+  explicit TabletPeer(const metadata::TabletMetadata& meta,
+                      MarkDirtyCallback mark_dirty_func);
 
   ~TabletPeer();
 
@@ -124,6 +130,12 @@ class TabletPeer : public consensus::ReplicaTransactionFactory {
   // NON_PARTICIPANT.
   const metadata::QuorumPeerPB::Role role() const;
 
+  // Notifies the TabletPeer that the consensus state has changed.
+  // Currently this is called to active the TsTabletManager callback that allows to
+  // mark the tablet report as dirty, so that the master will eventually become
+  // aware that the consensus role has changed for this peer.
+  void ConsensusStateChanged();
+
   TabletStatusListener* status_listener() const {
     return status_listener_.get();
   }
@@ -160,6 +172,11 @@ class TabletPeer : public consensus::ReplicaTransactionFactory {
     return clock_.get();
   }
 
+  // Returns the tablet_id of the tablet managed by this TabletPeer.
+  // Returns the correct tablet_id even if the underlying tablet is not available
+  // yet.
+  std::string tablet_id() const { return tablet_id_; }
+
   LeaderTransactionDriver* NewLeaderTransactionDriver();
 
  private:
@@ -174,8 +191,7 @@ class TabletPeer : public consensus::ReplicaTransactionFactory {
   // Task that runs Log GC on a periodic basis.
   Status RunLogGC();
 
-  // Helper method for log messages. Returns empty string if tablet not assigned.
-  std::string tablet_id() const;
+  const std::string tablet_id_;
 
   metadata::TabletStatePB state_;
   Status error_;
@@ -204,6 +220,9 @@ class TabletPeer : public consensus::ReplicaTransactionFactory {
   CountDownLatch log_gc_shutdown_latch_;
 
   scoped_refptr<server::Clock> clock_;
+
+  // Function to mark this TabletPeer's tablet as dirty in the TSTabletManager.
+  MarkDirtyCallback mark_dirty_clbk_;
 
   // Lock protecting updates to the configuration, stored in the tablet's
   // metadata.
