@@ -42,7 +42,7 @@ class TransactionDriver : public base::RefCountedThreadSafe<TransactionDriver> {
 
   virtual const std::tr1::shared_ptr<FutureCallback>& commit_finished_callback();
 
-  virtual std::string ToString() const { return "TODO TransactionDriver ToString()."; }
+  virtual std::string ToString() const;
 
   virtual ~TransactionDriver() {}
 
@@ -51,6 +51,8 @@ class TransactionDriver : public base::RefCountedThreadSafe<TransactionDriver> {
 
   // Returns the state of the transaction being executed by this driver.
   const TransactionState* state() const;
+
+  const MonoTime& start_time() const { return start_time_; }
 
  protected:
   // Called when Transaction::Prepare() or Consensus::Replicate() complete.
@@ -107,6 +109,8 @@ class TransactionDriver : public base::RefCountedThreadSafe<TransactionDriver> {
   gscoped_ptr<Transaction> transaction_;
  private:
   friend class base::RefCountedThreadSafe<TransactionDriver>;
+
+  const MonoTime start_time_;
 
   DISALLOW_COPY_AND_ASSIGN(TransactionDriver);
 };

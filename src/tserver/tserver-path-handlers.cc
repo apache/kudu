@@ -17,6 +17,7 @@
 #include "tserver/ts_tablet_manager.h"
 #include "util/url-coding.h"
 
+using kudu::consensus::TransactionStatusPB;
 using kudu::tablet::TabletPeer;
 using kudu::tablet::TabletStatusPB;
 using std::tr1::shared_ptr;
@@ -38,7 +39,44 @@ Status TabletServerPathHandlers::Register(Webserver* server) {
     "/tablet",
     boost::bind(&TabletServerPathHandlers::HandleTabletPage, this, _1, _2),
     true /* styled */, false /* is_on_nav_bar */);
+  server->RegisterPathHandler(
+    "/transactionz",
+    boost::bind(&TabletServerPathHandlers::HandleTransactionsPage, this, _1, _2),
+    true /* styled */, true /* is_on_nav_bar */);
+
   return Status::OK();
+}
+
+
+void TabletServerPathHandlers::HandleTransactionsPage(const Webserver::ArgumentMap& args,
+                                                      std::stringstream* output) {
+  vector<shared_ptr<TabletPeer> > peers;
+  tserver_->tablet_manager()->GetTabletPeers(&peers);
+
+  *output << "<h1>Transactions</h1>\n";
+  *output << "<table class='table table-striped'>\n";
+  *output << "   <tr><th>Tablet id</th><th>Op Id</th>"
+      "<th>Type</th><th>Total time in-flight</th><th>Description</th></tr>\n";
+  BOOST_FOREACH(const shared_ptr<TabletPeer>& peer, peers) {
+    vector<TransactionStatusPB> inflight;
+
+    if (peer->tablet() == NULL) {
+      continue;
+    }
+
+    peer->GetInFlightTransactions(&inflight);
+    BOOST_FOREACH(const TransactionStatusPB& inflight_tx, inflight) {
+      string total_time_str = Substitute("$0 us.", inflight_tx.running_for_micros());
+      (*output) << Substitute("<tr><th>$0</th><th>$1</th><th>$2</th><th>$3</th><th>$4</th></tr>\n",
+                              EscapeForHtmlToString(peer->tablet_id()),
+                              EscapeForHtmlToString(inflight_tx.op_id().ShortDebugString()),
+                              OperationType_Name(inflight_tx.tx_type()),
+                              total_time_str,
+                              EscapeForHtmlToString(inflight_tx.description()));
+
+    }
+  }
+  *output << "</table>\n";
 }
 
 void TabletServerPathHandlers::HandleTabletsPage(const Webserver::ArgumentMap &args,

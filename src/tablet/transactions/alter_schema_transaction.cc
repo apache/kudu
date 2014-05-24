@@ -14,15 +14,24 @@
 namespace kudu {
 namespace tablet {
 
+using boost::bind;
+using boost::shared_lock;
 using consensus::ReplicateMsg;
 using consensus::CommitMsg;
 using consensus::OP_ABORT;
 using consensus::ALTER_SCHEMA_OP;
-using boost::shared_lock;
+using strings::Substitute;
 using tserver::TabletServerErrorPB;
 using tserver::AlterSchemaRequestPB;
 using tserver::AlterSchemaResponsePB;
-using boost::bind;
+
+string AlterSchemaTransactionState::ToString() const {
+  return Substitute("AlterSchemaTransactionState "
+                    "[timestamp=$0, schema=$1, request=$2]",
+                    timestamp().ToString(),
+                    schema_ == NULL ? "(none)" : schema_->ToString(),
+                    request_ == NULL ? "(none)" : request_->ShortDebugString());
+}
 
 AlterSchemaTransaction::AlterSchemaTransaction(AlterSchemaTransactionState* state,
                                                DriverType type)
@@ -83,6 +92,10 @@ void AlterSchemaTransaction::Finish() {
   // make the changes visible to readers.
   TRACE("AlterSchemaCommitCallback: making edits visible");
   state()->commit();
+}
+
+string AlterSchemaTransaction::ToString() const {
+  return Substitute("AlterSchemaTransaction [state=$0]", tx_state_->ToString());
 }
 
 }  // namespace tablet

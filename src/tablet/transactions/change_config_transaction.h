@@ -3,6 +3,8 @@
 #ifndef KUDU_TABLET_CHANGE_CONFIG_TRANSACTION_H_
 #define KUDU_TABLET_CHANGE_CONFIG_TRANSACTION_H_
 
+#include <string>
+
 #include "gutil/macros.h"
 #include "tablet/transactions/transaction.h"
 #include "util/task_executor.h"
@@ -51,6 +53,8 @@ class ChangeConfigTransactionState : public TransactionState {
     release_config_sem();
   }
 
+  virtual std::string ToString() const OVERRIDE;
+
   ~ChangeConfigTransactionState() {
     release_config_sem();
   }
@@ -85,6 +89,8 @@ class ChangeConfigTransaction : public Transaction {
 
   // Actually commits the transaction.
   virtual void Finish() OVERRIDE;
+
+  virtual std::string ToString() const OVERRIDE;
 
  private:
 

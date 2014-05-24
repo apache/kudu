@@ -25,6 +25,12 @@ using metadata::QuorumPB;
 using strings::Substitute;
 using tserver::TabletServerErrorPB;
 
+string ChangeConfigTransactionState::ToString() const {
+  return Substitute("ChangeConfigTransactionState [timestamp=$0, request=$1]",
+                    timestamp().ToString(),
+                    request_ == NULL ? "(none)" : request_->ShortDebugString());
+}
+
 ChangeConfigTransaction::ChangeConfigTransaction(ChangeConfigTransactionState* tx_state,
                                                  DriverType type,
                                                  Semaphore* config_sem)
@@ -93,6 +99,10 @@ void ChangeConfigTransaction::Finish() {
   // make the changes visible to readers.
   TRACE("APPLY CHANGE CONFIG: apply finished");
   state()->commit();
+}
+
+string ChangeConfigTransaction::ToString() const {
+  return Substitute("ChangeConfigTransaction [state=$0]", tx_state_->ToString());
 }
 
 }  // namespace tablet

@@ -30,6 +30,8 @@ class TabletServerPathHandlers {
                          std::stringstream* output);
   void HandleTabletPage(const Webserver::ArgumentMap& args,
                         std::stringstream* output);
+  void HandleTransactionsPage(const Webserver::ArgumentMap& args,
+                              std::stringstream* output);
 
   TabletServer* tserver_;
 

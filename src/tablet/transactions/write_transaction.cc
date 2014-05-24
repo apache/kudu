@@ -19,15 +19,16 @@
 namespace kudu {
 namespace tablet {
 
+using boost::bind;
+using boost::shared_lock;
 using consensus::ReplicateMsg;
 using consensus::CommitMsg;
 using consensus::OP_ABORT;
 using consensus::WRITE_OP;
-using boost::shared_lock;
 using tserver::TabletServerErrorPB;
 using tserver::WriteRequestPB;
 using tserver::WriteResponsePB;
-using boost::bind;
+using strings::Substitute;
 
 WriteTransaction::WriteTransaction(WriteTransactionState* state, DriverType type)
   : Transaction(state, type, Transaction::WRITE_TXN),
@@ -241,6 +242,11 @@ void WriteTransaction::Finish() {
   }
 }
 
+string WriteTransaction::ToString() const {
+  return Substitute("WriteTransaction [start_time=$0, state=$1]",
+                    start_time_.ToString(), state_->ToString());
+}
+
 Status WriteTransactionState::AddInsert(const Timestamp &timestamp, int64_t mrs_id) {
   if (PREDICT_TRUE(mvcc_tx_.get() != NULL)) {
     DCHECK_EQ(mvcc_tx_->timestamp(), timestamp)
@@ -311,6 +317,15 @@ void WriteTransactionState::Reset() {
   tx_metrics_.Reset();
   failed_operations_ = 0;
   timestamp_ = Timestamp::kInvalidTimestamp;
+}
+
+string WriteTransactionState::ToString() const {
+  // TODO Add a Debug/Stringify to PreparedRowWrite() so that we can
+  // see the information on locks held by the transactions.
+  //
+  // Note: a debug string of the request is not included for security
+  // reasons.
+  return Substitute("WriteTransactionState [timestamp=$0]", timestamp().ToString());
 }
 
 PreparedRowWrite::PreparedRowWrite(const ConstContiguousRow* row,

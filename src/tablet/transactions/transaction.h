@@ -102,6 +102,9 @@ class Transaction {
   // also called when transactions fail.
   virtual void Finish() {}
 
+  // Each implementation should have its own ToString() method.
+  virtual std::string ToString() const = 0;
+
   virtual ~Transaction() {}
 
  private:
@@ -167,9 +170,8 @@ class TransactionState {
     return &arena_;
   }
 
-  string ToString() const {
-    return "TODO transaction toString";
-  }
+  // Each implementation should have its own ToString() method.
+  virtual std::string ToString() const = 0;
 
   // Sets the timestamp for the transaction
   void set_timestamp(const Timestamp& timestamp) {

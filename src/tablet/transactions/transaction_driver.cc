@@ -34,7 +34,8 @@ TransactionDriver::TransactionDriver(TransactionTracker *txn_tracker,
               boost::bind(&TransactionDriver::ApplyOrCommitFailed, this, _1))),
       prepare_executor_(prepare_executor),
       apply_executor_(apply_executor),
-      prepare_finished_calls_(0) {
+      prepare_finished_calls_(0),
+      start_time_(MonoTime::Now(MonoTime::FINE)) {
   // TODO ideally we should have the Transaction available *here*, as to avoid
   // a call to IncrementCounters() in Execute (the respective DecrementCounters()
   // call happens in TransactionTracker::Release()).
@@ -61,6 +62,10 @@ Transaction::TransactionType TransactionDriver::tx_type() const {
 const std::tr1::shared_ptr<FutureCallback>& TransactionDriver::commit_finished_callback() {
   boost::lock_guard<simple_spinlock> lock(lock_);
   return commit_finished_callback_;
+}
+
+string TransactionDriver::ToString() const {
+  return transaction_ != NULL ? transaction_->ToString() : "";
 }
 
 LeaderTransactionDriver::LeaderTransactionDriver(TransactionTracker* txn_tracker,

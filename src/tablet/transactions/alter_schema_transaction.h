@@ -76,6 +76,8 @@ class AlterSchemaTransactionState : public TransactionState {
     release_component_lock();
   }
 
+  virtual std::string ToString() const OVERRIDE;
+
  private:
   DISALLOW_COPY_AND_ASSIGN(AlterSchemaTransactionState);
 
@@ -107,6 +109,8 @@ class AlterSchemaTransaction : public Transaction {
 
   // Actually commits the transaction.
   virtual void Finish() OVERRIDE;
+
+  virtual std::string ToString() const OVERRIDE;
 
  private:
   gscoped_ptr<AlterSchemaTransactionState> tx_state_;

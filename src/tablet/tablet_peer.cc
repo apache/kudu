@@ -286,6 +286,33 @@ Status TabletPeer::RunLogGC() {
   return Status::OK();
 }
 
+void TabletPeer::GetInFlightTransactions(vector<consensus::TransactionStatusPB>* out) const {
+  vector<scoped_refptr<TransactionDriver> > pending_transactions;
+  txn_tracker_.GetPendingTransactions(&pending_transactions);
+  BOOST_FOREACH(const scoped_refptr<TransactionDriver>& driver, pending_transactions) {
+    if (driver->state() != NULL) {
+      consensus::TransactionStatusPB status_pb;
+      status_pb.mutable_op_id()->CopyFrom(driver->GetOpId());
+      switch (driver->tx_type()) {
+        case Transaction::WRITE_TXN:
+          status_pb.set_tx_type(consensus::WRITE_OP);
+          break;
+        case Transaction::ALTER_SCHEMA_TXN:
+          status_pb.set_tx_type(consensus::ALTER_SCHEMA_OP);
+          break;
+        case Transaction::CHANGE_CONFIG_TXN:
+          status_pb.set_tx_type(consensus::CHANGE_CONFIG_OP);
+          break;
+      }
+      status_pb.set_description(driver->ToString());
+      int64_t running_for_micros =
+          MonoTime::Now(MonoTime::FINE).GetDeltaSince(driver->start_time()).ToMicroseconds();
+      status_pb.set_running_for_micros(running_for_micros);
+      out->push_back(status_pb);
+    }
+  }
+}
+
 void TabletPeer::GetEarliestNeededOpId(consensus::OpId* min_op_id) const {
   min_op_id->Clear();
 

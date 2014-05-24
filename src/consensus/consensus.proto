@@ -136,3 +136,10 @@ message ConsensusResponsePB {
   optional tserver.TabletServerErrorPB error = 1;
   optional ConsensusStatusPB status = 3;
 }
+
+message TransactionStatusPB {
+  required OpId op_id = 1;
+  required OperationType tx_type = 2;
+  required int64 running_for_micros = 3;
+  required string description = 4;
+}

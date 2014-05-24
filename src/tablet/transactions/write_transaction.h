@@ -3,6 +3,7 @@
 #ifndef KUDU_TABLET_WRITE_TRANSACTION_H_
 #define KUDU_TABLET_WRITE_TRANSACTION_H_
 
+#include <string>
 #include <vector>
 
 #include "common/schema.h"
@@ -183,6 +184,8 @@ class WriteTransactionState : public TransactionState {
     Reset();
   }
 
+  virtual std::string ToString() const OVERRIDE;
+
  private:
   DISALLOW_COPY_AND_ASSIGN(WriteTransactionState);
 
@@ -317,6 +320,9 @@ class WriteTransaction : public Transaction {
 
   // Actually commits the mvcc transaction and updates the metrics.
   virtual void Finish() OVERRIDE;
+
+  virtual std::string ToString() const OVERRIDE;
+
  private:
   // Decodes the rows in WriteRequestPB and creates prepared row writes.
   Status CreatePreparedInsertsAndMutates(const Schema& client_schema);

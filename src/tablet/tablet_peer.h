@@ -4,6 +4,7 @@
 #define KUDU_TABLET_TABLET_PEER_H_
 
 #include <string>
+#include <vector>
 
 #include "consensus/consensus.h"
 #include "consensus/log.h"
@@ -153,6 +154,11 @@ class TabletPeer : public consensus::ReplicaTransactionFactory {
     boost::lock_guard<simple_spinlock> lock(lock_);
     return error_;
   }
+
+  // Adds list of transactions in-flight at the time of the call to
+  // 'out'. TransactionStatusPB objects are used to allow this method
+  // to be used by both the web-UI and ts-cli.
+  void GetInFlightTransactions(std::vector<consensus::TransactionStatusPB>* out) const;
 
   // Returns the minimum known OpId that is in-memory or in-flight.
   // Used for selection of log segments to delete during Log GC.
