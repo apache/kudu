@@ -140,7 +140,7 @@ class TabletPeerTest : public KuduTabletTest {
         << "\nReq:\n" << req.DebugString() << "Resp:\n" << resp->DebugString();
 
     // Roll the log after each write.
-    CHECK_OK(tablet_peer->log_->RollOverForTests());
+    CHECK_OK(tablet_peer->log_->AllocateSegmentAndRollOver());
     return Status::OK();
   }
 
@@ -361,7 +361,7 @@ TEST_F(TabletPeerTest, TestActiveTransactionPreventsLogGC) {
     apply_started.Wait();
     // The apply will hang until we CountDown() the continue latch.
     // Now, roll the log. Below, we execute a few more insertions with rolling.
-    ASSERT_STATUS_OK(log->RollOverForTests());
+    ASSERT_STATUS_OK(log->AllocateSegmentAndRollOver());
   }
 
   ASSERT_EQ(1, tablet_peer_->txn_tracker_.GetNumPendingForTests());

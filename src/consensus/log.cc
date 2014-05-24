@@ -463,9 +463,13 @@ Status Log::WriteHeaderForTests() {
   return WriteHeader(zero);
 }
 
-Status Log::RollOverForTests() {
+Status Log::AllocateSegmentAndRollOver() {
   RETURN_NOT_OK(AsyncAllocateSegment());
   return RollOver();
+}
+
+FsManager* Log::GetFsManager() {
+  return fs_manager_;
 }
 
 Status Log::Sync() {

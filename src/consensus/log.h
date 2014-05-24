@@ -180,8 +180,13 @@ class Log {
   // For testing recovery when only the header has been written, but no records.
   Status WriteHeaderForTests();
 
-  // Synchronously allocate a new segment and roll the log.
-  Status RollOverForTests();
+  // Forces the Log to allocate a new segment and roll over.
+  // This can be used to make sure all entries appended up to this point are
+  // available in closed, readable segments.
+  Status AllocateSegmentAndRollOver();
+
+  // Returns this Log's FsManager.
+  FsManager* GetFsManager();
 
  private:
   friend class LogTest;
