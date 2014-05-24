@@ -45,12 +45,21 @@ public class TestKuduSession extends BaseKuduTest {
   @Test(timeout = 100000)
   public void test() throws Exception {
 
-    KuduSession session = client.newSession(); // using the default, auto-sync
-    assertFalse("There shouldn't be any data in the beginning", exists(0));
-    Deferred<Object> d = session.apply(createInsert(0));
-    d.join();
-    assertTrue(exists(0));
+    KuduSession session = client.newSession();
 
+    // First testing KUDU-232, the cache is empty and we want to force flush. We force the flush
+    // interval to be higher than the sleep time so that we don't background flush while waiting.
+    // If our subsequent manual flush throws, it means the logic to block on in-flight tablet
+    // lookups in flush isn't working properly.
+    session.setFlushMode(KuduSession.FlushMode.AUTO_FLUSH_BACKGROUND);
+    session.setFlushInterval(11000);
+    Deferred<Object> d = session.apply(createInsert(0));
+    session.flush().join(DEFAULT_SLEEP);
+    assertTrue(exists(0));
+    // set back to default
+    session.setFlushInterval(1000);
+
+    session.setFlushMode(KuduSession.FlushMode.AUTO_FLUSH_SYNC);
     for (int i = 1; i < 10; i++) {
       d = session.apply(createInsert(i));
     }

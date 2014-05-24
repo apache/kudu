@@ -15,6 +15,8 @@ import javax.annotation.concurrent.GuardedBy;
 import java.nio.charset.Charset;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.Iterator;
+import java.util.List;
 import java.util.Map;
 
 import static java.util.concurrent.TimeUnit.MILLISECONDS;
@@ -117,6 +119,17 @@ public class KuduSession {
       Deferred<Object>>();
 
   /**
+   * This List is used when not in AUTO_FLUSH_SYNC mode in order to keep track of the operations
+   * that are looking up their tablet, meaning that they aren't in any of the maps above. This is
+   * not expected to grow a lot except when a client starts and only for a short amount of time.
+   *
+   * The locking is somewhat tricky since when calling flush() we need to be able to grab
+   * operations that already have found their tablets plus those that are going to start batching.
+   */
+  @GuardedBy("this")
+  private final List<Operation> operationsInLookup = new ArrayList<Operation>();
+
+  /**
    * Package-private constructor meant to be used via KuduClient
    * @param client client that creates this session
    */
@@ -133,7 +146,8 @@ public class KuduSession {
    */
   public void setFlushMode(FlushMode flushMode) {
     synchronized (this) {
-      if (!this.operations.isEmpty()) {
+      if (!this.operations.isEmpty() || !this.operationsInFlight.isEmpty() ||
+          !this.operationsInLookup.isEmpty()) {
         throw new IllegalArgumentException("Cannot change flush mode when writes are buffered");
       }
     }
@@ -198,8 +212,6 @@ public class KuduSession {
 
   /**
    * Flushes the buffered operations
-   * This method doesn't guarantee that all the apply()'d operations will be flushed since some
-   * might still be trying to locate their tablet.
    * @return a Deferred whose callback chain will be invoked when
    * everything that was buffered at the time of the call has been flushed.
    */
@@ -211,6 +223,14 @@ public class KuduSession {
     HashMap<Slice, Batch> copyOfOps;
     synchronized (this) {
       copyOfOps = new HashMap<Slice, Batch>(operations);
+      List<Operation> copyOfOpsInLookup = new ArrayList<Operation>(operationsInLookup);
+      operationsInLookup.clear();
+      for (Operation op : copyOfOpsInLookup) {
+        // Safe to do this here because we removed it from operationsInLookup. Lookup may not be
+        // over, but it will be finished down in KuduClient. It means we may be missing a few
+        // batching opportunities.
+        d.add(client.sendRpcToTablet(op));
+      }
     }
     for (Map.Entry<Slice, Batch> entry: copyOfOps.entrySet()) {
       d.add(flushTablet(entry.getKey(), entry.getValue()));
@@ -262,6 +282,9 @@ public class KuduSession {
       return d;
     }
 
+    synchronized (this) {
+      operationsInLookup.add(operation);
+    }
     // TODO starts looking a lot like sendRpcToTablet
     operation.attempt++;
     if (client.isTableNotServed(table)) {
@@ -274,9 +297,24 @@ public class KuduSession {
   Callback<Deferred<Object>, Object> getRetryRpcCB(final Operation operation) {
     final class RetryRpcCB implements Callback<Deferred<Object>, Object> {
       public Deferred<Object> call(final Object arg) {
-        Deferred<Object> d = client.handleLookupExceptions(operation, arg);
-        return d == null ? apply(operation):  // Retry the RPC.
-                           d; // something went wrong
+        // Important that we lock down everything here so that when we're done at the end of this
+        // method either we put back the operation into operationsInLookup down in apply(),
+        // or we succesfully batch it and then flush() will see it in the operations map.
+        synchronized (KuduSession.this) {
+          boolean removed = operationsInLookup.remove(operation);
+          if (!removed) {
+            LOG.trace("Won't continue applying this operation as it should be handled by a call " +
+                "to flush(): " + operation);
+            return Deferred.fromResult(null);
+          }
+
+          Deferred<Object> d = client.handleLookupExceptions(operation, arg);
+          if (d == null) {
+            return apply(operation); // Retry the RPC.
+          } else {
+            return d; // something went wrong
+          }
+        }
       }
       public String toString() {
         return "retry RPC";
