@@ -194,6 +194,17 @@ void PeerMessageQueue::ResponseFromPeer(const string& uuid,
   *more_pending = (iter != messages_.end());
 }
 
+Status PeerMessageQueue::GetOperationStatus(const OpId& op_id,
+                                            scoped_refptr<OperationStatusTracker>* status) {
+  boost::lock_guard<simple_spinlock> lock(queue_lock_);
+  MessagesBuffer::iterator iter = messages_.find(op_id);
+  if (iter == messages_.end()) {
+    return Status::NotFound("Operation is not in the queue.");
+  }
+  *status = (*iter).second->status_;
+  return Status::OK();
+}
+
 Status PeerMessageQueue::TrimBuffer() {
   // TODO for now we're just trimming the buffer, but we need to handle when
   // the buffer is full but there is a peer hanging on to the queue (very delayed)

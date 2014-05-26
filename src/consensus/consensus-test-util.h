@@ -11,12 +11,15 @@
 #include "consensus/consensus_peers.h"
 #include "consensus/consensus_queue.h"
 #include "gutil/map-util.h"
+#include "gutil/strings/substitute.h"
 #include "util/countdown_latch.h"
 #include "util/locks.h"
 #include "util/threadpool.h"
 
 namespace kudu {
 namespace consensus {
+
+using strings::Substitute;
 
 // An operation status for tests that allows to wait for operations
 // to complete.
@@ -58,6 +61,12 @@ class TestOperationStatus : public OperationStatusTracker {
   int replicated_count() const {
     boost::lock_guard<simple_spinlock> lock(lock_);
     return replicated_count_;
+  }
+
+  virtual std::string ToString() const {
+    boost::lock_guard<simple_spinlock> lock(lock_);
+    return Substitute("Id: $0, IsDone: $1, IsAllDone: $2, ReplicatedCount: $3.",
+                      op_id_.ShortDebugString(), IsDone(), IsAllDone(), replicated_count_);
   }
 
  private:

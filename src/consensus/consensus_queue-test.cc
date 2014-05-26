@@ -1,7 +1,5 @@
 // Copyright (c) 2013, Cloudera, inc.
 
-#include <boost/assign/list_of.hpp>
-#include <boost/foreach.hpp>
 #include <gtest/gtest.h>
 #include <gflags/gflags.h>
 
@@ -186,6 +184,21 @@ TEST(TestConsensusRequestQueue, TestBufferTrimsWhenMessagesAreNotNeeded) {
 
   // test that even though we've overflown the buffer it still keeps within bounds
   ASSERT_LE(queue.GetQueuedOperationsSizeBytesForTests(), 1 * 1024 * 1024);
+}
+
+TEST(TestConsensusRequestQueue, TestGetOperationStatusTracker) {
+  vector<scoped_refptr<OperationStatusTracker> > statuses;
+  PeerMessageQueue queue;
+  AppendReplicateMessagesToQueue(&queue, 1, 100, 1, 1, &statuses);
+
+  // Try and acccess some random operation in the queue. In this case operation
+  // 3.4 corresponds to the 25th operation in the queue.
+  OpId op;
+  op.set_term(3);
+  op.set_index(4);
+  scoped_refptr<OperationStatusTracker> status;
+  queue.GetOperationStatus(op, &status);
+  ASSERT_EQ(statuses[24]->ToString(), status->ToString());
 }
 
 }  // namespace consensus

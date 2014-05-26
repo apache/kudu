@@ -126,6 +126,12 @@ class PeerMessageQueue {
                         const ConsensusStatusPB& status,
                         bool* more_pending);
 
+  // Returns the OperationStatusTracker for the operation with id = 'op_id' by
+  // setting 'status' to it and returning Status::OK() or returns Status::NotFound
+  // if no such operation can be found in the queue.
+  Status GetOperationStatus(const OpId& op_id,
+                            scoped_refptr<OperationStatusTracker>* status);
+
   // Closes the queue, peers are still allowed to call UntrackPeer() and
   // ResponseFromPeer() but no additional peers can be tracked or messages
   // queued.
