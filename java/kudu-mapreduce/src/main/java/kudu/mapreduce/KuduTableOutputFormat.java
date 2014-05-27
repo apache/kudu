@@ -10,6 +10,7 @@ import kudu.rpc.Operation;
 import kudu.rpc.PleaseThrottleException;
 import org.apache.hadoop.conf.Configurable;
 import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.io.NullWritable;
 import org.apache.hadoop.mapreduce.JobContext;
 import org.apache.hadoop.mapreduce.OutputCommitter;
 import org.apache.hadoop.mapreduce.OutputFormat;
@@ -26,10 +27,9 @@ import java.util.concurrent.atomic.AtomicLong;
  * Use {@link kudu.mapreduce.KuduTableMapReduceUtil#initTableOutputFormat} to correctly setup
  * this output format, then {@link kudu.mapreduce.KuduTableMapReduceUtil#getTableFromContext} to
  * get a KuduTable.
- * @param <KEY>
  */
-public class KuduTableOutputFormat<KEY> extends OutputFormat<KEY,
-    Operation> implements Configurable {
+public class KuduTableOutputFormat extends OutputFormat<NullWritable,Operation>
+    implements Configurable {
 
   private static final Logger LOG = LoggerFactory.getLogger(KuduTableOutputFormat.class);
 
@@ -114,9 +114,9 @@ public class KuduTableOutputFormat<KEY> extends OutputFormat<KEY,
   }
 
   @Override
-  public RecordWriter<KEY, Operation> getRecordWriter(TaskAttemptContext taskAttemptContext)
+  public RecordWriter<NullWritable, Operation> getRecordWriter(TaskAttemptContext taskAttemptContext)
       throws IOException, InterruptedException {
-    return new TableRecordWriter<KEY>(this.session, this.operationTimeoutMs);
+    return new TableRecordWriter(this.session, this.operationTimeoutMs);
   }
 
   @Override
@@ -128,8 +128,7 @@ public class KuduTableOutputFormat<KEY> extends OutputFormat<KEY,
     return new KuduTableOutputCommitter();
   }
 
-  protected static class TableRecordWriter<KEY>
-      extends RecordWriter<KEY, Operation> {
+  protected static class TableRecordWriter extends RecordWriter<NullWritable, Operation> {
 
     private final AtomicLong rowsWithErrors = new AtomicLong();
     private final KuduSession session;
@@ -141,7 +140,8 @@ public class KuduTableOutputFormat<KEY> extends OutputFormat<KEY,
     }
 
     @Override
-    public void write(KEY key, Operation operation) throws IOException, InterruptedException {
+    public void write(NullWritable key, Operation operation)
+        throws IOException, InterruptedException {
       try {
         Deferred<Object> d = session.apply(operation);
         d.addErrback(defaultErrorCB);

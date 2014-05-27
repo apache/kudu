@@ -9,6 +9,7 @@ import kudu.rpc.KuduScanner;
 import kudu.rpc.KuduTable;
 import kudu.rpc.Operation;
 import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.io.NullWritable;
 import org.apache.hadoop.mapreduce.RecordWriter;
 import org.junit.BeforeClass;
 import org.junit.Test;
@@ -29,7 +30,7 @@ public class TestKuduTableOutputFormat extends BaseKuduTest {
   public void test() throws Exception {
     createTable(TABLE_NAME, getBasicSchema(), new CreateTableBuilder());
 
-    KuduTableOutputFormat<byte[]> output = new KuduTableOutputFormat<byte[]>();
+    KuduTableOutputFormat output = new KuduTableOutputFormat();
     Configuration conf = new Configuration();
     conf.set(KuduTableOutputFormat.MASTER_ADDRESS_KEY, getMasterAddressAndPort());
     conf.set(KuduTableOutputFormat.OUTPUT_TABLE_KEY, TABLE_NAME);
@@ -46,8 +47,8 @@ public class TestKuduTableOutputFormat extends BaseKuduTest {
     insert.addInt(schema.getColumn(2).getName(), 3);
     insert.addString(schema.getColumn(3).getName(), "a string");
 
-    RecordWriter<byte[], Operation> rw = output.getRecordWriter(null);
-    rw.write(insert.key(), insert);
+    RecordWriter<NullWritable, Operation> rw = output.getRecordWriter(null);
+    rw.write(NullWritable.get(), insert);
     rw.close(null);
     KuduScanner scanner = client.newScanner(table, schema);
     assertEquals(1, countRowsInScan(scanner));
