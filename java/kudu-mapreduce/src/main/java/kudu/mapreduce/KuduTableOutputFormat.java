@@ -1,11 +1,13 @@
 // Copyright (c) 2014, Cloudera, inc.
 package kudu.mapreduce;
 
+import com.stumbleupon.async.Callback;
 import com.stumbleupon.async.Deferred;
 import kudu.rpc.KuduClient;
 import kudu.rpc.KuduSession;
 import kudu.rpc.KuduTable;
 import kudu.rpc.Operation;
+import kudu.rpc.PleaseThrottleException;
 import org.apache.hadoop.conf.Configurable;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.mapreduce.JobContext;
@@ -13,9 +15,12 @@ import org.apache.hadoop.mapreduce.OutputCommitter;
 import org.apache.hadoop.mapreduce.OutputFormat;
 import org.apache.hadoop.mapreduce.RecordWriter;
 import org.apache.hadoop.mapreduce.TaskAttemptContext;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * Use {@link kudu.mapreduce.KuduTableMapReduceUtil#initTableOutputFormat} to correctly setup
@@ -26,6 +31,8 @@ import java.util.concurrent.ConcurrentHashMap;
 public class KuduTableOutputFormat<KEY> extends OutputFormat<KEY,
     Operation> implements Configurable {
 
+  private static final Logger LOG = LoggerFactory.getLogger(KuduTableOutputFormat.class);
+
   /** Job parameter that specifies the output table. */
   static final String OUTPUT_TABLE_KEY = "kudu.mapreduce.output.table";
 
@@ -34,6 +41,9 @@ public class KuduTableOutputFormat<KEY> extends OutputFormat<KEY,
 
   /** Job parameter that specifies how long we wait for operations to complete */
   static final String OPERATION_TIMEOUT_MS_KEY = "kudu.mapreduce.operation.timeout.ms";
+
+  /** Number of rows that are buffered before flushing to the tablet server */
+  static final String BUFFER_ROW_COUNT_KEY = "kudu.mapreduce.buffer.row.count";
 
   /**
    * Job parameter that specifies which key is to be used to reach the KuduTableOutputFormat
@@ -49,6 +59,12 @@ public class KuduTableOutputFormat<KEY> extends OutputFormat<KEY,
   private static final ConcurrentHashMap<String, KuduTableOutputFormat> MULTITON = new
       ConcurrentHashMap<String, KuduTableOutputFormat>();
 
+  /**
+   * This counter helps indicate which task log to look at since rows that weren't applied will
+   * increment this counter.
+   */
+  public static enum Counters { ROWS_WITH_ERRORS }
+
   private Configuration conf = null;
 
   private KuduClient client;
@@ -63,6 +79,7 @@ public class KuduTableOutputFormat<KEY> extends OutputFormat<KEY,
     String masterAddress = this.conf.get(MASTER_ADDRESS_KEY);
     String tableName = this.conf.get(OUTPUT_TABLE_KEY);
     this.operationTimeoutMs = this.conf.getLong(OPERATION_TIMEOUT_MS_KEY, 10000);
+    int bufferSpace = this.conf.getInt(BUFFER_ROW_COUNT_KEY, 1000);
 
     this.client = KuduTableMapReduceUtil.connect(masterAddress);
     Deferred<Object> d = client.openTable(tableName);
@@ -75,6 +92,8 @@ public class KuduTableOutputFormat<KEY> extends OutputFormat<KEY,
     }
     this.session = client.newSession();
     this.session.setTimeoutMillis(this.operationTimeoutMs);
+    this.session.setFlushMode(KuduSession.FlushMode.AUTO_FLUSH_BACKGROUND);
+    this.session.setMutationBufferSpace(bufferSpace);
     String multitonKey = String.valueOf(Thread.currentThread().getId());
     assert(MULTITON.get(multitonKey) == null);
     MULTITON.put(multitonKey, this);
@@ -85,7 +104,7 @@ public class KuduTableOutputFormat<KEY> extends OutputFormat<KEY,
     return MULTITON.get(multitonKey).getKuduTable();
   }
 
-  public KuduTable getKuduTable() {
+  private KuduTable getKuduTable() {
     return this.table;
   }
 
@@ -112,6 +131,7 @@ public class KuduTableOutputFormat<KEY> extends OutputFormat<KEY,
   protected static class TableRecordWriter<KEY>
       extends RecordWriter<KEY, Operation> {
 
+    private final AtomicLong rowsWithErrors = new AtomicLong();
     private final KuduSession session;
     private final long operationTimeoutMs;
 
@@ -122,23 +142,52 @@ public class KuduTableOutputFormat<KEY> extends OutputFormat<KEY,
 
     @Override
     public void write(KEY key, Operation operation) throws IOException, InterruptedException {
-      Deferred<Object> d = session.apply(operation);
       try {
-        d.join(operationTimeoutMs);
-      } catch (Exception e) {
-        throw new IOException("Could not apply the operation", e);
+        Deferred<Object> d = session.apply(operation);
+        d.addErrback(defaultErrorCB);
+      } catch (PleaseThrottleException ex) {
+        try {
+          ex.getDeferred().join(operationTimeoutMs);
+        } catch (Exception e) {
+          throw new IOException("Encounted exception while waiting to write", ex);
+        }
+        // We'll loop until the Operation's attemps hits the default max.
+        write(key, operation);
       }
     }
 
     @Override
     public void close(TaskAttemptContext taskAttemptContext) throws IOException,
         InterruptedException {
-      Deferred<Object> d = session.close();
       try {
+        Deferred<Object> d = session.close();
+        d.addErrback(defaultErrorCB);
         d.join(operationTimeoutMs);
       } catch (Exception e) {
         throw new IOException("Could not completely flush the operations when closing", e);
+      } finally {
+        if (taskAttemptContext != null) {
+          // This is the only place where we have access to the context in the record writer,
+          // so set the counter here.
+          taskAttemptContext.getCounter(Counters.ROWS_WITH_ERRORS).setValue(rowsWithErrors.get());
+        }
       }
     }
+
+    private Callback<Object, Object> defaultErrorCB = new Callback<Object, Object>() {
+      @Override
+      public Object call(Object arg) throws Exception {
+        rowsWithErrors.incrementAndGet();
+        if (arg == null) {
+          LOG.warn("The error callback was triggered after applying a row but a message wasn't " +
+              "provided");
+        } else if (arg instanceof Exception) {
+          LOG.warn("Encountered an exception after applying rows", arg);
+        } else {
+          LOG.warn("Encountered an error after applying rows: " + arg);
+        }
+        return null;
+      }
+    };
   }
 }
