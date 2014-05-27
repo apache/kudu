@@ -12,8 +12,8 @@ TEST(ScannersTest, TestManager) {
 
   // Create two scanners, make sure their ids are different.
   SharedScanner s1, s2;
-  mgr.NewScanner(&s1);
-  mgr.NewScanner(&s2);
+  mgr.NewScanner("", "", &s1);
+  mgr.NewScanner("", "", &s2);
   ASSERT_NE(s1->id(), s2->id());
 
   // Check that they're both registered.

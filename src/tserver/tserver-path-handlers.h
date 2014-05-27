@@ -18,6 +18,7 @@ class QuorumPB;
 namespace tserver {
 
 class TabletServer;
+class Scanner;
 
 class TabletServerPathHandlers {
  public:
@@ -30,6 +31,8 @@ class TabletServerPathHandlers {
   Status Register(Webserver* server);
 
  private:
+  void HandleScansPage(const Webserver::ArgumentMap& args,
+                       std::stringstream* output);
   void HandleTabletsPage(const Webserver::ArgumentMap& args,
                          std::stringstream* output);
   void HandleTabletPage(const Webserver::ArgumentMap& args,
@@ -37,6 +40,7 @@ class TabletServerPathHandlers {
   void HandleTransactionsPage(const Webserver::ArgumentMap& args,
                               std::stringstream* output);
   std::string QuorumPBToHtml(const metadata::QuorumPB& quorum) const;
+  std::string ScannerToHtml(const Scanner& scanner) const;
 
   TabletServer* tserver_;
 

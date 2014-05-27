@@ -10,11 +10,13 @@
 
 #include "gutil/map-util.h"
 #include "gutil/strings/human_readable.h"
+#include "gutil/strings/join.h"
 #include "gutil/strings/substitute.h"
 #include "server/webui_util.h"
 #include "tablet/tablet.pb.h"
 #include "tablet/tablet_bootstrap.h"
 #include "tablet/tablet_peer.h"
+#include "tserver/scanners.h"
 #include "tserver/tablet_server.h"
 #include "tserver/ts_tablet_manager.h"
 #include "util/url-coding.h"
@@ -36,6 +38,10 @@ TabletServerPathHandlers::~TabletServerPathHandlers() {
 }
 
 Status TabletServerPathHandlers::Register(Webserver* server) {
+  server->RegisterPathHandler(
+    "/scanz",
+    boost::bind(&TabletServerPathHandlers::HandleScansPage, this, _1, _2),
+    true /* styled */, true /* is_on_nav_bar */);
   server->RegisterPathHandler(
     "/tablets",
     boost::bind(&TabletServerPathHandlers::HandleTabletsPage, this, _1, _2),
@@ -217,6 +223,66 @@ void TabletServerPathHandlers::HandleTabletPage(const Webserver::ArgumentMap &ar
   *output << "<h2>Schema</h2>\n";
   shared_ptr<Schema> schema(peer->tablet()->schema());
   HtmlOutputSchemaTable(*schema.get(), output);
+}
+
+void TabletServerPathHandlers::HandleScansPage(const Webserver::ArgumentMap &args,
+                                               std::stringstream* output) {
+  *output << "<h1>Scans</h1>\n";
+  *output << "<table class='table table-striped'>\n";
+  *output << "<tr><th>Tablet id</th><th>Scanner id</th><th>Total time in-flight</th>"
+      "<th>Time since last update</th><th>Requestor</th>"
+      "<th>Pushed down key predicates</th><th>Other predicates</th></tr>\n";
+
+  vector<SharedScanner> scanners;
+  tserver_->scanner_manager()->ListScanners(&scanners);
+  BOOST_FOREACH(const SharedScanner& scanner, scanners) {
+    *output << ScannerToHtml(*scanner);
+  }
+  *output << "</table>";
+}
+
+string TabletServerPathHandlers::ScannerToHtml(const Scanner& scanner) const {
+  std::stringstream html;
+  uint64_t time_in_flight_us =
+      MonoTime::Now(MonoTime::COARSE).GetDeltaSince(scanner.start_time()).ToMicroseconds();
+  uint64_t time_since_last_access_us =
+      MonoTime::Now(MonoTime::COARSE).GetDeltaSince(scanner.last_access_time()).ToMicroseconds();
+
+  html << Substitute("<tr><td>$0</td><td>$1</td><td>$2 us.</td><td>$3 us.</td><td>$4</td>",
+                     EscapeForHtmlToString(scanner.tablet_id()), // $0
+                     EscapeForHtmlToString(scanner.id()), // $1
+                     time_in_flight_us, time_since_last_access_us, // $2, $3
+                     EscapeForHtmlToString(scanner.requestor_string())); // $4
+  shared_ptr<TabletPeer> tablet_peer;
+  if (!tserver_->tablet_manager()->LookupTablet(scanner.tablet_id(), &tablet_peer)) {
+    html << Substitute("<td><b>Tablet $0 is no longer valid.</b></td></tr>\n",
+                       scanner.tablet_id());
+  } else {
+    vector<string> pushed_preds;
+    vector<string> other_preds;
+    const Schema& schema = *tablet_peer->tablet()->schema();
+    BOOST_FOREACH(const EncodedKeyRange* key_range, scanner.spec().encoded_ranges()) {
+      string lower_bound_str = "''";
+      string upper_bound_str = "''";
+      if (key_range->has_lower_bound()) {
+        lower_bound_str = key_range->lower_bound().Stringify(schema);
+      }
+      if (key_range->has_upper_bound()) {
+        upper_bound_str = key_range->upper_bound().Stringify(schema);
+      }
+      pushed_preds.push_back(Substitute("lower bound: '$0', upper bound: '$1'",
+                                        lower_bound_str, upper_bound_str));
+    }
+    BOOST_FOREACH(const ColumnRangePredicate& pred, scanner.spec().predicates()) {
+      other_preds.push_back(pred.ToString());
+    }
+    string pushed_pred_str = JoinStrings(pushed_preds, "\n");
+    string other_pred_str = JoinStrings(other_preds, "\n");
+    html << Substitute("<td>$0</td><td>$1</td></tr>\n",
+                       EscapeForHtmlToString(pushed_pred_str),
+                       EscapeForHtmlToString(other_pred_str));
+  }
+  return html.str();
 }
 
 } // namespace tserver

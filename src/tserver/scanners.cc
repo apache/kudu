@@ -7,6 +7,7 @@
 #include <tr1/memory>
 
 #include "common/iterator.h"
+#include "common/scan_spec.h"
 #include "gutil/map-util.h"
 
 DEFINE_int32(tablet_server_scanner_ttl_seconds, 60,
@@ -24,7 +25,9 @@ ScannerManager::ScannerManager()
 ScannerManager::~ScannerManager() {
 }
 
-void ScannerManager::NewScanner(SharedScanner* scanner) {
+void ScannerManager::NewScanner(const std::string& tablet_id,
+                                const std::string& requestor_string,
+                                SharedScanner* scanner) {
   // Keep trying to generate a unique ID until we get one.
   bool success = false;
   while (!success) {
@@ -32,7 +35,7 @@ void ScannerManager::NewScanner(SharedScanner* scanner) {
     // probably generate random numbers instead, since we can safely
     // just retry until we avoid a collission.
     string id = oid_generator_.Next();
-    scanner->reset(new Scanner(id));
+    scanner->reset(new Scanner(id, tablet_id, requestor_string));
 
     boost::lock_guard<boost::shared_mutex> l(lock_);
     success = InsertIfNotPresent(&scanners_by_id_, id, *scanner);
@@ -54,8 +57,20 @@ size_t ScannerManager::CountActiveScanners() const {
   return scanners_by_id_.size();
 }
 
-Scanner::Scanner(const string& id)
-  : id_(id) {
+void ScannerManager::ListScanners(std::vector<SharedScanner>* scanners) {
+  boost::lock_guard<boost::shared_mutex> l(lock_);
+  BOOST_FOREACH(const ScannerMapEntry& e, scanners_by_id_) {
+    scanners->push_back(e.second);
+  }
+}
+
+Scanner::Scanner(const string& id,
+                 const string& tablet_id,
+                 const string& requestor_string)
+    : id_(id),
+      tablet_id_(tablet_id),
+      requestor_string_(requestor_string),
+      start_time_(MonoTime::Now(MonoTime::COARSE)) {
   UpdateAccessTime();
 }
 
@@ -66,9 +81,15 @@ void Scanner::UpdateAccessTime() {
   last_access_time_ = MonoTime::Now(MonoTime::COARSE);
 }
 
-void Scanner::Init(gscoped_ptr<RowwiseIterator> iter) {
+void Scanner::Init(gscoped_ptr<RowwiseIterator> iter,
+                   gscoped_ptr<ScanSpec> spec) {
   CHECK(!iter_) << "Already initialized";
   iter_.reset(iter.release());
+  spec_.reset(spec.release());
+}
+
+const ScanSpec& Scanner::spec() const {
+  return *spec_;
 }
 
 } // namespace tserver

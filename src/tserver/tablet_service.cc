@@ -639,12 +639,14 @@ void TabletServiceImpl::HandleNewScanRequest(const ScanRequestPB* req,
   }
 
   SharedScanner scanner;
-  server_->scanner_manager()->NewScanner(&scanner);
-  scanner->Init(iter.Pass());
+  server_->scanner_manager()->NewScanner(tablet_peer->tablet_id(),
+                                         context->requestor_string(),
+                                         &scanner);
 
-  // The ScanSpec has to remain valid as long as the scanner, so move its
-  // ownership into the scanner itself.
-  scanner->autorelease_pool()->Add(spec.release());
+  // The ScanSpec has to remain valid as long as the scanner, so move
+  // its pool into the scanner itself, and let the scaner take
+  // ownership of 'iter' and 'spec'.
+  scanner->Init(iter.Pass(), spec.Pass());
   pool.DonateAllTo(scanner->autorelease_pool());
 
   // TODO: could start the scan here unless batch_size_bytes is 0
