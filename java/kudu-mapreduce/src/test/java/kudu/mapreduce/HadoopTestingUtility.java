@@ -19,9 +19,11 @@
  */
 package kudu.mapreduce;
 
+import org.apache.commons.io.FileUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 
 import java.io.File;
@@ -82,18 +84,20 @@ public class HadoopTestingUtility {
   }
 
   public void cleanup() throws IOException {
+    FileSystem.closeAll();
     if (this.testDir != null) {
       delete(this.testDir);
     }
   }
 
-  private void delete(File f) throws IOException {
-    if (f.isDirectory()) {
-      for (File c : f.listFiles())
-        delete(c);
+  private void delete(File dir) throws IOException {
+    if (dir == null || !dir.exists()) {
+      return;
     }
-    if (!f.delete()) {
-      throw new FileNotFoundException("Failed to delete file: " + f);
+    try {
+      FileUtils.deleteDirectory(dir);
+    } catch (IOException ex) {
+      LOG.warn("Failed to delete " + dir.getAbsolutePath());
     }
   }
 }
