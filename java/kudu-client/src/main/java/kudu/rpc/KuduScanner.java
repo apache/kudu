@@ -181,7 +181,8 @@ public final class KuduScanner {
     this.client = client;
     this.table = table;
     this.schema = schema;
-    this.columnRangePredicates = new ColumnRangePredicates(schema);
+    // Passing the table's full schema as you can add predicates on columns you aren't reading
+    this.columnRangePredicates = new ColumnRangePredicates(table.getSchema());
     this.deadlineTracker = new DeadlineTracker();
     this.readMode = ReadMode.READ_LATEST;
   }

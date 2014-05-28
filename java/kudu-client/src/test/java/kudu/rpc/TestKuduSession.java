@@ -1,6 +1,7 @@
 // Copyright (c) 2013, Cloudera, inc.
 package kudu.rpc;
 
+import kudu.ColumnSchema;
 import kudu.Schema;
 import com.stumbleupon.async.Callback;
 import com.stumbleupon.async.Deferred;
@@ -10,6 +11,7 @@ import org.junit.Before;
 import org.junit.BeforeClass;
 import org.junit.Test;
 
+import java.util.ArrayList;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -199,6 +201,10 @@ public class TestKuduSession extends BaseKuduTest {
     // If we only waited after the in flight batch, there would be 10 rows here.
     assertEquals(20, countInRange(71, 91));
 
+    // Test empty scanner projection
+    KuduScanner scanner = getScanner(71, 91, new Schema(new ArrayList<ColumnSchema>(0)));
+    assertEquals(20, countRowsInScan(scanner));
+
     // Test Alter
     // Add a col
     AlterTableBuilder atb = new AlterTableBuilder();
@@ -352,7 +358,11 @@ public class TestKuduSession extends BaseKuduTest {
   }
 
   private static KuduScanner getScanner(int start, int end) {
-    KuduScanner scanner = client.newScanner(table, schema);
+    return getScanner(start, end, schema);
+  }
+
+  private static KuduScanner getScanner(int start, int end, Schema querySchema) {
+    KuduScanner scanner = client.newScanner(table, querySchema);
     ColumnRangePredicate predicate = new ColumnRangePredicate(schema.getColumn(0));
     predicate.setLowerBound(start);
     predicate.setUpperBound(end);

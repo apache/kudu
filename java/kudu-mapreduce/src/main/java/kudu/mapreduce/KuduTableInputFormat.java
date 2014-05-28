@@ -16,8 +16,11 @@
 package kudu.mapreduce;
 
 import com.google.common.base.Objects;
+import com.google.common.base.Splitter;
 import com.stumbleupon.async.Deferred;
+import kudu.ColumnSchema;
 import kudu.Common;
+import kudu.Schema;
 import kudu.rpc.Bytes;
 import kudu.rpc.KuduClient;
 import kudu.rpc.KuduScanner;
@@ -67,6 +70,13 @@ public class KuduTableInputFormat extends InputFormat<NullWritable, RowResult>
   static final String NAME_SERVER_KEY = "kudu.mapreduce.name.server";
 
   /**
+   * Job parameter that specifies the column projection as a comma-separated list of column names.
+   * Not specifying this means using an empty projection.
+   * Note: when specifying columns that are keys, they must be at the beginning.
+   */
+  static final String COLUMN_PROJECTION_KEY = "kudu.mapreduce.column.projection";
+
+  /**
    * The reverse DNS lookup cache mapping: address from Kudu => hostname for Hadoop. This cache is
    * used in order to not do DNS lookups multiple times for each tablet server.
    */
@@ -77,6 +87,7 @@ public class KuduTableInputFormat extends InputFormat<NullWritable, RowResult>
   private KuduTable table;
   private long operationTimeoutMs;
   private String nameServer;
+  private Schema querySchema;
 
   @Override
   public List<InputSplit> getSplits(JobContext jobContext)
@@ -165,6 +176,23 @@ public class KuduTableInputFormat extends InputFormat<NullWritable, RowResult>
       throw new RuntimeException("Could not obtain the table from the master, " +
           "is the master running and is this table created? tablename=" + tableName + " and " +
           "master address= " + masterAddress, ex);
+    }
+
+    String projectionConfig = conf.get(COLUMN_PROJECTION_KEY);
+    Schema tableSchema = table.getSchema();
+    if (projectionConfig == null || projectionConfig.equals("")) {
+      this.querySchema = new Schema(new ArrayList<ColumnSchema>(0));
+    } else {
+      Iterable<String> columnProjection = Splitter.on(',').split(projectionConfig);
+      List<ColumnSchema> columns = new ArrayList<ColumnSchema>();
+      for (String columnName : columnProjection) {
+        ColumnSchema columnSchema = tableSchema.getColumn(columnName);
+        if (columnSchema == null) {
+          throw new IllegalArgumentException("Unkown column " + columnName);
+        }
+        columns.add(columnSchema);
+      }
+      this.querySchema = new Schema(columns);
     }
   }
 
@@ -291,7 +319,7 @@ public class KuduTableInputFormat extends InputFormat<NullWritable, RowResult>
       }
       split = (TableSplit) inputSplit;
       // TODO be able to pass a schema
-      scanner = client.newScanner(table, table.getSchema());
+      scanner = client.newScanner(table, querySchema);
       scanner.setEncodedStartKey(split.getStartKey());
       scanner.setEncodedEndKey(split.getEndKey());
 

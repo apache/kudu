@@ -17,13 +17,13 @@ import java.io.IOException;
 
 /**
  * Map-only job that counts all the rows in the provided table.
- * TODO be able to provide columns
  * TODO be able to provide a start and end key
  */
 public class RowCounter extends Configured implements Tool {
 
   static final String NAME = "rowcounter";
   static final String OPERATION_TIMEOUT_MS_KEY = "rowcounter.operation.timeout.ms";
+  static final String COLUMN_PROJECTION_KEY = "rowcounter.column.projection";
 
   /** Counter enumeration to count the actual rows. */
   public static enum Counters { ROWS }
@@ -53,6 +53,7 @@ public class RowCounter extends Configured implements Tool {
       throws IOException, ClassNotFoundException {
 
     long timeout = conf.getLong(OPERATION_TIMEOUT_MS_KEY, 10000);
+    String columnProjection = conf.get(COLUMN_PROJECTION_KEY);
 
     Class mapperClass = RowCounterMapper.class;
     String tableName = args[0];
@@ -64,7 +65,8 @@ public class RowCounter extends Configured implements Tool {
     job.setMapperClass(mapperClass);
     job.setNumReduceTasks(0);
     job.setOutputFormatClass(NullOutputFormat.class);
-    KuduTableMapReduceUtil.initTableInputFormat(job, masterAddress, tableName, timeout, true);
+    KuduTableMapReduceUtil.initTableInputFormat(job, masterAddress, tableName, timeout,
+        columnProjection, true);
     return job;
   }
 
@@ -81,7 +83,10 @@ public class RowCounter extends Configured implements Tool {
             "\n" +
             "Other options that may be specified with -D include:\n" +
             "  -D" + OPERATION_TIMEOUT_MS_KEY + "=10000 - how long this job waits for " +
-            "Kudu operations\n";
+            "Kudu operations.\n" +
+            "  -D" + COLUMN_PROJECTION_KEY + "=a,b,c - comma-separated list of columns to read " +
+            "as part of the row count. By default, none are read so that the count is as fast " +
+            "as possible. When specifying columns that are keys, they must be at the beginning.\n";
 
     System.err.println(usage);
   }

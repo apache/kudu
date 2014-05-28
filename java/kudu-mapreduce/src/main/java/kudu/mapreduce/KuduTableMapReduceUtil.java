@@ -85,11 +85,13 @@ public class KuduTableMapReduceUtil {
    * @param masterAddress hostname:port where the master is
    * @param table Which table to read from
    * @param operationTimeoutMs Timeout for operations to complete
+   * @param columnProjection comma-separated list of columns to read, can be null in which case we
+   *                         read empty rows.
    * @param addDependencies If the job should add the Kudu dependencies to the distributed cache
    * @throws IOException
    */
-  public static void initTableInputFormat(Job job, String masterAddress,
-                                          String table, long operationTimeoutMs,
+  public static void initTableInputFormat(Job job, String masterAddress, String table,
+                                          long operationTimeoutMs, String columnProjection,
                                           boolean addDependencies) throws IOException {
     job.setInputFormatClass(KuduTableInputFormat.class);
 
@@ -97,6 +99,9 @@ public class KuduTableMapReduceUtil {
     conf.set(KuduTableInputFormat.MASTER_ADDRESS_KEY, masterAddress);
     conf.set(KuduTableInputFormat.INPUT_TABLE_KEY, table);
     conf.setLong(KuduTableInputFormat.OPERATION_TIMEOUT_MS_KEY, operationTimeoutMs);
+    if (columnProjection != null) {
+      conf.set(KuduTableInputFormat.COLUMN_PROJECTION_KEY, columnProjection);
+    }
     if (addDependencies) {
       addDependencyJars(job);
     }

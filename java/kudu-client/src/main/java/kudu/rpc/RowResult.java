@@ -40,6 +40,10 @@ public class RowResult {
     }
     this.rowSize = this.schema.getRowSize();
     columnOffsets = new int[columnOffsetsSize];
+    // Empty projection, usually used for quick row counting
+    if (columnOffsetsSize == 0) {
+      return;
+    }
     int currentOffset = 0;
     columnOffsets[0] = currentOffset;
     // Pre-compute the columns offsets in rowData for easier lookups later
@@ -179,6 +183,14 @@ public class RowResult {
     checkValidColumn(columnIndex);
     checkNull(columnIndex);
     return Bytes.getUnsignedLong(this.rowData, getCurrentRowDataOffsetForColumn(columnIndex));
+  }
+
+  /**
+   * Get the schema used for this scanner's column projection.
+   * @return A column projection as a schema.
+   */
+  public Schema getColumnProjection() {
+    return this.schema;
   }
 
   /**
