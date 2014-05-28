@@ -84,6 +84,7 @@ Connection::~Connection() {
 }
 
 bool Connection::Idle() const {
+  DCHECK(reactor_thread_->IsCurrentThread());
   // check if we're in the middle of receiving something
   InboundTransfer *transfer = inbound_.get();
   if (transfer && (transfer->TransferStarted())) {
@@ -359,10 +360,10 @@ void Connection::set_user_credentials(const UserCredentials &user_credentials) {
 void Connection::ReadHandler(ev::io &watcher, int revents) {
   DCHECK(reactor_thread_->IsCurrentThread());
 
-  DVLOG(3) << ToString() << " readHandler(revents=" << revents << ")";
+  DVLOG(3) << ToString() << " ReadHandler(revents=" << revents << ")";
   if (revents & EV_ERROR) {
     reactor_thread_->DestroyConnection(this, Status::NetworkError(ToString() +
-                                     ": readHandler encountered an error"));
+                                     ": ReadHandler encountered an error"));
     return;
   }
   last_activity_time_ = reactor_thread_->cur_time();
@@ -566,8 +567,16 @@ void Connection::MarkNegotiationComplete() {
 
 Status Connection::DumpPB(const DumpRunningRpcsRequestPB& req,
                           RpcConnectionPB* resp) {
+  DCHECK(reactor_thread_->IsCurrentThread());
   resp->set_remote_ip(remote_.ToString());
-  resp->set_remote_user_credentials(user_credentials_.ToString());
+  if (negotiation_complete_) {
+    resp->set_state(RpcConnectionPB::OPEN);
+    resp->set_remote_user_credentials(user_credentials_.ToString());
+  } else {
+    // It's racy to dump credentials while negotiating, since the Connection
+    // object is owned by the negotiation thread at that point.
+    resp->set_state(RpcConnectionPB::NEGOTIATING);
+  }
 
   if (direction_ == CLIENT) {
     BOOST_FOREACH(const car_map_t::value_type& entry, awaiting_response_) {

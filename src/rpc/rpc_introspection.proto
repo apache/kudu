@@ -14,10 +14,16 @@ message RpcCallInProgressPB {
 }
 
 message RpcConnectionPB {
+  enum StateType {
+    NEGOTIATING = 0;  // Connection is still being negotiated.
+    OPEN = 1;         // Connection is active.
+  };
+
   required string remote_ip = 1;
+  required StateType state = 2;
   // TODO: swap out for separate fields
-  required string remote_user_credentials = 2;
-  repeated RpcCallInProgressPB calls_in_flight = 3;
+  optional string remote_user_credentials = 3;
+  repeated RpcCallInProgressPB calls_in_flight = 4;
 }
 
 message DumpRunningRpcsRequestPB {

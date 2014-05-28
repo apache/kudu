@@ -89,7 +89,7 @@ Status Proxy::SyncRequest(const string& method,
 }
 
 void Proxy::set_user_credentials(const UserCredentials& user_credentials) {
-  CHECK(base::subtle::Release_Load(&is_started_) == false)
+  CHECK(base::subtle::NoBarrier_Load(&is_started_) == false)
     << "It is illegal to call set_user_credentials() after request processing has started";
   conn_id_.set_user_credentials(user_credentials);
 }
