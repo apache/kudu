@@ -346,12 +346,14 @@ TEST_F(TabletPeerTest, TestActiveTransactionPreventsLogGC) {
     tx_state->set_completion_callback(gscoped_ptr<TransactionCompletionCallback>(
           new LatchTransactionCompletionCallback<WriteResponsePB>(&rpc_latch, resp.get())).Pass());
 
-    LeaderTransactionDriver* driver = new LeaderTransactionDriver(
+    scoped_refptr<LeaderTransactionDriver> driver;
+    LeaderTransactionDriver::Create(
         &tablet_peer_->txn_tracker_,
         tablet_peer_->consensus(),
         tablet_peer_->prepare_executor_.get(),
         tablet_peer_->leader_apply_executor_.get(),
-        &tablet_peer_->prepare_replicate_lock_);
+        &tablet_peer_->prepare_replicate_lock_,
+        &driver);
 
     DelayedApplyTransaction* transaction = new DelayedApplyTransaction(&apply_started,
                                                                        &apply_continue,

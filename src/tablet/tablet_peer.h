@@ -184,9 +184,9 @@ class TabletPeer : public consensus::ReplicaTransactionFactory {
   // yet.
   std::string tablet_id() const { return tablet_id_; }
 
-  LeaderTransactionDriver* NewLeaderTransactionDriver();
+  void NewLeaderTransactionDriver(scoped_refptr<LeaderTransactionDriver>* driver);
 
-  ReplicaTransactionDriver* NewReplicaTransactionDriver();
+  void NewReplicaTransactionDriver(scoped_refptr<ReplicaTransactionDriver>* driver);
 
  private:
   friend class TabletPeerTest;

@@ -18,6 +18,10 @@ using consensus::CommitMsg;
 using consensus::OperationPB;
 using std::tr1::shared_ptr;
 
+////////////////////////////////////////////////////////////
+// TransactionDriver
+////////////////////////////////////////////////////////////
+
 TransactionDriver::TransactionDriver(TransactionTracker *txn_tracker,
                                      Consensus* consensus,
                                      TaskExecutor* prepare_executor,
@@ -33,6 +37,9 @@ TransactionDriver::TransactionDriver(TransactionTracker *txn_tracker,
       prepare_finished_calls_(0),
       trace_(new Trace()),
       start_time_(MonoTime::Now(MonoTime::FINE)) {
+}
+
+void TransactionDriver::Init() {
   // TODO ideally we should have the Transaction available *here*, as to avoid
   // a call to IncrementCounters() in Execute (the respective DecrementCounters()
   // call happens in TransactionTracker::Release()).
@@ -63,6 +70,21 @@ const std::tr1::shared_ptr<FutureCallback>& TransactionDriver::commit_finished_c
 
 string TransactionDriver::ToString() const {
   return transaction_ != NULL ? transaction_->ToString() : "";
+}
+
+////////////////////////////////////////////////////////////
+// LeaderTransactionDriver
+////////////////////////////////////////////////////////////
+
+void LeaderTransactionDriver::Create(TransactionTracker* txn_tracker,
+                                Consensus* consensus,
+                                TaskExecutor* prepare_executor,
+                                TaskExecutor* apply_executor,
+                                simple_spinlock* prepare_replicate_lock,
+                                scoped_refptr<LeaderTransactionDriver>* driver) {
+  driver->reset(new LeaderTransactionDriver(txn_tracker, consensus, prepare_executor,
+                                            apply_executor, prepare_replicate_lock));
+  (*driver)->Init();
 }
 
 LeaderTransactionDriver::LeaderTransactionDriver(TransactionTracker* txn_tracker,
@@ -315,6 +337,16 @@ LeaderTransactionDriver::~LeaderTransactionDriver() {
 ////////////////////////////////////////////////////////////
 // ReplicaTransactionDriver
 ////////////////////////////////////////////////////////////
+
+void ReplicaTransactionDriver::Create(TransactionTracker* txn_tracker,
+                                      Consensus* consensus,
+                                      TaskExecutor* prepare_executor,
+                                      TaskExecutor* apply_executor,
+                                      scoped_refptr<ReplicaTransactionDriver>* driver) {
+  driver->reset(new ReplicaTransactionDriver(txn_tracker, consensus,
+                                             prepare_executor, apply_executor));
+  (*driver)->Init();
+}
 
 Status ReplicaTransactionDriver::Execute(Transaction* transaction) {
   shared_ptr<FutureCallback> prepare_callback(

@@ -26,11 +26,8 @@ class TransactionTracker;
 // This class and implementations are thread safe.
 class TransactionDriver : public base::RefCountedThreadSafe<TransactionDriver> {
  public:
-
-  TransactionDriver(TransactionTracker* txn_tracker,
-                    consensus::Consensus* consensus,
-                    TaskExecutor* prepare_executor,
-                    TaskExecutor* apply_executor);
+  // Perform any non-constructor initialization.
+  virtual void Init();
 
   // Returns the OpId of the transaction being executed or an uninitialized
   // OpId if none has been assigned. Returns a copy and thus should not
@@ -46,8 +43,6 @@ class TransactionDriver : public base::RefCountedThreadSafe<TransactionDriver> {
 
   virtual std::string ToString() const;
 
-  virtual ~TransactionDriver() {}
-
   // Returns the type of the transaction being executed by this driver.
   Transaction::TransactionType tx_type() const;
 
@@ -59,6 +54,13 @@ class TransactionDriver : public base::RefCountedThreadSafe<TransactionDriver> {
   Trace* trace() { return trace_.get(); }
 
  protected:
+  TransactionDriver(TransactionTracker* txn_tracker,
+                    consensus::Consensus* consensus,
+                    TaskExecutor* prepare_executor,
+                    TaskExecutor* apply_executor);
+
+  virtual ~TransactionDriver() {}
+
   // Calls Transaction::Apply() followed by Consensus::Commit() with the
   // results from the Apply().
   virtual Status ApplyAndCommit() = 0;
@@ -121,17 +123,24 @@ class TransactionDriver : public base::RefCountedThreadSafe<TransactionDriver> {
 // This class is thread safe.
 class LeaderTransactionDriver : public TransactionDriver {
  public:
+  static void Create(TransactionTracker* txn_tracker,
+                     consensus::Consensus* consensus,
+                     TaskExecutor* prepare_executor,
+                     TaskExecutor* apply_executor,
+                     simple_spinlock* prepare_replicate_lock,
+                     scoped_refptr<LeaderTransactionDriver>* driver);
+
+  virtual Status Execute(Transaction* transaction) OVERRIDE;
+
+ protected:
   LeaderTransactionDriver(TransactionTracker* txn_tracker,
                           consensus::Consensus* consensus,
                           TaskExecutor* prepare_executor,
                           TaskExecutor* apply_executor,
                           simple_spinlock* prepare_replicate_lock);
 
-  virtual Status Execute(Transaction* transaction) OVERRIDE;
+  virtual ~LeaderTransactionDriver() OVERRIDE;
 
-  virtual ~LeaderTransactionDriver();
-
- protected:
   virtual Status ApplyAndCommit() OVERRIDE;
 
   virtual void ApplyAndCommitSucceeded() OVERRIDE;
@@ -139,6 +148,7 @@ class LeaderTransactionDriver : public TransactionDriver {
   virtual void ApplyOrCommitFailed(const Status& status) OVERRIDE;
 
  private:
+  friend class base::RefCountedThreadSafe<LeaderTransactionDriver>;
   FRIEND_TEST(TransactionTrackerTest, TestGetPending);
 
   void PrepareOrReplicateSucceeded();
@@ -156,6 +166,7 @@ class LeaderTransactionDriver : public TransactionDriver {
   // Lock that protects that, on Execute(), Transaction::Prepare() and
   // Consensus::Replicate() are submitted in one go across transactions.
   simple_spinlock* prepare_replicate_lock_;
+
   DISALLOW_COPY_AND_ASSIGN(LeaderTransactionDriver);
 };
 
@@ -163,14 +174,22 @@ class LeaderTransactionDriver : public TransactionDriver {
 class ReplicaTransactionDriver : public TransactionDriver,
                                  public consensus::ReplicaCommitContinuation {
  public:
+  static void Create(TransactionTracker* txn_tracker,
+                     consensus::Consensus* consensus,
+                     TaskExecutor* prepare_executor,
+                     TaskExecutor* apply_executor,
+                     scoped_refptr<ReplicaTransactionDriver>* driver);
+
+  virtual Status Execute(Transaction* transaction) OVERRIDE;
+
+ protected:
   ReplicaTransactionDriver(TransactionTracker* txn_tracker,
                            consensus::Consensus* consensus,
                            TaskExecutor* prepare_executor,
                            TaskExecutor* apply_executor);
 
-  virtual Status Execute(Transaction* transaction) OVERRIDE;
+  virtual ~ReplicaTransactionDriver() OVERRIDE;
 
- protected:
   virtual Status LeaderCommitted(gscoped_ptr<consensus::OperationPB> leader_commit_op) OVERRIDE;
 
   virtual Status ApplyAndCommit() OVERRIDE;
@@ -179,9 +198,9 @@ class ReplicaTransactionDriver : public TransactionDriver,
 
   virtual void ApplyOrCommitFailed(const Status& status) OVERRIDE;
 
-  virtual ~ReplicaTransactionDriver() OVERRIDE;
-
  private:
+  friend class base::RefCountedThreadSafe<ReplicaTransactionDriver>;
+
   void PrepareOrLeaderCommitSucceeded();
 
   void PrepareOrLeaderCommitFailed(const Status& status);
@@ -189,6 +208,7 @@ class ReplicaTransactionDriver : public TransactionDriver,
   void HandlePrepareOrLeaderCommitFailure();
 
   std::tr1::shared_ptr<Future> apply_future_;
+
   DISALLOW_COPY_AND_ASSIGN(ReplicaTransactionDriver);
 };
 

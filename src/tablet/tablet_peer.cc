@@ -224,7 +224,8 @@ Status TabletPeer::SubmitWrite(WriteTransactionState *state) {
   RETURN_NOT_OK(CheckRunning());
 
   WriteTransaction* transaction = new WriteTransaction(state, Transaction::LEADER);
-  LeaderTransactionDriver* driver = NewLeaderTransactionDriver();
+  scoped_refptr<LeaderTransactionDriver> driver;
+  NewLeaderTransactionDriver(&driver);
   return driver->Execute(transaction);
 }
 
@@ -232,7 +233,8 @@ Status TabletPeer::SubmitAlterSchema(AlterSchemaTransactionState *state) {
   RETURN_NOT_OK(CheckRunning());
 
   AlterSchemaTransaction* transaction = new AlterSchemaTransaction(state, Transaction::LEADER);
-  LeaderTransactionDriver* driver = NewLeaderTransactionDriver();
+  scoped_refptr<LeaderTransactionDriver> driver;
+  NewLeaderTransactionDriver(&driver);
   return driver->Execute(transaction);
 }
 
@@ -242,7 +244,8 @@ Status TabletPeer::SubmitChangeConfig(ChangeConfigTransactionState *state) {
   ChangeConfigTransaction* transaction = new ChangeConfigTransaction(state,
                                                                      Transaction::LEADER,
                                                                      &config_sem_);
-  LeaderTransactionDriver* driver = NewLeaderTransactionDriver();
+  scoped_refptr<LeaderTransactionDriver> driver;
+  NewLeaderTransactionDriver(&driver);
   return driver->Execute(transaction);
 }
 
@@ -379,27 +382,33 @@ Status TabletPeer::StartReplicaTransaction(gscoped_ptr<ConsensusRound> round) {
   TransactionState* state = transaction->state();
   state->set_consensus_round(round.Pass());
 
-  ReplicaTransactionDriver* driver = NewReplicaTransactionDriver();
-  state->consensus_round()->SetReplicaCommitContinuation(driver);
+  scoped_refptr<ReplicaTransactionDriver> driver;
+  NewReplicaTransactionDriver(&driver);
+  // FIXME: Bare ptr is a hack for a ref-counted object.
+  state->consensus_round()->SetReplicaCommitContinuation(driver.get());
   state->consensus_round()->SetCommitCallback(driver->commit_finished_callback());
 
   RETURN_NOT_OK(driver->Execute(transaction));
   return Status::OK();
 }
 
-LeaderTransactionDriver* TabletPeer::NewLeaderTransactionDriver() {
-  return new LeaderTransactionDriver(&txn_tracker_,
-                                     consensus_.get(),
-                                     prepare_executor_.get(),
-                                     leader_apply_executor_.get(),
-                                     &prepare_replicate_lock_);
+
+
+void TabletPeer::NewLeaderTransactionDriver(scoped_refptr<LeaderTransactionDriver>* driver) {
+  LeaderTransactionDriver::Create(&txn_tracker_,
+                                  consensus_.get(),
+                                  prepare_executor_.get(),
+                                  leader_apply_executor_.get(),
+                                  &prepare_replicate_lock_,
+                                  driver);
 }
 
-ReplicaTransactionDriver* TabletPeer::NewReplicaTransactionDriver() {
-  return new ReplicaTransactionDriver(&txn_tracker_,
-                                      consensus_.get(),
-                                      prepare_executor_.get(),
-                                      replica_apply_executor_.get());
+void TabletPeer::NewReplicaTransactionDriver(scoped_refptr<ReplicaTransactionDriver>* driver) {
+  ReplicaTransactionDriver::Create(&txn_tracker_,
+                                   consensus_.get(),
+                                   prepare_executor_.get(),
+                                   replica_apply_executor_.get(),
+                                   driver);
 }
 
 }  // namespace tablet
