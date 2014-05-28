@@ -5,7 +5,9 @@
 #include "gutil/macros.h"
 #include "server/webserver.h"
 
+#include <string>
 #include <sstream>
+#include <vector>
 
 namespace kudu {
 
@@ -14,6 +16,9 @@ class Schema;
 namespace master {
 
 class Master;
+struct TabletReplica;
+class TSDescriptor;
+class TSRegistrationPB;
 
 // Web page support for the master.
 class MasterPathHandlers {
@@ -33,6 +38,20 @@ class MasterPathHandlers {
                             std::stringstream* output);
   void HandleTablePage(const Webserver::ArgumentMap &args,
                        std::stringstream *output);
+
+  // Convert location of quorum members to HTML, indicating the roles
+  // of each tablet server in a quorum.
+  std::string QuorumToHtml(const std::vector<TabletReplica>& locations) const;
+
+  // Convert the specified TSDescriptor to HTML, adding a link to the
+  // tablet server's own webserver if specified in 'desc'.
+  std::string TSDescriptorToHtml(const TSDescriptor& desc) const;
+
+  // Convert the specified TSRegistrationPB to HTML, adding a link to
+  // the tablet server's own web server (if specified in 'reg') with
+  // anchor text 'link_text'.
+  std::string TSRegistrationPBToHtml(const TSRegistrationPB& reg,
+                                     const std::string& link_text) const;
 
   Master* master_;
   DISALLOW_COPY_AND_ASSIGN(MasterPathHandlers);

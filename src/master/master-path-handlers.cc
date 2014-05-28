@@ -2,6 +2,7 @@
 
 #include "master/master-path-handlers.h"
 
+#include <algorithm>
 #include <boost/bind.hpp>
 #include <boost/foreach.hpp>
 #include <string>
@@ -20,11 +21,14 @@
 #include "master/ts_manager.h"
 #include "util/url-coding.h"
 
+
+namespace kudu {
+
 using std::vector;
 using std::string;
 using strings::Substitute;
+using metadata::QuorumPeerPB;
 
-namespace kudu {
 namespace master {
 
 const int kSysTablesEntryStatePrefixLen = 11;  // kTableState
@@ -46,17 +50,9 @@ void MasterPathHandlers::HandleTabletServers(const Webserver::ArgumentMap& args,
     const string time_since_hb = StringPrintf("%.1fs", desc->TimeSinceHeartbeat().ToSeconds());
     TSRegistrationPB reg;
     desc->GetRegistration(&reg);
-
-    string uuid_cell = EscapeForHtmlToString(desc->permanent_uuid());
-    if (reg.http_addresses().size() > 0) {
-      uuid_cell = Substitute("<a href=\"http://$0:$1/\">$2</a>",
-                           reg.http_addresses(0).host(),
-                           reg.http_addresses(0).port(),
-                           uuid_cell);
-    }
-
     *output << Substitute("<tr><th>$0</th><td>$1</td><td><code>$2</code></td></tr>\n",
-                          uuid_cell, time_since_hb,
+                          TSRegistrationPBToHtml(reg, desc->permanent_uuid()),
+                          time_since_hb,
                           EscapeForHtmlToString(reg.ShortDebugString()));
   }
   *output << "</table>\n";
@@ -121,16 +117,20 @@ void MasterPathHandlers::HandleTablePage(const Webserver::ArgumentMap &args,
   HtmlOutputSchemaTable(schema, output);
 
   *output << "<table class='table table-striped'>\n";
-  *output << "  <tr><th>Tablet ID</th><th>Start-Key</th><th>End-Key</th><th>State</th></tr>\n";
+  *output << "  <tr><th>Tablet ID</th><th>Start-Key</th><th>End-Key</th><th>State</th>"
+      "<th>Quorum</th></tr>\n";
   BOOST_FOREACH(const scoped_refptr<TabletInfo>& tablet, tablets) {
+    vector<TabletReplica> locations;
+    tablet->GetLocations(&locations);
     TabletMetadataLock l(tablet.get(), TabletMetadataLock::READ);
     *output << Substitute(
-        "<tr><th>$0</th><td>$1</td><td>$2</td><td>$3 $4</td></tr>\n",
+        "<tr><th>$0</th><td>$1</td><td>$2</td><td>$3 $4</td><td>$5</td></tr>\n",
         tablet->tablet_id(),
         EscapeForHtmlToString(schema.DebugEncodedRowKey(l.data().pb.start_key())),
         EscapeForHtmlToString(schema.DebugEncodedRowKey(l.data().pb.end_key())),
         SysTabletsEntryPB_State_Name(l.data().pb.state()).substr(12),
-        EscapeForHtmlToString(l.data().pb.state_msg()));
+        EscapeForHtmlToString(l.data().pb.state_msg()),
+        QuorumToHtml(locations));
   }
   *output << "</table>\n";
 
@@ -152,6 +152,57 @@ Status MasterPathHandlers::Register(Webserver* server) {
                               boost::bind(&MasterPathHandlers::HandleTablePage, this, _1, _2),
                               is_styled, is_on_nav_bar);
   return Status::OK();
+}
+
+namespace {
+
+bool CompareByRole(const TabletReplica& a, const TabletReplica& b) {
+  return a.role < b.role;
+}
+
+} // anonymous namespace
+
+string MasterPathHandlers::QuorumToHtml(const std::vector<TabletReplica>& locations) const {
+  std::stringstream html;
+  vector<TabletReplica> sorted_locations;
+  sorted_locations.assign(locations.begin(), locations.end());
+
+  std::sort(sorted_locations.begin(), sorted_locations.end(), &CompareByRole);
+
+  html << "<ul>\n";
+  BOOST_FOREACH(const TabletReplica& location, sorted_locations) {
+    string location_html = TSDescriptorToHtml(*location.ts_desc);
+    if (location.role == QuorumPeerPB::LEADER) {
+      html << Substitute("  <li><b>LEADER: $0</b></li>\n", location_html);
+    } else {
+      html << Substitute("  <li>$0: $1</li>\n",
+                         QuorumPeerPB_Role_Name(location.role), location_html);
+    }
+  }
+  html << "</ul>\n";
+  return html.str();
+}
+
+string MasterPathHandlers::TSDescriptorToHtml(const TSDescriptor& desc) const {
+  TSRegistrationPB reg;
+  desc.GetRegistration(&reg);
+
+  string link_text = desc.permanent_uuid();
+  if (reg.rpc_addresses().size() > 0) {
+    link_text = reg.rpc_addresses(0).host();
+  }
+  return TSRegistrationPBToHtml(reg, link_text);
+}
+
+string MasterPathHandlers::TSRegistrationPBToHtml(const TSRegistrationPB& reg,
+                                                  const std::string& link_text) const {
+  string link_html = EscapeForHtmlToString(link_text);
+  if (reg.http_addresses().size() > 0) {
+    link_html = Substitute("<a href=\"http://$0:$1/\">$2</a>",
+                           reg.http_addresses(0).host(),
+                           reg.http_addresses(0).port(), link_html);
+  }
+  return link_html;
 }
 
 } // namespace master
