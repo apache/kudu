@@ -25,6 +25,8 @@ public class Schema {
   /**
    * Constructs a schema using the specified columns and does some internal accounting
    * @param columns
+   * @throws IllegalArgumentException If the key columns aren't specified first
+   * see src/common/wire_protocol.cc in ColumnPBsToSchema()
    */
   public Schema(List<ColumnSchema> columns) {
     this.columns = columns;
@@ -35,8 +37,17 @@ public class Schema {
     int pos = 0;
     int i = 0;
     boolean hasNulls = false;
+    boolean isHandlingKeys = true;
     // pre-compute a few counts and offsets
     for (ColumnSchema col : this.columns) {
+      if (col.isKey()) {
+        if (!isHandlingKeys) {
+          throw new IllegalArgumentException("Got out-of-order key column " + col);
+        }
+        keycnt++;
+      } else {
+        isHandlingKeys = false;
+      }
       if (col.isNullable()) {
         hasNulls = true;
       }
@@ -45,9 +56,6 @@ public class Schema {
       pos += col.getType().getSize();
       if (col.getType() == Type.STRING) {
         strcnt++;
-      }
-      if (col.isKey()) {
-        keycnt++;
       }
       i++;
     }

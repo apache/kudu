@@ -29,6 +29,15 @@ public class TestKuduTable extends BaseKuduTest {
     BaseKuduTest.setUpBeforeClass();
   }
 
+  @Test(expected = IllegalArgumentException.class)
+  public void testBadSchema() {
+    // Test creating a table with keys in the wrong order
+    List<ColumnSchema> badColumns = new ArrayList<ColumnSchema>(2);
+    badColumns.add(new ColumnSchema("not_key", Type.STRING, false));
+    badColumns.add(new ColumnSchema("key", Type.STRING, true));
+    new Schema(badColumns);
+  }
+
   /**
    * Test creating tables of different sizes and see that we get the correct number of tablets back
    * @throws Exception
