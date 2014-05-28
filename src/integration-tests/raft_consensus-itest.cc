@@ -230,6 +230,28 @@ TEST_F(DistConsensusTest, TestInsertAndMutateThroughConsensus) {
   AssertRowsExistInReplicas();
 }
 
+TEST_F(DistConsensusTest, TestInsertOnNonLeader) {
+  // Manually construct a write RPC to a replica and make sure it responds
+  // with the correct error code.
+  WriteRequestPB req;
+  WriteResponsePB resp;
+  RpcController rpc;
+  req.set_tablet_id(tablet_id);
+  ASSERT_STATUS_OK(SchemaToPB(schema_, req.mutable_schema()));
+
+  AddTestRowToPB(RowOperationsPB::INSERT, schema_, 1234, 5678,
+                 "hello world via RPC", req.mutable_row_operations());
+  ASSERT_STATUS_OK(replicas_[0]->proxy->Write(req, &resp, &rpc));
+  SCOPED_TRACE(resp.DebugString());
+  ASSERT_TRUE(resp.has_error());
+  Status s = StatusFromPB(resp.error().status());
+  EXPECT_TRUE(s.IsIllegalState());
+  ASSERT_STR_CONTAINS(s.ToString(), "Replica is not leader of this quorum");
+  // TODO: need to change the error code to be something like REPLICA_NOT_LEADER
+  // so that the client can properly handle this case! plumbing this is a little difficult
+  // so not addressing at the moment.
+}
+
 }  // namespace tserver
 }  // namespace kudu
 

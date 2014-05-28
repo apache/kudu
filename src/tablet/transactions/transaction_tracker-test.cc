@@ -39,7 +39,12 @@ TEST_F(TransactionTrackerTest, TestGetPending) {
   ASSERT_EQ(1, pending_transactions.size());
   ASSERT_EQ(driver.get(), pending_transactions.front().get());
 
+  // Fake the completion of the prepare/replicate stage by tweaking the internal
+  // state.
+  driver->prepare_finished_calls_ = 2;
+  // And mark the transaction as failed, which will cause it to unregister itself.
   driver->ApplyOrCommitFailed(Status::IllegalState(""));
+
   ASSERT_EQ(0, tracker_.GetNumPendingForTests());
 }
 

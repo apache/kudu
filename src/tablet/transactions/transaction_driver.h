@@ -55,13 +55,6 @@ class TransactionDriver : public base::RefCountedThreadSafe<TransactionDriver> {
   const MonoTime& start_time() const { return start_time_; }
 
  protected:
-  // Called when Transaction::Prepare() or Consensus::Replicate() complete.
-  // When this method is called twice it proceeds to submit ApplyAndCommit().
-  virtual void PrepareOrReplicateSucceeded() = 0;
-
-  // Called if either Transaction::Prepare() or Consensus::Replicate() failed.
-  virtual void PrepareOrReplicateFailed(const Status& status) = 0;
-
   // Calls Transaction::Apply() followed by Consensus::Commit() with the
   // results from the Apply().
   virtual Status ApplyAndCommit() = 0;
@@ -81,7 +74,6 @@ class TransactionDriver : public base::RefCountedThreadSafe<TransactionDriver> {
 
   TransactionTracker* txn_tracker_;
   consensus::Consensus* consensus_;
-  std::tr1::shared_ptr<FutureCallback> prepare_finished_callback_;
   std::tr1::shared_ptr<FutureCallback> commit_finished_callback_;
   TaskExecutor* prepare_executor_;
   TaskExecutor* apply_executor_;
@@ -132,10 +124,6 @@ class LeaderTransactionDriver : public TransactionDriver {
   virtual ~LeaderTransactionDriver();
 
  protected:
-  virtual void PrepareOrReplicateSucceeded() OVERRIDE;
-
-  virtual void PrepareOrReplicateFailed(const Status& status) OVERRIDE;
-
   virtual Status ApplyAndCommit() OVERRIDE;
 
   virtual void ApplyAndCommitSucceeded() OVERRIDE;
@@ -144,6 +132,10 @@ class LeaderTransactionDriver : public TransactionDriver {
 
  private:
   FRIEND_TEST(TransactionTrackerTest, TestGetPending);
+
+  void PrepareOrReplicateSucceeded();
+
+  void PrepareOrReplicateFailed(const Status& status);
 
   // Called when Transaction::Prepare() or Consensus::Replicate() failed,
   // after they have both completed.
@@ -173,10 +165,6 @@ class ReplicaTransactionDriver : public TransactionDriver,
  protected:
   virtual Status LeaderCommitted(gscoped_ptr<consensus::OperationPB> leader_commit_op) OVERRIDE;
 
-  virtual void PrepareOrReplicateSucceeded() OVERRIDE;
-
-  virtual void PrepareOrReplicateFailed(const Status& status) OVERRIDE;
-
   virtual Status ApplyAndCommit() OVERRIDE;
 
   virtual void ApplyAndCommitSucceeded() OVERRIDE;
@@ -184,8 +172,13 @@ class ReplicaTransactionDriver : public TransactionDriver,
   virtual void ApplyOrCommitFailed(const Status& status) OVERRIDE;
 
   virtual ~ReplicaTransactionDriver() OVERRIDE;
+
  private:
-  void HandlePrepareOrReplicateFailure();
+  void PrepareOrLeaderCommitSucceeded();
+
+  void PrepareOrLeaderCommitFailed(const Status& status);
+
+  void HandlePrepareOrLeaderCommitFailure();
 
   std::tr1::shared_ptr<Future> apply_future_;
   DISALLOW_COPY_AND_ASSIGN(ReplicaTransactionDriver);
