@@ -454,6 +454,9 @@ void ReplicaTransactionDriver::ApplyOrCommitFailed(const Status& abort_reason) {
 
 
 void ReplicaTransactionDriver::ApplyAndCommitSucceeded() {
+  // TODO: this is an ugly hack so that the Release() call doesn't delete the
+  // object while we still hold the lock.
+  scoped_refptr<ReplicaTransactionDriver> ref(this);
   boost::lock_guard<simple_spinlock> state_lock(lock_);
   transaction_->Finish();
   txn_tracker_->Release(this);
