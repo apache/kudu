@@ -46,6 +46,11 @@ class Transaction {
     CHANGE_CONFIG_TXN
   };
 
+  enum TraceType {
+    NO_TRACE_TXNS = 0,
+    TRACE_TXNS = 1
+  };
+
   Transaction(TransactionState* state, DriverType type, TransactionType tx_type);
 
   // Returns the TransactionState for this transaction.

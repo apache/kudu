@@ -20,6 +20,7 @@
 using kudu::consensus::TransactionStatusPB;
 using kudu::tablet::TabletPeer;
 using kudu::tablet::TabletStatusPB;
+using kudu::tablet::Transaction;
 using std::tr1::shared_ptr;
 using std::vector;
 using strings::Substitute;
@@ -53,10 +54,15 @@ void TabletServerPathHandlers::HandleTransactionsPage(const Webserver::ArgumentM
   vector<shared_ptr<TabletPeer> > peers;
   tserver_->tablet_manager()->GetTabletPeers(&peers);
 
+  string arg = FindWithDefault(args, "include_traces", "false");
+  Transaction::TraceType trace_type = ParseLeadingBoolValue(
+      arg.c_str(), false) ? Transaction::TRACE_TXNS : Transaction::NO_TRACE_TXNS;
+
   *output << "<h1>Transactions</h1>\n";
   *output << "<table class='table table-striped'>\n";
   *output << "   <tr><th>Tablet id</th><th>Op Id</th>"
       "<th>Type</th><th>Total time in-flight</th><th>Description</th></tr>\n";
+
   BOOST_FOREACH(const shared_ptr<TabletPeer>& peer, peers) {
     vector<TransactionStatusPB> inflight;
 
@@ -64,15 +70,22 @@ void TabletServerPathHandlers::HandleTransactionsPage(const Webserver::ArgumentM
       continue;
     }
 
-    peer->GetInFlightTransactions(&inflight);
+    peer->GetInFlightTransactions(trace_type, &inflight);
     BOOST_FOREACH(const TransactionStatusPB& inflight_tx, inflight) {
       string total_time_str = Substitute("$0 us.", inflight_tx.running_for_micros());
+      string description;
+      if (trace_type == Transaction::TRACE_TXNS) {
+        description = Substitute("$0, Trace: $1",
+                                  inflight_tx.description(), inflight_tx.trace_buffer());
+      } else {
+        description = inflight_tx.description();
+      }
       (*output) << Substitute("<tr><th>$0</th><th>$1</th><th>$2</th><th>$3</th><th>$4</th></tr>\n",
                               EscapeForHtmlToString(peer->tablet_id()),
                               EscapeForHtmlToString(inflight_tx.op_id().ShortDebugString()),
                               OperationType_Name(inflight_tx.tx_type()),
                               total_time_str,
-                              EscapeForHtmlToString(inflight_tx.description()));
+                              EscapeForHtmlToString(description));
 
     }
   }

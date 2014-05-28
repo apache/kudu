@@ -9,6 +9,8 @@
 #include "gutil/ref_counted.h"
 #include "tablet/transactions/transaction.h"
 #include "util/status.h"
+#include "util/trace.h"
+
 namespace kudu {
 class TaskExecutor;
 
@@ -53,6 +55,8 @@ class TransactionDriver : public base::RefCountedThreadSafe<TransactionDriver> {
   const TransactionState* state() const;
 
   const MonoTime& start_time() const { return start_time_; }
+
+  Trace* trace() { return trace_.get(); }
 
  protected:
   // Calls Transaction::Apply() followed by Consensus::Commit() with the
@@ -99,6 +103,10 @@ class TransactionDriver : public base::RefCountedThreadSafe<TransactionDriver> {
 
   // The transaction to be executed by this driver.
   gscoped_ptr<Transaction> transaction_;
+
+  // Trace object for tracing any transactions started by this driver.
+  scoped_refptr<Trace> trace_;
+
  private:
   friend class base::RefCountedThreadSafe<TransactionDriver>;
 

@@ -31,6 +31,7 @@ TransactionDriver::TransactionDriver(TransactionTracker *txn_tracker,
       prepare_executor_(prepare_executor),
       apply_executor_(apply_executor),
       prepare_finished_calls_(0),
+      trace_(new Trace()),
       start_time_(MonoTime::Now(MonoTime::FINE)) {
   // TODO ideally we should have the Transaction available *here*, as to avoid
   // a call to IncrementCounters() in Execute (the respective DecrementCounters()
@@ -77,6 +78,8 @@ LeaderTransactionDriver::LeaderTransactionDriver(TransactionTracker* txn_tracker
 }
 
 Status LeaderTransactionDriver::Execute(Transaction* transaction) {
+  ADOPT_TRACE(trace());
+
   txn_tracker_->IncrementCounters(transaction->tx_type());
 
   const shared_ptr<FutureCallback> prepare_replicate_callback(

@@ -286,7 +286,8 @@ Status TabletPeer::RunLogGC() {
   return Status::OK();
 }
 
-void TabletPeer::GetInFlightTransactions(vector<consensus::TransactionStatusPB>* out) const {
+void TabletPeer::GetInFlightTransactions(Transaction::TraceType trace_type,
+                                         vector<consensus::TransactionStatusPB>* out) const {
   vector<scoped_refptr<TransactionDriver> > pending_transactions;
   txn_tracker_.GetPendingTransactions(&pending_transactions);
   BOOST_FOREACH(const scoped_refptr<TransactionDriver>& driver, pending_transactions) {
@@ -308,6 +309,9 @@ void TabletPeer::GetInFlightTransactions(vector<consensus::TransactionStatusPB>*
       int64_t running_for_micros =
           MonoTime::Now(MonoTime::FINE).GetDeltaSince(driver->start_time()).ToMicroseconds();
       status_pb.set_running_for_micros(running_for_micros);
+      if (trace_type == Transaction::TRACE_TXNS) {
+        status_pb.set_trace_buffer(driver->trace()->DumpToString());
+      }
       out->push_back(status_pb);
     }
   }

@@ -137,9 +137,15 @@ message ConsensusResponsePB {
   optional ConsensusStatusPB status = 3;
 }
 
+// A message reflecting the status of an in-flight transaction.
 message TransactionStatusPB {
   required OpId op_id = 1;
   required OperationType tx_type = 2;
+  // Time the transaction has been in flight.
   required int64 running_for_micros = 3;
+  // Quick human-readable description (e.g., ToString() output).
   required string description = 4;
+  // If tracing is enabled when viewing the transaction, the trace
+  // buffer is copied here.
+  optional string trace_buffer = 5;
 }

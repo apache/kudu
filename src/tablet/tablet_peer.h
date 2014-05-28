@@ -158,7 +158,8 @@ class TabletPeer : public consensus::ReplicaTransactionFactory {
   // Adds list of transactions in-flight at the time of the call to
   // 'out'. TransactionStatusPB objects are used to allow this method
   // to be used by both the web-UI and ts-cli.
-  void GetInFlightTransactions(std::vector<consensus::TransactionStatusPB>* out) const;
+  void GetInFlightTransactions(Transaction::TraceType trace_type,
+                               std::vector<consensus::TransactionStatusPB>* out) const;
 
   // Returns the minimum known OpId that is in-memory or in-flight.
   // Used for selection of log segments to delete during Log GC.
