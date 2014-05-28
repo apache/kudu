@@ -8,6 +8,7 @@
 #include <string>
 
 #include "gutil/gscoped_ptr.h"
+#include "util/countdown_latch.h"
 #include "util/locks.h"
 #include "util/monotime.h"
 #include "util/status.h"
@@ -15,9 +16,18 @@
 
 namespace kudu {
 
-static const int64_t kSleepPeriodMsecs = 250;
+static const int64_t kSleepPeriodMsecs = 100;
+static const int kNumPeriodsToWait = 3;
+// Wait triple the required time before we time out, should be enough to avoid test flakiness.
+static const uint64_t kMaxWaitMsecs = kSleepPeriodMsecs * kNumPeriodsToWait * 3;
 
 class ResettableHeartbeaterTest : public KuduTest {
+ public:
+  ResettableHeartbeaterTest()
+    : KuduTest(),
+      latch_(kNumPeriodsToWait) {
+  }
+
  protected:
   void CreateHeartbeater(const MonoDelta period, const std::string& name) {
     heartbeater_.reset(
@@ -25,55 +35,45 @@ class ResettableHeartbeaterTest : public KuduTest {
                                   period,
                                   boost::bind(&ResettableHeartbeaterTest::HeartbeatFunction,
                                               this)));
-    boost::lock_guard<simple_spinlock> lock(lock_);
-    heartbeats_ = 0;
   }
 
   Status HeartbeatFunction() {
-    boost::lock_guard<simple_spinlock> lock(lock_);
-    heartbeats_++;
+    latch_.CountDown();
     return Status::OK();
   }
 
-  gscoped_ptr<ResettableHeartbeater> heartbeater_;
+  void WaitForCountDown() {
+    CHECK(latch_.TimedWait(boost::posix_time::milliseconds(kMaxWaitMsecs)))
+        << "Failed to count down " << kNumPeriodsToWait << " times in " << kMaxWaitMsecs
+        << " ms: latch count == " << latch_.count();
+  }
 
-  int heartbeats_;
-  mutable simple_spinlock lock_;
+  CountDownLatch latch_;
+  gscoped_ptr<ResettableHeartbeater> heartbeater_;
 };
 
 // Tests that if Reset() is not called the heartbeat method is called
 // the expected number of times.
 TEST_F(ResettableHeartbeaterTest, TestRegularHeartbeats) {
-  CreateHeartbeater(MonoDelta::FromMilliseconds(kSleepPeriodMsecs), "test-1");
+  CreateHeartbeater(MonoDelta::FromMilliseconds(kSleepPeriodMsecs), CURRENT_TEST_NAME());
   ASSERT_STATUS_OK(heartbeater_->Start());
-  usleep(kSleepPeriodMsecs * 4 * 1000);
+  WaitForCountDown();
   ASSERT_STATUS_OK(heartbeater_->Stop());
-  boost::lock_guard<simple_spinlock> lock(lock_);
-  ASSERT_GE(heartbeats_, 3);
-  ASSERT_LE(heartbeats_, 4);
 }
 
 // Tests that if we Reset() the heartbeater in a period smaller than
 // the heartbeat period the heartbeat method never gets called.
 // After we stop resetting heartbeats should resume as normal
 TEST_F(ResettableHeartbeaterTest, TestResetHeartbeats) {
-  CreateHeartbeater(MonoDelta::FromMilliseconds(kSleepPeriodMsecs), "test-1");
+  CreateHeartbeater(MonoDelta::FromMilliseconds(kSleepPeriodMsecs), CURRENT_TEST_NAME());
   ASSERT_STATUS_OK(heartbeater_->Start());
   for (int i = 0; i < 10; i++) {
-    usleep(kSleepPeriodMsecs / 4);
+    usleep(kSleepPeriodMsecs / 4 * 1000);
     heartbeater_->Reset();
+    ASSERT_EQ(kNumPeriodsToWait, latch_.count());
   }
-  {
-    boost::lock_guard<simple_spinlock> lock(lock_);
-    ASSERT_EQ(heartbeats_, 0);
-  }
-  usleep(kSleepPeriodMsecs * 4 * 1000);
+  WaitForCountDown();
   ASSERT_STATUS_OK(heartbeater_->Stop());
-  {
-    boost::lock_guard<simple_spinlock> lock(lock_);
-    ASSERT_GE(heartbeats_, 3);
-    ASSERT_LE(heartbeats_, 4);
-  }
 }
 
 }  // namespace kudu
