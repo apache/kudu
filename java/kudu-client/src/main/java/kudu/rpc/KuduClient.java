@@ -691,6 +691,20 @@ public class KuduClient {
     return sleepTime;
   }
 
+  /**
+   * Modifying the list returned by this method won't change how KuduClient behaves,
+   * but calling certain methods on the returned TabletClients can. For example,
+   * it's possible to forcefully shutdown a connection to a tablet server by calling {@link
+   * TabletClient#shutdown()}.
+   * @return Copy of the current TabletClients list
+   */
+  @VisibleForTesting
+  List<TabletClient> getTableClients() {
+    synchronized (ip2client) {
+      return new ArrayList<TabletClient>(ip2client.values());
+    }
+  }
+
   TabletClient clientFor(RemoteTablet tablet) {
     if (tablet == null) {
       return null;
@@ -964,7 +978,7 @@ public class KuduClient {
       // If we already know about this one, just refresh the locations
       RemoteTablet currentTablet = tablet2client.get(tabletId);
       if (currentTablet != null) {
-        rt.refreshServers(tabletPb);
+        currentTablet.refreshServers(tabletPb);
         continue;
       }
 
