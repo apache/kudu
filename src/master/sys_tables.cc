@@ -58,7 +58,7 @@ Status SysTable::Load(FsManager *fs_manager) {
   SetupTabletMasterBlock(&master_block);
 
   // Load Metadata Information from disk
-  gscoped_ptr<metadata::TabletMetadata> metadata;
+  scoped_refptr<metadata::TabletMetadata> metadata;
   RETURN_NOT_OK(metadata::TabletMetadata::Load(fs_manager, master_block, &metadata));
 
   // Verify that the schema is the current one
@@ -67,7 +67,10 @@ Status SysTable::Load(FsManager *fs_manager) {
     return(Status::Corruption("Unexpected schema", metadata->schema().ToString()));
   }
 
-  RETURN_NOT_OK(SetupTablet(metadata.Pass()));
+  QuorumPeerPB quorum_peer;
+  quorum_peer.set_permanent_uuid(master_->instance_pb().permanent_uuid());
+
+  RETURN_NOT_OK(SetupTablet(metadata, quorum_peer));
   return Status::OK();
 }
 
@@ -85,21 +88,22 @@ Status SysTable::CreateNew(FsManager *fs_manager) {
   quorum.add_peers()->CopyFrom(quorum_peer);
 
   // Create the new Metadata
-  gscoped_ptr<metadata::TabletMetadata> metadata;
+  scoped_refptr<metadata::TabletMetadata> metadata;
   RETURN_NOT_OK(metadata::TabletMetadata::CreateNew(fs_manager,
                                                     master_block,
                                                     table_name(),
                                                     BuildTableSchema(),
                                                     quorum,
                                                     "", "", &metadata));
-  return SetupTablet(metadata.Pass());
+  return SetupTablet(metadata, quorum_peer);
 }
 
 void SysTable::SysTableStateChanged(TabletPeer* tablet_peer) {
   LOG(FATAL) << "TODO: state changes not handled for system tables";
 }
 
-Status SysTable::SetupTablet(gscoped_ptr<metadata::TabletMetadata> metadata) {
+Status SysTable::SetupTablet(const scoped_refptr<metadata::TabletMetadata>& metadata,
+                             const QuorumPeerPB& quorum_peer) {
   shared_ptr<Tablet> tablet;
   gscoped_ptr<Log> log;
   scoped_refptr<OpIdAnchorRegistry> opid_anchor_registry;
@@ -109,9 +113,9 @@ Status SysTable::SetupTablet(gscoped_ptr<metadata::TabletMetadata> metadata) {
   // TODO right now sys tables are hard coded to be single quorum, so the MarkDirty
   // callback that allows to notify of state changes (such as consensus role changes)
   // just points to SysTableStateChanged(), which currently LOG(FATAL)s.
-  tablet_peer_.reset(new TabletPeer(*metadata,
+  tablet_peer_.reset(new TabletPeer(metadata, quorum_peer,
                                     boost::bind(&SysTable::SysTableStateChanged, this, _1)));
-  RETURN_NOT_OK(BootstrapTablet(metadata.Pass(),
+  RETURN_NOT_OK(BootstrapTablet(metadata,
                                 scoped_refptr<server::Clock>(master_->clock()),
                                 &metric_ctx_,
                                 tablet_peer_->status_listener(),
@@ -125,7 +129,6 @@ Status SysTable::SetupTablet(gscoped_ptr<metadata::TabletMetadata> metadata) {
   RETURN_NOT_OK_PREPEND(tablet_peer_->Init(tablet,
                                            scoped_refptr<server::Clock>(master_->clock()),
                                            master_->messenger(),
-                                           tablet->metadata()->Quorum().peers(0),
                                            log.Pass(),
                                            opid_anchor_registry.get()),
                         "Failed to Init() TabletPeer");

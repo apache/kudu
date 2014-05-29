@@ -98,7 +98,7 @@ class FsTool {
 
   Status LoadTabletMetadata(const std::string& master_block_path,
                             const std::string& tablet_id,
-                            gscoped_ptr<metadata::TabletMetadata> *meta);
+                            scoped_refptr<metadata::TabletMetadata> *meta);
 
   Status GetTabletsInMasterBlockDir(std::vector<std::string>* tablets);
 

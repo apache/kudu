@@ -10,6 +10,7 @@
 
 #include "common/schema.h"
 #include "gutil/atomicops.h"
+#include "gutil/ref_counted.h"
 #include "server/fsmanager.h"
 #include "server/metadata.pb.h"
 #include "util/env.h"
@@ -49,7 +50,7 @@ extern const int64 kNoDurableMemStore;
 // At startup, the TSTabletManager will load a TabletMetadata for each
 // master block found in the master block directory, and then instantiate
 // tablets from this data.
-class TabletMetadata {
+class TabletMetadata : public base::RefCountedThreadSafe<TabletMetadata> {
  public:
   // Create metadata for a new tablet. This assumes that the given master block
   // has not been written before, and writes out the initial superblock with
@@ -63,12 +64,12 @@ class TabletMetadata {
                           const Schema& schema,
                           const QuorumPB& quorum,
                           const std::string& start_key, const std::string& end_key,
-                          gscoped_ptr<TabletMetadata>* metadata);
+                          scoped_refptr<TabletMetadata>* metadata);
 
   // Load existing metadata from disk given a master block.
   static Status Load(FsManager* fs_manager,
                      const TabletMasterBlockPB& master_block,
-                     gscoped_ptr<TabletMetadata>* metadata);
+                     scoped_refptr<TabletMetadata>* metadata);
 
   // Load a tablet's master block from the file system.
   static Status OpenMasterBlock(Env* env,
@@ -87,7 +88,7 @@ class TabletMetadata {
                              const Schema& schema,
                              const QuorumPB& quorum,
                              const std::string& start_key, const std::string& end_key,
-                             gscoped_ptr<TabletMetadata>* metadata);
+                             scoped_refptr<TabletMetadata>* metadata);
 
   const std::string& oid() const {
     DCHECK_NE(state_, kNotLoadedYet);
@@ -185,6 +186,11 @@ class TabletMetadata {
   RowSetMetadata *GetRowSetForTests(int64_t id);
 
  private:
+  friend class base::RefCountedThreadSafe<TabletMetadata>;
+
+  // Compile time assert that no one deletes TabletMetadata objects.
+  ~TabletMetadata();
+
   // TODO: get rid of this many-arg constructor in favor of a Load() and
   // New() factory functions -- it's sort of weird that when you're loading
   // from a master block, you're expected to pass in schema/start_key/end_key,

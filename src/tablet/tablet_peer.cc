@@ -59,9 +59,12 @@ using tserver::TabletServerErrorPB;
 // ============================================================================
 //  Tablet Peer
 // ============================================================================
-TabletPeer::TabletPeer(const TabletMetadata& meta,
+TabletPeer::TabletPeer(const scoped_refptr<TabletMetadata>& meta,
+                       const QuorumPeerPB& quorum_peer,
                        MarkDirtyCallback mark_dirty_clbk)
-  : tablet_id_(meta.oid()),
+  : meta_(meta),
+    tablet_id_(meta->oid()),
+    quorum_peer_(quorum_peer),
     status_listener_(new TabletStatusListener(meta)),
     // prepare executor has a single thread as prepare must be done in order
     // of submission
@@ -83,7 +86,6 @@ TabletPeer::~TabletPeer() {
 Status TabletPeer::Init(const shared_ptr<Tablet>& tablet,
                         const scoped_refptr<server::Clock>& clock,
                         const shared_ptr<Messenger>& messenger,
-                        const QuorumPeerPB& quorum_peer,
                         gscoped_ptr<Log> log,
                         OpIdAnchorRegistry* opid_anchor_registry) {
   {
@@ -92,7 +94,6 @@ Status TabletPeer::Init(const shared_ptr<Tablet>& tablet,
     state_ = metadata::CONFIGURING;
     tablet_ = tablet;
     clock_ = clock;
-    quorum_peer_ = quorum_peer;
     messenger_ = messenger;
     log_.reset(log.release());
     opid_anchor_registry_ = opid_anchor_registry;
@@ -100,7 +101,7 @@ Status TabletPeer::Init(const shared_ptr<Tablet>& tablet,
     // a TabletPeerOptions).
 
     ConsensusOptions options;
-    options.tablet_id = tablet_->metadata()->oid();
+    options.tablet_id = meta_->oid();
 
     TRACE("Creating consensus instance");
     if (tablet_->metadata()->Quorum().local()) {
@@ -117,7 +118,7 @@ Status TabletPeer::Init(const shared_ptr<Tablet>& tablet,
   DCHECK(opid_anchor_registry_) << "A TabletPeer must be provided with a OpIdAnchorRegistry";
 
   TRACE("Initting consensus impl");
-  RETURN_NOT_OK_PREPEND(consensus_->Init(quorum_peer, clock_, this, log_.get()),
+  RETURN_NOT_OK_PREPEND(consensus_->Init(quorum_peer_, clock_, this, log_.get()),
                         "Could not initialize consensus");
 
   if (tablet_->metrics() != NULL) {
@@ -137,12 +138,11 @@ Status TabletPeer::Start() {
 
   gscoped_ptr<QuorumPB> actual_config;
   TRACE("Starting consensus");
-  RETURN_NOT_OK(consensus_->Start(tablet_->metadata()->Quorum(),
-                                  &actual_config));
-  tablet_->metadata()->SetQuorum(*actual_config.get());
+  RETURN_NOT_OK(consensus_->Start(Quorum(), &actual_config));
+  meta_->SetQuorum(*actual_config.get());
 
   TRACE("Flushing metadata");
-  RETURN_NOT_OK(tablet_->metadata()->Flush());
+  RETURN_NOT_OK(meta_->Flush());
 
   {
     boost::lock_guard<simple_spinlock> lock(lock_);
@@ -155,12 +155,13 @@ Status TabletPeer::Start() {
   return Status::OK();
 }
 
+const metadata::QuorumPB TabletPeer::Quorum() const {
+  return meta_->Quorum();
+}
+
 const metadata::QuorumPeerPB::Role TabletPeer::role() const {
   boost::lock_guard<simple_spinlock> lock(lock_);
-  if (tablet_ == NULL) {
-    return metadata::QuorumPeerPB::NON_PARTICIPANT;
-  }
-  QuorumPB latest_config = tablet_->metadata()->Quorum();
+  QuorumPB latest_config = meta_->Quorum();
   if (!latest_config.IsInitialized()) {
     return metadata::QuorumPeerPB::NON_PARTICIPANT;
   } else {

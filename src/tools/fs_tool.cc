@@ -223,7 +223,7 @@ Status FsTool::PrintTabletMeta(const string& tablet_id) {
 
 Status FsTool::PrintTabletMetaInternal(const string& master_block_path,
                                        const string& tablet_id) {
-  gscoped_ptr<TabletMetadata> meta;
+  scoped_refptr<TabletMetadata> meta;
   RETURN_NOT_OK(LoadTabletMetadata(master_block_path, tablet_id, &meta));
 
   const Schema& schema = meta->schema();
@@ -239,7 +239,7 @@ Status FsTool::PrintTabletMetaInternal(const string& master_block_path,
 
 Status FsTool::LoadTabletMetadata(const string& master_block_path,
                                   const string& tablet_id,
-                                  gscoped_ptr<metadata::TabletMetadata>* meta) {
+                                  scoped_refptr<metadata::TabletMetadata>* meta) {
   TabletMasterBlockPB master_block_pb;
   Status s = TabletMetadata::OpenMasterBlock(fs_manager_->env(),
                                              master_block_path,
@@ -288,7 +288,7 @@ Status FsTool::ListBlocksForTablet(const string& tablet_id) {
 
   std::cout << "Master block for tablet " << tablet_id << ": " << master_block_path << std::endl;
 
-  gscoped_ptr<TabletMetadata> meta;
+  scoped_refptr<TabletMetadata> meta;
   RETURN_NOT_OK(LoadTabletMetadata(master_block_path, tablet_id, &meta));
 
   if (meta->rowsets().empty()) {
@@ -346,7 +346,7 @@ Status FsTool::DumpTablet(const std::string& tablet_id,
   string master_block_path;
   RETURN_NOT_OK(GetMasterBlockPath(tablet_id, &master_block_path));
 
-  gscoped_ptr<TabletMetadata> meta;
+  scoped_refptr<TabletMetadata> meta;
   RETURN_NOT_OK(LoadTabletMetadata(master_block_path, tablet_id, &meta));
 
   if (meta->rowsets().empty()) {
@@ -373,7 +373,7 @@ Status FsTool::DumpRowSet(const string& tablet_id,
   string master_block_path;
   RETURN_NOT_OK(GetMasterBlockPath(tablet_id, &master_block_path));
 
-  gscoped_ptr<TabletMetadata> meta;
+  scoped_refptr<TabletMetadata> meta;
   RETURN_NOT_OK(LoadTabletMetadata(master_block_path, tablet_id, &meta));
 
   if (rowset_idx >= meta->rowsets().size()) {

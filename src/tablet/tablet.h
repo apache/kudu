@@ -65,7 +65,7 @@ class Tablet {
   //
   // If 'parent_metrics_context' is non-NULL, then this tablet will store
   // metrics in a sub-context of this context. Otherwise, no metrics are collected.
-  Tablet(gscoped_ptr<metadata::TabletMetadata> metadata,
+  Tablet(const scoped_refptr<metadata::TabletMetadata>& metadata,
          const scoped_refptr<server::Clock>& clock,
          const MetricContext* parent_metric_context,
          log::OpIdAnchorRegistry* opid_anchor_registry);
@@ -353,7 +353,7 @@ class Tablet {
 
   shared_ptr<Schema> schema_;
   const Schema key_schema_;
-  gscoped_ptr<metadata::TabletMetadata> metadata_;
+  scoped_refptr<metadata::TabletMetadata> metadata_;
   shared_ptr<MemRowSet> memrowset_;
   shared_ptr<RowSetTree> rowsets_;
 

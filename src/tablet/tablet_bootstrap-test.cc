@@ -49,7 +49,7 @@ class BootstrapTest : public LogTestBase {
     metadata::QuorumPB quorum;
     quorum.set_seqno(0);
 
-    gscoped_ptr<metadata::TabletMetadata> meta;
+    scoped_refptr<metadata::TabletMetadata> meta;
     scoped_refptr<OpIdAnchorRegistry> new_anchor_registry;
 
     RETURN_NOT_OK(metadata::TabletMetadata::LoadOrCreate(fs_manager_.get(),
@@ -69,11 +69,11 @@ class BootstrapTest : public LogTestBase {
     meta->Flush();
 
     gscoped_ptr<Log> new_log;
-    gscoped_ptr<TabletStatusListener> listener(new TabletStatusListener(*meta));
+    gscoped_ptr<TabletStatusListener> listener(new TabletStatusListener(meta));
 
     // Now attempt to recover the log
     RETURN_NOT_OK(BootstrapTablet(
-        meta.Pass(),
+        meta,
         scoped_refptr<Clock>(LogicalClock::CreateStartingAt(Timestamp::kInitialTimestamp)),
         NULL,
         listener.get(),

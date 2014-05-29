@@ -74,7 +74,8 @@ class SysTable {
   gscoped_ptr<tablet::TabletPeer> tablet_peer_;
 
  private:
-  Status SetupTablet(gscoped_ptr<metadata::TabletMetadata> metadata);
+  Status SetupTablet(const scoped_refptr<metadata::TabletMetadata>& metadata,
+                     const metadata::QuorumPeerPB& quorum_peer);
 
   Master* master_;
 };

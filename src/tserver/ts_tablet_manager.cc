@@ -111,18 +111,19 @@ Status TSTabletManager::Init() {
 
   // Register the tablets and trigger the asynchronous bootstrap
   BOOST_FOREACH(const string& tablet, tablets) {
-    gscoped_ptr<TabletMetadata> meta;
+    scoped_refptr<TabletMetadata> meta;
     RETURN_NOT_OK_PREPEND(OpenTabletMeta(tablet, &meta),
                           "Failed to open tablet metadata for tablet: " + tablet);
-
+    QuorumPeerPB quorum_peer;
+    quorum_peer.set_permanent_uuid(server_->instance_pb().permanent_uuid());
     shared_ptr<TabletPeer> tablet_peer(
-        new TabletPeer(*meta,
+        new TabletPeer(meta, quorum_peer,
                        boost::bind(&TSTabletManager::MarkTabletDirty, this, _1)));
     RegisterTablet(meta->oid(), tablet_peer);
 
     RETURN_NOT_OK(bootstrap_pool_.SubmitFunc(boost::bind(&TSTabletManager::OpenTablet,
                                                          this,
-                                                         meta.release())));
+                                                         meta)));
   }
 
   return Status::OK();
@@ -195,7 +196,7 @@ Status TSTabletManager::CreateNewTablet(const string& table_id,
   master_block.set_block_b(fs_manager_->GenerateName());
 
   TRACE("Creating new master block...");
-  gscoped_ptr<TabletMetadata> meta;
+  scoped_refptr<TabletMetadata> meta;
   RETURN_NOT_OK_PREPEND(
     TabletMetadata::CreateNew(fs_manager_,
                               master_block,
@@ -211,11 +212,14 @@ Status TSTabletManager::CreateNewTablet(const string& table_id,
   RETURN_NOT_OK_PREPEND(PersistMasterBlock(master_block),
                         "Couldn't persist master block for new tablet");
 
+  QuorumPeerPB quorum_peer;
+  quorum_peer.set_permanent_uuid(server_->instance_pb().permanent_uuid());
   shared_ptr<TabletPeer> new_peer(
-      new TabletPeer(*meta, boost::bind(&TSTabletManager::MarkTabletDirty, this, _1)));
+      new TabletPeer(meta, quorum_peer,
+                     boost::bind(&TSTabletManager::MarkTabletDirty, this, _1)));
   RegisterTablet(meta->oid(), new_peer);
   // We can run this synchronously since there is nothing to bootstrap.
-  OpenTablet(meta.release());
+  OpenTablet(meta);
 
   if (tablet_peer) {
     *tablet_peer = new_peer;
@@ -235,7 +239,7 @@ Status TSTabletManager::DeleteTablet(const shared_ptr<TabletPeer>& tablet_peer) 
 }
 
 Status TSTabletManager::OpenTabletMeta(const string& tablet_id,
-                                       gscoped_ptr<TabletMetadata>* metadata) {
+                                       scoped_refptr<TabletMetadata>* metadata) {
   LOG(INFO) << "Loading master block " << tablet_id;
   TRACE("Loading master block");
 
@@ -245,20 +249,16 @@ Status TSTabletManager::OpenTabletMeta(const string& tablet_id,
 
 
   TRACE("Loading metadata...");
-  gscoped_ptr<TabletMetadata> meta;
+  scoped_refptr<TabletMetadata> meta;
   RETURN_NOT_OK_PREPEND(TabletMetadata::Load(fs_manager_, master_block, &meta),
                         strings::Substitute("Failed to load tablet metadata. Master block: $0",
                                             master_block.ShortDebugString()));
   TRACE("Metadata loaded");
-  metadata->reset(meta.release());
+  metadata->swap(meta);
   return Status::OK();
 }
 
-void TSTabletManager::OpenTablet(TabletMetadata* metadata) {
-
-
-  gscoped_ptr<TabletMetadata> meta(metadata);
-
+void TSTabletManager::OpenTablet(const scoped_refptr<TabletMetadata>& meta) {
   string tablet_id = meta->oid();
 
   shared_ptr<TabletPeer> tablet_peer;
@@ -276,7 +276,7 @@ void TSTabletManager::OpenTablet(TabletMetadata* metadata) {
   LOG_TIMING(INFO, Substitute("Tablet $0 bootstrap complete.", tablet_id)) {
     // TODO: handle crash mid-creation of tablet? do we ever end up with a
     // partially created tablet here?
-    s = BootstrapTablet(meta.Pass(),
+    s = BootstrapTablet(meta,
                         scoped_refptr<server::Clock>(server_->clock()),
                         &metric_ctx_,
                         tablet_peer->status_listener(),
@@ -291,8 +291,6 @@ void TSTabletManager::OpenTablet(TabletMetadata* metadata) {
     }
   }
 
-  QuorumPeerPB quorum_peer;
-  quorum_peer.set_permanent_uuid(server_->instance_pb().permanent_uuid());
 
   LOG_TIMING(INFO, Substitute("Tablet $0 Started.", tablet_id)) {
     TRACE("Initializing tablet peer");
@@ -303,7 +301,6 @@ void TSTabletManager::OpenTablet(TabletMetadata* metadata) {
     s =  tablet_peer->Init(tablet,
                            scoped_refptr<server::Clock>(server_->clock()),
                            server_->messenger(),
-                           quorum_peer,
                            log.Pass(),
                            opid_anchor_registry.get());
 

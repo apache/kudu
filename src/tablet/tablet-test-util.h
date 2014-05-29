@@ -49,7 +49,7 @@ class KuduTabletTest : public KuduTest {
 
     // Build the Tablet
     fs_manager_.reset(new FsManager(env_.get(), root_dir.empty() ? test_dir_ : root_dir));
-    gscoped_ptr<metadata::TabletMetadata> metadata;
+    scoped_refptr<metadata::TabletMetadata> metadata;
     ASSERT_STATUS_OK(metadata::TabletMetadata::LoadOrCreate(fs_manager_.get(),
                                                             master_block,
                                                             "KuduTableTest",
@@ -58,7 +58,7 @@ class KuduTabletTest : public KuduTest {
                                                             "", "",
                                                             &metadata));
     opid_anchor_registry_ = new log::OpIdAnchorRegistry();
-    tablet_.reset(new Tablet(metadata.Pass(), clock_, NULL, opid_anchor_registry_.get()));
+    tablet_.reset(new Tablet(metadata, clock_, NULL, opid_anchor_registry_.get()));
     ASSERT_STATUS_OK(tablet_->Open());
   }
 

@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "gutil/macros.h"
+#include "gutil/ref_counted.h"
 #include "util/locks.h"
 #include "util/metrics.h"
 #include "util/status.h"
@@ -138,20 +139,18 @@ class TSTabletManager {
 
   // Open a tablet meta from the local file system by loading its master block.
   Status OpenTabletMeta(const std::string& tablet_id,
-                        gscoped_ptr<metadata::TabletMetadata>* metadata);
+                        scoped_refptr<metadata::TabletMetadata>* metadata);
 
   // Open a tablet whose metadata has already been loaded/created.
   // This method does not return anything as it can be run asynchronously.
   // Upon completion of this method the tablet should be initialized and running.
   // If something wrong happened on bootstrap/initialization the relevant error
   // will be set on TabletPeer along with the state set to FAILED.
-  // NOTE I: The tablet must be registered prior to calling this method.
-  // NOTE II: This method expects to effectively own the passed TabletMetadata
-  // raw pointer (not using gcoped_ptr<> due to boost::bind issues)
-  void OpenTablet(metadata::TabletMetadata* meta);
+  // NOTE: The tablet must be registered prior to calling this method.
+  void OpenTablet(const scoped_refptr<metadata::TabletMetadata>& meta);
 
   // Open a tablet whose metadata has already been loaded.
-  void BootstrapAndInitTablet(gscoped_ptr<metadata::TabletMetadata> meta,
+  void BootstrapAndInitTablet(const scoped_refptr<metadata::TabletMetadata>& meta,
                               std::tr1::shared_ptr<tablet::TabletPeer>* peer);
 
   // Add the tablet to the tablet map.

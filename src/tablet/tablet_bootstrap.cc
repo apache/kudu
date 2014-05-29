@@ -86,7 +86,7 @@ struct ReplayState;
 // we need to set it before replay or we won't be able to re-rebuild.
 class TabletBootstrap {
  public:
-  TabletBootstrap(gscoped_ptr<metadata::TabletMetadata> meta,
+  TabletBootstrap(const scoped_refptr<metadata::TabletMetadata>& meta,
                   const scoped_refptr<Clock>& clock,
                   MetricContext* metric_context,
                   TabletStatusListener* listener);
@@ -180,7 +180,7 @@ class TabletBootstrap {
   // Removes the recovery directory.
   Status RemoveRecoveryDir();
 
-  gscoped_ptr<metadata::TabletMetadata> meta_;
+  scoped_refptr<metadata::TabletMetadata> meta_;
   scoped_refptr<Clock> clock_;
   MetricContext* metric_context_;
   TabletStatusListener* listener_;
@@ -194,33 +194,48 @@ class TabletBootstrap {
   DISALLOW_COPY_AND_ASSIGN(TabletBootstrap);
 };
 
-TabletStatusListener::TabletStatusListener(
-    const metadata::TabletMetadata& meta)
-    : tablet_id_(meta.oid()),
-      table_name_(meta.table_name()),
-      start_key_(meta.start_key()),
-      end_key_(meta.end_key()),
-      schema_(meta.schema()),
+TabletStatusListener::TabletStatusListener(const scoped_refptr<metadata::TabletMetadata>& meta)
+    : meta_(meta),
       last_status_("") {
+}
+
+const string TabletStatusListener::tablet_id() const {
+  return meta_->oid();
+}
+
+const string TabletStatusListener::table_name() const {
+  return meta_->table_name();
+}
+
+const string TabletStatusListener::start_key() const {
+  return meta_->start_key();
+}
+
+const string TabletStatusListener::end_key() const {
+  return meta_->end_key();
+}
+
+const Schema TabletStatusListener::schema() const {
+  return meta_->schema();
 }
 
 TabletStatusListener::~TabletStatusListener() {
 }
 
 void TabletStatusListener::StatusMessage(const string& status) {
-  LOG(INFO) << "Tablet id " << tablet_id_ << ": " << status;
+  LOG(INFO) << "Tablet id " << tablet_id() << ": " << status;
   boost::lock_guard<boost::shared_mutex> l(lock_);
   last_status_ = status;
 }
 
-Status BootstrapTablet(gscoped_ptr<metadata::TabletMetadata> meta,
+Status BootstrapTablet(const scoped_refptr<metadata::TabletMetadata>& meta,
                        const scoped_refptr<Clock>& clock,
                        MetricContext* metric_context,
                        TabletStatusListener* listener,
                        std::tr1::shared_ptr<tablet::Tablet>* rebuilt_tablet,
                        gscoped_ptr<log::Log>* rebuilt_log,
                        scoped_refptr<log::OpIdAnchorRegistry>* opid_anchor_registry) {
-  TabletBootstrap bootstrap(meta.Pass(), clock, metric_context, listener);
+  TabletBootstrap bootstrap(meta, clock, metric_context, listener);
   RETURN_NOT_OK(bootstrap.Bootstrap(rebuilt_tablet, rebuilt_log, opid_anchor_registry));
   // This is necessary since OpenNewLog() initially disables sync.
   RETURN_NOT_OK((*rebuilt_log)->ReEnableSyncIfRequired());
@@ -245,11 +260,11 @@ static string DebugInfo(const string& tablet_id,
                     segment_path, debug_str);
 }
 
-TabletBootstrap::TabletBootstrap(gscoped_ptr<TabletMetadata> meta,
+TabletBootstrap::TabletBootstrap(const scoped_refptr<TabletMetadata>& meta,
                                  const scoped_refptr<Clock>& clock,
                                  MetricContext* metric_context,
                                  TabletStatusListener* listener)
-    : meta_(meta.Pass()),
+    : meta_(meta),
       clock_(clock),
       metric_context_(metric_context),
       listener_(listener),
@@ -319,7 +334,7 @@ Status TabletBootstrap::Bootstrap(shared_ptr<Tablet>* rebuilt_tablet,
 }
 
 Status TabletBootstrap::FetchBlocksAndOpenTablet(bool* fetched) {
-  gscoped_ptr<Tablet> tablet(new Tablet(meta_.Pass(),
+  gscoped_ptr<Tablet> tablet(new Tablet(meta_,
                                         clock_,
                                         metric_context_,
                                         opid_anchor_registry_.get()));

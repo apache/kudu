@@ -46,8 +46,9 @@ typedef boost::function<void(TabletPeer*)> MarkDirtyCallback;
 class TabletPeer : public consensus::ReplicaTransactionFactory {
  public:
 
-  explicit TabletPeer(const metadata::TabletMetadata& meta,
-                      MarkDirtyCallback mark_dirty_func);
+  TabletPeer(const scoped_refptr<metadata::TabletMetadata>& meta,
+             const metadata::QuorumPeerPB& quorum_peer,
+             MarkDirtyCallback mark_dirty_func);
 
   ~TabletPeer();
 
@@ -58,7 +59,6 @@ class TabletPeer : public consensus::ReplicaTransactionFactory {
   Status Init(const std::tr1::shared_ptr<tablet::Tablet>& tablet,
               const scoped_refptr<server::Clock>& clock,
               const std::tr1::shared_ptr<rpc::Messenger>& messenger,
-              const metadata::QuorumPeerPB& quorum_peer,
               gscoped_ptr<log::Log> log,
               log::OpIdAnchorRegistry* opid_anchor_registry);
 
@@ -123,6 +123,9 @@ class TabletPeer : public consensus::ReplicaTransactionFactory {
     boost::lock_guard<simple_spinlock> lock(lock_);
     return state_;
   }
+
+  // Returns the current quorum configuration.
+  const metadata::QuorumPB Quorum() const;
 
   // Returns the current role of this peer as accepted by the last configuration
   // round, that is the role which is set in the tablet metadata's quorum.
@@ -201,6 +204,8 @@ class TabletPeer : public consensus::ReplicaTransactionFactory {
   // Task that runs Log GC on a periodic basis.
   Status RunLogGC();
 
+  scoped_refptr<metadata::TabletMetadata> meta_;
+
   const std::string tablet_id_;
 
   metadata::TabletStatePB state_;
@@ -209,7 +214,7 @@ class TabletPeer : public consensus::ReplicaTransactionFactory {
   TransactionTracker txn_tracker_;
   gscoped_ptr<log::Log> log_;
   std::tr1::shared_ptr<Tablet> tablet_;
-  metadata::QuorumPeerPB quorum_peer_;
+  const metadata::QuorumPeerPB quorum_peer_;
   std::tr1::shared_ptr<rpc::Messenger> messenger_;
   gscoped_ptr<consensus::Consensus> consensus_;
   gscoped_ptr<TabletStatusListener> status_listener_;

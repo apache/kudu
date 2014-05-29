@@ -66,17 +66,21 @@ class TabletPeerTest : public KuduTabletTest {
     rpc::MessengerBuilder builder(CURRENT_TEST_NAME());
     ASSERT_STATUS_OK(builder.Build(&messenger_));
 
-    // "Bootstrap" and start the TabletPeer.
-    tablet_peer_.reset(new TabletPeer(*tablet_->metadata(), NULL));
     QuorumPeerPB quorum_peer;
     quorum_peer.set_permanent_uuid("test1");
     quorum_peer.set_role(QuorumPeerPB::LEADER);
+
+    // "Bootstrap" and start the TabletPeer.
+    tablet_peer_.reset(
+        new TabletPeer(make_scoped_refptr(tablet_->metadata()), quorum_peer, NULL));
+
     metric_ctx_.reset(new MetricContext(&metric_registry_, CURRENT_TEST_NAME()));
 
     gscoped_ptr<Log> log;
     ASSERT_STATUS_OK(Log::Open(LogOptions(), fs_manager_.get(), tablet_->tablet_id(),
-                                metric_ctx_.get(), &log));
-    ASSERT_STATUS_OK(tablet_peer_->Init(tablet_, clock_, messenger_, quorum_peer,
+                               metric_ctx_.get(), &log));
+
+    ASSERT_STATUS_OK(tablet_peer_->Init(tablet_, clock_, messenger_,
                                         log.Pass(), opid_anchor_registry_.get()));
 
     // Disable Log GC. We will call it manually.

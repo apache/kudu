@@ -275,7 +275,7 @@ class TestCompaction : public KuduRowSetTest {
       master_block.set_block_b("11111111111111111111111111111111");
 
       FsManager fs_manager(env_.get(), FLAGS_merge_benchmark_input_dir);
-      gscoped_ptr<metadata::TabletMetadata> input_meta;
+      scoped_refptr<metadata::TabletMetadata> input_meta;
       ASSERT_STATUS_OK(metadata::TabletMetadata::Load(&fs_manager, master_block, &input_meta));
 
       BOOST_FOREACH(const shared_ptr<RowSetMetadata>& meta, input_meta->rowsets()) {

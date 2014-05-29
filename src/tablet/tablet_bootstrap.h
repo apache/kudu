@@ -35,21 +35,21 @@ class Tablet;
 // piping it into the web UI.
 class TabletStatusListener {
  public:
-  explicit TabletStatusListener(const metadata::TabletMetadata& meta);
+  explicit TabletStatusListener(const scoped_refptr<metadata::TabletMetadata>& meta);
 
   ~TabletStatusListener();
 
   void StatusMessage(const std::string& status);
 
-  const std::string tablet_id() const { return tablet_id_; }
+  const std::string tablet_id() const;
 
-  const std::string table_name() const { return table_name_; }
+  const std::string table_name() const;
 
-  const std::string start_key() const { return start_key_; }
+  const std::string start_key() const;
 
-  const std::string end_key() const { return end_key_; }
+  const std::string end_key() const;
 
-  const Schema& schema() const { return schema_; }
+  const Schema schema() const;
 
   std::string last_status() const {
     boost::shared_lock<boost::shared_mutex> l(lock_);
@@ -59,11 +59,7 @@ class TabletStatusListener {
  private:
   mutable boost::shared_mutex lock_;
 
-  const std::string tablet_id_;
-  const std::string table_name_;
-  const std::string start_key_;
-  const std::string end_key_;
-  const Schema schema_;
+  scoped_refptr<metadata::TabletMetadata> meta_;
   std::string last_status_;
 
   DISALLOW_COPY_AND_ASSIGN(TabletStatusListener);
@@ -77,7 +73,7 @@ extern const char* kLogRecoveryDir;
 // TODO add functionality to fetch blocks and log segments from other TabletServers.
 // TODO make this async and allow the caller to check on the status of recovery
 // for monitoring purposes.
-Status BootstrapTablet(gscoped_ptr<metadata::TabletMetadata> meta,
+Status BootstrapTablet(const scoped_refptr<metadata::TabletMetadata>& meta,
                        const scoped_refptr<server::Clock>& clock,
                        MetricContext* metric_context,
                        TabletStatusListener* status_listener,

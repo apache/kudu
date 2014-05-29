@@ -25,7 +25,7 @@ void LocalLineItemDAO::Init() {
 
   // Try to load it. If it was not found, create a new one.
   Schema s = SchemaBuilder(tpch::CreateLineItemSchema()).Build();
-  gscoped_ptr<kudu::metadata::TabletMetadata> metadata;
+  scoped_refptr<kudu::metadata::TabletMetadata> metadata;
 
   QuorumPB quorum;
   CHECK_OK(TabletMetadata::LoadOrCreate(&fs_manager_,
@@ -39,7 +39,7 @@ void LocalLineItemDAO::Init() {
 
   scoped_refptr<server::Clock> clock(
       server::LogicalClock::CreateStartingAt(Timestamp::kInitialTimestamp));
-  tablet_.reset(new tablet::Tablet(metadata.Pass(), clock, NULL,
+  tablet_.reset(new tablet::Tablet(metadata, clock, NULL,
                                    new log::OpIdAnchorRegistry()));
   CHECK_OK(tablet_->Open());
 }

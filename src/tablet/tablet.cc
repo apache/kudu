@@ -84,13 +84,13 @@ static CompactionPolicy *CreateCompactionPolicy() {
   return NULL;
 }
 
-Tablet::Tablet(gscoped_ptr<TabletMetadata> metadata,
+Tablet::Tablet(const scoped_refptr<TabletMetadata>& metadata,
                const scoped_refptr<server::Clock>& clock,
                const MetricContext* parent_metric_context,
                OpIdAnchorRegistry* opid_anchor_registry)
   : schema_(new Schema(metadata->schema())),
     key_schema_(schema_->CreateKeyProjection()),
-    metadata_(metadata.Pass()),
+    metadata_(metadata),
     rowsets_(new RowSetTree()),
     opid_anchor_registry_(opid_anchor_registry),
     next_mrs_id_(0),

@@ -37,16 +37,16 @@ Status TabletMetadata::CreateNew(FsManager* fs_manager,
                                  const Schema& schema,
                                  const QuorumPB& quorum,
                                  const string& start_key, const string& end_key,
-                                 gscoped_ptr<TabletMetadata>* metadata) {
-  gscoped_ptr<TabletMetadata> ret(new TabletMetadata(fs_manager,
-                                                     master_block,
-                                                     table_name,
-                                                     schema,
-                                                     quorum,
-                                                     start_key,
-                                                     end_key));
+                                 scoped_refptr<TabletMetadata>* metadata) {
+  scoped_refptr<TabletMetadata> ret(new TabletMetadata(fs_manager,
+                                                       master_block,
+                                                       table_name,
+                                                       schema,
+                                                       quorum,
+                                                       start_key,
+                                                       end_key));
   RETURN_NOT_OK(ret->Flush());
-  metadata->reset(ret.release());
+  metadata->swap(ret);
   // TODO: should we verify that neither of the blocks referenced in the master block
   // exist?
   return Status::OK();
@@ -54,10 +54,10 @@ Status TabletMetadata::CreateNew(FsManager* fs_manager,
 
 Status TabletMetadata::Load(FsManager* fs_manager,
                             const TabletMasterBlockPB& master_block,
-                            gscoped_ptr<TabletMetadata>* metadata) {
-  gscoped_ptr<TabletMetadata> ret(new TabletMetadata(fs_manager, master_block));
+                            scoped_refptr<TabletMetadata>* metadata) {
+  scoped_refptr<TabletMetadata> ret(new TabletMetadata(fs_manager, master_block));
   RETURN_NOT_OK(ret->LoadFromDisk());
-  metadata->reset(ret.release());
+  metadata->swap(ret);
   return Status::OK();
 }
 
@@ -67,7 +67,7 @@ Status TabletMetadata::LoadOrCreate(FsManager* fs_manager,
                                     const Schema& schema,
                                     const QuorumPB& quorum,
                                     const string& start_key, const string& end_key,
-                                    gscoped_ptr<TabletMetadata>* metadata) {
+                                    scoped_refptr<TabletMetadata>* metadata) {
   Status s = Load(fs_manager, master_block, metadata);
   if (s.ok()) {
     if (!(*metadata)->schema().Equals(schema)) {
@@ -119,6 +119,9 @@ TabletMetadata::TabletMetadata(FsManager *fs_manager,
     num_flush_pins_(0),
     needs_flush_(false) {
   CHECK(schema_.has_column_ids());
+}
+
+TabletMetadata::~TabletMetadata() {
 }
 
 TabletMetadata::TabletMetadata(FsManager *fs_manager, const TabletMasterBlockPB& master_block)
