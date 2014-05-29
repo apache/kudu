@@ -80,12 +80,20 @@ void MiniTabletServer::Shutdown() {
   started_ = false;
 }
 
+QuorumPB MiniTabletServer::CreateLocalQuorum() const {
+  QuorumPB quorum;
+  quorum.set_seqno(0);
+  quorum.set_local(true);
+  QuorumPeerPB* peer = quorum.add_peers();
+  peer->set_permanent_uuid(server_->instance_pb().permanent_uuid());
+  peer->set_role(QuorumPeerPB::LEADER);
+  return quorum;
+}
+
 Status MiniTabletServer::AddTestTablet(const std::string& table_id,
                                        const std::string& tablet_id,
                                        const Schema& schema) {
-  QuorumPB quorum;
-  quorum.set_seqno(0);
-  return AddTestTablet(table_id, tablet_id, schema, quorum);
+  return AddTestTablet(table_id, tablet_id, schema, CreateLocalQuorum());
 }
 
 Status MiniTabletServer::AddTestTablet(const std::string& table_id,

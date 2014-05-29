@@ -189,6 +189,12 @@ class CreateTableOptions {
   // copied.
   CreateTableOptions& WithSplitKeys(const std::vector<std::string>& keys);
 
+  // Set the number of replicas for each tablet in the tablet.
+  // This should be an odd number.
+  //
+  // A value <= 0 falls back to the server-side default.
+  CreateTableOptions& WithNumReplicas(int n_replicas);
+
   // Wait the assignment
   CreateTableOptions& WaitAssignment(bool wait_assignment);
 
@@ -196,6 +202,7 @@ class CreateTableOptions {
   friend class KuduClient;
   std::vector<std::string> split_keys_;
   bool wait_assignment_;
+  int num_replicas_;
 };
 
 // A KuduTable represents a table on a particular cluster. It holds the current

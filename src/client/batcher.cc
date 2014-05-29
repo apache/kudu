@@ -438,11 +438,17 @@ void Batcher::TabletLookupFinished(InFlightOp* op, const Status& s) {
 
   boost::unique_lock<simple_spinlock> l2(op->lock_);
 
-  RemoteTabletServer* ts = op->tablet->replica_tserver(0);
-  CHECK(ts != NULL) << "TODO: handle no tablet locations";
-
-  if (VLOG_IS_ON(2)) {
-    VLOG(2) << "Result: loc = " << ts->ToString();
+  RemoteTabletServer* ts = op->tablet->LeaderTServer();
+  if (PREDICT_FALSE(ts == NULL)) {
+    VLOG(1) << "No LEADER found for tablet " << op->tablet->tablet_id()
+            << ": failing. TODO: retry instead";
+    Status err = Status::ServiceUnavailable(
+      "No LEADER for tablet", op->tablet->tablet_id());
+    l2.unlock();
+    l.unlock();
+    MarkInFlightOpFailed(op, err);
+    CheckForFinishedFlush();
+    return;
   }
 
   // We've figured out which tablet the row falls under.

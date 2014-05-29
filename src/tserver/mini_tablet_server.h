@@ -60,6 +60,10 @@ class MiniTabletServer {
                        const Schema& schema,
                        const metadata::QuorumPB& quorum);
 
+  // Create a QuorumPB which should be used to create a local-only
+  // tablet on the given tablet server.
+  metadata::QuorumPB CreateLocalQuorum() const;
+
   const Sockaddr bound_rpc_addr() const;
   const Sockaddr bound_http_addr() const;
 

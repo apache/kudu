@@ -153,12 +153,13 @@ Status TSTabletManager::CreateNewTablet(const string& table_id,
                                         QuorumPB quorum,
                                         shared_ptr<TabletPeer>* tablet_peer) {
 
-  // If the quorum is local, set the local peer
+  // If the quorum is specified to use local consensus, verify that the peer
+  // matches up with our local info.
   if (quorum.local()) {
-    QuorumPeerPB quorum_peer;
-    quorum_peer.set_permanent_uuid(server_->instance_pb().permanent_uuid());
-    quorum.clear_peers();
-    quorum.add_peers()->CopyFrom(quorum_peer);
+    CHECK_EQ(1, quorum.peers_size());
+    CHECK_EQ(server_->instance_pb().permanent_uuid(),
+             quorum.peers(0).permanent_uuid());
+    CHECK_EQ(QuorumPeerPB::LEADER, quorum.peers(0).role());
   }
 
   // Set the initial sequence number to -1, disregarding the passed sequence

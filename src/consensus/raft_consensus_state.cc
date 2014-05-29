@@ -311,7 +311,8 @@ void ReplicaState::NewIdUnlocked(OpId* id) {
 string ReplicaState::ToString() {
   string ret;
   StrAppend(&ret, Substitute("Replica: $0, State: $1, Role: $2\n",
-                             peer_uuid_, state_, current_role_));
+                             peer_uuid_, state_,
+                             QuorumPeerPB::Role_Name(current_role_)));
   StrAppend(&ret, "Watermarks: {Received: ", received_op_id_.ShortDebugString(),
             " Replicated: ", replicated_op_id_.ShortDebugString(),
             " Committed: ", all_committed_before_id_.ShortDebugString(), "}\n");

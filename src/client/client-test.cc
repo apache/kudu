@@ -78,19 +78,24 @@ class ClientTest : public KuduTest {
 
     // Set up two test tables inside the server. One has a single split, just so
     // that code is exercised a little more.
+    ASSERT_STATUS_OK(client_->CreateTable(kTableName, schema_,
+                                          CreateTableOptions()
+                                            .WithSplitKeys(GenerateSplitKeys())));
+    ASSERT_STATUS_OK(client_->CreateTable(kTable2Name, schema_));
+
+    ASSERT_STATUS_OK(client_->OpenTable(kTableName, &client_table_));
+    ASSERT_STATUS_OK(client_->OpenTable(kTable2Name, &client_table2_));
+  }
+
+  // Generate a set of split keys for tablets used in this test.
+  vector<string> GenerateSplitKeys() {
     vector<string> keys;
     EncodedKeyBuilder builder(schema_);
     int val = 9;
     builder.AddColumnKey(&val);
     gscoped_ptr<EncodedKey> key(builder.BuildEncodedKey());
     keys.push_back(key->encoded_key().ToString());
-    ASSERT_STATUS_OK(client_->CreateTable(kTableName, schema_,
-                                          CreateTableOptions()
-                                              .WithSplitKeys(keys)));
-    ASSERT_STATUS_OK(client_->CreateTable(kTable2Name, schema_));
-
-    ASSERT_STATUS_OK(client_->OpenTable(kTableName, &client_table_));
-    ASSERT_STATUS_OK(client_->OpenTable(kTable2Name, &client_table2_));
+    return keys;
   }
 
   virtual void TearDown() {
@@ -744,7 +749,7 @@ TEST_F(ClientTest, TestBasicAlterOperations) {
   // TODO: These tests explicitly use a single-tablet table (client_table2_),
   // because multi-tablet tables are prone to deadlocking.
   //
-  // See KUDU-237 for more details.
+  // See KUDU-273 for more details.
   AlterTableBuilder alter;
 
   // test that remove key should throws an error
@@ -895,6 +900,48 @@ TEST_F(ClientTest, TestStaleLocations) {
     wait_time = std::min(wait_time * 5 / 4, 1000000);
   }
   ASSERT_FALSE(locs_pb.stale());
+}
+
+// Test creating and accessing a table which has multiple tablets,
+// each of which is replicated.
+//
+// TODO: this should probably be the default for _all_ of the tests
+// in this file. However, some things like alter table are not yet
+// working on replicated tables - see KUDU-304
+TEST_F(ClientTest, TestReplicatedMultiTabletTable) {
+  const string kReplicatedTable = "replicated";
+  const int kNumRowsToWrite = 100;
+
+  // Add two more tablet servers so that the Create can succeed.
+  for (int i = 0; i < 2; i++) {
+    ASSERT_STATUS_OK(cluster_->AddTabletServer());
+  }
+
+  ASSERT_STATUS_OK(client_->CreateTable(kReplicatedTable, schema_,
+                                        CreateTableOptions()
+                                        .WithNumReplicas(3)
+                                        .WithSplitKeys(GenerateSplitKeys())));
+  scoped_refptr<KuduTable> table;
+  ASSERT_STATUS_OK(client_->OpenTable(kReplicatedTable, &table));
+
+  // Should have no rows to begin with.
+  ASSERT_EQ(0, CountRowsFromClient(table.get()));
+
+  // Insert some data.
+  shared_ptr<KuduSession> session = client_->NewSession();
+  ASSERT_STATUS_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
+  for (int row_key = 0; row_key < kNumRowsToWrite; row_key++) {
+    ASSERT_STATUS_OK(ApplyInsertToSession(
+                       session.get(), table, row_key, row_key * 10, "hello world"));
+  }
+
+  ASSERT_STATUS_OK(session->Flush());
+
+  // Should now see the data.
+  ASSERT_EQ(kNumRowsToWrite, CountRowsFromClient(table.get()));
+
+  // TODO: once leader re-election is in, should somehow force a re-election
+  // and ensure that the client handles refreshing the leader.
 }
 
 } // namespace client

@@ -164,9 +164,8 @@ message CreateTabletRequestPB {
   required string table_name = 5;
   required SchemaPB schema = 6;
 
-  // Optional quorum for the tablet. If one is not provided a local quorum
-  // is chosen.
-  optional metadata.QuorumPB quorum = 7;
+  // Initial quorum for the tablet.
+  required metadata.QuorumPB quorum = 7;
 }
 
 message CreateTabletResponsePB {

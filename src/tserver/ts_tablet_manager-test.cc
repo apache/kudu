@@ -40,11 +40,11 @@ class TsTabletManagerTest : public KuduTest {
   virtual void SetUp() {
     KuduTest::SetUp();
 
-    quorum_.set_seqno(0);
-
     mini_server_.reset(new MiniTabletServer(env_.get(), GetTestPath("TsTabletManagerTest-fsroot")));
     ASSERT_STATUS_OK(mini_server_->Start());
     mini_server_->FailHeartbeats();
+
+    quorum_ = mini_server_->CreateLocalQuorum();
 
     tablet_manager_ = mini_server_->server()->tablet_manager();
     fs_manager_ = mini_server_->fs_manager();

@@ -387,6 +387,7 @@ void LinkedListTest::WaitForBootstrapToFinishAndVerify(int64_t expected, int64_t
   while (true) {
     Status s = VerifyLinkedList(expected, seen);
     if (s.IsServiceUnavailable()) {
+      VLOG(1) << "Table not yet ready: " << s.ToString();
       if (sw.elapsed().wall_seconds() > FLAGS_seconds_to_run) {
         // We'll give it an equal amount of time to re-load the data as it took
         // to write it in. Typically it completes much faster than that.

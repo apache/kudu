@@ -163,26 +163,31 @@ Status KuduClient::CreateTable(const std::string& table_name,
   CreateTableRequestPB req;
   CreateTableResponsePB resp;
   RpcController rpc;
-
-  MonoTime deadline = MonoTime::Now(MonoTime::FINE);
-  deadline.AddDelta(MonoDelta::FromMilliseconds(15 * 1000));
-
-  req.set_name(table_name);
   rpc.set_timeout(options_.default_admin_operation_timeout);
+
+  // Build request.
+  req.set_name(table_name);
+  if (opts.num_replicas_ >= 1) {
+    req.set_num_replicas(opts.num_replicas_);
+  }
   RETURN_NOT_OK_PREPEND(SchemaToPB(schema, req.mutable_schema()),
                         "Invalid schema");
-
   BOOST_FOREACH(const std::string& key, opts.split_keys_) {
     req.add_pre_split_keys(key);
   }
 
+  // Send it.
   RETURN_NOT_OK(master_proxy_->CreateTable(req, &resp, &rpc));
   if (resp.has_error()) {
     // TODO: if already exist and in progress spin
     return StatusFromPB(resp.error().status());
   }
 
+  // Spin until the table is fully created, if requested.
   if (opts.wait_assignment_) {
+    // TODO: make the wait time configurable
+    MonoTime deadline = MonoTime::Now(MonoTime::FINE);
+    deadline.AddDelta(MonoDelta::FromSeconds(15));
     RETURN_NOT_OK(RetryFunc(deadline,
           "Waiting on Create Table to be completed",
           "Timeout out waiting for Table Creation",
@@ -336,9 +341,9 @@ Status KuduClient::GetTabletProxy(const std::string& tablet_id,
   scoped_refptr<RemoteTablet> remote_tablet;
   meta_cache_->LookupTabletByID(tablet_id, &remote_tablet);
 
-  RemoteTabletServer* ts = remote_tablet->replica_tserver(0);
-  if (ts == NULL) {
-    return Status::NotFound(Substitute("No replicas for tablet $0", tablet_id));
+  RemoteTabletServer* ts = remote_tablet->LeaderTServer();
+  if (PREDICT_FALSE(ts == NULL)) {
+    return Status::ServiceUnavailable(Substitute("No LEADER for tablet $0", tablet_id));
   }
 
   Synchronizer s;
@@ -354,7 +359,8 @@ Status KuduClient::GetTabletProxy(const std::string& tablet_id,
 ////////////////////////////////////////////////////////////
 
 CreateTableOptions::CreateTableOptions()
-  : wait_assignment_(true) {
+  : wait_assignment_(true),
+    num_replicas_(0) {
 }
 
 CreateTableOptions::~CreateTableOptions() {
@@ -363,6 +369,11 @@ CreateTableOptions::~CreateTableOptions() {
 CreateTableOptions& CreateTableOptions::WithSplitKeys(
     const std::vector<std::string>& keys) {
   split_keys_ = keys;
+  return *this;
+}
+
+CreateTableOptions& CreateTableOptions::WithNumReplicas(int num_replicas) {
+  num_replicas_ = num_replicas;
   return *this;
 }
 
@@ -746,13 +757,16 @@ void KuduScanner::PrepareRequest(RequestType state) {
 }
 
 Status KuduScanner::OpenTablet(const Slice& key) {
+  // TODO: scanners don't really require a leader. For now, however,
+  // we always scan from the leader.
   Synchronizer s;
   table_->client_->meta_cache_->LookupTabletByKey(table_,
                                                   key,
                                                   &remote_, s.callback());
   RETURN_NOT_OK(s.Wait());
   shared_ptr<TabletServerServiceProxy> proxy;
-  table_->client_->GetTabletProxy(remote_->tablet_id(), &proxy);
+  RETURN_NOT_OK(table_->client_->GetTabletProxy(remote_->tablet_id(), &proxy));
+  DCHECK(proxy);
 
   // Scan it.
   PrepareRequest(KuduScanner::NEW);
@@ -843,15 +857,21 @@ void KuduScanner::Close() {
     return;
   }
 
-  CloseCallback* closer = new CloseCallback;
+  gscoped_ptr<CloseCallback> closer(new CloseCallback);
   closer->scanner_id = next_req_.scanner_id();
   PrepareRequest(KuduScanner::CLOSE);
   next_req_.set_close_scanner(true);
   closer->controller.set_timeout(MonoDelta::FromMilliseconds(kRpcTimeoutMillis));
   shared_ptr<TabletServerServiceProxy> proxy;
-  table_->client_->GetTabletProxy(remote_->tablet_id(), &proxy);
-  proxy->ScanAsync(next_req_, &closer->response, &closer->controller,
-                   boost::bind(&CloseCallback::Callback, closer));
+  Status s = table_->client_->GetTabletProxy(remote_->tablet_id(), &proxy);
+  if (s.ok()) {
+    proxy->ScanAsync(next_req_, &closer->response, &closer->controller,
+                     boost::bind(&CloseCallback::Callback, closer.get()));
+    ignore_result(closer.release());
+  } else {
+    LOG(WARNING) << "Unable to close scanner " << ToString() << " on server: "
+                 << s.ToString();
+  }
   next_req_.Clear();
   open_ = false;
 }
@@ -902,7 +922,7 @@ Status KuduScanner::NextBatch(std::vector<const uint8_t*>* rows) {
 
     controller_.Reset();
     shared_ptr<TabletServerServiceProxy> proxy;
-    table_->client_->GetTabletProxy(remote_->tablet_id(), &proxy);
+    RETURN_NOT_OK(table_->client_->GetTabletProxy(remote_->tablet_id(), &proxy));
     PrepareRequest(KuduScanner::CONTINUE);
     RETURN_NOT_OK(proxy->Scan(next_req_, &last_response_, &controller_));
     RETURN_NOT_OK(CheckForErrors());

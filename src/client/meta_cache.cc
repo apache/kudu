@@ -24,6 +24,7 @@ using kudu::master::MasterServiceProxy;
 using kudu::master::TabletLocationsPB;
 using kudu::master::TabletLocationsPB_ReplicaPB;
 using kudu::master::TSInfoPB;
+using kudu::metadata::QuorumPeerPB;
 using kudu::tserver::TabletServerServiceProxy;
 using kudu::rpc::RpcController;
 using std::string;
@@ -129,15 +130,30 @@ void RemoteTablet::Refresh(const TabletServerMap& tservers,
   BOOST_FOREACH(const TabletLocationsPB_ReplicaPB& r, replicas) {
     RemoteReplica rep;
     rep.ts = FindOrDie(tservers, r.ts_info().permanent_uuid());
+    rep.role = r.role();
     replicas_.push_back(rep);
   }
 }
 
-RemoteTabletServer* RemoteTablet::replica_tserver(int idx) {
+RemoteTabletServer* RemoteTablet::replica_tserver(int idx) const {
   CHECK_GE(idx, 0);
   boost::lock_guard<simple_spinlock> l(lock_);
   if (idx >= replicas_.size()) return NULL;
   return replicas_[idx].ts;
+}
+
+RemoteTabletServer* RemoteTablet::LeaderTServer() const {
+  boost::lock_guard<simple_spinlock> l(lock_);
+  BOOST_FOREACH(const RemoteReplica& replica, replicas_) {
+    if (replica.role == QuorumPeerPB::LEADER) {
+      return replica.ts;
+    }
+  }
+  return NULL;
+}
+
+bool RemoteTablet::HasLeader() const {
+  return LeaderTServer() != NULL;
 }
 
 ////////////////////////////////////////////////////////////
@@ -217,13 +233,15 @@ void MetaCache::GetTableLocationsCB(InFlightLookup* ifl) {
       DCHECK_EQ(loc.start_key(), remote->start_key().ToString());
       DCHECK_EQ(loc.end_key(), remote->end_key().ToString());
 
-      VLOG(3) << "Refreshing tablet " << tablet_id;
+      VLOG(3) << "Refreshing tablet " << tablet_id << ": "
+              << loc.ShortDebugString();
       remote->Refresh(ts_cache_, loc.replicas());
       continue;
     }
 
     VLOG(3) << "Caching tablet " << tablet_id << " for (" << ifl->table_name
-        << "," << loc.start_key() << "," << loc.end_key() << ")";
+            << "," << loc.start_key() << "," << loc.end_key() << ")"
+            << ": " << loc.ShortDebugString();
 
     // The keys will outlive the pbs, so we relocate their data into our arena.
     Slice relocated_start_key;
@@ -277,7 +295,8 @@ void MetaCache::LookupTabletByKey(const KuduTable* table,
   const Schema& schema = table->schema();
 
   // Try fast path (cache) first.
-  if (PREDICT_TRUE(LookupTabletByKeyFastPath(table, key, remote_tablet))) {
+  if (PREDICT_TRUE(LookupTabletByKeyFastPath(table, key, remote_tablet)) &&
+      (*remote_tablet)->HasLeader()) {
     VLOG(3) << "Fast lookup: found tablet " << (*remote_tablet)->tablet_id()
             << " for " << schema.DebugEncodedRowKey(key.ToString())
             << " of " << table->name();

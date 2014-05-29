@@ -62,8 +62,8 @@ Status RaftConsensus::Start(const metadata::QuorumPB& initial_quorum,
   ReplicaState::UniqueLock lock;
   CHECK_OK(state_->LockForRead(&lock));
   LOG(INFO) << "Raft consensus started. Peer: " << state_->GetPeerUuid()
-      << " Role: " << state_->GetCurrentRoleUnlocked() << " Quorum: "
-      << state_->GetCurrentConfigUnlocked().ShortDebugString();
+            << " Role: " << QuorumPeerPB::Role_Name(state_->GetCurrentRoleUnlocked())
+            << " Quorum: " << state_->GetCurrentConfigUnlocked().ShortDebugString();
   running_quorum->reset(new QuorumPB(state_->GetCurrentConfigUnlocked()));
   RETURN_NOT_OK(ExecuteHook(POST_START));
   return Status::OK();

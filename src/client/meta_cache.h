@@ -11,6 +11,7 @@
 #include <vector>
 
 #include "gutil/macros.h"
+#include "server/metadata.pb.h"
 #include "util/locks.h"
 #include "util/monotime.h"
 #include "util/net/net_util.h"
@@ -86,6 +87,7 @@ class RemoteTabletServer {
 
 struct RemoteReplica {
   RemoteTabletServer* ts;
+  metadata::QuorumPeerPB::Role role;
 };
 
 struct InFlightLookup;
@@ -112,12 +114,25 @@ class RemoteTablet : public base::RefCountedThreadSafe<RemoteTablet> {
                const google::protobuf::RepeatedPtrField
                  <master::TabletLocationsPB_ReplicaPB>& replicas);
 
-  // Return the tablet server hosting the Nth replica.
+  // Return the tablet server hosting the Nth replica. This replica
+  // may or may not be the leader.
   //
   // Returns NULL if 'idx' is out of bounds. Since the list of
   // replicas may be updated by other threads concurrently, callers
   // should always check the result against NULL.
-  RemoteTabletServer* replica_tserver(int idx);
+  RemoteTabletServer* replica_tserver(int idx) const;
+
+  // Return the tablet server which is acting as the current LEADER for
+  // this tablet.
+  //
+  // Returns NULL if there is currently no leader. Given that the replica
+  // list may change at any time, callers should always check the result
+  // against NULL.
+  RemoteTabletServer* LeaderTServer() const;
+
+  // Return true if the tablet currently has a known LEADER replica
+  // (i.e the next call to LeaderTServer() is likely to return non-NULL)
+  bool HasLeader() const;
 
   const std::string& tablet_id() const { return tablet_id_; }
 

@@ -165,7 +165,8 @@ message QuorumPeerPB {
     UNKNOWN = 5;
   };
   required bytes permanent_uuid = 1;
-  optional Role role = 2;
+  // TODO: can we just make this field required and get rid of UNKNOWN?
+  optional Role role = 2 [ default = UNKNOWN ];
   optional HostPortPB last_known_addr = 3;
 }
 
