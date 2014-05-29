@@ -36,6 +36,7 @@
 #include "gutil/strings/substitute.h"
 #include "util/debug-util.h"
 #include "util/errno.h"
+#include "util/logging.h"
 #include "util/metrics.h"
 #include "util/url-coding.h"
 #include "util/os-util.h"
@@ -256,8 +257,8 @@ void ThreadMgr::PrintThreadCategoryRows(const ThreadCategory& category,
     ThreadStats stats;
     Status status = GetThreadStats(thread.second.thread_id(), &stats);
     if (!status.ok()) {
-      LOG_EVERY_N(INFO, 100) << "Could not get per-thread statistics: "
-                             << status.ToString();
+      KLOG_EVERY_N(INFO, 100) << "Could not get per-thread statistics: "
+                              << status.ToString();
     }
     (*output) << "<tr><td>" << thread.second.name() << "</td><td>"
               << (static_cast<double>(stats.user_ns) / 1e9) << "</td><td>"
@@ -427,7 +428,7 @@ void Thread::SuperviseThread(ThreadFunctor functor, Atomic64* c_p_tid) {
   int64_t system_tid = syscall(SYS_gettid);
   if (system_tid == -1) {
     string error_msg = ErrnoToString(errno);
-    LOG_EVERY_N(INFO, 100) << "Could not determine thread ID: " << error_msg;
+    KLOG_EVERY_N(INFO, 100) << "Could not determine thread ID: " << error_msg;
   }
   string name = strings::Substitute("$0-$1", name_, system_tid);
 

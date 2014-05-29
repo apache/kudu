@@ -2,22 +2,23 @@
 
 #include "consensus/log.h"
 
-#include "consensus/log_reader.h"
 #include "consensus/log_metrics.h"
+#include "consensus/log_reader.h"
 #include "consensus/log_util.h"
 #include "gutil/map-util.h"
 #include "gutil/ref_counted.h"
-#include "gutil/strings/substitute.h"
 #include "gutil/stl_util.h"
+#include "gutil/strings/substitute.h"
 #include "server/fsmanager.h"
 #include "util/coding.h"
+#include "util/countdown_latch.h"
 #include "util/env_util.h"
-#include "util/thread.h"
+#include "util/logging.h"
+#include "util/metrics.h"
 #include "util/path_util.h"
 #include "util/pb_util.h"
 #include "util/stopwatch.h"
-#include "util/countdown_latch.h"
-#include "util/metrics.h"
+#include "util/thread.h"
 
 DEFINE_int32(group_commit_queue_size_bytes, 4 * 1024 * 1024,
              "Maxmimum size of the group commit queue in bytes");
@@ -248,9 +249,9 @@ Status Log::Init() {
   }
 
   if (force_sync_all_) {
-    LOG_FIRST_N(INFO, 1) << "Log is configured to fsync() on all Append() calls";
+    KLOG_FIRST_N(INFO, 1) << "Log is configured to fsync() on all Append() calls";
   } else {
-    LOG_FIRST_N(INFO, 1) << "Log is configured to *not* fsync() on all Append() calls";
+    KLOG_FIRST_N(INFO, 1) << "Log is configured to *not* fsync() on all Append() calls";
   }
 
   // We always create a new segment when the log starts.

@@ -21,6 +21,7 @@
 #include "tablet/tablet-test-util.h"
 #include "tablet/transactions/write_util.h"
 #include "util/env.h"
+#include "util/logging.h"
 #include "util/stopwatch.h"
 #include "util/test_macros.h"
 #include "util/test_util.h"
@@ -241,7 +242,7 @@ class TestRowSet : public KuduRowSetTest {
       i += n;
 
       if (do_log) {
-        LOG_EVERY_N(INFO, log_interval) << "Got row: " << schema.DebugRow(dst.row(0));
+        KLOG_EVERY_N(INFO, log_interval) << "Got row: " << schema.DebugRow(dst.row(0));
       }
     }
 
