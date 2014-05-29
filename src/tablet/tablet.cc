@@ -794,6 +794,7 @@ void Tablet::SetFlushCompactCommonHooksForTests(
 }
 
 int32_t Tablet::CurrentMrsIdForTests() const {
+  boost::shared_lock<rw_semaphore> lock(component_lock_);
   return memrowset_->mrs_id();
 }
 
@@ -809,7 +810,6 @@ class FlushRowSetsOp : public MaintenanceOp {
       boost::mutex::scoped_try_lock guard(tablet_->rowsets_flush_lock_);
       stats->runnable = guard.owns_lock();
     }
-    boost::shared_lock<rw_semaphore> lock(tablet_->component_lock_);
     stats->ram_anchored = tablet_->MemRowSetSize();
     // TODO: add a field to MemRowSet storing how old a timestamp it contains
     stats->ts_anchored_secs = 0;
@@ -1327,6 +1327,7 @@ Status Tablet::CountRows(uint64_t *count) const {
 }
 
 size_t Tablet::MemRowSetSize() const {
+  boost::shared_lock<rw_semaphore> lock(component_lock_);
   return memrowset_->memory_footprint();
 }
 

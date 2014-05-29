@@ -190,6 +190,8 @@ class Tablet {
 
   Status Compact(CompactFlags flags);
 
+  // Returns the current size of the MRS, in bytes.
+  // This method takes a read lock on component_lock_ and is thread-safe.
   size_t MemRowSetSize() const;
 
   // Estimate the total on-disk size of this tablet, in bytes.
@@ -251,6 +253,8 @@ class Tablet {
   void SetFlushHooksForTests(const shared_ptr<FlushFaultHooks> &hooks);
   void SetFlushCompactCommonHooksForTests(const shared_ptr<FlushCompactCommonHooks> &hooks);
 
+  // Returns the current MemRowSet id, for tests.
+  // This method takes a read lock on component_lock_ and is thread-safe.
   int32_t CurrentMrsIdForTests() const;
 
   // Runs a major delta major compaction on columns at specified
