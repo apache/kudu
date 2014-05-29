@@ -20,6 +20,7 @@
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
+#include <iostream>
 #include <tr1/memory>
 #include <tr1/unordered_map>
 #include <utility>
@@ -34,6 +35,7 @@
 #include "util/random.h"
 #include "util/stopwatch.h"
 #include "util/test_util.h"
+#include "util/hdr_histogram.h"
 
 using kudu::client::CreateTableOptions;
 using kudu::client::KuduClient;
@@ -76,7 +78,8 @@ class LinkedListTest : public KuduTest {
       verify_projection_(boost::assign::list_of
                          (ColumnSchema(kKeyColumnName, UINT64))
                          (ColumnSchema(kLinkColumnName, UINT64)),
-                         1) {
+                         1),
+      latency_histogram_(1000000, 3) {
   }
 
   void SetUp() OVERRIDE {
@@ -113,12 +116,15 @@ class LinkedListTest : public KuduTest {
   // responsible for an equal fraction of the uint64 key space.
   vector<string> GenerateSplitKeys() const;
 
+  void DumpInsertHistogram(bool print_flags);
+
  protected:
   static const char* kTableName;
   const Schema schema_;
   const Schema verify_projection_;
   gscoped_ptr<ExternalMiniCluster> cluster_;
   shared_ptr<KuduClient> client_;
+  HdrHistogram latency_histogram_;
 };
 
 const char *LinkedListTest::kTableName = "linked_list";
@@ -221,8 +227,13 @@ Status LinkedListTest::LoadLinkedList(const MonoDelta& run_for,
   }
 
   *written_count = 0;
+  int iter = 0;
   while (true) {
-    LOG_EVERY_N(INFO, 10000) << "Written " << (*written_count) << " rows in chain";
+    if (iter++ % 10000 == 0) {
+      LOG(INFO) << "Written " << (*written_count) << " rows in chain";
+      DumpInsertHistogram(false);
+    }
+
 
     if (deadline.ComesBefore(MonoTime::Now(MonoTime::COARSE))) {
       LOG(INFO) << "Finished inserting list. Added " << (*written_count) << " in chain";
@@ -236,7 +247,11 @@ Status LinkedListTest::LoadLinkedList(const MonoDelta& run_for,
       RETURN_NOT_OK(chain->GenerateNextInsert(table.get(), session.get()));
     }
 
+    MicrosecondsInt64 st = GetCurrentTimeMicros();
     Status s = session->Flush();
+    int64_t elapsed = GetCurrentTimeMicros() - st;
+    latency_histogram_.Increment(elapsed);
+
     if (!s.ok()) {
       vector<client::Error*> errors;
       bool overflow;
@@ -251,6 +266,38 @@ Status LinkedListTest::LoadLinkedList(const MonoDelta& run_for,
       return s;
     }
     (*written_count) += chains.size();
+  }
+}
+
+void LinkedListTest::DumpInsertHistogram(bool print_flags) {
+  // We dump to cout instead of using glog so the output isn't prefixed with
+  // line numbers. This makes it less ugly to copy-paste into JIRA, etc.
+  using std::cout;
+  using std::endl;
+
+  const HdrHistogram* h = &latency_histogram_; // shorter alias
+
+  cout << "------------------------------------------------------------" << endl;
+  cout << "Histogram for latency of insert operations (microseconds)" << endl;
+  if (print_flags) {
+    cout << "Flags: " << google::CommandlineFlagsIntoString() << endl;
+  }
+  cout << "Note: each insert is a batch of " << FLAGS_num_chains << " rows." << endl;
+  cout << "------------------------------------------------------------" << endl;
+  cout << "Count: " << h->TotalCount() << endl;
+  cout << "Mean: " << h->MeanValue() << endl;
+  cout << "Percentiles:" << endl;
+  cout << "   0%  (min) = " << h->MinValue() << endl;
+  cout << "  25%        = " << h->ValueAtPercentile(25) << endl;
+  cout << "  50%  (med) = " << h->ValueAtPercentile(50) << endl;
+  cout << "  75%        = " << h->ValueAtPercentile(75) << endl;
+  cout << "  95%        = " << h->ValueAtPercentile(95) << endl;
+  cout << "  99%        = " << h->ValueAtPercentile(99) << endl;
+  cout << "  99.9%      = " << h->ValueAtPercentile(99.9) << endl;
+  cout << "  99.99%     = " << h->ValueAtPercentile(99.99) << endl;
+  cout << "  100% (max) = " << h->MaxValue() << endl;
+  if (h->MaxValue() >= h->highest_trackable_value()) {
+    cout << "*NOTE: some values were greater than highest trackable value" << endl;
   }
 }
 
@@ -381,6 +428,10 @@ TEST_F(LinkedListTest, TestLoadAndVerify) {
   ASSERT_NO_FATAL_FAILURE(RestartCluster());
   ASSERT_NO_FATAL_FAILURE(WaitForBootstrapToFinishAndVerify(written, &seen));
   ASSERT_EQ(written, seen);
+
+  // Dump the performance info at the very end, so it's easy to read. On a failed
+  // test, we don't care about this stuff anwyay.
+  DumpInsertHistogram(true);
 }
 
 } // namespace kudu
