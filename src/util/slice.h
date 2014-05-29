@@ -124,7 +124,7 @@ class Slice {
 
   // Comparator struct, useful for ordered collections (like STL maps).
   struct Comparator {
-    bool operator()(const Slice& a, const Slice& b) {
+    bool operator()(const Slice& a, const Slice& b) const {
       return a.compare(b) < 0;
     }
   };

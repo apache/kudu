@@ -170,6 +170,12 @@ class MetaCache {
                         scoped_refptr<RemoteTablet>* remote_tablet);
 
  private:
+  // Lookup the given tablet by key, only consulting local information.
+  // Returns true and sets *remote_tablet if successful.
+  bool LookupTabletByKeyFastPath(const KuduTable* table,
+                                 const Slice& key,
+                                 scoped_refptr<RemoteTablet>* remote_tablet);
+
   // Update our information about the given tablet server.
   //
   // This is called when we get some response from the master which contains

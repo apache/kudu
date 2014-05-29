@@ -245,30 +245,46 @@ void MetaCache::GetTableLocationsCB(InFlightLookup* ifl) {
   ifl->user_callback(Status::OK());
 }
 
+bool MetaCache::LookupTabletByKeyFastPath(const KuduTable* table,
+                                          const Slice& key,
+                                          scoped_refptr<RemoteTablet>* remote_tablet) {
+  boost::shared_lock<rw_spinlock> l(lock_);
+  const SliceTabletMap* tablets = FindOrNull(tablets_by_table_and_key_, table->name());
+  if (PREDICT_FALSE(!tablets)) {
+    // No cache available for this table.
+    return false;
+  }
+
+  const scoped_refptr<RemoteTablet>* r = FindFloorOrNull(*tablets, key);
+  if (PREDICT_FALSE(!r)) {
+    // No tablets with a start key lower than 'key'.
+    return false;
+  }
+
+  if ((*r)->end_key().compare(key) > 0 ||  // key < tablet.end
+      (*r)->end_key().empty()) {           // tablet doesn't end
+    *remote_tablet = *r;
+    return true;
+  }
+
+  return false;
+}
+
 void MetaCache::LookupTabletByKey(const KuduTable* table,
                                   const Slice& key,
                                   scoped_refptr<RemoteTablet>* remote_tablet,
                                   const StatusCallback& callback) {
   const Schema& schema = table->schema();
 
-  // Fast path: there's a tablet in the cache.
-  SliceTabletMap tablets;
-  boost::shared_lock<rw_spinlock> l(lock_);
-  if (FindCopy(tablets_by_table_and_key_, table->name(), &tablets)) {
-    scoped_refptr<RemoteTablet>* r = FindFloorOrNull(tablets, key);
-    if (r != NULL &&                          // tablet.start <= key
-        ((*r)->end_key().empty() ||           // tablet doesn't end
-         (*r)->end_key().compare(key)) > 0) { // key < tablet.end
-      VLOG(3) << "Fast lookup: found tablet " << (*r)->tablet_id()
-              << " for " << schema.DebugEncodedRowKey(key.ToString())
-              << " of " << table->name();
-      *remote_tablet = *r;
-      l.unlock();
-      callback(Status::OK());
-      return;
-    }
+  // Try fast path (cache) first.
+  if (PREDICT_TRUE(LookupTabletByKeyFastPath(table, key, remote_tablet))) {
+    VLOG(3) << "Fast lookup: found tablet " << (*remote_tablet)->tablet_id()
+            << " for " << schema.DebugEncodedRowKey(key.ToString())
+            << " of " << table->name();
+
+    callback(Status::OK());
+    return;
   }
-  l.unlock();
 
   // Slow path: must lookup the tablet in the master.
   VLOG(3) << "Fast lookup: no tablet "
