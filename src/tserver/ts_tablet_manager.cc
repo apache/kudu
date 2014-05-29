@@ -332,13 +332,28 @@ void TSTabletManager::OpenTablet(TabletMetadata* metadata) {
 
 void TSTabletManager::Shutdown() {
   LOG(INFO) << "Shutting down tablet manager...";
+
+  // Shut down the bootstrap pool, so new tablets are registered after this point.
   bootstrap_pool_.Shutdown();
-  boost::lock_guard<rw_spinlock> l(lock_);
-  BOOST_FOREACH(const TabletMap::value_type &pair, tablet_map_) {
-    const std::tr1::shared_ptr<TabletPeer>& peer = pair.second;
+
+  // Take a snapshot of the peers list -- that way we don't have to hold
+  // on to the lock while shutting them down, which might cause a lock
+  // inversion. (see KUDU-308 for example).
+  vector<shared_ptr<TabletPeer> > peers_to_shutdown;
+  GetTabletPeers(&peers_to_shutdown);
+
+  BOOST_FOREACH(const shared_ptr<TabletPeer>& peer, peers_to_shutdown) {
     peer->Shutdown();
   }
-  tablet_map_.clear();
+
+  {
+    boost::lock_guard<rw_spinlock> l(lock_);
+    // We don't expect anyone else to be modifying the map after we start the
+    // shut down process.
+    CHECK_EQ(tablet_map_.size(), peers_to_shutdown.size())
+      << "Map contents changed during shutdown!";
+    tablet_map_.clear();
+  }
   // TODO: add a state variable?
 }
 
