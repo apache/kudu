@@ -83,21 +83,6 @@ struct InFlightOp {
     // in-flight callback provided to MetaCache.
     kLookingUpTablet,
 
-    // Once the tablet ID has been determined, we may need to refresh its locations
-    // (e.g if the tablet replicas have been moved by the master due to a failure
-    // or normal load balancing activity).
-    //
-    // If the replica locations are already "fresh", this state will be passed through
-    // with no waiting. Otherwise we wait on a potential master RPC.
-    //
-    // TODO: we could piggy-back the tablet locations with the "LookupTablet" stage above
-    // and avoid going through this state in the normal case. Instead, we'd only
-    // go to this state after receiving some error that the tablet has moved.
-    //
-    // OWNERSHIP: the op is present in 'ops_' and also referenced by the callback provided
-    // to RemoteTablet::Refresh
-    kRefreshingTabletLocations,
-
     // Once the correct tablet has been determined, and the tablet locations have been
     // refreshed, we are ready to send the operation to the server.
     //
@@ -398,8 +383,7 @@ void Batcher::AddInFlightOp(InFlightOp* op) {
   InsertOrDie(&ops_, op);
 }
 
-bool Batcher::IsAborted() const {
-  boost::lock_guard<simple_spinlock> l(lock_);
+bool Batcher::IsAbortedUnlocked() const {
   return state_ == kAborted;
 }
 
@@ -424,9 +408,15 @@ void Batcher::MarkInFlightOpFailedUnlocked(InFlightOp* op, const Status& s) {
 
 void Batcher::TabletLookupFinished(InFlightOp* op, const Status& s) {
   ScopedRefReleaser<Batcher> releaser(this);
-  if (IsAborted()) {
+
+  // Acquire the batcher lock early to atomically:
+  // 1. Test if the batcher was aborted, and
+  // 2. Change the op state.
+  boost::unique_lock<simple_spinlock> l(lock_);
+
+  if (IsAbortedUnlocked()) {
     VLOG(1) << "Aborted batch: TabletLookupFinished for " << op->insert->ToString();
-    MarkInFlightOpFailed(op, Status::Aborted("Batch aborted"));
+    MarkInFlightOpFailedUnlocked(op, Status::Aborted("Batch aborted"));
     // 'op' is deleted by above function.
     return;
   }
@@ -440,12 +430,12 @@ void Batcher::TabletLookupFinished(InFlightOp* op, const Status& s) {
   }
 
   if (!s.ok()) {
-    MarkInFlightOpFailed(op, s);
+    MarkInFlightOpFailedUnlocked(op, s);
+    l.unlock();
     CheckForFinishedFlush();
     return;
   }
 
-  boost::unique_lock<simple_spinlock> l(lock_);
   boost::unique_lock<simple_spinlock> l2(op->lock_);
 
   RemoteTabletServer* ts = op->tablet->replica_tserver(0);
@@ -459,7 +449,6 @@ void Batcher::TabletLookupFinished(InFlightOp* op, const Status& s) {
   // Next, we need to find the current locations of that tablet.
   CHECK_EQ(op->state, InFlightOp::kLookingUpTablet);
   CHECK(op->tablet != NULL);
-  op->state = InFlightOp::kRefreshingTabletLocations;
 
   bool needs_tsproxy_refresh = false;
   PerTSBuffer* buf = FindPtrOrNull(per_ts_buffers_, ts);

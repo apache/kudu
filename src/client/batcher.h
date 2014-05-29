@@ -93,7 +93,7 @@ class Batcher : public base::RefCountedThreadSafe<Batcher> {
 
   // Return true if the batch has been aborted, and any in-flight ops should stop
   // processing wherever they are.
-  bool IsAborted() const;
+  bool IsAbortedUnlocked() const;
 
   // Mark the fact that errors have occurred with this batch. This ensures that
   // the flush callback will get a bad Status.
