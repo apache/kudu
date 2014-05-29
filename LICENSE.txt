@@ -131,6 +131,69 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 --------------------------------------------------------------------------------
 
+src/util/sync_point: adapted from the RocksDB project
+
+BSD License
+
+For rocksdb software
+
+Copyright (c) 2014, Facebook, Inc.
+All rights reserved.
+
+Copyright (c) 2011 The LevelDB Authors. All rights reserved.
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are
+met:
+
+   * Redistributions of source code must retain the above copyright
+notice, this list of conditions and the following disclaimer.
+   * Redistributions in binary form must reproduce the above
+copyright notice, this list of conditions and the following disclaimer
+in the documentation and/or other materials provided with the
+distribution.
+   * Neither the name of Google Inc. nor the names of its
+contributors may be used to endorse or promote products derived from
+this software without specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+"AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+Additional Grant of Patent Rights
+
+“Software” means the rocksdb software distributed by Facebook, Inc.
+
+Facebook hereby grants you a perpetual, worldwide, royalty-free,
+non-exclusive, irrevocable (subject to the termination provision below)
+license under any rights in any patent claims owned by Facebook, to make,
+have made, use, sell, offer to sell, import, and otherwise transfer the
+Software. For avoidance of doubt, no license is granted under Facebook’s
+rights in any patent claims that are infringed by (i) modifications to the
+Software made by you or a third party, or (ii) the Software in combination
+with any software or other technology provided by you or a third party.
+
+The license granted hereunder will terminate, automatically and without
+notice, for anyone that makes any claim (including by filing any lawsuit,
+assertion or other action) alleging (a) direct, indirect, or contributory
+infringement or inducement to infringe any patent: (i) by Facebook or any
+of its subsidiaries or affiliates, whether or not such claim is related
+to the Software, (ii) by any party if such claim arises in whole or in
+part from any software, product or service of Facebook or any of its
+subsidiaries or affiliates, whether or not such claim is related to the
+Software, or (iii) by any party relating to the Software; or (b) that
+any right in any patent claim of Facebook is invalid or unenforceable.
+
+--------------------------------------------------------------------------------
+
 src/server/url-coding.cc: some portions adapted from the Boost project
 
   Boost Software License - Version 1.0 - August 17th, 2003
