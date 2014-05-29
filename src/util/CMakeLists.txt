@@ -37,6 +37,7 @@ add_library(kudu_util
   status.cc
   string_case.cc
   subprocess.cc
+  sync_point.cc
   task_executor.cc
   test_graph.cc
   thread.cc
@@ -105,6 +106,7 @@ ADD_KUDU_TEST(spinlock_profiling-test)
 ADD_KUDU_TEST(status-test)
 ADD_KUDU_TEST(string_case-test)
 ADD_KUDU_TEST(subprocess-test)
+ADD_KUDU_TEST(sync_point-test)
 ADD_KUDU_TEST(task_executor-test)
 ADD_KUDU_TEST(thread-test)
 ADD_KUDU_TEST(threadpool-test)

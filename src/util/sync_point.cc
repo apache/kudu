@@ -1,3 +1,5 @@
+//  Copyright (c) 2014, Cloudera, inc.
+//
 //  Copyright (c) 2014, Facebook, Inc.  All rights reserved.
 //  This source code is licensed under the BSD-style license found in the
 //  LICENSE file in the root directory of this source tree. An additional grant
@@ -5,26 +7,40 @@
 
 #include "util/sync_point.h"
 
+#include <boost/foreach.hpp>
+
+using std::string;
+using std::vector;
+
 #ifndef NDEBUG
-namespace rocksdb {
+namespace kudu {
+
+SyncPoint::Dependency::Dependency(const string& predecessor, const string &successor)
+  : predecessor_(predecessor),
+    successor_(successor) {
+}
+
+SyncPoint::SyncPoint()
+  : enabled_(false) {
+}
 
 SyncPoint* SyncPoint::GetInstance() {
   static SyncPoint sync_point;
   return &sync_point;
 }
 
-void SyncPoint::LoadDependency(const std::vector<Dependency>& dependencies) {
+void SyncPoint::LoadDependency(const vector<Dependency>& dependencies) {
   successors_.clear();
   predecessors_.clear();
   cleared_points_.clear();
-  for (const auto& dependency : dependencies) {
-    successors_[dependency.predecessor].push_back(dependency.successor);
-    predecessors_[dependency.successor].push_back(dependency.predecessor);
+  BOOST_FOREACH(const Dependency& dependency, dependencies) {
+    successors_[dependency.predecessor_].push_back(dependency.successor_);
+    predecessors_[dependency.successor_].push_back(dependency.predecessor_);
   }
 }
 
-bool SyncPoint::PredecessorsAllCleared(const std::string& point) {
-  for (const auto& pred : predecessors_[point]) {
+bool SyncPoint::PredecessorsAllCleared(const string& point) {
+  BOOST_FOREACH(const string& pred, predecessors_[point]) {
     if (cleared_points_.count(pred) == 0) {
       return false;
     }
@@ -33,22 +49,22 @@ bool SyncPoint::PredecessorsAllCleared(const std::string& point) {
 }
 
 void SyncPoint::EnableProcessing() {
-  std::unique_lock<std::mutex> lock(mutex_);
+  boost::unique_lock<boost::mutex> lock(mutex_);
   enabled_ = true;
 }
 
 void SyncPoint::DisableProcessing() {
-  std::unique_lock<std::mutex> lock(mutex_);
+  boost::unique_lock<boost::mutex> lock(mutex_);
   enabled_ = false;
 }
 
 void SyncPoint::ClearTrace() {
-  std::unique_lock<std::mutex> lock(mutex_);
+  boost::unique_lock<boost::mutex> lock(mutex_);
   cleared_points_.clear();
 }
 
-void SyncPoint::Process(const std::string& point) {
-  std::unique_lock<std::mutex> lock(mutex_);
+void SyncPoint::Process(const string& point) {
+  boost::unique_lock<boost::mutex> lock(mutex_);
 
   if (!enabled_) return;
 
@@ -60,5 +76,5 @@ void SyncPoint::Process(const std::string& point) {
   cv_.notify_all();
 }
 
-}  // namespace rocksdb
+}  // namespace kudu
 #endif  // NDEBUG
