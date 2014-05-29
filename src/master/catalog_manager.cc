@@ -1893,6 +1893,7 @@ void TabletInfo::AddReplica(TSDescriptor* ts_desc,
               << TabletStatePB_Name(replica.state) << "->"
               << TabletStatePB_Name(state);
       replica.state = state;
+      replica.role = role;
       return;
     }
   }

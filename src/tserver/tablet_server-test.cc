@@ -2,12 +2,14 @@
 #include "tserver/tablet_server-test-base.h"
 
 #include "gutil/strings/substitute.h"
+#include "master/master.pb.h"
 #include "server/hybrid_clock.h"
 #include "util/curl_util.h"
 
 using std::string;
 using std::tr1::shared_ptr;
 using kudu::metadata::QuorumPB;
+using kudu::metadata::QuorumPeerPB;
 using kudu::rpc::Messenger;
 using kudu::rpc::MessengerBuilder;
 using kudu::rpc::RpcController;
@@ -1396,6 +1398,57 @@ TEST_F(TabletServerTest, TestChangeConfiguration) {
     ASSERT_TRUE(resp.has_error());
     ASSERT_EQ(TabletServerErrorPB::INVALID_CONFIG, resp.error().code());
     rpc.Reset();
+  }
+}
+
+namespace {
+
+// Return a random valid value for QuorumPeerPB::Role.
+QuorumPeerPB::Role RandomRole() {
+  const google::protobuf::EnumDescriptor* desc = metadata::QuorumPeerPB_Role_descriptor();
+  int idx = rand() % desc->value_count();
+  return static_cast<QuorumPeerPB::Role>(desc->value(idx)->number());
+}
+
+} // anonymous namespace
+
+// Test that when a change config. transaction changes the tablet state, such as the
+// quorum role, the tablet manager gets notified and includes that information in the next
+// tablet report.
+TEST_F(TabletServerTest, TestChangeConfiguration_TsTableManagerReportsNewRoles) {
+  ChangeConfigRequestPB req;
+  ChangeConfigResponsePB resp;
+  RpcController rpc;
+
+  req.set_tablet_id(kTabletId);
+
+  QuorumPB* new_quorum = req.mutable_new_config();
+  new_quorum->set_local(true);
+  new_quorum->set_seqno(1);
+  QuorumPeerPB* peer = new_quorum->add_peers();
+  peer->set_permanent_uuid(mini_server_->server()->instance_pb().permanent_uuid());
+  SeedRandom();
+
+  // loop and send multiple config. change requests where we change the
+  // role of the peer. TSTabletManager should acknowledge the role changes.
+  for (int i = 0; i < 10; i++) {
+    QuorumPeerPB::Role random_role = RandomRole();
+    peer->set_role(random_role);
+    {
+      SCOPED_TRACE(req.DebugString());
+      ASSERT_STATUS_OK(proxy_->ChangeConfig(req, &resp, &rpc));
+      SCOPED_TRACE(resp.DebugString());
+      ASSERT_FALSE(resp.has_error());
+      rpc.Reset();
+    }
+    // Now check that the tablet report reports the correct role
+    kudu::master::TabletReportPB report;
+    mini_server_->server()->tablet_manager()->GenerateTabletReport(&report);
+    ASSERT_EQ(report.updated_tablets_size(), 1);
+    kudu::master::ReportedTabletPB tablet_report = report.updated_tablets(0);
+    ASSERT_EQ(tablet_report.role(), random_role);
+
+    new_quorum->set_seqno(new_quorum->seqno() + 1);
   }
 }
 
