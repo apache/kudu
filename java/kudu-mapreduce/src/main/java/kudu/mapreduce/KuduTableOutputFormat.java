@@ -142,17 +142,19 @@ public class KuduTableOutputFormat extends OutputFormat<NullWritable,Operation>
     @Override
     public void write(NullWritable key, Operation operation)
         throws IOException, InterruptedException {
-      try {
-        Deferred<Object> d = session.apply(operation);
-        d.addErrback(defaultErrorCB);
-      } catch (PleaseThrottleException ex) {
+      // We'll loop until the Operation's attempts hits the default max.
+      while (true) {
         try {
-          ex.getDeferred().join(operationTimeoutMs);
-        } catch (Exception e) {
-          throw new IOException("Encounted exception while waiting to write", ex);
+          Deferred<Object> d = session.apply(operation);
+          d.addErrback(defaultErrorCB);
+          break;
+        } catch (PleaseThrottleException ex) {
+          try {
+            ex.getDeferred().join(operationTimeoutMs);
+          } catch (Exception e) {
+            throw new IOException("Encounted exception while waiting to write", e);
+          }
         }
-        // We'll loop until the Operation's attemps hits the default max.
-        write(key, operation);
       }
     }
 

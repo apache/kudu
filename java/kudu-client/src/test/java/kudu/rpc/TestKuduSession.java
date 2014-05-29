@@ -6,8 +6,6 @@ import kudu.Schema;
 import com.stumbleupon.async.Callback;
 import com.stumbleupon.async.Deferred;
 import kudu.Type;
-import org.junit.After;
-import org.junit.Before;
 import org.junit.BeforeClass;
 import org.junit.Test;
 
@@ -204,6 +202,39 @@ public class TestKuduSession extends BaseKuduTest {
     // Test empty scanner projection
     KuduScanner scanner = getScanner(71, 91, new Schema(new ArrayList<ColumnSchema>(0)));
     assertEquals(20, countRowsInScan(scanner));
+
+    // Test removing the connection and then do a rapid set of inserts
+    client.getTableClients().get(0).shutdown().join(DEFAULT_SLEEP);
+    session.setMutationBufferSpace(1);
+    for (int i = 91; i < 101; i++) {
+      try {
+        session.apply(createInsert(i));
+      } catch (PleaseThrottleException ex) {
+        // Wait for the buffer to clear
+        ex.getDeferred().join(DEFAULT_SLEEP);
+        session.apply(ex.getFailedRpc());
+      }
+    }
+    session.flush().join(DEFAULT_SLEEP);
+    assertEquals(10, countInRange(91, 101));
+
+    // Test a tablet going missing or encountering a new tablet while inserting a lot
+    // of data. This code used to fail in many different ways.
+    client.emptyTabletsCacheForTable(TABLE_NAME);
+    for (int i = 101; i < 151; i++) {
+      Insert insert = createInsert(i);
+      while (true) {
+        try {
+          session.apply(insert);
+          break;
+        } catch (PleaseThrottleException ex) {
+          // Wait for the buffer to clear
+          ex.getDeferred().join(DEFAULT_SLEEP);
+        }
+      }
+    }
+    session.flush().join(DEFAULT_SLEEP);
+    assertEquals(50, countInRange(101, 151));
 
     // Test Alter
     // Add a col

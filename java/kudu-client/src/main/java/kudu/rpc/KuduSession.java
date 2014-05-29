@@ -310,7 +310,14 @@ public class KuduSession {
 
           Deferred<Object> d = client.handleLookupExceptions(operation, arg);
           if (d == null) {
-            return apply(operation); // Retry the RPC.
+            try {
+              return apply(operation); // Retry the RPC.
+            } catch(PleaseThrottleException pte) {
+              // We're not really "done" doing the lookup since we couldn't apply. When we come
+              // back we'll call handleLookupExceptions again but it will be a no-op.
+              operationsInLookup.add(operation);
+              return pte.getDeferred().addBothDeferring(getRetryRpcCB(operation));
+            }
           } else {
             return d; // something went wrong
           }
@@ -492,13 +499,15 @@ public class KuduSession {
             Bytes.getString(tablet));
         return Deferred.fromResult(null);
       }
-      Deferred<Object> oldBatch = operationsInFlight.put(tablet, batch.getDeferred());
+      Deferred<Object> batchDeferred = batch.getDeferred();
+      batchDeferred.addBoth(new OpInFlightCallback(tablet));
+      Deferred<Object> oldBatch = operationsInFlight.put(tablet, batchDeferred);
       assert (oldBatch == null);
       if (currentTimeout != 0) {
         batch.deadlineTracker.reset();
         batch.setTimeoutMillis(currentTimeout);
       }
-      return client.sendRpcToTablet(batch).addBoth(new OpInFlightCallback(tablet));
+      return client.sendRpcToTablet(batch);
     }
   }
 

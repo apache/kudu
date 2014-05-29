@@ -63,6 +63,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.NavigableMap;
 import java.util.Random;
+import java.util.Set;
 import java.util.concurrent.*;
 
 import static java.util.concurrent.TimeUnit.MILLISECONDS;
@@ -702,6 +703,23 @@ public class KuduClient {
   List<TabletClient> getTableClients() {
     synchronized (ip2client) {
       return new ArrayList<TabletClient>(ip2client.values());
+    }
+  }
+
+  /**
+   * This method first clears tabletsCache and then tablet2client without any regards for
+   * calls to {@link #discoverTablets(String, kudu.master.Master.GetTableLocationsResponsePB)}.
+   * Call only when KuduClient is in a steady state.
+   * @param tableName Table for which we remove all the RemoteTablet entries
+   */
+  @VisibleForTesting
+  void emptyTabletsCacheForTable(String tableName) {
+    tabletsCache.remove(tableName);
+    Set<Map.Entry<Slice, RemoteTablet>> tablets = tablet2client.entrySet();
+    for (Map.Entry<Slice, RemoteTablet> entry : tablets) {
+      if (entry.getValue().getTable().equals(tableName)) {
+        tablets.remove(entry);
+      }
     }
   }
 
