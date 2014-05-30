@@ -15,7 +15,6 @@
 #include "common/maintenance_manager.h"
 #include "common/scan_spec.h"
 #include "common/schema.h"
-#include "consensus/consensus.h"
 #include "consensus/consensus.pb.h"
 #include "consensus/opid_anchor_registry.h"
 #include "gutil/atomicops.h"
@@ -56,10 +55,6 @@ namespace kudu {
 namespace tablet {
 
 using kudu::MaintenanceManager;
-using consensus::Consensus;
-using consensus::OperationPB;
-using consensus::CommitMsg;
-using consensus::ConsensusRound;
 using consensus::OpId;
 using log::MaximumOpId;
 using log::OpIdAnchorRegistry;
@@ -97,7 +92,6 @@ Tablet::Tablet(gscoped_ptr<TabletMetadata> metadata,
     key_schema_(schema_->CreateKeyProjection()),
     metadata_(metadata.Pass()),
     rowsets_(new RowSetTree()),
-    consensus_(NULL),
     opid_anchor_registry_(opid_anchor_registry),
     next_mrs_id_(0),
     mvcc_(clock),
@@ -158,10 +152,6 @@ Status Tablet::GetMappedReadProjection(const Schema& projection,
                                        Schema *mapped_projection) const {
   shared_ptr<Schema> cur_schema(schema());
   return cur_schema->GetMappedReadProjection(projection, mapped_projection);
-}
-
-void Tablet::SetConsensus(Consensus* consensus) {
-  consensus_ = consensus;
 }
 
 BloomFilterSizing Tablet::bloom_sizing() const {

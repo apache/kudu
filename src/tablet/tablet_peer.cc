@@ -118,10 +118,6 @@ Status TabletPeer::Init(const shared_ptr<Tablet>& tablet,
   RETURN_NOT_OK_PREPEND(consensus_->Init(quorum_peer, clock_, this, log_.get()),
                         "Could not initialize consensus");
 
-  // set consensus on the tablet to that it can store local state changes
-  // in the log.
-  tablet_->SetConsensus(consensus_.get());
-
   if (tablet_->metrics() != NULL) {
     txn_tracker_.StartInstrumentation(*tablet_->GetMetricContext());
   }

@@ -25,10 +25,6 @@ class MetricContext;
 class RowChangeList;
 class UnionIterator;
 
-namespace consensus {
-class Consensus;
-}
-
 namespace log {
 class OpIdAnchorRegistry;
 }
@@ -247,8 +243,6 @@ class Tablet {
   const metadata::TabletMetadata *metadata() const { return metadata_.get(); }
   metadata::TabletMetadata *metadata() { return metadata_.get(); }
 
-  void SetConsensus(consensus::Consensus* consensus);
-
   void SetCompactionHooksForTests(const shared_ptr<CompactionFaultHooks> &hooks);
   void SetFlushHooksForTests(const shared_ptr<FlushFaultHooks> &hooks);
   void SetFlushCompactCommonHooksForTests(const shared_ptr<FlushCompactCommonHooks> &hooks);
@@ -366,7 +360,6 @@ class Tablet {
   gscoped_ptr<MetricContext> metric_context_;
   gscoped_ptr<TabletMetrics> metrics_;
 
-  consensus::Consensus* consensus_;
   log::OpIdAnchorRegistry* opid_anchor_registry_;
 
   int64_t next_mrs_id_;
