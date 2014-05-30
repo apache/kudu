@@ -60,13 +60,12 @@ class TabletPeer : public consensus::ReplicaTransactionFactory {
               const std::tr1::shared_ptr<rpc::Messenger>& messenger,
               const metadata::QuorumPeerPB& quorum_peer,
               gscoped_ptr<log::Log> log,
-              log::OpIdAnchorRegistry* opid_anchor_registry,
-              bool local_peer);
+              log::OpIdAnchorRegistry* opid_anchor_registry);
 
   // Starts the TabletPeer, making it available for Write()s. If this
   // TabletPeer is part of a quorum this will connect it to other peers
   // in the quorum.
-  Status Start(const metadata::QuorumPB& quorum);
+  Status Start();
 
   // Shutdown this tablet peer.
   void Shutdown();

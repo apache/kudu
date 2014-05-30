@@ -85,8 +85,7 @@ Status TabletPeer::Init(const shared_ptr<Tablet>& tablet,
                         const shared_ptr<Messenger>& messenger,
                         const QuorumPeerPB& quorum_peer,
                         gscoped_ptr<Log> log,
-                        OpIdAnchorRegistry* opid_anchor_registry,
-                        bool local_peer) {
+                        OpIdAnchorRegistry* opid_anchor_registry) {
   {
     boost::lock_guard<simple_spinlock> lock(lock_);
     CHECK_EQ(state_, metadata::BOOTSTRAPPING);
@@ -103,7 +102,7 @@ Status TabletPeer::Init(const shared_ptr<Tablet>& tablet,
     ConsensusOptions options;
     options.tablet_id = tablet_->metadata()->oid();
 
-    if (local_peer) {
+    if (tablet_->metadata()->Quorum().local()) {
       consensus_.reset(new LocalConsensus(options));
     } else {
       gscoped_ptr<consensus::PeerProxyFactory> rpc_factory(
@@ -130,7 +129,7 @@ Status TabletPeer::Init(const shared_ptr<Tablet>& tablet,
   return Status::OK();
 }
 
-Status TabletPeer::Start(const QuorumPB& quorum) {
+Status TabletPeer::Start() {
   // Prevent any SubmitChangeConfig calls to try and modify the config
   // until consensus is booted and the actual configuration is stored in
   // the tablet meta.
@@ -138,7 +137,8 @@ Status TabletPeer::Start(const QuorumPB& quorum) {
 
   gscoped_ptr<QuorumPB> actual_config;
   TRACE("Starting consensus");
-  RETURN_NOT_OK(consensus_->Start(quorum, &actual_config));
+  RETURN_NOT_OK(consensus_->Start(tablet_->metadata()->Quorum(),
+                                  &actual_config));
   tablet_->metadata()->SetQuorum(*actual_config.get());
 
   TRACE("Flushing metadata");

@@ -1362,7 +1362,7 @@ TEST_F(TabletServerTest, TestChangeConfiguration) {
 
   QuorumPB* new_quorum = req.mutable_new_config();
   new_quorum->set_local(true);
-  new_quorum->set_seqno(1);
+  new_quorum->set_seqno(2);
 
   {
     SCOPED_TRACE(req.DebugString());
@@ -1387,9 +1387,9 @@ TEST_F(TabletServerTest, TestChangeConfiguration) {
 
   // On reboot the initial round of consensus should have pushed the
   // configuration and incremented the sequence number so pushing
-  // a configuration with seqno = 2 (the sequence number right
-  // after the initial one) should fail
-  new_quorum->set_seqno(2);
+  // a configuration with seqno = 3 (the sequence number right
+  // after the previous one) should fail
+  new_quorum->set_seqno(3);
 
   {
     SCOPED_TRACE(req.DebugString());
@@ -1424,7 +1424,7 @@ TEST_F(TabletServerTest, TestChangeConfiguration_TsTableManagerReportsNewRoles) 
 
   QuorumPB* new_quorum = req.mutable_new_config();
   new_quorum->set_local(true);
-  new_quorum->set_seqno(1);
+  new_quorum->set_seqno(2);
   QuorumPeerPB* peer = new_quorum->add_peers();
   peer->set_permanent_uuid(mini_server_->server()->instance_pb().permanent_uuid());
   SeedRandom();

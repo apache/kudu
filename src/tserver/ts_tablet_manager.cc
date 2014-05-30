@@ -296,17 +296,15 @@ void TSTabletManager::OpenTablet(TabletMetadata* metadata) {
   LOG_TIMING(INFO, Substitute("Tablet $0 Started.", tablet_id)) {
     TRACE("Initializing tablet peer");
 
-    // Check the tablet metadata for the quorum and increase the sequence number.
-    QuorumPB initial_config = tablet->metadata()->Quorum();
-    initial_config.set_seqno(initial_config.seqno() + 1);
+    // Check the tablet metadata for the quorum
+    CHECK(tablet->metadata()->Quorum().IsInitialized());
 
     s =  tablet_peer->Init(tablet,
                            scoped_refptr<server::Clock>(server_->clock()),
                            server_->messenger(),
                            quorum_peer,
                            log.Pass(),
-                           opid_anchor_registry.get(),
-                           initial_config.local());
+                           opid_anchor_registry.get());
 
     if (!s.ok()) {
       tablet_peer->SetFailed(s);
@@ -314,7 +312,7 @@ void TSTabletManager::OpenTablet(TabletMetadata* metadata) {
     }
 
     TRACE("Starting tablet peer");
-    s = tablet_peer->Start(initial_config);
+    s = tablet_peer->Start();
     if (!s.ok()) {
       tablet_peer->SetFailed(s);
       return;

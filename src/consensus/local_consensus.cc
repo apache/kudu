@@ -69,7 +69,9 @@ Status LocalConsensus::Start(const metadata::QuorumPB& initial_quorum,
 
   // FIXME: Seems like a hack to get the current tablet ID from the Log.
   req->set_tablet_id(log_->tablet_id());
-  req->mutable_new_config()->CopyFrom(initial_quorum);
+  QuorumPB* new_config = req->mutable_new_config();
+  new_config->CopyFrom(initial_quorum);
+  new_config->set_seqno(initial_quorum.seqno() + 1);
 
   shared_ptr<LatchCallback> replicate_clbk(new LatchCallback);
   shared_ptr<LatchCallback> commit_clbk(new LatchCallback);
@@ -95,7 +97,7 @@ Status LocalConsensus::Start(const metadata::QuorumPB& initial_quorum,
   RETURN_NOT_OK(commit_clbk->Wait());
   TRACE("Consensus started");
 
-  running_quorum->reset(new QuorumPB(initial_quorum));
+  running_quorum->reset(req->release_new_config());
 
   quorum_ = initial_quorum;
   state_ = kRunning;

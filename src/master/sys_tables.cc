@@ -127,12 +127,10 @@ Status SysTable::SetupTablet(gscoped_ptr<metadata::TabletMetadata> metadata) {
                                            master_->messenger(),
                                            tablet->metadata()->Quorum().peers(0),
                                            log.Pass(),
-                                           opid_anchor_registry.get(),
-                                           tablet->metadata()->Quorum().local()),
+                                           opid_anchor_registry.get()),
                         "Failed to Init() TabletPeer");
 
-  RETURN_NOT_OK_PREPEND(tablet_peer_->Start(tablet->metadata()->Quorum()),
-                                            "Failed to Start() TabletPeer");
+  RETURN_NOT_OK_PREPEND(tablet_peer_->Start(), "Failed to Start() TabletPeer");
 
   shared_ptr<Schema> schema(tablet->schema());
   schema_ = SchemaBuilder(*schema.get()).BuildWithoutIds();

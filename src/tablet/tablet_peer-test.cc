@@ -77,7 +77,7 @@ class TabletPeerTest : public KuduTabletTest {
     ASSERT_STATUS_OK(Log::Open(LogOptions(), fs_manager_.get(), tablet_->tablet_id(),
                                 metric_ctx_.get(), &log));
     ASSERT_STATUS_OK(tablet_peer_->Init(tablet_, clock_, messenger_, quorum_peer,
-                                        log.Pass(), opid_anchor_registry_.get(), true));
+                                        log.Pass(), opid_anchor_registry_.get()));
 
     // Disable Log GC. We will call it manually.
     // This flag is restored by the FlagSaver member at destruction time.
@@ -86,7 +86,7 @@ class TabletPeerTest : public KuduTabletTest {
     QuorumPB quorum;
     quorum.set_local(true);
     quorum.set_seqno(0);
-    ASSERT_STATUS_OK(tablet_peer_->Start(quorum));
+    ASSERT_STATUS_OK(tablet_peer_->Start());
   }
 
   virtual void TearDown() OVERRIDE {
