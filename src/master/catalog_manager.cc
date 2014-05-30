@@ -967,7 +967,8 @@ Status CatalogManager::HandleReportedTablet(TSDescriptor* ts_desc,
   }
   if (tablet == NULL) {
     VLOG(1) << "Got report from missing tablet " << report.tablet_id();
-    SendDeleteTabletRequest(report.tablet_id(), NULL, ts_desc);
+    SendDeleteTabletRequest(report.tablet_id(), NULL, ts_desc,
+                            "Report from unknown tablet");
     return Status::OK();
   }
 
@@ -978,9 +979,11 @@ Status CatalogManager::HandleReportedTablet(TSDescriptor* ts_desc,
 
   if (tablet_lock.data().is_deleted()) {
     report_updates->set_state_msg(tablet_lock.data().pb.state_msg());
+    const string msg = tablet_lock.data().pb.state_msg();
     VLOG(1) << "Got report from deleted tablet " << tablet->ToString()
-            << ": " << tablet_lock.data().pb.state_msg();
-    SendDeleteTabletRequest(tablet->tablet_id(), tablet->table(), ts_desc);
+            << ": " << msg;
+    SendDeleteTabletRequest(tablet->tablet_id(), tablet->table(), ts_desc,
+                            Substitute("Tablet deleted: $0", msg));
     return Status::OK();
   }
 
@@ -1222,9 +1225,11 @@ class AsyncDeleteTablet : public AsyncTabletRequestTask {
   AsyncDeleteTablet(Master *master,
                     const string& permanent_uuid,
                     const scoped_refptr<TableInfo>& table,
-                    const std::string& tablet_id)
+                    const std::string& tablet_id,
+                    const string& reason)
     : AsyncTabletRequestTask(master, permanent_uuid, table),
-      tablet_id_(tablet_id) {
+      tablet_id_(tablet_id),
+      reason_(reason) {
     }
 
   virtual bool Abort() {
@@ -1265,6 +1270,7 @@ class AsyncDeleteTablet : public AsyncTabletRequestTask {
   virtual void SendRequest(int attempt) {
     tserver::DeleteTabletRequestPB req;
     req.set_tablet_id(tablet_id_);
+    req.set_reason(reason_);
 
     rpc_.set_timeout(MonoDelta::FromMilliseconds(FLAGS_async_rpc_timeout_ms));
     ts_proxy_->DeleteTabletAsync(req, &resp_, &rpc_,
@@ -1275,6 +1281,7 @@ class AsyncDeleteTablet : public AsyncTabletRequestTask {
   }
 
   const std::string tablet_id_;
+  const std::string reason_;
   tserver::DeleteTabletResponsePB resp_;
 };
 
@@ -1388,16 +1395,18 @@ void CatalogManager::SendDeleteTableRequest(const scoped_refptr<TableInfo>& tabl
     std::vector<TabletReplica> locations;
     tablet->GetLocations(&locations);
     BOOST_FOREACH(const TabletReplica& replica, locations) {
-      SendDeleteTabletRequest(tablet->tablet_id(), table, replica.ts_desc);
+      SendDeleteTabletRequest(tablet->tablet_id(), table, replica.ts_desc,
+                              "Table being deleted");
     }
   }
 }
 
 void CatalogManager::SendDeleteTabletRequest(const std::string& tablet_id,
                                              const scoped_refptr<TableInfo>& table,
-                                             TSDescriptor* ts_desc) {
+                                             TSDescriptor* ts_desc,
+                                             const string& reason) {
   AsyncDeleteTablet *call = new AsyncDeleteTablet(master_, ts_desc->permanent_uuid(),
-                                                  table, tablet_id);
+                                                  table, tablet_id, reason);
   if (table != NULL) {
     table->AddTask(call);
   } else {

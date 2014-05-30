@@ -176,6 +176,9 @@ message CreateTabletResponsePB {
 // A delete tablet request.
 message DeleteTabletRequestPB {
   required bytes tablet_id = 1;
+
+  // Reason the tablet is being deleted (for logging purposes)
+  optional string reason = 2;
 }
 
 message DeleteTabletResponsePB {

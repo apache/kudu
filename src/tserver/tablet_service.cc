@@ -273,7 +273,10 @@ void TabletServiceImpl::CreateTablet(const CreateTabletRequestPB* req,
 void TabletServiceImpl::DeleteTablet(const DeleteTabletRequestPB* req,
                                      DeleteTabletResponsePB* resp,
                                      rpc::RpcContext* context) {
-  DVLOG(3) << "Received Delete Tablet RPC: " << req->DebugString();
+  LOG(INFO) << "Processing DeleteTablet for tablet " << req->tablet_id()
+            << (req->has_reason() ? ("(" + req->reason() + ")") : "")
+            << " from " << context->requestor_string();
+  VLOG(1) << "Full request: " << req->DebugString();
 
   shared_ptr<TabletPeer> tablet_peer;
   if (!LookupTabletOrRespond(req->tablet_id(), &tablet_peer, resp, context)) return;
