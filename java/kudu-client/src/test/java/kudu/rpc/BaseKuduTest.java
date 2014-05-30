@@ -38,7 +38,7 @@ public class BaseKuduTest {
   private static int masterPort;
   private static String masterAddressAndPort;
 
-  protected static final int DEFAULT_SLEEP = 10000;
+  protected static final int DEFAULT_SLEEP = 50000;
   static final List<Thread> PROCESS_INPUT_PRINTERS = new ArrayList<Thread>();
   static Process master;
   static Process tabletServer;

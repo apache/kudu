@@ -54,7 +54,7 @@ public class TestKuduSession extends BaseKuduTest {
     // If our subsequent manual flush throws, it means the logic to block on in-flight tablet
     // lookups in flush isn't working properly.
     session.setFlushMode(KuduSession.FlushMode.AUTO_FLUSH_BACKGROUND);
-    session.setFlushInterval(11000);
+    session.setFlushInterval(DEFAULT_SLEEP + 1000);
     Deferred<Object> d = session.apply(createInsert(0));
     session.flush().join(DEFAULT_SLEEP);
     assertTrue(exists(0));
