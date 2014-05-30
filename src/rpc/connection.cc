@@ -118,7 +118,7 @@ void Connection::Shutdown(const Status &status) {
   // Clear any calls which have been sent and were awaiting a response.
   BOOST_FOREACH(const car_map_t::value_type &v, awaiting_response_) {
     CallAwaitingResponse *c = v.second;
-    if (c->call.get()) {
+    if (c->call) {
       c->call->SetFailed(status);
     }
     // And we must return the CallAwaitingResponse to the pool
@@ -171,17 +171,17 @@ void Connection::CallAwaitingResponse::HandleTimeout(ev::timer &watcher, int rev
 
 void Connection::HandleOutboundCallTimeout(CallAwaitingResponse *car) {
   DCHECK(reactor_thread_->IsCurrentThread());
+  DCHECK(car->call);
   // The timeout timer is stopped by the car destructor exiting Connection::HandleCallResponse()
   DCHECK(!car->call->IsFinished());
 
-  // Detach the call object from the CallAwaitingResponse, mark it as failed.
-  shared_ptr<OutboundCall> &call = car->call;
-  call->SetTimedOut();
+  // Mark the call object as failed.
+  car->call->SetTimedOut();
 
   // Drop the reference to the call. If the original caller has moved on after
   // seeing the timeout, we no longer need to hold onto the allocated memory
   // from the request.
-  call.reset();
+  car->call.reset();
 
   // We still leave the CallAwaitingResponse in the map -- this is because we may still
   // receive a response from the server, and we don't want a spurious log message
@@ -223,6 +223,7 @@ struct CallTransferCallbacks : public TransferCallbacks {
 };
 
 void Connection::QueueOutboundCall(const shared_ptr<OutboundCall> &call) {
+  DCHECK(call);
   DCHECK_EQ(direction_, CLIENT);
   DCHECK(reactor_thread_->IsCurrentThread());
 
@@ -581,7 +582,9 @@ Status Connection::DumpPB(const DumpRunningRpcsRequestPB& req,
   if (direction_ == CLIENT) {
     BOOST_FOREACH(const car_map_t::value_type& entry, awaiting_response_) {
       CallAwaitingResponse *c = entry.second;
-      c->call->DumpPB(req, resp->add_calls_in_flight());
+      if (c->call) {
+        c->call->DumpPB(req, resp->add_calls_in_flight());
+      }
     }
   } else if (direction_ == SERVER) {
     BOOST_FOREACH(const inbound_call_map_t::value_type& entry, calls_being_handled_) {
