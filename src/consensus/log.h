@@ -59,6 +59,8 @@ typedef BlockingQueue<LogEntryBatch*, LogEntryBatchLogicalSize> LogEntryBatchQue
 // to execute the callbacks after each write.
 class Log {
  public:
+  class LogFaultHooks;
+
   static const Status kLogShutdownStatus;
   static const uint64_t kInitialLogSegmentSequenceNumber;
 
@@ -188,6 +190,7 @@ class Log {
   // Returns this Log's FsManager.
   FsManager* GetFsManager();
 
+  void SetLogFaultHooksForTests(const std::tr1::shared_ptr<LogFaultHooks> &hooks);
  private:
   friend class LogTest;
   friend class LogTestBase;
@@ -326,6 +329,8 @@ class Log {
   gscoped_ptr<MetricContext> metric_context_;
   gscoped_ptr<LogMetrics> metrics_;
 
+  std::tr1::shared_ptr<LogFaultHooks> log_hooks_;
+
   DISALLOW_COPY_AND_ASSIGN(Log);
 };
 
@@ -429,6 +434,26 @@ struct LogEntryBatchLogicalSize {
   static size_t logical_size(const LogEntryBatch* batch) {
     return batch->total_size_bytes();
   }
+};
+
+class Log::LogFaultHooks {
+ public:
+
+  // Executed immediately before returning from Log::Sync() at *ALL*
+  // times.
+  virtual Status PostSync() { return Status::OK(); }
+
+  // Iff fsync is enabled, executed immediately after call to fsync.
+  virtual Status PostSyncIfFsyncEnabled() { return Status::OK(); }
+
+  // Emulate a slow disk where the filesystem has decided to synchronously
+  // flush a full buffer.
+  virtual Status PostAppend() { return Status::OK(); }
+
+  virtual Status PreClose() { return Status::OK(); }
+  virtual Status PostClose() { return Status::OK(); }
+
+  virtual ~LogFaultHooks() {}
 };
 
 }  // namespace log

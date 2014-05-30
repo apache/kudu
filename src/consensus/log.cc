@@ -442,6 +442,10 @@ Status Log::DoAppend(LogEntryBatch* entry_batch, bool caller_owns_operation) {
     RETURN_NOT_OK(active_segment_->writable_file()->Append(
       Slice(reinterpret_cast<uint8_t *>(&entry_batch_bytes), 4)));
     RETURN_NOT_OK(active_segment_->writable_file()->Append(entry_batch_data));
+
+    if (log_hooks_) {
+      RETURN_NOT_OK_PREPEND(log_hooks_->PostAppend(), "PostAppend hook failed");
+    }
   }
   // TODO: Add a record checksum to each WAL record (see KUDU-109).
   return Status::OK();
@@ -479,10 +483,20 @@ FsManager* Log::GetFsManager() {
 
 Status Log::Sync() {
   SCOPED_LATENCY_METRIC(metrics_, sync_latency);
+
   if (force_sync_all_) {
     LOG_SLOW_EXECUTION(WARNING, 50, "Fsync log took a long time") {
       RETURN_NOT_OK(active_segment_->writable_file()->Sync());
+
+      if (log_hooks_) {
+        RETURN_NOT_OK_PREPEND(log_hooks_->PostSyncIfFsyncEnabled(),
+                              "PostSyncIfFsyncEnabled hook failed");
+      }
     }
+  }
+
+  if (log_hooks_) {
+    RETURN_NOT_OK_PREPEND(log_hooks_->PostSync(), "PostSync hook failed");
   }
   return Status::OK();
 }
@@ -584,6 +598,11 @@ int Log::GetNumReadableLogSegmentsForTests() const {
 }
 
 Status Log::Close() {
+  if (log_hooks_) {
+    RETURN_NOT_OK_PREPEND(log_hooks_->PreClose(),
+                          "PreClose hook failed");
+  }
+
   allocation_executor_->Shutdown();
   if (append_thread_.get() != NULL) {
     append_thread_->Shutdown();
@@ -603,6 +622,11 @@ Status Log::Close() {
       return Status::OK();
     default:
       return Status::IllegalState(Substitute("Bad state for Close() $0", log_state_));
+  }
+
+  if (log_hooks_) {
+    RETURN_NOT_OK_PREPEND(log_hooks_->PostClose(),
+                          "PostClose hook failed");
   }
 }
 
