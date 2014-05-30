@@ -33,6 +33,13 @@ enum OperationType {
   CHANGE_CONFIG_OP = 5;
 }
 
+// The transaction driver type: indicates whether a transaction is
+// being executed on a leader or a replica.
+enum DriverType {
+  LEADER = 1;
+  REPLICA = 2;
+}
+
 // A wrapper around replicates and commits so that we can send to peers
 // in total order without having to rebuild order between replicates/commits.
 // Each operation must either have a replicate or a commit, but not both.
@@ -145,7 +152,9 @@ message TransactionStatusPB {
   required int64 running_for_micros = 3;
   // Quick human-readable description (e.g., ToString() output).
   required string description = 4;
+
+  required DriverType driver_type = 5;
   // If tracing is enabled when viewing the transaction, the trace
   // buffer is copied here.
-  optional string trace_buffer = 5;
+  optional string trace_buffer = 6;
 }

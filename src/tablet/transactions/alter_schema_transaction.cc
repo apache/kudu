@@ -20,6 +20,7 @@ using consensus::ReplicateMsg;
 using consensus::CommitMsg;
 using consensus::OP_ABORT;
 using consensus::ALTER_SCHEMA_OP;
+using consensus::DriverType;
 using strings::Substitute;
 using tserver::TabletServerErrorPB;
 using tserver::AlterSchemaRequestPB;

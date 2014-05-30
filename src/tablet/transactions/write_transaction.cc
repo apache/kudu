@@ -23,6 +23,7 @@ using boost::bind;
 using boost::shared_lock;
 using consensus::ReplicateMsg;
 using consensus::CommitMsg;
+using consensus::DriverType;
 using consensus::OP_ABORT;
 using consensus::WRITE_OP;
 using tserver::TabletServerErrorPB;
@@ -45,7 +46,7 @@ void WriteTransaction::NewReplicateMsg(gscoped_ptr<ReplicateMsg>* replicate_msg)
 void WriteTransaction::NewCommitAbortMessage(gscoped_ptr<CommitMsg>* commit_msg) {
   commit_msg->reset(new CommitMsg());
   (*commit_msg)->set_op_type(OP_ABORT);
-  if (type() == Transaction::LEADER) {
+  if (type() == consensus::LEADER) {
     (*commit_msg)->set_timestamp(state()->timestamp().ToUint64());
     (*commit_msg)->mutable_write_response()->CopyFrom(*state_->response());
   } else {
@@ -192,7 +193,7 @@ Status WriteTransaction::Apply(gscoped_ptr<CommitMsg>* commit_msg) {
   // If this is a leader side transaction set the timestamp on the response
   // TODO(todd): can we consolidate this code into the driver? we seem to be
   // quite inconsistent whether we do this or not in the other transaction types.
-  if (type() == Transaction::LEADER) {
+  if (type() == consensus::LEADER) {
     state()->response()->set_write_timestamp(state()->timestamp().ToUint64());
     (*commit_msg)->mutable_write_response()->CopyFrom(*state()->response());
   } else {
@@ -221,7 +222,7 @@ void WriteTransaction::Finish() {
     metrics->rows_inserted->IncrementBy(state_->metrics().successful_inserts);
     metrics->rows_updated->IncrementBy(state_->metrics().successful_updates);
 
-    if (type() == Transaction::LEADER) {
+    if (type() == consensus::LEADER) {
       if (state()->external_consistency_mode() == COMMIT_WAIT) {
         metrics->commit_wait_duration->Increment(state_->metrics().commit_wait_duration_usec);
       }

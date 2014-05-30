@@ -27,7 +27,8 @@ TEST_F(TransactionTrackerTest, TestGetPending) {
 
   ASSERT_EQ(0, tracker_.GetNumPendingForTests());
   scoped_refptr<LeaderTransactionDriver> driver;
-  LeaderTransactionDriver::Create(&tracker_, NULL, executor.get(), executor.get(), &lock, &driver);
+  LeaderTransactionDriver::Create(
+      NULL, &tracker_, NULL, executor.get(), executor.get(), &lock, &driver);
 
   ASSERT_EQ(1, tracker_.GetNumPendingForTests());
 

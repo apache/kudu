@@ -279,7 +279,7 @@ class WriteTransactionState : public TransactionState {
 //      to transaction.h
 class WriteTransaction : public Transaction {
  public:
-  WriteTransaction(WriteTransactionState* tx_state, DriverType type);
+  WriteTransaction(WriteTransactionState* tx_state, consensus::DriverType type);
 
   virtual WriteTransactionState* state() OVERRIDE { return state_.get(); }
   virtual const WriteTransactionState* state() const OVERRIDE { return state_.get(); }

@@ -21,6 +21,7 @@ using consensus::ReplicateMsg;
 using consensus::CommitMsg;
 using consensus::OP_ABORT;
 using consensus::CHANGE_CONFIG_OP;
+using consensus::DriverType;
 using metadata::QuorumPB;
 using strings::Substitute;
 using tserver::TabletServerErrorPB;

@@ -203,7 +203,7 @@ class DelayedApplyTransaction : public WriteTransaction {
   DelayedApplyTransaction(CountDownLatch* apply_started,
                           CountDownLatch* apply_continue,
                           WriteTransactionState* state)
-      : WriteTransaction(state, Transaction::LEADER),
+      : WriteTransaction(state, consensus::LEADER),
         apply_started_(DCHECK_NOTNULL(apply_started)),
         apply_continue_(DCHECK_NOTNULL(apply_continue)) {
   }
@@ -346,8 +346,14 @@ TEST_F(TabletPeerTest, TestActiveTransactionPreventsLogGC) {
     tx_state->set_completion_callback(gscoped_ptr<TransactionCompletionCallback>(
           new LatchTransactionCompletionCallback<WriteResponsePB>(&rpc_latch, resp.get())).Pass());
 
+    DelayedApplyTransaction* transaction = new DelayedApplyTransaction(&apply_started,
+                                                                       &apply_continue,
+                                                                       tx_state);
+
     scoped_refptr<LeaderTransactionDriver> driver;
+
     LeaderTransactionDriver::Create(
+        transaction,
         &tablet_peer_->txn_tracker_,
         tablet_peer_->consensus(),
         tablet_peer_->prepare_executor_.get(),
@@ -355,11 +361,7 @@ TEST_F(TabletPeerTest, TestActiveTransactionPreventsLogGC) {
         &tablet_peer_->prepare_replicate_lock_,
         &driver);
 
-    DelayedApplyTransaction* transaction = new DelayedApplyTransaction(&apply_started,
-                                                                       &apply_continue,
-                                                                       tx_state);
-
-    ASSERT_STATUS_OK(driver->Execute(transaction));
+    ASSERT_STATUS_OK(driver->Execute());
     apply_started.Wait();
     // The apply will hang until we CountDown() the continue latch.
     // Now, roll the log. Below, we execute a few more insertions with rolling.

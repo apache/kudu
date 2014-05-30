@@ -15,6 +15,7 @@ using consensus::Consensus;
 using consensus::ConsensusRound;
 using consensus::ReplicateMsg;
 using consensus::CommitMsg;
+using consensus::DriverType;
 using consensus::OperationPB;
 using std::tr1::shared_ptr;
 
@@ -39,10 +40,9 @@ TransactionDriver::TransactionDriver(TransactionTracker *txn_tracker,
       start_time_(MonoTime::Now(MonoTime::FINE)) {
 }
 
-void TransactionDriver::Init() {
-  // TODO ideally we should have the Transaction available *here*, as to avoid
-  // a call to IncrementCounters() in Execute (the respective DecrementCounters()
-  // call happens in TransactionTracker::Release()).
+void TransactionDriver::Init(Transaction* transaction) {
+  boost::lock_guard<simple_spinlock> lock(lock_);
+  transaction_.reset(transaction);
   txn_tracker_->Add(this);
 }
 
@@ -63,6 +63,10 @@ Transaction::TransactionType TransactionDriver::tx_type() const {
   return transaction_->tx_type();
 }
 
+DriverType TransactionDriver::type() const {
+  return transaction_->type();
+}
+
 const std::tr1::shared_ptr<FutureCallback>& TransactionDriver::commit_finished_callback() {
   boost::lock_guard<simple_spinlock> lock(lock_);
   return commit_finished_callback_;
@@ -76,15 +80,16 @@ string TransactionDriver::ToString() const {
 // LeaderTransactionDriver
 ////////////////////////////////////////////////////////////
 
-void LeaderTransactionDriver::Create(TransactionTracker* txn_tracker,
-                                Consensus* consensus,
-                                TaskExecutor* prepare_executor,
-                                TaskExecutor* apply_executor,
-                                simple_spinlock* prepare_replicate_lock,
-                                scoped_refptr<LeaderTransactionDriver>* driver) {
+void LeaderTransactionDriver::Create(Transaction* transaction,
+                                     TransactionTracker* txn_tracker,
+                                     Consensus* consensus,
+                                     TaskExecutor* prepare_executor,
+                                     TaskExecutor* apply_executor,
+                                     simple_spinlock* prepare_replicate_lock,
+                                     scoped_refptr<LeaderTransactionDriver>* driver) {
   driver->reset(new LeaderTransactionDriver(txn_tracker, consensus, prepare_executor,
                                             apply_executor, prepare_replicate_lock));
-  (*driver)->Init();
+  (*driver)->Init(transaction);
 }
 
 LeaderTransactionDriver::LeaderTransactionDriver(TransactionTracker* txn_tracker,
@@ -99,10 +104,8 @@ LeaderTransactionDriver::LeaderTransactionDriver(TransactionTracker* txn_tracker
       prepare_replicate_lock_(DCHECK_NOTNULL(prepare_replicate_lock)) {
 }
 
-Status LeaderTransactionDriver::Execute(Transaction* transaction) {
+Status LeaderTransactionDriver::Execute() {
   ADOPT_TRACE(trace());
-
-  txn_tracker_->IncrementCounters(transaction->tx_type());
 
   const shared_ptr<FutureCallback> prepare_replicate_callback(
     new BoundFunctionCallback(
@@ -115,7 +118,6 @@ Status LeaderTransactionDriver::Execute(Transaction* transaction) {
   shared_ptr<Future> prepare_task_future;
   {
     boost::lock_guard<simple_spinlock> lock(lock_);
-    transaction_.reset(transaction);
 
     // This portion of this method needs to be guarded across transactions
     // because, for any given transactions A and B, if A prepares before B
@@ -338,17 +340,25 @@ LeaderTransactionDriver::~LeaderTransactionDriver() {
 // ReplicaTransactionDriver
 ////////////////////////////////////////////////////////////
 
-void ReplicaTransactionDriver::Create(TransactionTracker* txn_tracker,
+void ReplicaTransactionDriver::Create(Transaction* transaction,
+                                      TransactionTracker* txn_tracker,
                                       Consensus* consensus,
                                       TaskExecutor* prepare_executor,
                                       TaskExecutor* apply_executor,
                                       scoped_refptr<ReplicaTransactionDriver>* driver) {
   driver->reset(new ReplicaTransactionDriver(txn_tracker, consensus,
                                              prepare_executor, apply_executor));
-  (*driver)->Init();
+  (*driver)->Init(transaction);
 }
 
-Status ReplicaTransactionDriver::Execute(Transaction* transaction) {
+void ReplicaTransactionDriver::Init(Transaction* transaction) {
+  op_id_copy_ = transaction->state()->op_id();
+  TransactionDriver::Init(transaction);
+}
+
+Status ReplicaTransactionDriver::Execute() {
+  ADOPT_TRACE(trace());
+
   shared_ptr<FutureCallback> prepare_callback(
     new BoundFunctionCallback(
       boost::bind(&ReplicaTransactionDriver::PrepareOrLeaderCommitSucceeded, this),
@@ -357,7 +367,6 @@ Status ReplicaTransactionDriver::Execute(Transaction* transaction) {
   shared_ptr<Future> prepare_task_future;
   {
     boost::lock_guard<simple_spinlock> state_lock(lock_);
-    transaction_.reset(transaction);
 
     // submit the prepare task
     s = prepare_executor_->Submit(boost::bind(&Transaction::Prepare, transaction_.get()),

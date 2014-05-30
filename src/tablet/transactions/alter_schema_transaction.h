@@ -90,7 +90,7 @@ class AlterSchemaTransactionState : public TransactionState {
 // Executes the alter schema transaction,.
 class AlterSchemaTransaction : public Transaction {
  public:
-  AlterSchemaTransaction(AlterSchemaTransactionState* tx_state, DriverType type);
+  AlterSchemaTransaction(AlterSchemaTransactionState* tx_state, consensus::DriverType type);
 
   virtual AlterSchemaTransactionState* state() OVERRIDE { return tx_state_.get(); }
   virtual const AlterSchemaTransactionState* state() const OVERRIDE { return tx_state_.get(); }

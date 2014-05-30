@@ -61,7 +61,8 @@ void TabletServerPathHandlers::HandleTransactionsPage(const Webserver::ArgumentM
   *output << "<h1>Transactions</h1>\n";
   *output << "<table class='table table-striped'>\n";
   *output << "   <tr><th>Tablet id</th><th>Op Id</th>"
-      "<th>Type</th><th>Total time in-flight</th><th>Description</th></tr>\n";
+      "<th>Transaction Type</th><th>Driver Type</th><th>"
+      "Total time in-flight</th><th>Description</th></tr>\n";
 
   BOOST_FOREACH(const shared_ptr<TabletPeer>& peer, peers) {
     vector<TransactionStatusPB> inflight;
@@ -80,13 +81,14 @@ void TabletServerPathHandlers::HandleTransactionsPage(const Webserver::ArgumentM
       } else {
         description = inflight_tx.description();
       }
-      (*output) << Substitute("<tr><th>$0</th><th>$1</th><th>$2</th><th>$3</th><th>$4</th></tr>\n",
-                              EscapeForHtmlToString(peer->tablet_id()),
-                              EscapeForHtmlToString(inflight_tx.op_id().ShortDebugString()),
-                              OperationType_Name(inflight_tx.tx_type()),
-                              total_time_str,
-                              EscapeForHtmlToString(description));
-
+      (*output) << Substitute(
+          "<tr><th>$0</th><th>$1</th><th>$2</th><th>$3</th><th>$4</th><th>$5</th></tr>\n",
+          EscapeForHtmlToString(peer->tablet_id()),
+          EscapeForHtmlToString(inflight_tx.op_id().ShortDebugString()),
+          OperationType_Name(inflight_tx.tx_type()),
+          DriverType_Name(inflight_tx.driver_type()),
+          total_time_str,
+          EscapeForHtmlToString(description));
     }
   }
   *output << "</table>\n";

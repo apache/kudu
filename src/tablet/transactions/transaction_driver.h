@@ -26,22 +26,26 @@ class TransactionTracker;
 // This class and implementations are thread safe.
 class TransactionDriver : public base::RefCountedThreadSafe<TransactionDriver> {
  public:
-  // Perform any non-constructor initialization.
-  virtual void Init();
+  // Perform any non-constructor initialization. Sets the transaction
+  // that will be executed.
+  virtual void Init(Transaction* transaction);
 
   // Returns the OpId of the transaction being executed or an uninitialized
   // OpId if none has been assigned. Returns a copy and thus should not
   // be used in tight loops.
   virtual consensus::OpId GetOpId();
 
-  // Submits a transaction for execution.
+  // Submits the transaction for execution.
   // The returned status acknowledges any error on the submission process.
   // The transaction will be replied to asynchronously.
-  virtual Status Execute(Transaction* transaction) = 0;
+  virtual Status Execute() = 0;
 
   virtual const std::tr1::shared_ptr<FutureCallback>& commit_finished_callback();
 
   virtual std::string ToString() const;
+
+  // Returns the type of the driver.
+  consensus::DriverType type() const;
 
   // Returns the type of the transaction being executed by this driver.
   Transaction::TransactionType tx_type() const;
@@ -123,14 +127,15 @@ class TransactionDriver : public base::RefCountedThreadSafe<TransactionDriver> {
 // This class is thread safe.
 class LeaderTransactionDriver : public TransactionDriver {
  public:
-  static void Create(TransactionTracker* txn_tracker,
+  static void Create(Transaction* transaction,
+                     TransactionTracker* txn_tracker,
                      consensus::Consensus* consensus,
                      TaskExecutor* prepare_executor,
                      TaskExecutor* apply_executor,
                      simple_spinlock* prepare_replicate_lock,
                      scoped_refptr<LeaderTransactionDriver>* driver);
 
-  virtual Status Execute(Transaction* transaction) OVERRIDE;
+  virtual Status Execute() OVERRIDE;
 
  protected:
   LeaderTransactionDriver(TransactionTracker* txn_tracker,
@@ -174,13 +179,16 @@ class LeaderTransactionDriver : public TransactionDriver {
 class ReplicaTransactionDriver : public TransactionDriver,
                                  public consensus::ReplicaCommitContinuation {
  public:
-  static void Create(TransactionTracker* txn_tracker,
+  static void Create(Transaction* transaction,
+                     TransactionTracker* txn_tracker,
                      consensus::Consensus* consensus,
                      TaskExecutor* prepare_executor,
                      TaskExecutor* apply_executor,
                      scoped_refptr<ReplicaTransactionDriver>* driver);
 
-  virtual Status Execute(Transaction* transaction) OVERRIDE;
+  virtual void Init(Transaction* transaction) OVERRIDE;
+
+  virtual Status Execute() OVERRIDE;
 
  protected:
   ReplicaTransactionDriver(TransactionTracker* txn_tracker,

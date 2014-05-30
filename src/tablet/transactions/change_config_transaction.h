@@ -71,7 +71,7 @@ class ChangeConfigTransactionState : public TransactionState {
 class ChangeConfigTransaction : public Transaction {
  public:
   ChangeConfigTransaction(ChangeConfigTransactionState* tx_state,
-                          DriverType type,
+                          consensus::DriverType type,
                           Semaphore* config_sem);
 
   virtual ChangeConfigTransactionState* state() OVERRIDE { return tx_state_.get(); }

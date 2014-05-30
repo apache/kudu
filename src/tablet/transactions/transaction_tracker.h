@@ -22,10 +22,10 @@ class TransactionDriver;
 struct TransactionsInFlight {
   TransactionsInFlight();
 
-  uint64_t all_transactions_inflight;
-  uint64_t write_transactions_inflight;
-  uint64_t alter_schema_transactions_inflight;
-  uint64_t change_config_transactions_inflight;
+  int64_t all_transactions_inflight;
+  int64_t write_transactions_inflight;
+  int64_t alter_schema_transactions_inflight;
+  int64_t change_config_transactions_inflight;
 };
 
 // Each TabletPeer has a TransactionTracker which keeps track of pending transactions.

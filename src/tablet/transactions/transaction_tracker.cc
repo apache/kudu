@@ -44,11 +44,14 @@ TransactionTracker::~TransactionTracker() {
 
 void TransactionTracker::Add(TransactionDriver *driver) {
   boost::lock_guard<simple_spinlock> l(lock_);
+  if (driver->state() != NULL) {
+    IncrementCounters(driver->tx_type());
+  }
+
   pending_txns_.insert(driver);
 }
 
 void TransactionTracker::IncrementCounters(Transaction::TransactionType tx_type) {
-  boost::lock_guard<simple_spinlock> l(lock_);
   ++txns_in_flight_.all_transactions_inflight;
   switch (tx_type) {
     case Transaction::WRITE_TXN:
@@ -64,27 +67,30 @@ void TransactionTracker::IncrementCounters(Transaction::TransactionType tx_type)
 }
 
 void TransactionTracker::DecrementCounters(Transaction::TransactionType tx_type) {
-  boost::lock_guard<simple_spinlock> l(lock_);
+  DCHECK_GT(txns_in_flight_.all_transactions_inflight, 0);
   --txns_in_flight_.all_transactions_inflight;
   switch (tx_type) {
     case Transaction::WRITE_TXN:
+      DCHECK_GT(txns_in_flight_.write_transactions_inflight, 0);
       --txns_in_flight_.write_transactions_inflight;
       break;
     case Transaction::ALTER_SCHEMA_TXN:
+      DCHECK_GT(txns_in_flight_.alter_schema_transactions_inflight, 0);
       --txns_in_flight_.alter_schema_transactions_inflight;
       break;
     case Transaction::CHANGE_CONFIG_TXN:
+      DCHECK_GT(txns_in_flight_.change_config_transactions_inflight, 0);
       --txns_in_flight_.change_config_transactions_inflight;
       break;
   }
 }
 
 void TransactionTracker::Release(TransactionDriver *driver) {
+  boost::lock_guard<simple_spinlock> l(lock_);
   if (driver->state() != NULL) {
     DecrementCounters(driver->tx_type());
   }
 
-  boost::lock_guard<simple_spinlock> l(lock_);
   if (PREDICT_FALSE(pending_txns_.erase(driver) != 1)) {
     LOG(FATAL) << "Could not remove pending transaction from map: " << driver->ToString();
   }

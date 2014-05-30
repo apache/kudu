@@ -53,6 +53,8 @@ const char* MetricUnit::Name(Type unit) {
       return "seconds";
     case kThreads:
       return "threads";
+    case kTransactions:
+      return "transactions";
     default:
       return "UNKNOWN UNIT";
   }

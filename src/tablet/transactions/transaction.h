@@ -35,11 +35,6 @@ struct TransactionMetrics {
 class Transaction {
  public:
 
-  enum DriverType {
-    LEADER,
-    REPLICA
-  };
-
   enum TransactionType {
     WRITE_TXN,
     ALTER_SCHEMA_TXN,
@@ -51,7 +46,7 @@ class Transaction {
     TRACE_TXNS = 1
   };
 
-  Transaction(TransactionState* state, DriverType type, TransactionType tx_type);
+  Transaction(TransactionState* state, consensus::DriverType type, TransactionType tx_type);
 
   // Returns the TransactionState for this transaction.
   virtual TransactionState* state() { return state_; }
@@ -59,7 +54,7 @@ class Transaction {
 
   // Returns whether this transaction is being executed on the leader or on a
   // replica.
-  DriverType type() const { return type_; }
+  consensus::DriverType type() const { return type_; }
 
   // Returns this transaction's type.
   TransactionType tx_type() const { return tx_type_; }
@@ -116,7 +111,7 @@ class Transaction {
   // A private version of this transaction's transaction state so that
   // we can use base TransactionState methods on destructors.
   TransactionState* state_;
-  DriverType type_;
+  consensus::DriverType type_;
   const TransactionType tx_type_;
 };
 

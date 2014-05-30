@@ -5,6 +5,8 @@
 namespace kudu {
 namespace tablet {
 
+using consensus::DriverType;
+
 Transaction::Transaction(TransactionState* state, DriverType type, TransactionType tx_type)
     : state_(state),
       type_(type),
