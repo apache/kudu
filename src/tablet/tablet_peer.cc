@@ -102,6 +102,7 @@ Status TabletPeer::Init(const shared_ptr<Tablet>& tablet,
     ConsensusOptions options;
     options.tablet_id = tablet_->metadata()->oid();
 
+    TRACE("Creating consensus instance");
     if (tablet_->metadata()->Quorum().local()) {
       consensus_.reset(new LocalConsensus(options));
     } else {
@@ -115,13 +116,16 @@ Status TabletPeer::Init(const shared_ptr<Tablet>& tablet,
   DCHECK(log_) << "A TabletPeer must be provided with a Log";
   DCHECK(opid_anchor_registry_) << "A TabletPeer must be provided with a OpIdAnchorRegistry";
 
+  TRACE("Initting consensus impl");
   RETURN_NOT_OK_PREPEND(consensus_->Init(quorum_peer, clock_, this, log_.get()),
                         "Could not initialize consensus");
 
   if (tablet_->metrics() != NULL) {
+    TRACE("Starting instrumentation");
     txn_tracker_.StartInstrumentation(*tablet_->GetMetricContext());
   }
 
+  TRACE("TabletPeer::Init() finished");
   return Status::OK();
 }
 

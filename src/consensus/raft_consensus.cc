@@ -48,7 +48,7 @@ Status RaftConsensus::Init(const metadata::QuorumPeerPB& peer,
                                 txn_factory,
                                 initial.term(),
                                 initial.index()));
-  LOG(INFO) << "Initialized Raft consensus. Peer: " << state_->ToString();
+  LOG(INFO) << "Created Raft consensus for peer " << state_->ToString();
   return Status::OK();
 }
 
