@@ -11,6 +11,10 @@ namespace kudu {
 
 class Schema;
 
+namespace metadata {
+class QuorumPB;
+}
+
 namespace tserver {
 
 class TabletServer;
@@ -32,6 +36,7 @@ class TabletServerPathHandlers {
                         std::stringstream* output);
   void HandleTransactionsPage(const Webserver::ArgumentMap& args,
                               std::stringstream* output);
+  std::string QuorumPBToHtml(const metadata::QuorumPB& quorum) const;
 
   TabletServer* tserver_;
 

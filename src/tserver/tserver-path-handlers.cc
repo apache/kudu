@@ -2,6 +2,8 @@
 
 #include "tserver/tserver-path-handlers.h"
 
+#include <algorithm>
+#include <sstream>
 #include <string>
 #include <tr1/memory>
 #include <vector>
@@ -18,6 +20,8 @@
 #include "util/url-coding.h"
 
 using kudu::consensus::TransactionStatusPB;
+using kudu::metadata::QuorumPB;
+using kudu::metadata::QuorumPeerPB;
 using kudu::tablet::TabletPeer;
 using kudu::tablet::TabletStatusPB;
 using kudu::tablet::Transaction;
@@ -103,7 +107,7 @@ void TabletServerPathHandlers::HandleTabletsPage(const Webserver::ArgumentMap &a
   *output << "<table class='table table-striped'>\n";
   *output << "  <tr><th>Table name</th><th>Tablet ID</th>"
       "<th>Start key</th><th>End key</th>"
-      "<th>State</th><th>On-disk size</th><th>Last status</th></tr>\n";
+      "<th>State</th><th>On-disk size</th><th>Quorum</th><th>Last status</th></tr>\n";
   BOOST_FOREACH(const shared_ptr<TabletPeer>& peer, peers) {
     TabletStatusPB status;
     peer->GetTabletStatusPB(&status);
@@ -127,16 +131,59 @@ void TabletServerPathHandlers::HandleTabletsPage(const Webserver::ArgumentMap &a
       StrAppend(&state, ": ", EscapeForHtmlToString(peer->error().ToString()));
     }
     // TODO: would be nice to include some other stuff like memory usage
-    (*output) << Substitute("<tr><th>$0</th><th>$1</th><th>$2</th>"
-                            "<th>$3</th><th>$4</th><th>$5</th></tr>\n",
-                            EscapeForHtmlToString(table_name),
-                            tablet_id_or_link,
-                            EscapeForHtmlToString(schema.DebugEncodedRowKey(status.start_key())),
-                            EscapeForHtmlToString(schema.DebugEncodedRowKey(status.end_key())),
-                            state, n_bytes,
-                            EscapeForHtmlToString(status.last_status()));
+    (*output) << Substitute(
+        // Table name, tablet id, start key, end key
+        "<tr><th>$0</th><th>$1</th><th>$2</th><th>$3</th>"
+        // State, on-disk size, quorum, last status
+        "<th>$4</th><th>$5</th><th>$6</th><th>$7</tr>\n",
+        EscapeForHtmlToString(table_name), // $0
+        tablet_id_or_link, // $1
+        EscapeForHtmlToString(schema.DebugEncodedRowKey(status.start_key())), // $2
+        EscapeForHtmlToString(schema.DebugEncodedRowKey(status.end_key())), // $3
+        state, n_bytes, // $4, $5
+        QuorumPBToHtml(peer->Quorum()), // $6
+        EscapeForHtmlToString(status.last_status())); // $7
   }
   *output << "</table>\n";
+}
+
+namespace {
+
+bool CompareByRole(const QuorumPeerPB& a, const QuorumPeerPB& b) {
+  if (a.has_role()) {
+    if (b.has_role()) {
+      return a.role() < b.role();
+    } else {
+      return true;
+    }
+  }
+  return false;
+};
+
+} // anonymous namespace
+
+string TabletServerPathHandlers::QuorumPBToHtml(const QuorumPB& quorum) const {
+  std::stringstream html;
+
+  html << "<ul>\n";
+  std::vector<QuorumPeerPB> sorted_peers;
+  sorted_peers.assign(quorum.peers().begin(), quorum.peers().end());
+  std::sort(sorted_peers.begin(), sorted_peers.end(), &CompareByRole);
+  BOOST_FOREACH(const QuorumPeerPB& peer, sorted_peers) {
+    string peer_addr_or_uuid =
+        peer.has_last_known_addr() ? peer.last_known_addr().host() : peer.permanent_uuid();
+    peer_addr_or_uuid = EscapeForHtmlToString(peer_addr_or_uuid);
+    if (peer.has_role() && peer.role() == QuorumPeerPB::LEADER) {
+        html << Substitute("  <li><b>LEADER: $0</b></li>\n",
+                           peer_addr_or_uuid);
+    } else {
+        html << Substitute(" <li>$0: $1</li>\n",
+                           peer.has_role() ? QuorumPeerPB::Role_Name(peer.role()) : "UNKNOWN",
+                           peer_addr_or_uuid);
+      }
+  }
+  html << "</ul>\n";
+  return html.str();
 }
 
 void TabletServerPathHandlers::HandleTabletPage(const Webserver::ArgumentMap &args,
