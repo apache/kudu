@@ -743,11 +743,8 @@ public class KuduClient {
       }
       if (tablet.leaderIndex == RemoteTablet.NO_LEADER_INDEX) {
         // TODO we don't know where the leader is, either because one wasn't provided or because
-        // we couldn't resolve its IP. We currently send the first TS, revisit.
-        return tablet.tabletServers.get(0);
-      } else if (tablet.tabletServers.size() == tablet.leaderIndex) {
-        // Case where the leader got disconnected but we haven't refreshed the locations yet.
-        // This will trigger that.
+        // we couldn't resolve its IP. We'll just send the client back so it retries and probably
+        // dies after too many attempts.
         return null;
       } else {
         // TODO we currently always hit the leader, we probably don't need to except for writes
@@ -1532,7 +1529,18 @@ public class KuduClient {
 
     boolean removeTabletServer(TabletClient ts) {
       synchronized (tabletServers) {
-        return tabletServers.remove(ts);
+        // TODO unit test for this once we have the infra
+        int index = tabletServers.indexOf(ts);
+        if (index == -1) {
+          return false; // we removed it already
+        }
+        if (leaderIndex == index) {
+          leaderIndex = NO_LEADER_INDEX; // we lost the leader
+        } else if (leaderIndex > index) {
+          leaderIndex--; // leader moved down the list
+        }
+        tabletServers.remove(index);
+        return true;
         // TODO if we reach 0 TS, maybe we should remove ourselves?
       }
     }
