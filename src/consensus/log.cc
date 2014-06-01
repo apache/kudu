@@ -13,6 +13,7 @@
 #include "util/coding.h"
 #include "util/countdown_latch.h"
 #include "util/env_util.h"
+#include "util/kernel_stack_watchdog.h"
 #include "util/logging.h"
 #include "util/metrics.h"
 #include "util/path_util.h"
@@ -434,6 +435,7 @@ Status Log::DoAppend(LogEntryBatch* entry_batch, bool caller_owns_operation) {
 
   LOG_SLOW_EXECUTION(WARNING, 50, "Append to log took a long time") {
     SCOPED_LATENCY_METRIC(metrics_, append_latency);
+    SCOPED_WATCH_KERNEL_STACK();
 
     RETURN_NOT_OK(active_segment_->writable_file()->Append(
       Slice(reinterpret_cast<uint8_t *>(&entry_batch_bytes), 4)));

@@ -15,6 +15,7 @@ add_library(kudu_util
   hdr_histogram.cc
   hexdump.cc
   jsonwriter.cc
+  kernel_stack_watchdog.cc
   logging.cc
   memcmpable_varint.cc
   memory/arena.cc memory/memory.cc
