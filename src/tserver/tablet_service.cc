@@ -227,6 +227,7 @@ void TabletServiceImpl::AlterSchema(const AlterSchemaRequestPB* req,
     SetupErrorAndRespond(resp->mutable_error(), s,
                          TabletServerErrorPB::UNKNOWN_ERROR,
                          context);
+    return;
   }
 }
 
@@ -247,6 +248,7 @@ void TabletServiceImpl::CreateTablet(const CreateTabletRequestPB* req,
     SetupErrorAndRespond(resp->mutable_error(),
                          Status::IllegalState("Invalid Schema."),
                          TabletServerErrorPB::INVALID_SCHEMA, context);
+    return;
   }
 
   s = server_->tablet_manager()->CreateNewTablet(req->table_id(),
@@ -315,6 +317,7 @@ void TabletServiceImpl::ChangeConfig(const ChangeConfigRequestPB* req,
     SetupErrorAndRespond(resp->mutable_error(), s,
                          TabletServerErrorPB::UNKNOWN_ERROR,
                          context);
+    return;
   }
 }
 
@@ -394,6 +397,7 @@ void TabletServiceImpl::UpdateConsensus(const ConsensusRequestPB* req,
     SetupErrorAndRespond(resp->mutable_error(), s,
                          TabletServerErrorPB::UNKNOWN_ERROR,
                          context);
+    return;
   }
   context->RespondSuccess();
 }
