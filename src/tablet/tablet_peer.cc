@@ -315,7 +315,7 @@ void TabletPeer::GetInFlightTransactions(Transaction::TraceType trace_type,
           MonoTime::Now(MonoTime::FINE).GetDeltaSince(driver->start_time()).ToMicroseconds();
       status_pb.set_running_for_micros(running_for_micros);
       if (trace_type == Transaction::TRACE_TXNS) {
-        status_pb.set_trace_buffer(driver->trace()->DumpToString());
+        status_pb.set_trace_buffer(driver->trace()->DumpToString(true));
       }
       out->push_back(status_pb);
     }

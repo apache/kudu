@@ -75,7 +75,7 @@ TEST(TestThreadPool, TestTracePropagation) {
     ASSERT_STATUS_OK(thread_pool.SubmitFunc(&IssueTraceStatement));
   }
   thread_pool.Wait();
-  ASSERT_STR_CONTAINS(t->DumpToString(), "hello from task");
+  ASSERT_STR_CONTAINS(t->DumpToString(true), "hello from task");
 }
 
 TEST(TestThreadPool, TestSubmitAfterShutdown) {

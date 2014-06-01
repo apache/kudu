@@ -102,7 +102,7 @@ void Trace::AddEntry(TraceEntry* entry) {
   entries_tail_ = entry;
 }
 
-void Trace::Dump(std::ostream* out) const {
+void Trace::Dump(std::ostream* out, bool include_time_deltas) const {
   // Gather a copy of the list of entries under the lock. This is fast
   // enough that we aren't worried about stalling concurrent tracers
   // (whereas doing the logging itself while holding the lock might be
@@ -120,12 +120,19 @@ void Trace::Dump(std::ostream* out) const {
   // Save original flags.
   std::ios::fmtflags save_flags(out->flags());
 
+  int prev_usecs = 0;
   BOOST_FOREACH(TraceEntry* e, entries) {
     // Log format borrowed from glog/logging.cc
     time_t secs_since_epoch = e->timestamp_micros / 1000000;
     int usecs = e->timestamp_micros % 1000000;
     struct tm tm_time;
     localtime_r(&secs_since_epoch, &tm_time);
+
+    int usecs_since_prev = 0;
+    if (prev_usecs != 0) {
+      usecs_since_prev = usecs - prev_usecs;
+    }
+    prev_usecs = usecs;
 
     using std::setw;
     out->fill('0');
@@ -136,9 +143,12 @@ void Trace::Dump(std::ostream* out) const {
          << setw(2) << tm_time.tm_hour  << ':'
          << setw(2) << tm_time.tm_min   << ':'
          << setw(2) << tm_time.tm_sec   << '.'
-         << setw(6) << usecs
-         << ' '
-         << const_basename(e->file_path) << ':' << e->line_number
+         << setw(6) << usecs << ' ';
+    if (include_time_deltas) {
+      out->fill(' ');
+      *out << "(+" << setw(6) << usecs_since_prev << "us) ";
+    }
+    *out << const_basename(e->file_path) << ':' << e->line_number
          << "] ";
     out->write(reinterpret_cast<char*>(e) + sizeof(TraceEntry),
                e->message_len);
@@ -149,9 +159,9 @@ void Trace::Dump(std::ostream* out) const {
   out->flags(save_flags);
 }
 
-string Trace::DumpToString() const {
+string Trace::DumpToString(bool include_time_deltas) const {
   std::stringstream s;
-  Dump(&s);
+  Dump(&s, include_time_deltas);
   return s.str();
 }
 

@@ -19,9 +19,7 @@ TEST_F(SpinLockProfilingTest, TestSpinlockProfiling) {
     ADOPT_TRACE(t.get());
     gutil::SubmitSpinLockProfileData(&lock, 4000000);
   }
-  std::stringstream stream;
-  t->Dump(&stream);
-  string result = stream.str();
+  string result = t->DumpToString(true);
   LOG(INFO) << "trace: " << result;
   // We can't assert more specifically because the CyclesPerSecond
   // on different machines might be different.

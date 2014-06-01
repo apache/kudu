@@ -31,7 +31,7 @@ TEST_F(TraceTest, TestBasic) {
   TRACE_TO(t, "hello $0, $1", "world", 12345);
   TRACE_TO(t, "goodbye $0, $1", "cruel world", 54321);
 
-  string result = XOutDigits(t->DumpToString());
+  string result = XOutDigits(t->DumpToString(false));
   ASSERT_EQ("XXXX XX:XX:XX.XXXXXX trace-test.cc:XX] hello world, XXXXX\n"
             "XXXX XX:XX:XX.XXXXXX trace-test.cc:XX] goodbye cruel world, XXXXX\n",
             result);
@@ -54,9 +54,9 @@ TEST_F(TraceTest, TestAttach) {
   EXPECT_TRUE(Trace::CurrentTrace() == NULL);
   TRACE("this goes nowhere");
 
-  EXPECT_EQ(XOutDigits(traceA->DumpToString()),
+  EXPECT_EQ(XOutDigits(traceA->DumpToString(false)),
             "XXXX XX:XX:XX.XXXXXX trace-test.cc:XX] hello from traceA\n");
-  EXPECT_EQ(XOutDigits(traceB->DumpToString()),
+  EXPECT_EQ(XOutDigits(traceB->DumpToString(false)),
             "XXXX XX:XX:XX.XXXXXX trace-test.cc:XX] hello from traceB\n");
 }
 } // namespace kudu

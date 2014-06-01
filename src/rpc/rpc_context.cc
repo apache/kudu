@@ -75,7 +75,7 @@ void RpcContext::Panic(const char* filepath, int line_number, const string& mess
   Trace* t = trace();
   if (t) {
     MY_ERROR << "RPC trace:";
-    t->Dump(&MY_ERROR);
+    t->Dump(&MY_ERROR, true);
   }
   MY_FATAL << "Exiting due to panic.";
 

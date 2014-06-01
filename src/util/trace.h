@@ -84,10 +84,13 @@ class Trace : public base::RefCountedThreadSafe<Trace> {
                             strings::internal::SubstituteArg::NoArg);
 
   // Dump the trace buffer to the given output stream.
-  void Dump(std::ostream* out) const;
+  //
+  // If 'include_time_deltas' is true, calculates and prints the difference between
+  // successive trace messages.
+  void Dump(std::ostream* out, bool include_time_deltas) const;
 
   // Dump the trace buffer as a string.
-  std::string DumpToString() const;
+  std::string DumpToString(bool include_time_deltas) const;
 
   // Return the current trace attached to this thread, if there is one.
   static Trace* CurrentTrace() {
