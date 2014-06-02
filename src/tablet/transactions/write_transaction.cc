@@ -338,7 +338,7 @@ string WriteTransactionState::ToString() const {
 
 PreparedRowWrite::PreparedRowWrite(const ConstContiguousRow* row,
                                    gscoped_ptr<RowSetKeyProbe> probe,
-                                   gscoped_ptr<ScopedRowLock> lock)
+                                   ScopedRowLock lock)
     : row_(row),
       row_key_(NULL),
       probe_(probe.Pass()),
@@ -349,7 +349,7 @@ PreparedRowWrite::PreparedRowWrite(const ConstContiguousRow* row,
 PreparedRowWrite::PreparedRowWrite(const ConstContiguousRow* row_key,
                                    const RowChangeList& changelist,
                                    gscoped_ptr<RowSetKeyProbe> probe,
-                                   gscoped_ptr<tablet::ScopedRowLock> lock)
+                                   ScopedRowLock lock)
     : row_(NULL),
       row_key_(row_key),
       changelist_(changelist),

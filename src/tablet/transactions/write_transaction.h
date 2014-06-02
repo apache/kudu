@@ -9,6 +9,7 @@
 #include "common/schema.h"
 #include "common/row_changelist.h"
 #include "gutil/macros.h"
+#include "tablet/lock_manager.h"
 #include "tablet/mvcc.h"
 #include "tablet/tablet.pb.h"
 #include "tablet/transactions/transaction.h"
@@ -31,7 +32,6 @@ class WriteResponsePB;
 namespace tablet {
 class PreparedRowWrite;
 class RowSetKeyProbe;
-class ScopedRowLock;
 
 // A transaction context for a batch of inserts/mutates. This class holds and
 // owns most everything related to a transaction, including the acquired locks
@@ -363,8 +363,8 @@ class PreparedRowWrite {
     return changelist_;
   }
 
-  const ScopedRowLock* row_lock() const {
-    return row_lock_.get();
+  bool has_row_lock() const {
+    return row_lock_.acquired();
   }
 
   const Type write_type() const {
@@ -378,20 +378,20 @@ class PreparedRowWrite {
   // ctor for inserts
   PreparedRowWrite(const ConstContiguousRow* row,
                    const gscoped_ptr<RowSetKeyProbe> probe,
-                   const gscoped_ptr<ScopedRowLock> lock);
+                   ScopedRowLock lock);
 
   // ctor for mutations
   PreparedRowWrite(const ConstContiguousRow* row_key,
                    const RowChangeList& mutations,
                    const gscoped_ptr<RowSetKeyProbe> probe,
-                   const gscoped_ptr<tablet::ScopedRowLock> lock);
+                   ScopedRowLock lock);
 
   const ConstContiguousRow *row_;
   const ConstContiguousRow *row_key_;
   const RowChangeList changelist_;
 
   const gscoped_ptr<RowSetKeyProbe> probe_;
-  const gscoped_ptr<ScopedRowLock> row_lock_;
+  const ScopedRowLock row_lock_;
   const Type op_type_;
 };
 

@@ -71,6 +71,18 @@ TEST_F(LockManagerTest, TestRelockSameRow) {
   VerifyAlreadyLocked(key_a);
 }
 
+TEST_F(LockManagerTest, TestMoveLock) {
+  // Acquire a lock.
+  Slice key_a("a");
+  ScopedRowLock row_lock(&lock_manager_, kFakeTransaction, key_a, LockManager::LOCK_EXCLUSIVE);
+  ASSERT_TRUE(row_lock.acquired());
+
+  // Move it to a new instance.
+  ScopedRowLock moved_lock(row_lock.Pass());
+  ASSERT_TRUE(moved_lock.acquired());
+  ASSERT_FALSE(row_lock.acquired());
+}
+
 class LmTestResource {
  public:
   explicit LmTestResource(const Slice* id)

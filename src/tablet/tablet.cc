@@ -198,10 +198,10 @@ Status Tablet::CreatePreparedInsert(const WriteTransactionState* tx_state,
 
   RETURN_NOT_OK(CheckRowInTablet(*probe));
 
-  gscoped_ptr<ScopedRowLock> row_lock(new ScopedRowLock(&lock_manager_,
-                                                        tx_state,
-                                                        probe->encoded_key_slice(),
-                                                        LockManager::LOCK_EXCLUSIVE));
+  ScopedRowLock row_lock(&lock_manager_,
+                         tx_state,
+                         probe->encoded_key_slice(),
+                         LockManager::LOCK_EXCLUSIVE);
   row_write->reset(new PreparedRowWrite(row, probe.Pass(), row_lock.Pass()));
 
   // when we have a more advanced lock manager, acquiring the row lock might fail
@@ -255,7 +255,7 @@ Status Tablet::InsertUnlocked(WriteTransactionState *tx_state,
   // make sure that the WriteTransactionState has the component lock and that
   // there the PreparedRowWrite has the row lock.
   DCHECK(tx_state->has_component_lock()) << "WriteTransactionState must hold the component lock.";
-  DCHECK(insert->row_lock()) << "PreparedRowWrite must hold the row lock.";
+  DCHECK(insert->has_row_lock()) << "PreparedRowWrite must hold the row lock.";
   DCHECK_KEY_PROJECTION_SCHEMA_EQ(key_schema_, insert->row()->schema());
   DCHECK(tx_state->op_id().IsInitialized()) << "TransactionState OpId needed for anchoring";
 
@@ -310,10 +310,10 @@ Status Tablet::CreatePreparedMutate(const WriteTransactionState* tx_state,
 
   RETURN_NOT_OK(CheckRowInTablet(*probe));
 
-  gscoped_ptr<ScopedRowLock> row_lock(new ScopedRowLock(&lock_manager_,
-                                                        tx_state,
-                                                        probe->encoded_key_slice(),
-                                                        LockManager::LOCK_EXCLUSIVE));
+  ScopedRowLock row_lock(&lock_manager_,
+                         tx_state,
+                         probe->encoded_key_slice(),
+                         LockManager::LOCK_EXCLUSIVE);
   row_write->reset(new PreparedRowWrite(row_key, changelist, probe.Pass(), row_lock.Pass()));
 
   // when we have a more advanced lock manager, acquiring the row lock might fail

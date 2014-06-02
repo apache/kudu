@@ -262,14 +262,35 @@ ScopedRowLock::ScopedRowLock(LockManager *manager,
   }
 }
 
+ScopedRowLock::ScopedRowLock(RValue other) {
+  TakeState(other.object);
+}
+
+ScopedRowLock& ScopedRowLock::operator=(RValue other) {
+  TakeState(other.object);
+  return *this;
+}
+
+void ScopedRowLock::TakeState(ScopedRowLock* other) {
+  manager_ = other->manager_;
+  acquired_ = other->acquired_;
+  entry_ = other->entry_;
+  ls_ = other->ls_;
+
+  other->acquired_ = false;
+  other->entry_ = NULL;
+}
+
 ScopedRowLock::~ScopedRowLock() {
   Release();
 }
 
 void ScopedRowLock::Release() {
-  manager_->Release(entry_, ls_);
-  acquired_ = false;
-  entry_ = NULL;
+  if (entry_) {
+    manager_->Release(entry_, ls_);
+    acquired_ = false;
+    entry_ = NULL;
+  }
 }
 
 // ============================================================================
