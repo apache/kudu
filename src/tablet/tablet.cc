@@ -35,6 +35,7 @@
 #include "tablet/transactions/write_util.h"
 #include "util/bloom_filter.h"
 #include "util/env.h"
+#include "util/locks.h"
 #include "util/metrics.h"
 
 DEFINE_bool(tablet_do_dup_key_checks, true,
@@ -811,18 +812,16 @@ class FlushRowSetsOp : public MaintenanceOp {
     // Try to acquire the rowsets_flush_lock_.  If we can't, the Prepare step
     // fails.  This also implies that only one instance of FlushRowSetsOp can be
     // running at once.
-    guard.reset(new boost::mutex::scoped_try_lock(tablet_->rowsets_flush_lock_));
-    return guard->owns_lock();
+    return tablet_->rowsets_flush_lock_.try_lock();
   }
 
   virtual void Perform() {
     tablet_->FlushUnlocked();
-    guard.reset();
+    return tablet_->rowsets_flush_lock_.unlock();
   }
 
  private:
   Tablet *const tablet_;
-  shared_ptr<boost::mutex::scoped_try_lock> guard;
 };
 
 class CompactRowSetsOp : public MaintenanceOp {
@@ -844,7 +843,7 @@ class CompactRowSetsOp : public MaintenanceOp {
     // been in the last 5 minutes.  For now, we just set perf_improvement to 0
     // if the tablet has been compacted in the last 5 seconds.
     MonoTime now(MonoTime::Now(MonoTime::FINE));
-    MonoDelta delta(now.GetDeltaSince(last_));
+    MonoDelta delta(now.GetDeltaSince(last()));
     int64_t deltaMs = delta.ToMilliseconds();
     if (deltaMs < 5000) {
       stats->perf_improvement = 0;
@@ -852,8 +851,8 @@ class CompactRowSetsOp : public MaintenanceOp {
       stats->perf_improvement = deltaMs / 10;
     }
 
-    // Reduce perf_improvement_ if there is another rowset compaction already
-    // running on this tablet.
+    // Reduce perf_improvement stat if there is another rowset compaction
+    // already running on this tablet.
     stats->perf_improvement /= (compact_running_ + 1);
   }
 
@@ -864,10 +863,21 @@ class CompactRowSetsOp : public MaintenanceOp {
 
   virtual void Perform() {
     tablet_->Compact(Tablet::COMPACT_NO_FLAGS);
-    last_ = MonoTime::Now(MonoTime::FINE);
+    set_last(MonoTime::Now(MonoTime::FINE));
   }
 
  private:
+  MonoTime last() const {
+    boost::lock_guard<simple_spinlock> l(lock_);
+    return last_;
+  }
+
+  void set_last(const MonoTime& last) {
+    boost::lock_guard<simple_spinlock> l(lock_);
+    last_ = last;
+  }
+
+  mutable simple_spinlock lock_;
   MonoTime last_;
   Tablet *const tablet_;
   uint32_t compact_running_;

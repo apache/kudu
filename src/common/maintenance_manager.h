@@ -61,14 +61,14 @@ class MaintenanceOp {
   // This will be run under the MaintenanceManager lock.
   virtual void UpdateStats(MaintenanceOpStats* stats) = 0;
 
-  // Prepare to perform the operation.  This will be run without holding any
-  // locks.  It should be short, since it is run from the context of the
-  // maintenance op scheduler thread rather than a worker thread.
+  // Prepare to perform the operation.  This will be run without holding the
+  // maintenance manager lock.  It should be short, since it is run from the
+  // context of the maintenance op scheduler thread rather than a worker thread.
   // If this returns false, we will abort the operation.
   virtual bool Prepare() = 0;
 
-  // Perform the operation.  This will be run without holding any locks, and may
-  // take a long time.
+  // Perform the operation.  This will be run without holding the maintenance
+  // manager lock, and may take a long time.
   virtual void Perform() = 0;
 
   uint32_t running() { return running_; }
