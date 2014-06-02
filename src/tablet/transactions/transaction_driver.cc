@@ -169,6 +169,7 @@ Status LeaderTransactionDriver::Execute() {
 }
 
 void LeaderTransactionDriver::PrepareOrReplicateSucceeded() {
+  ADOPT_TRACE(trace());
   // TODO: this is an ugly hack so that the Release() call doesn't delete the
   // object while we still hold the lock.
   scoped_refptr<LeaderTransactionDriver> ref(this);
@@ -196,6 +197,7 @@ void LeaderTransactionDriver::PrepareOrReplicateSucceeded() {
 }
 
 void LeaderTransactionDriver::PrepareOrReplicateFailed(const Status& failure_reason) {
+  ADOPT_TRACE(trace());
   // TODO: this is an ugly hack so that the Release() call doesn't delete the
   // object while we still hold the lock.
   scoped_refptr<LeaderTransactionDriver> ref(this);
@@ -249,6 +251,7 @@ void LeaderTransactionDriver::HandlePrepareOrReplicateFailure() {
 // TODO: Consider exposing underlying ThreadPool::Submit()/SubmitFunc() methods in
 // TaskExecutor.
 Status LeaderTransactionDriver::ApplyAndCommit() {
+  ADOPT_TRACE(trace());
   Status s;
   {
     boost::lock_guard<simple_spinlock> lock(lock_);
@@ -285,6 +288,7 @@ Status LeaderTransactionDriver::ApplyAndCommit() {
 }
 
 void LeaderTransactionDriver::ApplyAndCommitSucceeded() {
+  ADOPT_TRACE(trace());
   // TODO: this is an ugly hack so that the Release() call doesn't delete the
   // object while we still hold the lock.
   scoped_refptr<LeaderTransactionDriver> ref(this);
@@ -295,6 +299,7 @@ void LeaderTransactionDriver::ApplyAndCommitSucceeded() {
 }
 
 void LeaderTransactionDriver::ApplyOrCommitFailed(const Status& abort_reason) {
+  ADOPT_TRACE(trace());
   // TODO: this is an ugly hack so that the Release() call doesn't delete the
   // object while we still hold the lock.
   scoped_refptr<LeaderTransactionDriver> ref(this);
@@ -361,8 +366,8 @@ Status ReplicaTransactionDriver::Execute() {
 
   shared_ptr<FutureCallback> prepare_callback(
     new BoundFunctionCallback(
-      boost::bind(&ReplicaTransactionDriver::PrepareOrLeaderCommitSucceeded, this),
-      boost::bind(&ReplicaTransactionDriver::PrepareOrLeaderCommitFailed, this, _1)));
+      boost::bind(&ReplicaTransactionDriver::PrepareFinished, this, Status::OK()),
+      boost::bind(&ReplicaTransactionDriver::PrepareFinished, this, _1)));
   Status s;
   shared_ptr<Future> prepare_task_future;
   {
@@ -384,12 +389,15 @@ Status ReplicaTransactionDriver::Execute() {
 }
 
 Status ReplicaTransactionDriver::LeaderCommitted(gscoped_ptr<OperationPB> leader_commit_op) {
+  ADOPT_TRACE(trace());
   OperationPB* leader_op;
   {
     boost::lock_guard<simple_spinlock> state_lock(lock_);
     mutable_state()->consensus_round()->SetLeaderCommitOp(leader_commit_op.Pass());
     leader_op = mutable_state()->consensus_round()->leader_commit_op();
   }
+  TRACE("Leader committed: $0",
+        OperationType_Name(leader_op->commit().op_type()));
   // check if the leader aborted the transaction
   if (leader_op->commit().op_type() == consensus::OP_ABORT) {
     PrepareOrLeaderCommitFailed(Status::Aborted("Leader aborted Operation"));
@@ -399,6 +407,16 @@ Status ReplicaTransactionDriver::LeaderCommitted(gscoped_ptr<OperationPB> leader
   }
   PrepareOrLeaderCommitSucceeded();
   return Status::OK();
+}
+
+void ReplicaTransactionDriver::PrepareFinished(const Status& s) {
+  ADOPT_TRACE(trace());
+  TRACE("PrepareFinished: $0", s.ToString());
+  if (s.ok()) {
+    PrepareOrLeaderCommitSucceeded();
+  } else {
+    PrepareOrLeaderCommitFailed(s);
+  }
 }
 
 void ReplicaTransactionDriver::PrepareOrLeaderCommitSucceeded() {
@@ -460,6 +478,8 @@ void ReplicaTransactionDriver::HandlePrepareOrLeaderCommitFailure() {
 
 // See: LeaderTransactionDriver::ApplyAndCommit();
 Status ReplicaTransactionDriver::ApplyAndCommit() {
+  ADOPT_TRACE(trace());
+  TRACE("ApplyAndCommit()");
   Status s;
   {
     boost::lock_guard<simple_spinlock> state_lock(lock_);
@@ -484,6 +504,7 @@ Status ReplicaTransactionDriver::ApplyAndCommit() {
 }
 
 void ReplicaTransactionDriver::ApplyOrCommitFailed(const Status& abort_reason) {
+  TRACE("ApplyOrCommitFailed($0)", abort_reason.ToString());
   transaction_status_ = abort_reason;
   // If we ere told to Apply & Commit it was because the leader
   // succeeded so if we failed for some reason we might diverge.
@@ -498,6 +519,8 @@ void ReplicaTransactionDriver::ApplyOrCommitFailed(const Status& abort_reason) {
 
 
 void ReplicaTransactionDriver::ApplyAndCommitSucceeded() {
+  ADOPT_TRACE(trace());
+  TRACE("ApplyAndCommitSucceeded()");
   // TODO: this is an ugly hack so that the Release() call doesn't delete the
   // object while we still hold the lock.
   scoped_refptr<ReplicaTransactionDriver> ref(this);

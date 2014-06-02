@@ -7,6 +7,8 @@
 #include "common/wire_protocol.h"
 #include "common/row_operations.h"
 #include "gutil/stl_util.h"
+#include "gutil/strings/numbers.h"
+#include "gutil/walltime.h"
 #include "rpc/rpc_context.h"
 #include "server/hybrid_clock.h"
 #include "tablet/tablet.h"
@@ -244,8 +246,13 @@ void WriteTransaction::Finish() {
 }
 
 string WriteTransaction::ToString() const {
+  MonoTime now(MonoTime::Now(MonoTime::FINE));
+  MonoDelta d = now.GetDeltaSince(start_time_);
+  WallTime abs_time = WallTime_Now() - d.ToSeconds();
+  string abs_time_formatted;
+  StringAppendStrftime(&abs_time_formatted, "%Y-%m-%d %H:%M:%S", (time_t)abs_time, true);
   return Substitute("WriteTransaction [start_time=$0, state=$1]",
-                    start_time_.ToString(), state_->ToString());
+                    abs_time_formatted, state_->ToString());
 }
 
 Status WriteTransactionState::AddInsert(const Timestamp &timestamp, int64_t mrs_id) {

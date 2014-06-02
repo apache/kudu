@@ -209,6 +209,8 @@ class ReplicaTransactionDriver : public TransactionDriver,
  private:
   friend class base::RefCountedThreadSafe<ReplicaTransactionDriver>;
 
+  void PrepareFinished(const Status& status);
+
   void PrepareOrLeaderCommitSucceeded();
 
   void PrepareOrLeaderCommitFailed(const Status& status);

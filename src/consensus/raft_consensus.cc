@@ -10,6 +10,7 @@
 #include "gutil/map-util.h"
 #include "gutil/stl_util.h"
 #include "server/metadata.h"
+#include "util/trace.h"
 
 DEFINE_int32(leader_heartbeat_interval_ms, 500,
              "The LEADER's heartbeat interval to the replicas.");
@@ -61,9 +62,8 @@ Status RaftConsensus::Start(const metadata::QuorumPB& initial_quorum,
 
   ReplicaState::UniqueLock lock;
   CHECK_OK(state_->LockForRead(&lock));
-  LOG(INFO) << "Raft consensus started. Peer: " << state_->GetPeerUuid()
-            << " Role: " << QuorumPeerPB::Role_Name(state_->GetCurrentRoleUnlocked())
-            << " Quorum: " << state_->GetCurrentConfigUnlocked().ShortDebugString();
+  LOG(INFO) << LogPrefixUnlocked() << "Started. Quorum: "
+            << state_->GetCurrentConfigUnlocked().ShortDebugString();
   running_quorum->reset(new QuorumPB(state_->GetCurrentConfigUnlocked()));
   RETURN_NOT_OK(ExecuteHook(POST_START));
   return Status::OK();
@@ -133,8 +133,20 @@ Status RaftConsensus::CreateOrUpdatePeersUnlocked() {
   return Status::OK();
 }
 
+string RaftConsensus::LogPrefix() const {
+  ReplicaState::UniqueLock lock;
+  CHECK_OK(state_->LockForRead(&lock));
+  return LogPrefixUnlocked();
+}
+
+string RaftConsensus::LogPrefixUnlocked() const {
+  return Substitute("T $0 P $1 [$2]: ",
+                    options_.tablet_id,
+                    state_->GetPeerUuid(),
+                    QuorumPeerPB::Role_Name(state_->GetCurrentRoleUnlocked()));
+}
+
 Status RaftConsensus::PushConfigurationToPeersUnlocked() {
-  LOG(INFO) << "Leader pushing configuration to peers.";
 
   OpId replicate_op_id;
   state_->NewIdUnlocked(&replicate_op_id);
@@ -147,6 +159,11 @@ Status RaftConsensus::PushConfigurationToPeersUnlocked() {
   QuorumPB* new_config = cc_request->mutable_new_config();
   new_config->CopyFrom(state_->GetCurrentConfigUnlocked());
 
+  const string log_prefix = Substitute("$0ChangeConfiguration(op=$1, seqno=$2)",
+                                       LogPrefixUnlocked(),
+                                       replicate_op_id.ShortDebugString(),
+                                       new_config->seqno());
+  LOG(INFO) << log_prefix << ": replicating to peers...";
   scoped_refptr<OperationStatusTracker> repl_status(
       new MajorityOperationStatus(&replicate_op->id(),
                                   state_->GetCurrentVotingPeersUnlocked(),
@@ -158,7 +175,7 @@ Status RaftConsensus::PushConfigurationToPeersUnlocked() {
   SignalRequestToPeers();
   repl_status->Wait();
 
-  LOG(INFO) << "Config change replication done, committing...";
+  LOG(INFO) << log_prefix << ": committing...";
 
   gscoped_ptr<OperationPB> commit_op(new OperationPB);
   state_->NewIdUnlocked(commit_op->mutable_id());
@@ -181,7 +198,8 @@ Status RaftConsensus::PushConfigurationToPeersUnlocked() {
   // Wait for the commit to complete
   commit_status->Wait();
 
-  LOG(INFO) << "A majority of peers have accepted the new configuration. Proceeding.";
+  LOG(INFO) << log_prefix << ": a majority of peers have accepted the new configuration. "
+            << "Proceeding.";
   return Status::OK();
 }
 
@@ -276,8 +294,8 @@ Status RaftConsensus::LeaderCommitUnlocked(ConsensusRound* context,
                         "Could not append commit request to the queue");
 
   if (VLOG_IS_ON(1)) {
-    VLOG(1) << "Leader appended commit. Leader: "
-        << state_->ToString() << " Commit: " << commit_op->ShortDebugString();
+    VLOG(1) << LogPrefixUnlocked() << "Leader appended commit. Leader: "
+            << state_->ToString() << " Commit: " << commit_op->ShortDebugString();
   }
 
   state_->UpdateLeaderCommittedOpIdUnlocked(commit_op->commit().commited_op_id());
@@ -289,8 +307,8 @@ Status RaftConsensus::ReplicaCommitUnlocked(ConsensusRound* context,
                                             OperationPB* commit_op) {
 
   if (VLOG_IS_ON(1)) {
-    VLOG(1) << "Replica appending commit. Replica: "
-        << state_->ToString() << " Commit: " << commit_op->ShortDebugString();
+    VLOG(1) << LogPrefixUnlocked() << "Replica appending commit. Replica: "
+            << state_->ToString() << " Commit: " << commit_op->ShortDebugString();
   }
 
   // Copy the ids to update later as we can't be sure they will be alive
@@ -321,6 +339,7 @@ Status RaftConsensus::Update(const ConsensusRequestPB* request,
   {
     ReplicaState::UniqueLock lock;
     RETURN_NOT_OK(state_->LockForRead(&lock));
+    TRACE("Updating watermarks");
     status->mutable_replicated_watermark()->CopyFrom(state_->GetLastReplicatedOpIdUnlocked());
     status->mutable_received_watermark()->CopyFrom(state_->GetLastReceivedOpIdUnlocked());
     status->mutable_safe_commit_watermark()->CopyFrom(state_->GetSafeCommitOpIdUnlocked());
@@ -328,7 +347,7 @@ Status RaftConsensus::Update(const ConsensusRequestPB* request,
 
   if (PREDICT_FALSE(VLOG_IS_ON(1))) {
     if (request->ops_size() == 0) {
-      VLOG(1) << "Replica replied to status only request. Replica: "
+      VLOG(1) << LogPrefix() <<  "Replica replied to status only request. Replica: "
               << state_->ToString() << " Status: " << status->ShortDebugString();
     }
   }
@@ -345,6 +364,7 @@ Status RaftConsensus::UpdateReplica(const ConsensusRequestPB* request,
   {
     ReplicaState::UniqueLock lock;
     RETURN_NOT_OK(state_->LockForUpdate(&lock));
+    TRACE("Updating replica for $0 ops", request->ops_size());
 
     // Split the operations into two lists, one for REPLICATE
     // and one for COMMIT. Also filter out any ops which have already
@@ -373,8 +393,8 @@ Status RaftConsensus::UpdateReplica(const ConsensusRequestPB* request,
     if (!replicate_ops.empty()) {
       // Trigger the log append asap, if fsync() is on this might take a while
       // and we can't reply until this is done.
-      log_->Reserve(replicate_ops, &reserved_entry_batch);
-      log_->AsyncAppend(reserved_entry_batch, log_synchronizer.callback());
+      CHECK_OK(log_->Reserve(replicate_ops, &reserved_entry_batch));
+      CHECK_OK(log_->AsyncAppend(reserved_entry_batch, log_synchronizer.callback()));
     }
 
     // Trigger the replica Prepares() and Apply()s.
@@ -402,7 +422,9 @@ Status RaftConsensus::UpdateReplica(const ConsensusRequestPB* request,
     // the replica state.
     // Note that this is safe because dist consensus now only supports a single outstanding
     // request at a time and this way we can allow commits to proceed while we wait.
+    TRACE("Waiting on the replicates to finish logging");
     RETURN_NOT_OK(log_synchronizer.Wait());
+    TRACE("finished");
 
     ReplicaState::UniqueLock lock;
     RETURN_NOT_OK(state_->LockForUpdate(&lock));
@@ -410,7 +432,7 @@ Status RaftConsensus::UpdateReplica(const ConsensusRequestPB* request,
   }
 
   if (PREDICT_FALSE(VLOG_IS_ON(1))) {
-    VLOG(1) << "Replica updated. Replica: "
+    VLOG(1) << LogPrefix() << "Replica updated. Replica: "
         << state_->ToString() << " Request: " << request->ShortDebugString();
   }
 

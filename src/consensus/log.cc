@@ -18,8 +18,9 @@
 #include "util/metrics.h"
 #include "util/path_util.h"
 #include "util/pb_util.h"
-#include "util/stopwatch.h"
 #include "util/thread.h"
+#include "util/trace.h"
+#include "util/stopwatch.h"
 
 DEFINE_int32(group_commit_queue_size_bytes, 4 * 1024 * 1024,
              "Maxmimum size of the group commit queue in bytes");
@@ -342,6 +343,7 @@ Status Log::AsyncAppend(LogEntryBatch* entry_batch, const StatusCallback& callba
 
   RETURN_NOT_OK(entry_batch->Serialize());
   entry_batch->set_callback(callback);
+  TRACE("Serialized $0 byte log entry", entry_batch->total_size_bytes());
   entry_batch->MarkReady();
 
   return Status::OK();
