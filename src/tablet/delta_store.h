@@ -46,6 +46,8 @@ class DeltaStore {
 
   virtual const Schema& schema() const = 0;
 
+  virtual std::string ToString() const = 0;
+
   virtual ~DeltaStore() {}
 };
 

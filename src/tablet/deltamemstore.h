@@ -89,6 +89,10 @@ class DeltaMemStore : public DeltaStore,
     return arena_.memory_footprint() + tree_.estimate_memory_usage();
   }
 
+  virtual std::string ToString() const OVERRIDE {
+    return "DMS";
+  }
+
  private:
   friend class DMSIterator;
   friend class DeltaCompactionInput;

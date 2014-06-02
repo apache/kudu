@@ -271,14 +271,25 @@ Status DeltaFileReader::NewDeltaIterator(const Schema *projection,
                                          DeltaIterator** iterator) const {
   if (delta_type_ == REDO &&
       snap.MayHaveCommittedTransactionsAtOrAfter(delta_stats_->min_timestamp())) {
+    VLOG(2) << "REDO Delta " << ToString()
+            << " has min ts " << delta_stats_->min_timestamp().ToString()
+            << ": can't cull " << snap.ToString();
     *iterator = new DeltaFileIterator(shared_from_this(), projection, snap, delta_type_);
     return Status::OK();
+  } else {
+    VLOG(2) << "Culling REDO delta " << ToString() << " for " << snap.ToString();
   }
   if (delta_type_ == UNDO &&
       snap.MayHaveUncommittedTransactionsAtOrBefore(delta_stats_->max_timestamp())) {
+    VLOG(2) << "UNDO Delta " << ToString()
+            << " has max ts " << delta_stats_->max_timestamp().ToString()
+            << ": can't cull " << snap.ToString();
     *iterator = new DeltaFileIterator(shared_from_this(), projection, snap, delta_type_);
     return Status::OK();
+  } else {
+    VLOG(2) << "Culling UNDO delta " << ToString() << " for " << snap.ToString();
   }
+
   return Status::NotFound("MvccSnapshot outside the range of this delta.");
 }
 

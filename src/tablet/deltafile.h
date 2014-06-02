@@ -128,6 +128,10 @@ class DeltaFileReader : public DeltaStore,
 
   virtual const DeltaStats& delta_stats() const { return *delta_stats_; }
 
+  virtual std::string ToString() const OVERRIDE {
+    return path();
+  }
+
  private:
   friend class DeltaFileIterator;
   friend class DeltaCompactionInput;
