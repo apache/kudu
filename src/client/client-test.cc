@@ -905,6 +905,7 @@ TEST_F(ClientTest, TestReplicatedMultiTabletTable) {
   for (int i = 0; i < 2; i++) {
     ASSERT_STATUS_OK(cluster_->AddTabletServer());
   }
+  ASSERT_STATUS_OK(cluster_->WaitForTabletServerCount(3));
 
   ASSERT_STATUS_OK(client_->CreateTable(kReplicatedTable, schema_,
                                         CreateTableOptions()

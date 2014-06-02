@@ -1636,9 +1636,9 @@ void CatalogManager::SelectReplicasForTablets(const vector<TabletInfo*>& tablets
     }
 
     if (ts_descs.size() < nreplicas) {
-      LOG(WARNING) << "Not enough Tablet Servers are online for " << l.data().name()
-                   << " expected at least " << nreplicas
-                   << " but " << ts_descs.size() << " are available";
+      LOG(WARNING) << "Not enough Tablet Servers are online for table '" << l.data().name()
+                   << "'. Need at least " << nreplicas
+                   << " servers, but only " << ts_descs.size() << " are available";
       continue;
     }
 
