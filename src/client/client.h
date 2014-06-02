@@ -653,6 +653,8 @@ class KuduScanner {
 
   // Set the projection used for this scanner. The given 'projection' object
   // must remain valid for the lifetime of this scanner object.
+  //
+  // If not called, table schema is used as the projection.
   Status SetProjection(const Schema* projection);
 
   // Add a predicate to this scanner.
@@ -734,7 +736,6 @@ class KuduScanner {
 
   bool open_;
   bool data_in_open_;
-  const Schema* projection_;
   bool has_batch_size_bytes_;
   uint32 batch_size_bytes_;
 
@@ -751,6 +752,9 @@ class KuduScanner {
 
   // The table we're scanning.
   KuduTable* table_;
+
+  // The projection schema used in the scan.
+  const Schema* projection_;
 
   // Machinery to store and encode raw column range predicates into
   // encoded keys.

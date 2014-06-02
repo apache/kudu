@@ -664,10 +664,10 @@ Status AlterTableBuilder::RenameColumn(const std::string& old_name,
 KuduScanner::KuduScanner(KuduTable* table)
   : open_(false),
     data_in_open_(false),
-    projection_(NULL),
     has_batch_size_bytes_(false),
     batch_size_bytes_(0),
     table_(DCHECK_NOTNULL(table)),
+    projection_(&table->schema()),
     spec_encoder_(table->schema()),
     start_key_(NULL),
     end_key_(NULL) {

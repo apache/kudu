@@ -174,7 +174,6 @@ class ClientTest : public KuduTest {
 
   void DoTestScanWithStringPredicate() {
     KuduScanner scanner(client_table_.get());
-    ASSERT_STATUS_OK(scanner.SetProjection(&schema_));
     Slice lower("hello 2");
     Slice upper("hello 3");
     ColumnRangePredicate pred(schema_.column(2), &lower, &upper);
@@ -202,7 +201,6 @@ class ClientTest : public KuduTest {
 
   void DoTestScanWithKeyPredicate() {
     KuduScanner scanner(client_table_.get());
-    ASSERT_STATUS_OK(scanner.SetProjection(&schema_));
     uint32_t lower = 5;
     uint32_t upper = 10;
     ColumnRangePredicate pred(schema_.column(0), &lower, &upper);
@@ -260,7 +258,6 @@ class ClientTest : public KuduTest {
   void ScanRowsToStrings(KuduTable* table, vector<string>* row_strings) {
     row_strings->clear();
     KuduScanner scanner(table);
-    scanner.SetProjection(&schema_);
     ASSERT_STATUS_OK(scanner.Open());
     vector<const uint8_t*> rows;
     while (scanner.HasMoreRows()) {
@@ -436,7 +433,6 @@ TEST_F(ClientTest, TestCloseScanner) {
   {
     SCOPED_TRACE("Implicit close");
     KuduScanner scanner(client_table_.get());
-    ASSERT_STATUS_OK(scanner.SetProjection(&schema_));
     ASSERT_STATUS_OK(scanner.Open());
     ASSERT_EQ(0, manager->CountActiveScanners());
     scanner.Close();
@@ -447,7 +443,6 @@ TEST_F(ClientTest, TestCloseScanner) {
   {
     SCOPED_TRACE("Explicit close");
     KuduScanner scanner(client_table_.get());
-    ASSERT_STATUS_OK(scanner.SetProjection(&schema_));
     ASSERT_STATUS_OK(scanner.SetBatchSizeBytes(0)); // won't return data on open
     ASSERT_STATUS_OK(scanner.Open());
     ASSERT_EQ(1, manager->CountActiveScanners());
@@ -459,7 +454,6 @@ TEST_F(ClientTest, TestCloseScanner) {
     SCOPED_TRACE("Close when out of scope");
     {
       KuduScanner scanner(client_table_.get());
-      ASSERT_STATUS_OK(scanner.SetProjection(&schema_));
       ASSERT_STATUS_OK(scanner.SetBatchSizeBytes(0));
       ASSERT_STATUS_OK(scanner.Open());
       ASSERT_EQ(1, manager->CountActiveScanners());
