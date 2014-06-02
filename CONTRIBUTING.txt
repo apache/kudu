@@ -6,22 +6,24 @@ http://google-styleguide.googlecode.com/svn/trunk/cppguide.xml
 
 There are a few exceptions where we depart from the above:
 
-- Use of boost is permitted
+- Use of boost is permitted but mostly discouraged.
 
-Google has a lot more legacy code and portability concerns than we
-do. So, they prohibit a lot of pieces of boost. Feel free to use boost
-libraries rather than re-implementing the same functionality, but heed
-the warning in the Google guide:
+Boost libraries may be used in cases where we don't have a suitable
+replacement in our own code-base. However, try to avoid introducing
+dependencies on new boost libraries, and use our own code in preference
+to boost where available. For example, do not use boost's scoped pointer
+implementations.
 
-  "Some Boost libraries encourage coding practices which can hamper
-   readability, such as metaprogramming and other advanced template
-   techniques, and an excessively "functional" style of programming."
+The most commonly used Boost libraries, which are fine to use are:
 
-Don't be fancy, and avoid crazy things like boost::bind, etc, which
-can make really ugly complex code.
+- BOOST_FOREACH
+- boost::assign (container literals)
+- boost::mutex and boost::shared_mutex (though consider our own
+  spin lock implementation for short critical sections)
+- boost::bind (for callbacks)
 
-Also, check that any features from boost you use are present in boost
-1.46 or earlier, for compatibility with RHEL6.
+Check that any features from boost you use are present in boost 1.46
+or earlier, for compatibility with RHEL6.
 
 - Line length: up to 100 characters is OK
 
