@@ -704,7 +704,12 @@ void TabletServiceImpl::HandleContinueScanRequest(const ScanRequestPB* req,
     //
     // TODO: should check if RPC got cancelled, once we implement RPC cancellation.
     size_t response_size = resp->data().rows().size() + resp->data().indirect_data().size();
-    TRACE("Copied block, new size=$0", response_size);
+
+    if (VLOG_IS_ON(2)) {
+      // This is actually fairly expensive, especially when scanning MRS, which has
+      // small row blocks.
+      TRACE("Copied block, new size=$0", response_size);
+    }
 
     MonoTime now = MonoTime::Now(MonoTime::COARSE);
     if (!now.ComesBefore(deadline)) {
