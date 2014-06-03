@@ -7,6 +7,7 @@
 #include <string>
 #include <tr1/unordered_map>
 #include <utility>
+#include <vector>
 
 #include "consensus/consensus.pb.h"
 #include "consensus/log_util.h"
@@ -144,7 +145,8 @@ class PeerMessageQueue {
 
   string ToString() const;
 
-  void DumpToLog();
+  // Dumps the contents of the queue to the provided string vector.
+  void DumpToStrings(vector<string>* lines) const;
 
   struct Metrics {
     // Keeps track of the total number of operations in the queue.
@@ -175,6 +177,10 @@ class PeerMessageQueue {
   typedef std::pair<OpId, Status> ErrorEntry;
 
   Status TrimBuffer();
+  string ToStringUnlocked() const;
+
+  void DumpToStringsUnlocked(vector<string>* lines) const;
+
 
   // The total size of consensus entries to keep in memory.
   // This is a soft limit, i.e. messages in the queue are discarded

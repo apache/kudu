@@ -222,7 +222,11 @@ class RaftConsensusTest : public KuduTest {
       if (num_attempts == 10) {
         LOG(ERROR) << "Max timeout attempts reached while waiting for commit: "
             << to_wait_for.ShortDebugString() << " on replica. Dumping state and quitting.";
-        GetLeader()->queue_.DumpToLog();
+        vector<string> lines;
+        GetLeader()->queue_.DumpToStrings(&lines);
+        BOOST_FOREACH(const string& line, lines) {
+          LOG(ERROR) << line;
+        }
 
         // Gather the replica and leader operations for printing
         vector<OperationPB*> replica_ops;

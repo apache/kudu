@@ -3,18 +3,18 @@
 #include <algorithm>
 #include <boost/foreach.hpp>
 #include <gflags/gflags.h>
-#include <gutil/map-util.h>
-#include <gutil/stl_util.h>
-#include <gutil/strings/substitute.h>
 #include <string>
 #include <tr1/memory>
 #include <utility>
-#include <vector>
 
 #include "consensus/consensus_queue.h"
 #include "consensus/log_util.h"
 
 #include "common/wire_protocol.h"
+#include "gutil/map-util.h"
+#include "gutil/stl_util.h"
+#include "gutil/strings/substitute.h"
+#include "gutil/strings/strcat.h"
 #include "util/auto_release_pool.h"
 #include "util/metrics.h"
 
@@ -275,19 +275,40 @@ Status PeerMessageQueue::TrimBuffer() {
   return Status::OK();
 }
 
-void PeerMessageQueue::DumpToLog() {
+void PeerMessageQueue::DumpToStrings(vector<string>* lines) const {
   boost::lock_guard<simple_spinlock> lock(queue_lock_);
-  LOG(INFO) << "Watermarks:";
+  DumpToStringsUnlocked(lines);
+}
+
+void PeerMessageQueue::DumpToStringsUnlocked(vector<string>* lines) const {
+  lines->push_back("Watermarks:");
   BOOST_FOREACH(const WatermarksMap::value_type& entry, watermarks_) {
-    LOG(INFO) << "Peer: " << entry.first << " Watermark: "
-      << (entry.second != NULL ? entry.second->ShortDebugString() : "NULL");
+    lines->push_back(
+        Substitute("Peer: $0 Watermark: $1",
+                   entry.first,
+                   (entry.second != NULL ? entry.second->ShortDebugString() : "NULL")));
   }
   int counter = 0;
-  LOG(INFO) << "Messages:";
+  lines->push_back("Messages:");
   BOOST_FOREACH(const MessagesBuffer::value_type entry, messages_) {
-    LOG(INFO) << "Message[" << counter++ << "]: " << entry.first.ShortDebugString()
-      << " Status: " << entry.second->status_->ToString()
-      << " Op: " << entry.second->op_->ShortDebugString();
+
+    const OpId& id = entry.second->op_->id();
+    if (entry.second->op_->has_replicate()) {
+      lines->push_back(
+          Substitute("Message[$0] $1.$2 : REPLICATE. Type: $3, Size: $4, Status: $5",
+                     counter++, id.term(), id.index(),
+                     OperationType_Name(entry.second->op_->replicate().op_type()),
+                     entry.second->op_->ByteSize(), entry.second->status_->ToString()));
+    } else {
+      const OpId& committed_op_id = entry.second->op_->commit().commited_op_id();
+      lines->push_back(
+          Substitute("Message[$0] $1.$2 : COMMIT. Committed OpId: $3.$4 "
+              "Type: $5, Size: $6, Status: $7",
+                     counter++, id.term(), id.index(), committed_op_id.index(),
+                     committed_op_id.term(),
+                     OperationType_Name(entry.second->op_->replicate().op_type()),
+                     entry.second->op_->ByteSize(), entry.second->status_->ToString()));
+    }
   }
 }
 
@@ -304,13 +325,17 @@ int64_t PeerMessageQueue::GetQueuedOperationsSizeBytesForTests() const {
 
 string PeerMessageQueue::ToString() const {
   // Even though metrics are thread-safe obtain the lock so that we get
-  // a "consistent" snaphsot of the metrics.
+  // a "consistent" snapshot of the metrics.
   boost::lock_guard<simple_spinlock> lock(queue_lock_);
+  return ToStringUnlocked();
+}
+
+string PeerMessageQueue::ToStringUnlocked() const {
   return Substitute("Consensus queue metrics: Total Ops: $0, All Done Ops: $1, "
-      "Only Majority Done Ops: $2, In Progress Ops: $3, Queue Size (bytes): $4",
+      "Only Majority Done Ops: $2, In Progress Ops: $3, Queue Size (bytes): $4/$5",
       metrics_.total_num_ops->value(), metrics_.num_all_done_ops->value(),
       metrics_.num_majority_done_ops->value(), metrics_.num_in_progress_ops->value(),
-      metrics_.queue_size_bytes->value());
+      metrics_.queue_size_bytes->value(), max_ops_size_bytes_hard_);
 }
 
 PeerMessageQueue::~PeerMessageQueue() {
