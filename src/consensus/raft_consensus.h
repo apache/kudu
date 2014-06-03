@@ -155,6 +155,10 @@ class RaftConsensus : public Consensus {
 
   gscoped_ptr<ReplicaState> state_;
 
+  // TODO hack to serialize updates due to repeated/out-of-order messages
+  // should probably be refactored out.
+  mutable simple_spinlock update_lock_;
+
   DISALLOW_COPY_AND_ASSIGN(RaftConsensus);
 };
 

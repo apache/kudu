@@ -333,6 +333,9 @@ Status RaftConsensus::Update(const ConsensusRequestPB* request,
   RETURN_NOT_OK(ExecuteHook(PRE_UPDATE));
   ConsensusStatusPB* status = response->mutable_status();
 
+  // see var declaration
+  boost::lock_guard<simple_spinlock> lock(update_lock_);
+
   // If there are any operations we update our state machine, otherwise just send the status.
   if (PREDICT_TRUE(request->ops_size() > 0)) {
     RETURN_NOT_OK(UpdateReplica(request, status));
@@ -385,6 +388,9 @@ Status RaftConsensus::UpdateReplica(const ConsensusRequestPB* request,
         LOG(FATAL)<< "Unexpected op: " << op.ShortDebugString();
       }
     }
+
+    // no operations were received or all operations were duplicated, return.
+    if (PREDICT_FALSE(replicate_ops.empty() && commit_ops.empty())) return Status::OK();
 
     // Only accept requests from the leader set in the last change config
     if (PREDICT_FALSE(request->sender_uuid() != state_->GetLeaderUuidUnlocked())) {
