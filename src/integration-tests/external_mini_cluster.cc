@@ -9,6 +9,7 @@
 
 #include "client/client.h"
 #include "common/wire_protocol.h"
+#include "gutil/strings/join.h"
 #include "gutil/strings/substitute.h"
 #include "gutil/strings/util.h"
 #include "master/master.proxy.h"
@@ -277,7 +278,7 @@ Status ExternalDaemon::StartProcess(const vector<string>& user_flags) {
   argv.push_back("--webserver_interface=localhost");
 
   gscoped_ptr<Subprocess> p(new Subprocess(exe_, argv));
-
+  LOG(INFO) << "Running " << exe_ << "\n" << JoinStrings(argv, "\n");
   RETURN_NOT_OK_PREPEND(p->Start(),
                         Substitute("Failed to start subprocess $0", exe_));
 
