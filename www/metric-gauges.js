@@ -6,7 +6,53 @@ var max_value = [];
 var span_ids = [];
 var last_update = Date.now();
 var num_gauges = 0;
+
+// TODO allow setting this from the UI, e.g., add a pick-and-choose
+// dialog box, or let a user click an 'x' next to a metric to delete
+// it from the view.
+var url_params = urlParams();
+var metrics_uri = makeMetricsUri();
+
 var MAX_SCALE_FACTOR = 1;
+
+// Technically we can just pass the string through as-is without
+// having to put it all into a map and re-encode it. However, this
+// makes it easier to add new UI functionality (e.g., pick and
+// choose).
+function urlParams() {
+  var query_params = {};
+  var query = window.location.search.substring(1);
+  var query_vars = query.split('&');
+  for (var i = 0; i < query_vars.length; i++) {
+    var entry_pair = query_vars[i].split('=');
+    if (entry_pair.length == 1) {
+      query_params[decodeURIComponent(entry_pair[0])] = true;
+    } else {
+      query_params[decodeURIComponent(entry_pair[0])] =
+        decodeURIComponent(entry_pair[1]);
+    }
+  }
+  return query_params;
+}
+
+function makeMetricsUri() {
+  var BASE_METRICS_URI = "/jsonmetricz";
+
+  var components = [];
+  for (var key in url_params) {
+    var value = url_params[key];
+    var component = encodeURIComponent(key);
+    if (typeof value === 'string') {
+      component += '=' + encodeURIComponent(value);
+    }
+    components.push(component);
+  }
+  var ret = BASE_METRICS_URI;
+  if (components.length > 0) {
+    ret += '?' + components.join('&');
+  }
+  return ret;
+}
 
 function generateConfig(name, label, min, max) {
   var config = {
@@ -67,7 +113,7 @@ function updateGauges(json, error) {
     // here.
     console.warn("null JSON response");
     setTimeout(function() {
-      d3.json("/jsonmetricz", updateGauges);
+      d3.json(metrics_uri, updateGauges);
     }, 1000);
     return;
   }
@@ -136,10 +182,10 @@ function updateGauges(json, error) {
   last_update = now;
 
   setTimeout(function() {
-    d3.json("/jsonmetricz", updateGauges);
+    d3.json(metrics_uri, updateGauges);
   }, 300);
 }
 
 function initialize() {
-  d3.json("/jsonmetricz", updateGauges);
+  d3.json(metrics_uri, updateGauges);
 }
