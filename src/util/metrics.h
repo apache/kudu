@@ -324,14 +324,14 @@ class GaugePrototype {
 
   // Instantiate a "manual" gauge.
   Gauge* Instantiate(const MetricContext& context,
-                     const T& initial_value) {
+                     const T& initial_value) const {
     return context.metrics()->FindOrCreateGauge(
         context.prefix() + "." + name_, *this, initial_value);
   }
 
   // Instantiate a gauge that is backed by the given callback.
   Gauge* InstantiateFunctionGauge(const MetricContext& context,
-                                  const boost::function<T()>& function) {
+                                  const boost::function<T()>& function) const {
     return context.metrics()->FindOrCreateFunctionGauge(
         context.prefix() + "." + name_, *this, function);
   }
@@ -383,6 +383,11 @@ class StringGauge : public Gauge {
 template <typename T>
 class AtomicGauge : public Gauge {
  public:
+  static AtomicGauge<T>* Instantiate(const GaugePrototype<T>& prototype,
+                                     const MetricContext& context) {
+    return down_cast<AtomicGauge<T>*>(prototype.Instantiate(context, 0));
+  }
+
   AtomicGauge(const GaugePrototype<T>& proto, T initial_value)
     : Gauge(proto.unit(), proto.description()),
       value_(initial_value) {
@@ -393,6 +398,19 @@ class AtomicGauge : public Gauge {
   void set_value(const T& value) {
     base::subtle::NoBarrier_Store(&value_, static_cast<base::subtle::Atomic64>(value));
   }
+  void Increment() {
+    IncrementBy(1);
+  }
+  void IncrementBy(int64_t amount) {
+    base::subtle::NoBarrier_AtomicIncrement(&value_, amount);
+  }
+  void Decrement() {
+    IncrementBy(-1);
+  }
+  void DecrementBy(int64_t amount) {
+    IncrementBy(-amount);
+  }
+
  protected:
   virtual void WriteValue(JsonWriter* writer) const OVERRIDE {
     writer->Value(value());
@@ -444,15 +462,17 @@ class CounterPrototype {
   DISALLOW_COPY_AND_ASSIGN(CounterPrototype);
 };
 
-// Simple incrementing and decrementing 64-bit integer.
+// Simple incrementing 64-bit integer.
+// Only use Counters in cases that we expect the count to only increase. For example,
+// a counter is appropriate for "number of transactions processed by the server",
+// but not for "number of transactions currently in flight". Monitoring software
+// knows that counters only increase and thus can compute rates over time, rates
+// across multiple servers, etc, which aren't appropriate in the case of gauges.
 class Counter : public Metric {
  public:
   int64_t value() const;
-  void set_value(int64_t value);
   void Increment();
   void IncrementBy(int64_t amount);
-  void Decrement();
-  void DecrementBy(int64_t amount);
   const std::string& description() const { return description_; }
   virtual MetricType::Type type() const OVERRIDE { return MetricType::kCounter; }
   virtual Status WriteAsJson(const std::string& name,

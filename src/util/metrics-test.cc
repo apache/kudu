@@ -24,20 +24,22 @@ TEST_F(MetricsTest, SimpleCounterTest) {
   ASSERT_EQ(1, requests.value());
   requests.IncrementBy(2);
   ASSERT_EQ(3, requests.value());
-  requests.Decrement();
-  ASSERT_EQ(2, requests.value());
-  requests.DecrementBy(2);
-  ASSERT_EQ(0, requests.value());
 }
 
 METRIC_DEFINE_gauge_uint64(fake_memory_usage, MetricUnit::kBytes, "Test Gauge 1");
 
 TEST_F(MetricsTest, SimpleAtomicGaugeTest) {
-  AtomicGauge<uint64_t> mem_usage(METRIC_fake_memory_usage, 7);
-  ASSERT_EQ(METRIC_fake_memory_usage.description(), mem_usage.description());
-  ASSERT_EQ(7, mem_usage.value());
-  mem_usage.set_value(5);
-  ASSERT_EQ(5, mem_usage.value());
+  MetricRegistry registry;
+  MetricContext context(&registry, "test");
+
+  AtomicGauge<uint64_t>* mem_usage = AtomicGauge<uint64_t>::Instantiate(METRIC_fake_memory_usage,
+                                                                context);
+  ASSERT_EQ(METRIC_fake_memory_usage.description(), mem_usage->description());
+  ASSERT_EQ(0, mem_usage->value());
+  mem_usage->IncrementBy(7);
+  ASSERT_EQ(7, mem_usage->value());
+  mem_usage->set_value(5);
+  ASSERT_EQ(5, mem_usage->value());
 }
 
 METRIC_DEFINE_gauge_int64(test_func_gauge, MetricUnit::kBytes, "Test Gauge 2");

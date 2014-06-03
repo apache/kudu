@@ -358,24 +358,12 @@ int64_t Counter::value() const {
   return base::subtle::NoBarrier_Load(&value_);
 }
 
-void Counter::set_value(int64_t value) {
-  base::subtle::NoBarrier_Store(&value_, value);
-}
-
 void Counter::Increment() {
   IncrementBy(1);
 }
 
 void Counter::IncrementBy(int64_t amount) {
   base::subtle::NoBarrier_AtomicIncrement(&value_, amount);
-}
-
-void Counter::Decrement() {
-  DecrementBy(1);
-}
-
-void Counter::DecrementBy(int64_t amount) {
-  IncrementBy(-amount);
 }
 
 Status Counter::WriteAsJson(const string& name,
