@@ -30,6 +30,7 @@ package kudu.rpc;
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Objects;
 import com.google.common.collect.ComparisonChain;
+import com.google.common.collect.Lists;
 import kudu.ColumnSchema;
 import kudu.Common;
 import kudu.Schema;
@@ -840,15 +841,17 @@ public class KuduClient {
    * @param endKey where to stop in the table, pass null to get all the tablets until the end of
    *               the table
    * @param deadline deadline in milliseconds for this method to finish
-   * @return a sorted map keyed by the tablets themselves pointing to their addresses.
+   * @return a list of the tablets in the table, which can be queried for metadata about
+   *         each tablet
    * @throws Exception
    */
-  NavigableMap<KuduClient.RemoteTablet, List<Common.HostPortPB>> syncLocateTable(String table,
-                                                     byte[] startKey,
-                                                     byte[] endKey,
-                                                     long deadline) throws Exception {
-    ConcurrentSkipListMap<KuduClient.RemoteTablet, List<Common.HostPortPB>> tablets =
-        new ConcurrentSkipListMap<KuduClient.RemoteTablet, List<Common.HostPortPB>>();
+  List<LocatedTablet> syncLocateTable(String table,
+                                      byte[] startKey,
+                                      byte[] endKey,
+                                      long deadline) throws Exception {
+    List<LocatedTablet> ret = Lists.newArrayList();
+    byte[] lastEndKey = null;
+
     DeadlineTracker deadlineTracker = new DeadlineTracker();
     deadlineTracker.setDeadline(deadline);
     while (true) {
@@ -866,20 +869,28 @@ public class KuduClient {
         break;
       }
       for (Master.TabletLocationsPB tabletPb : response.getTabletLocationsList()) {
-        RemoteTablet rt = createTabletFromPb(table, tabletPb);
-        List<Common.HostPortPB> addresses = rt.getAddressesFromPb(tabletPb);
-        tablets.put(rt, addresses);
+        LocatedTablet locs = new LocatedTablet(tabletPb);
+        ret.add(locs);
+
+        if (lastEndKey != null &&
+            locs.getEndKey().length != 0 &&
+            Bytes.memcmp(locs.getEndKey(), lastEndKey) < 0) {
+          throw new IllegalStateException(
+            "Server returned tablets out of order: " +
+            "end key '" + Bytes.pretty(locs.getEndKey()) + "' followed " +
+            "end key '" + Bytes.pretty(lastEndKey) + "'");
+        }
+        lastEndKey = locs.getEndKey();
       }
-      byte[] lastEndKey = tablets.lastEntry().getKey().endKey;
       // If true, we're done, else we have to go back to the master with the last end key
-      if (lastEndKey == EMPTY_ARRAY ||
+      if (lastEndKey.length == 0 ||
           (endKey != null && Bytes.memcmp(lastEndKey, endKey) > 0)) {
         break;
       } else {
         startKey = lastEndKey;
       }
     }
-    return tablets;
+    return ret;
   }
 
   /**

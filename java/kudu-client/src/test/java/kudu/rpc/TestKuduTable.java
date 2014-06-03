@@ -53,7 +53,7 @@ public class TestKuduTable extends BaseKuduTest {
     } catch (Exception ex) {
       // expected
     }
-    NavigableMap<KuduClient.RemoteTablet, List<Common.HostPortPB>> tablets =
+    List<LocatedTablet> tablets =
         client.syncLocateTable(table1, null, null, DEFAULT_SLEEP);
     assertEquals(0, tablets.size());
 
@@ -134,11 +134,10 @@ public class TestKuduTable extends BaseKuduTest {
     // by scanning
     countRowsInScan(client.newScanner(table, schema));
 
-    NavigableMap<KuduClient.RemoteTablet, List<Common.HostPortPB>> tablets =
-        table.getTabletsLocations(DEFAULT_SLEEP);
+    List<LocatedTablet> tablets = table.getTabletsLocations(DEFAULT_SLEEP);
     assertEquals(splitsCount + 1, tablets.size());
-    for (KuduClient.RemoteTablet tablet : tablets.keySet()) {
-      assertEquals(1, tablets.get(tablet).size());
+    for (LocatedTablet tablet : tablets) {
+      assertEquals(1, tablet.getReplicas().size());
     }
     return table;
   }

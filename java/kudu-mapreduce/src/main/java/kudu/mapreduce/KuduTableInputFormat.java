@@ -17,6 +17,7 @@ package kudu.mapreduce;
 
 import com.google.common.base.Objects;
 import com.google.common.base.Splitter;
+import com.google.common.collect.Lists;
 import com.stumbleupon.async.Deferred;
 import kudu.ColumnSchema;
 import kudu.Common;
@@ -25,6 +26,7 @@ import kudu.rpc.Bytes;
 import kudu.rpc.KuduClient;
 import kudu.rpc.KuduScanner;
 import kudu.rpc.KuduTable;
+import kudu.rpc.LocatedTablet;
 import kudu.rpc.RowResult;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
@@ -96,7 +98,7 @@ public class KuduTableInputFormat extends InputFormat<NullWritable, RowResult>
       throw new IOException("No table was provided");
     }
 
-    NavigableMap<KuduClient.RemoteTablet, List<Common.HostPortPB>> locations;
+    List<LocatedTablet> locations;
     try {
       locations = table.getTabletsLocations(operationTimeoutMs);
     } catch (Exception e) {
@@ -109,14 +111,18 @@ public class KuduTableInputFormat extends InputFormat<NullWritable, RowResult>
 
     // TODO currently we just pass all the replicas, maybe we don't want that. Investigate.
     List<InputSplit> splits = new ArrayList<InputSplit>(locations.size());
-    for (Map.Entry<KuduClient.RemoteTablet, List<Common.HostPortPB>> entry : locations.entrySet()) {
-      List<Common.HostPortPB> rawAddresses = entry.getValue();
-      String[] addresses = new String[rawAddresses.size()];
-      for (int i = 0; i < addresses.length; i++) {
-        addresses[i] = reverseDNS(rawAddresses.get(i));
+    for (LocatedTablet locatedTablet : locations) {
+      List<String> addresses = Lists.newArrayList();
+
+      for (LocatedTablet.Replica replica : locatedTablet.getReplicas()) {
+        addresses.add(reverseDNS(replica.getRpcHostPort()));
       }
-      KuduClient.RemoteTablet tablet = entry.getKey();
-      TableSplit split = new TableSplit(tablet.getStartKey(), tablet.getEndKey(), addresses);
+
+      String[] addressesArray = addresses.toArray(new String[addresses.size()]);
+      TableSplit split = new TableSplit(locatedTablet.getStartKey(),
+                                        locatedTablet.getEndKey(),
+                                        addressesArray);
+
       splits.add(split);
       LOG.debug("Split: " + split);
     }

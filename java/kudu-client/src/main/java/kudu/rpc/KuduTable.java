@@ -64,10 +64,11 @@ public class KuduTable {
    * Get all the tablets for this table. This may query the master multiple times if there
    * are a lot of tablets.
    * @param deadline deadline in milliseconds for this method to finish
-   * @return a sorted map keyed by the tablets themselves pointing to their addresses.
+   * @return a list containing the metadata and locations for each of the tablets in the
+   *         table
    * @throws Exception
    */
-  public NavigableMap<KuduClient.RemoteTablet, List<Common.HostPortPB>> getTabletsLocations(
+  public List<LocatedTablet> getTabletsLocations(
       long deadline) throws Exception {
     return getTabletsLocations(null, null, deadline);
   }
@@ -80,10 +81,11 @@ public class KuduTable {
    * @param endKey where to stop in the table, pass null to get all the tablets until the end of
    *               the table
    * @param deadline deadline in milliseconds for this method to finish
-   * @return a sorted map keyed by the tablets themselves pointing to their addresses.
+   * @return a list containing the metadata and locations for each of the tablets in the
+   *         table
    * @throws Exception
    */
-  public NavigableMap<KuduClient.RemoteTablet, List<Common.HostPortPB>> getTabletsLocations(
+  public List<LocatedTablet> getTabletsLocations(
       byte[] startKey, byte[] endKey, long deadline) throws Exception {
     return client.syncLocateTable(name, startKey, endKey, deadline);
   }
