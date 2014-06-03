@@ -262,7 +262,7 @@ void ReplicaState::UpdateReplicaCommittedOpIdUnlocked(const OpId& commit_op_id,
     if (!in_flight_commits_.empty()) {
        all_committed_before_id_ = *std::min_element(in_flight_commits_.begin(),
                                                     in_flight_commits_.end(),
-                                                    log::OpIdCompare);
+                                                    log::OpIdLessThan);
      } else {
        all_committed_before_id_ = commit_op_id;
      }
