@@ -176,11 +176,14 @@ class PeerMessageQueue {
   typedef std::tr1::unordered_map<OpId, Status> ErrorsMap;
   typedef std::pair<OpId, Status> ErrorEntry;
 
-  Status TrimBuffer();
   string ToStringUnlocked() const;
 
   void DumpToStringsUnlocked(vector<string>* lines) const;
 
+  // Trims the buffer, making sure it can accomodate a message with the provided
+  // 'size'. Returns Status::OK() if the buffer was trimmed or otherwise had available
+  // space or Status::ServiceUnavailable() if the queue could not free enough space.
+  Status TrimBufferForMessage(uint64_t size);
 
   // The total size of consensus entries to keep in memory.
   // This is a soft limit, i.e. messages in the queue are discarded

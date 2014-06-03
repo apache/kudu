@@ -12,6 +12,7 @@
 
 DECLARE_int32(consensus_max_batch_size_bytes);
 DECLARE_int32(consensus_entry_cache_size_soft_limit_mb);
+DECLARE_int32(consensus_entry_cache_size_hard_limit_mb);
 
 namespace kudu {
 namespace consensus {
@@ -211,6 +212,53 @@ TEST_F(ConsensusQueueTest, TestGetOperationStatusTracker) {
   scoped_refptr<OperationStatusTracker> status;
   queue_->GetOperationStatus(op, &status);
   ASSERT_EQ(statuses[24]->ToString(), status->ToString());
+}
+
+TEST_F(ConsensusQueueTest, TestQueueRefusesRequestWhenFilled) {
+  vector<scoped_refptr<OperationStatusTracker> > statuses;
+  FLAGS_consensus_entry_cache_size_soft_limit_mb = 0;
+  FLAGS_consensus_entry_cache_size_hard_limit_mb = 1;
+
+  queue_.reset(new PeerMessageQueue(metric_context_));
+
+  // generate a 128Kb dummy payload
+  string test_payload(128 * 1024, '0');
+
+  // append 8 messages to the queue, these should be allowed
+  AppendReplicateMessagesToQueue(queue_.get(), 1, 7, 1, 1, test_payload, &statuses);
+
+  gscoped_ptr<OperationPB> op;
+  scoped_refptr<OperationStatusTracker> status;
+  {
+    op.reset(new OperationPB);
+    OpId* id = op->mutable_id();
+    id->set_term(10);
+    id->set_index(1);
+    ReplicateMsg* msg = op->mutable_replicate();
+    msg->set_op_type(NO_OP);
+    msg->mutable_no_op()->set_payload_for_tests(test_payload);
+    status.reset(new TestOperationStatus(1, 1, *id));
+  }
+
+  // should fail with service unavailable
+  Status s = queue_->AppendOperation(op.Pass(), status);
+  LOG(INFO) << queue_->ToString();
+  ASSERT_TRUE(s.IsServiceUnavailable());
+  // now ack the first op
+  statuses[0]->AckPeer("");
+  // .. and try again
+  {
+    op.reset(new OperationPB);
+    OpId* id = op->mutable_id();
+    id->set_term(10);
+    id->set_index(1);
+    ReplicateMsg* msg = op->mutable_replicate();
+    msg->set_op_type(NO_OP);
+    msg->mutable_no_op()->set_payload_for_tests(test_payload);
+    status.reset(new TestOperationStatus(1, 1, *id));
+  }
+
+  ASSERT_STATUS_OK(queue_->AppendOperation(op.Pass(), status));
 }
 
 }  // namespace consensus

@@ -107,7 +107,25 @@ Status PeerMessageQueue::AppendOperation(gscoped_ptr<OperationPB> operation,
   DCHECK(operation->has_commit()
          || operation->has_replicate()) << "Operation must be a commit or a replicate: "
              << operation->DebugString();
+
+  int bytes = operation->ByteSize();
+
+  if (metrics_.queue_size_bytes->value() >= max_ops_size_bytes_soft_) {
+    Status s  = TrimBufferForMessage(bytes);
+    if (PREDICT_FALSE(!s.ok() && VLOG_IS_ON(2))) {
+      queue_lock_.unlock();
+      VLOG(2) << "Queue Full: Dumping State:";
+      vector<string>  queue_dump;
+      DumpToStringsUnlocked(&queue_dump);
+      BOOST_FOREACH(const string& line, queue_dump) {
+        VLOG(2) << line;
+      }
+    }
+    RETURN_NOT_OK(s);
+  }
+
   metrics_.queue_size_bytes->IncrementBy(operation->ByteSize());
+
   if (PREDICT_FALSE(VLOG_IS_ON(2))) {
     VLOG(2) << "Appended operation to queue: " << operation->ShortDebugString() <<
         " Operation Status: " << status->ToString();
@@ -130,8 +148,8 @@ Status PeerMessageQueue::AppendOperation(gscoped_ptr<OperationPB> operation,
   if (metrics_.queue_size_bytes->value() < max_ops_size_bytes_soft_) {
     return Status::OK();
   }
-  // TODO trim the buffer before we add to the queue
-  return TrimBuffer();
+
+  return Status::OK();
 }
 
 void PeerMessageQueue::RequestForPeer(const string& uuid,
@@ -251,26 +269,28 @@ Status PeerMessageQueue::GetOperationStatus(const OpId& op_id,
   return Status::OK();
 }
 
-Status PeerMessageQueue::TrimBuffer() {
+Status PeerMessageQueue::TrimBufferForMessage(uint64_t bytes) {
   // TODO for now we're just trimming the buffer, but we need to handle when
   // the buffer is full but there is a peer hanging on to the queue (very delayed)
   MessagesBuffer::iterator iter = messages_.begin();
-  while (metrics_.queue_size_bytes->value() > max_ops_size_bytes_soft_ &&
-      iter != messages_.end()) {
+  uint64_t new_size = metrics_.queue_size_bytes->value() + bytes;
+  while (new_size > max_ops_size_bytes_soft_ && iter != messages_.end()) {
     PeerMessage* message = (*iter).second;
     if (!message->status_->IsAllDone()) {
-      if (metrics_.queue_size_bytes->value() < max_ops_size_bytes_hard_) {
+      if (new_size < max_ops_size_bytes_hard_) {
         return Status::OK();
       } else {
-        LOG(FATAL) << "Queue reached hard limit: " << max_ops_size_bytes_hard_;
+        return Status::ServiceUnavailable("Queue is full.");
       }
     }
+    uint64_t bytes_to_decrement = (*iter).second->op_->ByteSize();
+    metrics_.total_num_ops->Decrement();
+    metrics_.num_all_done_ops->Decrement();
+    metrics_.queue_size_bytes->DecrementBy(bytes_to_decrement);
     PeerMessage* msg = (*iter).second;
     messages_.erase(iter++);
     delete msg;
-    metrics_.total_num_ops->Decrement();
-    metrics_.num_all_done_ops->Decrement();
-    metrics_.queue_size_bytes->DecrementBy((*iter).second->op_->ByteSize());
+    new_size = metrics_.queue_size_bytes->value() + bytes;
   }
   return Status::OK();
 }

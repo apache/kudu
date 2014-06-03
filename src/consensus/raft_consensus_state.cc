@@ -308,6 +308,14 @@ void ReplicaState::NewIdUnlocked(OpId* id) {
   id->set_index(next_index_++);
 }
 
+void ReplicaState::RollbackIdGenUnlocked(const OpId& id) {
+  DCHECK(update_lock_.is_locked());
+  CHECK_EQ(current_term_, id.term());
+  CHECK_EQ(next_index_, id.index() + 1);
+  current_term_ = id.term();
+  next_index_ = id.index();
+}
+
 string ReplicaState::ToString() {
   string ret;
   StrAppend(&ret, Substitute("Replica: $0, State: $1, Role: $2\n",

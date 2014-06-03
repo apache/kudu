@@ -227,8 +227,20 @@ Status RaftConsensus::Replicate(ConsensusRound* context) {
                                     &callback_pool_,
                                     context->replicate_callback()));
 
-    RETURN_NOT_OK_PREPEND(queue_.AppendOperation(queue_op.Pass(), status),
-                          "Could not append replicate request to the queue");
+    Status s = queue_.AppendOperation(queue_op.Pass(), status);
+    // Handle Status::ServiceUnavailable(), which means the queue is full.
+    if (PREDICT_FALSE(s.IsServiceUnavailable())) {
+      // Rollback the id gen. so that we reuse this id later, when we can
+      // actually append to the state machine, i.e. this makes the state
+      // machine have continuous ids, for the same term, even if the queue
+      // refused to add any more operations.
+      state_->RollbackIdGenUnlocked(context->replicate_op()->id());
+      LOG(WARNING) << "Could not append replicate request to the queue. Queue is Full. "
+          "Queue metrics: " << queue_.ToString();
+      // TODO Possibly evict a dangling peer from the quorum here.
+      // TODO count of number of ops failed due to consensus queue overflow.
+    }
+    RETURN_NOT_OK(s);
   }
 
   SignalRequestToPeers();

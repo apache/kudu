@@ -216,6 +216,11 @@ class ReplicaState {
 
   void NewIdUnlocked(OpId* id);
 
+  // Used when, for some reason, an operation that failed before it could be considered
+  // a part of the state machine. Basically restores the id gen to the state it was before
+  // generating 'id'.
+  void RollbackIdGenUnlocked(const OpId& id);
+
   std::string ToString();
 
  private:
