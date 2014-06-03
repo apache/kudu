@@ -15,6 +15,7 @@
 #include "rpc/rpc_context.h"
 #include "server/metadata.h"
 #include "server/logical_clock.h"
+#include "util/metrics.h"
 #include "util/test_macros.h"
 #include "util/test_util.h"
 
@@ -43,7 +44,8 @@ const char* kTestTablet = "TestTablet";
 class RaftConsensusTest : public KuduTest {
  public:
   RaftConsensusTest()
-    : clock_(server::LogicalClock::CreateStartingAt(Timestamp(0))) {}
+    : clock_(server::LogicalClock::CreateStartingAt(Timestamp(0))),
+      metric_context_(&metric_registry_, "raft-test") {}
 
   // Builds an initial quorum of 'num' elements where the first
   // element is the leader.
@@ -90,8 +92,10 @@ class RaftConsensusTest : public KuduTest {
     for (int i = 0; i < quorum_.peers_size(); i++) {
       LocalTestPeerProxyFactory* proxy_factory = new LocalTestPeerProxyFactory();
       proxy_factories.push_back(proxy_factory);
-      RaftConsensus* peer = new RaftConsensus(options_,
-                                              gscoped_ptr<PeerProxyFactory>(proxy_factory).Pass());
+      RaftConsensus* peer =
+          new RaftConsensus(options_,
+                            gscoped_ptr<PeerProxyFactory>(proxy_factory).Pass(),
+                            MetricContext(metric_context_, Substitute("peer-$0", i)));
 
       peers_.push_back(peer);
     }
@@ -350,6 +354,8 @@ class RaftConsensusTest : public KuduTest {
   vector<Log*> logs_;
   vector<TestTransactionFactory*> txn_factories_;
   scoped_refptr<server::Clock> clock_;
+  MetricRegistry metric_registry_;
+  MetricContext metric_context_;
 };
 
 // Tests Replicate/Commit a single message through the leader.

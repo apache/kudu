@@ -42,7 +42,8 @@ class RaftConsensus : public Consensus {
   typedef std::tr1::unordered_map<std::string, Peer*> PeersMap;
 
   RaftConsensus(const ConsensusOptions& options,
-                gscoped_ptr<PeerProxyFactory> peer_proxy_factory);
+                gscoped_ptr<PeerProxyFactory> peer_proxy_factory,
+                const MetricContext& metric_ctx);
 
   virtual Status Init(const metadata::QuorumPeerPB& peer,
                       const scoped_refptr<server::Clock>& clock,
@@ -97,6 +98,7 @@ class RaftConsensus : public Consensus {
  private:
   friend class ReplicaState;
   friend class RaftConsensusTest;
+  FRIEND_TEST(RaftConsensusTest, TestReplicasHandleCommunicationErrors);
 
   Status ChangeConfig(metadata::QuorumPB new_config);
 
@@ -149,6 +151,7 @@ class RaftConsensus : public Consensus {
   ThreadPool callback_pool_;
 
   gscoped_ptr<ReplicaState> state_;
+
   DISALLOW_COPY_AND_ASSIGN(RaftConsensus);
 };
 

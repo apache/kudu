@@ -70,11 +70,14 @@ class TabletPeerTest : public KuduTabletTest {
     quorum_peer.set_permanent_uuid("test1");
     quorum_peer.set_role(QuorumPeerPB::LEADER);
 
+    metric_ctx_.reset(new MetricContext(&metric_registry_, CURRENT_TEST_NAME()));
+
     // "Bootstrap" and start the TabletPeer.
     tablet_peer_.reset(
-        new TabletPeer(make_scoped_refptr(tablet_->metadata()), quorum_peer, NULL));
-
-    metric_ctx_.reset(new MetricContext(&metric_registry_, CURRENT_TEST_NAME()));
+        new TabletPeer(make_scoped_refptr(tablet_->metadata()),
+                       quorum_peer,
+                       *metric_ctx_,
+                       NULL));
 
     gscoped_ptr<Log> log;
     ASSERT_STATUS_OK(Log::Open(LogOptions(), fs_manager_.get(), tablet_->tablet_id(),

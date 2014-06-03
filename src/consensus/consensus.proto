@@ -86,6 +86,8 @@ message CommitMsg {
 // A no-op message to send a heartbeat from leader to followers
 // can also be used to witness a term change.
 message NoOp {
+ // Allows to set a dummy payload, for tests.
+ optional bytes payload_for_tests = 1;
 }
 
 message PerOpErrorPB {

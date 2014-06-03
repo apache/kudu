@@ -61,6 +61,7 @@ using tserver::TabletServerErrorPB;
 // ============================================================================
 TabletPeer::TabletPeer(const scoped_refptr<TabletMetadata>& meta,
                        const QuorumPeerPB& quorum_peer,
+                       const MetricContext& metric_ctx,
                        MarkDirtyCallback mark_dirty_clbk)
   : meta_(meta),
     tablet_id_(meta->oid()),
@@ -74,7 +75,8 @@ TabletPeer::TabletPeer(const scoped_refptr<TabletMetadata>& meta,
     log_gc_executor_(TaskExecutor::CreateNew("log gc exec", 1)),
     log_gc_shutdown_latch_(1),
     mark_dirty_clbk_(mark_dirty_clbk),
-    config_sem_(1) {
+    config_sem_(1),
+    metric_ctx_(metric_ctx) {
   state_ = metadata::BOOTSTRAPPING;
 }
 
@@ -109,7 +111,7 @@ Status TabletPeer::Init(const shared_ptr<Tablet>& tablet,
     } else {
       gscoped_ptr<consensus::PeerProxyFactory> rpc_factory(
           new consensus::RpcPeerProxyFactory(messenger_));
-      consensus_.reset(new RaftConsensus(options,  rpc_factory.Pass()));
+      consensus_.reset(new RaftConsensus(options,  rpc_factory.Pass(), metric_ctx_));
     }
   }
 

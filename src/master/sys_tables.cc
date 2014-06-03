@@ -113,7 +113,9 @@ Status SysTable::SetupTablet(const scoped_refptr<metadata::TabletMetadata>& meta
   // TODO right now sys tables are hard coded to be single quorum, so the MarkDirty
   // callback that allows to notify of state changes (such as consensus role changes)
   // just points to SysTableStateChanged(), which currently LOG(FATAL)s.
-  tablet_peer_.reset(new TabletPeer(metadata, quorum_peer,
+  tablet_peer_.reset(new TabletPeer(metadata,
+                                    quorum_peer,
+                                    metric_ctx_,
                                     boost::bind(&SysTable::SysTableStateChanged, this, _1)));
   RETURN_NOT_OK(BootstrapTablet(metadata,
                                 scoped_refptr<server::Clock>(master_->clock()),

@@ -117,7 +117,9 @@ Status TSTabletManager::Init() {
     QuorumPeerPB quorum_peer;
     quorum_peer.set_permanent_uuid(server_->instance_pb().permanent_uuid());
     shared_ptr<TabletPeer> tablet_peer(
-        new TabletPeer(meta, quorum_peer,
+        new TabletPeer(meta,
+                       quorum_peer,
+                       metric_ctx_,
                        boost::bind(&TSTabletManager::MarkTabletDirty, this, _1)));
     RegisterTablet(meta->oid(), tablet_peer);
 
@@ -215,7 +217,9 @@ Status TSTabletManager::CreateNewTablet(const string& table_id,
   QuorumPeerPB quorum_peer;
   quorum_peer.set_permanent_uuid(server_->instance_pb().permanent_uuid());
   shared_ptr<TabletPeer> new_peer(
-      new TabletPeer(meta, quorum_peer,
+      new TabletPeer(meta,
+                     quorum_peer,
+                     metric_ctx_,
                      boost::bind(&TSTabletManager::MarkTabletDirty, this, _1)));
   RegisterTablet(meta->oid(), new_peer);
   // We can run this synchronously since there is nothing to bootstrap.

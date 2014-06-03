@@ -8,6 +8,7 @@
 #include "consensus/log_util.h"
 #include "consensus/opid_anchor_registry.h"
 #include "server/fsmanager.h"
+#include "util/metrics.h"
 #include "util/test_macros.h"
 #include "util/test_util.h"
 
@@ -24,7 +25,9 @@ const char* kLeaderUuid = "test-peers-leader";
 
 class ConsensusPeersTest : public KuduTest {
  public:
-  ConsensusPeersTest() {}
+  ConsensusPeersTest()
+    :  metric_context_(&metric_registry_, "peer-test"),
+       message_queue_(metric_context_) {}
 
   virtual void SetUp() {
     KuduTest::SetUp();
@@ -78,6 +81,8 @@ class ConsensusPeersTest : public KuduTest {
   }
 
  protected:
+  MetricRegistry metric_registry_;
+  MetricContext metric_context_;
   PeerMessageQueue message_queue_;
   gscoped_ptr<FsManager> fs_manager_;
   LogOptions options_;
@@ -100,7 +105,7 @@ TEST_F(ConsensusPeersTest, TestLocalPeer) {
   NewLocalPeer(log.get(), "local-peer", &local_peer);
 
   // Append a bunch of messages to the queue
-  AppendReplicateMessagesToQueue(&message_queue_, 1, 20, 1, 1, &statuses_);
+  AppendReplicateMessagesToQueue(&message_queue_, 1, 20, 1, 1, "", &statuses_);
   // signal the peer there are requests pending.
   local_peer->SignalRequest();
   // now wait on the status of the last operation
@@ -121,7 +126,7 @@ TEST_F(ConsensusPeersTest, TestRemotePeer) {
   NoOpTestPeerProxy* proxy = NewRemotePeer("remote-peer", &remote_peer);
 
   // Append a bunch of messages to the queue
-  AppendReplicateMessagesToQueue(&message_queue_, 1, 20, 1, 1, &statuses_);
+  AppendReplicateMessagesToQueue(&message_queue_, 1, 20, 1, 1, "", &statuses_);
   // signal the peer there are requests pending.
   remote_peer->SignalRequest();
   // now wait on the status of the last operation
@@ -154,7 +159,7 @@ TEST_F(ConsensusPeersTest, TestLocalAndRemotePeers) {
   remote_peer2_proxy->DelayResponse();
 
   // Append one message to the queue with majority = 2.
-  AppendReplicateMessagesToQueue(&message_queue_, 1, 1, 2, 3, &statuses_);
+  AppendReplicateMessagesToQueue(&message_queue_, 1, 1, 2, 3, "", &statuses_);
 
   local_peer->SignalRequest();
   remote_peer1->SignalRequest();
@@ -174,7 +179,7 @@ TEST_F(ConsensusPeersTest, TestLocalAndRemotePeers) {
   test_status(statuses_[0].get())->WaitAllReplicated();
 
   // Now append another message to the queue
-  AppendReplicateMessagesToQueue(&message_queue_, 2, 1, 2, 3, &statuses_);
+  AppendReplicateMessagesToQueue(&message_queue_, 2, 1, 2, 3, "", &statuses_);
 
   // Signal a single peer
   remote_peer1->SignalRequest();

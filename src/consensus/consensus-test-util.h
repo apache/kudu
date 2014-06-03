@@ -91,6 +91,7 @@ static inline void AppendReplicateMessagesToQueue(
     int count,
     int n_majority = 1,
     int total_peers = 1,
+    string dummy_payload = "",
     vector<scoped_refptr<OperationStatusTracker> >* statuses_collector = NULL) {
 
   for (int i = first; i < first + count; i++) {
@@ -100,9 +101,10 @@ static inline void AppendReplicateMessagesToQueue(
     id->set_index(i % 7);
     ReplicateMsg* msg = op->mutable_replicate();
     msg->set_op_type(NO_OP);
+    msg->mutable_no_op()->set_payload_for_tests(dummy_payload);
     scoped_refptr<OperationStatusTracker> status(
         new TestOperationStatus(n_majority, total_peers, *id));
-    queue->AppendOperation(op.Pass(), status);
+    CHECK_OK(queue->AppendOperation(op.Pass(), status));
     if (statuses_collector) {
       statuses_collector->push_back(status);
     }

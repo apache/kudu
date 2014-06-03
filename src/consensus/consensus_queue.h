@@ -15,6 +15,9 @@
 #include "util/status.h"
 
 namespace kudu {
+template<class T>
+class AtomicGauge;
+class MetricContext;
 
 namespace log {
 class Log;
@@ -85,7 +88,7 @@ struct PeerMessage {
 // modify it.
 class PeerMessageQueue {
  public:
-  PeerMessageQueue();
+  explicit PeerMessageQueue(const MetricContext& metric_ctx);
 
   // Appends a operation that must be replicated to the quorum and associates
   // it with the provided 'status'.
@@ -137,11 +140,30 @@ class PeerMessageQueue {
   // queued.
   void Close();
 
-  int64_t GetQueuedOperationsSizeBytesForTests() {
-    return queued_ops_size_bytes_;
-  }
+  int64_t GetQueuedOperationsSizeBytesForTests() const;
+
+  string ToString() const;
 
   void DumpToLog();
+
+  struct Metrics {
+    // Keeps track of the total number of operations in the queue.
+    AtomicGauge<int64_t>* total_num_ops;
+    // Keeps track of the number of ops. that are completed (IsAllDone() is true) but
+    // haven't been deleted from the queue (either because the buffer is not full,
+    // because there is a dangling operation with a lower id or just because
+    // TrimBuffer() hasn't been called yet).
+    AtomicGauge<int64_t>* num_all_done_ops;
+    // Keeps track of the number of ops. that are completed by a majority but still need
+    // to be replicated to a minority (IsDone() is true, IsAllDone() is false).
+    AtomicGauge<int64_t>* num_majority_done_ops;
+    // Keeps track of the number of ops. that are still in progress (IsDone() returns false).
+    AtomicGauge<int64_t>* num_in_progress_ops;
+    // Keeps track of the total size of the queue, in bytes.
+    AtomicGauge<int64_t>* queue_size_bytes;
+
+    explicit Metrics(const MetricContext& metric_ctx);
+  };
 
   ~PeerMessageQueue();
 
@@ -153,9 +175,6 @@ class PeerMessageQueue {
   typedef std::pair<OpId, Status> ErrorEntry;
 
   Status TrimBuffer();
-
-  // The current size of the buffer in bytes
-  uint64_t queued_ops_size_bytes_;
 
   // The total size of consensus entries to keep in memory.
   // This is a soft limit, i.e. messages in the queue are discarded
@@ -174,6 +193,8 @@ class PeerMessageQueue {
   MessagesBuffer messages_;
   mutable simple_spinlock queue_lock_;
   OpId low_watermark_;
+
+  Metrics metrics_;
 
   enum State {
     kQueueOpen,

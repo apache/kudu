@@ -28,10 +28,12 @@ using tserver::ChangeConfigResponsePB;
 using tserver::TabletServerServiceProxy;
 
 RaftConsensus::RaftConsensus(const ConsensusOptions& options,
-                             gscoped_ptr<PeerProxyFactory> proxy_factory)
+                             gscoped_ptr<PeerProxyFactory> proxy_factory,
+                             const MetricContext& metric_ctx)
     : options_(options) ,
       log_(NULL),
       peer_proxy_factory_(proxy_factory.Pass()),
+      queue_(metric_ctx),
       callback_pool_("consensus-op-compl-callback-pool", 0, 1,
                                   ThreadPool::DEFAULT_TIMEOUT) {
   CHECK_OK(callback_pool_.Init());
@@ -520,7 +522,6 @@ QuorumPB RaftConsensus::Quorum() const {
 ReplicaState* RaftConsensus::GetReplicaStateForTests() {
   return state_.get();
 }
-
 
 RaftConsensus::~RaftConsensus() {
   Shutdown();

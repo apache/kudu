@@ -48,6 +48,7 @@ class TabletPeer : public consensus::ReplicaTransactionFactory {
 
   TabletPeer(const scoped_refptr<metadata::TabletMetadata>& meta,
              const metadata::QuorumPeerPB& quorum_peer,
+             const MetricContext& metric_ctx,
              MarkDirtyCallback mark_dirty_func);
 
   ~TabletPeer();
@@ -257,6 +258,8 @@ class TabletPeer : public consensus::ReplicaTransactionFactory {
   // ChangeConfigTransactions obtain this lock on prepare and release it on
   // apply.
   mutable Semaphore config_sem_;
+
+  MetricContext metric_ctx_;
 
   DISALLOW_COPY_AND_ASSIGN(TabletPeer);
 };

@@ -16,6 +16,7 @@
 
 #include "common/wire_protocol.h"
 #include "util/auto_release_pool.h"
+#include "util/metrics.h"
 
 DEFINE_int32(consensus_entry_cache_size_soft_limit_mb, 128,
              "The total size of consensus entries to keep in memory."
@@ -39,17 +40,41 @@ using std::tr1::shared_ptr;
 using std::tr1::unordered_map;
 using strings::Substitute;
 
+METRIC_DEFINE_gauge_int64(total_num_ops, MetricUnit::kCount,
+                          "Total number of queued operations in the leader queue.");
+METRIC_DEFINE_gauge_int64(num_all_done_ops, MetricUnit::kCount,
+                          "Number of operations in the leader queue ack'd by all peers.");
+METRIC_DEFINE_gauge_int64(num_majority_done_ops, MetricUnit::kCount,
+                          "Number of operations in the leader queue ack'd by a majority but "
+                          "not all peers.");
+METRIC_DEFINE_gauge_int64(num_in_progress_ops, MetricUnit::kCount,
+                          "Number of operations in the leader queue ack'd by a minority of "
+                          "peers.");
+METRIC_DEFINE_gauge_int64(queue_size_bytes, MetricUnit::kBytes,
+                          "Size of the leader queue, in bytes.");
+
 PeerMessage::PeerMessage(gscoped_ptr<OperationPB> op,
                          const scoped_refptr<OperationStatusTracker>& status)
     : op_(op.Pass()),
       status_(status) {
 }
 
-PeerMessageQueue::PeerMessageQueue()
-    : queued_ops_size_bytes_(0),
-      // TODO manage these on a server-wide basis
+#define INSTANTIATE_METRIC(x) \
+  AtomicGauge<int64_t>::Instantiate(x, metric_ctx)
+PeerMessageQueue::Metrics::Metrics(const MetricContext& metric_ctx)
+  : total_num_ops(INSTANTIATE_METRIC(METRIC_total_num_ops)),
+    num_all_done_ops(INSTANTIATE_METRIC(METRIC_num_all_done_ops)),
+    num_majority_done_ops(INSTANTIATE_METRIC(METRIC_num_majority_done_ops)),
+    num_in_progress_ops(INSTANTIATE_METRIC(METRIC_num_in_progress_ops)),
+    queue_size_bytes(INSTANTIATE_METRIC(METRIC_queue_size_bytes)) {
+}
+#undef INSTANTIATE_METRIC
+
+PeerMessageQueue::PeerMessageQueue(const MetricContext& metric_ctx)
+    : // TODO manage these on a server-wide basis
       max_ops_size_bytes_soft_(FLAGS_consensus_entry_cache_size_soft_limit_mb * 1024 * 1024),
       max_ops_size_bytes_hard_(FLAGS_consensus_entry_cache_size_hard_limit_mb * 1024 * 1024),
+      metrics_(metric_ctx),
       state_(kQueueOpen) {
 }
 
@@ -82,15 +107,27 @@ Status PeerMessageQueue::AppendOperation(gscoped_ptr<OperationPB> operation,
   DCHECK(operation->has_commit()
          || operation->has_replicate()) << "Operation must be a commit or a replicate: "
              << operation->DebugString();
-  queued_ops_size_bytes_ += operation->ByteSize();
+  metrics_.queue_size_bytes->IncrementBy(operation->ByteSize());
   if (PREDICT_FALSE(VLOG_IS_ON(2))) {
     VLOG(2) << "Appended operation to queue: " << operation->ShortDebugString() <<
         " Operation Status: " << status->ToString();
   }
   PeerMessage* msg = new PeerMessage(operation.Pass(), status);
   InsertOrDieNoPrint(&messages_, msg->GetOpId(), msg);
+  metrics_.total_num_ops->Increment();
 
-  if (queued_ops_size_bytes_ < max_ops_size_bytes_soft_) {
+  // In tests some operations might already be IsAllDone().
+  if (PREDICT_FALSE(status->IsAllDone())) {
+    metrics_.num_all_done_ops->Increment();
+  // If we're just replicating to learners, some operations might already
+  // be IsDone().
+  } else if (PREDICT_FALSE(status->IsDone())) {
+    metrics_.num_majority_done_ops->Increment();
+  } else {
+    metrics_.num_in_progress_ops->Increment();
+  }
+
+  if (metrics_.queue_size_bytes->value() < max_ops_size_bytes_soft_) {
     return Status::OK();
   }
   // TODO trim the buffer before we add to the queue
@@ -170,17 +207,26 @@ void PeerMessageQueue::ResponseFromPeer(const string& uuid,
   PeerMessage* msg = NULL;
   for (;iter != end_iter; iter++) {
     msg = (*iter).second;
+    bool was_done = msg->status_->IsDone();
+    bool was_all_done = msg->status_->IsAllDone();
+
     if (msg->op_->has_commit() &&
         OpIdCompare(msg->op_->id(), current_status->safe_commit_watermark()) > 0 &&
         OpIdCompare(msg->op_->id(), new_status.safe_commit_watermark()) <= 0) {
       msg->status_->AckPeer(uuid);
-      continue;
-    }
-    if (msg->op_->has_replicate() &&
+    } else if (msg->op_->has_replicate() &&
         OpIdCompare(msg->op_->id(), current_status->replicated_watermark()) > 0 &&
         OpIdCompare(msg->op_->id(), new_status.replicated_watermark()) <= 0) {
       msg->status_->AckPeer(uuid);
-      continue;
+    }
+
+    if (msg->status_->IsAllDone() && !was_all_done) {
+      metrics_.num_all_done_ops->Increment();
+      metrics_.num_majority_done_ops->Decrement();
+    }
+    if (msg->status_->IsDone() && !was_done) {
+      metrics_.num_majority_done_ops->Increment();
+      metrics_.num_in_progress_ops->Decrement();
     }
   }
 
@@ -209,19 +255,22 @@ Status PeerMessageQueue::TrimBuffer() {
   // TODO for now we're just trimming the buffer, but we need to handle when
   // the buffer is full but there is a peer hanging on to the queue (very delayed)
   MessagesBuffer::iterator iter = messages_.begin();
-  while (queued_ops_size_bytes_ > max_ops_size_bytes_soft_ && iter != messages_.end()) {
+  while (metrics_.queue_size_bytes->value() > max_ops_size_bytes_soft_ &&
+      iter != messages_.end()) {
     PeerMessage* message = (*iter).second;
     if (!message->status_->IsAllDone()) {
-      if (queued_ops_size_bytes_ < max_ops_size_bytes_hard_) {
+      if (metrics_.queue_size_bytes->value() < max_ops_size_bytes_hard_) {
         return Status::OK();
       } else {
         LOG(FATAL) << "Queue reached hard limit: " << max_ops_size_bytes_hard_;
       }
     }
-    queued_ops_size_bytes_ -= (*iter).second->op_->ByteSize();
     PeerMessage* msg = (*iter).second;
     messages_.erase(iter++);
     delete msg;
+    metrics_.total_num_ops->Decrement();
+    metrics_.num_all_done_ops->Decrement();
+    metrics_.queue_size_bytes->DecrementBy((*iter).second->op_->ByteSize());
   }
   return Status::OK();
 }
@@ -247,6 +296,21 @@ void PeerMessageQueue::Close() {
   state_ = kQueueClosed;
   STLDeleteValues(&messages_);
   STLDeleteValues(&watermarks_);
+}
+
+int64_t PeerMessageQueue::GetQueuedOperationsSizeBytesForTests() const {
+  return metrics_.queue_size_bytes->value();
+}
+
+string PeerMessageQueue::ToString() const {
+  // Even though metrics are thread-safe obtain the lock so that we get
+  // a "consistent" snaphsot of the metrics.
+  boost::lock_guard<simple_spinlock> lock(queue_lock_);
+  return Substitute("Consensus queue metrics: Total Ops: $0, All Done Ops: $1, "
+      "Only Majority Done Ops: $2, In Progress Ops: $3, Queue Size (bytes): $4",
+      metrics_.total_num_ops->value(), metrics_.num_all_done_ops->value(),
+      metrics_.num_majority_done_ops->value(), metrics_.num_in_progress_ops->value(),
+      metrics_.queue_size_bytes->value());
 }
 
 PeerMessageQueue::~PeerMessageQueue() {
