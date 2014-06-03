@@ -2,15 +2,17 @@ System Requirements
 ------------------------------------------------------------
 The following dependencies are necessary to build kudu:
 
-- gcc 4.4 or higher
+- autoscan
 - boost >= 1.41, including the following components:
   - boost::filesystem
   - boost::thread
   - boost::system
 - cmake 2.8.7
+- gcc 4.4 or higher
 - libssl-dev (Ubuntu) or openssl-devel (CentOS)
 - libsasl2-dev (Ubuntu) or cyrus-sasl-devel (CentOS)
 - libtool
+- ntp
 
 Earlier versions of each of these may work, but have not recently
 been tested.
