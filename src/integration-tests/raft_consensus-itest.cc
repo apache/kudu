@@ -8,6 +8,9 @@
 #include "client/client.h"
 #include "common/wire_protocol-test-util.h"
 #include "common/schema.h"
+#include "consensus/consensus_queue.h"
+#include "consensus/raft_consensus.h"
+#include "consensus/raft_consensus_state.h"
 #include "integration-tests/mini_cluster.h"
 #include "master/catalog_manager.h"
 #include "master/mini_master.h"
@@ -16,17 +19,30 @@
 #include "tserver/tablet_server.h"
 #include "tserver/mini_tablet_server.h"
 #include "tserver/tablet_server-test-base.h"
-#include "util/test_util.h"
+#include "util/random_util.h"
 #include "util/stopwatch.h"
+#include "util/test_util.h"
 
 DECLARE_int32(default_num_replicas);
+DECLARE_int32(consensus_entry_cache_size_soft_limit_mb);
+DECLARE_int32(consensus_entry_cache_size_hard_limit_mb);
+
+DEFINE_int32(num_client_threads, 8,
+             "Number of client threads to launch");
+DEFINE_int64(client_inserts_per_thread, 1000,
+             "Number of rows inserted by each client thread");
+DEFINE_int64(client_num_batches_per_thread, 100,
+             "In how many batches to group the rows, for each client");
 
 namespace kudu {
 
 namespace tserver {
 
-using std::vector;
-using std::tr1::shared_ptr;
+using consensus::RaftConsensus;
+using consensus::ReplicaState;
+using client::KuduClientOptions;
+using client::KuduClient;
+using client::KuduTable;
 using master::GetTableLocationsRequestPB;
 using master::GetTableLocationsResponsePB;
 using master::TableIdentifierPB;
@@ -34,16 +50,19 @@ using master::TabletLocationsPB;
 using master::MiniMaster;
 using metadata::QuorumPB;
 using metadata::QuorumPeerPB;
+using std::vector;
+using std::tr1::shared_ptr;
 using tserver::TabletServer;
-using client::KuduClientOptions;
-using client::KuduClient;
-using client::KuduTable;
 
 static const int kMaxRetries = 20;
+static const int kNumReplicas = 3;
 
 // Integration test for distributed consensus.
 class DistConsensusTest : public TabletServerTest {
  public:
+  DistConsensusTest()
+      : inserters_(FLAGS_num_client_threads) {
+  }
 
   struct ProxyDetails {
     master::TSInfoPB ts_info;
@@ -51,6 +70,8 @@ class DistConsensusTest : public TabletServerTest {
   };
 
   virtual void SetUp() {
+    FLAGS_consensus_entry_cache_size_soft_limit_mb = 5;
+    FLAGS_consensus_entry_cache_size_hard_limit_mb = 10;
     KuduTest::SetUp();
     CreateCluster();
     CreateClient();
@@ -58,10 +79,10 @@ class DistConsensusTest : public TabletServerTest {
   }
 
   void CreateCluster() {
-    FLAGS_default_num_replicas = 3;
-    cluster_.reset(new MiniCluster(env_.get(), test_dir_, 3));
+    FLAGS_default_num_replicas = kNumReplicas;
+    cluster_.reset(new MiniCluster(env_.get(), test_dir_, kNumReplicas));
     ASSERT_STATUS_OK(cluster_->Start());
-    ASSERT_STATUS_OK(cluster_->WaitForTabletServerCount(3));
+    ASSERT_STATUS_OK(cluster_->WaitForTabletServerCount(kNumReplicas));
     CreateTestSchema(&schema_);
   }
 
@@ -99,8 +120,8 @@ class DistConsensusTest : public TabletServerTest {
     }
   }
 
-  // Gets the the locations of the quorum and waits until 1 LEADER and 2 FOLLOWERS
-  // are reported.
+  // Gets the the locations of the quorum and waits until 1 LEADER and kNumReplicas - 1
+  // FOLLOWERS are reported.
   void WaitForAndGetQuorum() {
     GetTableLocationsRequestPB req;
     TableIdentifierPB* id = req.mutable_table();
@@ -123,8 +144,8 @@ class DistConsensusTest : public TabletServerTest {
       // TODO add a way to wait for a tablet to be ready. Also to wait for it to
       // have a certain _active_ replication count.
       replicas_.clear();
-      Status status = cluster_->WaitForReplicaCount(resp.tablet_locations(0).tablet_id(), 3,
-                                                    &locations);
+      Status status = cluster_->WaitForReplicaCount(resp.tablet_locations(0).tablet_id(),
+                                                    kNumReplicas, &locations);
       if (status.IsTimedOut()) {
         LOG(WARNING)<< "Timeout waiting for all three replicas to be online, retrying...";
         num_retries++;
@@ -134,7 +155,7 @@ class DistConsensusTest : public TabletServerTest {
       ASSERT_STATUS_OK(status);
       CreateLeaderAndReplicaProxies(locations);
 
-      if (leader_.get() == NULL || replicas_.size() < 2) {
+      if (leader_.get() == NULL || replicas_.size() < kNumReplicas - 1) {
         LOG(WARNING)<< "Couldn't find the leader and/or replicas. Locations: "
         << locations.ShortDebugString();
         sleep(1);
@@ -195,6 +216,45 @@ class DistConsensusTest : public TabletServerTest {
     }
   }
 
+  void InsertTestRowsRemoteThread(int tid,
+                                  uint64_t first_row,
+                                  uint64_t count,
+                                  uint64_t num_batches,
+                                  TabletServerServiceProxy* proxy) {
+    TabletServerTest::InsertTestRowsRemote(tid, first_row, count, num_batches, proxy, tablet_id);
+    inserters_.CountDown();
+  }
+
+  // Brings Chaos to a MiniTabletServer by introducing random delays. Does this by stealing the
+  // consensus lock a portion of the time.
+  // TODO use the consensus/tablet/log hooks _as_well_as_ lock stealing
+  // TODO This generates sleeps < 1.163175 seconds, with 99% probability. That is, this is tailored
+  // to go over the default consensus timeout (1 sec) with < 5% probability. Change this to be
+  // able to handle any timeout.
+  void DelayInjectorThread(MiniTabletServer* mini_tablet_server) {
+    shared_ptr<TabletPeer> peer;
+    CHECK(mini_tablet_server->server()->tablet_manager()->LookupTabletUnlocked(tablet_id, &peer));
+    RaftConsensus* consensus = down_cast<RaftConsensus*>(peer->consensus());
+    ReplicaState* state = consensus->GetReplicaStateForTests();
+    while (inserters_.count() > 0) {
+
+      double sleep_time = NormalDist(0, 0.5);
+      if (sleep_time < 0) sleep_time = 0;
+
+      double val = (rand() * 1.0) / RAND_MAX;
+
+      if (val < 0.8) {
+        usleep(sleep_time * 1000 * 1000);
+        continue;
+      }
+
+      ReplicaState::UniqueLock lock;
+      CHECK_OK(state->LockForRead(&lock));
+      usleep(sleep_time * 1000 * 1000);
+    }
+  }
+
+
   virtual void TearDown() {
     cluster_->Shutdown();
     STLDeleteElements(&replicas_);
@@ -210,6 +270,9 @@ class DistConsensusTest : public TabletServerTest {
   QuorumPB quorum_;
   Schema schema_;
   string tablet_id;
+
+  std::vector<scoped_refptr<kudu::Thread> > threads_;
+  CountDownLatch inserters_;
 };
 
 // TODO allow the scan to define an operation id, fetch the last id
@@ -219,13 +282,56 @@ TEST_F(DistConsensusTest, TestInsertAndMutateThroughConsensus) {
 
   if (AllowSlowTests()) {
     for (int i = 0; i < 100; i++) {
-      InsertTestRowsRemote(0, i * 1000, 1000, 100, leader_->proxy.get(), tablet_id);
+      InsertTestRowsRemoteThread(0, i * 1000, 1000, 100, leader_->proxy.get());
     }
     // sleep to let the request get committed to the replicas.
     usleep(500000);
   } else {
-    InsertTestRowsRemote(0, 0, 1000, 100, leader_->proxy.get(), tablet_id);
+    InsertTestRowsRemoteThread(0, 0, 1000, 100, leader_->proxy.get());
     usleep(1000000);
+  }
+  AssertRowsExistInReplicas();
+}
+
+// Inserts rows through consensus and also starts one delay injecting thread
+// that steals consensus peer locks for a while. This is meant to test that
+// even with timeouts and repeated requests consensus still works.
+TEST_F(DistConsensusTest, MultiThreadedMutateAndInsertThroughConsensus) {
+  if (1000 == FLAGS_client_inserts_per_thread) {
+    if (this->AllowSlowTests()) {
+      FLAGS_client_inserts_per_thread = 50000;
+      FLAGS_client_num_batches_per_thread = 5000;
+    }
+  }
+
+  int num_threads = FLAGS_num_client_threads;
+  for (int i = 0; i < num_threads; i++) {
+    scoped_refptr<kudu::Thread> new_thread;
+    CHECK_OK(kudu::Thread::Create("test", strings::Substitute("ts-test$0", i),
+                                  &DistConsensusTest::InsertTestRowsRemoteThread,
+                                  this, i, i * FLAGS_client_inserts_per_thread,
+                                  FLAGS_client_inserts_per_thread,
+                                  FLAGS_client_num_batches_per_thread,
+                                  leader_->proxy.get(),
+                                  &new_thread));
+    threads_.push_back(new_thread);
+  }
+  for (int i = 0; i < kNumReplicas; i++) {
+    scoped_refptr<kudu::Thread> new_thread;
+    CHECK_OK(kudu::Thread::Create("test", strings::Substitute("chaos-test$0", i),
+                                  &DistConsensusTest::DelayInjectorThread,
+                                  this, cluster_->mini_tablet_server(i),
+                                  &new_thread));
+    threads_.push_back(new_thread);
+  }
+  BOOST_FOREACH(scoped_refptr<kudu::Thread> thr, threads_) {
+   CHECK_OK(ThreadJoiner(thr.get()).Join());
+  }
+
+  if (AllowSlowTests()) {
+    usleep(5000000);
+  } else {
+    usleep(2000000);
   }
   AssertRowsExistInReplicas();
 }
