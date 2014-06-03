@@ -18,7 +18,9 @@
 using std::set;
 
 // Use this to search for plugins. Should work at least on RHEL & Ubuntu.
-DEFINE_string(sasl_path, "/usr/lib/sasl2:/usr/lib64/sasl2:/usr/lib/x86_64-linux-gnu/sasl2",
+// We prefix this with 'krpc' to avoid a collision with an Impala symbol of the
+// same name.
+DEFINE_string(krpc_sasl_path, "/usr/lib/sasl2:/usr/lib64/sasl2:/usr/lib/x86_64-linux-gnu/sasl2",
     "Colon separated list of paths to look for SASL security library plugins.");
 
 namespace kudu {
@@ -104,8 +106,8 @@ static int SaslGetOption(void* context, const char* plugin_name, const char* opt
 // UBUNTU:          /usr/lib/sasl2 or /usr/lib/x86_64-linux-gnu/sasl2
 // CENTOS:          /usr/lib64/sasl2
 static int SaslGetPath(void* context, const char** path) {
-  *path = FLAGS_sasl_path.c_str();
-  VLOG(3) << "SASL path: " << FLAGS_sasl_path;
+  *path = FLAGS_krpc_sasl_path.c_str();
+  VLOG(3) << "SASL path: " << FLAGS_krpc_sasl_path;
   return SASL_OK;
 }
 
