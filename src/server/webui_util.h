@@ -17,6 +17,7 @@ void HtmlOutputSchemaTable(const Schema& schema,
                            std::stringstream* output);
 void HtmlOutputImpalaSchema(const std::string& table_name,
                             const Schema& schema,
+                            const std::string& master_address,
                             std::stringstream* output);
 void HtmlOutputTaskList(const std::vector<scoped_refptr<MonitoredTask> >& tasks,
                         std::stringstream* output);

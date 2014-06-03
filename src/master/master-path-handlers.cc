@@ -96,10 +96,12 @@ void MasterPathHandlers::HandleTablePage(const Webserver::ArgumentMap &args,
   }
 
   Schema schema;
+  string table_name;
   vector<scoped_refptr<TabletInfo> > tablets;
   {
     TableMetadataLock l(table.get(), TableMetadataLock::READ);
-    *output << "<h1>Table: " << EscapeForHtmlToString(l.data().name())
+    table_name = l.data().name();
+    *output << "<h1>Table: " << EscapeForHtmlToString(table_name)
             << " (" << EscapeForHtmlToString(table_id) << ")</h1>\n";
 
     *output << "<table class='table table-striped'>\n";
@@ -133,6 +135,10 @@ void MasterPathHandlers::HandleTablePage(const Webserver::ArgumentMap &args,
         QuorumToHtml(locations));
   }
   *output << "</table>\n";
+
+  *output << "<h2>Impala CREATE TABLE statement</h2>\n";
+  const string master_addr = master_->first_rpc_address().ToString();
+  HtmlOutputImpalaSchema(table_name, schema, master_addr, output);
 
   std::vector<scoped_refptr<MonitoredTask> > task_list;
   table->GetTaskList(&task_list);
