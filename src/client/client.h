@@ -25,6 +25,7 @@
 namespace kudu {
 
 class DnsResolver;
+class HostPort;
 class RpcLineItemDAO;
 
 namespace rpc {
@@ -45,6 +46,7 @@ class KuduSession;
 class KuduTable;
 class MetaCache;
 class RemoteTablet;
+class RemoteTabletServer;
 
 namespace internal {
 class Batcher;
@@ -160,8 +162,14 @@ class KuduClient : public std::tr1::enable_shared_from_this<KuduClient> {
   explicit KuduClient(const KuduClientOptions& options);
   Status Init();
 
+  enum ProxySelection {
+    LEADER_ONLY,
+    CLOSEST_REPLICA
+  };
+
   // Return an RPC proxy to the given tablet ID.
   Status GetTabletProxy(const std::string& tablet_id,
+                        ProxySelection selection,
                         std::tr1::shared_ptr<tserver::TabletServerServiceProxy>* proxy);
 
   Status IsCreateTableInProgress(const std::string& table_name,
@@ -171,12 +179,25 @@ class KuduClient : public std::tr1::enable_shared_from_this<KuduClient> {
                                 const MonoTime& deadline,
                                 bool *alter_in_progress);
 
+  Status InitLocalHostNames();
+
+  bool IsLocalHostPort(const HostPort& hp) const;
+
+  bool IsTabletServerLocal(const RemoteTabletServer& rts) const;
+
+  RemoteTabletServer* PickClosestReplica(const scoped_refptr<RemoteTablet>& rt) const;
+
+
   bool initted_;
   KuduClientOptions options_;
   std::tr1::shared_ptr<rpc::Messenger> messenger_;
 
   gscoped_ptr<DnsResolver> dns_resolver_;
   gscoped_ptr<MetaCache> meta_cache_;
+
+  // Set of hostnames and IPs on the local host.
+  // This is initialized at client startup.
+  std::tr1::unordered_set<std::string> local_host_names_;
 
   // Proxy to the master.
   std::tr1::shared_ptr<master::MasterServiceProxy> master_proxy_;
@@ -696,6 +717,12 @@ class KuduScanner {
   // to the tablet server won't return data.
   Status SetBatchSizeBytes(uint32_t batch_size);
 
+  // This scanner may only read from leaders. This ensures that it sees all
+  // up-to-date information, at the cost of fewer options to read from.
+  //
+  // TODO: kill this in favor of a consistency-level-based API
+  Status SetScanFromLeaderOnly(bool leader_only);
+
   // Returns a string representation of this scan.
   std::string ToString() const;
 
@@ -738,6 +765,9 @@ class KuduScanner {
   bool data_in_open_;
   bool has_batch_size_bytes_;
   uint32 batch_size_bytes_;
+  bool leader_only_;
+
+  std::tr1::shared_ptr<tserver::TabletServerServiceProxy> proxy_;
 
   // The next scan request to be sent. This is cached as a field
   // since most scan requests will share the scanner ID with the previous

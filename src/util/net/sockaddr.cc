@@ -6,6 +6,8 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "gutil/endian.h"
+#include "gutil/macros.h"
 #include "gutil/stringprintf.h"
 
 namespace kudu {
@@ -68,6 +70,10 @@ std::string Sockaddr::ToString() const {
 
 bool Sockaddr::IsWildcard() const {
   return addr_.sin_addr.s_addr == 0;
+}
+
+bool Sockaddr::IsAnyLocalAddress() const {
+  return (NetworkByteOrder::FromHost32(addr_.sin_addr.s_addr) >> 24) == 127;
 }
 
 } // namespace kudu

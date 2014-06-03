@@ -232,6 +232,7 @@ class ClientTest : public KuduTest {
 
   int CountRowsFromClient(KuduTable* table, uint32_t lower_bound, uint32_t upper_bound) {
     KuduScanner scanner(table);
+    scanner.SetScanFromLeaderOnly(true);
     Schema empty_projection(vector<ColumnSchema>(), 0);
     CHECK_OK(scanner.SetProjection(&empty_projection));
     if (lower_bound != kNoBound && upper_bound != kNoBound) {
@@ -258,6 +259,7 @@ class ClientTest : public KuduTest {
   void ScanRowsToStrings(KuduTable* table, vector<string>* row_strings) {
     row_strings->clear();
     KuduScanner scanner(table);
+    scanner.SetScanFromLeaderOnly(true);
     ASSERT_STATUS_OK(scanner.Open());
     vector<const uint8_t*> rows;
     while (scanner.HasMoreRows()) {

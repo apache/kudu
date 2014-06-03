@@ -50,7 +50,8 @@ void RpcLineItemDAO::Init() {
   client_->meta_cache_->LookupTabletByKey(client_table_.get(), Slice(),
                                      &remote, sync.callback());
   CHECK_OK(sync.Wait());
-  CHECK_OK(client_->GetTabletProxy(remote->tablet_id(), &proxy_));
+  CHECK_OK(client_->GetTabletProxy(remote->tablet_id(), client::KuduClient::LEADER_ONLY,
+                                   &proxy_));
   request_.set_tablet_id(remote->tablet_id());
   CHECK_OK(SchemaToPB(schema, request_.mutable_schema()));
 }

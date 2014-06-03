@@ -118,6 +118,11 @@ string RemoteTabletServer::ToString() const {
   return uuid_;
 }
 
+void RemoteTabletServer::GetHostPorts(std::vector<HostPort>* host_ports) const {
+  boost::lock_guard<simple_spinlock> l(lock_);
+  *host_ports = rpc_hostports_;
+}
+
 ////////////////////////////////////////////////////////////
 
 
@@ -154,6 +159,13 @@ RemoteTabletServer* RemoteTablet::LeaderTServer() const {
 
 bool RemoteTablet::HasLeader() const {
   return LeaderTServer() != NULL;
+}
+
+void RemoteTablet::GetRemoteTabletServers(std::vector<RemoteTabletServer*>* servers) const {
+  boost::lock_guard<simple_spinlock> l(lock_);
+  BOOST_FOREACH(const RemoteReplica& replica, replicas_) {
+    servers->push_back(replica.ts);
+  }
 }
 
 ////////////////////////////////////////////////////////////

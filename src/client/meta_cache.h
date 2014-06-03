@@ -68,6 +68,8 @@ class RemoteTabletServer {
 
   std::string ToString() const;
 
+  void GetHostPorts(std::vector<HostPort>* host_ports) const;
+
  private:
   // Internal callback for DNS resolution.
   void DnsResolutionFinished(const Status &result_status,
@@ -129,6 +131,8 @@ class RemoteTablet : public base::RefCountedThreadSafe<RemoteTablet> {
   // list may change at any time, callers should always check the result
   // against NULL.
   RemoteTabletServer* LeaderTServer() const;
+
+  void GetRemoteTabletServers(std::vector<RemoteTabletServer*>* servers) const;
 
   // Return true if the tablet currently has a known LEADER replica
   // (i.e the next call to LeaderTServer() is likely to return non-NULL)

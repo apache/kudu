@@ -39,6 +39,7 @@ class Sockaddr {
   std::string ToString() const;
 
   bool IsWildcard() const;
+  bool IsAnyLocalAddress() const;
 
   // the default auto-generated copy constructor is fine here
  private:

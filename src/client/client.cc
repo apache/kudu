@@ -147,7 +147,41 @@ Status KuduClient::Init() {
   meta_cache_.reset(new MetaCache(this));
   dns_resolver_.reset(new DnsResolver());
 
+  // Init local host names used for locality decisions.
+  RETURN_NOT_OK_PREPEND(InitLocalHostNames(),
+                        "Could not determine local host names");
+
   initted_ = true;
+
+  return Status::OK();
+}
+
+Status KuduClient::InitLocalHostNames() {
+  // Currently, we just use our configured hostname, and resolve it to come up with
+  // a list of potentially local hosts. It would be better to iterate over all of
+  // the local network adapters. See KUDU-327.
+  string hostname;
+  RETURN_NOT_OK(GetHostname(&hostname));
+
+  // We don't want to consider 'localhost' to be local - otherwise if a misconfigured
+  // server reports its own name as localhost, all clients will hammer it.
+  if (hostname != "localhost" && hostname != "localhost.localdomain") {
+    local_host_names_.insert(hostname);
+    VLOG(1) << "Considering host " << hostname << " local";
+  }
+
+  vector<Sockaddr> addresses;
+  RETURN_NOT_OK_PREPEND(HostPort(hostname, 0).ResolveAddresses(&addresses),
+                        Substitute("Could not resolve local host name '$0'", hostname));
+
+  BOOST_FOREACH(const Sockaddr& addr, addresses) {
+    // Similar to above, ignore local or wildcard addresses.
+    if (addr.IsWildcard()) continue;
+    if (addr.IsAnyLocalAddress()) continue;
+
+    VLOG(1) << "Considering host " << addr.host() << " local";
+    local_host_names_.insert(addr.host());
+  }
 
   return Status::OK();
 }
@@ -335,15 +369,53 @@ shared_ptr<KuduSession> KuduClient::NewSession() {
   return ret;
 }
 
+bool KuduClient::IsLocalHostPort(const HostPort& hp) const {
+  return ContainsKey(local_host_names_, hp.host());
+}
+
+bool KuduClient::IsTabletServerLocal(const RemoteTabletServer& rts) const {
+  vector<HostPort> host_ports;
+  rts.GetHostPorts(&host_ports);
+  BOOST_FOREACH(const HostPort& hp, host_ports) {
+    if (IsLocalHostPort(hp)) return true;
+  }
+  return false;
+}
+
+RemoteTabletServer* KuduClient::PickClosestReplica(
+  const scoped_refptr<RemoteTablet>& rt) const {
+
+  vector<RemoteTabletServer*> candidates;
+  rt->GetRemoteTabletServers(&candidates);
+
+  BOOST_FOREACH(RemoteTabletServer* rts, candidates) {
+    if (IsTabletServerLocal(*rts)) {
+      return rts;
+    }
+  }
+
+  // No local one found. Pick a random one
+  return candidates[rand() % candidates.size()];
+}
+
 Status KuduClient::GetTabletProxy(const std::string& tablet_id,
+                                  ProxySelection selection,
                                   shared_ptr<TabletServerServiceProxy>* proxy) {
   // TODO: write a proper async version of this for async client.
   scoped_refptr<RemoteTablet> remote_tablet;
   meta_cache_->LookupTabletByID(tablet_id, &remote_tablet);
 
-  RemoteTabletServer* ts = remote_tablet->LeaderTServer();
-  if (PREDICT_FALSE(ts == NULL)) {
-    return Status::ServiceUnavailable(Substitute("No LEADER for tablet $0", tablet_id));
+  RemoteTabletServer* ts = NULL;
+  if (selection == LEADER_ONLY) {
+    ts = remote_tablet->LeaderTServer();
+    if (PREDICT_FALSE(ts == NULL)) {
+      return Status::ServiceUnavailable(Substitute("No LEADER for tablet $0", tablet_id));
+    }
+  } else if (selection == CLOSEST_REPLICA) {
+    ts = PickClosestReplica(remote_tablet);
+    if (PREDICT_FALSE(ts == NULL)) {
+      return Status::ServiceUnavailable(Substitute("No replicas for tablet $0", tablet_id));
+    }
   }
 
   Synchronizer s;
@@ -666,6 +738,7 @@ KuduScanner::KuduScanner(KuduTable* table)
     data_in_open_(false),
     has_batch_size_bytes_(false),
     batch_size_bytes_(0),
+    leader_only_(false),
     table_(DCHECK_NOTNULL(table)),
     projection_(&table->schema()),
     spec_encoder_(table->schema()),
@@ -686,6 +759,11 @@ Status KuduScanner::SetProjection(const Schema* projection) {
 Status KuduScanner::SetBatchSizeBytes(uint32_t batch_size) {
   has_batch_size_bytes_ = true;
   batch_size_bytes_ = batch_size;
+  return Status::OK();
+}
+
+Status KuduScanner::SetScanFromLeaderOnly(bool leader_only) {
+  leader_only_ = leader_only;
   return Status::OK();
 }
 
@@ -737,9 +815,11 @@ Status KuduScanner::OpenTablet(const Slice& key) {
                                                   key,
                                                   &remote_, s.callback());
   RETURN_NOT_OK(s.Wait());
-  shared_ptr<TabletServerServiceProxy> proxy;
-  RETURN_NOT_OK(table_->client_->GetTabletProxy(remote_->tablet_id(), &proxy));
-  DCHECK(proxy);
+  RETURN_NOT_OK(table_->client_->GetTabletProxy(
+                  remote_->tablet_id(),
+                  leader_only_ ? KuduClient::LEADER_ONLY : KuduClient::CLOSEST_REPLICA,
+                  &proxy_));
+  CHECK(proxy_);
 
   // Scan it.
   PrepareRequest(KuduScanner::NEW);
@@ -767,7 +847,7 @@ Status KuduScanner::OpenTablet(const Slice& key) {
   RETURN_NOT_OK(SchemaToColumnPBs(*projection_, scan->mutable_projected_columns()));
   controller_.Reset();
   controller_.set_timeout(MonoDelta::FromMilliseconds(kRpcTimeoutMillis));
-  RETURN_NOT_OK(proxy->Scan(next_req_, &last_response_, &controller_));
+  RETURN_NOT_OK(proxy_->Scan(next_req_, &last_response_, &controller_));
   RETURN_NOT_OK(CheckForErrors());
 
   next_req_.clear_new_scan_request();
@@ -839,6 +919,7 @@ Status KuduScanner::Open() {
 
 void KuduScanner::Close() {
   if (!open_) return;
+  CHECK(proxy_);
 
   VLOG(1) << "Ending scan " << ToString();
 
@@ -855,17 +936,11 @@ void KuduScanner::Close() {
   PrepareRequest(KuduScanner::CLOSE);
   next_req_.set_close_scanner(true);
   closer->controller.set_timeout(MonoDelta::FromMilliseconds(kRpcTimeoutMillis));
-  shared_ptr<TabletServerServiceProxy> proxy;
-  Status s = table_->client_->GetTabletProxy(remote_->tablet_id(), &proxy);
-  if (s.ok()) {
-    proxy->ScanAsync(next_req_, &closer->response, &closer->controller,
-                     boost::bind(&CloseCallback::Callback, closer.get()));
-    ignore_result(closer.release());
-  } else {
-    LOG(WARNING) << "Unable to close scanner " << ToString() << " on server: "
-                 << s.ToString();
-  }
+  proxy_->ScanAsync(next_req_, &closer->response, &closer->controller,
+                   boost::bind(&CloseCallback::Callback, closer.get()));
+  ignore_result(closer.release());
   next_req_.Clear();
+  proxy_.reset();
   open_ = false;
 }
 
@@ -903,6 +978,7 @@ Status KuduScanner::NextBatch(std::vector<const uint8_t*>* rows) {
   // need to do some swapping of the response objects around to avoid
   // stomping on the memory the user is looking at.
   CHECK(open_);
+  CHECK(proxy_);
 
   if (data_in_open_) {
     // We have data from a previous scan.
@@ -914,10 +990,8 @@ Status KuduScanner::NextBatch(std::vector<const uint8_t*>* rows) {
     VLOG(1) << "Continuing scan " << ToString();
 
     controller_.Reset();
-    shared_ptr<TabletServerServiceProxy> proxy;
-    RETURN_NOT_OK(table_->client_->GetTabletProxy(remote_->tablet_id(), &proxy));
     PrepareRequest(KuduScanner::CONTINUE);
-    RETURN_NOT_OK(proxy->Scan(next_req_, &last_response_, &controller_));
+    RETURN_NOT_OK(proxy_->Scan(next_req_, &last_response_, &controller_));
     RETURN_NOT_OK(CheckForErrors());
     return ExtractRows(rows);
   } else if (MoreTablets()) {

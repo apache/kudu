@@ -64,9 +64,9 @@ TEST_F(NetUtilTest, TestResolveAddresses) {
     LOG(INFO) << "Address: " << addr.ToString();
     EXPECT_TRUE(HasPrefixString(addr.ToString(), "127."));
     EXPECT_TRUE(HasSuffixString(addr.ToString(), ":12345"));
+    EXPECT_TRUE(addr.IsAnyLocalAddress());
   }
 
   ASSERT_STATUS_OK(hp.ResolveAddresses(NULL));
 }
-
 } // namespace kudu
