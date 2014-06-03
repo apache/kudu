@@ -1692,7 +1692,9 @@ void CatalogManager::SelectReplicas(metadata::QuorumPB *quorum,
   }
 
   // TODO: Select the leader
-  QuorumPeerPB *leader = quorum->mutable_peers(rand() % nreplicas);
+  // Super hack for clusters where ts_descs.size() is a multiple of nreplicas, gives
+  // us perfect distribution for the demo.
+  QuorumPeerPB *leader = quorum->mutable_peers((index / ts_descs.size()) % nreplicas);
   leader->set_role(QuorumPeerPB::LEADER);
 }
 
