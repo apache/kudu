@@ -234,7 +234,7 @@ Status Heartbeater::Thread::DoHeartbeat() {
       req.mutable_tablet_report());
   } else {
     VLOG(2) << "Sending an incremental tablet report to master...";
-    server_->tablet_manager()->GenerateTabletReport(
+    server_->tablet_manager()->GenerateIncrementalTabletReport(
       req.mutable_tablet_report());
   }
 
@@ -249,7 +249,7 @@ Status Heartbeater::Thread::DoHeartbeat() {
   last_hb_response_.Swap(&resp);
 
   // TODO: Handle TSHeartbeatResponsePB (e.g. deleted tablets and schema changes)
-  server_->tablet_manager()->AcknowledgeTabletReport(req.tablet_report());
+  server_->tablet_manager()->MarkTabletReportAcknowledged(req.tablet_report());
 
   return Status::OK();
 }

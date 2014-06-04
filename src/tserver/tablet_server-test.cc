@@ -1399,7 +1399,7 @@ TEST_F(TabletServerTest, TestChangeConfiguration_TsTableManagerReportsNewRoles) 
     }
     // Now check that the tablet report reports the correct role
     kudu::master::TabletReportPB report;
-    mini_server_->server()->tablet_manager()->GenerateTabletReport(&report);
+    mini_server_->server()->tablet_manager()->GenerateIncrementalTabletReport(&report);
     ASSERT_EQ(report.updated_tablets_size(), 1);
     kudu::master::ReportedTabletPB tablet_report = report.updated_tablets(0);
     ASSERT_EQ(tablet_report.role(), random_role);

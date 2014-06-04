@@ -31,27 +31,27 @@
 #include "util/stopwatch.h"
 #include "util/trace.h"
 
-using std::string;
-using std::tr1::shared_ptr;
-using std::vector;
-using strings::Substitute;
-using kudu::log::Log;
-using kudu::log::OpIdAnchorRegistry;
-using kudu::master::ReportedTabletPB;
-using kudu::tablet::TabletPeer;
-using kudu::tablet::TabletStatusListener;
-using kudu::tablet::TabletStatusPB;
-using kudu::master::TabletReportPB;
-using kudu::metadata::QuorumPB;
-using kudu::metadata::QuorumPeerPB;
-using kudu::metadata::TabletMasterBlockPB;
-using kudu::metadata::TabletMetadata;
-using kudu::tablet::Tablet;
-
 static const int kNumTabletsToBoostrapSimultaneously = 4;
 
 namespace kudu {
 namespace tserver {
+
+using log::Log;
+using log::OpIdAnchorRegistry;
+using master::ReportedTabletPB;
+using master::TabletReportPB;
+using metadata::QuorumPB;
+using metadata::QuorumPeerPB;
+using metadata::TabletMasterBlockPB;
+using metadata::TabletMetadata;
+using std::string;
+using std::tr1::shared_ptr;
+using std::vector;
+using strings::Substitute;
+using tablet::Tablet;
+using tablet::TabletPeer;
+using tablet::TabletStatusListener;
+using tablet::TabletStatusPB;
 
 namespace {
 // helper to delete the creation-in-progress entry from the corresponding
@@ -411,40 +411,16 @@ void TSTabletManager::MarkTabletDirty(TabletPeer* tablet_peer) {
 void TSTabletManager::MarkDirtyUnlocked(TabletPeer* tablet_peer) {
   TabletReportState* state = FindOrNull(dirty_tablets_, tablet_peer->tablet_id());
   if (state != NULL) {
-    CHECK_GE(next_report_seq_, state->change_seq_);
-    state->change_seq_ = next_report_seq_;
+    CHECK_GE(next_report_seq_, state->change_seq);
+    state->change_seq = next_report_seq_;
   } else {
     TabletReportState state;
-    state.change_seq_ = next_report_seq_;
+    state.change_seq = next_report_seq_;
 
     InsertOrDie(&dirty_tablets_, tablet_peer->tablet_id(), state);
   }
   VLOG(2) << "Will report tablet " << tablet_peer->tablet_id()
       << " in report #" << next_report_seq_;
-}
-
-void TSTabletManager::AcknowledgeTabletReport(const TabletReportPB& report) {
-  boost::shared_lock<rw_spinlock> shared_lock(lock_);
-
-  int32_t acked_seq = report.sequence_number();
-  CHECK_LT(acked_seq, next_report_seq_);
-
-  // Clear the "dirty" state for any tablets which have not changed since
-  // this report.
-  for (DirtyMap::iterator it = dirty_tablets_.begin();
-       it != dirty_tablets_.end();) {
-    const TabletReportState& state = (*it).second;
-
-    if (state.change_seq_ <= acked_seq) {
-      // This entry has not changed since this tablet report, we no longer need
-      // to track it as dirty. If it becomes dirty again, it will be re-added
-      // with a higher sequence number.
-      it = dirty_tablets_.erase(it);
-      continue;
-    } else {
-      ++it;
-    }
-  }
 }
 
 void TSTabletManager::CreateReportedTabletPB(const string& tablet_id,
@@ -463,25 +439,21 @@ void TSTabletManager::CreateReportedTabletPB(const string& tablet_id,
   }
 }
 
-void TSTabletManager::GenerateTabletReport(TabletReportPB* report) {
-  // Generate an incremental report
+void TSTabletManager::GenerateIncrementalTabletReport(TabletReportPB* report) {
   boost::shared_lock<rw_spinlock> shared_lock(lock_);
   report->Clear();
   report->set_sequence_number(next_report_seq_++);
   report->set_is_incremental(true);
-  for (DirtyMap::iterator it = dirty_tablets_.begin();
-       it != dirty_tablets_.end();) {
-    const string& tablet_id = (*it).first;
-
-    // The entry is actually dirty, so report it.
-    shared_ptr<kudu::tablet::TabletPeer>* entry = FindOrNull(tablet_map_, tablet_id);
-    if (entry != NULL) {
-      CreateReportedTabletPB(tablet_id, *entry, report->add_updated_tablets());
+  BOOST_FOREACH(const DirtyMap::value_type& dirty_entry, dirty_tablets_) {
+    const string& tablet_id = dirty_entry.first;
+    shared_ptr<tablet::TabletPeer>* tablet_peer = FindOrNull(tablet_map_, tablet_id);
+    if (tablet_peer) {
+      // Dirty entry, report on it.
+      CreateReportedTabletPB(tablet_id, *tablet_peer, report->add_updated_tablets());
     } else {
+      // Removed.
       report->add_removed_tablet_ids(tablet_id);
     }
-
-    ++it;
   }
 }
 
@@ -494,6 +466,28 @@ void TSTabletManager::GenerateFullTabletReport(TabletReportPB* report) {
     CreateReportedTabletPB(entry.first, entry.second, report->add_updated_tablets());
   }
   dirty_tablets_.clear();
+}
+
+void TSTabletManager::MarkTabletReportAcknowledged(const TabletReportPB& report) {
+  boost::shared_lock<rw_spinlock> shared_lock(lock_);
+
+  int32_t acked_seq = report.sequence_number();
+  CHECK_LT(acked_seq, next_report_seq_);
+
+  // Clear the "dirty" state for any tablets which have not changed since
+  // this report.
+  DirtyMap::iterator it = dirty_tablets_.begin();
+  while (it != dirty_tablets_.end()) {
+    const TabletReportState& state = it->second;
+    if (state.change_seq <= acked_seq) {
+      // This entry has not changed since this tablet report, we no longer need
+      // to track it as dirty. If it becomes dirty again, it will be re-added
+      // with a higher sequence number.
+      it = dirty_tablets_.erase(it);
+    } else {
+      ++it;
+    }
+  }
 }
 
 } // namespace tserver

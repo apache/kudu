@@ -104,21 +104,21 @@ class TSTabletManager {
   //
   // This will report any tablets which have changed since the last acknowleged
   // tablet report. Once the report is successfully transferred, call
-  // AcknowledgeTabletReport() to clear the incremental state. Otherwise, the
+  // MarkTabletReportAcknowledged() to clear the incremental state. Otherwise, the
   // next tablet report will continue to include the same tablets until one
   // is acknowleged.
   //
   // This is thread-safe to call along with tablet modification, but not safe
   // to call from multiple threads at the same time.
-  void GenerateTabletReport(master::TabletReportPB* report);
+  void GenerateIncrementalTabletReport(master::TabletReportPB* report);
+
+  // Generate a full tablet report and reset any incremental state tracking.
+  void GenerateFullTabletReport(master::TabletReportPB* report);
 
   // Mark that the master successfully received and processed the given
   // tablet report. This uses the report sequence number to "un-dirty" any
   // tablets which have not changed since the acknowledged report.
-  void AcknowledgeTabletReport(const master::TabletReportPB& report);
-
-  // Generate a full tablet report and reset any incremental state tracking.
-  void GenerateFullTabletReport(master::TabletReportPB* report);
+  void MarkTabletReportAcknowledged(const master::TabletReportPB& report);
 
   // Get all of the tablets currently hosted on this server.
   void GetTabletPeers(std::vector<std::tr1::shared_ptr<tablet::TabletPeer> >* tablet_peers) const;
@@ -130,6 +130,15 @@ class TSTabletManager {
 
  private:
   FRIEND_TEST(TsTabletManagerTest, TestPersistBlocks);
+
+  // Each tablet report is assigned a sequence number, so that subsequent
+  // tablet reports only need to re-report those tablets which have
+  // changed since the last report. Each tablet tracks the sequence
+  // number at which it became dirty.
+  struct TabletReportState {
+    uint32_t change_seq;
+  };
+  typedef std::tr1::unordered_map<std::string, TabletReportState> DirtyMap;
 
   // Write the given master block onto the file system.
   Status PersistMasterBlock(const metadata::TabletMasterBlockPB& pb);
@@ -183,23 +192,17 @@ class TSTabletManager {
   // Set of tablet ids whose creation is in-progress
   CreatesInProgressSet creates_in_progress_;
 
+  // Tablets to include in the next incremental tablet report.
   // When a tablet is added/removed/added locally and needs to be
-  // reported to the master, an entry is added to this map. Each
-  // tablet report is assigned a sequence number, so that subsequent
-  // tablet reports only need to re-report those tablets which have
-  // changed since the last report. Each tablet tracks the sequence
-  // number at which it became dirty.
-  struct TabletReportState {
-    uint32_t change_seq_;
-  };
-  typedef std::tr1::unordered_map<std::string, TabletReportState> DirtyMap;
-
+  // reported to the master, an entry is added to this map.
   DirtyMap dirty_tablets_;
+
+  // Next tablet report seqno.
   int32_t next_report_seq_;
 
   MetricContext metric_ctx_;
 
-  // latch allowing to wait for the bootstraps to complete.
+  // Latch allowing to wait for the bootstraps to complete.
   ThreadPool bootstrap_pool_;
 
   DISALLOW_COPY_AND_ASSIGN(TSTabletManager);

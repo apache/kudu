@@ -137,18 +137,18 @@ TEST_F(TsTabletManagerTest, TestTabletReports) {
   ASSERT_FALSE(report.is_incremental());
   ASSERT_EQ(0, report.updated_tablets().size());
   CheckSequenceNumber(&seqno, report);
-  tablet_manager_->AcknowledgeTabletReport(report);
+  tablet_manager_->MarkTabletReportAcknowledged(report);
 
   // Another report should now be incremental, but with no changes.
-  tablet_manager_->GenerateTabletReport(&report);
+  tablet_manager_->GenerateIncrementalTabletReport(&report);
   ASSERT_TRUE(report.is_incremental());
   ASSERT_EQ(0, report.updated_tablets().size());
   CheckSequenceNumber(&seqno, report);
-  tablet_manager_->AcknowledgeTabletReport(report);
+  tablet_manager_->MarkTabletReportAcknowledged(report);
 
   // Create a tablet and do another incremental report - should include the tablet.
   ASSERT_STATUS_OK(CreateNewTablet("tablet-1", "", "", schema_, NULL));
-  tablet_manager_->GenerateTabletReport(&report);
+  tablet_manager_->GenerateIncrementalTabletReport(&report);
   ASSERT_TRUE(report.is_incremental());
   ASSERT_EQ(1, report.updated_tablets().size());
   ASSERT_EQ("tablet-1", report.updated_tablets(0).tablet_id());
@@ -156,28 +156,28 @@ TEST_F(TsTabletManagerTest, TestTabletReports) {
 
   // If we don't acknowledge the report, and ask for another incremental report,
   // it should include the tablet again.
-  tablet_manager_->GenerateTabletReport(&report);
+  tablet_manager_->GenerateIncrementalTabletReport(&report);
   ASSERT_TRUE(report.is_incremental());
   ASSERT_EQ(1, report.updated_tablets().size());
   ASSERT_EQ("tablet-1", report.updated_tablets(0).tablet_id());
   CheckSequenceNumber(&seqno, report);
 
   // Now acknowledge the last report, and further incrementals should be empty.
-  tablet_manager_->AcknowledgeTabletReport(report);
-  tablet_manager_->GenerateTabletReport(&report);
+  tablet_manager_->MarkTabletReportAcknowledged(report);
+  tablet_manager_->GenerateIncrementalTabletReport(&report);
   ASSERT_TRUE(report.is_incremental());
   ASSERT_EQ(0, report.updated_tablets().size());
   CheckSequenceNumber(&seqno, report);
-  tablet_manager_->AcknowledgeTabletReport(report);
+  tablet_manager_->MarkTabletReportAcknowledged(report);
 
   // Create a second tablet, and ensure the incremental report shows it.
   ASSERT_STATUS_OK(CreateNewTablet("tablet-2", "", "", schema_, NULL));
-  tablet_manager_->GenerateTabletReport(&report);
+  tablet_manager_->GenerateIncrementalTabletReport(&report);
   ASSERT_TRUE(report.is_incremental());
   ASSERT_EQ(1, report.updated_tablets().size());
   ASSERT_EQ("tablet-2", report.updated_tablets(0).tablet_id());
   CheckSequenceNumber(&seqno, report);
-  tablet_manager_->AcknowledgeTabletReport(report);
+  tablet_manager_->MarkTabletReportAcknowledged(report);
 
   // Asking for a full tablet report should re-report both tablets
   tablet_manager_->GenerateFullTabletReport(&report);
