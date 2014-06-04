@@ -152,10 +152,23 @@ string ExternalMiniCluster::GetDataPath(const string& daemon_id) const {
   return JoinPathSegments(data_root_, daemon_id);
 }
 
+namespace {
+vector<string> SubstituteInFlags(const vector<string>& orig_flags,
+                                 int index) {
+  string str_index = strings::Substitute("$0", index);
+  vector<string> ret;
+  BOOST_FOREACH(const string& orig, orig_flags) {
+    ret.push_back(StringReplace(orig, "${index}", str_index, true));
+  }
+  return ret;
+}
+
+} // anonymous namespace
+
 Status ExternalMiniCluster::StartMaster() {
   string exe = GetBinaryPath(kMasterBinaryName);
   master_ = new ExternalMaster(exe, GetDataPath("master"),
-                               opts_.extra_master_flags);
+                               SubstituteInFlags(opts_.extra_master_flags, 0));
   return master_->Start();
 }
 
@@ -168,7 +181,7 @@ Status ExternalMiniCluster::AddTabletServer() {
   scoped_refptr<ExternalTabletServer> ts =
     new ExternalTabletServer(exe, GetDataPath(Substitute("ts-$0", idx)),
                              master_->bound_rpc_hostport(),
-                             opts_.extra_tserver_flags);
+                             SubstituteInFlags(opts_.extra_tserver_flags, idx));
   RETURN_NOT_OK(ts->Start());
   tablet_servers_.push_back(ts);
   return Status::OK();
@@ -254,12 +267,13 @@ Status ExternalDaemon::StartProcess(const vector<string>& user_flags) {
   // First the exe for argv[0]
   argv.push_back(BaseName(exe_));
 
-  // Then the "extra flags" passed into the ctor (from the ExternalMiniCluster
-  // options struct)
-  argv.insert(argv.end(), extra_flags_.begin(), extra_flags_.end());
-
-  // Then all the user-provided flags
+  // Then all the flags coming from the minicluster framework.
   argv.insert(argv.end(), user_flags.begin(), user_flags.end());
+
+  // Then the "extra flags" passed into the ctor (from the ExternalMiniCluster
+  // options struct). These come at the end so they can override things like
+  // web port or RPC bind address if necessary.
+  argv.insert(argv.end(), extra_flags_.begin(), extra_flags_.end());
 
   // Tell the server to dump its port information so we can pick it up.
   string info_path = JoinPathSegments(data_dir_, "info.pb");

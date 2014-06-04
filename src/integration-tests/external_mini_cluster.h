@@ -57,6 +57,9 @@ struct ExternalMiniClusterOptions {
   std::string daemon_bin_path;
 
   // Extra flags for tablet servers and masters respectively.
+  //
+  // In these flags, you may use the special string '${index}' which will
+  // be substituted with the index of the tablet server or master.
   std::vector<std::string> extra_tserver_flags;
   std::vector<std::string> extra_master_flags;
 };

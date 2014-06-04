@@ -517,10 +517,15 @@ struct ReplayState {
   // Return a Corruption status if 'id' seems to be out-of-sequence in the log.
   Status CheckSequentialOpId(const OpId& id) {
     if (!valid_sequence(prev_op_id, id)) {
-      return Status::Corruption(
+      // TODO: we used to have this return a Corruption. However, in consensus
+      // replicas, we get commits processed out-of-order, so it's no longer
+      // true. We're not yet 100% certain this is OK for other parts of the
+      // system like log GC, so logging these at WARNING for now so we don't
+      // forget to come back to it.
+      LOG_FIRST_N(WARNING, 10) <<
         Substitute("Unexpected opid $0 following opid $1",
                    id.ShortDebugString(),
-                   prev_op_id.ShortDebugString()));
+                   prev_op_id.ShortDebugString());
     }
 
     prev_op_id.CopyFrom(id);
@@ -566,7 +571,7 @@ Status TabletBootstrap::HandleEntry(ReplayState* state, LogEntryPB* entry) {
 }
 
 Status TabletBootstrap::HandleReplicateMessage(ReplayState* state, LogEntryPB* entry) {
-  RETURN_NOT_OK(state->CheckSequentialOpId(entry->operation().id()));
+  state->CheckSequentialOpId(entry->operation().id());
 
   state->last_replicate_id = entry->operation().id();
 
@@ -601,7 +606,8 @@ Status TabletBootstrap::HandleCommitMessage(ReplayState* state, LogEntryPB* entr
 
   gscoped_ptr<LogEntryPB> existing_entry;
   // Consensus commits must be sequentially increasing.
-  RETURN_NOT_OK(state->CheckSequentialOpId(entry->operation().id()));
+  state->CheckSequentialOpId(entry->operation().id());
+
   // They should also have an associated replicate OpId (it may have been in a
   // deleted log segment though).
   existing_entry.reset(EraseKeyReturnValuePtr(&state->pending_replicates, committed_op_id));

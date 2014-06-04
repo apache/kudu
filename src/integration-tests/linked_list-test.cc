@@ -30,6 +30,7 @@
 #include "gutil/map-util.h"
 #include "gutil/stl_util.h"
 #include "gutil/strings/substitute.h"
+#include "gutil/strings/split.h"
 #include "gutil/walltime.h"
 #include "integration-tests/external_mini_cluster.h"
 #include "util/random.h"
@@ -58,8 +59,11 @@ enum {
 };
 
 DEFINE_int32(num_chains, 50, "Number of parallel chains to generate");
-DEFINE_int32(num_tablets, 4, "Number of tablets over which to split the data");
-DEFINE_int32(num_tablet_servers, 2, "Number of tablet servers to start");
+DEFINE_int32(num_tablets, 3, "Number of tablets over which to split the data");
+DEFINE_int32(num_tablet_servers, 3, "Number of tablet servers to start");
+DEFINE_int32(num_replicas, 3, "Number of replicas per tablet server");
+
+DEFINE_string(ts_flags, "", "Flags to pass through to tablet servers");
 
 static const char* const kKeyColumnName = "rand_key";
 static const char* const kLinkColumnName = "link_to";
@@ -98,6 +102,13 @@ class LinkedListTest : public KuduTest {
     opts.num_tablet_servers = FLAGS_num_tablet_servers;
     opts.data_root = GetTestPath("linked-list-cluster");
     opts.extra_tserver_flags.push_back("--skip_remove_old_recovery_dir");
+    opts.extra_tserver_flags.push_back("--tablet_server_rpc_bind_addresses=127.0.0.1:705${index}");
+    if (!FLAGS_ts_flags.empty()) {
+      vector<string> flags = strings::Split(FLAGS_ts_flags, " ");
+      BOOST_FOREACH(const string& flag, flags) {
+        opts.extra_tserver_flags.push_back(flag);
+      }
+    }
     cluster_.reset(new ExternalMiniCluster(opts));
     ASSERT_STATUS_OK(cluster_->Start());
     ASSERT_STATUS_OK(cluster_->CreateClient(KuduClientOptions(), &client_));
@@ -205,9 +216,11 @@ vector<string> LinkedListTest::GenerateSplitKeys() const {
 
 Status LinkedListTest::LoadLinkedList(const MonoDelta& run_for,
                                       int64_t *written_count) {
+  CreateTableOptions opts;
   RETURN_NOT_OK_PREPEND(client_->CreateTable(kTableName, schema_,
                                              CreateTableOptions()
-                                               .WithSplitKeys(GenerateSplitKeys())),
+                                             .WithSplitKeys(GenerateSplitKeys())
+                                             .WithNumReplicas(FLAGS_num_replicas)),
                         "Failed to create table");
   scoped_refptr<KuduTable> table;
   RETURN_NOT_OK(client_->OpenTable(kTableName, &table));
@@ -387,8 +400,13 @@ void LinkedListTest::WaitForBootstrapToFinishAndVerify(int64_t expected, int64_t
   while (true) {
     Status s = VerifyLinkedList(expected, seen);
     if (s.IsServiceUnavailable()) {
+      // We'll give the tablets 3 seconds to start up regardless of how long we
+      // inserted for. There's some fixed cost startup time, especially when
+      // replication is enabled.
+      const int kBaseTimeToWaitSecs = 3;
+
       VLOG(1) << "Table not yet ready: " << s.ToString();
-      if (sw.elapsed().wall_seconds() > FLAGS_seconds_to_run) {
+      if (sw.elapsed().wall_seconds() > kBaseTimeToWaitSecs + FLAGS_seconds_to_run) {
         // We'll give it an equal amount of time to re-load the data as it took
         // to write it in. Typically it completes much faster than that.
         FAIL() << "Timed out waiting for table to be accessible again.";
