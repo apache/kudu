@@ -74,8 +74,18 @@ class Subprocess {
   }
 
   // Release control of the file descriptor for the child's stdout.
-  // Writes to this FD show up on stdin in the subprocess.
+  // Reads from this FD come from stdout of the subprocess.
   int ReleaseChildStdoutFd();
+
+  // Return the pipe fd to the child's standard error.
+  int from_child_stderr_fd() const {
+    CHECK(started_);
+    return from_child_stderr_;
+  }
+
+  // Release control of the file descriptor for the child's stderr.
+  // Reads from this FD come from stderr of the subprocess.
+  int ReleaseChildStderrFd();
 
  private:
   Status DoWait(int* ret, int options);
@@ -87,6 +97,7 @@ class Subprocess {
   int child_pid_;
   int to_child_stdin_;
   int from_child_stdout_;
+  int from_child_stderr_;
   bool disable_stderr_;
   bool disable_stdout_;
 

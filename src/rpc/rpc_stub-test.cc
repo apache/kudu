@@ -1,5 +1,7 @@
 // Copyright (c) 2013, Cloudera, inc
 
+#include <vector>
+
 #include <gtest/gtest.h>
 #include <boost/bind.hpp>
 #include <boost/foreach.hpp>
@@ -12,12 +14,14 @@
 #include "rpc/rpc-test-base.h"
 #include "util/countdown_latch.h"
 #include "util/metrics.h"
+#include "util/subprocess.h"
 #include "util/test_util.h"
 #include "util/user.h"
 
 DEFINE_bool(is_panic_test_child, false, "Used by TestRpcPanic");
 
 using boost::ptr_vector;
+using std::vector;
 
 namespace kudu {
 namespace rpc {
@@ -217,18 +221,37 @@ TEST_F(RpcStubTest, TestRpcPanic) {
     // test case, but set the above flag, and verify that
     // it aborted. gtest death tests don't work here because
     // there are already threads started up.
-    string exe = strings::Substitute("/proc/$0/exe", getpid());
-    string cmdline = exe +
-      " --is_panic_test_child" +
-      " --gtest_filter=RpcStubTest.TestRpcPanic";
+    vector<string> argv;
+    argv.push_back(strings::Substitute("/proc/$0/exe", getpid()));
+    argv.push_back("--is_panic_test_child");
+    argv.push_back("--gtest_filter=RpcStubTest.TestRpcPanic");
 
-    int ret = system(cmdline.c_str());
-    if (WIFSIGNALED(ret)) {
-      CHECK_EQ(WTERMSIG(ret), SIGABRT);
+    Subprocess subp(argv[0], argv);
+    CHECK_OK(subp.Start());
+    FILE* in = fdopen(subp.from_child_stderr_fd(), "r");
+    PCHECK(in);
+
+    // Search for string "Test method panicking!" somewhere in stderr
+    char buf[1024];
+    bool found_string = false;
+    while (fgets(buf, sizeof(buf), in)) {
+      if (strstr(buf, "Test method panicking!")) {
+	found_string = true;
+	break;
+      }
+    }
+    CHECK(found_string);
+
+    // Check return status
+    int wait_status = 0;
+    CHECK_OK(subp.Wait(&wait_status));
+    CHECK(!WIFEXITED(wait_status)); // should not have been successful
+    if (WIFSIGNALED(wait_status)) {
+      CHECK_EQ(WTERMSIG(wait_status), SIGABRT);
     } else {
       // On some systems, we get exit status 134 from SIGABRT rather than
       // WIFSIGNALED getting flagged.
-      CHECK_EQ(WEXITSTATUS(ret), 134);
+      CHECK_EQ(WEXITSTATUS(wait_status), 134);
     }
     return;
   } else {

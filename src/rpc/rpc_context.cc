@@ -70,7 +70,7 @@ void RpcContext::Panic(const char* filepath, int line_number, const string& mess
 #define MY_ERROR google::LogMessage(filepath, line_number, google::GLOG_ERROR).stream()
 #define MY_FATAL google::LogMessageFatal(filepath, line_number).stream()
 
-  MY_ERROR << "Panic handling " << call_->ToString() << ":";
+  MY_ERROR << "Panic handling " << call_->ToString() << ": " << message;
   MY_ERROR << "Request:\n" << request_pb_->DebugString();
   Trace* t = trace();
   if (t) {

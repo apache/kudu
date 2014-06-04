@@ -42,6 +42,32 @@ TEST_F(SubprocessTest, TestSimplePipe) {
   ASSERT_EQ(0, WEXITSTATUS(wait_status));
 }
 
+TEST_F(SubprocessTest, TestErrPipe) {
+  vector<string> argv;
+  argv.push_back("tee");
+  argv.push_back("/dev/stderr");
+  Subprocess p("/usr/bin/tee", argv);
+  ASSERT_STATUS_OK(p.Start());
+
+  FILE* out = fdopen(p.ReleaseChildStdinFd(), "w");
+  PCHECK(out);
+
+  fprintf(out, "Hello, World\n");
+  fclose(out); // same reasoning as above, flush to prevent tee buffering
+
+  FILE* in = fdopen(p.from_child_stderr_fd(), "r");
+  PCHECK(in);
+
+  char buf[1024];
+  ASSERT_EQ(buf, fgets(buf, sizeof(buf), in));
+  ASSERT_STREQ("Hello, World\n", &buf[0]);
+
+  int wait_status = 0;
+  ASSERT_STATUS_OK(p.Wait(&wait_status));
+  ASSERT_TRUE(WIFEXITED(wait_status));
+  ASSERT_EQ(0, WEXITSTATUS(wait_status));
+}
+
 TEST_F(SubprocessTest, TestKill) {
   vector<string> argv;
   argv.push_back("cat");

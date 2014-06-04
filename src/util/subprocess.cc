@@ -65,7 +65,10 @@ void CloseNonStandardFDs() {
   while ((ent = readdir64(d)) != NULL) {
     uint32_t fd;
     if (!safe_strtou32(ent->d_name, &fd)) continue;
-    if (fd >= 3 && fd != dir_fd) {
+    if (!(fd == STDIN_FILENO  ||
+	  fd == STDOUT_FILENO ||
+	  fd == STDERR_FILENO ||
+	  fd == dir_fd))  {
       close(fd);
     }
   }
@@ -83,6 +86,7 @@ Subprocess::Subprocess(const string& program,
     child_pid_(-1),
     to_child_stdin_(-1),
     from_child_stdout_(-1),
+    from_child_stderr_(-1),
     disable_stderr_(false),
     disable_stdout_(false) {
 }
@@ -102,6 +106,9 @@ Subprocess::~Subprocess() {
   }
   if (from_child_stdout_ >= 0) {
     close(from_child_stdout_);
+  }
+  if (from_child_stderr_ >= 0) {
+    close(from_child_stderr_);
   }
 }
 
@@ -147,9 +154,14 @@ Status Subprocess::Start() {
   PCHECK(pipe2(child_stdin, O_CLOEXEC) == 0);
 
   // Pipe from child's stdout back to caller process
-  int child_stdout[2];
   // [0] = how parent reads from child's stdout, [1] = how child writes to it
+  int child_stdout[2];
   PCHECK(pipe2(child_stdout, O_CLOEXEC) == 0);
+
+  // Pipe from child's stderr back to caller process
+  // [0] = how parent reads from child's stderr, [1] = how child writes to it
+  int child_stderr[2];
+  PCHECK(pipe2(child_stderr, O_CLOEXEC) == 0);
 
   int ret = fork();
   if (ret == -1) {
@@ -157,8 +169,9 @@ Status Subprocess::Start() {
   }
   if (ret == 0) {
     // We are the child
-    PCHECK(dup2(child_stdin[0], STDIN_FILENO) == STDIN_FILENO);
+    PCHECK(dup2(child_stdin[0],  STDIN_FILENO)  == STDIN_FILENO);
     PCHECK(dup2(child_stdout[1], STDOUT_FILENO) == STDOUT_FILENO);
+    PCHECK(dup2(child_stderr[1], STDERR_FILENO) == STDERR_FILENO);
     CloseNonStandardFDs();
     if (disable_stderr_) {
       RedirectToDevNull(STDERR_FILENO);
@@ -173,11 +186,14 @@ Status Subprocess::Start() {
   } else {
     // We are the parent
     child_pid_ = ret;
-
+    // Don't need inputs to pipes
     close(child_stdin[0]);
     close(child_stdout[1]);
-    to_child_stdin_ = child_stdin[1];
+    close(child_stderr[1]);
+    // Extract fds of child's output to pipes
+    to_child_stdin_    = child_stdin[1];
     from_child_stdout_ = child_stdout[0];
+    from_child_stderr_ = child_stderr[0];
   }
 
   started_ = true;
@@ -233,6 +249,14 @@ int Subprocess::ReleaseChildStdoutFd() {
   CHECK_GE(from_child_stdout_, 0);
   int ret = from_child_stdout_;
   from_child_stdout_ = -1;
+  return ret;
+}
+
+int Subprocess::ReleaseChildStderrFd() {
+  CHECK(started_);
+  CHECK_GE(from_child_stderr_, 0);
+  int ret = from_child_stderr_;
+  from_child_stderr_ = -1;
   return ret;
 }
 
