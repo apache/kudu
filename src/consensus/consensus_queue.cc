@@ -29,6 +29,9 @@ DEFINE_int32(consensus_entry_cache_size_hard_limit_mb, 256,
              " selected to be discarded the peer will be evicted from the quorum.");
 DEFINE_int32(consensus_max_batch_size_bytes, 1024 * 1024,
              "The maximum RPC batch size when updating peers.");
+DEFINE_bool(consensus_dump_queue_on_full, false,
+            "Whether to dump the full contents of the consensus queue to the log"
+            " when it gets full. Mostly useful for debugging.");
 
 namespace kudu {
 namespace consensus {
@@ -112,13 +115,13 @@ Status PeerMessageQueue::AppendOperation(gscoped_ptr<OperationPB> operation,
 
   if (metrics_.queue_size_bytes->value() >= max_ops_size_bytes_soft_) {
     Status s  = TrimBufferForMessage(bytes);
-    if (PREDICT_FALSE(!s.ok() && VLOG_IS_ON(2))) {
+    if (PREDICT_FALSE(!s.ok() && (VLOG_IS_ON(2) || FLAGS_consensus_dump_queue_on_full))) {
       queue_lock_.unlock();
-      VLOG(2) << "Queue Full: Dumping State:";
+      LOG(INFO) << "Queue Full: Dumping State:";
       vector<string>  queue_dump;
       DumpToStringsUnlocked(&queue_dump);
       BOOST_FOREACH(const string& line, queue_dump) {
-        VLOG(2) << line;
+        LOG(INFO) << line;
       }
     }
     RETURN_NOT_OK(s);
