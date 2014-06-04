@@ -504,6 +504,8 @@ static Status ExtractPredicateValue(const ColumnSchema& schema,
 }
 
 static Status SetupScanSpec(const NewScanRequestPB& scan_pb,
+                            const Schema& projection,
+                            vector<ColumnSchema>* missing_cols,
                             gscoped_ptr<ScanSpec>* spec,
                             AutoReleasePool* pool) {
   gscoped_ptr<ScanSpec> ret(new ScanSpec);
@@ -514,6 +516,9 @@ static Status SetupScanSpec(const NewScanRequestPB& scan_pb,
         ": has no lower or upper bound.");
     }
     ColumnSchema col(ColumnSchemaFromPB(pred_pb.column()));
+    if (projection.find_column(col.name()) == -1) {
+      missing_cols->push_back(col);
+    }
 
     boost::optional<const void*> lower_bound, upper_bound;
     if (pred_pb.has_lower_bound()) {
@@ -581,12 +586,28 @@ void TabletServiceImpl::HandleNewScanRequest(const ScanRequestPB* req,
 
   AutoReleasePool pool;
   gscoped_ptr<ScanSpec> spec(new ScanSpec);
-  s = SetupScanSpec(scan_pb, &spec, &pool);
+  vector<ColumnSchema> missing_cols;
+  s = SetupScanSpec(scan_pb, projection, &missing_cols, &spec, &pool);
   if (PREDICT_FALSE(!s.ok())) {
     SetupErrorAndRespond(resp->mutable_error(), s,
                          TabletServerErrorPB::INVALID_SCAN_SPEC,
                          context);
     return;
+  }
+
+  // Fix for KUDU-15: if predicate columns are missing from the projection,
+  // add to them projection before passing the projection to the iterator and
+  // save the original projection (in order to trim the missing predicate columns
+  // from the reply to the client).
+  gscoped_ptr<Schema> orig_projection;
+  if (missing_cols.size() > 0) {
+    const shared_ptr<Schema> schema(tablet_peer->tablet()->schema());
+    orig_projection.reset(new Schema(projection));
+    SchemaBuilder projection_builder(projection);
+    BOOST_FOREACH(const ColumnSchema& col, missing_cols) {
+      projection_builder.AddColumn(col, schema->is_key_column(col.name()));
+    }
+    projection = projection_builder.BuildWithoutIds();
   }
 
   TRACE("Creating iterator");
@@ -648,6 +669,10 @@ void TabletServiceImpl::HandleNewScanRequest(const ScanRequestPB* req,
   // ownership of 'iter' and 'spec'.
   scanner->Init(iter.Pass(), spec.Pass());
   pool.DonateAllTo(scanner->autorelease_pool());
+
+  if (orig_projection) {
+    scanner->set_client_projection_schema(orig_projection.Pass());
+  }
 
   // TODO: could start the scan here unless batch_size_bytes is 0
   resp->set_scanner_id(scanner->id());
@@ -729,7 +754,7 @@ void TabletServiceImpl::HandleContinueScanRequest(const ScanRequestPB* req,
       return;
     }
 
-    ConvertRowBlockToPB(block, resp->mutable_data());
+    ConvertRowBlockToPB(block, resp->mutable_data(), scanner->client_projection_schema());
 
     // TODO: could break if it's been looping too long - eg with restrictive predicates,
     // we don't want to loop here for too long monopolizing a thread and risking a

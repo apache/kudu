@@ -217,7 +217,7 @@ TEST_F(WireProtocolTest, TestColumnarRowBlockToPB) {
 
   // Convert to PB.
   RowwiseRowBlockPB pb;
-  ConvertRowBlockToPB(block, &pb);
+  ConvertRowBlockToPB(block, &pb, NULL);
   SCOPED_TRACE(pb.DebugString());
 
   // Convert back to a row, ensure that the resulting row is the same
@@ -241,7 +241,7 @@ TEST_F(WireProtocolTest, TestColumnarRowBlockToPBBenchmark) {
   LOG_TIMING(INFO, "Converting to PB") {
     for (int i = 0; i < kNumTrials; i++) {
       pb.Clear();
-      ConvertRowBlockToPB(block, &pb);
+      ConvertRowBlockToPB(block, &pb, NULL);
     }
   }
 }
@@ -285,7 +285,7 @@ TEST_F(WireProtocolTest, TestBlockWithNoColumns) {
 
   // Convert it to protobuf, ensure that the results look right.
   RowwiseRowBlockPB pb;
-  ConvertRowBlockToPB(block, &pb);
+  ConvertRowBlockToPB(block, &pb, NULL);
   ASSERT_EQ(900, pb.num_rows());
 }
 

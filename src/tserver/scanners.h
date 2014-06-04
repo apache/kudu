@@ -21,6 +21,7 @@ namespace kudu {
 
 class RowwiseIterator;
 class ScanSpec;
+class Schema;
 
 namespace tserver {
 
@@ -127,6 +128,24 @@ class Scanner {
   // Returns the time this scan was started.
   const MonoTime& start_time() const { return start_time_; }
 
+  // Associate a projection schema with the Scanner. The scanner takes
+  // ownership of 'client_projection_schema'.
+  //
+  // Note: 'client_projection_schema' is set if the client's
+  // projection is a subset of the iterator's schema -- the iterator's
+  // schema needs to include all columns that have predicates, whereas
+  // the client may not want to project all of them.
+  void set_client_projection_schema(gscoped_ptr<Schema> client_projection_schema) {
+    client_projection_schema_.swap(client_projection_schema);
+  }
+
+  // Returns request's projection schema if it differs from the schema
+  // used by the iterator (which must contain all columns used as
+  // predicates). Returns NULL if the iterator's schema is the same as
+  // the projection schema.
+  // See the note about 'set_client_projection_schema' above.
+  const Schema* client_projection_schema() const { return client_projection_schema_.get(); }
+
  private:
   friend class ScannerManager;
 
@@ -148,6 +167,10 @@ class Scanner {
 
   // The spec used by 'iter_'
   gscoped_ptr<ScanSpec> spec_;
+
+  // Stores the request's projection schema, if it differs from the
+  // schema used by the iterator.
+  gscoped_ptr<Schema> client_projection_schema_;
 
   gscoped_ptr<RowwiseIterator> iter_;
 

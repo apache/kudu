@@ -403,14 +403,27 @@ void AddRowToRowBlockPB(const RowBlockRow& row, RowwiseRowBlockPB* pb) {
 //
 // These are template parameters rather than normal function arguments
 // so that there are fewer branches inside the loop.
+//
+// NOTE: 'dst_schema' must either be NULL or a subset of the specified's
+// RowBlock's schema. If not NULL, then column at 'col_idx' in 'block' will
+// be copied to column 'dst_col_idx' in the output protobuf; otherwise,
+// dst_col_idx must be equal to col_idx.
 template<bool IS_NULLABLE, bool IS_STRING>
-static void CopyColumn(const RowBlock& block, int col_idx, uint8_t* dst_base,
-                       string* indirect_data) {
+static void CopyColumn(const RowBlock& block, int col_idx,
+                       int dst_col_idx, uint8_t* dst_base,
+                       string* indirect_data, const Schema* dst_schema) {
   const Schema& schema = block.schema();
+  if (dst_schema == NULL) {
+    dst_schema = &schema;
+    DCHECK(dst_col_idx == col_idx)
+        << strings::Substitute("output schema same as source schema, but"
+                               "dst_col_idx != col_idx ($0 vs. $1)",
+                               dst_col_idx, col_idx);
+  }
   ColumnBlock cblock = block.column_block(col_idx);
-  size_t row_stride = ContiguousRowHelper::row_size(schema);
-  uint8_t* dst = dst_base + schema.column_offset(col_idx);
-  size_t offset_to_null_bitmap = schema.byte_size() - schema.column_offset(col_idx);
+  size_t row_stride = ContiguousRowHelper::row_size(*dst_schema);
+  uint8_t* dst = dst_base + dst_schema->column_offset(dst_col_idx);
+  size_t offset_to_null_bitmap = dst_schema->byte_size() - dst_schema->column_offset(dst_col_idx);
 
   size_t cell_size = cblock.stride();
   const uint8_t* src = cblock.cell_ptr(0);
@@ -429,7 +442,7 @@ static void CopyColumn(const RowBlock& block, int col_idx, uint8_t* dst_base,
     for (int i = 0; i < run_size; i++) {
       if (IS_NULLABLE && cblock.is_null(row_idx)) {
         memset(dst, 0, cell_size);
-        BitmapChange(dst + offset_to_null_bitmap, col_idx, true);
+        BitmapChange(dst + offset_to_null_bitmap, dst_col_idx, true);
       } else if (IS_STRING) {
         const Slice *slice = reinterpret_cast<const Slice *>(src);
         size_t offset_in_indirect = indirect_data->size();
@@ -449,17 +462,25 @@ static void CopyColumn(const RowBlock& block, int col_idx, uint8_t* dst_base,
   }
 }
 
-void ConvertRowBlockToPB(const RowBlock& block, RowwiseRowBlockPB* pb) {
+void ConvertRowBlockToPB(const RowBlock& block, RowwiseRowBlockPB* pb,
+                         const Schema* project_schema) {
   const Schema& schema = block.schema();
   string* data_buf = pb->mutable_rows();
   size_t old_size = data_buf->size();
-  size_t row_stride = ContiguousRowHelper::row_size(schema);
+  size_t row_stride =
+      ContiguousRowHelper::row_size(project_schema != NULL ? *project_schema : schema);
   int num_rows = block.selection_vector()->CountSelected();
   data_buf->resize(old_size + row_stride * num_rows);
   uint8_t* base = reinterpret_cast<uint8_t*>(&(*data_buf)[old_size]);
-
+  size_t dst_idx = 0;
   for (int i = 0; i < schema.num_columns(); i++) {
     const ColumnSchema& col = schema.column(i);
+
+    if (project_schema != NULL) {
+      if (project_schema->find_column(col.name()) == -1) {
+        continue;
+      }
+    }
 
     // Generating different functions for each of these cases makes them much less
     // branch-heavy -- we do the branch once outside the loop, and then have a
@@ -468,16 +489,22 @@ void ConvertRowBlockToPB(const RowBlock& block, RowwiseRowBlockPB* pb) {
     // even bigger gains, since we could inline the constant cell sizes and column
     // offsets.
     if (col.is_nullable() && col.type_info()->type() == STRING) {
-      CopyColumn<true, true>(block, i, base, pb->mutable_indirect_data());
+      CopyColumn<true, true>(block, i, dst_idx, base, pb->mutable_indirect_data(),
+                             project_schema);
     } else if (col.is_nullable() && col.type_info()->type() != STRING) {
-      CopyColumn<true, false>(block, i, base, pb->mutable_indirect_data());
+      CopyColumn<true, false>(block, i, dst_idx, base, pb->mutable_indirect_data(),
+                              project_schema);
     } else if (!col.is_nullable() && col.type_info()->type() == STRING) {
-      CopyColumn<false, true>(block, i, base, pb->mutable_indirect_data());
+      CopyColumn<false, true>(block, i, dst_idx, base, pb->mutable_indirect_data(),
+                              project_schema);
     } else if (!col.is_nullable() && col.type_info()->type() != STRING) {
-      CopyColumn<false, false>(block, i, base, pb->mutable_indirect_data());
+      CopyColumn<false, false>(block, i, dst_idx, base, pb->mutable_indirect_data(),
+                               project_schema);
     } else {
       LOG(FATAL) << "cannot reach here";
     }
+
+    ++dst_idx;
   }
   pb->set_num_rows(pb->num_rows() + num_rows);
 }

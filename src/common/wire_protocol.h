@@ -80,7 +80,10 @@ void AddRowToRowBlockPB(const RowBlockRow& row, RowwiseRowBlockPB* pb);
 
 // Similar to the above, but converts a whole RowBlock at a time.
 // This only converts those rows whose selection vector entry is true.
-void ConvertRowBlockToPB(const RowBlock& block, RowwiseRowBlockPB* pb);
+// If 'client_projection_schema' is not NULL, then only columns specified in
+// 'client_projection_schema' will be projected to 'pb'.
+void ConvertRowBlockToPB(const RowBlock& block, RowwiseRowBlockPB* pb,
+                         const Schema* client_projection_schema);
 
 // Extract the rows stored in this protobuf, which must have exactly the
 // given Schema. This Schema may be obtained using ColumnPBsToSchema.

@@ -431,6 +431,81 @@ TEST_F(ClientTest, TestScanEmptyProjection) {
   }
 }
 
+
+// Test a scan where we have a predicate on a key column that is not
+// in the projection.
+TEST_F(ClientTest, TestScanPredicateKeyColNotProjected) {
+  InsertTestRows(FLAGS_test_scan_num_rows);
+  KuduScanner scanner(client_table_.get());
+  Schema no_key_projection(boost::assign::list_of
+                           (schema_.column(1)), 0);
+  ASSERT_STATUS_OK(scanner.SetProjection(&no_key_projection));
+  uint32_t lower = 5;
+  uint32_t upper = 10;
+  ColumnRangePredicate pred(schema_.column(0), &lower, &upper);
+  ASSERT_STATUS_OK(scanner.AddConjunctPredicate(pred));
+
+  size_t nrows = 0;
+  uint32_t curr_key = lower;
+  LOG_TIMING(INFO, "Scanning with predicate columns not projected") {
+    ASSERT_STATUS_OK(scanner.Open());
+
+    ASSERT_TRUE(scanner.HasMoreRows());
+    vector<const uint8_t*> rows;
+    while (scanner.HasMoreRows()) {
+      ASSERT_STATUS_OK(scanner.NextBatch(&rows));
+
+      BOOST_FOREACH(const uint8_t* row_ptr, rows) {
+         ConstContiguousRow row(no_key_projection, row_ptr);
+         const uint32_t val = *no_key_projection.ExtractColumnFromRow<UINT32>(row, 0);
+         ASSERT_EQ(curr_key * 2, val);
+         nrows++;
+         curr_key++;
+      }
+      rows.clear();
+    }
+  }
+  ASSERT_EQ(nrows, 6);
+}
+
+// Test a scan where we have a predicate on a non-key column that is
+// not in the projection.
+TEST_F(ClientTest, TestScanPredicateNonKeyColNotProjected) {
+  InsertTestRows(FLAGS_test_scan_num_rows);
+  KuduScanner scanner(client_table_.get());
+  Schema key_projection = schema_.CreateKeyProjection();
+
+  uint32_t lower = 10;
+  uint32_t upper = 20;
+  ColumnRangePredicate pred(schema_.column(1), &lower, &upper);
+  ASSERT_STATUS_OK(scanner.AddConjunctPredicate(pred));
+
+  size_t nrows = 0;
+  uint32_t curr_key = lower;
+
+  ASSERT_STATUS_OK(scanner.SetProjection(&key_projection));
+
+  LOG_TIMING(INFO, "Scanning with predicate columns not projected") {
+    ASSERT_STATUS_OK(scanner.Open());
+
+    ASSERT_TRUE(scanner.HasMoreRows());
+    vector<const uint8_t*> rows;
+    while (scanner.HasMoreRows()) {
+      ASSERT_STATUS_OK(scanner.NextBatch(&rows));
+
+      BOOST_FOREACH(const uint8_t* row_ptr, rows) {
+         ConstContiguousRow row(key_projection, row_ptr);
+         const uint32_t val = *key_projection.ExtractColumnFromRow<UINT32>(row, 0);
+         ASSERT_EQ(curr_key / 2, val);
+         nrows++;
+         curr_key += 2;
+      }
+      rows.clear();
+    }
+  }
+  ASSERT_EQ(nrows, 6);
+}
+
 static void AssertScannersDisappear(const tserver::ScannerManager* manager) {
   // The Close call is async, so we may have to loop a bit until we see it disappear.
   // This loops for ~10sec. Typically it succeeds in only a few milliseconds.
