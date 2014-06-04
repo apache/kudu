@@ -963,10 +963,11 @@ Status CatalogManager::HandleReportedTablet(TSDescriptor* ts_desc,
   scoped_refptr<TabletInfo> tablet;
   {
     boost::shared_lock<LockType> l(lock_);
-    tablet = FindPtrOrNull(tablet_map_, report.tablet_id());
+    ignore_result(FindCopy(tablet_map_, report.tablet_id(), &tablet));
   }
-  if (tablet == NULL) {
-    VLOG(1) << "Got report from missing tablet " << report.tablet_id();
+  if (!tablet) {
+    LOG(INFO) << "Got report from unknown tablet " << report.tablet_id()
+              << ": Sending delete request for this tablet";
     SendDeleteTabletRequest(report.tablet_id(), NULL, ts_desc,
                             "Report from unknown tablet");
     return Status::OK();
@@ -980,16 +981,19 @@ Status CatalogManager::HandleReportedTablet(TSDescriptor* ts_desc,
   if (tablet_lock.data().is_deleted()) {
     report_updates->set_state_msg(tablet_lock.data().pb.state_msg());
     const string msg = tablet_lock.data().pb.state_msg();
-    VLOG(1) << "Got report from deleted tablet " << tablet->ToString()
-            << ": " << msg;
+    LOG(INFO) << "Got report from replaced tablet " << tablet->ToString()
+              << " (" << msg << "): Sending delete request for this tablet";
+    // TODO: Cancel tablet creation, instead of deleting, in cases where
+    // that might be possible (tablet creation timeout & replacement).
     SendDeleteTabletRequest(tablet->tablet_id(), tablet->table(), ts_desc,
                             Substitute("Tablet deleted: $0", msg));
     return Status::OK();
   }
 
   if (!table_lock.data().is_running()) {
-    VLOG(1) << "Got report for a non-running table. " << tablet->ToString()
-            << ": " << tablet_lock.data().pb.state_msg();
+    LOG(INFO) << "Got report from tablet " << tablet->tablet_id()
+              << " for non-running table " << tablet->table()->ToString() << ": "
+              << tablet_lock.data().pb.state_msg();
     report_updates->set_state_msg(tablet_lock.data().pb.state_msg());
     return Status::OK();
   }
@@ -1066,7 +1070,7 @@ class AsyncTabletRequestTask : public MonitoredTask {
       attempt_(0) {
   }
 
-  Status Run() {
+  virtual Status Run() OVERRIDE {
     state_ = kStateRunning;
     start_ts_ = MonoTime::Now(MonoTime::FINE);
 
@@ -1076,19 +1080,21 @@ class AsyncTabletRequestTask : public MonitoredTask {
     return Status::OK();
   }
 
-  virtual bool Abort() {
+  virtual bool Abort() OVERRIDE {
     state_ = kStateAborted;
     return true;
   }
 
-  virtual State state() const { return state_; }
-  virtual MonoTime start_timestamp() const { return start_ts_; }
-  virtual MonoTime completion_timestamp() const { return end_ts_; }
+  virtual State state() const OVERRIDE { return state_; }
+  virtual MonoTime start_timestamp() const OVERRIDE { return start_ts_; }
+  virtual MonoTime completion_timestamp() const OVERRIDE { return end_ts_; }
 
  protected:
   virtual void SendRequest(int attempt) = 0;
   virtual void HandleResponse(int attempt) = 0;
   virtual string tablet_id() const = 0;
+
+  // TODO: Parameterize max_attempts.
   virtual int max_attempts() const { return 60; }
 
   void Callback() {
@@ -1168,17 +1174,17 @@ class AsyncCreateTablet : public AsyncTabletRequestTask {
       tablet_(tablet) {
   }
 
-  virtual string type_name() const { return "Create Table"; }
+  virtual string type_name() const OVERRIDE { return "Create Table"; }
 
-  virtual string description() const {
+  virtual string description() const OVERRIDE {
     return tablet_->ToString() + " Create Tablet RPC for TS=" + permanent_uuid_;
   }
 
  protected:
-  virtual string tablet_id() const { return tablet_->tablet_id(); }
-  virtual int max_attempts() const { return 1; }
+  virtual string tablet_id() const OVERRIDE { return tablet_->tablet_id(); }
+  virtual int max_attempts() const OVERRIDE { return 1; }
 
-  virtual void HandleResponse(int attempt) {
+  virtual void HandleResponse(int attempt) OVERRIDE {
     if (resp_.has_error()) {
       Status s = StatusFromPB(resp_.error().status());
       LOG(WARNING) << "CreateTablet RPC for tablet " << tablet_->tablet_id()
@@ -1187,7 +1193,7 @@ class AsyncCreateTablet : public AsyncTabletRequestTask {
     }
   }
 
-  virtual void SendRequest(int attempt) {
+  virtual void SendRequest(int attempt) OVERRIDE {
     tserver::CreateTabletRequestPB req;
     {
       TableMetadataLock table_lock(tablet_->table(), TableMetadataLock::READ);
@@ -1232,20 +1238,20 @@ class AsyncDeleteTablet : public AsyncTabletRequestTask {
       reason_(reason) {
     }
 
-  virtual bool Abort() {
+  virtual bool Abort() OVERRIDE {
     return false;
   }
 
-  virtual string type_name() const { return "Delete Tablet"; }
+  virtual string type_name() const OVERRIDE { return "Delete Tablet"; }
 
-  virtual string description() const {
+  virtual string description() const OVERRIDE {
     return tablet_id_ + " Delete Tablet RPC for TS=" + permanent_uuid_;
   }
 
  protected:
-  virtual string tablet_id() const { return tablet_id_; }
+  virtual string tablet_id() const OVERRIDE { return tablet_id_; }
 
-  virtual void HandleResponse(int attempt) {
+  virtual void HandleResponse(int attempt) OVERRIDE {
     if (resp_.has_error()) {
       Status status = StatusFromPB(resp_.error().status());
 
@@ -1267,7 +1273,7 @@ class AsyncDeleteTablet : public AsyncTabletRequestTask {
     }
   }
 
-  virtual void SendRequest(int attempt) {
+  virtual void SendRequest(int attempt) OVERRIDE {
     tserver::DeleteTabletRequestPB req;
     req.set_tablet_id(tablet_id_);
     req.set_reason(reason_);
@@ -1299,16 +1305,16 @@ class AsyncAlterTable : public AsyncTabletRequestTask {
       tablet_(tablet) {
   }
 
-  virtual string type_name() const { return "Alter Table"; }
+  virtual string type_name() const OVERRIDE { return "Alter Table"; }
 
-  virtual string description() const {
+  virtual string description() const OVERRIDE {
     return tablet_->ToString() + " Alter Table RPC for TS=" + permanent_uuid_;
   }
 
  private:
-  virtual string tablet_id() const { return tablet_->tablet_id(); }
+  virtual string tablet_id() const OVERRIDE { return tablet_->tablet_id(); }
 
-  virtual void HandleResponse(int attempt) {
+  virtual void HandleResponse(int attempt) OVERRIDE {
     if (resp_.has_error()) {
       Status status = StatusFromPB(resp_.error().status());
 
@@ -1338,7 +1344,7 @@ class AsyncAlterTable : public AsyncTabletRequestTask {
     }
   }
 
-  virtual void SendRequest(int attempt) {
+  virtual void SendRequest(int attempt) OVERRIDE {
     TableMetadataLock l(tablet_->table(), TableMetadataLock::READ);
 
     tserver::AlterSchemaRequestPB req;
@@ -1428,12 +1434,12 @@ void CatalogManager::ExtractTabletsToProcess(
   //       or just a counter to avoid to take the lock and loop through the tablets
   //       if everything is "stable".
 
-  BOOST_FOREACH(TabletInfoMap::value_type& entry, tablet_map_) {
+  BOOST_FOREACH(const TabletInfoMap::value_type& entry, tablet_map_) {
     scoped_refptr<TabletInfo> tablet = entry.second;
     TabletMetadataLock tablet_lock(tablet.get(), TabletMetadataLock::READ);
     TableMetadataLock table_lock(tablet->table(), TableMetadataLock::READ);
 
-    // if the table is deleted or the tablet was replaced
+    // If the table is deleted or the tablet was replaced.
     if (tablet_lock.data().is_deleted() || table_lock.data().is_deleted()) {
       tablets_to_delete->push_back(tablet);
       continue;
@@ -1492,7 +1498,7 @@ void CatalogManager::HandleAssignCreatingTablet(TabletInfo* tablet,
   const PersistentTabletInfo& old_info = tablet->metadata().state();
 
   // The "tablet creation" was already sent, but we didn't receive an answer
-  // within the timeout. so the tablet will be replaced by a new one.
+  // within the timeout. So the tablet will be replaced by a new one.
   TabletInfo *replacement = CreateTabletInfo(tablet->table(),
                                              old_info.pb.start_key(),
                                              old_info.pb.end_key());
@@ -1746,16 +1752,15 @@ bool CatalogManager::BuildLocationsForTablet(const scoped_refptr<TabletInfo>& ta
 bool CatalogManager::GetTabletLocations(const std::string& tablet_id,
                                         TabletLocationsPB* locs_pb) {
   locs_pb->mutable_replicas()->Clear();
-  scoped_refptr<TabletInfo> info;
+  scoped_refptr<TabletInfo> tablet_info;
   {
     boost::shared_lock<LockType> l(lock_);
-    info = FindPtrOrNull(tablet_map_, tablet_id);
-    if (info == NULL) {
+    if (!FindCopy(tablet_map_, tablet_id, &tablet_info)) {
       return false;
     }
   }
 
-  return BuildLocationsForTablet(info, locs_pb);
+  return BuildLocationsForTablet(tablet_info, locs_pb);
 }
 
 Status CatalogManager::GetTableLocations(const GetTableLocationsRequestPB* req,
@@ -1886,7 +1891,7 @@ TabletInfo::~TabletInfo() {
 }
 
 std::string TabletInfo::ToString() const {
-  return Substitute("$0 (Table $1)", tablet_id_,
+  return Substitute("$0 (table $1)", tablet_id_,
                     (table_ != NULL ? table_->ToString() : "MISSING"));
 }
 

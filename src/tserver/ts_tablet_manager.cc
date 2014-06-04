@@ -278,7 +278,7 @@ void TSTabletManager::OpenTablet(const scoped_refptr<TabletMetadata>& meta) {
 
   consensus::ConsensusBootstrapInfo bootstrap_info;
   Status s;
-  LOG_TIMING(INFO, Substitute("Tablet $0 bootstrap complete.", tablet_id)) {
+  LOG_TIMING(INFO, Substitute("tablet $0 bootstrap", tablet_id)) {
     // TODO: handle crash mid-creation of tablet? do we ever end up with a
     // partially created tablet here?
     s = BootstrapTablet(meta,
@@ -298,7 +298,7 @@ void TSTabletManager::OpenTablet(const scoped_refptr<TabletMetadata>& meta) {
   }
 
 
-  LOG_TIMING(INFO, Substitute("Tablet $0 Started.", tablet_id)) {
+  LOG_TIMING(INFO, Substitute("tablet $0 startup", tablet_id)) {
     TRACE("Initializing tablet peer");
 
     // Check the tablet metadata for the quorum

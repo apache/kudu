@@ -278,7 +278,7 @@ void TabletServiceImpl::DeleteTablet(const DeleteTabletRequestPB* req,
                                      DeleteTabletResponsePB* resp,
                                      rpc::RpcContext* context) {
   LOG(INFO) << "Processing DeleteTablet for tablet " << req->tablet_id()
-            << (req->has_reason() ? ("(" + req->reason() + ")") : "")
+            << (req->has_reason() ? (" (" + req->reason() + ")") : "")
             << " from " << context->requestor_string();
   VLOG(1) << "Full request: " << req->DebugString();
 
