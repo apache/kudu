@@ -530,8 +530,8 @@ Status Log::GetLastEntryOpId(consensus::OpId* op_id) const {
 Status Log::GC(const consensus::OpId& min_op_id, int32_t* num_gced) {
   CHECK(min_op_id.IsInitialized()) << "Invalid min_op_id: " << min_op_id.ShortDebugString();
 
-  LOG(INFO) << "Running Log GC on " << log_dir_;
-  LOG_TIMING(INFO, "Log GC") {
+  VLOG(1) << "Running Log GC on " << log_dir_;
+  VLOG_TIMING(1, "Log GC") {
     vector<string> stale_segment_paths;
 
     {
