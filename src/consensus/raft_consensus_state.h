@@ -336,6 +336,7 @@ class OperationCallbackRunnable : public Runnable {
   virtual void Run() OVERRIDE;
 
  private:
+   friend class MajorityOperationStatus;
    std::tr1::shared_ptr<FutureCallback> callback_;
    Status error_;
    mutable simple_spinlock lock_;

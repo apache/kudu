@@ -287,6 +287,14 @@ OperationStatusTracker* RaftConsensus::CreateLeaderOnlyOperationStatusUnlocked(
                                      commit_callback);
 }
 
+OperationStatusTracker* RaftConsensus::CreateLeaderOnlyOperationStatusUnlocked(
+    const OpId* op_id) {
+  unordered_set<string> leader_uuid_set(1);
+  InsertOrDie(&leader_uuid_set, state_->GetPeerUuid());
+  return new MajorityOperationStatus(op_id, leader_uuid_set,
+                                     1, state_->GetAllPeersCountUnlocked());
+}
+
 Status RaftConsensus::LeaderCommitUnlocked(ConsensusRound* context,
                                            OperationPB* commit_op) {
   // entry for the CommitMsg
@@ -302,9 +310,17 @@ Status RaftConsensus::LeaderCommitUnlocked(ConsensusRound* context,
   // would try to free the callback).
   shared_ptr<FutureCallback> commit_clbk = context->release_commit_callback();
 
-  scoped_refptr<OperationStatusTracker> status(CreateLeaderOnlyOperationStatusUnlocked(
-                                        &owned_op->id(),
-                                        commit_clbk));
+  scoped_refptr<OperationStatusTracker> status;
+  // If the context included a callback set it in the tracker, so that it gets
+  // called when the tracker reports IsDone(), if not just create a status tracker
+  // without a callback meaning the caller doesn't want to be notified when the
+  // operation completes.
+  if (PREDICT_TRUE(commit_clbk.get() != NULL)) {
+    status.reset(CreateLeaderOnlyOperationStatusUnlocked(&owned_op->id(), commit_clbk));
+  } else {
+    status.reset(CreateLeaderOnlyOperationStatusUnlocked(&owned_op->id()));
+  }
+
   RETURN_NOT_OK_PREPEND(queue_.AppendOperation(owned_op.Pass(), status),
                         "Could not append commit request to the queue");
 

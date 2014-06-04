@@ -136,6 +136,9 @@ class RaftConsensus : public Consensus {
       const OpId* op_id,
       const std::tr1::shared_ptr<FutureCallback>& commit_callback);
 
+  OperationStatusTracker* CreateLeaderOnlyOperationStatusUnlocked(
+      const OpId* op_id);
+
   OpId GetLastOpIdFromLog();
 
   // A common prefix that should be in any log messages emitted,

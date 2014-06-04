@@ -306,6 +306,9 @@ void LeaderTransactionDriver::ApplyOrCommitFailed(const Status& abort_reason) {
   boost::lock_guard<simple_spinlock> lock(lock_);
   CHECK_EQ(prepare_finished_calls_, 2);
 
+  LOG(WARNING) << "Commit failed in transaction: " << ToString()
+      << " with Status: " << abort_reason.ToString();
+
   //TODO use an application level error status here with better error details.
   transaction_status_ = abort_reason;
   if (mutable_state() != NULL) {

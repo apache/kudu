@@ -379,6 +379,7 @@ MajorityOperationStatus::MajorityOperationStatus(const OpId* id,
   DCHECK_GT(majority, 0);
   DCHECK_LE(majority, voting_peers.size());
   DCHECK_LE(voting_peers.size(), total_peers_count_);
+  DCHECK_NOTNULL(runnable_->callback_.get());
 }
 
 void MajorityOperationStatus::AckPeer(const string& uuid) {
