@@ -14,26 +14,28 @@ namespace kudu { namespace tablet {
 class MvccTest : public KuduTest {
  public:
   MvccTest() :
-    clock_(scoped_refptr<server::Clock>(
-        server::LogicalClock::CreateStartingAt(Timestamp::kInitialTimestamp))),
-    are_all_committed_(false) {
+    clock_(server::LogicalClock::CreateStartingAt(Timestamp::kInitialTimestamp)) {
   }
 
-  void WaitUntilAllCommitted(MvccManager* mgr, const MvccSnapshot& snap) {
-    mgr->WaitUntilAllCommitted(snap);
+  void WaitForSnapshotAtTSThread(MvccManager* mgr, Timestamp ts) {
+    MvccSnapshot s;
+    mgr->WaitForCleanSnapshotAtTimestamp(ts, &s);
+    mgr->WaitUntilAllCommitted(ts);
+    CHECK(s.is_clean()) << "verifying postcondition";
     boost::lock_guard<simple_spinlock> lock(lock_);
-    are_all_committed_ = true;
+    result_snapshot_.reset(new MvccSnapshot(s));
   }
 
-  bool AreAllCommitted() {
+  bool HasResultSnapshot() {
     boost::lock_guard<simple_spinlock> lock(lock_);
-    return are_all_committed_;
+    return result_snapshot_ != NULL;
   }
 
  protected:
   scoped_refptr<server::Clock> clock_;
-  bool are_all_committed_;
+
   mutable simple_spinlock lock_;
+  gscoped_ptr<MvccSnapshot> result_snapshot_;
 };
 
 TEST_F(MvccTest, TestMvccBasic) {
@@ -193,62 +195,46 @@ TEST_F(MvccTest, TestMayHaveUncommittedTransactionsBefore) {
 TEST_F(MvccTest, TestAreAllTransactionsCommitted) {
   MvccManager mgr(clock_.get());
 
-  MvccSnapshot snap_without_in_flights(mgr);
-  ASSERT_TRUE(mgr.AreAllTransactionsCommitted(snap_without_in_flights));
-
   // start several transactions and take snapshots along the way
   Timestamp tx1 = mgr.StartTransaction();
-  MvccSnapshot snap_with_in_flights1(mgr);
-
-  ASSERT_FALSE(mgr.AreAllTransactionsCommitted(snap_with_in_flights1));
-
   Timestamp tx2 = mgr.StartTransaction();
-  MvccSnapshot snap_with_in_flights2(mgr);
-
-  ASSERT_FALSE(mgr.AreAllTransactionsCommitted(snap_with_in_flights1));
-  ASSERT_FALSE(mgr.AreAllTransactionsCommitted(snap_with_in_flights2));
-
   Timestamp tx3 = mgr.StartTransaction();
-  MvccSnapshot snap_with_in_flights3(mgr);
 
-  ASSERT_FALSE(mgr.AreAllTransactionsCommitted(snap_with_in_flights1));
-  ASSERT_FALSE(mgr.AreAllTransactionsCommitted(snap_with_in_flights2));
-  ASSERT_FALSE(mgr.AreAllTransactionsCommitted(snap_with_in_flights3));
+  ASSERT_FALSE(mgr.AreAllTransactionsCommitted(Timestamp(1)));
+  ASSERT_FALSE(mgr.AreAllTransactionsCommitted(Timestamp(2)));
+  ASSERT_FALSE(mgr.AreAllTransactionsCommitted(Timestamp(3)));
 
   // commit tx3, should all still report as having as having uncommitted
   // transactions.
   mgr.CommitTransaction(tx3);
-  ASSERT_FALSE(mgr.AreAllTransactionsCommitted(snap_with_in_flights1));
-  ASSERT_FALSE(mgr.AreAllTransactionsCommitted(snap_with_in_flights2));
-  ASSERT_FALSE(mgr.AreAllTransactionsCommitted(snap_with_in_flights3));
+  ASSERT_FALSE(mgr.AreAllTransactionsCommitted(Timestamp(1)));
+  ASSERT_FALSE(mgr.AreAllTransactionsCommitted(Timestamp(2)));
+  ASSERT_FALSE(mgr.AreAllTransactionsCommitted(Timestamp(3)));
 
   // commit tx1, first snap with in-flights should now report as all committed
   // and remaining snaps as still having uncommitted transactions
   mgr.CommitTransaction(tx1);
-  ASSERT_TRUE(mgr.AreAllTransactionsCommitted(snap_with_in_flights1));
-  ASSERT_FALSE(mgr.AreAllTransactionsCommitted(snap_with_in_flights2));
-  ASSERT_FALSE(mgr.AreAllTransactionsCommitted(snap_with_in_flights3));
+  ASSERT_TRUE(mgr.AreAllTransactionsCommitted(Timestamp(1)));
+  ASSERT_FALSE(mgr.AreAllTransactionsCommitted(Timestamp(2)));
+  ASSERT_FALSE(mgr.AreAllTransactionsCommitted(Timestamp(3)));
 
   // Now they should all report as all committed.
   mgr.CommitTransaction(tx2);
-  ASSERT_TRUE(mgr.AreAllTransactionsCommitted(snap_with_in_flights1));
-  ASSERT_TRUE(mgr.AreAllTransactionsCommitted(snap_with_in_flights2));
-  ASSERT_TRUE(mgr.AreAllTransactionsCommitted(snap_with_in_flights3));
+  ASSERT_TRUE(mgr.AreAllTransactionsCommitted(Timestamp(1)));
+  ASSERT_TRUE(mgr.AreAllTransactionsCommitted(Timestamp(2)));
+  ASSERT_TRUE(mgr.AreAllTransactionsCommitted(Timestamp(3)));
 }
 
 TEST_F(MvccTest, TestWaitUntilAllCommitted_SnapWithNoInflights) {
   MvccManager mgr(clock_.get());
-  MvccSnapshot snap_without_in_fligths(mgr);
-
-  boost::thread waiting_thread = boost::thread(&MvccTest::WaitUntilAllCommitted,
+  boost::thread waiting_thread = boost::thread(&MvccTest::WaitForSnapshotAtTSThread,
                                                this,
                                                &mgr,
-                                               snap_without_in_fligths);
+                                               clock_->Now());
 
   // join immediately.
   waiting_thread.join();
-  ASSERT_TRUE(are_all_committed_);
-
+  ASSERT_TRUE(HasResultSnapshot());
 }
 
 TEST_F(MvccTest, TestWaitUntilAllCommitted_SnapWithInFlights) {
@@ -257,50 +243,51 @@ TEST_F(MvccTest, TestWaitUntilAllCommitted_SnapWithInFlights) {
 
   Timestamp tx1 = mgr.StartTransaction();
   Timestamp tx2 = mgr.StartTransaction();
-  MvccSnapshot snap_with_in_flights(mgr);
 
-
-  boost::thread waiting_thread = boost::thread(&MvccTest::WaitUntilAllCommitted,
+  boost::thread waiting_thread = boost::thread(&MvccTest::WaitForSnapshotAtTSThread,
                                                this,
                                                &mgr,
-                                               snap_with_in_flights);
+                                               clock_->Now());
 
-  ASSERT_FALSE(AreAllCommitted());
+  ASSERT_FALSE(HasResultSnapshot());
   mgr.CommitTransaction(tx1);
-  ASSERT_FALSE(AreAllCommitted());
+  ASSERT_FALSE(HasResultSnapshot());
   mgr.CommitTransaction(tx2);
   waiting_thread.join();
-  ASSERT_TRUE(AreAllCommitted());
+  ASSERT_TRUE(HasResultSnapshot());
 }
 
 TEST_F(MvccTest, TestWaitUntilAllCommitted_SnapAtTimestampWithInFlights) {
 
   MvccManager mgr(clock_.get());
 
-  // transaction will be assigned '1'
+  // Transactions with timestamp 1 through 3
   Timestamp tx1 = mgr.StartTransaction();
-  // transaction will be assigned '2'
   Timestamp tx2 = mgr.StartTransaction();
-  MvccSnapshot snap_with_in_flights_at_timestamp;
-  mgr.TakeSnapshotAtTimestamp(&snap_with_in_flights_at_timestamp, Timestamp(2));
+  Timestamp tx3 = mgr.StartTransaction();
 
-  ASSERT_EQ(snap_with_in_flights_at_timestamp.timestamps_in_flight_.size(), 1);
-
-  boost::thread waiting_thread = boost::thread(&MvccTest::WaitUntilAllCommitted,
+  // Start a thread waiting for transactions with ts <= 2 to commit
+  boost::thread waiting_thread = boost::thread(&MvccTest::WaitForSnapshotAtTSThread,
                                                this,
                                                &mgr,
-                                               snap_with_in_flights_at_timestamp);
+                                               tx2);
+  ASSERT_FALSE(HasResultSnapshot());
 
-  ASSERT_FALSE(AreAllCommitted());
+  // Commit tx 1 - thread should still wait.
   mgr.CommitTransaction(tx1);
-  // AreAllCommitted() turn true as soon as 'tx1' is committed since we've excluded 'tx2'
-  // from the snapshot.
-  waiting_thread.join();
-  ASSERT_TRUE(AreAllCommitted());
-  mgr.CommitTransaction(tx2);
-  ASSERT_TRUE(AreAllCommitted());
-}
+  usleep(1000);
+  ASSERT_FALSE(HasResultSnapshot());
 
+  // Commit tx 3 - thread should still wait.
+  mgr.CommitTransaction(tx3);
+  usleep(1000);
+  ASSERT_FALSE(HasResultSnapshot());
+
+  // Commit tx 2 - thread can now continue
+  mgr.CommitTransaction(tx2);
+  waiting_thread.join();
+  ASSERT_TRUE(HasResultSnapshot());
+}
 
 } // namespace tablet
 } // namespace kudu

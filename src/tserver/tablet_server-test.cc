@@ -921,16 +921,16 @@ TEST_F(TabletServerTest, TestSnapshotScan_SnapshotInTheFutureWithPropagatedTimes
     ASSERT_FALSE(resp.has_error());
   }
 
-  // make sure the server's current clock returns a value that is only
-  // +2 (logical) than the propagated timestamp (one value for the clock.Update()
-  // call and another for the subsequent Now() call).
+  // make sure the server's current clock returns a value that is larger than the
+  // propagated timestamp. It should have the same physical time, but higher
+  // logical time (due to various calls to clock.Now() when processing the request).
   Timestamp now = mini_server_->server()->clock()->Now();
 
   ASSERT_EQ(HybridClock::GetPhysicalValue(propagated_timestamp),
             HybridClock::GetPhysicalValue(now));
 
-  ASSERT_EQ(HybridClock::GetLogicalValue(propagated_timestamp) + 2,
-            HybridClock::GetLogicalValue(now));
+  ASSERT_GT(HybridClock::GetLogicalValue(now),
+            HybridClock::GetLogicalValue(propagated_timestamp));
 
   vector<string> results;
   ASSERT_NO_FATAL_FAILURE(DrainScannerToStrings(resp.scanner_id(), schema_, &results));

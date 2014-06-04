@@ -805,12 +805,11 @@ Status TabletServiceImpl::HandleScanAtSnapshot(gscoped_ptr<RowwiseIterator>* ite
   }
 
   tablet::MvccSnapshot snap;
-  tablet_peer->tablet()->mvcc_manager()->TakeSnapshotAtTimestamp(&snap, snap_timestamp);
 
   // Wait for the in-flights in the snapshot to be finished
   TRACE("Waiting for operations in snapshot to commit");
   MonoTime before = MonoTime::Now(MonoTime::FINE);
-  tablet_peer->tablet()->mvcc_manager()->WaitUntilAllCommitted(snap);
+  tablet_peer->tablet()->mvcc_manager()->WaitForCleanSnapshotAtTimestamp(snap_timestamp, &snap);
   uint64_t duration_usec = MonoTime::Now(MonoTime::FINE).GetDeltaSince(before).ToMicroseconds();
   tablet_peer->tablet()->metrics()->snapshot_scan_inflight_wait_duration->Increment(duration_usec);
   TRACE("All operations in snapshot committed. Waited for $0 microseconds", duration_usec);

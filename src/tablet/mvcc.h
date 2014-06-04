@@ -67,6 +67,14 @@ class MvccSnapshot {
   // Return the number of transactions in flight during this snapshot.
   size_t num_transactions_in_flight() const;
 
+  // Return true if the snapshot is considered 'clean'. A clean snapshot is one
+  // which is determined only by a timestamp -- the snapshot considers all
+  // transactions with timestamps less than some timestamp to be committed,
+  // and all other transactions to be uncommitted.
+  bool is_clean() const {
+    return timestamps_in_flight_.empty();
+  }
+
  private:
   friend class MvccManager;
   FRIEND_TEST(MvccTest, TestMayHaveCommittedTransactionsAtOrAfter);
@@ -128,39 +136,57 @@ class MvccManager {
   // transactions have been committed at the time of this call.
   void TakeSnapshot(MvccSnapshot *snapshot) const;
 
-  // Take a snapshot of the MVCC state at 'timestamp'. The difference
-  // between this method and the above is that in-flight transactions
-  // whose timestamp is bigger than or equal to 'timestamp' will not
-  // be included in the returned snapshot.
-  void TakeSnapshotAtTimestamp(MvccSnapshot *snapshot, Timestamp timestamp) const;
+  // Take a snapshot of the MVCC state at 'timestamp' (i.e which includes
+  // all transactions which have a lower timestamp)
+  //
+  // If there are any in-flight transactions at a lower timestamp, waits for
+  // them to complete before returning. Hence, we guarantee that, upon return,
+  // snapshot->is_clean().
+  //
+  // REQUIRES: 'timestamp' must be in the past according to the configured
+  // clock.
+  void WaitForCleanSnapshotAtTimestamp(Timestamp timestamp,
+                                       MvccSnapshot* snapshot) const;
 
-  // Blocks until all transactions in the provided snapshot are committed.
-  // 'snap' is assumed to having been obtained from a previous call
-  // to TakeSnapshot() or TakeSnapshotAtTimestamp().
-  void WaitUntilAllCommitted(const MvccSnapshot& snap);
+  // Take a snapshot at the current timestamp, and then wait for any
+  // currently running transactions at an earlier timestamp to finish.
+  //
+  // The returned snapshot acts as a "barrier":
+  // - all transactions which started prior to this call are included in
+  //   snapshot
+  // - no transactions which start after the call returns will be included
+  //   in snapshot
+  // - snapshot->is_clean() is guaranteed
+  //
+  // Note that transactions are not blocked during this call.
+  void WaitForCleanSnapshot(MvccSnapshot* snapshot) const;
+
+  bool AreAllTransactionsCommitted(Timestamp ts) const;
 
   ~MvccManager();
 
  private:
-  bool InitTransactionUnlocked(const Timestamp& timestamp);
-
+  friend class MvccTest;
   FRIEND_TEST(MvccTest, TestAreAllTransactionsCommitted);
 
+  bool InitTransactionUnlocked(const Timestamp& timestamp);
+
   struct WaitingState {
-    const MvccSnapshot* snap;
+    Timestamp timestamp;
     CountDownLatch* latch;
   };
 
-  // Returns true if all transactions in the provided snapshot are committed.
-  // NOTE: This does not take 'lock_', it is assumed that the caller has
-  // previously obtained the lock.
-  bool AreAllTransactionsCommitted(const MvccSnapshot& snapshot);
+  // Returns true if all transactions before the given timestamp are committed.
+  bool AreAllTransactionsCommittedUnlocked(Timestamp ts) const;
+
+  // Waits until all transactions before the given time are committed.
+  void WaitUntilAllCommitted(Timestamp ts) const;
 
   typedef simple_spinlock LockType;
   mutable LockType lock_;
   MvccSnapshot cur_snap_;
   scoped_refptr<server::Clock> clock_;
-  std::vector<WaitingState*> waiters_;
+  mutable std::vector<WaitingState*> waiters_;
 
   DISALLOW_COPY_AND_ASSIGN(MvccManager);
 };
