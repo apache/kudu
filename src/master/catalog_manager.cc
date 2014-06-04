@@ -907,6 +907,13 @@ bool CatalogManager::TableNameExists(const string& table_name) {
   return table_names_map_.find(table_name) != table_names_map_.end();
 }
 
+void CatalogManager::NotifyTabletDeleteSuccess(const string& permanent_uuid,
+                                               const string& tablet_id) {
+  // TODO: Clean up the stale deleted tablet data once all relevant tablet
+  // servers have responded that they have removed the remnants of the deleted
+  // tablet.
+}
+
 Status CatalogManager::ProcessTabletReport(TSDescriptor* ts_desc,
                                            const TabletReportPB& report,
                                            TabletReportUpdatesPB *report_update,
@@ -938,9 +945,6 @@ Status CatalogManager::ProcessTabletReport(TSDescriptor* ts_desc,
                           Substitute("Error handling $0", reported.ShortDebugString()));
   }
 
-  // TODO: Remove this, since we have the report-updates with the extra status-msg
-  CHECK_EQ(report.removed_tablet_ids().size(), 0) << "TODO: implement tablet removal";
-
   ts_desc->set_has_tablet_report(true);
 
   if (report.updated_tablets_size() > 0) {
@@ -967,7 +971,7 @@ Status CatalogManager::HandleReportedTablet(TSDescriptor* ts_desc,
   }
   if (!tablet) {
     LOG(INFO) << "Got report from unknown tablet " << report.tablet_id()
-              << ": Sending delete request for this tablet";
+              << ": Sending delete request for this orphan tablet";
     SendDeleteTabletRequest(report.tablet_id(), NULL, ts_desc,
                             "Report from unknown tablet");
     return Status::OK();
@@ -1268,6 +1272,13 @@ class AsyncDeleteTablet : public AsyncTabletRequestTask {
           break;
       }
     } else {
+      master_->catalog_manager()->NotifyTabletDeleteSuccess(permanent_uuid_, tablet_id_);
+      if (table_) {
+        LOG(INFO) << "Tablet " << tablet_id_ << " (table " << table_->ToString() << ") "
+                  << "successfully deleted";
+      } else {
+        LOG(WARNING) << "Orphaned tablet " << tablet_id_ << " successfully deleted";
+      }
       state_ = kStateComplete;
       VLOG(1) << "TS " << permanent_uuid_ << ": delete complete on tablet " << tablet_id_;
     }
@@ -1416,11 +1427,11 @@ void CatalogManager::SendDeleteTabletRequest(const std::string& tablet_id,
   if (table != NULL) {
     table->AddTask(call);
   } else {
-    // This is a floating task (since the tablet does not exist)
+    // This is a floating task (since the table does not exist)
     // created as response to a tablet report.
     call->AddRef();
   }
-  WARN_NOT_OK(call->Run(), "Failed to send delete table request");
+  WARN_NOT_OK(call->Run(), "Failed to send delete tablet request");
 }
 
 void CatalogManager::ExtractTabletsToProcess(

@@ -364,6 +364,10 @@ class CatalogManager {
   // NOTE: This should only be used by tests
   bool TableNameExists(const string& table_name);
 
+  // Let the catalog manager know that the the given tablet server successfully
+  // deleted the specified tablet.
+  void NotifyTabletDeleteSuccess(const std::string& permanent_uuid, const std::string& tablet_id);
+
  private:
   friend class TableLoader;
   friend class TabletLoader;

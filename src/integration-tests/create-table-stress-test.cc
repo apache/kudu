@@ -34,9 +34,9 @@ const char* kTableName = "test_table";
 const int kNumTablets = 100;
 
 // Temporarily disabled while working on KUDU-234.
-class DISABLED_CreateTableStressTest : public KuduTest {
+class CreateTableStressTest : public KuduTest {
  public:
-  DISABLED_CreateTableStressTest()
+  CreateTableStressTest()
     : schema_(boost::assign::list_of
               (ColumnSchema("key", UINT32))
               (ColumnSchema("v1", UINT64))
@@ -80,7 +80,7 @@ class DISABLED_CreateTableStressTest : public KuduTest {
   Schema schema_;
 };
 
-void DISABLED_CreateTableStressTest::CreateBigTable(const string& table_name) {
+void CreateTableStressTest::CreateBigTable(const string& table_name) {
   vector<string> keys;
   int num_splits = kNumTablets - 1; // 1 split = 2 tablets
   for (int i = num_splits; i >= 0; i--) {
@@ -95,7 +95,7 @@ void DISABLED_CreateTableStressTest::CreateBigTable(const string& table_name) {
 }
 
 
-TEST_F(DISABLED_CreateTableStressTest, CreateBigTable) {
+TEST_F(CreateTableStressTest, CreateBigTable) {
   if (!AllowSlowTests()) {
     LOG(INFO) << "Skipping slow test";
     return;
@@ -113,7 +113,7 @@ TEST_F(DISABLED_CreateTableStressTest, CreateBigTable) {
   cluster_->mini_master()->master()->catalog_manager()->DumpState(&std::cerr);
 }
 
-TEST_F(DISABLED_CreateTableStressTest, RestartMasterDuringCreation) {
+TEST_F(CreateTableStressTest, RestartMasterDuringCreation) {
   if (!AllowSlowTests()) {
     LOG(INFO) << "Skipping slow test";
     return;
@@ -136,7 +136,7 @@ TEST_F(DISABLED_CreateTableStressTest, RestartMasterDuringCreation) {
   }
 }
 
-TEST_F(DISABLED_CreateTableStressTest, TestGetTableLocationsOptions) {
+TEST_F(CreateTableStressTest, TestGetTableLocationsOptions) {
   if (!AllowSlowTests()) {
     LOG(INFO) << "Skipping slow test";
     return;
