@@ -56,6 +56,7 @@ Status RaftConsensus::Init(const metadata::QuorumPeerPB& peer,
 }
 
 Status RaftConsensus::Start(const metadata::QuorumPB& initial_quorum,
+                            const ConsensusBootstrapInfo& bootstrap_info,
                             gscoped_ptr<metadata::QuorumPB>* running_quorum) {
   RETURN_NOT_OK(ExecuteHook(PRE_START));
 

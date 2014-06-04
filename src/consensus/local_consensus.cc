@@ -38,6 +38,9 @@ Status LocalConsensus::Init(const QuorumPeerPB& peer,
   clock_ = clock;
   log_ = log;
   state_ = kInitializing;
+
+  // Determine initial OpId
+  // TODO: do this in Start() using the ConsensusBootstrapInfo
   OpId initial;
   Status s = log->GetLastEntryOpId(&initial);
   if (s.ok()) {
@@ -50,12 +53,13 @@ Status LocalConsensus::Init(const QuorumPeerPB& peer,
                << s.ToString();
   }
   next_op_id_index_ = initial.index() + 1;
+
   return Status::OK();
 }
 
 Status LocalConsensus::Start(const metadata::QuorumPB& initial_quorum,
+                             const ConsensusBootstrapInfo& bootstrap_info,
                              gscoped_ptr<metadata::QuorumPB>* running_quorum) {
-
   CHECK_EQ(state_, kInitializing);
 
   CHECK(initial_quorum.local()) << "Local consensus must be passed a local quorum";

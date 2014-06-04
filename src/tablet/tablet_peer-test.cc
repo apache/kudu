@@ -93,7 +93,7 @@ class TabletPeerTest : public KuduTabletTest {
     QuorumPB quorum;
     quorum.set_local(true);
     quorum.set_seqno(0);
-    ASSERT_STATUS_OK(tablet_peer_->Start());
+    ASSERT_STATUS_OK(tablet_peer_->Start(consensus::ConsensusBootstrapInfo()));
   }
 
   virtual void TearDown() OVERRIDE {

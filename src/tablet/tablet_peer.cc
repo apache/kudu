@@ -38,6 +38,7 @@ namespace kudu {
 namespace tablet {
 
 using consensus::Consensus;
+using consensus::ConsensusBootstrapInfo;
 using consensus::ConsensusRound;
 using consensus::ConsensusOptions;
 using consensus::LocalConsensus;
@@ -132,7 +133,7 @@ Status TabletPeer::Init(const shared_ptr<Tablet>& tablet,
   return Status::OK();
 }
 
-Status TabletPeer::Start() {
+Status TabletPeer::Start(const ConsensusBootstrapInfo& bootstrap_info) {
   // Prevent any SubmitChangeConfig calls to try and modify the config
   // until consensus is booted and the actual configuration is stored in
   // the tablet meta.
@@ -140,7 +141,7 @@ Status TabletPeer::Start() {
 
   gscoped_ptr<QuorumPB> actual_config;
   TRACE("Starting consensus");
-  RETURN_NOT_OK(consensus_->Start(Quorum(), &actual_config));
+  RETURN_NOT_OK(consensus_->Start(Quorum(), bootstrap_info, &actual_config));
   meta_->SetQuorum(*actual_config.get());
 
   TRACE("Flushing metadata");

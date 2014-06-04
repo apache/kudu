@@ -40,6 +40,7 @@ namespace tablet {
 
 using boost::shared_lock;
 using consensus::CommitMsg;
+using consensus::ConsensusBootstrapInfo;
 using consensus::ConsensusRound;
 using consensus::OperationPB;
 using consensus::OpId;
@@ -97,7 +98,8 @@ class TabletBootstrap {
   // A successful call will yield the rebuilt tablet and the rebuilt log.
   Status Bootstrap(std::tr1::shared_ptr<tablet::Tablet>* rebuilt_tablet,
                    gscoped_ptr<log::Log>* rebuilt_log,
-                   scoped_refptr<log::OpIdAnchorRegistry>* opid_anchor_registry);
+                   scoped_refptr<log::OpIdAnchorRegistry>* opid_anchor_registry,
+                   ConsensusBootstrapInfo* results);
 
  private:
 
@@ -134,7 +136,7 @@ class TabletBootstrap {
   // Plays the log segments into the tablet being built.
   // The process of playing the segments generates a new log that can be continued
   // later on when then tablet is rebuilt and starts accepting writes from clients.
-  Status PlaySegments();
+  Status PlaySegments(ConsensusBootstrapInfo* results);
 
   Status PlayWriteRequest(OperationPB* replicate_op,
                           const OperationPB& commit_op);
@@ -172,6 +174,8 @@ class TabletBootstrap {
   Status HandleReplicateMessage(ReplayState* state, LogEntryPB* entry);
   Status HandleCommitMessage(ReplayState* state, LogEntryPB* entry);
   Status HandleEntryPair(LogEntryPB* replicate_entry, LogEntryPB* commit_entry);
+
+  void DumpOrphanedReplicates(const vector<OperationPB*>& ops);
 
   // Decodes a Timestamp from the provided string and updates the clock
   // with it.
@@ -234,9 +238,12 @@ Status BootstrapTablet(const scoped_refptr<metadata::TabletMetadata>& meta,
                        TabletStatusListener* listener,
                        std::tr1::shared_ptr<tablet::Tablet>* rebuilt_tablet,
                        gscoped_ptr<log::Log>* rebuilt_log,
-                       scoped_refptr<log::OpIdAnchorRegistry>* opid_anchor_registry) {
+                       scoped_refptr<log::OpIdAnchorRegistry>* opid_anchor_registry,
+                       ConsensusBootstrapInfo* consensus_info) {
   TabletBootstrap bootstrap(meta, clock, metric_context, listener);
-  RETURN_NOT_OK(bootstrap.Bootstrap(rebuilt_tablet, rebuilt_log, opid_anchor_registry));
+  RETURN_NOT_OK(bootstrap.Bootstrap(rebuilt_tablet, rebuilt_log,
+                                    opid_anchor_registry,
+                                    consensus_info));
   // This is necessary since OpenNewLog() initially disables sync.
   RETURN_NOT_OK((*rebuilt_log)->ReEnableSyncIfRequired());
   return Status::OK();
@@ -273,7 +280,8 @@ TabletBootstrap::TabletBootstrap(const scoped_refptr<TabletMetadata>& meta,
 
 Status TabletBootstrap::Bootstrap(shared_ptr<Tablet>* rebuilt_tablet,
                                   gscoped_ptr<Log>* rebuilt_log,
-                                  scoped_refptr<OpIdAnchorRegistry>* opid_anchor_registry) {
+                                  scoped_refptr<OpIdAnchorRegistry>* opid_anchor_registry,
+                                  ConsensusBootstrapInfo* consensus_info) {
 
   string tablet_id = meta_->oid();
   meta_->PinFlush();
@@ -323,13 +331,14 @@ Status TabletBootstrap::Bootstrap(shared_ptr<Tablet>* rebuilt_tablet,
                                            tablet_id));
   }
 
-  RETURN_NOT_OK_PREPEND(PlaySegments(), "Failed log replay. Reason");
+  RETURN_NOT_OK_PREPEND(PlaySegments(consensus_info), "Failed log replay. Reason");
   RETURN_NOT_OK(tablet_->metadata()->UnPinFlush());
   RETURN_NOT_OK(RemoveRecoveryDir());
   listener_->StatusMessage("Bootstrap complete.");
   rebuilt_tablet->reset(tablet_.release());
   rebuilt_log->reset(log_.release());
   *opid_anchor_registry = opid_anchor_registry_;
+
   return Status::OK();
 }
 
@@ -518,7 +527,15 @@ struct ReplayState {
     return Status::OK();
   }
 
+  // The last message's id (regardless of type)
   OpId prev_op_id;
+
+  // The last COMMIT message's id
+  OpId last_commit_id;
+
+  // The last REPLICATE message's id
+  OpId last_replicate_id;
+
 
   // REPLICATE log entries whose corresponding COMMIT/ABORT record has
   // not yet been seen. Keyed by opid.
@@ -551,6 +568,8 @@ Status TabletBootstrap::HandleEntry(ReplayState* state, LogEntryPB* entry) {
 Status TabletBootstrap::HandleReplicateMessage(ReplayState* state, LogEntryPB* entry) {
   RETURN_NOT_OK(state->CheckSequentialOpId(entry->operation().id()));
 
+  state->last_replicate_id = entry->operation().id();
+
   // Append the replicate message to the log as is
   RETURN_NOT_OK(log_->Append(entry));
 
@@ -574,6 +593,8 @@ Status TabletBootstrap::HandleCommitMessage(ReplayState* state, LogEntryPB* entr
 
   // All log entries should have an OpId.
   DCHECK(entry->operation().has_id()) << "Entry has no OpId: " << entry->DebugString();
+
+  state->last_commit_id = entry->operation().id();
 
   // Match up the COMMIT/ABORT record with the original entry that it's applied to.
   const OpId& committed_op_id = entry->operation().commit().commited_op_id();
@@ -663,7 +684,7 @@ Status TabletBootstrap::HandleEntryPair(LogEntryPB* replicate_entry, LogEntryPB*
   return Status::OK();
 }
 
-Status TabletBootstrap::PlaySegments() {
+Status TabletBootstrap::PlaySegments(ConsensusBootstrapInfo* consensus_info) {
   RETURN_NOT_OK_PREPEND(OpenNewLog(), "Failed to open new log");
 
   ReplayState state;
@@ -711,17 +732,30 @@ Status TabletBootstrap::PlaySegments() {
     segment_count++;
   }
 
-  int num_orphaned = state.pending_replicates.size();
-  if (num_orphaned > 0) {
-    LOG(INFO) << "WAL for " << tablet_->tablet_id() << " included " << num_orphaned
-              << " REPLICATE messages with no corresponding commit/abort messages."
-              << " These transactions were probably in-flight when the server crashed.";
-    BOOST_FOREACH(const OpToEntryMap::value_type& e, state.pending_replicates) {
-      LOG(INFO) << "  " << e.second->ShortDebugString();
-    }
+  // Set up the ConsensusBootstrapInfo structure for the caller.
+  BOOST_FOREACH(OpToEntryMap::value_type& e, state.pending_replicates) {
+    consensus_info->orphaned_replicates.push_back(e.second->release_operation());
+  }
+  consensus_info->last_commit_id = state.last_commit_id;
+  consensus_info->last_replicate_id = state.last_replicate_id;
+  consensus_info->last_id = state.prev_op_id;
+
+  // Log any pending REPLICATEs, maybe useful for diagnosis.
+  if (!consensus_info->orphaned_replicates.empty()) {
+    DumpOrphanedReplicates(consensus_info->orphaned_replicates);
   }
 
   return Status::OK();
+}
+
+void TabletBootstrap::DumpOrphanedReplicates(const vector<OperationPB*>& ops) {
+  LOG(INFO) << "WAL for " << tablet_->tablet_id() << " included " << ops.size()
+            << " REPLICATE messages with no corresponding commit/abort messages."
+            << " These transactions were probably in-flight when the server crashed.";
+  BOOST_FOREACH(const OperationPB* op, ops) {
+    LOG(INFO) << "  " << op->ShortDebugString();
+  }
+
 }
 
 Status TabletBootstrap::PlayWriteRequest(OperationPB* replicate_op,

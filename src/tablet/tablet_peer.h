@@ -66,7 +66,7 @@ class TabletPeer : public consensus::ReplicaTransactionFactory {
   // Starts the TabletPeer, making it available for Write()s. If this
   // TabletPeer is part of a quorum this will connect it to other peers
   // in the quorum.
-  Status Start();
+  Status Start(const consensus::ConsensusBootstrapInfo& info);
 
   // Shutdown this tablet peer.
   void Shutdown();

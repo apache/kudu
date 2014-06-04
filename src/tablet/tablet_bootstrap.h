@@ -5,8 +5,10 @@
 #include <boost/thread/shared_mutex.hpp>
 #include <tr1/memory>
 #include <string>
+#include <vector>
 
 #include "common/schema.h"
+#include "consensus/log.pb.h"
 #include "gutil/gscoped_ptr.h"
 #include "gutil/ref_counted.h"
 #include "util/status.h"
@@ -19,6 +21,11 @@ namespace log {
 class Log;
 class OpIdAnchorRegistry;
 }
+
+namespace consensus {
+struct ConsensusBootstrapInfo;
+class OperationPB;
+} // namespace consensus
 
 namespace metadata {
 class TabletMetadata;
@@ -79,7 +86,8 @@ Status BootstrapTablet(const scoped_refptr<metadata::TabletMetadata>& meta,
                        TabletStatusListener* status_listener,
                        std::tr1::shared_ptr<tablet::Tablet>* rebuilt_tablet,
                        gscoped_ptr<log::Log>* rebuilt_log,
-                       scoped_refptr<log::OpIdAnchorRegistry>* opid_anchor_registry);
+                       scoped_refptr<log::OpIdAnchorRegistry>* opid_anchor_registry,
+                       consensus::ConsensusBootstrapInfo* consensus_info);
 
 }  // namespace tablet
 }  // namespace kudu

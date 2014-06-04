@@ -114,8 +114,6 @@ class LogTestBase : public KuduTest {
   }
 
   // Appends a batch with size 2 (1 insert, 1 mutate) to the log.
-  // Note that this test does not insert into tablet so the data contained in
-  // the ReplicateMsgs doesn't necessarily need to make sense.
   void AppendReplicateBatch(int index, bool sync = APPEND_SYNC) {
     LogEntryPB log_entry;
     log_entry.set_type(OPERATION);

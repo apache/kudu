@@ -51,6 +51,7 @@ class RaftConsensus : public Consensus {
                       log::Log* log) OVERRIDE;
 
   virtual Status Start(const metadata::QuorumPB& initial_quorum,
+                       const ConsensusBootstrapInfo& bootstrap_info,
                        gscoped_ptr<metadata::QuorumPB>* running_quorum) OVERRIDE;
 
   virtual Status Replicate(ConsensusRound* context) OVERRIDE;

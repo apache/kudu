@@ -121,10 +121,12 @@ class RaftConsensusTest : public KuduTest {
   }
 
   Status StartPeers() {
+    ConsensusBootstrapInfo boot_info;
+
     for (int i = 0; i < quorum_.peers_size(); i++) {
       RaftConsensus* peer = peers_[i];
       gscoped_ptr<metadata::QuorumPB> running_quorum;
-      RETURN_NOT_OK(peer->Start(quorum_, &running_quorum));
+      RETURN_NOT_OK(peer->Start(quorum_,ConsensusBootstrapInfo(), &running_quorum));
     }
     return Status::OK();
   }

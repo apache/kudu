@@ -117,13 +117,15 @@ Status SysTable::SetupTablet(const scoped_refptr<metadata::TabletMetadata>& meta
                                     quorum_peer,
                                     metric_ctx_,
                                     boost::bind(&SysTable::SysTableStateChanged, this, _1)));
+  consensus::ConsensusBootstrapInfo consensus_info;
   RETURN_NOT_OK(BootstrapTablet(metadata,
                                 scoped_refptr<server::Clock>(master_->clock()),
                                 &metric_ctx_,
                                 tablet_peer_->status_listener(),
                                 &tablet,
                                 &log,
-                                &opid_anchor_registry));
+                                &opid_anchor_registry,
+                                &consensus_info));
 
   // TODO: Do we have a setSplittable(false) or something from the outside is
   // handling split in the TS?
@@ -135,7 +137,8 @@ Status SysTable::SetupTablet(const scoped_refptr<metadata::TabletMetadata>& meta
                                            opid_anchor_registry.get()),
                         "Failed to Init() TabletPeer");
 
-  RETURN_NOT_OK_PREPEND(tablet_peer_->Start(), "Failed to Start() TabletPeer");
+  RETURN_NOT_OK_PREPEND(tablet_peer_->Start(consensus_info),
+                        "Failed to Start() TabletPeer");
 
   shared_ptr<Schema> schema(tablet->schema());
   schema_ = SchemaBuilder(*schema.get()).BuildWithoutIds();

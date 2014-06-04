@@ -1,12 +1,25 @@
 // Copyright (c) 2013, Cloudera, inc.
 
 #include "consensus/consensus.h"
+
+#include "consensus/log_util.h"
+#include "gutil/stl_util.h"
 #include "util/task_executor.h"
 
 namespace kudu {
 namespace consensus {
 
 using std::tr1::shared_ptr;
+
+ConsensusBootstrapInfo::ConsensusBootstrapInfo()
+  : last_commit_id(log::MinimumOpId()),
+    last_replicate_id(log::MinimumOpId()),
+    last_id(log::MinimumOpId()) {
+}
+
+ConsensusBootstrapInfo::~ConsensusBootstrapInfo() {
+  STLDeleteElements(&orphaned_replicates);
+}
 
 ConsensusRound::ConsensusRound(Consensus* consensus,
                                gscoped_ptr<OperationPB> replicate_op,

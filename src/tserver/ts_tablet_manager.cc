@@ -276,6 +276,7 @@ void TSTabletManager::OpenTablet(const scoped_refptr<TabletMetadata>& meta) {
   LOG(INFO) << "Bootstrapping tablet: " << tablet_id;
   TRACE("Bootstrapping tablet");
 
+  consensus::ConsensusBootstrapInfo bootstrap_info;
   Status s;
   LOG_TIMING(INFO, Substitute("Tablet $0 bootstrap complete.", tablet_id)) {
     // TODO: handle crash mid-creation of tablet? do we ever end up with a
@@ -286,7 +287,8 @@ void TSTabletManager::OpenTablet(const scoped_refptr<TabletMetadata>& meta) {
                         tablet_peer->status_listener(),
                         &tablet,
                         &log,
-                        &opid_anchor_registry);
+                        &opid_anchor_registry,
+                        &bootstrap_info);
     if (!s.ok()) {
       LOG(ERROR) << "Tablet failed to bootstrap: "
           << tablet_id << " Status: " << s.ToString();
@@ -314,7 +316,7 @@ void TSTabletManager::OpenTablet(const scoped_refptr<TabletMetadata>& meta) {
     }
 
     TRACE("Starting tablet peer");
-    s = tablet_peer->Start();
+    s = tablet_peer->Start(bootstrap_info);
     if (!s.ok()) {
       tablet_peer->SetFailed(s);
       return;
