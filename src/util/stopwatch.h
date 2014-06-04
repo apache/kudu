@@ -36,6 +36,18 @@ namespace kudu {
        !_l.has_printed();                                               \
        _l.Print(max_expected_millis))
 
+// Macro for vlogging timing of a block. The execution happens regardless of the vlog_level,
+// it's only the logging that's affected.
+// Usage:
+//   VLOG_TIMING(1, "doing some task") {
+//     ... some task which takes some time
+//   }
+// Yields a log just like LOG_TIMING's.
+#define VLOG_TIMING(vlog_level, description) \
+  for (kudu::sw_internal::LogTiming _l(__FILE__, __LINE__, google::INFO, description); \
+       !_l.has_printed();                     \
+       _l.PrintOnCondition(VLOG_IS_ON(vlog_level)))
+
 
 #define NANOS_PER_SECOND 1000000000.0
 #define NANOS_PER_MILLISECOND 1000000.0
@@ -193,6 +205,15 @@ class LogTiming {
       description_(description),
       has_printed_(false) {
     stopwatch_.start();
+  }
+
+  void PrintOnCondition(bool should_print) {
+    if (should_print) {
+      Print();
+    } else {
+      // Break out of the loop
+      has_printed_ = true;
+    }
   }
 
   void Print() {
