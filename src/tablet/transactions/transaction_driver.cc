@@ -431,18 +431,19 @@ void ReplicaTransactionDriver::PrepareOrLeaderCommitSucceeded() {
   }
   CHECK_EQ(2, prepare_finished_calls_);
 
-  if (!transaction_status_.ok()) {
-    HandlePrepareOrLeaderCommitFailure();
-    return;
-  }
-
-  Status s = apply_executor_->Submit(boost::bind(&ReplicaTransactionDriver::ApplyAndCommit, this),
-                                     &apply_future_);
-
-  if (!s.ok()) {
+  if (transaction_status_.ok()) {
+    Status s = apply_executor_->Submit(boost::bind(&ReplicaTransactionDriver::ApplyAndCommit, this),
+                                       &apply_future_);
+    if (PREDICT_TRUE(s.ok())) {
+      return;
+    }
     transaction_status_ = s;
-    HandlePrepareOrLeaderCommitFailure();
   }
+
+  // submit the handle leader commit failure on the apply executor, if possible, as the
+  // current thread already holds the lock for the consensus update.
+  CHECK_OK(apply_executor_->Submit(boost::bind(&ReplicaTransactionDriver::AbortAndCommit, this),
+                                   &apply_future_));
 }
 
 void ReplicaTransactionDriver::PrepareOrLeaderCommitFailed(const Status& failure_reason) {
@@ -452,7 +453,14 @@ void ReplicaTransactionDriver::PrepareOrLeaderCommitFailed(const Status& failure
   if (prepare_finished_calls_ < 2) {
     return;
   }
+  CHECK_OK(apply_executor_->Submit(boost::bind(&ReplicaTransactionDriver::AbortAndCommit, this),
+                                   &apply_future_));
+}
+
+Status ReplicaTransactionDriver::AbortAndCommit() {
+  boost::lock_guard<simple_spinlock> state_lock(lock_);
   HandlePrepareOrLeaderCommitFailure();
+  return Status::OK();
 }
 
 void ReplicaTransactionDriver::HandlePrepareOrLeaderCommitFailure() {

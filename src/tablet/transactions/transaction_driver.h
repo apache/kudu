@@ -200,6 +200,8 @@ class ReplicaTransactionDriver : public TransactionDriver,
 
   virtual Status LeaderCommitted(gscoped_ptr<consensus::OperationPB> leader_commit_op) OVERRIDE;
 
+  virtual Status AbortAndCommit();
+
   virtual Status ApplyAndCommit() OVERRIDE;
 
   virtual void ApplyAndCommitSucceeded() OVERRIDE;

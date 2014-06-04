@@ -293,6 +293,21 @@ TEST_F(DistConsensusTest, TestInsertAndMutateThroughConsensus) {
   AssertRowsExistInReplicas();
 }
 
+TEST_F(DistConsensusTest, TestFailedTransaction) {
+  WriteRequestPB req;
+  req.set_tablet_id(tablet_id);
+  RowOperationsPB* data = req.mutable_row_operations();
+  data->set_rows("some gibberish!");
+
+  WriteResponsePB resp;
+  RpcController controller;
+
+  controller.set_timeout(MonoDelta::FromSeconds(FLAGS_rpc_timeout));
+  ASSERT_STATUS_OK(DCHECK_NOTNULL(leader_->proxy.get())->Write(req, &resp, &controller));
+
+  ASSERT_TRUE(resp.has_error());
+}
+
 // Inserts rows through consensus and also starts one delay injecting thread
 // that steals consensus peer locks for a while. This is meant to test that
 // even with timeouts and repeated requests consensus still works.
