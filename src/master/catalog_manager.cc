@@ -434,7 +434,7 @@ Status CatalogManager::CreateTable(const CreateTableRequestPB* req,
   TRACE("Wrote tablets to system table");
 
   // 6. Update the on-disk table state to "running" (PONR)
-  table->metadata().mutable_dirty()->pb.set_state(SysTablesEntryPB::kTableStateRunning);
+  table->mutable_metadata()->mutable_dirty()->pb.set_state(SysTablesEntryPB::kTableStateRunning);
   s = sys_tables_->AddTable(table.get());
   if (!s.ok()) {
     PANIC_RPC(rpc, Substitute("An error occurred while inserting to sys-tablets: $0",
@@ -443,10 +443,10 @@ Status CatalogManager::CreateTable(const CreateTableRequestPB* req,
   TRACE("Wrote table to system table");
 
   // 7. Update the in-memory state
-  table->metadata().CommitMutation();
+  table->mutable_metadata()->CommitMutation();
 
   BOOST_FOREACH(TabletInfo *tablet, tablets) {
-    tablet->metadata().CommitMutation();
+    tablet->mutable_metadata()->CommitMutation();
   }
 
   VLOG(1) << "Created table " << table->ToString();
@@ -514,8 +514,8 @@ TableInfo *CatalogManager::CreateTableInfo(const CreateTableRequestPB* req,
                                            const Schema& schema) {
   DCHECK(schema.has_column_ids());
   TableInfo* table = new TableInfo(GenerateId());
-  table->metadata().StartMutation();
-  SysTablesEntryPB *metadata = &table->metadata().mutable_dirty()->pb;
+  table->mutable_metadata()->StartMutation();
+  SysTablesEntryPB *metadata = &table->mutable_metadata()->mutable_dirty()->pb;
   metadata->set_state(SysTablesEntryPB::kTableStatePreparing);
   metadata->set_name(req->name());
   metadata->set_version(0);
@@ -532,8 +532,8 @@ TabletInfo *CatalogManager::CreateTabletInfo(TableInfo *table,
                                              const string& start_key,
                                              const string& end_key) {
   TabletInfo* tablet = new TabletInfo(table, GenerateId());
-  tablet->metadata().StartMutation();
-  SysTabletsEntryPB *metadata = &tablet->metadata().mutable_dirty()->pb;
+  tablet->mutable_metadata()->StartMutation();
+  SysTabletsEntryPB *metadata = &tablet->mutable_metadata()->mutable_dirty()->pb;
   metadata->set_state(SysTabletsEntryPB::kTabletStatePreparing);
   metadata->set_start_key(start_key);
   metadata->set_end_key(end_key);
@@ -1464,7 +1464,7 @@ void CatalogManager::HandleAssignPreparingTablet(TabletInfo* tablet,
                                                  DeferredAssignmentActions* deferred) {
   // The tablet was just created (probably by a CreateTable)
   // update the state to "creating" to be reading for the creation request.
-  tablet->metadata().mutable_dirty()->set_state(
+  tablet->mutable_metadata()->mutable_dirty()->set_state(
     SysTabletsEntryPB::kTabletStateCreating, "Sending initial creation of tablet");
   deferred->tablets_to_update.push_back(tablet);
   deferred->needs_create_rpc.push_back(tablet);
@@ -1481,7 +1481,7 @@ void CatalogManager::HandleAssignCreatingTablet(TabletInfo* tablet,
 
   // Skip the tablet if the assignment timeout is not yet expired
   if (remaining_timeout > 0) {
-    tablet->metadata().AbortMutation();
+    tablet->mutable_metadata()->AbortMutation();
     VLOG(2) << "Tablet " << tablet->ToString() << " still being created. "
             << remaining_timeout << "ms remain until timeout.";
 
@@ -1506,12 +1506,12 @@ void CatalogManager::HandleAssignCreatingTablet(TabletInfo* tablet,
     tablet_map_[replacement->tablet_id()] = replacement;
   }
 
-  tablet->metadata().mutable_dirty()->set_state(
+  tablet->mutable_metadata()->mutable_dirty()->set_state(
     SysTabletsEntryPB::kTabletStateReplaced,
     Substitute("Replaced by $0 at ts=$1",
                replacement->tablet_id(), current_time));
 
-  replacement->metadata().mutable_dirty()->set_state(
+  replacement->mutable_metadata()->mutable_dirty()->set_state(
     SysTabletsEntryPB::kTabletStateCreating,
     Substitute("Replacement for $0", tablet->tablet_id()));
 
@@ -1570,7 +1570,7 @@ void CatalogManager::ProcessPendingAssignments(
   // it may be in. The actions required for the tablet are collected
   // into 'deferred'.
   BOOST_FOREACH(const scoped_refptr<TabletInfo>& tablet, tablets) {
-    tablet->metadata().StartMutation();
+    tablet->mutable_metadata()->StartMutation();
     SysTabletsEntryPB::State t_state = tablet->metadata().state().pb.state();
 
     switch (t_state) {
@@ -1616,10 +1616,10 @@ void CatalogManager::ProcessPendingAssignments(
   // to ensure that no one else tries to mutate the TabletInfos while we're
   // doing this.
   BOOST_FOREACH(TabletInfo* t, deferred.tablets_to_add) {
-    t->metadata().CommitMutation();
+    t->mutable_metadata()->CommitMutation();
   }
   BOOST_FOREACH(TabletInfo* t, deferred.tablets_to_update) {
-    t->metadata().CommitMutation();
+    t->mutable_metadata()->CommitMutation();
   }
 }
 
@@ -1643,7 +1643,7 @@ void CatalogManager::SelectReplicasForTablets(const vector<TabletInfo*>& tablets
     }
 
     // Select the set of replicas
-    metadata::QuorumPB *quorum = tablet->metadata().mutable_dirty()->pb.mutable_quorum();
+    metadata::QuorumPB *quorum = tablet->mutable_metadata()->mutable_dirty()->pb.mutable_quorum();
     quorum->set_seqno(0);
     // TODO allow the user to choose num replicas per table and
     // and allow to choose local/dist quorum. See: KUDU-96

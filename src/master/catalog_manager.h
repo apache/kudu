@@ -127,8 +127,8 @@ class TabletInfo : public base::RefCountedThreadSafe<TabletInfo> {
 
   // Access the persistent metadata. Typically you should use
   // TabletMetadataLock to gain access to this data.
-  const CowObject<PersistentTabletInfo>& metadata() const {return metadata_; }
-  CowObject<PersistentTabletInfo>& metadata() {return metadata_; }
+  const CowObject<PersistentTabletInfo>& metadata() const { return metadata_; }
+  CowObject<PersistentTabletInfo>* mutable_metadata() { return &metadata_; }
 
  private:
   friend class base::RefCountedThreadSafe<TabletInfo>;
@@ -211,7 +211,7 @@ class TableInfo : public base::RefCountedThreadSafe<TableInfo> {
   // Access the persistent metadata. Typically you should use
   // TableMetadataLock to gain access to this data.
   const CowObject<PersistentTableInfo>& metadata() const { return metadata_; }
-  CowObject<PersistentTableInfo>& metadata() { return metadata_; }
+  CowObject<PersistentTableInfo>* mutable_metadata() { return &metadata_; }
 
   // Returns true if the table creation is in-progress
   bool IsCreateInProgress() const;
@@ -233,7 +233,8 @@ class TableInfo : public base::RefCountedThreadSafe<TableInfo> {
 
   const std::string table_id_;
 
-  // Tablet map start-key/info
+  // Tablet map start-key/info.
+  // The TabletInfo objects are owned by the CatalogManager.
   typedef std::map<std::string, TabletInfo *> TabletInfoMap;
   TabletInfoMap tablet_map_;
 
@@ -255,7 +256,7 @@ class MetadataLock : public CowLock<typename MetadataClass::cow_state> {
   typedef CowLock<typename MetadataClass::cow_state> super;
   MetadataLock(MetadataClass* info,
                typename super::LockMode mode)
-    : super(&info->metadata(), mode) {}
+    : super(info->mutable_metadata(), mode) {}
   MetadataLock(const MetadataClass* info,
                typename super::LockMode mode)
     : super(&info->metadata(), mode) {}
