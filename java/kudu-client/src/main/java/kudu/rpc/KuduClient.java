@@ -898,10 +898,14 @@ public class KuduClient {
    * We're in the context of decode() meaning we need to either callback or retry later.
    */
   void handleNSTE(final KuduRpc rpc, KuduException ex, TabletClient server) {
+    invalidateTabletCache(rpc.getTablet(), server);
+    handleRetryableError(rpc, ex);
+  }
+
+  void handleRetryableError(final KuduRpc rpc, KuduException ex) {
     // TODO we don't always need to sleep, maybe another replica can serve this RPC
 
     boolean cannotRetry = cannotRetryRequest(rpc);
-    invalidateTabletCache(rpc.getTablet(), server);
     if (cannotRetry) {
       // This is a callback
       tooManyAttemptsOrTimeout(rpc, ex);

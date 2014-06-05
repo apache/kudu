@@ -8,7 +8,11 @@ import kudu.master.Master;
  */
 public class MasterErrorException extends KuduServerException {
 
+  MasterErrorException(RpcHeader.ErrorStatusPB errorStatus) {
+    super(errorStatus);
+  }
+
   MasterErrorException(Master.MasterErrorPB error) {
-    super(error.getStatus(), error.getCode().getNumber());
+    super(error.getStatus());
   }
 }

@@ -3,6 +3,7 @@ package kudu.rpc;
 
 import com.stumbleupon.async.Callback;
 import com.stumbleupon.async.Deferred;
+import kudu.WireProtocol;
 import kudu.tserver.Tserver;
 import kudu.util.Slice;
 import org.jboss.netty.util.HashedWheelTimer;
@@ -402,6 +403,12 @@ public class KuduSession {
         Tserver.WriteResponsePB resp = (Tserver.WriteResponsePB) response;
         if (resp.getError().hasCode()) {
           // TODO more specific error parsing, same as KuduScanner
+          if (resp.getError().getStatus().getCode().equals(WireProtocol.AppStatusPB.ErrorCode
+              .SERVICE_UNAVAILABLE)) {
+            client.handleRetryableError(request,
+                new TabletServerErrorException(resp.getError().getStatus()));
+            return null;
+          }
           LOG.error(resp.getError().getStatus().getMessage());
           throw new NonRecoverableException(resp.getError().getStatus().getMessage());
         }

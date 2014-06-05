@@ -369,6 +369,11 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
       RpcHeader.ErrorStatusPB.Builder errorBuilder = RpcHeader.ErrorStatusPB.newBuilder();
       KuduRpc.readProtobuf(buf, errorBuilder);
       RpcHeader.ErrorStatusPB error = errorBuilder.build();
+      if (error.getCode().equals(RpcHeader.ErrorStatusPB.RpcErrorCodePB.ERROR_SERVER_TOO_BUSY)) {
+        // we're not calling rpc.callback() so we rely on the client to retry that RPC
+        kuduClient.handleRetryableError(rpc, new TabletServerErrorException(error));
+        return null;
+      }
       String message = "Tablet server sent error " + error.getMessage();
       Exception ex = new Exception(message);
       LOG.error(message); // can be useful
@@ -392,12 +397,11 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
     if (decoded instanceof Tserver.TabletServerErrorPB) {
       Tserver.TabletServerErrorPB error = (Tserver.TabletServerErrorPB) decoded;
       if (error.getCode().equals(Tserver.TabletServerErrorPB.Code.TABLET_NOT_FOUND)) {
-        kuduClient.handleNSTE(rpc, new TabletServerErrorException(error.getStatus(),
-            error.getCode().getNumber()), this);
+        kuduClient.handleNSTE(rpc, new TabletServerErrorException(error.getStatus()), this);
         // we're not calling rpc.callback() so we rely on the client to retry that RPC
         return null;
       }
-      decoded = new TabletServerErrorException(error.getStatus(), error.getCode().getNumber());
+      decoded = new TabletServerErrorException(error.getStatus());
     }
 
     try {

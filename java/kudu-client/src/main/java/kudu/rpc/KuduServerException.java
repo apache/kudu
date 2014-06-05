@@ -8,20 +8,17 @@ import kudu.WireProtocol;
  */
 public class KuduServerException extends KuduException {
 
-  private final WireProtocol.AppStatusPB appStatus;
-  private final int errCode;
-
-  KuduServerException(WireProtocol.AppStatusPB appStatus, int errCode) {
-    this(appStatus, errCode, null);
+  KuduServerException(RpcHeader.ErrorStatusPB errorStatus) {
+    this(errorStatus.getMessage(), errorStatus.getCode().toString(),
+        errorStatus.getCode().getNumber(), null);
   }
 
-  KuduServerException(WireProtocol.AppStatusPB appStatus, int errCode, Throwable cause) {
-    super(appStatus.getMessage(), cause);
-    this.appStatus = appStatus;
-    this.errCode = errCode;
+  KuduServerException(WireProtocol.AppStatusPB appStatus) {
+    this(appStatus.getMessage(), appStatus.getCode().toString(),
+        appStatus.getCode().getNumber(), null);
   }
 
-  public int getErrCode() {
-    return errCode;
+  KuduServerException(String message, String errorDesc, int errCode, Throwable cause) {
+    super(errorDesc + "[code " + errCode + "]: "  + message, cause);
   }
 }
