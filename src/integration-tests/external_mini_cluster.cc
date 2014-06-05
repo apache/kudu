@@ -292,6 +292,7 @@ Status ExternalDaemon::StartProcess(const vector<string>& user_flags) {
   argv.push_back("--webserver_interface=localhost");
 
   gscoped_ptr<Subprocess> p(new Subprocess(exe_, argv));
+  p->ShareParentStdout(false);
   LOG(INFO) << "Running " << exe_ << "\n" << JoinStrings(argv, "\n");
   RETURN_NOT_OK_PREPEND(p->Start(),
                         Substitute("Failed to start subprocess $0", exe_));

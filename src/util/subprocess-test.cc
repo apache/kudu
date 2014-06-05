@@ -20,6 +20,7 @@ TEST_F(SubprocessTest, TestSimplePipe) {
   argv.push_back("a-z");
   argv.push_back("A-Z");
   Subprocess p("/usr/bin/tr", argv);
+  p.ShareParentStdout(false);
   ASSERT_STATUS_OK(p.Start());
 
   FILE* out = fdopen(p.ReleaseChildStdinFd(), "w");
@@ -47,6 +48,7 @@ TEST_F(SubprocessTest, TestErrPipe) {
   argv.push_back("tee");
   argv.push_back("/dev/stderr");
   Subprocess p("/usr/bin/tee", argv);
+  p.ShareParentStderr(false);
   ASSERT_STATUS_OK(p.Start());
 
   FILE* out = fdopen(p.ReleaseChildStdinFd(), "w");

@@ -114,6 +114,7 @@ void PstackWatcher::LogPstack() {
   argv.push_back(prog);
   argv.push_back(pid_string);
   Subprocess pstack_proc(prog, argv);
+  pstack_proc.ShareParentStdout(false);
   CHECK_OK(pstack_proc.Start());
   close(pstack_proc.ReleaseChildStdinFd());
 

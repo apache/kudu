@@ -18,6 +18,13 @@ namespace kudu {
 //
 // This takes care of creating pipes to/from the subprocess and offers
 // basic functionality to wait on it or send signals.
+// By default, child process only has stdin captured and separate from the parent.
+// The stdout/stderr streams are shared with the parent by default.
+//
+// The process may only be started and waited on/killed once.
+//
+// Optionally, user may change parent/child stream sharing. Also, a user may disable
+// a subprocess stream. A user cannot do both.
 //
 // Note that, when the Subprocess object is destructed, the child process
 // will be forcibly SIGKILLed to avoid orphaning processes.
@@ -27,15 +34,17 @@ class Subprocess {
              const std::vector<std::string>& argv);
   ~Subprocess();
 
-  // Disable the stderr output from the subprocess.  Must be called before the
-  // subprocess starts.
+  // Disable subprocess stream output.  Must be called before subprocess starts.
   void DisableStderr();
-
-  // Disable the stdout output from the subprocess.  Must be called before the
-  // subprocess starts.
   void DisableStdout();
 
-  // Start the subprocess.
+  // Share a stream with parent. Must be called before subprocess starts.
+  // Cannot set sharing at all if stream is disabled
+  void ShareParentStdin(bool  share = true) { SetFdShared(STDIN_FILENO,  share); }
+  void ShareParentStdout(bool share = true) { SetFdShared(STDOUT_FILENO, share); }
+  void ShareParentStderr(bool share = true) { SetFdShared(STDERR_FILENO, share); }
+
+  // Start the subprocess. Can only be called once.
   //
   // Thie returns a bad Status if the fork() fails. However,
   // note that if the executable path was incorrect such that
@@ -44,62 +53,48 @@ class Subprocess {
   Status Start();
 
   // Wait for the subprocess to exit. The return value is the same as
-  // that of the waitpid() syscall.
-  Status Wait(int* ret);
+  // that of the waitpid() syscall. Only call after starting.
+  Status Wait(int* ret) { return DoWait(ret, 0); }
 
   // Like the above, but does not block. This returns Status::TimedOut
   // immediately if the child has not exited. Otherwise returns Status::OK
-  // and sets *ret.
-  Status WaitNoBlock(int* ret);
+  // and sets *ret. Only call after starting.
+  Status WaitNoBlock(int* ret) { return DoWait(ret, WNOHANG); }
 
   // Send a signal to the subprocess.
   // Note that this does not reap the process -- you must still Wait()
-  // in order to reap it.
+  // in order to reap it. Only call after starting.
   Status Kill(int signal);
 
-  // Return the pipe fd to the child's standard input.
-  int to_child_stdin_fd() const {
-    CHECK(started_);
-    return to_child_stdin_;
-  }
+  // Return the pipe fd to the child's standard stream.
+  // Stream should not be disabled or shared.
+  int to_child_stdin_fd()    const { return CheckAndOffer(STDIN_FILENO); }
+  int from_child_stdout_fd() const { return CheckAndOffer(STDOUT_FILENO); }
+  int from_child_stderr_fd() const { return CheckAndOffer(STDERR_FILENO); }
 
-  // Release control of the file descriptor for the child's stdin.
-  // Writes to this FD show up on stdin in the subprocess.
-  int ReleaseChildStdinFd();
-
-  // Return the pipe fd from the child's standard output.
-  int from_child_stdout_fd() const {
-    CHECK(started_);
-    return from_child_stdout_;
-  }
-
-  // Release control of the file descriptor for the child's stdout.
-  // Reads from this FD come from stdout of the subprocess.
-  int ReleaseChildStdoutFd();
-
-  // Return the pipe fd to the child's standard error.
-  int from_child_stderr_fd() const {
-    CHECK(started_);
-    return from_child_stderr_;
-  }
-
-  // Release control of the file descriptor for the child's stderr.
-  // Reads from this FD come from stderr of the subprocess.
-  int ReleaseChildStderrFd();
+  // Release control of the file descriptor for the child's stream, only if piped.
+  // Writes to this FD show up on stdin in the subprocess
+  int ReleaseChildStdinFd()  { return ReleaseChildFd(STDIN_FILENO ); }
+  // Reads from this FD come from stdout of the subprocess
+  int ReleaseChildStdoutFd() { return ReleaseChildFd(STDOUT_FILENO); }
+  // Reads from this FD come from stderr of the subprocess
+  int ReleaseChildStderrFd() { return ReleaseChildFd(STDERR_FILENO); }
 
  private:
+  void SetFdShared(int stdfd, bool share);
+  int CheckAndOffer(int stdfd) const;
+  int ReleaseChildFd(int stdfd);
   Status DoWait(int* ret, int options);
+
+  enum StreamMode {SHARED, DISABLED, PIPED};
 
   std::string program_;
   std::vector<std::string> argv_;
 
   bool started_;
   int child_pid_;
-  int to_child_stdin_;
-  int from_child_stdout_;
-  int from_child_stderr_;
-  bool disable_stderr_;
-  bool disable_stdout_;
+  enum StreamMode fd_state_[3];
+  int child_fds_[3];
 
   DISALLOW_COPY_AND_ASSIGN(Subprocess);
 };

@@ -84,11 +84,14 @@ Subprocess::Subprocess(const string& program,
     argv_(argv),
     started_(false),
     child_pid_(-1),
-    to_child_stdin_(-1),
-    from_child_stdout_(-1),
-    from_child_stderr_(-1),
-    disable_stderr_(false),
-    disable_stdout_(false) {
+    fd_state_(),
+    child_fds_() {
+  fd_state_[STDIN_FILENO]   = PIPED;
+  fd_state_[STDOUT_FILENO]  = SHARED;
+  fd_state_[STDERR_FILENO]  = SHARED;
+  child_fds_[STDIN_FILENO]  = -1;
+  child_fds_[STDOUT_FILENO] = -1;
+  child_fds_[STDERR_FILENO] = -1;
 }
 
 Subprocess::~Subprocess() {
@@ -101,25 +104,27 @@ Subprocess::~Subprocess() {
     WARN_NOT_OK(Wait(&junk), "Failed to Wait()");
   }
 
-  if (to_child_stdin_ >= 0) {
-    close(to_child_stdin_);
+  for (int i = 0; i < 3; ++i) {
+    if (fd_state_[i] == PIPED && child_fds_[i] >= 0) {
+      close(child_fds_[i]);
+    }
   }
-  if (from_child_stdout_ >= 0) {
-    close(from_child_stdout_);
-  }
-  if (from_child_stderr_ >= 0) {
-    close(from_child_stderr_);
-  }
+}
+
+void Subprocess::SetFdShared(int stdfd, bool share) {
+  CHECK(!started_);
+  CHECK_NE(fd_state_[stdfd], DISABLED);
+  fd_state_[stdfd] = share? SHARED : PIPED;
 }
 
 void Subprocess::DisableStderr() {
   CHECK(!started_);
-  disable_stderr_ = true;
+  fd_state_[STDERR_FILENO] = DISABLED;
 }
 
 void Subprocess::DisableStdout() {
   CHECK(!started_);
-  disable_stdout_ = true;
+  fd_state_[STDOUT_FILENO] = DISABLED;
 }
 
 static void RedirectToDevNull(int fd) {
@@ -136,6 +141,7 @@ static void RedirectToDevNull(int fd) {
 }
 
 Status Subprocess::Start() {
+  CHECK(!started_);
   EnsureSigPipeDisabled();
 
   if (argv_.size() < 1) {
@@ -150,62 +156,76 @@ Status Subprocess::Start() {
 
   // Pipe from caller process to child's stdin
   // [0] = stdin for child, [1] = how parent writes to it
-  int child_stdin[2];
-  PCHECK(pipe2(child_stdin, O_CLOEXEC) == 0);
-
+  int child_stdin[2] = {-1, -1};
+  if (fd_state_[STDIN_FILENO] == PIPED) {
+    PCHECK(pipe2(child_stdin, O_CLOEXEC) == 0);
+  }
   // Pipe from child's stdout back to caller process
   // [0] = how parent reads from child's stdout, [1] = how child writes to it
-  int child_stdout[2];
-  PCHECK(pipe2(child_stdout, O_CLOEXEC) == 0);
-
+  int child_stdout[2] = {-1, -1};
+  if (fd_state_[STDOUT_FILENO] == PIPED) {
+    PCHECK(pipe2(child_stdout, O_CLOEXEC) == 0);
+  }
   // Pipe from child's stderr back to caller process
   // [0] = how parent reads from child's stderr, [1] = how child writes to it
-  int child_stderr[2];
-  PCHECK(pipe2(child_stderr, O_CLOEXEC) == 0);
+  int child_stderr[2] = {-1, -1};
+  if (fd_state_[STDERR_FILENO] == PIPED) {
+    PCHECK(pipe2(child_stderr, O_CLOEXEC) == 0);
+  }
 
   int ret = fork();
   if (ret == -1) {
     return Status::RuntimeError("Unable to fork", ErrnoToString(errno), errno);
   }
-  if (ret == 0) {
-    // We are the child
-    PCHECK(dup2(child_stdin[0],  STDIN_FILENO)  == STDIN_FILENO);
-    PCHECK(dup2(child_stdout[1], STDOUT_FILENO) == STDOUT_FILENO);
-    PCHECK(dup2(child_stderr[1], STDERR_FILENO) == STDERR_FILENO);
-    CloseNonStandardFDs();
-    if (disable_stderr_) {
-      RedirectToDevNull(STDERR_FILENO);
+  if (ret == 0) { // We are the child
+    // stdin
+    if (fd_state_[STDIN_FILENO] == PIPED) {
+      PCHECK(dup2(child_stdin[0], STDIN_FILENO) == STDIN_FILENO);
     }
-    if (disable_stdout_) {
+    // stdout
+    switch (fd_state_[STDOUT_FILENO]) {
+    case PIPED: {
+      PCHECK(dup2(child_stdout[1], STDOUT_FILENO) == STDOUT_FILENO);
+      break;
+    }
+    case DISABLED: {
       RedirectToDevNull(STDOUT_FILENO);
+      break;
+    }
+    default: break;
+    }
+    // stderr
+    switch (fd_state_[STDERR_FILENO]) {
+    case PIPED: {
+      PCHECK(dup2(child_stderr[1], STDERR_FILENO) == STDERR_FILENO);
+      break;
+    }
+    case DISABLED: {
+      RedirectToDevNull(STDERR_FILENO);
+      break;
+    }
+    default: break;
     }
 
+    CloseNonStandardFDs();
     execvp(program_.c_str(), &argv_ptrs[0]);
     PLOG(WARNING) << "Couldn't exec";
     _exit(errno);
   } else {
     // We are the parent
     child_pid_ = ret;
-    // Don't need inputs to pipes
-    close(child_stdin[0]);
-    close(child_stdout[1]);
-    close(child_stderr[1]);
-    // Extract fds of child's output to pipes
-    to_child_stdin_    = child_stdin[1];
-    from_child_stdout_ = child_stdout[0];
-    from_child_stderr_ = child_stderr[0];
+    // Close child's side of the pipes
+    if (fd_state_[STDIN_FILENO]  == PIPED) close(child_stdin[0]);
+    if (fd_state_[STDOUT_FILENO] == PIPED) close(child_stdout[1]);
+    if (fd_state_[STDERR_FILENO] == PIPED) close(child_stderr[1]);
+    // Keep parent's side of the pipes
+    child_fds_[STDIN_FILENO]  = child_stdin[1];
+    child_fds_[STDOUT_FILENO] = child_stdout[0];
+    child_fds_[STDERR_FILENO] = child_stderr[0];
   }
 
   started_ = true;
   return Status::OK();
-}
-
-Status Subprocess::Wait(int* ret) {
-  return DoWait(ret, 0);
-}
-
-Status Subprocess::WaitNoBlock(int* ret) {
-  return DoWait(ret, WNOHANG);
 }
 
 Status Subprocess::DoWait(int* ret, int options) {
@@ -236,27 +256,18 @@ Status Subprocess::Kill(int signal) {
   return Status::OK();
 }
 
-int Subprocess::ReleaseChildStdinFd() {
+int Subprocess::CheckAndOffer(int stdfd) const {
   CHECK(started_);
-  CHECK_GE(to_child_stdin_, 0);
-  int ret = to_child_stdin_;
-  to_child_stdin_ = -1;
-  return ret;
+  CHECK_EQ(fd_state_[stdfd], PIPED);
+  return child_fds_[stdfd];
 }
 
-int Subprocess::ReleaseChildStdoutFd() {
+int Subprocess::ReleaseChildFd(int stdfd) {
   CHECK(started_);
-  CHECK_GE(from_child_stdout_, 0);
-  int ret = from_child_stdout_;
-  from_child_stdout_ = -1;
-  return ret;
-}
-
-int Subprocess::ReleaseChildStderrFd() {
-  CHECK(started_);
-  CHECK_GE(from_child_stderr_, 0);
-  int ret = from_child_stderr_;
-  from_child_stderr_ = -1;
+  CHECK_GE(child_fds_[stdfd], 0);
+  CHECK_EQ(fd_state_[stdfd], PIPED);
+  int ret = child_fds_[stdfd];
+  child_fds_[stdfd] = -1;
   return ret;
 }
 
