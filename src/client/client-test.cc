@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "client/client.h"
+#include "client/meta_cache.h"
 #include "common/maintenance_manager.h"
 #include "common/row.h"
 #include "common/wire_protocol.h"
@@ -120,12 +121,12 @@ class ClientTest : public KuduTest {
   }
 
   // Inserts 'num_rows' test rows via RPC.
-  void InsertTestRows(int num_rows) {
+  void InsertTestRows(KuduTable* table, int num_rows) {
     shared_ptr<KuduSession> session = client_->NewSession();
     ASSERT_STATUS_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
     session->SetTimeoutMillis(5000);
     for (int i = 0; i < num_rows; i++) {
-      gscoped_ptr<Insert> insert(BuildTestRow(i));
+      gscoped_ptr<Insert> insert(BuildTestRow(table, i));
       ASSERT_STATUS_OK(session->Apply(&insert));
       if (i % 25 == 0) { // to avoid backpressure
         ASSERT_STATUS_OK(session->Flush());
@@ -134,8 +135,8 @@ class ClientTest : public KuduTest {
     ASSERT_STATUS_OK(session->Flush()); // and one more for good measure
   }
 
-  gscoped_ptr<Insert> BuildTestRow(int index) {
-    gscoped_ptr<Insert> insert = client_table_->NewInsert();
+  gscoped_ptr<Insert> BuildTestRow(KuduTable* table, int index) {
+    gscoped_ptr<Insert> insert = table->NewInsert();
     PartialRow* row = insert->mutable_row();
     CHECK_OK(row->SetUInt32(0, index));
     CHECK_OK(row->SetUInt32(1, index * 2));
@@ -231,8 +232,13 @@ class ClientTest : public KuduTest {
   }
 
   int CountRowsFromClient(KuduTable* table, uint32_t lower_bound, uint32_t upper_bound) {
+    return CountRowsFromClient(table, KuduClient::LEADER_ONLY, lower_bound, upper_bound);
+  }
+
+  int CountRowsFromClient(KuduTable* table, KuduClient::ReplicaSelection selection,
+                          uint32_t lower_bound, uint32_t upper_bound) {
     KuduScanner scanner(table);
-    scanner.SetScanFromLeaderOnly(true);
+    scanner.SetSelection(selection);
     Schema empty_projection(vector<ColumnSchema>(), 0);
     CHECK_OK(scanner.SetProjection(&empty_projection));
     if (lower_bound != kNoBound && upper_bound != kNoBound) {
@@ -259,7 +265,7 @@ class ClientTest : public KuduTest {
   void ScanRowsToStrings(KuduTable* table, vector<string>* row_strings) {
     row_strings->clear();
     KuduScanner scanner(table);
-    scanner.SetScanFromLeaderOnly(true);
+    scanner.SetSelection(KuduClient::LEADER_ONLY);
     ASSERT_STATUS_OK(scanner.Open());
     vector<const uint8_t*> rows;
     while (scanner.HasMoreRows()) {
@@ -270,6 +276,21 @@ class ClientTest : public KuduTest {
       }
       rows.clear();
     }
+  }
+
+  void CreateReplicatedTable(const string& table_name, int num_replicas,
+                             scoped_refptr<KuduTable>* table) {
+    // Add more tablet servers to satisfy all replicas.
+    // We assume there's one TS to begin with.
+    for (int i = 0; i < num_replicas - 1; i++) {
+      ASSERT_STATUS_OK(cluster_->AddTabletServer());
+    }
+    ASSERT_STATUS_OK(cluster_->WaitForTabletServerCount(num_replicas));
+    ASSERT_STATUS_OK(client_->CreateTable(table_name, schema_,
+                                          CreateTableOptions()
+                                          .WithNumReplicas(num_replicas)
+                                          .WithSplitKeys(GenerateSplitKeys())));
+    ASSERT_STATUS_OK(client_->OpenTable(table_name, table));
   }
 
   void DoApplyWithoutFlushTest(int sleep_micros);
@@ -315,7 +336,7 @@ TEST_F(ClientTest, TestMasterDown) {
 }
 
 TEST_F(ClientTest, TestScan) {
-  InsertTestRows(FLAGS_test_scan_num_rows);
+  InsertTestRows(client_table_.get(), FLAGS_test_scan_num_rows);
 
   DoTestScanWithoutPredicates();
   DoTestScanWithStringPredicate();
@@ -347,28 +368,28 @@ TEST_F(ClientTest, TestScanMultiTablet) {
   session->SetTimeoutMillis(5000);
   for (int i = 1; i < 5; i++) {
     gscoped_ptr<Insert> insert;
-    insert = BuildTestRow(2 + (i * 10));
+    insert = BuildTestRow(table.get(), 2 + (i * 10));
     ASSERT_STATUS_OK(session->Apply(&insert));
-    insert = BuildTestRow(3 + (i * 10));
+    insert = BuildTestRow(table.get(), 3 + (i * 10));
     ASSERT_STATUS_OK(session->Apply(&insert));
-    insert = BuildTestRow(5 + (i * 10));
+    insert = BuildTestRow(table.get(), 5 + (i * 10));
     ASSERT_STATUS_OK(session->Apply(&insert));
-    insert = BuildTestRow(7 + (i * 10));
+    insert = BuildTestRow(table.get(), 7 + (i * 10));
     ASSERT_STATUS_OK(session->Apply(&insert));
   }
   ASSERT_STATUS_OK(session->Flush());
 
   // Run through various scans.
-  ASSERT_EQ(16, CountRowsFromClient(client_table_.get(), kNoBound, kNoBound));
-  ASSERT_EQ(3, CountRowsFromClient(client_table_.get(), kNoBound, 15));
-  ASSERT_EQ(9, CountRowsFromClient(client_table_.get(), 27, kNoBound));
-  ASSERT_EQ(3, CountRowsFromClient(client_table_.get(), 0, 15));
-  ASSERT_EQ(0, CountRowsFromClient(client_table_.get(), 0, 10));
-  ASSERT_EQ(4, CountRowsFromClient(client_table_.get(), 0, 20));
-  ASSERT_EQ(8, CountRowsFromClient(client_table_.get(), 0, 30));
-  ASSERT_EQ(6, CountRowsFromClient(client_table_.get(), 14, 30));
-  ASSERT_EQ(0, CountRowsFromClient(client_table_.get(), 30, 30));
-  ASSERT_EQ(0, CountRowsFromClient(client_table_.get(), 50, kNoBound));
+  ASSERT_EQ(16, CountRowsFromClient(table.get(), kNoBound, kNoBound));
+  ASSERT_EQ(3, CountRowsFromClient(table.get(), kNoBound, 15));
+  ASSERT_EQ(9, CountRowsFromClient(table.get(), 27, kNoBound));
+  ASSERT_EQ(3, CountRowsFromClient(table.get(), 0, 15));
+  ASSERT_EQ(0, CountRowsFromClient(table.get(), 0, 10));
+  ASSERT_EQ(4, CountRowsFromClient(table.get(), 0, 20));
+  ASSERT_EQ(8, CountRowsFromClient(table.get(), 0, 30));
+  ASSERT_EQ(6, CountRowsFromClient(table.get(), 14, 30));
+  ASSERT_EQ(0, CountRowsFromClient(table.get(), 30, 30));
+  ASSERT_EQ(0, CountRowsFromClient(table.get(), 50, kNoBound));
 }
 
 TEST_F(ClientTest, TestScanEmptyTable) {
@@ -391,7 +412,7 @@ TEST_F(ClientTest, TestScanEmptyTable) {
 // row block with the proper number of rows filled in. Impala issues
 // scans like this in order to implement COUNT(*).
 TEST_F(ClientTest, TestScanEmptyProjection) {
-  InsertTestRows(FLAGS_test_scan_num_rows);
+  InsertTestRows(client_table_.get(), FLAGS_test_scan_num_rows);
   Schema empty_projection(vector<ColumnSchema>(), 0);
   KuduScanner scanner(client_table_.get());
   ASSERT_STATUS_OK(scanner.SetProjection(&empty_projection));
@@ -427,7 +448,7 @@ static void AssertScannersDisappear(const tserver::ScannerManager* manager) {
 
 // Test cleanup of scanners on the server side when closed.
 TEST_F(ClientTest, TestCloseScanner) {
-  InsertTestRows(10);
+  InsertTestRows(client_table_.get(), 10);
 
   const tserver::ScannerManager* manager =
     cluster_->mini_tablet_server(0)->server()->scanner_manager();
@@ -903,37 +924,75 @@ TEST_F(ClientTest, TestReplicatedMultiTabletTable) {
   const string kReplicatedTable = "replicated";
   const int kNumRowsToWrite = 100;
 
-  // Add two more tablet servers so that the Create can succeed.
-  for (int i = 0; i < 2; i++) {
-    ASSERT_STATUS_OK(cluster_->AddTabletServer());
-  }
-  ASSERT_STATUS_OK(cluster_->WaitForTabletServerCount(3));
-
-  ASSERT_STATUS_OK(client_->CreateTable(kReplicatedTable, schema_,
-                                        CreateTableOptions()
-                                        .WithNumReplicas(3)
-                                        .WithSplitKeys(GenerateSplitKeys())));
   scoped_refptr<KuduTable> table;
-  ASSERT_STATUS_OK(client_->OpenTable(kReplicatedTable, &table));
+  CreateReplicatedTable(kReplicatedTable, 3, &table);
 
   // Should have no rows to begin with.
   ASSERT_EQ(0, CountRowsFromClient(table.get()));
 
   // Insert some data.
-  shared_ptr<KuduSession> session = client_->NewSession();
-  ASSERT_STATUS_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
-  for (int row_key = 0; row_key < kNumRowsToWrite; row_key++) {
-    ASSERT_STATUS_OK(ApplyInsertToSession(
-                       session.get(), table, row_key, row_key * 10, "hello world"));
-  }
-
-  ASSERT_STATUS_OK(session->Flush());
+  InsertTestRows(table.get(), kNumRowsToWrite);
 
   // Should now see the data.
   ASSERT_EQ(kNumRowsToWrite, CountRowsFromClient(table.get()));
 
   // TODO: once leader re-election is in, should somehow force a re-election
   // and ensure that the client handles refreshing the leader.
+}
+
+TEST_F(ClientTest, TestReplicatedMultiTabletTableFailover) {
+  const string kReplicatedTable = "replicated_with_failover";
+  const int kNumRowsToWrite = 100;
+  const int kNumReplicas = 3;
+  const int kNumTries = 10;
+
+  scoped_refptr<KuduTable> table;
+  CreateReplicatedTable(kReplicatedTable, kNumReplicas, &table);
+
+  // Insert some data.
+  InsertTestRows(table.get(), kNumRowsToWrite);
+
+  // Find the first replica that will be scanned.
+  Synchronizer sync;
+  scoped_refptr<RemoteTablet> rt;
+  client_->meta_cache_->LookupTabletByKey(table.get(), Slice(),
+                                          &rt, sync.callback());
+  ASSERT_STATUS_OK(sync.Wait());
+  RemoteTabletServer *rts;
+  ASSERT_STATUS_OK(client_->GetTabletServer(rt->tablet_id(),
+                                            KuduClient::FIRST_REPLICA, &rts));
+
+  // Kill that replica's tablet server.
+  bool ts_killed = false;
+  for (int i = 0; i < kNumReplicas; i++) {
+    MiniTabletServer* ts = cluster_->mini_tablet_server(i);
+    if (ts->server()->instance_pb().permanent_uuid() == rts->ToString()) {
+      LOG(INFO) << "Killing TS running on " << ts->bound_rpc_addr().ToString();
+      ts->Shutdown();
+      ts_killed = true;
+      break;
+    }
+  }
+  CHECK(ts_killed);
+
+  // The first tablet to be scanned will fail, but we should fail over to
+  // another. Of course, there's no guarantee that the non-leader replica
+  // is up-to-date, so let's loop until we get an answer we like.
+  ASSERT_EQ(0, rt->GetNumFailedReplicas());
+  int tries = 0;
+  for (;;) {
+    tries++;
+    int num_rows = CountRowsFromClient(table.get(),
+                                       KuduClient::FIRST_REPLICA,
+                                       kNoBound, kNoBound);
+    if (num_rows == kNumRowsToWrite) {
+      break;
+    } else {
+      ASSERT_LE(tries, kNumTries);
+      usleep(10000 * tries); // sleep a bit more with each attempt.
+    }
+  }
+  ASSERT_EQ(1, rt->GetNumFailedReplicas());
 }
 
 } // namespace client

@@ -150,6 +150,19 @@ class KuduClient : public std::tr1::enable_shared_from_this<KuduClient> {
   // TODO: this should probably be private and exposed only to certain friend classes.
   DnsResolver* dns_resolver() { return dns_resolver_.get(); }
 
+  // Policy with which to choose amongst multiple replicas.
+  enum ReplicaSelection {
+    // Select the LEADER replica.
+    LEADER_ONLY,
+
+    // Select the closest replica to the client, or a random one if all
+    // replicas are equidistant.
+    CLOSEST_REPLICA,
+
+    // Select the first replica in the list.
+    FIRST_REPLICA
+  };
+
  private:
   friend class KuduTable;
   friend class KuduScanner;
@@ -159,18 +172,19 @@ class KuduClient : public std::tr1::enable_shared_from_this<KuduClient> {
   // TODO: When RpcLineItemDAO uses the client API, this goes away. See KUDU-264.
   friend class kudu::RpcLineItemDAO;
 
+  FRIEND_TEST(ClientTest, TestReplicatedMultiTabletTableFailover);
+
   explicit KuduClient(const KuduClientOptions& options);
   Status Init();
 
-  enum ProxySelection {
-    LEADER_ONLY,
-    CLOSEST_REPLICA
-  };
-
-  // Return an RPC proxy to the given tablet ID.
-  Status GetTabletProxy(const std::string& tablet_id,
-                        ProxySelection selection,
-                        std::tr1::shared_ptr<tserver::TabletServerServiceProxy>* proxy);
+  // Returns the ts that hosts a tablet with the given tablet ID, subject
+  // to the given selection criteria.
+  //
+  // Note: failed replicas are ignored. If no appropriate replica could be
+  // found, a non-OK status is returned and 'ts' is untouched.
+  Status GetTabletServer(const std::string& tablet_id,
+                         ReplicaSelection selection,
+                         RemoteTabletServer** ts);
 
   Status IsCreateTableInProgress(const std::string& table_name,
                                  const MonoTime& deadline,
@@ -185,8 +199,12 @@ class KuduClient : public std::tr1::enable_shared_from_this<KuduClient> {
 
   bool IsTabletServerLocal(const RemoteTabletServer& rts) const;
 
+  // Returns the closest, non-failed replica to the client.
+  //
+  // Returns NULL if there are no tablet servers, or if they've all failed.
+  // Given that the replica list may change at any time, callers should
+  // always check the result against NULL.
   RemoteTabletServer* PickClosestReplica(const scoped_refptr<RemoteTablet>& rt) const;
-
 
   bool initted_;
   KuduClientOptions options_;
@@ -717,11 +735,10 @@ class KuduScanner {
   // to the tablet server won't return data.
   Status SetBatchSizeBytes(uint32_t batch_size);
 
-  // This scanner may only read from leaders. This ensures that it sees all
-  // up-to-date information, at the cost of fewer options to read from.
+  // Sets the replica selection policy while scanning.
   //
   // TODO: kill this in favor of a consistency-level-based API
-  Status SetScanFromLeaderOnly(bool leader_only);
+  Status SetSelection(KuduClient::ReplicaSelection selection);
 
   // Returns a string representation of this scan.
   std::string ToString() const;
@@ -765,7 +782,7 @@ class KuduScanner {
   bool data_in_open_;
   bool has_batch_size_bytes_;
   uint32 batch_size_bytes_;
-  bool leader_only_;
+  KuduClient::ReplicaSelection selection_;
 
   std::tr1::shared_ptr<tserver::TabletServerServiceProxy> proxy_;
 

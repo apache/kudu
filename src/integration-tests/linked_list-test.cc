@@ -122,7 +122,10 @@ class LinkedListTest : public KuduTest {
                         int64_t* written_count);
   Status VerifyLinkedList(int64_t expected, int64_t* verified_count);
 
-  void WaitForBootstrapToFinishAndVerify(int64_t expected, int64_t* seen);
+  // A variant of VerifyLinkedList that is more robust towards ongoing
+  // bootstrapping and replication.
+  void WaitAndVerify(int64_t expected);
+
   // Generates a vector of keys for the table such that each tablet is
   // responsible for an equal fraction of the uint64 key space.
   vector<string> GenerateSplitKeys() const;
@@ -394,12 +397,14 @@ Status LinkedListTest::VerifyLinkedList(int64_t expected, int64_t* verified_coun
   return Status::OK();
 }
 
-void LinkedListTest::WaitForBootstrapToFinishAndVerify(int64_t expected, int64_t* seen) {
+void LinkedListTest::WaitAndVerify(int64_t expected) {
+  int64_t seen;
   Stopwatch sw;
   sw.start();
   while (true) {
-    Status s = VerifyLinkedList(expected, seen);
-    if (s.IsServiceUnavailable()) {
+    Status s = VerifyLinkedList(expected, &seen);
+    if (s.IsServiceUnavailable() ||      // still bootstrapping
+        (s.ok() && expected != seen)) {  // still replicating
       // We'll give the tablets 3 seconds to start up regardless of how long we
       // inserted for. There's some fixed cost startup time, especially when
       // replication is enabled.
@@ -415,6 +420,7 @@ void LinkedListTest::WaitForBootstrapToFinishAndVerify(int64_t expected, int64_t
       continue;
     }
     ASSERT_STATUS_OK(s);
+    ASSERT_EQ(expected, seen);
     break;
   }
 }
@@ -431,22 +437,28 @@ TEST_F(LinkedListTest, TestLoadAndVerify) {
   ASSERT_STATUS_OK(VerifyLinkedList(written, &seen));
   ASSERT_EQ(written, seen);
 
+  // Check in-memory state with a downed TS. Scans may try other replicas.
+  cluster_->tablet_server(0)->Shutdown();
+  ASSERT_NO_FATAL_FAILURE(WaitAndVerify(written));
+
   // Kill and restart the cluster, verify data remains.
   ASSERT_NO_FATAL_FAILURE(RestartCluster());
 
   // We need to loop here because the tablet may spend some time in BOOTSTRAPPING state
   // initially after a restart. TODO: Scanner should support its own retries in this circumstance.
   // Remove this loop once client is more fleshed out.
-  ASSERT_NO_FATAL_FAILURE(WaitForBootstrapToFinishAndVerify(written, &seen));
-  ASSERT_EQ(written, seen);
+  ASSERT_NO_FATAL_FAILURE(WaitAndVerify(written));
+
+  // Check post-replication state with a downed TS.
+  cluster_->tablet_server(0)->Shutdown();
+  ASSERT_NO_FATAL_FAILURE(WaitAndVerify(written));
 
   ASSERT_NO_FATAL_FAILURE(RestartCluster());
   // Sleep a little bit, so that the tablet is proably in bootstrapping state.
   usleep(100 * 1000);
   // Restart while bootstrapping
   ASSERT_NO_FATAL_FAILURE(RestartCluster());
-  ASSERT_NO_FATAL_FAILURE(WaitForBootstrapToFinishAndVerify(written, &seen));
-  ASSERT_EQ(written, seen);
+  ASSERT_NO_FATAL_FAILURE(WaitAndVerify(written));
 
   // Dump the performance info at the very end, so it's easy to read. On a failed
   // test, we don't care about this stuff anwyay.

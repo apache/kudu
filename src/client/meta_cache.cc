@@ -136,21 +136,49 @@ void RemoteTablet::Refresh(const TabletServerMap& tservers,
     RemoteReplica rep;
     rep.ts = FindOrDie(tservers, r.ts_info().permanent_uuid());
     rep.role = r.role();
+    rep.failed = false;
     replicas_.push_back(rep);
   }
 }
 
-RemoteTabletServer* RemoteTablet::replica_tserver(int idx) const {
-  CHECK_GE(idx, 0);
+void RemoteTablet::MarkReplicaFailed(RemoteTabletServer *ts) {
+  LOG(WARNING) << "Replica " << tablet_id_ << " on ts " << ts->ToString() << " has failed";
+
   boost::lock_guard<simple_spinlock> l(lock_);
-  if (idx >= replicas_.size()) return NULL;
-  return replicas_[idx].ts;
+  BOOST_FOREACH(RemoteReplica& rep, replicas_) {
+    if (rep.ts == ts) {
+      rep.failed = true;
+      break;
+    }
+  }
+}
+
+int RemoteTablet::GetNumFailedReplicas() const {
+  int failed = 0;
+  boost::lock_guard<simple_spinlock> l(lock_);
+  BOOST_FOREACH(const RemoteReplica& rep, replicas_) {
+    if (rep.failed) {
+      failed++;
+    }
+  }
+  return failed;
+}
+
+RemoteTabletServer* RemoteTablet::FirstTServer() const {
+  RemoteTabletServer *ts = NULL;
+  boost::lock_guard<simple_spinlock> l(lock_);
+  BOOST_FOREACH(const RemoteReplica& rep, replicas_) {
+    if (!rep.failed) {
+      return rep.ts;
+    }
+  }
+  return NULL;
 }
 
 RemoteTabletServer* RemoteTablet::LeaderTServer() const {
   boost::lock_guard<simple_spinlock> l(lock_);
   BOOST_FOREACH(const RemoteReplica& replica, replicas_) {
-    if (replica.role == QuorumPeerPB::LEADER) {
+    if (!replica.failed && replica.role == QuorumPeerPB::LEADER) {
       return replica.ts;
     }
   }
@@ -164,6 +192,9 @@ bool RemoteTablet::HasLeader() const {
 void RemoteTablet::GetRemoteTabletServers(std::vector<RemoteTabletServer*>* servers) const {
   boost::lock_guard<simple_spinlock> l(lock_);
   BOOST_FOREACH(const RemoteReplica& replica, replicas_) {
+    if (replica.failed) {
+      continue;
+    }
     servers->push_back(replica.ts);
   }
 }
@@ -344,5 +375,6 @@ void MetaCache::LookupTabletByID(const std::string& tablet_id,
                                  scoped_refptr<RemoteTablet>* remote_tablet) {
   *remote_tablet = FindOrDie(tablets_by_id_, tablet_id);
 }
+
 } // namespace client
 } // namespace kudu

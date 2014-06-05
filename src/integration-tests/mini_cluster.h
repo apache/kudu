@@ -90,7 +90,7 @@ class MiniCluster {
 
   Env* const env_;
   const std::string fs_root_;
-  const int num_tablet_servers_;
+  const int num_ts_initial_;
 
   gscoped_ptr<master::MiniMaster> mini_master_;
   vector<std::tr1::shared_ptr<tserver::MiniTabletServer> > mini_tablet_servers_;

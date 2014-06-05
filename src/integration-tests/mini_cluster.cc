@@ -33,7 +33,7 @@ MiniCluster::MiniCluster(Env* env,
   : started_(false),
     env_(env),
     fs_root_(fs_root),
-    num_tablet_servers_(num_tablet_servers) {
+    num_ts_initial_(num_tablet_servers) {
 }
 
 MiniCluster::~MiniCluster() {
@@ -48,12 +48,12 @@ Status MiniCluster::Start() {
   RETURN_NOT_OK_PREPEND(mini_master->Start(), "Couldn't start master");
   mini_master_.reset(mini_master.release());
 
-  for (int i = 0; i < num_tablet_servers_; i++) {
+  for (int i = 0; i < num_ts_initial_; i++) {
     RETURN_NOT_OK_PREPEND(AddTabletServer(),
                           Substitute("Error adding TS $0", i));
   }
 
-  RETURN_NOT_OK_PREPEND(WaitForTabletServerCount(num_tablet_servers_),
+  RETURN_NOT_OK_PREPEND(WaitForTabletServerCount(num_ts_initial_),
                         "Waiting for tablet servers to start");
 
   started_ = true;
@@ -96,7 +96,7 @@ void MiniCluster::Shutdown() {
 
 MiniTabletServer* MiniCluster::mini_tablet_server(int idx) {
   CHECK_GE(idx, 0) << "TabletServer idx must be >= 0";
-  CHECK_LT(idx, num_tablet_servers_) << "TabletServer idx must be < 'num_tablet_servers'";
+  CHECK_LT(idx, mini_tablet_servers_.size()) << "TabletServer idx must be < 'num_ts_started_'";
   return mini_tablet_servers_[idx].get();
 }
 

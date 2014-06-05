@@ -395,34 +395,40 @@ RemoteTabletServer* KuduClient::PickClosestReplica(
   }
 
   // No local one found. Pick a random one
-  return candidates[rand() % candidates.size()];
+  return !candidates.empty() ? candidates[rand() % candidates.size()] : NULL;
 }
 
-Status KuduClient::GetTabletProxy(const std::string& tablet_id,
-                                  ProxySelection selection,
-                                  shared_ptr<TabletServerServiceProxy>* proxy) {
+Status KuduClient::GetTabletServer(const std::string& tablet_id,
+                                   ReplicaSelection selection,
+                                   RemoteTabletServer** ts) {
   // TODO: write a proper async version of this for async client.
   scoped_refptr<RemoteTablet> remote_tablet;
   meta_cache_->LookupTabletByID(tablet_id, &remote_tablet);
 
-  RemoteTabletServer* ts = NULL;
-  if (selection == LEADER_ONLY) {
-    ts = remote_tablet->LeaderTServer();
-    if (PREDICT_FALSE(ts == NULL)) {
-      return Status::ServiceUnavailable(Substitute("No LEADER for tablet $0", tablet_id));
-    }
-  } else if (selection == CLOSEST_REPLICA) {
-    ts = PickClosestReplica(remote_tablet);
-    if (PREDICT_FALSE(ts == NULL)) {
-      return Status::ServiceUnavailable(Substitute("No replicas for tablet $0", tablet_id));
-    }
+  RemoteTabletServer* ret = NULL;
+  switch (selection) {
+    case LEADER_ONLY:
+      ret = remote_tablet->LeaderTServer();
+      break;
+    case CLOSEST_REPLICA:
+      ret = PickClosestReplica(remote_tablet);
+      break;
+    case FIRST_REPLICA:
+      ret = remote_tablet->FirstTServer();
+      break;
+    default:
+      LOG(FATAL) << "Unknown ProxySelection value " << selection;
   }
-
+  if (PREDICT_FALSE(ret == NULL)) {
+    return Status::ServiceUnavailable(
+        Substitute("No $0 for tablet $1",
+                   selection == LEADER_ONLY ? "LEADER" : "replicas", tablet_id));
+  }
   Synchronizer s;
-  ts->RefreshProxy(this, s.callback(), false);
+  ret->RefreshProxy(this, s.callback(), false);
   RETURN_NOT_OK(s.Wait());
 
-  *proxy = ts->proxy();
+  *ts = ret;
   return Status::OK();
 }
 
@@ -738,7 +744,7 @@ KuduScanner::KuduScanner(KuduTable* table)
     data_in_open_(false),
     has_batch_size_bytes_(false),
     batch_size_bytes_(0),
-    leader_only_(false),
+    selection_(KuduClient::CLOSEST_REPLICA),
     table_(DCHECK_NOTNULL(table)),
     projection_(&table->schema()),
     spec_encoder_(table->schema()),
@@ -762,8 +768,8 @@ Status KuduScanner::SetBatchSizeBytes(uint32_t batch_size) {
   return Status::OK();
 }
 
-Status KuduScanner::SetScanFromLeaderOnly(bool leader_only) {
-  leader_only_ = leader_only;
+Status KuduScanner::SetSelection(KuduClient::ReplicaSelection selection) {
+  selection_ = selection;
   return Status::OK();
 }
 
@@ -810,16 +816,11 @@ void KuduScanner::CopyPredicateBound(const ColumnSchema& col,
 Status KuduScanner::OpenTablet(const Slice& key) {
   // TODO: scanners don't really require a leader. For now, however,
   // we always scan from the leader.
-  Synchronizer s;
+  Synchronizer sync;
   table_->client_->meta_cache_->LookupTabletByKey(table_,
                                                   key,
-                                                  &remote_, s.callback());
-  RETURN_NOT_OK(s.Wait());
-  RETURN_NOT_OK(table_->client_->GetTabletProxy(
-                  remote_->tablet_id(),
-                  leader_only_ ? KuduClient::LEADER_ONLY : KuduClient::CLOSEST_REPLICA,
-                  &proxy_));
-  CHECK(proxy_);
+                                                  &remote_, sync.callback());
+  RETURN_NOT_OK(sync.Wait());
 
   // Scan it.
   PrepareRequest(KuduScanner::NEW);
@@ -845,9 +846,26 @@ Status KuduScanner::OpenTablet(const Slice& key) {
 
   scan->set_tablet_id(remote_->tablet_id());
   RETURN_NOT_OK(SchemaToColumnPBs(*projection_, scan->mutable_projected_columns()));
-  controller_.Reset();
-  controller_.set_timeout(MonoDelta::FromMilliseconds(kRpcTimeoutMillis));
-  RETURN_NOT_OK(proxy_->Scan(next_req_, &last_response_, &controller_));
+
+  for (;;) {
+    controller_.Reset();
+    controller_.set_timeout(MonoDelta::FromMilliseconds(kRpcTimeoutMillis));
+    RemoteTabletServer *ts;
+    RETURN_NOT_OK(table_->client_->GetTabletServer(
+        remote_->tablet_id(),
+        selection_,
+        &ts));
+    CHECK(ts);
+    CHECK(ts->proxy());
+    proxy_ = ts->proxy();
+    Status s = proxy_->Scan(next_req_, &last_response_, &controller_);
+    if (s.ok()) {
+      break;
+    }
+
+    // On error, mark this replica as failed and try another replica.
+    remote_->MarkReplicaFailed(ts);
+  }
   RETURN_NOT_OK(CheckForErrors());
 
   next_req_.clear_new_scan_request();
@@ -987,6 +1005,10 @@ Status KuduScanner::NextBatch(std::vector<const uint8_t*>* rows) {
     return ExtractRows(rows);
   } else if (last_response_.has_more_results()) {
     // More data is available in this tablet.
+    //
+    // Note that, in this case, we can't fail to a replica on error. Why?
+    // Because we're mid-tablet, and we might end up rereading some rows.
+    // Only fault tolerant scans can try other replicas here.
     VLOG(1) << "Continuing scan " << ToString();
 
     controller_.Reset();

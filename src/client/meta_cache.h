@@ -90,6 +90,7 @@ class RemoteTabletServer {
 struct RemoteReplica {
   RemoteTabletServer* ts;
   metadata::QuorumPeerPB::Role role;
+  bool failed;
 };
 
 struct InFlightLookup;
@@ -116,22 +117,31 @@ class RemoteTablet : public base::RefCountedThreadSafe<RemoteTablet> {
                const google::protobuf::RepeatedPtrField
                  <master::TabletLocationsPB_ReplicaPB>& replicas);
 
-  // Return the tablet server hosting the Nth replica. This replica
-  // may or may not be the leader.
+  // Mark the replica hosted by 'ts' as failed. It will not be returned in
+  // future cache lookups.
+  void MarkReplicaFailed(RemoteTabletServer *ts);
+
+  // Return the number of replicas for this tablet that have failed.
+  int GetNumFailedReplicas() const;
+
+  // Return the tablet server hosting the first non-failed replica. This
+  // replica may or may not be the leader.
   //
-  // Returns NULL if 'idx' is out of bounds. Since the list of
-  // replicas may be updated by other threads concurrently, callers
-  // should always check the result against NULL.
-  RemoteTabletServer* replica_tserver(int idx) const;
+  // Returns NULL if there are no tablet servers, or if they've all failed.
+  // Given that the replica list may change at any time, callers should
+  // always check the result against NULL.
+  RemoteTabletServer* FirstTServer() const;
 
   // Return the tablet server which is acting as the current LEADER for
-  // this tablet.
+  // this tablet, provided it hasn't failed.
   //
-  // Returns NULL if there is currently no leader. Given that the replica
-  // list may change at any time, callers should always check the result
-  // against NULL.
+  // Returns NULL if there is currently no leader, or if the leader has
+  // failed. Given that the replica list may change at any time,
+  // callers should always check the result against NULL.
   RemoteTabletServer* LeaderTServer() const;
 
+  // Writes this tablet's TSes (across all replicas) to 'servers'. Skips
+  // failed replicas.
   void GetRemoteTabletServers(std::vector<RemoteTabletServer*>* servers) const;
 
   // Return true if the tablet currently has a known LEADER replica
