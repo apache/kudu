@@ -86,6 +86,13 @@ class MvccSnapshot {
     return committed_timestamps_.empty();
   }
 
+  // Consider the given list of timestamps to be committed in this snapshot,
+  // even if they weren't when the snapshot was constructed.
+  // This is used in the flush path, where the set of commits going into a
+  // flushed file may not be a consistent snapshot from the MVCC point of view,
+  // yet we need to construct a scanner that accurately represents that set.
+  void AddCommittedTimestamps(const std::vector<Timestamp>& timestamps);
+
  private:
   friend class MvccManager;
   FRIEND_TEST(MvccTest, TestMayHaveCommittedTransactionsAtOrAfter);
@@ -93,6 +100,8 @@ class MvccSnapshot {
   FRIEND_TEST(MvccTest, TestWaitUntilAllCommitted_SnapAtTimestampWithInFlights);
 
   bool IsCommittedFallback(const Timestamp& timestamp) const;
+
+  void AddCommittedTimestamp(Timestamp timestamp);
 
   // Summary rule:
   //   A transaction T is committed if and only if:
@@ -207,6 +216,14 @@ class MvccManager {
   // Note that transactions are not blocked during this call.
   void WaitForCleanSnapshot(MvccSnapshot* snapshot) const;
 
+
+  // Wait until all of the currently in-flight transactions have committed.
+  //
+  // NOTE: this does _not_ guarantee that no transactions are in flight upon
+  // return -- just that those that were in-flight at call time are finished
+  // upon return.
+  void WaitForAllInFlightToCommit() const;
+
   bool AreAllTransactionsCommitted(Timestamp ts) const;
 
   // Return the number of transactions in flight..
@@ -215,6 +232,9 @@ class MvccManager {
   // Returns the earliest possible timestamp for an uncommitted transaction.
   // All timestamps before this one are guaranteed to be committed.
   Timestamp GetSafeTimestamp() const;
+
+  // Return the timestamps of all currently in-flight transactions.
+  void GetInFlightTransactionTimestamps(std::vector<Timestamp>* timestamps) const;
 
   ~MvccManager();
 
@@ -230,6 +250,9 @@ class MvccManager {
   };
 
   // Returns true if all transactions before the given timestamp are committed.
+  //
+  // If 'ts' is not in the past, it's still possible that new transactions could
+  // start with a lower timestamp after this returns.
   bool AreAllTransactionsCommittedUnlocked(Timestamp ts) const;
 
   // Waits until all transactions before the given time are committed.

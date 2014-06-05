@@ -31,7 +31,6 @@ class AlterSchemaTransactionState : public TransactionState {
   }
 
   ~AlterSchemaTransactionState() {
-    release_component_lock();
   }
 
   AlterSchemaTransactionState(TabletPeer* tablet_peer,
@@ -61,24 +60,12 @@ class AlterSchemaTransactionState : public TransactionState {
     return request_->schema_version();
   }
 
-  void acquire_component_lock(rw_semaphore& component_lock) {
-    component_lock_ = boost::unique_lock<rw_semaphore>(component_lock);
-    DCHECK(component_lock_.owns_lock());
-  }
-
-  void release_component_lock() {
-    if (component_lock_.owns_lock()) {
-      component_lock_.unlock();
-    }
-  }
-
   // Note: request_ and response_ are set to NULL after this method returns.
   void commit() {
     // Make the request NULL since after this transaction commits
     // the request may be deleted at any moment.
     request_ = NULL;
     response_ = NULL;
-    release_component_lock();
   }
 
   virtual std::string ToString() const OVERRIDE;
@@ -89,7 +76,6 @@ class AlterSchemaTransactionState : public TransactionState {
   const Schema* schema_;
   const tserver::AlterSchemaRequestPB *request_;
   tserver::AlterSchemaResponsePB *response_;
-  boost::unique_lock<rw_semaphore> component_lock_;
 };
 
 // Executes the alter schema transaction,.
@@ -104,7 +90,8 @@ class AlterSchemaTransaction : public Transaction {
 
   // Executes a Prepare for the alter schema transaction.
   //
-  // Acquires the tablet component lock for the transaction.
+  // TODO: need a schema lock?
+
   virtual Status Prepare() OVERRIDE;
 
   virtual void NewCommitAbortMessage(gscoped_ptr<consensus::CommitMsg>* commit_msg) OVERRIDE;

@@ -49,6 +49,7 @@ class MvccSnapshot;
 class PreparedRowWrite;
 class RowSetsInCompaction;
 class RowSetTree;
+struct TabletComponents;
 struct TabletMetrics;
 class WriteTransactionState;
 
@@ -75,6 +76,38 @@ class Tablet {
 
   // Open the tablet.
   Status Open();
+
+  // Finish the Prepare phase of a write transaction.
+  //
+  // Start an MVCC transaction and assigns a timestamp for the transaction.
+  // This also snapshots the current set of tablet components into the transaction
+  // state.
+  //
+  // This should always be done _after_ any relevant row locks are acquired
+  // (using CreatePreparedInsert/CreatePreparedMutate). This ensures that,
+  // within each row, timestamps only move forward. If we took a timestamp before
+  // getting the row lock, we could have the following situation:
+  //
+  //   Thread 1         |  Thread 2
+  //   ----------------------
+  //   Start tx 1       |
+  //                    |  Start tx 2
+  //                    |  Obtain row lock
+  //                    |  Update row
+  //                    |  Commit tx 2
+  //   Obtain row lock  |
+  //   Delete row       |
+  //   Commit tx 1
+  //
+  // This would cause the mutation list to look like: @t1: DELETE, @t2: UPDATE
+  // which is invalid, since we expect to be able to be able to replay mutations
+  // in increasing timestamp order on a given row.
+  //
+  // This requirement is basically two-phase-locking: the order in which row locks
+  // are acquired for transactions determines their serialization order. If/when
+  // we support multi-node serializable transactions, we'll have to acquire _all_
+  // row locks (across all nodes) before obtaining a timestamp.
+  void FinishPrepare(WriteTransactionState* tx_state);
 
   // TODO update tests so that we can remove Insert() and Mutate()
   // and use only InsertUnlocked() and MutateUnlocked().
@@ -162,16 +195,15 @@ class Tablet {
   // Prepares the transaction context for the alter schema operation.
   // An error will be returned if the specified schema is invalid (e.g.
   // key mismatch, or missing IDs)
-  // The "tablet lock" (component_lock_) will be taken in exclusive mode to
-  // prevent concurrent operations (e.g. Insert, MutateRow, ...)
+  //
+  // TODO: need to somehow prevent concurrent operations while an ALTER
+  // is prepared (see KUDU-382).
   Status CreatePreparedAlterSchema(AlterSchemaTransactionState *tx_state,
                                    const Schema* schema);
 
   // Apply the Schema of the specified transaction.
-  // This operation will trigger a flush on the current MemRowSet and on all the DeltaMemStores.
-  //
-  // The component lock acquired in exclusive mode by CreatePreparedAlterSchema()
-  // will be released when the schema is replaced in every RowSet.
+  // This operation will trigger a flush on the current MemRowSet and on
+  // all the DeltaMemStores.
   Status AlterSchema(AlterSchemaTransactionState* tx_state);
 
   // Prints current RowSet layout, taking a snapshot of the current RowSet interval
@@ -223,7 +255,7 @@ class Tablet {
   Status DebugDump(vector<string> *lines = NULL);
 
   shared_ptr<Schema> schema_unlocked() const {
-    DCHECK(component_lock_.is_locked());
+    // TODO: locking on the schema (KUDU-382)
     return schema_;
   }
 
@@ -241,9 +273,6 @@ class Tablet {
 
   // Return the Lock Manager for this tablet
   LockManager* lock_manager() { return &lock_manager_; }
-
-  // Returns the component lock for this tablet
-  rw_semaphore* component_lock() { return &component_lock_; }
 
   const metadata::TabletMetadata *metadata() const { return metadata_.get(); }
   metadata::TabletMetadata *metadata() { return metadata_.get(); }
@@ -318,20 +347,28 @@ class Tablet {
                        const metadata::RowSetMetadataVector& to_add,
                        int64_t mrs_being_flushed);
 
+  static void ModifyRowSetTree(const RowSetTree& old_tree,
+                               const RowSetVector& rowsets_to_remove,
+                               const RowSetVector& rowsets_to_add,
+                               RowSetTree* new_tree);
+
   // Swap out a set of rowsets, atomically replacing them with the new rowset
   // under the lock.
-  void AtomicSwapRowSets(const RowSetVector &old_rowsets,
-                         const RowSetVector &new_rowsets,
-                         MvccSnapshot *snap_under_lock);
+  void AtomicSwapRowSets(const RowSetVector &to_remove,
+                         const RowSetVector &to_add);
 
   // Same as the above, but without taking the lock. This should only be used
   // in cases where the lock is already held.
-  void AtomicSwapRowSetsUnlocked(const RowSetVector &old_rowsets,
-                                 const RowSetVector &new_rowsets,
-                                 MvccSnapshot *snap_under_lock);
+  void AtomicSwapRowSetsUnlocked(const RowSetVector &to_remove,
+                                 const RowSetVector &to_add);
 
   // Delete the underlying storage for the input layers in a compaction.
   Status DeleteCompactionInputs(const RowSetsInCompaction &input);
+
+  void GetComponents(scoped_refptr<TabletComponents>* comps) const {
+    boost::shared_lock<rw_semaphore> lock(component_lock_);
+    *comps = components_;
+  }
 
   // Create a new MemRowSet with the specified 'schema' and replace the current one.
   // The 'old_ms' pointer will be set to the current MemRowSet set before the replacement.
@@ -356,15 +393,13 @@ class Tablet {
 
   Status CheckRowInTablet(const tablet::RowSetKeyProbe& probe) const;
 
-  // If called outside of a lock, this returns the approximate size of
-  // the MemRowSet.
-  size_t MemRowSetSizeApprox() const;
-
   shared_ptr<Schema> schema_;
   const Schema key_schema_;
   scoped_refptr<metadata::TabletMetadata> metadata_;
-  shared_ptr<MemRowSet> memrowset_;
-  shared_ptr<RowSetTree> rowsets_;
+
+  // The current components of the tablet. These should always be read
+  // or swapped under the component_lock.
+  scoped_refptr<TabletComponents> components_;
 
   gscoped_ptr<MetricContext> metric_context_;
   gscoped_ptr<TabletMetrics> metrics_;
@@ -381,27 +416,28 @@ class Tablet {
 
   gscoped_ptr<CompactionPolicy> compaction_policy_;
 
-  // Lock protecting write access to the components of the tablet (memrowset and rowsets).
+  // Lock protecting access to the 'components_' member (i.e the rowsets in the tablet)
+  //
   // Shared mode:
-  // - Inserters, updaters take this in shared mode during their mutation.
-  // - Readers take this in shared mode while capturing their iterators.
+  // - Writers take this in shared mode at the same time as they obtain an MVCC timestamp
+  //   and capture a reference to components_. This ensures that we can use the MVCC timestamp
+  //   to determine which writers are writing to which components during compaction.
+  // - Readers take this in shared mode while capturing their iterators. This ensures that
+  //   they see a consistent view when racing against flush/compact.
+  //
   // Exclusive mode:
-  // - Flushers take this lock in order to lock out concurrent updates when swapping in
-  //   a new memrowset.
+  // - Flushes/compactions take this lock in order to lock out concurrent updates when
+  //   swapping in a new memrowset.
   //
   // NOTE: callers should avoid taking this lock for a long time, even in shared mode.
   // This is because the lock has some concept of fairness -- if, while a long reader
   // is active, a writer comes along, then all future short readers will be blocked.
-  //
-  // TODO: this could probably done more efficiently with a single atomic swap of a list
-  // and an RCU-style quiesce phase, but not worth it for now.
+  // TODO: now that this is single-threaded again, we should change it to rw_spinlock
   mutable rw_semaphore component_lock_;
 
   // Lock protecting the selection of rowsets for compaction.
   // Only one thread may run the compaction selection algorithm at a time
-  // so that they don't both try to select the same rowset. Before taking
-  // this lock, you should also hold component_lock_ in read mode so that
-  // no other thread could perform a swap underneath.
+  // so that they don't both try to select the same rowset.
   mutable boost::mutex compact_select_lock_;
 
   // We take this lock when flushing the tablet's rowsets in Tablet::Flush.  We
@@ -484,6 +520,16 @@ class Tablet::Iterator : public RowwiseIterator {
   const MvccSnapshot snap_;
   gscoped_ptr<UnionIterator> iter_;
   RangePredicateEncoder encoder_;
+};
+
+// Structure which represents the components of the tablet's storage.
+// This structure is immutable -- a transaction can grab it and be sure
+// that it won't change.
+struct TabletComponents : public base::RefCountedThreadSafe<TabletComponents> {
+  TabletComponents(const shared_ptr<MemRowSet>& mrs,
+                   const shared_ptr<RowSetTree>& rs_tree);
+  const shared_ptr<MemRowSet> memrowset;
+  const shared_ptr<RowSetTree> rowsets;
 };
 
 } // namespace tablet

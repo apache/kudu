@@ -32,6 +32,7 @@ class WriteResponsePB;
 namespace tablet {
 class PreparedRowWrite;
 class RowSetKeyProbe;
+struct TabletComponents;
 
 // A transaction context for a batch of inserts/mutates. This class holds and
 // owns most everything related to a transaction, including the acquired locks
@@ -107,14 +108,17 @@ class WriteTransactionState : public TransactionState {
     return response_;
   }
 
-  // Starts an Mvcc transaction, the ScopedTransaction will not commit until
-  // commit_mvcc_tx is called. To be able to start an Mvcc transaction this
-  // TransactionState must have a hold on the MvccManager.
-  Timestamp start_mvcc_tx();
+  // Set the MVCC transaction associated with this Write operation.
+  // This must be called exactly once, during the PREPARE phase.
+  void set_mvcc_tx(gscoped_ptr<ScopedTransaction> mvcc_tx);
 
-  // Allows to set the current Mvcc transaction externally when
-  // this TransactionState doesn't have a handle to MvccManager.
-  void set_current_mvcc_tx(gscoped_ptr<ScopedTransaction> mvcc_tx);
+  // Set the Tablet components that this transaction will write into.
+  // Called exactly once during PREPARE
+  void set_tablet_components(const scoped_refptr<const TabletComponents>& components);
+
+  const TabletComponents* tablet_components() const {
+    return tablet_components_.get();
+  }
 
   // Commits the Mvcc transaction and releases the component lock. After
   // this method is called all the inserts and mutations will become
@@ -126,6 +130,7 @@ class WriteTransactionState : public TransactionState {
   // Adds a PreparedRowWrite to be managed by this transaction context, as
   // created in the prepare phase.
   void add_prepared_row(gscoped_ptr<PreparedRowWrite> row) {
+    DCHECK(!mvcc_tx_) << "Must not add row locks after acquiring timestamp!";
     rows_.push_back(row.release());
   }
 
@@ -133,17 +138,6 @@ class WriteTransactionState : public TransactionState {
   // on the apply phase to actually make changes to the tablet.
   vector<PreparedRowWrite *> &rows() {
     return rows_;
-  }
-
-  // Sets the component lock for this transaction. The lock will not be
-  // unlocked unless either release_locks() or Reset() is called or this
-  // TransactionState is destroyed.
-  void set_component_lock(rw_semaphore* lock) {
-    component_lock_ = boost::shared_lock<rw_semaphore>(*lock);
-  }
-
-  bool has_component_lock() const {
-    return component_lock_.owns_lock();
   }
 
   // Releases all the row locks acquired by this transaction.
@@ -170,9 +164,12 @@ class WriteTransactionState : public TransactionState {
 
   // the rows and locks as transformed/acquired by the prepare task
   vector<PreparedRowWrite*> rows_;
-  // the component lock, acquired by all inserters/updaters
-  boost::shared_lock<rw_semaphore> component_lock_;
+
+  // The MVCC transaction, set up during PREPARE phase
   gscoped_ptr<ScopedTransaction> mvcc_tx_;
+
+  // The tablet components, acquired at the same time as mvcc_tx_ is set.
+  scoped_refptr<const TabletComponents> tablet_components_;
 };
 
 // Executes a write transaction.

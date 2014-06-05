@@ -96,6 +96,12 @@ static CompactionPolicy *CreateCompactionPolicy() {
   return NULL;
 }
 
+TabletComponents::TabletComponents(const shared_ptr<MemRowSet>& mrs,
+                                   const shared_ptr<RowSetTree>& rs_tree)
+  : memrowset(mrs),
+    rowsets(rs_tree) {
+}
+
 Tablet::Tablet(const scoped_refptr<TabletMetadata>& metadata,
                const scoped_refptr<server::Clock>& clock,
                const MetricContext* parent_metric_context,
@@ -103,12 +109,11 @@ Tablet::Tablet(const scoped_refptr<TabletMetadata>& metadata,
   : schema_(new Schema(metadata->schema())),
     key_schema_(schema_->CreateKeyProjection()),
     metadata_(metadata),
-    rowsets_(new RowSetTree()),
     opid_anchor_registry_(opid_anchor_registry),
     next_mrs_id_(0),
+    clock_(clock),
     mvcc_(clock),
     open_(false) {
-  boost::lock_guard<rw_semaphore> lock(component_lock_);
   CHECK(schema_->has_column_ids());
   compaction_policy_.reset(CreateCompactionPolicy());
 
@@ -117,7 +122,7 @@ Tablet::Tablet(const scoped_refptr<TabletMetadata>& metadata,
                                             Substitute("tablet.tablet-$0", tablet_id())));
     metrics_.reset(new TabletMetrics(*metric_context_));
     METRIC_memrowset_size.InstantiateFunctionGauge(
-        *metric_context_, boost::bind(&Tablet::MemRowSetSizeApprox, this));
+        *metric_context_, boost::bind(&Tablet::MemRowSetSize, this));
   }
 }
 
@@ -151,12 +156,12 @@ Status Tablet::Open() {
     rowsets_opened.push_back(rowset);
   }
 
-  CHECK_OK(rowsets_->Reset(rowsets_opened));
-
-  // now that the current state is loaded create the new MemRowSet with the next id
-  memrowset_.reset(new MemRowSet(next_mrs_id_, *schema_.get(),
-                                 opid_anchor_registry_));
-  next_mrs_id_++;
+  shared_ptr<RowSetTree> new_rowset_tree(new RowSetTree());
+  CHECK_OK(new_rowset_tree->Reset(rowsets_opened));
+  // now that the current state is loaded, create the new MemRowSet with the next id
+  shared_ptr<MemRowSet> new_mrs(new MemRowSet(next_mrs_id_++, *schema_.get(),
+                                              opid_anchor_registry_));
+  components_ = new TabletComponents(new_mrs, new_rowset_tree);
 
   open_ = true;
   return Status::OK();
@@ -223,6 +228,19 @@ Status Tablet::CreatePreparedInsert(const WriteTransactionState* tx_state,
   return Status::OK();
 }
 
+void Tablet::FinishPrepare(WriteTransactionState* tx_state) {
+  boost::shared_lock<rw_semaphore> lock(component_lock_);
+
+  gscoped_ptr<ScopedTransaction> mvcc_tx;
+  if (tx_state->external_consistency_mode() == COMMIT_WAIT) {
+    mvcc_tx.reset(new ScopedTransaction(&mvcc_, true));
+  } else {
+    mvcc_tx.reset(new ScopedTransaction(&mvcc_));
+  }
+  tx_state->set_mvcc_tx(mvcc_tx.Pass());
+  tx_state->set_tablet_components(components_);
+}
+
 Status Tablet::InsertForTesting(WriteTransactionState *tx_state,
                                 const ConstContiguousRow& row) {
   CHECK(open_) << "must Open() first!";
@@ -230,16 +248,10 @@ Status Tablet::InsertForTesting(WriteTransactionState *tx_state,
 
   DCHECK_KEY_PROJECTION_SCHEMA_EQ(key_schema_, row.schema());
 
-  // The order of the various locks is critical!
-  // See comment block in MutateRow(...) below for details.
-
-  tx_state->set_component_lock(&component_lock_);
-
   // Convert the client row to a server row (with IDs)
   // TODO: We have now three places where we do the projection (RPC, Tablet, Bootstrap)
-  //       One is the RPC side, the other is this method that should be renamed InsertForTesting()
+  //       One is the RPC side, the other is this method.
   DCHECK(!row.schema().has_column_ids());
-  DCHECK(component_lock_.is_locked());
   RowProjector row_projector(&row.schema(), schema_.get());
   if (!row_projector.is_identity()) {
     RETURN_NOT_OK(schema_->VerifyProjectionCompatibility(row.schema()));
@@ -252,11 +264,10 @@ Status Tablet::InsertForTesting(WriteTransactionState *tx_state,
   RETURN_NOT_OK(CreatePreparedInsert(tx_state, proj_row, &row_write));
   tx_state->add_prepared_row(row_write.Pass());
 
-  gscoped_ptr<ScopedTransaction> mvcc_tx(new ScopedTransaction(&mvcc_));
-  tx_state->set_current_mvcc_tx(mvcc_tx.Pass());
-
   // Create a "fake" OpId and set it in the TransactionState for anchoring.
   tx_state->mutable_op_id()->CopyFrom(MaximumOpId());
+
+  FinishPrepare(tx_state);
 
   Status s = InsertUnlocked(tx_state, tx_state->rows()[0]);
   tx_state->commit();
@@ -265,10 +276,11 @@ Status Tablet::InsertForTesting(WriteTransactionState *tx_state,
 
 Status Tablet::InsertUnlocked(WriteTransactionState *tx_state,
                               const PreparedRowWrite* insert) {
+  const TabletComponents* comps = DCHECK_NOTNULL(tx_state->tablet_components());
+
   CHECK(open_) << "must Open() first!";
   // make sure that the WriteTransactionState has the component lock and that
   // there the PreparedRowWrite has the row lock.
-  DCHECK(tx_state->has_component_lock()) << "WriteTransactionState must hold the component lock.";
   DCHECK(insert->has_row_lock()) << "PreparedRowWrite must hold the row lock.";
   DCHECK_KEY_PROJECTION_SCHEMA_EQ(key_schema_, insert->row()->schema());
   DCHECK(tx_state->op_id().IsInitialized()) << "TransactionState OpId needed for anchoring";
@@ -281,7 +293,7 @@ Status Tablet::InsertUnlocked(WriteTransactionState *tx_state,
   // First, ensure that it is a unique key by checking all the open RowSets.
   if (FLAGS_tablet_do_dup_key_checks) {
     vector<RowSet *> to_check;
-    rowsets_->FindRowSetsWithKeyInRange(insert->probe()->encoded_key_slice(), &to_check);
+    comps->rowsets->FindRowSetsWithKeyInRange(insert->probe()->encoded_key_slice(), &to_check);
 
     BOOST_FOREACH(const RowSet *rowset, to_check) {
       bool present = false;
@@ -304,9 +316,9 @@ Status Tablet::InsertUnlocked(WriteTransactionState *tx_state,
 
   // Now try to insert into memrowset. The memrowset itself will return
   // AlreadyPresent if it has already been inserted there.
-  Status s = memrowset_->Insert(ts, *insert->row(), tx_state->op_id());
+  Status s = comps->memrowset->Insert(ts, *insert->row(), tx_state->op_id());
   if (PREDICT_TRUE(s.ok())) {
-    RETURN_NOT_OK(tx_state->AddInsert(ts, memrowset_->mrs_id()));
+    RETURN_NOT_OK(tx_state->AddInsert(ts, comps->memrowset->mrs_id()));
   } else {
     if (s.IsAlreadyPresent() && metrics_) {
       metrics_->insertions_failed_dup_key->Increment();
@@ -345,58 +357,10 @@ Status Tablet::MutateRowForTesting(WriteTransactionState *tx_state,
   DCHECK(tx_state) << "you must have a transaction context";
   CHECK(tx_state->rows().empty()) << "WriteTransactionState must have no PreparedRowWrites.";
 
-  // The order of the next three steps is critical!
-  //
-  // Row-lock before ScopedTransaction:
-  // -------------------------------------
-  // We must take the row-lock before we assign a transaction ID in order to ensure
-  // that within each row, transaction IDs only move forward. If we took a timestamp before
-  // getting the row lock, we could have the following situation:
-  //
-  //   Thread 1         |  Thread 2
-  //   ----------------------
-  //   Start tx 1       |
-  //                    |  Start tx 2
-  //                    |  Obtain row lock
-  //                    |  Update row
-  //                    |  Commit tx 2
-  //   Obtain row lock  |
-  //   Delete row       |
-  //   Commit tx 1
-  //
-  // This would cause the mutation list to look like: @t1: DELETE, @t2: UPDATE
-  // which is invalid, since we expect to be able to be able to replay mutations
-  // in increasing timestamp order on a given row.
-  //
-  // This requirement is basically two-phase-locking: the order in which row locks
-  // are acquired for transactions determines their serialization order. If/when
-  // we support multi-row serializable transactions, we'll have to acquire _all_
-  // row locks before obtaining a timestamp.
-  //
-  // component_lock_ before ScopedTransaction:
-  // -------------------------------------
-  // Obtaining the timestamp inside of component_lock_ ensures that, in AtomicSwapRowSets,
-  // we can cleanly differentiate a set of transactions that saw the "old" rowsets
-  // vs the "new" rowsets. If we created the timestamp before taking the lock, then
-  // the in-flight transaction could either have mutated the old rowsets or the new.
-  //
-  // There may be a more "fuzzy" way of doing this barrier which would cause less of
-  // a locking hiccup during the swap, but let's keep things simple for now.
-  //
-  // RowLock before component_lock
-  // ------------------------------
-  // It currently doesn't matter which order these happen, but it makes more sense
-  // to logically lock the rows before doing anything on the "physical" layer.
-  // It is critical, however, that we're consistent with this choice between here
-  // and Insert() or else there's a possibility of deadlock.
-
-  tx_state->set_component_lock(&component_lock_);
-
   // Convert the client RowChangeList to a server RowChangeList (with IDs)
   // TODO: We have now three places where we do the projection (RPC, Tablet, Bootstrap)
   //       One is the RPC side, the other is this method that should be renamed MutateForTesting()
   DCHECK(!update_schema.has_column_ids());
-  DCHECK(component_lock_.is_locked());
   DeltaProjector delta_projector(&update_schema, schema_.get());
   if (!delta_projector.is_identity()) {
     RETURN_NOT_OK(schema_->VerifyProjectionCompatibility(update_schema));
@@ -409,8 +373,7 @@ Status Tablet::MutateRowForTesting(WriteTransactionState *tx_state,
   RETURN_NOT_OK(CreatePreparedMutate(tx_state, &row_key, changelist, &row_write));
   tx_state->add_prepared_row(row_write.Pass());
 
-  gscoped_ptr<ScopedTransaction> mvcc_tx(new ScopedTransaction(&mvcc_));
-  tx_state->set_current_mvcc_tx(mvcc_tx.Pass());
+  FinishPrepare(tx_state);
 
   // Create a "fake" OpId and set it in the TransactionState for anchoring.
   tx_state->mutable_op_id()->CopyFrom(MaximumOpId());
@@ -427,8 +390,9 @@ Status Tablet::MutateRowUnlocked(WriteTransactionState *tx_state,
 
   gscoped_ptr<OperationResultPB> result(new OperationResultPB());
 
+  const TabletComponents* comps = DCHECK_NOTNULL(tx_state->tablet_components());
+
   // Validate the update.
-  DCHECK(component_lock_.is_locked());
   RowChangeListDecoder rcl_decoder(*schema_.get(), mutate->changelist());
   Status s = rcl_decoder.Init();
   if (rcl_decoder.is_reinsert()) {
@@ -449,7 +413,7 @@ Status Tablet::MutateRowUnlocked(WriteTransactionState *tx_state,
   ProbeStatsSubmitter submitter(stats, metrics_.get());
 
   // First try to update in memrowset.
-  s = memrowset_->MutateRow(ts,
+  s = comps->memrowset->MutateRow(ts,
                             *mutate->probe(),
                             mutate->changelist(),
                             tx_state->op_id(),
@@ -470,7 +434,7 @@ Status Tablet::MutateRowUnlocked(WriteTransactionState *tx_state,
   // based on recent statistics - eg if a rowset is getting
   // updated frequently, pick that one first.
   vector<RowSet *> to_check;
-  rowsets_->FindRowSetsWithKeyInRange(mutate->probe()->encoded_key_slice(), &to_check);
+  comps->rowsets->FindRowSetsWithKeyInRange(mutate->probe()->encoded_key_slice(), &to_check);
   BOOST_FOREACH(RowSet *rs, to_check) {
     s = rs->MutateRow(ts, *mutate->probe(), mutate->changelist(), tx_state->op_id(),
                       &stats, result.get());
@@ -489,30 +453,23 @@ Status Tablet::MutateRowUnlocked(WriteTransactionState *tx_state,
   return s;
 }
 
-void Tablet::AtomicSwapRowSets(const RowSetVector &old_rowsets,
-                               const RowSetVector &new_rowsets,
-                               MvccSnapshot *snap_under_lock = NULL) {
-  boost::lock_guard<rw_semaphore> lock(component_lock_);
-  AtomicSwapRowSetsUnlocked(old_rowsets, new_rowsets, snap_under_lock);
-}
-
-void Tablet::AtomicSwapRowSetsUnlocked(const RowSetVector &old_rowsets,
-                                       const RowSetVector &new_rowsets,
-                                       MvccSnapshot *snap_under_lock = NULL) {
-
+void Tablet::ModifyRowSetTree(const RowSetTree& old_tree,
+                              const RowSetVector& rowsets_to_remove,
+                              const RowSetVector& rowsets_to_add,
+                              RowSetTree* new_tree) {
   RowSetVector post_swap;
 
   // O(n^2) diff algorithm to collect the set of rowsets excluding
   // the rowsets that were included in the compaction
-  int num_replaced = 0;
+  int num_removed = 0;
 
-  BOOST_FOREACH(const shared_ptr<RowSet> &rs, rowsets_->all_rowsets()) {
+  BOOST_FOREACH(const shared_ptr<RowSet> &rs, old_tree.all_rowsets()) {
     // Determine if it should be removed
     bool should_remove = false;
-    BOOST_FOREACH(const shared_ptr<RowSet> &l_input, old_rowsets) {
-      if (l_input == rs) {
+    BOOST_FOREACH(const shared_ptr<RowSet> &to_remove, rowsets_to_remove) {
+      if (to_remove == rs) {
         should_remove = true;
-        num_replaced++;
+        num_removed++;
         break;
       }
     }
@@ -521,30 +478,31 @@ void Tablet::AtomicSwapRowSetsUnlocked(const RowSetVector &old_rowsets,
     }
   }
 
-  CHECK_EQ(num_replaced, old_rowsets.size());
+  CHECK_EQ(num_removed, rowsets_to_remove.size());
 
-  // Then push the new rowsets on the end.
-  std::copy(new_rowsets.begin(), new_rowsets.end(), std::back_inserter(post_swap));
-  shared_ptr<RowSetTree> new_tree(new RowSetTree());
+  // Then push the new rowsets on the end of the new list
+  std::copy(rowsets_to_add.begin(),
+            rowsets_to_add.end(),
+            std::back_inserter(post_swap));
+
   CHECK_OK(new_tree->Reset(post_swap));
-  rowsets_.swap(new_tree);
+}
 
-  if (snap_under_lock != NULL) {
-    *snap_under_lock = MvccSnapshot(mvcc_);
+void Tablet::AtomicSwapRowSets(const RowSetVector &old_rowsets,
+                               const RowSetVector &new_rowsets) {
+  boost::lock_guard<rw_semaphore> lock(component_lock_);
+  AtomicSwapRowSetsUnlocked(old_rowsets, new_rowsets);
+}
 
-    // We expect that there are no transactions in flight, since we hold component_lock_
-    // in exclusive mode. For our compaction logic to be correct, we need to ensure that
-    // no mutations in the 'old_rowsets' are associated with transactions that are
-    // uncommitted in 'snap_under_lock'. If there were an in-flight transaction in
-    // 'snap_under_lock', it would be possible that it wrote some mutations into
-    // 'old_rowsets'.
-    //
-    // This property is ensured by the ordering between shared-locking 'component_lock_'
-    // and creating the ScopedTransaction during mutations.  The transaction should be
-    // started only after the 'component_lock' is taken, and committed before it is
-    // released.
-    CHECK_EQ(mvcc_.CountTransactionsInFlight(), 0);
-  }
+void Tablet::AtomicSwapRowSetsUnlocked(const RowSetVector &to_remove,
+                                       const RowSetVector &to_add) {
+  DCHECK(component_lock_.is_locked());
+
+  shared_ptr<RowSetTree> new_tree(new RowSetTree());
+  ModifyRowSetTree(*components_->rowsets,
+                   to_remove, to_add, new_tree.get());
+
+  components_ = new TabletComponents(components_->memrowset, new_tree);
 }
 
 Status Tablet::DoMajorDeltaCompaction(const ColumnIndexes& column_indexes,
@@ -569,15 +527,16 @@ Status Tablet::FlushUnlocked() {
   shared_ptr<MemRowSet> old_mrs;
   shared_ptr<Schema> old_schema;
   {
-    // Lock the component_lock_ in exclusive mode.
-    // This shuts out any concurrent readers or writers for as long
-    // as the swap takes.
-    // Also, this ensures that no write transactions are running (and thus
-    // after the swap, no more writers may insert into the old MRS).
+    // Create a new MRS with the latest schema.
     boost::lock_guard<rw_semaphore> lock(component_lock_);
     old_schema = schema_;
     RETURN_NOT_OK(ReplaceMemRowSetUnlocked(*old_schema.get(), &input, &old_mrs));
   }
+
+  // Wait for any in-flight transactions to finish against the old MRS
+  // before we flush it.
+  mvcc_.WaitForAllInFlightToCommit();
+
   // Note: "input" should only contain old_mrs.
   return FlushInternal(input, old_mrs, *old_schema.get());
 }
@@ -585,20 +544,25 @@ Status Tablet::FlushUnlocked() {
 Status Tablet::ReplaceMemRowSetUnlocked(const Schema& schema,
                                         RowSetsInCompaction *compaction,
                                         shared_ptr<MemRowSet> *old_ms) {
-  // swap in a new memrowset
-  *old_ms = memrowset_;
-  memrowset_.reset(new MemRowSet(next_mrs_id_, schema, opid_anchor_registry_));
-  // increment the next mrs_id
-  next_mrs_id_++;
-
-  // Mark the memrowset rowset as locked, so compactions won't consider it
+  *old_ms = components_->memrowset;
+  // Mark the old MRS as locked, so compactions won't consider it
   // for inclusion in any concurrent compactions.
   shared_ptr<boost::mutex::scoped_try_lock> ms_lock(
     new boost::mutex::scoped_try_lock(*((*old_ms)->compact_flush_lock())));
   CHECK(ms_lock->owns_lock());
+
+  // Add to compaction.
   compaction->AddRowSet(*old_ms, ms_lock);
 
-  AtomicSwapRowSetsUnlocked(RowSetVector(), boost::assign::list_of(*old_ms), NULL);
+  shared_ptr<MemRowSet> new_mrs(new MemRowSet(next_mrs_id_++, schema, opid_anchor_registry_));
+  shared_ptr<RowSetTree> new_rst(new RowSetTree());
+  ModifyRowSetTree(*components_->rowsets,
+                   RowSetVector(), // remove nothing
+                   boost::assign::list_of(*old_ms), // add the old MRS
+                   new_rst.get());
+
+  // Swap it in
+  components_ = new TabletComponents(new_mrs, new_rst);
   return Status::OK();
 }
 
@@ -612,8 +576,7 @@ Status Tablet::FlushInternal(const RowSetsInCompaction& input,
   //
   // At this point, we have already swapped in a new empty rowset, and
   // any new inserts are going into that one. 'old_ms' is effectively
-  // frozen -- no new inserts should arrive after this point, since
-  // we took component_lock_ when swapping in the new one.
+  // frozen -- no new inserts should arrive after this point.
   //
   // NOTE: updates and deletes may still arrive into 'old_ms' at this point.
   //
@@ -658,7 +621,6 @@ Status Tablet::CreatePreparedAlterSchema(AlterSchemaTransactionState *tx_state,
   // Alter schema must run when no reads/writes are in progress.
   // However, compactions and flushes can continue to run in parallel
   // with the schema change,
-  tx_state->acquire_component_lock(component_lock_);
   tx_state->set_schema(schema);
   return Status::OK();
 }
@@ -671,7 +633,6 @@ Status Tablet::AlterSchema(AlterSchemaTransactionState *tx_state) {
   shared_ptr<MemRowSet> old_ms;
   {
     // If the current version >= new version, there is nothing to do.
-    DCHECK(component_lock_.is_locked());
     bool same_schema = schema_->Equals(*tx_state->schema());
     if (metadata_->schema_version() >= tx_state->schema_version()) {
       LOG(INFO) << "Already running schema version " << metadata_->schema_version()
@@ -699,17 +660,19 @@ Status Tablet::AlterSchema(AlterSchemaTransactionState *tx_state) {
     //       The flush should be just a message (async)...
     //       with the current code the only way we can do a flush ouside this big lock
     //       is to get the list of DeltaMemStores out from the AlterSchema method...
-    BOOST_FOREACH(const shared_ptr<RowSet>& rs, rowsets_->all_rowsets()) {
+    BOOST_FOREACH(const shared_ptr<RowSet>& rs, components_->rowsets->all_rowsets()) {
       RETURN_NOT_OK(rs->AlterSchema(*schema_.get()));
     }
   }
 
-  // Replace the MemRowSet
-  RETURN_NOT_OK(ReplaceMemRowSetUnlocked(*schema_.get(), &input, &old_ms));
 
-  // Tablet::component_lock_ is acquired in CreatePreparedAlterSchema()
-  CHECK(component_lock_.is_write_locked());
-  tx_state->release_component_lock();
+  // Replace the MemRowSet
+  {
+    boost::lock_guard<rw_semaphore> lock(component_lock_);
+    RETURN_NOT_OK(ReplaceMemRowSetUnlocked(*schema_.get(), &input, &old_ms));
+  }
+
+  // TODO: release a schema lock?
 
   // Flush the old MemRowSet
   boost::lock_guard<boost::mutex> lock(rowsets_flush_lock_);
@@ -733,7 +696,7 @@ void Tablet::SetFlushCompactCommonHooksForTests(
 
 int32_t Tablet::CurrentMrsIdForTests() const {
   boost::shared_lock<rw_semaphore> lock(component_lock_);
-  return memrowset_->mrs_id();
+  return components_->memrowset->mrs_id();
 }
 
 class FlushRowSetsOp : public MaintenanceOp {
@@ -787,7 +750,6 @@ class CompactRowSetsOp : public MaintenanceOp {
   { }
 
   virtual void UpdateStats(MaintenanceOpStats* stats) OVERRIDE {
-    boost::shared_lock<rw_semaphore> lock(tablet_->component_lock_);
     stats->runnable = true;
     stats->ram_anchored = 0;
     stats->ts_anchored_secs = 0;
@@ -876,7 +838,7 @@ Status Tablet::PickRowSetsToCompact(RowSetsInCompaction *picked,
   shared_ptr<RowSetTree> rowsets_copy;
   {
     boost::shared_lock<rw_semaphore> lock(component_lock_);
-    rowsets_copy = rowsets_;
+    rowsets_copy = components_->rowsets;
   }
 
   boost::lock_guard<boost::mutex> compact_lock(compact_select_lock_);
@@ -897,7 +859,7 @@ Status Tablet::PickRowSetsToCompact(RowSetsInCompaction *picked,
   }
 
   boost::shared_lock<rw_semaphore> lock(component_lock_);
-  BOOST_FOREACH(const shared_ptr<RowSet>& rs, rowsets_->all_rowsets()) {
+  BOOST_FOREACH(const shared_ptr<RowSet>& rs, components_->rowsets->all_rowsets()) {
     if (picked_set.erase(rs.get()) == 0) {
       // Not picked.
       continue;
@@ -935,7 +897,7 @@ void Tablet::GetRowSetsForTests(RowSetVector* out) {
   shared_ptr<RowSetTree> rowsets_copy;
   {
     boost::shared_lock<rw_semaphore> lock(component_lock_);
-    rowsets_copy = rowsets_;
+    rowsets_copy = components_->rowsets;
   }
   BOOST_FOREACH(const shared_ptr<RowSet>& rs, rowsets_copy->all_rowsets()) {
     out->push_back(rs);
@@ -1092,13 +1054,50 @@ Status Tablet::DoCompactionOrFlush(const Schema& schema,
             << "in new rowsets)";
   shared_ptr<DuplicatingRowSet> inprogress_rowset(
     new DuplicatingRowSet(input.rowsets(), new_disk_rowsets));
-  MvccSnapshot snap2;
   shared_ptr<Schema> schema2;
+
+  // The next step is to swap in the DuplicatingRowSet, and at the same time, determine an
+  // MVCC snapshot which includes all of the transactions that saw a pre-DuplicatingRowSet
+  // version of components_.
+  MvccSnapshot non_duplicated_txns_snap;
+  vector<Timestamp> in_flight_during_swap;
   {
+    // Taking component_lock_ in write mode ensures that no new transactions
+    // can start (or snapshot components_) during this block.
     boost::lock_guard<rw_semaphore> lock(component_lock_);
-    AtomicSwapRowSetsUnlocked(input.rowsets(), boost::assign::list_of(inprogress_rowset), &snap2);
+    AtomicSwapRowSetsUnlocked(input.rowsets(), boost::assign::list_of(inprogress_rowset));
     schema2 = schema_;
+
+    // NOTE: transactions may *commit* in between these two lines.
+    // We need to make sure all such transactions end up in the
+    // in-flight list, the 'non_duplicated_txns_snap' snapshot, or both. Thus it's
+    // crucial that these next two lines are in this order!
+    mvcc_.GetInFlightTransactionTimestamps(&in_flight_during_swap);
+    non_duplicated_txns_snap = MvccSnapshot(mvcc_);
   }
+
+  // All transactions committed in 'non_duplicated_txns_snap' saw the pre-swap components_.
+  // Additionally, any transactions that were in-flight during the above block by definition
+  // _started_ before the swap. Hence the in-flights also need to get included in
+  // non_duplicated_txns_snap. To do so, we wait for those in-flights to commit, and then
+  // manually include them into our snapshot.
+  if (VLOG_IS_ON(1) && !in_flight_during_swap.empty()) {
+    VLOG(1) << "Waiting for " << in_flight_during_swap.size() << " in-flight txns to commit "
+            << "before finishing compaction...";
+    BOOST_FOREACH(const Timestamp& ts, in_flight_during_swap) {
+      VLOG(1) << "  " << ts.value();
+    }
+  }
+
+  // This wait is a little bit conservative - technically we only need to wait for
+  // those transactions in 'in_flight_during_swap', but MVCC doesn't implement the
+  // ability to wait for a specific set. So instead we wait for all current in-flights --
+  // a bit more than we need, but still correct.
+  mvcc_.WaitForAllInFlightToCommit();
+
+  // Then we want to consider all those transactions that were in-flight when we did the
+  // swap as committed in 'non_duplicated_txns_snap'.
+  non_duplicated_txns_snap.AddCommittedTimestamps(in_flight_during_swap);
 
   // Ensure that the latest schema is set to the new RowSets
   BOOST_FOREACH(const shared_ptr<RowSet>& rs, new_disk_rowsets) {
@@ -1114,9 +1113,9 @@ Status Tablet::DoCompactionOrFlush(const Schema& schema,
   // Phase 2. Here we re-scan the compaction input, copying those missed updates into the
   // new rowset's DeltaTracker.
   LOG(INFO) << op_name << " Phase 2: carrying over any updates which arrived during Phase 1";
-  LOG(INFO) << "Phase 2 snapshot: " << snap2.ToString();
+  LOG(INFO) << "Phase 2 snapshot: " << non_duplicated_txns_snap.ToString();
   RETURN_NOT_OK_PREPEND(
-      input.CreateCompactionInput(snap2, schema2.get(), &merge),
+      input.CreateCompactionInput(non_duplicated_txns_snap, schema2.get(), &merge),
           Substitute("Failed to create $0 inputs", op_name).c_str());
 
   // Update the output rowsets with the deltas that came in in phase 1, before we swapped
@@ -1126,7 +1125,7 @@ Status Tablet::DoCompactionOrFlush(const Schema& schema,
   RETURN_NOT_OK_PREPEND(ReupdateMissedDeltas(metadata_->oid(),
                                              merge.get(),
                                              flush_snap,
-                                             snap2,
+                                             non_duplicated_txns_snap,
                                              new_disk_rowsets),
         Substitute("Failed to re-update deltas missed during $0 phase 1",
                      op_name).c_str());
@@ -1192,10 +1191,10 @@ Status Tablet::DebugDump(vector<string> *lines) {
   LOG_STRING(INFO, lines) << "Dumping tablet:";
   LOG_STRING(INFO, lines) << "---------------------------";
 
-  LOG_STRING(INFO, lines) << "MRS " << memrowset_->ToString() << ":";
-  RETURN_NOT_OK(memrowset_->DebugDump(lines));
+  LOG_STRING(INFO, lines) << "MRS " << components_->memrowset->ToString() << ":";
+  RETURN_NOT_OK(components_->memrowset->DebugDump(lines));
 
-  BOOST_FOREACH(const shared_ptr<RowSet> &rs, rowsets_->all_rowsets()) {
+  BOOST_FOREACH(const shared_ptr<RowSet> &rs, components_->rowsets->all_rowsets()) {
     LOG_STRING(INFO, lines) << "RowSet " << rs->ToString() << ":";
     RETURN_NOT_OK(rs->DebugDump(lines));
   }
@@ -1215,7 +1214,8 @@ Status Tablet::CaptureConsistentIterators(
   vector<shared_ptr<RowwiseIterator> > ret;
 
   // Grab the memrowset iterator.
-  shared_ptr<RowwiseIterator> ms_iter(memrowset_->NewRowIterator(projection, snap));
+  shared_ptr<RowwiseIterator> ms_iter(
+    components_->memrowset->NewRowIterator(projection, snap));
   ret.push_back(ms_iter);
 
   // We can only use this optimization if there is a single encoded predicate
@@ -1227,7 +1227,7 @@ Status Tablet::CaptureConsistentIterators(
     // TODO : support open-ended intervals
     if (range.has_lower_bound() && range.has_upper_bound()) {
       vector<RowSet *> interval_sets;
-      rowsets_->FindRowSetsIntersectingInterval(range.lower_bound().encoded_key(),
+      components_->rowsets->FindRowSetsIntersectingInterval(range.lower_bound().encoded_key(),
                                                 range.upper_bound().encoded_key(),
                                                 &interval_sets);
       BOOST_FOREACH(const RowSet *rs, interval_sets) {
@@ -1241,7 +1241,7 @@ Status Tablet::CaptureConsistentIterators(
 
   // If there are no encoded predicates or they represent an open-ended range, then
   // fall back to grabbing all rowset iterators
-  BOOST_FOREACH(const shared_ptr<RowSet> &rs, rowsets_->all_rowsets()) {
+  BOOST_FOREACH(const shared_ptr<RowSet> &rs, components_->rowsets->all_rowsets()) {
     shared_ptr<RowwiseIterator> row_it(rs->NewRowIterator(projection, snap));
     ret.push_back(row_it);
   }
@@ -1253,18 +1253,12 @@ Status Tablet::CaptureConsistentIterators(
 
 Status Tablet::CountRows(uint64_t *count) const {
   // First grab a consistent view of the components of the tablet.
-  shared_ptr<MemRowSet> memrowset;
-  shared_ptr<RowSetTree> rowsets_copy;
-
-  {
-    boost::shared_lock<rw_semaphore> lock(component_lock_);
-    memrowset = memrowset_;
-    rowsets_copy = rowsets_;
-  }
+  scoped_refptr<TabletComponents> comps;
+  GetComponents(&comps);
 
   // Now sum up the counts.
-  *count = memrowset->entry_count();
-  BOOST_FOREACH(const shared_ptr<RowSet> &rowset, rowsets_copy->all_rowsets()) {
+  *count = comps->memrowset->entry_count();
+  BOOST_FOREACH(const shared_ptr<RowSet> &rowset, comps->rowsets->all_rowsets()) {
     rowid_t l_count;
     RETURN_NOT_OK(rowset->CountRows(&l_count));
     *count += l_count;
@@ -1274,24 +1268,18 @@ Status Tablet::CountRows(uint64_t *count) const {
 }
 
 size_t Tablet::MemRowSetSize() const {
-  boost::shared_lock<rw_semaphore> lock(component_lock_);
-  return MemRowSetSizeApprox();
-}
+  scoped_refptr<TabletComponents> comps;
+  GetComponents(&comps);
 
-size_t Tablet::MemRowSetSizeApprox() const {
-  return memrowset_->memory_footprint();
+  return comps->memrowset->memory_footprint();
 }
 
 size_t Tablet::EstimateOnDiskSize() const {
-  shared_ptr<RowSetTree> rowsets_copy;
-
-  {
-    boost::shared_lock<rw_semaphore> lock(component_lock_);
-    rowsets_copy = rowsets_;
-  }
+  scoped_refptr<TabletComponents> comps;
+  GetComponents(&comps);
 
   size_t ret = 0;
-  BOOST_FOREACH(const shared_ptr<RowSet> &rowset, rowsets_copy->all_rowsets()) {
+  BOOST_FOREACH(const shared_ptr<RowSet> &rowset, comps->rowsets->all_rowsets()) {
     ret += rowset->EstimateOnDiskSize();
   }
 
@@ -1299,15 +1287,11 @@ size_t Tablet::EstimateOnDiskSize() const {
 }
 
 size_t Tablet::DeltaMemStoresSize() const {
-  shared_ptr<RowSetTree> rowsets_copy;
-
-  {
-    boost::shared_lock<rw_semaphore> lock(component_lock_);
-    rowsets_copy = rowsets_;
-  }
+  scoped_refptr<TabletComponents> comps;
+  GetComponents(&comps);
 
   size_t ret = 0;
-  BOOST_FOREACH(const shared_ptr<RowSet> &rowset, rowsets_copy->all_rowsets()) {
+  BOOST_FOREACH(const shared_ptr<RowSet> &rowset, comps->rowsets->all_rowsets()) {
     ret += rowset->DeltaMemStoreSize();
   }
 
@@ -1315,16 +1299,12 @@ size_t Tablet::DeltaMemStoresSize() const {
 }
 
 Status Tablet::FlushBiggestDMS() {
-  shared_ptr<RowSetTree> rowsets_copy;
-
-  {
-    boost::shared_lock<rw_semaphore> lock(component_lock_);
-    rowsets_copy = rowsets_;
-  }
+  scoped_refptr<TabletComponents> comps;
+  GetComponents(&comps);
 
   int64_t max_size = -1;
   shared_ptr<RowSet> biggest_drs;
-  BOOST_FOREACH(const shared_ptr<RowSet> &rowset, rowsets_copy->all_rowsets()) {
+  BOOST_FOREACH(const shared_ptr<RowSet> &rowset, comps->rowsets->all_rowsets()) {
     int64_t current = rowset->DeltaMemStoreSize();
     if (current > max_size) {
       max_size = current;
@@ -1335,16 +1315,12 @@ Status Tablet::FlushBiggestDMS() {
 }
 
 Status Tablet::MinorCompactWorstDeltas() {
-  shared_ptr<RowSetTree> rowsets_copy;
-
-  {
-    boost::shared_lock<rw_semaphore> lock(component_lock_);
-    rowsets_copy = rowsets_;
-  }
+  scoped_refptr<TabletComponents> comps;
+  GetComponents(&comps);
 
   int worst_delta_count = -1;
   shared_ptr<RowSet> worst_rs;
-  BOOST_FOREACH(const shared_ptr<RowSet> &rowset, rowsets_copy->all_rowsets()) {
+  BOOST_FOREACH(const shared_ptr<RowSet> &rowset, comps->rowsets->all_rowsets()) {
     int count = rowset->CountDeltaStores();
     if (count > worst_delta_count) {
       worst_rs = rowset;
@@ -1361,14 +1337,14 @@ Status Tablet::MinorCompactWorstDeltas() {
 
 size_t Tablet::num_rowsets() const {
   boost::shared_lock<rw_semaphore> lock(component_lock_);
-  return rowsets_->all_rowsets().size();
+  return components_->rowsets->all_rowsets().size();
 }
 
 void Tablet::PrintRSLayout(ostream* o, bool header) {
   shared_ptr<RowSetTree> rowsets_copy;
   {
     boost::shared_lock<rw_semaphore> lock(component_lock_);
-    rowsets_copy = rowsets_;
+    rowsets_copy = components_->rowsets;
   }
   // Simulate doing a compaction with no rowsets chosen to simply display
   // the current layout

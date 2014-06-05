@@ -64,14 +64,9 @@ void WriteTransaction::NewCommitAbortMessage(gscoped_ptr<CommitMsg>* commit_msg)
 }
 
 Status WriteTransaction::CreatePreparedInsertsAndMutates(const Schema& client_schema) {
-  TRACE("PREPARE: Acquiring component lock");
-
   Tablet* tablet = state()->tablet_peer()->tablet();
 
-  // acquire the component lock. this is more like "tablet lock" and is used
-  // to prevent AlterSchema and other operations that requires exclusive access
-  // to the tablet.
-  state()->set_component_lock(tablet->component_lock());
+  // TODO: acquire a schema lock?
 
   TRACE("Projecting inserts");
   // Now that the schema is fixed, we can project the operations into that schema.
@@ -146,14 +141,13 @@ Status WriteTransaction::Prepare() {
     state_->completion_callback()->set_error(s, TabletServerErrorPB::INVALID_SCHEMA);
     return s;
   }
-  Status s = CreatePreparedInsertsAndMutates(client_schema);
+  RETURN_NOT_OK(CreatePreparedInsertsAndMutates(client_schema));
 
-  // Now that we've prepared set the transaction timestamp (by initiating the
-  // mvcc transaction). Doing this here allows us to wait the least possible
-  // time if we're using commit wait.
-  Timestamp timestamp = state_->start_mvcc_tx();
-  TRACE("PREPARE: finished. Timestamp: $0", server::HybridClock::GetPhysicalValue(timestamp));
-  return s;
+  Tablet* tablet = state_->tablet_peer()->tablet();
+  tablet->FinishPrepare(state_.get());
+  TRACE("PREPARE: finished. Timestamp: $0",
+        server::HybridClock::GetPhysicalValue(state_->timestamp()));
+  return Status::OK();
 }
 
 // FIXME: Since this is called as a void in a thread-pool callback,
@@ -306,25 +300,17 @@ Status WriteTransactionState::AddMutation(const Timestamp &timestamp,
   return Status::OK();
 }
 
-Timestamp WriteTransactionState::start_mvcc_tx() {
+void WriteTransactionState::set_mvcc_tx(gscoped_ptr<ScopedTransaction> mvcc_tx) {
   DCHECK(mvcc_tx_.get() == NULL) << "Mvcc transaction already started/set.";
-  // if the consistency mode is set to COMMIT_WAIT instruct
-  // ScopedTransaction to obtain the latest possible clock value
-  // taking the error into consideration.
-  if (external_consistency_mode() == COMMIT_WAIT) {
-    mvcc_tx_.reset(new ScopedTransaction(tablet_peer_->tablet()->mvcc_manager(), true));
-  } else {
-    mvcc_tx_.reset(new ScopedTransaction(tablet_peer_->tablet()->mvcc_manager()));
-  }
-  set_timestamp(mvcc_tx_->timestamp());
-  return mvcc_tx_->timestamp();
-}
-
-void WriteTransactionState::set_current_mvcc_tx(gscoped_ptr<ScopedTransaction> mvcc_tx) {
-  DCHECK(mvcc_tx_.get() == NULL) << "Mvcc transaction already started/set.";
-  DCHECK(external_consistency_mode() != COMMIT_WAIT);
   mvcc_tx_.reset(mvcc_tx.release());
   set_timestamp(mvcc_tx_->timestamp());
+}
+
+void WriteTransactionState::set_tablet_components(
+    const scoped_refptr<const TabletComponents>& components) {
+  DCHECK(!tablet_components_) << "Already set";
+  DCHECK(components);
+  tablet_components_ = components;
 }
 
 void WriteTransactionState::commit() {
@@ -333,9 +319,6 @@ void WriteTransactionState::commit() {
     mvcc_tx_->Commit();
   }
   mvcc_tx_.reset();
-  if (component_lock_.owns_lock()) {
-    component_lock_.unlock();
-  }
   release_row_locks();
 
   // Make the request NULL since after this transaction commits
@@ -359,6 +342,7 @@ void WriteTransactionState::Reset() {
   tx_metrics_.Reset();
   failed_operations_ = 0;
   timestamp_ = Timestamp::kInvalidTimestamp;
+  tablet_components_ = NULL;
 }
 
 string WriteTransactionState::ToString() const {

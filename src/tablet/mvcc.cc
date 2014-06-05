@@ -129,12 +129,7 @@ void MvccManager::CommitTransactionUnlocked(Timestamp timestamp,
     << timestamp.ToString();
 
   // Add to snapshot's committed list
-  cur_snap_.committed_timestamps_.push_back(timestamp.value());
-
-  // If this is a new upper bound commit mark, update it.
-  if (cur_snap_.none_committed_at_or_after_.CompareTo(timestamp) <= 0) {
-    cur_snap_.none_committed_at_or_after_ = Timestamp(timestamp.value() + 1);
-  }
+  cur_snap_.AddCommittedTimestamp(timestamp);
 
   // If we're committing the earliest transaction that was in flight,
   // update our cached value.
@@ -207,8 +202,6 @@ void MvccManager::AdjustSafeTime(Timestamp now) {
 }
 
 void MvccManager::WaitUntilAllCommitted(Timestamp ts) const {
-  DCHECK(clock_->IsAfter(ts))
-    << "timestamp " << ts.ToString() << " must be in the past";
   CountDownLatch latch(1);
   WaitingState waiting_state;
   {
@@ -247,6 +240,28 @@ void MvccManager::WaitForCleanSnapshot(MvccSnapshot* snap) const {
   WaitForCleanSnapshotAtTimestamp(clock_->Now(), snap);
 }
 
+void MvccManager::WaitForAllInFlightToCommit() const {
+  Timestamp wait_for;
+
+  {
+    boost::lock_guard<LockType> l(lock_);
+    if (timestamps_in_flight_.empty()) {
+      return;
+    }
+
+    // We could wait exactly for the set of in-flight transactions to commit,
+    // but that's a little trickier to implement. So for now, we just wait
+    // until all transactions lower than the current highest timestamp.
+    // This may wait longer than necessary if new transactions start with
+    // a lower timestamp, but that's OK - there is no "wait for the minimum
+    // amount of time" guarantee in this API.
+    wait_for = Timestamp(*std::max_element(timestamps_in_flight_.begin(),
+                                           timestamps_in_flight_.end()));
+  }
+
+  WaitUntilAllCommitted(wait_for);
+}
+
 bool MvccManager::AreAllTransactionsCommitted(Timestamp ts) const {
   boost::lock_guard<LockType> l(lock_);
   return AreAllTransactionsCommittedUnlocked(ts);
@@ -260,6 +275,14 @@ int MvccManager::CountTransactionsInFlight() const {
 Timestamp MvccManager::GetSafeTimestamp() const {
   boost::lock_guard<LockType> l(lock_);
   return cur_snap_.all_committed_before_;
+}
+
+void MvccManager::GetInFlightTransactionTimestamps(std::vector<Timestamp>* timestamps) const {
+  boost::lock_guard<LockType> l(lock_);
+  timestamps->reserve(timestamps_in_flight_.size());
+  BOOST_FOREACH(const Timestamp::val_type val, timestamps_in_flight_) {
+    timestamps->push_back(Timestamp(val));
+  }
 }
 
 MvccManager::~MvccManager() {
@@ -328,6 +351,23 @@ std::string MvccSnapshot::ToString() const {
   }
   ret.append("})}]");
   return ret;
+}
+
+void MvccSnapshot::AddCommittedTimestamps(const std::vector<Timestamp>& timestamps) {
+  BOOST_FOREACH(const Timestamp& ts, timestamps) {
+    AddCommittedTimestamp(ts);
+  }
+}
+
+void MvccSnapshot::AddCommittedTimestamp(Timestamp timestamp) {
+  if (IsCommitted(timestamp)) return;
+
+  committed_timestamps_.push_back(timestamp.value());
+
+  // If this is a new upper bound commit mark, update it.
+  if (none_committed_at_or_after_.CompareTo(timestamp) <= 0) {
+    none_committed_at_or_after_ = Timestamp(timestamp.value() + 1);
+  }
 }
 
 ////////////////////////////////////////////////////////////
