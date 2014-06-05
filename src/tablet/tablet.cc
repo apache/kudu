@@ -1425,8 +1425,11 @@ Status Tablet::Iterator::Init(ScanSpec *spec) {
 
   vector<shared_ptr<RowwiseIterator> > iters;
   if (spec != NULL) {
+    VLOG(3) << "Before encoding range preds: " << spec->ToString();
     encoder_.EncodeRangePredicates(spec, true);
+    VLOG(3) << "After encoding range preds: " << spec->ToString();
   }
+
   RETURN_NOT_OK(tablet_->CaptureConsistentIterators(
       &projection_, snap_, spec, &iters));
   iter_.reset(new UnionIterator(iters));

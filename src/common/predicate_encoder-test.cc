@@ -31,6 +31,7 @@ TEST(TestRangePredicateEncoder, TestEncodeRangePredicates) {
     spec.AddPredicate(pred_a);
     spec.AddPredicate(pred_b);
     ASSERT_NO_FATAL_FAILURE(enc.EncodeRangePredicates(&spec, true));
+    LOG(INFO) << spec.predicates().size();
     ASSERT_TRUE(spec.predicates().empty()) << "Should have pushed down all predicates";
     ASSERT_EQ(spec.encoded_ranges().size(), 1);
 
@@ -55,6 +56,29 @@ TEST(TestRangePredicateEncoder, TestEncodeRangePredicates) {
     spec.AddPredicate(pred_a);
     ASSERT_NO_FATAL_FAILURE(enc.EncodeRangePredicates(&spec, false));
     ASSERT_EQ(1, spec.predicates().size());
+    ASSERT_TRUE(spec.encoded_ranges()[0]->has_lower_bound());
+    ASSERT_TRUE(spec.encoded_ranges()[0]->has_upper_bound());
+  }
+
+  // Test that, if pushed predicates are erased, that we don't
+  // erase non-pushed predicates.
+  {
+    ScanSpec spec;
+
+    // Add predicates on column A and C. They're not contiguous so
+    // we can't turn it into a single range predicate.
+    ColumnRangePredicate pred_a(schema.column(0), &u, &u);
+    spec.AddPredicate(pred_a);
+
+    ColumnRangePredicate pred_c(schema.column(2), &u, &u);
+    spec.AddPredicate(pred_c);
+
+    ASSERT_NO_FATAL_FAILURE(enc.EncodeRangePredicates(&spec, true));
+
+    // We should have one predicate remaining for column C
+    ASSERT_EQ(1, spec.predicates().size());
+
+    // The predicate on column A should be pushed
     ASSERT_TRUE(spec.encoded_ranges()[0]->has_lower_bound());
     ASSERT_TRUE(spec.encoded_ranges()[0]->has_upper_bound());
   }

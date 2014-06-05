@@ -3,6 +3,7 @@
 #ifndef KUDU_COMMON_SCAN_SPEC_H
 #define KUDU_COMMON_SCAN_SPEC_H
 
+#include <string>
 #include <vector>
 
 #include "common/scan_predicate.h"
@@ -42,6 +43,8 @@ class ScanSpec {
   const vector<const EncodedKeyRange *> &encoded_ranges() const {
     return encoded_ranges_;
   }
+
+  std::string ToString() const;
 
  private:
   vector<ColumnRangePredicate> predicates_;

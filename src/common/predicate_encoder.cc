@@ -159,22 +159,18 @@ int RangePredicateEncoder::CountKeyPrefixEqualities(
 void RangePredicateEncoder::ErasePushedPredicates(
     ScanSpec *spec, const ColumnRangePredicate **key_preds) const {
   int num_key_cols = key_schema_.num_key_columns();
-  ScanSpec::PredicateList *preds = spec->mutable_predicates();
-  for (ScanSpec::PredicateList::iterator iter = preds->begin();
-       iter != preds->end();) {
-    const ColumnRangePredicate &pred = *iter;
-    bool found = false;
-    for (int i = 0 ; i < num_key_cols && !found; ++i) {
-      if (key_preds[i] == &pred) {
-        found = true;
-      }
+  ScanSpec::PredicateList* preds = spec->mutable_predicates();
+  ScanSpec::PredicateList::iterator it = preds->begin();
+  for (int i = 0; i < num_key_cols; ++i) {
+    const ColumnRangePredicate& pred = *it;
+    if (key_preds[i] == &pred) {
+      ++it;
+      continue;
     }
-    if (found) {
-      iter = preds->erase(iter);
-    } else {
-      ++iter;
-    }
+    break;
   }
+  // Nothing will be erased if it == preds->begin() anyway.
+  preds->erase(preds->begin(), it);
 }
 
 } // namespace kudu
