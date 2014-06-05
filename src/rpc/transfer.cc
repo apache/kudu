@@ -29,7 +29,8 @@ using std::string;
     return status;                                              \
   }
 
-DEFINE_int32(max_message_size, (8 * 1024 * 1024), "maximum message size");
+DEFINE_int32(rpc_max_message_size, (8 * 1024 * 1024),
+	     "The maximum size of a message that any RPC that the server will accept.");
 
 TransferCallbacks::~TransferCallbacks()
 {}
@@ -58,10 +59,10 @@ Status InboundTransfer::ReceiveBuffer(Socket &socket) {
       // The length prefix doesn't include its own 4 bytes, so we have to
       // add that back in.
       total_length_ = NetworkByteOrder::Load32(&buf_[0]) + kMsgLengthPrefixLength;
-      if (total_length_ > FLAGS_max_message_size) {
+      if (total_length_ > FLAGS_rpc_max_message_size) {
         return Status::NetworkError(StringPrintf("the frame had a "
                  "length of %d, but we only support messages up to %d bytes "
-                 "long.", total_length_, FLAGS_max_message_size));
+                 "long.", total_length_, FLAGS_rpc_max_message_size));
       }
       buf_.resize(total_length_);
     }
