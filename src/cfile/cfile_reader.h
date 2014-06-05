@@ -23,6 +23,7 @@
 #include "util/object_pool.h"
 #include "util/rle-encoding.h"
 #include "util/status.h"
+#include "common/iterator_stats.h"
 #include "common/key_encoder.h"
 
 namespace kudu {
@@ -185,22 +186,6 @@ class CFileReader {
 // It is used to fill the data requested by the projection.
 class ColumnIterator {
  public:
-  // Statistics on the amount of IO done by the iterator.
-  struct IOStatistics {
-    IOStatistics();
-    string ToString() const;
-
-    // The number of data blocks which were read by this iterator.
-    uint32_t data_blocks_read;
-
-    // The number of rows which were read from disk -- regardless of whether
-    // they were decoded/materialized.
-    uint64_t rows_read;
-
-    // TODO: flesh this out with index blocks, number of bytes read,
-    // rows
-  };
-
   virtual ~ColumnIterator() {}
 
   // Seek to the given ordinal entry in the file.
@@ -246,7 +231,7 @@ class ColumnIterator {
   // batch left off.
   virtual Status FinishBatch() = 0;
 
-  virtual const IOStatistics &io_statistics() const = 0;
+  virtual const IteratorStats& io_statistics() const = 0;
 };
 
 // ColumnIterator that fills the ColumnBlock with the specified value.
@@ -272,7 +257,7 @@ class DefaultColumnValueIterator : public ColumnIterator {
   Status Scan(ColumnBlock *dst);
   Status FinishBatch();
 
-  const IOStatistics &io_statistics() const { return io_stats_; }
+  const IteratorStats& io_statistics() const { return io_stats_; }
 
  private:
   const DataType type_;
@@ -280,7 +265,7 @@ class DefaultColumnValueIterator : public ColumnIterator {
 
   size_t batch_;
   rowid_t ordinal_;
-  IOStatistics io_stats_;
+  IteratorStats io_stats_;
 };
 
 
@@ -355,7 +340,7 @@ class CFileIterator : public ColumnIterator {
   // Convenience method to prepare a batch, scan it, and finish it.
   Status CopyNextValues(size_t *n, ColumnBlock *dst);
 
-  const IOStatistics &io_statistics() const {
+  const IteratorStats &io_statistics() const {
     return io_stats_;
   }
 
@@ -447,7 +432,7 @@ class CFileIterator : public ColumnIterator {
   // Otherwise, 0.
   uint32_t last_prepare_count_;
 
-  IOStatistics io_stats_;
+  IteratorStats io_stats_;
 
   // a temporary buffer for encoding
   faststring tmp_buf_;

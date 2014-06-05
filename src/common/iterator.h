@@ -3,10 +3,12 @@
 #define KUDU_COMMON_ITERATOR_H
 
 #include <string>
+#include <vector>
 
 #include "common/columnblock.h"
 #include "common/rowblock.h"
 #include "common/schema.h"
+#include "common/iterator_stats.h"
 #include "util/slice.h"
 #include "util/status.h"
 
@@ -101,6 +103,9 @@ class ColumnwiseIterator : public virtual BatchedIterator {
   // Any indirect data (eg strings) are copied into the destination block's
   // arena, if non-null.
   virtual Status MaterializeColumn(size_t col_idx, ColumnBlock *dst) = 0;
+
+  // Get IteratorStats for each column.
+  virtual void GetIteratorStats(std::vector<IteratorStats>* stats) const = 0;
 };
 
 

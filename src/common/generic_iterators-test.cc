@@ -83,6 +83,8 @@ class VectorIterator : public ColumnwiseIterator {
     return kIntSchema;
   }
 
+  virtual void GetIteratorStats(vector<IteratorStats>* stats) const {}
+
  private:
   vector<uint32_t> ints_;
   int cur_idx_;

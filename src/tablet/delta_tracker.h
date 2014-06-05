@@ -265,6 +265,10 @@ class DeltaApplier : public ColumnwiseIterator {
     return base_iter_->schema();
   }
 
+  virtual void GetIteratorStats(std::vector<IteratorStats>* stats) const {
+    return base_iter_->GetIteratorStats(stats);
+  }
+
   // Initialize the selection vector for the current batch.
   // This processes DELETEs -- any deleted rows are set to 0 in 'sel_vec'.
   // All other rows are set to 1.

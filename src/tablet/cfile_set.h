@@ -27,7 +27,6 @@ class RowSetMetadata;
 
 namespace tablet {
 
-using boost::ptr_vector;
 using kudu::cfile::BloomFileReader;
 using kudu::cfile::CFileIterator;
 using kudu::cfile::CFileReader;
@@ -141,8 +140,9 @@ class CFileSet::Iterator : public ColumnwiseIterator {
   }
 
   // Collect the IO statistics for each of the underlying columns.
-  void GetIOStatistics(vector<ColumnIterator::IOStatistics> *stats);
+  virtual void GetIteratorStats(vector<IteratorStats> *stats) const;
 
+  virtual ~Iterator();
  private:
   DISALLOW_COPY_AND_ASSIGN(Iterator);
   FRIEND_TEST(TestCFileSet, TestRangeScan);
@@ -175,7 +175,7 @@ class CFileSet::Iterator : public ColumnwiseIterator {
 
   // Iterator for the key column in the underlying data.
   gscoped_ptr<CFileIterator> key_iter_;
-  ptr_vector<ColumnIterator> col_iters_;
+  std::vector<ColumnIterator*> col_iters_;
 
   bool initted_;
 

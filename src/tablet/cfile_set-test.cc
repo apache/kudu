@@ -158,22 +158,22 @@ TEST_F(TestCFileSet, TestPartiallyMaterialize) {
 
   // Verify through the iterator statistics that IO was saved by not materializing
   // all of the columns.
-  vector<CFileIterator::IOStatistics> stats;
-  iter->GetIOStatistics(&stats);
+  vector<IteratorStats> stats;
+  iter->GetIteratorStats(&stats);
   ASSERT_EQ(3, stats.size());
   for (int i = 0; i < 3; i++) {
     LOG(INFO) << "Col " << i << " stats: " << stats[i].ToString();
   }
 
   // Since we pushed down the block size, we expect to have read 100+ blocks of column 0
-  ASSERT_GT(stats[0].data_blocks_read, 100);
+  ASSERT_GT(stats[0].data_blocks_read_from_disk, 100);
 
   // Since we didn't ever materialize column 2, we shouldn't have read any data blocks.
-  ASSERT_EQ(0, stats[2].data_blocks_read);
+  ASSERT_EQ(0, stats[2].data_blocks_read_from_disk);
 
   // Column 0 and 1 skipped a lot of blocks, so should not have read all rows.
-  ASSERT_LT(stats[0].rows_read, kNumRows * 3 / 4);
-  ASSERT_LT(stats[1].rows_read, kNumRows * 3 / 4);
+  ASSERT_LT(stats[0].rows_read_from_disk, kNumRows * 3 / 4);
+  ASSERT_LT(stats[1].rows_read_from_disk, kNumRows * 3 / 4);
 }
 
 TEST_F(TestCFileSet, TestIteratePartialSchema) {
@@ -254,11 +254,11 @@ TEST_F(TestCFileSet, TestRangeScan) {
 
   // Ensure that we only read the relevant range from all of the columns.
   // Since it's a small range, it should be all in one data block in each column.
-  vector<CFileIterator::IOStatistics> stats;
-  cfile_iter->GetIOStatistics(&stats);
-  EXPECT_EQ(stats[0].data_blocks_read, 1);
-  EXPECT_EQ(stats[1].data_blocks_read, 1);
-  EXPECT_EQ(stats[2].data_blocks_read, 1);
+  vector<IteratorStats> stats;
+  cfile_iter->GetIteratorStats(&stats);
+  EXPECT_EQ(stats[0].data_blocks_read_from_disk, 1);
+  EXPECT_EQ(stats[1].data_blocks_read_from_disk, 1);
+  EXPECT_EQ(stats[2].data_blocks_read_from_disk, 1);
 }
 
 // Several other black-box tests for range scans. These are similar to

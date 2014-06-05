@@ -318,7 +318,7 @@ Status DefaultColumnValueIterator::Scan(ColumnBlock *dst)  {
       }
     }
   }
-  io_stats_.rows_read += dst->nrows();
+  io_stats_.rows_read_from_disk += dst->nrows();
   return Status::OK();
 }
 
@@ -347,16 +347,6 @@ CFileIterator::CFileIterator(const CFileReader *reader,
     validx_iter_.reset(IndexTreeIterator::Create(
                          reader, reader->type_info()->type(), *validx_root));
   }
-}
-
-CFileIterator::IOStatistics::IOStatistics()
- : data_blocks_read(0),
-   rows_read(0) {
-}
-
-string CFileIterator::IOStatistics::ToString() const {
-  return StringPrintf("data_blocks_read=%d rows_read=%ld",
-                      data_blocks_read, rows_read);
 }
 
 Status CFileIterator::SeekToOrdinal(rowid_t ord_idx) {
@@ -535,7 +525,7 @@ Status CFileIterator::ReadCurrentDataBlock(const IndexTreeIterator &idx_iter,
   prep_block->dblk_ptr_ = idx_iter.GetCurrentBlockPointer();
   RETURN_NOT_OK(reader_->ReadBlock(prep_block->dblk_ptr_, &prep_block->dblk_data_));
 
-  io_stats_.data_blocks_read++;
+  io_stats_.data_blocks_read_from_disk++;
 
   uint32_t num_rows_in_block = 0;
   Slice data_block = prep_block->dblk_data_.data();
@@ -557,7 +547,7 @@ Status CFileIterator::ReadCurrentDataBlock(const IndexTreeIterator &idx_iter,
     num_rows_in_block = bd->Count();
   }
 
-  io_stats_.rows_read += num_rows_in_block;
+  io_stats_.rows_read_from_disk += num_rows_in_block;
 
   prep_block->idx_in_block_ = 0;
   prep_block->num_rows_in_block_ = num_rows_in_block;

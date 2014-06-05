@@ -11,6 +11,7 @@
 #include "cfile/cfile_util.h"
 #include "common/scan_spec.h"
 #include "gutil/algorithm.h"
+#include "gutil/stl_util.h"
 #include "tablet/diskrowset.h"
 #include "tablet/cfile_set.h"
 
@@ -235,7 +236,7 @@ class CFileSetIteratorProjector {
  public:
   // Used by CFileSet::Iterator::Init() to create the ColumnIterators
   static Status Project(const CFileSet *base_data, const Schema* projection,
-                        ptr_vector<ColumnIterator> *col_iters) {
+                        vector<ColumnIterator*>* col_iters) {
     CFileSetIteratorProjector projector(base_data, projection, col_iters);
     return projector.Run();
   }
@@ -243,7 +244,7 @@ class CFileSetIteratorProjector {
  private:
   CFileSetIteratorProjector(const CFileSet *base_data,
                             const Schema* projection,
-                            ptr_vector<ColumnIterator> *col_iters)
+                            vector<ColumnIterator*>* col_iters)
     : projection_(projection), base_data_(base_data), col_iters_(col_iters) {
   }
 
@@ -286,9 +287,13 @@ class CFileSetIteratorProjector {
 
   const Schema* projection_;
   const CFileSet *base_data_;
-  ptr_vector<ColumnIterator> *col_iters_;
+  vector<ColumnIterator*>* col_iters_;
 };
 
+
+CFileSet::Iterator::~Iterator() {
+  STLDeleteElements(&col_iters_);
+}
 
 Status CFileSet::Iterator::Init(ScanSpec *spec) {
   CHECK(!initted_);
@@ -379,8 +384,8 @@ Status CFileSet::Iterator::PushdownRangeScanPredicate(ScanSpec *spec) {
 Status CFileSet::Iterator::SeekToOrdinal(rowid_t ord_idx) {
   DCHECK(initted_);
   if (ord_idx < row_count_) {
-    BOOST_FOREACH(ColumnIterator& col_iter, col_iters_) {
-      RETURN_NOT_OK(col_iter.SeekToOrdinal(ord_idx));
+    BOOST_FOREACH(ColumnIterator* col_iter, col_iters_) {
+      RETURN_NOT_OK(col_iter->SeekToOrdinal(ord_idx));
     }
   } else {
     DCHECK_EQ(ord_idx, row_count_);
@@ -421,19 +426,19 @@ Status CFileSet::Iterator::PrepareColumn(size_t idx) {
     return Status::OK();
   }
 
-  ColumnIterator& col_iter = col_iters_[idx];
+  ColumnIterator* col_iter = col_iters_[idx];
   size_t n = prepared_count_;
 
-  if (!col_iter.seeked() || col_iter.GetCurrentOrdinal() != cur_idx_) {
+  if (!col_iter->seeked() || col_iter->GetCurrentOrdinal() != cur_idx_) {
     // Either this column has not yet been accessed, or it was accessed
     // but then skipped in a prior block (e.g because predicates on other
     // columns completely eliminated the block).
     //
     // Either way, we need to seek it to the correct offset.
-    RETURN_NOT_OK(col_iter.SeekToOrdinal(cur_idx_));
+    RETURN_NOT_OK(col_iter->SeekToOrdinal(cur_idx_));
   }
 
-  Status s = col_iter.PrepareBatch(&n);
+  Status s = col_iter->PrepareBatch(&n);
   if (!s.ok()) {
     LOG(WARNING) << "Unable to prepare column " << idx << ": " << s.ToString();
     return s;
@@ -461,8 +466,8 @@ Status CFileSet::Iterator::MaterializeColumn(size_t col_idx, ColumnBlock *dst) {
   DCHECK_LT(col_idx, col_iters_.size());
 
   RETURN_NOT_OK(PrepareColumn(col_idx));
-  ColumnIterator& iter = col_iters_[col_idx];
-  return iter.Scan(dst);
+  ColumnIterator* iter = col_iters_[col_idx];
+  return iter->Scan(dst);
 }
 
 Status CFileSet::Iterator::FinishBatch() {
@@ -470,7 +475,7 @@ Status CFileSet::Iterator::FinishBatch() {
 
   for (size_t i = 0; i < col_iters_.size(); i++) {
     if (cols_prepared_[i]) {
-      Status s = col_iters_[i].FinishBatch();
+      Status s = col_iters_[i]->FinishBatch();
       if (!s.ok()) {
         LOG(WARNING) << "Unable to FinishBatch() on column " << i;
         return s;
@@ -485,14 +490,13 @@ Status CFileSet::Iterator::FinishBatch() {
 }
 
 
-void CFileSet::Iterator::GetIOStatistics(vector<ColumnIterator::IOStatistics> *stats) {
+void CFileSet::Iterator::GetIteratorStats(vector<IteratorStats>* stats) const {
   stats->clear();
   stats->reserve(col_iters_.size());
-  BOOST_FOREACH(const ColumnIterator& iter, col_iters_) {
-    stats->push_back(iter.io_statistics());
+  BOOST_FOREACH(const ColumnIterator* iter, col_iters_) {
+    stats->push_back(iter->io_statistics());
   }
 }
 
 } // namespace tablet
 } // namespace kudu
-

@@ -17,6 +17,7 @@ add_library(wire_protocol_proto ${WIRE_PROTOCOL_PROTO_SRCS} ${WIRE_PROTOCOL_PROT
 target_link_libraries(wire_protocol_proto kudu_common_proto protobuf)
 
 set(COMMON_SRCS
+  iterator_stats.cc
   generic_iterators.cc
   key_encoder.cc
   partial_row.cc
