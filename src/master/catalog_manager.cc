@@ -1105,7 +1105,7 @@ class AsyncTabletRequestTask : public MonitoredTask {
   void DeferredCallback() {
     bool retry = (attempt_ < max_attempts() && state_ != kStateAborted);
     if (!rpc_.status().ok()) {
-      LOG(WARNING) << permanent_uuid_ << " " << type_name() << " RPC failed for tablet "
+      LOG(WARNING) << "TS " << permanent_uuid_ << ": " << type_name() << " RPC failed for tablet "
                    << tablet_id() << ": " << rpc_.status().ToString();
       if (retry) {
         usleep((1 + (attempt_ / 5)) * 1000000);
@@ -1174,7 +1174,7 @@ class AsyncCreateTablet : public AsyncTabletRequestTask {
       tablet_(tablet) {
   }
 
-  virtual string type_name() const OVERRIDE { return "Create Table"; }
+  virtual string type_name() const OVERRIDE { return "Create Tablet"; }
 
   virtual string description() const OVERRIDE {
     return tablet_->ToString() + " Create Tablet RPC for TS=" + permanent_uuid_;
@@ -1258,18 +1258,18 @@ class AsyncDeleteTablet : public AsyncTabletRequestTask {
       // Do not retry on a fatal error
       switch (resp_.error().code()) {
         case TabletServerErrorPB::TABLET_NOT_FOUND:
-          LOG(WARNING) << permanent_uuid_ << " delete failed for tablet " << tablet_id_
+          LOG(WARNING) << "TS " << permanent_uuid_ << ": delete failed for tablet " << tablet_id_
                        << " no further retry: " << status.ToString();
           state_ = kStateComplete;
           break;
         default:
-          LOG(WARNING) << permanent_uuid_ << " delete failed for tablet " << tablet_id_
+          LOG(WARNING) << "TS " << permanent_uuid_ << ": delete failed for tablet " << tablet_id_
                        << ": " << status.ToString();
           break;
       }
     } else {
       state_ = kStateComplete;
-      VLOG(1) << "TS " << permanent_uuid_ << " delete complete on tablet " << tablet_id_;
+      VLOG(1) << "TS " << permanent_uuid_ << ": delete complete on tablet " << tablet_id_;
     }
   }
 
@@ -1323,18 +1323,18 @@ class AsyncAlterTable : public AsyncTabletRequestTask {
         case TabletServerErrorPB::TABLET_NOT_FOUND:
         case TabletServerErrorPB::MISMATCHED_SCHEMA:
         case TabletServerErrorPB::TABLET_HAS_A_NEWER_SCHEMA:
-          LOG(WARNING) << permanent_uuid_ << " alter failed for tablet " << tablet_->ToString()
-                       << " no further retry: " << status.ToString();
+          LOG(WARNING) << "TS " << permanent_uuid_ << ": alter failed for tablet "
+                       << tablet_->ToString() << " no further retry: " << status.ToString();
           state_ = kStateComplete;
           break;
         default:
-          LOG(WARNING) << permanent_uuid_ << " alter failed for tablet " << tablet_->ToString()
-                       << ": " << status.ToString();
+          LOG(WARNING) << "TS " << permanent_uuid_ << ": alter failed for tablet "
+                       << tablet_->ToString() << ": " << status.ToString();
           break;
       }
     } else {
       state_ = kStateComplete;
-      VLOG(1) << "TS " << permanent_uuid_ << " alter complete on tablet " << tablet_->ToString();
+      VLOG(1) << "TS " << permanent_uuid_ << ": alter complete on tablet " << tablet_->ToString();
     }
 
     if (state_ == kStateComplete) {
