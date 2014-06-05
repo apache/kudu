@@ -23,15 +23,16 @@
 #include "util/stopwatch.h"
 #include "util/test_util.h"
 
-DECLARE_int32(default_num_replicas);
 DECLARE_int32(consensus_entry_cache_size_soft_limit_mb);
 DECLARE_int32(consensus_entry_cache_size_hard_limit_mb);
+DECLARE_int32(consensus_rpc_timeout_ms);
+DECLARE_int32(default_num_replicas);
 
 DEFINE_int32(num_client_threads, 8,
              "Number of client threads to launch");
-DEFINE_int64(client_inserts_per_thread, 1000,
+DEFINE_int64(client_inserts_per_thread, 500,
              "Number of rows inserted by each client thread");
-DEFINE_int64(client_num_batches_per_thread, 100,
+DEFINE_int64(client_num_batches_per_thread, 50,
              "In how many batches to group the rows, for each client");
 
 namespace kudu {
@@ -72,6 +73,7 @@ class DistConsensusTest : public TabletServerTest {
   virtual void SetUp() {
     FLAGS_consensus_entry_cache_size_soft_limit_mb = 5;
     FLAGS_consensus_entry_cache_size_hard_limit_mb = 10;
+    FLAGS_consensus_rpc_timeout_ms = 50;
     KuduTest::SetUp();
     CreateCluster();
     CreateClient();
@@ -199,20 +201,47 @@ class DistConsensusTest : public TabletServerTest {
     std::sort(results->begin(), results->end());
   }
 
-  void AssertRowsExistInReplicas() {
-    vector<string> leader_results;
-    vector<string> replica_results;
-    ScanReplica(leader_->proxy.get(), &leader_results);
-    BOOST_FOREACH(ProxyDetails* replica, replicas_) {
-      SCOPED_TRACE(strings::Substitute("Replica results did not match the leaders."
-          "\nReplica: $0\nLeader:$1", replica->ts_info.ShortDebugString(),
-          leader_->ts_info.ShortDebugString()));
-      ScanReplica(replica->proxy.get(), &replica_results);
-      ASSERT_EQ(leader_results.size(), replica_results.size());
-      for (int i = 0; i < leader_results.size(); i++) {
-        ASSERT_EQ(leader_results[i], replica_results[i]);
+  void AssertAllReplicasAgree() {
+
+    int counter = 0;
+    while (true) {
+      usleep(10000 * counter);
+      vector<string> leader_results;
+      vector<string> replica_results;
+      ScanReplica(leader_->proxy.get(), &leader_results);
+
+      bool all_replicas_matched = true;
+      BOOST_FOREACH(ProxyDetails* replica, replicas_) {
+        ScanReplica(replica->proxy.get(), &replica_results);
+        SCOPED_TRACE(strings::Substitute("Replica results did not match the leaders."
+                                         "\nReplica: $0\nLeader:$1. Results size "
+                                         "L: $2 R: $3", replica->ts_info.ShortDebugString(),
+                                         leader_->ts_info.ShortDebugString(),
+                                         leader_results.size(), replica_results.size()));
+
+        if (leader_results.size() != replica_results.size()) {
+          all_replicas_matched = false;
+          break;
+        }
+
+        // when the result sizes match the rows must match
+        // TODO handle the case where we have compactions/flushes
+        // (needs post-scan sorting or FT scans)
+        ASSERT_EQ(leader_results.size(), replica_results.size());
+        for (int i = 0; i < leader_results.size(); i++) {
+          ASSERT_EQ(leader_results[i], replica_results[i]);
+        }
+        replica_results.clear();
       }
-      replica_results.clear();
+
+      if (all_replicas_matched) {
+        break;
+      } else {
+        if (counter >= kMaxRetries) {
+          FAIL() << "LEADER results did not match one of the replicas.";
+        }
+        counter++;
+      }
     }
   }
 
@@ -228,9 +257,6 @@ class DistConsensusTest : public TabletServerTest {
   // Brings Chaos to a MiniTabletServer by introducing random delays. Does this by stealing the
   // consensus lock a portion of the time.
   // TODO use the consensus/tablet/log hooks _as_well_as_ lock stealing
-  // TODO This generates sleeps < 1.163175 seconds, with 99% probability. That is, this is tailored
-  // to go over the default consensus timeout (1 sec) with < 5% probability. Change this to be
-  // able to handle any timeout.
   void DelayInjectorThread(MiniTabletServer* mini_tablet_server) {
     shared_ptr<TabletPeer> peer;
     CHECK(mini_tablet_server->server()->tablet_manager()->LookupTabletUnlocked(tablet_id, &peer));
@@ -238,19 +264,24 @@ class DistConsensusTest : public TabletServerTest {
     ReplicaState* state = consensus->GetReplicaStateForTests();
     while (inserters_.count() > 0) {
 
-      double sleep_time = NormalDist(0, 0.5);
-      if (sleep_time < 0) sleep_time = 0;
+      // Adjust the value obtained from the normalized gauss. dist. so that we steal the lock
+      // longer than the the timeout a small (~5%) percentage of the times.
+      // (95% corresponds to 1.64485, in a normalized (0,1) gaussian distribution).
+      double sleep_time_usec = 1000 *
+          ((NormalDist(0, 1) * FLAGS_consensus_rpc_timeout_ms) / 1.64485);
 
+      if (sleep_time_usec < 0) sleep_time_usec = 0;
+
+      // Additionally only cause timeouts at all 50% of the time, otherwise sleep.
       double val = (rand() * 1.0) / RAND_MAX;
-
-      if (val < 0.8) {
-        usleep(sleep_time * 1000 * 1000);
+      if (val < 0.5) {
+        usleep(sleep_time_usec);
         continue;
       }
 
       ReplicaState::UniqueLock lock;
       CHECK_OK(state->LockForRead(&lock));
-      usleep(sleep_time * 1000 * 1000);
+      usleep(sleep_time_usec);
     }
   }
 
@@ -280,17 +311,15 @@ class DistConsensusTest : public TabletServerTest {
 // until it is done. This will avoid the sleeps below.
 TEST_F(DistConsensusTest, TestInsertAndMutateThroughConsensus) {
 
-  if (AllowSlowTests()) {
-    for (int i = 0; i < 100; i++) {
-      InsertTestRowsRemoteThread(0, i * 1000, 1000, 100, leader_->proxy.get());
-    }
-    // sleep to let the request get committed to the replicas.
-    usleep(500000);
-  } else {
-    InsertTestRowsRemoteThread(0, 0, 1000, 100, leader_->proxy.get());
-    usleep(1000000);
+  int num_iters = AllowSlowTests() ? 10 : 1;
+
+  for (int i = 0; i < num_iters; i++) {
+    InsertTestRowsRemoteThread(0, i * FLAGS_client_inserts_per_thread,
+                               FLAGS_client_inserts_per_thread,
+                               FLAGS_client_num_batches_per_thread,
+                               leader_->proxy.get());
   }
-  AssertRowsExistInReplicas();
+  AssertAllReplicasAgree();
 }
 
 TEST_F(DistConsensusTest, TestFailedTransaction) {
@@ -304,18 +333,18 @@ TEST_F(DistConsensusTest, TestFailedTransaction) {
 
   controller.set_timeout(MonoDelta::FromSeconds(FLAGS_rpc_timeout));
   ASSERT_STATUS_OK(DCHECK_NOTNULL(leader_->proxy.get())->Write(req, &resp, &controller));
-
   ASSERT_TRUE(resp.has_error());
+  AssertAllReplicasAgree();
 }
 
 // Inserts rows through consensus and also starts one delay injecting thread
 // that steals consensus peer locks for a while. This is meant to test that
 // even with timeouts and repeated requests consensus still works.
 TEST_F(DistConsensusTest, MultiThreadedMutateAndInsertThroughConsensus) {
-  if (1000 == FLAGS_client_inserts_per_thread) {
+  if (500 == FLAGS_client_inserts_per_thread) {
     if (this->AllowSlowTests()) {
-      FLAGS_client_inserts_per_thread = 50000;
-      FLAGS_client_num_batches_per_thread = 5000;
+      FLAGS_client_inserts_per_thread = FLAGS_client_inserts_per_thread * 10;
+      FLAGS_client_num_batches_per_thread = FLAGS_client_num_batches_per_thread * 10;
     }
   }
 
@@ -343,12 +372,7 @@ TEST_F(DistConsensusTest, MultiThreadedMutateAndInsertThroughConsensus) {
    CHECK_OK(ThreadJoiner(thr.get()).Join());
   }
 
-  if (AllowSlowTests()) {
-    usleep(5000000);
-  } else {
-    usleep(2000000);
-  }
-  AssertRowsExistInReplicas();
+  AssertAllReplicasAgree();
 }
 
 TEST_F(DistConsensusTest, TestInsertOnNonLeader) {
@@ -371,6 +395,7 @@ TEST_F(DistConsensusTest, TestInsertOnNonLeader) {
   // TODO: need to change the error code to be something like REPLICA_NOT_LEADER
   // so that the client can properly handle this case! plumbing this is a little difficult
   // so not addressing at the moment.
+  AssertAllReplicasAgree();
 }
 
 }  // namespace tserver
