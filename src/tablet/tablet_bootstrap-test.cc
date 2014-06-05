@@ -125,27 +125,41 @@ TEST_F(BootstrapTest, TestBootstrap) {
   ASSERT_EQ(1, results.size());
 }
 
-// Tests the KUDU-141 scenario
+// Tests the KUDU-141 scenario: bootstrap when there is
+// an orphaned commit after a log roll.
+// The test simulates the following scenario:
+//
+// 1) 'Replicate A' is written to Segment_1, which is anchored
+// on MemRowSet_1.
+// 2) Segment_1 is rolled, 'Commit A' is written to Segment_2.
+// 3) MemRowSet_1 is flushed, releasing all anchors.
+// 4) Segment_1 is garbage collected.
+// 5) We crash, requiring a recovery of Segment_2 which now contains
+// the orphan 'Commit A'.
 TEST_F(BootstrapTest, TestOrphanCommit) {
   BuildLog();
 
-  // Write a REPLICATE to the log, and roll it.
+  // Step 1) Write a REPLICATE to the log, and roll it.
   AppendReplicateBatch(current_id_);
   ASSERT_STATUS_OK(RollLog());
 
-  // Write the corresponding COMMIT in the second segment.
+  // Step 2) Write the corresponding COMMIT in the second segment.
   AppendCommit(current_id_ + 1, current_id_);
 
   shared_ptr<Tablet> tablet;
   ConsensusBootstrapInfo boot_info;
-  ASSERT_STATUS_OK(BootstrapTestTablet(-1, -1, &tablet, &boot_info));
 
+  // Step 3) Apply the operations in the log to the tablet and flush
+  // the tablet to disk.
+  ASSERT_STATUS_OK(BootstrapTestTablet(-1, -1, &tablet, &boot_info));
   ASSERT_STATUS_OK(tablet->Flush());
 
+  // Create a new log segment.
   ASSERT_STATUS_OK(RollLog());
 
-  // Create an orphanned commit by first adding a commit to the newly
-  // rolled logfile, and then by removing the previous commits.
+  // Step 4) Create an orphanned commit by first adding a commit to
+  // the newly rolled logfile, and then by removing the previous
+  // commits.
   AppendCommit(current_id_ + 1, current_id_);
   ReadableLogSegmentMap segments;
   log_->GetReadableLogSegments(&segments);
@@ -155,7 +169,7 @@ TEST_F(BootstrapTest, TestOrphanCommit) {
   // orphan commit: op_type: WRITE_OP...' line.
   ASSERT_STATUS_OK(BootstrapTestTablet(2, 1, &tablet, &boot_info));
 
-  // Confirm that the legitimate data is there.
+  // Confirm that the legitimate data (from Step 3) is still there.
   vector<string> results;
   IterateTabletRows(tablet.get(), &results);
   ASSERT_EQ(1, results.size());
