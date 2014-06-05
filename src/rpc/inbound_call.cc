@@ -48,6 +48,7 @@ void InboundCall::RespondFailure(ErrorStatusPB::RpcErrorCodePB error_code,
                                  const Status& status) {
   ErrorStatusPB err;
   err.set_message(status.ToString());
+  err.set_code(error_code);
 
   Respond(err, false);
 }
