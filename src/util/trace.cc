@@ -120,7 +120,7 @@ void Trace::Dump(std::ostream* out, bool include_time_deltas) const {
   // Save original flags.
   std::ios::fmtflags save_flags(out->flags());
 
-  int prev_usecs = 0;
+  int64_t prev_usecs = 0;
   BOOST_FOREACH(TraceEntry* e, entries) {
     // Log format borrowed from glog/logging.cc
     time_t secs_since_epoch = e->timestamp_micros / 1000000;
@@ -128,11 +128,11 @@ void Trace::Dump(std::ostream* out, bool include_time_deltas) const {
     struct tm tm_time;
     localtime_r(&secs_since_epoch, &tm_time);
 
-    int usecs_since_prev = 0;
+    int64_t usecs_since_prev = 0;
     if (prev_usecs != 0) {
-      usecs_since_prev = usecs - prev_usecs;
+      usecs_since_prev = e->timestamp_micros - prev_usecs;
     }
-    prev_usecs = usecs;
+    prev_usecs = e->timestamp_micros;
 
     using std::setw;
     out->fill('0');
