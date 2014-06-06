@@ -459,6 +459,8 @@ class Tablet::Iterator : public RowwiseIterator {
     return projection_;
   }
 
+  virtual void GetIteratorStats(std::vector<IteratorStats>* stats) const;
+
  private:
   friend class Tablet;
 

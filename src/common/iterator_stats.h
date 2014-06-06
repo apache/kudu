@@ -19,6 +19,11 @@ struct IteratorStats {
   // they were decoded/materialized.
   uint64_t rows_read_from_disk;
 
+  // Add statistics contained 'other' to this object (for each field
+  // in this object, increment it by the value of the equivalent field
+  // in 'other').
+  void AddStats(const IteratorStats& other);
+
   // TODO: flesh this out with index blocks, number of bytes read,
   // rows
 };

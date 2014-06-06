@@ -230,7 +230,7 @@ void TabletServerPathHandlers::HandleScansPage(const Webserver::ArgumentMap &arg
   *output << "<h1>Scans</h1>\n";
   *output << "<table class='table table-striped'>\n";
   *output << "<tr><th>Tablet id</th><th>Scanner id</th><th>Total time in-flight</th>"
-      "<th>Time since last update</th><th>Requestor</th>"
+      "<th>Time since last update</th><th>Requestor</th><th>Iterator Stats</th>"
       "<th>Pushed down key predicates</th><th>Other predicates</th></tr>\n";
 
   vector<SharedScanner> scanners;
@@ -248,11 +248,15 @@ string TabletServerPathHandlers::ScannerToHtml(const Scanner& scanner) const {
   uint64_t time_since_last_access_us =
       MonoTime::Now(MonoTime::COARSE).GetDeltaSince(scanner.last_access_time()).ToMicroseconds();
 
-  html << Substitute("<tr><td>$0</td><td>$1</td><td>$2 us.</td><td>$3 us.</td><td>$4</td>",
+  vector<IteratorStats> stats;
+  scanner.GetIteratorStats(&stats);
+  html << Substitute("<tr><td>$0</td><td>$1</td><td>$2 us.</td><td>$3 us.</td><td>$4</td>"
+                     "<td>$5</td>",
                      EscapeForHtmlToString(scanner.tablet_id()), // $0
                      EscapeForHtmlToString(scanner.id()), // $1
                      time_in_flight_us, time_since_last_access_us, // $2, $3
-                     EscapeForHtmlToString(scanner.requestor_string())); // $4
+                     EscapeForHtmlToString(scanner.requestor_string()), // $4
+                     IteratorStatsToHtml(stats)); // $5
   shared_ptr<TabletPeer> tablet_peer;
   if (!tserver_->tablet_manager()->LookupTablet(scanner.tablet_id(), &tablet_peer)) {
     html << Substitute("<td><b>Tablet $0 is no longer valid.</b></td></tr>\n",
@@ -282,6 +286,20 @@ string TabletServerPathHandlers::ScannerToHtml(const Scanner& scanner) const {
                        EscapeForHtmlToString(pushed_pred_str),
                        EscapeForHtmlToString(other_pred_str));
   }
+  return html.str();
+}
+
+string TabletServerPathHandlers::IteratorStatsToHtml(const vector<IteratorStats>& stats) const {
+  std::stringstream html;
+  html << "<table>\n";
+  html << "<tr><th>Column/th><th>Blocks read from disk</th>"
+      "<th>Rows read from disk</th></tr>\n";
+  for (size_t idx = 0; idx < stats.size(); idx++) {
+    html << Substitute("<tr><td>$0</td><td>$1</td><td>$2</td></tr>\n",
+                       idx, stats[idx].data_blocks_read_from_disk,
+                       stats[idx].rows_read_from_disk);
+  }
+  html << "</table>\n";
   return html.str();
 }
 

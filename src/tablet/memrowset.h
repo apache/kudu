@@ -440,6 +440,15 @@ class MemRowSet::Iterator : public RowwiseIterator {
     return projector_.projection();
   }
 
+  virtual void GetIteratorStats(std::vector<IteratorStats>* stats) const {
+    // Currently we do not expose any non-disk related statistics in
+    // IteratorStats.  However, callers of GetIteratorStats expected
+    // an IteratorStats object for every column; vector::resize() is
+    // used as it will also fill the 'stats' with new instances of
+    // IteratorStats.
+    stats->resize(schema().num_columns());
+  }
+
  private:
   friend class MemRowSet;
 

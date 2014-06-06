@@ -84,6 +84,9 @@ class RowwiseIterator : public virtual BatchedIterator {
   // prior to using this call.
   static Status CopyBlock(RowwiseIterator *iter, RowBlock *dst);
 
+  // Get IteratorStats for each column in the row, including
+  // (potentially) columns that are iterated over but not projected;
+  virtual void GetIteratorStats(std::vector<IteratorStats>* stats) const = 0;
 };
 
 class ColumnwiseIterator : public virtual BatchedIterator {

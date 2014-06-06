@@ -92,5 +92,10 @@ const ScanSpec& Scanner::spec() const {
   return *spec_;
 }
 
+void Scanner::GetIteratorStats(vector<IteratorStats>* stats) const {
+  iter_->GetIteratorStats(stats);
+}
+
+
 } // namespace tserver
 } // namespace kudu

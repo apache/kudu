@@ -50,6 +50,8 @@ class MergeIterator : public RowwiseIterator {
 
   virtual const Schema &schema() const { return schema_; }
 
+  virtual void GetIteratorStats(std::vector<IteratorStats>* stats) const;
+
  private:
   Status InitSubIterators(ScanSpec *spec);
 
@@ -100,6 +102,8 @@ class UnionIterator : public RowwiseIterator {
     return *CHECK_NOTNULL(schema_.get());
   }
 
+  virtual void GetIteratorStats(std::vector<IteratorStats>* stats) const;
+
  private:
   Status InitSubIterators(ScanSpec *spec);
 
@@ -107,6 +111,10 @@ class UnionIterator : public RowwiseIterator {
   gscoped_ptr<Schema> schema_;
   bool initted_;
   deque<shared_ptr<RowwiseIterator> > iters_;
+
+  // Since we pop from 'iters_' this field is needed in order to keep
+  // the underlying iterators available for GetIteratorStats.
+  std::vector<shared_ptr<RowwiseIterator> > all_iters_;
 
   // When the underlying iterators are initialized, each needs its own
   // copy of the scan spec in order to do its own pushdown calculations, etc.
@@ -138,6 +146,10 @@ class MaterializingIterator : public RowwiseIterator {
 
   const Schema &schema() const {
     return iter_->schema();
+  }
+
+  virtual void GetIteratorStats(std::vector<IteratorStats>* stats) const {
+    iter_->GetIteratorStats(stats);
   }
 
  private:
@@ -186,6 +198,10 @@ class PredicateEvaluatingIterator : public RowwiseIterator {
 
   const Schema &schema() const {
     return base_iter_->schema();
+  }
+
+  virtual void GetIteratorStats(std::vector<IteratorStats>* stats) const {
+    base_iter_->GetIteratorStats(stats);
   }
 
  private:

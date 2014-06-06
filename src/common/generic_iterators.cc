@@ -87,6 +87,10 @@ class MergeIterState {
     return valid_rows_ - cur_row_;
   }
 
+  const shared_ptr<RowwiseIterator>& iter() const {
+    return iter_;
+  }
+
   shared_ptr<RowwiseIterator> iter_;
   Arena arena_;
   RowBlock read_block_;
@@ -226,6 +230,22 @@ string MergeIterator::ToString() const {
   return s;
 }
 
+void MergeIterator::GetIteratorStats(vector<IteratorStats>* stats) const {
+  vector<vector<IteratorStats> > stats_by_iter;
+  BOOST_FOREACH(const shared_ptr<MergeIterState>& iter_state, iters_) {
+    vector<IteratorStats> stats_for_iter;
+    iter_state->iter()->GetIteratorStats(&stats_for_iter);
+    stats_by_iter.push_back(stats_for_iter);
+  }
+  for (size_t idx = 0; idx < schema_.num_columns(); ++idx) {
+    IteratorStats stats_for_col;
+    BOOST_FOREACH(const vector<IteratorStats>& stats_for_iter, stats_by_iter) {
+      stats_for_col.AddStats(stats_for_iter[idx]);
+    }
+    stats->push_back(stats_for_col);
+  }
+}
+
 
 ////////////////////////////////////////////////////////////
 // Union iterator
@@ -236,6 +256,7 @@ UnionIterator::UnionIterator(const vector<shared_ptr<RowwiseIterator> > &iters)
     iters_(iters.size()) {
   CHECK_GT(iters.size(), 0);
   iters_.assign(iters.begin(), iters.end());
+  all_iters_.assign(iters.begin(), iters.end());
 }
 
 Status UnionIterator::Init(ScanSpec *spec) {
@@ -325,6 +346,22 @@ string UnionIterator::ToString() const {
   }
   s.append(")");
   return s;
+}
+
+void UnionIterator::GetIteratorStats(std::vector<IteratorStats>* stats) const {
+  vector<vector<IteratorStats> > stats_by_iter;
+  BOOST_FOREACH(const shared_ptr<RowwiseIterator>& iter, all_iters_) {
+    vector<IteratorStats> stats_for_iter;
+    iter->GetIteratorStats(&stats_for_iter);
+    stats_by_iter.push_back(stats_for_iter);
+  }
+  for (size_t idx = 0; idx < schema_->num_columns(); ++idx) {
+    IteratorStats stats_for_col;
+    BOOST_FOREACH(const vector<IteratorStats>& stats_for_iter, stats_by_iter) {
+      stats_for_col.AddStats(stats_for_iter[idx]);
+    }
+    stats->push_back(stats_for_col);
+  }
 }
 
 ////////////////////////////////////////////////////////////

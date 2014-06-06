@@ -6,10 +6,12 @@
 #include "server/webserver.h"
 #include <string>
 #include <sstream>
+#include <vector>
 
 namespace kudu {
 
 class Schema;
+struct IteratorStats;
 
 namespace metadata {
 class QuorumPB;
@@ -41,6 +43,7 @@ class TabletServerPathHandlers {
                               std::stringstream* output);
   std::string QuorumPBToHtml(const metadata::QuorumPB& quorum) const;
   std::string ScannerToHtml(const Scanner& scanner) const;
+  std::string IteratorStatsToHtml(const std::vector<IteratorStats>& stats) const;
 
   TabletServer* tserver_;
 

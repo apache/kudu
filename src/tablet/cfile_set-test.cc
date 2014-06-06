@@ -255,7 +255,7 @@ TEST_F(TestCFileSet, TestRangeScan) {
   // Ensure that we only read the relevant range from all of the columns.
   // Since it's a small range, it should be all in one data block in each column.
   vector<IteratorStats> stats;
-  cfile_iter->GetIteratorStats(&stats);
+  iter->GetIteratorStats(&stats);
   EXPECT_EQ(stats[0].data_blocks_read_from_disk, 1);
   EXPECT_EQ(stats[1].data_blocks_read_from_disk, 1);
   EXPECT_EQ(stats[2].data_blocks_read_from_disk, 1);

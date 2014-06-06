@@ -1468,6 +1468,10 @@ string Tablet::Iterator::ToString() const {
   return s;
 }
 
+void Tablet::Iterator::GetIteratorStats(vector<IteratorStats>* stats) const {
+  iter_->GetIteratorStats(stats);
+}
+
 
 } // namespace tablet
 } // namespace kudu

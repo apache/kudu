@@ -43,13 +43,13 @@ class TabletPushdownTest : public KuduTabletTest,
   void FillTestTablet() {
     RowBuilder rb(schema_);
 
-    uint64_t nrows = 2100;
+    nrows_ = 2100;
     if (AllowSlowTests()) {
-      nrows = 100000;
+      nrows_ = 100000;
     }
 
     WriteTransactionState tx_state;
-    for (uint64_t i = 0; i < nrows; i++) {
+    for (uint64_t i = 0; i < nrows_; i++) {
       rb.Reset();
       rb.AddUint32(i);
       rb.AddUint32(i * 10);
@@ -90,6 +90,45 @@ class TabletPushdownTest : public KuduTabletTest,
               results[0]);
     ASSERT_EQ("(uint32 key=210, uint32 int_val=2100, string string_val=00000210)",
               results[10]);
+
+    int expected_blocks_from_disk;
+    int expected_rows_from_disk;
+    bool check_stats = true;
+    switch (GetParam()) {
+      case ALL_IN_MEMORY:
+        expected_blocks_from_disk = 0;
+        expected_rows_from_disk = 0;
+        break;
+      case SPLIT_MEMORY_DISK:
+        expected_blocks_from_disk = 1;
+        expected_rows_from_disk = 206;
+        break;
+      case ALL_ON_DISK:
+        // If AllowSlowTests() is true and all data is on disk
+        // (vs. first 206 rows -- containing the values we're looking
+        // for -- on disk and the rest in-memory), then the number
+        // of blocks and rows we will scan through can't be easily
+        // determined (as it depends on default cfile block size, the
+        // size of cfile header, and how much data each column takes
+        // up).
+        if (AllowSlowTests()) {
+          check_stats = false;
+        } else {
+          // If AllowSlowTests() is false, then all of the data fits
+          // into a single cfile.
+          expected_blocks_from_disk = 1;
+          expected_rows_from_disk = nrows_;
+        }
+        break;
+    }
+    if (check_stats) {
+      vector<IteratorStats> stats;
+      iter->GetIteratorStats(&stats);
+      BOOST_FOREACH(const IteratorStats& col_stats, stats) {
+        EXPECT_EQ(expected_blocks_from_disk, col_stats.data_blocks_read_from_disk);
+        EXPECT_EQ(expected_rows_from_disk, col_stats.rows_read_from_disk);
+      }
+    }
   }
 
   // Test that a scan with an empty projection and the given spec
@@ -109,6 +148,8 @@ class TabletPushdownTest : public KuduTabletTest,
       ASSERT_EQ("()", result);
     }
   }
+ private:
+  uint64_t nrows_;
 };
 
 TEST_P(TabletPushdownTest, TestPushdownIntKeyRange) {

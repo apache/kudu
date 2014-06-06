@@ -22,6 +22,7 @@ namespace kudu {
 class RowwiseIterator;
 class ScanSpec;
 class Schema;
+struct IteratorStats;
 
 namespace tserver {
 
@@ -145,6 +146,9 @@ class Scanner {
   // the projection schema.
   // See the note about 'set_client_projection_schema' above.
   const Schema* client_projection_schema() const { return client_projection_schema_.get(); }
+
+  // Get per-column stats for each iterator.
+  void GetIteratorStats(std::vector<IteratorStats>* stats) const;
 
  private:
   friend class ScannerManager;
