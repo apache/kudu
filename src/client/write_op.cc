@@ -35,5 +35,21 @@ Insert::Insert(KuduTable *table)
 
 Insert::~Insert() {}
 
+// Update -----------------------------------------------------------------------
+
+Update::Update(KuduTable *table)
+  : WriteOperation(table) {
+}
+
+Update::~Update() {}
+
+// Delete -----------------------------------------------------------------------
+
+Delete::Delete(KuduTable *table)
+  : WriteOperation(table) {
+}
+
+Delete::~Delete() {}
+
 } // namespace client
 } // namespace kudu

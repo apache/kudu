@@ -10,6 +10,7 @@
 
 #include "client/client.h"
 #include "client/meta_cache.h"
+#include "client/write_op.h"
 #include "common/maintenance_manager.h"
 #include "common/row.h"
 #include "common/wire_protocol.h"
@@ -132,6 +133,28 @@ class ClientTest : public KuduTest {
     ASSERT_STATUS_OK(session->Flush()); // and one more for good measure
   }
 
+  void UpdateTestRows(KuduTable* table, int lo, int hi) {
+    shared_ptr<KuduSession> session = client_->NewSession();
+    ASSERT_STATUS_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
+    session->SetTimeoutMillis(5000);
+    for (int i = lo; i < hi; i++) {
+      gscoped_ptr<Update> update(UpdateTestRow(table, i));
+      ASSERT_STATUS_OK(session->Apply(&update));
+    }
+    ASSERT_STATUS_OK(session->Flush()); // and one more for good measure
+  }
+
+  void DeleteTestRows(KuduTable* table, int lo, int hi) {
+    shared_ptr<KuduSession> session = client_->NewSession();
+    ASSERT_STATUS_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
+    session->SetTimeoutMillis(5000);
+    for (int i = lo; i < hi; i++) {
+      gscoped_ptr<Delete> del(DeleteTestRow(table, i));
+      ASSERT_STATUS_OK(session->Apply(&del));
+    }
+    ASSERT_STATUS_OK(session->Flush()); // and one more for good measure
+  }
+
   gscoped_ptr<Insert> BuildTestRow(KuduTable* table, int index) {
     gscoped_ptr<Insert> insert = table->NewInsert();
     PartialRow* row = insert->mutable_row();
@@ -140,6 +163,22 @@ class ClientTest : public KuduTest {
     CHECK_OK(row->SetStringCopy(2, Slice(StringPrintf("hello %d", index))));
     CHECK_OK(row->SetUInt32(3, index * 3));
     return insert.Pass();
+  }
+
+  gscoped_ptr<Update> UpdateTestRow(KuduTable* table, int index) {
+    gscoped_ptr<Update> update = table->NewUpdate();
+    PartialRow* row = update->mutable_row();
+    CHECK_OK(row->SetUInt32(0, index));
+    CHECK_OK(row->SetUInt32(1, index * 2 + 1));
+    CHECK_OK(row->SetStringCopy(2, Slice(StringPrintf("hello again %d", index))));
+    return update.Pass();
+  }
+
+  gscoped_ptr<Delete> DeleteTestRow(KuduTable* table, int index) {
+    gscoped_ptr<Delete> del = table->NewDelete();
+    PartialRow* row = del->mutable_row();
+    CHECK_OK(row->SetUInt32(0, index));
+    return del.Pass();
   }
 
   void DoTestScanWithoutPredicates() {
@@ -335,8 +374,26 @@ TEST_F(ClientTest, TestMasterDown) {
 TEST_F(ClientTest, TestScan) {
   InsertTestRows(client_table_.get(), FLAGS_test_scan_num_rows);
 
+  // Scan after insert
   DoTestScanWithoutPredicates();
   DoTestScanWithStringPredicate();
+  DoTestScanWithKeyPredicate();
+
+  // Scan after update
+  UpdateTestRows(client_table_.get(), 0, FLAGS_test_scan_num_rows);
+  DoTestScanWithKeyPredicate();
+
+  // Scan after delete half
+  DeleteTestRows(client_table_.get(), 0, FLAGS_test_scan_num_rows/2);
+  DoTestScanWithKeyPredicate();
+
+  // Scan after delete all
+  DeleteTestRows(client_table_.get(), FLAGS_test_scan_num_rows/2 + 1,
+                 FLAGS_test_scan_num_rows);
+  DoTestScanWithKeyPredicate();
+
+  // Scan after re-insert
+  InsertTestRows(client_table_.get(), 1);
   DoTestScanWithKeyPredicate();
 }
 
@@ -358,7 +415,7 @@ TEST_F(ClientTest, TestScanMultiTablet) {
   scoped_refptr<KuduTable> table;
   ASSERT_STATUS_OK(client_->OpenTable("TestScanMultiTablet", &table));
 
-  // Insert rows with keys 12, 13, 15, 17, 22, 23, 25, 27...57 into each
+  // Insert rows with keys 12, 13, 15, 17, 22, 23, 25, 27...47 into each
   // tablet, except the first which is empty.
   shared_ptr<KuduSession> session = client_->NewSession();
   ASSERT_STATUS_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
@@ -385,6 +442,72 @@ TEST_F(ClientTest, TestScanMultiTablet) {
   ASSERT_EQ(4, CountRowsFromClient(table.get(), 0, 20));
   ASSERT_EQ(8, CountRowsFromClient(table.get(), 0, 30));
   ASSERT_EQ(6, CountRowsFromClient(table.get(), 14, 30));
+  ASSERT_EQ(0, CountRowsFromClient(table.get(), 30, 30));
+  ASSERT_EQ(0, CountRowsFromClient(table.get(), 50, kNoBound));
+
+  // Update every other row
+  for (int i = 1; i < 5; ++i) {
+    gscoped_ptr<Update> update;
+    update = UpdateTestRow(table.get(), 2 + i * 10);
+    ASSERT_STATUS_OK(session->Apply(&update));
+    update = UpdateTestRow(table.get(), 5 + i * 10);
+    ASSERT_STATUS_OK(session->Apply(&update));
+  }
+  ASSERT_STATUS_OK(session->Flush());
+
+  // Check all counts the same (make sure updates don't change # of rows)
+  ASSERT_EQ(16, CountRowsFromClient(table.get(), kNoBound, kNoBound));
+  ASSERT_EQ(3, CountRowsFromClient(table.get(), kNoBound, 15));
+  ASSERT_EQ(9, CountRowsFromClient(table.get(), 27, kNoBound));
+  ASSERT_EQ(3, CountRowsFromClient(table.get(), 0, 15));
+  ASSERT_EQ(0, CountRowsFromClient(table.get(), 0, 10));
+  ASSERT_EQ(4, CountRowsFromClient(table.get(), 0, 20));
+  ASSERT_EQ(8, CountRowsFromClient(table.get(), 0, 30));
+  ASSERT_EQ(6, CountRowsFromClient(table.get(), 14, 30));
+  ASSERT_EQ(0, CountRowsFromClient(table.get(), 30, 30));
+  ASSERT_EQ(0, CountRowsFromClient(table.get(), 50, kNoBound));
+
+  // Delete half the rows
+  for (int i = 1; i < 5; ++i) {
+    gscoped_ptr<Delete> del;
+    del = DeleteTestRow(table.get(), 5 + i*10);
+    ASSERT_STATUS_OK(session->Apply(&del));
+    del = DeleteTestRow(table.get(), 7 + i*10);
+    ASSERT_STATUS_OK(session->Apply(&del));
+  }
+  ASSERT_STATUS_OK(session->Flush());
+
+  // Check counts changed accordingly
+  ASSERT_EQ(8, CountRowsFromClient(table.get(), kNoBound, kNoBound));
+  ASSERT_EQ(2, CountRowsFromClient(table.get(), kNoBound, 15));
+  ASSERT_EQ(4, CountRowsFromClient(table.get(), 27, kNoBound));
+  ASSERT_EQ(2, CountRowsFromClient(table.get(), 0, 15));
+  ASSERT_EQ(0, CountRowsFromClient(table.get(), 0, 10));
+  ASSERT_EQ(2, CountRowsFromClient(table.get(), 0, 20));
+  ASSERT_EQ(4, CountRowsFromClient(table.get(), 0, 30));
+  ASSERT_EQ(2, CountRowsFromClient(table.get(), 14, 30));
+  ASSERT_EQ(0, CountRowsFromClient(table.get(), 30, 30));
+  ASSERT_EQ(0, CountRowsFromClient(table.get(), 50, kNoBound));
+
+  // Delete rest of rows
+  for (int i = 1; i < 5; ++i) {
+    gscoped_ptr<Delete> del;
+    del = DeleteTestRow(table.get(), 2 + i*10);
+    ASSERT_STATUS_OK(session->Apply(&del));
+    del = DeleteTestRow(table.get(), 3 + i*10);
+    ASSERT_STATUS_OK(session->Apply(&del));
+  }
+  ASSERT_STATUS_OK(session->Flush());
+
+  // Check counts changed accordingly
+  ASSERT_EQ(0, CountRowsFromClient(table.get(), kNoBound, kNoBound));
+  ASSERT_EQ(0, CountRowsFromClient(table.get(), kNoBound, 15));
+  ASSERT_EQ(0, CountRowsFromClient(table.get(), 27, kNoBound));
+  ASSERT_EQ(0, CountRowsFromClient(table.get(), 0, 15));
+  ASSERT_EQ(0, CountRowsFromClient(table.get(), 0, 10));
+  ASSERT_EQ(0, CountRowsFromClient(table.get(), 0, 20));
+  ASSERT_EQ(0, CountRowsFromClient(table.get(), 0, 30));
+  ASSERT_EQ(0, CountRowsFromClient(table.get(), 14, 30));
   ASSERT_EQ(0, CountRowsFromClient(table.get(), 30, 30));
   ASSERT_EQ(0, CountRowsFromClient(table.get(), 50, kNoBound));
 }
@@ -596,6 +719,24 @@ static Status ApplyInsertToSession(KuduSession* session,
   return session->Apply(&insert);
 }
 
+static Status ApplyUpdateToSession(KuduSession* session,
+                                   const scoped_refptr<KuduTable>& table,
+                                   int row_key,
+                                   int int_val) {
+  gscoped_ptr<Update> update = table->NewUpdate();
+  RETURN_NOT_OK(update->mutable_row()->SetUInt32("key", row_key));
+  RETURN_NOT_OK(update->mutable_row()->SetUInt32("int_val", int_val));
+  return session->Apply(&update);
+}
+
+static Status ApplyDeleteToSession(KuduSession* session,
+                                   const scoped_refptr<KuduTable>& table,
+                                   int row_key) {
+  gscoped_ptr<Delete> del = table->NewDelete();
+  RETURN_NOT_OK(del->mutable_row()->SetUInt32("key", row_key));
+  return session->Apply(&del);
+}
+
 // Test which does an async flush and then drops the reference
 // to the Session. This should still call the callback.
 TEST_F(ClientTest, TestAsyncFlushResponseAfterSessionDropped) {
@@ -777,6 +918,115 @@ TEST_F(ClientTest, TestApplyToSessionWithoutFlushing_OpsBuffered) {
   DoApplyWithoutFlushTest(10000);
 }
 
+// Test that update updates and delete deletes with expected use
+TEST_F(ClientTest, TestMutationsWork) {
+  shared_ptr<KuduSession> session = client_->NewSession();
+  ASSERT_STATUS_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
+  ASSERT_STATUS_OK(ApplyInsertToSession(session.get(), client_table_, 1, 1, "original row"));
+  ASSERT_STATUS_OK(session->Flush());
+
+  ASSERT_STATUS_OK(ApplyUpdateToSession(session.get(), client_table_, 1, 2));
+  ASSERT_STATUS_OK(session->Flush());
+  vector<string> rows;
+  ScanRowsToStrings(client_table_.get(), &rows);
+  ASSERT_EQ(1, rows.size());
+  ASSERT_EQ("(uint32 key=1, uint32 int_val=2, string string_val=original row, "
+            "uint32 non_null_with_default=12345)", rows[0]);
+  rows.clear();
+
+  ASSERT_STATUS_OK(ApplyDeleteToSession(session.get(), client_table_, 1));
+  ASSERT_STATUS_OK(session->Flush());
+  ScanRowsToStrings(client_table_.get(), &rows);
+  ASSERT_EQ(0, rows.size());
+}
+
+TEST_F(ClientTest, TestMutateDeletedRow) {
+  vector<string> rows;
+  shared_ptr<KuduSession> session = client_->NewSession();
+  ASSERT_STATUS_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
+  ASSERT_STATUS_OK(ApplyInsertToSession(session.get(), client_table_, 1, 1, "original row"));
+  ASSERT_STATUS_OK(session->Flush());
+  ASSERT_STATUS_OK(ApplyDeleteToSession(session.get(), client_table_, 1));
+  ASSERT_STATUS_OK(session->Flush());
+  ScanRowsToStrings(client_table_.get(), &rows);
+  ASSERT_EQ(0, rows.size());
+
+  // Attempt update deleted row
+  ASSERT_STATUS_OK(ApplyUpdateToSession(session.get(), client_table_, 1, 2));
+  Status s = session->Flush();
+  ASSERT_FALSE(s.ok());
+  ASSERT_STR_CONTAINS(s.ToString(), "Some errors occurred");
+  // verify error
+  ASSERT_EQ(1, session->CountPendingErrors());
+  vector<Error*> errors;
+  ElementDeleter d(&errors);
+  bool overflow;
+  session->GetPendingErrors(&errors, &overflow);
+  ASSERT_FALSE(overflow);
+  ASSERT_EQ(1, errors.size());
+  ASSERT_EQ(errors[0]->failed_op().ToString(),
+            "UPDATE uint32 key=1, uint32 int_val=2");
+  ScanRowsToStrings(client_table_.get(), &rows);
+  ASSERT_EQ(0, rows.size());
+
+  // Attempt delete deleted row
+  ASSERT_STATUS_OK(ApplyDeleteToSession(session.get(), client_table_, 1));
+  s = session->Flush();
+  ASSERT_FALSE(s.ok());
+  ASSERT_STR_CONTAINS(s.ToString(), "Some errors occurred");
+  // verify error
+  ASSERT_EQ(1, session->CountPendingErrors());
+  vector<Error*> errors2;
+  ElementDeleter d2(&errors2);
+  session->GetPendingErrors(&errors2, &overflow);
+  ASSERT_FALSE(overflow);
+  ASSERT_EQ(1, errors2.size());
+  ASSERT_EQ(errors2[0]->failed_op().ToString(),
+            "DELETE uint32 key=1");
+  ScanRowsToStrings(client_table_.get(), &rows);
+  ASSERT_EQ(0, rows.size());
+}
+
+TEST_F(ClientTest, TestMutateNonexistentRow) {
+  vector<string> rows;
+  shared_ptr<KuduSession> session = client_->NewSession();
+  ASSERT_STATUS_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
+
+  // Attempt update nonexistent row
+  ASSERT_STATUS_OK(ApplyUpdateToSession(session.get(), client_table_, 1, 2));
+  Status s = session->Flush();
+  ASSERT_FALSE(s.ok());
+  ASSERT_STR_CONTAINS(s.ToString(), "Some errors occurred");
+  // verify error
+  ASSERT_EQ(1, session->CountPendingErrors());
+  vector<Error*> errors;
+  ElementDeleter d(&errors);
+  bool overflow;
+  session->GetPendingErrors(&errors, &overflow);
+  ASSERT_FALSE(overflow);
+  ASSERT_EQ(1, errors.size());
+  ASSERT_EQ(errors[0]->failed_op().ToString(),
+            "UPDATE uint32 key=1, uint32 int_val=2");
+  ScanRowsToStrings(client_table_.get(), &rows);
+  ASSERT_EQ(0, rows.size());
+
+  // Attempt delete nonexistent row
+  ASSERT_STATUS_OK(ApplyDeleteToSession(session.get(), client_table_, 1));
+  s = session->Flush();
+  ASSERT_FALSE(s.ok());
+  ASSERT_STR_CONTAINS(s.ToString(), "Some errors occurred");
+  // verify error
+  ASSERT_EQ(1, session->CountPendingErrors());
+  vector<Error*> errors2;
+  ElementDeleter d2(&errors2);
+  session->GetPendingErrors(&errors2, &overflow);
+  ASSERT_FALSE(overflow);
+  ASSERT_EQ(1, errors2.size());
+  ASSERT_EQ(errors2[0]->failed_op().ToString(),
+            "DELETE uint32 key=1");
+  ScanRowsToStrings(client_table_.get(), &rows);
+  ASSERT_EQ(0, rows.size());
+}
 
 TEST_F(ClientTest, TestWriteWithBadColumn) {
   scoped_refptr<KuduTable> table;
@@ -807,10 +1057,8 @@ TEST_F(ClientTest, TestWriteWithBadSchema) {
   // Try to do a write with the bad schema.
   shared_ptr<KuduSession> session = client_->NewSession();
   ASSERT_STATUS_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
-  gscoped_ptr<Insert> insert = table->NewInsert();
-  ASSERT_STATUS_OK(insert->mutable_row()->SetUInt32("key", 12345));
-  ASSERT_STATUS_OK(insert->mutable_row()->SetUInt32("int_val", 12345));
-  ASSERT_STATUS_OK(session->Apply(&insert));
+  ASSERT_STATUS_OK(ApplyInsertToSession(session.get(), client_table_,
+                                        12345, 12345, "x"));
   Status s = session->Flush();
   ASSERT_FALSE(s.ok());
 
@@ -826,7 +1074,7 @@ TEST_F(ClientTest, TestWriteWithBadSchema) {
             "Invalid argument: Client provided column int_val[uint32 NOT NULL] "
             "not present in tablet");
   ASSERT_EQ(errors[0]->failed_op().ToString(),
-            "INSERT uint32 key=12345, uint32 int_val=12345");
+            "INSERT uint32 key=12345, uint32 int_val=12345, string string_val=x");
 }
 
 TEST_F(ClientTest, TestBasicAlterOperations) {
@@ -1065,6 +1313,152 @@ TEST_F(ClientTest, TestReplicatedMultiTabletTableFailover) {
     }
   }
   ASSERT_EQ(1, rt->GetNumFailedReplicas());
+}
+
+// Randomized mutations accuracy testing
+TEST_F(ClientTest, TestRandomWriteOperation) {
+  shared_ptr<KuduSession> session = client_->NewSession();
+  session->SetTimeoutMillis(5000);
+  ASSERT_STATUS_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
+  int row[FLAGS_test_scan_num_rows]; // -1 indicates empty
+  int nrows;
+  KuduScanner scanner(client_table_.get());
+
+  // First half-fill
+  for (int i = 0; i < FLAGS_test_scan_num_rows/2; ++i) {
+    ASSERT_STATUS_OK(ApplyInsertToSession(session.get(), client_table_, i, i, ""));
+    row[i] = i;
+  }
+  for (int i = FLAGS_test_scan_num_rows/2; i < FLAGS_test_scan_num_rows; ++i) {
+    row[i] = -1;
+  }
+  nrows = FLAGS_test_scan_num_rows/2;
+
+  // Randomized testing
+  unordered_set<int> changed; // TODO: currently delete/insert of same row is not
+                              // supported in the same batch. Need to keep track of recents.
+  LOG(INFO) << "Randomized mutations testing.";
+  SeedRandom();
+  for (int i = 0; i <= 1000; ++i) {
+    int change = rand() % FLAGS_test_scan_num_rows;
+    // Insert if empty
+    while (changed.find(change) != changed.end())
+      change = (change + 1) % FLAGS_test_scan_num_rows; // TODO: remove (see above)
+    if (row[change] == -1) {
+      ASSERT_STATUS_OK(ApplyInsertToSession(session.get(),
+                                            client_table_,
+                                            change,
+                                            change,
+                                            ""));
+      row[change] = change;
+      ++nrows;
+      VLOG(1) << "Insert " << change;
+    } else {
+      // Update or delete otherwise
+      int update = rand() & 1;
+      if (update) {
+        ASSERT_STATUS_OK(ApplyUpdateToSession(session.get(),
+                                              client_table_,
+                                              change,
+                                              ++row[change]));
+        VLOG(1) << "Update " << change;
+      } else {
+        ASSERT_STATUS_OK(ApplyDeleteToSession(session.get(),
+                                              client_table_,
+                                              change));
+        row[change] = -1;
+        --nrows;
+        changed.insert(change); // TODO: remove (see above)
+        VLOG(1) << "Delete " << change;
+      }
+    }
+    // Test correctness every so often
+    if (i % 50 == 0) {
+      LOG(INFO) << "Correctness test " << i;
+      ASSERT_STATUS_OK(session->Flush());
+      scanner.Open();
+      int readrows = 0;
+      vector<const uint8_t*> rows;
+      if (nrows) {
+        ASSERT_TRUE(scanner.HasMoreRows());
+      } else {
+        ASSERT_FALSE(scanner.HasMoreRows());
+      }
+
+      while (scanner.HasMoreRows()) {
+        ASSERT_STATUS_OK(scanner.NextBatch(&rows));
+        BOOST_FOREACH(const uint8_t* row_ptr, rows) {
+          ConstContiguousRow crow(schema_, row_ptr);
+          const uint32_t key  = *schema_.ExtractColumnFromRow<UINT32>(crow, 0);
+          const uint32_t val  = *schema_.ExtractColumnFromRow<UINT32>(crow, 1);
+          const string strval = schema_.ExtractColumnFromRow<STRING>(crow,  2)->ToString();
+          ASSERT_NE(row[key], -1) << "Deleted key found in table in table " << key;
+          ASSERT_EQ(row[key], val) << "Incorrect int value for key " <<  key;
+          ASSERT_EQ(strval.size(), 0) << "Incorrect string value for key " << key;
+          ++readrows;
+        }
+        rows.clear();
+      }
+      ASSERT_EQ(readrows, nrows);
+      scanner.Close();
+      LOG(INFO) << "...complete";
+      changed.clear(); // TODO: remove (see above)
+    }
+  }
+}
+
+// Test whether a batch can handle several mutations in a batch
+TEST_F(ClientTest, TestSeveralRowMutatesPerBatch) {
+  shared_ptr<KuduSession> session = client_->NewSession();
+  session->SetTimeoutMillis(5000);
+  ASSERT_STATUS_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
+
+  // Test insert/update
+  ASSERT_STATUS_OK(ApplyInsertToSession(session.get(), client_table_, 1, 1, ""));
+  ASSERT_STATUS_OK(ApplyUpdateToSession(session.get(), client_table_, 1, 2));
+  ASSERT_STATUS_OK(session->Flush());
+  vector<string> rows;
+  ScanRowsToStrings(client_table_.get(), &rows);
+  ASSERT_EQ(1, rows.size());
+  ASSERT_EQ("(uint32 key=1, uint32 int_val=2, string string_val=, "
+            "uint32 non_null_with_default=12345)", rows[0]);
+  rows.clear();
+
+
+  // Test insert/delete
+  ASSERT_STATUS_OK(ApplyInsertToSession(session.get(), client_table_, 2, 1, ""));
+  ASSERT_STATUS_OK(ApplyDeleteToSession(session.get(), client_table_, 2));
+  ASSERT_STATUS_OK(session->Flush());
+  ScanRowsToStrings(client_table_.get(), &rows);
+  ASSERT_EQ(1, rows.size());
+  ASSERT_EQ("(uint32 key=1, uint32 int_val=2, string string_val=, "
+            "uint32 non_null_with_default=12345)", rows[0]);
+  rows.clear();
+
+  // Test update/delete
+  ASSERT_STATUS_OK(ApplyUpdateToSession(session.get(), client_table_, 1, 1));
+  ASSERT_STATUS_OK(ApplyDeleteToSession(session.get(), client_table_, 1));
+  ASSERT_STATUS_OK(session->Flush());
+  ScanRowsToStrings(client_table_.get(), &rows);
+  ASSERT_EQ(0, rows.size());
+
+  // Test delete/insert
+  ASSERT_STATUS_OK(ApplyInsertToSession(session.get(), client_table_, 1, 1, ""));
+  ASSERT_STATUS_OK(session->Flush());
+  ScanRowsToStrings(client_table_.get(), &rows);
+  ASSERT_EQ(1, rows.size());
+  ASSERT_EQ("(uint32 key=1, uint32 int_val=1, string string_val=, "
+            "uint32 non_null_with_default=12345)", rows[0]);
+  rows.clear();
+  /* TODO: enable commented-out test below for delete/insert sequence
+  ASSERT_STATUS_OK(ApplyDeleteToSession(session.get(), client_table_, 1));
+  ASSERT_STATUS_OK(ApplyInsertToSession(session.get(), client_table_, 1, 2, ""));
+  ASSERT_STATUS_OK(session->Flush());
+  ScanRowsToStrings(client_table_.get(), &rows);
+  ASSERT_EQ(1, rows.size());
+  ASSERT_EQ("(uint32 key=1, uint32 int_val=2, string string_val=, "
+            "uint32 non_null_with_default=12345)", rows[0]);
+            rows.clear(); */
 }
 
 // Tests that master permits are properly released after a whole bunch of

@@ -264,8 +264,10 @@ class KuduTable : public base::RefCountedThreadSafe<KuduTable> {
 
   const Schema& schema() const { return schema_; }
 
-  // Create a new insertion for this table.
+  // Create a new write operation for this table.
   gscoped_ptr<Insert> NewInsert();
+  gscoped_ptr<Update> NewUpdate();
+  gscoped_ptr<Delete> NewDelete();
 
   KuduClient *client() const { return client_.get(); }
 
@@ -515,7 +517,8 @@ class KuduSession : public std::tr1::enable_shared_from_this<KuduSession> {
   //
   // This is thread safe.
   Status Apply(gscoped_ptr<Insert>* write_op) WARN_UNUSED_RESULT;
-  // TODO: Add Update, Delete versions. See KUDU-264.
+  Status Apply(gscoped_ptr<Update>* write_op) WARN_UNUSED_RESULT;
+  Status Apply(gscoped_ptr<Delete>* write_op) WARN_UNUSED_RESULT;
 
   // Similar to the above, except never blocks. Even in the flush modes that return
   // immediately, StatusCallback is triggered with the result. The callback may
@@ -523,7 +526,8 @@ class KuduSession : public std::tr1::enable_shared_from_this<KuduSession> {
   // the same thread which calls ApplyAsync().
   // TODO: not yet implemented.
   void ApplyAsync(gscoped_ptr<Insert>* write_op, StatusCallback cb);
-  // TODO: Add Update, Delete versions. See KUDU-264.
+  void ApplyAsync(gscoped_ptr<Update>* write_op, StatusCallback cb);
+  void ApplyAsync(gscoped_ptr<Delete>* write_op, StatusCallback cb);
 
   // Flush any pending writes.
   //

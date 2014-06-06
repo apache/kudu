@@ -506,9 +506,18 @@ gscoped_ptr<Insert> KuduTable::NewInsert() {
   return gscoped_ptr<Insert>(new Insert(this));
 }
 
+gscoped_ptr<Update> KuduTable::NewUpdate() {
+  return gscoped_ptr<Update>(new Update(this));
+}
+
+gscoped_ptr<Delete> KuduTable::NewDelete() {
+  return gscoped_ptr<Delete>(new Delete(this));
+}
+
 ////////////////////////////////////////////////////////////
 // Error
 ////////////////////////////////////////////////////////////
+
 Error::Error(gscoped_ptr<WriteOperation> failed_op,
              const Status& status) :
   failed_op_(failed_op.Pass()),
@@ -617,7 +626,6 @@ bool KuduSession::HasPendingOperations() const {
   return false;
 }
 
-// Template function specification for KuduSession::Apply on derived
 // WriteOperation classes
 Status KuduSession::Apply(gscoped_ptr<Insert>* scoped_write_op) {
   Status s = Apply(implicit_cast<WriteOperation*>(scoped_write_op->get()));
@@ -627,7 +635,24 @@ Status KuduSession::Apply(gscoped_ptr<Insert>* scoped_write_op) {
   return s;
 }
 
-// TODO add Delete and Update classes. See KUDU-264
+// WriteOperation classes
+Status KuduSession::Apply(gscoped_ptr<Update>* scoped_write_op) {
+  Status s = Apply(implicit_cast<WriteOperation*>(scoped_write_op->get()));
+  if (s.ok()) {
+    ignore_result<>(scoped_write_op->release());
+  }
+  return s;
+}
+
+// Template function specification for KuduSession::Apply on derived
+// WriteOperation classes
+Status KuduSession::Apply(gscoped_ptr<Delete>* scoped_write_op) {
+  Status s = Apply(implicit_cast<WriteOperation*>(scoped_write_op->get()));
+  if (s.ok()) {
+    ignore_result<>(scoped_write_op->release());
+  }
+  return s;
+}
 
 // Actual apply method, with WriteOperation pointer
 // Takes ownership (deletes) iff operation succeeds

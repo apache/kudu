@@ -50,6 +50,7 @@ class WriteOperation {
 // A single row insert to be sent to the cluster.
 // Row operation is defined by what's in the PartialRow instance here.
 // Use mutable_row() to change the row being inserted
+// An insert requires all key columns from the table schema to be defined.
 class Insert : public WriteOperation {
  public:
   virtual ~Insert();
@@ -62,6 +63,45 @@ class Insert : public WriteOperation {
  private:
   friend class KuduTable;
   explicit Insert(KuduTable* table);
+};
+
+
+// A single row update to be sent to the cluster.
+// Row operation is defined by what's in the PartialRow instance here.
+// Use mutable_row() to change the row being updated.
+// An update requires the key columns and at least one other column
+// in the schema to be defined.
+class Update : public WriteOperation {
+ public:
+  virtual ~Update();
+
+  virtual RowOperationsPB::Type RowOperationType() const {
+    return RowOperationsPB::UPDATE;
+  }
+  virtual std::string ToString() const { return "UPDATE " + row_.ToString(); }
+
+ private:
+  friend class KuduTable;
+  explicit Update(KuduTable* table);
+};
+
+
+// A single row delete to be sent to the cluster.
+// Row operation is defined by what's in the PartialRow instance here.
+// Use mutable_row() to change the row being deleted
+// A delete requires just the key columns to be defined.
+class Delete : public WriteOperation {
+ public:
+  virtual ~Delete();
+
+  virtual RowOperationsPB::Type RowOperationType() const {
+    return RowOperationsPB::DELETE;
+  }
+  virtual std::string ToString() const { return "DELETE " + row_.ToString(); }
+
+ private:
+  friend class KuduTable;
+  explicit Delete(KuduTable* table);
 };
 
 } // namespace client
