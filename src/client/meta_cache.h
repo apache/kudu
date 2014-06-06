@@ -117,8 +117,8 @@ class RemoteTablet : public base::RefCountedThreadSafe<RemoteTablet> {
                const google::protobuf::RepeatedPtrField
                  <master::TabletLocationsPB_ReplicaPB>& replicas);
 
-  // Mark the replica hosted by 'ts' as failed. It will not be returned in
-  // future cache lookups.
+  // Mark any replicas of this tablet hosted by 'ts' as failed. They will
+  // not be returned in future cache lookups.
   void MarkReplicaFailed(RemoteTabletServer *ts);
 
   // Return the number of replicas for this tablet that have failed.
@@ -198,6 +198,10 @@ class MetaCache {
   void LookupTabletByID(const std::string& tablet_id,
                         scoped_refptr<RemoteTablet>* remote_tablet);
 
+  // Mark any replicas of any tablets hosted by 'ts' as failed. They will
+  // not be returned in future cache lookups.
+  void MarkTSFailed(RemoteTabletServer* ts);
+
  private:
   // Lookup the given tablet by key, only consulting local information.
   // Returns true and sets *remote_tablet if successful.
@@ -244,7 +248,9 @@ class MetaCache {
   // Cache of tablets, keyed by tablet ID.
   //
   // Protected by lock_
-  std::tr1::unordered_map<std::string, scoped_refptr<RemoteTablet> > tablets_by_id_;
+  typedef std::tr1::unordered_map<std::string, scoped_refptr<RemoteTablet> > TabletMap;
+  TabletMap tablets_by_id_;
+
   DISALLOW_COPY_AND_ASSIGN(MetaCache);
 };
 

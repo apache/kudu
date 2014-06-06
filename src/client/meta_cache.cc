@@ -148,7 +148,6 @@ void RemoteTablet::MarkReplicaFailed(RemoteTabletServer *ts) {
   BOOST_FOREACH(RemoteReplica& rep, replicas_) {
     if (rep.ts == ts) {
       rep.failed = true;
-      break;
     }
   }
 }
@@ -373,6 +372,15 @@ void MetaCache::LookupTabletByKey(const KuduTable* table,
 void MetaCache::LookupTabletByID(const std::string& tablet_id,
                                  scoped_refptr<RemoteTablet>* remote_tablet) {
   *remote_tablet = FindOrDie(tablets_by_id_, tablet_id);
+}
+
+void MetaCache::MarkTSFailed(RemoteTabletServer* ts) {
+  boost::shared_lock<rw_spinlock> l(lock_);
+
+  // TODO: replace with a ts->tablet multimap for faster lookup?
+  BOOST_FOREACH(const TabletMap::value_type& tablet, tablets_by_id_) {
+    tablet.second->MarkReplicaFailed(ts);
+  }
 }
 
 } // namespace client

@@ -863,8 +863,9 @@ Status KuduScanner::OpenTablet(const Slice& key) {
       break;
     }
 
-    // On error, mark this replica as failed and try another replica.
-    remote_->MarkReplicaFailed(ts);
+    // On error, mark any replicas hosted by this TS as failed, then try
+    // another replica.
+    table_->client_->meta_cache_->MarkTSFailed(ts);
   }
   RETURN_NOT_OK(CheckForErrors());
 
