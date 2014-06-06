@@ -435,7 +435,7 @@ TEST_F(ClientTest, TestScanEmptyProjection) {
 // Test a scan where we have a predicate on a key column that is not
 // in the projection.
 TEST_F(ClientTest, TestScanPredicateKeyColNotProjected) {
-  InsertTestRows(FLAGS_test_scan_num_rows);
+  InsertTestRows(client_table_.get(), FLAGS_test_scan_num_rows);
   KuduScanner scanner(client_table_.get());
   Schema no_key_projection(boost::assign::list_of
                            (schema_.column(1)), 0);
@@ -471,7 +471,7 @@ TEST_F(ClientTest, TestScanPredicateKeyColNotProjected) {
 // Test a scan where we have a predicate on a non-key column that is
 // not in the projection.
 TEST_F(ClientTest, TestScanPredicateNonKeyColNotProjected) {
-  InsertTestRows(FLAGS_test_scan_num_rows);
+  InsertTestRows(client_table_.get(), FLAGS_test_scan_num_rows);
   KuduScanner scanner(client_table_.get());
   Schema key_projection = schema_.CreateKeyProjection();
 
