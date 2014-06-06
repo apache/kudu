@@ -10,7 +10,7 @@
 ME=$(dirname $BASH_SOURCE)
 ROOT=$(readlink -f $ME/..)
 
-TEST_OUT=$ROOT/build/test-logs/
+TEST_OUT=$ROOT/build/test-logs
 mkdir -p $TEST_OUT
 TEST_NAME=$(basename $1)
 
@@ -33,8 +33,13 @@ fi
 
 export TSAN_OPTIONS="$TSAN_OPTIONS suppressions=$ME/tsan-suppressions.txt history_size=7"
 
+# Set a 15-minute timeout for tests run via 'make test'.
+# This keeps our jenkins builds from hanging in the case that there's
+# a deadlock or anything.
+KUDU_TEST_TIMEOUT=${KUDU_TEST_TIMEOUT:-900}
+
 echo Running $TEST_NAME, redirecting output into $OUT
-"$@"  2>&1 | $ROOT/thirdparty/asan_symbolize.py | c++filt | $pipe_cmd > $OUT
+"$@" --test_timeout_after $KUDU_TEST_TIMEOUT 2>&1 | $ROOT/thirdparty/asan_symbolize.py | c++filt | $pipe_cmd > $OUT
 
 # TSAN doesn't always exit with a non-zero exit code due to a bug:
 # mutex errors don't get reported through the normal error reporting infrastructure.

@@ -217,11 +217,6 @@ include_directories(src)
 # Testing
 ############################################################
 
-# Set a 15-minute timeout for tests run via 'make test'.
-# This keeps our jenkins builds from hanging in the case that there's
-# a deadlock or anything.
-set(KUDU_TEST_TIMEOUT 900)
-
 # Add a new test case. Additional arguments after the
 # name of the test will be passed to SET_TESTS_PROPERTIES
 function(ADD_KUDU_TEST REL_TEST_BINARY)
@@ -231,9 +226,9 @@ function(ADD_KUDU_TEST REL_TEST_BINARY)
   add_executable(${TEST_BINARY} "${REL_TEST_BINARY}.cc")
   add_test(${TEST_BINARY} ${CMAKE_SOURCE_DIR}/build-support/run-test.sh
     "${BUILD_OUTPUT_ROOT_DIRECTORY}/${TEST_BINARY}")
-  set_tests_properties(${TEST_BINARY} PROPERTIES
-    TIMEOUT ${KUDU_TEST_TIMEOUT}
-    ${ARGN})
+  if(ARGN)
+    set_tests_properties(${TEST_BINARY} PROPERTIES ${ARGN})
+  endif()
   target_link_libraries(${TEST_BINARY} ${KUDU_TEST_LINK_LIBS})
 endfunction()
 

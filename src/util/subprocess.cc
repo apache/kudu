@@ -10,6 +10,7 @@
 #include <vector>
 #include <signal.h>
 #include <unistd.h>
+#include <sys/prctl.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 
@@ -208,6 +209,11 @@ Status Subprocess::Start() {
     }
 
     CloseNonStandardFDs();
+
+    // TODO: prctl(PR_SET_PDEATHSIG) is Linux-specific, look into portable ways
+    // to prevent orphans when parent is killed.
+    prctl(PR_SET_PDEATHSIG, SIGINT);
+
     execvp(program_.c_str(), &argv_ptrs[0]);
     PLOG(WARNING) << "Couldn't exec";
     _exit(errno);
