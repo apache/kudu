@@ -2,8 +2,8 @@
 #ifndef KUDU_CLIENT_CLIENT_H
 #define KUDU_CLIENT_CLIENT_H
 
+#include "client/write_op.h"
 #include "common/encoded_key.h"
-#include "common/partial_row.h"
 #include "common/predicate_encoder.h"
 #include "common/scan_predicate.h"
 #include "common/scan_spec.h"
@@ -47,10 +47,11 @@ class KuduTable;
 class MetaCache;
 class RemoteTablet;
 class RemoteTabletServer;
+class WriteOperation;
 
 namespace internal {
-class Batcher;
 class ErrorCollector;
+class Batcher;
 } // namespace internal
 
 struct KuduClientOptions {
@@ -271,7 +272,7 @@ class KuduTable : public base::RefCountedThreadSafe<KuduTable> {
  private:
   friend class KuduClient;
   friend class KuduScanner;
-  friend class Insert;
+  friend class WriteOperation;
   friend class base::RefCountedThreadSafe<KuduTable>;
 
   KuduTable(const std::tr1::shared_ptr<KuduClient>& client,
@@ -291,35 +292,6 @@ class KuduTable : public base::RefCountedThreadSafe<KuduTable> {
   const Schema schema_;
 
   DISALLOW_COPY_AND_ASSIGN(KuduTable);
-};
-
-// A single row insert to be sent to the cluster.
-// See PartialRow API for field setters, etc.
-class Insert {
- public:
-  virtual ~Insert();
-
-  const KuduTable* table() const { return table_.get(); }
-
-  PartialRow* mutable_row() { return &row_; }
-  const PartialRow& row() const { return row_; }
-
-  // Create and encode the key for this insert.
-  //
-  // Caller takes ownership of the allocated memory.
-  gscoped_ptr<EncodedKey> CreateKey();
-
-  std::string ToString() const {
-    return "INSERT " + row_.ToString();
-  }
-
- private:
-  friend class KuduTable;
-  explicit Insert(KuduTable* table);
-  scoped_refptr<KuduTable> const table_;
-  PartialRow row_;
-
-  DISALLOW_COPY_AND_ASSIGN(Insert);
 };
 
 // Alter Table helper
@@ -372,13 +344,13 @@ class Error {
   }
 
   // Return the operation which failed.
-  const Insert& failed_op() const {
+  const WriteOperation& failed_op() const {
     return *failed_op_;
   }
 
   // Release the operation that failed. The caller takes ownership. Must only
   // be called once.
-  gscoped_ptr<Insert> release_failed_op() {
+  gscoped_ptr<WriteOperation> release_failed_op() {
     CHECK_NOTNULL(failed_op_.get());
     return failed_op_.Pass();
   }
@@ -397,10 +369,10 @@ class Error {
   }
 
  private:
-  Error(gscoped_ptr<Insert> failed_op, const Status& error);
+  Error(gscoped_ptr<WriteOperation> failed_op, const Status& error);
   friend class internal::Batcher;
 
-  gscoped_ptr<Insert> failed_op_;
+  gscoped_ptr<WriteOperation> failed_op_;
   Status status_;
 
   DISALLOW_COPY_AND_ASSIGN(Error);
@@ -529,10 +501,7 @@ class KuduSession : public std::tr1::enable_shared_from_this<KuduSession> {
   // TODO: add "doAs" ability here for proxy servers to be able to act on behalf of
   // other users, assuming access rights.
 
-  // Insert the given row.
-  // TODO: will probably make Insert derive from some "WriteOperation" class,
-  // and have Apply take any WriteOperation, rather than being insert-specific.
-  // Just supporting inserts for now to keep reviews smaller.
+  // Apply the write operation
   //
   // If this returns an OK status, then the session has taken ownership of the
   // pointer and the gscoped_ptr will be reset to NULL. On error, the gscoped_ptr
@@ -545,14 +514,16 @@ class KuduSession : public std::tr1::enable_shared_from_this<KuduSession> {
   // mode.
   //
   // This is thread safe.
-  Status Apply(gscoped_ptr<Insert>* insert) WARN_UNUSED_RESULT;
+  Status Apply(gscoped_ptr<Insert>* write_op) WARN_UNUSED_RESULT;
+  // TODO: Add Update, Delete versions. See KUDU-264.
 
   // Similar to the above, except never blocks. Even in the flush modes that return
   // immediately, StatusCallback is triggered with the result. The callback may
   // be called by a reactor thread, or in some cases may be called inline by
   // the same thread which calls ApplyAsync().
   // TODO: not yet implemented.
-  void ApplyAsync(gscoped_ptr<Insert>* insert, StatusCallback cb);
+  void ApplyAsync(gscoped_ptr<Insert>* write_op, StatusCallback cb);
+  // TODO: Add Update, Delete versions. See KUDU-264.
 
   // Flush any pending writes.
   //
@@ -648,6 +619,9 @@ class KuduSession : public std::tr1::enable_shared_from_this<KuduSession> {
   // Swap in a new Batcher instance, returning the old one in '*old_batcher', unless it is
   // NULL.
   void NewBatcher(scoped_refptr<internal::Batcher>* old_batcher);
+
+  // Base class call for Apply's templates
+  Status Apply(WriteOperation* write_op) WARN_UNUSED_RESULT;
 
   // The client that this session is associated with.
   const std::tr1::shared_ptr<KuduClient> client_;

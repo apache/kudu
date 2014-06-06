@@ -5,6 +5,7 @@ set(CLIENT_SRCS
   client.cc
   error_collector.cc
   meta_cache.cc
+  write_op.cc
 )
 
 add_library(client ${CLIENT_SRCS})

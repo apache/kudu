@@ -14,6 +14,7 @@
 #include "client/client.h"
 #include "client/error_collector.h"
 #include "client/meta_cache.h"
+#include "client/write_op.h"
 #include "common/row_operations.h"
 #include "common/wire_protocol.h"
 #include "gutil/map-util.h"
@@ -122,9 +123,7 @@ struct InFlightOp {
   State state;
 
   // The actual operation.
-  // TODO: once other operation batching is supported, this will be a superclass
-  // reference.
-  gscoped_ptr<Insert> insert;
+  gscoped_ptr<WriteOperation> write_op;
 
   gscoped_ptr<EncodedKey> key;
 
@@ -133,8 +132,8 @@ struct InFlightOp {
   scoped_refptr<RemoteTablet> tablet;
 
   string ToString() const {
-    return strings::Substitute("op[state=$0, insert=$1]",
-                               state, insert->ToString());
+    return strings::Substitute("op[state=$0, write_op=$1]",
+                               state, write_op->ToString());
   }
 };
 
@@ -354,22 +353,22 @@ void Batcher::FlushAsync(const StatusCallback& cb) {
   }
 }
 
-Status Batcher::Add(gscoped_ptr<Insert> insert) {
+Status Batcher::Add(gscoped_ptr<WriteOperation> write_op) {
   // As soon as we get the op, start looking up where it belongs,
   // so that when the user calls Flush, we are ready to go.
   InFlightOp* op = new InFlightOp;
-  op->insert.reset(insert.release());
+  op->write_op.reset(write_op.release());
   op->state = InFlightOp::kLookingUpTablet;
-  op->key = op->insert->CreateKey();
+  op->key = op->write_op->CreateKey();
 
   AddInFlightOp(op);
   if (VLOG_IS_ON(2)) {
-    VLOG(2) << "Looking up tablet for " << op->insert->ToString();
+    VLOG(2) << "Looking up tablet for " << op->write_op->ToString();
   }
 
   // Increment our reference count for the outstanding callback.
   AddRef();
-  client_->meta_cache_->LookupTabletByKey(op->insert->table(),
+  client_->meta_cache_->LookupTabletByKey(op->write_op->table(),
                                           op->key->encoded_key(),
                                           &op->tablet,
                                           boost::bind(&Batcher::TabletLookupFinished, this,
@@ -400,7 +399,7 @@ void Batcher::MarkInFlightOpFailed(InFlightOp* op, const Status& s) {
 void Batcher::MarkInFlightOpFailedUnlocked(InFlightOp* op, const Status& s) {
   CHECK_EQ(1, ops_.erase(op))
     << "Could not remove op " << op->ToString() << " from in-flight list";
-  gscoped_ptr<Error> error(new Error(op->insert.Pass(), s));
+  gscoped_ptr<Error> error(new Error(op->write_op.Pass(), s));
   error_collector_->AddError(error.Pass());
   had_errors_ = true;
   delete op;
@@ -415,14 +414,14 @@ void Batcher::TabletLookupFinished(InFlightOp* op, const Status& s) {
   boost::unique_lock<simple_spinlock> l(lock_);
 
   if (IsAbortedUnlocked()) {
-    VLOG(1) << "Aborted batch: TabletLookupFinished for " << op->insert->ToString();
+    VLOG(1) << "Aborted batch: TabletLookupFinished for " << op->write_op->ToString();
     MarkInFlightOpFailedUnlocked(op, Status::Aborted("Batch aborted"));
     // 'op' is deleted by above function.
     return;
   }
 
   if (VLOG_IS_ON(2)) {
-    VLOG(2) << "TabletLookupFinished for " << op->insert->ToString()
+    VLOG(2) << "TabletLookupFinished for " << op->write_op->ToString()
             << ": " << s.ToString();
     if (s.ok()) {
       VLOG(2) << "Result: tablet_id = " << op->tablet->tablet_id();
@@ -528,7 +527,7 @@ void Batcher::FlushBuffer(RemoteTabletServer* ts, PerTSBuffer* buf) {
       InsertOrDie(&rpcs, op->tablet.get(), rpc);
     }
     rpc->ops.push_back(op);
-    DCHECK_EQ(op->insert->table(), rpc->ops[0]->insert->table());
+    DCHECK_EQ(op->write_op->table(), rpc->ops[0]->write_op->table());
   }
 
   // For each tablet, create and send an RPC.
@@ -538,7 +537,7 @@ void Batcher::FlushBuffer(RemoteTabletServer* ts, PerTSBuffer* buf) {
     InFlightRpc* rpc = entry.second;
     // All of the ops for a given tablet obviously correspond to the same table,
     // so we'll just grab the table from the first.
-    const KuduTable* table = rpc->ops[0]->insert->table();
+    const KuduTable* table = rpc->ops[0]->write_op->table();
     const Schema& schema = table->schema();
     const RemoteTablet* tablet = entry.first;
 
@@ -548,10 +547,10 @@ void Batcher::FlushBuffer(RemoteTabletServer* ts, PerTSBuffer* buf) {
 
     CHECK_OK(SchemaToPB(schema, req.mutable_schema()));
 
-    RowOperationsPB* to_insert = req.mutable_row_operations();
+    RowOperationsPB* requested = req.mutable_row_operations();
 
     // Add the rows
-    RowOperationsPBEncoder enc(to_insert);
+    RowOperationsPBEncoder enc(requested);
     BOOST_FOREACH(InFlightOp* op, rpc->ops) {
       DCHECK(op->key->InRange(op->tablet->start_key(), op->tablet->end_key()))
           << "Row " << schema.DebugEncodedRowKey(op->key->encoded_key().ToString())
@@ -559,7 +558,7 @@ void Batcher::FlushBuffer(RemoteTabletServer* ts, PerTSBuffer* buf) {
           << ", " << schema.DebugEncodedRowKey(tablet->end_key().ToString())
           << ")";
 
-      enc.Add(RowOperationsPB::INSERT, op->insert->row());
+      enc.Add(op->write_op->RowOperationType(), op->write_op->row());
 
       // Set the state now, even though we haven't yet sent it -- at this point
       // there is no return, and we're definitely going to send it. If we waited
@@ -617,10 +616,10 @@ void Batcher::WriteRpcFinished(InFlightRpc* rpc) {
     // TODO: need to handle various retry cases here -- eg re-fetching
     // the locations, re-resolving the TS, etc.
 
-    // Mark each of the rows in the insert as failed, since the whole RPC
+    // Mark each of the rows in the write op as failed, since the whole RPC
     // failed.
     BOOST_FOREACH(InFlightOp* op, rpc->ops) {
-      gscoped_ptr<Error> error(new Error(op->insert.Pass(), s));
+      gscoped_ptr<Error> error(new Error(op->write_op.Pass(), s));
       error_collector_->AddError(error.Pass());
     }
 
@@ -638,7 +637,7 @@ void Batcher::WriteRpcFinished(InFlightRpc* rpc) {
         rpc->response.DebugString();
       continue;
     }
-    gscoped_ptr<Insert> op = rpc->ops[err_pb.row_index()]->insert.Pass();
+    gscoped_ptr<WriteOperation> op = rpc->ops[err_pb.row_index()]->write_op.Pass();
     VLOG(1) << "Error on op " << op->ToString() << ": " << err_pb.error().ShortDebugString();
     Status op_status = StatusFromPB(err_pb.error());
     gscoped_ptr<Error> error(new Error(op.Pass(), op_status));

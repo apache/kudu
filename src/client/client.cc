@@ -3,9 +3,11 @@
 #include <boost/bind.hpp>
 #include <boost/thread/locks.hpp>
 
-#include "client/batcher.h"
 #include "client/client.h"
+
+#include "client/batcher.h"
 #include "client/error_collector.h"
+#include "client/write_op.h"
 #include "client/meta_cache.h"
 #include "common/row.h"
 #include "common/wire_protocol.h"
@@ -507,7 +509,7 @@ gscoped_ptr<Insert> KuduTable::NewInsert() {
 ////////////////////////////////////////////////////////////
 // Error
 ////////////////////////////////////////////////////////////
-Error::Error(gscoped_ptr<Insert> failed_op,
+Error::Error(gscoped_ptr<WriteOperation> failed_op,
              const Status& status) :
   failed_op_(failed_op.Pass()),
   status_(status) {
@@ -573,21 +575,6 @@ void KuduSession::SetTimeoutMillis(int millis) {
   batcher_->SetTimeoutMillis(millis);
 }
 
-Status KuduSession::Apply(gscoped_ptr<Insert>* insert_scoped) {
-  Insert* insert = insert_scoped->get();
-  if (!insert->row().IsKeySet()) {
-    return Status::IllegalState("Key not specified", insert->ToString());
-  }
-
-  batcher_->Add(insert_scoped->Pass());
-
-  if (flush_mode_ == AUTO_FLUSH_SYNC) {
-    RETURN_NOT_OK(Flush());
-  }
-
-  return Status::OK();
-}
-
 Status KuduSession::Flush() {
   Synchronizer s;
   FlushAsync(s.callback());
@@ -630,6 +617,34 @@ bool KuduSession::HasPendingOperations() const {
   return false;
 }
 
+// Template function specification for KuduSession::Apply on derived
+// WriteOperation classes
+Status KuduSession::Apply(gscoped_ptr<Insert>* scoped_write_op) {
+  Status s = Apply(implicit_cast<WriteOperation*>(scoped_write_op->get()));
+  if (s.ok()) {
+    ignore_result<>(scoped_write_op->release());
+  }
+  return s;
+}
+
+// TODO add Delete and Update classes. See KUDU-264
+
+// Actual apply method, with WriteOperation pointer
+// Takes ownership (deletes) iff operation succeeds
+Status KuduSession::Apply(WriteOperation* write_op) {
+  if (!write_op->row().IsKeySet()) {
+    return Status::IllegalState("Key not specified", write_op->ToString());
+  }
+
+  batcher_->Add(gscoped_ptr<WriteOperation>(write_op).Pass());
+
+  if (flush_mode_ == AUTO_FLUSH_SYNC) {
+    RETURN_NOT_OK(Flush());
+  }
+
+  return Status::OK();
+}
+
 int KuduSession::CountBufferedOperations() const {
   boost::lock_guard<simple_spinlock> l(lock_);
   CHECK_EQ(flush_mode_, MANUAL_FLUSH);
@@ -643,29 +658,6 @@ int KuduSession::CountPendingErrors() const {
 
 void KuduSession::GetPendingErrors(std::vector<Error*>* errors, bool* overflowed) {
   error_collector_->GetErrors(errors, overflowed);
-}
-
-////////////////////////////////////////////////////////////
-// Mutation classes (Insert/Update/Delete)
-////////////////////////////////////////////////////////////
-
-Insert::Insert(KuduTable* table)
-  : table_(table),
-    row_(&table->schema()) {
-}
-
-Insert::~Insert() {}
-
-gscoped_ptr<EncodedKey> Insert::CreateKey() {
-  CHECK(row_.IsKeySet()) << "key must be set";
-
-  ConstContiguousRow row = row_.as_contiguous_row();
-  EncodedKeyBuilder kb(row.schema());
-  for (int i = 0; i < row.schema().num_key_columns(); i++) {
-    kb.AddColumnKey(row.cell_ptr(i));
-  }
-  gscoped_ptr<EncodedKey> key(kb.BuildEncodedKey());
-  return key.Pass();
 }
 
 ////////////////////////////////////////////////////////////

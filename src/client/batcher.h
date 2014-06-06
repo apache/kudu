@@ -19,7 +19,7 @@ namespace client {
 
 class KuduClient;
 class KuduSession;
-class Insert;
+class WriteOperation;
 class RemoteTabletServer;
 
 namespace internal {
@@ -49,7 +49,7 @@ class Batcher : public base::RefCountedThreadSafe<Batcher> {
           ErrorCollector* error_collector,
           const std::tr1::shared_ptr<KuduSession>& session);
 
-  // Abort the current batch. Any inserts that were buffered and not yet sent are
+  // Abort the current batch. Any writes that were buffered and not yet sent are
   // discarded. Those that were sent may still be delivered.  If there is a pending Flush
   // callback, it will be called immediately with an error status.
   void Abort();
@@ -64,7 +64,7 @@ class Batcher : public base::RefCountedThreadSafe<Batcher> {
   // Add a new operation to the batch. Requires that the batch has not yet been flushed.
   // TODO: in other flush modes, this may not be the case -- need to
   // update this when they're implemented.
-  Status Add(gscoped_ptr<Insert> insert);
+  Status Add(gscoped_ptr<WriteOperation> write_op);
 
   // Return true if any operations are still pending. An operation is no longer considered
   // pending once it has either errored or succeeded.  Operations are considering pending
