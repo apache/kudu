@@ -289,6 +289,7 @@ Peer::Peer(const metadata::QuorumPeerPB& peer_pb,
       peer_impl_(new LocalPeer(this, tablet_id, leader_uuid, log, initial_op)),
       queue_(queue),
       processing_(false),
+      failed_attempts_(0),
       outstanding_req_latch_(0),
       heartbeater_(NULL),
       state_(kPeerCreated) {
@@ -303,6 +304,7 @@ Peer::Peer(const metadata::QuorumPeerPB& peer_pb,
       peer_impl_(new RemotePeer(this, tablet_id, leader_uuid, proxy.Pass())),
       queue_(queue),
       processing_(false),
+      failed_attempts_(0),
       outstanding_req_latch_(0),
       heartbeater_(
           new ResettableHeartbeater(peer_pb.permanent_uuid(),
@@ -374,23 +376,19 @@ void Peer::ProcessResponse(const ConsensusStatusPB& status) {
   } else {
     processing_ = false;
   }
+  failed_attempts_ = 0;
 }
 
 void Peer::ProcessResponseError(const Status& status) {
   boost::lock_guard<simple_spinlock> lock(peer_lock_);
-  // TODO do better than infinite retries and eventually report the peer dead.
-  // .. and avoid the usleep here.
-  usleep(20000);
-  if (state_ != kPeerClosed) {
-    queue_->RequestForPeer(peer_pb_.permanent_uuid(), peer_impl_->request());
-    processing_ = peer_impl_->ProcessNextRequest();
-    if (processing_) {
-      outstanding_req_latch_.CountDown();
-      outstanding_req_latch_.Reset(1);
-    }
-  } else {
-    outstanding_req_latch_.CountDown();
-  }
+  // TODO handle the error.
+  failed_attempts_++;
+  LOG_EVERY_N(WARNING, 10) << "Couldn't send request to peer: "
+      << peer_pb_.permanent_uuid() << " Status: " << status.ToString()
+      << ". Retrying in the next heartbeat period. Already tried "
+      << failed_attempts_ << " times.";
+  outstanding_req_latch_.CountDown();
+  processing_ = false;
 }
 
 void Peer::Close() {

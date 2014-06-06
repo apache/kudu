@@ -154,6 +154,7 @@ class Peer {
   gscoped_ptr<PeerImpl> peer_impl_;
   PeerMessageQueue* queue_;
   bool processing_;
+  uint64_t failed_attempts_;
 
   CountDownLatch outstanding_req_latch_;
 
