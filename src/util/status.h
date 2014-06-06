@@ -18,14 +18,14 @@
 
 // Return the given status if it is not OK.
 #define RETURN_NOT_OK(s) do { \
-    Status _s = (s); \
+    ::kudu::Status _s = (s); \
     if (PREDICT_FALSE(!_s.ok())) return _s;     \
   } while (0);
 
 // Return the given status if it is not OK, but first clone it and
 // prepend the given message.
 #define RETURN_NOT_OK_PREPEND(s, msg) do { \
-    Status _s = (s); \
+    ::kudu::Status _s = (s); \
     if (PREDICT_FALSE(!_s.ok())) return _s.CloneAndPrepend(msg); \
   } while (0);
 
@@ -33,26 +33,26 @@
 // The substitution for 'to_return' may reference the variable
 // 's' for the bad status.
 #define RETURN_NOT_OK_RET(to_call, to_return) do { \
-    Status s = (to_call); \
+    ::kudu::Status s = (to_call); \
     if (PREDICT_FALSE(!s.ok())) return (to_return);  \
   } while (0);
 
 // Emit a warning if 'to_call' returns a bad status.
 #define WARN_NOT_OK(to_call, warning_prefix) do { \
-    Status _s = (to_call); \
+    ::kudu::Status _s = (to_call); \
     if (PREDICT_FALSE(!_s.ok())) { \
       LOG(WARNING) << (warning_prefix) << ": " << _s.ToString();  \
     } \
   } while (0);
 
 #define LOG_AND_RETURN(level, status) do { \
-    Status _s = (status); \
+    ::kudu::Status _s = (status); \
     LOG(level) << _s.ToString(); \
     return _s; \
   } while (0);
 
 #define CHECK_OK_PREPEND(to_call, msg) do { \
-  Status _s = (to_call); \
+  ::kudu::Status _s = (to_call); \
   CHECK(_s.ok()) << (msg) << ": " << _s.ToString(); \
   } while (0);
 
