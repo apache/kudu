@@ -15,6 +15,7 @@
 #include "util/locks.h"
 #include "util/monotime.h"
 #include "util/net/net_util.h"
+#include "util/semaphore.h"
 #include "util/status.h"
 
 namespace kudu {
@@ -202,7 +203,16 @@ class MetaCache {
   // not be returned in future cache lookups.
   void MarkTSFailed(RemoteTabletServer* ts);
 
+  // Acquire or release a permit to perform a (slow) master lookup.
+  //
+  // If acquisition fails, caller may still do the lookup, but is first
+  // blocked for a short time to prevent lookup storms.
+  bool AcquireMasterLookupPermit();
+  void ReleaseMasterLookupPermit();
+
  private:
+  FRIEND_TEST(ClientTest, TestMasterLookupPermits);
+
   // Lookup the given tablet by key, only consulting local information.
   // Returns true and sets *remote_tablet if successful.
   bool LookupTabletByKeyFastPath(const KuduTable* table,
@@ -250,6 +260,10 @@ class MetaCache {
   // Protected by lock_
   typedef std::tr1::unordered_map<std::string, scoped_refptr<RemoteTablet> > TabletMap;
   TabletMap tablets_by_id_;
+
+  // Prevents master lookup "storms" by slowing down master lookups when
+  // the semaphore capacity is exceeded.
+  Semaphore master_lookup_sem_;
 
   DISALLOW_COPY_AND_ASSIGN(MetaCache);
 };

@@ -65,6 +65,12 @@ void Semaphore::Release() {
   PCHECK(sem_post(&sem_) == 0);
 }
 
+int Semaphore::GetValue() {
+  int val;
+  PCHECK(sem_getvalue(&sem_, &val) == 0);
+  return val;
+}
+
 void Semaphore::Fatal(const char* action) {
   PLOG(FATAL) << "Could not " << action << " semaphore "
               << reinterpret_cast<void*>(&sem_);

@@ -29,6 +29,9 @@ class Semaphore {
   // Release the semaphore.
   void Release();
 
+  // Get the current value of the semaphore.
+  int GetValue();
+
   // Boost-compatible wrappers.
   void lock() { Acquire(); }
   void unlock() { Release(); }

@@ -128,9 +128,6 @@ class ClientTest : public KuduTest {
     for (int i = 0; i < num_rows; i++) {
       gscoped_ptr<Insert> insert(BuildTestRow(table, i));
       ASSERT_STATUS_OK(session->Apply(&insert));
-      if (i % 25 == 0) { // to avoid backpressure
-        ASSERT_STATUS_OK(session->Flush());
-      }
     }
     ASSERT_STATUS_OK(session->Flush()); // and one more for good measure
   }
@@ -1068,6 +1065,15 @@ TEST_F(ClientTest, TestReplicatedMultiTabletTableFailover) {
     }
   }
   ASSERT_EQ(1, rt->GetNumFailedReplicas());
+}
+
+// Tests that master permits are properly released after a whole bunch of
+// rows are inserted.
+TEST_F(ClientTest, TestMasterLookupPermits) {
+  int initial_value = client_->meta_cache_->master_lookup_sem_.GetValue();
+  InsertTestRows(client_table_.get(), FLAGS_test_scan_num_rows);
+  ASSERT_EQ(initial_value,
+            client_->meta_cache_->master_lookup_sem_.GetValue());
 }
 
 } // namespace client

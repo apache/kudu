@@ -173,6 +173,7 @@ class KuduClient : public std::tr1::enable_shared_from_this<KuduClient> {
   friend class kudu::RpcLineItemDAO;
 
   FRIEND_TEST(ClientTest, TestReplicatedMultiTabletTableFailover);
+  FRIEND_TEST(ClientTest, TestMasterLookupPermits);
 
   explicit KuduClient(const KuduClientOptions& options);
   Status Init();

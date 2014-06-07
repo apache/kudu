@@ -201,7 +201,8 @@ void RemoteTablet::GetRemoteTabletServers(std::vector<RemoteTabletServer*>* serv
 
 MetaCache::MetaCache(KuduClient* client)
   : client_(client),
-    slice_data_arena_(16 * 1024, 128 * 1024) { // arbitrarily chosen
+    slice_data_arena_(16 * 1024, 128 * 1024), // arbitrarily chosen
+    master_lookup_sem_(50) {
 }
 
 MetaCache::~MetaCache() {
@@ -220,7 +221,29 @@ void MetaCache::UpdateTabletServer(const TSInfoPB& pb) {
   InsertOrDie(&ts_cache_, pb.permanent_uuid(), new RemoteTabletServer(pb));
 }
 
+// A quick note about lifecycle: as written, the MetaCache cannot be safely
+// destroyed while there's an outstanding InFlightLookup. It relies on safe
+// use by its clients to prevent this from happening (i.e. keeping a ref on
+// the KuduClient when there are outstanding operations). It's because of
+// this property that we're able to store a bare pointer to the MetaCache
+// in each lookup.
+//
+// TODO: fix this.
 struct InFlightLookup {
+  InFlightLookup()
+    : mc(NULL),
+      permit_held(false),
+      remote_tablet(NULL) {
+  }
+
+  ~InFlightLookup() {
+    if (permit_held) {
+      mc->ReleaseMasterLookupPermit();
+    }
+  }
+
+  MetaCache* mc;
+  bool permit_held;
   RpcController rpc;
   GetTableLocationsResponsePB resp;
   StatusCallback user_callback;
@@ -334,16 +357,34 @@ void MetaCache::LookupTabletByKey(const KuduTable* table,
                                   scoped_refptr<RemoteTablet>* remote_tablet,
                                   const StatusCallback& callback) {
   const Schema& schema = table->schema();
+  bool permit_acquired;
 
-  // Try fast path (cache) first.
-  if (PREDICT_TRUE(LookupTabletByKeyFastPath(table, key, remote_tablet)) &&
-      (*remote_tablet)->HasLeader()) {
-    VLOG(3) << "Fast lookup: found tablet " << (*remote_tablet)->tablet_id()
-            << " for " << schema.DebugEncodedRowKey(key.ToString())
-            << " of " << table->name();
+  // We make up to two fast lookup calls.
+  // - The first is unconditional.
+  // - The second is made if the first misses and if we failed to acquire a
+  //   master (slow) lookup permit. Failed permit acquisition means we
+  //   slept for a bit, and it's possible that the cache was populated
+  //   while we were asleep.
+  for (int i = 0; i < 2; i++) {
+    if (PREDICT_TRUE(LookupTabletByKeyFastPath(table, key, remote_tablet)) &&
+        (*remote_tablet)->HasLeader()) {
+      VLOG(3) << "Fast lookup: found tablet " << (*remote_tablet)->tablet_id()
+                << " for " << schema.DebugEncodedRowKey(key.ToString())
+                << " of " << table->name() << " in "
+                << (i == 0 ? "first" : "second") << " pass";
 
-    callback(Status::OK());
-    return;
+      callback(Status::OK());
+      return;
+    }
+
+    if (i == 0) {
+      permit_acquired = AcquireMasterLookupPermit();
+      VLOG(3) << (permit_acquired ? "Acquired" : "Did not acquire")
+              << " permit for master lookup";
+      if (permit_acquired) {
+        break;
+      }
+    }
   }
 
   // Slow path: must lookup the tablet in the master.
@@ -358,6 +399,8 @@ void MetaCache::LookupTabletByKey(const KuduTable* table,
   // additional tablets.
 
   InFlightLookup *ref = new InFlightLookup;
+  ref->mc = this;
+  ref->permit_held = permit_acquired;
   ref->rpc.set_timeout(MonoDelta::FromMilliseconds(5000));
   ref->user_callback = callback;
   ref->table_name = table->name();
@@ -381,6 +424,14 @@ void MetaCache::MarkTSFailed(RemoteTabletServer* ts) {
   BOOST_FOREACH(const TabletMap::value_type& tablet, tablets_by_id_) {
     tablet.second->MarkReplicaFailed(ts);
   }
+}
+
+bool MetaCache::AcquireMasterLookupPermit() {
+  return master_lookup_sem_.TimedAcquire(MonoDelta::FromMilliseconds(5));
+}
+
+void MetaCache::ReleaseMasterLookupPermit() {
+  master_lookup_sem_.Release();
 }
 
 } // namespace client
