@@ -103,6 +103,8 @@ TEST_F(ConsensusPeersTest, TestLocalPeer) {
                      NULL,
                      &log));
   NewLocalPeer(log.get(), "local-peer", &local_peer);
+  // Test that the local peer handles status-only requests.
+  local_peer->SignalRequest(true);
 
   // Append a bunch of messages to the queue
   AppendReplicateMessagesToQueue(&message_queue_, 1, 20, 1, 1, "", &statuses_);
