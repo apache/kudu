@@ -420,7 +420,9 @@ void LinkedListTest::WaitAndVerify(int64_t expected) {
       continue;
     }
     ASSERT_STATUS_OK(s);
-    ASSERT_EQ(expected, seen);
+    ASSERT_EQ(expected, seen)
+      << "Missing rows, but with no broken link in the chain. This means that "
+      << "a suffix of the inserted rows went missing.";
     break;
   }
 }
@@ -433,9 +435,10 @@ TEST_F(LinkedListTest, TestLoadAndVerify) {
   int64_t written = 0;
   ASSERT_STATUS_OK(LoadLinkedList(MonoDelta::FromSeconds(FLAGS_seconds_to_run), &written));
 
-  int64_t seen = 0;
-  ASSERT_STATUS_OK(VerifyLinkedList(written, &seen));
-  ASSERT_EQ(written, seen);
+  // TODO: currently we don't use hybridtime on the C++ client, so it's possible when we
+  // scan after writing we may not see all of our writes (we may scan a replica). So,
+  // we use WaitAndVerify here instead of a plain Verify.
+  ASSERT_NO_FATAL_FAILURE(WaitAndVerify(written));
 
   // Check in-memory state with a downed TS. Scans may try other replicas.
   cluster_->tablet_server(0)->Shutdown();
