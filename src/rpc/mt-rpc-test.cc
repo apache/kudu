@@ -14,6 +14,7 @@
 #include "util/test_util.h"
 
 METRIC_DECLARE_counter(rpc_connections_accepted);
+METRIC_DECLARE_counter(rpcs_queue_overflow);
 
 using std::string;
 using strings::Substitute;
@@ -210,6 +211,11 @@ TEST_F(MultiThreadedRpcTest, TestBlowOutServiceQueue) {
 
   ASSERT_EQ(1, errors_backpressure);
   ASSERT_EQ(2, errors_shutdown);
+
+  // Check that RPC queue overflow metric is 1
+  Counter *rpcs_queue_overflow =
+    METRIC_rpcs_queue_overflow.Instantiate(*server_messenger_->metric_context());
+  ASSERT_EQ(1, rpcs_queue_overflow->value());
 }
 
 static void HammerServerWithTCPConns(const Sockaddr& addr) {

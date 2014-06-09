@@ -47,6 +47,10 @@ class ServicePool : public RpcService {
     return rpcs_timed_out_in_queue_;
   }
 
+  const Counter* RpcsQueueOverflowMetric() const {
+    return rpcs_queue_overflow_;
+  }
+
  private:
   void RunThread();
   gscoped_ptr<ServiceIf> service_;
@@ -54,6 +58,7 @@ class ServicePool : public RpcService {
   BlockingQueue<InboundCall*> service_queue_;
   Histogram* incoming_queue_time_;
   Counter* rpcs_timed_out_in_queue_;
+  Counter* rpcs_queue_overflow_;
 
   mutable boost::mutex shutdown_lock_;
   bool closing_;

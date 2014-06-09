@@ -31,6 +31,10 @@ METRIC_DEFINE_counter(rpcs_timed_out_in_queue, kudu::MetricUnit::kRequests,
                       "Number of RPCs whose timeout elapsed while waiting "
                       "in the service queue, and thus were not processed.");
 
+METRIC_DEFINE_counter(rpcs_queue_overflow, kudu::MetricUnit::kRequests,
+                      "Number of RPCs dropped because the service queue "
+                      "was full.");
+
 namespace kudu {
 namespace rpc {
 
@@ -41,6 +45,7 @@ ServicePool::ServicePool(gscoped_ptr<ServiceIf> service,
     service_queue_(service_queue_length),
     incoming_queue_time_(METRIC_incoming_queue_time.Instantiate(metric_ctx)),
     rpcs_timed_out_in_queue_(METRIC_rpcs_timed_out_in_queue.Instantiate(metric_ctx)),
+    rpcs_queue_overflow_(METRIC_rpcs_queue_overflow.Instantiate(metric_ctx)),
     closing_(false) {
 }
 
@@ -101,6 +106,7 @@ Status ServicePool::QueueInboundCall(gscoped_ptr<InboundCall> call) {
         service_->service_name(),
         c->remote_address().ToString(),
         service_queue_.max_size()));
+    rpcs_queue_overflow_->Increment();
     c->RespondFailure(ErrorStatusPB::ERROR_SERVER_TOO_BUSY, status);
   } else if (queue_status == QUEUE_SHUTDOWN) {
     status = Status::ServiceUnavailable("Service is shutting down");
