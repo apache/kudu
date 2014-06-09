@@ -212,7 +212,7 @@ class KuduClient : public std::tr1::enable_shared_from_this<KuduClient> {
   std::tr1::shared_ptr<rpc::Messenger> messenger_;
 
   gscoped_ptr<DnsResolver> dns_resolver_;
-  gscoped_ptr<MetaCache> meta_cache_;
+  scoped_refptr<MetaCache> meta_cache_;
 
   // Set of hostnames and IPs on the local host.
   // This is initialized at client startup.

@@ -221,14 +221,6 @@ void MetaCache::UpdateTabletServer(const TSInfoPB& pb) {
   InsertOrDie(&ts_cache_, pb.permanent_uuid(), new RemoteTabletServer(pb));
 }
 
-// A quick note about lifecycle: as written, the MetaCache cannot be safely
-// destroyed while there's an outstanding InFlightLookup. It relies on safe
-// use by its clients to prevent this from happening (i.e. keeping a ref on
-// the KuduClient when there are outstanding operations). It's because of
-// this property that we're able to store a bare pointer to the MetaCache
-// in each lookup.
-//
-// TODO: fix this.
 struct InFlightLookup {
   InFlightLookup()
     : mc(NULL),
@@ -242,7 +234,7 @@ struct InFlightLookup {
     }
   }
 
-  MetaCache* mc;
+  scoped_refptr<MetaCache> mc;
   bool permit_held;
   RpcController rpc;
   GetTableLocationsResponsePB resp;

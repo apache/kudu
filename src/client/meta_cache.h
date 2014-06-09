@@ -170,7 +170,7 @@ class RemoteTablet : public base::RefCountedThreadSafe<RemoteTablet> {
 // this class to look up a given tablet or server.
 //
 // This class will also be responsible for cache eviction policies, etc.
-class MetaCache {
+class MetaCache : public base::RefCountedThreadSafe<MetaCache> {
  public:
   // The passed 'client' object must remain valid as long as MetaCache is alive.
   explicit MetaCache(KuduClient* client);
