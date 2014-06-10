@@ -37,7 +37,9 @@ class HybridClock : public Clock {
   // HybridClock supports all external consistency modes.
   virtual bool SupportsExternalConsistencyMode(ExternalConsistencyMode mode) OVERRIDE;
 
-  // Blocks the caller thread until the current time is after 'then'.
+  // Blocks the caller thread until the true time is after 'then'.
+  // In other words, waits until the HybridClock::Now() on _all_ nodes
+  // will return a value greater than 'then'.
   //
   // The incoming time 'then' is assumed to be the latest time possible
   // at the time the read was performed, i.e. 'then' = now + max_error.
@@ -58,6 +60,14 @@ class HybridClock : public Clock {
   // Returns Status::ServiceUnavailable if the system clock was not
   // synchronized and therefore it couldn't wait out the error.
   virtual Status WaitUntilAfter(const Timestamp& then) OVERRIDE;
+
+  // Return true if the given time has passed (i.e any future call
+  // to Now() would return a higher value than t).
+  //
+  // NOTE: this only refers to the _local_ clock, and is not a guarantee
+  // that other nodes' clocks have definitely passed this timestamp.
+  // This is in contrast to WaitUntilAfter() above.
+  virtual bool IsAfter(Timestamp t) OVERRIDE;
 
   // Obtains the timestamp corresponding to the current time and the associated
   // error in micros. This may fail if the clock is unsynchronized or synchronized

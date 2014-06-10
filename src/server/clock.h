@@ -50,6 +50,10 @@ class Clock : public base::RefCountedThreadSafe<Clock> {
   // Google's Spanner.
   virtual Status WaitUntilAfter(const Timestamp& then) = 0;
 
+  // Return true if the given time has definitely passed (i.e any future call
+  // to Now() would return a higher value than t).
+  virtual bool IsAfter(Timestamp t) = 0;
+
   // Register the clock metrics in the registry.
   virtual void RegisterMetrics(MetricRegistry* registry) = 0;
 

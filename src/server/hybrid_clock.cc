@@ -266,8 +266,8 @@ Status HybridClock::WaitUntilAfter(const Timestamp& then_latest) {
   requested.tv_nsec = wait_for_usec * 1000 - (requested.tv_sec * 1000000000);
 
   VLOG(1) << "WaitUntilAfter(): Incoming time(latest): " << then_latest_usec
-      << " Now(earliest): " << now_earliest_usec << " error: " << error
-      << " Waiting for: " << wait_for_usec;
+          << " Now(earliest): " << now_earliest_usec << " error: " << error
+          << " Waiting for: " << wait_for_usec;
 
   while (true) {
     timespec remaining;
@@ -292,6 +292,28 @@ Status HybridClock::WaitUntilAfter(const Timestamp& then_latest) {
   }
 
   return Status::OK();
+}
+
+bool HybridClock::IsAfter(Timestamp t) {
+  // Manually get the time, rather than using Now(), so we don't end up
+  // causing a time update.
+  ntptimeval now_ntp;
+  CHECK_OK(GetClockTime(&now_ntp));
+  uint64_t now_usec = GetTimeUsecs(&now_ntp);
+
+  boost::lock_guard<simple_spinlock> lock(lock_);
+  now_usec = std::max(now_usec, last_usec_);
+
+  Timestamp now;
+  if (now_usec > last_usec_) {
+    now = TimestampFromMicroseconds(now_usec);
+  } else {
+    // last_usec_ may be in the future if we were updated from a remote
+    // node.
+    now = TimestampFromMicrosecondsAndLogicalValue(last_usec_, next_logical_);
+  }
+
+  return t.value() < now.value();
 }
 
 // Used to get the timestamp for metrics.

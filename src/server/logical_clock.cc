@@ -44,9 +44,14 @@ Status LogicalClock::Update(const Timestamp& to_update) {
   }
   return Status::OK();
 }
+
 Status LogicalClock::WaitUntilAfter(const Timestamp& then) {
   return Status::ServiceUnavailable(
       "Logical clock does not support WaitUntilAfter()");
+}
+
+bool LogicalClock::IsAfter(Timestamp t) {
+  return base::subtle::Acquire_Load(&now_) >= t.value();
 }
 
 LogicalClock* LogicalClock::CreateStartingAt(const Timestamp& timestamp) {

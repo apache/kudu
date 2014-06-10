@@ -36,6 +36,8 @@ class LogicalClock : public Clock {
   // WaitUntilAfter() is unavailable for this clock.
   virtual Status WaitUntilAfter(const Timestamp& then) OVERRIDE;
 
+  virtual bool IsAfter(Timestamp t) OVERRIDE;
+
   virtual void RegisterMetrics(MetricRegistry* registry) OVERRIDE;
 
   // Logical clock doesn't support COMMIT_WAIT.

@@ -530,7 +530,7 @@ void Tablet::AtomicSwapRowSetsUnlocked(const RowSetVector &old_rowsets,
     // and creating the ScopedTransaction during mutations.  The transaction should be
     // started only after the 'component_lock' is taken, and committed before it is
     // released.
-    CHECK_EQ(snap_under_lock->num_transactions_in_flight(), 0);
+    CHECK_EQ(mvcc_.CountTransactionsInFlight(), 0);
   }
 }
 

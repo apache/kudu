@@ -319,11 +319,11 @@ TEST_F(TestCompaction, TestMemRowSetInput) {
   ASSERT_EQ(10, out.size());
   ASSERT_EQ("(string key=hello 00000000, uint32 val=0) "
       "Undos: [@1(DELETE)] "
-      "Redos: [@11(SET val=1), @21(SET val=2)]",
+      "Redos: [@21(SET val=1), @41(SET val=2)]",
             out[0]);
   ASSERT_EQ("(string key=hello 00000090, uint32 val=9) "
-      "Undos: [@10(DELETE)] "
-      "Redos: [@20(SET val=1), @30(SET val=2)]",
+      "Undos: [@19(DELETE)] "
+      "Redos: [@39(SET val=1), @59(SET val=2)]",
             out[9]);
 }
 
@@ -350,13 +350,13 @@ TEST_F(TestCompaction, TestRowSetInput) {
   gscoped_ptr<CompactionInput> input(CompactionInput::Create(*rs, &schema_, MvccSnapshot(mvcc_)));
   IterateInput(input.get(), &out);
   ASSERT_EQ(10, out.size());
-  ASSERT_EQ("(string key=hello 00000000, uint32 val=0) "
+  EXPECT_EQ("(string key=hello 00000000, uint32 val=0) "
       "Undos: [@1(DELETE)] "
-      "Redos: [@11(SET val=1), @21(SET val=2), @31(SET val=3), @41(SET val=4)]",
+      "Redos: [@21(SET val=1), @41(SET val=2), @61(SET val=3), @81(SET val=4)]",
             out[0]);
-  ASSERT_EQ("(string key=hello 00000090, uint32 val=9) "
-      "Undos: [@10(DELETE)] "
-      "Redos: [@20(SET val=1), @30(SET val=2), @40(SET val=3), @50(SET val=4)]",
+  EXPECT_EQ("(string key=hello 00000090, uint32 val=9) "
+      "Undos: [@19(DELETE)] "
+      "Redos: [@39(SET val=1), @59(SET val=2), @79(SET val=3), @99(SET val=4)]",
             out[9]);
 }
 
@@ -413,11 +413,11 @@ TEST_F(TestCompaction, TestDuplicatedGhostRowsDontSurviveCompaction) {
   vector<string> out;
   IterateInput(input.get(), &out);
   ASSERT_EQ(out.size(), 10);
-  ASSERT_EQ("(string key=hello 00000000, uint32 val=2) "
-      "Undos: [@61(SET val=0), @51(DELETE)] "
+  EXPECT_EQ("(string key=hello 00000000, uint32 val=2) "
+      "Undos: [@121(SET val=0), @101(DELETE)] "
       "Redos: []", out[0]);
-  ASSERT_EQ("(string key=hello 00000090, uint32 val=2) "
-      "Undos: [@70(SET val=9), @60(DELETE)] "
+  EXPECT_EQ("(string key=hello 00000090, uint32 val=2) "
+      "Undos: [@139(SET val=9), @119(DELETE)] "
       "Redos: []", out[9]);
 }
 
@@ -459,9 +459,9 @@ TEST_F(TestCompaction, TestOneToOne) {
   input.reset(CompactionInput::Create(*rs, &schema_, MvccSnapshot(mvcc_)));
   IterateInput(input.get(), &out);
   ASSERT_EQ(1000, out.size());
-  ASSERT_EQ("(string key=hello 00000000, uint32 val=1) "
-      "Undos: [@1001(SET val=0), @1(DELETE)] "
-      "Redos: [@2001(SET val=2), @3001(SET val=3)]", out[0]);
+  EXPECT_EQ("(string key=hello 00000000, uint32 val=1) "
+      "Undos: [@2001(SET val=0), @1(DELETE)] "
+      "Redos: [@4001(SET val=2), @6001(SET val=3)]", out[0]);
 
   // And compact (1 input to 1 output)
   MvccSnapshot snap3(mvcc_);
@@ -562,7 +562,7 @@ TEST_F(TestCompaction, TestMergeMRS) {
   IterateInput(input.get(), &out);
   ASSERT_EQ(out.size(), 20);
   EXPECT_EQ(out[0], "(string key=hello 00000000, uint32 val=0) Undos: [@1(DELETE)] Redos: []");
-  EXPECT_EQ(out[19], "(string key=hello 00000091, uint32 val=9) Undos: [@20(DELETE)] Redos: []");
+  EXPECT_EQ(out[19], "(string key=hello 00000091, uint32 val=9) Undos: [@39(DELETE)] Redos: []");
 }
 
 #ifdef NDEBUG

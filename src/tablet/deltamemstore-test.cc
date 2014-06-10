@@ -400,7 +400,7 @@ TEST_F(TestDeltaMemStore, TestCollectMutations) {
     if (i != 2) {
       EXPECT_EQ("[]", str);
     } else {
-      EXPECT_EQ("[@2(SET col3=120)]", str);
+      EXPECT_EQ("[@3(SET col3=120)]", str);
     }
   }
 }

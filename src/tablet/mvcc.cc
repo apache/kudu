@@ -7,6 +7,7 @@
 #include <glog/logging.h>
 #include <algorithm>
 
+#include "gutil/map-util.h"
 #include "gutil/mathlimits.h"
 #include "gutil/port.h"
 #include "gutil/stringprintf.h"
@@ -20,8 +21,7 @@ namespace kudu { namespace tablet {
 
 MvccManager::MvccManager(const scoped_refptr<server::Clock>& clock)
     : clock_(clock) {
-  cur_snap_.none_committed_after_timestamp_ = Timestamp::kInitialTimestamp;
-  cur_snap_.all_committed_before_timestamp_ = Timestamp::kInitialTimestamp;
+  cur_snap_.all_committed_before_ = Timestamp::kInitialTimestamp;
 }
 
 Timestamp MvccManager::StartTransaction() {
@@ -43,9 +43,9 @@ Timestamp MvccManager::StartTransactionAtLatest() {
   // If in debug mode enforce that transactions have monotonically increasing
   // timestamps at all times
 #ifndef NDEBUG
-  if (!cur_snap_.timestamps_in_flight_.empty()) {
-    Timestamp max(*std::max_element(cur_snap_.timestamps_in_flight_.begin(),
-                                    cur_snap_.timestamps_in_flight_.end()));
+  if (!timestamps_in_flight_.empty()) {
+    Timestamp max(*std::max_element(timestamps_in_flight_.begin(),
+                                    timestamps_in_flight_.end()));
     CHECK_EQ(max.value(), now_latest.value());
   }
 #endif
@@ -54,35 +54,30 @@ Timestamp MvccManager::StartTransactionAtLatest() {
 }
 
 bool MvccManager::InitTransactionUnlocked(const Timestamp& timestamp) {
-  cur_snap_.none_committed_after_timestamp_ = Timestamp(timestamp.value() + 1);
-  if (cur_snap_.timestamps_in_flight_.empty()) {
-    cur_snap_.all_committed_before_timestamp_ = timestamp;
-  }
-  return cur_snap_.timestamps_in_flight_.insert(timestamp.value()).second;
+  // Since transactions only commit once they are in the past, and new
+  // transactions always start either in the current time or the future,
+  // we should never be trying to start a new transaction at the same time
+  // as an already-committed one.
+  DCHECK(!cur_snap_.IsCommitted(timestamp))
+    << "Trying to start a new txn at already-committed timestamp "
+    << timestamp.ToString()
+    << " cur_snap_: " << cur_snap_.ToString();
+
+  return timestamps_in_flight_.insert(timestamp.value()).second;
 }
 
 void MvccManager::CommitTransaction(Timestamp timestamp) {
   boost::lock_guard<LockType> l(lock_);
-  DCHECK(timestamp.CompareTo(cur_snap_.none_committed_after_timestamp_) <= 0)
-    << "Trying to commit timestamp which isn't in the in-flight range yet";
-  unordered_set<Timestamp::val_type>::iterator it =
-      cur_snap_.timestamps_in_flight_.find(timestamp.value());
-  CHECK(it != cur_snap_.timestamps_in_flight_.end())
-    << "Trying to commit timestamp which isn't in the in-flight set";
-  cur_snap_.timestamps_in_flight_.erase(it);
+  DCHECK(clock_->IsAfter(timestamp))
+    << "Trying to commit a transaction with a future timestamp: "
+    << timestamp.ToString();
 
-  // If the timestamp was the earliest in the in-flight range, we can now advance
-  // the in-flight range
-  if (timestamp.CompareTo(cur_snap_.all_committed_before_timestamp_) == 0) {
+  // Remove from our in-flight list.
+  CHECK_EQ(timestamps_in_flight_.erase(timestamp.value()), 1)
+    << "Trying to commit timestamp which isn't in the in-flight set: "
+    << timestamp.ToString();
 
-    if (!cur_snap_.timestamps_in_flight_.empty()) {
-      Timestamp new_min(*std::min_element(cur_snap_.timestamps_in_flight_.begin(),
-                                          cur_snap_.timestamps_in_flight_.end()));
-      cur_snap_.all_committed_before_timestamp_ = new_min;
-    } else {
-      cur_snap_.all_committed_before_timestamp_ = cur_snap_.none_committed_after_timestamp_;
-    }
-  }
+  AdjustCurSnapForCommit(timestamp);
 
   // Check if someone is waiting for transactions to be committed.
   if (PREDICT_FALSE(!waiters_.empty())) {
@@ -99,8 +94,54 @@ void MvccManager::CommitTransaction(Timestamp timestamp) {
   }
 }
 
+void MvccManager::AdjustCurSnapForCommit(Timestamp ts) {
+  Timestamp earliest_in_flight;
+  if (!timestamps_in_flight_.empty()) {
+    earliest_in_flight = Timestamp(*std::min_element(timestamps_in_flight_.begin(),
+                                                     timestamps_in_flight_.end()));
+  } else {
+    earliest_in_flight = Timestamp::kMax;
+  }
+
+  Timestamp now = clock_->Now();
+
+
+  // There are two possibilities:
+  //
+  // 1) We still have an in-flight transaction earlier than clock_->Now().
+  //    In this case, we update the watermark to that transaction's timestamp.
+  //
+  // 2) There are no in-flight transactions earlier than clock_->Now().
+  //    (There may still be in-flight transactions with future timestamps due to
+  //    commit-wait transactions which start in the future). In this case, we update
+  //    the watermark to 'now', since we know that no new transactions can start
+  //    with an earlier timestamp.
+  //
+  // In either case, we have to add the newly committed ts only if it remains higher
+  // than the new watermark.
+
+  if (earliest_in_flight.CompareTo(now) < 0) {
+    cur_snap_.all_committed_before_ = earliest_in_flight;
+  } else {
+    cur_snap_.all_committed_before_ = now;
+  }
+
+  InsertOrDie(&cur_snap_.committed_timestamps_, ts.value());
+
+  // Trim any transactions from the snapshot list which fall below the new watermark.
+  unordered_set<Timestamp::val_type>::iterator it = cur_snap_.committed_timestamps_.begin();
+  while (it != cur_snap_.committed_timestamps_.end()) {
+    if (Timestamp(*it).CompareTo(cur_snap_.all_committed_before_) < 0) {
+      it = cur_snap_.committed_timestamps_.erase(it);
+    } else {
+      ++it;
+    }
+  }
+
+}
+
 void MvccManager::WaitUntilAllCommitted(Timestamp ts) const {
-  DCHECK_LT(ts.CompareTo(clock_->Now()), 0)
+  DCHECK(clock_->IsAfter(ts))
     << "timestamp " << ts.ToString() << " must be in the past";
   CountDownLatch latch(1);
   WaitingState waiting_state;
@@ -115,7 +156,7 @@ void MvccManager::WaitUntilAllCommitted(Timestamp ts) const {
 }
 
 bool MvccManager::AreAllTransactionsCommittedUnlocked(Timestamp ts) const {
-  if (cur_snap_.timestamps_in_flight_.empty()) {
+  if (timestamps_in_flight_.empty()) {
     // If nothing is in-flight, then check the clock. If the timestamp is in the past,
     // we know that no new uncommitted transactions may start before this ts.
     return ts.CompareTo(clock_->Now()) <= 0;
@@ -130,7 +171,7 @@ void MvccManager::TakeSnapshot(MvccSnapshot *snap) const {
 }
 
 void MvccManager::WaitForCleanSnapshotAtTimestamp(Timestamp timestamp, MvccSnapshot *snap) const {
-  DCHECK_LT(timestamp.CompareTo(clock_->Now()), 0)
+  DCHECK(clock_->IsAfter(timestamp))
     << "timestamp " << timestamp.ToString() << " must be in the past";
   WaitUntilAllCommitted(timestamp);
   *snap = MvccSnapshot(timestamp);
@@ -145,6 +186,12 @@ bool MvccManager::AreAllTransactionsCommitted(Timestamp ts) const {
   return AreAllTransactionsCommittedUnlocked(ts);
 }
 
+int MvccManager::CountTransactionsInFlight() const {
+  boost::lock_guard<LockType> l(lock_);
+  return timestamps_in_flight_.size();
+}
+
+
 MvccManager::~MvccManager() {
   CHECK(waiters_.empty());
 }
@@ -154,8 +201,7 @@ MvccManager::~MvccManager() {
 ////////////////////////////////////////////////////////////
 
 MvccSnapshot::MvccSnapshot()
- : all_committed_before_timestamp_(Timestamp::kInitialTimestamp),
-   none_committed_after_timestamp_(Timestamp::kInitialTimestamp) {
+  : all_committed_before_(Timestamp::kInitialTimestamp) {
 }
 
 MvccSnapshot::MvccSnapshot(const MvccManager &manager) {
@@ -163,8 +209,7 @@ MvccSnapshot::MvccSnapshot(const MvccManager &manager) {
 }
 
 MvccSnapshot::MvccSnapshot(const Timestamp& timestamp)
-  : all_committed_before_timestamp_(timestamp),
-    none_committed_after_timestamp_(timestamp) {
+  : all_committed_before_(timestamp) {
  }
 
 MvccSnapshot MvccSnapshot::CreateSnapshotIncludingAllTransactions() {
@@ -176,43 +221,48 @@ MvccSnapshot MvccSnapshot::CreateSnapshotIncludingNoTransactions() {
 }
 
 bool MvccSnapshot::IsCommitted(const Timestamp& timestamp) const {
-  if (PREDICT_TRUE(timestamp.CompareTo(all_committed_before_timestamp_) < 0)) {
+  if (PREDICT_TRUE(timestamp.CompareTo(all_committed_before_) < 0)) {
     return true;
   }
 
-  if (timestamp.CompareTo(none_committed_after_timestamp_) >= 0) {
-    return false;
+  if (committed_timestamps_.count(timestamp.value())) {
+    return true;
   }
 
-  if (timestamps_in_flight_.count(timestamp.value())) {
-    return false;
-  }
-
-  return true;
+  return false;
 }
 
 bool MvccSnapshot::MayHaveCommittedTransactionsAtOrAfter(const Timestamp& timestamp) const {
-  return timestamp.CompareTo(none_committed_after_timestamp_) < 0;
+  if (committed_timestamps_.empty()) {
+    // We have a "clean" snapshot - if our query comes before the cutover point
+    // into uncommitted territory, then we'll include at least one of the
+    // committed transactions.
+    return timestamp.CompareTo(all_committed_before_) < 0;
+  }
+
+  // If we have some set of committed transactions, then we see if the query point
+  // is <= than the highest of them
+  Timestamp max(*std::max_element(committed_timestamps_.begin(),
+                                  committed_timestamps_.end()));
+  return timestamp.CompareTo(max) <= 0;
 }
 
 bool MvccSnapshot::MayHaveUncommittedTransactionsAtOrBefore(const Timestamp& timestamp) const {
-  return timestamp.CompareTo(all_committed_before_timestamp_) >= 0;
+  return timestamp.CompareTo(all_committed_before_) >= 0;
 }
 
 std::string MvccSnapshot::ToString() const {
   string ret("MvccSnapshot[committed={T|");
 
-  if (timestamps_in_flight_.size() == 0) {
-    // if there are no transactions in flight these must be the same.
-    CHECK(all_committed_before_timestamp_ == none_committed_after_timestamp_);
-    StrAppend(&ret, "T < ", none_committed_after_timestamp_.ToString(),"}]");
+  if (committed_timestamps_.size() == 0) {
+    StrAppend(&ret, "T < ", all_committed_before_.ToString(),"}]");
     return ret;
   }
-  StrAppend(&ret, "T < ", all_committed_before_timestamp_.ToString(),
-            " or (T < ", none_committed_after_timestamp_.ToString(), " and T not in {");
+  StrAppend(&ret, "T < ", all_committed_before_.ToString(),
+            " or (T in {");
 
   bool first = true;
-  BOOST_FOREACH(Timestamp::val_type t, timestamps_in_flight_) {
+  BOOST_FOREACH(Timestamp::val_type t, committed_timestamps_) {
     if (!first) {
       ret.push_back(',');
     }
@@ -221,10 +271,6 @@ std::string MvccSnapshot::ToString() const {
   }
   ret.append("})}]");
   return ret;
-}
-
-size_t MvccSnapshot::num_transactions_in_flight() const {
-  return timestamps_in_flight_.size();
 }
 
 ////////////////////////////////////////////////////////////

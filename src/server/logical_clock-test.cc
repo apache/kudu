@@ -51,6 +51,21 @@ TEST_F(LogicalClockTest, TestWaitUntilAfterIsUnavailable) {
   ASSERT_TRUE(status.IsServiceUnavailable());
 }
 
+TEST_F(LogicalClockTest, TestIsAfter) {
+  Timestamp ts1 = clock_->Now();
+  ASSERT_TRUE(clock_->IsAfter(ts1));
+
+  // Update the clock in the future, make sure it still
+  // handles "IsAfter" properly even when it's running in
+  // "logical" mode.
+  Timestamp now_increased = Timestamp(1000);
+  ASSERT_STATUS_OK(clock_->Update(now_increased));
+  Timestamp ts2 = clock_->Now();
+
+  ASSERT_TRUE(clock_->IsAfter(ts1));
+  ASSERT_TRUE(clock_->IsAfter(ts2));
+}
+
 }  // namespace server
 }  // namespace kudu
 

@@ -64,15 +64,12 @@ class MvccSnapshot {
   // in this snapshot, suitable for debug printouts.
   string ToString() const;
 
-  // Return the number of transactions in flight during this snapshot.
-  size_t num_transactions_in_flight() const;
-
   // Return true if the snapshot is considered 'clean'. A clean snapshot is one
   // which is determined only by a timestamp -- the snapshot considers all
   // transactions with timestamps less than some timestamp to be committed,
   // and all other transactions to be uncommitted.
   bool is_clean() const {
-    return timestamps_in_flight_.empty();
+    return committed_timestamps_.empty();
   }
 
  private:
@@ -81,24 +78,27 @@ class MvccSnapshot {
   FRIEND_TEST(MvccTest, TestMayHaveUncommittedTransactionsBefore);
   FRIEND_TEST(MvccTest, TestWaitUntilAllCommitted_SnapAtTimestampWithInFlights);
 
-  typedef unordered_set<Timestamp::val_type>::iterator InFlightsIterator;
-
   // Summary rule:
-  // A transaction T is committed if and only if:
-  //    T < all_committed_before_timestamp_
-  // or (T < none_committed_after_timestamp && !timestamps_in_flight.contains(T))
+  //   A transaction T is committed if and only if:
+  //      T < all_committed_before_ or
+  //   or committed_timestamps_.contains(T)
+  //
+  // In ASCII form, where 'C' represents a committed transaction,
+  // and 'U' represents an uncommitted one:
+  //
+  //   CCCCCCCCCCCCCCCCCUUUUUCUUUCU
+  //                    |    \___\___ committed_timestamps_
+  //                    |
+  //                    \- all_committed_before_
+
 
   // A transaction ID below which all transactions have been committed.
   // For any timestamp X, if X < all_committed_timestamp_, then X is committed.
-  Timestamp all_committed_before_timestamp_;
+  Timestamp all_committed_before_;
 
-  // A transaction ID above which no transactions have been committed.
-  // For any timestamp X, if X >= none_committed_after_timestamp_, then X is not committed.
-  Timestamp none_committed_after_timestamp_;
-
-  // The current set of transactions which are in flight.
-  // For any timestamp X, if X is in timestamps_in_flight_, it is not yet committed.
-  unordered_set<Timestamp::val_type> timestamps_in_flight_;
+  // The set of transactions higher than all_committed_before_timestamp_ which
+  // are committed in this snapshot.
+  unordered_set<Timestamp::val_type> committed_timestamps_;
 
 };
 
@@ -163,6 +163,9 @@ class MvccManager {
 
   bool AreAllTransactionsCommitted(Timestamp ts) const;
 
+  // Return the number of transactions in flight..
+  int CountTransactionsInFlight() const;
+
   ~MvccManager();
 
  private:
@@ -182,9 +185,16 @@ class MvccManager {
   // Waits until all transactions before the given time are committed.
   void WaitUntilAllCommitted(Timestamp ts) const;
 
+  void AdjustCurSnapForCommit(Timestamp ts);
+
   typedef simple_spinlock LockType;
   mutable LockType lock_;
+
   MvccSnapshot cur_snap_;
+
+  // The set of timestamps corresponding to currently in-flight transactions.
+  std::tr1::unordered_set<Timestamp::val_type> timestamps_in_flight_;
+
   scoped_refptr<server::Clock> clock_;
   mutable std::vector<WaitingState*> waiters_;
 

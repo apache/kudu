@@ -120,5 +120,21 @@ TEST_F(HybridClockTest, TestWaitUntilAfter_TestCase2) {
   }
 }
 
+TEST_F(HybridClockTest, TestIsAfter) {
+  Timestamp ts1 = clock_->Now();
+  ASSERT_TRUE(clock_->IsAfter(ts1));
+
+  // Update the clock in the future, make sure it still
+  // handles "IsAfter" properly even when it's running in
+  // "logical" mode.
+  Timestamp now_increased = HybridClock::TimestampFromMicroseconds(
+    HybridClock::GetPhysicalValue(ts1) + 1 * 1000 * 1000);
+  ASSERT_STATUS_OK(clock_->Update(now_increased));
+  Timestamp ts2 = clock_->Now();
+
+  ASSERT_TRUE(clock_->IsAfter(ts1));
+  ASSERT_TRUE(clock_->IsAfter(ts2));
+}
+
 }  // namespace server
 }  // namespace kudu

@@ -5,16 +5,24 @@
 #include <gtest/gtest.h>
 #include <glog/logging.h>
 
+#include "server/hybrid_clock.h"
 #include "server/logical_clock.h"
 #include "tablet/mvcc.h"
 #include "util/test_util.h"
 
+DECLARE_int32(max_clock_sync_error_usec);
+
 namespace kudu { namespace tablet {
+
+using server::Clock;
+using server::HybridClock;
 
 class MvccTest : public KuduTest {
  public:
   MvccTest() :
     clock_(server::LogicalClock::CreateStartingAt(Timestamp::kInitialTimestamp)) {
+    // Increase clock sync tolerance so test doesn't fail on jenkins.
+    FLAGS_max_clock_sync_error_usec = 10 * 1000 * 1000;
   }
 
   void WaitForSnapshotAtTSThread(MvccManager* mgr, Timestamp ts) {
@@ -54,7 +62,7 @@ TEST_F(MvccTest, TestMvccBasic) {
 
   // State should still have no committed transactions, since 1 is in-flight.
   mgr.TakeSnapshot(&snap);
-  ASSERT_EQ("MvccSnapshot[committed={T|T < 1 or (T < 2 and T not in {1})}]", snap.ToString());
+  ASSERT_EQ("MvccSnapshot[committed={T|T < 1}]", snap.ToString());
   ASSERT_FALSE(snap.IsCommitted(Timestamp(1)));
   ASSERT_FALSE(snap.IsCommitted(Timestamp(2)));
 
@@ -81,7 +89,7 @@ TEST_F(MvccTest, TestMvccMultipleInFlight) {
   // State should still have no committed transactions, since both are in-flight.
 
   mgr.TakeSnapshot(&snap);
-  ASSERT_EQ("MvccSnapshot[committed={T|T < 1 or (T < 3 and T not in {1,2})}]", snap.ToString());
+  ASSERT_EQ("MvccSnapshot[committed={T|T < 1}]", snap.ToString());
   ASSERT_FALSE(snap.IsCommitted(t1));
   ASSERT_FALSE(snap.IsCommitted(t2));
 
@@ -91,42 +99,80 @@ TEST_F(MvccTest, TestMvccMultipleInFlight) {
   // State should show 1 as committed, 0 as uncommitted.
   mgr.TakeSnapshot(&snap);
   ASSERT_EQ("MvccSnapshot[committed="
-            "{T|T < 1 or (T < 3 and T not in {1})}]", snap.ToString());
+            "{T|T < 1 or (T in {2})}]", snap.ToString());
   ASSERT_FALSE(snap.IsCommitted(t1));
   ASSERT_TRUE(snap.IsCommitted(t2));
 
-  // Start timestamp 3
-  Timestamp t3 = mgr.StartTransaction();
-  ASSERT_EQ(3, t3.value());
+  // Start another transaction. This gets timestamp 4
+  // (the earlier Commit() incremented the clock once)
+  Timestamp t4 = mgr.StartTransaction();
+  ASSERT_EQ(4, t4.value());
 
-  // State should show 2 as committed, 1 and 3 as uncommitted.
+  // State should show 2 as committed, 1 and 4 as uncommitted.
   mgr.TakeSnapshot(&snap);
   ASSERT_EQ("MvccSnapshot[committed="
-            "{T|T < 1 or (T < 4 and T not in {1,3})}]", snap.ToString());
+            "{T|T < 1 or (T in {2})}]", snap.ToString());
   ASSERT_FALSE(snap.IsCommitted(t1));
   ASSERT_TRUE(snap.IsCommitted(t2));
-  ASSERT_FALSE(snap.IsCommitted(t3));
+  ASSERT_FALSE(snap.IsCommitted(t4));
 
   // Commit 3
-  mgr.CommitTransaction(t3);
+  mgr.CommitTransaction(t4);
 
   // 2 and 3 committed
   mgr.TakeSnapshot(&snap);
   ASSERT_EQ("MvccSnapshot[committed="
-            "{T|T < 1 or (T < 4 and T not in {1})}]", snap.ToString());
+            "{T|T < 1 or (T in {2,4})}]", snap.ToString());
   ASSERT_FALSE(snap.IsCommitted(t1));
   ASSERT_TRUE(snap.IsCommitted(t2));
-  ASSERT_TRUE(snap.IsCommitted(t3));
+  ASSERT_TRUE(snap.IsCommitted(t4));
 
   // Commit 1
   mgr.CommitTransaction(t1);
 
   // all committed
   mgr.TakeSnapshot(&snap);
-  ASSERT_EQ("MvccSnapshot[committed={T|T < 4}]", snap.ToString());
+  ASSERT_EQ("MvccSnapshot[committed={T|T < 6}]", snap.ToString());
   ASSERT_TRUE(snap.IsCommitted(t1));
   ASSERT_TRUE(snap.IsCommitted(t2));
-  ASSERT_TRUE(snap.IsCommitted(t3));
+  ASSERT_TRUE(snap.IsCommitted(t4));
+}
+
+TEST_F(MvccTest, TestOutOfOrderTxns) {
+  scoped_refptr<Clock> hybrid_clock(new HybridClock());
+  ASSERT_STATUS_OK(hybrid_clock->Init());
+  MvccManager mgr(hybrid_clock);
+
+  // Start a normal non-commit-wait txn.
+  Timestamp normal_txn = mgr.StartTransaction();
+
+  MvccSnapshot s1(mgr);
+
+  // Start a transaction as if it were using commit-wait (ie started in future)
+  Timestamp cw_txn = mgr.StartTransactionAtLatest();
+
+  // Commit the original txn
+  mgr.CommitTransaction(normal_txn);
+
+  // Start a new txn
+  Timestamp normal_txn_2 = mgr.StartTransaction();
+
+  // The old snapshot should not have either txn
+  EXPECT_FALSE(s1.IsCommitted(normal_txn));
+  EXPECT_FALSE(s1.IsCommitted(normal_txn_2));
+
+  // A new snapshot should have only the first transaction
+  MvccSnapshot s2(mgr);
+  EXPECT_TRUE(s2.IsCommitted(normal_txn));
+  EXPECT_FALSE(s2.IsCommitted(normal_txn_2));
+
+  // Commit the commit-wait one once it is time.
+  ASSERT_STATUS_OK(hybrid_clock->WaitUntilAfter(cw_txn));
+  mgr.CommitTransaction(cw_txn);
+
+  // A new snapshot at this point should still think that normal_txn_2 is uncommitted
+  MvccSnapshot s3(mgr);
+  EXPECT_FALSE(s3.IsCommitted(normal_txn_2));
 }
 
 TEST_F(MvccTest, TestScopedTransaction) {
@@ -164,10 +210,9 @@ TEST_F(MvccTest, TestPointInTimeSnapshot) {
 
 TEST_F(MvccTest, TestMayHaveCommittedTransactionsAtOrAfter) {
   MvccSnapshot snap;
-  snap.all_committed_before_timestamp_ = Timestamp(10);
-  snap.timestamps_in_flight_.insert(11);
-  snap.timestamps_in_flight_.insert(13);
-  snap.none_committed_after_timestamp_ = Timestamp(14);
+  snap.all_committed_before_ = Timestamp(10);
+  snap.committed_timestamps_.insert(11);
+  snap.committed_timestamps_.insert(13);
 
   ASSERT_TRUE(snap.MayHaveCommittedTransactionsAtOrAfter(Timestamp(9)));
   ASSERT_TRUE(snap.MayHaveCommittedTransactionsAtOrAfter(Timestamp(10)));
@@ -175,14 +220,23 @@ TEST_F(MvccTest, TestMayHaveCommittedTransactionsAtOrAfter) {
   ASSERT_TRUE(snap.MayHaveCommittedTransactionsAtOrAfter(Timestamp(13)));
   ASSERT_FALSE(snap.MayHaveCommittedTransactionsAtOrAfter(Timestamp(14)));
   ASSERT_FALSE(snap.MayHaveCommittedTransactionsAtOrAfter(Timestamp(15)));
+
+  // Test for "all committed" snapshot
+  MvccSnapshot all_committed = MvccSnapshot::CreateSnapshotIncludingAllTransactions();
+  ASSERT_TRUE(all_committed.MayHaveCommittedTransactionsAtOrAfter(Timestamp(1)));
+  ASSERT_TRUE(all_committed.MayHaveCommittedTransactionsAtOrAfter(Timestamp(12345)));
+
+  // And "none committed" snapshot
+  MvccSnapshot none_committed = MvccSnapshot::CreateSnapshotIncludingNoTransactions();
+  ASSERT_FALSE(none_committed.MayHaveCommittedTransactionsAtOrAfter(Timestamp(1)));
+  ASSERT_FALSE(none_committed.MayHaveCommittedTransactionsAtOrAfter(Timestamp(12345)));
 }
 
 TEST_F(MvccTest, TestMayHaveUncommittedTransactionsBefore) {
   MvccSnapshot snap;
-  snap.all_committed_before_timestamp_ = Timestamp(10);
-  snap.timestamps_in_flight_.insert(11);
-  snap.timestamps_in_flight_.insert(13);
-  snap.none_committed_after_timestamp_ = Timestamp(14);
+  snap.all_committed_before_ = Timestamp(10);
+  snap.committed_timestamps_.insert(11);
+  snap.committed_timestamps_.insert(13);
 
   ASSERT_FALSE(snap.MayHaveUncommittedTransactionsAtOrBefore(Timestamp(9)));
   ASSERT_TRUE(snap.MayHaveUncommittedTransactionsAtOrBefore(Timestamp(10)));
@@ -190,6 +244,16 @@ TEST_F(MvccTest, TestMayHaveUncommittedTransactionsBefore) {
   ASSERT_TRUE(snap.MayHaveUncommittedTransactionsAtOrBefore(Timestamp(13)));
   ASSERT_TRUE(snap.MayHaveUncommittedTransactionsAtOrBefore(Timestamp(14)));
   ASSERT_TRUE(snap.MayHaveUncommittedTransactionsAtOrBefore(Timestamp(15)));
+
+  // Test for "all committed" snapshot
+  MvccSnapshot all_committed = MvccSnapshot::CreateSnapshotIncludingAllTransactions();
+  ASSERT_FALSE(all_committed.MayHaveUncommittedTransactionsAtOrBefore(Timestamp(1)));
+  ASSERT_FALSE(all_committed.MayHaveUncommittedTransactionsAtOrBefore(Timestamp(12345)));
+
+  // And "none committed" snapshot
+  MvccSnapshot none_committed = MvccSnapshot::CreateSnapshotIncludingNoTransactions();
+  ASSERT_TRUE(none_committed.MayHaveUncommittedTransactionsAtOrBefore(Timestamp(1)));
+  ASSERT_TRUE(none_committed.MayHaveUncommittedTransactionsAtOrBefore(Timestamp(12345)));
 }
 
 TEST_F(MvccTest, TestAreAllTransactionsCommitted) {
