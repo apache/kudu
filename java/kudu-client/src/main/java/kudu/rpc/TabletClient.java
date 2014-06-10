@@ -49,6 +49,7 @@ import org.jboss.netty.handler.codec.replay.VoidEnum;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import javax.security.sasl.SaslException;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.concurrent.ConcurrentHashMap;
@@ -330,7 +331,13 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
     final int rdx = buf.readerIndex();
     LOG.debug("------------------>> ENTERING DECODE >>------------------");
 
-    buf = secureRpcHelper.handleResponse(buf, chan);
+    try {
+      buf = secureRpcHelper.handleResponse(buf, chan);
+    } catch (SaslException e) {
+      String message = "Couldn't complete the SASL handshake";
+      LOG.error(message);
+      throw new NonRecoverableException(message, e);
+    }
     if (buf == null) {
       return null;
     }

@@ -16,14 +16,10 @@ import java.util.List;
 
 public class ProtobufHelper {
 
-  public static String getShortTextFormat(Message m) {
-    return "TODO: " + m.getClass().toString();
-  }
-
   /**
-   * TODO
-   * @param schema
-   * @return
+   * Utility method to convert a Schema to its wire format.
+   * @param schema Schema to convert
+   * @return a list of ColumnSchemaPB
    */
   public static List<Common.ColumnSchemaPB> schemaToListPb(Schema schema) {
     ArrayList<Common.ColumnSchemaPB> columns =

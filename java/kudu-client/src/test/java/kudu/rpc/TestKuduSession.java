@@ -154,8 +154,6 @@ public class TestKuduSession extends BaseKuduTest {
     buffered.join(2000);
     assertEquals(10, countInRange(0, 40));
 
-    // TODO add a test for manual flush against multiple tablets once we can pre-split on ints
-
     // Test nulls
     // add 10 rows with the nullable column set to null
     session.setFlushMode(KuduSession.FlushMode.AUTO_FLUSH_SYNC);

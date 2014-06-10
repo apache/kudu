@@ -93,28 +93,24 @@ public class SecureRpcHelper {
     Channels.write(channel, buffer);
   }
 
-  public ChannelBuffer handleResponse(ChannelBuffer buf, Channel chan) {
+  public ChannelBuffer handleResponse(ChannelBuffer buf, Channel chan) throws SaslException {
     if (!saslClient.isComplete() || negoUnderway) {
-      try {
-        final int readIdx = buf.readerIndex();
-        RpcHeader.SaslMessagePB response = parseSaslMsgResponse(buf);
-        switch (response.getState()) {
-          case NEGOTIATE:
-            handleNegotiateResponse(chan, response);
-            break;
-          case CHALLENGE:
-            handleChallengeResponse(chan, response);
-            break;
-          case SUCCESS:
-            handleSuccessResponse(chan, response);
-            break;
-          default:
-            System.out.println("Wrong sasl state");
-        }
-        return null;
-      } catch (SaslException e) {
-        e.printStackTrace();  // TODO
+      final int readIdx = buf.readerIndex();
+      RpcHeader.SaslMessagePB response = parseSaslMsgResponse(buf);
+      switch (response.getState()) {
+        case NEGOTIATE:
+          handleNegotiateResponse(chan, response);
+          break;
+        case CHALLENGE:
+          handleChallengeResponse(chan, response);
+          break;
+        case SUCCESS:
+          handleSuccessResponse(chan, response);
+          break;
+        default:
+          System.out.println("Wrong sasl state");
       }
+      return null;
     }
     return unwrap(buf);
   }
