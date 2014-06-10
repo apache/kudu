@@ -102,6 +102,8 @@ class InboundCall {
 
   const Sockaddr& remote_address() const;
 
+  const scoped_refptr<Connection>& connection() const;
+
   Trace* trace();
 
   // When this InboundCall was received (instantiated).

@@ -195,7 +195,7 @@ TEST_F(RpcStubTest, TestCallMissingMethod) {
 
   Status s = DoTestSyncCall(p, "DoesNotExist");
   ASSERT_TRUE(s.IsRemoteError()) << "Bad status: " << s.ToString();
-  ASSERT_STR_CONTAINS(s.ToString(), "Invalid method: DoesNotExist");
+  ASSERT_STR_CONTAINS(s.ToString(), "with an invalid method name: DoesNotExist");
 }
 
 TEST_F(RpcStubTest, TestApplicationError) {

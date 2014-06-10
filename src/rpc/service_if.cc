@@ -4,10 +4,14 @@
 
 #include <string>
 
+#include "gutil/strings/substitute.h"
+
+#include "rpc/connection.h"
 #include "rpc/inbound_call.h"
 #include "rpc/rpc_header.pb.h"
 
 using std::string;
+using strings::Substitute;
 
 namespace kudu {
 namespace rpc {
@@ -33,9 +37,17 @@ bool ServiceIf::ParseParam(InboundCall *call, google::protobuf::Message *message
 }
 
 void ServiceIf::RespondBadMethod(InboundCall *call) {
-  string err = StringPrintf("Invalid method: %s",
-                            call->method_name().c_str());
-  LOG(WARNING) << err << " from " << call->remote_address().ToString();
+  Sockaddr local_addr, remote_addr;
+
+  call->connection()->socket()->GetSocketAddress(&local_addr);
+  call->connection()->socket()->GetPeerAddress(&remote_addr);
+  string err = Substitute("Call on service $0 received at $1 from $2 with an "
+                          "invalid method name: $3",
+                          call->connection()->service_name().c_str(),
+                          local_addr.host().c_str(),
+                          remote_addr.host().c_str(),
+                          call->method_name().c_str());
+  LOG(WARNING) << err;
   call->RespondFailure(ErrorStatusPB::ERROR_NO_SUCH_METHOD,
                        Status::InvalidArgument(err));
 }

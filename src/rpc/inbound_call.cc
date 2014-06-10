@@ -155,6 +155,10 @@ const Sockaddr& InboundCall::remote_address() const {
   return conn_->remote();
 }
 
+const scoped_refptr<Connection>& InboundCall::connection() const {
+  return conn_;
+}
+
 Trace* InboundCall::trace() {
   return trace_.get();
 }
