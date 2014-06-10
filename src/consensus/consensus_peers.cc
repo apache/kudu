@@ -384,10 +384,9 @@ void Peer::ProcessResponseError(const Status& status) {
   boost::lock_guard<simple_spinlock> lock(peer_lock_);
   // TODO handle the error.
   failed_attempts_++;
-  KLOG_EVERY_N(WARNING, 10) << "Couldn't send request to peer: "
-      << peer_pb_.permanent_uuid() << " Status: " << status.ToString()
-      << ". Retrying in the next heartbeat period. Already tried "
-      << failed_attempts_ << " times.";
+  LOG(WARNING) << "Couldn't send request to peer: " << peer_pb_.permanent_uuid()
+      << " Status: " << status.ToString() << ". Retrying in the next heartbeat period."
+      << " Already tried " << failed_attempts_ << " times.";
   outstanding_req_latch_.CountDown();
   processing_ = false;
 }
