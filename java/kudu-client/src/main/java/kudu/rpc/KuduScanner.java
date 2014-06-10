@@ -108,7 +108,7 @@ public final class KuduScanner {
    * Maximum number of bytes to fetch at a time.
    * @see #setMaxNumBytes
    */
-  private int max_num_bytes = 1024*1024; // TODO
+  private int max_num_bytes = 1024*1024;
 
   /**
    * The tabletSlice currently being scanned.
@@ -160,8 +160,6 @@ public final class KuduScanner {
   private boolean hasMore = true;
 
   private boolean prefetching = false;
-
-  private boolean faultTolerantScan = false;
 
   private boolean inFirstTablet = true;
 
@@ -259,20 +257,6 @@ public final class KuduScanner {
   protected long getSnapshotTimestamp() {
     return this.timestamp;
   }
-
-  /**
-   * TODO
-   * Scans a number of rows.  Calling this method is equivalent to:
-   * <pre>
-   *   this.{@link #nextRows() nextRows}();
-   * </pre>
-   * @param nrows The maximum number of rows to retrieve.
-   * @return A deferred list of rows.
-   * @see #nextRows()
-   */
-  /*public Deferred<List<RowResult>> nextRows(final int nrows) {
-    return nextRows();
-  }*/
 
   /**
    * Scans a number of rows.
@@ -552,26 +536,6 @@ public final class KuduScanner {
     this.deadlineTracker.setDeadline(deadline);
   }
 
-  /**
-   * This concept doesn't exist on the TabletServer at the moment, but the idea is to be able to
-   * scan the row keys in order so that if a TS dies, you can just continue on another node.
-   * TODO: this is barely implemented either way
-   * @param faultTolerantScan true if the scan tolerates server failures or fails as soon as it
-   *                          encounters such a situation
-   */
-  public void setFaultTolerantScan(boolean faultTolerantScan) {
-    this.faultTolerantScan = faultTolerantScan;
-  }
-
-  /**
-   * Is this scanner fault tolerant or not.
-   * TODO functionality not implemented, it's never fault tolerant
-   * @return true if the scanner can tolerate tablet server failures, else false
-   */
-  public boolean isFaultTolerantScan() {
-    return this.faultTolerantScan;
-  }
-
   // ---------------------- //
   // Package private stuff. //
   // ---------------------- //
@@ -779,9 +743,13 @@ public final class KuduScanner {
       final byte[] id = resp.getScannerId().toByteArray();
       TabletServerErrorPB error = resp.getError();
       if (error.getCode().equals(TabletServerErrorPB.Code.TABLET_NOT_FOUND)) {
-        // TODO doing this makes it act like Write, the request will be redirected to a new
-        // TODO tablet. Likely not what we want.
-        return error;
+        if (state == State.OPENING) {
+          // Doing this will trigger finding the new location.
+          return error;
+        } else {
+          return new NonRecoverableException("Cannot continue scanning, " +
+              "the tablet has moved and this isn't a fault tolerant scan");
+        }
       }
       RowResultIterator iterator = new RowResultIterator(schema, resp.getData());
 
@@ -850,40 +818,6 @@ public final class KuduScanner {
             "but expected " + expectedSize + " for " + numRows + " rows");
       }
       this.rowResult = new RowResult(this.schema, this.bs, this.indirectBs);
-
-      // TODO this is currently not even supported server-side
-      if (faultTolerantScan) {
-        setLastSeenKey(data.getNumRows());
-      }
-    }
-
-    /**
-     * Making a big assumption here, that we always get all the keys back!
-     */
-    private void setLastSeenKey(int numRows) {
-      // First go to the end of the results since we want to only keep track of the last row key
-      this.rowResult.advancePointerTo(numRows-1);
-      KeyEncoder encoder = new KeyEncoder(schema);
-      for (int i = 0; i < schema.getColumnCount(); i++) {
-        ColumnSchema column = schema.getColumn(i);
-        if (!column.isKey()) {
-          break;
-        }
-        if (column.getType().equals(Type.STRING)) {
-          // TODO It'd be better to just pass the string's original bytes but this is getting
-          // TODO hella messy
-          String key = this.rowResult.getString(i);
-          encoder.addKey(key.getBytes(), 0, key.length(), column, i);
-        } else {
-          encoder.addKey(this.rowResult.getRowData(),
-              this.rowResult.getCurrentRowDataOffsetForColumn(i), column.getType().getSize(),
-              column, i);
-        }
-      }
-      startKey = encoder.extractByteArray();
-      assert startKey.length > 0;
-      // reset the row result for querying
-      this.rowResult.resetPointer();
     }
 
     @Override
@@ -924,72 +858,3 @@ public final class KuduScanner {
     }
   }
 }
-
-// TODO when multiple tablets
-  /*private Deferred<ArrayList<ArrayList<KeyValue>>> scanFinished(final Response resp) {
-    final byte[] region_stop_key = tabletSlice.stopKey();
-    // Check to see if this tabletSlice is the last we should scan (either
-    // because (1) it's the last tabletSlice or (3) because its stop_key is
-    // greater than or equal to the stop_key of this scanner provided
-    // that (2) we're not trying to scan until the end of the table).
-    if (region_stop_key == EMPTY_ARRAY                           // (1)
-        || (stop_key != EMPTY_ARRAY                              // (2)
-        && Bytes.memcmp(stop_key, region_stop_key) <= 0)) {  // (3)
-      get_next_rows_request = null;        // free();
-      families = null;                     // free();
-      qualifiers = null;                   // free();
-      start_key = stop_key = EMPTY_ARRAY;  // free() but mustn't be null.
-      if (resp != null && !resp.more) {
-        return null;  // The server already closed the scanner for us.
-      }
-      return close()  // Auto-close the scanner.
-          .addCallback(new Callback<ArrayList<ArrayList<KeyValue>>, Object>() {
-            public ArrayList<ArrayList<KeyValue>> call(final Object arg) {
-              return null;  // Tell the user there's nothing more to scan.
-            }
-            public String toString() {
-              return "auto-close scanner " + Bytes.hex(scanner_id);
-            }
-          });
-    }
-    return continueScanOnNextRegion();
-  }*/
-
-/**
- * TODO when multiple tablets
- * Continues scanning on the next tabletSlice.
- * <p>
- * This method is called when we tried to get more rows but we reached the
- * end of the current tabletSlice and need to move on to the next tabletSlice.
- * <p>
- * This method closes the scanner on the current tabletSlice, updates the start
- * key of this scanner and resumes scanning on the next tabletSlice.
- * @return The deferred results from the next tabletSlice.
- */
-  /*private Deferred<ArrayList<ArrayList<KeyValue>>> continueScanOnNextRegion() {
-    // Copy those into local variables so we can still refer to them in the
-    // "closure" below even after we've changed them.
-    final long old_scanner_id = scanner_id;
-    final String old_region = tabletSlice;
-    if (LOG.isDebugEnabled()) {
-      LOG.debug("Scanner " + Bytes.hex(old_scanner_id) + " done scanning "
-          + old_region);
-    }
-    client.closeScanner(this).addCallback(new Callback<Object, Object>() {
-      public Object call(final Object arg) {
-        if (LOG.isDebugEnabled()) {
-          LOG.debug("Scanner " + Bytes.hex(old_scanner_id) + " closed on "
-              + old_region);
-        }
-        return arg;
-      }
-      public String toString() {
-        return "scanner moved";
-      }
-    });
-    // Continue scanning from the next tabletSlice's start key.
-    start_key = tabletSlice.stopKey();
-    scanner_id = 0xDEAD000AA000DEADL;   // Make debugging easier.
-    invalidate();
-    return nextRows();
-  }*/
