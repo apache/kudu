@@ -1,20 +1,18 @@
 // Copyright (c) 2013, Cloudera, inc.
 #include <glog/logging.h>
-#include "gutil/atomicops.h"
 #include <boost/thread/thread.hpp>
-
 #include <stdlib.h>
 
-#include "common/schema.h"
-#include "common/row.h"
-#include "gutil/gscoped_ptr.h"
-#include "benchmarks/tpch/tpch-schemas.h"
 #include "benchmarks/tpch/line_item_dao.h"
-#include "benchmarks/tpch/rpc_line_item_dao.h"
-#include "common/wire_protocol.h"
-#include "util/status.h"
-#include "common/row_changelist.h"
 #include "benchmarks/tpch/line_item_tsv_importer.h"
+#include "benchmarks/tpch/rpc_line_item_dao.h"
+#include "common/row.h"
+#include "common/row_changelist.h"
+#include "common/schema.h"
+#include "common/wire_protocol.h"
+#include "gutil/atomicops.h"
+#include "gutil/gscoped_ptr.h"
+#include "util/status.h"
 
 DEFINE_string(tpch_path_to_data, "/data/3/dbgen/truncated_lineitem.tbl",
               "The full path to the '|' separated file containing the lineitem table.");
@@ -92,17 +90,20 @@ static void UpdateThread(Demo *demo) {
     ColumnRangePredicate pred(query_schema.column(0), &current_order, &current_order);
     spec.AddPredicate(pred);
     dao->OpenScanner(query_schema, &spec);
-    vector<const uint8_t*> rows;
+    vector<client::KuduRowResult> rows;
     while (dao->HasMore()) {
       dao->GetNext(&rows);
     }
     if (rows.empty()) continue;
-    ConstContiguousRow last_row(query_schema, rows.back());
+    client::KuduRowResult& last_row(rows.back());
 
     // 3. The last row has the highest line, we update it
-    uint32_t l_ordernumber = *query_schema.ExtractColumnFromRow<UINT32>(last_row, 0);
-    uint32_t l_linenumber = *query_schema.ExtractColumnFromRow<UINT32>(last_row, 1);
-    uint32_t l_quantity = *query_schema.ExtractColumnFromRow<UINT32>(last_row, 2);
+    uint32_t l_ordernumber;
+    uint32_t l_linenumber;
+    uint32_t l_quantity;
+    CHECK_OK(last_row.GetUInt32(0, &l_ordernumber));
+    CHECK_OK(last_row.GetUInt32(1, &l_linenumber));
+    CHECK_OK(last_row.GetUInt32(2, &l_quantity));
     uint32_t new_l_quantity = l_quantity + 1;
 
     // 4. Do the update

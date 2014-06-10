@@ -6,9 +6,7 @@
 #include <tr1/memory>
 #include <utility>
 
-#include "gutil/map-util.h"
-#include "gutil/gscoped_ptr.h"
-
+#include "benchmarks/tpch/rpc_line_item_dao.h"
 #include "client/client.h"
 #include "client/meta_cache.h"
 #include "client/write_op.h"
@@ -18,12 +16,13 @@
 #include "common/scan_spec.h"
 #include "common/schema.h"
 #include "common/wire_protocol.h"
+#include "gutil/gscoped_ptr.h"
+#include "gutil/map-util.h"
+#include "gutil/stl_util.h"
 #include "tserver/tserver_service.proxy.h"
 #include "util/status.h"
-#include "benchmarks/tpch/rpc_line_item_dao.h"
 #include "util/locks.h"
 #include "util/coding.h"
-#include "gutil/stl_util.h"
 
 using std::tr1::shared_ptr;
 
@@ -152,7 +151,7 @@ bool RpcLineItemDAO::HasMore() {
 }
 
 
-void RpcLineItemDAO::GetNext(vector<const uint8_t*> *rows) {
+void RpcLineItemDAO::GetNext(vector<client::KuduRowResult> *rows) {
   CHECK_OK(current_scanner_->NextBatch(rows));
 }
 

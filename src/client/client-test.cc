@@ -10,6 +10,7 @@
 
 #include "client/client.h"
 #include "client/meta_cache.h"
+#include "client/row_result.h"
 #include "client/write_op.h"
 #include "common/maintenance_manager.h"
 #include "common/row.h"
@@ -195,15 +196,15 @@ class ClientTest : public KuduTest {
       ASSERT_STATUS_OK(scanner.Open());
 
       ASSERT_TRUE(scanner.HasMoreRows());
-      vector<const uint8_t*> rows;
+      vector<KuduRowResult> rows;
       uint64_t sum = 0;
       while (scanner.HasMoreRows()) {
         ASSERT_STATUS_OK(scanner.NextBatch(&rows));
 
-        BOOST_FOREACH(const uint8_t* row_ptr, rows) {
-          ConstContiguousRow row(projection, row_ptr);
-          uint32_t to_add = *projection.ExtractColumnFromRow<UINT32>(row, 0);
-          sum += implicit_cast<uint64_t>(to_add);
+        BOOST_FOREACH(const KuduRowResult& row, rows) {
+          uint32_t value;
+          ASSERT_STATUS_OK(row.GetUInt32(0, &value));
+          sum += value;
         }
         rows.clear();
       }
@@ -226,15 +227,15 @@ class ClientTest : public KuduTest {
       ASSERT_STATUS_OK(scanner.Open());
 
       ASSERT_TRUE(scanner.HasMoreRows());
-      vector<const uint8_t*> rows;
+      vector<KuduRowResult> rows;
       while (scanner.HasMoreRows()) {
         ASSERT_STATUS_OK(scanner.NextBatch(&rows));
 
-        BOOST_FOREACH(const uint8_t* row_ptr, rows) {
-          ConstContiguousRow row(schema_, row_ptr);
-          Slice s = *schema_.ExtractColumnFromRow<STRING>(row, 2);
+        BOOST_FOREACH(const KuduRowResult& row, rows) {
+          Slice s;
+          ASSERT_STATUS_OK(row.GetString(2, &s));
           if (!s.starts_with("hello 2") && !s.starts_with("hello 3")) {
-            FAIL() << schema_.DebugRow(row);
+            FAIL() << row.ToString();
           }
         }
         rows.clear();
@@ -253,15 +254,15 @@ class ClientTest : public KuduTest {
       ASSERT_STATUS_OK(scanner.Open());
 
       ASSERT_TRUE(scanner.HasMoreRows());
-      vector<const uint8_t*> rows;
+      vector<KuduRowResult> rows;
       while (scanner.HasMoreRows()) {
         ASSERT_STATUS_OK(scanner.NextBatch(&rows));
 
-        BOOST_FOREACH(const uint8_t* row_ptr, rows) {
-          ConstContiguousRow row(schema_, row_ptr);
-          uint32_t k = *schema_.ExtractColumnFromRow<UINT32>(row, 0);
+        BOOST_FOREACH(const KuduRowResult& row, rows) {
+          uint32_t k;
+          ASSERT_STATUS_OK(row.GetUInt32(0, &k));
           if (k < 5 || k > 10) {
-            FAIL() << schema_.DebugRow(row);
+            FAIL() << row.ToString();
           }
         }
         rows.clear();
@@ -295,7 +296,7 @@ class ClientTest : public KuduTest {
     }
     CHECK_OK(scanner.Open());
     int count = 0;
-    vector<const uint8_t*> rows;
+    vector<KuduRowResult> rows;
     while (scanner.HasMoreRows()) {
       CHECK_OK(scanner.NextBatch(&rows));
       count += rows.size();
@@ -309,12 +310,11 @@ class ClientTest : public KuduTest {
     KuduScanner scanner(table);
     scanner.SetSelection(KuduClient::LEADER_ONLY);
     ASSERT_STATUS_OK(scanner.Open());
-    vector<const uint8_t*> rows;
+    vector<KuduRowResult> rows;
     while (scanner.HasMoreRows()) {
       ASSERT_STATUS_OK(scanner.NextBatch(&rows));
-      BOOST_FOREACH(const uint8_t* row_ptr, rows) {
-        ConstContiguousRow row(schema_, row_ptr);
-        row_strings->push_back(schema_.DebugRow(row));
+      BOOST_FOREACH(const KuduRowResult& row, rows) {
+        row_strings->push_back(row.ToString());
       }
       rows.clear();
     }
@@ -528,7 +528,7 @@ TEST_F(ClientTest, TestScanEmptyTable) {
   // the last tablet, HasMoreRows will return true (because it doesn't
   // know whether there's data in subsequent tablets).
   ASSERT_TRUE(scanner.HasMoreRows());
-  vector<const uint8_t*> rows;
+  vector<KuduRowResult> rows;
   ASSERT_STATUS_OK(scanner.NextBatch(&rows));
   ASSERT_TRUE(rows.empty());
   ASSERT_FALSE(scanner.HasMoreRows());
@@ -546,7 +546,7 @@ TEST_F(ClientTest, TestScanEmptyProjection) {
     ASSERT_STATUS_OK(scanner.Open());
 
     ASSERT_TRUE(scanner.HasMoreRows());
-    vector<const uint8_t*> rows;
+    vector<KuduRowResult> rows;
     uint64_t count = 0;
     while (scanner.HasMoreRows()) {
       ASSERT_STATUS_OK(scanner.NextBatch(&rows));
@@ -577,16 +577,16 @@ TEST_F(ClientTest, TestScanPredicateKeyColNotProjected) {
     ASSERT_STATUS_OK(scanner.Open());
 
     ASSERT_TRUE(scanner.HasMoreRows());
-    vector<const uint8_t*> rows;
+    vector<KuduRowResult> rows;
     while (scanner.HasMoreRows()) {
       ASSERT_STATUS_OK(scanner.NextBatch(&rows));
 
-      BOOST_FOREACH(const uint8_t* row_ptr, rows) {
-         ConstContiguousRow row(no_key_projection, row_ptr);
-         const uint32_t val = *no_key_projection.ExtractColumnFromRow<UINT32>(row, 0);
-         ASSERT_EQ(curr_key * 2, val);
-         nrows++;
-         curr_key++;
+      BOOST_FOREACH(const KuduRowResult& row, rows) {
+        uint32_t val;
+        ASSERT_STATUS_OK(row.GetUInt32(0, &val));
+        ASSERT_EQ(curr_key * 2, val);
+        nrows++;
+        curr_key++;
       }
       rows.clear();
     }
@@ -615,16 +615,16 @@ TEST_F(ClientTest, TestScanPredicateNonKeyColNotProjected) {
     ASSERT_STATUS_OK(scanner.Open());
 
     ASSERT_TRUE(scanner.HasMoreRows());
-    vector<const uint8_t*> rows;
+    vector<KuduRowResult> rows;
     while (scanner.HasMoreRows()) {
       ASSERT_STATUS_OK(scanner.NextBatch(&rows));
 
-      BOOST_FOREACH(const uint8_t* row_ptr, rows) {
-         ConstContiguousRow row(key_projection, row_ptr);
-         const uint32_t val = *key_projection.ExtractColumnFromRow<UINT32>(row, 0);
-         ASSERT_EQ(curr_key / 2, val);
-         nrows++;
-         curr_key += 2;
+      BOOST_FOREACH(const KuduRowResult& row, rows) {
+        uint32_t val;
+        ASSERT_STATUS_OK(row.GetUInt32(0, &val));
+        ASSERT_EQ(curr_key / 2, val);
+        nrows++;
+        curr_key += 2;
       }
       rows.clear();
     }
@@ -1384,7 +1384,7 @@ TEST_F(ClientTest, TestRandomWriteOperation) {
       ASSERT_STATUS_OK(session->Flush());
       scanner.Open();
       int readrows = 0;
-      vector<const uint8_t*> rows;
+      vector<KuduRowResult> rows;
       if (nrows) {
         ASSERT_TRUE(scanner.HasMoreRows());
       } else {
@@ -1393,11 +1393,13 @@ TEST_F(ClientTest, TestRandomWriteOperation) {
 
       while (scanner.HasMoreRows()) {
         ASSERT_STATUS_OK(scanner.NextBatch(&rows));
-        BOOST_FOREACH(const uint8_t* row_ptr, rows) {
-          ConstContiguousRow crow(schema_, row_ptr);
-          const uint32_t key  = *schema_.ExtractColumnFromRow<UINT32>(crow, 0);
-          const uint32_t val  = *schema_.ExtractColumnFromRow<UINT32>(crow, 1);
-          const string strval = schema_.ExtractColumnFromRow<STRING>(crow,  2)->ToString();
+        BOOST_FOREACH(const KuduRowResult& r, rows) {
+          uint32_t key;
+          uint32_t val;
+          Slice strval;
+          ASSERT_STATUS_OK(r.GetUInt32(0, &key));
+          ASSERT_STATUS_OK(r.GetUInt32(1, &val));
+          ASSERT_STATUS_OK(r.GetString(2, &strval));
           ASSERT_NE(row[key], -1) << "Deleted key found in table in table " << key;
           ASSERT_EQ(row[key], val) << "Incorrect int value for key " <<  key;
           ASSERT_EQ(strval.size(), 0) << "Incorrect string value for key " << key;

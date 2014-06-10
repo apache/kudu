@@ -5,18 +5,18 @@
 
 #include "benchmarks/tpch/rpc_line_item_dao.h"
 #include "benchmarks/tpch/tpch-schemas.h"
+#include "common/partial_row.h"
+#include "common/row.h"
+#include "common/row_changelist.h"
 #include "common/scan_spec.h"
 #include "common/schema.h"
-#include "common/row.h"
-#include "common/partial_row.h"
 #include "common/wire_protocol.h"
-#include "common/row_changelist.h"
-#include "util/status.h"
-#include "util/test_util.h"
+#include "integration-tests/mini_cluster.h"
 #include "master/master-test-util.h"
 #include "master/mini_master.h"
 #include "tserver/mini_tablet_server.h"
-#include "integration-tests/mini_cluster.h"
+#include "util/status.h"
+#include "util/test_util.h"
 
 namespace kudu {
 
@@ -77,7 +77,7 @@ class RpcLineItemDAOTest : public KuduTest {
     Schema query_schema = schema_.CreateKeyProjection();
     ScanSpec spec;
     dao_->OpenScanner(query_schema, &spec);
-    vector<const uint8_t*> rows;
+    vector<client::KuduRowResult> rows;
     int count = 0;
     while (dao_->HasMore()) {
       dao_->GetNext(&rows);
@@ -110,12 +110,12 @@ TEST_F(RpcLineItemDAOTest, TestUpdate) {
   dao_->FinishWriting();
   ScanSpec spec;
   dao_->OpenScanner(schema_, &spec);
-  vector<const uint8_t*> rows;
+  vector<client::KuduRowResult> rows;
   while (dao_->HasMore()) {
     dao_->GetNext(&rows);
-    BOOST_FOREACH(const uint8_t* row_ptr, rows) {
-      ConstContiguousRow row(schema_, row_ptr);
-      uint32_t l_quantity = *schema_.ExtractColumnFromRow<UINT32>(row, tpch::kQuantityColIdx);
+    BOOST_FOREACH(const client::KuduRowResult& row, rows) {
+      uint32_t l_quantity;
+      ASSERT_STATUS_OK(row.GetUInt32(tpch::kQuantityColIdx, &l_quantity));
       ASSERT_EQ(12345, l_quantity);
     }
     rows.clear();

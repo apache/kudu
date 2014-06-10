@@ -42,6 +42,7 @@ namespace client {
 class AlterTableBuilder;
 class CreateTableOptions;
 class Insert;
+class KuduRowResult;
 class KuduSession;
 class KuduTable;
 class MetaCache;
@@ -699,12 +700,8 @@ class KuduScanner {
   // scan, even if that tablet has no data (we'll only know once we scan it).
   bool HasMoreRows() const;
 
-  // Appends the next batch of rows to the 'rows' vector. Each row is a
-  // pointer suitable for constructing a ConstContiguousRow.
-  //
-  // TODO: this isn't a good API... need to fix this up while maintaining
-  // good performance.
-  Status NextBatch(std::vector<const uint8_t*>* rows);
+  // Appends the next batch of rows to the 'rows' vector.
+  Status NextBatch(std::vector<KuduRowResult>* rows);
 
   // Set the hint for the size of the next batch in bytes.
   // If setting to 0 before calling Open(), it means that the first call
@@ -730,7 +727,7 @@ class KuduScanner {
   Status OpenTablet(const Slice& key);
 
   // Extracts data from the last scan response and adds them to 'rows'.
-  Status ExtractRows(std::vector<const uint8_t*>* rows);
+  Status ExtractRows(std::vector<KuduRowResult>* rows);
 
   // Returns whether there exist more tablets we should scan.
   //
@@ -776,8 +773,10 @@ class KuduScanner {
   // The table we're scanning.
   KuduTable* table_;
 
-  // The projection schema used in the scan.
+  // The projection schema used in the scan, and the expected size (in
+  // bytes) per projected row.
   const Schema* projection_;
+  size_t projected_row_size_;
 
   // Machinery to store and encode raw column range predicates into
   // encoded keys.

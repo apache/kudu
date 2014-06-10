@@ -1,16 +1,20 @@
 // Copyright (c) 2013, Cloudera,inc.
 
-#include <boost/bind.hpp>
-#include <boost/thread/locks.hpp>
-
 #include "client/client.h"
 
-#include "client/batcher.h"
-#include "client/error_collector.h"
-#include "client/write_op.h"
-#include "client/meta_cache.h"
+#include <algorithm>
+#include <boost/bind.hpp>
+#include <boost/thread/locks.hpp>
+#include <tr1/memory>
+#include <vector>
+
 #include "common/row.h"
 #include "common/wire_protocol.h"
+#include "client/batcher.h"
+#include "client/error_collector.h"
+#include "client/meta_cache.h"
+#include "client/row_result.h"
+#include "client/write_op.h"
 #include "gutil/casts.h"
 #include "gutil/stl_util.h"
 #include "gutil/strings/substitute.h"
@@ -23,14 +27,12 @@
 #include "util/net/net_util.h"
 #include "util/status.h"
 
-#include <algorithm>
-#include <tr1/memory>
-#include <vector>
 
 using std::string;
 using std::tr1::shared_ptr;
 using std::vector;
 using strings::Substitute;
+using kudu::RowwiseRowBlockPB;
 using kudu::master::MasterServiceProxy;
 using kudu::master::AlterTableRequestPB;
 using kudu::master::AlterTableResponsePB;
@@ -756,6 +758,11 @@ Status AlterTableBuilder::RenameColumn(const std::string& old_name,
 // KuduScanner
 ////////////////////////////////////////////////////////////
 
+static size_t CalculateProjectedRowSize(const Schema& proj) {
+  return proj.byte_size() +
+        (proj.has_nullables() ? BitmapSize(proj.num_columns()) : 0);
+}
+
 KuduScanner::KuduScanner(KuduTable* table)
   : open_(false),
     data_in_open_(false),
@@ -764,6 +771,7 @@ KuduScanner::KuduScanner(KuduTable* table)
     selection_(KuduClient::CLOSEST_REPLICA),
     table_(DCHECK_NOTNULL(table)),
     projection_(&table->schema()),
+    projected_row_size_(CalculateProjectedRowSize(*projection_)),
     spec_encoder_(table->schema()),
     start_key_(NULL),
     end_key_(NULL) {
@@ -776,6 +784,7 @@ KuduScanner::~KuduScanner() {
 Status KuduScanner::SetProjection(const Schema* projection) {
   CHECK(!open_) << "Scanner already open";
   projection_ = projection;
+  projected_row_size_ = CalculateProjectedRowSize(*projection_);
   return Status::OK();
 }
 
@@ -1001,14 +1010,40 @@ bool KuduScanner::HasMoreRows() const {
       MoreTablets(); // more tablets to scan, possibly with more data
 }
 
-Status KuduScanner::ExtractRows(vector<const uint8_t*>* rows) {
+Status KuduScanner::ExtractRows(vector<KuduRowResult>* rows) {
+  // First, rewrite the relative addresses into absolute ones.
+  RowwiseRowBlockPB* rowblock_pb = last_response_.mutable_data();
+  RETURN_NOT_OK(RewriteRowBlockPB(*projection_, last_response_.mutable_data()));
+
+  int n_rows = rowblock_pb->num_rows();
+  if (PREDICT_FALSE(n_rows == 0)) {
+    // Early-out here to avoid a UBSAN failure.
+    VLOG(1) << "Extracted 0 rows";
+    return Status::OK();
+  }
+
+  // Next, allocate a block of KuduRowResults in 'rows'.
   size_t before = rows->size();
-  Status s = ExtractRowsFromRowBlockPB(*projection_, last_response_.mutable_data(), rows);
+  rows->resize(before + n_rows);
+
+  // Lastly, initialize each KuduRowResult with data from the response.
+  //
+  // Doing this resize and array indexing turns out to be noticeably faster
+  // than using reserve and push_back.
+  string* row_data = rowblock_pb->mutable_rows();
+  const uint8_t* src = reinterpret_cast<const uint8_t*>(&(*row_data)[0]);
+  KuduRowResult* dst = &(*rows)[before];
+  while (n_rows > 0) {
+    dst->Init(projection_, src);
+    dst++;
+    src += projected_row_size_;
+    n_rows--;
+  }
   VLOG(1) << "Extracted " << rows->size() - before << " rows";
-  return s;
+  return Status::OK();
 }
 
-Status KuduScanner::NextBatch(std::vector<const uint8_t*>* rows) {
+Status KuduScanner::NextBatch(std::vector<KuduRowResult>* rows) {
   // TODO: do some double-buffering here -- when we return this batch
   // we should already have fired off the RPC for the next batch, but
   // need to do some swapping of the response objects around to avoid

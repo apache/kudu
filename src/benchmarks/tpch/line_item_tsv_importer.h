@@ -7,9 +7,10 @@
 #include <vector>
 #include <string>
 
-#include "common/schema.h"
-#include "common/row.h"
+#include "benchmarks/tpch/tpch-schemas.h"
 #include "common/partial_row.h"
+#include "common/row.h"
+#include "common/schema.h"
 #include "gutil/strings/split.h"
 #include "gutil/strings/stringpiece.h"
 

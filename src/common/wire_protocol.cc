@@ -258,10 +258,8 @@ Status SchemaToColumnPBs(const Schema& schema,
   return Status::OK();
 }
 
-
-Status ExtractRowsFromRowBlockPB(const Schema& schema,
-                                 RowwiseRowBlockPB *rowblock_pb,
-                                 vector<const uint8_t*>* rows) {
+Status RewriteRowBlockPB(const Schema& schema,
+                         RowwiseRowBlockPB *rowblock_pb) {
   // TODO: cheating here so we can rewrite the request as it arrived and
   // change any indirect data pointers back to "real" pointers instead of
   // on-the-wire pointers. Maybe the RPC layer should give us a non-const
@@ -312,6 +310,14 @@ Status ExtractRowsFromRowBlockPB(const Schema& schema,
     }
   }
 
+  return Status::OK();
+}
+
+Status ExtractRowsFromRowBlockPB(const Schema& schema,
+                                 RowwiseRowBlockPB *rowblock_pb,
+                                 vector<const uint8_t*>* rows) {
+  RETURN_NOT_OK(RewriteRowBlockPB(schema, rowblock_pb));
+
   int n_rows = rowblock_pb->num_rows();
   if (PREDICT_FALSE(n_rows == 0)) {
     // Early-out here to avoid a UBSAN failure.
@@ -320,6 +326,8 @@ Status ExtractRowsFromRowBlockPB(const Schema& schema,
 
   // Doing this resize and array indexing turns out to be noticeably faster
   // than using reserve and push_back.
+  string* row_data = rowblock_pb->mutable_rows();
+  size_t row_size = ContiguousRowHelper::row_size(schema);
   const uint8_t* src = reinterpret_cast<const uint8_t*>(&(*row_data)[0]);
   int dst_index = rows->size();
   rows->resize(rows->size() + n_rows);

@@ -85,6 +85,13 @@ void AddRowToRowBlockPB(const RowBlockRow& row, RowwiseRowBlockPB* pb);
 void ConvertRowBlockToPB(const RowBlock& block, RowwiseRowBlockPB* pb,
                          const Schema* client_projection_schema);
 
+// Rewrites 'rowblock_pb' by replacing relative indirect data pointers with
+// absolute ones.
+//
+// Returns a bad Status if the provided data is invalid or corrupt.
+Status RewriteRowBlockPB(const Schema& schema,
+                         RowwiseRowBlockPB* rowblock_pb);
+
 // Extract the rows stored in this protobuf, which must have exactly the
 // given Schema. This Schema may be obtained using ColumnPBsToSchema.
 //

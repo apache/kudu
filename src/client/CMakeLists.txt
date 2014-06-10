@@ -5,6 +5,7 @@ set(CLIENT_SRCS
   client.cc
   error_collector.cc
   meta_cache.cc
+  row_result.cc
   write_op.cc
 )
 

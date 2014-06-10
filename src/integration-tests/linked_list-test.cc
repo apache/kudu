@@ -27,6 +27,7 @@
 #include <vector>
 
 #include "client/client.h"
+#include "client/row_result.h"
 #include "gutil/map-util.h"
 #include "gutil/stl_util.h"
 #include "gutil/strings/substitute.h"
@@ -41,6 +42,7 @@
 using kudu::client::CreateTableOptions;
 using kudu::client::KuduClient;
 using kudu::client::KuduClientOptions;
+using kudu::client::KuduRowResult;
 using kudu::client::KuduScanner;
 using kudu::client::KuduSession;
 using kudu::client::KuduTable;
@@ -337,7 +339,7 @@ Status LinkedListTest::VerifyLinkedList(int64_t expected, int64_t* verified_coun
   RETURN_NOT_OK_PREPEND(scanner.SetProjection(&verify_projection_), "Bad projection");
   RETURN_NOT_OK_PREPEND(scanner.Open(), "Couldn't open scanner");
 
-  vector<const uint8_t*> rows;
+  vector<KuduRowResult> rows;
   vector<uint64_t> seen_key;
   vector<uint64_t> seen_link_to;
   seen_key.reserve(expected);
@@ -347,12 +349,12 @@ Status LinkedListTest::VerifyLinkedList(int64_t expected, int64_t* verified_coun
   sw.start();
   while (scanner.HasMoreRows()) {
     RETURN_NOT_OK(scanner.NextBatch(&rows));
-    BOOST_FOREACH(const uint8_t* row_ptr, rows) {
-      ConstContiguousRow row(verify_projection_, row_ptr);
-
-      uint64_t key = *verify_projection_.ExtractColumnFromRow<UINT64>(row, 0);
+    BOOST_FOREACH(const KuduRowResult& row, rows) {
+      uint64_t key;
+      uint64_t link;
+      RETURN_NOT_OK(row.GetUInt64(0, &key));
+      RETURN_NOT_OK(row.GetUInt64(1, &link));
       seen_key.push_back(key);
-      uint64_t link = *verify_projection_.ExtractColumnFromRow<UINT64>(row, 1);
       if (link != 0) {
         // Links to entry 0 don't count - the first inserts use this link
         seen_link_to.push_back(link);
