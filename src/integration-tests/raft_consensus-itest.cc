@@ -201,7 +201,7 @@ class DistConsensusTest : public TabletServerTest {
     std::sort(results->begin(), results->end());
   }
 
-  void AssertAllReplicasAgree() {
+  void AssertAllReplicasAgree(int expected_result_count = -1) {
 
     int counter = 0;
     while (true) {
@@ -209,6 +209,14 @@ class DistConsensusTest : public TabletServerTest {
       vector<string> leader_results;
       vector<string> replica_results;
       ScanReplica(leader_->proxy.get(), &leader_results);
+
+      if (expected_result_count != -1 && leader_results.size() != expected_result_count) {
+        if (counter >= kMaxRetries) {
+          FAIL() << "LEADER results did not match the expected count.";
+        }
+        counter++;
+        continue;
+      }
 
       bool all_replicas_matched = true;
       BOOST_FOREACH(ProxyDetails* replica, replicas_) {
@@ -319,22 +327,39 @@ TEST_F(DistConsensusTest, TestInsertAndMutateThroughConsensus) {
                                FLAGS_client_num_batches_per_thread,
                                leader_->proxy.get());
   }
-  AssertAllReplicasAgree();
+  AssertAllReplicasAgree(FLAGS_client_inserts_per_thread * num_iters);
 }
 
 TEST_F(DistConsensusTest, TestFailedTransaction) {
   WriteRequestPB req;
   req.set_tablet_id(tablet_id);
+  ASSERT_STATUS_OK(SchemaToPB(schema_, req.mutable_schema()));
+
   RowOperationsPB* data = req.mutable_row_operations();
   data->set_rows("some gibberish!");
 
   WriteResponsePB resp;
   RpcController controller;
-
   controller.set_timeout(MonoDelta::FromSeconds(FLAGS_rpc_timeout));
+
   ASSERT_STATUS_OK(DCHECK_NOTNULL(leader_->proxy.get())->Write(req, &resp, &controller));
   ASSERT_TRUE(resp.has_error());
-  AssertAllReplicasAgree();
+
+  // Add a proper row so that we can verify that all of the replicas continue
+  // to process transactions after a failure. Additionally, this allows us to wait
+  // for all of the replicas to finish processing transactions before shutting down,
+  // avoiding a potential stall as we currently can't abort transactions (see KUDU-341).
+  data->Clear();
+  AddTestRowToPB(RowOperationsPB::INSERT, schema_, 0, 0, "original0", data);
+
+  controller.Reset();
+  controller.set_timeout(MonoDelta::FromSeconds(FLAGS_rpc_timeout));
+
+  ASSERT_STATUS_OK(DCHECK_NOTNULL(leader_->proxy.get())->Write(req, &resp, &controller));
+  SCOPED_TRACE(resp.ShortDebugString());
+  ASSERT_FALSE(resp.has_error());
+
+  AssertAllReplicasAgree(1);
 }
 
 // Inserts rows through consensus and also starts one delay injecting thread
@@ -372,7 +397,7 @@ TEST_F(DistConsensusTest, MultiThreadedMutateAndInsertThroughConsensus) {
    CHECK_OK(ThreadJoiner(thr.get()).Join());
   }
 
-  AssertAllReplicasAgree();
+  AssertAllReplicasAgree(FLAGS_client_inserts_per_thread * FLAGS_num_client_threads);
 }
 
 TEST_F(DistConsensusTest, TestInsertOnNonLeader) {
@@ -395,7 +420,7 @@ TEST_F(DistConsensusTest, TestInsertOnNonLeader) {
   // TODO: need to change the error code to be something like REPLICA_NOT_LEADER
   // so that the client can properly handle this case! plumbing this is a little difficult
   // so not addressing at the moment.
-  AssertAllReplicasAgree();
+  AssertAllReplicasAgree(0);
 }
 
 }  // namespace tserver
