@@ -146,11 +146,8 @@ public class KuduSession {
    * @throws IllegalArgumentException if the buffer isn't empty
    */
   public void setFlushMode(FlushMode flushMode) {
-    synchronized (this) {
-      if (!this.operations.isEmpty() || !this.operationsInFlight.isEmpty() ||
-          !this.operationsInLookup.isEmpty()) {
-        throw new IllegalArgumentException("Cannot change flush mode when writes are buffered");
-      }
+    if (hasPendingOperations()) {
+      throw new IllegalArgumentException("Cannot change flush mode when writes are buffered");
     }
     this.flushMode = flushMode;
   }
@@ -161,11 +158,9 @@ public class KuduSession {
    * @throws IllegalArgumentException if the buffer isn't empty
    */
   public void setExternalConsistencyMode(ExternalConsistencyMode consistencyMode) {
-    synchronized (this) {
-      if (!this.operations.isEmpty()) {
-        throw new IllegalArgumentException("Cannot change consistency mode "
-            + "when writes are buffered");
-      }
+    if (hasPendingOperations()) {
+      throw new IllegalArgumentException("Cannot change consistency mode "
+          + "when writes are buffered");
     }
     this.consistencyMode = consistencyMode;
   }
@@ -176,11 +171,9 @@ public class KuduSession {
    * @throws IllegalArgumentException if the buffer isn't empty
    */
   public void setMutationBufferSpace(int size) {
-    synchronized (this) {
-      if (!this.operations.isEmpty()) {
-        throw new IllegalArgumentException("Cannot change the buffer" +
-            " size when operations are buffered");
-      }
+    if (hasPendingOperations()) {
+      throw new IllegalArgumentException("Cannot change the buffer" +
+          " size when operations are buffered");
     }
     this.mutationBufferSpace = size;
   }
@@ -240,11 +233,14 @@ public class KuduSession {
   }
 
   /**
-   * TODO
-   * @return
+   * Check if there are operations that haven't been completely applied.
+   * @return true if operations are pending, else false.
    */
   public boolean hasPendingOperations() {
-    return false; // TODO
+    synchronized (this) {
+      return !this.operations.isEmpty() || !this.operationsInFlight.isEmpty() ||
+          !this.operationsInLookup.isEmpty();
+    }
   }
 
   /**
@@ -349,7 +345,6 @@ public class KuduSession {
       // TODO obviously wrong, not same size thing
       if (batch != null && batch.ops.size() + 1 > mutationBufferSpace) {
         if (flushMode == FlushMode.MANUAL_FLUSH) {
-          // TODO copy message from C++
           throw new NonRecoverableException("MANUAL_FLUSH is enabled but the buffer is too big");
         }
         flushTablet(tablet, batch);
@@ -450,26 +445,6 @@ public class KuduSession {
    * Schedules the next periodic flush of buffered edits.
    */
   private void scheduleNextPeriodicFlush(Slice tablet, Batch batch) {
-   /* if (interval > 0) { TODO ?
-      // Since we often connect to many regions at the same time, we should
-      // try to stagger the flushes to avoid flushing too many different
-      // RegionClient concurrently.
-      // To this end, we "randomly" adjust the time interval using the
-      // system's time.  nanoTime uses the machine's most precise clock, but
-      // often nanoseconds (the lowest bits) aren't available.  Most modern
-      // machines will return microseconds so we can cheaply extract some
-      // random adjustment from that.
-      short adj = (short) (System.nanoTime() & 0xF0);
-      if (interval < 3 * adj) {  // Is `adj' too large compared to `interval'?
-        adj >>>= 2;  // Reduce the adjustment to not be too far off `interval'.
-      }
-      if ((adj & 0x10) == 0x10) {  // if some arbitrary bit is set...
-        if (adj < interval) {
-          adj = (short) -adj;      // ... use a negative adjustment instead.
-        } else {
-          adj = (short) (interval / -2);
-        }
-      }*/
     timer.newTimeout(new FlusherTask(tablet, batch), interval, MILLISECONDS);
   }
 
