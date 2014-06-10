@@ -165,7 +165,6 @@ int RemoteTablet::GetNumFailedReplicas() const {
 }
 
 RemoteTabletServer* RemoteTablet::FirstTServer() const {
-  RemoteTabletServer *ts = NULL;
   boost::lock_guard<simple_spinlock> l(lock_);
   BOOST_FOREACH(const RemoteReplica& rep, replicas_) {
     if (!rep.failed) {

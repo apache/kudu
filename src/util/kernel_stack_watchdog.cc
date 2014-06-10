@@ -24,10 +24,6 @@ DEFINE_int32(hung_kernel_task_check_interval_ms, 200,
 using std::tr1::unordered_set;
 using strings::Substitute;
 
-// How often to log stuck kernel stacks
-static const int kCheckIntervalMillis = 500;
-
-
 namespace kudu {
 
 KernelStackWatchdog::KernelStackWatchdog()
