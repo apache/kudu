@@ -176,6 +176,11 @@ int main(int argc, char **argv) {
     return 1;
   }
   if (argc == 2) {
+    if (!kudu::Env::Default()->FileExists(argv[1])) {
+      std::cerr << "Specified file \"" << argv[1] << "\" does not exist"
+          << std::endl;
+      return 1;
+    }
     kudu::log::DumpSegment(argv[1]);
   } else {
     kudu::log::DumpLog(argv[1], argv[2]);
