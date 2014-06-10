@@ -14,6 +14,7 @@
 #include "gutil/stl_util.h"
 #include "gutil/strings/substitute.h"
 #include "tserver/tserver_service.proxy.h"
+#include "util/logging.h"
 #include "util/net/net_util.h"
 
 DEFINE_int32(consensus_rpc_timeout_ms, 1000,
@@ -383,7 +384,7 @@ void Peer::ProcessResponseError(const Status& status) {
   boost::lock_guard<simple_spinlock> lock(peer_lock_);
   // TODO handle the error.
   failed_attempts_++;
-  LOG_EVERY_N(WARNING, 10) << "Couldn't send request to peer: "
+  KLOG_EVERY_N(WARNING, 10) << "Couldn't send request to peer: "
       << peer_pb_.permanent_uuid() << " Status: " << status.ToString()
       << ". Retrying in the next heartbeat period. Already tried "
       << failed_attempts_ << " times.";

@@ -31,6 +31,7 @@
 #include "tablet/transactions/write_util.h"
 #include "util/path_util.h"
 #include "util/locks.h"
+#include "util/logging.h"
 
 DEFINE_bool(skip_remove_old_recovery_dir, false,
             "Skip removing WAL recovery dir after startup. (useful for debugging)");
@@ -522,7 +523,7 @@ struct ReplayState {
       // true. We're not yet 100% certain this is OK for other parts of the
       // system like log GC, so logging these at WARNING for now so we don't
       // forget to come back to it.
-      LOG_FIRST_N(WARNING, 10) <<
+      KLOG_FIRST_N(WARNING, 10) <<
         Substitute("Unexpected opid $0 following opid $1",
                    id.ShortDebugString(),
                    prev_op_id.ShortDebugString());
