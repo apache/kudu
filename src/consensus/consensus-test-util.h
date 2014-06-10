@@ -244,7 +244,8 @@ class LocalTestPeerProxy : public PeerProxy {
       if (PREDICT_FALSE(miss_comm_)) {
         tserver::TabletServerErrorPB* error = response->mutable_error();
         error->set_code(tserver::TabletServerErrorPB::UNKNOWN_ERROR);
-        StatusToPB(s, error->mutable_status());
+        StatusToPB(Status::IOError("Artificial error caused by communication failure injection."),
+                   error->mutable_status());
         miss_comm_ = false;
       }
       CHECK_OK(pool_.SubmitFunc(*callback_));
