@@ -15,6 +15,7 @@
 #include "common/row.h"
 #include "common/wire_protocol.h"
 #include "gutil/stl_util.h"
+#include "gutil/atomicops.h"
 #include "integration-tests/mini_cluster.h"
 #include "master/catalog_manager.h"
 #include "master/master-test-util.h"
@@ -39,6 +40,11 @@ using std::tr1::shared_ptr;
 namespace kudu {
 namespace client {
 
+
+using base::subtle::Atomic32;
+using base::subtle::NoBarrier_Load;
+using base::subtle::NoBarrier_Store;
+using base::subtle::NoBarrier_AtomicIncrement;
 using master::CatalogManager;
 using master::GetTableLocationsRequestPB;
 using master::GetTableLocationsResponsePB;
@@ -1468,6 +1474,149 @@ TEST_F(ClientTest, TestMasterLookupPermits) {
   InsertTestRows(client_table_.get(), FLAGS_test_scan_num_rows);
   ASSERT_EQ(initial_value,
             client_->meta_cache_->master_lookup_sem_.GetValue());
+}
+
+// Define callback for deadlock simulation, as well as various helper methods.
+namespace {
+  class DLSCallback {
+  public:
+    explicit DLSCallback(Atomic32* i)
+      : i(i) {}
+    void operator()(const Status& s) {
+      CHECK_OK(s);
+      NoBarrier_AtomicIncrement(i, 1);
+    }
+  private:
+    Atomic32* const i;
+  };
+
+  // Returns col1 value of first row.
+  uint32_t ReadFirstRowKeyFirstCol(const Schema& schema, scoped_refptr<KuduTable> tbl) {
+    KuduScanner scanner(tbl.get());
+
+    scanner.Open();
+    vector<const uint8_t*> rows;
+    CHECK(scanner.HasMoreRows());
+    CHECK_OK(scanner.NextBatch(&rows));
+    ConstContiguousRow crow(schema, rows.front());
+    return *schema.ExtractColumnFromRow<UINT32>(crow, 1);
+  }
+
+  // Checks that all rows have value equal to expected, return number of rows.
+  int CheckRowsEqual(const Schema& schema, scoped_refptr<KuduTable> tbl, uint32_t expected) {
+    KuduScanner scanner(tbl.get());
+    scanner.Open();
+    vector<const uint8_t*> rows;
+    int cnt = 0;
+    while (scanner.HasMoreRows()) {
+      CHECK_OK(scanner.NextBatch(&rows));
+      BOOST_FOREACH(const uint8_t* row_ptr, rows) {
+        // Check that for every key:
+        // 1. Column 1 uint32_t value == expected
+        // 2. Column 2 string value is empty
+        // 3. Column 3 uint32_t value is default, 12345
+        ConstContiguousRow crow(schema, row_ptr);
+        const uint32_t key  = *schema.ExtractColumnFromRow<UINT32>(crow, 0);
+        const uint32_t val  = *schema.ExtractColumnFromRow<UINT32>(crow, 1);
+        const string strval =  schema.ExtractColumnFromRow<STRING>(crow, 2)->ToString();
+        const uint32_t val2 = *schema.ExtractColumnFromRow<UINT32>(crow, 3);
+        CHECK_EQ(expected, val) << "Incorrect int value for key " << key;
+        CHECK_EQ(strval.size(), 0) << "Incorrect string value for key " << key;
+        CHECK_EQ(12345, val2);
+        ++cnt;
+      }
+      rows.clear();
+    }
+    return cnt;
+  }
+
+  // Return a session "loaded" with updates. Sets the session timeout
+  // to the parameter value. Larger timeouts decrease false positives.
+  shared_ptr<KuduSession> LoadedSession(shared_ptr<KuduClient> client,
+                                        scoped_refptr<KuduTable> tbl,
+                                        bool fwd, int max, int timeout) {
+    shared_ptr<KuduSession> session = client->NewSession();
+    session->SetTimeoutMillis(timeout);
+    CHECK_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
+    for (int i = 0; i < max; ++i) {
+      int key = fwd ? i : max - i;
+      CHECK_OK(ApplyUpdateToSession(session.get(), tbl, key, fwd));
+    }
+    return session;
+  }
+} // anonymous namespace
+
+// Currently, deadlock simulation is disabled. See KUDU-47.
+TEST_F(ClientTest, DISABLED_TestDeadlockSimulation) {
+  if (!AllowSlowTests()) {
+    LOG(WARNING) << "TestDeadlockSimulation disabled since slow.";
+    return;
+  }
+
+  // Make reverse client who will make batches that update rows
+  // in reverse order. Separate client used so rpc calls come in at same time.
+  shared_ptr<KuduClient> rev_client;
+  KuduClientOptions opts;
+  scoped_refptr<KuduTable> rev_table;
+  opts.master_server_addr = cluster_->mini_master()->bound_rpc_addr().ToString();
+  ASSERT_STATUS_OK(KuduClient::Create(opts, &rev_client));
+  ASSERT_STATUS_OK(client_->OpenTable(kTableName, &rev_table));
+
+  // Load up some rows
+  const int kNumRows = 3000; // Increase to reduce deadlock false-negative.
+  shared_ptr<KuduSession> session = client_->NewSession();
+  session->SetTimeoutMillis(5000);
+  ASSERT_STATUS_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
+  for (int i = 0; i < kNumRows; ++i)
+    ASSERT_STATUS_OK(ApplyInsertToSession(session.get(), client_table_, i, i,  ""));
+  ASSERT_STATUS_OK(session->Flush());
+
+  // Check both clients see rows
+  int fwd = CountRowsFromClient(client_table_.get());
+  ASSERT_EQ(kNumRows, fwd);
+  int rev = CountRowsFromClient(rev_table.get());
+  ASSERT_EQ(kNumRows, rev);
+
+  // Generate sessions
+  const int kNumSessions = 100; // Increase to reduce deadlock false-negative.
+  const int kTimoutMilis = 5000; // Increase to reduce false-positives.
+  shared_ptr<KuduSession> fwd_sessions[kNumSessions];
+  shared_ptr<KuduSession> rev_sessions[kNumSessions];
+  for (int i = 0; i < kNumSessions; ++i) {
+    fwd_sessions[i] = LoadedSession(client_, client_table_, true, kNumRows, kTimoutMilis);
+    rev_sessions[i] = LoadedSession(rev_client, rev_table, true, kNumRows, kTimoutMilis);
+  }
+
+  // Run async calls - one thread updates sequentially, another in reverse.
+  Atomic32 ctr1, ctr2;
+  NoBarrier_Store(&ctr1, 0);
+  NoBarrier_Store(&ctr2, 0);
+  for (int i = 0; i < kNumSessions; ++i) {
+    fwd_sessions[i]->FlushAsync(DLSCallback(&ctr1));
+    rev_sessions[i]->FlushAsync(DLSCallback(&ctr2));
+  }
+
+  // Spin while waiting for ops to complete.
+  int lctr1, lctr2, prev1 = 0, prev2 = 0;
+  do {
+    lctr1 = NoBarrier_Load(&ctr1);
+    lctr2 = NoBarrier_Load(&ctr2);
+    // Display progress in 10% increments.
+    if (prev1 == 0 || lctr1 + lctr2 - prev1 - prev2 > kNumSessions / 10) {
+      LOG(INFO) << "# updates: " << lctr1 << " fwd, " << lctr2 << " rev";
+      prev1 = lctr1;
+      prev2 = lctr2;
+    }
+  } while (lctr1 != kNumSessions|| lctr2 != kNumSessions);
+  uint32_t expected = ReadFirstRowKeyFirstCol(schema_, client_table_);
+
+  // Check transaction from forward client.
+  fwd = CheckRowsEqual(schema_, client_table_, expected);
+  ASSERT_EQ(fwd, kNumRows);
+
+  // Check from reverse client side.
+  rev = CheckRowsEqual(schema_, rev_table, expected);
+  ASSERT_EQ(rev, kNumRows);
 }
 
 } // namespace client
