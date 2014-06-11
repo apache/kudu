@@ -9,8 +9,6 @@ import kudu.Schema;
 import kudu.Type;
 import kudu.WireProtocol.RowOperationsPB;
 import kudu.tserver.Tserver;
-import kudu.util.Arena;
-import kudu.util.Slice;
 import org.jboss.netty.buffer.ChannelBuffer;
 
 import java.math.BigInteger;
@@ -49,11 +47,9 @@ public abstract class Operation extends KuduRpc implements KuduRpc.HasKey {
 
   static final String METHOD = "Write";
   final Schema schema;
-  final List<Slice> strings;
+  final List<String> strings;
   final int rowSize;
-  final Arena arena;
   final byte[] rowAlloc;
-  final int offset;
   final BitSet columnsBitSet;
   final BitSet nullsBitSet;
 
@@ -76,11 +72,8 @@ public abstract class Operation extends KuduRpc implements KuduRpc.HasKey {
     this.nullsBitSet = schema.hasNullableColumns() ?
         new BitSet(this.schema.getColumnCount()) : null;
     this.rowSize = schema.getRowSize();
-    this.arena = new Arena();
-    Arena.Allocation alloc = this.arena.allocateBytes(this.rowSize);
-    this.rowAlloc = alloc.getData();
-    this.offset = alloc.getOffset();
-    strings = new ArrayList<Slice>(schema.getStringCount());
+    this.rowAlloc = new byte[this.rowSize];
+    strings = new ArrayList<String>(schema.getStringCount());
   }
 
   /**
@@ -204,10 +197,7 @@ public abstract class Operation extends KuduRpc implements KuduRpc.HasKey {
     ColumnSchema col = this.schema.getColumn(columnName);
     checkColumn(col, Type.STRING);
     int size = val.length();
-    Arena.Allocation alloc = arena.allocateBytes(size);
-    // TODO Should we even bother? Just keep the strings around?
-    System.arraycopy(val.getBytes(), 0, alloc.getData(), alloc.getOffset(), size);
-    this.strings.add(new Slice(alloc.getData(), alloc.getOffset(), size));
+    this.strings.add(val);
     this.stringsSize += size;
     // special accounting for string row keys in updates or deletes
     if (col.isKey()) {
@@ -332,9 +322,9 @@ public abstract class Operation extends KuduRpc implements KuduRpc.HasKey {
     for (int i = 0; i < this.schema.getKeysCount(); i++) {
       ColumnSchema column = this.schema.getColumn(i);
       if (column.getType() == Type.STRING) {
-        Slice string = this.strings.get(seenStrings);
+        String string = this.strings.get(seenStrings);
         seenStrings++;
-        keyEncoder.addKey(string.getRawArray(), string.getRawOffset(), string.length(), column, i);
+        keyEncoder.addKey(Bytes.fromString(string), 0, string.length(), column, i);
       } else {
         keyEncoder.addKey(this.rowAlloc, this.schema.getColumnOffset(i), column.getType().getSize(),
             column, i);
@@ -384,15 +374,15 @@ public abstract class Operation extends KuduRpc implements KuduRpc.HasKey {
       int colIdx = 0;
       byte[] rowData = operation.rowAlloc;
       int stringsIndex = 0;
-      int currentRowOffset = operation.offset;
+      int currentRowOffset = 0;
       for (ColumnSchema col : operation.schema.getColumns()) {
         // Keys should always be specified, maybe check?
         if (operation.isSet(colIdx) && !operation.isSetToNull(colIdx)) {
           if (col.getType() == Type.STRING) {
-            Slice slice = operation.strings.get(stringsIndex);
+            String string = operation.strings.get(stringsIndex);
             rows.putLong(indirectData.position());
-            indirectData.put(slice.getRawArray(), slice.getRawOffset(), slice.length());
-            rows.putLong(slice.length());
+            rows.putLong(string.length());
+            indirectData.put(Bytes.fromString(string), 0, string.length());
             stringsIndex++;
           } else {
             // This is for cols other than strings
