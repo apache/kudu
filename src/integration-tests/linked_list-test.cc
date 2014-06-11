@@ -403,14 +403,24 @@ void LinkedListTest::WaitAndVerify(int64_t expected) {
   sw.start();
   while (true) {
     Status s = VerifyLinkedList(expected, &seen);
-    if (s.IsServiceUnavailable() ||      // still bootstrapping
-        (s.ok() && expected != seen)) {  // still replicating
+
+    // TODO: when we enable hybridtime consistency for the scans,
+    // then we should not allow !s.ok() here. But, with READ_LATEST
+    // scans, we could have a lagging replica of one tablet, with an
+    // up-to-date replica of another tablet, and end up with broken links
+    // in the chain.
+
+    if (!s.ok() || expected != seen) {
       // We'll give the tablets 3 seconds to start up regardless of how long we
       // inserted for. There's some fixed cost startup time, especially when
       // replication is enabled.
       const int kBaseTimeToWaitSecs = 3;
 
-      VLOG(1) << "Table not yet ready: " << s.ToString();
+      if (!s.ok()) {
+        LOG(INFO) << "Table not yet ready: " << s.ToString();
+      } else {
+        LOG(INFO) << "Table not yet ready: " << expected << "/" << seen << " rows";
+      }
       if (sw.elapsed().wall_seconds() > kBaseTimeToWaitSecs + FLAGS_seconds_to_run) {
         // We'll give it an equal amount of time to re-load the data as it took
         // to write it in. Typically it completes much faster than that.
