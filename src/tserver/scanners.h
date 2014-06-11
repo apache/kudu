@@ -13,6 +13,7 @@
 
 #include "gutil/gscoped_ptr.h"
 #include "gutil/macros.h"
+#include "gutil/ref_counted.h"
 #include "util/auto_release_pool.h"
 #include "util/monotime.h"
 #include "server/oid_generator.h"
@@ -22,6 +23,9 @@ namespace kudu {
 class RowwiseIterator;
 class ScanSpec;
 class Schema;
+class Status;
+class Thread;
+
 struct IteratorStats;
 
 namespace tserver {
@@ -42,6 +46,9 @@ class ScannerManager {
   ScannerManager();
   ~ScannerManager();
 
+  // Starts the expired scanner removal thread.
+  Status StartRemovalThread();
+
   // Create a new scanner with a unique ID, inserting it into the map.
   void NewScanner(const std::string& tablet_id,
                   const std::string& requestor_string,
@@ -61,17 +68,24 @@ class ScannerManager {
   // List all active scanners.
   void ListScanners(std::vector<SharedScanner>* scanners);
 
-  // TODO: add method to iterate through scanners and remove any which
-  // are past their TTL
+  // Iterate through scanners and remove any which are past their TTL.
+  void RemoveExpiredScanners();
 
  private:
   typedef std::pair<std::string, SharedScanner> ScannerMapEntry;
+
+  // Periodically call RemoveExpiredScanners().
+  void RunRemovalThread();
 
   // The amount of time that any given scanner should live after its
   // last access.
   MonoDelta scanner_ttl_;
 
-  // Lock protecting the scanner map
+  // If true, removeal thread should shut itself down. Protected
+  // by 'lock_'.]
+  bool shutdown_;
+
+  // Lock protecting the scanner map and 'shutdown_'.
   mutable boost::shared_mutex lock_;
 
   // Map of the currently active scanners.
@@ -81,6 +95,9 @@ class ScannerManager {
 
   // Generator for scanner IDs.
   ObjectIdGenerator oid_generator_;
+
+  // Thread to remove expired scanners.
+  scoped_refptr<kudu::Thread> removal_thread_;
 
   DISALLOW_COPY_AND_ASSIGN(ScannerManager);
 };
