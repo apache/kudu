@@ -17,7 +17,6 @@ import java.io.IOException;
 
 /**
  * Map-only job that counts all the rows in the provided table.
- * TODO be able to provide a start and end key
  */
 public class RowCounter extends Configured implements Tool {
 

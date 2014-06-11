@@ -22,6 +22,7 @@ import com.stumbleupon.async.Deferred;
 import kudu.ColumnSchema;
 import kudu.Common;
 import kudu.Schema;
+import kudu.metadata.Metadata;
 import kudu.rpc.Bytes;
 import kudu.rpc.KuduClient;
 import kudu.rpc.KuduScanner;
@@ -109,15 +110,20 @@ public class KuduTableInputFormat extends InputFormat<NullWritable, RowResult>
       throw new IOException("The requested table has 0 tablets, cannot continue");
     }
 
-    // TODO currently we just pass all the replicas, maybe we don't want that. Investigate.
+    // For the moment we only pass the leader since that's who we read from
     List<InputSplit> splits = new ArrayList<InputSplit>(locations.size());
     for (LocatedTablet locatedTablet : locations) {
       List<String> addresses = Lists.newArrayList();
 
       for (LocatedTablet.Replica replica : locatedTablet.getReplicas()) {
-        addresses.add(reverseDNS(replica.getRpcHostPort()));
+        if (replica.getRole() == Metadata.QuorumPeerPB.Role.LEADER) {
+          addresses.add(reverseDNS(replica.getRpcHostPort()));
+        }
       }
-
+      if (addresses.isEmpty()) {
+        throw new IOException("This tablet has no leader, this is currently required for " +
+            "reading: " + locatedTablet.toString());
+      }
       String[] addressesArray = addresses.toArray(new String[addresses.size()]);
       TableSplit split = new TableSplit(locatedTablet.getStartKey(),
                                         locatedTablet.getEndKey(),
@@ -324,7 +330,6 @@ public class KuduTableInputFormat extends InputFormat<NullWritable, RowResult>
         throw new IllegalArgumentException("TableSplit is the only accepted input split");
       }
       split = (TableSplit) inputSplit;
-      // TODO be able to pass a schema
       scanner = client.newScanner(table, querySchema);
       scanner.setEncodedStartKey(split.getStartKey());
       scanner.setEncodedEndKey(split.getEndKey());
