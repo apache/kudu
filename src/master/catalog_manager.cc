@@ -1277,7 +1277,8 @@ class AsyncDeleteTablet : public AsyncTabletRequestTask {
         LOG(INFO) << "Tablet " << tablet_id_ << " (table " << table_->ToString() << ") "
                   << "successfully deleted";
       } else {
-        LOG(WARNING) << "Orphaned tablet " << tablet_id_ << " successfully deleted";
+        LOG(WARNING) << "Tablet " << tablet_id_ << " did not belong to a known table, but was "
+                        "successfully deleted";
       }
       state_ = kStateComplete;
       VLOG(1) << "TS " << permanent_uuid_ << ": delete complete on tablet " << tablet_id_;
