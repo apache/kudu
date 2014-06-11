@@ -111,10 +111,8 @@ Status PeerMessageQueue::AppendOperation(gscoped_ptr<OperationPB> operation,
          || operation->has_replicate()) << "Operation must be a commit or a replicate: "
              << operation->DebugString();
 
-  int bytes = operation->ByteSize();
-
   if (metrics_.queue_size_bytes->value() >= max_ops_size_bytes_soft_) {
-    Status s  = TrimBufferForMessage(bytes);
+    Status s  = TrimBufferForMessage(operation.get());
     if (PREDICT_FALSE(!s.ok() && (VLOG_IS_ON(2) || FLAGS_consensus_dump_queue_on_full))) {
       queue_lock_.unlock();
       LOG(INFO) << "Queue Full: Dumping State:";
@@ -271,18 +269,22 @@ Status PeerMessageQueue::GetOperationStatus(const OpId& op_id,
   return Status::OK();
 }
 
-Status PeerMessageQueue::TrimBufferForMessage(uint64_t bytes) {
+Status PeerMessageQueue::TrimBufferForMessage(const OperationPB* operation) {
   // TODO for now we're just trimming the buffer, but we need to handle when
   // the buffer is full but there is a peer hanging on to the queue (very delayed)
+  int bytes = operation->ByteSize();
+
   MessagesBuffer::iterator iter = messages_.begin();
   uint64_t new_size = metrics_.queue_size_bytes->value() + bytes;
   while (new_size > max_ops_size_bytes_soft_ && iter != messages_.end()) {
     PeerMessage* message = (*iter).second;
     if (!message->status_->IsAllDone()) {
-      if (new_size < max_ops_size_bytes_hard_) {
+      // return OK if we could trim the queue or if the operation was a commit
+      // in which case we always accept it.
+      if (new_size < max_ops_size_bytes_hard_ || operation->has_commit()) {
         return Status::OK();
       } else {
-        return Status::ServiceUnavailable("Queue is full.");
+        return Status::ServiceUnavailable("Cannot append replicate message. Queue is full.");
       }
     }
     uint64_t bytes_to_decrement = (*iter).second->op_->ByteSize();

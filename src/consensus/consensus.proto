@@ -54,10 +54,11 @@ message OperationPB {
 // commit.
 message ReplicateMsg {
   required OperationType op_type = 2;
-  optional NoOp no_op = 3;
-  optional tserver.WriteRequestPB write_request = 4;
-  optional tserver.AlterSchemaRequestPB alter_schema_request = 5;
-  optional tserver.ChangeConfigRequestPB change_config_request = 6;
+  optional tserver.WriteRequestPB write_request = 3;
+  optional tserver.AlterSchemaRequestPB alter_schema_request = 4;
+  optional tserver.ChangeConfigRequestPB change_config_request = 5;
+
+  optional NoOpRequestPB noop_request = 999;
 }
 
 // A commit message for a previous operation.
@@ -77,17 +78,24 @@ message CommitMsg {
   // The response to the alter schema request
   optional tserver.AlterSchemaResponsePB alter_schema_response = 6;
   optional tserver.ChangeConfigResponsePB change_config_response = 7;
+
+  optional NoOpResponsePB noop_response = 999;
 }
 
 // ===========================================================================
 //  Internal Consensus Messages and State
 // ===========================================================================
 
-// A no-op message to send a heartbeat from leader to followers
-// can also be used to witness a term change.
-message NoOp {
+// NoOp requests, mostly used in tests.
+message NoOpRequestPB {
  // Allows to set a dummy payload, for tests.
  optional bytes payload_for_tests = 1;
+}
+
+// NoOp responses, mostly used in tests.
+message NoOpResponsePB {
+   // Allows to set a dummy payload, for tests.
+   optional bytes payload_for_tests = 1;
 }
 
 message PerOpErrorPB {

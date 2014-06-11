@@ -168,7 +168,7 @@ class RaftConsensusTest : public KuduTest {
   Status AppendDummyMessage(RaftConsensus* peer, gscoped_ptr<ConsensusRound>* round) {
     gscoped_ptr<ReplicateMsg> msg(new ReplicateMsg());
     msg->set_op_type(NO_OP);
-    msg->mutable_no_op();
+    msg->mutable_noop_request();
     shared_ptr<FutureCallback> replicate_clbk(new LatchCallback);
     shared_ptr<FutureCallback> commit_clbk(new LatchCallback);
     round->reset(peer->NewRound(msg.Pass(), replicate_clbk, commit_clbk));

@@ -105,7 +105,7 @@ TEST_F(ConsensusQueueTest, TestGetPagedMessages) {
   id->set_term(0);
   ReplicateMsg* msg = op->mutable_replicate();
   msg->set_op_type(NO_OP);
-  msg->mutable_no_op()->set_payload_for_tests("");
+  msg->mutable_noop_request()->set_payload_for_tests("");
 
   // Save the current flag state.
   google::FlagSaver saver;
@@ -236,7 +236,7 @@ TEST_F(ConsensusQueueTest, TestQueueRefusesRequestWhenFilled) {
     id->set_index(1);
     ReplicateMsg* msg = op->mutable_replicate();
     msg->set_op_type(NO_OP);
-    msg->mutable_no_op()->set_payload_for_tests(test_payload);
+    msg->mutable_noop_request()->set_payload_for_tests(test_payload);
     status.reset(new TestOperationStatus(1, 1, *id));
   }
 
@@ -244,17 +244,34 @@ TEST_F(ConsensusQueueTest, TestQueueRefusesRequestWhenFilled) {
   Status s = queue_->AppendOperation(op.Pass(), status);
   LOG(INFO) << queue_->ToString();
   ASSERT_TRUE(s.IsServiceUnavailable());
-  // now ack the first op
-  statuses[0]->AckPeer("");
-  // .. and try again
+
+  // but should still accept commits
   {
     op.reset(new OperationPB);
     OpId* id = op->mutable_id();
     id->set_term(10);
     id->set_index(1);
+    CommitMsg* msg = op->mutable_commit();
+    msg->set_op_type(NO_OP);
+    msg->mutable_noop_response()->set_payload_for_tests(test_payload);
+    status.reset(new TestOperationStatus(1, 1, *id));
+  }
+
+  ASSERT_STATUS_OK(queue_->AppendOperation(op.Pass(), status));
+
+  // now ack the first and second ops
+  statuses[0]->AckPeer("");
+  statuses[1]->AckPeer("");
+
+  // .. and try again
+  {
+    op.reset(new OperationPB);
+    OpId* id = op->mutable_id();
+    id->set_term(10);
+    id->set_index(2);
     ReplicateMsg* msg = op->mutable_replicate();
     msg->set_op_type(NO_OP);
-    msg->mutable_no_op()->set_payload_for_tests(test_payload);
+    msg->mutable_noop_request()->set_payload_for_tests(test_payload);
     status.reset(new TestOperationStatus(1, 1, *id));
   }
 
