@@ -345,7 +345,7 @@ void StringGauge::WriteValue(JsonWriter* writer) const {
 
 Counter* CounterPrototype::Instantiate(const MetricContext& context) {
   return context.metrics()->FindOrCreateCounter(
-    context.prefix() + "." + name_, *this);
+    context.prefix() + "." + name(), *this);
 }
 
 Counter::Counter(const CounterPrototype& proto)
@@ -394,8 +394,8 @@ Status Counter::WriteAsJson(const string& name,
 // HistogramPrototype
 /////////////////////////////////////////////////
 
-HistogramPrototype::HistogramPrototype(const std::string& name, MetricUnit::Type unit,
-                                       const std::string& description,
+HistogramPrototype::HistogramPrototype(const char* name, MetricUnit::Type unit,
+                                       const char* description,
                                        uint64_t max_trackable_value, int num_sig_digits)
   : name_(name),
     unit_(unit),
@@ -413,7 +413,7 @@ HistogramPrototype::HistogramPrototype(const std::string& name, MetricUnit::Type
 
 Histogram* HistogramPrototype::Instantiate(const MetricContext& context) {
   return context.metrics()->FindOrCreateHistogram(
-    context.prefix() + "." + name_, *this);
+    context.prefix() + "." + name(), *this);
 }
 
 /////////////////////////////////////////////////

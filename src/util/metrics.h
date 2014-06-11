@@ -311,35 +311,35 @@ class MetricContext {
 template<typename T>
 class GaugePrototype {
  public:
-  GaugePrototype(const std::string& name,
-                 MetricUnit::Type unit, const std::string& description)
+  GaugePrototype(const char* name,
+                 MetricUnit::Type unit, const char* description)
     : name_(name),
       unit_(unit),
       description_(description) {
   }
 
-  const std::string& name() const { return name_; }
+  const char* name() const { return name_; }
   MetricUnit::Type unit() const { return unit_; }
-  const std::string& description() const { return description_; }
+  const char* description() const { return description_; }
 
   // Instantiate a "manual" gauge.
   Gauge* Instantiate(const MetricContext& context,
                      const T& initial_value) const {
     return context.metrics()->FindOrCreateGauge(
-        context.prefix() + "." + name_, *this, initial_value);
+        context.prefix() + "." + name(), *this, initial_value);
   }
 
   // Instantiate a gauge that is backed by the given callback.
   Gauge* InstantiateFunctionGauge(const MetricContext& context,
                                   const boost::function<T()>& function) const {
     return context.metrics()->FindOrCreateFunctionGauge(
-        context.prefix() + "." + name_, *this, function);
+        context.prefix() + "." + name(), *this, function);
   }
 
  private:
-  const std::string name_;
+  const char* name_;
   const MetricUnit::Type unit_;
-  const std::string description_;
+  const char* description_;
   DISALLOW_COPY_AND_ASSIGN(GaugePrototype);
 };
 
@@ -443,22 +443,22 @@ class FunctionGauge : public Gauge {
 // Prototype for a counter.
 class CounterPrototype {
  public:
-  CounterPrototype(const std::string& name, MetricUnit::Type unit,
-      const std::string& description)
+  CounterPrototype(const char* name, MetricUnit::Type unit,
+      const char* description)
     : name_(name),
       unit_(unit),
       description_(description) {
   }
-  const std::string& name() const { return name_; }
+  const char* name() const { return name_; }
   MetricUnit::Type unit() const { return unit_; }
-  const std::string& description() const { return description_; }
+  const char* description() const { return description_; }
 
   Counter* Instantiate(const MetricContext& context);
 
  private:
-  const std::string name_;
+  const char* name_;
   const MetricUnit::Type unit_;
-  const std::string description_;
+  const char* description_;
   DISALLOW_COPY_AND_ASSIGN(CounterPrototype);
 };
 
@@ -494,20 +494,20 @@ class Counter : public Metric {
 
 class HistogramPrototype {
  public:
-  HistogramPrototype(const std::string& name, MetricUnit::Type unit,
-                     const std::string& description,
+  HistogramPrototype(const char* name, MetricUnit::Type unit,
+                     const char* description,
                      uint64_t max_trackable_value, int num_sig_digits);
   Histogram* Instantiate(const MetricContext& context);
-  const std::string& name() const { return name_; }
+  const char* name() const { return name_; }
   MetricUnit::Type unit() const { return unit_; }
-  const std::string& description() const { return description_; }
+  const char* description() const { return description_; }
   uint64_t max_trackable_value() const { return max_trackable_value_; }
   int num_sig_digits() const { return num_sig_digits_; }
 
  private:
-  const std::string name_;
+  const char* name_;
   const MetricUnit::Type unit_;
-  const std::string description_;
+  const char* description_;
   const uint64_t max_trackable_value_;
   const int num_sig_digits_;
   DISALLOW_COPY_AND_ASSIGN(HistogramPrototype);
