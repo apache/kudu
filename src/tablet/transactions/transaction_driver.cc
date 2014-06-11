@@ -164,7 +164,6 @@ Status LeaderTransactionDriver::Execute() {
     prepare_replicate_callback->OnFailure(replicate_status);
   }
 
-  // TODO: this always returns OK
   return Status::OK();
 }
 
@@ -187,7 +186,7 @@ void LeaderTransactionDriver::PrepareOrReplicateSucceeded() {
   }
 
   shared_ptr<Future> apply_future;
-  // TODO Allow to abort apply/commit
+  // TODO Allow to abort apply/commit. See KUDU-341
   Status s = apply_executor_->Submit(boost::bind(&LeaderTransactionDriver::ApplyAndCommit, this),
                                      &apply_future);
   if (!s.ok()) {
@@ -499,7 +498,6 @@ Status ReplicaTransactionDriver::ApplyAndCommit() {
 
     if (PREDICT_TRUE(s.ok())) {
       transaction_->PreCommit();
-      // TODO do something about this status
       s = mutable_state()->consensus_round()->Commit(commit_msg.Pass());
       if (PREDICT_TRUE(s.ok())) {
         transaction_->PostCommit();

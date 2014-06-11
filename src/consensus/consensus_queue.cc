@@ -158,7 +158,6 @@ Status PeerMessageQueue::AppendOperation(gscoped_ptr<OperationPB> operation,
 void PeerMessageQueue::RequestForPeer(const string& uuid,
                                         ConsensusRequestPB* request) {
   // Clear the requests without deleting the entries, as they may be in use by other peers.
-  // TODO consider adding an utility for this.
   request->mutable_ops()->ExtractSubrange(0, request->ops_size(), NULL);
   boost::lock_guard<simple_spinlock> lock(queue_lock_);
   DCHECK_EQ(state_, kQueueOpen);

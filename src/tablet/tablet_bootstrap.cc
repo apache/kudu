@@ -564,7 +564,6 @@ Status TabletBootstrap::HandleEntry(ReplayState* state, LogEntryPB* entry) {
         RETURN_NOT_OK(HandleCommitMessage(state, entry));
       }
       break;
-    // TODO support other op types when we run distributedly
     default:
       return Status::Corruption(Substitute("Unexpected log entry type: $0", entry->type()));
   }
@@ -769,11 +768,6 @@ Status TabletBootstrap::PlayWriteRequest(OperationPB* replicate_op,
                                          const OperationPB& commit_op) {
   WriteRequestPB* write = replicate_op->mutable_replicate()->mutable_write_request();
 
-  // TODO should we re-append to the new log when all operations were
-  // skipped? On one hand appending allows this node to catch up other
-  // nodes even its log entries go back further than its current
-  // flushed state. On the other hand it just seems wasteful...
-
   WriteTransactionState tx_state;
   tx_state.mutable_op_id()->CopyFrom(replicate_op->id());
 
@@ -787,7 +781,6 @@ Status TabletBootstrap::PlayWriteRequest(OperationPB* replicate_op,
   tx_state.set_component_lock(tablet_->component_lock());
 
   if (write->has_row_operations()) {
-    // TODO: is above always true at this point in the code?
     RETURN_NOT_OK(PlayRowOperations(&tx_state,
                                     write->schema(),
                                     write->row_operations(),

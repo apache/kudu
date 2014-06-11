@@ -210,16 +210,13 @@ class RaftConsensusTest : public KuduTest {
     }
     ASSERT_STATUS_OK(s);
     int num_attempts = 0;
-    // Because commit's are asynchonous we need to keep making the leader
-    // send status updates.
-    // TODO heartbeats should do this.
+
     while (true) {
       Status s = clbk->TimedWait(MonoDelta::FromMilliseconds(1000));
       if (s.ok()) {
         return;
       }
       CHECK(s.IsTimedOut());
-      GetLeader()->SignalRequestToPeers(true);
       num_attempts++;
       if (num_attempts == 10) {
         LOG(ERROR) << "Max timeout attempts reached while waiting for commit: "

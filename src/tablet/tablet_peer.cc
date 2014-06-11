@@ -100,8 +100,6 @@ Status TabletPeer::Init(const shared_ptr<Tablet>& tablet,
     messenger_ = messenger;
     log_.reset(log.release());
     opid_anchor_registry_ = opid_anchor_registry;
-    // TODO support different consensus implementations (possibly by adding
-    // a TabletPeerOptions).
 
     ConsensusOptions options;
     options.tablet_id = meta_->oid();
