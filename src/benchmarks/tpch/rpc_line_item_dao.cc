@@ -1,6 +1,5 @@
 // Copyright (c) 2013, Cloudera, inc.
 
-#include <boost/bind.hpp>
 #include <boost/thread/locks.hpp>
 #include <glog/logging.h>
 #include <vector>
@@ -8,10 +7,13 @@
 #include <utility>
 
 #include "gutil/map-util.h"
+#include "gutil/gscoped_ptr.h"
 
 #include "client/client.h"
 #include "client/meta_cache.h"
+#include "client/write_op.h"
 #include "common/row.h"
+#include "common/partial_row.h"
 #include "common/row_operations.h"
 #include "common/scan_spec.h"
 #include "common/schema.h"
@@ -21,13 +23,56 @@
 #include "benchmarks/tpch/rpc_line_item_dao.h"
 #include "util/locks.h"
 #include "util/coding.h"
+#include "gutil/stl_util.h"
 
 using std::tr1::shared_ptr;
 
 namespace kudu {
+
 using tserver::TabletServerServiceProxy;
 using tserver::WriteRequestPB;
 using tserver::WriteResponsePB;
+using client::Insert;
+using client::Update;
+
+namespace {
+
+  class CountingCallback {
+  public:
+    explicit CountingCallback(shared_ptr<client::KuduSession> session, Atomic32 *ctr)
+      : session_(session), ctr_(ctr) {
+      base::subtle::NoBarrier_AtomicIncrement(ctr_, 1);
+    }
+
+    void operator()(Status s) {
+      BatchFinished();
+      CHECK_OK(s);
+      base::subtle::NoBarrier_AtomicIncrement(ctr_, -1);
+    }
+
+  private:
+    void BatchFinished() {
+      int nerrs = session_->CountPendingErrors();
+      if (nerrs) {
+        LOG(WARNING) << nerrs << " errors occured during last batch.";
+        vector<client::Error*> errors;
+        ElementDeleter d(&errors);
+        bool overflow;
+        session_->GetPendingErrors(&errors, &overflow);
+        if (overflow) {
+          LOG(WARNING) << "Error overflow occured";
+        }
+        BOOST_FOREACH(client::Error* error, errors) {
+          LOG(WARNING) << "FAILED: " << error->failed_op().ToString();
+        }
+      }
+    }
+
+    shared_ptr<client::KuduSession> session_;
+    Atomic32 *ctr_;
+  };
+
+} // anonymous namespace
 
 void RpcLineItemDAO::Init() {
   const Schema schema = tpch::CreateLineItemSchema();
@@ -43,42 +88,33 @@ void RpcLineItemDAO::Init() {
     CHECK_OK(s);
   }
 
-  // TODO: Use the client api instead of the direct request. This only
-  // works because we've created a single-tablet table.
-  Synchronizer sync;
-  scoped_refptr<client::RemoteTablet> remote;
-  client_->meta_cache_->LookupTabletByKey(client_table_.get(), Slice(),
-                                     &remote, sync.callback());
-  CHECK_OK(sync.Wait());
-  client::RemoteTabletServer *ts;
-  CHECK_OK(client_->GetTabletServer(remote->tablet_id(),
-                                    client::KuduClient::LEADER_ONLY,
-                                    &ts));
-  proxy_ = ts->proxy();
-  request_.set_tablet_id(remote->tablet_id());
-  CHECK_OK(SchemaToPB(schema, request_.mutable_schema()));
+  session_ = client_->NewSession();
+  session_->SetTimeoutMillis(timeout_);
+  CHECK_OK(session_->SetFlushMode(client::KuduSession::MANUAL_FLUSH));
 }
 
-void RpcLineItemDAO::WriteLine(const PartialRow& row) {
-  if (!ShouldAddKey(row)) return;
-
-  RowOperationsPB* data = request_.mutable_row_operations();
-  RowOperationsPBEncoder enc(data);
-  enc.Add(RowOperationsPB::INSERT, row);
-  num_pending_rows_++;
-  DoWriteAsync();
-  ApplyBackpressure();
+void RpcLineItemDAO::WriteLine(boost::function<void(PartialRow*)> f) {
+  gscoped_ptr<Insert> insert = client_table_->NewInsert();
+  f(insert->mutable_row());
+  if (!ShouldAddKey(insert->row())) return;
+  CHECK_OK(session_->Apply(&insert));
+  ++batch_size_;
+  if (batch_size_ == batch_max_) {
+    batch_size_ = 0;
+    session_->FlushAsync(CountingCallback(session_, &semaphore_));
+  }
 }
 
-void RpcLineItemDAO::MutateLine(const PartialRow& row) {
-  if (!ShouldAddKey(row)) return;
-
-  RowOperationsPB* data = request_.mutable_row_operations();
-  RowOperationsPBEncoder enc(data);
-  enc.Add(RowOperationsPB::UPDATE, row);
-  num_pending_rows_++;
-  DoWriteAsync();
-  ApplyBackpressure();
+void RpcLineItemDAO::MutateLine(boost::function<void(PartialRow*)> f) {
+  gscoped_ptr<Update> update = client_table_->NewUpdate();
+  f(update->mutable_row());
+  if (!ShouldAddKey(update->row())) return;
+  CHECK_OK(session_->Apply(&update));
+  ++batch_size_;
+  if (batch_size_ == batch_max_) {
+    batch_size_ = 0;
+    session_->FlushAsync(CountingCallback(session_, &semaphore_));
+  }
 }
 
 bool RpcLineItemDAO::ShouldAddKey(const PartialRow &row) {
@@ -87,83 +123,13 @@ bool RpcLineItemDAO::ShouldAddKey(const PartialRow &row) {
   uint32_t l_linenumber;
   CHECK_OK(row.GetUInt32(tpch::kLineNumberColIdx, &l_linenumber));
   std::pair<uint32_t, uint32_t> composite_k(l_ordernumber, l_linenumber);
-
-  boost::lock_guard<simple_spinlock> l(lock_);
   return InsertIfNotPresent(&orders_in_request_, composite_k);
 }
 
-void RpcLineItemDAO::ApplyBackpressure() {
-  while (true) {
-    {
-      boost::lock_guard<simple_spinlock> l(lock_);
-      if (!request_pending_) return;
-      if (num_pending_rows_ < batch_size_) {
-        break;
-      }
-    }
-    usleep(1000);
-  }
-}
-
-void RpcLineItemDAO::DoWriteAsync() {
-  boost::lock_guard<simple_spinlock> l(lock_);
-  if (!request_pending_) {
-    request_pending_ = true;
-
-    rpc_.Reset();
-    rpc_.set_timeout(MonoDelta::FromMilliseconds(2000));
-
-    VLOG(1) << "Sending batch of " << num_pending_rows_;
-    proxy_->WriteAsync(request_, &response_, &rpc_,
-                       boost::bind(&RpcLineItemDAO::BatchFinished, this));
-
-    num_pending_rows_ = 0;
-
-    request_.mutable_row_operations()->Clear();
-    orders_in_request_.clear();
-  }
-}
-
-void RpcLineItemDAO::BatchFinished() {
-  boost::lock_guard<simple_spinlock> l(lock_);
-  request_pending_ = false;
-
-  Status s = rpc_.status();
-  if (!s.ok()) {
-    // We can't log which rows failed, since we already cleared the Request
-    // object right after sending it.
-    LOG(WARNING) << "RPC error inserting rows: " << s.ToString();
-    return;
-  }
-
-  if (response_.has_error()) {
-    LOG(WARNING) << "Unable to insert rows: " << response_.error().DebugString();
-    return;
-  }
-
-  if (response_.per_row_errors().size() > 0) {
-    BOOST_FOREACH(const WriteResponsePB::PerRowErrorPB& err, response_.per_row_errors()) {
-      if (err.error().code() != AppStatusPB::ALREADY_PRESENT) {
-        LOG(WARNING) << "Per-row errors for row " << err.row_index() << ": " << err.DebugString();
-      }
-    }
-  }
-}
-
 void RpcLineItemDAO::FinishWriting() {
-  while (true) {
-    {
-      boost::unique_lock<simple_spinlock> l(lock_);
-      if (!request_pending_) {
-        if (num_pending_rows_ > 0) {
-          l.unlock();
-          DoWriteAsync();
-        } else {
-          return;
-        }
-      }
-    }
-    usleep(1000);
+  CHECK_OK(session_->Flush());
+  while (base::subtle::NoBarrier_Load(&semaphore_)) {
+    usleep(timeout_ * 10); // 1/100th of timeout
   }
 }
 
@@ -197,6 +163,15 @@ bool RpcLineItemDAO::IsTableEmpty() {
 void RpcLineItemDAO::GetNext(RowBlock *block) {}
 RpcLineItemDAO::~RpcLineItemDAO() {
   FinishWriting();
+}
+
+RpcLineItemDAO::RpcLineItemDAO(const string& master_address,
+                               const string& table_name,
+                               const int batch_size,
+                               const int mstimeout)
+  : master_address_(master_address), table_name_(table_name),
+    timeout_(mstimeout), batch_max_(batch_size), batch_size_(0) {
+  base::subtle::NoBarrier_Store(&semaphore_, 0);
 }
 
 } // namespace kudu

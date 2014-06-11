@@ -9,6 +9,7 @@
 
 #include "common/schema.h"
 #include "common/row.h"
+#include "common/partial_row.h"
 #include "gutil/strings/split.h"
 #include "gutil/strings/stringpiece.h"
 
@@ -22,14 +23,16 @@ class LineItemTsvImporter {
  public:
   explicit LineItemTsvImporter(const string &path) : in_(path.c_str()) {
     CHECK(in_.is_open()) << "not able to open input file: " << path;
+    done_ = !getline(in_, line_);
   }
+
+  bool done() const { return done_; }
 
   // Fills the row builder with a single line item from the file.
   // It returns 0 if it's done or the order number if it got a line
   int GetNextLine(PartialRow* row) {
-    if (!getline(in_, line_)) {
-      return 0;
-    }
+    if (done_) return 0;
+
     columns_.clear();
 
     // grab all the columns_ individually
@@ -52,6 +55,10 @@ class LineItemTsvImporter {
     CHECK_OK(row->SetString(tpch::kShipInstructColIdx, columns_[i++]));
     CHECK_OK(row->SetString(tpch::kShipModeColIdx, columns_[i++]));
     CHECK_OK(row->SetString(tpch::kCommentColIdx, columns_[i++]));
+
+    // Get next line
+    done_ = !getline(in_, line_);
+
     return order_number;
   }
 
@@ -86,6 +93,7 @@ class LineItemTsvImporter {
   std::ifstream in_;
   vector<StringPiece> columns_;
   string line_, tmp_;
+  bool done_;
 };
 } // namespace kudu
 #endif

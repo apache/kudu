@@ -64,6 +64,13 @@ class Demo {
   DISALLOW_COPY_AND_ASSIGN(Demo);
 };
 
+
+static void UpdateRow(int order, int line, int quantity, PartialRow* row) {
+  CHECK_OK(row->SetUInt32(tpch::kOrderKeyColIdx, order));
+  CHECK_OK(row->SetUInt32(tpch::kLineNumberColIdx, line));
+  CHECK_OK(row->SetUInt32(tpch::kQuantityColIdx, quantity));
+}
+
 // This thread continuously updates the l_quantity column from orders
 // as determined by Demo::GetNextOrder. It first needs to read the order to get
 // the quantity, picking the highest line number, does l_quantity+1, then
@@ -101,12 +108,16 @@ static void UpdateThread(Demo *demo) {
     // 4. Do the update
     VLOG(1) << "updating " << l_ordernumber << " " << l_linenumber << " "
             << l_quantity << " " << new_l_quantity;
-    PartialRow update(&full_schema);
-    CHECK_OK(update.SetUInt32(tpch::kOrderKeyColIdx, l_ordernumber));
-    CHECK_OK(update.SetUInt32(tpch::kLineNumberColIdx, l_linenumber));
-    CHECK_OK(update.SetUInt32(tpch::kQuantityColIdx, new_l_quantity));
-    dao->MutateLine(update);
+    dao->MutateLine(boost::bind(UpdateRow, l_ordernumber,
+                                l_linenumber, new_l_quantity, _1));
   }
+}
+
+// Import line, and write its order number to the argument
+static void ImportLine(Demo* demo, LineItemTsvImporter* import, PartialRow* row) {
+  int order = import->GetNextLine(row);
+  // Move the window forward
+  demo->SetLastInsertedOrder(order);
 }
 
 // This function inserts all the orders it reads until it runs out, and keeps
@@ -117,15 +128,8 @@ static void InsertThread(Demo *demo, const string &path) {
   dao->Init();
   LineItemTsvImporter importer(path);
 
-  Schema schema(tpch::CreateLineItemSchema());
-  PartialRow row(&schema);
-
-  int order_number = importer.GetNextLine(&row);
-  while (order_number != 0) {
-    dao->WriteLine(row);
-    // Move the window forward
-    demo->SetLastInsertedOrder(order_number);
-    order_number = importer.GetNextLine(&row);
+  while (!importer.done()) {
+    dao->WriteLine(boost::bind(ImportLine, demo, &importer, _1));
   }
   dao->FinishWriting();
 }

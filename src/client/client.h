@@ -170,9 +170,6 @@ class KuduClient : public std::tr1::enable_shared_from_this<KuduClient> {
   friend class RemoteTablet;
   friend class internal::Batcher;
 
-  // TODO: When RpcLineItemDAO uses the client API, this goes away. See KUDU-264.
-  friend class kudu::RpcLineItemDAO;
-
   FRIEND_TEST(ClientTest, TestReplicatedMultiTabletTableFailover);
   FRIEND_TEST(ClientTest, TestMasterLookupPermits);
 

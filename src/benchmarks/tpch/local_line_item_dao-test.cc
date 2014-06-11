@@ -36,7 +36,7 @@ class LocalLineItemDAOTest : public KuduTest {
   Schema schema_;
   RowBuilder rb_;
 
-  void BuildTestRow(int order, int line, PartialRow* row) {
+  static void BuildTestRow(int order, int line, PartialRow* row) {
     CHECK_OK(row->SetUInt32(tpch::kOrderKeyColIdx, order));
     CHECK_OK(row->SetUInt32(tpch::kLineNumberColIdx, line));
     CHECK_OK(row->SetUInt32(tpch::kPartKeyColIdx, 12345));
@@ -72,15 +72,12 @@ class LocalLineItemDAOTest : public KuduTest {
 }; // class LocalLineItemDAOTest
 
 TEST_F(LocalLineItemDAOTest, TestInsert) {
-  PartialRow row(&schema_);
-  BuildTestRow(1, 1, &row);
-  dao_->WriteLine(row);
+  dao_->WriteLine(boost::bind(BuildTestRow, 1, 1, _1));
   dao_->FinishWriting();
   ASSERT_EQ(1, CountRows());
   for (int i = 2; i < 7; i++) {
     for (int y = 0; y < 5; y++) {
-      BuildTestRow(i, y, &row);
-      dao_->WriteLine(row);
+      dao_->WriteLine(boost::bind(BuildTestRow, i, y, _1));
     }
   }
   dao_->FinishWriting();

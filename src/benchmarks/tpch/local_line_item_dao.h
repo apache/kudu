@@ -18,18 +18,11 @@ namespace kudu {
 // FinishWriting here has the effect of flushing all the memrowsets
 class LocalLineItemDAO : public LineItemDAO {
  public:
-  explicit LocalLineItemDAO(const string &path)
-      : fs_manager_(kudu::Env::Default(), path) {
-    Status s = fs_manager_.Open();
-    if (s.IsNotFound()) {
-      CHECK_OK(fs_manager_.CreateInitialFileSystemLayout());
-      CHECK_OK(fs_manager_.Open());
-    }
-  }
+  explicit LocalLineItemDAO(const string &path);
   virtual ~LocalLineItemDAO() OVERRIDE;
 
-  virtual void WriteLine(const PartialRow& row) OVERRIDE;
-  virtual void MutateLine(const PartialRow& row) OVERRIDE;
+  virtual void WriteLine(boost::function<void(PartialRow*)> f) OVERRIDE;
+  virtual void MutateLine(boost::function<void(PartialRow*)> f) OVERRIDE;
   virtual void Init() OVERRIDE;
   virtual void FinishWriting() OVERRIDE;
   virtual void OpenScanner(const Schema &query_schema, ScanSpec *spec) OVERRIDE;
@@ -38,10 +31,14 @@ class LocalLineItemDAO : public LineItemDAO {
   virtual bool IsTableEmpty() OVERRIDE;
 
  private:
+  void WriteLine(const PartialRow& row);
+  void MutateLine(const PartialRow& row);
+
   kudu::FsManager fs_manager_;
   gscoped_ptr<kudu::tablet::Tablet> tablet_;
   tablet::WriteTransactionState tx_state_;
   gscoped_ptr<RowwiseIterator> current_iter_;
+  Schema schema_;
 };
 
 } // namespace kudu

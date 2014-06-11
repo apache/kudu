@@ -16,6 +16,17 @@ using metadata::QuorumPB;
 using metadata::TabletMasterBlockPB;
 using metadata::TabletMetadata;
 
+
+LocalLineItemDAO::LocalLineItemDAO(const string &path)
+    : fs_manager_(kudu::Env::Default(), path),
+      schema_(tpch::CreateLineItemSchema()) {
+  Status s = fs_manager_.Open();
+  if (s.IsNotFound()) {
+    CHECK_OK(fs_manager_.CreateInitialFileSystemLayout());
+    CHECK_OK(fs_manager_.Open());
+  }
+}
+
 void LocalLineItemDAO::Init() {
   // Hard-coded master block
   TabletMasterBlockPB master_block;
@@ -24,14 +35,14 @@ void LocalLineItemDAO::Init() {
   master_block.set_block_b("b0f65c47c2a84dcf9ec4e95dd63f4393");
 
   // Try to load it. If it was not found, create a new one.
-  Schema s = SchemaBuilder(tpch::CreateLineItemSchema()).Build();
   scoped_refptr<kudu::metadata::TabletMetadata> metadata;
 
   QuorumPB quorum;
   CHECK_OK(TabletMetadata::LoadOrCreate(&fs_manager_,
                                         master_block,
                                         "tpch1",
-                                        s,
+                                        // Build schema with column ids
+                                        SchemaBuilder(schema_).Build(),
                                         quorum,
                                         "",
                                         "",
@@ -42,6 +53,18 @@ void LocalLineItemDAO::Init() {
   tablet_.reset(new tablet::Tablet(metadata, clock, NULL,
                                    new log::OpIdAnchorRegistry()));
   CHECK_OK(tablet_->Open());
+}
+
+void LocalLineItemDAO::WriteLine(boost::function<void(PartialRow*)> f) {
+  PartialRow row(&schema_);
+  f(&row);
+  WriteLine(row);
+}
+
+void LocalLineItemDAO::MutateLine(boost::function<void(PartialRow*)> f) {
+  PartialRow row(&schema_);
+  f(&row);
+  MutateLine(row);
 }
 
 void LocalLineItemDAO::WriteLine(const PartialRow& row) {

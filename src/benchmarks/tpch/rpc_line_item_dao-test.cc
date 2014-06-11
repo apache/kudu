@@ -8,6 +8,7 @@
 #include "common/scan_spec.h"
 #include "common/schema.h"
 #include "common/row.h"
+#include "common/partial_row.h"
 #include "common/wire_protocol.h"
 #include "common/row_changelist.h"
 #include "util/status.h"
@@ -47,7 +48,7 @@ class RpcLineItemDAOTest : public KuduTest {
   Schema schema_;
   RowBuilder rb_;
 
-  void BuildTestRow(int order, int line, PartialRow* row) {
+  static void BuildTestRow(int order, int line, PartialRow* row) {
     CHECK_OK(row->SetUInt32(tpch::kOrderKeyColIdx, order));
     CHECK_OK(row->SetUInt32(tpch::kLineNumberColIdx, line));
     CHECK_OK(row->SetUInt32(tpch::kPartKeyColIdx, 12345));
@@ -66,6 +67,12 @@ class RpcLineItemDAOTest : public KuduTest {
     CHECK_OK(row->SetStringCopy(tpch::kCommentColIdx, StringPrintf("hello %d", line)));
   }
 
+  static void UpdateTestRow(int key, int line_number, int quantity, PartialRow* row) {
+    CHECK_OK(row->SetUInt32(tpch::kOrderKeyColIdx, key));
+    CHECK_OK(row->SetUInt32(tpch::kLineNumberColIdx, line_number));
+    CHECK_OK(row->SetUInt32(tpch::kQuantityColIdx, quantity));
+  }
+
   int CountRows() {
     Schema query_schema = schema_.CreateKeyProjection();
     ScanSpec spec;
@@ -82,15 +89,12 @@ class RpcLineItemDAOTest : public KuduTest {
 }; // class RpcLineItemDAOTest
 
 TEST_F(RpcLineItemDAOTest, TestInsert) {
-  PartialRow row(&schema_);
-  BuildTestRow(1, 1, &row);
-  dao_->WriteLine(row);
+  dao_->WriteLine(boost::bind(BuildTestRow, 1, 1, _1));
   dao_->FinishWriting();
   ASSERT_EQ(1, CountRows());
   for (int i = 2; i < 7; i++) {
     for (int y = 0; y < 5; y++) {
-      BuildTestRow(i, y, &row);
-      dao_->WriteLine(row);
+      dao_->WriteLine(boost::bind(BuildTestRow, i, y, _1));
     }
   }
   dao_->FinishWriting();
@@ -98,16 +102,11 @@ TEST_F(RpcLineItemDAOTest, TestInsert) {
 }
 
 TEST_F(RpcLineItemDAOTest, TestUpdate) {
-  PartialRow row(&schema_);
-  BuildTestRow(1, 1, &row);
-  dao_->WriteLine(row);
+  dao_->WriteLine(boost::bind(BuildTestRow, 1, 1, _1));
   dao_->FinishWriting();
+  ASSERT_EQ(1, CountRows());
 
-  PartialRow update(&schema_);
-  ASSERT_STATUS_OK(update.SetUInt32(tpch::kOrderKeyColIdx, 1));
-  ASSERT_STATUS_OK(update.SetUInt32(tpch::kLineNumberColIdx, 1));
-  ASSERT_STATUS_OK(update.SetUInt32(tpch::kQuantityColIdx, 12345));
-  dao_->MutateLine(update);
+  dao_->MutateLine(boost::bind(UpdateTestRow, 1, 1, 12345, _1));
   dao_->FinishWriting();
   ScanSpec spec;
   dao_->OpenScanner(schema_, &spec);

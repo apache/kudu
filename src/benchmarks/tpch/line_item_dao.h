@@ -2,6 +2,8 @@
 #ifndef KUDU_TPCH_LINE_ITEM_DAO_H
 #define KUDU_TPCH_LINE_ITEM_DAO_H
 
+#include <boost/function.hpp>
+
 #include "common/scan_spec.h"
 #include "common/schema.h"
 #include "common/row.h"
@@ -13,8 +15,9 @@ class PartialRow;
 // Abstract class to read/write line item rows
 class LineItemDAO {
  public:
-  virtual void WriteLine(const PartialRow& row) = 0;
-  virtual void MutateLine(const PartialRow& row) = 0;
+  // Parameter function defines write/mutate operation.
+  virtual void WriteLine(boost::function<void(PartialRow*)> f) = 0;
+  virtual void MutateLine(boost::function<void(PartialRow*)> f) = 0;
   virtual void Init() = 0;
   virtual void FinishWriting() = 0;
   virtual void OpenScanner(const Schema &query_schema, ScanSpec *spec) = 0;
