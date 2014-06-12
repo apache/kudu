@@ -6,21 +6,17 @@ import com.stumbleupon.async.Deferred;
 import kudu.WireProtocol;
 import kudu.tserver.Tserver;
 import kudu.util.Slice;
-import org.jboss.netty.util.HashedWheelTimer;
 import org.jboss.netty.util.Timeout;
 import org.jboss.netty.util.TimerTask;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import javax.annotation.concurrent.GuardedBy;
-import java.nio.charset.Charset;
 import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 
-import static java.util.concurrent.TimeUnit.MILLISECONDS;
 import static kudu.rpc.ExternalConsistencyMode.NO_CONSISTENCY;
 
 /**
@@ -66,8 +62,6 @@ import static kudu.rpc.ExternalConsistencyMode.NO_CONSISTENCY;
 public class KuduSession {
 
   public static final Logger LOG = LoggerFactory.getLogger(KuduSession.class);
-
-  private final HashedWheelTimer timer = new HashedWheelTimer(20, MILLISECONDS);
 
   public enum FlushMode {
     // Every write will be sent to the server in-band with the Apply()
@@ -129,6 +123,11 @@ public class KuduSession {
    */
   @GuardedBy("this")
   private final List<Operation> operationsInLookup = new ArrayList<Operation>();
+
+  /**
+   * Tracks whether the session has been closed.
+   */
+  volatile boolean closed;
 
   /**
    * Package-private constructor meant to be used via KuduClient
@@ -196,11 +195,18 @@ public class KuduSession {
   }
 
   /**
+   * Returns true if this session has already been closed.
+   */
+  public boolean isClosed() {
+    return closed;
+  }
+
+  /**
    * Flushes the buffered operations
    * @return a Deferred if operations needed to be flushed, else null
    */
   public Deferred<Object> close() {
-    timer.stop();
+    closed = true;
     return flush();
   }
 
@@ -445,7 +451,7 @@ public class KuduSession {
    * Schedules the next periodic flush of buffered edits.
    */
   private void scheduleNextPeriodicFlush(Slice tablet, Batch batch) {
-    timer.newTimeout(new FlusherTask(tablet, batch), interval, MILLISECONDS);
+    client.newTimeout(new FlusherTask(tablet, batch), interval);
   }
 
   /**
@@ -557,6 +563,9 @@ public class KuduSession {
     }
 
     public void run(final Timeout timeout) {
+      if (isClosed()) {
+        return; // we ran too late, no-op
+      }
       LOG.trace("Timed flushing: " + Bytes.getString(tabletSlice));
       flushTablet(this.tabletSlice, this.expectedBatch);
     }
