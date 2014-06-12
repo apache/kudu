@@ -139,7 +139,43 @@ TEST_F(ConsensusQueueTest, TestGetPagedMessages) {
 
   // extract the ops from the request to avoid double free
   request.mutable_ops()->ExtractSubrange(0, request.ops_size(), NULL);
+}
 
+// Ensure that the queue always sends at least one message to a peer,
+// even if that message is larger than the batch size. This ensures
+// that we don't get "stuck" in the case that a large message enters
+// the queue.
+TEST_F(ConsensusQueueTest, TestAlwaysYieldsAtLeastOneMessage) {
+  // generate a 2MB dummy payload
+  string test_payload(2 * 1024 * 1024, '0');
+
+  // Set a small batch size -- smaller than the message we're appending.
+  google::FlagSaver saver;
+  FLAGS_consensus_max_batch_size_bytes = 10000;
+
+  // Append the large op to the queue
+  gscoped_ptr<OperationPB> op;
+  scoped_refptr<OperationStatusTracker> status;
+  {
+    op.reset(new OperationPB);
+    OpId* id = op->mutable_id();
+    id->set_term(0);
+    id->set_index(1);
+    ReplicateMsg* msg = op->mutable_replicate();
+    msg->set_op_type(NO_OP);
+    msg->mutable_noop_request()->set_payload_for_tests(test_payload);
+    status.reset(new TestOperationStatus(1, 1, *id));
+  }
+  ASSERT_STATUS_OK(queue_->AppendOperation(op.Pass(), status));
+
+  // Ensure that a request contains the message.
+  ConsensusRequestPB request;
+  queue_->TrackPeer(kPeerUuid, log::MinimumOpId());
+  queue_->RequestForPeer(kPeerUuid, &request);
+  ASSERT_EQ(1, request.ops_size());
+
+  // extract the op from the request to avoid double free
+  request.mutable_ops()->ExtractSubrange(0, request.ops_size(), NULL);
 }
 
 TEST_F(ConsensusQueueTest, TestPeersDontAckBeyondWatermarks) {

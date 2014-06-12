@@ -169,7 +169,12 @@ void PeerMessageQueue::RequestForPeer(const string& uuid,
     msg = (*iter).second;
     request->mutable_ops()->AddAllocated(msg->op_.get());
     if (request->ByteSize() > FLAGS_consensus_max_batch_size_bytes) {
-      request->mutable_ops()->ReleaseLast();
+
+      // Allow overflowing the max batch size in the case that we are sending
+      // exactly onle op. Otherwise we would never send the batch!
+      if (request->ops_size() > 1) {
+        request->mutable_ops()->ReleaseLast();
+      }
       if (PREDICT_FALSE(VLOG_IS_ON(2))) {
         VLOG(2) << "Request reached max size for peer: "
             << uuid << " trimmed to: " << request->ops_size()
