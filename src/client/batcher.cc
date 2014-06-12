@@ -550,6 +550,7 @@ void Batcher::FlushBuffer(RemoteTabletServer* ts, PerTSBuffer* buf) {
     RowOperationsPB* requested = req.mutable_row_operations();
 
     // Add the rows
+    int ctr = 0;
     RowOperationsPBEncoder enc(requested);
     BOOST_FOREACH(InFlightOp* op, rpc->ops) {
       DCHECK(op->key->InRange(op->tablet->start_key(), op->tablet->end_key()))
@@ -565,6 +566,7 @@ void Batcher::FlushBuffer(RemoteTabletServer* ts, PerTSBuffer* buf) {
       // until after we sent it, the RPC callback could fire before we got a chance
       // to change its state to 'sent'.
       op->state = InFlightOp::kRequestSent;
+      VLOG(3) << ++ctr << ". Encoded row " << op->write_op->ToString();
     }
 
     if (VLOG_IS_ON(2)) {

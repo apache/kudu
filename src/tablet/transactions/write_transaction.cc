@@ -161,7 +161,12 @@ Status WriteTransaction::Apply(gscoped_ptr<CommitMsg>* commit_msg) {
   // TODO for now we're just warning on this status. This status indicates if
   // _any_ insert or mutation failed consider writing OP_ABORT if all failed.
   Status s;
+  int ctr = 0;
+  VLOG(2) <<  "Write Transaction at " << reinterpret_cast<size_t>(this) << ":\n";
   BOOST_FOREACH(const PreparedRowWrite *row, state()->rows()) {
+    VLOG(2) << "(" << reinterpret_cast<size_t>(this) << "#"
+              << ctr++ << ") " << ((row->write_type() == PreparedRowWrite::INSERT) ?
+                                   "insertion" : "mutation");
     switch (row->write_type()) {
       case PreparedRowWrite::INSERT: {
         s = tablet->InsertUnlocked(state(), row);

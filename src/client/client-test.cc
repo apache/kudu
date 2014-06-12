@@ -1416,12 +1416,14 @@ TEST_F(ClientTest, TestRandomWriteOperation) {
 }
 
 // Test whether a batch can handle several mutations in a batch
-TEST_F(ClientTest, TestSeveralRowMutatesPerBatch) {
+// Disabled. See KUDU-352
+TEST_F(ClientTest, DISABLED_TestSeveralRowMutatesPerBatch) {
   shared_ptr<KuduSession> session = client_->NewSession();
   session->SetTimeoutMillis(5000);
   ASSERT_STATUS_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
 
   // Test insert/update
+  LOG(INFO) << "Testing insert/update in same batch, key " << 1 << ".";
   ASSERT_STATUS_OK(ApplyInsertToSession(session.get(), client_table_, 1, 1, ""));
   ASSERT_STATUS_OK(ApplyUpdateToSession(session.get(), client_table_, 1, 2));
   ASSERT_STATUS_OK(session->Flush());
@@ -1433,6 +1435,7 @@ TEST_F(ClientTest, TestSeveralRowMutatesPerBatch) {
   rows.clear();
 
 
+  LOG(INFO) << "Testing insert/delete in same batch, key " << 2 << ".";
   // Test insert/delete
   ASSERT_STATUS_OK(ApplyInsertToSession(session.get(), client_table_, 2, 1, ""));
   ASSERT_STATUS_OK(ApplyDeleteToSession(session.get(), client_table_, 2));
@@ -1444,13 +1447,15 @@ TEST_F(ClientTest, TestSeveralRowMutatesPerBatch) {
   rows.clear();
 
   // Test update/delete
+  LOG(INFO) << "Testing update/delete in same batch, key " << 1 << ".";
   ASSERT_STATUS_OK(ApplyUpdateToSession(session.get(), client_table_, 1, 1));
   ASSERT_STATUS_OK(ApplyDeleteToSession(session.get(), client_table_, 1));
   ASSERT_STATUS_OK(session->Flush());
   ScanRowsToStrings(client_table_.get(), &rows);
   ASSERT_EQ(0, rows.size());
 
-  // Test delete/insert
+  // Test delete/insert (insert a row first)
+  LOG(INFO) << "Inserting row for delete/insert test, key " << 1 << ".";
   ASSERT_STATUS_OK(ApplyInsertToSession(session.get(), client_table_, 1, 1, ""));
   ASSERT_STATUS_OK(session->Flush());
   ScanRowsToStrings(client_table_.get(), &rows);
@@ -1458,7 +1463,7 @@ TEST_F(ClientTest, TestSeveralRowMutatesPerBatch) {
   ASSERT_EQ("(uint32 key=1, uint32 int_val=1, string string_val=, "
             "uint32 non_null_with_default=12345)", rows[0]);
   rows.clear();
-  /* TODO: enable commented-out test below for delete/insert sequence
+  LOG(INFO) << "Testing delete/insert in same batch, key " << 1 << ".";
   ASSERT_STATUS_OK(ApplyDeleteToSession(session.get(), client_table_, 1));
   ASSERT_STATUS_OK(ApplyInsertToSession(session.get(), client_table_, 1, 2, ""));
   ASSERT_STATUS_OK(session->Flush());
@@ -1466,7 +1471,7 @@ TEST_F(ClientTest, TestSeveralRowMutatesPerBatch) {
   ASSERT_EQ(1, rows.size());
   ASSERT_EQ("(uint32 key=1, uint32 int_val=2, string string_val=, "
             "uint32 non_null_with_default=12345)", rows[0]);
-            rows.clear(); */
+            rows.clear();
 }
 
 // Tests that master permits are properly released after a whole bunch of
