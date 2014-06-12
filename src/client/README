@@ -32,13 +32,22 @@ void ExplicitBatchingExample() {
   // Insert 100 rows.
   for (int i = 0; i < 100; i++) {
     gscoped_ptr<Insert> ins = t->NewInsert();
-    ins->row()->SetInt64("key", i);
-    ins->row()->SetInt64("val", i * 2);
+    ins->mutable_row()->SetInt64("key", i);
+    ins->mutable_row()->SetInt64("val", i * 2);
     // The insert should return immediately after moving the insert
     // into the appropriate buffers. This always returns OK unless the
     // Insert itself is invalid (eg missing a key column).
     CHECK_OK(session->Apply(&ins));
   }
+
+  // Update a row.
+  gscoped_ptr<Update> upd = t->NewUpdate();
+  upd->mutable_row()->SetInt64("key", 1);
+  upd->mutable_row()->SetInt64("val", 1 * 2 + 1);
+
+  // Delete a row.
+  gscoped_ptr<Delete> del = t->NewDelete();
+  del->mutable_row()->SetInt64("key", 2); // only specify key.
 
   // Setting a timeout on the session applies to the next Flush call.
   session->SetTimeoutMillis(300);
