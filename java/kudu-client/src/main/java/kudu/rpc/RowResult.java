@@ -203,10 +203,12 @@ public class RowResult {
   public String getString(int columnIndex) {
     checkValidColumn(columnIndex);
     checkNull(columnIndex);
-    // TODO figure the long/int mess
-    int offset = (int)getLong(columnIndex);
-    int length = (int)Bytes.getLong(rowData, getCurrentRowDataOffsetForColumn(columnIndex) + 8);
-    return new String(indirectData, offset, length);
+    // C++ puts a Slice in rowData which is 16 bytes long for simplity, but we only support ints
+    long offset = getLong(columnIndex);
+    long length = Bytes.getLong(rowData, getCurrentRowDataOffsetForColumn(columnIndex) + 8);
+    assert offset < Integer.MAX_VALUE;
+    assert length < Integer.MAX_VALUE;
+    return Bytes.getString(indirectData, (int)offset, (int)length);
   }
 
   /**
