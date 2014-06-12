@@ -11,6 +11,7 @@
 #include "gutil/map-util.h"
 #include "gutil/strings/human_readable.h"
 #include "gutil/strings/join.h"
+#include "gutil/strings/numbers.h"
 #include "gutil/strings/substitute.h"
 #include "server/webui_util.h"
 #include "tablet/tablet.pb.h"
@@ -28,6 +29,7 @@ using kudu::tablet::TabletPeer;
 using kudu::tablet::TabletStatusPB;
 using kudu::tablet::Transaction;
 using std::tr1::shared_ptr;
+using std::endl;
 using std::vector;
 using strings::Substitute;
 
@@ -61,6 +63,8 @@ Status TabletServerPathHandlers::Register(Webserver* server) {
 
 void TabletServerPathHandlers::HandleTransactionsPage(const Webserver::ArgumentMap& args,
                                                       std::stringstream* output) {
+  bool as_text = ContainsKey(args, "raw");
+
   vector<shared_ptr<TabletPeer> > peers;
   tserver_->tablet_manager()->GetTabletPeers(&peers);
 
@@ -68,11 +72,13 @@ void TabletServerPathHandlers::HandleTransactionsPage(const Webserver::ArgumentM
   Transaction::TraceType trace_type = ParseLeadingBoolValue(
       arg.c_str(), false) ? Transaction::TRACE_TXNS : Transaction::NO_TRACE_TXNS;
 
-  *output << "<h1>Transactions</h1>\n";
-  *output << "<table class='table table-striped'>\n";
-  *output << "   <tr><th>Tablet id</th><th>Op Id</th>"
+  if (!as_text) {
+    *output << "<h1>Transactions</h1>\n";
+    *output << "<table class='table table-striped'>\n";
+    *output << "   <tr><th>Tablet id</th><th>Op Id</th>"
       "<th>Transaction Type</th><th>Driver Type</th><th>"
       "Total time in-flight</th><th>Description</th></tr>\n";
+  }
 
   BOOST_FOREACH(const shared_ptr<TabletPeer>& peer, peers) {
     vector<TransactionStatusPB> inflight;
@@ -91,7 +97,9 @@ void TabletServerPathHandlers::HandleTransactionsPage(const Webserver::ArgumentM
       } else {
         description = inflight_tx.description();
       }
-      (*output) << Substitute(
+
+      if (!as_text) {
+        (*output) << Substitute(
           "<tr><th>$0</th><th>$1</th><th>$2</th><th>$3</th><th>$4</th><th>$5</th></tr>\n",
           EscapeForHtmlToString(peer->tablet_id()),
           EscapeForHtmlToString(inflight_tx.op_id().ShortDebugString()),
@@ -99,9 +107,21 @@ void TabletServerPathHandlers::HandleTransactionsPage(const Webserver::ArgumentM
           DriverType_Name(inflight_tx.driver_type()),
           total_time_str,
           EscapeForHtmlToString(description));
+      } else {
+        (*output) << "Tablet: " << peer->tablet_id() << endl;
+        (*output) << "Op ID: " << inflight_tx.op_id().ShortDebugString() << endl;
+        (*output) << "Type: " << OperationType_Name(inflight_tx.tx_type()) << endl;
+        (*output) << "Driver: " << DriverType_Name(inflight_tx.driver_type()) << endl;
+        (*output) << "Running: " << total_time_str;
+        (*output) << description << endl;
+        (*output) << endl;
+      }
     }
   }
-  *output << "</table>\n";
+
+  if (!as_text) {
+    *output << "</table>\n";
+  }
 }
 
 void TabletServerPathHandlers::HandleTabletsPage(const Webserver::ArgumentMap &args,
