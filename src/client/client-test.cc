@@ -1497,31 +1497,36 @@ namespace {
     KuduScanner scanner(tbl.get());
 
     scanner.Open();
-    vector<const uint8_t*> rows;
+    vector<KuduRowResult> rows;
     CHECK(scanner.HasMoreRows());
     CHECK_OK(scanner.NextBatch(&rows));
-    ConstContiguousRow crow(schema, rows.front());
-    return *schema.ExtractColumnFromRow<UINT32>(crow, 1);
+    KuduRowResult& row = rows.front();
+    uint32_t val;
+    CHECK_OK(row.GetUInt32(1, &val));
+    return val;
   }
 
   // Checks that all rows have value equal to expected, return number of rows.
   int CheckRowsEqual(const Schema& schema, scoped_refptr<KuduTable> tbl, uint32_t expected) {
     KuduScanner scanner(tbl.get());
     scanner.Open();
-    vector<const uint8_t*> rows;
+    vector<KuduRowResult> rows;
     int cnt = 0;
     while (scanner.HasMoreRows()) {
       CHECK_OK(scanner.NextBatch(&rows));
-      BOOST_FOREACH(const uint8_t* row_ptr, rows) {
+      BOOST_FOREACH(const KuduRowResult& row, rows) {
         // Check that for every key:
         // 1. Column 1 uint32_t value == expected
         // 2. Column 2 string value is empty
         // 3. Column 3 uint32_t value is default, 12345
-        ConstContiguousRow crow(schema, row_ptr);
-        const uint32_t key  = *schema.ExtractColumnFromRow<UINT32>(crow, 0);
-        const uint32_t val  = *schema.ExtractColumnFromRow<UINT32>(crow, 1);
-        const string strval =  schema.ExtractColumnFromRow<STRING>(crow, 2)->ToString();
-        const uint32_t val2 = *schema.ExtractColumnFromRow<UINT32>(crow, 3);
+        uint32_t key;
+        uint32_t val;
+        Slice strval;
+        uint32_t val2;
+        CHECK_OK(row.GetUInt32(0, &key));
+        CHECK_OK(row.GetUInt32(1, &val));
+        CHECK_OK(row.GetString(2, &strval));
+        CHECK_OK(row.GetUInt32(3, &val2));
         CHECK_EQ(expected, val) << "Incorrect int value for key " << key;
         CHECK_EQ(strval.size(), 0) << "Incorrect string value for key " << key;
         CHECK_EQ(12345, val2);
