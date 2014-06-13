@@ -46,6 +46,8 @@ public class TestKuduSession extends BaseKuduTest {
   public void test() throws Exception {
 
     KuduSession session = client.newSession();
+    // disable the low watermark until we need it
+    session.setMutationBufferLowWatermark(1f);
 
     // First testing KUDU-232, the cache is empty and we want to force flush. We force the flush
     // interval to be higher than the sleep time so that we don't background flush while waiting.
@@ -233,6 +235,30 @@ public class TestKuduSession extends BaseKuduTest {
     }
     session.flush().join(DEFAULT_SLEEP);
     assertEquals(50, countInRange(101, 151));
+
+    // Test the low watermark.
+    session.setMutationBufferSpace(10);
+    session.setMutationBufferLowWatermark(0.1f);
+    session.setRandomSeed(12345); // Will make us hit the exception after 6 tries
+    gotException = false;
+    for (int i = 151; i < 171; i++) {
+      try {
+        session.apply(createInsert(i));
+      } catch (PleaseThrottleException ex) {
+        // We're going to hit the exception after filling up the buffer a first time then trying
+        // to insert 6 more rows.
+        assertEquals(167, i);
+        gotException = true;
+        assertTrue(ex.getMessage().contains("watermark"));
+        // Once we hit the exception we wait on the batch to finish flushing and then insert the
+        // rest of the data.
+        ex.getDeferred().join(DEFAULT_SLEEP);
+        session.apply(ex.getFailedRpc());
+      }
+    }
+    session.flush().join(DEFAULT_SLEEP);
+    assertEquals(20, countInRange(151, 171));
+    assertTrue(gotException);
 
     // Test Alter
     // Add a col

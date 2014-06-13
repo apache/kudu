@@ -1,6 +1,9 @@
 // Copyright (c) 2013, Cloudera, inc.
 package kudu.rpc;
 
+import com.google.common.annotations.VisibleForTesting;
+import com.google.common.collect.Range;
+import com.google.common.collect.Ranges;
 import com.stumbleupon.async.Callback;
 import com.stumbleupon.async.Deferred;
 import kudu.WireProtocol;
@@ -16,6 +19,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Random;
 
 import static kudu.rpc.ExternalConsistencyMode.NO_CONSISTENCY;
 
@@ -62,6 +66,7 @@ import static kudu.rpc.ExternalConsistencyMode.NO_CONSISTENCY;
 public class KuduSession {
 
   public static final Logger LOG = LoggerFactory.getLogger(KuduSession.class);
+  private static final Range<Float> PERCENTAGE_RANGE = Ranges.closed(0.0f, 1.0f);
 
   public enum FlushMode {
     // Every write will be sent to the server in-band with the Apply()
@@ -89,8 +94,10 @@ public class KuduSession {
   }
 
   private final KuduClient client;
+  private final Random randomizer = new Random();
   private int interval = 1000;
   private int mutationBufferSpace = 1000;
+  private int mutationBufferLowWatermark;
   private FlushMode flushMode;
   private ExternalConsistencyMode consistencyMode;
   private long currentTimeout = 0;
@@ -137,6 +144,7 @@ public class KuduSession {
     this.client = client;
     this.flushMode = FlushMode.AUTO_FLUSH_SYNC;
     this.consistencyMode = NO_CONSISTENCY;
+    setMutationBufferLowWatermark(0.5f);
   }
 
   /**
@@ -175,6 +183,36 @@ public class KuduSession {
           " size when operations are buffered");
     }
     this.mutationBufferSpace = size;
+  }
+
+  /**
+   * Set the low watermark for this session. The default is set to half the mutation buffer space.
+   * For example, a buffer space of 1000 with a low watermark set to 50% (0.5) will start randomly
+   * sending PleaseRetryExceptions once there's an outstanding flush and the buffer is over 500.
+   * As the buffer gets fuller, it becomes likelier to hit the exception.
+   * @param mutationBufferLowWatermark New low watermark as a percentage,
+   *                             has to be between 0  and 1 (inclusive). A value of 1 disables
+   *                             the low watermark since it's the same as the high one.
+   * @throws IllegalArgumentException if the buffer isn't empty or if the watermark isn't between
+   * 0 and 1.
+   */
+  public void setMutationBufferLowWatermark(float mutationBufferLowWatermark) {
+    if (hasPendingOperations()) {
+      throw new IllegalArgumentException("Cannot change the buffer" +
+          " low watermark when operations are buffered");
+    } else if (!PERCENTAGE_RANGE.contains(mutationBufferLowWatermark)) {
+      throw new IllegalArgumentException("The low watermark must be between 0 and 1 inclusively");
+    }
+    this.mutationBufferLowWatermark = (int)(mutationBufferLowWatermark * mutationBufferSpace);
+  }
+
+  /**
+   * Lets us set a specific seed for tests
+   * @param seed
+   */
+  @VisibleForTesting
+  void setRandomSeed(long seed) {
+    this.randomizer.setSeed(seed);
   }
 
   /**
@@ -349,21 +387,34 @@ public class KuduSession {
 
       // doing + 1 to see if the current insert would push us over the limit
       // TODO obviously wrong, not same size thing
-      if (batch != null && batch.ops.size() + 1 > mutationBufferSpace) {
-        if (flushMode == FlushMode.MANUAL_FLUSH) {
-          throw new NonRecoverableException("MANUAL_FLUSH is enabled but the buffer is too big");
+      if (batch != null) {
+        if (batch.ops.size() + 1 > mutationBufferSpace) {
+          if (flushMode == FlushMode.MANUAL_FLUSH) {
+            throw new NonRecoverableException("MANUAL_FLUSH is enabled but the buffer is too big");
+          }
+          flushTablet(tablet, batch);
+          if (operations.containsKey(tablet)) {
+            // This means we didn't flush because there was another batch in flight.
+            // We cannot continue here, we have to send this back to the client.
+            // This is our high watermark.
+            throw new PleaseThrottleException("The RPC cannot be buffered because the current " +
+                "buffer is full and the previous buffer hasn't been flushed yet", null,
+                operation, operationsInFlight.get(tablet));
+          }
+          // Below will take care of creating the new batch and adding the operation.
+          batch = null;
+        } else if (operationsInFlight.containsKey(tablet) &&
+            batch.ops.size() + 1 > mutationBufferLowWatermark) {
+          // This is our low watermark, we throw PleaseThrottleException before hitting the high
+          // mark. As we get fuller past the watermark it becomes likelier to trigger it.
+          int randomWatermark = batch.ops.size() + 1 + randomizer.nextInt(mutationBufferSpace -
+              mutationBufferLowWatermark);
+          if (randomWatermark > mutationBufferSpace) {
+            throw new PleaseThrottleException("The previous buffer hasn't been flushed and the " +
+                "current one is over the low watermark, please retry later", null, operation,
+                operationsInFlight.get(tablet));
+          }
         }
-        flushTablet(tablet, batch);
-        if (operations.containsKey(tablet)) {
-          // This means we didn't flush because there was another batch in flight.
-          // We cannot continue here, we have to send this back to the client.
-          // This is our high watermark (TODO we'll need a low one).
-          throw new PleaseThrottleException("The RPC cannot be buffered because the current " +
-              "buffer is full and the previous buffer hasn't been flushed yet", null,
-              operation, operationsInFlight.get(tablet));
-        }
-        // Below will take care of creating the new batch and adding the operation.
-        batch = null;
       }
       if (batch == null) {
         // We found a tablet that needs batching, this is the only place where
