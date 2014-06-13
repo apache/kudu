@@ -137,7 +137,8 @@ public class BaseKuduTest {
       }
     } finally {
       if (client != null) {
-        client.shutdown();
+        Deferred<Object> d = client.shutdown();
+        d.addErrback(defaultErrorCB);
       }
       if (startCluster) {
         if (master != null) {

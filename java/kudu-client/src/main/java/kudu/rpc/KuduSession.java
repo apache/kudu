@@ -245,6 +245,7 @@ public class KuduSession {
    */
   public Deferred<Object> close() {
     closed = true;
+    client.removeSession(this);
     return flush();
   }
 

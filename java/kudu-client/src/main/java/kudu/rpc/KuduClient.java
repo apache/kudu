@@ -52,6 +52,7 @@ import org.jboss.netty.util.TimerTask;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import javax.annotation.concurrent.GuardedBy;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.SocketAddress;
@@ -59,6 +60,8 @@ import java.net.UnknownHostException;
 import java.nio.charset.Charset;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Random;
@@ -169,6 +172,9 @@ public class KuduClient {
   private final HashMap<String, TabletClient> ip2client =
       new HashMap<String, TabletClient>();
 
+  @GuardedBy("sessions")
+  private final Set<KuduSession> sessions = new HashSet<KuduSession>();
+
   // TODO Below is an uber hack, the master is considered a tablet with
   // a table name.
   static final String MASTER_TABLE_HACK =  "~~~masterTableHack~~~";
@@ -202,6 +208,8 @@ public class KuduClient {
   private final Semaphore masterLookups = new Semaphore(50);
 
   private final Random sleepRandomizer = new Random();
+
+  private volatile boolean closed;
 
   /**
    * Create a new client that connects to the specified master
@@ -252,6 +260,7 @@ public class KuduClient {
   }
 
   public Deferred<Object> ping() {
+    checkIsClosed();
     PingRequest ping = new PingRequest(this.masterTableHack);
     return sendRpcToTablet(ping);
   }
@@ -275,6 +284,7 @@ public class KuduClient {
    * @return Deferred object to track the progress
    */
   public Deferred<Object> createTable(String name, Schema schema, CreateTableBuilder builder) {
+    checkIsClosed();
     if (builder == null) {
       builder = new CreateTableBuilder();
     }
@@ -289,6 +299,7 @@ public class KuduClient {
    * @return Deferred object to track the progress
    */
   public Deferred<Object> deleteTable(String name) {
+    checkIsClosed();
     DeleteTableRequest delete = new DeleteTableRequest(this.masterTableHack, name);
     return sendRpcToTablet(delete);
   }
@@ -302,6 +313,7 @@ public class KuduClient {
    * syncWaitOnAlterCompletion() to know when the alter completes.
    */
   public Deferred<Object> alterTable(String name, AlterTableBuilder atb) {
+    checkIsClosed();
     AlterTableRequest alter = new AlterTableRequest(this.masterTableHack, name, atb);
     return sendRpcToTablet(alter);
   }
@@ -314,6 +326,7 @@ public class KuduClient {
    * @return
    */
   public boolean syncWaitOnAlterCompletion(String name, long deadline) throws Exception {
+    checkIsClosed();
     if (deadline < SLEEP_TIME) {
       throw new IllegalArgumentException("deadline must be at least " + SLEEP_TIME + "ms");
     }
@@ -365,6 +378,7 @@ public class KuduClient {
    * @return an int, the count
    */
   public Deferred<Object> getTabletServersCount() {
+    checkIsClosed();
     ListTabletServersRequest rpc = new ListTabletServersRequest(this.masterTableHack);
     return sendRpcToTablet(rpc);
   }
@@ -380,6 +394,7 @@ public class KuduClient {
    * @return a KuduTable if the table exists, else a MasterErrorException
    */
   public Deferred<Object> openTable(final String name) {
+    checkIsClosed();
     return getTableSchema(name).addCallback(new Callback<Object, Object>() {
       @Override
       public Object call(Object o) throws Exception {
@@ -405,6 +420,7 @@ public class KuduClient {
    * @see src/common/common.proto for info on ReadModes
    */
   public KuduScanner newScanner(final KuduTable table, Schema schema) {
+    checkIsClosed();
     return new KuduScanner(this, table, schema);
   }
 
@@ -416,6 +432,7 @@ public class KuduClient {
    * @see src/common/common.proto for info on ReadModes and snapshot scanners
    */
   public KuduScanner newSnapshotScanner(final KuduTable table, Schema schema) {
+    checkIsClosed();
     return new KuduScanner(this, table, schema, READ_AT_SNAPSHOT);
   }
 
@@ -427,6 +444,7 @@ public class KuduClient {
    */
   public KuduScanner newSnapshotScanner(final KuduTable table,
     Schema schema, long timestamp, TimeUnit timeUnit) {
+    checkIsClosed();
     return new KuduScanner(this, table, schema, READ_AT_SNAPSHOT);
   }
 
@@ -462,10 +480,26 @@ public class KuduClient {
    * Create a new session for interacting with the cluster.
    * User is responsible for destroying the session object.
    * This is a fully local operation (no RPCs or blocking).
-   * @return
+   * @return a new KuduSession
    */
   public KuduSession newSession() {
-    return new KuduSession(this);
+    checkIsClosed();
+    KuduSession session = new KuduSession(this);
+    synchronized (sessions) {
+      sessions.add(session);
+    }
+    return session;
+  }
+
+  /**
+   * This method is for KuduSessions so that they can remove themselves as part of closing down.
+   * @param session Session to remove
+   */
+  void removeSession(KuduSession session) {
+    synchronized (sessions) {
+      boolean removed = sessions.remove(session);
+      assert removed == true;
+    }
   }
 
   /**
@@ -1104,14 +1138,14 @@ public class KuduClient {
    * <strong>Not calling this method before losing the last reference to this
    * instance may result in data loss and other unwanted side effects</strong>
    * @return A {@link Deferred}, whose callback chain will be invoked once all
-   * of the above have been done.  If this callback chain doesn't fail, then
+   * of the above have been done. If this callback chain doesn't fail, then
    * the clean shutdown will be successful, and all the data will be safe on
-   * the Kudu side (provided that you use <a href="#durability">durable</a>
-   * edits).  In case of a failure (the "errback" is invoked) you may want to
-   * retry the shutdown to avoid losing data, depending on the nature of the
-   * failure.
+   * the Kudu side. In case of a failure (the "errback" is invoked) you will have
+   * to open a new KuduClient if you want to retry those operations.
    */
   public Deferred<Object> shutdown() {
+    checkIsClosed();
+    closed = true;
     // This is part of step 3.  We need to execute this in its own thread
     // because Netty gets stuck in an infinite loop if you try to shut it
     // down from within a thread of its own thread pool.  They don't want
@@ -1141,23 +1175,42 @@ public class KuduClient {
     }
 
     // 2. Terminate all connections.
-    disconnectEverything().addCallback(new ReleaseResourcesCB());
-
-    // TODO re-add where the buffers are
-
-    /*final class DisconnectCB implements Callback<Object, Object> {
+    final class DisconnectCB implements Callback<Object, Object> {
       public Object call(final Object arg) {
         return disconnectEverything().addCallback(new ReleaseResourcesCB());
       }
       public String toString() {
         return "disconnect callback";
       }
-    }*/
+    }
 
     // 1. Flush everything.
-    //return flush().addCallback(new DisconnectCB());
+    return closeAllSessions().addBoth(new DisconnectCB());
+  }
 
-    return null;
+  private void checkIsClosed() {
+    if (closed) {
+      throw new IllegalStateException("Cannot proceed, the client has already been closed");
+    }
+  }
+
+  private Deferred<Object> closeAllSessions() {
+    // We create a copy because KuduSession.close will call removeSession which would get us a
+    // concurrent modification during the iteration.
+    Set<KuduSession> copyOfSessions;
+    synchronized (sessions) {
+      copyOfSessions = new HashSet<KuduSession>(sessions);
+    }
+    if (sessions.isEmpty()) {
+      return Deferred.fromResult(null);
+    }
+    // Guaranteed that we'll have at least one session to close.
+    ArrayList<Deferred<Object>> deferreds = new ArrayList<Deferred<Object>>(copyOfSessions.size());
+    for (KuduSession session : copyOfSessions ) {
+      deferreds.add(session.close());
+    }
+
+    return (Deferred) Deferred.group(deferreds);
   }
 
 
