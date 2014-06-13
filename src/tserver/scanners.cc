@@ -2,6 +2,7 @@
 // All rights reserved.
 #include "tserver/scanners.h"
 
+#include <boost/bind.hpp>
 #include <boost/thread/locks.hpp>
 #include <gflags/gflags.h>
 #include <tr1/memory>
@@ -9,25 +10,36 @@
 #include "common/iterator.h"
 #include "common/scan_spec.h"
 #include "gutil/map-util.h"
+#include "tserver/scanner_metrics.h"
 #include "util/thread.h"
+#include "util/metrics.h"
 
 DEFINE_int32(tablet_server_scanner_ttl_millis, 60000,
              "Number of milliseconds of inactivity allowed for a scanner"
              "before it may be expired");
 
-// TODO: add gauges for the number of active scanners as well as the number of
-// scanners expired.
+METRIC_DEFINE_gauge_uint64(active_scanners, kudu::MetricUnit::kScanners,
+                           "Number of scanners that are currently active");
 
 namespace kudu {
 namespace tserver {
 
-// The interval at which we remove expired scanners.]
+// The interval at which we remove expired scanners.
 static const uint64_t kRemovalThreadIntervalUs = 5000000;
 
-ScannerManager::ScannerManager()
+using strings::Substitute;
+
+ScannerManager::ScannerManager(MetricContext* parent_metric_context)
   : scanner_ttl_(MonoDelta::FromMilliseconds(
                    FLAGS_tablet_server_scanner_ttl_millis)),
     shutdown_(false) {
+  if (parent_metric_context) {
+    metric_context_.reset(new MetricContext(*parent_metric_context,
+                                            "tserver.scanners"));
+    metrics_.reset(new ScannerMetrics(*metric_context_));
+    METRIC_active_scanners.InstantiateFunctionGauge(
+        *metric_context_, boost::bind(&ScannerManager::CountActiveScanners, this));
+  }
 }
 
 ScannerManager::~ScannerManager() {
@@ -74,7 +86,7 @@ void ScannerManager::NewScanner(const std::string& tablet_id,
     // probably generate random numbers instead, since we can safely
     // just retry until we avoid a collission.
     string id = oid_generator_.Next();
-    scanner->reset(new Scanner(id, tablet_id, requestor_string));
+    scanner->reset(new Scanner(id, tablet_id, requestor_string, metrics_.get()));
 
     boost::lock_guard<boost::shared_mutex> l(lock_);
     success = InsertIfNotPresent(&scanners_by_id_, id, *scanner);
@@ -125,15 +137,20 @@ void ScannerManager::RemoveExpiredScanners() {
 
 Scanner::Scanner(const string& id,
                  const string& tablet_id,
-                 const string& requestor_string)
+                 const string& requestor_string,
+                 ScannerMetrics* metrics)
     : id_(id),
       tablet_id_(tablet_id),
       requestor_string_(requestor_string),
-      start_time_(MonoTime::Now(MonoTime::COARSE)) {
+      start_time_(MonoTime::Now(MonoTime::COARSE)),
+      metrics_(metrics) {
   UpdateAccessTime();
 }
 
 Scanner::~Scanner() {
+  if (metrics_) {
+    metrics_->SubmitScannerDuration(start_time_);
+  }
 }
 
 void Scanner::UpdateAccessTime() {

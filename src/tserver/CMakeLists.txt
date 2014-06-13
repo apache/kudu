@@ -27,6 +27,7 @@ target_link_libraries(tserver_service_proto wire_protocol_proto)
 set(TSERVER_SRCS
   heartbeater.cc
   mini_tablet_server.cc
+  scanner_metrics.cc
   scanners.cc
   tablet_server.cc
   tablet_server_options.cc

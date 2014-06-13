@@ -79,6 +79,10 @@ const MetricContext& ServerBase::metric_context() const {
   return *metric_ctx_;
 }
 
+MetricContext* ServerBase::mutable_metric_context() const {
+  return metric_ctx_.get();
+}
+
 Status ServerBase::GenerateInstanceID() {
   instance_pb_.reset(new NodeInstancePB);
   instance_pb_->set_permanent_uuid(fs_manager_->uuid());

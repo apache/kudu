@@ -55,6 +55,8 @@ const char* MetricUnit::Name(Type unit) {
       return "threads";
     case kTransactions:
       return "transactions";
+    case kScanners:
+      return "scanners";
     default:
       return "UNKNOWN UNIT";
   }

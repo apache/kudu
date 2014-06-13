@@ -58,6 +58,8 @@ class ServerBase {
 
   const MetricContext& metric_context() const;
 
+  MetricContext* mutable_metric_context() const;
+
   MetricRegistry* metric_registry() { return metric_registry_.get(); }
 
   // Returns this server's clock.

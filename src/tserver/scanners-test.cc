@@ -14,7 +14,7 @@ namespace tserver {
 using std::vector;
 
 TEST(ScannersTest, TestManager) {
-  ScannerManager mgr;
+  ScannerManager mgr(NULL);
 
   // Create two scanners, make sure their ids are different.
   SharedScanner s1, s2;
@@ -43,7 +43,7 @@ TEST(ScannersTest, TestManager) {
 
 TEST(ScannerTest, TestExpire) {
   FLAGS_tablet_server_scanner_ttl_millis = 100;
-  ScannerManager mgr;
+  ScannerManager mgr(NULL);
   SharedScanner s1, s2;
   mgr.NewScanner("", "", &s1);
   mgr.NewScanner("", "", &s2);

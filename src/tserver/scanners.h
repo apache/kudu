@@ -20,6 +20,7 @@
 
 namespace kudu {
 
+class MetricContext;
 class RowwiseIterator;
 class ScanSpec;
 class Schema;
@@ -31,6 +32,7 @@ struct IteratorStats;
 namespace tserver {
 
 class Scanner;
+struct ScannerMetrics;
 typedef std::tr1::shared_ptr<Scanner> SharedScanner;
 
 // Manages the live scanners within a Tablet Server.
@@ -43,7 +45,7 @@ typedef std::tr1::shared_ptr<Scanner> SharedScanner;
 // removes any scanners which have not been accessed since a configurable TTL.
 class ScannerManager {
  public:
-  ScannerManager();
+  explicit ScannerManager(MetricContext* parent_metric_context);
   ~ScannerManager();
 
   // Starts the expired scanner removal thread.
@@ -77,6 +79,12 @@ class ScannerManager {
   // Periodically call RemoveExpiredScanners().
   void RunRemovalThread();
 
+  // (Optional) metrics context for this instance.
+  gscoped_ptr<MetricContext> metric_context_;
+
+  // (Optional) scanner metrics for this instance.
+  gscoped_ptr<ScannerMetrics> metrics_;
+
   // The amount of time that any given scanner should live after its
   // last access.
   MonoDelta scanner_ttl_;
@@ -109,7 +117,8 @@ class Scanner {
  public:
   explicit Scanner(const std::string& id,
                    const std::string& tablet_id,
-                   const std::string& requestor_string);
+                   const std::string& requestor_string,
+                   ScannerMetrics* metrics);
   ~Scanner();
 
   // Attach an actual iterator and a ScanSpec to this Scanner.
@@ -187,6 +196,9 @@ class Scanner {
 
   // The time the scanner was started.
   const MonoTime start_time_;
+
+  // (Optional) scanner metrics struct, for recording scanner's duration.
+  ScannerMetrics* metrics_;
 
   // The spec used by 'iter_'
   gscoped_ptr<ScanSpec> spec_;
