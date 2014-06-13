@@ -211,7 +211,8 @@ public class KuduTableMapReduceUtil {
         // pull necessary dependencies
         org.jboss.netty.channel.ChannelFactory.class,
         com.google.protobuf.Message.class,
-        com.google.common.collect.Lists.class);
+        com.google.common.collect.Lists.class,
+        com.stumbleupon.async.Deferred.class);
   }
 
   /**
