@@ -312,7 +312,7 @@ string TabletServerPathHandlers::ScannerToHtml(const Scanner& scanner) const {
 string TabletServerPathHandlers::IteratorStatsToHtml(const vector<IteratorStats>& stats) const {
   std::stringstream html;
   html << "<table>\n";
-  html << "<tr><th>Column/th><th>Blocks read from disk</th>"
+  html << "<tr><th>Column</th><th>Blocks read from disk</th>"
       "<th>Rows read from disk</th></tr>\n";
   for (size_t idx = 0; idx < stats.size(); idx++) {
     html << Substitute("<tr><td>$0</td><td>$1</td><td>$2</td></tr>\n",
