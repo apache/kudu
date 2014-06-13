@@ -81,11 +81,13 @@ class ScannerManager {
   // last access.
   MonoDelta scanner_ttl_;
 
-  // If true, removeal thread should shut itself down. Protected
-  // by 'lock_'.]
+  // If true, removal thread should shut itself down. Protected
+  // by 'shutdown_lock_' and 'shutdown_cv_'.
   bool shutdown_;
+  mutable boost::mutex shutdown_lock_;
+  boost::condition_variable shutdown_cv_;
 
-  // Lock protecting the scanner map and 'shutdown_'.
+  // Lock protecting the scanner map.
   mutable boost::shared_mutex lock_;
 
   // Map of the currently active scanners.

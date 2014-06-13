@@ -32,8 +32,9 @@ ScannerManager::ScannerManager()
 
 ScannerManager::~ScannerManager() {
   {
-    boost::lock_guard<boost::shared_mutex> l(lock_);
+    boost::lock_guard<boost::mutex> l(shutdown_lock_);
     shutdown_ = true;
+    shutdown_cv_.notify_all();
   }
   if (removal_thread_.get() != NULL) {
     CHECK_OK(ThreadJoiner(removal_thread_.get()).Join());
@@ -51,13 +52,14 @@ void ScannerManager::RunRemovalThread() {
   while (true) {
     // Loop until we are shutdown.
     {
-      boost::shared_lock<boost::shared_mutex> l(lock_);
+      boost::unique_lock<boost::mutex> l(shutdown_lock_);
       if (shutdown_) {
         return;
       }
+      boost::system_time wtime = boost::get_system_time() +
+          boost::posix_time::microseconds(kRemovalThreadIntervalUs);
+      shutdown_cv_.timed_wait(l, wtime);
     }
-
-    usleep(kRemovalThreadIntervalUs);
     RemoveExpiredScanners();
   }
 }
@@ -90,12 +92,12 @@ bool ScannerManager::UnregisterScanner(const string& scanner_id) {
 }
 
 size_t ScannerManager::CountActiveScanners() const {
-  boost::lock_guard<boost::shared_mutex> l(lock_);
+  boost::shared_lock<boost::shared_mutex> l(lock_);
   return scanners_by_id_.size();
 }
 
 void ScannerManager::ListScanners(std::vector<SharedScanner>* scanners) {
-  boost::lock_guard<boost::shared_mutex> l(lock_);
+  boost::shared_lock<boost::shared_mutex> l(lock_);
   BOOST_FOREACH(const ScannerMapEntry& e, scanners_by_id_) {
     scanners->push_back(e.second);
   }
