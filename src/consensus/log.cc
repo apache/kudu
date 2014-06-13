@@ -184,8 +184,7 @@ Status Log::Open(const LogOptions &options,
                  gscoped_ptr<Log> *log) {
 
   RETURN_NOT_OK(fs_manager->CreateDirIfMissing(fs_manager->GetWalsRootDir()));
-
-  string tablet_wal_path = JoinPathSegments(fs_manager->GetWalsRootDir(), tablet_id);
+  string tablet_wal_path = fs_manager->GetTabletWalDir(tablet_id);
   RETURN_NOT_OK(fs_manager->CreateDirIfMissing(tablet_wal_path));
 
   gscoped_ptr<Log> new_log(new Log(options,
@@ -530,7 +529,6 @@ Status Log::WaitUntilAllFlushed() {
   return s.Wait();
 }
 
-
 Status Log::GetLastEntryOpId(consensus::OpId* op_id) const {
   boost::shared_lock<rw_spinlock> read_lock(last_entry_op_id_lock_);
   if (last_entry_op_id_.IsInitialized()) {
@@ -657,7 +655,8 @@ Status Log::SwitchToAllocatedSegment() {
   // Increment "next" log segment seqno.
   active_segment_sequence_number_++;
 
-  string new_segment_path = CreateSegmentFileName(active_segment_sequence_number_);
+  string new_segment_path = fs_manager_->GetWalSegmentFileName(tablet_id_,
+                                                               active_segment_sequence_number_);
 
   // TODO KUDU-261: Technically, we need to fsync DirName(new_segment_path)
   // after RenameFile().
@@ -693,13 +692,6 @@ Status Log::SwitchToAllocatedSegment() {
   allocation_state_ = kAllocationNotStarted;
 
   return Status::OK();
-}
-
-string Log::CreateSegmentFileName(uint64_t sequence_number) {
-  return JoinPathSegments(log_dir_,
-                          strings::Substitute("$0-$1",
-                                              kLogPrefix,
-                                              StringPrintf("%09lu", sequence_number)));
 }
 
 Status Log::CreatePlaceholderSegment(const WritableFileOptions& opts,

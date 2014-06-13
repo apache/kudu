@@ -229,9 +229,6 @@ class Log {
   Status DoReserve(gscoped_ptr<LogEntryBatchPB> entry_batch,
                    LogEntryBatch** reserved_entry);
 
-  // Creates the name for a new segment as log-<seqno>
-  string CreateSegmentFileName(uint64_t sequence_number);
-
   // Sets 'out' to a newly created temporary file (see
   // Env::NewTempWritableFile()) for a placeholder segment. Sets
   // 'result_path' to the fully qualified path to the unique filename

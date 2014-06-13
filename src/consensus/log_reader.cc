@@ -70,7 +70,7 @@ Status LogReader::Init(const string& tablet_wal_path) {
 
   // build a log segment from each file
   BOOST_FOREACH(const string &log_file, log_files) {
-    if (HasPrefixString(log_file, kLogPrefix)) {
+    if (HasPrefixString(log_file, FsManager::kWalFileNamePrefix)) {
       string fqp = JoinPathSegments(tablet_wal_path, log_file);
       scoped_refptr<ReadableLogSegment> segment;
       RETURN_NOT_OK(ReadableLogSegment::Open(env, fqp, &segment));

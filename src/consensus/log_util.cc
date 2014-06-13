@@ -15,6 +15,7 @@
 #include "gutil/strings/substitute.h"
 #include "gutil/strings/util.h"
 #include "gutil/strings/split.h"
+#include "server/fsmanager.h"
 #include "util/coding.h"
 #include "util/env_util.h"
 #include "util/pb_util.h"
@@ -50,8 +51,6 @@ const size_t kLogSegmentMagicAndHeaderLength = 12;
 // This is used to check the case where we have a nonzero-length empty log file.
 const char kLogSegmentNullHeader[] =
            { 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0 };
-
-const char kLogPrefix[] = "log";
 
 const size_t kEntryLengthSize = 4;
 
@@ -408,7 +407,7 @@ bool IsLogFileName(const string& fname) {
   }
 
   vector<string> v = strings::Split(fname, "-");
-  if (v.size() != 2 || v[0] != kLogPrefix) {
+  if (v.size() != 2 || v[0] != FsManager::kWalFileNamePrefix) {
     VLOG(1) << "Not a log file: " << fname;
     return false;
   }

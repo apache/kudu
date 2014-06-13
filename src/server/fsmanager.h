@@ -101,6 +101,7 @@ const char *FsMetadataTypeToString(FsMetadataType type);
 //    <kudu.root.dir>/data/<prefix-0>/<prefix-2>/<prefix-4>/<name>
 class FsManager {
  public:
+  static const char *kWalFileNamePrefix;
   static const char *kWalsRecoveryDirSuffix;
 
   FsManager(Env *env, const string& root_path);
@@ -166,7 +167,7 @@ class FsManager {
   }
 
   string GetWalsRootDir() const {
-    return JoinPathSegments(root_path_, kWalsDirName);
+    return JoinPathSegments(root_path_, kWalDirName);
   }
 
   string GetTabletWalDir(const std::string& tablet_id) const {
@@ -177,6 +178,13 @@ class FsManager {
     string path = JoinPathSegments(GetWalsRootDir(), tablet_id);
     StrAppend(&path, kWalsRecoveryDirSuffix);
     return path;
+  }
+
+  string GetWalSegmentFileName(const std::string& tablet_id, uint64_t sequence_number) {
+    return JoinPathSegments(GetTabletWalDir(tablet_id),
+                            strings::Substitute("$0-$1",
+                                                kWalFileNamePrefix,
+                                                StringPrintf("%09lu", sequence_number)));
   }
 
   // Return the directory where tablet master blocks should be stored.
@@ -249,7 +257,7 @@ class FsManager {
 
   static const char *kDataDirName;
   static const char *kMasterBlockDirName;
-  static const char *kWalsDirName;
+  static const char *kWalDirName;
   static const char *kCorruptedSuffix;
   static const char *kInstanceMetadataFileName;
 

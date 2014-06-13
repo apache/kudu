@@ -21,9 +21,6 @@ namespace log {
 // Suffix for temprorary files
 extern const char kTmpSuffix[];
 
-// Logs start with "log-" prefix.
-extern const char kLogPrefix[];
-
 // Each log entry is prefixed by its length (4 bytes).
 extern const size_t kEntryLengthSize;
 
