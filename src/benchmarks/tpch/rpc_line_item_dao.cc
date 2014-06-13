@@ -100,6 +100,7 @@ void RpcLineItemDAO::WriteLine(boost::function<void(PartialRow*)> f) {
   ++batch_size_;
   if (batch_size_ == batch_max_) {
     batch_size_ = 0;
+    orders_in_request_.clear();
     session_->FlushAsync(CountingCallback(session_, &semaphore_));
   }
 }
@@ -112,6 +113,7 @@ void RpcLineItemDAO::MutateLine(boost::function<void(PartialRow*)> f) {
   ++batch_size_;
   if (batch_size_ == batch_max_) {
     batch_size_ = 0;
+    orders_in_request_.clear();
     session_->FlushAsync(CountingCallback(session_, &semaphore_));
   }
 }

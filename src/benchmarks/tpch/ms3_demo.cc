@@ -129,7 +129,7 @@ static void InsertThread(Demo *demo, const string &path) {
   dao->Init();
   LineItemTsvImporter importer(path);
 
-  while (!importer.done()) {
+  while (importer.HasNextLine()) {
     dao->WriteLine(boost::bind(ImportLine, demo, &importer, _1));
   }
   dao->FinishWriting();

@@ -116,10 +116,9 @@ struct hash {
 };
 
 void LoadLineItems(const string &path, LineItemDAO *dao) {
-  Schema schema(tpch::CreateLineItemSchema());
   LineItemTsvImporter importer(path);
 
-  while (!importer.done()) {
+  while (importer.HasNextLine()) {
     dao->WriteLine(boost::bind(&LineItemTsvImporter::GetNextLine,
                                &importer, _1));
   }

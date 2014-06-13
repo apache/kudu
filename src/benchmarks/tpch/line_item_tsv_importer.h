@@ -22,23 +22,30 @@ static const char* const kPipeSeparator = "|";
 // Utility class used to parse the lineitem tsv file
 class LineItemTsvImporter {
  public:
-  explicit LineItemTsvImporter(const string &path) : in_(path.c_str()) {
+  explicit LineItemTsvImporter(const string &path) : in_(path.c_str()),
+    updated_(false) {
     CHECK(in_.is_open()) << "not able to open input file: " << path;
-    done_ = !getline(in_, line_);
   }
 
-  bool done() const { return done_; }
+  bool HasNextLine() {
+    if (!updated_) {
+      done_ = !getline(in_, line_);
+      updated_ = true;
+    }
+    return !done_;
+  }
 
   // Fills the row builder with a single line item from the file.
   // It returns 0 if it's done or the order number if it got a line
   int GetNextLine(PartialRow* row) {
-    if (done_) return 0;
-
+    if (!HasNextLine()) return 0;
     columns_.clear();
 
     // grab all the columns_ individually
+    // Note that columns_ refers, and does not copy, the data in line_
     columns_ = strings::Split(line_, kPipeSeparator);
 
+    // Note that the row will refer to, and not copy, the data in columns_
     int i = 0;
     int order_number = ConvertToIntAndPopulate(columns_[i++], row, tpch::kOrderKeyColIdx);
     ConvertToIntAndPopulate(columns_[i++], row, tpch::kPartKeyColIdx);
@@ -57,8 +64,7 @@ class LineItemTsvImporter {
     CHECK_OK(row->SetString(tpch::kShipModeColIdx, columns_[i++]));
     CHECK_OK(row->SetString(tpch::kCommentColIdx, columns_[i++]));
 
-    // Get next line
-    done_ = !getline(in_, line_);
+    updated_ = false;
 
     return order_number;
   }
@@ -94,7 +100,7 @@ class LineItemTsvImporter {
   std::ifstream in_;
   vector<StringPiece> columns_;
   string line_, tmp_;
-  bool done_;
+  bool updated_, done_;
 };
 } // namespace kudu
 #endif
