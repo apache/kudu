@@ -12,6 +12,7 @@
 #include "gutil/port.h"
 #include "gutil/stringprintf.h"
 #include "gutil/strings/strcat.h"
+#include "gutil/strings/substitute.h"
 #include "server/logical_clock.h"
 #include "tablet/mvcc.h"
 #include "util/countdown_latch.h"
@@ -53,6 +54,20 @@ Timestamp MvccManager::StartTransactionAtLatest() {
   return now_latest;
 }
 
+Status MvccManager::StartTransactionAtTimestamp(Timestamp timestamp) {
+  boost::lock_guard<LockType> l(lock_);
+  if (PREDICT_FALSE(cur_snap_.IsCommitted(timestamp))) {
+    return Status::IllegalState(
+        strings::Substitute("Timestamp: $0 is already committed.", timestamp.value()));
+  }
+  if (!InitTransactionUnlocked(timestamp)) {
+    return Status::IllegalState(
+        strings::Substitute("There is already a transaction with timestamp: $0 in flight.",
+                            timestamp.value()));
+  }
+  return Status::OK();
+}
+
 bool MvccManager::InitTransactionUnlocked(const Timestamp& timestamp) {
   // Since transactions only commit once they are in the past, and new
   // transactions always start either in the current time or the future,
@@ -72,12 +87,34 @@ void MvccManager::CommitTransaction(Timestamp timestamp) {
     << "Trying to commit a transaction with a future timestamp: "
     << timestamp.ToString();
 
+  CommitTransactionUnlocked(timestamp);
+
+  // This is an 'online' commit so adjust the 'all_committed_before_' watermark
+  // up to clock_->Now().
+  Timestamp now = clock_->Now();
+  AdjustCurSnap(now);
+}
+
+void MvccManager::OfflineCommitTransaction(Timestamp timestamp) {
+  boost::lock_guard<LockType> l(lock_);
+
+  // Commit the transaction, but do not adjust 'all_committed_before_', that will
+  // be done with a separate OfflineAdjustCurSnap() call.
+  CommitTransactionUnlocked(timestamp);
+}
+
+void MvccManager::CommitTransactionUnlocked(Timestamp timestamp) {
+  DCHECK(clock_->IsAfter(timestamp))
+    << "Trying to commit a transaction with a future timestamp: "
+    << timestamp.ToString();
+
   // Remove from our in-flight list.
   CHECK_EQ(timestamps_in_flight_.erase(timestamp.value()), 1)
     << "Trying to commit timestamp which isn't in the in-flight set: "
     << timestamp.ToString();
 
-  AdjustCurSnapForCommit(timestamp);
+  // Add the timestamp to the committed timestamps
+  InsertOrDie(&cur_snap_.committed_timestamps_, timestamp.value());
 
   // Check if someone is waiting for transactions to be committed.
   if (PREDICT_FALSE(!waiters_.empty())) {
@@ -94,7 +131,12 @@ void MvccManager::CommitTransaction(Timestamp timestamp) {
   }
 }
 
-void MvccManager::AdjustCurSnapForCommit(Timestamp ts) {
+void MvccManager::OfflineAdjustCurSnap(Timestamp now) {
+  boost::lock_guard<LockType> l(lock_);
+  AdjustCurSnap(now);
+}
+
+void MvccManager::AdjustCurSnap(Timestamp now) {
   Timestamp earliest_in_flight;
   if (!timestamps_in_flight_.empty()) {
     earliest_in_flight = Timestamp(*std::min_element(timestamps_in_flight_.begin(),
@@ -102,9 +144,6 @@ void MvccManager::AdjustCurSnapForCommit(Timestamp ts) {
   } else {
     earliest_in_flight = Timestamp::kMax;
   }
-
-  Timestamp now = clock_->Now();
-
 
   // There are two possibilities:
   //
@@ -125,8 +164,6 @@ void MvccManager::AdjustCurSnapForCommit(Timestamp ts) {
   } else {
     cur_snap_.all_committed_before_ = now;
   }
-
-  InsertOrDie(&cur_snap_.committed_timestamps_, ts.value());
 
   // Trim any transactions from the snapshot list which fall below the new watermark.
   unordered_set<Timestamp::val_type>::iterator it = cur_snap_.committed_timestamps_.begin();

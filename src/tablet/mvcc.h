@@ -125,12 +125,31 @@ class MvccManager {
   // not possible to obtain the latest time.
   Timestamp StartTransactionAtLatest();
 
+  // Begins a new transaction, which is assigned the provided timestamp.
+  // Returns Status::OK() if the transaction was started successfully or
+  // Status::IllegalState() if the provided timestamp is already considered
+  // committed, e.g. if timestamp < 'all_committed_before_'.
+  Status StartTransactionAtTimestamp(Timestamp timestamp);
+
   // Commit the given transaction.
   //
   // If the transaction is not currently in-flight, this will trigger an
   // assertion error. It is an error to commit the same transaction more
   // than once.
+  //
+  // This should be used for 'true' online transaction processing on LEADER
+  // replicas and not for delayed processing on FOLLOWER/LEARNER replicas or
+  // on bootstrap, as this advances 'all_committed_before_' to clock_->Now()
+  // when possible.
   void CommitTransaction(Timestamp timestamp);
+
+  // Same as commit transaction but does not advance 'all_committed_before_'.
+  // Used for bootstrap and delayed processing in FOLLOWERS/LEARNERS.
+  void OfflineCommitTransaction(Timestamp timestamp);
+
+  // Used in conjunction with OfflineCommitTransaction() so that the mvcc
+  // manager can trim state.
+  void OfflineAdjustCurSnap(Timestamp now);
 
   // Take a snapshot of the current MVCC state, which indicates which
   // transactions have been committed at the time of this call.
@@ -185,7 +204,9 @@ class MvccManager {
   // Waits until all transactions before the given time are committed.
   void WaitUntilAllCommitted(Timestamp ts) const;
 
-  void AdjustCurSnapForCommit(Timestamp ts);
+  void AdjustCurSnap(Timestamp now);
+
+  void CommitTransactionUnlocked(Timestamp timestamp);
 
   typedef simple_spinlock LockType;
   mutable LockType lock_;

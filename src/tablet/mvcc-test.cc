@@ -175,6 +175,41 @@ TEST_F(MvccTest, TestOutOfOrderTxns) {
   EXPECT_FALSE(s3.IsCommitted(normal_txn_2));
 }
 
+// Tests starting transaction at a point-in-time in the past and committing them.
+// This is disconnected from the current time (whatever is returned from clock->Now())
+// for replication/bootstrap.
+TEST_F(MvccTest, TestOfflineTransactions) {
+  MvccManager mgr(clock_.get());
+
+  // set the clock to some time in the "future"
+  ASSERT_STATUS_OK(clock_->Update(Timestamp(100)));
+
+  // now start a transaction in the "past"
+  ASSERT_STATUS_OK(mgr.StartTransactionAtTimestamp(Timestamp(50)));
+
+  // and committing this transaction "offline" this
+  // should not advance the MvccManager 'all_committed_before_'
+  // watermark.
+  mgr.OfflineCommitTransaction(Timestamp(50));
+
+  // Now take a snaphsot.
+  MvccSnapshot snap1;
+  mgr.TakeSnapshot(&snap1);
+
+  // Because we did not advance the watermark, even though the only
+  // in-flight transaction was committed at time 50, a transaction at
+  // time 40 should still be considered uncommitted.
+  ASSERT_FALSE(snap1.IsCommitted(Timestamp(40)));
+
+  // Now advance the watermark to the last committed transaction.
+  mgr.OfflineAdjustCurSnap(Timestamp(50));
+
+  MvccSnapshot snap2;
+  mgr.TakeSnapshot(&snap2);
+
+  ASSERT_TRUE(snap2.IsCommitted(Timestamp(40)));
+}
+
 TEST_F(MvccTest, TestScopedTransaction) {
   MvccManager mgr(clock_.get());
   MvccSnapshot snap;
