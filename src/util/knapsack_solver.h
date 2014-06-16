@@ -38,8 +38,8 @@ class KnapsackSolver {
   // The indexes of the chosen items are stored in 'chosen_items',
   // and the maximal value is stored in 'optimal_value'.
   void Solve(std::vector<item_type> &items,
-             size_t knapsack_capacity,
-             std::vector<size_t>* chosen_items,
+             int knapsack_capacity,
+             std::vector<int>* chosen_items,
              value_type* optimal_value);
 
 
@@ -65,7 +65,7 @@ class KnapsackSolver {
   // Trace the path of item indexes used to achieve the given best
   // solution as of the latest ProcessNext() call.
   void TracePath(const solution_type& best,
-                 std::vector<size_t>* chosen_items);
+                 std::vector<int>* chosen_items);
 
  private:
 
@@ -117,7 +117,7 @@ class KnapsackSolver {
     // then warn.
     static const int kWarnDimension = 10000000;
 
-    size_t index(int item, int weight) const {
+    int index(int item, int weight) const {
       return n_weights_ * item + weight;
     }
 
@@ -126,7 +126,7 @@ class KnapsackSolver {
     // while only considering items 0..cur_item_idx_-1
     std::vector<value_type> max_value_;
     std::vector<bool> item_taken_; // TODO: record difference vectors?
-    size_t n_items_, n_weights_;
+    int n_items_, n_weights_;
     int cur_item_idx_;
     // Best current solution
     solution_type best_solution_;
@@ -164,8 +164,8 @@ inline bool KnapsackSolver<Traits>::ProcessNext() {
 
 template<class Traits>
 inline void KnapsackSolver<Traits>::Solve(std::vector<item_type> &items,
-                                          size_t knapsack_capacity,
-                                          std::vector<size_t>* chosen_items,
+                                          int knapsack_capacity,
+                                          std::vector<int>* chosen_items,
                                           value_type* optimal_value) {
   Reset(knapsack_capacity, &items);
 
@@ -184,7 +184,7 @@ inline typename KnapsackSolver<Traits>::solution_type KnapsackSolver<Traits>::Ge
 
 template<class Traits>
 inline void KnapsackSolver<Traits>::TracePath(const solution_type& best,
-                                              std::vector<size_t>* chosen_items) {
+                                              std::vector<int>* chosen_items) {
   chosen_items->clear();
   // Retrace back which set of items corresponded to this value.
   int w = best.first;
@@ -211,7 +211,7 @@ void KnapsackSolver<Traits>::KnapsackBlackboard::ResizeAndClear(int n_items,
   n_weights_ = max_weight + 1;
   max_value_.resize(n_weights_);
 
-  size_t dimension = index(n_items, n_weights_);
+  int dimension = index(n_items, n_weights_);
   if (dimension > kWarnDimension) {
     LOG(WARNING) << "Knapsack problem " << n_items << "x" << n_weights_
                  << " is large: may be inefficient!";

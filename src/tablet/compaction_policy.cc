@@ -501,7 +501,7 @@ Status BudgetedCompactionPolicy::PickRowSets(const RowSetTree &tree,
   // The value attained by the 'best_chosen' solution.
   double best_optimal = 0;
 
-  vector<size_t> chosen_indexes;
+  vector<int> chosen_indexes;
   vector<CompactionCandidate> inrange_candidates;
   inrange_candidates.reserve(all_candidates.size());
   vector<double> upper_bounds;

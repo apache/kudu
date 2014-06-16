@@ -48,7 +48,7 @@ static void GenerateRandomItems(int n_items, int max_weight,
 }
 
 // Join and stringify the given list of ints.
-static string JoinInts(const vector<size_t> &ints) {
+static string JoinInts(const vector<int> &ints) {
   string ret;
   for (int i = 0; i < ints.size(); i++) {
     if (i > 0) {
@@ -68,7 +68,7 @@ TEST_F(TestKnapsack, Basics) {
   in.push_back(TestItem(125, 1));
   in.push_back(TestItem(100, 1));
 
-  vector<size_t> out;
+  vector<int> out;
   int max_val;
 
   // For 1 weight, pick item 2
@@ -108,7 +108,7 @@ TEST_F(TestKnapsack, Randomized) {
 
   for (int i = 0; i < kNumTrials; i++) {
     vector<TestItem> in;
-    vector<size_t> out;
+    vector<int> out;
     GenerateRandomItems(kNumItems, kMaxWeight, &in);
     int max_val;
     int max_weight = random() % kMaxWeight;
@@ -138,7 +138,7 @@ TEST_F(TestKnapsack, Benchmark) {
   GenerateRandomItems(kNumItems, kMaxWeight, &in);
 
   LOG_TIMING(INFO, "benchmark") {
-    vector<size_t> out;
+    vector<int> out;
     for (int i = 0; i < kNumTrials; i++) {
       out.clear();
       int max_val;
