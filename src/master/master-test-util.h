@@ -10,10 +10,12 @@
 
 #include "common/schema.h"
 #include "common/wire_protocol.h"
+#include "gutil/strings/substitute.h"
 #include "master/catalog_manager.h"
 #include "master/mini_master.h"
 #include "master/master.h"
 #include "master/master.pb.h"
+#include "util/stopwatch.h"
 #include "util/test_util.h"
 
 namespace kudu {
@@ -25,7 +27,8 @@ Status WaitForRunningTabletCount(MiniMaster* mini_master,
                                  GetTableLocationsResponsePB* resp) {
   int wait_time = 1000;
 
-  for (int i = 0; i < 80; ++i) {
+  SCOPED_LOG_TIMING(INFO, strings::Substitute("waiting for tablet count of $0", expected_count));
+  while (true) {
     GetTableLocationsRequestPB req;
     resp->Clear();
     req.mutable_table()->set_table_name(table_name);
@@ -50,7 +53,8 @@ Status WaitForRunningTabletCount(MiniMaster* mini_master,
     wait_time = std::min(wait_time * 5 / 4, 1000000);
   }
 
-  return Status::TimedOut("Timed out waiting for table", table_name);
+  // Unreachable.
+  LOG(FATAL) << "Reached unreachable section";
 }
 
 void CreateTabletForTesting(MiniMaster* mini_master,

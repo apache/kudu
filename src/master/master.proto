@@ -212,18 +212,18 @@ message TSHeartbeatResponsePB {
 //////////////////////////////
 
 message TabletLocationsPB {
-  required bytes tablet_id = 1;
-
   message ReplicaPB {
     required TSInfoPB ts_info = 1;
     required metadata.QuorumPeerPB.Role role = 2;
   }
 
-  repeated ReplicaPB replicas = 2;
+  required bytes tablet_id = 1;
 
   // In the following keys, the non-string components are in big-endian order
-  required bytes start_key = 3;
-  required bytes end_key = 4;
+  required bytes start_key = 2;
+  required bytes end_key = 3;
+
+  repeated ReplicaPB replicas = 4;
 
   // true if the tablet was running but no tablet server has reported it yet.
   // The set of replicas will be the last one that was hosting the tablet.

@@ -145,9 +145,9 @@ TEST_F(CreateTableStressTest, TestGetTableLocationsOptions) {
   ASSERT_NO_FATAL_FAILURE(CreateBigTable(table_name));
   master::GetTableLocationsResponsePB resp;
 
-  // Make sure the table is completely created before we start poking
+  // Make sure the table is completely created before we start poking.
   CHECK_OK(WaitForRunningTabletCount(cluster_->mini_master(), table_name,
-                                       kNumTablets, &resp));
+                                     kNumTablets, &resp));
 
   master::GetTableLocationsRequestPB req;
 
