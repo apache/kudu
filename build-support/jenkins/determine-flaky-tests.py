@@ -17,10 +17,10 @@ import urllib2
 # Configuration
 DEFAULT_JENKINS_URL = "http://sandbox.jenkins.cloudera.com"
 DEFAULT_JOB_NAME = "kudu-test"
-NUM_PREVIOUS_DAYS = 14
+NUM_PREVIOUS_DAYS = 3
 
 # Constants
-SECONDS_PER_DAY = 186400
+SECONDS_PER_DAY = 86400
 FAILED_TEST_RE = re.compile('Test.*: (\S+).*\*\*\*Failed')
 
 class TestFailure(object):
@@ -41,6 +41,8 @@ def parse_args():
                     default=[DEFAULT_JOB_NAME])
   parser.add_option("-D", "--download", type="string",
                     help="directory to download failed tests to")
+  parser.add_option("-d", "--days", type=int, default=3,
+                    help="number of days of test history to analyze")
   (options, args) = parser.parse_args()
   if args:
     parser.error("unexpected arguments: " + repr(args))
@@ -78,9 +80,9 @@ def find_failing_tests(url):
   return ret
 
 
-def find_flaky_tests(jenkins_url, job_name):
+def find_flaky_tests(jenkins_url, job_name, num_previous_days):
   """
-  Find any tests failures in the last NUM_PREVIOUS_DAYS.
+  Find any tests failures in the last 'num_previous_days'.
   Returns a list of TestFailure instances.
   """
   to_return = []
@@ -88,8 +90,8 @@ def find_flaky_tests(jenkins_url, job_name):
   builds = list_builds(jenkins_url, job_name)
 
   # Select only those in the last N days
-  min_time = int(time.time()) - SECONDS_PER_DAY * NUM_PREVIOUS_DAYS
-  builds = [b for b in builds if b['timestamp'] > min_time]
+  min_time = int(time.time()) - SECONDS_PER_DAY * num_previous_days
+  builds = [b for b in builds if int(b['timestamp'])/1000 > min_time]
 
   # Filter out only those that failed
   failing_build_numbers = [b['number'] for b in builds if b['result'] == 'FAILURE']
@@ -124,7 +126,7 @@ def main():
   opts = parse_args()
   all_failing = []
   for job in opts.job_names:
-    all_failing.extend(find_flaky_tests(opts.jenkins_url, job))
+    all_failing.extend(find_flaky_tests(opts.jenkins_url, job, opts.days))
 
   # Group failures by test name
   by_test_name = defaultdict(lambda: [])
@@ -132,7 +134,7 @@ def main():
     by_test_name[failure.test_name].append(failure)
 
   # Print a summary of failed tests
-  print "Summary: %d test failures in last %d days" % (len(all_failing), NUM_PREVIOUS_DAYS)
+  print "Summary: %d test failures in last %d day(s)" % (len(all_failing), opts.days)
   print "Flaky tests:"
   for test_name, failed_builds in by_test_name.iteritems():
     print "  ", test_name, ":", ", ".join((str(x.build_number) for x in failed_builds))
