@@ -4,9 +4,12 @@
 # Script to look at recent Jenkins history and find any unit tests which have
 # recently failed. Outputs a list of these tests on stdout.
 
+from collections import defaultdict
 import logging
 from optparse import OptionParser
+import os
 import re
+import shutil
 import simplejson
 import time
 import urllib2
@@ -20,13 +23,24 @@ NUM_PREVIOUS_DAYS = 14
 SECONDS_PER_DAY = 186400
 FAILED_TEST_RE = re.compile('Test.*: (\S+).*\*\*\*Failed')
 
+class TestFailure(object):
+  """ Simple struct-like class to record a test failure """
+
+  def __init__(self, test_name, build_number, url):
+    self.test_name = test_name
+    self.build_number = build_number
+    self.url = url
+
+
 def parse_args():
   parser = OptionParser()
   parser.add_option("-J", "--jenkins-url", type="string",
-                   help="Jenkins URL", default=DEFAULT_JENKINS_URL)
+                    help="Jenkins URL", default=DEFAULT_JENKINS_URL)
   parser.add_option("-j", "--job-name", type="string", action="append",
                     dest="job_names", help="Job name to look at (may specify multiple times)",
                     default=[DEFAULT_JOB_NAME])
+  parser.add_option("-D", "--download", type="string",
+                    help="directory to download failed tests to")
   (options, args) = parser.parse_args()
   if args:
     parser.error("unexpected arguments: " + repr(args))
@@ -63,8 +77,13 @@ def find_failing_tests(url):
       ret.add(m.group(1))
   return ret
 
+
 def find_flaky_tests(jenkins_url, job_name):
-  all_failing = set()
+  """
+  Find any tests failures in the last NUM_PREVIOUS_DAYS.
+  Returns a list of TestFailure instances.
+  """
+  to_return = []
   # First list all builds
   builds = list_builds(jenkins_url, job_name)
 
@@ -74,25 +93,54 @@ def find_flaky_tests(jenkins_url, job_name):
 
   # Filter out only those that failed
   failing_build_numbers = [b['number'] for b in builds if b['result'] == 'FAILURE']
-  logging.info("Recently failed builds: %s" % repr(failing_build_numbers))
+  logging.debug("Recently failed builds: %s" % repr(failing_build_numbers))
 
   for build_number in failing_build_numbers:
     failing_subbuilds = get_failing_subbuilds(jenkins_url, job_name, build_number)
-    logging.info("build %d failing sub-builds: %s" % (build_number, repr(failing_subbuilds)))
+    logging.debug("build %d failing sub-builds: %s" % (build_number, repr(failing_subbuilds)))
     for failed_subbuild in failing_subbuilds:
       failing = find_failing_tests(failed_subbuild + "consoleText")
       if failing:
-        logging.info("Failed in build #%d: %s" % (build_number, repr(failing)))
-        all_failing.update(failing)
-  return all_failing
+        logging.debug("Failed in build #%d: %s" % (build_number, repr(failing)))
+        for test_name in failing:
+          to_return.append(TestFailure(test_name, build_number, failed_subbuild))
+  return to_return
+
+def download_failure(failure, download_dir):
+  test_output_url = "%s/artifact/build/test-logs/%s.txt.gz" % (failure.url, failure.test_name)
+  req = urllib2.urlopen(test_output_url)
+  out_path = os.path.join(download_dir,
+      failure.test_name,
+      "%s-%d.txt.gz" % (failure.test_name, failure.build_number))
+  try:
+    os.makedirs(os.path.dirname(out_path))
+  except OSError:
+    pass
+  with open(out_path, "wb") as out:
+    shutil.copyfileobj(req, out)
 
 def main():
   logging.basicConfig(level=logging.INFO)
   opts = parse_args()
-  all_failing = set()
+  all_failing = []
   for job in opts.job_names:
-    all_failing.update(find_flaky_tests(opts.jenkins_url, job))
-  print "\n".join(all_failing)
+    all_failing.extend(find_flaky_tests(opts.jenkins_url, job))
+
+  # Group failures by test name
+  by_test_name = defaultdict(lambda: [])
+  for failure in all_failing:
+    by_test_name[failure.test_name].append(failure)
+
+  # Print a summary of failed tests
+  print "Summary: %d test failures in last %d days" % (len(all_failing), NUM_PREVIOUS_DAYS)
+  print "Flaky tests:"
+  for test_name, failed_builds in by_test_name.iteritems():
+    print "  ", test_name, ":", ", ".join((str(x.build_number) for x in failed_builds))
+    if opts.download:
+      for b in failed_builds:
+        download_failure(b, opts.download)
+  if opts.download:
+    print "Downloaded test failure logs into " + opts.download
 
 if __name__ == "__main__":
   main()
