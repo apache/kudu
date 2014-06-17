@@ -91,6 +91,7 @@
 //
 /////////////////////////////////////////////////////
 
+#include <algorithm>
 #include <boost/function.hpp>
 #include <string>
 #include <tr1/unordered_map>
@@ -396,13 +397,13 @@ class AtomicGauge : public Gauge {
   T value() const {
     return static_cast<T>(base::subtle::Release_Load(&value_));
   }
-  void set_value(const T& value) {
+  virtual void set_value(const T& value) {
     base::subtle::NoBarrier_Store(&value_, static_cast<base::subtle::Atomic64>(value));
   }
   void Increment() {
     IncrementBy(1);
   }
-  void IncrementBy(int64_t amount) {
+  virtual void IncrementBy(int64_t amount) {
     base::subtle::NoBarrier_AtomicIncrement(&value_, amount);
   }
   void Decrement() {
@@ -416,9 +417,83 @@ class AtomicGauge : public Gauge {
   virtual void WriteValue(JsonWriter* writer) const OVERRIDE {
     writer->Value(value());
   }
- private:
   base::subtle::Atomic64 value_;
+ private:
   DISALLOW_COPY_AND_ASSIGN(AtomicGauge);
+};
+
+// Like AtomicGauge, but keeps track of the highest value seen.
+// Similar to Impala's RuntimeProfile::HighWaterMarkCounter.
+template <typename T>
+class HighWaterMark : public AtomicGauge<T> {
+ public:
+  static HighWaterMark<T>* Instantiate(const GaugePrototype<T>& prototype,
+                                       const MetricContext& context) {
+    return down_cast<HighWaterMark<T*> >(prototype.Instantiate(context, 0));
+  }
+
+  HighWaterMark(const GaugePrototype<T>& proto, T initial_value)
+      : AtomicGauge<T>(proto, initial_value),
+        current_value_(initial_value) {
+  }
+
+  T current_value() const {
+    return static_cast<T>(base::subtle::NoBarrier_Load(&current_value_));
+  }
+
+  void UpdateMax(int64_t value) {
+    while (true) {
+      int64_t old_value = base::subtle::NoBarrier_Load(&value_);
+      int64_t new_value = std::max(old_value, value);
+      if (PREDICT_TRUE(base::subtle::NoBarrier_CompareAndSwap(
+              &value_,
+              old_value,
+              new_value))) {
+        break;
+      }
+    }
+  }
+
+  bool TryIncrementBy(int64_t delta, int64_t max) {
+    while (true) {
+      T old_val = current_value();
+      T new_val = old_val + delta;
+      if (new_val > max) {
+        return false;
+      }
+      if (PREDICT_TRUE(base::subtle::NoBarrier_CompareAndSwap(
+              &current_value_,
+              static_cast<base::subtle::Atomic64>(old_val),
+              static_cast<base::subtle::Atomic64>(new_val)))) {
+        UpdateMax(new_val);
+        return true;
+      }
+    }
+  }
+
+  virtual void IncrementBy(int64_t amount) OVERRIDE {
+    base::subtle::NoBarrier_AtomicIncrement(&current_value_, amount);
+    UpdateMax(amount);
+  }
+
+  virtual void set_value(const T& value) OVERRIDE {
+    int64_t v = static_cast<int64_t>(value);
+    base::subtle::NoBarrier_Store(&current_value_, v);
+    UpdateMax(v);
+  }
+ protected:
+  virtual void WriteValue(JsonWriter* writer) const OVERRIDE {
+    writer->StartObject();
+    writer->String("current");
+    writer->Value(current_value());
+    writer->String("max");
+    writer->Value(AtomicGauge<T>::value());
+    writer->EndObject();
+  }
+
+  using AtomicGauge<T>::value_;
+ private:
+  base::subtle::Atomic64 current_value_;
 };
 
 // A Gauge that calls back to a function to get its value.

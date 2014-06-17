@@ -20,6 +20,7 @@ add_library(kudu_util
   memcmpable_varint.cc
   memory/arena.cc memory/memory.cc
   memenv/memenv.cc
+  mem_tracker.cc
   metrics.cc
   monotime.cc
   net/dns_resolver.cc
@@ -93,6 +94,7 @@ ADD_KUDU_TEST(map-util-test)
 ADD_KUDU_TEST(memcmpable_varint-test LABELS no_tsan)
 ADD_KUDU_TEST(memenv/memenv-test)
 ADD_KUDU_TEST(memory/arena-test)
+ADD_KUDU_TEST(mem_tracker-test)
 ADD_KUDU_TEST(metrics-test)
 ADD_KUDU_TEST(monotime-test)
 ADD_KUDU_TEST(mt-hdr_histogram-test RUN_SERIAL true)
