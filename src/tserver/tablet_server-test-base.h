@@ -118,8 +118,10 @@ class TabletServerTest : public KuduTest {
     // maintenance operations at predetermined times.
     MaintenanceManager::Disable();
 
-    // Start server.
+    // Start server with an invalid master address, so it never successfully
+    // heartbeats, even if there happens to be a master running on this machine.
     mini_server_.reset(new MiniTabletServer(env_.get(), GetTestPath("TabletServerTest-fsroot")));
+    mini_server_->options()->master_hostport = HostPort("255.255.255.255", 1);
     ASSERT_STATUS_OK(mini_server_->Start());
 
     // Set up a tablet inside the server.

@@ -1371,7 +1371,7 @@ QuorumPeerPB::Role RandomRole() {
 // Test that when a change config. transaction changes the tablet state, such as the
 // quorum role, the tablet manager gets notified and includes that information in the next
 // tablet report.
-TEST_F(TabletServerTest, TestChangeConfiguration_TsTableManagerReportsNewRoles) {
+TEST_F(TabletServerTest, TestChangeConfiguration_TsTabletManagerReportsNewRoles) {
   ChangeConfigRequestPB req;
   ChangeConfigResponsePB resp;
   RpcController rpc;
