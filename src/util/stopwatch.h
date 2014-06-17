@@ -8,6 +8,7 @@
 #include <time.h>
 #include <string>
 
+#include "gutil/macros.h"
 #include "gutil/stringprintf.h"
 
 namespace kudu {
@@ -17,24 +18,27 @@ namespace kudu {
 //     ... some task which takes some time
 //   }
 // yields a log like:
-// I1102 14:35:51.726186 23082 file.cc:167] Times for doing some task:
+// I1102 14:35:51.726186 23082 file.cc:167] Time spent doing some task:
 //   real 3.729s user 3.570s sys 0.150s
 #define LOG_TIMING(severity, description) \
-  for (kudu::sw_internal::LogTiming _l(__FILE__, __LINE__, google::severity, description); \
-       !_l.has_printed();                                               \
-       _l.Print())
+  for (kudu::sw_internal::LogTiming _l(__FILE__, __LINE__, google::severity, description, \
+          -1, true); !_l.HasRun(); _l.MarkHasRun())
+
+// Macro to log the time spent in the rest of the block.
+#define SCOPED_LOG_TIMING(severity, description) \
+  kudu::sw_internal::LogTiming VARNAME_LINENUM(_log_timing)(__FILE__, __LINE__, \
+      google::severity, description, -1, true);
 
 // Macro for logging timing of a block. Usage:
 //   LOG_SLOW_EXECUTION(INFO, 5, "doing some task") {
 //     ... some task which takes some time
 //   }
 // when slower than 5 milliseconds, yields a log like:
-// I1102 14:35:51.726186 23082 file.cc:167] Times for doing some task:
+// I1102 14:35:51.726186 23082 file.cc:167] Time spent doing some task:
 //   real 3.729s user 3.570s sys 0.150s
 #define LOG_SLOW_EXECUTION(severity, max_expected_millis, description) \
-  for (kudu::sw_internal::LogTiming _l(__FILE__, __LINE__, google::severity, description); \
-       !_l.has_printed();                                               \
-       _l.Print(max_expected_millis))
+  for (kudu::sw_internal::LogTiming _l(__FILE__, __LINE__, google::severity, description, \
+          max_expected_millis, true); !_l.HasRun(); _l.MarkHasRun())
 
 // Macro for vlogging timing of a block. The execution happens regardless of the vlog_level,
 // it's only the logging that's affected.
@@ -44,10 +48,13 @@ namespace kudu {
 //   }
 // Yields a log just like LOG_TIMING's.
 #define VLOG_TIMING(vlog_level, description) \
-  for (kudu::sw_internal::LogTiming _l(__FILE__, __LINE__, google::INFO, description); \
-       !_l.has_printed();                     \
-       _l.PrintOnCondition(VLOG_IS_ON(vlog_level)))
+  for (kudu::sw_internal::LogTiming _l(__FILE__, __LINE__, google::INFO, description, \
+          -1, VLOG_IS_ON(vlog_level)); !_l.HasRun(); _l.MarkHasRun())
 
+// Macro to log the time spent in the rest of the block.
+#define SCOPED_VLOG_TIMING(vlog_level, description) \
+  kudu::sw_internal::LogTiming VARNAME_LINENUM(_log_timing)(__FILE__, __LINE__, \
+      google::INFO, description, -1, VLOG_IS_ON(vlog_level));
 
 #define NANOS_PER_SECOND 1000000000.0
 #define NANOS_PER_MILLISECOND 1000000.0
@@ -198,41 +205,34 @@ namespace sw_internal {
 class LogTiming {
  public:
   LogTiming(const char *file, int line, google::LogSeverity severity,
-            const std::string &description)
+            const std::string &description, int64_t max_expected_millis,
+            bool should_print)
     : file_(file),
       line_(line),
       severity_(severity),
       description_(description),
-      has_printed_(false) {
+      max_expected_millis_(max_expected_millis),
+      should_print_(should_print),
+      has_run_(false) {
     stopwatch_.start();
   }
 
-  void PrintOnCondition(bool should_print) {
-    if (should_print) {
-      Print();
-    } else {
-      // Break out of the loop
-      has_printed_ = true;
+  ~LogTiming() {
+    if (should_print_) {
+      Print(max_expected_millis_);
     }
   }
 
-  void Print() {
-    Print(-1);
+  // Allows this object to be used as the loop variable in for-loop macros.
+  // Call HasRun() in the conditional check in the for-loop.
+  bool HasRun() {
+    return has_run_;
   }
 
-  void Print(int64 max_expected_millis) {
-    stopwatch_.stop();
-    CpuTimes times = stopwatch_.elapsed();
-    if (times.wall_millis() > max_expected_millis) {
-      google::LogMessage(file_, line_, severity_).stream()
-        << "Times for " << description_ << ": "
-        << times.ToString();
-    }
-    has_printed_ = true;
-  }
-
-  bool has_printed() {
-    return has_printed_;
+  // Allows this object to be used as the loop variable in for-loop macros.
+  // Call MarkHasRun() in the "increment" section of the for-loop.
+  void MarkHasRun() {
+    has_run_ = true;
   }
 
  private:
@@ -241,7 +241,22 @@ class LogTiming {
   const int line_;
   const google::LogSeverity severity_;
   const std::string description_;
-  bool has_printed_;
+  const int64_t max_expected_millis_;
+  const bool should_print_;
+  bool has_run_;
+
+  // Print if the number of expected millis exceeds the max.
+  // Passing a negative number implies "always print".
+  void Print(int64_t max_expected_millis) {
+    stopwatch_.stop();
+    CpuTimes times = stopwatch_.elapsed();
+    if (times.wall_millis() > max_expected_millis) {
+      google::LogMessage(file_, line_, severity_).stream()
+        << "Time spent " << description_ << ": "
+        << times.ToString();
+    }
+  }
+
 };
 
 } // namespace sw_internal

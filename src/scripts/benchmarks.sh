@@ -190,9 +190,9 @@ parse_and_record_all_results() {
     record_result $BUILD_IDENTIFIER MultiThreadedTabletTest_$i 1 `echo $timing / 1000 | bc -l`
   done
 
-  # parse out the real time from: "Times for Insert 10000000 keys: real 16.438s user 16.164s  sys 0.229s"
+  # parse out the real time from: "Time spent Insert 10000000 keys: real 16.438s user 16.164s  sys 0.229s"
   for i in $(seq 1 $NUM_SAMPLES); do
-    real=`grep "Times for Insert" $LOGDIR/${CBTREE_TEST}$i.log | ./parse_real_out.sh`
+    real=`grep "Time spent Insert" $LOGDIR/${CBTREE_TEST}$i.log | ./parse_real_out.sh`
     record_result $BUILD_IDENTIFIER ConcurrentBTreeScanInsert $i $real
   done
 
@@ -206,7 +206,7 @@ parse_and_record_all_results() {
     record_result $BUILD_IDENTIFIER ConcurrentBTreeScanFrozen $i $real
   done
 
-  # parse out the real time from "Times for with overlap: real 0.557s user 0.546s sys 0.010s"
+  # parse out the real time from "Time spent with overlap: real 0.557s user 0.546s sys 0.010s"
   for i in $(seq 1 $NUM_SAMPLES); do
     real=`grep "with overlap" $LOGDIR/${COMPACT_MERGE_BENCH}$i.log | ./parse_real_out.sh`
     record_result $BUILD_IDENTIFIER ${COMPACT_MERGE_BENCH}${WITH_OVERLAP} $i $real
@@ -217,15 +217,15 @@ parse_and_record_all_results() {
     record_result $BUILD_IDENTIFIER ${COMPACT_MERGE_BENCH}${NO_OVERLAP} $i $real
   done
 
-  # Parse out the real time from: "Times for Running 10000000 queries: real 3.281s  user 3.273s sys 0.000s"
+  # Parse out the real time from: "Time spent Running 10000000 queries: real 3.281s  user 3.273s sys 0.000s"
   for i in $(seq 1 $NUM_SAMPLES); do
-    real=`grep "Times for Running" $LOGDIR/$BLOOM_TEST$i.log | ./parse_real_out.sh`
+    real=`grep "Time spent Running" $LOGDIR/$BLOOM_TEST$i.log | ./parse_real_out.sh`
     record_result $BUILD_IDENTIFIER $BLOOM_TEST $i $real
   done
 
-  # Parse out the real time from: "Times for Converting to PB: real 5.962s  user 5.918s sys 0.025s"
+  # Parse out the real time from: "Time spent Converting to PB: real 5.962s  user 5.918s sys 0.025s"
   for i in $(seq 1 $NUM_SAMPLES); do
-    real=`grep "Times for Converting" $LOGDIR/$WIRE_PROTOCOL_TEST$i.log | ./parse_real_out.sh`
+    real=`grep "Time spent Converting" $LOGDIR/$WIRE_PROTOCOL_TEST$i.log | ./parse_real_out.sh`
     record_result $BUILD_IDENTIFIER $WIRE_PROTOCOL_TEST $i $real
   done
 
