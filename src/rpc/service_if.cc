@@ -39,14 +39,14 @@ bool ServiceIf::ParseParam(InboundCall *call, google::protobuf::Message *message
 void ServiceIf::RespondBadMethod(InboundCall *call) {
   Sockaddr local_addr, remote_addr;
 
-  call->connection()->socket()->GetSocketAddress(&local_addr);
-  call->connection()->socket()->GetPeerAddress(&remote_addr);
+  CHECK_OK(call->connection()->socket()->GetSocketAddress(&local_addr));
+  CHECK_OK(call->connection()->socket()->GetPeerAddress(&remote_addr));
   string err = Substitute("Call on service $0 received at $1 from $2 with an "
                           "invalid method name: $3",
-                          call->connection()->service_name().c_str(),
-                          local_addr.host().c_str(),
-                          remote_addr.host().c_str(),
-                          call->method_name().c_str());
+                          call->connection()->service_name(),
+                          local_addr.ToString(),
+                          remote_addr.ToString(),
+                          call->method_name());
   LOG(WARNING) << err;
   call->RespondFailure(ErrorStatusPB::ERROR_NO_SUCH_METHOD,
                        Status::InvalidArgument(err));
