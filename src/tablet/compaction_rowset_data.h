@@ -1,12 +1,8 @@
 // Copyright (c) 2013, Cloudera, inc.
-//
-// Internal classes and methods used by compaction_policy.cc.
-// Only that file and its unit tests should include this.
-#ifndef KUDU_TABLET_COMPACTION_POLICY_INTERNAL_H
-#define KUDU_TABLET_COMPACTION_POLICY_INTERNAL_H
+#ifndef KUDU_TABLET_COMPACTION_ROWSET_DATA_H
+#define KUDU_TABLET_COMPACTION_ROWSET_DATA_H
 
 #include <string>
-#include <tr1/unordered_set>
 #include <vector>
 #include <gtest/gtest.h>
 
@@ -14,11 +10,17 @@
 
 namespace kudu {
 namespace tablet {
+
+class RowSetTree;
+
 namespace compaction_policy {
 
 // Class to calculate the CDF of data stored in the tablet.
 class DataSizeCDF {
  public:
+  // Error value guaranteed by CDF estimation
+  static const double kEpsilon;
+
   // Create the CDF. The given RowSetTree must remain valid
   // for the lifetime of this object.
   explicit DataSizeCDF(const RowSetTree* tree);

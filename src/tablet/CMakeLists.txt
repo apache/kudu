@@ -15,6 +15,8 @@ set(TABLET_SRCS
   cfile_set.cc
   compaction.cc
   compaction_policy.cc
+  compaction_rowset_data.cc
+  compaction_svg_dump.cc
   diskrowset.cc
   lock_manager.cc
   memrowset.cc

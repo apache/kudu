@@ -2,11 +2,7 @@
 
 #include <glog/logging.h>
 #include <gtest/gtest.h>
-#include <vector>
-#include "tablet/compaction_policy.h"
-#include "tablet/compaction_policy-internal.h"
-#include "util/stopwatch.h"
-#include "util/test_util.h"
+#include "tablet/compaction_rowset_data.h"
 
 using std::vector;
 
