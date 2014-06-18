@@ -49,11 +49,15 @@ void WriteTransaction::NewCommitAbortMessage(gscoped_ptr<CommitMsg>* commit_msg)
   commit_msg->reset(new CommitMsg());
   (*commit_msg)->set_op_type(OP_ABORT);
   if (type() == consensus::LEADER) {
-    (*commit_msg)->set_timestamp(state()->timestamp().ToUint64());
+    if (state()->has_timestamp()) {
+      (*commit_msg)->set_timestamp(state()->timestamp().ToUint64());
+    }
     (*commit_msg)->mutable_write_response()->CopyFrom(*state_->response());
   } else {
     consensus::OperationPB* leader_op = state()->consensus_round()->leader_commit_op();
-    (*commit_msg)->set_timestamp(leader_op->commit().timestamp());
+    if (leader_op->commit().has_timestamp()) {
+      (*commit_msg)->set_timestamp(leader_op->commit().timestamp());
+    }
     (*commit_msg)->mutable_write_response()->CopyFrom(leader_op->commit().write_response());
   }
 }
@@ -338,7 +342,17 @@ string WriteTransactionState::ToString() const {
   //
   // Note: a debug string of the request is not included for security
   // reasons.
-  return Substitute("WriteTransactionState [timestamp=$0]", timestamp().ToString());
+  string ts_str;
+  if (has_timestamp()) {
+    ts_str = timestamp().ToString();
+  } else {
+    ts_str = "<unassigned>";
+  }
+
+  return Substitute("WriteTransactionState $0 [op_id=($1), ts=$2]",
+                    this,
+                    op_id().ShortDebugString(),
+                    ts_str);
 }
 
 PreparedRowWrite::PreparedRowWrite(const ConstContiguousRow* row,

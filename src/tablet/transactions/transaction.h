@@ -176,13 +176,19 @@ class TransactionState {
   // Sets the timestamp for the transaction
   void set_timestamp(const Timestamp& timestamp) {
     // make sure we set the timestamp only once
-    DCHECK(timestamp_ == Timestamp::kInvalidTimestamp);
+    DCHECK_EQ(timestamp_, Timestamp::kInvalidTimestamp);
     timestamp_ = timestamp;
   }
 
   Timestamp timestamp() const {
+    DCHECK(has_timestamp());
     return timestamp_;
   }
+
+  bool has_timestamp() const {
+    return timestamp_ != Timestamp::kInvalidTimestamp;
+  }
+
   consensus::OpId* mutable_op_id() {
     return &op_id_;
   }

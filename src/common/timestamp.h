@@ -23,6 +23,9 @@ class Timestamp {
   bool operator ==(const Timestamp &other) const {
     return v == other.v;
   }
+  bool operator !=(const Timestamp &other) const {
+    return v != other.v;
+  }
 
   // Decode a timestamp from the given input slice.
   // Mutates the slice to point after the decoded timestamp.
