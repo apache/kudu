@@ -41,8 +41,11 @@ namespace kudu {
 namespace rpc {
 
 namespace {
-Status ShutdownError() {
-  return Status::ServiceUnavailable("reactor is shutting down", "", ESHUTDOWN);
+Status ShutdownError(bool aborted) {
+  const char* msg = "reactor is shutting down";
+  return aborted ?
+      Status::Aborted(msg, "", ESHUTDOWN) :
+      Status::ServiceUnavailable(msg, "", ESHUTDOWN);
 }
 } // anonymous namespace
 
@@ -86,12 +89,13 @@ void ReactorThread::ShutdownInternal() {
   DCHECK(IsCurrentThread());
 
   // Tear down any outbound TCP connections.
+  Status service_unavailable = ShutdownError(false);
   VLOG(1) << name() << ": tearing down outbound TCP connections...";
   for (conn_map_t::iterator c = client_conns_.begin();
        c != client_conns_.end(); c = client_conns_.begin()) {
     const scoped_refptr<Connection>& conn = (*c).second;
     VLOG(1) << name() << ": shutting down " << conn->ToString();
-    conn->Shutdown(ShutdownError());
+    conn->Shutdown(service_unavailable);
     client_conns_.erase(c);
   }
 
@@ -99,9 +103,19 @@ void ReactorThread::ShutdownInternal() {
   VLOG(1) << name() << ": tearing down inbound TCP connections...";
   BOOST_FOREACH(const scoped_refptr<Connection>& conn, server_conns_) {
     VLOG(1) << name() << ": shutting down " << conn->ToString();
-    conn->Shutdown(ShutdownError());
+    conn->Shutdown(service_unavailable);
   }
   server_conns_.clear();
+
+  // Abort any scheduled tasks.
+  //
+  // These won't be found in the ReactorThread's list of pending tasks
+  // because they've been "run" (that is, they've been scheduled).
+  Status aborted = ShutdownError(true); // aborted
+  BOOST_FOREACH(DelayedTask* task, scheduled_tasks_) {
+    task->Abort(aborted); // should also free the task.
+  }
+  scheduled_tasks_.clear();
 }
 
 ReactorTask::ReactorTask() {
@@ -425,6 +439,45 @@ void ReactorThread::DestroyConnection(Connection *conn,
   }
 }
 
+DelayedTask::DelayedTask(const boost::function<void(const Status&)>& func,
+                         MonoDelta when)
+  : func_(func),
+    when_(when),
+    thread_(NULL) {
+}
+
+void DelayedTask::Run(ReactorThread* thread) {
+  DCHECK(thread_ == NULL) << "Task has already been scheduled";
+  DCHECK(thread->IsCurrentThread());
+
+  // Schedule the task to run later.
+  thread_ = thread;
+  timer_.set(thread->loop_);
+  timer_.set<DelayedTask, &DelayedTask::TimerHandler>(this);
+  timer_.start(when_.ToSeconds(), // after
+               0);                // repeat
+  thread_->scheduled_tasks_.insert(this);
+}
+
+void DelayedTask::Abort(const Status& abort_status) {
+  func_(abort_status);
+  delete this;
+}
+
+void DelayedTask::TimerHandler(ev::timer& watcher, int revents) {
+  // We will free this task's memory.
+  thread_->scheduled_tasks_.erase(this);
+
+  if (EV_ERROR & revents) {
+    string msg = "Delayed task got an error in its timer handler";
+    LOG(WARNING) << msg;
+    Abort(Status::Aborted(msg)); // Will delete 'this'.
+  } else {
+    func_(Status::OK());
+    delete this;
+  }
+}
+
 Reactor::Reactor(const shared_ptr<Messenger>& messenger,
                  int index, const MessengerBuilder &bld)
   : messenger_(messenger),
@@ -451,10 +504,11 @@ void Reactor::Shutdown() {
 
   // Abort all pending tasks. No new tasks can get scheduled after this
   // because ScheduleReactorTask() tests the closing_ flag set above.
+  Status aborted = ShutdownError(true);
   while (!pending_tasks_.empty()) {
     ReactorTask& task = pending_tasks_.front();
     pending_tasks_.pop_front();
-    task.Abort(ShutdownError());
+    task.Abort(aborted);
   }
 }
 
@@ -582,7 +636,7 @@ void Reactor::ScheduleReactorTask(ReactorTask *task) {
     if (closing_) {
       // We guarantee the reactor lock is not taken when calling Abort().
       lock_guard.unlock();
-      task->Abort(ShutdownError());
+      task->Abort(ShutdownError(false));
       return;
     }
     pending_tasks_.push_back(*task);

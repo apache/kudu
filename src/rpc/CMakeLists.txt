@@ -79,8 +79,9 @@ target_link_libraries(rtest_krpc
 
 # Tests
 set(KUDU_TEST_LINK_LIBS rtest_krpc krpc ${KUDU_MIN_TEST_LIBS})
-ADD_KUDU_TEST(rpc-test)
+ADD_KUDU_TEST(mt-rpc-test RUN_SERIAL true)
+ADD_KUDU_TEST(reactor-test)
 ADD_KUDU_TEST(rpc-bench RUN_SERIAL true)
+ADD_KUDU_TEST(rpc-test)
 ADD_KUDU_TEST(rpc_stub-test)
 ADD_KUDU_TEST(sasl_rpc-test)
-ADD_KUDU_TEST(mt-rpc-test RUN_SERIAL true)

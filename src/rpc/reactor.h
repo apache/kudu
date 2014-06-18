@@ -9,6 +9,7 @@
 #include <tr1/memory>
 
 #include <map>
+#include <set>
 #include <string>
 
 #include "gutil/ref_counted.h"
@@ -59,6 +60,41 @@ class ReactorTask : public boost::intrusive::list_base_hook<> {
 
  private:
   DISALLOW_COPY_AND_ASSIGN(ReactorTask);
+};
+
+// A ReactorTask that is scheduled to run at some point in the future.
+//
+// Semantically it works like RunFunctionTask with a few key differences:
+// 1. The user function is called during Abort. Put another way, the
+//    user function is _always_ invoked, even during reactor shutdown.
+// 2. To differentiate between Abort and non-Abort, the user function
+//    receives a Status as its first argument.
+class DelayedTask : public ReactorTask {
+ public:
+  DelayedTask(const boost::function<void(const Status&)>& func,
+              MonoDelta when);
+
+  // Schedules the task for running later but doesn't actually run it yet.
+  virtual void Run(ReactorThread* reactor) OVERRIDE;
+
+  // Behaves like ReactorTask::Abort.
+  virtual void Abort(const Status& abort_status) OVERRIDE;
+
+ private:
+  // libev callback for when the registered timer fires.
+  void TimerHandler(ev::timer& watcher, int revents);
+
+  // User function to invoke when timer fires or when task is aborted.
+  const boost::function<void(const Status&)> func_;
+
+  // Delay to apply to this task.
+  const MonoDelta when_;
+
+  // Link back to registering reactor thread.
+  ReactorThread* thread_;
+
+  // libev timer. Set when Run() is invoked.
+  ev::timer timer_;
 };
 
 // A ReactorThread is a libev event handler thread which manages I/O
@@ -133,6 +169,7 @@ class ReactorThread {
  private:
   friend class AssignOutboundCallTask;
   friend class RegisterConnectionTask;
+  friend class DelayedTask;
 
   // Run the main event loop of the reactor.
   void RunThread();
@@ -186,6 +223,12 @@ class ReactorThread {
 
   // Handles the periodic timer.
   ev::timer timer_;
+
+  // Scheduled (but not yet run) delayed tasks.
+  //
+  // Each task owns its own memory and must be freed by its TaskRun and
+  // Abort members, provided it was allocated on the heap.
+  std::set<DelayedTask*> scheduled_tasks_;
 
   // The current monotonic time.  Updated every coarse_timer_granularity_secs_.
   MonoTime cur_time_;
@@ -261,6 +304,11 @@ class Reactor {
   //
   // This method is thread-safe.
   bool closing() const;
+
+  // Is this reactor's thread the current thread?
+  bool IsCurrentThread() const {
+    return thread_.IsCurrentThread();
+  }
 
  private:
   friend class ReactorThread;

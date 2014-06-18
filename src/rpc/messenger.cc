@@ -239,5 +239,25 @@ Status Messenger::DumpRunningRpcs(const DumpRunningRpcsRequestPB& req,
   return Status::OK();
 }
 
+void Messenger::ScheduleOnReactor(const boost::function<void(const Status&)>& func,
+                                  MonoDelta when) {
+  DCHECK(!reactors_.empty());
+
+  // If we're already running on a reactor thread, reuse it.
+  Reactor* chosen = NULL;
+  BOOST_FOREACH(Reactor* r, reactors_) {
+    if (r->IsCurrentThread()) {
+      chosen = r;
+    }
+  }
+  if (chosen == NULL) {
+    // Not running on a reactor thread, pick one at random.
+    chosen = reactors_[rand() % reactors_.size()];
+  }
+
+  DelayedTask* task = new DelayedTask(func, when);
+  chosen->ScheduleReactorTask(task);
+}
+
 } // namespace rpc
 } // namespace kudu

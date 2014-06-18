@@ -144,6 +144,13 @@ class Messenger {
   Status DumpRunningRpcs(const DumpRunningRpcsRequestPB& req,
                          DumpRunningRpcsResponsePB* resp);
 
+  // Run 'func' on a reactor thread after 'when' time elapses.
+  //
+  // The status argument conveys whether 'func' was run correctly (i.e.
+  // after the elapsed time) or not.
+  void ScheduleOnReactor(const boost::function<void(const Status&)>& func,
+                         MonoDelta when);
+
   TaskExecutor* negotiation_executor() const { return negotiation_executor_.get(); }
 
   std::string name() const {

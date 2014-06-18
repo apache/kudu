@@ -122,7 +122,8 @@ TEST_F(MultiThreadedRpcTest, TestShutdownClientWhileCallsPending) {
   client_messenger.reset();
 
   ASSERT_STATUS_OK(ThreadJoiner(thread.get()).warn_every_ms(500).Join());
-  ASSERT_TRUE(status.IsServiceUnavailable());
+  ASSERT_TRUE(status.IsAborted() ||
+              status.IsServiceUnavailable());
   string msg = status.ToString();
   SCOPED_TRACE(msg);
   ASSERT_TRUE(msg.find("Client RPC Messenger shutting down") != string::npos ||
