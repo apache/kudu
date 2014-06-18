@@ -72,7 +72,8 @@ add_library(kudu_test_main test_main.cc)
 target_link_libraries(kudu_test_main
   gflags
   glog
-  gtest)
+  gtest
+  rt)
 
 set(KUDU_TEST_LINK_LIBS kudu_util gutil ${KUDU_MIN_TEST_LIBS})
 ADD_KUDU_TEST(bit-util-test)

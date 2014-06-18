@@ -335,7 +335,6 @@ endfunction()
 # Look in thirdparty/installed before anywhere else for system dependencies.
 set(THIRDPARTY_PREFIX ${CMAKE_SOURCE_DIR}/thirdparty/installed)
 set(CMAKE_PREFIX_PATH ${THIRDPARTY_PREFIX})
-set(LIBS ${LIBS} -lrt)
 
 ## Boost
 ### Workaround for http://stackoverflow.com/questions/9948375/cmake-find-package-succeeds-but-returns-wrong-path
