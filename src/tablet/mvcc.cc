@@ -292,14 +292,7 @@ MvccSnapshot MvccSnapshot::CreateSnapshotIncludingNoTransactions() {
   return MvccSnapshot(Timestamp::kMin);
 }
 
-bool MvccSnapshot::IsCommitted(const Timestamp& timestamp) const {
-  if (PREDICT_TRUE(timestamp.CompareTo(all_committed_before_) < 0)) {
-    return true;
-  }
-  if (PREDICT_TRUE(timestamp.CompareTo(none_committed_at_or_after_) >= 0)) {
-    return false;
-  }
-
+bool MvccSnapshot::IsCommittedFallback(const Timestamp& timestamp) const {
   BOOST_FOREACH(const Timestamp::val_type& v, committed_timestamps_) {
     if (v == timestamp.value()) return true;
   }

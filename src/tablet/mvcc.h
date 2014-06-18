@@ -44,7 +44,18 @@ class MvccSnapshot {
 
   // Return true if the given transaction ID should be considered committed
   // in this snapshot.
-  bool IsCommitted(const Timestamp& timestamp) const;
+  inline bool IsCommitted(const Timestamp& timestamp) const {
+    // Inline the most likely path, in which our watermarks determine
+    // whether a transaction is committed.
+    if (PREDICT_TRUE(timestamp.CompareTo(all_committed_before_) < 0)) {
+      return true;
+    }
+    if (PREDICT_TRUE(timestamp.CompareTo(none_committed_at_or_after_) >= 0)) {
+      return false;
+    }
+    // Out-of-line the unlikely case which involves more complex (loopy) code.
+    return IsCommittedFallback(timestamp);
+  }
 
   // Returns true if this snapshot may have any committed transactions with ID
   // equal to or higher than the provided 'timestamp'.
@@ -80,6 +91,8 @@ class MvccSnapshot {
   FRIEND_TEST(MvccTest, TestMayHaveCommittedTransactionsAtOrAfter);
   FRIEND_TEST(MvccTest, TestMayHaveUncommittedTransactionsBefore);
   FRIEND_TEST(MvccTest, TestWaitUntilAllCommitted_SnapAtTimestampWithInFlights);
+
+  bool IsCommittedFallback(const Timestamp& timestamp) const;
 
   // Summary rule:
   //   A transaction T is committed if and only if:
