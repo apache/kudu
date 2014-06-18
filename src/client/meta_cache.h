@@ -219,6 +219,14 @@ class MetaCache : public base::RefCountedThreadSafe<MetaCache> {
                                  const Slice& key,
                                  scoped_refptr<RemoteTablet>* remote_tablet);
 
+  // Variant of LookupTabletByKey that is invoked as a delayed task if a
+  // master lookup permit could not be acquired.
+  void LookupTabletByKeyCB(const Status& abort_status,
+                           const KuduTable* table,
+                           const Slice& key,
+                           scoped_refptr<RemoteTablet>* remote_tablet,
+                           const StatusCallback& callback);
+
   // Update our information about the given tablet server.
   //
   // This is called when we get some response from the master which contains
@@ -261,8 +269,8 @@ class MetaCache : public base::RefCountedThreadSafe<MetaCache> {
   typedef std::tr1::unordered_map<std::string, scoped_refptr<RemoteTablet> > TabletMap;
   TabletMap tablets_by_id_;
 
-  // Prevents master lookup "storms" by slowing down master lookups when
-  // the semaphore capacity is exceeded.
+  // Prevents master lookup "storms" by delaying master lookups when all
+  // permits have been acquired.
   Semaphore master_lookup_sem_;
 
   DISALLOW_COPY_AND_ASSIGN(MetaCache);
