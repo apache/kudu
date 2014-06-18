@@ -1341,15 +1341,20 @@ TEST_F(ClientTest, TestRandomWriteOperation) {
   nrows = FLAGS_test_scan_num_rows/2;
 
   // Randomized testing
-  unordered_set<int> changed; // TODO: currently delete/insert of same row is not
-                              // supported in the same batch. Need to keep track of recents.
+  // TODO: Currently, multiple mutations of the same row are not supported
+  // in the same batch. Once KUDU-352 is resolved, then the changed set
+  // should be removed (if per-row per-batch ordering is preserved).
+  // If batches remain with no ordering guarantee, then only this comment
+  // should be removed.
+  unordered_set<int> changed;
   LOG(INFO) << "Randomized mutations testing.";
   SeedRandom();
   for (int i = 0; i <= 1000; ++i) {
     int change = rand() % FLAGS_test_scan_num_rows;
     // Insert if empty
     while (changed.find(change) != changed.end())
-      change = (change + 1) % FLAGS_test_scan_num_rows; // TODO: remove (see above)
+      change = (change + 1) % FLAGS_test_scan_num_rows;
+    changed.insert(change);
     if (row[change] == -1) {
       ASSERT_STATUS_OK(ApplyInsertToSession(session.get(),
                                             client_table_,
@@ -1374,7 +1379,6 @@ TEST_F(ClientTest, TestRandomWriteOperation) {
                                               change));
         row[change] = -1;
         --nrows;
-        changed.insert(change); // TODO: remove (see above)
         VLOG(1) << "Delete " << change;
       }
     }
@@ -1410,7 +1414,7 @@ TEST_F(ClientTest, TestRandomWriteOperation) {
       ASSERT_EQ(readrows, nrows);
       scanner.Close();
       LOG(INFO) << "...complete";
-      changed.clear(); // TODO: remove (see above)
+      changed.clear();
     }
   }
 }
