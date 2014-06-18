@@ -51,7 +51,7 @@ Status RaftConsensus::Init(const metadata::QuorumPeerPB& peer,
                                 txn_factory,
                                 initial.term(),
                                 initial.index()));
-  LOG(INFO) << "Created Raft consensus for peer " << state_->ToString();
+  LOG(INFO) << LogPrefix() << "Created Raft consensus for peer " << state_->ToString();
   return Status::OK();
 }
 
@@ -236,8 +236,9 @@ Status RaftConsensus::Replicate(ConsensusRound* context) {
       // machine have continuous ids, for the same term, even if the queue
       // refused to add any more operations.
       state_->RollbackIdGenUnlocked(context->replicate_op()->id());
-      LOG(WARNING) << "Could not append replicate request to the queue. Queue is Full. "
-          "Queue metrics: " << queue_.ToString();
+      LOG(WARNING) << LogPrefixUnlocked() << ": Could not append replicate request "
+                   << "to the queue. Queue is Full. "
+                   << "Queue metrics: " << queue_.ToString();
       // TODO Possibly evict a dangling peer from the quorum here.
       // TODO count of number of ops failed due to consensus queue overflow.
     }
@@ -486,7 +487,7 @@ void RaftConsensus::SignalRequestToPeers(bool force_if_queue_empty) {
   for (; iter != peers_.end(); iter++) {
     Status s = (*iter).second->SignalRequest(force_if_queue_empty);
     if (PREDICT_FALSE(!s.ok())) {
-      LOG(WARNING) << "Peer was closed, removing from peers. Peer: "
+      LOG(WARNING) << LogPrefixUnlocked() << "Peer was closed, removing from peers. Peer: "
           << (*iter).second->peer_pb().ShortDebugString();
       peers_.erase(iter);
     }
@@ -511,7 +512,7 @@ void RaftConsensus::Shutdown() {
   CHECK_OK(state_->WaitForOustandingApplies());
   CHECK_OK(log_->Close());
   STLDeleteValues(&peers_);
-  LOG(INFO) << "Raft consensus Shutdown!";
+  LOG(INFO) << LogPrefix() << "Raft consensus Shutdown!";
   CHECK_OK(ExecuteHook(POST_SHUTDOWN));
 }
 
@@ -534,7 +535,7 @@ OpId RaftConsensus::GetLastOpIdFromLog() {
   } else if (s.IsNotFound()) {
     id = log::MinimumOpId();
   } else {
-    LOG(FATAL) << "Unexpected status from Log::GetLastEntryOpId(): "
+    LOG(FATAL) << LogPrefix() << "Unexpected status from Log::GetLastEntryOpId(): "
                << s.ToString();
   }
   return id;

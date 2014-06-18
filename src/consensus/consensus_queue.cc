@@ -187,9 +187,9 @@ void PeerMessageQueue::RequestForPeer(const string& uuid,
   if (PREDICT_FALSE(VLOG_IS_ON(2))) {
     if (request->ops_size() > 0) {
       VLOG(2) << "Sending request with operations to Peer: " << uuid
-          << ". Size: " << request->ops_size()
-          << ". From: " << request->ops(0).ShortDebugString() << ". To: "
-          << request->ops(request->ops_size() -1).ShortDebugString();
+              << ". Size: " << request->ops_size()
+              << ". From: " << request->ops(0).id().ShortDebugString() << ". To: "
+              << request->ops(request->ops_size() - 1).id().ShortDebugString();
     } else {
       VLOG(2) << "Sending status only request to Peer: " << uuid;
     }

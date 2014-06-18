@@ -61,6 +61,8 @@ class PeerImpl {
     return &request_;
   }
 
+  const string& tablet_id() const { return tablet_id_; }
+
   // On destruction release the operations as the peers don't
   // own them.
   virtual ~PeerImpl() {
@@ -384,7 +386,8 @@ void Peer::ProcessResponseError(const Status& status) {
   boost::lock_guard<simple_spinlock> lock(peer_lock_);
   // TODO handle the error.
   failed_attempts_++;
-  LOG(WARNING) << "Couldn't send request to peer: " << peer_pb_.permanent_uuid()
+  LOG(WARNING) << "Couldn't send request to peer " << peer_pb_.permanent_uuid()
+      << " for tablet " << peer_impl_->tablet_id() << ":"
       << " Status: " << status.ToString() << ". Retrying in the next heartbeat period."
       << " Already tried " << failed_attempts_ << " times.";
   outstanding_req_latch_.CountDown();
