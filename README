@@ -13,6 +13,7 @@ The following dependencies are necessary to build kudu:
 - libsasl2-dev (Ubuntu) or cyrus-sasl-devel (CentOS)
 - libtool
 - ntp
+- unzip
 
 Earlier versions of each of these may work, but have not recently
 been tested.
