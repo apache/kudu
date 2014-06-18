@@ -22,6 +22,7 @@
 #include "master/master-test-util.h"
 #include "master/master.proxy.h"
 #include "master/mini_master.h"
+#include "server/hybrid_clock.h"
 #include "tablet/tablet_peer.h"
 #include "tablet/transactions/write_transaction.h"
 #include "tserver/mini_tablet_server.h"
@@ -34,6 +35,9 @@
 #include "util/test_util.h"
 
 DECLARE_int32(heartbeat_interval_ms);
+DECLARE_bool(use_hybrid_clock);
+DECLARE_int32(max_clock_sync_error_usec);
+
 DEFINE_int32(test_scan_num_rows, 1000, "Number of rows to insert and scan");
 
 using std::tr1::shared_ptr;
@@ -71,7 +75,14 @@ class ClientTest : public KuduTest {
   virtual void SetUp() {
     KuduTest::SetUp();
 
+    // Reduce the TS<->Master heartbeat interval
     FLAGS_heartbeat_interval_ms = 10;
+
+    // Use the hybrid clock for client tests
+    FLAGS_use_hybrid_clock = true;
+
+    // increase the max error tolerance, for tests, to 10 seconds.
+    FLAGS_max_clock_sync_error_usec = 10000000;
 
     // Start minicluster and wait for tablet servers to connect to master.
     cluster_.reset(new MiniCluster(env_.get(), test_dir_, 1));
@@ -129,11 +140,11 @@ class ClientTest : public KuduTest {
   }
 
   // Inserts 'num_rows' test rows via RPC.
-  void InsertTestRows(KuduTable* table, int num_rows) {
+  void InsertTestRows(KuduTable* table, int num_rows, int first_row = 0) {
     shared_ptr<KuduSession> session = client_->NewSession();
     ASSERT_STATUS_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
     session->SetTimeoutMillis(5000);
-    for (int i = 0; i < num_rows; i++) {
+    for (int i = first_row; i < num_rows + first_row; i++) {
       gscoped_ptr<Insert> insert(BuildTestRow(table, i));
       ASSERT_STATUS_OK(session->Apply(&insert));
     }
@@ -281,7 +292,7 @@ class ClientTest : public KuduTest {
   int CountRowsFromClient(KuduTable* table, KuduClient::ReplicaSelection selection,
                           uint32_t lower_bound, uint32_t upper_bound) {
     KuduScanner scanner(table);
-    scanner.SetSelection(selection);
+    CHECK_OK(scanner.SetSelection(selection));
     Schema empty_projection(vector<ColumnSchema>(), 0);
     CHECK_OK(scanner.SetProjection(&empty_projection));
     if (lower_bound != kNoBound && upper_bound != kNoBound) {
@@ -308,7 +319,7 @@ class ClientTest : public KuduTest {
   void ScanRowsToStrings(KuduTable* table, vector<string>* row_strings) {
     row_strings->clear();
     KuduScanner scanner(table);
-    scanner.SetSelection(KuduClient::LEADER_ONLY);
+    ASSERT_STATUS_OK(scanner.SetSelection(KuduClient::LEADER_ONLY));
     ASSERT_STATUS_OK(scanner.Open());
     vector<KuduRowResult> rows;
     while (scanner.HasMoreRows()) {
@@ -401,6 +412,52 @@ TEST_F(ClientTest, TestScan) {
   // Scan after re-insert
   InsertTestRows(client_table_.get(), 1);
   DoTestScanWithKeyPredicate();
+}
+
+TEST_F(ClientTest, TestScanAtSnapshot) {
+  int half_the_rows = FLAGS_test_scan_num_rows / 2;
+
+  // Insert half the rows
+  InsertTestRows(client_table_.get(), half_the_rows);
+
+  // get the time from the server and transform to micros disregarding any
+  // logical values (we shouldn't have any with a single server anyway);
+  int64_t ts = server::HybridClock::GetPhysicalValue(
+      cluster_->mini_tablet_server(0)->server()->clock()->Now());
+
+  // Insert the second half of the rows
+  InsertTestRows(client_table_.get(), half_the_rows, half_the_rows);
+
+  KuduScanner scanner(client_table_.get());
+  ASSERT_STATUS_OK(scanner.Open());
+  vector<KuduRowResult> rows;
+  uint64_t sum = 0;
+
+  // Do a "normal", READ_LATEST scan
+  while (scanner.HasMoreRows()) {
+    ASSERT_STATUS_OK(scanner.NextBatch(&rows));
+    sum += rows.size();
+    rows.clear();
+  }
+
+  ASSERT_EQ(FLAGS_test_scan_num_rows, sum);
+
+  // Now close the scanner and perform a scan at 'ts'
+  scanner.Close();
+  ASSERT_STATUS_OK(scanner.SetReadMode(KuduScanner::READ_AT_SNAPSHOT));
+  ASSERT_STATUS_OK(scanner.SetSnapshot(ts));
+  ASSERT_STATUS_OK(scanner.Open());
+
+  sum = 0;
+
+  while (scanner.HasMoreRows()) {
+    ASSERT_STATUS_OK(scanner.NextBatch(&rows));
+    sum += rows.size();
+    rows.clear();
+  }
+
+  ASSERT_EQ(half_the_rows, sum);
+
 }
 
 TEST_F(ClientTest, TestScanMultiTablet) {

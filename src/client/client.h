@@ -661,6 +661,41 @@ class KuduSession : public std::tr1::enable_shared_from_this<KuduSession> {
 // scanners on different threads may share a single KuduTable object.
 class KuduScanner {
  public:
+
+  // The possible read modes for clients.
+  enum ReadMode {
+    // When READ_LATEST is specified the server will execute the read independently
+    // of the clock and will always return all visible writes at the time the request
+    // was received. This type of read does not return a snapshot timestamp since
+    // it might not be repeatable, i.e. a later read executed at the same snapshot
+    // timestamp might yield rows that were committed by in-flight transactions.
+    //
+    // This is the default mode.
+    READ_LATEST,
+
+    // When READ_AT_SNAPSHOT is specified the server will attempt to perform a read
+    // at the required snapshot. If no snapshot is defined the server will take the
+    // current time as the snapshot timestamp. Snapshot reads are repeatable, i.e.
+    // all future reads at the same timestamp will yield the same rows. This is
+    // performed at the expense of waiting for in-flight transactions whose timestamp
+    // is lower than the snapshot's timestamp to complete.
+    //
+    // When mixing reads and writes clients that specify COMMIT_WAIT as their
+    // external consistency mode and then use the returned write_timestamp to
+    // to perform snapshot reads are guaranteed that that snapshot time is
+    // considered in the past by all servers and no additional action is
+    // necessary. Clients using CLIENT_PROPAGATED however must forcibly propagate
+    // the timestamps even at read time, so that the server will not generate
+    // any more transactions before the snapshot requested by the client.
+    // The latter option is implemented by allowing the client to specify one or
+    // two timestamps, the first one obtained from the previous CLIENT_PROPAGATED
+    // write, directly or through back-channels, must be signed and will be
+    // checked by the server. The second one, if defined, is the actual snapshot
+    // read time. When selecting both, the latter must be lower than or equal to
+    // the former.
+    READ_AT_SNAPSHOT
+  };
+
   // Initialize the scanner. The given 'table' object must remain valid
   // for the lifetime of this scanner object.
   // TODO: should table be a const pointer?
@@ -671,14 +706,14 @@ class KuduScanner {
   // must remain valid for the lifetime of this scanner object.
   //
   // If not called, table schema is used as the projection.
-  Status SetProjection(const Schema* projection);
+  Status SetProjection(const Schema* projection) WARN_UNUSED_RESULT;
 
   // Add a predicate to this scanner.
   // The predicates act as conjunctions -- i.e, they all must pass for
   // a row to be returned.
   // TODO: currently, the predicates must refer to columns which are also
   // part of the projection.
-  Status AddConjunctPredicate(const ColumnRangePredicate& pred);
+  Status AddConjunctPredicate(const ColumnRangePredicate& pred) WARN_UNUSED_RESULT;
 
   // Begin scanning.
   Status Open();
@@ -711,7 +746,13 @@ class KuduScanner {
   // Sets the replica selection policy while scanning.
   //
   // TODO: kill this in favor of a consistency-level-based API
-  Status SetSelection(KuduClient::ReplicaSelection selection);
+  Status SetSelection(KuduClient::ReplicaSelection selection) WARN_UNUSED_RESULT;
+
+  // Sets the ReadMode. Default is READ_LATEST.
+  Status SetReadMode(ReadMode read_mode) WARN_UNUSED_RESULT;
+
+  // Sets the snapshot timestamp for scans in READ_AT_SNAPSHOT mode.
+  Status SetSnapshot(uint64_t snapshot_timestamp_micros) WARN_UNUSED_RESULT;
 
   // Returns a string representation of this scan.
   std::string ToString() const;
@@ -756,6 +797,9 @@ class KuduScanner {
   bool has_batch_size_bytes_;
   uint32 batch_size_bytes_;
   KuduClient::ReplicaSelection selection_;
+
+  ReadMode read_mode_;
+  int64_t snapshot_timestamp_;
 
   std::tr1::shared_ptr<tserver::TabletServerServiceProxy> proxy_;
 

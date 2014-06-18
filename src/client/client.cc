@@ -8,6 +8,7 @@
 #include <tr1/memory>
 #include <vector>
 
+#include "common/common.pb.h"
 #include "common/row.h"
 #include "common/wire_protocol.h"
 #include "client/batcher.h"
@@ -62,8 +63,15 @@ MAKE_ENUM_LIMITS(kudu::client::KuduSession::FlushMode,
                  kudu::client::KuduSession::AUTO_FLUSH_SYNC,
                  kudu::client::KuduSession::MANUAL_FLUSH);
 
+MAKE_ENUM_LIMITS(kudu::client::KuduScanner::ReadMode,
+                 kudu::client::KuduScanner::READ_LATEST,
+                 kudu::client::KuduScanner::READ_AT_SNAPSHOT);
+
 namespace kudu {
 namespace client {
+
+static const int64_t kNoTimestamp = -1;
+static const int kHtTimestampBitsToShift = 12;
 
 using internal::Batcher;
 using internal::ErrorCollector;
@@ -769,6 +777,8 @@ KuduScanner::KuduScanner(KuduTable* table)
     has_batch_size_bytes_(false),
     batch_size_bytes_(0),
     selection_(KuduClient::CLOSEST_REPLICA),
+    read_mode_(READ_LATEST),
+    snapshot_timestamp_(kNoTimestamp),
     table_(DCHECK_NOTNULL(table)),
     projection_(&table->schema()),
     projected_row_size_(CalculateProjectedRowSize(*projection_)),
@@ -782,7 +792,9 @@ KuduScanner::~KuduScanner() {
 }
 
 Status KuduScanner::SetProjection(const Schema* projection) {
-  CHECK(!open_) << "Scanner already open";
+  if (open_) {
+    return Status::IllegalState("Projection must be set before Open()");
+  }
   projection_ = projection;
   projected_row_size_ = CalculateProjectedRowSize(*projection_);
   return Status::OK();
@@ -794,13 +806,39 @@ Status KuduScanner::SetBatchSizeBytes(uint32_t batch_size) {
   return Status::OK();
 }
 
+Status KuduScanner::SetReadMode(ReadMode read_mode) {
+  if (open_) {
+    return Status::IllegalState("Read mode must be set before Open()");
+  }
+  if (!tight_enum_test<ReadMode>(read_mode)) {
+    return Status::InvalidArgument("Bad read mode");
+  }
+  read_mode_ = read_mode;
+  return Status::OK();
+}
+
+Status KuduScanner::SetSnapshot(uint64_t snapshot_timestamp_micros) {
+  if (open_) {
+    return Status::IllegalState("Snapshot timestamp must be set before Open()");
+  }
+  // Shift the HT timestamp bits to get well-formed HT timestamp with the logical
+  // bits zeroed out.
+  snapshot_timestamp_ = snapshot_timestamp_micros << kHtTimestampBitsToShift;
+  return Status::OK();
+}
+
 Status KuduScanner::SetSelection(KuduClient::ReplicaSelection selection) {
+  if (open_) {
+    return Status::IllegalState("Replica selection must be set before Open()");
+  }
   selection_ = selection;
   return Status::OK();
 }
 
 Status KuduScanner::AddConjunctPredicate(const ColumnRangePredicate& pred) {
-  CHECK(!open_) << "Scanner already open";
+  if (open_) {
+    return Status::IllegalState("Predicate must be set before Open()");
+  }
   spec_.AddPredicate(pred);
   return Status::OK();
 }
@@ -852,6 +890,20 @@ Status KuduScanner::OpenTablet(const Slice& key) {
   PrepareRequest(KuduScanner::NEW);
   next_req_.clear_scanner_id();
   NewScanRequestPB* scan = next_req_.mutable_new_scan_request();
+  switch (read_mode_) {
+    case READ_LATEST: scan->set_read_mode(kudu::READ_LATEST); break;
+    case READ_AT_SNAPSHOT: scan->set_read_mode(kudu::READ_AT_SNAPSHOT); break;
+    default: LOG(FATAL) << "Unexpected read mode.";
+  }
+
+  if (snapshot_timestamp_ != kNoTimestamp) {
+    if (PREDICT_FALSE(read_mode_ != READ_AT_SNAPSHOT)) {
+      LOG(WARNING) << "Scan snapshot timestamp set but read mode was READ_LATEST."
+          " Ignoring timestamp.";
+    } else {
+      scan->set_snap_timestamp(snapshot_timestamp_);
+    }
+  }
 
   // Set up the predicates.
   scan->clear_range_predicates();
