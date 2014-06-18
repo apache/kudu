@@ -631,11 +631,13 @@ void TabletServiceImpl::HandleNewScanRequest(const ScanRequestPB* req,
       s = Status::IllegalState("Unsupported read mode");
     }
   }
-  TRACE("Iterator initialized");
+  TRACE("Iterator created");
 
   if (PREDICT_TRUE(s.ok())) {
     s = iter->Init(spec.get());
   }
+
+  TRACE("Iterator init: $0", s.ToString());
 
   if (PREDICT_FALSE(s.IsInvalidArgument())) {
     // An invalid projection returns InvalidArgument above.
@@ -651,6 +653,7 @@ void TabletServiceImpl::HandleNewScanRequest(const ScanRequestPB* req,
   }
 
   bool has_more = iter->HasNext();
+  TRACE("has_more: $0", has_more);
   resp->set_has_more_results(has_more);
   if (!has_more) {
     // If there are no more rows, there is no need to assign a scanner ID.
@@ -684,6 +687,7 @@ void TabletServiceImpl::HandleNewScanRequest(const ScanRequestPB* req,
   size_t batch_size_bytes = GetBatchSizeBytes(req);
 
   if (batch_size_bytes > 0) {
+    TRACE("Continuing scan request");
     // TODO: instead of copying the pb, instead split HandleContinueScanRequest
     // and call the second half directly
     ScanRequestPB continue_req(*req);
