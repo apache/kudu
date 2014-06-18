@@ -243,6 +243,10 @@ void TabletServerPathHandlers::HandleTabletPage(const Webserver::ArgumentMap &ar
   *output << "<h2>Schema</h2>\n";
   shared_ptr<Schema> schema(peer->tablet()->schema());
   HtmlOutputSchemaTable(*schema.get(), output);
+
+  // Output svg of current DiskRowSet layout over keyspace.
+  *output << "<h3>Horizontal Partitions</h3>\n";
+  peer->tablet()->PrintRSLayout(output);
 }
 
 void TabletServerPathHandlers::HandleScansPage(const Webserver::ArgumentMap &args,

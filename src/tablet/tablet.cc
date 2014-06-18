@@ -6,7 +6,9 @@
 #include <boost/thread/mutex.hpp>
 #include <iterator>
 #include <limits>
+#include <ostream>
 #include <tr1/memory>
+#include <tr1/unordered_set>
 #include <vector>
 
 #include "cfile/cfile.h"
@@ -24,12 +26,14 @@
 #include "gutil/strings/substitute.h"
 #include "gutil/strings/util.h"
 #include "tablet/compaction.h"
+#include "tablet/compaction_rowset_data.h"
 #include "tablet/compaction_policy.h"
 #include "tablet/delta_compaction.h"
 #include "tablet/diskrowset.h"
 #include "tablet/tablet.h"
 #include "tablet/tablet_metrics.h"
 #include "tablet/rowset_tree.h"
+#include "tablet/svg_dump.h"
 #include "tablet/transactions/alter_schema_transaction.h"
 #include "tablet/transactions/write_transaction.h"
 #include "tablet/transactions/write_util.h"
@@ -68,6 +72,7 @@ using std::string;
 using std::set;
 using std::vector;
 using std::tr1::shared_ptr;
+using std::tr1::unordered_set;
 using strings::Substitute;
 using base::subtle::Barrier_AtomicIncrement;
 
@@ -1407,6 +1412,20 @@ size_t Tablet::num_rowsets() const {
   return rowsets_->all_rowsets().size();
 }
 
+void Tablet::PrintRSLayout(ostream* o, bool header) {
+  shared_ptr<RowSetTree> rowsets_copy;
+  {
+    boost::shared_lock<rw_semaphore> lock(component_lock_);
+    rowsets_copy = rowsets_;
+  }
+  // Simulate doing a compaction with no candidates chosen to simply display
+  // the current layout
+  vector<compaction_policy::CompactionCandidate> all;
+  compaction_policy::CompactionCandidate::CollectCandidates(*rowsets_copy, &all);
+  unordered_set<RowSet*> picked;
+  compaction_policy::DumpCompactionSVG(all, picked, o, header);
+}
+
 Tablet::Iterator::Iterator(const Tablet *tablet,
                            const Schema &projection,
                            const MvccSnapshot &snap)
@@ -1471,7 +1490,6 @@ string Tablet::Iterator::ToString() const {
 void Tablet::Iterator::GetIteratorStats(vector<IteratorStats>* stats) const {
   iter_->GetIteratorStats(stats);
 }
-
 
 } // namespace tablet
 } // namespace kudu

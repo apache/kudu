@@ -2,6 +2,7 @@
 #ifndef KUDU_TABLET_TABLET_H
 #define KUDU_TABLET_TABLET_H
 
+#include <iosfwd>
 #include <string>
 #include <vector>
 
@@ -172,6 +173,10 @@ class Tablet {
   // The component lock acquired in exclusive mode by CreatePreparedAlterSchema()
   // will be released when the schema is replaced in every RowSet.
   Status AlterSchema(AlterSchemaTransactionState* tx_state);
+
+  // Prints current RowSet layout, taking a snapshot of the current RowSet interval
+  // tree. Optionally prints XML header
+  void PrintRSLayout(std::ostream* o, bool header = false);
 
   // Flags to change the behavior of compaction.
   enum CompactFlag {

@@ -1,6 +1,6 @@
 // Copyright (c) 2014, Cloudera, inc.
 
-#include "tablet/compaction_svg_dump.h"
+#include "tablet/svg_dump.h"
 
 #include <glog/logging.h>
 #include <time.h>
@@ -11,9 +11,11 @@
 #include <tr1/unordered_set>
 #include <vector>
 
+#include "gutil/gscoped_ptr.h"
 #include "gutil/strings/util.h"
 #include "tablet/compaction_rowset_data.h"
 
+using std::ostream;
 using std::tr1::unordered_set;
 using std::vector;
 
@@ -41,7 +43,7 @@ namespace {
 // distributes 'rowsets' into separate vectors in 'rows' such that
 // within any given row, none of the rowsets overlap in keyspace.
 void OrganizeSVGRows(const vector<CompactionCandidate>& candidates,
-                            vector<vector<const CompactionCandidate*> >* rows) {
+                     vector<vector<const CompactionCandidate*> >* rows) {
   rows->push_back(vector<const CompactionCandidate *>());
 
   BOOST_FOREACH(const CompactionCandidate &candidate, candidates) {
@@ -74,20 +76,13 @@ void OrganizeSVGRows(const vector<CompactionCandidate>& candidates,
   }
 }
 
-} // anonymous namespace
-
-void DumpCompactionSVG(const vector<CompactionCandidate>& candidates,
-                              const unordered_set<RowSet*>& picked) {
-  const string &pattern = FLAGS_compaction_policy_dump_svgs_pattern;
-  if (pattern.empty()) return;
-  const string path = StringReplace(pattern, "TIME", StringPrintf("%ld", time(NULL)), true);
-
+void DumpSVG(const vector<CompactionCandidate>& candidates,
+             const unordered_set<RowSet*>& picked,
+             ostream* outptr) {
+  CHECK(outptr) << "Dump SVG expects an ostream";
+  CHECK(outptr->good()) << "Dump SVG expects a good ostream";
   using std::endl;
-  std::ofstream out(path.c_str());
-  if (!out.is_open()) {
-    LOG(WARNING) << "Could not dump compaction output to " << path << ": file open failed";
-    return;
-  }
+  ostream& out = *outptr;
 
   vector<vector<const CompactionCandidate*> > svg_rows;
   OrganizeSVGRows(candidates, &svg_rows);
@@ -99,10 +94,8 @@ void DumpCompactionSVG(const vector<CompactionCandidate>& candidates,
   const double kHeaderHeight = 60;
   const double kTotalHeight = kRowHeight * svg_rows.size() + kHeaderHeight;
 
-  out << "<?xml version=\"1.0\" standalone=\"no\"?>" << endl;
-  out << "<!DOCTYPE svg PUBLIC \"-//W3C//DTD SVG 1.1//EN\" "
-         "\"http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd\">" << endl;
-  out << "<svg version=\"1.1\" width=\"" << kTotalWidth << "\" height=\"" << kTotalHeight << "\""
+  out << "<svg version=\"1.1\" width=\"" << kTotalWidth << "\" height=\""
+      << kTotalHeight << "\""
       << " viewBox=\"0 0 " << kTotalWidth << " " << kTotalHeight << "\""
       << " xmlns=\"http://www.w3.org/2000/svg\" >" << endl;
 
@@ -134,6 +127,58 @@ void DumpCompactionSVG(const vector<CompactionCandidate>& candidates,
   }
 
   out << "</svg>" << endl;
+}
+
+void PrintXMLHeader(ostream* o) {
+  CHECK(o) << "XML header printer expects an ostream";
+  CHECK(o->good()) << "XML header printer expects a good ostream";
+  *o << "<?xml version=\"1.0\" standalone=\"no\"?>" << std::endl;
+  *o << "<!DOCTYPE svg PUBLIC \"-//W3C//DTD SVG 1.1//EN\" "
+     << "\"http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd\">" << std::endl;
+}
+
+// Prepares ofstream to default dump location.
+// In case any of the preparation fails or default pattern is empty,
+// NULL is returned.
+gscoped_ptr<ostream> PrepareOstream() {
+  using std::ofstream;
+  gscoped_ptr<ofstream> out;
+  // Get default file name
+  const string &pattern = FLAGS_compaction_policy_dump_svgs_pattern;
+  if (pattern.empty()) return gscoped_ptr<ostream>();
+  const string path = StringReplace(pattern, "TIME", StringPrintf("%ld", time(NULL)), true);
+
+  // Open
+  out.reset(new ofstream(path.c_str()));
+  if (!out->is_open()) {
+    LOG(WARNING) << "Could not dump compaction output to " << path << ": file open failed";
+    return gscoped_ptr<ostream>();
+  }
+
+  return out.PassAs<ostream>();
+}
+
+} // anonymous namespace
+
+void DumpCompactionSVG(const vector<CompactionCandidate>& candidates,
+                       const unordered_set<RowSet*>& picked,
+                       ostream* out,
+                       bool print_xml) {
+  // Get the desired pointer to the ostream
+  gscoped_ptr<ostream> dfl;
+  if (!out) {
+    dfl = PrepareOstream();
+    out = dfl.get();
+    if (!out) return;
+  }
+
+  // Print out with the correct ostream
+  LOG(INFO) << "Dumping SVG of DiskRowSetLayout with"
+            << (print_xml ? "" : "out") << " XML header";
+  if (print_xml) {
+    PrintXMLHeader(out);
+  }
+  DumpSVG(candidates, picked, out);
 }
 
 } // namespace compaction_policy

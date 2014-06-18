@@ -16,7 +16,6 @@ set(TABLET_SRCS
   compaction.cc
   compaction_policy.cc
   compaction_rowset_data.cc
-  compaction_svg_dump.cc
   diskrowset.cc
   lock_manager.cc
   memrowset.cc
@@ -25,6 +24,7 @@ set(TABLET_SRCS
   mvcc.cc
   rowset.cc
   rowset_tree.cc
+  svg_dump.cc
   delta_stats.cc deltamemstore.cc deltafile.cc delta_tracker.cc
   delta_compaction.cc
 )

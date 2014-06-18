@@ -11,14 +11,14 @@
 
 #include "gutil/map-util.h"
 #include "tablet/compaction_rowset_data.h"
-#include "tablet/compaction_svg_dump.h"
 #include "tablet/rowset.h"
 #include "tablet/rowset_tree.h"
+#include "tablet/svg_dump.h"
 #include "util/knapsack_solver.h"
 #include "util/slice.h"
 #include "util/status.h"
 
-using std::vector; // svg cpy
+using std::vector;
 
 DEFINE_int32(budgeted_compaction_target_rowset_size, 32*1024*1024,
              "The target size for DiskRowSets during flush/compact when the "
