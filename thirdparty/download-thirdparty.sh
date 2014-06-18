@@ -124,5 +124,9 @@ if [ ! -d $CRCUTIL_DIR ]; then
   fetch_and_expand crcutil-${CRCUTIL_VERSION}.tar.gz
 fi
 
+if [ ! -d $LIBUNWIND_DIR ]; then
+  fetch_and_expand libunwind-${LIBUNWIND_VERSION}.tar.gz
+fi
+
 echo "---------------"
 echo "Thirdparty dependencies downloaded successfully"

@@ -363,6 +363,14 @@ ADD_THIRDPARTY_LIB(glog
   SHARED_LIB "${GLOG_LIBS}/libglog.so")
 set(KUDU_BASE_LIBS ${KUDU_BASE_LIBS} glog)
 
+## libunwind (dependent of glog)
+find_package(LibUnwind REQUIRED)
+include_directories(SYSTEM ${UNWIND_INCLUDE_DIR})
+ADD_THIRDPARTY_LIB(unwind
+  STATIC_LIB "${UNWIND_STATIC_LIB}"
+  SHARED_LIB "${UNWIND_SHARED_LIB}")
+set(KUDU_BASE_LIBS ${KUDU_BASE_LIBS} unwind)
+
 ## GFlags
 find_package(GFlags REQUIRED)
 include_directories(SYSTEM ${GFLAGS_INCLUDE_DIR})

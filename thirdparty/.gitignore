@@ -6,6 +6,7 @@ glog-*
 gperftools-*
 gtest-*
 libev-*
+libunwind-*
 protobuf-*
 snappy-*
 zlib-*

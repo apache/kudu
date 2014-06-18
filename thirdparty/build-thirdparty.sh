@@ -31,6 +31,7 @@ else
       "gcovr")      F_GCOVR=1 ;;
       "curl")       F_CURL=1 ;;
       "crcutil")    F_CRCUTIL=1 ;;
+      "libunwind")  F_LIBUNWIND=1 ;;
       *)            echo "Unknown module: $arg"; exit 1 ;;
     esac
   done
@@ -74,10 +75,20 @@ if [ -n "$F_ALL" -o -n "$F_GFLAGS" ]; then
   make -j$PARALLEL install
 fi
 
+# build libunwind (glog consumes it)
+if [ -n "$F_ALL" -o -n "$F_LIBUNWIND" ]; then
+  cd $LIBUNWIND_DIR
+  ./configure --with-pic --prefix=$PREFIX
+  make -j$PARALLEL install
+fi
+
 # build glog
 if [ -n "$F_ALL" -o -n "$F_GLOG" ]; then
   cd $GLOG_DIR
-  ./configure --with-pic --prefix=$PREFIX --with-gflags=$PREFIX
+  # Help glog find libunwind.
+  CPPFLAGS=-I$PREFIX/include \
+    LDFLAGS=-L$PREFIX/lib \
+    ./configure --with-pic --prefix=$PREFIX --with-gflags=$PREFIX
   make -j$PARALLEL install
 fi
 
