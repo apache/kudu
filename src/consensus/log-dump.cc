@@ -75,10 +75,14 @@ void PrintIdOnly(const LogEntryPB& entry) {
 
 void PrintDecodedWriteRequestPB(const string& indent,
                                 const WriteRequestPB& write) {
-  Schema s;
-  CHECK_OK(SchemaFromPB(write.schema(), &s));
+  Schema decoded_schema;
+  CHECK_OK(SchemaFromPB(write.schema(), &decoded_schema));
+
+  // We need to assign dummy ids as the decoder expects them.
+  Schema schema_with_ids = SchemaBuilder(decoded_schema).Build();
+
   Arena arena(32 * 1024, 1024 * 1024);
-  RowOperationsPBDecoder dec(&write.row_operations(), &s, &s, &arena);
+  RowOperationsPBDecoder dec(&write.row_operations(), &decoded_schema, &schema_with_ids, &arena);
   vector<DecodedRowOperation> ops;
   CHECK_OK(dec.DecodeOperations(&ops));
 
@@ -91,7 +95,7 @@ void PrintDecodedWriteRequestPB(const string& indent,
 
   int i = 0;
   BOOST_FOREACH(const DecodedRowOperation& op, ops) {
-    cout << indent << "op " << (i++) << ": " << op.ToString(s) << endl;
+    cout << indent << "op " << (i++) << ": " << op.ToString(decoded_schema) << endl;
   }
 }
 
