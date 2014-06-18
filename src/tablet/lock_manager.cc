@@ -334,8 +334,9 @@ LockManager::LockStatus LockManager::Lock(const Slice& key,
     // time.
     int waited_seconds = 0;
     while (!(*entry)->sem.TimedAcquire(MonoDelta::FromSeconds(1))) {
+      const TransactionState* cur_holder = ANNOTATE_UNPROTECTED_READ((*entry)->holder_);
       LOG(WARNING) << "Waited " << (++waited_seconds) << " seconds to obtain row lock on key "
-                   << key.ToDebugString();
+                   << key.ToDebugString() << " cur holder: " << cur_holder;
       // TODO: add RPC trace annotation here. Above warning should also include an RPC
       // trace ID.
       // TODO: would be nice to also include some info about the blocking transaction,
