@@ -266,7 +266,7 @@ string TabletServerPathHandlers::ScannerToHtml(const Scanner& scanner) const {
   uint64_t time_in_flight_us =
       MonoTime::Now(MonoTime::COARSE).GetDeltaSince(scanner.start_time()).ToMicroseconds();
   uint64_t time_since_last_access_us =
-      MonoTime::Now(MonoTime::COARSE).GetDeltaSince(scanner.last_access_time()).ToMicroseconds();
+      scanner.TimeSinceLastAccess(MonoTime::Now(MonoTime::COARSE)).ToMicroseconds();
 
   vector<IteratorStats> stats;
   scanner.GetIteratorStats(&stats);

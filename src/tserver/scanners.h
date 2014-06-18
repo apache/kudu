@@ -151,8 +151,11 @@ class Scanner {
 
   const std::string& requestor_string() const { return requestor_string_; }
 
-  // Return the last time this scan was updated.
-  const MonoTime& last_access_time() const { return last_access_time_; }
+  // Return the delta from the last time this scan was updated to 'now'.
+  MonoDelta TimeSinceLastAccess(const MonoTime& now) const {
+    boost::lock_guard<simple_spinlock> l(lock_);
+    return now.GetDeltaSince(last_access_time_);
+  }
 
   // Returns the time this scan was started.
   const MonoTime& start_time() const { return start_time_; }
@@ -193,6 +196,9 @@ class Scanner {
 
   // The last time that the scanner was accessed.
   MonoTime last_access_time_;
+
+  // Protects last_access_time_.
+  mutable simple_spinlock lock_;
 
   // The time the scanner was started.
   const MonoTime start_time_;

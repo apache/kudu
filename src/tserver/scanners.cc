@@ -121,7 +121,7 @@ void ScannerManager::RemoveExpiredScanners() {
        it != scanners_by_id_.end(); ) {
     SharedScanner& scanner = it->second;
     MonoDelta time_live =
-        MonoTime::Now(MonoTime::COARSE).GetDeltaSince(scanner->last_access_time());
+        scanner->TimeSinceLastAccess(MonoTime::Now(MonoTime::COARSE));
     if (time_live.MoreThan(scanner_ttl_)) {
       // TODO: once we have a metric for the number of scanners expired, make this a
       // VLOG(1).
@@ -154,6 +154,7 @@ Scanner::~Scanner() {
 }
 
 void Scanner::UpdateAccessTime() {
+  boost::lock_guard<simple_spinlock> l(lock_);
   last_access_time_ = MonoTime::Now(MonoTime::COARSE);
 }
 
