@@ -21,17 +21,20 @@
 namespace kudu { namespace tablet {
 
 MvccManager::MvccManager(const scoped_refptr<server::Clock>& clock)
-    : clock_(clock) {
+  : earliest_in_flight_(Timestamp::kMax),
+    clock_(clock) {
   cur_snap_.all_committed_before_ = Timestamp::kInitialTimestamp;
+  cur_snap_.none_committed_at_or_after_ = Timestamp::kInitialTimestamp;
 }
 
 Timestamp MvccManager::StartTransaction() {
-  boost::lock_guard<LockType> l(lock_);
-  Timestamp now = clock_->Now();
-  while (PREDICT_FALSE(!InitTransactionUnlocked(now))) {
-    now = clock_->Now();
+  while (true) {
+    Timestamp now = clock_->Now();
+    boost::lock_guard<LockType> l(lock_);
+    if (PREDICT_TRUE(InitTransactionUnlocked(now))) {
+      return now;
+    }
   }
-  return now;
 }
 
 Timestamp MvccManager::StartTransactionAtLatest() {
@@ -69,6 +72,12 @@ Status MvccManager::StartTransactionAtTimestamp(Timestamp timestamp) {
 }
 
 bool MvccManager::InitTransactionUnlocked(const Timestamp& timestamp) {
+  // Ensure that we didn't mark the given timestamp as "safe" in between
+  // acquiring the time and taking the lock. This allows us to acquire timestamps
+  // outside of the MVCC lock.
+  if (PREDICT_FALSE(cur_snap_.all_committed_before_.CompareTo(timestamp) > 0)) {
+    return false;
+  }
   // Since transactions only commit once they are in the past, and new
   // transactions always start either in the current time or the future,
   // we should never be trying to start a new transaction at the same time
@@ -78,21 +87,23 @@ bool MvccManager::InitTransactionUnlocked(const Timestamp& timestamp) {
     << timestamp.ToString()
     << " cur_snap_: " << cur_snap_.ToString();
 
+  if (timestamp.CompareTo(earliest_in_flight_) < 0) {
+    earliest_in_flight_ = timestamp;
+  }
+
   return timestamps_in_flight_.insert(timestamp.value()).second;
 }
 
 void MvccManager::CommitTransaction(Timestamp timestamp) {
   boost::lock_guard<LockType> l(lock_);
-  DCHECK(clock_->IsAfter(timestamp))
-    << "Trying to commit a transaction with a future timestamp: "
-    << timestamp.ToString();
+  bool was_earliest = false;
+  CommitTransactionUnlocked(timestamp, &was_earliest);
 
-  CommitTransactionUnlocked(timestamp);
-
-  // This is an 'online' commit so adjust the 'all_committed_before_' watermark
-  // up to clock_->Now().
-  Timestamp now = clock_->Now();
-  AdjustCurSnap(now);
+  if (was_earliest) {
+    // This is an 'online' commit so adjust the 'all_committed_before_' watermark
+    // up to clock_->Now().
+    AdjustSafeTime(clock_->Now());
+  }
 }
 
 void MvccManager::OfflineCommitTransaction(Timestamp timestamp) {
@@ -100,50 +111,61 @@ void MvccManager::OfflineCommitTransaction(Timestamp timestamp) {
 
   // Commit the transaction, but do not adjust 'all_committed_before_', that will
   // be done with a separate OfflineAdjustCurSnap() call.
-  CommitTransactionUnlocked(timestamp);
+  bool was_earliest = false;
+  CommitTransactionUnlocked(timestamp, &was_earliest);
 }
 
-void MvccManager::CommitTransactionUnlocked(Timestamp timestamp) {
+void MvccManager::CommitTransactionUnlocked(Timestamp timestamp,
+                                            bool* was_earliest_in_flight) {
   DCHECK(clock_->IsAfter(timestamp))
     << "Trying to commit a transaction with a future timestamp: "
     << timestamp.ToString();
+
+  *was_earliest_in_flight = earliest_in_flight_ == timestamp;
 
   // Remove from our in-flight list.
   CHECK_EQ(timestamps_in_flight_.erase(timestamp.value()), 1)
     << "Trying to commit timestamp which isn't in the in-flight set: "
     << timestamp.ToString();
 
-  // Add the timestamp to the committed timestamps
-  InsertOrDie(&cur_snap_.committed_timestamps_, timestamp.value());
+  // Add to snapshot's committed list
+  cur_snap_.committed_timestamps_.push_back(timestamp.value());
 
-  // Check if someone is waiting for transactions to be committed.
-  if (PREDICT_FALSE(!waiters_.empty())) {
-    vector<WaitingState*>::iterator iter = waiters_.begin();
-    while (iter != waiters_.end()) {
-      WaitingState* waiter = *iter;
-      if (AreAllTransactionsCommittedUnlocked(waiter->timestamp)) {
-        iter = waiters_.erase(iter);
-        waiter->latch->CountDown();
-        continue;
-      }
-      iter++;
+  // If this is a new upper bound commit mark, update it.
+  if (cur_snap_.none_committed_at_or_after_.CompareTo(timestamp) <= 0) {
+    cur_snap_.none_committed_at_or_after_ = Timestamp(timestamp.value() + 1);
+  }
+
+  // If we're committing the earliest transaction that was in flight,
+  // update our cached value.
+  if (*was_earliest_in_flight) {
+    if (timestamps_in_flight_.empty()) {
+      earliest_in_flight_ = Timestamp::kMax;
+    } else {
+      earliest_in_flight_ = Timestamp(*std::min_element(timestamps_in_flight_.begin(),
+                                                        timestamps_in_flight_.end()));
     }
   }
 }
 
 void MvccManager::OfflineAdjustCurSnap(Timestamp now) {
   boost::lock_guard<LockType> l(lock_);
-  AdjustCurSnap(now);
+  AdjustSafeTime(now);
 }
 
-void MvccManager::AdjustCurSnap(Timestamp now) {
-  Timestamp earliest_in_flight;
-  if (!timestamps_in_flight_.empty()) {
-    earliest_in_flight = Timestamp(*std::min_element(timestamps_in_flight_.begin(),
-                                                     timestamps_in_flight_.end()));
-  } else {
-    earliest_in_flight = Timestamp::kMax;
+// Remove any elements from 'v' which are < the given watermark.
+static void FilterTimestamps(std::vector<Timestamp::val_type>* v,
+                             Timestamp::val_type watermark) {
+  int j = 0;
+  for (int i = 0; i < v->size(); i++) {
+    if ((*v)[i] >= watermark) {
+      (*v)[j++] = (*v)[i];
+    }
   }
+  v->resize(j);
+}
+
+void MvccManager::AdjustSafeTime(Timestamp now) {
 
   // There are two possibilities:
   //
@@ -159,22 +181,29 @@ void MvccManager::AdjustCurSnap(Timestamp now) {
   // In either case, we have to add the newly committed ts only if it remains higher
   // than the new watermark.
 
-  if (earliest_in_flight.CompareTo(now) < 0) {
-    cur_snap_.all_committed_before_ = earliest_in_flight;
+  if (earliest_in_flight_.CompareTo(now) < 0) {
+    cur_snap_.all_committed_before_ = earliest_in_flight_;
   } else {
     cur_snap_.all_committed_before_ = now;
   }
 
-  // Trim any transactions from the snapshot list which fall below the new watermark.
-  unordered_set<Timestamp::val_type>::iterator it = cur_snap_.committed_timestamps_.begin();
-  while (it != cur_snap_.committed_timestamps_.end()) {
-    if (Timestamp(*it).CompareTo(cur_snap_.all_committed_before_) < 0) {
-      it = cur_snap_.committed_timestamps_.erase(it);
-    } else {
-      ++it;
+  // Filter out any committed timestamps that now fall below the watermark
+  FilterTimestamps(&cur_snap_.committed_timestamps_, cur_snap_.all_committed_before_.value());
+
+  // it may also have unblocked some waiters.
+  // Check if someone is waiting for transactions to be committed.
+  if (PREDICT_FALSE(!waiters_.empty())) {
+    vector<WaitingState*>::iterator iter = waiters_.begin();
+    while (iter != waiters_.end()) {
+      WaitingState* waiter = *iter;
+      if (AreAllTransactionsCommittedUnlocked(waiter->timestamp)) {
+        iter = waiters_.erase(iter);
+        waiter->latch->CountDown();
+        continue;
+      }
+      iter++;
     }
   }
-
 }
 
 void MvccManager::WaitUntilAllCommitted(Timestamp ts) const {
@@ -242,7 +271,8 @@ MvccManager::~MvccManager() {
 ////////////////////////////////////////////////////////////
 
 MvccSnapshot::MvccSnapshot()
-  : all_committed_before_(Timestamp::kInitialTimestamp) {
+  : all_committed_before_(Timestamp::kInitialTimestamp),
+    none_committed_at_or_after_(Timestamp::kInitialTimestamp) {
 }
 
 MvccSnapshot::MvccSnapshot(const MvccManager &manager) {
@@ -250,7 +280,8 @@ MvccSnapshot::MvccSnapshot(const MvccManager &manager) {
 }
 
 MvccSnapshot::MvccSnapshot(const Timestamp& timestamp)
-  : all_committed_before_(timestamp) {
+  : all_committed_before_(timestamp),
+    none_committed_at_or_after_(timestamp) {
  }
 
 MvccSnapshot MvccSnapshot::CreateSnapshotIncludingAllTransactions() {
@@ -265,27 +296,19 @@ bool MvccSnapshot::IsCommitted(const Timestamp& timestamp) const {
   if (PREDICT_TRUE(timestamp.CompareTo(all_committed_before_) < 0)) {
     return true;
   }
+  if (PREDICT_TRUE(timestamp.CompareTo(none_committed_at_or_after_) >= 0)) {
+    return false;
+  }
 
-  if (committed_timestamps_.count(timestamp.value())) {
-    return true;
+  BOOST_FOREACH(const Timestamp::val_type& v, committed_timestamps_) {
+    if (v == timestamp.value()) return true;
   }
 
   return false;
 }
 
 bool MvccSnapshot::MayHaveCommittedTransactionsAtOrAfter(const Timestamp& timestamp) const {
-  if (committed_timestamps_.empty()) {
-    // We have a "clean" snapshot - if our query comes before the cutover point
-    // into uncommitted territory, then we'll include at least one of the
-    // committed transactions.
-    return timestamp.CompareTo(all_committed_before_) < 0;
-  }
-
-  // If we have some set of committed transactions, then we see if the query point
-  // is <= than the highest of them
-  Timestamp max(*std::max_element(committed_timestamps_.begin(),
-                                  committed_timestamps_.end()));
-  return timestamp.CompareTo(max) <= 0;
+  return timestamp.CompareTo(none_committed_at_or_after_) < 0;
 }
 
 bool MvccSnapshot::MayHaveUncommittedTransactionsAtOrBefore(const Timestamp& timestamp) const {

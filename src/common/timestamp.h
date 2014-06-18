@@ -68,6 +68,15 @@ inline std::ostream &operator <<(std::ostream &o, const Timestamp &timestamp) {
   return o << timestamp.ToString();
 }
 
+inline int Timestamp::CompareTo(const Timestamp &other) const {
+  if (v < other.v) {
+    return -1;
+  } else if (v > other.v) {
+    return 1;
+  }
+  return 0;
+}
+
 } // namespace kudu
 
 #endif /* KUDU_COMMON_TIMESTAMP_H_ */

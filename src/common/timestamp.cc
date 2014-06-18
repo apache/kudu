@@ -24,15 +24,6 @@ void Timestamp::EncodeTo(faststring *dst) const {
   PutMemcmpableVarint64(dst, v);
 }
 
-int Timestamp::CompareTo(const Timestamp &other) const {
-  if (v < other.v) {
-    return -1;
-  } else if (v > other.v) {
-    return 1;
-  }
-  return 0;
-}
-
 string Timestamp::ToString() const {
   return strings::Substitute("$0", v);
 }
@@ -47,5 +38,3 @@ Status Timestamp::FromUint64(uint64_t value) {
 }
 
 }  // namespace kudu
-
-

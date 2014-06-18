@@ -96,17 +96,16 @@ TEST_F(MvccTest, TestMvccMultipleInFlight) {
   // Commit timestamp 2
   mgr.CommitTransaction(t2);
 
-  // State should show 1 as committed, 0 as uncommitted.
+  // State should show 2 as committed, 1 as uncommitted.
   mgr.TakeSnapshot(&snap);
   ASSERT_EQ("MvccSnapshot[committed="
             "{T|T < 1 or (T in {2})}]", snap.ToString());
   ASSERT_FALSE(snap.IsCommitted(t1));
   ASSERT_TRUE(snap.IsCommitted(t2));
 
-  // Start another transaction. This gets timestamp 4
-  // (the earlier Commit() incremented the clock once)
-  Timestamp t4 = mgr.StartTransaction();
-  ASSERT_EQ(4, t4.value());
+  // Start another transaction. This gets timestamp 3
+  Timestamp t3 = mgr.StartTransaction();
+  ASSERT_EQ(3, t3.value());
 
   // State should show 2 as committed, 1 and 4 as uncommitted.
   mgr.TakeSnapshot(&snap);
@@ -114,28 +113,28 @@ TEST_F(MvccTest, TestMvccMultipleInFlight) {
             "{T|T < 1 or (T in {2})}]", snap.ToString());
   ASSERT_FALSE(snap.IsCommitted(t1));
   ASSERT_TRUE(snap.IsCommitted(t2));
-  ASSERT_FALSE(snap.IsCommitted(t4));
+  ASSERT_FALSE(snap.IsCommitted(t3));
 
   // Commit 3
-  mgr.CommitTransaction(t4);
+  mgr.CommitTransaction(t3);
 
   // 2 and 3 committed
   mgr.TakeSnapshot(&snap);
   ASSERT_EQ("MvccSnapshot[committed="
-            "{T|T < 1 or (T in {2,4})}]", snap.ToString());
+            "{T|T < 1 or (T in {2,3})}]", snap.ToString());
   ASSERT_FALSE(snap.IsCommitted(t1));
   ASSERT_TRUE(snap.IsCommitted(t2));
-  ASSERT_TRUE(snap.IsCommitted(t4));
+  ASSERT_TRUE(snap.IsCommitted(t3));
 
   // Commit 1
   mgr.CommitTransaction(t1);
 
   // all committed
   mgr.TakeSnapshot(&snap);
-  ASSERT_EQ("MvccSnapshot[committed={T|T < 6}]", snap.ToString());
+  ASSERT_EQ("MvccSnapshot[committed={T|T < 4}]", snap.ToString());
   ASSERT_TRUE(snap.IsCommitted(t1));
   ASSERT_TRUE(snap.IsCommitted(t2));
-  ASSERT_TRUE(snap.IsCommitted(t4));
+  ASSERT_TRUE(snap.IsCommitted(t3));
 }
 
 TEST_F(MvccTest, TestOutOfOrderTxns) {
@@ -250,8 +249,9 @@ TEST_F(MvccTest, TestPointInTimeSnapshot) {
 TEST_F(MvccTest, TestMayHaveCommittedTransactionsAtOrAfter) {
   MvccSnapshot snap;
   snap.all_committed_before_ = Timestamp(10);
-  snap.committed_timestamps_.insert(11);
-  snap.committed_timestamps_.insert(13);
+  snap.committed_timestamps_.push_back(11);
+  snap.committed_timestamps_.push_back(13);
+  snap.none_committed_at_or_after_ = Timestamp(14);
 
   ASSERT_TRUE(snap.MayHaveCommittedTransactionsAtOrAfter(Timestamp(9)));
   ASSERT_TRUE(snap.MayHaveCommittedTransactionsAtOrAfter(Timestamp(10)));
@@ -269,13 +269,19 @@ TEST_F(MvccTest, TestMayHaveCommittedTransactionsAtOrAfter) {
   MvccSnapshot none_committed = MvccSnapshot::CreateSnapshotIncludingNoTransactions();
   ASSERT_FALSE(none_committed.MayHaveCommittedTransactionsAtOrAfter(Timestamp(1)));
   ASSERT_FALSE(none_committed.MayHaveCommittedTransactionsAtOrAfter(Timestamp(12345)));
+
+  // Test for a "clean" snapshot
+  MvccSnapshot clean_snap(Timestamp(10));
+  ASSERT_TRUE(clean_snap.MayHaveCommittedTransactionsAtOrAfter(Timestamp(9)));
+  ASSERT_FALSE(clean_snap.MayHaveCommittedTransactionsAtOrAfter(Timestamp(10)));
 }
 
 TEST_F(MvccTest, TestMayHaveUncommittedTransactionsBefore) {
   MvccSnapshot snap;
   snap.all_committed_before_ = Timestamp(10);
-  snap.committed_timestamps_.insert(11);
-  snap.committed_timestamps_.insert(13);
+  snap.committed_timestamps_.push_back(11);
+  snap.committed_timestamps_.push_back(13);
+  snap.none_committed_at_or_after_ = Timestamp(14);
 
   ASSERT_FALSE(snap.MayHaveUncommittedTransactionsAtOrBefore(Timestamp(9)));
   ASSERT_TRUE(snap.MayHaveUncommittedTransactionsAtOrBefore(Timestamp(10)));
@@ -293,6 +299,11 @@ TEST_F(MvccTest, TestMayHaveUncommittedTransactionsBefore) {
   MvccSnapshot none_committed = MvccSnapshot::CreateSnapshotIncludingNoTransactions();
   ASSERT_TRUE(none_committed.MayHaveUncommittedTransactionsAtOrBefore(Timestamp(1)));
   ASSERT_TRUE(none_committed.MayHaveUncommittedTransactionsAtOrBefore(Timestamp(12345)));
+
+  // Test for a "clean" snapshot
+  MvccSnapshot clean_snap(Timestamp(10));
+  ASSERT_FALSE(clean_snap.MayHaveUncommittedTransactionsAtOrBefore(Timestamp(9)));
+  ASSERT_TRUE(clean_snap.MayHaveUncommittedTransactionsAtOrBefore(Timestamp(10)));
 }
 
 TEST_F(MvccTest, TestAreAllTransactionsCommitted) {

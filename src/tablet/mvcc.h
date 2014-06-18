@@ -29,7 +29,10 @@ class MvccSnapshot {
   // Create a snapshot with the current state of the given manager
   explicit MvccSnapshot(const MvccManager &manager);
 
-  // Create a snapshot at a specific Timestamp
+  // Create a snapshot at a specific Timestamp.
+  //
+  // This snapshot considers all transactions with lower timestamps to
+  // be committed, and those with higher timestamps to be uncommitted.
   explicit MvccSnapshot(const Timestamp& timestamp);
 
   // Create a snapshot which considers all transactions as committed.
@@ -96,9 +99,20 @@ class MvccSnapshot {
   // For any timestamp X, if X < all_committed_timestamp_, then X is committed.
   Timestamp all_committed_before_;
 
+  // A transaction ID at or beyond which no transactions have been committed.
+  // For any timestamp X, if X >= none_committed_after_, then X is uncommitted.
+  // This is equivalent to max(committed_timestamps_) + 1, but since
+  // that vector is unsorted, we cache it.
+  Timestamp none_committed_at_or_after_;
+
   // The set of transactions higher than all_committed_before_timestamp_ which
   // are committed in this snapshot.
-  unordered_set<Timestamp::val_type> committed_timestamps_;
+  // It might seem like using an unordered_set<> or a set<> would be faster here,
+  // but in practice, this list tends to be stay pretty small, and is only
+  // rarely consulted (most data will be culled by 'all_committed_before_'
+  // or none_committed_at_or_after_. So, using the compact vector structure fits
+  // the whole thing on one or two cache lines, and it ends up going faster.
+  std::vector<Timestamp::val_type> committed_timestamps_;
 
 };
 
@@ -208,9 +222,12 @@ class MvccManager {
   // Waits until all transactions before the given time are committed.
   void WaitUntilAllCommitted(Timestamp ts) const;
 
-  void AdjustCurSnap(Timestamp now);
+  // Commits the given transaction.
+  // Sets *was_earliest to true if this was the earliest in-flight transaction.
+  void CommitTransactionUnlocked(Timestamp timestamp,
+                                 bool* was_earliest);
 
-  void CommitTransactionUnlocked(Timestamp timestamp);
+  void AdjustSafeTime(Timestamp now);
 
   typedef simple_spinlock LockType;
   mutable LockType lock_;
@@ -219,6 +236,11 @@ class MvccManager {
 
   // The set of timestamps corresponding to currently in-flight transactions.
   std::tr1::unordered_set<Timestamp::val_type> timestamps_in_flight_;
+
+  // The minimum timestamp in timestamps_in_flight_, or Timestamp::kMax
+  // if that set is empty. This is cached in order to avoid having to iterate
+  // over timestamps_in_flight_ on every commit.
+  Timestamp earliest_in_flight_;
 
   scoped_refptr<server::Clock> clock_;
   mutable std::vector<WaitingState*> waiters_;
