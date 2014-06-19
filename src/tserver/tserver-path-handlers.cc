@@ -56,6 +56,10 @@ Status TabletServerPathHandlers::Register(Webserver* server) {
     "/transactionz",
     boost::bind(&TabletServerPathHandlers::HandleTransactionsPage, this, _1, _2),
     true /* styled */, true /* is_on_nav_bar */);
+  server->RegisterPathHandler(
+    "/tablet-rowsetlayout-svg",
+    boost::bind(&TabletServerPathHandlers::HandleTabletSVGPage, this, _1, _2),
+    true /* styled */, false /* is_on_nav_bar */);
 
   return Status::OK();
 }
@@ -124,6 +128,14 @@ void TabletServerPathHandlers::HandleTransactionsPage(const Webserver::ArgumentM
   }
 }
 
+namespace {
+string TabletLink(const string& id) {
+  return Substitute("<a href=\"/tablet?id=$0\">$1</a>",
+                    UrlEncodeToString(id),
+                    EscapeForHtmlToString(id));
+}
+} // anonymous namespace
+
 void TabletServerPathHandlers::HandleTabletsPage(const Webserver::ArgumentMap &args,
                                                  std::stringstream *output) {
   vector<shared_ptr<TabletPeer> > peers;
@@ -142,9 +154,7 @@ void TabletServerPathHandlers::HandleTabletsPage(const Webserver::ArgumentMap &a
     string tablet_id_or_link;
     const Schema& schema = peer->status_listener()->schema();
     if (peer->tablet() != NULL) {
-      tablet_id_or_link = Substitute("<a href=\"/tablet?id=$0\">$1</a>",
-                                UrlEncodeToString(id),
-                                EscapeForHtmlToString(id));
+      tablet_id_or_link = TabletLink(id);
     } else {
       tablet_id_or_link = EscapeForHtmlToString(id);
     }
@@ -212,28 +222,55 @@ string TabletServerPathHandlers::QuorumPBToHtml(const QuorumPB& quorum) const {
   return html.str();
 }
 
+namespace {
+
+bool GetTabletID(const Webserver::ArgumentMap& args, string* id, std::stringstream *out) {
+  if (!FindCopy(args, "id", id)) {
+    // TODO: webserver should give a way to return a non-200 response code
+    (*out) << "Tablet missing 'id' argument";
+    return false;
+  }
+  return true;
+}
+
+bool GetTabletPeer(TabletServer* tserver, const Webserver::ArgumentMap& args,
+                   shared_ptr<TabletPeer>* peer, const string& tablet_id,
+                   std::stringstream *out) {
+  if (!tserver->tablet_manager()->LookupTablet(tablet_id, peer)) {
+    (*out) << "Tablet " << EscapeForHtmlToString(tablet_id) << " not found";
+    return false;
+  }
+  return true;
+}
+
+bool TabletBootstrapping(const shared_ptr<TabletPeer>& peer, const string& tablet_id,
+                         std::stringstream* out) {
+  if (peer->state() == metadata::BOOTSTRAPPING) {
+    (*out) << "Tablet " << EscapeForHtmlToString(tablet_id) << " is still bootstrapping";
+    return false;
+  }
+  return true;
+}
+
+// Returns true if the tablet_id was properly specified, the
+// tablet is found, and is in a non-bootstrapping state.
+bool LoadTablet(TabletServer* tserver,
+                const Webserver::ArgumentMap& args,
+                string* tablet_id, shared_ptr<TabletPeer>* peer,
+                std::stringstream* out) {
+  if (!GetTabletID(args, tablet_id, out)) return false;
+  if (!GetTabletPeer(tserver, args, peer, *tablet_id, out)) return false;
+  if (!TabletBootstrapping(*peer, *tablet_id, out)) return false;
+  return true;
+}
+
+} // anonymous namespace
+
 void TabletServerPathHandlers::HandleTabletPage(const Webserver::ArgumentMap &args,
                                                 std::stringstream *output) {
-  // Parse argument.
   string tablet_id;
-  if (!FindCopy(args, "id", &tablet_id)) {
-    // TODO: webserver should give a way to return a non-200 response code
-    (*output) << "Missing 'id' argument";
-    return;
-  }
-
-  // Look up tablet.
   shared_ptr<TabletPeer> peer;
-  if (!tserver_->tablet_manager()->LookupTablet(tablet_id, &peer)) {
-    (*output) << "Tablet " << tablet_id << " not found";
-    return;
-  }
-
-  // Can't look at bootstrapping tablets.
-  if (peer->state() == metadata::BOOTSTRAPPING) {
-    (*output) << "Tablet " << tablet_id << " is still bootstrapping";
-    return;
-  }
+  if (!LoadTablet(tserver_, args, &tablet_id, &peer, output)) return;
 
   string table_name = peer->tablet()->metadata()->table_name();
 
@@ -244,9 +281,27 @@ void TabletServerPathHandlers::HandleTabletPage(const Webserver::ArgumentMap &ar
   shared_ptr<Schema> schema(peer->tablet()->schema());
   HtmlOutputSchemaTable(*schema.get(), output);
 
-  // Output svg of current DiskRowSet layout over keyspace.
-  *output << "<h3>Horizontal Partitions</h3>\n";
+  // List of links to various tablet-specific info pages
+  *output << "<ul>";
+  // Link to output svg of current DiskRowSet layout over keyspace.
+  string drsl_link = Substitute("<a href=\"/tablet-rowsetlayout-svg?id=$0\">$1</a>",
+                                UrlEncodeToString(tablet_id),
+                                "Rowset Layout Diagram");
+  *output << "<li>" << drsl_link << "</li>";
+  // End list
+  *output << "</ul>\n";
+}
+
+void TabletServerPathHandlers::HandleTabletSVGPage(const Webserver::ArgumentMap &args,
+                                                   std::stringstream* output) {
+  string id;
+  shared_ptr<TabletPeer> peer;
+  if (!LoadTablet(tserver_, args, &id, &peer, output)) return;
+
+  *output << "<h1>Rowset Layout Diagram "
+          << TabletLink(id) << "</h1>\n";
   peer->tablet()->PrintRSLayout(output);
+
 }
 
 void TabletServerPathHandlers::HandleScansPage(const Webserver::ArgumentMap &args,
