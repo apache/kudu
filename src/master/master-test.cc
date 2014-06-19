@@ -73,6 +73,13 @@ static void MakeHostPortPB(const string& host, uint32_t port, HostPortPB* pb) {
   pb->set_port(port);
 }
 
+// Test that shutting down a MiniMaster without starting it does not
+// SEGV.
+TEST_F(MasterTest, TestShutdownWithoutStart) {
+  MiniMaster m(Env::Default(), "/xxxx");
+  m.Shutdown();
+}
+
 TEST_F(MasterTest, TestRegisterAndHeartbeat) {
   const char *kTsUUID = "my-ts-uuid";
 

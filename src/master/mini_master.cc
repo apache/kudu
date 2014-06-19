@@ -33,7 +33,9 @@ Status MiniMaster::Start() {
 }
 
 void MiniMaster::Shutdown() {
-  master_->Shutdown();
+  if (started_) {
+    master_->Shutdown();
+  }
   started_ = false;
   master_.reset();
 }
