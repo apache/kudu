@@ -722,9 +722,10 @@ Status TabletBootstrap::PlaySegments(ConsensusBootstrapInfo* consensus_info) {
     // entry-by-entry iterator-like API instead? Seems better to avoid
     // exposing the idea of segments to callers.
     if (PREDICT_FALSE(!read_status.ok())) {
-      return Status::Corruption(Substitute("Error reading Log Segment of tablet: $0. "
-                                           "Read up to entry: $1 of segment: $2, in path: $3.",
+      return Status::Corruption(Substitute("Error reading Log Segment of tablet $0: $1 "
+                                           "(Read up to entry $2 of segment $3, in path $4)",
                                            tablet_->tablet_id(),
+                                           read_status.ToString(),
                                            entries.size(),
                                            segment->header().sequence_number(),
                                            segment->path()));

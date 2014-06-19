@@ -41,6 +41,7 @@ using env_util::ReadFully;
 using std::vector;
 using std::tr1::shared_ptr;
 using strings::Substitute;
+using strings::SubstituteAndAppend;
 
 const char kTmpSuffix[] = ".tmp";
 
@@ -139,22 +140,31 @@ Status ReadableLogSegment::Init() {
 }
 
 Status ReadableLogSegment::ReadEntries(vector<LogEntryPB*>* entries) {
+  vector<int64_t> recent_offsets(4, -1);
+  int batches_read = 0;
+
   uint64_t offset = first_entry_offset();
   VLOG(1) << "Reading segment entries offset: " << offset << " file size: "
           << file_size();
   faststring tmp_buf;
   while (offset < file_size()) {
+    const uint64_t this_batch_offset = offset;
+    recent_offsets[batches_read++ % recent_offsets.size()] = offset;
+
     gscoped_ptr<LogEntryBatchPB> current_batch;
 
     // Read the entry length first, if we get 0 back that just means that
     // the log hasn't been ftruncated().
     uint32_t length;
-    RETURN_NOT_OK(ReadEntryLength(&offset, &length));
-    if (length == 0) {
-      return Status::OK();
+    Status status = ReadEntryLength(&offset, &length);
+    if (status.ok()) {
+      if (length == 0) {
+        // EOF
+        return Status::OK();
+      }
+      status = ReadEntryBatch(&offset, length, &tmp_buf, &current_batch);
     }
 
-    Status status = ReadEntryBatch(&offset, length, &tmp_buf, &current_batch);
     if (status.ok()) {
       if (VLOG_IS_ON(3)) {
         VLOG(3) << "Read Log entry batch: " << current_batch->DebugString();
@@ -166,9 +176,18 @@ Status ReadableLogSegment::ReadEntries(vector<LogEntryPB*>* entries) {
                                                       current_batch->entry_size(),
                                                       NULL);
     } else {
-      RETURN_NOT_OK_PREPEND(status, strings::Substitute("Log File corrupted, "
-          "cannot read further. 'entries' contains log entries read up to $0"
-          " bytes", offset));
+      string err = "Log file corrupted. ";
+      SubstituteAndAppend(&err, "Failed trying to read batch #$0 at offset $1. ",
+                          batches_read, this_batch_offset);
+      err.append("Prior batch offsets:");
+      std::sort(recent_offsets.begin(), recent_offsets.end());
+      BOOST_FOREACH(int64_t offset, recent_offsets) {
+        if (offset >= 0) {
+          SubstituteAndAppend(&err, " $0", offset);
+        }
+      }
+
+      RETURN_NOT_OK_PREPEND(status, err);
     }
   }
   return Status::OK();

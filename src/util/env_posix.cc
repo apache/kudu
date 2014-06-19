@@ -134,7 +134,9 @@ class PosixMmapReadableFile: public RandomAccessFile {
     Status s;
     if (offset + n > length_) {
       *result = Slice();
-      s = IOError(filename_, EINVAL);
+      s = Status::IOError(
+        Substitute("cannot read $0 bytes at offset $1 (file $2 has length $3)",
+                   n, offset, filename_, length_), "", EINVAL);
     } else {
       *result = Slice(reinterpret_cast<uint8_t *>(mmapped_region_) + offset, n);
     }
