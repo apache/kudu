@@ -225,12 +225,16 @@ endif()
 
 # Are we using the gold linker? It doesn't work with dynamic linking as
 # weak symbols aren't properly overridden, causing tcmalloc to be omitted.
+# Let's flag this as an error in RELEASE builds (we shouldn't release a
+# product like this).
 #
 # See https://sourceware.org/bugzilla/show_bug.cgi?id=16979 for details.
 execute_process(COMMAND ${CMAKE_CXX_COMPILER} -Wl,--version OUTPUT_VARIABLE LINKER_OUTPUT)
 if (LINKER_OUTPUT MATCHES "gold")
-  if ("${KUDU_LINK}" STREQUAL "d")
-    message(SEND_ERROR "Cannot use gold with dynamic linking")
+  if ("${KUDU_LINK}" STREQUAL "d" AND
+      "${CMAKE_BUILD_TYPE}" STREQUAL "RELEASE")
+    message(SEND_ERROR "Cannot use gold with dynamic linking in a RELEASE build "
+      "as it would cause tcmalloc symbols to get dropped")
   else()
     message("Using gold linker")
   endif()
@@ -433,8 +437,13 @@ ADD_THIRDPARTY_LIB(squeasel
   DEPS "${SQUEASEL_STATIC_LIB_DEPS}")
 
 ## Google PerfTools
+##
+## Disabled with TSAN/ASAN as well as with gold+dynamic linking (see comment
+## near definition of KUDU_USING_GOLD).
 find_package(GPerf REQUIRED)
-if (NOT "${KUDU_USE_ASAN}" AND NOT "${KUDU_USE_TSAN}")
+if (NOT "${KUDU_USE_ASAN}" AND
+    NOT "${KUDU_USE_TSAN}" AND
+    NOT ("${KUDU_USING_GOLD}" AND "${KUDU_LINK}" STREQUAL "d"))
   ADD_THIRDPARTY_LIB(tcmalloc
     STATIC_LIB "${TCMALLOC_STATIC_LIB}"
     SHARED_LIB "${TCMALLOC_LIBS}/libtcmalloc.so")
