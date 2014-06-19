@@ -6,6 +6,7 @@
 
 #include "kudu/consensus/log-test-base.h"
 #include "kudu/gutil/stl_util.h"
+#include "kudu/server/logical_clock.h"
 #include "kudu/tablet/mvcc.h"
 
 DEFINE_int32(num_batches, 10000,
@@ -241,8 +242,12 @@ TEST_F(LogTest, TestGCWithLogRunning) {
 // writing them to the log.
 TEST_F(LogTest, TestWaitUntilAllFlushed) {
   BuildLog();
-  // Append 4 replicate/commit pairs asynchronously
-  AppendReplicateBatchAndCommitEntryPairsToLog(2, APPEND_ASYNC);
+  // Append 2 replicate/commit pairs asynchronously
+  AppendReplicateBatchAndCommitEntryPairsToLog(
+      2,
+      make_scoped_refptr(
+          server::LogicalClock::CreateStartingAt(Timestamp::kInitialTimestamp)),
+      APPEND_ASYNC);
 
   ASSERT_STATUS_OK(log_->WaitUntilAllFlushed());
 
@@ -325,7 +330,10 @@ TEST_F(LogTest, TestWriteManyBatches) {
 
   LOG(INFO)<< "Starting to write " << num_batches << " to log";
   LOG_TIMING(INFO, "Wrote all batches to log") {
-    AppendReplicateBatchAndCommitEntryPairsToLog(num_batches);
+    AppendReplicateBatchAndCommitEntryPairsToLog(
+        num_batches,
+        make_scoped_refptr(
+            server::LogicalClock::CreateStartingAt(Timestamp::kInitialTimestamp)));
   }
   ASSERT_STATUS_OK(log_->Close());
   LOG(INFO) << "Done writing";

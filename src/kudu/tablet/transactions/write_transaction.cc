@@ -148,7 +148,18 @@ Status WriteTransaction::Prepare() {
 }
 
 Status WriteTransaction::Start() {
-  state_->tablet_peer()->tablet()->StartTransaction(state_.get());
+  if (type() == consensus::LEADER) {
+    state_->tablet_peer()->tablet()->StartTransaction(state_.get());
+  } else {
+    consensus::OperationPB* leader_commit_op =
+        DCHECK_NOTNULL(state()->consensus_round()->leader_commit_op());
+    DCHECK(leader_commit_op->has_commit());
+    Timestamp leader_timestamp(leader_commit_op->commit().timestamp());
+    state_->tablet_peer()->tablet()->StartTransactionAtTimestamp(state_.get(), leader_timestamp);
+    // Also update the replica's clock, thus making sure it will never generate a timestamp
+    // that is lower than the one it just received.
+    state()->tablet_peer()->clock()->Update(leader_timestamp);
+  }
   TRACE("START. Timestamp: $0", state_->tablet_peer()->clock()->Stringify(state_->timestamp()));
   return Status::OK();
 }
