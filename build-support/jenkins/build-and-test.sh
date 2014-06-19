@@ -81,6 +81,7 @@ export PPROF_PATH=$(pwd)/thirdparty/installed/bin/pprof
 
 rm -rf CMakeCache.txt CMakeFiles src/*/CMakeFiles
 
+TEST_LOGDIR="$ROOT/build/test-logs"
 
 if [ "$BUILD_TYPE" = "ASAN" ]; then
   # NB: passing just "clang++" below causes an infinite loop, see http://www.cmake.org/pipermail/cmake/2012-December/053071.html
@@ -105,10 +106,10 @@ elif [ "$BUILD_TYPE" = "LINT" ]; then
   # Create empty test logs or else Jenkins fails to archive artifacts, which
   # results in the build failing.
   mkdir -p Testing/Temporary
-  mkdir -p build/test-logs
+  mkdir -p $TEST_LOGDIR
 
   cmake .
-  make lint | tee build/test-logs/lint.log
+  make lint | tee $TEST_LOGDIR/lint.log
   exit $?
 fi
 
@@ -121,6 +122,8 @@ NUM_PROCS=$(cat /proc/cpuinfo | grep processor | wc -l)
 
 make -j$NUM_PROCS 2>&1 | tee build.log
 
+export GTEST_OUTPUT="xml:$TEST_LOGDIR/" # Enable JUnit-compatible XML output.
+rm -Rf "$TEST_LOGDIR/*.xml"             # Clean up XML from previous runs.
 ctest -j$NUM_PROCS $EXTRA_TEST_FLAGS
 
 if [ "$DO_COVERAGE" == "1" ]; then
