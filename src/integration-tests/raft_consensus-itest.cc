@@ -70,7 +70,7 @@ class DistConsensusTest : public TabletServerTest {
     gscoped_ptr<TabletServerServiceProxy> proxy;
   };
 
-  virtual void SetUp() {
+  virtual void SetUp() OVERRIDE {
     FLAGS_consensus_entry_cache_size_soft_limit_mb = 5;
     FLAGS_consensus_entry_cache_size_hard_limit_mb = 10;
     FLAGS_consensus_rpc_timeout_ms = 50;
@@ -294,7 +294,7 @@ class DistConsensusTest : public TabletServerTest {
   }
 
 
-  virtual void TearDown() {
+  virtual void TearDown() OVERRIDE {
     cluster_->Shutdown();
     STLDeleteElements(&replicas_);
   }

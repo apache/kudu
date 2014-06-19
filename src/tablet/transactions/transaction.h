@@ -294,7 +294,7 @@ class LatchTransactionCompletionCallback : public TransactionCompletionCallback 
       response_(DCHECK_NOTNULL(response)) {
   }
 
-  virtual void TransactionCompleted() {
+  virtual void TransactionCompleted() OVERRIDE {
     tserver::TabletServerErrorPB* error = response_->mutable_error();
     StatusToPB(status_, error->mutable_status());
     error->set_code(tserver::TabletServerErrorPB::UNKNOWN_ERROR);

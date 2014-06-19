@@ -82,7 +82,7 @@ class TabletServerTest : public KuduTest {
   }
 
   // Starts the tablet server, override to start it later.
-  virtual void SetUp() {
+  virtual void SetUp() OVERRIDE {
     KuduTest::SetUp();
 
     // Use the hybrid clock for TS tests
@@ -95,7 +95,7 @@ class TabletServerTest : public KuduTest {
     StartTabletServer();
   }
 
-  virtual void TearDown() {
+  virtual void TearDown() OVERRIDE {
     DeleteSharedRegion();
     KuduTest::TearDown();
   }

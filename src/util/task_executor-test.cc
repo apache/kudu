@@ -35,13 +35,13 @@ class SimpleTask : public Task {
       : id_(id) {
   }
 
-  Status Run() {
+  Status Run() OVERRIDE {
     LOG(INFO)<< "Executing SimpleTask(" << *id_ << ")::Run()";
     ++(*id_);
     return Status::OK();
   }
 
-  bool Abort() {return false;}
+  bool Abort() OVERRIDE {return false;}
 
  private:
   int *id_;
@@ -49,7 +49,7 @@ class SimpleTask : public Task {
 
 class SimpleRunnable : public Runnable {
  public:
-  void Run() {
+  void Run() OVERRIDE {
     LOG(INFO)<< "SimpleRunnable()::Run()";
   }
 };
@@ -60,11 +60,11 @@ class SimpleCallback : public FutureCallback {
       : id_(id) {
   }
 
-  void OnSuccess() {
+  void OnSuccess() OVERRIDE {
     LOG(INFO)<< "OnSuccess Callback result=" << *id_;
   }
 
-  void OnFailure(const Status& status) {
+  void OnFailure(const Status& status) OVERRIDE {
     LOG(INFO) << "OnFailure Callback status=" << status.ToString();
   }
  private:
@@ -139,10 +139,10 @@ TEST(TestTaskExecutor, TestFutureListeners) {
 // A task that always succeeds and which cannot be aborted.
 class SucceedingTask : public Task {
  public:
-  virtual Status Run() {
+  virtual Status Run() OVERRIDE {
     return Status::OK();
   }
-  virtual bool Abort() {
+  virtual bool Abort() OVERRIDE {
     // Cannot abort.
     return false;
   }
@@ -151,10 +151,10 @@ class SucceedingTask : public Task {
 // A task that always fails and which cannot be aborted.
 class FailingTask : public Task {
  public:
-  virtual Status Run() {
+  virtual Status Run() OVERRIDE {
     return Status::RuntimeError("FailingTask has failed");
   }
-  virtual bool Abort() {
+  virtual bool Abort() OVERRIDE {
     // Cannot abort.
     return false;
   }
@@ -224,12 +224,12 @@ class IndicatorCallback : public FutureCallback {
   explicit IndicatorCallback(TaskResult* result)
     : result_(DCHECK_NOTNULL(result)) {
     }
-  virtual void OnSuccess() {
+  virtual void OnSuccess() OVERRIDE {
     result_->set_code(kIndicatorSuccess);
     result_->set_status(Status::OK());
     result_->IncrementCount();
   }
-  virtual void OnFailure(const Status& status) {
+  virtual void OnFailure(const Status& status) OVERRIDE {
     result_->set_code(kIndicatorFailure);
     result_->set_status(status);
     result_->IncrementCount();
@@ -280,13 +280,13 @@ class AbortableHangingTask : public Task {
     : started_latch_(1),
       continue_latch_(1) {
   }
-  virtual Status Run() {
+  virtual Status Run() OVERRIDE {
     LOG(INFO) << "Task Run() called";
     started_latch_.CountDown();
     continue_latch_.Wait();
     return Status::Aborted("Aborted task");
   }
-  virtual bool Abort() {
+  virtual bool Abort() OVERRIDE {
     LOG(INFO) << "Task Abort() called";
     // Allow Run() to complete.
     started_latch_.CountDown();
@@ -307,11 +307,11 @@ class AbortableHangingTask : public Task {
 // It also always returns Status::OK from Run() after Abort() is called.
 class FalselyNonAbortableHangingTask : public AbortableHangingTask {
  public:
-  virtual Status Run() {
+  virtual Status Run() OVERRIDE {
     ignore_result(AbortableHangingTask::Run());
     return Status::OK();
   }
-  virtual bool Abort() {
+  virtual bool Abort() OVERRIDE {
     AbortableHangingTask::Abort();
     return false;
   }

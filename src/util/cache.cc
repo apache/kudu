@@ -296,26 +296,26 @@ class ShardedLRUCache : public Cache {
   }
   virtual ~ShardedLRUCache() { }
   virtual Handle* Insert(const Slice& key, void* value, size_t charge,
-                         void (*deleter)(const Slice& key, void* value)) {
+                         void (*deleter)(const Slice& key, void* value)) OVERRIDE {
     const uint32_t hash = HashSlice(key);
     return shard_[Shard(hash)].Insert(key, hash, value, charge, deleter);
   }
-  virtual Handle* Lookup(const Slice& key) {
+  virtual Handle* Lookup(const Slice& key) OVERRIDE {
     const uint32_t hash = HashSlice(key);
     return shard_[Shard(hash)].Lookup(key, hash);
   }
-  virtual void Release(Handle* handle) {
+  virtual void Release(Handle* handle) OVERRIDE {
     LRUHandle* h = reinterpret_cast<LRUHandle*>(handle);
     shard_[Shard(h->hash)].Release(handle);
   }
-  virtual void Erase(const Slice& key) {
+  virtual void Erase(const Slice& key) OVERRIDE {
     const uint32_t hash = HashSlice(key);
     shard_[Shard(hash)].Erase(key, hash);
   }
-  virtual void* Value(Handle* handle) {
+  virtual void* Value(Handle* handle) OVERRIDE {
     return reinterpret_cast<LRUHandle*>(handle)->value;
   }
-  virtual uint64_t NewId() {
+  virtual uint64_t NewId() OVERRIDE {
     boost::lock_guard<MutexType> l(id_mutex_);
     return ++(last_id_);
   }

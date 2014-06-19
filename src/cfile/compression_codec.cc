@@ -29,11 +29,11 @@ class SlicesSource : public snappy::Source {
     available_ = TotalSize();
   }
 
-  size_t Available() const {
+  size_t Available() const OVERRIDE {
     return available_;
   }
 
-  const char* Peek(size_t* len) {
+  const char* Peek(size_t* len) OVERRIDE {
     if (available_ == 0) {
       *len = 0;
       return NULL;
@@ -44,7 +44,7 @@ class SlicesSource : public snappy::Source {
     return reinterpret_cast<const char *>(data.data()) + slice_offset_;
   }
 
-  void Skip(size_t n) {
+  void Skip(size_t n) OVERRIDE {
     DCHECK_LE(n, Available());
     if (n == 0) return;
 
@@ -91,14 +91,14 @@ class SnappyCodec : public CompressionCodec {
     return Singleton<SnappyCodec>::get();
   }
 
-  Status Compress(const Slice& input, uint8_t *compressed, size_t *compressed_length) {
+  Status Compress(const Slice& input, uint8_t *compressed, size_t *compressed_length) OVERRIDE {
     snappy::RawCompress(reinterpret_cast<const char *>(input.data()), input.size(),
                         reinterpret_cast<char *>(compressed), compressed_length);
     return Status::OK();
   }
 
   Status Compress(const vector<Slice>& input_slices, uint8_t *compressed,
-                  size_t *compressed_length) {
+                  size_t *compressed_length) OVERRIDE {
     SlicesSource source(input_slices);
     snappy::UncheckedByteArraySink sink(reinterpret_cast<char *>(compressed));
     if ((*compressed_length = snappy::Compress(&source, &sink)) <= 0) {
@@ -107,13 +107,15 @@ class SnappyCodec : public CompressionCodec {
     return Status::OK();
   }
 
-  Status Uncompress(const Slice& compressed, uint8_t *uncompressed, size_t uncompressed_length) {
+  Status Uncompress(const Slice& compressed,
+                    uint8_t *uncompressed,
+                    size_t uncompressed_length) OVERRIDE {
     bool success = snappy::RawUncompress(reinterpret_cast<const char *>(compressed.data()),
                                          compressed.size(), reinterpret_cast<char *>(uncompressed));
     return success ? Status::OK() : Status::Corruption("unable to uncompress the buffer");
   }
 
-  size_t MaxCompressedLength(size_t source_bytes) {
+  size_t MaxCompressedLength(size_t source_bytes) OVERRIDE {
     return snappy::MaxCompressedLength(source_bytes);
   }
 };
@@ -124,7 +126,7 @@ class Lz4Codec : public CompressionCodec {
     return Singleton<Lz4Codec>::get();
   }
 
-  Status Compress(const Slice& input, uint8_t *compressed, size_t *compressed_length) {
+  Status Compress(const Slice& input, uint8_t *compressed, size_t *compressed_length) OVERRIDE {
     int n = LZ4_compress(reinterpret_cast<const char *>(input.data()),
                          reinterpret_cast<char *>(compressed), input.size());
     *compressed_length = n;
@@ -132,7 +134,7 @@ class Lz4Codec : public CompressionCodec {
   }
 
   Status Compress(const vector<Slice>& input_slices,
-                  uint8_t *compressed, size_t *compressed_length) {
+                  uint8_t *compressed, size_t *compressed_length) OVERRIDE {
     if (input_slices.size() == 1) {
       return Compress(input_slices[0], compressed, compressed_length);
     }
@@ -143,7 +145,9 @@ class Lz4Codec : public CompressionCodec {
     return Compress(Slice(buffer.data(), buffer.size()), compressed, compressed_length);
   }
 
-  Status Uncompress(const Slice& compressed, uint8_t *uncompressed, size_t uncompressed_length) {
+  Status Uncompress(const Slice& compressed,
+                    uint8_t *uncompressed,
+                    size_t uncompressed_length) OVERRIDE {
     int n = LZ4_uncompress(reinterpret_cast<const char *>(compressed.data()),
                            reinterpret_cast<char *>(uncompressed), uncompressed_length);
     if (n != compressed.size()) {
@@ -154,7 +158,7 @@ class Lz4Codec : public CompressionCodec {
     return Status::OK();
   }
 
-  size_t MaxCompressedLength(size_t source_bytes) {
+  size_t MaxCompressedLength(size_t source_bytes) OVERRIDE {
     return LZ4_compressBound(source_bytes);
   }
 };
@@ -169,14 +173,14 @@ class ZlibCodec : public CompressionCodec {
     return Singleton<ZlibCodec>::get();
   }
 
-  Status Compress(const Slice& input, uint8_t *compressed, size_t *compressed_length) {
+  Status Compress(const Slice& input, uint8_t *compressed, size_t *compressed_length) OVERRIDE {
     *compressed_length = MaxCompressedLength(input.size());
     int err = ::compress(compressed, compressed_length, input.data(), input.size());
     return err == Z_OK ? Status::OK() : Status::IOError("unable to compress the buffer");
   }
 
   Status Compress(const vector<Slice>& input_slices,
-                  uint8_t *compressed, size_t *compressed_length) {
+                  uint8_t *compressed, size_t *compressed_length) OVERRIDE {
     if (input_slices.size() == 1) {
       return Compress(input_slices[0], compressed, compressed_length);
     }
@@ -189,13 +193,13 @@ class ZlibCodec : public CompressionCodec {
   }
 
   Status Uncompress(const Slice& compressed,
-                    uint8_t *uncompressed, size_t uncompressed_length) {
+                    uint8_t *uncompressed, size_t uncompressed_length) OVERRIDE {
     int err = ::uncompress(uncompressed, &uncompressed_length,
                            compressed.data(), compressed.size());
     return err == Z_OK ? Status::OK() : Status::Corruption("unable to uncompress the buffer");
   }
 
-  size_t MaxCompressedLength(size_t source_bytes) {
+  size_t MaxCompressedLength(size_t source_bytes) OVERRIDE {
     // one-time overhead of six bytes for the entire stream plus five bytes per 16 KB block
     return source_bytes + (6 + (5 * ((source_bytes + 16383) >> 14)));
   }

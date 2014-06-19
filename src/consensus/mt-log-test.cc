@@ -55,7 +55,7 @@ extern const char *kTestTablet;
 class MultiThreadedLogTest : public LogTestBase {
  public:
 
-  virtual void SetUp() {
+  virtual void SetUp() OVERRIDE {
     LogTestBase::SetUp();
     SeedRandom();
   }

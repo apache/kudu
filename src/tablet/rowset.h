@@ -243,7 +243,7 @@ class DuplicatingRowSet : public RowSet {
                            OperationResultPB* result) OVERRIDE;
 
   Status CheckRowPresent(const RowSetKeyProbe &probe, bool *present,
-                         ProbeStats* stats) const;
+                         ProbeStats* stats) const OVERRIDE;
 
   virtual RowwiseIterator *NewRowIterator(const Schema *projection,
                                           const MvccSnapshot &snap) const OVERRIDE;
@@ -251,23 +251,23 @@ class DuplicatingRowSet : public RowSet {
   virtual CompactionInput *NewCompactionInput(const Schema* projection,
                                               const MvccSnapshot &snap) const OVERRIDE;
 
-  Status CountRows(rowid_t *count) const;
+  Status CountRows(rowid_t *count) const OVERRIDE;
 
   virtual Status GetBounds(Slice *min_encoded_key,
-                           Slice *max_encoded_key) const;
+                           Slice *max_encoded_key) const OVERRIDE;
 
-  uint64_t EstimateOnDiskSize() const;
+  uint64_t EstimateOnDiskSize() const OVERRIDE;
 
-  Status AlterSchema(const Schema& schema);
+  Status AlterSchema(const Schema& schema) OVERRIDE;
 
-  string ToString() const;
+  string ToString() const OVERRIDE;
 
-  virtual Status DebugDump(vector<string> *lines = NULL);
+  virtual Status DebugDump(vector<string> *lines = NULL) OVERRIDE;
 
-  shared_ptr<metadata::RowSetMetadata> metadata();
+  shared_ptr<metadata::RowSetMetadata> metadata() OVERRIDE;
 
   // A flush-in-progress rowset should never be selected for compaction.
-  boost::mutex *compact_flush_lock() {
+  boost::mutex *compact_flush_lock() OVERRIDE {
     LOG(FATAL) << "Cannot be compacted";
     return NULL;
   }
@@ -278,22 +278,22 @@ class DuplicatingRowSet : public RowSet {
 
   ~DuplicatingRowSet();
 
-  const Schema &schema() const {
+  const Schema &schema() const OVERRIDE {
     return schema_;
   }
 
-  size_t DeltaMemStoreSize() const { return 0; }
+  size_t DeltaMemStoreSize() const OVERRIDE { return 0; }
 
-  size_t CountDeltaStores() const { return 0; }
+  size_t CountDeltaStores() const OVERRIDE { return 0; }
 
-  Status FlushDeltas() {
+  Status FlushDeltas() OVERRIDE {
     // It's important that DuplicatingRowSet does not FlushDeltas. This prevents
     // a bug where we might end up with out-of-order deltas. See the long
     // comment in Tablet::Flush(...)
     return Status::OK();
   }
 
-  Status MinorCompactDeltaStores() { return Status::OK(); }
+  Status MinorCompactDeltaStores() OVERRIDE { return Status::OK(); }
 
  private:
   friend class Tablet;

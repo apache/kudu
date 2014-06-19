@@ -25,8 +25,8 @@ class SaslServer;
 class ClientNegotiationTask : public kudu::Task {
  public:
   ClientNegotiationTask(const scoped_refptr<Connection>& conn, const MonoTime &deadline);
-  virtual kudu::Status Run();
-  virtual bool Abort();
+  virtual kudu::Status Run() OVERRIDE;
+  virtual bool Abort() OVERRIDE;
  private:
   scoped_refptr<Connection> conn_;
   MonoTime deadline_;
@@ -38,8 +38,8 @@ class ServerNegotiationTask : public kudu::Task {
  public:
   explicit ServerNegotiationTask(const scoped_refptr<Connection>& conn,
                                  const MonoTime &deadline);
-  virtual kudu::Status Run();
-  virtual bool Abort();
+  virtual kudu::Status Run() OVERRIDE;
+  virtual bool Abort() OVERRIDE;
  private:
   scoped_refptr<Connection> conn_;
   MonoTime deadline_;
@@ -49,8 +49,8 @@ class ServerNegotiationTask : public kudu::Task {
 class NegotiationCallback : public FutureCallback {
  public:
   explicit NegotiationCallback(const scoped_refptr<Connection>& conn);
-  virtual void OnSuccess();
-  virtual void OnFailure(const kudu::Status& status);
+  virtual void OnSuccess() OVERRIDE;
+  virtual void OnFailure(const kudu::Status& status) OVERRIDE;
  private:
   scoped_refptr<Connection> conn_;
 };

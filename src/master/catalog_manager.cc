@@ -85,7 +85,7 @@ class TableLoader : public SysTablesTable::Visitor {
   }
 
   virtual Status VisitTable(const std::string& table_id,
-                            const SysTablesEntryPB& metadata) {
+                            const SysTablesEntryPB& metadata) OVERRIDE {
     CHECK(!ContainsKey(table_manager_->table_ids_map_, table_id))
           << "Table already exists: " << table_id;
 
@@ -126,7 +126,7 @@ class TabletLoader : public SysTabletsTable::Visitor {
 
   virtual Status VisitTablet(const std::string& table_id,
                              const std::string& tablet_id,
-                             const SysTabletsEntryPB& metadata) {
+                             const SysTabletsEntryPB& metadata) OVERRIDE {
     // Lookup the table
     scoped_refptr<TableInfo> table(FindPtrOrNull(
                                      table_manager_->table_ids_map_, table_id));

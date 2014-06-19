@@ -18,24 +18,24 @@ class StringPrefixBlockBuilder : public BlockBuilder {
  public:
   explicit StringPrefixBlockBuilder(const WriterOptions *options);
 
-  int Add(const uint8_t *vals, size_t count);
+  int Add(const uint8_t *vals, size_t count) OVERRIDE;
 
   // Return a Slice which represents the encoded data.
   //
   // This Slice points to internal data of this class
   // and becomes invalid after the builder is destroyed
   // or after Finish() is called again.
-  Slice Finish(rowid_t ordinal_pos);
+  Slice Finish(rowid_t ordinal_pos) OVERRIDE;
 
-  void Reset();
+  void Reset() OVERRIDE;
 
-  uint64_t EstimateEncodedSize() const;
+  uint64_t EstimateEncodedSize() const OVERRIDE;
 
-  size_t Count() const;
+  size_t Count() const OVERRIDE;
 
   // Return the first added key.
   // key should be a Slice *
-  Status GetFirstKey(void *key) const;
+  Status GetFirstKey(void *key) const OVERRIDE;
 
  private:
   faststring buffer_;
@@ -65,28 +65,28 @@ class StringPrefixBlockDecoder : public BlockDecoder {
  public:
   explicit StringPrefixBlockDecoder(const Slice &slice);
 
-  virtual Status ParseHeader();
-  virtual void SeekToPositionInBlock(uint pos);
+  virtual Status ParseHeader() OVERRIDE;
+  virtual void SeekToPositionInBlock(uint pos) OVERRIDE;
   virtual Status SeekAtOrAfterValue(const void *value,
-                                    bool *exact_match);
-  Status CopyNextValues(size_t *n, ColumnDataView *dst);
+                                    bool *exact_match) OVERRIDE;
+  Status CopyNextValues(size_t *n, ColumnDataView *dst) OVERRIDE;
 
-  virtual bool HasNext() const {
+  virtual bool HasNext() const OVERRIDE {
     DCHECK(parsed_);
     return cur_idx_ < num_elems_;
   }
 
-  virtual size_t Count() const {
+  virtual size_t Count() const OVERRIDE {
     DCHECK(parsed_);
     return num_elems_;
   }
 
-  virtual size_t GetCurrentIndex() const {
+  virtual size_t GetCurrentIndex() const OVERRIDE {
     DCHECK(parsed_);
     return cur_idx_;
   }
 
-  virtual rowid_t GetFirstRowId() const {
+  virtual rowid_t GetFirstRowId() const OVERRIDE {
     DCHECK(parsed_);
     return ordinal_pos_base_;
   }

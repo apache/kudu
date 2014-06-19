@@ -533,11 +533,11 @@ class RunFunctionTask : public ReactorTask {
     latch_(1)
   {}
 
-  virtual void Run(ReactorThread *reactor) {
+  virtual void Run(ReactorThread *reactor) OVERRIDE {
     status_ = function_();
     latch_.CountDown();
   }
-  virtual void Abort(const Status &status) {
+  virtual void Abort(const Status &status) OVERRIDE {
     status_ = status;
     latch_.CountDown();
   }
@@ -577,12 +577,12 @@ class RegisterConnectionTask : public ReactorTask {
     conn_(conn)
   {}
 
-  virtual void Run(ReactorThread *thread) {
+  virtual void Run(ReactorThread *thread) OVERRIDE {
     thread->RegisterConnection(conn_);
     delete this;
   }
 
-  virtual void Abort(const Status &status) {
+  virtual void Abort(const Status &status) OVERRIDE {
     // We don't need to Shutdown the connection since it was never registered.
     // This is only used for inbound connections, and inbound connections will
     // never have any calls added to them until they've been registered.
@@ -609,12 +609,12 @@ class AssignOutboundCallTask : public ReactorTask {
     call_(call)
   {}
 
-  virtual void Run(ReactorThread *reactor) {
+  virtual void Run(ReactorThread *reactor) OVERRIDE {
     reactor->AssignOutboundCall(call_);
     delete this;
   }
 
-  virtual void Abort(const Status &status) {
+  virtual void Abort(const Status &status) OVERRIDE {
     call_->SetFailed(status);
     delete this;
   }

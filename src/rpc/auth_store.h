@@ -48,7 +48,7 @@ class DummyAuthStore : public AuthStore {
   virtual ~DummyAuthStore();
 
   // Always returns OK
-  virtual Status Authenticate(const string& user, const string& password) const;
+  virtual Status Authenticate(const string& user, const string& password) const OVERRIDE;
 };
 
 } // namespace rpc

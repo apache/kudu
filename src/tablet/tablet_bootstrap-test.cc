@@ -36,7 +36,7 @@ using server::LogicalClock;
 class BootstrapTest : public LogTestBase {
  protected:
 
-  void SetUp() {
+  void SetUp() OVERRIDE {
     LogTestBase::SetUp();
     master_block_.set_table_id(log::kTestTable);
     master_block_.set_tablet_id(log::kTestTablet);

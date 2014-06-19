@@ -34,7 +34,7 @@ class KuduTest : public ::testing::Test {
     env_(env)
   {}
 
-  virtual void SetUp() {
+  virtual void SetUp() OVERRIDE {
     kudu::InitSpinLockContentionProfiling();
 
     const ::testing::TestInfo* const test_info =
@@ -51,7 +51,7 @@ class KuduTest : public ::testing::Test {
     ASSERT_STATUS_OK(env_->CreateDir(test_dir_));
   }
 
-  virtual void TearDown() {
+  virtual void TearDown() OVERRIDE {
     if (FLAGS_test_leave_files) {
       LOG(INFO) << "-----------------------------------------------";
       LOG(INFO) << "--test_leave_files specified, leaving files in " << test_dir_;

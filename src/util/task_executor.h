@@ -66,11 +66,11 @@ class LatchCallback : public FutureCallback {
  public:
   LatchCallback() : latch_(1) {}
 
-  virtual void OnSuccess() {
+  virtual void OnSuccess() OVERRIDE {
     latch_.CountDown();
   }
 
-  virtual void OnFailure(const Status& status) {
+  virtual void OnFailure(const Status& status) OVERRIDE {
     status_ = status;
     latch_.CountDown();
   }
@@ -112,10 +112,10 @@ class BoundFunctionCallback : public FutureCallback {
         on_failure_(on_failure) {
   }
 
-  void OnSuccess() {
+  void OnSuccess() OVERRIDE {
     on_success_();
   }
-  void OnFailure(const Status& status) {
+  void OnFailure(const Status& status) OVERRIDE {
     on_failure_(status);
   }
 
@@ -240,11 +240,11 @@ class BoundTask : public Task {
         abort_(abort) {
   }
 
-  Status Run() {
+  Status Run() OVERRIDE {
     return run_();
   }
 
-  bool Abort() {
+  bool Abort() OVERRIDE {
     return abort_();
   }
 
@@ -277,25 +277,25 @@ class FutureTask : public Runnable, public Future {
  public:
   explicit FutureTask(const std::tr1::shared_ptr<Task>& task);
 
-  void Run();
+  void Run() OVERRIDE;
 
-  bool Abort();
+  bool Abort() OVERRIDE;
 
-  void AddListener(std::tr1::shared_ptr<FutureCallback> callback);
+  void AddListener(std::tr1::shared_ptr<FutureCallback> callback) OVERRIDE;
 
-  bool is_aborted() const;
+  bool is_aborted() const OVERRIDE;
 
-  bool is_done() const;
+  bool is_done() const OVERRIDE;
 
   bool is_running() const;
 
-  Status status() const {
+  Status status() const OVERRIDE {
     return status_;
   }
 
-  void Wait();
+  void Wait() OVERRIDE;
 
-  bool TimedWait(const boost::system_time& time_until);
+  bool TimedWait(const boost::system_time& time_until) OVERRIDE;
 
   virtual ~FutureTask() {
   }

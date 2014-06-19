@@ -25,43 +25,43 @@ class MasterServiceImpl : public MasterServiceIf {
 
   virtual void Ping(const PingRequestPB* req,
                     PingResponsePB* resp,
-                    rpc::RpcContext* rpc);
+                    rpc::RpcContext* rpc) OVERRIDE;
 
   virtual void TSHeartbeat(const TSHeartbeatRequestPB* req,
                            TSHeartbeatResponsePB* resp,
-                           rpc::RpcContext* rpc);
+                           rpc::RpcContext* rpc) OVERRIDE;
 
   virtual void GetTabletLocations(const GetTabletLocationsRequestPB* req,
                                   GetTabletLocationsResponsePB* resp,
-                                  rpc::RpcContext* rpc);
+                                  rpc::RpcContext* rpc) OVERRIDE;
 
   virtual void CreateTable(const CreateTableRequestPB* req,
                            CreateTableResponsePB* resp,
-                           rpc::RpcContext* rpc);
+                           rpc::RpcContext* rpc) OVERRIDE;
   virtual void IsCreateTableDone(const IsCreateTableDoneRequestPB* req,
                                  IsCreateTableDoneResponsePB* resp,
-                                 rpc::RpcContext* rpc);
+                                 rpc::RpcContext* rpc) OVERRIDE;
   virtual void DeleteTable(const DeleteTableRequestPB* req,
                            DeleteTableResponsePB* resp,
-                           rpc::RpcContext* rpc);
+                           rpc::RpcContext* rpc) OVERRIDE;
   virtual void AlterTable(const AlterTableRequestPB* req,
                            AlterTableResponsePB* resp,
-                           rpc::RpcContext* rpc);
+                           rpc::RpcContext* rpc) OVERRIDE;
   virtual void IsAlterTableDone(const IsAlterTableDoneRequestPB* req,
                                 IsAlterTableDoneResponsePB* resp,
-                                rpc::RpcContext* rpc);
+                                rpc::RpcContext* rpc) OVERRIDE;
   virtual void ListTables(const ListTablesRequestPB* req,
                           ListTablesResponsePB* resp,
-                          rpc::RpcContext* rpc);
+                          rpc::RpcContext* rpc) OVERRIDE;
   virtual void GetTableLocations(const GetTableLocationsRequestPB* req,
                                  GetTableLocationsResponsePB* resp,
-                                 rpc::RpcContext* rpc);
+                                 rpc::RpcContext* rpc) OVERRIDE;
   virtual void GetTableSchema(const GetTableSchemaRequestPB* req,
                               GetTableSchemaResponsePB* resp,
-                              rpc::RpcContext* rpc);
+                              rpc::RpcContext* rpc) OVERRIDE;
   virtual void ListTabletServers(const ListTabletServersRequestPB* req,
                                  ListTabletServersResponsePB* resp,
-                                 rpc::RpcContext* rpc);
+                                 rpc::RpcContext* rpc) OVERRIDE;
  private:
   Master* server_;
 

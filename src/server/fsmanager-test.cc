@@ -12,7 +12,7 @@ namespace kudu {
 
 class FsManagerTestBase : public KuduTest {
  public:
-  void SetUp() {
+  void SetUp() OVERRIDE {
     KuduTest::SetUp();
 
     // Initialize File-System Layout

@@ -21,7 +21,7 @@ class FunctionRunnable : public Runnable {
     : func_(func) {
   }
 
-  void Run() {
+  void Run() OVERRIDE {
     func_();
   }
 

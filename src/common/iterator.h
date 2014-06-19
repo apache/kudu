@@ -63,7 +63,7 @@ class BatchedIterator {
 
 class RowwiseIterator : public virtual BatchedIterator {
  public:
-  virtual bool is_column_store() const { return false; }
+  virtual bool is_column_store() const OVERRIDE { return false; }
 
   // Materialize all columns in the destination block.
   //
@@ -91,7 +91,7 @@ class RowwiseIterator : public virtual BatchedIterator {
 
 class ColumnwiseIterator : public virtual BatchedIterator {
  public:
-  virtual bool is_column_store() const { return true; }
+  virtual bool is_column_store() const OVERRIDE { return true; }
 
   // Initialize the given SelectionVector to indicate which rows in the currently
   // prepared batch are live vs deleted.

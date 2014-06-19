@@ -45,7 +45,7 @@ using tserver::TabletServerServiceProxy;
 // Consumer which simply logs messages to the console.
 class LoggingConsumer : public TwitterConsumer {
  public:
-  virtual void ConsumeJSON(const Slice& json) {
+  virtual void ConsumeJSON(const Slice& json) OVERRIDE {
     std::cout << json.ToString();
   }
 };

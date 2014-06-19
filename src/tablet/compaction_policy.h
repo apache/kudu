@@ -56,7 +56,8 @@ class CompactionPolicy {
 // This policy is more-or-less based on HBase.
 class SizeRatioCompactionPolicy : public CompactionPolicy {
  public:
-  virtual Status PickRowSets(const RowSetTree &tree, std::tr1::unordered_set<RowSet*>* picked);
+  virtual Status PickRowSets(const RowSetTree &tree,
+                             std::tr1::unordered_set<RowSet*>* picked) OVERRIDE;
 };
 
 // Compaction policy which, given a size budget for a compaction, and a workload,
@@ -68,9 +69,10 @@ class BudgetedCompactionPolicy : public CompactionPolicy {
  public:
   explicit BudgetedCompactionPolicy(int size_budget_mb);
 
-  virtual Status PickRowSets(const RowSetTree &tree, std::tr1::unordered_set<RowSet*>* picked);
+  virtual Status PickRowSets(const RowSetTree &tree,
+                             std::tr1::unordered_set<RowSet*>* picked) OVERRIDE;
 
-  virtual uint64_t target_rowset_size() const;
+  virtual uint64_t target_rowset_size() const OVERRIDE;
 
  private:
   void SetupKnapsackInput(const RowSetTree &tree,

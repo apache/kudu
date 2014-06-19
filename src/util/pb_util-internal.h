@@ -24,17 +24,17 @@ class SequentialFileFileInputStream : public google::protobuf::io::ZeroCopyInput
   ~SequentialFileFileInputStream() {
   }
 
-  bool Next(const void **data, int *size);
-  bool Skip(int count);
+  bool Next(const void **data, int *size) OVERRIDE;
+  bool Skip(int count) OVERRIDE;
 
-  void BackUp(int count) {
+  void BackUp(int count) OVERRIDE {
     CHECK_GE(count, 0);
     CHECK_LE(count, buffer_offset_);
     buffer_offset_ -= count;
     total_read_ -= count;
   }
 
-  long ByteCount() const { // NOLINT(runtime/int)
+  long ByteCount() const OVERRIDE { // NOLINT(runtime/int)
     return total_read_;
   }
 
@@ -123,15 +123,15 @@ class WritableFileOutputStream : public google::protobuf::io::ZeroCopyOutputStre
     return status_.ok();
   }
 
-  bool Next(void **data, int *size);
+  bool Next(void **data, int *size) OVERRIDE;
 
-  void BackUp(int count) {
+  void BackUp(int count) OVERRIDE {
     CHECK_GE(count, 0);
     CHECK_LE(count, buffer_offset_);
     buffer_offset_ -= count;
   }
 
-  long ByteCount() const { // NOLINT(runtime/int)
+  long ByteCount() const OVERRIDE { // NOLINT(runtime/int)
     return flushed_ + buffer_offset_;
   }
 

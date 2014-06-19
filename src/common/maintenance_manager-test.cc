@@ -46,7 +46,7 @@ class TestMaintenanceOp : public MaintenanceOp {
   virtual ~TestMaintenanceOp() {
   }
 
-  virtual bool Prepare() {
+  virtual bool Prepare() OVERRIDE {
     boost::lock_guard<boost::mutex> guard(lock_);
     if (state_ != OP_RUNNABLE) {
       return false;
@@ -57,7 +57,7 @@ class TestMaintenanceOp : public MaintenanceOp {
     return true;
   }
 
-  virtual void Perform() {
+  virtual void Perform() OVERRIDE {
     DLOG(INFO) << "Performing op " << name();
     boost::unique_lock<boost::mutex> guard(lock_);
     CHECK_EQ(OP_RUNNING, state_);
@@ -65,7 +65,7 @@ class TestMaintenanceOp : public MaintenanceOp {
     state_change_cond_.notify_all();
   }
 
-  virtual void UpdateStats(MaintenanceOpStats* stats) {
+  virtual void UpdateStats(MaintenanceOpStats* stats) OVERRIDE {
     boost::lock_guard<boost::mutex> guard(lock_);
     stats->runnable = (state_ == OP_RUNNABLE);
     stats->ram_anchored = ram_anchored_;

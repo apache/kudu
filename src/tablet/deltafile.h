@@ -116,17 +116,17 @@ class DeltaFileReader : public DeltaStore,
                           DeltaIterator** iterator) const OVERRIDE;
 
   // See DeltaStore::CheckRowDeleted
-  virtual Status CheckRowDeleted(rowid_t row_idx, bool *deleted) const;
+  virtual Status CheckRowDeleted(rowid_t row_idx, bool *deleted) const OVERRIDE;
 
-  virtual const Schema &schema() const {
+  virtual const Schema &schema() const OVERRIDE {
     return schema_;
   }
 
   const string& path() const { return path_; }
 
-  const int64_t id() const { return id_; }
+  const int64_t id() const OVERRIDE { return id_; }
 
-  virtual const DeltaStats& delta_stats() const { return *delta_stats_; }
+  virtual const DeltaStats& delta_stats() const OVERRIDE { return *delta_stats_; }
 
   virtual std::string ToString() const OVERRIDE {
     return path();
@@ -170,17 +170,17 @@ class DeltaFileReader : public DeltaStore,
 // See DeltaIterator for details.
 class DeltaFileIterator : public DeltaIterator {
  public:
-  Status Init();
+  Status Init() OVERRIDE;
 
-  Status SeekToOrdinal(rowid_t idx);
-  Status PrepareBatch(size_t nrows);
-  Status ApplyUpdates(size_t col_to_apply, ColumnBlock *dst);
-  Status ApplyDeletes(SelectionVector *sel_vec);
-  Status CollectMutations(vector<Mutation *> *dst, Arena *arena);
+  Status SeekToOrdinal(rowid_t idx) OVERRIDE;
+  Status PrepareBatch(size_t nrows) OVERRIDE;
+  Status ApplyUpdates(size_t col_to_apply, ColumnBlock *dst) OVERRIDE;
+  Status ApplyDeletes(SelectionVector *sel_vec) OVERRIDE;
+  Status CollectMutations(vector<Mutation *> *dst, Arena *arena) OVERRIDE;
   Status FilterColumnsAndAppend(const metadata::ColumnIndexes& col_indexes,
                                 vector<DeltaKeyAndUpdate>* out,
-                                Arena* arena);
-  string ToString() const;
+                                Arena* arena) OVERRIDE;
+  string ToString() const OVERRIDE;
 
  private:
   friend class DeltaFileReader;

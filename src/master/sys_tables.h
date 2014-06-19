@@ -104,7 +104,7 @@ class SysTabletsTable : public SysTable {
   Status VisitTablets(Visitor *visitor);
 
  protected:
-  virtual const char *table_name() const { return "sys.tablets"; }
+  virtual const char *table_name() const OVERRIDE { return "sys.tablets"; }
 
   virtual Schema BuildTableSchema() OVERRIDE;
   virtual void SetupTabletMasterBlock(metadata::TabletMasterBlockPB *master_block) OVERRIDE;
@@ -140,7 +140,7 @@ class SysTablesTable : public SysTable {
   Status VisitTables(Visitor *visitor);
 
  protected:
-  virtual const char *table_name() const { return "sys.tables"; }
+  virtual const char *table_name() const OVERRIDE { return "sys.tables"; }
 
   virtual Schema BuildTableSchema() OVERRIDE;
   virtual void SetupTabletMasterBlock(metadata::TabletMasterBlockPB *master_block) OVERRIDE;

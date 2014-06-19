@@ -25,7 +25,7 @@ namespace rpc {
 
 class TestSaslRpc : public RpcTestBase {
  public:
-  virtual void SetUp() {
+  virtual void SetUp() OVERRIDE {
     RpcTestBase::SetUp();
     ASSERT_STATUS_OK(SaslInit(kSaslAppName));
   }

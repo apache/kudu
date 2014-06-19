@@ -257,7 +257,7 @@ class HeapBufferAllocator : public BufferAllocator {
     return Singleton<HeapBufferAllocator>::get();
   }
 
-  virtual size_t Available() const {
+  virtual size_t Available() const OVERRIDE {
     return numeric_limits<size_t>::max();
   }
 
@@ -276,17 +276,17 @@ class HeapBufferAllocator : public BufferAllocator {
   // Always allocates 'requested'-sized buffer, or returns NULL on OOM.
   virtual Buffer* AllocateInternal(size_t requested,
                                    size_t minimal,
-                                   BufferAllocator* originator);
+                                   BufferAllocator* originator) OVERRIDE;
 
   virtual bool ReallocateInternal(size_t requested,
                                   size_t minimal,
                                   Buffer* buffer,
-                                  BufferAllocator* originator);
+                                  BufferAllocator* originator) OVERRIDE;
 
   void* Malloc(size_t size);
   void* Realloc(void* previousData, size_t previousSize, size_t newSize);
 
-  virtual void FreeInternal(Buffer* buffer);
+  virtual void FreeInternal(Buffer* buffer) OVERRIDE;
 
   HeapBufferAllocator();
   explicit HeapBufferAllocator(bool aligned_mode)
@@ -303,21 +303,21 @@ class ClearingBufferAllocator : public BufferAllocator {
   explicit ClearingBufferAllocator(BufferAllocator* delegate)
       : delegate_(delegate) {}
 
-  virtual size_t Available() const {
+  virtual size_t Available() const OVERRIDE {
     return delegate_->Available();
   }
 
  private:
   virtual Buffer* AllocateInternal(size_t requested,
                                    size_t minimal,
-                                   BufferAllocator* originator);
+                                   BufferAllocator* originator) OVERRIDE;
 
   virtual bool ReallocateInternal(size_t requested,
                                   size_t minimal,
                                   Buffer* buffer,
-                                  BufferAllocator* originator);
+                                  BufferAllocator* originator) OVERRIDE;
 
-  virtual void FreeInternal(Buffer* buffer);
+  virtual void FreeInternal(Buffer* buffer) OVERRIDE;
 
   BufferAllocator* delegate_;
   DISALLOW_COPY_AND_ASSIGN(ClearingBufferAllocator);
@@ -355,14 +355,14 @@ class Quota : public Mediator {
   // value accordingly.  Otherwise, returns zero. The semantics of 'remaining
   // quota' are defined by subclasses (that must supply GetQuotaInternal()
   // method).
-  virtual size_t Allocate(size_t requested, size_t minimal);
+  virtual size_t Allocate(size_t requested, size_t minimal) OVERRIDE;
 
-  virtual void Free(size_t amount);
+  virtual void Free(size_t amount) OVERRIDE;
 
   // Returns memory still available in the quota. For unenforced Quota objects,
   // you are still able to perform _minimal_ allocations when the available
   // quota is 0 (or less than "minimal" param).
-  virtual size_t Available() const {
+  virtual size_t Available() const OVERRIDE {
     lock_guard_maybe<boost::mutex> lock(Quota<thread_safe>::mutex());
     const size_t quota = GetQuotaInternal();
     return (usage_ >= quota) ? 0 : (quota - usage_);
@@ -452,21 +452,21 @@ class MediatingBufferAllocator : public BufferAllocator {
 
   virtual ~MediatingBufferAllocator() {}
 
-  virtual size_t Available() const {
+  virtual size_t Available() const OVERRIDE {
     return min(delegate_->Available(), mediator_->Available());
   }
 
  private:
   virtual Buffer* AllocateInternal(size_t requested,
                                    size_t minimal,
-                                   BufferAllocator* originator);
+                                   BufferAllocator* originator) OVERRIDE;
 
   virtual bool ReallocateInternal(size_t requested,
                                   size_t minimal,
                                   Buffer* buffer,
-                                  BufferAllocator* originator);
+                                  BufferAllocator* originator) OVERRIDE;
 
-  virtual void FreeInternal(Buffer* buffer);
+  virtual void FreeInternal(Buffer* buffer) OVERRIDE;
 
   BufferAllocator* delegate_;
   Mediator* const mediator_;
@@ -500,7 +500,7 @@ class MemoryLimit : public BufferAllocator {
 
   virtual ~MemoryLimit() {}
 
-  virtual size_t Available() const {
+  virtual size_t Available() const OVERRIDE {
     return allocator_.Available();
   }
 
@@ -511,17 +511,17 @@ class MemoryLimit : public BufferAllocator {
  private:
   virtual Buffer* AllocateInternal(size_t requested,
                                    size_t minimal,
-                                   BufferAllocator* originator) {
+                                   BufferAllocator* originator) OVERRIDE {
     return DelegateAllocate(&allocator_, requested, minimal, originator);
   }
   virtual bool ReallocateInternal(size_t requested,
                                   size_t minimal,
                                   Buffer* buffer,
-                                  BufferAllocator* originator) {
+                                  BufferAllocator* originator) OVERRIDE {
     return DelegateReallocate(&allocator_, requested, minimal, buffer,
                               originator);
   }
-  virtual void FreeInternal(Buffer* buffer) {
+  virtual void FreeInternal(Buffer* buffer) OVERRIDE {
     DelegateFree(&allocator_, buffer);
   }
 
@@ -540,7 +540,7 @@ class SoftQuotaBypassingBufferAllocator : public BufferAllocator {
       : allocator_(std::numeric_limits<size_t>::max(), allocator),
         bypassed_amount_(bypassed_amount) {}
 
-  virtual size_t Available() const {
+  virtual size_t Available() const OVERRIDE {
     const size_t usage = allocator_.GetUsage();
     size_t available = allocator_.Available();
     if (bypassed_amount_ > usage) {
@@ -560,7 +560,7 @@ class SoftQuotaBypassingBufferAllocator : public BufferAllocator {
   }
   virtual Buffer* AllocateInternal(size_t requested,
                                    size_t minimal,
-                                   BufferAllocator* originator) {
+                                   BufferAllocator* originator) OVERRIDE {
     // Try increasing the "minimal" parameter to allocate more aggresively
     // within the bypassed amount of soft quota.
     Buffer* result = DelegateAllocate(&allocator_,
@@ -579,7 +579,7 @@ class SoftQuotaBypassingBufferAllocator : public BufferAllocator {
   virtual bool ReallocateInternal(size_t requested,
                                   size_t minimal,
                                   Buffer* buffer,
-                                  BufferAllocator* originator) {
+                                  BufferAllocator* originator) OVERRIDE {
     if (DelegateReallocate(&allocator_,
                            requested,
                            AdjustMinimal(requested, minimal),
@@ -594,7 +594,7 @@ class SoftQuotaBypassingBufferAllocator : public BufferAllocator {
                                 originator);
     }
   }
-  virtual void FreeInternal(Buffer* buffer) {
+  virtual void FreeInternal(Buffer* buffer) OVERRIDE {
     DelegateFree(&allocator_, buffer);
   }
 
@@ -642,21 +642,21 @@ class MemoryStatisticsCollectingBufferAllocator : public BufferAllocator {
 
   virtual ~MemoryStatisticsCollectingBufferAllocator() {}
 
-  virtual size_t Available() const {
+  virtual size_t Available() const OVERRIDE {
     return delegate_->Available();
   }
 
  private:
   virtual Buffer* AllocateInternal(size_t requested,
                                    size_t minimal,
-                                   BufferAllocator* originator);
+                                   BufferAllocator* originator) OVERRIDE;
 
   virtual bool ReallocateInternal(size_t requested,
                                   size_t minimal,
                                   Buffer* buffer,
-                                  BufferAllocator* originator);
+                                  BufferAllocator* originator) OVERRIDE;
 
-  virtual void FreeInternal(Buffer* buffer);
+  virtual void FreeInternal(Buffer* buffer) OVERRIDE;
 
   BufferAllocator* delegate_;
   gscoped_ptr<MemoryStatisticsCollectorInterface>
@@ -678,7 +678,7 @@ class ThreadSafeBufferAllocator : public BufferAllocator {
       : delegate_(delegate) {}
   virtual ~ThreadSafeBufferAllocator() {}
 
-  virtual size_t Available() const {
+  virtual size_t Available() const OVERRIDE {
     lock_guard_maybe<boost::mutex> lock(mutex());
     return delegate()->Available();
   }
@@ -695,7 +695,7 @@ class ThreadSafeBufferAllocator : public BufferAllocator {
  private:
   virtual Buffer* AllocateInternal(size_t requested,
                                    size_t minimal,
-                                   BufferAllocator* originator) {
+                                   BufferAllocator* originator) OVERRIDE {
     lock_guard_maybe<boost::mutex> lock(mutex());
     return DelegateAllocate(delegate(), requested, minimal, originator);
   }
@@ -703,13 +703,13 @@ class ThreadSafeBufferAllocator : public BufferAllocator {
   virtual bool ReallocateInternal(size_t requested,
                                   size_t minimal,
                                   Buffer* buffer,
-                                  BufferAllocator* originator) {
+                                  BufferAllocator* originator) OVERRIDE {
     lock_guard_maybe<boost::mutex> lock(mutex());
     return DelegateReallocate(delegate(), requested, minimal, buffer,
                               originator);
   }
 
-  virtual void FreeInternal(Buffer* buffer) {
+  virtual void FreeInternal(Buffer* buffer) OVERRIDE {
     lock_guard_maybe<boost::mutex> lock(mutex());
     DelegateFree(delegate(), buffer);
   }
@@ -783,26 +783,26 @@ class OwningBufferAllocator : public BufferAllocator {
     return this;
   }
 
-  virtual size_t Available() const {
+  virtual size_t Available() const OVERRIDE {
     return delegate_->Available();
   }
 
  private:
   virtual Buffer* AllocateInternal(size_t requested,
                                    size_t minimal,
-                                   BufferAllocator* originator) {
+                                   BufferAllocator* originator) OVERRIDE {
     return DelegateAllocate(delegate_, requested, minimal, originator);
   }
 
   virtual bool ReallocateInternal(size_t requested,
                                   size_t minimal,
                                   Buffer* buffer,
-                                  BufferAllocator* originator) {
+                                  BufferAllocator* originator) OVERRIDE {
     return DelegateReallocate(delegate_, requested, minimal, buffer,
                               originator);
   }
 
-  virtual void FreeInternal(Buffer* buffer) {
+  virtual void FreeInternal(Buffer* buffer) OVERRIDE {
     DelegateFree(delegate_, buffer);
   }
 
@@ -826,14 +826,14 @@ class GuaranteeMemory : public BufferAllocator {
       : limit_(memory_quota, true, delegate),
         memory_guarantee_(memory_quota) {}
 
-  virtual size_t Available() const {
+  virtual size_t Available() const OVERRIDE {
     return memory_guarantee_ - limit_.GetUsage();
   }
 
  private:
   virtual Buffer* AllocateInternal(size_t requested,
                                    size_t minimal,
-                                   BufferAllocator* originator) {
+                                   BufferAllocator* originator) OVERRIDE {
     if (requested > Available()) {
       return NULL;
     } else {
@@ -844,14 +844,14 @@ class GuaranteeMemory : public BufferAllocator {
   virtual bool ReallocateInternal(size_t requested,
                                   size_t minimal,
                                   Buffer* buffer,
-                                  BufferAllocator* originator) {
+                                  BufferAllocator* originator) OVERRIDE {
     int64 additional_memory = requested - (buffer != NULL ? buffer->size() : 0);
     return additional_memory <= static_cast<int64>(Available())
         && DelegateReallocate(&limit_, requested, requested,
                               buffer, originator);
   }
 
-  virtual void FreeInternal(Buffer* buffer) {
+  virtual void FreeInternal(Buffer* buffer) OVERRIDE {
     DelegateFree(&limit_, buffer);
   }
 

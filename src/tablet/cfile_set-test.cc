@@ -26,7 +26,7 @@ class TestCFileSet : public KuduRowSetTest {
             (ColumnSchema("c2", UINT32)), 1))
   {}
 
-  virtual void SetUp() {
+  virtual void SetUp() OVERRIDE {
     KuduRowSetTest::SetUp();
 
     // Use a small cfile block size, so that when we skip materializing a given

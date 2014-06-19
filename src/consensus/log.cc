@@ -162,12 +162,12 @@ class Log::SegmentAllocationTask : public Task {
     : log_(log) {
   }
 
-  Status Run() {
+  Status Run() OVERRIDE {
     RETURN_NOT_OK(log_->PreAllocateNewSegment());
     return Status::OK();
   }
 
-  bool Abort() { return false; }
+  bool Abort() OVERRIDE { return false; }
  private:
   Log* log_;
 };

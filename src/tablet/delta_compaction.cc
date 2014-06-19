@@ -54,17 +54,17 @@ class DeltaMemStoreCompactionInput : public DeltaCompactionInput {
         delta_projector_(schema, &projection_) {
   }
 
-  virtual Status Init() {
+  virtual Status Init() OVERRIDE {
     RETURN_NOT_OK(delta_projector_.Init());
     iter_->SeekToStart();
     return Status::OK();
   }
 
-  virtual bool HasMoreBlocks() {
+  virtual bool HasMoreBlocks() OVERRIDE {
     return iter_->IsValid();
   }
 
-  virtual Status PrepareBlock(vector<DeltaKeyAndUpdate> *block) {
+  virtual Status PrepareBlock(vector<DeltaKeyAndUpdate> *block) OVERRIDE {
     // Reset the arena used to project the deltas to the compaction schema.
     arena_.Reset();
 
@@ -88,19 +88,19 @@ class DeltaMemStoreCompactionInput : public DeltaCompactionInput {
     return Status::OK();
   }
 
-  virtual Status FinishBlock() {
+  virtual Status FinishBlock() OVERRIDE {
     return Status::OK();
   }
 
-  const Schema& schema() const {
+  const Schema& schema() const OVERRIDE {
     return projection_;
   }
 
-  const DeltaStats& stats() const {
+  const DeltaStats& stats() const OVERRIDE {
     return stats_;
   }
 
-  const DeltaProjector* delta_projector() const {
+  const DeltaProjector* delta_projector() const OVERRIDE {
     return &delta_projector_;
   }
 
@@ -144,7 +144,7 @@ class DeltaFileCompactionInput : public DeltaCompactionInput {
         block_prepared_(false) {
   }
 
-  virtual Status Init() {
+  virtual Status Init() OVERRIDE {
     DCHECK(!initted_);
     RETURN_NOT_OK(delta_projector_.Init());
     RETURN_NOT_OK(iter_->SeekToFirst());
@@ -152,11 +152,11 @@ class DeltaFileCompactionInput : public DeltaCompactionInput {
     return Status::OK();
   }
 
-  virtual bool HasMoreBlocks() {
+  virtual bool HasMoreBlocks() OVERRIDE {
     return iter_->HasNext();
   }
 
-  virtual Status PrepareBlock(vector<DeltaKeyAndUpdate> *block) {
+  virtual Status PrepareBlock(vector<DeltaKeyAndUpdate> *block) OVERRIDE {
     // Reset the arena used by the ColumnBlock scan and used to project
     // the deltas to the compaction schema.
     arena_.Reset();
@@ -183,7 +183,7 @@ class DeltaFileCompactionInput : public DeltaCompactionInput {
     return Status::OK();
   }
 
-  virtual Status FinishBlock() {
+  virtual Status FinishBlock() OVERRIDE {
     if (block_prepared_) {
       RETURN_NOT_OK(iter_->FinishBatch());
     }
@@ -191,15 +191,15 @@ class DeltaFileCompactionInput : public DeltaCompactionInput {
     return Status::OK();
   }
 
-  const Schema& schema() const {
+  const Schema& schema() const OVERRIDE {
     return projection_;
   }
 
-  const DeltaStats& stats() const {
+  const DeltaStats& stats() const OVERRIDE {
     return stats_;
   }
 
-  const DeltaProjector* delta_projector() const {
+  const DeltaProjector* delta_projector() const OVERRIDE {
     return &delta_projector_;
   }
 
@@ -316,7 +316,7 @@ class MergeDeltaCompactionInput : public DeltaCompactionInput {
     STLDeleteElements(&states_);
   }
 
-  virtual Status Init() {
+  virtual Status Init() OVERRIDE {
     BOOST_FOREACH(MergeState *state, states_) {
       RETURN_NOT_OK(state->input->Init());
     }
@@ -325,7 +325,7 @@ class MergeDeltaCompactionInput : public DeltaCompactionInput {
     return Status::OK();
   }
 
-  virtual bool HasMoreBlocks() {
+  virtual bool HasMoreBlocks() OVERRIDE {
     BOOST_FOREACH(MergeState *state, states_) {
       if (!state->empty() ||
           state->input->HasMoreBlocks()) {
@@ -336,7 +336,7 @@ class MergeDeltaCompactionInput : public DeltaCompactionInput {
     return false;
   }
 
-  virtual Status PrepareBlock(vector<DeltaKeyAndUpdate> *block) {
+  virtual Status PrepareBlock(vector<DeltaKeyAndUpdate> *block) OVERRIDE {
     CHECK(!states_.empty());
 
     block->clear();
@@ -374,19 +374,19 @@ class MergeDeltaCompactionInput : public DeltaCompactionInput {
     return Status::OK();
   }
 
-  virtual Status FinishBlock() {
+  virtual Status FinishBlock() OVERRIDE {
     return ProcessEmptyInputs();
   }
 
-  const Schema& schema() const {
+  const Schema& schema() const OVERRIDE {
     return schema_;
   }
 
-  const DeltaStats& stats() const {
+  const DeltaStats& stats() const OVERRIDE {
     return stats_;
   }
 
-  const DeltaProjector* delta_projector() const {
+  const DeltaProjector* delta_projector() const OVERRIDE {
     LOG(FATAL) <<
         "MergeDeltaCompactionInput does not support delta_projector()";
     return NULL;

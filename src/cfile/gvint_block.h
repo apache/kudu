@@ -30,19 +30,19 @@ class GVIntBlockBuilder : public BlockBuilder {
  public:
   explicit GVIntBlockBuilder(const WriterOptions *options);
 
-  int Add(const uint8_t *vals, size_t count);
+  int Add(const uint8_t *vals, size_t count) OVERRIDE;
 
-  Slice Finish(rowid_t ordinal_pos);
+  Slice Finish(rowid_t ordinal_pos) OVERRIDE;
 
-  void Reset();
+  void Reset() OVERRIDE;
 
-  uint64_t EstimateEncodedSize() const;
+  uint64_t EstimateEncodedSize() const OVERRIDE;
 
-  size_t Count() const;
+  size_t Count() const OVERRIDE;
 
   // Return the first added key.
   // key should be a uint32_t *
-  Status GetFirstKey(void *key) const;
+  Status GetFirstKey(void *key) const OVERRIDE;
 
  private:
   friend class TestEncoding;
@@ -69,31 +69,31 @@ class GVIntBlockDecoder : public BlockDecoder {
  public:
   explicit GVIntBlockDecoder(const Slice &slice);
 
-  Status ParseHeader();
+  Status ParseHeader() OVERRIDE;
   void SeekToStart() {
     SeekToPositionInBlock(0);
   }
 
-  void SeekToPositionInBlock(uint pos);
+  void SeekToPositionInBlock(uint pos) OVERRIDE;
 
-  Status SeekAtOrAfterValue(const void *value, bool *exact_match);
+  Status SeekAtOrAfterValue(const void *value, bool *exact_match) OVERRIDE;
 
-  Status CopyNextValues(size_t *n, ColumnDataView *dst);
+  Status CopyNextValues(size_t *n, ColumnDataView *dst) OVERRIDE;
 
-  size_t GetCurrentIndex() const {
+  size_t GetCurrentIndex() const OVERRIDE {
     DCHECK(parsed_) << "must parse header first";
     return cur_idx_;
   }
 
-  virtual rowid_t GetFirstRowId() const {
+  virtual rowid_t GetFirstRowId() const OVERRIDE {
     return ordinal_pos_base_;
   }
 
-  size_t Count() const {
+  size_t Count() const OVERRIDE {
     return num_elems_;
   }
 
-  bool HasNext() const {
+  bool HasNext() const OVERRIDE {
     return (num_elems_ - cur_idx_) > 0;
   }
 

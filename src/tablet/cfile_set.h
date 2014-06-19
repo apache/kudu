@@ -116,31 +116,31 @@ class CFileSet : public std::tr1::enable_shared_from_this<CFileSet> {
 class CFileSet::Iterator : public ColumnwiseIterator {
  public:
 
-  virtual Status Init(ScanSpec *spec);
+  virtual Status Init(ScanSpec *spec) OVERRIDE;
 
-  virtual Status PrepareBatch(size_t *nrows);
+  virtual Status PrepareBatch(size_t *nrows) OVERRIDE;
 
-  virtual Status InitializeSelectionVector(SelectionVector *sel_vec);
+  virtual Status InitializeSelectionVector(SelectionVector *sel_vec) OVERRIDE;
 
-  virtual Status MaterializeColumn(size_t col_idx, ColumnBlock *dst);
+  virtual Status MaterializeColumn(size_t col_idx, ColumnBlock *dst) OVERRIDE;
 
-  virtual Status FinishBatch();
+  virtual Status FinishBatch() OVERRIDE;
 
-  virtual bool HasNext() const {
+  virtual bool HasNext() const OVERRIDE {
     DCHECK(initted_);
     return cur_idx_ <= upper_bound_idx_;
   }
 
-  virtual string ToString() const {
+  virtual string ToString() const OVERRIDE {
     return string("rowset iterator for ") + base_data_->ToString();
   }
 
-  const Schema &schema() const {
+  const Schema &schema() const OVERRIDE {
     return *projection_;
   }
 
   // Collect the IO statistics for each of the underlying columns.
-  virtual void GetIteratorStats(vector<IteratorStats> *stats) const;
+  virtual void GetIteratorStats(vector<IteratorStats> *stats) const OVERRIDE;
 
   virtual ~Iterator();
  private:

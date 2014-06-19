@@ -23,7 +23,7 @@ class LocalLineItemDAOTest : public KuduTest {
  public:
   LocalLineItemDAOTest() : schema_(tpch::CreateLineItemSchema()), rb_(schema_) {}
 
-  virtual void SetUp() {
+  virtual void SetUp() OVERRIDE {
     KuduTest::SetUp();
 
     // Create the table and Connect to it.

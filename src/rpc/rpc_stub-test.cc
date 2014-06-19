@@ -28,7 +28,7 @@ namespace rpc {
 
 class RpcStubTest : public RpcTestBase {
  public:
-  virtual void SetUp() {
+  virtual void SetUp() OVERRIDE {
     RpcTestBase::SetUp();
     StartTestServerWithGeneratedCode(&server_addr_);
     client_messenger_ = CreateMessenger("Client");

@@ -32,7 +32,7 @@ class TestPredicate : public KuduTest {
   // N      N * 10
   //
   // The third STRING column is left unset.
-  void SetUp() {
+  void SetUp() OVERRIDE {
     KuduTest::SetUp();
 
     ColumnBlock col0 = row_block_.column_block(0, n_rows_);

@@ -44,7 +44,7 @@ class CreateTableStressTest : public KuduTest {
               1) {
   }
 
-  virtual void SetUp() {
+  virtual void SetUp() OVERRIDE {
     // Make heartbeats faster to speed test runtime.
     FLAGS_heartbeat_interval_ms = 10;
 
@@ -67,7 +67,7 @@ class CreateTableStressTest : public KuduTest {
     ASSERT_STATUS_OK(KuduClient::Create(opts, &client_));
   }
 
-  virtual void TearDown() {
+  virtual void TearDown() OVERRIDE {
     cluster_->Shutdown();
   }
 

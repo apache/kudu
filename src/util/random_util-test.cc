@@ -11,7 +11,7 @@ namespace kudu {
 class RandomUtilTest : public KuduTest {
  protected:
 
-  virtual void SetUp() {
+  virtual void SetUp() OVERRIDE {
     KuduTest::SetUp();
     SeedRandom();
   }

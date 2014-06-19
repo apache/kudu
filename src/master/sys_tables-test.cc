@@ -32,7 +32,7 @@ namespace master {
 
 class SysTablesTest : public KuduTest {
  protected:
-  void SetUp() {
+  void SetUp() OVERRIDE {
     KuduTest::SetUp();
 
     // Start master
@@ -66,7 +66,7 @@ class TableLoader : public SysTablesTable::Visitor {
   }
 
   virtual Status VisitTable(const std::string& table_id,
-                            const SysTablesEntryPB& metadata) {
+                            const SysTablesEntryPB& metadata) OVERRIDE {
     // Setup the table info
     TableInfo *table = new TableInfo(table_id);
     TableMetadataLock l(table, TableMetadataLock::WRITE);
@@ -188,7 +188,7 @@ class TabletLoader : public SysTabletsTable::Visitor {
 
   virtual Status VisitTablet(const std::string& table_id,
                              const std::string& tablet_id,
-                             const SysTabletsEntryPB& metadata) {
+                             const SysTabletsEntryPB& metadata) OVERRIDE {
     // Setup the tablet info
     TabletInfo *tablet = new TabletInfo(NULL, tablet_id);
     TabletMetadataLock l(tablet, TabletMetadataLock::WRITE);

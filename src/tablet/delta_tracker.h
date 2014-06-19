@@ -236,22 +236,22 @@ class DeltaTracker {
 // from the delta iterator to the results of the base iterator.
 class DeltaApplier : public ColumnwiseIterator {
  public:
-  virtual Status Init(ScanSpec *spec) {
+  virtual Status Init(ScanSpec *spec) OVERRIDE {
     RETURN_NOT_OK(base_iter_->Init(spec));
     RETURN_NOT_OK(delta_iter_->Init());
     RETURN_NOT_OK(delta_iter_->SeekToOrdinal(0));
     return Status::OK();
   }
 
-  Status PrepareBatch(size_t *nrows);
+  Status PrepareBatch(size_t *nrows) OVERRIDE;
 
-  Status FinishBatch();
+  Status FinishBatch() OVERRIDE;
 
-  bool HasNext() const {
+  bool HasNext() const OVERRIDE {
     return base_iter_->HasNext();
   }
 
-  string ToString() const {
+  string ToString() const OVERRIDE {
     string s;
     s.append("DeltaApplier(");
     s.append(base_iter_->ToString());
@@ -261,20 +261,20 @@ class DeltaApplier : public ColumnwiseIterator {
     return s;
   }
 
-  const Schema &schema() const {
+  const Schema &schema() const OVERRIDE {
     return base_iter_->schema();
   }
 
-  virtual void GetIteratorStats(std::vector<IteratorStats>* stats) const {
+  virtual void GetIteratorStats(std::vector<IteratorStats>* stats) const OVERRIDE {
     return base_iter_->GetIteratorStats(stats);
   }
 
   // Initialize the selection vector for the current batch.
   // This processes DELETEs -- any deleted rows are set to 0 in 'sel_vec'.
   // All other rows are set to 1.
-  virtual Status InitializeSelectionVector(SelectionVector *sel_vec);
+  virtual Status InitializeSelectionVector(SelectionVector *sel_vec) OVERRIDE;
 
-  Status MaterializeColumn(size_t col_idx, ColumnBlock *dst);
+  Status MaterializeColumn(size_t col_idx, ColumnBlock *dst) OVERRIDE;
  private:
   friend class DeltaTracker;
 

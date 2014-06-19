@@ -326,7 +326,7 @@ TYPED_TEST(TestTablet, TestReinsertDuringFlush) {
    public:
     explicit MyCommonHooks(TestFixture *test) : test_(test) {}
 
-    Status PostWriteSnapshot() {
+    Status PostWriteSnapshot() OVERRIDE {
       WriteTransactionState tx_state;
       test_->InsertTestRow(&tx_state, 0, 1);
       tx_state.Reset();
@@ -682,7 +682,7 @@ class MyCommonHooks : public Tablet::FlushCompactCommonHooks {
     return Status::OK();
   }
 
-  virtual Status PostTakeMvccSnapshot() {
+  virtual Status PostTakeMvccSnapshot() OVERRIDE {
     // before we flush we update the MemRowSet afterwards we update the
     // DeltaMemStore
     if (!flushed_) {
@@ -691,20 +691,20 @@ class MyCommonHooks : public Tablet::FlushCompactCommonHooks {
       return DoHook(DELTA_MUTATION);
     }
   }
-  virtual Status PostWriteSnapshot() {
+  virtual Status PostWriteSnapshot() OVERRIDE {
     if (!flushed_) {
       return DoHook(MRS_MUTATION);
     } else {
       return DoHook(DELTA_MUTATION);
     }
   }
-  virtual Status PostSwapInDuplicatingRowSet() {
+  virtual Status PostSwapInDuplicatingRowSet() OVERRIDE {
     return DoHook(DUPLICATED_MUTATION);
   }
-  virtual Status PostReupdateMissedDeltas() {
+  virtual Status PostReupdateMissedDeltas() OVERRIDE {
     return DoHook(DUPLICATED_MUTATION);
   }
-  virtual Status PostSwapNewRowSet() {
+  virtual Status PostSwapNewRowSet() OVERRIDE {
     return DoHook(DELTA_MUTATION);
   }
  protected:

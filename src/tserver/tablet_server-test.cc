@@ -515,33 +515,33 @@ class MyCommonHooks : public Tablet::FlushCompactCommonHooks,
   }
 
   // This should go in pre-flush and get flushed
-  virtual Status PostSwapNewMemRowSet() {
+  virtual Status PostSwapNewMemRowSet() OVERRIDE {
     return DoHook(1, 10 + iteration_);
   }
   // This should go in after the flush, but before
   // the duplicating row set, i.e., this should appear as
   // a missed delta.
-  virtual Status PostTakeMvccSnapshot() {
+  virtual Status PostTakeMvccSnapshot() OVERRIDE {
     return DoHook(2, 20 + iteration_);
   }
   // This too should appear as a missed delta.
-  virtual Status PostWriteSnapshot() {
+  virtual Status PostWriteSnapshot() OVERRIDE {
     return DoHook(3, 30 + iteration_);
   }
   // This should appear as a duplicated mutation
-  virtual Status PostSwapInDuplicatingRowSet() {
+  virtual Status PostSwapInDuplicatingRowSet() OVERRIDE {
     return DoHook(4, 40 + iteration_);
   }
   // This too should appear as a duplicated mutation
-  virtual Status PostReupdateMissedDeltas() {
+  virtual Status PostReupdateMissedDeltas() OVERRIDE {
     return DoHook(5, 50 + iteration_);
   }
   // This should go into the new delta.
-  virtual Status PostSwapNewRowSet() {
+  virtual Status PostSwapNewRowSet() OVERRIDE {
     return DoHook(6, 60 + iteration_);
   }
   // This should go in pre-flush (only on compactions)
-  virtual Status PostSelectIterators() {
+  virtual Status PostSelectIterators() OVERRIDE {
     return DoHook(7, 70 + iteration_);
   }
   void increment_iteration() {

@@ -34,7 +34,7 @@ class InsertConsumer : public TwitterConsumer {
 
   Status Init();
 
-  virtual void ConsumeJSON(const Slice& json);
+  virtual void ConsumeJSON(const Slice& json) OVERRIDE;
 
  private:
   void BatchFinished(const Status& s);

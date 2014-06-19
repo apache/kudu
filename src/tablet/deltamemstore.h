@@ -70,17 +70,17 @@ class DeltaMemStore : public DeltaStore,
                                   const MvccSnapshot &snap,
                                   DeltaIterator** iterator) const OVERRIDE;
 
-  virtual Status CheckRowDeleted(rowid_t row_idx, bool *deleted) const;
+  virtual Status CheckRowDeleted(rowid_t row_idx, bool *deleted) const OVERRIDE;
 
   Status AlterSchema(const Schema& schema);
 
-  virtual const Schema &schema() const {
+  virtual const Schema &schema() const OVERRIDE {
     return schema_;
   }
 
-  const int64_t id() const { return id_; }
+  const int64_t id() const OVERRIDE { return id_; }
 
-  virtual const DeltaStats& delta_stats() const { return delta_stats_; }
+  virtual const DeltaStats& delta_stats() const OVERRIDE { return delta_stats_; }
 
   typedef btree::CBTree<btree::BTreeTraits> DMSTree;
   typedef btree::CBTreeIterator<btree::BTreeTraits> DMSTreeIter;
@@ -127,22 +127,22 @@ class DeltaMemStore : public DeltaStore,
 // functions.
 class DMSIterator : public DeltaIterator {
  public:
-  Status Init();
+  Status Init() OVERRIDE;
 
-  Status SeekToOrdinal(rowid_t row_idx);
+  Status SeekToOrdinal(rowid_t row_idx) OVERRIDE;
 
-  Status PrepareBatch(size_t nrows);
+  Status PrepareBatch(size_t nrows) OVERRIDE;
 
-  Status ApplyUpdates(size_t col_to_apply, ColumnBlock *dst);
+  Status ApplyUpdates(size_t col_to_apply, ColumnBlock *dst) OVERRIDE;
 
-  Status ApplyDeletes(SelectionVector *sel_vec);
+  Status ApplyDeletes(SelectionVector *sel_vec) OVERRIDE;
 
-  Status CollectMutations(vector<Mutation *> *dst, Arena *arena);
+  Status CollectMutations(vector<Mutation *> *dst, Arena *arena) OVERRIDE;
 
   Status FilterColumnsAndAppend(const metadata::ColumnIndexes& col_indexes,
                                 vector<DeltaKeyAndUpdate>* out,
-                                Arena* arena);
-  string ToString() const;
+                                Arena* arena) OVERRIDE;
+  string ToString() const OVERRIDE;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(DMSIterator);

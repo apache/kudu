@@ -88,7 +88,7 @@ class FileSubstitutions : public Substituter {
     return Status::OK();
   }
 
-  virtual void InitSubstitutionMap(map<string, string> *map) const {
+  virtual void InitSubstitutionMap(map<string, string> *map) const OVERRIDE {
     typedef std::map<string, string>::value_type kv_pair;
     BOOST_FOREACH(const kv_pair &pair, map_) {
       (*map)[pair.first] = pair.second;
@@ -153,7 +153,7 @@ class MethodSubstitutions : public Substituter {
     : method_(method) {
   }
 
-  virtual void InitSubstitutionMap(map<string, string> *map) const {
+  virtual void InitSubstitutionMap(map<string, string> *map) const OVERRIDE {
     (*map)["rpc_name"] = method_->name();
     (*map)["rpc_full_name"] = method_->full_name();
     (*map)["rpc_full_name_plainchars"] =
@@ -204,7 +204,7 @@ class ServiceSubstitutions : public Substituter {
     : service_(service)
   {}
 
-  virtual void InitSubstitutionMap(map<string, string> *map) const {
+  virtual void InitSubstitutionMap(map<string, string> *map) const OVERRIDE {
     (*map)["service_name"] = service_->name();
     (*map)["full_service_name"] = service_->full_name();
     (*map)["service_method_count"] = SimpleItoa(service_->method_count());
@@ -259,7 +259,7 @@ class CodeGenerator : public ::google::protobuf::compiler::CodeGenerator {
   bool Generate(const google::protobuf::FileDescriptor *file,
         const std::string &/* parameter */,
         google::protobuf::compiler::GeneratorContext *gen_context,
-        std::string *error) const {
+        std::string *error) const OVERRIDE {
     FileSubstitutions *name_info = new FileSubstitutions();
     Status ret = name_info->Init(file);
     if (!ret.ok()) {

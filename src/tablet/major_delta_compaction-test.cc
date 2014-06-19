@@ -36,7 +36,7 @@ class TestMajorDeltaCompaction : public KuduRowSetTest {
           server::LogicalClock::CreateStartingAt(Timestamp::kInitialTimestamp))) {
   }
 
-  virtual void SetUp() {
+  virtual void SetUp() OVERRIDE {
     KuduRowSetTest::SetUp();
   }
 

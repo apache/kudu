@@ -28,41 +28,41 @@ class TabletServiceImpl : public TabletServerServiceIf {
 
   virtual void Ping(const PingRequestPB* req,
                     PingResponsePB* resp,
-                    rpc::RpcContext* context);
+                    rpc::RpcContext* context) OVERRIDE;
 
   virtual void CreateTablet(const CreateTabletRequestPB* req,
                             CreateTabletResponsePB* resp,
-                            rpc::RpcContext* context);
+                            rpc::RpcContext* context) OVERRIDE;
 
   virtual void DeleteTablet(const DeleteTabletRequestPB* req,
                             DeleteTabletResponsePB* resp,
-                            rpc::RpcContext* context);
+                            rpc::RpcContext* context) OVERRIDE;
 
   virtual void AlterSchema(const AlterSchemaRequestPB* req,
                            AlterSchemaResponsePB* resp,
-                           rpc::RpcContext* context);
+                           rpc::RpcContext* context) OVERRIDE;
 
   virtual void ChangeConfig(const ChangeConfigRequestPB* req, ChangeConfigResponsePB* resp,
-                            rpc::RpcContext* context);
+                            rpc::RpcContext* context) OVERRIDE;
 
   virtual void Write(const WriteRequestPB* req, WriteResponsePB* resp,
-                   rpc::RpcContext* context);
+                   rpc::RpcContext* context) OVERRIDE;
 
   virtual void Scan(const ScanRequestPB* req,
                     ScanResponsePB* resp,
-                    rpc::RpcContext* context);
+                    rpc::RpcContext* context) OVERRIDE;
 
   virtual void ListTablets(const ListTabletsRequestPB* req,
                            ListTabletsResponsePB* resp,
-                           rpc::RpcContext* context);
+                           rpc::RpcContext* context) OVERRIDE;
 
   virtual void UpdateConsensus(const kudu::consensus::ConsensusRequestPB *req,
                                kudu::consensus::ConsensusResponsePB *resp,
-                               ::kudu::rpc::RpcContext *context);
+                               ::kudu::rpc::RpcContext *context) OVERRIDE;
 
   virtual void RequestConsensusVote(const kudu::consensus::VoteRequestPB* req,
                                     kudu::consensus::VoteResponsePB* resp,
-                                    ::kudu::rpc::RpcContext* context);
+                                    ::kudu::rpc::RpcContext* context) OVERRIDE;
 
  private:
   // Lookup the given tablet, ensuring that it both exists and is RUNNING.

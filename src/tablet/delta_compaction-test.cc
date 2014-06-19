@@ -112,7 +112,7 @@ class TestDeltaCompaction : public KuduTest {
     return Status::OK();
   }
 
-  virtual void SetUp() {
+  virtual void SetUp() OVERRIDE {
     KuduTest::SetUp();
     SeedRandom();
   }

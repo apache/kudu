@@ -247,17 +247,17 @@ class DefaultColumnValueIterator : public ColumnIterator {
     : type_(type), value_(value) {
   }
 
-  Status SeekToOrdinal(rowid_t ord_idx);
+  Status SeekToOrdinal(rowid_t ord_idx) OVERRIDE;
 
-  bool seeked() const { return true; }
+  bool seeked() const OVERRIDE { return true; }
 
-  rowid_t GetCurrentOrdinal() const { return ordinal_; }
+  rowid_t GetCurrentOrdinal() const OVERRIDE { return ordinal_; }
 
-  Status PrepareBatch(size_t *n);
-  Status Scan(ColumnBlock *dst);
-  Status FinishBatch();
+  Status PrepareBatch(size_t *n) OVERRIDE;
+  Status Scan(ColumnBlock *dst) OVERRIDE;
+  Status FinishBatch() OVERRIDE;
 
-  const IteratorStats& io_statistics() const { return io_stats_; }
+  const IteratorStats& io_statistics() const OVERRIDE { return io_stats_; }
 
  private:
   const DataType type_;
@@ -284,7 +284,7 @@ class CFileIterator : public ColumnIterator {
   // If provided seek point is past the end of the file,
   // then returns a NotFound Status.
   // TODO: do we ever want to be able to seek to the end of the file?
-  Status SeekToOrdinal(rowid_t ord_idx);
+  Status SeekToOrdinal(rowid_t ord_idx) OVERRIDE;
 
   // Seek the index to the given row_key, or to the index entry immediately
   // before it. Then (if the index is sparse) seek the data block to the
@@ -301,7 +301,7 @@ class CFileIterator : public ColumnIterator {
   // Return true if this reader is currently seeked.
   // If the iterator is not seeked, it is an error to call any functions except
   // for seek (including GetCurrentOrdinal).
-  bool seeked() const { return seeked_; }
+  bool seeked() const OVERRIDE { return seeked_; }
 
   // Get the ordinal index that the iterator is currently pointed to.
   //
@@ -309,7 +309,7 @@ class CFileIterator : public ColumnIterator {
   // seek. PrepareBatch() and Scan() do not change the position returned by this
   // function. FinishBatch() advances the ordinal to the position of the next
   // block to be prepared.
-  rowid_t GetCurrentOrdinal() const;
+  rowid_t GetCurrentOrdinal() const OVERRIDE;
 
   // Prepare to read up to *n into the given column block.
   // On return sets *n to the number of prepared rows, which is always
@@ -320,19 +320,19 @@ class CFileIterator : public ColumnIterator {
   // If there are at least dst->size() values remaining in the underlying file,
   // this will always return *n == dst->size(). In other words, this does not
   // ever result in a "short read".
-  Status PrepareBatch(size_t *n);
+  Status PrepareBatch(size_t *n) OVERRIDE;
 
   // Copy values into the prepared column block.
   // Any indirected values (eg strings) are copied into the dst block's
   // arena.
   // This does _not_ advance the position in the underlying file. Multiple
   // calls to Scan() will re-read the same values.
-  Status Scan(ColumnBlock *dst);
+  Status Scan(ColumnBlock *dst) OVERRIDE;
 
   // Finish processing the current batch, advancing the iterators
   // such that the next call to PrepareBatch() will start where the previous
   // batch left off.
-  Status FinishBatch();
+  Status FinishBatch() OVERRIDE;
 
   // Return true if the next call to PrepareBatch will return at least one row.
   bool HasNext() const;
@@ -340,7 +340,7 @@ class CFileIterator : public ColumnIterator {
   // Convenience method to prepare a batch, scan it, and finish it.
   Status CopyNextValues(size_t *n, ColumnBlock *dst);
 
-  const IteratorStats &io_statistics() const {
+  const IteratorStats &io_statistics() const OVERRIDE {
     return io_stats_;
   }
 

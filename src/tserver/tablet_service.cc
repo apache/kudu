@@ -107,7 +107,7 @@ class RpcTransactionCompletionCallback : public TransactionCompletionCallback {
     as_resp_(NULL),
     cc_resp_(cc_resp) {}
 
-  virtual void TransactionCompleted() {
+  virtual void TransactionCompleted() OVERRIDE {
     if (!status_.ok()) {
       SetupErrorAndRespond(get_error(), status_, code_, context_);
     } else {

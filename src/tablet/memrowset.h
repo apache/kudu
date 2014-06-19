@@ -186,24 +186,24 @@ class MemRowSet : public RowSet,
   }
 
   // Conform entry_count to RowSet
-  Status CountRows(rowid_t *count) const {
+  Status CountRows(rowid_t *count) const OVERRIDE {
     *count = entry_count();
     return Status::OK();
   }
 
   virtual Status GetBounds(Slice *min_encoded_key,
-                           Slice *max_encoded_key) const;
+                           Slice *max_encoded_key) const OVERRIDE;
 
-  uint64_t EstimateOnDiskSize() const {
+  uint64_t EstimateOnDiskSize() const OVERRIDE {
     return 0;
   }
 
-  boost::mutex *compact_flush_lock() {
+  boost::mutex *compact_flush_lock() OVERRIDE {
     return &compact_flush_lock_;
   }
 
   // MemRowSets are never available for compaction, currently.
-  virtual bool IsAvailableForCompaction() {
+  virtual bool IsAvailableForCompaction() OVERRIDE {
     return false;
   }
 
@@ -214,7 +214,7 @@ class MemRowSet : public RowSet,
 
   // TODO: unit test me
   Status CheckRowPresent(const RowSetKeyProbe &probe, bool *present,
-                         ProbeStats* stats) const;
+                         ProbeStats* stats) const OVERRIDE;
 
   // Return the memory footprint of this memrowset.
   // Note that this may be larger than the sum of the data
@@ -245,7 +245,7 @@ class MemRowSet : public RowSet,
                                       const MvccSnapshot &snap) const OVERRIDE;
 
   // Return the Schema for the rows in this memrowset.
-  const Schema &schema() const {
+  const Schema &schema() const OVERRIDE {
     return schema_;
   }
 
@@ -253,20 +253,20 @@ class MemRowSet : public RowSet,
     return id_;
   }
 
-  std::tr1::shared_ptr<metadata::RowSetMetadata> metadata() {
+  std::tr1::shared_ptr<metadata::RowSetMetadata> metadata() OVERRIDE {
     return std::tr1::shared_ptr<metadata::RowSetMetadata>(
         reinterpret_cast<metadata::RowSetMetadata *>(NULL));
   }
 
-  Status AlterSchema(const Schema& schema);
+  Status AlterSchema(const Schema& schema) OVERRIDE;
 
   // Dump the contents of the memrowset to the given vector.
   // If 'lines' is NULL, dumps to LOG(INFO).
   //
   // This dumps every row, so should only be used in tests, etc.
-  virtual Status DebugDump(vector<string> *lines = NULL);
+  virtual Status DebugDump(vector<string> *lines = NULL) OVERRIDE;
 
-  string ToString() const {
+  string ToString() const OVERRIDE {
     return string("memrowset");
   }
 
@@ -282,13 +282,13 @@ class MemRowSet : public RowSet,
     return debug_update_count_;
   }
 
-  size_t DeltaMemStoreSize() const { return 0; }
+  size_t DeltaMemStoreSize() const OVERRIDE { return 0; }
 
-  size_t CountDeltaStores() const { return 0; }
+  size_t CountDeltaStores() const OVERRIDE { return 0; }
 
-  Status FlushDeltas() { return Status::OK(); }
+  Status FlushDeltas() OVERRIDE { return Status::OK(); }
 
-  Status MinorCompactDeltaStores() { return Status::OK(); }
+  Status MinorCompactDeltaStores() OVERRIDE { return Status::OK(); }
 
  private:
   friend class Iterator;
@@ -342,11 +342,11 @@ class MemRowSet::Iterator : public RowwiseIterator {
  public:
   virtual ~Iterator() {}
 
-  virtual Status Init(ScanSpec *spec);
+  virtual Status Init(ScanSpec *spec) OVERRIDE;
 
   Status SeekAtOrAfter(const Slice &key, bool *exact);
 
-  virtual Status PrepareBatch(size_t *nrows);
+  virtual Status PrepareBatch(size_t *nrows) OVERRIDE;
 
   bool has_upper_bound() const {
     return upper_bound_.is_initialized();
@@ -363,11 +363,11 @@ class MemRowSet::Iterator : public RowwiseIterator {
     return iter_->remaining_in_leaf();
   }
 
-  virtual Status MaterializeBlock(RowBlock *dst);
+  virtual Status MaterializeBlock(RowBlock *dst) OVERRIDE;
 
-  virtual Status FinishBatch();
+  virtual Status FinishBatch() OVERRIDE;
 
-  virtual bool HasNext() const {
+  virtual bool HasNext() const OVERRIDE {
     DCHECK_NE(state_, kUninitialized) << "not initted";
     return state_ != kFinished && iter_->IsValid();
   }
@@ -432,15 +432,15 @@ class MemRowSet::Iterator : public RowwiseIterator {
     return iter_->Next();
   }
 
-  string ToString() const {
+  string ToString() const OVERRIDE {
     return "memrowset iterator";
   }
 
-  const Schema &schema() const {
+  const Schema &schema() const OVERRIDE {
     return projector_.projection();
   }
 
-  virtual void GetIteratorStats(std::vector<IteratorStats>* stats) const {
+  virtual void GetIteratorStats(std::vector<IteratorStats>* stats) const OVERRIDE {
     // Currently we do not expose any non-disk related statistics in
     // IteratorStats.  However, callers of GetIteratorStats expected
     // an IteratorStats object for every column; vector::resize() is

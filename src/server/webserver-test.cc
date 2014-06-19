@@ -19,7 +19,7 @@ class WebserverTest : public KuduTest {
     server_.reset(new Webserver(opts));
   }
 
-  virtual void SetUp() {
+  virtual void SetUp() OVERRIDE {
     KuduTest::SetUp();
 
     AddDefaultPathHandlers(server_.get());

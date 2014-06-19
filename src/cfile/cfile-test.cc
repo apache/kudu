@@ -94,28 +94,28 @@ class DataGenerator {
 
 class UInt32DataGenerator : public DataGenerator<uint32_t> {
  public:
-  uint32_t BuildTestValue(size_t block_index, size_t value) {
+  uint32_t BuildTestValue(size_t block_index, size_t value) OVERRIDE {
     return value * 10;
   }
 };
 
 class Int32DataGenerator : public DataGenerator<int32_t> {
  public:
-  int32_t BuildTestValue(size_t block_index, size_t value) {
+  int32_t BuildTestValue(size_t block_index, size_t value) OVERRIDE {
     return (value * 10) *(value % 2 == 0 ? -1 : 1);
   }
 };
 
 class StringDataGenerator : public DataGenerator<Slice> {
  public:
-  Slice BuildTestValue(size_t block_index, size_t value) {
+  Slice BuildTestValue(size_t block_index, size_t value) OVERRIDE {
     char *buf = data_buffer_[block_index].data;
     int len = snprintf(buf, kItemBufferSize - 1, "ITEM-%zu", value);
     DCHECK_LT(len, kItemBufferSize);
     return Slice(buf, len);
   }
 
-  void Resize(size_t num_entries) {
+  void Resize(size_t num_entries) OVERRIDE {
     if (num_entries > block_entries()) {
       data_buffer_.reset(new Buffer[num_entries]);
     }

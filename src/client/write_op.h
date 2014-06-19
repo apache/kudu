@@ -55,10 +55,10 @@ class Insert : public WriteOperation {
  public:
   virtual ~Insert();
 
-  virtual RowOperationsPB::Type RowOperationType() const {
+  virtual RowOperationsPB::Type RowOperationType() const OVERRIDE {
     return RowOperationsPB::INSERT;
   }
-  virtual std::string ToString() const { return "INSERT " + row_.ToString(); }
+  virtual std::string ToString() const OVERRIDE { return "INSERT " + row_.ToString(); }
 
  private:
   friend class KuduTable;
@@ -75,10 +75,10 @@ class Update : public WriteOperation {
  public:
   virtual ~Update();
 
-  virtual RowOperationsPB::Type RowOperationType() const {
+  virtual RowOperationsPB::Type RowOperationType() const OVERRIDE {
     return RowOperationsPB::UPDATE;
   }
-  virtual std::string ToString() const { return "UPDATE " + row_.ToString(); }
+  virtual std::string ToString() const OVERRIDE { return "UPDATE " + row_.ToString(); }
 
  private:
   friend class KuduTable;
@@ -94,10 +94,10 @@ class Delete : public WriteOperation {
  public:
   virtual ~Delete();
 
-  virtual RowOperationsPB::Type RowOperationType() const {
+  virtual RowOperationsPB::Type RowOperationType() const OVERRIDE {
     return RowOperationsPB::DELETE;
   }
-  virtual std::string ToString() const { return "DELETE " + row_.ToString(); }
+  virtual std::string ToString() const OVERRIDE { return "DELETE " + row_.ToString(); }
 
  private:
   friend class KuduTable;

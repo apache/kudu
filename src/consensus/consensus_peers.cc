@@ -94,14 +94,14 @@ class LocalPeer : public PeerImpl {
     last_received_.CopyFrom(initial_op);
   }
 
-  Status Init(OpId* initial_id) {
+  Status Init(OpId* initial_id) OVERRIDE {
     initial_id->CopyFrom(last_received_);
     request_.set_tablet_id(tablet_id_);
     request_.set_sender_uuid(leader_uuid_);
     return Status::OK();
   }
 
-  bool ProcessNextRequest() {
+  bool ProcessNextRequest() OVERRIDE {
     if (PREDICT_FALSE(request_.ops_size() == 0)) {
       return false;
     }
@@ -141,7 +141,7 @@ class LocalPeer : public PeerImpl {
     return true;
   }
 
-  void RequestFinishedCallback() {
+  void RequestFinishedCallback() OVERRIDE {
     if (PREDICT_TRUE(status_.ok())) {
       if (PREDICT_FALSE(VLOG_IS_ON(2))) {
         VLOG(2) << "Local peer logged: " << request_.ShortDebugString();
@@ -186,7 +186,7 @@ class RemotePeer : public PeerImpl {
         state_(kStateWaiting) {
   }
 
-  Status Init(OpId* initial_id) {
+  Status Init(OpId* initial_id) OVERRIDE {
     // TODO ask the remote peer for the initial id when we have catch up.
     initial_id->CopyFrom(log::MinimumOpId());
     request_.set_tablet_id(tablet_id_);
@@ -194,7 +194,7 @@ class RemotePeer : public PeerImpl {
     return Status::OK();
   }
 
-  bool ProcessNextRequest() {
+  bool ProcessNextRequest() OVERRIDE {
     DCHECK_EQ(state_, kStateWaiting);
     response_.Clear();
     controller_.Reset();
@@ -209,7 +209,7 @@ class RemotePeer : public PeerImpl {
     return true;
   }
 
-  virtual void RequestFinishedCallback() {
+  virtual void RequestFinishedCallback() OVERRIDE {
     DCHECK_EQ(state_, kStateSending);
     state_ = kStateWaiting;
     if (PREDICT_FALSE(!controller_.status().ok() || response_.has_error())) {

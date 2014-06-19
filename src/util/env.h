@@ -292,53 +292,55 @@ class EnvWrapper : public Env {
   Env* target() const { return target_; }
 
   // The following text is boilerplate that forwards all methods to target()
-  Status NewSequentialFile(const std::string& f, SequentialFile** r) {
+  Status NewSequentialFile(const std::string& f, SequentialFile** r) OVERRIDE {
     return target_->NewSequentialFile(f, r);
   }
-  Status NewRandomAccessFile(const std::string& f, RandomAccessFile** r) {
+  Status NewRandomAccessFile(const std::string& f, RandomAccessFile** r) OVERRIDE {
     return target_->NewRandomAccessFile(f, r);
   }
-  Status NewWritableFile(const std::string& f, WritableFile** r) {
+  Status NewWritableFile(const std::string& f, WritableFile** r) OVERRIDE {
     return target_->NewWritableFile(f, r);
   }
-  Status NewWritableFile(const WritableFileOptions& o, const std::string& f, WritableFile** r) {
+  Status NewWritableFile(const WritableFileOptions& o,
+                         const std::string& f,
+                         WritableFile** r) OVERRIDE {
     return target_->NewWritableFile(o, f, r);
   }
   Status NewTempWritableFile(const WritableFileOptions& o, const std::string& t,
                              std::string* f, gscoped_ptr<WritableFile>* r) OVERRIDE {
     return target_->NewTempWritableFile(o, t, f, r);
   }
-  bool FileExists(const std::string& f) { return target_->FileExists(f); }
-  Status GetChildren(const std::string& dir, std::vector<std::string>* r) {
+  bool FileExists(const std::string& f) OVERRIDE { return target_->FileExists(f); }
+  Status GetChildren(const std::string& dir, std::vector<std::string>* r) OVERRIDE {
     return target_->GetChildren(dir, r);
   }
-  Status DeleteFile(const std::string& f) { return target_->DeleteFile(f); }
-  Status CreateDir(const std::string& d) { return target_->CreateDir(d); }
-  Status DeleteDir(const std::string& d) { return target_->DeleteDir(d); }
-  Status DeleteRecursively(const std::string& d) { return target_->DeleteRecursively(d); }
-  Status GetFileSize(const std::string& f, uint64_t* s) {
+  Status DeleteFile(const std::string& f) OVERRIDE { return target_->DeleteFile(f); }
+  Status CreateDir(const std::string& d) OVERRIDE { return target_->CreateDir(d); }
+  Status DeleteDir(const std::string& d) OVERRIDE { return target_->DeleteDir(d); }
+  Status DeleteRecursively(const std::string& d) OVERRIDE { return target_->DeleteRecursively(d); }
+  Status GetFileSize(const std::string& f, uint64_t* s) OVERRIDE {
     return target_->GetFileSize(f, s);
   }
-  Status RenameFile(const std::string& s, const std::string& t) {
+  Status RenameFile(const std::string& s, const std::string& t) OVERRIDE {
     return target_->RenameFile(s, t);
   }
-  Status LockFile(const std::string& f, FileLock** l) {
+  Status LockFile(const std::string& f, FileLock** l) OVERRIDE {
     return target_->LockFile(f, l);
   }
-  Status UnlockFile(FileLock* l) { return target_->UnlockFile(l); }
-  virtual Status GetTestDirectory(std::string* path) {
+  Status UnlockFile(FileLock* l) OVERRIDE { return target_->UnlockFile(l); }
+  virtual Status GetTestDirectory(std::string* path) OVERRIDE {
     return target_->GetTestDirectory(path);
   }
-  uint64_t NowMicros() {
+  uint64_t NowMicros() OVERRIDE {
     return target_->NowMicros();
   }
-  void SleepForMicroseconds(int micros) {
+  void SleepForMicroseconds(int micros) OVERRIDE {
     target_->SleepForMicroseconds(micros);
   }
-  uint64_t gettid() {
+  uint64_t gettid() OVERRIDE {
     return target_->gettid();
   }
-  Status GetExecutablePath(std::string* path) {
+  Status GetExecutablePath(std::string* path) OVERRIDE {
     return target_->GetExecutablePath(path);
   }
  private:

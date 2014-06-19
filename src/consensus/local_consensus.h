@@ -41,7 +41,7 @@ class LocalConsensus : public Consensus {
 
   virtual Status Replicate(ConsensusRound* context) OVERRIDE;
 
-  metadata::QuorumPeerPB::Role role() const {
+  metadata::QuorumPeerPB::Role role() const OVERRIDE {
     return metadata::QuorumPeerPB::LEADER;
   }
 
@@ -50,11 +50,11 @@ class LocalConsensus : public Consensus {
     return peer_.permanent_uuid();
   }
 
-  metadata::QuorumPB Quorum() const {
+  metadata::QuorumPB Quorum() const OVERRIDE {
     return quorum_;
   }
 
-  void Shutdown();
+  void Shutdown() OVERRIDE;
 
   //
   //  NOT IMPLEMENTED IN LOCAL CONSENSUS

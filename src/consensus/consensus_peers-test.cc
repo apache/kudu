@@ -29,7 +29,7 @@ class ConsensusPeersTest : public KuduTest {
     :  metric_context_(&metric_registry_, "peer-test"),
        message_queue_(metric_context_) {}
 
-  virtual void SetUp() {
+  virtual void SetUp() OVERRIDE {
     KuduTest::SetUp();
     fs_manager_.reset(new FsManager(env_.get(), test_dir_));
   }

@@ -37,7 +37,7 @@ class TsTabletManagerTest : public KuduTest {
       metric_ctx_(&metric_registry_, "ts_tablet_manager_test") {
   }
 
-  virtual void SetUp() {
+  virtual void SetUp() OVERRIDE {
     KuduTest::SetUp();
 
     mini_server_.reset(new MiniTabletServer(env_.get(), GetTestPath("TsTabletManagerTest-fsroot")));

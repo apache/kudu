@@ -27,7 +27,7 @@ class RpcLineItemDAOTest : public KuduTest {
  public:
   RpcLineItemDAOTest() : schema_(tpch::CreateLineItemSchema()), rb_(schema_) {}
 
-  virtual void SetUp() {
+  virtual void SetUp() OVERRIDE {
     KuduTest::SetUp();
 
     // Start minicluster

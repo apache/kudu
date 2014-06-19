@@ -443,23 +443,23 @@ class Tablet::Iterator : public RowwiseIterator {
  public:
   virtual ~Iterator();
 
-  virtual Status Init(ScanSpec *spec);
+  virtual Status Init(ScanSpec *spec) OVERRIDE;
 
-  virtual Status PrepareBatch(size_t *nrows);
+  virtual Status PrepareBatch(size_t *nrows) OVERRIDE;
 
-  virtual bool HasNext() const;
+  virtual bool HasNext() const OVERRIDE;
 
-  virtual Status MaterializeBlock(RowBlock *dst);
+  virtual Status MaterializeBlock(RowBlock *dst) OVERRIDE;
 
-  virtual Status FinishBatch();
+  virtual Status FinishBatch() OVERRIDE;
 
-  string ToString() const;
+  string ToString() const OVERRIDE;
 
-  const Schema &schema() const {
+  const Schema &schema() const OVERRIDE {
     return projection_;
   }
 
-  virtual void GetIteratorStats(std::vector<IteratorStats>* stats) const;
+  virtual void GetIteratorStats(std::vector<IteratorStats>* stats) const OVERRIDE;
 
  private:
   friend class Tablet;

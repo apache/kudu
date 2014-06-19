@@ -53,7 +53,7 @@ class Webserver : public WebCallbackRegistry {
   Status GetBoundAddresses(std::vector<Sockaddr>* addrs) const;
 
   virtual void RegisterPathHandler(const std::string& path, const PathHandlerCallback& callback,
-                                   bool is_styled = true, bool is_on_nav_bar = true);
+                                   bool is_styled = true, bool is_on_nav_bar = true) OVERRIDE;
 
   // True if serving all traffic over SSL, false otherwise
   bool IsSecure() const;

@@ -222,12 +222,12 @@ class DiskRowSet : public RowSet {
   ////////////////////////////////////////////////////////////
 
   // Flush all accumulated delta data to disk.
-  Status FlushDeltas();
+  Status FlushDeltas() OVERRIDE;
 
   // Perform delta store minor compaction.
   // This compacts the delta files down to a single one.
   // If there is already only a single delta file, this does nothing.
-  Status MinorCompactDeltaStores();
+  Status MinorCompactDeltaStores() OVERRIDE;
 
   ////////////////////////////////////////////////////////////
   // RowSet implementation
@@ -247,7 +247,9 @@ class DiskRowSet : public RowSet {
                    ProbeStats* stats,
                    OperationResultPB* result) OVERRIDE;
 
-  Status CheckRowPresent(const RowSetKeyProbe &probe, bool *present, ProbeStats* stats) const;
+  Status CheckRowPresent(const RowSetKeyProbe &probe,
+                         bool *present,
+                         ProbeStats* stats) const OVERRIDE;
 
   ////////////////////
   // Read functions.
@@ -259,22 +261,22 @@ class DiskRowSet : public RowSet {
                                               const MvccSnapshot &snap) const OVERRIDE;
 
   // Count the number of rows in this rowset.
-  Status CountRows(rowid_t *count) const;
+  Status CountRows(rowid_t *count) const OVERRIDE;
 
   // See RowSet::GetBounds(...)
   virtual Status GetBounds(Slice *min_encoded_key,
-                           Slice *max_encoded_key) const;
+                           Slice *max_encoded_key) const OVERRIDE;
 
   // Estimate the number of bytes on-disk
-  uint64_t EstimateOnDiskSize() const;
+  uint64_t EstimateOnDiskSize() const OVERRIDE;
 
-  size_t DeltaMemStoreSize() const;
+  size_t DeltaMemStoreSize() const OVERRIDE;
 
-  size_t CountDeltaStores() const;
+  size_t CountDeltaStores() const OVERRIDE;
 
-  Status AlterSchema(const Schema& schema);
+  Status AlterSchema(const Schema& schema) OVERRIDE;
 
-  boost::mutex *compact_flush_lock() {
+  boost::mutex *compact_flush_lock() OVERRIDE {
     return &compact_flush_lock_;
   }
 
@@ -282,19 +284,19 @@ class DiskRowSet : public RowSet {
     return DCHECK_NOTNULL(delta_tracker_.get());
   }
 
-  shared_ptr<metadata::RowSetMetadata> metadata() {
+  shared_ptr<metadata::RowSetMetadata> metadata() OVERRIDE {
     return rowset_metadata_;
   }
 
-  const Schema& schema() const {
+  const Schema& schema() const OVERRIDE {
     return rowset_metadata_->schema();
   }
 
-  std::string ToString() const {
+  std::string ToString() const OVERRIDE {
     return rowset_metadata_->ToString();
   }
 
-  virtual Status DebugDump(std::vector<std::string> *out = NULL);
+  virtual Status DebugDump(std::vector<std::string> *out = NULL) OVERRIDE;
 
  private:
   FRIEND_TEST(TestRowSet, TestRowSetUpdate);

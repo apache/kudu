@@ -41,15 +41,15 @@ class RpcLineItemDAO : public LineItemDAO {
  public:
   RpcLineItemDAO(const string& master_address, const string& table_name,
                  const int batch_size, const int mstimeout = 5000);
-  virtual void WriteLine(boost::function<void(PartialRow*)> f);
-  virtual void MutateLine(boost::function<void(PartialRow*)> f);
-  virtual void Init();
-  virtual void FinishWriting();
-  virtual void OpenScanner(const Schema &query_schema, ScanSpec *spec);
-  virtual bool HasMore();
-  virtual void GetNext(RowBlock *block);
+  virtual void WriteLine(boost::function<void(PartialRow*)> f) OVERRIDE;
+  virtual void MutateLine(boost::function<void(PartialRow*)> f) OVERRIDE;
+  virtual void Init() OVERRIDE;
+  virtual void FinishWriting() OVERRIDE;
+  virtual void OpenScanner(const Schema &query_schema, ScanSpec *spec) OVERRIDE;
+  virtual bool HasMore() OVERRIDE;
+  virtual void GetNext(RowBlock *block) OVERRIDE;
   void GetNext(std::vector<client::KuduRowResult> *rows);
-  virtual bool IsTableEmpty();
+  virtual bool IsTableEmpty() OVERRIDE;
   ~RpcLineItemDAO();
 
  private:

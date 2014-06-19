@@ -72,7 +72,7 @@ class ClientTest : public KuduTest {
       rb_(schema_) {
   }
 
-  virtual void SetUp() {
+  virtual void SetUp() OVERRIDE {
     KuduTest::SetUp();
 
     // Reduce the TS<->Master heartbeat interval
@@ -116,7 +116,7 @@ class ClientTest : public KuduTest {
     return keys;
   }
 
-  virtual void TearDown() {
+  virtual void TearDown() OVERRIDE {
     if (cluster_) {
       cluster_.reset();
     }

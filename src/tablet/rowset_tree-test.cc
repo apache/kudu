@@ -22,7 +22,7 @@ class TestRowSetTree : public KuduTest {
 class MockRowSet : public RowSet {
  public:
   virtual Status CheckRowPresent(const RowSetKeyProbe &probe, bool *present,
-                                 ProbeStats* stats) const {
+                                 ProbeStats* stats) const OVERRIDE {
     LOG(FATAL) << "Unimplemented";
     return Status::OK();
   }
@@ -41,19 +41,19 @@ class MockRowSet : public RowSet {
     return NULL;
   }
   virtual CompactionInput *NewCompactionInput(const Schema* projection,
-                                              const MvccSnapshot &snap) const {
+                                              const MvccSnapshot &snap) const OVERRIDE {
     LOG(FATAL) << "Unimplemented";
     return NULL;
   }
-  virtual Status CountRows(rowid_t *count) const {
+  virtual Status CountRows(rowid_t *count) const OVERRIDE {
     LOG(FATAL) << "Unimplemented";
     return Status::OK();
   }
-  virtual string ToString() const {
+  virtual string ToString() const OVERRIDE {
     LOG(FATAL) << "Unimplemented";
     return "";
   }
-  virtual Status DebugDump(vector<string> *lines = NULL) {
+  virtual Status DebugDump(vector<string> *lines = NULL) OVERRIDE {
     LOG(FATAL) << "Unimplemented";
     return Status::OK();
   }
@@ -61,42 +61,42 @@ class MockRowSet : public RowSet {
     LOG(FATAL) << "Unimplemented";
     return Status::OK();
   }
-  virtual uint64_t EstimateOnDiskSize() const {
+  virtual uint64_t EstimateOnDiskSize() const OVERRIDE {
     LOG(FATAL) << "Unimplemented";
     return 0;
   }
-  virtual boost::mutex *compact_flush_lock() {
+  virtual boost::mutex *compact_flush_lock() OVERRIDE {
     LOG(FATAL) << "Unimplemented";
     return NULL;
   }
-  virtual shared_ptr<RowSetMetadata> metadata() {
+  virtual shared_ptr<RowSetMetadata> metadata() OVERRIDE {
     LOG(FATAL) << "Unimplemented";
     return shared_ptr<RowSetMetadata>(reinterpret_cast<RowSetMetadata *>(NULL));
   }
-  virtual Status AlterSchema(const Schema& schema) {
+  virtual Status AlterSchema(const Schema& schema) OVERRIDE {
     LOG(FATAL) << "Unimplemented";
     return Status::OK();
   }
-  virtual const Schema &schema() const {
+  virtual const Schema &schema() const OVERRIDE {
     LOG(FATAL) << "Unimplemented";
   }
 
-  virtual size_t DeltaMemStoreSize() const {
+  virtual size_t DeltaMemStoreSize() const OVERRIDE {
     LOG(FATAL) << "Unimplemented";
     return 0;
   }
 
-  virtual size_t CountDeltaStores() const {
+  virtual size_t CountDeltaStores() const OVERRIDE {
     LOG(FATAL) << "Unimplemented";
     return 0;
   }
 
-  virtual Status FlushDeltas() {
+  virtual Status FlushDeltas() OVERRIDE {
     LOG(FATAL) << "Unimplemented";
     return Status::OK();
   }
 
-  virtual Status MinorCompactDeltaStores() {
+  virtual Status MinorCompactDeltaStores() OVERRIDE {
     LOG(FATAL) << "Unimplemented";
     return Status::OK();
   }
@@ -111,7 +111,7 @@ class MockDiskRowSet : public MockRowSet {
   }
 
   virtual Status GetBounds(Slice *min_encoded_key,
-                           Slice *max_encoded_key) const {
+                           Slice *max_encoded_key) const OVERRIDE {
     *min_encoded_key = Slice(first_key_);
     *max_encoded_key = Slice(last_key_);
     return Status::OK();
@@ -126,7 +126,7 @@ class MockDiskRowSet : public MockRowSet {
 class MockMemRowSet : public MockRowSet {
  public:
   virtual Status GetBounds(Slice *min_encoded_key,
-                           Slice *max_encoded_key) const {
+                           Slice *max_encoded_key) const OVERRIDE {
     return Status::NotSupported("");
   }
 

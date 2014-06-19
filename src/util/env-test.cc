@@ -251,7 +251,7 @@ class ShortReadRandomAccessFile : public RandomAccessFile {
   }
 
   virtual Status Read(uint64_t offset, size_t n, Slice* result,
-                      uint8_t *scratch) const {
+                      uint8_t *scratch) const OVERRIDE {
     CHECK_GT(n, 0);
     // Divide the requested amount of data by a small integer,
     // and issue the shorter read to the underlying file.
@@ -265,7 +265,7 @@ class ShortReadRandomAccessFile : public RandomAccessFile {
     return wrapped_->Read(offset, short_n, result, scratch);
   }
 
-  virtual Status Size(uint64_t *size) const {
+  virtual Status Size(uint64_t *size) const OVERRIDE {
     return wrapped_->Size(size);
   }
 

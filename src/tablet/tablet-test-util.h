@@ -29,7 +29,7 @@ class KuduTabletTest : public KuduTest {
       clock_(server::LogicalClock::CreateStartingAt(Timestamp::kInitialTimestamp)) {
   }
 
-  virtual void SetUp() {
+  virtual void SetUp() OVERRIDE {
     KuduTest::SetUp();
 
     SetUpTestTablet();
@@ -99,7 +99,7 @@ class KuduRowSetTest : public KuduTabletTest {
     : KuduTabletTest(schema) {
   }
 
-  virtual void SetUp() {
+  virtual void SetUp() OVERRIDE {
     KuduTabletTest::SetUp();
     ASSERT_STATUS_OK(tablet_->metadata()->CreateRowSet(&rowset_meta_,
                                                        SchemaBuilder(schema_).Build()));

@@ -34,23 +34,23 @@ class MergeIterator : public RowwiseIterator {
                 const vector<shared_ptr<RowwiseIterator> > &iters);
 
   // The passed-in iterators should be already initialized.
-  Status Init(ScanSpec *spec);
+  Status Init(ScanSpec *spec) OVERRIDE;
 
-  virtual Status PrepareBatch(size_t *nrows);
+  virtual Status PrepareBatch(size_t *nrows) OVERRIDE;
 
-  virtual Status MaterializeBlock(RowBlock *dst);
+  virtual Status MaterializeBlock(RowBlock *dst) OVERRIDE;
 
-  virtual Status FinishBatch();
+  virtual Status FinishBatch() OVERRIDE;
 
-  virtual bool HasNext() const {
+  virtual bool HasNext() const OVERRIDE {
     return !iters_.empty();
   }
 
-  virtual string ToString() const;
+  virtual string ToString() const OVERRIDE;
 
-  virtual const Schema &schema() const { return schema_; }
+  virtual const Schema &schema() const OVERRIDE { return schema_; }
 
-  virtual void GetIteratorStats(std::vector<IteratorStats>* stats) const;
+  virtual void GetIteratorStats(std::vector<IteratorStats>* stats) const OVERRIDE;
 
  private:
   Status InitSubIterators(ScanSpec *spec);
@@ -87,22 +87,22 @@ class UnionIterator : public RowwiseIterator {
   // calling iter->Init(spec) should remove all predicates from the spec.
   explicit UnionIterator(const vector<shared_ptr<RowwiseIterator> > &iters);
 
-  Status Init(ScanSpec *spec);
+  Status Init(ScanSpec *spec) OVERRIDE;
 
-  Status PrepareBatch(size_t *nrows);
-  Status MaterializeBlock(RowBlock *dst);
-  Status FinishBatch();
+  Status PrepareBatch(size_t *nrows) OVERRIDE;
+  Status MaterializeBlock(RowBlock *dst) OVERRIDE;
+  Status FinishBatch() OVERRIDE;
 
-  bool HasNext() const;
+  bool HasNext() const OVERRIDE;
 
-  string ToString() const;
+  string ToString() const OVERRIDE;
 
-  const Schema &schema() const {
+  const Schema &schema() const OVERRIDE {
     CHECK(schema_.get() != NULL) << "Bad schema in " << ToString();
     return *CHECK_NOTNULL(schema_.get());
   }
 
-  virtual void GetIteratorStats(std::vector<IteratorStats>* stats) const;
+  virtual void GetIteratorStats(std::vector<IteratorStats>* stats) const OVERRIDE;
 
  private:
   Status InitSubIterators(ScanSpec *spec);
@@ -134,21 +134,21 @@ class MaterializingIterator : public RowwiseIterator {
   explicit MaterializingIterator(const shared_ptr<ColumnwiseIterator> &iter);
 
   // Initialize the iterator, performing predicate pushdown as described above.
-  Status Init(ScanSpec *spec);
+  Status Init(ScanSpec *spec) OVERRIDE;
 
-  Status PrepareBatch(size_t *nrows);
-  Status MaterializeBlock(RowBlock *dst);
-  Status FinishBatch();
+  Status PrepareBatch(size_t *nrows) OVERRIDE;
+  Status MaterializeBlock(RowBlock *dst) OVERRIDE;
+  Status FinishBatch() OVERRIDE;
 
-  bool HasNext() const;
+  bool HasNext() const OVERRIDE;
 
-  string ToString() const;
+  string ToString() const OVERRIDE;
 
-  const Schema &schema() const {
+  const Schema &schema() const OVERRIDE {
     return iter_->schema();
   }
 
-  virtual void GetIteratorStats(std::vector<IteratorStats>* stats) const {
+  virtual void GetIteratorStats(std::vector<IteratorStats>* stats) const OVERRIDE {
     iter_->GetIteratorStats(stats);
   }
 
@@ -186,21 +186,21 @@ class PredicateEvaluatingIterator : public RowwiseIterator {
 
   // Initialize the iterator.
   // POSTCONDITION: spec->predicates().empty()
-  Status Init(ScanSpec *spec);
+  Status Init(ScanSpec *spec) OVERRIDE;
 
-  Status PrepareBatch(size_t *nrows);
-  Status MaterializeBlock(RowBlock *dst);
-  Status FinishBatch();
+  Status PrepareBatch(size_t *nrows) OVERRIDE;
+  Status MaterializeBlock(RowBlock *dst) OVERRIDE;
+  Status FinishBatch() OVERRIDE;
 
-  bool HasNext() const;
+  bool HasNext() const OVERRIDE;
 
-  string ToString() const;
+  string ToString() const OVERRIDE;
 
-  const Schema &schema() const {
+  const Schema &schema() const OVERRIDE {
     return base_iter_->schema();
   }
 
-  virtual void GetIteratorStats(std::vector<IteratorStats>* stats) const {
+  virtual void GetIteratorStats(std::vector<IteratorStats>* stats) const OVERRIDE {
     base_iter_->GetIteratorStats(stats);
   }
 

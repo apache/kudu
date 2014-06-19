@@ -18,7 +18,7 @@ class HybridClockTest : public KuduTest {
       : clock_(new HybridClock) {
   }
 
-  virtual void SetUp() {
+  virtual void SetUp() OVERRIDE {
     KuduTest::SetUp();
     // set the synchronization requirement higher since test servers/local dev machines
     // might be quite unsynchronized.

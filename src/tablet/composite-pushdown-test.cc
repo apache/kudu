@@ -25,7 +25,7 @@ class CompositePushdownTest : public KuduTabletTest {
                               3)) {
   }
 
-  virtual void SetUp() {
+  virtual void SetUp() OVERRIDE {
     KuduTabletTest::SetUp();
 
     FillTestTablet();

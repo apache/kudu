@@ -35,7 +35,7 @@ namespace master {
 
 class MasterTest : public KuduTest {
  protected:
-  void SetUp() {
+  void SetUp() OVERRIDE {
     KuduTest::SetUp();
 
     // Start master

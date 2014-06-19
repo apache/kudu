@@ -36,7 +36,7 @@ class PlainBlockBuilder : public BlockBuilder {
     Reset();
   }
 
-  virtual int Add(const uint8_t *vals_void, size_t count) {
+  virtual int Add(const uint8_t *vals_void, size_t count) OVERRIDE {
     int old_size = buffer_.size();
     buffer_.resize(old_size + count * kCppTypeSize);
     memcpy(&buffer_[old_size], vals_void, count * kCppTypeSize);
@@ -44,27 +44,27 @@ class PlainBlockBuilder : public BlockBuilder {
     return count;
   }
 
-  virtual Slice Finish(rowid_t ordinal_pos) {
+  virtual Slice Finish(rowid_t ordinal_pos) OVERRIDE {
     InlineEncodeFixed32(&buffer_[0], count_);
     InlineEncodeFixed32(&buffer_[4], ordinal_pos);
     return Slice(buffer_);
   }
 
-  virtual void Reset() {
+  virtual void Reset() OVERRIDE {
     count_ = 0;
     buffer_.clear();
     buffer_.resize(kHeaderSize);
   }
 
-  virtual uint64_t EstimateEncodedSize() const {
+  virtual uint64_t EstimateEncodedSize() const OVERRIDE {
     return buffer_.size();
   }
 
-  virtual size_t Count() const {
+  virtual size_t Count() const OVERRIDE {
     return count_;
   }
 
-  virtual Status GetFirstKey(void *key) const {
+  virtual Status GetFirstKey(void *key) const OVERRIDE {
     DCHECK_GT(count_, 0);
     *reinterpret_cast<CppType *>(key) = Decode<CppType>(&buffer_[kHeaderSize]);
     return Status::OK();
@@ -95,7 +95,7 @@ class PlainBlockDecoder : public BlockDecoder {
       cur_idx_(0) {
   }
 
-  virtual Status ParseHeader() {
+  virtual Status ParseHeader() OVERRIDE {
     CHECK(!parsed_);
 
     if (data_.size() < kHeaderSize) {
@@ -121,7 +121,7 @@ class PlainBlockDecoder : public BlockDecoder {
     return Status::OK();
   }
 
-  virtual void SeekToPositionInBlock(uint pos) {
+  virtual void SeekToPositionInBlock(uint pos) OVERRIDE {
     CHECK(parsed_) << "Must call ParseHeader()";
 
     if (PREDICT_FALSE(num_elems_ == 0)) {
@@ -133,7 +133,7 @@ class PlainBlockDecoder : public BlockDecoder {
     cur_idx_ = pos;
   }
 
-  virtual Status SeekAtOrAfterValue(const void *value, bool *exact_match) {
+  virtual Status SeekAtOrAfterValue(const void *value, bool *exact_match) OVERRIDE {
     DCHECK(value != NULL);
 
     const CppType &target = *reinterpret_cast<const CppType *>(value);
@@ -165,7 +165,7 @@ class PlainBlockDecoder : public BlockDecoder {
     return Status::OK();
   }
 
-  virtual Status CopyNextValues(size_t *n, ColumnDataView *dst) {
+  virtual Status CopyNextValues(size_t *n, ColumnDataView *dst) OVERRIDE {
     DCHECK(parsed_);
     DCHECK_LE(*n, dst->nrows());
     DCHECK_EQ(dst->stride(), sizeof(CppType));
@@ -182,19 +182,19 @@ class PlainBlockDecoder : public BlockDecoder {
     return Status::OK();
   }
 
-  virtual bool HasNext() const {
+  virtual bool HasNext() const OVERRIDE {
     return cur_idx_ < num_elems_;
   }
 
-  virtual size_t Count() const {
+  virtual size_t Count() const OVERRIDE {
     return num_elems_;
   }
 
-  virtual size_t GetCurrentIndex() const {
+  virtual size_t GetCurrentIndex() const OVERRIDE {
     return cur_idx_;
   }
 
-  virtual rowid_t GetFirstRowId() const {
+  virtual rowid_t GetFirstRowId() const OVERRIDE {
     return ordinal_pos_base_;
   }
 

@@ -67,14 +67,14 @@ class LogTestBase : public KuduTest {
     : opid_anchor_registry_(new OpIdAnchorRegistry()) {
   }
 
-  virtual void SetUp() {
+  virtual void SetUp() OVERRIDE {
     KuduTest::SetUp();
     current_id_ = 0;
     fs_manager_.reset(new FsManager(env_.get(), test_dir_));
     CreateTestSchema(&schema_);
   }
 
-  virtual void TearDown() {
+  virtual void TearDown() OVERRIDE {
     KuduTest::TearDown();
     STLDeleteElements(&entries_);
   }

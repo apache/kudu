@@ -41,16 +41,16 @@ class DeltaIteratorMerger : public DeltaIterator {
   ////////////////////////////////////////////////////////////
   // Implementations of DeltaIterator
   ////////////////////////////////////////////////////////////
-  virtual Status Init();
-  virtual Status SeekToOrdinal(rowid_t idx);
-  virtual Status PrepareBatch(size_t nrows);
-  virtual Status ApplyUpdates(size_t col_to_apply, ColumnBlock *dst);
-  virtual Status ApplyDeletes(SelectionVector *sel_vec);
-  virtual Status CollectMutations(vector<Mutation *> *dst, Arena *arena);
+  virtual Status Init() OVERRIDE;
+  virtual Status SeekToOrdinal(rowid_t idx) OVERRIDE;
+  virtual Status PrepareBatch(size_t nrows) OVERRIDE;
+  virtual Status ApplyUpdates(size_t col_to_apply, ColumnBlock *dst) OVERRIDE;
+  virtual Status ApplyDeletes(SelectionVector *sel_vec) OVERRIDE;
+  virtual Status CollectMutations(vector<Mutation *> *dst, Arena *arena) OVERRIDE;
   virtual Status FilterColumnsAndAppend(const metadata::ColumnIndexes& col_indexes,
                                         vector<DeltaKeyAndUpdate>* out,
-                                        Arena* arena);
-  virtual string ToString() const;
+                                        Arena* arena) OVERRIDE;
+  virtual string ToString() const OVERRIDE;
 
  private:
   explicit DeltaIteratorMerger(const vector<shared_ptr<DeltaIterator> > &iters);

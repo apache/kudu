@@ -200,7 +200,7 @@ struct CallTransferCallbacks : public TransferCallbacks {
     : call_(call) {
   }
 
-  virtual void NotifyTransferFinished() {
+  virtual void NotifyTransferFinished() OVERRIDE {
     // TODO: would be better to cancel the transfer while it is still on the queue if we
     // timed out before the transfer started, but there is still a race in the case of
     // a partial send that we have to handle here
@@ -212,7 +212,7 @@ struct CallTransferCallbacks : public TransferCallbacks {
     delete this;
   }
 
-  virtual void NotifyTransferAborted(const Status &status) {
+  virtual void NotifyTransferAborted(const Status &status) OVERRIDE {
     VLOG(1) << "Connection torn down before " <<
       call_->ToString() << " could send its call: " << status.ToString();
     delete this;
@@ -289,11 +289,11 @@ struct ResponseTransferCallbacks : public TransferCallbacks {
     DCHECK_EQ(call_from_map, call_.get());
   }
 
-  virtual void NotifyTransferFinished() {
+  virtual void NotifyTransferFinished() OVERRIDE {
     delete this;
   }
 
-  virtual void NotifyTransferAborted(const Status &status) {
+  virtual void NotifyTransferAborted(const Status &status) OVERRIDE {
     LOG(WARNING) << "Connection torn down before " <<
       call_->ToString() << " could send its response";
     delete this;
@@ -313,12 +313,12 @@ class QueueTransferTask : public ReactorTask {
       conn_(conn)
   {}
 
-  virtual void Run(ReactorThread *thr) {
+  virtual void Run(ReactorThread *thr) OVERRIDE {
     conn_->QueueOutbound(transfer_.Pass());
     delete this;
   }
 
-  virtual void Abort(const Status &status) {
+  virtual void Abort(const Status &status) OVERRIDE {
     transfer_->Abort(status);
     delete this;
   }
@@ -538,12 +538,12 @@ class NegotiationCompletedTask : public ReactorTask {
       negotiation_status_(negotiation_status) {
   }
 
-  virtual void Run(ReactorThread *rthread) {
+  virtual void Run(ReactorThread *rthread) OVERRIDE {
     rthread->CompleteConnectionNegotiation(conn_, negotiation_status_);
     delete this;
   }
 
-  virtual void Abort(const Status &status) {
+  virtual void Abort(const Status &status) OVERRIDE {
     DCHECK(conn_->reactor_thread()->reactor()->closing());
     VLOG(1) << "Failed connection negotiation due to shut down reactor thread: " <<
         status.ToString();

@@ -32,7 +32,7 @@ class TestOperationStatus : public OperationStatusTracker {
       replicated_count_(0) {
   }
 
-  void AckPeer(const string& uuid) {
+  void AckPeer(const string& uuid) OVERRIDE {
     if (PREDICT_FALSE(VLOG_IS_ON(2))) {
       VLOG(2) << "Peer: " << uuid << " Ack'd op: " << op_id_.ShortDebugString();
     }
@@ -42,15 +42,15 @@ class TestOperationStatus : public OperationStatusTracker {
     all_replicated_latch_.CountDown();
   }
 
-  bool IsDone() const {
+  bool IsDone() const OVERRIDE {
     return majority_latch_.count() == 0;
   }
 
-  bool IsAllDone() const {
+  bool IsAllDone() const OVERRIDE {
     return all_replicated_latch_.count() == 0;
   }
 
-  void Wait() {
+  void Wait() OVERRIDE {
     majority_latch_.Wait();
   }
 
@@ -63,7 +63,7 @@ class TestOperationStatus : public OperationStatusTracker {
     return replicated_count_;
   }
 
-  virtual std::string ToString() const {
+  virtual std::string ToString() const OVERRIDE {
     boost::lock_guard<simple_spinlock> lock(lock_);
     return Substitute("Id: $0, IsDone: $1, IsAllDone: $2, ReplicatedCount: $3.",
                       op_id_.ShortDebugString(), IsDone(), IsAllDone(), replicated_count_);
@@ -282,7 +282,7 @@ class LocalTestPeerProxy : public PeerProxy {
 class UnsetConsensusOnDestroyHook : public Consensus::ConsensusFaultHooks {
  public:
    void AddPeerProxy(LocalTestPeerProxy* proxy) { proxies_.push_back(proxy); }
-   virtual Status PreShutdown() {
+   virtual Status PreShutdown() OVERRIDE {
      BOOST_FOREACH(LocalTestPeerProxy* proxy, proxies_) {
        proxy->ConsensusShutdown();
      }
@@ -329,7 +329,7 @@ class TestTransaction : public ReplicaCommitContinuation {
     : context_(context.Pass()),
       pool_(pool) {}
 
-  virtual Status LeaderCommitted(gscoped_ptr<OperationPB> leader_commit_op) {
+  virtual Status LeaderCommitted(gscoped_ptr<OperationPB> leader_commit_op) OVERRIDE {
     context_->SetLeaderCommitOp(leader_commit_op.Pass());
     RETURN_NOT_OK(pool_->SubmitFunc(boost::bind(&TestTransaction::Commit, this)));
     return Status::OK();
@@ -364,7 +364,7 @@ class TestTransactionFactory : public ReplicaTransactionFactory {
     thread_pool_.Init();
   }
 
-  Status StartReplicaTransaction(gscoped_ptr<ConsensusRound> context) {
+  Status StartReplicaTransaction(gscoped_ptr<ConsensusRound> context) OVERRIDE {
     TestTransaction* txn = new TestTransaction(&thread_pool_, context.Pass());
     txn->context_->SetReplicaCommitContinuation(txn);
     std::tr1::shared_ptr<FutureCallback> commit_clbk(
@@ -405,84 +405,84 @@ class CounterHooks : public Consensus::ConsensusFaultHooks {
         post_shutdown_calls_(0) {
   }
 
-  virtual Status PreStart() {
+  virtual Status PreStart() OVERRIDE {
     if (current_hook_.get()) RETURN_NOT_OK(current_hook_->PreStart());
     boost::lock_guard<simple_spinlock> lock(lock_);
     pre_start_calls_++;
     return Status::OK();
   }
 
-  virtual Status PostStart() {
+  virtual Status PostStart() OVERRIDE {
     if (current_hook_.get()) RETURN_NOT_OK(current_hook_->PostStart());
     boost::lock_guard<simple_spinlock> lock(lock_);
     post_start_calls_++;
     return Status::OK();
   }
 
-  virtual Status PreConfigChange() {
+  virtual Status PreConfigChange() OVERRIDE {
     if (current_hook_.get()) RETURN_NOT_OK(current_hook_->PreConfigChange());
     boost::lock_guard<simple_spinlock> lock(lock_);
     pre_config_change_calls_++;
     return Status::OK();
   }
 
-  virtual Status PostConfigChange() {
+  virtual Status PostConfigChange() OVERRIDE {
     if (current_hook_.get()) RETURN_NOT_OK(current_hook_->PostConfigChange());
     boost::lock_guard<simple_spinlock> lock(lock_);
     post_config_change_calls_++;
     return Status::OK();
   }
 
-  virtual Status PreReplicate() {
+  virtual Status PreReplicate() OVERRIDE {
     if (current_hook_.get()) RETURN_NOT_OK(current_hook_->PreReplicate());
     boost::lock_guard<simple_spinlock> lock(lock_);
     pre_replicate_calls_++;
     return Status::OK();
   }
 
-  virtual Status PostReplicate() {
+  virtual Status PostReplicate() OVERRIDE {
     if (current_hook_.get()) RETURN_NOT_OK(current_hook_->PostReplicate());
     boost::lock_guard<simple_spinlock> lock(lock_);
     post_replicate_calls_++;
     return Status::OK();
   }
 
-  virtual Status PreCommit() {
+  virtual Status PreCommit() OVERRIDE {
     if (current_hook_.get()) RETURN_NOT_OK(current_hook_->PreCommit());
     boost::lock_guard<simple_spinlock> lock(lock_);
     pre_commit_calls_++;
     return Status::OK();
   }
 
-  virtual Status PostCommit() {
+  virtual Status PostCommit() OVERRIDE {
     if (current_hook_.get()) RETURN_NOT_OK(current_hook_->PostCommit());
     boost::lock_guard<simple_spinlock> lock(lock_);
     post_commit_calls_++;
     return Status::OK();
   }
 
-  virtual Status PreUpdate() {
+  virtual Status PreUpdate() OVERRIDE {
     if (current_hook_.get()) RETURN_NOT_OK(current_hook_->PreUpdate());
     boost::lock_guard<simple_spinlock> lock(lock_);
     pre_update_calls_++;
     return Status::OK();
   }
 
-  virtual Status PostUpdate() {
+  virtual Status PostUpdate() OVERRIDE {
     if (current_hook_.get()) RETURN_NOT_OK(current_hook_->PostUpdate());
     boost::lock_guard<simple_spinlock> lock(lock_);
     post_update_calls_++;
     return Status::OK();
   }
 
-  virtual Status PreShutdown() {
+  virtual Status PreShutdown() OVERRIDE {
     if (current_hook_.get()) RETURN_NOT_OK(current_hook_->PreShutdown());
     boost::lock_guard<simple_spinlock> lock(lock_);
     pre_shutdown_calls_++;
     return Status::OK();
   }
 
-  virtual Status PostShutdown() {
+  virtual Status PostShutdown() OVERRIDE {
     if (current_hook_.get()) RETURN_NOT_OK(current_hook_->PostShutdown());
     boost::lock_guard<simple_spinlock> lock(lock_);
     post_shutdown_calls_++;

@@ -790,7 +790,7 @@ class FlushRowSetsOp : public MaintenanceOp {
       tablet_(tablet)
   { }
 
-  virtual void UpdateStats(MaintenanceOpStats* stats) {
+  virtual void UpdateStats(MaintenanceOpStats* stats) OVERRIDE {
     {
       boost::mutex::scoped_try_lock guard(tablet_->rowsets_flush_lock_);
       stats->runnable = guard.owns_lock();
@@ -808,14 +808,14 @@ class FlushRowSetsOp : public MaintenanceOp {
     }
   }
 
-  virtual bool Prepare() {
+  virtual bool Prepare() OVERRIDE {
     // Try to acquire the rowsets_flush_lock_.  If we can't, the Prepare step
     // fails.  This also implies that only one instance of FlushRowSetsOp can be
     // running at once.
     return tablet_->rowsets_flush_lock_.try_lock();
   }
 
-  virtual void Perform() {
+  virtual void Perform() OVERRIDE {
     tablet_->FlushUnlocked();
     return tablet_->rowsets_flush_lock_.unlock();
   }
@@ -833,7 +833,7 @@ class CompactRowSetsOp : public MaintenanceOp {
       compact_running_(0)
   { }
 
-  virtual void UpdateStats(MaintenanceOpStats* stats) {
+  virtual void UpdateStats(MaintenanceOpStats* stats) OVERRIDE {
     boost::shared_lock<rw_semaphore> lock(tablet_->component_lock_);
     stats->runnable = true;
     stats->ram_anchored = 0;
@@ -856,12 +856,12 @@ class CompactRowSetsOp : public MaintenanceOp {
     stats->perf_improvement /= (compact_running_ + 1);
   }
 
-  virtual bool Prepare() {
+  virtual bool Prepare() OVERRIDE {
     compact_running_ = running();
     return true;
   }
 
-  virtual void Perform() {
+  virtual void Perform() OVERRIDE {
     tablet_->Compact(Tablet::COMPACT_NO_FLAGS);
     set_last(MonoTime::Now(MonoTime::FINE));
   }
@@ -891,7 +891,7 @@ class FlushDeltaMemStoresOp : public MaintenanceOp {
       tablet_(tablet)
   { }
 
-  virtual void UpdateStats(MaintenanceOpStats* stats) {
+  virtual void UpdateStats(MaintenanceOpStats* stats) OVERRIDE {
     size_t dms_size = tablet_->DeltaMemStoresSize();
     uint64_t threshold = FLAGS_flush_threshold_mb * 1024LLU * 1024LLU;
     if (dms_size < threshold) {
@@ -903,11 +903,11 @@ class FlushDeltaMemStoresOp : public MaintenanceOp {
     stats->ts_anchored_secs = 0;
   }
 
-  virtual bool Prepare() {
+  virtual bool Prepare() OVERRIDE {
     return true;
   }
 
-  virtual void Perform() {
+  virtual void Perform() OVERRIDE {
     tablet_->FlushBiggestDMS();
   }
 

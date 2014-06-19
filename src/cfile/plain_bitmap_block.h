@@ -31,7 +31,7 @@ class PlainBitMapBlockBuilder : public BlockBuilder {
     Reset();
   }
 
-  virtual int Add(const uint8_t* vals, size_t count)  {
+  virtual int Add(const uint8_t* vals, size_t count) OVERRIDE  {
     for (const uint8_t* val = vals;
          val < vals + count;
          ++val) {
@@ -43,14 +43,14 @@ class PlainBitMapBlockBuilder : public BlockBuilder {
     return count;
   }
 
-  virtual Slice Finish(rowid_t ordinal_pos) {
+  virtual Slice Finish(rowid_t ordinal_pos) OVERRIDE {
     InlineEncodeFixed32(&buf_[0], count_);
     InlineEncodeFixed32(&buf_[4], ordinal_pos);
     writer_.Flush(false);
     return Slice(buf_);
   }
 
-  virtual void Reset() {
+  virtual void Reset() OVERRIDE {
     count_ = 0;
     writer_.Clear();
     // Reserve space for a header
@@ -58,16 +58,16 @@ class PlainBitMapBlockBuilder : public BlockBuilder {
     writer_.PutValue(0xdeadbeef, 32);
   }
 
-  virtual uint64_t EstimateEncodedSize() const {
+  virtual uint64_t EstimateEncodedSize() const OVERRIDE {
     return writer_.bytes_written();
   }
 
-  virtual size_t Count() const {
+  virtual size_t Count() const OVERRIDE {
     return count_;
   }
 
   // TODO Implement this method
-  virtual Status GetFirstKey(void* key) const {
+  virtual Status GetFirstKey(void* key) const OVERRIDE {
     return Status::NotSupported("BOOL keys not supported");
   }
 
@@ -91,7 +91,7 @@ class PlainBitMapBlockDecoder : public BlockDecoder {
     cur_idx_(0)  {
   }
 
-  virtual Status ParseHeader() {
+  virtual Status ParseHeader() OVERRIDE {
     CHECK(!parsed_);
 
     if (data_.size() < kHeaderSize) {
@@ -120,7 +120,7 @@ class PlainBitMapBlockDecoder : public BlockDecoder {
     return Status::OK();
   }
 
-  virtual void SeekToPositionInBlock(uint pos) {
+  virtual void SeekToPositionInBlock(uint pos) OVERRIDE {
     CHECK(parsed_) << "Must call ParseHeader()";
 
     if (PREDICT_FALSE(num_elems_ == 0)) {
@@ -137,11 +137,11 @@ class PlainBitMapBlockDecoder : public BlockDecoder {
 
   // TODO : Support BOOL keys
   virtual Status SeekAtOrAfterValue(const void *value,
-                                    bool *exact_match) {
+                                    bool *exact_match) OVERRIDE {
     return Status::NotSupported("BOOL keys are not supported!");
   }
 
-  virtual Status CopyNextValues(size_t *n, ColumnDataView *dst) {
+  virtual Status CopyNextValues(size_t *n, ColumnDataView *dst) OVERRIDE {
     DCHECK(parsed_);
     DCHECK_LE(*n, dst->nrows());
     DCHECK_EQ(dst->stride(), sizeof(bool));
@@ -168,13 +168,13 @@ class PlainBitMapBlockDecoder : public BlockDecoder {
     return Status::OK();
   }
 
-  virtual bool HasNext() const { return cur_idx_ < num_elems_; }
+  virtual bool HasNext() const OVERRIDE { return cur_idx_ < num_elems_; }
 
-  virtual size_t Count() const { return num_elems_; }
+  virtual size_t Count() const OVERRIDE { return num_elems_; }
 
-  virtual size_t GetCurrentIndex() const { return cur_idx_; }
+  virtual size_t GetCurrentIndex() const OVERRIDE { return cur_idx_; }
 
-  virtual rowid_t GetFirstRowId() const { return ordinal_pos_base_; }
+  virtual rowid_t GetFirstRowId() const OVERRIDE { return ordinal_pos_base_; }
 
  private:
   Slice data_;
