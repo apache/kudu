@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <vector>
 
+#include <boost/thread/locks.hpp>
 #include "common/generic_iterators.h"
 #include "common/iterator.h"
 #include "common/schema.h"
@@ -16,9 +17,11 @@
 #include "gutil/stl_util.h"
 #include "tablet/cfile_set.h"
 #include "tablet/compaction.h"
+#include "tablet/delta_store.h"
 #include "tablet/diskrowset.h"
 #include "tablet/delta_compaction.h"
 #include "tablet/multi_column_writer.h"
+#include "util/locks.h"
 #include "util/status.h"
 
 namespace kudu { namespace tablet {
@@ -385,7 +388,6 @@ DiskRowSet::DiskRowSet(const shared_ptr<RowSetMetadata>& rowset_metadata,
 Status DiskRowSet::Open() {
   gscoped_ptr<CFileSet> new_base(new CFileSet(rowset_metadata_));
   RETURN_NOT_OK(new_base->Open());
-
   base_data_.reset(new_base.release());
 
   rowid_t num_rows;
@@ -407,28 +409,72 @@ Status DiskRowSet::MinorCompactDeltaStores() {
   return delta_tracker_->Compact();
 }
 
-MajorDeltaCompaction* DiskRowSet::NewMajorDeltaCompaction(
-    RowSetColumnUpdater* updater,
-    vector<BlockId>* included_ids) const {
-  CHECK(open_);
+Status DiskRowSet::MajorCompactDeltaStores(const metadata::ColumnIndexes& col_indexes) {
+  // TODO: make this more fine-grained if possible. Will make sense
+  // to re-touch this area once integrated with maintenance ops
+  // scheduling.
+  shared_ptr<boost::mutex::scoped_try_lock> input_rs_lock(
+    new boost::mutex::scoped_try_lock(compact_flush_lock_));
+  if (!input_rs_lock->owns_lock()) {
+    return Status::ServiceUnavailable("DRS cannot be major-delta-compacted: RS already busy");
+  }
 
+  shared_ptr<boost::mutex::scoped_try_lock> input_dt_lock(
+    new boost::mutex::scoped_try_lock(*delta_tracker()->compact_flush_lock()));
+  if (!input_dt_lock->owns_lock()) {
+    return Status::ServiceUnavailable("DRS cannot be major-delta-compacted: DT already busy");
+  }
+
+  // TODO: do we need to lock schema or anything here?
+  gscoped_ptr<MajorDeltaCompaction> compaction(
+    NewMajorDeltaCompaction(col_indexes));
+
+  BlockId delta_block;
+  RETURN_NOT_OK(compaction->Compact());
+
+  // Update metadata.
+  // TODO: think carefully about whether to update metadata or stores first!
+  metadata::RowSetMetadataUpdate update;
+  RETURN_NOT_OK(compaction->CreateMetadataUpdate(&update));
+  RETURN_NOT_OK(rowset_metadata_->CommitUpdate(update));
+
+  // Open the new data.
+  gscoped_ptr<CFileSet> new_base(new CFileSet(rowset_metadata_));
+  RETURN_NOT_OK(new_base->Open());
+  {
+    boost::lock_guard<percpu_rwlock> lock(component_lock_);
+    compaction->UpdateDeltaTracker(delta_tracker_.get());
+    base_data_.reset(new_base.release());
+  }
+
+  // Flush metadata.
+  RETURN_NOT_OK(rowset_metadata_->Flush());
+  return Status::OK();
+}
+
+MajorDeltaCompaction* DiskRowSet::NewMajorDeltaCompaction(
+    const metadata::ColumnIndexes& col_indexes) const {
+  CHECK(open_);
+  boost::shared_lock<rw_spinlock> lock(component_lock_.get_lock());
+
+  vector<shared_ptr<DeltaStore> > included_stores;
   shared_ptr<DeltaIterator> delta_iter = delta_tracker_->NewDeltaFileIterator(
     &schema(),
     MvccSnapshot::CreateSnapshotIncludingAllTransactions(),
-    included_ids);
-  return new MajorDeltaCompaction(delta_iter, updater);
-}
-
-void DiskRowSet::SetDMSFrom(DiskRowSet* rs) {
-  // Concurrency issues are handled by the DeltaTracker::SetDMS
-  delta_tracker_->SetDMS(rs->delta_tracker()->dms_);
+    REDO,
+    &included_stores);
+  return new MajorDeltaCompaction(rowset_metadata_->fs_manager(),
+                                  rowset_metadata_->schema(),
+                                  base_data_.get(),
+                                  delta_iter,
+                                  included_stores,
+                                  col_indexes);
 }
 
 RowwiseIterator *DiskRowSet::NewRowIterator(const Schema *projection,
                                             const MvccSnapshot &mvcc_snap) const {
   CHECK(open_);
-  //boost::shared_lock<boost::shared_mutex> lock(component_lock_);
-  // TODO: need to add back some appropriate locking?
+  boost::shared_lock<rw_spinlock> lock(component_lock_.get_lock());
 
   shared_ptr<ColumnwiseIterator> base_iter(base_data_->NewIterator(projection));
   return new MaterializingIterator(
@@ -448,6 +494,7 @@ Status DiskRowSet::MutateRow(Timestamp timestamp,
                              ProbeStats* stats,
                              OperationResultPB* result) {
   CHECK(open_);
+  boost::shared_lock<rw_spinlock> lock(component_lock_.get_lock());
 
   rowid_t row_idx;
   RETURN_NOT_OK(base_data_->FindRow(probe, &row_idx, stats));
@@ -469,6 +516,7 @@ Status DiskRowSet::CheckRowPresent(const RowSetKeyProbe &probe,
                                    bool* present,
                                    ProbeStats* stats) const {
   CHECK(open_);
+  boost::shared_lock<rw_spinlock> lock(component_lock_.get_lock());
 
   rowid_t row_idx;
   RETURN_NOT_OK(base_data_->CheckRowPresent(probe, present, &row_idx, stats));
@@ -486,6 +534,7 @@ Status DiskRowSet::CheckRowPresent(const RowSetKeyProbe &probe,
 
 Status DiskRowSet::CountRows(rowid_t *count) const {
   CHECK(open_);
+  boost::shared_lock<rw_spinlock> lock(component_lock_.get_lock());
 
   return base_data_->CountRows(count);
 }
@@ -493,12 +542,14 @@ Status DiskRowSet::CountRows(rowid_t *count) const {
 Status DiskRowSet::GetBounds(Slice *min_encoded_key,
                              Slice *max_encoded_key) const {
   CHECK(open_);
+  boost::shared_lock<rw_spinlock> lock(component_lock_.get_lock());
   return base_data_->GetBounds(min_encoded_key, max_encoded_key);
 }
 
 uint64_t DiskRowSet::EstimateOnDiskSize() const {
   CHECK(open_);
   // TODO: should probably add the delta trackers as well.
+  boost::shared_lock<rw_spinlock> lock(component_lock_.get_lock());
   return base_data_->EstimateOnDiskSize();
 }
 

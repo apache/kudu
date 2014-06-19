@@ -74,10 +74,12 @@ class DeltaTracker {
 
   // Like NewDeltaIterator() but only includes file based stores, does not include
   // the DMS.
-  // Returns the block IDs of the files being merged in *included_blocks.
-  shared_ptr<DeltaIterator> NewDeltaFileIterator(const Schema* schema,
-                                                 const MvccSnapshot &snap,
-                                                 std::vector<BlockId>* included_blocks) const;
+  // Returns the delta stores being merged in *included_stores.
+  shared_ptr<DeltaIterator> NewDeltaFileIterator(
+    const Schema* schema,
+    const MvccSnapshot &snap,
+    DeltaType type,
+    std::vector<std::tr1::shared_ptr<DeltaStore> >* included_stores) const;
 
   Status Open();
 
@@ -118,6 +120,12 @@ class DeltaTracker {
   // new delta block. If "end_idx" is set to -1, then delta files at
   // all indexes starting with "start_idx" will be compacted.
   Status CompactStores(int start_idx, int end_idx);
+
+  // Replace the subsequence of stores that matches 'stores_to_replace' with
+  // delta file readers correpsonding to 'new_delta_blocks', which may be empty.
+  Status AtomicUpdateStores(const SharedDeltaStoreVector& stores_to_replace,
+                            const std::vector<BlockId>& new_delta_blocks,
+                            DeltaType type);
 
   // Alter DeltaMemStore Schema
   // If the schema is changed and there are any unflushed deltas
@@ -164,13 +172,6 @@ class DeltaTracker {
   // This collects all undo and redo stores.
   void CollectStores(vector<shared_ptr<DeltaStore> > *stores) const;
 
-  // If delta stores in delta_store_ at indexes "start_idx" to "end_idx" (inclusive) match
-  // delta stores in in "expected_stores", remove the specified delta stores and replace them
-  // with the "new_store"; otherwise, crashes with a FATAL error message.
-  Status AtomicUpdateStores(size_t start_idx, size_t end_idx,
-                            const vector<shared_ptr<DeltaStore> > &expected_stores,
-                            const std::tr1::shared_ptr<DeltaFileReader>& new_store);
-
   // Performs the actual compaction. Results of compaction are written to "data_writer",
   // while delta stores that underwent compaction are appended to "compacted_stores", while
   // their corresponding block ids are appended to "compacted_blocks".
@@ -208,9 +209,9 @@ class DeltaTracker {
   // The current DeltaMemStore into which updates should be written.
   shared_ptr<DeltaMemStore> dms_;
   // The set of tracked REDO delta stores
-  vector<shared_ptr<DeltaStore> > redo_delta_stores_;
+  SharedDeltaStoreVector redo_delta_stores_;
   // The set of tracked UNDO delta stores
-  vector<shared_ptr<DeltaStore> > undo_delta_stores_;
+  SharedDeltaStoreVector undo_delta_stores_;
 
   // read-write lock protecting dms_ and delta_stores_.
   // - Readers and mutators take this lock in shared mode.

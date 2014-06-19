@@ -11,10 +11,17 @@
 #include "tablet/deltafile.h"
 
 namespace kudu {
+
+namespace metadata {
+class RowSetMetadata;
+} // namespace metadata
+
 namespace tablet {
 
+class CFileSet;
 class DeltaMemStore;
 class DeltaKey;
+class MultiColumnWriter;
 
 class DeltaCompactionInput {
  public:
@@ -58,106 +65,82 @@ class DeltaCompactionInput {
   virtual ~DeltaCompactionInput() {}
 };
 
-// Inspired by DiskRowSetWriter, but handles rewriting only specified
-// columns of a single rowset. Data blocks for unchanged columns as well
-// as the index and bloom filter blocks are kept the same as in the
-// original rowset. This class is not thread-safe: the caller must
-// synchronize access to tablet_metadata.
-//
-// TODO: we probably shouldn't create a new RowSetMetadata right away
-class RowSetColumnUpdater {
- public:
-  // Create a new column updater. The given 'tablet_metadata' and
-  // 'input_rowset_metadata' must remain valid until Open(), as they are
-  // used to create the new rowset and copy the ids of the existing data
-  // blocks; 'col_indexes' must be sorted.
-  RowSetColumnUpdater(metadata::TabletMetadata* tablet_metadata,
-                      const shared_ptr<metadata::RowSetMetadata> &input_rowset_metadata,
-                      const metadata::ColumnIndexes& col_indexes);
-
-  ~RowSetColumnUpdater();
-
-  // Set 'output_rowset_meta' to a new RowSetMetadata, create new column
-  // blocks for columns specified in the constructor, and start writers
-  // for the columns being rewritten.
-  Status Open(shared_ptr<metadata::RowSetMetadata>* output_rowset_meta);
-
-  // Writes the specified columns from RowBlock into the newly opened RowSet.
-  // Rows must be appended in an ascending order.
-  //
-  // See major_delta_compaction-test.cc (TestRowSetColumnUpdater) for
-  // sample use.
-  Status AppendColumnsFromRowBlock(const RowBlock& row_block);
-
-  Status Finish();
-
-  string ColumnNamesToString() const;
-
-  const metadata::ColumnIndexes& column_indexes() const {
-    return column_indexes_;
-  }
-
-  const Schema& base_schema() const {
-    return base_schema_;
-  }
-
-  const Schema& partial_schema() const {
-    return partial_schema_;
-  }
-
-  const shared_ptr<metadata::RowSetMetadata> &input_rowset_meta() const {
-    return input_rowset_meta_;
-  }
-
-  size_t old_to_new(size_t old_idx) {
-    return old_to_new_[old_idx];
-  }
-
- private:
-  DISALLOW_COPY_AND_ASSIGN(RowSetColumnUpdater);
-
-  metadata::TabletMetadata* tablet_meta_;
-  shared_ptr<metadata::RowSetMetadata> input_rowset_meta_;
-  const metadata::ColumnIndexes column_indexes_;
-  const Schema base_schema_;
-  std::tr1::unordered_map<size_t, cfile::Writer*> column_writers_;
-  bool finished_;
-
-  Schema partial_schema_;
-  std::tr1::unordered_map<size_t, size_t> old_to_new_;
-};
 
 // Handles major delta compaction: applying deltas to specific columns
 // of a DiskRowSet, writing out an updated DiskRowSet without re-writing the
 // unchanged columns (see RowSetColumnUpdater), and writing out a new
 // deltafile which does not contain the deltas applied to the specific rows.
-//
-// TODO: creation and instantion of this class together with RowSetColumnUpdater
-// is somewhat awkward, could be improved.
 class MajorDeltaCompaction {
  public:
-  // Creates a new major delta compaction request. The given 'rsu' must not
-  // have been opened and must remain valid for the lifetime of this object;
+  // Creates a new major delta compaction. The given 'base_data' should already
+  // be open and must remain valid for the lifetime of this object.
   // 'delta_iter' must not be initialized.
-  MajorDeltaCompaction(const shared_ptr<DeltaIterator>& delta_iter,
-                       RowSetColumnUpdater* rsu);
+  // col_indexes determines which columns of 'base_schema' should be compacted.
+  //
+  // TODO: is base_schema supposed to be the same as base_data->schema()? how about
+  // in an ALTER scenario?
+  MajorDeltaCompaction(FsManager* fs_manager,
+                       const Schema& base_schema,
+                       CFileSet* base_data,
+                       const shared_ptr<DeltaIterator>& delta_iter,
+                       const std::vector<std::tr1::shared_ptr<DeltaStore> >& included_stores,
+                       const metadata::ColumnIndexes& col_indexes);
+  ~MajorDeltaCompaction();
 
-  // Executes a compaction request specified in this class, setting
-  // 'output' to the newly created rowset, 'block_id' to the newly created
-  // delta file block, and deltas_written to the number of deltas written out
-  // during the compaction.
-  Status Compact(shared_ptr<metadata::RowSetMetadata> *output,
-                 BlockId* block_id, size_t* deltas_written);
+  // Executes the compaction.
+  // This has no effect on the metadata of the tablet, etc.
+  Status Compact();
+
+  // After a compaction is successful, prepares a metadata update which:
+  // 1) swaps out the old columns for the new ones
+  // 2) removes the compacted deltas
+  // 3) adds the new REDO delta which contains any uncompacted deltas
+  Status CreateMetadataUpdate(metadata::RowSetMetadataUpdate* update);
+
+  // Apply the changes to the given delta tracker.
+  Status UpdateDeltaTracker(DeltaTracker* tracker);
 
  private:
-  // Helper for Compact() method; 'dfw' must remain valid for duration of
-  // of this method's run. This method will call Start() and Stop() on dfw.
-  // See also: Compact()
-  Status FlushRowSetAndDeltas(DeltaFileWriter* dfw, size_t* deltas_written);
+  std::string ColumnNamesToString() const;
 
-  shared_ptr<DeltaIterator> delta_iter_;
-  RowSetColumnUpdater* rsu_;
+  Status OpenNewColumns();
+  Status OpenNewDeltaBlock();
+  Status FlushRowSetAndDeltas();
+
+  FsManager* const fs_manager_;
+
+  // TODO: doc me
+  const Schema base_schema_;
+
+  // The computed partial schema which includes only the columns being
+  // compacted.
+  Schema partial_schema_;
+
+  // The column indexes to compact (relative to the base schema)
+  const metadata::ColumnIndexes column_indexes_;
+
+  // Mapping from base schema index to partial schema index.
+  std::tr1::unordered_map<size_t, size_t> old_to_new_;
+
+  // Inputs:
+  //-----------------
+
+  // The base data into which deltas are being compacted.
+  CFileSet* const base_data_;
+
+  // The DeltaStores from which deltas are being read.
+  const SharedDeltaStoreVector included_stores_;
+
+  // The merged view of the deltas from included_stores_.
+  const shared_ptr<DeltaIterator> delta_iter_;
+
+  // Outputs:
+  gscoped_ptr<MultiColumnWriter> col_writer_;
+  gscoped_ptr<DeltaFileWriter> delta_writer_;
+  BlockId new_delta_block_;
+
   size_t nrows_;
+  size_t deltas_written_;
 
   enum State {
     kInitialized = 1,

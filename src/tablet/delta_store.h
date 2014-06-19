@@ -56,6 +56,8 @@ class DeltaStore {
   virtual ~DeltaStore() {}
 };
 
+typedef std::vector<std::tr1::shared_ptr<DeltaStore> > SharedDeltaStoreVector;
+
 // Iterator over deltas.
 // For each rowset, this iterator is constructed alongside the base data iterator,
 // and used to apply any updates which haven't been yet compacted into the base

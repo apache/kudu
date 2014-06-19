@@ -7,6 +7,7 @@
 #include <tr1/memory>
 #include <string>
 
+#include "gutil/strings/join.h"
 #include "gutil/strings/strip.h"
 #include "util/env.h"
 #include "util/env_util.h"
@@ -20,6 +21,7 @@
 
 namespace kudu { namespace tablet {
 
+using boost::assign::list_of;
 using metadata::RowSetMetadata;
 
 using boost::assign::list_of;
@@ -119,25 +121,53 @@ Status DeltaTracker::MakeCompactionInput(size_t start_idx, size_t end_idx,
   return Status::OK();
 }
 
-Status DeltaTracker::AtomicUpdateStores(size_t start_idx, size_t end_idx,
-                                        const vector<shared_ptr<DeltaStore> > &expected_stores,
-                                        const shared_ptr<DeltaFileReader>& new_store) {
-  boost::lock_guard<boost::shared_mutex> lock(component_lock_);
+namespace {
 
-  // First check that delta stores match the old stores
-  vector<shared_ptr<DeltaStore > >::const_iterator it = expected_stores.begin();
-  for (size_t idx = start_idx; idx <= end_idx; ++idx) {
-    CHECK_EQ(it->get(), redo_delta_stores_[idx].get());
-    ++it;
+string JoinDeltaStoreStrings(const SharedDeltaStoreVector& stores) {
+  vector<string> strings;
+  BOOST_FOREACH(const shared_ptr<DeltaStore>& store, stores) {
+    strings.push_back(store->ToString());
+  }
+  return ::JoinStrings(strings, ",");
+}
+
+} // anonymous namespace
+
+Status DeltaTracker::AtomicUpdateStores(const SharedDeltaStoreVector& to_remove,
+                                        const vector<BlockId>& new_delta_blocks,
+                                        DeltaType type) {
+  SharedDeltaStoreVector new_stores;
+  RETURN_NOT_OK_PREPEND(OpenDeltaReaders(new_delta_blocks, &new_stores, type),
+                        "Unable to open delta blocks");
+
+  boost::lock_guard<boost::shared_mutex> lock(component_lock_);
+  CHECK(!to_remove.empty());
+
+  SharedDeltaStoreVector* stores_to_update =
+    type == REDO ? &redo_delta_stores_ : &undo_delta_stores_;
+
+  SharedDeltaStoreVector::iterator start_it =
+    std::find(stores_to_update->begin(), stores_to_update->end(), to_remove[0]);
+
+  SharedDeltaStoreVector::iterator end_it = start_it;
+  BOOST_FOREACH(const shared_ptr<DeltaStore>& ds, to_remove) {
+    if (end_it == stores_to_update->end() || *end_it != ds) {
+      return Status::InvalidArgument(
+        strings::Substitute("Cannot find deltastore sequence <$0> in <$1>",
+                            JoinDeltaStoreStrings(to_remove),
+                            JoinDeltaStoreStrings(*stores_to_update)));
+    }
+    ++end_it;
   }
 
   // Remove the old stores
-  vector<shared_ptr<DeltaStore> >::iterator erase_start = redo_delta_stores_.begin() + start_idx;
-  vector<shared_ptr<DeltaStore> >::iterator erase_end = redo_delta_stores_.begin() + end_idx + 1;
-  redo_delta_stores_.erase(erase_start, erase_end);
+  stores_to_update->erase(start_it, end_it);
 
   // Insert the new store
-  redo_delta_stores_.push_back(new_store);
+  stores_to_update->insert(start_it, new_stores.begin(), new_stores.end());
+
+  VLOG(1) << "New " << DeltaType_Name(type) << " stores: "
+          << JoinDeltaStoreStrings(*stores_to_update);
   return Status::OK();
 }
 
@@ -173,17 +203,8 @@ Status DeltaTracker::CompactStores(int start_idx, int end_idx) {
   RETURN_NOT_OK(DoCompactStores(start_idx, end_idx, data_writer,
                 &compacted_stores, &compacted_blocks));
 
-  // Open the new deltafile
-  shared_ptr<DeltaFileReader> dfr;
-  size_t data_size = 0;
-  shared_ptr<RandomAccessFile> data_reader;
-  RETURN_NOT_OK(rowset_metadata_->OpenDataBlock(new_block_id, &data_reader,
-                                                &data_size));
-  RETURN_NOT_OK(DeltaFileReader::Open(new_block_id.ToString(), data_reader,
-                                      data_size, new_block_id, &dfr, REDO));
-
   // Update delta_stores_, removing the compacted delta files and inserted the new
-  RETURN_NOT_OK(AtomicUpdateStores(start_idx, end_idx, compacted_stores, dfr));
+  RETURN_NOT_OK(AtomicUpdateStores(compacted_stores, list_of(new_block_id), REDO));
   LOG(INFO) << "Opened delta block for read: " << new_block_id.ToString();
 
   // Update the metadata accordingly
@@ -237,23 +258,30 @@ shared_ptr<DeltaIterator> DeltaTracker::NewDeltaIterator(const Schema* schema,
 shared_ptr<DeltaIterator> DeltaTracker::NewDeltaFileIterator(
     const Schema* schema,
     const MvccSnapshot& snap,
-    vector<BlockId>* included_blocks) const {
-  std::vector<shared_ptr<DeltaStore> > stores;
+    DeltaType type,
+    vector<shared_ptr<DeltaStore> >* included_stores) const {
   {
     boost::lock_guard<boost::shared_mutex> lock(component_lock_);
     // TODO perf: is this really needed? Will check
     // DeltaIteratorMerger::Create()
-    stores.assign(undo_delta_stores_.begin(), undo_delta_stores_.end());
-    stores.insert(stores.end(), redo_delta_stores_.begin(), redo_delta_stores_.end());
+    if (type == UNDO) {
+      *included_stores = undo_delta_stores_;
+    } else if (type == REDO) {
+      *included_stores = redo_delta_stores_;
+    } else {
+      LOG(FATAL);
+    }
   }
-  BOOST_FOREACH(const shared_ptr<DeltaStore>& store, stores) {
-    // TODO: we need to somehow ensure this doesn't fail - we have to somehow coordinate
-    // minor delta compaction against delta flush. Add a test case here to trigger this
-    // condition.
-    DeltaFileReader* dfr = down_cast<DeltaFileReader*>(store.get());
-    included_blocks->push_back(dfr->block_id());
+
+  // Verify that we're only merging files and not DeltaMemStores.
+  // TODO: we need to somehow ensure this doesn't fail - we have to somehow coordinate
+  // minor delta compaction against delta flush. Add a test case here to trigger this
+  // condition.
+  BOOST_FOREACH(const shared_ptr<DeltaStore>& store, *included_stores) {
+    ignore_result(down_cast<DeltaFileReader*>(store.get()));
   }
-  return DeltaIteratorMerger::Create(stores, schema, snap);
+
+  return DeltaIteratorMerger::Create(*included_stores, schema, snap);
 }
 
 ColumnwiseIterator *DeltaTracker::WrapIterator(const shared_ptr<ColumnwiseIterator> &base,
@@ -381,7 +409,7 @@ Status DeltaTracker::Flush(MetadataFlushType flush_type) {
     redo_delta_stores_.push_back(old_dms);
   }
 
-  LOG(INFO) << "Flushing " << count << " deltas...";
+  LOG(INFO) << "Flushing " << count << " deltas from DMS " << old_dms->id() << "...";
 
   // Now, actually flush the contents of the old DMS.
   // TODO: need another lock to prevent concurrent flushers

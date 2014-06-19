@@ -663,24 +663,25 @@ TEST_F(TabletServerTest, TestRecoveryWithMutationsWhileFlushingAndCompacting) {
 
   // make sure 'now_after' is greater than or equal to 'now_before'
   ASSERT_GE(now_after.value(), now_before.value());
-
 }
 
-TEST_F(TabletServerTest, TestRecoveryAfterMajorDeltaCompaction) {
+#define ANFF ASSERT_NO_FATAL_FAILURE
+
+// Regression test for KUDU-176. Ensures that after a major delta compaction,
+// restarting properly recovers the tablet.
+TEST_F(TabletServerTest, TestKUDU_176_RecoveryAfterMajorDeltaCompaction) {
 
   // Flush a DRS with 1 rows.
   ASSERT_NO_FATAL_FAILURE(InsertTestRowsRemote(0, 1, 1));
   ASSERT_STATUS_OK(tablet_peer_->tablet()->Flush());
-  VerifyRows(schema_, boost::assign::list_of(KeyValue(1, 1)));
-  ASSERT_NO_FATAL_FAILURE();
+  ANFF(VerifyRows(schema_, boost::assign::list_of(KeyValue(1, 1))));
 
   // Update it, flush deltas.
-  ASSERT_NO_FATAL_FAILURE(UpdateTestRowRemote(0, 1, 2));
+  ANFF(UpdateTestRowRemote(0, 1, 2));
   ASSERT_STATUS_OK(tablet_peer_->tablet()->FlushBiggestDMS());
-  VerifyRows(schema_, boost::assign::list_of(KeyValue(1, 2)));
-  ASSERT_NO_FATAL_FAILURE();
+  ANFF(VerifyRows(schema_, boost::assign::list_of(KeyValue(1, 2))));
 
-  // Major compact.
+  // Major compact deltas.
   vector<shared_ptr<tablet::RowSet> > rsets;
   tablet_peer_->tablet()->GetRowSetsForTests(&rsets);
   ASSERT_STATUS_OK(tablet_peer_->tablet()->DoMajorDeltaCompaction(
@@ -688,13 +689,43 @@ TEST_F(TabletServerTest, TestRecoveryAfterMajorDeltaCompaction) {
                      rsets[0]));
 
   // Verify that data is still the same.
-  VerifyRows(schema_, boost::assign::list_of(KeyValue(1, 2)));
-  ASSERT_NO_FATAL_FAILURE();
+  ANFF(VerifyRows(schema_, boost::assign::list_of(KeyValue(1, 2))));
 
   // Verify that data remains after a restart.
-  ASSERT_NO_FATAL_FAILURE(ShutdownAndRebuildTablet());
-  VerifyRows(schema_, boost::assign::list_of(KeyValue(1, 2)));
-  ASSERT_NO_FATAL_FAILURE();
+  ANFF(ShutdownAndRebuildTablet());
+  ANFF(VerifyRows(schema_, boost::assign::list_of(KeyValue(1, 2))));
+}
+
+// Regression test for KUDU-177. Ensures that after a major delta compaction,
+// rows that were in the old DRS's DMS are properly replayed.
+TEST_F(TabletServerTest, TestKUDU_177_RecoveryOfDMSEditsAfterMajorDeltaCompaction) {
+  // Flush a DRS with 1 rows.
+  ANFF(InsertTestRowsRemote(0, 1, 1));
+  ASSERT_STATUS_OK(tablet_peer_->tablet()->Flush());
+  ANFF(VerifyRows(schema_, boost::assign::list_of(KeyValue(1, 1))));
+
+  // Update it, flush deltas.
+  ANFF(UpdateTestRowRemote(0, 1, 2));
+  ASSERT_STATUS_OK(tablet_peer_->tablet()->FlushBiggestDMS());
+
+  // Update it again, so this last update is in the DMS.
+  ANFF(UpdateTestRowRemote(0, 1, 3));
+  ANFF(VerifyRows(schema_, boost::assign::list_of(KeyValue(1, 3))));
+
+  // Major compact deltas. This doesn't include the DMS, but the old
+  // DMS should "move over" to the output of the delta compaction.
+  vector<shared_ptr<tablet::RowSet> > rsets;
+  tablet_peer_->tablet()->GetRowSetsForTests(&rsets);
+  ASSERT_STATUS_OK(tablet_peer_->tablet()->DoMajorDeltaCompaction(
+                     boost::assign::list_of(1)(2),
+                     rsets[0]));
+
+  // Verify that data is still the same.
+  ANFF(VerifyRows(schema_, boost::assign::list_of(KeyValue(1, 3))));
+
+  // Verify that the update remains after a restart.
+  ANFF(ShutdownAndRebuildTablet());
+  ANFF(VerifyRows(schema_, boost::assign::list_of(KeyValue(1, 3))));
 }
 
 TEST_F(TabletServerTest, TestScan) {

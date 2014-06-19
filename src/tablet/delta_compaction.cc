@@ -2,6 +2,7 @@
 
 #include "tablet/delta_compaction.h"
 
+#include <boost/assign/list_of.hpp>
 #include <string>
 #include <vector>
 #include <algorithm>
@@ -17,6 +18,7 @@
 #include "tablet/cfile_set.h"
 #include "tablet/delta_key.h"
 #include "tablet/deltamemstore.h"
+#include "tablet/multi_column_writer.h"
 #include "tablet/mvcc.h"
 
 namespace kudu {
@@ -36,7 +38,6 @@ namespace {
 
 typedef DeltaMemStore::DMSTree DMSTree;
 typedef DeltaMemStore::DMSTreeIter DMSTreeIter;
-typedef std::pair<size_t, cfile::Writer *> WriterMapEntry;
 
 const size_t kRowsPerBlock = 100; // Number of rows per block of columns
 
@@ -483,92 +484,30 @@ class MergeDeltaCompactionInput : public DeltaCompactionInput {
 
 } // anonymous namespace
 
-RowSetColumnUpdater::RowSetColumnUpdater(TabletMetadata* tablet_metadata,
-                                         const shared_ptr<RowSetMetadata>& input_rowset_metadata,
-                                         const ColumnIndexes& col_indexes)
- : tablet_meta_(tablet_metadata),
-   input_rowset_meta_(input_rowset_metadata),
-   column_indexes_(col_indexes),
-   base_schema_(input_rowset_metadata->schema()),
-   finished_(false) {
+// TODO: can you major-delta-compact a new column after an alter table in order
+// to materialize it? should write a test for this.
+MajorDeltaCompaction::MajorDeltaCompaction(FsManager* fs_manager,
+                                           const Schema& base_schema,
+                                           CFileSet* base_data,
+                                           const shared_ptr<DeltaIterator>& delta_iter,
+                                           const vector<shared_ptr<DeltaStore> >& included_stores,
+                                           const ColumnIndexes& col_indexes)
+  : fs_manager_(fs_manager),
+    base_schema_(base_schema),
+    column_indexes_(col_indexes),
+    base_data_(base_data),
+    included_stores_(included_stores),
+    delta_iter_(delta_iter),
+    nrows_(0),
+    deltas_written_(0),
+    state_(kInitialized) {
+  CHECK(!col_indexes.empty());
 }
 
-RowSetColumnUpdater::~RowSetColumnUpdater() {
-  STLDeleteValues(&column_writers_);
+MajorDeltaCompaction::~MajorDeltaCompaction() {
 }
 
-Status RowSetColumnUpdater::Open(shared_ptr<RowSetMetadata>* output_rowset_meta) {
-  CHECK(!finished_);
-
-  RETURN_NOT_OK(base_schema_.CreatePartialSchema(column_indexes_,
-                                                 &old_to_new_,
-                                                 &partial_schema_));
-
-  ColumnWriters data_writers;
-  RETURN_NOT_OK(tablet_meta_->CreateRowSetWithUpdatedColumns(column_indexes_,
-                                                             *input_rowset_meta_,
-                                                             output_rowset_meta,
-                                                             &data_writers));
-  BOOST_FOREACH(size_t col_idx, column_indexes_) {
-    const ColumnSchema &col = input_rowset_meta_->schema().column(col_idx);
-    cfile::WriterOptions opts;
-    opts.write_posidx = true;
-    opts.storage_attributes = col.attributes();
-
-    gscoped_ptr<cfile::Writer> writer(
-        new cfile::Writer(
-            opts,
-            col.type_info()->type(),
-            col.is_nullable(),
-            data_writers[col_idx]));
-    Status s = writer->Start();
-    if (!s.ok()) {
-      string msg = "Unable to Start() writer for column " + col.ToString();
-      RETURN_NOT_OK_PREPEND(s, msg);
-    }
-
-    LOG(INFO) << "Opened CFile writer for column " << col.ToString();
-    column_writers_[col_idx] = writer.release();
-  }
-
-  return Status::OK();
-}
-
-Status RowSetColumnUpdater::AppendColumnsFromRowBlock(const RowBlock& block) {
-  CHECK(!finished_);
-
-  BOOST_FOREACH(size_t col_idx, column_indexes_) {
-    cfile::Writer* column_writer = column_writers_[col_idx];
-    ColumnBlock column(block.column_block(col_idx));
-    if (column.is_nullable()) {
-      RETURN_NOT_OK(column_writer->AppendNullableEntries(column.null_bitmap(),
-                                                         column.data(),
-                                                         column.nrows()));
-    } else {
-      RETURN_NOT_OK(column_writer->AppendEntries(column.data(), column.nrows()));
-    }
-  }
-  return Status::OK();
-}
-
-Status RowSetColumnUpdater::Finish() {
-  CHECK(!finished_);
-
-  BOOST_FOREACH(const WriterMapEntry& writer_pair, column_writers_) {
-    Status s = writer_pair.second->Finish();
-    if (!s.ok()) {
-      LOG(WARNING) << "Unable to Finish writer for column "
-          << input_rowset_meta_->schema().column(writer_pair.first).ToString()
-          << " : " << s.ToString();
-      return s;
-    }
-  }
-
-  finished_ = true;
-  return Status::OK();
-}
-
-string RowSetColumnUpdater::ColumnNamesToString() const {
+string MajorDeltaCompaction::ColumnNamesToString() const {
   std::string result;
   BOOST_FOREACH(size_t col_idx, column_indexes_) {
     result += base_schema_.column(col_idx).ToString() + " ";
@@ -576,39 +515,23 @@ string RowSetColumnUpdater::ColumnNamesToString() const {
   return result;
 }
 
-MajorDeltaCompaction::MajorDeltaCompaction(const shared_ptr<DeltaIterator>& delta_iter,
-                                           RowSetColumnUpdater* rsu)
-    : delta_iter_(delta_iter),
-      rsu_(rsu),
-      nrows_(0),
-      state_(kInitialized) {
-}
-
-Status MajorDeltaCompaction::FlushRowSetAndDeltas(DeltaFileWriter* dfw, size_t *deltas_written) {
+Status MajorDeltaCompaction::FlushRowSetAndDeltas() {
   CHECK_EQ(state_, kInitialized);
 
-  const Schema* base_schema = &rsu_->base_schema();
-  const Schema* partial_schema = &rsu_->partial_schema();
-
-  shared_ptr<CFileSet> cfileset(new CFileSet(rsu_->input_rowset_meta()));
-  RETURN_NOT_OK(cfileset->Open());
-  shared_ptr<CFileSet::Iterator> cfileset_iter(cfileset->NewIterator(partial_schema));
+  shared_ptr<CFileSet::Iterator> cfileset_iter(base_data_->NewIterator(&partial_schema_));
 
   RETURN_NOT_OK_PREPEND(
       cfileset_iter->Init(NULL),
-      "Unable to open iterator for specified columns (" + partial_schema->ToString() + ")");
+      "Unable to open iterator for specified columns (" + partial_schema_.ToString() + ")");
 
   RETURN_NOT_OK(delta_iter_->Init());
   RETURN_NOT_OK(delta_iter_->SeekToOrdinal(0));
 
   Arena arena(32 * 1024, 128 * 1024);
-  RowBlock block(*base_schema, kRowsPerBlock, &arena);
+  RowBlock block(partial_schema_, kRowsPerBlock, &arena);
 
-  DVLOG(1) << "Applying deltas and flushing for columns (" << partial_schema->ToString() << ")";
-
-  RETURN_NOT_OK(dfw->Start());
-
-  DeltaStats stats(base_schema->num_columns());
+  DVLOG(1) << "Applying deltas and rewriting columns (" << partial_schema_.ToString() << ")";
+  DeltaStats stats(base_schema_.num_columns());
   // Iterate over the rows
   // For each iteration:
   // - apply the deltas for each column
@@ -622,63 +545,116 @@ Status MajorDeltaCompaction::FlushRowSetAndDeltas(DeltaFileWriter* dfw, size_t *
     nrows_ += n;
 
     RETURN_NOT_OK(delta_iter_->PrepareBatch(n));
-    BOOST_FOREACH(size_t col_idx, rsu_->column_indexes()) {
-      size_t new_idx = rsu_->old_to_new(col_idx);
-      ColumnBlock col_block(block.column_block(col_idx));
+    BOOST_FOREACH(size_t col_idx, column_indexes_) {
+      size_t new_idx = old_to_new_[col_idx];
+      ColumnBlock col_block(block.column_block(new_idx));
       RETURN_NOT_OK(cfileset_iter->MaterializeColumn(new_idx, &col_block));
+
+      // TODO: should this be IDs? indexes? check this with alter.
       RETURN_NOT_OK(delta_iter_->ApplyUpdates(col_idx, &col_block));
     }
-    RETURN_NOT_OK(rsu_->AppendColumnsFromRowBlock(block));
+    RETURN_NOT_OK(col_writer_->AppendBlock(block));
 
     arena.Reset();
     vector<DeltaKeyAndUpdate> out;
-    RETURN_NOT_OK(delta_iter_->FilterColumnsAndAppend(rsu_->column_indexes(), &out, &arena));
+    RETURN_NOT_OK(delta_iter_->FilterColumnsAndAppend(column_indexes_, &out, &arena));
     BOOST_FOREACH(const DeltaKeyAndUpdate& key_and_update, out) {
       RowChangeList update(key_and_update.cell);
-      RETURN_NOT_OK_PREPEND(dfw->AppendDelta<REDO>(key_and_update.key, update),
+      RETURN_NOT_OK_PREPEND(delta_writer_->AppendDelta<REDO>(key_and_update.key, update),
                             "Failed to append a delta");
-      WARN_NOT_OK(stats.UpdateStats(key_and_update.key.timestamp(), *base_schema, update),
+      WARN_NOT_OK(stats.UpdateStats(key_and_update.key.timestamp(), base_schema_, update),
                   "Failed to update stats");
     }
-    *deltas_written += out.size();
+    deltas_written_ += out.size();
     RETURN_NOT_OK(cfileset_iter->FinishBatch());
   }
 
-  RETURN_NOT_OK(rsu_->Finish());
-  RETURN_NOT_OK(dfw->WriteDeltaStats(stats));
-  RETURN_NOT_OK(dfw->Finish());
+  RETURN_NOT_OK(col_writer_->Finish());
+  RETURN_NOT_OK(delta_writer_->WriteDeltaStats(stats));
+  RETURN_NOT_OK(delta_writer_->Finish());
 
   DVLOG(1) << "Applied all outstanding deltas for columns "
-           << partial_schema->ToString()
+           << partial_schema_.ToString()
            << ", and flushed the resulting rowsets and a total of "
-           << *deltas_written
+           << deltas_written_
            << " deltas to disk.";
 
   state_ = kFinished;
   return Status::OK();
 }
 
-Status MajorDeltaCompaction::Compact(shared_ptr<RowSetMetadata>* output,
-                                     BlockId* block_id, size_t* deltas_written) {
+Status MajorDeltaCompaction::OpenNewColumns() {
+  CHECK(!col_writer_);
+
+  gscoped_ptr<MultiColumnWriter> w(new MultiColumnWriter(fs_manager_, &partial_schema_));
+  RETURN_NOT_OK(w->Open());
+  col_writer_.swap(w);
+  return Status::OK();
+}
+
+Status MajorDeltaCompaction::OpenNewDeltaBlock() {
+  shared_ptr<WritableFile> file;
+  RETURN_NOT_OK_PREPEND(fs_manager_->CreateNewBlock(&file, &new_delta_block_),
+                        "Unable to create delta output block");
+  delta_writer_.reset(new DeltaFileWriter(base_schema_, file));
+  return delta_writer_->Start();
+}
+
+Status MajorDeltaCompaction::Compact() {
   CHECK_EQ(state_, kInitialized);
 
-  LOG(INFO) << "Starting major delta compaction for columns " <<
-      rsu_->ColumnNamesToString();
-
-  RETURN_NOT_OK(rsu_->Open(output));
-
-  shared_ptr<WritableFile> data_writer;
-  RETURN_NOT_OK_PREPEND((*output)->NewDeltaDataBlock(&data_writer, block_id),
-                        "Unable to create delta output block " + block_id->ToString());
-
-  DeltaFileWriter dfw(rsu_->base_schema(), data_writer);
-  RETURN_NOT_OK(FlushRowSetAndDeltas(&dfw, deltas_written));
-
+  LOG(INFO) << "Starting major delta compaction for columns " << ColumnNamesToString();
+  RETURN_NOT_OK(base_schema_.CreatePartialSchema(column_indexes_,
+                                                 &old_to_new_,
+                                                 &partial_schema_));
+  RETURN_NOT_OK(OpenNewColumns());
+  RETURN_NOT_OK(OpenNewDeltaBlock());
+  RETURN_NOT_OK(FlushRowSetAndDeltas());
   LOG(INFO) << "Finished major delta compaction of columns " <<
-      rsu_->ColumnNamesToString();
+      ColumnNamesToString();
+  return Status::OK();
+}
+
+Status MajorDeltaCompaction::CreateMetadataUpdate(
+    metadata::RowSetMetadataUpdate* update) {
+  CHECK(update);
+  CHECK_EQ(state_, kFinished);
+
+  vector<BlockId> compacted_delta_blocks;
+  BOOST_FOREACH(const shared_ptr<DeltaStore>& store, included_stores_) {
+    DeltaFileReader* dfr = down_cast<DeltaFileReader*>(store.get());
+    compacted_delta_blocks.push_back(dfr->block_id());
+  }
+
+  vector<BlockId> new_delta_blocks;
+  if (deltas_written_ > 0) {
+    new_delta_blocks.push_back(new_delta_block_);
+  }
+
+  update->ReplaceRedoDeltaBlocks(compacted_delta_blocks,
+                                 new_delta_blocks);
+
+  // Replace old column blocks with new ones
+  vector<BlockId> new_column_blocks = col_writer_->FlushedBlocks();
+  CHECK_EQ(new_column_blocks.size(), column_indexes_.size());
+
+  for (int i = 0; i < column_indexes_.size(); i++) {
+    update->ReplaceColumnBlock(column_indexes_[i], new_column_blocks[i]);
+  }
 
   return Status::OK();
 }
+
+Status MajorDeltaCompaction::UpdateDeltaTracker(DeltaTracker* tracker) {
+  CHECK_EQ(state_, kFinished);
+  return tracker->AtomicUpdateStores(included_stores_,
+                                     boost::assign::list_of(new_delta_block_),
+                                     REDO);
+}
+
+////////////////////////////////////////////////////////////
+// DeltaCompactionInput
+////////////////////////////////////////////////////////////
 
 Status DeltaCompactionInput::Open(const shared_ptr<DeltaFileReader>& reader,
                                   const Schema& projection,

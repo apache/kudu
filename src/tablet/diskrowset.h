@@ -20,6 +20,7 @@
 #include "server/metadata.h"
 #include "tablet/rowset.h"
 #include "util/bloom_filter.h"
+#include "util/locks.h"
 
 namespace kudu {
 
@@ -274,6 +275,8 @@ class DiskRowSet : public RowSet {
 
   size_t CountDeltaStores() const OVERRIDE;
 
+  Status MajorCompactDeltaStores(const metadata::ColumnIndexes& col_indexes);
+
   Status AlterSchema(const Schema& schema) OVERRIDE;
 
   boost::mutex *compact_flush_lock() OVERRIDE {
@@ -311,19 +314,9 @@ class DiskRowSet : public RowSet {
 
   Status Open();
 
-  // Create a new major delta compaction object, with 'updater', and a
-  // merge of all of deltafiles in this object's delta tracker as
-  // input. Sets 'included_blocks' to the list of delta blocks corresponding
-  // to the deltafile merger.
-  //
-  // 'updater' must remain valid for the lifetime of the returned
-  // MajorDeltaCompaction object.
-  MajorDeltaCompaction* NewMajorDeltaCompaction(RowSetColumnUpdater* updater,
-                                                std::vector<BlockId>* included_blocks) const;
-
-  // Points this object's delta memstore to delta memstore in
-  // 'rs'.
-  void SetDMSFrom(DiskRowSet* rs);
+  // Create a new major delta compaction object to compact the specified columns.
+  MajorDeltaCompaction* NewMajorDeltaCompaction(
+    const metadata::ColumnIndexes& col_indexes) const;
 
   shared_ptr<metadata::RowSetMetadata> rowset_metadata_;
 
@@ -332,6 +325,7 @@ class DiskRowSet : public RowSet {
   log::OpIdAnchorRegistry* opid_anchor_registry_;
 
   // Base data for this rowset.
+  mutable percpu_rwlock component_lock_;
   shared_ptr<CFileSet> base_data_;
   gscoped_ptr<DeltaTracker> delta_tracker_;
 

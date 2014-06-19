@@ -549,69 +549,7 @@ void Tablet::AtomicSwapRowSetsUnlocked(const RowSetVector &old_rowsets,
 
 Status Tablet::DoMajorDeltaCompaction(const ColumnIndexes& column_indexes,
                                       shared_ptr<RowSet> input_rs) {
-  vector<shared_ptr<RowSet> > new_rowsets;
-  vector<shared_ptr<RowSet> > input_rowsets;
-
-  gscoped_ptr<RowSetColumnUpdater> updater;
-  DiskRowSet* input_drs = NULL;
-  gscoped_ptr<MajorDeltaCompaction> compaction;
-  shared_ptr<Schema> cur_schema;
-
-  vector<BlockId> included_blocks;
-  {
-    // Avoid holding component_lock_ for too long
-    boost::shared_lock<rw_semaphore> lock(component_lock_);
-    updater.reset(new RowSetColumnUpdater(metadata(), input_rs->metadata(), column_indexes));
-    input_drs = down_cast<DiskRowSet*>(input_rs.get());
-    compaction.reset(input_drs->NewMajorDeltaCompaction(updater.get(), &included_blocks));
-    cur_schema = schema_;
-  }
-
-  shared_ptr<DiskRowSet> new_rowset;
-  shared_ptr<RowSetMetadata> meta;
-
-  // TODO: isn't there a race here? If someone delta-flushed this DRS right here,
-  // we'd end up not having included the newly flushed delta file in our compaction,
-  // and then the "SetDMSFrom" down below would carry over an empty DRS.
-  // I also wonder whether the rowset IDs are right.
-
-  {
-    // TODO: make this more fine-grained if possible. Will make sense
-    // to re-touch this area once integrated with maintenance ops
-    // scheduling.
-    boost::mutex::scoped_try_lock input_rs_lock(*input_drs->compact_flush_lock());
-    CHECK(input_rs_lock.owns_lock());
-
-    boost::mutex::scoped_try_lock input_dt_lock(
-      *input_drs->delta_tracker()->compact_flush_lock());
-    CHECK(input_dt_lock.owns_lock());
-
-    BlockId delta_block;
-    size_t ndeltas = 0;
-
-    RETURN_NOT_OK(compaction->Compact(&meta, &delta_block, &ndeltas));
-    if (ndeltas > 0) {
-      int64_t dms_id = input_rs->metadata()->last_durable_redo_dms_id();
-      RETURN_NOT_OK(meta->CommitRedoDeltaDataBlock(dms_id, delta_block));
-    }
-    RETURN_NOT_OK_PREPEND(meta->Flush(),
-                          "Unable to commit rowset metadata " + meta->ToString());
-    RETURN_NOT_OK_PREPEND(DiskRowSet::Open(meta, opid_anchor_registry_, &new_rowset),
-                          "Unable to open compaction results " + meta->ToString());
-
-    new_rowset->SetDMSFrom(input_drs);
-
-    new_rowsets.push_back(new_rowset);
-    input_rowsets.push_back(input_rs);
-
-    // Ensure that the latest schema is set to the new RowSets
-    RETURN_NOT_OK(new_rowset->AlterSchema(*cur_schema.get()));
-
-    AtomicSwapRowSets(input_rowsets, new_rowsets);
-    RETURN_NOT_OK(FlushMetadata(input_rowsets, boost::assign::list_of(meta), kNoMrsFlushed));
-  }
-
-  return Status::OK();
+  return down_cast<DiskRowSet*>(input_rs.get())->MajorCompactDeltaStores(column_indexes);
 }
 
 Status Tablet::DeleteCompactionInputs(const RowSetsInCompaction &input) {
