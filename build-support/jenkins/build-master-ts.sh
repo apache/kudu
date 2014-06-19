@@ -23,7 +23,7 @@ export PATH=$(pwd)/thirdparty/installed/bin:$PATH
 
 rm -rf CMakeCache.txt CMakeFiles src/*/CMakeFiles
 
-cmake . -DCMAKE_BUILD_TYPE=release
+cmake . -DCMAKE_BUILD_TYPE=release -DKUDU_LINK=dynamic
 make clean
 
 NUM_PROCS=$(cat /proc/cpuinfo | grep processor | wc -l)
