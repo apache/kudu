@@ -63,35 +63,10 @@ import static kudu.rpc.ExternalConsistencyMode.NO_CONSISTENCY;
  * operations upon flush()'ing. It means that in a situation with a timeout of 500ms and a flush
  * interval of 1000ms, an operation can be oustanding for up to 1500ms before being timed out.
  */
-public class KuduSession {
+public class KuduSession implements SessionConfiguration {
 
   public static final Logger LOG = LoggerFactory.getLogger(KuduSession.class);
   private static final Range<Float> PERCENTAGE_RANGE = Ranges.closed(0.0f, 1.0f);
-
-  public enum FlushMode {
-    // Every write will be sent to the server in-band with the Apply()
-    // call. No batching will occur. This is the default flush mode. In this
-    // mode, the Flush() call never has any effect, since each Apply() call
-    // has already flushed the buffer.
-    AUTO_FLUSH_SYNC,
-
-    // Apply() calls will return immediately, but the writes will be sent in
-    // the background, potentially batched together with other writes from
-    // the same session. If there is not sufficient buffer space, then Apply()
-    // may block for buffer space to be available.
-    //
-    // Because writes are applied in the background, any errors will be stored
-    // in a session-local buffer. Call CountPendingErrors() or GetPendingErrors()
-    // to retrieve them.
-    //
-    // The Flush() call can be used to block until the buffer is empty.
-    AUTO_FLUSH_BACKGROUND,
-
-    // Apply() calls will return immediately, and the writes will not be
-    // sent until the user calls Flush(). If the buffer runs past the
-    // configured space limit, then Apply() will return an error.
-    MANUAL_FLUSH
-  }
 
   private final KuduClient client;
   private final Random randomizer = new Random();
@@ -147,11 +122,12 @@ public class KuduSession {
     setMutationBufferLowWatermark(0.5f);
   }
 
-  /**
-   * Set the new flush mode for this session
-   * @param flushMode new flush mode, can be the same as the previous one
-   * @throws IllegalArgumentException if the buffer isn't empty
-   */
+  @Override
+  public FlushMode getFlushMode() {
+    return this.flushMode;
+  }
+
+  @Override
   public void setFlushMode(FlushMode flushMode) {
     if (hasPendingOperations()) {
       throw new IllegalArgumentException("Cannot change flush mode when writes are buffered");
@@ -159,11 +135,7 @@ public class KuduSession {
     this.flushMode = flushMode;
   }
 
-  /**
-   * Set the new external consistency mode for this session.
-   * @param consistencyMode new external consistency mode, can the same as the previous one.
-   * @throws IllegalArgumentException if the buffer isn't empty
-   */
+  @Override
   public void setExternalConsistencyMode(ExternalConsistencyMode consistencyMode) {
     if (hasPendingOperations()) {
       throw new IllegalArgumentException("Cannot change consistency mode "
@@ -172,11 +144,7 @@ public class KuduSession {
     this.consistencyMode = consistencyMode;
   }
 
-  /**
-   * Set the number of operations that can be buffered.
-   * @param size number of ops
-   * @throws IllegalArgumentException if the buffer isn't empty
-   */
+  @Override
   public void setMutationBufferSpace(int size) {
     if (hasPendingOperations()) {
       throw new IllegalArgumentException("Cannot change the buffer" +
@@ -185,17 +153,7 @@ public class KuduSession {
     this.mutationBufferSpace = size;
   }
 
-  /**
-   * Set the low watermark for this session. The default is set to half the mutation buffer space.
-   * For example, a buffer space of 1000 with a low watermark set to 50% (0.5) will start randomly
-   * sending PleaseRetryExceptions once there's an outstanding flush and the buffer is over 500.
-   * As the buffer gets fuller, it becomes likelier to hit the exception.
-   * @param mutationBufferLowWatermark New low watermark as a percentage,
-   *                             has to be between 0  and 1 (inclusive). A value of 1 disables
-   *                             the low watermark since it's the same as the high one.
-   * @throws IllegalArgumentException if the buffer isn't empty or if the watermark isn't between
-   * 0 and 1.
-   */
+  @Override
   public void setMutationBufferLowWatermark(float mutationBufferLowWatermark) {
     if (hasPendingOperations()) {
       throw new IllegalArgumentException("Cannot change the buffer" +
@@ -215,26 +173,22 @@ public class KuduSession {
     this.randomizer.setSeed(seed);
   }
 
-  /**
-   * Set the flush interval, which will be used for the next scheduling decision
-   * @param interval interval in milliseconds
-   */
+  @Override
   public void setFlushInterval(int interval) {
     this.interval = interval;
   }
 
-  /**
-   * Sets the timeout for the next applied operations.
-   * The default timeout is 0, which disables the timeout functionality.
-   * @param timeout Timeout in milliseconds
-   */
+  @Override
   public void setTimeoutMillis(long timeout) {
     this.currentTimeout = timeout;
   }
 
-  /**
-   * Returns true if this session has already been closed.
-   */
+  @Override
+  public long getTimeoutMillis() {
+    return this.currentTimeout;
+  }
+
+  @Override
   public boolean isClosed() {
     return closed;
   }
@@ -277,10 +231,7 @@ public class KuduSession {
     return (Deferred) Deferred.group(d);
   }
 
-  /**
-   * Check if there are operations that haven't been completely applied.
-   * @return true if operations are pending, else false.
-   */
+  @Override
   public boolean hasPendingOperations() {
     synchronized (this) {
       return !this.operations.isEmpty() || !this.operationsInFlight.isEmpty() ||
@@ -489,14 +440,6 @@ public class KuduSession {
       }
     };
     request.getDeferred().addBoth(new BatchCallback());
-  }
-
-  /**
-   * TODO
-   * @param priority
-   */
-  public void setPriority(int priority) {
-    // TODO
   }
 
   /**
