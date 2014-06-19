@@ -12,6 +12,10 @@
 
 namespace kudu {
 
+//////////////////////////////////////////////////
+// FutureTask
+//////////////////////////////////////////////////
+
 FutureTask::FutureTask(const std::tr1::shared_ptr<Task>& task)
 : state_(kTaskPendingState),
   task_(task),
@@ -101,8 +105,12 @@ bool FutureTask::set_state(TaskState state) {
   return true;
 }
 
-TaskExecutor::TaskExecutor(const std::tr1::shared_ptr<ThreadPool>& thread_pool)
-  : thread_pool_(thread_pool) {
+//////////////////////////////////////////////////
+// TaskExecutor
+//////////////////////////////////////////////////
+
+TaskExecutor::TaskExecutor(gscoped_ptr<ThreadPool> thread_pool)
+  : thread_pool_(thread_pool.Pass()) {
 }
 
 Status TaskExecutor::Submit(const std::tr1::shared_ptr<Task>& task,
@@ -156,19 +164,17 @@ TaskExecutor* TaskExecutor::CreateNew(const string& name,
 TaskExecutor* TaskExecutor::CreateNew(const string& name,
                                       size_t min_threads,
                                       size_t max_threads) {
-  std::tr1::shared_ptr<ThreadPool> thread_pool(
+  gscoped_ptr<ThreadPool> thread_pool(
         new ThreadPool(name, min_threads, max_threads, ThreadPool::DEFAULT_TIMEOUT));
 
   Status s = thread_pool->Init();
   if (!s.ok()) {
-    LOG(ERROR)<< "Unable to initialize the TaskExecutor ThreadPool for "
-              << name << ": " << s.ToString();
+    LOG(ERROR) << "Unable to initialize the TaskExecutor ThreadPool for "
+               << name << ": " << s.ToString();
     return(NULL);
   }
 
-  return new TaskExecutor(thread_pool);
+  return new TaskExecutor(thread_pool.Pass());
 }
 
-
-}  // namespace kudu
-
+} // namespace kudu

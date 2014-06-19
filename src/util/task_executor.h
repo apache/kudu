@@ -6,8 +6,9 @@
 #include <boost/bind.hpp>
 #include <boost/foreach.hpp>
 #include <boost/function.hpp>
-#include <tr1/memory>
+#include <gtest/gtest_prod.h>
 #include <string>
+#include <tr1/memory>
 #include <vector>
 
 #include "gutil/macros.h"
@@ -317,8 +318,6 @@ class FutureTask : public Runnable, public Future {
 
 class TaskExecutor {
  public:
-  // Initialize a TaskExecutor using an external ThreadPool
-  explicit TaskExecutor(const std::tr1::shared_ptr<ThreadPool>& thread_pool);
   ~TaskExecutor();
 
   // Create a new Executor with its own ThreadPool and a maximum of
@@ -395,13 +394,20 @@ class TaskExecutor {
   // Returns true if the pool is idle within the given timeout. Otherwise false.
   bool TimedWait(const boost::system_time& time_until);
 
-  // Returns the thread pool used by the TaskExecutor
-  std::tr1::shared_ptr<ThreadPool> thread_pool() const {
+ private:
+  FRIEND_TEST(TestTaskExecutor, TestFutureListeners);
+
+  // Initialize a TaskExecutor using an external ThreadPool.
+  explicit TaskExecutor(gscoped_ptr<ThreadPool> thread_pool);
+
+  // Return the thread pool used by the TaskExecutor.
+  const gscoped_ptr<ThreadPool>& thread_pool() const {
     return thread_pool_;
   }
 
- private:
-  std::tr1::shared_ptr<ThreadPool> thread_pool_;
+  gscoped_ptr<ThreadPool> thread_pool_;
+
+  DISALLOW_COPY_AND_ASSIGN(TaskExecutor);
 };
 
 }  // namespace kudu
