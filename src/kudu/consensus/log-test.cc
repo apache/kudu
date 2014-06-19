@@ -119,7 +119,7 @@ TEST_F(LogTest, TestMultipleEntriesInABatch) {
   opid.set_term(1);
   opid.set_index(1);
 
-  AppendNoOpsToLogSync(log_.get(), &opid, 2);
+  AppendNoOpsToLogSync(clock_, log_.get(), &opid, 2);
 
   // RollOver() the batch so that we have a properly formed footer.
   ASSERT_STATUS_OK(log_->AllocateSegmentAndRollOver());
@@ -259,14 +259,14 @@ void LogTest::DoCorruptionTest(CorruptionType type, int offset,
 // It should still return OK, since on a crash, it's acceptable to have
 // a partial entry at EOF.
 TEST_F(LogTest, TestTruncateLog) {
-  DoCorruptionTest(TRUNCATE_FILE, 200, Status::OK(), 3);
+  DoCorruptionTest(TRUNCATE_FILE, 218, Status::OK(), 3);
 }
 
 // Similar to the above, except flips a byte. In this case, it should return
 // a Corruption instead of an OK, because we still have a valid footer in
 // the file (indicating that all of the entries should be valid as well).
 TEST_F(LogTest, TestCorruptLog) {
-  DoCorruptionTest(FLIP_BYTE, 200, Status::Corruption(""), 3);
+  DoCorruptionTest(FLIP_BYTE, 218, Status::Corruption(""), 3);
 }
 
 // Tests that segments roll over when max segment size is reached
@@ -337,6 +337,7 @@ TEST_F(LogTest, TestWriteAndReadToAndFromInProgressSegment) {
   ReplicateMsg* repl = log_entry->mutable_replicate();
   repl->mutable_id()->CopyFrom(op_id);
   repl->set_op_type(NO_OP);
+  repl->set_timestamp(0L);
 
   // Entries are prefixed with a header.
   int single_entry_size = batch.ByteSize() + kEntryHeaderSize;
@@ -511,7 +512,7 @@ TEST_F(LogTest, TestGCOfIndexChunks) {
 // writing them to the log.
 TEST_F(LogTest, TestWaitUntilAllFlushed) {
   BuildLog();
-  // Append 4 replicate/commit pairs asynchronously
+  // Append 2 replicate/commit pairs asynchronously
   AppendReplicateBatchAndCommitEntryPairsToLog(2, APPEND_ASYNC);
 
   ASSERT_STATUS_OK(log_->WaitUntilAllFlushed());

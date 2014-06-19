@@ -154,6 +154,7 @@ class RpcTransactionCompletionCallback : public TransactionCompletionCallback {
 
   rpc::RpcContext* context_;
   Response* response_;
+  tablet::TransactionState* state_;
 };
 
 // Generic interface to handle scan results.
@@ -371,7 +372,8 @@ void TabletServiceAdminImpl::AlterSchema(const AlterSchemaRequestPB* req,
     new AlterSchemaTransactionState(tablet_peer.get(), req, resp);
 
   tx_state->set_completion_callback(gscoped_ptr<TransactionCompletionCallback>(
-      new RpcTransactionCompletionCallback<AlterSchemaResponsePB>(context, resp)).Pass());
+      new RpcTransactionCompletionCallback<AlterSchemaResponsePB>(context,
+                                                                  resp)).Pass());
 
   // Submit the alter schema op. The RPC will be responded to asynchronously.
   Status s = tablet_peer->SubmitAlterSchema(tx_state);
@@ -476,7 +478,7 @@ void TabletServiceImpl::Write(const WriteRequestPB* req,
     }
   }
 
-  WriteTransactionState *state =
+  WriteTransactionState *tx_state =
     new WriteTransactionState(tablet_peer.get(), req, resp);
 
   // If the consistency mode is set to CLIENT_PROPAGATED and the client
@@ -488,7 +490,7 @@ void TabletServiceImpl::Write(const WriteRequestPB* req,
     if (req->has_propagated_timestamp()) {
       Timestamp ts(req->propagated_timestamp());
       if (PREDICT_TRUE(s.ok())) {
-        state->set_client_propagated_timestamp(ts);
+        tx_state->set_client_propagated_timestamp(ts);
         // update the clock with the client's timestamp
         s = server_->clock()->Update(ts);
       }
@@ -501,11 +503,12 @@ void TabletServiceImpl::Write(const WriteRequestPB* req,
     }
   }
 
-  state->set_completion_callback(gscoped_ptr<TransactionCompletionCallback>(
-      new RpcTransactionCompletionCallback<WriteResponsePB>(context, resp)).Pass());
+  tx_state->set_completion_callback(gscoped_ptr<TransactionCompletionCallback>(
+      new RpcTransactionCompletionCallback<WriteResponsePB>(context,
+                                                            resp)).Pass());
 
   // Submit the write. The RPC will be responded to asynchronously.
-  Status s = tablet_peer->SubmitWrite(state);
+  Status s = tablet_peer->SubmitWrite(tx_state);
 
   // Check that we could submit the write
   if (PREDICT_FALSE(!s.ok())) {
@@ -540,7 +543,8 @@ void ConsensusServiceImpl::ChangeConfig(const consensus::ChangeConfigRequestPB* 
     new ChangeConfigTransactionState(tablet_peer.get(), req, resp);
 
   tx_state->set_completion_callback(gscoped_ptr<TransactionCompletionCallback>(
-      new RpcTransactionCompletionCallback<ChangeConfigResponsePB>(context, resp)).Pass());
+      new RpcTransactionCompletionCallback<ChangeConfigResponsePB>(context,
+                                                                   resp)).Pass());
 
   // Submit the change config op. The RPC will be responded to asynchronously.
   Status s = tablet_peer->SubmitChangeConfig(tx_state);

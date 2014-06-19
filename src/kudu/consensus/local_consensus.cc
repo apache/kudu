@@ -35,7 +35,8 @@ LocalConsensus::LocalConsensus(const ConsensusOptions& options,
       next_op_id_index_(-1),
       state_(kInitializing),
       txn_factory_(DCHECK_NOTNULL(txn_factory)),
-      log_(DCHECK_NOTNULL(log)) {
+      log_(DCHECK_NOTNULL(log)),
+      clock_(clock) {
   CHECK(cmeta_) << "Passed ConsensusMetadata object is NULL";
 }
 
@@ -70,6 +71,7 @@ Status LocalConsensus::Start(const ConsensusBootstrapInfo& info) {
 
     replicate->mutable_id()->set_term(0);
     replicate->mutable_id()->set_index(next_op_id_index_);
+    replicate->set_timestamp(clock_->Now().ToUint64());
 
     round.reset(new ConsensusRound(this, make_scoped_refptr_replicate(replicate)));
     state_ = kRunning;

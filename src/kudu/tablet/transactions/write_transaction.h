@@ -79,7 +79,7 @@ class WriteTransactionState : public TransactionState {
 
   // Returns the prepared response to the client that will be sent when this
   // transaction is completed, if this transaction was started by a client.
-  tserver::WriteResponsePB *response() {
+  tserver::WriteResponsePB *response() OVERRIDE {
     return response_;
   }
 

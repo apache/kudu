@@ -371,6 +371,7 @@ TEST_F(BootstrapTest, TestOutOfOrderCommits) {
   // This appends Insert(1) with op 10.10
   OpId insert_opid = MakeOpId(10, 10);
   replicate->get()->mutable_id()->CopyFrom(insert_opid);
+  replicate->get()->set_timestamp(clock_->Now().ToUint64());
   AddTestRowToPB(RowOperationsPB::INSERT, schema_, 10, 1,
                  "this is a test insert", batch_request->mutable_row_operations());
   AppendReplicateBatch(replicate, true);
@@ -379,6 +380,7 @@ TEST_F(BootstrapTest, TestOutOfOrderCommits) {
   OpId mutate_opid = MakeOpId(10, 11);
   batch_request->mutable_row_operations()->Clear();
   replicate->get()->mutable_id()->CopyFrom(mutate_opid);
+  replicate->get()->set_timestamp(clock_->Now().ToUint64());
   AddTestRowToPB(RowOperationsPB::UPDATE, schema_,
                  10, 2, "this is a test mutate",
                  batch_request->mutable_row_operations());
@@ -387,7 +389,6 @@ TEST_F(BootstrapTest, TestOutOfOrderCommits) {
   // Now commit the mutate before the insert (in the log).
   gscoped_ptr<consensus::CommitMsg> mutate_commit(new consensus::CommitMsg);
   mutate_commit->set_op_type(consensus::WRITE_OP);
-  mutate_commit->set_timestamp(Timestamp(mutate_opid.index()).ToUint64());
   mutate_commit->mutable_commited_op_id()->CopyFrom(mutate_opid);
   TxResultPB* result = mutate_commit->mutable_result();
   OperationResultPB* mutate = result->add_ops();
@@ -398,7 +399,6 @@ TEST_F(BootstrapTest, TestOutOfOrderCommits) {
 
   gscoped_ptr<consensus::CommitMsg> insert_commit(new consensus::CommitMsg);
   insert_commit->set_op_type(consensus::WRITE_OP);
-  insert_commit->set_timestamp(Timestamp(insert_opid.index()).ToUint64());
   insert_commit->mutable_commited_op_id()->CopyFrom(insert_opid);
   result = insert_commit->mutable_result();
   OperationResultPB* insert = result->add_ops();
@@ -435,6 +435,7 @@ TEST_F(BootstrapTest, TestMissingCommitMessage) {
   // This appends Insert(1) with op 10.10
   OpId insert_opid = MakeOpId(10, 10);
   replicate->get()->mutable_id()->CopyFrom(insert_opid);
+  replicate->get()->set_timestamp(clock_->Now().ToUint64());
   AddTestRowToPB(RowOperationsPB::INSERT, schema_, 10, 1,
                  "this is a test insert", batch_request->mutable_row_operations());
   AppendReplicateBatch(replicate, true);
@@ -443,6 +444,7 @@ TEST_F(BootstrapTest, TestMissingCommitMessage) {
   OpId mutate_opid = MakeOpId(10, 11);
   batch_request->mutable_row_operations()->Clear();
   replicate->get()->mutable_id()->CopyFrom(mutate_opid);
+  replicate->get()->set_timestamp(clock_->Now().ToUint64());
   AddTestRowToPB(RowOperationsPB::UPDATE, schema_,
                  10, 2, "this is a test mutate",
                  batch_request->mutable_row_operations());
@@ -451,7 +453,6 @@ TEST_F(BootstrapTest, TestMissingCommitMessage) {
   // Now commit the mutate before the insert (in the log).
   gscoped_ptr<consensus::CommitMsg> mutate_commit(new consensus::CommitMsg);
   mutate_commit->set_op_type(consensus::WRITE_OP);
-  mutate_commit->set_timestamp(Timestamp(mutate_opid.index()).ToUint64());
   mutate_commit->mutable_commited_op_id()->CopyFrom(mutate_opid);
   TxResultPB* result = mutate_commit->mutable_result();
   OperationResultPB* mutate = result->add_ops();

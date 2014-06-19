@@ -39,7 +39,7 @@ class ChangeConfigTransactionState : public TransactionState {
   }
 
   const consensus::ChangeConfigRequestPB* request() const { return request_; }
-  consensus::ChangeConfigResponsePB* response() { return response_; }
+  consensus::ChangeConfigResponsePB* response() OVERRIDE { return response_; }
 
   Status set_old_quorum(metadata::QuorumPB quorum) WARN_UNUSED_RESULT;
 

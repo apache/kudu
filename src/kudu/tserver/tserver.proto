@@ -118,9 +118,8 @@ message WriteResponsePB {
   repeated PerRowErrorPB per_row_errors = 2;
 
   // The timestamp chosen by the server for this write.
-  // This is only set when the request specified external_consistency_mode = CLIENT_PROPAGATED.
-  // TODO propagate timestamps with server signature
-  optional fixed64 write_timestamp = 3;
+  // TODO KUDU-611 propagate timestamps with server signature.
+  optional fixed64 timestamp = 3;
 }
 
 // A list tablets request

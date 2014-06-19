@@ -12,9 +12,12 @@
 #include "kudu/consensus/log_util.h"
 #include "kudu/consensus/opid_util.h"
 #include "kudu/fs/fs_manager.h"
+#include "kudu/server/hybrid_clock.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
+
+DECLARE_int32(max_clock_sync_error_usec);
 
 namespace kudu {
 namespace consensus {
@@ -44,6 +47,11 @@ class ConsensusPeersTest : public KuduTest {
                        schema_,
                        NULL,
                        &log_));
+
+    FLAGS_max_clock_sync_error_usec = 10000000;
+    clock_.reset(new server::HybridClock());
+    ASSERT_OK(clock_->Init());
+
     consensus_.reset(new TestRaftConsensusQueueIface());
     message_queue_.reset(new PeerMessageQueue(metric_context_, log_.get(), kLeaderUuid, kTabletId));
     message_queue_->RegisterObserver(consensus_.get());
@@ -108,6 +116,7 @@ class ConsensusPeersTest : public KuduTest {
   const Schema schema_;
   LogOptions options_;
   gscoped_ptr<ThreadPool> pool_;
+  scoped_refptr<server::Clock> clock_;
 };
 
 
@@ -130,7 +139,7 @@ TEST_F(ConsensusPeersTest, TestRemotePeer) {
       NewRemotePeer("remote-peer", &remote_peer);
 
   // Append a bunch of messages to the queue
-  AppendReplicateMessagesToQueue(message_queue_.get(), 1, 20);
+  AppendReplicateMessagesToQueue(message_queue_.get(), clock_, 1, 20);
 
   // The above append ends up appending messages in term 2, so we
   // update the peer's term to match.
@@ -167,7 +176,7 @@ TEST_F(ConsensusPeersTest, TestRemotePeers) {
   remote_peer2_proxy->DelayResponse();
 
   // Append one message to the queue.
-  AppendReplicateMessagesToQueue(message_queue_.get(), 1, 1);
+  AppendReplicateMessagesToQueue(message_queue_.get(), clock_, 1, 1);
 
   OpId first = MakeOpId(0, 1);
 
@@ -191,7 +200,7 @@ TEST_F(ConsensusPeersTest, TestRemotePeers) {
   }
 
   // Now append another message to the queue
-  AppendReplicateMessagesToQueue(message_queue_.get(), 2, 1);
+  AppendReplicateMessagesToQueue(message_queue_.get(), clock_, 2, 1);
 
   // We should not see it replicated, even after 10ms,
   // since only the local peer replicates the message.

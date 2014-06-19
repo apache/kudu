@@ -64,7 +64,7 @@ class TabletServerTestBase : public KuduTest {
     // Use the hybrid clock for TS tests
     FLAGS_use_hybrid_clock = true;
 
-    // increase the max error tolerance, for tests, to 10 seconds.
+    // Increase the max error tolerance, for tests, to 10 seconds.
     FLAGS_max_clock_sync_error_usec = 10000000;
 
     // Disable the maintenance ops manager since we want to trigger our own
@@ -223,7 +223,7 @@ class TabletServerTestBase : public KuduTest {
       }
       CHECK_OK(DCHECK_NOTNULL(proxy)->Write(req, &resp, &controller));
       if (write_timestamps_collector) {
-        write_timestamps_collector->push_back(resp.write_timestamp());
+        write_timestamps_collector->push_back(resp.timestamp());
       }
 
       if (resp.has_error() || resp.per_row_errors_size() > 0) {

@@ -11,9 +11,12 @@
 #include "kudu/fs/fs_manager.h"
 #include "kudu/gutil/bind_helpers.h"
 #include "kudu/gutil/stl_util.h"
+#include "kudu/server/hybrid_clock.h"
 #include "kudu/util/mem_tracker.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/test_util.h"
+
+DECLARE_int32(max_clock_sync_error_usec);
 
 using std::tr1::shared_ptr;
 
@@ -49,6 +52,10 @@ class LogCacheTest : public KuduTest {
                             &log_));
 
     CloseAndReopenCache(MinimumOpId(), "TestMemTracker");
+
+    FLAGS_max_clock_sync_error_usec = 10000000;
+    clock_.reset(new server::HybridClock());
+    ASSERT_OK(clock_->Init());
   }
 
   virtual void TearDown() OVERRIDE {
@@ -80,7 +87,7 @@ class LogCacheTest : public KuduTest {
       int index = i;
       vector<ReplicateRefPtr> msgs;
       msgs.push_back(make_scoped_refptr_replicate(
-              CreateDummyReplicate(term, index, payload_size).release()));
+              CreateDummyReplicate(term, index, clock_->Now(), payload_size).release()));
       if (!cache_->AppendOperations(msgs, Bind(&FatalOnError))) {
         return false;
       }
@@ -119,6 +126,7 @@ class LogCacheTest : public KuduTest {
   gscoped_ptr<FsManager> fs_manager_;
   gscoped_ptr<LogCache> cache_;
   gscoped_ptr<log::Log> log_;
+  scoped_refptr<server::Clock> clock_;
 };
 
 

@@ -198,6 +198,7 @@ class RaftConsensusTest : public KuduTest {
   ConsensusRound* AppendNoOpRound() {
     gscoped_ptr<ReplicateMsg> replicate(new ReplicateMsg);
     replicate->set_op_type(NO_OP);
+    replicate->set_timestamp(clock_->Now().ToUint64());
     ConsensusRound* round = CreateRound(replicate.Pass());
     CHECK_OK(consensus_->Replicate(round));
     SetContinuationIfEnabled(round);
@@ -468,6 +469,7 @@ TEST_F(RaftConsensusTest, TestAbortOperations) {
   ReplicateMsg* cc_msg = request.add_ops();
   cc_msg->mutable_id()->CopyFrom(MakeOpId(3, 6));
   cc_msg->set_op_type(CHANGE_CONFIG_OP);
+  cc_msg->set_timestamp(clock_->Now().ToUint64());
   ChangeConfigRequestPB* cc_req = cc_msg->mutable_change_config_request();
   cc_req->set_tablet_id(kTestTablet);
 
@@ -479,6 +481,7 @@ TEST_F(RaftConsensusTest, TestAbortOperations) {
     ReplicateMsg* replicate = request.add_ops();
     replicate->mutable_id()->CopyFrom(MakeOpId(3, i));
     replicate->set_op_type(NO_OP);
+    replicate->set_timestamp(clock_->Now().ToUint64());
   }
 
   request.mutable_committed_index()->CopyFrom(MakeOpId(3, 6));

@@ -201,6 +201,10 @@ class TransactionDriver : public RefCountedThreadSafe<TransactionDriver>,
   static std::string StateString(ReplicationState repl_state,
                                  PrepareState prep_state);
 
+  // Sets the timestamp on the response PB, if there is one.
+  void SetResponseTimestamp(TransactionState* transaction_state,
+                            const Timestamp& timestamp);
+
   TransactionTracker* txn_tracker_;
   consensus::Consensus* consensus_;
   log::Log* log_;

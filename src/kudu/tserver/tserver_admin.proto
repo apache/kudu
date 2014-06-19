@@ -21,6 +21,10 @@ message AlterSchemaRequestPB {
 
 message AlterSchemaResponsePB {
   optional TabletServerErrorPB error = 1;
+
+  // The timestamp chosen by the server for this alter schema operation.
+  // TODO KUDU-611 propagate timestamps with server signature.
+  optional fixed64 timestamp = 2;
 }
 
 // A create tablet request.

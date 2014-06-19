@@ -83,7 +83,9 @@ Status AlterSchemaTransaction::Prepare() {
 }
 
 Status AlterSchemaTransaction::Start() {
-  state_->set_timestamp(state_->tablet_peer()->clock()->Now());
+  if (!state_->has_timestamp()) {
+    state_->set_timestamp(state_->tablet_peer()->clock()->Now());
+  }
   TRACE("START. Timestamp: $0", server::HybridClock::GetPhysicalValueMicros(state_->timestamp()));
   return Status::OK();
 }
@@ -103,7 +105,6 @@ Status AlterSchemaTransaction::Apply(gscoped_ptr<CommitMsg>* commit_msg) {
 
   commit_msg->reset(new CommitMsg());
   (*commit_msg)->set_op_type(ALTER_SCHEMA_OP);
-  (*commit_msg)->set_timestamp(state_->timestamp().ToUint64());
   return Status::OK();
 }
 
@@ -113,7 +114,6 @@ void AlterSchemaTransaction::Finish(TransactionResult result) {
     state()->Finish();
     return;
   }
-
 
   DCHECK_EQ(result, Transaction::COMMITTED);
   // Now that all of the changes have been applied and the commit is durable

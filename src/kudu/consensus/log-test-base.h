@@ -24,6 +24,9 @@
 #include "kudu/gutil/stringprintf.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/strings/util.h"
+#include "kudu/server/clock.h"
+#include "kudu/server/hybrid_clock.h"
+#include "kudu/server/metadata.h"
 #include "kudu/tserver/tserver.pb.h"
 #include "kudu/util/env_util.h"
 #include "kudu/util/metrics.h"
@@ -31,6 +34,8 @@
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 #include "kudu/util/stopwatch.h"
+
+DECLARE_int32(max_clock_sync_error_usec);
 
 namespace kudu {
 namespace log {
@@ -40,6 +45,8 @@ using consensus::CommitMsg;
 using consensus::ReplicateMsg;
 using consensus::WRITE_OP;
 using consensus::NO_OP;
+
+using server::Clock;
 
 using tserver::WriteRequestPB;
 
@@ -55,7 +62,11 @@ const bool APPEND_ASYNC = false;
 // Append a single batch of 'count' NoOps to the log.
 // If 'size' is not NULL, increments it by the expected increase in log size.
 // Increments 'op_id''s index once for each operation logged.
-static Status AppendNoOpsToLogSync(Log* log, OpId* op_id, int count, int* size = NULL) {
+static Status AppendNoOpsToLogSync(const scoped_refptr<Clock>& clock,
+                                   Log* log,
+                                   OpId* op_id,
+                                   int count,
+                                   int* size = NULL) {
 
   vector<consensus::ReplicateRefPtr> replicates;
   for (int i = 0; i < count; i++) {
@@ -64,6 +75,7 @@ static Status AppendNoOpsToLogSync(Log* log, OpId* op_id, int count, int* size =
 
     repl->mutable_id()->CopyFrom(*op_id);
     repl->set_op_type(NO_OP);
+    repl->set_timestamp(clock->Now().ToUint64());
 
     // Increment op_id.
     op_id->set_index(op_id->index() + 1);
@@ -88,8 +100,11 @@ static Status AppendNoOpsToLogSync(Log* log, OpId* op_id, int count, int* size =
   return Status::OK();
 }
 
-static Status AppendNoOpToLogSync(Log* log, OpId* op_id, int* size = NULL) {
-  return AppendNoOpsToLogSync(log, op_id, 1, size);
+static Status AppendNoOpToLogSync(const scoped_refptr<Clock>& clock,
+                                  Log* log,
+                                  OpId* op_id,
+                                  int* size = NULL) {
+  return AppendNoOpsToLogSync(clock, log, op_id, 1, size);
 }
 
 class LogTestBase : public KuduTest {
@@ -110,6 +125,10 @@ class LogTestBase : public KuduTest {
     metric_context_.reset(new MetricContext(metric_registry_.get(), "log-test-base"));
     ASSERT_OK(fs_manager_->CreateInitialFileSystemLayout());
     ASSERT_OK(fs_manager_->Open());
+
+    FLAGS_max_clock_sync_error_usec = 10000000;
+    clock_.reset(new server::HybridClock());
+    ASSERT_OK(clock_->Init());
   }
 
   virtual void TearDown() OVERRIDE {
@@ -161,6 +180,7 @@ class LogTestBase : public KuduTest {
     consensus::ReplicateRefPtr replicate = make_scoped_refptr_replicate(new ReplicateMsg());
     replicate->get()->set_op_type(WRITE_OP);
     replicate->get()->mutable_id()->CopyFrom(opid);
+    replicate->get()->set_timestamp(clock_->Now().ToUint64());
     WriteRequestPB* batch_request = replicate->get()->mutable_write_request();
     ASSERT_STATUS_OK(SchemaToPB(schema_, batch_request->mutable_schema()));
     AddTestRowToPB(RowOperationsPB::INSERT, schema_,
@@ -217,7 +237,6 @@ class LogTestBase : public KuduTest {
                     bool sync = APPEND_SYNC) {
     gscoped_ptr<CommitMsg> commit(new CommitMsg);
     commit->set_op_type(WRITE_OP);
-    commit->set_timestamp(Timestamp(original_opid.index()).ToUint64());
 
     commit->mutable_commited_op_id()->CopyFrom(original_opid);
 
@@ -258,7 +277,7 @@ class LogTestBase : public KuduTest {
   // If non-NULL, and if the write is successful, 'size' is incremented
   // by the size of the written operation.
   Status AppendNoOp(OpId* op_id, int* size = NULL) {
-    return AppendNoOpToLogSync(log_.get(), op_id, size);
+    return AppendNoOpToLogSync(clock_, log_.get(), op_id, size);
   }
 
   // Append a number of no-op entries to the log.
@@ -305,6 +324,7 @@ class LogTestBase : public KuduTest {
   // Reusable entries vector that deletes the entries on destruction.
   vector<LogEntryPB* > entries_;
   scoped_refptr<LogAnchorRegistry> log_anchor_registry_;
+  scoped_refptr<Clock> clock_;
 };
 
 // Corrupts the last segment of the provided log by either truncating it

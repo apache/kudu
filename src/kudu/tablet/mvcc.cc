@@ -66,7 +66,8 @@ Status MvccManager::StartTransactionAtTimestamp(Timestamp timestamp) {
   boost::lock_guard<LockType> l(lock_);
   if (PREDICT_FALSE(cur_snap_.IsCommitted(timestamp))) {
     return Status::IllegalState(
-        strings::Substitute("Timestamp: $0 is already committed.", timestamp.value()));
+        strings::Substitute("Timestamp: $0 is already committed. Current Snapshot: $1",
+                            timestamp.value(), cur_snap_.ToString()));
   }
   if (!InitTransactionUnlocked(timestamp)) {
     return Status::IllegalState(

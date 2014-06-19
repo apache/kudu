@@ -28,6 +28,8 @@ using kudu::master::MasterServiceProxy;
 DECLARE_int32(heartbeat_interval_ms);
 DECLARE_bool(log_preallocate_segments);
 DEFINE_int32(num_test_tablets, 100, "Number of tablets for stress test");
+DECLARE_bool(use_hybrid_clock);
+DECLARE_int32(max_clock_sync_error_usec);
 
 namespace kudu {
 
@@ -47,6 +49,12 @@ class CreateTableStressTest : public KuduTest {
   virtual void SetUp() OVERRIDE {
     // Make heartbeats faster to speed test runtime.
     FLAGS_heartbeat_interval_ms = 10;
+
+    // Use the hybrid clock for TS tests
+    FLAGS_use_hybrid_clock = true;
+
+    // Increase the max error tolerance to 10 seconds.
+    FLAGS_max_clock_sync_error_usec = 10000000;
 
     // Don't preallocate log segments, since we're creating thousands
     // of tablets here. If each preallocates 64M or so, we use

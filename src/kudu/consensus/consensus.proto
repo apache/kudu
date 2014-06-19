@@ -129,17 +129,28 @@ message ChangeConfigRequestPB {
 // the 'error' field is set with it.
 message ChangeConfigResponsePB {
   optional tserver.TabletServerErrorPB error = 1;
+
+  // The timestamp chosen by the server for this change config operation.
+  // TODO KUDU-611 propagate timestamps with server signature.
+  optional fixed64 timestamp = 2;
 }
 
 // A Replicate message, sent to replicas by leader to indicate this operation must
 // be stored in the WAL/SM log, as part of the first phase of the two phase
 // commit.
 message ReplicateMsg {
+  // The Raft operation ID (term and index) being replicated.
   required OpId id = 1;
-  required OperationType op_type = 2;
-  optional tserver.WriteRequestPB write_request = 3;
-  optional tserver.AlterSchemaRequestPB alter_schema_request = 4;
-  optional ChangeConfigRequestPB change_config_request = 5;
+  // The (hybrid or logical) timestamp assigned to this message.
+  required fixed64 timestamp = 2;
+  // The consistency mode assigned to this message. Only when HybridTime is enabled are consistency
+  // modes other than NO_CONSISTENCY allowed. Moreover, even when HybridTime is enabled, only Write
+  // transactions may choose a consistency mode, all other transaction type default to COMMIT_WAIT.
+  optional ExternalConsistencyMode external_consistency_mode = 3 [default = NO_CONSISTENCY];
+  required OperationType op_type = 4;
+  optional tserver.WriteRequestPB write_request = 5;
+  optional tserver.AlterSchemaRequestPB alter_schema_request = 6;
+  optional ChangeConfigRequestPB change_config_request = 7;
 
   optional NoOpRequestPB noop_request = 999;
 }
@@ -151,11 +162,8 @@ message CommitMsg {
   required OperationType op_type = 1;
   // the id of the message this commit pertains to
   optional OpId commited_op_id = 2;
-  // The transaction timestamp for the operation.
-  // This is present for all COMMITs, but not necessarily on ABORTs.
-  optional fixed64 timestamp = 3;
   // The operations that were applied and/or failed in this transaction.
-  optional tablet.TxResultPB result = 4;
+  optional tablet.TxResultPB result = 3;
 }
 
 // ===========================================================================

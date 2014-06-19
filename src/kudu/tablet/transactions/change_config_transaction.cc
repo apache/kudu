@@ -85,8 +85,11 @@ Status ChangeConfigTransaction::Prepare() {
 }
 
 Status ChangeConfigTransaction::Start() {
-  // now that we've acquired the semaphore, set the transaction timestamp
-  state_->set_timestamp(state_->tablet_peer()->clock()->Now());
+  // now that we've acquired the semaphore, set the transaction timestamp, if this is
+  // a new transaction.
+  if (!state_->has_timestamp()) {
+    state_->set_timestamp(state_->tablet_peer()->clock()->Now());
+  }
   TRACE("START. Timestamp: $0", server::HybridClock::GetPhysicalValueMicros(state_->timestamp()));
   return Status::OK();
 }
@@ -101,7 +104,6 @@ Status ChangeConfigTransaction::Apply(gscoped_ptr<CommitMsg>* commit_msg) {
 
   commit_msg->reset(new CommitMsg());
   (*commit_msg)->set_op_type(CHANGE_CONFIG_OP);
-  (*commit_msg)->set_timestamp(state_->timestamp().ToUint64());
   return Status::OK();
 }
 

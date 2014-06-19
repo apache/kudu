@@ -15,10 +15,13 @@
 #include "kudu/consensus/log_reader.h"
 #include "kudu/consensus/log-test-base.h"
 #include "kudu/fs/fs_manager.h"
+#include "kudu/server/hybrid_clock.h"
 #include "kudu/util/mem_tracker.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
+
+DECLARE_int32(max_clock_sync_error_usec);
 
 DECLARE_bool(enable_data_block_fsync);
 DECLARE_int32(consensus_max_batch_size_bytes);
@@ -57,6 +60,10 @@ class ConsensusQueueTest : public KuduTest {
                             NULL,
                             &log_));
 
+    FLAGS_max_clock_sync_error_usec = 10000000;
+    clock_.reset(new server::HybridClock());
+    ASSERT_OK(clock_->Init());
+
     consensus_.reset(new TestRaftConsensusQueueIface());
     queue_.reset(new PeerMessageQueue(metric_context_, log_.get(), kLeaderUuid, kTestTablet));
     queue_->RegisterObserver(consensus_.get());
@@ -69,7 +76,10 @@ class ConsensusQueueTest : public KuduTest {
 
   Status AppendReplicateMsg(int term, int index, int payload_size) {
     return queue_->AppendOperation(
-        make_scoped_refptr_replicate(CreateDummyReplicate(term, index, payload_size).release()));
+        make_scoped_refptr_replicate(CreateDummyReplicate(term,
+                                                          index,
+                                                          clock_->Now(),
+                                                          payload_size).release()));
   }
 
   // Updates the peer's watermark in the queue so that it matches
@@ -151,6 +161,7 @@ class ConsensusQueueTest : public KuduTest {
   gscoped_ptr<log::Log> log_;
   gscoped_ptr<PeerMessageQueue> queue_;
   scoped_refptr<log::LogAnchorRegistry> registry_;
+  scoped_refptr<server::Clock> clock_;
 };
 
 // Tests that the queue is able to track a peer when it starts tracking a peer
@@ -160,7 +171,7 @@ class ConsensusQueueTest : public KuduTest {
 TEST_F(ConsensusQueueTest, TestStartTrackingAfterStart) {
   queue_->Init(MinimumOpId());
   queue_->SetLeaderMode(MinimumOpId(), MinimumOpId().term(), 1);
-  AppendReplicateMessagesToQueue(queue_.get(), 1, 100);
+  AppendReplicateMessagesToQueue(queue_.get(), clock_, 1, 100);
 
   ConsensusRequestPB request;
   ConsensusResponsePB response;
@@ -212,7 +223,8 @@ TEST_F(ConsensusQueueTest, TestGetPagedMessages) {
   // for a total of 12 pages. The last page should have a single op.
   const int kOpsPerRequest = 9;
   for (int i = 0; i < kOpsPerRequest; i++) {
-    page_size_estimator.mutable_ops()->AddAllocated(CreateDummyReplicate(0, 0, 0).release());
+    page_size_estimator.mutable_ops()->AddAllocated(
+        CreateDummyReplicate(0, 0, clock_->Now(), 0).release());
   }
 
   // Save the current flag state.
@@ -230,7 +242,7 @@ TEST_F(ConsensusQueueTest, TestGetPagedMessages) {
   // Append the messages after the queue is tracked. Otherwise the ops might
   // get evicted from the cache immediately and the requests below would
   // result in async log reads instead of cache hits.
-  AppendReplicateMessagesToQueue(queue_.get(), 1, 100);
+  AppendReplicateMessagesToQueue(queue_.get(), clock_, 1, 100);
 
   OpId last;
   for (int i = 0; i < 11; i++) {
@@ -256,7 +268,7 @@ TEST_F(ConsensusQueueTest, TestGetPagedMessages) {
 TEST_F(ConsensusQueueTest, TestPeersDontAckBeyondWatermarks) {
   queue_->Init(MinimumOpId());
   queue_->SetLeaderMode(MinimumOpId(), MinimumOpId().term(), 2);
-  AppendReplicateMessagesToQueue(queue_.get(), 1, 100);
+  AppendReplicateMessagesToQueue(queue_.get(), clock_, 1, 100);
 
   // Wait for the local peer to append all messages
   WaitForLocalPeerToAckIndex(100);
@@ -292,7 +304,7 @@ TEST_F(ConsensusQueueTest, TestPeersDontAckBeyondWatermarks) {
   }
   ASSERT_EQ(50, request.ops_size());
 
-  AppendReplicateMessagesToQueue(queue_.get(), 101, 100);
+  AppendReplicateMessagesToQueue(queue_.get(), clock_, 101, 100);
 
   SetLastReceivedAndLastCommitted(&response, request.ops(49).id());
   response.set_responder_term(28);
@@ -334,7 +346,7 @@ TEST_F(ConsensusQueueTest, TestQueueAdvancesCommittedIndex) {
 
   // Append 10 messages to the queue with a majority of 2 for a total of 3 peers.
   // This should add messages 0.1 -> 0.7, 1.8 -> 1.10 to the queue.
-  AppendReplicateMessagesToQueue(queue_.get(), 1, 10);
+  AppendReplicateMessagesToQueue(queue_.get(), clock_, 1, 10);
   WaitForLocalPeerToAckIndex(10);
 
   // Since only the local log might have ACKed at this point,
@@ -400,7 +412,7 @@ TEST_F(ConsensusQueueTest, TestQueueLoadsOperationsForPeer) {
   OpId opid = MakeOpId(1, 1);
 
   for (int i = 1; i <= 100; i++) {
-    ASSERT_OK(log::AppendNoOpToLogSync(log_.get(), &opid));
+    ASSERT_OK(log::AppendNoOpToLogSync(clock_, log_.get(), &opid));
     // Roll the log every 10 ops
     if (i % 10 == 0) {
       ASSERT_OK(log_->AllocateSegmentAndRollOver());
@@ -504,7 +516,7 @@ TEST_F(ConsensusQueueTest, TestQueueHandlesOperationOverwriting) {
   OpId opid = MakeOpId(1, 1);
   // Append 10 messages in term 1 to the log.
   for (int i = 1; i <= 10; i++) {
-    ASSERT_OK(log::AppendNoOpToLogSync(log_.get(), &opid));
+    ASSERT_OK(log::AppendNoOpToLogSync(clock_, log_.get(), &opid));
     // Roll the log every 3 ops
     if (i % 3 == 0) {
       ASSERT_OK(log_->AllocateSegmentAndRollOver());
@@ -514,7 +526,7 @@ TEST_F(ConsensusQueueTest, TestQueueHandlesOperationOverwriting) {
   opid = MakeOpId(2, 11);
   // Now append 10 more messages in term 2.
   for (int i = 11; i <= 20; i++) {
-    ASSERT_OK(log::AppendNoOpToLogSync(log_.get(), &opid));
+    ASSERT_OK(log::AppendNoOpToLogSync(clock_, log_.get(), &opid));
     // Roll the log every 3 ops
     if (i % 3 == 0) {
       ASSERT_OK(log_->AllocateSegmentAndRollOver());
@@ -571,7 +583,7 @@ TEST_F(ConsensusQueueTest, TestQueueHandlesOperationOverwriting) {
 
   // Test even when a correct peer responds (meaning we actually get to execute
   // watermark advancement) we sill have the same queue watermarks.
-  ReplicateMsg* replicate = CreateDummyReplicate(2, 21, 0).release();
+  ReplicateMsg* replicate = CreateDummyReplicate(2, 21, clock_->Now(), 0).release();
   ASSERT_OK(queue_->AppendOperation(make_scoped_refptr(new RefCountedReplicate(replicate))));
   WaitForLocalPeerToAckIndex(21);
 
@@ -618,14 +630,14 @@ TEST_F(ConsensusQueueTest, TestQueueMovesWatermarksBackward) {
   queue_->Init(MinimumOpId());
   queue_->SetNonLeaderMode();
   // Append a bunch of messages.
-  AppendReplicateMessagesToQueue(queue_.get(), 1, 10);
+  AppendReplicateMessagesToQueue(queue_.get(), clock_, 1, 10);
   log_->WaitUntilAllFlushed();
   ASSERT_OPID_EQ(queue_->GetAllReplicatedIndexForTests(), MakeOpId(1, 10));
   // Now rewrite some of the operations and wait for the log to append.
   Synchronizer synch;
   CHECK_OK(queue_->AppendOperations(
       boost::assign::list_of(make_scoped_refptr(new RefCountedReplicate(
-          CreateDummyReplicate(2, 5, 0).release()))),
+          CreateDummyReplicate(2, 5, clock_->Now(), 0).release()))),
       synch.AsStatusCallback()));
 
   // Wait for the operation to be in the log.
@@ -636,7 +648,7 @@ TEST_F(ConsensusQueueTest, TestQueueMovesWatermarksBackward) {
   synch.Reset();
   CHECK_OK(queue_->AppendOperations(
       boost::assign::list_of(make_scoped_refptr(new RefCountedReplicate(
-          CreateDummyReplicate(2, 6, 0).release()))),
+          CreateDummyReplicate(2, 6, clock_->Now(), 0).release()))),
       synch.AsStatusCallback()));
 
   // Wait for the operation to be in the log.

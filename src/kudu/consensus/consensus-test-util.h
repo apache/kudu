@@ -11,6 +11,7 @@
 #include <vector>
 #include <utility>
 
+#include "kudu/common/timestamp.h"
 #include "kudu/common/wire_protocol.h"
 #include "kudu/consensus/consensus.h"
 #include "kudu/consensus/consensus_peers.h"
@@ -19,6 +20,7 @@
 #include "kudu/consensus/raft_consensus.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/server/clock.h"
 #include "kudu/util/countdown_latch.h"
 #include "kudu/util/locks.h"
 #include "kudu/util/task_executor.h"
@@ -43,6 +45,7 @@ using strings::Substitute;
 
 static gscoped_ptr<ReplicateMsg> CreateDummyReplicate(int term,
                                                       int index,
+                                                      const Timestamp& timestamp,
                                                       int payload_size) {
     gscoped_ptr<ReplicateMsg> msg(new ReplicateMsg);
     OpId* id = msg->mutable_id();
@@ -51,6 +54,7 @@ static gscoped_ptr<ReplicateMsg> CreateDummyReplicate(int term,
 
     msg->set_op_type(NO_OP);
     msg->mutable_noop_request()->mutable_payload_for_tests()->resize(payload_size);
+    msg->set_timestamp(timestamp.ToUint64());
     return msg.Pass();
 }
 
@@ -59,11 +63,9 @@ static gscoped_ptr<ReplicateMsg> CreateDummyReplicate(int term,
 // An operation will only be considered done (TestOperationStatus::IsDone()
 // will become true) once at least 'n_majority' peers have called
 // TestOperationStatus::AckPeer().
-//
-// If the 'statuses_collector' vector is not NULL the operation statuses will
-// be added to it.
 static inline void AppendReplicateMessagesToQueue(
     PeerMessageQueue* queue,
+    const scoped_refptr<server::Clock>& clock,
     int first,
     int count,
     int payload_size = 0) {
@@ -72,7 +74,7 @@ static inline void AppendReplicateMessagesToQueue(
     int term = i / 7;
     int index = i;
     CHECK_OK(queue->AppendOperation(make_scoped_refptr_replicate(
-        CreateDummyReplicate(term, index, payload_size).release())));
+        CreateDummyReplicate(term, index, clock->Now(), payload_size).release())));
   }
 }
 

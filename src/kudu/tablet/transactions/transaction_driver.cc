@@ -25,6 +25,8 @@ using consensus::DriverType;
 using log::Log;
 using std::tr1::shared_ptr;
 
+static const char* kTimestampFieldName = "timestamp";
+
 
 ////////////////////////////////////////////////////////////
 // TransactionDriver
@@ -144,8 +146,8 @@ Status TransactionDriver::PrepareAndStart() {
   prepare_physical_timestamp_ = GetMonoTimeMicros();
   RETURN_NOT_OK(transaction_->Prepare());
 
-  // TODO: use the already-provided timestamp if there is one
   RETURN_NOT_OK(transaction_->Start());
+
 
   // Only take the lock long enough to take a local copy of the
   // replication state and set our prepare state. This ensures that
@@ -162,6 +164,11 @@ Status TransactionDriver::PrepareAndStart() {
   switch (repl_state_copy) {
     case NOT_REPLICATING:
     {
+
+      // Set the timestamp in the message, now that it's prepared.
+      transaction_->state()->consensus_round()->replicate_msg()->set_timestamp(
+          transaction_->state()->timestamp().ToUint64());
+
       VLOG_WITH_PREFIX_LK(4) << "Triggering consensus repl";
       // Trigger the consensus replication.
 
@@ -348,6 +355,7 @@ Status TransactionDriver::ApplyAndTriggerCommit() {
     gscoped_ptr<CommitMsg> commit_msg;
     CHECK_OK(transaction_->Apply(&commit_msg));
     commit_msg->mutable_commited_op_id()->CopyFrom(op_id_copy_);
+    SetResponseTimestamp(transaction_->state(), transaction_->state()->timestamp());
 
     // If the client requested COMMIT_WAIT as the external consistency mode
     // calculate the latest that the prepare timestamp could be and wait
@@ -371,6 +379,16 @@ Status TransactionDriver::ApplyAndTriggerCommit() {
   }
 
   return Status::OK();
+}
+
+void TransactionDriver::SetResponseTimestamp(TransactionState* transaction_state,
+                                             const Timestamp& timestamp) {
+  google::protobuf::Message* response = transaction_state->response();
+  if (response) {
+    const google::protobuf::FieldDescriptor* ts_field =
+        response->GetDescriptor()->FindFieldByName(kTimestampFieldName);
+    response->GetReflection()->SetUInt64(response, ts_field, timestamp.ToUint64());
+  }
 }
 
 void TransactionDriver::CommitCallback(const Status& s) {

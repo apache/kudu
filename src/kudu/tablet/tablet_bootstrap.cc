@@ -27,6 +27,7 @@
 #include "kudu/gutil/strings/util.h"
 #include "kudu/gutil/walltime.h"
 #include "kudu/server/clock.h"
+#include "kudu/server/hybrid_clock.h"
 #include "kudu/server/metadata.h"
 #include "kudu/tablet/lock_manager.h"
 #include "kudu/tablet/row_op.h"
@@ -40,6 +41,7 @@
 
 DEFINE_bool(skip_remove_old_recovery_dir, false,
             "Skip removing WAL recovery dir after startup. (useful for debugging)");
+DECLARE_int32(max_clock_sync_error_usec);
 
 namespace kudu {
 namespace tablet {
@@ -409,6 +411,10 @@ Status TabletBootstrap::Bootstrap(shared_ptr<Tablet>* rebuilt_tablet,
                                            tablet_id));
   }
 
+
+  // Before playing any segments we set the safe and clean times to 'kMin' so that
+  // the MvccManager will accept all transactions that we replay as uncommitted.
+  tablet_->mvcc_manager()->OfflineAdjustSafeTime(Timestamp::kMin);
   RETURN_NOT_OK_PREPEND(PlaySegments(consensus_info), "Failed log replay. Reason");
 
   // Flush the consensus metadata once at the end to persist our changes, if any.
@@ -680,7 +686,10 @@ Status TabletBootstrap::HandleEntry(ReplayState* state, LogEntryPB* entry) {
 Status TabletBootstrap::HandleReplicateMessage(ReplayState* state, LogEntryPB* replicate_entry) {
   stats_.ops_read++;
 
-  RETURN_NOT_OK(state->CheckSequentialReplicateId(replicate_entry->replicate()));
+  const ReplicateMsg& replicate = replicate_entry->replicate();
+  RETURN_NOT_OK(state->CheckSequentialReplicateId(replicate));
+  DCHECK(replicate.has_timestamp());
+  CHECK_OK(UpdateClock(replicate.timestamp()));
 
   // Append the replicate message to the log as is
   RETURN_NOT_OK(log_->Append(replicate_entry));
@@ -688,7 +697,7 @@ Status TabletBootstrap::HandleReplicateMessage(ReplayState* state, LogEntryPB* r
   int64_t index = replicate_entry->replicate().id().index();
 
   LogEntryPB** existing_entry_ptr = InsertOrReturnExisting(
-    &state->pending_replicates, index, replicate_entry);
+      &state->pending_replicates, index, replicate_entry);
 
   // If there was a entry with the same index we're overwriting then we need to delete
   // that entry and all entries with higher indexes.
@@ -879,8 +888,28 @@ Status TabletBootstrap::HandleEntryPair(LogEntryPB* replicate_entry, LogEntryPB*
                                              commit.op_type()));
   }
 
-  // update the clock with the commit timestamp
-  RETURN_NOT_OK(UpdateClock(commit.timestamp()));
+  // Handle safe time advancement:
+  //
+  // If this operation has an external consistency mode other than COMMIT_WAIT, we know that no
+  // future transaction will have a timestamp that is lower than it, so we can just advance the
+  // safe timestamp to this operation's timestamp.
+  //
+  // If the hybrid clock is disabled, all transactions will fall into this category.
+  Timestamp safe_time;
+  if (replicate->write_request().external_consistency_mode() != COMMIT_WAIT) {
+    safe_time = Timestamp(replicate->timestamp());
+  // ... else we set the safe timestamp to be the transaction's timestamp minus the maximum clock
+  // error. This opens the door for problems if the flags changed across reboots, but this is
+  // unlikely and the problem would manifest itself immediately and clearly (mvcc would complain
+  // the operation is already committed, with a CHECK failure).
+  } else {
+    DCHECK(clock_->SupportsExternalConsistencyMode(COMMIT_WAIT)) << "The provided clock does not"
+        "support COMMIT_WAIT external consistency mode.";
+    safe_time = server::HybridClock::AddPhysicalTimeToTimestamp(
+        Timestamp(replicate->timestamp()),
+        MonoDelta::FromMicroseconds(-FLAGS_max_clock_sync_error_usec));
+  }
+  tablet_->mvcc_manager()->OfflineAdjustSafeTime(safe_time);
 
   return Status::OK();
 }
@@ -1025,14 +1054,13 @@ Status TabletBootstrap::PlaySegments(ConsensusBootstrapInfo* consensus_info) {
 
 Status TabletBootstrap::PlayWriteRequest(ReplicateMsg* replicate_msg,
                                          const CommitMsg& commit_msg) {
+  DCHECK(replicate_msg->has_timestamp());
   WriteRequestPB* write = replicate_msg->mutable_write_request();
 
   WriteTransactionState tx_state(NULL, write, NULL);
   tx_state.mutable_op_id()->CopyFrom(replicate_msg->id());
+  tx_state.set_timestamp(Timestamp(replicate_msg->timestamp()));
 
-  // TODO: KUDU-138: need to reuse the timestamp of the original operation.
-  // In the current code, that's part of the commit msg, but really it
-  // is assigned during "prepare" and should be made part of the ReplicateMsg.
   tablet_->StartTransaction(&tx_state);
 
   // Use committed OpId for mem store anchoring.

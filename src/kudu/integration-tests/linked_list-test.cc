@@ -50,6 +50,7 @@ enum {
 DEFINE_int32(num_chains, 50, "Number of parallel chains to generate");
 DEFINE_int32(num_tablets, 3, "Number of tablets over which to split the data");
 DEFINE_bool(enable_mutation, false, "Enable periodic mutation of inserted rows");
+DEFINE_int32(num_snapshots, 3, "Number of snapshots to verify across replicas and reboots.");
 
 namespace kudu {
 
@@ -75,6 +76,8 @@ class LinkedListTest : public tserver::TabletServerIntegrationTestBase {
 
     common_flags.push_back("--skip_remove_old_recovery_dir");
     common_flags.push_back("--enable_leader_failure_detection=true");
+    common_flags.push_back("--use_hybrid_clock=true");
+    common_flags.push_back("--max_clock_sync_error_usec=10000000");
 
     vector<string> ts_flags(common_flags);
     ts_flags.push_back("--tablet_server_rpc_bind_addresses=127.0.0.1:705${index}");
@@ -136,6 +139,7 @@ TEST_F(LinkedListTest, TestLoadAndVerify) {
 
   int64_t written = 0;
   ASSERT_STATUS_OK(tester_->LoadLinkedList(MonoDelta::FromSeconds(FLAGS_seconds_to_run),
+                                           FLAGS_num_snapshots,
                                            &written));
 
   // TODO: currently we don't use hybridtime on the C++ client, so it's possible when we

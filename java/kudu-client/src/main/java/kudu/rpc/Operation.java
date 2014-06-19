@@ -318,7 +318,7 @@ public abstract class Operation extends KuduRpc<OperationResponse> implements Ku
       throw RowsWithErrorException.fromPerRowErrorPB(builder.getPerRowErrorsList(), ops, tsUUID);
     }
     OperationResponse response = new OperationResponse(deadlineTracker.getElapsedMillis(), tsUUID,
-        builder.getWriteTimestamp());
+        builder.getTimestamp());
     return new Pair<OperationResponse, Object>(response, builder.getError());
   }
 

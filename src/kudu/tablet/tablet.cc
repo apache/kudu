@@ -274,7 +274,19 @@ void Tablet::StartTransaction(WriteTransactionState* tx_state) {
   boost::shared_lock<rw_spinlock> lock(component_lock_);
 
   gscoped_ptr<ScopedTransaction> mvcc_tx;
-  if (tx_state->external_consistency_mode() == COMMIT_WAIT) {
+
+  // If the state already has a timestamp then we're replaying a transaction that occurred
+  // before a crash or at another node...
+  if (tx_state->has_timestamp()) {
+    mvcc_tx.reset(new ScopedTransaction(&mvcc_, tx_state->timestamp()));
+    if (tx_state->external_consistency_mode() != COMMIT_WAIT) {
+      mvcc_manager()->OfflineAdjustSafeTime(tx_state->timestamp());
+    }
+
+  // ... otherwise this is a new transaction and we must assign a new timestamp. We either
+  // assign a timestamp in the future, if the consistency mode is COMMIT_WAIT, or we assign
+  // one in the present if the consistency mode is any other one.
+  } else if (tx_state->external_consistency_mode() == COMMIT_WAIT) {
     mvcc_tx.reset(new ScopedTransaction(&mvcc_, ScopedTransaction::NOW_LATEST));
   } else {
     mvcc_tx.reset(new ScopedTransaction(&mvcc_, ScopedTransaction::NOW));

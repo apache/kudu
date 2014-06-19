@@ -50,7 +50,7 @@ class Batch extends KuduRpc<OperationResponse> implements KuduRpc.HasKey {
       throw RowsWithErrorException.fromPerRowErrorPB(builder.getPerRowErrorsList(), ops, tsUUID);
     }
     OperationResponse response = new OperationResponse(deadlineTracker.getElapsedMillis(), tsUUID,
-        builder.getWriteTimestamp());
+        builder.getTimestamp());
     return new Pair<OperationResponse, Object>(response, builder.getError());
   }
 

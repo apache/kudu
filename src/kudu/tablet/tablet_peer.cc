@@ -384,6 +384,7 @@ Status TabletPeer::StartReplicaTransaction(gscoped_ptr<ConsensusRound> round) {
   RETURN_NOT_OK(CheckRunning());
 
   consensus::ReplicateMsg* replicate_msg = round->replicate_msg();
+  DCHECK(replicate_msg->has_timestamp());
   Transaction* transaction;
   switch (replicate_msg->op_type()) {
     case WRITE_OP:
@@ -414,6 +415,9 @@ Status TabletPeer::StartReplicaTransaction(gscoped_ptr<ConsensusRound> round) {
   // TODO(todd) Look at wiring the stuff below on the driver
   TransactionState* state = transaction->state();
   state->set_consensus_round(round.Pass());
+  Timestamp ts(replicate_msg->timestamp());
+  state->set_timestamp(ts);
+  clock_->Update(ts);
 
   scoped_refptr<TransactionDriver> driver;
   NewReplicaTransactionDriver(transaction, &driver);

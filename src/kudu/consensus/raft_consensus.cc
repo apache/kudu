@@ -378,6 +378,10 @@ Status RaftConsensus::BecomeLeaderUnlocked() {
   // TODO implement NO_OP, consensus only, rounds and use those instead.
   ReplicateMsg* replicate = new ReplicateMsg;
   replicate->set_op_type(CHANGE_CONFIG_OP);
+
+  // TODO We should have config changes be COMMIT_WAIT transactions.
+  replicate->set_timestamp(clock_->Now().ToUint64());
+
   ChangeConfigRequestPB* cc_req = replicate->mutable_change_config_request();
   cc_req->set_tablet_id(state_->GetOptions().tablet_id);
   cc_req->mutable_old_config()->CopyFrom(state_->GetCommittedQuorumUnlocked());
@@ -800,6 +804,12 @@ Status RaftConsensus::UpdateReplica(const ConsensusRequestPB* request,
 
     Status prepare_status;
     std::vector<ReplicateRefPtr>::iterator iter = deduped_req.messages.begin();
+
+    // TODO The below is temporary until the leader explicitly propagates the safe
+    // timestamp.
+    if (PREDICT_TRUE(deduped_req.messages.size() > 0)) {
+      clock_->Update(Timestamp(deduped_req.messages.back()->get()->timestamp()));
+    }
 
     while (iter != deduped_req.messages.end()) {
       prepare_status = StartReplicaTransactionUnlocked(*iter);

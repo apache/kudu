@@ -218,7 +218,7 @@ TEST_F(TabletServerTest, TestExternalConsistencyModes_ClientPropagated) {
   // make sure the server returned a write timestamp where only
   // the logical value was increased since he should have updated
   // its clock with the client's value.
-  Timestamp write_timestamp(resp.write_timestamp());
+  Timestamp write_timestamp(resp.timestamp());
 
   ASSERT_EQ(HybridClock::GetPhysicalValueMicros(current),
             HybridClock::GetPhysicalValueMicros(write_timestamp));
@@ -276,7 +276,7 @@ TEST_F(TabletServerTest, TestExternalConsistencyModes_CommitWait) {
   uint64_t error_after;
   hclock->NowWithError(&now_after, &error_after);
 
-  Timestamp write_timestamp(resp.write_timestamp());
+  Timestamp write_timestamp(resp.timestamp());
 
   uint64_t write_took = HybridClock::GetPhysicalValueMicros(now_after) -
       HybridClock::GetPhysicalValueMicros(now_before);

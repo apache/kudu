@@ -46,7 +46,7 @@ class AlterSchemaTransactionState : public TransactionState {
   }
 
   const tserver::AlterSchemaRequestPB* request() const { return request_; }
-  tserver::AlterSchemaResponsePB* response() { return response_; }
+  tserver::AlterSchemaResponsePB* response() OVERRIDE { return response_; }
 
   void set_schema(const Schema* schema) { schema_ = schema; }
   const Schema* schema() const { return schema_; }

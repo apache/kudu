@@ -50,11 +50,6 @@ void WriteTransaction::NewReplicateMsg(gscoped_ptr<ReplicateMsg>* replicate_msg)
 void WriteTransaction::NewCommitAbortMessage(gscoped_ptr<CommitMsg>* commit_msg) {
   commit_msg->reset(new CommitMsg());
   (*commit_msg)->set_op_type(OP_ABORT);
-  if (type() == consensus::LEADER) {
-    if (state()->has_timestamp()) {
-      (*commit_msg)->set_timestamp(state()->timestamp().ToUint64());
-    }
-  }
 }
 
 Status WriteTransaction::Prepare() {
@@ -123,12 +118,7 @@ Status WriteTransaction::Apply(gscoped_ptr<CommitMsg>* commit_msg) {
   commit_msg->reset(new CommitMsg());
   state()->ReleaseTxResultPB((*commit_msg)->mutable_result());
   (*commit_msg)->set_op_type(WRITE_OP);
-  (*commit_msg)->set_timestamp(state()->timestamp().ToUint64());
 
-  // If this is a leader side transaction set the timestamp on the response
-  if (type() == consensus::LEADER) {
-    state()->response()->set_write_timestamp(state()->timestamp().ToUint64());
-  }
   return Status::OK();
 }
 
@@ -209,8 +199,12 @@ WriteTransactionState::WriteTransactionState(TabletPeer* tablet_peer,
 
 void WriteTransactionState::set_mvcc_tx(gscoped_ptr<ScopedTransaction> mvcc_tx) {
   DCHECK(mvcc_tx_.get() == NULL) << "Mvcc transaction already started/set.";
+  if (has_timestamp()) {
+    DCHECK_EQ(timestamp(), mvcc_tx->timestamp());
+  } else {
+    set_timestamp(mvcc_tx->timestamp());
+  }
   mvcc_tx_.reset(mvcc_tx.release());
-  set_timestamp(mvcc_tx_->timestamp());
 }
 
 void WriteTransactionState::set_tablet_components(
