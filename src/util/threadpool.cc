@@ -5,15 +5,23 @@
 #include <boost/thread/locks.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
+#include <limits>
 #include <string>
 
 #include "gutil/stl_util.h"
 #include "gutil/strings/substitute.h"
+#include "gutil/sysinfo.h"
 #include "util/thread.h"
 #include "util/threadpool.h"
 #include "util/trace.h"
 
 namespace kudu {
+
+using strings::Substitute;
+
+////////////////////////////////////////////////////////
+// FunctionRunnable
+////////////////////////////////////////////////////////
 
 class FunctionRunnable : public Runnable {
  public:
@@ -29,20 +37,61 @@ class FunctionRunnable : public Runnable {
   boost::function<void()> func_;
 };
 
-const kudu::MonoDelta ThreadPool::DEFAULT_TIMEOUT =
-    MonoDelta::FromMilliseconds(500);
+////////////////////////////////////////////////////////
+// ThreadPoolBuilder
+////////////////////////////////////////////////////////
 
-ThreadPool::ThreadPool(const string& name, int min_threads,
-                       int max_threads, const MonoDelta &timeout)
+ThreadPoolBuilder::ThreadPoolBuilder(const std::string& name)
   : name_(name),
+    min_threads_(0),
+    max_threads_(base::NumCPUs()),
+    max_queue_size_(std::numeric_limits<int>::max()),
+    timeout_(MonoDelta::FromMilliseconds(500)) {
+}
+
+ThreadPoolBuilder& ThreadPoolBuilder::set_min_threads(int min_threads) {
+  CHECK_GE(min_threads, 0);
+  min_threads_ = min_threads;
+  return *this;
+}
+
+ThreadPoolBuilder& ThreadPoolBuilder::set_max_threads(int max_threads) {
+  CHECK_GT(max_threads, 0);
+  max_threads_ = max_threads;
+  return *this;
+}
+
+ThreadPoolBuilder& ThreadPoolBuilder::set_max_queue_size(int max_queue_size) {
+  CHECK_GT(max_queue_size, 0);
+  max_queue_size_ = max_queue_size;
+  return *this;
+}
+
+ThreadPoolBuilder& ThreadPoolBuilder::set_timeout(const MonoDelta& timeout) {
+  timeout_ = timeout;
+  return *this;
+}
+
+Status ThreadPoolBuilder::Build(gscoped_ptr<ThreadPool>* pool) const {
+  pool->reset(new ThreadPool(*this));
+  RETURN_NOT_OK((*pool)->Init());
+  return Status::OK();
+}
+
+////////////////////////////////////////////////////////
+// ThreadPool
+////////////////////////////////////////////////////////
+
+ThreadPool::ThreadPool(const ThreadPoolBuilder& builder)
+  : name_(builder.name_),
+    min_threads_(builder.min_threads_),
+    max_threads_(builder.max_threads_),
+    max_queue_size_(builder.max_queue_size_),
+    timeout_(builder.timeout_),
     pool_status_(Status::Uninitialized("The pool was not initialized.")),
     num_threads_(0),
     active_threads_(0),
-    min_threads_(min_threads),
-    max_threads_(max_threads),
-    timeout_(timeout) {
-  CHECK_LE(min_threads_, max_threads_);
-  CHECK_GT(max_threads, 0);
+    queue_size_(0) {
 }
 
 ThreadPool::~ThreadPool() {
@@ -72,13 +121,14 @@ void ThreadPool::ClearQueue() {
     }
   }
   queue_.clear();
+  queue_size_ = 0;
 }
 
 void ThreadPool::Shutdown() {
   boost::unique_lock<boost::mutex> unique_lock(lock_);
   pool_status_ = Status::ServiceUnavailable("The pool has been shut down.");
   ClearQueue();
-  queue_changed_.notify_all();
+  not_empty_.notify_all();
 
   // The Runnable doesn't have Abort() so we must wait
   // and hopefully the abort is done outside before calling Shutdown().
@@ -96,6 +146,13 @@ Status ThreadPool::Submit(const std::tr1::shared_ptr<Runnable>& task) {
   if (PREDICT_FALSE(!pool_status_.ok())) {
     return pool_status_;
   }
+
+  // Size limit check.
+  if (queue_size_ == max_queue_size_) {
+    return Status::ServiceUnavailable(Substitute("Thread pool queue is full ($0 items)",
+                                                 queue_size_));
+  }
+
   // Should we create another thread?
   // We assume that each current inactive thread will grab one item from the
   // queue.  If it seems like we'll need another thread, we create one.
@@ -106,7 +163,7 @@ Status ThreadPool::Submit(const std::tr1::shared_ptr<Runnable>& task) {
   //
   // Of course, we never create more than max_threads_ threads no matter what.
   int inactive_threads = num_threads_ - active_threads_;
-  int additional_threads = (queue_.size() + 1) - inactive_threads;
+  int additional_threads = (queue_size_ + 1) - inactive_threads;
   if (additional_threads > 0 && num_threads_ < max_threads_) {
     Status status = CreateThreadUnlocked();
     if (!status.ok()) {
@@ -131,7 +188,9 @@ Status ThreadPool::Submit(const std::tr1::shared_ptr<Runnable>& task) {
     e.trace->AddRef();
   }
   queue_.push_back(e);
-  queue_changed_.notify_one();
+  queue_size_++;
+
+  not_empty_.notify_one();
   return Status::OK();
 }
 
@@ -163,11 +222,11 @@ void ThreadPool::DispatchThread(bool permanent) {
 
     if (queue_.empty()) {
       if (permanent) {
-        queue_changed_.wait(unique_lock);
+        not_empty_.wait(unique_lock);
       } else {
         boost::posix_time::time_duration timeout =
           boost::posix_time::microseconds(timeout_.ToMicroseconds());
-        if (!queue_changed_.timed_wait(unique_lock, timeout)) {
+        if (!not_empty_.timed_wait(unique_lock, timeout)) {
           // After much investigation, it appears that boost's condition variables have
           // a weird behavior in which they can return 'false' from timed_wait even if
           // another thread did in fact notify. This doesn't happen with pthread cond
@@ -187,6 +246,7 @@ void ThreadPool::DispatchThread(bool permanent) {
     // Fetch a pending task
     QueueEntry entry = queue_.front();
     queue_.pop_front();
+    queue_size_--;
     ++active_threads_;
 
     unique_lock.unlock();
@@ -215,6 +275,7 @@ void ThreadPool::DispatchThread(bool permanent) {
     // Sanity check: if we're the last thread exiting, the queue ought to be
     // empty. Otherwise it will never get processed.
     CHECK(queue_.empty());
+    DCHECK_EQ(0, queue_size_);
   }
 }
 

@@ -74,8 +74,6 @@ const MaintenanceManager::Options MaintenanceManager::DEFAULT_OPTIONS = {
 MaintenanceManager::MaintenanceManager(const Options& options)
   : num_threads_(options.num_threads <= 0 ?
       FLAGS_maintenance_manager_num_threads : options.num_threads),
-    thread_pool_("MaintenanceManager",
-        num_threads_, num_threads_, ThreadPool::DEFAULT_TIMEOUT),
     shutdown_(false),
     mem_target_(0),
     running_ops_(0),
@@ -86,7 +84,10 @@ MaintenanceManager::MaintenanceManager(const Options& options)
           FLAGS_maintenance_manager_memory_limit : options.memory_limit),
     max_ts_anchored_secs_(options.max_ts_anchored_secs <= 0 ?
           FLAGS_maintenance_manager_max_ts_anchored_secs :
-          options.max_ts_anchored_secs) { }
+          options.max_ts_anchored_secs) {
+  CHECK_OK(ThreadPoolBuilder("MaintenanceMgr").set_min_threads(num_threads_)
+               .set_max_threads(num_threads_).Build(&thread_pool_));
+}
 
 MaintenanceManager::~MaintenanceManager() {
   Shutdown();
@@ -96,7 +97,6 @@ Status MaintenanceManager::Init() {
   RETURN_NOT_OK(CalculateMemTarget(&mem_target_));
   LOG(INFO) << StringPrintf("MaintenanceManager: targetting memory size of %.6f GB",
                 (static_cast<float>(mem_target_) / (1024.0 * 1024.0 * 1024.0)));
-  RETURN_NOT_OK(thread_pool_.Init());
   RETURN_NOT_OK(Thread::Create("maintenance", "maintenance_scheduler",
       boost::bind(&MaintenanceManager::RunSchedulerThread, this),
       &monitor_thread_));
@@ -115,7 +115,7 @@ void MaintenanceManager::Shutdown() {
   if (monitor_thread_.get()) {
     CHECK_OK(ThreadJoiner(monitor_thread_.get()).Join());
     monitor_thread_.reset();
-    thread_pool_.Shutdown();
+    thread_pool_->Shutdown();
   }
 }
 
@@ -204,7 +204,7 @@ void MaintenanceManager::RunSchedulerThread() {
     }
 
     // Run the maintenance operation.
-    Status s = thread_pool_.SubmitFunc(boost::bind(
+    Status s = thread_pool_->SubmitFunc(boost::bind(
           &MaintenanceManager::LaunchOp, this, op));
     CHECK(s.ok());
     next_schedule_time_ = cur_time + polling_interval;

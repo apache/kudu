@@ -150,7 +150,7 @@ class MaintenanceManager
   OpMapTy ops_; // registered operations
   boost::mutex lock_;
   scoped_refptr<kudu::Thread> monitor_thread_;
-  kudu::ThreadPool thread_pool_;
+  gscoped_ptr<ThreadPool> thread_pool_;
   boost::system_time next_schedule_time_;
   boost::condition_variable cond_;
   bool shutdown_;

@@ -155,7 +155,7 @@ class RaftConsensus : public Consensus {
   PeersMap peers_;
   // The queue of messages that must be sent to peers.
   PeerMessageQueue queue_;
-  ThreadPool callback_pool_;
+  gscoped_ptr<ThreadPool> callback_pool_;
 
   gscoped_ptr<ReplicaState> state_;
 

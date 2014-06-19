@@ -15,10 +15,18 @@ using std::tr1::shared_ptr;
 
 namespace kudu {
 
+namespace {
+static Status BuildMinMaxTestPool(int min_threads, int max_threads, gscoped_ptr<ThreadPool>* pool) {
+  return ThreadPoolBuilder("test").set_min_threads(min_threads)
+                                  .set_max_threads(max_threads)
+                                  .Build(pool);
+}
+} // anonymous namespace
+
 TEST(TestThreadPool, TestNoTaskOpenClose) {
-  ThreadPool thread_pool("test", 4, 4, ThreadPool::DEFAULT_TIMEOUT);
-  ASSERT_STATUS_OK(thread_pool.Init());
-  thread_pool.Shutdown();
+  gscoped_ptr<ThreadPool> thread_pool;
+  ASSERT_STATUS_OK(BuildMinMaxTestPool(4, 4, &thread_pool));
+  thread_pool->Shutdown();
 }
 
 static void SimpleTaskMethod(int n, Atomic32 *counter) {
@@ -44,19 +52,19 @@ class SimpleTask : public Runnable {
 };
 
 TEST(TestThreadPool, TestSimpleTasks) {
-  ThreadPool thread_pool("test", 4, 4, ThreadPool::DEFAULT_TIMEOUT);
-  ASSERT_STATUS_OK(thread_pool.Init());
+  gscoped_ptr<ThreadPool> thread_pool;
+  ASSERT_STATUS_OK(BuildMinMaxTestPool(4, 4, &thread_pool));
 
   Atomic32 counter(0);
   std::tr1::shared_ptr<Runnable> task(new SimpleTask(15, &counter));
 
-  ASSERT_STATUS_OK(thread_pool.SubmitFunc(boost::bind(&SimpleTaskMethod, 10, &counter)));
-  ASSERT_STATUS_OK(thread_pool.Submit(task));
-  ASSERT_STATUS_OK(thread_pool.SubmitFunc(boost::bind(&SimpleTaskMethod, 20, &counter)));
-  ASSERT_STATUS_OK(thread_pool.Submit(task));
-  thread_pool.Wait();
+  ASSERT_STATUS_OK(thread_pool->SubmitFunc(boost::bind(&SimpleTaskMethod, 10, &counter)));
+  ASSERT_STATUS_OK(thread_pool->Submit(task));
+  ASSERT_STATUS_OK(thread_pool->SubmitFunc(boost::bind(&SimpleTaskMethod, 20, &counter)));
+  ASSERT_STATUS_OK(thread_pool->Submit(task));
+  thread_pool->Wait();
   ASSERT_EQ(10 + 15 + 20 + 15, base::subtle::NoBarrier_Load(&counter));
-  thread_pool.Shutdown();
+  thread_pool->Shutdown();
 }
 
 static void IssueTraceStatement() {
@@ -66,23 +74,23 @@ static void IssueTraceStatement() {
 // Test that the thread-local trace is propagated to tasks
 // submitted to the threadpool.
 TEST(TestThreadPool, TestTracePropagation) {
-  ThreadPool thread_pool("test", 1, 1, ThreadPool::DEFAULT_TIMEOUT);
-  ASSERT_STATUS_OK(thread_pool.Init());
+  gscoped_ptr<ThreadPool> thread_pool;
+  ASSERT_STATUS_OK(BuildMinMaxTestPool(1, 1, &thread_pool));
 
   scoped_refptr<Trace> t(new Trace);
   {
     ADOPT_TRACE(t.get());
-    ASSERT_STATUS_OK(thread_pool.SubmitFunc(&IssueTraceStatement));
+    ASSERT_STATUS_OK(thread_pool->SubmitFunc(&IssueTraceStatement));
   }
-  thread_pool.Wait();
+  thread_pool->Wait();
   ASSERT_STR_CONTAINS(t->DumpToString(true), "hello from task");
 }
 
 TEST(TestThreadPool, TestSubmitAfterShutdown) {
-  ThreadPool thread_pool("test", 1, 1, ThreadPool::DEFAULT_TIMEOUT);
-  ASSERT_STATUS_OK(thread_pool.Init());
-  thread_pool.Shutdown();
-  Status s = thread_pool.SubmitFunc(&IssueTraceStatement);
+  gscoped_ptr<ThreadPool> thread_pool;
+  ASSERT_STATUS_OK(BuildMinMaxTestPool(1, 1, &thread_pool));
+  thread_pool->Shutdown();
+  Status s = thread_pool->SubmitFunc(&IssueTraceStatement);
   ASSERT_EQ("Service unavailable: The pool has been shut down.",
             s.ToString());
 }
@@ -103,30 +111,32 @@ class SlowTask : public Runnable {
 
 TEST(TestThreadPool, TestThreadPoolWithNoMinimum) {
   MonoDelta timeout = MonoDelta::FromMilliseconds(1);
-  ThreadPool thread_pool("test", 0, 3, timeout);
-  ASSERT_STATUS_OK(thread_pool.Init());
+  gscoped_ptr<ThreadPool> thread_pool;
+  ASSERT_STATUS_OK(ThreadPoolBuilder("test")
+      .set_min_threads(0).set_max_threads(3)
+      .set_timeout(timeout).Build(&thread_pool));
   // There are no threads to start with.
-  ASSERT_TRUE(thread_pool.num_threads_ == 0);
+  ASSERT_TRUE(thread_pool->num_threads_ == 0);
   // We get up to 3 threads when submitting work.
   CountDownLatch latch(1);
-  ASSERT_STATUS_OK(thread_pool.Submit(
+  ASSERT_STATUS_OK(thread_pool->Submit(
         shared_ptr<Runnable>(new SlowTask(&latch))));
-  ASSERT_STATUS_OK(thread_pool.Submit(
+  ASSERT_STATUS_OK(thread_pool->Submit(
         shared_ptr<Runnable>(new SlowTask(&latch))));
-  ASSERT_EQ(2, thread_pool.num_threads_);
-  ASSERT_STATUS_OK(thread_pool.Submit(
+  ASSERT_EQ(2, thread_pool->num_threads_);
+  ASSERT_STATUS_OK(thread_pool->Submit(
         shared_ptr<Runnable>(new SlowTask(&latch))));
-  ASSERT_EQ(3, thread_pool.num_threads_);
+  ASSERT_EQ(3, thread_pool->num_threads_);
   // The 4th piece of work gets queued.
-  ASSERT_STATUS_OK(thread_pool.Submit(
+  ASSERT_STATUS_OK(thread_pool->Submit(
         shared_ptr<Runnable>(new SlowTask(&latch))));
-  ASSERT_EQ(3, thread_pool.num_threads_);
+  ASSERT_EQ(3, thread_pool->num_threads_);
   // Finish all work
   latch.CountDown();
-  thread_pool.Wait();
-  ASSERT_EQ(0, thread_pool.active_threads_);
-  thread_pool.Shutdown();
-  ASSERT_EQ(0, thread_pool.num_threads_);
+  thread_pool->Wait();
+  ASSERT_EQ(0, thread_pool->active_threads_);
+  thread_pool->Shutdown();
+  ASSERT_EQ(0, thread_pool->num_threads_);
 }
 
 // Regression test for a bug where a task is submitted exactly
@@ -134,12 +144,14 @@ TEST(TestThreadPool, TestThreadPoolWithNoMinimum) {
 TEST(TestThreadPool, TestRace) {
   alarm(10);
   MonoDelta timeout = MonoDelta::FromMicroseconds(1);
-  ThreadPool thread_pool("test", 0, 1, timeout);
-  ASSERT_STATUS_OK(thread_pool.Init());
+  gscoped_ptr<ThreadPool> thread_pool;
+  ASSERT_STATUS_OK(ThreadPoolBuilder("test")
+      .set_min_threads(0).set_max_threads(1)
+      .set_timeout(timeout).Build(&thread_pool));
 
   for (int i = 0; i < 500; i++) {
     CountDownLatch l(1);
-    ASSERT_STATUS_OK(thread_pool.SubmitFunc(boost::bind(&CountDownLatch::CountDown, &l)));
+    ASSERT_STATUS_OK(thread_pool->SubmitFunc(boost::bind(&CountDownLatch::CountDown, &l)));
     l.Wait();
     // Sleeping a different amount in each iteration makes it more likely to hit
     // the bug.
@@ -149,34 +161,57 @@ TEST(TestThreadPool, TestRace) {
 
 TEST(TestThreadPool, TestVariableSizeThreadPool) {
   MonoDelta timeout = MonoDelta::FromMilliseconds(1);
-  ThreadPool thread_pool("test", 1, 4, timeout);
-  ASSERT_STATUS_OK(thread_pool.Init());
+  gscoped_ptr<ThreadPool> thread_pool;
+  ASSERT_STATUS_OK(ThreadPoolBuilder("test")
+      .set_min_threads(1).set_max_threads(4)
+      .set_timeout(timeout).Build(&thread_pool));
   // There is 1 thread to start with.
-  ASSERT_EQ(1, thread_pool.num_threads_);
+  ASSERT_EQ(1, thread_pool->num_threads_);
   // We get up to 4 threads when submitting work.
   CountDownLatch latch(1);
-  ASSERT_STATUS_OK(thread_pool.Submit(
+  ASSERT_STATUS_OK(thread_pool->Submit(
         shared_ptr<Runnable>(new SlowTask(&latch))));
-  ASSERT_EQ(1, thread_pool.num_threads_);
-  ASSERT_STATUS_OK(thread_pool.Submit(
+  ASSERT_EQ(1, thread_pool->num_threads_);
+  ASSERT_STATUS_OK(thread_pool->Submit(
         shared_ptr<Runnable>(new SlowTask(&latch))));
-  ASSERT_EQ(2, thread_pool.num_threads_);
-  ASSERT_STATUS_OK(thread_pool.Submit(
+  ASSERT_EQ(2, thread_pool->num_threads_);
+  ASSERT_STATUS_OK(thread_pool->Submit(
         shared_ptr<Runnable>(new SlowTask(&latch))));
-  ASSERT_EQ(3, thread_pool.num_threads_);
-  ASSERT_STATUS_OK(thread_pool.Submit(
+  ASSERT_EQ(3, thread_pool->num_threads_);
+  ASSERT_STATUS_OK(thread_pool->Submit(
         shared_ptr<Runnable>(new SlowTask(&latch))));
-  ASSERT_EQ(4, thread_pool.num_threads_);
+  ASSERT_EQ(4, thread_pool->num_threads_);
   // The 5th piece of work gets queued.
-  ASSERT_STATUS_OK(thread_pool.Submit(
+  ASSERT_STATUS_OK(thread_pool->Submit(
         shared_ptr<Runnable>(new SlowTask(&latch))));
-  ASSERT_EQ(4, thread_pool.num_threads_);
+  ASSERT_EQ(4, thread_pool->num_threads_);
   // Finish all work
   latch.CountDown();
-  thread_pool.Wait();
-  ASSERT_EQ(0, thread_pool.active_threads_);
-  thread_pool.Shutdown();
-  ASSERT_EQ(0, thread_pool.num_threads_);
+  thread_pool->Wait();
+  ASSERT_EQ(0, thread_pool->active_threads_);
+  thread_pool->Shutdown();
+  ASSERT_EQ(0, thread_pool->num_threads_);
+}
+
+TEST(TestThreadPool, TestMaxQueueSize) {
+  gscoped_ptr<ThreadPool> thread_pool;
+  ASSERT_STATUS_OK(ThreadPoolBuilder("test")
+      .set_min_threads(1).set_max_threads(1)
+      .set_max_queue_size(1).Build(&thread_pool));
+
+  CountDownLatch latch(1);
+  ASSERT_STATUS_OK(thread_pool->Submit(shared_ptr<Runnable>(new SlowTask(&latch))));
+  Status s = thread_pool->Submit(shared_ptr<Runnable>(new SlowTask(&latch)));
+  // We race against the worker thread to re-enqueue.
+  // If we get there first, we fail on the 2nd Submit().
+  // If the worker dequeues first, we fail on the 3rd.
+  if (s.ok()) {
+    s = thread_pool->Submit(shared_ptr<Runnable>(new SlowTask(&latch)));
+  }
+  CHECK(s.IsServiceUnavailable()) << "Expected failure due to queue blowout:" << s.ToString();
+  latch.CountDown();
+  thread_pool->Wait();
+  thread_pool->Shutdown();
 }
 
 } // namespace kudu

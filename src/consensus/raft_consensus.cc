@@ -33,10 +33,8 @@ RaftConsensus::RaftConsensus(const ConsensusOptions& options,
     : options_(options) ,
       log_(NULL),
       peer_proxy_factory_(proxy_factory.Pass()),
-      queue_(metric_ctx),
-      callback_pool_("consensus-op-compl-callback-pool", 0, 1,
-                                  ThreadPool::DEFAULT_TIMEOUT) {
-  CHECK_OK(callback_pool_.Init());
+      queue_(metric_ctx) {
+  CHECK_OK(ThreadPoolBuilder("raft-op-cb").set_max_threads(1).Build(&callback_pool_));
 }
 
 Status RaftConsensus::Init(const metadata::QuorumPeerPB& peer,
@@ -46,7 +44,7 @@ Status RaftConsensus::Init(const metadata::QuorumPeerPB& peer,
   log_ = log;
   clock_ = clock;
   OpId initial = GetLastOpIdFromLog();
-  state_.reset(new ReplicaState(&callback_pool_,
+  state_.reset(new ReplicaState(callback_pool_.get(),
                                 peer.permanent_uuid(),
                                 txn_factory,
                                 initial.term(),
@@ -225,7 +223,7 @@ Status RaftConsensus::Replicate(ConsensusRound* context) {
                                     state_->GetCurrentVotingPeersUnlocked(),
                                     state_->GetCurrentMajorityUnlocked(),
                                     state_->GetAllPeersCountUnlocked(),
-                                    &callback_pool_,
+                                    callback_pool_.get(),
                                     context->replicate_callback()));
 
     Status s = queue_.AppendOperation(queue_op.Pass(), status);
@@ -284,7 +282,7 @@ OperationStatusTracker* RaftConsensus::CreateLeaderOnlyOperationStatusUnlocked(
                                      leader_uuid_set,
                                      1,
                                      state_->GetAllPeersCountUnlocked(),
-                                     &callback_pool_,
+                                     callback_pool_.get(),
                                      commit_callback);
 }
 

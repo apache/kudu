@@ -203,7 +203,7 @@ class TSTabletManager {
   MetricContext metric_ctx_;
 
   // Latch allowing to wait for the bootstraps to complete.
-  ThreadPool bootstrap_pool_;
+  gscoped_ptr<ThreadPool> bootstrap_pool_;
 
   DISALLOW_COPY_AND_ASSIGN(TSTabletManager);
 };

@@ -82,9 +82,12 @@ TSTabletManager::TSTabletManager(FsManager* fs_manager,
   : fs_manager_(fs_manager),
     server_(server),
     next_report_seq_(0),
-    metric_ctx_(metric_ctx),
-    bootstrap_pool_("tablet-bootstrap",
-                    0, kNumTabletsToBoostrapSimultaneously, ThreadPool::DEFAULT_TIMEOUT) {
+    metric_ctx_(metric_ctx) {
+  // TODO base the number of parallel tablet bootstraps on something related
+  // to the number of physical devices.
+  CHECK_OK(ThreadPoolBuilder("tablet-bootstrap")
+      .set_max_threads(kNumTabletsToBoostrapSimultaneously)
+      .Build(&bootstrap_pool_));
 }
 
 TSTabletManager::~TSTabletManager() {
@@ -105,10 +108,6 @@ Status TSTabletManager::Init() {
     tablets.push_back(child);
   }
 
-  // TODO base the number of parallel tablet bootstraps on something related
-  // to the number of physical devices.
-  RETURN_NOT_OK(bootstrap_pool_.Init());
-
   // Register the tablets and trigger the asynchronous bootstrap
   BOOST_FOREACH(const string& tablet, tablets) {
     scoped_refptr<TabletMetadata> meta;
@@ -123,7 +122,7 @@ Status TSTabletManager::Init() {
                        boost::bind(&TSTabletManager::MarkTabletDirty, this, _1)));
     RegisterTablet(meta->oid(), tablet_peer);
 
-    RETURN_NOT_OK(bootstrap_pool_.SubmitFunc(boost::bind(&TSTabletManager::OpenTablet,
+    RETURN_NOT_OK(bootstrap_pool_->SubmitFunc(boost::bind(&TSTabletManager::OpenTablet,
                                                          this,
                                                          meta)));
   }
@@ -132,7 +131,7 @@ Status TSTabletManager::Init() {
 }
 
 Status TSTabletManager::WaitForAllBootstrapsToFinish() {
-  bootstrap_pool_.Wait();
+  bootstrap_pool_->Wait();
 
   Status s = Status::OK();
 
@@ -336,7 +335,7 @@ void TSTabletManager::Shutdown() {
   LOG(INFO) << "Shutting down tablet manager...";
 
   // Shut down the bootstrap pool, so new tablets are registered after this point.
-  bootstrap_pool_.Shutdown();
+  bootstrap_pool_->Shutdown();
 
   // Take a snapshot of the peers list -- that way we don't have to hold
   // on to the lock while shutting them down, which might cause a lock

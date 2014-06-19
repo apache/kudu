@@ -116,10 +116,9 @@ static inline void AppendReplicateMessagesToQueue(
 class NoOpTestPeerProxy : public PeerProxy {
  public:
   NoOpTestPeerProxy()
-    : pool_("noop-peer-pool", 0, 1, ThreadPool::DEFAULT_TIMEOUT),
-      delay_response_(false),
+    : delay_response_(false),
       callback_(NULL) {
-    CHECK_OK(pool_.Init());
+    CHECK_OK(ThreadPoolBuilder("noop-peer-pool").set_max_threads(1).Build(&pool_));
   }
 
   virtual Status UpdateAsync(const ConsensusRequestPB* request,
@@ -162,11 +161,11 @@ class NoOpTestPeerProxy : public PeerProxy {
   Status Respond() {
     delay_response_ = false;
     CHECK_NOTNULL(callback_);
-    return pool_.SubmitFunc(*callback_);
+    return pool_->SubmitFunc(*callback_);
   }
 
  private:
-  ThreadPool pool_;
+  gscoped_ptr<ThreadPool> pool_;
   ConsensusStatusPB last_status_;
   bool delay_response_;
   const rpc::ResponseCallback* callback_;
@@ -188,11 +187,10 @@ class NoOpTestPeerProxyFactory : public PeerProxyFactory {
 class LocalTestPeerProxy : public PeerProxy {
  public:
   explicit LocalTestPeerProxy(Consensus* consensus)
-    : pool_("test-proxy-pool", 0, 1, ThreadPool::DEFAULT_TIMEOUT),
-      callback_(NULL),
+    : callback_(NULL),
       consensus_(consensus),
       miss_comm_(false) {
-    CHECK_OK(pool_.Init());
+    CHECK_OK(ThreadPoolBuilder("noop-peer-pool").set_max_threads(1).Build(&pool_));
   }
 
   virtual Status UpdateAsync(const ConsensusRequestPB* request,
@@ -201,7 +199,7 @@ class LocalTestPeerProxy : public PeerProxy {
                              const rpc::ResponseCallback& callback) OVERRIDE {
     boost::lock_guard<simple_spinlock> lock(lock_);
     callback_ = &callback;
-    RETURN_NOT_OK(pool_.SubmitFunc(boost::bind(&LocalTestPeerProxy::SendToOtherPeer,
+    RETURN_NOT_OK(pool_->SubmitFunc(boost::bind(&LocalTestPeerProxy::SendToOtherPeer,
                                                this, request, response)));
     return Status::OK();
   }
@@ -248,7 +246,7 @@ class LocalTestPeerProxy : public PeerProxy {
                    error->mutable_status());
         miss_comm_ = false;
       }
-      CHECK_OK(pool_.SubmitFunc(*callback_));
+      CHECK_OK(pool_->SubmitFunc(*callback_));
     }
   }
 
@@ -268,7 +266,7 @@ class LocalTestPeerProxy : public PeerProxy {
   }
 
  private:
-  ThreadPool pool_;
+  gscoped_ptr<ThreadPool> pool_;
   const rpc::ResponseCallback* callback_;
   Consensus* consensus_;
   mutable simple_spinlock lock_;
@@ -327,7 +325,8 @@ class TestTransaction : public ReplicaCommitContinuation {
  public:
   TestTransaction(ThreadPool* pool, gscoped_ptr<ConsensusRound> context)
     : context_(context.Pass()),
-      pool_(pool) {}
+      pool_(pool) {
+  }
 
   virtual Status LeaderCommitted(gscoped_ptr<OperationPB> leader_commit_op) OVERRIDE {
     context_->SetLeaderCommitOp(leader_commit_op.Pass());
@@ -359,13 +358,12 @@ class TestTransaction : public ReplicaCommitContinuation {
 // A transaction factory for tests, usually this is implemented by TabletPeer.
 class TestTransactionFactory : public ReplicaTransactionFactory {
  public:
-  TestTransactionFactory()
-    :thread_pool_("test-transaction-factory-pool", 0, 1, ThreadPool::DEFAULT_TIMEOUT) {
-    thread_pool_.Init();
+  TestTransactionFactory() {
+    CHECK_OK(ThreadPoolBuilder("test-txn-factory").set_max_threads(1).Build(&pool_));
   }
 
   Status StartReplicaTransaction(gscoped_ptr<ConsensusRound> context) OVERRIDE {
-    TestTransaction* txn = new TestTransaction(&thread_pool_, context.Pass());
+    TestTransaction* txn = new TestTransaction(pool_.get(), context.Pass());
     txn->context_->SetReplicaCommitContinuation(txn);
     std::tr1::shared_ptr<FutureCallback> commit_clbk(
         new BoundFunctionCallback(boost::bind(&TestTransaction::Cleanup, txn),
@@ -375,12 +373,11 @@ class TestTransactionFactory : public ReplicaTransactionFactory {
   }
 
  void ShutDown() {
-   thread_pool_.Shutdown();
+   pool_->Shutdown();
  }
 
  private:
-  ThreadPool thread_pool_;
-
+  gscoped_ptr<ThreadPool> pool_;
 };
 
 // Consensus fault hooks impl. that simply counts the number of calls to

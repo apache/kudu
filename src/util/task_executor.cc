@@ -164,10 +164,10 @@ TaskExecutor* TaskExecutor::CreateNew(const string& name,
 TaskExecutor* TaskExecutor::CreateNew(const string& name,
                                       size_t min_threads,
                                       size_t max_threads) {
-  gscoped_ptr<ThreadPool> thread_pool(
-        new ThreadPool(name, min_threads, max_threads, ThreadPool::DEFAULT_TIMEOUT));
-
-  Status s = thread_pool->Init();
+  gscoped_ptr<ThreadPool> thread_pool;
+  Status s = ThreadPoolBuilder(name).set_min_threads(min_threads)
+                                    .set_max_threads(max_threads)
+                                    .Build(&thread_pool);
   if (!s.ok()) {
     LOG(ERROR) << "Unable to initialize the TaskExecutor ThreadPool for "
                << name << ": " << s.ToString();

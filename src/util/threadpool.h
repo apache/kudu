@@ -18,6 +18,7 @@
 
 namespace kudu {
 
+class ThreadPool;
 class Trace;
 
 class Runnable {
@@ -26,43 +27,73 @@ class Runnable {
   virtual ~Runnable() {}
 };
 
-// Simple Thread-Pool with a fixed number of threads.
-// You can submit a class that implements the Runnable interface
-// or use the boost::bind() to bind a function.
+// ThreadPool takes a lot of arguments. We provide sane defaults with a builder.
+//
+// name: Used for debugging output and default names of the worker threads.
+//    Since thread names are limited to 16 characters on Linux, it's good to
+//    choose a short name here.
+//    Required.
+//
+// min_threads: Minimum number of threads we'll have at any time.
+//    Default: 0.
+//
+// max_threads: Maximum number of threads we'll have at any time.
+//    Default: Number of CPUs detected on the system.
+//
+// max_queue_size: Maximum number of items to enqueue before returning a
+//    Status::ServiceUnavailable message from Submit().
+//    Default: INT_MAX.
+//
+// timeout: How long we'll keep around an idle thread before timing it out.
+//    We always keep at least min_threads.
+//    Default: 500 milliseconds.
+//
+class ThreadPoolBuilder {
+ public:
+  explicit ThreadPoolBuilder(const std::string& name);
+
+  // Note: We violate the style guide by returning mutable references here
+  // in order to provide traditional Builder pattern conveniences.
+  ThreadPoolBuilder& set_min_threads(int min_threads);
+  ThreadPoolBuilder& set_max_threads(int max_threads);
+  ThreadPoolBuilder& set_max_queue_size(int max_queue_size);
+  ThreadPoolBuilder& set_timeout(const MonoDelta& timeout);
+
+  // Instantiate a new ThreadPool with the existing builder arguments.
+  Status Build(gscoped_ptr<ThreadPool>* pool) const;
+
+ private:
+  friend class ThreadPool;
+  const std::string name_;
+  int min_threads_;
+  int max_threads_;
+  int max_queue_size_;
+  MonoDelta timeout_;
+
+  DISALLOW_COPY_AND_ASSIGN(ThreadPoolBuilder);
+};
+
+// Thread pool with a variable number of threads.
+// The pool can execute a class that implements the Runnable interface, or a
+// boost::function, which can be obtained via boost::bind().
 //
 // Usage Example:
 //    static void Func(int n) { ... }
 //    class Task : public Runnable { ... }
 //
-//    ThreadPool thread_pool("my_pool", 0, 5, ThreadPool::DEFAULT_TIMEOUT);
-//    thread_pool.Submit(shared_ptr<Runnable>(new Task()));
-//    thread_pool.Submit(boost::bind(&Func, 10));
+//    gscoped_ptr<ThreadPool> thread_pool;
+//    CHECK_OK(
+//        ThreadPoolBuilder("my_pool")
+//            .set_min_threads(0)
+//            .set_max_threads(5)
+//            .set_max_queue_size(10)
+//            .set_timeout(MonoDelta::FromMilliseconds(2000))
+//            .Build(&thread_pool));
+//    thread_pool->Submit(shared_ptr<Runnable>(new Task()));
+//    thread_pool->Submit(boost::bind(&Func, 10));
 class ThreadPool {
  public:
-  // Default timeout to use for threads.
-  static const MonoDelta DEFAULT_TIMEOUT;
-
-  // Create a new thread pool.
-  //
-  // name: used for debugging output and default names of the worker threads.
-  //    Since thread names are limited to 16 characters on Linux, it's good to
-  //    choose a short name here.
-  //
-  // min_threads: minimum number of threads we'll have at any time.
-
-  // max_threads: maximum number of threads we'll have at any time.
-  //
-  // timeout: how long we'll keep around a thread before timing it out.
-  //    We always keep at least min_threads.
-  //
-  // TODO: this class needs a builder.
-  ThreadPool(const std::string& name, int min_threads,
-             int max_threads, const MonoDelta &timeout);
-
   ~ThreadPool();
-
-  // Initialize the thread pool.  We will start the minimum number of threads.
-  Status Init();
 
   // Wait for the running tasks to complete and then shutdown the threads.
   // All the other pending tasks in the queue will be removed.
@@ -98,6 +129,14 @@ class ThreadPool {
   bool TimedWait(const boost::system_time& time_until);
 
  private:
+  friend class ThreadPoolBuilder;
+
+  // Create a new thread pool using a builder.
+  explicit ThreadPool(const ThreadPoolBuilder& builder);
+
+  // Initialize the thread pool by starting the minimum number of threads.
+  Status Init();
+
   // Clear all entries from queue_. Requires that lock_ is held.
   void ClearQueue();
 
@@ -110,7 +149,6 @@ class ThreadPool {
  private:
   FRIEND_TEST(TestThreadPool, TestThreadPoolWithNoMinimum);
   FRIEND_TEST(TestThreadPool, TestVariableSizeThreadPool);
-  DISALLOW_COPY_AND_ASSIGN(ThreadPool);
 
   struct QueueEntry {
     std::tr1::shared_ptr<Runnable> runnable;
@@ -118,17 +156,22 @@ class ThreadPool {
   };
 
   const std::string name_;
-  std::list<QueueEntry> queue_;
-  boost::mutex lock_;
-  Status pool_status_;
-  int num_threads_;
-  int active_threads_;
   const int min_threads_;
   const int max_threads_;
+  const int max_queue_size_;
   const MonoDelta timeout_;
-  boost::condition_variable queue_changed_;
+
+  Status pool_status_;
   boost::condition_variable idle_cond_;
   boost::condition_variable no_threads_cond_;
+  boost::condition_variable not_empty_;
+  int num_threads_;
+  int active_threads_;
+  int queue_size_;
+  boost::mutex lock_;
+  std::list<QueueEntry> queue_;
+
+  DISALLOW_COPY_AND_ASSIGN(ThreadPool);
 };
 
 } // namespace kudu
