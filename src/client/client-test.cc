@@ -389,7 +389,8 @@ TEST_F(ClientTest, TestMasterDown) {
 }
 
 TEST_F(ClientTest, TestScan) {
-  InsertTestRows(client_table_.get(), FLAGS_test_scan_num_rows);
+  ASSERT_NO_FATAL_FAILURE(InsertTestRows(
+      client_table_.get(), FLAGS_test_scan_num_rows));
 
   // Scan after insert
   DoTestScanWithoutPredicates();
@@ -401,11 +402,11 @@ TEST_F(ClientTest, TestScan) {
   DoTestScanWithKeyPredicate();
 
   // Scan after delete half
-  DeleteTestRows(client_table_.get(), 0, FLAGS_test_scan_num_rows/2);
+  DeleteTestRows(client_table_.get(), 0, FLAGS_test_scan_num_rows / 2);
   DoTestScanWithKeyPredicate();
 
   // Scan after delete all
-  DeleteTestRows(client_table_.get(), FLAGS_test_scan_num_rows/2 + 1,
+  DeleteTestRows(client_table_.get(), FLAGS_test_scan_num_rows / 2 + 1,
                  FLAGS_test_scan_num_rows);
   DoTestScanWithKeyPredicate();
 
@@ -418,7 +419,8 @@ TEST_F(ClientTest, TestScanAtSnapshot) {
   int half_the_rows = FLAGS_test_scan_num_rows / 2;
 
   // Insert half the rows
-  InsertTestRows(client_table_.get(), half_the_rows);
+  ASSERT_NO_FATAL_FAILURE(InsertTestRows(client_table_.get(),
+                                         half_the_rows));
 
   // get the time from the server and transform to micros disregarding any
   // logical values (we shouldn't have any with a single server anyway);
@@ -426,7 +428,8 @@ TEST_F(ClientTest, TestScanAtSnapshot) {
       cluster_->mini_tablet_server(0)->server()->clock()->Now());
 
   // Insert the second half of the rows
-  InsertTestRows(client_table_.get(), half_the_rows, half_the_rows);
+  ASSERT_NO_FATAL_FAILURE(InsertTestRows(client_table_.get(),
+                                         half_the_rows, half_the_rows));
 
   KuduScanner scanner(client_table_.get());
   ASSERT_STATUS_OK(scanner.Open());
@@ -595,7 +598,8 @@ TEST_F(ClientTest, TestScanEmptyTable) {
 // row block with the proper number of rows filled in. Impala issues
 // scans like this in order to implement COUNT(*).
 TEST_F(ClientTest, TestScanEmptyProjection) {
-  InsertTestRows(client_table_.get(), FLAGS_test_scan_num_rows);
+  ASSERT_NO_FATAL_FAILURE(InsertTestRows(client_table_.get(),
+                                         FLAGS_test_scan_num_rows));
   Schema empty_projection(vector<ColumnSchema>(), 0);
   KuduScanner scanner(client_table_.get());
   ASSERT_STATUS_OK(scanner.SetProjection(&empty_projection));
@@ -618,7 +622,8 @@ TEST_F(ClientTest, TestScanEmptyProjection) {
 // Test a scan where we have a predicate on a key column that is not
 // in the projection.
 TEST_F(ClientTest, TestScanPredicateKeyColNotProjected) {
-  InsertTestRows(client_table_.get(), FLAGS_test_scan_num_rows);
+  ASSERT_NO_FATAL_FAILURE(InsertTestRows(client_table_.get(),
+                                         FLAGS_test_scan_num_rows));
   KuduScanner scanner(client_table_.get());
   Schema no_key_projection(boost::assign::list_of
                            (schema_.column(1)), 0);
@@ -654,7 +659,8 @@ TEST_F(ClientTest, TestScanPredicateKeyColNotProjected) {
 // Test a scan where we have a predicate on a non-key column that is
 // not in the projection.
 TEST_F(ClientTest, TestScanPredicateNonKeyColNotProjected) {
-  InsertTestRows(client_table_.get(), FLAGS_test_scan_num_rows);
+  ASSERT_NO_FATAL_FAILURE(InsertTestRows(client_table_.get(),
+                                         FLAGS_test_scan_num_rows));
   KuduScanner scanner(client_table_.get());
   Schema key_projection = schema_.CreateKeyProjection();
 
@@ -706,7 +712,7 @@ static void AssertScannersDisappear(const tserver::ScannerManager* manager) {
 
 // Test cleanup of scanners on the server side when closed.
 TEST_F(ClientTest, TestCloseScanner) {
-  InsertTestRows(client_table_.get(), 10);
+  ASSERT_NO_FATAL_FAILURE(InsertTestRows(client_table_.get(), 10));
 
   const tserver::ScannerManager* manager =
     cluster_->mini_tablet_server(0)->server()->scanner_manager();
@@ -1308,13 +1314,13 @@ TEST_F(ClientTest, TestReplicatedMultiTabletTable) {
   const int kNumRowsToWrite = 100;
 
   scoped_refptr<KuduTable> table;
-  CreateReplicatedTable(kReplicatedTable, 3, &table);
+  ASSERT_NO_FATAL_FAILURE(CreateReplicatedTable(kReplicatedTable, 3, &table));
 
   // Should have no rows to begin with.
   ASSERT_EQ(0, CountRowsFromClient(table.get()));
 
   // Insert some data.
-  InsertTestRows(table.get(), kNumRowsToWrite);
+  ASSERT_NO_FATAL_FAILURE(InsertTestRows(table.get(), kNumRowsToWrite));
 
   // Should now see the data.
   ASSERT_EQ(kNumRowsToWrite, CountRowsFromClient(table.get()));
@@ -1330,10 +1336,11 @@ TEST_F(ClientTest, TestReplicatedMultiTabletTableFailover) {
   const int kNumTries = 10;
 
   scoped_refptr<KuduTable> table;
-  CreateReplicatedTable(kReplicatedTable, kNumReplicas, &table);
+  ASSERT_NO_FATAL_FAILURE(CreateReplicatedTable(
+      kReplicatedTable, kNumReplicas, &table));
 
   // Insert some data.
-  InsertTestRows(table.get(), kNumRowsToWrite);
+  ASSERT_NO_FATAL_FAILURE(InsertTestRows(table.get(), kNumRowsToWrite));
 
   // Find the first replica that will be scanned.
   Synchronizer sync;
@@ -1371,6 +1378,8 @@ TEST_F(ClientTest, TestReplicatedMultiTabletTableFailover) {
     if (num_rows == kNumRowsToWrite) {
       break;
     } else {
+      LOG(INFO) << "Only found " << num_rows << " rows on try "
+                << tries << ", retrying";
       ASSERT_LE(tries, kNumTries);
       usleep(10000 * tries); // sleep a bit more with each attempt.
     }
@@ -1539,7 +1548,8 @@ TEST_F(ClientTest, DISABLED_TestSeveralRowMutatesPerBatch) {
 // rows are inserted.
 TEST_F(ClientTest, TestMasterLookupPermits) {
   int initial_value = client_->meta_cache_->master_lookup_sem_.GetValue();
-  InsertTestRows(client_table_.get(), FLAGS_test_scan_num_rows);
+  ASSERT_NO_FATAL_FAILURE(InsertTestRows(client_table_.get(),
+                                         FLAGS_test_scan_num_rows));
   ASSERT_EQ(initial_value,
             client_->meta_cache_->master_lookup_sem_.GetValue());
 }
