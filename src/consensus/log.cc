@@ -626,6 +626,8 @@ Status Log::Close() {
     RETURN_NOT_OK_PREPEND(log_hooks_->PostClose(),
                           "PostClose hook failed");
   }
+
+  return Status::OK();
 }
 
 Status Log::PreAllocateNewSegment() {
