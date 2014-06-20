@@ -12,14 +12,15 @@
 #include <utility>
 #include <vector>
 
-#include "util/errno.h"
-#include "util/net/net_util.h"
-#include "util/net/sockaddr.h"
+#include "gutil/gscoped_ptr.h"
 #include "gutil/map-util.h"
 #include "gutil/strings/numbers.h"
 #include "gutil/strings/split.h"
 #include "gutil/strings/strip.h"
 #include "gutil/strings/util.h"
+#include "util/errno.h"
+#include "util/net/net_util.h"
+#include "util/net/sockaddr.h"
 
 using std::tr1::unordered_set;
 using std::vector;

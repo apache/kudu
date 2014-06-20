@@ -6,14 +6,15 @@
 #include <algorithm>
 #include <string>
 
-#include "gutil/port.h"
 #include "cfile/block_encodings.h"
 #include "common/columnblock.h"
+#include "gutil/port.h"
+#include "gutil/strings/substitute.h"
+#include "util/bit-stream-utils.inline.h"
+#include "util/bitmap.h"
 #include "util/coding.h"
 #include "util/coding-inl.h"
 #include "util/hexdump.h"
-#include "util/bit-stream-utils.inline.h"
-#include "util/bitmap.h"
 
 namespace kudu {
 namespace cfile {

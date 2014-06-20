@@ -2,16 +2,19 @@
 #ifndef KUDU_CLIENT_ROW_RESULT_H
 #define KUDU_CLIENT_ROW_RESULT_H
 
-#include <glog/logging.h>
 #include <string>
 
-#include "common/schema.h"
+#include <glog/logging.h>
+
 #include "common/types.h"
 #include "gutil/port.h"
 #include "util/slice.h"
 #include "util/status.h"
 
 namespace kudu {
+
+class Schema;
+
 namespace client {
 
 // A single row result from a scan.

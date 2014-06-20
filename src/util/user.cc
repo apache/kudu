@@ -11,6 +11,7 @@
 
 #include <glog/logging.h>
 
+#include "gutil/gscoped_ptr.h"
 #include "util/errno.h"
 #include "util/status.h"
 

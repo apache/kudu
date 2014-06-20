@@ -14,10 +14,11 @@
 #include "master/ts_manager.h"
 #include "rpc/rpc_context.h"
 
-using std::tr1::shared_ptr;
-
 namespace kudu {
 namespace master {
+
+using std::vector;
+using std::tr1::shared_ptr;
 
 MasterServiceImpl::MasterServiceImpl(Master* server)
   : MasterServiceIf(server->metric_context()),

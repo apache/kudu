@@ -6,6 +6,7 @@
 #include <tr1/memory>
 #include <vector>
 
+#include "gutil/gscoped_ptr.h"
 #include "gutil/ref_counted.h"
 #include "util/net/sockaddr.h"
 #include "util/status.h"

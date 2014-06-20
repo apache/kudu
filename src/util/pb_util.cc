@@ -30,6 +30,7 @@ using google::protobuf::MessageLite;
 using google::protobuf::Reflection;
 using std::string;
 using std::tr1::shared_ptr;
+using std::vector;
 
 static const char* const kTmpSuffix = ".tmp";
 

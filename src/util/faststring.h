@@ -4,9 +4,7 @@
 
 #include <string>
 
-#include "gutil/gscoped_ptr.h"
 #include "gutil/macros.h"
-#include "gutil/port.h"
 #include "gutil/strings/fastmem.h"
 
 namespace kudu {

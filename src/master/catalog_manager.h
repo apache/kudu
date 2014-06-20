@@ -200,13 +200,13 @@ class TableInfo : public base::RefCountedThreadSafe<TableInfo> {
   // Add a tablet to this table.
   void AddTablet(TabletInfo *tablet);
   // Add multiple tablets to this table.
-  void AddTablets(const vector<TabletInfo*>& tablets);
+  void AddTablets(const std::vector<TabletInfo*>& tablets);
 
   // This only returns tablets which are in RUNNING state.
   void GetTabletsInRange(const GetTableLocationsRequestPB* req,
-                         vector<scoped_refptr<TabletInfo> > *ret) const;
+                         std::vector<scoped_refptr<TabletInfo> > *ret) const;
 
-  void GetAllTablets(vector<scoped_refptr<TabletInfo> > *ret) const;
+  void GetAllTablets(std::vector<scoped_refptr<TabletInfo> > *ret) const;
 
   // Access the persistent metadata. Typically you should use
   // TableMetadataLock to gain access to this data.
@@ -378,7 +378,7 @@ class CatalogManager {
   // "dirty" state field.
   void CreateTablets(const CreateTableRequestPB* req,
                      TableInfo *table,
-                     vector<TabletInfo*> *tablets);
+                     std::vector<TabletInfo*> *tablets);
 
   // Helper for creating the initial TableInfo state
   // Leaves the table "write locked" with the new info in the
@@ -419,7 +419,7 @@ class CatalogManager {
     const std::vector<scoped_refptr<TabletInfo> >& tablets,
     int *next_timeout_ms);
 
-  void SelectReplicasForTablets(const vector<TabletInfo*>& tablets,
+  void SelectReplicasForTablets(const std::vector<TabletInfo*>& tablets,
                                 const TSDescriptorVector& ts_descs);
 
   // Select N Replicas from the online tablet servers
@@ -444,7 +444,7 @@ class CatalogManager {
   // assignment/creation.
   //
   // This method is part of the "ProcessPendingAssignments()"
-  void SendCreateTabletRequests(const vector<TabletInfo*>& tablets);
+  void SendCreateTabletRequests(const std::vector<TabletInfo*>& tablets);
 
   // Send the "alter table request" to all TS that have tablet of the specified table
   void SendAlterTableRequest(const scoped_refptr<TableInfo>& table);

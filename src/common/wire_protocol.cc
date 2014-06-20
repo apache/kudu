@@ -10,6 +10,7 @@
 #include "common/row_changelist.h"
 #include "gutil/stl_util.h"
 #include "gutil/strings/fastmem.h"
+#include "gutil/strings/substitute.h"
 #include "util/net/net_util.h"
 #include "util/safe_math.h"
 

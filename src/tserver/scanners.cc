@@ -27,8 +27,6 @@ namespace tserver {
 // The interval at which we remove expired scanners.
 static const uint64_t kRemovalThreadIntervalUs = 5000000;
 
-using strings::Substitute;
-
 ScannerManager::ScannerManager(MetricContext* parent_metric_context)
   : scanner_ttl_(MonoDelta::FromMilliseconds(
                    FLAGS_tablet_server_scanner_ttl_millis)),

@@ -31,7 +31,6 @@
 #include "gutil/logging-inl.h"
 #include "gutil/macros.h"
 #include "gutil/gscoped_ptr.h"
-#include "gutil/strings/stringpiece.h"
 #include "util/alignment.h"
 #include "util/memory/memory.h"
 #include "util/slice.h"

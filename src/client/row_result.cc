@@ -4,6 +4,7 @@
 
 #include <string>
 
+#include "common/schema.h"
 #include "gutil/strings/substitute.h"
 #include "util/bitmap.h"
 

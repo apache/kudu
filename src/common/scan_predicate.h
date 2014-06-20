@@ -6,8 +6,7 @@
 #include <boost/optional.hpp>
 #include <string>
 
-#include "common/key_encoder.h"
-#include "common/rowblock.h"
+#include "common/schema.h"
 #include "util/bitmap.h"
 #include "util/faststring.h"
 
@@ -15,6 +14,8 @@ namespace kudu {
 
 using std::string;
 
+class RowBlock;
+class SelectionVector;
 
 class ValueRange {
  public:

@@ -93,7 +93,7 @@ class ReadableLogSegment : public base::RefCountedThreadSafe<ReadableLogSegment>
   // If the log is corrupted (i.e. the returned 'Status' is 'Corruption') all
   // the log entries read up to the corrupted are returned in the 'entries'
   // vector.
-  Status ReadEntries(vector<LogEntryPB*>* entries);
+  Status ReadEntries(std::vector<LogEntryPB*>* entries);
 
   bool IsInitialized() const {
     return is_initialized_;

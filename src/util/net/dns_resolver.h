@@ -2,10 +2,12 @@
 #ifndef KUDU_UTIL_NET_DNS_RESOLVER_H
 #define KUDU_UTIL_NET_DNS_RESOLVER_H
 
+#include <vector>
+
+#include "gutil/gscoped_ptr.h"
 #include "gutil/macros.h"
 #include "util/async_util.h"
 #include "util/status.h"
-#include <vector>
 
 namespace kudu {
 

@@ -13,14 +13,13 @@
 #include "util/slice.h"
 #include "util/status.h"
 
-using std::tr1::shared_ptr;
-
 namespace kudu {
 namespace cfile {
 
 class CompressedBlockBuilder {
  public:
-  explicit CompressedBlockBuilder(const shared_ptr<CompressionCodec> &codec, size_t size_limit);
+  explicit CompressedBlockBuilder(const std::tr1::shared_ptr<CompressionCodec> &codec,
+                                  size_t size_limit);
 
   // Sets "*result" to the compressed version of the "data".
   // The data inside the result is owned by the CompressedBlockBuilder class
@@ -28,21 +27,22 @@ class CompressedBlockBuilder {
   //
   // If an error was encountered, returns a non-OK status.
   Status Compress(const Slice& data, Slice *result);
-  Status Compress(const vector<Slice> &data_slices, Slice *result);
+  Status Compress(const std::vector<Slice> &data_slices, Slice *result);
 
   // header includes a 32-bit compressed length, 32-bit uncompressed length
   static const size_t kHeaderReservedLength = (2 * sizeof(uint32_t));
 
  private:
   DISALLOW_COPY_AND_ASSIGN(CompressedBlockBuilder);
-  shared_ptr<CompressionCodec> codec_;
+  std::tr1::shared_ptr<CompressionCodec> codec_;
   faststring buffer_;
   size_t compressed_size_limit_;
 };
 
 class CompressedBlockDecoder {
  public:
-  explicit CompressedBlockDecoder(const shared_ptr<CompressionCodec> &codec, size_t size_limit);
+  explicit CompressedBlockDecoder(const std::tr1::shared_ptr<CompressionCodec> &codec,
+                                  size_t size_limit);
 
   // Sets "*result" to the uncompressed version of the "data".
   // It is the caller's responsibility to free the result data.
@@ -52,7 +52,7 @@ class CompressedBlockDecoder {
 
  private:
   DISALLOW_COPY_AND_ASSIGN(CompressedBlockDecoder);
-  shared_ptr<CompressionCodec> codec_;
+  std::tr1::shared_ptr<CompressionCodec> codec_;
   size_t uncompressed_size_limit_;
 };
 

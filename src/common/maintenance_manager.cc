@@ -6,7 +6,6 @@
 #include <boost/thread/mutex.hpp>
 #include <boost/thread/thread.hpp>
 #include <errno.h>
-#include <gflags/gflags.h>
 #include <set>
 #include <stdint.h>
 #include <string>
@@ -14,6 +13,9 @@
 #include <tr1/memory>
 #include <utility>
 
+#include <gflags/gflags.h>
+
+#include "gutil/stringprintf.h"
 #include "tablet/mvcc.h"
 #include "util/countdown_latch.h"
 #include "util/monotime.h"

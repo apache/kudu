@@ -8,8 +8,9 @@
 #include <limits>
 #include <utility>
 
-#include "gflags/gflags.h"
-#include "glog/logging.h"
+#include <gflags/gflags.h>
+#include <glog/logging.h>
+
 #include "gutil/map-util.h"
 #include "gutil/stl_util.h"
 #include "gutil/strings/substitute.h"
@@ -37,6 +38,7 @@ namespace log {
 
 using consensus::OpId;
 using env_util::ReadFully;
+using std::vector;
 using std::tr1::shared_ptr;
 using strings::Substitute;
 

@@ -2,11 +2,14 @@
 
 #include "twitter-demo/parser.h"
 
+#include <time.h>
+
 #include <glog/logging.h>
 #include <rapidjson/document.h>
 #include <rapidjson/rapidjson.h>
+
+#include "gutil/stringprintf.h"
 #include "util/slice.h"
-#include <time.h>
 
 namespace kudu {
 namespace twitter_demo {

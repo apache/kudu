@@ -6,6 +6,7 @@
 #include <gtest/gtest.h>
 
 #include "gutil/atomicops.h"
+#include "gutil/gscoped_ptr.h"
 #include "util/locks.h"
 #include "util/task_executor.h"
 #include "util/test_macros.h"

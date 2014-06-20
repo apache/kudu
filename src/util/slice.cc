@@ -2,6 +2,7 @@
 
 #include "util/slice.h"
 
+#include "gutil/stringprintf.h"
 #include "util/status.h"
 
 namespace kudu {

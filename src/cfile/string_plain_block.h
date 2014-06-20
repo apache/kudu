@@ -57,7 +57,7 @@ class StringPlainBlockBuilder : public BlockBuilder {
   size_t size_estimate_;
 
   // Offsets of each entry, relative to the start of the block
-  vector<uint32_t> offsets_;
+  std::vector<uint32_t> offsets_;
 
   bool finished_;
 
@@ -107,7 +107,7 @@ class StringPlainBlockDecoder : public BlockDecoder {
   // The parsed offsets.
   // This array also contains one extra offset at the end, pointing
   // _after_ the last entry. This makes the code much simpler.
-  vector<uint32_t> offsets_;
+  std::vector<uint32_t> offsets_;
 
   uint32_t num_elems_;
   rowid_t ordinal_pos_base_;

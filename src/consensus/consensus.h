@@ -5,8 +5,9 @@
 #include <string>
 #include <vector>
 
-#include "gutil/ref_counted.h"
 #include "consensus/consensus.pb.h"
+#include "gutil/gscoped_ptr.h"
+#include "gutil/ref_counted.h"
 #include "util/status.h"
 #include "util/task_executor.h"
 

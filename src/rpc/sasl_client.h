@@ -125,7 +125,7 @@ class SaslClient {
 
   string app_name_;
   Socket sock_;
-  vector<sasl_callback_t> callbacks_;
+  std::vector<sasl_callback_t> callbacks_;
   gscoped_ptr<sasl_conn_t, SaslDeleter> sasl_conn_;
   SaslHelper helper_;
 

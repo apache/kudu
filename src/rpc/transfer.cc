@@ -3,13 +3,15 @@
 #include "rpc/transfer.h"
 
 #include <boost/foreach.hpp>
-#include <glog/logging.h>
 #include <stdint.h>
 
 #include <iostream>
 #include <sstream>
 
+#include <glog/logging.h>
+
 #include "gutil/endian.h"
+#include "gutil/stringprintf.h"
 #include "rpc/constants.h"
 #include "rpc/messenger.h"
 #include "util/net/sockaddr.h"

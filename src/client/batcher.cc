@@ -19,6 +19,7 @@
 #include "common/wire_protocol.h"
 #include "gutil/map-util.h"
 #include "gutil/stl_util.h"
+#include "gutil/strings/substitute.h"
 #include "tserver/tserver_service.proxy.h"
 #include "util/debug-util.h"
 

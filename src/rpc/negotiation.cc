@@ -6,11 +6,12 @@
 #include <sys/time.h>
 #include <sys/select.h>
 
-#include <string>
 #include <boost/lexical_cast.hpp>
+#include <string>
 
 #include <glog/logging.h>
 
+#include "gutil/stringprintf.h"
 #include "rpc/blocking_ops.h"
 #include "rpc/connection.h"
 #include "rpc/reactor.h"

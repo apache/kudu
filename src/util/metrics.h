@@ -231,8 +231,8 @@ class MetricRegistry {
   // NOTE: Including all the counts and values can easily make the generated
   // json very large. Use with caution.
   Status WriteAsJson(JsonWriter* writer,
-                     const vector<string>& requested_metrics,
-                     const vector<string>& requested_detail_metrics) const;
+                     const std::vector<string>& requested_metrics,
+                     const std::vector<string>& requested_detail_metrics) const;
 
   Counter* FindOrCreateCounter(const std::string& name,
                                const CounterPrototype& proto);

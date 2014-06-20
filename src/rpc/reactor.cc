@@ -7,7 +7,6 @@
 #include <boost/foreach.hpp>
 #include <boost/thread/locks.hpp>
 #include <ev++.h>
-#include <glog/logging.h>
 #include <netinet/in.h>
 #include <stdlib.h>
 #include <sys/socket.h>
@@ -16,7 +15,10 @@
 
 #include <string>
 
+#include <glog/logging.h>
+
 #include "gutil/ref_counted.h"
+#include "gutil/stringprintf.h"
 #include "rpc/connection.h"
 #include "rpc/messenger.h"
 #include "rpc/negotiation.h"
@@ -29,8 +31,8 @@
 #include "util/errno.h"
 #include "util/monotime.h"
 #include "util/thread.h"
-#include "util/net/socket.h"
 #include "util/status.h"
+#include "util/net/socket.h"
 
 using std::string;
 using std::tr1::shared_ptr;

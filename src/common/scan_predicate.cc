@@ -1,16 +1,17 @@
 // Copyright (c) 2013, Cloudera, inc.
 // All rights reserved.
 
+#include "common/scan_predicate.h"
+
 #include <string>
 
+#include "common/rowblock.h"
 #include "common/types.h"
-#include "common/scan_predicate.h"
 #include "util/bitmap.h"
 
 namespace kudu {
 
 using std::string;
-
 
 ValueRange::ValueRange(const TypeInfo* type,
                        boost::optional<const void *> lower_bound,

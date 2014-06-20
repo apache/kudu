@@ -15,6 +15,8 @@
 
 #include <glog/logging.h>
 
+#include "gutil/basictypes.h"
+#include "gutil/stringprintf.h"
 #include "util/errno.h"
 #include "util/monotime.h"
 #include "util/net/sockaddr.h"

@@ -5,6 +5,7 @@
 #include <string>
 #include <tr1/memory>
 
+#include "gutil/gscoped_ptr.h"
 #include "util/locks.h"
 #include "util/monotime.h"
 #include "util/status.h"

@@ -247,7 +247,7 @@ class WritableFile {
   //
   // For implementation specific quirks and details, see comments in
   // implementation source code (e.g., env_posix.cc)
-  virtual Status AppendVector(const vector<Slice>& data_vector) = 0;
+  virtual Status AppendVector(const std::vector<Slice>& data_vector) = 0;
   virtual Status Close() = 0;
   virtual Status Flush() = 0;
   virtual Status Sync() = 0;

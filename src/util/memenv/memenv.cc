@@ -23,6 +23,7 @@ namespace {
 
 using boost::mutex;
 using boost::lock_guard;
+using std::vector;
 
 class FileState {
  public:
@@ -141,7 +142,7 @@ class FileState {
  private:
   // Private since only Unref() should be used to delete it.
   ~FileState() {
-    for (std::vector<uint8_t*>::iterator i = blocks_.begin(); i != blocks_.end();
+    for (vector<uint8_t*>::iterator i = blocks_.begin(); i != blocks_.end();
          ++i) {
       delete [] *i;
     }
@@ -157,7 +158,7 @@ class FileState {
   // The following fields are not protected by any mutex. They are only mutable
   // while the file is being written, and concurrent access is not allowed
   // to writable files.
-  std::vector<uint8_t*> blocks_;
+  vector<uint8_t*> blocks_;
   uint64_t size_;
 
   enum { kBlockSize = 8 * 1024 };
@@ -320,7 +321,7 @@ class InMemoryEnv : public EnvWrapper {
   }
 
   virtual Status GetChildren(const std::string& dir,
-                             std::vector<std::string>* result) OVERRIDE {
+                             vector<std::string>* result) OVERRIDE {
     lock_guard<mutex> lock(mutex_);
     result->clear();
 

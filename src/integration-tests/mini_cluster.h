@@ -93,7 +93,7 @@ class MiniCluster {
   const int num_ts_initial_;
 
   gscoped_ptr<master::MiniMaster> mini_master_;
-  vector<std::tr1::shared_ptr<tserver::MiniTabletServer> > mini_tablet_servers_;
+  std::vector<std::tr1::shared_ptr<tserver::MiniTabletServer> > mini_tablet_servers_;
 };
 
 } // namespace kudu

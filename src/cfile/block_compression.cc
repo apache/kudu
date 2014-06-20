@@ -5,12 +5,15 @@
 #include <algorithm>
 
 #include "cfile/block_compression.h"
+#include "gutil/gscoped_ptr.h"
+#include "gutil/stringprintf.h"
 #include "util/coding.h"
 #include "util/coding-inl.h"
-#include "gutil/gscoped_ptr.h"
 
 namespace kudu {
 namespace cfile {
+
+using std::vector;
 
 CompressedBlockBuilder::CompressedBlockBuilder(const shared_ptr<CompressionCodec> &codec,
                                                size_t size_limit)

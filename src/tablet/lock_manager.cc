@@ -7,14 +7,16 @@
 #include <string>
 #include <semaphore.h>
 
-#include "gutil/hash/city.h"
 #include "gutil/dynamic_annotations.h"
+#include "gutil/gscoped_ptr.h"
+#include "gutil/hash/city.h"
 #include "tablet/lock_manager.h"
-#include "util/pthread_spinlock.h"
 #include "util/locks.h"
+#include "util/pthread_spinlock.h"
 #include "util/semaphore.h"
 
-namespace kudu { namespace tablet {
+namespace kudu {
+namespace tablet {
 
 class TransactionState;
 

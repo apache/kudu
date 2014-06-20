@@ -16,14 +16,15 @@
 #define KUDU_UTIL_SLICE_H_
 
 #include <assert.h>
-#include <glog/logging.h>
 #include <map>
 #include <stddef.h>
 #include <string.h>
 #include <string>
+
+#include <glog/logging.h>
+
 #include "gutil/strings/fastmem.h"
 #include "gutil/strings/stringpiece.h"
-#include "gutil/stringprintf.h"
 #include "util/faststring.h"
 
 namespace kudu {

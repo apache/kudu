@@ -15,11 +15,12 @@
 
 #include "gutil/endian.h"
 #include "gutil/map-util.h"
+#include "gutil/stringprintf.h"
 #include "rpc/blocking_ops.h"
 #include "rpc/constants.h"
 #include "rpc/rpc_header.pb.h"
-#include "rpc/sasl_helper.h"
 #include "rpc/sasl_common.h"
+#include "rpc/sasl_helper.h"
 #include "rpc/serialization.h"
 #include "util/faststring.h"
 #include "util/net/sockaddr.h"

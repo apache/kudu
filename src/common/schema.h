@@ -3,19 +3,16 @@
 #define KUDU_COMMON_SCHEMA_H
 
 #include <boost/foreach.hpp>
-#include <glog/logging.h>
+#include <string>
 #include <tr1/memory>
 #include <tr1/unordered_map>
 #include <tr1/unordered_set>
-#include <string>
 #include <utility>
 #include <vector>
 
-#include "common/types.h"
-#include "common/common.pb.h"
+#include <glog/logging.h>
+
 #include "common/key_encoder.h"
-#include "gutil/map-util.h"
-#include "gutil/strings/substitute.h"
 #include "util/status.h"
 
 // Check that two schemas are equal, yielding a useful error message in the case that

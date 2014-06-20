@@ -146,7 +146,7 @@ class PeerMessageQueue {
   string ToString() const;
 
   // Dumps the contents of the queue to the provided string vector.
-  void DumpToStrings(vector<string>* lines) const;
+  void DumpToStrings(std::vector<string>* lines) const;
 
   struct Metrics {
     // Keeps track of the total number of operations in the queue.
@@ -178,7 +178,7 @@ class PeerMessageQueue {
 
   string ToStringUnlocked() const;
 
-  void DumpToStringsUnlocked(vector<string>* lines) const;
+  void DumpToStringsUnlocked(std::vector<string>* lines) const;
 
   // Trims the buffer, making sure it can accomodate the provided message.
   // Returns Status::OK() if the buffer was trimmed or otherwise had available

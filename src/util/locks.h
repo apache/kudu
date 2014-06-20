@@ -2,8 +2,6 @@
 #ifndef KUDU_UTIL_LOCKS_H
 #define KUDU_UTIL_LOCKS_H
 
-#include <boost/smart_ptr/detail/spinlock.hpp>
-#include <boost/smart_ptr/detail/yield_k.hpp>
 #include <glog/logging.h>
 
 #include "gutil/atomicops.h"

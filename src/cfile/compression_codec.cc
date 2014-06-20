@@ -11,9 +11,12 @@
 
 #include "cfile/compression_codec.h"
 #include "gutil/singleton.h"
+#include "gutil/stringprintf.h"
 
 namespace kudu {
 namespace cfile {
+
+using std::vector;
 
 CompressionCodec::CompressionCodec() {
 }
