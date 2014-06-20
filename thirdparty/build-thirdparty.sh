@@ -78,7 +78,9 @@ fi
 # build libunwind (glog consumes it)
 if [ -n "$F_ALL" -o -n "$F_LIBUNWIND" ]; then
   cd $LIBUNWIND_DIR
-  ./configure --with-pic --prefix=$PREFIX
+  # Disable minidebuginfo, which depends on liblzma, until/unless we decide to
+  # add liblzma to thirdparty.
+  ./configure --disable-minidebuginfo --with-pic --prefix=$PREFIX
   make -j$PARALLEL install
 fi
 
