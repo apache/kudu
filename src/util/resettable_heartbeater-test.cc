@@ -18,8 +18,9 @@ namespace kudu {
 
 static const int64_t kSleepPeriodMsecs = 100;
 static const int kNumPeriodsToWait = 3;
-// Wait triple the required time before we time out, should be enough to avoid test flakiness.
-static const uint64_t kMaxWaitMsecs = kSleepPeriodMsecs * kNumPeriodsToWait * 3;
+// Wait a large multiple (in the worst case) of the required time before we
+// time out to avoid test flakiness.
+static const uint64_t kMaxWaitMsecs = kSleepPeriodMsecs * kNumPeriodsToWait * 20;
 
 class ResettableHeartbeaterTest : public KuduTest {
  public:
