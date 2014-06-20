@@ -11,6 +11,7 @@
 #include <string>
 #include <vector>
 
+#include "gutil/gscoped_ptr.h"
 #include "gutil/macros.h"
 #include "gutil/port.h"
 #include "util/monotime.h"
