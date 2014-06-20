@@ -17,6 +17,9 @@ namespace kudu {
 // the results to stdout.  It does this after a certain timeout has occured.
 class PstackWatcher {
  public:
+  // Collect and write pstack output to stdout.
+  static Status DumpStacks();
+
   // Instantiate a watcher that writes a pstack to stdout after the given
   // timeout expires.
   explicit PstackWatcher(const MonoDelta& timeout);
@@ -27,24 +30,24 @@ class PstackWatcher {
   void Shutdown();
 
   // Test whether the watcher is still running or has shut down.
-  bool IsRunning();
+  bool IsRunning() const;
+
+  // Wait until the timeout expires and the watcher logs a pstack.
+  void Wait() const;
 
  private:
+  // Test for the existence of the given program in the system path.
+  static Status HasProgram(const char* progname);
+
   // Run the thread that waits for the specified duration before logging a
   // pstack.
   void Run();
 
-  // Test for the existence of the given program in the system path.
-  Status HasProgram(const char* progname);
-
-  // Collect and write pstack output to stdout, if possible.
-  void LogPstack();
-
   const MonoDelta timeout_;
   bool running_;
   scoped_refptr<Thread> thread_;
-  boost::mutex lock_;
-  boost::condition_variable cond_;
+  mutable boost::mutex lock_;
+  mutable boost::condition_variable cond_;
 };
 
 } // namespace kudu

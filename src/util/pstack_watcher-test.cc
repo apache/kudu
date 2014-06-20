@@ -26,6 +26,15 @@ TEST(TestPstackWatcher, TestPstackWatcherCancellation) {
   watcher.Shutdown();
 }
 
+TEST(TestPstackWatcher, TestWait) {
+  PstackWatcher watcher(MonoDelta::FromMilliseconds(10));
+  watcher.Wait();
+}
+
+TEST(TestPstackWatcher, TestDumpStacks) {
+  ASSERT_STATUS_OK(PstackWatcher::DumpStacks());
+}
+
 static shared_ptr<FILE> RedirectStdout(string *temp_path) {
   string temp_dir;
   CHECK_OK(Env::Default()->GetTestDirectory(&temp_dir));

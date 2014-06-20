@@ -6,6 +6,9 @@
 #include <signal.h>
 #include <time.h>
 
+#include "util/pstack_watcher.h"
+#include "util/status.h"
+
 DEFINE_bool(test_leave_files, false,
             "Whether to leave test files around after the test run");
 
@@ -53,5 +56,9 @@ static void CreateAndStartTimer(timer_t* timerid, struct sigevent* sevp, struct 
 }
 
 static void KillTestOnTimeout(sigval_t sigval) {
+  // Dump a pstack to stdout.
+  WARN_NOT_OK(kudu::PstackWatcher::DumpStacks(), "Unable to print pstack");
+
+  // ...and abort.
   LOG(FATAL) << "Maximum unit test time exceeded (" << FLAGS_test_timeout_after << " sec)";
 }
