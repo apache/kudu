@@ -1003,7 +1003,7 @@ Status TabletBootstrap::PlayMutation(WriteTransactionState* tx_state,
 bool TabletBootstrap::WasStoreAlreadyFlushed(const MemStoreTargetPB& target) {
   if (target.has_mrs_id()) {
     DCHECK(!target.has_rs_id());
-    DCHECK(!target.has_delta_id());
+    DCHECK(!target.has_dms_id());
 
     // The original mutation went to the MRS. It is flushed if it went to an MRS
     // with a lower ID than the latest flushed one.
@@ -1026,7 +1026,7 @@ bool TabletBootstrap::WasStoreAlreadyFlushed(const MemStoreTargetPB& target) {
     }
 
     // if it exists we check if the mutation is already flushed
-    if (target.delta_id() <= row_set->last_durable_redo_dms_id()) {
+    if (target.dms_id() <= row_set->last_durable_redo_dms_id()) {
       return true;
     }
 

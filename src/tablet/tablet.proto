@@ -15,7 +15,7 @@ message MemStoreTargetPB {
 
   // ... or both of the following fields are set.
   optional int64 rs_id = 2 [ default = -1 ];
-  optional int64 delta_id = 3 [ default = -1 ];
+  optional int64 dms_id = 3 [ default = -1 ];
 }
 
 // Stores the result of an Insert or Mutate.

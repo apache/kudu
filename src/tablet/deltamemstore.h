@@ -78,7 +78,7 @@ class DeltaMemStore : public DeltaStore,
     return schema_;
   }
 
-  const int64_t id() const OVERRIDE { return id_; }
+  const int64_t id() const { return id_; }
 
   virtual const DeltaStats& delta_stats() const OVERRIDE { return delta_stats_; }
 

@@ -184,26 +184,26 @@ Status DeltaFileWriter::WriteDeltaStats(const DeltaStats& stats) {
 
 Status DeltaFileReader::Open(Env *env,
                              const string &path,
-                             int64_t delta_id,
+                             const BlockId& block_id,
                              shared_ptr<DeltaFileReader>* reader_out,
                              DeltaType delta_type) {
   shared_ptr<RandomAccessFile> file;
   RETURN_NOT_OK(env_util::OpenFileForRandom(env, path, &file));
   uint64_t size;
   RETURN_NOT_OK(env->GetFileSize(path, &size));
-  return Open(path, file, size, delta_id, reader_out, delta_type);
+  return Open(path, file, size, block_id, reader_out, delta_type);
 }
 
 Status DeltaFileReader::Open(const string& path,
                              const shared_ptr<RandomAccessFile> &file,
                              uint64_t file_size,
-                             int64_t delta_id,
+                             const BlockId& block_id,
                              shared_ptr<DeltaFileReader>* reader_out,
                              DeltaType delta_type) {
   gscoped_ptr<CFileReader> cf_reader;
   RETURN_NOT_OK(CFileReader::Open(file, file_size, cfile::ReaderOptions(), &cf_reader));
 
-  gscoped_ptr<DeltaFileReader> df_reader(new DeltaFileReader(delta_id,
+  gscoped_ptr<DeltaFileReader> df_reader(new DeltaFileReader(block_id,
                                                              cf_reader.release(),
                                                              path,
                                                              delta_type));
@@ -214,13 +214,13 @@ Status DeltaFileReader::Open(const string& path,
   return Status::OK();
 }
 
-DeltaFileReader::DeltaFileReader(const int64_t id,
+DeltaFileReader::DeltaFileReader(const BlockId& block_id,
                                  CFileReader *cf_reader,
                                  const string &path,
                                  DeltaType delta_type)
-  : id_(id),
-    reader_(cf_reader),
+  : reader_(cf_reader),
     path_(path),
+    block_id_(block_id),
     delta_type_(delta_type) {
 }
 

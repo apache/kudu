@@ -580,16 +580,16 @@ Status Tablet::DoMajorDeltaCompaction(const ColumnIndexes& column_indexes,
 
   gscoped_ptr<RowSetColumnUpdater> updater;
   DiskRowSet* input_drs = NULL;
-  int64_t delta_store_id;
   gscoped_ptr<MajorDeltaCompaction> compaction;
   shared_ptr<Schema> cur_schema;
 
+  vector<BlockId> included_blocks;
   {
     // Avoid holding component_lock_ for too long
     boost::shared_lock<rw_semaphore> lock(component_lock_);
     updater.reset(new RowSetColumnUpdater(metadata(), input_rs->metadata(), column_indexes));
     input_drs = down_cast<DiskRowSet*>(input_rs.get());
-    compaction.reset(input_drs->NewMajorDeltaCompaction(updater.get(), &delta_store_id));
+    compaction.reset(input_drs->NewMajorDeltaCompaction(updater.get(), &included_blocks));
     cur_schema = schema_;
   }
 
@@ -617,7 +617,8 @@ Status Tablet::DoMajorDeltaCompaction(const ColumnIndexes& column_indexes,
 
     RETURN_NOT_OK(compaction->Compact(&meta, &delta_block, &ndeltas));
     if (ndeltas > 0) {
-      RETURN_NOT_OK(meta->CommitRedoDeltaDataBlock(delta_store_id, delta_block));
+      int64_t dms_id = input_rs->metadata()->last_durable_redo_dms_id();
+      RETURN_NOT_OK(meta->CommitRedoDeltaDataBlock(dms_id, delta_block));
     }
     RETURN_NOT_OK_PREPEND(meta->Flush(),
                           "Unable to commit rowset metadata " + meta->ToString());

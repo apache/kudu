@@ -18,6 +18,7 @@
 #include "util/test_util.h"
 #include "util/env.h"
 #include "util/env_util.h"
+#include "util/path_util.h"
 #include "util/status.h"
 #include "util/auto_release_pool.h"
 
@@ -45,7 +46,7 @@ class TestDeltaCompaction : public KuduTest {
   }
 
   string GetDeltaFilePath(int64_t deltafile_idx) {
-    return GetTestPath(StringPrintf("%ld", deltafile_idx));
+    return GetTestPath(StringPrintf("%08ld", deltafile_idx));
   }
 
   Status GetDeltaFileWriter(string path, const Schema& schema,
@@ -57,12 +58,13 @@ class TestDeltaCompaction : public KuduTest {
     return Status::OK();
   }
 
-  Status OpenAsCompactionInput(const string& path, uint64_t deltafile_idx,
+  Status OpenAsCompactionInput(const string& path,
                                const Schema& projection,
                                gscoped_ptr<DeltaCompactionInput> *dci) {
+    BlockId block_id(BaseName(path));
     shared_ptr<DeltaFileReader> reader;
-    RETURN_NOT_OK(DeltaFileReader::Open(env_.get(), path, deltafile_idx_, &reader, REDO));
-    CHECK_EQ(deltafile_idx_, reader->id());
+    RETURN_NOT_OK(DeltaFileReader::Open(env_.get(), path, block_id, &reader, REDO));
+    CHECK_EQ(block_id, reader->block_id());
     RETURN_NOT_OK(DeltaCompactionInput::Open(reader, projection, dci));
     deltafile_idx_++;
     return Status::OK();
@@ -95,7 +97,7 @@ class TestDeltaCompaction : public KuduTest {
     stats.IncrUpdateCount(0, num_updates);
     RETURN_NOT_OK(dfw->WriteDeltaStats(stats));
     RETURN_NOT_OK(dfw->Finish());
-    RETURN_NOT_OK(OpenAsCompactionInput(path, deltafile_idx_, schema_, dci));
+    RETURN_NOT_OK(OpenAsCompactionInput(path, schema_, dci));
     return Status::OK();
   }
 
@@ -153,7 +155,7 @@ TEST_F(TestDeltaCompaction, TestFlushDeltaCompactionInput) {
   ASSERT_STATUS_OK(FlushDeltaCompactionInput(merged.get(), dfw.get()));
   ASSERT_STATUS_OK(dfw->Finish());
   gscoped_ptr<DeltaCompactionInput> dci;
-  ASSERT_STATUS_OK(OpenAsCompactionInput(path, FLAGS_num_delta_files + 1, schema_, &dci));
+  ASSERT_STATUS_OK(OpenAsCompactionInput(path, schema_, &dci));
   vector<string> results;
   ASSERT_STATUS_OK(DebugDumpDeltaCompactionInput(dci.get(), &results, schema_));
   BOOST_FOREACH(const string &str, results) {
@@ -235,7 +237,7 @@ TEST_F(TestDeltaCompaction, TestMergeMultipleSchemas) {
     ASSERT_STATUS_OK(dfw->WriteDeltaStats(stats));
     ASSERT_STATUS_OK(dfw->Finish());
     gscoped_ptr<DeltaCompactionInput> dci;
-    ASSERT_STATUS_OK(OpenAsCompactionInput(path, deltafile_idx, schemas.back(), &dci));
+    ASSERT_STATUS_OK(OpenAsCompactionInput(path, schemas.back(), &dci));
     inputs.push_back(shared_ptr<DeltaCompactionInput>(dci.release()));
     deltafile_idx++;
   }
@@ -250,7 +252,7 @@ TEST_F(TestDeltaCompaction, TestMergeMultipleSchemas) {
   ASSERT_STATUS_OK(dfw->Finish());
 
   gscoped_ptr<DeltaCompactionInput> dci;
-  ASSERT_STATUS_OK(OpenAsCompactionInput(path, deltafile_idx, merged->schema(), &dci));
+  ASSERT_STATUS_OK(OpenAsCompactionInput(path, merged->schema(), &dci));
 
   vector<string> results;
   ASSERT_STATUS_OK(DebugDumpDeltaCompactionInput(dci.get(), &results, schemas.back()));

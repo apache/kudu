@@ -37,7 +37,6 @@ message ColumnDataPB {
 }
 
 message DeltaDataPB {
-  required uint64 id = 1;
   required BlockIdPB block = 2;
 }
 

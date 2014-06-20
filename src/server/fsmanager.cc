@@ -4,6 +4,7 @@
 #include <glog/logging.h>
 #include <iostream>
 
+#include "gutil/strings/join.h"
 #include "gutil/strings/numbers.h"
 #include "gutil/strings/strip.h"
 #include "gutil/strings/substitute.h"
@@ -20,6 +21,15 @@ using kudu::metadata::InstanceMetadataPB;
 using strings::Substitute;
 
 namespace kudu {
+
+string BlockId::JoinStrings(const vector<BlockId>& blocks) {
+  vector<string> strings;
+  strings.reserve(blocks.size());
+  BOOST_FOREACH(const BlockId& block, blocks) {
+    strings.push_back(block.ToString());
+  }
+  return ::JoinStrings(strings, ",");
+}
 
 // ==========================================================================
 //  FS Paths

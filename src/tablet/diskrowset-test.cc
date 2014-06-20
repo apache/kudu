@@ -162,7 +162,7 @@ TEST_F(TestRowSet, TestDelete) {
   ASSERT_STATUS_OK(DeleteRow(rs.get(), 0, &result));
   ASSERT_EQ(1, result.mutated_stores_size());
   ASSERT_EQ(0L, result.mutated_stores(0).rs_id());
-  ASSERT_EQ(0L, result.mutated_stores(0).delta_id());
+  ASSERT_EQ(0L, result.mutated_stores(0).dms_id());
   MvccSnapshot snap_after_delete(mvcc_);
 
   vector<string> rows;
@@ -229,9 +229,11 @@ TEST_F(TestRowSet, TestDMSFlush) {
 
     // Now read back the value column, and verify that the updates
     // are visible.
+    SCOPED_TRACE("before reopen");
     VerifyUpdates(*rs, updated);
   }
 
+  LOG(INFO) << "Reopening rowset ===============";
   // Close and re-open the rowset and ensure that the updates were
   // persistent.
   {
@@ -240,6 +242,7 @@ TEST_F(TestRowSet, TestDMSFlush) {
 
     // Now read back the value column, and verify that the updates
     // are visible.
+    SCOPED_TRACE("after reopen");
     VerifyUpdates(*rs, updated);
   }
 }
@@ -295,7 +298,7 @@ TEST_F(TestRowSet, TestFlushedUpdatesRespectMVCC) {
                                           &result));
       ASSERT_EQ(1, result.mutated_stores_size());
       ASSERT_EQ(0L, result.mutated_stores(0).rs_id());
-      ASSERT_EQ(0L, result.mutated_stores(0).delta_id());
+      ASSERT_EQ(0L, result.mutated_stores(0).dms_id());
     }
     snaps.push_back(MvccSnapshot(mvcc_));
   }
@@ -389,17 +392,17 @@ TEST_F(TestRowSet, TestMakeDeltaCompactionInput) {
   DeltaTracker *dt = rs->delta_tracker();
   int num_stores = dt->redo_delta_stores_.size();
   vector<shared_ptr<DeltaStore> > compacted_stores;
-  vector<int64_t> compacted_ids;
+  vector<BlockId> compacted_blocks;
   gscoped_ptr<DeltaCompactionInput> dci;
   ASSERT_STATUS_OK(dt->MakeCompactionInput(0, num_stores - 1, &compacted_stores,
-                                           &compacted_ids, &dci));
+                                           &compacted_blocks, &dci));
   vector<string> results;
   ASSERT_STATUS_OK(DebugDumpDeltaCompactionInput(dci.get(), &results, schema_));
   BOOST_FOREACH(const string &str, results) {
     VLOG(1) << str;
   }
   ASSERT_EQ(compacted_stores.size(), num_stores);
-  ASSERT_EQ(compacted_ids.size(), num_stores);
+  ASSERT_EQ(compacted_blocks.size(), num_stores);
   ASSERT_TRUE(is_sorted(results.begin(), results.end()));
 }
 
@@ -428,10 +431,10 @@ TEST_F(TestRowSet, TestCompactStores) {
 
   // Verify that the resulting deltafile is valid
   vector<shared_ptr<DeltaStore> > compacted_stores;
-  vector<int64_t> compacted_ids;
+  vector<BlockId> compacted_blocks;
   gscoped_ptr<DeltaCompactionInput> dci;
   ASSERT_STATUS_OK(dt->MakeCompactionInput(0, num_stores - 1, &compacted_stores,
-                                           &compacted_ids, &dci));
+                                           &compacted_blocks, &dci));
   vector<string> results;
   ASSERT_STATUS_OK(DebugDumpDeltaCompactionInput(dci.get(), &results, schema_));
   BOOST_FOREACH(const string &str, results) {

@@ -324,16 +324,12 @@ Status FsTool::ListBlocksInRowSet(const Schema& schema,
     }
   }
 
-  for (size_t idx = 0; idx < rs_meta.undo_delta_blocks_count(); ++idx) {
-    DeltaBlock block = rs_meta.undo_delta_block(idx);
-    std::cout << "Undo delta block (delta id=" << block.first << "): " << block.second.ToString()
-              << std::endl;
+  BOOST_FOREACH(const BlockId& block, rs_meta.undo_delta_blocks()) {
+    std::cout << "UNDO: " << block.ToString() << std::endl;
   }
 
-  for (size_t idx = 0; idx < rs_meta.redo_delta_blocks_count(); ++idx) {
-    DeltaBlock block = rs_meta.redo_delta_block(idx);
-    std::cout << "Redo delta block (delta id=" << block.first << "): " << block.second.ToString()
-              << std::endl;
+  BOOST_FOREACH(const BlockId& block, rs_meta.redo_delta_blocks()) {
+    std::cout << "REDO: " << block.ToString() << std::endl;
   }
 
   return Status::OK();
@@ -402,26 +398,23 @@ Status FsTool::DumpRowSetInternal(const Schema& schema,
     }
   }
 
-  for (size_t idx = 0; idx < rs_meta->undo_delta_blocks_count(); ++idx) {
-    DeltaBlock block = rs_meta->undo_delta_block(idx);
-    std::cout << "Dumping undo delta block delta id = " << block.first << ": " << std::endl;
+
+  BOOST_FOREACH(const BlockId& block, rs_meta->undo_delta_blocks()) {
+    std::cout << "Dumping undo delta block " << block.ToString() << ":" << std::endl;
     RETURN_NOT_OK(DumpDeltaCFileBlockInternal(schema,
                                               rs_meta,
-                                              block.second,
-                                              block.first,
+                                              block,
                                               tablet::UNDO,
                                               opts));
   }
 
-  for (size_t idx = 0; idx < rs_meta->redo_delta_blocks_count(); ++idx) {
-    DeltaBlock block = rs_meta->redo_delta_block(idx);
-    std::cout << "Redo delta block delta id = " << block.first << ": " << std::endl;
-     RETURN_NOT_OK(DumpDeltaCFileBlockInternal(schema,
-                                               rs_meta,
-                                               block.second,
-                                               block.first,
-                                               tablet::REDO,
-                                               opts));
+  BOOST_FOREACH(const BlockId& block, rs_meta->redo_delta_blocks()) {
+    std::cout << "Dumping redo delta block " << block.ToString() << ":" << std::endl;
+    RETURN_NOT_OK(DumpDeltaCFileBlockInternal(schema,
+                                              rs_meta,
+                                              block,
+                                              tablet::REDO,
+                                              opts));
   }
 
   return Status::OK();
@@ -458,7 +451,6 @@ Status FsTool::DumpCFileBlockInternal(const BlockId& block_id, const DumpOptions
 Status FsTool::DumpDeltaCFileBlockInternal(const Schema& schema,
                                            const shared_ptr<RowSetMetadata>& rs_meta,
                                            const BlockId& block_id,
-                                           int64_t delta_id,
                                            DeltaType delta_type,
                                            const DumpOptions& opts) {
   // Open the delta reader
@@ -470,7 +462,7 @@ Status FsTool::DumpDeltaCFileBlockInternal(const Schema& schema,
   RETURN_NOT_OK(DeltaFileReader::Open(path,
                                       block_reader,
                                       file_size,
-                                      delta_id,
+                                      block_id,
                                       &delta_reader,
                                       delta_type));
   // Create the delta iterator.

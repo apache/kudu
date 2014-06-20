@@ -3,6 +3,7 @@
 #include "server/metadata.h"
 
 #include <glog/logging.h>
+#include <glog/stl_logging.h>
 #include <boost/foreach.hpp>
 #include <boost/lexical_cast.hpp>
 #include <boost/thread/locks.hpp>
@@ -496,16 +497,14 @@ Status RowSetMetadata::InitFromPB(const RowSetDataPB& pb) {
 
   // Load redo delta files
   BOOST_FOREACH(const DeltaDataPB& redo_delta_pb, pb.redo_deltas()) {
-    redo_delta_blocks_.push_back(std::pair<int64_t, BlockId>(redo_delta_pb.id(),
-                                                             BlockIdFromPB(redo_delta_pb.block())));
+    redo_delta_blocks_.push_back(BlockIdFromPB(redo_delta_pb.block()));
   }
 
   last_durable_redo_dms_id_ = pb.last_durable_dms_id();
 
   // Load undo delta files
   BOOST_FOREACH(const DeltaDataPB& undo_delta_pb, pb.undo_deltas()) {
-    undo_delta_blocks_.push_back(std::pair<int64_t, BlockId>(undo_delta_pb.id(),
-                                                             BlockIdFromPB(undo_delta_pb.block())));
+    undo_delta_blocks_.push_back(BlockIdFromPB(undo_delta_pb.block()));
   }
 
   initted_ = true;
@@ -529,21 +528,17 @@ void RowSetMetadata::ToProtobuf(RowSetDataPB *pb) {
 
   // Write Delta Files
   {
-    typedef std::pair<uint32_t, BlockId> DeltaDataBlock;
-
     boost::lock_guard<LockType> l(deltas_lock_);
     pb->set_last_durable_dms_id(last_durable_redo_dms_id_);
 
-    BOOST_FOREACH(const DeltaDataBlock& redo_delta_block, redo_delta_blocks_) {
+    BOOST_FOREACH(const BlockId& redo_delta_block, redo_delta_blocks_) {
       DeltaDataPB *redo_delta_pb = pb->add_redo_deltas();
-      redo_delta_pb->set_id(redo_delta_block.first);
-      BlockIdToPB(redo_delta_block.second, redo_delta_pb->mutable_block());
+      BlockIdToPB(redo_delta_block, redo_delta_pb->mutable_block());
     }
 
-    BOOST_FOREACH(const DeltaDataBlock& undo_delta_block, undo_delta_blocks_) {
+    BOOST_FOREACH(const BlockId& undo_delta_block, undo_delta_blocks_) {
       DeltaDataPB *undo_delta_pb = pb->add_undo_deltas();
-      undo_delta_pb->set_id(undo_delta_block.first);
-      BlockIdToPB(undo_delta_block.second, undo_delta_pb->mutable_block());
+      BlockIdToPB(undo_delta_block, undo_delta_pb->mutable_block());
     }
   }
 
@@ -568,86 +563,50 @@ void RowSetMetadata::SetColumnDataBlocks(const std::vector<BlockId>& blocks) {
   column_blocks_ = blocks;
 }
 
-Status RowSetMetadata::CommitRedoDeltaDataBlock(int64_t id, const BlockId& block_id) {
+Status RowSetMetadata::CommitRedoDeltaDataBlock(int64_t dms_id,
+                                                const BlockId& block_id) {
   boost::lock_guard<LockType> l(deltas_lock_);
-  DCHECK_GE(id, last_durable_redo_dms_id_);
-  last_durable_redo_dms_id_ = id;
-  redo_delta_blocks_.push_back(std::pair<int64_t, BlockId>(id, block_id));
+  last_durable_redo_dms_id_ = dms_id;
+  redo_delta_blocks_.push_back(block_id);
   return Status::OK();
 }
 
-Status RowSetMetadata::OpenRedoDeltaDataBlock(size_t index,
-                                              shared_ptr<RandomAccessFile> *reader,
-                                              uint64_t *size,
-                                              int64_t *id) {
+Status RowSetMetadata::CommitUndoDeltaDataBlock(const BlockId& block_id) {
   boost::lock_guard<LockType> l(deltas_lock_);
-  *id = redo_delta_blocks_[index].first;
-  return OpenDataBlock(redo_delta_blocks_[index].second, reader, size);
-}
-
-size_t RowSetMetadata::redo_delta_blocks_count() const {
-  boost::lock_guard<LockType> l(deltas_lock_);
-  return redo_delta_blocks_.size();
-}
-
-
-Status RowSetMetadata::CommitUndoDeltaDataBlock(int64_t id, const BlockId& block_id) {
-  boost::lock_guard<LockType> l(deltas_lock_);
-  undo_delta_blocks_.push_back(std::pair<int64_t, BlockId>(id, block_id));
+  undo_delta_blocks_.push_back(block_id);
   return Status::OK();
-}
-
-Status RowSetMetadata::OpenUndoDeltaDataBlock(size_t index,
-                                              shared_ptr<RandomAccessFile> *reader,
-                                              uint64_t *size,
-                                              int64_t *id) {
-  boost::lock_guard<LockType> l(deltas_lock_);
-  *id = undo_delta_blocks_[index].first;
-  return OpenDataBlock(undo_delta_blocks_[index].second, reader, size);
-}
-
-size_t RowSetMetadata::undo_delta_blocks_count() const {
-  boost::lock_guard<LockType> l(deltas_lock_);
-  return undo_delta_blocks_.size();
 }
 
 Status RowSetMetadata::CommitUpdate(const RowSetMetadataUpdate& update) {
   boost::lock_guard<LockType> l(deltas_lock_);
 
-  std::tr1::unordered_set<int64_t> to_remove;
-  to_remove.insert(update.delta_stores_to_remove_.begin(),
-                   update.delta_stores_to_remove_.end());
+  BOOST_FOREACH(const RowSetMetadataUpdate::ReplaceDeltaBlocks rep, update.replace_redo_blocks_) {
+    CHECK(!rep.to_remove.empty());
 
-  // Remove old delta stores
-  for (DeltaBlockVector::iterator it = redo_delta_blocks_.begin();
-       it != redo_delta_blocks_.end();) {
-    if (ContainsKey(to_remove, (*it).first)) {
-      CHECK_EQ(to_remove.erase((*it).first), 1);
-      redo_delta_blocks_.erase(it);
-    } else {
-      ++it;
+    vector<BlockId>::iterator start_it =
+      std::find(redo_delta_blocks_.begin(), redo_delta_blocks_.end(), rep.to_remove[0]);
+
+    vector<BlockId>::iterator end_it = start_it;
+    BOOST_FOREACH(const BlockId& b, rep.to_remove) {
+      if (end_it == redo_delta_blocks_.end() || *end_it != b) {
+        return Status::InvalidArgument(
+          Substitute("Cannot find subsequence <$0> in <$1>",
+                     BlockId::JoinStrings(rep.to_remove),
+                     BlockId::JoinStrings(redo_delta_blocks_)));
+      }
+      ++end_it;
     }
-  }
-  for (DeltaBlockVector::iterator it = undo_delta_blocks_.begin();
-       it != undo_delta_blocks_.end();) {
-    if (ContainsKey(to_remove, (*it).first)) {
-      CHECK_EQ(to_remove.erase((*it).first), 1);
-      undo_delta_blocks_.erase(it);
-    } else {
-      ++it;
-    }
-  }
 
-  // We should have removed all IDs requested.
-  CHECK(to_remove.empty());
-
-  typedef std::pair<int, BlockId> IntBlockPair;
+    redo_delta_blocks_.erase(start_it, end_it);
+    redo_delta_blocks_.insert(start_it, rep.to_add.begin(), rep.to_add.end());
+  }
 
   // Add new redo blocks
-  BOOST_FOREACH(const IntBlockPair& e, update.new_redo_blocks_) {
-    redo_delta_blocks_.push_back(e);
+  BOOST_FOREACH(const BlockId& b, update.new_redo_blocks_) {
+    redo_delta_blocks_.push_back(b);
   }
 
+  typedef std::pair<int, BlockId> IntBlockPair;
   BOOST_FOREACH(const IntBlockPair& e, update.cols_to_replace_) {
     CHECK_LT(e.first, column_blocks_.size());
     column_blocks_[e.first] = e.second;
@@ -659,20 +618,20 @@ RowSetMetadataUpdate::RowSetMetadataUpdate() {
 }
 RowSetMetadataUpdate::~RowSetMetadataUpdate() {
 }
-RowSetMetadataUpdate& RowSetMetadataUpdate::AddRedoDeltaBlock(int64_t store_id,
-                                                              const BlockId& block_id) {
-  InsertOrDie(&new_redo_blocks_, store_id, block_id);
-  return *this;
-}
 RowSetMetadataUpdate& RowSetMetadataUpdate::ReplaceColumnBlock(
     int col_idx, const BlockId& block_id) {
   InsertOrDie(&cols_to_replace_, col_idx, block_id);
   return *this;
 }
-RowSetMetadataUpdate& RowSetMetadataUpdate::RemoveDeltaStoreId(int64_t store_id) {
-  delta_stores_to_remove_.push_back(store_id);
+RowSetMetadataUpdate& RowSetMetadataUpdate::ReplaceRedoDeltaBlocks(
+    const std::vector<BlockId>& to_remove,
+    const std::vector<BlockId>& to_add) {
+
+  ReplaceDeltaBlocks rdb = { to_remove, to_add };
+  replace_redo_blocks_.push_back(rdb);
   return *this;
 }
+
 
 
 } // namespace metadata

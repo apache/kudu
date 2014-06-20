@@ -74,9 +74,10 @@ class DeltaTracker {
 
   // Like NewDeltaIterator() but only includes file based stores, does not include
   // the DMS.
+  // Returns the block IDs of the files being merged in *included_blocks.
   shared_ptr<DeltaIterator> NewDeltaFileIterator(const Schema* schema,
                                                  const MvccSnapshot &snap,
-                                                 int64_t* last_store_id) const;
+                                                 std::vector<BlockId>* included_blocks) const;
 
   Status Open();
 
@@ -152,7 +153,10 @@ class DeltaTracker {
   FRIEND_TEST(TestRowSet, TestCompactStores);
   FRIEND_TEST(TestMajorDeltaCompaction, TestCompact);
 
-  Status OpenDeltaFileReaders();
+  Status OpenDeltaReaders(const std::vector<BlockId>& blocks,
+                          std::vector<std::tr1::shared_ptr<DeltaStore> >* stores,
+                          DeltaType type);
+
   Status FlushDMS(DeltaMemStore* dms,
                   shared_ptr<DeltaFileReader>* dfr,
                   MetadataFlushType flush_type);
@@ -169,18 +173,18 @@ class DeltaTracker {
 
   // Performs the actual compaction. Results of compaction are written to "data_writer",
   // while delta stores that underwent compaction are appended to "compacted_stores", while
-  // their corresponding ids are appended to "compacted_ids".
+  // their corresponding block ids are appended to "compacted_blocks".
   Status DoCompactStores(size_t start_idx, size_t end_idx,
                          const shared_ptr<WritableFile> &data_writer,
                          vector<shared_ptr<DeltaStore> > *compacted_stores,
-                         vector<int64_t> *compacted_ids);
+                         std::vector<BlockId>* compacted_blocks);
 
-  // Creates a merged compaction input and captures the delta stores and delta file ids
-  // under compaction.
+  // Creates a merged compaction input and captures the delta stores and
+  // delta block ids under compaction.
   // The compaction input is only valid as long as this DeltaTracker.
   Status MakeCompactionInput(size_t start_idx, size_t end_idx,
                              vector<shared_ptr<DeltaStore > > *target_stores,
-                             vector<int64_t> *target_ids,
+                             vector<BlockId> *target_blocks,
                              gscoped_ptr<DeltaCompactionInput> *out);
 
   // Set this delta tracker's DeltaMemStore to 'new_dms'.

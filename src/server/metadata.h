@@ -283,8 +283,6 @@ class TabletMetadata : public base::RefCountedThreadSafe<TabletMetadata> {
 // There's a lock around the delta-blocks operations.
 class RowSetMetadata {
  public:
-  typedef std::vector<std::pair<int64_t, BlockId> > DeltaBlockVector;
-
   // Create a new RowSetMetadata
   static Status CreateNew(TabletMetadata* tablet_metadata,
                           int64_t id,
@@ -304,6 +302,9 @@ class RowSetMetadata {
 
   const Schema& schema() const { return schema_; }
 
+  // TODO: this is just a simple wrapper around FsManager.
+  // We should provide this wrapper as part of FsManager and make this a pure
+  // metadata container, without trying to funnel FS operations through it.
   Status OpenDataBlock(const BlockId& block_id,
                        shared_ptr<RandomAccessFile> *reader, uint64_t *size) {
     RETURN_NOT_OK(fs_manager()->OpenBlock(block_id, reader));
@@ -347,24 +348,28 @@ class RowSetMetadata {
     return fs_manager()->CreateNewBlock(writer, block_id);
   }
 
-  Status CommitRedoDeltaDataBlock(int64_t id, const BlockId& block_id);
+  Status CommitRedoDeltaDataBlock(int64_t dms_id,
+                                  const BlockId& block_id);
 
   Status OpenRedoDeltaDataBlock(size_t index,
                                 shared_ptr<RandomAccessFile> *reader,
-                                uint64_t *size,
-                                int64_t *id);
+                                uint64_t *size);
 
-  size_t redo_delta_blocks_count() const;
+  vector<BlockId> redo_delta_blocks() const {
+    boost::lock_guard<LockType> l(deltas_lock_);
+    return redo_delta_blocks_;
+  }
 
+  vector<BlockId> undo_delta_blocks() const {
+    boost::lock_guard<LockType> l(deltas_lock_);
+    return undo_delta_blocks_;
+  }
 
-  Status CommitUndoDeltaDataBlock(int64_t id, const BlockId& block_id);
+  Status CommitUndoDeltaDataBlock(const BlockId& block_id);
 
   Status OpenUndoDeltaDataBlock(size_t index,
                                 shared_ptr<RandomAccessFile> *reader,
-                                uint64_t *size,
-                                int64_t *id);
-
-  size_t undo_delta_blocks_count() const;
+                                uint64_t *size);
 
   TabletMetadata *tablet_metadata() const { return tablet_metadata_; }
 
@@ -384,7 +389,7 @@ class RowSetMetadata {
 
   bool HasUndoDeltaBlockForTests(size_t idx) const {
     return undo_delta_blocks_.size() > idx &&
-        fs_manager()->BlockExists(undo_delta_blocks_[idx].second);
+        fs_manager()->BlockExists(undo_delta_blocks_[idx]);
   }
 
   FsManager *fs_manager() const { return tablet_metadata_->fs_manager(); }
@@ -426,21 +431,13 @@ class RowSetMetadata {
     return column_blocks_[col_idx];
   }
 
-  const std::pair<int64_t, BlockId>& redo_delta_block(size_t idx) const {
-    return redo_delta_blocks_[idx];
-  }
-
-  const std::pair<int64_t, BlockId>& undo_delta_block(size_t idx) const {
-    return undo_delta_blocks_[idx];
-  }
-
   int64_t id_;
   Schema schema_;
   BlockId bloom_block_;
   BlockId adhoc_index_block_;
   std::vector<BlockId> column_blocks_;
-  DeltaBlockVector redo_delta_blocks_;
-  DeltaBlockVector undo_delta_blocks_;
+  std::vector<BlockId> redo_delta_blocks_;
+  std::vector<BlockId> undo_delta_blocks_;
   TabletMetadata *tablet_metadata_;
 
   int64_t last_durable_redo_dms_id_;
@@ -457,15 +454,26 @@ class RowSetMetadataUpdate {
   RowSetMetadataUpdate();
   ~RowSetMetadataUpdate();
 
-  RowSetMetadataUpdate& RemoveDeltaStoreId(int64_t store_id);
-  RowSetMetadataUpdate& AddRedoDeltaBlock(int64_t store_id, const BlockId& block_id);
+  // Replace the subsequence of redo delta blocks with the new (compacted) delta blocks.
+  // The replaced blocks must be a contiguous subsequence of the the full list,
+  // since delta files cannot overlap in time.
+  // 'to_add' may be empty, in which case the blocks in to_remove are simply removed
+  // with no replacement.
+  RowSetMetadataUpdate& ReplaceRedoDeltaBlocks(const std::vector<BlockId>& to_remove,
+                                               const std::vector<BlockId>& to_add);
+
   RowSetMetadataUpdate& ReplaceColumnBlock(int col_idx, const BlockId& block_id);
 
  private:
   friend class RowSetMetadata;
-  std::vector<int64_t> delta_stores_to_remove_;
-  std::tr1::unordered_map<int, BlockId> new_redo_blocks_;
   std::tr1::unordered_map<int, BlockId> cols_to_replace_;
+  std::vector<BlockId> new_redo_blocks_;
+
+  struct ReplaceDeltaBlocks {
+    std::vector<BlockId> to_remove;
+    std::vector<BlockId> to_add;
+  };
+  std::vector<ReplaceDeltaBlocks> replace_redo_blocks_;
 
   DISALLOW_COPY_AND_ASSIGN(RowSetMetadataUpdate);
 };

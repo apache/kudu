@@ -16,6 +16,7 @@ set(TABLET_SRCS
   compaction.cc
   compaction_policy.cc
   compaction_rowset_data.cc
+  delta_key.cc
   diskrowset.cc
   lock_manager.cc
   maintenance_manager.cc

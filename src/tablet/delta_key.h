@@ -8,6 +8,7 @@
 #include "gutil/endian.h"
 #include "gutil/strings/substitute.h"
 #include "tablet/mvcc.h"
+#include "util/status.h"
 
 namespace kudu {
 namespace tablet {
@@ -24,6 +25,8 @@ enum DeltaType {
   // deltas are sorted by decreasing transaction timestamp.
   UNDO
 };
+
+const char* DeltaType_Name(DeltaType t);
 
 // Each entry in the delta memrowset or delta files is keyed by the rowid
 // which has been updated, as well as the timestamp which performed the update.

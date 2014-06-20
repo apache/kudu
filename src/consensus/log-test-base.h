@@ -160,7 +160,7 @@ class LogTestBase : public KuduTest {
     AppendCommit(index, original_op_index, kTargetMrsId, kTargetRsId, kTargetDeltaId, sync);
   }
 
-  void AppendCommit(int index, int original_op_index, int mrs_id, int rs_id, int delta_id,
+  void AppendCommit(int index, int original_op_index, int mrs_id, int rs_id, int dms_id,
                     bool sync = APPEND_SYNC) {
     LogEntryPB log_entry;
     log_entry.set_type(OPERATION);
@@ -185,7 +185,7 @@ class LogTestBase : public KuduTest {
 
     OperationResultPB* mutate = result->add_ops();
     MemStoreTargetPB* target = mutate->add_mutated_stores();
-    target->set_delta_id(delta_id);
+    target->set_dms_id(dms_id);
     target->set_rs_id(rs_id);
 
     if (sync) {

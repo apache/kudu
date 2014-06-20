@@ -89,8 +89,6 @@ class FsTool {
   Status DumpCFileBlock(const std::string& block_id,
                         const DumpOptions& opts);
  private:
-  typedef std::pair<int64_t, BlockId> DeltaBlock;
-
   Status ListSegmentsInDir(const std::string& segments_dir);
 
   Status ListBlocksInRowSet(const Schema& schema,
@@ -115,7 +113,6 @@ class FsTool {
   Status DumpDeltaCFileBlockInternal(const Schema& schema,
                                      const std::tr1::shared_ptr<metadata::RowSetMetadata>& rs_meta,
                                      const BlockId& block_id,
-                                     int64_t delta_id, // TODO (WIP): pass DeltaBlock instead
                                      tablet::DeltaType delta_type,
                                      const DumpOptions& opts);
 

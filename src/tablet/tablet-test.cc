@@ -59,19 +59,17 @@ TYPED_TEST(TestTablet, TestFlush) {
   ASSERT_TRUE(rowset_meta->HasBloomDataBlockForTests());
 
   // check that undo deltas are present
-  ASSERT_TRUE(rowset_meta->HasUndoDeltaBlockForTests(0));
+  vector<BlockId> undo_blocks = rowset_meta->undo_delta_blocks();
+  ASSERT_EQ(1, undo_blocks.size());
 
   // Read the undo delta, we should get one undo mutation (delete) for each row.
   size_t dsize = 0;
   shared_ptr<RandomAccessFile> dfile;
-  int64_t delta_id;
-  ASSERT_STATUS_OK(rowset_meta->OpenUndoDeltaDataBlock(0,
-                                                       &dfile,
-                                                       &dsize,
-                                                       &delta_id));
+  ASSERT_STATUS_OK(rowset_meta->OpenDataBlock(undo_blocks[0], &dfile, &dsize));
 
   shared_ptr<DeltaFileReader> dfr;
-  ASSERT_STATUS_OK(DeltaFileReader::Open("---", dfile, dsize, delta_id, &dfr, UNDO));
+  ASSERT_STATUS_OK(DeltaFileReader::Open(undo_blocks[0].ToString(), dfile, dsize,
+                                         undo_blocks[0], &dfr, UNDO));
   // Assert there were 'max_rows' deletions in the undo delta (one for each inserted row)
   ASSERT_EQ(dfr->delta_stats().delete_count(), max_rows);
 }
@@ -257,7 +255,7 @@ TYPED_TEST(TestTablet, TestDeleteWithFlushAndCompact) {
   ASSERT_STATUS_OK(this->DeleteTestRow(&tx_state, 0));
   ASSERT_EQ(1, last_mutation(tx_state).mutated_stores_size());
   ASSERT_EQ(1L, last_mutation(tx_state).mutated_stores(0).rs_id());
-  ASSERT_EQ(0L, last_mutation(tx_state).mutated_stores(0).delta_id());
+  ASSERT_EQ(0L, last_mutation(tx_state).mutated_stores(0).dms_id());
   ASSERT_STATUS_OK(this->IterateToStringList(&rows));
   ASSERT_EQ(0, rows.size());
 
@@ -542,7 +540,7 @@ TYPED_TEST(TestTablet, TestMultipleUpdates) {
   ASSERT_STATUS_OK(this->UpdateTestRow(&tx_state, 0, 4));
   ASSERT_EQ(1, last_mutation(tx_state).mutated_stores_size());
   ASSERT_EQ(0L, last_mutation(tx_state).mutated_stores(0).rs_id());
-  ASSERT_EQ(0L, last_mutation(tx_state).mutated_stores(0).delta_id());
+  ASSERT_EQ(0L, last_mutation(tx_state).mutated_stores(0).dms_id());
   tx_state.Reset();
   ASSERT_STATUS_OK(this->UpdateTestRow(&tx_state, 0, 5));
   tx_state.Reset();
@@ -668,7 +666,7 @@ class MyCommonHooks : public Tablet::FlushCompactCommonHooks {
       case DELTA_MUTATION:
         CHECK_EQ(1, last_mutation(tx_state).mutated_stores_size());
         CHECK(last_mutation(tx_state).mutated_stores(0).has_rs_id());
-        CHECK(last_mutation(tx_state).mutated_stores(0).has_delta_id());
+        CHECK(last_mutation(tx_state).mutated_stores(0).has_dms_id());
         break;
       case DUPLICATED_MUTATION:
         CHECK_EQ(2, last_mutation(tx_state).mutated_stores_size());

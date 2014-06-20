@@ -313,12 +313,13 @@ class DiskRowSet : public RowSet {
 
   // Create a new major delta compaction object, with 'updater', and a
   // merge of all of deltafiles in this object's delta tracker as
-  // input. Sets 'delta_store_id' to the correct delta store id to use
-  // for the delta file created by this delta compaction
+  // input. Sets 'included_blocks' to the list of delta blocks corresponding
+  // to the deltafile merger.
+  //
   // 'updater' must remain valid for the lifetime of the returned
-  // NewMajorDeltaCompaction() object.
+  // MajorDeltaCompaction object.
   MajorDeltaCompaction* NewMajorDeltaCompaction(RowSetColumnUpdater* updater,
-                                                int64_t* delta_store_id) const;
+                                                std::vector<BlockId>* included_blocks) const;
 
   // Points this object's delta memstore to delta memstore in
   // 'rs'.

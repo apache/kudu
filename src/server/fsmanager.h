@@ -60,6 +60,12 @@ class BlockId {
   bool operator==(const BlockId& other) const {
     return id_ == other.id_;
   }
+  bool operator!=(const BlockId& other) const {
+    return id_ != other.id_;
+  }
+
+  // Join the given block IDs with ','. Useful for debug printouts.
+  static std::string JoinStrings(const std::vector<BlockId>& blocks);
 
  private:
   string id_;

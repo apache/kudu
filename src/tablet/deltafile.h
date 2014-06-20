@@ -66,7 +66,6 @@ class DeltaFileWriter {
   const Schema& schema() const { return schema_; }
 
  private:
-  int64_t id_;
   const Schema schema_;
 
   Status WriteSchema();
@@ -99,14 +98,14 @@ class DeltaFileReader : public DeltaStore,
   // Open the Delta File at the given path.
   static Status Open(Env *env,
                      const string &path,
-                     int64_t delta_id,
+                     const BlockId& block_id,
                      std::tr1::shared_ptr<DeltaFileReader>* reader_out,
                      DeltaType delta_type);
 
   static Status Open(const string& path,
                      const shared_ptr<RandomAccessFile> &file,
                      uint64_t file_size,
-                     int64_t delta_id,
+                     const BlockId& block_id,
                      std::tr1::shared_ptr<DeltaFileReader>* reader_out,
                      DeltaType delta_type);
 
@@ -124,7 +123,7 @@ class DeltaFileReader : public DeltaStore,
 
   const string& path() const { return path_; }
 
-  const int64_t id() const OVERRIDE { return id_; }
+  const BlockId& block_id() const { return block_id_; }
 
   virtual const DeltaStats& delta_stats() const OVERRIDE { return *delta_stats_; }
 
@@ -142,7 +141,7 @@ class DeltaFileReader : public DeltaStore,
     return reader_;
   }
 
-  DeltaFileReader(const int64_t id,
+  DeltaFileReader(const BlockId& block_id,
                   cfile::CFileReader *cf_reader,
                   const string &path,
                   DeltaType delta_type);
@@ -153,13 +152,14 @@ class DeltaFileReader : public DeltaStore,
 
   Status ReadDeltaStats();
 
-  const int64_t id_;
   shared_ptr<cfile::CFileReader> reader_;
   gscoped_ptr<DeltaStats> delta_stats_;
   Schema schema_;
 
   // The path of the file being read (should be used only for debugging)
   const string path_;
+
+  const BlockId block_id_;
 
   // The type of this delta, i.e. UNDO or REDO.
   const DeltaType delta_type_;

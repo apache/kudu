@@ -321,7 +321,7 @@ Status RollingDiskRowSetWriter::FinishCurrentWriter() {
   // delta store commit the undo delta block.
   if (cur_undo_writer_.get() != NULL &&
       cur_undo_delta_stats->min_timestamp().CompareTo(Timestamp::kMax) != 0) {
-    cur_drs_metadata_->CommitUndoDeltaDataBlock(0, cur_undo_ds_block_id_);
+    cur_drs_metadata_->CommitUndoDeltaDataBlock(cur_undo_ds_block_id_);
   }
 
   // If the writer is not null _AND_ we've written something to the redo
@@ -407,12 +407,15 @@ Status DiskRowSet::MinorCompactDeltaStores() {
   return delta_tracker_->Compact();
 }
 
-MajorDeltaCompaction* DiskRowSet::NewMajorDeltaCompaction(RowSetColumnUpdater* updater,
-                                                          int64_t* last_store_id) const {
+MajorDeltaCompaction* DiskRowSet::NewMajorDeltaCompaction(
+    RowSetColumnUpdater* updater,
+    vector<BlockId>* included_ids) const {
   CHECK(open_);
 
   shared_ptr<DeltaIterator> delta_iter = delta_tracker_->NewDeltaFileIterator(
-    &schema(), MvccSnapshot::CreateSnapshotIncludingAllTransactions(), last_store_id);
+    &schema(),
+    MvccSnapshot::CreateSnapshotIncludingAllTransactions(),
+    included_ids);
   return new MajorDeltaCompaction(delta_iter, updater);
 }
 

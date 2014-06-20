@@ -32,7 +32,8 @@ class TestDeltaFile : public ::testing::Test {
   TestDeltaFile() :
     env_(NewMemEnv(Env::Default())),
     schema_(CreateSchema()),
-    arena_(1024, 1024)
+    arena_(1024, 1024),
+    kTestBlock("test-block-id")
   {}
 
   static Schema CreateSchema() {
@@ -81,7 +82,7 @@ class TestDeltaFile : public ::testing::Test {
 
   void VerifyTestFile() {
     shared_ptr<DeltaFileReader> reader;
-    ASSERT_STATUS_OK(DeltaFileReader::Open(env_.get(), kTestPath, 0, &reader, REDO));
+    ASSERT_STATUS_OK(DeltaFileReader::Open(env_.get(), kTestPath, kTestBlock, &reader, REDO));
     ASSERT_EQ(((FLAGS_last_row_to_update - FLAGS_first_row_to_update) / 2) + 1,
               reader->delta_stats().update_count(0));
     ASSERT_EQ(0, reader->delta_stats().delete_count());
@@ -137,6 +138,7 @@ class TestDeltaFile : public ::testing::Test {
   gscoped_ptr<Env> env_;
   Schema schema_;
   Arena arena_;
+  const BlockId kTestBlock;
 };
 
 TEST_F(TestDeltaFile, TestRoundTripTinyDeltaBlocks) {
@@ -157,7 +159,7 @@ TEST_F(TestDeltaFile, TestCollectMutations) {
 
   {
     shared_ptr<DeltaFileReader> reader;
-    ASSERT_STATUS_OK(DeltaFileReader::Open(env_.get(), kTestPath, 0, &reader, REDO));
+    ASSERT_STATUS_OK(DeltaFileReader::Open(env_.get(), kTestPath, kTestBlock, &reader, REDO));
 
     MvccSnapshot snap = MvccSnapshot::CreateSnapshotIncludingAllTransactions();
 
@@ -201,7 +203,7 @@ TEST_F(TestDeltaFile, TestCollectMutations) {
 TEST_F(TestDeltaFile, TestSkipsDeltasOutOfRange) {
   WriteTestFile(10, 20);
   shared_ptr<DeltaFileReader> reader;
-  ASSERT_STATUS_OK(DeltaFileReader::Open(env_.get(), kTestPath, 0, &reader, REDO));
+  ASSERT_STATUS_OK(DeltaFileReader::Open(env_.get(), kTestPath, kTestBlock, &reader, REDO));
 
   gscoped_ptr<DeltaIterator> iter;
 

@@ -28,8 +28,9 @@ target_link_libraries(server_common
 
 set(KUDU_TEST_LINK_LIBS server_common ${KUDU_MIN_TEST_LIBS})
 ADD_KUDU_TEST(fsmanager-test)
-ADD_KUDU_TEST(logical_clock-test)
 ADD_KUDU_TEST(hybrid_clock-test)
+ADD_KUDU_TEST(logical_clock-test)
+ADD_KUDU_TEST(metadata-test)
 
 #------------------------------
 
