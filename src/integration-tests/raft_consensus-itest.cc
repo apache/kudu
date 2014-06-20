@@ -201,6 +201,31 @@ class DistConsensusTest : public TabletServerTest {
     std::sort(results->begin(), results->end());
   }
 
+  string DumpToString(const master::TSInfoPB& leader_info,
+                      const vector<string>& leader_results,
+                      const master::TSInfoPB& replica_info,
+                      const vector<string>& replica_results) {
+    string ret = strings::Substitute("Replica results did not match the leaders."
+                                     "\nReplica: $0\nLeader:$1. Results size "
+                                     "L: $2 R: $3",
+                                     leader_info.ShortDebugString(),
+                                     replica_info.ShortDebugString(),
+                                     leader_results.size(),
+                                     replica_results.size());
+
+    StrAppend(&ret, "Leader Results: \n");
+    BOOST_FOREACH(const string& result, leader_results) {
+      StrAppend(&ret, result, "\n");
+    }
+
+    StrAppend(&ret, "Replica Results: \n");
+    BOOST_FOREACH(const string& result, replica_results) {
+      StrAppend(&ret, result, "\n");
+    }
+
+    return ret;
+  }
+
   void AssertAllReplicasAgree(int expected_result_count = -1) {
 
     int counter = 0;
@@ -218,14 +243,13 @@ class DistConsensusTest : public TabletServerTest {
         continue;
       }
 
+      ProxyDetails* last_replica;
       bool all_replicas_matched = true;
       BOOST_FOREACH(ProxyDetails* replica, replicas_) {
         ScanReplica(replica->proxy.get(), &replica_results);
-        SCOPED_TRACE(strings::Substitute("Replica results did not match the leaders."
-                                         "\nReplica: $0\nLeader:$1. Results size "
-                                         "L: $2 R: $3", replica->ts_info.ShortDebugString(),
-                                         leader_->ts_info.ShortDebugString(),
-                                         leader_results.size(), replica_results.size()));
+        last_replica = replica;
+        SCOPED_TRACE(DumpToString(leader_->ts_info, leader_results,
+                                  replica->ts_info, replica_results));
 
         if (leader_results.size() != replica_results.size()) {
           all_replicas_matched = false;
@@ -246,6 +270,8 @@ class DistConsensusTest : public TabletServerTest {
         break;
       } else {
         if (counter >= kMaxRetries) {
+          SCOPED_TRACE(DumpToString(leader_->ts_info, leader_results,
+                                    last_replica->ts_info, replica_results));
           FAIL() << "LEADER results did not match one of the replicas.";
         }
         counter++;
