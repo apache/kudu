@@ -32,9 +32,11 @@ using std::ifstream;
 using std::ostringstream;
 using std::stringstream;
 
-const int PPROF_DEFAULT_SAMPLE_SECS = 30; // pprof default sample time in seconds.
-
 namespace kudu {
+
+#ifdef TCMALLOC_ENABLED
+const int PPROF_DEFAULT_SAMPLE_SECS = 30; // pprof default sample time in seconds.
+#endif
 
 // pprof asks for the url /pprof/cmdline to figure out what application it's profiling.
 // The server should respond by reading the contents of /proc/self/cmdline.
