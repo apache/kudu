@@ -128,7 +128,7 @@ void PstackWatcher::LogPstack() {
     }
     fwrite(buf, 1, res, stdout);
   }
-  printf("************************ END STACKS **************************\n");
+  printf("************************* END STACKS ***************************\n");
   int ret;
   CHECK_OK(pstack_proc.Wait(&ret));
 }
