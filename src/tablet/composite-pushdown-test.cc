@@ -156,11 +156,11 @@ TEST_F(CompositePushdownTest, TestPushDownPrefixEqualitySuffixInequality) {
 
   ColumnRangePredicate pred_month_eq(schema_.column(1), &month_l, &month_l);
   ColumnRangePredicate pred_month_ge_le(schema_.column(1), &month_l, &month_u);
-  ColumnRangePredicate pred_month_le(schema_.column(1), boost::none, &month_l);
+  ColumnRangePredicate pred_month_le(schema_.column(1), NULL, &month_l);
 
   ColumnRangePredicate pred_day_ge_le(schema_.column(2), &day_l, &day_u);
-  ColumnRangePredicate pred_day_ge(schema_.column(2), &day_l, boost::none);
-  ColumnRangePredicate pred_day_le(schema_.column(2), boost::none, &day_u);
+  ColumnRangePredicate pred_day_ge(schema_.column(2), &day_l, NULL);
+  ColumnRangePredicate pred_day_le(schema_.column(2), NULL, &day_u);
 
   {
     // year=2001, month=9, day >= 1 && day <= 15
@@ -256,7 +256,7 @@ TEST_F(CompositePushdownTest, TestPushdownPrefixInequality) {
 
   {
     // year >= 2001
-    ColumnRangePredicate pred_year(schema_.column(0), &year_2001, boost::none);
+    ColumnRangePredicate pred_year(schema_.column(0), &year_2001, NULL);
     ScanSpec spec;
     spec.AddPredicate(pred_year);
     vector<string> results;
@@ -273,7 +273,7 @@ TEST_F(CompositePushdownTest, TestPushdownPrefixInequality) {
 
   {
     // year <= 2003
-    ColumnRangePredicate pred_year(schema_.column(0), boost::none, &year_2003);
+    ColumnRangePredicate pred_year(schema_.column(0), NULL, &year_2003);
     ScanSpec spec;
     spec.AddPredicate(pred_year);
     vector<string> results;

@@ -82,7 +82,7 @@ TEST_F(TestPredicate, TestColumnRange) {
 
   // Apply predicate col1 >= 250
   uint32_t col1_lower = 250;
-  ColumnRangePredicate pred2(schema_.column(1), &col1_lower, boost::none);
+  ColumnRangePredicate pred2(schema_.column(1), &col1_lower, NULL);
   ASSERT_EQ("(`col1` >= 250)", pred2.ToString());
   pred2.Evaluate(&row_block_, &selvec);
   ASSERT_EQ(5, selvec.CountSelected()) << "Only 5 rows should be left (25-29)";
@@ -100,7 +100,7 @@ TEST_F(TestPredicate, TestDontEvalauteOnUnselectedRows) {
                        "JUNKDATA");
 
   Slice lower("lower");
-  ColumnRangePredicate p(schema_.column(2), &lower, boost::none);
+  ColumnRangePredicate p(schema_.column(2), &lower, NULL);
   p.Evaluate(&row_block_, &selvec);
   ASSERT_EQ(0, selvec.CountSelected());
 }

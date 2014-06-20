@@ -3,7 +3,6 @@
 #ifndef KUDU_COMMON_SCAN_PREDICATE_H
 #define KUDU_COMMON_SCAN_PREDICATE_H
 
-#include <boost/optional.hpp>
 #include <string>
 
 #include "common/schema.h"
@@ -27,38 +26,38 @@ class ValueRange {
   // The cells are not copied by this object, so should remain unchanged
   // for the lifetime of this object.
   //
-  // If either optional is unspecified (ie boost::none), then the range is
+  // If either optional is unspecified (i.e. NULL), then the range is
   // open on that end.
   //
   // A range must be bounded on at least one end.
   ValueRange(const TypeInfo* type,
-             boost::optional<const void *> lower_bound,
-             boost::optional<const void *> upper_bound);
+             const void* lower_bound,
+             const void* upper_bound);
 
   bool has_lower_bound() const {
-    return lower_bound_.is_initialized();
+    return lower_bound_;
   }
 
   bool has_upper_bound() const {
-    return upper_bound_.is_initialized();
+    return upper_bound_;
   }
 
-  const void *lower_bound() const {
-    return lower_bound_.get();
+  const void* lower_bound() const {
+    return lower_bound_;
   }
 
-  const void *upper_bound() const {
-    return upper_bound_.get();
+  const void* upper_bound() const {
+    return upper_bound_;
   }
 
   bool IsEquality() const;
 
-  bool ContainsCell(const void *cell) const;
+  bool ContainsCell(const void* cell) const;
 
  private:
   const TypeInfo* type_info_;
-  boost::optional<const void *> lower_bound_;
-  boost::optional<const void *> upper_bound_;
+  const void* lower_bound_;
+  const void* upper_bound_;
 };
 
 // Predicate which evaluates to true when the value for a given column
@@ -73,11 +72,11 @@ class ColumnRangePredicate {
   // The lower_bound and upper_bound pointers should point to storage
   // which represents a constant cell value to be used as a range.
   // The range is inclusive on both ends.
-  // If either optional is unspecified (ie boost::none), then the range is
+  // If either optional is unspecified (i.e. NULL), then the range is
   // open on that end.
   ColumnRangePredicate(const ColumnSchema &col,
-                       boost::optional<const void *> lower_bound,
-                       boost::optional<const void *> upper_bound);
+                       const void* lower_bound,
+                       const void* upper_bound);
 
 
   // Evaluate the predicate on every row in the rowblock.

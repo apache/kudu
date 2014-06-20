@@ -43,7 +43,7 @@ TEST(TestRangePredicateEncoder, TestEncodeRangePredicates) {
   u = 254;
   {
     ScanSpec spec;
-    ColumnRangePredicate pred_a(schema.column(0), boost::none, &u);
+    ColumnRangePredicate pred_a(schema.column(0), NULL, &u);
     spec.AddPredicate(pred_a);
     ASSERT_NO_FATAL_FAILURE(enc.EncodeRangePredicates(&spec, true));
     ASSERT_FALSE(spec.encoded_ranges()[0]->has_lower_bound());

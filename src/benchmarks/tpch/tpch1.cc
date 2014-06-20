@@ -138,7 +138,7 @@ void Tpch1(LineItemDAO *dao) {
   Schema query_schema(tpch::CreateTpch1QuerySchema());
   Slice date("1998-09-02");
   ScanSpec spec;
-  ColumnRangePredicate pred1(query_schema.column(0), boost::none, &date);
+  ColumnRangePredicate pred1(query_schema.column(0), NULL, &date);
   spec.AddPredicate(pred1);
 
   dao->OpenScanner(query_schema, &spec);

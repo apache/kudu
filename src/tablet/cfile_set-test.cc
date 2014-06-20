@@ -58,8 +58,8 @@ class TestCFileSet : public KuduRowSetTest {
   // Issue a range scan between 'lower' and 'upper', and verify that all result
   // rows indeed fall inside that predicate.
   void DoTestRangeScan(const shared_ptr<CFileSet> &fileset,
-                       boost::optional<uint32_t> lower,
-                       boost::optional<uint32_t> upper) {
+                       uint32_t lower,
+                       uint32_t upper) {
     // Create iterator.
     shared_ptr<CFileSet::Iterator> cfile_iter(fileset->NewIterator(&schema_));
     gscoped_ptr<RowwiseIterator> iter(new MaterializingIterator(cfile_iter));
@@ -68,8 +68,8 @@ class TestCFileSet : public KuduRowSetTest {
     ScanSpec spec;
     ColumnRangePredicate pred1(
       schema_.column(0),
-      boost::make_optional(lower, reinterpret_cast<const void *>(lower.get_ptr())),
-      boost::make_optional(upper, reinterpret_cast<const void *>(upper.get_ptr())));
+      lower != kNoBound ? &lower : NULL,
+      upper != kNoBound ? &upper : NULL);
     spec.AddPredicate(pred1);
     ASSERT_STATUS_OK(iter->Init(&spec));
 
@@ -81,8 +81,8 @@ class TestCFileSet : public KuduRowSetTest {
       for (size_t i = 0; i < block.nrows(); i++) {
         if (block.selection_vector()->IsRowSelected(i)) {
           RowBlockRow row = block.row(i);
-          if ((lower && *schema_.ExtractColumnFromRow<UINT32>(row, 0) < lower.get()) ||
-              (upper && *schema_.ExtractColumnFromRow<UINT32>(row, 0) > upper.get())) {
+          if ((lower != kNoBound && *schema_.ExtractColumnFromRow<UINT32>(row, 0) < lower) ||
+              (upper != kNoBound && *schema_.ExtractColumnFromRow<UINT32>(row, 0) > upper)) {
             FAIL() << "Row " << schema_.DebugRow(row) << " should not have "
                    << "passed predicate " << pred1.ToString();
           }
@@ -92,9 +92,11 @@ class TestCFileSet : public KuduRowSetTest {
   }
 
  protected:
+  static const uint32_t kNoBound;
   google::FlagSaver saver;
 };
 
+const uint32_t TestCFileSet::kNoBound = kuint32max;
 
 TEST_F(TestCFileSet, TestPartiallyMaterialize) {
   const int kCycleInterval = 10000;
@@ -275,17 +277,17 @@ TEST_F(TestCFileSet, TestRangePredicates2) {
   // Range scan which falls between rows on both ends
   DoTestRangeScan(fileset, 2001, 2009);
   // Range scan with open lower bound
-  DoTestRangeScan(fileset, boost::none, 2009);
+  DoTestRangeScan(fileset, kNoBound, 2009);
   // Range scan with open upper bound
-  DoTestRangeScan(fileset, 2001, boost::none);
+  DoTestRangeScan(fileset, 2001, kNoBound);
   // Range scan with upper bound coming at end of data
   DoTestRangeScan(fileset, 2001, kNumRows * 2);
   // Range scan with upper bound coming after end of data
   DoTestRangeScan(fileset, 2001, kNumRows * 10);
   // Range scan with lower bound coming at end of data
-  DoTestRangeScan(fileset, kNumRows * 2, boost::none);
+  DoTestRangeScan(fileset, kNumRows * 2, kNoBound);
   // Range scan with lower bound coming after end of data
-  DoTestRangeScan(fileset, kNumRows * 10, boost::none);
+  DoTestRangeScan(fileset, kNumRows * 10, kNoBound);
 }
 
 

@@ -520,18 +520,23 @@ static Status SetupScanSpec(const NewScanRequestPB& scan_pb,
       missing_cols->push_back(col);
     }
 
-    boost::optional<const void*> lower_bound, upper_bound;
+    const void* lower_bound;
+    const void* upper_bound;
     if (pred_pb.has_lower_bound()) {
       const void* val;
       RETURN_NOT_OK(ExtractPredicateValue(col, pred_pb.lower_bound(), pool,
                                           &val));
       lower_bound = val;
+    } else {
+      lower_bound = NULL;
     }
     if (pred_pb.has_upper_bound()) {
       const void* val;
       RETURN_NOT_OK(ExtractPredicateValue(col, pred_pb.upper_bound(), pool,
                                           &val));
       upper_bound = val;
+    } else {
+      upper_bound = NULL;
     }
 
     ColumnRangePredicate pred(col, lower_bound, upper_bound);

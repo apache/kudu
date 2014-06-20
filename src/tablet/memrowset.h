@@ -2,8 +2,9 @@
 #ifndef KUDU_TABLET_MEMROWSET_H
 #define KUDU_TABLET_MEMROWSET_H
 
-#include <tr1/memory>
+#include <boost/optional.hpp>
 #include <string>
+#include <tr1/memory>
 #include <vector>
 
 #include "common/scan_spec.h"

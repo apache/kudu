@@ -14,8 +14,8 @@ namespace kudu {
 using std::string;
 
 ValueRange::ValueRange(const TypeInfo* type,
-                       boost::optional<const void *> lower_bound,
-                       boost::optional<const void *> upper_bound)
+                       const void* lower_bound,
+                       const void* upper_bound)
   : type_info_(type),
     lower_bound_(lower_bound),
     upper_bound_(upper_bound) {
@@ -25,16 +25,16 @@ ValueRange::ValueRange(const TypeInfo* type,
 
 bool ValueRange::IsEquality() const {
   if (has_lower_bound() && has_upper_bound()) {
-    return type_info_->Compare(upper_bound_.get(), lower_bound_.get()) == 0;
+    return type_info_->Compare(upper_bound(), lower_bound()) == 0;
   }
   return false;
 }
 
-bool ValueRange::ContainsCell(const void *cell) const {
-  if (has_lower_bound() && type_info_->Compare(cell, lower_bound_.get()) < 0) {
+bool ValueRange::ContainsCell(const void* cell) const {
+  if (has_lower_bound() && type_info_->Compare(cell, lower_bound()) < 0) {
     return false;
   }
-  if (has_upper_bound() && type_info_->Compare(cell, upper_bound_.get()) > 0) {
+  if (has_upper_bound() && type_info_->Compare(cell, upper_bound()) > 0) {
     return false;
   }
   return true;
@@ -43,14 +43,14 @@ bool ValueRange::ContainsCell(const void *cell) const {
 ////////////////////////////////////////////////////////////
 
 ColumnRangePredicate::ColumnRangePredicate(const ColumnSchema &col,
-                                           boost::optional<const void *> lower_bound,
-                                           boost::optional<const void *> upper_bound) :
+                                           const void* lower_bound,
+                                           const void* upper_bound) :
   col_(col),
   range_(col_.type_info(), lower_bound, upper_bound) {
 }
 
 
-void ColumnRangePredicate::Evaluate(RowBlock *block, SelectionVector *vec) const {
+void ColumnRangePredicate::Evaluate(RowBlock* block, SelectionVector* vec) const {
   int col_idx = block->schema().find_column(col_.name());
   CHECK_GE(col_idx, 0) << "bad col: " << col_.ToString();
 

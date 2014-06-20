@@ -299,10 +299,10 @@ class ClientTest : public KuduTest {
       ColumnRangePredicate pred(table->schema().column(0), &lower_bound, &upper_bound);
       CHECK_OK(scanner.AddConjunctPredicate(pred));
     } else if (lower_bound != kNoBound) {
-      ColumnRangePredicate pred(table->schema().column(0), &lower_bound, boost::none);
+      ColumnRangePredicate pred(table->schema().column(0), &lower_bound, NULL);
       CHECK_OK(scanner.AddConjunctPredicate(pred));
     } else if (upper_bound != kNoBound) {
-      ColumnRangePredicate pred(table->schema().column(0), boost::none, &upper_bound);
+      ColumnRangePredicate pred(table->schema().column(0), NULL, &upper_bound);
       CHECK_OK(scanner.AddConjunctPredicate(pred));
     }
     CHECK_OK(scanner.Open());
