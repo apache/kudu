@@ -148,7 +148,7 @@ TEST_F(MvccTest, TestOutOfOrderTxns) {
 
   MvccSnapshot s1(mgr);
 
-  // Start a transaction as if it were using commit-wait (ie started in future)
+  // Start a transaction as if it were using commit-wait (i.e. started in future)
   Timestamp cw_txn = mgr.StartTransactionAtLatest();
 
   // Commit the original txn
@@ -187,6 +187,8 @@ TEST_F(MvccTest, TestOfflineTransactions) {
   // now start a transaction in the "past"
   ASSERT_STATUS_OK(mgr.StartTransactionAtTimestamp(Timestamp(50)));
 
+  ASSERT_EQ(mgr.GetSafeTimestamp().CompareTo(Timestamp::kInitialTimestamp), 0);
+
   // and committing this transaction "offline" this
   // should not advance the MvccManager 'all_committed_before_'
   // watermark.
@@ -203,6 +205,8 @@ TEST_F(MvccTest, TestOfflineTransactions) {
 
   // Now advance the watermark to the last committed transaction.
   mgr.OfflineAdjustCurSnap(Timestamp(50));
+
+  ASSERT_EQ(mgr.GetSafeTimestamp().CompareTo(Timestamp(50)), 0);
 
   MvccSnapshot snap2;
   mgr.TakeSnapshot(&snap2);

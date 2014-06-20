@@ -185,6 +185,10 @@ class MvccManager {
   // Return the number of transactions in flight..
   int CountTransactionsInFlight() const;
 
+  // Returns the earliest possible timestamp for an uncommitted transaction.
+  // All timestamps before this one are guaranteed to be committed.
+  Timestamp GetSafeTimestamp() const;
+
   ~MvccManager();
 
  private:

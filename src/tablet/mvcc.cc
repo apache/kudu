@@ -228,6 +228,10 @@ int MvccManager::CountTransactionsInFlight() const {
   return timestamps_in_flight_.size();
 }
 
+Timestamp MvccManager::GetSafeTimestamp() const {
+  boost::lock_guard<LockType> l(lock_);
+  return cur_snap_.all_committed_before_;
+}
 
 MvccManager::~MvccManager() {
   CHECK(waiters_.empty());
