@@ -309,16 +309,11 @@ public class TestKuduSession extends BaseKuduTest {
     assertTrue(done);
   }
 
-  public static Insert createInsert(int key) {
-    Insert insert = table.newInsert();
-    insert.addInt(schema.getColumn(0).getName(), key);
-    insert.addInt(schema.getColumn(1).getName(), 2);
-    insert.addInt(schema.getColumn(2).getName(), 3);
-    insert.addString(schema.getColumn(3).getName(), "a string");
-    return insert;
+  private Insert createInsert(int key) {
+    return createBasicSchemaInsert(table, key);
   }
 
-  public static Insert createInsertWithNull(int key) {
+  private Insert createInsertWithNull(int key) {
     Insert insert = table.newInsert();
     insert.addInt(schema.getColumn(0).getName(), key);
     insert.addInt(schema.getColumn(1).getName(), 2);
@@ -327,14 +322,13 @@ public class TestKuduSession extends BaseKuduTest {
     return insert;
   }
 
-  public static Update createUpdate(int key) {
-
+  private Update createUpdate(int key) {
     Update update = table.newUpdate();
     update.addInt(schema.getColumn(0).getName(), key);
     return update;
   }
 
-  public static Delete createDelete(int key) {
+  private Delete createDelete(int key) {
     Delete delete = table.newDelete();
     delete.addInt(schema.getColumn(0).getName(), key);
     return delete;

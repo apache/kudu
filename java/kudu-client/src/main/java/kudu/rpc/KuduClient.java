@@ -462,6 +462,16 @@ public class KuduClient {
   }
 
   /**
+   * Same as {@link #newSession} but returns a synchronous version of {@link KuduSession},
+   * see {@link kudu.rpc.SynchronousKuduSession}.
+   * @return A synchronous wrapper around KuduSession.
+   */
+  public SynchronousKuduSession newSynchronousSession() {
+    KuduSession session = newSession();
+    return new SynchronousKuduSession(session);
+  }
+
+  /**
    * This method is for KuduSessions so that they can remove themselves as part of closing down.
    * @param session Session to remove
    */

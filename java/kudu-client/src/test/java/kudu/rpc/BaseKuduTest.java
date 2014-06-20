@@ -237,6 +237,15 @@ public class BaseKuduTest {
     return new Schema(columns);
   }
 
+  protected Insert createBasicSchemaInsert(KuduTable table, int key) {
+    Insert insert = table.newInsert();
+    insert.addInt(basicSchema.getColumn(0).getName(), key);
+    insert.addInt(basicSchema.getColumn(1).getName(), 2);
+    insert.addInt(basicSchema.getColumn(2).getName(), 3);
+    insert.addString(basicSchema.getColumn(3).getName(), "a string");
+    return insert;
+  }
+
   static Callback<Object, Object> defaultErrorCB = new Callback<Object, Object>() {
     @Override
     public Object call(Object arg) throws Exception {

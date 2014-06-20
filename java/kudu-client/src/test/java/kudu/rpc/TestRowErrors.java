@@ -67,10 +67,6 @@ public class TestRowErrors extends BaseKuduTest {
   }
 
   private Insert createInsert(int key) {
-    Insert insert = table.newInsert();
-    insert.addInt(basicSchema.getColumn(0).getName(), key);
-    insert.addInt(basicSchema.getColumn(1).getName(), 2);
-    insert.addInt(basicSchema.getColumn(2).getName(), 3);
-    return insert;
+    return createBasicSchemaInsert(table, key);
   }
 }
