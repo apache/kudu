@@ -34,6 +34,7 @@ add_library(gutil
 )
 
 target_link_libraries(gutil
+  glog
   protobuf
   rt) # clock_gettime() requires -lrt
 
