@@ -298,7 +298,7 @@ void TabletServerPathHandlers::HandleTabletSVGPage(const Webserver::ArgumentMap 
   shared_ptr<TabletPeer> peer;
   if (!LoadTablet(tserver_, args, &id, &peer, output)) return;
 
-  *output << "<h1>Rowset Layout Diagram "
+  *output << "<h1>Rowset Layout Diagram for Tablet "
           << TabletLink(id) << "</h1>\n";
   peer->tablet()->PrintRSLayout(output);
 

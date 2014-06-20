@@ -103,10 +103,6 @@ void DumpSVG(const vector<CompactionCandidate>& candidates,
   out << "<rect x=\"0.0\" y=\"0\" width=\"1200.0\" height=\"" << kTotalHeight << "\""
       << " fill=\"#fff\" />" << endl;
 
-  // Title
-  out << "<text text-anchor=\"middle\" x=\"" << (kTotalWidth / 2) << "\" "
-      << "y=\"24\" font-size=\"17\" fill=\"#000\">Compaction</text>" << endl;
-
   for (int row_index = 0; row_index < svg_rows.size(); row_index++) {
     const vector<const CompactionCandidate *> &row = svg_rows[row_index];
 
