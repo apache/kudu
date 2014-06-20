@@ -59,6 +59,11 @@ struct big_ {
   char dummy[2];
 };
 
+// Types YesType and NoType are guaranteed such that sizeof(YesType) <
+// sizeof(NoType).
+typedef small_ YesType;
+typedef big_ NoType;
+
 // Identity metafunction.
 template <class T>
 struct identity_ {
@@ -87,6 +92,16 @@ typedef integral_constant<bool, true>  true_type;
 typedef integral_constant<bool, false> false_type;
 typedef true_type  true_;
 typedef false_type false_;
+
+template <class T> struct is_non_const_reference : false_type {};
+template <class T> struct is_non_const_reference<T&> : true_type {};
+template <class T> struct is_non_const_reference<const T&> : false_type {};
+
+template <class T> struct is_const : false_type {};
+template <class T> struct is_const<const T> : true_type {};
+
+template <class T> struct is_void : false_type {};
+template <> struct is_void<void> : true_type {};
 
 // if_ is a templatized conditional statement.
 // if_<cond, A, B> is a compile time evaluation of cond.
@@ -127,6 +142,22 @@ template<typename A, typename B>
 struct or_ : public integral_constant<bool, (A::value || B::value)> {
 };
 
+// Used to determine if a type is a struct/union/class. Inspired by Boost's
+// is_class type_trait implementation.
+struct IsClassHelper {
+  template <typename C>
+  static YesType Test(void(C::*)(void));
+
+  template <typename C>
+  static NoType Test(...);
+};
+
+template <typename T>
+struct is_class
+    : integral_constant<bool,
+                        sizeof(IsClassHelper::Test<T>(0)) ==
+                            sizeof(YesType)> {
+};
 
 }
 
