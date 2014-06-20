@@ -132,11 +132,27 @@ export PATH=$(pwd)/build/latest/:$PATH
 if [ -f "$TOOLCHAIN" ]; then
   source $TOOLCHAIN
 fi
-cd java
-# use git clean to help with the transition from protoc generated files in
-# src/main/java to target/generated-sources.
-git clean -df
 
-set -x
+pushd java
 export TSAN_OPTIONS="$TSAN_OPTIONS suppressions=$ROOT/build-support/tsan-suppressions.txt history_size=7"
+set -x
 mvn clean test
+set +x
+popd
+
+# Check that the heap checker actually worked. Need to temporarily remove
+# -e to allow for failed commands.
+set +e
+if [ "$HEAPCHECK" = normal ]; then
+  FAILED_TESTS=$(zgrep -L -- "WARNING: Perftools heap leak checker is active -- Performance may suffer" build/test-logs/*-test.txt*)
+  if [ -n "$FAILED_TESTS" ]; then
+    echo "Some tests didn't heap check properly:"
+    for FTEST in $FAILED_TESTS; do
+      echo $FTEST
+    done
+    exit 1
+  else
+    echo "All tests heap checked properly"
+  fi
+fi
+set -e
