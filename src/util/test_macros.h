@@ -4,7 +4,7 @@
 
 #include <string>
 
-#define ASSERT_STATUS_OK(status) do { \
+#define ASSERT_OK(status) do { \
     Status _s = status; \
     if (_s.ok()) { \
       SUCCEED(); \
@@ -13,7 +13,10 @@
     } \
   } while (0);
 
-#define EXPECT_STATUS_OK(status) do { \
+// For backwards compatibility.
+#define ASSERT_STATUS_OK(status) ASSERT_OK(status)
+
+#define EXPECT_OK(status) do { \
     Status _s = status; \
     if (_s.ok()) { \
       SUCCEED(); \
@@ -24,12 +27,15 @@
 
 // Like the above, but doesn't record successful
 // tests.
-#define ASSERT_STATUS_OK_FAST(status) do {      \
+#define ASSERT_OK_FAST(status) do {      \
     Status _s = status; \
     if (!_s.ok()) { \
       FAIL() << "Bad status: " << _s.ToString();  \
     } \
   } while (0);
+
+// For backwards compatibility.
+#define ASSERT_STATUS_OK_FAST(status) ASSERT_OK_FAST(status)
 
 #define ASSERT_STR_CONTAINS(str, substr) do { \
   std::string _s = (str); \

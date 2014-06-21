@@ -36,30 +36,30 @@ TEST_F(PartialRowTest, UnitTest) {
   EXPECT_EQ("", row.ToString());
 
   // Set just the key.
-  EXPECT_STATUS_OK(row.SetUInt32("key", 12345));
+  EXPECT_OK(row.SetUInt32("key", 12345));
   EXPECT_TRUE(row.IsKeySet());
   EXPECT_FALSE(row.IsColumnSet(1));
   EXPECT_FALSE(row.IsColumnSet(2));
   EXPECT_EQ("uint32 key=12345", row.ToString());
   uint32_t x;
-  EXPECT_STATUS_OK(row.GetUInt32("key", &x));
+  EXPECT_OK(row.GetUInt32("key", &x));
   EXPECT_EQ(12345, x);
   EXPECT_FALSE(row.IsNull("key"));
 
   // Fill in the other columns.
-  EXPECT_STATUS_OK(row.SetUInt32("int_val", 54321));
-  EXPECT_STATUS_OK(row.SetStringCopy("string_val", "hello world"));
+  EXPECT_OK(row.SetUInt32("int_val", 54321));
+  EXPECT_OK(row.SetStringCopy("string_val", "hello world"));
   EXPECT_TRUE(row.IsColumnSet(1));
   EXPECT_TRUE(row.IsColumnSet(2));
   EXPECT_EQ("uint32 key=12345, uint32 int_val=54321, string string_val=hello world",
             row.ToString());
   Slice slice;
-  EXPECT_STATUS_OK(row.GetString("string_val", &slice));
+  EXPECT_OK(row.GetString("string_val", &slice));
   EXPECT_EQ("hello world", slice.ToString());
   EXPECT_FALSE(row.IsNull("key"));
 
   // Set a nullable entry to NULL
-  EXPECT_STATUS_OK(row.SetNull("string_val"));
+  EXPECT_OK(row.SetNull("string_val"));
   EXPECT_EQ("uint32 key=12345, uint32 int_val=54321, string string_val=NULL",
             row.ToString());
   EXPECT_TRUE(row.IsNull("string_val"));
@@ -79,19 +79,19 @@ TEST_F(PartialRowTest, UnitTest) {
   EXPECT_EQ("Invalid argument: column not nullable: key[uint32 NOT NULL]", s.ToString());
 
   // Set the NULL string back to non-NULL
-  EXPECT_STATUS_OK(row.SetStringCopy("string_val", "goodbye world"));
+  EXPECT_OK(row.SetStringCopy("string_val", "goodbye world"));
   EXPECT_EQ("uint32 key=12345, uint32 int_val=54321, string string_val=goodbye world",
             row.ToString());
 
   // Unset some columns.
-  EXPECT_STATUS_OK(row.Unset("string_val"));
+  EXPECT_OK(row.Unset("string_val"));
   EXPECT_EQ("uint32 key=12345, uint32 int_val=54321", row.ToString());
 
-  EXPECT_STATUS_OK(row.Unset("key"));
+  EXPECT_OK(row.Unset("key"));
   EXPECT_EQ("uint32 int_val=54321", row.ToString());
 
   // Set the column by index
-  EXPECT_STATUS_OK(row.SetUInt32(1, 99999));
+  EXPECT_OK(row.SetUInt32(1, 99999));
   EXPECT_EQ("uint32 int_val=99999", row.ToString());
 }
 

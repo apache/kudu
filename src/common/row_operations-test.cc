@@ -96,10 +96,10 @@ void RowOperationsTest::DoFuzzTest(const PartialRow& row) {
 // a malicious client can't crash the server.
 TEST_F(RowOperationsTest, FuzzTest) {
   PartialRow row(&schema_);
-  EXPECT_STATUS_OK(row.SetUInt32("int_val", 54321));
-  EXPECT_STATUS_OK(row.SetStringCopy("string_val", "hello world"));
+  EXPECT_OK(row.SetUInt32("int_val", 54321));
+  EXPECT_OK(row.SetStringCopy("string_val", "hello world"));
   DoFuzzTest(row);
-  EXPECT_STATUS_OK(row.SetNull("string_val"));
+  EXPECT_OK(row.SetNull("string_val"));
   DoFuzzTest(row);
 }
 
