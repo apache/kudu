@@ -10,6 +10,7 @@
 #include <vector>
 #include "util/cache.h"
 #include "util/coding.h"
+#include "util/mem_tracker.h"
 
 namespace kudu {
 
@@ -38,10 +39,12 @@ class CacheTest : public ::testing::Test {
   static const int kCacheSize = 1000;
   std::vector<int> deleted_keys_;
   std::vector<int> deleted_values_;
+  std::tr1::shared_ptr<MemTracker> mem_tracker_;
   Cache* cache_;
 
   CacheTest() : cache_(NewLRUCache(kCacheSize)) {
     current_ = this;
+    CHECK(MemTracker::FindTracker("sharded_lru_cache", &mem_tracker_));
   }
 
   ~CacheTest() {
@@ -67,6 +70,15 @@ class CacheTest : public ::testing::Test {
   }
 };
 CacheTest* CacheTest::current_;
+
+
+TEST_F(CacheTest, TrackMemory) {
+  Insert(100, 100, 1);
+  ASSERT_EQ(1, mem_tracker_->consumption());
+  Erase(100);
+  ASSERT_EQ(0, mem_tracker_->consumption());
+  ASSERT_EQ(1, mem_tracker_->peak_consumption());
+}
 
 TEST_F(CacheTest, HitAndMiss) {
   ASSERT_EQ(-1, Lookup(100));

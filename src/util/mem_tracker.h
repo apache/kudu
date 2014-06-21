@@ -76,8 +76,11 @@ class MemTracker {
   // Factory method for tracker that uses consumption_metric as the
   // consumption value.  Consume()/Release() can still be called.
   //
-  // TODO: this was borrowed directly from Impala, but doesn't quite
-  // have a use in Kudu and may be removed in the future.
+  // TODO Gauge-based memtrackers can't have parents (but can have
+  // children). In the future, however, it may be very convenient to
+  // use FunctionGauges to monitor memory consumed by e.g., various
+  // per-tablet in-memory structures -- where it is logical to have an
+  // umbrella per-tablet tracker as a parent.
   static std::tr1::shared_ptr<MemTracker> CreateTracker(FunctionGauge<uint64_t>* consumption_metric,
                                                         int64_t byte_limit,
                                                         const std::string& id);
@@ -86,8 +89,9 @@ class MemTracker {
   // Returns a list of all the valid trackers.
   static void ListTrackers(std::vector<std::tr1::shared_ptr<MemTracker> >* trackers);
 
-  // List all children of the current tracker.
-  void GetChildTrackers(std::vector<MemTracker*>* trackers) const;
+  // Updates consumption from the consumption metric specified in the constructor.
+  // NOTE: this method will crash if 'consumption_metric_' is not set.
+  void UpdateConsumption();
 
   // Increases consumption of this tracker and its ancestors by 'bytes'.
   void Consume(int64_t bytes);
@@ -163,6 +167,9 @@ class MemTracker {
   // by the destructor.
   static void AddToTrackerMap(const std::string& id,
                               const std::tr1::shared_ptr<MemTracker>& tracker);
+
+  static bool FindTracker(const std::string& id,
+                          std::tr1::shared_ptr<MemTracker>* tracker);
 
  private:
   FRIEND_TEST(MemTrackerTest, SingleTrackerNoLimit);

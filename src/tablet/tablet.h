@@ -22,6 +22,7 @@
 
 namespace kudu {
 
+class MemTracker;
 class MetricContext;
 class RowChangeList;
 class UnionIterator;
@@ -191,7 +192,7 @@ class Tablet {
 
   Status Compact(CompactFlags flags);
 
-  // Returns the current size of the MRS, in bytes.
+  // Returns the exact current size of the MRS, in bytes.
   // This method takes a read lock on component_lock_ and is thread-safe.
   size_t MemRowSetSize() const;
 
@@ -356,6 +357,10 @@ class Tablet {
 
   Status CheckRowInTablet(const tablet::RowSetKeyProbe& probe) const;
 
+  // If called outside of a lock, this returns the approximate size of
+  // the MemRowSet.
+  size_t MemRowSetSizeApprox() const;
+
   shared_ptr<Schema> schema_;
   const Schema key_schema_;
   scoped_refptr<metadata::TabletMetadata> metadata_;
@@ -364,6 +369,9 @@ class Tablet {
 
   gscoped_ptr<MetricContext> metric_context_;
   gscoped_ptr<TabletMetrics> metrics_;
+
+  shared_ptr<MemTracker> mrs_tracker_;
+  shared_ptr<MemTracker> dms_tracker_;
 
   log::OpIdAnchorRegistry* opid_anchor_registry_;
 

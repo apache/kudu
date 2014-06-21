@@ -114,6 +114,16 @@ void MemTracker::AddToTrackerMap(const string& id, const shared_ptr<MemTracker>&
   id_to_mem_trackers_[id] = tracker;
 }
 
+bool MemTracker::FindTracker(const string& id, shared_ptr<MemTracker>* tracker) {
+  boost::lock_guard<boost::mutex> l(static_mem_trackers_lock_);
+  TrackerMap::iterator it = id_to_mem_trackers_.find(id);
+  if (it != id_to_mem_trackers_.end()) {
+    *tracker = it->second.lock();
+    return true;
+  }
+  return false;
+}
+
 void MemTracker::ListTrackers(vector<shared_ptr<MemTracker> >* trackers) {
   boost::lock_guard<boost::mutex> l(static_mem_trackers_lock_);
   for (TrackerMap::iterator it = id_to_mem_trackers_.begin();
@@ -123,11 +133,15 @@ void MemTracker::ListTrackers(vector<shared_ptr<MemTracker> >* trackers) {
   }
 }
 
-void MemTracker::GetChildTrackers(std::vector<MemTracker*>* trackers) const {
-  boost::lock_guard<boost::mutex> l(child_trackers_lock_);
-  trackers->assign(child_trackers_.begin(), child_trackers_.end());
+void MemTracker::UpdateConsumption() {
+  DCHECK(consumption_metric_ != NULL);
+  DCHECK(parent_ == NULL);
+  consumption_->set_value(consumption_metric_->value());
 }
 
+// TODO Use HighWaterMark for 'consumption_metric', then if
+// 'consumption_metric' is not null, simply make calls to
+// consumption() forward to consumption_metric_ instead.
 void MemTracker::Consume(int64_t bytes) {
   if (bytes < 0) {
     Release(-bytes);
@@ -135,8 +149,7 @@ void MemTracker::Consume(int64_t bytes) {
   }
 
   if (consumption_metric_ != NULL) {
-    DCHECK(parent_ == NULL);
-    consumption_->set_value(consumption_metric_->value());
+    UpdateConsumption();
     return;
   }
   if (bytes == 0) {
@@ -156,7 +169,7 @@ void MemTracker::Consume(int64_t bytes) {
 
 bool MemTracker::TryConsume(int64_t bytes) {
   if (consumption_metric_ != NULL) {
-    consumption_->set_value(consumption_metric_->value());
+    UpdateConsumption();
   }
   if (bytes <= 0) {
     return true;
@@ -219,8 +232,7 @@ void MemTracker::Release(int64_t bytes) {
   }
 
   if (consumption_metric_ != NULL) {
-    DCHECK(parent_ == NULL);
-    consumption_->set_value(consumption_metric_->value());
+    UpdateConsumption();
     return;
   }
 
@@ -277,7 +289,7 @@ bool MemTracker::GcMemory(int64_t max_consumption) {
   DCHECK_GE(max_consumption, 0);
   boost::lock_guard<simple_spinlock> l(gc_lock_);
   if (consumption_metric_ != NULL) {
-    consumption_->set_value(consumption_metric_->value());
+    UpdateConsumption();
   }
   uint64_t pre_gc_consumption = consumption();
   // Check if someone gc'd before us
@@ -289,7 +301,7 @@ bool MemTracker::GcMemory(int64_t max_consumption) {
   for (int i = 0; i < gc_functions_.size(); ++i) {
     gc_functions_[i]();
     if (consumption_metric_ != NULL) {
-      consumption_->set_value(consumption_metric_->value());
+      UpdateConsumption();
     }
     if (consumption() <= max_consumption) {
       break;

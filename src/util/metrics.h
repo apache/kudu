@@ -448,7 +448,7 @@ class HighWaterMark : public AtomicGauge<T> {
       if (PREDICT_TRUE(base::subtle::NoBarrier_CompareAndSwap(
               &value_,
               old_value,
-              new_value))) {
+              new_value) == old_value)) {
         break;
       }
     }
@@ -464,7 +464,8 @@ class HighWaterMark : public AtomicGauge<T> {
       if (PREDICT_TRUE(base::subtle::NoBarrier_CompareAndSwap(
               &current_value_,
               static_cast<base::subtle::Atomic64>(old_val),
-              static_cast<base::subtle::Atomic64>(new_val)))) {
+              static_cast<base::subtle::Atomic64>(new_val)) ==
+                       static_cast<base::subtle::Atomic64>(old_val))) {
         UpdateMax(new_val);
         return true;
       }

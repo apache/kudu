@@ -9,8 +9,12 @@
 #include <gutil/hash/city.h>
 
 #include <stdlib.h>
+#include <tr1/memory>
+#include <vector>
 
+#include "gutil/stl_util.h"
 #include "util/cache.h"
+#include "util/mem_tracker.h"
 #include "util/pthread_spinlock.h"
 
 namespace kudu {
@@ -19,6 +23,9 @@ Cache::~Cache() {
 }
 
 namespace {
+
+using std::tr1::shared_ptr;
+using std::vector;
 
 typedef PThreadSpinLock MutexType;
 
@@ -138,7 +145,7 @@ class HandleTable {
 // A single shard of sharded cache.
 class LRUCache {
  public:
-  LRUCache();
+  explicit LRUCache(MemTracker* tracker);
   ~LRUCache();
 
   // Separate from constructor so caller can easily make an array of LRUCache
@@ -169,10 +176,13 @@ class LRUCache {
   LRUHandle lru_;
 
   HandleTable table_;
+
+  MemTracker* mem_tracker_;
 };
 
-LRUCache::LRUCache()
-  : usage_(0) {
+LRUCache::LRUCache(MemTracker* tracker)
+ : usage_(0),
+   mem_tracker_(tracker) {
   // Make empty circular linked list
   lru_.next = &lru_;
   lru_.prev = &lru_;
@@ -193,6 +203,7 @@ void LRUCache::Unref(LRUHandle* e) {
   if (e->refs <= 0) {
     usage_ -= e->charge;
     (*e->deleter)(e->key(), e->value);
+    mem_tracker_->Release(e->charge);
     free(e);
   }
 }
@@ -240,6 +251,7 @@ Cache::Handle* LRUCache::Insert(
   e->hash = hash;
   e->refs = 2;  // One from LRUCache, one for the returned handle
   memcpy(e->key_data, key.data(), key.size());
+  mem_tracker_->Consume(charge);
   LRU_Append(e);
   usage_ += charge;
 
@@ -273,7 +285,8 @@ static const int kNumShards = 1 << kNumShardBits;
 
 class ShardedLRUCache : public Cache {
  private:
-  LRUCache shard_[kNumShards];
+  shared_ptr<MemTracker> mem_tracker_;
+  vector<LRUCache*> shards_;
   MutexType id_mutex_;
   uint64_t last_id_;
 
@@ -288,29 +301,36 @@ class ShardedLRUCache : public Cache {
 
  public:
   explicit ShardedLRUCache(size_t capacity)
-      : last_id_(0) {
+      : mem_tracker_(MemTracker::CreateTracker(-1, "sharded_lru_cache", NULL)),
+        last_id_(0) {
     const size_t per_shard = (capacity + (kNumShards - 1)) / kNumShards;
     for (int s = 0; s < kNumShards; s++) {
-      shard_[s].SetCapacity(per_shard);
+      gscoped_ptr<LRUCache> shard(new LRUCache(mem_tracker_.get()));
+      shard->SetCapacity(per_shard);
+      shards_.push_back(shard.release());
     }
   }
-  virtual ~ShardedLRUCache() { }
+
+  virtual ~ShardedLRUCache() {
+    STLDeleteElements(&shards_);
+  }
+
   virtual Handle* Insert(const Slice& key, void* value, size_t charge,
                          void (*deleter)(const Slice& key, void* value)) OVERRIDE {
     const uint32_t hash = HashSlice(key);
-    return shard_[Shard(hash)].Insert(key, hash, value, charge, deleter);
+    return shards_[Shard(hash)]->Insert(key, hash, value, charge, deleter);
   }
   virtual Handle* Lookup(const Slice& key) OVERRIDE {
     const uint32_t hash = HashSlice(key);
-    return shard_[Shard(hash)].Lookup(key, hash);
+    return shards_[Shard(hash)]->Lookup(key, hash);
   }
   virtual void Release(Handle* handle) OVERRIDE {
     LRUHandle* h = reinterpret_cast<LRUHandle*>(handle);
-    shard_[Shard(h->hash)].Release(handle);
+    shards_[Shard(h->hash)]->Release(handle);
   }
   virtual void Erase(const Slice& key) OVERRIDE {
     const uint32_t hash = HashSlice(key);
-    shard_[Shard(hash)].Erase(key, hash);
+    shards_[Shard(hash)]->Erase(key, hash);
   }
   virtual void* Value(Handle* handle) OVERRIDE {
     return reinterpret_cast<LRUHandle*>(handle)->value;

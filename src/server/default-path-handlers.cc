@@ -22,14 +22,18 @@
 #include <boost/bind.hpp>
 #include <boost/foreach.hpp>
 #include <google/malloc_extension.h>
+#include <tr1/memory>
 #include <vector>
 
 #include "gutil/map-util.h"
+#include "gutil/strings/human_readable.h"
 #include "gutil/strings/split.h"
+#include "gutil/strings/substitute.h"
 #include "server/pprof-path-handlers.h"
 #include "server/webserver.h"
 #include "util/histogram.pb.h"
 #include "util/logging.h"
+#include "util/mem_tracker.h"
 #include "util/metrics.h"
 #include "util/jsonwriter.h"
 
@@ -38,12 +42,15 @@ using google::CommandlineFlagsIntoString;
 using std::ifstream;
 using std::string;
 using std::endl;
+using strings::Substitute;
 
 DECLARE_bool(enable_process_lifetime_heap_profiling);
 DEFINE_int64(web_log_bytes, 1024 * 1024,
     "The maximum number of bytes to display on the debug webserver's log page");
 
 namespace kudu {
+
+using std::tr1::shared_ptr;
 
 namespace {
 // Html/Text formatting tags
@@ -124,10 +131,34 @@ static void MemUsageHandler(const Webserver::ArgumentMap& args, std::stringstrea
 #endif
 }
 
+// Registered to handle "/memtrackerz", and prints out to handle memory tracker information.
+static void MemTrackersHandler(const Webserver::ArgumentMap& args, std::stringstream* output) {
+  *output << "<h1>Memory usage by subsystem</h1>\n";
+  *output << "<table class='table table-striped'>\n";
+  *output << "  <tr><th>Id</th><th>Parent</th><th>Limit</th><th>Current Consumption</th>"
+      "<th>Peak consumption</th></tr>\n";
+
+  vector<shared_ptr<MemTracker> > trackers;
+  MemTracker::ListTrackers(&trackers);
+  BOOST_FOREACH(const shared_ptr<MemTracker>& tracker, trackers) {
+    string parent = tracker->parent() == NULL ? "none" : tracker->parent()->id();
+    string limit_str = tracker->limit() == -1 ? "none" :
+                       HumanReadableNumBytes::ToString(tracker->limit());
+    string current_consumption_str = HumanReadableNumBytes::ToString(tracker->consumption());
+    string peak_consumption_str = HumanReadableNumBytes::ToString(tracker->peak_consumption());
+    (*output) << Substitute("  <tr><td>$0</td><td>$1</td><td>$2</td>" // id, parent, limit
+                            "<td>$3</td><td>$4</td></tr>\n", // current, peak
+                            tracker->id(), parent, limit_str, current_consumption_str,
+                            peak_consumption_str);
+  }
+  *output << "</table>\n";
+}
+
 void AddDefaultPathHandlers(Webserver* webserver) {
   webserver->RegisterPathHandler("/logs", LogsHandler);
   webserver->RegisterPathHandler("/varz", FlagsHandler);
   webserver->RegisterPathHandler("/memz", MemUsageHandler);
+  webserver->RegisterPathHandler("/memtrackerz", MemTrackersHandler);
 
 #ifdef TCMALLOC_ENABLED
   // Remote (on-demand) profiling is disabled if the process is already being profiled.
@@ -136,6 +167,7 @@ void AddDefaultPathHandlers(Webserver* webserver) {
   }
 #endif
 }
+
 
 static void WriteMetricsAsJson(const MetricRegistry* const metrics,
     const Webserver::ArgumentMap& args, std::stringstream* output) {

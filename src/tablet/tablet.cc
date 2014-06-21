@@ -1,6 +1,7 @@
 // Copyright (c) 2012, Cloudera, inc.
 #include <algorithm>
 #include <boost/assign/list_of.hpp>
+#include <boost/bind.hpp>
 #include <boost/foreach.hpp>
 #include <boost/thread/locks.hpp>
 #include <boost/thread/mutex.hpp>
@@ -40,6 +41,7 @@
 #include "util/bloom_filter.h"
 #include "util/env.h"
 #include "util/locks.h"
+#include "util/mem_tracker.h"
 #include "util/metrics.h"
 
 DEFINE_bool(tablet_do_dup_key_checks, true,
@@ -55,6 +57,13 @@ DEFINE_int32(tablet_compaction_budget_mb, 128,
              "algorithm is selected");
 
 DEFINE_int32(flush_threshold_mb, 64, "Minimum memrowset size to flush");
+
+
+METRIC_DEFINE_gauge_uint64(memrowset_size, kudu::MetricUnit::kBytes,
+                           "Size of this tablet's memrowset");
+
+METRIC_DEFINE_gauge_uint64(delta_memstores_size, kudu::MetricUnit::kBytes,
+                           "Size of this tablet's delta memstores");
 
 namespace kudu {
 namespace tablet {
@@ -110,6 +119,20 @@ Tablet::Tablet(const scoped_refptr<TabletMetadata>& metadata,
     metric_context_.reset(new MetricContext(*parent_metric_context,
                                             Substitute("tablet.tablet-$0", tablet_id())));
     metrics_.reset(new TabletMetrics(*metric_context_));
+
+    Gauge* mrs_gauge = METRIC_memrowset_size.InstantiateFunctionGauge(
+        *metric_context_, boost::bind(&Tablet::MemRowSetSizeApprox, this));
+    Gauge* dms_gauge = METRIC_delta_memstores_size.InstantiateFunctionGauge(
+        *metric_context_, boost::bind(&Tablet::DeltaMemStoresSize, this));
+
+    // TODO If possible, support parents for FunctionGauge based
+    // memtrackers; create a parent MemTracker that tracks memory
+    // usage for an entire tablet, and track memory used by various
+    // queues, etc...
+    mrs_tracker_ = MemTracker::CreateTracker(down_cast<FunctionGauge<uint64_t>* >(mrs_gauge),
+                                             -1, Substitute("tablet.mrs-$0", tablet_id()));
+    dms_tracker_ = MemTracker::CreateTracker(down_cast<FunctionGauge<uint64_t>* >(dms_gauge),
+                                             -1, Substitute("tablet.dms-$0", tablet_id()));
   }
 }
 
@@ -298,6 +321,11 @@ Status Tablet::InsertUnlocked(WriteTransactionState *tx_state,
   // AlreadyPresent if it has already been inserted there.
   Status s = memrowset_->Insert(ts, *insert->row(), tx_state->op_id());
   if (PREDICT_TRUE(s.ok())) {
+    if (metrics_) {
+      // Causes 'mrs_tracker' to update consumption from the
+      // associated gauge.
+      mrs_tracker_->UpdateConsumption();
+    }
     RETURN_NOT_OK(tx_state->AddInsert(ts, memrowset_->mrs_id()));
   } else {
     if (s.IsAlreadyPresent() && metrics_) {
@@ -467,6 +495,12 @@ Status Tablet::MutateRowUnlocked(WriteTransactionState *tx_state,
     s = rs->MutateRow(ts, *mutate->probe(), mutate->changelist(), tx_state->op_id(),
                       &stats, result.get());
     if (s.ok()) {
+      if (metrics_) {
+        // Update DMS and MRS trackers
+        mrs_tracker_->UpdateConsumption();
+        dms_tracker_->UpdateConsumption();
+      }
+
       RETURN_NOT_OK(tx_state->AddMutation(ts, result.Pass()));
       return s;
     }
@@ -599,8 +633,14 @@ Status Tablet::DoMajorDeltaCompaction(const ColumnIndexes& column_indexes,
     RETURN_NOT_OK(new_rowset->AlterSchema(*cur_schema.get()));
 
     AtomicSwapRowSets(input_rowsets, new_rowsets);
-    return FlushMetadata(input_rowsets, boost::assign::list_of(meta), kNoMrsFlushed);
+    RETURN_NOT_OK(FlushMetadata(input_rowsets, boost::assign::list_of(meta), kNoMrsFlushed));
   }
+
+  if (metrics_) {
+    dms_tracker_->UpdateConsumption();
+  }
+
+  return Status::OK();
 }
 
 Status Tablet::DeleteCompactionInputs(const RowSetsInCompaction &input) {
@@ -650,7 +690,6 @@ Status Tablet::ReplaceMemRowSetUnlocked(const Schema& schema,
   compaction->AddRowSet(*old_ms, ms_lock);
 
   AtomicSwapRowSetsUnlocked(RowSetVector(), boost::assign::list_of(*old_ms), NULL);
-
   return Status::OK();
 }
 
@@ -1327,6 +1366,10 @@ Status Tablet::CountRows(uint64_t *count) const {
 
 size_t Tablet::MemRowSetSize() const {
   boost::shared_lock<rw_semaphore> lock(component_lock_);
+  return MemRowSetSizeApprox();
+}
+
+size_t Tablet::MemRowSetSizeApprox() const {
   return memrowset_->memory_footprint();
 }
 
