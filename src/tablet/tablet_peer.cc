@@ -66,19 +66,19 @@ TabletPeer::TabletPeer(const scoped_refptr<TabletMetadata>& meta,
                        MarkDirtyCallback mark_dirty_clbk)
   : meta_(meta),
     tablet_id_(meta->oid()),
+    state_(metadata::BOOTSTRAPPING),
     quorum_peer_(quorum_peer),
     status_listener_(new TabletStatusListener(meta)),
     // prepare executor has a single thread as prepare must be done in order
     // of submission
-    prepare_executor_(TaskExecutor::CreateNew("prepare exec", 1)),
-    leader_apply_executor_(TaskExecutor::CreateNew("leader apply exec", base::NumCPUs())),
-    replica_apply_executor_(TaskExecutor::CreateNew("replica apply exec", 1)),
-    log_gc_executor_(TaskExecutor::CreateNew("log gc exec", 1)),
     log_gc_shutdown_latch_(1),
     mark_dirty_clbk_(mark_dirty_clbk),
     config_sem_(1),
     metric_ctx_(metric_ctx) {
-  state_ = metadata::BOOTSTRAPPING;
+  CHECK_OK(TaskExecutorBuilder("prepare").set_max_threads(1).Build(&prepare_executor_));
+  CHECK_OK(TaskExecutorBuilder("ldr-apply").Build(&leader_apply_executor_));
+  CHECK_OK(TaskExecutorBuilder("repl-apply").set_max_threads(1).Build(&replica_apply_executor_));
+  CHECK_OK(TaskExecutorBuilder("log-gc").set_max_threads(1).Build(&log_gc_executor_));
 }
 
 TabletPeer::~TabletPeer() {

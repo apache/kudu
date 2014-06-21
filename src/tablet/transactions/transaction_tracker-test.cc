@@ -22,7 +22,8 @@ class TransactionTrackerTest : public KuduTest {
 };
 
 TEST_F(TransactionTrackerTest, TestGetPending) {
-  gscoped_ptr<TaskExecutor> executor(TaskExecutor::CreateNew("test", 1));
+  gscoped_ptr<TaskExecutor> executor;
+  ASSERT_OK(TaskExecutorBuilder("test").set_max_threads(1).Build(&executor));
   simple_spinlock lock;
 
   ASSERT_EQ(0, tracker_.GetNumPendingForTests());

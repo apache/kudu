@@ -7,10 +7,13 @@
 #include <string>
 
 #include "gutil/stl_util.h"
+#include "gutil/strings/substitute.h"
 #include "util/countdown_latch.h"
 #include "util/task_executor.h"
 
 namespace kudu {
+
+using strings::Substitute;
 
 //////////////////////////////////////////////////
 // FutureTask
@@ -106,6 +109,43 @@ bool FutureTask::set_state(TaskState state) {
 }
 
 //////////////////////////////////////////////////
+// TaskExecutorBuilder
+//////////////////////////////////////////////////
+
+TaskExecutorBuilder::TaskExecutorBuilder(const string& name)
+  : pool_builder_(name) {
+}
+
+TaskExecutorBuilder& TaskExecutorBuilder::set_min_threads(int min_threads) {
+  pool_builder_.set_min_threads(min_threads);
+  return *this;
+}
+
+TaskExecutorBuilder& TaskExecutorBuilder::set_max_threads(int max_threads) {
+  pool_builder_.set_max_threads(max_threads);
+  return *this;
+}
+
+TaskExecutorBuilder& TaskExecutorBuilder::set_max_queue_size(int max_queue_size) {
+  pool_builder_.set_max_queue_size(max_queue_size);
+  return *this;
+}
+
+TaskExecutorBuilder& TaskExecutorBuilder::set_idle_timeout(const MonoDelta& idle_timeout) {
+  pool_builder_.set_idle_timeout(idle_timeout);
+  return *this;
+}
+
+Status TaskExecutorBuilder::Build(gscoped_ptr<TaskExecutor>* executor) const {
+  gscoped_ptr<ThreadPool> pool;
+  RETURN_NOT_OK_PREPEND(pool_builder_.Build(&pool),
+      Substitute("Unable to initialize the TaskExecutor ThreadPool for $0",
+                 pool_builder_.name()));
+  executor->reset(new TaskExecutor(pool.Pass()));
+  return Status::OK();
+}
+
+//////////////////////////////////////////////////
 // TaskExecutor
 //////////////////////////////////////////////////
 
@@ -122,7 +162,6 @@ Status TaskExecutor::Submit(const std::tr1::shared_ptr<Task>& task,
   }
   return thread_pool_->Submit(future_task);
 }
-
 
 Status TaskExecutor::Submit(const boost::function<Status()>& run_method,
                             std::tr1::shared_ptr<Future>* future) {
@@ -154,27 +193,6 @@ TaskExecutor::~TaskExecutor() {
 
 void TaskExecutor::Shutdown() {
   thread_pool_->Shutdown();
-}
-
-TaskExecutor* TaskExecutor::CreateNew(const string& name,
-                                      size_t max_threads) {
-  return CreateNew(name, 0, max_threads);
-}
-
-TaskExecutor* TaskExecutor::CreateNew(const string& name,
-                                      size_t min_threads,
-                                      size_t max_threads) {
-  gscoped_ptr<ThreadPool> thread_pool;
-  Status s = ThreadPoolBuilder(name).set_min_threads(min_threads)
-                                    .set_max_threads(max_threads)
-                                    .Build(&thread_pool);
-  if (!s.ok()) {
-    LOG(ERROR) << "Unable to initialize the TaskExecutor ThreadPool for "
-               << name << ": " << s.ToString();
-    return(NULL);
-  }
-
-  return new TaskExecutor(thread_pool.Pass());
 }
 
 } // namespace kudu

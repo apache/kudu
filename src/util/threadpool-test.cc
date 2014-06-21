@@ -110,11 +110,11 @@ class SlowTask : public Runnable {
 };
 
 TEST(TestThreadPool, TestThreadPoolWithNoMinimum) {
-  MonoDelta timeout = MonoDelta::FromMilliseconds(1);
+  MonoDelta idle_timeout = MonoDelta::FromMilliseconds(1);
   gscoped_ptr<ThreadPool> thread_pool;
   ASSERT_STATUS_OK(ThreadPoolBuilder("test")
       .set_min_threads(0).set_max_threads(3)
-      .set_timeout(timeout).Build(&thread_pool));
+      .set_idle_timeout(idle_timeout).Build(&thread_pool));
   // There are no threads to start with.
   ASSERT_TRUE(thread_pool->num_threads_ == 0);
   // We get up to 3 threads when submitting work.
@@ -143,11 +143,11 @@ TEST(TestThreadPool, TestThreadPoolWithNoMinimum) {
 // as a thread is about to exit. Previously this could hang forever.
 TEST(TestThreadPool, TestRace) {
   alarm(10);
-  MonoDelta timeout = MonoDelta::FromMicroseconds(1);
+  MonoDelta idle_timeout = MonoDelta::FromMicroseconds(1);
   gscoped_ptr<ThreadPool> thread_pool;
   ASSERT_STATUS_OK(ThreadPoolBuilder("test")
       .set_min_threads(0).set_max_threads(1)
-      .set_timeout(timeout).Build(&thread_pool));
+      .set_idle_timeout(idle_timeout).Build(&thread_pool));
 
   for (int i = 0; i < 500; i++) {
     CountDownLatch l(1);
@@ -160,11 +160,11 @@ TEST(TestThreadPool, TestRace) {
 }
 
 TEST(TestThreadPool, TestVariableSizeThreadPool) {
-  MonoDelta timeout = MonoDelta::FromMilliseconds(1);
+  MonoDelta idle_timeout = MonoDelta::FromMilliseconds(1);
   gscoped_ptr<ThreadPool> thread_pool;
   ASSERT_STATUS_OK(ThreadPoolBuilder("test")
       .set_min_threads(1).set_max_threads(4)
-      .set_timeout(timeout).Build(&thread_pool));
+      .set_idle_timeout(idle_timeout).Build(&thread_pool));
   // There is 1 thread to start with.
   ASSERT_EQ(1, thread_pool->num_threads_);
   // We get up to 4 threads when submitting work.

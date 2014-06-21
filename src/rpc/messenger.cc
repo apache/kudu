@@ -202,8 +202,9 @@ Messenger::Messenger(const MessengerBuilder &bld)
   for (int i = 0; i < bld.num_reactors_; i++) {
     reactors_.push_back(new Reactor(retain_self_, i, bld));
   }
-  negotiation_executor_.reset(TaskExecutor::CreateNew("rpc negotiation",
-                                                      bld.num_negotiation_threads_));
+  CHECK_OK(TaskExecutorBuilder("negotiator")
+              .set_max_threads(bld.num_negotiation_threads_)
+              .Build(&negotiation_executor_));
 }
 
 Messenger::~Messenger() {

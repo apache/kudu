@@ -207,18 +207,17 @@ Log::Log(const LogOptions &options,
          const string& log_path,
          const string& tablet_id,
          MetricContext* parent_metric_context)
-: options_(options),
-  fs_manager_(fs_manager),
-  log_dir_(log_path),
-  tablet_id_(tablet_id),
-  log_state_(kLogInitialized),
-  max_segment_size_(options_.segment_size_mb * 1024 * 1024),
-  entry_batch_queue_(FLAGS_group_commit_queue_size_bytes),
-  append_thread_(new AppendThread(this)),
-  allocation_executor_(TaskExecutor::CreateNew("allocation exec", 1)),
-  force_sync_all_(options_.force_fsync_all),
-  allocation_state_(kAllocationNotStarted) {
-
+  : options_(options),
+    fs_manager_(fs_manager),
+    log_dir_(log_path),
+    tablet_id_(tablet_id),
+    log_state_(kLogInitialized),
+    max_segment_size_(options_.segment_size_mb * 1024 * 1024),
+    entry_batch_queue_(FLAGS_group_commit_queue_size_bytes),
+    append_thread_(new AppendThread(this)),
+    force_sync_all_(options_.force_fsync_all),
+    allocation_state_(kAllocationNotStarted) {
+  CHECK_OK(TaskExecutorBuilder("log-alloc").set_max_threads(1).Build(&allocation_executor_));
   if (parent_metric_context) {
     metric_context_.reset(new MetricContext(*parent_metric_context,
                                             strings::Substitute("log.tablet-$0", tablet_id)));

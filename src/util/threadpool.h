@@ -58,7 +58,13 @@ class ThreadPoolBuilder {
   ThreadPoolBuilder& set_min_threads(int min_threads);
   ThreadPoolBuilder& set_max_threads(int max_threads);
   ThreadPoolBuilder& set_max_queue_size(int max_queue_size);
-  ThreadPoolBuilder& set_timeout(const MonoDelta& timeout);
+  ThreadPoolBuilder& set_idle_timeout(const MonoDelta& idle_timeout);
+
+  const std::string& name() const { return name_; }
+  int min_threads() const { return min_threads_; }
+  int max_threads() const { return max_threads_; }
+  int max_queue_size() const { return max_queue_size_; }
+  const MonoDelta& idle_timeout() const { return idle_timeout_; }
 
   // Instantiate a new ThreadPool with the existing builder arguments.
   Status Build(gscoped_ptr<ThreadPool>* pool) const;
@@ -69,7 +75,7 @@ class ThreadPoolBuilder {
   int min_threads_;
   int max_threads_;
   int max_queue_size_;
-  MonoDelta timeout_;
+  MonoDelta idle_timeout_;
 
   DISALLOW_COPY_AND_ASSIGN(ThreadPoolBuilder);
 };
@@ -160,7 +166,7 @@ class ThreadPool {
   const int min_threads_;
   const int max_threads_;
   const int max_queue_size_;
-  const MonoDelta timeout_;
+  const MonoDelta idle_timeout_;
 
   Status pool_status_;
   boost::condition_variable idle_cond_;

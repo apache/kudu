@@ -46,7 +46,7 @@ ThreadPoolBuilder::ThreadPoolBuilder(const std::string& name)
     min_threads_(0),
     max_threads_(base::NumCPUs()),
     max_queue_size_(std::numeric_limits<int>::max()),
-    timeout_(MonoDelta::FromMilliseconds(500)) {
+    idle_timeout_(MonoDelta::FromMilliseconds(500)) {
 }
 
 ThreadPoolBuilder& ThreadPoolBuilder::set_min_threads(int min_threads) {
@@ -67,8 +67,8 @@ ThreadPoolBuilder& ThreadPoolBuilder::set_max_queue_size(int max_queue_size) {
   return *this;
 }
 
-ThreadPoolBuilder& ThreadPoolBuilder::set_timeout(const MonoDelta& timeout) {
-  timeout_ = timeout;
+ThreadPoolBuilder& ThreadPoolBuilder::set_idle_timeout(const MonoDelta& idle_timeout) {
+  idle_timeout_ = idle_timeout;
   return *this;
 }
 
@@ -87,7 +87,7 @@ ThreadPool::ThreadPool(const ThreadPoolBuilder& builder)
     min_threads_(builder.min_threads_),
     max_threads_(builder.max_threads_),
     max_queue_size_(builder.max_queue_size_),
-    timeout_(builder.timeout_),
+    idle_timeout_(builder.idle_timeout_),
     pool_status_(Status::Uninitialized("The pool was not initialized.")),
     num_threads_(0),
     active_threads_(0),
@@ -225,7 +225,7 @@ void ThreadPool::DispatchThread(bool permanent) {
         not_empty_.wait(unique_lock);
       } else {
         boost::posix_time::time_duration timeout =
-          boost::posix_time::microseconds(timeout_.ToMicroseconds());
+          boost::posix_time::microseconds(idle_timeout_.ToMicroseconds());
         if (!not_empty_.timed_wait(unique_lock, timeout)) {
           // After much investigation, it appears that boost's condition variables have
           // a weird behavior in which they can return 'false' from timed_wait even if
@@ -235,7 +235,7 @@ void ThreadPool::DispatchThread(bool permanent) {
           // before we get the mutex. So, we'll recheck the empty queue case regardless.
           if (queue_.empty()) {
             VLOG(1) << "Timed out worker for pool " << name_ << " after "
-                    << timeout_.ToMilliseconds() << " ms.";
+                    << idle_timeout_.ToMilliseconds() << " ms.";
             break;
           }
         }

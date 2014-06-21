@@ -24,22 +24,38 @@ namespace kudu {
 class Future;
 class FutureTask;
 class Task;
+class TaskExecutor;
 
+// Builder for instantiating a TaskExecutor.
+// See ThreadPoolBuilder for documentation on each of these properties.
+class TaskExecutorBuilder {
+ public:
+  explicit TaskExecutorBuilder(const std::string& name);
+
+  TaskExecutorBuilder& set_min_threads(int min_threads);
+  TaskExecutorBuilder& set_max_threads(int max_threads);
+  TaskExecutorBuilder& set_max_queue_size(int max_queue_size);
+  TaskExecutorBuilder& set_idle_timeout(const MonoDelta& idle_timeout);
+
+  const std::string& name() const { return pool_builder_.name(); }
+  int min_threads() const { return pool_builder_.min_threads(); }
+  int max_threads() const { return pool_builder_.max_threads(); }
+  int max_queue_size() const { return pool_builder_.max_queue_size(); }
+  const MonoDelta& idle_timeout() const { return pool_builder_.idle_timeout(); }
+
+  Status Build(gscoped_ptr<TaskExecutor>* executor) const;
+
+ private:
+  ThreadPoolBuilder pool_builder_;
+
+  DISALLOW_COPY_AND_ASSIGN(TaskExecutorBuilder);
+};
+
+// Abstraction of a thread pool that allows for execution and sophisticated
+// failure handling of arbitrary tasks, support for futures, etc.
 class TaskExecutor {
  public:
   ~TaskExecutor();
-
-  // Create a new Executor with its own ThreadPool and a maximum of
-  // 'max_threads' threads. Idle threads will be timed out (see
-  // threadpool.h for more information).
-  static TaskExecutor* CreateNew(const std::string& name,
-                                 size_t max_threads);
-
-  // Like the above CreateNew(), but with 'min_threads' minimum number
-  // of threads which will not be timed out if idle.
-  static TaskExecutor* CreateNew(const string& name,
-                                 size_t min_threads,
-                                 size_t max_threads);
 
   // Wait for the running tasks to complete and then shutdown the threads.
   // All the other pending tasks in the queue will be removed.
@@ -104,6 +120,8 @@ class TaskExecutor {
   bool TimedWait(const boost::system_time& time_until);
 
  private:
+  friend class TaskExecutorBuilder;
+
   FRIEND_TEST(TestTaskExecutor, TestFutureListeners);
 
   // Initialize a TaskExecutor using an external ThreadPool.
