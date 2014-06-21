@@ -21,6 +21,104 @@
 
 namespace kudu {
 
+class Future;
+class FutureTask;
+class Task;
+
+class TaskExecutor {
+ public:
+  ~TaskExecutor();
+
+  // Create a new Executor with its own ThreadPool and a maximum of
+  // 'max_threads' threads. Idle threads will be timed out (see
+  // threadpool.h for more information).
+  static TaskExecutor* CreateNew(const std::string& name,
+                                 size_t max_threads);
+
+  // Like the above CreateNew(), but with 'min_threads' minimum number
+  // of threads which will not be timed out if idle.
+  static TaskExecutor* CreateNew(const string& name,
+                                 size_t min_threads,
+                                 size_t max_threads);
+
+  // Wait for the running tasks to complete and then shutdown the threads.
+  // All the other pending tasks in the queue will be removed.
+  // NOTE: That the user may implement an external abort logic for the
+  //       runnables, that must be called before Shutdown(), if the system
+  //       should know about the non-execution of these tasks, or the runnable
+  //       require an explicit "abort" notification to exit from the run loop.
+  void Shutdown();
+
+  // Submit a Task to the executor.
+  // If the Future<> pointer is not NULL, it will be set with the task tracker object.
+  //
+  // Example without using the Future:
+  //    std::tr1::shared_ptr<Task> task(new MyTask);
+  //    executor->Submit(task, NULL);
+  //
+  // Example using the Future:
+  //    std::tr1::shared_ptr<Task> task(new MyTask);
+  //    std::tr1::shared_ptr<Future> future;
+  //    executor->Submit(task, &future);
+  //    future->Wait();
+  Status Submit(const std::tr1::shared_ptr<Task>& task,
+                std::tr1::shared_ptr<Future> *future)
+                WARN_UNUSED_RESULT;
+
+  // Submit a method to be executed through this executor.
+  Status Submit(const boost::function<Status()>& run_method,
+                std::tr1::shared_ptr<Future> *future)
+                WARN_UNUSED_RESULT;
+
+  // Submit a method to be executed through this executor and a method
+  // to be executed on Future::Abort().
+  Status Submit(const boost::function<Status()>& run_method,
+                const boost::function<bool()>& abort_method,
+                std::tr1::shared_ptr<Future> *future)
+                WARN_UNUSED_RESULT;
+
+  // Submit a FutureTask to the executor.
+  //
+  // By adding Listeners to the FutureTask before calling this method,
+  // you are guaranteed that the callbacks will be called from the executor thread if:
+  // 1. SubmitFutureTask() returns Status::OK.
+  // 2. The TaskExecutor is not Shutdown() while your FutureTask is in the threadpool queue.
+  Status SubmitFutureTask(const std::tr1::shared_ptr<FutureTask>* future_task)
+      WARN_UNUSED_RESULT;
+
+  // Wait until all the tasks are completed.
+  void Wait();
+
+  // Waits for the idle state for the given duration of time.
+  // Returns true if the pool is idle within the given timeout. Otherwise false.
+  //
+  // For example:
+  //  executor.TimedWait(boost::posix_time::milliseconds(100));
+  template<class TimeDuration>
+  bool TimedWait(const TimeDuration& relative_time) {
+    return thread_pool_->TimedWait(relative_time);
+  }
+
+  // Waits for the idle state for the given duration of time.
+  // Returns true if the pool is idle within the given timeout. Otherwise false.
+  bool TimedWait(const boost::system_time& time_until);
+
+ private:
+  FRIEND_TEST(TestTaskExecutor, TestFutureListeners);
+
+  // Initialize a TaskExecutor using an external ThreadPool.
+  explicit TaskExecutor(gscoped_ptr<ThreadPool> thread_pool);
+
+  // Return the thread pool used by the TaskExecutor.
+  const gscoped_ptr<ThreadPool>& thread_pool() const {
+    return thread_pool_;
+  }
+
+  gscoped_ptr<ThreadPool> thread_pool_;
+
+  DISALLOW_COPY_AND_ASSIGN(TaskExecutor);
+};
+
 // A Callback for a Task. Added to a Future through AddListener() the
 // FutureCallback gets called when the Task the future is attached to
 // finished execution.
@@ -316,99 +414,5 @@ class FutureTask : public Runnable, public Future {
   CountDownLatch latch_;
 };
 
-class TaskExecutor {
- public:
-  ~TaskExecutor();
-
-  // Create a new Executor with its own ThreadPool and a maximum of
-  // 'max_threads' threads. Idle threads will be timed out (see
-  // threadpool.h for more information).
-  static TaskExecutor* CreateNew(const std::string& name,
-                                 size_t max_threads);
-
-  // Like the above CreateNew(), but with 'min_threads' minimum number
-  // of threads which will not be timed out if idle.
-  static TaskExecutor* CreateNew(const string& name,
-                                 size_t min_threads,
-                                 size_t max_threads);
-
-  // Wait for the running tasks to complete and then shutdown the threads.
-  // All the other pending tasks in the queue will be removed.
-  // NOTE: That the user may implement an external abort logic for the
-  //       runnables, that must be called before Shutdown(), if the system
-  //       should know about the non-execution of these tasks, or the runnable
-  //       require an explicit "abort" notification to exit from the run loop.
-  void Shutdown();
-
-  // Submit a Task to the executor.
-  // If the Future<> pointer is not NULL, it will be set with the task tracker object.
-  //
-  // Example without using the Future:
-  //    std::tr1::shared_ptr<Task> task(new MyTask);
-  //    executor->Submit(task, NULL);
-  //
-  // Example using the Future:
-  //    std::tr1::shared_ptr<Task> task(new MyTask);
-  //    std::tr1::shared_ptr<Future> future;
-  //    executor->Submit(task, &future);
-  //    future->Wait();
-  Status Submit(const std::tr1::shared_ptr<Task>& task,
-                std::tr1::shared_ptr<Future> *future)
-                WARN_UNUSED_RESULT;
-
-  // Submit a method to be executed through this executor.
-  Status Submit(const boost::function<Status()>& run_method,
-                std::tr1::shared_ptr<Future> *future)
-                WARN_UNUSED_RESULT;
-
-  // Submit a method to be executed through this executor and a method
-  // to be executed on Future::Abort().
-  Status Submit(const boost::function<Status()>& run_method,
-                const boost::function<bool()>& abort_method,
-                std::tr1::shared_ptr<Future> *future)
-                WARN_UNUSED_RESULT;
-
-  // Submit a FutureTask to the executor.
-  //
-  // By adding Listeners to the FutureTask before calling this method,
-  // you are guaranteed that the callbacks will be called from the executor thread if:
-  // 1. SubmitFutureTask() returns Status::OK.
-  // 2. The TaskExecutor is not Shutdown() while your FutureTask is in the threadpool queue.
-  Status SubmitFutureTask(const std::tr1::shared_ptr<FutureTask>* future_task)
-      WARN_UNUSED_RESULT;
-
-  // Wait until all the tasks are completed.
-  void Wait();
-
-  // Waits for the idle state for the given duration of time.
-  // Returns true if the pool is idle within the given timeout. Otherwise false.
-  //
-  // For example:
-  //  executor.TimedWait(boost::posix_time::milliseconds(100));
-  template<class TimeDuration>
-  bool TimedWait(const TimeDuration& relative_time) {
-    return thread_pool_->TimedWait(relative_time);
-  }
-
-  // Waits for the idle state for the given duration of time.
-  // Returns true if the pool is idle within the given timeout. Otherwise false.
-  bool TimedWait(const boost::system_time& time_until);
-
- private:
-  FRIEND_TEST(TestTaskExecutor, TestFutureListeners);
-
-  // Initialize a TaskExecutor using an external ThreadPool.
-  explicit TaskExecutor(gscoped_ptr<ThreadPool> thread_pool);
-
-  // Return the thread pool used by the TaskExecutor.
-  const gscoped_ptr<ThreadPool>& thread_pool() const {
-    return thread_pool_;
-  }
-
-  gscoped_ptr<ThreadPool> thread_pool_;
-
-  DISALLOW_COPY_AND_ASSIGN(TaskExecutor);
-};
-
-}  // namespace kudu
+} // namespace kudu
 #endif
