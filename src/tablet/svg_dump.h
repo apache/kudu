@@ -11,10 +11,7 @@ namespace tablet {
 
 class RowSet;
 
-namespace compaction_policy {
-
-class CompactionCandidate;
-class DataSizeCDF;
+class RowSetInfo;
 
 // Dump an SVG file which represents the candidates
 // for compaction, highlighting the ones that were selected.
@@ -23,12 +20,11 @@ class DataSizeCDF;
 // The last optional parameter controls whether to print an XML header in
 // the file. If true, prints the header (xml tag and DOCTYPE). Otherwise, only
 // the <svg>...</svg> section is printed.
-void DumpCompactionSVG(const std::vector<CompactionCandidate>& candidates,
+void DumpCompactionSVG(const std::vector<RowSetInfo>& candidates,
                        const std::tr1::unordered_set<RowSet*>& picked,
                        std::ostream* out = NULL,
                        bool print_xml = true);
 
-} // namespace compaction_policy
 } // namespace tablet
 } // namespace kudu
 

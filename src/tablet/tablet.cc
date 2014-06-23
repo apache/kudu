@@ -26,13 +26,13 @@
 #include "gutil/strings/substitute.h"
 #include "gutil/strings/util.h"
 #include "tablet/compaction.h"
-#include "tablet/compaction_rowset_data.h"
 #include "tablet/compaction_policy.h"
 #include "tablet/delta_compaction.h"
 #include "tablet/diskrowset.h"
 #include "tablet/maintenance_manager.h"
 #include "tablet/tablet.h"
 #include "tablet/tablet_metrics.h"
+#include "tablet/rowset_info.h"
 #include "tablet/rowset_tree.h"
 #include "tablet/svg_dump.h"
 #include "tablet/transactions/alter_schema_transaction.h"
@@ -1432,12 +1432,12 @@ void Tablet::PrintRSLayout(ostream* o, bool header) {
     boost::shared_lock<rw_semaphore> lock(component_lock_);
     rowsets_copy = rowsets_;
   }
-  // Simulate doing a compaction with no candidates chosen to simply display
+  // Simulate doing a compaction with no rowsets chosen to simply display
   // the current layout
-  vector<compaction_policy::CompactionCandidate> all;
-  compaction_policy::CompactionCandidate::CollectCandidates(*rowsets_copy, &all);
+  vector<RowSetInfo> min, max;
+  RowSetInfo::CollectOrdered(*rowsets_copy, &min, &max);
   unordered_set<RowSet*> picked;
-  compaction_policy::DumpCompactionSVG(all, picked, o, header);
+  DumpCompactionSVG(min, picked, o, header);
 }
 
 Tablet::Iterator::Iterator(const Tablet *tablet,

@@ -15,11 +15,7 @@ namespace tablet {
 class RowSet;
 class RowSetTree;
 
-// Forward declarations for internals (defined in compaction_policy-internal.h)
-namespace compaction_policy {
-class CompactionCandidate;
-class DataSizeCDF;
-}
+class RowSetInfo;
 
 // A Compaction Policy is responsible for picking which files in a tablet
 // should be compacted together.
@@ -76,7 +72,8 @@ class BudgetedCompactionPolicy : public CompactionPolicy {
 
  private:
   void SetupKnapsackInput(const RowSetTree &tree,
-                          std::vector<compaction_policy::CompactionCandidate> *inputs);
+                          std::vector<RowSetInfo>* min_key,
+                          std::vector<RowSetInfo>* max_key);
 
   size_t size_budget_mb_;
 };

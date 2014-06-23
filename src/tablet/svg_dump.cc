@@ -2,6 +2,7 @@
 
 #include "tablet/svg_dump.h"
 
+#include <boost/foreach.hpp>
 #include <glog/logging.h>
 #include <time.h>
 
@@ -11,9 +12,12 @@
 #include <tr1/unordered_set>
 #include <vector>
 
+#include "common/encoded_key.h"
 #include "gutil/gscoped_ptr.h"
+#include "gutil/map-util.h"
+#include "gutil/stringprintf.h"
 #include "gutil/strings/util.h"
-#include "tablet/compaction_rowset_data.h"
+#include "tablet/rowset_info.h"
 
 using std::ostream;
 using std::tr1::unordered_set;
@@ -21,7 +25,6 @@ using std::vector;
 
 namespace kudu {
 namespace tablet {
-namespace compaction_policy {
 
 // Flag to dump SVGs of every compaction decision.
 //
@@ -42,18 +45,18 @@ namespace {
 // Organize the input rowsets into rows for presentation.  This simply
 // distributes 'rowsets' into separate vectors in 'rows' such that
 // within any given row, none of the rowsets overlap in keyspace.
-void OrganizeSVGRows(const vector<CompactionCandidate>& candidates,
-                     vector<vector<const CompactionCandidate*> >* rows) {
-  rows->push_back(vector<const CompactionCandidate *>());
+void OrganizeSVGRows(const vector<RowSetInfo>& candidates,
+                     vector<vector<const RowSetInfo*> >* rows) {
+  rows->push_back(vector<const RowSetInfo *>());
 
-  BOOST_FOREACH(const CompactionCandidate &candidate, candidates) {
+  BOOST_FOREACH(const RowSetInfo &candidate, candidates) {
     // Slot into the first row of the output which fits it
     bool found_slot = false;
-    BOOST_FOREACH(vector<const CompactionCandidate *> &row, *rows) {
+    BOOST_FOREACH(vector<const RowSetInfo *> &row, *rows) {
       // If this candidate doesn't intersect any other candidates in this
       // row, we can put it here.
       bool fits_in_row = true;
-      BOOST_FOREACH(const CompactionCandidate *already_in_row, row) {
+      BOOST_FOREACH(const RowSetInfo *already_in_row, row) {
         if (candidate.Intersects(*already_in_row)) {
           fits_in_row = false;
           break;
@@ -69,14 +72,14 @@ void OrganizeSVGRows(const vector<CompactionCandidate>& candidates,
     // If we couldn't find a spot in any existing row, add a new row
     // to the bottom of the SVG.
     if (!found_slot) {
-      vector<const CompactionCandidate *> new_row;
+      vector<const RowSetInfo *> new_row;
       new_row.push_back(&candidate);
       rows->push_back(new_row);
     }
   }
 }
 
-void DumpSVG(const vector<CompactionCandidate>& candidates,
+void DumpSVG(const vector<RowSetInfo>& candidates,
              const unordered_set<RowSet*>& picked,
              ostream* outptr) {
   CHECK(outptr) << "Dump SVG expects an ostream";
@@ -84,7 +87,7 @@ void DumpSVG(const vector<CompactionCandidate>& candidates,
   using std::endl;
   ostream& out = *outptr;
 
-  vector<vector<const CompactionCandidate*> > svg_rows;
+  vector<vector<const RowSetInfo*> > svg_rows;
   OrganizeSVGRows(candidates, &svg_rows);
 
   const char *kPickedColor = "#f66";
@@ -104,10 +107,10 @@ void DumpSVG(const vector<CompactionCandidate>& candidates,
       << " fill=\"#fff\" />" << endl;
 
   for (int row_index = 0; row_index < svg_rows.size(); row_index++) {
-    const vector<const CompactionCandidate *> &row = svg_rows[row_index];
+    const vector<const RowSetInfo *> &row = svg_rows[row_index];
 
     int y = kRowHeight * row_index + kHeaderHeight;
-    BOOST_FOREACH(const CompactionCandidate *cand, row) {
+    BOOST_FOREACH(const RowSetInfo *cand, row) {
       bool was_picked = ContainsKey(picked, cand->rowset());
       const char *color = was_picked ? kPickedColor : kDefaultColor;
 
@@ -156,7 +159,7 @@ gscoped_ptr<ostream> PrepareOstream() {
 
 } // anonymous namespace
 
-void DumpCompactionSVG(const vector<CompactionCandidate>& candidates,
+void DumpCompactionSVG(const vector<RowSetInfo>& candidates,
                        const unordered_set<RowSet*>& picked,
                        ostream* out,
                        bool print_xml) {
@@ -177,6 +180,5 @@ void DumpCompactionSVG(const vector<CompactionCandidate>& candidates,
   DumpSVG(candidates, picked, out);
 }
 
-} // namespace compaction_policy
 } // namespace tablet
 } // namespace kudu

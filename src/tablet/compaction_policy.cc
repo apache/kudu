@@ -10,8 +10,8 @@
 #include <vector>
 
 #include "gutil/map-util.h"
-#include "tablet/compaction_rowset_data.h"
 #include "tablet/rowset.h"
+#include "tablet/rowset_info.h"
 #include "tablet/rowset_tree.h"
 #include "tablet/svg_dump.h"
 #include "util/knapsack_solver.h"
@@ -46,27 +46,24 @@ namespace tablet {
 // here.
 static const double kSupportAdjust = 1.01;
 
-using compaction_policy::CompactionCandidate;
-using compaction_policy::DataSizeCDF;
-
 ////////////////////////////////////////////////////////////
 // SizeRatioCompactionPolicy
 ////////////////////////////////////////////////////////////
 
-static bool CompareBySize(const CompactionCandidate& a,
-                          const CompactionCandidate& b) {
+static bool CompareBySize(const RowSetInfo& a,
+                          const RowSetInfo& b) {
   return a.rowset()->EstimateOnDiskSize() < b.rowset()->EstimateOnDiskSize();
 }
 
 Status SizeRatioCompactionPolicy::PickRowSets(const RowSetTree &tree,
                                               std::tr1::unordered_set<RowSet*>* picked) {
-  vector<CompactionCandidate> candidates;
-  CompactionCandidate::CollectCandidates(tree, &candidates);
+  vector<RowSetInfo> candidates;
+  RowSetInfo::Collect(tree, &candidates);
 
   // Sort the rowsets by their on-disk size
   std::sort(candidates.begin(), candidates.end(), CompareBySize);
   uint64_t accumulated_size = 0;
-  BOOST_FOREACH(const CompactionCandidate &cand, candidates) {
+  BOOST_FOREACH(const RowSetInfo &cand, candidates) {
     RowSet* rs = cand.rowset();
     uint64_t this_size = rs->EstimateOnDiskSize();
     if (picked->size() < 2 || this_size < accumulated_size * 2) {
@@ -86,6 +83,16 @@ Status SizeRatioCompactionPolicy::PickRowSets(const RowSetTree &tree,
 // BudgetedCompactionPolicy
 ////////////////////////////////////////////////////////////
 
+namespace {
+
+struct CompareByDescendingDensity {
+  bool operator()(const RowSetInfo& a, const RowSetInfo& b) const {
+    return a.density() > b.density();
+  }
+};
+
+} // anonymous namespace
+
 BudgetedCompactionPolicy::BudgetedCompactionPolicy(int budget)
   : size_budget_mb_(budget) {
   CHECK_GT(budget, 0);
@@ -96,45 +103,36 @@ uint64_t BudgetedCompactionPolicy::target_rowset_size() const {
   return FLAGS_budgeted_compaction_target_rowset_size;
 }
 
-struct CompareByDescendingDensity {
-  bool operator()(const CompactionCandidate& a, const CompactionCandidate& b) const {
-    return a.density() > b.density();
-  }
-};
-
-static bool CompareByMinKey(const CompactionCandidate& a, const CompactionCandidate& b) {
-  return a.cdf_min_key() < b.cdf_min_key();
-}
-
-static bool CompareByMaxKey(const CompactionCandidate& a, const CompactionCandidate& b) {
-  return a.cdf_max_key() < b.cdf_max_key();
-}
-
-
+// Returns in min-key and max-key sorted order
 void BudgetedCompactionPolicy::SetupKnapsackInput(const RowSetTree &tree,
-                                                  vector<CompactionCandidate> *rowsets) {
-  CompactionCandidate::CollectCandidates(tree, rowsets);
+                                                  vector<RowSetInfo>* min_key,
+                                                  vector<RowSetInfo>* max_key) {
+  RowSetInfo::CollectOrdered(tree, min_key, max_key);
 
-  if (rowsets->size() < 2) {
+  if (min_key->size() < 2) {
     // require at least 2 rowsets to compact
-    rowsets->clear();
+    min_key->clear();
+    max_key->clear();
     return;
   }
 
   // Enforce a minimum size of 1MB, since otherwise the knapsack algorithm
   // will always pick up small rowsets no matter what.
-  BOOST_FOREACH(CompactionCandidate& candidate, *rowsets) {
+  BOOST_FOREACH(RowSetInfo& candidate, *min_key) {
+    candidate.set_size_mb(std::max(candidate.size_mb(), 1));
+  }
+  BOOST_FOREACH(RowSetInfo& candidate, *max_key) {
     candidate.set_size_mb(std::max(candidate.size_mb(), 1));
   }
 }
 
 struct KnapsackTraits {
-  typedef CompactionCandidate item_type;
+  typedef RowSetInfo item_type;
   typedef double value_type;
-  static int get_weight(const CompactionCandidate &item) {
+  static int get_weight(const RowSetInfo &item) {
     return item.size_mb();
   }
-  static value_type get_value(const CompactionCandidate &item) {
+  static value_type get_value(const RowSetInfo &item) {
     return item.width();
   }
 };
@@ -161,14 +159,14 @@ class UpperBoundCalculator {
       max_weight_(max_weight) {
   }
 
-  void Add(const CompactionCandidate& candidate) {
+  void Add(const RowSetInfo& candidate) {
     fractional_solution_.push_back(candidate);
     std::push_heap(fractional_solution_.begin(), fractional_solution_.end(),
                    CompareByDescendingDensity());
 
     total_weight_ += candidate.size_mb();
     total_value_ += candidate.width();
-    const CompactionCandidate& top = fractional_solution_.front();
+    const RowSetInfo& top = fractional_solution_.front();
     if (total_weight_ - top.size_mb() >= max_weight_) {
       total_weight_ -= top.size_mb();
       total_value_ -= top.width();
@@ -186,7 +184,7 @@ class UpperBoundCalculator {
       return total_value_;
     }
 
-    const CompactionCandidate& top = fractional_solution_.front();
+    const RowSetInfo& top = fractional_solution_.front();
     double fraction_of_top_to_remove = static_cast<double>(excess_weight) / top.size_mb();
     DCHECK_GT(fraction_of_top_to_remove, 0);
     return total_value_ - fraction_of_top_to_remove * top.width();
@@ -200,7 +198,7 @@ class UpperBoundCalculator {
 
  private:
 
-  vector<CompactionCandidate> fractional_solution_;
+  vector<RowSetInfo> fractional_solution_;
   int total_weight_;
   double total_value_;
   int max_weight_;
@@ -208,18 +206,12 @@ class UpperBoundCalculator {
 
 Status BudgetedCompactionPolicy::PickRowSets(const RowSetTree &tree,
                                              unordered_set<RowSet*>* picked) {
-  vector<CompactionCandidate> all_candidates;
-  SetupKnapsackInput(tree, &all_candidates);
-  if (all_candidates.empty()) {
+  vector<RowSetInfo> asc_min_key, asc_max_key;
+  SetupKnapsackInput(tree, &asc_min_key, &asc_max_key);
+  if (asc_max_key.empty()) {
     // nothing to compact.
     return Status::OK();
   }
-
-  // Collect the rowsets ascending by min key and by max key.
-  vector<CompactionCandidate> asc_min_key(all_candidates);
-  std::sort(asc_min_key.begin(), asc_min_key.end(), CompareByMinKey);
-  vector<CompactionCandidate> asc_max_key(all_candidates);
-  std::sort(asc_max_key.begin(), asc_max_key.end(), CompareByMaxKey);
 
   UpperBoundCalculator ub_calc(size_budget_mb_);
   KnapsackSolver<KnapsackTraits> solver;
@@ -230,11 +222,11 @@ Status BudgetedCompactionPolicy::PickRowSets(const RowSetTree &tree,
   double best_optimal = 0;
 
   vector<int> chosen_indexes;
-  vector<CompactionCandidate> inrange_candidates;
-  inrange_candidates.reserve(all_candidates.size());
+  vector<RowSetInfo> inrange_candidates;
+  inrange_candidates.reserve(asc_min_key.size());
   vector<double> upper_bounds;
 
-  BOOST_FOREACH(const CompactionCandidate& cc_a, asc_min_key) {
+  BOOST_FOREACH(const RowSetInfo& cc_a, asc_min_key) {
     chosen_indexes.clear();
     inrange_candidates.clear();
     ub_calc.clear();
@@ -265,7 +257,7 @@ Status BudgetedCompactionPolicy::PickRowSets(const RowSetTree &tree,
     // problem by adding just a single rowset, meaning that we can reuse the
     // existing dynamic programming state to incrementally update the solution,
     // rather than having to rebuild from scratch.
-    BOOST_FOREACH(const CompactionCandidate& cc_b, asc_max_key) {
+    BOOST_FOREACH(const RowSetInfo& cc_b, asc_max_key) {
       if (cc_b.cdf_min_key() < ab_min) {
         // Would expand support to the left.
         // TODO: possible optimization here: binary search to skip to the first
@@ -295,7 +287,7 @@ Status BudgetedCompactionPolicy::PickRowSets(const RowSetTree &tree,
     while (solver.ProcessNext()) {
       // If this candidate's upper bound is worse than the optimal, we don't
       // need to look at it.
-      const CompactionCandidate& item = inrange_candidates[i];
+      const RowSetInfo& item = inrange_candidates[i];
       double upper_bound = upper_bounds[i];
       i++;
       if (upper_bound < best_optimal) continue;
@@ -306,7 +298,7 @@ Status BudgetedCompactionPolicy::PickRowSets(const RowSetTree &tree,
       ab_max = std::max(item.cdf_max_key(), ab_max);
       DCHECK_GE(ab_max, ab_min);
       double solution = best_value - (ab_max - ab_min) * kSupportAdjust;
-      DCHECK_LT(solution, upper_bound + DataSizeCDF::kEpsilon);
+      DCHECK_LT(solution, upper_bound + RowSetInfo::kEpsilon);
 
       if (solution > best_optimal) {
         solver.TracePath(best_with_this_item, &chosen_indexes);
@@ -326,7 +318,7 @@ Status BudgetedCompactionPolicy::PickRowSets(const RowSetTree &tree,
   // Log the input and output of the selection.
   if (VLOG_IS_ON(1)) {
     VLOG(1) << "Budgeted compaction selection:";
-    BOOST_FOREACH(CompactionCandidate &cand, all_candidates) {
+    BOOST_FOREACH(RowSetInfo &cand, asc_min_key) {
       const char *checkbox = "[ ]";
       if (ContainsKey(best_chosen, cand.rowset())) {
         checkbox = "[x]";
@@ -342,7 +334,7 @@ Status BudgetedCompactionPolicy::PickRowSets(const RowSetTree &tree,
   }
 
   picked->swap(best_chosen);
-  compaction_policy::DumpCompactionSVG(all_candidates, *picked);
+  DumpCompactionSVG(asc_min_key, *picked);
 
   return Status::OK();
 }

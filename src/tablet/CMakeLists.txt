@@ -15,7 +15,6 @@ set(TABLET_SRCS
   cfile_set.cc
   compaction.cc
   compaction_policy.cc
-  compaction_rowset_data.cc
   delta_key.cc
   diskrowset.cc
   lock_manager.cc
@@ -25,6 +24,7 @@ set(TABLET_SRCS
   mutation.cc
   mvcc.cc
   rowset.cc
+  rowset_info.cc
   rowset_tree.cc
   svg_dump.cc
   delta_stats.cc deltamemstore.cc deltafile.cc delta_tracker.cc
@@ -65,7 +65,6 @@ ADD_KUDU_TEST(tablet_bootstrap-test)
 ADD_KUDU_TEST(maintenance_manager-test)
 ADD_KUDU_TEST(mvcc-test)
 ADD_KUDU_TEST(compaction-test)
-ADD_KUDU_TEST(compaction_policy-test)
 ADD_KUDU_TEST(lock_manager-test)
 ADD_KUDU_TEST(rowset_tree-test)
 ADD_KUDU_TEST(composite-pushdown-test)

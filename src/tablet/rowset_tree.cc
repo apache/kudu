@@ -2,6 +2,7 @@
 
 #include "tablet/rowset_tree.h"
 
+#include <algorithm>
 #include <string>
 #include <vector>
 
@@ -9,12 +10,23 @@
 #include "tablet/rowset.h"
 #include "util/interval_tree.h"
 #include "util/interval_tree-inl.h"
+#include "util/slice.h"
 
 using std::vector;
 using std::tr1::shared_ptr;
 
 namespace kudu {
 namespace tablet {
+
+namespace {
+
+bool RSEndpointBySliceCompare(const RowSetTree::RSEndpoint& a,
+                              const RowSetTree::RSEndpoint& b) {
+  static const Slice::Comparator comp = Slice::Comparator();
+  return comp(a.slice_, b.slice_);
+}
+
+}
 
 // Entry for use in the interval tree.
 struct RowSetWithBounds {
@@ -50,8 +62,9 @@ Status RowSetTree::Reset(const RowSetVector &rowsets) {
   std::vector<RowSetWithBounds *> entries;
   RowSetVector unbounded;
   ElementDeleter deleter(&entries);
-
   entries.reserve(rowsets.size());
+  std::vector<RSEndpoint> endpoints;
+  endpoints.reserve(rowsets.size()*2);
 
   // Iterate over each of the provided RowSets, fetching their
   // bounds and adding them to the local vectors.
@@ -73,17 +86,27 @@ Status RowSetTree::Reset(const RowSetVector &rowsets) {
                    << s.ToString();
       return s;
     }
+    // Load into key endpoints.
+    endpoints.push_back(RSEndpoint(rsit->rowset, START, min_key));
+    endpoints.push_back(RSEndpoint(rsit->rowset, STOP, max_key));
+
+    // Load bounds and save entry
     rsit->min_key = min_key.ToString();
     rsit->max_key = max_key.ToString();
     entries.push_back(rsit.release());
   }
 
+  // Sort endpoints
+  std::sort(endpoints.begin(), endpoints.end(), RSEndpointBySliceCompare);
+
   // Install the vectors into the object.
   entries_.swap(entries);
   unbounded_rowsets_.swap(unbounded);
   tree_.reset(new IntervalTree<RowSetIntervalTraits>(entries_));
+  key_endpoints_.swap(endpoints);
   all_rowsets_.assign(rowsets.begin(), rowsets.end());
   initted_ = true;
+
   return Status::OK();
 }
 
