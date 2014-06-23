@@ -258,8 +258,8 @@ string WriteTransaction::ToString() const {
   WallTime abs_time = WallTime_Now() - d.ToSeconds();
   string abs_time_formatted;
   StringAppendStrftime(&abs_time_formatted, "%Y-%m-%d %H:%M:%S", (time_t)abs_time, true);
-  return Substitute("WriteTransaction [start_time=$0, state=$1]",
-                    abs_time_formatted, state_->ToString());
+  return Substitute("WriteTransaction [type=$0, start_time=$1, state=$2]",
+                    DriverType_Name(type()), abs_time_formatted, state_->ToString());
 }
 
 Status WriteTransactionState::AddInsert(const Timestamp &timestamp, int64_t mrs_id) {

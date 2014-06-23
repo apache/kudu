@@ -122,6 +122,10 @@ void TransactionTracker::WaitForAllToFinish() {
       if (pending_txns_.empty()) {
         break;
       }
+      LOG(INFO) << "Dumping currently running transactions: ";
+      BOOST_FOREACH(scoped_refptr<TransactionDriver> driver, pending_txns_) {
+        LOG(INFO) << driver->ToString();
+      }
     }
     usleep(wait_time);
     MonoDelta diff = MonoTime::Now(MonoTime::FINE).GetDeltaSince(start_time);

@@ -103,7 +103,9 @@ void ChangeConfigTransaction::Finish() {
 }
 
 string ChangeConfigTransaction::ToString() const {
-  return Substitute("ChangeConfigTransaction [state=$0]", tx_state_->ToString());
+  return Substitute("ChangeConfigTransaction [type=$0, state=$1]",
+                    DriverType_Name(type()),
+                    tx_state_->ToString());
 }
 
 }  // namespace tablet
