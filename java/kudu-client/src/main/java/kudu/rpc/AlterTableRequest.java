@@ -9,7 +9,7 @@ import static kudu.master.Master.*;
  * RPC used to alter a table. When it returns it doesn't mean that the table is altered,
  * a success just means that the master accepted it.
  */
-class AlterTableRequest extends KuduRpc {
+class AlterTableRequest extends KuduRpc<AlterTableResponsePB> {
 
   static final String ALTER_TABLE = "AlterTable";
   private final String name;

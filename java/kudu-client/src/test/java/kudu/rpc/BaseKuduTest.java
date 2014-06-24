@@ -138,7 +138,7 @@ public class BaseKuduTest {
       }
     } finally {
       if (client != null) {
-        Deferred<Object> d = client.shutdown();
+        Deferred<ArrayList<ArrayList<Object>>> d = client.shutdown();
         d.addErrback(defaultErrorCB);
       }
       if (startCluster) {

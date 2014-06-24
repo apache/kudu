@@ -8,7 +8,7 @@ import org.jboss.netty.buffer.ChannelBuffer;
 /**
  * RPC to delete tables
  */
-class DeleteTableRequest extends KuduRpc {
+class DeleteTableRequest extends KuduRpc<Master.DeleteTableResponsePB> {
 
   static final String DELETE_TABLE = "DeleteTable";
 

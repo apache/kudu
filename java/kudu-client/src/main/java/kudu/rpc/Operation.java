@@ -26,7 +26,7 @@ import static kudu.rpc.KuduClient.NO_TIMESTAMP;
  * Each Operation is backed by an Arena where all the cells (except strings) are written. The
  * strings are kept in a List.
  */
-public abstract class Operation extends KuduRpc implements KuduRpc.HasKey {
+public abstract class Operation extends KuduRpc<Tserver.WriteResponsePB> implements KuduRpc.HasKey {
 
   enum ChangeType {
     INSERT((byte)RowOperationsPB.Type.INSERT.getNumber()),

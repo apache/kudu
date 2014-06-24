@@ -298,6 +298,7 @@ public final class KuduScanner {
             }
           });
     } else if (prefetching && prefetcherDeferred != null) {
+      // TODO check if prefetching still works
       prefetcherDeferred.chain(new Deferred<RowResultIterator>().addCallback(prefetch));
       return prefetcherDeferred;
     }
@@ -305,7 +306,7 @@ public final class KuduScanner {
     // declares its return type to be Object, because its return value
     // may or may not be deferred.
     @SuppressWarnings("unchecked")
-    final Deferred<RowResultIterator> d = (Deferred)
+    final Deferred<RowResultIterator> d =
         client.scanNextRows(this).addCallbacks(got_next_row, nextRowErrback());
     if (prefetching) {
       d.chain(new Deferred<RowResultIterator>().addCallback(prefetch));
@@ -313,11 +314,12 @@ public final class KuduScanner {
     return d;
   }
 
-  private final Callback<RowResultIterator, RowResultIterator> prefetch = new Callback() {
+  private final Callback<RowResultIterator, RowResultIterator> prefetch =
+      new Callback<RowResultIterator, RowResultIterator>() {
     @Override
-    public RowResultIterator call(Object arg) throws Exception {
+    public RowResultIterator call(RowResultIterator arg) throws Exception {
       if (hasMoreRows()) {
-        prefetcherDeferred = (Deferred)client.scanNextRows(KuduScanner.this).addCallbacks
+        prefetcherDeferred = client.scanNextRows(KuduScanner.this).addCallbacks
             (got_next_row, nextRowErrback());
       }
       return null;
@@ -329,8 +331,8 @@ public final class KuduScanner {
    * This returns an {@code ArrayList<ArrayList<KeyValue>>} (possibly inside a
    * deferred one).
    */
-  private final Callback<Object, Response> got_next_row =
-      new Callback<Object, Response>() {
+  private final Callback<RowResultIterator, Response> got_next_row =
+      new Callback<RowResultIterator, Response>() {
         public RowResultIterator call(final Response resp) {
           //System.out.println("got_next_row");
           if (resp.error.hasCode()) {
@@ -647,7 +649,7 @@ public final class KuduScanner {
   /**
    * RPC sent out to fetch the next rows from the TabletServer.
    */
-  private final class ScanRequest extends KuduRpc implements KuduRpc.HasKey {
+  private final class ScanRequest extends KuduRpc<Response> implements KuduRpc.HasKey {
 
     State state;
 

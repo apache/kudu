@@ -5,7 +5,7 @@ import com.google.protobuf.Message;
 import kudu.tserver.Tserver;
 import org.jboss.netty.buffer.ChannelBuffer;
 
-public class PingRequest extends KuduRpc {
+public class PingRequest extends KuduRpc<Tserver.PingResponsePB> {
 
   public static final String PING = "Ping";
 

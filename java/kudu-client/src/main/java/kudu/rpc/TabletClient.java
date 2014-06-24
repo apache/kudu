@@ -217,13 +217,13 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
     return payload;
   }
 
-  public Deferred shutdown() {
-    final class RetryShutdown<T> implements Callback<Deferred<Object>, T> {
+  public Deferred<ArrayList<Object>> shutdown() {
+    final class RetryShutdown<T> implements Callback<Deferred<ArrayList<Object>>, T> {
       private final int nrpcs;
       RetryShutdown(final int nrpcs) {
         this.nrpcs = nrpcs;
       }
-      public Deferred<Object> call(final T ignored) {
+      public Deferred<ArrayList<Object>> call(final T ignored) {
         return shutdown();
       }
       public String toString() {
@@ -264,7 +264,7 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
     // It's OK to call close() on a Channel if it's already closed.
     final ChannelFuture future = Channels.close(chancopy);
     // Now wrap the ChannelFuture in a Deferred.
-    final Deferred<Object> d = new Deferred<Object>();
+    final Deferred<ArrayList<Object>> d = new Deferred<ArrayList<Object>>();
     // Opportunistically check if it's already completed successfully.
     if (future.isSuccess()) {
       d.callback(null);
@@ -477,7 +477,7 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
           "key");
     }
 
-    final class GetTableLocations extends KuduRpc {
+    final class GetTableLocations extends KuduRpc<Master.GetTableLocationsResponsePB> {
       GetTableLocations(KuduTable table) {
         super(table);
       }
@@ -537,7 +537,7 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
       };
 
   public Deferred<Master.IsCreateTableDoneResponsePB> isCreateTableDone(final String tableName) {
-    final class IsCreateTableDone extends KuduRpc {
+    final class IsCreateTableDone extends KuduRpc<Master.IsCreateTableDoneResponsePB> {
       IsCreateTableDone(KuduTable table) {
         super(table);
       }
@@ -563,32 +563,12 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
         return toChannelBuffer(header, builder.build());
       }
     };
-    final KuduRpc rpc = new IsCreateTableDone(kuduClient.masterTableHack);
+    final IsCreateTableDone rpc = new IsCreateTableDone(kuduClient.masterTableHack);
     rpc.setTablet(kuduClient.masterTabletHack);
-    final Deferred<Master.IsCreateTableDoneResponsePB> d = rpc.getDeferred()
-        .addCallback(isCreateTableDoneCB);
+    final Deferred<Master.IsCreateTableDoneResponsePB> d = rpc.getDeferred();
     sendRpc(rpc);
     return d;
   }
-
-  private static final Callback<Master.IsCreateTableDoneResponsePB, Object>
-      isCreateTableDoneCB =
-      new Callback<Master.IsCreateTableDoneResponsePB, Object>() {
-        public Master.IsCreateTableDoneResponsePB call(final Object response) {
-          if (response == null) {  // No result.
-            return null;
-          } else if (response instanceof Master.IsCreateTableDoneResponsePB) {
-            final Master.IsCreateTableDoneResponsePB pb = (Master.IsCreateTableDoneResponsePB)
-                response;
-            return pb;
-          } else {
-            throw new InvalidResponseException(Master.IsCreateTableDoneResponsePB.class, response);
-          }
-        }
-        public String toString() {
-          return "type isCreateTableDone response";
-        }
-      };
 
   /**
    * Tells whether or not this handler should be used.

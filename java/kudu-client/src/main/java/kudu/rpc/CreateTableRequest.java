@@ -9,7 +9,7 @@ import org.jboss.netty.buffer.ChannelBuffer;
 /**
  * RPC to create new tables
  */
-class CreateTableRequest extends KuduRpc {
+class CreateTableRequest extends KuduRpc<Master.CreateTableResponsePB> {
 
   static final String CREATE_TABLE = "CreateTable";
 

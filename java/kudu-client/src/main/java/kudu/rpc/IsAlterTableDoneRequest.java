@@ -8,7 +8,7 @@ import org.jboss.netty.buffer.ChannelBuffer;
 /**
  * RPC used to check if an alter is running for the specified table
  */
-class IsAlterTableDoneRequest extends KuduRpc {
+class IsAlterTableDoneRequest extends KuduRpc<IsAlterTableDoneResponsePB> {
 
   static final String IS_ALTER_TABLE_DONE = "IsAlterTableDone";
   private final String name;

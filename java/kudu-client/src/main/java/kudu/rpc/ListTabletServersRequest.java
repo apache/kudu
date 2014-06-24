@@ -5,7 +5,7 @@ import com.google.protobuf.Message;
 import static kudu.master.Master.*;
 import org.jboss.netty.buffer.ChannelBuffer;
 
-public class ListTabletServersRequest extends KuduRpc {
+public class ListTabletServersRequest extends KuduRpc<Integer> {
 
   public ListTabletServersRequest(KuduTable masterTable) {
     super(masterTable);

@@ -4,12 +4,13 @@ package kudu.rpc;
 import com.google.protobuf.Message;
 import static kudu.master.Master.*;
 
+import kudu.Schema;
 import org.jboss.netty.buffer.ChannelBuffer;
 
 /**
  * RPC to fetch a table's schema
  */
-public class GetTableSchemaRequest extends KuduRpc {
+public class GetTableSchemaRequest extends KuduRpc<Schema> {
   static final String GET_TABLE_SCHEMA = "GetTableSchema";
   private final String name;
 

@@ -52,7 +52,7 @@ import static kudu.rpc.ExternalConsistencyMode.NO_CONSISTENCY;
  * unnecessary memory copies when you know you won't be changing (or event
  * holding a reference to) the byte array, which is frequently the case.
  */
-public abstract class KuduRpc {
+public abstract class KuduRpc<R> {
 
   public interface HasKey {
     /**
@@ -71,7 +71,7 @@ public abstract class KuduRpc {
    * Once an RPC has been used, we create a new Deferred for it, in case
    * the user wants to re-use it.
    */
-  private Deferred<Object> deferred;
+  private Deferred<R> deferred;
 
   private KuduClient.RemoteTablet tablet;
 
@@ -143,17 +143,8 @@ public abstract class KuduRpc {
     this.propagatedTimestamp = propagatedTimestamp;
   }
 
-  /**
-   * Package private way of making an RPC complete by giving it its result.
-   * If this RPC has no {@link Deferred} associated to it, nothing will
-   * happen.  This may happen if the RPC was already called back.
-   * <p>
-   * Once this call to this method completes, this object can be re-used to
-   * re-send the same RPC, provided that no other thread still believes this
-   * RPC to be in-flight (guaranteeing this may be hard in error cases).
-   */
-  final void callback(final Object result) {
-    final Deferred<Object> d = deferred;
+  private final void handleCallback(final Object result) {
+    final Deferred<R> d = deferred;
     if (d == null) {
       return;
     }
@@ -163,10 +154,30 @@ public abstract class KuduRpc {
     d.callback(result);
   }
 
+  /**
+   * Package private way of making an RPC complete by giving it its result.
+   * If this RPC has no {@link Deferred} associated to it, nothing will
+   * happen.  This may happen if the RPC was already called back.
+   * <p>
+   * Once this call to this method completes, this object can be re-used to
+   * re-send the same RPC, provided that no other thread still believes this
+   * RPC to be in-flight (guaranteeing this may be hard in error cases).
+   */
+  final void callback(final R result) {
+    handleCallback(result);
+  }
+
+  /**
+   * Same as callback, except that it accepts an Exception.
+   */
+  final void errback(final Exception e) {
+    handleCallback(e);
+  }
+
   /** Package private way of accessing / creating the Deferred of this RPC.  */
-  final Deferred<Object> getDeferred() {
+  final Deferred<R> getDeferred() {
     if (deferred == null) {
-      deferred = new Deferred<Object>();
+      deferred = new Deferred<R>();
     }
     return deferred;
   }

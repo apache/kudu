@@ -13,7 +13,7 @@ import java.util.List;
 /**
  * Used internally to batch Operations together before sending to the cluster
  */
-class Batch extends KuduRpc implements KuduRpc.HasKey {
+class Batch extends KuduRpc<Tserver.WriteResponsePB> implements KuduRpc.HasKey {
 
   final List<Operation> ops;
 

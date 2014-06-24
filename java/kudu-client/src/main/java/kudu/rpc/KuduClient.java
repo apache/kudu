@@ -263,7 +263,7 @@ public class KuduClient {
   public Deferred<Tserver.PingResponsePB> ping() {
     checkIsClosed();
     PingRequest ping = new PingRequest(this.masterTableHack);
-    return (Deferred<Tserver.PingResponsePB>) sendRpcToTablet(ping);
+    return sendRpcToTablet(ping);
   }
 
   /**
@@ -291,7 +291,7 @@ public class KuduClient {
     }
     CreateTableRequest create = new CreateTableRequest(this.masterTableHack, name, schema,
         builder);
-    return (Deferred<Master.CreateTableResponsePB>) sendRpcToTablet(create);
+    return sendRpcToTablet(create);
   }
 
   /**
@@ -302,7 +302,7 @@ public class KuduClient {
   public Deferred<Master.DeleteTableResponsePB> deleteTable(String name) {
     checkIsClosed();
     DeleteTableRequest delete = new DeleteTableRequest(this.masterTableHack, name);
-    return (Deferred<Master.DeleteTableResponsePB>) sendRpcToTablet(delete);
+    return sendRpcToTablet(delete);
   }
 
   /**
@@ -316,7 +316,7 @@ public class KuduClient {
   public Deferred<Master.AlterTableResponsePB> alterTable(String name, AlterTableBuilder atb) {
     checkIsClosed();
     AlterTableRequest alter = new AlterTableRequest(this.masterTableHack, name, atb);
-    return (Deferred<Master.AlterTableResponsePB>) sendRpcToTablet(alter);
+    return sendRpcToTablet(alter);
   }
 
   /**
@@ -336,22 +336,17 @@ public class KuduClient {
       long start = System.currentTimeMillis();
 
       // Send RPC, wait for reponse, process it
-      Deferred<?> d = sendRpcToTablet(new IsAlterTableDoneRequest(this.masterTableHack, name));
-      Object response;
+      Deferred<Master.IsAlterTableDoneResponsePB> d =
+          sendRpcToTablet(new IsAlterTableDoneRequest(this.masterTableHack, name));
+      Master.IsAlterTableDoneResponsePB response;
       try {
         response = d.join(SLEEP_TIME);
       } catch (Exception ex) {
         throw ex;
       }
-      if (response instanceof MasterErrorException) {
-        throw (MasterErrorException) response;
-      } else if (response instanceof Master.IsAlterTableDoneResponsePB) {
-        Master.IsAlterTableDoneResponsePB pb = (Master.IsAlterTableDoneResponsePB) response;
-        if (pb.getDone()) {
-          return true;
-        }
-      } else {
-        throw new NonRecoverableException("Cannot parse reponse " + response);
+
+      if (response.getDone()) {
+        return true;
       }
 
       // Count time that was slept and see if we need to wait a little more
@@ -380,12 +375,11 @@ public class KuduClient {
   public Deferred<Integer> getTabletServersCount() {
     checkIsClosed();
     ListTabletServersRequest rpc = new ListTabletServersRequest(this.masterTableHack);
-    return (Deferred<Integer>) sendRpcToTablet(rpc);
+    return sendRpcToTablet(rpc);
   }
 
   Deferred<Schema> getTableSchema(String name) {
-    return (Deferred<Schema>) sendRpcToTablet(new GetTableSchemaRequest(this.masterTableHack,
-        name));
+    return sendRpcToTablet(new GetTableSchemaRequest(this.masterTableHack, name));
   }
 
   /**
@@ -447,18 +441,14 @@ public class KuduClient {
    * @return A deferred {@link KuduScanner.Response}
    */
   Deferred<KuduScanner.Response> openScanner(final KuduScanner scanner) {
-    return (Deferred<KuduScanner.Response>) sendRpcToTablet(scanner.getOpenRequest()).addErrback(
-        new Callback<Object, Object>() {
-          public Object call(final Object error) {
+    return sendRpcToTablet(scanner.getOpenRequest()).addErrback(
+        new Callback<Exception, Exception>() {
+          public Exception call(final Exception e) {
             String message = "Cannot openScanner because: ";
-            if (error instanceof Exception) {
-              LOG.warn(message, (Exception)error);
-            } else {
-              LOG.warn(message + " because of " + error);
-            }
+            LOG.warn(message, e);
             // Don't let the scanner think it's opened on this tablet.
             scanner.invalidate();
-            return error;  // Let the error propagate.
+            return e;  // Let the error propagate.
           }
           public String toString() {
             return "openScanner errback";
@@ -516,16 +506,16 @@ public class KuduClient {
     }
     //num_scans.increment();
     final KuduRpc next_request = scanner.getNextRowsRequest();
-    final Deferred<?> d = next_request.getDeferred();
+    final Deferred<KuduScanner.Response> d = next_request.getDeferred();
     client.sendRpc(next_request);
-    return (Deferred<KuduScanner.Response>) d;
+    return d;
   }
 
   /**
    * Package-private access point for {@link KuduScanner}s to close themselves.
    * @param scanner The scanner to close.
    * @return A deferred object that indicates the completion of the request.
-   * The {@link Object} has not special meaning and can be {@code null}.
+   * The {@link KuduScanner.Response} can contain rows that were left to scan.
    */
   Deferred<KuduScanner.Response> closeScanner(final KuduScanner scanner) {
     final RemoteTablet tablet = scanner.currentTablet();
@@ -539,12 +529,12 @@ public class KuduClient {
       return Deferred.fromResult(null);
     }
     final KuduRpc close_request = scanner.getCloseRequest();
-    final Deferred<?> d = close_request.getDeferred();
+    final Deferred<KuduScanner.Response> d = close_request.getDeferred();
     client.sendRpc(close_request);
-    return (Deferred<KuduScanner.Response>) d;
+    return d;
   }
 
-  Deferred<?> sendRpcToTablet(final KuduRpc request) {
+  <R> Deferred<R> sendRpcToTablet(final KuduRpc<R> request) {
     if (cannotRetryRequest(request)) {
       return tooManyAttemptsOrTimeout(request, null);
     }
@@ -568,7 +558,7 @@ public class KuduClient {
       TabletClient tabletClient = clientFor(tablet);
       if (tabletClient != null) {
         request.setTablet(tablet);
-        final Deferred<Object> d = request.getDeferred();
+        final Deferred<R> d = request.getDeferred();
         tabletClient.sendRpc(request);
         return d;
       }
@@ -582,15 +572,15 @@ public class KuduClient {
     if (tablesNotServed.contains(tableName)) {
       return delayedIsCreateTableDone(tableName, request, getRetryRpcCB(request));
     }
-    // TODO Needed to remove the generics to make it compile, is there a better way?
-    Callback cb = getRetryRpcCB(request);
+    Callback<Deferred<R>, Object> cb = getRetryRpcCB(request);
+    // TODO make it so that locateTablet doesn't return an Object and fix the rest
     return locateTablet(tableName, rowkey).addBothDeferring(cb);
   }
 
-  private Callback<Deferred<?>, Object> getRetryRpcCB(final KuduRpc request) {
-    final class RetryRpcCB implements Callback<Deferred<?>, Object> {
-      public Deferred<?> call(final Object arg) {
-        Deferred<?> d = handleLookupExceptions(request, arg);
+  private <R> Callback<Deferred<R>, Object> getRetryRpcCB(final KuduRpc<R> request) {
+    final class RetryRpcCB implements Callback<Deferred<R>, Object> {
+      public Deferred<R> call(final Object arg) {
+        Deferred<R> d = handleLookupExceptions(request, arg);
         return d == null ? sendRpcToTablet(request):  // Retry the RPC.
                            d; // something went wrong
       }
@@ -610,8 +600,8 @@ public class KuduClient {
    * @param cb Callback to call on completion
    * @return Deferred used to track the provided KuduRpc
    */
-  Deferred<?> delayedIsCreateTableDone(final String tableName, final KuduRpc rpc,
-                                       final Callback cb) {
+  <R> Deferred<R> delayedIsCreateTableDone(final String tableName, final KuduRpc<R> rpc,
+                                           final Callback<Deferred<R>, Object> cb) {
 
     final class RetryTimer implements TimerTask {
       public void run(final Timeout timeout) {
@@ -633,11 +623,11 @@ public class KuduClient {
             clientFor(masterTabletHack).isCreateTableDone(tableName).addCallback(new
                 IsCreateTableDoneCB(tableName));
         if (has_permit) {
-          d.addBoth(new ReleaseMasterLookupPermit());
+          d.addBoth(new ReleaseMasterLookupPermit<Object>());
         }
         d.addBothDeferring(cb);
       }
-    };
+    }
     long sleepTime = getSleepTimeForRpc(rpc);
     if (rpc.deadlineTracker.wouldSleepingTimeout(sleepTime)) {
       return tooManyAttemptsOrTimeout(rpc, null);
@@ -647,15 +637,15 @@ public class KuduClient {
     return rpc.getDeferred();
   }
 
-  private final class ReleaseMasterLookupPermit implements Callback<Object, Object> {
-    public Object call(final Object arg) {
+  private final class ReleaseMasterLookupPermit<T> implements Callback<T, T> {
+    public T call(final T arg) {
       releaseMasterLookupPermit();
       return arg;
     }
     public String toString() {
       return "release master lookup permit";
     }
-  };
+  }
 
   /** Callback executed when IsCreateTableDone completes.  */
   private final class IsCreateTableDoneCB implements Callback<Object,
@@ -756,7 +746,7 @@ public class KuduClient {
     }
   }
 
-  Deferred<?> handleLookupExceptions(final KuduRpc request, Object arg) {
+  <R> Deferred<R> handleLookupExceptions(final KuduRpc<R> request, Object arg) {
     if (arg instanceof NonRecoverableException) {
       // No point in retrying here, so fail the RPC.
       KuduException e = (NonRecoverableException) arg;
@@ -769,7 +759,7 @@ public class KuduClient {
         // re-create the exception but with the correct RPC in argument.
         e = e.make(e, request);  // e is likely a PleaseThrottleException.
       }
-      request.callback(e);
+      request.errback(e);
       return Deferred.fromError(e);
     }
     return null;
@@ -794,8 +784,8 @@ public class KuduClient {
    * @param cause What was cause of the last failed attempt, if known.
    * You can pass {@code null} if the cause is unknown.
    */
-  static Deferred<?> tooManyAttemptsOrTimeout(final KuduRpc request,
-                                              final KuduException cause) {
+  static <R> Deferred<R> tooManyAttemptsOrTimeout(final KuduRpc<R> request,
+                                                  final KuduException cause) {
     String message;
     if (request.deadlineTracker.timedOut()) {
       message = "Time out: ";
@@ -803,7 +793,7 @@ public class KuduClient {
       message = "Too many attempts: ";
     }
     final Exception e = new NonRecoverableException(message + request, cause);
-    request.callback(e);
+    request.errback(e);
     return Deferred.fromError(e);
   }
 
@@ -828,7 +818,7 @@ public class KuduClient {
         clientFor(masterTabletHack).getTableLocations(table, rowkey, rowkey).
             addCallback(new MasterLookupCB(table));
     if (has_permit) {
-      d.addBoth(new ReleaseMasterLookupPermit());
+      d.addBoth(new ReleaseMasterLookupPermit<Object>());
     }
     return d;
   }
@@ -1117,8 +1107,10 @@ public class KuduClient {
    * the clean shutdown will be successful, and all the data will be safe on
    * the Kudu side. In case of a failure (the "errback" is invoked) you will have
    * to open a new KuduClient if you want to retry those operations.
+   * It is composed a list that was constructed by grouping up all the RPCs' Deferreds that were
+   * in-flight, which is why in the end you end up with an Object.
    */
-  public Deferred<Object> shutdown() {
+  public Deferred<ArrayList<ArrayList<Object>>> shutdown() {
     checkIsClosed();
     closed = true;
     // This is part of step 3.  We need to execute this in its own thread
@@ -1137,8 +1129,8 @@ public class KuduClient {
     };
 
     // 3. Release all other resources.
-    final class ReleaseResourcesCB implements Callback<Object, Object> {
-      public Object call(final Object arg) {
+    final class ReleaseResourcesCB<T> implements Callback<T, T> {
+      public T call(final T arg) {
         LOG.debug("Releasing all remaining resources");
         timer.stop();
         new ShutdownThread().start();
@@ -1150,9 +1142,10 @@ public class KuduClient {
     }
 
     // 2. Terminate all connections.
-    final class DisconnectCB implements Callback<Object,
+    final class DisconnectCB implements Callback<Deferred<ArrayList<ArrayList<Object>>>,
         ArrayList<ArrayList<Tserver.WriteResponsePB>>> {
-      public Object call(final ArrayList<ArrayList<Tserver.WriteResponsePB>> arg) {
+      public Deferred<ArrayList<ArrayList<Object>>> call(final ArrayList<ArrayList<Tserver
+          .WriteResponsePB>> arg) {
         return disconnectEverything().addCallback(new ReleaseResourcesCB());
       }
       public String toString() {
@@ -1161,7 +1154,7 @@ public class KuduClient {
     }
 
     // 1. Flush everything.
-    return closeAllSessions().addBoth(new DisconnectCB());
+    return closeAllSessions().addBothDeferring(new DisconnectCB());
   }
 
   private void checkIsClosed() {
@@ -1192,10 +1185,11 @@ public class KuduClient {
 
 
   /**
-   * Closes every socket, which will also flush all internal tabletSlice caches.
+   * Closes every socket, which will also flush all the RPCs in flight.
    */
-  private Deferred<Object> disconnectEverything() {
-    ArrayList<Deferred<Object>> deferreds = new ArrayList<Deferred<Object>>(2);
+  private Deferred<ArrayList<ArrayList<Object>>> disconnectEverything() {
+    ArrayList<Deferred<ArrayList<Object>>> deferreds =
+        new ArrayList<Deferred<ArrayList<Object>>>(2);
     HashMap<String, TabletClient> ip2client_copy;
     synchronized (ip2client) {
       // Make a local copy so we can shutdown every Tablet Server clients
@@ -1208,8 +1202,8 @@ public class KuduClient {
     }
     final int size = deferreds.size();
     return Deferred.group(deferreds).addCallback(
-        new Callback<Object, ArrayList<Object>>() {
-          public Object call(final ArrayList<Object> arg) {
+        new Callback<ArrayList<ArrayList<Object>>, ArrayList<ArrayList<Object>>>() {
+          public ArrayList<ArrayList<Object>> call(final ArrayList<ArrayList<Object>> arg) {
             // Normally, now that we've shutdown() every client, all our caches should
             // be empty since each shutdown() generates a DISCONNECTED event, which
             // causes TabletClientPipeline to call removeClientFromCache().
@@ -1227,7 +1221,7 @@ public class KuduClient {
               // the ip2client HashMap second, so this can easily deadlock.
               LOG.error("Some clients are left in the client cache and haven't"
                   + " been cleaned up: " + logme);
-              return disconnectEverything();  // Try again.
+              //return disconnectEverything(); TODO did this really work before?
             }
             return arg;
           }
