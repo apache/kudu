@@ -218,17 +218,24 @@ class RowProjector {
     DCHECK_SCHEMA_EQ(*projection_, dst_row->schema());
 
     // Copy directly from base Data
-    BOOST_FOREACH(const ProjectionIdxMapping& base_mapping, base_cols_mapping_) {
+    for (vector<ProjectionIdxMapping>::const_iterator it =
+           base_cols_mapping_.begin();
+         it != base_cols_mapping_.end();
+         ++it) {
+      const ProjectionIdxMapping& base_mapping = *it;
       typename RowType1::Cell src_cell = src_row.cell(base_mapping.second);
       typename RowType2::Cell dst_cell = dst_row->cell(base_mapping.first);
       RETURN_NOT_OK(CopyCell(src_cell, &dst_cell, dst_arena));
     }
 
     // TODO: Copy Adapted base Data
-    CHECK(adapter_cols_mapping_.size() == 0) << "Value Adapter not supported yet";
+    DCHECK(adapter_cols_mapping_.size() == 0) << "Value Adapter not supported yet";
 
     // Fill with Defaults
-    BOOST_FOREACH(size_t proj_idx, projection_defaults_) {
+    for (vector<size_t>::const_iterator it = projection_defaults_.begin();
+         it != projection_defaults_.end();
+         ++it) {
+      size_t proj_idx = *it;
       const ColumnSchema& col_proj = projection_->column(proj_idx);
       const void *vdefault = FOR_READ ? col_proj.read_default_value() :
                                         col_proj.write_default_value();

@@ -1698,7 +1698,7 @@ class CBTreeIterator {
 
   // Get the given indexed entry in the current leaf node.
   void GetEntryInLeaf(size_t idx, Slice *key, Slice *val) {
-    CHECK(seeked_);
+    DCHECK(seeked_);
     DCHECK_LT(idx, leaf_to_scan_->num_entries());
     leaf_to_scan_->Get(idx, key, val);
   }
