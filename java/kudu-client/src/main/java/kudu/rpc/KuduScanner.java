@@ -273,14 +273,8 @@ public final class KuduScanner {
 
       // We need to open the scanner first.
       return client.openScanner(this).addCallbackDeferring(
-          new Callback<Deferred<RowResultIterator>, Object>() {
-            public Deferred<RowResultIterator> call(final Object response) {
-              if (! (response instanceof Response)) {
-                throw new IllegalStateException("WTF? Scanner open callback"
-                    + " invoked with impossible"
-                    + " argument: " + response);
-              }
-              final Response resp = (Response) response;
+          new Callback<Deferred<RowResultIterator>, KuduScanner.Response>() {
+            public Deferred<RowResultIterator> call(final KuduScanner.Response resp) {
               if (resp.error.hasCode()) {
                 // TODO more specific error parsing
                 LOG.error(resp.error.getStatus().getMessage());
@@ -335,14 +329,10 @@ public final class KuduScanner {
    * This returns an {@code ArrayList<ArrayList<KeyValue>>} (possibly inside a
    * deferred one).
    */
-  private final Callback<Object, Object> got_next_row =
-      new Callback<Object, Object>() {
-        public Object call(final Object response) {
+  private final Callback<Object, Response> got_next_row =
+      new Callback<Object, Response>() {
+        public RowResultIterator call(final Response resp) {
           //System.out.println("got_next_row");
-          if (!(response instanceof Response)) {
-            throw new InvalidResponseException(Response.class, response);
-          }
-          Response resp = (Response) response;
           if (resp.error.hasCode()) {
             // TODO more specific error parsing
             LOG.error(resp.error.getStatus().getMessage());
@@ -365,16 +355,12 @@ public final class KuduScanner {
   /**
    * Creates a new errback to handle errors while trying to get more rows.
    */
-  private final Callback<Object, Object> nextRowErrback() {
-    return new Callback<Object, Object>() {
-      public Object call(final Object error) {
+  private final Callback<Exception, Exception> nextRowErrback() {
+    return new Callback<Exception, Exception>() {
+      public Exception call(final Exception error) {
         final KuduClient.RemoteTablet old_tablet = tablet;  // Save before invalidate().
         String message = old_tablet + " pretends to not know " + KuduScanner.this;
-        if (error instanceof Exception) {
-          LOG.warn(message, (Exception)error);
-        } else {
-          LOG.warn(message + " because of " + error);
-        }
+        LOG.warn(message, error);
         invalidate();  // If there was an error, don't assume we're still OK.
         return error;  // Let the error propagate.
       }
@@ -419,21 +405,15 @@ public final class KuduScanner {
     // declares its return type to be Object, because its return value
     // may or may not be deferred.
     @SuppressWarnings("unchecked")
-    final Deferred<RowResultIterator> d = (Deferred)
-       client.closeScanner(this).addBoth(closedCallback());
+    final Deferred<RowResultIterator> d =
+       client.closeScanner(this).addCallback(closedCallback()); // TODO errBack ?
     return d;
   }
 
   /** Callback+Errback invoked when the TabletServer closed our scanner.  */
-  private Callback<Object, Object> closedCallback() {
-    return new Callback<Object, Object>() {
-      public Object call(Object response) {
-        Object returnedObj = null;
-        if (response instanceof Exception) {
-          returnedObj = response;
-        } else if (response instanceof Response) {
-          returnedObj = ((Response)response).data;
-        }
+  private Callback<RowResultIterator, Response> closedCallback() {
+    return new Callback<RowResultIterator, Response>() {
+      public RowResultIterator call(Response response) {
         closed = true;
         if (LOG.isDebugEnabled()) {
           LOG.debug("Scanner " + Bytes.pretty(scannerId) + " closed on "
@@ -441,8 +421,7 @@ public final class KuduScanner {
         }
         tablet = null;
         scannerId = "client debug closed".getBytes();   // Make debugging easier.
-        //LOG.info("Scan.close is returning rows: " + resp.data.getNumRows());
-        return returnedObj;
+        return response.data;
       }
       public String toString() {
         return "scanner closed";

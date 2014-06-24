@@ -73,8 +73,8 @@ public class TestHybridTime extends BaseKuduTest {
     for (int i = 0; i < keys.length; i++) {
       Insert insert = table.newInsert();
       insert.addString(schema.getColumn(0).getName(), keys[i]);
-      Deferred<Object> d = session.apply(insert);
-      Tserver.WriteResponsePB response = (Tserver.WriteResponsePB) d.join(DEFAULT_SLEEP);
+      Deferred<Tserver.WriteResponsePB> d = session.apply(insert);
+      Tserver.WriteResponsePB response = d.join(DEFAULT_SLEEP);
       assertTrue(response.hasWriteTimestamp());
       clockValues = HTTimestampToPhysicalAndLogical(response.getWriteTimestamp());
       LOG.debug("Clock value after write[" + i + "]: " + new Date(clockValues[0] / 1000).toString()
@@ -103,11 +103,8 @@ public class TestHybridTime extends BaseKuduTest {
       Insert insert = table.newInsert();
       insert.addString(schema.getColumn(0).getName(), keys[i]);
       session.apply(insert);
-      Deferred<Object> d = session.flush();
-      Object responseObj = d.join(DEFAULT_SLEEP);
-      assertTrue("Response was not of the expected type: " + responseObj.getClass().getName(),
-        responseObj instanceof ArrayList);
-      List<Tserver.WriteResponsePB> responses = (List<Tserver.WriteResponsePB>) responseObj;
+      Deferred<ArrayList<kudu.tserver.Tserver.WriteResponsePB>> d = session.flush();
+      ArrayList<kudu.tserver.Tserver.WriteResponsePB> responses = d.join(DEFAULT_SLEEP);
       assertEquals("Response was not of the expected size: " + responses.size(),
         1, responses.size());
 

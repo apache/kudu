@@ -181,9 +181,9 @@ public class KuduTableInputFormat extends InputFormat<NullWritable, RowResult>
     this.nameServer = conf.get(NAME_SERVER_KEY);
 
     this.client = KuduTableMapReduceUtil.connect(masterAddress);
-    Deferred<Object> d = client.openTable(tableName);
+    Deferred<KuduTable> d = client.openTable(tableName);
     try {
-      this.table = (KuduTable)d.join(this.operationTimeoutMs);
+      this.table = d.join(this.operationTimeoutMs);
     } catch (Exception ex) {
       throw new RuntimeException("Could not obtain the table from the master, " +
           "is the master running and is this table created? tablename=" + tableName + " and " +

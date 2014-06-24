@@ -92,8 +92,8 @@ public class KuduSession implements SessionConfiguration {
   private final Map<Slice, Batch> operations = new HashMap<Slice, Batch>();
 
   @GuardedBy("this")
-  private final Map<Slice, Deferred<Object>> operationsInFlight = new HashMap<Slice,
-      Deferred<Object>>();
+  private final Map<Slice, Deferred<Tserver.WriteResponsePB>> operationsInFlight = new HashMap<Slice,
+      Deferred<Tserver.WriteResponsePB>>();
 
   /**
    * This List is used when not in AUTO_FLUSH_SYNC mode in order to keep track of the operations
@@ -197,7 +197,7 @@ public class KuduSession implements SessionConfiguration {
    * Flushes the buffered operations
    * @return a Deferred if operations needed to be flushed, else null
    */
-  public Deferred<Object> close() {
+  public Deferred<ArrayList<Tserver.WriteResponsePB>> close() {
     closed = true;
     client.removeSession(this);
     return flush();
@@ -208,10 +208,10 @@ public class KuduSession implements SessionConfiguration {
    * @return a Deferred whose callback chain will be invoked when
    * everything that was buffered at the time of the call has been flushed.
    */
-  public Deferred<Object> flush() {
+  public Deferred<ArrayList<Tserver.WriteResponsePB>> flush() {
     LOG.trace("Flushing all tablets");
-    final ArrayList<Deferred<Object>> d =
-        new ArrayList<Deferred<Object>>(operations.size());
+    final ArrayList<Deferred<Tserver.WriteResponsePB>> d =
+        new ArrayList<Deferred<Tserver.WriteResponsePB>>(operations.size());
     // Make a copy of the map since we're going to remove objects within the iteration
     HashMap<Slice, Batch> copyOfOps;
     synchronized (this) {
@@ -222,13 +222,13 @@ public class KuduSession implements SessionConfiguration {
         // Safe to do this here because we removed it from operationsInLookup. Lookup may not be
         // over, but it will be finished down in KuduClient. It means we may be missing a few
         // batching opportunities.
-        d.add(client.sendRpcToTablet(op));
+        d.add((Deferred<Tserver.WriteResponsePB>) client.sendRpcToTablet(op));
       }
     }
     for (Map.Entry<Slice, Batch> entry: copyOfOps.entrySet()) {
       d.add(flushTablet(entry.getKey(), entry.getValue()));
     }
-    return (Deferred) Deferred.group(d);
+    return Deferred.group(d);
   }
 
   @Override
@@ -247,13 +247,14 @@ public class KuduSession implements SessionConfiguration {
    * @param operation operation to apply
    * @return a Deferred to track this operation
    */
-  public Deferred<Object> apply(final Operation operation) {
+  public Deferred<Tserver.WriteResponsePB> apply(final Operation operation) {
     if (operation == null) {
       throw new NullPointerException("Cannot apply a null operation");
     }
 
     if (KuduClient.cannotRetryRequest(operation)) {
-      return KuduClient.tooManyAttemptsOrTimeout(operation, null);
+      return (Deferred<Tserver.WriteResponsePB>)
+          KuduClient.tooManyAttemptsOrTimeout(operation, null);
     }
 
     // If we autoflush, just send it to the TS
@@ -262,7 +263,7 @@ public class KuduSession implements SessionConfiguration {
         operation.setTimeoutMillis(currentTimeout);
       }
       operation.setExternalConsistencyMode(this.consistencyMode);
-      return client.sendRpcToTablet(operation);
+      return (Deferred<Tserver.WriteResponsePB>) client.sendRpcToTablet(operation);
     }
     String table = operation.getTable().getName();
     byte[] rowkey = operation.key();
@@ -271,7 +272,7 @@ public class KuduSession implements SessionConfiguration {
     if (tablet != null) {
       operation.setTablet(tablet);
       // Handles the difference between manual and auto flush
-      Deferred<Object> d = addToBuffer(tablet.getTabletId(), operation);
+      Deferred<Tserver.WriteResponsePB> d = addToBuffer(tablet.getTabletId(), operation);
       return d;
     }
 
@@ -281,46 +282,68 @@ public class KuduSession implements SessionConfiguration {
     // TODO starts looking a lot like sendRpcToTablet
     operation.attempt++;
     if (client.isTableNotServed(table)) {
-      return client.delayedIsCreateTableDone(table, operation, getRetryRpcCB(operation));
+      Callback cb = getTabletLookupCB(operation); // TODO err Callback without types...
+      return (Deferred<Tserver.WriteResponsePB>) client.delayedIsCreateTableDone(table,
+          operation, cb);
     }
 
-    return client.locateTablet(table, rowkey).addBothDeferring(getRetryRpcCB(operation));
+    Deferred<Object> d = client.locateTablet(table,
+        rowkey);
+    return d.addBothDeferring(getTabletLookupCB(operation));
   }
 
-  Callback<Deferred<Object>, Object> getRetryRpcCB(final Operation operation) {
-    final class RetryRpcCB implements Callback<Deferred<Object>, Object> {
-      public Deferred<Object> call(final Object arg) {
-        // Important that we lock down everything here so that when we're done at the end of this
-        // method either we put back the operation into operationsInLookup down in apply(),
-        // or we succesfully batch it and then flush() will see it in the operations map.
-        synchronized (KuduSession.this) {
-          boolean removed = operationsInLookup.remove(operation);
-          if (!removed) {
-            LOG.trace("Won't continue applying this operation as it should be handled by a call " +
-                "to flush(): " + operation);
-            return Deferred.fromResult(null);
-          }
-
-          Deferred<Object> d = client.handleLookupExceptions(operation, arg);
-          if (d == null) {
-            try {
-              return apply(operation); // Retry the RPC.
-            } catch(PleaseThrottleException pte) {
-              // We're not really "done" doing the lookup since we couldn't apply. When we come
-              // back we'll call handleLookupExceptions again but it will be a no-op.
-              operationsInLookup.add(operation);
-              return pte.getDeferred().addBothDeferring(getRetryRpcCB(operation));
-            }
-          } else {
-            return d; // something went wrong
-          }
-        }
+  Callback<Deferred<Tserver.WriteResponsePB>, Object> getTabletLookupCB(final Operation operation) {
+    final class TabletLookupCB implements Callback<Deferred<Tserver.WriteResponsePB>, Object> {
+      public Deferred<Tserver.WriteResponsePB> call(final Object arg) {
+        return handleOperationInFlight(operation, arg);
       }
       public String toString() {
-        return "retry RPC";
+        return "retry RPC after lookup";
       }
     }
-    return new RetryRpcCB();
+    return new TabletLookupCB();
+  }
+
+  Callback<Deferred<Tserver.WriteResponsePB>, Tserver.WriteResponsePB> getRetryOpInFlightCB(final Operation operation) {
+    final class RetryOpInFlightCB implements Callback<Deferred<Tserver.WriteResponsePB>, Tserver.WriteResponsePB> {
+      public Deferred<Tserver.WriteResponsePB> call(final Tserver.WriteResponsePB arg) {
+        return handleOperationInFlight(operation, arg);
+      }
+      public String toString() {
+        return "retry RPC after PleaseThrottleException";
+      }
+    }
+    return new RetryOpInFlightCB();
+  }
+
+
+  private Deferred<Tserver.WriteResponsePB> handleOperationInFlight(Operation operation, Object arg) {
+    // Important that we lock down everything here so that when we're done at the end of this
+    // method either we put back the operation into operationsInLookup down in apply(),
+    // or we succesfully batch it and then flush() will see it in the operations map.
+    synchronized (KuduSession.this) {
+      boolean removed = operationsInLookup.remove(operation);
+      if (!removed) {
+        LOG.trace("Won't continue applying this operation as it should be handled by a call " +
+            "to flush(): " + operation);
+        return Deferred.fromResult(null);
+      }
+
+      Deferred<?> d = client.handleLookupExceptions(operation, arg);
+      if (d == null) {
+        try {
+          return apply(operation); // Retry the RPC.
+        } catch(PleaseThrottleException pte) {
+          // We're not really "done" doing the lookup since we couldn't apply. When we come
+          // back we'll call handleLookupExceptions again but it will be a no-op.
+          operationsInLookup.add(operation);
+          return pte.getDeferred().addBothDeferring(getRetryOpInFlightCB(operation));
+        }
+      } else {
+        // TODO probably will break
+        return (Deferred<Tserver.WriteResponsePB>) d; // something went wrong
+      }
+    }
   }
 
   /**
@@ -330,7 +353,7 @@ public class KuduSession implements SessionConfiguration {
    * @param operation operation to batch
    * @return Deffered to track the operation
    */
-  private Deferred<Object> addToBuffer(Slice tablet, Operation operation) {
+  private Deferred<Tserver.WriteResponsePB> addToBuffer(Slice tablet, Operation operation) {
     boolean scheduleFlush = false;
 
     // Fat lock but none of the operations will block
@@ -389,7 +412,8 @@ public class KuduSession implements SessionConfiguration {
 
     // Get here if we accumulated an insert, regardless of if it scheduled
     // a flush
-    return operation.getDeferred();
+    Deferred<?> d = operation.getDeferred();
+    return (Deferred<Tserver.WriteResponsePB>) d;
   }
 
   /**
@@ -430,6 +454,7 @@ public class KuduSession implements SessionConfiguration {
             errorsIndex++;
             callbackObj = resp.getPerRowErrors(errorsIndex);
           }
+          // TODO this is the wrong type we're returning
           request.ops.get(i).callback(callbackObj);
         }
         return resp;
@@ -458,7 +483,7 @@ public class KuduSession implements SessionConfiguration {
    * Also, if there's already a Batch in flight for the given tablet,
    * the flush will be delayed and the returned Deferred will be chained to it.
    */
-  private Deferred<Object> flushTablet(Slice tablet, Batch expectedBatch) {
+  private Deferred<Tserver.WriteResponsePB> flushTablet(Slice tablet, Batch expectedBatch) {
     assert (expectedBatch != null);
 
     synchronized (this) {
@@ -472,7 +497,7 @@ public class KuduSession implements SessionConfiguration {
       if (operationsInFlight.containsKey(tablet)) {
         LOG.trace("This tablet is already in flight, attaching a callback to retry later: " +
             Bytes.getString(tablet));
-        return operationsInFlight.get(tablet).addBothDeferring(
+        return operationsInFlight.get(tablet).addCallbackDeferring(
             new FlushRetryCallback(tablet, operations.get(tablet)));
       }
 
@@ -482,15 +507,16 @@ public class KuduSession implements SessionConfiguration {
             Bytes.getString(tablet));
         return Deferred.fromResult(null);
       }
-      Deferred<Object> batchDeferred = batch.getDeferred();
-      batchDeferred.addBoth(new OpInFlightCallback(tablet));
-      Deferred<Object> oldBatch = operationsInFlight.put(tablet, batchDeferred);
+      Deferred<?> batchDeferred = batch.getDeferred();
+      Deferred<Tserver.WriteResponsePB> recastedDeferred = (Deferred<Tserver.WriteResponsePB>)batchDeferred;
+      recastedDeferred.addBoth(new OpInFlightCallback(tablet));
+      Deferred<?> oldBatch = operationsInFlight.put(tablet, recastedDeferred);
       assert (oldBatch == null);
       if (currentTimeout != 0) {
         batch.deadlineTracker.reset();
         batch.setTimeoutMillis(currentTimeout);
       }
-      return client.sendRpcToTablet(batch);
+      return (Deferred<Tserver.WriteResponsePB>) client.sendRpcToTablet(batch);
     }
   }
 
@@ -499,7 +525,7 @@ public class KuduSession implements SessionConfiguration {
    * Simple callback so that we try to flush this tablet again if we were waiting on the previous
    * Batch to finish.
    */
-  class FlushRetryCallback implements Callback<Deferred<Object>, Object> {
+  class FlushRetryCallback implements Callback<Deferred<Tserver.WriteResponsePB>, Tserver.WriteResponsePB> {
     private final Slice tablet;
     private final Batch expectedBatch;
     public FlushRetryCallback(Slice tablet, Batch expectedBatch) {
@@ -508,11 +534,7 @@ public class KuduSession implements SessionConfiguration {
     }
 
     @Override
-    public Deferred<Object> call(Object o) throws Exception {
-      if (o instanceof Exception) {
-        LOG.warn("Encountered exception sending a batch to " + Bytes.getString(tablet),
-            (Exception) o);
-      }
+    public Deferred<Tserver.WriteResponsePB> call(Tserver.WriteResponsePB o) throws Exception {
       synchronized (KuduSession.this) {
         LOG.trace("Previous batch in flight is done, flushing this tablet again: " +
             Bytes.getString(tablet));
@@ -525,18 +547,14 @@ public class KuduSession implements SessionConfiguration {
    * Simple callback that removes the tablet from the in flight operations map once it completed.
    * TODO we're not handling errors.
    */
-  class OpInFlightCallback implements Callback<Object, Object> {
+  class OpInFlightCallback implements Callback<Tserver.WriteResponsePB, Tserver.WriteResponsePB> {
     private final Slice tablet;
     public OpInFlightCallback(Slice tablet) {
       this.tablet = tablet;
     }
 
     @Override
-    public Object call(Object o) throws Exception {
-      if (o instanceof Exception) {
-        LOG.warn("Encountered exception sending a batch to " + Bytes.getString(tablet),
-            (Exception) o);
-      }
+    public Tserver.WriteResponsePB call(Tserver.WriteResponsePB o) throws Exception {
       synchronized (KuduSession.this) {
         LOG.trace("Unmarking this tablet as in flight: " + Bytes.getString(tablet));
         operationsInFlight.remove(tablet);

@@ -4,6 +4,7 @@ package kudu.rpc;
 import com.stumbleupon.async.Deferred;
 import kudu.ColumnSchema;
 import kudu.Schema;
+import kudu.tserver.Tserver;
 import org.junit.BeforeClass;
 import org.junit.Test;
 
@@ -44,7 +45,7 @@ public class TestScannerMultiTablet extends BaseKuduTest {
       for (String key2 : keys) {
         Insert insert = table.newInsert();
         insert.addString(schema.getColumn(0).getName(), key1 + key2);
-        Deferred<Object> d = session.apply(insert);
+        Deferred<Tserver.WriteResponsePB> d = session.apply(insert);
         d.join(DEFAULT_SLEEP);
       }
     }

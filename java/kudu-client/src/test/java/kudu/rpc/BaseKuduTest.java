@@ -6,6 +6,7 @@ import com.stumbleupon.async.Callback;
 import com.stumbleupon.async.Deferred;
 import kudu.ColumnSchema;
 import kudu.Schema;
+import kudu.master.Master;
 import org.junit.AfterClass;
 import org.junit.BeforeClass;
 import org.slf4j.Logger;
@@ -86,9 +87,9 @@ public class BaseKuduTest {
     Stopwatch stopwatch = new Stopwatch().start();
     while (count < expected && stopwatch.elapsedMillis() < DEFAULT_SLEEP) {
       Thread.sleep(200);
-      Deferred<Object> d = client.getTabletServersCount();
+      Deferred<Integer> d = client.getTabletServersCount();
       d.addErrback(defaultErrorCB);
-      count = (Integer)d.join(DEFAULT_SLEEP);
+      count = d.join(DEFAULT_SLEEP);
     }
     return count >= expected;
   }
@@ -121,7 +122,7 @@ public class BaseKuduTest {
     try {
       for (String tableName : tableNames) {
         final AtomicBoolean gotError = new AtomicBoolean(false);
-        Deferred<Object> d = client.deleteTable(tableName);
+        Deferred<Master.DeleteTableResponsePB> d = client.deleteTable(tableName);
         d.addErrback(new Callback<Object, Object>() {
           @Override
           public Object call(Object arg) throws Exception {
@@ -155,7 +156,7 @@ public class BaseKuduTest {
   }
 
   protected static void createTable(String tableName, Schema schema, CreateTableBuilder builder) {
-    Deferred<Object> d = client.createTable(tableName, schema, builder);
+    Deferred<Master.CreateTableResponsePB> d = client.createTable(tableName, schema, builder);
     final AtomicBoolean gotError = new AtomicBoolean(false);
     d.addErrback(new Callback<Object, Object>() {
       @Override
@@ -259,8 +260,8 @@ public class BaseKuduTest {
    * @throws Exception MasterErrorException if the table doesn't exist
    */
   protected static KuduTable openTable(String name) throws Exception {
-    Deferred<Object> d = client.openTable(name);
-    return (KuduTable)d.join(DEFAULT_SLEEP);
+    Deferred<KuduTable> d = client.openTable(name);
+    return d.join(DEFAULT_SLEEP);
   }
 
   protected static int getMasterPort() {

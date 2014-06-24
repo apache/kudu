@@ -8,6 +8,7 @@ import kudu.rpc.KuduSession;
 import kudu.rpc.KuduTable;
 import kudu.rpc.Operation;
 import kudu.rpc.PleaseThrottleException;
+import kudu.tserver.Tserver;
 import org.apache.hadoop.conf.Configurable;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.io.NullWritable;
@@ -20,6 +21,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
 
@@ -82,9 +84,9 @@ public class KuduTableOutputFormat extends OutputFormat<NullWritable,Operation>
     int bufferSpace = this.conf.getInt(BUFFER_ROW_COUNT_KEY, 1000);
 
     this.client = KuduTableMapReduceUtil.connect(masterAddress);
-    Deferred<Object> d = client.openTable(tableName);
+    Deferred<KuduTable> d = client.openTable(tableName);
     try {
-      this.table = (KuduTable)d.join(this.operationTimeoutMs);
+      this.table = d.join(this.operationTimeoutMs);
     } catch (Exception ex) {
       throw new RuntimeException("Could not obtain the table from the master, " +
           "is the master running and is this table created? tablename=" + tableName + " and " +
@@ -145,7 +147,7 @@ public class KuduTableOutputFormat extends OutputFormat<NullWritable,Operation>
       // We'll loop until the Operation's attempts hits the default max.
       while (true) {
         try {
-          Deferred<Object> d = session.apply(operation);
+          Deferred<Tserver.WriteResponsePB> d = session.apply(operation);
           d.addErrback(defaultErrorCB);
           break;
         } catch (PleaseThrottleException ex) {
@@ -162,7 +164,7 @@ public class KuduTableOutputFormat extends OutputFormat<NullWritable,Operation>
     public void close(TaskAttemptContext taskAttemptContext) throws IOException,
         InterruptedException {
       try {
-        Deferred<Object> d = session.close();
+        Deferred<ArrayList<Tserver.WriteResponsePB>> d = session.close();
         d.addErrback(defaultErrorCB);
         d.join(operationTimeoutMs);
       } catch (Exception e) {
