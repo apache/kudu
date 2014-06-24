@@ -34,7 +34,7 @@ OUT_DIR_NAME=build/bench-out
 HTML_FILE="benchmarks.html"
 
 # Most tests will run this many times.
-NUM_SAMPLES=10
+NUM_SAMPLES=${NUM_SAMPLES:-10}
 
 ################################################################
 # Global variables
@@ -370,6 +370,17 @@ run() {
     if [ -z "$1" ]; then
       build_run_record "working_tree"
     else
+      # Convert the passed-in git refs into their hashes.
+      # This allows you to use "HEAD~3 HEAD" as arguments
+      # and end up with those being evaluated with regard to
+      # the _current_ branch, instead of evaluating the second
+      # "HEAD" after checking out the first.
+      local ref
+      local hashes
+      for ref in "$@" ; do
+        hashes="$hashes $(git rev-parse "$ref")"
+      done
+      set $hashes
       while [ -n "$1" ]; do
         local GIT_HASH="$1"
         shift
