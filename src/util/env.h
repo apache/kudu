@@ -109,6 +109,9 @@ class Env {
   // Delete the specified directory.
   virtual Status DeleteDir(const std::string& dirname) = 0;
 
+  // Synchronize the entry for a specific directory.
+  virtual Status SyncDir(const std::string& dirname) = 0;
+
   // Recursively delete the specified directory.
   // This should operate safely, not following any symlinks, etc.
   virtual Status DeleteRecursively(const std::string &dirname) = 0;
@@ -316,6 +319,7 @@ class EnvWrapper : public Env {
   }
   Status DeleteFile(const std::string& f) OVERRIDE { return target_->DeleteFile(f); }
   Status CreateDir(const std::string& d) OVERRIDE { return target_->CreateDir(d); }
+  Status SyncDir(const std::string& d) OVERRIDE { return target_->SyncDir(d); }
   Status DeleteDir(const std::string& d) OVERRIDE { return target_->DeleteDir(d); }
   Status DeleteRecursively(const std::string& d) OVERRIDE { return target_->DeleteRecursively(d); }
   Status GetFileSize(const std::string& f, uint64_t* s) OVERRIDE {

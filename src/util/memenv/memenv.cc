@@ -364,6 +364,10 @@ class InMemoryEnv : public EnvWrapper {
     return Status::OK();
   }
 
+  virtual Status SyncDir(const std::string& dirname) OVERRIDE {
+    return Status::OK();
+  }
+
   virtual Status DeleteRecursively(const std::string& dirname) OVERRIDE {
     CHECK(!dirname.empty());
     string dir(dirname);

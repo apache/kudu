@@ -83,6 +83,16 @@ TEST_F(LogTest, TestMultipleEntriesInABatch) {
   ASSERT_STATUS_OK(log_->Close());
 }
 
+// Tests that everything works properly with fsync enabled:
+// This also tests SyncDir() (see KUDU-261), which is called whenever
+// a new log segment is initialized.
+TEST_F(LogTest, TestFsync) {
+  options_.force_fsync_all = true;
+  BuildLog();
+  ASSERT_STATUS_OK(log_->WriteHeaderForTests());
+  ASSERT_STATUS_OK(log_->Close());
+}
+
 // Test that the reader can read from the log even if it hasn't been
 // properly closed.
 TEST_F(LogTest, TestLogNotTrimmed) {
