@@ -17,6 +17,8 @@
 
 DEFINE_int32(roundtrip_num_rows, 10000,
              "Number of rows to use for the round-trip test");
+DEFINE_int32(num_scan_passes, 1,
+             "Number of passes to run the scan portion of the round-trip test");
 
 namespace kudu {
 namespace tablet {
@@ -82,7 +84,7 @@ class TestMemRowSet : public ::testing::Test {
       snprintf(keybuf, sizeof(keybuf), "hello %d", i);
       rb.AddString(Slice(keybuf));
       rb.AddUint32(i);
-      RETURN_NOT_OK(mrs->Insert(Timestamp(0), rb.row(), op_id_));
+      RETURN_NOT_OK(mrs->Insert(Timestamp(i), rb.row(), op_id_));
     }
 
     return Status::OK();
@@ -133,6 +135,20 @@ class TestMemRowSet : public ::testing::Test {
                           op_id_,
                           &stats,
                           result);
+  }
+
+  int ScanAndCount(MemRowSet* mrs, const MvccSnapshot& snap) {
+    gscoped_ptr<MemRowSet::Iterator> iter(mrs->NewIterator(&schema_, snap));
+    CHECK_OK(iter->Init(NULL));
+
+    Arena arena(1024, 256*1024);
+    RowBlock block(schema_, 100, &arena);
+    int fetched = 0;
+    while (iter->HasNext()) {
+      CHECK_OK(RowwiseIterator::CopyBlock(iter.get(), &block));
+      fetched += block.selection_vector()->CountSelected();
+    }
+    return fetched;
   }
 
   OpId op_id_;
@@ -364,7 +380,9 @@ TEST_F(TestMemRowSet, TestDelete) {
   EXPECT_EQ("(string key=hello world, uint32 val=2)", rows[0]);
 }
 
-TEST_F(TestMemRowSet, TestMemRowSetInsertAndScan) {
+// Test for basic operations.
+// Can operate as a benchmark by setting --roundtrip_num_rows to a high value like 10M
+TEST_F(TestMemRowSet, TestMemRowSetInsertCountAndScan) {
   shared_ptr<MemRowSet> mrs(new MemRowSet(0, schema_, opid_anchor_registry_.get()));
 
   LOG_TIMING(INFO, "Inserting rows") {
@@ -375,8 +393,19 @@ TEST_F(TestMemRowSet, TestMemRowSetInsertAndScan) {
     int count = mrs->entry_count();
     ASSERT_EQ(FLAGS_roundtrip_num_rows, count);
   }
-}
 
+  for (int i = 0; i < FLAGS_num_scan_passes; i++) {
+    LOG_TIMING(INFO, "Scanning rows where none are committed") {
+      ASSERT_EQ(0, ScanAndCount(mrs.get(), MvccSnapshot(Timestamp(0))));
+    }
+
+    LOG_TIMING(INFO, "Scanning rows where all are committed") {
+      ASSERT_EQ(FLAGS_roundtrip_num_rows,
+                ScanAndCount(mrs.get(),
+                             MvccSnapshot(Timestamp(FLAGS_roundtrip_num_rows + 1))));
+    }
+  }
+}
 // Test that scanning at past MVCC snapshots will hide rows which are
 // not committed in that snapshot.
 TEST_F(TestMemRowSet, TestInsertionMVCC) {
