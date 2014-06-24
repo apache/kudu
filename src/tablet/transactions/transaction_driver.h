@@ -40,6 +40,12 @@ class TransactionDriver : public base::RefCountedThreadSafe<TransactionDriver> {
   // The transaction will be replied to asynchronously.
   virtual Status Execute() = 0;
 
+  // Aborts the transaction, if possible. Since transactions are executed in
+  // multiple stages by multiple executors it might not be possible to stop
+  // the transaction immediately, but this will make sure it is aborted
+  // at the next synchronization point.
+  virtual void Abort() = 0;
+
   virtual const std::tr1::shared_ptr<FutureCallback>& commit_finished_callback();
 
   virtual std::string ToString() const;
@@ -91,7 +97,7 @@ class TransactionDriver : public base::RefCountedThreadSafe<TransactionDriver> {
   Status transaction_status_;
   int prepare_finished_calls_;
 
-  // Lock that synchronizes access to 'transaction_status_' and
+  // Lock that synchronizes access to 'transaction_status_',
   // 'prepare_finished_calls_'.
   mutable simple_spinlock lock_;
 
@@ -136,6 +142,8 @@ class LeaderTransactionDriver : public TransactionDriver {
                      scoped_refptr<LeaderTransactionDriver>* driver);
 
   virtual Status Execute() OVERRIDE;
+
+  virtual void Abort() OVERRIDE;
 
  protected:
   LeaderTransactionDriver(TransactionTracker* txn_tracker,
@@ -189,6 +197,8 @@ class ReplicaTransactionDriver : public TransactionDriver,
   virtual void Init(Transaction* transaction) OVERRIDE;
 
   virtual Status Execute() OVERRIDE;
+
+  virtual void Abort() OVERRIDE;
 
  protected:
   ReplicaTransactionDriver(TransactionTracker* txn_tracker,

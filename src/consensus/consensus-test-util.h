@@ -334,6 +334,8 @@ class TestTransaction : public ReplicaCommitContinuation {
     return Status::OK();
   }
 
+  virtual void Abort() {}
+
   void Commit() {
     // Normally the replica would have a different commit msg
     // but for tests we just copy the leader's message.

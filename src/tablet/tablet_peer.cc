@@ -186,20 +186,23 @@ void TabletPeer::Shutdown() {
   }
   tablet_->UnregisterMaintenanceOps();
 
-  // TODO: KUDU-183: Keep track of the pending tasks and send an "abort" message.
-  LOG_SLOW_EXECUTION(WARNING, 1000,
-      Substitute("TabletPeer: tablet $0: Waiting for Transactions to complete", tablet_id())) {
-    txn_tracker_.WaitForAllToFinish();
-  }
-
   // Stop Log GC thread before we close the log.
   VLOG(1) << Substitute("TabletPeer: tablet $0: Shutting down Log GC thread...", tablet_id());
   log_gc_shutdown_latch_.CountDown();
   log_gc_executor_->Shutdown();
 
   consensus_->Shutdown();
+
+  // TODO: KUDU-183: Keep track of the pending tasks and send an "abort" message.
+  LOG_SLOW_EXECUTION(WARNING, 1000,
+      Substitute("TabletPeer: tablet $0: Waiting for Transactions to complete", tablet_id())) {
+    txn_tracker_.WaitForAllToFinish();
+  }
+
   prepare_executor_->Shutdown();
   leader_apply_executor_->Shutdown();
+
+  WARN_NOT_OK(log_->Close(), "Error closing the Log.");
 
   if (VLOG_IS_ON(1)) {
     VLOG(1) << "TabletPeer: tablet " << tablet_id() << " shut down!";
@@ -355,6 +358,7 @@ void TabletPeer::GetEarliestNeededOpId(consensus::OpId* min_op_id) const {
 }
 
 Status TabletPeer::StartReplicaTransaction(gscoped_ptr<ConsensusRound> round) {
+  RETURN_NOT_OK(CheckRunning());
   consensus::ReplicateMsg* replicate_msg = round->replicate_op()->mutable_replicate();
   Transaction* transaction;
   switch (replicate_msg->op_type()) {

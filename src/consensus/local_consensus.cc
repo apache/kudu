@@ -179,7 +179,6 @@ Status LocalConsensus::Commit(ConsensusRound* context) {
 }
 
 void LocalConsensus::Shutdown() {
-  WARN_NOT_OK(log_->Close(), "Error closing the Log.");
   VLOG(1) << "LocalConsensus Shutdown!";
 }
 

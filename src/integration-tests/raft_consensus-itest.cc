@@ -434,7 +434,6 @@ TEST_F(DistConsensusTest, TestInsertOnNonLeader) {
   RpcController rpc;
   req.set_tablet_id(tablet_id);
   ASSERT_STATUS_OK(SchemaToPB(schema_, req.mutable_schema()));
-
   AddTestRowToPB(RowOperationsPB::INSERT, schema_, 1234, 5678,
                  "hello world via RPC", req.mutable_row_operations());
   ASSERT_STATUS_OK(replicas_[0]->proxy->Write(req, &resp, &rpc));

@@ -93,11 +93,16 @@ class ReplicaState {
   // completed.
   Status LockForShutdown(UniqueLock* lock) WARN_UNUSED_RESULT;
 
-
-  Status LockForConfigChange(UniqueLock* lock);
+  Status LockForConfigChange(UniqueLock* lock) WARN_UNUSED_RESULT;
 
   // Obtains the lock for a state read, does not check state.
-  Status LockForRead(UniqueLock* lock);
+  Status LockForRead(UniqueLock* lock) WARN_UNUSED_RESULT;
+
+  // Completes the Shutdown() of this replica. No more operations, local
+  // or otherwise can happen after this point.
+  // Called after the quiescing phase (started with LockForShutdown())
+  // finishes.
+  Status Shutdown() WARN_UNUSED_RESULT;
 
   // Changes the config for this replica. Checks that the role change
   // is legal.
@@ -173,6 +178,8 @@ class ReplicaState {
 
   // Waits for already triggered Apply()s to commit.
   Status WaitForOustandingApplies();
+
+  Status CancelPendingTransactions();
 
   // Obtains the lock and registers a callback that will be triggered when
   // an operation with id equal to or greater than 'op_id' is replicated.

@@ -167,6 +167,13 @@ Status LeaderTransactionDriver::Execute() {
   return Status::OK();
 }
 
+void LeaderTransactionDriver::Abort() {
+  boost::lock_guard<simple_spinlock> lock(lock_);
+  // Just set the status, upon the next task completing this will cause
+  // the transaction to abort.
+  transaction_status_ = Status::Aborted("Transaction Aborted on request.");
+}
+
 void LeaderTransactionDriver::PrepareOrReplicateSucceeded() {
   ADOPT_TRACE(trace());
   // TODO: this is an ugly hack so that the Release() call doesn't delete the
@@ -388,6 +395,17 @@ Status ReplicaTransactionDriver::Execute() {
     return s;
   }
   return Status::OK();
+}
+
+void ReplicaTransactionDriver::Abort() {
+  // TODO: this is an ugly hack so that the Release() call doesn't delete the
+  // object while we still hold the lock.
+  scoped_refptr<ReplicaTransactionDriver> ref(this);
+  boost::lock_guard<simple_spinlock> state_lock(lock_);
+  prepare_finished_calls_ = 2;
+  LOG(WARNING) << "Transaction aborted on request: " << ToString();
+  transaction_->Finish();
+  txn_tracker_->Release(this);
 }
 
 Status ReplicaTransactionDriver::LeaderCommitted(gscoped_ptr<OperationPB> leader_commit_op) {

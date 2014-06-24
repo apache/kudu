@@ -508,16 +508,19 @@ void RaftConsensus::ClosePeers() {
 
 void RaftConsensus::Shutdown() {
   CHECK_OK(ExecuteHook(PRE_SHUTDOWN));
+  LOG_WITH_PREFIX_LK(INFO) << "Raft consensus shutting down.";
   {
     ReplicaState::UniqueLock lock;
-    CHECK_OK(state_->LockForShutdown(&lock));
+    Status s = state_->LockForShutdown(&lock);
+    if (s.IsIllegalState()) return;
     ClosePeers();
     queue_.Close();
   }
+  CHECK_OK(state_->CancelPendingTransactions());
   CHECK_OK(state_->WaitForOustandingApplies());
-  CHECK_OK(log_->Close());
   STLDeleteValues(&peers_);
   LOG_WITH_PREFIX_LK(INFO) << "Raft consensus Shutdown!";
+  CHECK_OK(state_->Shutdown());
   CHECK_OK(ExecuteHook(POST_SHUTDOWN));
 }
 

@@ -248,6 +248,14 @@ class Consensus {
 class ReplicaCommitContinuation {
  public:
   virtual Status LeaderCommitted(gscoped_ptr<OperationPB> leader_commit_op) = 0;
+
+  // Aborts the replica transaction, making the transaction release its
+  // resources.
+  // Note that this is not equivalent to an OP_ABORT commit, which is issued by
+  // the LEADER, instead this is used when the replica is shutting down and needs
+  // to cancel pending transactions. This doesn't cause a commit message to be stored
+  // in the WAL.
+  virtual void Abort() = 0;
   virtual ~ReplicaCommitContinuation() {}
 };
 

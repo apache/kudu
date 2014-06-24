@@ -126,12 +126,22 @@ Status ReplicaState::LockForUpdate(UniqueLock* lock) {
 
 Status ReplicaState::LockForShutdown(UniqueLock* lock) {
   UniqueLock l(update_lock_);
+  if (state_ == kShutDown) {
+    return Status::IllegalState("Replica is already shutdown");
+  }
   if (state_ != kShuttingDown) {
     state_ = kShuttingDown;
     current_role_ = QuorumPeerPB::NON_PARTICIPANT;
     in_flight_commits_latch_.Reset(in_flight_commits_.size());
   }
   lock->swap(l);
+  return Status::OK();
+}
+
+Status ReplicaState::Shutdown() {
+  CHECK_EQ(state_, kShuttingDown);
+  UniqueLock l(update_lock_);
+  state_ = kShutDown;
   return Status::OK();
 }
 
@@ -181,6 +191,22 @@ const string& ReplicaState::GetLeaderUuidUnlocked() {
   return leader_uuid_;
 }
 
+Status ReplicaState::CancelPendingTransactions() {
+  {
+    UniqueLock lock(update_lock_);
+    if (state_ != kShuttingDown) {
+      return Status::IllegalState("Can only wait for pending commits on kShuttingDown state.");
+    }
+    LOG_WITH_PREFIX(INFO) << "Aborting pending transactions.";
+    OpIdToContextMap::iterator iter = pending_txns_.begin();
+    for (; iter != pending_txns_.end(); iter++) {
+      (*iter).second->GetReplicaCommitContinuation()->Abort();
+    }
+    pending_txns_.clear();
+  }
+  return Status::OK();
+}
+
 Status ReplicaState::WaitForOustandingApplies() {
   {
     UniqueLock lock(update_lock_);
@@ -211,7 +237,7 @@ Status ReplicaState::TriggerApplyUnlocked(gscoped_ptr<OperationPB> leader_commit
     return Status::IllegalState("Cannot trigger apply. Replica is not in kRunning state.");
   }
   ConsensusRound* context = FindPtrOrNull(pending_txns_,
-                                            leader_commit_op->commit().commited_op_id());
+                                           leader_commit_op->commit().commited_op_id());
   if (in_flight_commits_.empty()) {
     all_committed_before_id_.CopyFrom(leader_commit_op->id());
   }
