@@ -60,6 +60,7 @@ import java.net.SocketAddress;
 import java.net.UnknownHostException;
 import java.nio.charset.Charset;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -195,9 +196,9 @@ public class KuduClient {
   private long lastPropagatedTimestamp = NO_TIMESTAMP;
 
   // A table is considered not served when we get an empty list of locations but know
-  // that a tablet exists. This is currently only used for new tables
-  private final ConcurrentHashMap<String, Object> tablesNotServed
-      = new ConcurrentHashMap<String, Object>();
+  // that a tablet exists. This is currently only used for new tables.
+  private final Set<String> tablesNotServed = Collections.newSetFromMap(new
+      ConcurrentHashMap<String, Boolean>());
 
   /**
    * Semaphore used to rate-limit master lookups
@@ -578,7 +579,7 @@ public class KuduClient {
     // then on retry we'll fall into the following block. It will sleep, then call the master to
     // see if the table was created. We'll spin like this until the table is created and then
     // we'll try to locate the tablet again.
-    if (tablesNotServed.containsKey(tableName)) {
+    if (tablesNotServed.contains(tableName)) {
       return delayedIsCreateTableDone(tableName, request, getRetryRpcCB(request));
     }
     // TODO Needed to remove the generics to make it compile, is there a better way?
@@ -619,7 +620,7 @@ public class KuduClient {
           // If we failed to acquire a permit, it's worth checking if someone
           // looked up the tablet we're interested in.  Every once in a while
           // this will save us a Master lookup.
-          if (!tablesNotServed.containsKey(tableName)) {
+          if (!tablesNotServed.contains(tableName)) {
             try {
               cb.call(null);
               return;
@@ -680,7 +681,7 @@ public class KuduClient {
   };
 
   boolean isTableNotServed(String tableName) {
-    return tablesNotServed.containsKey(tableName);
+    return tablesNotServed.contains(tableName);
   }
 
 
@@ -985,7 +986,7 @@ public class KuduClient {
       if (LOG.isDebugEnabled()) {
         LOG.debug("Table " + table + " hasn't been created yet");
       }
-      tablesNotServed.putIfAbsent(table, new Object());
+      tablesNotServed.add(table);
       return;
     }
     // Doing a get first instead of putIfAbsent to avoid creating unnecessary CSLMs because in
