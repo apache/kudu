@@ -9,6 +9,7 @@
 #include <boost/type_traits/remove_pointer.hpp>
 #include <unistd.h>
 #include <list>
+#include <string>
 #include <tr1/type_traits>
 #include <vector>
 
@@ -183,6 +184,17 @@ class BlockingQueue {
 
   size_t max_size() const {
     return max_size_;
+  }
+
+  std::string ToString() const {
+    std::string ret;
+
+    boost::lock_guard<boost::mutex> guard(lock_);
+    BOOST_FOREACH(const T& t, list_) {
+      ret.append(t->ToString());
+      ret.append("\n");
+    }
+    return ret;
   }
 
  private:

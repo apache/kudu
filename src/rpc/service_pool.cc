@@ -99,15 +99,19 @@ Status ServicePool::QueueInboundCall(gscoped_ptr<InboundCall> call) {
 
   Status status = Status::OK();
   if (queue_status == QUEUE_FULL) {
-    status = Status::ServiceUnavailable(Substitute(
-        "$0 request on $1 from $2 dropped due to backpressure. "
+    string err_msg =
+        Substitute("$0 request on $1 from $2 dropped due to backpressure. "
         "The service queue is full; it has $3 items.",
         c->method_name(),
         service_->service_name(),
         c->remote_address().ToString(),
-        service_queue_.max_size()));
+        service_queue_.max_size());
+    status = Status::ServiceUnavailable(err_msg);
     rpcs_queue_overflow_->Increment();
     c->RespondFailure(ErrorStatusPB::ERROR_SERVER_TOO_BUSY, status);
+    DLOG(INFO) << err_msg;
+    DLOG(INFO) << "Contents of service queue: ";
+    DLOG(INFO) << service_queue_.ToString();
   } else if (queue_status == QUEUE_SHUTDOWN) {
     status = Status::ServiceUnavailable("Service is shutting down");
     c->RespondFailure(ErrorStatusPB::FATAL_SERVER_SHUTTING_DOWN, status);
