@@ -29,6 +29,11 @@ COMPACT_MERGE_BENCH=CompactBenchMerge
 WITH_OVERLAP=Overlap
 NO_OVERLAP=NoOverlap
 
+MEMROWSET_BENCH=MemRowSetBenchmark
+INSERT=Insert
+SCAN_NONE_COMMITTED=ScanNoneCommitted
+SCAN_ALL_COMMITTED=ScanAllCommitted
+
 LOG_DIR_NAME=build/bench-logs
 OUT_DIR_NAME=build/bench-out
 HTML_FILE="benchmarks.html"
@@ -164,6 +169,12 @@ run_benchmarks() {
     KUDU_ALLOW_SLOW_TESTS=true ./build/latest/compaction-test \
       --gtest_filter=TestCompaction.BenchmarkMerge* &> $LOGDIR/${COMPACT_MERGE_BENCH}$i.log
   done
+
+  # run memrowset benchmark 5 times, ~10 seconds per run
+  for i in $(seq 1 $NUM_SAMPLES) ; do
+    ./build/latest/memrowset-test --roundtrip_num_rows=10000000 \
+        --gtest_filter=\*InsertCount\* &> $LOGDIR/${MEMROWSET_BENCH}$i.log
+  done
 }
 
 parse_and_record_all_results() {
@@ -217,6 +228,17 @@ parse_and_record_all_results() {
     record_result $BUILD_IDENTIFIER ${COMPACT_MERGE_BENCH}${NO_OVERLAP} $i $real
   done
 
+  # parse out time from MRS benchmarks
+  for i in $(seq 1 $NUM_SAMPLES); do
+    log=$LOGDIR/${MEMROWSET_BENCH}$i.log
+    real=`grep "Time spent Inserting" $log | ./parse_real_out.sh`
+    record_result $BUILD_IDENTIFIER ${MEMROWSET_BENCH}${INSERT} $i $real
+    real=`grep "Time spent Scanning rows where none" $log | ./parse_real_out.sh`
+    record_result $BUILD_IDENTIFIER ${MEMROWSET_BENCH}${SCAN_NONE_COMMITTED} $i $real
+    real=`grep "Time spent Scanning rows where all" $log | ./parse_real_out.sh`
+    record_result $BUILD_IDENTIFIER ${MEMROWSET_BENCH}${SCAN_ALL_COMMITTED} $i $real
+  done
+
   # Parse out the real time from: "Time spent Running 10000000 queries: real 3.281s  user 3.273s sys 0.000s"
   for i in $(seq 1 $NUM_SAMPLES); do
     real=`grep "Time spent Running" $LOGDIR/$BLOOM_TEST$i.log | ./parse_real_out.sh`
@@ -267,36 +289,33 @@ generate_ycsb_plots() {
   done
 }
 
+load_and_generate_plot() {
+  local TEST_NAME=$1
+  local PLOT_NAME=$2
+  load_stats "$TEST_NAME" > $OUTDIR/$PLOT_NAME.tsv
+  write_img_plot $OUTDIR/$PLOT_NAME.tsv $PLOT_NAME
+}
+
 load_stats_and_generate_plots() {
   pushd src
   pushd scripts
 
-  load_stats "%MultiThreadedTabletTest%" > $OUTDIR/mt-tablet-test-runtime.tsv
-  write_img_plot $OUTDIR/mt-tablet-test-runtime.tsv ${MT_TABLET_TEST}
+  load_and_generate_plot "%MultiThreadedTabletTest%" mt-tablet-test-runtime
 
-  load_stats ConcurrentBTreeScanInsert > $OUTDIR/cb-tree-insert.tsv
-  write_img_plot $OUTDIR/cb-tree-insert.tsv cb-tree-insert
+  load_and_generate_plot ConcurrentBTreeScanInsert cb-tree-insert
+  load_and_generate_plot ConcurrentBTreeScanNotFrozen cb-ctree-not-frozen
+  load_and_generate_plot ConcurrentBTreeScanFrozen cb-ctree-frozen
 
-  load_stats ConcurrentBTreeScanNotFrozen > $OUTDIR/cb-ctree-not-frozen.tsv
-  write_img_plot $OUTDIR/cb-ctree-not-frozen.tsv cb-ctree-not-frozen
+  load_and_generate_plot "${COMPACT_MERGE_BENCH}%" compact-merge-bench
 
-  load_stats ConcurrentBTreeScanFrozen > $OUTDIR/cb-ctree-frozen.tsv
-  write_img_plot $OUTDIR/cb-ctree-frozen.tsv cb-ctree-frozen
+  load_and_generate_plot "${MEMROWSET_BENCH}${INSERT}" memrowset-bench-insert
+  load_and_generate_plot "${MEMROWSET_BENCH}Scan%" memrowset-bench-scan
 
-  load_stats ${COMPACT_MERGE_BENCH}${WITH_OVERLAP} > $OUTDIR/${COMPACT_MERGE_BENCH}${WITH_OVERLAP}.tsv
-  write_img_plot $OUTDIR/${COMPACT_MERGE_BENCH}${WITH_OVERLAP}.tsv ${COMPACT_MERGE_BENCH}${WITH_OVERLAP}
+  load_and_generate_plot $BLOOM_TEST bloom-test
 
-  load_stats ${COMPACT_MERGE_BENCH}${NO_OVERLAP} > $OUTDIR/${COMPACT_MERGE_BENCH}${NO_OVERLAP}.tsv
-  write_img_plot $OUTDIR/${COMPACT_MERGE_BENCH}${NO_OVERLAP}.tsv ${COMPACT_MERGE_BENCH}${NO_OVERLAP}
+  load_and_generate_plot $WIRE_PROTOCOL_TEST wire-protocol-test
 
-  load_stats $BLOOM_TEST > $OUTDIR/$BLOOM_TEST.tsv
-  write_img_plot $OUTDIR/$BLOOM_TEST.tsv $BLOOM_TEST
-
-  load_stats $WIRE_PROTOCOL_TEST > $OUTDIR/$WIRE_PROTOCOL_TEST.tsv
-  write_img_plot $OUTDIR/$WIRE_PROTOCOL_TEST.tsv $WIRE_PROTOCOL_TEST
-
-  load_stats $RPC_BENCH_TEST > $OUTDIR/$RPC_BENCH_TEST.tsv
-  write_img_plot $OUTDIR/$RPC_BENCH_TEST.tsv $RPC_BENCH_TEST
+  load_and_generate_plot $RPC_BENCH_TEST rpc-bench-test
 
   # Generate all the pngs for all the mt-tablet tests
   for i in {0..9}; do
@@ -312,11 +331,8 @@ load_stats_and_generate_plots() {
     ################################################################
 
     # TPC-H 1 runs separately, let's just get those graphs
-    load_stats query_1_1gb > $OUTDIR/tpch1-query.tsv
-    write_img_plot $OUTDIR/tpch1-query.tsv tpch1-query
-
-    load_stats insert_1gb > $OUTDIR/tpch1-insert.tsv
-    write_img_plot $OUTDIR/tpch1-insert.tsv tpch1-insert
+    load_and_generate_plot query_1_1gb tpch1-query
+    load_and_generate_plot insert_1gb tpch1-insert
 
     # YCSB which runs the 5nodes_workload on a cluster
     # First we process the loading phase
