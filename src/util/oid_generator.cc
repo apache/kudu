@@ -1,11 +1,10 @@
 // Copyright (c) 2012, Cloudera, inc.
 
 #include <boost/thread/locks.hpp>
-#include <boost/thread/mutex.hpp>
 #include <string>
 
-#include "server/oid_generator.h"
 #include "gutil/stringprintf.h"
+#include "util/oid_generator.h"
 
 namespace kudu {
 

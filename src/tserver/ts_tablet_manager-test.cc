@@ -9,7 +9,7 @@
 
 #include "common/schema.h"
 #include "master/master.pb.h"
-#include "server/fsmanager.h"
+#include "fs/fs_manager.h"
 #include "server/metadata.pb.h"
 #include "tablet/tablet_peer.h"
 #include "tserver/mini_tablet_server.h"

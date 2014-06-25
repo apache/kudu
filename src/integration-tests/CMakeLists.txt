@@ -9,7 +9,8 @@ add_library(integration-tests ${INTEGRATION_TESTS_SRCS})
 target_link_libraries(integration-tests
   tserver
   master
-  client)
+  client
+  kudu_fs)
 add_dependencies(integration-tests
   kudu-tablet_server
   kudu-master)

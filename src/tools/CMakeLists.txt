@@ -6,6 +6,7 @@ set(LINK_LIBS
   consensus
   tserver
   kudu_common
+  kudu_fs
   kudu_util
   gutil
   cfile

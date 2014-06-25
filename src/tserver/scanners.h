@@ -16,7 +16,7 @@
 #include "gutil/ref_counted.h"
 #include "util/auto_release_pool.h"
 #include "util/monotime.h"
-#include "server/oid_generator.h"
+#include "util/oid_generator.h"
 
 namespace kudu {
 

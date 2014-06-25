@@ -35,6 +35,7 @@ target_link_libraries(log
   server_common
   gutil
   kudu_common
+  kudu_fs
   consensus_proto
   log_proto
   metadata_proto)

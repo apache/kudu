@@ -7,7 +7,7 @@
 #include "consensus/log.h"
 #include "consensus/log_util.h"
 #include "consensus/opid_anchor_registry.h"
-#include "server/fsmanager.h"
+#include "fs/fs_manager.h"
 #include "util/metrics.h"
 #include "util/test_macros.h"
 #include "util/test_util.h"

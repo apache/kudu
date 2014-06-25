@@ -11,7 +11,7 @@
 #include <map>
 
 #include "common/schema.h"
-#include "server/fsmanager.h"
+#include "fs/fs_manager.h"
 #include "server/metadata.pb.h"
 
 namespace kudu {

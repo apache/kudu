@@ -1,23 +1,23 @@
 // Copyright (c) 2013, Cloudera, inc.
 
+#include "fs/fs_manager.h"
+
 #include <boost/foreach.hpp>
 #include <glog/logging.h>
 #include <iostream>
 
+#include "fs/fs.pb.h"
 #include "gutil/strings/join.h"
 #include "gutil/strings/numbers.h"
 #include "gutil/strings/strip.h"
 #include "gutil/strings/substitute.h"
 #include "gutil/strtoint.h"
 #include "gutil/walltime.h"
-#include "server/fsmanager.h"
-#include "server/metadata.pb.h"
 #include "util/env_util.h"
 #include "util/net/net_util.h"
 #include "util/path_util.h"
 #include "util/pb_util.h"
 
-using kudu::metadata::InstanceMetadataPB;
 using strings::Substitute;
 
 namespace kudu {

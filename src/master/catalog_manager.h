@@ -14,10 +14,10 @@
 #include "util/monotime.h"
 #include "master/master.pb.h"
 #include "master/ts_manager.h"
-#include "server/oid_generator.h"
 #include "server/monitored_task.h"
 #include "util/cow_object.h"
 #include "util/locks.h"
+#include "util/oid_generator.h"
 #include "util/status.h"
 
 namespace kudu {

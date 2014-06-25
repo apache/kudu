@@ -8,9 +8,9 @@
 #include <vector>
 
 #include "common/wire_protocol.pb.h"
+#include "fs/fs_manager.h"
 #include "rpc/messenger.h"
 #include "server/default-path-handlers.h"
-#include "server/fsmanager.h"
 #include "server/hybrid_clock.h"
 #include "server/logical_clock.h"
 #include "server/rpc_server.h"

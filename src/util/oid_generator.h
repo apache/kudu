@@ -1,7 +1,7 @@
 // Copyright (c) 2012, Cloudera, inc.
 
-#ifndef KUDU_OID_GENERATOR_H
-#define KUDU_OID_GENERATOR_H
+#ifndef KUDU_UTIL_OID_GENERATOR_H
+#define KUDU_UTIL_OID_GENERATOR_H
 
 #include <boost/uuid/uuid_generators.hpp>
 #include <string>

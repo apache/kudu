@@ -11,6 +11,7 @@
 #include <iostream>
 #include <vector>
 
+#include "fs/fs_manager.h"
 #include "gutil/strings/substitute.h"
 #include "gutil/strings/util.h"
 #include "gutil/strings/human_readable.h"
@@ -18,7 +19,6 @@
 #include "util/env.h"
 #include "util/memory/arena.h"
 #include "util/logging.h"
-#include "server/fsmanager.h"
 #include "common/rowblock.h"
 #include "common/row_changelist.h"
 #include "consensus/log_util.h"

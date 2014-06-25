@@ -11,12 +11,12 @@
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 
+#include "fs/fs_manager.h"
 #include "gutil/map-util.h"
 #include "gutil/stl_util.h"
 #include "gutil/strings/substitute.h"
 #include "gutil/strings/util.h"
 #include "gutil/strings/split.h"
-#include "server/fsmanager.h"
 #include "util/coding.h"
 #include "util/env_util.h"
 #include "util/pb_util.h"

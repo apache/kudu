@@ -1,0 +1,21 @@
+// Copyright (c) 2013, Cloudera, inc.
+package kudu;
+
+// ============================================================================
+//  Local file system metadata
+// ============================================================================
+
+// When any server initializes a new filesystem (eg a new node is created in the
+// cluster), it creates this structure and stores it persistently.
+message InstanceMetadataPB {
+
+  // The UUID which is assigned when the instance is first formatted. This uniquely
+  // identifies the node in the cluster.
+  required bytes uuid = 1;
+
+  // Human-readable string indicating when and where the node was first
+  // initialized.
+  required string format_stamp = 2;
+
+  // TODO: add a "node type" (TS/Master?)
+}

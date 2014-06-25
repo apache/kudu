@@ -11,23 +11,21 @@ target_link_libraries(metadata_proto
   protobuf)
 
 set(SERVER_COMMON_SRCS
-  fsmanager.cc
   hybrid_clock.cc
   logical_clock.cc
   metadata.cc
   metadata_util.cc
-  oid_generator.cc
 )
 
 add_library(server_common ${SERVER_COMMON_SRCS})
 target_link_libraries(server_common
   kudu_common
   gutil
+  kudu_fs
   kudu_util
   metadata_proto)
 
 set(KUDU_TEST_LINK_LIBS server_common ${KUDU_MIN_TEST_LIBS})
-ADD_KUDU_TEST(fsmanager-test)
 ADD_KUDU_TEST(hybrid_clock-test)
 ADD_KUDU_TEST(logical_clock-test)
 ADD_KUDU_TEST(metadata-test)
@@ -57,6 +55,7 @@ add_library(server_process ${SERVER_PROCESS_SRCS} ${SERVER_BASE_PROTO_SRCS} ${SE
 target_link_libraries(server_process
   server_common
   kudu_common
+  kudu_fs
   gutil
   krpc
   kudu_util

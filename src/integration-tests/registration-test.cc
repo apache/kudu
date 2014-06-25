@@ -8,6 +8,7 @@
 
 #include "common/schema.h"
 #include "common/wire_protocol-test-util.h"
+#include "fs/fs_manager.h"
 #include "gutil/gscoped_ptr.h"
 #include "integration-tests/mini_cluster.h"
 #include "master/mini_master.h"
@@ -15,7 +16,6 @@
 #include "master/master.pb.h"
 #include "master/master-test-util.h"
 #include "master/ts_descriptor.h"
-#include "server/fsmanager.h"
 #include "tserver/mini_tablet_server.h"
 #include "tserver/tablet_server.h"
 #include "util/curl_util.h"

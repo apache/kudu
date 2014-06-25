@@ -1,10 +1,8 @@
 // Copyright (c) 2013, Cloudera, inc.
 
-#ifndef KUDU_COMMON_FS_MANAGER_H
-#define KUDU_COMMON_FS_MANAGER_H
+#ifndef KUDU_FS_FS_MANAGER_H
+#define KUDU_FS_FS_MANAGER_H
 
-#include <boost/noncopyable.hpp>
-#include <boost/lexical_cast.hpp>
 #include <google/protobuf/message_lite.h>
 #include <iosfwd>
 #include <tr1/memory>
@@ -15,8 +13,8 @@
 #include "gutil/strings/substitute.h"
 #include "gutil/strings/strcat.h"
 #include "gutil/strtoint.h"
-#include "server/oid_generator.h"
 #include "util/env.h"
+#include "util/oid_generator.h"
 #include "util/path_util.h"
 
 namespace kudu {
@@ -27,9 +25,7 @@ using std::vector;
 using std::tr1::shared_ptr;
 using google::protobuf::MessageLite;
 
-namespace metadata {
 class InstanceMetadataPB;
-} // namespace metadata
 
 class BlockId {
  public:
@@ -272,7 +268,7 @@ class FsManager {
 
   ObjectIdGenerator oid_generator_;
 
-  gscoped_ptr<metadata::InstanceMetadataPB> metadata_;
+  gscoped_ptr<InstanceMetadataPB> metadata_;
 
   DISALLOW_COPY_AND_ASSIGN(FsManager);
 };

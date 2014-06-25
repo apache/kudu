@@ -6,7 +6,7 @@
 #include <vector>
 
 #include "consensus/log_util.h"
-#include "server/fsmanager.h"
+#include "fs/fs_manager.h"
 
 namespace kudu {
 namespace log {

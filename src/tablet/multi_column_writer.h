@@ -5,7 +5,7 @@
 #include <glog/logging.h>
 #include <vector>
 
-#include "server/fsmanager.h"
+#include "fs/fs_manager.h"
 #include "gutil/macros.h"
 
 namespace kudu {
