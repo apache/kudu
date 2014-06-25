@@ -15,6 +15,14 @@
 DEFINE_int32(leader_heartbeat_interval_ms, 500,
              "The LEADER's heartbeat interval to the replicas.");
 
+// Convenience macros to prefix log messages with the id of the tablet and peer.
+// Do not obtain the state lock and should be used when holding the state_ lock
+#define LOG_WITH_PREFIX(severity) LOG(severity) << LogPrefixUnlocked()
+#define VLOG_WITH_PREFIX(verboselevel) LOG_IF(INFO, VLOG_IS_ON(verboselevel)) << LogPrefixUnlocked()
+// Same as the above, but obtain the lock
+#define LOG_WITH_PREFIX_LK(severity) LOG(severity) << LogPrefix()
+#define VLOG_WITH_PREFIX_LK(verboselevel) LOG_IF(INFO, VLOG_IS_ON(verboselevel)) << LogPrefix()
+
 namespace kudu {
 namespace consensus {
 
@@ -49,7 +57,7 @@ Status RaftConsensus::Init(const metadata::QuorumPeerPB& peer,
                                 txn_factory,
                                 initial.term(),
                                 initial.index()));
-  LOG(INFO) << LogPrefix() << "Created Raft consensus for peer " << state_->ToString();
+  LOG_WITH_PREFIX_LK(INFO) << "Created Raft consensus for peer " << state_->ToString();
   return Status::OK();
 }
 
@@ -63,8 +71,8 @@ Status RaftConsensus::Start(const metadata::QuorumPB& initial_quorum,
 
   ReplicaState::UniqueLock lock;
   CHECK_OK(state_->LockForRead(&lock));
-  LOG(INFO) << LogPrefixUnlocked() << "Started. Quorum: "
-            << state_->GetCurrentConfigUnlocked().ShortDebugString();
+  LOG_WITH_PREFIX(INFO) << "Started. Quorum: "
+      << state_->GetCurrentConfigUnlocked().ShortDebugString();
   running_quorum->reset(new QuorumPB(state_->GetCurrentConfigUnlocked()));
   RETURN_NOT_OK(ExecuteHook(POST_START));
   return Status::OK();
@@ -72,7 +80,6 @@ Status RaftConsensus::Start(const metadata::QuorumPB& initial_quorum,
 
 Status RaftConsensus::ChangeConfig(QuorumPB new_config) {
   RETURN_NOT_OK(ExecuteHook(PRE_CONFIG_CHANGE));
-
   ReplicaState::UniqueLock lock;
   CHECK_OK(state_->LockForConfigChange(&lock));
   QuorumPB old_config = state_->GetCurrentConfigUnlocked();
@@ -97,7 +104,7 @@ Status RaftConsensus::CreateOrUpdatePeersUnlocked() {
       continue;
     }
     if (peer_pb.permanent_uuid() == state_->GetPeerUuid()) {
-      VLOG(1) << "Adding local peer. Peer: " << peer_pb.ShortDebugString();
+      VLOG_WITH_PREFIX(1) << "Adding local peer. Peer: " << peer_pb.ShortDebugString();
       gscoped_ptr<Peer> local_peer;
       OpId initial = GetLastOpIdFromLog();
       RETURN_NOT_OK(Peer::NewLocalPeer(peer_pb,
@@ -109,7 +116,7 @@ Status RaftConsensus::CreateOrUpdatePeersUnlocked() {
                                        &local_peer))
       peers_.insert(pair<string, Peer*>(peer_pb.permanent_uuid(), local_peer.release()));
     } else {
-      VLOG(1) << "Adding remote peer. Peer: " << peer_pb.ShortDebugString();
+      VLOG_WITH_PREFIX(1) << "Adding remote peer. Peer: " << peer_pb.ShortDebugString();
       gscoped_ptr<PeerProxy> peer_proxy;
       RETURN_NOT_OK_PREPEND(peer_proxy_factory_->NewProxy(peer_pb, &peer_proxy),
                             "Could not obtain a remote proxy to the peer.");
@@ -234,7 +241,7 @@ Status RaftConsensus::Replicate(ConsensusRound* context) {
       // machine have continuous ids, for the same term, even if the queue
       // refused to add any more operations.
       state_->RollbackIdGenUnlocked(context->replicate_op()->id());
-      LOG(WARNING) << LogPrefixUnlocked() << ": Could not append replicate request "
+      LOG_WITH_PREFIX(WARNING) << ": Could not append replicate request "
                    << "to the queue. Queue is Full. "
                    << "Queue metrics: " << queue_.ToString();
       // TODO Possibly evict a dangling peer from the quorum here.
@@ -324,8 +331,8 @@ Status RaftConsensus::LeaderCommitUnlocked(ConsensusRound* context,
                         "Could not append commit request to the queue");
 
   if (VLOG_IS_ON(1)) {
-    VLOG(1) << LogPrefixUnlocked() << "Leader appended commit. Leader: "
-            << state_->ToString() << " Commit: " << commit_op->ShortDebugString();
+    VLOG_WITH_PREFIX(1) << "Leader appended commit. Leader: "
+        << state_->ToString() << " Commit: " << commit_op->ShortDebugString();
   }
 
   state_->UpdateLeaderCommittedOpIdUnlocked(commit_op->commit().commited_op_id());
@@ -337,8 +344,8 @@ Status RaftConsensus::ReplicaCommitUnlocked(ConsensusRound* context,
                                             OperationPB* commit_op) {
 
   if (VLOG_IS_ON(1)) {
-    VLOG(1) << LogPrefixUnlocked() << "Replica appending commit. Replica: "
-            << state_->ToString() << " Commit: " << commit_op->ShortDebugString();
+    VLOG_WITH_PREFIX(1) << "Replica appending commit. Replica: "
+        << state_->ToString() << " Commit: " << commit_op->ShortDebugString();
   }
 
   // Copy the ids to update later as we can't be sure they will be alive
@@ -380,8 +387,8 @@ Status RaftConsensus::Update(const ConsensusRequestPB* request,
 
   if (PREDICT_FALSE(VLOG_IS_ON(1))) {
     if (request->ops_size() == 0) {
-      VLOG(1) << LogPrefix() <<  "Replica replied to status only request. Replica: "
-              << state_->ToString() << " Status: " << status->ShortDebugString();
+      VLOG_WITH_PREFIX(1) <<  "Replica replied to status only request. Replica: "
+          << state_->ToString() << " Status: " << status->ShortDebugString();
     }
   }
   RETURN_NOT_OK(ExecuteHook(POST_UPDATE));
@@ -404,7 +411,7 @@ Status RaftConsensus::UpdateReplica(const ConsensusRequestPB* request,
     // been handled by a previous call to UpdateReplica()
     BOOST_FOREACH(const OperationPB& op, request->ops()) {
       if (log::OpIdCompare(op.id(), state_->GetLastReceivedOpIdUnlocked()) <= 0) {
-        VLOG(2) << "Skipping op id " << op.id().ShortDebugString()
+        VLOG_WITH_PREFIX(2) << "Skipping op id " << op.id().ShortDebugString()
             << " (already replicated/committed)";
         continue;
       }
@@ -413,7 +420,7 @@ Status RaftConsensus::UpdateReplica(const ConsensusRequestPB* request,
       } else if (op.has_commit()) {
         commit_ops.push_back(&op);
       } else {
-        LOG(FATAL)<< "Unexpected op: " << op.ShortDebugString();
+        LOG_WITH_PREFIX(FATAL)<< "Unexpected op: " << op.ShortDebugString();
       }
     }
 
@@ -468,7 +475,7 @@ Status RaftConsensus::UpdateReplica(const ConsensusRequestPB* request,
   }
 
   if (PREDICT_FALSE(VLOG_IS_ON(1))) {
-    VLOG(1) << LogPrefix() << "Replica updated. Replica: "
+    VLOG_WITH_PREFIX_LK(1) << "Replica updated. Replica: "
         << state_->ToString() << " Request: " << request->ShortDebugString();
   }
 
@@ -485,7 +492,7 @@ void RaftConsensus::SignalRequestToPeers(bool force_if_queue_empty) {
   for (; iter != peers_.end(); iter++) {
     Status s = (*iter).second->SignalRequest(force_if_queue_empty);
     if (PREDICT_FALSE(!s.ok())) {
-      LOG(WARNING) << LogPrefixUnlocked() << "Peer was closed, removing from peers. Peer: "
+      LOG_WITH_PREFIX(WARNING) << "Peer was closed, removing from peers. Peer: "
           << (*iter).second->peer_pb().ShortDebugString();
       peers_.erase(iter);
     }
@@ -510,7 +517,7 @@ void RaftConsensus::Shutdown() {
   CHECK_OK(state_->WaitForOustandingApplies());
   CHECK_OK(log_->Close());
   STLDeleteValues(&peers_);
-  LOG(INFO) << LogPrefix() << "Raft consensus Shutdown!";
+  LOG_WITH_PREFIX_LK(INFO) << "Raft consensus Shutdown!";
   CHECK_OK(ExecuteHook(POST_SHUTDOWN));
 }
 
@@ -533,8 +540,7 @@ OpId RaftConsensus::GetLastOpIdFromLog() {
   } else if (s.IsNotFound()) {
     id = log::MinimumOpId();
   } else {
-    LOG(FATAL) << LogPrefix() << "Unexpected status from Log::GetLastEntryOpId(): "
-               << s.ToString();
+    LOG_WITH_PREFIX(FATAL) << "Unexpected status from Log::GetLastEntryOpId(): " << s.ToString();
   }
   return id;
 }
