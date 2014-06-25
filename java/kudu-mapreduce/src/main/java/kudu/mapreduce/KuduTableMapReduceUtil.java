@@ -229,6 +229,7 @@ public class KuduTableMapReduceUtil {
    * @return a jar file that contains the class.
    * @throws IOException
    */
+  @SuppressWarnings("deprecation")
   private static Path findOrCreateJar(Class<?> my_class, FileSystem fs,
                                       Map<String, String> packagedClasses)
       throws IOException {

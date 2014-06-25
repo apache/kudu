@@ -4,6 +4,7 @@ package kudu.rpc;
 import com.google.protobuf.Message;
 import kudu.Schema;
 import kudu.master.Master;
+import kudu.util.Pair;
 import org.jboss.netty.buffer.ChannelBuffer;
 
 /**
@@ -39,10 +40,10 @@ class CreateTableRequest extends KuduRpc<Master.CreateTableResponsePB> {
   }
 
   @Override
-  Object deserialize(ChannelBuffer buf) {
+  Pair<Master.CreateTableResponsePB, Object> deserialize(ChannelBuffer buf) throws Exception {
     final Master.CreateTableResponsePB.Builder builder = Master.CreateTableResponsePB.newBuilder();
     readProtobuf(buf, builder);
     Master.CreateTableResponsePB resp = builder.build();
-    return resp.hasError() ? new MasterErrorException(resp.getError()) : resp;
+    return new Pair<Master.CreateTableResponsePB, Object>(resp, resp.getError());
   }
 }

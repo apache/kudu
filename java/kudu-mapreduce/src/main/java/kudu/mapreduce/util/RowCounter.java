@@ -48,13 +48,14 @@ public class RowCounter extends Configured implements Tool {
    * @return The newly created job.
    * @throws java.io.IOException When setting up the job fails.
    */
+  @SuppressWarnings("deprecation")
   public static Job createSubmittableJob(Configuration conf, String[] args)
       throws IOException, ClassNotFoundException {
 
     long timeout = conf.getLong(OPERATION_TIMEOUT_MS_KEY, 10000);
     String columnProjection = conf.get(COLUMN_PROJECTION_KEY);
 
-    Class mapperClass = RowCounterMapper.class;
+    Class<RowCounterMapper> mapperClass = RowCounterMapper.class;
     String tableName = args[0];
     String masterAddress = args[1];
 

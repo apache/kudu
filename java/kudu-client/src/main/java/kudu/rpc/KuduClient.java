@@ -505,7 +505,7 @@ public class KuduClient {
       return Deferred.fromError(e);
     }
     //num_scans.increment();
-    final KuduRpc next_request = scanner.getNextRowsRequest();
+    final KuduRpc<KuduScanner.Response> next_request = scanner.getNextRowsRequest();
     final Deferred<KuduScanner.Response> d = next_request.getDeferred();
     client.sendRpc(next_request);
     return d;
@@ -528,7 +528,7 @@ public class KuduClient {
           + (tablet == null ? null : tablet));
       return Deferred.fromResult(null);
     }
-    final KuduRpc close_request = scanner.getCloseRequest();
+    final KuduRpc<KuduScanner.Response>  close_request = scanner.getCloseRequest();
     final Deferred<KuduScanner.Response> d = close_request.getDeferred();
     client.sendRpc(close_request);
     return d;
@@ -834,7 +834,7 @@ public class KuduClient {
    * @param deadline deadline in milliseconds for this method to finish
    * @return a list of the tablets in the table, which can be queried for metadata about
    *         each tablet
-   * @throws Exception
+   * @throws Exception MasterErrorException if the table doesn't exist
    */
   List<LocatedTablet> syncLocateTable(String table,
                                       byte[] startKey,
@@ -888,12 +888,12 @@ public class KuduClient {
    * We're handling a tablet server that's telling us it doesn't have the tablet we're asking for.
    * We're in the context of decode() meaning we need to either callback or retry later.
    */
-  void handleNSTE(final KuduRpc rpc, KuduException ex, TabletClient server) {
+  <R> void handleNSTE(final KuduRpc<R> rpc, KuduException ex, TabletClient server) {
     invalidateTabletCache(rpc.getTablet(), server);
     handleRetryableError(rpc, ex);
   }
 
-  void handleRetryableError(final KuduRpc rpc, KuduException ex) {
+  <R> void handleRetryableError(final KuduRpc<R> rpc, KuduException ex) {
     // TODO we don't always need to sleep, maybe another replica can serve this RPC
 
     boolean cannotRetry = cannotRetryRequest(rpc);
@@ -905,7 +905,7 @@ public class KuduClient {
     delayedSendRpcToTablet(rpc, ex);
   }
 
-  private void delayedSendRpcToTablet(final KuduRpc rpc, KuduException ex) {
+  private <R> void delayedSendRpcToTablet(final KuduRpc<R> rpc, KuduException ex) {
     // Here we simply retry the RPC later. We might be doing this along with a lot of other RPCs
     // in parallel. Asynchbase does some hacking with a "probe" RPC while putting the other ones
     // on hold but we won't be doing this for the moment. Regions in HBase can move a lot,
@@ -914,7 +914,7 @@ public class KuduClient {
       public void run(final Timeout timeout) {
         sendRpcToTablet(rpc);
       }
-    };
+    }
     long sleepTime = getSleepTimeForRpc(rpc);
     if (rpc.deadlineTracker.wouldSleepingTimeout(sleepTime)) {
       tooManyAttemptsOrTimeout(rpc, ex);
@@ -1096,7 +1096,7 @@ public class KuduClient {
    * <p>
    * <ul>
    *   <li>{@link KuduSession#flush Flushes} all buffered edits.</li>
-   *   <li>Completes all outstanding requests.</li>
+   *   <li>Cancels all the other requests.</li>
    *   <li>Terminates all connections.</li>
    *   <li>Releases all other resources.</li>
    * </ul>
@@ -1107,10 +1107,9 @@ public class KuduClient {
    * the clean shutdown will be successful, and all the data will be safe on
    * the Kudu side. In case of a failure (the "errback" is invoked) you will have
    * to open a new KuduClient if you want to retry those operations.
-   * It is composed a list that was constructed by grouping up all the RPCs' Deferreds that were
-   * in-flight, which is why in the end you end up with an Object.
+   * The Deferred doesn't actually hold any content.
    */
-  public Deferred<ArrayList<ArrayList<Object>>> shutdown() {
+  public Deferred<ArrayList<Void>> shutdown() {
     checkIsClosed();
     closed = true;
     // This is part of step 3.  We need to execute this in its own thread
@@ -1126,11 +1125,11 @@ public class KuduClient {
         // This terminates the Executor.
         channelFactory.releaseExternalResources();
       }
-    };
+    }
 
     // 3. Release all other resources.
-    final class ReleaseResourcesCB<T> implements Callback<T, T> {
-      public T call(final T arg) {
+    final class ReleaseResourcesCB implements Callback<ArrayList<Void>, ArrayList<Void>> {
+      public ArrayList<Void> call(final ArrayList<Void> arg) {
         LOG.debug("Releasing all remaining resources");
         timer.stop();
         new ShutdownThread().start();
@@ -1142,9 +1141,9 @@ public class KuduClient {
     }
 
     // 2. Terminate all connections.
-    final class DisconnectCB implements Callback<Deferred<ArrayList<ArrayList<Object>>>,
+    final class DisconnectCB implements Callback<Deferred<ArrayList<Void>>,
         ArrayList<ArrayList<Tserver.WriteResponsePB>>> {
-      public Deferred<ArrayList<ArrayList<Object>>> call(final ArrayList<ArrayList<Tserver
+      public Deferred<ArrayList<Void>> call(final ArrayList<ArrayList<Tserver
           .WriteResponsePB>> arg) {
         return disconnectEverything().addCallback(new ReleaseResourcesCB());
       }
@@ -1152,7 +1151,6 @@ public class KuduClient {
         return "disconnect callback";
       }
     }
-
     // 1. Flush everything.
     return closeAllSessions().addBothDeferring(new DisconnectCB());
   }
@@ -1183,13 +1181,12 @@ public class KuduClient {
     return Deferred.group(deferreds);
   }
 
-
   /**
-   * Closes every socket, which will also flush all the RPCs in flight.
+   * Closes every socket, which will also cancel all the RPCs in flight.
    */
-  private Deferred<ArrayList<ArrayList<Object>>> disconnectEverything() {
-    ArrayList<Deferred<ArrayList<Object>>> deferreds =
-        new ArrayList<Deferred<ArrayList<Object>>>(2);
+  private Deferred<ArrayList<Void>> disconnectEverything() {
+    ArrayList<Deferred<Void>> deferreds =
+        new ArrayList<Deferred<Void>>(2);
     HashMap<String, TabletClient> ip2client_copy;
     synchronized (ip2client) {
       // Make a local copy so we can shutdown every Tablet Server clients
@@ -1202,8 +1199,8 @@ public class KuduClient {
     }
     final int size = deferreds.size();
     return Deferred.group(deferreds).addCallback(
-        new Callback<ArrayList<ArrayList<Object>>, ArrayList<ArrayList<Object>>>() {
-          public ArrayList<ArrayList<Object>> call(final ArrayList<ArrayList<Object>> arg) {
+        new Callback<ArrayList<Void>, ArrayList<Void>>() {
+          public ArrayList<Void> call(final ArrayList<Void> arg) {
             // Normally, now that we've shutdown() every client, all our caches should
             // be empty since each shutdown() generates a DISCONNECTED event, which
             // causes TabletClientPipeline to call removeClientFromCache().
@@ -1221,7 +1218,6 @@ public class KuduClient {
               // the ip2client HashMap second, so this can easily deadlock.
               LOG.error("Some clients are left in the client cache and haven't"
                   + " been cleaned up: " + logme);
-              //return disconnectEverything(); TODO did this really work before?
             }
             return arg;
           }

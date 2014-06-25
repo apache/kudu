@@ -26,6 +26,7 @@
  */
 package kudu.rpc;
 
+@SuppressWarnings("serial")
 public class NonRecoverableException extends KuduException {
 
   /**
@@ -46,6 +47,4 @@ public class NonRecoverableException extends KuduException {
   NonRecoverableException(final String msg, final Throwable cause) {
     super(msg, cause);
   }
-
-  private static final long serialVersionUID = 1280638547;
 }

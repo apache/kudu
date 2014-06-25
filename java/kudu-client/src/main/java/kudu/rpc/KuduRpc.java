@@ -30,6 +30,7 @@ import com.google.protobuf.CodedOutputStream;
 import com.google.protobuf.InvalidProtocolBufferException;
 import com.google.protobuf.Message;
 import com.stumbleupon.async.Deferred;
+import kudu.util.Pair;
 import org.jboss.netty.buffer.ChannelBuffer;
 import org.jboss.netty.buffer.ChannelBuffers;
 
@@ -119,8 +120,12 @@ public abstract class KuduRpc<R> {
    * @param buf The buffer from which to de-serialize the response.
    * protobuf of the RPC response.  If 0, then there is just the protobuf.
    * The value is guaranteed to be both positive and of a "reasonable" size.
+   * @return An Object of type R that will be sent to callback and an Object that will be an Error
+   * of type TabletServerErrorPB or MasterErrorPB that will be converted into an exception and
+   * sent to errback.
+   * @throws Exception An exception that will be sent to errback.
    */
-  abstract Object deserialize(ChannelBuffer buf);
+  abstract Pair<R, Object> deserialize(ChannelBuffer buf) throws Exception;
 
   /**
    * Sets the external consistency mode for this RPC.

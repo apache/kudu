@@ -3,6 +3,8 @@ package kudu.rpc;
 
 import com.google.protobuf.Message;
 import static kudu.master.Master.*;
+
+import kudu.util.Pair;
 import org.jboss.netty.buffer.ChannelBuffer;
 
 /**
@@ -35,10 +37,10 @@ class IsAlterTableDoneRequest extends KuduRpc<IsAlterTableDoneResponsePB> {
   }
 
   @Override
-  Object deserialize(ChannelBuffer buf) {
+  Pair<IsAlterTableDoneResponsePB, Object> deserialize(ChannelBuffer buf) throws Exception {
     final IsAlterTableDoneResponsePB.Builder respBuilder = IsAlterTableDoneResponsePB.newBuilder();
     readProtobuf(buf, respBuilder);
     IsAlterTableDoneResponsePB resp = respBuilder.build();
-    return resp.hasError() ? new MasterErrorException(resp.getError()) : resp;
+    return new Pair<IsAlterTableDoneResponsePB, Object>(resp, resp.getError());
   }
 }

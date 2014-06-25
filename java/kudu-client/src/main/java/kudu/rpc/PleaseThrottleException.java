@@ -58,6 +58,7 @@ import kudu.tserver.Tserver;
  * Note that low-throughput applications will typically rarely (if ever)
  * hit this exception, so they don't need complex throttling logic.
  */
+@SuppressWarnings("serial")
 public final class PleaseThrottleException extends NonRecoverableException
     implements HasFailedRpcException {
 
@@ -98,7 +99,5 @@ public final class PleaseThrottleException extends NonRecoverableException
   public Deferred<Tserver.WriteResponsePB> getDeferred() {
     return deferred;
   }
-
-  private static final long serialVersionUID = 1286782542;
 
 }

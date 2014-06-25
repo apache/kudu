@@ -20,6 +20,7 @@ import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.conf.Configured;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.mapreduce.Job;
+import org.apache.hadoop.mapreduce.Mapper;
 import org.apache.hadoop.mapreduce.lib.input.FileInputFormat;
 import org.apache.hadoop.mapreduce.lib.input.TextInputFormat;
 import org.apache.hadoop.util.Tool;
@@ -50,12 +51,13 @@ public class ImportCsv extends Configured implements Tool {
    * @return The newly created job.
    * @throws java.io.IOException When setting up the job fails.
    */
+  @SuppressWarnings("deprecation")
   public static Job createSubmittableJob(Configuration conf, String[] args)
       throws IOException, ClassNotFoundException {
 
     long timeout = conf.getLong(OPERATION_TIMEOUT_MS_KEY, 10000);
 
-    Class mapperClass = ImportCsvMapper.class;
+    Class<ImportCsvMapper> mapperClass = ImportCsvMapper.class;
     conf.set(COLUMNS_NAMES_KEY, args[0]);
     String tableName = args[1];
     Path inputDir = new Path(args[2]);

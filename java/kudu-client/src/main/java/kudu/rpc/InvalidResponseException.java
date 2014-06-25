@@ -29,6 +29,7 @@ package kudu.rpc;
 /**
  * Exception used when the server sends an invalid response to an RPC.
  */
+@SuppressWarnings("serial")
 public final class InvalidResponseException extends NonRecoverableException {
 
   private final Object response;
@@ -72,7 +73,4 @@ public final class InvalidResponseException extends NonRecoverableException {
   public Object getResponse() {
     return response;
   }
-
-  private static final long serialVersionUID = 1280883942;
-
 }

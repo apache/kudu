@@ -9,6 +9,7 @@ import kudu.Schema;
 import kudu.Type;
 import kudu.WireProtocol.RowOperationsPB;
 import kudu.tserver.Tserver;
+import kudu.util.Pair;
 import org.jboss.netty.buffer.ChannelBuffer;
 
 import java.math.BigInteger;
@@ -306,14 +307,11 @@ public abstract class Operation extends KuduRpc<Tserver.WriteResponsePB> impleme
   }
 
   @Override
-  Object deserialize(ChannelBuffer buf) {
+  Pair<Tserver.WriteResponsePB, Object> deserialize(ChannelBuffer buf) throws Exception {
     Tserver.WriteResponsePB.Builder builder = Tserver.WriteResponsePB.newBuilder();
     readProtobuf(buf, builder);
     Tserver.WriteResponsePB response = builder.build();
-    if (response.hasError()) {
-      return response.getError();
-    }
-    return builder.build();
+    return new Pair<Tserver.WriteResponsePB, Object>(response, response.getError());
   }
 
   public byte[] key() {

@@ -5,6 +5,7 @@ import com.google.protobuf.Message;
 import static kudu.master.Master.*;
 
 import kudu.Schema;
+import kudu.util.Pair;
 import org.jboss.netty.buffer.ChannelBuffer;
 
 /**
@@ -36,13 +37,10 @@ public class GetTableSchemaRequest extends KuduRpc<Schema> {
   }
 
   @Override
-  Object deserialize(ChannelBuffer buf) {
+  Pair<Schema, Object> deserialize(ChannelBuffer buf) throws Exception {
     final GetTableSchemaResponsePB.Builder respBuilder = GetTableSchemaResponsePB.newBuilder();
     readProtobuf(buf, respBuilder);
     GetTableSchemaResponsePB resp = respBuilder.build();
-    if (resp.hasError()) {
-      return new MasterErrorException(resp.getError());
-    }
-    return ProtobufHelper.pbToSchema(resp.getSchema());
+    return new Pair<Schema, Object>(ProtobufHelper.pbToSchema(resp.getSchema()), resp.getError());
   }
 }

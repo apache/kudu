@@ -53,10 +53,6 @@ public class TestKuduTable extends BaseKuduTest {
     } catch (Exception ex) {
       // expected
     }
-    List<LocatedTablet> tablets =
-        client.syncLocateTable(table1, null, null, DEFAULT_SLEEP);
-    assertEquals(0, tablets.size());
-
     // Test with defaults
     String tableWithDefault = BASE_TABLE_NAME + "WithDefault" + System.currentTimeMillis();
     CreateTableBuilder builder = new CreateTableBuilder();
@@ -89,7 +85,7 @@ public class TestKuduTable extends BaseKuduTest {
 
     KuduTable table = createTableWithSplitsAndTest(30);
 
-    tablets = table.getTabletsLocations(null, getKeyInBytes(9), DEFAULT_SLEEP);
+    List<LocatedTablet>tablets = table.getTabletsLocations(null, getKeyInBytes(9), DEFAULT_SLEEP);
     assertEquals(10, tablets.size());
 
     tablets = table.getTabletsLocations(getKeyInBytes(0), getKeyInBytes(9), DEFAULT_SLEEP);

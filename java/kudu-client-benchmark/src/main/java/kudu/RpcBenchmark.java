@@ -32,7 +32,7 @@ public class RpcBenchmark {
       String tableName = "tpch1";
       Deferred<Master.CreateTableResponsePB> create = client.createTable(tableName, schema);
       create.join(DEFAULT_SLEEP);
-      KuduTable table = (KuduTable)client.openTable(tableName).join(DEFAULT_SLEEP);
+      KuduTable table = client.openTable(tableName).join(DEFAULT_SLEEP);
       Deferred<Tserver.PingResponsePB> dd = client.ping();
       dd.join(DEFAULT_SLEEP);
 

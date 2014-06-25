@@ -31,6 +31,7 @@ import org.jboss.netty.channel.Channel;
 /**
  * Exception thrown when an RPC was in flight while we got disconnected.
  */
+@SuppressWarnings("serial")
 public final class ConnectionResetException extends RecoverableException {
 
   ConnectionResetException(final String msg) {
@@ -43,8 +44,4 @@ public final class ConnectionResetException extends RecoverableException {
   ConnectionResetException(final String msg, final Exception cause) {
     super(msg, cause);
   }
-
-
-  private static final long serialVersionUID = 1280644142;
-
 }

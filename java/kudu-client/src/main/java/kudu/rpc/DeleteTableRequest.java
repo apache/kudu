@@ -3,6 +3,7 @@ package kudu.rpc;
 
 import com.google.protobuf.Message;
 import kudu.master.Master;
+import kudu.util.Pair;
 import org.jboss.netty.buffer.ChannelBuffer;
 
 /**
@@ -35,10 +36,10 @@ class DeleteTableRequest extends KuduRpc<Master.DeleteTableResponsePB> {
   }
 
   @Override
-  Object deserialize(ChannelBuffer buf) {
+  Pair<Master.DeleteTableResponsePB, Object> deserialize(ChannelBuffer buf) throws Exception {
     final Master.DeleteTableResponsePB.Builder builder = Master.DeleteTableResponsePB.newBuilder();
     readProtobuf(buf, builder);
     Master.DeleteTableResponsePB resp = builder.build();
-    return resp.hasError() ? new MasterErrorException(resp.getError()) : null;
+    return new Pair<Master.DeleteTableResponsePB, Object>(resp, resp.getError());
   }
 }

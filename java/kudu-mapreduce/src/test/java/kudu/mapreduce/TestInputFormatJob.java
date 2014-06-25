@@ -43,6 +43,7 @@ public class TestInputFormatJob extends BaseKuduTest {
   }
 
   @Test
+  @SuppressWarnings("deprecation")
   public void test() throws Exception {
 
     KuduTable table = createFourTabletsTableWithNineRows(TABLE_NAME);
@@ -52,7 +53,7 @@ public class TestInputFormatJob extends BaseKuduTest {
     String jobName = TestInputFormatJob.class.getName();
     Job job = new Job(conf, jobName);
 
-    Class mapperClass = TestMapperTableInput.class;
+    Class<TestMapperTableInput> mapperClass = TestMapperTableInput.class;
     job.setJarByClass(mapperClass);
     job.setMapperClass(mapperClass);
     job.setNumReduceTasks(0);

@@ -29,11 +29,11 @@ package kudu.rpc;
 
 import com.google.protobuf.Message;
 import com.google.protobuf.ZeroCopyLiteralByteString;
+import kudu.WireProtocol;
 import kudu.master.Master;
-import com.stumbleupon.async.Callback;
 import com.stumbleupon.async.Deferred;
 import kudu.tserver.Tserver;
-import kudu.util.Slice;
+import kudu.util.Pair;
 import org.jboss.netty.buffer.ChannelBuffer;
 import org.jboss.netty.buffer.ChannelBuffers;
 import org.jboss.netty.channel.Channel;
@@ -52,6 +52,7 @@ import org.slf4j.LoggerFactory;
 import javax.security.sasl.SaslException;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Iterator;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -79,7 +80,7 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
 
   public static final Logger LOG = LoggerFactory.getLogger(TabletClient.class);
 
-  private ArrayList<KuduRpc> pending_rpcs;
+  private ArrayList<KuduRpc<?>> pending_rpcs;
 
   public static final byte RPC_CURRENT_VERSION = 9;
   /** Initial part of the header for 0.95 and up.  */
@@ -123,8 +124,8 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
    * Maps an RPC ID to the in-flight RPC that was given this ID.
    * RPCs can be sent out from any thread, so we need a concurrent map.
    */
-  private final ConcurrentHashMap<Integer, KuduRpc> rpcs_inflight =
-      new ConcurrentHashMap<Integer, KuduRpc>();
+  private final ConcurrentHashMap<Integer, KuduRpc<?>> rpcs_inflight =
+      new ConcurrentHashMap<Integer, KuduRpc<?>>();
 
   private final KuduClient kuduClient;
 
@@ -134,7 +135,7 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
     this.kuduClient = client;
   }
 
-  void sendRpc(KuduRpc rpc) {
+  <R> void sendRpc(KuduRpc<R> rpc) {
     if (chan != null) {
       final ChannelBuffer serialized = encode(rpc);
       if (serialized == null) {  // Error during encoding.
@@ -156,15 +157,15 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
         tryagain = true;
       } else if (!copyOfDead) {
         if (pending_rpcs == null) {
-          pending_rpcs = new ArrayList<KuduRpc>();
+          pending_rpcs = new ArrayList<KuduRpc<?>>();
         }
         pending_rpcs.add(rpc);
       }
     }
     if (copyOfDead) {
-      if (rpc.getTablet() == null  // Can't retry, dunno where it should go.
-          ) {
-        rpc.callback(new ConnectionResetException(null));
+      if (rpc.getTablet() == null) {
+        // Can't retry, dunno where it should go.
+        rpc.errback(new ConnectionResetException(null));
       } else {
         kuduClient.sendRpcToTablet(rpc);  // Re-schedule the RPC.
       }
@@ -180,7 +181,7 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
     }
   }
 
-  private ChannelBuffer encode(final KuduRpc rpc) {
+  private <R> ChannelBuffer encode(final KuduRpc<R> rpc) {
     final int rpcid = this.rpcid.incrementAndGet();
     ChannelBuffer payload;
     final String method = rpc.method();
@@ -194,17 +195,17 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
       payload = rpc.serialize(headerBuilder.build());
     } catch (Exception e) {
         LOG.error("Uncaught exception while serializing RPC: " + rpc, e);
-        rpc.callback(e);  // Make the RPC fail with the exception.
+        rpc.errback(e);  // Make the RPC fail with the exception.
         return null;
     }
-    final KuduRpc oldrpc = rpcs_inflight.put(rpcid, rpc);
+    final KuduRpc<?> oldrpc = rpcs_inflight.put(rpcid, rpc);
     if (oldrpc != null) {
       final String wtf = "WTF?  There was already an RPC in flight with"
           + " rpcid=" + rpcid + ": " + oldrpc
           + ".  This happened when sending out: " + rpc;
       LOG.error(wtf);
-      // Make it fail.  This isn't an expected failure mode.
-      oldrpc.callback(new NonRecoverableException(wtf));
+      // Make it fail. This isn't an expected failure mode.
+      oldrpc.errback(new NonRecoverableException(wtf));
     }
 
     if (LOG.isDebugEnabled()) {
@@ -217,36 +218,22 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
     return payload;
   }
 
-  public Deferred<ArrayList<Object>> shutdown() {
-    final class RetryShutdown<T> implements Callback<Deferred<ArrayList<Object>>, T> {
-      private final int nrpcs;
-      RetryShutdown(final int nrpcs) {
-        this.nrpcs = nrpcs;
-      }
-      public Deferred<ArrayList<Object>> call(final T ignored) {
-        return shutdown();
-      }
-      public String toString() {
-        return "wait until " + nrpcs + " RPCs complete";
-      }
-    };
-
-    // First, check whether we have RPCs in flight.  If we do, we need to wait
-    // until they complete.
-    {
-      final ArrayList<Deferred<Object>> inflight = getInflightRpcs();
-      final int size = inflight.size();
-      if (size > 0) {
-        return Deferred.group(inflight)
-            .addCallbackDeferring(new RetryShutdown<ArrayList<Object>>(size));
-      }
+  public Deferred<Void> shutdown() {
+    // First, check whether we have RPCs in flight and cancel them.
+    for (Iterator<KuduRpc<?>> ite = rpcs_inflight.values().iterator(); ite
+        .hasNext();) {
+      KuduRpc<?> rpc = ite.next();
+      rpc.errback(new ConnectionResetException(null));
+      ite.remove();
     }
 
-    {
-      final ArrayList<Deferred<Object>> pending = getPendingRpcs();
-      if (pending != null) {
-        return Deferred.group(pending).addCallbackDeferring(
-            new RetryShutdown<ArrayList<Object>>(pending.size()));
+    // Same for the pending RPCs.
+    synchronized (this) {
+      if (pending_rpcs != null) {
+        for (Iterator<KuduRpc<?>> ite = pending_rpcs.iterator(); ite.hasNext();) {
+          ite.next().errback(new ConnectionResetException(null));
+          ite.remove();
+        }
       }
     }
 
@@ -264,7 +251,7 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
     // It's OK to call close() on a Channel if it's already closed.
     final ChannelFuture future = Channels.close(chancopy);
     // Now wrap the ChannelFuture in a Deferred.
-    final Deferred<ArrayList<Object>> d = new Deferred<ArrayList<Object>>();
+    final Deferred<Void> d = new Deferred<Void>();
     // Opportunistically check if it's already completed successfully.
     if (future.isSuccess()) {
       d.callback(null);
@@ -293,40 +280,15 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
   }
 
   /**
-   * Returns a possibly empty list of all the RPCs that are in-flight.
+   * The reason we are suppressing the unchecked conversions is because the KuduRpc is coming
+   * from a collection that has RPCs with different generics, and there's no way to get "decoded"
+   * casted correctly. The best we can do is to rely on the RPC to decode correctly,
+   * and to not pass an Exception in the callback.
    */
-  private ArrayList<Deferred<Object>> getInflightRpcs() {
-    final ArrayList<Deferred<Object>> inflight =
-        new ArrayList<Deferred<Object>>();
-    for (final KuduRpc rpc : rpcs_inflight.values()) {
-      inflight.add(rpc.getDeferred());
-    }
-    return inflight;
-  }
-
-  /**
-   * Returns a possibly {@code null} list of all RPCs that are pending.
-   * <p>
-   * Pending RPCs are those that are scheduled to be sent as soon as we
-   * are connected to the TabletServer and have done version negotiation.
-   */
-  private ArrayList<Deferred<Object>> getPendingRpcs() {
-    synchronized (this) {
-      if (pending_rpcs != null) {
-        final ArrayList<Deferred<Object>> pending =
-            new ArrayList<Deferred<Object>>(pending_rpcs.size());
-        for (final KuduRpc rpc : pending_rpcs) {
-          pending.add(rpc.getDeferred());
-        }
-        return pending;
-      }
-    }
-    return null;
-  }
-
   @Override
+  @SuppressWarnings("unchecked")
   protected Object decode(ChannelHandlerContext ctx, Channel chan, ChannelBuffer buf,
-                          VoidEnum voidEnum) {
+                              VoidEnum voidEnum) {
     final long start = System.nanoTime();
     final int rdx = buf.readerIndex();
     LOG.debug("------------------>> ENTERING DECODE >>------------------");
@@ -371,7 +333,8 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
       throw new NonRecoverableException(msg);
     }
 
-    Object decoded;
+    Pair<Object, Object> decoded = null;
+    Exception exception = null;
     if (header.hasIsError() && header.getIsError()) {
       RpcHeader.ErrorStatusPB.Builder errorBuilder = RpcHeader.ErrorStatusPB.newBuilder();
       KuduRpc.readProtobuf(buf, errorBuilder);
@@ -382,11 +345,14 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
         return null;
       }
       String message = "Tablet server sent error " + error.getMessage();
-      Exception ex = new Exception(message);
+      exception = new NonRecoverableException(message);
       LOG.error(message); // can be useful
-      decoded = ex;
     } else {
-      decoded = rpc.deserialize(buf);
+      try {
+        decoded = rpc.deserialize(buf);
+      } catch (Exception ex) {
+        exception = ex;
+      }
     }
     if (LOG.isDebugEnabled()) {
       LOG.debug("rpcid=" + rpcid
@@ -396,31 +362,47 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
     }
 
     {
-      final KuduRpc removed = rpcs_inflight.remove(rpcid);
+      final KuduRpc<?> removed = rpcs_inflight.remove(rpcid);
       assert rpc == removed;
     }
 
-    // The TS services will send this error, make it pretty.
-    if (decoded instanceof Tserver.TabletServerErrorPB) {
-      Tserver.TabletServerErrorPB error = (Tserver.TabletServerErrorPB) decoded;
-      if (error.getCode().equals(Tserver.TabletServerErrorPB.Code.TABLET_NOT_FOUND)) {
-        kuduClient.handleNSTE(rpc, new TabletServerErrorException(error.getStatus()), this);
-        // we're not calling rpc.callback() so we rely on the client to retry that RPC
-        return null;
+    // We can get this Message from within the RPC's expected type,
+    // so convert it into an exception and nullify decoded so that we use the errback route.
+    // Have to do it for both TS and Master errors
+    if (decoded.getSecond() instanceof Tserver.TabletServerErrorPB) {
+      Tserver.TabletServerErrorPB error = (Tserver.TabletServerErrorPB) decoded.getSecond();
+      if (error.getStatus().getCode() != WireProtocol.AppStatusPB.ErrorCode.OK) {
+        if (error.getCode().equals(Tserver.TabletServerErrorPB.Code.TABLET_NOT_FOUND)) {
+          kuduClient.handleNSTE(rpc, new TabletServerErrorException(error.getStatus()), this);
+          // we're not calling rpc.callback() so we rely on the client to retry that RPC
+          return null;
+        }
+        exception = new TabletServerErrorException(error.getStatus());
+        decoded = null;
       }
-      decoded = new TabletServerErrorException(error.getStatus());
+    } else if (decoded.getSecond() instanceof Master.MasterErrorPB) {
+      Master.MasterErrorPB error = (Master.MasterErrorPB) decoded.getSecond();
+      if (error.getStatus().getCode() != WireProtocol.AppStatusPB.ErrorCode.OK) {
+        exception = new MasterErrorException(error);
+        decoded = null;
+      }
     }
 
     try {
-      rpc.callback(decoded);
+      if (decoded != null) {
+        assert !(decoded.getFirst() instanceof Exception);
+        rpc.callback(decoded.getFirst());
+      } else {
+        rpc.errback(exception);
+      }
     } catch (Exception e) {
       LOG.debug("Unexpected exception while handling RPC #" + rpcid
           + ", rpc=" + rpc + ", buf=" + Bytes.pretty(buf), e);
     }
-  if (LOG.isDebugEnabled()) {
-    LOG.debug("------------------<< LEAVING  DECODE <<------------------"
-        + " time elapsed: " + ((System.nanoTime() - start) / 1000) + "us");
-  }
+    if (LOG.isDebugEnabled()) {
+      LOG.debug("------------------<< LEAVING  DECODE <<------------------"
+          + " time elapsed: " + ((System.nanoTime() - start) / 1000) + "us");
+    }
     return null;  // Stop processing here.  The Deferred does everything else.
   }
 
@@ -488,11 +470,14 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
       }
 
       @Override
-      Object deserialize(final ChannelBuffer buf) {
+      Pair<Master.GetTableLocationsResponsePB, Object> deserialize(final ChannelBuffer buf)
+          throws
+          Exception {
         Master.GetTableLocationsResponsePB.Builder builder = Master.GetTableLocationsResponsePB
             .newBuilder();
         readProtobuf(buf, builder);
-        return builder.build();
+        Master.GetTableLocationsResponsePB resp = builder.build();
+        return new Pair<Master.GetTableLocationsResponsePB, Object>(resp, resp.getError());
       }
 
       @Override
@@ -508,33 +493,13 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
         }
         return toChannelBuffer(header, builder.build());
       }
-    };
-    final KuduRpc rpc = new GetTableLocations(kuduClient.masterTableHack);
+    }
+    final GetTableLocations rpc = new GetTableLocations(kuduClient.masterTableHack);
     rpc.setTablet(kuduClient.masterTabletHack);
-    final Deferred<Master.GetTableLocationsResponsePB> d = rpc.getDeferred()
-        .addCallback(getTableLocationsCB);
+    final Deferred<Master.GetTableLocationsResponsePB> d = rpc.getDeferred();
     sendRpc(rpc);
     return d;
   }
-
-  private static final Callback<Master.GetTableLocationsResponsePB, Object>
-      getTableLocationsCB =
-      new Callback<Master.GetTableLocationsResponsePB, Object>() {
-        public Master.GetTableLocationsResponsePB call(final Object response) {
-          if (response == null) {  // No result.
-            return null;
-          } else if (response instanceof Master.GetTableLocationsResponsePB) {
-            final Master.GetTableLocationsResponsePB pb = (Master.GetTableLocationsResponsePB)
-                response;
-            return pb;
-          } else {
-            throw new InvalidResponseException(Master.GetTableLocationsResponsePB.class, response);
-          }
-        }
-        public String toString() {
-          return "type getTableLocations response";
-        }
-      };
 
   public Deferred<Master.IsCreateTableDoneResponsePB> isCreateTableDone(final String tableName) {
     final class IsCreateTableDone extends KuduRpc<Master.IsCreateTableDoneResponsePB> {
@@ -548,11 +513,12 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
       }
 
       @Override
-      Object deserialize(final ChannelBuffer buf) {
+      kudu.util.Pair<Master.IsCreateTableDoneResponsePB, Object> deserialize(final ChannelBuffer buf) throws Exception {
         Master.IsCreateTableDoneResponsePB.Builder builder = Master.IsCreateTableDoneResponsePB
             .newBuilder();
         readProtobuf(buf, builder);
-        return builder.build();
+        Master.IsCreateTableDoneResponsePB resp = builder.build();
+        return new Pair<Master.IsCreateTableDoneResponsePB, Object>(resp, resp.getError());
       }
 
       @Override
@@ -562,7 +528,7 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
         builder.setTable(Master.TableIdentifierPB.newBuilder().setTableName(tableName));
         return toChannelBuffer(header, builder.build());
       }
-    };
+    }
     final IsCreateTableDone rpc = new IsCreateTableDone(kuduClient.masterTableHack);
     rpc.setTablet(kuduClient.masterTabletHack);
     final Deferred<Master.IsCreateTableDoneResponsePB> d = rpc.getDeferred();
@@ -658,7 +624,7 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
     failOrRetryRpcs(rpcs_inflight.values(), exception);
     rpcs_inflight.clear();
 
-    final ArrayList<KuduRpc> rpcs;
+    final ArrayList<KuduRpc<?>> rpcs;
     synchronized (this) {
       dead = true;
       rpcs = pending_rpcs;
@@ -675,13 +641,13 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
    * @param exception The exception with which to fail RPCs that can't be
    * retried.
    */
-  private void failOrRetryRpcs(final Collection<KuduRpc> rpcs,
+  private void failOrRetryRpcs(final Collection<KuduRpc<?>> rpcs,
                                final ConnectionResetException exception) {
-    for (final KuduRpc rpc : rpcs) {
+    for (final KuduRpc<?> rpc : rpcs) {
       final KuduClient.RemoteTablet tablet = rpc.getTablet();
       if (tablet == null  // Can't retry, dunno where this RPC should go.
           ) {
-        rpc.callback(exception);
+        rpc.errback(exception);
       } else {
         kuduClient.handleNSTE(rpc, new ConnectionResetException(exception.getMessage(), exception),
             this);
@@ -725,13 +691,13 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
    * handshake with the server
    */
   private void sendQueuedRpcs() {
-    ArrayList<KuduRpc> rpcs;
+    ArrayList<KuduRpc<?>> rpcs;
     synchronized (this) {
       rpcs = pending_rpcs;
       pending_rpcs = null;
     }
     if (rpcs != null) {
-      for (final KuduRpc rpc : rpcs) {
+      for (final KuduRpc<?> rpc : rpcs) {
         LOG.debug("Executing RPC queued: " + rpc);
         sendRpc(rpc);
       }

@@ -6,6 +6,7 @@ import kudu.WireProtocol;
 /**
  * This class is used for errors sent in response to a RPC.
  */
+@SuppressWarnings("serial")
 public class KuduServerException extends KuduException {
 
   KuduServerException(RpcHeader.ErrorStatusPB errorStatus) {

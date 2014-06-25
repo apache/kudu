@@ -150,6 +150,7 @@ public class CsvParser {
   /**
    * Exception used when the CsvParser is unable to parse a line.
    */
+  @SuppressWarnings("serial")
   public static class BadCsvLineException extends Exception {
     public BadCsvLineException(String err) {
       super(err);

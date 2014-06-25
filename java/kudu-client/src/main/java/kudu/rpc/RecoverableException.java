@@ -33,6 +33,7 @@ package kudu.rpc;
  * upper bound on the number of retries and to use some kind of an exponential
  * backoff.
  */
+@SuppressWarnings("serial")
 public abstract class RecoverableException extends KuduException {
 
   /**
@@ -53,7 +54,4 @@ public abstract class RecoverableException extends KuduException {
   RecoverableException(final String msg, final Exception cause) {
     super(msg, cause);
   }
-
-  private static final long serialVersionUID = 1280641142;
-
 }

@@ -30,14 +30,13 @@ import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Preconditions;
 import com.google.protobuf.Message;
 import com.google.protobuf.ZeroCopyLiteralByteString;
-import kudu.ColumnSchema;
 import kudu.Common;
 import kudu.Schema;
-import kudu.Type;
 import kudu.WireProtocol;
 import com.stumbleupon.async.Callback;
 import com.stumbleupon.async.Deferred;
 import kudu.util.HybridTimeUtil;
+import kudu.util.Pair;
 import org.jboss.netty.buffer.ChannelBuffer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -553,7 +552,7 @@ public final class KuduScanner {
   /**
    * Returns an RPC to open this scanner.
    */
-  KuduRpc getOpenRequest() {
+  KuduRpc<Response> getOpenRequest() {
     checkScanningNotStarted();
     // This is the only point where we know we haven't started scanning and where the scanner
     // should be fully configured
@@ -582,14 +581,14 @@ public final class KuduScanner {
   /**
    * Returns an RPC to fetch the next rows.
    */
-  KuduRpc getNextRowsRequest() {
+  KuduRpc<Response> getNextRowsRequest() {
     return new ScanRequest(table, State.NEXT);
   }
 
   /**
    * Returns an RPC to close this scanner.
    */
-  KuduRpc getCloseRequest() {
+  KuduRpc<Response> getCloseRequest() {
     return new ScanRequest(table, State.CLOSING);
   }
 
@@ -717,7 +716,7 @@ public final class KuduScanner {
     }
 
     @Override
-    Object deserialize(final ChannelBuffer buf) {
+    Pair<Response, Object> deserialize(final ChannelBuffer buf) throws Exception {
       ScanResponsePB.Builder builder = ScanResponsePB.newBuilder();
       readProtobuf(buf, builder);
       ScanResponsePB resp = builder.build();
@@ -726,9 +725,9 @@ public final class KuduScanner {
       if (error.getCode().equals(TabletServerErrorPB.Code.TABLET_NOT_FOUND)) {
         if (state == State.OPENING) {
           // Doing this will trigger finding the new location.
-          return error;
+          return new Pair<Response, Object>(null, error);
         } else {
-          return new NonRecoverableException("Cannot continue scanning, " +
+          throw new NonRecoverableException("Cannot continue scanning, " +
               "the tablet has moved and this isn't a fault tolerant scan");
         }
       }
@@ -744,7 +743,7 @@ public final class KuduScanner {
       if (LOG.isDebugEnabled()) {
         LOG.debug(response.toString());
       }
-      return response;
+      return new Pair<Response, Object>(response, error);
     }
 
     public String toString() {

@@ -1,10 +1,10 @@
 // Copyright (c) 2013, Cloudera, inc.
 package kudu.rpc;
 
-import com.google.protobuf.ByteString;
 import com.google.protobuf.Message;
 import com.google.protobuf.ZeroCopyLiteralByteString;
 import kudu.tserver.Tserver;
+import kudu.util.Pair;
 import org.jboss.netty.buffer.ChannelBuffer;
 
 import java.util.ArrayList;
@@ -41,10 +41,11 @@ class Batch extends KuduRpc<Tserver.WriteResponsePB> implements KuduRpc.HasKey {
   }
 
   @Override
-  Object deserialize(ChannelBuffer buf) {
+  Pair<Tserver.WriteResponsePB, Object> deserialize(ChannelBuffer buf) throws Exception {
     Tserver.WriteResponsePB.Builder builder = Tserver.WriteResponsePB.newBuilder();
     readProtobuf(buf, builder);
-    return builder.build();
+    Tserver.WriteResponsePB resp = builder.build();
+    return new Pair<Tserver.WriteResponsePB, Object>(resp, resp.getError());
   }
 
   @Override

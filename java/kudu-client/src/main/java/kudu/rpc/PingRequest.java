@@ -3,6 +3,7 @@ package kudu.rpc;
 
 import com.google.protobuf.Message;
 import kudu.tserver.Tserver;
+import kudu.util.Pair;
 import org.jboss.netty.buffer.ChannelBuffer;
 
 public class PingRequest extends KuduRpc<Tserver.PingResponsePB> {
@@ -25,9 +26,9 @@ public class PingRequest extends KuduRpc<Tserver.PingResponsePB> {
   }
 
   @Override
-  Object deserialize(ChannelBuffer buf) {
+  Pair<Tserver.PingResponsePB, Object> deserialize(ChannelBuffer buf) throws Exception {
     Tserver.PingResponsePB.Builder builder = Tserver.PingResponsePB.newBuilder();
     readProtobuf(buf, builder);
-    return builder.build();
+    return new Pair<Tserver.PingResponsePB, Object>(builder.build(), null);
   }
 }

@@ -48,6 +48,7 @@ public class TestOutputFormatJob extends BaseKuduTest {
   }
 
   @Test
+  @SuppressWarnings("deprecation")
   public void test() throws Exception {
     Configuration conf = new Configuration();
     String testHome =
@@ -62,7 +63,7 @@ public class TestOutputFormatJob extends BaseKuduTest {
     FileInputFormat.setInputPaths(job, data.toString());
 
     // Configure the job to map the file and write to kudu, without reducers
-    Class mapperClass = TestMapperTableOutput.class;
+    Class<TestMapperTableOutput> mapperClass = TestMapperTableOutput.class;
     job.setJarByClass(mapperClass);
     job.setMapperClass(mapperClass);
     job.setInputFormatClass(TextInputFormat.class);

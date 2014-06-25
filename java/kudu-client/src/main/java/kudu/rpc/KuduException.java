@@ -29,6 +29,7 @@ package kudu.rpc;
 /**
  * The parent class of all {@link RuntimeException} created by this package.
  */
+@SuppressWarnings("serial")
 public abstract class KuduException extends RuntimeException {
 
   /**
@@ -61,7 +62,4 @@ public abstract class KuduException extends RuntimeException {
   KuduException make(final Object arg, final KuduRpc rpc) {
     throw new AssertionError("Must not be used.");
   }
-
-  private static final long serialVersionUID = 1280638842;
-
 }

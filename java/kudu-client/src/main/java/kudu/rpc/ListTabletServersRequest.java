@@ -3,6 +3,8 @@ package kudu.rpc;
 
 import com.google.protobuf.Message;
 import static kudu.master.Master.*;
+
+import kudu.util.Pair;
 import org.jboss.netty.buffer.ChannelBuffer;
 
 public class ListTabletServersRequest extends KuduRpc<Integer> {
@@ -24,11 +26,11 @@ public class ListTabletServersRequest extends KuduRpc<Integer> {
   }
 
   @Override
-  Object deserialize(ChannelBuffer buf) {
+  Pair<Integer, Object> deserialize(ChannelBuffer buf) throws Exception {
     final ListTabletServersResponsePB.Builder respBuilder =
         ListTabletServersResponsePB.newBuilder();
     readProtobuf(buf, respBuilder);
     ListTabletServersResponsePB resp = respBuilder.build();
-    return resp.getServersCount();
+    return new Pair<Integer, Object>(resp.getServersCount(), null);
   }
 }
