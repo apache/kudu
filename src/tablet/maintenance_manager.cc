@@ -1,6 +1,6 @@
 // Copyright (c) 2013, Cloudera, inc.
 
-#include "common/maintenance_manager.h"
+#include "tablet/maintenance_manager.h"
 
 #include <boost/foreach.hpp>
 #include <boost/thread/mutex.hpp>

@@ -12,7 +12,6 @@
 #include "client/meta_cache.h"
 #include "client/row_result.h"
 #include "client/write_op.h"
-#include "common/maintenance_manager.h"
 #include "common/row.h"
 #include "common/wire_protocol.h"
 #include "gutil/stl_util.h"

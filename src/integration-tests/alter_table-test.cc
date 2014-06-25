@@ -6,7 +6,6 @@
 #include <string>
 #include <tr1/memory>
 
-#include "common/maintenance_manager.h"
 #include "common/schema.h"
 #include "common/wire_protocol-test-util.h"
 #include "gutil/gscoped_ptr.h"

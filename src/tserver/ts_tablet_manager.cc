@@ -10,7 +10,6 @@
 #include <tr1/memory>
 #include <vector>
 
-#include "common/maintenance_manager.h"
 #include "common/wire_protocol.h"
 #include "consensus/log.h"
 #include "consensus/opid_anchor_registry.h"
@@ -19,6 +18,7 @@
 #include "master/master.pb.h"
 #include "server/fsmanager.h"
 #include "server/metadata.pb.h"
+#include "tablet/maintenance_manager.h"
 #include "tablet/tablet.pb.h"
 #include "tablet/tablet.h"
 #include "tablet/tablet_bootstrap.h"

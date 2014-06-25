@@ -19,11 +19,11 @@
 #include <signal.h>
 #include <utility>
 
-#include "common/maintenance_manager.h"
 #include "common/wire_protocol-test-util.h"
 #include "consensus/log_reader.h"
 #include "gutil/atomicops.h"
 #include "gutil/stl_util.h"
+#include "tablet/maintenance_manager.h"
 #include "tablet/tablet.h"
 #include "tablet/tablet_peer.h"
 #include "tablet/transactions/write_transaction.h"

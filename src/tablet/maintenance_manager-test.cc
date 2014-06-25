@@ -5,7 +5,7 @@
 #include <util/test_macros.h>
 #include <vector>
 
-#include "common/maintenance_manager.h"
+#include "tablet/maintenance_manager.h"
 #include "util/thread.h"
 
 using std::tr1::shared_ptr;

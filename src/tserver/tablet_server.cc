@@ -6,12 +6,12 @@
 #include <list>
 #include <vector>
 
-#include "common/maintenance_manager.h"
 #include "gutil/strings/substitute.h"
 #include "rpc/service_if.h"
 #include "server/fsmanager.h"
 #include "server/rpc_server.h"
 #include "server/webserver.h"
+#include "tablet/maintenance_manager.h"
 #include "tserver/heartbeater.h"
 #include "tserver/scanners.h"
 #include "tserver/tablet_service.h"

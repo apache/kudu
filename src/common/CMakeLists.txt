@@ -35,7 +35,6 @@ add_library(kudu_common
   schema.cc
   timestamp.cc
   types.cc
-  maintenance_manager.cc
 )
 
 target_link_libraries(kudu_common
@@ -47,7 +46,6 @@ target_link_libraries(kudu_common
 set(KUDU_TEST_LINK_LIBS kudu_common ${KUDU_MIN_TEST_LIBS})
 ADD_KUDU_TEST(encoded_key-test)
 ADD_KUDU_TEST(generic_iterators-test)
-ADD_KUDU_TEST(maintenance_manager-test)
 ADD_KUDU_TEST(partial_row-test)
 ADD_KUDU_TEST(predicate-test)
 ADD_KUDU_TEST(predicate_encoder-test)
