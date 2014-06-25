@@ -545,7 +545,7 @@ KuduSession::KuduSession(const std::tr1::shared_ptr<KuduClient>& client)
   : client_(client),
     error_collector_(new ErrorCollector()),
     flush_mode_(AUTO_FLUSH_SYNC),
-    timeout_ms_(0) {
+    timeout_ms_(-1) {
 }
 
 KuduSession::~KuduSession() {
@@ -566,7 +566,9 @@ void KuduSession::NewBatcher(scoped_refptr<Batcher>* old_batcher) {
 
   scoped_refptr<Batcher> batcher(
     new Batcher(client_.get(), error_collector_.get(), shared_from_this()));
-  batcher->SetTimeoutMillis(timeout_ms_);
+  if (timeout_ms_ != -1) {
+    batcher->SetTimeoutMillis(timeout_ms_);
+  }
   batcher.swap(batcher_);
 
   if (old_batcher) {

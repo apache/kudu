@@ -7,18 +7,24 @@
 
 #include <gtest/gtest.h>
 
+#include "gutil/integral_types.h"
+
 namespace kudu {
 class MonoTime;
 
 // Represent an elapsed duration of time -- i.e the delta between
 // two MonoTime instances.
+//
+// A MonoDelta built with the default constructor is "uninitialized" and
+// may not be used for any operation.
 class MonoDelta {
  public:
   static MonoDelta FromSeconds(double seconds);
   static MonoDelta FromMilliseconds(int64_t ms);
   static MonoDelta FromMicroseconds(int64_t us);
   static MonoDelta FromNanoseconds(int64_t ns);
-  explicit MonoDelta();
+  MonoDelta();
+  bool Initialized() const;
   bool LessThan(const MonoDelta &rhs) const;
   bool MoreThan(const MonoDelta &rhs) const;
   bool Equals(const MonoDelta &rhs) const;
@@ -40,6 +46,8 @@ class MonoDelta {
   static void NanosToTimeSpec(int64_t nanos, struct timespec* ts);
 
  private:
+  static const int64_t kUninitialized = kint64min;
+
   friend class MonoTime;
   FRIEND_TEST(TestMonoTime, TestDeltaConversions);
   explicit MonoDelta(int64_t delta);

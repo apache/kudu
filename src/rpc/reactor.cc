@@ -194,7 +194,7 @@ void ReactorThread::AssignOutboundCall(const shared_ptr<OutboundCall> &call) {
   // TODO: Move call deadline timeout computation into OutboundCall constructor.
   const MonoDelta &timeout = call->controller()->timeout();
   MonoTime deadline;
-  if (timeout.ToNanoseconds() == 0) {
+  if (!timeout.Initialized()) {
     LOG(WARNING) << "Client call " << call->method()
                  << " has no timeout set for connection id: "
                  << call->conn_id().ToString();

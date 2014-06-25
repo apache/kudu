@@ -19,7 +19,7 @@ namespace kudu {
 
 
 ///
-/// MonoTime
+/// MonoDelta
 ///
 
 MonoDelta MonoDelta::FromSeconds(double seconds) {
@@ -40,18 +40,28 @@ MonoDelta MonoDelta::FromNanoseconds(int64_t ns) {
 }
 
 MonoDelta::MonoDelta()
-  : nano_delta_(0) {
+  : nano_delta_(kUninitialized) {
+}
+
+bool MonoDelta::Initialized() const {
+  return nano_delta_ != kUninitialized;
 }
 
 bool MonoDelta::LessThan(const MonoDelta &rhs) const {
+  DCHECK(Initialized());
+  DCHECK(rhs.Initialized());
   return nano_delta_ < rhs.nano_delta_;
 }
 
 bool MonoDelta::MoreThan(const MonoDelta &rhs) const {
+  DCHECK(Initialized());
+  DCHECK(rhs.Initialized());
   return nano_delta_ > rhs.nano_delta_;
 }
 
 bool MonoDelta::Equals(const MonoDelta &rhs) const {
+  DCHECK(Initialized());
+  DCHECK(rhs.Initialized());
   return nano_delta_ == rhs.nano_delta_;
 }
 
@@ -64,24 +74,29 @@ MonoDelta::MonoDelta(int64_t delta)
 }
 
 double MonoDelta::ToSeconds() const {
+  DCHECK(Initialized());
   double d(nano_delta_);
   d /= MonoTime::kNanosecondsPerSecond;
   return d;
 }
 
 int64_t MonoDelta::ToNanoseconds() const {
+  DCHECK(Initialized());
   return nano_delta_;
 }
 
 int64_t MonoDelta::ToMicroseconds() const {
-  return nano_delta_ / MonoTime::kNanosecondsPerMicrosecond;
+  DCHECK(Initialized());
+ return nano_delta_ / MonoTime::kNanosecondsPerMicrosecond;
 }
 
 int64_t MonoDelta::ToMilliseconds() const {
+  DCHECK(Initialized());
   return nano_delta_ / MonoTime::kNanosecondsPerMillisecond;
 }
 
 void MonoDelta::ToTimeVal(struct timeval *tv) const {
+  DCHECK(Initialized());
   tv->tv_sec = nano_delta_ / MonoTime::kNanosecondsPerSecond;
   tv->tv_usec = (nano_delta_ - (tv->tv_sec * MonoTime::kNanosecondsPerSecond))
       / MonoTime::kNanosecondsPerMicrosecond;
@@ -121,6 +136,7 @@ void MonoDelta::NanosToTimeSpec(int64_t nanos, struct timespec* ts) {
 }
 
 void MonoDelta::ToTimeSpec(struct timespec *ts) const {
+  DCHECK(Initialized());
   NanosToTimeSpec(nano_delta_, ts);
 }
 

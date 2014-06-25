@@ -230,8 +230,7 @@ Batcher::Batcher(KuduClient* client,
     client_(client),
     weak_session_(session),
     error_collector_(error_collector),
-    had_errors_(false),
-    timeout_ms_(0) {
+    had_errors_(false) {
 }
 
 void Batcher::Abort() {
@@ -276,7 +275,7 @@ Batcher::~Batcher() {
 void Batcher::SetTimeoutMillis(int millis) {
   CHECK_GE(millis, 0);
   boost::lock_guard<simple_spinlock> l(lock_);
-  timeout_ms_ = millis;
+  timeout_ = MonoDelta::FromMilliseconds(millis);
 }
 
 
@@ -577,7 +576,7 @@ void Batcher::FlushBuffer(RemoteTabletServer* ts, PerTSBuffer* buf) {
 
     // TODO: the timeout should actually be a bit smarter -- i.e be the full span from
     // when the flush was called to when the response has to come.
-    rpc->controller.set_timeout(MonoDelta::FromMilliseconds(timeout_ms_));
+    rpc->controller.set_timeout(timeout_);
     // Actually send the RPC.
     // The 'rpc' object will be released by the callback.
     AddRef();

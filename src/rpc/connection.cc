@@ -256,12 +256,12 @@ void Connection::QueueOutboundCall(const shared_ptr<OutboundCall> &call) {
   car->call = call;
 
   // Set up the timeout timer.
-  double timeout_secs = call->controller()->timeout().ToSeconds();
-  if (timeout_secs > 0) {
+  const MonoDelta &timeout = call->controller()->timeout();
+  if (timeout.Initialized()) {
     reactor_thread_->RegisterTimeout(&car->timeout_timer);
     car->timeout_timer.set<CallAwaitingResponse, // NOLINT(*)
                            &CallAwaitingResponse::HandleTimeout>(car.get());
-    car->timeout_timer.set(timeout_secs, 0);
+    car->timeout_timer.set(timeout.ToSeconds(), 0);
     car->timeout_timer.start();
   }
 

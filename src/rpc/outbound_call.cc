@@ -54,7 +54,10 @@ Status OutboundCall::SerializeTo(vector<Slice>* slices) {
     return Status::InvalidArgument("Must call SetRequestParam() before SerializeTo()");
   }
 
-  header_.set_timeout_millis(controller_->timeout().ToMilliseconds());
+  const MonoDelta &timeout = controller_->timeout();
+  if (timeout.Initialized()) {
+    header_.set_timeout_millis(timeout.ToMilliseconds());
+  }
 
   CHECK_OK(serialization::SerializeHeader(header_, param_len, &header_buf_));
 

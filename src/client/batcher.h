@@ -146,7 +146,7 @@ class Batcher : public base::RefCountedThreadSafe<Batcher> {
   // Buffers for each tablet of ops that haven't yet been sent.
   std::tr1::unordered_map<RemoteTabletServer*, PerTSBuffer*> per_ts_buffers_;
 
-  int timeout_ms_;
+  MonoDelta timeout_;
 
   DISALLOW_COPY_AND_ASSIGN(Batcher);
 };
