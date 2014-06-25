@@ -33,12 +33,6 @@ class BatchedIterator {
   // Should probably simplify the API by not allowing NULL.
   virtual Status Init(ScanSpec *spec) = 0;
 
-  // Return true if the underlying storage is a column store.
-  //
-  // If true, then this class also must implement RowStoreBaseDataInterface.
-  // Otherwise, this class must implement ColumnStoreBaseDataInterface.
-  virtual bool is_column_store() const = 0;
-
   // Prepare to read the next nrows from the underlying base data.
   // Sets *nrows back to the number of rows available to be read,
   // which may be less than the requested number in the case that the iterator
@@ -63,8 +57,6 @@ class BatchedIterator {
 
 class RowwiseIterator : public virtual BatchedIterator {
  public:
-  virtual bool is_column_store() const OVERRIDE { return false; }
-
   // Materialize all columns in the destination block.
   //
   // Any indirect data (eg strings) are copied into the destination block's
@@ -91,7 +83,6 @@ class RowwiseIterator : public virtual BatchedIterator {
 
 class ColumnwiseIterator : public virtual BatchedIterator {
  public:
-  virtual bool is_column_store() const OVERRIDE { return true; }
 
   // Initialize the given SelectionVector to indicate which rows in the currently
   // prepared batch are live vs deleted.
