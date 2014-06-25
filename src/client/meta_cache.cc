@@ -1,20 +1,22 @@
 // Copyright (c) 2013, Cloudera, inc.
 
-#include "client/client.h"
 #include "client/meta_cache.h"
-#include "common/wire_protocol.h"
-#include "gutil/map-util.h"
-#include "gutil/stl_util.h"
-#include "master/master.proxy.h"
-#include "rpc/messenger.h"
-#include "util/net/dns_resolver.h"
-#include "util/net/net_util.h"
 
 #include <boost/bind.hpp>
 #include <boost/foreach.hpp>
 #include <boost/thread/locks.hpp>
 #include <boost/thread/mutex.hpp>
 #include <glog/logging.h>
+
+#include "client/client.h"
+#include "common/wire_protocol.h"
+#include "gutil/map-util.h"
+#include "gutil/stl_util.h"
+#include "gutil/strings/substitute.h"
+#include "master/master.proxy.h"
+#include "rpc/messenger.h"
+#include "util/net/dns_resolver.h"
+#include "util/net/net_util.h"
 
 using kudu::HostPortPB;
 using kudu::master::GetTableLocationsRequestPB;
@@ -27,6 +29,7 @@ using kudu::master::TabletLocationsPB_ReplicaPB;
 using kudu::master::TSInfoPB;
 using kudu::metadata::QuorumPeerPB;
 using kudu::tserver::TabletServerServiceProxy;
+using kudu::rpc::ErrorStatusPB;
 using kudu::rpc::RpcController;
 using std::string;
 using std::map;
@@ -203,7 +206,8 @@ void RemoteTablet::GetRemoteTabletServers(std::vector<RemoteTabletServer*>* serv
 MetaCache::MetaCache(KuduClient* client)
   : client_(client),
     slice_data_arena_(16 * 1024, 128 * 1024), // arbitrarily chosen
-    master_lookup_sem_(50) {
+    master_lookup_sem_(50),
+    timeout_(MonoDelta::FromMilliseconds(5000)) { // TODO: make this configurable
 }
 
 MetaCache::~MetaCache() {
@@ -223,8 +227,13 @@ void MetaCache::UpdateTabletServer(const TSInfoPB& pb) {
 }
 
 struct InFlightLookup {
-  InFlightLookup()
-    : mc(NULL),
+  InFlightLookup(MetaCache* mc,
+                 const shared_ptr<MasterServiceProxy>& master,
+                 const MonoTime& deadline)
+    : mc(mc),
+      master(master),
+      deadline(deadline),
+      attempt(0),
       remote_tablet(NULL) {
   }
 
@@ -233,7 +242,11 @@ struct InFlightLookup {
   }
 
   scoped_refptr<MetaCache> mc;
-  RpcController rpc;
+  shared_ptr<MasterServiceProxy> master;
+  MonoTime deadline;
+  int attempt;
+  RpcController controller;
+  GetTableLocationsRequestPB req;
   GetTableLocationsResponsePB resp;
   StatusCallback user_callback;
   string table_name;
@@ -241,22 +254,48 @@ struct InFlightLookup {
   scoped_refptr<RemoteTablet> *remote_tablet;
 };
 
-void MetaCache::GetTableLocationsCB(InFlightLookup* ifl) {
+void MetaCache::GetTableLocationsCb(InFlightLookup* ifl) {
   gscoped_ptr<InFlightLookup> ifl_deleter(ifl); // delete on scope exit
 
   // The logging below refers to tablet locations even though the RPC was
   // GetTableLocations. That's because we're using said RPC to look up
   // the location of a particular tablet.
-  Status s = ifl->rpc.status();
-  if (!s.ok()) {
-    LOG(WARNING) << "Failed to fetch tablet with start key " << ifl->key << ": "
-        << s.ToString();
-    ifl->user_callback(s);
-    return;
-  }
 
-  s = StatusFromPB(ifl->resp.error().status());
+  // Must extract the actual "too busy" error from the ErrorStatusPB.
+  Status s = ifl->controller.status();
+  bool retry = false;
+  if (s.IsRemoteError()) {
+    const ErrorStatusPB* err = ifl->controller.error_response();
+    if (err &&
+        err->has_code() &&
+        err->code() == ErrorStatusPB::ERROR_SERVER_TOO_BUSY) {
+      retry = true;
+    }
+  }
+  if (s.ok() && ifl->resp.has_error()) {
+    s = StatusFromPB(ifl->resp.error().status());
+  }
   if (!s.ok()) {
+    if (retry) {
+      // Retry provided we haven't exceeded the deadline.
+      if (!ifl->deadline.Initialized() || // no deadline --> retry forever
+          MonoTime::Now(MonoTime::FINE).ComesBefore(ifl->deadline)) {
+        // Add some jitter to the retry delay.
+        //
+        // If the delay causes us to miss our deadline, SendRpc will fail
+        // the RPC on our behalf.
+        int num_ms = ++ifl->attempt + ((rand() % 5));
+        client_->messenger()->ScheduleOnReactor(
+            boost::bind(&MetaCache::SendRpc, this, ifl, _1),
+            MonoDelta::FromMilliseconds(num_ms));
+        ignore_result(ifl_deleter.release());
+        return;
+      } else {
+        VLOG(2) <<
+            strings::Substitute("Failing RPC to master, deadline exceeded: $1",
+                                ifl->deadline.ToString());
+      }
+    }
     LOG(WARNING) << "Failed to fetch tablet with start key " << ifl->key << ": "
         << s.ToString();
     ifl->user_callback(s);
@@ -316,6 +355,33 @@ void MetaCache::GetTableLocationsCB(InFlightLookup* ifl) {
   ifl->user_callback(Status::OK());
 }
 
+void MetaCache::SendRpc(InFlightLookup* ifl, const Status& s) {
+  Status new_status = s;
+
+  // Has this RPC timed out?
+  if (ifl->deadline.Initialized()) {
+    MonoTime now = MonoTime::Now(MonoTime::FINE);
+    if (ifl->deadline.ComesBefore(now)) {
+      new_status = Status::TimedOut("Write timed out");
+    }
+  }
+
+  if (!new_status.ok()) {
+    gscoped_ptr<InFlightLookup> ifl_deleter(ifl); // delete on scope exit
+    ifl->user_callback(new_status);
+    return;
+  }
+
+  ifl->controller.Reset();
+
+  // Compute the new RPC deadline, then send it.
+  if (ifl->deadline.Initialized()) {
+    ifl->controller.set_deadline(ifl->deadline);
+  }
+  ifl->master->GetTableLocationsAsync(ifl->req, &ifl->resp, &ifl->controller,
+                                      boost::bind(&MetaCache::GetTableLocationsCb, this, ifl));
+}
+
 bool MetaCache::LookupTabletByKeyFastPath(const KuduTable* table,
                                           const Slice& key,
                                           scoped_refptr<RemoteTablet>* remote_tablet) {
@@ -341,7 +407,7 @@ bool MetaCache::LookupTabletByKeyFastPath(const KuduTable* table,
   return false;
 }
 
-void MetaCache::LookupTabletByKeyCB(const Status& abort_status,
+void MetaCache::LookupTabletByKeyCb(const Status& abort_status,
                                     const KuduTable* table,
                                     const Slice& key,
                                     scoped_refptr<RemoteTablet>* remote_tablet,
@@ -382,30 +448,31 @@ void MetaCache::LookupTabletByKey(const KuduTable* table,
     VLOG(3) << "All master lookup permits are held, will retry in "
             << num_ms << " ms";
     client_->messenger()->ScheduleOnReactor(
-        boost::bind(&MetaCache::LookupTabletByKeyCB, this, _1, table, key,
+        boost::bind(&MetaCache::LookupTabletByKeyCb, this, _1, table, key,
                     remote_tablet, callback),
         MonoDelta::FromMilliseconds(num_ms));
     return;
   }
 
-  GetTableLocationsRequestPB req;
-  req.mutable_table()->set_table_name(table->name());
-  req.set_start_key(key.data(), key.size());
-
-  // The end key is left unset intentionally so that we'll prefetch some
-  // additional tablets.
-
-  InFlightLookup *ifl = new InFlightLookup;
-  ifl->mc = this;
-  ifl->rpc.set_timeout(MonoDelta::FromMilliseconds(5000));
+  // Got a permit, construct and issue the lookup RPC.
+  shared_ptr<MasterServiceProxy> master = client_->master_proxy();
+  MonoTime deadline;
+  if (timeout_.Initialized()) {
+    deadline = MonoTime::Now(MonoTime::FINE);
+    deadline.AddDelta(timeout_);
+  }
+  InFlightLookup *ifl = new InFlightLookup(this, master, deadline);
   ifl->user_callback = callback;
   ifl->table_name = table->name();
   ifl->key = key;
   ifl->remote_tablet = remote_tablet;
+  ifl->req.mutable_table()->set_table_name(table->name());
+  ifl->req.set_start_key(key.data(), key.size());
 
-  shared_ptr<MasterServiceProxy> master = client_->master_proxy();
-  master->GetTableLocationsAsync(req, &ifl->resp, &ifl->rpc,
-                                 boost::bind(&MetaCache::GetTableLocationsCB, this, ifl));
+  // The end key is left unset intentionally so that we'll prefetch some
+  // additional tablets.
+
+  SendRpc(ifl, Status::OK());
 }
 
 void MetaCache::LookupTabletByID(const std::string& tablet_id,

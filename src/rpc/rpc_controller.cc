@@ -46,10 +46,14 @@ const ErrorStatusPB* RpcController::error_response() const {
   return NULL;
 }
 
-void RpcController::set_timeout(const MonoDelta &timeout) {
+void RpcController::set_timeout(const MonoDelta& timeout) {
   boost::lock_guard<simple_spinlock> l(lock_);
   DCHECK(!call_ || call_->state() == OutboundCall::READY);
   timeout_ = timeout;
+}
+
+void RpcController::set_deadline(const MonoTime& deadline) {
+  set_timeout(deadline.GetDeltaSince(MonoTime::Now(MonoTime::FINE)));
 }
 
 const MonoDelta &RpcController::timeout() const {

@@ -11,12 +11,14 @@
 #include <vector>
 
 #include "gutil/macros.h"
+#include "gutil/ref_counted.h"
 #include "server/metadata.pb.h"
 #include "util/locks.h"
 #include "util/monotime.h"
-#include "util/net/net_util.h"
 #include "util/semaphore.h"
 #include "util/status.h"
+#include "util/memory/arena.h"
+#include "util/net/net_util.h"
 
 namespace kudu {
 
@@ -75,7 +77,7 @@ class RemoteTabletServer {
   // Internal callback for DNS resolution.
   void DnsResolutionFinished(const Status &result_status,
                              const HostPort& hp,
-                             vector<Sockaddr>* addrs,
+                             std::vector<Sockaddr>* addrs,
                              KuduClient* client,
                              const StatusCallback& user_callback);
 
@@ -221,7 +223,7 @@ class MetaCache : public base::RefCountedThreadSafe<MetaCache> {
 
   // Variant of LookupTabletByKey that is invoked as a delayed task if a
   // master lookup permit could not be acquired.
-  void LookupTabletByKeyCB(const Status& abort_status,
+  void LookupTabletByKeyCb(const Status& abort_status,
                            const KuduTable* table,
                            const Slice& key,
                            scoped_refptr<RemoteTablet>* remote_tablet,
@@ -237,7 +239,13 @@ class MetaCache : public base::RefCountedThreadSafe<MetaCache> {
 
   // Called on the slow LookupTablet path when the master responds. Populates
   // the tablet caches and invokes the user-specified callback.
-  void GetTableLocationsCB(InFlightLookup* ifl);
+  void GetTableLocationsCb(InFlightLookup* ifl);
+
+  // Sends a master lookup RPC.
+  //
+  // If invoked for an RPC retry, 's' may be non-OK if the lookup was aborted
+  // before it fired (e.g. the reactor thread shut down).
+  void SendRpc(InFlightLookup* ifl, const Status& s);
 
   KuduClient* client_;
 
@@ -272,6 +280,9 @@ class MetaCache : public base::RefCountedThreadSafe<MetaCache> {
   // Prevents master lookup "storms" by delaying master lookups when all
   // permits have been acquired.
   Semaphore master_lookup_sem_;
+
+  // Amount of time a slow lookup can consume before timing out.
+  MonoDelta timeout_;
 
   DISALLOW_COPY_AND_ASSIGN(MetaCache);
 };

@@ -73,9 +73,14 @@ class RpcController {
   // Timeouts must be set prior to making the request -- the timeout may
   // not currently be adjusted for an already-sent call.
   //
-  // Setting the timeout to 0 will result in a call which never times out
-  // (not recommended!)
-  void set_timeout(const MonoDelta &timeout);
+  // Using an uninitialized timeout will result in a call which never
+  // times out (not recommended!)
+  void set_timeout(const MonoDelta& timeout);
+
+  // Like a timeout, but based on a fixed point in time instead of a delta.
+  //
+  // Using an uninitialized deadline means the call won't time out.
+  void set_deadline(const MonoTime& deadline);
 
   // Return the configured timeout.
   const MonoDelta &timeout() const;

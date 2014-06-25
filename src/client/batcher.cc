@@ -20,9 +20,11 @@
 #include "gutil/map-util.h"
 #include "gutil/stl_util.h"
 #include "gutil/strings/substitute.h"
+#include "rpc/messenger.h"
 #include "tserver/tserver_service.proxy.h"
 #include "util/debug-util.h"
 
+using kudu::rpc::ErrorStatusPB;
 using kudu::rpc::RpcController;
 using kudu::tserver::WriteRequestPB;
 using kudu::tserver::WriteResponsePB;
@@ -139,17 +141,24 @@ struct InFlightOp {
 };
 
 // An RPC which is in-flight to the remote server.
+//
+// Keeps a reference on the owning batcher while alive.
 struct InFlightRpc {
-  explicit InFlightRpc(RemoteTabletServer* dst_ts) :
-    ts(dst_ts) {
+  explicit InFlightRpc(Batcher* batcher, RemoteTabletServer* dst_ts)
+    : batcher(batcher),
+      ts(dst_ts),
+      attempt(0) {
   }
 
   ~InFlightRpc() {
     STLDeleteElements(&ops);
   }
 
+  scoped_refptr<Batcher> batcher;
   RemoteTabletServer* ts;
+  int attempt;
   RpcController controller;
+  WriteRequestPB request;
   WriteResponsePB response;
 
   // Operations which were batched into this RPC.
@@ -334,6 +343,10 @@ void Batcher::FlushAsync(const StatusCallback& cb) {
     // We have to drop the lock since FlushBufferIfReady tries to acquire
     // it again, and it's not a recursive lock.
     bufs_copy = per_ts_buffers_;
+    if (timeout_.Initialized()) {
+      deadline_ = MonoTime::Now(MonoTime::FINE);
+      deadline_.AddDelta(timeout_);
+    }
   }
 
   // In the case that we have nothing buffered, just call the callback
@@ -523,7 +536,7 @@ void Batcher::FlushBuffer(RemoteTabletServer* ts, PerTSBuffer* buf) {
   BOOST_FOREACH(InFlightOp* op, ops) {
     InFlightRpc* rpc = FindPtrOrNull(rpcs, op->tablet.get());
     if (!rpc) {
-      rpc = new InFlightRpc(ts);
+      rpc = new InFlightRpc(this, ts);
       InsertOrDie(&rpcs, op->tablet.get(), rpc);
     }
     rpc->ops.push_back(op);
@@ -531,7 +544,6 @@ void Batcher::FlushBuffer(RemoteTabletServer* ts, PerTSBuffer* buf) {
   }
 
   // For each tablet, create and send an RPC.
-  WriteRequestPB req;
   typedef pair<RemoteTablet*, InFlightRpc*> entry_type;
   BOOST_FOREACH(const entry_type& entry, rpcs) {
     InFlightRpc* rpc = entry.second;
@@ -541,13 +553,13 @@ void Batcher::FlushBuffer(RemoteTabletServer* ts, PerTSBuffer* buf) {
     const Schema& schema = table->schema();
     const RemoteTablet* tablet = entry.first;
 
-    req.Clear();
-    req.set_tablet_id(tablet->tablet_id());
+    rpc->request.Clear();
+    rpc->request.set_tablet_id(tablet->tablet_id());
     // Set up schema
 
-    CHECK_OK(SchemaToPB(schema, req.mutable_schema()));
+    CHECK_OK(SchemaToPB(schema, rpc->request.mutable_schema()));
 
-    RowOperationsPB* requested = req.mutable_row_operations();
+    RowOperationsPB* requested = rpc->request.mutable_row_operations();
 
     // Add the rows
     int ctr = 0;
@@ -571,55 +583,97 @@ void Batcher::FlushBuffer(RemoteTabletServer* ts, PerTSBuffer* buf) {
 
     if (VLOG_IS_ON(2)) {
       VLOG(2) << "Created batch for " << entry.first->tablet_id() << ":\n"
-              << req.ShortDebugString();
+              << rpc->request.ShortDebugString();
     }
 
-    // TODO: the timeout should actually be a bit smarter -- i.e be the full span from
-    // when the flush was called to when the response has to come.
-    rpc->controller.set_timeout(timeout_);
-    // Actually send the RPC.
-    // The 'rpc' object will be released by the callback.
-    AddRef();
-    ts->proxy()->WriteAsync(req, &rpc->response, &rpc->controller,
-                            boost::bind(&Batcher::WriteRpcFinished, this, rpc));
+    SendRpc(rpc, Status::OK());
   }
 }
 
-void Batcher::WriteRpcFinished(InFlightRpc* rpc) {
-  ScopedRefReleaser<Batcher> releaser(this);
+void Batcher::SendRpc(InFlightRpc* rpc, const Status& s) {
+  Status new_status = s;
 
+  // Has this RPC timed out?
+  if (deadline_.Initialized()) {
+    MonoTime now = MonoTime::Now(MonoTime::FINE);
+    if (deadline_.ComesBefore(now)) {
+      new_status = Status::TimedOut("Write timed out");
+    }
+  }
+
+  if (!new_status.ok()) {
+    FinishRpc(rpc, new_status);
+    return;
+  }
+
+  rpc->controller.Reset();
+
+  // Compute the new RPC deadline, then send it.
+  //
+  // The 'rpc' object will be released by the callback.
+  if (deadline_.Initialized()) {
+    rpc->controller.set_deadline(deadline_);
+  }
+  rpc->ts->proxy()->WriteAsync(rpc->request, &rpc->response, &rpc->controller,
+                               boost::bind(&Batcher::WriteRpcFinished, this, rpc));
+}
+
+void Batcher::WriteRpcFinished(InFlightRpc* rpc) {
   // TODO: there is a potential race here -- if the Batcher gets destructed while
   // RPCs are in-flight, then accessing state_ will crash. We probably need to keep
   // track of the in-flight RPCs, and in the destructor, change each of them to an
   // "aborted" state.
   CHECK_EQ(state_, kFlushing);
 
-  // Remove all the ops from the "in-flight" list
-  {
-    boost::lock_guard<simple_spinlock> l(lock_);
-    BOOST_FOREACH(InFlightOp* op, rpc->ops) {
-      CHECK_EQ(1, ops_.erase(op))
-        << "Could not remove op " << op->ToString() << " from in-flight list";
+  // Must extract the actual "too busy" error from the ErrorStatusPB.
+  Status s = rpc->controller.status();
+  bool retry = false;
+  if (s.IsRemoteError()) {
+    const ErrorStatusPB* err = rpc->controller.error_response();
+    if (err &&
+        err->has_code() &&
+        err->code() == ErrorStatusPB::ERROR_SERVER_TOO_BUSY) {
+      retry = true;
     }
   }
-
-  // Make sure after this method that the ops and the RPC are deleted.
-  gscoped_ptr<InFlightRpc> scoped_rpc(rpc);
-  Status s = rpc->controller.status();
   if (s.ok() && rpc->response.has_error()) {
     s = StatusFromPB(rpc->response.error().status());
   }
-
   if (s.ok()) {
     VLOG(2) << "Write RPC success: " << rpc->response.DebugString();
   } else {
     VLOG(2) << "Write RPC failed: " << s.ToString();
 
-    // TODO: need to handle various retry cases here -- eg re-fetching
-    // the locations, re-resolving the TS, etc.
+    if (retry) {
+      // Retry provided we haven't exceeded the deadline.
+      if (!deadline_.Initialized() || // no deadline --> retry forever
+          MonoTime::Now(MonoTime::FINE).ComesBefore(deadline_)) {
+        // Add some jitter to the retry delay.
+        //
+        // If the delay causes us to miss our deadline, SendRpc will fail
+        // the RPC on our behalf.
+        int num_ms = ++rpc->attempt + ((rand() % 5));
+        client_->messenger()->ScheduleOnReactor(
+            boost::bind(&Batcher::SendRpc, this, rpc, _1),
+            MonoDelta::FromMilliseconds(num_ms));
+        return;
+      } else {
+        VLOG(2) <<
+            strings::Substitute("Failing RPC to $0, deadline exceeded: $1",
+                                rpc->ts->ToString(), deadline_.ToString());
+      }
+    }
+  }
 
-    // Mark each of the rows in the write op as failed, since the whole RPC
-    // failed.
+  FinishRpc(rpc, s);
+}
+
+void Batcher::FinishRpc(InFlightRpc* rpc, const Status& s) {
+  // Make sure after this method that the ops and the RPC are deleted.
+  gscoped_ptr<InFlightRpc> scoped_rpc(rpc);
+
+  if (!s.ok()) {
+    // Mark each of the rows in the write op as failed, since the whole RPC failed.
     BOOST_FOREACH(InFlightOp* op, rpc->ops) {
       gscoped_ptr<Error> error(new Error(op->write_op.Pass(), s));
       error_collector_->AddError(error.Pass());
@@ -628,19 +682,33 @@ void Batcher::WriteRpcFinished(InFlightRpc* rpc) {
     MarkHadErrors();
   }
 
+
+  // Remove all the ops from the "in-flight" list.
+  {
+    boost::lock_guard<simple_spinlock> l(lock_);
+    BOOST_FOREACH(InFlightOp* op, rpc->ops) {
+      CHECK_EQ(1, ops_.erase(op))
+            << "Could not remove op " << op->ToString()
+            << " from in-flight list";
+    }
+  }
+
+  // Check individual row errors.
   BOOST_FOREACH(const WriteResponsePB_PerRowErrorPB& err_pb, rpc->response.per_row_errors()) {
     // TODO: handle case where we get one of the more specific TS errors
     // like the tablet not being hosted, or too busy?
 
     if (err_pb.row_index() >= rpc->ops.size()) {
-      LOG(ERROR) << "Received a per_row_error for an out-of-bound op index " << err_pb.row_index()
-                 << " (sent only " << rpc->ops.size() << " ops)";
-      LOG(ERROR) << "Response from TS " << rpc->ts->ToString() << ":\n" <<
-        rpc->response.DebugString();
+      LOG(ERROR) << "Received a per_row_error for an out-of-bound op index "
+                 << err_pb.row_index() << " (sent only "
+                 << rpc->ops.size() << " ops)";
+      LOG(ERROR) << "Response from TS " << rpc->ts->ToString() << ":\n"
+                 << rpc->response.DebugString();
       continue;
     }
     gscoped_ptr<WriteOperation> op = rpc->ops[err_pb.row_index()]->write_op.Pass();
-    VLOG(1) << "Error on op " << op->ToString() << ": " << err_pb.error().ShortDebugString();
+    VLOG(1) << "Error on op " << op->ToString() << ": "
+            << err_pb.error().ShortDebugString();
     Status op_status = StatusFromPB(err_pb.error());
     gscoped_ptr<Error> error(new Error(op.Pass(), op_status));
     error_collector_->AddError(error.Pass());

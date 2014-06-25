@@ -104,13 +104,23 @@ class Batcher : public base::RefCountedThreadSafe<Batcher> {
   // given status.
   void MarkInFlightOpFailed(InFlightOp* op, const Status& s);
   void MarkInFlightOpFailedUnlocked(InFlightOp* op, const Status& s);
+
   void CheckForFinishedFlush();
   void FlushBufferIfReady(RemoteTabletServer* ts, PerTSBuffer* buf);
   void FlushBuffer(RemoteTabletServer* ts, PerTSBuffer* buf);
 
+  // Sends a write RPC.
+  //
+  // If invoked for an RPC retry, 's' may be non-OK if the lookup was aborted
+  // before it fired (e.g. the reactor thread shut down).
+  void SendRpc(InFlightRpc* rpc, const Status& s);
+
+  // Cleans up an RPC, scooping out any errors and passing them up to the
+  // batcher.
+  void FinishRpc(InFlightRpc* rpc, const Status& s);
+
   // Async Callbacks.
   void TabletLookupFinished(InFlightOp* op, const Status& s);
-  void TabletRefreshFinished(InFlightOp* op, const Status& s);
   void RefreshTSProxyFinished(RemoteTabletServer* ts, PerTSBuffer* buf,
                               const Status& status);
   void WriteRpcFinished(InFlightRpc* rpc);
@@ -146,7 +156,13 @@ class Batcher : public base::RefCountedThreadSafe<Batcher> {
   // Buffers for each tablet of ops that haven't yet been sent.
   std::tr1::unordered_map<RemoteTabletServer*, PerTSBuffer*> per_ts_buffers_;
 
+  // Amount of time to wait for a given op, from start to finish.
+  //
+  // Set by SetTimeoutMillis.
   MonoDelta timeout_;
+
+  // After flushing, the absolute deadline for all in-flight ops.
+  MonoTime deadline_;
 
   DISALLOW_COPY_AND_ASSIGN(Batcher);
 };
