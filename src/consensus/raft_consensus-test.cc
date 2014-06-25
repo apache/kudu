@@ -189,7 +189,7 @@ class RaftConsensusTest : public KuduTest {
   }
   Status TimedWaitForReplicate(ConsensusRound* round, const MonoDelta& delta) {
     return down_cast<LatchCallback*, FutureCallback>(
-        round->replicate_callback().get())->TimedWait(delta);
+        round->replicate_callback().get())->WaitFor(delta);
   }
 
   void WaitForReplicateIfNotAlreadyPresent(const OpId& to_wait_for, RaftConsensus* replica) {
@@ -212,7 +212,7 @@ class RaftConsensusTest : public KuduTest {
     int num_attempts = 0;
 
     while (true) {
-      Status s = clbk->TimedWait(MonoDelta::FromMilliseconds(1000));
+      Status s = clbk->WaitFor(MonoDelta::FromMilliseconds(1000));
       if (s.ok()) {
         return;
       }

@@ -286,8 +286,8 @@ Status TabletPeer::RunLogGC() {
       LOG(ERROR) << s.ToString();
     }
     // TODO: Possibly back off if num_gced == 0.
-  } while (!log_gc_shutdown_latch_.TimedWait(
-               boost::posix_time::milliseconds(FLAGS_log_gc_sleep_delay_ms)));
+  } while (!log_gc_shutdown_latch_.WaitFor(
+      MonoDelta::FromMilliseconds(FLAGS_log_gc_sleep_delay_ms)));
   return Status::OK();
 }
 

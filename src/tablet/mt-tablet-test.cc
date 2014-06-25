@@ -162,7 +162,7 @@ class MultiThreadedTabletTest : public TabletTestBase<SETUP> {
         CHECK_OK(iter->MaterializeBlock(&block));
         CHECK_OK(iter->FinishBatch());
 
-        if (running_insert_count_.TimedWait(boost::posix_time::milliseconds(1))) {
+        if (running_insert_count_.WaitFor(MonoDelta::FromMilliseconds(1))) {
           return;
         }
       }
@@ -245,7 +245,7 @@ class MultiThreadedTabletTest : public TabletTestBase<SETUP> {
       }
 
       // Wait, unless the inserters are all done.
-      running_insert_count_.TimedWait(boost::posix_time::milliseconds(wait_time));
+      running_insert_count_.WaitFor(MonoDelta::FromMilliseconds(wait_time));
       wait_time *= FLAGS_flusher_backoff;
     }
   }
@@ -256,7 +256,7 @@ class MultiThreadedTabletTest : public TabletTestBase<SETUP> {
       CHECK_OK(tablet_->Compact(Tablet::COMPACT_NO_FLAGS));
 
       // Wait, unless the inserters are all done.
-      running_insert_count_.TimedWait(boost::posix_time::milliseconds(wait_time));
+      running_insert_count_.WaitFor(MonoDelta::FromMilliseconds(wait_time));
     }
   }
 
@@ -306,7 +306,7 @@ class MultiThreadedTabletTest : public TabletTestBase<SETUP> {
       memrowset_size_ts->SetValue(tablet_->MemRowSetSize() / 1024);
 
       // Wait, unless the inserters are all done.
-      running_insert_count_.TimedWait(boost::posix_time::milliseconds(250));
+      running_insert_count_.WaitFor(MonoDelta::FromMilliseconds(250));
     }
   }
 

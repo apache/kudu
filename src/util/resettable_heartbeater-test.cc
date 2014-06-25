@@ -44,7 +44,7 @@ class ResettableHeartbeaterTest : public KuduTest {
   }
 
   void WaitForCountDown() {
-    CHECK(latch_.TimedWait(boost::posix_time::milliseconds(kMaxWaitMsecs)))
+    CHECK(latch_.WaitFor(MonoDelta::FromMilliseconds(kMaxWaitMsecs)))
         << "Failed to count down " << kNumPeriodsToWait << " times in " << kMaxWaitMsecs
         << " ms: latch count == " << latch_.count();
   }

@@ -46,32 +46,19 @@ class CountDownLatch {
     }
   }
 
+  // Waits for the count on the latch to reach zero, or until 'until' time is reached.
+  // Returns true if the count became zero, false otherwise.
   bool WaitUntil(const MonoTime& when) {
     MonoDelta relative = when.GetDeltaSince(MonoTime::Now(MonoTime::FINE));
-    return TimedWait(boost::posix_time::microseconds(relative.ToMicroseconds()));
+    return WaitFor(relative);
   }
 
-  // TODO: use MonoTime APIs instead of the boost time APIs in the
-  // following two functions. Inconsistent time types is annoying!
-
-  // Wait on the latch for the given duration of time.
-  // Return true if the latch reaches 0 within the given
-  // timeout. Otherwise false.
-  //
-  // For example:
-  //  latch.TimedWait(boost::posix_time::milliseconds(100));
-  template<class TimeDuration>
-  bool TimedWait(TimeDuration const &relative_time) {
-    return TimedWait(boost::get_system_time() + relative_time);
-  }
-
-  // Wait on the latch until the given system time.
-  // Return true if the latch reaches 0 within the given
-  // timeout. Otherwise false.
-  bool TimedWait(const boost::system_time &time_until) {
+  // Waits for the count on the latch to reach zero, or until 'delta' time elapses.
+  // Returns true if the count became zero, false otherwise.
+  bool WaitFor(const MonoDelta& delta) {
     boost::unique_lock<boost::mutex> lock(lock_);
     while (count_ > 0) {
-      if (!cond_.timed_wait(lock, time_until)) {
+      if (!cond_.timed_wait(lock, boost::posix_time::microseconds(delta.ToMicroseconds()))) {
         return false;
       }
     }

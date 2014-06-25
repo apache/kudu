@@ -201,10 +201,16 @@ void ThreadPool::Wait() {
   }
 }
 
-bool ThreadPool::TimedWait(const boost::system_time& time_until) {
+bool ThreadPool::WaitUntil(const MonoTime& until) {
+  MonoDelta relative = until.GetDeltaSince(MonoTime::Now(MonoTime::FINE));
+  return WaitFor(relative);
+}
+
+bool ThreadPool::WaitFor(const MonoDelta& delta) {
   boost::unique_lock<boost::mutex> unique_lock(lock_);
   while ((!queue_.empty()) || (active_threads_ > 0)) {
-    if (!idle_cond_.timed_wait(unique_lock, time_until)) {
+    if (!idle_cond_.timed_wait(unique_lock,
+                               boost::posix_time::microseconds(delta.ToMicroseconds()))) {
       return false;
     }
   }

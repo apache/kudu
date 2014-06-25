@@ -121,19 +121,13 @@ class ThreadPool {
   // Wait until all the tasks are completed.
   void Wait();
 
-  // Waits for the idle state for the given duration of time.
-  // Returns true if the pool is idle within the given timeout. Otherwise false.
-  //
-  // For example:
-  //  thread_pool.TimedWait(boost::posix_time::milliseconds(100));
-  template<class TimeDuration>
-  bool TimedWait(const TimeDuration& relative_time) {
-    return TimedWait(boost::get_system_time() + relative_time);
-  }
+  // Waits for the pool to reach the idle state, or until 'until' time is reached.
+  // Returns true if the pool reached the idle state, false otherwise.
+  bool WaitUntil(const MonoTime& until);
 
-  // Waits for the idle state for the given duration of time.
-  // Returns true if the pool is idle within the given timeout. Otherwise false.
-  bool TimedWait(const boost::system_time& time_until);
+  // Waits for the pool to reach the idle state, or until 'delta' time elapses.
+  // Returns true if the pool reached the idle state, false otherwise.
+  bool WaitFor(const MonoDelta& delta);
 
  private:
   friend class ThreadPoolBuilder;

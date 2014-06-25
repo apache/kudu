@@ -105,19 +105,13 @@ class TaskExecutor {
   // Wait until all the tasks are completed.
   void Wait();
 
-  // Waits for the idle state for the given duration of time.
-  // Returns true if the pool is idle within the given timeout. Otherwise false.
-  //
-  // For example:
-  //  executor.TimedWait(boost::posix_time::milliseconds(100));
-  template<class TimeDuration>
-  bool TimedWait(const TimeDuration& relative_time) {
-    return thread_pool_->TimedWait(relative_time);
-  }
+  // Waits for the pool to reach the idle state, or until 'until' time is reached.
+  // Returns true if the pool reached the idle state, false otherwise.
+  bool WaitUntil(const MonoTime& until);
 
-  // Waits for the idle state for the given duration of time.
-  // Returns true if the pool is idle within the given timeout. Otherwise false.
-  bool TimedWait(const boost::system_time& time_until);
+  // Waits for the pool to reach the idle state, or until 'delta' time elapses.
+  // Returns true if the pool reached the idle state, false otherwise.
+  bool WaitFor(const MonoDelta& delta);
 
  private:
   friend class TaskExecutorBuilder;
@@ -197,8 +191,8 @@ class LatchCallback : public FutureCallback {
     return status_;
   }
 
-  Status TimedWait(const MonoDelta& delta) {
-    bool done = latch_.TimedWait(boost::posix_time::microseconds(delta.ToMicroseconds()));
+  Status WaitFor(const MonoDelta& delta) {
+    bool done = latch_.WaitFor(delta);
     if (!done) {
       return Status::TimedOut("Timeout waiting on LatchCallback.");
     }
@@ -266,9 +260,13 @@ class Future {
   // Wait for the task finished state.
   virtual void Wait() = 0;
 
-  // Waits for the task finished state for the given duration of time.
-  // Returns true if the task is finished within the given timeout. Otherwise false.
-  virtual bool TimedWait(const boost::system_time& time_until) = 0;
+  // Waits for the task to reach the finished state, or until 'until' time is reached.
+  // Returns true if the task finishes, false otherwise.
+  virtual bool WaitUntil(const MonoTime& until) = 0;
+
+  // Waits for the task to reach the finished state, or until 'delta' time elapses.
+  // Returns true if the task finished, false otherwise.
+  virtual bool WaitFor(const MonoDelta& delta) = 0;
 
   // Send an abort signal to the task
   // If the result is True, the task is handling the abort signal. Otherwise false.
@@ -312,16 +310,6 @@ class Future {
                    const boost::function<void(const Status&)>& on_failure) {
     AddListener(std::tr1::shared_ptr<FutureCallback>(
         new BoundFunctionCallback(on_success, on_failure)));
-  }
-
-  // Waits for the task finished state for the given duration of time.
-  // Returns true if the task is finished within the given timeout. Otherwise false.
-  //
-  // For example:
-  //  future.TimedWait(boost::posix_time::milliseconds(100));
-  template<class TimeDuration>
-  bool TimedWait(TimeDuration const &relative_time) {
-    return TimedWait(boost::get_system_time() + relative_time);
   }
 
   virtual ~Future() {
@@ -412,7 +400,9 @@ class FutureTask : public Runnable, public Future {
 
   void Wait() OVERRIDE;
 
-  bool TimedWait(const boost::system_time& time_until) OVERRIDE;
+  virtual bool WaitUntil(const MonoTime& until) OVERRIDE;
+
+  virtual bool WaitFor(const MonoDelta& delta) OVERRIDE;
 
   virtual ~FutureTask() {
   }

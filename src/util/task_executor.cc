@@ -95,8 +95,12 @@ void FutureTask::Wait() {
   latch_.Wait();
 }
 
-bool FutureTask::TimedWait(const boost::system_time& time_until) {
-  return latch_.TimedWait(time_until);
+bool FutureTask::WaitUntil(const MonoTime& until) {
+  return latch_.WaitUntil(until);
+}
+
+bool FutureTask::WaitFor(const MonoDelta& delta) {
+  return latch_.WaitFor(delta);
 }
 
 bool FutureTask::set_state(TaskState state) {
@@ -183,8 +187,12 @@ void TaskExecutor::Wait() {
   thread_pool_->Wait();
 }
 
-bool TaskExecutor::TimedWait(const boost::system_time& time_until) {
-  return thread_pool_->TimedWait(time_until);
+bool TaskExecutor::WaitUntil(const MonoTime& until) {
+  return thread_pool_->WaitUntil(until);
+}
+
+bool TaskExecutor::WaitFor(const MonoDelta& delta) {
+  return thread_pool_->WaitFor(delta);
 }
 
 TaskExecutor::~TaskExecutor() {

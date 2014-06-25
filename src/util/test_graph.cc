@@ -76,7 +76,7 @@ void TimeSeriesCollector::DumperThread() {
     LOG(INFO) << metrics_str.ToString();
 
     // Sleep until next dump time, or return if we should exit
-    if (exit_latch_.TimedWait(boost::posix_time::milliseconds(250))) {
+    if (exit_latch_.WaitFor(MonoDelta::FromMilliseconds(250))) {
       return;
     }
   }
