@@ -11,6 +11,7 @@
 #include "consensus/consensus_queue.h"
 #include "consensus/raft_consensus.h"
 #include "consensus/raft_consensus_state.h"
+#include "gutil/strings/strcat.h"
 #include "integration-tests/mini_cluster.h"
 #include "master/catalog_manager.h"
 #include "master/master.h"

@@ -5,6 +5,7 @@
 #include "common/rowblock.h"
 #include "common/schema.h"
 #include "cfile/cfile.h"
+#include "fs/block_id.h"
 #include "gutil/stl_util.h"
 
 namespace kudu {

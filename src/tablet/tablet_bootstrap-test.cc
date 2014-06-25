@@ -40,8 +40,8 @@ class BootstrapTest : public LogTestBase {
     LogTestBase::SetUp();
     master_block_.set_table_id(log::kTestTable);
     master_block_.set_tablet_id(log::kTestTablet);
-    master_block_.set_block_a(fs_manager_->GenerateName());
-    master_block_.set_block_b(fs_manager_->GenerateName());
+    master_block_.set_block_a(fs_manager_->GenerateBlockId().ToString());
+    master_block_.set_block_b(fs_manager_->GenerateBlockId().ToString());
   }
 
   Status BootstrapTestTablet(int mrs_id,

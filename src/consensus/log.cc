@@ -33,6 +33,7 @@ namespace log {
 using consensus::OpId;
 using env_util::OpenFileForRandom;
 using strings::Substitute;
+using std::tr1::shared_ptr;
 
 // This class is responsible for managing the thread that appends to
 // the log file.

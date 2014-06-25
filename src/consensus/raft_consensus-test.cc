@@ -13,6 +13,8 @@
 #include "consensus/raft_consensus.h"
 #include "consensus/raft_consensus_state.h"
 #include "gutil/stl_util.h"
+#include "gutil/strings/strcat.h"
+#include "gutil/strings/substitute.h"
 #include "consensus/log_reader.h"
 #include "rpc/rpc_context.h"
 #include "server/metadata.h"
@@ -40,6 +42,7 @@ using metadata::QuorumPeerPB;
 using metadata::TabletSuperBlockPB;
 using rpc::RpcContext;
 using strings::Substitute;
+using strings::SubstituteAndAppend;
 
 const char* kTestTablet = "TestTablet";
 
@@ -334,9 +337,9 @@ class RaftConsensusTest : public KuduTest {
   string PrintOnError(const vector<OperationPB*>& replica_ops,
                       string replica_id) {
     string ret = "";
-    StrAppend(&ret, Substitute("Replica Ops for replica: $0 Num. Replica Ops: $1\n",
-                               replica_id,
-                               replica_ops.size()));
+    SubstituteAndAppend(&ret, "Replica Ops for replica: $0 Num. Replica Ops: $1\n",
+                        replica_id,
+                        replica_ops.size());
     BOOST_FOREACH(OperationPB* replica_op, replica_ops) {
       StrAppend(&ret, "Replica Operation: ", replica_op->ShortDebugString(), "\n");
     }

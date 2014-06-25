@@ -213,8 +213,8 @@ Status TSTabletManager::CreateNewTablet(const string& table_id,
   TabletMasterBlockPB master_block;
   master_block.set_table_id(table_id);
   master_block.set_tablet_id(tablet_id);
-  master_block.set_block_a(fs_manager_->GenerateName());
-  master_block.set_block_b(fs_manager_->GenerateName());
+  master_block.set_block_a(fs_manager_->GenerateBlockId().ToString());
+  master_block.set_block_b(fs_manager_->GenerateBlockId().ToString());
 
   TRACE("Creating new master block...");
   scoped_refptr<TabletMetadata> meta;

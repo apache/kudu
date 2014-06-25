@@ -7,7 +7,6 @@
 #include "common/schema.h"
 #include "gutil/macros.h"
 #include "server/metadata.h"
-#include "server/metadata_util.h"
 #include "server/rpc_server.h"
 #include "server/webserver.h"
 #include "tablet/maintenance_manager.h"

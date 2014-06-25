@@ -44,7 +44,6 @@ using metadata::TabletSuperBlockPB;
 using metadata::TabletMasterBlockPB;
 using metadata::RowSetDataPB;
 using metadata::DeltaDataPB;
-using metadata::BlockIdPB;
 using metadata::kNoDurableMemStore;
 
 using tserver::WriteRequestPB;

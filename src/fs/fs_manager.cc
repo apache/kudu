@@ -4,8 +4,12 @@
 
 #include <boost/foreach.hpp>
 #include <glog/logging.h>
+#include <google/protobuf/message_lite.h>
 #include <iostream>
+#include <tr1/memory>
 
+#include "fs/block_id.h"
+#include "fs/block_id-inl.h"
 #include "fs/fs.pb.h"
 #include "gutil/strings/join.h"
 #include "gutil/strings/numbers.h"
@@ -18,18 +22,11 @@
 #include "util/path_util.h"
 #include "util/pb_util.h"
 
+using google::protobuf::MessageLite;
 using strings::Substitute;
+using std::tr1::shared_ptr;
 
 namespace kudu {
-
-string BlockId::JoinStrings(const vector<BlockId>& blocks) {
-  vector<string> strings;
-  strings.reserve(blocks.size());
-  BOOST_FOREACH(const BlockId& block, blocks) {
-    strings.push_back(block.ToString());
-  }
-  return ::JoinStrings(strings, ",");
-}
 
 // ==========================================================================
 //  FS Paths
@@ -41,17 +38,6 @@ const char *FsManager::kMasterBlockDirName = "master-blocks";
 const char *FsManager::kDataDirName = "data";
 const char *FsManager::kCorruptedSuffix = ".corrupted";
 const char *FsManager::kInstanceMetadataFileName = "instance";
-
-const char *FsMetadataTypeToString(FsMetadataType type) {
-  switch (type) {
-    case kFsMetaTabletData:
-      return "data";
-  }
-
-  /* Never reached */
-  DCHECK(0);
-  return(NULL);
-}
 
 FsManager::FsManager(Env *env, const string& root_path)
   : env_(env), root_path_(root_path) {
@@ -92,7 +78,7 @@ Status FsManager::CreateInitialFileSystemLayout() {
 
 Status FsManager::CreateAndWriteInstanceMetadata() {
   InstanceMetadataPB new_instance;
-  new_instance.set_uuid(GenerateName());
+  new_instance.set_uuid(oid_generator_.Next());
 
   string time_str;
   StringAppendStrftime(&time_str, "%Y-%m-%d %H:%M:%S", time(NULL), false);
@@ -114,6 +100,16 @@ const string& FsManager::uuid() const {
   return CHECK_NOTNULL(metadata_.get())->uuid();
 }
 
+string FsManager::GetBlockPath(const BlockId& block_id) const {
+  CHECK(!block_id.IsNull());
+  string path = GetDataRootDir();
+  path = JoinPathSegments(path, block_id.hash0());
+  path = JoinPathSegments(path, block_id.hash1());
+  path = JoinPathSegments(path, block_id.hash2());
+  path = JoinPathSegments(path, block_id.ToString());
+  return path;
+}
+
 string FsManager::GetMasterBlockDir() const {
   return JoinPathSegments(GetRootDir(), kMasterBlockDirName);
 }
@@ -125,6 +121,21 @@ string FsManager::GetMasterBlockPath(const std::string& tablet_id) const {
 string FsManager::GetInstanceMetadataPath() const {
   return JoinPathSegments(GetRootDir(), kInstanceMetadataFileName);
 }
+
+string FsManager::GetTabletWalRecoveryDir(const string& tablet_id) const {
+  string path = JoinPathSegments(GetWalsRootDir(), tablet_id);
+  StrAppend(&path, kWalsRecoveryDirSuffix);
+  return path;
+}
+
+string FsManager::GetWalSegmentFileName(const string& tablet_id,
+                                        uint64_t sequence_number) const {
+  return JoinPathSegments(GetTabletWalDir(tablet_id),
+                          strings::Substitute("$0-$1",
+                                              kWalFileNamePrefix,
+                                              StringPrintf("%09lu", sequence_number)));
+}
+
 
 // ==========================================================================
 //  Dump/Debug utils
@@ -164,11 +175,15 @@ void FsManager::DumpFileSystemTree(ostream& out, const string& prefix,
 //  Data read/write interfaces
 // ==========================================================================
 
+BlockId FsManager::GenerateBlockId() {
+  return BlockId(oid_generator_.Next());
+}
+
 Status FsManager::CreateNewBlock(shared_ptr<WritableFile> *writer, BlockId *block_id) {
   // TODO: Add a NewWritableFile without O_TRUNC and remove the loop that is not atomic anyway...
   string path;
   do {
-    block_id->SetId(GenerateName());
+    *block_id = GenerateBlockId();
     RETURN_NOT_OK(CreateBlockDir(*block_id));
     path = GetBlockPath(*block_id);
   } while (env_->FileExists(path));
@@ -180,6 +195,23 @@ Status FsManager::OpenBlock(const BlockId& block_id, shared_ptr<RandomAccessFile
   VLOG(1) << "OpenBlock: " << block_id.ToString();
   return env_util::OpenFileForRandom(env_, GetBlockPath(block_id), reader);
 }
+
+Status FsManager::CreateBlockDir(const BlockId& block_id) {
+  CHECK(!block_id.IsNull());
+
+  string path = GetDataRootDir();
+  RETURN_NOT_OK(CreateDirIfMissing(path));
+
+  path = JoinPathSegments(path, block_id.hash0());
+  RETURN_NOT_OK(CreateDirIfMissing(path));
+
+  path = JoinPathSegments(path, block_id.hash1());
+  RETURN_NOT_OK(CreateDirIfMissing(path));
+
+  path = JoinPathSegments(path, block_id.hash2());
+  return CreateDirIfMissing(path);
+}
+
 
 // ==========================================================================
 //  Metadata read/write interfaces

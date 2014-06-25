@@ -1,16 +1,12 @@
 // Copyright (c) 2013, Cloudera, inc.
-
 package kudu.metadata;
 
 import "common/common.proto";
+import "fs/fs.proto";
 
 // ============================================================================
 //  Tablet Metadata
 // ============================================================================
-
-message BlockIdPB {
-  required string id = 1;
-}
 
 message ColumnDataPB {
   required BlockIdPB block = 2;

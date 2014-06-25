@@ -19,13 +19,13 @@ class LogReader {
   // Opens a LogReader on the default tablet log directory, and sets
   // 'reader' to the newly created LogReader.
   static Status Open(FsManager *fs_manager,
-                     const string& tablet_oid,
+                     const std::string& tablet_oid,
                      gscoped_ptr<LogReader> *reader);
 
   // Opens a LogReader on a specific tablet log recovery directory, and sets
   // 'reader' to the newly created LogReader.
   static Status OpenFromRecoveryDir(FsManager *fs_manager,
-                                    const string& tablet_oid,
+                                    const std::string& tablet_oid,
                                     gscoped_ptr<LogReader> *reader);
 
   // Returns the number of segments in path_, set only once on Init().
@@ -41,13 +41,13 @@ class LogReader {
   DISALLOW_COPY_AND_ASSIGN(LogReader);
 
   LogReader(FsManager *fs_manager,
-            const string& tablet_name);
+            const std::string& tablet_name);
 
   // Reads the headers of all segments in 'path_'.
-  Status Init(const string& path_);
+  Status Init(const std::string& path_);
 
   FsManager *fs_manager_;
-  const string tablet_oid_;
+  const std::string tablet_oid_;
   ReadableLogSegmentMap segments_;
 
   enum State {

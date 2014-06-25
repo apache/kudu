@@ -30,6 +30,7 @@ DEFINE_int32(num_reactor_threads, 4, "Number of libev reactor threads to start."
              " (Advanced option).");
 DECLARE_bool(use_hybrid_clock);
 
+using std::string;
 using std::vector;
 
 namespace kudu {
@@ -121,8 +122,8 @@ Status ServerBase::Init() {
   return Status::OK();
 }
 
-Status ServerBase::DumpServerInfo(const std::string& path,
-                                  const std::string& format) const {
+Status ServerBase::DumpServerInfo(const string& path,
+                                  const string& format) const {
   ServerStatusPB status;
 
   // Node instance

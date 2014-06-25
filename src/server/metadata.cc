@@ -19,7 +19,6 @@
 #include "util/pb_util.h"
 #include "util/trace.h"
 #include "server/metadata.pb.h"
-#include "server/metadata_util.h"
 
 namespace kudu {
 namespace metadata {
@@ -475,12 +474,12 @@ Status RowSetMetadata::InitFromPB(const RowSetDataPB& pb) {
 
   // Load Bloom File
   if (pb.has_bloom_block()) {
-    bloom_block_ = BlockIdFromPB(pb.bloom_block());
+    bloom_block_ = BlockId::FromPB(pb.bloom_block());
   }
 
   // Load AdHoc Index File
   if (pb.has_adhoc_index_block()) {
-    adhoc_index_block_ = BlockIdFromPB(pb.adhoc_index_block());
+    adhoc_index_block_ = BlockId::FromPB(pb.adhoc_index_block());
   }
 
   // Load Column Files
@@ -488,7 +487,7 @@ Status RowSetMetadata::InitFromPB(const RowSetDataPB& pb) {
   std::vector<size_t> cols_ids;
   std::vector<ColumnSchema> cols;
   BOOST_FOREACH(const ColumnDataPB& col_pb, pb.columns()) {
-    column_blocks_.push_back(BlockIdFromPB(col_pb.block()));
+    column_blocks_.push_back(BlockId::FromPB(col_pb.block()));
     cols.push_back(ColumnSchemaFromPB(col_pb.schema()));
     cols_ids.push_back(col_pb.schema().id());
     key_columns += !!col_pb.schema().is_key();
@@ -497,14 +496,14 @@ Status RowSetMetadata::InitFromPB(const RowSetDataPB& pb) {
 
   // Load redo delta files
   BOOST_FOREACH(const DeltaDataPB& redo_delta_pb, pb.redo_deltas()) {
-    redo_delta_blocks_.push_back(BlockIdFromPB(redo_delta_pb.block()));
+    redo_delta_blocks_.push_back(BlockId::FromPB(redo_delta_pb.block()));
   }
 
   last_durable_redo_dms_id_ = pb.last_durable_dms_id();
 
   // Load undo delta files
   BOOST_FOREACH(const DeltaDataPB& undo_delta_pb, pb.undo_deltas()) {
-    undo_delta_blocks_.push_back(BlockIdFromPB(undo_delta_pb.block()));
+    undo_delta_blocks_.push_back(BlockId::FromPB(undo_delta_pb.block()));
   }
 
   initted_ = true;
@@ -519,7 +518,7 @@ void RowSetMetadata::ToProtobuf(RowSetDataPB *pb) {
   BOOST_FOREACH(const BlockId& block_id, column_blocks_) {
     ColumnDataPB *col_data = pb->add_columns();
     ColumnSchemaPB *col_schema = col_data->mutable_schema();
-    BlockIdToPB(block_id, col_data->mutable_block());
+    block_id.CopyToPB(col_data->mutable_block());
     ColumnSchemaToPB(schema_.column(idx), col_schema);
     col_schema->set_id(schema_.column_id(idx));
     col_schema->set_is_key(idx < schema_.num_key_columns());
@@ -533,23 +532,23 @@ void RowSetMetadata::ToProtobuf(RowSetDataPB *pb) {
 
     BOOST_FOREACH(const BlockId& redo_delta_block, redo_delta_blocks_) {
       DeltaDataPB *redo_delta_pb = pb->add_redo_deltas();
-      BlockIdToPB(redo_delta_block, redo_delta_pb->mutable_block());
+      redo_delta_block.CopyToPB(redo_delta_pb->mutable_block());
     }
 
     BOOST_FOREACH(const BlockId& undo_delta_block, undo_delta_blocks_) {
       DeltaDataPB *undo_delta_pb = pb->add_undo_deltas();
-      BlockIdToPB(undo_delta_block, undo_delta_pb->mutable_block());
+      undo_delta_block.CopyToPB(undo_delta_pb->mutable_block());
     }
   }
 
   // Write Bloom File
   if (!bloom_block_.IsNull()) {
-    BlockIdToPB(bloom_block_, pb->mutable_bloom_block());
+    bloom_block_.CopyToPB(pb->mutable_bloom_block());
   }
 
   // Write AdHoc Index
   if (!adhoc_index_block_.IsNull()) {
-    BlockIdToPB(adhoc_index_block_, pb->mutable_adhoc_index_block());
+    adhoc_index_block_.CopyToPB(pb->mutable_adhoc_index_block());
   }
 }
 

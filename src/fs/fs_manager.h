@@ -3,85 +3,27 @@
 #ifndef KUDU_FS_FS_MANAGER_H
 #define KUDU_FS_FS_MANAGER_H
 
-#include <google/protobuf/message_lite.h>
 #include <iosfwd>
 #include <tr1/memory>
 #include <string>
 #include <vector>
 
 #include "gutil/gscoped_ptr.h"
-#include "gutil/strings/substitute.h"
-#include "gutil/strings/strcat.h"
-#include "gutil/strtoint.h"
 #include "util/env.h"
 #include "util/oid_generator.h"
 #include "util/path_util.h"
 
+namespace google {
+namespace protobuf {
+class MessageLite;
+} // namespace protobuf
+} // namespace google
+
 namespace kudu {
 
-using std::ostream;
-using std::string;
-using std::vector;
-using std::tr1::shared_ptr;
-using google::protobuf::MessageLite;
+class BlockId;
 
 class InstanceMetadataPB;
-
-class BlockId {
- public:
-  BlockId() {}
-  explicit BlockId(const string& id) { SetId(id); }
-
-  void SetId(const string& id) {
-    CHECK_GE(id.size(), 8);
-    id_ = id;
-  }
-
-  bool IsNull() const { return id_.empty(); }
-  const string& ToString() const { return id_; }
-
-  // Used for on-disk partition
-  string hash0() const { return id_.substr(0, 2); }
-  string hash1() const { return id_.substr(2, 2); }
-  string hash2() const { return id_.substr(4, 2); }
-  string hash3() const { return id_.substr(6, 2); }
-
-  size_t hash() const {
-    return (strto32(hash0().c_str(), NULL, 16) << 24) +
-           (strto32(hash1().c_str(), NULL, 16) << 16) +
-           (strto32(hash2().c_str(), NULL, 16) << 8) +
-           strto32(hash3().c_str(), NULL, 16);
-  }
-
-  bool operator==(const BlockId& other) const {
-    return id_ == other.id_;
-  }
-  bool operator!=(const BlockId& other) const {
-    return id_ != other.id_;
-  }
-
-  // Join the given block IDs with ','. Useful for debug printouts.
-  static std::string JoinStrings(const std::vector<BlockId>& blocks);
-
- private:
-  string id_;
-};
-
-std::ostream& operator<<(std::ostream& o, const BlockId& block_id);
-
-struct BlockIdHash {
-  size_t operator()(const BlockId& block_id) const {
-    return block_id.hash();
-  }
-};
-
-enum FsMetadataType {
-  // metadata file that contains the rowset blocks
-  kFsMetaTabletData,
-};
-
-// Returns the on-disk name of the specified metadata type
-const char *FsMetadataTypeToString(FsMetadataType type);
 
 // FsManager provides helpers to read data and metadata files,
 // and it's responsible for abstracting the file-system layout.
@@ -106,7 +48,7 @@ class FsManager {
   static const char *kWalFileNamePrefix;
   static const char *kWalsRecoveryDirSuffix;
 
-  FsManager(Env *env, const string& root_path);
+  FsManager(Env *env, const std::string& root_path);
 
   ~FsManager();
 
@@ -119,7 +61,7 @@ class FsManager {
   // Create the initial filesystem layout.
   // This has no effect if the layout is already initialized.
   Status CreateInitialFileSystemLayout();
-  void DumpFileSystemTree(ostream& out);
+  void DumpFileSystemTree(std::ostream& out);
 
   // Return the UUID persisted in the local filesystem. If Open()
   // has not been called, this will crash.
@@ -129,8 +71,10 @@ class FsManager {
   //  Data read/write interfaces
   // ==========================================================================
 
-  Status CreateNewBlock(shared_ptr<WritableFile> *writer, BlockId *block_id);
-  Status OpenBlock(const BlockId& block_id, shared_ptr<RandomAccessFile> *reader);
+  Status CreateNewBlock(std::tr1::shared_ptr<WritableFile> *writer,
+                        BlockId *block_id);
+  Status OpenBlock(const BlockId& block_id,
+                   std::tr1::shared_ptr<RandomAccessFile> *reader);
 
   Status DeleteBlock(const BlockId& block) {
     return env_->DeleteFile(GetBlockPath(block));
@@ -144,108 +88,70 @@ class FsManager {
   //  Metadata read/write interfaces
   // ==========================================================================
 
-  Status WriteMetadataBlock(const BlockId& block_id, const MessageLite& msg);
-  Status ReadMetadataBlock(const BlockId& block_id, MessageLite *msg);
+  Status WriteMetadataBlock(const BlockId& block_id,
+                            const google::protobuf::MessageLite& msg);
+  Status ReadMetadataBlock(const BlockId& block_id,
+                           google::protobuf::MessageLite *msg);
 
   // ==========================================================================
   //  on-disk path
   // ==========================================================================
-  const string& GetRootDir() const {
+  const std::string& GetRootDir() const {
     return root_path_;
   }
 
-  string GetDataRootDir() const {
+  std::string GetDataRootDir() const {
     return JoinPathSegments(GetRootDir(), kDataDirName);
   }
 
-  string GetBlockPath(const BlockId& block_id) const {
-    CHECK(!block_id.IsNull());
-    string path = GetDataRootDir();
-    path = JoinPathSegments(path, block_id.hash0());
-    path = JoinPathSegments(path, block_id.hash1());
-    path = JoinPathSegments(path, block_id.hash2());
-    path = JoinPathSegments(path, block_id.ToString());
-    return path;
-  }
+  std::string GetBlockPath(const BlockId& block_id) const;
 
-  string GetWalsRootDir() const {
+  std::string GetWalsRootDir() const {
     return JoinPathSegments(root_path_, kWalDirName);
   }
 
-  string GetTabletWalDir(const std::string& tablet_id) const {
+  std::string GetTabletWalDir(const std::string& tablet_id) const {
     return JoinPathSegments(GetWalsRootDir(), tablet_id);
   }
 
-  string GetTabletWalRecoveryDir(const std::string& tablet_id) const {
-    string path = JoinPathSegments(GetWalsRootDir(), tablet_id);
-    StrAppend(&path, kWalsRecoveryDirSuffix);
-    return path;
-  }
+  std::string GetTabletWalRecoveryDir(const std::string& tablet_id) const;
 
-  string GetWalSegmentFileName(const std::string& tablet_id, uint64_t sequence_number) {
-    return JoinPathSegments(GetTabletWalDir(tablet_id),
-                            strings::Substitute("$0-$1",
-                                                kWalFileNamePrefix,
-                                                StringPrintf("%09lu", sequence_number)));
-  }
+  std::string GetWalSegmentFileName(const std::string& tablet_id,
+                                    uint64_t sequence_number) const;
 
   // Return the directory where tablet master blocks should be stored.
-  string GetMasterBlockDir() const;
+  std::string GetMasterBlockDir() const;
 
   // Return the path for a specific tablet's master block.
-  string GetMasterBlockPath(const std::string& tablet_id) const;
+  std::string GetMasterBlockPath(const std::string& tablet_id) const;
 
   // Return the path where InstanceMetadataPB is stored.
-  string GetInstanceMetadataPath() const;
+  std::string GetInstanceMetadataPath() const;
 
-  // ==========================================================================
-  //  Name generator
-  // ==========================================================================
-
-  string GenerateName() {
-    return oid_generator_.Next();
-  }
+  // Generate a new block ID.
+  BlockId GenerateBlockId();
 
   Env *env() { return env_; }
 
   // ==========================================================================
   //  file-system helpers
   // ==========================================================================
-  bool Exists(const string& path) const {
+  bool Exists(const std::string& path) const {
     return env_->FileExists(path);
   }
 
-  Status ListDir(const string& path, vector<string> *objects) const {
+  Status ListDir(const std::string& path, std::vector<std::string> *objects) const {
     return env_->GetChildren(path, objects);
   }
 
-  Status CreateDirIfMissing(const string& path) {
+  Status CreateDirIfMissing(const std::string& path) {
     Status s = env_->CreateDir(path);
     return s.IsAlreadyPresent() ? Status::OK() : s;
   }
 
  private:
-  // ==========================================================================
-  //  on-disk dir creations
-  // ==========================================================================
-
-  // TODO: This should be removed, and part of the file creation
-  //       to ensure that the file can be created.
-  Status CreateBlockDir(const BlockId& block_id) {
-    CHECK(!block_id.IsNull());
-
-    string path = GetDataRootDir();
-    RETURN_NOT_OK(CreateDirIfMissing(path));
-
-    path = JoinPathSegments(path, block_id.hash0());
-    RETURN_NOT_OK(CreateDirIfMissing(path));
-
-    path = JoinPathSegments(path, block_id.hash1());
-    RETURN_NOT_OK(CreateDirIfMissing(path));
-
-    path = JoinPathSegments(path, block_id.hash2());
-    return CreateDirIfMissing(path);
-  }
+  // Creates the parent directory hierarchy to contain the given block id.
+  Status CreateBlockDir(const BlockId& block_id);
 
   // Create a new InstanceMetadataPB and save it to the filesystem.
   // Does not mutate the current state of the fsmanager.
@@ -254,8 +160,10 @@ class FsManager {
   // ==========================================================================
   //  file-system helpers
   // ==========================================================================
-  void DumpFileSystemTree(ostream& out, const string& prefix,
-                          const string& path, const vector<string>& objects);
+  void DumpFileSystemTree(std::ostream& out,
+                          const std::string& prefix,
+                          const std::string& path,
+                          const std::vector<std::string>& objects);
 
   static const char *kDataDirName;
   static const char *kMasterBlockDirName;
@@ -264,7 +172,7 @@ class FsManager {
   static const char *kInstanceMetadataFileName;
 
   Env *env_;
-  string root_path_;
+  std::string root_path_;
 
   ObjectIdGenerator oid_generator_;
 

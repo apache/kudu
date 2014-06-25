@@ -2,11 +2,15 @@
 
 #include <glog/logging.h>
 #include <gtest/gtest.h>
+#include <tr1/memory>
 
+#include "fs/block_id.h"
 #include "fs/fs_manager.h"
 #include "util/env_util.h"
 #include "util/test_macros.h"
 #include "util/test_util.h"
+
+using std::tr1::shared_ptr;
 
 namespace kudu {
 

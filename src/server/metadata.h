@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "common/schema.h"
+#include "fs/block_id.h"
 #include "fs/fs_manager.h"
 #include "gutil/atomicops.h"
 #include "gutil/ref_counted.h"

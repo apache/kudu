@@ -8,13 +8,13 @@ PROTOBUF_GENERATE_CPP(METADATA_PROTO_SRCS METADATA_PROTO_HDRS
 add_library(metadata_proto ${METADATA_PROTO_SRCS} ${METADATA_PROTO_HDRS})
 target_link_libraries(metadata_proto
   kudu_common_proto
+  fs_proto
   protobuf)
 
 set(SERVER_COMMON_SRCS
   hybrid_clock.cc
   logical_clock.cc
   metadata.cc
-  metadata_util.cc
 )
 
 add_library(server_common ${SERVER_COMMON_SRCS})

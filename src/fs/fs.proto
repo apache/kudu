@@ -19,3 +19,7 @@ message InstanceMetadataPB {
 
   // TODO: add a "node type" (TS/Master?)
 }
+
+message BlockIdPB {
+  required string id = 1;
+}
