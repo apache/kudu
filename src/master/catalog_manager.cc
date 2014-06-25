@@ -329,8 +329,10 @@ void CatalogManager::Shutdown() {
     return;
   }
 
-  // Shutdown the Catalog Manager backgroud thread
-  background_tasks_->Shutdown();
+  // Shutdown the Catalog Manager background thread
+  if (background_tasks_) {
+    background_tasks_->Shutdown();
+  }
 
   // Abort and Wait tables task completion
   BOOST_FOREACH(const TableInfoMap::value_type& e, table_ids_map_) {
