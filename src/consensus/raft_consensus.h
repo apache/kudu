@@ -141,13 +141,6 @@ class RaftConsensus : public Consensus {
 
   OpId GetLastOpIdFromLog();
 
-  // A common prefix that should be in any log messages emitted,
-  // identifying the tablet and peer.
-  std::string LogPrefix() const;
-  std::string LogPrefixUnlocked() const;
-
-  const ConsensusOptions options_;
-
   log::Log* log_;
   scoped_refptr<server::Clock> clock_;
   gscoped_ptr<PeerProxyFactory> peer_proxy_factory_;

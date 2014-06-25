@@ -10,6 +10,16 @@
 #include "gutil/strings/substitute.h"
 #include "util/status.h"
 
+// Convenience macros to prefix log messages with the id of the tablet and peer.
+// Do not obtain the state lock and should be used when holding the state_ lock
+#define LOG_WITH_PREFIX(severity) LOG(severity) << LogPrefixUnlocked()
+#define VLOG_WITH_PREFIX(verboselevel) LOG_IF(INFO, VLOG_IS_ON(verboselevel)) \
+  << LogPrefixUnlocked()
+// Same as the above, but obtain the lock
+#define LOG_WITH_PREFIX_LK(severity) LOG(severity) << LogPrefix()
+#define VLOG_WITH_PREFIX_LK(verboselevel) LOG_IF(INFO, VLOG_IS_ON(verboselevel)) \
+  << LogPrefix()
+
 namespace kudu {
 namespace consensus {
 
@@ -19,27 +29,39 @@ using std::tr1::shared_ptr;
 using std::tr1::unordered_set;
 using strings::Substitute;
 
-ReplicaState::ReplicaState(ThreadPool* callback_exec_pool,
-                           const std::string& peer_uuid,
-                           ReplicaTransactionFactory* txn_factory,
-                           uint64_t current_term,
-                           uint64_t current_index)
-  : peer_uuid_(peer_uuid),
+ReplicaState::ReplicaState(const ConsensusOptions& options,
+                           ThreadPool* callback_exec_pool)
+  : options_(options),
     current_role_(metadata::QuorumPeerPB::NON_PARTICIPANT),
     current_majority_(-1),
-    current_term_(current_term),
-    next_index_(current_index + 1),
-    txn_factory_(txn_factory),
+    current_term_(0),
+    next_index_(0),
+    txn_factory_(NULL),
     in_flight_commits_latch_(0),
     replicate_watchers_(callback_exec_pool),
     commit_watchers_(callback_exec_pool),
     state_(kNotInitialized) {
+
+}
+
+Status ReplicaState::Init(const std::string& peer_uuid,
+                          ReplicaTransactionFactory* txn_factory,
+                          uint64_t current_term,
+                          uint64_t current_index) {
+  UniqueLock l(update_lock_);
+  CHECK_EQ(state_, kNotInitialized);
+  peer_uuid_ = peer_uuid;
+  current_term_ = current_term;
+  next_index_ = current_index + 1;
+  txn_factory_ = txn_factory;
   OpId initial;
   initial.set_term(current_term);
   initial.set_index(current_index);
   all_committed_before_id_.CopyFrom(initial);
   replicated_op_id_.CopyFrom(initial);
   received_op_id_.CopyFrom(initial);
+  state_ = kInitialized;
+  return Status::OK();
 }
 
 // TODO check that the role change is legal.
@@ -102,7 +124,7 @@ Status ReplicaState::LockForConfigChange(UniqueLock* lock) {
   // Can only change the config on non-initialized replicas for
   // now, later kRunning state will also be a valid state for
   // config changes.
-  CHECK_EQ(state_, kNotInitialized);
+  CHECK_EQ(state_, kInitialized);
   lock->swap(l);
   state_ = kChangingConfig;
   return Status::OK();
@@ -152,12 +174,12 @@ Status ReplicaState::SetChangeConfigSuccessfulUnlocked() {
   return Status::OK();
 }
 
-metadata::QuorumPeerPB::Role ReplicaState::GetCurrentRoleUnlocked() {
+metadata::QuorumPeerPB::Role ReplicaState::GetCurrentRoleUnlocked() const {
   DCHECK(update_lock_.is_locked());
   return current_role_;
 }
 
-const metadata::QuorumPB& ReplicaState::GetCurrentConfigUnlocked() {
+const metadata::QuorumPB& ReplicaState::GetCurrentConfigUnlocked() const {
   DCHECK(update_lock_.is_locked());
   return current_quorum_;
 }
@@ -167,26 +189,30 @@ void ReplicaState::IncrementConfigSeqNoUnlocked() {
   current_quorum_.set_seqno(current_quorum_.seqno() + 1);
 }
 
-int ReplicaState::GetCurrentMajorityUnlocked() {
+int ReplicaState::GetCurrentMajorityUnlocked() const {
   DCHECK(update_lock_.is_locked());
   return current_majority_;
 }
 
-const unordered_set<string>& ReplicaState::GetCurrentVotingPeersUnlocked() {
+const unordered_set<string>& ReplicaState::GetCurrentVotingPeersUnlocked() const {
   DCHECK(update_lock_.is_locked());
   return voting_peers_;
 }
 
-int ReplicaState::GetAllPeersCountUnlocked() {
+int ReplicaState::GetAllPeersCountUnlocked() const {
   DCHECK(update_lock_.is_locked());
   return current_quorum_.peers_size();
 }
 
-const string& ReplicaState::GetPeerUuid() {
+const string& ReplicaState::GetPeerUuid() const {
   return peer_uuid_;
 }
 
-const string& ReplicaState::GetLeaderUuidUnlocked() {
+const ConsensusOptions& ReplicaState::GetOptions() const {
+  return options_;
+}
+
+const string& ReplicaState::GetLeaderUuidUnlocked() const {
   DCHECK(update_lock_.is_locked());
   return leader_uuid_;
 }
@@ -213,11 +239,11 @@ Status ReplicaState::WaitForOustandingApplies() {
     if (state_ != kShuttingDown) {
       return Status::IllegalState("Can only wait for pending commits on kShuttingDown state.");
     }
-    LOG(INFO) << "Replica " << peer_uuid_ << " waiting on "
-      << in_flight_commits_latch_.count() << " outstanding commits.";
+    LOG_WITH_PREFIX(INFO) << "Waiting on " << in_flight_commits_latch_.count()
+        << " outstanding commits.";
   }
   in_flight_commits_latch_.Wait();
-  LOG(INFO) << "All local commits completed for replica: " << GetPeerUuid();
+  LOG_WITH_PREFIX_LK(INFO) << "All local commits completed.";
   return Status::OK();
 }
 
@@ -342,7 +368,21 @@ void ReplicaState::RollbackIdGenUnlocked(const OpId& id) {
   next_index_ = id.index();
 }
 
-string ReplicaState::ToString() {
+string ReplicaState::LogPrefix() {
+  ReplicaState::UniqueLock lock;
+  CHECK_OK(LockForRead(&lock));
+  return LogPrefixUnlocked();
+}
+
+string ReplicaState::LogPrefixUnlocked() const {
+  return Substitute("T $0 P $1 [$2]: ",
+                    options_.tablet_id,
+                    GetPeerUuid(),
+                    QuorumPeerPB::Role_Name(GetCurrentRoleUnlocked()));
+}
+
+
+string ReplicaState::ToString() const {
   string ret;
   StrAppend(&ret, Substitute("Replica: $0, State: $1, Role: $2\n",
                              peer_uuid_, state_,

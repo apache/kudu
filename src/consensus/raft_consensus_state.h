@@ -61,11 +61,13 @@ class ReplicaState {
                         std::tr1::shared_ptr<FutureCallback>,
                         log::OpIdBiggerThanFunctor > CallbackMap;
 
-  ReplicaState(ThreadPool* callback_exec_pool,
-               const std::string& peer_uuid,
-               ReplicaTransactionFactory* txn_factory,
-               uint64_t current_term,
-               uint64_t current_index);
+  ReplicaState(const ConsensusOptions& options,
+               ThreadPool* callback_exec_pool);
+
+  Status Init(const std::string& peer_uuid,
+              ReplicaTransactionFactory* txn_factory,
+              uint64_t current_term,
+              uint64_t current_index);
 
   // Locks a replica down until the critical section of an append completes,
   // i.e. until the replicate message has been assigned an id and placed in
@@ -110,25 +112,27 @@ class ReplicaState {
 
   Status SetChangeConfigSuccessfulUnlocked();
 
-  metadata::QuorumPeerPB::Role GetCurrentRoleUnlocked();
+  metadata::QuorumPeerPB::Role GetCurrentRoleUnlocked() const;
 
-  const metadata::QuorumPB& GetCurrentConfigUnlocked();
+  const metadata::QuorumPB& GetCurrentConfigUnlocked() const;
 
   void IncrementConfigSeqNoUnlocked();
 
   // Returns the current majority count.
-  int GetCurrentMajorityUnlocked();
+  int GetCurrentMajorityUnlocked() const;
 
   // Returns the set of voting peers (i.e. those whose ACK's count towards majority)
-  const std::tr1::unordered_set<std::string>& GetCurrentVotingPeersUnlocked();
+  const std::tr1::unordered_set<std::string>& GetCurrentVotingPeersUnlocked() const;
 
   // Returns the current total set of tracked peers.
-  int GetAllPeersCountUnlocked();
+  int GetAllPeersCountUnlocked() const;
 
   // Returns the uuid of the peer to which this replica state belongs.
-  const std::string& GetPeerUuid();
+  const std::string& GetPeerUuid() const;
 
-  const std::string& GetLeaderUuidUnlocked();
+  const ConsensusOptions& GetOptions() const;
+
+  const std::string& GetLeaderUuidUnlocked() const;
 
   // Triggers a Prepare() in the bound replica_operation_factory_
   Status TriggerPrepareUnlocked(gscoped_ptr<ConsensusRound> context);
@@ -228,11 +232,18 @@ class ReplicaState {
   // generating 'id'.
   void RollbackIdGenUnlocked(const OpId& id);
 
-  std::string ToString();
+  std::string ToString() const;
+
+  // A common prefix that should be in any log messages emitted,
+  // identifying the tablet and peer.
+  std::string LogPrefix();
+  std::string LogPrefixUnlocked() const;
 
  private:
+  const ConsensusOptions options_;
+
   // The UUID of the local peer.
-  const std::string peer_uuid_;
+  std::string peer_uuid_;
 
   // The UUID of the leader. This changes over time, and may be the same as the local peer.
   std::string leader_uuid_;
@@ -310,6 +321,9 @@ class ReplicaState {
   enum State {
     // State replicas start in.
     kNotInitialized,
+    // State after the replica is initialized with initial ids and
+    // a peer.
+    kInitialized,
     // State signaling the replica is changing configs. Replicas
     // need both the replicate and the commit message for the config
     // change before proceeding.

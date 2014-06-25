@@ -17,11 +17,13 @@ DEFINE_int32(leader_heartbeat_interval_ms, 500,
 
 // Convenience macros to prefix log messages with the id of the tablet and peer.
 // Do not obtain the state lock and should be used when holding the state_ lock
-#define LOG_WITH_PREFIX(severity) LOG(severity) << LogPrefixUnlocked()
-#define VLOG_WITH_PREFIX(verboselevel) LOG_IF(INFO, VLOG_IS_ON(verboselevel)) << LogPrefixUnlocked()
+#define LOG_WITH_PREFIX(severity) LOG(severity) << state_->LogPrefixUnlocked()
+#define VLOG_WITH_PREFIX(verboselevel) LOG_IF(INFO, VLOG_IS_ON(verboselevel)) \
+  << state_->LogPrefixUnlocked()
 // Same as the above, but obtain the lock
-#define LOG_WITH_PREFIX_LK(severity) LOG(severity) << LogPrefix()
-#define VLOG_WITH_PREFIX_LK(verboselevel) LOG_IF(INFO, VLOG_IS_ON(verboselevel)) << LogPrefix()
+#define LOG_WITH_PREFIX_LK(severity) LOG(severity) << state_->LogPrefix()
+#define VLOG_WITH_PREFIX_LK(verboselevel) LOG_IF(INFO, VLOG_IS_ON(verboselevel)) \
+  << state_->LogPrefix()
 
 namespace kudu {
 namespace consensus {
@@ -38,11 +40,11 @@ using tserver::TabletServerServiceProxy;
 RaftConsensus::RaftConsensus(const ConsensusOptions& options,
                              gscoped_ptr<PeerProxyFactory> proxy_factory,
                              const MetricContext& metric_ctx)
-    : options_(options) ,
-      log_(NULL),
+    : log_(NULL),
       peer_proxy_factory_(proxy_factory.Pass()),
       queue_(metric_ctx) {
   CHECK_OK(ThreadPoolBuilder("raft-op-cb").set_max_threads(1).Build(&callback_pool_));
+  state_.reset(new ReplicaState(options, callback_pool_.get()));
 }
 
 Status RaftConsensus::Init(const metadata::QuorumPeerPB& peer,
@@ -52,11 +54,10 @@ Status RaftConsensus::Init(const metadata::QuorumPeerPB& peer,
   log_ = log;
   clock_ = clock;
   OpId initial = GetLastOpIdFromLog();
-  state_.reset(new ReplicaState(callback_pool_.get(),
-                                peer.permanent_uuid(),
-                                txn_factory,
-                                initial.term(),
-                                initial.index()));
+  RETURN_NOT_OK(state_->Init(peer.permanent_uuid(),
+                             txn_factory,
+                             initial.term(),
+                             initial.index()));
   LOG_WITH_PREFIX_LK(INFO) << "Created Raft consensus for peer " << state_->ToString();
   return Status::OK();
 }
@@ -80,6 +81,7 @@ Status RaftConsensus::Start(const metadata::QuorumPB& initial_quorum,
 
 Status RaftConsensus::ChangeConfig(QuorumPB new_config) {
   RETURN_NOT_OK(ExecuteHook(PRE_CONFIG_CHANGE));
+
   ReplicaState::UniqueLock lock;
   CHECK_OK(state_->LockForConfigChange(&lock));
   QuorumPB old_config = state_->GetCurrentConfigUnlocked();
@@ -108,7 +110,7 @@ Status RaftConsensus::CreateOrUpdatePeersUnlocked() {
       gscoped_ptr<Peer> local_peer;
       OpId initial = GetLastOpIdFromLog();
       RETURN_NOT_OK(Peer::NewLocalPeer(peer_pb,
-                                       options_.tablet_id,
+                                       state_->GetOptions().tablet_id,
                                        state_->GetPeerUuid(),
                                        &queue_,
                                        log_,
@@ -123,7 +125,7 @@ Status RaftConsensus::CreateOrUpdatePeersUnlocked() {
 
       gscoped_ptr<Peer> remote_peer;
       RETURN_NOT_OK(Peer::NewRemotePeer(peer_pb,
-                                        options_.tablet_id,
+                                        state_->GetOptions().tablet_id,
                                         state_->GetPeerUuid(),
                                         &queue_,
                                         peer_proxy.Pass(),
@@ -141,19 +143,6 @@ Status RaftConsensus::CreateOrUpdatePeersUnlocked() {
   return Status::OK();
 }
 
-string RaftConsensus::LogPrefix() const {
-  ReplicaState::UniqueLock lock;
-  CHECK_OK(state_->LockForRead(&lock));
-  return LogPrefixUnlocked();
-}
-
-string RaftConsensus::LogPrefixUnlocked() const {
-  return Substitute("T $0 P $1 [$2]: ",
-                    options_.tablet_id,
-                    state_->GetPeerUuid(),
-                    QuorumPeerPB::Role_Name(state_->GetCurrentRoleUnlocked()));
-}
-
 Status RaftConsensus::PushConfigurationToPeersUnlocked() {
 
   OpId replicate_op_id;
@@ -163,12 +152,12 @@ Status RaftConsensus::PushConfigurationToPeersUnlocked() {
   ReplicateMsg* replicate = replicate_op->mutable_replicate();
   replicate->set_op_type(CHANGE_CONFIG_OP);
   ChangeConfigRequestPB* cc_request = replicate->mutable_change_config_request();
-  cc_request->set_tablet_id(options_.tablet_id);
+  cc_request->set_tablet_id(state_->GetOptions().tablet_id);
   QuorumPB* new_config = cc_request->mutable_new_config();
   new_config->CopyFrom(state_->GetCurrentConfigUnlocked());
 
   const string log_prefix = Substitute("$0ChangeConfiguration(op=$1, seqno=$2)",
-                                       LogPrefixUnlocked(),
+                                       state_->LogPrefixUnlocked(),
                                        replicate_op_id.ShortDebugString(),
                                        new_config->seqno());
   LOG(INFO) << log_prefix << ": replicating to peers...";
