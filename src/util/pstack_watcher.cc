@@ -96,25 +96,56 @@ Status PstackWatcher::HasProgram(const char* progname) {
 }
 
 Status PstackWatcher::DumpStacks() {
-  const char *progname = NULL;
-  Status pstack_status = HasProgram("pstack");
-  if (pstack_status.ok()) {
-    progname = "pstack";
-  } else {
-    Status gstack_status = HasProgram("gstack");
-    if (gstack_status.ok()) {
-      progname = "gstack";
-    }
-  }
-  if (!progname) {
-    return Status::ServiceUnavailable("neither pstack nor gstack appears to be installed.");
-  }
   pid_t pid = getpid();
+
+  // Prefer GDB if available; it gives us line numbers and thread names.
+  if (HasProgram("gdb").ok()) {
+    return RunGdbStackDump(pid);
+  }
+
+  // Otherwise, try to use pstack or gstack.
+  const char *progname = NULL;
+  if (HasProgram("pstack").ok()) {
+    progname = "pstack";
+  } else if (HasProgram("gstack").ok()) {
+    progname = "gstack";
+  }
+
+  if (!progname) {
+    return Status::ServiceUnavailable("Neither gdb, pstack, nor gstack appears to be installed.");
+  }
+  return RunPstack(progname, pid);
+}
+
+Status PstackWatcher::RunGdbStackDump(pid_t pid) {
+  // Command: gdb -quiet -batch -nx -ex cmd1 -ex cmd2 /proc/$PID/exe $PID
+  string prog("gdb");
+  vector<string> argv;
+  argv.push_back(prog);
+  argv.push_back("-quiet");
+  argv.push_back("-batch");
+  argv.push_back("-nx");
+  argv.push_back("-ex");
+  argv.push_back("set print pretty on");
+  argv.push_back("-ex");
+  argv.push_back("info threads");
+  argv.push_back("-ex");
+  argv.push_back("thread apply all bt full");
+  argv.push_back(Substitute("/proc/$0/exe", pid));
+  argv.push_back(Substitute("$0", pid));
+  return RunStackDump(prog, argv);
+}
+
+Status PstackWatcher::RunPstack(const std::string& progname, pid_t pid) {
   string prog(progname);
   string pid_string(Substitute("$0", pid));
   vector<string> argv;
   argv.push_back(prog);
   argv.push_back(pid_string);
+  return RunStackDump(prog, argv);
+}
+
+Status PstackWatcher::RunStackDump(const string& prog, const vector<string>& argv) {
   Subprocess pstack_proc(prog, argv);
   printf("************************ BEGIN STACKS **************************\n");
   RETURN_NOT_OK_PREPEND(pstack_proc.Start(), "DumpStacks proc.Start() failed");
