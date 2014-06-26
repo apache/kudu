@@ -94,7 +94,7 @@ class MultiThreadedLogTest : public LogTestBase {
           request->set_tablet_id(kTestTablet);
           batch_ops.push_back(op.release());
         }
-        ASSERT_STATUS_OK(log_->Reserve(batch_ops, &entry_batch));
+        ASSERT_STATUS_OK(log_->Reserve(&batch_ops[0], batch_ops.size(), &entry_batch));
       } // lock_guard scope
       shared_ptr<CustomLatchCallback> cb(new CustomLatchCallback(&latch, &errors));
       ASSERT_STATUS_OK(log_->AsyncAppend(entry_batch, CustomLatchCallback(&latch, &errors)));

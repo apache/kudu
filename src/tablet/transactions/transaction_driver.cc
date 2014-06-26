@@ -119,6 +119,12 @@ Status LeaderTransactionDriver::Execute() {
   {
     boost::lock_guard<simple_spinlock> lock(lock_);
 
+    gscoped_ptr<ReplicateMsg> replicate_msg;
+    transaction_->NewReplicateMsg(&replicate_msg);
+    gscoped_ptr<ConsensusRound> round(consensus_->NewRound(replicate_msg.Pass(),
+                                                           prepare_replicate_callback,
+                                                           commit_finished_callback_));
+
     // This portion of this method needs to be guarded across transactions
     // because, for any given transactions A and B, if A prepares before B
     // on the leader, then A must also replicate before B to other nodes, so
@@ -128,12 +134,6 @@ Status LeaderTransactionDriver::Execute() {
     // not get reordered internally in the consensus implementation.
     {
       boost::lock_guard<simple_spinlock> l(*prepare_replicate_lock_);
-      gscoped_ptr<ReplicateMsg> replicate_msg;
-      transaction_->NewReplicateMsg(&replicate_msg);
-      gscoped_ptr<ConsensusRound> round(consensus_->NewRound(replicate_msg.Pass(),
-                                                             prepare_replicate_callback,
-                                                             commit_finished_callback_));
-
       replicate_status = consensus_->Replicate(round.get());
       if (replicate_status.ok()) {
         // See: TransactionDriver::GetOpId() and opid_lock_ declaration.
@@ -323,7 +323,9 @@ void LeaderTransactionDriver::ApplyOrCommitFailed(const Status& abort_reason) {
     transaction_->NewCommitAbortMessage(&commit);
     // Make sure to remove the commit callback since the transaction will
     // be disappearing when this method ends.
-    mutable_state()->consensus_round()->release_commit_callback();
+    shared_ptr<FutureCallback> junk;
+    mutable_state()->consensus_round()->release_commit_callback(&junk);
+    junk.reset();
     WARN_NOT_OK(mutable_state()->consensus_round()->Commit(commit.Pass()),
                 "Could not submit commit abort message.")
 

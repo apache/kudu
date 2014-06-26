@@ -135,7 +135,7 @@ class LocalPeer : public PeerImpl {
       VLOG(2) << "Local peer appending to log: " << request_.ShortDebugString();
     }
 
-    CHECK_OK(log_->Reserve(ops, &reserved_entry_batch));
+    CHECK_OK(log_->Reserve(&ops[0], ops.size(), &reserved_entry_batch));
     CHECK_OK(log_->AsyncAppend(reserved_entry_batch,
                                boost::bind(&LocalPeer::LogAppendCallback, this, _1)));
     return true;

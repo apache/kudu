@@ -303,7 +303,8 @@ Status RaftConsensus::LeaderCommitUnlocked(ConsensusRound* context,
   // ConsensusRound or we'd get a cycle. (callback would free the
   // TransactionState which would free the ConsensusRound, which in turn
   // would try to free the callback).
-  shared_ptr<FutureCallback> commit_clbk = context->release_commit_callback();
+  shared_ptr<FutureCallback> commit_clbk;
+  context->release_commit_callback(&commit_clbk);
 
   scoped_refptr<OperationStatusTracker> status;
   // If the context included a callback set it in the tracker, so that it gets
@@ -343,7 +344,7 @@ Status RaftConsensus::ReplicaCommitUnlocked(ConsensusRound* context,
   OpId committed_op_id = commit_op->commit().commited_op_id();
 
   LogEntryBatch* reserved_entry_batch;
-  RETURN_NOT_OK(log_->Reserve(boost::assign::list_of((commit_op)), &reserved_entry_batch));
+  RETURN_NOT_OK(log_->Reserve(&commit_op, 1, &reserved_entry_batch));
   // TODO: replace the FutureCallbacks in ConsensusContext with StatusCallbacks
   RETURN_NOT_OK(log_->AsyncAppend(reserved_entry_batch,
                                   FutureToStatusCallback(context->commit_callback())));
@@ -425,7 +426,7 @@ Status RaftConsensus::UpdateReplica(const ConsensusRequestPB* request,
     if (!replicate_ops.empty()) {
       // Trigger the log append asap, if fsync() is on this might take a while
       // and we can't reply until this is done.
-      CHECK_OK(log_->Reserve(replicate_ops, &reserved_entry_batch));
+      CHECK_OK(log_->Reserve(&replicate_ops[0], replicate_ops.size(), &reserved_entry_batch));
       CHECK_OK(log_->AsyncAppend(reserved_entry_batch, log_synchronizer.callback()));
     }
 

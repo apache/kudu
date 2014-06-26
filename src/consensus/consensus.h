@@ -327,10 +327,9 @@ class ConsensusRound {
     return replicate_callback_;
   }
 
-  std::tr1::shared_ptr<FutureCallback> release_commit_callback() {
-    std::tr1::shared_ptr<FutureCallback> commit_callback = commit_callback_;
+  void release_commit_callback(std::tr1::shared_ptr<FutureCallback>* ret) {
+    ret->swap(commit_callback_);
     commit_callback_.reset();
-    return commit_callback;
   }
 
   OperationPB* commit_op() {

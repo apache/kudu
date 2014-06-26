@@ -201,8 +201,7 @@ class LogTestBase : public KuduTest {
 
   void AppendAsync(OperationPB* operation) {
     LogEntryBatch* reserved_entry_batch;
-    ASSERT_STATUS_OK(log_->Reserve(boost::assign::list_of(operation),
-                                   &reserved_entry_batch));
+    ASSERT_STATUS_OK(log_->Reserve(&operation, 1, &reserved_entry_batch));
     ASSERT_STATUS_OK(log_->AsyncAppend(reserved_entry_batch));
   }
 

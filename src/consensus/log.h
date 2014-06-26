@@ -74,7 +74,11 @@ class Log {
 
   ~Log();
 
-  // Reserves a spot in the log for operations in 'ops';
+  // Reserves a spot in the log for operations in 'ops' (an array
+  // with size 'num_ops').
+  // We use C-style passing here to avoid having to allocate a vector
+  // in some hot paths.
+  //
   // 'reserved_entry' is initialized by this method and any resources
   // associated with it will be released in AsyncAppend().  In order
   // to ensure correct ordering of operations across multiple threads,
@@ -82,7 +86,8 @@ class Log {
   //
   // WARNING: the caller _must_ call AsyncAppend() or else the log
   // will "stall" and will never be able to make forward progress.
-  Status Reserve(const std::vector<const consensus::OperationPB*>& ops,
+  Status Reserve(const consensus::OperationPB* const * ops,
+                 int num_ops,
                  LogEntryBatch** reserved_entry);
 
   // Asynchronously appends 'entry' to the log. Once the append

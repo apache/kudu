@@ -112,17 +112,21 @@ Status LocalConsensus::Replicate(ConsensusRound* context) {
   DCHECK_GE(state_, kConfiguring);
 
   LogEntryBatch* reserved_entry_batch;
+  OpId* cur_op_id = DCHECK_NOTNULL(context->replicate_op())->mutable_id();
+  cur_op_id->set_term(0);
+  const consensus::OperationPB* op = context->replicate_op();
+
+  // Pre-cache the ByteSize outside of the lock, since this is somewhat
+  // expensive.
+  ignore_result(op->ByteSize());
+
   {
     boost::lock_guard<simple_spinlock> lock(lock_);
 
     // create the new op id for the entry.
-    OpId* cur_op_id = DCHECK_NOTNULL(context->replicate_op())->mutable_id();
-    cur_op_id->set_term(0);
     cur_op_id->set_index(next_op_id_index_++);
-
     // Reserve the correct slot in the log for the replication operation.
-    RETURN_NOT_OK(log_->Reserve(boost::assign::list_of(context->replicate_op()),
-                                &reserved_entry_batch));
+    RETURN_NOT_OK(log_->Reserve(&op, 1, &reserved_entry_batch));
   }
   // Serialize and mark the message as ready to be appended.
   // When the Log actually fsync()s this message to disk, 'repl_callback'
@@ -143,32 +147,34 @@ Status LocalConsensus::RequestVote(const VoteRequestPB* request,
   return Status::NotSupported("LocalConsensus does not support RequestVote() calls.");
 }
 
-Status LocalConsensus::Commit(ConsensusRound* context) {
+Status LocalConsensus::Commit(ConsensusRound* round) {
 
-  OperationPB* commit_op = DCHECK_NOTNULL(context->commit_op());
+  OperationPB* commit_op = DCHECK_NOTNULL(round->commit_op());
   DCHECK(commit_op->has_commit()) << "A commit operation must have a commit.";
 
   LogEntryBatch* reserved_entry_batch;
   shared_ptr<FutureCallback> commit_clbk;
+
+  // The commit callback is the very last thing to execute in a transaction
+  // so it needs to free all resources. We need release it from the
+  // ConsensusRound or we'd get a cycle. (callback would free the
+  // TransactionState which would free the ConsensusRound, which in turn
+  // would try to free the callback).
+  round->release_commit_callback(&commit_clbk);
+
+  // entry for the CommitMsg -- call mutable_id outside the lock
+  // since this can do an allocation
+  OpId* commit_id = commit_op->mutable_id();
+  commit_id->set_term(0);
+
+  // Pre-cache the ByteSize outside of the lock, since this is somewhat
+  // expensive.
+  ignore_result(commit_op->ByteSize());
   {
     boost::lock_guard<simple_spinlock> lock(lock_);
-
-    // entry for the CommitMsg
-    OpId* commit_id = commit_op->mutable_id();
-    commit_id->set_term(0);
     commit_id->set_index(next_op_id_index_++);
-
-    // The commit callback is the very last thing to execute in a transaction
-    // so it needs to free all resources. We need release it from the
-    // ConsensusRound or we'd get a cycle. (callback would free the
-    // TransactionState which would free the ConsensusRound, which in turn
-    // would try to free the callback).
-    commit_clbk = context->commit_callback();
-    context->release_commit_callback();
-
     // Reserve the correct slot in the log for the commit operation.
-    RETURN_NOT_OK(log_->Reserve(boost::assign::list_of(commit_op),
-                                &reserved_entry_batch));
+    RETURN_NOT_OK(log_->Reserve(&commit_op, 1, &reserved_entry_batch));
   }
   // Serialize and mark the message as ready to be appended.
   // When the Log actually fsync()s this message to disk, 'commit_clbk'
