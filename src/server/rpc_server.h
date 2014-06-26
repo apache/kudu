@@ -8,6 +8,7 @@
 
 #include "gutil/gscoped_ptr.h"
 #include "gutil/ref_counted.h"
+#include "rpc/service_pool.h"
 #include "util/net/sockaddr.h"
 #include "util/status.h"
 
@@ -17,7 +18,6 @@ namespace rpc {
 class AcceptorPool;
 class Messenger;
 class ServiceIf;
-class ServicePool;
 } // namespace rpc
 
 struct RpcServerOptions {
@@ -44,6 +44,10 @@ class RpcServer {
   // Return the addresses that this server has successfully
   // bound to. Requires that the server has been Start()ed.
   void GetBoundAddresses(std::vector<Sockaddr>* addresses) const;
+
+  const scoped_refptr<rpc::ServicePool> service_pool() const {
+    return service_pool_;
+  }
 
  private:
   const RpcServerOptions options_;

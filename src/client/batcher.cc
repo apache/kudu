@@ -239,7 +239,8 @@ Batcher::Batcher(KuduClient* client,
     client_(client),
     weak_session_(session),
     error_collector_(error_collector),
-    had_errors_(false) {
+    had_errors_(false),
+    outstanding_lookups_(0) {
 }
 
 void Batcher::Abort() {
@@ -333,16 +334,11 @@ void Batcher::CheckForFinishedFlush() {
 }
 
 void Batcher::FlushAsync(const StatusCallback& cb) {
-  unordered_map<RemoteTabletServer*, PerTSBuffer*> bufs_copy;
   {
     boost::lock_guard<simple_spinlock> l(lock_);
     CHECK_EQ(state_, kGatheringOps);
     state_ = kFlushing;
     flush_callback_ = cb;
-    // Copy the list of buffers while we're under the lock.
-    // We have to drop the lock since FlushBufferIfReady tries to acquire
-    // it again, and it's not a recursive lock.
-    bufs_copy = per_ts_buffers_;
     if (timeout_.Initialized()) {
       deadline_ = MonoTime::Now(MonoTime::FINE);
       deadline_.AddDelta(timeout_);
@@ -360,10 +356,7 @@ void Batcher::FlushAsync(const StatusCallback& cb) {
   //
   // If some of the operations are still in-flight, then they'll get sent
   // when they hit the PerTSBuffer, since our state is now kFlushing.
-  typedef std::pair<RemoteTabletServer*, PerTSBuffer*> entry_type;
-  BOOST_FOREACH(const entry_type& e, bufs_copy) {
-    FlushBufferIfReady(e.first, e.second);
-  }
+  FlushBuffersIfReady();
 }
 
 Status Batcher::Add(gscoped_ptr<WriteOperation> write_op) {
@@ -381,6 +374,7 @@ Status Batcher::Add(gscoped_ptr<WriteOperation> write_op) {
 
   // Increment our reference count for the outstanding callback.
   AddRef();
+  base::RefCountInc(&outstanding_lookups_);
   client_->meta_cache_->LookupTabletByKey(op->write_op->table(),
                                           op->key->encoded_key(),
                                           &op->tablet,
@@ -390,6 +384,8 @@ Status Batcher::Add(gscoped_ptr<WriteOperation> write_op) {
 }
 
 void Batcher::AddInFlightOp(InFlightOp* op) {
+  DCHECK_EQ(op->state, InFlightOp::kLookingUpTablet);
+
   boost::lock_guard<simple_spinlock> l(lock_);
   CHECK_EQ(state_, kGatheringOps);
   InsertOrDie(&ops_, op);
@@ -420,6 +416,7 @@ void Batcher::MarkInFlightOpFailedUnlocked(InFlightOp* op, const Status& s) {
 
 void Batcher::TabletLookupFinished(InFlightOp* op, const Status& s) {
   ScopedRefReleaser<Batcher> releaser(this);
+  base::RefCountDec(&outstanding_lookups_);
 
   // Acquire the batcher lock early to atomically:
   // 1. Test if the batcher was aborted, and
@@ -490,38 +487,59 @@ void Batcher::TabletLookupFinished(InFlightOp* op, const Status& s) {
     ts->RefreshProxy(client_,
                      boost::bind(&Batcher::RefreshTSProxyFinished, this, ts, buf, _1),
                      false);
+  } else {
+    FlushBuffersIfReady();
   }
-
-  FlushBufferIfReady(ts, buf);
 }
 
 void Batcher::RefreshTSProxyFinished(RemoteTabletServer* ts, PerTSBuffer* buf,
                                      const Status& status) {
   CHECK(status.ok()) << "Failed to refresh TS proxy. TODO: handle this";
   buf->SetProxyReady();
-  FlushBufferIfReady(ts, buf);
+  FlushBuffersIfReady();
   Release();
 }
 
 
-void Batcher::FlushBufferIfReady(RemoteTabletServer* ts, PerTSBuffer* buf) {
-  // If we're already in "flushing" state, then we should send the op
-  // immediately.
+void Batcher::FlushBuffersIfReady() {
+  unordered_map<RemoteTabletServer*, PerTSBuffer*> bufs_copy;
+
+  // We're only ready to flush if:
+  // 1. The batcher is in the flushing state (i.e. FlushAsync was called).
+  // 2. All outstanding ops have finished lookup. Why? To avoid a situation
+  //    where ops are flushed one by one as they finish lookup.
   {
     boost::lock_guard<simple_spinlock> l(lock_);
     if (state_ != kFlushing) {
+      VLOG(2) << "FlushBuffersIfReady: batcher not yet in flushing state";
       return;
     }
+    if (!base::RefCountIsZero(&outstanding_lookups_)) {
+      VLOG(2) << "FlushBuffersIfReady: "
+              << base::subtle::NoBarrier_Load(&outstanding_lookups_)
+              << " ops still in lookup";
+      return;
+    }
+    // Copy the list of buffers while we're under the lock.
+    bufs_copy = per_ts_buffers_;
   }
 
-  if (!buf->ProxyReady()) {
-    VLOG(2) << "FlushBufferIfReady: proxy not yet ready";
-    return;
-  }
+  // Now check each PerTSBuffer.
+  typedef std::pair<RemoteTabletServer*, PerTSBuffer*> entry_type;
+  BOOST_FOREACH(const entry_type& e, bufs_copy) {
+    RemoteTabletServer* ts = e.first;
+    PerTSBuffer* buf = e.second;
 
-  VLOG(2) << "FlushBufferIfReady: already in flushing state, immediately flushing to "
-          << ts->ToString();
-  FlushBuffer(ts, buf);
+    if (!buf->ProxyReady()) {
+      VLOG(2) << "FlushBuffersIfReady: proxy for " << ts->ToString()
+              << " not yet ready";
+      return;
+    }
+
+    VLOG(2) << "FlushBuffersIfReady: already in flushing state, immediately flushing to "
+            << ts->ToString();
+    FlushBuffer(ts, buf);
+  }
 }
 
 void Batcher::FlushBuffer(RemoteTabletServer* ts, PerTSBuffer* buf) {

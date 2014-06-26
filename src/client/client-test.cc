@@ -138,6 +138,11 @@ class ClientTest : public KuduTest {
     return resp.tablet_locations(0).tablet_id();
   }
 
+  void CheckNoRpcOverflow() {
+    ASSERT_EQ(0, cluster_->mini_tablet_server(0)->server()->
+        rpc_server()->service_pool()->RpcsQueueOverflowMetric()->value());
+  }
+
   // Inserts 'num_rows' test rows via RPC.
   void InsertTestRows(KuduTable* table, int num_rows, int first_row = 0) {
     shared_ptr<KuduSession> session = client_->NewSession();
@@ -147,7 +152,8 @@ class ClientTest : public KuduTest {
       gscoped_ptr<Insert> insert(BuildTestRow(table, i));
       ASSERT_STATUS_OK(session->Apply(&insert));
     }
-    ASSERT_STATUS_OK(session->Flush()); // and one more for good measure
+    ASSERT_STATUS_OK(session->Flush());
+    ASSERT_NO_FATAL_FAILURE(CheckNoRpcOverflow());
   }
 
   void UpdateTestRows(KuduTable* table, int lo, int hi) {
@@ -158,7 +164,8 @@ class ClientTest : public KuduTest {
       gscoped_ptr<Update> update(UpdateTestRow(table, i));
       ASSERT_STATUS_OK(session->Apply(&update));
     }
-    ASSERT_STATUS_OK(session->Flush()); // and one more for good measure
+    ASSERT_STATUS_OK(session->Flush());
+    ASSERT_NO_FATAL_FAILURE(CheckNoRpcOverflow());
   }
 
   void DeleteTestRows(KuduTable* table, int lo, int hi) {
@@ -169,7 +176,8 @@ class ClientTest : public KuduTest {
       gscoped_ptr<Delete> del(DeleteTestRow(table, i));
       ASSERT_STATUS_OK(session->Apply(&del));
     }
-    ASSERT_STATUS_OK(session->Flush()); // and one more for good measure
+    ASSERT_STATUS_OK(session->Flush());
+    ASSERT_NO_FATAL_FAILURE(CheckNoRpcOverflow());
   }
 
   gscoped_ptr<Insert> BuildTestRow(KuduTable* table, int index) {

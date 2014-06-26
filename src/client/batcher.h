@@ -106,7 +106,7 @@ class Batcher : public base::RefCountedThreadSafe<Batcher> {
   void MarkInFlightOpFailedUnlocked(InFlightOp* op, const Status& s);
 
   void CheckForFinishedFlush();
-  void FlushBufferIfReady(RemoteTabletServer* ts, PerTSBuffer* buf);
+  void FlushBuffersIfReady();
   void FlushBuffer(RemoteTabletServer* ts, PerTSBuffer* buf);
 
   // Sends a write RPC.
@@ -163,6 +163,11 @@ class Batcher : public base::RefCountedThreadSafe<Batcher> {
 
   // After flushing, the absolute deadline for all in-flight ops.
   MonoTime deadline_;
+
+  // Number of outstanding lookups across all in-flight ops.
+  //
+  // Note: _not_ protected by lock_!
+  Atomic32 outstanding_lookups_;
 
   DISALLOW_COPY_AND_ASSIGN(Batcher);
 };
