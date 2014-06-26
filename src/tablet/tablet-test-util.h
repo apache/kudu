@@ -2,6 +2,7 @@
 #ifndef KUDU_TABLET_TABLET_TEST_UTIL_H
 #define KUDU_TABLET_TABLET_TEST_UTIL_H
 
+#include <gflags/gflags.h>
 #include <string>
 #include <vector>
 
@@ -13,7 +14,11 @@
 #include "tablet/tablet.h"
 #include "tablet/transactions/alter_schema_transaction.h"
 #include "tablet/transactions/write_transaction.h"
+#include "util/metrics.h"
 #include "util/test_util.h"
+
+DEFINE_bool(tablet_test_enable_metrics, false,
+            "Enable metrics collection in tablet-tests");
 
 namespace kudu {
 namespace tablet {
@@ -58,7 +63,13 @@ class KuduTabletTest : public KuduTest {
                                                             "", "",
                                                             &metadata));
     opid_anchor_registry_ = new log::OpIdAnchorRegistry();
-    tablet_.reset(new Tablet(metadata, clock_, NULL, opid_anchor_registry_.get()));
+
+    if (FLAGS_tablet_test_enable_metrics) {
+      metrics_registry_.reset(new MetricRegistry());
+      metrics_.reset(new MetricContext(metrics_registry_.get(), "tablet-test"));
+    }
+
+    tablet_.reset(new Tablet(metadata, clock_, metrics_.get(), opid_anchor_registry_.get()));
     ASSERT_STATUS_OK(tablet_->Open());
   }
 
@@ -85,6 +96,9 @@ class KuduTabletTest : public KuduTest {
   }
 
  protected:
+  gscoped_ptr<MetricRegistry> metrics_registry_;
+  gscoped_ptr<MetricContext> metrics_;
+
   const Schema schema_;
   QuorumPB quorum_;
   scoped_refptr<server::Clock> clock_;
