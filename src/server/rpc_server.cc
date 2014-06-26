@@ -5,6 +5,8 @@
 #include <string>
 #include <vector>
 
+#include <gflags/gflags.h>
+
 #include "gutil/gscoped_ptr.h"
 #include "gutil/strings/substitute.h"
 #include "rpc/acceptor_pool.h"
@@ -24,6 +26,9 @@ using kudu::rpc::Messenger;
 using kudu::rpc::ServiceIf;
 using strings::Substitute;
 
+DEFINE_int32(rpc_service_queue_length, 50,
+             "Default length of queue for incoming RPC requests");
+
 namespace kudu {
 
 RpcServerOptions::RpcServerOptions()
@@ -31,7 +36,7 @@ RpcServerOptions::RpcServerOptions()
     num_acceptors_per_address(1),
     num_service_threads(10),
     default_port(0),
-    service_queue_length(50) {
+    service_queue_length(FLAGS_rpc_service_queue_length) {
 }
 
 RpcServer::RpcServer(const RpcServerOptions& opts)
