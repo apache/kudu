@@ -12,6 +12,7 @@
 #include <inttypes.h>
 
 #include "gutil/algorithm.h"
+#include "gutil/casts.h"
 #include "gutil/endian.h"
 #include "gutil/strings/util.h"
 #include "tablet/rowset.h"
@@ -150,16 +151,18 @@ void CheckCollectOrderedCorrectness(const vector<RowSetInfo>& min_key,
 
 // RowSetInfo class ---------------------------------------------------
 
-void RowSetInfo::Collect(const RowSetTree& tree, vector<RowSetInfo>* rsvec) {
+void RowSetInfo::Collect(const RowSetTree& tree, vector<RowSetInfo>* rsvec,
+                         int min_size_mb) {
   rsvec->reserve(tree.all_rowsets().size());
   BOOST_FOREACH(const shared_ptr<RowSet>& ptr, tree.all_rowsets()) {
-    rsvec->push_back(RowSetInfo(ptr.get(), 0));
+    rsvec->push_back(RowSetInfo(ptr.get(), 0, min_size_mb));
   }
 }
 
 void RowSetInfo::CollectOrdered(const RowSetTree& tree,
-                               vector<RowSetInfo>* min_key,
-                               vector<RowSetInfo>* max_key) {
+                                vector<RowSetInfo>* min_key,
+                                vector<RowSetInfo>* max_key,
+                                int min_size_mb) {
   // Resize
   size_t len = tree.all_rowsets().size();
   min_key->reserve(min_key->size() + len);
@@ -204,7 +207,7 @@ void RowSetInfo::CollectOrdered(const RowSetTree& tree,
 
     // Add/remove current RowSetInfo
     if (rse.endpoint_ == RowSetTree::START) {
-      min_key->push_back(RowSetInfo(rs, total_width));
+      min_key->push_back(RowSetInfo(rs, total_width, min_size_mb));
       // Store reference from vector. This is safe b/c of reserve() above.
       active.insert(std::make_pair(rs, &min_key->back()));
     } else if (rse.endpoint_ == RowSetTree::STOP) {
@@ -225,22 +228,31 @@ void RowSetInfo::CollectOrdered(const RowSetTree& tree,
 
   CheckCollectOrderedCorrectness(*min_key, *max_key, total_width);
 
-  DivideCDFVector(min_key, total_width);
-  DivideCDFVector(max_key, total_width);
+  FinalizeCDFVector(min_key, total_width);
+  FinalizeCDFVector(max_key, total_width);
 }
 
-RowSetInfo::RowSetInfo(RowSet* rs, double init_cdf)
+RowSetInfo::RowSetInfo(RowSet* rs, double init_cdf, int min_size_mb)
   : rowset_(rs),
-    size_mb_(rs->EstimateOnDiskSize() / 1024 / 1024),
+    size_mb_(std::max(implicit_cast<int>(rs->EstimateOnDiskSize() / 1024 / 1024),
+                      min_size_mb)),
     cdf_min_key_(init_cdf),
-    cdf_max_key_(init_cdf) {}
+    cdf_max_key_(init_cdf) {
+  DCHECK_GE(min_size_mb, 0);
+}
 
-void RowSetInfo::DivideCDFVector(vector<RowSetInfo>* vec,
+void RowSetInfo::FinalizeCDFVector(vector<RowSetInfo>* vec,
                                  double quot) {
   if (quot == 0) return;
   BOOST_FOREACH(RowSetInfo& cdf_rs, *vec) {
+    CHECK_GT(cdf_rs.size_mb_, 0) << "Expected file size to be at least 1MB "
+                                 << "for RowSet " << cdf_rs.rowset_->ToString()
+                                 << ", was " << cdf_rs.rowset_->EstimateOnDiskSize()
+                                 << " bytes.";
     cdf_rs.cdf_min_key_ /= quot;
     cdf_rs.cdf_max_key_ /= quot;
+    cdf_rs.density_ = (cdf_rs.cdf_max_key() - cdf_rs.cdf_min_key())
+      / cdf_rs.size_mb_;
   }
 }
 

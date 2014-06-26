@@ -14,18 +14,22 @@ class RowSetTree;
 
 // Class used to cache some computed statistics on a RowSet used
 // during evaluation of budgeted compaction policy.
+//
+// Class is immutable.
 class RowSetInfo {
  public:
   // error on cdf bounds
   static const double kEpsilon;
 
   // Appends the rowsets in no order without the cdf values set.
-  static void Collect(const RowSetTree& tree, std::vector<RowSetInfo>* rsvec);
+  static void Collect(const RowSetTree& tree, std::vector<RowSetInfo>* rsvec,
+                      int min_size_mb = 0);
   // Appends the rowsets in min-key and max-key sorted order, with
   // cdf values set.
   static void CollectOrdered(const RowSetTree& tree,
                              std::vector<RowSetInfo>* min_key,
-                             std::vector<RowSetInfo>* max_key);
+                             std::vector<RowSetInfo>* max_key,
+                             int min_size_mb = 0);
 
   int size_mb() const { return size_mb_; }
 
@@ -43,27 +47,25 @@ class RowSetInfo {
     return cdf_max_key_ - cdf_min_key_;
   }
 
-  double density() const {
-    return width() / size_mb_;
-  }
+  double density() const { return density_; }
 
   RowSet* rowset() const { return rowset_; }
 
   std::string ToString() const;
 
-  void set_size_mb(const int size_mb) { size_mb_ = size_mb; }
-
   // Return true if this candidate overlaps the other candidate in key space.
   bool Intersects(const RowSetInfo& other) const;
 
  private:
-  RowSetInfo(RowSet* rs, double init_cdf);
+  explicit RowSetInfo(RowSet* rs, double init_cdf, int min_size_mb);
 
-  static void DivideCDFVector(std::vector<RowSetInfo>* vec, double quot);
+  static void FinalizeCDFVector(std::vector<RowSetInfo>* vec,
+                                double quot);
 
   RowSet* rowset_;
   int size_mb_;
   double cdf_min_key_, cdf_max_key_;
+  double density_;
 };
 
 } // namespace tablet
