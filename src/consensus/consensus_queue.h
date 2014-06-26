@@ -3,6 +3,7 @@
 #ifndef KUDU_CONSENSUS_CONSENSUS_QUEUE_H_
 #define KUDU_CONSENSUS_CONSENSUS_QUEUE_H_
 
+#include <gtest/gtest.h>
 #include <map>
 #include <string>
 #include <tr1/unordered_map>

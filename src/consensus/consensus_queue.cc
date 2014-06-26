@@ -125,7 +125,7 @@ Status PeerMessageQueue::AppendOperation(gscoped_ptr<OperationPB> operation,
     RETURN_NOT_OK(s);
   }
 
-  metrics_.queue_size_bytes->IncrementBy(operation->ByteSize());
+  metrics_.queue_size_bytes->IncrementBy(operation->SpaceUsed());
 
   if (PREDICT_FALSE(VLOG_IS_ON(2))) {
     VLOG(2) << "Appended operation to queue: " << operation->ShortDebugString() <<
@@ -144,10 +144,6 @@ Status PeerMessageQueue::AppendOperation(gscoped_ptr<OperationPB> operation,
     metrics_.num_majority_done_ops->Increment();
   } else {
     metrics_.num_in_progress_ops->Increment();
-  }
-
-  if (metrics_.queue_size_bytes->value() < max_ops_size_bytes_soft_) {
-    return Status::OK();
   }
 
   return Status::OK();
@@ -277,7 +273,7 @@ Status PeerMessageQueue::GetOperationStatus(const OpId& op_id,
 Status PeerMessageQueue::TrimBufferForMessage(const OperationPB* operation) {
   // TODO for now we're just trimming the buffer, but we need to handle when
   // the buffer is full but there is a peer hanging on to the queue (very delayed)
-  int bytes = operation->ByteSize();
+  int bytes = operation->SpaceUsed();
 
   MessagesBuffer::iterator iter = messages_.begin();
   uint64_t new_size = metrics_.queue_size_bytes->value() + bytes;
@@ -292,7 +288,7 @@ Status PeerMessageQueue::TrimBufferForMessage(const OperationPB* operation) {
         return Status::ServiceUnavailable("Cannot append replicate message. Queue is full.");
       }
     }
-    uint64_t bytes_to_decrement = (*iter).second->op_->ByteSize();
+    uint64_t bytes_to_decrement = (*iter).second->op_->SpaceUsed();
     metrics_.total_num_ops->Decrement();
     metrics_.num_all_done_ops->Decrement();
     metrics_.queue_size_bytes->DecrementBy(bytes_to_decrement);
