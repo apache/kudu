@@ -22,7 +22,6 @@
 
 namespace kudu {
 
-class MemTracker;
 class MetricContext;
 class RowChangeList;
 class UnionIterator;
@@ -369,9 +368,6 @@ class Tablet {
 
   gscoped_ptr<MetricContext> metric_context_;
   gscoped_ptr<TabletMetrics> metrics_;
-
-  shared_ptr<MemTracker> mrs_tracker_;
-  shared_ptr<MemTracker> dms_tracker_;
 
   log::OpIdAnchorRegistry* opid_anchor_registry_;
 
