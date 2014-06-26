@@ -116,40 +116,21 @@ Status PstackWatcher::DumpStacks() {
   argv.push_back(prog);
   argv.push_back(pid_string);
   Subprocess pstack_proc(prog, argv);
-  pstack_proc.ShareParentStdout(false);
+  printf("************************ BEGIN STACKS **************************\n");
   RETURN_NOT_OK_PREPEND(pstack_proc.Start(), "DumpStacks proc.Start() failed");
   if (::close(pstack_proc.ReleaseChildStdinFd()) == -1) {
     return Status::IOError("Unable to close child stdin", ErrnoToString(errno), errno);
   }
-
-  printf("************************ BEGIN STACKS **************************\n");
-  FILE* in = ::fdopen(pstack_proc.from_child_stdout_fd(), "r");
-  if (in == NULL) {
-    return Status::IOError("Unable to open child stdout for read", ErrnoToString(errno), errno);
-  }
-  char buf[16384] = { 0 };
-  shared_ptr<FILE> in_wrapper(in, ::fclose);
-  bool error = false;
-  while (!error) {
-    int bytes_to_write = ::fread(buf, 1, sizeof(buf), in);
-    if (bytes_to_write <= 0) {
-      break;
-    }
-    while (bytes_to_write > 0) {
-      int bytes_written = ::fwrite(buf, 1, bytes_to_write, stdout);
-      if (bytes_written <= 0) {
-        error = true;
-        break;
-      }
-      bytes_to_write -= bytes_written;
-    }
-  }
-  printf("************************* END STACKS ***************************\n");
   int ret;
   RETURN_NOT_OK_PREPEND(pstack_proc.Wait(&ret), "DumpStacks proc.Wait() failed");
   if (ret == -1) {
     return Status::RuntimeError("DumpStacks proc.Wait() error", ErrnoToString(errno), errno);
   }
+  printf("************************* END STACKS ***************************\n");
+  if (fflush(stdout) == EOF) {
+    return Status::IOError("Unable to flush stdout", ErrnoToString(errno), errno);
+  }
+
   return Status::OK();
 }
 
