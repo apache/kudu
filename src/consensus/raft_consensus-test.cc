@@ -431,7 +431,7 @@ TEST_F(RaftConsensusTest, TestConsensusContinuesIfAMinorityFallsBehind) {
     // and never letting it go.
     ReplicaState* follower0_rs = GetFollower(0)->GetReplicaStateForTests();
     ReplicaState::UniqueLock lock;
-    follower0_rs->LockForRead(&lock);
+    ASSERT_STATUS_OK(follower0_rs->LockForRead(&lock));
 
     // replicate and commit 10 messages
     for (int i = 0; i < 10; i++) {
@@ -467,11 +467,11 @@ TEST_F(RaftConsensusTest, TestConsensusStopsIfAMajorityFallsBehind) {
     // and never letting them go.
     ReplicaState* follower0_rs = GetFollower(0)->GetReplicaStateForTests();
     ReplicaState::UniqueLock lock0;
-    follower0_rs->LockForRead(&lock0);
+    ASSERT_STATUS_OK(follower0_rs->LockForRead(&lock0));
 
     ReplicaState* follower1_rs = GetFollower(1)->GetReplicaStateForTests();
     ReplicaState::UniqueLock lock1;
-    follower1_rs->LockForRead(&lock1);
+    ASSERT_STATUS_OK(follower1_rs->LockForRead(&lock1));
 
     // Append a single message to the queue
     ASSERT_STATUS_OK(AppendDummyMessage(GetLeader(), &round));
