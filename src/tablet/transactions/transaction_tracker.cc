@@ -44,10 +44,7 @@ TransactionTracker::~TransactionTracker() {
 
 void TransactionTracker::Add(TransactionDriver *driver) {
   boost::lock_guard<simple_spinlock> l(lock_);
-  if (driver->state() != NULL) {
-    IncrementCounters(driver->tx_type());
-  }
-
+  IncrementCounters(driver->tx_type());
   pending_txns_.insert(driver);
 }
 
@@ -87,9 +84,7 @@ void TransactionTracker::DecrementCounters(Transaction::TransactionType tx_type)
 
 void TransactionTracker::Release(TransactionDriver *driver) {
   boost::lock_guard<simple_spinlock> l(lock_);
-  if (driver->state() != NULL) {
-    DecrementCounters(driver->tx_type());
-  }
+  DecrementCounters(driver->tx_type());
 
   if (PREDICT_FALSE(pending_txns_.erase(driver) != 1)) {
     LOG(FATAL) << "Could not remove pending transaction from map: " << driver->ToString();

@@ -224,11 +224,13 @@ Status ReplicaState::CancelPendingTransactions() {
       return Status::IllegalState("Can only wait for pending commits on kShuttingDown state.");
     }
     LOG_WITH_PREFIX(INFO) << "Aborting pending transactions.";
-    OpIdToContextMap::iterator iter = pending_txns_.begin();
-    for (; iter != pending_txns_.end(); iter++) {
-      (*iter).second->GetReplicaCommitContinuation()->Abort();
+    for (OpIdToRoundMap::iterator iter = pending_txns_.begin();
+         iter != pending_txns_.end(); iter++) {
+      ConsensusRound* round = (*iter).second;
+      if (round->leader_commit_op() == NULL) {
+        round->GetReplicaCommitContinuation()->Abort();
+      }
     }
-    pending_txns_.clear();
   }
   return Status::OK();
 }

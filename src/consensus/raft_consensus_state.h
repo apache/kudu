@@ -50,12 +50,12 @@ class ReplicaState {
   typedef std::tr1::unordered_map<consensus::OpId,
                                   ConsensusRound*,
                                   log::OpIdHashFunctor,
-                                  log::OpIdEqualsFunctor> OpIdToContextMap;
+                                  log::OpIdEqualsFunctor> OpIdToRoundMap;
 
   typedef std::set<consensus::OpId,
                    log::OpIdCompareFunctor> OutstandingCommits;
 
-  typedef OpIdToContextMap::value_type OpToContextEntry;
+  typedef OpIdToRoundMap::value_type OpToRoundEntry;
 
   typedef std::multimap<consensus::OpId,
                         std::tr1::shared_ptr<FutureCallback>,
@@ -183,6 +183,9 @@ class ReplicaState {
   // Waits for already triggered Apply()s to commit.
   Status WaitForOustandingApplies();
 
+  // Used by replicas to cancel pending transactions. Pending transaction are those
+  // that have completed prepare/replicate but are waiting on the LEADER's commit
+  // to complete. This does not cancel transactions being applied.
   Status CancelPendingTransactions();
 
   // Obtains the lock and registers a callback that will be triggered when
@@ -273,7 +276,7 @@ class ReplicaState {
   // The key is the id of the replicate operation for which we're expecting a commit
   // message.
   // Used when Role = FOLLOWER/CANDIDATE/LEARNER.
-  OpIdToContextMap pending_txns_;
+  OpIdToRoundMap pending_txns_;
 
   // Set that tracks the outstanding commits/applies that are being executed asynchronously,
   // i.e. the operations for which we've received both the replica and commit messages
