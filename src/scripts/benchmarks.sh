@@ -30,6 +30,7 @@ WITH_OVERLAP=Overlap
 NO_OVERLAP=NoOverlap
 
 MEMROWSET_BENCH=MemRowSetBenchmark
+TS_INSERT_LATENCY=TabletServerInsertLatency
 INSERT=Insert
 SCAN_NONE_COMMITTED=ScanNoneCommitted
 SCAN_ALL_COMMITTED=ScanAllCommitted
@@ -175,6 +176,14 @@ run_benchmarks() {
     ./build/latest/memrowset-test --roundtrip_num_rows=10000000 \
         --gtest_filter=\*InsertCount\* &> $LOGDIR/${MEMROWSET_BENCH}$i.log
   done
+
+  # Run single-threaded TS insert latency benchmark, 5-6 seconds per run
+  for i in $(seq 1 $NUM_SAMPLES) ; do
+    KUDU_ALLOW_SLOW_TESTS=true ./build/latest/tablet_server-test \
+      --gtest_filter=*MicroBench* \
+      --single_threaded_insert_latency_bench_warmup_rows=1000 \
+      --single_threaded_insert_latency_bench_insert_rows=10000 &> $LOGDIR/${TS_INSERT_LATENCY}$i.log
+  done
 }
 
 parse_and_record_all_results() {
@@ -257,6 +266,13 @@ parse_and_record_all_results() {
     record_result $BUILD_IDENTIFIER $RPC_BENCH_TEST $i $rate
   done
 
+  # parse latency numbers from single-threaded tserver benchmark
+  for i in $(seq 1 $NUM_SAMPLES); do
+    for metric in min mean percentile_95 percentile_99 percentile_99_9 ; do
+      val=$(grep "\"$metric\": " $LOGDIR/${TS_INSERT_LATENCY}$i.log | awk '{print $2}' | sed -e 's/,//')
+      record_result $BUILD_IDENTIFIER ${TS_INSERT_LATENCY}_$metric $i $val
+    done
+  done
   popd
   popd
 }
@@ -316,6 +332,8 @@ load_stats_and_generate_plots() {
   load_and_generate_plot $WIRE_PROTOCOL_TEST wire-protocol-test
 
   load_and_generate_plot $RPC_BENCH_TEST rpc-bench-test
+
+  load_and_generate_plot "${TS_INSERT_LATENCY}%" ts-insert-latency
 
   # Generate all the pngs for all the mt-tablet tests
   for i in {0..9}; do
