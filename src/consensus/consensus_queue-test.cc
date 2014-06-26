@@ -2,10 +2,12 @@
 
 #include <gtest/gtest.h>
 #include <gflags/gflags.h>
+#include <tr1/memory>
 
 #include "consensus/consensus_queue.h"
 #include "consensus/consensus-test-util.h"
 #include "consensus/log_util.h"
+#include "util/mem_tracker.h"
 #include "util/metrics.h"
 #include "util/test_macros.h"
 #include "util/test_util.h"
@@ -13,6 +15,10 @@
 DECLARE_int32(consensus_max_batch_size_bytes);
 DECLARE_int32(consensus_entry_cache_size_soft_limit_mb);
 DECLARE_int32(consensus_entry_cache_size_hard_limit_mb);
+DECLARE_int32(global_consensus_entry_cache_size_soft_limit_mb);
+DECLARE_int32(global_consensus_entry_cache_size_hard_limit_mb);
+
+using std::tr1::shared_ptr;
 
 namespace kudu {
 namespace consensus {
@@ -369,7 +375,93 @@ TEST_F(ConsensusQueueTest, TestQueueHardAndSoftLimit) {
   ASSERT_GT(queue_->GetQueuedOperationsSizeBytesForTests(), size_with_one_msg);
 }
 
+TEST_F(ConsensusQueueTest, TestGlobalHardLimit) {
+ FLAGS_consensus_entry_cache_size_soft_limit_mb = 1;
+ FLAGS_global_consensus_entry_cache_size_soft_limit_mb = 4;
+
+ FLAGS_consensus_entry_cache_size_hard_limit_mb = 2;
+ FLAGS_global_consensus_entry_cache_size_hard_limit_mb = 5;
+
+ const string kParentTrackerId = "TestGlobalHardLimit";
+
+ shared_ptr<MemTracker> parent_tracker = MemTracker::CreateTracker(
+     FLAGS_consensus_entry_cache_size_soft_limit_mb * 1024 * 1024,
+     kParentTrackerId,
+     NULL);
+
+ ASSERT_TRUE(parent_tracker.get() != NULL);
+
+
+ // Exceed the global hard limit.
+ parent_tracker->Consume(6 * 1024 * 1024);
+
+ queue_.reset(new PeerMessageQueue(metric_context_, kParentTrackerId));
+
+ const int kPayloadSize = 768 * 1024;
+
+ gscoped_ptr<OperationPB> op;
+ scoped_refptr<OperationStatusTracker> status;
+
+ string payload(kPayloadSize, '0');
+
+ // Should fail with service unavailable.
+ Status s = AppendReplicateOp(op.Pass(), 1, 1, payload, &status);
+
+ LOG(INFO) << queue_->ToString();
+
+ ASSERT_TRUE(s.IsServiceUnavailable());
+
+ // Now release the memory.
+
+ parent_tracker->Release(2 * 1024 * 1024);
+
+ ASSERT_STATUS_OK(AppendReplicateOp(op.Pass(), 1, 1, payload, &status));
+}
+
+TEST_F(ConsensusQueueTest, TestTrimWhenGlobalSoftLimitExceeded) {
+  FLAGS_consensus_entry_cache_size_soft_limit_mb = 1;
+  FLAGS_global_consensus_entry_cache_size_soft_limit_mb = 4;
+
+  FLAGS_consensus_entry_cache_size_hard_limit_mb = 2;
+  FLAGS_global_consensus_entry_cache_size_hard_limit_mb = 5;
+
+  const string kParentTrackerId = "TestGlobalSoftLimit";
+
+  shared_ptr<MemTracker> parent_tracker = MemTracker::CreateTracker(
+     FLAGS_consensus_entry_cache_size_soft_limit_mb * 1024 * 1024,
+     kParentTrackerId,
+     NULL);
+
+ ASSERT_TRUE(parent_tracker.get() != NULL);
+
+
+ // Exceed the global soft limit.
+ parent_tracker->Consume(4 * 1024 * 1024);
+ parent_tracker->Consume(1024);
+
+ queue_.reset(new PeerMessageQueue(metric_context_, kParentTrackerId));
+
+ const int kPayloadSize = 768 * 1024;
+
+ gscoped_ptr<OperationPB> op;
+ scoped_refptr<OperationStatusTracker> status;
+
+ string payload(kPayloadSize, '0');
+
+ ASSERT_STATUS_OK(AppendReplicateOp(op.Pass(), 1, 1, payload, &status));
+
+ int size_with_one_msg = queue_->GetQueuedOperationsSizeBytesForTests();
+
+ status->AckPeer("");
+
+ // If this goes through, that means the queue has been trimmed, otherwise
+ // the hard limit would be violated and service unavailable status would
+ // be returned.
+ ASSERT_STATUS_OK(AppendReplicateOp(op.Pass(), 1, 2, payload, &status));
+
+ // Verify that there is only one message in the queue.
+ ASSERT_EQ(size_with_one_msg, queue_->GetQueuedOperationsSizeBytesForTests());
+}
 
 }  // namespace consensus
 }  // namespace kudu
-

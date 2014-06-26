@@ -8,6 +8,7 @@
 #include <map>
 #include <string>
 #include <tr1/unordered_map>
+#include <tr1/memory>
 #include <utility>
 #include <vector>
 
@@ -20,6 +21,7 @@
 namespace kudu {
 template<class T>
 class AtomicGauge;
+class MemTracker;
 class MetricContext;
 
 namespace log {
@@ -27,6 +29,9 @@ class Log;
 }
 
 namespace consensus {
+
+// The id for the server-wide consensus queue MemTracker.
+extern const char kConsensusQueueParentTrackerId[];
 
 // The status associated with each single quorum operation.
 // This class is ref. counted and takes ownership of the tracked operation.
@@ -87,7 +92,8 @@ class OperationStatusTracker : public base::RefCountedThreadSafe<OperationStatus
 // modify it.
 class PeerMessageQueue {
  public:
-  explicit PeerMessageQueue(const MetricContext& metric_ctx);
+  explicit PeerMessageQueue(const MetricContext& metric_ctx,
+                            const std::string& parent_tracker_id = kConsensusQueueParentTrackerId);
 
   // Appends a operation that must be replicated to the quorum and associates
   // it with the provided 'status'.
@@ -169,6 +175,7 @@ class PeerMessageQueue {
   ~PeerMessageQueue();
 
  private:
+
   // An ordered map that serves as the buffer for the pending messages.
   typedef std::map<OpId,
                    scoped_refptr<OperationStatusTracker>,
@@ -187,10 +194,10 @@ class PeerMessageQueue {
   // space or Status::ServiceUnavailable() if the queue could not free enough space.
   Status TrimBufferForMessage(const OperationPB* operation);
 
-  // The total size of consensus entries to keep in memory.
-  // This is a soft limit, i.e. messages in the queue are discarded
-  // down to this limit only if no peer needs to replicate them.
-  uint64_t max_ops_size_bytes_soft_;
+  // Check whether adding 'bytes' to the consensus queue would violate
+  // either the local (per-tablet) hard limit or the global
+  // (server-wide) hard limit.
+  bool CheckHardLimitsNotViolated(size_t bytes) const;
 
   // The total size of consensus entries to keep in memory.
   // This is a hard limit, i.e. messages in the queue are always discarded
@@ -198,12 +205,28 @@ class PeerMessageQueue {
   // selected to be discarded the peer will be evicted from the quorum.
   uint64_t max_ops_size_bytes_hard_;
 
+  // Server-wide version of 'max_ops_size_bytes_hard_'.
+  uint64_t global_max_ops_size_bytes_hard_;
+
   // The current watermark for each peer.
   // The queue owns the OpIds.
   WatermarksMap watermarks_;
   MessagesBuffer messages_;
   mutable simple_spinlock queue_lock_;
   OpId low_watermark_;
+
+  // Pointer to a parent memtracker for all consensus queues. This
+  // exists to compute server-wide queue size and enforce a
+  // server-wide memory limit.  When the first instance of a consensus
+  // queue is created, a new entry is added to MemTracker's static
+  // map; subsequent entries merely increment the refcount, so that
+  // the parent tracker can be deleted if all consensus queues are
+  // deleted (e.g., if all tablets are deleted from a server, or if
+  // the server is shutdown).
+  std::tr1::shared_ptr<MemTracker> parent_tracker_;
+
+  // A MemTracker for this instance.
+  std::tr1::shared_ptr<MemTracker> tracker_;
 
   Metrics metrics_;
 

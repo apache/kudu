@@ -124,6 +124,19 @@ bool MemTracker::FindTracker(const string& id, shared_ptr<MemTracker>* tracker) 
   return false;
 }
 
+shared_ptr<MemTracker> MemTracker::FindOrCreateTracker(int64_t byte_limit,
+                                                       const std::string& id,
+                                                       MemTracker* parent) {
+  boost::lock_guard<boost::mutex> l(static_mem_trackers_lock_);
+  TrackerMap::iterator it = id_to_mem_trackers_.find(id);
+  if (it != id_to_mem_trackers_.end()) {
+    return it->second.lock();
+  }
+  shared_ptr<MemTracker> ret(new MemTracker(byte_limit, id, parent));
+  id_to_mem_trackers_[id] = ret;
+  return ret;
+}
+
 void MemTracker::ListTrackers(vector<shared_ptr<MemTracker> >* trackers) {
   boost::lock_guard<boost::mutex> l(static_mem_trackers_lock_);
   for (TrackerMap::iterator it = id_to_mem_trackers_.begin();

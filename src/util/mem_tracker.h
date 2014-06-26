@@ -65,16 +65,20 @@ class MemTracker {
   // Removes this tracker from parent_->child_trackers_.
   void UnregisterFromParent();
 
-
-  // byte_limit < 0 means no limit
-  // 'id' is a used as a label for LogUsage() and web UI and must be unique.
-  // Set 'parent' to NULL if there is no parent.
+  // Creates and adds the tracker to a static map so that it can be
+  // retrieved with FindTracker/FindOrCreateTracker.
+  //
+  // byte_limit < 0 means no limit; 'id' is a used as a label for
+  // LogUsage() and web UI and must be unique; set 'parent' to NULL if
+  // there is no parent.
   static std::tr1::shared_ptr<MemTracker> CreateTracker(int64_t byte_limit,
                                                         const std::string& id,
                                                         MemTracker* parent);
 
   // Factory method for tracker that uses consumption_metric as the
   // consumption value.  Consume()/Release() can still be called.
+  // Adds the tracker to a static map so that it can be retrieved with
+  // FindTracker/FindOrCreateTracker.
   //
   // TODO Gauge-based memtrackers can't have parents (but can have
   // children). In the future, however, it may be very convenient to
@@ -84,6 +88,19 @@ class MemTracker {
   static std::tr1::shared_ptr<MemTracker> CreateTracker(FunctionGauge<uint64_t>* consumption_metric,
                                                         int64_t byte_limit,
                                                         const std::string& id);
+
+  // If a tracker with the specified 'id' exists in the tracker map,
+  // sets 'tracker' to reference that instance. Returns false if no
+  // such tracker exists in the map.
+  static bool FindTracker(const std::string& id,
+                          std::tr1::shared_ptr<MemTracker>* tracker);
+
+  // If a tracker with the specified 'id' exists in the tracker map,
+  // returns a shared_ptr to that instance. Otherwise, creates a new
+  // MemTracker with the specified byte_limit, id, and parent.
+  static std::tr1::shared_ptr<MemTracker> FindOrCreateTracker(int64_t byte_limit,
+                                                              const std::string& id,
+                                                              MemTracker* parent);
 
 
   // Returns a list of all the valid trackers.
@@ -159,25 +176,13 @@ class MemTracker {
     log_stack_ = log_stack;
   }
 
-  // Adds the tracker for 'id' to a map so that trackers can be listed
-  // and retrieved by other classes.
-  //
-  // NOTE: if CreateTracker factory methods are used, this is called automatically.
-  // There is no need to manually remove the tracker from the map, this is done
-  // by the destructor.
-  static void AddToTrackerMap(const std::string& id,
-                              const std::tr1::shared_ptr<MemTracker>& tracker);
-
-  static bool FindTracker(const std::string& id,
-                          std::tr1::shared_ptr<MemTracker>* tracker);
-
  private:
   FRIEND_TEST(MemTrackerTest, SingleTrackerNoLimit);
   FRIEND_TEST(MemTrackerTest, SingleTrackerWithLimit);
   FRIEND_TEST(MemTrackerTest, TrackerHierarchy);
   FRIEND_TEST(MemTrackerTest, GcFunctions);
 
-   // byte_limit < 0 means no limit
+  // byte_limit < 0 means no limit
   // 'id' is the label for LogUsage() and web UI.
   MemTracker(int64_t byte_limit, const std::string& id,
              MemTracker* parent);
@@ -186,6 +191,15 @@ class MemTracker {
   // Consume()/Release() can still be called.
   MemTracker(FunctionGauge<uint64_t>* consumption_metric,
              int64_t byte_limit, const std::string& id);
+
+  // Adds the tracker for 'id' to a map so that trackers can be listed
+  // and retrieved by other classes.
+  //
+  // NOTE: if CreateTracker factory methods are used, this is called automatically.
+  // There is no need to manually remove the tracker from the map, this is done
+  // by the destructor.
+  static void AddToTrackerMap(const std::string& id,
+                              const std::tr1::shared_ptr<MemTracker>& tracker);
 
   bool CheckLimitExceeded() const {
     return limit_ >= 0 && limit_ < consumption();

@@ -16,21 +16,29 @@
 #include "gutil/stl_util.h"
 #include "gutil/strings/substitute.h"
 #include "gutil/strings/strcat.h"
+#include "gutil/strings/human_readable.h"
 #include "util/auto_release_pool.h"
+#include "util/mem_tracker.h"
 #include "util/metrics.h"
 #include "util/url-coding.h"
 
 DEFINE_int32(consensus_entry_cache_size_soft_limit_mb, 128,
-             "The total size of consensus entries to keep in memory."
+             "The total per-tablet size of consensus entries to keep in memory."
              " This is a soft limit, i.e. messages in the queue are discarded"
              " down to this limit only if no peer needs to replicate them.");
 DEFINE_int32(consensus_entry_cache_size_hard_limit_mb, 256,
-             "The total size of consensus entries to keep in memory."
+             "The total per-tablet size of consensus entries to keep in memory."
              " This is a hard limit, i.e. messages in the queue are always discarded"
              " down to this limit. If a peer has not yet replicated the messages"
              " selected to be discarded the peer will be evicted from the quorum.");
+
+DEFINE_int32(global_consensus_entry_cache_size_soft_limit_mb, 1024,
+             "Server-wide version of 'consensus_entry_cache_size_soft_limit_mb'");
+DEFINE_int32(global_consensus_entry_cache_size_hard_limit_mb, 1024,
+             "Server-wide version of 'consensus_entry_cache_size_hard_limit_mb'");
+
 DEFINE_int32(consensus_max_batch_size_bytes, 1024 * 1024,
-             "The maximum RPC batch size when updating peers.");
+             "The maximum per-tablet RPC batch size when updating peers.");
 DEFINE_bool(consensus_dump_queue_on_full, false,
             "Whether to dump the full contents of the consensus queue to the log"
             " when it gets full. Mostly useful for debugging.");
@@ -55,8 +63,13 @@ METRIC_DEFINE_gauge_int64(num_majority_done_ops, MetricUnit::kCount,
 METRIC_DEFINE_gauge_int64(num_in_progress_ops, MetricUnit::kCount,
                           "Number of operations in the leader queue ack'd by a minority of "
                           "peers.");
+
+// TODO expose and register metics via the MemTracker itself, so that
+// we don't have to do the accounting in two places.
 METRIC_DEFINE_gauge_int64(queue_size_bytes, MetricUnit::kBytes,
                           "Size of the leader queue, in bytes.");
+
+const char kConsensusQueueParentTrackerId[] = "consensus_queue_parent";
 
 OperationStatusTracker::OperationStatusTracker(gscoped_ptr<OperationPB> operation)
   : operation_(operation.Pass()) {
@@ -73,12 +86,26 @@ PeerMessageQueue::Metrics::Metrics(const MetricContext& metric_ctx)
 }
 #undef INSTANTIATE_METRIC
 
-PeerMessageQueue::PeerMessageQueue(const MetricContext& metric_ctx)
-    : // TODO manage these on a server-wide basis
-      max_ops_size_bytes_soft_(FLAGS_consensus_entry_cache_size_soft_limit_mb * 1024 * 1024),
-      max_ops_size_bytes_hard_(FLAGS_consensus_entry_cache_size_hard_limit_mb * 1024 * 1024),
+PeerMessageQueue::PeerMessageQueue(const MetricContext& metric_ctx,
+                                   const std::string& parent_tracker_id)
+    : max_ops_size_bytes_hard_(FLAGS_consensus_entry_cache_size_hard_limit_mb * 1024 * 1024),
+      global_max_ops_size_bytes_hard_(
+          FLAGS_global_consensus_entry_cache_size_hard_limit_mb * 1024 * 1024),
       metrics_(metric_ctx),
       state_(kQueueOpen) {
+  uint64_t max_ops_size_bytes_soft = FLAGS_consensus_entry_cache_size_soft_limit_mb * 1024 * 1024;
+  uint64_t global_max_ops_size_bytes_soft =
+      FLAGS_global_consensus_entry_cache_size_soft_limit_mb * 1024 * 1024;
+
+  // If no tracker is registered for kConsensusQueueMemTrackerId,
+  // create one using the global soft limit.
+  parent_tracker_ = MemTracker::FindOrCreateTracker(global_max_ops_size_bytes_soft,
+                                                    parent_tracker_id,
+                                                    NULL);
+
+  tracker_ = MemTracker::CreateTracker(max_ops_size_bytes_soft,
+                                       Substitute("$0-$1", parent_tracker_id, metric_ctx.prefix()),
+                                       parent_tracker_.get());
 }
 
 Status PeerMessageQueue::TrackPeer(const string& uuid, const OpId& initial_watermark) {
@@ -112,8 +139,10 @@ Status PeerMessageQueue::AppendOperation(scoped_refptr<OperationStatusTracker> s
          || operation->has_replicate()) << "Operation must be a commit or a replicate: "
              << operation->DebugString();
 
-  if (metrics_.queue_size_bytes->value() >= max_ops_size_bytes_soft_) {
-    Status s = TrimBufferForMessage(operation);
+  // Once either the local or global soft limit is exceeded...
+  if (tracker_->AnyLimitExceeded()) {
+    // .. try to trim the queue.
+    Status s  = TrimBufferForMessage(operation);
     if (PREDICT_FALSE(!s.ok() && (VLOG_IS_ON(2) || FLAGS_consensus_dump_queue_on_full))) {
       queue_lock_.unlock();
       LOG(INFO) << "Queue Full: Dumping State:";
@@ -126,7 +155,17 @@ Status PeerMessageQueue::AppendOperation(scoped_refptr<OperationStatusTracker> s
     RETURN_NOT_OK(s);
   }
 
+  // If we get here, then either:
+  //
+  // 1) We were able to trim the queue such that no local or global
+  // soft limit was exceeded
+  // 2) We were unable to trim the queue to below any soft limits, but
+  // hard limits were not violated.
+  // 3) 'operation' is a COMMIT instead of a REPLICATE.
+  //
+  // See also: TrimBufferForMessage() in this class.
   metrics_.queue_size_bytes->IncrementBy(operation->SpaceUsed());
+  tracker_->Consume(operation->SpaceUsed());
 
   if (PREDICT_FALSE(VLOG_IS_ON(2))) {
     VLOG(2) << "Appended operation to queue: " << operation->ShortDebugString() <<
@@ -150,7 +189,7 @@ Status PeerMessageQueue::AppendOperation(scoped_refptr<OperationStatusTracker> s
 }
 
 void PeerMessageQueue::RequestForPeer(const string& uuid,
-                                        ConsensusRequestPB* request) {
+                                      ConsensusRequestPB* request) {
   // Clear the requests without deleting the entries, as they may be in use by other peers.
   request->mutable_ops()->ExtractSubrange(0, request->ops_size(), NULL);
   boost::lock_guard<simple_spinlock> lock(queue_lock_);
@@ -275,16 +314,28 @@ Status PeerMessageQueue::GetOperationStatus(const OpId& op_id,
 Status PeerMessageQueue::TrimBufferForMessage(const OperationPB* operation) {
   // TODO for now we're just trimming the buffer, but we need to handle when
   // the buffer is full but there is a peer hanging on to the queue (very delayed)
-  int bytes = operation->SpaceUsed();
+  int32_t bytes = operation->SpaceUsed();
 
   MessagesBuffer::iterator iter = messages_.begin();
-  uint64_t new_size = metrics_.queue_size_bytes->value() + bytes;
-  while (new_size > max_ops_size_bytes_soft_ && iter != messages_.end()) {
-    OperationStatusTracker* ost = (*iter).second.get();
-    if (!ost->IsAllDone()) {
+
+  // If adding 'operation' to the queue would violate either a local
+  // or a global soft limit, try to trim any finished operations from
+  // the queue and release the memory used to the mem tracker.
+  while (bytes > tracker_->SpareCapacity()) {
+    OperationStatusTracker* ost = NULL;
+    // Handle the situation where this tablet's consensus queue is
+    // empty, but the global limits may have already been violated due
+    // to the other queues' memory consumption.
+    if (iter != messages_.end()) {
+      ost = (*iter).second.get();
+    }
+    if (ost == NULL || !ost->IsAllDone()) {
       // return OK if we could trim the queue or if the operation was a commit
       // in which case we always accept it.
-      if (new_size < max_ops_size_bytes_hard_ || operation->has_commit()) {
+      if (CheckHardLimitsNotViolated(bytes) || operation->has_commit()) {
+        // parent_tracker_->consumption() in this case returns total
+        // consumption by _ALL_ all consensus queues, i.e., the
+        // server-wide consensus queue memory consumption.
         return Status::OK();
       } else {
         return Status::ServiceUnavailable("Cannot append replicate message. Queue is full.");
@@ -294,10 +345,36 @@ Status PeerMessageQueue::TrimBufferForMessage(const OperationPB* operation) {
     metrics_.total_num_ops->Decrement();
     metrics_.num_all_done_ops->Decrement();
     metrics_.queue_size_bytes->DecrementBy(bytes_to_decrement);
+
+    tracker_->Release(bytes_to_decrement);
     messages_.erase(iter++);
-    new_size = metrics_.queue_size_bytes->value() + bytes;
   }
   return Status::OK();
+}
+
+
+bool PeerMessageQueue::CheckHardLimitsNotViolated(size_t bytes) const {
+  bool local_limit_violated = (bytes + tracker_->consumption()) > max_ops_size_bytes_hard_;
+  bool global_limit_violated = (bytes + parent_tracker_->consumption())
+      > global_max_ops_size_bytes_hard_;
+#ifndef NDEBUG
+  if (VLOG_IS_ON(1)) {
+    DVLOG(1) << "global consumption: "
+             << HumanReadableNumBytes::ToString(parent_tracker_->consumption());
+    string human_readable_bytes = HumanReadableNumBytes::ToString(bytes);
+    if (local_limit_violated) {
+      DVLOG(1) << "adding " << human_readable_bytes
+               << " would violate local hard limit ("
+               << HumanReadableNumBytes::ToString(max_ops_size_bytes_hard_) << ").";
+    }
+    if (global_limit_violated) {
+      DVLOG(1) << "adding " << human_readable_bytes
+               << " would violate global hard limit ("
+               << HumanReadableNumBytes::ToString(global_max_ops_size_bytes_hard_) << ").";
+    }
+  }
+#endif
+  return !local_limit_violated && !global_limit_violated;
 }
 
 void PeerMessageQueue::DumpToStrings(vector<string>* lines) const {
@@ -386,7 +463,7 @@ void PeerMessageQueue::Close() {
 }
 
 int64_t PeerMessageQueue::GetQueuedOperationsSizeBytesForTests() const {
-  return metrics_.queue_size_bytes->value();
+  return tracker_->consumption();
 }
 
 string PeerMessageQueue::ToString() const {
@@ -410,4 +487,3 @@ PeerMessageQueue::~PeerMessageQueue() {
 
 }  // namespace consensus
 }  // namespace kudu
-
