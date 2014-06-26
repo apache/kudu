@@ -57,6 +57,7 @@ target_link_libraries(tserver
 # Tests
 set(KUDU_TEST_LINK_LIBS tserver ${KUDU_MIN_TEST_LIBS})
 ADD_KUDU_TEST(tablet_server-test)
+ADD_KUDU_TEST(tablet_server-stress-test RUN_SERIAL true)
 ADD_KUDU_TEST(scanners-test)
 ADD_KUDU_TEST(ts_tablet_manager-test)
 

@@ -115,6 +115,7 @@ class MaintenanceManager
 
   static const Options DEFAULT_OPTIONS;
 
+  static void Enable();
   static void Disable();
   explicit MaintenanceManager(const Options& options);
   ~MaintenanceManager();

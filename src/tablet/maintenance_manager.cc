@@ -121,9 +121,14 @@ void MaintenanceManager::Shutdown() {
   }
 }
 
+void MaintenanceManager::Enable() {
+  LOG(INFO) << "Enabling maintenance manager";
+  base::subtle::NoBarrier_Store(&disabled_, 0);
+}
+
 void MaintenanceManager::Disable() {
   LOG(INFO) << "Disabling maintenance manager";
-  base::subtle::Acquire_Store(&disabled_, 1);
+  base::subtle::NoBarrier_Store(&disabled_, 1);
 }
 
 void MaintenanceManager::RegisterOp(MaintenanceOp* op) {

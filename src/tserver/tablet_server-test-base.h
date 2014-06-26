@@ -225,14 +225,16 @@ class TabletServerTest : public KuduTest {
         AddTestRowToPB(RowOperationsPB::INSERT, schema_, j, j,
                        strings::Substitute("original$0", j), data);
       }
-
-      ASSERT_STATUS_OK(DCHECK_NOTNULL(proxy)->Write(req, &resp, &controller));
+      CHECK_OK(DCHECK_NOTNULL(proxy)->Write(req, &resp, &controller));
       if (write_timestamps_collector) {
         write_timestamps_collector->push_back(resp.write_timestamp());
       }
-      SCOPED_TRACE(resp.DebugString());
-      ASSERT_FALSE(resp.has_error());
-      ASSERT_EQ(0, resp.per_row_errors_size());
+
+      if (resp.has_error() || resp.per_row_errors_size() > 0) {
+        LOG(FATAL) << "Failed to insert batch "
+                    << first_row_in_batch << "-" << last_row_in_batch
+                    << ": " << resp.DebugString();
+      }
       shared_data_->last_inserted[tid] = last_row_in_batch;
 
       inserted_since_last_report += count / num_batches;
