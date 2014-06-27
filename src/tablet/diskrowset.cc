@@ -369,8 +369,9 @@ RollingDiskRowSetWriter::~RollingDiskRowSetWriter() {
 
 Status DiskRowSet::Open(const shared_ptr<RowSetMetadata>& rowset_metadata,
                         log::OpIdAnchorRegistry* opid_anchor_registry,
-                        shared_ptr<DiskRowSet> *rowset) {
-  shared_ptr<DiskRowSet> rs(new DiskRowSet(rowset_metadata, opid_anchor_registry));
+                        shared_ptr<DiskRowSet> *rowset,
+                        const shared_ptr<MemTracker>& parent_tracker) {
+  shared_ptr<DiskRowSet> rs(new DiskRowSet(rowset_metadata, opid_anchor_registry, parent_tracker));
 
   RETURN_NOT_OK(rs->Open());
 
@@ -379,10 +380,12 @@ Status DiskRowSet::Open(const shared_ptr<RowSetMetadata>& rowset_metadata,
 }
 
 DiskRowSet::DiskRowSet(const shared_ptr<RowSetMetadata>& rowset_metadata,
-                       OpIdAnchorRegistry* opid_anchor_registry)
+                       OpIdAnchorRegistry* opid_anchor_registry,
+                       const shared_ptr<MemTracker>& parent_tracker)
   : rowset_metadata_(rowset_metadata),
     open_(false),
-    opid_anchor_registry_(opid_anchor_registry) {
+    opid_anchor_registry_(opid_anchor_registry),
+    parent_tracker_(parent_tracker) {
 }
 
 Status DiskRowSet::Open() {
@@ -393,7 +396,8 @@ Status DiskRowSet::Open() {
   rowid_t num_rows;
   RETURN_NOT_OK(base_data_->CountRows(&num_rows));
   delta_tracker_.reset(new DeltaTracker(rowset_metadata_, schema(), num_rows,
-                                        opid_anchor_registry_));
+                                        opid_anchor_registry_,
+                                        parent_tracker_.get()));
   RETURN_NOT_OK(delta_tracker_->Open());
 
   open_ = true;

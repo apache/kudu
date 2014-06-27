@@ -31,12 +31,14 @@ using std::tr1::shared_ptr;
 DeltaTracker::DeltaTracker(const shared_ptr<RowSetMetadata>& rowset_metadata,
                            const Schema &schema,
                            rowid_t num_rows,
-                           log::OpIdAnchorRegistry* opid_anchor_registry) :
+                           log::OpIdAnchorRegistry* opid_anchor_registry,
+                           MemTracker* parent_tracker) :
   rowset_metadata_(rowset_metadata),
   schema_(schema),
   num_rows_(num_rows),
   open_(false),
-  opid_anchor_registry_(opid_anchor_registry) {
+  opid_anchor_registry_(opid_anchor_registry),
+  parent_tracker_(parent_tracker) {
 }
 
 Status DeltaTracker::OpenDeltaReaders(const vector<BlockId>& blocks,
@@ -87,7 +89,8 @@ Status DeltaTracker::Open() {
   // the id of the first DeltaMemStore is the max id of the current ones +1
   dms_.reset(new DeltaMemStore(rowset_metadata_->last_durable_redo_dms_id() + 1,
                                schema_,
-                               opid_anchor_registry_));
+                               opid_anchor_registry_,
+                               parent_tracker_));
   open_ = true;
   return Status::OK();
 }
@@ -398,7 +401,8 @@ Status DeltaTracker::Flush(MetadataFlushType flush_type) {
 
     // Swap the DeltaMemStore to use the new schema
     old_dms = dms_;
-    dms_.reset(new DeltaMemStore(old_dms->id() + 1, schema_, opid_anchor_registry_));
+    dms_.reset(new DeltaMemStore(old_dms->id() + 1, schema_, opid_anchor_registry_,
+                                 parent_tracker_));
 
     if (count == 0) {
       // No need to flush if there are no deltas.

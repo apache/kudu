@@ -6,16 +6,21 @@
 #include <gflags/gflags.h>
 #include <gtest/gtest.h>
 #include <glog/logging.h>
+#include <tr1/memory>
 #include <vector>
 
 #include "gutil/stringprintf.h"
 #include "util/memory/arena.h"
+#include "util/memory/memory.h"
+#include "util/mem_tracker.h"
 
 DEFINE_int32(num_threads, 16, "Number of threads to test");
 DEFINE_int32(allocs_per_thread, 10000, "Number of allocations each thread should do");
 DEFINE_int32(alloc_size, 4, "number of bytes in each allocation");
 
 namespace kudu {
+
+using std::tr1::shared_ptr;
 
 template<class ArenaType>
 static void AllocateThread(ArenaType *arena, uint8_t thread_index) {
@@ -80,6 +85,51 @@ TEST(TestArena, TestAlignment) {
       "failed to align on " << alignment << "b boundary: " <<
       ret;
   }
+}
+
+TEST(TestArena, TestMemoryTrackingDontEnforce) {
+  shared_ptr<MemTracker> mem_tracker = MemTracker::CreateTracker(1024, "arena-test-tracker", NULL);
+  shared_ptr<MemoryTrackingBufferAllocator> allocator(
+      new MemoryTrackingBufferAllocator(HeapBufferAllocator::Get(), mem_tracker));
+  MemoryTrackingArena arena(256, 1024, allocator);
+  ASSERT_EQ(256, mem_tracker->consumption());
+  void *allocated = arena.AllocateBytes(256);
+  ASSERT_TRUE(allocated);
+  ASSERT_EQ(256, mem_tracker->consumption());
+  allocated = arena.AllocateBytes(256);
+  ASSERT_TRUE(allocated);
+  ASSERT_EQ(768, mem_tracker->consumption());
+
+  // In DEBUG mode after Reset() the last component of an arena is
+  // cleared, but is then created again; in release mode, the last
+  // component is not cleared. In either case, after Reset()
+  // consumption() should equal the size of the last component which
+  // is 512 bytes.
+  arena.Reset();
+  ASSERT_EQ(512, mem_tracker->consumption());
+
+  // Allocate beyond allowed consumption. This should still go
+  // through, since enforce_limit is false.
+  allocated = arena.AllocateBytes(1024);
+  ASSERT_TRUE(allocated);
+
+  ASSERT_EQ(1536, mem_tracker->consumption());
+}
+
+TEST(TestArena, TestMemoryTrackingEnforced) {
+  shared_ptr<MemTracker> mem_tracker = MemTracker::CreateTracker(1024, "arena-test-tracker", NULL);
+  shared_ptr<MemoryTrackingBufferAllocator> allocator(
+      new MemoryTrackingBufferAllocator(HeapBufferAllocator::Get(), mem_tracker,
+                                        // enforce limit
+                                        true));
+  MemoryTrackingArena arena(256, 1024, allocator);
+  ASSERT_EQ(256, mem_tracker->consumption());
+  void *allocated = arena.AllocateBytes(256);
+  ASSERT_TRUE(allocated);
+  ASSERT_EQ(256, mem_tracker->consumption());
+  allocated = arena.AllocateBytes(1024);
+  ASSERT_FALSE(allocated);
+  ASSERT_EQ(256, mem_tracker->consumption());
 }
 
 } // namespace kudu

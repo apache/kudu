@@ -15,6 +15,7 @@
 
 #include "util/alignment.h"
 #include "util/memory/memory.h"
+#include "util/mem_tracker.h"
 
 #include <gflags/gflags.h>
 #include <string.h>
@@ -294,6 +295,61 @@ bool MemoryStatisticsCollectingBufferAllocator::ReallocateInternal(
 void MemoryStatisticsCollectingBufferAllocator::FreeInternal(Buffer* buffer) {
   DelegateFree(delegate_, buffer);
   memory_stats_collector_->FreedMemoryBytes(buffer->size());
+}
+
+size_t MemoryTrackingBufferAllocator::Available() const {
+  return enforce_limit_ ? mem_tracker_->SpareCapacity() : std::numeric_limits<int64_t>::max();
+}
+
+bool MemoryTrackingBufferAllocator::TryConsume(int64_t bytes) {
+  // Calls TryConsume first, even if enforce_limit_ is false: this
+  // will cause mem_tracker_ to try to free up more memory by GCing.
+  if (!mem_tracker_->TryConsume(bytes)) {
+    if (enforce_limit_) {
+      return false;
+    } else {
+      // If enforce_limit_ is false, allocate memory anyway.
+      mem_tracker_->Consume(bytes);
+    }
+  }
+  return true;
+}
+
+Buffer* MemoryTrackingBufferAllocator::AllocateInternal(size_t requested,
+                                                        size_t minimal,
+                                                        BufferAllocator* originator) {
+  if (TryConsume(requested)) {
+    Buffer* buffer = DelegateAllocate(delegate_, requested, requested, originator);
+    if (buffer == NULL) {
+      mem_tracker_->Release(requested);
+    } else {
+      return buffer;
+    }
+  }
+
+  if (TryConsume(minimal)) {
+    Buffer* buffer = DelegateAllocate(delegate_, minimal, minimal, originator);
+    if (buffer == NULL) {
+      mem_tracker_->Release(minimal);
+    }
+    return buffer;
+  }
+
+  return NULL;
+}
+
+
+bool MemoryTrackingBufferAllocator::ReallocateInternal(size_t requested,
+                                                       size_t minimal,
+                                                       Buffer* buffer,
+                                                       BufferAllocator* originator) {
+  LOG(FATAL) << "Not implemented";
+  return false;
+}
+
+void MemoryTrackingBufferAllocator::FreeInternal(Buffer* buffer) {
+  DelegateFree(delegate_, buffer);
+  mem_tracker_->Release(buffer->size());
 }
 
 }  // namespace kudu

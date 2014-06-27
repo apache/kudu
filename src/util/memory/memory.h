@@ -32,6 +32,7 @@
 #include <boost/thread/mutex.hpp>
 #include <boost/thread/locks.hpp>
 #include <glog/logging.h>
+#include <tr1/memory>
 
 #include <algorithm>
 using std::copy;
@@ -57,6 +58,7 @@ using boost::mutex;
 using boost::lock_guard;
 
 class BufferAllocator;
+class MemTracker;
 
 void OverwriteWithPattern(char* p, size_t len, StringPiece pattern);
 
@@ -661,6 +663,57 @@ class MemoryStatisticsCollectingBufferAllocator : public BufferAllocator {
   BufferAllocator* delegate_;
   gscoped_ptr<MemoryStatisticsCollectorInterface>
       memory_stats_collector_;
+};
+
+// BufferAllocator which uses MemTracker to keep track of and optionally
+// (if a limit is set on the MemTracker) regulate memory consumption.
+class MemoryTrackingBufferAllocator : public BufferAllocator {
+ public:
+  // Does not take ownership of the delegate. The delegate must remain
+  // valid for the lifetime of this allocator. Increments reference
+  // count for 'mem_tracker'.
+  // If 'mem_tracker' has a limit and 'enforce_limit' is true, then
+  // the classes calling this buffer allocator (whether directly, or
+  // through an Arena) must be able to handle the case when allocation
+  // fails. If 'enforce_limit' is false (this is the default), then
+  // allocation will always succeed.
+  MemoryTrackingBufferAllocator(
+      BufferAllocator* const delegate,
+      const std::tr1::shared_ptr<MemTracker>& mem_tracker,
+      bool enforce_limit = false)
+      : delegate_(delegate),
+        mem_tracker_(mem_tracker),
+        enforce_limit_(enforce_limit) {}
+
+  virtual ~MemoryTrackingBufferAllocator() {}
+
+  // If enforce limit is false, this always returns maximum possible value
+  // for int64_t (std::numeric_limits<int64_t>::max()). Otherwise, this
+  // is equivalent to calling mem_tracker_->SpareCapacity();
+  virtual size_t Available() const OVERRIDE;
+
+ private:
+
+  // If enforce_limit_ is true, this is equivalent to calling
+  // mem_tracker_->TryConsume(bytes). If enforce_limit_ is false and
+  // mem_tracker_->TryConsume(bytes) is false, we call
+  // mem_tracker_->Consume(bytes) and always return true.
+  bool TryConsume(int64_t bytes);
+
+  virtual Buffer* AllocateInternal(size_t requested,
+                                   size_t minimal,
+                                   BufferAllocator* originator) OVERRIDE;
+
+  virtual bool ReallocateInternal(size_t requested,
+                                  size_t minimal,
+                                  Buffer* buffer,
+                                  BufferAllocator* originator) OVERRIDE;
+
+  virtual void FreeInternal(Buffer* buffer) OVERRIDE;
+
+  BufferAllocator* delegate_;
+  std::tr1::shared_ptr<MemTracker> mem_tracker_;
+  bool enforce_limit_;
 };
 
 // Synchronizes access to AllocateInternal and FreeInternal, and exposes the

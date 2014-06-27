@@ -20,6 +20,9 @@
 #include "util/status.h"
 
 namespace kudu {
+
+class MemTracker;
+
 namespace tablet {
 
 //
@@ -127,6 +130,10 @@ class MRSRow {
   const MemRowSet *memrowset_;
 };
 
+struct MSBTreeTraits : public btree::BTreeTraits {
+  typedef ThreadSafeMemoryTrackingArena ArenaType;
+};
+
 // Define an MRSRow instance using on-stack storage.
 // This defines an array on the stack which is sized correctly for an MRSRow::Header
 // plus a single row of the given schema, then constructs an MRSRow object which
@@ -152,7 +159,9 @@ class MemRowSet : public RowSet,
 
   MemRowSet(int64_t id,
             const Schema &schema,
-            log::OpIdAnchorRegistry* opid_anchor_registry);
+            log::OpIdAnchorRegistry* opid_anchor_registry,
+            const std::tr1::shared_ptr<MemTracker>& parent_tracker =
+            std::tr1::shared_ptr<MemTracker>());
 
   // Insert a new row into the memrowset.
   //
@@ -222,8 +231,7 @@ class MemRowSet : public RowSet,
   // inserted into the memrowset, due to arena and data structure
   // overhead.
   size_t memory_footprint() const {
-    // TODO: merge the two into the same arena?
-    return arena_.memory_footprint() + tree_.estimate_memory_usage();
+    return arena_->memory_footprint();
   }
 
   // Return an iterator over the items in this memrowset.
@@ -308,14 +316,17 @@ class MemRowSet : public RowSet,
                   const ConstContiguousRow& row_data,
                   MRSRow *row);
 
-  typedef btree::CBTree<btree::BTreeTraits> MSBTree;
+  typedef btree::CBTree<MSBTreeTraits> MSBTree;
 
   int64_t id_;
 
   const Schema schema_;
-  ThreadSafeArena arena_;
+  std::tr1::shared_ptr<MemTracker> parent_tracker_;
+  std::tr1::shared_ptr<MemTracker> mem_tracker_;
+  std::tr1::shared_ptr<MemoryTrackingBufferAllocator> allocator_;
+  std::tr1::shared_ptr<ThreadSafeMemoryTrackingArena> arena_;
 
-  typedef btree::CBTreeIterator<btree::BTreeTraits> MSBTIter;
+  typedef btree::CBTreeIterator<MSBTreeTraits> MSBTIter;
 
   MSBTree tree_;
 

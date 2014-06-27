@@ -22,6 +22,7 @@
 
 namespace kudu {
 
+class MemTracker;
 class MetricContext;
 class RowChangeList;
 class UnionIterator;
@@ -67,6 +68,8 @@ class Tablet {
   //
   // If 'parent_metrics_context' is non-NULL, then this tablet will store
   // metrics in a sub-context of this context. Otherwise, no metrics are collected.
+  //
+  // TODO allow passing in a server-wide parent MemTracker.
   Tablet(const scoped_refptr<metadata::TabletMetadata>& metadata,
          const scoped_refptr<server::Clock>& clock,
          const MetricContext* parent_metric_context,
@@ -400,11 +403,13 @@ class Tablet {
   // The current components of the tablet. These should always be read
   // or swapped under the component_lock.
   scoped_refptr<TabletComponents> components_;
+  log::OpIdAnchorRegistry* opid_anchor_registry_;
+  std::tr1::shared_ptr<MemTracker> mem_tracker_;
+  shared_ptr<MemRowSet> memrowset_;
+  shared_ptr<RowSetTree> rowsets_;
 
   gscoped_ptr<MetricContext> metric_context_;
   gscoped_ptr<TabletMetrics> metrics_;
-
-  log::OpIdAnchorRegistry* opid_anchor_registry_;
 
   int64_t next_mrs_id_;
 

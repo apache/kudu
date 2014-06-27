@@ -69,6 +69,7 @@ struct BTreeTraits {
     // races.
     debug_raciness = 0
   };
+  typedef ThreadSafeArena ArenaType;
 };
 
 template<class T>
@@ -301,10 +302,10 @@ size_t FindInSliceArray(const InlineSlice<N, true> *array, ssize_t num_entries,
 }
 
 
-template<class ISlice>
+template<class ISlice, class ArenaType>
 static void InsertInSliceArray(ISlice *array, size_t num_entries,
                                const Slice &src, size_t idx,
-                               ThreadSafeArena *arena) {
+                               ArenaType *arena) {
   DCHECK_LT(idx, num_entries);
   for (size_t i = num_entries - 1; i > idx; i--) {
     array[i] = array[i - 1];
@@ -475,7 +476,7 @@ class PACKED InternalNode : public NodeBase<Traits> {
   InternalNode(const Slice &split_key,
                NodePtr<Traits> lchild,
                NodePtr<Traits> rchild,
-               ThreadSafeArena *arena)
+               typename Traits::ArenaType* arena)
     : num_children_(0) {
     DCHECK_EQ(lchild.type(), rchild.type())
       << "Only expect to create a new internal node on account of a "
@@ -499,7 +500,7 @@ class PACKED InternalNode : public NodeBase<Traits> {
   //
   // This is typically called after one of its child nodes has split.
   InsertStatus Insert(const Slice &key, NodePtr<Traits> right_child,
-                      ThreadSafeArena *arena) {
+                      typename Traits::ArenaType* arena) {
     DCHECK(this->IsLocked());
     CHECK_GT(key.size(), 0);
 
@@ -670,7 +671,7 @@ class LeafNode : public NodeBase<Traits> {
   // Insert an entry at the given index, which is guaranteed to be
   // new.
   InsertStatus InsertNew(size_t idx, const Slice &key, const Slice &val,
-                         ThreadSafeArena *arena) {
+                         typename Traits::ArenaType* arena) {
     if (PREDICT_FALSE(num_entries_ == Traits::leaf_max_entries)) {
       // Full due to metadata
       return INSERT_FULL;
@@ -845,7 +846,7 @@ class PreparedMutation {
   void Prepare(CBTree<Traits> *tree) {
     CHECK(!prepared());
     this->tree_ = tree;
-    this->arena_ = &tree->arena_;
+    this->arena_ = tree->arena_.get();
     tree->PrepareMutation(this);
     needs_unlock_ = true;
   }
@@ -903,7 +904,7 @@ class PreparedMutation {
     return idx_;
   }
 
-  ThreadSafeArena *arena() {
+  typename Traits::ArenaType* arena() {
     return arena_;
   }
 
@@ -925,7 +926,7 @@ class PreparedMutation {
 
   // The arena where inserted data may be copied if the data is too
   // large to fit entirely within a tree node.
-  ThreadSafeArena *arena_;
+  typename Traits::ArenaType* arena_;
 
   LeafNode<Traits> *leaf_;
 
@@ -939,9 +940,15 @@ template<class Traits = BTreeTraits>
 class CBTree {
  public:
   CBTree()
-    : arena_(512*1024, 4*1024*1024),
+    : arena_(new typename Traits::ArenaType(512*1024, 4*1024*1024)),
       root_(NewLeaf(false)),
       frozen_(false) {
+  }
+
+  explicit CBTree(const std::tr1::shared_ptr<typename Traits::ArenaType>& arena)
+      : arena_(arena),
+        root_(NewLeaf(false)),
+        frozen_(false) {
   }
 
   ~CBTree() {
@@ -1098,7 +1105,7 @@ class CBTree {
   }
 
   size_t estimate_memory_usage() const {
-    return arena_.memory_footprint();
+    return arena_->memory_footprint();
   }
 
   // Mark the tree as frozen.
@@ -1409,7 +1416,7 @@ class CBTree {
 
       // TODO: this could be done more efficiently since we know that
       // these inserts are coming in sorted order.
-      CHECK_EQ(INSERT_SUCCESS, new_inode->Insert(k, child, &arena_));
+      CHECK_EQ(INSERT_SUCCESS, new_inode->Insert(k, child, arena_.get()));
     }
 
     // Up to this point, we haven't modified the left node, so concurrent
@@ -1544,7 +1551,7 @@ class CBTree {
     }
 
     // Parent exists. Try to insert
-    switch (parent->Insert(split_key, right_ptr, &arena_)) {
+    switch (parent->Insert(split_key, right_ptr, arena_.get())) {
       case INSERT_SUCCESS:
       {
         VLOG(3) << "Inserted new entry into internal node "
@@ -1572,7 +1579,7 @@ class CBTree {
                 << split_key.ToDebugString() << "[" << right << "]"
                 << " (split at " << inode_split.ToDebugString() << ")";
 
-        CHECK_EQ(INSERT_SUCCESS, dst_inode->Insert(split_key, right_ptr, &arena_));
+        CHECK_EQ(INSERT_SUCCESS, dst_inode->Insert(split_key, right_ptr, arena_.get()));
 
         left->Unlock();
         right->Unlock();
@@ -1585,17 +1592,17 @@ class CBTree {
   }
 
   LeafNode<Traits> *NewLeaf(bool locked) {
-    void *mem = CHECK_NOTNULL(arena_.AllocateBytesAligned(sizeof(LeafNode<Traits>),
-                                                          sizeof(AtomicVersion)));
+    void *mem = CHECK_NOTNULL(arena_->AllocateBytesAligned(sizeof(LeafNode<Traits>),
+                                                           sizeof(AtomicVersion)));
     return new (mem) LeafNode<Traits>(locked);
   }
 
   InternalNode<Traits> *NewInternalNode(const Slice &split_key,
                                         NodePtr<Traits> lchild,
                                         NodePtr<Traits> rchild) {
-    void *mem = CHECK_NOTNULL(arena_.AllocateBytesAligned(sizeof(InternalNode<Traits>),
-                                                          sizeof(AtomicVersion)));
-    return new (mem) InternalNode<Traits>(split_key, lchild, rchild, &arena_);
+    void *mem = CHECK_NOTNULL(arena_->AllocateBytesAligned(sizeof(InternalNode<Traits>),
+                                                           sizeof(AtomicVersion)));
+    return new (mem) InternalNode<Traits>(split_key, lchild, rchild, arena_.get());
   }
 
   void FreeLeaf(LeafNode<Traits> *leaf) {
@@ -1608,7 +1615,7 @@ class CBTree {
     // No need to actually free, since it came from the arena
   }
 
-  ThreadSafeArena arena_;
+  std::tr1::shared_ptr<typename Traits::ArenaType> arena_;
 
   // marked 'mutable' because readers will lazy-update the root
   // when they encounter a stale root pointer.

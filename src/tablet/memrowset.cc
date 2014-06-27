@@ -14,6 +14,7 @@
 #include "gutil/dynamic_annotations.h"
 #include "tablet/memrowset.h"
 #include "tablet/compaction.h"
+#include "util/mem_tracker.h"
 
 DEFINE_int32(memrowset_throttle_mb, 0,
              "number of MB of RAM beyond which memrowset inserts will be throttled");
@@ -27,8 +28,8 @@ using log::OpIdLessThan;
 using std::pair;
 using strings::Substitute;
 
-static const int kInitialArenaSize = 1*1024*1024;
-static const int kMaxArenaBufferSize = 4*1024*1024;
+static const int kInitialArenaSize = 1536*1024;
+static const int kMaxArenaBufferSize = 8*1024*1024;
 
 bool MRSRow::IsGhost() const {
   bool is_ghost = false;
@@ -52,13 +53,31 @@ bool MRSRow::IsGhost() const {
   return is_ghost;
 }
 
+namespace {
+
+shared_ptr<MemTracker> CreateMemTrackerForMemRowSet(int64_t id,
+                                                    MemTracker* parent_tracker) {
+  string mem_tracker_id = Substitute("MemRowSet-$0", id);
+  if (parent_tracker != NULL) {
+    mem_tracker_id = Substitute("$0-$1", parent_tracker->id(), mem_tracker_id);
+  }
+  return MemTracker::CreateTracker(-1, mem_tracker_id, parent_tracker);
+}
+
+} // anonymous namespace
 
 MemRowSet::MemRowSet(int64_t id,
                      const Schema &schema,
-                     OpIdAnchorRegistry* opid_anchor_registry)
+                     OpIdAnchorRegistry* opid_anchor_registry,
+                     const shared_ptr<MemTracker>& parent_tracker)
   : id_(id),
     schema_(schema),
-    arena_(kInitialArenaSize, kMaxArenaBufferSize),
+    parent_tracker_(parent_tracker),
+    mem_tracker_(CreateMemTrackerForMemRowSet(id, parent_tracker.get())),
+    allocator_(new MemoryTrackingBufferAllocator(HeapBufferAllocator::Get(), mem_tracker_)),
+    arena_(new ThreadSafeMemoryTrackingArena(kInitialArenaSize, kMaxArenaBufferSize,
+                                             allocator_)),
+    tree_(arena_),
     debug_insert_count_(0),
     debug_update_count_(0),
     has_logged_throttling_(false),
@@ -101,7 +120,7 @@ Status MemRowSet::Insert(Timestamp timestamp,
   schema_.EncodeComparableKey(row, &enc_key_buf);
   Slice enc_key(enc_key_buf);
 
-  btree::PreparedMutation<btree::BTreeTraits> mutation(enc_key);
+  btree::PreparedMutation<MSBTreeTraits> mutation(enc_key);
   mutation.Prepare(&tree_);
 
   // TODO: for now, the key ends up stored doubly --
@@ -126,7 +145,7 @@ Status MemRowSet::Insert(Timestamp timestamp,
   DEFINE_MRSROW_ON_STACK(this, mrsrow, mrsrow_slice);
   mrsrow.header_->insertion_timestamp = timestamp;
   mrsrow.header_->redo_head = NULL;
-  RETURN_NOT_OK(mrsrow.CopyRow(row, &arena_));
+  RETURN_NOT_OK(mrsrow.CopyRow(row, arena_.get()));
 
   CHECK(mutation.Insert(mrsrow_slice))
     << "Expected to be able to insert, since the prepared mutation "
@@ -149,7 +168,7 @@ Status MemRowSet::Reinsert(Timestamp timestamp, const ConstContiguousRow& row, M
   // Make a copy of the row, and relocate any of its indirected data into
   // our Arena.
   DEFINE_MRSROW_ON_STACK(this, row_copy, row_copy_slice);
-  RETURN_NOT_OK(row_copy.CopyRow(row, &arena_));
+  RETURN_NOT_OK(row_copy.CopyRow(row, arena_.get()));
 
   // Encode the REINSERT mutation from the relocated row copy.
   faststring buf;
@@ -157,7 +176,7 @@ Status MemRowSet::Reinsert(Timestamp timestamp, const ConstContiguousRow& row, M
   encoder.SetToReinsert(row_copy.row_slice());
 
   // Move the REINSERT mutation itself into our Arena.
-  Mutation *mut = Mutation::CreateInArena(&arena_, timestamp, encoder.as_changelist());
+  Mutation *mut = Mutation::CreateInArena(arena_.get(), timestamp, encoder.as_changelist());
 
   // Append the mutation into the row's mutation list.
   // This function has "release" semantics which ensures that the memory writes
@@ -174,7 +193,7 @@ Status MemRowSet::MutateRow(Timestamp timestamp,
                             ProbeStats* stats,
                             OperationResultPB *result) {
   {
-    btree::PreparedMutation<btree::BTreeTraits> mutation(probe.encoded_key_slice());
+    btree::PreparedMutation<MSBTreeTraits> mutation(probe.encoded_key_slice());
     mutation.Prepare(&tree_);
 
     if (!mutation.exists()) {
@@ -191,7 +210,7 @@ Status MemRowSet::MutateRow(Timestamp timestamp,
     }
 
     // Append to the linked list of mutations for this row.
-    Mutation *mut = Mutation::CreateInArena(&arena_, timestamp, delta);
+    Mutation *mut = Mutation::CreateInArena(arena_.get(), timestamp, delta);
 
     // This function has "release" semantics which ensures that the memory writes
     // for the mutation are fully published before any concurrent reader sees
@@ -221,7 +240,7 @@ Status MemRowSet::CheckRowPresent(const RowSetKeyProbe &probe, bool *present,
 
   stats->mrs_consulted++;
 
-  btree::PreparedMutation<btree::BTreeTraits> mutation(probe.encoded_key_slice());
+  btree::PreparedMutation<MSBTreeTraits> mutation(probe.encoded_key_slice());
   mutation.Prepare(const_cast<MSBTree *>(&tree_));
 
   if (!mutation.exists()) {

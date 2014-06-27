@@ -19,6 +19,7 @@
 namespace kudu {
 
 class Env;
+class MemTracker;
 
 namespace consensus {
 class OpId;
@@ -59,7 +60,8 @@ class DeltaTracker {
   DeltaTracker(const shared_ptr<metadata::RowSetMetadata>& rowset_metadata,
                const Schema &schema,
                rowid_t num_rows,
-               log::OpIdAnchorRegistry* opid_anchor_registry);
+               log::OpIdAnchorRegistry* opid_anchor_registry,
+               MemTracker* parent_tracker = NULL);
 
   ColumnwiseIterator *WrapIterator(const shared_ptr<ColumnwiseIterator> &base,
                                    const MvccSnapshot &mvcc_snap) const;
@@ -199,6 +201,8 @@ class DeltaTracker {
   bool open_;
 
   log::OpIdAnchorRegistry* opid_anchor_registry_;
+
+  MemTracker* parent_tracker_;
 
   // The current DeltaMemStore into which updates should be written.
   shared_ptr<DeltaMemStore> dms_;

@@ -24,6 +24,7 @@
 
 namespace kudu {
 
+class MemTracker;
 class RowBlock;
 
 namespace cfile {
@@ -216,7 +217,9 @@ class DiskRowSet : public RowSet {
   // If successful, sets *rowset to the newly open rowset
   static Status Open(const shared_ptr<metadata::RowSetMetadata>& rowset_metadata,
                      log::OpIdAnchorRegistry* opid_anchor_registry,
-                     shared_ptr<DiskRowSet> *rowset);
+                     shared_ptr<DiskRowSet> *rowset,
+                     const std::tr1::shared_ptr<MemTracker>& parent_tracker =
+                     std::tr1::shared_ptr<MemTracker>());
 
   ////////////////////////////////////////////////////////////
   // "Management" functions
@@ -310,7 +313,8 @@ class DiskRowSet : public RowSet {
   friend class Tablet;
 
   DiskRowSet(const shared_ptr<metadata::RowSetMetadata>& rowset_metadata,
-             log::OpIdAnchorRegistry* opid_anchor_registry);
+             log::OpIdAnchorRegistry* opid_anchor_registry,
+             const std::tr1::shared_ptr<MemTracker>& parent_tracker);
 
   Status Open();
 
@@ -323,6 +327,8 @@ class DiskRowSet : public RowSet {
   bool open_;
 
   log::OpIdAnchorRegistry* opid_anchor_registry_;
+
+  std::tr1::shared_ptr<MemTracker> parent_tracker_;
 
   // Base data for this rowset.
   mutable percpu_rwlock component_lock_;

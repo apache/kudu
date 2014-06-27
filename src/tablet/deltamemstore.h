@@ -23,11 +23,18 @@
 #include "util/memory/arena.h"
 
 namespace kudu {
+
+class MemTracker;
+
 namespace tablet {
 
 class DeltaFileWriter;
 class DMSIterator;
 class Mutation;
+
+struct DMSTreeTraits : public btree::BTreeTraits {
+  typedef ThreadSafeMemoryTrackingArena ArenaType;
+};
 
 // In-memory storage for data which has been recently updated.
 // This essentially tracks a 'diff' per row, which contains the
@@ -36,7 +43,8 @@ class Mutation;
 class DeltaMemStore : public DeltaStore,
                       public std::tr1::enable_shared_from_this<DeltaMemStore> {
  public:
-  DeltaMemStore(int64_t id, const Schema &schema, log::OpIdAnchorRegistry* opid_anchor_registry);
+  DeltaMemStore(int64_t id, const Schema &schema, log::OpIdAnchorRegistry* opid_anchor_registry,
+                MemTracker* parent_tracker = NULL);
 
   // Update the given row in the database.
   // Copies the data, as well as any referenced values into this DMS's local
@@ -82,11 +90,11 @@ class DeltaMemStore : public DeltaStore,
 
   virtual const DeltaStats& delta_stats() const OVERRIDE { return delta_stats_; }
 
-  typedef btree::CBTree<btree::BTreeTraits> DMSTree;
-  typedef btree::CBTreeIterator<btree::BTreeTraits> DMSTreeIter;
+  typedef btree::CBTree<DMSTreeTraits> DMSTree;
+  typedef btree::CBTreeIterator<DMSTreeTraits> DMSTreeIter;
 
   size_t memory_footprint() const {
-    return arena_.memory_footprint() + tree_.estimate_memory_usage();
+    return arena_->memory_footprint();
   }
 
   virtual std::string ToString() const OVERRIDE {
@@ -104,10 +112,13 @@ class DeltaMemStore : public DeltaStore,
   const int64_t id_;
   Schema schema_;
 
+  std::tr1::shared_ptr<MemTracker> mem_tracker_;
+  std::tr1::shared_ptr<MemoryTrackingBufferAllocator> allocator_;
+
+  std::tr1::shared_ptr<ThreadSafeMemoryTrackingArena> arena_;
+
   // Concurrent B-Tree storing <key index> -> RowChangeList
   DMSTree tree_;
-
-  ThreadSafeArena arena_;
 
   DeltaStats delta_stats_;
 

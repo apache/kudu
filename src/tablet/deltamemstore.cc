@@ -6,6 +6,7 @@
 #include "tablet/deltamemstore.h"
 #include "tablet/delta_tracker.h"
 #include "gutil/port.h"
+#include "util/mem_tracker.h"
 #include "util/hexdump.h"
 #include "util/status.h"
 #include "tablet/mvcc.h"
@@ -15,18 +16,40 @@ namespace tablet {
 
 using log::OpIdAnchorRegistry;
 using log::OpIdLessThan;
+using std::tr1::shared_ptr;
 using strings::Substitute;
 
 ////////////////////////////////////////////////////////////
 // DeltaMemStore implementation
 ////////////////////////////////////////////////////////////
 
+static const int kInitialArenaSize = 1024*1024;
+static const int kMaxArenaBufferSize = 5*1024*1024;
+
+namespace {
+
+shared_ptr<MemTracker> CreateMemTrackerForDMS(int64_t id,
+                                              MemTracker* parent_tracker) {
+  string mem_tracker_id = Substitute("DeltaMemStore-$0", id);
+  if (parent_tracker != NULL) {
+    mem_tracker_id = Substitute("$0-$1", parent_tracker->id(), mem_tracker_id);
+  }
+  return MemTracker::CreateTracker(-1, mem_tracker_id, parent_tracker);
+}
+
+} // anonymous namespace
+
 DeltaMemStore::DeltaMemStore(int64_t id,
                              const Schema &schema,
-                             OpIdAnchorRegistry* opid_anchor_registry)
+                             OpIdAnchorRegistry* opid_anchor_registry,
+                             MemTracker* parent_tracker)
   : id_(id),
     schema_(schema),
-    arena_(8*1024, 1*1024*1024),
+    mem_tracker_(CreateMemTrackerForDMS(id, parent_tracker)),
+    allocator_(new MemoryTrackingBufferAllocator(HeapBufferAllocator::Get(), mem_tracker_)),
+    arena_(new ThreadSafeMemoryTrackingArena(kInitialArenaSize, kMaxArenaBufferSize,
+                                             allocator_)),
+    tree_(arena_),
     delta_stats_(schema_.num_columns()),
     anchorer_(opid_anchor_registry, Substitute("DeltaMemStore-$0", id_)) {
   CHECK(schema.has_column_ids());
@@ -46,7 +69,7 @@ Status DeltaMemStore::Update(Timestamp timestamp,
   key.EncodeTo(&buf);
   Slice key_slice(buf);
 
-  btree::PreparedMutation<btree::BTreeTraits> mutation(key_slice);
+  btree::PreparedMutation<DMSTreeTraits> mutation(key_slice);
   mutation.Prepare(&tree_);
   CHECK(!mutation.exists())
     << "Already have an entry for rowid " << row_idx << " at timestamp "

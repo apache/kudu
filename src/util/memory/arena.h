@@ -263,6 +263,48 @@ class ThreadSafeArena : public ArenaBase<true> {
   {}
 };
 
+// Arena implementation that is integrated with MemTracker in order to
+// track heap-allocated space consumed by the arena.
+
+class MemoryTrackingArena : public ArenaBase<false> {
+ public:
+
+  MemoryTrackingArena(
+      size_t initial_buffer_size,
+      size_t max_buffer_size,
+      const std::tr1::shared_ptr<MemoryTrackingBufferAllocator>& tracking_allocator)
+      : ArenaBase<false>(tracking_allocator.get(), initial_buffer_size, max_buffer_size),
+        tracking_allocator_(tracking_allocator) {}
+
+  ~MemoryTrackingArena() {
+  }
+
+ private:
+
+  // This is required in order for the Arena to survive even after tablet is shut down,
+  // e.g., in the case of Scanners running scanners (see tablet_server-test.cc)
+  std::tr1::shared_ptr<MemoryTrackingBufferAllocator> tracking_allocator_;
+};
+
+class ThreadSafeMemoryTrackingArena : public ArenaBase<true> {
+ public:
+
+  ThreadSafeMemoryTrackingArena(
+      size_t initial_buffer_size,
+      size_t max_buffer_size,
+      const std::tr1::shared_ptr<MemoryTrackingBufferAllocator>& tracking_allocator)
+      : ArenaBase<true>(tracking_allocator.get(), initial_buffer_size, max_buffer_size),
+        tracking_allocator_(tracking_allocator) {}
+
+  ~ThreadSafeMemoryTrackingArena() {
+  }
+
+ private:
+
+  // See comment in MemoryTrackingArena above.
+  std::tr1::shared_ptr<MemoryTrackingBufferAllocator> tracking_allocator_;
+};
+
 // Implementation of inline and template methods
 
 template<bool THREADSAFE>
