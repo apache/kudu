@@ -164,7 +164,7 @@ TEST_F(ConsensusQueueTest, TestAlwaysYieldsAtLeastOneMessage) {
     ReplicateMsg* msg = op->mutable_replicate();
     msg->set_op_type(NO_OP);
     msg->mutable_noop_request()->set_payload_for_tests(test_payload);
-    status.reset(new TestOperationStatus(1, 1, *id));
+    status.reset(new TestOpStatusTracker(1, 1, *id));
   }
   ASSERT_STATUS_OK(queue_->AppendOperation(op.Pass(), status));
 
@@ -273,7 +273,7 @@ TEST_F(ConsensusQueueTest, TestQueueRefusesRequestWhenFilled) {
     ReplicateMsg* msg = op->mutable_replicate();
     msg->set_op_type(NO_OP);
     msg->mutable_noop_request()->set_payload_for_tests(test_payload);
-    status.reset(new TestOperationStatus(1, 1, *id));
+    status.reset(new TestOpStatusTracker(1, 1, *id));
   }
 
   // should fail with service unavailable
@@ -290,7 +290,7 @@ TEST_F(ConsensusQueueTest, TestQueueRefusesRequestWhenFilled) {
     CommitMsg* msg = op->mutable_commit();
     msg->set_op_type(NO_OP);
     msg->mutable_noop_response()->set_payload_for_tests(test_payload);
-    status.reset(new TestOperationStatus(1, 1, *id));
+    status.reset(new TestOpStatusTracker(1, 1, *id));
   }
 
   ASSERT_STATUS_OK(queue_->AppendOperation(op.Pass(), status));
@@ -308,7 +308,7 @@ TEST_F(ConsensusQueueTest, TestQueueRefusesRequestWhenFilled) {
     ReplicateMsg* msg = op->mutable_replicate();
     msg->set_op_type(NO_OP);
     msg->mutable_noop_request()->set_payload_for_tests(test_payload);
-    status.reset(new TestOperationStatus(1, 1, *id));
+    status.reset(new TestOpStatusTracker(1, 1, *id));
   }
 
   ASSERT_STATUS_OK(queue_->AppendOperation(op.Pass(), status));

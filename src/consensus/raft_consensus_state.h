@@ -360,7 +360,7 @@ class OperationCallbackRunnable : public Runnable {
   virtual void Run() OVERRIDE;
 
  private:
-   friend class MajorityOperationStatus;
+   friend class MajorityOpStatusTracker;
    std::tr1::shared_ptr<FutureCallback> callback_;
    Status error_;
    mutable simple_spinlock lock_;
@@ -370,15 +370,15 @@ class OperationCallbackRunnable : public Runnable {
 // committed.
 // IsDone becomes true when a 'majority' of peers have ACK'd the message
 // IsAllDone becomes true when all peers have ACK'd the message.
-class MajorityOperationStatus : public OperationStatusTracker {
+class MajorityOpStatusTracker : public OperationStatusTracker {
  public:
 
-  MajorityOperationStatus(const OpId* id,
+  MajorityOpStatusTracker(const OpId* id,
                           const std::tr1::unordered_set<std::string>& voting_peers,
                           int majority,
                           int total_peers_count);
 
-  MajorityOperationStatus(const OpId* id,
+  MajorityOpStatusTracker(const OpId* id,
                           const std::tr1::unordered_set<string>& voting_peers,
                           int majority,
                           int total_peers_count,
@@ -396,7 +396,7 @@ class MajorityOperationStatus : public OperationStatusTracker {
 
   virtual std::string ToString() const OVERRIDE;
 
-  virtual ~MajorityOperationStatus();
+  virtual ~MajorityOpStatusTracker();
 
  private:
   std::string ToStringUnlocked() const;

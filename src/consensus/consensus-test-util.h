@@ -23,9 +23,9 @@ using strings::Substitute;
 
 // An operation status for tests that allows to wait for operations
 // to complete.
-class TestOperationStatus : public OperationStatusTracker {
+class TestOpStatusTracker : public OperationStatusTracker {
  public:
-  explicit TestOperationStatus(int n_majority, int total_peers, const OpId& op_id)
+  explicit TestOpStatusTracker(int n_majority, int total_peers, const OpId& op_id)
     : op_id_(op_id),
       majority_latch_(n_majority),
       all_replicated_latch_(total_peers),
@@ -103,7 +103,7 @@ static inline void AppendReplicateMessagesToQueue(
     msg->set_op_type(NO_OP);
     msg->mutable_noop_request()->set_payload_for_tests(dummy_payload);
     scoped_refptr<OperationStatusTracker> status(
-        new TestOperationStatus(n_majority, total_peers, *id));
+        new TestOpStatusTracker(n_majority, total_peers, *id));
     CHECK_OK(queue->AppendOperation(op.Pass(), status));
     if (statuses_collector) {
       statuses_collector->push_back(status);

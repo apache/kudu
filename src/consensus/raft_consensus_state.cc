@@ -416,7 +416,7 @@ void OperationCallbackRunnable::Run() {
 }
 
 
-MajorityOperationStatus::MajorityOperationStatus(const OpId* id,
+MajorityOpStatusTracker::MajorityOpStatusTracker(const OpId* id,
                                                  const unordered_set<string>& voting_peers,
                                                  int majority,
                                                  int total_peers_count)
@@ -430,7 +430,7 @@ MajorityOperationStatus::MajorityOperationStatus(const OpId* id,
       runnable_(NULL) {
 }
 
-MajorityOperationStatus::MajorityOperationStatus(const OpId* id,
+MajorityOpStatusTracker::MajorityOpStatusTracker(const OpId* id,
                                                  const unordered_set<string>& voting_peers,
                                                  int majority,
                                                  int total_peers_count,
@@ -450,7 +450,7 @@ MajorityOperationStatus::MajorityOperationStatus(const OpId* id,
   DCHECK_NOTNULL(runnable_->callback_.get());
 }
 
-void MajorityOperationStatus::AckPeer(const string& uuid) {
+void MajorityOpStatusTracker::AckPeer(const string& uuid) {
   boost::lock_guard<simple_spinlock> lock(lock_);
   if (voting_peers_.count(uuid) != 0) {
     completion_latch_.CountDown();
@@ -468,31 +468,31 @@ void MajorityOperationStatus::AckPeer(const string& uuid) {
     << "More replicates than expected. " << ToStringUnlocked();
 }
 
-bool MajorityOperationStatus::IsDone() const {
+bool MajorityOpStatusTracker::IsDone() const {
   return completion_latch_.count() == 0;
 }
 
-bool MajorityOperationStatus::IsAllDone() const {
+bool MajorityOpStatusTracker::IsAllDone() const {
   boost::lock_guard<simple_spinlock> lock(lock_);
   return replicated_count_ >= total_peers_count_;
 }
 
-void MajorityOperationStatus::Wait() {
+void MajorityOpStatusTracker::Wait() {
   completion_latch_.Wait();
 }
 
-MajorityOperationStatus::~MajorityOperationStatus() {
+MajorityOpStatusTracker::~MajorityOpStatusTracker() {
   if (!IsDone()) {
     LOG(WARNING) << "Deleting incomplete Operation: " << ToString();
   }
 }
 
-std::string MajorityOperationStatus::ToString() const {
+std::string MajorityOpStatusTracker::ToString() const {
   boost::lock_guard<simple_spinlock> lock(lock_);
   return ToStringUnlocked();
 }
 
-std::string MajorityOperationStatus::ToStringUnlocked() const {
+std::string MajorityOpStatusTracker::ToStringUnlocked() const {
   return Substitute("MajorityOS. Id: $0 IsDone: $1 All Peers: $2, Voting Peers: $3, "
                     "ACK'd Peers: $4, Majority: $5",
                     id_->ShortDebugString(),

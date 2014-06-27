@@ -162,7 +162,7 @@ Status RaftConsensus::PushConfigurationToPeersUnlocked() {
                                        new_config->seqno());
   LOG(INFO) << log_prefix << ": replicating to peers...";
   scoped_refptr<OperationStatusTracker> repl_status(
-      new MajorityOperationStatus(&replicate_op->id(),
+      new MajorityOpStatusTracker(&replicate_op->id(),
                                   state_->GetCurrentVotingPeersUnlocked(),
                                   state_->GetCurrentMajorityUnlocked(),
                                   state_->GetAllPeersCountUnlocked()));
@@ -183,7 +183,7 @@ Status RaftConsensus::PushConfigurationToPeersUnlocked() {
   commit_msg->set_timestamp(clock_->Now().ToUint64());
 
   scoped_refptr<OperationStatusTracker> commit_status(
-      new MajorityOperationStatus(&commit_op->id(),
+      new MajorityOpStatusTracker(&commit_op->id(),
                                   state_->GetCurrentVotingPeersUnlocked(),
                                   state_->GetCurrentMajorityUnlocked(),
                                   state_->GetAllPeersCountUnlocked()));
@@ -215,7 +215,7 @@ Status RaftConsensus::Replicate(ConsensusRound* context) {
     gscoped_ptr<OperationPB> queue_op(new OperationPB(*context->replicate_op()));
 
     scoped_refptr<OperationStatusTracker> status(
-        new MajorityOperationStatus(&queue_op->id(),
+        new MajorityOpStatusTracker(&queue_op->id(),
                                     state_->GetCurrentVotingPeersUnlocked(),
                                     state_->GetCurrentMajorityUnlocked(),
                                     state_->GetAllPeersCountUnlocked(),
@@ -274,7 +274,7 @@ OperationStatusTracker* RaftConsensus::CreateLeaderOnlyOperationStatusUnlocked(
     const shared_ptr<FutureCallback>& commit_callback) {
   unordered_set<string> leader_uuid_set(1);
   InsertOrDie(&leader_uuid_set, state_->GetPeerUuid());
-  return new MajorityOperationStatus(op_id,
+  return new MajorityOpStatusTracker(op_id,
                                      leader_uuid_set,
                                      1,
                                      state_->GetAllPeersCountUnlocked(),
@@ -286,7 +286,7 @@ OperationStatusTracker* RaftConsensus::CreateLeaderOnlyOperationStatusUnlocked(
     const OpId* op_id) {
   unordered_set<string> leader_uuid_set(1);
   InsertOrDie(&leader_uuid_set, state_->GetPeerUuid());
-  return new MajorityOperationStatus(op_id, leader_uuid_set,
+  return new MajorityOpStatusTracker(op_id, leader_uuid_set,
                                      1, state_->GetAllPeersCountUnlocked());
 }
 

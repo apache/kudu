@@ -76,8 +76,8 @@ class ConsensusPeersTest : public KuduTest {
     ASSERT_EQ(id.index(), index);
   }
 
-  TestOperationStatus* test_status(OperationStatusTracker* status) {
-    return down_cast<TestOperationStatus*, OperationStatusTracker>(status);
+  TestOpStatusTracker* test_status(OperationStatusTracker* status) {
+    return down_cast<TestOpStatusTracker*, OperationStatusTracker>(status);
   }
 
  protected:
