@@ -67,12 +67,17 @@ fi
 ROOT=$(readlink -f $(dirname "$BASH_SOURCE")/../..)
 cd $ROOT
 
+TEST_LOGDIR="$ROOT/build/test-logs"
+TEST_DEBUGDIR="$ROOT/build/test-debug"
+
 # Remove testing artifacts from the previous run before we do anything
 # else. Otherwise, if we fail during the "build" step, Jenkins will
 # archive the test logs from the previous run, thinking they came from
 # this run, and confuse us when we look at the failed build.
 rm -Rf Testing/Temporary
 rm -f build.log
+rm -Rf $TEST_LOGDIR
+rm -Rf $TEST_DEBUGDIR
 
 thirdparty/build-if-necessary.sh
 
@@ -81,7 +86,6 @@ export PPROF_PATH=$(pwd)/thirdparty/installed/bin/pprof
 
 rm -rf CMakeCache.txt CMakeFiles src/*/CMakeFiles
 
-TEST_LOGDIR="$ROOT/build/test-logs"
 
 if [ "$BUILD_TYPE" = "ASAN" ]; then
   # NB: passing just "clang++" below causes an infinite loop, see http://www.cmake.org/pipermail/cmake/2012-December/053071.html
@@ -122,8 +126,12 @@ NUM_PROCS=$(cat /proc/cpuinfo | grep processor | wc -l)
 
 make -j$NUM_PROCS 2>&1 | tee build.log
 
+# Only enable test core dumps for certain build types.
+if [ "$BUILD_TYPE" != "ASAN" ]; then
+  export KUDU_TEST_ULIMIT_CORE=unlimited
+fi
+
 export GTEST_OUTPUT="xml:$TEST_LOGDIR/" # Enable JUnit-compatible XML output.
-rm -f $TEST_LOGDIR/*.xml                # Clean up XML from previous runs.
 ctest -j$NUM_PROCS $EXTRA_TEST_FLAGS
 
 if [ "$DO_COVERAGE" == "1" ]; then
