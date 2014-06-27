@@ -4,6 +4,7 @@ package kudu.rpc;
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.collect.Range;
 import com.google.common.collect.Ranges;
+import com.google.common.collect.Sets;
 import com.stumbleupon.async.Callback;
 import com.stumbleupon.async.Deferred;
 import kudu.WireProtocol;
@@ -17,9 +18,10 @@ import org.slf4j.LoggerFactory;
 import javax.annotation.concurrent.GuardedBy;
 import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.List;
+import java.util.HashSet;
 import java.util.Map;
 import java.util.Random;
+import java.util.Set;
 
 import static kudu.rpc.ExternalConsistencyMode.NO_CONSISTENCY;
 
@@ -96,15 +98,14 @@ public class KuduSession implements SessionConfiguration {
       Deferred<Tserver.WriteResponsePB>>();
 
   /**
-   * This List is used when not in AUTO_FLUSH_SYNC mode in order to keep track of the operations
+   * This Set is used when not in AUTO_FLUSH_SYNC mode in order to keep track of the operations
    * that are looking up their tablet, meaning that they aren't in any of the maps above. This is
    * not expected to grow a lot except when a client starts and only for a short amount of time.
-   *
-   * The locking is somewhat tricky since when calling flush() we need to be able to grab
-   * operations that already have found their tablets plus those that are going to start batching.
    */
   @GuardedBy("this")
-  private final List<Operation> operationsInLookup = new ArrayList<Operation>();
+  private final Set<Operation> operationsInLookup = Sets.newIdentityHashSet();
+  // Only populated when we're waiting to flush and there are operations in lookup
+  private Deferred<Void> lookupsDone;
 
   /**
    * Tracks whether the session has been closed.
@@ -210,20 +211,34 @@ public class KuduSession implements SessionConfiguration {
    */
   public Deferred<ArrayList<Tserver.WriteResponsePB>> flush() {
     LOG.trace("Flushing all tablets");
+    synchronized (this) {
+      if (!operationsInLookup.isEmpty()) {
+        lookupsDone = new Deferred<Void>();
+        return lookupsDone.addCallbackDeferring(new OperationsInLookupDoneCB());
+      } else {
+        return flushAllBatches();
+      }
+    }
+  }
+
+  class OperationsInLookupDoneCB implements
+      Callback<Deferred<ArrayList<Tserver.WriteResponsePB>>, Void> {
+    @Override
+    public Deferred<ArrayList<Tserver.WriteResponsePB>>
+        call(Void nothing) throws Exception {
+      return flushAllBatches();
+    }
+  }
+
+  /**
+   * This will flush all the batches but not the operations that are currently in lookup.
+   */
+  private Deferred<ArrayList<Tserver.WriteResponsePB>> flushAllBatches() {
+    HashMap<Slice, Batch> copyOfOps;
     final ArrayList<Deferred<Tserver.WriteResponsePB>> d =
         new ArrayList<Deferred<Tserver.WriteResponsePB>>(operations.size());
-    // Make a copy of the map since we're going to remove objects within the iteration
-    HashMap<Slice, Batch> copyOfOps;
     synchronized (this) {
       copyOfOps = new HashMap<Slice, Batch>(operations);
-      List<Operation> copyOfOpsInLookup = new ArrayList<Operation>(operationsInLookup);
-      operationsInLookup.clear();
-      for (Operation op : copyOfOpsInLookup) {
-        // Safe to do this here because we removed it from operationsInLookup. Lookup may not be
-        // over, but it will be finished down in KuduClient. It means we may be missing a few
-        // batching opportunities.
-        d.add(client.sendRpcToTablet(op));
-      }
     }
     for (Map.Entry<Slice, Batch> entry: copyOfOps.entrySet()) {
       d.add(flushTablet(entry.getKey(), entry.getValue()));
@@ -314,30 +329,15 @@ public class KuduSession implements SessionConfiguration {
 
 
   private Deferred<Tserver.WriteResponsePB> handleOperationInFlight(Operation operation, Object arg) {
-    // Important that we lock down everything here so that when we're done at the end of this
-    // method either we put back the operation into operationsInLookup down in apply(),
-    // or we succesfully batch it and then flush() will see it in the operations map.
-    synchronized (KuduSession.this) {
-      boolean removed = operationsInLookup.remove(operation);
-      if (!removed) {
-        LOG.trace("Won't continue applying this operation as it should be handled by a call " +
-            "to flush(): " + operation);
-        return Deferred.fromResult(null);
+    Deferred<Tserver.WriteResponsePB> d = client.handleLookupExceptions(operation, arg);
+    if (d == null) {
+      try {
+        return apply(operation); // Retry the RPC.
+      } catch (PleaseThrottleException pte) {
+        return pte.getDeferred().addBothDeferring(getRetryOpInFlightCB(operation));
       }
-
-      Deferred<Tserver.WriteResponsePB> d = client.handleLookupExceptions(operation, arg);
-      if (d == null) {
-        try {
-          return apply(operation); // Retry the RPC.
-        } catch (PleaseThrottleException pte) {
-          // We're not really "done" doing the lookup since we couldn't apply. When we come
-          // back we'll call handleLookupExceptions again but it will be a no-op.
-          operationsInLookup.add(operation);
-          return pte.getDeferred().addBothDeferring(getRetryOpInFlightCB(operation));
-        }
-      } else {
-        return d; // something went wrong
-      }
+    } else {
+      return d; // something went wrong
     }
   }
 
@@ -397,6 +397,13 @@ public class KuduSession implements SessionConfiguration {
         scheduleFlush = true;
       }
       batch.ops.add(operation);
+      if (!operationsInLookup.isEmpty()) {
+        operationsInLookup.remove(operation);
+        if (lookupsDone != null && operationsInLookup.isEmpty()) {
+          lookupsDone.callback(null);
+          lookupsDone = null;
+        }
+      }
       if (flushMode == FlushMode.AUTO_FLUSH_BACKGROUND && scheduleFlush) {
         // Accumulated a first insert but we're not in manual mode,
         // schedule the flush
