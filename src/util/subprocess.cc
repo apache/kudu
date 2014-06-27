@@ -6,6 +6,7 @@
 #include <dirent.h>
 #include <glog/logging.h>
 #include <fcntl.h>
+#include <tr1/memory>
 #include <string>
 #include <vector>
 #include <signal.h>
@@ -18,15 +19,22 @@
 #include "gutil/port.h"
 #include "gutil/strings/join.h"
 #include "gutil/strings/numbers.h"
+#include "gutil/strings/substitute.h"
 #include "util/debug-util.h"
 #include "util/errno.h"
+#include "util/status.h"
 
 using std::string;
+using std::tr1::shared_ptr;
 using std::vector;
+using strings::Substitute;
 
 namespace kudu {
 
 namespace {
+
+static const char* kProcSelfFd = "/proc/self/fd";
+
 void DisableSigPipe() {
   struct sigaction act;
 
@@ -41,8 +49,33 @@ void EnsureSigPipeDisabled() {
   GoogleOnceInit(&once, &DisableSigPipe);
 }
 
+// Since opendir() calls malloc(), this must be called before fork().
+// This function is not async-signal-safe.
+Status OpenProcFdDir(DIR** dir) {
+  *dir = opendir(kProcSelfFd);
+  if (PREDICT_FALSE(dir == NULL)) {
+    return Status::IOError(Substitute("opendir(\"$0\") failed", kProcSelfFd),
+                           ErrnoToString(errno), errno);
+  }
+  return Status::OK();
+}
+
+// Close the directory stream opened by OpenProcFdDir().
+// This function is not async-signal-safe.
+void CloseProcFdDir(DIR* dir) {
+  if (PREDICT_FALSE(closedir(dir) == -1)) {
+    LOG(WARNING) << "Unable to close fd dir: "
+                 << Status::IOError(Substitute("closedir(\"$0\") failed", kProcSelfFd),
+                                    ErrnoToString(errno), errno).ToString();
+  }
+}
+
 // Close all open file descriptors other than stdin, stderr, stdout.
-void CloseNonStandardFDs() {
+// Expects a directory stream created by OpenProdFdDir() as a parameter.
+// This function is called after fork() and must not call malloc().
+// The rule of thumb is to only call async-signal-safe functions in such cases
+// if at all possible.
+void CloseNonStandardFDs(DIR* fd_dir) {
 #ifndef __linux__
 #error This function is Linux-specific.
 #endif
@@ -57,24 +90,28 @@ void CloseNonStandardFDs() {
   // make it as lean and mean as possible -- this runs in the subprocess
   // after a fork, so there's some possibility that various global locks
   // inside malloc() might be held, so allocating memory is a no-no.
-  errno = 0;
-  DIR* d = opendir("/proc/self/fd");
-  int dir_fd = dirfd(d);
-  PCHECK(d != NULL);
+  PCHECK(fd_dir != NULL);
+  int dir_fd = dirfd(fd_dir);
 
   struct dirent64 *ent;
-  while ((ent = readdir64(d)) != NULL) {
+  // readdir64() is not reentrant (it uses a static buffer) and it also
+  // locks fd_dir->lock, so it must not be called in a multi-threaded
+  // environment and is certainly not async-signal-safe.
+  // However, it appears to be safe to call right after fork(), since only one
+  // thread exists in the child process at that time. It also does not call
+  // malloc() or free(). We could use readdir64_r() instead, but all that
+  // buys us is reentrancy, and not async-signal-safety, due to the use of
+  // dir->lock, so seems not worth the added complexity in lifecycle & plumbing.
+  while ((ent = readdir64(fd_dir)) != NULL) {
     uint32_t fd;
     if (!safe_strtou32(ent->d_name, &fd)) continue;
     if (!(fd == STDIN_FILENO  ||
-	  fd == STDOUT_FILENO ||
-	  fd == STDERR_FILENO ||
-	  fd == dir_fd))  {
+          fd == STDOUT_FILENO ||
+          fd == STDERR_FILENO ||
+          fd == dir_fd))  {
       close(fd);
     }
   }
-
-  PCHECK(closedir(d) == 0);
 }
 
 } // anonymous namespace
@@ -174,6 +211,10 @@ Status Subprocess::Start() {
     PCHECK(pipe2(child_stderr, O_CLOEXEC) == 0);
   }
 
+  DIR* fd_dir = NULL;
+  RETURN_NOT_OK_PREPEND(OpenProcFdDir(&fd_dir), "Unable to open fd dir");
+  shared_ptr<DIR> fd_dir_closer(fd_dir, CloseProcFdDir);
+
   int ret = fork();
   if (ret == -1) {
     return Status::RuntimeError("Unable to fork", ErrnoToString(errno), errno);
@@ -208,7 +249,7 @@ Status Subprocess::Start() {
     default: break;
     }
 
-    CloseNonStandardFDs();
+    CloseNonStandardFDs(fd_dir);
 
     // TODO: prctl(PR_SET_PDEATHSIG) is Linux-specific, look into portable ways
     // to prevent orphans when parent is killed.
