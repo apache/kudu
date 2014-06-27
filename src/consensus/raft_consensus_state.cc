@@ -482,9 +482,9 @@ void MajorityOperationStatus::Wait() {
 }
 
 MajorityOperationStatus::~MajorityOperationStatus() {
-  // TODO support some of the peers not getting back, but for now
-  // check that the operation IsDone()
-  DCHECK(IsDone());
+  if (!IsDone()) {
+    LOG(WARNING) << "Deleting incomplete Operation: " << ToString();
+  }
 }
 
 std::string MajorityOperationStatus::ToString() const {
