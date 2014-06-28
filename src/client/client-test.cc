@@ -836,7 +836,7 @@ TEST_F(ClientTest, TestAsyncFlushResponseAfterSessionDropped) {
   ASSERT_STATUS_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
   ASSERT_STATUS_OK(ApplyInsertToSession(session.get(), client_table_, 1, 1, "row"));
   Synchronizer s;
-  session->FlushAsync(s.callback());
+  session->FlushAsync(s.AsStatusCallback());
   session.reset();
   ASSERT_STATUS_OK(s.Wait());
 
@@ -846,7 +846,7 @@ TEST_F(ClientTest, TestAsyncFlushResponseAfterSessionDropped) {
   ASSERT_STATUS_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
   ASSERT_STATUS_OK(ApplyInsertToSession(session.get(), client_table_, 1, 1, "row"));
   ASSERT_EQ(1, session->CountBufferedOperations());
-  session->FlushAsync(s.callback());
+  session->FlushAsync(s.AsStatusCallback());
   ASSERT_EQ(0, session->CountBufferedOperations());
   session.reset();
   ASSERT_FALSE(s.Wait().ok());
@@ -1369,7 +1369,7 @@ TEST_F(ClientTest, TestReplicatedMultiTabletTableFailover) {
   Synchronizer sync;
   scoped_refptr<RemoteTablet> rt;
   client_->meta_cache_->LookupTabletByKey(table.get(), Slice(),
-                                          &rt, sync.callback());
+                                          &rt, sync.AsStatusCallback());
   ASSERT_STATUS_OK(sync.Wait());
   RemoteTabletServer *rts;
   ASSERT_STATUS_OK(client_->GetTabletServer(rt->tablet_id(),
@@ -1578,13 +1578,16 @@ TEST_F(ClientTest, TestMasterLookupPermits) {
 
 // Define callback for deadlock simulation, as well as various helper methods.
 namespace {
-  class DLSCallback {
+  class DLSCallback : public base::RefCountedThreadSafe<DLSCallback> {
   public:
     explicit DLSCallback(Atomic32* i)
       : i(i) {}
-    void operator()(const Status& s) {
+    void StatusCB(const Status& s) {
       CHECK_OK(s);
       NoBarrier_AtomicIncrement(i, 1);
+    }
+    StatusCallback AsStatusCallback() {
+      return base::Bind(&DLSCallback::StatusCB, this);
     }
   private:
     Atomic32* const i;
@@ -1697,8 +1700,12 @@ TEST_F(ClientTest, DISABLED_TestDeadlockSimulation) {
   NoBarrier_Store(&ctr1, 0);
   NoBarrier_Store(&ctr2, 0);
   for (int i = 0; i < kNumSessions; ++i) {
-    fwd_sessions[i]->FlushAsync(DLSCallback(&ctr1));
-    rev_sessions[i]->FlushAsync(DLSCallback(&ctr2));
+    DLSCallback* cb1 = new DLSCallback(&ctr1);
+    DLSCallback* cb2 = new DLSCallback(&ctr2);
+
+    // 'cb1' and 'cb2' will be freed after the callbacks are invoked.
+    fwd_sessions[i]->FlushAsync(cb1->AsStatusCallback());
+    rev_sessions[i]->FlushAsync(cb2->AsStatusCallback());
   }
 
   // Spin while waiting for ops to complete.

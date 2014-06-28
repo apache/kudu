@@ -36,17 +36,22 @@ using client::Update;
 
 namespace {
 
-  class CountingCallback {
+class CountingCallback : public base::RefCountedThreadSafe<CountingCallback> {
   public:
-    explicit CountingCallback(shared_ptr<client::KuduSession> session, Atomic32 *ctr)
-      : session_(session), ctr_(ctr) {
+    CountingCallback(shared_ptr<client::KuduSession> session, Atomic32 *ctr)
+      : session_(session),
+        ctr_(ctr) {
       base::subtle::NoBarrier_AtomicIncrement(ctr_, 1);
     }
 
-    void operator()(Status s) {
+    void StatusCB(const Status& s) {
       BatchFinished();
       CHECK_OK(s);
       base::subtle::NoBarrier_AtomicIncrement(ctr_, -1);
+    }
+
+    StatusCallback AsStatusCallback() {
+      return base::Bind(&CountingCallback::StatusCB, this);
     }
 
   private:
@@ -101,7 +106,10 @@ void RpcLineItemDAO::WriteLine(boost::function<void(PartialRow*)> f) {
   if (batch_size_ == batch_max_) {
     batch_size_ = 0;
     orders_in_request_.clear();
-    session_->FlushAsync(CountingCallback(session_, &semaphore_));
+    CountingCallback* cb = new CountingCallback(session_, &semaphore_);
+
+    // The callback object will free 'cb' after it is invoked.
+    session_->FlushAsync(cb->AsStatusCallback());
   }
 }
 
@@ -114,7 +122,10 @@ void RpcLineItemDAO::MutateLine(boost::function<void(PartialRow*)> f) {
   if (batch_size_ == batch_max_) {
     batch_size_ = 0;
     orders_in_request_.clear();
-    session_->FlushAsync(CountingCallback(session_, &semaphore_));
+    CountingCallback* cb = new CountingCallback(session_, &semaphore_);
+
+    // The callback object will free 'cb' after it is invoked.
+    session_->FlushAsync(cb->AsStatusCallback());
   }
 }
 

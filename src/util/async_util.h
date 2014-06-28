@@ -4,8 +4,8 @@
 #ifndef KUDU_UTIL_ASYNC_UTIL_H
 #define KUDU_UTIL_ASYNC_UTIL_H
 
-#include <boost/function.hpp>
-
+#include "gutil/bind.h"
+#include "gutil/callback.h"
 #include "gutil/macros.h"
 #include "util/status.h"
 #include "util/countdown_latch.h"
@@ -14,27 +14,7 @@ namespace kudu {
 
 // A callback which takes a Status. This is typically used for functions which
 // produce asynchronous results and may fail.
-typedef boost::function<void(const Status& status)> StatusCallback;
-
-// StatusCallback implementation which, upon completion, assigns the
-// result status to a variable and triggers a latch. Useful to convert
-// async functions which take StatusCallbacks into synchronous calls.
-class AssignStatusAndTriggerLatch {
- public:
-  AssignStatusAndTriggerLatch(Status* result_status, CountDownLatch* latch)
-    : result_status_(result_status),
-      latch_(latch) {
-  }
-
-  inline void operator()(const Status& status) {
-    *result_status_ = status;
-    latch_->CountDown();
-  }
-
- private:
-  Status* result_status_;
-  CountDownLatch* latch_;
-};
+typedef base::Callback<void(const Status& status)> StatusCallback;
 
 // Simple class which can be used to make async methods synchronous.
 // For example:
@@ -43,9 +23,20 @@ class AssignStatusAndTriggerLatch {
 //   CHECK_OK(s.Wait());
 class Synchronizer {
  public:
-  Synchronizer() : l(1) {}
-  inline StatusCallback callback() {
-    return AssignStatusAndTriggerLatch(&s, &l);
+  Synchronizer()
+    : l(1) {
+  }
+  void StatusCB(const Status& status) {
+    s = status;
+    l.CountDown();
+  }
+  StatusCallback AsStatusCallback() {
+    // Synchronizers are often declared on the stack, so it doesn't make
+    // sense for a callback to take a reference to its synchronizer.
+    //
+    // Note: this means the returned callback _must_ go out of scope before
+    // its synchronizer.
+    return base::Bind(&Synchronizer::StatusCB, base::Unretained(this));
   }
   Status Wait() {
     l.Wait();

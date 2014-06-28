@@ -23,7 +23,7 @@ TEST_F(DnsResolverTest, TestResolution) {
   Synchronizer s;
   {
     HostPort hp("localhost", 12345);
-    resolver_.ResolveAddresses(hp, &addrs, s.callback());
+    resolver_.ResolveAddresses(hp, &addrs, s.AsStatusCallback());
   }
   ASSERT_STATUS_OK(s.Wait());
   ASSERT_TRUE(!addrs.empty());

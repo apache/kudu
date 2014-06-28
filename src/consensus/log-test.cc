@@ -70,7 +70,7 @@ TEST_F(LogTest, TestMultipleEntriesInABatch) {
   LogEntryBatch* reserved_entry;
   ASSERT_STATUS_OK(log_->Reserve(&ops[0], 2, &reserved_entry));
   Synchronizer sync;
-  ASSERT_STATUS_OK(log_->AsyncAppend(reserved_entry, sync.callback()));
+  ASSERT_STATUS_OK(log_->AsyncAppend(reserved_entry, sync.AsStatusCallback()));
   ASSERT_STATUS_OK(sync.Wait());
 
   BuildLogReader();

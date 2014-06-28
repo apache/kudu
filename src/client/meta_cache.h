@@ -13,6 +13,7 @@
 #include "gutil/macros.h"
 #include "gutil/ref_counted.h"
 #include "server/metadata.pb.h"
+#include "util/async_util.h"
 #include "util/locks.h"
 #include "util/monotime.h"
 #include "util/semaphore.h"
@@ -43,12 +44,6 @@ namespace client {
 class KuduClient;
 class KuduTable;
 
-//typedef boost::function<void(const Status& status, const std::vector<Sockaddr>& addr)>
-//        ResolveAddressCallback;
-
-
-typedef boost::function<void(const Status& status)> StatusCallback;
-
 // The information cached about a given tablet server in the cluster.
 //
 // This class is thread-safe.
@@ -75,11 +70,11 @@ class RemoteTabletServer {
 
  private:
   // Internal callback for DNS resolution.
-  void DnsResolutionFinished(const Status &result_status,
-                             const HostPort& hp,
+  void DnsResolutionFinished(const HostPort& hp,
                              std::vector<Sockaddr>* addrs,
                              KuduClient* client,
-                             const StatusCallback& user_callback);
+                             const StatusCallback& user_callback,
+                             const Status &result_status);
 
   mutable simple_spinlock lock_;
   const std::string uuid_;

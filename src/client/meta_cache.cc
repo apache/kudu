@@ -46,11 +46,11 @@ RemoteTabletServer::RemoteTabletServer(const master::TSInfoPB& pb)
   Update(pb);
 }
 
-void RemoteTabletServer::DnsResolutionFinished(const Status &result_status,
-                                               const HostPort& hp,
+void RemoteTabletServer::DnsResolutionFinished(const HostPort& hp,
                                                vector<Sockaddr>* addrs,
                                                KuduClient* client,
-                                               const StatusCallback& user_callback) {
+                                               const StatusCallback& user_callback,
+                                               const Status &result_status) {
   gscoped_ptr<vector<Sockaddr> > scoped_addrs(addrs);
 
   Status s = result_status;
@@ -61,7 +61,7 @@ void RemoteTabletServer::DnsResolutionFinished(const Status &result_status,
 
   if (!s.ok()) {
     s = s.CloneAndPrepend("Failed to resolve address for TS " + uuid_);
-    user_callback(s);
+    user_callback.Run(s);
     return;
   }
 
@@ -72,7 +72,7 @@ void RemoteTabletServer::DnsResolutionFinished(const Status &result_status,
     boost::lock_guard<simple_spinlock> l(lock_);
     proxy_.reset(new TabletServerServiceProxy(client->messenger(), (*addrs)[0]));
   }
-  user_callback(s);
+  user_callback.Run(s);
 }
 
 void RemoteTabletServer::RefreshProxy(KuduClient* client,
@@ -85,7 +85,7 @@ void RemoteTabletServer::RefreshProxy(KuduClient* client,
     if (proxy_ && !force) {
       // Already have a proxy created.
       l.unlock();
-      cb(Status::OK());
+      cb.Run(Status::OK());
       return;
     }
 
@@ -97,8 +97,8 @@ void RemoteTabletServer::RefreshProxy(KuduClient* client,
 
   vector<Sockaddr>* addrs = new vector<Sockaddr>();
   client->dns_resolver()->ResolveAddresses(
-    hp, addrs, boost::bind(&RemoteTabletServer::DnsResolutionFinished,
-                           this, _1, hp, addrs, client, cb));
+    hp, addrs, base::Bind(&RemoteTabletServer::DnsResolutionFinished,
+                          base::Unretained(this), hp, addrs, client, cb));
 }
 
 void RemoteTabletServer::Update(const master::TSInfoPB& pb) {
@@ -298,13 +298,13 @@ void MetaCache::GetTableLocationsCb(InFlightLookup* ifl) {
     }
     LOG(WARNING) << "Failed to fetch tablet with start key " << ifl->key << ": "
         << s.ToString();
-    ifl->user_callback(s);
+    ifl->user_callback.Run(s);
     return;
   }
 
   if (ifl->resp.tablet_locations_size() == 0) {
     LOG(WARNING) << "Unable to find tablet with start key " << ifl->key;
-    ifl->user_callback(Status::NotFound("No tablet found"));
+    ifl->user_callback.Run(Status::NotFound("No tablet found"));
     return;
   }
 
@@ -352,7 +352,7 @@ void MetaCache::GetTableLocationsCb(InFlightLookup* ifl) {
   *ifl->remote_tablet = FindOrDie(tablets_by_id_,
                                   ifl->resp.tablet_locations(0).tablet_id());
   l.unlock();
-  ifl->user_callback(Status::OK());
+  ifl->user_callback.Run(Status::OK());
 }
 
 void MetaCache::SendRpc(InFlightLookup* ifl, const Status& s) {
@@ -368,7 +368,7 @@ void MetaCache::SendRpc(InFlightLookup* ifl, const Status& s) {
 
   if (!new_status.ok()) {
     gscoped_ptr<InFlightLookup> ifl_deleter(ifl); // delete on scope exit
-    ifl->user_callback(new_status);
+    ifl->user_callback.Run(new_status);
     return;
   }
 
@@ -415,7 +415,7 @@ void MetaCache::LookupTabletByKeyCb(const Status& abort_status,
   if (!abort_status.ok()) {
     LOG(WARNING) << "Rescheduled lookup failed: "
                  << abort_status.ToString();
-    callback(abort_status);
+    callback.Run(abort_status);
   } else {
     LookupTabletByKey(table, key, remote_tablet, callback);
   }
@@ -433,7 +433,7 @@ void MetaCache::LookupTabletByKey(const KuduTable* table,
     VLOG(3) << "Fast lookup: found tablet " << (*remote_tablet)->tablet_id()
                     << " for " << schema.DebugEncodedRowKey(key.ToString())
                     << " of " << table->name();
-    callback(Status::OK());
+    callback.Run(Status::OK());
     return;
   }
 

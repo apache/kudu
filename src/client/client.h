@@ -549,7 +549,7 @@ class KuduSession : public std::tr1::enable_shared_from_this<KuduSession> {
   // 'a' has completed or not.
   //
   // Note that this also means that, if FlushAsync is called twice in succession, with
-  // no intervening operationsthe second flush will return immediately. For example:
+  // no intervening operations, the second flush will return immediately. For example:
   //
   //    session->Insert(a);
   //    session->FlushAsync(callback_1); // called when 'a' is inserted
@@ -570,7 +570,7 @@ class KuduSession : public std::tr1::enable_shared_from_this<KuduSession> {
   // Return true if there are operations which have not yet been delivered to the
   // cluster. This may include buffered operations (i.e those that have not yet been
   // flushed) as well as in-flight operations (i.e those that are in the process of
-  // being sent to the servers). After calling Flush()
+  // being sent to the servers).
   // TODO: maybe "incomplete" or "undelivered" is clearer?
   //
   // This function is thread-safe.

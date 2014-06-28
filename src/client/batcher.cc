@@ -260,10 +260,10 @@ void Batcher::Abort() {
     MarkInFlightOpFailedUnlocked(op, Status::Aborted("Batch aborted"));
   }
 
-  if (flush_callback_) {
+  if (!flush_callback_.is_null()) {
     l.unlock();
 
-    flush_callback_(Status::Aborted(""));
+    flush_callback_.Run(Status::Aborted(""));
   }
 }
 
@@ -330,7 +330,7 @@ void Batcher::CheckForFinishedFlush() {
     s = Status::IOError("Some errors occurred");
   }
 
-  flush_callback_(s);
+  flush_callback_.Run(s);
 }
 
 void Batcher::FlushAsync(const StatusCallback& cb) {
@@ -373,13 +373,11 @@ Status Batcher::Add(gscoped_ptr<WriteOperation> write_op) {
   }
 
   // Increment our reference count for the outstanding callback.
-  AddRef();
   base::RefCountInc(&outstanding_lookups_);
   client_->meta_cache_->LookupTabletByKey(op->write_op->table(),
                                           op->key->encoded_key(),
                                           &op->tablet,
-                                          boost::bind(&Batcher::TabletLookupFinished, this,
-                                                      op, _1));
+                                          base::Bind(&Batcher::TabletLookupFinished, this, op));
   return Status::OK();
 }
 
@@ -415,7 +413,6 @@ void Batcher::MarkInFlightOpFailedUnlocked(InFlightOp* op, const Status& s) {
 }
 
 void Batcher::TabletLookupFinished(InFlightOp* op, const Status& s) {
-  ScopedRefReleaser<Batcher> releaser(this);
   base::RefCountDec(&outstanding_lookups_);
 
   // Acquire the batcher lock early to atomically:
@@ -483,9 +480,8 @@ void Batcher::TabletLookupFinished(InFlightOp* op, const Status& s) {
   if (needs_tsproxy_refresh) {
     // Even if we're not ready to flush, we should get the proxy ready
     // to go (eg DNS resolving the tablet server if it's not resolved).
-    AddRef();
     ts->RefreshProxy(client_,
-                     boost::bind(&Batcher::RefreshTSProxyFinished, this, ts, buf, _1),
+                     base::Bind(&Batcher::RefreshTSProxyFinished, this, ts, buf),
                      false);
   } else {
     FlushBuffersIfReady();
@@ -497,7 +493,6 @@ void Batcher::RefreshTSProxyFinished(RemoteTabletServer* ts, PerTSBuffer* buf,
   CHECK(status.ok()) << "Failed to refresh TS proxy. TODO: handle this";
   buf->SetProxyReady();
   FlushBuffersIfReady();
-  Release();
 }
 
 

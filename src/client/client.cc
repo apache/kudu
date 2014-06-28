@@ -437,7 +437,7 @@ Status KuduClient::GetTabletServer(const std::string& tablet_id,
                    selection == LEADER_ONLY ? "LEADER" : "replicas", tablet_id));
   }
   Synchronizer s;
-  ret->RefreshProxy(this, s.callback(), false);
+  ret->RefreshProxy(this, s.AsStatusCallback(), false);
   RETURN_NOT_OK(s.Wait());
 
   *ts = ret;
@@ -598,7 +598,7 @@ void KuduSession::SetTimeoutMillis(int millis) {
 
 Status KuduSession::Flush() {
   Synchronizer s;
-  FlushAsync(s.callback());
+  FlushAsync(s.AsStatusCallback());
   return s.Wait();
 }
 
@@ -885,7 +885,7 @@ Status KuduScanner::OpenTablet(const Slice& key) {
   Synchronizer sync;
   table_->client_->meta_cache_->LookupTabletByKey(table_,
                                                   key,
-                                                  &remote_, sync.callback());
+                                                  &remote_, sync.AsStatusCallback());
   RETURN_NOT_OK(sync.Wait());
 
   // Scan it.

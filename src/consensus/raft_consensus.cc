@@ -346,8 +346,10 @@ Status RaftConsensus::ReplicaCommitUnlocked(ConsensusRound* context,
   LogEntryBatch* reserved_entry_batch;
   RETURN_NOT_OK(log_->Reserve(&commit_op, 1, &reserved_entry_batch));
   // TODO: replace the FutureCallbacks in ConsensusContext with StatusCallbacks
+  //
+  // AsyncAppend takes ownership of 'ftscb'.
   RETURN_NOT_OK(log_->AsyncAppend(reserved_entry_batch,
-                                  FutureToStatusCallback(context->commit_callback())));
+                                  context->commit_callback()->AsStatusCallback()));
 
   state_->UpdateReplicaCommittedOpIdUnlocked(commit_op_id, committed_op_id);
   return Status::OK();
@@ -427,7 +429,7 @@ Status RaftConsensus::UpdateReplica(const ConsensusRequestPB* request,
       // Trigger the log append asap, if fsync() is on this might take a while
       // and we can't reply until this is done.
       CHECK_OK(log_->Reserve(&replicate_ops[0], replicate_ops.size(), &reserved_entry_batch));
-      CHECK_OK(log_->AsyncAppend(reserved_entry_batch, log_synchronizer.callback()));
+      CHECK_OK(log_->AsyncAppend(reserved_entry_batch, log_synchronizer.AsStatusCallback()));
     }
 
     // Trigger the replica Prepares() and Apply()s.

@@ -132,7 +132,7 @@ Status LocalConsensus::Replicate(ConsensusRound* context) {
   // When the Log actually fsync()s this message to disk, 'repl_callback'
   // is triggered.
   RETURN_NOT_OK(log_->AsyncAppend(reserved_entry_batch,
-                                  FutureToStatusCallback(context->replicate_callback())));
+                                  context->replicate_callback()->AsStatusCallback()));
 
   return Status::OK();
 }
@@ -180,7 +180,7 @@ Status LocalConsensus::Commit(ConsensusRound* round) {
   // When the Log actually fsync()s this message to disk, 'commit_clbk'
   // is triggered.
   RETURN_NOT_OK(log_->AsyncAppend(reserved_entry_batch,
-                                  FutureToStatusCallback(commit_clbk)));
+                                  commit_clbk->AsStatusCallback()));
   return Status::OK();
 }
 

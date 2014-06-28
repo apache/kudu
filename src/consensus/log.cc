@@ -23,7 +23,7 @@
 #include "util/stopwatch.h"
 
 DEFINE_int32(group_commit_queue_size_bytes, 4 * 1024 * 1024,
-             "Maxmimum size of the group commit queue in bytes");
+             "Maximum size of the group commit queue in bytes");
 
 static const char kSegmentPlaceholderFileTemplate[] = ".tmp.newsegmentXXXXXX";
 
@@ -105,7 +105,9 @@ void Log::AppendThread::RunThread() {
         // abort all subsequent transactions in this batch or allow
         // them to be appended? What about transactions in future
         // batches?
-        entry_batch->callback()(s);
+        if (!entry_batch->callback().is_null()) {
+          entry_batch->callback().Run(s);
+        }
       }
     }
 
@@ -114,16 +116,16 @@ void Log::AppendThread::RunThread() {
       LOG(ERROR) << "Error syncing log" << s.ToString();
       DLOG(FATAL) << "Aborting: " << s.ToString();
       BOOST_FOREACH(LogEntryBatch* entry_batch, entry_batches) {
-        if (entry_batch->callback() != NULL) {
-          entry_batch->callback()(s);
+        if (!entry_batch->callback().is_null()) {
+          entry_batch->callback().Run(s);
         }
       }
     } else {
       VLOG(2) << "Synchronized " << entry_batches.size() << " entry batches";
       BOOST_FOREACH(LogEntryBatch* entry_batch, entry_batches) {
         if (PREDICT_TRUE(!entry_batch->failed_to_append()
-                         && entry_batch->callback() != NULL)) {
-          entry_batch->callback()(Status::OK());
+                         && !entry_batch->callback().is_null())) {
+          entry_batch->callback().Run(Status::OK());
         }
       }
     }
@@ -524,7 +526,7 @@ Status Log::WaitUntilAllFlushed() {
   LogEntryBatch* reserved_entry_batch;
   RETURN_NOT_OK(DoReserve(entry_batch.Pass(), &reserved_entry_batch));
   Synchronizer s;
-  RETURN_NOT_OK(AsyncAppend(reserved_entry_batch, s.callback()));
+  RETURN_NOT_OK(AsyncAppend(reserved_entry_batch, s.AsStatusCallback()));
   return s.Wait();
 }
 

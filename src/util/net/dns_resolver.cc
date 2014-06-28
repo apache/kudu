@@ -28,7 +28,7 @@ DnsResolver::~DnsResolver() {
 namespace {
 static void DoResolution(const HostPort &hostport, vector<Sockaddr>* addresses,
                          StatusCallback cb) {
-  cb(hostport.ResolveAddresses(addresses));
+  cb.Run(hostport.ResolveAddresses(addresses));
 }
 } // anonymous namespace
 
@@ -37,7 +37,7 @@ void DnsResolver::ResolveAddresses(const HostPort& hostport,
                                    const StatusCallback& cb) {
   Status s = pool_->SubmitFunc(boost::bind(&DoResolution, hostport, addresses, cb));
   if (!s.ok()) {
-    cb(s);
+    cb.Run(s);
   }
 }
 
