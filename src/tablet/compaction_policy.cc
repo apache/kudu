@@ -130,6 +130,16 @@ struct KnapsackTraits {
   }
 };
 
+// Dereference-then-compare comparator
+template<class Compare>
+struct DerefCompare {
+  template<class T>
+  bool operator()(T* a, T* b) const {
+    static const Compare comp = Compare();
+    return comp(*a, *b);
+  }
+};
+
 // Incremental calculator for the upper bound on a knapsack solution,
 // given a set of items. The upper bound is computed by solving the
 // simpler "fractional knapsack problem" -- i.e the related problem
@@ -153,18 +163,18 @@ class UpperBoundCalculator {
   }
 
   void Add(const RowSetInfo& candidate) {
-    fractional_solution_.push_back(candidate);
+    fractional_solution_.push_back(&candidate);
     std::push_heap(fractional_solution_.begin(), fractional_solution_.end(),
-                   CompareByDescendingDensity());
+                   DerefCompare<CompareByDescendingDensity>());
 
     total_weight_ += candidate.size_mb();
     total_value_ += candidate.width();
-    const RowSetInfo& top = fractional_solution_.front();
+    const RowSetInfo& top = *fractional_solution_.front();
     if (total_weight_ - top.size_mb() >= max_weight_) {
       total_weight_ -= top.size_mb();
       total_value_ -= top.width();
       std::pop_heap(fractional_solution_.begin(), fractional_solution_.end(),
-                    CompareByDescendingDensity());
+                    DerefCompare<CompareByDescendingDensity>());
       fractional_solution_.pop_back();
     }
   }
@@ -177,7 +187,7 @@ class UpperBoundCalculator {
       return total_value_;
     }
 
-    const RowSetInfo& top = fractional_solution_.front();
+    const RowSetInfo& top = *fractional_solution_.front();
     double fraction_of_top_to_remove = static_cast<double>(excess_weight) / top.size_mb();
     DCHECK_GT(fraction_of_top_to_remove, 0);
     return total_value_ - fraction_of_top_to_remove * top.width();
@@ -191,7 +201,9 @@ class UpperBoundCalculator {
 
  private:
 
-  vector<RowSetInfo> fractional_solution_;
+  // Store pointers to RowSetInfo rather than whole copies in order
+  // to allow for fast swapping in the heap.
+  vector<const RowSetInfo*> fractional_solution_;
   int total_weight_;
   double total_value_;
   int max_weight_;
