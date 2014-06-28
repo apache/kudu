@@ -30,7 +30,7 @@ void SnakeToCamelCase(const std::string &snake_case,
       camel_case->push_back(c);
     }
     uppercase_next = false;
-  };
+  }
 }
 
 void ToUpperCase(const std::string &string,
@@ -41,7 +41,7 @@ void ToUpperCase(const std::string &string,
 
   for (int i = 0; i < out->size(); i++) {
     (*out)[i] = toupper((*out)[i]);
-  };
+  }
 }
 
 } // namespace kudu

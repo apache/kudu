@@ -194,7 +194,7 @@ bool CompareByRole(const QuorumPeerPB& a, const QuorumPeerPB& b) {
     }
   }
   return false;
-};
+}
 
 } // anonymous namespace
 

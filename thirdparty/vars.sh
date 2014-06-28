@@ -57,7 +57,7 @@ SQUEASEL_DIR=$TP_DIR/squeasel-${SQUEASEL_VERSION}
 
 # SVN revision of google style guide:
 # https://code.google.com/p/google-styleguide/source/list
-GSG_REVISION=110
+GSG_REVISION=134
 GSG_DIR=$TP_DIR/google-styleguide-r${GSG_REVISION}
 
 GCOVR_VERSION=3.0
