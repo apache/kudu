@@ -3,6 +3,8 @@
 
 #include <string>
 #include <tr1/memory>
+#include <sys/types.h>
+#include <fcntl.h>
 
 #include <glog/logging.h>
 #include <gtest/gtest.h>
@@ -23,6 +25,35 @@ using std::tr1::shared_ptr;
 static const uint32_t kOneMb = 1024 * 1024;
 
 class TestEnv : public KuduTest {
+ public:
+  virtual void SetUp() OVERRIDE {
+    KuduTest::SetUp();
+    CheckFallocateSupport();
+  }
+
+  // Verify that fallocate() is supported in the test directory.
+  // Some local file systems like ext3 do not support it, and we don't
+  // want to fail tests on those systems.
+  //
+  // Sets fallocate_supported_ based on the result.
+  void CheckFallocateSupport() {
+    static bool checked = false;
+    if (checked) return;
+
+    int fd = open(GetTestPath("check-fallocate").c_str(), O_WRONLY | O_CREAT);
+    PCHECK(fd >= 0);
+    int err = fallocate(fd, 0, 0, 4096);
+    if (err != 0) {
+      PCHECK(errno == ENOTSUP);
+      fallocate_supported_ = false;
+    } else {
+      fallocate_supported_ = true;
+    }
+    close(fd);
+
+    checked = true;
+  }
+
  protected:
 
   void VerifyTestData(const Slice& read_data, size_t offset) {
@@ -214,18 +245,29 @@ class TestEnv : public KuduTest {
   void DoTestAppendVector(const WritableFileOptions& opts) {
     LOG(INFO) << "Testing AppendVector() with mmap "
               << (opts.mmap_file ? "enabled" : "disabled");
-
-    LOG(INFO) << "Testing AppendVector() only, WITH pre-allocation";
-    ASSERT_NO_FATAL_FAILURE(TestAppendVector(2000, 1024, 5, true, true, opts));
     LOG(INFO) << "Testing AppendVector() only, NO pre-allocation";
     ASSERT_NO_FATAL_FAILURE(TestAppendVector(2000, 1024, 5, true, false, opts));
-    LOG(INFO) << "Testing AppendVector() together with Append() and Read(), WITH pre-allocation";
-    ASSERT_NO_FATAL_FAILURE(TestAppendVector(128, 4096, 5, false, true, opts));
+
+    if (!fallocate_supported_) {
+      LOG(INFO) << "fallocate not supported, skipping preallocated runs";
+    } else {
+      LOG(INFO) << "Testing AppendVector() only, WITH pre-allocation";
+      ASSERT_NO_FATAL_FAILURE(TestAppendVector(2000, 1024, 5, true, true, opts));
+      LOG(INFO) << "Testing AppendVector() together with Append() and Read(), WITH pre-allocation";
+      ASSERT_NO_FATAL_FAILURE(TestAppendVector(128, 4096, 5, false, true, opts));
+    }
   }
+
+  static bool fallocate_supported_;
 };
 
+bool TestEnv::fallocate_supported_ = false;
 
 TEST_F(TestEnv, TestPreallocate) {
+  if (!fallocate_supported_) {
+    LOG(INFO) << "fallocate not supported, skipping test";
+    return;
+  }
   WritableFileOptions opts;
   opts.mmap_file = true;
   ASSERT_NO_FATAL_FAILURE(DoTestPreallocate(opts));
@@ -237,6 +279,10 @@ TEST_F(TestEnv, TestPreallocate) {
 // mmapped regions grow in size until 2MBs (so smaller pre-allocations will easily
 // be smaller than the mmapped regions size).
 TEST_F(TestEnv, TestConsecutivePreallocate) {
+  if (!fallocate_supported_) {
+    LOG(INFO) << "fallocate not supported, skipping test";
+    return;
+  }
   WritableFileOptions opts;
   opts.mmap_file = true;
   ASSERT_NO_FATAL_FAILURE(DoTestConsecutivePreallocate(opts));
