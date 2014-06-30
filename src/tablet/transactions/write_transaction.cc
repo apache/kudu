@@ -321,6 +321,11 @@ void WriteTransactionState::commit() {
     component_lock_.unlock();
   }
   release_row_locks();
+
+  // Make the request NULL since after this transaction commits
+  // the request may be deleted at any moment.
+  request_ = NULL;
+  response_ = NULL;
 }
 
 void WriteTransactionState::release_row_locks() {

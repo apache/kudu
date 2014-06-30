@@ -72,7 +72,12 @@ class AlterSchemaTransactionState : public TransactionState {
     }
   }
 
+  // Note: request_ and response_ are set to NULL after this method returns.
   void commit() {
+    // Make the request NULL since after this transaction commits
+    // the request may be deleted at any moment.
+    request_ = NULL;
+    response_ = NULL;
     release_component_lock();
   }
 

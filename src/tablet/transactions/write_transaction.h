@@ -144,6 +144,8 @@ class WriteTransactionState : public TransactionState {
   // Commits the Mvcc transaction and releases the component lock. After
   // this method is called all the inserts and mutations will become
   // visible to other transactions.
+  //
+  // Note: request_ and response_ are set to NULL after this method returns.
   void commit();
 
   // Adds a PreparedRowWrite to be managed by this transaction context, as
