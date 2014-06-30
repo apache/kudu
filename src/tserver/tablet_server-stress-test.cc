@@ -33,6 +33,10 @@ class TSStressTest : public TabletServerTest {
                                   2);
     histogram_ = hist_proto.Instantiate(ts_test_metric_context_);
 
+    if (FLAGS_num_inserts_per_thread == 0) {
+      FLAGS_num_inserts_per_thread = AllowSlowTests() ? 100000 : 1000;
+    }
+
     // Re-enable the maintenance manager which is disabled by default
     // in TS tests. We want to stress the whole system including
     // flushes, etc.
@@ -68,10 +72,6 @@ void TSStressTest::InserterThread(int thread_idx) {
   start_latch_.Wait();
 
   uint64_t max_rows = FLAGS_num_inserts_per_thread;
-  if (FLAGS_num_inserts_per_thread == 0) {
-    max_rows = AllowSlowTests() ? 100000 : 1000;
-  }
-
   int start_row = thread_idx * max_rows;
   for (int i = start_row; i < start_row + max_rows ; i++) {
     MonoTime before = MonoTime::Now(MonoTime::FINE);

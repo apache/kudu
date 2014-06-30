@@ -31,6 +31,7 @@ NO_OVERLAP=NoOverlap
 
 MEMROWSET_BENCH=MemRowSetBenchmark
 TS_INSERT_LATENCY=TabletServerInsertLatency
+TS_8THREAD_BENCH=TabletServer8Threads
 INSERT=Insert
 SCAN_NONE_COMMITTED=ScanNoneCommitted
 SCAN_ALL_COMMITTED=ScanAllCommitted
@@ -184,6 +185,12 @@ run_benchmarks() {
       --single_threaded_insert_latency_bench_warmup_rows=1000 \
       --single_threaded_insert_latency_bench_insert_rows=10000 &> $LOGDIR/${TS_INSERT_LATENCY}$i.log
   done
+
+  # Run multi-threaded TS insert benchmark
+  for i in $(seq 1 $NUM_SAMPLES) ; do
+    KUDU_ALLOW_SLOW_TESTS=1 build/latest/tablet_server-stress-test \
+      --num_inserts_per_thread=30000 &> $LOGDIR/${TS_8THREAD_BENCH}$i.log
+  done
 }
 
 parse_and_record_all_results() {
@@ -273,6 +280,20 @@ parse_and_record_all_results() {
       record_result $BUILD_IDENTIFIER ${TS_INSERT_LATENCY}_$metric $i $val
     done
   done
+
+  # parse latency and throughput numbers from multi-threaded tserver benchmark
+  for i in $(seq 1 $NUM_SAMPLES); do
+    local log=$LOGDIR/${TS_8THREAD_BENCH}$i.log
+    for metric in min mean percentile_95 percentile_99 percentile_99_9 ; do
+      val=$(grep "\"$metric\": " $log | awk '{print $2}' | sed -e 's/,//')
+      record_result $BUILD_IDENTIFIER ${TS_8THREAD_BENCH}_${metric}_latency $i $val
+    done
+    rate=$(grep -o 'Throughput.*' $log | awk '{print $2}')
+    record_result $BUILD_IDENTIFIER ${TS_8THREAD_BENCH}_throughput_wall $i $rate
+    rate=$(grep -o 'CPU efficiency.*' $log | awk '{print $3}')
+    record_result $BUILD_IDENTIFIER ${TS_8THREAD_BENCH}_throughput_cpu $i $rate
+  done
+
   popd
   popd
 }
@@ -334,6 +355,9 @@ load_stats_and_generate_plots() {
   load_and_generate_plot $RPC_BENCH_TEST rpc-bench-test
 
   load_and_generate_plot "${TS_INSERT_LATENCY}%" ts-insert-latency
+
+  load_and_generate_plot "${TS_8THREAD_BENCH}%_latency" ts-8thread-insert-latency
+  load_and_generate_plot "${TS_8THREAD_BENCH}%_throughput_%" ts-8thread-insert-throughput
 
   # Generate all the pngs for all the mt-tablet tests
   for i in {0..9}; do
