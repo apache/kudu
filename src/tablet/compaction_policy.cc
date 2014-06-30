@@ -83,16 +83,6 @@ Status SizeRatioCompactionPolicy::PickRowSets(const RowSetTree &tree,
 // BudgetedCompactionPolicy
 ////////////////////////////////////////////////////////////
 
-namespace {
-
-struct CompareByDescendingDensity {
-  bool operator()(const RowSetInfo& a, const RowSetInfo& b) const {
-    return a.density() > b.density();
-  }
-};
-
-} // anonymous namespace
-
 BudgetedCompactionPolicy::BudgetedCompactionPolicy(int budget)
   : size_budget_mb_(budget) {
   CHECK_GT(budget, 0);
@@ -118,6 +108,14 @@ void BudgetedCompactionPolicy::SetupKnapsackInput(const RowSetTree &tree,
     return;
   }
 }
+
+namespace {
+
+struct CompareByDescendingDensity {
+  bool operator()(const RowSetInfo& a, const RowSetInfo& b) const {
+    return a.density() > b.density();
+  }
+};
 
 struct KnapsackTraits {
   typedef RowSetInfo item_type;
@@ -208,6 +206,8 @@ class UpperBoundCalculator {
   double total_value_;
   int max_weight_;
 };
+
+} // anonymous namespace
 
 Status BudgetedCompactionPolicy::PickRowSets(const RowSetTree &tree,
                                              unordered_set<RowSet*>* picked) {
