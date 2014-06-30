@@ -34,6 +34,7 @@ message AppStatusPB {
     TIMED_OUT = 14;
     UNINITIALIZED = 15;
     CONFIGURATION_ERROR = 16;
+    INCOMPLETE = 17;
     UNKNOWN_ERROR = 999;
   }
 

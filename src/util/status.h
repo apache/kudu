@@ -138,6 +138,10 @@ class Status {
                                    int16_t posix_code = -1) {
     return Status(kConfigurationError, msg, msg2, posix_code);
   }
+  static Status Incomplete(const Slice& msg, const Slice& msg2 = Slice(),
+                           int64_t posix_code = -1) {
+    return Status(kIncomplete, msg, msg2, posix_code);
+  }
 
   // Returns true iff the status indicates success.
   bool ok() const { return (state_ == NULL); }
@@ -190,6 +194,9 @@ class Status {
   // Returns true iff the status indicates Configuration error.
   bool IsConfigurationError() const { return code() == kConfigurationError; }
 
+  // Returns true iff the status indicates Incomplete.
+  bool IsIncomplete() const { return code() == kIncomplete; }
+
   // Return a string representation of this status suitable for printing.
   // Returns the string "OK" for success.
   std::string ToString() const;
@@ -240,7 +247,9 @@ class Status {
     kTimedOut = 14,
     kUninitialized = 15,
     kConfigurationError = 16,
-    // NOTE: Remember to duplicate these constants into wire_protocol.proto and wire_protocol.cc!
+    kIncomplete = 17,
+    // NOTE: Remember to duplicate these constants into wire_protocol.proto and
+    // and to add StatusTo/FromPB ser/deser cases in wire_protocol.cc !
     //
     // TODO: Move error codes into an error_code.proto or something similar.
   };

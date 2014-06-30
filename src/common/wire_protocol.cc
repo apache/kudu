@@ -58,6 +58,8 @@ void StatusToPB(const Status& status, AppStatusPB* pb) {
     pb->set_code(AppStatusPB::UNINITIALIZED);
   } else if (status.IsConfigurationError()) {
     pb->set_code(AppStatusPB::CONFIGURATION_ERROR);
+  } else if (status.IsIncomplete()) {
+    pb->set_code(AppStatusPB::INCOMPLETE);
   } else {
     LOG(WARNING) << "Unknown error code translation from internal error "
                  << status.ToString() << ": sending UNKNOWN_ERROR";
@@ -117,6 +119,8 @@ Status StatusFromPB(const AppStatusPB& pb) {
       return Status::Uninitialized(pb.message(), "", posix_code);
     case AppStatusPB::CONFIGURATION_ERROR:
       return Status::ConfigurationError(pb.message(), "", posix_code);
+    case AppStatusPB::INCOMPLETE:
+      return Status::Incomplete(pb.message(), "", posix_code);
     case AppStatusPB::UNKNOWN_ERROR:
     default:
       LOG(WARNING) << "Unknown error code in status: " << pb.ShortDebugString();

@@ -96,6 +96,9 @@ std::string Status::CodeAsString() const {
     case kConfigurationError:
       type = "Configuration error";
       break;
+    case kIncomplete:
+      type = "Incomplete";
+      break;
     default:
       snprintf(tmp, sizeof(tmp), "Unknown code(%d)",
                static_cast<int>(code()));
