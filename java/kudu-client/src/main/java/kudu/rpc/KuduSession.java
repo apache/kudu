@@ -511,7 +511,7 @@ public class KuduSession implements SessionConfiguration {
         return Deferred.fromResult(null);
       }
       Deferred<Tserver.WriteResponsePB> batchDeferred = batch.getDeferred();
-      batchDeferred.addBoth(new OpInFlightCallback(tablet));
+      batchDeferred.addCallbacks(getOpInFlightCallback(tablet), getOpInFlightErrback(tablet));
       Deferred<Tserver.WriteResponsePB> oldBatch = operationsInFlight.put(tablet, batchDeferred);
       assert (oldBatch == null);
       if (currentTimeout != 0) {
@@ -547,21 +547,37 @@ public class KuduSession implements SessionConfiguration {
 
   /**
    * Simple callback that removes the tablet from the in flight operations map once it completed.
-   * TODO we're not handling errors.
    */
-  class OpInFlightCallback implements Callback<Tserver.WriteResponsePB, Tserver.WriteResponsePB> {
-    private final Slice tablet;
-    public OpInFlightCallback(Slice tablet) {
-      this.tablet = tablet;
-    }
-
-    @Override
-    public Tserver.WriteResponsePB call(Tserver.WriteResponsePB o) throws Exception {
-      synchronized (KuduSession.this) {
-        LOG.trace("Unmarking this tablet as in flight: " + Bytes.getString(tablet));
-        operationsInFlight.remove(tablet);
+  private Callback<Tserver.WriteResponsePB, Tserver.WriteResponsePB>
+      getOpInFlightCallback(final Slice tablet) {
+    return new Callback<Tserver.WriteResponsePB, Tserver.WriteResponsePB>() {
+      @Override
+      public Tserver.WriteResponsePB call(Tserver.WriteResponsePB o) throws Exception {
+        tabletInFlightDone(tablet);
+        return o;
       }
-      return o;
+    };
+  }
+
+  /**
+   * We need a separate callback for errors since the generics are different. We still remove the
+   * tablet from the in flight operations since there's nothing we can do about it,
+   * and by returning the Exception we will bubble it up to the user.
+   */
+  private Callback<Exception, Exception> getOpInFlightErrback(final Slice tablet) {
+    return new Callback<Exception, Exception>() {
+      @Override
+      public Exception call(Exception e) throws Exception {
+        tabletInFlightDone(tablet);
+        return e;
+      }
+    };
+  }
+
+  private void tabletInFlightDone(Slice tablet) {
+    synchronized (KuduSession.this) {
+      LOG.trace("Unmarking this tablet as in flight: " + Bytes.getString(tablet));
+      operationsInFlight.remove(tablet);
     }
   }
 
