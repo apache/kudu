@@ -27,8 +27,6 @@ using std::vector;
 namespace kudu {
 namespace tablet {
 
-const double RowSetInfo::kEpsilon = 0.0001;
-
 namespace {
 
 // Less-than comparison by minimum key (both by actual key slice and cdf)
@@ -275,9 +273,8 @@ string RowSetInfo::ToString() const {
 }
 
 bool RowSetInfo::Intersects(const RowSetInfo &other) const {
-  // TODO epsilon needed?
-  if (other.cdf_min_key() + RowSetInfo::kEpsilon > cdf_max_key()) return false;
-  if (other.cdf_max_key() - RowSetInfo::kEpsilon < cdf_min_key()) return false;
+  if (other.cdf_min_key() > cdf_max_key()) return false;
+  if (other.cdf_max_key() < cdf_min_key()) return false;
   return true;
 }
 

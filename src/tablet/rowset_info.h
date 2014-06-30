@@ -18,8 +18,6 @@ class RowSetTree;
 // Class is immutable.
 class RowSetInfo {
  public:
-  // error on cdf bounds
-  static const double kEpsilon;
 
   // Appends the rowsets in no order without the cdf values set.
   static void Collect(const RowSetTree& tree, std::vector<RowSetInfo>* rsvec,
@@ -53,7 +51,11 @@ class RowSetInfo {
 
   std::string ToString() const;
 
-  // Return true if this candidate overlaps the other candidate in key space.
+  // Return true if this candidate overlaps the other candidate in
+  // the computed cdf interval. To check intersection in key space,
+  // use this instance's rowset()->GetBounds().
+  // The two intersection results may not agree because of floating
+  // point error in the cdf calculation.
   bool Intersects(const RowSetInfo& other) const;
 
  private:

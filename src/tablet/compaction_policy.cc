@@ -312,7 +312,7 @@ Status BudgetedCompactionPolicy::PickRowSets(const RowSetTree &tree,
       ab_max = std::max(item.cdf_max_key(), ab_max);
       DCHECK_GE(ab_max, ab_min);
       double solution = best_value - (ab_max - ab_min) * kSupportAdjust;
-      DCHECK_LT(solution, upper_bound + RowSetInfo::kEpsilon);
+      DCHECK_LE(solution, upper_bound + 0.0001);
 
       if (solution > best_optimal) {
         solver.TracePath(best_with_this_item, &chosen_indexes);
