@@ -157,7 +157,7 @@ uint64_t TransactionTracker::NumWriteTransactionsInFlight() const {
 
 uint64_t TransactionTracker::NumAlterSchemaTransactionsInFlight() const {
   boost::lock_guard<simple_spinlock> l(lock_);
-  return txns_in_flight_.all_transactions_inflight;
+  return txns_in_flight_.alter_schema_transactions_inflight;
 }
 
 uint64_t TransactionTracker::NumChangeConfigTransactionsInFlight() const {
