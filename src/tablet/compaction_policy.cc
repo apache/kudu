@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "gutil/map-util.h"
+#include "gutil/mathlimits.h"
 #include "tablet/rowset.h"
 #include "tablet/rowset_info.h"
 #include "tablet/rowset_tree.h"
@@ -157,10 +158,16 @@ class UpperBoundCalculator {
   explicit UpperBoundCalculator(int max_weight)
     : total_weight_(0),
       total_value_(0),
-      max_weight_(max_weight) {
+      max_weight_(max_weight),
+      topdensity_(MathLimits<double>::kNegInf) {
   }
 
   void Add(const RowSetInfo& candidate) {
+    // No need to add if less dense than the top and have no more room
+    if (total_weight_ >= max_weight_ &&
+        candidate.density() <= topdensity_)
+      return;
+
     fractional_solution_.push_back(&candidate);
     std::push_heap(fractional_solution_.begin(), fractional_solution_.end(),
                    DerefCompare<CompareByDescendingDensity>());
@@ -175,6 +182,7 @@ class UpperBoundCalculator {
                     DerefCompare<CompareByDescendingDensity>());
       fractional_solution_.pop_back();
     }
+    topdensity_ = fractional_solution_.front()->density();
   }
 
   // Compute the upper-bound to the 0-1 knapsack problem with the elements
@@ -205,6 +213,7 @@ class UpperBoundCalculator {
   int total_weight_;
   double total_value_;
   int max_weight_;
+  double topdensity_;
 };
 
 } // anonymous namespace
