@@ -1,17 +1,14 @@
-// Copyright (c) 2013, Cloudera, inc.
+// Copyright (c) 2014, Cloudera, inc.
 
-var gauges = [];
+var charts = [];
 var last_value = [];
-var max_value = [];
-var span_ids = [];
 var last_update = Date.now();
-var num_gauges = 0;
+var num_charts = 0;
 
 // TODO allow setting this from the UI, e.g., add a pick-and-choose
 // dialog box, or let a user click an 'x' next to a metric to delete
 // it from the view.
-var url_params = urlParams();
-var metrics_uri = makeMetricsUri();
+var metrics_uri = makeMetricsUri(urlParams());
 
 var MAX_SCALE_FACTOR = 1;
 
@@ -35,8 +32,10 @@ function urlParams() {
   return query_params;
 }
 
-function makeMetricsUri() {
+function makeMetricsUri(url_params) {
   var BASE_METRICS_URI = "/jsonmetricz";
+
+  url_params['detailed_metrics'] = '*';
 
   var components = [];
   for (var key in url_params) {
@@ -47,6 +46,7 @@ function makeMetricsUri() {
     }
     components.push(component);
   }
+
   var ret = BASE_METRICS_URI;
   if (components.length > 0) {
     ret += '?' + components.join('&');
@@ -54,30 +54,11 @@ function makeMetricsUri() {
   return ret;
 }
 
-function generateConfig(name, label, min, max) {
-  var config = {
-    size: 250,
-    label: "",
-    min: (min === undefined) ? 0 : min,
-    max: (max === undefined || max === 0) ? 1 : max,
-    minorTicks: 5
-  }
+function createChart(name, label, type, initial_data, raw_data) {
+  var span_id = 'chart_' + num_charts++;
 
-  var range = config.max - config.min;
-  config.yellowZones = [{ from: config.min + range*0.75, to: config.min + range*0.9 }];
-  config.redZones = [{ from: config.min + range*0.9, to: config.max }];
-
-  return config;
-}
-
-function createGauge(name, label, min, max) {
-  var config = generateConfig(name, label, min, max);
-
-  var span_id = 'gauge_' + num_gauges++;
-  span_ids[name] = span_id;
-
-  var div = d3.select('#gauges').append('div');
-  div.attr('class', 'gauge-container');
+  var div = d3.select('#metrics').append('div');
+  div.attr('class', 'metrics-container');
 
   var name_elem = div.append('div');
   name_elem.attr('class', 'metric-name');
@@ -85,55 +66,70 @@ function createGauge(name, label, min, max) {
 
   var display_elem = div.append('div');
   display_elem.attr('id', span_id);
-  display_elem.attr('class', 'metric-gauge-display');
+  display_elem.attr('class', 'epoch category10');
+  display_elem.attr('style', 'height: 100px;');
 
   var label_elem = div.append('div');
   label_elem.attr('class', 'metric-label');
   label_elem.html(label);
 
-  gauges[name] = new Gauge(span_id, config);
-  gauges[name].render();
-}
+  div.append('hr');
 
-// Allow for resetting the max over time.
-function reconfigureGauge(name, label, min, max) {
-  var config = generateConfig(name, label, min, max);
-  if (name in gauges) {
-    gauges[name].configure(config);
-    // Clear the existing rendering, we have to render a whole new gauge.
-    d3.select('#' + span_ids[name]).html("");
-    gauges[name].render();
+  var data = [
+    {
+      'label': "foo",
+      'values': [ initial_data ]
+    }
+  ];
+
+  if (type == 'histogram') {
+    charts[name] = $('#' + span_id).epoch({
+      type: 'time.heatmap',
+      data: data,
+      axes: ['right', 'bottom', 'left'],
+      bucketRange: [raw_data['min'], raw_data['percentile_99_9']],
+      buckets: 20,
+      ticks: { 'time': 3 },
+    });
+  } else {
+    charts[name] = $('#' + span_id).epoch({
+      type: 'time.line',
+      data: data,
+      axes: ['right', 'bottom', 'left'],
+      ticks: { 'y': 3, 'time': 3 },
+    });
   }
 }
 
-function updateGauges(json, error) {
+function updateCharts(json, error) {
   if (error) return console.warn(error);
   if (! json) {
     // Unclear why, but sometimes we seem to get a null
     // here.
     console.warn("null JSON response");
     setTimeout(function() {
-      d3.json(metrics_uri, updateGauges);
+      d3.json(metrics_uri, updateCharts);
     }, 1000);
     return;
   }
 
   var now = Date.now();
   var delta_time = now - last_update;
+  var extra = {};
 
   json['metrics'].forEach(function(m) {
+    var extra = m;
     var name = m['name'];
     var type = m['type'];
     var unit = m['unit'];
     var label = m['description'];
 
-    var display_value = 0;
+    var data =  { 'time': now / 1000 };
 
     var first_run = false;
-    if (!(name in gauges)) {
+    if (!(name in charts)) {
       first_run = true;
       last_value[name] = 0;
-      max_value[name] = 0;
     }
 
     // For counters, we display a rate
@@ -147,45 +143,61 @@ function updateGauges(json, error) {
         var delta_value = cur_value - last_value[name];
         last_value[name] = cur_value;
         var rate = delta_value / delta_time * 1000;
-        display_value = rate;
+
+        data['y'] = rate;
       }
 
-    // For gauges, we simply display the value.
+    // For charts, we simply display the value.
     } else if (type == "gauge") {
-      display_value = m['value'];
+      data['y'] = m['value'];
 
-    // For histograms, we display the 99th percentile (and max).
     } else if (type == "histogram") {
-      label += "<br>(shown: 99th percentile)";
-      display_value = m['percentile_99'];
+      // For histograms, we display a heat map
 
-    // For non-special-cased stuff just print the value field as well, if available.
+      if (first_run) {
+        last_value[name] = {};
+      }
+
+      var values = m['values'];
+      var counts = m['counts'];
+      if (! values) { values = []; }
+      if (! counts) { counts = []; }
+      var hist = {};
+      var prev = last_value[name];
+      for (var i = 0; i < values.length; i++) {
+        var value = values[i];
+        var count = counts[i];
+        hist[value] = count;
+      }
+      last_value[name] = $.extend({}, hist);
+
+      for (value in hist) {
+        if (value in prev) {
+          hist[value] -= prev[value];
+        }
+      }
+      data['histogram'] = hist;
     } else {
+      // For non-special-cased stuff just print the value field as well, if available.
       if ("value" in m) {
-        display_value = m['value'];
+        data['y'] = m['value'];
       }
     }
 
     if (first_run) {
-      createGauge(name, label, 0, 0);
+      createChart(name, label, type, data, extra);
+    } else {
+      charts[name].push([data]);
     }
-
-    // Did max increase? If so, reconfigure.
-    if (display_value > max_value[name]) {
-      max_value[name] = display_value;
-      reconfigureGauge(name, label, 0, Math.floor(max_value[name] * MAX_SCALE_FACTOR));
-    }
-
-    gauges[name].redraw(display_value);
   });
 
   last_update = now;
 
   setTimeout(function() {
-    d3.json(metrics_uri, updateGauges);
-  }, 300);
+    d3.json(metrics_uri, updateCharts);
+  }, 1000);
 }
 
 function initialize() {
-  d3.json(metrics_uri, updateGauges);
+  d3.json(metrics_uri, updateCharts);
 }

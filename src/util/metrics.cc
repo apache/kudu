@@ -214,6 +214,23 @@ Histogram* MetricRegistry::FindOrCreateHistogram(const std::string& name,
   return histogram;
 }
 
+namespace {
+
+bool MatchMetricInList(const string& metric_name,
+                       const vector<string>& match_params) {
+  BOOST_FOREACH(const string& param, match_params) {
+    // Handle wildcard.
+    if (param == "*") return true;
+    // The parameter is a substring match of the metric name.
+    if (metric_name.find(param) != std::string::npos) {
+      return true;
+    }
+  }
+  return false;
+}
+
+} // anonymous namespace
+
 Status MetricRegistry::WriteAsJson(JsonWriter* writer,
                                    const vector<string>& requested_metrics,
                                    const vector<string>& requested_detail_metrics) const {
@@ -225,22 +242,10 @@ Status MetricRegistry::WriteAsJson(JsonWriter* writer,
     // Snapshot the metrics in this registry (not guaranteed to be a consistent snapshot)
     boost::lock_guard<simple_spinlock> l(lock_);
     BOOST_FOREACH(const UnorderedMetricMap::value_type& val, metrics_) {
-      if (!requested_metrics.empty()) {
-       BOOST_FOREACH(const string& requested_metric, requested_metrics) {
-         if (val.first.find(requested_metric) != std::string::npos) {
-           metrics.insert(val);
-           break;
-         }
-       }
-      } else {
+      if (MatchMetricInList(val.first, requested_metrics)) {
         metrics.insert(val);
-      }
-      if (!requested_detail_metrics.empty()) {
-        BOOST_FOREACH(const string& requested_detail_metric, requested_detail_metrics) {
-          if (val.first.find(requested_detail_metric) != std::string::npos) {
-            requested_detail_metrics_set.insert(val.first);
-            break;
-          }
+        if (MatchMetricInList(val.first, requested_detail_metrics)) {
+          requested_detail_metrics_set.insert(val.first);
         }
       }
     }
@@ -466,9 +471,6 @@ Status Histogram::GetHistogramSnapshotPB(HistogramSnapshotPB* snapshot_pb,
   snapshot_pb->set_description(description_);
 
   if (granularity == DETAILED) {
-    // If the caller asked for the details of this histogram it probably
-    // already got the description, so save some space by clearing it.
-    snapshot_pb->clear_description();
     RecordedValuesIterator iter(&snapshot);
     while (iter.HasNext()) {
       HistogramIterationValue value;

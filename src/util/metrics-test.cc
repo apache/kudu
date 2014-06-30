@@ -8,6 +8,8 @@
 #include "util/metrics.h"
 #include "util/test_util.h"
 
+using boost::assign::list_of;
+
 namespace kudu {
 
 class MetricsTest : public KuduTest {
@@ -81,7 +83,7 @@ TEST_F(MetricsTest, JsonPrintTest) {
   std::stringstream out;
   JsonWriter writer(&out);
   ASSERT_STATUS_OK(metrics.WriteAsJson(&writer,
-                                       vector<string>(),
+                                       list_of("*"),
                                        vector<string>()));
 
   // Now parse it back out.

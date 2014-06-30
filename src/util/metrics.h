@@ -222,13 +222,15 @@ class MetricRegistry {
   MetricRegistry();
   ~MetricRegistry();
 
-  // Writes metrics in this registry to 'writer'. If 'requested_metrics' is
-  // non-null only the metrics whose names match one of the substrings in
-  // 'requested_metrics' will be included in the generated json.
-  // Similarly the metrics whose names match one of the substrings in
-  // 'requested_detail_metrics' will include additional detail in the generated
-  // json. Currently 'requested_detail_metrics' only works for histograms
-  // and includes the full counts and values of the histograms in the response.
+  // Writes metrics in this registry to 'writer'.
+  //
+  // 'requested_metrics' is a set of substrings to match metric names against,
+  // where '*' matches all metrics.
+  //
+  // 'requested_detail_metrics' specifies which of the metrics should include
+  // full detail (eg raw histogram counts). A metric must be matched by
+  // _both_ 'requested_metrics' and 'requested_detail_metrics' to be included
+  // with detail.
   // NOTE: Including all the counts and values can easily make the generated
   // json very large. Use with caution.
   Status WriteAsJson(JsonWriter* writer,
