@@ -368,13 +368,17 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
 
     // We can get this Message from within the RPC's expected type,
     // so convert it into an exception and nullify decoded so that we use the errback route.
-    // Have to do it for both TS and Master errors
+    // Have to do it for both TS and Master errors.
     if (decoded.getSecond() instanceof Tserver.TabletServerErrorPB) {
       Tserver.TabletServerErrorPB error = (Tserver.TabletServerErrorPB) decoded.getSecond();
-      if (error.getStatus().getCode() != WireProtocol.AppStatusPB.ErrorCode.OK) {
+      WireProtocol.AppStatusPB.ErrorCode code = error.getStatus().getCode();
+      if (code != WireProtocol.AppStatusPB.ErrorCode.OK) {
         if (error.getCode().equals(Tserver.TabletServerErrorPB.Code.TABLET_NOT_FOUND)) {
           kuduClient.handleNSTE(rpc, new TabletServerErrorException(error.getStatus()), this);
           // we're not calling rpc.callback() so we rely on the client to retry that RPC
+          return null;
+        } else if(code != WireProtocol.AppStatusPB.ErrorCode.SERVICE_UNAVAILABLE) {
+          kuduClient.handleRetryableError(rpc, new TabletServerErrorException(error.getStatus()));
           return null;
         }
         exception = new TabletServerErrorException(error.getStatus());

@@ -426,16 +426,6 @@ public class KuduSession implements SessionConfiguration {
         Callback<Tserver.WriteResponsePB, Tserver.WriteResponsePB> {
       public Tserver.WriteResponsePB call(final Tserver.WriteResponsePB response) {
         LOG.trace("Got a InsertsBatch response for " + request.ops.size() + " rows");
-        if (response.getError().hasCode()) {
-          if (response.getError().getStatus().getCode().equals(WireProtocol.AppStatusPB.ErrorCode
-              .SERVICE_UNAVAILABLE)) {
-            client.handleRetryableError(request,
-                new TabletServerErrorException(response.getError().getStatus()));
-            return null;
-          }
-          LOG.error(response.getError().getStatus().getMessage());
-          throw new NonRecoverableException(response.getError().getStatus().getMessage());
-        }
         if (response.hasWriteTimestamp()) {
           KuduSession.this.client.updateLastPropagatedTimestamp(response.getWriteTimestamp());
         }
