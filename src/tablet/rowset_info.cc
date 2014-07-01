@@ -14,6 +14,7 @@
 #include "gutil/algorithm.h"
 #include "gutil/casts.h"
 #include "gutil/endian.h"
+#include "gutil/map-util.h"
 #include "gutil/strings/util.h"
 #include "tablet/rowset.h"
 #include "tablet/rowset_tree.h"
@@ -80,7 +81,9 @@ void DCheckCommonPrefix(const Slice& min, const Slice& imin,
 
 uint64_t SliceTailToInt(const Slice& slice, int start) {
   uint64_t ret = 0;
-  memcpy(&ret, &slice[start], std::min(slice.size() - start, sizeof(ret)));
+  DCHECK_GE(start, 0);
+  DCHECK_LE(start, slice.size());
+  memcpy(&ret, &slice.data()[start], std::min(slice.size() - start, sizeof(ret)));
   ret = BigEndian::ToHost64(ret);
   return ret;
 }
@@ -211,10 +214,11 @@ void RowSetInfo::CollectOrdered(const RowSetTree& tree,
       // Store reference from vector. This is safe b/c of reserve() above.
       active.insert(std::make_pair(rs, &min_key->back()));
     } else if (rse.endpoint_ == RowSetTree::STOP) {
-      RowSetInfo& cdf_rs = *active[rs];
-      CHECK_EQ(cdf_rs.rowset(), rs) << "Inconsistent key interval tree.";
+      // If not in active set, then STOP before START in endpoint tree
+      RowSetInfo* cdf_rs = CHECK_NOTNULL(active[rs]);
+      CHECK_EQ(cdf_rs->rowset(), rs) << "Inconsistent key interval tree.";
       CHECK_EQ(active.erase(rs), 1);
-      max_key->push_back(cdf_rs);
+      max_key->push_back(*cdf_rs);
     } else {
       LOG(FATAL) << "Undefined RowSet endpoint type.\n"
                  << "\tExpected either RowSetTree::START=" << RowSetTree::START

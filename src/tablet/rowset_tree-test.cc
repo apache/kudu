@@ -3,14 +3,18 @@
 
 #include <gtest/gtest.h>
 #include <glog/logging.h>
+
+#include <tr1/unordered_set>
 #include <stdio.h>
 
+#include "gutil/map-util.h"
 #include "server/metadata.h"
 #include "tablet/rowset_tree.h"
 #include "util/stopwatch.h"
 #include "util/test_util.h"
 
 using std::string;
+using std::tr1::unordered_set;
 using kudu::metadata::RowSetMetadata;
 
 namespace kudu { namespace tablet {
@@ -135,6 +139,22 @@ class MockMemRowSet : public MockRowSet {
   const string last_key_;
 };
 
+namespace {
+
+// Generates random rowsets with keys between 0 and 10000
+static RowSetVector GenerateRandomRowSets(int num_sets) {
+  RowSetVector vec;
+  for (int i = 0; i < num_sets; i++) {
+    int min = rand() % 9000;
+    int max = min + 1000;
+
+    vec.push_back(shared_ptr<RowSet>(new MockDiskRowSet(StringPrintf("%04d", min),
+                                                        StringPrintf("%04d", max))));
+  }
+  return vec;
+}
+
+} // anonymous namespace
 
 TEST_F(TestRowSetTree, TestTree) {
   RowSetVector vec;
@@ -193,15 +213,7 @@ TEST_F(TestRowSetTree, TestPerformance) {
 
   // Create a bunch of rowsets, each of which spans about 10% of the "row space".
   // The row space here is 4-digit 0-padded numbers.
-  RowSetVector vec;
-  for (int i = 0; i < kNumRowSets; i++) {
-    int min = rand() % 9000;
-    int max = min + 1000;
-
-    vec.push_back(shared_ptr<RowSet>(new MockDiskRowSet(
-                                       StringPrintf("%04d", min),
-                                       StringPrintf("%04d", max))));
-  }
+  RowSetVector vec = GenerateRandomRowSets(kNumRowSets);
 
   RowSetTree tree;
   ASSERT_STATUS_OK(tree.Reset(vec));
@@ -214,6 +226,54 @@ TEST_F(TestRowSetTree, TestPerformance) {
       int query = rand() % 10000;
       snprintf(buf, arraysize(buf), "%04d", query);
       tree.FindRowSetsWithKeyInRange(Slice(buf, 4), &out);
+    }
+  }
+}
+
+TEST_F(TestRowSetTree, TestEndpointsConsistency) {
+  const int kNumRowSets = 1000;
+  RowSetVector vec = GenerateRandomRowSets(kNumRowSets);
+  // Add pathological one-key rows
+  for (int i = 0; i < 10; ++i) {
+    vec.push_back(shared_ptr<RowSet>(new MockDiskRowSet(StringPrintf("%04d", 11000),
+                                                        StringPrintf("%04d", 11000))));
+  }
+  vec.push_back(shared_ptr<RowSet>(new MockDiskRowSet(StringPrintf("%04d", 12000),
+                                                      StringPrintf("%04d", 12000))));
+  // Make tree
+  RowSetTree tree;
+  tree.Reset(vec);
+  // Keep track of "currently open" intervals defined by the endpoints
+  unordered_set<RowSet*> open;
+  // Keep track of all rowsets that have been visited
+  unordered_set<RowSet*> visited;
+
+  Slice prev;
+  BOOST_FOREACH(const RowSetTree::RSEndpoint& rse, tree.key_endpoints()) {
+    RowSet* rs = rse.rowset_;
+    enum RowSetTree::EndpointType ept = rse.endpoint_;
+    const Slice& slice = rse.slice_;
+
+    ASSERT_TRUE(rs != NULL) << "RowSetTree has an endpoint with no rowset";
+    ASSERT_TRUE(!slice.empty()) << "RowSetTree has an endpoint with no key";
+
+    if (!prev.empty()) {
+      ASSERT_LE(prev.compare(slice), 0);
+    }
+
+    Slice min, max;
+    ASSERT_OK(rs->GetBounds(&min, &max));
+    if (ept == RowSetTree::START) {
+      ASSERT_EQ(min.data(), slice.data());
+      ASSERT_EQ(min.size(), slice.size());
+      ASSERT_TRUE(InsertIfNotPresent(&open, rs));
+      ASSERT_TRUE(InsertIfNotPresent(&visited, rs));
+    } else if (ept == RowSetTree::STOP) {
+      ASSERT_EQ(max.data(), slice.data());
+      ASSERT_EQ(max.size(), slice.size());
+      ASSERT_TRUE(open.erase(rs) == 1);
+    } else {
+      FAIL() << "No such endpoint type exists";
     }
   }
 }

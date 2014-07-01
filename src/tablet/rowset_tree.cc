@@ -3,6 +3,7 @@
 #include "tablet/rowset_tree.h"
 
 #include <algorithm>
+#include <cstddef>
 #include <string>
 #include <vector>
 
@@ -20,13 +21,17 @@ namespace tablet {
 
 namespace {
 
+// Lexicographic, first by slice, then by rowset pointer, then by start/stop
 bool RSEndpointBySliceCompare(const RowSetTree::RSEndpoint& a,
                               const RowSetTree::RSEndpoint& b) {
-  static const Slice::Comparator comp = Slice::Comparator();
-  return comp(a.slice_, b.slice_);
+  int slice_cmp = a.slice_.compare(b.slice_);
+  if (slice_cmp) return slice_cmp < 0;
+  ptrdiff_t rs_cmp = a.rowset_ - b.rowset_;
+  if (rs_cmp) return rs_cmp < 0;
+  return b.endpoint_ == RowSetTree::STOP;
 }
 
-}
+} // anonymous namespace
 
 // Entry for use in the interval tree.
 struct RowSetWithBounds {
