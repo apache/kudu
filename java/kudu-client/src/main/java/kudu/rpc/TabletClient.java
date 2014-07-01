@@ -373,11 +373,11 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
       Tserver.TabletServerErrorPB error = (Tserver.TabletServerErrorPB) decoded.getSecond();
       WireProtocol.AppStatusPB.ErrorCode code = error.getStatus().getCode();
       if (code != WireProtocol.AppStatusPB.ErrorCode.OK) {
-        if (error.getCode().equals(Tserver.TabletServerErrorPB.Code.TABLET_NOT_FOUND)) {
+        if (error.getCode() == Tserver.TabletServerErrorPB.Code.TABLET_NOT_FOUND) {
           kuduClient.handleNSTE(rpc, new TabletServerErrorException(error.getStatus()), this);
           // we're not calling rpc.callback() so we rely on the client to retry that RPC
           return null;
-        } else if(code != WireProtocol.AppStatusPB.ErrorCode.SERVICE_UNAVAILABLE) {
+        } else if(code == WireProtocol.AppStatusPB.ErrorCode.SERVICE_UNAVAILABLE) {
           kuduClient.handleRetryableError(rpc, new TabletServerErrorException(error.getStatus()));
           return null;
         }
