@@ -25,10 +25,6 @@ namespace kudu {
 
 class PartialRow;
 
-namespace rpc {
-class Messenger;
-} // namespace rpc
-
 namespace tserver {
 class TabletServerServiceProxy;
 } // namespace tserver

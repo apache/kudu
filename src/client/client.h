@@ -134,23 +134,7 @@ class KuduClient : public std::tr1::enable_shared_from_this<KuduClient> {
   // This is a fully local operation (no RPCs or blocking).
   std::tr1::shared_ptr<KuduSession> NewSession();
 
-  // TODO: this should probably be private and exposed only to certain friend classes.
-  const std::tr1::shared_ptr<rpc::Messenger>& messenger() const {
-    return messenger_;
-  }
-
-  // Return a proxy to the current master.
-  // TODO: in the future, the master might move around (switch leaders), etc.
-  // So, this returns a copy of the shared_ptr instead of a reference, in case it
-  // gets modified.
-  std::tr1::shared_ptr<master::MasterServiceProxy> master_proxy() const {
-    return master_proxy_;
-  }
-
   const KuduClientOptions& options() const { return options_; }
-
-  // TODO: this should probably be private and exposed only to certain friend classes.
-  DnsResolver* dns_resolver() { return dns_resolver_.get(); }
 
   // Policy with which to choose amongst multiple replicas.
   enum ReplicaSelection {
@@ -169,6 +153,8 @@ class KuduClient : public std::tr1::enable_shared_from_this<KuduClient> {
   friend class KuduTable;
   friend class KuduScanner;
   friend class RemoteTablet;
+  friend class RemoteTabletServer; // for dns_resolver_ and messenger_.
+  friend class MetaCache; // for master_proxy_ and messenger_
   friend class internal::Batcher;
 
   FRIEND_TEST(ClientTest, TestReplicatedMultiTabletTableFailover);

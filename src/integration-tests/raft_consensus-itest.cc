@@ -13,8 +13,8 @@
 #include "consensus/raft_consensus_state.h"
 #include "integration-tests/mini_cluster.h"
 #include "master/catalog_manager.h"
+#include "master/master.h"
 #include "master/mini_master.h"
-#include "master/master.proxy.h"
 #include "server/metadata.pb.h"
 #include "tserver/tablet_server.h"
 #include "tserver/mini_tablet_server.h"
@@ -126,14 +126,11 @@ class DistConsensusTest : public TabletServerTest {
   // FOLLOWERS are reported.
   void WaitForAndGetQuorum() {
     GetTableLocationsRequestPB req;
-    TableIdentifierPB* id = req.mutable_table();
-    id->set_table_name(kTableId);
-
     GetTableLocationsResponsePB resp;
-    RpcController controller;
-
-    CHECK_OK(client_->master_proxy()->GetTableLocations(req, &resp, &controller));
-    ASSERT_EQ(resp.tablet_locations_size(), 1);
+    req.mutable_table()->set_table_name(kTableId);
+    CHECK_OK(cluster_->mini_master()->master()->catalog_manager()->GetTableLocations(
+        &req, &resp));
+    CHECK(resp.tablet_locations_size() > 0);
     tablet_id = resp.tablet_locations(0).tablet_id();
 
     TabletLocationsPB locations;
@@ -146,7 +143,7 @@ class DistConsensusTest : public TabletServerTest {
       // TODO add a way to wait for a tablet to be ready. Also to wait for it to
       // have a certain _active_ replication count.
       replicas_.clear();
-      Status status = cluster_->WaitForReplicaCount(resp.tablet_locations(0).tablet_id(),
+      Status status = cluster_->WaitForReplicaCount(tablet_id,
                                                     kNumReplicas, &locations);
       if (status.IsTimedOut()) {
         LOG(WARNING)<< "Timeout waiting for all three replicas to be online, retrying...";

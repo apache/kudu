@@ -14,6 +14,10 @@
 
 namespace kudu {
 
+namespace client {
+class WriteOperation;
+} // namespace client
+
 class Arena;
 class RowChangeList;
 class Schema;
@@ -130,8 +134,12 @@ class PartialRow {
 
   std::string ToString() const;
 
-
   const Schema* schema() const { return schema_; }
+
+ private:
+  friend class RowOperationsPBEncoder;
+  friend class LocalLineItemDAO; // for as_contiguous_row.
+  friend class client::WriteOperation;   // for as_contiguous_row.
 
   // Return this row as a contiguous row.
   // NOTE: because this is a partial row, some of the columns in the returned
@@ -139,9 +147,6 @@ class PartialRow {
   ConstContiguousRow as_contiguous_row() const {
     return ConstContiguousRow(*schema_, row_data_);
   }
-
- private:
-  friend class RowOperationsPBEncoder;
 
   template<DataType TYPE>
   Status Set(const Slice& col_name,

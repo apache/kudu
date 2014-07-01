@@ -11,6 +11,10 @@
 namespace kudu {
 namespace client {
 
+namespace internal {
+class Batcher;
+} // namespace internal
+
 class KuduTable;
 
 // A write operation operates on a single KuduTable and single Partial row
@@ -32,17 +36,21 @@ class WriteOperation {
   // See PartialRow API for field setters, etc.
   PartialRow* mutable_row() { return &row_; }
 
-  // Create and encode the key for this write (key must be set)
-  //
-  // Caller takes ownership of the allocated memory.
-  gscoped_ptr<EncodedKey> CreateKey() const;
-
   virtual RowOperationsPB::Type RowOperationType() const = 0;
   virtual std::string ToString() const = 0;
  protected:
   explicit WriteOperation(KuduTable *table);
+
   scoped_refptr<KuduTable> const table_;
   PartialRow row_;
+
+ private:
+  friend class internal::Batcher; // for CreateKey.
+
+  // Create and encode the key for this write (key must be set)
+  //
+  // Caller takes ownership of the allocated memory.
+  gscoped_ptr<EncodedKey> CreateKey() const;
 
   DISALLOW_COPY_AND_ASSIGN(WriteOperation);
 };

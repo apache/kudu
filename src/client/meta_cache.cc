@@ -70,7 +70,7 @@ void RemoteTabletServer::DnsResolutionFinished(const HostPort& hp,
 
   {
     boost::lock_guard<simple_spinlock> l(lock_);
-    proxy_.reset(new TabletServerServiceProxy(client->messenger(), (*addrs)[0]));
+    proxy_.reset(new TabletServerServiceProxy(client->messenger_, (*addrs)[0]));
   }
   user_callback.Run(s);
 }
@@ -96,7 +96,7 @@ void RemoteTabletServer::RefreshProxy(KuduClient* client,
   }
 
   vector<Sockaddr>* addrs = new vector<Sockaddr>();
-  client->dns_resolver()->ResolveAddresses(
+  client->dns_resolver_->ResolveAddresses(
     hp, addrs, base::Bind(&RemoteTabletServer::DnsResolutionFinished,
                           base::Unretained(this), hp, addrs, client, cb));
 }
@@ -285,7 +285,7 @@ void MetaCache::GetTableLocationsCb(InFlightLookup* ifl) {
         // If the delay causes us to miss our deadline, SendRpc will fail
         // the RPC on our behalf.
         int num_ms = ++ifl->attempt + ((rand() % 5));
-        client_->messenger()->ScheduleOnReactor(
+        client_->messenger_->ScheduleOnReactor(
             boost::bind(&MetaCache::SendRpc, this, ifl, _1),
             MonoDelta::FromMilliseconds(num_ms));
         ignore_result(ifl_deleter.release());
@@ -447,7 +447,7 @@ void MetaCache::LookupTabletByKey(const KuduTable* table,
     int num_ms = 1 + ((rand() % 5) + 1);
     VLOG(3) << "All master lookup permits are held, will retry in "
             << num_ms << " ms";
-    client_->messenger()->ScheduleOnReactor(
+    client_->messenger_->ScheduleOnReactor(
         boost::bind(&MetaCache::LookupTabletByKeyCb, this, _1, table, key,
                     remote_tablet, callback),
         MonoDelta::FromMilliseconds(num_ms));
@@ -455,13 +455,12 @@ void MetaCache::LookupTabletByKey(const KuduTable* table,
   }
 
   // Got a permit, construct and issue the lookup RPC.
-  shared_ptr<MasterServiceProxy> master = client_->master_proxy();
   MonoTime deadline;
   if (timeout_.Initialized()) {
     deadline = MonoTime::Now(MonoTime::FINE);
     deadline.AddDelta(timeout_);
   }
-  InFlightLookup *ifl = new InFlightLookup(this, master, deadline);
+  InFlightLookup *ifl = new InFlightLookup(this, client_->master_proxy_, deadline);
   ifl->user_callback = callback;
   ifl->table_name = table->name();
   ifl->key = key;

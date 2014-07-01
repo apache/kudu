@@ -5,6 +5,8 @@
 
 #include <string>
 
+#include <gtest/gtest.h>
+
 #include "common/schema.h"
 #include "util/bitmap.h"
 #include "util/faststring.h"
@@ -78,6 +80,21 @@ class ColumnRangePredicate {
                        const void* lower_bound,
                        const void* upper_bound);
 
+  const ColumnSchema &column() const {
+    return col_;
+  }
+
+  string ToString() const;
+
+  // Return the value range for which this predicate passes.
+  const ValueRange &range() const { return range_; }
+
+ private:
+  // For Evaluate.
+  friend class MaterializingIterator;
+  friend class PredicateEvaluatingIterator;
+  FRIEND_TEST(TestPredicate, TestColumnRange);
+  FRIEND_TEST(TestPredicate, TestDontEvalauteOnUnselectedRows);
 
   // Evaluate the predicate on every row in the rowblock.
   //
@@ -94,16 +111,6 @@ class ColumnRangePredicate {
   // same vector as block->selection_vector().
   void Evaluate(RowBlock *block, SelectionVector *sel) const;
 
-  const ColumnSchema &column() const {
-    return col_;
-  }
-
-  string ToString() const;
-
-  // Return the value range for which this predicate passes.
-  const ValueRange &range() const { return range_; }
-
- private:
   ColumnSchema col_;
   ValueRange range_;
 };

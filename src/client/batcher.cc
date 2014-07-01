@@ -666,7 +666,7 @@ void Batcher::WriteRpcFinished(InFlightRpc* rpc) {
         // If the delay causes us to miss our deadline, SendRpc will fail
         // the RPC on our behalf.
         int num_ms = ++rpc->attempt + ((rand() % 5));
-        client_->messenger()->ScheduleOnReactor(
+        client_->messenger_->ScheduleOnReactor(
             boost::bind(&Batcher::SendRpc, this, rpc, _1),
             MonoDelta::FromMilliseconds(num_ms));
         return;

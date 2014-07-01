@@ -496,7 +496,7 @@ Status KuduTable::Open() {
   do {
     rpc::RpcController rpc;
     rpc.set_timeout(client_->options_.default_admin_operation_timeout);
-    RETURN_NOT_OK(client_->master_proxy()->GetTableLocations(req, &resp, &rpc));
+    RETURN_NOT_OK(client_->master_proxy_->GetTableLocations(req, &resp, &rpc));
     if (resp.has_error()) {
       return StatusFromPB(resp.error().status());
     }
