@@ -7,7 +7,7 @@ import com.google.common.collect.Ranges;
 import com.google.common.collect.Sets;
 import com.stumbleupon.async.Callback;
 import com.stumbleupon.async.Deferred;
-import kudu.WireProtocol;
+import kudu.master.Master;
 import kudu.tserver.Tserver;
 import kudu.util.Slice;
 import org.jboss.netty.util.Timeout;
@@ -18,7 +18,6 @@ import org.slf4j.LoggerFactory;
 import javax.annotation.concurrent.GuardedBy;
 import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.Map;
 import java.util.Random;
 import java.util.Set;
@@ -295,31 +294,57 @@ public class KuduSession implements SessionConfiguration {
     // TODO starts looking a lot like sendRpcToTablet
     operation.attempt++;
     if (client.isTableNotServed(table)) {
-      Callback<Deferred<Tserver.WriteResponsePB>, Object> cb = getTabletLookupCB(operation);
-      return client.delayedIsCreateTableDone(table, operation, cb);
+      Callback<Deferred<Tserver.WriteResponsePB>, Master.IsCreateTableDoneResponsePB> cb =
+          new TabletLookupCB<Master.IsCreateTableDoneResponsePB>(operation);
+      return client.delayedIsCreateTableDone(table, operation, cb, getOpInLookupErrback(operation));
     }
 
-    Deferred<Object> d = client.locateTablet(table, rowkey);
-    return d.addBothDeferring(getTabletLookupCB(operation));
+    Deferred<Master.GetTableLocationsResponsePB> d = client.locateTablet(table, rowkey);
+    d.addErrback(getOpInLookupErrback(operation));
+    return d.addCallbackDeferring(new TabletLookupCB<Master.GetTableLocationsResponsePB>(operation));
   }
 
-  Callback<Deferred<Tserver.WriteResponsePB>, Object> getTabletLookupCB(final Operation operation) {
-    final class TabletLookupCB implements Callback<Deferred<Tserver.WriteResponsePB>, Object> {
-      public Deferred<Tserver.WriteResponsePB> call(final Object arg) {
-        return handleOperationInFlight(operation, arg);
+  /**
+   * This errback is different from the one in KuduClient because we need to be able to remove
+   * the operation from operationsInLookup if whatever master query we issue throws an Exception.
+   * @param operation Operation to errback to.
+   * @return An errback.
+   */
+  Callback<Exception, Exception> getOpInLookupErrback(final Operation operation) {
+    return new Callback<Exception, Exception>() {
+      @Override
+      public Exception call(Exception e) throws Exception {
+        // TODO maybe we can retry it?
+        synchronized (this) {
+          operationsInLookup.remove(operation);
+        }
+        operation.errback(e);
+        return e;
       }
-      public String toString() {
-        return "retry RPC after lookup";
-      }
+    };
+  }
+
+  final class TabletLookupCB<D> implements Callback<Deferred<Tserver.WriteResponsePB>, D> {
+    final Operation operation;
+    TabletLookupCB(Operation operation) {
+      this.operation = operation;
     }
-    return new TabletLookupCB();
+    public Deferred<Tserver.WriteResponsePB> call(final D arg) {
+      return handleOperationInLookup(operation);
+    }
+    public String toString() {
+      return "retry RPC after lookup";
+    }
   }
 
-  Callback<Deferred<Tserver.WriteResponsePB>, Tserver.WriteResponsePB> getRetryOpInFlightCB(final Operation operation) {
-    final class RetryOpInFlightCB implements Callback<Deferred<Tserver.WriteResponsePB>, Tserver.WriteResponsePB> {
+  Callback<Deferred<Tserver.WriteResponsePB>, Tserver.WriteResponsePB>
+  getRetryOpInLookupCB(final Operation operation) {
+    final class RetryOpInFlightCB implements Callback<Deferred<Tserver.WriteResponsePB>,
+        Tserver.WriteResponsePB> {
       public Deferred<Tserver.WriteResponsePB> call(final Tserver.WriteResponsePB arg) {
-        return handleOperationInFlight(operation, arg);
+        return handleOperationInLookup(operation);
       }
+
       public String toString() {
         return "retry RPC after PleaseThrottleException";
       }
@@ -327,17 +352,11 @@ public class KuduSession implements SessionConfiguration {
     return new RetryOpInFlightCB();
   }
 
-
-  private Deferred<Tserver.WriteResponsePB> handleOperationInFlight(Operation operation, Object arg) {
-    Deferred<Tserver.WriteResponsePB> d = client.handleLookupExceptions(operation, arg);
-    if (d == null) {
-      try {
-        return apply(operation); // Retry the RPC.
-      } catch (PleaseThrottleException pte) {
-        return pte.getDeferred().addBothDeferring(getRetryOpInFlightCB(operation));
-      }
-    } else {
-      return d; // something went wrong
+  private Deferred<Tserver.WriteResponsePB> handleOperationInLookup(Operation operation) {
+    try {
+      return apply(operation); // Retry the RPC.
+    } catch (PleaseThrottleException pte) {
+      return pte.getDeferred().addBothDeferring(getRetryOpInLookupCB(operation));
     }
   }
 

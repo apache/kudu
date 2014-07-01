@@ -570,38 +570,69 @@ public class KuduClient {
     // see if the table was created. We'll spin like this until the table is created and then
     // we'll try to locate the tablet again.
     if (tablesNotServed.contains(tableName)) {
-      return delayedIsCreateTableDone(tableName, request, getRetryRpcCB(request));
+      return delayedIsCreateTableDone(tableName, request,
+          new RetryRpcCB<R, Master.IsCreateTableDoneResponsePB>(request),
+          getDelayedIsCreateTableDoneErrback(request));
     }
-    Callback<Deferred<R>, Object> cb = getRetryRpcCB(request);
-    // TODO make it so that locateTablet doesn't return an Object and fix the rest
-    return locateTablet(tableName, rowkey).addBothDeferring(cb);
+    Callback<Deferred<R>, Master.GetTableLocationsResponsePB> cb = new RetryRpcCB<R,
+        Master.GetTableLocationsResponsePB>(request);
+    Deferred<Master.GetTableLocationsResponsePB> returnedD = locateTablet(tableName, rowkey);
+    // not adding an errback, if we failed locating the tablet we just throw
+    return returnedD.addCallbackDeferring(cb);
   }
 
-  private <R> Callback<Deferred<R>, Object> getRetryRpcCB(final KuduRpc<R> request) {
-    final class RetryRpcCB implements Callback<Deferred<R>, Object> {
-      public Deferred<R> call(final Object arg) {
-        Deferred<R> d = handleLookupExceptions(request, arg);
-        return d == null ? sendRpcToTablet(request):  // Retry the RPC.
-                           d; // something went wrong
-      }
-      public String toString() {
-        return "retry RPC";
-      }
+  /**
+   * Callback used to retry a RPC after another query finished, like looking up where that RPC
+   * should go.
+   * @param <R> RPC's return type.
+   * @param <D> Previous query's return type, which we don't use, but need to specify in order to
+   *           tie it all together.
+   */
+  final class RetryRpcCB<R, D> implements Callback<Deferred<R>, D> {
+    final KuduRpc<R> request;
+    RetryRpcCB(KuduRpc<R> request) {
+      this.request = request;
     }
-    return new RetryRpcCB();
+    public Deferred<R> call(final D arg) {
+      return sendRpcToTablet(request);  // Retry the RPC.
+    }
+    public String toString() {
+      return "retry RPC";
+    }
+  }
+
+  /**
+   * This errback ensures that if the delayed call to IsCreateTableDone throws an Exception that
+   * it will be propagated back to the user.
+   * @param request Request to errback if there's a problem with the delayed call.
+   * @param <R> Request's return type.
+   * @return An errback.
+   */
+  <R> Callback<Exception, Exception> getDelayedIsCreateTableDoneErrback(final KuduRpc<R> request) {
+    return new Callback<Exception, Exception>() {
+      @Override
+      public Exception call(Exception e) throws Exception {
+        // TODO maybe we can retry it?
+        request.errback(e);
+        return e;
+      }
+    };
   }
 
   /**
    * This method will call IsCreateTableDone on the master after sleeping for
    * getSleepTimeForRpc() based on the provided KuduRpc's number of attempts. Once this is done,
-   * the provided callback will be called
-   * @param tableName Table to lookup
-   * @param rpc Original KuduRpc that needs to access the table
-   * @param cb Callback to call on completion
+   * the provided callback will be called.
+   * @param tableName Table to lookup.
+   * @param rpc Original KuduRpc that needs to access the table.
+   * @param retryCB Callback to call on completion.
+   * @param errback Errback to call if something goes wrong when calling IsCreateTableDone.
    * @return Deferred used to track the provided KuduRpc
    */
   <R> Deferred<R> delayedIsCreateTableDone(final String tableName, final KuduRpc<R> rpc,
-                                           final Callback<Deferred<R>, Object> cb) {
+                                           final Callback<Deferred<R>,
+                                               Master.IsCreateTableDoneResponsePB> retryCB,
+                                           final Callback<Exception, Exception> errback) {
 
     final class RetryTimer implements TimerTask {
       public void run(final Timeout timeout) {
@@ -612,20 +643,22 @@ public class KuduClient {
           // this will save us a Master lookup.
           if (!tablesNotServed.contains(tableName)) {
             try {
-              cb.call(null);
+              retryCB.call(null);
               return;
             } catch (Exception e) {
               // we're calling RetryRpcCB which doesn't throw exceptions, ignore
             }
           }
         }
-        final Deferred<Object> d =
+        final Deferred<Master.IsCreateTableDoneResponsePB> d =
             clientFor(masterTabletHack).isCreateTableDone(tableName).addCallback(new
                 IsCreateTableDoneCB(tableName));
         if (has_permit) {
-          d.addBoth(new ReleaseMasterLookupPermit<Object>());
+          // The errback is needed here to release the lookup permit
+          d.addCallbacks(new ReleaseMasterLookupPermit<Master.IsCreateTableDoneResponsePB>(),
+              new ReleaseMasterLookupPermit<Exception>());
         }
-        d.addBothDeferring(cb);
+        d.addCallbacks(retryCB, errback);
       }
     }
     long sleepTime = getSleepTimeForRpc(rpc);
@@ -648,22 +681,20 @@ public class KuduClient {
   }
 
   /** Callback executed when IsCreateTableDone completes.  */
-  private final class IsCreateTableDoneCB implements Callback<Object,
+  private final class IsCreateTableDoneCB implements Callback<Master.IsCreateTableDoneResponsePB,
       Master.IsCreateTableDoneResponsePB> {
     final String table;
     IsCreateTableDoneCB(String table) {
       this.table = table;
     }
-    public Object call(final Master.IsCreateTableDoneResponsePB response) {
+    public Master.IsCreateTableDoneResponsePB call(final Master.IsCreateTableDoneResponsePB response) {
       if (response.getDone()) {
         LOG.debug("Table " + table + " was created");
         tablesNotServed.remove(table);
-      } else if (response.hasError()) {
-        throw new MasterErrorException(response.getError());
       } else {
         LOG.debug("Table " + table + " is still being created");
       }
-      return null;
+      return response;
     }
     public String toString() {
       return "ask the master if " + table + " was created";
@@ -746,25 +777,6 @@ public class KuduClient {
     }
   }
 
-  <R> Deferred<R> handleLookupExceptions(final KuduRpc<R> request, Object arg) {
-    if (arg instanceof NonRecoverableException) {
-      // No point in retrying here, so fail the RPC.
-      KuduException e = (NonRecoverableException) arg;
-      if (e instanceof HasFailedRpcException
-          && ((HasFailedRpcException) e).getFailedRpc() != request) {
-        // If we get here it's because a dependent RPC (such as a master
-        // lookup) has failed.  Therefore the exception we're getting
-        // indicates that the master lookup failed, but we need to return
-        // to our caller here that it's their RPC that failed.  Here we
-        // re-create the exception but with the correct RPC in argument.
-        e = e.make(e, request);  // e is likely a PleaseThrottleException.
-      }
-      request.errback(e);
-      return Deferred.fromError(e);
-    }
-    return null;
-  }
-
   /**
    * Checks whether or not an RPC can be retried once more.
    * @param rpc The RPC we're going to attempt to execute.
@@ -803,7 +815,7 @@ public class KuduClient {
    * @param rowkey can be null, if not we'll find the exact tablet that contains it
    * @return Deferred to track the progress
    */
-  Deferred<Object> locateTablet(String table, byte[] rowkey) {
+  Deferred<Master.GetTableLocationsResponsePB> locateTablet(String table, byte[] rowkey) {
     final boolean has_permit = acquireMasterLookupPermit();
     if (!has_permit) {
       // If we failed to acquire a permit, it's worth checking if someone
@@ -814,11 +826,11 @@ public class KuduClient {
         return Deferred.fromResult(null);  // Looks like no lookup needed.
       }
     }
-    final Deferred<Object> d =
-        clientFor(masterTabletHack).getTableLocations(table, rowkey, rowkey).
-            addCallback(new MasterLookupCB(table));
+    final Deferred<Master.GetTableLocationsResponsePB> d =
+        clientFor(masterTabletHack).getTableLocations(table, rowkey, rowkey);
+    d.addCallback(new MasterLookupCB(table));
     if (has_permit) {
-      d.addBoth(new ReleaseMasterLookupPermit<Object>());
+      d.addBoth(new ReleaseMasterLookupPermit<Master.GetTableLocationsResponsePB>());
     }
     return d;
   }
