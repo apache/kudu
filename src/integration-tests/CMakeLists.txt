@@ -22,3 +22,7 @@ ADD_KUDU_TEST(raft_consensus-itest)
 ADD_KUDU_TEST(create-table-stress-test)
 ADD_KUDU_TEST(external_mini_cluster-test)
 ADD_KUDU_TEST(linked_list-test)
+
+# Some tests have additional dependencies
+set(KUDU_TEST_LINK_LIBS client ${KUDU_TEST_LINK_LIBS})
+ADD_KUDU_TEST(full_stack-insert-scan-test)
