@@ -73,6 +73,11 @@ const std::tr1::shared_ptr<FutureCallback>& TransactionDriver::commit_finished_c
 }
 
 string TransactionDriver::ToString() const {
+  boost::lock_guard<simple_spinlock> lock(lock_);
+  return ToStringUnlocked();
+}
+
+string TransactionDriver::ToStringUnlocked() const {
   return transaction_ != NULL ? transaction_->ToString() : "";
 }
 
@@ -312,7 +317,7 @@ void LeaderTransactionDriver::ApplyOrCommitFailed(const Status& abort_reason) {
   boost::lock_guard<simple_spinlock> lock(lock_);
   CHECK_EQ(prepare_finished_calls_, 2);
 
-  LOG(WARNING) << "Commit failed in transaction: " << ToString()
+  LOG(WARNING) << "Commit failed in transaction: " << ToStringUnlocked()
       << " with Status: " << abort_reason.ToString();
 
   //TODO use an application level error status here with better error details.
@@ -405,7 +410,7 @@ void ReplicaTransactionDriver::Abort() {
   scoped_refptr<ReplicaTransactionDriver> ref(this);
   boost::lock_guard<simple_spinlock> state_lock(lock_);
   prepare_finished_calls_ = 2;
-  LOG(WARNING) << "Transaction aborted on request: " << ToString();
+  LOG(WARNING) << "Transaction aborted on request: " << ToStringUnlocked();
   transaction_->Finish();
   txn_tracker_->Release(this);
 }

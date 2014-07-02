@@ -87,7 +87,8 @@ void TransactionTracker::Release(TransactionDriver *driver) {
   DecrementCounters(driver->tx_type());
 
   if (PREDICT_FALSE(pending_txns_.erase(driver) != 1)) {
-    LOG(FATAL) << "Could not remove pending transaction from map: " << driver->ToString();
+    LOG(FATAL) << "Could not remove pending transaction from map: "
+        << driver->ToStringUnlocked();
   }
 }
 
@@ -117,10 +118,10 @@ void TransactionTracker::WaitForAllToFinish() {
       if (pending_txns_.empty()) {
         break;
       }
-      LOG(INFO) << "Dumping currently running transactions: ";
-      BOOST_FOREACH(scoped_refptr<TransactionDriver> driver, pending_txns_) {
-        LOG(INFO) << driver->ToString();
-      }
+    }
+    LOG(INFO) << "Dumping currently running transactions: ";
+    BOOST_FOREACH(scoped_refptr<TransactionDriver> driver, pending_txns_) {
+      LOG(INFO) << driver->ToString();
     }
     usleep(wait_time);
     MonoDelta diff = MonoTime::Now(MonoTime::FINE).GetDeltaSince(start_time);

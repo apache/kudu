@@ -50,6 +50,8 @@ class TransactionDriver : public base::RefCountedThreadSafe<TransactionDriver> {
 
   virtual std::string ToString() const;
 
+  virtual std::string ToStringUnlocked() const;
+
   // Returns the type of the driver.
   consensus::DriverType type() const;
 
@@ -97,8 +99,7 @@ class TransactionDriver : public base::RefCountedThreadSafe<TransactionDriver> {
   Status transaction_status_;
   int prepare_finished_calls_;
 
-  // Lock that synchronizes access to 'transaction_status_',
-  // 'prepare_finished_calls_'.
+  // Lock that synchronizes access to the transaction's state.
   mutable simple_spinlock lock_;
 
   // A copy of the transaction's OpId, set when the transaction first
