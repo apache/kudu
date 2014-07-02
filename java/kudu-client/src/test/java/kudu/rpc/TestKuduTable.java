@@ -6,7 +6,6 @@ import static org.junit.Assert.assertNull;
 import static org.junit.Assert.fail;
 
 import kudu.ColumnSchema;
-import kudu.Common;
 import kudu.Schema;
 import kudu.Type;
 import org.junit.BeforeClass;
@@ -14,7 +13,6 @@ import org.junit.Test;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.NavigableMap;
 
 public class TestKuduTable extends BaseKuduTest {
 

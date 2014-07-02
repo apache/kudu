@@ -6,7 +6,6 @@ import com.stumbleupon.async.Callback;
 import com.stumbleupon.async.Deferred;
 import kudu.ColumnSchema;
 import kudu.Schema;
-import kudu.master.Master;
 import org.junit.AfterClass;
 import org.junit.BeforeClass;
 import org.slf4j.Logger;
@@ -87,9 +86,9 @@ public class BaseKuduTest {
     Stopwatch stopwatch = new Stopwatch().start();
     while (count < expected && stopwatch.elapsedMillis() < DEFAULT_SLEEP) {
       Thread.sleep(200);
-      Deferred<Integer> d = client.getTabletServersCount();
+      Deferred<ListTabletServersResponse> d = client.listTabletServers();
       d.addErrback(defaultErrorCB);
-      count = d.join(DEFAULT_SLEEP);
+      count = d.join(DEFAULT_SLEEP).getTabletServersCount();
     }
     return count >= expected;
   }
@@ -122,7 +121,7 @@ public class BaseKuduTest {
     try {
       for (String tableName : tableNames) {
         final AtomicBoolean gotError = new AtomicBoolean(false);
-        Deferred<Master.DeleteTableResponsePB> d = client.deleteTable(tableName);
+        Deferred<DeleteTableResponse> d = client.deleteTable(tableName);
         d.addErrback(new Callback<Object, Object>() {
           @Override
           public Object call(Object arg) throws Exception {
@@ -156,7 +155,7 @@ public class BaseKuduTest {
   }
 
   protected static void createTable(String tableName, Schema schema, CreateTableBuilder builder) {
-    Deferred<Master.CreateTableResponsePB> d = client.createTable(tableName, schema, builder);
+    Deferred<CreateTableResponse> d = client.createTable(tableName, schema, builder);
     final AtomicBoolean gotError = new AtomicBoolean(false);
     d.addErrback(new Callback<Object, Object>() {
       @Override

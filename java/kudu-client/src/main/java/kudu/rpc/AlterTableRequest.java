@@ -10,7 +10,7 @@ import static kudu.master.Master.*;
  * RPC used to alter a table. When it returns it doesn't mean that the table is altered,
  * a success just means that the master accepted it.
  */
-class AlterTableRequest extends KuduRpc<AlterTableResponsePB> {
+class AlterTableRequest extends KuduRpc<AlterTableResponse> {
 
   static final String ALTER_TABLE = "AlterTable";
   private final String name;
@@ -37,10 +37,10 @@ class AlterTableRequest extends KuduRpc<AlterTableResponsePB> {
   }
 
   @Override
-  Pair<AlterTableResponsePB, Object> deserialize(ChannelBuffer buf) throws Exception {
+  Pair<AlterTableResponse, Object> deserialize(ChannelBuffer buf) throws Exception {
     final AlterTableResponsePB.Builder respBuilder = AlterTableResponsePB.newBuilder();
     readProtobuf(buf, respBuilder);
-    AlterTableResponsePB resp = respBuilder.build();
-    return new Pair<AlterTableResponsePB, Object>(resp, resp.getError());
+    AlterTableResponse response = new AlterTableResponse(deadlineTracker.getElapsedMillis());
+    return new Pair<AlterTableResponse, Object>(response, respBuilder.getError());
   }
 }

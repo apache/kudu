@@ -9,7 +9,7 @@ import org.jboss.netty.buffer.ChannelBuffer;
 /**
  * RPC to delete tables
  */
-class DeleteTableRequest extends KuduRpc<Master.DeleteTableResponsePB> {
+class DeleteTableRequest extends KuduRpc<DeleteTableResponse> {
 
   static final String DELETE_TABLE = "DeleteTable";
 
@@ -36,10 +36,10 @@ class DeleteTableRequest extends KuduRpc<Master.DeleteTableResponsePB> {
   }
 
   @Override
-  Pair<Master.DeleteTableResponsePB, Object> deserialize(ChannelBuffer buf) throws Exception {
+  Pair<DeleteTableResponse, Object> deserialize(ChannelBuffer buf) throws Exception {
     final Master.DeleteTableResponsePB.Builder builder = Master.DeleteTableResponsePB.newBuilder();
     readProtobuf(buf, builder);
-    Master.DeleteTableResponsePB resp = builder.build();
-    return new Pair<Master.DeleteTableResponsePB, Object>(resp, resp.getError());
+    DeleteTableResponse response = new DeleteTableResponse(deadlineTracker.getElapsedMillis());
+    return new Pair<DeleteTableResponse, Object>(response, builder.getError());
   }
 }

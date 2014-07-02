@@ -27,7 +27,6 @@
 package kudu.rpc;
 
 import com.stumbleupon.async.Deferred;
-import kudu.tserver.Tserver;
 
 /**
  * This exception notifies the application to throttle its use of Kudu.
@@ -66,7 +65,7 @@ public final class PleaseThrottleException extends NonRecoverableException
   private final Operation rpc;
 
   /** A deferred one can wait on before retrying the failed RPC.  */
-  private final Deferred<Tserver.WriteResponsePB> deferred;
+  private final Deferred<OperationResponse> deferred;
 
   /**
    * Constructor.
@@ -79,7 +78,7 @@ public final class PleaseThrottleException extends NonRecoverableException
   PleaseThrottleException(final String msg,
                           final KuduException cause,
                           final Operation rpc,
-                          final Deferred<Tserver.WriteResponsePB> deferred) {
+                          final Deferred<OperationResponse> deferred) {
     super(msg, cause);
     this.rpc = rpc;
     this.deferred = deferred;
@@ -96,7 +95,7 @@ public final class PleaseThrottleException extends NonRecoverableException
    * Returns a deferred one can wait on before retrying the failed RPC.
    * @since 1.3
    */
-  public Deferred<Tserver.WriteResponsePB> getDeferred() {
+  public Deferred<OperationResponse> getDeferred() {
     return deferred;
   }
 

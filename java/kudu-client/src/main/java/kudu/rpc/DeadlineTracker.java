@@ -65,6 +65,10 @@ public class DeadlineTracker {
     return millisBeforeDeadline;
   }
 
+  public long getElapsedMillis() {
+    return this.stopwatch.elapsedMillis();
+  }
+
   /**
    * Tells if a non-zero deadline was set.
    * @return true if the deadline is greater than 0, false otherwise.

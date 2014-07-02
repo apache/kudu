@@ -260,12 +260,6 @@ public class KuduClient {
     return lastPropagatedTimestamp;
   }
 
-  public Deferred<Tserver.PingResponsePB> ping() {
-    checkIsClosed();
-    PingRequest ping = new PingRequest(this.masterTableHack);
-    return sendRpcToTablet(ping);
-  }
-
   /**
    * Create a table on the cluster with the specified name and schema. Default table
    * configurations are used, mainly the tablet will have one tablet.
@@ -273,7 +267,7 @@ public class KuduClient {
    * @param schema Table's schema
    * @return Deferred object to track the progress
    */
-  public Deferred<Master.CreateTableResponsePB> createTable(String name, Schema schema) {
+  public Deferred<CreateTableResponse> createTable(String name, Schema schema) {
     return this.createTable(name, schema, new CreateTableBuilder());
   }
 
@@ -284,7 +278,7 @@ public class KuduClient {
    * @param builder Table's configurations
    * @return Deferred object to track the progress
    */
-  public Deferred<Master.CreateTableResponsePB> createTable(String name, Schema schema, CreateTableBuilder builder) {
+  public Deferred<CreateTableResponse> createTable(String name, Schema schema, CreateTableBuilder builder) {
     checkIsClosed();
     if (builder == null) {
       builder = new CreateTableBuilder();
@@ -299,7 +293,7 @@ public class KuduClient {
    * @param name Table's name
    * @return Deferred object to track the progress
    */
-  public Deferred<Master.DeleteTableResponsePB> deleteTable(String name) {
+  public Deferred<DeleteTableResponse> deleteTable(String name) {
     checkIsClosed();
     DeleteTableRequest delete = new DeleteTableRequest(this.masterTableHack, name);
     return sendRpcToTablet(delete);
@@ -313,7 +307,7 @@ public class KuduClient {
    * but it's completion only means that the master received the request. Use
    * syncWaitOnAlterCompletion() to know when the alter completes.
    */
-  public Deferred<Master.AlterTableResponsePB> alterTable(String name, AlterTableBuilder atb) {
+  public Deferred<AlterTableResponse> alterTable(String name, AlterTableBuilder atb) {
     checkIsClosed();
     AlterTableRequest alter = new AlterTableRequest(this.masterTableHack, name, atb);
     return sendRpcToTablet(alter);
@@ -372,13 +366,13 @@ public class KuduClient {
    * Get the count of running tablet servers
    * @return an int, the count
    */
-  public Deferred<Integer> getTabletServersCount() {
+  public Deferred<ListTabletServersResponse> listTabletServers() {
     checkIsClosed();
     ListTabletServersRequest rpc = new ListTabletServersRequest(this.masterTableHack);
     return sendRpcToTablet(rpc);
   }
 
-  Deferred<Schema> getTableSchema(String name) {
+  Deferred<GetTableSchemaResponse> getTableSchema(String name) {
     return sendRpcToTablet(new GetTableSchemaRequest(this.masterTableHack, name));
   }
 
@@ -389,10 +383,10 @@ public class KuduClient {
    */
   public Deferred<KuduTable> openTable(final String name) {
     checkIsClosed();
-    return getTableSchema(name).addCallback(new Callback<KuduTable, Schema>() {
+    return getTableSchema(name).addCallback(new Callback<KuduTable, GetTableSchemaResponse>() {
       @Override
-      public KuduTable call(Schema schema) throws Exception {
-        return new KuduTable(KuduClient.this, name, schema);
+      public KuduTable call(GetTableSchemaResponse response) throws Exception {
+        return new KuduTable(KuduClient.this, name, response.getSchema());
       }
     });
   }
@@ -1154,9 +1148,8 @@ public class KuduClient {
 
     // 2. Terminate all connections.
     final class DisconnectCB implements Callback<Deferred<ArrayList<Void>>,
-        ArrayList<ArrayList<Tserver.WriteResponsePB>>> {
-      public Deferred<ArrayList<Void>> call(final ArrayList<ArrayList<Tserver
-          .WriteResponsePB>> arg) {
+        ArrayList<ArrayList<OperationResponse>>> {
+      public Deferred<ArrayList<Void>> call(final ArrayList<ArrayList<OperationResponse>> arg) {
         return disconnectEverything().addCallback(new ReleaseResourcesCB());
       }
       public String toString() {
@@ -1173,7 +1166,7 @@ public class KuduClient {
     }
   }
 
-  private Deferred<ArrayList<ArrayList<Tserver.WriteResponsePB>>> closeAllSessions() {
+  private Deferred<ArrayList<ArrayList<OperationResponse>>> closeAllSessions() {
     // We create a copy because KuduSession.close will call removeSession which would get us a
     // concurrent modification during the iteration.
     Set<KuduSession> copyOfSessions;
@@ -1184,8 +1177,8 @@ public class KuduClient {
       return Deferred.fromResult(null);
     }
     // Guaranteed that we'll have at least one session to close.
-    ArrayList<Deferred<ArrayList<Tserver.WriteResponsePB>>> deferreds =
-        new ArrayList<Deferred<ArrayList<Tserver.WriteResponsePB>>>(copyOfSessions.size());
+    ArrayList<Deferred<ArrayList<OperationResponse>>> deferreds =
+        new ArrayList<Deferred<ArrayList<OperationResponse>>>(copyOfSessions.size());
     for (KuduSession session : copyOfSessions ) {
       deferreds.add(session.close());
     }

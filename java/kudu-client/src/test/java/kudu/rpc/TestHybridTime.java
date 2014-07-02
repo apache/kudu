@@ -4,13 +4,11 @@ package kudu.rpc;
 import com.stumbleupon.async.Deferred;
 import kudu.ColumnSchema;
 import kudu.Schema;
-import kudu.tserver.Tserver;
 import org.junit.BeforeClass;
 import org.junit.Test;
 
 import java.util.ArrayList;
 import java.util.Date;
-import java.util.List;
 import java.util.concurrent.TimeUnit;
 
 import static kudu.Type.STRING;
@@ -73,9 +71,9 @@ public class TestHybridTime extends BaseKuduTest {
     for (int i = 0; i < keys.length; i++) {
       Insert insert = table.newInsert();
       insert.addString(schema.getColumn(0).getName(), keys[i]);
-      Deferred<Tserver.WriteResponsePB> d = session.apply(insert);
-      Tserver.WriteResponsePB response = d.join(DEFAULT_SLEEP);
-      assertTrue(response.hasWriteTimestamp());
+      Deferred<OperationResponse> d = session.apply(insert);
+      OperationResponse response = d.join(DEFAULT_SLEEP);
+      assertTrue(response.getWriteTimestamp() != 0);
       clockValues = HTTimestampToPhysicalAndLogical(response.getWriteTimestamp());
       LOG.debug("Clock value after write[" + i + "]: " + new Date(clockValues[0] / 1000).toString()
         + " Logical value: " + clockValues[1]);
@@ -103,13 +101,13 @@ public class TestHybridTime extends BaseKuduTest {
       Insert insert = table.newInsert();
       insert.addString(schema.getColumn(0).getName(), keys[i]);
       session.apply(insert);
-      Deferred<ArrayList<kudu.tserver.Tserver.WriteResponsePB>> d = session.flush();
-      ArrayList<kudu.tserver.Tserver.WriteResponsePB> responses = d.join(DEFAULT_SLEEP);
+      Deferred<ArrayList<OperationResponse>> d = session.flush();
+      ArrayList<OperationResponse> responses = d.join(DEFAULT_SLEEP);
       assertEquals("Response was not of the expected size: " + responses.size(),
         1, responses.size());
 
-      Tserver.WriteResponsePB response = responses.get(0);
-      assertTrue(response.hasWriteTimestamp());
+      OperationResponse response = responses.get(0);
+      assertTrue(response.getWriteTimestamp() != 0);
       clockValues = HTTimestampToPhysicalAndLogical(response.getWriteTimestamp());
       LOG.debug("Clock value after write[" + i + "]: " + new Date(clockValues[0] / 1000).toString()
         + " Logical value: " + clockValues[1]);

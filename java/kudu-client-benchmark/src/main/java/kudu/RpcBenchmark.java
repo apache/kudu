@@ -4,11 +4,13 @@ package kudu;
 import com.stumbleupon.async.Callback;
 import com.stumbleupon.async.Deferred;
 import kudu.master.Master;
+import kudu.rpc.CreateTableResponse;
 import kudu.rpc.Insert;
 import kudu.rpc.KuduClient;
 import kudu.rpc.KuduScanner;
 import kudu.rpc.KuduSession;
 import kudu.rpc.KuduTable;
+import kudu.rpc.OperationResponse;
 import kudu.rpc.RowResult;
 import kudu.tserver.Tserver;
 
@@ -30,12 +32,9 @@ public class RpcBenchmark {
       client = new KuduClient(address, port);
       Schema schema = Tpch1Schema.getTpch1Schema();
       String tableName = "tpch1";
-      Deferred<Master.CreateTableResponsePB> create = client.createTable(tableName, schema);
+      Deferred<CreateTableResponse> create = client.createTable(tableName, schema);
       create.join(DEFAULT_SLEEP);
       KuduTable table = client.openTable(tableName).join(DEFAULT_SLEEP);
-      Deferred<Tserver.PingResponsePB> dd = client.ping();
-      dd.join(DEFAULT_SLEEP);
-
       final AtomicLong counter = new AtomicLong();
       Callback<Object, KuduScanner.RowResultIterator> cb = new Callback<Object, KuduScanner.RowResultIterator>() {
         @Override
@@ -55,11 +54,10 @@ public class RpcBenchmark {
 
       int count = 100000;
       final CountDownLatch latch = new CountDownLatch(count);
-      Callback<Void, Tserver.WriteResponsePB> insertCb = new Callback<Void,
-          Tserver.WriteResponsePB>() {
+      Callback<Void, OperationResponse> insertCb = new Callback<Void, OperationResponse>() {
 
         @Override
-        public Void call(Tserver.WriteResponsePB arg) throws Exception {
+        public Void call(OperationResponse arg) throws Exception {
           latch.countDown();
           return null;
         }
@@ -67,7 +65,7 @@ public class RpcBenchmark {
 
       KuduSession session = client.newSession(); // defaults to auto flush sync
       session.setFlushMode(KuduSession.FlushMode.AUTO_FLUSH_BACKGROUND);
-      Deferred<Tserver.WriteResponsePB> lastD = null;
+      Deferred<OperationResponse> lastD = null;
       long time = System.currentTimeMillis();
       for (int i = count * 0; i < count * 30; i++) {
         Insert insert = table.newInsert();
@@ -89,7 +87,7 @@ public class RpcBenchmark {
         insert.addString(schema.getColumn(14).getName(), "l_shipmode");
         insert.addString(schema.getColumn(15).getName(), "l_comment");
 
-        Deferred<Tserver.WriteResponsePB> insertD = session.apply(insert);
+        Deferred<OperationResponse> insertD = session.apply(insert);
         insertD.addCallback(insertCb);
         lastD = insertD;
       }

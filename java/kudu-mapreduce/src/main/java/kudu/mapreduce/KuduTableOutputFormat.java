@@ -7,8 +7,8 @@ import kudu.rpc.KuduClient;
 import kudu.rpc.KuduSession;
 import kudu.rpc.KuduTable;
 import kudu.rpc.Operation;
+import kudu.rpc.OperationResponse;
 import kudu.rpc.PleaseThrottleException;
-import kudu.tserver.Tserver;
 import org.apache.hadoop.conf.Configurable;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.io.NullWritable;
@@ -147,7 +147,7 @@ public class KuduTableOutputFormat extends OutputFormat<NullWritable,Operation>
       // We'll loop until the Operation's attempts hits the default max.
       while (true) {
         try {
-          Deferred<Tserver.WriteResponsePB> d = session.apply(operation);
+          Deferred<OperationResponse> d = session.apply(operation);
           d.addErrback(defaultErrorCB);
           break;
         } catch (PleaseThrottleException ex) {
@@ -164,7 +164,7 @@ public class KuduTableOutputFormat extends OutputFormat<NullWritable,Operation>
     public void close(TaskAttemptContext taskAttemptContext) throws IOException,
         InterruptedException {
       try {
-        Deferred<ArrayList<Tserver.WriteResponsePB>> d = session.close();
+        Deferred<ArrayList<OperationResponse>> d = session.close();
         d.addErrback(defaultErrorCB);
         d.join(operationTimeoutMs);
       } catch (Exception e) {

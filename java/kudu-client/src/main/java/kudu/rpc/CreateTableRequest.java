@@ -10,7 +10,7 @@ import org.jboss.netty.buffer.ChannelBuffer;
 /**
  * RPC to create new tables
  */
-class CreateTableRequest extends KuduRpc<Master.CreateTableResponsePB> {
+class CreateTableRequest extends KuduRpc<CreateTableResponse> {
 
   static final String CREATE_TABLE = "CreateTable";
 
@@ -40,10 +40,10 @@ class CreateTableRequest extends KuduRpc<Master.CreateTableResponsePB> {
   }
 
   @Override
-  Pair<Master.CreateTableResponsePB, Object> deserialize(ChannelBuffer buf) throws Exception {
+  Pair<CreateTableResponse, Object> deserialize(ChannelBuffer buf) throws Exception {
     final Master.CreateTableResponsePB.Builder builder = Master.CreateTableResponsePB.newBuilder();
     readProtobuf(buf, builder);
-    Master.CreateTableResponsePB resp = builder.build();
-    return new Pair<Master.CreateTableResponsePB, Object>(resp, resp.getError());
+    CreateTableResponse response = new CreateTableResponse(deadlineTracker.getElapsedMillis());
+    return new Pair<CreateTableResponse, Object>(response, builder.getError());
   }
 }

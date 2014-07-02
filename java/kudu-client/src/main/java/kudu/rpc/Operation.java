@@ -27,7 +27,7 @@ import static kudu.rpc.KuduClient.NO_TIMESTAMP;
  * Each Operation is backed by an Arena where all the cells (except strings) are written. The
  * strings are kept in a List.
  */
-public abstract class Operation extends KuduRpc<Tserver.WriteResponsePB> implements KuduRpc.HasKey {
+public abstract class Operation extends KuduRpc<OperationResponse> implements KuduRpc.HasKey {
 
   enum ChangeType {
     INSERT((byte)RowOperationsPB.Type.INSERT.getNumber()),
@@ -307,11 +307,12 @@ public abstract class Operation extends KuduRpc<Tserver.WriteResponsePB> impleme
   }
 
   @Override
-  Pair<Tserver.WriteResponsePB, Object> deserialize(ChannelBuffer buf) throws Exception {
+  Pair<OperationResponse, Object> deserialize(ChannelBuffer buf) throws Exception {
     Tserver.WriteResponsePB.Builder builder = Tserver.WriteResponsePB.newBuilder();
     readProtobuf(buf, builder);
-    Tserver.WriteResponsePB response = builder.build();
-    return new Pair<Tserver.WriteResponsePB, Object>(response, response.getError());
+    OperationResponse response = new OperationResponse(deadlineTracker.getElapsedMillis(),
+        builder.getWriteTimestamp());
+    return new Pair<OperationResponse, Object>(response, builder.getError());
   }
 
   public byte[] key() {

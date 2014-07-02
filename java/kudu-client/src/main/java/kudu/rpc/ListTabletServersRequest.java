@@ -7,7 +7,10 @@ import static kudu.master.Master.*;
 import kudu.util.Pair;
 import org.jboss.netty.buffer.ChannelBuffer;
 
-public class ListTabletServersRequest extends KuduRpc<Integer> {
+import java.util.ArrayList;
+import java.util.List;
+
+public class ListTabletServersRequest extends KuduRpc<ListTabletServersResponse> {
 
   public ListTabletServersRequest(KuduTable masterTable) {
     super(masterTable);
@@ -26,11 +29,17 @@ public class ListTabletServersRequest extends KuduRpc<Integer> {
   }
 
   @Override
-  Pair<Integer, Object> deserialize(ChannelBuffer buf) throws Exception {
+  Pair<ListTabletServersResponse, Object> deserialize(ChannelBuffer buf) throws Exception {
     final ListTabletServersResponsePB.Builder respBuilder =
         ListTabletServersResponsePB.newBuilder();
     readProtobuf(buf, respBuilder);
-    ListTabletServersResponsePB resp = respBuilder.build();
-    return new Pair<Integer, Object>(resp.getServersCount(), null);
+    int serversCount = respBuilder.getServersCount();
+    List<String> servers = new ArrayList<String>(serversCount);
+    for (ListTabletServersResponsePB.Entry entry : respBuilder.getServersList()) {
+      servers.add(entry.getRegistration().getRpcAddresses(0).getHost());
+    }
+    ListTabletServersResponse response = new ListTabletServersResponse(deadlineTracker
+        .getElapsedMillis(), serversCount, servers);
+    return new Pair<ListTabletServersResponse, Object>(response, null);
   }
 }

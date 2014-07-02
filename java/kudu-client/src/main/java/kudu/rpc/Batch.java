@@ -13,7 +13,7 @@ import java.util.List;
 /**
  * Used internally to batch Operations together before sending to the cluster
  */
-class Batch extends KuduRpc<Tserver.WriteResponsePB> implements KuduRpc.HasKey {
+class Batch extends KuduRpc<OperationResponse> implements KuduRpc.HasKey {
 
   final List<Operation> ops;
 
@@ -41,11 +41,12 @@ class Batch extends KuduRpc<Tserver.WriteResponsePB> implements KuduRpc.HasKey {
   }
 
   @Override
-  Pair<Tserver.WriteResponsePB, Object> deserialize(ChannelBuffer buf) throws Exception {
+  Pair<OperationResponse, Object> deserialize(ChannelBuffer buf) throws Exception {
     Tserver.WriteResponsePB.Builder builder = Tserver.WriteResponsePB.newBuilder();
     readProtobuf(buf, builder);
-    Tserver.WriteResponsePB resp = builder.build();
-    return new Pair<Tserver.WriteResponsePB, Object>(resp, resp.getError());
+    OperationResponse response = new OperationResponse(deadlineTracker.getElapsedMillis(),
+        builder.getWriteTimestamp());
+    return new Pair<OperationResponse, Object>(response, builder.getError());
   }
 
   @Override

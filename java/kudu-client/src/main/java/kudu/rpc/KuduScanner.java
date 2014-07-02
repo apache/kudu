@@ -731,7 +731,8 @@ public final class KuduScanner {
               "the tablet has moved and this isn't a fault tolerant scan");
         }
       }
-      RowResultIterator iterator = new RowResultIterator(schema, resp.getData());
+      RowResultIterator iterator = new RowResultIterator(deadlineTracker.getElapsedMillis(),
+          schema, resp.getData());
 
       boolean hasMore = resp.getHasMoreResults();
       if (id.length  != 0 && scannerId != null && !Bytes.equals(scannerId, id)) {
@@ -763,7 +764,8 @@ public final class KuduScanner {
    * Class that contains the rows sent by a tablet server, exhausting this iterator only means
    * that all the rows from the last server response were read.
    */
-  public class RowResultIterator implements Iterator<RowResult>, Iterable<RowResult> {
+  public class RowResultIterator extends KuduRpcResponse implements Iterator<RowResult>,
+      Iterable<RowResult> {
 
     private final Schema schema;
     private final byte[] bs;
@@ -774,10 +776,13 @@ public final class KuduScanner {
 
     /**
      * Private constructor, only meant to be instantiated from KuduScanner.
+     * @param ellapsedMillis Time in milliseconds since RPC creation to now.
      * @param schema Schema used to parse the rows
      * @param data PB containing the data
      */
-    private RowResultIterator(Schema schema, WireProtocol.RowwiseRowBlockPB data) {
+    private RowResultIterator(long ellapsedMillis, Schema schema, WireProtocol.RowwiseRowBlockPB
+        data) {
+      super(ellapsedMillis);
       this.schema = schema;
       if (data == null || data.getNumRows() == 0) {
         this.bs = this.indirectBs = null;

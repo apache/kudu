@@ -6,8 +6,6 @@ import kudu.Schema;
 import com.stumbleupon.async.Callback;
 import com.stumbleupon.async.Deferred;
 import kudu.Type;
-import kudu.master.Master;
-import kudu.tserver.Tserver;
 import org.junit.BeforeClass;
 import org.junit.Test;
 
@@ -57,7 +55,7 @@ public class TestKuduSession extends BaseKuduTest {
     // lookups in flush isn't working properly.
     session.setFlushMode(KuduSession.FlushMode.AUTO_FLUSH_BACKGROUND);
     session.setFlushInterval(DEFAULT_SLEEP + 1000);
-    Deferred<Tserver.WriteResponsePB> d = session.apply(createInsert(0));
+    Deferred<OperationResponse> d = session.apply(createInsert(0));
     session.flush().join(DEFAULT_SLEEP);
     assertTrue(exists(0));
     // set back to default
@@ -109,7 +107,7 @@ public class TestKuduSession extends BaseKuduTest {
     for (int i = 21; i < 30; i++) {
       d = session.apply(createInsert(i));
     }
-    Deferred<Tserver.WriteResponsePB> buffered = session.apply(createInsert(30));
+    Deferred<OperationResponse> buffered = session.apply(createInsert(30));
     long now = System.currentTimeMillis();
     d.join();
     // auto flush will force flush if the buffer is full as it should be now
@@ -307,7 +305,7 @@ public class TestKuduSession extends BaseKuduTest {
   public static void submitAlterAndCheck(AlterTableBuilder atb,
                                          String tableToAlter, String tableToCheck) throws
       Exception {
-    Deferred<Master.AlterTableResponsePB> alterDeffered = client.alterTable(tableToAlter, atb);
+    Deferred<AlterTableResponse> alterDeffered = client.alterTable(tableToAlter, atb);
     alterDeffered.join(DEFAULT_SLEEP);
     boolean done  = client.syncWaitOnAlterCompletion(tableToCheck, DEFAULT_SLEEP);
     assertTrue(done);

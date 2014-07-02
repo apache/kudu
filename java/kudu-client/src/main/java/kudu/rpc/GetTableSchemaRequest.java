@@ -11,7 +11,7 @@ import org.jboss.netty.buffer.ChannelBuffer;
 /**
  * RPC to fetch a table's schema
  */
-public class GetTableSchemaRequest extends KuduRpc<Schema> {
+public class GetTableSchemaRequest extends KuduRpc<GetTableSchemaResponse> {
   static final String GET_TABLE_SCHEMA = "GetTableSchema";
   private final String name;
 
@@ -37,10 +37,11 @@ public class GetTableSchemaRequest extends KuduRpc<Schema> {
   }
 
   @Override
-  Pair<Schema, Object> deserialize(ChannelBuffer buf) throws Exception {
+  Pair<GetTableSchemaResponse, Object> deserialize(ChannelBuffer buf) throws Exception {
     final GetTableSchemaResponsePB.Builder respBuilder = GetTableSchemaResponsePB.newBuilder();
     readProtobuf(buf, respBuilder);
-    GetTableSchemaResponsePB resp = respBuilder.build();
-    return new Pair<Schema, Object>(ProtobufHelper.pbToSchema(resp.getSchema()), resp.getError());
+    GetTableSchemaResponse response = new GetTableSchemaResponse(
+        deadlineTracker.getElapsedMillis(), ProtobufHelper.pbToSchema(respBuilder.getSchema()));
+    return new Pair<GetTableSchemaResponse, Object>(response, respBuilder.getError());
   }
 }
