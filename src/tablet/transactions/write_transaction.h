@@ -344,6 +344,8 @@ class PreparedRowWrite {
     return op_type_;
   }
 
+  std::string ToString() const;
+
  private:
 
   friend class Tablet;

@@ -2,6 +2,7 @@
 
 #include "tablet/transactions/write_transaction.h"
 
+#include <algorithm>
 #include <vector>
 
 #include "common/wire_protocol.h"
@@ -361,11 +362,6 @@ void WriteTransactionState::Reset() {
 }
 
 string WriteTransactionState::ToString() const {
-  // TODO Add a Debug/Stringify to PreparedRowWrite() so that we can
-  // see the information on locks held by the transactions.
-  //
-  // Note: a debug string of the request is not included for security
-  // reasons.
   string ts_str;
   if (has_timestamp()) {
     ts_str = timestamp().ToString();
@@ -373,10 +369,27 @@ string WriteTransactionState::ToString() const {
     ts_str = "<unassigned>";
   }
 
-  return Substitute("WriteTransactionState $0 [op_id=($1), ts=$2]",
+  // Stringify the actual row operations (eg INSERT/UPDATE/etc)
+  // NOTE: we'll eventually need to gate this by some flag if we want to avoid
+  // user data escaping into the log. See KUDU-387.
+  const size_t kMaxToStringify = 3;
+  string rows_str = "[";
+  for (int i = 0; i < std::min(rows_.size(), kMaxToStringify); i++) {
+    if (i > 0) {
+      rows_str.append(", ");
+    }
+    rows_str.append(rows_[i]->ToString());
+  }
+  if (rows_.size() > kMaxToStringify) {
+    rows_str.append(", ...");
+  }
+  rows_str.append("]");
+
+  return Substitute("WriteTransactionState $0 [op_id=($1), ts=$2, rows=$3]",
                     this,
                     op_id().ShortDebugString(),
-                    ts_str);
+                    ts_str,
+                    rows_str);
 }
 
 PreparedRowWrite::PreparedRowWrite(const ConstContiguousRow* row,
@@ -399,6 +412,19 @@ PreparedRowWrite::PreparedRowWrite(const ConstContiguousRow* row_key,
       probe_(probe.Pass()),
       row_lock_(lock.Pass()),
       op_type_(MUTATE) {
+}
+
+string PreparedRowWrite::ToString() const {
+  switch (op_type_) {
+    case INSERT:
+      return Substitute("INSERT $0", row_->schema().DebugRowKey(*row_));
+    case MUTATE:
+      return Substitute("MUTATE $0", row_key_->schema().DebugRowKey(*row_key_));
+      break;
+    default:
+      LOG(FATAL);
+  }
+  return ""; // silence spurious "no return" warning
 }
 
 }  // namespace tablet
