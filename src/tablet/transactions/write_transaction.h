@@ -52,35 +52,10 @@ class RowSetKeyProbe;
 class WriteTransactionState : public TransactionState {
 
  public:
-  WriteTransactionState()
-      : TransactionState(NULL),
-        failed_operations_(0),
-        request_(NULL),
-        response_(NULL),
-        mvcc_tx_(NULL) {
-  }
-
-  // ctor used by the LEADER replica
-  WriteTransactionState(TabletPeer* tablet_peer,
-                        const tserver::WriteRequestPB *request,
-                        tserver::WriteResponsePB *response)
-      : TransactionState(tablet_peer),
-        failed_operations_(0),
-        request_(request),
-        response_(response),
-        mvcc_tx_(NULL) {
-    external_consistency_mode_ = request->external_consistency_mode();
-  }
-
-  // ctor used by FOLLOWER/LEARNER replicas
-  WriteTransactionState(TabletPeer* tablet_peer,
-                        const tserver::WriteRequestPB *request)
-      : TransactionState(tablet_peer),
-        failed_operations_(0),
-        request_(request),
-        response_(NULL),
-        mvcc_tx_(NULL) {
-  }
+  WriteTransactionState(TabletPeer* tablet_peer = NULL,
+                        const tserver::WriteRequestPB *request = NULL,
+                        tserver::WriteResponsePB *response = NULL);
+  virtual ~WriteTransactionState();
 
   // Adds an applied insert to this TransactionState, including the
   // id of the MemRowSet to which it was applied.
@@ -178,10 +153,6 @@ class WriteTransactionState : public TransactionState {
   // writes, clearing the transaction result _and_ committing the current Mvcc
   // transaction.
   void Reset();
-
-  ~WriteTransactionState() {
-    Reset();
-  }
 
   virtual std::string ToString() const OVERRIDE;
 

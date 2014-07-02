@@ -262,6 +262,21 @@ string WriteTransaction::ToString() const {
                     DriverType_Name(type()), abs_time_formatted, state_->ToString());
 }
 
+WriteTransactionState::WriteTransactionState(TabletPeer* tablet_peer,
+                                             const tserver::WriteRequestPB *request,
+                                             tserver::WriteResponsePB *response)
+  : TransactionState(tablet_peer),
+    failed_operations_(0),
+    request_(request),
+    response_(response),
+    mvcc_tx_(NULL) {
+  if (request) {
+    external_consistency_mode_ = request->external_consistency_mode();
+  } else {
+    external_consistency_mode_ = NO_CONSISTENCY;
+  }
+}
+
 Status WriteTransactionState::AddInsert(const Timestamp &timestamp, int64_t mrs_id) {
   if (PREDICT_TRUE(mvcc_tx_.get() != NULL)) {
     DCHECK_EQ(mvcc_tx_->timestamp(), timestamp)
@@ -331,6 +346,10 @@ void WriteTransactionState::commit() {
 void WriteTransactionState::release_row_locks() {
   // free the row locks
   STLDeleteElements(&rows_);
+}
+
+WriteTransactionState::~WriteTransactionState() {
+  Reset();
 }
 
 void WriteTransactionState::Reset() {
