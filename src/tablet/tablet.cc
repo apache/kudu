@@ -134,7 +134,7 @@ Tablet::~Tablet() {
 }
 
 Status Tablet::Open() {
-  boost::lock_guard<rw_semaphore> lock(component_lock_);
+  boost::lock_guard<rw_spinlock> lock(component_lock_);
   CHECK(!open_) << "already open";
   CHECK(schema_->has_column_ids());
   // TODO: track a state_ variable, ensure tablet is open, etc.
@@ -229,7 +229,7 @@ Status Tablet::CreatePreparedInsert(const WriteTransactionState* tx_state,
 }
 
 void Tablet::FinishPrepare(WriteTransactionState* tx_state) {
-  boost::shared_lock<rw_semaphore> lock(component_lock_);
+  boost::shared_lock<rw_spinlock> lock(component_lock_);
 
   gscoped_ptr<ScopedTransaction> mvcc_tx;
   if (tx_state->external_consistency_mode() == COMMIT_WAIT) {
@@ -490,7 +490,7 @@ void Tablet::ModifyRowSetTree(const RowSetTree& old_tree,
 
 void Tablet::AtomicSwapRowSets(const RowSetVector &old_rowsets,
                                const RowSetVector &new_rowsets) {
-  boost::lock_guard<rw_semaphore> lock(component_lock_);
+  boost::lock_guard<rw_spinlock> lock(component_lock_);
   AtomicSwapRowSetsUnlocked(old_rowsets, new_rowsets);
 }
 
@@ -528,7 +528,7 @@ Status Tablet::FlushUnlocked() {
   shared_ptr<Schema> old_schema;
   {
     // Create a new MRS with the latest schema.
-    boost::lock_guard<rw_semaphore> lock(component_lock_);
+    boost::lock_guard<rw_spinlock> lock(component_lock_);
     old_schema = schema_;
     RETURN_NOT_OK(ReplaceMemRowSetUnlocked(*old_schema.get(), &input, &old_mrs));
   }
@@ -668,7 +668,7 @@ Status Tablet::AlterSchema(AlterSchemaTransactionState *tx_state) {
 
   // Replace the MemRowSet
   {
-    boost::lock_guard<rw_semaphore> lock(component_lock_);
+    boost::lock_guard<rw_spinlock> lock(component_lock_);
     RETURN_NOT_OK(ReplaceMemRowSetUnlocked(*schema_.get(), &input, &old_ms));
   }
 
@@ -695,7 +695,7 @@ void Tablet::SetFlushCompactCommonHooksForTests(
 }
 
 int32_t Tablet::CurrentMrsIdForTests() const {
-  boost::shared_lock<rw_semaphore> lock(component_lock_);
+  boost::shared_lock<rw_spinlock> lock(component_lock_);
   return components_->memrowset->mrs_id();
 }
 
@@ -837,7 +837,7 @@ Status Tablet::PickRowSetsToCompact(RowSetsInCompaction *picked,
   // in tablet.h for details on why that would be bad.
   shared_ptr<RowSetTree> rowsets_copy;
   {
-    boost::shared_lock<rw_semaphore> lock(component_lock_);
+    boost::shared_lock<rw_spinlock> lock(component_lock_);
     rowsets_copy = components_->rowsets;
   }
 
@@ -858,7 +858,7 @@ Status Tablet::PickRowSetsToCompact(RowSetsInCompaction *picked,
     RETURN_NOT_OK(compaction_policy_->PickRowSets(*rowsets_copy, &picked_set));
   }
 
-  boost::shared_lock<rw_semaphore> lock(component_lock_);
+  boost::shared_lock<rw_spinlock> lock(component_lock_);
   BOOST_FOREACH(const shared_ptr<RowSet>& rs, components_->rowsets->all_rowsets()) {
     if (picked_set.erase(rs.get()) == 0) {
       // Not picked.
@@ -896,7 +896,7 @@ Status Tablet::PickRowSetsToCompact(RowSetsInCompaction *picked,
 void Tablet::GetRowSetsForTests(RowSetVector* out) {
   shared_ptr<RowSetTree> rowsets_copy;
   {
-    boost::shared_lock<rw_semaphore> lock(component_lock_);
+    boost::shared_lock<rw_spinlock> lock(component_lock_);
     rowsets_copy = components_->rowsets;
   }
   BOOST_FOREACH(const shared_ptr<RowSet>& rs, rowsets_copy->all_rowsets()) {
@@ -1064,7 +1064,7 @@ Status Tablet::DoCompactionOrFlush(const Schema& schema,
   {
     // Taking component_lock_ in write mode ensures that no new transactions
     // can start (or snapshot components_) during this block.
-    boost::lock_guard<rw_semaphore> lock(component_lock_);
+    boost::lock_guard<rw_spinlock> lock(component_lock_);
     AtomicSwapRowSetsUnlocked(input.rowsets(), boost::assign::list_of(inprogress_rowset));
     schema2 = schema_;
 
@@ -1186,7 +1186,7 @@ Status Tablet::Compact(CompactFlags flags) {
 }
 
 Status Tablet::DebugDump(vector<string> *lines) {
-  boost::shared_lock<rw_semaphore> lock(component_lock_);
+  boost::shared_lock<rw_spinlock> lock(component_lock_);
 
   LOG_STRING(INFO, lines) << "Dumping tablet:";
   LOG_STRING(INFO, lines) << "---------------------------";
@@ -1207,7 +1207,7 @@ Status Tablet::CaptureConsistentIterators(
   const MvccSnapshot &snap,
   const ScanSpec *spec,
   vector<shared_ptr<RowwiseIterator> > *iters) const {
-  boost::shared_lock<rw_semaphore> lock(component_lock_);
+  boost::shared_lock<rw_spinlock> lock(component_lock_);
 
   // Construct all the iterators locally first, so that if we fail
   // in the middle, we don't modify the output arguments.
@@ -1336,14 +1336,14 @@ Status Tablet::MinorCompactWorstDeltas() {
 }
 
 size_t Tablet::num_rowsets() const {
-  boost::shared_lock<rw_semaphore> lock(component_lock_);
+  boost::shared_lock<rw_spinlock> lock(component_lock_);
   return components_->rowsets->all_rowsets().size();
 }
 
 void Tablet::PrintRSLayout(ostream* o, bool header) {
   shared_ptr<RowSetTree> rowsets_copy;
   {
-    boost::shared_lock<rw_semaphore> lock(component_lock_);
+    boost::shared_lock<rw_spinlock> lock(component_lock_);
     rowsets_copy = components_->rowsets;
   }
   // Simulate doing a compaction with no rowsets chosen to simply display

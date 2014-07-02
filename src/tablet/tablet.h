@@ -260,7 +260,7 @@ class Tablet {
   }
 
   shared_ptr<Schema> schema() const {
-    boost::shared_lock<rw_semaphore> lock(component_lock_);
+    boost::shared_lock<rw_spinlock> lock(component_lock_);
     return schema_;
   }
 
@@ -366,7 +366,7 @@ class Tablet {
   Status DeleteCompactionInputs(const RowSetsInCompaction &input);
 
   void GetComponents(scoped_refptr<TabletComponents>* comps) const {
-    boost::shared_lock<rw_semaphore> lock(component_lock_);
+    boost::shared_lock<rw_spinlock> lock(component_lock_);
     *comps = components_;
   }
 
@@ -433,7 +433,7 @@ class Tablet {
   // This is because the lock has some concept of fairness -- if, while a long reader
   // is active, a writer comes along, then all future short readers will be blocked.
   // TODO: now that this is single-threaded again, we should change it to rw_spinlock
-  mutable rw_semaphore component_lock_;
+  mutable rw_spinlock component_lock_;
 
   // Lock protecting the selection of rowsets for compaction.
   // Only one thread may run the compaction selection algorithm at a time
