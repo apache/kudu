@@ -201,6 +201,7 @@ void TabletPeer::Shutdown() {
 
   prepare_executor_->Shutdown();
   leader_apply_executor_->Shutdown();
+  replica_apply_executor_->Shutdown();
 
   WARN_NOT_OK(log_->Close(), "Error closing the Log.");
 
