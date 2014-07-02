@@ -73,6 +73,7 @@
                 <configuration>
                     <failIfNoTests>false</failIfNoTests>
                     <reuseForks>false</reuseForks>
+                    <redirectTestOutputToFile>true</redirectTestOutputToFile>
                     <systemPropertyVariables>
                         <masterAddress>localhost</masterAddress>
                         <masterPort>64000</masterPort>
