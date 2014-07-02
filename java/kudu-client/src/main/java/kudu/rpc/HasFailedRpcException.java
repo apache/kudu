@@ -35,6 +35,6 @@ public interface HasFailedRpcException {
   /**
    * Returns the RPC that caused this exception.
    */
-  KuduRpc getFailedRpc();
+  KuduRpc<?> getFailedRpc();
 
 }

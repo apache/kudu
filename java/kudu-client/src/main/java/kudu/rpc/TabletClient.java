@@ -317,7 +317,8 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
     }
     final int rpcid = header.getCallId();
 
-    final KuduRpc rpc = rpcs_inflight.get(rpcid);
+    @SuppressWarnings("rawtypes")
+	final KuduRpc rpc = rpcs_inflight.get(rpcid);
 
     if (rpc == null) {
       final String msg = "Invalid rpcid: " + rpcid + " found in "

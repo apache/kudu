@@ -1,12 +1,10 @@
 // Copyright (c) 2013, Cloudera, inc.
 package kudu.rpc;
 
-import kudu.Common;
 import kudu.Schema;
 import kudu.util.Slice;
 
 import java.util.List;
-import java.util.NavigableMap;
 
 /**
  * A KuduTable represents a table on a particular cluster. It holds the current

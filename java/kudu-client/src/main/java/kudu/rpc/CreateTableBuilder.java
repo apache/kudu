@@ -1,7 +1,6 @@
 // Copyright (c) 2014, Cloudera, inc.
 package kudu.rpc;
 
-import com.google.protobuf.ByteString;
 import com.google.protobuf.ZeroCopyLiteralByteString;
 import kudu.master.Master;
 

@@ -2,7 +2,6 @@
 package kudu.rpc;
 
 import com.google.protobuf.ByteString;
-import com.google.protobuf.Message;
 import com.google.protobuf.ZeroCopyLiteralByteString;
 import kudu.ColumnSchema;
 import kudu.Common;

@@ -4,7 +4,6 @@ package kudu.rpc;
 import com.google.protobuf.Message;
 import static kudu.master.Master.*;
 
-import kudu.Schema;
 import kudu.util.Pair;
 import org.jboss.netty.buffer.ChannelBuffer;
 

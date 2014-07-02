@@ -296,10 +296,6 @@ public final class KuduScanner {
       prefetcherDeferred.chain(new Deferred<RowResultIterator>().addCallback(prefetch));
       return prefetcherDeferred;
     }
-    // Need to silence this warning because the callback `got_next_row'
-    // declares its return type to be Object, because its return value
-    // may or may not be deferred.
-    @SuppressWarnings("unchecked")
     final Deferred<RowResultIterator> d =
         client.scanNextRows(this).addCallbacks(got_next_row, nextRowErrback());
     if (prefetching) {
@@ -391,10 +387,6 @@ public final class KuduScanner {
     if (closed) {
       return Deferred.fromResult(null);
     }
-    // Need to silence this warning because the callback `got_next_row'
-    // declares its return type to be Object, because its return value
-    // may or may not be deferred.
-    @SuppressWarnings("unchecked")
     final Deferred<RowResultIterator> d =
        client.closeScanner(this).addCallback(closedCallback()); // TODO errBack ?
     return d;

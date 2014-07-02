@@ -3,20 +3,15 @@ package kudu;
 
 import com.stumbleupon.async.Callback;
 import com.stumbleupon.async.Deferred;
-import kudu.master.Master;
 import kudu.rpc.CreateTableResponse;
 import kudu.rpc.Insert;
 import kudu.rpc.KuduClient;
-import kudu.rpc.KuduScanner;
 import kudu.rpc.KuduSession;
 import kudu.rpc.KuduTable;
 import kudu.rpc.OperationResponse;
-import kudu.rpc.RowResult;
-import kudu.tserver.Tserver;
 
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * This class currently just contains code to drive load, nothing fancy
@@ -35,22 +30,6 @@ public class RpcBenchmark {
       Deferred<CreateTableResponse> create = client.createTable(tableName, schema);
       create.join(DEFAULT_SLEEP);
       KuduTable table = client.openTable(tableName).join(DEFAULT_SLEEP);
-      final AtomicLong counter = new AtomicLong();
-      Callback<Object, KuduScanner.RowResultIterator> cb = new Callback<Object, KuduScanner.RowResultIterator>() {
-        @Override
-        public Object call(KuduScanner.RowResultIterator arg) throws Exception {
-          if (arg == null) return null;
-          //System.out.println("Got me some data! " + arg.getNumRows());
-          counter.addAndGet(arg.getNumRows());
-          //Thread.sleep(13);
-          RowResult row;
-          while (arg.hasNext()) {
-            row = arg.next();
-            //System.out.println(row.toStringLongFormat());
-          }
-          return null;
-        }
-      };
 
       int count = 100000;
       final CountDownLatch latch = new CountDownLatch(count);

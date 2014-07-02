@@ -113,6 +113,7 @@ public class KuduTableMapReduceUtil {
    * @param context Map context
    * @return The kudu table object as setup by the output format
    */
+  @SuppressWarnings("rawtypes")
   public static KuduTable getTableFromContext(TaskInputOutputContext context) {
     String multitonKey = context.getConfiguration().get(KuduTableOutputFormat.MULTITON_KEY);
     return KuduTableOutputFormat.getKuduTable(multitonKey);

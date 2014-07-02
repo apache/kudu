@@ -3,12 +3,10 @@
  */
 package kudu.rpc;
 
-import java.util.Collections;
 import java.util.List;
 
 import com.google.common.collect.Lists;
 import com.google.common.collect.ImmutableList;
-import kudu.master.Master;
 import kudu.master.Master.TabletLocationsPB;
 import kudu.master.Master.TabletLocationsPB.ReplicaPB;
 import kudu.Common.HostPortPB;

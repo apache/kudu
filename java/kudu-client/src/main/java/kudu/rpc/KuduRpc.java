@@ -221,7 +221,7 @@ public abstract class KuduRpc<R> {
   }
 
   static void readProtobuf(final ChannelBuffer buf, final com.google.protobuf.GeneratedMessage
-      .Builder builder) {
+      .Builder<?> builder) {
     final int length = Bytes.readVarInt32(buf);
     checkArrayLength(buf, length);
     final byte[] payload;

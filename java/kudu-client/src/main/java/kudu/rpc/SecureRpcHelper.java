@@ -95,7 +95,6 @@ public class SecureRpcHelper {
 
   public ChannelBuffer handleResponse(ChannelBuffer buf, Channel chan) throws SaslException {
     if (!saslClient.isComplete() || negoUnderway) {
-      final int readIdx = buf.readerIndex();
       RpcHeader.SaslMessagePB response = parseSaslMsgResponse(buf);
       switch (response.getState()) {
         case NEGOTIATE:

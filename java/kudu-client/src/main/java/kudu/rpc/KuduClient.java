@@ -38,7 +38,6 @@ import kudu.master.Master;
 import com.stumbleupon.async.Callback;
 import com.stumbleupon.async.Deferred;
 import kudu.metadata.Metadata;
-import kudu.tserver.Tserver;
 import kudu.util.Slice;
 import org.jboss.netty.channel.ChannelEvent;
 import org.jboss.netty.channel.ChannelStateEvent;
@@ -700,7 +699,7 @@ public class KuduClient {
   }
 
 
-  long getSleepTimeForRpc(KuduRpc rpc) {
+  long getSleepTimeForRpc(KuduRpc<?> rpc) {
     // TODO backoffs? Sleep in increments of 500 ms, plus some random time up to 50
     long sleepTime = (rpc.attempt * SLEEP_TIME) + sleepRandomizer.nextInt(50);
     if (LOG.isDebugEnabled()) {
@@ -779,7 +778,7 @@ public class KuduClient {
    * @throws NonRecoverableException if the request has had too many attempts
    * already.
    */
-  static boolean cannotRetryRequest(final KuduRpc rpc) {
+  static boolean cannotRetryRequest(final KuduRpc<?> rpc) {
     return rpc.deadlineTracker.timedOut() || rpc.attempt > 10;  // TODO Don't hardcode.
   }
 
@@ -1411,18 +1410,6 @@ public class KuduClient {
       }
     }
 
-  }
-
-    /** A custom channel factory that doesn't shutdown its executor.  */
-  private static final class CustomChannelFactory
-      extends NioClientSocketChannelFactory {
-    CustomChannelFactory(final Executor executor) {
-      super(executor, executor);
-    }
-    @Override
-    public void releaseExternalResources() {
-      // Do nothing, we don't want to shut down the executor.
-    }
   }
 
   /** Creates a default channel factory in case we haven't been given one.  */

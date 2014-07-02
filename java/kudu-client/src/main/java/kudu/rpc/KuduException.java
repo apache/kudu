@@ -59,7 +59,7 @@ public abstract class KuduException extends RuntimeException {
    * @param arg Some arbitrary parameter to help build the new instance.
    * @param rpc The RPC that failed, if any.  Can be {@code null}.
    */
-  KuduException make(final Object arg, final KuduRpc rpc) {
+  KuduException make(final Object arg, final KuduRpc<?> rpc) {
     throw new AssertionError("Must not be used.");
   }
 }

@@ -26,8 +26,6 @@
  */
 package kudu.rpc;
 
-import org.jboss.netty.channel.Channel;
-
 /**
  * Exception thrown when an RPC was in flight while we got disconnected.
  */
