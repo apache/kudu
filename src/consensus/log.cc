@@ -61,18 +61,17 @@ class Log::AppendThread {
   Log* log_;
   bool closing_;
   scoped_refptr<kudu::Thread> thread_;
-  CountDownLatch finished_;
 };
 
 
 Log::AppendThread::AppendThread(Log *log)
-    : log_(log),
-      closing_(false),
-      finished_(1) {
+  : log_(log),
+    closing_(false) {
 }
 
 Status Log::AppendThread::Init() {
   DCHECK(thread_.get() == NULL) << "Already initialized";
+  VLOG(1) << "Starting log append thread for tablet " << log_->tablet_id();
   RETURN_NOT_OK(kudu::Thread::Create("log", "appender",
       &AppendThread::RunThread, this, &thread_));
   return Status::OK();
@@ -130,30 +129,25 @@ void Log::AppendThread::RunThread() {
       }
     }
   }
-  finished_.CountDown();
-  VLOG(1) << "Finished AppendThread()";
+  VLOG(1) << "Exiting AppendThread for tablet " << log_->tablet_id();
 }
 
 void Log::AppendThread::Shutdown() {
-  if (closing()) {
-    return;
-  }
-
-  VLOG(1) << "Shutting down Log append thread!";
-
-  LogEntryBatchQueue* queue = log_->entry_queue();
-  queue->Shutdown();
-
   {
     boost::lock_guard<boost::mutex> lock_guard(lock_);
+    if (closing_) {
+      return;
+    }
     closing_ = true;
   }
 
-  finished_.Wait();
+  VLOG(1) << "Shutting down log append thread for tablet " << log_->tablet_id();
 
-  VLOG(1) << "Log append thread shut down!";
-
+  LogEntryBatchQueue* queue = log_->entry_queue();
+  queue->Shutdown();
   CHECK_OK(ThreadJoiner(thread_.get()).Join())
+
+  VLOG(1) << "Log append thread for tablet " << log_->tablet_id() << " is shut down";
 }
 
 // This task is submitted to allocation_executor_ in order to
@@ -172,6 +166,7 @@ class Log::SegmentAllocationTask : public Task {
   bool Abort() OVERRIDE { return false; }
  private:
   Log* log_;
+  DISALLOW_COPY_AND_ASSIGN(SegmentAllocationTask);
 };
 
 const Status Log::kLogShutdownStatus(
