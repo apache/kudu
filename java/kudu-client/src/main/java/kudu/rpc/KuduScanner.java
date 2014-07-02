@@ -274,11 +274,6 @@ public final class KuduScanner {
       return client.openScanner(this).addCallbackDeferring(
           new Callback<Deferred<RowResultIterator>, KuduScanner.Response>() {
             public Deferred<RowResultIterator> call(final KuduScanner.Response resp) {
-              if (resp.error.hasCode()) {
-                // TODO more specific error parsing
-                LOG.error(resp.error.getStatus().getMessage());
-                throw new NonRecoverableException(resp.error.getStatus().getMessage());
-              }
               if (!resp.more || resp.scanner_id == null) {
                 scanFinished();
                 return Deferred.fromResult(resp.data); // there might be data to return
@@ -333,12 +328,6 @@ public final class KuduScanner {
   private final Callback<RowResultIterator, Response> got_next_row =
       new Callback<RowResultIterator, Response>() {
         public RowResultIterator call(final Response resp) {
-          //System.out.println("got_next_row");
-          if (resp.error.hasCode()) {
-            // TODO more specific error parsing
-            LOG.error(resp.error.getStatus().getMessage());
-            throw new NonRecoverableException(resp.error.getStatus().getMessage());
-          }
           if (!resp.more) {  // We're done scanning this tablet.
             scanFinished();
             return resp.data;
@@ -615,7 +604,6 @@ public final class KuduScanner {
     /** The actual payload of the response.  */
     private final RowResultIterator data;
 
-    private final TabletServerErrorPB error;
     /**
      * If false, the filter we use decided there was no more data to scan.
      * In this case, the server has automatically closed the scanner for us,
@@ -625,17 +613,15 @@ public final class KuduScanner {
 
     Response(final byte[] scanner_id,
              final RowResultIterator data,
-             final boolean more,
-             final TabletServerErrorPB error) {
+             final boolean more) {
       this.scanner_id = scanner_id;
       this.data = data;
       this.more = more;
-      this.error = error;
     }
 
     public String toString() {
       return "KuduScanner$Response(scannerId=" + Bytes.pretty(scanner_id)
-          + ", data=" + data + ", more=" + more + ", error = " + error+  ") ";
+          + ", data=" + data + ", more=" + more +  ") ";
     }
   }
 
@@ -740,7 +726,7 @@ public final class KuduScanner {
             + " ID " + Bytes.pretty(id) + " but we expected "
             + Bytes.pretty(scannerId), resp);
       }
-      Response response = new Response(id, iterator, hasMore, error);
+      Response response = new Response(id, iterator, hasMore);
       if (LOG.isDebugEnabled()) {
         LOG.debug(response.toString());
       }
