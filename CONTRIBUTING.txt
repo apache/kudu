@@ -20,10 +20,14 @@ The most commonly used Boost libraries, which are fine to use are:
 - boost::assign (container literals)
 - boost::mutex and boost::shared_mutex (though consider our own
   spin lock implementation for short critical sections)
-- boost::bind (for callbacks)
 
 Check that any features from boost you use are present in boost 1.46
 or earlier, for compatibility with RHEL6.
+
+Special considerations should be made for the Kudu C++ client. We don't
+want boost in any public headers because it's notoriously bad at
+maintaining backwards compatibility, and passing data between two boost
+versions (one by the user, one by us) is a recipe for disaster.
 
 - Line length: up to 100 characters is OK
 
@@ -107,19 +111,32 @@ over shared_ptr in new code. Existing code (as of 12/20/2013) uses shared_ptrs
 in many places -- when interfacing with that code, continued use of shared_ptr
 is fine.
 
--CMake Style Guide
+- Function binding and callbacks:
+
+Existing code (as of 01/07/2014) uses boost::bind and boost::function for
+function binding and callbacks. For new code, use the Callback and Bind
+classes in gutil instead. While less featureful (Bind doesn't support argument
+place holders, wrapped function pointers, or function objects), they provide
+more options by the way of argument lifecycle management. For example, a
+bound argument whose class extends RefCounted will be incremented during Bind()
+and decremented when the Callback goes out of scope.
+
+See the large file comment in gutil/callback.h for more details, as well as
+util/callback_bind-test.cc for examples.
+
+- CMake Style Guide
 
 CMake allows commands in lower, upper, or mixed case. Therefore to keep
 the CMake files consistent, please use the following guidelines:
 
--built-in commands in lowercase
-add_subdirectory(some/path)
+ -built-in commands in lowercase
+  add_subdirectory(some/path)
 
--built-in arguments in uppercase
-message(STATUS "message goes here")
+ -built-in arguments in uppercase
+  message(STATUS "message goes here")
 
--custom commands/macros in uppercase
-ADD_KUDU_TEST(some-test)
+ -custom commands/macros in uppercase
+  ADD_KUDU_TEST(some-test)
 
 
 Testing guidelines
