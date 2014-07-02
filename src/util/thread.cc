@@ -52,6 +52,7 @@ using boost::thread_resource_error;
 using std::endl;
 using std::map;
 using std::stringstream;
+using strings::Substitute;
 
 namespace kudu {
 
@@ -357,8 +358,8 @@ Status ThreadJoiner::Join() {
   bool keep_trying = true;
   while (keep_trying) {
     if (waited_ms >= warn_after_ms_) {
-      LOG(WARNING) << "Waited for " << waited_ms << "ms trying to join with "
-                   << thread_->name_;
+      LOG(WARNING) << Substitute("Waited for $0ms trying to join with $1 (tid $2)",
+                                 waited_ms, thread_->name_, thread_->tid_);
     }
 
     int remaining_before_giveup = MathLimits<int>::kMax;

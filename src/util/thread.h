@@ -49,10 +49,14 @@ class ThreadJoiner {
   explicit ThreadJoiner(const Thread* thread);
 
   // Start emitting warnings after this many milliseconds.
+  //
+  // Default: 1000 ms.
   ThreadJoiner& warn_after_ms(int ms);
 
   // After the warnings after started, emit another warning at the
   // given interval.
+  //
+  // Default: 1000 ms.
   ThreadJoiner& warn_every_ms(int ms);
 
   // If the thread has not stopped after this number of milliseconds, give up
