@@ -113,14 +113,14 @@ void TransactionTracker::WaitForAllToFinish() {
   int num_complaints = 0;
   MonoTime start_time = MonoTime::Now(MonoTime::FINE);
   while (1) {
-    {
-      boost::lock_guard<simple_spinlock> l(lock_);
-      if (pending_txns_.empty()) {
-        break;
-      }
+    vector<scoped_refptr<TransactionDriver> > txns;
+    GetPendingTransactions(&txns);
+
+    if (txns.empty()) {
+      break;
     }
     LOG(INFO) << "Dumping currently running transactions: ";
-    BOOST_FOREACH(scoped_refptr<TransactionDriver> driver, pending_txns_) {
+    BOOST_FOREACH(scoped_refptr<TransactionDriver> driver, txns) {
       LOG(INFO) << driver->ToString();
     }
     usleep(wait_time);
