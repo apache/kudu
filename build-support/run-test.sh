@@ -16,7 +16,8 @@ mkdir -p $TEST_LOGDIR
 TEST_DEBUGDIR=$ROOT/build/test-debug
 mkdir -p $TEST_DEBUGDIR
 
-TEST_EXECUTABLE=$1
+TEST_EXECUTABLE=$(readlink -f $1)
+shift
 TEST_NAME=$(basename $TEST_EXECUTABLE)
 
 # We run each test in its own subdir to avoid core file related races.
@@ -54,7 +55,7 @@ ulimit -c $KUDU_TEST_ULIMIT_CORE
 
 # Run the actual test.
 echo Running $TEST_NAME, redirecting output into $LOGFILE
-"$@" --test_timeout_after $KUDU_TEST_TIMEOUT 2>&1 \
+$TEST_EXECUTABLE "$@" --test_timeout_after $KUDU_TEST_TIMEOUT 2>&1 \
     | $ROOT/thirdparty/asan_symbolize.py \
     | c++filt \
     | $ROOT/build-support/stacktrace_addr2line.pl $TEST_EXECUTABLE \
