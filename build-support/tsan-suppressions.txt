@@ -18,6 +18,12 @@ race:google::protobuf::Message::GetReflection
 # Reported at http://savannah.nongnu.org/bugs/index.php?42677
 race:_ULx86_64_local_addr_space_init
 
+# libev uses some lock-free synchronization, but doesn't have TSAN annotations.
+# See http://lists.schmorp.de/pipermail/libev/2013q2/002178.html or KUDU-366
+# for examples.
+race:evpipe_write
+race:evpipe_init
+
 # concurrent btree uses optimistic concurrency, needs to be annotated a bunch
 # more before it would pass. Relatively confident that it is correct based on
 # a lot of stress testing.
