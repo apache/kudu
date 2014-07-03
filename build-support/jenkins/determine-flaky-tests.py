@@ -43,6 +43,10 @@ def parse_args():
                     help="directory to download failed tests to")
   parser.add_option("-d", "--days", type=int, default=3,
                     help="number of days of test history to analyze")
+  parser.add_option("-l", "--list-tests-only", action="store_true",
+                    dest="list_tests_only",
+                    help="just list the flaky test names, one per line")
+
   (options, args) = parser.parse_args()
   if args:
     parser.error("unexpected arguments: " + repr(args))
@@ -133,16 +137,20 @@ def main():
   for failure in all_failing:
     by_test_name[failure.test_name].append(failure)
 
-  # Print a summary of failed tests
-  print "Summary: %d test failures in last %d day(s)" % (len(all_failing), opts.days)
-  print "Flaky tests:"
-  for test_name, failed_builds in by_test_name.iteritems():
-    print "  ", test_name, ":", ", ".join((str(x.build_number) for x in failed_builds))
+  if opts.list_tests_only:
+    for test_name in by_test_name.iterkeys():
+      print test_name
+  else:
+    # Print a summary of failed tests
+    print "Summary: %d test failures in last %d day(s)" % (len(all_failing), opts.days)
+    print "Flaky tests:"
+    for test_name, failed_builds in by_test_name.iteritems():
+      print "  ", test_name, ":", ", ".join((str(x.build_number) for x in failed_builds))
+      if opts.download:
+        for b in failed_builds:
+          download_failure(b, opts.download)
     if opts.download:
-      for b in failed_builds:
-        download_failure(b, opts.download)
-  if opts.download:
-    print "Downloaded test failure logs into " + opts.download
+      print "Downloaded test failure logs into " + opts.download
 
 if __name__ == "__main__":
   main()

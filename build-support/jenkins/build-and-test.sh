@@ -14,6 +14,13 @@
 #
 #   LLVM_DIR
 #     Path in which to find bin/clang and bin/clang++
+#
+#   RUN_FLAKY_ONLY    Default: 0
+#     Only runs tests which have failed recently, if this is 1.
+#     Used by the kudu-flaky-tests jenkins build.
+#
+#   BUILD_JAVA        Default: 1
+#     Build and test java code if this is set to 1.
 
 # If a commit messages contains a line that says 'DONT_BUILD', exit
 # immediately.
@@ -46,6 +53,7 @@ export KUDU_ALLOW_SLOW_TESTS=${KUDU_ALLOW_SLOW_TESTS:-$DEFAULT_ALLOW_SLOW_TESTS}
 LLVM_DIR=${LLVM_DIR:-/opt/toolchain/llvm-3.3/}
 export KUDU_COMPRESS_TEST_OUTPUT=${KUDU_COMPRESS_TEST_OUTPUT:-1}
 export TOOLCHAIN=/mnt/toolchain/toolchain.sh
+BUILD_JAVA=${BUILD_JAVA:-1}
 
 if [ ! -d $LLVM_DIR ]; then
   echo "No LLVM found ($LLVM_DIR does not exist)"
@@ -132,6 +140,21 @@ if [ "$BUILD_TYPE" != "ASAN" ]; then
 fi
 
 export GTEST_OUTPUT="xml:$TEST_LOGDIR/" # Enable JUnit-compatible XML output.
+
+if [ "$RUN_FLAKY_ONLY" == "1" ] ; then
+  echo Running flaky tests only:
+  $ROOT/build-support/jenkins/determine-flaky-tests.py -l | tee build/flaky-tests.txt
+  test_regex=$(perl -e '
+    chomp(my @lines = <>);
+    print join("|", map { "^" . quotemeta($_) . "\$" } @lines);
+   ' build/flaky-tests.txt)
+  EXTRA_TEST_FLAGS="$EXTRA_TEST_FLAGS -R $test_regex"
+
+  # We don't support detecting java flaky tests at the moment.
+  echo Disabling Java build since RUN_FLAKY_ONLY=1
+  BUILD_JAVA=0
+fi
+
 ctest -j$NUM_PROCS $EXTRA_TEST_FLAGS
 
 if [ "$DO_COVERAGE" == "1" ]; then
@@ -144,12 +167,15 @@ if [ -f "$TOOLCHAIN" ]; then
   source $TOOLCHAIN
 fi
 
-pushd java
-export TSAN_OPTIONS="$TSAN_OPTIONS suppressions=$ROOT/build-support/tsan-suppressions.txt history_size=7"
-set -x
-mvn clean test
-set +x
-popd
+
+if [ "$BUILD_JAVA" == "1" ]; then
+  pushd java
+  export TSAN_OPTIONS="$TSAN_OPTIONS suppressions=$ROOT/build-support/tsan-suppressions.txt history_size=7"
+  set -x
+  mvn clean test
+  set +x
+  popd
+fi
 
 # Check that the heap checker actually worked. Need to temporarily remove
 # -e to allow for failed commands.
