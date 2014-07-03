@@ -97,7 +97,7 @@ MaintenanceManager::~MaintenanceManager() {
 
 Status MaintenanceManager::Init() {
   RETURN_NOT_OK(CalculateMemTarget(&mem_target_));
-  LOG(INFO) << StringPrintf("MaintenanceManager: targetting memory size of %.6f GB",
+  LOG(INFO) << StringPrintf("MaintenanceManager: targeting memory size of %.6f GB",
                 (static_cast<float>(mem_target_) / (1024.0 * 1024.0 * 1024.0)));
   RETURN_NOT_OK(Thread::Create("maintenance", "maintenance_scheduler",
       boost::bind(&MaintenanceManager::RunSchedulerThread, this),

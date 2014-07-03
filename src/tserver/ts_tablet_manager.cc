@@ -297,7 +297,7 @@ void TSTabletManager::OpenTablet(const scoped_refptr<TabletMetadata>& meta) {
   }
 
 
-  LOG_TIMING(INFO, Substitute("tablet $0 startup", tablet_id)) {
+  LOG_TIMING(INFO, Substitute("starting tablet $0", tablet_id)) {
     TRACE("Initializing tablet peer");
 
     // Check the tablet metadata for the quorum

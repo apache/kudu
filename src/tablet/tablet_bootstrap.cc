@@ -228,7 +228,7 @@ TabletStatusListener::~TabletStatusListener() {
 }
 
 void TabletStatusListener::StatusMessage(const string& status) {
-  LOG(INFO) << "Tablet id " << tablet_id() << ": " << status;
+  LOG(INFO) << "Tablet " << tablet_id() << ": " << status;
   boost::lock_guard<boost::shared_mutex> l(lock_);
   last_status_ = status;
 }

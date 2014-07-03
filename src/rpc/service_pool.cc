@@ -109,9 +109,8 @@ Status ServicePool::QueueInboundCall(gscoped_ptr<InboundCall> call) {
     status = Status::ServiceUnavailable(err_msg);
     rpcs_queue_overflow_->Increment();
     c->RespondFailure(ErrorStatusPB::ERROR_SERVER_TOO_BUSY, status);
-    DLOG(INFO) << err_msg;
-    DLOG(INFO) << "Contents of service queue: ";
-    DLOG(INFO) << service_queue_.ToString();
+    DLOG(INFO) << err_msg << " Contents of service queue:\n"
+               << service_queue_.ToString();
   } else if (queue_status == QUEUE_SHUTDOWN) {
     status = Status::ServiceUnavailable("Service is shutting down");
     c->RespondFailure(ErrorStatusPB::FATAL_SERVER_SHUTTING_DOWN, status);

@@ -107,7 +107,7 @@ void InboundCall::SerializeResponseTo(vector<Slice>* slices) const {
 }
 
 string InboundCall::ToString() const {
-  return StringPrintf("Call %s from %s (#%d)", method_name().c_str(),
+  return StringPrintf("Call %s from %s (request call id %d)", method_name().c_str(),
                       conn_->remote().ToString().c_str(),
                       header_.call_id());
 }
