@@ -117,6 +117,7 @@ class ClientTest : public KuduTest {
 
   virtual void TearDown() OVERRIDE {
     if (cluster_) {
+      cluster_->Shutdown();
       cluster_.reset();
     }
     KuduTest::TearDown();

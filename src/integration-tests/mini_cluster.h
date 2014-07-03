@@ -86,7 +86,7 @@ class MiniCluster {
     kRegistrationWaitTimeSeconds = 5
   };
 
-  bool started_;
+  bool running_;
 
   Env* const env_;
   const std::string fs_root_;

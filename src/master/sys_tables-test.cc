@@ -32,7 +32,7 @@ namespace master {
 
 class SysTablesTest : public KuduTest {
  protected:
-  void SetUp() OVERRIDE {
+  virtual void SetUp() OVERRIDE {
     KuduTest::SetUp();
 
     // Start master
@@ -46,6 +46,10 @@ class SysTablesTest : public KuduTest {
     proxy_.reset(new MasterServiceProxy(client_messenger_, mini_master_->bound_rpc_addr()));
   }
 
+  virtual void TearDown() OVERRIDE {
+    mini_master_->Shutdown();
+    KuduTest::TearDown();
+  }
 
   shared_ptr<Messenger> client_messenger_;
   gscoped_ptr<MiniMaster> mini_master_;

@@ -28,24 +28,25 @@ namespace master {
 
 Master::Master(const MasterOptions& opts)
   : ServerBase(opts, "kudu.master"),
-    initted_(false),
+    state_(kStopped),
     ts_manager_(new TSManager()),
     catalog_manager_(new CatalogManager(this)),
     path_handlers_(new MasterPathHandlers(this)) {
 }
 
 Master::~Master() {
+  CHECK_NE(kRunning, state_);
 }
 
 string Master::ToString() const {
-  if (!initted_) {
-    return "Uninitialized master";
+  if (state_ != kRunning) {
+    return "Master (stopped)";
   }
   return strings::Substitute("Master@$0", first_rpc_address().ToString());
 }
 
 Status Master::Init() {
-  CHECK(!initted_);
+  CHECK_EQ(kStopped, state_);
 
   RETURN_NOT_OK(ServerBase::Init());
 
@@ -53,25 +54,29 @@ Status Master::Init() {
 
   RETURN_NOT_OK(catalog_manager_->Init(is_first_run_));
 
-  initted_ = true;
+  state_ = kInitialized;
   return Status::OK();
 }
 
 Status Master::Start() {
-  CHECK(initted_);
+  CHECK_EQ(kInitialized, state_);
 
   gscoped_ptr<ServiceIf> impl(new MasterServiceImpl(this));
   RETURN_NOT_OK(ServerBase::Start(impl.Pass()));
 
+  state_ = kRunning;
   return Status::OK();
 }
 
 void Master::Shutdown() {
-  string name = ToString();
-  LOG(INFO) << name << " shutting down...";
-  ServerBase::Shutdown();
-  catalog_manager_->Shutdown();
-  LOG(INFO) << name << " shutdown complete.";
+  if (state_ == kRunning) {
+    string name = ToString();
+    LOG(INFO) << name << " shutting down...";
+    ServerBase::Shutdown();
+    catalog_manager_->Shutdown();
+    LOG(INFO) << name << " shutdown complete.";
+  }
+  state_ = kStopped;
 }
 
 } // namespace master

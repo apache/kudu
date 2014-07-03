@@ -35,7 +35,7 @@ namespace master {
 
 class MasterTest : public KuduTest {
  protected:
-  void SetUp() OVERRIDE {
+  virtual void SetUp() OVERRIDE {
     KuduTest::SetUp();
 
     // Start master
@@ -47,6 +47,11 @@ class MasterTest : public KuduTest {
     MessengerBuilder bld("Client");
     ASSERT_STATUS_OK(bld.Build(&client_messenger_));
     proxy_.reset(new MasterServiceProxy(client_messenger_, mini_master_->bound_rpc_addr()));
+  }
+
+  virtual void TearDown() OVERRIDE {
+    mini_master_->Shutdown();
+    KuduTest::TearDown();
   }
 
   void DoListTables(ListTablesResponsePB* resp);

@@ -51,9 +51,15 @@ class Master : public server::ServerBase {
  private:
   friend class MasterTest;
 
+  enum MasterState {
+    kStopped,
+    kInitialized,
+    kRunning
+  };
+
   RpcServer *rpc_server() const { return rpc_server_.get(); }
 
-  bool initted_;
+  MasterState state_;
 
   gscoped_ptr<TSManager> ts_manager_;
   gscoped_ptr<CatalogManager> catalog_manager_;

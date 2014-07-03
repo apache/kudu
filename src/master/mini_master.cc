@@ -18,30 +18,31 @@ namespace kudu {
 namespace master {
 
 MiniMaster::MiniMaster(Env* env, const string& fs_root)
-  : started_(false),
+  : running_(false),
     env_(env),
     fs_root_(fs_root) {
 }
 
 MiniMaster::~MiniMaster() {
+  CHECK(!running_);
 }
 
 Status MiniMaster::Start() {
-  CHECK(!started_);
-
+  CHECK(!running_);
   return StartOnPorts(0, 0);
 }
 
 void MiniMaster::Shutdown() {
-  if (started_) {
+  if (running_) {
     master_->Shutdown();
   }
-  started_ = false;
+  running_ = false;
   master_.reset();
 }
 
 Status MiniMaster::StartOnPorts(uint16_t rpc_port, uint16_t web_port) {
-  CHECK(!started_);
+  CHECK(!running_);
+  CHECK(!master_);
 
   MasterOptions opts;
 
@@ -55,27 +56,29 @@ Status MiniMaster::StartOnPorts(uint16_t rpc_port, uint16_t web_port) {
   RETURN_NOT_OK(server->Start());
 
   master_.swap(server);
-  started_ = true;
+  running_ = true;
   return Status::OK();
 }
 
 Status MiniMaster::Restart() {
-  CHECK(started_);
+  CHECK(running_);
 
   Sockaddr prev_rpc = bound_rpc_addr();
   Sockaddr prev_http = bound_http_addr();
   Shutdown();
 
-  return StartOnPorts(prev_rpc.port(), prev_http.port());
+  RETURN_NOT_OK(StartOnPorts(prev_rpc.port(), prev_http.port()));
+  CHECK(running_);
+  return Status::OK();
 }
 
 const Sockaddr MiniMaster::bound_rpc_addr() const {
-  CHECK(started_);
+  CHECK(running_);
   return master_->first_rpc_address();
 }
 
 const Sockaddr MiniMaster::bound_http_addr() const {
-  CHECK(started_);
+  CHECK(running_);
   return master_->first_http_address();
 }
 

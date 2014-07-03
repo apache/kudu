@@ -30,18 +30,19 @@ using tserver::TabletServer;
 MiniCluster::MiniCluster(Env* env,
                          const string& fs_root,
                          int num_tablet_servers)
-  : started_(false),
+  : running_(false),
     env_(env),
     fs_root_(fs_root),
     num_ts_initial_(num_tablet_servers) {
 }
 
 MiniCluster::~MiniCluster() {
+  CHECK(!running_);
 }
 
 Status MiniCluster::Start() {
   CHECK(!fs_root_.empty()) << "No Fs root was provided";
-  CHECK(!started_);
+  CHECK(!running_);
 
   // start the master (we need the port to set on the servers)
   gscoped_ptr<MiniMaster> mini_master(new MiniMaster(env_, GetMasterFsRoot()));
@@ -56,7 +57,7 @@ Status MiniCluster::Start() {
   RETURN_NOT_OK_PREPEND(WaitForTabletServerCount(num_ts_initial_),
                         "Waiting for tablet servers to start");
 
-  started_ = true;
+  running_ = true;
   return Status::OK();
 }
 
@@ -92,6 +93,7 @@ void MiniCluster::Shutdown() {
     tablet_server->Shutdown();
   }
   mini_master_->Shutdown();
+  running_ = false;
 }
 
 MiniTabletServer* MiniCluster::mini_tablet_server(int idx) {

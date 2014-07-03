@@ -42,6 +42,11 @@ class RpcLineItemDAOTest : public KuduTest {
     dao_->Init();
   }
 
+  virtual void TearDown() OVERRIDE {
+    cluster_->Shutdown();
+    KuduTest::TearDown();
+  }
+
  protected:
   gscoped_ptr<MiniCluster> cluster_;
   gscoped_ptr<RpcLineItemDAO> dao_;

@@ -40,7 +40,7 @@ class MiniMaster {
  private:
   Status StartOnPorts(uint16_t rpc_port, uint16_t web_port);
 
-  bool started_;
+  bool running_;
 
   ATTRIBUTE_MEMBER_UNUSED Env* const env_;
   const std::string fs_root_;
