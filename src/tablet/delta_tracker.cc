@@ -440,11 +440,6 @@ Status DeltaTracker::Flush(MetadataFlushType flush_type) {
   // and rename to final path!
 }
 
-void DeltaTracker::SetDMS(const shared_ptr<DeltaMemStore>& dms) {
-  boost::lock_guard<boost::shared_mutex> lock(component_lock_);
-  dms_ = dms;
-}
-
 Status DeltaTracker::AlterSchema(const Schema& schema) {
   bool require_update;
   {

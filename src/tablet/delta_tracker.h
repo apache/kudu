@@ -188,12 +188,6 @@ class DeltaTracker {
                              vector<BlockId> *target_blocks,
                              gscoped_ptr<DeltaCompactionInput> *out);
 
-  // Set this delta tracker's DeltaMemStore to 'new_dms'.
-  //
-  // NOTE: this is an internal API strictly for use during
-  // compactions.
-  void SetDMS(const shared_ptr<DeltaMemStore> &new_dms);
-
   shared_ptr<metadata::RowSetMetadata> rowset_metadata_;
   Schema schema_;
 
