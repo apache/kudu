@@ -43,6 +43,7 @@
 #include "util/locks.h"
 #include "util/mem_tracker.h"
 #include "util/metrics.h"
+#include "util/stopwatch.h"
 
 DEFINE_bool(tablet_do_dup_key_checks, true,
             "Whether to check primary keys for duplicate on insertion. "
@@ -715,12 +716,15 @@ int32_t Tablet::CurrentMrsIdForTests() const {
   return components_->memrowset->mrs_id();
 }
 
-class FlushRowSetsOp : public MaintenanceOp {
+// Maintenance op for MRS flush.
+//
+class FlushMRSOp : public MaintenanceOp {
  public:
-  explicit FlushRowSetsOp(Tablet* tablet)
-    : MaintenanceOp(StringPrintf("FlushRowSetsOp(%s)", tablet->tablet_id().c_str())),
-      tablet_(tablet)
-  { }
+  explicit FlushMRSOp(Tablet* tablet)
+    : MaintenanceOp(StringPrintf("FlushMRSOp(%s)", tablet->tablet_id().c_str())),
+      tablet_(tablet) {
+    time_since_flush_.start();
+  }
 
   virtual void UpdateStats(MaintenanceOpStats* stats) OVERRIDE {
     {
@@ -732,86 +736,103 @@ class FlushRowSetsOp : public MaintenanceOp {
     stats->ts_anchored_secs = 0;
     // TODO: use workload statistics here to find out how "hot" the tablet has
     // been in the last 5 minutes.
+
     if (stats->ram_anchored > FLAGS_flush_threshold_mb * 1024 * 1024) {
+      // If we're over the user-specified flush threshold, then consider the perf
+      // improvement to be 1 for every extra MB.  This produces perf_improvement results
+      // which are much higher than any compaction would produce, and means that, when
+      // there is an MRS over threshold, a flush will almost always be selected instead of
+      // a compaction.  That's not necessarily a good thing, but in the absense of better
+      // heuristics, it will do for now.
       int extra_mb = stats->ram_anchored / 1024 / 1024;
       stats->perf_improvement = extra_mb;
-    } else {
-      stats->perf_improvement = 0;
+    } else if (stats->ram_anchored > 0 &&
+               time_since_flush_.elapsed().wall_millis() > kFlushDueToTimeMs) {
+      // Even if we aren't over the threshold, consider flushing if we haven't flushed
+      // in a long time. But, don't give it a large perf_improvement score. We should
+      // only do this if we really don't have much else to do.
+      double extra_millis = time_since_flush_.elapsed().wall_millis() - 60 * 1000;
+      stats->perf_improvement = std::min(600000.0 / extra_millis, 0.05);
     }
   }
 
   virtual bool Prepare() OVERRIDE {
     // Try to acquire the rowsets_flush_lock_.  If we can't, the Prepare step
-    // fails.  This also implies that only one instance of FlushRowSetsOp can be
+    // fails.  This also implies that only one instance of FlushMRSOp can be
     // running at once.
     return tablet_->rowsets_flush_lock_.try_lock();
   }
 
   virtual void Perform() OVERRIDE {
     tablet_->FlushUnlocked();
-    return tablet_->rowsets_flush_lock_.unlock();
+    time_since_flush_.start();
+    tablet_->rowsets_flush_lock_.unlock();
   }
 
  private:
+  enum {
+    kFlushDueToTimeMs = 120 * 1000
+  };
+
+  Stopwatch time_since_flush_;
+
   Tablet *const tablet_;
 };
 
+// MaintenanceOp for rowset compaction.
+//
+// This periodically invokes the tablet's CompactionPolicy to select a compaction.  The
+// compaction policy's "quality" is used as a proxy for the performance improvement which
+// is exposed back to the maintenance manager. As compactions become more fruitful (i.e.
+// more overlapping rowsets), the perf_improvement score goes up, increasing priority
+// with which a compaction on this tablet will be selected by the maintenance manager.
 class CompactRowSetsOp : public MaintenanceOp {
  public:
   explicit CompactRowSetsOp(Tablet* tablet)
-    : MaintenanceOp(StringPrintf("CompactRowSetsOp(%s)", tablet->tablet_id().c_str())),
-      last_(MonoTime::Now(MonoTime::FINE)),
-      tablet_(tablet),
-      compact_running_(0)
-  { }
+    : MaintenanceOp(Substitute("CompactRowSetsOp($0)", tablet->tablet_id())),
+      tablet_(tablet) {
+    since_last_stats_update_.start();
+  }
 
   virtual void UpdateStats(MaintenanceOpStats* stats) OVERRIDE {
-    stats->runnable = true;
-    stats->ram_anchored = 0;
-    stats->ts_anchored_secs = 0;
-
-    // TODO: use workload statistics here to find out how "hot" the tablet has
-    // been in the last 5 minutes.  For now, we just set perf_improvement to 0
-    // if the tablet has been compacted in the last 5 seconds.
-    MonoTime now(MonoTime::Now(MonoTime::FINE));
-    MonoDelta delta(now.GetDeltaSince(last()));
-    int64_t deltaMs = delta.ToMilliseconds();
-    if (deltaMs < 5000) {
-      stats->perf_improvement = 0;
-    } else {
-      stats->perf_improvement = deltaMs / 10;
+    boost::lock_guard<simple_spinlock> l(lock_);
+    // If we've computed stats recently, no need to recompute.
+    // TODO: it would be nice if we could invalidate this on any Flush as well
+    // as after a compaction.
+    if (since_last_stats_update_.elapsed().wall_millis() < kRefreshIntervalMs) {
+      *stats = prev_stats_;
+      return;
     }
 
-    // Reduce perf_improvement stat if there is another rowset compaction
-    // already running on this tablet.
-    stats->perf_improvement /= (compact_running_ + 1);
+    tablet_->UpdateCompactionStats(&prev_stats_);
+    *stats = prev_stats_;
+    since_last_stats_update_.start();
   }
 
   virtual bool Prepare() OVERRIDE {
-    compact_running_ = running();
+    boost::lock_guard<simple_spinlock> l(lock_);
+    // Resetting stats ensures that, while this compaction is running, if we
+    // are asked for more stats, we won't end up calling Compact() twice
+    // and accidentally scheduling a much less fruitful compaction.
+    prev_stats_.Clear();
     return true;
   }
 
   virtual void Perform() OVERRIDE {
-    tablet_->Compact(Tablet::COMPACT_NO_FLAGS);
-    set_last(MonoTime::Now(MonoTime::FINE));
+    WARN_NOT_OK(tablet_->Compact(Tablet::COMPACT_NO_FLAGS),
+                Substitute("Compaction failed on $0", tablet_->tablet_id()));
   }
 
  private:
-  MonoTime last() const {
-    boost::lock_guard<simple_spinlock> l(lock_);
-    return last_;
-  }
-
-  void set_last(const MonoTime& last) {
-    boost::lock_guard<simple_spinlock> l(lock_);
-    last_ = last;
-  }
+  enum {
+    kRefreshIntervalMs = 5000
+  };
 
   mutable simple_spinlock lock_;
-  MonoTime last_;
-  Tablet *const tablet_;
-  uint32_t compact_running_;
+  Stopwatch since_last_stats_update_;
+  MaintenanceOpStats prev_stats_;
+
+  Tablet * const tablet_;
 };
 
 class FlushDeltaMemStoresOp : public MaintenanceOp {
@@ -839,7 +860,8 @@ class FlushDeltaMemStoresOp : public MaintenanceOp {
   }
 
   virtual void Perform() OVERRIDE {
-    tablet_->FlushBiggestDMS();
+    WARN_NOT_OK(tablet_->FlushBiggestDMS(),
+                Substitute("Failed to flush biggest DMS on $0", tablet_->tablet_id()));
   }
 
  private:
@@ -871,7 +893,9 @@ Status Tablet::PickRowSetsToCompact(RowSetsInCompaction *picked,
     }
   } else {
     // Let the policy decide which rowsets to compact.
-    RETURN_NOT_OK(compaction_policy_->PickRowSets(*rowsets_copy, &picked_set));
+    double quality = 0;
+    RETURN_NOT_OK(compaction_policy_->PickRowSets(*rowsets_copy, &picked_set, &quality));
+    VLOG(2) << "Compaction quality: " << quality;
   }
 
   boost::shared_lock<rw_spinlock> lock(component_lock_);
@@ -936,7 +960,7 @@ bool Tablet::IsTabletFileName(const std::string& fname) {
 }
 
 void Tablet::RegisterMaintenanceOps(MaintenanceManager* maint_mgr) {
-  gscoped_ptr<MaintenanceOp> mrs_flush_op(new FlushRowSetsOp(this));
+  gscoped_ptr<MaintenanceOp> mrs_flush_op(new FlushMRSOp(this));
   maint_mgr->RegisterOp(mrs_flush_op.get());
   maintenance_ops_.push_back(mrs_flush_op.release());
 
@@ -1200,6 +1224,33 @@ Status Tablet::Compact(CompactFlags flags) {
   shared_ptr<Schema> cur_schema(schema());
   return DoCompactionOrFlush(*cur_schema.get(), input, kNoMrsFlushed);
 }
+
+void Tablet::UpdateCompactionStats(MaintenanceOpStats* stats) {
+
+  // TODO: use workload statistics here to find out how "hot" the tablet has
+  // been in the last 5 minutes, and somehow scale the compaction quality
+  // based on that, so we favor hot tablets.
+  double quality = 0;
+  unordered_set<RowSet*> picked_set_ignored;
+
+  shared_ptr<RowSetTree> rowsets_copy;
+  {
+    boost::shared_lock<rw_spinlock> lock(component_lock_);
+    rowsets_copy = components_->rowsets;
+  }
+
+  {
+    boost::lock_guard<boost::mutex> compact_lock(compact_select_lock_);
+    WARN_NOT_OK(compaction_policy_->PickRowSets(*rowsets_copy, &picked_set_ignored, &quality),
+                Substitute("Couldn't determine compaction quality for $0", tablet_id()));
+  }
+
+  VLOG(1) << "Best compaction for " << tablet_id() << ": " << quality;
+
+  stats->runnable = quality >= 0;
+  stats->perf_improvement = quality;
+}
+
 
 Status Tablet::DebugDump(vector<string> *lines) {
   boost::shared_lock<rw_spinlock> lock(component_lock_);

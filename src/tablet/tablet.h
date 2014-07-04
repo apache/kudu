@@ -37,6 +37,7 @@ class Clock;
 
 class MaintenanceManager;
 class MaintenanceOp;
+struct MaintenanceOpStats;
 
 namespace tablet {
 
@@ -57,7 +58,7 @@ class WriteTransactionState;
 class Tablet {
  public:
   friend class CompactRowSetsOp;
-  friend class FlushRowSetsOp;
+  friend class FlushMRSOp;
 
   class CompactionFaultHooks;
   class FlushCompactCommonHooks;
@@ -230,6 +231,9 @@ class Tablet {
   typedef int CompactFlags;
 
   Status Compact(CompactFlags flags);
+
+  // Update the statistics for performing a compaction.
+  void UpdateCompactionStats(MaintenanceOpStats* stats);
 
   // Returns the exact current size of the MRS, in bytes.
   // This method takes a read lock on component_lock_ and is thread-safe.

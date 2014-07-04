@@ -29,8 +29,10 @@ TEST(TestCompactionPolicy, TestBudgetedSelection) {
   BudgetedCompactionPolicy policy(kBudgetMb);
 
   std::tr1::unordered_set<RowSet*> picked;
-  ASSERT_OK(policy.PickRowSets(tree, &picked));
+  double quality = 0;
+  ASSERT_OK(policy.PickRowSets(tree, &picked, &quality));
   ASSERT_EQ(3, picked.size());
+  ASSERT_GE(quality, 1.0);
 }
 
 } // namespace tablet

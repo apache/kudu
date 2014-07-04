@@ -21,6 +21,8 @@ namespace kudu {
 class MaintenanceManager;
 
 struct MaintenanceOpStats {
+  MaintenanceOpStats();
+
   // True if this op can be run now.
   bool runnable;
 

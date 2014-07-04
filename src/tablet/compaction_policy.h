@@ -31,7 +31,12 @@ class CompactionPolicy {
   // is unlocked, but will not itself take the lock. Hence no other threads
   // should lock or unlock the rowsets' compact_flush_lock while this method
   // is running.
-  virtual Status PickRowSets(const RowSetTree &tree, std::tr1::unordered_set<RowSet*>* picked) = 0;
+  //
+  // *quality is set to represent how effective the compaction will be on
+  // reducing IO in the tablet. TODO: determine the units/ranges of this thing
+  virtual Status PickRowSets(const RowSetTree &tree,
+                             std::tr1::unordered_set<RowSet*>* picked,
+                             double* quality) = 0;
 
   // Return the size at which flush/compact should "roll" to new files. Some
   // compaction policies may prefer to deal with small constant-size files
@@ -50,10 +55,12 @@ class CompactionPolicy {
 // more than a given ratio.
 //
 // This policy is more-or-less based on HBase.
+// This policy is essentially deprecated/dead, to be removed at some point.
 class SizeRatioCompactionPolicy : public CompactionPolicy {
  public:
   virtual Status PickRowSets(const RowSetTree &tree,
-                             std::tr1::unordered_set<RowSet*>* picked) OVERRIDE;
+                             std::tr1::unordered_set<RowSet*>* picked,
+                             double* quality) OVERRIDE;
 };
 
 // Compaction policy which, given a size budget for a compaction, and a workload,
@@ -66,7 +73,8 @@ class BudgetedCompactionPolicy : public CompactionPolicy {
   explicit BudgetedCompactionPolicy(int size_budget_mb);
 
   virtual Status PickRowSets(const RowSetTree &tree,
-                             std::tr1::unordered_set<RowSet*>* picked) OVERRIDE;
+                             std::tr1::unordered_set<RowSet*>* picked,
+                             double* quality) OVERRIDE;
 
   virtual uint64_t target_rowset_size() const OVERRIDE;
 

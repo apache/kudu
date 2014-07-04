@@ -57,7 +57,8 @@ static bool CompareBySize(const RowSetInfo& a,
 }
 
 Status SizeRatioCompactionPolicy::PickRowSets(const RowSetTree &tree,
-                                              std::tr1::unordered_set<RowSet*>* picked) {
+                                              std::tr1::unordered_set<RowSet*>* picked,
+                                              double* quality) {
   vector<RowSetInfo> candidates;
   RowSetInfo::Collect(tree, &candidates);
 
@@ -73,6 +74,17 @@ Status SizeRatioCompactionPolicy::PickRowSets(const RowSetTree &tree,
     } else {
       break;
     }
+  }
+
+  // Totally arbitrary quality calculation: make quality approach
+  // 1 as the number of included rowsets approaches 7 (same number that HBase
+  // uses for the max count of outstanding files before forcing a compaction).
+  // TODO We don't really support SizeRatio compaction anymore - should probably
+  // remove this code entirely.
+  if (picked->size() >= 7) {
+    *quality = 1;
+  } else {
+    *quality = 1/(8.0 - implicit_cast<double>(picked->size()));
   }
 
   DumpCompactionSVG(candidates, *picked);
@@ -219,7 +231,8 @@ class UpperBoundCalculator {
 } // anonymous namespace
 
 Status BudgetedCompactionPolicy::PickRowSets(const RowSetTree &tree,
-                                             unordered_set<RowSet*>* picked) {
+                                             unordered_set<RowSet*>* picked,
+                                             double* quality) {
   vector<RowSetInfo> asc_min_key, asc_max_key;
   SetupKnapsackInput(tree, &asc_min_key, &asc_max_key);
   if (asc_max_key.empty()) {
@@ -341,6 +354,8 @@ Status BudgetedCompactionPolicy::PickRowSets(const RowSetTree &tree,
     }
     VLOG(1) << "Solution value: " << best_optimal;
   }
+
+  *quality = best_optimal;
 
   if (best_optimal <= 0) {
     VLOG(1) << "Best compaction available makes things worse. Not compacting.";

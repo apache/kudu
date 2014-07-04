@@ -40,6 +40,10 @@ DEFINE_bool(enable_maintenance_manager, true,
 
 namespace kudu {
 
+MaintenanceOpStats::MaintenanceOpStats() {
+  Clear();
+}
+
 void MaintenanceOpStats::Clear() {
   runnable = false;
   ram_anchored = 0;
