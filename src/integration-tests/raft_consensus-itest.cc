@@ -48,6 +48,7 @@ using master::GetTableLocationsRequestPB;
 using master::GetTableLocationsResponsePB;
 using master::TableIdentifierPB;
 using master::TabletLocationsPB;
+using master::TSInfoPB;
 using master::MiniMaster;
 using metadata::QuorumPB;
 using metadata::QuorumPeerPB;
@@ -75,6 +76,9 @@ class DistConsensusTest : public TabletServerTest {
     FLAGS_consensus_entry_cache_size_hard_limit_mb = 10;
     FLAGS_consensus_rpc_timeout_ms = 50;
     KuduTest::SetUp();
+  }
+
+  void BuildAndStart() {
     CreateCluster();
     CreateClient();
     WaitForAndGetQuorum();
@@ -131,7 +135,7 @@ class DistConsensusTest : public TabletServerTest {
     CHECK_OK(cluster_->mini_master()->master()->catalog_manager()->GetTableLocations(
         &req, &resp));
     CHECK(resp.tablet_locations_size() > 0);
-    tablet_id = resp.tablet_locations(0).tablet_id();
+    tablet_id_ = resp.tablet_locations(0).tablet_id();
 
     TabletLocationsPB locations;
     int num_retries = 0;
@@ -143,7 +147,7 @@ class DistConsensusTest : public TabletServerTest {
       // TODO add a way to wait for a tablet to be ready. Also to wait for it to
       // have a certain _active_ replication count.
       replicas_.clear();
-      Status status = cluster_->WaitForReplicaCount(tablet_id,
+      Status status = cluster_->WaitForReplicaCount(tablet_id_,
                                                     kNumReplicas, &locations);
       if (status.IsTimedOut()) {
         LOG(WARNING)<< "Timeout waiting for all three replicas to be online, retrying...";
@@ -174,7 +178,7 @@ class DistConsensusTest : public TabletServerTest {
     RpcController rpc;
 
     NewScanRequestPB* scan = req.mutable_new_scan_request();
-    scan->set_tablet_id(tablet_id);
+    scan->set_tablet_id(tablet_id_);
     ASSERT_STATUS_OK(SchemaToColumnPBs(schema_, scan->mutable_projected_columns()));
 
     // Send the call
@@ -281,7 +285,7 @@ class DistConsensusTest : public TabletServerTest {
                                   uint64_t count,
                                   uint64_t num_batches,
                                   TabletServerServiceProxy* proxy) {
-    TabletServerTest::InsertTestRowsRemote(tid, first_row, count, num_batches, proxy, tablet_id);
+    TabletServerTest::InsertTestRowsRemote(tid, first_row, count, num_batches, proxy, tablet_id_);
     inserters_.CountDown();
   }
 
@@ -290,7 +294,7 @@ class DistConsensusTest : public TabletServerTest {
   // TODO use the consensus/tablet/log hooks _as_well_as_ lock stealing
   void DelayInjectorThread(MiniTabletServer* mini_tablet_server) {
     shared_ptr<TabletPeer> peer;
-    CHECK(mini_tablet_server->server()->tablet_manager()->LookupTabletUnlocked(tablet_id, &peer));
+    CHECK(mini_tablet_server->server()->tablet_manager()->LookupTabletUnlocked(tablet_id_, &peer));
     RaftConsensus* consensus = down_cast<RaftConsensus*>(peer->consensus());
     ReplicaState* state = consensus->GetReplicaStateForTests();
     while (inserters_.count() > 0) {
@@ -331,7 +335,7 @@ class DistConsensusTest : public TabletServerTest {
 
   QuorumPB quorum_;
   Schema schema_;
-  string tablet_id;
+  string tablet_id_;
 
   std::vector<scoped_refptr<kudu::Thread> > threads_;
   CountDownLatch inserters_;
@@ -341,6 +345,7 @@ class DistConsensusTest : public TabletServerTest {
 // from the leader and then use that id to make the replica wait
 // until it is done. This will avoid the sleeps below.
 TEST_F(DistConsensusTest, TestInsertAndMutateThroughConsensus) {
+  BuildAndStart();
 
   int num_iters = AllowSlowTests() ? 10 : 1;
 
@@ -354,8 +359,10 @@ TEST_F(DistConsensusTest, TestInsertAndMutateThroughConsensus) {
 }
 
 TEST_F(DistConsensusTest, TestFailedTransaction) {
+  BuildAndStart();
+
   WriteRequestPB req;
-  req.set_tablet_id(tablet_id);
+  req.set_tablet_id(tablet_id_);
   ASSERT_STATUS_OK(SchemaToPB(schema_, req.mutable_schema()));
 
   RowOperationsPB* data = req.mutable_row_operations();
@@ -389,6 +396,8 @@ TEST_F(DistConsensusTest, TestFailedTransaction) {
 // that steals consensus peer locks for a while. This is meant to test that
 // even with timeouts and repeated requests consensus still works.
 TEST_F(DistConsensusTest, MultiThreadedMutateAndInsertThroughConsensus) {
+  BuildAndStart();
+
   if (500 == FLAGS_client_inserts_per_thread) {
     if (this->AllowSlowTests()) {
       FLAGS_client_inserts_per_thread = FLAGS_client_inserts_per_thread * 10;
@@ -424,12 +433,14 @@ TEST_F(DistConsensusTest, MultiThreadedMutateAndInsertThroughConsensus) {
 }
 
 TEST_F(DistConsensusTest, TestInsertOnNonLeader) {
+  BuildAndStart();
+
   // Manually construct a write RPC to a replica and make sure it responds
   // with the correct error code.
   WriteRequestPB req;
   WriteResponsePB resp;
   RpcController rpc;
-  req.set_tablet_id(tablet_id);
+  req.set_tablet_id(tablet_id_);
   ASSERT_STATUS_OK(SchemaToPB(schema_, req.mutable_schema()));
   AddTestRowToPB(RowOperationsPB::INSERT, schema_, 1234, 5678,
                  "hello world via RPC", req.mutable_row_operations());
@@ -443,6 +454,102 @@ TEST_F(DistConsensusTest, TestInsertOnNonLeader) {
   // so that the client can properly handle this case! plumbing this is a little difficult
   // so not addressing at the moment.
   AssertAllReplicasAgree(0);
+}
+
+TEST_F(DistConsensusTest, TestInsertWhenTheQueueIsFull) {
+  FLAGS_consensus_entry_cache_size_soft_limit_mb = 0;
+  FLAGS_consensus_entry_cache_size_hard_limit_mb = 1;
+  BuildAndStart();
+  RaftConsensus* replica_consensus = NULL;
+
+  // now get a RaftConsensus instance from one of the replicas and steal the lock
+  // so that operations get appended and requests successfully completed, but the
+  // queue doesn't get trimmed.
+  const TSInfoPB& info = replicas_[0]->ts_info;
+  for (int i = 0; i < kNumReplicas; i++) {
+    TabletServer* server = cluster_->mini_tablet_server(i)->server();
+    if (server->instance_pb().permanent_uuid() != info.permanent_uuid()) continue;
+    shared_ptr<TabletPeer> peer;
+    CHECK(server->tablet_manager()->LookupTabletUnlocked(tablet_id_, &peer));
+    replica_consensus = down_cast<RaftConsensus*>(peer->consensus());
+    break;
+  }
+
+  ASSERT_TRUE(replica_consensus != NULL);
+
+  // generate a 128Kb dummy payload
+  string test_payload(128 * 1024, '0');
+
+  WriteRequestPB req;
+  req.set_tablet_id(tablet_id_);
+  ASSERT_STATUS_OK(SchemaToPB(schema_, req.mutable_schema()));
+  RowOperationsPB* data = req.mutable_row_operations();
+
+  WriteResponsePB resp;
+  RpcController rpc;
+  Status s;
+
+  int key = 0;
+  int successful_writes_counter = 0;
+
+  // Steal a replica's lock
+  {
+    ReplicaState::UniqueLock lock;
+    ASSERT_OK(replica_consensus->GetReplicaStateForTests()->LockForRead(&lock));
+    LOG(INFO)<< "Acquired lock for one of the replicas, starting to write.";
+
+    // .. and insert until insertions fail because the queue is full
+    while (true) {
+      rpc.Reset();
+      data->Clear();
+      AddTestRowToPB(RowOperationsPB::INSERT, schema_, key, key,
+                     test_payload, data);
+      key++;
+      ASSERT_OK(leader_->proxy->Write(req, &resp, &rpc));
+
+      if (resp.has_error()) {
+        s = StatusFromPB(resp.error().status());
+      }
+      if (s.ok()) {
+        successful_writes_counter++;
+        continue;
+      }
+      break;
+    }
+    // Make sure the we get Status::ServiceUnavailable()
+    ASSERT_TRUE(s.IsServiceUnavailable());
+  }
+
+  // .. now release the lock, the lagging replica should eventually ACK the
+  // pending request and allow to discard messages from the queue, thus
+  // accepting new requests.
+  // .. and insert until insertions fail because the queue is full
+  int failure_counter = 0;
+  while (true) {
+    rpc.Reset();
+    data->Clear();
+    AddTestRowToPB(RowOperationsPB::INSERT, schema_, key, key,
+                   test_payload, data);
+    key++;
+    ASSERT_OK(leader_->proxy->Write(req, &resp, &rpc));
+    if (resp.has_error()) {
+      s = StatusFromPB(resp.error().status());
+    } else {
+      successful_writes_counter++;
+      s = Status::OK();
+    }
+    if (s.IsServiceUnavailable()) {
+      if (failure_counter++ == 1000) {
+        FAIL() << "Wasn't able to write to the tablet.";
+      }
+      usleep(100 * 1000);
+      continue;
+    }
+    ASSERT_OK(s);
+    break;
+  }
+
+  AssertAllReplicasAgree(successful_writes_counter);
 }
 
 }  // namespace tserver
