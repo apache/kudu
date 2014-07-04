@@ -26,6 +26,7 @@
 #include "gutil/strings/substitute.h"
 #include "util/env.h"
 #include "util/errno.h"
+#include "util/logging.h"
 #include "util/slice.h"
 #include "util/stopwatch.h"
 
@@ -498,15 +499,9 @@ class PosixWritableFile : public WritableFile {
     uint64_t offset = std::max(filesize_, pre_allocated_size_);
     if (fallocate(fd_, 0, offset, size) < 0) {
       if (errno == EOPNOTSUPP) {
-        if (!logged_fallocate_warning_) {
-          LOG(WARNING) << "The filesystem does not support fallocate().";
-          logged_fallocate_warning_ = true;
-        }
+        KLOG_FIRST_N(WARNING, 1) << "The filesystem does not support fallocate().";
       } else if (errno == ENOSYS) {
-        if (!logged_fallocate_warning_) {
-          LOG(WARNING) << "The kernel does not implement fallocate().";
-          logged_fallocate_warning_ = true;
-        }
+        KLOG_FIRST_N(WARNING, 1) << "The kernel does not implement fallocate().";
       } else {
         return IOError(filename_, errno);
       }
@@ -614,8 +609,6 @@ class PosixWritableFile : public WritableFile {
   uint64_t filesize_;
   uint64_t pre_allocated_size_;
 
-  static bool logged_fallocate_warning_;
-
   enum SyncType {
     NONE,
     FSYNC,
@@ -623,8 +616,6 @@ class PosixWritableFile : public WritableFile {
   };
   SyncType pending_sync_type_;
 };
-
-bool PosixWritableFile::logged_fallocate_warning_(false);
 
 static int LockOrUnlock(int fd, bool lock) {
   errno = 0;
