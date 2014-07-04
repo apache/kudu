@@ -6,6 +6,12 @@
 #
 # If $KUDU_COMPRESS_TEST_OUTPUT is non-empty, then the logs will be
 # gzip-compressed while they are written.
+#
+# If KUDU_FLAKY_TEST_ATTEMPTS is non-zero, and the test being run matches
+# one of the lines in the file KUDU_FLAKY_TEST_LIST, then the test will
+# be retried on failure up to the specified number of times. This can be
+# used in the gerrit workflow to prevent annoying false -1s caused by
+# tests that are known to be flaky in master.
 
 ME=$(dirname $BASH_SOURCE)
 ROOT=$(readlink -f $ME/..)
@@ -20,10 +26,23 @@ TEST_EXECUTABLE=$(readlink -f $1)
 shift
 TEST_NAME=$(basename $TEST_EXECUTABLE)
 
+# Determine whether the test is a known flaky by comparing against the user-specified
+# list.
+TEST_EXECUTION_ATTEMPTS=1
+if [ -n "$KUDU_FLAKY_TEST_LIST" ]; then
+  IS_KNOWN_FLAKY=$(grep --count --line-regexp "$TEST_NAME" "$KUDU_FLAKY_TEST_LIST")
+  if [ "$IS_KNOWN_FLAKY" -gt 0 ]; then
+    TEST_EXECUTION_ATTEMPTS=${KUDU_FLAKY_TEST_ATTEMPTS:-1}
+    echo $TEST_NAME is a known-flaky test. Will attempt running it
+    echo up to $TEST_EXECUTION_ATTEMPTS times.
+  fi
+fi
+
+
 # We run each test in its own subdir to avoid core file related races.
 TEST_WORKDIR=$ROOT/build/test-work/$TEST_NAME
 mkdir -p $TEST_WORKDIR
-pushd $TEST_WORKDIR || exit 1
+pushd $TEST_WORKDIR >/dev/null || exit 1
 rm -f *
 
 set -o pipefail
@@ -54,13 +73,30 @@ KUDU_TEST_ULIMIT_CORE=${KUDU_TEST_ULIMIT_CORE:-0}
 ulimit -c $KUDU_TEST_ULIMIT_CORE
 
 # Run the actual test.
-echo Running $TEST_NAME, redirecting output into $LOGFILE
-$TEST_EXECUTABLE "$@" --test_timeout_after $KUDU_TEST_TIMEOUT 2>&1 \
+for ATTEMPT_NUMBER in $(seq 1 $TEST_EXECUTION_ATTEMPTS) ; do
+  echo "Running $TEST_NAME, redirecting output into $LOGFILE" \
+    "(attempt ${ATTEMPT_NUMBER}/$TEST_EXECUTION_ATTEMPTS)"
+  $TEST_EXECUTABLE "$@" --test_timeout_after $KUDU_TEST_TIMEOUT 2>&1 \
     | $ROOT/thirdparty/asan_symbolize.py \
     | c++filt \
     | $ROOT/build-support/stacktrace_addr2line.pl $TEST_EXECUTABLE \
     | $pipe_cmd > $LOGFILE
-STATUS=$?
+  STATUS=$?
+
+  # TSAN doesn't always exit with a non-zero exit code due to a bug:
+  # mutex errors don't get reported through the normal error reporting infrastructure.
+  if zgrep --silent "ThreadSanitizer" $LOGFILE ; then
+    echo ThreadSanitizer failures in $LOGFILE
+    STATUS=1
+  fi
+
+  if [ "$STATUS" -eq "0" ]; then
+    break
+  elif [ "$ATTEMPT_NUMBER" -lt "$TEST_EXECUTION_ATTEMPTS" ]; then
+    echo Test failed attempt number $ATTEMPT_NUMBER
+    echo Will retry...
+  fi
+done
 
 # Capture and compress core file and binary.
 COREFILES=$(ls | grep ^core)
@@ -75,13 +111,6 @@ if [ -n "$COREFILES" ]; then
     LIB_NAME=$(basename $LIB)
     gzip < $LIB > "$TEST_DEBUGDIR/$LIB_NAME.gz" || exit $?
   done
-fi
-
-# TSAN doesn't always exit with a non-zero exit code due to a bug:
-# mutex errors don't get reported through the normal error reporting infrastructure.
-if zgrep --silent "ThreadSanitizer" $LOGFILE ; then
-  echo ThreadSanitizer failures in $LOGFILE
-  STATUS=1
 fi
 
 popd
