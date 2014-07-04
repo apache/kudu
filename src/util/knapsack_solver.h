@@ -237,7 +237,7 @@ void KnapsackSolver<Traits>::KnapsackBlackboard::Advance(value_type new_val, int
   // else mv(i, j) = mv(i-1, j)
   // Since the recursive formula requires an access of j-weight(i), we go in reverse.
   for (int j = n_weights_ - 1; j >= new_wt ; --j) {
-    int val_if_taken = max_value_[j - new_wt] + new_val;
+    value_type val_if_taken = max_value_[j - new_wt] + new_val;
     if (max_value_[j] < val_if_taken) {
       max_value_[j] = val_if_taken;
       MarkTaken(cur_item_idx_, j);

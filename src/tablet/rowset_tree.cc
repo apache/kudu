@@ -91,6 +91,8 @@ Status RowSetTree::Reset(const RowSetVector &rowsets) {
                    << s.ToString();
       return s;
     }
+    DCHECK_LE(min_key.compare(max_key), 0)
+      << "Rowset min must be <= max: " << rs->ToString();
     // Load into key endpoints.
     endpoints.push_back(RSEndpoint(rsit->rowset, START, min_key));
     endpoints.push_back(RSEndpoint(rsit->rowset, STOP, max_key));

@@ -8,135 +8,18 @@
 #include <stdio.h>
 
 #include "gutil/map-util.h"
-#include "server/metadata.h"
+#include "tablet/mock-rowsets.h"
+#include "tablet/rowset.h"
 #include "tablet/rowset_tree.h"
 #include "util/stopwatch.h"
 #include "util/test_util.h"
 
 using std::string;
 using std::tr1::unordered_set;
-using kudu::metadata::RowSetMetadata;
 
 namespace kudu { namespace tablet {
 
 class TestRowSetTree : public KuduTest {
-};
-
-// Mock implementation of RowSet which just aborts on every call.
-class MockRowSet : public RowSet {
- public:
-  virtual Status CheckRowPresent(const RowSetKeyProbe &probe, bool *present,
-                                 ProbeStats* stats) const OVERRIDE {
-    LOG(FATAL) << "Unimplemented";
-    return Status::OK();
-  }
-  virtual Status MutateRow(Timestamp timestamp,
-                           const RowSetKeyProbe &probe,
-                           const RowChangeList &update,
-                           const consensus::OpId& op_id_,
-                           ProbeStats* stats,
-                           OperationResultPB *result) OVERRIDE {
-    LOG(FATAL) << "Unimplemented";
-    return Status::OK();
-  }
-  virtual RowwiseIterator *NewRowIterator(const Schema* projection,
-                                          const MvccSnapshot &snap) const OVERRIDE {
-    LOG(FATAL) << "Unimplemented";
-    return NULL;
-  }
-  virtual CompactionInput *NewCompactionInput(const Schema* projection,
-                                              const MvccSnapshot &snap) const OVERRIDE {
-    LOG(FATAL) << "Unimplemented";
-    return NULL;
-  }
-  virtual Status CountRows(rowid_t *count) const OVERRIDE {
-    LOG(FATAL) << "Unimplemented";
-    return Status::OK();
-  }
-  virtual string ToString() const OVERRIDE {
-    LOG(FATAL) << "Unimplemented";
-    return "";
-  }
-  virtual Status DebugDump(vector<string> *lines = NULL) OVERRIDE {
-    LOG(FATAL) << "Unimplemented";
-    return Status::OK();
-  }
-  virtual Status Delete() {
-    LOG(FATAL) << "Unimplemented";
-    return Status::OK();
-  }
-  virtual uint64_t EstimateOnDiskSize() const OVERRIDE {
-    LOG(FATAL) << "Unimplemented";
-    return 0;
-  }
-  virtual boost::mutex *compact_flush_lock() OVERRIDE {
-    LOG(FATAL) << "Unimplemented";
-    return NULL;
-  }
-  virtual shared_ptr<RowSetMetadata> metadata() OVERRIDE {
-    LOG(FATAL) << "Unimplemented";
-    return shared_ptr<RowSetMetadata>(reinterpret_cast<RowSetMetadata *>(NULL));
-  }
-  virtual Status AlterSchema(const Schema& schema) OVERRIDE {
-    LOG(FATAL) << "Unimplemented";
-    return Status::OK();
-  }
-  virtual const Schema &schema() const OVERRIDE {
-    LOG(FATAL) << "Unimplemented";
-  }
-
-  virtual size_t DeltaMemStoreSize() const OVERRIDE {
-    LOG(FATAL) << "Unimplemented";
-    return 0;
-  }
-
-  virtual size_t CountDeltaStores() const OVERRIDE {
-    LOG(FATAL) << "Unimplemented";
-    return 0;
-  }
-
-  virtual Status FlushDeltas() OVERRIDE {
-    LOG(FATAL) << "Unimplemented";
-    return Status::OK();
-  }
-
-  virtual Status MinorCompactDeltaStores() OVERRIDE {
-    LOG(FATAL) << "Unimplemented";
-    return Status::OK();
-  }
-};
-
-// Mock which implements GetBounds() with constant provided bonuds.
-class MockDiskRowSet : public MockRowSet {
- public:
-  MockDiskRowSet(string first_key, string last_key)
-    : first_key_(first_key),
-      last_key_(last_key) {
-  }
-
-  virtual Status GetBounds(Slice *min_encoded_key,
-                           Slice *max_encoded_key) const OVERRIDE {
-    *min_encoded_key = Slice(first_key_);
-    *max_encoded_key = Slice(last_key_);
-    return Status::OK();
-  }
-
- private:
-  const string first_key_;
-  const string last_key_;
-};
-
-// Mock which acts like a MemRowSet and has no known bounds.
-class MockMemRowSet : public MockRowSet {
- public:
-  virtual Status GetBounds(Slice *min_encoded_key,
-                           Slice *max_encoded_key) const OVERRIDE {
-    return Status::NotSupported("");
-  }
-
- private:
-  const string first_key_;
-  const string last_key_;
 };
 
 namespace {

@@ -19,18 +19,18 @@ class TestKnapsack : public KuduTest {
 // The real code will be solving knapsack over RowSet objects --
 // using simple value/weight pairs in the tests makes it standalone.
 struct TestItem {
-  TestItem(int v, int w)
+  TestItem(double v, int w)
     : value(v), weight(w) {
   }
 
-  int value;
+  double value;
   int weight;
 };
 
 // A traits class to adapt the knapsack solver to TestItem.
 struct TestItemTraits {
   typedef TestItem item_type;
-  typedef int value_type;
+  typedef double value_type;
   static int get_weight(const TestItem &item) {
     return item.weight;
   }
@@ -43,7 +43,9 @@ struct TestItemTraits {
 static void GenerateRandomItems(int n_items, int max_weight,
                                 vector<TestItem> *out) {
   for (int i = 0; i < n_items; i++) {
-    out->push_back(TestItem(random() % 10000, random() % max_weight));
+    double value = 10000.0 / (random() % 10000 + 1);
+    int weight = random() % max_weight;
+    out->push_back(TestItem(value, weight));
   }
 }
 
@@ -69,29 +71,29 @@ TEST_F(TestKnapsack, Basics) {
   in.push_back(TestItem(100, 1));
 
   vector<int> out;
-  int max_val;
+  double max_val;
 
   // For 1 weight, pick item 2
   solver.Solve(in, 1, &out, &max_val);
-  ASSERT_EQ(125, max_val);
+  ASSERT_DOUBLE_EQ(125, max_val);
   ASSERT_EQ("2", JoinInts(out));
   out.clear();
 
   // For 2 weight, pick item 1, 2
   solver.Solve(in, 2, &out, &max_val);
-  ASSERT_EQ(110 + 125, max_val);
+  ASSERT_DOUBLE_EQ(110 + 125, max_val);
   ASSERT_EQ("2,1", JoinInts(out));
   out.clear();
 
   // For 3 weight, pick item 0
   solver.Solve(in, 3, &out, &max_val);
-  ASSERT_EQ(500, max_val);
+  ASSERT_DOUBLE_EQ(500, max_val);
   ASSERT_EQ("0", JoinInts(out));
   out.clear();
 
   // For 10 weight, pick all.
   solver.Solve(in, 10, &out, &max_val);
-  ASSERT_EQ(500 + 110 + 125 + 100, max_val);
+  ASSERT_DOUBLE_EQ(500 + 110 + 125 + 100, max_val);
   ASSERT_EQ("3,2,1,0", JoinInts(out));
   out.clear();
 }
@@ -110,18 +112,18 @@ TEST_F(TestKnapsack, Randomized) {
     vector<TestItem> in;
     vector<int> out;
     GenerateRandomItems(kNumItems, kMaxWeight, &in);
-    int max_val;
+    double max_val;
     int max_weight = random() % kMaxWeight;
     solver.Solve(in, max_weight, &out, &max_val);
 
     // Verify that the max_val is equal to the sum of the chosen items' values.
-    int sum_val = 0;
+    double sum_val = 0;
     int sum_weight = 0;
     BOOST_FOREACH(int i, out) {
       sum_val += in[i].value;
       sum_weight += in[i].weight;
     }
-    ASSERT_EQ(max_val, sum_val);
+    ASSERT_DOUBLE_EQ(max_val, sum_val);
     ASSERT_LE(sum_weight, max_weight);
   }
 }
@@ -141,7 +143,7 @@ TEST_F(TestKnapsack, Benchmark) {
     vector<int> out;
     for (int i = 0; i < kNumTrials; i++) {
       out.clear();
-      int max_val;
+      double max_val;
       solver.Solve(in, random() % kMaxWeight, &out, &max_val);
     }
   }
