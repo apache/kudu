@@ -373,12 +373,12 @@ class OperationCallbackRunnable : public Runnable {
 class MajorityOpStatusTracker : public OperationStatusTracker {
  public:
 
-  MajorityOpStatusTracker(const OpId* id,
+  MajorityOpStatusTracker(gscoped_ptr<OperationPB> operation,
                           const std::tr1::unordered_set<std::string>& voting_peers,
                           int majority,
                           int total_peers_count);
 
-  MajorityOpStatusTracker(const OpId* id,
+  MajorityOpStatusTracker(gscoped_ptr<OperationPB> operation,
                           const std::tr1::unordered_set<string>& voting_peers,
                           int majority,
                           int total_peers_count,
@@ -401,8 +401,6 @@ class MajorityOpStatusTracker : public OperationStatusTracker {
  private:
   std::string ToStringUnlocked() const;
 
-  // The id of the operation being replicated.
-  const OpId* id_;
   // The total number of peers in a majority.
   const int majority_;
   // The peer's whose acks count towards majority.

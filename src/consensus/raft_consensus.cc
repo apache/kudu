@@ -162,11 +162,11 @@ Status RaftConsensus::PushConfigurationToPeersUnlocked() {
                                        new_config->seqno());
   LOG(INFO) << log_prefix << ": replicating to peers...";
   scoped_refptr<OperationStatusTracker> repl_status(
-      new MajorityOpStatusTracker(&replicate_op->id(),
+      new MajorityOpStatusTracker(replicate_op.Pass(),
                                   state_->GetCurrentVotingPeersUnlocked(),
                                   state_->GetCurrentMajorityUnlocked(),
                                   state_->GetAllPeersCountUnlocked()));
-  RETURN_NOT_OK_PREPEND(queue_.AppendOperation(replicate_op.Pass(), repl_status),
+  RETURN_NOT_OK_PREPEND(queue_.AppendOperation(repl_status),
                         "Could not append change config replication req. to the queue");
 
   SignalRequestToPeers();
@@ -183,12 +183,12 @@ Status RaftConsensus::PushConfigurationToPeersUnlocked() {
   commit_msg->set_timestamp(clock_->Now().ToUint64());
 
   scoped_refptr<OperationStatusTracker> commit_status(
-      new MajorityOpStatusTracker(&commit_op->id(),
+      new MajorityOpStatusTracker(commit_op.Pass(),
                                   state_->GetCurrentVotingPeersUnlocked(),
                                   state_->GetCurrentMajorityUnlocked(),
                                   state_->GetAllPeersCountUnlocked()));
 
-  RETURN_NOT_OK_PREPEND(queue_.AppendOperation(commit_op.Pass(), commit_status),
+  RETURN_NOT_OK_PREPEND(queue_.AppendOperation(commit_status),
                         "Could not append change config commit req. to the queue");
 
   SignalRequestToPeers();
@@ -215,24 +215,26 @@ Status RaftConsensus::Replicate(ConsensusRound* context) {
     gscoped_ptr<OperationPB> queue_op(new OperationPB(*context->replicate_op()));
 
     scoped_refptr<OperationStatusTracker> status(
-        new MajorityOpStatusTracker(&queue_op->id(),
+        new MajorityOpStatusTracker(queue_op.Pass(),
                                     state_->GetCurrentVotingPeersUnlocked(),
                                     state_->GetCurrentMajorityUnlocked(),
                                     state_->GetAllPeersCountUnlocked(),
                                     callback_pool_.get(),
                                     context->replicate_callback()));
 
-    Status s = queue_.AppendOperation(queue_op.Pass(), status);
+    Status s = queue_.AppendOperation(status);
     // Handle Status::ServiceUnavailable(), which means the queue is full.
     if (PREDICT_FALSE(s.IsServiceUnavailable())) {
+      gscoped_ptr<OpId> id(status->operation()->release_id());
       // Rollback the id gen. so that we reuse this id later, when we can
       // actually append to the state machine, i.e. this makes the state
       // machine have continuous ids, for the same term, even if the queue
       // refused to add any more operations.
-      state_->RollbackIdGenUnlocked(context->replicate_op()->id());
+      state_->RollbackIdGenUnlocked(*id);
       LOG_WITH_PREFIX(WARNING) << ": Could not append replicate request "
                    << "to the queue. Queue is Full. "
                    << "Queue metrics: " << queue_.ToString();
+
       // TODO Possibly evict a dangling peer from the quorum here.
       // TODO count of number of ops failed due to consensus queue overflow.
     }
@@ -270,11 +272,11 @@ Status RaftConsensus::Commit(ConsensusRound* context) {
 }
 
 OperationStatusTracker* RaftConsensus::CreateLeaderOnlyOperationStatusUnlocked(
-    const OpId* op_id,
+    gscoped_ptr<OperationPB> operation,
     const shared_ptr<FutureCallback>& commit_callback) {
   unordered_set<string> leader_uuid_set(1);
   InsertOrDie(&leader_uuid_set, state_->GetPeerUuid());
-  return new MajorityOpStatusTracker(op_id,
+  return new MajorityOpStatusTracker(operation.Pass(),
                                      leader_uuid_set,
                                      1,
                                      state_->GetAllPeersCountUnlocked(),
@@ -283,10 +285,10 @@ OperationStatusTracker* RaftConsensus::CreateLeaderOnlyOperationStatusUnlocked(
 }
 
 OperationStatusTracker* RaftConsensus::CreateLeaderOnlyOperationStatusUnlocked(
-    const OpId* op_id) {
+    gscoped_ptr<OperationPB> operation) {
   unordered_set<string> leader_uuid_set(1);
   InsertOrDie(&leader_uuid_set, state_->GetPeerUuid());
-  return new MajorityOpStatusTracker(op_id, leader_uuid_set,
+  return new MajorityOpStatusTracker(operation.Pass(), leader_uuid_set,
                                      1, state_->GetAllPeersCountUnlocked());
 }
 
@@ -312,12 +314,12 @@ Status RaftConsensus::LeaderCommitUnlocked(ConsensusRound* context,
   // without a callback meaning the caller doesn't want to be notified when the
   // operation completes.
   if (PREDICT_TRUE(commit_clbk.get() != NULL)) {
-    status.reset(CreateLeaderOnlyOperationStatusUnlocked(&owned_op->id(), commit_clbk));
+    status.reset(CreateLeaderOnlyOperationStatusUnlocked(owned_op.Pass(), commit_clbk));
   } else {
-    status.reset(CreateLeaderOnlyOperationStatusUnlocked(&owned_op->id()));
+    status.reset(CreateLeaderOnlyOperationStatusUnlocked(owned_op.Pass()));
   }
 
-  RETURN_NOT_OK_PREPEND(queue_.AppendOperation(owned_op.Pass(), status),
+  RETURN_NOT_OK_PREPEND(queue_.AppendOperation(status),
                         "Could not append commit request to the queue");
 
   if (VLOG_IS_ON(1)) {

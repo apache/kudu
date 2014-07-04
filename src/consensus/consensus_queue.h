@@ -28,10 +28,12 @@ class Log;
 namespace consensus {
 
 // The status associated with each single quorum operation.
+// This class is ref. counted and takes ownership of the tracked operation.
 //
 // NOTE: Implementations of this class must be thread safe.
 class OperationStatusTracker : public base::RefCountedThreadSafe<OperationStatusTracker> {
  public:
+  explicit OperationStatusTracker(gscoped_ptr<OperationPB> operation);
 
   // Called by PeerMessageQueue after a peer ACKs this operation.
   //
@@ -58,26 +60,20 @@ class OperationStatusTracker : public base::RefCountedThreadSafe<OperationStatus
   // TODO make this return a status on error.
   virtual void Wait() = 0;
 
+  const OpId& op_id() const {
+    return operation_->id();
+  }
+
+  OperationPB* operation() {
+    return operation_.get();
+  }
+
   virtual std::string ToString() const { return  IsDone() ? "Done" : "NotDone"; }
 
   virtual ~OperationStatusTracker() {}
-};
 
-// A peer message that is queued for replication to peers.
-// Basically a wrapper around an OperationPB (which must be
-// replicated) and an OperationStatus (which tracks the replication
-// status).
-struct PeerMessage {
-
-  PeerMessage(gscoped_ptr<OperationPB> op,
-              const scoped_refptr<OperationStatusTracker>& status);
-
-  const OpId& GetOpId() const {
-    return op_->id();
-  }
-
-  gscoped_ptr<OperationPB> op_;
-  scoped_refptr<OperationStatusTracker> status_;
+ protected:
+  gscoped_ptr<OperationPB> operation_;
 };
 
 // Tracks all the pending consensus operations on the LEADER side.
@@ -99,8 +95,7 @@ class PeerMessageQueue {
   // progress.
   // Returns OK unless the operation could not be added to the queue for some
   // reason (e.g. the queue reached max size).
-  Status AppendOperation(gscoped_ptr<OperationPB> operation,
-                         scoped_refptr<OperationStatusTracker> status);
+  Status AppendOperation(scoped_refptr<OperationStatusTracker> status);
 
   // Makes the queue track this peer. Used when the peer already has
   // state. The queue assumes the peer has both replicated and committed
@@ -172,7 +167,10 @@ class PeerMessageQueue {
 
  private:
   // An ordered map that serves as the buffer for the pending messages.
-  typedef std::map<OpId, PeerMessage*, log::OpIdCompareFunctor> MessagesBuffer;
+  typedef std::map<OpId,
+                   scoped_refptr<OperationStatusTracker>,
+                   log::OpIdCompareFunctor> MessagesBuffer;
+
   typedef std::tr1::unordered_map<std::string, ConsensusStatusPB*> WatermarksMap;
   typedef std::tr1::unordered_map<OpId, Status> ErrorsMap;
   typedef std::pair<OpId, Status> ErrorEntry;

@@ -133,11 +133,11 @@ class RaftConsensus : public Consensus {
   Status PushConfigurationToPeersUnlocked();
 
   OperationStatusTracker* CreateLeaderOnlyOperationStatusUnlocked(
-      const OpId* op_id,
+      gscoped_ptr<OperationPB> operation,
       const std::tr1::shared_ptr<FutureCallback>& commit_callback);
 
   OperationStatusTracker* CreateLeaderOnlyOperationStatusUnlocked(
-      const OpId* op_id);
+      gscoped_ptr<OperationPB> operation);
 
   OpId GetLastOpIdFromLog();
 

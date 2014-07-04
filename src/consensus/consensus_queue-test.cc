@@ -164,9 +164,9 @@ TEST_F(ConsensusQueueTest, TestAlwaysYieldsAtLeastOneMessage) {
     ReplicateMsg* msg = op->mutable_replicate();
     msg->set_op_type(NO_OP);
     msg->mutable_noop_request()->set_payload_for_tests(test_payload);
-    status.reset(new TestOpStatusTracker(1, 1, *id));
+    status.reset(new TestOpStatusTracker(op.Pass(), 1, 1));
   }
-  ASSERT_STATUS_OK(queue_->AppendOperation(op.Pass(), status));
+  ASSERT_STATUS_OK(queue_->AppendOperation(status));
 
   // Ensure that a request contains the message.
   ConsensusRequestPB request;
@@ -273,11 +273,11 @@ TEST_F(ConsensusQueueTest, TestQueueRefusesRequestWhenFilled) {
     ReplicateMsg* msg = op->mutable_replicate();
     msg->set_op_type(NO_OP);
     msg->mutable_noop_request()->set_payload_for_tests(test_payload);
-    status.reset(new TestOpStatusTracker(1, 1, *id));
+    status.reset(new TestOpStatusTracker(op.Pass(), 1, 1));
   }
 
   // should fail with service unavailable
-  Status s = queue_->AppendOperation(op.Pass(), status);
+  Status s = queue_->AppendOperation(status);
   LOG(INFO) << queue_->ToString();
   ASSERT_TRUE(s.IsServiceUnavailable());
 
@@ -290,10 +290,10 @@ TEST_F(ConsensusQueueTest, TestQueueRefusesRequestWhenFilled) {
     CommitMsg* msg = op->mutable_commit();
     msg->set_op_type(NO_OP);
     msg->mutable_noop_response()->set_payload_for_tests(test_payload);
-    status.reset(new TestOpStatusTracker(1, 1, *id));
+    status.reset(new TestOpStatusTracker(op.Pass(), 1, 1));
   }
 
-  ASSERT_STATUS_OK(queue_->AppendOperation(op.Pass(), status));
+  ASSERT_STATUS_OK(queue_->AppendOperation(status));
 
   // now ack the first and second ops
   statuses[0]->AckPeer("");
@@ -308,10 +308,10 @@ TEST_F(ConsensusQueueTest, TestQueueRefusesRequestWhenFilled) {
     ReplicateMsg* msg = op->mutable_replicate();
     msg->set_op_type(NO_OP);
     msg->mutable_noop_request()->set_payload_for_tests(test_payload);
-    status.reset(new TestOpStatusTracker(1, 1, *id));
+    status.reset(new TestOpStatusTracker(op.Pass(), 1, 1));
   }
 
-  ASSERT_STATUS_OK(queue_->AppendOperation(op.Pass(), status));
+  ASSERT_STATUS_OK(queue_->AppendOperation(status));
 }
 
 }  // namespace consensus

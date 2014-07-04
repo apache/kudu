@@ -25,8 +25,8 @@ using strings::Substitute;
 // to complete.
 class TestOpStatusTracker : public OperationStatusTracker {
  public:
-  explicit TestOpStatusTracker(int n_majority, int total_peers, const OpId& op_id)
-    : op_id_(op_id),
+  TestOpStatusTracker(gscoped_ptr<OperationPB> op, int n_majority, int total_peers)
+    : OperationStatusTracker(op.Pass()),
       majority_latch_(n_majority),
       all_replicated_latch_(total_peers),
       replicated_count_(0) {
@@ -34,7 +34,7 @@ class TestOpStatusTracker : public OperationStatusTracker {
 
   void AckPeer(const string& uuid) OVERRIDE {
     if (PREDICT_FALSE(VLOG_IS_ON(2))) {
-      VLOG(2) << "Peer: " << uuid << " Ack'd op: " << op_id_.ShortDebugString();
+      VLOG(2) << "Peer: " << uuid << " Ack'd op: " << operation_->ShortDebugString();
     }
     boost::lock_guard<simple_spinlock> lock(lock_);
     replicated_count_++;
@@ -65,12 +65,11 @@ class TestOpStatusTracker : public OperationStatusTracker {
 
   virtual std::string ToString() const OVERRIDE {
     boost::lock_guard<simple_spinlock> lock(lock_);
-    return Substitute("Id: $0, IsDone: $1, IsAllDone: $2, ReplicatedCount: $3.",
-                      op_id_.ShortDebugString(), IsDone(), IsAllDone(), replicated_count_);
+    return Substitute("Op: $0, IsDone: $1, IsAllDone: $2, ReplicatedCount: $3.",
+                      operation_->ShortDebugString(), IsDone(), IsAllDone(), replicated_count_);
   }
 
  private:
-  OpId op_id_;
   CountDownLatch majority_latch_;
   CountDownLatch all_replicated_latch_;
   int replicated_count_;
@@ -103,8 +102,8 @@ static inline void AppendReplicateMessagesToQueue(
     msg->set_op_type(NO_OP);
     msg->mutable_noop_request()->set_payload_for_tests(dummy_payload);
     scoped_refptr<OperationStatusTracker> status(
-        new TestOpStatusTracker(n_majority, total_peers, *id));
-    CHECK_OK(queue->AppendOperation(op.Pass(), status));
+        new TestOpStatusTracker(op.Pass(), n_majority, total_peers));
+    CHECK_OK(queue->AppendOperation(status));
     if (statuses_collector) {
       statuses_collector->push_back(status);
     }

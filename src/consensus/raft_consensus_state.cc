@@ -416,11 +416,11 @@ void OperationCallbackRunnable::Run() {
 }
 
 
-MajorityOpStatusTracker::MajorityOpStatusTracker(const OpId* id,
+MajorityOpStatusTracker::MajorityOpStatusTracker(gscoped_ptr<OperationPB> operation,
                                                  const unordered_set<string>& voting_peers,
                                                  int majority,
                                                  int total_peers_count)
-    : id_(id),
+    : OperationStatusTracker(operation.Pass()),
       majority_(majority),
       voting_peers_(voting_peers),
       total_peers_count_(total_peers_count),
@@ -430,13 +430,13 @@ MajorityOpStatusTracker::MajorityOpStatusTracker(const OpId* id,
       runnable_(NULL) {
 }
 
-MajorityOpStatusTracker::MajorityOpStatusTracker(const OpId* id,
+MajorityOpStatusTracker::MajorityOpStatusTracker(gscoped_ptr<OperationPB> operation,
                                                  const unordered_set<string>& voting_peers,
                                                  int majority,
                                                  int total_peers_count,
                                                  ThreadPool* callback_pool,
                                                  const shared_ptr<FutureCallback>& callback)
-    : id_(id),
+    : OperationStatusTracker(operation.Pass()),
       majority_(majority),
       voting_peers_(voting_peers),
       total_peers_count_(total_peers_count),
@@ -495,7 +495,7 @@ std::string MajorityOpStatusTracker::ToString() const {
 std::string MajorityOpStatusTracker::ToStringUnlocked() const {
   return Substitute("MajorityOS. Id: $0 IsDone: $1 All Peers: $2, Voting Peers: $3, "
                     "ACK'd Peers: $4, Majority: $5",
-                    id_->ShortDebugString(),
+                    (operation_->has_id() ? operation_->id().ShortDebugString() : "NULL"),
                     IsDone(),
                     total_peers_count_,
                     voting_peers_.size(),
