@@ -179,7 +179,6 @@ public class KuduClient {
   // TODO Below is an uber hack, the master is considered a tablet with
   // a table name.
   static final String MASTER_TABLE_HACK =  "~~~masterTableHack~~~";
-  static final Slice MASTER_TABLE_HACK_SLICE = new Slice(MASTER_TABLE_HACK.getBytes());
   final KuduTable masterTableHack;
   private final String masterAddress;
   private final int masterPort;

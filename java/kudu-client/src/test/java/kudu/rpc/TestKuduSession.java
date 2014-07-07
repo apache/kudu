@@ -63,16 +63,15 @@ public class TestKuduSession extends BaseKuduTest {
 
     session.setFlushMode(KuduSession.FlushMode.AUTO_FLUSH_SYNC);
     for (int i = 1; i < 10; i++) {
-      d = session.apply(createInsert(i));
+      session.apply(createInsert(i)).join(DEFAULT_SLEEP);
     }
-    d.join();
 
     assertEquals(10, countInRange(0, 10));
 
     session.setFlushMode(KuduSession.FlushMode.MANUAL_FLUSH);
     session.setMutationBufferSpace(10);
 
-    d = session.apply(createInsert(10));
+    session.apply(createInsert(10));
 
     try {
       session.setFlushMode(KuduSession.FlushMode.AUTO_FLUSH_SYNC);
@@ -83,7 +82,7 @@ public class TestKuduSession extends BaseKuduTest {
     assertFalse(exists(10));
 
     for (int i = 11; i < 20; i++) {
-      d = session.apply(createInsert(i));
+      session.apply(createInsert(i));
     }
 
     assertEquals(0, countInRange(10, 20));
@@ -94,8 +93,7 @@ public class TestKuduSession extends BaseKuduTest {
     }
     assertEquals(0, countInRange(10, 20)); // the buffer should still be full
 
-    session.flush();
-    d.join(); // d is from the last good insert eg 20
+    session.flush().join(DEFAULT_SLEEP);
     assertEquals(10, countInRange(10, 20)); // now everything should be there
 
     session.setFlushMode(KuduSession.FlushMode.AUTO_FLUSH_BACKGROUND);
@@ -109,7 +107,7 @@ public class TestKuduSession extends BaseKuduTest {
     }
     Deferred<OperationResponse> buffered = session.apply(createInsert(30));
     long now = System.currentTimeMillis();
-    d.join();
+    d.join(DEFAULT_SLEEP); // Ok to use the last d, everything is going to the buffer
     // auto flush will force flush if the buffer is full as it should be now
     // so we check that we didn't wait the full interval
     long elapsed = System.currentTimeMillis() - now;
@@ -124,13 +122,13 @@ public class TestKuduSession extends BaseKuduTest {
     update.addString(schema.getColumn(3).getName(), "updated data");
     d = session.apply(update);
     d.addErrback(defaultErrorCB);
-    d.join();
+    d.join(DEFAULT_SLEEP);
     assertEquals(31, countInRange(0, 31));
 
     Delete del = createDelete(30);
     d = session.apply(del);
     d.addErrback(defaultErrorCB);
-    d.join();
+    d.join(DEFAULT_SLEEP);
     assertEquals(30, countInRange(0, 31));
 
     session.setFlushMode(KuduSession.FlushMode.MANUAL_FLUSH);
@@ -140,7 +138,7 @@ public class TestKuduSession extends BaseKuduTest {
     }
     assertEquals(30, countInRange(0, 31));
     session.flush();
-    buffered.join();
+    buffered.join(DEFAULT_SLEEP);
     assertEquals(10, countInRange(0, 31));
 
     for (int i = 30; i < 40; i++) {
@@ -153,14 +151,14 @@ public class TestKuduSession extends BaseKuduTest {
 
     assertEquals(10, countInRange(0, 40));
     session.flush();
-    buffered.join(2000);
+    buffered.join(DEFAULT_SLEEP);
     assertEquals(10, countInRange(0, 40));
 
     // Test nulls
     // add 10 rows with the nullable column set to null
     session.setFlushMode(KuduSession.FlushMode.AUTO_FLUSH_SYNC);
     for (int i = 40; i < 50; i++) {
-      session.apply(createInsertWithNull(i)).join();
+      session.apply(createInsertWithNull(i)).join(DEFAULT_SLEEP);
     }
 
     // now scan those rows and make sure the column is null
@@ -365,14 +363,14 @@ public class TestKuduSession extends BaseKuduTest {
     while (scanner.hasMoreRows()) {
       Deferred<KuduScanner.RowResultIterator> data = scanner.nextRows();
       data.addCallbacks(cb, defaultErrorCB);
-      data.join();
+      data.join(DEFAULT_SLEEP);
       if (exists.get()) {
         break;
       }
     }
 
     Deferred<KuduScanner.RowResultIterator> closer = scanner.close();
-    closer.join();
+    closer.join(DEFAULT_SLEEP);
     return exists.get();
   }
 
@@ -398,11 +396,11 @@ public class TestKuduSession extends BaseKuduTest {
     while (scanner.hasMoreRows()) {
       Deferred<KuduScanner.RowResultIterator> data = scanner.nextRows();
       data.addCallbacks(cb, defaultErrorCB);
-      data.join();
+      data.join(DEFAULT_SLEEP);
     }
 
     Deferred<KuduScanner.RowResultIterator> closer = scanner.close();
-    closer.join();
+    closer.join(DEFAULT_SLEEP);
     return ai.get();
   }
 
