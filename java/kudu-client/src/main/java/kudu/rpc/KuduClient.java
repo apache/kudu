@@ -31,6 +31,7 @@ import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Objects;
 import com.google.common.collect.ComparisonChain;
 import com.google.common.collect.Lists;
+import com.google.protobuf.ByteString;
 import kudu.ColumnSchema;
 import kudu.Common;
 import kudu.Schema;
@@ -179,7 +180,6 @@ public class KuduClient {
   // a table name.
   static final String MASTER_TABLE_HACK =  "~~~masterTableHack~~~";
   static final Slice MASTER_TABLE_HACK_SLICE = new Slice(MASTER_TABLE_HACK.getBytes());
-  final RemoteTablet masterTabletHack;
   final KuduTable masterTableHack;
   private final String masterAddress;
   private final int masterPort;
@@ -235,8 +235,6 @@ public class KuduClient {
     this.masterPort = port;
     this.masterTableHack = new KuduTable(this, MASTER_TABLE_HACK,
        new Schema(new ArrayList<ColumnSchema>(0)));
-    this.masterTabletHack = new RemoteTablet(MASTER_TABLE_HACK,
-        MASTER_TABLE_HACK_SLICE, EMPTY_ARRAY, EMPTY_ARRAY);
   }
 
   /**
@@ -643,9 +641,9 @@ public class KuduClient {
             }
           }
         }
+        IsCreateTableDoneRequest rpc = new IsCreateTableDoneRequest(masterTableHack, tableName);
         final Deferred<Master.IsCreateTableDoneResponsePB> d =
-            clientFor(masterTabletHack).isCreateTableDone(tableName).addCallback(new
-                IsCreateTableDoneCB(tableName));
+            sendRpcToTablet(rpc).addCallback(new IsCreateTableDoneCB(tableName));
         if (has_permit) {
           // The errback is needed here to release the lookup permit
           d.addCallbacks(new ReleaseMasterLookupPermit<Master.IsCreateTableDoneResponsePB>(),
@@ -743,15 +741,6 @@ public class KuduClient {
     if (tablet == null) {
       return null;
     }
-    if (masterTabletHack == tablet) {
-      synchronized (masterTabletHack.tabletServers) {
-        if (masterTabletHack.tabletServers.isEmpty()) {
-          // TODO We currently always reconnect to the same master, too bad if it dies
-          masterTabletHack.addTabletClient(masterAddress, masterPort);
-        }
-        return masterTabletHack.tabletServers.get(0);
-      }
-    }
 
     synchronized (tablet.tabletServers) {
       if (tablet.tabletServers.isEmpty()) {
@@ -819,13 +808,46 @@ public class KuduClient {
         return Deferred.fromResult(null);  // Looks like no lookup needed.
       }
     }
-    final Deferred<Master.GetTableLocationsResponsePB> d =
-        clientFor(masterTabletHack).getTableLocations(table, rowkey, rowkey);
+    GetTableLocationsRequest rpc = new GetTableLocationsRequest(masterTableHack, rowkey,
+        rowkey, table);
+    final Deferred<Master.GetTableLocationsResponsePB> d;
+
+    // If we know this is going to the master, there's currently nothing we can lookup to find it.
+    // Instead, we use our already-known location and hope the master's going to be there. Else,
+    // this will get retried like any other RPC.
+    if (table.equals(MASTER_TABLE_HACK)) {
+      Master.GetTableLocationsResponsePB.Builder responseBuilder = Master
+          .GetTableLocationsResponsePB.newBuilder();
+      responseBuilder.addTabletLocations(getMasterTableLocationPB());
+      d = Deferred.fromResult(responseBuilder.build());
+    } else {
+      d = sendRpcToTablet(rpc);
+    }
     d.addCallback(new MasterLookupCB(table));
     if (has_permit) {
       d.addBoth(new ReleaseMasterLookupPermit<Master.GetTableLocationsResponsePB>());
     }
     return d;
+  }
+
+  private Master.TabletLocationsPB.Builder getMasterTableLocationPB() {
+    Master.TabletLocationsPB.Builder locationBuilder = Master.TabletLocationsPB.newBuilder();
+    locationBuilder.setStartKey(ByteString.copyFromUtf8(""));
+    locationBuilder.setEndKey(ByteString.copyFromUtf8(""));
+    locationBuilder.setTabletId(ByteString.copyFromUtf8("MASTER_TABLE_HACK"));
+    locationBuilder.setStale(false);
+    Master.TabletLocationsPB.ReplicaPB.Builder replicaBuilder = Master.TabletLocationsPB
+        .ReplicaPB.newBuilder();
+    replicaBuilder.setRole(Metadata.QuorumPeerPB.Role.LEADER);
+    Master.TSInfoPB.Builder tsInfoBuilder = Master.TSInfoPB.newBuilder();
+    Common.HostPortPB.Builder hostPortBuilder = Common.HostPortPB.newBuilder();
+    hostPortBuilder.setHost(masterAddress);
+    hostPortBuilder.setPort(masterPort);
+    tsInfoBuilder.addRpcAddresses(hostPortBuilder);
+    tsInfoBuilder.setPermanentUuid(ByteString.copyFromUtf8(MASTER_TABLE_HACK));
+    replicaBuilder.setTsInfo(tsInfoBuilder);
+    locationBuilder.addReplicas(replicaBuilder);
+    return locationBuilder;
   }
 
   /**
@@ -855,9 +877,9 @@ public class KuduClient {
         throw new NonRecoverableException("Took too long getting the list of tablets, " +
             "deadline=" + deadline);
       }
-      final Deferred<Master.GetTableLocationsResponsePB> d =
-          clientFor(masterTabletHack).getTableLocations(table, startKey, endKey);
-      // TODO we should post-process exceptions that come out here, do in KUDU-169
+      GetTableLocationsRequest rpc = new GetTableLocationsRequest(masterTableHack, startKey,
+          endKey, table);
+      final Deferred<Master.GetTableLocationsResponsePB> d = sendRpcToTablet(rpc);
       Master.GetTableLocationsResponsePB response =
           d.join(deadlineTracker.getMillisBeforeDeadline());
       // Table doesn't exist or is being created.
@@ -1041,15 +1063,15 @@ public class KuduClient {
    * @return a tablet ID as a slice or null if not found
    */
   RemoteTablet getTablet(String tableName, byte[] rowkey) {
-    // The hack for the master only has one tablet, we can just return it right away
-    if (tableName.equals(MASTER_TABLE_HACK)) {
-      return masterTabletHack;
-    }
-
     ConcurrentSkipListMap<byte[], RemoteTablet> tablets = tabletsCache.get(tableName);
 
     if (tablets == null) {
       return null;
+    }
+
+    // We currently only have one master.
+    if (tableName.equals(MASTER_TABLE_HACK)) {
+      return tablets.firstEntry().getValue();
     }
 
     Map.Entry<byte[], RemoteTablet> tabletPair = tablets.floorEntry(rowkey);
