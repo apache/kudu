@@ -40,7 +40,7 @@ class TestEnv : public KuduTest {
     static bool checked = false;
     if (checked) return;
 
-    int fd = open(GetTestPath("check-fallocate").c_str(), O_WRONLY | O_CREAT);
+    int fd = creat(GetTestPath("check-fallocate").c_str(), S_IWUSR);
     PCHECK(fd >= 0);
     int err = fallocate(fd, 0, 0, 4096);
     if (err != 0) {
