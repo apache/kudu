@@ -1411,6 +1411,40 @@ TEST_F(ClientTest, TestReplicatedMultiTabletTableFailover) {
   ASSERT_EQ(1, rt->GetNumFailedReplicas());
 }
 
+namespace {
+
+void CheckCorrectness(KuduScanner* scanner, int expected[], int nrows) {
+  scanner->Open();
+  int readrows = 0;
+  vector<KuduRowResult> rows;
+  if (nrows) {
+    ASSERT_TRUE(scanner->HasMoreRows());
+  } else {
+    ASSERT_FALSE(scanner->HasMoreRows());
+  }
+
+  while (scanner->HasMoreRows()) {
+    ASSERT_STATUS_OK(scanner->NextBatch(&rows));
+    BOOST_FOREACH(const KuduRowResult& r, rows) {
+      uint32_t key;
+      uint32_t val;
+      Slice strval;
+      ASSERT_STATUS_OK(r.GetUInt32(0, &key));
+      ASSERT_STATUS_OK(r.GetUInt32(1, &val));
+      ASSERT_STATUS_OK(r.GetString(2, &strval));
+      ASSERT_NE(expected[key], -1) << "Deleted key found in table in table " << key;
+      ASSERT_EQ(expected[key], val) << "Incorrect int value for key " <<  key;
+      ASSERT_EQ(strval.size(), 0) << "Incorrect string value for key " << key;
+      ++readrows;
+    }
+    rows.clear();
+  }
+  ASSERT_EQ(readrows, nrows);
+  scanner->Close();
+}
+
+} // anonymous namespace
+
 // Randomized mutations accuracy testing
 TEST_F(ClientTest, TestRandomWriteOperation) {
   shared_ptr<KuduSession> session = client_->NewSession();
@@ -1440,6 +1474,15 @@ TEST_F(ClientTest, TestRandomWriteOperation) {
   LOG(INFO) << "Randomized mutations testing.";
   SeedRandom();
   for (int i = 0; i <= 1000; ++i) {
+    // Test correctness every so often
+    if (i % 50 == 0) {
+      LOG(INFO) << "Correctness test " << i;
+      ASSERT_NO_FATAL_FAILURE(WrappedFlush(session));
+      ASSERT_NO_FATAL_FAILURE(CheckCorrectness(&scanner, row, nrows));
+      LOG(INFO) << "...complete";
+      changed.clear();
+    }
+
     int change = rand() % FLAGS_test_scan_num_rows;
     // Insert if empty
     while (changed.find(change) != changed.end())
@@ -1472,41 +1515,11 @@ TEST_F(ClientTest, TestRandomWriteOperation) {
         VLOG(1) << "Delete " << change;
       }
     }
-    // Test correctness every so often
-    if (i % 50 == 0) {
-      LOG(INFO) << "Correctness test " << i;
-      ASSERT_NO_FATAL_FAILURE(WrappedFlush(session));
-      scanner.Open();
-      int readrows = 0;
-      vector<KuduRowResult> rows;
-      if (nrows) {
-        ASSERT_TRUE(scanner.HasMoreRows());
-      } else {
-        ASSERT_FALSE(scanner.HasMoreRows());
-      }
-
-      while (scanner.HasMoreRows()) {
-        ASSERT_STATUS_OK(scanner.NextBatch(&rows));
-        BOOST_FOREACH(const KuduRowResult& r, rows) {
-          uint32_t key;
-          uint32_t val;
-          Slice strval;
-          ASSERT_STATUS_OK(r.GetUInt32(0, &key));
-          ASSERT_STATUS_OK(r.GetUInt32(1, &val));
-          ASSERT_STATUS_OK(r.GetString(2, &strval));
-          ASSERT_NE(row[key], -1) << "Deleted key found in table in table " << key;
-          ASSERT_EQ(row[key], val) << "Incorrect int value for key " <<  key;
-          ASSERT_EQ(strval.size(), 0) << "Incorrect string value for key " << key;
-          ++readrows;
-        }
-        rows.clear();
-      }
-      ASSERT_EQ(readrows, nrows);
-      scanner.Close();
-      LOG(INFO) << "...complete";
-      changed.clear();
-    }
   }
+
+  // And one more time for the last batch.
+  ASSERT_NO_FATAL_FAILURE(WrappedFlush(session));
+  ASSERT_NO_FATAL_FAILURE(CheckCorrectness(&scanner, row, nrows));
 }
 
 // Test whether a batch can handle several mutations in a batch
