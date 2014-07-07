@@ -193,8 +193,10 @@ public class KuduSession implements SessionConfiguration {
   }
 
   /**
-   * Flushes the buffered operations
-   * @return a Deferred if operations needed to be flushed, else null
+   * Flushes the buffered operations and marks this sessions as closed.
+   * See the javadoc on {@link #flush()} on how to deal with exceptions coming out of this method.
+   * @return a Deferred whose callback chain will be invoked when.
+   * everything that was buffered at the time of the call has been flushed.
    */
   public Deferred<ArrayList<OperationResponse>> close() {
     closed = true;
@@ -203,7 +205,10 @@ public class KuduSession implements SessionConfiguration {
   }
 
   /**
-   * Flushes the buffered operations
+   * Flushes the buffered operations.
+   * If joining on the Deferred throws a DeferredGroupException (or invokes the errback), call
+   * {@link RowsWithErrorException#fromDeferredGroupException(com.stumbleupon.async.DeferredGroupException)}
+   * in order to get a single RowsWithErrorException.
    * @return a Deferred whose callback chain will be invoked when
    * everything that was buffered at the time of the call has been flushed.
    */

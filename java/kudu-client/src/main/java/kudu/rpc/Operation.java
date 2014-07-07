@@ -310,6 +310,11 @@ public abstract class Operation extends KuduRpc<OperationResponse> implements Ku
   Pair<OperationResponse, Object> deserialize(ChannelBuffer buf) throws Exception {
     Tserver.WriteResponsePB.Builder builder = Tserver.WriteResponsePB.newBuilder();
     readProtobuf(buf, builder);
+    if (builder.getPerRowErrorsCount() != 0) {
+      List<Operation> ops = new ArrayList<Operation>(1);
+      ops.add(this);
+      throw RowsWithErrorException.fromPerRowErrorPB(builder.getPerRowErrorsList(), ops);
+    }
     OperationResponse response = new OperationResponse(deadlineTracker.getElapsedMillis(),
         builder.getWriteTimestamp());
     return new Pair<OperationResponse, Object>(response, builder.getError());

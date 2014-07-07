@@ -44,6 +44,9 @@ class Batch extends KuduRpc<OperationResponse> implements KuduRpc.HasKey {
   Pair<OperationResponse, Object> deserialize(ChannelBuffer buf) throws Exception {
     Tserver.WriteResponsePB.Builder builder = Tserver.WriteResponsePB.newBuilder();
     readProtobuf(buf, builder);
+    if (builder.getPerRowErrorsCount() != 0) {
+      throw RowsWithErrorException.fromPerRowErrorPB(builder.getPerRowErrorsList(), ops);
+    }
     OperationResponse response = new OperationResponse(deadlineTracker.getElapsedMillis(),
         builder.getWriteTimestamp());
     return new Pair<OperationResponse, Object>(response, builder.getError());
