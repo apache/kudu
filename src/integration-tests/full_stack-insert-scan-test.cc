@@ -53,9 +53,9 @@ using client::KuduScanner;
 using client::KuduSession;
 using client::KuduTable;
 
-class ClientMRSTest : public KuduTest {
+class FullStackInsertScanTest : public KuduTest {
  protected:
-  ClientMRSTest()
+  FullStackInsertScanTest()
     : kNumInsertClients(FLAGS_concurrent_inserts),
     kNumInsertsPerClient(FLAGS_inserts_per_client),
     kNumRows(kNumInsertClients * kNumInsertsPerClient),
@@ -208,14 +208,14 @@ void ReportAllDone(int id, int numids) {
 
 } // anonymous namespace
 
-const char* const ClientMRSTest::kTableName = "full-stack-mrs-test-tbl";
+const char* const FullStackInsertScanTest::kTableName = "full-stack-mrs-test-tbl";
 
-TEST_F(ClientMRSTest, ClientInsertScanStressTest) {
+TEST_F(FullStackInsertScanTest, ClientInsertScanStressTest) {
   DoConcurrentClientInserts();
   DoTestScans();
 }
 
-void ClientMRSTest::DoConcurrentClientInserts() {
+void FullStackInsertScanTest::DoConcurrentClientInserts() {
   vector<scoped_refptr<Thread> > threads(kNumInsertClients);
   CountDownLatch start_latch(kNumInsertClients + 1);
   SeedRandom();
@@ -223,8 +223,8 @@ void ClientMRSTest::DoConcurrentClientInserts() {
     CreateNewClient(i);
     ASSERT_OK(Thread::Create(CURRENT_TEST_NAME(),
                              StrCat(CURRENT_TEST_CASE_NAME(), "-id", i),
-                             &ClientMRSTest::InsertRows, this, &start_latch, i,
-                             &threads[i]));
+                             &FullStackInsertScanTest::InsertRows, this,
+                             &start_latch, i, &threads[i]));
     start_latch.CountDown();
   }
   LOG_TIMING(INFO,
@@ -239,7 +239,7 @@ void ClientMRSTest::DoConcurrentClientInserts() {
   }
 }
 
-void ClientMRSTest::DoTestScans() {
+void FullStackInsertScanTest::DoTestScans() {
   LOG(INFO) << "Doing test scans on table of " << kNumRows << " rows.";
   ScanProjection(Schema(vector<ColumnSchema>(), 0), "empty projection, 0 col");
   ScanProjection(schema_.CreateKeyProjection(), "key scan, 1 col");
@@ -249,7 +249,7 @@ void ClientMRSTest::DoTestScans() {
   ScanProjection(Int64Schema(), "Int64 projection, 4 col");
 }
 
-void ClientMRSTest::InsertRows(CountDownLatch* start_latch, int id) {
+void FullStackInsertScanTest::InsertRows(CountDownLatch* start_latch, int id) {
   Random rng(id);
 
   start_latch->Wait();
@@ -286,7 +286,8 @@ void ClientMRSTest::InsertRows(CountDownLatch* start_latch, int id) {
   CHECK_OK(session->Flush());
 }
 
-void ClientMRSTest::ScanProjection(const Schema& schema, const string& msg) {
+void FullStackInsertScanTest::ScanProjection(const Schema& schema,
+                                             const string& msg) {
   KuduScanner scanner(reader_table_.get());
   CHECK_OK(scanner.SetProjection(&schema));
   uint64_t nrows = 0;
@@ -307,8 +308,8 @@ void ClientMRSTest::ScanProjection(const Schema& schema, const string& msg) {
 // type: (uint64_t, string,     int32_t x4, int64_t x4)
 // The first int32 gets the id and the first int64 gets the thread
 // id. The key is assigned to "key," and the other fields are random.
-void ClientMRSTest::RandomRow(Random* rng, PartialRow* row, char* buf,
-                                 uint64_t key, int id) {
+void FullStackInsertScanTest::RandomRow(Random* rng, PartialRow* row, char* buf,
+                                        uint64_t key, int id) {
   CHECK_OK(row->SetUInt64(kKeyCol, key));
   RandomString(rng, buf, kRandomStrMinLength, kRandomStrMaxLength);
   CHECK_OK(row->SetStringCopy(kStrCol, buf));
@@ -320,11 +321,11 @@ void ClientMRSTest::RandomRow(Random* rng, PartialRow* row, char* buf,
   }
 }
 
-Schema ClientMRSTest::StringSchema() const {
+Schema FullStackInsertScanTest::StringSchema() const {
   return Schema(list_of(schema_.column(kKeyCol)), 0);
 }
 
-Schema ClientMRSTest::Int32Schema() const {
+Schema FullStackInsertScanTest::Int32Schema() const {
   vector<ColumnSchema> cols;
   for (int i = 0; i < kNumIntCols; ++i) {
     cols.push_back(schema_.column(kInt32ColBase + i));
@@ -332,7 +333,7 @@ Schema ClientMRSTest::Int32Schema() const {
   return Schema(cols, 0);
 }
 
-Schema ClientMRSTest::Int64Schema() const {
+Schema FullStackInsertScanTest::Int64Schema() const {
   vector<ColumnSchema> cols;
   for (int i = 0; i < kNumIntCols; ++i) {
     cols.push_back(schema_.column(kInt64ColBase + i));
