@@ -22,6 +22,8 @@ class Random {
       seed_ = 1;
     }
   }
+
+  // Next pseudo-random 32-bit unsigned integer
   uint32_t Next() {
     static const uint32_t M = 2147483647L;   // 2^31-1
     static const uint64_t A = 16807;  // bits 14, 8, 7, 5, 2, 1, 0
@@ -43,6 +45,18 @@ class Random {
     }
     return seed_;
   }
+
+  // Alias for consistency with Next64
+  uint32_t Next32() { return Next(); }
+
+  // Next pseudo-random 64-bit unsigned integer
+  uint64_t Next64() {
+    uint64_t large = Next();
+    large <<= sizeof(uint32_t);
+    large |= Next();
+    return large;
+  }
+
   // Returns a uniformly distributed value in the range [0..n-1]
   // REQUIRES: n > 0
   uint32_t Uniform(int n) { return Next() % n; }

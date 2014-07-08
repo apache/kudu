@@ -12,6 +12,7 @@
 #include "util/env.h"
 #include "util/test_macros.h"
 #include "util/path_util.h"
+#include "util/random.h"
 #include "util/spinlock_profiling.h"
 #include "gutil/gscoped_ptr.h"
 #include "gutil/strings/substitute.h"
@@ -91,8 +92,8 @@ class KuduTest : public ::testing::Test {
   // Call srand() with a random seed based on the current time, reporting
   // that seed to the logs. The time-based seed may be overridden by passing
   // --test_random_seed= from the CLI in order to reproduce a failed randomized
-  // test.
-  void SeedRandom() {
+  // test. Returns the seed.
+  int SeedRandom() {
     int seed;
     // Initialize random seed
     if (FLAGS_test_random_seed == 0) {
@@ -103,6 +104,7 @@ class KuduTest : public ::testing::Test {
     }
     LOG(INFO) << "Using random seed: " << seed;
     srand(seed);
+    return seed;
   }
 
   gscoped_ptr<Env> env_;

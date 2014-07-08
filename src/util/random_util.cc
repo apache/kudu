@@ -4,6 +4,9 @@
 
 #include <cmath>
 #include <cstdlib>
+#include <cstring>
+
+#include "util/random.h"
 
 namespace kudu {
 
@@ -19,6 +22,20 @@ double NormalDist(double mean, double std_dev) {
   double uniform2 = (rand() + 1.0) / (RAND_MAX + 1.0);
 
   return (mean + std_dev * sqrt(-2 * log(uniform1)) * cos(kTwoPi * uniform2));
+}
+
+void RandomString(void* dest, size_t n, Random* rng) {
+  size_t i = 0;
+  uint32_t random = rng->Next();
+  char* cdest = static_cast<char*>(dest);
+  static const size_t sz = sizeof(random);
+  if (n >= sz) {
+    for (i = 0; i <= n - sz; i += sz) {
+      memcpy(&cdest[i], &random, sizeof(random));
+      random = rng->Next();
+    }
+  }
+  memcpy(cdest + i, &random, n - i);
 }
 
 } // namespace kudu

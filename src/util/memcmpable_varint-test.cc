@@ -8,6 +8,7 @@
 #include "util/hexdump.h"
 #include "util/memcmpable_varint.h"
 #include "util/stopwatch.h"
+#include "util/test_util.h"
 
 // Add operator<< to print pairs, used in a test below.
 // This has to be done in the 'std' namespace due to the way that
@@ -21,18 +22,21 @@ ostream &operator <<(ostream &os, const pair<T1, T2> &pair) {
 
 namespace kudu {
 
-static uint64_t Rand64() {
-  return (random() << 32) ^ random();
-}
+class TestMemcmpableVarint : public KuduTest {
+ protected:
+  TestMemcmpableVarint() : random_(SeedRandom()) {}
 
-// Random number generator that generates different length integers
-// with equal probability -- i.e it is equally as likely to generate
-// a number with 8 bits as it is to generate one with 64 bits.
-// This is useful for testing varint implementations, where a uniform
-// random is skewed towards generating longer integers.
-static uint64_t Rand64WithRandomBitLength() {
-  return Rand64() >> (random() % 64);
-}
+  // Random number generator that generates different length integers
+  // with equal probability -- i.e it is equally as likely to generate
+  // a number with 8 bits as it is to generate one with 64 bits.
+  // This is useful for testing varint implementations, where a uniform
+  // random is skewed towards generating longer integers.
+  uint64_t Rand64WithRandomBitLength() {
+    return random_.Next64() >> random_.Uniform(64);
+  }
+
+  Random random_;
+};
 
 static void DoRoundTripTest(uint64_t to_encode) {
   static faststring buf;
@@ -48,9 +52,7 @@ static void DoRoundTripTest(uint64_t to_encode) {
 }
 
 
-TEST(TestMemcmpableVarint, TestRoundTrip) {
-  srand(time(NULL));
-
+TEST_F(TestMemcmpableVarint, TestRoundTrip) {
   // Test the first 100K integers
   // (exercises the special cases for <= 67823 in the code)
   for (int i = 0; i < 100000; i++) {
@@ -59,7 +61,7 @@ TEST(TestMemcmpableVarint, TestRoundTrip) {
 
   // Test a bunch of random integers (which are likely to be many bytes)
   for (int i = 0; i < 100000; i++) {
-    DoRoundTripTest(Rand64());
+    DoRoundTripTest(random_.Next64());
   }
 }
 
@@ -67,7 +69,7 @@ TEST(TestMemcmpableVarint, TestRoundTrip) {
 // Test that a composite key can be made up of multiple memcmpable
 // varints strung together, and that the resulting key compares the
 // same as the original pair of integers (i.e left-to-right).
-TEST(TestMemcmpableVarint, TestCompositeKeys) {
+TEST_F(TestMemcmpableVarint, TestCompositeKeys) {
   faststring buf1;
   faststring buf2;
 
@@ -102,7 +104,7 @@ TEST(TestMemcmpableVarint, TestCompositeKeys) {
 // Similar to the above test, but instead of being randomized, specifically
 // tests "interesting" values -- i.e values around the boundaries of where
 // the encoding changes its number of bytes.
-TEST(TestMemcmpableVarint, TestInterestingCompositeKeys) {
+TEST_F(TestMemcmpableVarint, TestInterestingCompositeKeys) {
   vector<uint64_t> interesting_values =
     boost::assign::list_of
     (0)(1)(240) // 1 byte
@@ -148,7 +150,7 @@ TEST(TestMemcmpableVarint, TestInterestingCompositeKeys) {
 ////////////////////////////////////////////////////////////
 
 #ifdef NDEBUG
-TEST(TestMemcmpableVarint, BenchmarkEncode) {
+TEST_F(TestMemcmpableVarint, BenchmarkEncode) {
   faststring buf;
 
   int sum_sizes = 0; // need to do something with results to force evaluation
@@ -165,7 +167,7 @@ TEST(TestMemcmpableVarint, BenchmarkEncode) {
   ASSERT_GT(sum_sizes, 1); // use 'sum_sizes' to avoid optimizing it out.
 }
 
-TEST(TestMemcmpableVarint, BenchmarkDecode) {
+TEST_F(TestMemcmpableVarint, BenchmarkDecode) {
   faststring buf;
 
   // Encode 1M integers into the buffer

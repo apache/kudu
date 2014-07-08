@@ -30,6 +30,7 @@
 #include "util/status.h"
 #include "util/thread.h"
 #include "util/random.h"
+#include "util/random_util.h"
 
 // Test size parameters
 DEFINE_int32(concurrent_inserts, 3, "Number of inserting clients to launch");
@@ -60,6 +61,7 @@ class FullStackInsertScanTest : public KuduTest {
     kNumInsertsPerClient(FLAGS_inserts_per_client),
     kNumRows(kNumInsertClients * kNumInsertsPerClient),
     kFlushEveryN(FLAGS_rows_per_batch),
+    random_(SeedRandom()),
     // schema has kNumIntCols contiguous columns of Int32 and Int64, in order.
     schema_(list_of
             (ColumnSchema("key", UINT64))
@@ -126,7 +128,7 @@ class FullStackInsertScanTest : public KuduTest {
   }
 
   // Insert the rows that are associated with that ID.
-  void InsertRows(CountDownLatch* cdl, int id);
+  void InsertRows(CountDownLatch* start_latch, int id, uint32_t seed);
 
   // Run a scan from the reader_client_ with the projection schema schema
   // and LOG_TIMING message msg.
@@ -149,6 +151,8 @@ class FullStackInsertScanTest : public KuduTest {
   };
   const int kFlushEveryN;
 
+  Random random_;
+
   Schema schema_;
   shared_ptr<MiniCluster> cluster_;
   KuduClientOptions client_opts_;
@@ -159,31 +163,6 @@ class FullStackInsertScanTest : public KuduTest {
 };
 
 namespace {
-
-// Fills buf randomly with a string between min and max length
-// then appends a null character. Buffer should have room for
-// max + 1 chars.
-void RandomString(Random* rng, char* buf, int min, int max) {
-  CHECK_GE(min, 0);
-  CHECK_LE(min, max);
-  int size = min + rng->Uniform(max - min + 1);
-  buf[size] = '\0';
-  int i;
-  uint32_t random;
-  for (i = 0; i <= size - sizeof(random); i += sizeof(random)) {
-    random = rng->Next();
-    memcpy(&buf[i], &random, sizeof(random));
-  }
-  random = rng->Next();
-  memcpy(&buf[i], &random, size - i);
-}
-
-int64_t rand64(Random* rng) {
-  int64_t ret = rng->Next();
-  ret <<= sizeof(int);
-  ret |= rng->Next();
-  return ret;
-}
 
 // If key is approximately at an even multiple of 1/10 of the way between
 // start and end, then a % completion update is printed to LOG(INFO)
@@ -224,13 +203,12 @@ TEST_F(FullStackInsertScanTest, WithDiskStressTest) {
 void FullStackInsertScanTest::DoConcurrentClientInserts() {
   vector<scoped_refptr<Thread> > threads(kNumInsertClients);
   CountDownLatch start_latch(kNumInsertClients + 1);
-  SeedRandom();
   for (int i = 0; i < kNumInsertClients; ++i) {
     CreateNewClient(i);
     ASSERT_OK(Thread::Create(CURRENT_TEST_NAME(),
                              StrCat(CURRENT_TEST_CASE_NAME(), "-id", i),
                              &FullStackInsertScanTest::InsertRows, this,
-                             &start_latch, i, &threads[i]));
+                             &start_latch, i, random_.Next(), &threads[i]));
     start_latch.CountDown();
   }
   LOG_TIMING(INFO,
@@ -255,8 +233,9 @@ void FullStackInsertScanTest::DoTestScans() {
   ScanProjection(Int64Schema(), "Int64 projection, 4 col");
 }
 
-void FullStackInsertScanTest::InsertRows(CountDownLatch* start_latch, int id) {
-  Random rng(id);
+void FullStackInsertScanTest::InsertRows(CountDownLatch* start_latch, int id,
+                                         uint32_t seed) {
+  Random rng(seed + id);
 
   start_latch->Wait();
   // Retrieve id's session and table
@@ -269,6 +248,7 @@ void FullStackInsertScanTest::InsertRows(CountDownLatch* start_latch, int id) {
   ++id;
   // Use synchronizer to keep 1 asynchronous batch flush maximum
   Synchronizer sync;
+  // Prime the synchronizer as if it was running a batch (for for-loop code)
   sync.AsStatusCallback().Run(Status::OK());
   // Maintain buffer for random string generation
   char randstr[kRandomStrMaxLength + 1];
@@ -317,13 +297,16 @@ void FullStackInsertScanTest::ScanProjection(const Schema& schema,
 void FullStackInsertScanTest::RandomRow(Random* rng, PartialRow* row, char* buf,
                                         uint64_t key, int id) {
   CHECK_OK(row->SetUInt64(kKeyCol, key));
-  RandomString(rng, buf, kRandomStrMinLength, kRandomStrMaxLength);
+  int len = kRandomStrMinLength +
+    rng->Uniform(kRandomStrMaxLength - kRandomStrMinLength + 1);
+  RandomString(buf, len, rng);
+  buf[len] = '\0';
   CHECK_OK(row->SetStringCopy(kStrCol, buf));
   CHECK_OK(row->SetInt32(kInt32ColBase, id));
   CHECK_OK(row->SetInt64(kInt64ColBase, Thread::current_thread()->tid()));
   for (int i = 1; i < kNumIntCols; ++i) {
-    CHECK_OK(row->SetInt32(kInt32ColBase + i, rng->Next()));
-    CHECK_OK(row->SetInt64(kInt64ColBase + i, rand64(rng)));
+    CHECK_OK(row->SetInt32(kInt32ColBase + i, rng->Next32()));
+    CHECK_OK(row->SetInt64(kInt64ColBase + i, rng->Next64()));
   }
 }
 
