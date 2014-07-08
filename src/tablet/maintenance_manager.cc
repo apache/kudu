@@ -145,28 +145,29 @@ void MaintenanceManager::RegisterOp(MaintenanceOp* op) {
 }
 
 void MaintenanceManager::UnregisterOp(MaintenanceOp* op) {
-  CHECK(op->manager_.get() == this) << "Tried to unregister " << op->name()
-        << ", but it was not registered with this maintenance manager.";
-  boost::unique_lock<boost::mutex> guard(lock_);
-  OpMapTy::iterator iter = ops_.find(op);
-  CHECK(iter != ops_.end()) << "Tried to unregister " << op->name()
-      << ", but it was never registered";
-  // While the op is running, wait for it to be finished.
-  if (iter->first->running_ > 0) {
-    VLOG(1) << "Waiting for op " << op->name() << " to finish so "
-           << "we can unregister it.";
-  }
-  while (iter->first->running_ > 0) {
-    op->cond_.wait(guard);
-    iter = ops_.find(op);
+  {
+    boost::unique_lock<boost::mutex> guard(lock_);
+    CHECK(op->manager_.get() == this) << "Tried to unregister " << op->name()
+          << ", but it is not currently registered with this maintenance manager.";
+    OpMapTy::iterator iter = ops_.find(op);
     CHECK(iter != ops_.end()) << "Tried to unregister " << op->name()
-        << ", but another thread unregistered it while we were "
-        << "waiting for it to complete";
+        << ", but it was never registered";
+    // While the op is running, wait for it to be finished.
+    if (iter->first->running_ > 0) {
+      VLOG(1) << "Waiting for op " << op->name() << " to finish so "
+            << "we can unregister it.";
+    }
+    while (iter->first->running_ > 0) {
+      op->cond_.wait(guard);
+      iter = ops_.find(op);
+      CHECK(iter != ops_.end()) << "Tried to unregister " << op->name()
+          << ", but another thread unregistered it while we were "
+          << "waiting for it to complete";
+    }
+    ops_.erase(iter);
   }
-  ops_.erase(iter);
   LOG(INFO) << "Unregistered op " << op->name();
-  guard.unlock();
-  // Remove the op's shared_ptr reference to us.  This might 'delete this'
+  // Remove the op's shared_ptr reference to us.  This might 'delete this'.
   op->manager_.reset();
 }
 

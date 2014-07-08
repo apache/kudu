@@ -305,8 +305,8 @@ class Tablet {
   // Register the maintenance ops associated with this tablet
   void RegisterMaintenanceOps(MaintenanceManager* maintenance_manager);
 
-  // Unregister the maintenance ops associated with this tablet.  Visible for
-  // testing.
+  // Unregister the maintenance ops associated with this tablet.
+  // This method is not thread safe.
   void UnregisterMaintenanceOps();
 
   const std::string& tablet_id() const { return metadata_->oid(); }
