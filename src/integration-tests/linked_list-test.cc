@@ -453,8 +453,10 @@ TEST_F(LinkedListTest, TestLoadAndVerify) {
   ASSERT_NO_FATAL_FAILURE(WaitAndVerify(written));
 
   // Check in-memory state with a downed TS. Scans may try other replicas.
-  cluster_->tablet_server(0)->Shutdown();
-  ASSERT_NO_FATAL_FAILURE(WaitAndVerify(written));
+  if (FLAGS_num_tablet_servers > 1) {
+    cluster_->tablet_server(0)->Shutdown();
+    ASSERT_NO_FATAL_FAILURE(WaitAndVerify(written));
+  }
 
   // Kill and restart the cluster, verify data remains.
   ASSERT_NO_FATAL_FAILURE(RestartCluster());
@@ -465,8 +467,10 @@ TEST_F(LinkedListTest, TestLoadAndVerify) {
   ASSERT_NO_FATAL_FAILURE(WaitAndVerify(written));
 
   // Check post-replication state with a downed TS.
-  cluster_->tablet_server(0)->Shutdown();
-  ASSERT_NO_FATAL_FAILURE(WaitAndVerify(written));
+  if (FLAGS_num_tablet_servers > 1) {
+    cluster_->tablet_server(0)->Shutdown();
+    ASSERT_NO_FATAL_FAILURE(WaitAndVerify(written));
+  }
 
   ASSERT_NO_FATAL_FAILURE(RestartCluster());
   // Sleep a little bit, so that the tablet is proably in bootstrapping state.
