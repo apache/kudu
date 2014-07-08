@@ -3,12 +3,14 @@ package kudu.mapreduce;
 
 import com.stumbleupon.async.Callback;
 import com.stumbleupon.async.Deferred;
+import com.stumbleupon.async.DeferredGroupException;
 import kudu.rpc.KuduClient;
 import kudu.rpc.KuduSession;
 import kudu.rpc.KuduTable;
 import kudu.rpc.Operation;
 import kudu.rpc.OperationResponse;
 import kudu.rpc.PleaseThrottleException;
+import kudu.rpc.RowsWithErrorException;
 import org.apache.hadoop.conf.Configurable;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.io.NullWritable;
@@ -154,7 +156,8 @@ public class KuduTableOutputFormat extends OutputFormat<NullWritable,Operation>
           try {
             ex.getDeferred().join(operationTimeoutMs);
           } catch (Exception e) {
-            throw new IOException("Encounted exception while waiting to write", e);
+              // we don't care, it will get registered in defaultErrorCB,
+              // we'll still try to apply our operation.
           }
         }
       }
@@ -168,7 +171,7 @@ public class KuduTableOutputFormat extends OutputFormat<NullWritable,Operation>
         d.addErrback(defaultErrorCB);
         d.join(operationTimeoutMs);
       } catch (Exception e) {
-        throw new IOException("Could not completely flush the operations when closing", e);
+        // Same as for write, it will get registered in defaultErrorCB.
       } finally {
         if (taskAttemptContext != null) {
           // This is the only place where we have access to the context in the record writer,
@@ -186,7 +189,23 @@ public class KuduTableOutputFormat extends OutputFormat<NullWritable,Operation>
           LOG.warn("The error callback was triggered after applying a row but a message wasn't " +
               "provided");
         } else if (arg instanceof Exception) {
-          LOG.warn("Encountered an exception after applying rows", arg);
+          RowsWithErrorException rwe;
+          if (arg instanceof DeferredGroupException) {
+            rwe = RowsWithErrorException.fromDeferredGroupException((DeferredGroupException) arg);
+          } else if (arg instanceof RowsWithErrorException) {
+            rwe = (RowsWithErrorException) arg;
+          } else {
+            LOG.warn("Encountered an exception after applying rows", arg);
+            return null;
+          }
+          if (rwe != null) {
+            int rowErrorsCount = rwe.getErrors().size();
+            rowsWithErrors.addAndGet(rowErrorsCount - 1); // Here we know the real count.
+            LOG.warn("Got per errors for " + rowErrorsCount + " rows, " +
+                "the first one being " + rwe.getErrors().get(0).getStatus());
+          } else {
+            LOG.warn("Got a DeferredGroupException without per-row errors", arg);
+          }
         } else {
           LOG.warn("Encountered an error after applying rows: " + arg);
         }
