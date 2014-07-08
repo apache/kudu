@@ -15,7 +15,6 @@
 #include "client/client.h"
 #include "client/row_result.h"
 #include "client/write_op.h"
-#include "common/schema.h"
 #include "gutil/gscoped_ptr.h"
 #include "gutil/ref_counted.h"
 #include "gutil/strings/split.h"
@@ -61,8 +60,10 @@ namespace tablet {
 using client::Insert;
 using client::KuduClient;
 using client::KuduClientOptions;
+using client::KuduColumnSchema;
 using client::KuduRowResult;
 using client::KuduScanner;
+using client::KuduSchema;
 using client::KuduSession;
 using client::KuduTable;
 using strings::Split;
@@ -79,16 +80,16 @@ class FullStackInsertScanTest : public KuduTest {
     random_(SeedRandom()),
     // schema has kNumIntCols contiguous columns of Int32 and Int64, in order.
     schema_(list_of
-            (ColumnSchema("key", UINT64))
-            (ColumnSchema("string_val", STRING))
-            (ColumnSchema("int32_val1", INT32))
-            (ColumnSchema("int32_val2", INT32))
-            (ColumnSchema("int32_val3", INT32))
-            (ColumnSchema("int32_val4", INT32))
-            (ColumnSchema("int64_val1", INT64))
-            (ColumnSchema("int64_val2", INT64))
-            (ColumnSchema("int64_val3", INT64))
-            (ColumnSchema("int64_val4", INT64)), 1),
+            (KuduColumnSchema("key", UINT64))
+            (KuduColumnSchema("string_val", STRING))
+            (KuduColumnSchema("int32_val1", INT32))
+            (KuduColumnSchema("int32_val2", INT32))
+            (KuduColumnSchema("int32_val3", INT32))
+            (KuduColumnSchema("int32_val4", INT32))
+            (KuduColumnSchema("int64_val1", INT64))
+            (KuduColumnSchema("int64_val2", INT64))
+            (KuduColumnSchema("int64_val3", INT64))
+            (KuduColumnSchema("int64_val4", INT64)), 1),
     sessions_(kNumInsertClients),
     tables_(kNumInsertClients) {
   }
@@ -153,11 +154,11 @@ class FullStackInsertScanTest : public KuduTest {
 
   // Run a scan from the reader_client_ with the projection schema schema
   // and LOG_TIMING message msg.
-  void ScanProjection(const Schema& schema, const string& msg);
+  void ScanProjection(const KuduSchema& schema, const string& msg);
 
-  Schema StringSchema() const;
-  Schema Int32Schema() const;
-  Schema Int64Schema() const;
+  KuduSchema StringSchema() const;
+  KuduSchema Int32Schema() const;
+  KuduSchema Int64Schema() const;
 
   static const char* const kTableName;
   static const int kSessionTimeoutMs = 5000;
@@ -174,7 +175,7 @@ class FullStackInsertScanTest : public KuduTest {
 
   Random random_;
 
-  Schema schema_;
+  KuduSchema schema_;
   shared_ptr<MiniCluster> cluster_;
   KuduClientOptions client_opts_;
   scoped_refptr<KuduTable> reader_table_;
@@ -279,7 +280,7 @@ void FullStackInsertScanTest::DoTestScans() {
   if (stat) stat->Start();
   if (record) record->Start();
 
-  ScanProjection(Schema(vector<ColumnSchema>(), 0), "empty projection, 0 col");
+  ScanProjection(KuduSchema(vector<KuduColumnSchema>(), 0), "empty projection, 0 col");
   ScanProjection(schema_.CreateKeyProjection(), "key scan, 1 col");
   ScanProjection(schema_, "full schema scan, 10 col");
   ScanProjection(StringSchema(), "String projection, 1 col");
@@ -329,7 +330,7 @@ void FullStackInsertScanTest::InsertRows(CountDownLatch* start_latch, int id,
   CHECK_OK(session->Flush());
 }
 
-void FullStackInsertScanTest::ScanProjection(const Schema& schema,
+void FullStackInsertScanTest::ScanProjection(const KuduSchema& schema,
                                              const string& msg) {
   KuduScanner scanner(reader_table_.get());
   CHECK_OK(scanner.SetProjection(&schema));
@@ -367,24 +368,24 @@ void FullStackInsertScanTest::RandomRow(Random* rng, PartialRow* row, char* buf,
   }
 }
 
-Schema FullStackInsertScanTest::StringSchema() const {
-  return Schema(list_of(schema_.column(kKeyCol)), 0);
+KuduSchema FullStackInsertScanTest::StringSchema() const {
+  return KuduSchema(list_of(schema_.Column(kKeyCol)), 0);
 }
 
-Schema FullStackInsertScanTest::Int32Schema() const {
-  vector<ColumnSchema> cols;
+KuduSchema FullStackInsertScanTest::Int32Schema() const {
+  vector<KuduColumnSchema> cols;
   for (int i = 0; i < kNumIntCols; ++i) {
-    cols.push_back(schema_.column(kInt32ColBase + i));
+    cols.push_back(schema_.Column(kInt32ColBase + i));
   }
-  return Schema(cols, 0);
+  return KuduSchema(cols, 0);
 }
 
-Schema FullStackInsertScanTest::Int64Schema() const {
-  vector<ColumnSchema> cols;
+KuduSchema FullStackInsertScanTest::Int64Schema() const {
+  vector<KuduColumnSchema> cols;
   for (int i = 0; i < kNumIntCols; ++i) {
-    cols.push_back(schema_.column(kInt64ColBase + i));
+    cols.push_back(schema_.Column(kInt64ColBase + i));
   }
-  return Schema(cols, 0);
+  return KuduSchema(cols, 0);
 }
 
 } // namespace tablet

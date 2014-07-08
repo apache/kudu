@@ -2,12 +2,12 @@
 #ifndef KUDU_CLIENT_CLIENT_H
 #define KUDU_CLIENT_CLIENT_H
 
+#include "client/scan_predicate.h"
+#include "client/schema.h"
 #include "client/write_op.h"
-#include "common/encoded_key.h"
 #include "common/predicate_encoder.h"
 #include "common/scan_predicate.h"
 #include "common/scan_spec.h"
-#include "common/schema.h"
 #include "gutil/gscoped_ptr.h"
 #include "gutil/ref_counted.h"
 #include "gutil/macros.h"
@@ -99,9 +99,9 @@ class KuduClient : public std::tr1::enable_shared_from_this<KuduClient> {
                        std::tr1::shared_ptr<KuduClient>* client);
 
   Status CreateTable(const std::string& table_name,
-                     const Schema& schema);
+                     const KuduSchema& schema);
   Status CreateTable(const std::string& table_name,
-                     const Schema& schema,
+                     const KuduSchema& schema,
                      const CreateTableOptions& opts);
 
   // set 'create_in_progress' to true if a CreateTable operation is in-progress
@@ -118,7 +118,7 @@ class KuduClient : public std::tr1::enable_shared_from_this<KuduClient> {
                                 bool *alter_in_progress);
 
   Status GetTableSchema(const std::string& table_name,
-                        Schema *schema);
+                        KuduSchema* schema);
 
   // Open the table with the given name. If the table has not been opened before
   // in this client, this will do an RPC to ensure that the table exists and
@@ -246,7 +246,7 @@ class KuduTable : public base::RefCountedThreadSafe<KuduTable> {
  public:
   const std::string& name() const { return name_; }
 
-  const Schema& schema() const { return schema_; }
+  const KuduSchema& schema() const { return schema_; }
 
   // Create a new write operation for this table.
   gscoped_ptr<Insert> NewInsert();
@@ -263,7 +263,7 @@ class KuduTable : public base::RefCountedThreadSafe<KuduTable> {
 
   KuduTable(const std::tr1::shared_ptr<KuduClient>& client,
             const std::string& name,
-            const Schema& schema);
+            const KuduSchema& schema);
   ~KuduTable();
 
   Status Open();
@@ -275,7 +275,7 @@ class KuduTable : public base::RefCountedThreadSafe<KuduTable> {
   // TODO: figure out how we deal with a schema change from the client perspective.
   // Do we make them call a RefreshSchema() method? Or maybe reopen the table and get
   // a new KuduTable instance (which would simplify the object lifecycle a little?)
-  const Schema schema_;
+  const KuduSchema schema_;
 
   DISALLOW_COPY_AND_ASSIGN(KuduTable);
 };
@@ -298,11 +298,11 @@ class AlterTableBuilder {
   Status AddColumn(const std::string& name,
                    DataType type,
                    const void *default_value,
-                   ColumnStorageAttributes attributes = ColumnStorageAttributes());
+                   KuduColumnStorageAttributes attributes = KuduColumnStorageAttributes());
 
   Status AddNullableColumn(const std::string& name,
                            DataType type,
-                           ColumnStorageAttributes attributes = ColumnStorageAttributes());
+                           KuduColumnStorageAttributes attributes = KuduColumnStorageAttributes());
 
   Status DropColumn(const std::string& name);
 
@@ -692,14 +692,14 @@ class KuduScanner {
   // must remain valid for the lifetime of this scanner object.
   //
   // If not called, table schema is used as the projection.
-  Status SetProjection(const Schema* projection) WARN_UNUSED_RESULT;
+  Status SetProjection(const KuduSchema* projection) WARN_UNUSED_RESULT;
 
   // Add a predicate to this scanner.
   // The predicates act as conjunctions -- i.e, they all must pass for
   // a row to be returned.
   // TODO: currently, the predicates must refer to columns which are also
   // part of the projection.
-  Status AddConjunctPredicate(const ColumnRangePredicate& pred) WARN_UNUSED_RESULT;
+  Status AddConjunctPredicate(const KuduColumnRangePredicate& pred) WARN_UNUSED_RESULT;
 
   // Begin scanning.
   Status Open();

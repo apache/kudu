@@ -10,16 +10,9 @@
 #include "client/client.h"
 #include "client/meta_cache.h"
 #include "client/write_op.h"
-#include "common/row.h"
-#include "common/partial_row.h"
-#include "common/row_operations.h"
-#include "common/scan_spec.h"
-#include "common/schema.h"
-#include "common/wire_protocol.h"
 #include "gutil/gscoped_ptr.h"
 #include "gutil/map-util.h"
 #include "gutil/stl_util.h"
-#include "tserver/tserver_service.proxy.h"
 #include "util/status.h"
 #include "util/locks.h"
 #include "util/coding.h"
@@ -28,11 +21,11 @@ using std::tr1::shared_ptr;
 
 namespace kudu {
 
-using tserver::TabletServerServiceProxy;
-using tserver::WriteRequestPB;
-using tserver::WriteResponsePB;
 using client::Insert;
+using client::KuduColumnRangePredicate;
+using client::KuduSchema;
 using client::Update;
+using std::vector;
 
 namespace {
 
@@ -79,7 +72,7 @@ class CountingCallback : public base::RefCountedThreadSafe<CountingCallback> {
 } // anonymous namespace
 
 void RpcLineItemDAO::Init() {
-  const Schema schema = tpch::CreateLineItemSchema();
+  const KuduSchema schema = tpch::CreateLineItemSchema();
 
   client::KuduClientOptions opts;
   opts.master_server_addr = master_address_;
@@ -145,11 +138,12 @@ void RpcLineItemDAO::FinishWriting() {
   }
 }
 
-void RpcLineItemDAO::OpenScanner(const Schema &query_schema, ScanSpec *spec) {
+void RpcLineItemDAO::OpenScanner(const KuduSchema& query_schema,
+                                 const vector<KuduColumnRangePredicate>& preds) {
   client::KuduScanner *scanner = new client::KuduScanner(client_table_.get());
   current_scanner_.reset(scanner);
   CHECK_OK(current_scanner_->SetProjection(&query_schema));
-  BOOST_FOREACH(const ColumnRangePredicate& pred, spec->predicates()) {
+  BOOST_FOREACH(const KuduColumnRangePredicate& pred, preds) {
     CHECK_OK(current_scanner_->AddConjunctPredicate(pred));
   }
   CHECK_OK(current_scanner_->Open());

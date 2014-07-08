@@ -3,9 +3,12 @@
 set(CLIENT_SRCS
   batcher.cc
   client.cc
+  encoded_key.cc
   error_collector.cc
   meta_cache.cc
   row_result.cc
+  scan_predicate.cc
+  schema.cc
   write_op.cc
 )
 

@@ -49,20 +49,16 @@
 
 #include <map>
 
-#include "common/scan_predicate.h"
-#include "common/scan_spec.h"
-#include "common/schema.h"
-#include "common/row.h"
-#include "gutil/gscoped_ptr.h"
-#include "gutil/hash/city.h"
-#include "gutil/strings/numbers.h"
-#include "util/slice.h"
-#include "util/stopwatch.h"
 #include "benchmarks/tpch/tpch-schemas.h"
 #include "benchmarks/tpch/line_item_dao.h"
 #include "benchmarks/tpch/local_line_item_dao.h"
 #include "benchmarks/tpch/rpc_line_item_dao.h"
 #include "benchmarks/tpch/line_item_tsv_importer.h"
+#include "gutil/gscoped_ptr.h"
+#include "gutil/hash/city.h"
+#include "gutil/strings/numbers.h"
+#include "util/slice.h"
+#include "util/stopwatch.h"
 
 DEFINE_string(tpch_path_to_data, "/tmp/lineitem.tbl",
               "The full path to the '|' separated file containing the lineitem table.");
@@ -76,6 +72,10 @@ DEFINE_int32(tpch_max_batch_size, 1000,
              "Maximum number of inserts/updates to batch at once");
 
 namespace kudu {
+
+using client::KuduColumnRangePredicate;
+using client::KuduColumnSchema;
+using client::KuduSchema;
 
 struct Result {
   int l_quantity;
@@ -135,16 +135,16 @@ void Tpch1(LineItemDAO *dao) {
   typedef unordered_map<SliceMapKey, Result*, hash> slice_map;
   typedef unordered_map<SliceMapKey, slice_map*, hash> slice_map_map;
 
-  Schema query_schema(tpch::CreateTpch1QuerySchema());
+  KuduSchema query_schema(tpch::CreateTpch1QuerySchema());
   Slice date("1998-09-02");
-  ScanSpec spec;
-  ColumnRangePredicate pred1(query_schema.column(0), NULL, &date);
-  spec.AddPredicate(pred1);
+  vector<KuduColumnRangePredicate> preds;
+  KuduColumnRangePredicate pred1(query_schema.Column(0), NULL, &date);
+  preds.push_back(pred1);
 
-  dao->OpenScanner(query_schema, &spec);
+  dao->OpenScanner(query_schema, preds);
 
   Arena arena(32*1024, 256*1024);
-  RowBlock block(query_schema, 1000, &arena);
+  RowBlock block(*query_schema.schema_, 1000, &arena);
   int matching_rows = 0;
   slice_map_map results;
   Result *r;

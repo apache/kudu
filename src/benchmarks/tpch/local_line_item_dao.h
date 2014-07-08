@@ -3,14 +3,14 @@
 #define KUDU_TPCH_LOCAL_LINE_ITEM_DAO_H
 
 #include <string>
+#include <vector>
 
-#include "common/scan_spec.h"
-#include "common/schema.h"
-#include "common/row.h"
+#include "benchmarks/tpch/line_item_dao.h"
+#include "client/scan_predicate.h"
+#include "client/schema.h"
 #include "consensus/opid_anchor_registry.h"
 #include "tablet/tablet.h"
 #include "tablet/transactions/write_transaction.h"
-#include "benchmarks/tpch/line_item_dao.h"
 
 namespace kudu {
 
@@ -25,7 +25,8 @@ class LocalLineItemDAO : public LineItemDAO {
   virtual void MutateLine(boost::function<void(PartialRow*)> f) OVERRIDE;
   virtual void Init() OVERRIDE;
   virtual void FinishWriting() OVERRIDE;
-  virtual void OpenScanner(const Schema &query_schema, ScanSpec *spec) OVERRIDE;
+  virtual void OpenScanner(const client::KuduSchema& query_schema,
+                           const std::vector<client::KuduColumnRangePredicate>& preds) OVERRIDE;
   virtual bool HasMore() OVERRIDE;
   virtual void GetNext(RowBlock *block) OVERRIDE;
   virtual bool IsTableEmpty() OVERRIDE;
@@ -38,7 +39,8 @@ class LocalLineItemDAO : public LineItemDAO {
   gscoped_ptr<kudu::tablet::Tablet> tablet_;
   tablet::WriteTransactionState tx_state_;
   gscoped_ptr<RowwiseIterator> current_iter_;
-  Schema schema_;
+  gscoped_ptr<ScanSpec> current_iter_spec_;
+  client::KuduSchema schema_;
 };
 
 } // namespace kudu

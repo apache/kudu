@@ -43,6 +43,9 @@ using consensus::RaftConsensus;
 using consensus::ReplicaState;
 using client::KuduClientOptions;
 using client::KuduClient;
+using client::KuduColumnSchema;
+using client::KuduColumnStorageAttributes;
+using client::KuduSchema;
 using client::KuduTable;
 using master::GetTableLocationsRequestPB;
 using master::GetTableLocationsResponsePB;
@@ -97,9 +100,30 @@ class DistConsensusTest : public TabletServerTest {
     KuduClientOptions opts;
     opts.master_server_addr = cluster_->mini_master()->bound_rpc_addr().ToString();
     ASSERT_STATUS_OK(KuduClient::Create(opts, &client_));
-    // Create a table with a single tablet, with three replicas
-    ASSERT_STATUS_OK(client_->CreateTable(kTableId, schema_));
+
+    // Create a table with a single tablet, with three replicas.
+    //
+    // The tests here make extensive use of server schemas, but we need
+    // a client schema to create the table.
+    ASSERT_STATUS_OK(client_->CreateTable(kTableId, GetClientSchema(schema_)));
     ASSERT_STATUS_OK(client_->OpenTable(kTableId, &table_));
+  }
+
+  KuduSchema GetClientSchema(const Schema& server_schema) const {
+    std::vector<KuduColumnSchema> client_cols;
+    BOOST_FOREACH(const ColumnSchema& col, server_schema.columns()) {
+      CHECK_EQ(col.has_read_default(), col.has_write_default());
+      if (col.has_read_default()) {
+        CHECK_EQ(col.read_default_value(), col.write_default_value());
+      }
+      KuduColumnStorageAttributes client_attrs(col.attributes().encoding(),
+                                               col.attributes().compression());
+      KuduColumnSchema client_col(col.name(), col.type_info()->type(),
+                                  col.is_nullable(), col.read_default_value(),
+                                  client_attrs);
+      client_cols.push_back(client_col);
+    }
+    return KuduSchema(client_cols, server_schema.num_key_columns());
   }
 
   void CreateLeaderAndReplicaProxies(const TabletLocationsPB& locations) {

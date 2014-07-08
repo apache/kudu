@@ -5,23 +5,20 @@
 
 #include "benchmarks/tpch/local_line_item_dao.h"
 #include "benchmarks/tpch/tpch-schemas.h"
-#include "common/scan_spec.h"
-#include "common/schema.h"
-#include "common/row.h"
-#include "common/wire_protocol.h"
-#include "common/row_changelist.h"
+#include "client/schema.h"
 #include "common/partial_row.h"
 #include "util/status.h"
 #include "util/test_util.h"
 
 namespace kudu {
 
-using tserver::ColumnRangePredicatePB;
+using client::KuduColumnRangePredicate;
+using client::KuduSchema;
 
 class LocalLineItemDAOTest : public KuduTest {
 
  public:
-  LocalLineItemDAOTest() : schema_(tpch::CreateLineItemSchema()), rb_(schema_) {}
+  LocalLineItemDAOTest() : schema_(tpch::CreateLineItemSchema()) {}
 
   virtual void SetUp() OVERRIDE {
     KuduTest::SetUp();
@@ -33,8 +30,7 @@ class LocalLineItemDAOTest : public KuduTest {
 
  protected:
   gscoped_ptr<LineItemDAO> dao_;
-  Schema schema_;
-  RowBuilder rb_;
+  KuduSchema schema_;
 
   static void BuildTestRow(int order, int line, PartialRow* row) {
     CHECK_OK(row->SetUInt32(tpch::kOrderKeyColIdx, order));
@@ -56,14 +52,13 @@ class LocalLineItemDAOTest : public KuduTest {
   }
 
   int CountRows() {
-    Schema query_schema = schema_.CreateKeyProjection();
-    ColumnRangePredicatePB pred;
-    ScanSpec spec;
-    dao_->OpenScanner(query_schema, &spec);
+    KuduSchema query_schema = schema_.CreateKeyProjection();
+    vector<KuduColumnRangePredicate> preds;
+    dao_->OpenScanner(query_schema, preds);
     int count = 0;
     while (dao_->HasMore()) {
       gscoped_ptr<Arena> arena(new Arena(256*1000, 256*1000*1000));
-      RowBlock rows(schema_, 1000, arena.get());
+      RowBlock rows(*schema_.schema_, 1000, arena.get());
       dao_->GetNext(&rows);
       count += rows.nrows();
     }

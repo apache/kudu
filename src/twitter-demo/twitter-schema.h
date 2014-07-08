@@ -6,24 +6,27 @@
 
 #include <boost/assign/list_of.hpp>
 
-#include "common/schema.h"
+#include "client/schema.h"
 
 namespace kudu {
 namespace twitter_demo {
 
-inline Schema CreateTwitterSchema() {
-  return Schema(boost::assign::list_of
-                (ColumnSchema("tweet_id", UINT64))
-                (ColumnSchema("text", STRING))
-                (ColumnSchema("source", STRING))
-                (ColumnSchema("created_at", STRING))
-                (ColumnSchema("user_id", UINT64))
-                (ColumnSchema("user_name", STRING))
-                (ColumnSchema("user_description", STRING))
-                (ColumnSchema("user_location", STRING))
-                (ColumnSchema("user_followers_count", UINT32))
-                (ColumnSchema("user_friends_count", UINT32))
-                (ColumnSchema("user_image_url", STRING)),
+using client::KuduColumnSchema;
+using client::KuduSchema;
+
+inline KuduSchema CreateTwitterSchema() {
+  return KuduSchema(boost::assign::list_of
+                (KuduColumnSchema("tweet_id", UINT64))
+                (KuduColumnSchema("text", STRING))
+                (KuduColumnSchema("source", STRING))
+                (KuduColumnSchema("created_at", STRING))
+                (KuduColumnSchema("user_id", UINT64))
+                (KuduColumnSchema("user_name", STRING))
+                (KuduColumnSchema("user_description", STRING))
+                (KuduColumnSchema("user_location", STRING))
+                (KuduColumnSchema("user_followers_count", UINT32))
+                (KuduColumnSchema("user_friends_count", UINT32))
+                (KuduColumnSchema("user_image_url", STRING)),
                 1);
 }
 

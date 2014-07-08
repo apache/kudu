@@ -2,20 +2,20 @@
 
 #include "benchmarks/tpch/local_line_item_dao.h"
 
+#include "benchmarks/tpch/tpch-schemas.h"
+#include "client/schema.h"
 #include "common/partial_row.h"
-#include "common/scan_spec.h"
-#include "common/schema.h"
-#include "common/row.h"
 #include "server/logical_clock.h"
 #include "tablet/tablet.h"
-#include "benchmarks/tpch/tpch-schemas.h"
 
 namespace kudu {
 
+using client::KuduSchema;
+using client::KuduColumnRangePredicate;
 using metadata::QuorumPB;
 using metadata::TabletMasterBlockPB;
 using metadata::TabletMetadata;
-
+using std::vector;
 
 LocalLineItemDAO::LocalLineItemDAO(const string &path)
     : fs_manager_(kudu::Env::Default(), path),
@@ -42,7 +42,7 @@ void LocalLineItemDAO::Init() {
                                         master_block,
                                         "tpch1",
                                         // Build schema with column ids
-                                        SchemaBuilder(schema_).Build(),
+                                        SchemaBuilder(*schema_.schema_).Build(),
                                         quorum,
                                         "",
                                         "",
@@ -56,13 +56,13 @@ void LocalLineItemDAO::Init() {
 }
 
 void LocalLineItemDAO::WriteLine(boost::function<void(PartialRow*)> f) {
-  PartialRow row(&schema_);
+  PartialRow row(schema_.schema_.get());
   f(&row);
   WriteLine(row);
 }
 
 void LocalLineItemDAO::MutateLine(boost::function<void(PartialRow*)> f) {
-  PartialRow row(&schema_);
+  PartialRow row(schema_.schema_.get());
   f(&row);
   MutateLine(row);
 }
@@ -84,9 +84,14 @@ void LocalLineItemDAO::FinishWriting() {
   CHECK_OK(tablet_->Flush());
 }
 
-void LocalLineItemDAO::OpenScanner(const Schema &query_schema, ScanSpec *spec) {
-  CHECK_OK(tablet_->NewRowIterator(query_schema, &current_iter_));
-  CHECK_OK(current_iter_->Init(spec));
+void LocalLineItemDAO::OpenScanner(const KuduSchema& query_schema,
+                                   const vector<KuduColumnRangePredicate>& preds) {
+  CHECK_OK(tablet_->NewRowIterator(*query_schema.schema_, &current_iter_));
+  current_iter_spec_.reset(new ScanSpec());
+  BOOST_FOREACH(const KuduColumnRangePredicate& pred, preds) {
+    current_iter_spec_->AddPredicate(*pred.pred_);
+  }
+  CHECK_OK(current_iter_->Init(current_iter_spec_.get()));
 }
 
 bool LocalLineItemDAO::HasMore() {

@@ -23,6 +23,7 @@ using std::string;
 using std::tr1::shared_ptr;
 using kudu::client::KuduClient;
 using kudu::client::KuduClientOptions;
+using kudu::client::KuduSchema;
 using kudu::rpc::RpcController;
 
 DEFINE_string(master_address, "localhost",
@@ -46,7 +47,7 @@ string LoadFile(const string& path) {
 
 // TODO: refactor this and the associated constants into some sort of
 // demo-tables.h class in a src/demos/ directory.
-Status GetDemoSchema(const string& table_name, Schema* schema) {
+Status GetDemoSchema(const string& table_name, KuduSchema* schema) {
   if (table_name == kTwitterTabletId) {
     *schema = twitter_demo::CreateTwitterSchema();
   } else if (table_name == kTPCH1TabletId) {
@@ -70,7 +71,7 @@ static int CreateDemoTable(int argc, char** argv) {
 
   string table_name = argv[1];
 
-  Schema schema;
+  KuduSchema schema;
   CHECK_OK(GetDemoSchema(table_name, &schema));
 
   // Set up client.

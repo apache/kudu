@@ -563,14 +563,14 @@ void Batcher::FlushBuffer(RemoteTabletServer* ts, PerTSBuffer* buf) {
     // All of the ops for a given tablet obviously correspond to the same table,
     // so we'll just grab the table from the first.
     const KuduTable* table = rpc->ops[0]->write_op->table();
-    const Schema& schema = table->schema();
+    const Schema* schema = table->schema().schema_.get();
     const RemoteTablet* tablet = entry.first;
 
     rpc->request.Clear();
     rpc->request.set_tablet_id(tablet->tablet_id());
     // Set up schema
 
-    CHECK_OK(SchemaToPB(schema, rpc->request.mutable_schema()));
+    CHECK_OK(SchemaToPB(*schema, rpc->request.mutable_schema()));
 
     RowOperationsPB* requested = rpc->request.mutable_row_operations();
 
@@ -579,9 +579,9 @@ void Batcher::FlushBuffer(RemoteTabletServer* ts, PerTSBuffer* buf) {
     RowOperationsPBEncoder enc(requested);
     BOOST_FOREACH(InFlightOp* op, rpc->ops) {
       DCHECK(op->key->InRange(op->tablet->start_key(), op->tablet->end_key()))
-          << "Row " << schema.DebugEncodedRowKey(op->key->encoded_key().ToString())
-          << " not in range (" << schema.DebugEncodedRowKey(tablet->start_key().ToString())
-          << ", " << schema.DebugEncodedRowKey(tablet->end_key().ToString())
+          << "Row " << schema->DebugEncodedRowKey(op->key->encoded_key().ToString())
+          << " not in range (" << schema->DebugEncodedRowKey(tablet->start_key().ToString())
+          << ", " << schema->DebugEncodedRowKey(tablet->end_key().ToString())
           << ")";
 
       enc.Add(op->write_op->RowOperationType(), op->write_op->row());

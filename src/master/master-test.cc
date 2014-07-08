@@ -29,6 +29,8 @@ using kudu::rpc::MessengerBuilder;
 using kudu::rpc::RpcController;
 using kudu::client::KuduClient;
 using kudu::client::KuduClientOptions;
+using kudu::client::KuduColumnSchema;
+using kudu::client::KuduSchema;
 
 namespace kudu {
 namespace master {
@@ -56,7 +58,7 @@ class MasterTest : public KuduTest {
 
   void DoListTables(ListTablesResponsePB* resp);
   void CreateTable(const string& table_name,
-                   const Schema& schema);
+                   const KuduSchema& schema);
 
 
   shared_ptr<Messenger> client_messenger_;
@@ -177,7 +179,7 @@ TEST_F(MasterTest, TestRegisterAndHeartbeat) {
 
 // Create a table
 void MasterTest::CreateTable(const string& table_name,
-                             const Schema& schema) {
+                             const KuduSchema& schema) {
   shared_ptr<KuduClient> client;
   KuduClientOptions opts;
   opts.master_server_addr = mini_master_->bound_rpc_addr().ToString();
@@ -205,10 +207,10 @@ void MasterTest::DoListTables(ListTablesResponsePB* resp) {
 
 TEST_F(MasterTest, TestCatalog) {
   const char *kTableName = "testtb";
-  const Schema kTableSchema(boost::assign::list_of
-                            (ColumnSchema("key", UINT32))
-                            (ColumnSchema("v1", UINT64))
-                            (ColumnSchema("v2", STRING)),
+  const KuduSchema kTableSchema(boost::assign::list_of
+                            (KuduColumnSchema("key", UINT32))
+                            (KuduColumnSchema("v1", UINT64))
+                            (KuduColumnSchema("v2", STRING)),
                             1);
 
   ASSERT_NO_FATAL_FAILURE(CreateTable(kTableName, kTableSchema));

@@ -6,10 +6,6 @@
 #include "benchmarks/tpch/line_item_dao.h"
 #include "benchmarks/tpch/line_item_tsv_importer.h"
 #include "benchmarks/tpch/rpc_line_item_dao.h"
-#include "common/row.h"
-#include "common/row_changelist.h"
-#include "common/schema.h"
-#include "common/wire_protocol.h"
 #include "gutil/atomicops.h"
 #include "gutil/gscoped_ptr.h"
 #include "util/status.h"
@@ -74,8 +70,7 @@ static void UpdateRow(int order, int line, int quantity, PartialRow* row) {
 // the quantity, picking the highest line number, does l_quantity+1, then
 // writes it back
 static void UpdateThread(Demo *demo) {
-  Schema full_schema = tpch::CreateLineItemSchema();
-  Schema query_schema = tpch::CreateMS3DemoQuerySchema();
+  client::KuduSchema query_schema = tpch::CreateMS3DemoQuerySchema();
   gscoped_ptr<kudu::RpcLineItemDAO> dao(new kudu::RpcLineItemDAO(FLAGS_master_address,
                                         kTabletId, FLAGS_tpch_max_batch_size));
   dao->Init();
@@ -86,10 +81,10 @@ static void UpdateThread(Demo *demo) {
     VLOG(1) << "current order: " << current_order;
 
     // 2. Fetch the order including the column we want to update
-    ScanSpec spec;
-    ColumnRangePredicate pred(query_schema.column(0), &current_order, &current_order);
-    spec.AddPredicate(pred);
-    dao->OpenScanner(query_schema, &spec);
+    vector<client::KuduColumnRangePredicate> preds;
+    client::KuduColumnRangePredicate pred(query_schema.Column(0), &current_order, &current_order);
+    preds.push_back(pred);
+    dao->OpenScanner(query_schema, preds);
     vector<client::KuduRowResult> rows;
     while (dao->HasMore()) {
       dao->GetNext(&rows);

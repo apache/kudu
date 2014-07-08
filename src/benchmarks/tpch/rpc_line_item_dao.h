@@ -2,34 +2,20 @@
 #ifndef KUDU_TPCH_RPC_LINE_ITEM_DAO_H
 #define KUDU_TPCH_RPC_LINE_ITEM_DAO_H
 
+#include <set>
+#include <string>
 #include <tr1/memory>
 #include <utility>
 #include <vector>
-#include <set>
-#include <string>
 
 #include "benchmarks/tpch/line_item_dao.h"
 #include "benchmarks/tpch/tpch-schemas.h"
 #include "client/client.h"
 #include "client/row_result.h"
-#include "common/scan_spec.h"
-#include "common/schema.h"
-#include "common/row.h"
-#include "common/wire_protocol.h"
 #include "gutil/atomicops.h"
 #include "gutil/ref_counted.h"
-#include "tserver/tserver_service.proxy.h"
 
 namespace kudu {
-
-namespace client {
-
-class KuduClient;
-class KuduScanner;
-class KuduSession;
-class KuduTable;
-
-} // namespace client
 
 using tserver::TabletServerServiceProxy;
 using tserver::WriteRequestPB;
@@ -45,7 +31,8 @@ class RpcLineItemDAO : public LineItemDAO {
   virtual void MutateLine(boost::function<void(PartialRow*)> f) OVERRIDE;
   virtual void Init() OVERRIDE;
   virtual void FinishWriting() OVERRIDE;
-  virtual void OpenScanner(const Schema &query_schema, ScanSpec *spec) OVERRIDE;
+  virtual void OpenScanner(const client::KuduSchema &query_schema,
+                           const std::vector<client::KuduColumnRangePredicate>& preds) OVERRIDE;
   virtual bool HasMore() OVERRIDE;
   virtual void GetNext(RowBlock *block) OVERRIDE;
   void GetNext(std::vector<client::KuduRowResult> *rows);

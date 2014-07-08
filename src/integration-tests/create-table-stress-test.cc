@@ -20,6 +20,8 @@ using std::tr1::shared_ptr;
 using kudu::client::CreateTableOptions;
 using kudu::client::KuduClient;
 using kudu::client::KuduClientOptions;
+using kudu::client::KuduColumnSchema;
+using kudu::client::KuduSchema;
 using kudu::rpc::Messenger;
 using kudu::rpc::MessengerBuilder;
 using kudu::rpc::RpcController;
@@ -38,9 +40,9 @@ class CreateTableStressTest : public KuduTest {
  public:
   CreateTableStressTest()
     : schema_(boost::assign::list_of
-              (ColumnSchema("key", UINT32))
-              (ColumnSchema("v1", UINT64))
-              (ColumnSchema("v2", STRING)),
+              (KuduColumnSchema("key", UINT32))
+              (KuduColumnSchema("v1", UINT64))
+              (KuduColumnSchema("v2", STRING)),
               1) {
   }
 
@@ -77,7 +79,7 @@ class CreateTableStressTest : public KuduTest {
   shared_ptr<KuduClient> client_;
   shared_ptr<Messenger> msgr_;
   gscoped_ptr<MiniCluster> cluster_;
-  Schema schema_;
+  KuduSchema schema_;
 };
 
 void CreateTableStressTest::CreateBigTable(const string& table_name) {

@@ -199,12 +199,12 @@ Status KuduClient::InitLocalHostNames() {
 }
 
 Status KuduClient::CreateTable(const std::string& table_name,
-                               const Schema& schema) {
+                               const KuduSchema& schema) {
   return CreateTable(table_name, schema, CreateTableOptions());
 }
 
 Status KuduClient::CreateTable(const std::string& table_name,
-                               const Schema& schema,
+                               const KuduSchema& schema,
                                const CreateTableOptions& opts) {
   CreateTableRequestPB req;
   CreateTableResponsePB resp;
@@ -216,7 +216,7 @@ Status KuduClient::CreateTable(const std::string& table_name,
   if (opts.num_replicas_ >= 1) {
     req.set_num_replicas(opts.num_replicas_);
   }
-  RETURN_NOT_OK_PREPEND(SchemaToPB(schema, req.mutable_schema()),
+  RETURN_NOT_OK_PREPEND(SchemaToPB(*schema.schema_, req.mutable_schema()),
                         "Invalid schema");
   BOOST_FOREACH(const std::string& key, opts.split_keys_) {
     req.add_pre_split_keys(key);
@@ -339,7 +339,7 @@ Status KuduClient::IsAlterTableInProgress(const std::string& table_name,
 }
 
 Status KuduClient::GetTableSchema(const std::string& table_name,
-                                  Schema *schema) {
+                                  KuduSchema* schema) {
   GetTableSchemaRequestPB req;
   GetTableSchemaResponsePB resp;
   RpcController rpc;
@@ -355,7 +355,9 @@ Status KuduClient::GetTableSchema(const std::string& table_name,
   RETURN_NOT_OK(SchemaFromPB(resp.schema(), &server_schema));
 
   // Remove the server IDs from the schema
-  schema->Reset(server_schema.columns(), server_schema.num_key_columns());
+  gscoped_ptr<Schema> client_schema(new Schema());
+  client_schema->Reset(server_schema.columns(), server_schema.num_key_columns());
+  schema->schema_.swap(client_schema);
   return Status::OK();
 }
 
@@ -363,7 +365,7 @@ Status KuduClient::OpenTable(const std::string& table_name,
                              scoped_refptr<KuduTable>* table) {
   CHECK(initted_) << "Must Init()";
 
-  Schema schema;
+  KuduSchema schema;
   RETURN_NOT_OK(GetTableSchema(table_name, &schema));
 
   // In the future, probably will look up the table in some map to reuse KuduTable
@@ -478,7 +480,7 @@ CreateTableOptions& CreateTableOptions::WaitAssignment(bool wait_assignment) {
 
 KuduTable::KuduTable(const std::tr1::shared_ptr<KuduClient>& client,
                      const std::string& name,
-                     const Schema& schema)
+                     const KuduSchema& schema)
   : client_(client),
     name_(name),
     schema_(schema) {
@@ -725,7 +727,7 @@ Status AlterTableBuilder::RenameTable(const string& new_name) {
 Status AlterTableBuilder::AddColumn(const std::string& name,
                                     DataType type,
                                     const void *default_value,
-                                    ColumnStorageAttributes attributes) {
+                                    KuduColumnStorageAttributes attributes) {
   if (default_value == NULL) {
     return Status::InvalidArgument("A new column must have a default value",
                                    "Use AddNullableColumn() to add a NULLABLE column");
@@ -733,17 +735,19 @@ Status AlterTableBuilder::AddColumn(const std::string& name,
 
   AlterTableRequestPB::Step* step = alter_steps_->add_alter_schema_steps();
   step->set_type(AlterTableRequestPB::ADD_COLUMN);
-  ColumnSchemaToPB(ColumnSchema(name, type, false, default_value, default_value, attributes),
+  ColumnStorageAttributes attr_priv(attributes.encoding(), attributes.compression());
+  ColumnSchemaToPB(ColumnSchema(name, type, false, default_value, default_value, attr_priv),
                                 step->mutable_add_column()->mutable_schema());
   return Status::OK();
 }
 
 Status AlterTableBuilder::AddNullableColumn(const std::string& name,
                                             DataType type,
-                                            ColumnStorageAttributes attributes) {
+                                            KuduColumnStorageAttributes attributes) {
   AlterTableRequestPB::Step* step = alter_steps_->add_alter_schema_steps();
   step->set_type(AlterTableRequestPB::ADD_COLUMN);
-  ColumnSchemaToPB(ColumnSchema(name, type, true, NULL, NULL, attributes),
+  ColumnStorageAttributes attr_priv(attributes.encoding(), attributes.compression());
+  ColumnSchemaToPB(ColumnSchema(name, type, true, NULL, NULL, attr_priv),
                                 step->mutable_add_column()->mutable_schema());
   return Status::OK();
 }
@@ -782,9 +786,9 @@ KuduScanner::KuduScanner(KuduTable* table)
     read_mode_(READ_LATEST),
     snapshot_timestamp_(kNoTimestamp),
     table_(DCHECK_NOTNULL(table)),
-    projection_(&table->schema()),
+    projection_(table->schema().schema_.get()),
     projected_row_size_(CalculateProjectedRowSize(*projection_)),
-    spec_encoder_(table->schema()),
+    spec_encoder_(*table->schema().schema_),
     start_key_(NULL),
     end_key_(NULL) {
 }
@@ -793,11 +797,11 @@ KuduScanner::~KuduScanner() {
   Close();
 }
 
-Status KuduScanner::SetProjection(const Schema* projection) {
+Status KuduScanner::SetProjection(const KuduSchema* projection) {
   if (open_) {
     return Status::IllegalState("Projection must be set before Open()");
   }
-  projection_ = projection;
+  projection_ = projection->schema_.get();
   projected_row_size_ = CalculateProjectedRowSize(*projection_);
   return Status::OK();
 }
@@ -837,11 +841,11 @@ Status KuduScanner::SetSelection(KuduClient::ReplicaSelection selection) {
   return Status::OK();
 }
 
-Status KuduScanner::AddConjunctPredicate(const ColumnRangePredicate& pred) {
+Status KuduScanner::AddConjunctPredicate(const KuduColumnRangePredicate& pred) {
   if (open_) {
     return Status::IllegalState("Predicate must be set before Open()");
   }
-  spec_.AddPredicate(pred);
+  spec_.AddPredicate(*pred.pred_);
   return Status::OK();
 }
 

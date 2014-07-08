@@ -1,31 +1,27 @@
 // Copyright (c) 2013, Cloudera, inc.
 
+#include <boost/bind.hpp>
 #include <gtest/gtest.h>
 #include <gflags/gflags.h>
 
 #include "benchmarks/tpch/rpc_line_item_dao.h"
 #include "benchmarks/tpch/tpch-schemas.h"
 #include "common/partial_row.h"
-#include "common/row.h"
-#include "common/row_changelist.h"
-#include "common/scan_spec.h"
-#include "common/schema.h"
-#include "common/wire_protocol.h"
 #include "integration-tests/mini_cluster.h"
-#include "master/master-test-util.h"
 #include "master/mini_master.h"
-#include "tserver/mini_tablet_server.h"
 #include "util/status.h"
 #include "util/test_util.h"
 
 namespace kudu {
 
-using tserver::MiniTabletServer;
+using client::KuduColumnRangePredicate;
+using client::KuduRowResult;
+using client::KuduSchema;
 
 class RpcLineItemDAOTest : public KuduTest {
 
  public:
-  RpcLineItemDAOTest() : schema_(tpch::CreateLineItemSchema()), rb_(schema_) {}
+  RpcLineItemDAOTest() : schema_(tpch::CreateLineItemSchema()) {}
 
   virtual void SetUp() OVERRIDE {
     KuduTest::SetUp();
@@ -50,8 +46,7 @@ class RpcLineItemDAOTest : public KuduTest {
  protected:
   gscoped_ptr<MiniCluster> cluster_;
   gscoped_ptr<RpcLineItemDAO> dao_;
-  Schema schema_;
-  RowBuilder rb_;
+  KuduSchema schema_;
 
   static void BuildTestRow(int order, int line, PartialRow* row) {
     CHECK_OK(row->SetUInt32(tpch::kOrderKeyColIdx, order));
@@ -79,10 +74,10 @@ class RpcLineItemDAOTest : public KuduTest {
   }
 
   int CountRows() {
-    Schema query_schema = schema_.CreateKeyProjection();
-    ScanSpec spec;
-    dao_->OpenScanner(query_schema, &spec);
-    vector<client::KuduRowResult> rows;
+    KuduSchema query_schema = schema_.CreateKeyProjection();
+    vector<KuduColumnRangePredicate> preds;
+    dao_->OpenScanner(query_schema, preds);
+    vector<KuduRowResult> rows;
     int count = 0;
     while (dao_->HasMore()) {
       dao_->GetNext(&rows);
@@ -113,12 +108,12 @@ TEST_F(RpcLineItemDAOTest, TestUpdate) {
 
   dao_->MutateLine(boost::bind(UpdateTestRow, 1, 1, 12345, _1));
   dao_->FinishWriting();
-  ScanSpec spec;
-  dao_->OpenScanner(schema_, &spec);
-  vector<client::KuduRowResult> rows;
+  vector<KuduColumnRangePredicate> preds;
+  dao_->OpenScanner(schema_, preds);
+  vector<KuduRowResult> rows;
   while (dao_->HasMore()) {
     dao_->GetNext(&rows);
-    BOOST_FOREACH(const client::KuduRowResult& row, rows) {
+    BOOST_FOREACH(const KuduRowResult& row, rows) {
       uint32_t l_quantity;
       ASSERT_STATUS_OK(row.GetUInt32(tpch::kQuantityColIdx, &l_quantity));
       ASSERT_EQ(12345, l_quantity);

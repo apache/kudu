@@ -425,13 +425,13 @@ void MetaCache::LookupTabletByKey(const KuduTable* table,
                                   const Slice& key,
                                   scoped_refptr<RemoteTablet>* remote_tablet,
                                   const StatusCallback& callback) {
-  const Schema& schema = table->schema();
+  const Schema* schema = table->schema().schema_.get();
 
   // Fast path: lookup in the cache.
   if (PREDICT_TRUE(LookupTabletByKeyFastPath(table, key, remote_tablet)) &&
       (*remote_tablet)->HasLeader()) {
     VLOG(3) << "Fast lookup: found tablet " << (*remote_tablet)->tablet_id()
-                    << " for " << schema.DebugEncodedRowKey(key.ToString())
+                    << " for " << schema->DebugEncodedRowKey(key.ToString())
                     << " of " << table->name();
     callback.Run(Status::OK());
     return;
@@ -439,7 +439,7 @@ void MetaCache::LookupTabletByKey(const KuduTable* table,
 
   // Slow path: must lookup the tablet in the master.
   VLOG(3) << "Fast lookup: no tablet"
-          << " for " << schema.DebugEncodedRowKey(key.ToString())
+          << " for " << schema->DebugEncodedRowKey(key.ToString())
           << " of " << table->name();
 
   if (!AcquireMasterLookupPermit()) {

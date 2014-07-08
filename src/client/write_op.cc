@@ -10,7 +10,7 @@ namespace client {
 
 WriteOperation::WriteOperation(KuduTable *table)
   : table_(table),
-    row_(&table->schema()) {
+    row_(table->schema().schema_.get()) {
 }
 
 WriteOperation::~WriteOperation() {}

@@ -7,7 +7,7 @@
 #include <string>
 #include <tr1/memory>
 
-#include "common/schema.h"
+#include "client/schema.h"
 #include "gutil/ref_counted.h"
 #include "rpc/rpc_controller.h"
 #include "tserver/tserver_service.proxy.h"
@@ -41,7 +41,7 @@ class InsertConsumer : public TwitterConsumer {
 
   bool initted_;
 
-  Schema schema_;
+  client::KuduSchema schema_;
 
   TwitterEventParser parser_;
 

@@ -9,10 +9,10 @@
 #include <vector>
 
 #include "client/client.h"
+#include "client/encoded_key.h"
 #include "client/meta_cache.h"
 #include "client/row_result.h"
 #include "client/write_op.h"
-#include "common/row.h"
 #include "common/wire_protocol.h"
 #include "gutil/stl_util.h"
 #include "gutil/atomicops.h"
@@ -62,13 +62,12 @@ class ClientTest : public KuduTest {
  public:
   ClientTest()
     : schema_(boost::assign::list_of
-              (ColumnSchema("key", UINT32))
-              (ColumnSchema("int_val", UINT32))
-              (ColumnSchema("string_val", STRING, true))
-              (ColumnSchema("non_null_with_default", UINT32, false,
-                            &kNonNullDefault, &kNonNullDefault)),
-              1),
-      rb_(schema_) {
+              (KuduColumnSchema("key", UINT32))
+              (KuduColumnSchema("int_val", UINT32))
+              (KuduColumnSchema("string_val", STRING, true))
+              (KuduColumnSchema("non_null_with_default", UINT32, false,
+                                &kNonNullDefault)),
+              1) {
   }
 
   virtual void SetUp() OVERRIDE {
@@ -107,11 +106,11 @@ class ClientTest : public KuduTest {
   // Generate a set of split keys for tablets used in this test.
   vector<string> GenerateSplitKeys() {
     vector<string> keys;
-    EncodedKeyBuilder builder(schema_);
+    KuduEncodedKeyBuilder builder(schema_);
     int val = 9;
     builder.AddColumnKey(&val);
-    gscoped_ptr<EncodedKey> key(builder.BuildEncodedKey());
-    keys.push_back(key->encoded_key().ToString());
+    gscoped_ptr<KuduEncodedKey> key(builder.BuildEncodedKey());
+    keys.push_back(key->ToString());
     return keys;
   }
 
@@ -208,7 +207,7 @@ class ClientTest : public KuduTest {
   }
 
   void DoTestScanWithoutPredicates() {
-    Schema projection = schema_.CreateKeyProjection();
+    KuduSchema projection = schema_.CreateKeyProjection();
     KuduScanner scanner(client_table_.get());
     ASSERT_STATUS_OK(scanner.SetProjection(&projection));
     LOG_TIMING(INFO, "Scanning with no predicates") {
@@ -239,7 +238,7 @@ class ClientTest : public KuduTest {
     KuduScanner scanner(client_table_.get());
     Slice lower("hello 2");
     Slice upper("hello 3");
-    ColumnRangePredicate pred(schema_.column(2), &lower, &upper);
+    KuduColumnRangePredicate pred(schema_.Column(2), &lower, &upper);
     ASSERT_STATUS_OK(scanner.AddConjunctPredicate(pred));
 
     LOG_TIMING(INFO, "Scanning with string predicate") {
@@ -266,7 +265,7 @@ class ClientTest : public KuduTest {
     KuduScanner scanner(client_table_.get());
     uint32_t lower = 5;
     uint32_t upper = 10;
-    ColumnRangePredicate pred(schema_.column(0), &lower, &upper);
+    KuduColumnRangePredicate pred(schema_.Column(0), &lower, &upper);
     ASSERT_STATUS_OK(scanner.AddConjunctPredicate(pred));
 
     LOG_TIMING(INFO, "Scanning with key predicate") {
@@ -301,16 +300,16 @@ class ClientTest : public KuduTest {
                           uint32_t lower_bound, uint32_t upper_bound) {
     KuduScanner scanner(table);
     CHECK_OK(scanner.SetSelection(selection));
-    Schema empty_projection(vector<ColumnSchema>(), 0);
+    KuduSchema empty_projection(vector<KuduColumnSchema>(), 0);
     CHECK_OK(scanner.SetProjection(&empty_projection));
     if (lower_bound != kNoBound && upper_bound != kNoBound) {
-      ColumnRangePredicate pred(table->schema().column(0), &lower_bound, &upper_bound);
+      KuduColumnRangePredicate pred(table->schema().Column(0), &lower_bound, &upper_bound);
       CHECK_OK(scanner.AddConjunctPredicate(pred));
     } else if (lower_bound != kNoBound) {
-      ColumnRangePredicate pred(table->schema().column(0), &lower_bound, NULL);
+      KuduColumnRangePredicate pred(table->schema().Column(0), &lower_bound, NULL);
       CHECK_OK(scanner.AddConjunctPredicate(pred));
     } else if (upper_bound != kNoBound) {
-      ColumnRangePredicate pred(table->schema().column(0), NULL, &upper_bound);
+      KuduColumnRangePredicate pred(table->schema().Column(0), NULL, &upper_bound);
       CHECK_OK(scanner.AddConjunctPredicate(pred));
     }
     CHECK_OK(scanner.Open());
@@ -378,8 +377,7 @@ class ClientTest : public KuduTest {
   };
   void DoTestWriteWithDeadServer(WhichServerToKill which);
 
-  Schema schema_;
-  RowBuilder rb_;
+  KuduSchema schema_;
 
   gscoped_ptr<MiniCluster> cluster_;
   shared_ptr<KuduClient> client_;
@@ -489,15 +487,15 @@ TEST_F(ClientTest, TestScanAtSnapshot) {
 
 TEST_F(ClientTest, TestScanMultiTablet) {
   // 5 tablets, each with 10 rows worth of space.
-  EncodedKeyBuilder key_builder(schema_);
-  gscoped_ptr<EncodedKey> key;
+  KuduEncodedKeyBuilder key_builder(schema_);
+  gscoped_ptr<KuduEncodedKey> key;
   vector<string> keys;
   for (int i = 1; i < 5; i++) {
     int val = i * 10;
     key_builder.Reset();
     key_builder.AddColumnKey(&val);
     key.reset(key_builder.BuildEncodedKey());
-    keys.push_back(key->encoded_key().ToString());
+    keys.push_back(key->ToString());
   }
   ASSERT_STATUS_OK(client_->CreateTable("TestScanMultiTablet", schema_,
                                         kudu::client::CreateTableOptions()
@@ -604,7 +602,7 @@ TEST_F(ClientTest, TestScanMultiTablet) {
 
 TEST_F(ClientTest, TestScanEmptyTable) {
   KuduScanner scanner(client_table_.get());
-  Schema empty_projection(vector<ColumnSchema>(), 0);
+  KuduSchema empty_projection(vector<KuduColumnSchema>(), 0);
   ASSERT_STATUS_OK(scanner.SetProjection(&empty_projection));
   ASSERT_STATUS_OK(scanner.Open());
 
@@ -624,7 +622,7 @@ TEST_F(ClientTest, TestScanEmptyTable) {
 TEST_F(ClientTest, TestScanEmptyProjection) {
   ASSERT_NO_FATAL_FAILURE(InsertTestRows(client_table_.get(),
                                          FLAGS_test_scan_num_rows));
-  Schema empty_projection(vector<ColumnSchema>(), 0);
+  KuduSchema empty_projection(vector<KuduColumnSchema>(), 0);
   KuduScanner scanner(client_table_.get());
   ASSERT_STATUS_OK(scanner.SetProjection(&empty_projection));
   LOG_TIMING(INFO, "Scanning with no projected columns") {
@@ -649,12 +647,12 @@ TEST_F(ClientTest, TestScanPredicateKeyColNotProjected) {
   ASSERT_NO_FATAL_FAILURE(InsertTestRows(client_table_.get(),
                                          FLAGS_test_scan_num_rows));
   KuduScanner scanner(client_table_.get());
-  Schema no_key_projection(boost::assign::list_of
-                           (schema_.column(1)), 0);
+  KuduSchema no_key_projection(boost::assign::list_of
+                               (schema_.Column(1)), 0);
   ASSERT_STATUS_OK(scanner.SetProjection(&no_key_projection));
   uint32_t lower = 5;
   uint32_t upper = 10;
-  ColumnRangePredicate pred(schema_.column(0), &lower, &upper);
+  KuduColumnRangePredicate pred(schema_.Column(0), &lower, &upper);
   ASSERT_STATUS_OK(scanner.AddConjunctPredicate(pred));
 
   size_t nrows = 0;
@@ -686,11 +684,11 @@ TEST_F(ClientTest, TestScanPredicateNonKeyColNotProjected) {
   ASSERT_NO_FATAL_FAILURE(InsertTestRows(client_table_.get(),
                                          FLAGS_test_scan_num_rows));
   KuduScanner scanner(client_table_.get());
-  Schema key_projection = schema_.CreateKeyProjection();
+  KuduSchema key_projection = schema_.CreateKeyProjection();
 
   uint32_t lower = 10;
   uint32_t upper = 20;
-  ColumnRangePredicate pred(schema_.column(1), &lower, &upper);
+  KuduColumnRangePredicate pred(schema_.Column(1), &lower, &upper);
   ASSERT_STATUS_OK(scanner.AddConjunctPredicate(pred));
 
   size_t nrows = 0;
@@ -1222,7 +1220,7 @@ TEST_F(ClientTest, TestBasicAlterOperations) {
   // type throws an error
   {
     alter.Reset();
-    alter.AddNullableColumn("new_string_val", STRING, ColumnStorageAttributes(GROUP_VARINT));
+    alter.AddNullableColumn("new_string_val", STRING, KuduColumnStorageAttributes(GROUP_VARINT));
     Status s = client_->AlterTable(kTable2Name, alter);
     ASSERT_TRUE(s.IsNotSupported());
     ASSERT_STR_CONTAINS(s.ToString(), "Unsupported type/encoding pair");
@@ -1231,7 +1229,7 @@ TEST_F(ClientTest, TestBasicAlterOperations) {
 
   {
     alter.Reset();
-    alter.AddNullableColumn("new_string_val", STRING, ColumnStorageAttributes(PREFIX_ENCODING));
+    alter.AddNullableColumn("new_string_val", STRING, KuduColumnStorageAttributes(PREFIX_ENCODING));
     ASSERT_STATUS_OK(client_->AlterTable(kTable2Name, alter));
     ASSERT_EQ(2, tablet_peer->tablet()->metadata()->schema_version());
   }
@@ -1278,7 +1276,7 @@ TEST_F(ClientTest, TestDeleteTable) {
 }
 
 TEST_F(ClientTest, TestGetTableSchema) {
-  Schema schema;
+  KuduSchema schema;
 
   // Verify the schema for the current table
   ASSERT_STATUS_OK(client_->GetTableSchema(kTableName, &schema));
@@ -1608,7 +1606,7 @@ namespace {
   };
 
   // Returns col1 value of first row.
-  uint32_t ReadFirstRowKeyFirstCol(const Schema& schema, scoped_refptr<KuduTable> tbl) {
+  uint32_t ReadFirstRowKeyFirstCol(scoped_refptr<KuduTable> tbl) {
     KuduScanner scanner(tbl.get());
 
     scanner.Open();
@@ -1622,7 +1620,7 @@ namespace {
   }
 
   // Checks that all rows have value equal to expected, return number of rows.
-  int CheckRowsEqual(const Schema& schema, scoped_refptr<KuduTable> tbl, uint32_t expected) {
+  int CheckRowsEqual(scoped_refptr<KuduTable> tbl, uint32_t expected) {
     KuduScanner scanner(tbl.get());
     scanner.Open();
     vector<KuduRowResult> rows;
@@ -1734,14 +1732,14 @@ TEST_F(ClientTest, DISABLED_TestDeadlockSimulation) {
       prev2 = lctr2;
     }
   } while (lctr1 != kNumSessions|| lctr2 != kNumSessions);
-  uint32_t expected = ReadFirstRowKeyFirstCol(schema_, client_table_);
+  uint32_t expected = ReadFirstRowKeyFirstCol(client_table_);
 
   // Check transaction from forward client.
-  fwd = CheckRowsEqual(schema_, client_table_, expected);
+  fwd = CheckRowsEqual(client_table_, expected);
   ASSERT_EQ(fwd, kNumRows);
 
   // Check from reverse client side.
-  rev = CheckRowsEqual(schema_, rev_table, expected);
+  rev = CheckRowsEqual(rev_table, expected);
   ASSERT_EQ(rev, kNumRows);
 }
 

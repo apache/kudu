@@ -5,22 +5,22 @@
 #define KUDU_BENCHMARKS_YCSB_SCHEMA_H
 
 #include <boost/assign/list_of.hpp>
-#include "common/schema.h"
+#include "client/schema.h"
 
 namespace kudu {
-inline Schema CreateYCSBSchema() {
-  return Schema(boost::assign::list_of
-                (ColumnSchema("key", STRING))
-                (ColumnSchema("field0", STRING))
-                (ColumnSchema("field1", STRING))
-                (ColumnSchema("field2", STRING))
-                (ColumnSchema("field3", STRING))
-                (ColumnSchema("field4", STRING))
-                (ColumnSchema("field5", STRING))
-                (ColumnSchema("field6", STRING))
-                (ColumnSchema("field7", STRING))
-                (ColumnSchema("field8", STRING))
-                (ColumnSchema("field9", STRING))
+inline client::KuduSchema CreateYCSBSchema() {
+  return client::KuduSchema(boost::assign::list_of
+                (client::KuduColumnSchema("key", STRING))
+                (client::KuduColumnSchema("field0", STRING))
+                (client::KuduColumnSchema("field1", STRING))
+                (client::KuduColumnSchema("field2", STRING))
+                (client::KuduColumnSchema("field3", STRING))
+                (client::KuduColumnSchema("field4", STRING))
+                (client::KuduColumnSchema("field5", STRING))
+                (client::KuduColumnSchema("field6", STRING))
+                (client::KuduColumnSchema("field7", STRING))
+                (client::KuduColumnSchema("field8", STRING))
+                (client::KuduColumnSchema("field9", STRING))
                 , 1);
 }
 

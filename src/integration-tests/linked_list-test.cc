@@ -27,6 +27,7 @@
 #include <vector>
 
 #include "client/client.h"
+#include "client/encoded_key.h"
 #include "client/row_result.h"
 #include "gutil/map-util.h"
 #include "gutil/stl_util.h"
@@ -42,8 +43,12 @@
 using kudu::client::CreateTableOptions;
 using kudu::client::KuduClient;
 using kudu::client::KuduClientOptions;
+using kudu::client::KuduColumnSchema;
+using kudu::client::KuduEncodedKey;
+using kudu::client::KuduEncodedKeyBuilder;
 using kudu::client::KuduRowResult;
 using kudu::client::KuduScanner;
+using kudu::client::KuduSchema;
 using kudu::client::KuduSession;
 using kudu::client::KuduTable;
 using kudu::client::Insert;
@@ -77,13 +82,13 @@ class LinkedListTest : public KuduTest {
  public:
   LinkedListTest()
     : schema_(boost::assign::list_of
-              (ColumnSchema(kKeyColumnName, UINT64))
-              (ColumnSchema(kLinkColumnName, UINT64))
-              (ColumnSchema(kInsertTsColumnName, UINT64)),
+              (KuduColumnSchema(kKeyColumnName, UINT64))
+              (KuduColumnSchema(kLinkColumnName, UINT64))
+              (KuduColumnSchema(kInsertTsColumnName, UINT64)),
               1),
       verify_projection_(boost::assign::list_of
-                         (ColumnSchema(kKeyColumnName, UINT64))
-                         (ColumnSchema(kLinkColumnName, UINT64)),
+                         (KuduColumnSchema(kKeyColumnName, UINT64))
+                         (KuduColumnSchema(kLinkColumnName, UINT64)),
                          1),
       latency_histogram_(1000000, 3) {
   }
@@ -136,8 +141,8 @@ class LinkedListTest : public KuduTest {
 
  protected:
   static const char* kTableName;
-  const Schema schema_;
-  const Schema verify_projection_;
+  const KuduSchema schema_;
+  const KuduSchema verify_projection_;
   gscoped_ptr<ExternalMiniCluster> cluster_;
   shared_ptr<KuduClient> client_;
   HdrHistogram latency_histogram_;
@@ -205,8 +210,8 @@ class ChainGenerator {
 } // anonymous namespace
 
 vector<string> LinkedListTest::GenerateSplitKeys() const {
-  EncodedKeyBuilder key_builder(schema_);
-  gscoped_ptr<EncodedKey> key;
+  KuduEncodedKeyBuilder key_builder(schema_);
+  gscoped_ptr<KuduEncodedKey> key;
   vector<string> split_keys;
   uint64_t increment = kuint64max / FLAGS_num_tablets;
   for (uint64_t i = 1; i < FLAGS_num_tablets; i++) {
@@ -214,7 +219,7 @@ vector<string> LinkedListTest::GenerateSplitKeys() const {
     key_builder.Reset();
     key_builder.AddColumnKey(&val);
     key.reset(key_builder.BuildEncodedKey());
-    split_keys.push_back(key->encoded_key().ToString());
+    split_keys.push_back(key->ToString());
   }
   return split_keys;
 }

@@ -3,14 +3,15 @@
 #define KUDU_TPCH_LINE_ITEM_DAO_H
 
 #include <boost/function.hpp>
+#include <vector>
 
-#include "common/scan_spec.h"
-#include "common/schema.h"
-#include "common/row.h"
+#include "client/scan_predicate.h"
+#include "client/schema.h"
 
 namespace kudu {
 
 class PartialRow;
+class RowBlock;
 
 // Abstract class to read/write line item rows
 class LineItemDAO {
@@ -20,7 +21,8 @@ class LineItemDAO {
   virtual void MutateLine(boost::function<void(PartialRow*)> f) = 0;
   virtual void Init() = 0;
   virtual void FinishWriting() = 0;
-  virtual void OpenScanner(const Schema &query_schema, ScanSpec *spec) = 0;
+  virtual void OpenScanner(const client::KuduSchema& query_schema,
+                           const std::vector<client::KuduColumnRangePredicate>& preds) = 0;
   virtual bool HasMore() = 0;
   virtual void GetNext(RowBlock *block) = 0;
   virtual bool IsTableEmpty() = 0;
