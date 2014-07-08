@@ -11,7 +11,7 @@
 #include "common/partial_row.h"
 #include "gutil/strings/split.h"
 #include "gutil/strings/stringpiece.h"
-
+#include "util/status.h"
 
 namespace kudu {
 

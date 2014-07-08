@@ -2,13 +2,17 @@
 #ifndef KUDU_CLIENT_WRITE_OP_H
 #define KUDU_CLIENT_WRITE_OP_H
 
-#include "common/partial_row.h"
-#include "common/encoded_key.h"
-#include "gutil/ref_counted.h"
-
 #include <string>
 
+#include "common/partial_row.h"
+#include "common/wire_protocol.pb.h"
+#include "gutil/gscoped_ptr.h"
+#include "gutil/ref_counted.h"
+
 namespace kudu {
+
+class EncodedKey;
+
 namespace client {
 
 namespace internal {

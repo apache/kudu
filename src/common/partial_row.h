@@ -2,13 +2,10 @@
 #ifndef KUDU_COMMON_PARTIAL_ROW_H
 #define KUDU_COMMON_PARTIAL_ROW_H
 
-#include <gtest/gtest.h>
 #include <string>
 #include <vector>
 
 #include "common/types.h"
-#include "common/row.h"
-#include "common/wire_protocol.pb.h"
 #include "gutil/macros.h"
 #include "util/slice.h"
 
@@ -138,15 +135,8 @@ class PartialRow {
 
  private:
   friend class RowOperationsPBEncoder;
-  friend class LocalLineItemDAO; // for as_contiguous_row.
-  friend class client::WriteOperation;   // for as_contiguous_row.
-
-  // Return this row as a contiguous row.
-  // NOTE: because this is a partial row, some of the columns in the returned
-  // ContiguousRow may contain garbage data.
-  ConstContiguousRow as_contiguous_row() const {
-    return ConstContiguousRow(*schema_, row_data_);
-  }
+  friend class LocalLineItemDAO; // for as_row_data_.
+  friend class client::WriteOperation;   // for row_data_.
 
   template<DataType TYPE>
   Status Set(const Slice& col_name,

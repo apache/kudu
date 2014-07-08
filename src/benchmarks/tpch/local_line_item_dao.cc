@@ -69,7 +69,8 @@ void LocalLineItemDAO::MutateLine(boost::function<void(PartialRow*)> f) {
 
 void LocalLineItemDAO::WriteLine(const PartialRow& row) {
   // TODO: This code should use InsertUnlocked().
-  CHECK_OK(tablet_->InsertForTesting(&tx_state_, row.as_contiguous_row()));
+  ConstContiguousRow ccrow(*row.schema(), row.row_data_);
+  CHECK_OK(tablet_->InsertForTesting(&tx_state_, ccrow));
   tx_state_.Reset();
 }
 
