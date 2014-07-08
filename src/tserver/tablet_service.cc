@@ -290,6 +290,8 @@ void TabletServiceImpl::DeleteTablet(const DeleteTabletRequestPB* req,
     TabletServerErrorPB::Code code;
     if (s.IsNotFound()) {
       code = TabletServerErrorPB::TABLET_NOT_FOUND;
+    } else if (s.IsServiceUnavailable()) {
+      code = TabletServerErrorPB::TABLET_NOT_RUNNING;
     } else {
       code = TabletServerErrorPB::UNKNOWN_ERROR;
     }
@@ -389,8 +391,8 @@ void TabletServiceImpl::UpdateConsensus(const ConsensusRequestPB* req,
   // Can't answer update requests if peer is not RUNNING
   if (tablet_peer->state() != metadata::RUNNING) {
     SetupErrorAndRespond(resp->mutable_error(),
-                         Status::NotFound("Tablet Peer not in RUNNING state"),
-                         TabletServerErrorPB::TABLET_NOT_FOUND, context);
+                         Status::ServiceUnavailable("Tablet Peer not in RUNNING state"),
+                         TabletServerErrorPB::TABLET_NOT_RUNNING, context);
     return;
   }
   // Submit the update directly to the TabletPeer's Consensus instance.
@@ -418,7 +420,7 @@ void TabletServiceImpl::RequestConsensusVote(const VoteRequestPB* req,
   // Can't answer update requests if peer is not RUNNING
   if (tablet_peer->state() != metadata::RUNNING) {
     SetupErrorAndRespond(resp->mutable_error(),
-                         Status::NotFound("Tablet Peer not in RUNNING state"),
+                         Status::ServiceUnavailable("Tablet Peer not in RUNNING state"),
                          TabletServerErrorPB::TABLET_NOT_RUNNING, context);
     return;
   }

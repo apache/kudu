@@ -232,9 +232,13 @@ Status TSTabletManager::DeleteTablet(const scoped_refptr<TabletPeer>& tablet_pee
   TRACE("Deleting tablet $0 (table=$1 [id=$2])", tablet_peer->tablet()->tablet_id(),
         tablet_peer->tablet()->metadata()->table_name(),
         tablet_peer->tablet()->metadata()->table_id());
-  tablet_peer->Shutdown();
+  metadata::TabletStatePB prev_state = tablet_peer->Shutdown();
+  if (prev_state == metadata::QUIESCING || prev_state == metadata::SHUTDOWN) {
+    return Status::ServiceUnavailable("Tablet Peer not in RUNNING state",
+                                      metadata::TabletStatePB_Name(prev_state));
+  }
   boost::lock_guard<rw_spinlock> lock(lock_);
-  tablet_map_.erase(tablet_peer->tablet()->tablet_id());
+  CHECK_EQ(1, tablet_map_.erase(tablet_peer->tablet()->tablet_id()));
   // TODO: Trash the data
   return Status::OK();
 }

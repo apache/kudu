@@ -175,9 +175,14 @@ void TabletPeer::ConsensusStateChanged() {
   mark_dirty_clbk_(this);
 }
 
-void TabletPeer::Shutdown() {
+metadata::TabletStatePB TabletPeer::Shutdown() {
+  metadata::TabletStatePB prev_state;
   {
     boost::lock_guard<simple_spinlock> lock(lock_);
+    if (state_ == metadata::QUIESCING || state_ == metadata::SHUTDOWN) {
+      return state_;
+    }
+    prev_state = state_;
     state_ = metadata::QUIESCING;
   }
   tablet_->UnregisterMaintenanceOps();
@@ -209,6 +214,7 @@ void TabletPeer::Shutdown() {
     boost::lock_guard<simple_spinlock> lock(lock_);
     state_ = metadata::SHUTDOWN;
   }
+  return prev_state;
 }
 
 Status TabletPeer::CheckRunning() const {

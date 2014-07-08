@@ -66,7 +66,10 @@ class TabletPeer : public base::RefCountedThreadSafe<TabletPeer>,
   Status Start(const consensus::ConsensusBootstrapInfo& info);
 
   // Shutdown this tablet peer.
-  void Shutdown();
+  // Returns the previous state value.
+  // This function is a no-op and makes no state change if the previous state
+  // was QUIESCING or SHUTDOWN.
+  metadata::TabletStatePB Shutdown();
 
   // Check that the tablet is in a RUNNING state.
   Status CheckRunning() const;

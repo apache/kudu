@@ -1340,6 +1340,43 @@ TEST_F(TabletServerTest, TestDeleteTablet_TabletNotCreated) {
   }
 }
 
+// Test that with concurrent requests to delete the same tablet, one wins and
+// the other fails, with no assertion failures. Regression test for KUDU-345.
+TEST_F(TabletServerTest, TestConcurrentDeleteTablet) {
+  // Verify that the tablet exists
+  scoped_refptr<TabletPeer> tablet;
+  ASSERT_TRUE(mini_server_->server()->tablet_manager()->LookupTablet(kTabletId, &tablet));
+
+  static const int kNumDeletes = 2;
+  RpcController rpcs[kNumDeletes];
+  DeleteTabletResponsePB responses[kNumDeletes];
+  CountDownLatch latch(kNumDeletes);
+
+  DeleteTabletRequestPB req;
+  req.set_tablet_id(kTabletId);
+
+  for (int i = 0; i < kNumDeletes; i++) {
+    SCOPED_TRACE(req.DebugString());
+    proxy_->DeleteTabletAsync(req, &responses[i], &rpcs[i],
+                              boost::bind(&CountDownLatch::CountDown, &latch));
+  }
+  latch.Wait();
+
+  int num_success = 0;
+  for (int i = 0; i < kNumDeletes; i++) {
+    ASSERT_TRUE(rpcs[i].finished());
+    LOG(INFO) << "STATUS " << i << ": " << rpcs[i].status().ToString();
+    LOG(INFO) << "RESPONSE " << i << ": " << responses[i].DebugString();
+    if (!responses[i].has_error()) {
+      num_success++;
+    }
+  }
+
+  // Verify that the tablet is removed from the tablet map
+  ASSERT_FALSE(mini_server_->server()->tablet_manager()->LookupTablet(kTabletId, &tablet));
+  ASSERT_EQ(1, num_success);
+}
+
 TEST_F(TabletServerTest, TestChangeConfiguration) {
   ChangeConfigRequestPB req;
   ChangeConfigResponsePB resp;
