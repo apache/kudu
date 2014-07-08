@@ -32,10 +32,10 @@
 #include "util/random.h"
 
 // Test size parameters
-DEFINE_int32(concurrent_inserts, 8, "Number of inserting clients to launch");
-DEFINE_int32(inserts_per_client, 1000,
+DEFINE_int32(concurrent_inserts, 3, "Number of inserting clients to launch");
+DEFINE_int32(inserts_per_client, 500,
              "Number of rows inserted by each inserter client");
-DEFINE_int32(rows_per_batch, 250, "Number of rows per client batch");
+DEFINE_int32(rows_per_batch, 125, "Number of rows per client batch");
 
 using boost::assign::list_of;
 using std::string;
@@ -82,7 +82,6 @@ class FullStackInsertScanTest : public KuduTest {
 
   virtual void SetUp() OVERRIDE {
     KuduTest::SetUp();
-    MaintenanceManager::Disable();
     ASSERT_GE(kNumInsertClients, 0);
     ASSERT_GE(kNumInsertsPerClient, 0);
     InitCluster();
@@ -210,7 +209,14 @@ void ReportAllDone(int id, int numids) {
 
 const char* const FullStackInsertScanTest::kTableName = "full-stack-mrs-test-tbl";
 
-TEST_F(FullStackInsertScanTest, ClientInsertScanStressTest) {
+TEST_F(FullStackInsertScanTest, MRSOnlyStressTest) {
+  MaintenanceManager::Disable();
+  DoConcurrentClientInserts();
+  DoTestScans();
+}
+
+TEST_F(FullStackInsertScanTest, WithDiskStressTest) {
+  MaintenanceManager::Enable();
   DoConcurrentClientInserts();
   DoTestScans();
 }
