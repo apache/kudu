@@ -367,7 +367,7 @@ TEST_F(TestRowSet, TestRollingDiskRowSetWriter) {
   google::FlagSaver saver;
   FLAGS_cfile_default_block_size = 4096;
 
-  RollingDiskRowSetWriter writer(tablet_->metadata(), schema_,
+  RollingDiskRowSetWriter writer(tablet()->metadata(), schema_,
                                  BloomFilterSizing::BySizeAndFPRate(32*1024, 0.01f),
                                  64 * 1024); // roll every 64KB
   DoWriteTestRowSet(10000, &writer);

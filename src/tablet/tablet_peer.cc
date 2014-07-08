@@ -89,8 +89,7 @@ TabletPeer::~TabletPeer() {
 Status TabletPeer::Init(const shared_ptr<Tablet>& tablet,
                         const scoped_refptr<server::Clock>& clock,
                         const shared_ptr<Messenger>& messenger,
-                        gscoped_ptr<Log> log,
-                        OpIdAnchorRegistry* opid_anchor_registry) {
+                        gscoped_ptr<Log> log) {
   {
     boost::lock_guard<simple_spinlock> lock(lock_);
     CHECK_EQ(state_, metadata::BOOTSTRAPPING);
@@ -99,7 +98,6 @@ Status TabletPeer::Init(const shared_ptr<Tablet>& tablet,
     clock_ = clock;
     messenger_ = messenger;
     log_.reset(log.release());
-    opid_anchor_registry_ = opid_anchor_registry;
 
     ConsensusOptions options;
     options.tablet_id = meta_->oid();
@@ -116,7 +114,6 @@ Status TabletPeer::Init(const shared_ptr<Tablet>& tablet,
 
   DCHECK(tablet_) << "A TabletPeer must be provided with a Tablet";
   DCHECK(log_) << "A TabletPeer must be provided with a Log";
-  DCHECK(opid_anchor_registry_) << "A TabletPeer must be provided with a OpIdAnchorRegistry";
 
   TRACE("Initting consensus impl");
   RETURN_NOT_OK_PREPEND(consensus_->Init(quorum_peer_, clock_, this, log_.get()),
@@ -338,7 +335,7 @@ void TabletPeer::GetEarliestNeededOpId(consensus::OpId* min_op_id) const {
   // Next, we interrogate the anchor registry.
   // Returns OK if minimum known, NotFound if no anchors are registered.
   OpId min_anchor_op_id;
-  s = opid_anchor_registry_->GetEarliestRegisteredOpId(&min_anchor_op_id);
+  s = tablet_->opid_anchor_registry()->GetEarliestRegisteredOpId(&min_anchor_op_id);
   if (PREDICT_FALSE(!s.ok())) {
     DCHECK(s.IsNotFound()) << "Unexpected error calling OpIdAnchorRegistry: " << s.ToString();
   }

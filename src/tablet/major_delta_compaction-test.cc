@@ -78,7 +78,7 @@ class TestMajorDeltaCompaction : public KuduRowSetTest {
       rb.AddString(row.val2);
       rb.AddUint32(row.val3);
       rb.AddString(row.val4);
-      ASSERT_STATUS_OK_FAST(tablet_->InsertForTesting(&tx_state, rb.row()));
+      ASSERT_STATUS_OK_FAST(tablet()->InsertForTesting(&tx_state, rb.row()));
       expected_state_.push_back(row);
     }
   }
@@ -110,7 +110,7 @@ class TestMajorDeltaCompaction : public KuduRowSetTest {
         update.AddColumnUpdate(1, &row->val1);
         update.AddColumnUpdate(3, &row->val3);
         update.AddColumnUpdate(4, &val4_slice);
-        ASSERT_STATUS_OK(tablet_->MutateRowForTesting(
+        ASSERT_STATUS_OK(tablet()->MutateRowForTesting(
             &tx_state, rb.row(), schema_, RowChangeList(update_buf)));
       }
     }
@@ -120,7 +120,7 @@ class TestMajorDeltaCompaction : public KuduRowSetTest {
   // expected_state_.
   void VerifyData() {
     gscoped_ptr<RowwiseIterator> row_iter;
-    ASSERT_STATUS_OK(tablet_->NewRowIterator(schema_, &row_iter));
+    ASSERT_STATUS_OK(tablet()->NewRowIterator(schema_, &row_iter));
     ASSERT_STATUS_OK(row_iter->Init(NULL));
     vector<string> results;
     ASSERT_STATUS_OK(IterateToStringList(row_iter.get(), &results));
@@ -144,10 +144,10 @@ class TestMajorDeltaCompaction : public KuduRowSetTest {
 TEST_F(TestMajorDeltaCompaction, TestCompact) {
   const int kNumRows = 100;
   ASSERT_NO_FATAL_FAILURE(WriteTestTablet(kNumRows));
-  ASSERT_STATUS_OK(tablet_->Flush());
+  ASSERT_STATUS_OK(tablet()->Flush());
 
   vector<shared_ptr<RowSet> > all_rowsets;
-  tablet_->GetRowSetsForTests(&all_rowsets);
+  tablet()->GetRowSetsForTests(&all_rowsets);
 
   shared_ptr<RowSet> rs = all_rowsets.front();
 
@@ -161,19 +161,19 @@ TEST_F(TestMajorDeltaCompaction, TestCompact) {
     ASSERT_NO_FATAL_FAILURE(VerifyData());
 
     // Flush the deltas, make sure data stays the same.
-    ASSERT_STATUS_OK(tablet_->FlushBiggestDMS());
+    ASSERT_STATUS_OK(tablet()->FlushBiggestDMS());
     ASSERT_NO_FATAL_FAILURE(VerifyData());
 
     // Update the odd rows and flush deltas
     ASSERT_NO_FATAL_FAILURE(UpdateRows(kNumRows, true));
-    ASSERT_STATUS_OK(tablet_->FlushBiggestDMS());
+    ASSERT_STATUS_OK(tablet()->FlushBiggestDMS());
     ASSERT_NO_FATAL_FAILURE(VerifyData());
 
     // Compact two columns, data should stay the same.
     vector<size_t> cols;
     cols.push_back(1);
     cols.push_back(3);
-    ASSERT_STATUS_OK(tablet_->DoMajorDeltaCompaction(cols, rs));
+    ASSERT_STATUS_OK(tablet()->DoMajorDeltaCompaction(cols, rs));
 
     ASSERT_NO_FATAL_FAILURE(VerifyData());
   }

@@ -133,8 +133,7 @@ Status SysTable::SetupTablet(const scoped_refptr<metadata::TabletMetadata>& meta
   RETURN_NOT_OK_PREPEND(tablet_peer_->Init(tablet,
                                            scoped_refptr<server::Clock>(master_->clock()),
                                            master_->messenger(),
-                                           log.Pass(),
-                                           opid_anchor_registry.get()),
+                                           log.Pass()),
                         "Failed to Init() TabletPeer");
 
   RETURN_NOT_OK_PREPEND(tablet_peer_->Start(consensus_info),

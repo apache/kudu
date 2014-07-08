@@ -55,16 +55,16 @@ class TabletPushdownTest : public KuduTabletTest,
       rb.AddUint32(i * 10);
       rb.AddString(StringPrintf("%08ld", i));
 
-      ASSERT_STATUS_OK_FAST(tablet_->InsertForTesting(&tx_state, rb.row()));
+      ASSERT_STATUS_OK_FAST(tablet()->InsertForTesting(&tx_state, rb.row()));
 
       if (i == 205 && GetParam() == SPLIT_MEMORY_DISK) {
-        ASSERT_STATUS_OK(tablet_->Flush());
+        ASSERT_STATUS_OK(tablet()->Flush());
       }
       tx_state.Reset();
     }
 
     if (GetParam() == ALL_ON_DISK) {
-      ASSERT_STATUS_OK(tablet_->Flush());
+      ASSERT_STATUS_OK(tablet()->Flush());
     }
   }
 
@@ -73,7 +73,7 @@ class TabletPushdownTest : public KuduTabletTest,
   // expected rows are returned.
   void TestScanYieldsExpectedResults(ScanSpec spec) {
     gscoped_ptr<RowwiseIterator> iter;
-    ASSERT_STATUS_OK(tablet_->NewRowIterator(schema_, &iter));
+    ASSERT_STATUS_OK(tablet()->NewRowIterator(schema_, &iter));
     ASSERT_STATUS_OK(iter->Init(&spec));
     ASSERT_TRUE(spec.predicates().empty()) << "Should have accepted all predicates";
 
@@ -137,7 +137,7 @@ class TabletPushdownTest : public KuduTabletTest,
   void TestCountOnlyScanYieldsExpectedResults(ScanSpec spec) {
     Schema empty_schema(std::vector<ColumnSchema>(), 0);
     gscoped_ptr<RowwiseIterator> iter;
-    ASSERT_STATUS_OK(tablet_->NewRowIterator(empty_schema, &iter));
+    ASSERT_STATUS_OK(tablet()->NewRowIterator(empty_schema, &iter));
     ASSERT_STATUS_OK(iter->Init(&spec));
     ASSERT_TRUE(spec.predicates().empty()) << "Should have accepted all predicates";
 

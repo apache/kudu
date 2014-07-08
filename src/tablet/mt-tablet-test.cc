@@ -39,7 +39,7 @@ class MultiThreadedTabletTest : public TabletTestBase<SETUP> {
   // letting us refer to the members otherwise.
   typedef TabletTestBase<SETUP> superclass;
   using superclass::schema_;
-  using superclass::tablet_;
+  using superclass::tablet;
   using superclass::setup_;
  public:
   virtual void SetUp() {
@@ -90,7 +90,7 @@ class MultiThreadedTabletTest : public TabletTestBase<SETUP> {
 
     while (running_insert_count_.count() > 0) {
       gscoped_ptr<RowwiseIterator> iter;
-      CHECK_OK(tablet_->NewRowIterator(schema_, &iter));
+      CHECK_OK(tablet()->NewRowIterator(schema_, &iter));
       CHECK_OK(iter->Init(NULL));
 
       while (iter->HasNext() && running_insert_count_.count() > 0) {
@@ -115,7 +115,7 @@ class MultiThreadedTabletTest : public TabletTestBase<SETUP> {
           update_buf.clear();
           RowChangeListEncoder(schema_, &update_buf).AddColumnUpdate(col_idx, &new_val);
           WriteTransactionState dummy;
-          CHECK_OK(tablet_->MutateRowForTesting(&dummy, rb.row(), schema_,
+          CHECK_OK(tablet()->MutateRowForTesting(&dummy, rb.row(), schema_,
                                                 RowChangeList(update_buf)));
 
           if (++updates_since_last_report >= 10) {
@@ -133,7 +133,7 @@ class MultiThreadedTabletTest : public TabletTestBase<SETUP> {
     rowid_t last_count = 0;
     while (running_insert_count_.count() > 0) {
       uint64_t count;
-      CHECK_OK(tablet_->CountRows(&count));
+      CHECK_OK(tablet()->CountRows(&count));
       ASSERT_GE(count, last_count);
       last_count = count;
     }
@@ -153,7 +153,7 @@ class MultiThreadedTabletTest : public TabletTestBase<SETUP> {
 
     while (running_insert_count_.count() > 0) {
       gscoped_ptr<RowwiseIterator> iter;
-      CHECK_OK(tablet_->NewRowIterator(schema_, &iter));
+      CHECK_OK(tablet()->NewRowIterator(schema_, &iter));
       CHECK_OK(iter->Init(NULL));
 
       for (int i = 0; i < max_iters && iter->HasNext(); i++) {
@@ -183,7 +183,7 @@ class MultiThreadedTabletTest : public TabletTestBase<SETUP> {
 
     // Scan a projection with only an int column.
     // This is provided by both harnesses.
-    shared_ptr<Schema> schema(tablet_->schema());
+    shared_ptr<Schema> schema(tablet()->schema());
     ColumnSchema valcol = schema->column(schema->find_column("val"));
     Schema projection = Schema(boost::assign::list_of(valcol), 0);
 
@@ -196,7 +196,7 @@ class MultiThreadedTabletTest : public TabletTestBase<SETUP> {
     uint64_t sum = 0;
 
     gscoped_ptr<RowwiseIterator> iter;
-    CHECK_OK(tablet_->NewRowIterator(projection, &iter));
+    CHECK_OK(tablet()->NewRowIterator(projection, &iter));
     CHECK_OK(iter->Init(NULL));
 
     while (iter->HasNext()) {
@@ -234,14 +234,14 @@ class MultiThreadedTabletTest : public TabletTestBase<SETUP> {
     int wait_time = FLAGS_flusher_initial_frequency_ms;
     while (running_insert_count_.count() > 0) {
 
-      if (tablet_->MemRowSetSize() > FLAGS_tablet_test_flush_threshold_mb * 1024 * 1024) {
-        CHECK_OK(tablet_->Flush());
+      if (tablet()->MemRowSetSize() > FLAGS_tablet_test_flush_threshold_mb * 1024 * 1024) {
+        CHECK_OK(tablet()->Flush());
       } else {
         LOG(INFO) << "Not flushing, memrowset not very full";
       }
 
-      if (tablet_->DeltaMemStoresSize() > FLAGS_tablet_test_flush_threshold_mb * 1024 * 1024) {
-        CHECK_OK(tablet_->FlushBiggestDMS());
+      if (tablet()->DeltaMemStoresSize() > FLAGS_tablet_test_flush_threshold_mb * 1024 * 1024) {
+        CHECK_OK(tablet()->FlushBiggestDMS());
       }
 
       // Wait, unless the inserters are all done.
@@ -253,7 +253,7 @@ class MultiThreadedTabletTest : public TabletTestBase<SETUP> {
   void CompactThread(int tid) {
     int wait_time = 100;
     while (running_insert_count_.count() > 0) {
-      CHECK_OK(tablet_->Compact(Tablet::COMPACT_NO_FLAGS));
+      CHECK_OK(tablet()->Compact(Tablet::COMPACT_NO_FLAGS));
 
       // Wait, unless the inserters are all done.
       running_insert_count_.WaitFor(MonoDelta::FromMilliseconds(wait_time));
@@ -302,8 +302,8 @@ class MultiThreadedTabletTest : public TabletTestBase<SETUP> {
       "memrowset_kb");
 
     while (running_insert_count_.count() > 0) {
-      num_rowsets_ts->SetValue(tablet_->num_rowsets());
-      memrowset_size_ts->SetValue(tablet_->MemRowSetSize() / 1024);
+      num_rowsets_ts->SetValue(tablet()->num_rowsets());
+      memrowset_size_ts->SetValue(tablet()->MemRowSetSize() / 1024);
 
       // Wait, unless the inserters are all done.
       running_insert_count_.WaitFor(MonoDelta::FromMilliseconds(250));

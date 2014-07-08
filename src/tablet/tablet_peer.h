@@ -8,7 +8,6 @@
 
 #include "consensus/consensus.h"
 #include "consensus/log.h"
-#include "consensus/opid_anchor_registry.h"
 #include "tablet/tablet.h"
 #include "tablet/transactions/transaction_tracker.h"
 #include "util/countdown_latch.h"
@@ -56,12 +55,10 @@ class TabletPeer : public consensus::ReplicaTransactionFactory {
   // Initializes the TabletPeer, namely creating the Log and initializing
   // Consensus. 'local_peer' indicates whether this should serve the tablet
   // locally or if it collaborates with other replicas through consensus.
-  // Takes a reference to 'opid_anchor_registry'
   Status Init(const std::tr1::shared_ptr<tablet::Tablet>& tablet,
               const scoped_refptr<server::Clock>& clock,
               const std::tr1::shared_ptr<rpc::Messenger>& messenger,
-              gscoped_ptr<log::Log> log,
-              log::OpIdAnchorRegistry* opid_anchor_registry);
+              gscoped_ptr<log::Log> log);
 
   // Starts the TabletPeer, making it available for Write()s. If this
   // TabletPeer is part of a quorum this will connect it to other peers
@@ -168,10 +165,6 @@ class TabletPeer : public consensus::ReplicaTransactionFactory {
   // Used for selection of log segments to delete during Log GC.
   void GetEarliestNeededOpId(consensus::OpId* op_id) const;
 
-  const scoped_refptr<log::OpIdAnchorRegistry>& opid_anchor_registry() const {
-    return opid_anchor_registry_;
-  }
-
   // Return a pointer to the Log.
   // The Log is owned by TabletPeer and will be destroyed with TabletPeer.
   log::Log* log() const {
@@ -211,7 +204,6 @@ class TabletPeer : public consensus::ReplicaTransactionFactory {
 
   metadata::TabletStatePB state_;
   Status error_;
-  scoped_refptr<log::OpIdAnchorRegistry> opid_anchor_registry_;
   TransactionTracker txn_tracker_;
   gscoped_ptr<log::Log> log_;
   std::tr1::shared_ptr<Tablet> tablet_;

@@ -46,10 +46,10 @@ class CompositePushdownTest : public KuduTabletTest {
           rb.AddUint8(day);
           rb.AddString(StringPrintf("%d/%02d/%02d", year, month, day));
           tx_state.Reset();
-          ASSERT_STATUS_OK_FAST(tablet_->InsertForTesting(&tx_state, rb.row()));
+          ASSERT_STATUS_OK_FAST(tablet()->InsertForTesting(&tx_state, rb.row()));
 
           if (i == nrows * 9 / 10) {
-            ASSERT_STATUS_OK(tablet_->Flush());
+            ASSERT_STATUS_OK(tablet()->Flush());
           }
           ++i;
         }
@@ -61,7 +61,7 @@ class CompositePushdownTest : public KuduTabletTest {
     SCOPED_TRACE(descr);
 
     gscoped_ptr<RowwiseIterator> iter;
-    ASSERT_STATUS_OK(tablet_->NewRowIterator(schema_, &iter));
+    ASSERT_STATUS_OK(tablet()->NewRowIterator(schema_, &iter));
     ASSERT_STATUS_OK(iter->Init(spec));
     ASSERT_TRUE(spec->predicates().empty()) << "Should have accepted all predicates";
     LOG_TIMING(INFO, descr) {

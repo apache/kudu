@@ -55,6 +55,7 @@ const char *FsMetadataTypeToString(FsMetadataType type) {
 
 FsManager::FsManager(Env *env, const string& root_path)
   : env_(env), root_path_(root_path) {
+  CHECK(!root_path_.empty());
 }
 
 FsManager::~FsManager() {

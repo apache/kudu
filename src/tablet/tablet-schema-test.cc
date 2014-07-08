@@ -35,7 +35,7 @@ class TestTabletSchema : public KuduTabletTest {
       // Half of the rows will be on disk
       // and the other half in the MemRowSet
       if (i == (nrows / 2)) {
-        ASSERT_STATUS_OK(tablet_->Flush());
+        ASSERT_STATUS_OK(tablet()->Flush());
       }
     }
   }
@@ -45,7 +45,7 @@ class TestTabletSchema : public KuduTabletTest {
     rb.AddUint32(key);
     rb.AddUint32(key);
     WriteTransactionState tx_state;
-    ASSERT_STATUS_OK(tablet_->InsertForTesting(&tx_state, rb.row()));
+    ASSERT_STATUS_OK(tablet()->InsertForTesting(&tx_state, rb.row()));
   }
 
   void DeleteRow(const Schema& schema, size_t key) {
@@ -55,7 +55,7 @@ class TestTabletSchema : public KuduTabletTest {
     RowChangeListEncoder mutation(schema, &buf);
     mutation.SetToDelete();
     WriteTransactionState tx_state;
-    ASSERT_STATUS_OK(tablet_->MutateRowForTesting(&tx_state, rb.row(), schema,
+    ASSERT_STATUS_OK(tablet()->MutateRowForTesting(&tx_state, rb.row(), schema,
                                                   mutation.as_changelist()));
   }
 
@@ -66,7 +66,7 @@ class TestTabletSchema : public KuduTabletTest {
     RowChangeListEncoder mutation(schema, &buf);
     mutation.AddColumnUpdate(col_idx, &new_val);
     WriteTransactionState tx_state;
-    ASSERT_STATUS_OK(tablet_->MutateRowForTesting(&tx_state, rb.row(), schema,
+    ASSERT_STATUS_OK(tablet()->MutateRowForTesting(&tx_state, rb.row(), schema,
                                                   mutation.as_changelist()));
   }
 
@@ -74,7 +74,7 @@ class TestTabletSchema : public KuduTabletTest {
                         const std::vector<std::pair<string, string> >& keys) {
     typedef std::pair<string, string> StringPair;
     gscoped_ptr<RowwiseIterator> iter;
-    ASSERT_STATUS_OK(tablet_->NewRowIterator(projection, &iter));
+    ASSERT_STATUS_OK(tablet()->NewRowIterator(projection, &iter));
     ASSERT_STATUS_OK(iter->Init(NULL));
     std::vector<string> rows;
     ASSERT_STATUS_OK(IterateToStringList(iter.get(), &rows));
@@ -113,7 +113,7 @@ TEST_F(TestTabletSchema, TestRead) {
   InsertRows(schema_, 0, kNumRows);
 
   gscoped_ptr<RowwiseIterator> iter;
-  ASSERT_STATUS_OK(tablet_->NewRowIterator(projection, &iter));
+  ASSERT_STATUS_OK(tablet()->NewRowIterator(projection, &iter));
 
   Status s = iter->Init(NULL);
   ASSERT_TRUE(s.IsInvalidArgument());
@@ -133,7 +133,7 @@ TEST_F(TestTabletSchema, TestWrite) {
   const uint32_t c2_write_default = 5;
   const uint32_t c2_read_default = 7;
 
-  SchemaBuilder builder(tablet_->metadata()->schema());
+  SchemaBuilder builder(tablet()->metadata()->schema());
   ASSERT_STATUS_OK(builder.AddColumn("c2", UINT32, false, &c2_read_default, &c2_write_default));
   AlterSchema(builder.Build());
   Schema s2 = builder.BuildWithoutIds();
@@ -160,7 +160,7 @@ TEST_F(TestTabletSchema, TestWrite) {
   VerifyTabletRows(s2, keys);
 
   // Try compact all (different schemas)
-  ASSERT_STATUS_OK(tablet_->Compact(Tablet::FORCE_COMPACT_ALL));
+  ASSERT_STATUS_OK(tablet()->Compact(Tablet::FORCE_COMPACT_ALL));
   VerifyTabletRows(s2, keys);
 }
 
@@ -176,7 +176,7 @@ TEST_F(TestTabletSchema, TestReInsert) {
   const uint32_t c2_write_default = 5;
   const uint32_t c2_read_default = 7;
 
-  SchemaBuilder builder(tablet_->metadata()->schema());
+  SchemaBuilder builder(tablet()->metadata()->schema());
   ASSERT_STATUS_OK(builder.AddColumn("c2", UINT32, false, &c2_read_default, &c2_write_default));
   AlterSchema(builder.Build());
   Schema s2 = builder.BuildWithoutIds();
@@ -194,7 +194,7 @@ TEST_F(TestTabletSchema, TestReInsert) {
   VerifyTabletRows(s2, keys);
 
   // Try compact all (different schemas)
-  ASSERT_STATUS_OK(tablet_->Compact(Tablet::FORCE_COMPACT_ALL));
+  ASSERT_STATUS_OK(tablet()->Compact(Tablet::FORCE_COMPACT_ALL));
   VerifyTabletRows(s2, keys);
 }
 
@@ -206,7 +206,7 @@ TEST_F(TestTabletSchema, TestRenameProjection) {
   InsertRow(schema_, 1);
 
   // Switch schema to s2
-  SchemaBuilder builder(tablet_->metadata()->schema());
+  SchemaBuilder builder(tablet()->metadata()->schema());
   ASSERT_STATUS_OK(builder.RenameColumn("c1", "c1_renamed"));
   AlterSchema(builder.Build());
   Schema s2 = builder.BuildWithoutIds();
@@ -247,7 +247,7 @@ TEST_F(TestTabletSchema, TestDeleteAndReAddColumn) {
   VerifyTabletRows(schema_, keys);
 
   // Switch schema to s2
-  SchemaBuilder builder(tablet_->metadata()->schema());
+  SchemaBuilder builder(tablet()->metadata()->schema());
   ASSERT_STATUS_OK(builder.RemoveColumn("c1"));
   // NOTE this new 'c1' will have a different id from the previous one
   //      so the data added to the previous 'c1' will not be visible.
@@ -266,7 +266,7 @@ TEST_F(TestTabletSchema, TestModifyEmptyMemRowSet) {
   std::vector<std::pair<string, string> > keys;
 
   // Switch schema to s2
-  SchemaBuilder builder(tablet_->metadata()->schema());
+  SchemaBuilder builder(tablet()->metadata()->schema());
   ASSERT_STATUS_OK(builder.AddNullableColumn("c2", UINT32));
   AlterSchema(builder.Build());
   Schema s2 = builder.BuildWithoutIds();
@@ -277,7 +277,7 @@ TEST_F(TestTabletSchema, TestModifyEmptyMemRowSet) {
   rb.AddUint32(2);
   rb.AddUint32(2);
   WriteTransactionState tx_state;
-  ASSERT_STATUS_OK(tablet_->InsertForTesting(&tx_state, rb.row()));
+  ASSERT_STATUS_OK(tablet()->InsertForTesting(&tx_state, rb.row()));
   MutateRow(s2, /* key= */ 2, /* col_idx= */ 0, /* new_val= */ 2);
   //MutateRow(s2, /* key= */ 1, /* col_idx= */ 2, /* new_val= */ 2);
 

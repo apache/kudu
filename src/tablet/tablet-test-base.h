@@ -635,7 +635,7 @@ class TabletTestBase : public KuduTabletTest {
       rb.Reset();
       tx_state.Reset();
       setup_.BuildRow(&rb, i, update_count_val);
-      CHECK_OK(tablet_->InsertForTesting(&tx_state, rb.row()));
+      CHECK_OK(tablet()->InsertForTesting(&tx_state, rb.row()));
 
       if ((inserted_since_last_report++ > 100) && ts) {
         ts->AddValue(static_cast<double>(inserted_since_last_report));
@@ -655,7 +655,7 @@ class TabletTestBase : public KuduTabletTest {
     RowBuilder rb(schema_);
     rb.Reset();
     setup_.BuildRow(&rb, row, update_count_val);
-    CHECK_OK(tablet_->InsertForTesting(tx_state, rb.row()));
+    CHECK_OK(tablet()->InsertForTesting(tx_state, rb.row()));
   }
 
   Status UpdateTestRow(WriteTransactionState *tx_state,
@@ -669,7 +669,7 @@ class TabletTestBase : public KuduTabletTest {
     // or the fourth if there are two col keys).
     int col_idx = schema_.num_key_columns() == 1 ? 2 : 3;
     RowChangeListEncoder(schema_, &buf).AddColumnUpdate(col_idx, &new_val);
-    return tablet_->MutateRowForTesting(tx_state, rb.row(), schema_, RowChangeList(buf));
+    return tablet()->MutateRowForTesting(tx_state, rb.row(), schema_, RowChangeList(buf));
   }
 
   Status DeleteTestRow(WriteTransactionState *tx_state, uint64_t row_idx) {
@@ -677,7 +677,7 @@ class TabletTestBase : public KuduTabletTest {
     setup_.BuildRowKey(&rb, row_idx);
     faststring buf;
     RowChangeListEncoder(schema_, &buf).SetToDelete();
-    return tablet_->MutateRowForTesting(tx_state, rb.row(), schema_, RowChangeList(buf));
+    return tablet()->MutateRowForTesting(tx_state, rb.row(), schema_, RowChangeList(buf));
   }
 
   template <class RowType>
@@ -687,7 +687,7 @@ class TabletTestBase : public KuduTabletTest {
 
   void VerifyTestRows(uint64_t first_row, uint64_t expected_count) {
     gscoped_ptr<RowwiseIterator> iter;
-    ASSERT_STATUS_OK(tablet_->NewRowIterator(schema_, &iter));
+    ASSERT_STATUS_OK(tablet()->NewRowIterator(schema_, &iter));
     ASSERT_STATUS_OK(iter->Init(NULL));
     int batch_size = std::max(
       (size_t)1, std::min((size_t)(expected_count / 10),
@@ -741,7 +741,7 @@ class TabletTestBase : public KuduTabletTest {
   // a very small number of rows.
   Status IterateToStringList(vector<string> *out) {
     gscoped_ptr<RowwiseIterator> iter;
-    RETURN_NOT_OK(this->tablet_->NewRowIterator(this->schema_, &iter));
+    RETURN_NOT_OK(this->tablet()->NewRowIterator(this->schema_, &iter));
     RETURN_NOT_OK(iter->Init(NULL));
     return kudu::tablet::IterateToStringList(iter.get(), out);
   }
@@ -749,7 +749,7 @@ class TabletTestBase : public KuduTabletTest {
   // Return the number of rows in the tablet.
   uint64_t TabletCount() const {
     uint64_t count;
-    CHECK_OK(tablet_->CountRows(&count));
+    CHECK_OK(tablet()->CountRows(&count));
     return count;
   }
 

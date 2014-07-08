@@ -321,6 +321,10 @@ class Tablet {
   // Return true if 'fname' is a valid filename for a tablet.
   static bool IsTabletFileName(const std::string& fname);
 
+  log::OpIdAnchorRegistry* opid_anchor_registry() {
+    return opid_anchor_registry_;
+  }
+
  private:
   friend class Iterator;
 

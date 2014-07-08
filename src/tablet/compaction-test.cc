@@ -150,7 +150,7 @@ class TestCompaction : public KuduRowSetTest {
     // Flush with a large roll threshold so we only write a single file.
     // This simplifies the test so we always need to reopen only a single rowset.
     const size_t kRollThreshold = 1024 * 1024 * 1024; // 1GB
-    RollingDiskRowSetWriter rsw(tablet_->metadata(), projection,
+    RollingDiskRowSetWriter rsw(tablet()->metadata(), projection,
                                 BloomFilterSizing::BySizeAndFPRate(32*1024, 0.01f),
                                 kRollThreshold);
     ASSERT_STATUS_OK(rsw.Open());

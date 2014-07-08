@@ -7,11 +7,10 @@
 #include <vector>
 
 #include "common/iterator.h"
-#include "consensus/opid_anchor_registry.h"
 #include "gutil/strings/join.h"
 #include "gutil/casts.h"
-#include "server/logical_clock.h"
 #include "tablet/tablet.h"
+#include "tablet/tablet-harness.h"
 #include "tablet/transactions/alter_schema_transaction.h"
 #include "tablet/transactions/write_transaction.h"
 #include "util/metrics.h"
@@ -30,8 +29,7 @@ using std::vector;
 class KuduTabletTest : public KuduTest {
  public:
   explicit KuduTabletTest(const Schema& schema)
-    : schema_(schema),
-      clock_(server::LogicalClock::CreateStartingAt(Timestamp::kInitialTimestamp)) {
+    : schema_(schema) {
   }
 
   virtual void SetUp() OVERRIDE {
@@ -41,36 +39,11 @@ class KuduTabletTest : public KuduTest {
   }
 
   void SetUpTestTablet(const string& root_dir = "") {
-    metadata::TabletMasterBlockPB master_block;
-    master_block.set_table_id("KuduTableTestId");
-    master_block.set_tablet_id("KuduTabletTestId");
-    master_block.set_block_a("00000000000000000000000000000000");
-    master_block.set_block_b("11111111111111111111111111111111");
-
-    // Build a schema with IDs
-    Schema server_schema = SchemaBuilder(schema_).Build();
-
-    quorum_.set_seqno(0);
-
-    // Build the Tablet
-    fs_manager_.reset(new FsManager(env_.get(), root_dir.empty() ? test_dir_ : root_dir));
-    scoped_refptr<metadata::TabletMetadata> metadata;
-    ASSERT_STATUS_OK(metadata::TabletMetadata::LoadOrCreate(fs_manager_.get(),
-                                                            master_block,
-                                                            "KuduTableTest",
-                                                            server_schema,
-                                                            quorum_,
-                                                            "", "",
-                                                            &metadata));
-    opid_anchor_registry_ = new log::OpIdAnchorRegistry();
-
-    if (FLAGS_tablet_test_enable_metrics) {
-      metrics_registry_.reset(new MetricRegistry());
-      metrics_.reset(new MetricContext(metrics_registry_.get(), "tablet-test"));
-    }
-
-    tablet_.reset(new Tablet(metadata, clock_, metrics_.get(), opid_anchor_registry_.get()));
-    ASSERT_STATUS_OK(tablet_->Open());
+    string dir = root_dir.empty() ? test_dir_ : root_dir;
+    TabletHarness::Options opts(dir);
+    opts.enable_metrics = FLAGS_tablet_test_enable_metrics;
+    harness_.reset(new TabletHarness(schema_, opts));
+    ASSERT_OK(harness_->Open());
   }
 
   void TabletReOpen(const string& root_dir = "") {
@@ -82,29 +55,31 @@ class KuduTabletTest : public KuduTest {
   }
 
   server::Clock* clock() {
-    return clock_.get();
+    return harness_->clock();
+  }
+
+  FsManager* fs_manager() {
+    return harness_->fs_manager();
   }
 
   void AlterSchema(const Schema& schema) {
     tserver::AlterSchemaRequestPB req;
-    req.set_schema_version(tablet_->metadata()->schema_version() + 1);
+    req.set_schema_version(tablet()->metadata()->schema_version() + 1);
 
     AlterSchemaTransactionState tx_state(&req);
-    ASSERT_STATUS_OK(tablet_->CreatePreparedAlterSchema(&tx_state, &schema));
-    ASSERT_STATUS_OK(tablet_->AlterSchema(&tx_state));
+    ASSERT_STATUS_OK(tablet()->CreatePreparedAlterSchema(&tx_state, &schema));
+    ASSERT_STATUS_OK(tablet()->AlterSchema(&tx_state));
     tx_state.commit();
   }
 
- protected:
-  gscoped_ptr<MetricRegistry> metrics_registry_;
-  gscoped_ptr<MetricContext> metrics_;
+  const std::tr1::shared_ptr<Tablet>& tablet() const {
+    return harness_->tablet();
+  }
 
+ protected:
   const Schema schema_;
-  QuorumPB quorum_;
-  scoped_refptr<server::Clock> clock_;
-  scoped_refptr<log::OpIdAnchorRegistry> opid_anchor_registry_;
-  std::tr1::shared_ptr<Tablet> tablet_;
-  gscoped_ptr<FsManager> fs_manager_;
+
+  gscoped_ptr<TabletHarness> harness_;
 };
 
 class KuduRowSetTest : public KuduTabletTest {
@@ -115,12 +90,12 @@ class KuduRowSetTest : public KuduTabletTest {
 
   virtual void SetUp() OVERRIDE {
     KuduTabletTest::SetUp();
-    ASSERT_STATUS_OK(tablet_->metadata()->CreateRowSet(&rowset_meta_,
+    ASSERT_STATUS_OK(tablet()->metadata()->CreateRowSet(&rowset_meta_,
                                                        SchemaBuilder(schema_).Build()));
   }
 
   Status FlushMetadata() {
-    return tablet_->metadata()->Flush();
+    return tablet()->metadata()->Flush();
   }
 
  protected:

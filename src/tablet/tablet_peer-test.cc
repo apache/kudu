@@ -74,17 +74,16 @@ class TabletPeerTest : public KuduTabletTest {
 
     // "Bootstrap" and start the TabletPeer.
     tablet_peer_.reset(
-        new TabletPeer(make_scoped_refptr(tablet_->metadata()),
-                       quorum_peer,
-                       *metric_ctx_,
-                       NULL));
+      new TabletPeer(make_scoped_refptr(tablet()->metadata()),
+                     quorum_peer,
+                     *metric_ctx_,
+                     NULL));
 
     gscoped_ptr<Log> log;
-    ASSERT_STATUS_OK(Log::Open(LogOptions(), fs_manager_.get(), tablet_->tablet_id(),
+    ASSERT_STATUS_OK(Log::Open(LogOptions(), fs_manager(), tablet()->tablet_id(),
                                metric_ctx_.get(), &log));
 
-    ASSERT_STATUS_OK(tablet_peer_->Init(tablet_, clock_, messenger_,
-                                        log.Pass(), opid_anchor_registry_.get()));
+    ASSERT_STATUS_OK(tablet_peer_->Init(tablet(), clock(), messenger_, log.Pass()));
 
     // Disable Log GC. We will call it manually.
     // This flag is restored by the FlagSaver member at destruction time.
@@ -106,7 +105,7 @@ class TabletPeerTest : public KuduTabletTest {
   // Generate monotonic sequence of key column integers.
   Status GenerateSequentialInsertRequest(WriteRequestPB* write_req) {
     Schema schema(GetTestSchema());
-    write_req->set_tablet_id(tablet_->tablet_id());
+    write_req->set_tablet_id(tablet()->tablet_id());
     CHECK_OK(SchemaToPB(schema, write_req->mutable_schema()));
 
     PartialRow row(&schema);
@@ -122,7 +121,7 @@ class TabletPeerTest : public KuduTabletTest {
   Status GenerateSequentialDeleteRequest(WriteRequestPB* write_req) {
     CHECK_LT(delete_counter_, insert_counter_);
     Schema schema(GetTestSchema());
-    write_req->set_tablet_id(tablet_->tablet_id());
+    write_req->set_tablet_id(tablet()->tablet_id());
     CHECK_OK(SchemaToPB(schema, write_req->mutable_schema()));
 
     PartialRow row(&schema);
@@ -175,7 +174,7 @@ class TabletPeerTest : public KuduTabletTest {
   }
 
   void AssertNoLogAnchors() {
-    CHECK_EQ(0, tablet_peer_->opid_anchor_registry_->GetAnchorCountForTests());
+    CHECK_EQ(0, tablet()->opid_anchor_registry()->GetAnchorCountForTests());
     OpId earliest_opid;
     tablet_peer_->GetEarliestNeededOpId(&earliest_opid);
     OpId last_log_opid;
@@ -241,7 +240,7 @@ TEST_F(TabletPeerTest, TestMRSAnchorPreventsLogGC) {
   ASSERT_EQ(3, log->GetNumReadableLogSegmentsForTests());
 
   AssertLogAnchorEarlierThanLogLatest();
-  CHECK_GT(tablet_peer_->opid_anchor_registry_->GetAnchorCountForTests(), 0);
+  CHECK_GT(tablet()->opid_anchor_registry()->GetAnchorCountForTests(), 0);
 
   // Ensure nothing gets deleted.
   tablet_peer_->GetEarliestNeededOpId(&min_op_id);
@@ -286,7 +285,7 @@ TEST_F(TabletPeerTest, TestDMSAnchorPreventsLogGC) {
   // Execute a mutation.
   ASSERT_STATUS_OK(ExecuteDeletesAndRollLogs(1));
   AssertLogAnchorEarlierThanLogLatest();
-  CHECK_GT(tablet_peer_->opid_anchor_registry_->GetAnchorCountForTests(), 0);
+  CHECK_GT(tablet()->opid_anchor_registry()->GetAnchorCountForTests(), 0);
   ASSERT_EQ(2, log->GetNumReadableLogSegmentsForTests());
 
   // Execute another couple inserts, but Flush it so it doesn't anchor.
@@ -330,7 +329,7 @@ TEST_F(TabletPeerTest, TestActiveTransactionPreventsLogGC) {
   ASSERT_EQ(4, log->GetNumReadableLogSegmentsForTests());
 
   // Flush MRS as needed to ensure that we don't have OpId anchors in the MRS.
-  ASSERT_EQ(1, tablet_peer_->opid_anchor_registry_->GetAnchorCountForTests());
+  ASSERT_EQ(1, tablet()->opid_anchor_registry()->GetAnchorCountForTests());
   tablet_peer_->tablet()->Flush();
 
   // Verify no anchors after Flush().
@@ -390,9 +389,9 @@ TEST_F(TabletPeerTest, TestActiveTransactionPreventsLogGC) {
   // want to ensure the only thing "anchoring" is the TransactionTracker.
   ASSERT_STATUS_OK(ExecuteDeletesAndRollLogs(3));
   ASSERT_EQ(4, log->GetNumReadableLogSegmentsForTests());
-  ASSERT_EQ(1, tablet_peer_->opid_anchor_registry_->GetAnchorCountForTests());
+  ASSERT_EQ(1, tablet()->opid_anchor_registry()->GetAnchorCountForTests());
   tablet_peer_->tablet()->FlushBiggestDMS();
-  ASSERT_EQ(0, tablet_peer_->opid_anchor_registry_->GetAnchorCountForTests());
+  ASSERT_EQ(0, tablet()->opid_anchor_registry()->GetAnchorCountForTests());
   ASSERT_EQ(1, tablet_peer_->txn_tracker_.GetNumPendingForTests());
 
   AssertLogAnchorEarlierThanLogLatest();

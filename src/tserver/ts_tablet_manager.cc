@@ -306,8 +306,7 @@ void TSTabletManager::OpenTablet(const scoped_refptr<TabletMetadata>& meta) {
     s =  tablet_peer->Init(tablet,
                            scoped_refptr<server::Clock>(server_->clock()),
                            server_->messenger(),
-                           log.Pass(),
-                           opid_anchor_registry.get());
+                           log.Pass());
 
     if (!s.ok()) {
       tablet_peer->SetFailed(s);
