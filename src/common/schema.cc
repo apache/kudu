@@ -64,17 +64,18 @@ void Schema::CopyFrom(const Schema& other) {
     // The map uses the 'name' string from within the ColumnSchema object.
     name_to_index_[col.name()] = i++;
   }
+
+  has_nullables_ = other.has_nullables_;
 }
 
 void Schema::swap(Schema& other) { // NOLINT(build/include_what_you_use)
-  int tmp = other.num_key_columns_;
-  other.num_key_columns_ = num_key_columns_;
-  num_key_columns_ = tmp;
+  std::swap(num_key_columns_, other.num_key_columns_);
   cols_.swap(other.cols_);
   col_ids_.swap(other.col_ids_);
   col_offsets_.swap(other.col_offsets_);
   name_to_index_.swap(other.name_to_index_);
   id_to_index_.swap(other.id_to_index_);
+  std::swap(has_nullables_, other.has_nullables_);
 }
 
 Status Schema::Reset(const vector<ColumnSchema>& cols,
@@ -128,6 +129,15 @@ Status Schema::Reset(const vector<ColumnSchema>& cols,
   id_to_index_.clear();
   for (int i = 0; i < ids.size(); ++i) {
     id_to_index_[col_ids_[i]] = i;
+  }
+
+  // Determine whether any column is nullable
+  has_nullables_ = false;
+  BOOST_FOREACH(const ColumnSchema& col, cols_) {
+    if (col.is_nullable()) {
+      has_nullables_ = true;
+      break;
+    }
   }
 
   return Status::OK();

@@ -379,12 +379,7 @@ class Schema {
 
   // Returns true if the schema contains nullable columns
   bool has_nullables() const {
-    BOOST_FOREACH(const ColumnSchema& col, cols_) {
-      if (col.is_nullable()) {
-        return true;
-      }
-    }
-    return false;
+    return has_nullables_;
   }
 
   // Returns true if the specified column (by name) is a key
@@ -674,6 +669,9 @@ class Schema {
 
   typedef unordered_map<size_t, size_t> IdToIndexMap;
   IdToIndexMap id_to_index_;
+
+  // Cached indicator whether any columns are nullable.
+  bool has_nullables_;
 
   // NOTE: if you add more members, make sure to add the appropriate
   // code to swap() and CopyFrom() as well to prevent subtle bugs.
