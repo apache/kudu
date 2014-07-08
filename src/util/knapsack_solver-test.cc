@@ -123,7 +123,7 @@ TEST_F(TestKnapsack, Randomized) {
       sum_val += in[i].value;
       sum_weight += in[i].weight;
     }
-    ASSERT_DOUBLE_EQ(max_val, sum_val);
+    ASSERT_NEAR(max_val, sum_val, 0.000001);
     ASSERT_LE(sum_weight, max_weight);
   }
 }
