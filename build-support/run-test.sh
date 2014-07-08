@@ -30,7 +30,12 @@ TEST_NAME=$(basename $TEST_EXECUTABLE)
 # list.
 TEST_EXECUTION_ATTEMPTS=1
 if [ -n "$KUDU_FLAKY_TEST_LIST" ]; then
-  IS_KNOWN_FLAKY=$(grep --count --line-regexp "$TEST_NAME" "$KUDU_FLAKY_TEST_LIST")
+  if [ -f "$KUDU_FLAKY_TEST_LIST" ]; then
+    IS_KNOWN_FLAKY=$(grep --count --line-regexp "$TEST_NAME" "$KUDU_FLAKY_TEST_LIST")
+  else
+    echo "Flaky test list file $KUDU_FLAKY_TEST_LIST missing"
+    IS_KNOWN_FLAKY=0
+  fi
   if [ "$IS_KNOWN_FLAKY" -gt 0 ]; then
     TEST_EXECUTION_ATTEMPTS=${KUDU_FLAKY_TEST_ATTEMPTS:-1}
     echo $TEST_NAME is a known-flaky test. Will attempt running it

@@ -19,6 +19,11 @@
 #     Only runs tests which have failed recently, if this is 1.
 #     Used by the kudu-flaky-tests jenkins build.
 #
+#   KUDU_FLAKY_TEST_ATTEMPTS  Default: 1
+#     If more than 1, will fetch the list of known flaky tests
+#     from the kudu-test jenkins job, and allow those tests to
+#     be flaky in this build.
+#
 #   BUILD_JAVA        Default: 1
 #     Build and test java code if this is set to 1.
 
@@ -49,6 +54,7 @@ if [ "$BUILD_TYPE" = "TSAN" ]; then
   DEFAULT_ALLOW_SLOW_TESTS=0
 fi
 
+export KUDU_FLAKY_TEST_ATTEMPTS=${KUDU_FLAKY_TEST_ATTEMPTS:-1}
 export KUDU_ALLOW_SLOW_TESTS=${KUDU_ALLOW_SLOW_TESTS:-$DEFAULT_ALLOW_SLOW_TESTS}
 LLVM_DIR=${LLVM_DIR:-/opt/toolchain/llvm-3.3/}
 export KUDU_COMPRESS_TEST_OUTPUT=${KUDU_COMPRESS_TEST_OUTPUT:-1}
@@ -86,21 +92,23 @@ rm -Rf Testing/Temporary
 rm -f build.log
 rm -Rf $TEST_LOGDIR
 rm -Rf $TEST_DEBUGDIR
+rm -rf CMakeCache.txt CMakeFiles src/*/CMakeFiles
 
 thirdparty/build-if-necessary.sh
 
 export PATH=$(pwd)/thirdparty/installed/bin:$PATH
 export PPROF_PATH=$(pwd)/thirdparty/installed/bin/pprof
 
-rm -rf CMakeCache.txt CMakeFiles src/*/CMakeFiles
-
-
+# Configure the build
 if [ "$BUILD_TYPE" = "ASAN" ]; then
-  # NB: passing just "clang++" below causes an infinite loop, see http://www.cmake.org/pipermail/cmake/2012-December/053071.html
-  CC=$LLVM_DIR/bin/clang CXX=$LLVM_DIR/bin/clang++ cmake -DKUDU_USE_ASAN=1 -DKUDU_USE_UBSAN=1 .
+  # NB: passing just "clang++" below causes an infinite loop, see
+  # http://www.cmake.org/pipermail/cmake/2012-December/053071.html
+  CC=$LLVM_DIR/bin/clang CXX=$LLVM_DIR/bin/clang++ \
+    cmake -DKUDU_USE_ASAN=1 -DKUDU_USE_UBSAN=1 .
   BUILD_TYPE=fastdebug
 elif [ "$BUILD_TYPE" = "TSAN" ]; then
-  CC=$LLVM_DIR/bin/clang CXX=$LLVM_DIR/bin/clang++ cmake -DKUDU_USE_TSAN=1
+  CC=$LLVM_DIR/bin/clang CXX=$LLVM_DIR/bin/clang++ \
+    cmake -DKUDU_USE_TSAN=1
   BUILD_TYPE=fastdebug
   EXTRA_TEST_FLAGS="$EXTRA_TEST_FLAGS -LE no_tsan"
 elif [ "$BUILD_TYPE" = "LEAKCHECK" ]; then
@@ -125,22 +133,40 @@ elif [ "$BUILD_TYPE" = "LINT" ]; then
   exit $?
 fi
 
-cmake . -DCMAKE_BUILD_TYPE=${BUILD_TYPE}
-make clean
-
-# our tests leave lots of data lying around, clean up before we run
-rm -Rf /tmp/kudutest-$UID
-NUM_PROCS=$(cat /proc/cpuinfo | grep processor | wc -l)
-
-make -j$NUM_PROCS 2>&1 | tee build.log
-
 # Only enable test core dumps for certain build types.
 if [ "$BUILD_TYPE" != "ASAN" ]; then
   export KUDU_TEST_ULIMIT_CORE=unlimited
 fi
 
-export GTEST_OUTPUT="xml:$TEST_LOGDIR/" # Enable JUnit-compatible XML output.
+# If we are supposed to be resistant to flaky tests, we need to fetch the
+# list of tests to ignore
+if [ "$KUDU_FLAKY_TEST_ATTEMPTS" -gt 1 ]; then
+  echo Fetching flaky test list...
+  export KUDU_FLAKY_TEST_LIST=$ROOT/build/flaky-tests.txt
+  echo -n > $KUDU_FLAKY_TEST_LIST
+  if $ROOT/build-support/jenkins/determine-flaky-tests.py --list-tests-only \
+    > $KUDU_FLAKY_TEST_LIST ; then
+    echo Will retry flaky tests up to $KUDU_FLAKY_TEST_ATTEMPTS times:
+    cat $KUDU_FLAKY_TEST_LIST
+    echo ----------
+  else
+    echo Unable to fetch flaky test list. Disabling flaky test resistance.
+    export KUDU_FLAKY_TEST_ATTEMPTS=1
+  fi
+fi
 
+cmake . -DCMAKE_BUILD_TYPE=${BUILD_TYPE}
+
+# our tests leave lots of data lying around, clean up before we run
+make clean
+rm -Rf /tmp/kudutest-$UID
+
+# actually do the build
+NUM_PROCS=$(cat /proc/cpuinfo | grep processor | wc -l)
+make -j$NUM_PROCS 2>&1 | tee build.log
+
+# Run tests
+export GTEST_OUTPUT="xml:$TEST_LOGDIR/" # Enable JUnit-compatible XML output.
 if [ "$RUN_FLAKY_ONLY" == "1" ] ; then
   echo Running flaky tests only:
   $ROOT/build-support/jenkins/determine-flaky-tests.py -l | tee build/flaky-tests.txt
