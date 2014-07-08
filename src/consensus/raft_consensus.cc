@@ -4,6 +4,7 @@
 
 #include <boost/assign/list_of.hpp>
 #include <gflags/gflags.h>
+#include <iostream>
 #include <string>
 
 #include "consensus/log.h"
@@ -14,6 +15,7 @@
 #include "server/clock.h"
 #include "server/metadata.h"
 #include "util/trace.h"
+#include "util/url-coding.h"
 
 DEFINE_int32(leader_heartbeat_interval_ms, 500,
              "The LEADER's heartbeat interval to the replicas.");
@@ -562,6 +564,28 @@ QuorumPB RaftConsensus::Quorum() const {
   ReplicaState::UniqueLock lock;
   CHECK_OK(state_->LockForRead(&lock));
   return state_->GetCurrentConfigUnlocked();
+}
+
+void RaftConsensus::DumpStatusHtml(std::ostream& out) const {
+  out << "<h1>Raft Consensus State</h1>" << std::endl;
+
+  out << "<h2>State</h2>" << std::endl;
+  out << "<pre>" << EscapeForHtmlToString(queue_.ToString()) << "</pre>" << std::endl;
+
+  // Dump the queues on a leader.
+  QuorumPeerPB::Role role;
+  {
+    ReplicaState::UniqueLock lock;
+    CHECK_OK(state_->LockForRead(&lock));
+    role = state_->GetCurrentRoleUnlocked();
+  }
+  if (role == QuorumPeerPB::LEADER) {
+    out << "<h2>Queue overview</h2>" << std::endl;
+    out << "<pre>" << EscapeForHtmlToString(queue_.ToString()) << "</pre>" << std::endl;
+    out << "<hr/>" << std::endl;
+    out << "<h2>Queue details</h2>" << std::endl;
+    queue_.DumpToHtml(out);
+  }
 }
 
 ReplicaState* RaftConsensus::GetReplicaStateForTests() {

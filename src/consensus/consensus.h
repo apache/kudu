@@ -2,6 +2,7 @@
 #ifndef KUDO_QUORUM_CONSENSUS_H_
 #define KUDO_QUORUM_CONSENSUS_H_
 
+#include <iosfwd>
 #include <string>
 #include <vector>
 
@@ -187,6 +188,8 @@ class Consensus {
   // Returns the current configuration of the quorum.
   // NOTE: Returns a copy, thus should not be used in a tight loop.
   virtual metadata::QuorumPB Quorum() const = 0;
+
+  virtual void DumpStatusHtml(std::ostream& out) const = 0;
 
   virtual ~Consensus() {}
 

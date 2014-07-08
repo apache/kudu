@@ -4,6 +4,8 @@
 
 #include <boost/thread/locks.hpp>
 #include <boost/assign/list_of.hpp>
+#include <iostream>
+
 #include "consensus/log.h"
 #include "server/metadata.h"
 #include "server/clock.h"
@@ -186,6 +188,13 @@ Status LocalConsensus::Commit(ConsensusRound* round) {
 
 void LocalConsensus::Shutdown() {
   VLOG(1) << "LocalConsensus Shutdown!";
+}
+
+void LocalConsensus::DumpStatusHtml(std::ostream& out) const {
+  out << "<h1>Local Consensus Status</h1>\n";
+
+  boost::lock_guard<simple_spinlock> lock(lock_);
+  out << "next op: " << next_op_id_index_;
 }
 
 } // end namespace consensus

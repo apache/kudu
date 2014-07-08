@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <boost/foreach.hpp>
 #include <gflags/gflags.h>
+#include <iostream>
 #include <string>
 #include <tr1/memory>
 #include <utility>
@@ -17,6 +18,7 @@
 #include "gutil/strings/strcat.h"
 #include "util/auto_release_pool.h"
 #include "util/metrics.h"
+#include "util/url-coding.h"
 
 DEFINE_int32(consensus_entry_cache_size_soft_limit_mb, 128,
              "The total size of consensus entries to keep in memory."
@@ -314,7 +316,6 @@ void PeerMessageQueue::DumpToStringsUnlocked(vector<string>* lines) const {
   int counter = 0;
   lines->push_back("Messages:");
   BOOST_FOREACH(const MessagesBuffer::value_type entry, messages_) {
-
     const OpId& id = entry.second->op_id();
     OperationPB* operation = entry.second->operation();
     if (operation->has_replicate()) {
@@ -330,10 +331,52 @@ void PeerMessageQueue::DumpToStringsUnlocked(vector<string>* lines) const {
               "Type: $5, Size: $6, Status: $7",
                      counter++, id.term(), id.index(), committed_op_id.index(),
                      committed_op_id.term(),
-                     OperationType_Name(operation->replicate().op_type()),
+                     OperationType_Name(operation->commit().op_type()),
                      operation->ByteSize(), entry.second->ToString()));
     }
   }
+}
+
+void PeerMessageQueue::DumpToHtml(std::ostream& out) const {
+  using std::endl;
+
+  boost::lock_guard<simple_spinlock> lock(queue_lock_);
+  out << "<h3>Watermarks</h3>" << endl;
+  out << "<table>" << endl;;
+  out << "  <tr><th>Peer</th><th>Watermark</th></tr>" << endl;
+  BOOST_FOREACH(const WatermarksMap::value_type& entry, watermarks_) {
+    string watermark_str = (entry.second != NULL ? entry.second->ShortDebugString() : "NULL");
+    out << Substitute("  <tr><td>$0</td><td>$1</td></tr>",
+                      EscapeForHtmlToString(entry.first),
+                      EscapeForHtmlToString(watermark_str)) << endl;
+  }
+  out << "</table>" << endl;
+
+  out << "<h3>Messages:</h3>" << endl;
+  out << "<table>" << endl;
+  out << "<tr><th>Entry</th><th>OpId</th><th>Type</th><th>Size</th><th>Status</th></tr>" << endl;
+
+  int counter = 0;
+  BOOST_FOREACH(const MessagesBuffer::value_type entry, messages_) {
+    const OpId& id = entry.second->op_id();
+    OperationPB* operation = entry.second->operation();
+    if (operation->has_replicate()) {
+      out << Substitute("<tr><th>$0</th><th>$1.$2</th><td>REPLICATE $3</td>"
+                        "<td>$4</td><td>$5</td></tr>",
+                        counter++, id.term(), id.index(),
+                        OperationType_Name(operation->replicate().op_type()),
+                        operation->ByteSize(), entry.second->ToString()) << endl;
+    } else {
+      const OpId& committed_op_id = operation->commit().commited_op_id();
+      out << Substitute("<tr><th>$0</th><th>$1.$2</th><td>COMMIT $5 $3.$4</td>"
+                        "<td>$6</td><td>$7</td></tr>",
+                        counter++, id.term(), id.index(), committed_op_id.index(),
+                        committed_op_id.term(),
+                        OperationType_Name(operation->commit().op_type()),
+                        operation->ByteSize(), entry.second->ToString()) << endl;
+    }
+  }
+  out << "</table>";
 }
 
 void PeerMessageQueue::Close() {

@@ -60,6 +60,10 @@ Status TabletServerPathHandlers::Register(Webserver* server) {
     "/tablet-rowsetlayout-svg",
     boost::bind(&TabletServerPathHandlers::HandleTabletSVGPage, this, _1, _2),
     true /* styled */, false /* is_on_nav_bar */);
+  server->RegisterPathHandler(
+    "/tablet-consensus-status",
+    boost::bind(&TabletServerPathHandlers::HandleConsensusStatusPage, this, _1, _2),
+    true /* styled */, false /* is_on_nav_bar */);
 
   return Status::OK();
 }
@@ -284,10 +288,16 @@ void TabletServerPathHandlers::HandleTabletPage(const Webserver::ArgumentMap &ar
   // List of links to various tablet-specific info pages
   *output << "<ul>";
   // Link to output svg of current DiskRowSet layout over keyspace.
-  string drsl_link = Substitute("<a href=\"/tablet-rowsetlayout-svg?id=$0\">$1</a>",
-                                UrlEncodeToString(tablet_id),
-                                "Rowset Layout Diagram");
-  *output << "<li>" << drsl_link << "</li>";
+  *output << "<li>" << Substitute("<a href=\"/tablet-rowsetlayout-svg?id=$0\">$1</a>",
+                                  UrlEncodeToString(tablet_id),
+                                  "Rowset Layout Diagram")
+          << "</li>" << endl;
+  // Link to consensus status page.
+  *output << "<li>" << Substitute("<a href=\"/tablet-consensus-status?id=$0\">$1</a>",
+                                  UrlEncodeToString(tablet_id),
+                                  "Consensus Status")
+          << "</li>" << endl;
+
   // End list
   *output << "</ul>\n";
 }
@@ -302,6 +312,15 @@ void TabletServerPathHandlers::HandleTabletSVGPage(const Webserver::ArgumentMap 
           << TabletLink(id) << "</h1>\n";
   peer->tablet()->PrintRSLayout(output);
 
+}
+
+void TabletServerPathHandlers::HandleConsensusStatusPage(const Webserver::ArgumentMap& args,
+                                                         std::stringstream* output) {
+  string id;
+  shared_ptr<TabletPeer> peer;
+  if (!LoadTablet(tserver_, args, &id, &peer, output)) return;
+
+  peer->consensus()->DumpStatusHtml(*output);
 }
 
 void TabletServerPathHandlers::HandleScansPage(const Webserver::ArgumentMap &args,

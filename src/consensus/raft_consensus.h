@@ -68,6 +68,8 @@ class RaftConsensus : public Consensus {
 
   virtual metadata::QuorumPB Quorum() const OVERRIDE;
 
+  virtual void DumpStatusHtml(std::ostream& out) const OVERRIDE;
+
   virtual void Shutdown() OVERRIDE;
 
   // Returns the replica state for tests. This should never be used outside of

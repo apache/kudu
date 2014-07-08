@@ -54,7 +54,9 @@ class LocalConsensus : public Consensus {
     return quorum_;
   }
 
-  void Shutdown() OVERRIDE;
+  virtual void Shutdown() OVERRIDE;
+
+  virtual void DumpStatusHtml(std::ostream& out) const OVERRIDE;
 
   //
   //  NOT IMPLEMENTED IN LOCAL CONSENSUS

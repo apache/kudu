@@ -4,6 +4,7 @@
 #define KUDU_CONSENSUS_CONSENSUS_QUEUE_H_
 
 #include <gtest/gtest.h>
+#include <iosfwd>
 #include <map>
 #include <string>
 #include <tr1/unordered_map>
@@ -143,6 +144,8 @@ class PeerMessageQueue {
 
   // Dumps the contents of the queue to the provided string vector.
   void DumpToStrings(std::vector<string>* lines) const;
+
+  void DumpToHtml(std::ostream& out) const;
 
   struct Metrics {
     // Keeps track of the total number of operations in the queue.
