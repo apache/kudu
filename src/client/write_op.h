@@ -34,27 +34,27 @@ class KuduWriteOperation {
  public:
   virtual ~KuduWriteOperation();
 
-  const KuduTable* table() const { return table_.get(); }
-  const KuduPartialRow& row() const { return row_; }
-
   // See KuduPartialRow API for field setters, etc.
+  const KuduPartialRow& row() const { return row_; }
   KuduPartialRow* mutable_row() { return &row_; }
 
-  virtual RowOperationsPB::Type RowOperationType() const = 0;
   virtual std::string ToString() const = 0;
  protected:
   explicit KuduWriteOperation(KuduTable *table);
+  virtual RowOperationsPB::Type RowOperationType() const = 0;
 
   scoped_refptr<KuduTable> const table_;
   KuduPartialRow row_;
 
  private:
-  friend class internal::Batcher; // for CreateKey.
+  friend class internal::Batcher;
 
   // Create and encode the key for this write (key must be set)
   //
   // Caller takes ownership of the allocated memory.
   gscoped_ptr<EncodedKey> CreateKey() const;
+
+  const KuduTable* table() const { return table_.get(); }
 
   DISALLOW_COPY_AND_ASSIGN(KuduWriteOperation);
 };
@@ -67,10 +67,12 @@ class KuduInsert : public KuduWriteOperation {
  public:
   virtual ~KuduInsert();
 
+  virtual std::string ToString() const OVERRIDE { return "INSERT " + row_.ToString(); }
+
+ protected:
   virtual RowOperationsPB::Type RowOperationType() const OVERRIDE {
     return RowOperationsPB::INSERT;
   }
-  virtual std::string ToString() const OVERRIDE { return "INSERT " + row_.ToString(); }
 
  private:
   friend class KuduTable;
@@ -87,10 +89,12 @@ class KuduUpdate : public KuduWriteOperation {
  public:
   virtual ~KuduUpdate();
 
+  virtual std::string ToString() const OVERRIDE { return "UPDATE " + row_.ToString(); }
+
+ protected:
   virtual RowOperationsPB::Type RowOperationType() const OVERRIDE {
     return RowOperationsPB::UPDATE;
   }
-  virtual std::string ToString() const OVERRIDE { return "UPDATE " + row_.ToString(); }
 
  private:
   friend class KuduTable;
@@ -106,10 +110,12 @@ class KuduDelete : public KuduWriteOperation {
  public:
   virtual ~KuduDelete();
 
+  virtual std::string ToString() const OVERRIDE { return "DELETE " + row_.ToString(); }
+
+ protected:
   virtual RowOperationsPB::Type RowOperationType() const OVERRIDE {
     return RowOperationsPB::DELETE;
   }
-  virtual std::string ToString() const OVERRIDE { return "DELETE " + row_.ToString(); }
 
  private:
   friend class KuduTable;
