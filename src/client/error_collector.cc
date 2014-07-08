@@ -19,7 +19,7 @@ ErrorCollector::~ErrorCollector() {
   STLDeleteElements(&errors_);
 }
 
-void ErrorCollector::AddError(gscoped_ptr<Error> error) {
+void ErrorCollector::AddError(gscoped_ptr<KuduError> error) {
   boost::lock_guard<simple_spinlock> l(lock_);
   errors_.push_back(error.release());
 }
@@ -29,7 +29,7 @@ int ErrorCollector::CountErrors() const {
   return errors_.size();
 }
 
-void ErrorCollector::GetErrors(std::vector<Error*>* errors, bool* overflowed) {
+void ErrorCollector::GetErrors(std::vector<KuduError*>* errors, bool* overflowed) {
   boost::lock_guard<simple_spinlock> l(lock_);
   errors->swap(errors_);
   *overflowed = false;

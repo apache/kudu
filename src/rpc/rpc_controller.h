@@ -11,7 +11,9 @@
 #include "util/monotime.h"
 #include "util/status.h"
 
-namespace kudu { namespace rpc {
+namespace kudu {
+
+namespace rpc {
 
 class ErrorStatusPB;
 class OutboundCall;

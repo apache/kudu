@@ -28,7 +28,7 @@ void AddTestRowToPB(RowOperationsPB::Type op_type,
                     uint32_t int_val,
                     const string& string_val,
                     RowOperationsPB* ops) {
-  PartialRow row(&schema);
+  KuduPartialRow row(&schema);
   CHECK_OK(row.SetUInt32("key", key));
   CHECK_OK(row.SetUInt32("int_val", int_val));
   CHECK_OK(row.SetStringCopy("string_val", string_val));
@@ -40,7 +40,7 @@ void AddTestKeyToPB(RowOperationsPB::Type op_type,
                     const Schema& schema,
                     uint32_t key,
                     RowOperationsPB* ops) {
-  PartialRow row(&schema);
+  KuduPartialRow row(&schema);
   CHECK_OK(row.SetUInt32(0, key));
   RowOperationsPBEncoder enc(ops);
   enc.Add(op_type, row);

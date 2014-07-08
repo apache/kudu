@@ -6,15 +6,15 @@
 #include "client/schema.h"
 #include "client/write_op.h"
 #include "common/predicate_encoder.h"
-#include "common/scan_predicate.h"
 #include "common/scan_spec.h"
 #include "gutil/gscoped_ptr.h"
 #include "gutil/ref_counted.h"
 #include "gutil/macros.h"
+#include "rpc/rpc_controller.h"
+#include "tserver/tserver.pb.h"
 #include "util/async_util.h"
 #include "util/locks.h"
 #include "util/status.h"
-#include "tserver/tserver_service.proxy.h" // TODO: move this to a protocol/ module
 
 #include <gtest/gtest.h>
 #include <map>
@@ -37,18 +37,22 @@ class AlterTableRequestPB;
 class MasterServiceProxy;
 }
 
+namespace tserver {
+class TabletServerServiceProxy;
+}
+
 namespace client {
 
-class AlterTableBuilder;
-class CreateTableOptions;
-class Insert;
+class KuduAlterTableBuilder;
+class KuduCreateTableOptions;
+class KuduInsert;
 class KuduRowResult;
 class KuduSession;
 class KuduTable;
 class MetaCache;
 class RemoteTablet;
 class RemoteTabletServer;
-class WriteOperation;
+class KuduWriteOperation;
 
 namespace internal {
 class ErrorCollector;
@@ -102,7 +106,7 @@ class KuduClient : public std::tr1::enable_shared_from_this<KuduClient> {
                      const KuduSchema& schema);
   Status CreateTable(const std::string& table_name,
                      const KuduSchema& schema,
-                     const CreateTableOptions& opts);
+                     const KuduCreateTableOptions& opts);
 
   // set 'create_in_progress' to true if a CreateTable operation is in-progress
   Status IsCreateTableInProgress(const std::string& table_name,
@@ -111,7 +115,7 @@ class KuduClient : public std::tr1::enable_shared_from_this<KuduClient> {
   Status DeleteTable(const std::string& table_name);
 
   Status AlterTable(const std::string& table_name,
-                    const AlterTableBuilder& alter);
+                    const KuduAlterTableBuilder& alter);
 
   // set 'alter_in_progress' to true if an AlterTable operation is in-progress
   Status IsAlterTableInProgress(const std::string& table_name,
@@ -209,23 +213,23 @@ class KuduClient : public std::tr1::enable_shared_from_this<KuduClient> {
   DISALLOW_COPY_AND_ASSIGN(KuduClient);
 };
 
-class CreateTableOptions {
+class KuduCreateTableOptions {
  public:
-  CreateTableOptions();
-  ~CreateTableOptions();
+  KuduCreateTableOptions();
+  ~KuduCreateTableOptions();
 
   // Set keys on which to pre-split the table. The vector is
   // copied.
-  CreateTableOptions& WithSplitKeys(const std::vector<std::string>& keys);
+  KuduCreateTableOptions& WithSplitKeys(const std::vector<std::string>& keys);
 
   // Set the number of replicas for each tablet in the tablet.
   // This should be an odd number.
   //
   // A value <= 0 falls back to the server-side default.
-  CreateTableOptions& WithNumReplicas(int n_replicas);
+  KuduCreateTableOptions& WithNumReplicas(int n_replicas);
 
   // Wait the assignment
-  CreateTableOptions& WaitAssignment(bool wait_assignment);
+  KuduCreateTableOptions& WaitAssignment(bool wait_assignment);
 
  private:
   friend class KuduClient;
@@ -249,16 +253,16 @@ class KuduTable : public base::RefCountedThreadSafe<KuduTable> {
   const KuduSchema& schema() const { return schema_; }
 
   // Create a new write operation for this table.
-  gscoped_ptr<Insert> NewInsert();
-  gscoped_ptr<Update> NewUpdate();
-  gscoped_ptr<Delete> NewDelete();
+  gscoped_ptr<KuduInsert> NewInsert();
+  gscoped_ptr<KuduUpdate> NewUpdate();
+  gscoped_ptr<KuduDelete> NewDelete();
 
   KuduClient *client() const { return client_.get(); }
 
  private:
   friend class KuduClient;
   friend class KuduScanner;
-  friend class WriteOperation;
+  friend class KuduWriteOperation;
   friend class base::RefCountedThreadSafe<KuduTable>;
 
   KuduTable(const std::tr1::shared_ptr<KuduClient>& client,
@@ -284,10 +288,9 @@ class KuduTable : public base::RefCountedThreadSafe<KuduTable> {
 //   AlterTableBuilder builder;
 //   builder.AddNullableColumn("col1", UINT32);
 //   client->AlterTable("table-name", builder);
-class AlterTableBuilder {
+class KuduAlterTableBuilder {
  public:
-  AlterTableBuilder();
-  ~AlterTableBuilder();
+  KuduAlterTableBuilder();
 
   void Reset();
 
@@ -313,16 +316,16 @@ class AlterTableBuilder {
 
  private:
   friend class KuduClient;
-  master::AlterTableRequestPB* alter_steps_;
+  gscoped_ptr<master::AlterTableRequestPB> alter_steps_;
 
-  DISALLOW_COPY_AND_ASSIGN(AlterTableBuilder);
+  DISALLOW_COPY_AND_ASSIGN(KuduAlterTableBuilder);
 };
 
 // An error which occurred in a given operation. This tracks the operation
 // which caused the error, along with whatever the actual error was.
-class Error {
+class KuduError {
  public:
-  ~Error();
+  ~KuduError();
 
   // Return the actual error which occurred.
   const Status& status() const {
@@ -330,13 +333,13 @@ class Error {
   }
 
   // Return the operation which failed.
-  const WriteOperation& failed_op() const {
+  const KuduWriteOperation& failed_op() const {
     return *failed_op_;
   }
 
   // Release the operation that failed. The caller takes ownership. Must only
   // be called once.
-  gscoped_ptr<WriteOperation> release_failed_op() {
+  gscoped_ptr<KuduWriteOperation> release_failed_op() {
     CHECK_NOTNULL(failed_op_.get());
     return failed_op_.Pass();
   }
@@ -355,13 +358,13 @@ class Error {
   }
 
  private:
-  Error(gscoped_ptr<WriteOperation> failed_op, const Status& error);
+  KuduError(gscoped_ptr<KuduWriteOperation> failed_op, const Status& error);
   friend class internal::Batcher;
 
-  gscoped_ptr<WriteOperation> failed_op_;
+  gscoped_ptr<KuduWriteOperation> failed_op_;
   Status status_;
 
-  DISALLOW_COPY_AND_ASSIGN(Error);
+  DISALLOW_COPY_AND_ASSIGN(KuduError);
 };
 
 
@@ -500,18 +503,18 @@ class KuduSession : public std::tr1::enable_shared_from_this<KuduSession> {
   // mode.
   //
   // This is thread safe.
-  Status Apply(gscoped_ptr<Insert>* write_op) WARN_UNUSED_RESULT;
-  Status Apply(gscoped_ptr<Update>* write_op) WARN_UNUSED_RESULT;
-  Status Apply(gscoped_ptr<Delete>* write_op) WARN_UNUSED_RESULT;
+  Status Apply(gscoped_ptr<KuduInsert>* write_op) WARN_UNUSED_RESULT;
+  Status Apply(gscoped_ptr<KuduUpdate>* write_op) WARN_UNUSED_RESULT;
+  Status Apply(gscoped_ptr<KuduDelete>* write_op) WARN_UNUSED_RESULT;
 
   // Similar to the above, except never blocks. Even in the flush modes that return
   // immediately, StatusCallback is triggered with the result. The callback may
   // be called by a reactor thread, or in some cases may be called inline by
   // the same thread which calls ApplyAsync().
   // TODO: not yet implemented.
-  void ApplyAsync(gscoped_ptr<Insert>* write_op, StatusCallback cb);
-  void ApplyAsync(gscoped_ptr<Update>* write_op, StatusCallback cb);
-  void ApplyAsync(gscoped_ptr<Delete>* write_op, StatusCallback cb);
+  void ApplyAsync(gscoped_ptr<KuduInsert>* write_op, StatusCallback cb);
+  void ApplyAsync(gscoped_ptr<KuduUpdate>* write_op, StatusCallback cb);
+  void ApplyAsync(gscoped_ptr<KuduDelete>* write_op, StatusCallback cb);
 
   // Flush any pending writes.
   //
@@ -588,7 +591,7 @@ class KuduSession : public std::tr1::enable_shared_from_this<KuduSession> {
   // Caller takes ownership of the returned errors.
   //
   // This function is thread-safe.
-  void GetPendingErrors(std::vector<Error*>* errors, bool* overflowed);
+  void GetPendingErrors(std::vector<KuduError*>* errors, bool* overflowed);
 
   KuduClient* client() { return client_.get(); }
 
@@ -609,7 +612,7 @@ class KuduSession : public std::tr1::enable_shared_from_this<KuduSession> {
   void NewBatcher(scoped_refptr<internal::Batcher>* old_batcher);
 
   // Base class call for Apply's templates
-  Status Apply(WriteOperation* write_op) WARN_UNUSED_RESULT;
+  Status Apply(KuduWriteOperation* write_op) WARN_UNUSED_RESULT;
 
   // The client that this session is associated with.
   const std::tr1::shared_ptr<KuduClient> client_;

@@ -15,6 +15,7 @@
 #include "gutil/strings/substitute.h"
 #include "master/master.proxy.h"
 #include "rpc/messenger.h"
+#include "tserver/tserver_service.proxy.h"
 #include "util/net/dns_resolver.h"
 #include "util/net/net_util.h"
 

@@ -29,7 +29,7 @@ class Batcher;
 class KuduClient;
 class KuduColumnRangePredicate;
 class MetaCache;
-class WriteOperation;
+class KuduWriteOperation;
 
 class KuduColumnStorageAttributes {
  public:
@@ -94,7 +94,7 @@ class KuduSchema {
   friend class KuduEncodedKeyBuilder;
   friend class KuduScanner;
   friend class MetaCache;
-  friend class WriteOperation;
+  friend class KuduWriteOperation;
   friend class internal::Batcher;
   friend class kudu::LocalLineItemDAO;
   friend class kudu::LocalLineItemDAOTest;

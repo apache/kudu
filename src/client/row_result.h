@@ -19,7 +19,7 @@ namespace client {
 
 // A single row result from a scan.
 //
-// Drawn extensively from ContiguousRow and PartialRow.
+// Drawn extensively from ContiguousRow and KuduPartialRow.
 class KuduRowResult {
  public:
   bool IsNull(const Slice& col_name) const;

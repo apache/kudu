@@ -13,7 +13,7 @@
 namespace kudu {
 
 class Arena;
-class PartialRow;
+class KuduPartialRow;
 class Schema;
 
 class ClientServerMapping;
@@ -24,7 +24,7 @@ class RowOperationsPBEncoder {
   ~RowOperationsPBEncoder();
 
   // Append this partial row to the protobuf.
-  void Add(RowOperationsPB::Type type, const PartialRow& row);
+  void Add(RowOperationsPB::Type type, const KuduPartialRow& row);
 
  private:
   RowOperationsPB* pb_;

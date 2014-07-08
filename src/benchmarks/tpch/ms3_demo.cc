@@ -59,7 +59,7 @@ class Demo {
 };
 
 
-static void UpdateRow(int order, int line, int quantity, PartialRow* row) {
+static void UpdateRow(int order, int line, int quantity, KuduPartialRow* row) {
   CHECK_OK(row->SetUInt32(tpch::kOrderKeyColIdx, order));
   CHECK_OK(row->SetUInt32(tpch::kLineNumberColIdx, line));
   CHECK_OK(row->SetUInt32(tpch::kQuantityColIdx, quantity));
@@ -110,7 +110,7 @@ static void UpdateThread(Demo *demo) {
 }
 
 // Import line, and write its order number to the argument
-static void ImportLine(Demo* demo, LineItemTsvImporter* import, PartialRow* row) {
+static void ImportLine(Demo* demo, LineItemTsvImporter* import, KuduPartialRow* row) {
   int order = import->GetNextLine(row);
   // Move the window forward
   demo->SetLastInsertedOrder(order);

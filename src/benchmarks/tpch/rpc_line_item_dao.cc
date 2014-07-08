@@ -21,10 +21,10 @@ using std::tr1::shared_ptr;
 
 namespace kudu {
 
-using client::Insert;
+using client::KuduInsert;
 using client::KuduColumnRangePredicate;
 using client::KuduSchema;
-using client::Update;
+using client::KuduUpdate;
 using std::vector;
 
 namespace {
@@ -52,14 +52,14 @@ class CountingCallback : public base::RefCountedThreadSafe<CountingCallback> {
       int nerrs = session_->CountPendingErrors();
       if (nerrs) {
         LOG(WARNING) << nerrs << " errors occured during last batch.";
-        vector<client::Error*> errors;
+        vector<client::KuduError*> errors;
         ElementDeleter d(&errors);
         bool overflow;
         session_->GetPendingErrors(&errors, &overflow);
         if (overflow) {
           LOG(WARNING) << "Error overflow occured";
         }
-        BOOST_FOREACH(client::Error* error, errors) {
+        BOOST_FOREACH(client::KuduError* error, errors) {
           LOG(WARNING) << "FAILED: " << error->failed_op().ToString();
         }
       }
@@ -90,8 +90,8 @@ void RpcLineItemDAO::Init() {
   CHECK_OK(session_->SetFlushMode(client::KuduSession::MANUAL_FLUSH));
 }
 
-void RpcLineItemDAO::WriteLine(boost::function<void(PartialRow*)> f) {
-  gscoped_ptr<Insert> insert = client_table_->NewInsert();
+void RpcLineItemDAO::WriteLine(boost::function<void(KuduPartialRow*)> f) {
+  gscoped_ptr<KuduInsert> insert = client_table_->NewInsert();
   f(insert->mutable_row());
   if (!ShouldAddKey(insert->row())) return;
   CHECK_OK(session_->Apply(&insert));
@@ -106,8 +106,8 @@ void RpcLineItemDAO::WriteLine(boost::function<void(PartialRow*)> f) {
   }
 }
 
-void RpcLineItemDAO::MutateLine(boost::function<void(PartialRow*)> f) {
-  gscoped_ptr<Update> update = client_table_->NewUpdate();
+void RpcLineItemDAO::MutateLine(boost::function<void(KuduPartialRow*)> f) {
+  gscoped_ptr<KuduUpdate> update = client_table_->NewUpdate();
   f(update->mutable_row());
   if (!ShouldAddKey(update->row())) return;
   CHECK_OK(session_->Apply(&update));
@@ -122,7 +122,7 @@ void RpcLineItemDAO::MutateLine(boost::function<void(PartialRow*)> f) {
   }
 }
 
-bool RpcLineItemDAO::ShouldAddKey(const PartialRow &row) {
+bool RpcLineItemDAO::ShouldAddKey(const KuduPartialRow &row) {
   uint32_t l_ordernumber;
   CHECK_OK(row.GetUInt32(tpch::kOrderKeyColIdx, &l_ordernumber));
   uint32_t l_linenumber;

@@ -458,7 +458,7 @@ TEST_F(TabletServerTest, TestInvalidWriteRequest_BadSchema) {
     RowOperationsPB* data = req.mutable_row_operations();
     ASSERT_STATUS_OK(SchemaToPB(bad_schema, req.mutable_schema()));
 
-    PartialRow row(&bad_schema);
+    KuduPartialRow row(&bad_schema);
     CHECK_OK(row.SetUInt32("key", 1234));
     CHECK_OK(row.SetUInt32("int_val", 5678));
     CHECK_OK(row.SetStringCopy("string_val", "hello world via RPC"));

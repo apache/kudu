@@ -95,7 +95,7 @@ class ClientTest : public KuduTest {
     // Set up two test tables inside the server. One has a single split, just so
     // that code is exercised a little more.
     ASSERT_STATUS_OK(client_->CreateTable(kTableName, schema_,
-                                          CreateTableOptions()
+                                          KuduCreateTableOptions()
                                             .WithSplitKeys(GenerateSplitKeys())));
     ASSERT_STATUS_OK(client_->CreateTable(kTable2Name, schema_));
 
@@ -149,7 +149,7 @@ class ClientTest : public KuduTest {
     ASSERT_STATUS_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
     session->SetTimeoutMillis(5000);
     for (int i = first_row; i < num_rows + first_row; i++) {
-      gscoped_ptr<Insert> insert(BuildTestRow(table, i));
+      gscoped_ptr<KuduInsert> insert(BuildTestRow(table, i));
       ASSERT_STATUS_OK(session->Apply(&insert));
     }
     ASSERT_NO_FATAL_FAILURE(WrappedFlush(session));
@@ -161,7 +161,7 @@ class ClientTest : public KuduTest {
     ASSERT_STATUS_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
     session->SetTimeoutMillis(5000);
     for (int i = lo; i < hi; i++) {
-      gscoped_ptr<Update> update(UpdateTestRow(table, i));
+      gscoped_ptr<KuduUpdate> update(UpdateTestRow(table, i));
       ASSERT_STATUS_OK(session->Apply(&update));
     }
     ASSERT_NO_FATAL_FAILURE(WrappedFlush(session));
@@ -173,16 +173,16 @@ class ClientTest : public KuduTest {
     ASSERT_STATUS_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
     session->SetTimeoutMillis(5000);
     for (int i = lo; i < hi; i++) {
-      gscoped_ptr<Delete> del(DeleteTestRow(table, i));
+      gscoped_ptr<KuduDelete> del(DeleteTestRow(table, i));
       ASSERT_STATUS_OK(session->Apply(&del));
     }
     ASSERT_NO_FATAL_FAILURE(WrappedFlush(session));
     ASSERT_NO_FATAL_FAILURE(CheckNoRpcOverflow());
   }
 
-  gscoped_ptr<Insert> BuildTestRow(KuduTable* table, int index) {
-    gscoped_ptr<Insert> insert = table->NewInsert();
-    PartialRow* row = insert->mutable_row();
+  gscoped_ptr<KuduInsert> BuildTestRow(KuduTable* table, int index) {
+    gscoped_ptr<KuduInsert> insert = table->NewInsert();
+    KuduPartialRow* row = insert->mutable_row();
     CHECK_OK(row->SetUInt32(0, index));
     CHECK_OK(row->SetUInt32(1, index * 2));
     CHECK_OK(row->SetStringCopy(2, Slice(StringPrintf("hello %d", index))));
@@ -190,18 +190,18 @@ class ClientTest : public KuduTest {
     return insert.Pass();
   }
 
-  gscoped_ptr<Update> UpdateTestRow(KuduTable* table, int index) {
-    gscoped_ptr<Update> update = table->NewUpdate();
-    PartialRow* row = update->mutable_row();
+  gscoped_ptr<KuduUpdate> UpdateTestRow(KuduTable* table, int index) {
+    gscoped_ptr<KuduUpdate> update = table->NewUpdate();
+    KuduPartialRow* row = update->mutable_row();
     CHECK_OK(row->SetUInt32(0, index));
     CHECK_OK(row->SetUInt32(1, index * 2 + 1));
     CHECK_OK(row->SetStringCopy(2, Slice(StringPrintf("hello again %d", index))));
     return update.Pass();
   }
 
-  gscoped_ptr<Delete> DeleteTestRow(KuduTable* table, int index) {
-    gscoped_ptr<Delete> del = table->NewDelete();
-    PartialRow* row = del->mutable_row();
+  gscoped_ptr<KuduDelete> DeleteTestRow(KuduTable* table, int index) {
+    gscoped_ptr<KuduDelete> del = table->NewDelete();
+    KuduPartialRow* row = del->mutable_row();
     CHECK_OK(row->SetUInt32(0, index));
     return del.Pass();
   }
@@ -347,7 +347,7 @@ class ClientTest : public KuduTest {
     }
     ASSERT_STATUS_OK(cluster_->WaitForTabletServerCount(num_replicas));
     ASSERT_STATUS_OK(client_->CreateTable(table_name, schema_,
-                                          CreateTableOptions()
+                                          KuduCreateTableOptions()
                                           .WithNumReplicas(num_replicas)
                                           .WithSplitKeys(GenerateSplitKeys())));
     ASSERT_STATUS_OK(client_->OpenTable(table_name, table));
@@ -356,12 +356,12 @@ class ClientTest : public KuduTest {
   void WrappedFlush(const shared_ptr<KuduSession>& session) {
     Status s = session->Flush();
     if (!s.ok()) {
-      vector<Error*> errors;
+      vector<KuduError*> errors;
       ElementDeleter d(&errors);
       bool overflow;
       session->GetPendingErrors(&errors, &overflow);
       ASSERT_FALSE(overflow);
-      BOOST_FOREACH(const Error* e, errors) {
+      BOOST_FOREACH(const KuduError* e, errors) {
         LOG(INFO) << "Op " << e->failed_op().ToString()
                   << " had status " << e->status().ToString();
       }
@@ -498,7 +498,7 @@ TEST_F(ClientTest, TestScanMultiTablet) {
     keys.push_back(key->ToString());
   }
   ASSERT_STATUS_OK(client_->CreateTable("TestScanMultiTablet", schema_,
-                                        kudu::client::CreateTableOptions()
+                                        kudu::client::KuduCreateTableOptions()
                                             .WithSplitKeys(keys)));
   scoped_refptr<KuduTable> table;
   ASSERT_STATUS_OK(client_->OpenTable("TestScanMultiTablet", &table));
@@ -509,7 +509,7 @@ TEST_F(ClientTest, TestScanMultiTablet) {
   ASSERT_STATUS_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
   session->SetTimeoutMillis(5000);
   for (int i = 1; i < 5; i++) {
-    gscoped_ptr<Insert> insert;
+    gscoped_ptr<KuduInsert> insert;
     insert = BuildTestRow(table.get(), 2 + (i * 10));
     ASSERT_STATUS_OK(session->Apply(&insert));
     insert = BuildTestRow(table.get(), 3 + (i * 10));
@@ -535,7 +535,7 @@ TEST_F(ClientTest, TestScanMultiTablet) {
 
   // Update every other row
   for (int i = 1; i < 5; ++i) {
-    gscoped_ptr<Update> update;
+    gscoped_ptr<KuduUpdate> update;
     update = UpdateTestRow(table.get(), 2 + i * 10);
     ASSERT_STATUS_OK(session->Apply(&update));
     update = UpdateTestRow(table.get(), 5 + i * 10);
@@ -557,7 +557,7 @@ TEST_F(ClientTest, TestScanMultiTablet) {
 
   // Delete half the rows
   for (int i = 1; i < 5; ++i) {
-    gscoped_ptr<Delete> del;
+    gscoped_ptr<KuduDelete> del;
     del = DeleteTestRow(table.get(), 5 + i*10);
     ASSERT_STATUS_OK(session->Apply(&del));
     del = DeleteTestRow(table.get(), 7 + i*10);
@@ -579,7 +579,7 @@ TEST_F(ClientTest, TestScanMultiTablet) {
 
   // Delete rest of rows
   for (int i = 1; i < 5; ++i) {
-    gscoped_ptr<Delete> del;
+    gscoped_ptr<KuduDelete> del;
     del = DeleteTestRow(table.get(), 2 + i*10);
     ASSERT_STATUS_OK(session->Apply(&del));
     del = DeleteTestRow(table.get(), 3 + i*10);
@@ -780,7 +780,7 @@ TEST_F(ClientTest, TestInsertSingleRowManualBatch) {
 
   ASSERT_STATUS_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
 
-  gscoped_ptr<Insert> insert = client_table_->NewInsert();
+  gscoped_ptr<KuduInsert> insert = client_table_->NewInsert();
   // Try inserting without specifying a key: should fail.
   ASSERT_STATUS_OK(insert->mutable_row()->SetUInt32("int_val", 54321));
   ASSERT_STATUS_OK(insert->mutable_row()->SetStringCopy("string_val", "hello world"));
@@ -803,7 +803,7 @@ static Status ApplyInsertToSession(KuduSession* session,
                                    int row_key,
                                    int int_val,
                                    const char* string_val) {
-  gscoped_ptr<Insert> insert = table->NewInsert();
+  gscoped_ptr<KuduInsert> insert = table->NewInsert();
   RETURN_NOT_OK(insert->mutable_row()->SetUInt32("key", row_key));
   RETURN_NOT_OK(insert->mutable_row()->SetUInt32("int_val", int_val));
   RETURN_NOT_OK(insert->mutable_row()->SetStringCopy("string_val", string_val));
@@ -814,7 +814,7 @@ static Status ApplyUpdateToSession(KuduSession* session,
                                    const scoped_refptr<KuduTable>& table,
                                    int row_key,
                                    int int_val) {
-  gscoped_ptr<Update> update = table->NewUpdate();
+  gscoped_ptr<KuduUpdate> update = table->NewUpdate();
   RETURN_NOT_OK(update->mutable_row()->SetUInt32("key", row_key));
   RETURN_NOT_OK(update->mutable_row()->SetUInt32("int_val", int_val));
   return session->Apply(&update);
@@ -823,7 +823,7 @@ static Status ApplyUpdateToSession(KuduSession* session,
 static Status ApplyDeleteToSession(KuduSession* session,
                                    const scoped_refptr<KuduTable>& table,
                                    int row_key) {
-  gscoped_ptr<Delete> del = table->NewDelete();
+  gscoped_ptr<KuduDelete> del = table->NewDelete();
   RETURN_NOT_OK(del->mutable_row()->SetUInt32("key", row_key));
   return session->Apply(&del);
 }
@@ -909,7 +909,7 @@ TEST_F(ClientTest, TestBatchWithPartialError) {
 
   // Fetch and verify the reported error.
   ASSERT_EQ(1, session->CountPendingErrors());
-  vector<Error*> errors;
+  vector<KuduError*> errors;
   ElementDeleter d(&errors);
   bool overflow;
   session->GetPendingErrors(&errors, &overflow);
@@ -957,7 +957,7 @@ void ClientTest::DoTestWriteWithDeadServer(WhichServerToKill which) {
   ASSERT_TRUE(s.IsIOError()) << s.ToString();
   ASSERT_EQ(1, session->CountPendingErrors());
 
-  vector<Error*> errors;
+  vector<KuduError*> errors;
   ElementDeleter d(&errors);
   bool overflow;
   session->GetPendingErrors(&errors, &overflow);
@@ -1049,7 +1049,7 @@ TEST_F(ClientTest, TestMutateDeletedRow) {
   ASSERT_STR_CONTAINS(s.ToString(), "Some errors occurred");
   // verify error
   ASSERT_EQ(1, session->CountPendingErrors());
-  vector<Error*> errors;
+  vector<KuduError*> errors;
   ElementDeleter d(&errors);
   bool overflow;
   session->GetPendingErrors(&errors, &overflow);
@@ -1067,7 +1067,7 @@ TEST_F(ClientTest, TestMutateDeletedRow) {
   ASSERT_STR_CONTAINS(s.ToString(), "Some errors occurred");
   // verify error
   ASSERT_EQ(1, session->CountPendingErrors());
-  vector<Error*> errors2;
+  vector<KuduError*> errors2;
   ElementDeleter d2(&errors2);
   session->GetPendingErrors(&errors2, &overflow);
   ASSERT_FALSE(overflow);
@@ -1090,7 +1090,7 @@ TEST_F(ClientTest, TestMutateNonexistentRow) {
   ASSERT_STR_CONTAINS(s.ToString(), "Some errors occurred");
   // verify error
   ASSERT_EQ(1, session->CountPendingErrors());
-  vector<Error*> errors;
+  vector<KuduError*> errors;
   ElementDeleter d(&errors);
   bool overflow;
   session->GetPendingErrors(&errors, &overflow);
@@ -1108,7 +1108,7 @@ TEST_F(ClientTest, TestMutateNonexistentRow) {
   ASSERT_STR_CONTAINS(s.ToString(), "Some errors occurred");
   // verify error
   ASSERT_EQ(1, session->CountPendingErrors());
-  vector<Error*> errors2;
+  vector<KuduError*> errors2;
   ElementDeleter d2(&errors2);
   session->GetPendingErrors(&errors2, &overflow);
   ASSERT_FALSE(overflow);
@@ -1126,7 +1126,7 @@ TEST_F(ClientTest, TestWriteWithBadColumn) {
   // Try to do a write with the bad schema.
   shared_ptr<KuduSession> session = client_->NewSession();
   ASSERT_STATUS_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
-  gscoped_ptr<Insert> insert = table->NewInsert();
+  gscoped_ptr<KuduInsert> insert = table->NewInsert();
   ASSERT_STATUS_OK(insert->mutable_row()->SetUInt32("key", 12345));
   Status s = insert->mutable_row()->SetUInt32("bad_col", 12345);
   ASSERT_TRUE(s.IsNotFound());
@@ -1141,7 +1141,7 @@ TEST_F(ClientTest, TestWriteWithBadSchema) {
 
   // Remove the 'int_val' column.
   // Now the schema on the client is "old"
-  AlterTableBuilder alter;
+  KuduAlterTableBuilder alter;
   alter.DropColumn("int_val");
   ASSERT_STATUS_OK(client_->AlterTable(kTableName, alter));
 
@@ -1154,7 +1154,7 @@ TEST_F(ClientTest, TestWriteWithBadSchema) {
   ASSERT_FALSE(s.ok());
 
   // Verify the specific error.
-  vector<Error*> errors;
+  vector<KuduError*> errors;
   ElementDeleter d(&errors);
   bool overflow;
   session->GetPendingErrors(&errors, &overflow);
@@ -1173,7 +1173,7 @@ TEST_F(ClientTest, TestBasicAlterOperations) {
   // because multi-tablet tables are prone to deadlocking.
   //
   // See KUDU-273 for more details.
-  AlterTableBuilder alter;
+  KuduAlterTableBuilder alter;
 
   // test that remove key should throws an error
   {

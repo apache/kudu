@@ -23,7 +23,7 @@
 
 namespace kudu {
 
-class PartialRow;
+class KuduPartialRow;
 
 namespace tserver {
 class TabletServerServiceProxy;

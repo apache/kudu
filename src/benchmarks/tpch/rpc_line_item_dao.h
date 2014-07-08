@@ -27,8 +27,8 @@ class RpcLineItemDAO : public LineItemDAO {
  public:
   RpcLineItemDAO(const string& master_address, const string& table_name,
                  const int batch_size, const int mstimeout = 5000);
-  virtual void WriteLine(boost::function<void(PartialRow*)> f) OVERRIDE;
-  virtual void MutateLine(boost::function<void(PartialRow*)> f) OVERRIDE;
+  virtual void WriteLine(boost::function<void(KuduPartialRow*)> f) OVERRIDE;
+  virtual void MutateLine(boost::function<void(KuduPartialRow*)> f) OVERRIDE;
   virtual void Init() OVERRIDE;
   virtual void FinishWriting() OVERRIDE;
   virtual void OpenScanner(const client::KuduSchema &query_schema,
@@ -42,7 +42,7 @@ class RpcLineItemDAO : public LineItemDAO {
  private:
   // Sending the same key more than once in the same batch crashes the server
   // This method is used to know if it's safe to add the row in that regard
-  bool ShouldAddKey(const PartialRow& row);
+  bool ShouldAddKey(const KuduPartialRow& row);
 
   simple_spinlock lock_;
   shared_ptr<client::KuduClient> client_;

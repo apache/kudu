@@ -29,7 +29,7 @@ using tserver::TabletServerServiceProxy;
 using tserver::WriteRequestPB;
 using tserver::WriteResponsePB;
 using rpc::RpcController;
-using kudu::client::Insert;
+using kudu::client::KuduInsert;
 using kudu::client::KuduClient;
 using kudu::client::KuduSession;
 using kudu::client::KuduTable;
@@ -70,10 +70,10 @@ void InsertConsumer::BatchFinished(const Status& s) {
   request_pending_ = false;
   if (!s.ok()) {
     bool overflow;
-    vector<client::Error*> errors;
+    vector<client::KuduError*> errors;
     ElementDeleter d(&errors);
     session_->GetPendingErrors(&errors, &overflow);
-    BOOST_FOREACH(const client::Error* error, errors) {
+    BOOST_FOREACH(const client::KuduError* error, errors) {
       LOG(WARNING) << "Failed to insert row " << error->failed_op().ToString()
                    << ": " << error->status().ToString();
     }
@@ -96,8 +96,8 @@ void InsertConsumer::ConsumeJSON(const Slice& json_slice) {
 
   string created_at = TwitterEventParser::ReformatTime(event_.tweet_event.created_at);
 
-  gscoped_ptr<Insert> ins = table_->NewInsert();
-  PartialRow* r = ins->mutable_row();
+  gscoped_ptr<KuduInsert> ins = table_->NewInsert();
+  KuduPartialRow* r = ins->mutable_row();
   CHECK_OK(r->SetUInt64("tweet_id", event_.tweet_event.tweet_id));
   CHECK_OK(r->SetStringCopy("text", event_.tweet_event.text));
   CHECK_OK(r->SetStringCopy("source", event_.tweet_event.source));

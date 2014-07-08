@@ -40,7 +40,7 @@
 #include "util/test_util.h"
 #include "util/hdr_histogram.h"
 
-using kudu::client::CreateTableOptions;
+using kudu::client::KuduCreateTableOptions;
 using kudu::client::KuduClient;
 using kudu::client::KuduClientOptions;
 using kudu::client::KuduColumnSchema;
@@ -51,7 +51,7 @@ using kudu::client::KuduScanner;
 using kudu::client::KuduSchema;
 using kudu::client::KuduSession;
 using kudu::client::KuduTable;
-using kudu::client::Insert;
+using kudu::client::KuduInsert;
 
 using strings::Substitute;
 using std::tr1::shared_ptr;
@@ -180,7 +180,7 @@ class ChainGenerator {
     // intersect.
     uint64_t this_key = (Rand64() << 8) | chain_idx_;
     uint64_t ts = GetCurrentTimeMicros();
-    gscoped_ptr<Insert> insert = table->NewInsert();
+    gscoped_ptr<KuduInsert> insert = table->NewInsert();
     CHECK_OK(insert->mutable_row()->SetUInt64(kKeyColumnName, this_key));
     CHECK_OK(insert->mutable_row()->SetUInt64(kInsertTsColumnName, ts));
     CHECK_OK(insert->mutable_row()->SetUInt64(kLinkColumnName, prev_key_));
@@ -226,9 +226,9 @@ vector<string> LinkedListTest::GenerateSplitKeys() const {
 
 Status LinkedListTest::LoadLinkedList(const MonoDelta& run_for,
                                       int64_t *written_count) {
-  CreateTableOptions opts;
+  KuduCreateTableOptions opts;
   RETURN_NOT_OK_PREPEND(client_->CreateTable(kTableName, schema_,
-                                             CreateTableOptions()
+                                             KuduCreateTableOptions()
                                              .WithSplitKeys(GenerateSplitKeys())
                                              .WithNumReplicas(FLAGS_num_replicas)),
                         "Failed to create table");
@@ -276,10 +276,10 @@ Status LinkedListTest::LoadLinkedList(const MonoDelta& run_for,
     latency_histogram_.Increment(elapsed);
 
     if (!s.ok()) {
-      vector<client::Error*> errors;
+      vector<client::KuduError*> errors;
       bool overflow;
       session->GetPendingErrors(&errors, &overflow);
-      BOOST_FOREACH(client::Error* err, errors) {
+      BOOST_FOREACH(client::KuduError* err, errors) {
         LOG(WARNING) << "Flush error for row " << err->failed_op().ToString()
                      << ": " << err->status().ToString();
         s = err->status();

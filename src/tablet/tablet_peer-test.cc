@@ -107,7 +107,7 @@ class TabletPeerTest : public KuduTabletTest {
     write_req->set_tablet_id(tablet()->tablet_id());
     CHECK_OK(SchemaToPB(schema, write_req->mutable_schema()));
 
-    PartialRow row(&schema);
+    KuduPartialRow row(&schema);
     CHECK_OK(row.SetUInt32("key", insert_counter_++));
 
     RowOperationsPBEncoder enc(write_req->mutable_row_operations());
@@ -123,7 +123,7 @@ class TabletPeerTest : public KuduTabletTest {
     write_req->set_tablet_id(tablet()->tablet_id());
     CHECK_OK(SchemaToPB(schema, write_req->mutable_schema()));
 
-    PartialRow row(&schema);
+    KuduPartialRow row(&schema);
     CHECK_OK(row.SetUInt32("key", delete_counter_++));
 
     RowOperationsPBEncoder enc(write_req->mutable_row_operations());

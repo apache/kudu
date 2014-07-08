@@ -12,23 +12,21 @@
 namespace kudu {
 
 namespace client {
-class WriteOperation;
+class KuduWriteOperation;
 } // namespace client
 
-class Arena;
-class RowChangeList;
 class Schema;
 
 // A row which may only contain values for a subset of the columns.
 // This type contains a normal contiguous row, plus a bitfield indicating
 // which columns have been set. Additionally, this type may optionally own
 // copies of indirect data (eg STRING values).
-class PartialRow {
+class KuduPartialRow {
  public:
   // The given Schema object must remain valid for the lifetime of this
   // row.
-  explicit PartialRow(const Schema* schema);
-  virtual ~PartialRow();
+  explicit KuduPartialRow(const Schema* schema);
+  virtual ~KuduPartialRow();
 
   //------------------------------------------------------------
   // Setters
@@ -136,7 +134,7 @@ class PartialRow {
  private:
   friend class RowOperationsPBEncoder;
   friend class LocalLineItemDAO; // for as_row_data_.
-  friend class client::WriteOperation;   // for row_data_.
+  friend class client::KuduWriteOperation;   // for row_data_.
 
   template<DataType TYPE>
   Status Set(const Slice& col_name,
@@ -182,7 +180,7 @@ class PartialRow {
   // or NULL can have undefined bytes.
   uint8_t* row_data_;
 
-  DISALLOW_COPY_AND_ASSIGN(PartialRow);
+  DISALLOW_COPY_AND_ASSIGN(KuduPartialRow);
 };
 
 } // namespace kudu

@@ -37,7 +37,7 @@ RowOperationsPBEncoder::RowOperationsPBEncoder(RowOperationsPB* pb)
 RowOperationsPBEncoder::~RowOperationsPBEncoder() {
 }
 
-void RowOperationsPBEncoder::Add(RowOperationsPB::Type op_type, const PartialRow& partial_row) {
+void RowOperationsPBEncoder::Add(RowOperationsPB::Type op_type, const KuduPartialRow& partial_row) {
   const Schema* schema = partial_row.schema();
 
   // See wire_protocol.pb for a description of the format.

@@ -240,7 +240,7 @@ Status SysTabletsTable::AddTabletsToPB(const vector<TabletInfo*>& tablets,
                                        RowOperationsPB::Type op_type,
                                        RowOperationsPB* ops) const {
   faststring metadata_buf;
-  PartialRow row(&schema_);
+  KuduPartialRow row(&schema_);
   RowOperationsPBEncoder enc(ops);
   BOOST_FOREACH(const TabletInfo *tablet, tablets) {
     if (!pb_util::SerializeToString(tablet->metadata().dirty().pb, &metadata_buf)) {
@@ -286,7 +286,7 @@ Status SysTabletsTable::DeleteTablets(const vector<TabletInfo*>& tablets) {
   RETURN_NOT_OK(SchemaToPB(schema_, req.mutable_schema()));
 
   RowOperationsPBEncoder enc(req.mutable_row_operations());
-  PartialRow row(&schema_);
+  KuduPartialRow row(&schema_);
   BOOST_FOREACH(const TabletInfo* tablet, tablets) {
     CHECK_OK(row.SetString(kSysTabletsColTableId, tablet->table()->id()));
     CHECK_OK(row.SetString(kSysTabletsColTabletId, tablet->tablet_id()));
@@ -363,7 +363,7 @@ Status SysTablesTable::AddTable(const TableInfo *table) {
   req.set_tablet_id(kSysTablesTabletId);
   RETURN_NOT_OK(SchemaToPB(schema_, req.mutable_schema()));
 
-  PartialRow row(&schema_);
+  KuduPartialRow row(&schema_);
   CHECK_OK(row.SetString(kSysTablesColTableId, table->id()));
   CHECK_OK(row.SetString(kSysTablesColMetadata, metadata_buf));
   RowOperationsPBEncoder enc(req.mutable_row_operations());
@@ -385,7 +385,7 @@ Status SysTablesTable::UpdateTable(const TableInfo *table) {
   req.set_tablet_id(kSysTablesTabletId);
   RETURN_NOT_OK(SchemaToPB(schema_, req.mutable_schema()));
 
-  PartialRow row(&schema_);
+  KuduPartialRow row(&schema_);
   CHECK_OK(row.SetString(kSysTablesColTableId, table->id()));
   CHECK_OK(row.SetString(kSysTablesColMetadata, metadata_buf));
   RowOperationsPBEncoder enc(req.mutable_row_operations());
@@ -401,7 +401,7 @@ Status SysTablesTable::DeleteTable(const TableInfo *table) {
   req.set_tablet_id(kSysTablesTabletId);
   RETURN_NOT_OK(SchemaToPB(schema_, req.mutable_schema()));
 
-  PartialRow row(&schema_);
+  KuduPartialRow row(&schema_);
   CHECK_OK(row.SetString(kSysTablesColTableId, table->id()));
 
   RowOperationsPBEncoder enc(req.mutable_row_operations());

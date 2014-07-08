@@ -192,7 +192,7 @@ void MasterTest::CreateTable(const string& table_name,
 
   ASSERT_STATUS_OK(client->CreateTable(
                      table_name, schema,
-                     kudu::client::CreateTableOptions()
+                     kudu::client::KuduCreateTableOptions()
                         .WithSplitKeys(keys)
                         .WaitAssignment(false)));
 }

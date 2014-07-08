@@ -32,7 +32,7 @@ class LocalLineItemDAOTest : public KuduTest {
   gscoped_ptr<LineItemDAO> dao_;
   KuduSchema schema_;
 
-  static void BuildTestRow(int order, int line, PartialRow* row) {
+  static void BuildTestRow(int order, int line, KuduPartialRow* row) {
     CHECK_OK(row->SetUInt32(tpch::kOrderKeyColIdx, order));
     CHECK_OK(row->SetUInt32(tpch::kLineNumberColIdx, line));
     CHECK_OK(row->SetUInt32(tpch::kPartKeyColIdx, 12345));

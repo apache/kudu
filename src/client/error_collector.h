@@ -13,8 +13,8 @@
 namespace kudu {
 namespace client {
 
-class Error;
-class Insert;
+class KuduError;
+class KuduInsert;
 
 namespace internal {
 
@@ -22,20 +22,20 @@ class ErrorCollector : public base::RefCountedThreadSafe<ErrorCollector> {
  public:
   ErrorCollector();
 
-  void AddError(gscoped_ptr<Error> error);
+  void AddError(gscoped_ptr<KuduError> error);
 
   // See KuduSession for details.
   int CountErrors() const;
 
   // See KuduSession for details.
-  void GetErrors(std::vector<Error*>* errors, bool* overflowed);
+  void GetErrors(std::vector<KuduError*>* errors, bool* overflowed);
 
  private:
   friend class base::RefCountedThreadSafe<ErrorCollector>;
   virtual ~ErrorCollector();
 
   mutable simple_spinlock lock_;
-  std::vector<Error*> errors_;
+  std::vector<KuduError*> errors_;
 
   DISALLOW_COPY_AND_ASSIGN(ErrorCollector);
 };

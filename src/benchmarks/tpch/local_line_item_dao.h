@@ -21,8 +21,8 @@ class LocalLineItemDAO : public LineItemDAO {
   explicit LocalLineItemDAO(const string &path);
   virtual ~LocalLineItemDAO() OVERRIDE;
 
-  virtual void WriteLine(boost::function<void(PartialRow*)> f) OVERRIDE;
-  virtual void MutateLine(boost::function<void(PartialRow*)> f) OVERRIDE;
+  virtual void WriteLine(boost::function<void(KuduPartialRow*)> f) OVERRIDE;
+  virtual void MutateLine(boost::function<void(KuduPartialRow*)> f) OVERRIDE;
   virtual void Init() OVERRIDE;
   virtual void FinishWriting() OVERRIDE;
   virtual void OpenScanner(const client::KuduSchema& query_schema,
@@ -32,8 +32,8 @@ class LocalLineItemDAO : public LineItemDAO {
   virtual bool IsTableEmpty() OVERRIDE;
 
  private:
-  void WriteLine(const PartialRow& row);
-  void MutateLine(const PartialRow& row);
+  void WriteLine(const KuduPartialRow& row);
+  void MutateLine(const KuduPartialRow& row);
 
   kudu::FsManager fs_manager_;
   gscoped_ptr<kudu::tablet::Tablet> tablet_;

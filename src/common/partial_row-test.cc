@@ -26,7 +26,7 @@ class PartialRowTest : public KuduTest {
 };
 
 TEST_F(PartialRowTest, UnitTest) {
-  PartialRow row(&schema_);
+  KuduPartialRow row(&schema_);
 
   // Initially all columns are unset.
   EXPECT_FALSE(row.IsColumnSet(0));

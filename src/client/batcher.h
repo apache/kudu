@@ -19,7 +19,7 @@ namespace client {
 
 class KuduClient;
 class KuduSession;
-class WriteOperation;
+class KuduWriteOperation;
 class RemoteTabletServer;
 
 namespace internal {
@@ -64,7 +64,7 @@ class Batcher : public base::RefCountedThreadSafe<Batcher> {
   // Add a new operation to the batch. Requires that the batch has not yet been flushed.
   // TODO: in other flush modes, this may not be the case -- need to
   // update this when they're implemented.
-  Status Add(gscoped_ptr<WriteOperation> write_op);
+  Status Add(gscoped_ptr<KuduWriteOperation> write_op);
 
   // Return true if any operations are still pending. An operation is no longer considered
   // pending once it has either errored or succeeded.  Operations are considering pending

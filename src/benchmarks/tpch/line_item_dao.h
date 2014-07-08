@@ -10,15 +10,15 @@
 
 namespace kudu {
 
-class PartialRow;
+class KuduPartialRow;
 class RowBlock;
 
 // Abstract class to read/write line item rows
 class LineItemDAO {
  public:
   // Parameter function defines write/mutate operation.
-  virtual void WriteLine(boost::function<void(PartialRow*)> f) = 0;
-  virtual void MutateLine(boost::function<void(PartialRow*)> f) = 0;
+  virtual void WriteLine(boost::function<void(KuduPartialRow*)> f) = 0;
+  virtual void MutateLine(boost::function<void(KuduPartialRow*)> f) = 0;
   virtual void Init() = 0;
   virtual void FinishWriting() = 0;
   virtual void OpenScanner(const client::KuduSchema& query_schema,

@@ -22,6 +22,7 @@
 #include "master/master.h" // TODO: remove this include - just needed for default port
 #include "master/master.proxy.h"
 #include "rpc/messenger.h"
+#include "tserver/tserver_service.proxy.h"
 #include "util/async_util.h"
 #include "util/countdown_latch.h"
 #include "util/net/dns_resolver.h"
@@ -33,8 +34,6 @@ using std::string;
 using std::tr1::shared_ptr;
 using std::vector;
 using strings::Substitute;
-using kudu::RowwiseRowBlockPB;
-using kudu::master::MasterServiceProxy;
 using kudu::master::AlterTableRequestPB;
 using kudu::master::AlterTableResponsePB;
 using kudu::master::CreateTableRequestPB;
@@ -53,9 +52,7 @@ using kudu::master::MasterServiceProxy;
 using kudu::master::TabletLocationsPB;
 using kudu::tserver::ColumnRangePredicatePB;
 using kudu::tserver::NewScanRequestPB;
-using kudu::tserver::ScanRequestPB;
 using kudu::tserver::ScanResponsePB;
-using kudu::tserver::TabletServerServiceProxy;
 using kudu::rpc::MessengerBuilder;
 using kudu::rpc::RpcController;
 
@@ -200,12 +197,12 @@ Status KuduClient::InitLocalHostNames() {
 
 Status KuduClient::CreateTable(const std::string& table_name,
                                const KuduSchema& schema) {
-  return CreateTable(table_name, schema, CreateTableOptions());
+  return CreateTable(table_name, schema, KuduCreateTableOptions());
 }
 
 Status KuduClient::CreateTable(const std::string& table_name,
                                const KuduSchema& schema,
-                               const CreateTableOptions& opts) {
+                               const KuduCreateTableOptions& opts) {
   CreateTableRequestPB req;
   CreateTableResponsePB resp;
   RpcController rpc;
@@ -284,7 +281,7 @@ Status KuduClient::DeleteTable(const std::string& table_name) {
 }
 
 Status KuduClient::AlterTable(const std::string& table_name,
-                              const AlterTableBuilder& alter) {
+                              const KuduAlterTableBuilder& alter) {
   AlterTableRequestPB req;
   AlterTableResponsePB resp;
   RpcController rpc;
@@ -450,26 +447,26 @@ Status KuduClient::GetTabletServer(const std::string& tablet_id,
 // CreateTableOptions
 ////////////////////////////////////////////////////////////
 
-CreateTableOptions::CreateTableOptions()
+KuduCreateTableOptions::KuduCreateTableOptions()
   : wait_assignment_(true),
     num_replicas_(0) {
 }
 
-CreateTableOptions::~CreateTableOptions() {
+KuduCreateTableOptions::~KuduCreateTableOptions() {
 }
 
-CreateTableOptions& CreateTableOptions::WithSplitKeys(
+KuduCreateTableOptions& KuduCreateTableOptions::WithSplitKeys(
     const std::vector<std::string>& keys) {
   split_keys_ = keys;
   return *this;
 }
 
-CreateTableOptions& CreateTableOptions::WithNumReplicas(int num_replicas) {
+KuduCreateTableOptions& KuduCreateTableOptions::WithNumReplicas(int num_replicas) {
   num_replicas_ = num_replicas;
   return *this;
 }
 
-CreateTableOptions& CreateTableOptions::WaitAssignment(bool wait_assignment) {
+KuduCreateTableOptions& KuduCreateTableOptions::WaitAssignment(bool wait_assignment) {
   wait_assignment_ = wait_assignment;
   return *this;
 }
@@ -514,29 +511,29 @@ Status KuduTable::Open() {
   return Status::OK();
 }
 
-gscoped_ptr<Insert> KuduTable::NewInsert() {
-  return gscoped_ptr<Insert>(new Insert(this));
+gscoped_ptr<KuduInsert> KuduTable::NewInsert() {
+  return gscoped_ptr<KuduInsert>(new KuduInsert(this));
 }
 
-gscoped_ptr<Update> KuduTable::NewUpdate() {
-  return gscoped_ptr<Update>(new Update(this));
+gscoped_ptr<KuduUpdate> KuduTable::NewUpdate() {
+  return gscoped_ptr<KuduUpdate>(new KuduUpdate(this));
 }
 
-gscoped_ptr<Delete> KuduTable::NewDelete() {
-  return gscoped_ptr<Delete>(new Delete(this));
+gscoped_ptr<KuduDelete> KuduTable::NewDelete() {
+  return gscoped_ptr<KuduDelete>(new KuduDelete(this));
 }
 
 ////////////////////////////////////////////////////////////
 // Error
 ////////////////////////////////////////////////////////////
 
-Error::Error(gscoped_ptr<WriteOperation> failed_op,
+KuduError::KuduError(gscoped_ptr<KuduWriteOperation> failed_op,
              const Status& status) :
   failed_op_(failed_op.Pass()),
   status_(status) {
 }
 
-Error::~Error() {
+KuduError::~KuduError() {
 }
 
 ////////////////////////////////////////////////////////////
@@ -640,28 +637,27 @@ bool KuduSession::HasPendingOperations() const {
   return false;
 }
 
-// WriteOperation classes
-Status KuduSession::Apply(gscoped_ptr<Insert>* scoped_write_op) {
-  Status s = Apply(implicit_cast<WriteOperation*>(scoped_write_op->get()));
-  if (s.ok()) {
-    ignore_result<>(scoped_write_op->release());
-  }
-  return s;
-}
-
-// WriteOperation classes
-Status KuduSession::Apply(gscoped_ptr<Update>* scoped_write_op) {
-  Status s = Apply(implicit_cast<WriteOperation*>(scoped_write_op->get()));
-  if (s.ok()) {
-    ignore_result<>(scoped_write_op->release());
-  }
-  return s;
-}
-
 // Template function specification for KuduSession::Apply on derived
-// WriteOperation classes
-Status KuduSession::Apply(gscoped_ptr<Delete>* scoped_write_op) {
-  Status s = Apply(implicit_cast<WriteOperation*>(scoped_write_op->get()));
+// KuduWriteOperation classes
+
+Status KuduSession::Apply(gscoped_ptr<KuduInsert>* scoped_write_op) {
+  Status s = Apply(implicit_cast<KuduWriteOperation*>(scoped_write_op->get()));
+  if (s.ok()) {
+    ignore_result<>(scoped_write_op->release());
+  }
+  return s;
+}
+
+Status KuduSession::Apply(gscoped_ptr<KuduUpdate>* scoped_write_op) {
+  Status s = Apply(implicit_cast<KuduWriteOperation*>(scoped_write_op->get()));
+  if (s.ok()) {
+    ignore_result<>(scoped_write_op->release());
+  }
+  return s;
+}
+
+Status KuduSession::Apply(gscoped_ptr<KuduDelete>* scoped_write_op) {
+  Status s = Apply(implicit_cast<KuduWriteOperation*>(scoped_write_op->get()));
   if (s.ok()) {
     ignore_result<>(scoped_write_op->release());
   }
@@ -670,12 +666,12 @@ Status KuduSession::Apply(gscoped_ptr<Delete>* scoped_write_op) {
 
 // Actual apply method, with WriteOperation pointer
 // Takes ownership (deletes) iff operation succeeds
-Status KuduSession::Apply(WriteOperation* write_op) {
+Status KuduSession::Apply(KuduWriteOperation* write_op) {
   if (!write_op->row().IsKeySet()) {
     return Status::IllegalState("Key not specified", write_op->ToString());
   }
 
-  batcher_->Add(gscoped_ptr<WriteOperation>(write_op).Pass());
+  batcher_->Add(gscoped_ptr<KuduWriteOperation>(write_op).Pass());
 
   if (flush_mode_ == AUTO_FLUSH_SYNC) {
     RETURN_NOT_OK(Flush());
@@ -695,36 +691,32 @@ int KuduSession::CountPendingErrors() const {
   return error_collector_->CountErrors();
 }
 
-void KuduSession::GetPendingErrors(std::vector<Error*>* errors, bool* overflowed) {
+void KuduSession::GetPendingErrors(std::vector<KuduError*>* errors, bool* overflowed) {
   error_collector_->GetErrors(errors, overflowed);
 }
 
 ////////////////////////////////////////////////////////////
 // AlterTable
 ////////////////////////////////////////////////////////////
-AlterTableBuilder::AlterTableBuilder()
+KuduAlterTableBuilder::KuduAlterTableBuilder()
   : alter_steps_(new AlterTableRequestPB) {
 }
 
-AlterTableBuilder::~AlterTableBuilder() {
-  delete alter_steps_;
-}
-
-void AlterTableBuilder::Reset() {
+void KuduAlterTableBuilder::Reset() {
   alter_steps_->clear_alter_schema_steps();
 }
 
-bool AlterTableBuilder::has_changes() const {
+bool KuduAlterTableBuilder::has_changes() const {
   return alter_steps_->has_new_table_name() ||
          alter_steps_->alter_schema_steps_size() > 0;
 }
 
-Status AlterTableBuilder::RenameTable(const string& new_name) {
+Status KuduAlterTableBuilder::RenameTable(const string& new_name) {
   alter_steps_->set_new_table_name(new_name);
   return Status::OK();
 }
 
-Status AlterTableBuilder::AddColumn(const std::string& name,
+Status KuduAlterTableBuilder::AddColumn(const std::string& name,
                                     DataType type,
                                     const void *default_value,
                                     KuduColumnStorageAttributes attributes) {
@@ -741,7 +733,7 @@ Status AlterTableBuilder::AddColumn(const std::string& name,
   return Status::OK();
 }
 
-Status AlterTableBuilder::AddNullableColumn(const std::string& name,
+Status KuduAlterTableBuilder::AddNullableColumn(const std::string& name,
                                             DataType type,
                                             KuduColumnStorageAttributes attributes) {
   AlterTableRequestPB::Step* step = alter_steps_->add_alter_schema_steps();
@@ -752,14 +744,14 @@ Status AlterTableBuilder::AddNullableColumn(const std::string& name,
   return Status::OK();
 }
 
-Status AlterTableBuilder::DropColumn(const std::string& name) {
+Status KuduAlterTableBuilder::DropColumn(const std::string& name) {
   AlterTableRequestPB::Step* step = alter_steps_->add_alter_schema_steps();
   step->set_type(AlterTableRequestPB::DROP_COLUMN);
   step->mutable_drop_column()->set_name(name);
   return Status::OK();
 }
 
-Status AlterTableBuilder::RenameColumn(const std::string& old_name,
+Status KuduAlterTableBuilder::RenameColumn(const std::string& old_name,
                                        const std::string& new_name) {
   AlterTableRequestPB::Step* step = alter_steps_->add_alter_schema_steps();
   step->set_type(AlterTableRequestPB::RENAME_COLUMN);

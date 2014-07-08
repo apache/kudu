@@ -126,7 +126,7 @@ struct InFlightOp {
   State state;
 
   // The actual operation.
-  gscoped_ptr<WriteOperation> write_op;
+  gscoped_ptr<KuduWriteOperation> write_op;
 
   gscoped_ptr<EncodedKey> key;
 
@@ -359,7 +359,7 @@ void Batcher::FlushAsync(const StatusCallback& cb) {
   FlushBuffersIfReady();
 }
 
-Status Batcher::Add(gscoped_ptr<WriteOperation> write_op) {
+Status Batcher::Add(gscoped_ptr<KuduWriteOperation> write_op) {
   // As soon as we get the op, start looking up where it belongs,
   // so that when the user calls Flush, we are ready to go.
   InFlightOp* op = new InFlightOp;
@@ -406,7 +406,7 @@ void Batcher::MarkInFlightOpFailed(InFlightOp* op, const Status& s) {
 void Batcher::MarkInFlightOpFailedUnlocked(InFlightOp* op, const Status& s) {
   CHECK_EQ(1, ops_.erase(op))
     << "Could not remove op " << op->ToString() << " from in-flight list";
-  gscoped_ptr<Error> error(new Error(op->write_op.Pass(), s));
+  gscoped_ptr<KuduError> error(new KuduError(op->write_op.Pass(), s));
   error_collector_->AddError(error.Pass());
   had_errors_ = true;
   delete op;
@@ -688,7 +688,7 @@ void Batcher::FinishRpc(InFlightRpc* rpc, const Status& s) {
   if (!s.ok()) {
     // Mark each of the rows in the write op as failed, since the whole RPC failed.
     BOOST_FOREACH(InFlightOp* op, rpc->ops) {
-      gscoped_ptr<Error> error(new Error(op->write_op.Pass(), s));
+      gscoped_ptr<KuduError> error(new KuduError(op->write_op.Pass(), s));
       error_collector_->AddError(error.Pass());
     }
 
@@ -719,11 +719,11 @@ void Batcher::FinishRpc(InFlightRpc* rpc, const Status& s) {
                  << rpc->response.DebugString();
       continue;
     }
-    gscoped_ptr<WriteOperation> op = rpc->ops[err_pb.row_index()]->write_op.Pass();
+    gscoped_ptr<KuduWriteOperation> op = rpc->ops[err_pb.row_index()]->write_op.Pass();
     VLOG(1) << "Error on op " << op->ToString() << ": "
             << err_pb.error().ShortDebugString();
     Status op_status = StatusFromPB(err_pb.error());
-    gscoped_ptr<Error> error(new Error(op.Pass(), op_status));
+    gscoped_ptr<KuduError> error(new KuduError(op.Pass(), op_status));
     error_collector_->AddError(error.Pass());
     MarkHadErrors();
   }

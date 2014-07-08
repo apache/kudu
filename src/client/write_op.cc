@@ -10,14 +10,14 @@ namespace client {
 
 // WriteOperation --------------------------------------------------------------
 
-WriteOperation::WriteOperation(KuduTable *table)
+KuduWriteOperation::KuduWriteOperation(KuduTable *table)
   : table_(table),
     row_(table->schema().schema_.get()) {
 }
 
-WriteOperation::~WriteOperation() {}
+KuduWriteOperation::~KuduWriteOperation() {}
 
-gscoped_ptr<EncodedKey> WriteOperation::CreateKey() const {
+gscoped_ptr<EncodedKey> KuduWriteOperation::CreateKey() const {
   CHECK(row_.IsKeySet()) << "key must be set";
 
   ConstContiguousRow row(*row_.schema(), row_.row_data_);
@@ -31,27 +31,27 @@ gscoped_ptr<EncodedKey> WriteOperation::CreateKey() const {
 
 // Insert -----------------------------------------------------------------------
 
-Insert::Insert(KuduTable *table)
-  : WriteOperation(table) {
+KuduInsert::KuduInsert(KuduTable *table)
+  : KuduWriteOperation(table) {
 }
 
-Insert::~Insert() {}
+KuduInsert::~KuduInsert() {}
 
 // Update -----------------------------------------------------------------------
 
-Update::Update(KuduTable *table)
-  : WriteOperation(table) {
+KuduUpdate::KuduUpdate(KuduTable *table)
+  : KuduWriteOperation(table) {
 }
 
-Update::~Update() {}
+KuduUpdate::~KuduUpdate() {}
 
 // Delete -----------------------------------------------------------------------
 
-Delete::Delete(KuduTable *table)
-  : WriteOperation(table) {
+KuduDelete::KuduDelete(KuduTable *table)
+  : KuduWriteOperation(table) {
 }
 
-Delete::~Delete() {}
+KuduDelete::~KuduDelete() {}
 
 } // namespace client
 } // namespace kudu

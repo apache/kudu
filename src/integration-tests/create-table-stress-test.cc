@@ -17,7 +17,7 @@
 #include "util/test_util.h"
 
 using std::tr1::shared_ptr;
-using kudu::client::CreateTableOptions;
+using kudu::client::KuduCreateTableOptions;
 using kudu::client::KuduClient;
 using kudu::client::KuduClientOptions;
 using kudu::client::KuduColumnSchema;
@@ -91,7 +91,7 @@ void CreateTableStressTest::CreateBigTable(const string& table_name) {
 
   ASSERT_STATUS_OK(client_->CreateTable(
                      table_name, schema_,
-                     kudu::client::CreateTableOptions()
+                     kudu::client::KuduCreateTableOptions()
                         .WithSplitKeys(keys)
                         .WaitAssignment(false)));
 }

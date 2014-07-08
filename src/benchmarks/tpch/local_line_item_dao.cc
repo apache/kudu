@@ -55,26 +55,26 @@ void LocalLineItemDAO::Init() {
   CHECK_OK(tablet_->Open());
 }
 
-void LocalLineItemDAO::WriteLine(boost::function<void(PartialRow*)> f) {
-  PartialRow row(schema_.schema_.get());
+void LocalLineItemDAO::WriteLine(boost::function<void(KuduPartialRow*)> f) {
+  KuduPartialRow row(schema_.schema_.get());
   f(&row);
   WriteLine(row);
 }
 
-void LocalLineItemDAO::MutateLine(boost::function<void(PartialRow*)> f) {
-  PartialRow row(schema_.schema_.get());
+void LocalLineItemDAO::MutateLine(boost::function<void(KuduPartialRow*)> f) {
+  KuduPartialRow row(schema_.schema_.get());
   f(&row);
   MutateLine(row);
 }
 
-void LocalLineItemDAO::WriteLine(const PartialRow& row) {
+void LocalLineItemDAO::WriteLine(const KuduPartialRow& row) {
   // TODO: This code should use InsertUnlocked().
   ConstContiguousRow ccrow(*row.schema(), row.row_data_);
   CHECK_OK(tablet_->InsertForTesting(&tx_state_, ccrow));
   tx_state_.Reset();
 }
 
-void LocalLineItemDAO::MutateLine(const PartialRow& row) {
+void LocalLineItemDAO::MutateLine(const KuduPartialRow& row) {
   LOG(FATAL) << "Updates not implemented on local DAO";
   // Call MutateRow with context, rb, schema and a list of changes such as:
   // RowChangeListEncoder(schema_, &update_buf).AddColumnUpdate(col_idx, &new_val);

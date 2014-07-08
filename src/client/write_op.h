@@ -21,32 +21,32 @@ class Batcher;
 
 class KuduTable;
 
-// A write operation operates on a single KuduTable and single Partial row
-// The WriteOperation class itself allows the internal::batcher to get to the
+// A write operation operates on a single table and partial row.
+// The KuduWriteOperation class itself allows the batcher to get to the
 // generic information that it needs to process all write operations.
 //
 // On its own, the class does not represent any specific change and thus cannot
 // be constructed independently.
 //
-// WriteOperation also holds shared ownership of its KuduTable to allow client's
-// scope to end while the WriteOperation is still alive.
-class WriteOperation {
+// KuduWriteOperation also holds shared ownership of its KuduTable to allow client's
+// scope to end while the KuduWriteOperation is still alive.
+class KuduWriteOperation {
  public:
-  virtual ~WriteOperation();
+  virtual ~KuduWriteOperation();
 
   const KuduTable* table() const { return table_.get(); }
-  const PartialRow& row() const { return row_; }
+  const KuduPartialRow& row() const { return row_; }
 
-  // See PartialRow API for field setters, etc.
-  PartialRow* mutable_row() { return &row_; }
+  // See KuduPartialRow API for field setters, etc.
+  KuduPartialRow* mutable_row() { return &row_; }
 
   virtual RowOperationsPB::Type RowOperationType() const = 0;
   virtual std::string ToString() const = 0;
  protected:
-  explicit WriteOperation(KuduTable *table);
+  explicit KuduWriteOperation(KuduTable *table);
 
   scoped_refptr<KuduTable> const table_;
-  PartialRow row_;
+  KuduPartialRow row_;
 
  private:
   friend class internal::Batcher; // for CreateKey.
@@ -56,16 +56,16 @@ class WriteOperation {
   // Caller takes ownership of the allocated memory.
   gscoped_ptr<EncodedKey> CreateKey() const;
 
-  DISALLOW_COPY_AND_ASSIGN(WriteOperation);
+  DISALLOW_COPY_AND_ASSIGN(KuduWriteOperation);
 };
 
 // A single row insert to be sent to the cluster.
 // Row operation is defined by what's in the PartialRow instance here.
 // Use mutable_row() to change the row being inserted
 // An insert requires all key columns from the table schema to be defined.
-class Insert : public WriteOperation {
+class KuduInsert : public KuduWriteOperation {
  public:
-  virtual ~Insert();
+  virtual ~KuduInsert();
 
   virtual RowOperationsPB::Type RowOperationType() const OVERRIDE {
     return RowOperationsPB::INSERT;
@@ -74,7 +74,7 @@ class Insert : public WriteOperation {
 
  private:
   friend class KuduTable;
-  explicit Insert(KuduTable* table);
+  explicit KuduInsert(KuduTable* table);
 };
 
 
@@ -83,9 +83,9 @@ class Insert : public WriteOperation {
 // Use mutable_row() to change the row being updated.
 // An update requires the key columns and at least one other column
 // in the schema to be defined.
-class Update : public WriteOperation {
+class KuduUpdate : public KuduWriteOperation {
  public:
-  virtual ~Update();
+  virtual ~KuduUpdate();
 
   virtual RowOperationsPB::Type RowOperationType() const OVERRIDE {
     return RowOperationsPB::UPDATE;
@@ -94,7 +94,7 @@ class Update : public WriteOperation {
 
  private:
   friend class KuduTable;
-  explicit Update(KuduTable* table);
+  explicit KuduUpdate(KuduTable* table);
 };
 
 
@@ -102,9 +102,9 @@ class Update : public WriteOperation {
 // Row operation is defined by what's in the PartialRow instance here.
 // Use mutable_row() to change the row being deleted
 // A delete requires just the key columns to be defined.
-class Delete : public WriteOperation {
+class KuduDelete : public KuduWriteOperation {
  public:
-  virtual ~Delete();
+  virtual ~KuduDelete();
 
   virtual RowOperationsPB::Type RowOperationType() const OVERRIDE {
     return RowOperationsPB::DELETE;
@@ -113,7 +113,7 @@ class Delete : public WriteOperation {
 
  private:
   friend class KuduTable;
-  explicit Delete(KuduTable* table);
+  explicit KuduDelete(KuduTable* table);
 };
 
 } // namespace client

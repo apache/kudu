@@ -57,7 +57,7 @@ using std::vector;
 namespace kudu {
 namespace tablet {
 
-using client::Insert;
+using client::KuduInsert;
 using client::KuduClient;
 using client::KuduClientOptions;
 using client::KuduColumnSchema;
@@ -127,7 +127,7 @@ class FullStackInsertScanTest : public KuduTest {
   }
 
   // Generate random row according to schema_.
-  static void RandomRow(Random* rng, PartialRow* row,
+  static void RandomRow(Random* rng, KuduPartialRow* row,
                         char* buf, uint64_t key, int id);
 
   void InitCluster() {
@@ -312,7 +312,7 @@ void FullStackInsertScanTest::InsertRows(CountDownLatch* start_latch, int id,
   char randstr[kRandomStrMaxLength + 1];
   // Insert in the id's key range
   for (uint64_t key = start; key < end; ++key) {
-    gscoped_ptr<Insert> insert = table->NewInsert();
+    gscoped_ptr<KuduInsert> insert = table->NewInsert();
     RandomRow(&rng, insert->mutable_row(), randstr, key, id);
     CHECK_OK(session->Apply(&insert));
 
@@ -352,7 +352,7 @@ void FullStackInsertScanTest::ScanProjection(const KuduSchema& schema,
 // type: (uint64_t, string,     int32_t x4, int64_t x4)
 // The first int32 gets the id and the first int64 gets the thread
 // id. The key is assigned to "key," and the other fields are random.
-void FullStackInsertScanTest::RandomRow(Random* rng, PartialRow* row, char* buf,
+void FullStackInsertScanTest::RandomRow(Random* rng, KuduPartialRow* row, char* buf,
                                         uint64_t key, int id) {
   CHECK_OK(row->SetUInt64(kKeyCol, key));
   int len = kRandomStrMinLength +
