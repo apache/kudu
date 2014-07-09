@@ -7,6 +7,7 @@
 
 #include <cmath>
 #include <cstdlib>
+#include <signal.h>
 #include <string>
 #include <tr1/memory>
 #include <vector>
@@ -17,6 +18,7 @@
 #include "common/schema.h"
 #include "gutil/gscoped_ptr.h"
 #include "gutil/ref_counted.h"
+#include "gutil/strings/split.h"
 #include "gutil/strings/strcat.h"
 #include "gutil/strings/substitute.h"
 #include "integration-tests/mini_cluster.h"
@@ -24,10 +26,12 @@
 #include "tablet/maintenance_manager.h"
 #include "util/async_util.h"
 #include "util/countdown_latch.h"
+#include "util/errno.h"
 #include "util/stopwatch.h"
 #include "util/test_macros.h"
 #include "util/test_util.h"
 #include "util/status.h"
+#include "util/subprocess.h"
 #include "util/thread.h"
 #include "util/random.h"
 #include "util/random_util.h"
@@ -37,6 +41,14 @@ DEFINE_int32(concurrent_inserts, 3, "Number of inserting clients to launch");
 DEFINE_int32(inserts_per_client, 500,
              "Number of rows inserted by each inserter client");
 DEFINE_int32(rows_per_batch, 125, "Number of rows per client batch");
+
+// Perf-related FLAGS_perf_stat
+DEFINE_bool(perf_record_scan, false, "Call \"perf record --call-graph\" "
+            "for the durantion of the scan, disabled by default");
+DEFINE_bool(perf_stat_scan, false, "Print \"perf stat\" results during"
+            "scan to stdout, disabled by default");
+DEFINE_bool(perf_fp_flag, false, "Only applicable with --perf_record_scan,"
+            " provides argument \"fp\" to the --call-graph flag");
 
 using boost::assign::list_of;
 using std::string;
@@ -53,13 +65,15 @@ using client::KuduRowResult;
 using client::KuduScanner;
 using client::KuduSession;
 using client::KuduTable;
+using strings::Split;
+using strings::Substitute;
 
 class FullStackInsertScanTest : public KuduTest {
  protected:
   FullStackInsertScanTest()
     : kNumInsertClients(FLAGS_concurrent_inserts),
     kNumInsertsPerClient(FLAGS_inserts_per_client),
-    kNumRows(kNumInsertClients * kNumInsertsPerClient),
+      kNumRows(kNumInsertClients * kNumInsertsPerClient),
     kFlushEveryN(FLAGS_rows_per_batch),
     random_(SeedRandom()),
     // schema has kNumIntCols contiguous columns of Int32 and Int64, in order.
@@ -164,6 +178,33 @@ class FullStackInsertScanTest : public KuduTest {
 
 namespace {
 
+gscoped_ptr<Subprocess> MakePerfStat() {
+  if (!FLAGS_perf_stat_scan) return gscoped_ptr<Subprocess>();
+  // No output flag for perf-stat 2.x, just print to output
+  string cmd = Substitute("perf stat --pid=$0", getpid());
+  LOG(INFO) << "Calling: \"" << cmd << "\"";
+  return gscoped_ptr<Subprocess>(new Subprocess("perf", Split(cmd, " ")));
+}
+
+gscoped_ptr<Subprocess> MakePerfRecord() {
+  if (!FLAGS_perf_record_scan) return gscoped_ptr<Subprocess>();
+  string cmd = Substitute("perf record --pid=$0 --call-graph", getpid());
+  if (FLAGS_perf_fp_flag) cmd += " fp";
+  LOG(INFO) << "Calling: \"" << cmd << "\"";
+  return gscoped_ptr<Subprocess>(new Subprocess("perf", Split(cmd, " ")));
+}
+
+void InterruptNotNull(gscoped_ptr<Subprocess> sub) {
+  if (!sub) return;
+  CHECK_OK(sub->Kill(SIGINT));
+  int exit_status = 0;
+  CHECK_OK(sub->Wait(&exit_status));
+  if (!exit_status) {
+    LOG(WARNING) << "Subprocess returned " << exit_status
+                 << ": " << ErrnoToString(exit_status);
+  }
+}
+
 // If key is approximately at an even multiple of 1/10 of the way between
 // start and end, then a % completion update is printed to LOG(INFO)
 // Assumes that end - start + 1 fits into an int
@@ -225,12 +266,21 @@ void FullStackInsertScanTest::DoConcurrentClientInserts() {
 
 void FullStackInsertScanTest::DoTestScans() {
   LOG(INFO) << "Doing test scans on table of " << kNumRows << " rows.";
+
+  gscoped_ptr<Subprocess> stat = MakePerfStat();
+  gscoped_ptr<Subprocess> record = MakePerfRecord();
+  if (stat) stat->Start();
+  if (record) record->Start();
+
   ScanProjection(Schema(vector<ColumnSchema>(), 0), "empty projection, 0 col");
   ScanProjection(schema_.CreateKeyProjection(), "key scan, 1 col");
   ScanProjection(schema_, "full schema scan, 10 col");
   ScanProjection(StringSchema(), "String projection, 1 col");
   ScanProjection(Int32Schema(), "Int32 projection, 4 col");
   ScanProjection(Int64Schema(), "Int64 projection, 4 col");
+
+  InterruptNotNull(record.Pass());
+  InterruptNotNull(stat.Pass());
 }
 
 void FullStackInsertScanTest::InsertRows(CountDownLatch* start_latch, int id,
