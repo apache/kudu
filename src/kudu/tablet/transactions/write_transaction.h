@@ -17,6 +17,7 @@
 #include "kudu/util/task_executor.h"
 
 namespace kudu {
+struct DecodedRowOperation;
 class ConstContiguousRow;
 class RowwiseRowBlockPB;
 
@@ -140,6 +141,14 @@ class WriteTransactionState : public TransactionState {
     return rows_;
   }
 
+  const std::vector<DecodedRowOperation>& decoded_ops() const {
+    return decoded_ops_;
+  }
+
+  std::vector<DecodedRowOperation>* mutable_decoded_ops() {
+    return &decoded_ops_;
+  }
+
   // Releases all the row locks acquired by this transaction.
   void release_row_locks();
 
@@ -161,6 +170,9 @@ class WriteTransactionState : public TransactionState {
   // transaction was not initiated by an RPC call.
   const tserver::WriteRequestPB* request_;
   tserver::WriteResponsePB* response_;
+
+  // The row operations which are decoded from the request during PREPARE
+  std::vector<DecodedRowOperation> decoded_ops_;
 
   // the rows and locks as transformed/acquired by the prepare task
   vector<PreparedRowWrite*> rows_;
@@ -294,9 +306,6 @@ class WriteTransaction : public Transaction {
   virtual std::string ToString() const OVERRIDE;
 
  private:
-  // Decodes the rows in WriteRequestPB and creates prepared row writes.
-  Status CreatePreparedInsertsAndMutates(const Schema& client_schema);
-
   // this transaction's start time
   MonoTime start_time_;
 

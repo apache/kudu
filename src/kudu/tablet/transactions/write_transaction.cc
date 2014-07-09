@@ -63,76 +63,12 @@ void WriteTransaction::NewCommitAbortMessage(gscoped_ptr<CommitMsg>* commit_msg)
   }
 }
 
-Status WriteTransaction::CreatePreparedInsertsAndMutates(const Schema& client_schema) {
-  Tablet* tablet = state()->tablet_peer()->tablet();
-
-  // TODO: acquire a schema lock?
-
-  TRACE("Projecting inserts");
-  // Now that the schema is fixed, we can project the operations into that schema.
-  vector<DecodedRowOperation> decoded_ops;
-  if (state()->request()->row_operations().rows().size() > 0) {
-    RowOperationsPBDecoder dec(&state()->request()->row_operations(),
-                               &client_schema,
-                               tablet->schema_unlocked().get(),
-                               state()->arena());
-    Status s = dec.DecodeOperations(&decoded_ops);
-    if (!s.ok()) {
-      // TODO: is MISMATCHED_SCHEMA always right here? probably not.
-      state()->completion_callback()->set_error(s, TabletServerErrorPB::MISMATCHED_SCHEMA);
-      return s;
-    }
-  }
-
-  // Now acquire row locks and prepare everything for apply
-  TRACE("PREPARE: Running prepare for $0 operations", decoded_ops.size());
-  BOOST_FOREACH(const DecodedRowOperation& op, decoded_ops) {
-    gscoped_ptr<PreparedRowWrite> row_write;
-
-    switch (op.type) {
-      case RowOperationsPB::INSERT:
-      {
-        // TODO pass 'row_ptr' to the PreparedRowWrite once we get rid of the
-        // old API that has a Mutate method that receives the row as a reference.
-        // TODO: allocating ConstContiguousRow is kind of a waste since it is just
-        // a {schema, ptr} pair itself and probably cheaper to copy around.
-        ConstContiguousRow *row = state()->AddToAutoReleasePool(
-          new ConstContiguousRow(tablet->schema_unlocked().get(), op.row_data));
-        RETURN_NOT_OK(tablet->CreatePreparedInsert(state(), row, &row_write));
-        break;
-      }
-      case RowOperationsPB::UPDATE:
-      case RowOperationsPB::DELETE:
-      {
-        const uint8_t* row_key_ptr = op.row_data;
-        const RowChangeList& mutation = op.changelist;
-
-        // TODO pass 'row_key_ptr' to the PreparedRowWrite once we get rid of the
-        // old API that has a Mutate method that receives the row as a reference.
-        // TODO: allocating ConstContiguousRow is kind of a waste since it is just
-        // a {schema, ptr} pair itself and probably cheaper to copy around.
-        ConstContiguousRow* row_key = new ConstContiguousRow(&tablet->key_schema(), row_key_ptr);
-        row_key = state()->AddToAutoReleasePool(row_key);
-        RETURN_NOT_OK(tablet->CreatePreparedMutate(state(), row_key, mutation, &row_write));
-        break;
-      }
-      default:
-        LOG(FATAL) << "Bad type: " << op.type;
-    }
-
-    state()->add_prepared_row(row_write.Pass());
-  }
-  return Status::OK();
-}
-
 Status WriteTransaction::Prepare() {
   TRACE("PREPARE: Starting");
 
-  const WriteRequestPB* req = state_->request();
-
   // Decode everything first so that we give up if something major is wrong.
   Schema client_schema;
-  RETURN_NOT_OK_PREPEND(SchemaFromPB(req->schema(), &client_schema),
+  RETURN_NOT_OK_PREPEND(SchemaFromPB(state_->request()->schema(), &client_schema),
                         "Cannot decode client schema");
   if (client_schema.has_column_ids()) {
     // TODO: we have this kind of code a lot - add a new SchemaFromPB variant which
@@ -141,7 +77,18 @@ Status WriteTransaction::Prepare() {
     state_->completion_callback()->set_error(s, TabletServerErrorPB::INVALID_SCHEMA);
     return s;
   }
-  RETURN_NOT_OK(CreatePreparedInsertsAndMutates(client_schema));
+
+  Tablet* tablet = state()->tablet_peer()->tablet();
+
+  Status s = tablet->DecodeWriteOperations(&client_schema, state());
+  if (!s.ok()) {
+    // TODO: is MISMATCHED_SCHEMA always right here? probably not.
+    state()->completion_callback()->set_error(s, TabletServerErrorPB::MISMATCHED_SCHEMA);
+    return s;
+  }
+
+  // Now acquire row locks and prepare everything for apply
+  RETURN_NOT_OK(tablet->AcquireRowLocks(state()));
 
   TRACE("PREPARE: finished.");
   return Status::OK();

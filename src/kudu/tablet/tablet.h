@@ -81,7 +81,15 @@ class Tablet {
   // Open the tablet.
   Status Open();
 
-  // Actually start a write transaction.
+  // Decode the Write (insert/mutate) operations from within a user's
+  // request.
+  Status DecodeWriteOperations(const Schema* client_schema,
+                               WriteTransactionState* tx_state);
+
+  // Acquire locks for each of the operations in the given txn.
+  Status AcquireRowLocks(WriteTransactionState* tx_state);
+
+  // Finish the Prepare phase of a write transaction.
   //
   // Starts an MVCC transaction and assigns a timestamp for the transaction.
   // This also snapshots the current set of tablet components into the transaction
@@ -111,6 +119,9 @@ class Tablet {
   // are acquired for transactions determines their serialization order. If/when
   // we support multi-node serializable transactions, we'll have to acquire _all_
   // row locks (across all nodes) before obtaining a timestamp.
+  //
+  // TODO: rename this to something like "FinishPrepare" or "StartApply", since
+  // it's not the first thing in a transaction!
   void StartTransaction(WriteTransactionState* tx_state);
 
   // Same as the method above, but starts the transaction at a specified timestamp

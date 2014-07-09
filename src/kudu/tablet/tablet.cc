@@ -15,6 +15,7 @@
 #include "kudu/cfile/cfile.h"
 #include "kudu/common/iterator.h"
 #include "kudu/common/row_changelist.h"
+#include "kudu/common/row_operations.h"
 #include "kudu/common/scan_spec.h"
 #include "kudu/common/schema.h"
 #include "kudu/consensus/consensus.pb.h"
@@ -43,6 +44,7 @@
 #include "kudu/util/locks.h"
 #include "kudu/util/mem_tracker.h"
 #include "kudu/util/metrics.h"
+#include "kudu/util/trace.h"
 #include "kudu/util/stopwatch.h"
 
 DEFINE_bool(tablet_do_dup_key_checks, true,
@@ -200,6 +202,62 @@ Status Tablet::NewRowIterator(const Schema &projection,
   }
   VLOG(2) << "Created new Iterator under snap: " << snap.ToString();
   iter->reset(new Iterator(this, projection, snap));
+  return Status::OK();
+}
+
+Status Tablet::DecodeWriteOperations(const Schema* client_schema,
+                                     WriteTransactionState* tx_state) {
+  // TODO: acquire schema lock in tx_state
+  // The Schema needs to be held constant while any transactions are between
+  // PREPARE and APPLY stages
+  TRACE("PREPARE: Decoding operations");
+  RowOperationsPBDecoder dec(&tx_state->request()->row_operations(),
+                             client_schema,
+                             schema_.get(),
+                             tx_state->arena());
+  return dec.DecodeOperations(tx_state->mutable_decoded_ops());
+}
+
+Status Tablet::AcquireRowLocks(WriteTransactionState* tx_state) {
+  TRACE("PREPARE: Acquiring locks for $0 operations", tx_state->decoded_ops().size());
+
+  BOOST_FOREACH(const DecodedRowOperation& op, tx_state->decoded_ops()) {
+    gscoped_ptr<PreparedRowWrite> row_write;
+
+    switch (op.type) {
+      case RowOperationsPB::INSERT:
+      {
+        // TODO pass 'row_ptr' to the PreparedRowWrite once we get rid of the
+        // old API that has a Mutate method that receives the row as a reference.
+        // TODO: allocating ConstContiguousRow is kind of a waste since it is just
+        // a {schema, ptr} pair itself and probably cheaper to copy around.
+        ConstContiguousRow *row = tx_state->AddToAutoReleasePool(
+          new ConstContiguousRow(schema_.get(), op.row_data));
+        RETURN_NOT_OK(CreatePreparedInsert(tx_state, row, &row_write));
+        break;
+      }
+      case RowOperationsPB::UPDATE:
+      case RowOperationsPB::DELETE:
+      {
+        const uint8_t* row_key_ptr = op.row_data;
+        const RowChangeList& mutation = op.changelist;
+
+        // TODO pass 'row_key_ptr' to the PreparedRowWrite once we get rid of the
+        // old API that has a Mutate method that receives the row as a reference.
+        // TODO: allocating ConstContiguousRow is kind of a waste since it is just
+        // a {schema, ptr} pair itself and probably cheaper to copy around.
+        ConstContiguousRow* row_key = new ConstContiguousRow(&key_schema_, row_key_ptr);
+        row_key = tx_state->AddToAutoReleasePool(row_key);
+        RETURN_NOT_OK(CreatePreparedMutate(tx_state, row_key, mutation, &row_write));
+        break;
+      }
+      default:
+        LOG(FATAL) << "Bad type: " << op.type;
+    }
+
+    tx_state->add_prepared_row(row_write.Pass());
+  }
+  TRACE("PREPARE: locks acquired");
   return Status::OK();
 }
 
