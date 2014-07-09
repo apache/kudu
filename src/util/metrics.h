@@ -426,6 +426,8 @@ class AtomicGauge : public Gauge {
 
 // Like AtomicGauge, but keeps track of the highest value seen.
 // Similar to Impala's RuntimeProfile::HighWaterMarkCounter.
+// HighWaterMark::value() returns the highest value seen;
+// HighWaterMark::current_value() returns the current value.
 template <typename T>
 class HighWaterMark : public AtomicGauge<T> {
  public:
@@ -439,6 +441,7 @@ class HighWaterMark : public AtomicGauge<T> {
         current_value_(initial_value) {
   }
 
+  // Return the current value.
   T current_value() const {
     return static_cast<T>(base::subtle::NoBarrier_Load(&current_value_));
   }
@@ -456,6 +459,8 @@ class HighWaterMark : public AtomicGauge<T> {
     }
   }
 
+  // If current value + 'delta' is <= 'max', increment current value
+  // by 'delta' and return true; return false otherwise.
   bool TryIncrementBy(int64_t delta, int64_t max) {
     while (true) {
       T old_val = current_value();
@@ -475,8 +480,7 @@ class HighWaterMark : public AtomicGauge<T> {
   }
 
   virtual void IncrementBy(int64_t amount) OVERRIDE {
-    base::subtle::NoBarrier_AtomicIncrement(&current_value_, amount);
-    UpdateMax(amount);
+    UpdateMax(base::subtle::NoBarrier_AtomicIncrement(&current_value_, amount));
   }
 
   virtual void set_value(const T& value) OVERRIDE {

@@ -44,6 +44,20 @@ TEST_F(MetricsTest, SimpleAtomicGaugeTest) {
   ASSERT_EQ(5, mem_usage->value());
 }
 
+TEST_F(MetricsTest, HighWaterMarkTest) {
+  GaugePrototype<int64_t> proto("test", MetricUnit::kBytes, "Test HighWaterMark");
+  HighWaterMark<int64_t> hwm(proto, 0);
+  hwm.IncrementBy(1);
+  ASSERT_EQ(1, hwm.current_value());
+  ASSERT_EQ(1, hwm.value());
+  hwm.IncrementBy(42);
+  ASSERT_EQ(43, hwm.current_value());
+  ASSERT_EQ(43, hwm.value());
+  hwm.DecrementBy(1);
+  ASSERT_EQ(42, hwm.current_value());
+  ASSERT_EQ(43, hwm.value());
+}
+
 METRIC_DEFINE_gauge_int64(test_func_gauge, MetricUnit::kBytes, "Test Gauge 2");
 
 static int64_t MyFunction() {
