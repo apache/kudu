@@ -6,9 +6,12 @@
 #include <gflags/gflags.h>
 #include <string>
 
+#include "consensus/log.h"
 #include "consensus/consensus_peers.h"
+#include "consensus/raft_consensus_state.h"
 #include "gutil/map-util.h"
 #include "gutil/stl_util.h"
+#include "server/clock.h"
 #include "server/metadata.h"
 #include "util/trace.h"
 

@@ -7,16 +7,9 @@
 #include <utility>
 #include <vector>
 
-#include "consensus/log.h"
 #include "consensus/consensus.h"
 #include "consensus/consensus.pb.h"
-#include "consensus/consensus_peers.h"
 #include "consensus/consensus_queue.h"
-#include "consensus/raft_consensus_state.h"
-#include "server/clock.h"
-#include "tserver/tserver_service.proxy.h"
-#include "util/blocking_queue.h"
-#include "util/net/net_util.h"
 
 namespace kudu {
 
@@ -26,13 +19,18 @@ typedef gscoped_ptr<Lock> ScopedLock;
 class TaskExecutor;
 class FutureCallback;
 class HostPort;
-class ReplicaState;
+
+namespace server {
+class Clock;
+}
 
 namespace rpc {
 class Messenger;
 }
 
 namespace consensus {
+class Peer;
+class PeerProxyFactory;
 class ReplicaState;
 
 class RaftConsensus : public Consensus {
