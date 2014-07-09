@@ -143,6 +143,7 @@ fi
 if [ "$KUDU_FLAKY_TEST_ATTEMPTS" -gt 1 ]; then
   echo Fetching flaky test list...
   export KUDU_FLAKY_TEST_LIST=$ROOT/build/flaky-tests.txt
+  mkdir -p $(dirname $KUDU_FLAKY_TEST_LIST)
   echo -n > $KUDU_FLAKY_TEST_LIST
   if $ROOT/build-support/jenkins/determine-flaky-tests.py --list-tests-only \
     > $KUDU_FLAKY_TEST_LIST ; then
