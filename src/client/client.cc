@@ -16,6 +16,7 @@
 #include "client/row_result.h"
 #include "client/scanner-internal.h"
 #include "client/session-internal.h"
+#include "client/table-internal.h"
 #include "client/write_op.h"
 #include "common/common.pb.h"
 #include "common/row.h"
@@ -47,8 +48,6 @@ using kudu::master::DeleteTableRequestPB;
 using kudu::master::DeleteTableResponsePB;
 using kudu::master::GetTableSchemaRequestPB;
 using kudu::master::GetTableSchemaResponsePB;
-using kudu::master::GetTableLocationsRequestPB;
-using kudu::master::GetTableLocationsResponsePB;
 using kudu::master::IsAlterTableDoneRequestPB;
 using kudu::master::IsAlterTableDoneResponsePB;
 using kudu::master::IsCreateTableDoneRequestPB;
@@ -370,7 +369,7 @@ Status KuduClient::OpenTable(const std::string& table_name,
   // In the future, probably will look up the table in some map to reuse KuduTable
   // instances.
   scoped_refptr<KuduTable> ret(new KuduTable(shared_from_this(), table_name, schema));
-  RETURN_NOT_OK(ret->Open());
+  RETURN_NOT_OK(ret->data_->Open());
   table->swap(ret);
 
   return Status::OK();
@@ -477,41 +476,24 @@ KuduCreateTableOptions& KuduCreateTableOptions::WaitAssignment(bool wait_assignm
 // KuduTable
 ////////////////////////////////////////////////////////////
 
-KuduTable::KuduTable(const std::tr1::shared_ptr<KuduClient>& client,
-                     const std::string& name,
-                     const KuduSchema& schema)
-  : client_(client),
-    name_(name),
-    schema_(schema) {
+KuduTable::KuduTable(const shared_ptr<KuduClient>& client,
+                     const string& name,
+                     const KuduSchema& schema) {
+  data_.reset(new KuduTable::Data(client, name, schema));
 }
 
 KuduTable::~KuduTable() {
 }
 
-Status KuduTable::Open() {
-  // TODO: fetch the schema from the master here once catalog is available.
-  GetTableLocationsRequestPB req;
-  GetTableLocationsResponsePB resp;
-
-  req.mutable_table()->set_table_name(name_);
-  do {
-    rpc::RpcController rpc;
-    rpc.set_timeout(client_->options_.default_admin_operation_timeout);
-    RETURN_NOT_OK(client_->master_proxy_->GetTableLocations(req, &resp, &rpc));
-    if (resp.has_error()) {
-      return StatusFromPB(resp.error().status());
-    }
-
-    if (resp.tablet_locations_size() > 0)
-      break;
-
-    /* TODO: Add a timeout or number of retries */
-    usleep(100000);
-  } while (1);
-
-  VLOG(1) << "Open Table " << name_ << ", found " << resp.tablet_locations_size() << " tablets";
-  return Status::OK();
+const string& KuduTable::name() const {
+  return data_->name_;
 }
+
+const KuduSchema& KuduTable::schema() const {
+  return data_->schema_;
+}
+
+// Create a new write operation for this table.
 
 gscoped_ptr<KuduInsert> KuduTable::NewInsert() {
   return gscoped_ptr<KuduInsert>(new KuduInsert(this));
@@ -523,6 +505,10 @@ gscoped_ptr<KuduUpdate> KuduTable::NewUpdate() {
 
 gscoped_ptr<KuduDelete> KuduTable::NewDelete() {
   return gscoped_ptr<KuduDelete>(new KuduDelete(this));
+}
+
+KuduClient* KuduTable::client() const {
+  return data_->client_.get();
 }
 
 ////////////////////////////////////////////////////////////

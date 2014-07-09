@@ -12,6 +12,7 @@ set(CLIENT_SRCS
   scanner-internal.cc
   session-internal.cc
   schema.cc
+  table-internal.cc
   write_op.cc
 )
 

@@ -245,38 +245,29 @@ class KuduCreateTableOptions {
 // This class is thread-safe.
 class KuduTable : public base::RefCountedThreadSafe<KuduTable> {
  public:
-  const std::string& name() const { return name_; }
+  ~KuduTable();
 
-  const KuduSchema& schema() const { return schema_; }
+  const std::string& name() const;
+
+  const KuduSchema& schema() const;
 
   // Create a new write operation for this table.
   gscoped_ptr<KuduInsert> NewInsert();
   gscoped_ptr<KuduUpdate> NewUpdate();
   gscoped_ptr<KuduDelete> NewDelete();
 
-  KuduClient *client() const { return client_.get(); }
+  KuduClient* client() const;
 
  private:
+  class Data;
+
   friend class KuduClient;
-  friend class KuduScanner;
-  friend class KuduWriteOperation;
-  friend class base::RefCountedThreadSafe<KuduTable>;
 
   KuduTable(const std::tr1::shared_ptr<KuduClient>& client,
             const std::string& name,
             const KuduSchema& schema);
-  ~KuduTable();
 
-  Status Open();
-
-  std::tr1::shared_ptr<KuduClient> client_;
-
-  std::string name_;
-
-  // TODO: figure out how we deal with a schema change from the client perspective.
-  // Do we make them call a RefreshSchema() method? Or maybe reopen the table and get
-  // a new KuduTable instance (which would simplify the object lifecycle a little?)
-  const KuduSchema schema_;
+  gscoped_ptr<Data> data_;
 
   DISALLOW_COPY_AND_ASSIGN(KuduTable);
 };

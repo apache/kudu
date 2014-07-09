@@ -8,6 +8,7 @@
 
 #include "client/meta_cache.h"
 #include "client/row_result.h"
+#include "client/table-internal.h"
 #include "common/wire_protocol.h"
 #include "gutil/strings/substitute.h"
 
