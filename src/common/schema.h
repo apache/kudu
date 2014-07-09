@@ -260,7 +260,8 @@ class ContiguousRow;
 class Schema {
  public:
   Schema()
-    : num_key_columns_(0) {
+    : num_key_columns_(0),
+      has_nullables_(false) {
   }
 
   Schema(const Schema& other);
