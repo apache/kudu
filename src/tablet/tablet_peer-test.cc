@@ -200,7 +200,7 @@ class TabletPeerTest : public KuduTabletTest {
   MetricRegistry metric_registry_;
   gscoped_ptr<MetricContext> metric_ctx_;
   shared_ptr<Messenger> messenger_;
-  shared_ptr<TabletPeer> tablet_peer_;
+  scoped_refptr<TabletPeer> tablet_peer_;
 };
 
 // A Transaction that waits on the apply_continue latch inside of Apply().

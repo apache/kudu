@@ -85,20 +85,20 @@ class TSTabletManager {
                          const string& table_name,
                          const Schema& schema,
                          metadata::QuorumPB quorum,
-                         std::tr1::shared_ptr<tablet::TabletPeer>* tablet_peer);
+                         scoped_refptr<tablet::TabletPeer>* tablet_peer);
 
   // Delete the specified tablet.
   // TODO: Remove it from disk
-  Status DeleteTablet(const std::tr1::shared_ptr<tablet::TabletPeer>& tablet_peer);
+  Status DeleteTablet(const scoped_refptr<tablet::TabletPeer>& tablet_peer);
 
   // Lookup the given tablet peer by its ID.
   // Returns true if the tablet is found successfully.
   bool LookupTablet(const std::string& tablet_id,
-                    std::tr1::shared_ptr<tablet::TabletPeer>* tablet_peer) const;
+                    scoped_refptr<tablet::TabletPeer>* tablet_peer) const;
 
   // Same as LookupTablet but doesn't acquired the shared lock.
   bool LookupTabletUnlocked(const string& tablet_id,
-                            std::tr1::shared_ptr<tablet::TabletPeer>* tablet_peer) const;
+                            scoped_refptr<tablet::TabletPeer>* tablet_peer) const;
 
   // Generate an incremental tablet report.
   //
@@ -121,7 +121,7 @@ class TSTabletManager {
   void MarkTabletReportAcknowledged(const master::TabletReportPB& report);
 
   // Get all of the tablets currently hosted on this server.
-  void GetTabletPeers(std::vector<std::tr1::shared_ptr<tablet::TabletPeer> >* tablet_peers) const;
+  void GetTabletPeers(std::vector<scoped_refptr<tablet::TabletPeer> >* tablet_peers) const;
 
   // Marks tablet with 'tablet_id' dirty.
   // Used for state changes outside of the control of TsTabletManager, such as consensus role
@@ -160,15 +160,15 @@ class TSTabletManager {
 
   // Open a tablet whose metadata has already been loaded.
   void BootstrapAndInitTablet(const scoped_refptr<metadata::TabletMetadata>& meta,
-                              std::tr1::shared_ptr<tablet::TabletPeer>* peer);
+                              scoped_refptr<tablet::TabletPeer>* peer);
 
   // Add the tablet to the tablet map.
   void RegisterTablet(const std::string& tablet_id,
-                      const std::tr1::shared_ptr<tablet::TabletPeer>& tablet_peer);
+                      const scoped_refptr<tablet::TabletPeer>& tablet_peer);
 
   // Helper to generate the report for a single tablet.
   void CreateReportedTabletPB(const string& tablet_id,
-                              const std::tr1::shared_ptr<tablet::TabletPeer>& tablet_peer,
+                              const scoped_refptr<tablet::TabletPeer>& tablet_peer,
                               master::ReportedTabletPB* reported_tablet);
 
   // Mark that the provided TabletPeer's state has changed. That should be taken into
@@ -181,7 +181,7 @@ class TSTabletManager {
 
   TabletServer* server_;
 
-  typedef std::tr1::unordered_map<std::string, std::tr1::shared_ptr<tablet::TabletPeer> > TabletMap;
+  typedef std::tr1::unordered_map<std::string, scoped_refptr<tablet::TabletPeer> > TabletMap;
 
   // Lock protecting tablet_map_, dirty_tablets_ and creates_in_progress_.
   mutable rw_spinlock lock_;

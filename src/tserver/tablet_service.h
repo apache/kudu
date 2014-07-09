@@ -3,9 +3,9 @@
 #define KUDU_TSERVER_TABLET_SERVICE_H
 
 #include <string>
-#include <tr1/memory>
 #include <vector>
 
+#include "gutil/ref_counted.h"
 #include "tserver/tserver_service.service.h"
 
 namespace kudu {
@@ -72,7 +72,7 @@ class TabletServiceImpl : public TabletServerServiceIf {
   // Returns true if successful.
   template<class RespClass>
   bool LookupTabletOrRespond(const std::string& tablet_id,
-                             std::tr1::shared_ptr<tablet::TabletPeer>* peer,
+                             scoped_refptr<tablet::TabletPeer>* peer,
                              RespClass* resp,
                              rpc::RpcContext* context);
 
@@ -88,7 +88,7 @@ class TabletServiceImpl : public TabletServerServiceIf {
                               ScanResponsePB* resp,
                               const NewScanRequestPB& scan_pb,
                               const Schema& projection,
-                              std::tr1::shared_ptr<tablet::TabletPeer> tablet_peer);
+                              const scoped_refptr<tablet::TabletPeer>& tablet_peer);
 
   TabletServer* server_;
 };

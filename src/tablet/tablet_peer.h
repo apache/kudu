@@ -8,6 +8,7 @@
 
 #include "consensus/consensus.h"
 #include "consensus/log.h"
+#include "gutil/ref_counted.h"
 #include "tablet/tablet.h"
 #include "tablet/transactions/transaction_tracker.h"
 #include "util/countdown_latch.h"
@@ -42,14 +43,13 @@ typedef boost::function<void(TabletPeer*)> MarkDirtyCallback;
 // state machine through a consensus algorithm, which makes sure that other
 // peers see the same updates in the same order. In addition to this, this
 // class also splits the work and coordinates multi-threaded execution.
-class TabletPeer : public consensus::ReplicaTransactionFactory {
+class TabletPeer : public base::RefCountedThreadSafe<TabletPeer>,
+                   public consensus::ReplicaTransactionFactory {
  public:
 
   TabletPeer(const scoped_refptr<metadata::TabletMetadata>& meta,
              const metadata::QuorumPeerPB& quorum_peer,
              MarkDirtyCallback mark_dirty_func);
-
-  ~TabletPeer();
 
   // Initializes the TabletPeer, namely creating the Log and initializing
   // Consensus. 'local_peer' indicates whether this should serve the tablet
@@ -187,10 +187,13 @@ class TabletPeer : public consensus::ReplicaTransactionFactory {
                                    scoped_refptr<ReplicaTransactionDriver>* driver);
 
  private:
+  friend class base::RefCountedThreadSafe<TabletPeer>;
   friend class TabletPeerTest;
   FRIEND_TEST(TabletPeerTest, TestMRSAnchorPreventsLogGC);
   FRIEND_TEST(TabletPeerTest, TestDMSAnchorPreventsLogGC);
   FRIEND_TEST(TabletPeerTest, TestActiveTransactionPreventsLogGC);
+
+  ~TabletPeer();
 
   // Schedule the Log GC task to run in the executor.
   Status StartLogGCTask();

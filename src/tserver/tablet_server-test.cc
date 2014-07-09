@@ -67,7 +67,7 @@ TEST_F(TabletServerTest, TestInsert) {
   WriteResponsePB resp;
   RpcController controller;
 
-  shared_ptr<TabletPeer> tablet;
+  scoped_refptr<TabletPeer> tablet;
   ASSERT_TRUE(mini_server_->server()->tablet_manager()->LookupTablet(kTabletId, &tablet));
   Counter* rows_inserted =
       METRIC_rows_inserted.Instantiate(*tablet->tablet()->GetMetricContext());
@@ -163,7 +163,7 @@ TEST_F(TabletServerTest, TestExternalConsistencyModes_ClientPropagated) {
   WriteResponsePB resp;
   RpcController controller;
 
-  shared_ptr<TabletPeer> tablet;
+  scoped_refptr<TabletPeer> tablet;
   ASSERT_TRUE(
       mini_server_->server()->tablet_manager()->LookupTablet(kTabletId,
                                                              &tablet));
@@ -215,7 +215,7 @@ TEST_F(TabletServerTest, TestExternalConsistencyModes_CommitWait) {
   RpcController controller;
   HybridClock* hclock = down_cast<HybridClock*, Clock>(mini_server_->server()->clock());
 
-  shared_ptr<TabletPeer> tablet;
+  scoped_refptr<TabletPeer> tablet;
   ASSERT_TRUE(
       mini_server_->server()->tablet_manager()->LookupTablet(kTabletId,
                                                              &tablet));
@@ -279,7 +279,7 @@ TEST_F(TabletServerTest, TestExternalConsistencyModes_CommitWait) {
 
 TEST_F(TabletServerTest, TestInsertAndMutate) {
 
-  shared_ptr<TabletPeer> tablet;
+  scoped_refptr<TabletPeer> tablet;
   ASSERT_TRUE(mini_server_->server()->tablet_manager()->LookupTablet(kTabletId, &tablet));
   Counter* rows_inserted =
       METRIC_rows_inserted.Instantiate(*tablet->tablet()->GetMetricContext());
@@ -1248,7 +1248,7 @@ TEST_F(TabletServerTest, TestAlterSchema) {
 
   {
     InsertTestRowsRemote(0, 2, 2);
-    shared_ptr<TabletPeer> tablet;
+    scoped_refptr<TabletPeer> tablet;
     ASSERT_TRUE(mini_server_->server()->tablet_manager()->LookupTablet(kTabletId, &tablet));
     ASSERT_STATUS_OK(tablet->tablet()->Flush());
   }
@@ -1298,7 +1298,7 @@ TEST_F(TabletServerTest, TestCreateTablet_TabletExists) {
 }
 
 TEST_F(TabletServerTest, TestDeleteTablet) {
-  shared_ptr<TabletPeer> tablet;
+  scoped_refptr<TabletPeer> tablet;
 
   // Verify that the tablet exists
   ASSERT_TRUE(mini_server_->server()->tablet_manager()->LookupTablet(kTabletId, &tablet));

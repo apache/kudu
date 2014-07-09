@@ -54,7 +54,7 @@ class TsTabletManagerTest : public KuduTest {
                          const std::string& start_key,
                          const std::string& end_key,
                          const Schema& schema,
-                         std::tr1::shared_ptr<tablet::TabletPeer>* tablet_peer) {
+                         scoped_refptr<tablet::TabletPeer>* tablet_peer) {
     return tablet_manager_->CreateNewTablet(tablet_id, tablet_id, start_key, end_key,
                                             tablet_id,
                                             SchemaBuilder(schema).Build(),
@@ -103,7 +103,7 @@ TEST_F(TsTabletManagerTest, TestPersistBlocks) {
 
 TEST_F(TsTabletManagerTest, TestCreateTablet) {
   // Create a new tablet.
-  shared_ptr<TabletPeer> peer;
+  scoped_refptr<TabletPeer> peer;
   ASSERT_STATUS_OK(CreateNewTablet(kTabletId, "", "",schema_, &peer));
   ASSERT_EQ(kTabletId, peer->tablet()->tablet_id());
   peer.reset();

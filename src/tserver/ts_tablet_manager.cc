@@ -115,7 +115,7 @@ Status TSTabletManager::Init() {
                           "Failed to open tablet metadata for tablet: " + tablet);
     QuorumPeerPB quorum_peer;
     quorum_peer.set_permanent_uuid(server_->instance_pb().permanent_uuid());
-    shared_ptr<TabletPeer> tablet_peer(
+    scoped_refptr<TabletPeer> tablet_peer(
         new TabletPeer(meta,
                        quorum_peer,
                        boost::bind(&TSTabletManager::MarkTabletDirty, this, _1)));
@@ -152,7 +152,7 @@ Status TSTabletManager::CreateNewTablet(const string& table_id,
                                         const string& table_name,
                                         const Schema& schema,
                                         QuorumPB quorum,
-                                        shared_ptr<TabletPeer>* tablet_peer) {
+                                        scoped_refptr<TabletPeer>* tablet_peer) {
 
   // If the quorum is specified to use local consensus, verify that the peer
   // matches up with our local info.
@@ -174,7 +174,7 @@ Status TSTabletManager::CreateNewTablet(const string& table_id,
     TRACE("Acquired tablet manager lock");
 
     // Sanity check that the tablet isn't already registered.
-    shared_ptr<TabletPeer> junk;
+    scoped_refptr<TabletPeer> junk;
     if (LookupTabletUnlocked(tablet_id, &junk)) {
       return Status::AlreadyPresent("Tablet already registered", tablet_id);
     }
@@ -214,7 +214,7 @@ Status TSTabletManager::CreateNewTablet(const string& table_id,
 
   QuorumPeerPB quorum_peer;
   quorum_peer.set_permanent_uuid(server_->instance_pb().permanent_uuid());
-  shared_ptr<TabletPeer> new_peer(
+  scoped_refptr<TabletPeer> new_peer(
       new TabletPeer(meta,
                      quorum_peer,
                      boost::bind(&TSTabletManager::MarkTabletDirty, this, _1)));
@@ -228,7 +228,7 @@ Status TSTabletManager::CreateNewTablet(const string& table_id,
   return Status::OK();
 }
 
-Status TSTabletManager::DeleteTablet(const shared_ptr<TabletPeer>& tablet_peer) {
+Status TSTabletManager::DeleteTablet(const scoped_refptr<TabletPeer>& tablet_peer) {
   TRACE("Deleting tablet $0 (table=$1 [id=$2])", tablet_peer->tablet()->tablet_id(),
         tablet_peer->tablet()->metadata()->table_name(),
         tablet_peer->tablet()->metadata()->table_id());
@@ -262,7 +262,7 @@ Status TSTabletManager::OpenTabletMeta(const string& tablet_id,
 void TSTabletManager::OpenTablet(const scoped_refptr<TabletMetadata>& meta) {
   string tablet_id = meta->oid();
 
-  shared_ptr<TabletPeer> tablet_peer;
+  scoped_refptr<TabletPeer> tablet_peer;
   CHECK(LookupTablet(tablet_id, &tablet_peer))
       << "Tablet not registered prior to OpenTabletAsync call: " << tablet_id;
 
@@ -338,10 +338,10 @@ void TSTabletManager::Shutdown() {
   // Take a snapshot of the peers list -- that way we don't have to hold
   // on to the lock while shutting them down, which might cause a lock
   // inversion. (see KUDU-308 for example).
-  vector<shared_ptr<TabletPeer> > peers_to_shutdown;
+  vector<scoped_refptr<TabletPeer> > peers_to_shutdown;
   GetTabletPeers(&peers_to_shutdown);
 
-  BOOST_FOREACH(const shared_ptr<TabletPeer>& peer, peers_to_shutdown) {
+  BOOST_FOREACH(const scoped_refptr<TabletPeer>& peer, peers_to_shutdown) {
     peer->Shutdown();
   }
 
@@ -367,7 +367,7 @@ Status TSTabletManager::LoadMasterBlock(const string& tablet_id, TabletMasterBlo
 }
 
 void TSTabletManager::RegisterTablet(const std::string& tablet_id,
-                                     const std::tr1::shared_ptr<TabletPeer>& tablet_peer) {
+                                     const scoped_refptr<TabletPeer>& tablet_peer) {
   boost::lock_guard<rw_spinlock> lock(lock_);
   if (!InsertIfNotPresent(&tablet_map_, tablet_id, tablet_peer)) {
     LOG(FATAL) << "Unable to register tablet peer " << tablet_id << ": already registered!";
@@ -379,14 +379,14 @@ void TSTabletManager::RegisterTablet(const std::string& tablet_id,
 }
 
 bool TSTabletManager::LookupTablet(const string& tablet_id,
-                                   std::tr1::shared_ptr<TabletPeer>* tablet_peer) const {
+                                   scoped_refptr<TabletPeer>* tablet_peer) const {
   boost::shared_lock<rw_spinlock> shared_lock(lock_);
   return LookupTabletUnlocked(tablet_id, tablet_peer);
 }
 
 bool TSTabletManager::LookupTabletUnlocked(const string& tablet_id,
-                                           std::tr1::shared_ptr<TabletPeer>* tablet_peer) const {
-  const std::tr1::shared_ptr<TabletPeer>* found = FindOrNull(tablet_map_, tablet_id);
+                                           scoped_refptr<TabletPeer>* tablet_peer) const {
+  const scoped_refptr<TabletPeer>* found = FindOrNull(tablet_map_, tablet_id);
   if (!found) {
     return false;
   }
@@ -394,7 +394,7 @@ bool TSTabletManager::LookupTabletUnlocked(const string& tablet_id,
   return true;
 }
 
-void TSTabletManager::GetTabletPeers(vector<shared_ptr<TabletPeer> >* tablet_peers) const {
+void TSTabletManager::GetTabletPeers(vector<scoped_refptr<TabletPeer> >* tablet_peers) const {
   boost::shared_lock<rw_spinlock> shared_lock(lock_);
   AppendValuesFromMap(tablet_map_, tablet_peers);
 }
@@ -421,7 +421,7 @@ void TSTabletManager::MarkDirtyUnlocked(TabletPeer* tablet_peer) {
 }
 
 void TSTabletManager::CreateReportedTabletPB(const string& tablet_id,
-                                             const shared_ptr<TabletPeer>& tablet_peer,
+                                             const scoped_refptr<TabletPeer>& tablet_peer,
                                              ReportedTabletPB* reported_tablet) {
   reported_tablet->set_tablet_id(tablet_id);
   reported_tablet->set_state(tablet_peer->state());
@@ -443,7 +443,7 @@ void TSTabletManager::GenerateIncrementalTabletReport(TabletReportPB* report) {
   report->set_is_incremental(true);
   BOOST_FOREACH(const DirtyMap::value_type& dirty_entry, dirty_tablets_) {
     const string& tablet_id = dirty_entry.first;
-    shared_ptr<tablet::TabletPeer>* tablet_peer = FindOrNull(tablet_map_, tablet_id);
+    scoped_refptr<tablet::TabletPeer>* tablet_peer = FindOrNull(tablet_map_, tablet_id);
     if (tablet_peer) {
       // Dirty entry, report on it.
       CreateReportedTabletPB(tablet_id, *tablet_peer, report->add_updated_tablets());

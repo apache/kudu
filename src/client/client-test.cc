@@ -1206,7 +1206,7 @@ TEST_F(ClientTest, TestBasicAlterOperations) {
 
   // Need a tablet peer for the next set of tests.
   string tablet_id = GetFirstTabletId(client_table2_.get());
-  shared_ptr<TabletPeer> tablet_peer;
+  scoped_refptr<TabletPeer> tablet_peer;
   ASSERT_TRUE(cluster_->mini_tablet_server(0)->server()->tablet_manager()->LookupTablet(
       tablet_id, &tablet_peer));
 
@@ -1263,7 +1263,7 @@ TEST_F(ClientTest, TestDeleteTable) {
   int wait_time = 1000;
   bool tablet_found = true;
   for (int i = 0; i < 80 && tablet_found; ++i) {
-    shared_ptr<TabletPeer> tablet_peer;
+    scoped_refptr<TabletPeer> tablet_peer;
     tablet_found = cluster_->mini_tablet_server(0)->server()->tablet_manager()->LookupTablet(
                       tablet_id, &tablet_peer);
     usleep(wait_time);

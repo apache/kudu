@@ -138,7 +138,7 @@ TabletServiceImpl::TabletServiceImpl(TabletServer* server)
 
 template<class RespClass>
 bool TabletServiceImpl::LookupTabletOrRespond(const string& tablet_id,
-                                              shared_ptr<TabletPeer>* peer,
+                                              scoped_refptr<TabletPeer>* peer,
                                               RespClass* resp,
                                               rpc::RpcContext* context) {
   // Check that it exists.
@@ -172,7 +172,7 @@ void TabletServiceImpl::AlterSchema(const AlterSchemaRequestPB* req,
                                     rpc::RpcContext* context) {
   DVLOG(3) << "Received Alter Schema RPC: " << req->DebugString();
 
-  shared_ptr<TabletPeer> tablet_peer;
+  scoped_refptr<TabletPeer> tablet_peer;
   if (!LookupTabletOrRespond(req->tablet_id(), &tablet_peer, resp, context)) return;
 
   uint32_t schema_version = tablet_peer->tablet()->metadata()->schema_version();
@@ -282,7 +282,7 @@ void TabletServiceImpl::DeleteTablet(const DeleteTabletRequestPB* req,
             << " from " << context->requestor_string();
   VLOG(1) << "Full request: " << req->DebugString();
 
-  shared_ptr<TabletPeer> tablet_peer;
+  scoped_refptr<TabletPeer> tablet_peer;
   if (!LookupTabletOrRespond(req->tablet_id(), &tablet_peer, resp, context)) return;
 
   Status s = server_->tablet_manager()->DeleteTablet(tablet_peer);
@@ -304,7 +304,7 @@ void TabletServiceImpl::ChangeConfig(const ChangeConfigRequestPB* req,
                                      rpc::RpcContext* context) {
   DVLOG(3) << "Received Change Config RPC: " << req->DebugString();
 
-  shared_ptr<TabletPeer> tablet_peer;
+  scoped_refptr<TabletPeer> tablet_peer;
   if (!LookupTabletOrRespond(req->tablet_id(), &tablet_peer, resp, context)) return;
 
   ChangeConfigTransactionState *tx_state =
@@ -328,7 +328,7 @@ void TabletServiceImpl::Write(const WriteRequestPB* req,
                               rpc::RpcContext* context) {
   DVLOG(3) << "Received Write RPC: " << req->DebugString();
 
-  shared_ptr<TabletPeer> tablet_peer;
+  scoped_refptr<TabletPeer> tablet_peer;
   if (!LookupTabletOrRespond(req->tablet_id(), &tablet_peer, resp, context)) return;
 
   if (req->external_consistency_mode() != NO_CONSISTENCY) {
@@ -380,7 +380,7 @@ void TabletServiceImpl::UpdateConsensus(const ConsensusRequestPB* req,
                                         rpc::RpcContext* context) {
   DVLOG(3) << "Received Consensus Update RPC: " << req->DebugString();
 
-  shared_ptr<TabletPeer> tablet_peer;
+  scoped_refptr<TabletPeer> tablet_peer;
 
   if (!LookupTabletOrRespond(req->tablet_id(), &tablet_peer, resp, context)) return;
 
@@ -409,7 +409,7 @@ void TabletServiceImpl::RequestConsensusVote(const VoteRequestPB* req,
                                              rpc::RpcContext* context) {
   DVLOG(3) << "Received Consensus Request Vote RPC: " << req->DebugString();
 
-  shared_ptr<TabletPeer> tablet_peer;
+  scoped_refptr<TabletPeer> tablet_peer;
   if (!LookupTabletOrRespond(req->tablet_id(), &tablet_peer, resp, context))
     return;
 
@@ -458,10 +458,10 @@ void TabletServiceImpl::Scan(const ScanRequestPB* req,
 void TabletServiceImpl::ListTablets(const ListTabletsRequestPB* req,
                                     ListTabletsResponsePB* resp,
                                     rpc::RpcContext* context) {
-  vector<shared_ptr<TabletPeer> > peers;
+  vector<scoped_refptr<TabletPeer> > peers;
   server_->tablet_manager()->GetTabletPeers(&peers);
   RepeatedPtrField<StatusAndSchemaPB>* peer_status = resp->mutable_status_and_schema();
-  BOOST_FOREACH(const shared_ptr<TabletPeer>& peer, peers) {
+  BOOST_FOREACH(const scoped_refptr<TabletPeer>& peer, peers) {
     StatusAndSchemaPB* status = peer_status->Add();
     peer->GetTabletStatusPB(status->mutable_tablet_status());
     CHECK_OK(SchemaToPB(peer->status_listener()->schema(),
@@ -567,7 +567,7 @@ void TabletServiceImpl::HandleNewScanRequest(const ScanRequestPB* req,
   DCHECK(req->has_new_scan_request());
 
   const NewScanRequestPB& scan_pb = req->new_scan_request();
-  shared_ptr<TabletPeer> tablet_peer;
+  scoped_refptr<TabletPeer> tablet_peer;
   if (!LookupTabletOrRespond(scan_pb.tablet_id(), &tablet_peer, resp, context)) return;
 
   // Create the user's requested projection.
@@ -806,7 +806,7 @@ Status TabletServiceImpl::HandleScanAtSnapshot(gscoped_ptr<RowwiseIterator>* ite
                                                ScanResponsePB* resp,
                                                const NewScanRequestPB& scan_pb,
                                                const Schema& projection,
-                                               shared_ptr<TabletPeer> tablet_peer) {
+                                               const scoped_refptr<TabletPeer>& tablet_peer) {
 
   // TODO check against the earliest boundary (i.e. how early can we go) right
   // now we're keeping all undos/redos forever!

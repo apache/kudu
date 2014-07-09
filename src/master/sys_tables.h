@@ -71,7 +71,7 @@ class SysTable {
 
   MetricContext metric_ctx_;
 
-  gscoped_ptr<tablet::TabletPeer> tablet_peer_;
+  scoped_refptr<tablet::TabletPeer> tablet_peer_;
 
  private:
   Status SetupTablet(const scoped_refptr<metadata::TabletMetadata>& metadata,

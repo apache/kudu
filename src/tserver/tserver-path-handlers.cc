@@ -73,7 +73,7 @@ void TabletServerPathHandlers::HandleTransactionsPage(const Webserver::ArgumentM
                                                       std::stringstream* output) {
   bool as_text = ContainsKey(args, "raw");
 
-  vector<shared_ptr<TabletPeer> > peers;
+  vector<scoped_refptr<TabletPeer> > peers;
   tserver_->tablet_manager()->GetTabletPeers(&peers);
 
   string arg = FindWithDefault(args, "include_traces", "false");
@@ -88,7 +88,7 @@ void TabletServerPathHandlers::HandleTransactionsPage(const Webserver::ArgumentM
       "Total time in-flight</th><th>Description</th></tr>\n";
   }
 
-  BOOST_FOREACH(const shared_ptr<TabletPeer>& peer, peers) {
+  BOOST_FOREACH(const scoped_refptr<TabletPeer>& peer, peers) {
     vector<TransactionStatusPB> inflight;
 
     if (peer->tablet() == NULL) {
@@ -142,7 +142,7 @@ string TabletLink(const string& id) {
 
 void TabletServerPathHandlers::HandleTabletsPage(const Webserver::ArgumentMap &args,
                                                  std::stringstream *output) {
-  vector<shared_ptr<TabletPeer> > peers;
+  vector<scoped_refptr<TabletPeer> > peers;
   tserver_->tablet_manager()->GetTabletPeers(&peers);
 
   *output << "<h1>Tablets</h1>\n";
@@ -150,7 +150,7 @@ void TabletServerPathHandlers::HandleTabletsPage(const Webserver::ArgumentMap &a
   *output << "  <tr><th>Table name</th><th>Tablet ID</th>"
       "<th>Start key</th><th>End key</th>"
       "<th>State</th><th>On-disk size</th><th>Quorum</th><th>Last status</th></tr>\n";
-  BOOST_FOREACH(const shared_ptr<TabletPeer>& peer, peers) {
+  BOOST_FOREACH(const scoped_refptr<TabletPeer>& peer, peers) {
     TabletStatusPB status;
     peer->GetTabletStatusPB(&status);
     string id = status.tablet_id();
@@ -238,7 +238,7 @@ bool GetTabletID(const Webserver::ArgumentMap& args, string* id, std::stringstre
 }
 
 bool GetTabletPeer(TabletServer* tserver, const Webserver::ArgumentMap& args,
-                   shared_ptr<TabletPeer>* peer, const string& tablet_id,
+                   scoped_refptr<TabletPeer>* peer, const string& tablet_id,
                    std::stringstream *out) {
   if (!tserver->tablet_manager()->LookupTablet(tablet_id, peer)) {
     (*out) << "Tablet " << EscapeForHtmlToString(tablet_id) << " not found";
@@ -247,7 +247,7 @@ bool GetTabletPeer(TabletServer* tserver, const Webserver::ArgumentMap& args,
   return true;
 }
 
-bool TabletBootstrapping(const shared_ptr<TabletPeer>& peer, const string& tablet_id,
+bool TabletBootstrapping(const scoped_refptr<TabletPeer>& peer, const string& tablet_id,
                          std::stringstream* out) {
   if (peer->state() == metadata::BOOTSTRAPPING) {
     (*out) << "Tablet " << EscapeForHtmlToString(tablet_id) << " is still bootstrapping";
@@ -260,7 +260,7 @@ bool TabletBootstrapping(const shared_ptr<TabletPeer>& peer, const string& table
 // tablet is found, and is in a non-bootstrapping state.
 bool LoadTablet(TabletServer* tserver,
                 const Webserver::ArgumentMap& args,
-                string* tablet_id, shared_ptr<TabletPeer>* peer,
+                string* tablet_id, scoped_refptr<TabletPeer>* peer,
                 std::stringstream* out) {
   if (!GetTabletID(args, tablet_id, out)) return false;
   if (!GetTabletPeer(tserver, args, peer, *tablet_id, out)) return false;
@@ -273,7 +273,7 @@ bool LoadTablet(TabletServer* tserver,
 void TabletServerPathHandlers::HandleTabletPage(const Webserver::ArgumentMap &args,
                                                 std::stringstream *output) {
   string tablet_id;
-  shared_ptr<TabletPeer> peer;
+  scoped_refptr<TabletPeer> peer;
   if (!LoadTablet(tserver_, args, &tablet_id, &peer, output)) return;
 
   string table_name = peer->tablet()->metadata()->table_name();
@@ -305,7 +305,7 @@ void TabletServerPathHandlers::HandleTabletPage(const Webserver::ArgumentMap &ar
 void TabletServerPathHandlers::HandleTabletSVGPage(const Webserver::ArgumentMap &args,
                                                    std::stringstream* output) {
   string id;
-  shared_ptr<TabletPeer> peer;
+  scoped_refptr<TabletPeer> peer;
   if (!LoadTablet(tserver_, args, &id, &peer, output)) return;
 
   *output << "<h1>Rowset Layout Diagram for Tablet "
@@ -317,7 +317,7 @@ void TabletServerPathHandlers::HandleTabletSVGPage(const Webserver::ArgumentMap 
 void TabletServerPathHandlers::HandleConsensusStatusPage(const Webserver::ArgumentMap& args,
                                                          std::stringstream* output) {
   string id;
-  shared_ptr<TabletPeer> peer;
+  scoped_refptr<TabletPeer> peer;
   if (!LoadTablet(tserver_, args, &id, &peer, output)) return;
 
   peer->consensus()->DumpStatusHtml(*output);
@@ -355,7 +355,7 @@ string TabletServerPathHandlers::ScannerToHtml(const Scanner& scanner) const {
                      time_in_flight_us, time_since_last_access_us, // $2, $3
                      EscapeForHtmlToString(scanner.requestor_string()), // $4
                      IteratorStatsToHtml(stats)); // $5
-  shared_ptr<TabletPeer> tablet_peer;
+  scoped_refptr<TabletPeer> tablet_peer;
   if (!tserver_->tablet_manager()->LookupTablet(scanner.tablet_id(), &tablet_peer)) {
     html << Substitute("<td><b>Tablet $0 is no longer valid.</b></td></tr>\n",
                        scanner.tablet_id());

@@ -392,7 +392,7 @@ class TabletServerTest : public KuduTest {
   shared_ptr<Messenger> client_messenger_;
 
   gscoped_ptr<MiniTabletServer> mini_server_;
-  shared_ptr<TabletPeer> tablet_peer_;
+  scoped_refptr<TabletPeer> tablet_peer_;
   gscoped_ptr<TabletServerServiceProxy> proxy_;
 
   MetricRegistry ts_test_metric_registry_;

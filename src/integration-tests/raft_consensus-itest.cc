@@ -293,7 +293,7 @@ class DistConsensusTest : public TabletServerTest {
   // consensus lock a portion of the time.
   // TODO use the consensus/tablet/log hooks _as_well_as_ lock stealing
   void DelayInjectorThread(MiniTabletServer* mini_tablet_server) {
-    shared_ptr<TabletPeer> peer;
+    scoped_refptr<TabletPeer> peer;
     CHECK(mini_tablet_server->server()->tablet_manager()->LookupTabletUnlocked(tablet_id_, &peer));
     RaftConsensus* consensus = down_cast<RaftConsensus*>(peer->consensus());
     ReplicaState* state = consensus->GetReplicaStateForTests();
@@ -469,7 +469,7 @@ TEST_F(DistConsensusTest, TestInsertWhenTheQueueIsFull) {
   for (int i = 0; i < kNumReplicas; i++) {
     TabletServer* server = cluster_->mini_tablet_server(i)->server();
     if (server->instance_pb().permanent_uuid() != info.permanent_uuid()) continue;
-    shared_ptr<TabletPeer> peer;
+    scoped_refptr<TabletPeer> peer;
     CHECK(server->tablet_manager()->LookupTabletUnlocked(tablet_id_, &peer));
     replica_consensus = down_cast<RaftConsensus*>(peer->consensus());
     break;

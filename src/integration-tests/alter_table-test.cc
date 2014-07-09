@@ -164,7 +164,7 @@ class AlterTableTest : public KuduTest {
   Schema schema_;
 
   string tablet_id_;
-  std::tr1::shared_ptr<TabletPeer> tablet_peer_;
+  scoped_refptr<TabletPeer> tablet_peer_;
 };
 
 const char *AlterTableTest::kTableName = "fake-table";
