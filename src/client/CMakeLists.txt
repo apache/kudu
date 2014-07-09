@@ -5,6 +5,7 @@ set(CLIENT_SRCS
   client.cc
   encoded_key.cc
   error_collector.cc
+  error-internal.cc
   meta_cache.cc
   row_result.cc
   scan_predicate.cc

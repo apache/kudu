@@ -11,6 +11,7 @@
 
 #include "client/batcher.h"
 #include "client/error_collector.h"
+#include "client/error-internal.h"
 #include "client/meta_cache.h"
 #include "client/row_result.h"
 #include "client/scanner-internal.h"
@@ -528,10 +529,27 @@ gscoped_ptr<KuduDelete> KuduTable::NewDelete() {
 // Error
 ////////////////////////////////////////////////////////////
 
+const Status& KuduError::status() const {
+  return data_->status_;
+}
+
+const KuduWriteOperation& KuduError::failed_op() const {
+  return *data_->failed_op_;
+}
+
+gscoped_ptr<KuduWriteOperation> KuduError::release_failed_op() {
+  CHECK_NOTNULL(data_->failed_op_.get());
+  return data_->failed_op_.Pass();
+}
+
+bool KuduError::was_possibly_successful() const {
+  // TODO: implement me - right now be conservative.
+  return true;
+}
+
 KuduError::KuduError(gscoped_ptr<KuduWriteOperation> failed_op,
-             const Status& status) :
-  failed_op_(failed_op.Pass()),
-  status_(status) {
+                     const Status& status) {
+  data_.reset(new KuduError::Data(failed_op.Pass(), status));
 }
 
 KuduError::~KuduError() {

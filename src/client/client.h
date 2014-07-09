@@ -325,21 +325,14 @@ class KuduError {
   ~KuduError();
 
   // Return the actual error which occurred.
-  const Status& status() const {
-    return status_;
-  }
+  const Status& status() const;
 
   // Return the operation which failed.
-  const KuduWriteOperation& failed_op() const {
-    return *failed_op_;
-  }
+  const KuduWriteOperation& failed_op() const;
 
   // Release the operation that failed. The caller takes ownership. Must only
   // be called once.
-  gscoped_ptr<KuduWriteOperation> release_failed_op() {
-    CHECK_NOTNULL(failed_op_.get());
-    return failed_op_.Pass();
-  }
+  gscoped_ptr<KuduWriteOperation> release_failed_op();
 
   // In some cases, it's possible that the server did receive and successfully
   // perform the requested operation, but the client can't tell whether or not
@@ -349,18 +342,17 @@ class KuduError {
   // This function returns true if there is some chance that the server did
   // process the operation, and false if it can guarantee that the operation
   // did not succeed.
-  bool was_possibly_successful() const {
-    // TODO: implement me - right now be conservative.
-    return true;
-  }
+  bool was_possibly_successful() const;
 
  private:
-  KuduError(gscoped_ptr<KuduWriteOperation> failed_op, const Status& error);
+  class Data;
+
   friend class internal::Batcher;
   friend class KuduSession;
 
-  gscoped_ptr<KuduWriteOperation> failed_op_;
-  Status status_;
+  KuduError(gscoped_ptr<KuduWriteOperation> failed_op, const Status& error);
+
+  gscoped_ptr<Data> data_;
 
   DISALLOW_COPY_AND_ASSIGN(KuduError);
 };
