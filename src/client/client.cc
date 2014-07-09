@@ -6,16 +6,19 @@
 #include <boost/bind.hpp>
 #include <boost/thread/locks.hpp>
 #include <tr1/memory>
+#include <tr1/unordered_map>
 #include <vector>
 
-#include "common/common.pb.h"
-#include "common/row.h"
-#include "common/wire_protocol.h"
 #include "client/batcher.h"
 #include "client/error_collector.h"
 #include "client/meta_cache.h"
 #include "client/row_result.h"
+#include "client/scanner-internal.h"
 #include "client/write_op.h"
+#include "common/common.pb.h"
+#include "common/row.h"
+#include "common/schema.h"
+#include "common/wire_protocol.h"
 #include "gutil/casts.h"
 #include "gutil/stl_util.h"
 #include "gutil/strings/substitute.h"
@@ -50,11 +53,9 @@ using kudu::master::IsCreateTableDoneRequestPB;
 using kudu::master::IsCreateTableDoneResponsePB;
 using kudu::master::MasterServiceProxy;
 using kudu::master::TabletLocationsPB;
-using kudu::tserver::ColumnRangePredicatePB;
-using kudu::tserver::NewScanRequestPB;
-using kudu::tserver::ScanResponsePB;
 using kudu::rpc::MessengerBuilder;
 using kudu::rpc::RpcController;
+using kudu::tserver::ScanResponsePB;
 
 MAKE_ENUM_LIMITS(kudu::client::KuduSession::FlushMode,
                  kudu::client::KuduSession::AUTO_FLUSH_SYNC,
@@ -67,7 +68,6 @@ MAKE_ENUM_LIMITS(kudu::client::KuduScanner::ReadMode,
 namespace kudu {
 namespace client {
 
-static const int64_t kNoTimestamp = -1;
 static const int kHtTimestampBitsToShift = 12;
 
 using internal::Batcher;
@@ -764,25 +764,8 @@ Status KuduAlterTableBuilder::RenameColumn(const std::string& old_name,
 // KuduScanner
 ////////////////////////////////////////////////////////////
 
-static size_t CalculateProjectedRowSize(const Schema& proj) {
-  return proj.byte_size() +
-        (proj.has_nullables() ? BitmapSize(proj.num_columns()) : 0);
-}
-
-KuduScanner::KuduScanner(KuduTable* table)
-  : open_(false),
-    data_in_open_(false),
-    has_batch_size_bytes_(false),
-    batch_size_bytes_(0),
-    selection_(KuduClient::CLOSEST_REPLICA),
-    read_mode_(READ_LATEST),
-    snapshot_timestamp_(kNoTimestamp),
-    table_(DCHECK_NOTNULL(table)),
-    projection_(table->schema().schema_.get()),
-    projected_row_size_(CalculateProjectedRowSize(*projection_)),
-    spec_encoder_(*table->schema().schema_),
-    start_key_(NULL),
-    end_key_(NULL) {
+KuduScanner::KuduScanner(KuduTable* table) {
+  data_.reset(new KuduScanner::Data(table));
 }
 
 KuduScanner::~KuduScanner() {
@@ -790,173 +773,54 @@ KuduScanner::~KuduScanner() {
 }
 
 Status KuduScanner::SetProjection(const KuduSchema* projection) {
-  if (open_) {
+  if (data_->open_) {
     return Status::IllegalState("Projection must be set before Open()");
   }
-  projection_ = projection->schema_.get();
-  projected_row_size_ = CalculateProjectedRowSize(*projection_);
+  data_->projection_ = projection->schema_.get();
+  data_->projected_row_size_ = data_->CalculateProjectedRowSize(*data_->projection_);
   return Status::OK();
 }
 
 Status KuduScanner::SetBatchSizeBytes(uint32_t batch_size) {
-  has_batch_size_bytes_ = true;
-  batch_size_bytes_ = batch_size;
+  data_->has_batch_size_bytes_ = true;
+  data_->batch_size_bytes_ = batch_size;
   return Status::OK();
 }
 
 Status KuduScanner::SetReadMode(ReadMode read_mode) {
-  if (open_) {
+  if (data_->open_) {
     return Status::IllegalState("Read mode must be set before Open()");
   }
   if (!tight_enum_test<ReadMode>(read_mode)) {
     return Status::InvalidArgument("Bad read mode");
   }
-  read_mode_ = read_mode;
+  data_->read_mode_ = read_mode;
   return Status::OK();
 }
 
 Status KuduScanner::SetSnapshot(uint64_t snapshot_timestamp_micros) {
-  if (open_) {
+  if (data_->open_) {
     return Status::IllegalState("Snapshot timestamp must be set before Open()");
   }
   // Shift the HT timestamp bits to get well-formed HT timestamp with the logical
   // bits zeroed out.
-  snapshot_timestamp_ = snapshot_timestamp_micros << kHtTimestampBitsToShift;
+  data_->snapshot_timestamp_ = snapshot_timestamp_micros << kHtTimestampBitsToShift;
   return Status::OK();
 }
 
 Status KuduScanner::SetSelection(KuduClient::ReplicaSelection selection) {
-  if (open_) {
+  if (data_->open_) {
     return Status::IllegalState("Replica selection must be set before Open()");
   }
-  selection_ = selection;
+  data_->selection_ = selection;
   return Status::OK();
 }
 
 Status KuduScanner::AddConjunctPredicate(const KuduColumnRangePredicate& pred) {
-  if (open_) {
+  if (data_->open_) {
     return Status::IllegalState("Predicate must be set before Open()");
   }
-  spec_.AddPredicate(*pred.pred_);
-  return Status::OK();
-}
-
-void KuduScanner::PrepareRequest(RequestType state) {
-  if (state == KuduScanner::CLOSE) {
-    next_req_.set_batch_size_bytes(0);
-  } else if (has_batch_size_bytes_) {
-    next_req_.set_batch_size_bytes(batch_size_bytes_);
-  } else {
-    next_req_.clear_batch_size_bytes();
-  }
-
-  if (state == KuduScanner::NEW) {
-    next_req_.set_call_seq_id(0);
-  } else {
-    next_req_.set_call_seq_id(next_req_.call_seq_id() + 1);
-  }
-}
-
-void KuduScanner::CopyPredicateBound(const ColumnSchema& col,
-                                     const void* bound_src,
-                                     string* bound_dst) {
-  const void* src;
-  size_t size;
-  if (col.type_info()->type() == STRING) {
-    // Copying a string involves an extra level of indirection through its
-    // owning slice.
-    const Slice* s = reinterpret_cast<const Slice*>(bound_src);
-    src = s->data();
-    size = s->size();
-  } else {
-    src = bound_src;
-    size = col.type_info()->size();
-  }
-  bound_dst->assign(reinterpret_cast<const char*>(src), size);
-}
-
-Status KuduScanner::OpenTablet(const Slice& key) {
-  // TODO: scanners don't really require a leader. For now, however,
-  // we always scan from the leader.
-  Synchronizer sync;
-  table_->client_->meta_cache_->LookupTabletByKey(table_,
-                                                  key,
-                                                  &remote_, sync.AsStatusCallback());
-  RETURN_NOT_OK(sync.Wait());
-
-  // Scan it.
-  PrepareRequest(KuduScanner::NEW);
-  next_req_.clear_scanner_id();
-  NewScanRequestPB* scan = next_req_.mutable_new_scan_request();
-  switch (read_mode_) {
-    case READ_LATEST: scan->set_read_mode(kudu::READ_LATEST); break;
-    case READ_AT_SNAPSHOT: scan->set_read_mode(kudu::READ_AT_SNAPSHOT); break;
-    default: LOG(FATAL) << "Unexpected read mode.";
-  }
-
-  if (snapshot_timestamp_ != kNoTimestamp) {
-    if (PREDICT_FALSE(read_mode_ != READ_AT_SNAPSHOT)) {
-      LOG(WARNING) << "Scan snapshot timestamp set but read mode was READ_LATEST."
-          " Ignoring timestamp.";
-    } else {
-      scan->set_snap_timestamp(snapshot_timestamp_);
-    }
-  }
-
-  // Set up the predicates.
-  scan->clear_range_predicates();
-  BOOST_FOREACH(const ColumnRangePredicate& pred, spec_.predicates()) {
-    const ColumnSchema& col = pred.column();
-    const ValueRange& range = pred.range();
-    ColumnRangePredicatePB* pb = scan->add_range_predicates();
-    if (range.has_lower_bound()) {
-      CopyPredicateBound(col, range.lower_bound(),
-                         pb->mutable_lower_bound());
-    }
-    if (range.has_upper_bound()) {
-      CopyPredicateBound(col, range.upper_bound(),
-                         pb->mutable_upper_bound());
-    }
-    ColumnSchemaToPB(col, pb->mutable_column());
-  }
-
-  scan->set_tablet_id(remote_->tablet_id());
-  RETURN_NOT_OK(SchemaToColumnPBs(*projection_, scan->mutable_projected_columns()));
-
-  for (;;) {
-    controller_.Reset();
-    controller_.set_timeout(MonoDelta::FromMilliseconds(kRpcTimeoutMillis));
-    RemoteTabletServer *ts;
-    RETURN_NOT_OK(table_->client_->GetTabletServer(
-        remote_->tablet_id(),
-        selection_,
-        &ts));
-    CHECK(ts);
-    CHECK(ts->proxy());
-    proxy_ = ts->proxy();
-    Status s = proxy_->Scan(next_req_, &last_response_, &controller_);
-    if (s.ok()) {
-      break;
-    }
-
-    // On error, mark any replicas hosted by this TS as failed, then try
-    // another replica.
-    table_->client_->meta_cache_->MarkTSFailed(ts);
-  }
-  RETURN_NOT_OK(CheckForErrors());
-
-  next_req_.clear_new_scan_request();
-  data_in_open_ = last_response_.has_data();
-  if (last_response_.has_more_results()) {
-    next_req_.set_scanner_id(last_response_.scanner_id());
-    VLOG(1) << "Opened tablet " << remote_->tablet_id()
-            << ", scanner ID " << last_response_.scanner_id();
-  } else if (last_response_.has_data()) {
-    VLOG(1) << "Opened tablet " << remote_->tablet_id() << ", no scanner ID assigned";
-  } else {
-    VLOG(1) << "Opened tablet " << remote_->tablet_id() << " (no rows), no scanner ID assigned";
-  }
-
+  data_->spec_.AddPredicate(*pred.pred_);
   return Status::OK();
 }
 
@@ -980,117 +844,70 @@ struct CloseCallback {
 } // anonymous namespace
 
 string KuduScanner::ToString() const {
-  Slice start_key = start_key_ ? start_key_->encoded_key() : Slice("INF");
-  Slice end_key = end_key_ ? end_key_->encoded_key() : Slice("INF");
-  return strings::Substitute("$0: [$1,$2)", table_->name(),
+  Slice start_key = data_->start_key_ ? data_->start_key_->encoded_key() : Slice("INF");
+  Slice end_key = data_->end_key_ ? data_->end_key_->encoded_key() : Slice("INF");
+  return strings::Substitute("$0: [$1,$2)", data_->table_->name(),
                              start_key.ToDebugString(), end_key.ToDebugString());
 }
 
 Status KuduScanner::Open() {
-  CHECK(!open_) << "Scanner already open";
-  CHECK(projection_ != NULL) << "No projection provided";
+  CHECK(!data_->open_) << "Scanner already open";
+  CHECK(data_->projection_ != NULL) << "No projection provided";
 
   // Find the first tablet.
-  spec_encoder_.EncodeRangePredicates(&spec_, false);
-  CHECK(!spec_.has_encoded_ranges() ||
-        spec_.encoded_ranges().size() == 1);
-  if (spec_.has_encoded_ranges()) {
-    const EncodedKeyRange* key_range = spec_.encoded_ranges()[0];
+  data_->spec_encoder_.EncodeRangePredicates(&data_->spec_, false);
+  CHECK(!data_->spec_.has_encoded_ranges() ||
+        data_->spec_.encoded_ranges().size() == 1);
+  if (data_->spec_.has_encoded_ranges()) {
+    const EncodedKeyRange* key_range = data_->spec_.encoded_ranges()[0];
     if (key_range->has_lower_bound()) {
-      start_key_ = &key_range->lower_bound();
+      data_->start_key_ = &key_range->lower_bound();
     }
     if (key_range->has_upper_bound()) {
-      end_key_ = &key_range->upper_bound();
+      data_->end_key_ = &key_range->upper_bound();
     }
   }
 
   VLOG(1) << "Beginning scan " << ToString();
 
-  RETURN_NOT_OK(OpenTablet(start_key_ != NULL ? start_key_->encoded_key() : Slice()));
+  RETURN_NOT_OK(data_->OpenTablet(data_->start_key_ != NULL
+                                  ? data_->start_key_->encoded_key() : Slice()));
 
-  open_ = true;
+  data_->open_ = true;
   return Status::OK();
 }
 
 void KuduScanner::Close() {
-  if (!open_) return;
-  CHECK(proxy_);
+  if (!data_->open_) return;
+  CHECK(data_->proxy_);
 
   VLOG(1) << "Ending scan " << ToString();
-
-  if (next_req_.scanner_id().empty()) {
+  if (data_->next_req_.scanner_id().empty()) {
     // In the case that the scan matched no rows, and this was determined
     // in the Open() call, then we won't have been assigned a scanner ID
     // at all. So, no need to close on the server side.
-    open_ = false;
+    data_->open_ = false;
     return;
   }
 
   gscoped_ptr<CloseCallback> closer(new CloseCallback);
-  closer->scanner_id = next_req_.scanner_id();
-  PrepareRequest(KuduScanner::CLOSE);
-  next_req_.set_close_scanner(true);
-  closer->controller.set_timeout(MonoDelta::FromMilliseconds(kRpcTimeoutMillis));
-  proxy_->ScanAsync(next_req_, &closer->response, &closer->controller,
-                   boost::bind(&CloseCallback::Callback, closer.get()));
+  closer->scanner_id = data_->next_req_.scanner_id();
+  data_->PrepareRequest(KuduScanner::Data::CLOSE);
+  data_->next_req_.set_close_scanner(true);
+  closer->controller.set_timeout(MonoDelta::FromMilliseconds(data_->kRpcTimeoutMillis));
+  data_->proxy_->ScanAsync(data_->next_req_, &closer->response, &closer->controller,
+                           boost::bind(&CloseCallback::Callback, closer.get()));
   ignore_result(closer.release());
-  next_req_.Clear();
-  proxy_.reset();
-  open_ = false;
-}
-
-Status KuduScanner::CheckForErrors() {
-  if (PREDICT_TRUE(!last_response_.has_error())) {
-    return Status::OK();
-  }
-
-  return StatusFromPB(last_response_.error().status());
-}
-
-bool KuduScanner::MoreTablets() const {
-  CHECK(open_);
-  return !remote_->end_key().empty() &&
-      (end_key_ == NULL || end_key_->encoded_key().compare(remote_->end_key()) > 0);
+  data_->next_req_.Clear();
+  data_->proxy_.reset();
+  data_->open_ = false;
 }
 
 bool KuduScanner::HasMoreRows() const {
-  CHECK(open_);
-  return data_in_open_ || // more data in hand
-      last_response_.has_more_results() || // more data in this tablet
-      MoreTablets(); // more tablets to scan, possibly with more data
-}
-
-Status KuduScanner::ExtractRows(vector<KuduRowResult>* rows) {
-  // First, rewrite the relative addresses into absolute ones.
-  RowwiseRowBlockPB* rowblock_pb = last_response_.mutable_data();
-  RETURN_NOT_OK(RewriteRowBlockPB(*projection_, last_response_.mutable_data()));
-
-  int n_rows = rowblock_pb->num_rows();
-  if (PREDICT_FALSE(n_rows == 0)) {
-    // Early-out here to avoid a UBSAN failure.
-    VLOG(1) << "Extracted 0 rows";
-    return Status::OK();
-  }
-
-  // Next, allocate a block of KuduRowResults in 'rows'.
-  size_t before = rows->size();
-  rows->resize(before + n_rows);
-
-  // Lastly, initialize each KuduRowResult with data from the response.
-  //
-  // Doing this resize and array indexing turns out to be noticeably faster
-  // than using reserve and push_back.
-  string* row_data = rowblock_pb->mutable_rows();
-  const uint8_t* src = reinterpret_cast<const uint8_t*>(&(*row_data)[0]);
-  KuduRowResult* dst = &(*rows)[before];
-  while (n_rows > 0) {
-    dst->Init(projection_, src);
-    dst++;
-    src += projected_row_size_;
-    n_rows--;
-  }
-  VLOG(1) << "Extracted " << rows->size() - before << " rows";
-  return Status::OK();
+  CHECK(data_->open_);
+  return data_->data_in_open_ || // more data in hand
+      data_->last_response_.has_more_results() || // more data in this tablet
+      data_->MoreTablets(); // more tablets to scan, possibly with more data
 }
 
 Status KuduScanner::NextBatch(std::vector<KuduRowResult>* rows) {
@@ -1098,15 +915,15 @@ Status KuduScanner::NextBatch(std::vector<KuduRowResult>* rows) {
   // we should already have fired off the RPC for the next batch, but
   // need to do some swapping of the response objects around to avoid
   // stomping on the memory the user is looking at.
-  CHECK(open_);
-  CHECK(proxy_);
+  CHECK(data_->open_);
+  CHECK(data_->proxy_);
 
-  if (data_in_open_) {
+  if (data_->data_in_open_) {
     // We have data from a previous scan.
     VLOG(1) << "Extracting data from scan " << ToString();
-    data_in_open_ = false;
-    return ExtractRows(rows);
-  } else if (last_response_.has_more_results()) {
+    data_->data_in_open_ = false;
+    return data_->ExtractRows(rows);
+  } else if (data_->last_response_.has_more_results()) {
     // More data is available in this tablet.
     //
     // Note that, in this case, we can't fail to a replica on error. Why?
@@ -1114,18 +931,21 @@ Status KuduScanner::NextBatch(std::vector<KuduRowResult>* rows) {
     // Only fault tolerant scans can try other replicas here.
     VLOG(1) << "Continuing scan " << ToString();
 
-    controller_.Reset();
-    PrepareRequest(KuduScanner::CONTINUE);
-    RETURN_NOT_OK(proxy_->Scan(next_req_, &last_response_, &controller_));
-    RETURN_NOT_OK(CheckForErrors());
-    return ExtractRows(rows);
-  } else if (MoreTablets()) {
+    data_->controller_.Reset();
+    data_->controller_.set_timeout(MonoDelta::FromMilliseconds(data_->kRpcTimeoutMillis));
+    data_->PrepareRequest(KuduScanner::Data::CONTINUE);
+    RETURN_NOT_OK(data_->proxy_->Scan(data_->next_req_,
+                                      &data_->last_response_,
+                                      &data_->controller_));
+    RETURN_NOT_OK(data_->CheckForErrors());
+    return data_->ExtractRows(rows);
+  } else if (data_->MoreTablets()) {
     // More data may be available in other tablets.
     //
     // No need to close the current tablet; we scanned all the data so the
     // server closed it for us.
     VLOG(1) << "Scanning next tablet " << ToString();
-    RETURN_NOT_OK(OpenTablet(remote_->end_key()));
+    RETURN_NOT_OK(data_->OpenTablet(data_->remote_->end_key()));
 
     // No rows written, the next invocation will pick them up.
     return Status::OK();
@@ -1134,7 +954,6 @@ Status KuduScanner::NextBatch(std::vector<KuduRowResult>* rows) {
     return Status::OK();
   }
 }
-
 
 } // namespace client
 } // namespace kudu

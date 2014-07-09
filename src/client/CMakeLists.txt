@@ -8,6 +8,7 @@ set(CLIENT_SRCS
   meta_cache.cc
   row_result.cc
   scan_predicate.cc
+  scanner-internal.cc
   schema.cc
   write_op.cc
 )

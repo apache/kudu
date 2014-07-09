@@ -9,6 +9,7 @@
 #include <glog/logging.h>
 
 #include "client/client.h"
+#include "common/schema.h"
 #include "common/wire_protocol.h"
 #include "gutil/map-util.h"
 #include "gutil/stl_util.h"

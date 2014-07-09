@@ -17,12 +17,6 @@
 
 namespace kudu {
 
-using tserver::TabletServerServiceProxy;
-using tserver::WriteRequestPB;
-using tserver::WriteResponsePB;
-using tserver::ColumnRangePredicatePB;
-using std::tr1::shared_ptr;
-
 class RpcLineItemDAO : public LineItemDAO {
  public:
   RpcLineItemDAO(const string& master_address, const string& table_name,
@@ -45,8 +39,8 @@ class RpcLineItemDAO : public LineItemDAO {
   bool ShouldAddKey(const KuduPartialRow& row);
 
   simple_spinlock lock_;
-  shared_ptr<client::KuduClient> client_;
-  shared_ptr<client::KuduSession> session_;
+  std::tr1::shared_ptr<client::KuduClient> client_;
+  std::tr1::shared_ptr<client::KuduSession> session_;
   scoped_refptr<client::KuduTable> client_table_;
   gscoped_ptr<client::KuduScanner> current_scanner_;
   // Keeps track of all the orders batched for writing

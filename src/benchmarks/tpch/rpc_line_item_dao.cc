@@ -1,5 +1,6 @@
 // Copyright (c) 2013, Cloudera, inc.
 
+#include <boost/foreach.hpp>
 #include <boost/thread/locks.hpp>
 #include <glog/logging.h>
 #include <vector>

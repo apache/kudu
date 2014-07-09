@@ -3,6 +3,7 @@
 #include "client/write_op.h"
 
 #include "client/client.h"
+#include "common/encoded_key.h"
 #include "common/row.h"
 
 namespace kudu {

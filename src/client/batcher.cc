@@ -15,6 +15,7 @@
 #include "client/error_collector.h"
 #include "client/meta_cache.h"
 #include "client/write_op.h"
+#include "common/encoded_key.h"
 #include "common/row_operations.h"
 #include "common/wire_protocol.h"
 #include "gutil/map-util.h"

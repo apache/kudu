@@ -1,6 +1,7 @@
 // Copyright (c) 2013, Cloudera, inc.
 
 #include <boost/bind.hpp>
+#include <boost/foreach.hpp>
 #include <gtest/gtest.h>
 #include <gflags/gflags.h>
 
