@@ -25,6 +25,22 @@ class ConsensusQueueTest : public KuduTest {
       : metric_context_(&metric_registry_, "queue-test"),
         queue_(new PeerMessageQueue(metric_context_)) {}
 
+  Status AppendReplicateOp(gscoped_ptr<OperationPB> op,
+                           int term, int index,
+                           const std::string& payload,
+                           scoped_refptr<OperationStatusTracker>* ost) {
+    op.reset(new OperationPB);
+    OpId* id = op->mutable_id();
+    id->set_term(term);
+    id->set_index(index);
+
+    ReplicateMsg* msg = op->mutable_replicate();
+    msg->set_op_type(NO_OP);
+    msg->mutable_noop_request()->set_payload_for_tests(payload);
+    ost->reset(new TestOpStatusTracker(op.Pass(), 1, 1));
+    return queue_->AppendOperation(*ost);
+  }
+
  protected:
   MetricRegistry metric_registry_;
   MetricContext metric_context_;
@@ -265,19 +281,10 @@ TEST_F(ConsensusQueueTest, TestQueueRefusesRequestWhenFilled) {
 
   gscoped_ptr<OperationPB> op;
   scoped_refptr<OperationStatusTracker> status;
-  {
-    op.reset(new OperationPB);
-    OpId* id = op->mutable_id();
-    id->set_term(10);
-    id->set_index(1);
-    ReplicateMsg* msg = op->mutable_replicate();
-    msg->set_op_type(NO_OP);
-    msg->mutable_noop_request()->set_payload_for_tests(test_payload);
-    status.reset(new TestOpStatusTracker(op.Pass(), 1, 1));
-  }
 
   // should fail with service unavailable
-  Status s = queue_->AppendOperation(status);
+  Status s = AppendReplicateOp(op.Pass(), 10, 1, test_payload, &status);
+
   LOG(INFO) << queue_->ToString();
   ASSERT_TRUE(s.IsServiceUnavailable());
 
@@ -300,19 +307,68 @@ TEST_F(ConsensusQueueTest, TestQueueRefusesRequestWhenFilled) {
   statuses[1]->AckPeer("");
 
   // .. and try again
-  {
-    op.reset(new OperationPB);
-    OpId* id = op->mutable_id();
-    id->set_term(10);
-    id->set_index(2);
-    ReplicateMsg* msg = op->mutable_replicate();
-    msg->set_op_type(NO_OP);
-    msg->mutable_noop_request()->set_payload_for_tests(test_payload);
-    status.reset(new TestOpStatusTracker(op.Pass(), 1, 1));
-  }
-
-  ASSERT_STATUS_OK(queue_->AppendOperation(status));
+  ASSERT_STATUS_OK(AppendReplicateOp(op.Pass(), 10, 2, test_payload, &status));
 }
+
+TEST_F(ConsensusQueueTest, TestQueueHardAndSoftLimit) {
+  FLAGS_consensus_entry_cache_size_soft_limit_mb = 1;
+  FLAGS_consensus_entry_cache_size_hard_limit_mb = 2;
+
+  queue_.reset(new PeerMessageQueue(metric_context_));
+
+  const int kPayloadSize = 768 * 1024;
+
+  gscoped_ptr<OperationPB> op;
+  scoped_refptr<OperationStatusTracker> status_1;
+  string payload(kPayloadSize, '0');
+
+  // Soft limit should not be violated.
+  ASSERT_STATUS_OK(AppendReplicateOp(op.Pass(), 1, 1, payload, &status_1));
+
+  int size_with_one_msg = queue_->GetQueuedOperationsSizeBytesForTests();
+  ASSERT_LT(size_with_one_msg, 1 * 1024 * 1024);
+
+  // Violating a soft limit, but not a hard limit should still allow
+  // the operation to be added.
+  scoped_refptr<OperationStatusTracker> status_2;
+  ASSERT_STATUS_OK(AppendReplicateOp(op.Pass(), 1, 2, payload, &status_2));
+
+  // Since the first operation is not yet done, we can't trim.
+  int size_with_two_msgs = queue_->GetQueuedOperationsSizeBytesForTests();
+  ASSERT_GE(size_with_two_msgs, 2 * 768 * 1024);
+  ASSERT_LT(size_with_two_msgs, 2 * 1024 * 1024);
+
+  // Ensure that we can trim one message from the queue.
+  status_1->AckPeer("");
+  scoped_refptr<OperationStatusTracker> status_3;
+
+  // Verify that we have trimmed by appending a message that would
+  // otherwise be rejected, since the queue max size limit is 2MB.
+  ASSERT_STATUS_OK(AppendReplicateOp(op.Pass(), 1, 3, payload, &status_3));
+
+  // The queue should be trimmed down to two messages.
+  ASSERT_EQ(size_with_two_msgs, queue_->GetQueuedOperationsSizeBytesForTests());
+
+
+  // Ack 'status_2', 'status_3'.
+  status_2->AckPeer("");
+  status_3->AckPeer("");
+  scoped_refptr<OperationStatusTracker> status_4;
+  ASSERT_STATUS_OK(AppendReplicateOp(op.Pass(), 1, 4, payload, &status_4));
+
+  // Verify that the queue is trimmed down to just one message.
+  ASSERT_EQ(size_with_one_msg, queue_->GetQueuedOperationsSizeBytesForTests());
+
+  status_4->AckPeer("");
+  // Add a small message such that soft limit is not violated.
+  string small_payload(128 * 1024, '0');
+  scoped_refptr<OperationStatusTracker> status_5;
+  ASSERT_STATUS_OK(AppendReplicateOp(op.Pass(), 1, 5, small_payload, &status_5));
+
+  // Verify that the queue is not trimmed.
+  ASSERT_GT(queue_->GetQueuedOperationsSizeBytesForTests(), size_with_one_msg);
+}
+
 
 }  // namespace consensus
 }  // namespace kudu
