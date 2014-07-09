@@ -107,7 +107,7 @@ void MasterPathHandlers::HandleTablePage(const Webserver::ArgumentMap &args,
     *output << "<table class='table table-striped'>\n";
     *output << "  <tr><td>Version:</td><td>" << l.data().pb.version() << "</td></tr>\n";
     *output << "  <tr><td>State:</td><td>"
-          << SysTablesEntryPB_State_Name(l.data().pb.state()).substr(kSysTabletsEntryStatePrefixLen)
+          << SysTablesEntryPB_State_Name(l.data().pb.state()).substr(kSysTablesEntryStatePrefixLen)
           << EscapeForHtmlToString(l.data().pb.state_msg())
           << "</td></tr>\n";
     *output << "</table>\n";
@@ -130,7 +130,7 @@ void MasterPathHandlers::HandleTablePage(const Webserver::ArgumentMap &args,
         tablet->tablet_id(),
         EscapeForHtmlToString(schema.DebugEncodedRowKey(l.data().pb.start_key())),
         EscapeForHtmlToString(schema.DebugEncodedRowKey(l.data().pb.end_key())),
-        SysTabletsEntryPB_State_Name(l.data().pb.state()).substr(12),
+        SysTabletsEntryPB_State_Name(l.data().pb.state()).substr(kSysTabletsEntryStatePrefixLen),
         EscapeForHtmlToString(l.data().pb.state_msg()),
         QuorumToHtml(locations));
   }
