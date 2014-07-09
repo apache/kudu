@@ -115,7 +115,6 @@ Status SysTable::SetupTablet(const scoped_refptr<metadata::TabletMetadata>& meta
   // just points to SysTableStateChanged(), which currently LOG(FATAL)s.
   tablet_peer_.reset(new TabletPeer(metadata,
                                     quorum_peer,
-                                    metric_ctx_,
                                     boost::bind(&SysTable::SysTableStateChanged, this, _1)));
   consensus::ConsensusBootstrapInfo consensus_info;
   RETURN_NOT_OK(BootstrapTablet(metadata,
@@ -133,7 +132,8 @@ Status SysTable::SetupTablet(const scoped_refptr<metadata::TabletMetadata>& meta
   RETURN_NOT_OK_PREPEND(tablet_peer_->Init(tablet,
                                            scoped_refptr<server::Clock>(master_->clock()),
                                            master_->messenger(),
-                                           log.Pass()),
+                                           log.Pass(),
+                                           *tablet->GetMetricContext()),
                         "Failed to Init() TabletPeer");
 
   RETURN_NOT_OK_PREPEND(tablet_peer_->Start(consensus_info),

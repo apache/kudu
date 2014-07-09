@@ -62,7 +62,6 @@ using tserver::TabletServerErrorPB;
 // ============================================================================
 TabletPeer::TabletPeer(const scoped_refptr<TabletMetadata>& meta,
                        const QuorumPeerPB& quorum_peer,
-                       const MetricContext& metric_ctx,
                        MarkDirtyCallback mark_dirty_clbk)
   : meta_(meta),
     tablet_id_(meta->oid()),
@@ -73,8 +72,7 @@ TabletPeer::TabletPeer(const scoped_refptr<TabletMetadata>& meta,
     // of submission
     log_gc_shutdown_latch_(1),
     mark_dirty_clbk_(mark_dirty_clbk),
-    config_sem_(1),
-    metric_ctx_(metric_ctx) {
+    config_sem_(1) {
   CHECK_OK(TaskExecutorBuilder("prepare").set_max_threads(1).Build(&prepare_executor_));
   CHECK_OK(TaskExecutorBuilder("ldr-apply").Build(&leader_apply_executor_));
   CHECK_OK(TaskExecutorBuilder("repl-apply").set_max_threads(1).Build(&replica_apply_executor_));
@@ -89,7 +87,8 @@ TabletPeer::~TabletPeer() {
 Status TabletPeer::Init(const shared_ptr<Tablet>& tablet,
                         const scoped_refptr<server::Clock>& clock,
                         const shared_ptr<Messenger>& messenger,
-                        gscoped_ptr<Log> log) {
+                        gscoped_ptr<Log> log,
+                        const MetricContext& metric_ctx) {
   {
     boost::lock_guard<simple_spinlock> lock(lock_);
     CHECK_EQ(state_, metadata::BOOTSTRAPPING);
@@ -108,7 +107,7 @@ Status TabletPeer::Init(const shared_ptr<Tablet>& tablet,
     } else {
       gscoped_ptr<consensus::PeerProxyFactory> rpc_factory(
           new consensus::RpcPeerProxyFactory(messenger_));
-      consensus_.reset(new RaftConsensus(options,  rpc_factory.Pass(), metric_ctx_));
+      consensus_.reset(new RaftConsensus(options,  rpc_factory.Pass(), metric_ctx));
     }
   }
 

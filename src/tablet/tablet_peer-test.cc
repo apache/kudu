@@ -76,14 +76,13 @@ class TabletPeerTest : public KuduTabletTest {
     tablet_peer_.reset(
       new TabletPeer(make_scoped_refptr(tablet()->metadata()),
                      quorum_peer,
-                     *metric_ctx_,
                      NULL));
 
     gscoped_ptr<Log> log;
     ASSERT_STATUS_OK(Log::Open(LogOptions(), fs_manager(), tablet()->tablet_id(),
                                metric_ctx_.get(), &log));
 
-    ASSERT_STATUS_OK(tablet_peer_->Init(tablet(), clock(), messenger_, log.Pass()));
+    ASSERT_STATUS_OK(tablet_peer_->Init(tablet(), clock(), messenger_, log.Pass(), *metric_ctx_));
 
     // Disable Log GC. We will call it manually.
     // This flag is restored by the FlagSaver member at destruction time.

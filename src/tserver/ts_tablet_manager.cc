@@ -118,7 +118,6 @@ Status TSTabletManager::Init() {
     shared_ptr<TabletPeer> tablet_peer(
         new TabletPeer(meta,
                        quorum_peer,
-                       metric_ctx_,
                        boost::bind(&TSTabletManager::MarkTabletDirty, this, _1)));
     RegisterTablet(meta->oid(), tablet_peer);
 
@@ -218,7 +217,6 @@ Status TSTabletManager::CreateNewTablet(const string& table_id,
   shared_ptr<TabletPeer> new_peer(
       new TabletPeer(meta,
                      quorum_peer,
-                     metric_ctx_,
                      boost::bind(&TSTabletManager::MarkTabletDirty, this, _1)));
   RegisterTablet(meta->oid(), new_peer);
   // We can run this synchronously since there is nothing to bootstrap.
@@ -306,7 +304,8 @@ void TSTabletManager::OpenTablet(const scoped_refptr<TabletMetadata>& meta) {
     s =  tablet_peer->Init(tablet,
                            scoped_refptr<server::Clock>(server_->clock()),
                            server_->messenger(),
-                           log.Pass());
+                           log.Pass(),
+                           *tablet->GetMetricContext());
 
     if (!s.ok()) {
       tablet_peer->SetFailed(s);
