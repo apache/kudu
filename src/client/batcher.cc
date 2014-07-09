@@ -14,6 +14,7 @@
 #include "client/client.h"
 #include "client/error_collector.h"
 #include "client/meta_cache.h"
+#include "client/session-internal.h"
 #include "client/write_op.h"
 #include "common/encoded_key.h"
 #include "common/row_operations.h"
@@ -322,7 +323,7 @@ void Batcher::CheckForFinishedFlush() {
     // Important to do this outside of the lock so that we don't have
     // a lock inversion deadlock -- the session lock should always
     // come before the batcher lock.
-    session->FlushFinished(this);
+    session->data_->FlushFinished(this);
   }
 
   Status s;

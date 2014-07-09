@@ -14,6 +14,7 @@
 #include "client/meta_cache.h"
 #include "client/row_result.h"
 #include "client/scanner-internal.h"
+#include "client/session-internal.h"
 #include "client/write_op.h"
 #include "common/common.pb.h"
 #include "common/row.h"
@@ -376,7 +377,7 @@ Status KuduClient::OpenTable(const std::string& table_name,
 
 shared_ptr<KuduSession> KuduClient::NewSession() {
   shared_ptr<KuduSession> ret(new KuduSession(shared_from_this()));
-  ret->Init();
+  ret->data_->Init(ret);
   return ret;
 }
 
@@ -540,43 +541,19 @@ KuduError::~KuduError() {
 // KuduSession
 ////////////////////////////////////////////////////////////
 
-KuduSession::KuduSession(const std::tr1::shared_ptr<KuduClient>& client)
-  : client_(client),
-    error_collector_(new ErrorCollector()),
-    flush_mode_(AUTO_FLUSH_SYNC),
-    timeout_ms_(-1) {
+KuduSession::KuduSession(const shared_ptr<KuduClient>& client) {
+  data_.reset(new KuduSession::Data(client));
 }
 
 KuduSession::~KuduSession() {
-  if (batcher_->HasPendingOperations()) {
+  if (data_->batcher_->HasPendingOperations()) {
     LOG(WARNING) << "Closing Session with pending operations.";
   }
-  batcher_->Abort();
-}
-
-void KuduSession::Init() {
-  boost::lock_guard<simple_spinlock> l(lock_);
-  CHECK(!batcher_);
-  NewBatcher(NULL);
-}
-
-void KuduSession::NewBatcher(scoped_refptr<Batcher>* old_batcher) {
-  DCHECK(lock_.is_locked());
-
-  scoped_refptr<Batcher> batcher(
-    new Batcher(client_.get(), error_collector_.get(), shared_from_this()));
-  if (timeout_ms_ != -1) {
-    batcher->SetTimeoutMillis(timeout_ms_);
-  }
-  batcher.swap(batcher_);
-
-  if (old_batcher) {
-    old_batcher->swap(batcher);
-  }
+  data_->batcher_->Abort();
 }
 
 Status KuduSession::SetFlushMode(FlushMode m) {
-  if (batcher_->HasPendingOperations()) {
+  if (data_->batcher_->HasPendingOperations()) {
     // TODO: there may be a more reasonable behavior here.
     return Status::IllegalState("Cannot change flush mode when writes are buffered");
   }
@@ -585,14 +562,14 @@ Status KuduSession::SetFlushMode(FlushMode m) {
     return Status::InvalidArgument("Bad flush mode");
   }
 
-  flush_mode_ = m;
+  data_->flush_mode_ = m;
   return Status::OK();
 }
 
 void KuduSession::SetTimeoutMillis(int millis) {
   CHECK_GE(millis, 0);
-  timeout_ms_ = millis;
-  batcher_->SetTimeoutMillis(millis);
+  data_->timeout_ms_ = millis;
+  data_->batcher_->SetTimeoutMillis(millis);
 }
 
 Status KuduSession::Flush() {
@@ -602,15 +579,15 @@ Status KuduSession::Flush() {
 }
 
 void KuduSession::FlushAsync(const StatusCallback& user_callback) {
-  CHECK_EQ(flush_mode_, MANUAL_FLUSH) << "TODO: handle other flush modes";
+  CHECK_EQ(data_->flush_mode_, MANUAL_FLUSH) << "TODO: handle other flush modes";
 
   // Swap in a new batcher to start building the next batch.
   // Save off the old batcher.
   scoped_refptr<Batcher> old_batcher;
   {
-    boost::lock_guard<simple_spinlock> l(lock_);
-    NewBatcher(&old_batcher);
-    InsertOrDie(&flushed_batchers_, old_batcher.get());
+    boost::lock_guard<simple_spinlock> l(data_->lock_);
+    data_->NewBatcher(shared_from_this(), &old_batcher);
+    InsertOrDie(&data_->flushed_batchers_, old_batcher.get());
   }
 
   // Send off any buffered data. Important to do this outside of the lock
@@ -619,17 +596,12 @@ void KuduSession::FlushAsync(const StatusCallback& user_callback) {
   old_batcher->FlushAsync(user_callback);
 }
 
-void KuduSession::FlushFinished(Batcher* batcher) {
-  boost::lock_guard<simple_spinlock> l(lock_);
-  CHECK_EQ(flushed_batchers_.erase(batcher), 1);
-}
-
 bool KuduSession::HasPendingOperations() const {
-  boost::lock_guard<simple_spinlock> l(lock_);
-  if (batcher_->HasPendingOperations()) {
+  boost::lock_guard<simple_spinlock> l(data_->lock_);
+  if (data_->batcher_->HasPendingOperations()) {
     return true;
   }
-  BOOST_FOREACH(Batcher* b, flushed_batchers_) {
+  BOOST_FOREACH(Batcher* b, data_->flushed_batchers_) {
     if (b->HasPendingOperations()) {
       return true;
     }
@@ -652,13 +624,14 @@ Status KuduSession::Apply(gscoped_ptr<KuduDelete> write_op) {
 Status KuduSession::Apply(gscoped_ptr<KuduWriteOperation> write_op) {
   if (!write_op->row().IsKeySet()) {
     Status status = Status::IllegalState("Key not specified", write_op->ToString());
-    error_collector_->AddError(gscoped_ptr<KuduError>(new KuduError(write_op.Pass(), status)));
+    data_->error_collector_->AddError(gscoped_ptr<KuduError>(
+        new KuduError(write_op.Pass(), status)));
     return status;
   }
 
-  batcher_->Add(write_op.Pass());
+  data_->batcher_->Add(write_op.Pass());
 
-  if (flush_mode_ == AUTO_FLUSH_SYNC) {
+  if (data_->flush_mode_ == AUTO_FLUSH_SYNC) {
     return Flush();
   }
 
@@ -666,18 +639,22 @@ Status KuduSession::Apply(gscoped_ptr<KuduWriteOperation> write_op) {
 }
 
 int KuduSession::CountBufferedOperations() const {
-  boost::lock_guard<simple_spinlock> l(lock_);
-  CHECK_EQ(flush_mode_, MANUAL_FLUSH);
+  boost::lock_guard<simple_spinlock> l(data_->lock_);
+  CHECK_EQ(data_->flush_mode_, MANUAL_FLUSH);
 
-  return batcher_->CountBufferedOperations();
+  return data_->batcher_->CountBufferedOperations();
 }
 
 int KuduSession::CountPendingErrors() const {
-  return error_collector_->CountErrors();
+  return data_->error_collector_->CountErrors();
 }
 
-void KuduSession::GetPendingErrors(std::vector<KuduError*>* errors, bool* overflowed) {
-  error_collector_->GetErrors(errors, overflowed);
+void KuduSession::GetPendingErrors(vector<KuduError*>* errors, bool* overflowed) {
+  data_->error_collector_->GetErrors(errors, overflowed);
+}
+
+KuduClient* KuduSession::client() const {
+  return data_->client_.get();
 }
 
 ////////////////////////////////////////////////////////////

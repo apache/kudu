@@ -9,6 +9,7 @@ set(CLIENT_SRCS
   row_result.cc
   scan_predicate.cc
   scanner-internal.cc
+  session-internal.cc
   schema.cc
   write_op.cc
 )

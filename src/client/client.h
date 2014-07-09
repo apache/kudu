@@ -595,51 +595,16 @@ class KuduSession : public std::tr1::enable_shared_from_this<KuduSession> {
   // This function is thread-safe.
   void GetPendingErrors(std::vector<KuduError*>* errors, bool* overflowed);
 
-  KuduClient* client() { return client_.get(); }
+  KuduClient* client() const;
 
  private:
+  class Data;
+
   friend class KuduClient;
   friend class internal::Batcher;
   explicit KuduSession(const std::tr1::shared_ptr<KuduClient>& client);
 
-  // Must be called after construction, and after the KuduSession is inside
-  // a shared_ptr.
-  void Init();
-
-  // Called by Batcher when a flush has finished.
-  void FlushFinished(internal::Batcher* b);
-
-  // Swap in a new Batcher instance, returning the old one in '*old_batcher', unless it is
-  // NULL.
-  void NewBatcher(scoped_refptr<internal::Batcher>* old_batcher);
-
-  // The client that this session is associated with.
-  const std::tr1::shared_ptr<KuduClient> client_;
-
-  // Lock protecting internal state.
-  // Note that this lock should not be taken if the thread is already holding
-  // a Batcher lock. This must be acquired first.
-  mutable simple_spinlock lock_;
-
-  // Buffer for errors.
-  scoped_refptr<internal::ErrorCollector> error_collector_;
-
-  // The current batcher being prepared.
-  scoped_refptr<internal::Batcher> batcher_;
-
-  // Any batchers which have been flushed but not yet finished.
-  //
-  // Upon a batch finishing, it will call FlushFinished(), which removes the batcher from
-  // this set. This set does not hold any reference count to the Batcher, since, while
-  // the flush is active, the batcher manages its own refcount. The Batcher will always
-  // call FlushFinished() before it destructs itself, so we're guaranteed that these
-  // pointers stay valid.
-  std::tr1::unordered_set<internal::Batcher*> flushed_batchers_;
-
-  FlushMode flush_mode_;
-
-  // Timeout for the next batch.
-  int timeout_ms_;
+  gscoped_ptr<Data> data_;
 
   DISALLOW_COPY_AND_ASSIGN(KuduSession);
 };
