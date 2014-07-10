@@ -36,6 +36,9 @@ INSERT=Insert
 SCAN_NONE_COMMITTED=ScanNoneCommitted
 SCAN_ALL_COMMITTED=ScanAllCommitted
 
+FS_SCANINSERT_MRS=FullStackScanInsertMRSOnly
+FS_SCANINSERT_DISK=FullStackScanInsertWithDisk
+
 LOG_DIR_NAME=build/bench-logs
 OUT_DIR_NAME=build/bench-out
 HTML_FILE="benchmarks.html"
@@ -191,6 +194,26 @@ run_benchmarks() {
     KUDU_ALLOW_SLOW_TESTS=1 build/latest/tablet_server-stress-test \
       --num_inserts_per_thread=30000 &> $LOGDIR/${TS_8THREAD_BENCH}$i.log
   done
+
+  # Run full stack scan/insert test using MRS only, ~26s each
+  for i in $(seq 1 $NUM_SAMPLES) ; do
+    ./build/latest/full_stack-insert-scan-test \
+      --gtest_filter=FullStackInsertScanTest.MRSOnlyStressTest \
+      --concurrent_inserts=50 \
+      --inserts_per_client=200000 \
+      --rows_per_batch=10000 \
+      &> $LOGDIR/${FS_SCANINSERT_MRS}$i.log
+  done
+
+  # Run full stack scan/insert test with disk, ~50s each
+  for i in $(seq 1 $NUM_SAMPLES) ; do
+    ./build/latest/full_stack-insert-scan-test \
+      --gtest_filter=FullStackInsertScanTest.WithDiskStressTest \
+      --concurrent_inserts=50 \
+      --inserts_per_client=200000 \
+      --rows_per_batch=10000 \
+      &> $LOGDIR/${FS_SCANINSERT_DISK}$i.log
+  done
 }
 
 parse_and_record_all_results() {
@@ -294,6 +317,36 @@ parse_and_record_all_results() {
     record_result $BUILD_IDENTIFIER ${TS_8THREAD_BENCH}_throughput_cpu $i $rate
   done
 
+  # parse scan timings for scans and inserts with MRS only
+  for i in $(seq 1 $NUM_SAMPLES); do
+    local log=$LOGDIR/${FS_SCANINSERT_MRS}$i.log
+    insert=`grep "Time spent concurrent inserts" $log | ./parse_real_out.sh`
+    scan_full=`grep "Time spent full schema scan" $log | ./parse_real_out.sh`
+    scan_str=`grep "Time spent String projection" $log | ./parse_real_out.sh`
+    scan_int32=`grep "Time spent Int32 projection" $log | ./parse_real_out.sh`
+    scan_int64=`grep "Time spent Int64 projection" $log | ./parse_real_out.sh`
+    record_result $BUILD_IDENTIFIER ${FS_SCANINSERT_MRS}_insert $i $insert
+    record_result $BUILD_IDENTIFIER ${FS_SCANINSERT_MRS}_scan_full $i $scan_full
+    record_result $BUILD_IDENTIFIER ${FS_SCANINSERT_MRS}_scan_str $i $scan_str
+    record_result $BUILD_IDENTIFIER ${FS_SCANINSERT_MRS}_scan_int32 $i $scan_int32
+    record_result $BUILD_IDENTIFIER ${FS_SCANINSERT_MRS}_scan_int64 $i $scan_int64
+  done
+
+  # parse scan timings for scans and inserts with disk
+  for i in $(seq 1 $NUM_SAMPLES); do
+    local log=$LOGDIR/${FS_SCANINSERT_DISK}$i.log
+    insert=`grep "Time spent concurrent inserts" $log | ./parse_real_out.sh`
+    scan=`grep "Time spent full schema scan" $log | ./parse_real_out.sh`
+    scan_str=`grep "Time spent String projection" $log | ./parse_real_out.sh`
+    scan_int32=`grep "Time spent Int32 projection" $log | ./parse_real_out.sh`
+    scan_int64=`grep "Time spent Int64 projection" $log | ./parse_real_out.sh`
+    record_result $BUILD_IDENTIFIER ${FS_SCANINSERT_DISK}_insert $i $insert
+    record_result $BUILD_IDENTIFIER ${FS_SCANINSERT_MRS}_scan_full $i $scan_full
+    record_result $BUILD_IDENTIFIER ${FS_SCANINSERT_MRS}_scan_str $i $scan_str
+    record_result $BUILD_IDENTIFIER ${FS_SCANINSERT_MRS}_scan_int32 $i $scan_int32
+    record_result $BUILD_IDENTIFIER ${FS_SCANINSERT_MRS}_scan_int64 $i $scan_int64
+  done
+
   popd
   popd
 }
@@ -358,6 +411,11 @@ load_stats_and_generate_plots() {
 
   load_and_generate_plot "${TS_8THREAD_BENCH}%_latency" ts-8thread-insert-latency
   load_and_generate_plot "${TS_8THREAD_BENCH}%_throughput_%" ts-8thread-insert-throughput
+
+  load_and_generate_plot "${FS_SCANINSERT_MRS}%_insert" fs-mrsonly-insert
+  load_and_generate_plot "${FS_SCANINSERT_MRS}%_scan%" fs-mrsonly-scan
+  load_and_generate_plot "${FS_SCANINSERT_DISK}%_insert" fs-withdisk-insert
+  load_and_generate_plot "${FS_SCANINSERT_DISK}%_scan%" fs-withdisk-scan
 
   # Generate all the pngs for all the mt-tablet tests
   for i in {0..9}; do
