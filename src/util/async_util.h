@@ -5,16 +5,12 @@
 #define KUDU_UTIL_ASYNC_UTIL_H
 
 #include "gutil/bind.h"
-#include "gutil/callback.h"
 #include "gutil/macros.h"
-#include "util/status.h"
 #include "util/countdown_latch.h"
+#include "util/status.h"
+#include "util/status_callback.h"
 
 namespace kudu {
-
-// A callback which takes a Status. This is typically used for functions which
-// produce asynchronous results and may fail.
-typedef base::Callback<void(const Status& status)> StatusCallback;
 
 // Simple class which can be used to make async methods synchronous.
 // For example:

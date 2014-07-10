@@ -6,6 +6,7 @@
 #include <tr1/unordered_set>
 
 #include "client/client.h"
+#include "util/locks.h"
 
 namespace kudu {
 

@@ -14,10 +14,9 @@
 #include "client/write_op.h"
 #include "gutil/gscoped_ptr.h"
 #include "gutil/ref_counted.h"
-#include "gutil/macros.h"
-#include "util/async_util.h"
-#include "util/locks.h"
+#include "util/monotime.h"
 #include "util/status.h"
+#include "util/status_callback.h"
 
 namespace kudu {
 

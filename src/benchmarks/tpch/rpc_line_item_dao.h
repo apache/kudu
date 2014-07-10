@@ -14,6 +14,7 @@
 #include "client/row_result.h"
 #include "gutil/atomicops.h"
 #include "gutil/ref_counted.h"
+#include "util/locks.h"
 
 namespace kudu {
 

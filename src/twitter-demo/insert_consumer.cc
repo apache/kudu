@@ -15,6 +15,7 @@
 #include "common/row.h"
 #include "common/schema.h"
 #include "client/client.h"
+#include "gutil/bind.h"
 #include "gutil/stl_util.h"
 #include "tserver/tserver_service.proxy.h"
 #include "tserver/tserver.pb.h"
