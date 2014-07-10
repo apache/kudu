@@ -52,7 +52,11 @@ class KuduTest : public ::testing::Test {
     ASSERT_STATUS_OK(env_->CreateDir(test_dir_));
   }
 
-  virtual void TearDown() OVERRIDE {
+  virtual ~KuduTest() {
+    // Clean up the test directory in the destructor instead of a TearDown
+    // method. This is better because it ensures that the child-class
+    // dtor runs first -- so, if the child class is using a minicluster, etc,
+    // we will shut that down before we remove files underneath.
     if (FLAGS_test_leave_files) {
       LOG(INFO) << "-----------------------------------------------";
       LOG(INFO) << "--test_leave_files specified, leaving files in " << test_dir_;
@@ -60,6 +64,7 @@ class KuduTest : public ::testing::Test {
       LOG(INFO) << "-----------------------------------------------";
       LOG(INFO) << "Had fatal failures, leaving test files at " << test_dir_;
     } else {
+      VLOG(1) << "Cleaning up temporary test files...";
       WARN_NOT_OK(env_->DeleteRecursively(test_dir_),
                   "Couldn't remove test files");
     }

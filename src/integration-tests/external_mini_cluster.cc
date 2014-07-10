@@ -335,7 +335,7 @@ Status ExternalDaemon::StartProcess(const vector<string>& user_flags) {
 
 void ExternalDaemon::Shutdown() {
   if (!process_) return;
-
+  LOG(INFO) << "Killing " << exe_ << " with pid " << process_->pid();
   ignore_result(process_->Kill(SIGKILL));
   int ret;
   WARN_NOT_OK(process_->Wait(&ret), "Waiting on " + exe_);

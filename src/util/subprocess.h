@@ -80,6 +80,8 @@ class Subprocess {
   // Reads from this FD come from stderr of the subprocess
   int ReleaseChildStderrFd() { return ReleaseChildFd(STDERR_FILENO); }
 
+  pid_t pid() const;
+
  private:
   void SetFdShared(int stdfd, bool share);
   int CheckAndOffer(int stdfd) const;

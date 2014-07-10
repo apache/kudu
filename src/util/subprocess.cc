@@ -318,4 +318,9 @@ int Subprocess::ReleaseChildFd(int stdfd) {
   return ret;
 }
 
+pid_t Subprocess::pid() const {
+  CHECK(started_);
+  return child_pid_;
+}
+
 } // namespace kudu
