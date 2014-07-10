@@ -11,6 +11,11 @@ namespace kudu {
 
 namespace client {
 
+namespace internal {
+class Batcher;
+class ErrorCollector;
+} // internal
+
 class KuduSession::Data {
  public:
   explicit Data(const std::tr1::shared_ptr<KuduClient>& client);

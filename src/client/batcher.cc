@@ -12,6 +12,7 @@
 #include <vector>
 
 #include "client/client.h"
+#include "client/client-internal.h"
 #include "client/error_collector.h"
 #include "client/meta_cache.h"
 #include "client/session-internal.h"
@@ -376,10 +377,11 @@ Status Batcher::Add(gscoped_ptr<KuduWriteOperation> write_op) {
 
   // Increment our reference count for the outstanding callback.
   base::RefCountInc(&outstanding_lookups_);
-  client_->meta_cache_->LookupTabletByKey(op->write_op->table(),
-                                          op->key->encoded_key(),
-                                          &op->tablet,
-                                          base::Bind(&Batcher::TabletLookupFinished, this, op));
+  client_->data_->meta_cache_->LookupTabletByKey(op->write_op->table(),
+                                                 op->key->encoded_key(),
+                                                 &op->tablet,
+                                                 base::Bind(&Batcher::TabletLookupFinished,
+                                                            this, op));
   return Status::OK();
 }
 
@@ -668,7 +670,7 @@ void Batcher::WriteRpcFinished(InFlightRpc* rpc) {
         // If the delay causes us to miss our deadline, SendRpc will fail
         // the RPC on our behalf.
         int num_ms = ++rpc->attempt + ((rand() % 5));
-        client_->messenger_->ScheduleOnReactor(
+        client_->data_->messenger_->ScheduleOnReactor(
             boost::bind(&Batcher::SendRpc, this, rpc, _1),
             MonoDelta::FromMilliseconds(num_ms));
         return;

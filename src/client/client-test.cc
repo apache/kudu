@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "client/client.h"
+#include "client/client-internal.h"
 #include "client/encoded_key.h"
 #include "client/meta_cache.h"
 #include "client/row_result.h"
@@ -1380,12 +1381,13 @@ TEST_F(ClientTest, TestReplicatedMultiTabletTableFailover) {
   // Find the first replica that will be scanned.
   Synchronizer sync;
   scoped_refptr<RemoteTablet> rt;
-  client_->meta_cache_->LookupTabletByKey(table.get(), Slice(),
-                                          &rt, sync.AsStatusCallback());
+  client_->data_->meta_cache_->LookupTabletByKey(table.get(), Slice(),
+                                                 &rt, sync.AsStatusCallback());
   ASSERT_STATUS_OK(sync.Wait());
   RemoteTabletServer *rts;
-  ASSERT_STATUS_OK(client_->GetTabletServer(rt->tablet_id(),
-                                            KuduClient::FIRST_REPLICA, &rts));
+  ASSERT_STATUS_OK(client_->data_->GetTabletServer(client_.get(),
+                                                   rt->tablet_id(),
+                                                   KuduClient::FIRST_REPLICA, &rts));
 
   // Kill that replica's tablet server.
   bool ts_killed = false;
@@ -1594,11 +1596,11 @@ TEST_F(ClientTest, DISABLED_TestSeveralRowMutatesPerBatch) {
 // Tests that master permits are properly released after a whole bunch of
 // rows are inserted.
 TEST_F(ClientTest, TestMasterLookupPermits) {
-  int initial_value = client_->meta_cache_->master_lookup_sem_.GetValue();
+  int initial_value = client_->data_->meta_cache_->master_lookup_sem_.GetValue();
   ASSERT_NO_FATAL_FAILURE(InsertTestRows(client_table_.get(),
                                          FLAGS_test_scan_num_rows));
   ASSERT_EQ(initial_value,
-            client_->meta_cache_->master_lookup_sem_.GetValue());
+            client_->data_->meta_cache_->master_lookup_sem_.GetValue());
 }
 
 // Define callback for deadlock simulation, as well as various helper methods.

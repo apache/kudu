@@ -6,6 +6,7 @@
 #include <string>
 #include <vector>
 
+#include "client/client-internal.h"
 #include "client/meta_cache.h"
 #include "client/row_result.h"
 #include "client/table-internal.h"
@@ -72,9 +73,9 @@ Status KuduScanner::Data::OpenTablet(const Slice& key) {
   // TODO: scanners don't really require a leader. For now, however,
   // we always scan from the leader.
   Synchronizer sync;
-  table_->client()->meta_cache_->LookupTabletByKey(table_,
-                                                   key,
-                                                   &remote_, sync.AsStatusCallback());
+  table_->client()->data_->meta_cache_->LookupTabletByKey(table_,
+                                                          key,
+                                                          &remote_, sync.AsStatusCallback());
   RETURN_NOT_OK(sync.Wait());
 
   // Scan it.
@@ -120,7 +121,8 @@ Status KuduScanner::Data::OpenTablet(const Slice& key) {
     controller_.Reset();
     controller_.set_timeout(MonoDelta::FromMilliseconds(kRpcTimeoutMillis));
     RemoteTabletServer *ts;
-    RETURN_NOT_OK(table_->client()->GetTabletServer(
+    RETURN_NOT_OK(table_->client()->data_->GetTabletServer(
+        table_->client(),
         remote_->tablet_id(),
         selection_,
         &ts));
@@ -134,7 +136,7 @@ Status KuduScanner::Data::OpenTablet(const Slice& key) {
 
     // On error, mark any replicas hosted by this TS as failed, then try
     // another replica.
-    table_->client()->meta_cache_->MarkTSFailed(ts);
+    table_->client()->data_->meta_cache_->MarkTSFailed(ts);
   }
   RETURN_NOT_OK(CheckForErrors());
 

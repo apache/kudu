@@ -9,6 +9,7 @@
 #include <glog/logging.h>
 
 #include "client/client.h"
+#include "client/client-internal.h"
 #include "common/schema.h"
 #include "common/wire_protocol.h"
 #include "gutil/map-util.h"
@@ -72,7 +73,7 @@ void RemoteTabletServer::DnsResolutionFinished(const HostPort& hp,
 
   {
     boost::lock_guard<simple_spinlock> l(lock_);
-    proxy_.reset(new TabletServerServiceProxy(client->messenger_, (*addrs)[0]));
+    proxy_.reset(new TabletServerServiceProxy(client->data_->messenger_, (*addrs)[0]));
   }
   user_callback.Run(s);
 }
@@ -98,7 +99,7 @@ void RemoteTabletServer::RefreshProxy(KuduClient* client,
   }
 
   vector<Sockaddr>* addrs = new vector<Sockaddr>();
-  client->dns_resolver_->ResolveAddresses(
+  client->data_->dns_resolver_->ResolveAddresses(
     hp, addrs, base::Bind(&RemoteTabletServer::DnsResolutionFinished,
                           base::Unretained(this), hp, addrs, client, cb));
 }
@@ -124,7 +125,7 @@ string RemoteTabletServer::ToString() const {
   return uuid_;
 }
 
-void RemoteTabletServer::GetHostPorts(std::vector<HostPort>* host_ports) const {
+void RemoteTabletServer::GetHostPorts(vector<HostPort>* host_ports) const {
   boost::lock_guard<simple_spinlock> l(lock_);
   *host_ports = rpc_hostports_;
 }
@@ -193,7 +194,7 @@ bool RemoteTablet::HasLeader() const {
   return LeaderTServer() != NULL;
 }
 
-void RemoteTablet::GetRemoteTabletServers(std::vector<RemoteTabletServer*>* servers) const {
+void RemoteTablet::GetRemoteTabletServers(vector<RemoteTabletServer*>* servers) const {
   boost::lock_guard<simple_spinlock> l(lock_);
   BOOST_FOREACH(const RemoteReplica& replica, replicas_) {
     if (replica.failed) {
@@ -287,7 +288,7 @@ void MetaCache::GetTableLocationsCb(InFlightLookup* ifl) {
         // If the delay causes us to miss our deadline, SendRpc will fail
         // the RPC on our behalf.
         int num_ms = ++ifl->attempt + ((rand() % 5));
-        client_->messenger_->ScheduleOnReactor(
+        client_->data_->messenger_->ScheduleOnReactor(
             boost::bind(&MetaCache::SendRpc, this, ifl, _1),
             MonoDelta::FromMilliseconds(num_ms));
         ignore_result(ifl_deleter.release());
@@ -449,7 +450,7 @@ void MetaCache::LookupTabletByKey(const KuduTable* table,
     int num_ms = 1 + ((rand() % 5) + 1);
     VLOG(3) << "All master lookup permits are held, will retry in "
             << num_ms << " ms";
-    client_->messenger_->ScheduleOnReactor(
+    client_->data_->messenger_->ScheduleOnReactor(
         boost::bind(&MetaCache::LookupTabletByKeyCb, this, _1, table, key,
                     remote_tablet, callback),
         MonoDelta::FromMilliseconds(num_ms));
@@ -462,7 +463,7 @@ void MetaCache::LookupTabletByKey(const KuduTable* table,
     deadline = MonoTime::Now(MonoTime::FINE);
     deadline.AddDelta(timeout_);
   }
-  InFlightLookup *ifl = new InFlightLookup(this, client_->master_proxy_, deadline);
+  InFlightLookup *ifl = new InFlightLookup(this, client_->data_->master_proxy_, deadline);
   ifl->user_callback = callback;
   ifl->table_name = table->name();
   ifl->key = key;
@@ -476,7 +477,7 @@ void MetaCache::LookupTabletByKey(const KuduTable* table,
   SendRpc(ifl, Status::OK());
 }
 
-void MetaCache::LookupTabletByID(const std::string& tablet_id,
+void MetaCache::LookupTabletByID(const string& tablet_id,
                                  scoped_refptr<RemoteTablet>* remote_tablet) {
   *remote_tablet = FindOrDie(tablets_by_id_, tablet_id);
 }

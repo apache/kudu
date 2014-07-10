@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "client/batcher.h"
+#include "client/client-internal.h"
 #include "client/error_collector.h"
 #include "client/error-internal.h"
 #include "client/meta_cache.h"
@@ -18,28 +19,15 @@
 #include "client/session-internal.h"
 #include "client/table-internal.h"
 #include "client/write_op.h"
-#include "common/common.pb.h"
-#include "common/row.h"
-#include "common/schema.h"
 #include "common/wire_protocol.h"
-#include "gutil/casts.h"
-#include "gutil/stl_util.h"
+#include "gutil/map-util.h"
 #include "gutil/strings/substitute.h"
-#include "master/master.h" // TODO: remove this include - just needed for default port
+#include "master/master.pb.h"
 #include "master/master.proxy.h"
-#include "rpc/messenger.h"
-#include "tserver/tserver_service.proxy.h"
-#include "util/async_util.h"
-#include "util/countdown_latch.h"
-#include "util/net/dns_resolver.h"
-#include "util/net/net_util.h"
-#include "util/status.h"
-
 
 using std::string;
 using std::tr1::shared_ptr;
 using std::vector;
-using strings::Substitute;
 using kudu::master::AlterTableRequestPB;
 using kudu::master::AlterTableResponsePB;
 using kudu::master::CreateTableRequestPB;
@@ -48,13 +36,9 @@ using kudu::master::DeleteTableRequestPB;
 using kudu::master::DeleteTableResponsePB;
 using kudu::master::GetTableSchemaRequestPB;
 using kudu::master::GetTableSchemaResponsePB;
-using kudu::master::IsAlterTableDoneRequestPB;
-using kudu::master::IsAlterTableDoneResponsePB;
-using kudu::master::IsCreateTableDoneRequestPB;
-using kudu::master::IsCreateTableDoneResponsePB;
 using kudu::master::MasterServiceProxy;
 using kudu::master::TabletLocationsPB;
-using kudu::rpc::MessengerBuilder;
+using kudu::rpc::Messenger;
 using kudu::rpc::RpcController;
 using kudu::tserver::ScanResponsePB;
 
@@ -119,95 +103,30 @@ KuduClientOptions::KuduClientOptions()
   : default_admin_operation_timeout(MonoDelta::FromMilliseconds(5 * 1000)) {
 }
 
+KuduClient::KuduClient(const KuduClientOptions& options) {
+  data_.reset(new KuduClient::Data(options));
+}
+
 Status KuduClient::Create(const KuduClientOptions& options,
-                          std::tr1::shared_ptr<KuduClient>* client) {
+                          shared_ptr<KuduClient>* client) {
   shared_ptr<KuduClient> c(new KuduClient(options));
-  RETURN_NOT_OK(c->Init());
+  RETURN_NOT_OK(c->data_->Init(c));
   client->swap(c);
   return Status::OK();
 }
 
-KuduClient::KuduClient(const KuduClientOptions& options)
-  : initted_(false),
-    options_(options) {
-}
-
-Status KuduClient::Init() {
-  // Init messenger.
-  if (options_.messenger) {
-    messenger_ = options_.messenger;
-  } else {
-    MessengerBuilder builder("client");
-    RETURN_NOT_OK(builder.Build(&messenger_));
-  }
-
-  // Init proxy.
-  vector<Sockaddr> addrs;
-  RETURN_NOT_OK(ParseAddressList(options_.master_server_addr,
-                                 master::Master::kDefaultPort, &addrs));
-  if (addrs.empty()) {
-    return Status::InvalidArgument("No master address specified");
-  }
-  if (addrs.size() > 1) {
-    LOG(WARNING) << "Specified master server address '" << options_.master_server_addr << "' "
-                 << "resolved to multiple IPs. Using " << addrs[0].ToString();
-  }
-  master_proxy_.reset(new MasterServiceProxy(messenger_, addrs[0]));
-
-  meta_cache_.reset(new MetaCache(this));
-  dns_resolver_.reset(new DnsResolver());
-
-  // Init local host names used for locality decisions.
-  RETURN_NOT_OK_PREPEND(InitLocalHostNames(),
-                        "Could not determine local host names");
-
-  initted_ = true;
-
-  return Status::OK();
-}
-
-Status KuduClient::InitLocalHostNames() {
-  // Currently, we just use our configured hostname, and resolve it to come up with
-  // a list of potentially local hosts. It would be better to iterate over all of
-  // the local network adapters. See KUDU-327.
-  string hostname;
-  RETURN_NOT_OK(GetHostname(&hostname));
-
-  // We don't want to consider 'localhost' to be local - otherwise if a misconfigured
-  // server reports its own name as localhost, all clients will hammer it.
-  if (hostname != "localhost" && hostname != "localhost.localdomain") {
-    local_host_names_.insert(hostname);
-    VLOG(1) << "Considering host " << hostname << " local";
-  }
-
-  vector<Sockaddr> addresses;
-  RETURN_NOT_OK_PREPEND(HostPort(hostname, 0).ResolveAddresses(&addresses),
-                        Substitute("Could not resolve local host name '$0'", hostname));
-
-  BOOST_FOREACH(const Sockaddr& addr, addresses) {
-    // Similar to above, ignore local or wildcard addresses.
-    if (addr.IsWildcard()) continue;
-    if (addr.IsAnyLocalAddress()) continue;
-
-    VLOG(1) << "Considering host " << addr.host() << " local";
-    local_host_names_.insert(addr.host());
-  }
-
-  return Status::OK();
-}
-
-Status KuduClient::CreateTable(const std::string& table_name,
+Status KuduClient::CreateTable(const string& table_name,
                                const KuduSchema& schema) {
   return CreateTable(table_name, schema, KuduCreateTableOptions());
 }
 
-Status KuduClient::CreateTable(const std::string& table_name,
+Status KuduClient::CreateTable(const string& table_name,
                                const KuduSchema& schema,
                                const KuduCreateTableOptions& opts) {
   CreateTableRequestPB req;
   CreateTableResponsePB resp;
   RpcController rpc;
-  rpc.set_timeout(options_.default_admin_operation_timeout);
+  rpc.set_timeout(data_->options_.default_admin_operation_timeout);
 
   // Build request.
   req.set_name(table_name);
@@ -216,12 +135,12 @@ Status KuduClient::CreateTable(const std::string& table_name,
   }
   RETURN_NOT_OK_PREPEND(SchemaToPB(*schema.schema_, req.mutable_schema()),
                         "Invalid schema");
-  BOOST_FOREACH(const std::string& key, opts.split_keys_) {
+  BOOST_FOREACH(const string& key, opts.split_keys_) {
     req.add_pre_split_keys(key);
   }
 
   // Send it.
-  RETURN_NOT_OK(master_proxy_->CreateTable(req, &resp, &rpc));
+  RETURN_NOT_OK(data_->master_proxy_->CreateTable(req, &resp, &rpc));
   if (resp.has_error()) {
     // TODO: if already exist and in progress spin
     return StatusFromPB(resp.error().status());
@@ -235,45 +154,28 @@ Status KuduClient::CreateTable(const std::string& table_name,
     RETURN_NOT_OK(RetryFunc(deadline,
           "Waiting on Create Table to be completed",
           "Timeout out waiting for Table Creation",
-          boost::bind(&KuduClient::IsCreateTableInProgress, this, table_name, _1, _2)));
+          boost::bind(&KuduClient::Data::IsCreateTableInProgress, data_.get(),
+                      table_name, _1, _2)));
   }
 
   return Status::OK();
 }
 
-Status KuduClient::IsCreateTableInProgress(const std::string& table_name,
+Status KuduClient::IsCreateTableInProgress(const string& table_name,
                                            bool *create_in_progress) {
   MonoTime deadline = MonoTime::Now(MonoTime::FINE);
-  deadline.AddDelta(options_.default_admin_operation_timeout);
-  return IsCreateTableInProgress(table_name, deadline, create_in_progress);
+  deadline.AddDelta(data_->options_.default_admin_operation_timeout);
+  return data_->IsCreateTableInProgress(table_name, deadline, create_in_progress);
 }
 
-Status KuduClient::IsCreateTableInProgress(const std::string& table_name,
-                                           const MonoTime& deadline,
-                                           bool *create_in_progress) {
-  IsCreateTableDoneRequestPB req;
-  IsCreateTableDoneResponsePB resp;
-  RpcController rpc;
-
-  req.mutable_table()->set_table_name(table_name);
-  rpc.set_timeout(deadline.GetDeltaSince(MonoTime::Now(MonoTime::FINE)));
-  RETURN_NOT_OK(master_proxy_->IsCreateTableDone(req, &resp, &rpc));
-  if (resp.has_error()) {
-    return StatusFromPB(resp.error().status());
-  }
-
-  *create_in_progress = !resp.done();
-  return Status::OK();
-}
-
-Status KuduClient::DeleteTable(const std::string& table_name) {
+Status KuduClient::DeleteTable(const string& table_name) {
   DeleteTableRequestPB req;
   DeleteTableResponsePB resp;
   RpcController rpc;
 
   req.mutable_table()->set_table_name(table_name);
-  rpc.set_timeout(options_.default_admin_operation_timeout);
-  RETURN_NOT_OK(master_proxy_->DeleteTable(req, &resp, &rpc));
+  rpc.set_timeout(data_->options_.default_admin_operation_timeout);
+  RETURN_NOT_OK(data_->master_proxy_->DeleteTable(req, &resp, &rpc));
   if (resp.has_error()) {
     return StatusFromPB(resp.error().status());
   }
@@ -281,7 +183,7 @@ Status KuduClient::DeleteTable(const std::string& table_name) {
   return Status::OK();
 }
 
-Status KuduClient::AlterTable(const std::string& table_name,
+Status KuduClient::AlterTable(const string& table_name,
                               const KuduAlterTableBuilder& alter) {
   AlterTableRequestPB req;
   AlterTableResponsePB resp;
@@ -296,8 +198,8 @@ Status KuduClient::AlterTable(const std::string& table_name,
 
   req.CopyFrom(*alter.alter_steps_);
   req.mutable_table()->set_table_name(table_name);
-  rpc.set_timeout(options_.default_admin_operation_timeout);
-  RETURN_NOT_OK(master_proxy_->AlterTable(req, &resp, &rpc));
+  rpc.set_timeout(data_->options_.default_admin_operation_timeout);
+  RETURN_NOT_OK(data_->master_proxy_->AlterTable(req, &resp, &rpc));
   if (resp.has_error()) {
     return StatusFromPB(resp.error().status());
   }
@@ -306,45 +208,28 @@ Status KuduClient::AlterTable(const std::string& table_name,
   RETURN_NOT_OK(RetryFunc(deadline,
         "Waiting on Alter Table to be completed",
         "Timeout out waiting for AlterTable",
-        boost::bind(&KuduClient::IsAlterTableInProgress, this, alter_name, _1, _2)));
+        boost::bind(&KuduClient::Data::IsAlterTableInProgress, data_.get(),
+                    alter_name, _1, _2)));
 
   return Status::OK();
 }
 
-Status KuduClient::IsAlterTableInProgress(const std::string& table_name,
+Status KuduClient::IsAlterTableInProgress(const string& table_name,
                                           bool *alter_in_progress) {
   MonoTime deadline = MonoTime::Now(MonoTime::FINE);
-  deadline.AddDelta(options_.default_admin_operation_timeout);
-  return IsAlterTableInProgress(table_name, deadline, alter_in_progress);
+  deadline.AddDelta(data_->options_.default_admin_operation_timeout);
+  return data_->IsAlterTableInProgress(table_name, deadline, alter_in_progress);
 }
 
-Status KuduClient::IsAlterTableInProgress(const std::string& table_name,
-                                          const MonoTime& deadline,
-                                          bool *alter_in_progress) {
-  IsAlterTableDoneRequestPB req;
-  IsAlterTableDoneResponsePB resp;
-  RpcController rpc;
-
-  req.mutable_table()->set_table_name(table_name);
-  rpc.set_timeout(deadline.GetDeltaSince(MonoTime::Now(MonoTime::FINE)));
-  RETURN_NOT_OK(master_proxy_->IsAlterTableDone(req, &resp, &rpc));
-  if (resp.has_error()) {
-    return StatusFromPB(resp.error().status());
-  }
-
-  *alter_in_progress = !resp.done();
-  return Status::OK();
-}
-
-Status KuduClient::GetTableSchema(const std::string& table_name,
+Status KuduClient::GetTableSchema(const string& table_name,
                                   KuduSchema* schema) {
   GetTableSchemaRequestPB req;
   GetTableSchemaResponsePB resp;
   RpcController rpc;
 
   req.mutable_table()->set_table_name(table_name);
-  rpc.set_timeout(options_.default_admin_operation_timeout);
-  RETURN_NOT_OK(master_proxy_->GetTableSchema(req, &resp, &rpc));
+  rpc.set_timeout(data_->options_.default_admin_operation_timeout);
+  RETURN_NOT_OK(data_->master_proxy_->GetTableSchema(req, &resp, &rpc));
   if (resp.has_error()) {
     return StatusFromPB(resp.error().status());
   }
@@ -359,9 +244,9 @@ Status KuduClient::GetTableSchema(const std::string& table_name,
   return Status::OK();
 }
 
-Status KuduClient::OpenTable(const std::string& table_name,
+Status KuduClient::OpenTable(const string& table_name,
                              scoped_refptr<KuduTable>* table) {
-  CHECK(initted_) << "Must Init()";
+  CHECK(data_->initted_) << "Must Init()";
 
   KuduSchema schema;
   RETURN_NOT_OK(GetTableSchema(table_name, &schema));
@@ -381,67 +266,8 @@ shared_ptr<KuduSession> KuduClient::NewSession() {
   return ret;
 }
 
-bool KuduClient::IsLocalHostPort(const HostPort& hp) const {
-  return ContainsKey(local_host_names_, hp.host());
-}
-
-bool KuduClient::IsTabletServerLocal(const RemoteTabletServer& rts) const {
-  vector<HostPort> host_ports;
-  rts.GetHostPorts(&host_ports);
-  BOOST_FOREACH(const HostPort& hp, host_ports) {
-    if (IsLocalHostPort(hp)) return true;
-  }
-  return false;
-}
-
-RemoteTabletServer* KuduClient::PickClosestReplica(
-  const scoped_refptr<RemoteTablet>& rt) const {
-
-  vector<RemoteTabletServer*> candidates;
-  rt->GetRemoteTabletServers(&candidates);
-
-  BOOST_FOREACH(RemoteTabletServer* rts, candidates) {
-    if (IsTabletServerLocal(*rts)) {
-      return rts;
-    }
-  }
-
-  // No local one found. Pick a random one
-  return !candidates.empty() ? candidates[rand() % candidates.size()] : NULL;
-}
-
-Status KuduClient::GetTabletServer(const std::string& tablet_id,
-                                   ReplicaSelection selection,
-                                   RemoteTabletServer** ts) {
-  // TODO: write a proper async version of this for async client.
-  scoped_refptr<RemoteTablet> remote_tablet;
-  meta_cache_->LookupTabletByID(tablet_id, &remote_tablet);
-
-  RemoteTabletServer* ret = NULL;
-  switch (selection) {
-    case LEADER_ONLY:
-      ret = remote_tablet->LeaderTServer();
-      break;
-    case CLOSEST_REPLICA:
-      ret = PickClosestReplica(remote_tablet);
-      break;
-    case FIRST_REPLICA:
-      ret = remote_tablet->FirstTServer();
-      break;
-    default:
-      LOG(FATAL) << "Unknown ProxySelection value " << selection;
-  }
-  if (PREDICT_FALSE(ret == NULL)) {
-    return Status::ServiceUnavailable(
-        Substitute("No $0 for tablet $1",
-                   selection == LEADER_ONLY ? "LEADER" : "replicas", tablet_id));
-  }
-  Synchronizer s;
-  ret->RefreshProxy(this, s.AsStatusCallback(), false);
-  RETURN_NOT_OK(s.Wait());
-
-  *ts = ret;
-  return Status::OK();
+const KuduClientOptions& KuduClient::options() const {
+  return data_->options_;
 }
 
 ////////////////////////////////////////////////////////////
@@ -456,8 +282,7 @@ KuduCreateTableOptions::KuduCreateTableOptions()
 KuduCreateTableOptions::~KuduCreateTableOptions() {
 }
 
-KuduCreateTableOptions& KuduCreateTableOptions::WithSplitKeys(
-    const std::vector<std::string>& keys) {
+KuduCreateTableOptions& KuduCreateTableOptions::WithSplitKeys(const vector<string>& keys) {
   split_keys_ = keys;
   return *this;
 }
@@ -682,10 +507,10 @@ Status KuduAlterTableBuilder::RenameTable(const string& new_name) {
   return Status::OK();
 }
 
-Status KuduAlterTableBuilder::AddColumn(const std::string& name,
-                                    DataType type,
-                                    const void *default_value,
-                                    KuduColumnStorageAttributes attributes) {
+Status KuduAlterTableBuilder::AddColumn(const string& name,
+                                        DataType type,
+                                        const void *default_value,
+                                        KuduColumnStorageAttributes attributes) {
   if (default_value == NULL) {
     return Status::InvalidArgument("A new column must have a default value",
                                    "Use AddNullableColumn() to add a NULLABLE column");
@@ -699,9 +524,9 @@ Status KuduAlterTableBuilder::AddColumn(const std::string& name,
   return Status::OK();
 }
 
-Status KuduAlterTableBuilder::AddNullableColumn(const std::string& name,
-                                            DataType type,
-                                            KuduColumnStorageAttributes attributes) {
+Status KuduAlterTableBuilder::AddNullableColumn(const string& name,
+                                                DataType type,
+                                                KuduColumnStorageAttributes attributes) {
   AlterTableRequestPB::Step* step = alter_steps_->add_alter_schema_steps();
   step->set_type(AlterTableRequestPB::ADD_COLUMN);
   ColumnStorageAttributes attr_priv(attributes.encoding(), attributes.compression());
@@ -710,15 +535,15 @@ Status KuduAlterTableBuilder::AddNullableColumn(const std::string& name,
   return Status::OK();
 }
 
-Status KuduAlterTableBuilder::DropColumn(const std::string& name) {
+Status KuduAlterTableBuilder::DropColumn(const string& name) {
   AlterTableRequestPB::Step* step = alter_steps_->add_alter_schema_steps();
   step->set_type(AlterTableRequestPB::DROP_COLUMN);
   step->mutable_drop_column()->set_name(name);
   return Status::OK();
 }
 
-Status KuduAlterTableBuilder::RenameColumn(const std::string& old_name,
-                                       const std::string& new_name) {
+Status KuduAlterTableBuilder::RenameColumn(const string& old_name,
+                                           const string& new_name) {
   AlterTableRequestPB::Step* step = alter_steps_->add_alter_schema_steps();
   step->set_type(AlterTableRequestPB::RENAME_COLUMN);
   step->mutable_rename_column()->set_old_name(old_name);
@@ -876,7 +701,7 @@ bool KuduScanner::HasMoreRows() const {
       data_->MoreTablets(); // more tablets to scan, possibly with more data
 }
 
-Status KuduScanner::NextBatch(std::vector<KuduRowResult>* rows) {
+Status KuduScanner::NextBatch(vector<KuduRowResult>* rows) {
   // TODO: do some double-buffering here -- when we return this batch
   // we should already have fired off the RPC for the next batch, but
   // need to do some swapping of the response objects around to avoid

@@ -21,40 +21,24 @@
 
 namespace kudu {
 
-class DnsResolver;
-class HostPort;
-class RpcLineItemDAO;
-
 namespace rpc {
 class Messenger;
 }
 
 namespace master {
 class AlterTableRequestPB;
-class MasterServiceProxy;
-}
-
-namespace tserver {
-class TabletServerServiceProxy;
 }
 
 namespace client {
 
 class KuduAlterTableBuilder;
 class KuduCreateTableOptions;
-class KuduInsert;
 class KuduRowResult;
 class KuduSession;
 class KuduTable;
-class MetaCache;
 class RemoteTablet;
 class RemoteTabletServer;
 class KuduWriteOperation;
-
-namespace internal {
-class ErrorCollector;
-class Batcher;
-} // namespace internal
 
 struct KuduClientOptions {
   KuduClientOptions();
@@ -135,7 +119,7 @@ class KuduClient : public std::tr1::enable_shared_from_this<KuduClient> {
   // This is a fully local operation (no RPCs or blocking).
   std::tr1::shared_ptr<KuduSession> NewSession();
 
-  const KuduClientOptions& options() const { return options_; }
+  const KuduClientOptions& options() const;
 
   // Policy with which to choose amongst multiple replicas.
   enum ReplicaSelection {
@@ -151,61 +135,21 @@ class KuduClient : public std::tr1::enable_shared_from_this<KuduClient> {
   };
 
  private:
-  friend class KuduTable;
+  class Data;
+
   friend class KuduScanner;
+  friend class KuduTable;
+  friend class MetaCache;
   friend class RemoteTablet;
-  friend class RemoteTabletServer; // for dns_resolver_ and messenger_.
-  friend class MetaCache; // for master_proxy_ and messenger_
+  friend class RemoteTabletServer;
   friend class internal::Batcher;
 
   FRIEND_TEST(ClientTest, TestReplicatedMultiTabletTableFailover);
   FRIEND_TEST(ClientTest, TestMasterLookupPermits);
 
   explicit KuduClient(const KuduClientOptions& options);
-  Status Init();
 
-  // Returns the ts that hosts a tablet with the given tablet ID, subject
-  // to the given selection criteria.
-  //
-  // Note: failed replicas are ignored. If no appropriate replica could be
-  // found, a non-OK status is returned and 'ts' is untouched.
-  Status GetTabletServer(const std::string& tablet_id,
-                         ReplicaSelection selection,
-                         RemoteTabletServer** ts);
-
-  Status IsCreateTableInProgress(const std::string& table_name,
-                                 const MonoTime& deadline,
-                                 bool *create_in_progress);
-  Status IsAlterTableInProgress(const std::string& table_name,
-                                const MonoTime& deadline,
-                                bool *alter_in_progress);
-
-  Status InitLocalHostNames();
-
-  bool IsLocalHostPort(const HostPort& hp) const;
-
-  bool IsTabletServerLocal(const RemoteTabletServer& rts) const;
-
-  // Returns the closest, non-failed replica to the client.
-  //
-  // Returns NULL if there are no tablet servers, or if they've all failed.
-  // Given that the replica list may change at any time, callers should
-  // always check the result against NULL.
-  RemoteTabletServer* PickClosestReplica(const scoped_refptr<RemoteTablet>& rt) const;
-
-  bool initted_;
-  KuduClientOptions options_;
-  std::tr1::shared_ptr<rpc::Messenger> messenger_;
-
-  gscoped_ptr<DnsResolver> dns_resolver_;
-  scoped_refptr<MetaCache> meta_cache_;
-
-  // Set of hostnames and IPs on the local host.
-  // This is initialized at client startup.
-  std::tr1::unordered_set<std::string> local_host_names_;
-
-  // Proxy to the master.
-  std::tr1::shared_ptr<master::MasterServiceProxy> master_proxy_;
+  gscoped_ptr<Data> data_;
 
   DISALLOW_COPY_AND_ASSIGN(KuduClient);
 };

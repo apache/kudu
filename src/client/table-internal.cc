@@ -4,6 +4,7 @@
 
 #include <string>
 
+#include "client/client-internal.h"
 #include "common/wire_protocol.h"
 #include "master/master.pb.h"
 #include "master/master.proxy.h"
@@ -37,8 +38,8 @@ Status KuduTable::Data::Open() {
   req.mutable_table()->set_table_name(name_);
   do {
     rpc::RpcController rpc;
-    rpc.set_timeout(client_->options_.default_admin_operation_timeout);
-    RETURN_NOT_OK(client_->master_proxy_->GetTableLocations(req, &resp, &rpc));
+    rpc.set_timeout(client_->options().default_admin_operation_timeout);
+    RETURN_NOT_OK(client_->data_->master_proxy_->GetTableLocations(req, &resp, &rpc));
     if (resp.has_error()) {
       return StatusFromPB(resp.error().status());
     }
