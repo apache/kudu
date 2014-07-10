@@ -42,6 +42,7 @@ DEFINE_int32(num_updater_threads, 1, "Number of updating threads to launch");
 DECLARE_bool(use_hybrid_clock);
 DECLARE_bool(log_force_fsync_all);
 DECLARE_int32(max_clock_sync_error_usec);
+DECLARE_bool(enable_maintenance_manager);
 
 using std::string;
 using std::tr1::shared_ptr;
@@ -78,19 +79,23 @@ class TabletServerTest : public KuduTest {
     : schema_(GetSimpleTestSchema()),
       ts_test_metric_context_(&ts_test_metric_registry_, "ts_server-test") {
 
-    key_schema_ = schema_.CreateKeyProjection();
-    rb_.reset(new RowBuilder(schema_));
+    // Use the hybrid clock for TS tests
+    FLAGS_use_hybrid_clock = true;
+
+    // increase the max error tolerance, for tests, to 10 seconds.
+    FLAGS_max_clock_sync_error_usec = 10000000;
+
+    // Disable the maintenance ops manager since we want to trigger our own
+    // maintenance operations at predetermined times.
+    FLAGS_enable_maintenance_manager = false;
   }
 
   // Starts the tablet server, override to start it later.
   virtual void SetUp() OVERRIDE {
     KuduTest::SetUp();
 
-    // Use the hybrid clock for TS tests
-    FLAGS_use_hybrid_clock = true;
-
-    // increase the max error tolerance, for tests, to 10 seconds.
-    FLAGS_max_clock_sync_error_usec = 10000000;
+    key_schema_ = schema_.CreateKeyProjection();
+    rb_.reset(new RowBuilder(schema_));
 
     CreateSharedRegion();
     StartTabletServer();
@@ -115,10 +120,6 @@ class TabletServerTest : public KuduTest {
   }
 
   virtual void StartTabletServer() {
-    // Disable the maintenance ops manager since we want to trigger our own
-    // maintenance operations at predetermined times.
-    MaintenanceManager::Disable();
-
     // Start server with an invalid master address, so it never successfully
     // heartbeats, even if there happens to be a master running on this machine.
     mini_server_.reset(new MiniTabletServer(env_.get(), GetTestPath("TabletServerTest-fsroot")));

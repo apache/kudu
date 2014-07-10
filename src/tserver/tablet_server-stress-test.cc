@@ -14,6 +14,7 @@ DEFINE_int32(single_threaded_insert_latency_bench_insert_rows, 1000,
 
 DEFINE_int32(num_inserter_threads, 8, "Number of inserter threads to run");
 DEFINE_int32(num_inserts_per_thread, 0, "Number of inserts from each thread");
+DECLARE_bool(enable_maintenance_manager);
 
 namespace kudu {
 namespace tserver {
@@ -22,6 +23,15 @@ class TSStressTest : public TabletServerTest {
  public:
   TSStressTest()
     : start_latch_(FLAGS_num_inserter_threads) {
+
+    if (FLAGS_num_inserts_per_thread == 0) {
+      FLAGS_num_inserts_per_thread = AllowSlowTests() ? 100000 : 1000;
+    }
+
+    // Re-enable the maintenance manager which is disabled by default
+    // in TS tests. We want to stress the whole system including
+    // flushes, etc.
+    FLAGS_enable_maintenance_manager = true;
   }
 
   virtual void SetUp() OVERRIDE {
@@ -32,15 +42,6 @@ class TSStressTest : public TabletServerTest {
                                   10000000,
                                   2);
     histogram_ = hist_proto.Instantiate(ts_test_metric_context_);
-
-    if (FLAGS_num_inserts_per_thread == 0) {
-      FLAGS_num_inserts_per_thread = AllowSlowTests() ? 100000 : 1000;
-    }
-
-    // Re-enable the maintenance manager which is disabled by default
-    // in TS tests. We want to stress the whole system including
-    // flushes, etc.
-    MaintenanceManager::Enable();
   }
 
   void StartThreads() {
@@ -70,6 +71,7 @@ void TSStressTest::InserterThread(int thread_idx) {
   // Wait for all the threads to be ready before we start.
   start_latch_.CountDown();
   start_latch_.Wait();
+  LOG(INFO) << "Starting inserter thread " << thread_idx << " complete";
 
   uint64_t max_rows = FLAGS_num_inserts_per_thread;
   int start_row = thread_idx * max_rows;
@@ -80,6 +82,7 @@ void TSStressTest::InserterThread(int thread_idx) {
     MonoDelta delta = after.GetDeltaSince(before);
     histogram_->Increment(delta.ToMicroseconds());
   }
+  LOG(INFO) << "Inserter thread " << thread_idx << " complete";
 }
 
 TEST_F(TSStressTest, TestMTInserts) {

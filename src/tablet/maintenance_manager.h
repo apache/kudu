@@ -103,8 +103,7 @@ struct MaintenanceOpComparator {
 // as flushes or compactions.  It runs these operations in the background, in a
 // thread pool.  It uses information provided in MaintenanceOpStats objects to
 // decide which operations, if any, to run.
-class MaintenanceManager
-    : public std::tr1::enable_shared_from_this<MaintenanceManager> {
+class MaintenanceManager : public std::tr1::enable_shared_from_this<MaintenanceManager> {
  public:
   struct Options {
     int32_t num_threads;
@@ -113,12 +112,9 @@ class MaintenanceManager
     int32_t max_ts_anchored_secs;
   };
 
-  static const Options DEFAULT_OPTIONS;
-
-  static void Enable();
-  static void Disable();
   explicit MaintenanceManager(const Options& options);
   ~MaintenanceManager();
+
   Status Init();
   void Shutdown();
 
@@ -130,13 +126,14 @@ class MaintenanceManager
   // function will block until the Op is finished.
   void UnregisterOp(MaintenanceOp* op);
 
- private:
-  static Atomic32 disabled_;
+  static const Options DEFAULT_OPTIONS;
 
+ private:
   typedef std::map<MaintenanceOp*, MaintenanceOpStats,
           MaintenanceOpComparator> OpMapTy;
 
-  DISALLOW_COPY_AND_ASSIGN(MaintenanceManager);
+  static Status CalculateMemTotal(uint64_t* total);
+  Status CalculateMemTarget(uint64_t* mem_target);
 
   void RunSchedulerThread();
 
@@ -144,8 +141,6 @@ class MaintenanceManager
   MaintenanceOp* FindBestOp();
 
   void LaunchOp(MaintenanceOp* op);
-  Status CalculateMemTarget(uint64_t* mem_target);
-  static Status CalculateMemTotal(uint64_t* total);
 
   const int32_t num_threads_;
   OpMapTy ops_; // registered operations
@@ -160,6 +155,8 @@ class MaintenanceManager
   int32_t polling_interval_ms_;
   int64_t memory_limit_;
   int32_t max_ts_anchored_secs_;
+
+  DISALLOW_COPY_AND_ASSIGN(MaintenanceManager);
 };
 
 } // namespace kudu

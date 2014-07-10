@@ -35,6 +35,8 @@ DEFINE_int64(maintenance_manager_memory_limit, 0,
 DEFINE_int64(maintenance_manager_max_ts_anchored_secs, 0,
        "We will try not to let entries sit in the write-ahead log for "
        "longer than this interval in milliseconds.");
+DEFINE_bool(enable_maintenance_manager, true,
+       "Enable the maintenance manager, runs compaction and tablet cleaning tasks.");
 
 namespace kudu {
 
@@ -63,8 +65,6 @@ void MaintenanceOp::Unregister() {
 std::string MaintenanceOp::name() const {
   return name_;
 }
-
-Atomic32 MaintenanceManager::disabled_ = 0;
 
 const MaintenanceManager::Options MaintenanceManager::DEFAULT_OPTIONS = {
   0,
@@ -119,16 +119,6 @@ void MaintenanceManager::Shutdown() {
     monitor_thread_.reset();
     thread_pool_->Shutdown();
   }
-}
-
-void MaintenanceManager::Enable() {
-  LOG(INFO) << "Enabling maintenance manager";
-  base::subtle::NoBarrier_Store(&disabled_, 0);
-}
-
-void MaintenanceManager::Disable() {
-  LOG(INFO) << "Disabling maintenance manager";
-  base::subtle::NoBarrier_Store(&disabled_, 1);
 }
 
 void MaintenanceManager::RegisterOp(MaintenanceOp* op) {
@@ -220,7 +210,10 @@ void MaintenanceManager::RunSchedulerThread() {
 }
 
 MaintenanceOp* MaintenanceManager::FindBestOp() {
-  if (base::subtle::Acquire_Load(&disabled_)) return NULL;
+  if (!FLAGS_enable_maintenance_manager) {
+    VLOG(1) << "Maintenance manager is disabled. Doing nothing";
+    return NULL;
+  }
   size_t free_threads = num_threads_ - running_ops_;
   if (free_threads == 0) {
     VLOG(1) << "there are no free threads, so we can't run anything.";

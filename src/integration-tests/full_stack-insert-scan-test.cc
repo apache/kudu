@@ -48,6 +48,7 @@ DEFINE_bool(perf_stat_scan, false, "Print \"perf stat\" results during"
             "scan to stdout, disabled by default");
 DEFINE_bool(perf_fp_flag, false, "Only applicable with --perf_record_scan,"
             " provides argument \"fp\" to the --call-graph flag");
+DECLARE_bool(enable_maintenance_manager);
 
 using boost::assign::list_of;
 using std::string;
@@ -100,6 +101,9 @@ class FullStackInsertScanTest : public KuduTest {
 
   virtual void SetUp() OVERRIDE {
     KuduTest::SetUp();
+  }
+
+  void CreateTable() {
     ASSERT_GE(kNumInsertClients, 0);
     ASSERT_GE(kNumInsertsPerClient, 0);
     InitCluster();
@@ -238,13 +242,14 @@ void ReportAllDone(int id, int numids) {
 const char* const FullStackInsertScanTest::kTableName = "full-stack-mrs-test-tbl";
 
 TEST_F(FullStackInsertScanTest, MRSOnlyStressTest) {
-  MaintenanceManager::Disable();
+  FLAGS_enable_maintenance_manager = false;
+  CreateTable();
   DoConcurrentClientInserts();
   DoTestScans();
 }
 
 TEST_F(FullStackInsertScanTest, WithDiskStressTest) {
-  MaintenanceManager::Enable();
+  CreateTable();
   DoConcurrentClientInserts();
   DoTestScans();
 }
