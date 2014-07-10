@@ -37,10 +37,10 @@
 #include "util/random_util.h"
 
 // Test size parameters
-DEFINE_int32(concurrent_inserts, 3, "Number of inserting clients to launch");
-DEFINE_int32(inserts_per_client, 500,
+DEFINE_int32(concurrent_inserts, -1, "Number of inserting clients to launch");
+DEFINE_int32(inserts_per_client, -1,
              "Number of rows inserted by each inserter client");
-DEFINE_int32(rows_per_batch, 125, "Number of rows per client batch");
+DEFINE_int32(rows_per_batch, -1, "Number of rows per client batch");
 
 // Perf-related FLAGS_perf_stat
 DEFINE_bool(perf_record_scan, false, "Call \"perf record --call-graph\" "
@@ -71,10 +71,11 @@ using strings::Substitute;
 class FullStackInsertScanTest : public KuduTest {
  protected:
   FullStackInsertScanTest()
-    : kNumInsertClients(FLAGS_concurrent_inserts),
-    kNumInsertsPerClient(FLAGS_inserts_per_client),
-      kNumRows(kNumInsertClients * kNumInsertsPerClient),
-    kFlushEveryN(FLAGS_rows_per_batch),
+    : // Set the default value depending on whether slow tests are allowed
+    kNumInsertClients(DefaultFlag(FLAGS_concurrent_inserts, 3, 10)),
+    kNumInsertsPerClient(DefaultFlag(FLAGS_inserts_per_client, 500, 50000)),
+    kNumRows(kNumInsertClients * kNumInsertsPerClient),
+    kFlushEveryN(DefaultFlag(FLAGS_rows_per_batch, 125, 5000)),
     random_(SeedRandom()),
     // schema has kNumIntCols contiguous columns of Int32 and Int64, in order.
     schema_(list_of
@@ -118,6 +119,12 @@ class FullStackInsertScanTest : public KuduTest {
   void DoTestScans();
 
  private:
+  int DefaultFlag(int flag, int fast, int slow) {
+    if (flag != -1) return flag;
+    if (AllowSlowTests()) return slow;
+    return fast;
+  }
+
   // Generate random row according to schema_.
   static void RandomRow(Random* rng, PartialRow* row,
                         char* buf, uint64_t key, int id);
