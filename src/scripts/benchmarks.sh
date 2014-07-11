@@ -341,10 +341,10 @@ parse_and_record_all_results() {
     scan_int32=`grep "Time spent Int32 projection" $log | ./parse_real_out.sh`
     scan_int64=`grep "Time spent Int64 projection" $log | ./parse_real_out.sh`
     record_result $BUILD_IDENTIFIER ${FS_SCANINSERT_DISK}_insert $i $insert
-    record_result $BUILD_IDENTIFIER ${FS_SCANINSERT_MRS}_scan_full $i $scan_full
-    record_result $BUILD_IDENTIFIER ${FS_SCANINSERT_MRS}_scan_str $i $scan_str
-    record_result $BUILD_IDENTIFIER ${FS_SCANINSERT_MRS}_scan_int32 $i $scan_int32
-    record_result $BUILD_IDENTIFIER ${FS_SCANINSERT_MRS}_scan_int64 $i $scan_int64
+    record_result $BUILD_IDENTIFIER ${FS_SCANINSERT_DISK}_scan_full $i $scan_full
+    record_result $BUILD_IDENTIFIER ${FS_SCANINSERT_DISK}_scan_str $i $scan_str
+    record_result $BUILD_IDENTIFIER ${FS_SCANINSERT_DISK}_scan_int32 $i $scan_int32
+    record_result $BUILD_IDENTIFIER ${FS_SCANINSERT_DISK}_scan_int64 $i $scan_int64
   done
 
   popd
