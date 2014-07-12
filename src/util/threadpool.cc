@@ -240,8 +240,8 @@ void ThreadPool::DispatchThread(bool permanent) {
           // which another thread may actually grab the mutex, notify, and release again
           // before we get the mutex. So, we'll recheck the empty queue case regardless.
           if (queue_.empty()) {
-            VLOG(1) << "Timed out worker for pool " << name_ << " after "
-                    << idle_timeout_.ToMilliseconds() << " ms.";
+            VLOG(3) << "Releasing worker thread from pool " << name_ << " after "
+                    << idle_timeout_.ToMilliseconds() << "ms of idle time.";
             break;
           }
         }
