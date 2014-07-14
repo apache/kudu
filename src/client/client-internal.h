@@ -15,6 +15,10 @@ namespace master {
 class MasterServiceProxy;
 } // namespace master
 
+namespace rpc {
+class Messenger;
+} // namespace rpc
+
 namespace client {
 
 class KuduClient::Data {

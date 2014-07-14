@@ -237,9 +237,6 @@ Status ExternalMiniCluster::CreateClient(const client::KuduClientOptions& their_
 
   client::KuduClientOptions opts(their_opts);
   opts.master_server_addr = master_->bound_rpc_hostport().ToString();
-  if (!opts.messenger) {
-    opts.messenger = messenger_;
-  }
 
   return client::KuduClient::Create(opts, client);
 }

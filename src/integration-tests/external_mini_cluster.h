@@ -110,8 +110,7 @@ class ExternalMiniCluster {
   Status WaitForTabletServerCount(int count, const MonoDelta& timeout);
 
   // Create a client configured to talk to this cluster.
-  // Options may contain override options for the client. If no messenger is provided,
-  // the internal messenger owned by this class is used. The master address will
+  // Options may contain override options for the client. The master address will
   // be overridden to talk to the running master.
   //
   // REQUIRES: the cluster must have already been Start()ed.

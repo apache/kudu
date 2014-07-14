@@ -13,7 +13,6 @@
 #include "master/master.proxy.h"
 #include "master/mini_master.h"
 #include "master/master-test-util.h"
-#include "rpc/messenger.h"
 #include "util/stopwatch.h"
 #include "util/test_util.h"
 
@@ -23,8 +22,6 @@ using kudu::client::KuduClient;
 using kudu::client::KuduClientOptions;
 using kudu::client::KuduColumnSchema;
 using kudu::client::KuduSchema;
-using kudu::rpc::Messenger;
-using kudu::rpc::MessengerBuilder;
 using kudu::rpc::RpcController;
 using kudu::master::MasterServiceProxy;
 
@@ -63,10 +60,8 @@ class CreateTableStressTest : public KuduTest {
     cluster_.reset(new MiniCluster(env_.get(), test_dir_, 1));
     ASSERT_STATUS_OK(cluster_->Start());
 
-    ASSERT_STATUS_OK(MessengerBuilder("Client").Build(&msgr_));
     KuduClientOptions opts;
     opts.master_server_addr = cluster_->mini_master()->bound_rpc_addr().ToString();
-    opts.messenger = msgr_;
     ASSERT_STATUS_OK(KuduClient::Create(opts, &client_));
   }
 
@@ -78,7 +73,6 @@ class CreateTableStressTest : public KuduTest {
 
  protected:
   shared_ptr<KuduClient> client_;
-  shared_ptr<Messenger> msgr_;
   gscoped_ptr<MiniCluster> cluster_;
   KuduSchema schema_;
 };

@@ -20,10 +20,6 @@
 
 namespace kudu {
 
-namespace rpc {
-class Messenger;
-}
-
 namespace master {
 class AlterTableRequestPB;
 }
@@ -45,9 +41,6 @@ struct KuduClientOptions {
   // The RPC address of the master.
   // When we have a replicated master, this will switch to a vector of addresses.
   std::string master_server_addr;
-
-  // The messenger to use.
-  std::tr1::shared_ptr<rpc::Messenger> messenger;
 
   // Default Timeout used for admin operations (e.g. CreateTable, AlterTable, ...)
   MonoDelta default_admin_operation_timeout;

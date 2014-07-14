@@ -8,7 +8,6 @@
 #include <tr1/memory>
 #include <vector>
 
-#include "client/client.h"
 #include "gutil/strings/join.h"
 #include "master/master.h"
 #include "master/master.proxy.h"
@@ -16,21 +15,16 @@
 #include "master/mini_master.h"
 #include "master/ts_descriptor.h"
 #include "master/ts_manager.h"
+#include "rpc/messenger.h"
 #include "server/rpc_server.h"
-#include "util/net/sockaddr.h"
 #include "util/status.h"
 #include "util/test_util.h"
-#include "rpc/messenger.h"
 
 using std::string;
 using std::tr1::shared_ptr;
 using kudu::rpc::Messenger;
 using kudu::rpc::MessengerBuilder;
 using kudu::rpc::RpcController;
-using kudu::client::KuduClient;
-using kudu::client::KuduClientOptions;
-using kudu::client::KuduColumnSchema;
-using kudu::client::KuduSchema;
 
 namespace kudu {
 namespace master {
@@ -58,7 +52,7 @@ class MasterTest : public KuduTest {
 
   void DoListTables(ListTablesResponsePB* resp);
   void CreateTable(const string& table_name,
-                   const KuduSchema& schema);
+                   const Schema& schema);
 
 
   shared_ptr<Messenger> client_messenger_;
@@ -179,22 +173,20 @@ TEST_F(MasterTest, TestRegisterAndHeartbeat) {
 
 // Create a table
 void MasterTest::CreateTable(const string& table_name,
-                             const KuduSchema& schema) {
-  shared_ptr<KuduClient> client;
-  KuduClientOptions opts;
-  opts.master_server_addr = mini_master_->bound_rpc_addr().ToString();
-  opts.messenger = client_messenger_;
-  ASSERT_STATUS_OK(KuduClient::Create(opts, &client));
+                             const Schema& schema) {
+  CreateTableRequestPB req;
+  CreateTableResponsePB resp;
+  RpcController controller;
 
-  vector<string> keys;
-  keys.push_back("k1");
-  keys.push_back("k2");
+  req.set_name(table_name);
+  ASSERT_STATUS_OK(SchemaToPB(schema, req.mutable_schema()));
+  req.add_pre_split_keys("k1");
+  req.add_pre_split_keys("k2");
 
-  ASSERT_STATUS_OK(client->CreateTable(
-                     table_name, schema,
-                     kudu::client::KuduCreateTableOptions()
-                        .WithSplitKeys(keys)
-                        .WaitAssignment(false)));
+  ASSERT_STATUS_OK(proxy_->CreateTable(req, &resp, &controller));
+  if (resp.has_error()) {
+    ASSERT_STATUS_OK(StatusFromPB(resp.error().status()));
+  }
 }
 
 void MasterTest::DoListTables(ListTablesResponsePB* resp) {
@@ -207,10 +199,10 @@ void MasterTest::DoListTables(ListTablesResponsePB* resp) {
 
 TEST_F(MasterTest, TestCatalog) {
   const char *kTableName = "testtb";
-  const KuduSchema kTableSchema(boost::assign::list_of
-                            (KuduColumnSchema("key", UINT32))
-                            (KuduColumnSchema("v1", UINT64))
-                            (KuduColumnSchema("v2", STRING)),
+  const Schema kTableSchema(boost::assign::list_of
+                            (ColumnSchema("key", UINT32))
+                            (ColumnSchema("v1", UINT64))
+                            (ColumnSchema("v2", STRING)),
                             1);
 
   ASSERT_NO_FATAL_FAILURE(CreateTable(kTableName, kTableSchema));

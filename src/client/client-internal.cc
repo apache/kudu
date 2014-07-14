@@ -41,12 +41,8 @@ KuduClient::Data::~Data() {
 
 Status KuduClient::Data::Init(const shared_ptr<KuduClient>& client) {
   // Init messenger.
-  if (options_.messenger) {
-    messenger_ = options_.messenger;
-  } else {
-    MessengerBuilder builder("client");
-    RETURN_NOT_OK(builder.Build(&messenger_));
-  }
+  MessengerBuilder builder("client");
+  RETURN_NOT_OK(builder.Build(&messenger_));
 
   // Init proxy.
   vector<Sockaddr> addrs;
