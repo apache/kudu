@@ -1164,9 +1164,10 @@ TEST_F(ClientTest, TestWriteWithBadSchema) {
 
   // Remove the 'int_val' column.
   // Now the schema on the client is "old"
-  KuduAlterTableBuilder alter;
-  alter.DropColumn("int_val");
-  ASSERT_STATUS_OK(client_->AlterTable(kTableName, alter));
+  ASSERT_STATUS_OK(client_->NewTableAlterer()
+                   ->table_name(kTableName)
+                   .drop_column("int_val")
+                   .Alter());
 
   // Try to do a write with the bad schema.
   shared_ptr<KuduSession> session = client_->NewSession();
@@ -1196,31 +1197,61 @@ TEST_F(ClientTest, TestBasicAlterOperations) {
   // because multi-tablet tables are prone to deadlocking.
   //
   // See KUDU-273 for more details.
-  KuduAlterTableBuilder alter;
+
+  // test that missing the table's name throws an error
+  {
+    Status s = client_->NewTableAlterer()
+        ->drop_column("key")
+        .Alter();
+    ASSERT_TRUE(s.IsInvalidArgument());
+    ASSERT_STR_CONTAINS(s.ToString(), "Missing table name");
+  }
+
+  // test that having no steps throws an error
+  {
+    Status s = client_->NewTableAlterer()
+        ->table_name(kTable2Name)
+        .Alter();
+    ASSERT_TRUE(s.IsInvalidArgument());
+    ASSERT_STR_CONTAINS(s.ToString(), "No alter steps provided");
+  }
+
+  // test that adding a non-nullable column with no default value throws an error
+  {
+    Status s = client_->NewTableAlterer()
+        ->table_name(kTable2Name)
+        .add_column("key", UINT32, NULL)
+        .Alter();
+    ASSERT_TRUE(s.IsInvalidArgument());
+    ASSERT_STR_CONTAINS(s.ToString(), "A new column must have a default value");
+  }
 
   // test that remove key should throws an error
   {
-    alter.Reset();
-    alter.DropColumn("key");
-    Status s = client_->AlterTable(kTable2Name, alter);
+    Status s = client_->NewTableAlterer()
+        ->table_name(kTable2Name)
+        .drop_column("key")
+        .Alter();
     ASSERT_TRUE(s.IsInvalidArgument());
     ASSERT_STR_CONTAINS(s.ToString(), "cannot remove a key column");
   }
 
   // test that renaming a key should throws an error
   {
-    alter.Reset();
-    alter.RenameColumn("key", "key2");
-    Status s = client_->AlterTable(kTable2Name, alter);
+    Status s = client_->NewTableAlterer()
+        ->table_name(kTable2Name)
+        .rename_column("key", "key2")
+        .Alter();
     ASSERT_TRUE(s.IsInvalidArgument());
     ASSERT_STR_CONTAINS(s.ToString(), "cannot rename a key column");
   }
 
   // test that renaming to an already-existing name throws an error
   {
-    alter.Reset();
-    alter.RenameColumn("int_val", "string_val");
-    Status s = client_->AlterTable(kTable2Name, alter);
+    Status s = client_->NewTableAlterer()
+        ->table_name(kTable2Name)
+        .rename_column("int_val", "string_val")
+        .Alter();
     ASSERT_TRUE(s.IsAlreadyPresent());
     ASSERT_STR_CONTAINS(s.ToString(), "The column already exists: string_val");
   }
@@ -1232,36 +1263,42 @@ TEST_F(ClientTest, TestBasicAlterOperations) {
       tablet_id, &tablet_peer));
 
   {
-    alter.Reset();
-    alter.DropColumn("int_val");
-    alter.AddNullableColumn("new_col", UINT32);
-    ASSERT_STATUS_OK(client_->AlterTable(kTable2Name, alter));
+    ASSERT_STATUS_OK(client_->NewTableAlterer()
+                     ->table_name(kTable2Name)
+                     .drop_column("int_val")
+                     .add_nullable_column("new_col", UINT32)
+                     .Alter());
     ASSERT_EQ(1, tablet_peer->tablet()->metadata()->schema_version());
   }
 
   // test that specifying an encoding incompatible with the column's
   // type throws an error
   {
-    alter.Reset();
-    alter.AddNullableColumn("new_string_val", STRING, KuduColumnStorageAttributes(GROUP_VARINT));
-    Status s = client_->AlterTable(kTable2Name, alter);
+    Status s = client_->NewTableAlterer()
+        ->table_name(kTable2Name)
+        .add_nullable_column("new_string_val", STRING,
+                             KuduColumnStorageAttributes(GROUP_VARINT))
+        .Alter();
     ASSERT_TRUE(s.IsNotSupported());
     ASSERT_STR_CONTAINS(s.ToString(), "Unsupported type/encoding pair");
     ASSERT_EQ(1, tablet_peer->tablet()->metadata()->schema_version());
   }
 
   {
-    alter.Reset();
-    alter.AddNullableColumn("new_string_val", STRING, KuduColumnStorageAttributes(PREFIX_ENCODING));
-    ASSERT_STATUS_OK(client_->AlterTable(kTable2Name, alter));
+    ASSERT_STATUS_OK(client_->NewTableAlterer()
+                     ->table_name(kTable2Name)
+                     .add_nullable_column("new_string_val", STRING,
+                                          KuduColumnStorageAttributes(PREFIX_ENCODING))
+                     .Alter());
     ASSERT_EQ(2, tablet_peer->tablet()->metadata()->schema_version());
   }
 
   {
     const char *kRenamedTableName = "RenamedTable";
-    alter.Reset();
-    alter.RenameTable(kRenamedTableName);
-    ASSERT_STATUS_OK(client_->AlterTable(kTable2Name, alter));
+    ASSERT_STATUS_OK(client_->NewTableAlterer()
+                     ->table_name(kTable2Name)
+                     .rename_table(kRenamedTableName)
+                     .Alter());
     ASSERT_EQ(3, tablet_peer->tablet()->metadata()->schema_version());
     ASSERT_EQ(kRenamedTableName, tablet_peer->tablet()->metadata()->table_name());
 

@@ -20,20 +20,16 @@
 
 namespace kudu {
 
-namespace master {
-class AlterTableRequestPB;
-}
-
 namespace client {
 
-class KuduAlterTableBuilder;
 class KuduRowResult;
 class KuduSession;
 class KuduTable;
+class KuduTableAlterer;
 class KuduTableCreator;
+class KuduWriteOperation;
 class RemoteTablet;
 class RemoteTabletServer;
-class KuduWriteOperation;
 
 // Creates a new KuduClient with the desired options.
 //
@@ -103,8 +99,7 @@ class KuduClient : public std::tr1::enable_shared_from_this<KuduClient> {
 
   Status DeleteTable(const std::string& table_name);
 
-  Status AlterTable(const std::string& table_name,
-                    const KuduAlterTableBuilder& alter);
+  gscoped_ptr<KuduTableAlterer> NewTableAlterer();
 
   // set 'alter_in_progress' to true if an AlterTable operation is in-progress
   Status IsAlterTableInProgress(const std::string& table_name,
@@ -150,6 +145,7 @@ class KuduClient : public std::tr1::enable_shared_from_this<KuduClient> {
   friend class KuduClientBuilder;
   friend class KuduScanner;
   friend class KuduTable;
+  friend class KuduTableAlterer;
   friend class KuduTableCreator;
   friend class MetaCache;
   friend class RemoteTablet;
@@ -251,41 +247,63 @@ class KuduTable : public base::RefCountedThreadSafe<KuduTable> {
   DISALLOW_COPY_AND_ASSIGN(KuduTable);
 };
 
-// Alter Table helper
-//   AlterTableBuilder builder;
-//   builder.AddNullableColumn("col1", UINT32);
-//   client->AlterTable("table-name", builder);
-class KuduAlterTableBuilder {
+// Alters an existing table based on the provided steps.
+//
+// Sample usage:
+//   gscoped_ptr<KuduTableAlterer> alterer = client->NewTableAlterer();
+//   alterer->table_name("table-name");
+//   alterer->add_nullable_column("col1", UINT32);
+//   alterer->Alter();
+class KuduTableAlterer {
  public:
-  KuduAlterTableBuilder();
+  ~KuduTableAlterer();
 
-  void Reset();
+  // Sets the table to alter. Required.
+  KuduTableAlterer& table_name(const std::string& name);
 
-  bool has_changes() const;
+  // Renames the table. Optional.
+  KuduTableAlterer& rename_table(const std::string& new_name);
 
-  Status RenameTable(const string& new_name);
+  // Adds a new column to the table. The default value must be provided.
+  // Optional.
+  KuduTableAlterer& add_column(const std::string& name,
+                               DataType type,
+                               const void *default_value,
+                               KuduColumnStorageAttributes attributes =
+                                   KuduColumnStorageAttributes());
 
-  Status AddColumn(const std::string& name,
-                   DataType type,
-                   const void *default_value,
-                   KuduColumnStorageAttributes attributes = KuduColumnStorageAttributes());
+  // Adds a new nullable column to the table. Optional.
+  KuduTableAlterer& add_nullable_column(const std::string& name,
+                                        DataType type,
+                                        KuduColumnStorageAttributes attributes =
+                                            KuduColumnStorageAttributes());
 
-  Status AddNullableColumn(const std::string& name,
-                           DataType type,
-                           KuduColumnStorageAttributes attributes = KuduColumnStorageAttributes());
+  // Drops an existing column from the table. Optional.
+  KuduTableAlterer& drop_column(const std::string& name);
 
-  Status DropColumn(const std::string& name);
+  // Renames an existing column in the table. Optional.
+  KuduTableAlterer& rename_column(const std::string& old_name,
+                                  const std::string& new_name);
 
-  Status RenameColumn(const std::string& old_name,
-                      const std::string& new_name);
+  // Alters the table.
+  //
+  // The return value may indicate an error in the alter operation, or a
+  // misuse of the builder (e.g. add_column() with default_value=NULL); in
+  // the latter case, only the last error is returned.
+  Status Alter();
 
   // TODO: Add Edit column
 
  private:
-  friend class KuduClient;
-  gscoped_ptr<master::AlterTableRequestPB> alter_steps_;
+  class Data;
 
-  DISALLOW_COPY_AND_ASSIGN(KuduAlterTableBuilder);
+  friend class KuduClient;
+
+  explicit KuduTableAlterer(KuduClient* client);
+
+  gscoped_ptr<Data> data_;
+
+  DISALLOW_COPY_AND_ASSIGN(KuduTableAlterer);
 };
 
 // An error which occurred in a given operation. This tracks the operation

@@ -19,6 +19,7 @@
 #include "client/scanner-internal.h"
 #include "client/session-internal.h"
 #include "client/table-internal.h"
+#include "client/table_alterer-internal.h"
 #include "client/table_creator-internal.h"
 #include "client/write_op.h"
 #include "common/wire_protocol.h"
@@ -34,6 +35,7 @@ using std::string;
 using std::tr1::shared_ptr;
 using std::vector;
 using kudu::master::AlterTableRequestPB;
+using kudu::master::AlterTableRequestPB_Step;
 using kudu::master::AlterTableResponsePB;
 using kudu::master::CreateTableRequestPB;
 using kudu::master::CreateTableResponsePB;
@@ -185,35 +187,8 @@ Status KuduClient::DeleteTable(const string& table_name) {
   return Status::OK();
 }
 
-Status KuduClient::AlterTable(const string& table_name,
-                              const KuduAlterTableBuilder& alter) {
-  AlterTableRequestPB req;
-  AlterTableResponsePB resp;
-  RpcController rpc;
-
-  if (!alter.has_changes()) {
-    return Status::InvalidArgument("No alter steps provided");
-  }
-
-  MonoTime deadline = MonoTime::Now(MonoTime::FINE);
-  deadline.AddDelta(MonoDelta::FromMilliseconds(60 * 1000));
-
-  req.CopyFrom(*alter.alter_steps_);
-  req.mutable_table()->set_table_name(table_name);
-  rpc.set_timeout(default_admin_operation_timeout());
-  RETURN_NOT_OK(data_->master_proxy_->AlterTable(req, &resp, &rpc));
-  if (resp.has_error()) {
-    return StatusFromPB(resp.error().status());
-  }
-
-  string alter_name = req.has_new_table_name() ? req.new_table_name() : table_name;
-  RETURN_NOT_OK(RetryFunc(deadline,
-        "Waiting on Alter Table to be completed",
-        "Timeout out waiting for AlterTable",
-        boost::bind(&KuduClient::Data::IsAlterTableInProgress, data_.get(),
-                    alter_name, _1, _2)));
-
-  return Status::OK();
+gscoped_ptr<KuduTableAlterer> KuduClient::NewTableAlterer() {
+  return gscoped_ptr<KuduTableAlterer>(new KuduTableAlterer(this));
 }
 
 Status KuduClient::IsAlterTableInProgress(const string& table_name,
@@ -312,10 +287,10 @@ KuduTableCreator& KuduTableCreator::wait_for_assignment(bool wait) {
 
 Status KuduTableCreator::Create() {
   if (!data_->table_name_.length()) {
-    return Status::Incomplete("Missing table name");
+    return Status::InvalidArgument("Missing table name");
   }
   if (!data_->schema_) {
-    return Status::Incomplete("Missing schema");
+    return Status::InvalidArgument("Missing schema");
   }
 
   CreateTableRequestPB req;
@@ -547,67 +522,104 @@ KuduClient* KuduSession::client() const {
 }
 
 ////////////////////////////////////////////////////////////
-// AlterTable
+// KuduTableAlterer
 ////////////////////////////////////////////////////////////
-KuduAlterTableBuilder::KuduAlterTableBuilder()
-  : alter_steps_(new AlterTableRequestPB) {
+KuduTableAlterer::KuduTableAlterer(KuduClient* client) {
+  data_.reset(new KuduTableAlterer::Data(client));
 }
 
-void KuduAlterTableBuilder::Reset() {
-  alter_steps_->clear_alter_schema_steps();
+KuduTableAlterer::~KuduTableAlterer() {
 }
 
-bool KuduAlterTableBuilder::has_changes() const {
-  return alter_steps_->has_new_table_name() ||
-         alter_steps_->alter_schema_steps_size() > 0;
+KuduTableAlterer& KuduTableAlterer::table_name(const string& name) {
+  data_->alter_steps_.mutable_table()->set_table_name(name);
+  return *this;
 }
 
-Status KuduAlterTableBuilder::RenameTable(const string& new_name) {
-  alter_steps_->set_new_table_name(new_name);
-  return Status::OK();
+KuduTableAlterer& KuduTableAlterer::rename_table(const string& new_name) {
+  data_->alter_steps_.set_new_table_name(new_name);
+  return *this;
 }
 
-Status KuduAlterTableBuilder::AddColumn(const string& name,
-                                        DataType type,
-                                        const void *default_value,
-                                        KuduColumnStorageAttributes attributes) {
+KuduTableAlterer& KuduTableAlterer::add_column(const string& name,
+                                               DataType type,
+                                               const void *default_value,
+                                               KuduColumnStorageAttributes attributes) {
   if (default_value == NULL) {
-    return Status::InvalidArgument("A new column must have a default value",
-                                   "Use AddNullableColumn() to add a NULLABLE column");
+    data_->status_ = Status::InvalidArgument("A new column must have a default value",
+                                             "Use AddNullableColumn() to add a NULLABLE column");
   }
 
-  AlterTableRequestPB::Step* step = alter_steps_->add_alter_schema_steps();
+  AlterTableRequestPB::Step* step = data_->alter_steps_.add_alter_schema_steps();
   step->set_type(AlterTableRequestPB::ADD_COLUMN);
   ColumnStorageAttributes attr_priv(attributes.encoding(), attributes.compression());
   ColumnSchemaToPB(ColumnSchema(name, type, false, default_value, default_value, attr_priv),
                                 step->mutable_add_column()->mutable_schema());
-  return Status::OK();
+  return *this;
 }
 
-Status KuduAlterTableBuilder::AddNullableColumn(const string& name,
-                                                DataType type,
-                                                KuduColumnStorageAttributes attributes) {
-  AlterTableRequestPB::Step* step = alter_steps_->add_alter_schema_steps();
+KuduTableAlterer& KuduTableAlterer::add_nullable_column(const string& name,
+                                                        DataType type,
+                                                        KuduColumnStorageAttributes attributes) {
+  AlterTableRequestPB::Step* step = data_->alter_steps_.add_alter_schema_steps();
   step->set_type(AlterTableRequestPB::ADD_COLUMN);
   ColumnStorageAttributes attr_priv(attributes.encoding(), attributes.compression());
   ColumnSchemaToPB(ColumnSchema(name, type, true, NULL, NULL, attr_priv),
                                 step->mutable_add_column()->mutable_schema());
-  return Status::OK();
+  return *this;
 }
 
-Status KuduAlterTableBuilder::DropColumn(const string& name) {
-  AlterTableRequestPB::Step* step = alter_steps_->add_alter_schema_steps();
+KuduTableAlterer& KuduTableAlterer::drop_column(const string& name) {
+  AlterTableRequestPB::Step* step = data_->alter_steps_.add_alter_schema_steps();
   step->set_type(AlterTableRequestPB::DROP_COLUMN);
   step->mutable_drop_column()->set_name(name);
-  return Status::OK();
+  return *this;
 }
 
-Status KuduAlterTableBuilder::RenameColumn(const string& old_name,
-                                           const string& new_name) {
-  AlterTableRequestPB::Step* step = alter_steps_->add_alter_schema_steps();
+KuduTableAlterer& KuduTableAlterer::rename_column(const string& old_name,
+                                                  const string& new_name) {
+  AlterTableRequestPB::Step* step = data_->alter_steps_.add_alter_schema_steps();
   step->set_type(AlterTableRequestPB::RENAME_COLUMN);
   step->mutable_rename_column()->set_old_name(old_name);
   step->mutable_rename_column()->set_new_name(new_name);
+  return *this;
+}
+
+Status KuduTableAlterer::Alter() {
+  if (!data_->alter_steps_.table().has_table_name()) {
+    return Status::InvalidArgument("Missing table name");
+  }
+
+  if (!data_->alter_steps_.has_new_table_name() &&
+      data_->alter_steps_.alter_schema_steps_size() == 0) {
+    return Status::InvalidArgument("No alter steps provided");
+  }
+
+  if (!data_->status_.ok()) {
+    return data_->status_;
+  }
+
+  AlterTableResponsePB resp;
+  RpcController rpc;
+
+  MonoTime deadline = MonoTime::Now(MonoTime::FINE);
+  deadline.AddDelta(MonoDelta::FromMilliseconds(60 * 1000));
+
+  rpc.set_timeout(data_->client_->default_admin_operation_timeout());
+  RETURN_NOT_OK(data_->client_->data_->master_proxy_->AlterTable(data_->alter_steps_, &resp, &rpc));
+  if (resp.has_error()) {
+    return StatusFromPB(resp.error().status());
+  }
+
+  string alter_name = data_->alter_steps_.has_new_table_name() ?
+      data_->alter_steps_.new_table_name() : data_->alter_steps_.table().table_name();
+  RETURN_NOT_OK(RetryFunc(deadline,
+        "Waiting on Alter Table to be completed",
+        "Timeout out waiting for AlterTable",
+        boost::bind(&KuduClient::Data::IsAlterTableInProgress,
+                    data_->client_->data_.get(),
+                    alter_name, _1, _2)));
+
   return Status::OK();
 }
 
