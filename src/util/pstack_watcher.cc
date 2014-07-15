@@ -130,6 +130,8 @@ Status PstackWatcher::RunGdbStackDump(pid_t pid) {
   argv.push_back("-ex");
   argv.push_back("info threads");
   argv.push_back("-ex");
+  argv.push_back("thread apply all bt");
+  argv.push_back("-ex");
   argv.push_back("thread apply all bt full");
   argv.push_back(Substitute("/proc/$0/exe", pid));
   argv.push_back(Substitute("$0", pid));
@@ -146,8 +148,11 @@ Status PstackWatcher::RunPstack(const std::string& progname, pid_t pid) {
 }
 
 Status PstackWatcher::RunStackDump(const string& prog, const vector<string>& argv) {
-  Subprocess pstack_proc(prog, argv);
   printf("************************ BEGIN STACKS **************************\n");
+  if (fflush(stdout) == EOF) {
+    return Status::IOError("Unable to flush stdout", ErrnoToString(errno), errno);
+  }
+  Subprocess pstack_proc(prog, argv);
   RETURN_NOT_OK_PREPEND(pstack_proc.Start(), "DumpStacks proc.Start() failed");
   if (::close(pstack_proc.ReleaseChildStdinFd()) == -1) {
     return Status::IOError("Unable to close child stdin", ErrnoToString(errno), errno);
