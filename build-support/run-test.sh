@@ -66,7 +66,7 @@ else
   pipe_cmd=cat
 fi
 
-export TSAN_OPTIONS="$TSAN_OPTIONS suppressions=$ME/tsan-suppressions.txt history_size=7"
+export TSAN_OPTIONS="$TSAN_OPTIONS suppressions=$ROOT/build-support/tsan-suppressions.txt history_size=7"
 
 # Set a 15-minute timeout for tests run via 'make test'.
 # This keeps our jenkins builds from hanging in the case that there's
