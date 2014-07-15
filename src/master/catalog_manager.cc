@@ -68,11 +68,13 @@ DEFINE_int32(default_num_replicas, 1, // TODO switch to 3 and fix SelectReplicas
 namespace kudu {
 namespace master {
 
-using strings::Substitute;
-using rpc::RpcContext;
-using tserver::TabletServerErrorPB;
-using metadata::QuorumPeerPB;
 using cfile::TypeEncodingInfo;
+using metadata::QuorumPeerPB;
+using rpc::RpcContext;
+using std::string;
+using std::vector;
+using strings::Substitute;
+using tserver::TabletServerErrorPB;
 
 ////////////////////////////////////////////////////////////
 // Table Loader
@@ -80,13 +82,13 @@ using cfile::TypeEncodingInfo;
 
 class TableLoader : public SysTablesTable::Visitor {
  public:
-  explicit TableLoader(CatalogManager *table_manager)
-    : table_manager_(table_manager) {
+  explicit TableLoader(CatalogManager *catalog_manager)
+    : catalog_manager_(catalog_manager) {
   }
 
   virtual Status VisitTable(const std::string& table_id,
                             const SysTablesEntryPB& metadata) OVERRIDE {
-    CHECK(!ContainsKey(table_manager_->table_ids_map_, table_id))
+    CHECK(!ContainsKey(catalog_manager_->table_ids_map_, table_id))
           << "Table already exists: " << table_id;
 
     // Setup the table info
@@ -95,9 +97,9 @@ class TableLoader : public SysTablesTable::Visitor {
     l.mutable_data()->pb.CopyFrom(metadata);
 
     // Add the tablet to the IDs map and to the name map (if the table is not deleted)
-    table_manager_->table_ids_map_[table->id()] = table;
+    catalog_manager_->table_ids_map_[table->id()] = table;
     if (!l.data().is_deleted()) {
-      table_manager_->table_names_map_[l.data().name()] = table;
+      catalog_manager_->table_names_map_[l.data().name()] = table;
     }
 
     LOG(INFO) << "Loaded table " << table->ToString();
@@ -109,7 +111,7 @@ class TableLoader : public SysTablesTable::Visitor {
   }
 
  private:
-  CatalogManager *table_manager_;
+  CatalogManager *catalog_manager_;
 
   DISALLOW_COPY_AND_ASSIGN(TableLoader);
 };
@@ -120,8 +122,8 @@ class TableLoader : public SysTablesTable::Visitor {
 
 class TabletLoader : public SysTabletsTable::Visitor {
  public:
-  explicit TabletLoader(CatalogManager *table_manager)
-    : table_manager_(table_manager) {
+  explicit TabletLoader(CatalogManager *catalog_manager)
+    : catalog_manager_(catalog_manager) {
   }
 
   virtual Status VisitTablet(const std::string& table_id,
@@ -129,7 +131,7 @@ class TabletLoader : public SysTabletsTable::Visitor {
                              const SysTabletsEntryPB& metadata) OVERRIDE {
     // Lookup the table
     scoped_refptr<TableInfo> table(FindPtrOrNull(
-                                     table_manager_->table_ids_map_, table_id));
+                                     catalog_manager_->table_ids_map_, table_id));
 
     // Setup the tablet info
     TabletInfo* tablet = new TabletInfo(table, tablet_id);
@@ -137,7 +139,7 @@ class TabletLoader : public SysTabletsTable::Visitor {
     l.mutable_data()->pb.CopyFrom(metadata);
 
     // Add the tablet to the tablet manager
-    table_manager_->tablet_map_[tablet->tablet_id()] = tablet;
+    catalog_manager_->tablet_map_[tablet->tablet_id()] = tablet;
 
     if (table == NULL) {
       // if the table is missing and the tablet is in "preparing" state
@@ -172,7 +174,7 @@ class TabletLoader : public SysTabletsTable::Visitor {
   }
 
  private:
-  CatalogManager *table_manager_;
+  CatalogManager *catalog_manager_;
 
   DISALLOW_COPY_AND_ASSIGN(TabletLoader);
 };
@@ -364,13 +366,13 @@ Status CatalogManager::CheckOnline() const {
 }
 
 // Create a new table.
-// See 'README' in this directory for description of the design.
+// See README file in this directory for a description of the design.
 Status CatalogManager::CreateTable(const CreateTableRequestPB* req,
                                    CreateTableResponsePB* resp,
                                    rpc::RpcContext* rpc) {
   RETURN_NOT_OK(CheckOnline());
 
-  // 0. Verify the request
+  // a. Validate the user request.
   Schema schema;
   RETURN_NOT_OK(SchemaFromPB(req->schema(), &schema));
   if (schema.has_column_ids()) {
@@ -389,7 +391,7 @@ Status CatalogManager::CreateTable(const CreateTableRequestPB* req,
     boost::lock_guard<LockType> l(lock_);
     TRACE("Acquired catalog manager lock");
 
-    // 1. Verify that the table does not exist
+    // b. Verify that the table does not exist.
     table = FindPtrOrNull(table_names_map_, req->name());
     if (table != NULL) {
       Status s = Status::AlreadyPresent("Table already exists", table->id());
@@ -397,22 +399,22 @@ Status CatalogManager::CreateTable(const CreateTableRequestPB* req,
       return s;
     }
 
-    // 2. Add the new table in "preparing" state
+    // c. Add the new table in "preparing" state.
     table = CreateTableInfo(req, schema);
     table_ids_map_[table->id()] = table;
     table_names_map_[req->name()] = table;
 
-    // 3. Create the Tablet Infos (state is kTabletStatePreparing)
+    // d. Create the TabletInfo objects in state kTabletStatePreparing.
     CreateTablets(req, table.get(), &tablets);
 
-    // 4. Add the table/tablets to the in-memory map for the assignment.
+    // Add the table/tablets to the in-memory map for the assignment.
     resp->set_table_id(table->id());
     table->AddTablets(tablets);
     BOOST_FOREACH(const scoped_refptr<TabletInfo>& tablet, tablets) {
       InsertOrDie(&tablet_map_, tablet->tablet_id(), tablet);
     }
   }
-  TRACE("Inserted table and tablets into CM maps");
+  TRACE("Inserted new table and tablet info into CatalogManager maps");
 
   // NOTE: the table and tablets are already locked for write at this point,
   // since the CreateTableInfo/CreateTabletInfo functions leave them in that state.
@@ -424,7 +426,7 @@ Status CatalogManager::CreateTable(const CreateTableRequestPB* req,
              tablet->metadata().dirty().pb.state());
   }
 
-  // 5. Write Tablets to sys-tablets (in "preparing" state)
+  // e. Write Tablets to sys-tablets (in "preparing" state)
   Status s = sys_tablets_->AddTablets(tablets);
   if (!s.ok()) {
     // TODO: we could potentially handle this error case by returning an error,
@@ -435,7 +437,7 @@ Status CatalogManager::CreateTable(const CreateTableRequestPB* req,
   }
   TRACE("Wrote tablets to system table");
 
-  // 6. Update the on-disk table state to "running" (PONR)
+  // f. Update the on-disk table state to "running" (point of no return).
   table->mutable_metadata()->mutable_dirty()->pb.set_state(SysTablesEntryPB::kTableStateRunning);
   s = sys_tables_->AddTable(table.get());
   if (!s.ok()) {
@@ -444,7 +446,7 @@ Status CatalogManager::CreateTable(const CreateTableRequestPB* req,
   }
   TRACE("Wrote table to system table");
 
-  // 7. Update the in-memory state
+  // g. Commit the in-memory state.
   table->mutable_metadata()->CommitMutation();
 
   BOOST_FOREACH(TabletInfo *tablet, tablets) {
@@ -1482,8 +1484,8 @@ struct DeferredAssignmentActions {
 
 void CatalogManager::HandleAssignPreparingTablet(TabletInfo* tablet,
                                                  DeferredAssignmentActions* deferred) {
-  // The tablet was just created (probably by a CreateTable)
-  // update the state to "creating" to be reading for the creation request.
+  // The tablet was just created (probably by a CreateTable RPC).
+  // Update the state to "creating" to be reading for the creation request.
   tablet->mutable_metadata()->mutable_dirty()->set_state(
     SysTabletsEntryPB::kTabletStateCreating, "Sending initial creation of tablet");
   deferred->tablets_to_update.push_back(tablet);
@@ -1567,7 +1569,7 @@ void CatalogManager::HandleTabletSchemaVersionReport(TabletInfo *tablet, uint32_
   l.mutable_data()->set_state(SysTablesEntryPB::kTableStateRunning,
                               Substitute("Current schema version=$0", current_version));
 
-  Status s = master_->catalog_manager()->sys_tables()->UpdateTable(table);
+  Status s = sys_tables_->UpdateTable(table);
   if (!s.ok()) {
     // panic-mode: abort the master
     LOG(FATAL) << "An error occurred while updating sys-tables: " << s.ToString();

@@ -77,13 +77,13 @@ struct TabletReplica {
 // on disk. This allows the mutated data to be staged and written to disk
 // while readers continue to access the previous version. These portions
 // of data are in PersistentTableInfo above, and typically accessed using
-// TableMetadataLock. For example:
+// TabletMetadataLock. For example:
 //
-//   TableInfo* table = ...;
-//   TableMetadataLock l(table, TableMetadataLock::READ);
+//   TabletInfo* table = ...;
+//   TabletMetadataLock l(tablet, TableMetadataLock::READ);
 //   if (l.data().is_running()) { ... }
 //
-// The non-persistent information about the table is protected by an internal
+// The non-persistent information about the tablet is protected by an internal
 // spin-lock.
 //
 // The object is owned/managed by the CatalogManager, and exposed for testing.
@@ -254,12 +254,12 @@ template<class MetadataClass>
 class MetadataLock : public CowLock<typename MetadataClass::cow_state> {
  public:
   typedef CowLock<typename MetadataClass::cow_state> super;
-  MetadataLock(MetadataClass* info,
-               typename super::LockMode mode)
-    : super(info->mutable_metadata(), mode) {}
-  MetadataLock(const MetadataClass* info,
-               typename super::LockMode mode)
-    : super(&info->metadata(), mode) {}
+  MetadataLock(MetadataClass* info, typename super::LockMode mode)
+    : super(info->mutable_metadata(), mode) {
+  }
+  MetadataLock(const MetadataClass* info, typename super::LockMode mode)
+    : super(&info->metadata(), mode) {
+  }
 };
 
 typedef MetadataLock<TabletInfo> TabletMetadataLock;
@@ -393,7 +393,9 @@ class CatalogManager {
                                const string& start_key,
                                const string& end_key);
 
-  // Builds the TabletLocationsPB for based on the provided TabletInfo.
+  // Builds the TabletLocationsPB for a tablet based on the provided TabletInfo.
+  // Populates locs_pb and returns true on success.
+  // Returns false if tablet is not running.
   bool BuildLocationsForTablet(const scoped_refptr<TabletInfo>& tablet,
                                TabletLocationsPB* locs_pb);
 
