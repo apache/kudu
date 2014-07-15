@@ -1,145 +1,171 @@
 ============================================================
- Catalog Manager and Sys-Tables
+The Catalog Manager and System Tables
 ============================================================
-The Catalog Manager keeps track of the tables and tablets in the system.
 
-All the tables and tablets information are stored both in-memory and on-disk
-as a "sys-tables" table and a "sys-tablets" table.
+The Catalog Manager keeps track of the Kudu tables and tablets defined by the
+user in the cluster.
 
-The two sys tables are loaded in-memory on startup.
-To add or modify a table/tablet the changes written to disk and if the operation
-succeeds the in-memory counterpart is updated.
+All the table and tablet information is stored in-memory in copy-on-write
+TableInfo / TabletInfo objects, as well as on-disk, in the "sys.tables" and
+"sys.tablets" Kudu system tables hosted only on the Master.
+These two system tables are loaded into memory on Master startup.
+At the time of this writing, each of these tables consists of only one tablet.
 
-The catalog manager keeps 3 hash-maps:
- - [Table Id] -> TableInfo
- - [Table Name] -> TableInfo
- - [Tablet Id] -> TabletInfo
+To add or modify a table or tablet, the Master writes, but does not yet commit
+the changes to memory, then writes and flushes the system tables to disk, and
+then makes the changes visible in-memory (commits them) if the disk write is
+successful. This allows readers to access the in-memory state in a consistent
+way, even while a write is in-progress.
+
+This design prevents having to go through the whole scan path to service tablet
+location calls, which would be more expensive, and allows for easily keeping
+"soft" state in the Master for every Table and Tablet.
+
+The catalog manager maintains 3 hash-maps for looking up info in the sys tables:
+- [Table Id] -> TableInfo
+- [Table Name] -> TableInfo
+- [Tablet Id] -> TabletInfo
 
 The TableInfo has a map [tablet-start-key] -> TabletInfo used to provide
 the tablets locations to the user based on a key-range request.
 
-============================================================
- TableInfo/TabletInfo "state" field
-============================================================
-Tables and Tablets are "never" removed, instead we set a "deleted" flag.
 
-A cleaner will be reponsible to delete the "deleted" tables/tablets from
-both the in-memory state and the sys-tables/sys-tablets.
+Table Creation
+--------------
 
-============================================================
- Table Creation
-============================================================
+The below corresponds to the code in CatalogManager::CreateTable().
 
-- client -> master: Create "Table X" with N Tablet and Schema S
-- Catalog Manager Create Table
-    - Verify user request (e.g. valid schema)
-    - Verify that the table name is not already taken
-    - Add (in-memory) the new TableInfo in "preparing" state
-    - Add (in-memory) the TabletInfo based on the user pre-split-keys field ("preparing" state)
-    [if something fails here the table will not be created on master-restart]
-    [BEGIN-WRITE-TO-DISK]
-    - Write the tablets info to "sys-tablets" (kill master if the write failed)
-    [if something fails here the table will not be created on master-restart]
-    - Write the table info to "sys-tables" with the "running" state (kill master if the write failed)
-    [END-WRITE-TO-DISK]
-    - commit the "running" state to memory, which allows clients to see the table.
+1. Client -> Master request: Create "table X" with N tablets and schema S.
+2. Master: CatalogManager::CreateTable():
+   a. Validate user request (e.g. ensure a valid schema).
+   b. Verify that the table name is not already taken.
+      TODO: What about old, deleted tables?
+   c. Add (in-memory) the new TableInfo (in "preparing" state).
+   d. Add (in-memory) the TabletInfo based on the user-provided pre-split-keys
+      field (in "preparing" state).
+   e. Write the tablets info to "sys.tablets"
+      (The Master process is killed if the write fails).
+      - Master begins writing to disk.
+      - Note: If the Master crashes or restarts here or at any time previous to
+        this point, the table will not exist when the Master comes back online.
+   f. Write the table info to "sys.tables" with the "running" state
+      (The Master process is killed if the write fails).
+      - Master completes writing to disk.
+      - After this point, the table will exist and be re-created as necessary
+        at startup time after a crash or process restart.
+   g. Commit the "running" state to memory, which allows clients to see the table.
+3. Master -> Client response: The table has been created with some ID, i.e. "xyz"
+   (or, in case something went wrong, an error message).
 
-- master -> client: The table was created with ID xyz... (or an error in case something went wrong)
+After this point in time, the table is reported as created, which means that if
+the cluster is shut down, when it starts back up the table will still exist.
+However, the tablets are not yet created (see Table Assignment, below).
 
-At this point the table is reported as created, what it means is that:
-"If the cluster is shut down, on restart the table will still be there"
 
-but.. tablets are not created yet.
+Table Deletion
+--------------
 
-============================================================
- Table Assignment (aka Tablets Creation)
-============================================================
+When the user sends a DeleteTable request for table T, table T is marked as
+deleted by writing a "deleted" flag in the state field in T's record in the
+"sys.tables" table, table T is removed from the in-memory "table names"
+map on the Master, and the table is marked as being "deleted" in the
+in-memory TableInfo / TabletInfo "state" field on the Master.
+TODO: Could this race with table deletion / creation??
 
-Once a table is created, the tablets must be created on a set of replicas.
-In order to do that, the master has to select the replicas and associate them to the tablet.
+At this point, the table is no longer externally visible to clients via Master
+RPC calls, but the tablet quorums that make up the table may still be up and
+running. New clients trying to open the table will get a NotFound error, while
+clients that already have the tablet locations cached may still be able to
+read and write to the tablet quorums, as long as the corresponding tablet
+servers are online and their respective tablets have not yet been deleted.
+In some ways, this is similar the design of FS unlink.
 
-For each tablet not created we select a set of replicas and a leader and we send the "create tablet"
-request. On the next TS-heartbeat from the leader we can mark the tablet as "running", if reported.
-If we don't receive a "tablet created" report after ASSIGNMENT-TIMEOUT-MSEC we replace the tablet
-with a new one, following these same steps for the new tablet.
+The Master will asynchronously send a DeleteTablet RPC request to each tablet
+(one RPC request per tablet server in the quorum, for each tablet), and the
+tablets will therefore be deleted in parallel in some unspecified order. If the
+Master or tablet server goes offline before a particular DeleteTablet operation
+successfully completes, the Master will send a new DeleteTablet request at the
+time that the next heartbeat is received from the tablet that is to be deleted.
 
-The Assignment is processed by the "CatalogManagerBgTasksThread".
-This thread is waiting for an event that can be:
- - Create Table (need to process the new tablet for assignment)
- - Assignment Timeout (some tablet request timeout expired, replace it)
+A "Cleaner" process will be reponsible for removing the data from deleted tables
+and tablets in the future, both on-disk and cached in memory (TODO).
 
-- CatalogManagerBgTasksThread
-  - Process Pending Assignments
-      ...for each tablet...
-      - If the tablet is new (just created by CreateTable "preparing" state)
-          - Add it to the "create tablet list"
-      - If the tablet creation was already requested
-          - If we did not received a response within ASSIGNMENT-TIMEOUT-MSEC
-              - Mark this tablet as "replaced", this means that even if a replica was able to
-                create the tablet.. now the tablet does not exist for the system.. and the replica
-                will delete it on the next report.
-              - Create a new tablet and add it to the "create tablet list"
-          - If we did not receive a response, but is too early (< ASSIGNMENT-TIMEOUT-MSEC)
-              - do nothing... on the next run we will see
 
-      ...now we have a list of tablets to create and a list of tablet created
-      ...for each tablet to create...
-        - Select a Quorum and a leader
-      [BEGIN-WRITE-TO-DISK]
-      - Flush the "to create" to sys-tablets with state "creating"
-      [if something fails here, the "Process Pending Assignments" will reprocess this tablets
-       as nothing was done, running tables will be replaced]
-      [END-WRITE-TO-DISK]
-      ...for each tablet to create...
-        - Send an async "create tablet" request to the peers
-          (on TS-heartbeat we will receive the notification of "tablet creation")
-      - Commit any changes in state to memory.
-        At this point the tablets marked as "running" are visible to the user
+Table Assignment (Tablet Creation)
+----------------------------------
 
-  - Cleanup Deleted Tables/Tablets
-    - remove the tablets with "deleted" state from the "sys-tablets"
-    - remove the tables with "deleted" state from "sys-tables"
-    - remove the tablets with "deleted" state from the in-memory map
-    - remove the tables with "deleted" state from the in-memory map
+Once a table is created, the tablets must be created on a set of replicas. In
+order to do that, the master has to select the replicas and associate them to
+the tablet.
 
-When the TS receives a CreateTablet RPC, it will attempt to create the tablet
+For each tablet not created we select a set of replicas and a leader and we
+send the "create tablet" request. On the next TS-heartbeat from the leader we
+can mark the tablet as "running", if reported. If we don't receive a "tablet
+created" report after ASSIGNMENT-TIMEOUT-MSEC we replace the tablet with a new
+one, following these same steps for the new tablet.
+
+The Assignment is processed by the "CatalogManagerBgTasksThread". This thread
+is waiting for an event that can be:
+
+- Create Table (need to process the new tablet for assignment)
+- Assignment Timeout (some tablet request timeout expired, replace it)
+
+This is the current control flow:
+
+- CatalogManagerBgTasksThread:
+  1. Process Pending Assignments:
+     - For each tablet pending assignment:
+       - If tablet creation was already requested:
+          - If we did not receive a response yet, and the configurable
+            assignment timeout period has passed, mark the tablet as "replaced":
+            1. Delete the tablet if it ever reports in.
+            2. Create a new tablet in its place, add that tablet to the
+               "create table" list.
+       - Else, if the tablet is new (just created by CreateTable in "preparing" state):
+         - Add it to the "create tablet" list.
+     - Now, for each tablet in the "create tablet" list:
+       - Select a set of tablet servers to host the tablet quorum.
+       - Select a tablet server to be the initial quorum leader.
+       [BEGIN-WRITE-TO-DISK]
+       - Flush the "to create" to sys.tablets with state "creating"
+       [If something fails here, the "Process Pending Assignments" will
+        reprocess these tablets. As nothing was done, running tables will be replaced]
+       [END-WRITE-TO-DISK]
+       - For each tablet server in the quorum:
+         - Send an async CreateTablet() RPC request to the TS.
+           On TS-heartbeat, the Master will receive the notification of "tablet creation".
+     - Commit any changes in state to memory.
+       At this point the tablets marked as "running" are visible to the user.
+
+  2. Cleanup deleted tables & tablets (FIXME: is this implemented?):
+     - Remove the tablets with "deleted" state from the "sys.tablets"
+     - Remove the tables with "deleted" state from "sys.tables"
+     - Remove the tablets with "deleted" state from the in-memory map
+     - Remove the tables with "deleted" state from the in-memory map
+
+When the TS receives a CreateTablet() RPC, it will attempt to create the tablet
 replica locally. Once it is successful, it will be added to the next tablet
 report. When the tablet is reported, the master-side ProcessTabletReport()
 function is called.
 
-If we find at this point that the reported tablet is in "creating" state, and the TS reporting the
-tablet is the leader selected during the assignment process (see CatalogManagerBgTasksThread)
-the tablet will be marked as running and committed to disk, completing the assignment process.
+If we find at this point that the reported tablet is in "creating" state, and
+the TS reporting the tablet is the leader selected during the assignment
+process (see CatalogManagerBgTasksThread above), the tablet will be marked as
+running and committed to disk, completing the assignment process.
 
-============================================================
- Alter Table
-============================================================
+
+Alter Table
+-----------
+
 When the user sends an alter request, which may contain changes to the schema,
-table name or attributes, the Master will send a set of "alter requests" to each
-TS handling the set of tablets currently running and it will keep retrying in
-case of error.
+table name or attributes, the Master will send a set of AlterTable() RPCs to
+each TS handling the set of tablets currently running. The Master will keep
+retrying in case of error.
 
-If a TS is down or goes down during an "alter request", on restart it will report
-the "schema version" which it is using and the master will send the "alter request"
-to the TS.
+If a TS is down or goes down during an AlterTable request, on restart it will
+report the schema version that it is using, and if it is out of date, the Master
+will send an AlterTable request to that TS at that time.
 
-On Master restart the full tablet report will be requested, and the tablet
-"schema version" sent on the next heartbeat will be used to determine if the
-tablet requires an "alter request".
-
-============================================================
- Table Deletion
-============================================================
-When the user sends a delete request, the table is marked as deleted.
-The deleted state is written to the "sys.tables" and the table removed from
-the in-memory "table names map".
-
-At this point, the table is no longer visible on the master side,
-but the tablets are still up and running.
-New clients trying to open the table will get a NotFound error,
-while clients already running with the locations are still able to read and write
-to the tablets. (In theory this is not a problem, and is the same as the fs unlink)
-
-Each TS/tablet will receive a delete request from the master and the tablet will be removed.
-If the Master or TS crashes and the delete tablet request is not received,
-a new "delete tablet" request will be sent on the first heartbeat.
+When the Master first comes online after being restarted, a full tablet report
+will be requested from each TS, and the tablet schema version sent on the next
+heartbeat will be used to determine if a given TS needs an AlterTable() call.
