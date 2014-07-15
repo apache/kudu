@@ -40,7 +40,6 @@
 #include "util/test_util.h"
 #include "util/hdr_histogram.h"
 
-using kudu::client::KuduCreateTableOptions;
 using kudu::client::KuduClient;
 using kudu::client::KuduClientBuilder;
 using kudu::client::KuduColumnSchema;
@@ -227,11 +226,13 @@ vector<string> LinkedListTest::GenerateSplitKeys() const {
 
 Status LinkedListTest::LoadLinkedList(const MonoDelta& run_for,
                                       int64_t *written_count) {
-  KuduCreateTableOptions opts;
-  RETURN_NOT_OK_PREPEND(client_->CreateTable(kTableName, schema_,
-                                             KuduCreateTableOptions()
-                                             .WithSplitKeys(GenerateSplitKeys())
-                                             .WithNumReplicas(FLAGS_num_replicas)),
+
+  RETURN_NOT_OK_PREPEND(client_->NewTableCreator()
+                        ->table_name(kTableName)
+                        .schema(&schema_)
+                        .split_keys(GenerateSplitKeys())
+                        .num_replicas(FLAGS_num_replicas)
+                        .Create(),
                         "Failed to create table");
   scoped_refptr<KuduTable> table;
   RETURN_NOT_OK(client_->OpenTable(kTableName, &table));

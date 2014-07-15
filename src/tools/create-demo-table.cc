@@ -80,7 +80,10 @@ static int CreateDemoTable(int argc, char** argv) {
            .master_server_addr(FLAGS_master_address)
            .Build(&client));
 
-  CHECK_OK(client->CreateTable(table_name, schema));
+  CHECK_OK(client->NewTableCreator()
+           ->table_name(table_name)
+           .schema(&schema)
+           .Create());
   return 0;
 }
 

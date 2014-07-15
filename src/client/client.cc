@@ -19,6 +19,7 @@
 #include "client/scanner-internal.h"
 #include "client/session-internal.h"
 #include "client/table-internal.h"
+#include "client/table_creator-internal.h"
 #include "client/write_op.h"
 #include "common/wire_protocol.h"
 #include "gutil/map-util.h"
@@ -158,50 +159,8 @@ KuduClient::KuduClient() {
   data_.reset(new KuduClient::Data());
 }
 
-Status KuduClient::CreateTable(const string& table_name,
-                               const KuduSchema& schema) {
-  return CreateTable(table_name, schema, KuduCreateTableOptions());
-}
-
-Status KuduClient::CreateTable(const string& table_name,
-                               const KuduSchema& schema,
-                               const KuduCreateTableOptions& opts) {
-  CreateTableRequestPB req;
-  CreateTableResponsePB resp;
-  RpcController rpc;
-  rpc.set_timeout(default_admin_operation_timeout());
-
-  // Build request.
-  req.set_name(table_name);
-  if (opts.num_replicas_ >= 1) {
-    req.set_num_replicas(opts.num_replicas_);
-  }
-  RETURN_NOT_OK_PREPEND(SchemaToPB(*schema.schema_, req.mutable_schema()),
-                        "Invalid schema");
-  BOOST_FOREACH(const string& key, opts.split_keys_) {
-    req.add_pre_split_keys(key);
-  }
-
-  // Send it.
-  RETURN_NOT_OK(data_->master_proxy_->CreateTable(req, &resp, &rpc));
-  if (resp.has_error()) {
-    // TODO: if already exist and in progress spin
-    return StatusFromPB(resp.error().status());
-  }
-
-  // Spin until the table is fully created, if requested.
-  if (opts.wait_assignment_) {
-    // TODO: make the wait time configurable
-    MonoTime deadline = MonoTime::Now(MonoTime::FINE);
-    deadline.AddDelta(MonoDelta::FromSeconds(15));
-    RETURN_NOT_OK(RetryFunc(deadline,
-          "Waiting on Create Table to be completed",
-          "Timeout out waiting for Table Creation",
-          boost::bind(&KuduClient::Data::IsCreateTableInProgress, data_.get(),
-                      table_name, _1, _2)));
-  }
-
-  return Status::OK();
+gscoped_ptr<KuduTableCreator> KuduClient::NewTableCreator() {
+  return gscoped_ptr<KuduTableCreator>(new KuduTableCreator(this));
 }
 
 Status KuduClient::IsCreateTableInProgress(const string& table_name,
@@ -316,30 +275,86 @@ const MonoDelta& KuduClient::default_admin_operation_timeout() const {
 }
 
 ////////////////////////////////////////////////////////////
-// CreateTableOptions
+// KuduTableCreator
 ////////////////////////////////////////////////////////////
 
-KuduCreateTableOptions::KuduCreateTableOptions()
-  : wait_assignment_(true),
-    num_replicas_(0) {
+KuduTableCreator::KuduTableCreator(KuduClient* client) {
+  data_.reset(new KuduTableCreator::Data(client));
 }
 
-KuduCreateTableOptions::~KuduCreateTableOptions() {
+KuduTableCreator::~KuduTableCreator() {
 }
 
-KuduCreateTableOptions& KuduCreateTableOptions::WithSplitKeys(const vector<string>& keys) {
-  split_keys_ = keys;
+KuduTableCreator& KuduTableCreator::table_name(const string& name) {
+  data_->table_name_ = name;
   return *this;
 }
 
-KuduCreateTableOptions& KuduCreateTableOptions::WithNumReplicas(int num_replicas) {
-  num_replicas_ = num_replicas;
+KuduTableCreator& KuduTableCreator::schema(const KuduSchema* schema) {
+  data_->schema_ = schema;
   return *this;
 }
 
-KuduCreateTableOptions& KuduCreateTableOptions::WaitAssignment(bool wait_assignment) {
-  wait_assignment_ = wait_assignment;
+KuduTableCreator& KuduTableCreator::split_keys(const vector<string>& keys) {
+  data_->split_keys_ = keys;
   return *this;
+}
+
+KuduTableCreator& KuduTableCreator::num_replicas(int num_replicas) {
+  data_->num_replicas_ = num_replicas;
+  return *this;
+}
+
+KuduTableCreator& KuduTableCreator::wait_for_assignment(bool wait) {
+  data_->wait_for_assignment_ = wait;
+  return *this;
+}
+
+Status KuduTableCreator::Create() {
+  if (!data_->table_name_.length()) {
+    return Status::Incomplete("Missing table name");
+  }
+  if (!data_->schema_) {
+    return Status::Incomplete("Missing schema");
+  }
+
+  CreateTableRequestPB req;
+  CreateTableResponsePB resp;
+  RpcController rpc;
+  rpc.set_timeout(data_->client_->default_admin_operation_timeout());
+
+  // Build request.
+  req.set_name(data_->table_name_);
+  if (data_->num_replicas_ >= 1) {
+    req.set_num_replicas(data_->num_replicas_);
+  }
+  RETURN_NOT_OK_PREPEND(SchemaToPB(*data_->schema_->schema_, req.mutable_schema()),
+                        "Invalid schema");
+  BOOST_FOREACH(const string& key, data_->split_keys_) {
+    req.add_pre_split_keys(key);
+  }
+
+  // Send it.
+  RETURN_NOT_OK(data_->client_->data_->master_proxy_->CreateTable(req, &resp, &rpc));
+  if (resp.has_error()) {
+    // TODO: if already exist and in progress spin
+    return StatusFromPB(resp.error().status());
+  }
+
+  // Spin until the table is fully created, if requested.
+  if (data_->wait_for_assignment_) {
+    // TODO: make the wait time configurable
+    MonoTime deadline = MonoTime::Now(MonoTime::FINE);
+    deadline.AddDelta(MonoDelta::FromSeconds(15));
+    RETURN_NOT_OK(RetryFunc(deadline,
+                            "Waiting on Create Table to be completed",
+                            "Timeout out waiting for Table Creation",
+                            boost::bind(&KuduClient::Data::IsCreateTableInProgress,
+                                        data_->client_->data_.get(),
+                                        data_->table_name_, _1, _2)));
+  }
+
+  return Status::OK();
 }
 
 ////////////////////////////////////////////////////////////

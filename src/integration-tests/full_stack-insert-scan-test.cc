@@ -109,7 +109,10 @@ class FullStackInsertScanTest : public KuduTest {
     InitCluster();
     shared_ptr<KuduClient> reader;
     ASSERT_OK(client_builder_.Build(&reader));
-    ASSERT_OK(reader->CreateTable(kTableName, schema_));
+    ASSERT_OK(reader->NewTableCreator()
+             ->table_name(kTableName)
+             .schema(&schema_)
+             .Create());
     ASSERT_OK(reader->OpenTable(kTableName, &reader_table_));
   }
 

@@ -104,7 +104,11 @@ class DistConsensusTest : public TabletServerTest {
     //
     // The tests here make extensive use of server schemas, but we need
     // a client schema to create the table.
-    ASSERT_STATUS_OK(client_->CreateTable(kTableId, GetClientSchema(schema_)));
+    KuduSchema client_schema(GetClientSchema(schema_));
+    ASSERT_OK(client_->NewTableCreator()
+             ->table_name(kTableId)
+             .schema(&client_schema)
+             .Create());
     ASSERT_STATUS_OK(client_->OpenTable(kTableId, &table_));
   }
 

@@ -86,6 +86,7 @@ class KuduSchema {
 
  private:
   friend class KuduClient;
+  friend class KuduTableCreator;
   friend class KuduEncodedKeyBuilder;
   friend class KuduScanner;
   friend class MetaCache;

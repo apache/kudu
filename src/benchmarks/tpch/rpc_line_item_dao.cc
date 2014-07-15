@@ -86,7 +86,10 @@ void RpcLineItemDAO::Init() {
            .Build(&client_));
   Status s = client_->OpenTable(table_name_, &client_table_);
   if (s.IsNotFound()) {
-    CHECK_OK(client_->CreateTable(table_name_, schema));
+    CHECK_OK(client_->NewTableCreator()
+             ->table_name(table_name_)
+             .schema(&schema)
+             .Create());
     CHECK_OK(client_->OpenTable(table_name_, &client_table_));
   } else {
     CHECK_OK(s);

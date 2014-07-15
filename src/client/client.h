@@ -27,10 +27,10 @@ class AlterTableRequestPB;
 namespace client {
 
 class KuduAlterTableBuilder;
-class KuduCreateTableOptions;
 class KuduRowResult;
 class KuduSession;
 class KuduTable;
+class KuduTableCreator;
 class RemoteTablet;
 class RemoteTabletServer;
 class KuduWriteOperation;
@@ -95,11 +95,7 @@ class KuduClientBuilder {
 // This class is thread-safe.
 class KuduClient : public std::tr1::enable_shared_from_this<KuduClient> {
  public:
-  Status CreateTable(const std::string& table_name,
-                     const KuduSchema& schema);
-  Status CreateTable(const std::string& table_name,
-                     const KuduSchema& schema,
-                     const KuduCreateTableOptions& opts);
+  gscoped_ptr<KuduTableCreator> NewTableCreator();
 
   // set 'create_in_progress' to true if a CreateTable operation is in-progress
   Status IsCreateTableInProgress(const std::string& table_name,
@@ -154,6 +150,7 @@ class KuduClient : public std::tr1::enable_shared_from_this<KuduClient> {
   friend class KuduClientBuilder;
   friend class KuduScanner;
   friend class KuduTable;
+  friend class KuduTableCreator;
   friend class MetaCache;
   friend class RemoteTablet;
   friend class RemoteTabletServer;
@@ -169,29 +166,52 @@ class KuduClient : public std::tr1::enable_shared_from_this<KuduClient> {
   DISALLOW_COPY_AND_ASSIGN(KuduClient);
 };
 
-class KuduCreateTableOptions {
+// Creates a new table with the desired options.
+class KuduTableCreator {
  public:
-  KuduCreateTableOptions();
-  ~KuduCreateTableOptions();
+  ~KuduTableCreator();
 
-  // Set keys on which to pre-split the table. The vector is
-  // copied.
-  KuduCreateTableOptions& WithSplitKeys(const std::vector<std::string>& keys);
+  // Sets the name to give the table. It is copied. Required.
+  KuduTableCreator& table_name(const std::string& name);
 
-  // Set the number of replicas for each tablet in the tablet.
-  // This should be an odd number.
+  // Sets the schema with which to create the table. Must remain valid for
+  // the lifetime of the builder. Required.
+  KuduTableCreator& schema(const KuduSchema* schema);
+
+  // Sets the keys on which to pre-split the table. The vector is copied.
+  // Optional.
   //
-  // A value <= 0 falls back to the server-side default.
-  KuduCreateTableOptions& WithNumReplicas(int n_replicas);
+  // If not provided, no pre-splitting is performed.
+  KuduTableCreator& split_keys(const std::vector<std::string>& keys);
 
-  // Wait the assignment
-  KuduCreateTableOptions& WaitAssignment(bool wait_assignment);
+  // Sets the number of replicas for each tablet in the table.
+  // This should be an odd number. Optional.
+  //
+  // If not provided (or if <= 0), falls back to the server-side default.
+  KuduTableCreator& num_replicas(int n_replicas);
 
+  // Wait for all tablets to be assigned after creating the table.
+  // Optional.
+  //
+  // If not provided, defaults to true.
+  KuduTableCreator& wait_for_assignment(bool wait);
+
+  // Creates the table.
+  //
+  // The return value may indicate an error in the create table operation,
+  // or a misuse of the builder; in the latter case, only the last error is
+  // returned.
+  Status Create();
  private:
+  class Data;
+
   friend class KuduClient;
-  std::vector<std::string> split_keys_;
-  bool wait_assignment_;
-  int num_replicas_;
+
+  explicit KuduTableCreator(KuduClient* client);
+
+  gscoped_ptr<Data> data_;
+
+  DISALLOW_COPY_AND_ASSIGN(KuduTableCreator);
 };
 
 // A KuduTable represents a table on a particular cluster. It holds the current

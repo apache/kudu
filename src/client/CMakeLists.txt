@@ -15,6 +15,7 @@ set(CLIENT_SRCS
   session-internal.cc
   schema.cc
   table-internal.cc
+  table_creator-internal.cc
   write_op.cc
 )
 

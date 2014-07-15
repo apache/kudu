@@ -94,10 +94,15 @@ class ClientTest : public KuduTest {
 
     // Set up two test tables inside the server. One has a single split, just so
     // that code is exercised a little more.
-    ASSERT_STATUS_OK(client_->CreateTable(kTableName, schema_,
-                                          KuduCreateTableOptions()
-                                            .WithSplitKeys(GenerateSplitKeys())));
-    ASSERT_STATUS_OK(client_->CreateTable(kTable2Name, schema_));
+    ASSERT_STATUS_OK(client_->NewTableCreator()
+                     ->table_name(kTableName)
+                     .schema(&schema_)
+                     .split_keys(GenerateSplitKeys())
+                     .Create());
+    ASSERT_STATUS_OK(client_->NewTableCreator()
+                     ->table_name(kTable2Name)
+                     .schema(&schema_)
+                     .Create());
 
     ASSERT_STATUS_OK(client_->OpenTable(kTableName, &client_table_));
     ASSERT_STATUS_OK(client_->OpenTable(kTable2Name, &client_table2_));
@@ -346,10 +351,12 @@ class ClientTest : public KuduTest {
       ASSERT_STATUS_OK(cluster_->AddTabletServer());
     }
     ASSERT_STATUS_OK(cluster_->WaitForTabletServerCount(num_replicas));
-    ASSERT_STATUS_OK(client_->CreateTable(table_name, schema_,
-                                          KuduCreateTableOptions()
-                                          .WithNumReplicas(num_replicas)
-                                          .WithSplitKeys(GenerateSplitKeys())));
+    ASSERT_STATUS_OK(client_->NewTableCreator()
+                     ->table_name(table_name)
+                     .schema(&schema_)
+                     .num_replicas(num_replicas)
+                     .split_keys(GenerateSplitKeys())
+                     .Create());
     ASSERT_STATUS_OK(client_->OpenTable(table_name, table));
   }
 
@@ -497,9 +504,12 @@ TEST_F(ClientTest, TestScanMultiTablet) {
     key.reset(key_builder.BuildEncodedKey());
     keys.push_back(key->ToString());
   }
-  ASSERT_STATUS_OK(client_->CreateTable("TestScanMultiTablet", schema_,
-                                        kudu::client::KuduCreateTableOptions()
-                                            .WithSplitKeys(keys)));
+  ASSERT_STATUS_OK(client_->NewTableCreator()
+                   ->table_name("TestScanMultiTablet")
+                   .schema(&schema_)
+                   .split_keys(keys)
+                   .Create());
+
   scoped_refptr<KuduTable> table;
   ASSERT_STATUS_OK(client_->OpenTable("TestScanMultiTablet", &table));
 

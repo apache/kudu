@@ -46,7 +46,10 @@ Status InsertConsumer::Init() {
   const char *kTableName = "twitter";
   Status s = client_->OpenTable(kTableName, &table_);
   if (s.IsNotFound()) {
-    RETURN_NOT_OK_PREPEND(client_->CreateTable(kTableName, schema_),
+    RETURN_NOT_OK_PREPEND(client_->NewTableCreator()
+                          ->table_name(kTableName)
+                          .schema(&schema_)
+                          .Create(),
                           "Couldn't create twitter table");
     s = client_->OpenTable(kTableName, &table_);
   }
