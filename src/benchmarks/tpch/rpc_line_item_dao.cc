@@ -24,7 +24,7 @@ namespace kudu {
 
 using client::KuduInsert;
 using client::KuduClient;
-using client::KuduClientOptions;
+using client::KuduClientBuilder;
 using client::KuduColumnRangePredicate;
 using client::KuduError;
 using client::KuduRowResult;
@@ -81,9 +81,9 @@ class CountingCallback : public base::RefCountedThreadSafe<CountingCallback> {
 void RpcLineItemDAO::Init() {
   const KuduSchema schema = tpch::CreateLineItemSchema();
 
-  KuduClientOptions opts;
-  opts.master_server_addr = master_address_;
-  CHECK_OK(KuduClient::Create(opts, &client_));
+  CHECK_OK(KuduClientBuilder()
+           .master_server_addr(master_address_)
+           .Build(&client_));
   Status s = client_->OpenTable(table_name_, &client_table_);
   if (s.IsNotFound()) {
     CHECK_OK(client_->CreateTable(table_name_, schema));

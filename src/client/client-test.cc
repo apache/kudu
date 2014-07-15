@@ -88,10 +88,9 @@ class ClientTest : public KuduTest {
     ASSERT_STATUS_OK(cluster_->Start());
 
     // Connect to the cluster.
-    KuduClientOptions opts;
-    opts.master_server_addr = cluster_->mini_master()->bound_rpc_addr().ToString();
-
-    ASSERT_STATUS_OK(KuduClient::Create(opts, &client_));
+    ASSERT_STATUS_OK(KuduClientBuilder()
+                     .master_server_addr(cluster_->mini_master()->bound_rpc_addr().ToString())
+                     .Build(&client_));
 
     // Set up two test tables inside the server. One has a single split, just so
     // that code is exercised a little more.
@@ -1691,10 +1690,10 @@ TEST_F(ClientTest, DISABLED_TestDeadlockSimulation) {
   // Make reverse client who will make batches that update rows
   // in reverse order. Separate client used so rpc calls come in at same time.
   shared_ptr<KuduClient> rev_client;
-  KuduClientOptions opts;
+  ASSERT_STATUS_OK(KuduClientBuilder()
+                   .master_server_addr(cluster_->mini_master()->bound_rpc_addr().ToString())
+                   .Build(&rev_client));
   scoped_refptr<KuduTable> rev_table;
-  opts.master_server_addr = cluster_->mini_master()->bound_rpc_addr().ToString();
-  ASSERT_STATUS_OK(KuduClient::Create(opts, &rev_client));
   ASSERT_STATUS_OK(client_->OpenTable(kTableName, &rev_table));
 
   // Load up some rows

@@ -41,8 +41,8 @@ namespace tserver {
 
 using consensus::RaftConsensus;
 using consensus::ReplicaState;
-using client::KuduClientOptions;
 using client::KuduClient;
+using client::KuduClientBuilder;
 using client::KuduColumnSchema;
 using client::KuduColumnStorageAttributes;
 using client::KuduSchema;
@@ -96,9 +96,9 @@ class DistConsensusTest : public TabletServerTest {
 
   void CreateClient() {
     // Connect to the cluster.
-    KuduClientOptions opts;
-    opts.master_server_addr = cluster_->mini_master()->bound_rpc_addr().ToString();
-    ASSERT_STATUS_OK(KuduClient::Create(opts, &client_));
+    ASSERT_STATUS_OK(KuduClientBuilder()
+                     .master_server_addr(cluster_->mini_master()->bound_rpc_addr().ToString())
+                     .Build(&client_));
 
     // Create a table with a single tablet, with three replicas.
     //

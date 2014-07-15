@@ -3,6 +3,7 @@
 set(CLIENT_SRCS
   batcher.cc
   client.cc
+  client_builder-internal.cc
   client-internal.cc
   encoded_key.cc
   error_collector.cc

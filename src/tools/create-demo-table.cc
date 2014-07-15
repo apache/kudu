@@ -22,7 +22,7 @@
 using std::string;
 using std::tr1::shared_ptr;
 using kudu::client::KuduClient;
-using kudu::client::KuduClientOptions;
+using kudu::client::KuduClientBuilder;
 using kudu::client::KuduSchema;
 using kudu::rpc::RpcController;
 
@@ -75,10 +75,10 @@ static int CreateDemoTable(int argc, char** argv) {
   CHECK_OK(GetDemoSchema(table_name, &schema));
 
   // Set up client.
-  KuduClientOptions opts;
-  opts.master_server_addr = FLAGS_master_address;
   shared_ptr<KuduClient> client;
-  CHECK_OK(KuduClient::Create(opts, &client));
+  CHECK_OK(KuduClientBuilder()
+           .master_server_addr(FLAGS_master_address)
+           .Build(&client));
 
   CHECK_OK(client->CreateTable(table_name, schema));
   return 0;

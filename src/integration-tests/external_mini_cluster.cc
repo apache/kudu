@@ -231,14 +231,12 @@ shared_ptr<MasterServiceProxy> ExternalMiniCluster::master_proxy() {
     new MasterServiceProxy(messenger_, master_->bound_rpc_addr()));
 }
 
-Status ExternalMiniCluster::CreateClient(const client::KuduClientOptions& their_opts,
+Status ExternalMiniCluster::CreateClient(client::KuduClientBuilder& builder,
                                          shared_ptr<client::KuduClient>* client) {
   CHECK(started_);
 
-  client::KuduClientOptions opts(their_opts);
-  opts.master_server_addr = master_->bound_rpc_hostport().ToString();
-
-  return client::KuduClient::Create(opts, client);
+  return builder.master_server_addr(master_->bound_rpc_hostport().ToString())
+      .Build(client);
 }
 
 //------------------------------------------------------------

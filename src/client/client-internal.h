@@ -23,10 +23,8 @@ namespace client {
 
 class KuduClient::Data {
  public:
-  explicit Data(const KuduClientOptions& options);
+  Data();
   ~Data();
-
-  Status Init(const std::tr1::shared_ptr<KuduClient>& client);
 
   // Returns the ts that hosts a tablet with the given tablet ID, subject
   // to the given selection criteria.
@@ -58,16 +56,17 @@ class KuduClient::Data {
   // always check the result against NULL.
   RemoteTabletServer* PickClosestReplica(const scoped_refptr<RemoteTablet>& rt) const;
 
-  bool initted_;
-  KuduClientOptions options_;
   std::tr1::shared_ptr<rpc::Messenger> messenger_;
-
   gscoped_ptr<DnsResolver> dns_resolver_;
   scoped_refptr<MetaCache> meta_cache_;
 
   // Set of hostnames and IPs on the local host.
   // This is initialized at client startup.
   std::tr1::unordered_set<std::string> local_host_names_;
+
+  // Options the client was built with.
+  std::string master_server_addr_;
+  MonoDelta default_admin_operation_timeout_;
 
   // Proxy to the master.
   std::tr1::shared_ptr<master::MasterServiceProxy> master_proxy_;

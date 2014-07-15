@@ -13,7 +13,6 @@
 #include "master/master.h"
 #include "master/master.pb.h"
 #include "master/master.proxy.h"
-#include "rpc/messenger.h"
 #include "rpc/rpc_controller.h"
 #include "util/net/dns_resolver.h"
 
@@ -23,50 +22,15 @@ using master::IsAlterTableDoneRequestPB;
 using master::IsAlterTableDoneResponsePB;
 using master::IsCreateTableDoneRequestPB;
 using master::IsCreateTableDoneResponsePB;
-using master::MasterServiceProxy;
-using rpc::MessengerBuilder;
 using rpc::RpcController;
-using std::tr1::shared_ptr;
 using strings::Substitute;
 
 namespace client {
 
-KuduClient::Data::Data(const KuduClientOptions& options)
-  : initted_(false),
-    options_(options) {
+KuduClient::Data::Data() {
 }
 
 KuduClient::Data::~Data() {
-}
-
-Status KuduClient::Data::Init(const shared_ptr<KuduClient>& client) {
-  // Init messenger.
-  MessengerBuilder builder("client");
-  RETURN_NOT_OK(builder.Build(&messenger_));
-
-  // Init proxy.
-  vector<Sockaddr> addrs;
-  RETURN_NOT_OK(ParseAddressList(options_.master_server_addr,
-                                 master::Master::kDefaultPort, &addrs));
-  if (addrs.empty()) {
-    return Status::InvalidArgument("No master address specified");
-  }
-  if (addrs.size() > 1) {
-    LOG(WARNING) << "Specified master server address '" << options_.master_server_addr << "' "
-                 << "resolved to multiple IPs. Using " << addrs[0].ToString();
-  }
-  master_proxy_.reset(new MasterServiceProxy(messenger_, addrs[0]));
-
-  meta_cache_.reset(new MetaCache(client.get()));
-  dns_resolver_.reset(new DnsResolver());
-
-  // Init local host names used for locality decisions.
-  RETURN_NOT_OK_PREPEND(InitLocalHostNames(),
-                        "Could not determine local host names");
-
-  initted_ = true;
-
-  return Status::OK();
 }
 
 Status KuduClient::Data::GetTabletServer(KuduClient* client,

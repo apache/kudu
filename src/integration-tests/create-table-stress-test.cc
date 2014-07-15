@@ -19,7 +19,7 @@
 using std::tr1::shared_ptr;
 using kudu::client::KuduCreateTableOptions;
 using kudu::client::KuduClient;
-using kudu::client::KuduClientOptions;
+using kudu::client::KuduClientBuilder;
 using kudu::client::KuduColumnSchema;
 using kudu::client::KuduSchema;
 using kudu::rpc::RpcController;
@@ -60,9 +60,9 @@ class CreateTableStressTest : public KuduTest {
     cluster_.reset(new MiniCluster(env_.get(), test_dir_, 1));
     ASSERT_STATUS_OK(cluster_->Start());
 
-    KuduClientOptions opts;
-    opts.master_server_addr = cluster_->mini_master()->bound_rpc_addr().ToString();
-    ASSERT_STATUS_OK(KuduClient::Create(opts, &client_));
+    ASSERT_STATUS_OK(KuduClientBuilder()
+                     .master_server_addr(cluster_->mini_master()->bound_rpc_addr().ToString())
+                     .Build(&client_));
   }
 
   virtual void TearDown() OVERRIDE {

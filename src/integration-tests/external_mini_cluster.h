@@ -6,6 +6,7 @@
 #include <tr1/memory>
 #include <vector>
 
+#include "client/client.h"
 #include "gutil/gscoped_ptr.h"
 #include "gutil/macros.h"
 #include "gutil/ref_counted.h"
@@ -21,11 +22,6 @@ class HostPort;
 class NodeInstancePB;
 class Sockaddr;
 class Subprocess;
-
-namespace client {
-class KuduClient;
-struct KuduClientOptions;
-} // namespace client
 
 namespace master {
 class MasterServiceProxy;
@@ -110,11 +106,11 @@ class ExternalMiniCluster {
   Status WaitForTabletServerCount(int count, const MonoDelta& timeout);
 
   // Create a client configured to talk to this cluster.
-  // Options may contain override options for the client. The master address will
+  // Builder may contain override options for the client. The master address will
   // be overridden to talk to the running master.
   //
   // REQUIRES: the cluster must have already been Start()ed.
-  Status CreateClient(const client::KuduClientOptions& opts,
+  Status CreateClient(client::KuduClientBuilder& builder,
                       std::tr1::shared_ptr<client::KuduClient>* client);
 
  private:

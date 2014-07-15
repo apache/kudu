@@ -35,15 +35,38 @@ class RemoteTablet;
 class RemoteTabletServer;
 class KuduWriteOperation;
 
-struct KuduClientOptions {
-  KuduClientOptions();
+// Creates a new KuduClient with the desired options.
+//
+// Note that KuduClients are shared amongst multiple threads and, as such,
+// are stored in shared pointers.
+class KuduClientBuilder {
+ public:
+  KuduClientBuilder();
+  ~KuduClientBuilder();
 
-  // The RPC address of the master.
-  // When we have a replicated master, this will switch to a vector of addresses.
-  std::string master_server_addr;
+  // The RPC address of the master. Required.
+  //
+  // TODO: switch to vector of addresses when we have a replicated master.
+  KuduClientBuilder& master_server_addr(const std::string& addr);
 
-  // Default Timeout used for admin operations (e.g. CreateTable, AlterTable, ...)
-  MonoDelta default_admin_operation_timeout;
+  // The default timeout used for administrative operations (e.g. CreateTable,
+  // AlterTable, ...). Optional.
+  //
+  // If not provided, defaults to 5s.
+  KuduClientBuilder& default_admin_operation_timeout(const MonoDelta& timeout);
+
+  // Creates the client.
+  //
+  // The return value may indicate an error in the create operation, or a
+  // misuse of the builder; in the latter case, only the last error is
+  // returned.
+  Status Build(std::tr1::shared_ptr<KuduClient>* client);
+ private:
+  class Data;
+
+  gscoped_ptr<Data> data_;
+
+  DISALLOW_COPY_AND_ASSIGN(KuduClientBuilder);
 };
 
 // The KuduClient represents a connection to a cluster. From the user
@@ -72,9 +95,6 @@ struct KuduClientOptions {
 // This class is thread-safe.
 class KuduClient : public std::tr1::enable_shared_from_this<KuduClient> {
  public:
-  static Status Create(const KuduClientOptions& options,
-                       std::tr1::shared_ptr<KuduClient>* client);
-
   Status CreateTable(const std::string& table_name,
                      const KuduSchema& schema);
   Status CreateTable(const std::string& table_name,
@@ -102,7 +122,7 @@ class KuduClient : public std::tr1::enable_shared_from_this<KuduClient> {
   // look up its schema.
   //
   // TODO: should we offer an async version of this as well?
-  // TODO: probably should have a configurable timeout in KuduClientOptions?
+  // TODO: probably should have a configurable timeout in KuduClientBuilder?
   Status OpenTable(const std::string& table_name,
                    scoped_refptr<KuduTable>* table);
 
@@ -110,8 +130,6 @@ class KuduClient : public std::tr1::enable_shared_from_this<KuduClient> {
   // User is responsible for destroying the session object.
   // This is a fully local operation (no RPCs or blocking).
   std::tr1::shared_ptr<KuduSession> NewSession();
-
-  const KuduClientOptions& options() const;
 
   // Policy with which to choose amongst multiple replicas.
   enum ReplicaSelection {
@@ -126,9 +144,14 @@ class KuduClient : public std::tr1::enable_shared_from_this<KuduClient> {
     FIRST_REPLICA
   };
 
+  const std::string& master_server_addr() const;
+
+  const MonoDelta& default_admin_operation_timeout() const;
+
  private:
   class Data;
 
+  friend class KuduClientBuilder;
   friend class KuduScanner;
   friend class KuduTable;
   friend class MetaCache;
@@ -139,7 +162,7 @@ class KuduClient : public std::tr1::enable_shared_from_this<KuduClient> {
   FRIEND_TEST(ClientTest, TestReplicatedMultiTabletTableFailover);
   FRIEND_TEST(ClientTest, TestMasterLookupPermits);
 
-  explicit KuduClient(const KuduClientOptions& options);
+  KuduClient();
 
   gscoped_ptr<Data> data_;
 

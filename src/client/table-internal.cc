@@ -38,7 +38,7 @@ Status KuduTable::Data::Open() {
   req.mutable_table()->set_table_name(name_);
   do {
     rpc::RpcController rpc;
-    rpc.set_timeout(client_->options().default_admin_operation_timeout);
+    rpc.set_timeout(client_->default_admin_operation_timeout());
     RETURN_NOT_OK(client_->data_->master_proxy_->GetTableLocations(req, &resp, &rpc));
     if (resp.has_error()) {
       return StatusFromPB(resp.error().status());

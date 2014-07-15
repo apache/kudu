@@ -11,6 +11,7 @@
 
 #include "client/batcher.h"
 #include "client/client-internal.h"
+#include "client/client_builder-internal.h"
 #include "client/error_collector.h"
 #include "client/error-internal.h"
 #include "client/meta_cache.h"
@@ -22,8 +23,11 @@
 #include "common/wire_protocol.h"
 #include "gutil/map-util.h"
 #include "gutil/strings/substitute.h"
+#include "master/master.h" // TODO: remove this include - just needed for default port
 #include "master/master.pb.h"
 #include "master/master.proxy.h"
+#include "rpc/messenger.h"
+#include "util/net/dns_resolver.h"
 
 using std::string;
 using std::tr1::shared_ptr;
@@ -39,6 +43,7 @@ using kudu::master::GetTableSchemaResponsePB;
 using kudu::master::MasterServiceProxy;
 using kudu::master::TabletLocationsPB;
 using kudu::rpc::Messenger;
+using kudu::rpc::MessengerBuilder;
 using kudu::rpc::RpcController;
 using kudu::tserver::ScanResponsePB;
 
@@ -99,20 +104,58 @@ static Status RetryFunc(const MonoTime& deadline,
   return Status::TimedOut(timeout_msg);
 }
 
-KuduClientOptions::KuduClientOptions()
-  : default_admin_operation_timeout(MonoDelta::FromMilliseconds(5 * 1000)) {
+KuduClientBuilder::KuduClientBuilder() {
+  data_.reset(new KuduClientBuilder::Data());
 }
 
-KuduClient::KuduClient(const KuduClientOptions& options) {
-  data_.reset(new KuduClient::Data(options));
+KuduClientBuilder::~KuduClientBuilder() {
 }
 
-Status KuduClient::Create(const KuduClientOptions& options,
-                          shared_ptr<KuduClient>* client) {
-  shared_ptr<KuduClient> c(new KuduClient(options));
-  RETURN_NOT_OK(c->data_->Init(c));
+KuduClientBuilder& KuduClientBuilder::master_server_addr(const string& addr) {
+  data_->master_server_addr_ = addr;
+  return *this;
+}
+
+KuduClientBuilder& KuduClientBuilder::default_admin_operation_timeout(const MonoDelta& timeout) {
+  data_->default_admin_operation_timeout_ = timeout;
+  return *this;
+}
+
+Status KuduClientBuilder::Build(shared_ptr<KuduClient>* client) {
+  shared_ptr<KuduClient> c(new KuduClient());
+
+  // Init messenger.
+  MessengerBuilder builder("client");
+  RETURN_NOT_OK(builder.Build(&c->data_->messenger_));
+
+  // Init proxy.
+  vector<Sockaddr> addrs;
+  RETURN_NOT_OK(ParseAddressList(data_->master_server_addr_,
+                                 master::Master::kDefaultPort, &addrs));
+  if (addrs.empty()) {
+    return Status::InvalidArgument("No master address specified");
+  }
+  if (addrs.size() > 1) {
+    LOG(WARNING) << "Specified master server address '" << data_->master_server_addr_ << "' "
+                 << "resolved to multiple IPs. Using " << addrs[0].ToString();
+  }
+  c->data_->master_proxy_.reset(new MasterServiceProxy(c->data_->messenger_, addrs[0]));
+
+  c->data_->meta_cache_.reset(new MetaCache(c.get()));
+  c->data_->dns_resolver_.reset(new DnsResolver());
+  c->data_->master_server_addr_ = data_->master_server_addr_;
+  c->data_->default_admin_operation_timeout_ = data_->default_admin_operation_timeout_;
+
+  // Init local host names used for locality decisions.
+  RETURN_NOT_OK_PREPEND(c->data_->InitLocalHostNames(),
+                        "Could not determine local host names");
+
   client->swap(c);
   return Status::OK();
+}
+
+KuduClient::KuduClient() {
+  data_.reset(new KuduClient::Data());
 }
 
 Status KuduClient::CreateTable(const string& table_name,
@@ -126,7 +169,7 @@ Status KuduClient::CreateTable(const string& table_name,
   CreateTableRequestPB req;
   CreateTableResponsePB resp;
   RpcController rpc;
-  rpc.set_timeout(data_->options_.default_admin_operation_timeout);
+  rpc.set_timeout(default_admin_operation_timeout());
 
   // Build request.
   req.set_name(table_name);
@@ -164,7 +207,7 @@ Status KuduClient::CreateTable(const string& table_name,
 Status KuduClient::IsCreateTableInProgress(const string& table_name,
                                            bool *create_in_progress) {
   MonoTime deadline = MonoTime::Now(MonoTime::FINE);
-  deadline.AddDelta(data_->options_.default_admin_operation_timeout);
+  deadline.AddDelta(default_admin_operation_timeout());
   return data_->IsCreateTableInProgress(table_name, deadline, create_in_progress);
 }
 
@@ -174,7 +217,7 @@ Status KuduClient::DeleteTable(const string& table_name) {
   RpcController rpc;
 
   req.mutable_table()->set_table_name(table_name);
-  rpc.set_timeout(data_->options_.default_admin_operation_timeout);
+  rpc.set_timeout(default_admin_operation_timeout());
   RETURN_NOT_OK(data_->master_proxy_->DeleteTable(req, &resp, &rpc));
   if (resp.has_error()) {
     return StatusFromPB(resp.error().status());
@@ -198,7 +241,7 @@ Status KuduClient::AlterTable(const string& table_name,
 
   req.CopyFrom(*alter.alter_steps_);
   req.mutable_table()->set_table_name(table_name);
-  rpc.set_timeout(data_->options_.default_admin_operation_timeout);
+  rpc.set_timeout(default_admin_operation_timeout());
   RETURN_NOT_OK(data_->master_proxy_->AlterTable(req, &resp, &rpc));
   if (resp.has_error()) {
     return StatusFromPB(resp.error().status());
@@ -217,7 +260,7 @@ Status KuduClient::AlterTable(const string& table_name,
 Status KuduClient::IsAlterTableInProgress(const string& table_name,
                                           bool *alter_in_progress) {
   MonoTime deadline = MonoTime::Now(MonoTime::FINE);
-  deadline.AddDelta(data_->options_.default_admin_operation_timeout);
+  deadline.AddDelta(default_admin_operation_timeout());
   return data_->IsAlterTableInProgress(table_name, deadline, alter_in_progress);
 }
 
@@ -228,7 +271,7 @@ Status KuduClient::GetTableSchema(const string& table_name,
   RpcController rpc;
 
   req.mutable_table()->set_table_name(table_name);
-  rpc.set_timeout(data_->options_.default_admin_operation_timeout);
+  rpc.set_timeout(default_admin_operation_timeout());
   RETURN_NOT_OK(data_->master_proxy_->GetTableSchema(req, &resp, &rpc));
   if (resp.has_error()) {
     return StatusFromPB(resp.error().status());
@@ -246,8 +289,6 @@ Status KuduClient::GetTableSchema(const string& table_name,
 
 Status KuduClient::OpenTable(const string& table_name,
                              scoped_refptr<KuduTable>* table) {
-  CHECK(data_->initted_) << "Must Init()";
-
   KuduSchema schema;
   RETURN_NOT_OK(GetTableSchema(table_name, &schema));
 
@@ -266,8 +307,12 @@ shared_ptr<KuduSession> KuduClient::NewSession() {
   return ret;
 }
 
-const KuduClientOptions& KuduClient::options() const {
-  return data_->options_;
+const std::string& KuduClient::master_server_addr() const {
+  return data_->master_server_addr_;
+}
+
+const MonoDelta& KuduClient::default_admin_operation_timeout() const {
+  return data_->default_admin_operation_timeout_;
 }
 
 ////////////////////////////////////////////////////////////

@@ -60,7 +60,7 @@ namespace tablet {
 
 using client::KuduInsert;
 using client::KuduClient;
-using client::KuduClientOptions;
+using client::KuduClientBuilder;
 using client::KuduColumnSchema;
 using client::KuduRowResult;
 using client::KuduScanner;
@@ -108,7 +108,7 @@ class FullStackInsertScanTest : public KuduTest {
     ASSERT_GE(kNumInsertsPerClient, 0);
     InitCluster();
     shared_ptr<KuduClient> reader;
-    ASSERT_OK(KuduClient::Create(client_opts_, &reader));
+    ASSERT_OK(client_builder_.Build(&reader));
     ASSERT_OK(reader->CreateTable(kTableName, schema_));
     ASSERT_OK(reader->OpenTable(kTableName, &reader_table_));
   }
@@ -138,14 +138,14 @@ class FullStackInsertScanTest : public KuduTest {
     // Start mini-cluster with 1 tserver, config client options
     cluster_.reset(new MiniCluster(env_.get(), test_dir_, 1));
     ASSERT_OK(cluster_->Start());
-    client_opts_.master_server_addr =
-      cluster_->mini_master()->bound_rpc_addr().ToString();
+    client_builder_.master_server_addr(
+        cluster_->mini_master()->bound_rpc_addr().ToString());
   }
 
   // Adds newly generated client's session and table pointers to arrays at id
   void CreateNewClient(int id) {
     shared_ptr<KuduClient> client;
-    CHECK_OK(KuduClient::Create(client_opts_, &client));
+    CHECK_OK(client_builder_.Build(&client));
     CHECK_OK(client->OpenTable(kTableName, &tables_[id]));
     shared_ptr<KuduSession> session = client->NewSession();
     session->SetTimeoutMillis(kSessionTimeoutMs);
@@ -181,7 +181,7 @@ class FullStackInsertScanTest : public KuduTest {
 
   KuduSchema schema_;
   shared_ptr<MiniCluster> cluster_;
-  KuduClientOptions client_opts_;
+  KuduClientBuilder client_builder_;
   scoped_refptr<KuduTable> reader_table_;
   // Concurrent client insertion test variables
   vector<shared_ptr<KuduSession> > sessions_;

@@ -42,7 +42,7 @@
 
 using kudu::client::KuduCreateTableOptions;
 using kudu::client::KuduClient;
-using kudu::client::KuduClientOptions;
+using kudu::client::KuduClientBuilder;
 using kudu::client::KuduColumnSchema;
 using kudu::client::KuduEncodedKey;
 using kudu::client::KuduEncodedKeyBuilder;
@@ -118,7 +118,8 @@ class LinkedListTest : public KuduTest {
     }
     cluster_.reset(new ExternalMiniCluster(opts));
     ASSERT_STATUS_OK(cluster_->Start());
-    ASSERT_STATUS_OK(cluster_->CreateClient(KuduClientOptions(), &client_));
+    KuduClientBuilder builder;
+    ASSERT_STATUS_OK(cluster_->CreateClient(builder, &client_));
   }
 
   // Load the table with the linked list test pattern.
