@@ -17,7 +17,7 @@ namespace kudu {
 // the results to stdout.  It does this after a certain timeout has occured.
 class PstackWatcher {
  public:
-  // Collect and write pstack output to stdout.
+  // Static method to collect and write stack dump output to stdout.
   static Status DumpStacks();
 
   // Instantiate a watcher that writes a pstack to stdout after the given
@@ -27,12 +27,15 @@ class PstackWatcher {
   ~PstackWatcher();
 
   // Shut down the watcher and do not log a pstack.
+  // This method is not thread-safe.
   void Shutdown();
 
   // Test whether the watcher is still running or has shut down.
+  // Thread-safe.
   bool IsRunning() const;
 
   // Wait until the timeout expires and the watcher logs a pstack.
+  // Thread-safe.
   void Wait() const;
 
  private:

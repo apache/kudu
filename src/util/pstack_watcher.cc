@@ -35,12 +35,13 @@ PstackWatcher::~PstackWatcher() {
 void PstackWatcher::Shutdown() {
   {
     boost::lock_guard<boost::mutex> guard(lock_);
-    if (!running_) return;
     running_ = false;
     cond_.notify_all();
   }
-  CHECK_OK(ThreadJoiner(thread_.get()).Join());
-  thread_.reset();
+  if (thread_) {
+    CHECK_OK(ThreadJoiner(thread_.get()).Join());
+    thread_.reset();
+  }
 }
 
 bool PstackWatcher::IsRunning() const {
