@@ -117,7 +117,7 @@ static inline Status IterateToStringList(RowwiseIterator *iter,
   RowBlock block(schema, 100, &arena);
   int fetched = 0;
   while (iter->HasNext() && fetched < limit) {
-    RETURN_NOT_OK(RowwiseIterator::CopyBlock(iter, &block));
+    RETURN_NOT_OK(iter->NextBlock(&block));
     for (size_t i = 0; i < block.nrows() && fetched < limit; i++) {
       if (block.selection_vector()->IsRowSelected(i)) {
         out->push_back(schema.DebugRow(block.row(i)));

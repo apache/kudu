@@ -200,7 +200,7 @@ Status SysTabletsTable::VisitTablets(Visitor *visitor) {
   Arena arena(32 * 1024, 256 * 1024);
   RowBlock block(iter->schema(), 512, &arena);
   while (iter->HasNext()) {
-    RETURN_NOT_OK(RowwiseIterator::CopyBlock(iter.get(), &block));
+    RETURN_NOT_OK(iter->NextBlock(&block));
     for (size_t i = 0; i < block.nrows(); i++) {
       if (!block.selection_vector()->IsRowSelected(i)) continue;
 
@@ -327,7 +327,7 @@ Status SysTablesTable::VisitTables(Visitor *visitor) {
   Arena arena(32 * 1024, 256 * 1024);
   RowBlock block(iter->schema(), 512, &arena);
   while (iter->HasNext()) {
-    RETURN_NOT_OK(RowwiseIterator::CopyBlock(iter.get(), &block));
+    RETURN_NOT_OK(iter->NextBlock(&block));
     for (size_t i = 0; i < block.nrows(); i++) {
       if (!block.selection_vector()->IsRowSelected(i)) continue;
 

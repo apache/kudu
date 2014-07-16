@@ -188,16 +188,13 @@ class TestRowSet : public KuduRowSetTest {
     int batch_size = 10000;
     RowBlock dst(proj_val, batch_size, &arena);
 
-
     int i = 0;
     while (row_iter->HasNext()) {
       arena.Reset();
-      size_t n = batch_size;
-      CHECK_OK(row_iter->PrepareBatch(&n));
-      CHECK_OK(row_iter->MaterializeBlock(&dst));
-      CHECK_OK(row_iter->FinishBatch());
-      VerifyUpdatedBlock(proj_val.ExtractColumnFromRow<UINT32>(dst.row(0), 0), i, n, updated);
-      i += n;
+      CHECK_OK(row_iter->NextBlock(&dst));
+      VerifyUpdatedBlock(proj_val.ExtractColumnFromRow<UINT32>(dst.row(0), 0),
+                         i, dst.nrows(), updated);
+      i += dst.nrows();
     }
   }
 
@@ -235,11 +232,8 @@ class TestRowSet : public KuduRowSetTest {
     int log_interval = expected_rows/20 / batch_size;
     while (row_iter->HasNext()) {
       arena.Reset();
-      size_t n = batch_size;
-      CHECK_OK(row_iter->PrepareBatch(&n));
-      CHECK_OK(row_iter->MaterializeBlock(&dst));
-      CHECK_OK(row_iter->FinishBatch());
-      i += n;
+      CHECK_OK(row_iter->NextBlock(&dst));
+      i += dst.nrows();
 
       if (do_log) {
         KLOG_EVERY_N(INFO, log_interval) << "Got row: " << schema.DebugRow(dst.row(0));

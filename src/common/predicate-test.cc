@@ -65,6 +65,17 @@ TEST_F(TestPredicate, TestSelectionVector) {
   }
 
   ASSERT_FALSE(selvec.AnySelected());
+
+  // Test Resize()
+  selvec.SetAllTrue();
+  for (int i = 10; i > 0; --i) {
+    selvec.Resize(i);
+    ASSERT_EQ(selvec.CountSelected(), i);
+    ASSERT_TRUE(selvec.AnySelected());
+  }
+  selvec.Resize(0);
+  ASSERT_EQ(selvec.CountSelected(), 0);
+  ASSERT_FALSE(selvec.AnySelected());
 }
 
 TEST_F(TestPredicate, TestColumnRange) {

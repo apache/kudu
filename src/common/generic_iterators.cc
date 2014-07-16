@@ -75,7 +75,7 @@ class MergeIterState {
       return Status::OK();
     }
 
-    RETURN_NOT_OK(RowwiseIterator::CopyBlock(iter_.get(), &read_block_));
+    RETURN_NOT_OK(iter_->NextBlock(&read_block_));
     cur_row_ = 0;
     // TODO: do we need valid_rows_ or can we just use read_block_.nrows()?
     valid_rows_ = read_block_.nrows();
@@ -111,7 +111,6 @@ MergeIterator::MergeIterator(
     iters_.push_back(shared_ptr<MergeIterState>(new MergeIterState(iter)));
   }
 }
-
 
 Status MergeIterator::Init(ScanSpec *spec) {
   CHECK(!initted_);
@@ -151,6 +150,20 @@ Status MergeIterator::InitSubIterators(ScanSpec *spec) {
   return Status::OK();
 }
 
+// TODO: Instead of relying on separate prepare, materialize, finish batch methods,
+// streamline this NextBlock() method in order to reduce cross-method state
+// now that the individual functions are private
+Status MergeIterator::NextBlock(RowBlock* dst) {
+  size_t n = dst->row_capacity();
+  if (dst->arena()) {
+    dst->arena()->Reset();
+  }
+  RETURN_NOT_OK(PrepareBatch(&n));
+  dst->Resize(n);
+  RETURN_NOT_OK(MaterializeBlock(dst));
+  RETURN_NOT_OK(FinishBatch());
+  return Status::OK();
+}
 
 Status MergeIterator::PrepareBatch(size_t *nrows) {
   // We can always provide at least as many rows as are remaining
@@ -304,32 +317,31 @@ bool UnionIterator::HasNext() const {
   return false;
 }
 
-Status UnionIterator::PrepareBatch(size_t *nrows) {
+Status UnionIterator::NextBlock(RowBlock* dst) {
+  PrepareBatch();
+  RETURN_NOT_OK(MaterializeBlock(dst));
+  FinishBatch();
+  return Status::OK();
+}
+
+void UnionIterator::PrepareBatch() {
   CHECK(initted_);
 
   while (!iters_.empty() &&
          !iters_.front()->HasNext()) {
     iters_.pop_front();
   }
-  if (iters_.empty()) {
-    *nrows = 0;
-    return Status::OK();
-  }
-
-  return iters_.front()->PrepareBatch(nrows);
 }
 
 Status UnionIterator::MaterializeBlock(RowBlock *dst) {
-  return iters_.front()->MaterializeBlock(dst);
+  return iters_.front()->NextBlock(dst);
 }
 
-Status UnionIterator::FinishBatch() {
-  RETURN_NOT_OK(iters_.front()->FinishBatch());
+void UnionIterator::FinishBatch() {
   if (!iters_.front()->HasNext()) {
     // Iterator exhausted, remove it.
     iters_.pop_front();
   }
-  return Status::OK();
 }
 
 
@@ -426,6 +438,21 @@ bool MaterializingIterator::HasNext() const {
   return iter_->HasNext();
 }
 
+// TODO: Instead of relying on separate prepare, materialize, finish batch methods,
+// streamline this NextBlock() method in order to reduce cross-method state
+// now that the individual functions are private
+Status MaterializingIterator::NextBlock(RowBlock* dst) {
+  size_t n = dst->row_capacity();
+  if (dst->arena()) {
+    dst->arena()->Reset();
+  }
+  RETURN_NOT_OK(PrepareBatch(&n));
+  dst->Resize(n);
+  RETURN_NOT_OK(MaterializeBlock(dst));
+  RETURN_NOT_OK(FinishBatch());
+  return Status::OK();
+}
+
 Status MaterializingIterator::PrepareBatch(size_t *nrows) {
   RETURN_NOT_OK(iter_->PrepareBatch(nrows));
   prepared_count_ = *nrows;
@@ -518,13 +545,8 @@ bool PredicateEvaluatingIterator::HasNext() const {
   return base_iter_->HasNext();
 }
 
-Status PredicateEvaluatingIterator::PrepareBatch(size_t *nrows) {
-  RETURN_NOT_OK(base_iter_->PrepareBatch(nrows));
-  return Status::OK();
-}
-
-Status PredicateEvaluatingIterator::MaterializeBlock(RowBlock *dst) {
-  RETURN_NOT_OK(base_iter_->MaterializeBlock(dst));
+Status PredicateEvaluatingIterator::NextBlock(RowBlock *dst) {
+  RETURN_NOT_OK(base_iter_->NextBlock(dst));
 
   BOOST_FOREACH(ColumnRangePredicate &pred, predicates_) {
     pred.Evaluate(dst, dst->selection_vector());
@@ -537,10 +559,6 @@ Status PredicateEvaluatingIterator::MaterializeBlock(RowBlock *dst) {
   }
 
   return Status::OK();
-}
-
-Status PredicateEvaluatingIterator::FinishBatch() {
-  return base_iter_->FinishBatch();
 }
 
 string PredicateEvaluatingIterator::ToString() const {

@@ -95,7 +95,7 @@ class MultiThreadedTabletTest : public TabletTestBase<SETUP> {
 
       while (iter->HasNext() && running_insert_count_.count() > 0) {
         tmp_arena.Reset();
-        CHECK_OK(RowwiseIterator::CopyBlock(iter.get(), &block));
+        CHECK_OK(iter->NextBlock(&block));
         CHECK_EQ(block.nrows(), 1);
 
         if (!block.selection_vector()->IsRowSelected(0)) {
@@ -157,10 +157,7 @@ class MultiThreadedTabletTest : public TabletTestBase<SETUP> {
       CHECK_OK(iter->Init(NULL));
 
       for (int i = 0; i < max_iters && iter->HasNext(); i++) {
-        size_t n = 1;
-        CHECK_OK(iter->PrepareBatch(&n));
-        CHECK_OK(iter->MaterializeBlock(&block));
-        CHECK_OK(iter->FinishBatch());
+        CHECK_OK(iter->NextBlock(&block));
 
         if (running_insert_count_.WaitFor(MonoDelta::FromMilliseconds(1))) {
           return;
@@ -201,7 +198,7 @@ class MultiThreadedTabletTest : public TabletTestBase<SETUP> {
 
     while (iter->HasNext()) {
       arena.Reset();
-      CHECK_OK(RowwiseIterator::CopyBlock(iter.get(), &block));
+      CHECK_OK(iter->NextBlock(&block));
 
       for (size_t j = 0; j < block.nrows(); j++) {
         sum += *reinterpret_cast<const uint32_t *>(column.cell_ptr(j));

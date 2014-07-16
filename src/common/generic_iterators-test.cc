@@ -144,14 +144,11 @@ TEST(TestMergeIterator, TestMerge) {
       RowBlock dst(kIntSchema, 100, NULL);
       size_t total_idx = 0;
       while (merger.HasNext()) {
-        size_t n = dst.nrows();
-        ASSERT_STATUS_OK_FAST(merger.PrepareBatch(&n));
-        ASSERT_GT(n, 0) <<
+        ASSERT_OK(merger.NextBlock(&dst));
+        ASSERT_GT(dst.nrows(), 0) <<
           "if HasNext() returns true, must return some rows";
-        ASSERT_STATUS_OK_FAST(merger.MaterializeBlock(&dst));
-        ASSERT_STATUS_OK_FAST(merger.FinishBatch());
 
-        for (int i = 0; i < n; i++) {
+        for (int i = 0; i < dst.nrows(); i++) {
           uint32_t this_row = *kIntSchema.ExtractColumnFromRow<UINT32>(dst.row(i), 0);
           if (all_ints[total_idx] != this_row) {
             ASSERT_EQ(all_ints[total_idx], this_row) <<
@@ -197,11 +194,8 @@ TEST(TestMaterializingIterator, TestMaterializingPredicatePushdown) {
 
   Arena arena(1024, 1024);
   RowBlock dst(kIntSchema, 100, &arena);
-  size_t n = 100;
-  ASSERT_STATUS_OK(materializing.PrepareBatch(&n));
-  ASSERT_EQ(n, 100);
-  ASSERT_STATUS_OK(materializing.MaterializeBlock(&dst));
-  ASSERT_STATUS_OK(materializing.FinishBatch());
+  ASSERT_OK(materializing.NextBlock(&dst));
+  ASSERT_EQ(dst.nrows(), 100);
 
   // Check that the resulting selection vector is correct (rows 20-29 selected)
   ASSERT_EQ(10, dst.selection_vector()->CountSelected());
@@ -248,11 +242,8 @@ TEST(TestPredicateEvaluatingIterator, TestPredicateEvaluation) {
 
   Arena arena(1024, 1024);
   RowBlock dst(kIntSchema, 100, &arena);
-  size_t n = 100;
-  ASSERT_STATUS_OK(outer_iter->PrepareBatch(&n));
-  ASSERT_EQ(n, 100);
-  ASSERT_STATUS_OK(outer_iter->MaterializeBlock(&dst));
-  ASSERT_STATUS_OK(outer_iter->FinishBatch());
+  ASSERT_OK(outer_iter->NextBlock(&dst));
+  ASSERT_EQ(dst.nrows(), 100);
 
   // Check that the resulting selection vector is correct (rows 20-29 selected)
   ASSERT_EQ(10, dst.selection_vector()->CountSelected());

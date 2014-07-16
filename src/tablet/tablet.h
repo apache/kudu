@@ -499,13 +499,9 @@ class Tablet::Iterator : public RowwiseIterator {
 
   virtual Status Init(ScanSpec *spec) OVERRIDE;
 
-  virtual Status PrepareBatch(size_t *nrows) OVERRIDE;
-
   virtual bool HasNext() const OVERRIDE;
 
-  virtual Status MaterializeBlock(RowBlock *dst) OVERRIDE;
-
-  virtual Status FinishBatch() OVERRIDE;
+  virtual Status NextBlock(RowBlock *dst) OVERRIDE;
 
   string ToString() const OVERRIDE;
 

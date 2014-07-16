@@ -20,6 +20,12 @@ void SelectionVector::Resize(size_t n_rows) {
   CHECK_LE(new_bytes, bytes_capacity_);
   n_rows_ = n_rows;
   n_bytes_ = new_bytes;
+  // Pad with zeroes up to the next byte in order to give CountSelected()
+  // and AnySelected() the assumption that the size is an even byte
+  size_t bits_in_last_byte = n_rows & 7;
+  if (bits_in_last_byte > 0) {
+    BitmapChangeBits(&bitmap_[0], n_rows_, 8 - bits_in_last_byte, 0);
+  }
 }
 
 size_t SelectionVector::CountSelected() const {

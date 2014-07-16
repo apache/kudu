@@ -758,30 +758,29 @@ void TabletServiceImpl::HandleContinueScanRequest(const ScanRequestPB* req,
   deadline.AddDelta(MonoDelta::FromMilliseconds(budget_ms));
 
   while (iter->HasNext()) {
-    Status s = RowwiseIterator::CopyBlock(iter, &block);
+    Status s = iter->NextBlock(&block);
     if (PREDICT_FALSE(!s.ok())) {
       RespondGenericError("copying rows from internal iterator",
                           resp->mutable_error(), s, context);
       return;
     }
 
-    ConvertRowBlockToPB(block, resp->mutable_data(), scanner->client_projection_schema());
-
-    // TODO: could break if it's been looping too long - eg with restrictive predicates,
-    // we don't want to loop here for too long monopolizing a thread and risking a
-    // client timeout.
-    //
-    // TODO: should check if RPC got cancelled, once we implement RPC cancellation.
-    size_t response_size = resp->data().rows().size() + resp->data().indirect_data().size();
-
-    if (VLOG_IS_ON(2)) {
-      // This is actually fairly expensive, especially when scanning MRS, which has
-      // small row blocks.
-      TRACE("Copied block, new size=$0", response_size);
+    if (PREDICT_TRUE(block.nrows() > 0)) {
+      ConvertRowBlockToPB(block, resp->mutable_data(),
+                          scanner->client_projection_schema());
     }
 
+    size_t response_size = resp->data().rows().size() +
+      resp->data().indirect_data().size();
+
+    if (VLOG_IS_ON(2)) {
+      // This may be fairly expensive if row block size is small
+      TRACE("Copied block (nrows=$0), new size=$1", block.nrows(), response_size);
+    }
+
+    // TODO: should check if RPC got cancelled, once we implement RPC cancellation.
     MonoTime now = MonoTime::Now(MonoTime::COARSE);
-    if (!now.ComesBefore(deadline)) {
+    if (PREDICT_FALSE(!now.ComesBefore(deadline))) {
       TRACE("Deadline expired - responding early");
       break;
     }

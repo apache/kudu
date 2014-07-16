@@ -369,60 +369,57 @@ Status MemRowSet::Iterator::SeekAtOrAfter(const Slice &key, bool *exact) {
   }
 }
 
-Status MemRowSet::Iterator::PrepareBatch(size_t *nrows) {
+Status MemRowSet::Iterator::NextBlock(RowBlock *dst) {
+  // TODO: add dcheck that dst->schema() matches our schema
+  // also above TODO applies to a lot of other CopyNextRows cases
+
   DCHECK_NE(state_, kUninitialized) << "not initted";
   if (PREDICT_FALSE(!iter_->IsValid())) {
-    *nrows = 0;
+    dst->Resize(0);
     return Status::NotFound("end of iter");
   }
-
   if (PREDICT_FALSE(state_ != kScanning)) {
-    // The scan is finished as we've gone past the upper bound
-    *nrows = 0;
+    dst->Resize(0);
     return Status::OK();
   }
 
-  size_t rem_in_leaf = iter_->remaining_in_leaf();
-  if (PREDICT_TRUE(rem_in_leaf < *nrows)) {
-    *nrows = rem_in_leaf;
+  // Reset rowblock arena to eventually reach appropriate buffer size.
+  // Always allocating the full capacity is only a problem for the last
+  dst->Resize(dst->row_capacity());
+  if (dst->arena()) {
+    dst->arena()->Reset();
   }
-  prepared_count_ = *nrows;
-  prepared_idx_in_leaf_ = iter_->index_in_leaf();
-  if (has_upper_bound() && prepared_count_ > 0) {
-    size_t end_idx = prepared_idx_in_leaf_ + prepared_count_ - 1;
-    if (out_of_bounds(iter_->GetKeyInLeaf(end_idx))) {
-      // At the end of this batch we will have exceeded the upper bound
-      // so we will not be able to Prepare any more batches.
-      state_ = kLastBatch;
-    }
-  }
+
+  // Fill
+  dst->selection_vector()->SetAllTrue();
+  size_t fetched;
+  RETURN_NOT_OK(FetchRows(dst, &fetched));
+  DCHECK_LE(0, fetched);
+  DCHECK_LE(fetched, dst->nrows());
+
+  // Clear unreached bits by resizing
+  dst->Resize(fetched);
+
   return Status::OK();
 }
 
-Status MemRowSet::Iterator::MaterializeBlock(RowBlock *dst) {
-  // TODO: add dcheck that dst->schema() matches our schema
-  // also above TODO applies to a lot of other CopyNextRows cases
-  DCHECK_NE(state_, kUninitialized) << "not initted";
-
-  dst->selection_vector()->SetAllTrue();
-
-  DCHECK_EQ(dst->nrows(), prepared_count_);
-  Slice k, v;
-  size_t fetched = 0;
-  for (size_t i = prepared_idx_in_leaf_; fetched < prepared_count_; i++) {
-    RowBlockRow dst_row = dst->row(fetched);
+Status MemRowSet::Iterator::FetchRows(RowBlock* dst, size_t* fetched) {
+  *fetched = 0;
+  do {
+    Slice k, v;
+    RowBlockRow dst_row = dst->row(*fetched);
 
     // Copy the row into the destination, including projection
     // and relocating slices.
     // TODO: can we share some code here with CopyRowToArena() from row.h
     // or otherwise put this elsewhere?
-    iter_->GetEntryInLeaf(i, &k, &v);
-
+    iter_->GetCurrentEntry(&k, &v);
     MRSRow row(memrowset_.get(), v);
-    if (mvcc_snap_.IsCommitted(row.insertion_timestamp()) && state_ != kFinished) {
-      if (state_ == kLastBatch && has_upper_bound() && out_of_bounds(k)) {
+
+    if (mvcc_snap_.IsCommitted(row.insertion_timestamp())) {
+      if (has_upper_bound() && out_of_bounds(k)) {
         state_ = kFinished;
-        BitmapClear(dst->selection_vector()->mutable_bitmap(), fetched);
+        break;
       } else {
         RETURN_NOT_OK(projector_.ProjectRowForRead(row, &dst_row, dst->arena()));
 
@@ -431,10 +428,8 @@ Status MemRowSet::Iterator::MaterializeBlock(RowBlock *dst) {
             row.header_->redo_head, &dst_row, dst->arena()));
       }
     } else {
-      // This row was not yet committed in the current MVCC snapshot or we have
-      // reached upper bounds of the scan, so zero the selection bit -- this
-      // causes it to not show up in any result set.
-      BitmapClear(dst->selection_vector()->mutable_bitmap(), fetched);
+      // This row was not yet committed in the current MVCC snapshot
+      dst->selection_vector()->SetRowUnselected(*fetched);
 
       // In debug mode, fill the row data for easy debugging
       #ifndef NDEBUG
@@ -446,20 +441,9 @@ Status MemRowSet::Iterator::MaterializeBlock(RowBlock *dst) {
       #endif
     }
 
-    // advance to next row
-    fetched++;
-  }
-  return Status::OK();
-}
+    ++*fetched;
+  } while (iter_->Next() && *fetched < dst->nrows());
 
-Status MemRowSet::Iterator::FinishBatch() {
-  for (int i = 0; i < prepared_count_; i++) {
-    iter_->Next();
-  }
-  prepared_count_ = 0;
-  if (state_ == kLastBatch) {
-    state_ = kFinished;
-  }
   return Status::OK();
 }
 

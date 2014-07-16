@@ -100,7 +100,7 @@ bool LocalLineItemDAO::HasMore() {
 }
 
 void LocalLineItemDAO::GetNext(RowBlock *block) {
-  CHECK_OK(RowwiseIterator::CopyBlock(current_iter_.get(), block));
+  CHECK_OK(current_iter_->NextBlock(block));
 }
 
 bool LocalLineItemDAO::IsTableEmpty() {

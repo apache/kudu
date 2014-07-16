@@ -77,7 +77,7 @@ class TestCFileSet : public KuduRowSetTest {
     Arena arena(1024, 1024);
     RowBlock block(schema_, 100, &arena);
     while (iter->HasNext()) {
-      ASSERT_STATUS_OK_FAST(RowwiseIterator::CopyBlock(iter.get(), &block));
+      ASSERT_STATUS_OK_FAST(iter->NextBlock(&block));
       for (size_t i = 0; i < block.nrows(); i++) {
         if (block.selection_vector()->IsRowSelected(i)) {
           RowBlockRow row = block.row(i);
@@ -293,4 +293,3 @@ TEST_F(TestCFileSet, TestRangePredicates2) {
 
 } // namespace tablet
 } // namespace kudu
-

@@ -1390,24 +1390,14 @@ Status Tablet::Iterator::Init(ScanSpec *spec) {
   return Status::OK();
 }
 
-Status Tablet::Iterator::PrepareBatch(size_t *nrows) {
-  DCHECK(iter_.get() != NULL) << "Not initialized!";
-  return iter_->PrepareBatch(nrows);
-}
-
 bool Tablet::Iterator::HasNext() const {
   DCHECK(iter_.get() != NULL) << "Not initialized!";
   return iter_->HasNext();
 }
 
-Status Tablet::Iterator::MaterializeBlock(RowBlock *dst) {
+Status Tablet::Iterator::NextBlock(RowBlock *dst) {
   DCHECK(iter_.get() != NULL) << "Not initialized!";
-  return iter_->MaterializeBlock(dst);
-}
-
-Status Tablet::Iterator::FinishBatch() {
-  DCHECK(iter_.get() != NULL) << "Not initialized!";
-  return iter_->FinishBatch();
+  return iter_->NextBlock(dst);
 }
 
 string Tablet::Iterator::ToString() const {

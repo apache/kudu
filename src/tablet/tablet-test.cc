@@ -395,19 +395,19 @@ TYPED_TEST(TestTablet, TestRowIteratorSimple) {
   RowBlock block(this->schema_, 100, &this->arena_);
 
   // First call to CopyNextRows should fetch the whole memrowset.
-  ASSERT_STATUS_OK_FAST(RowwiseIterator::CopyBlock(iter.get(), &block));
+  ASSERT_STATUS_OK_FAST(iter->NextBlock(&block));
   ASSERT_EQ(1, block.nrows()) << "should get only the one row from memrowset";
   this->VerifyRow(block.row(0), kInMemRowSet, 0);
 
   // Next, should fetch the older rowset
   ASSERT_TRUE(iter->HasNext());
-  ASSERT_STATUS_OK(RowwiseIterator::CopyBlock(iter.get(), &block));
+  ASSERT_STATUS_OK(iter->NextBlock(&block));
   ASSERT_EQ(1, block.nrows()) << "should get only the one row from rowset 1";
   this->VerifyRow(block.row(0), kInRowSet1, 0);
 
   // Next, should fetch the newer rowset
   ASSERT_TRUE(iter->HasNext());
-  ASSERT_STATUS_OK(RowwiseIterator::CopyBlock(iter.get(), &block));
+  ASSERT_STATUS_OK(iter->NextBlock(&block));
   ASSERT_EQ(1, block.nrows()) << "should get only the one row from rowset 2";
   this->VerifyRow(block.row(0), kInRowSet2, 0);
 
@@ -467,7 +467,7 @@ TYPED_TEST(TestTablet, TestRowIteratorComplex) {
   RowBlock block(this->schema_, 100, &this->arena_);
   while (iter->HasNext()) {
     this->arena_.Reset();
-    ASSERT_STATUS_OK(RowwiseIterator::CopyBlock(iter.get(), &block));
+    ASSERT_STATUS_OK(iter->NextBlock(&block));
     LOG(INFO) << "Fetched batch of " << block.nrows();
     for (size_t i = 0; i < block.nrows(); i++) {
       uint32_t val_read = this->setup_.GetRowValueAfterUpdate(block.row(i));

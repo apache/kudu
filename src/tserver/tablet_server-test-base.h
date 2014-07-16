@@ -321,7 +321,7 @@ class TabletServerTest : public KuduTest {
 
     int count = 0;
     while (iter->HasNext()) {
-      ASSERT_STATUS_OK_FAST(RowwiseIterator::CopyBlock(iter.get(), &block));
+      ASSERT_STATUS_OK_FAST(iter->NextBlock(&block));
       RowBlockRow rb_row = block.row(0);
       for (int i = 0; i < block.nrows(); i++) {
         if (block.selection_vector()->IsRowSelected(i)) {

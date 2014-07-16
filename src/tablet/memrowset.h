@@ -363,7 +363,7 @@ class MemRowSet::Iterator : public RowwiseIterator {
 
   Status SeekAtOrAfter(const Slice &key, bool *exact);
 
-  virtual Status PrepareBatch(size_t *nrows) OVERRIDE;
+  virtual Status NextBlock(RowBlock *dst) OVERRIDE;
 
   bool has_upper_bound() const {
     return upper_bound_.is_initialized();
@@ -379,10 +379,6 @@ class MemRowSet::Iterator : public RowwiseIterator {
     DCHECK_NE(state_, kUninitialized) << "not initted";
     return iter_->remaining_in_leaf();
   }
-
-  virtual Status MaterializeBlock(RowBlock *dst) OVERRIDE;
-
-  virtual Status FinishBatch() OVERRIDE;
 
   virtual bool HasNext() const OVERRIDE {
     DCHECK_NE(state_, kUninitialized) << "not initted";
@@ -473,10 +469,7 @@ class MemRowSet::Iterator : public RowwiseIterator {
     // Enumerated constants to indicate the iterator state:
     kUninitialized = 0,
     kScanning = 1,  // We may continue fetching and returning values.
-    kLastBatch = 2, // Current batch contains the upper bound, we
-                    // may return all rows up to and including the upper bound,
-                    // but we may not prepare any further batches.
-    kFinished = 3   // We either know we can never reach the lower bound, or
+    kFinished = 2   // We either know we can never reach the lower bound, or
                     // we've exceeded the upper bound.
   };
 
@@ -491,8 +484,6 @@ class MemRowSet::Iterator : public RowwiseIterator {
       mvcc_snap_(mvcc_snap),
       projector_(&mrs->schema_nonvirtual(), projection),
       delta_projector_(&mrs->schema_nonvirtual(), projection),
-      prepared_count_(0),
-      prepared_idx_in_leaf_(0),
       state_(kUninitialized) {
     // TODO: various code assumes that a newly constructed iterator
     // is pointed at the beginning of the dataset. This causes a redundant
@@ -500,6 +491,8 @@ class MemRowSet::Iterator : public RowwiseIterator {
     // a seek is required (probably the latter)
     iter_->SeekToStart();
   }
+
+  Status FetchRows(RowBlock* dst, size_t* fetched);
 
   Status ApplyMutationsToProjectedRow(const Mutation *mutation_head,
                                       RowBlockRow *dst_row,
@@ -578,7 +571,6 @@ class MemRowSet::Iterator : public RowwiseIterator {
   faststring delta_buf_;
 
   size_t prepared_count_;
-  size_t prepared_idx_in_leaf_;
 
   // Temporary local buffer used for seeking to hold the encoded
   // seek target.

@@ -138,7 +138,7 @@ class DiskRowSetCompactionInput : public CompactionInput {
   }
 
   virtual Status PrepareBlock(vector<CompactionInputRow> *block) OVERRIDE {
-    RETURN_NOT_OK(RowwiseIterator::CopyBlock(base_iter_.get(), &block_));
+    RETURN_NOT_OK(base_iter_->NextBlock(&block_));
     std::fill(redo_mutation_block_.begin(), redo_mutation_block_.end(),
               reinterpret_cast<Mutation *>(NULL));
     std::fill(undo_mutation_block_.begin(), undo_mutation_block_.end(),

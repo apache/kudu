@@ -145,7 +145,7 @@ class TestMemRowSet : public ::testing::Test {
     RowBlock block(schema_, 100, &arena);
     int fetched = 0;
     while (iter->HasNext()) {
-      CHECK_OK(RowwiseIterator::CopyBlock(iter.get(), &block));
+      CHECK_OK(iter->NextBlock(&block));
       fetched += block.selection_vector()->CountSelected();
     }
     return fetched;

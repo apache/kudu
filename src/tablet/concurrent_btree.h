@@ -1660,6 +1660,11 @@ class CBTreeIterator {
     leaf_to_scan_->Get(idx_in_leaf_, key, val);
   }
 
+  Slice GetCurrentKey() const {
+    CHECK(seeked_);
+    return leaf_to_scan_->GetKey(idx_in_leaf_);
+  }
+
   ////////////////////////////////////////////////////////////
   // Advanced functions which expose some of the internal state
   // of the iterator, allowing for limited "rewind" capability

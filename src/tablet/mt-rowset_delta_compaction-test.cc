@@ -95,11 +95,9 @@ class TestMultiThreadedRowSetDeltaCompaction : public TestRowSet {
     uint32_t expected = NoBarrier_Load(&update_counter_);
     ASSERT_STATUS_OK(iter->Init(NULL));
     while (iter->HasNext()) {
+      ASSERT_STATUS_OK_FAST(iter->NextBlock(&dst));
       size_t n = dst.nrows();
-      ASSERT_STATUS_OK_FAST(iter->PrepareBatch(&n));
       ASSERT_GT(n, 0);
-      ASSERT_STATUS_OK_FAST(iter->MaterializeBlock(&dst));
-      ASSERT_STATUS_OK_FAST(iter->FinishBatch());
       for (size_t j = 0; j < n; j++) {
         uint32_t val = *rs->schema().ExtractColumnFromRow<UINT32>(dst.row(j), 1);
         ASSERT_GE(val, expected);

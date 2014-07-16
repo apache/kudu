@@ -36,12 +36,6 @@ class MergeIterator : public RowwiseIterator {
   // The passed-in iterators should be already initialized.
   Status Init(ScanSpec *spec) OVERRIDE;
 
-  virtual Status PrepareBatch(size_t *nrows) OVERRIDE;
-
-  virtual Status MaterializeBlock(RowBlock *dst) OVERRIDE;
-
-  virtual Status FinishBatch() OVERRIDE;
-
   virtual bool HasNext() const OVERRIDE {
     return !iters_.empty();
   }
@@ -52,7 +46,12 @@ class MergeIterator : public RowwiseIterator {
 
   virtual void GetIteratorStats(std::vector<IteratorStats>* stats) const OVERRIDE;
 
+  virtual Status NextBlock(RowBlock* dst) OVERRIDE;
+
  private:
+  Status PrepareBatch(size_t *nrows);
+  Status MaterializeBlock(RowBlock *dst);
+  Status FinishBatch();
   Status InitSubIterators(ScanSpec *spec);
 
   const Schema schema_;
@@ -89,10 +88,6 @@ class UnionIterator : public RowwiseIterator {
 
   Status Init(ScanSpec *spec) OVERRIDE;
 
-  Status PrepareBatch(size_t *nrows) OVERRIDE;
-  Status MaterializeBlock(RowBlock *dst) OVERRIDE;
-  Status FinishBatch() OVERRIDE;
-
   bool HasNext() const OVERRIDE;
 
   string ToString() const OVERRIDE;
@@ -104,7 +99,12 @@ class UnionIterator : public RowwiseIterator {
 
   virtual void GetIteratorStats(std::vector<IteratorStats>* stats) const OVERRIDE;
 
+  virtual Status NextBlock(RowBlock* dst) OVERRIDE;
+
  private:
+  void PrepareBatch();
+  Status MaterializeBlock(RowBlock* dst);
+  void FinishBatch();
   Status InitSubIterators(ScanSpec *spec);
 
   // Schema: initialized during Init()
@@ -136,10 +136,6 @@ class MaterializingIterator : public RowwiseIterator {
   // Initialize the iterator, performing predicate pushdown as described above.
   Status Init(ScanSpec *spec) OVERRIDE;
 
-  Status PrepareBatch(size_t *nrows) OVERRIDE;
-  Status MaterializeBlock(RowBlock *dst) OVERRIDE;
-  Status FinishBatch() OVERRIDE;
-
   bool HasNext() const OVERRIDE;
 
   string ToString() const OVERRIDE;
@@ -152,9 +148,15 @@ class MaterializingIterator : public RowwiseIterator {
     iter_->GetIteratorStats(stats);
   }
 
+  virtual Status NextBlock(RowBlock* dst) OVERRIDE;
+
  private:
   FRIEND_TEST(TestMaterializingIterator, TestPredicatePushdown);
   FRIEND_TEST(TestPredicateEvaluatingIterator, TestPredicateEvaluation);
+
+  Status PrepareBatch(size_t *nrows);
+  Status MaterializeBlock(RowBlock *dst);
+  Status FinishBatch();
 
   shared_ptr<ColumnwiseIterator> iter_;
   size_t prepared_count_;
@@ -188,9 +190,7 @@ class PredicateEvaluatingIterator : public RowwiseIterator {
   // POSTCONDITION: spec->predicates().empty()
   Status Init(ScanSpec *spec) OVERRIDE;
 
-  Status PrepareBatch(size_t *nrows) OVERRIDE;
-  Status MaterializeBlock(RowBlock *dst) OVERRIDE;
-  Status FinishBatch() OVERRIDE;
+  virtual Status NextBlock(RowBlock *dst) OVERRIDE;
 
   bool HasNext() const OVERRIDE;
 

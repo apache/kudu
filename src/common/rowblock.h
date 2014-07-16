@@ -39,13 +39,13 @@ class SelectionVector {
   // Resize the selection vector to the given number of rows.
   // This size must be <= the allocated capacity.
   //
-  // After this call, the state of the values in the bitmap is indeterminate.
+  // Ensures that all rows for indices < n_rows are unmodified.
   void Resize(size_t n_rows);
 
   // Return the number of selected rows.
   size_t CountSelected() const;
 
-  // Return true if any rows are selected
+  // Return true if any rows are selected, false if size 0.
   // This is equivalent to (CountSelected() > 0), but faster.
   bool AnySelected() const;
 
@@ -122,7 +122,7 @@ class RowBlock {
   // Resize the block to the given number of rows.
   // This size must be <= the the allocated capacity row_capacity().
   //
-  // After this call, the state of the underlying data is indeterminate.
+  // Ensures that all rows for indices < n_rows are unmodified.
   void Resize(size_t n_rows);
 
   size_t row_capacity() const {
