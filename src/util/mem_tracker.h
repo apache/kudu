@@ -3,7 +3,6 @@
 #define KUDU_UTIL_MEM_TRACKER_H
 
 #include <boost/functional.hpp>
-#include <boost/thread/mutex.hpp>
 #include <list>
 #include <stdint.h>
 #include <string>
@@ -12,6 +11,7 @@
 
 #include "util/locks.h"
 #include "util/metrics.h"
+#include "util/mutex.h"
 
 namespace kudu {
 
@@ -242,7 +242,7 @@ class MemTracker {
 
   simple_spinlock gc_lock_;
 
-  static boost::mutex static_mem_trackers_lock_;
+  static Mutex static_mem_trackers_lock_;
 
   typedef std::tr1::unordered_map<std::string, std::tr1::weak_ptr<MemTracker> > TrackerMap;
 
@@ -262,7 +262,7 @@ class MemTracker {
 
   // All the child trackers of this tracker. Used for error reporting only.
   // i.e., Updating a parent tracker does not update the children.
-  mutable boost::mutex child_trackers_lock_;
+  mutable Mutex child_trackers_lock_;
   std::list<MemTracker*> child_trackers_;
 
   // Iterator into parent_->child_trackers_ for this object. Stored to have O(1)

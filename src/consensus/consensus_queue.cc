@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <boost/foreach.hpp>
+#include <boost/thread/locks.hpp>
 #include <gflags/gflags.h>
 #include <iostream>
 #include <string>

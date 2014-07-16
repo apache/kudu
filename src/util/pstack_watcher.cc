@@ -23,7 +23,8 @@ using strings::Substitute;
 
 PstackWatcher::PstackWatcher(const MonoDelta& timeout)
   : timeout_(timeout),
-    running_(true) {
+    running_(true),
+    cond_(&lock_) {
   CHECK_OK(Thread::Create("pstack_watcher", "pstack_watcher",
                  boost::bind(&PstackWatcher::Run, this), &thread_));
 }
@@ -34,9 +35,9 @@ PstackWatcher::~PstackWatcher() {
 
 void PstackWatcher::Shutdown() {
   {
-    boost::lock_guard<boost::mutex> guard(lock_);
+    MutexLock guard(lock_);
     running_ = false;
-    cond_.notify_all();
+    cond_.Broadcast();
   }
   if (thread_) {
     CHECK_OK(ThreadJoiner(thread_.get()).Join());
@@ -45,34 +46,26 @@ void PstackWatcher::Shutdown() {
 }
 
 bool PstackWatcher::IsRunning() const {
-  boost::lock_guard<boost::mutex> guard(lock_);
+  MutexLock guard(lock_);
   return running_;
 }
 
 void PstackWatcher::Wait() const {
-  boost::unique_lock<boost::mutex> lock(lock_);
+  MutexLock lock(lock_);
   while (running_) {
-    cond_.wait(lock);
+    cond_.Wait();
   }
 }
 
 void PstackWatcher::Run() {
-  boost::system_time end_time = boost::get_system_time() +
-        boost::posix_time::milliseconds(timeout_.ToMilliseconds());
-  boost::unique_lock<boost::mutex> guard(lock_);
-  while (true) {
-    if (!running_) {
-      return;
-    }
-    boost::system_time cur_time = boost::get_system_time();
-    if (cur_time >= end_time) {
-      break;
-    }
-    cond_.timed_wait(guard, end_time);
-  }
+  MutexLock guard(lock_);
+  if (!running_) return;
+  cond_.TimedWait(timeout_);
+  if (!running_) return;
+
   WARN_NOT_OK(DumpStacks(), "Unable to print pstack from watcher");
   running_ = false;
-  cond_.notify_all();
+  cond_.Broadcast();
 }
 
 Status PstackWatcher::HasProgram(const char* progname) {

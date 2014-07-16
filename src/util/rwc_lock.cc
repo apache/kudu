@@ -7,7 +7,9 @@
 namespace kudu {
 
 RWCLock::RWCLock()
-  : reader_count_(0),
+  : no_mutators_(&lock_),
+    no_readers_(&lock_),
+    reader_count_(0),
     write_locked_(false) {
 }
 
@@ -16,45 +18,45 @@ RWCLock::~RWCLock() {
 }
 
 void RWCLock::ReadLock() {
-  boost::lock_guard<boost::mutex> l(lock_);
+  MutexLock l(lock_);
   reader_count_++;
 }
 
 void RWCLock::ReadUnlock() {
-  boost::lock_guard<boost::mutex> l(lock_);
+  MutexLock l(lock_);
   DCHECK_GT(reader_count_, 0);
   reader_count_--;
   if (reader_count_ == 0) {
-    no_readers_.notify_one();
+    no_readers_.Signal();
   }
 }
 
 bool RWCLock::HasReaders() const {
-  boost::unique_lock<boost::mutex> l(lock_);
+  MutexLock l(lock_);
   return reader_count_ > 0;
 }
 
 void RWCLock::WriteLock() {
-  boost::unique_lock<boost::mutex> l(lock_);
+  MutexLock l(lock_);
   // Wait for any other mutations to finish.
   while (write_locked_) {
-    no_mutators_.wait(l);
+    no_mutators_.Wait();
   }
   write_locked_ = true;
 }
 
 void RWCLock::WriteUnlock() {
-  boost::unique_lock<boost::mutex> l(lock_);
+  MutexLock l(lock_);
   DCHECK(write_locked_);
   write_locked_ = false;
-  no_mutators_.notify_one();
+  no_mutators_.Signal();
 }
 
 void RWCLock::UpgradeToCommitLock() {
   lock_.lock();
   DCHECK(write_locked_);
   while (reader_count_ > 0) {
-    no_readers_.wait(lock_);
+    no_readers_.Wait();
   }
   DCHECK(write_locked_);
 
@@ -65,7 +67,7 @@ void RWCLock::UpgradeToCommitLock() {
 void RWCLock::CommitUnlock() {
   DCHECK_EQ(0, reader_count_);
   write_locked_ = false;
-  no_mutators_.notify_all();
+  no_mutators_.Broadcast();
   lock_.unlock();
 }
 

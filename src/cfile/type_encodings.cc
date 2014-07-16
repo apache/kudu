@@ -1,9 +1,10 @@
 // Copyright (c) 2013, Cloudera, inc.
 #include "cfile/type_encodings.h"
 
-#include <boost/noncopyable.hpp>
-#include <utility>
 #include <tr1/unordered_map>
+#include <tr1/memory>
+#include <utility>
+
 #include <glog/logging.h>
 
 #include "gutil/strings/substitute.h"
@@ -12,7 +13,7 @@ namespace kudu {
 namespace cfile {
 
 using std::tr1::unordered_map;
-using boost::shared_ptr;
+using std::tr1::shared_ptr;
 
 template<typename TypeEncodingTraitsClass>
 TypeEncodingInfo::TypeEncodingInfo(TypeEncodingTraitsClass t)

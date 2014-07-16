@@ -2,6 +2,7 @@
 #ifndef KUDU_CONSENSUS_RAFT_CONSENSUS_UTIL_H_
 #define KUDU_CONSENSUS_RAFT_CONSENSUS_UTIL_H_
 
+#include <boost/thread/locks.hpp>
 #include <map>
 #include <set>
 #include <string>

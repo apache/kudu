@@ -21,7 +21,8 @@ SyncPoint::Dependency::Dependency(const string& predecessor, const string &succe
 }
 
 SyncPoint::SyncPoint()
-  : enabled_(false) {
+  : cv_(&mutex_),
+    enabled_(false) {
 }
 
 SyncPoint* SyncPoint::GetInstance() {
@@ -49,31 +50,31 @@ bool SyncPoint::PredecessorsAllCleared(const string& point) {
 }
 
 void SyncPoint::EnableProcessing() {
-  boost::unique_lock<boost::mutex> lock(mutex_);
+  MutexLock lock(mutex_);
   enabled_ = true;
 }
 
 void SyncPoint::DisableProcessing() {
-  boost::unique_lock<boost::mutex> lock(mutex_);
+  MutexLock lock(mutex_);
   enabled_ = false;
 }
 
 void SyncPoint::ClearTrace() {
-  boost::unique_lock<boost::mutex> lock(mutex_);
+  MutexLock lock(mutex_);
   cleared_points_.clear();
 }
 
 void SyncPoint::Process(const string& point) {
-  boost::unique_lock<boost::mutex> lock(mutex_);
+  MutexLock lock(mutex_);
 
   if (!enabled_) return;
 
   while (!PredecessorsAllCleared(point)) {
-    cv_.wait(lock);
+    cv_.Wait();
   }
 
   cleared_points_.insert(point);
-  cv_.notify_all();
+  cv_.Broadcast();
 }
 
 }  // namespace kudu

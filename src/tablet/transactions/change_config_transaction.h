@@ -3,6 +3,7 @@
 #ifndef KUDU_TABLET_CHANGE_CONFIG_TRANSACTION_H_
 #define KUDU_TABLET_CHANGE_CONFIG_TRANSACTION_H_
 
+#include <boost/thread/locks.hpp>
 #include <string>
 
 #include "gutil/macros.h"

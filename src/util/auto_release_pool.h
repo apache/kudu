@@ -7,8 +7,8 @@
 #define KUDU_UTIL_AUTO_RELEASE_POOL_H
 
 #include <vector>
-#include <boost/thread/mutex.hpp>
-#include <boost/thread/locks.hpp>
+
+#include "gutil/spinlock.h"
 
 namespace kudu {
 
@@ -26,7 +26,7 @@ class AutoReleasePool {
 
   template <class T>
   T *Add(T *t) {
-    boost::lock_guard<boost::mutex> l(lock_);
+    base::SpinLockHolder l(&lock_);
     objects_.push_back(new SpecificElement<T>(t));
     return t;
   }
@@ -35,15 +35,15 @@ class AutoReleasePool {
   // Add() except that it will be freed with 'delete[]' instead of 'delete'.
   template<class T>
   T* AddArray(T *t) {
-    boost::lock_guard<boost::mutex> l(lock_);
+    base::SpinLockHolder l(&lock_);
     objects_.push_back(new SpecificArrayElement<T>(t));
     return t;
   }
 
   // Donate all objects in this pool to another pool.
   void DonateAllTo(AutoReleasePool* dst) {
-    boost::lock_guard<boost::mutex> l_me(lock_);
-    boost::lock_guard<boost::mutex> l_them(dst->lock_);
+    base::SpinLockHolder l(&lock_);
+    base::SpinLockHolder l_them(&dst->lock_);
 
     dst->objects_.reserve(dst->objects_.size() + objects_.size());
     dst->objects_.insert(dst->objects_.end(), objects_.begin(), objects_.end());
@@ -77,7 +77,7 @@ class AutoReleasePool {
 
   typedef std::vector<GenericElement *> ElementVector;
   ElementVector objects_;
-  boost::mutex lock_;
+  base::SpinLock lock_;
 };
 
 

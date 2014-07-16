@@ -2,12 +2,12 @@
 #ifndef KUDU_UTIL_PSTACK_WATCHER_H
 #define KUDU_UTIL_PSTACK_WATCHER_H
 
-#include <boost/thread/condition_variable.hpp>
-#include <boost/thread/mutex.hpp>
-#include <vector>
 #include <string>
+#include <vector>
 
+#include "util/condition_variable.h"
 #include "util/monotime.h"
+#include "util/mutex.h"
 #include "util/status.h"
 #include "util/thread.h"
 
@@ -58,8 +58,8 @@ class PstackWatcher {
   const MonoDelta timeout_;
   bool running_;
   scoped_refptr<Thread> thread_;
-  mutable boost::mutex lock_;
-  mutable boost::condition_variable cond_;
+  mutable Mutex lock_;
+  mutable ConditionVariable cond_;
 };
 
 } // namespace kudu

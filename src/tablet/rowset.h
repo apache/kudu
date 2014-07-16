@@ -2,6 +2,7 @@
 #ifndef KUDU_TABLET_ROWSET_H
 #define KUDU_TABLET_ROWSET_H
 
+#include <boost/thread/mutex.hpp>
 #include <string>
 #include <vector>
 

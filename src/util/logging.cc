@@ -14,7 +14,6 @@
 
 #include "util/logging.h"
 
-#include <boost/thread/mutex.hpp>
 #include <boost/uuid/uuid.hpp>
 #include <boost/uuid/uuid_io.hpp>
 #include <boost/uuid/uuid_generators.hpp>
@@ -23,6 +22,7 @@
 #include <iostream>
 #include <fstream>
 #include <glog/logging.h>
+#include "gutil/spinlock.h"
 
 DEFINE_string(log_filename, "",
     "Prefix of log filename - "
@@ -32,16 +32,18 @@ DEFINE_string(log_filename, "",
 
 bool logging_initialized = false;
 
-using namespace boost; // NOLINT(*)
 using namespace std; // NOLINT(*)
 using namespace boost::uuids; // NOLINT(*)
 
-mutex logging_mutex;
+using base::SpinLock;
+using base::SpinLockHolder;
+
+SpinLock logging_mutex;
 
 namespace kudu {
 
 void InitGoogleLoggingSafe(const char* arg) {
-  mutex::scoped_lock logging_lock(logging_mutex);
+  SpinLockHolder logging_lock(&logging_mutex);
   if (logging_initialized) return;
 
   google::InstallFailureSignalHandler();
@@ -72,7 +74,7 @@ void InitGoogleLoggingSafe(const char* arg) {
       error_msg << "Could not open file in log_dir " << FLAGS_log_dir;
       perror(error_msg.str().c_str());
       // Unlock the mutex before exiting the program to avoid mutex d'tor assert.
-      logging_mutex.unlock();
+      logging_mutex.Unlock();
       exit(1);
     }
     remove(file_name.c_str());
@@ -101,7 +103,7 @@ void ShutdownLogging() {
   // This method may only correctly be called once (which this lock does not
   // enforce), but this lock protects against concurrent calls with
   // InitGoogleLoggingSafe
-  mutex::scoped_lock logging_lock(logging_mutex);
+  SpinLockHolder l(&logging_mutex);
   google::ShutdownGoogleLogging();
 }
 

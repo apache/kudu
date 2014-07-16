@@ -58,7 +58,7 @@ void ConditionVariable::Wait() {
 #endif
 }
 
-void ConditionVariable::TimedWait(const MonoDelta& max_time) {
+bool ConditionVariable::TimedWait(const MonoDelta& max_time) {
   base::ThreadRestrictions::AssertWaitAllowed();
   int64 usecs = max_time.ToMicroseconds();
   struct timespec relative_time;
@@ -107,6 +107,7 @@ void ConditionVariable::TimedWait(const MonoDelta& max_time) {
 #if !defined(NDEBUG)
   user_lock_->CheckUnheldAndMark();
 #endif
+  return rv == 0;
 }
 
 void ConditionVariable::Broadcast() {

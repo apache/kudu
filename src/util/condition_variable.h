@@ -85,7 +85,11 @@ class ConditionVariable {
   // Wait() releases the caller's critical section atomically as it starts to
   // sleep, and the reacquires it when it is signaled.
   void Wait();
-  void TimedWait(const MonoDelta& max_time);
+
+  // Like Wait(), but only waits up to a limited amount of time.
+  //
+  // Returns true if we were Signal()'ed, or false if 'max_time' elapsed.
+  bool TimedWait(const MonoDelta& max_time);
 
   // Broadcast() revives all waiting threads.
   void Broadcast();

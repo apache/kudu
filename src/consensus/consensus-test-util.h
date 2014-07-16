@@ -1,5 +1,6 @@
 // Copyright (c) 2013, Cloudera, inc.
 
+#include <boost/thread/locks.hpp>
 #include <string>
 #include <tr1/unordered_map>
 #include <tr1/memory>

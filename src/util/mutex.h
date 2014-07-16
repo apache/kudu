@@ -3,6 +3,7 @@
 #define KUDU_UTIL_MUTEX_H
 
 #include <pthread.h>
+#include <glog/logging.h>
 #include <sys/types.h>
 
 #include "gutil/macros.h"
@@ -64,7 +65,9 @@ class MutexLock {
   //   MutexLock l(lock_); // acquired
   //   ...
   // } // released
-  explicit MutexLock(Mutex& lock) : lock_(&lock) {
+  explicit MutexLock(Mutex& lock)
+    : lock_(&lock),
+      owned_(true) {
     lock_->Acquire();
   }
 
@@ -77,17 +80,38 @@ class MutexLock {
   //   MutexLock l(lock_, AlreadyAcquired());
   //   ...
   // } // released
-  MutexLock(Mutex& lock, const AlreadyAcquired&) : lock_(&lock) {
+  MutexLock(Mutex& lock, const AlreadyAcquired&)
+    : lock_(&lock),
+      owned_(true) {
     lock_->AssertAcquired();
   }
 
-  ~MutexLock() {
+  void Lock() {
+    DCHECK(!owned_);
+    lock_->Acquire();
+    owned_ = true;
+  }
+
+  void Unlock() {
+    DCHECK(owned_);
     lock_->AssertAcquired();
     lock_->Release();
+    owned_ = false;
+  }
+
+  ~MutexLock() {
+    if (owned_) {
+      Unlock();
+    }
+  }
+
+  bool OwnsLock() const {
+    return owned_;
   }
 
  private:
   Mutex* lock_;
+  bool owned_;
   DISALLOW_COPY_AND_ASSIGN(MutexLock);
 };
 

@@ -14,7 +14,6 @@
 //
 
 #include <boost/thread/locks.hpp>
-#include <boost/thread/mutex.hpp>
 #include <algorithm>
 
 #include "util/debug-util.h"

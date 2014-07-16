@@ -132,7 +132,7 @@ class MultiThreadTest {
     for (int i = 0; i < blocking_puts_; i++) {
       ASSERT_TRUE(queue_.BlockingPut(arg));
     }
-    boost::lock_guard<boost::mutex> guard(lock_);
+    MutexLock guard(lock_);
     if (--num_inserters_ == 0) {
       queue_.Shutdown();
     }
@@ -145,7 +145,7 @@ class MultiThreadTest {
       if (!got) {
         arg = -1;
       }
-      boost::lock_guard<boost::mutex> guard(lock_);
+      MutexLock guard(lock_);
       gotten_[arg] = gotten_[arg] + 1;
     }
   }
@@ -169,7 +169,7 @@ class MultiThreadTest {
       (*t)->join();
     }
     // Let's check to make sure we got what we should have.
-    boost::lock_guard<boost::mutex> guard(lock_);
+    MutexLock guard(lock_);
     for (int i = 0; i < nthreads_; i++) {
       ASSERT_EQ(puts_ + blocking_puts_, gotten_[i]);
     }
@@ -184,7 +184,7 @@ class MultiThreadTest {
   int blocking_puts_;
   int nthreads_;
   BlockingQueue<int32_t> queue_;
-  boost::mutex lock_;
+  Mutex lock_;
   std::map<int32_t, int> gotten_;
   thread_vec_t threads_;
   int num_inserters_;

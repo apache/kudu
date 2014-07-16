@@ -1,20 +1,6 @@
 // Copyright (c) 2014, Cloudera, inc.
 //
-// Copied from Impala. Changes include:
-// - Namespace + imports.
-// - Adapted to Kudu metrics library.
-// - Removal of ThreadGroups.
-// - Switched from promise to spinlock in SuperviseThread to RunThread
-//   communication.
-// - Fixes for cpplint.
-// - Added spinlock for protection against KUDU-11.
-// - Replaced boost exception throwing on thread creation with status.
-// - Added ThreadJoiner.
-// - Added prctl(PR_SET_NAME) to name threads.
-// - Added current_thread() abstraction using TLS.
-// - Used GoogleOnce to make thread_manager initialization lazy.
-// - Switched shared_ptr from boost to tr1.
-// - Added ThreadMgr::ScopedThread for exception safety/RAII in Thread::SuperviseThread.
+// Copied from Impala and adapted to Kudu.
 
 #include "util/thread.h"
 
@@ -36,6 +22,7 @@
 #include "util/debug-util.h"
 #include "util/errno.h"
 #include "util/logging.h"
+#include "util/mutex.h"
 #include "util/metrics.h"
 #include "util/url-coding.h"
 #include "util/os-util.h"
@@ -44,7 +31,6 @@
 using boost::bind;
 using boost::lock_guard;
 using boost::mem_fn;
-using boost::mutex;
 using std::tr1::shared_ptr;
 using boost::thread;
 using boost::thread_resource_error;
@@ -84,7 +70,7 @@ class ThreadMgr {
   }
 
   ~ThreadMgr() {
-    lock_guard<mutex> l(lock_);
+    MutexLock l(lock_);
     thread_categories_.clear();
   }
 
@@ -160,7 +146,7 @@ class ThreadMgr {
   typedef map<string, ThreadCategory> ThreadCategoryMap;
 
   // Protects thread_categories_ and metrics_enabled_
-  mutex lock_;
+  Mutex lock_;
 
   // All thread categorys that ever contained a thread, even if empty
   ThreadCategoryMap thread_categories_;
@@ -205,7 +191,7 @@ void ThreadMgr::SetThreadName(const string& name, int64 tid) {
 
 Status ThreadMgr::StartInstrumentation(MetricRegistry* metric, WebCallbackRegistry* web) {
   MetricContext ctx(DCHECK_NOTNULL(metric), "threading");
-  lock_guard<mutex> l(lock_);
+  MutexLock l(lock_);
   metrics_enabled_ = true;
 
   // TODO: These metrics should be expressed as counters but their lifecycles
@@ -222,18 +208,18 @@ Status ThreadMgr::StartInstrumentation(MetricRegistry* metric, WebCallbackRegist
 }
 
 uint64_t ThreadMgr::ReadNumTotalThreads() {
-  lock_guard<mutex> l(lock_);
+  MutexLock l(lock_);
   return total_threads_metric_;
 }
 
 uint64_t ThreadMgr::ReadNumCurrentThreads() {
-  lock_guard<mutex> l(lock_);
+  MutexLock l(lock_);
   return current_num_threads_metric_;
 }
 
 void ThreadMgr::AddThread(const thread::id& thread, const string& name,
     const string& category, int64_t tid) {
-  lock_guard<mutex> l(lock_);
+  MutexLock l(lock_);
   thread_categories_[category][thread] = ThreadDescriptor(category, name, tid);
   if (metrics_enabled_) {
     current_num_threads_metric_++;
@@ -242,7 +228,7 @@ void ThreadMgr::AddThread(const thread::id& thread, const string& name,
 }
 
 void ThreadMgr::RemoveThread(const thread::id& boost_id, const string& category) {
-  lock_guard<mutex> l(lock_);
+  MutexLock l(lock_);
   ThreadCategoryMap::iterator category_it = thread_categories_.find(category);
   DCHECK(category_it != thread_categories_.end());
   category_it->second.erase(boost_id);
@@ -269,7 +255,7 @@ void ThreadMgr::PrintThreadCategoryRows(const ThreadCategory& category,
 
 void ThreadMgr::ThreadPathHandler(const WebCallbackRegistry::ArgumentMap& args,
     stringstream* output) {
-  lock_guard<mutex> l(lock_);
+  MutexLock l(lock_);
   vector<const ThreadCategory*> categories_to_print;
   WebCallbackRegistry::ArgumentMap::const_iterator category_name = args.find("group");
   if (category_name != args.end()) {

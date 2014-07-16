@@ -2,10 +2,9 @@
 #ifndef KUDU_UTIL_RWC_LOCK_H
 #define KUDU_UTIL_RWC_LOCK_H
 
-#include <boost/thread/mutex.hpp>
-#include <boost/thread/condition.hpp>
-
 #include "gutil/macros.h"
+#include "util/condition_variable.h"
+#include "util/mutex.h"
 
 namespace kudu {
 
@@ -95,8 +94,8 @@ class RWCLock {
   // Additionally, while the commit lock is held, the
   // locking thread holds this mutex, which prevents any new
   // threads from obtaining the lock in any mode.
-  mutable boost::mutex lock_;
-  boost::condition no_mutators_, no_readers_;
+  mutable Mutex lock_;
+  ConditionVariable no_mutators_, no_readers_;
   int reader_count_;
   bool write_locked_;
 

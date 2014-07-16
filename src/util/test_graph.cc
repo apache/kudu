@@ -37,7 +37,7 @@ TimeSeriesCollector::~TimeSeriesCollector() {
 }
 
 shared_ptr<TimeSeries> TimeSeriesCollector::GetTimeSeries(const string &key) {
-  boost::mutex::scoped_lock l(series_lock_);
+  MutexLock l(series_lock_);
   SeriesMap::const_iterator it = series_map_.find(key);
   if (it == series_map_.end()) {
     shared_ptr<TimeSeries> ts(new TimeSeries());
@@ -84,7 +84,7 @@ void TimeSeriesCollector::DumperThread() {
 
 void TimeSeriesCollector::BuildMetricsString(
   WallTime time_since_start, faststring *dst_buf) const {
-  boost::mutex::scoped_lock l(series_lock_);
+  MutexLock l(series_lock_);
 
   dst_buf->append(StringPrintf("{ \"scope\": \"%s\", \"time\": %.3f",
                                scope_.c_str(), time_since_start));

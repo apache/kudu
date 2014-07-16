@@ -29,7 +29,7 @@ const int kTargetCounterVal = 1000000;
 
 class Counter;
 typedef unordered_set<Counter*> CounterPtrSet;
-typedef boost::mutex RegistryLockType;
+typedef Mutex RegistryLockType;
 typedef simple_spinlock CounterLockType;
 
 // Registry to provide reader access to the thread-local Counters.

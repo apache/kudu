@@ -4,6 +4,7 @@
 
 #include <tr1/unordered_set>
 
+#include <boost/thread/locks.hpp>
 #include <string>
 #include <utility>
 #include <vector>

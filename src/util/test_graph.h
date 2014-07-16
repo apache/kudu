@@ -64,7 +64,7 @@ class TimeSeriesCollector {
 
   typedef unordered_map<string, shared_ptr<TimeSeries> > SeriesMap;
   SeriesMap series_map_;
-  mutable boost::mutex series_lock_;
+  mutable Mutex series_lock_;
 
   scoped_refptr<kudu::Thread> dumper_thread_;
 

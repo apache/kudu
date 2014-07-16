@@ -29,8 +29,6 @@
 
 #include <stddef.h>
 
-#include <boost/thread/mutex.hpp>
-#include <boost/thread/locks.hpp>
 #include <glog/logging.h>
 #include <tr1/memory>
 
@@ -47,6 +45,7 @@ using std::numeric_limits;
 using std::vector;
 
 #include "util/boost_mutex_utils.h"
+#include "util/mutex.h"
 #include "gutil/gscoped_ptr.h"
 #include "gutil/logging-inl.h"
 #include "gutil/macros.h"
@@ -54,8 +53,6 @@ using std::vector;
 #include "gutil/singleton.h"
 
 namespace kudu {
-using boost::mutex;
-using boost::lock_guard;
 
 class BufferAllocator;
 class MemTracker;
@@ -365,7 +362,7 @@ class Quota : public Mediator {
   // you are still able to perform _minimal_ allocations when the available
   // quota is 0 (or less than "minimal" param).
   virtual size_t Available() const OVERRIDE {
-    lock_guard_maybe<boost::mutex> lock(Quota<thread_safe>::mutex());
+    lock_guard_maybe<Mutex> lock(Quota<thread_safe>::mutex());
     const size_t quota = GetQuotaInternal();
     return (usage_ >= quota) ? 0 : (quota - usage_);
   }
@@ -390,10 +387,10 @@ class Quota : public Mediator {
   // quota).
   virtual size_t GetQuotaInternal() const = 0;
 
-  boost::mutex* mutex() const { return thread_safe ? &mutex_ : NULL; }
+  Mutex* mutex() const { return thread_safe ? &mutex_ : NULL; }
 
  private:
-  mutable boost::mutex mutex_;
+  mutable Mutex mutex_;
   size_t usage_;
   bool enforced_;
   DISALLOW_COPY_AND_ASSIGN(Quota);
@@ -732,12 +729,12 @@ class ThreadSafeBufferAllocator : public BufferAllocator {
   virtual ~ThreadSafeBufferAllocator() {}
 
   virtual size_t Available() const OVERRIDE {
-    lock_guard_maybe<boost::mutex> lock(mutex());
+    lock_guard_maybe<Mutex> lock(mutex());
     return delegate()->Available();
   }
 
  protected:
-  boost::mutex* mutex() const { return &mutex_; }
+  Mutex* mutex() const { return &mutex_; }
   // Expose the delegate allocator, with the precise type of the allocator
   // specified by the template parameter. The delegate() methods themselves
   // don't give any thread-safety guarantees. Protect all uses taking the Mutex
@@ -749,7 +746,7 @@ class ThreadSafeBufferAllocator : public BufferAllocator {
   virtual Buffer* AllocateInternal(size_t requested,
                                    size_t minimal,
                                    BufferAllocator* originator) OVERRIDE {
-    lock_guard_maybe<boost::mutex> lock(mutex());
+    lock_guard_maybe<Mutex> lock(mutex());
     return DelegateAllocate(delegate(), requested, minimal, originator);
   }
 
@@ -757,18 +754,18 @@ class ThreadSafeBufferAllocator : public BufferAllocator {
                                   size_t minimal,
                                   Buffer* buffer,
                                   BufferAllocator* originator) OVERRIDE {
-    lock_guard_maybe<boost::mutex> lock(mutex());
+    lock_guard_maybe<Mutex> lock(mutex());
     return DelegateReallocate(delegate(), requested, minimal, buffer,
                               originator);
   }
 
   virtual void FreeInternal(Buffer* buffer) OVERRIDE {
-    lock_guard_maybe<boost::mutex> lock(mutex());
+    lock_guard_maybe<Mutex> lock(mutex());
     DelegateFree(delegate(), buffer);
   }
 
   DelegateAllocatorType* delegate_;
-  mutable boost::mutex mutex_;
+  mutable Mutex mutex_;
   DISALLOW_COPY_AND_ASSIGN(ThreadSafeBufferAllocator);
 };
 
@@ -797,15 +794,15 @@ class ThreadSafeMemoryLimit
   virtual ~ThreadSafeMemoryLimit() {}
 
   size_t GetQuota() const {
-    lock_guard_maybe<boost::mutex> lock(mutex());
+    lock_guard_maybe<Mutex> lock(mutex());
     return delegate()->GetQuota();
   }
   size_t GetUsage() const {
-    lock_guard_maybe<boost::mutex> lock(mutex());
+    lock_guard_maybe<Mutex> lock(mutex());
     return delegate()->GetUsage();
   }
   void SetQuota(const size_t quota) {
-    lock_guard_maybe<boost::mutex> lock(mutex());
+    lock_guard_maybe<Mutex> lock(mutex());
     delegate()->SetQuota(quota);
   }
 };
@@ -918,7 +915,7 @@ class GuaranteeMemory : public BufferAllocator {
 template<bool thread_safe>
 size_t Quota<thread_safe>::Allocate(const size_t requested,
                                     const size_t minimal) {
-  lock_guard_maybe<boost::mutex> lock(mutex());
+  lock_guard_maybe<Mutex> lock(mutex());
   DCHECK_LE(minimal, requested)
       << "\"minimal\" shouldn't be bigger than \"requested\"";
   const size_t quota = GetQuotaInternal();
@@ -949,7 +946,7 @@ size_t Quota<thread_safe>::Allocate(const size_t requested,
 
 template<bool thread_safe>
 void Quota<thread_safe>::Free(size_t amount) {
-  lock_guard_maybe<boost::mutex> lock(mutex());
+  lock_guard_maybe<Mutex> lock(mutex());
   usage_ -= amount;
   // threads allocate/free memory concurrently via the same Quota object that is
   // not protected with a mutex (thread_safe == false).
@@ -962,19 +959,19 @@ void Quota<thread_safe>::Free(size_t amount) {
 
 template<bool thread_safe>
 size_t Quota<thread_safe>::GetQuota() const {
-  lock_guard_maybe<boost::mutex> lock(mutex());
+  lock_guard_maybe<Mutex> lock(mutex());
   return GetQuotaInternal();
 }
 
 template<bool thread_safe>
 size_t Quota<thread_safe>::GetUsage() const {
-  lock_guard_maybe<boost::mutex> lock(mutex());
+  lock_guard_maybe<Mutex> lock(mutex());
   return usage_;
 }
 
 template<bool thread_safe>
 void StaticQuota<thread_safe>::SetQuota(const size_t quota) {
-  lock_guard_maybe<boost::mutex> lock(Quota<thread_safe>::mutex());
+  lock_guard_maybe<Mutex> lock(Quota<thread_safe>::mutex());
   quota_ = quota;
 }
 

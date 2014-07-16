@@ -7,13 +7,12 @@
 
 #include <string.h>
 #include <boost/foreach.hpp>
-#include <boost/thread/locks.hpp>
-#include <boost/thread/mutex.hpp>
 #include <glog/logging.h>
 #include <map>
 #include <string>
 #include <vector>
 #include "util/env.h"
+#include "util/mutex.h"
 #include "util/memenv/memenv.h"
 #include "util/status.h"
 
@@ -21,8 +20,6 @@ namespace kudu {
 
 namespace {
 
-using boost::mutex;
-using boost::lock_guard;
 using std::string;
 using std::vector;
 
@@ -34,7 +31,7 @@ class FileState {
 
   // Increase the reference count.
   void Ref() {
-    lock_guard<mutex> lock(refs_mutex_);
+    MutexLock lock(refs_mutex_);
     ++refs_;
   }
 
@@ -43,7 +40,7 @@ class FileState {
     bool do_delete = false;
 
     {
-      lock_guard<mutex> lock(refs_mutex_);
+      MutexLock lock(refs_mutex_);
       --refs_;
       assert(refs_ >= 0);
       if (refs_ <= 0) {
@@ -153,7 +150,7 @@ class FileState {
   FileState(const FileState&);
   void operator=(const FileState&);
 
-  mutex refs_mutex_;
+  Mutex refs_mutex_;
   int refs_;  // Protected by refs_mutex_;
 
   // The following fields are not protected by any mutex. They are only mutable
@@ -273,7 +270,7 @@ class InMemoryEnv : public EnvWrapper {
   // Partial implementation of the Env interface.
   virtual Status NewSequentialFile(const std::string& fname,
                                    SequentialFile** result) OVERRIDE {
-    lock_guard<mutex> lock(mutex_);
+    MutexLock lock(mutex_);
     if (file_map_.find(fname) == file_map_.end()) {
       *result = NULL;
       return Status::IOError(fname, "File not found");
@@ -285,7 +282,7 @@ class InMemoryEnv : public EnvWrapper {
 
   virtual Status NewRandomAccessFile(const std::string& fname,
                                      RandomAccessFile** result) OVERRIDE {
-    lock_guard<mutex> lock(mutex_);
+    MutexLock lock(mutex_);
     if (file_map_.find(fname) == file_map_.end()) {
       *result = NULL;
       return Status::IOError(fname, "File not found");
@@ -303,7 +300,7 @@ class InMemoryEnv : public EnvWrapper {
 
   virtual Status NewWritableFile(const std::string& fname,
                                  WritableFile** result) OVERRIDE {
-    lock_guard<mutex> lock(mutex_);
+    MutexLock lock(mutex_);
     if (file_map_.find(fname) != file_map_.end()) {
       DeleteFileInternal(fname);
     }
@@ -317,13 +314,13 @@ class InMemoryEnv : public EnvWrapper {
   }
 
   virtual bool FileExists(const std::string& fname) OVERRIDE {
-    lock_guard<mutex> lock(mutex_);
+    MutexLock lock(mutex_);
     return file_map_.find(fname) != file_map_.end();
   }
 
   virtual Status GetChildren(const std::string& dir,
                              vector<std::string>* result) OVERRIDE {
-    lock_guard<mutex> lock(mutex_);
+    MutexLock lock(mutex_);
     result->clear();
 
     for (FileSystem::iterator i = file_map_.begin(); i != file_map_.end(); ++i) {
@@ -348,7 +345,7 @@ class InMemoryEnv : public EnvWrapper {
   }
 
   virtual Status DeleteFile(const std::string& fname) OVERRIDE {
-    lock_guard<mutex> lock(mutex_);
+    MutexLock lock(mutex_);
     if (file_map_.find(fname) == file_map_.end()) {
       return Status::IOError(fname, "File not found");
     }
@@ -376,7 +373,7 @@ class InMemoryEnv : public EnvWrapper {
       dir.push_back('/');
     }
 
-    lock_guard<mutex> lock(mutex_);
+    MutexLock lock(mutex_);
 
     for (FileSystem::iterator i = file_map_.begin(); i != file_map_.end(); ) {
       const std::string& filename = i->first;
@@ -392,7 +389,7 @@ class InMemoryEnv : public EnvWrapper {
   }
 
   virtual Status GetFileSize(const std::string& fname, uint64_t* file_size) OVERRIDE {
-    lock_guard<mutex> lock(mutex_);
+    MutexLock lock(mutex_);
     if (file_map_.find(fname) == file_map_.end()) {
       return Status::IOError(fname, "File not found");
     }
@@ -403,7 +400,7 @@ class InMemoryEnv : public EnvWrapper {
 
   virtual Status RenameFile(const std::string& src,
                             const std::string& target) OVERRIDE {
-    lock_guard<mutex> lock(mutex_);
+    MutexLock lock(mutex_);
     if (file_map_.find(src) == file_map_.end()) {
       return Status::IOError(src, "File not found");
     }
@@ -432,7 +429,7 @@ class InMemoryEnv : public EnvWrapper {
  private:
   // Map from filenames to FileState objects, representing a simple file system.
   typedef std::map<std::string, FileState*> FileSystem;
-  mutex mutex_;
+  Mutex mutex_;
   FileSystem file_map_;  // Protected by mutex_.
 };
 

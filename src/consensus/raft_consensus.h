@@ -3,6 +3,7 @@
 #ifndef KUDU_CONSENSUS_RAFT_CONSENSUS_H_
 #define KUDU_CONSENSUS_RAFT_CONSENSUS_H_
 
+#include <boost/thread/locks.hpp>
 #include <string>
 #include <utility>
 #include <vector>

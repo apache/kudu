@@ -19,7 +19,6 @@
 #define SUPERSONIC_BASE_MEMORY_ARENA_H_
 
 #include <boost/signals2/dummy_mutex.hpp>
-#include <boost/thread/mutex.hpp>
 #include <glog/logging.h>
 #include <stddef.h>
 #include <string.h>
@@ -44,7 +43,7 @@ template<bool THREADSAFE> struct ArenaTraits;
 
 template <> struct ArenaTraits<true> {
   typedef Atomic32 offset_type;
-  typedef boost::mutex mutex_type;
+  typedef Mutex mutex_type;
 };
 
 template <> struct ArenaTraits<false> {

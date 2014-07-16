@@ -2,6 +2,8 @@
 
 #include "client/session-internal.h"
 
+#include <boost/thread/locks.hpp>
+
 #include "client/batcher.h"
 #include "client/error_collector.h"
 

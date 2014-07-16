@@ -3,12 +3,10 @@
 #ifndef KUDU_UTIL_COUNTDOWN_LATCH_H
 #define KUDU_UTIL_COUNTDOWN_LATCH_H
 
-#include <boost/thread/condition_variable.hpp>
-#include <boost/thread/locks.hpp>
-#include <boost/thread/mutex.hpp>
-
 #include "gutil/macros.h"
+#include "util/condition_variable.h"
 #include "util/monotime.h"
+#include "util/mutex.h"
 
 namespace kudu {
 
@@ -18,31 +16,32 @@ namespace kudu {
 class CountDownLatch {
  public:
   // Initialize the latch with the given initial count.
-  explicit CountDownLatch(int count) :
-    count_(count)
-  {}
+  explicit CountDownLatch(int count)
+    : cond_(&lock_),
+      count_(count) {
+  }
 
   // Decrement the count of this latch.
   // If the new count is zero, then all waiting threads are woken up.
   // If the count is already zero, this has no effect.
   void CountDown() {
-    boost::lock_guard<boost::mutex> lock(lock_);
+    MutexLock lock(lock_);
     if (count_ == 0) {
       return;
     }
 
     if (--count_ == 0) {
       // Latch has triggered.
-      cond_.notify_all();
+      cond_.Broadcast();
     }
   }
 
   // Wait until the count on the latch reaches zero.
   // If the count is already zero, this returns immediately.
   void Wait() {
-    boost::unique_lock<boost::mutex> lock(lock_);
+    MutexLock lock(lock_);
     while (count_ > 0) {
-      cond_.wait(lock);
+      cond_.Wait();
     }
   }
 
@@ -56,9 +55,9 @@ class CountDownLatch {
   // Waits for the count on the latch to reach zero, or until 'delta' time elapses.
   // Returns true if the count became zero, false otherwise.
   bool WaitFor(const MonoDelta& delta) {
-    boost::unique_lock<boost::mutex> lock(lock_);
+    MutexLock lock(lock_);
     while (count_ > 0) {
-      if (!cond_.timed_wait(lock, boost::posix_time::microseconds(delta.ToMicroseconds()))) {
+      if (!cond_.TimedWait(delta)) {
         return false;
       }
     }
@@ -68,19 +67,19 @@ class CountDownLatch {
   // Reset the latch with the given count. This is equivalent to reconstructing
   // the latch.
   void Reset(uint64_t count) {
-    boost::unique_lock<boost::mutex> lock(lock_);
+    MutexLock lock(lock_);
     count_ = count;
   }
 
   uint64_t count() const {
-    boost::lock_guard<boost::mutex> lock(lock_);
+    MutexLock lock(lock_);
     return count_;
   }
 
  private:
   DISALLOW_COPY_AND_ASSIGN(CountDownLatch);
-  mutable boost::mutex lock_;
-  boost::condition_variable cond_;
+  mutable Mutex lock_;
+  ConditionVariable cond_;
 
   uint64_t count_;
 };

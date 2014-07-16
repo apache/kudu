@@ -1,16 +1,6 @@
 // Copyright (c) 2014, Cloudera, inc.
 //
-// Copied from Impala. Changes include:
-// - Namespace + imports.
-// - Adapted to Kudu metrics library.
-// - Removal of ThreadGroups.
-// - Switched from promise to spinlock in SuperviseThread to RunThread
-//   communication.
-// - Fixes for cpplint.
-// - Added spinlock for protection against KUDU-11.
-// - Replaced boost exception throwing on thread creation with status.
-// - Added ThreadJoiner.
-// - Added current_thread() abstraction using TLS.
+// Copied from Impala and adapted to Kudu.
 
 #ifndef KUDU_UTIL_THREAD_H
 #define KUDU_UTIL_THREAD_H

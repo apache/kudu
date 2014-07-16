@@ -6,12 +6,13 @@
 //  of patent rights can be found in the PATENTS file in the same directory.
 #pragma once
 
-#include <boost/thread/condition_variable.hpp>
-#include <boost/thread/mutex.hpp>
 #include <string>
 #include <tr1/unordered_set>
 #include <tr1/unordered_map>
 #include <vector>
+
+#include "util/condition_variable.h"
+#include "util/mutex.h"
 
 #ifdef NDEBUG
 #define TEST_SYNC_POINT(x)
@@ -66,8 +67,8 @@ class SyncPoint {
   std::tr1::unordered_map<std::string, std::vector<std::string> > successors_;
   std::tr1::unordered_map<std::string, std::vector<std::string> > predecessors_;
 
-  boost::mutex mutex_;
-  boost::condition_variable cv_;
+  Mutex mutex_;
+  ConditionVariable cv_;
   // sync points that have been passed through
   std::tr1::unordered_set<std::string> cleared_points_;
   bool enabled_;

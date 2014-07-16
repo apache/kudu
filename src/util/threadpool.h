@@ -4,8 +4,6 @@
 #define KUDU_UTIL_THREAD_POOL_H
 
 #include <boost/function.hpp>
-#include <boost/thread/condition_variable.hpp>
-#include <boost/thread/mutex.hpp>
 #include <tr1/memory>
 #include <list>
 #include <string>
@@ -15,6 +13,8 @@
 #include "gutil/macros.h"
 #include "gutil/port.h"
 #include "util/monotime.h"
+#include "util/condition_variable.h"
+#include "util/mutex.h"
 #include "util/status.h"
 
 namespace kudu {
@@ -163,13 +163,13 @@ class ThreadPool {
   const MonoDelta idle_timeout_;
 
   Status pool_status_;
-  boost::condition_variable idle_cond_;
-  boost::condition_variable no_threads_cond_;
-  boost::condition_variable not_empty_;
+  Mutex lock_;
+  ConditionVariable idle_cond_;
+  ConditionVariable no_threads_cond_;
+  ConditionVariable not_empty_;
   int num_threads_;
   int active_threads_;
   int queue_size_;
-  boost::mutex lock_;
   std::list<QueueEntry> queue_;
 
   DISALLOW_COPY_AND_ASSIGN(ThreadPool);
