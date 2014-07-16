@@ -24,7 +24,6 @@
 #include <boost/bind.hpp>
 #include <boost/mem_fn.hpp>
 #include <boost/algorithm/string.hpp>
-#include <boost/filesystem.hpp>
 #include <glog/logging.h>
 #include <squeasel.h>
 

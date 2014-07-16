@@ -9,7 +9,6 @@
 
 #include "util/os-util.h"
 
-#include <boost/filesystem.hpp>
 #include <fstream>
 #include <sstream>
 #include <string>
@@ -93,10 +92,6 @@ Status GetThreadStats(int64_t tid, ThreadStats* stats) {
 
   stringstream proc_path;
   proc_path << "/proc/self/task/" << tid << "/stat";
-  if (!boost::filesystem::exists(proc_path.str())) {
-    return Status::NotFound("Thread path does not exist");
-  }
-
   ifstream proc_file(proc_path.str().c_str());
   if (!proc_file.is_open()) {
     return Status::IOError("Could not open ifstream");

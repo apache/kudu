@@ -4,9 +4,8 @@ The following dependencies are necessary to build kudu:
 
 - autoscan
 - boost >= 1.41, including the following components:
-  - boost::filesystem
   - boost::thread
-  - boost::system
+  - boost::system (thread depends on it)
 - cmake 2.8.7
 - gcc 4.4 or higher
 - libssl-dev (Ubuntu) or openssl-devel (CentOS)

@@ -20,7 +20,6 @@
 
 #include <algorithm>
 #include <boost/foreach.hpp>
-#include <boost/system/system_error.hpp>
 #include <map>
 #include <set>
 #include <sys/prctl.h>
@@ -381,7 +380,7 @@ Status ThreadJoiner::Join() {
       if (thread_->thread_->timed_join(boost::posix_time::milliseconds(wait_for))) {
         return Status::OK();
       }
-    } catch(boost::system::system_error& e) {
+    } catch(std::runtime_error& e) {
       return Status::RuntimeError(strings::Substitute("Error occured joining on $0",
           thread_->name_), e.what());
     }
