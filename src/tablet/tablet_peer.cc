@@ -28,7 +28,7 @@
 #include "util/stopwatch.h"
 #include "util/trace.h"
 
-DEFINE_bool(log_gc_enable, true,
+DEFINE_bool(enable_log_gc, true,
     "Enable garbage collection (deletion) of old write-ahead logs.");
 
 DEFINE_int32(log_gc_sleep_delay_ms, 10000,
@@ -273,7 +273,7 @@ void TabletPeer::GetTabletStatusPB(TabletStatusPB* status_pb_out) const {
 }
 
 Status TabletPeer::StartLogGCTask() {
-  if (PREDICT_FALSE(!FLAGS_log_gc_enable)) {
+  if (PREDICT_FALSE(!FLAGS_enable_log_gc)) {
     LOG(INFO) << "Log GC is disabled, not deleting old write-ahead logs!";
     return Status::OK();
   }

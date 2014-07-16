@@ -26,7 +26,7 @@
 #include "util/test_util.h"
 #include "util/test_macros.h"
 
-DECLARE_bool(log_gc_enable);
+DECLARE_bool(enable_log_gc);
 
 namespace kudu {
 namespace tablet {
@@ -86,7 +86,7 @@ class TabletPeerTest : public KuduTabletTest {
 
     // Disable Log GC. We will call it manually.
     // This flag is restored by the FlagSaver member at destruction time.
-    FLAGS_log_gc_enable = false;
+    FLAGS_enable_log_gc = false;
 
     QuorumPB quorum;
     quorum.set_local(true);
