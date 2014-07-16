@@ -70,6 +70,8 @@ class MonoTime {
   static const int64_t kNanosecondsPerMillisecond = 1000000L;
   static const int64_t kNanosecondsPerMicrosecond = 1000L;
 
+  static const int64_t kMicrosecondsPerSecond = 1000000L;
+
   // The coarse monotonic time is faster to retrieve, but "only"
   // accurate to within a millisecond or two.  The speed difference will
   // depend on your timer hardware.

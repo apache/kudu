@@ -20,6 +20,7 @@ add_library(kudu_util
   bitmap.cc
   cache.cc
   coding.cc
+  condition_variable.cc
   crc.cc
   curl_util.cc
   debug-util.cc
@@ -39,6 +40,7 @@ add_library(kudu_util
   mem_tracker.cc
   metrics.cc
   monotime.cc
+  mutex.cc
   net/dns_resolver.cc
   net/net_util.cc
   net/sockaddr.cc

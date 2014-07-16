@@ -66,7 +66,7 @@ Status ServicePool::Init(int num_threads) {
 void ServicePool::Shutdown() {
   service_queue_.Shutdown();
 
-  boost::lock_guard<boost::mutex> lock(shutdown_lock_);
+  MutexLock lock(shutdown_lock_);
   if (closing_) return;
   closing_ = true;
   // TODO: Use a proper thread pool implementation.

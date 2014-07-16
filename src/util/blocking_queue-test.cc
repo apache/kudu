@@ -1,8 +1,5 @@
 // Copyright (c) 2013, Cloudera, inc.
 
-#include <boost/thread/condition_variable.hpp>
-#include <boost/thread/locks.hpp>
-#include <boost/thread/mutex.hpp>
 #include <boost/thread/thread.hpp>
 #include <glog/logging.h>
 #include <gtest/gtest.h>

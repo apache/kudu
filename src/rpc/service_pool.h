@@ -11,6 +11,7 @@
 #include "gutil/ref_counted.h"
 #include "rpc/rpc_service.h"
 #include "util/blocking_queue.h"
+#include "util/mutex.h"
 #include "util/thread.h"
 #include "util/status.h"
 
@@ -60,7 +61,7 @@ class ServicePool : public RpcService {
   Counter* rpcs_timed_out_in_queue_;
   Counter* rpcs_queue_overflow_;
 
-  mutable boost::mutex shutdown_lock_;
+  mutable Mutex shutdown_lock_;
   bool closing_;
 
   DISALLOW_COPY_AND_ASSIGN(ServicePool);

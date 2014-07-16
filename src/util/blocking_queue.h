@@ -3,9 +3,6 @@
 #define KUDU_UTIL_BLOCKING_QUEUE_H
 
 #include <boost/foreach.hpp>
-#include <boost/thread/condition_variable.hpp>
-#include <boost/thread/locks.hpp>
-#include <boost/thread/mutex.hpp>
 #include <boost/type_traits/remove_pointer.hpp>
 #include <unistd.h>
 #include <list>
@@ -15,6 +12,8 @@
 
 #include "gutil/basictypes.h"
 #include "gutil/gscoped_ptr.h"
+#include "util/condition_variable.h"
+#include "util/mutex.h"
 
 namespace kudu {
 
@@ -44,7 +43,9 @@ class BlockingQueue {
   explicit BlockingQueue(size_t max_size)
     : shutdown_(false),
       size_(0),
-      max_size_(max_size) {
+      max_size_(max_size),
+      not_empty_(&lock_),
+      not_full_(&lock_) {
   }
 
   // If the queue holds a bare pointer, it must be empty on destruction, since
@@ -57,19 +58,19 @@ class BlockingQueue {
   // Get an element from the queue.  Returns false if we were shut down prior to
   // getting the element.
   bool BlockingGet(T *out) {
-    boost::unique_lock<boost::mutex> unique_lock(lock_);
+    MutexLock l(lock_);
     while (true) {
       if (!list_.empty()) {
         *out = list_.front();
         list_.pop_front();
         decrement_size_unlocked(*out);
-        not_full_.notify_one();
+        not_full_.Signal();
         return true;
       }
       if (shutdown_) {
         return false;
       }
-      not_empty_.wait(unique_lock);
+      not_empty_.Wait();
     }
   }
 
@@ -88,7 +89,7 @@ class BlockingQueue {
   // Get all elements from the queue and append them to a
   // vector. Returns false if shutdown prior to getting the elements.
   bool BlockingDrainTo(std::vector<T>* out) {
-    boost::unique_lock<boost::mutex> unique_lock(lock_);
+    MutexLock l(lock_);
     while (true) {
       if (!list_.empty()) {
         out->reserve(list_.size());
@@ -97,13 +98,13 @@ class BlockingQueue {
           decrement_size_unlocked(elt);
         }
         list_.clear();
-        not_full_.notify_one();
+        not_full_.Signal();
         return true;
       }
       if (shutdown_) {
         return false;
       }
-      not_empty_.wait(unique_lock);
+      not_empty_.Wait();
     }
   }
 
@@ -113,7 +114,7 @@ class BlockingQueue {
   //   QUEUE_FULL: if the queue has reached max_size
   //   QUEUE_SHUTDOWN: if someone has already called Shutdown()
   QueueStatus Put(const T &val) {
-    boost::lock_guard<boost::mutex> guard(lock_);
+    MutexLock l(lock_);
     if (size_ >= max_size_) {
       return QUEUE_FULL;
     }
@@ -122,7 +123,7 @@ class BlockingQueue {
     }
     list_.push_back(val);
     increment_size_unlocked(val);
-    not_empty_.notify_one();
+    not_empty_.Signal();
     return QUEUE_SUCCESS;
   }
 
@@ -140,7 +141,7 @@ class BlockingQueue {
   // space becomes available. Returns false if we were shutdown prior
   // to enqueueing the element.
   bool BlockingPut(const T& val) {
-    boost::unique_lock<boost::mutex> unique_lock(lock_);
+    MutexLock l(lock_);
     while (true) {
       if (shutdown_) {
         return false;
@@ -148,10 +149,10 @@ class BlockingQueue {
       if (size_ < max_size_) {
         list_.push_back(val);
         increment_size_unlocked(val);
-        not_empty_.notify_one();
+        not_empty_.Signal();
         return true;
       }
-      not_full_.wait(unique_lock);
+      not_full_.Wait();
     }
   }
 
@@ -171,14 +172,14 @@ class BlockingQueue {
   // Existing elements will drain out of it, and then BlockingGet will start
   // returning false.
   void Shutdown() {
-    boost::lock_guard<boost::mutex> guard(lock_);
+    MutexLock l(lock_);
     shutdown_ = true;
-    not_full_.notify_all();
-    not_empty_.notify_all();
+    not_full_.Broadcast();
+    not_empty_.Broadcast();
   }
 
   bool empty() const {
-    boost::lock_guard<boost::mutex> guard(lock_);
+    MutexLock l(lock_);
     return list_.empty();
   }
 
@@ -189,7 +190,7 @@ class BlockingQueue {
   std::string ToString() const {
     std::string ret;
 
-    boost::lock_guard<boost::mutex> guard(lock_);
+    MutexLock l(lock_);
     BOOST_FOREACH(const T& t, list_) {
       ret.append(t->ToString());
       ret.append("\n");
@@ -212,9 +213,9 @@ class BlockingQueue {
   bool shutdown_;
   size_t size_;
   size_t max_size_;
-  boost::condition_variable not_empty_;
-  boost::condition_variable not_full_;
-  mutable boost::mutex lock_;
+  mutable Mutex lock_;
+  ConditionVariable not_empty_;
+  ConditionVariable not_full_;
   std::list<T> list_;
 };
 

@@ -3,7 +3,6 @@
 #include "rpc/acceptor_pool.h"
 
 #include <boost/foreach.hpp>
-#include <boost/thread/mutex.hpp>
 #include <glog/logging.h>
 #include <inttypes.h>
 #include <stdint.h>
