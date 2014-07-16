@@ -596,7 +596,7 @@ Status CatalogManager::DeleteTable(const DeleteTableRequestPB* req,
   l.mutable_data()->set_state(SysTablesEntryPB::kTableStateRemoved,
                               Substitute("Deleted at ts=$0", GetCurrentTimeMicros()));
 
-  // 3. Update sys-tablets with the removed the table state (PONR)
+  // 3. Update sys.tables with the removed table state (point of no return).
   Status s = sys_tables_->UpdateTable(table.get());
   if (!s.ok()) {
     PANIC_RPC(rpc, Substitute("An error occurred while updating sys tables: $0",
@@ -618,10 +618,11 @@ Status CatalogManager::DeleteTable(const DeleteTableRequestPB* req,
   TRACE("Committing in-memory state");
   l.Commit();
 
-  // Send the 'delete tablet' request to all the TSs
-  SendDeleteTableRequest(table);
+  // Send a DeleteTablet() request to each tablet replica in the table.
+  SendDeleteTabletRequestsForTable(table);
 
-  VLOG(1) << "Deleted table " << table->ToString();
+  LOG(INFO) << "Successfully deleted table " << table->ToString()
+            << " per request from " << RequestorString(rpc);
   background_tasks_->Wake();
   return Status::OK();
 }
@@ -1412,7 +1413,7 @@ void CatalogManager::SendAlterTabletRequest(const scoped_refptr<TabletInfo>& tab
   WARN_NOT_OK(call->Run(), "Failed to send alter table request");
 }
 
-void CatalogManager::SendDeleteTableRequest(const scoped_refptr<TableInfo>& table) {
+void CatalogManager::SendDeleteTabletRequestsForTable(const scoped_refptr<TableInfo>& table) {
   vector<scoped_refptr<TabletInfo> > tablets;
   table->GetAllTablets(&tablets);
 

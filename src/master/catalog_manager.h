@@ -416,7 +416,7 @@ class CatalogManager {
                                std::vector<scoped_refptr<TabletInfo> > *tablets_to_process);
 
   // Task that takes care of the tablet assignments/creations.
-  // loops through the "not created" tablets and send a create request.
+  // Loops through the "not created" tablets and sends a CreateTablet() request.
   void ProcessPendingAssignments(
     const std::vector<scoped_refptr<TabletInfo> >& tablets,
     int *next_timeout_ms);
@@ -459,7 +459,7 @@ class CatalogManager {
                               TSDescriptor* ts_desc);
 
   // Send the "delete tablet request" to all TS that have tablet of the specified table
-  void SendDeleteTableRequest(const scoped_refptr<TableInfo>& table);
+  void SendDeleteTabletRequestsForTable(const scoped_refptr<TableInfo>& table);
 
   // Send the "delete tablet request" to the specified TS/tablet.
   // The specified 'reason' will be logged on the TS.
