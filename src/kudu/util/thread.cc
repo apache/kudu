@@ -22,18 +22,15 @@
 #include "kudu/util/debug-util.h"
 #include "kudu/util/errno.h"
 #include "kudu/util/logging.h"
-#include "kudu/util/mutex.h"
 #include "kudu/util/metrics.h"
+#include "kudu/util/mutex.h"
 #include "kudu/util/url-coding.h"
 #include "kudu/util/os-util.h"
 #include "kudu/util/web_callback_registry.h"
 
 using boost::bind;
-using boost::lock_guard;
 using boost::mem_fn;
 using std::tr1::shared_ptr;
-using boost::thread;
-using boost::thread_resource_error;
 using std::endl;
 using std::map;
 using std::stringstream;
@@ -78,43 +75,14 @@ class ThreadMgr {
 
   Status StartInstrumentation(MetricRegistry* metric, WebCallbackRegistry* web);
 
-  // Registers a thread to the supplied category. The key is a boost::thread::id, used
-  // instead of the system TID since boost::thread::id is always available, unlike
-  // gettid() which might fail.
-  void AddThread(const thread::id& thread, const string& name, const string& category,
+  // Registers a thread to the supplied category. The key is a pthread_t,
+  // not the system TID, since pthread_t is less prone to being recycled.
+  void AddThread(const pthread_t& pthread_id, const string& name, const string& category,
       int64_t tid);
 
   // Removes a thread from the supplied category. If the thread has
   // already been removed, this is a no-op.
-  void RemoveThread(const thread::id& boost_id, const string& category);
-
-  // Helper for ensuring exception safety: adds the thread to 'mgr' at
-  // start, sets the correct thread name and calls RemoveThread() once
-  // we exit the current scope.
-  class ScopedThread {
-   public:
-    ScopedThread(ThreadMgr* mgr,
-                 const std::string& name,
-                 const std::string& category,
-                 int64_t system_tid)
-        : mgr_(DCHECK_NOTNULL(mgr)),
-          category_(category),
-          // Use boost's get_id rather than the system thread ID as the unique key for this thread
-          // since the latter is more prone to being recycled.
-          boost_thread_id_(boost::this_thread::get_id()) {
-      mgr_->AddThread(boost_thread_id_, name, category_, system_tid);
-      SetThreadName(name, system_tid);
-    }
-
-    ~ScopedThread() {
-      mgr_->RemoveThread(boost_thread_id_, category_);
-    }
-
-   private:
-    ThreadMgr* mgr_;
-    const std::string& category_;
-    const thread::id boost_thread_id_;
-  };
+  void RemoveThread(const pthread_t& pthread_id, const string& category);
 
  private:
   // Container class for any details we want to capture about a thread
@@ -129,18 +97,18 @@ class ThreadMgr {
 
     const string& name() const { return name_; }
     const string& category() const { return category_; }
-    int64_t thread_id() const { return thread_id_; }
+    pthread_t thread_id() const { return thread_id_; }
 
    private:
     string name_;
     string category_;
-    int64_t thread_id_;
+    pthread_t thread_id_;
   };
 
   // A ThreadCategory is a set of threads that are logically related.
-  // TODO: unordered_map is incompatible with boost::thread::id, but would be more
+  // TODO: unordered_map is incompatible with pthread_t, but would be more
   // efficient here.
-  typedef map<const thread::id, ThreadDescriptor> ThreadCategory;
+  typedef map<const pthread_t, ThreadDescriptor> ThreadCategory;
 
   // All thread categorys, keyed on the category name.
   typedef map<string, ThreadCategory> ThreadCategoryMap;
@@ -217,21 +185,21 @@ uint64_t ThreadMgr::ReadNumCurrentThreads() {
   return current_num_threads_metric_;
 }
 
-void ThreadMgr::AddThread(const thread::id& thread, const string& name,
+void ThreadMgr::AddThread(const pthread_t& pthread_id, const string& name,
     const string& category, int64_t tid) {
   MutexLock l(lock_);
-  thread_categories_[category][thread] = ThreadDescriptor(category, name, tid);
+  thread_categories_[category][pthread_id] = ThreadDescriptor(category, name, tid);
   if (metrics_enabled_) {
     current_num_threads_metric_++;
     total_threads_metric_++;
   }
 }
 
-void ThreadMgr::RemoveThread(const thread::id& boost_id, const string& category) {
+void ThreadMgr::RemoveThread(const pthread_t& pthread_id, const string& category) {
   MutexLock l(lock_);
   ThreadCategoryMap::iterator category_it = thread_categories_.find(category);
   DCHECK(category_it != thread_categories_.end());
-  category_it->second.erase(boost_id);
+  category_it->second.erase(pthread_id);
   if (metrics_enabled_) {
     current_num_threads_metric_--;
   }
@@ -311,7 +279,7 @@ Status StartThreadInstrumentation(MetricRegistry* metric, WebCallbackRegistry* w
   return thread_manager->StartInstrumentation(metric, web);
 }
 
-ThreadJoiner::ThreadJoiner(const Thread* thr)
+ThreadJoiner::ThreadJoiner(Thread* thr)
   : thread_(CHECK_NOTNULL(thr)),
     warn_after_ms_(kDefaultWarnAfterMs),
     warn_every_ms_(kDefaultWarnEveryMs),
@@ -339,6 +307,11 @@ Status ThreadJoiner::Join() {
     return Status::InvalidArgument("Can't join on own thread", thread_->name_);
   }
 
+  // Early exit: double join is a no-op.
+  if (!thread_->joinable_) {
+    return Status::OK();
+  }
+
   int waited_ms = 0;
   bool keep_trying = true;
   while (keep_trying) {
@@ -362,13 +335,15 @@ Status ThreadJoiner::Join() {
     }
 
     int wait_for = std::min(remaining_before_giveup, remaining_before_next_warn);
-    try {
-      if (thread_->thread_->timed_join(boost::posix_time::milliseconds(wait_for))) {
-        return Status::OK();
-      }
-    } catch(std::runtime_error& e) {
-      return Status::RuntimeError(strings::Substitute("Error occured joining on $0",
-          thread_->name_), e.what());
+
+    if (thread_->done_.WaitFor(MonoDelta::FromMilliseconds(wait_for))) {
+      // Unconditionally join before returning, to guarantee that any TLS
+      // has been destroyed (pthread_key_create() destructors only run
+      // after a pthread's user method has returned).
+      int ret = pthread_join(thread_->thread_, NULL);
+      CHECK_EQ(ret, 0);
+      thread_->joinable_ = false;
+      return Status::OK();
     }
     waited_ms += wait_for;
   }
@@ -376,47 +351,59 @@ Status ThreadJoiner::Join() {
                                              waited_ms, thread_->name_));
 }
 
-
+Thread::~Thread() {
+  if (joinable_) {
+    int ret = pthread_detach(thread_);
+    CHECK_EQ(ret, 0);
+  }
+}
 
 Status Thread::StartThread(const std::string& category, const std::string& name,
                            const ThreadFunctor& functor, scoped_refptr<Thread> *holder) {
-  Atomic64 c_p_tid = UNINITIALISED_THREAD_ID;
-
   // Temporary reference for the duration of this function.
-  scoped_refptr<Thread> thr = new Thread(category, name);
-  try {
-    thr->thread_.reset(
-        new thread(&Thread::SuperviseThread, thr.get(), functor, &c_p_tid));
-  } catch(thread_resource_error &e) {
-    return Status::RuntimeError(e.what());
+  scoped_refptr<Thread> t(new Thread(category, name, functor));
+  int ret = pthread_create(&t->thread_, NULL, &Thread::SuperviseThread, t.get());
+  if (ret) {
+    return Status::RuntimeError("Could not create thread", strerror(ret), ret);
   }
+
+  // The thread has been created and is now joinable.
+  //
+  // Why set this in the parent and not the child? Because only the parent
+  // (or someone communicating with the parent) can join, so joinable must
+  // be set before the parent returns.
+  t->joinable_ = true;
 
   // Optional, and only set if the thread was successfully created.
   if (holder) {
-    *holder = thr;
+    *holder = t;
   }
 
-  // Wait for the child to discover its tid, then set it. The child will be
-  // waiting on tid_; setting it is a signal that all child-visible state
-  // has also been set.
+  // The tid_ member goes through the following states:
+  // 1  CHILD_WAITING_TID: the child has just been spawned and is waiting
+  //    for the parent to finish writing to caller state (i.e. 'holder').
+  // 2. PARENT_WAITING_TID: the parent has updated caller state and is now
+  //    waiting for the child to write the tid.
+  // 3. <value>: both the parent and the child are free to continue. If the
+  //    value is INVALID_TID, the child could not discover its tid.
+  Release_Store(&t->tid_, PARENT_WAITING_TID);
   int loop_count = 0;
-  while (Acquire_Load(&c_p_tid) == UNINITIALISED_THREAD_ID) {
+  while (Acquire_Load(&t->tid_) == PARENT_WAITING_TID) {
     boost::detail::yield(loop_count++);
   }
-  int64 system_tid = Acquire_Load(&c_p_tid);
-  Release_Store(&thr->tid_, system_tid);
 
-  VLOG(2) << "Started thread " << system_tid << " - " << category << ":" << name;
+  VLOG(2) << "Started thread " << t->tid()<< " - " << category << ":" << name;
   return Status::OK();
 }
 
-void Thread::SuperviseThread(ThreadFunctor functor, Atomic64* c_p_tid) {
+void* Thread::SuperviseThread(void* arg) {
+  Thread* t = static_cast<Thread*>(arg);
   int64_t system_tid = syscall(SYS_gettid);
   if (system_tid == -1) {
     string error_msg = ErrnoToString(errno);
     KLOG_EVERY_N(INFO, 100) << "Could not determine thread ID: " << error_msg;
   }
-  string name = strings::Substitute("$0-$1", name_, system_tid);
+  string name = strings::Substitute("$0-$1", t->name(), system_tid);
 
   // Take an additional reference to the thread manager, which we'll need below.
   GoogleOnceInit(&once, &InitThreading);
@@ -424,30 +411,47 @@ void Thread::SuperviseThread(ThreadFunctor functor, Atomic64* c_p_tid) {
 
   // Set up the TLS.
   //
-  // We could store a scoped_refptr in the TLS itself, but as its lifecycle is
-  // poorly defined, we'll use a bare pointer and take an additional reference on
-  // _thread out of band, in thread_ref.
-  scoped_refptr<Thread> thread_ref = this;
-  tls_ = this;
+  // We could store a scoped_refptr in the TLS itself, but as its
+  // lifecycle is poorly defined, we'll use a bare pointer and take an
+  // additional reference on t out of band, in thread_ref.
+  scoped_refptr<Thread> thread_ref = t;
+  t->tls_ = t;
 
-  // Signal the parent with our tid.
-  Release_Store(c_p_tid, system_tid);
-
-  // Any reference to any parameter not copied in by value may no longer be valid after
-  // this point, since the caller that is waiting on *c_p_tid != UNINITIALISED_THREAD_ID
-  // may wake and return.
-
-  // When tid_ has been set, the parent is done assigning everything and we can proceed to
-  // the functor.
+  // Wait until the parent has updated all caller-visible state, then write
+  // the TID to 'tid_', thus completing the parent<-->child handshake.
   int loop_count = 0;
-  while (Acquire_Load(&tid_) == UNINITIALISED_THREAD_ID) {
+  while (Acquire_Load(&t->tid_) == CHILD_WAITING_TID) {
     boost::detail::yield(loop_count++);
   }
+  Release_Store(&t->tid_, system_tid);
 
-  {
-    ThreadMgr::ScopedThread scoped_thread(thread_mgr_ref.get(), name, category_, system_tid);
-    functor();
-  }
+  thread_manager->SetThreadName(name, t->tid());
+  thread_manager->AddThread(pthread_self(), name, t->category(), t->tid());
+
+  // FinishThread() is guaranteed to run (even if functor_ throws an
+  // exception) because pthread_cleanup_push() creates a scoped object
+  // whose destructor invokes the provided callback.
+  pthread_cleanup_push(&Thread::FinishThread, t);
+  t->functor_();
+  pthread_cleanup_pop(true);
+
+  return NULL;
+}
+
+void Thread::FinishThread(void* arg) {
+  Thread* t = static_cast<Thread*>(arg);
+
+  // We're here either because of the explicit pthread_cleanup_pop() in
+  // SuperviseThread() or through pthread_exit(). In either case,
+  // thread_manager is guaranteed to be live because thread_mgr_ref in
+  // SuperviseThread() is still live.
+  thread_manager->RemoveThread(pthread_self(), t->category());
+
+  // Signal any Joiner that we're done.
+  t->done_.CountDown();
+
+  VLOG(2) << "Ended thread " << t->tid() << " - "
+          << t->category() << ":" << t->name();
 }
 
 } // namespace kudu

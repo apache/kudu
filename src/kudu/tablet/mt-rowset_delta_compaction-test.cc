@@ -1,6 +1,7 @@
 // Copyright (c) 2013, Cloudera, inc.
 
 #include <boost/foreach.hpp>
+#include <boost/thread/thread.hpp>
 #include <tr1/unordered_map>
 
 #include "kudu/gutil/atomicops.h"
@@ -26,7 +27,6 @@ DEFINE_int32(num_seconds_per_thread, kDefaultNumSecondsPerThread,
 namespace kudu {
 namespace tablet {
 
-using boost::ptr_vector;
 using base::subtle::Release_Store;
 using base::subtle::Release_Load;
 using base::subtle::NoBarrier_Load;

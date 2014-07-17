@@ -54,4 +54,12 @@ TEST_F(ThreadTest, TestJoinOnSelf) {
   // Actual assertion is done by the thread spawned above.
 }
 
+TEST_F(ThreadTest, TestDoubleJoinIsNoOp) {
+  scoped_refptr<Thread> holder;
+  ASSERT_STATUS_OK(Thread::Create("test", "sleeper thread", usleep, 0, &holder));
+  ThreadJoiner joiner(holder.get());
+  ASSERT_STATUS_OK(joiner.Join());
+  ASSERT_STATUS_OK(joiner.Join());
+}
+
 } // namespace kudu

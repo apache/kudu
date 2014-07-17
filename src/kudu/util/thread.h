@@ -7,13 +7,12 @@
 
 #include <boost/bind.hpp>
 #include <boost/function.hpp>
-#include <boost/scoped_ptr.hpp>
-#include <boost/thread/thread.hpp>
-#include <boost/ptr_container/ptr_vector.hpp>
+#include <pthread.h>
 #include <string>
 
 #include "kudu/gutil/atomicops.h"
 #include "kudu/gutil/ref_counted.h"
+#include "kudu/util/async_util.h"
 #include "kudu/util/status.h"
 
 namespace kudu {
@@ -36,7 +35,7 @@ class WebCallbackRegistry;
 // pretty complicated to get right.
 class ThreadJoiner {
  public:
-  explicit ThreadJoiner(const Thread* thread);
+  explicit ThreadJoiner(Thread* thread);
 
   // Start emitting warnings after this many milliseconds.
   //
@@ -67,7 +66,7 @@ class ThreadJoiner {
     kDefaultGiveUpAfterMs = -1 // forever
   };
 
-  const Thread* thread_;
+  Thread* thread_;
 
   int warn_after_ms_;
   int warn_every_ms_;
@@ -76,20 +75,26 @@ class ThreadJoiner {
   DISALLOW_COPY_AND_ASSIGN(ThreadJoiner);
 };
 
-// Thin wrapper around boost::thread that can register itself with the singleton ThreadMgr
+// Thin wrapper around pthread that can register itself with the singleton ThreadMgr
 // (a private class implemented in thread.cc entirely, which tracks all live threads so
 // that they may be monitored via the debug webpages). This class has a limited subset of
 // boost::thread's API. Construction is almost the same, but clients must supply a
 // category and a name for each thread so that they can be identified in the debug web
 // UI. Otherwise, Join() is the only supported method from boost::thread.
 //
-// Each Thread object knows its operating system thread ID (tid), which can be used to
+// Each Thread object knows its operating system thread ID (TID), which can be used to
 // attach debuggers to specific threads, to retrieve resource-usage statistics from the
 // operating system, and to assign threads to resource control groups.
 //
+// Threads are shared objects, but in a degenerate way. They may only have
+// up to two referents: the caller that created the thread (parent), and
+// the thread itself (child). Moreover, the only two methods to mutate state
+// (Join() and the destructor) are constrained: the child may not Join() on
+// itself, and the destructor is only run when there's one referent left.
+// These constraints allow us to access thread internals without any locks.
+//
 // TODO: Consider allowing fragment IDs as category parameters.
 class Thread : public base::RefCountedThreadSafe<Thread> {
-  friend class ThreadJoiner;
  public:
   // This constructor pattern mimics that in boost::thread. There is
   // one constructor for each number of arguments that the thread
@@ -152,43 +157,67 @@ class Thread : public base::RefCountedThreadSafe<Thread> {
 
   // Blocks until this thread finishes execution. Once this method returns, the thread
   // will be unregistered with the ThreadMgr and will not appear in the debug UI.
-  void Join() const { ThreadJoiner(this).Join(); }
+  void Join() { ThreadJoiner(this).Join(); }
 
   // The thread ID assigned to this thread by the operating system. If the OS does not
-  // support retrieving the tid, returns Thread::INVALID_THREAD_ID.
+  // support retrieving the tid, returns Thread::INVALID_TID.
   int64_t tid() const { return tid_; }
+
+  const std::string& name() const { return name_; }
+  const std::string& category() const { return category_; }
 
   // The current thread of execution, or NULL if the current thread isn't a Thread.
   static Thread* current_thread() { return tls_; }
 
-  static const int64_t INVALID_THREAD_ID = -1;
+  // Emulates boost::thread and detaches.
+  ~Thread();
 
  private:
-  // To distinguish between a thread ID that can't be determined, and one that hasn't been
-  // assigned. Since tid_ is set in the constructor, this value will never be seen by
-  // clients of this class.
-  static const int64_t UNINITIALISED_THREAD_ID = -2;
+  friend class ThreadJoiner;
+
+  // The various special values for tid_ that describe the various steps
+  // in the parent<-->child handshake.
+  enum {
+    INVALID_TID = -1,
+    CHILD_WAITING_TID = -2,
+    PARENT_WAITING_TID = -3,
+  };
 
   // Function object that wraps the user-supplied function to run in a separate thread.
   typedef boost::function<void ()> ThreadFunctor;
 
-  Thread(const std::string& category, const std::string& name)
-    : category_(category),
+  Thread(const std::string& category, const std::string& name, const ThreadFunctor& functor)
+    : thread_(0),
+      category_(category),
       name_(name),
-      tid_(UNINITIALISED_THREAD_ID) {
+      tid_(CHILD_WAITING_TID),
+      functor_(functor),
+      done_(1),
+      joinable_(false) {
   }
 
-  // The actual thread object that runs the user's method via SuperviseThread().
-  boost::scoped_ptr<boost::thread> thread_;
+  // Library-specific thread ID.
+  pthread_t thread_;
 
-  // Name and category for this thread
+  // Name and category for this thread.
   const std::string category_;
   const std::string name_;
 
-  // OS-specific thread ID. Set to UNINITIALISED_THREAD_ID initially, but once the
-  // constructor returns from StartThread() the tid_ is guaranteed to be set either to a
-  // non-negative integer, or INVALID_THREAD_ID.
+  // OS-specific thread ID. Once the constructor finishes StartThread(),
+  // guaranteed to be set either to a non-negative integer, or to INVALID_TID.
   int64_t tid_;
+
+  // User function to be executed by this thread.
+  const ThreadFunctor functor_;
+
+  // Joiners wait on this latch to be notified if the thread is done.
+  //
+  // Note that Joiners must additionally pthread_join(), otherwise certain
+  // resources that callers expect to be destroyed (like TLS) may still be
+  // alive when a Joiner finishes.
+  CountDownLatch done_;
+
+  bool joinable_;
 
   // Thread local pointer to the current thread of execution. Will be NULL if the current
   // thread is not a Thread.
@@ -201,20 +230,28 @@ class Thread : public base::RefCountedThreadSafe<Thread> {
   static Status StartThread(const std::string& category, const std::string& name,
                             const ThreadFunctor& functor, scoped_refptr<Thread>* holder);
 
-  // Wrapper for the user-supplied function. Always invoked from thread_. Executes the
-  // method in functor, but before doing so registers with the global ThreadMgr and reads
-  // the thread's system TID. After the method terminates, it is unregistered.
+  // Wrapper for the user-supplied function. Invoked from the new thread,
+  // with the Thread as its only argument. Executes functor_, but before
+  // doing so registers with the global ThreadMgr and reads the thread's
+  // system ID. After functor_ terminates, unregisters with the ThreadMgr.
+  // Always returns NULL.
   //
-  // SuperviseThread() notifies StartThread() when thread initialisation is completed via
-  // the c_p_tid parameter, which is set to the new thread's system ID. By that point in
-  // time SuperviseThread() has also taken a reference to thread', allowing it to refer
-  // to it even after the caller moves on.
+  // SuperviseThread() notifies StartThread() when thread initialisation is
+  // completed via the tid_, which is set to the new thread's system ID.
+  // By that point in time SuperviseThread() has also taken a reference to
+  // the Thread object, allowing it to safely refer to it even after the
+  // caller drops its reference.
   //
-  // Additionally, StartThread() notifies SuperviseThread() when the actual thread object
-  // has been assigned (SuperviseThread() is spinning during this time). Without this,
-  // the new thread may reference the actual thread object before it has been assigned by
-  // StartThread(). See KUDU-11 for more details.
-  void SuperviseThread(ThreadFunctor functor, Atomic64* c_p_tid);
+  // Additionally, StartThread() notifies SuperviseThread() when the actual
+  // Thread object has been assigned (SuperviseThread() is spinning during
+  // this time). Without this, the new thread may reference the actual
+  // Thread object before it has been assigned by StartThread(). See
+  // KUDU-11 for more details.
+  static void* SuperviseThread(void* arg);
+
+  // Invoked when the user-supplied function finishes or in the case of an
+  // abrupt exit (i.e. pthread_exit()). Cleans up after SuperviseThread().
+  static void FinishThread(void* arg);
 };
 
 // Registers /threadz with the debug webserver, and creates thread-tracking metrics under
