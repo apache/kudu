@@ -637,44 +637,29 @@ bool KuduSession::HasPendingOperations() const {
   return false;
 }
 
-// Template function specification for KuduSession::Apply on derived
-// KuduWriteOperation classes
-
-Status KuduSession::Apply(gscoped_ptr<KuduInsert>* scoped_write_op) {
-  Status s = Apply(implicit_cast<KuduWriteOperation*>(scoped_write_op->get()));
-  if (s.ok()) {
-    ignore_result<>(scoped_write_op->release());
-  }
-  return s;
+Status KuduSession::Apply(gscoped_ptr<KuduInsert> write_op) {
+  return Apply(write_op.PassAs<KuduWriteOperation>());
 }
 
-Status KuduSession::Apply(gscoped_ptr<KuduUpdate>* scoped_write_op) {
-  Status s = Apply(implicit_cast<KuduWriteOperation*>(scoped_write_op->get()));
-  if (s.ok()) {
-    ignore_result<>(scoped_write_op->release());
-  }
-  return s;
+Status KuduSession::Apply(gscoped_ptr<KuduUpdate> write_op) {
+  return Apply(write_op.PassAs<KuduWriteOperation>());
 }
 
-Status KuduSession::Apply(gscoped_ptr<KuduDelete>* scoped_write_op) {
-  Status s = Apply(implicit_cast<KuduWriteOperation*>(scoped_write_op->get()));
-  if (s.ok()) {
-    ignore_result<>(scoped_write_op->release());
-  }
-  return s;
+Status KuduSession::Apply(gscoped_ptr<KuduDelete> write_op) {
+  return Apply(write_op.PassAs<KuduWriteOperation>());
 }
 
-// Actual apply method, with WriteOperation pointer
-// Takes ownership (deletes) iff operation succeeds
-Status KuduSession::Apply(KuduWriteOperation* write_op) {
+Status KuduSession::Apply(gscoped_ptr<KuduWriteOperation> write_op) {
   if (!write_op->row().IsKeySet()) {
-    return Status::IllegalState("Key not specified", write_op->ToString());
+    Status status = Status::IllegalState("Key not specified", write_op->ToString());
+    error_collector_->AddError(gscoped_ptr<KuduError>(new KuduError(write_op.Pass(), status)));
+    return status;
   }
 
-  batcher_->Add(gscoped_ptr<KuduWriteOperation>(write_op).Pass());
+  batcher_->Add(write_op.Pass());
 
   if (flush_mode_ == AUTO_FLUSH_SYNC) {
-    RETURN_NOT_OK(Flush());
+    return Flush();
   }
 
   return Status::OK();

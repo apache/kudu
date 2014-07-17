@@ -109,7 +109,7 @@ void InsertConsumer::ConsumeJSON(const Slice& json_slice) {
   CHECK_OK(r->SetUInt32("user_followers_count", event_.tweet_event.user_followers_count));
   CHECK_OK(r->SetUInt32("user_friends_count", event_.tweet_event.user_friends_count));
   CHECK_OK(r->SetStringCopy("user_image_url", event_.tweet_event.user_image_url));
-  CHECK_OK(session_->Apply(&ins));
+  CHECK_OK(session_->Apply(ins.Pass()));
 
   // TODO: once the auto-flush mode is implemented, switch to using that
   // instead of the manual batching here

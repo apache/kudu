@@ -95,7 +95,7 @@ void RpcLineItemDAO::WriteLine(boost::function<void(KuduPartialRow*)> f) {
   gscoped_ptr<KuduInsert> insert = client_table_->NewInsert();
   f(insert->mutable_row());
   if (!ShouldAddKey(insert->row())) return;
-  CHECK_OK(session_->Apply(&insert));
+  CHECK_OK(session_->Apply(insert.Pass()));
   ++batch_size_;
   if (batch_size_ == batch_max_) {
     batch_size_ = 0;
@@ -111,7 +111,7 @@ void RpcLineItemDAO::MutateLine(boost::function<void(KuduPartialRow*)> f) {
   gscoped_ptr<KuduUpdate> update = client_table_->NewUpdate();
   f(update->mutable_row());
   if (!ShouldAddKey(update->row())) return;
-  CHECK_OK(session_->Apply(&update));
+  CHECK_OK(session_->Apply(update.Pass()));
   ++batch_size_;
   if (batch_size_ == batch_max_) {
     batch_size_ = 0;

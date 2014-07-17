@@ -314,7 +314,7 @@ void FullStackInsertScanTest::InsertRows(CountDownLatch* start_latch, int id,
   for (uint64_t key = start; key < end; ++key) {
     gscoped_ptr<KuduInsert> insert = table->NewInsert();
     RandomRow(&rng, insert->mutable_row(), randstr, key, id);
-    CHECK_OK(session->Apply(&insert));
+    CHECK_OK(session->Apply(insert.Pass()));
 
     // Report updates or flush every so often, using the synchronizer to always
     // start filling up the next batch while previous one is sent out.

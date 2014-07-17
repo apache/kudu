@@ -150,7 +150,7 @@ class ClientTest : public KuduTest {
     session->SetTimeoutMillis(5000);
     for (int i = first_row; i < num_rows + first_row; i++) {
       gscoped_ptr<KuduInsert> insert(BuildTestRow(table, i));
-      ASSERT_STATUS_OK(session->Apply(&insert));
+      ASSERT_STATUS_OK(session->Apply(insert.Pass()));
     }
     ASSERT_NO_FATAL_FAILURE(WrappedFlush(session));
     ASSERT_NO_FATAL_FAILURE(CheckNoRpcOverflow());
@@ -162,7 +162,7 @@ class ClientTest : public KuduTest {
     session->SetTimeoutMillis(5000);
     for (int i = lo; i < hi; i++) {
       gscoped_ptr<KuduUpdate> update(UpdateTestRow(table, i));
-      ASSERT_STATUS_OK(session->Apply(&update));
+      ASSERT_STATUS_OK(session->Apply(update.Pass()));
     }
     ASSERT_NO_FATAL_FAILURE(WrappedFlush(session));
     ASSERT_NO_FATAL_FAILURE(CheckNoRpcOverflow());
@@ -174,7 +174,7 @@ class ClientTest : public KuduTest {
     session->SetTimeoutMillis(5000);
     for (int i = lo; i < hi; i++) {
       gscoped_ptr<KuduDelete> del(DeleteTestRow(table, i));
-      ASSERT_STATUS_OK(session->Apply(&del));
+      ASSERT_STATUS_OK(session->Apply(del.Pass()))
     }
     ASSERT_NO_FATAL_FAILURE(WrappedFlush(session));
     ASSERT_NO_FATAL_FAILURE(CheckNoRpcOverflow());
@@ -511,13 +511,13 @@ TEST_F(ClientTest, TestScanMultiTablet) {
   for (int i = 1; i < 5; i++) {
     gscoped_ptr<KuduInsert> insert;
     insert = BuildTestRow(table.get(), 2 + (i * 10));
-    ASSERT_STATUS_OK(session->Apply(&insert));
+    ASSERT_STATUS_OK(session->Apply(insert.Pass()));
     insert = BuildTestRow(table.get(), 3 + (i * 10));
-    ASSERT_STATUS_OK(session->Apply(&insert));
+    ASSERT_STATUS_OK(session->Apply(insert.Pass()));
     insert = BuildTestRow(table.get(), 5 + (i * 10));
-    ASSERT_STATUS_OK(session->Apply(&insert));
+    ASSERT_STATUS_OK(session->Apply(insert.Pass()));
     insert = BuildTestRow(table.get(), 7 + (i * 10));
-    ASSERT_STATUS_OK(session->Apply(&insert));
+    ASSERT_STATUS_OK(session->Apply(insert.Pass()));
   }
   ASSERT_NO_FATAL_FAILURE(WrappedFlush(session));
 
@@ -537,9 +537,9 @@ TEST_F(ClientTest, TestScanMultiTablet) {
   for (int i = 1; i < 5; ++i) {
     gscoped_ptr<KuduUpdate> update;
     update = UpdateTestRow(table.get(), 2 + i * 10);
-    ASSERT_STATUS_OK(session->Apply(&update));
+    ASSERT_STATUS_OK(session->Apply(update.Pass()));
     update = UpdateTestRow(table.get(), 5 + i * 10);
-    ASSERT_STATUS_OK(session->Apply(&update));
+    ASSERT_STATUS_OK(session->Apply(update.Pass()));
   }
   ASSERT_NO_FATAL_FAILURE(WrappedFlush(session));
 
@@ -559,9 +559,9 @@ TEST_F(ClientTest, TestScanMultiTablet) {
   for (int i = 1; i < 5; ++i) {
     gscoped_ptr<KuduDelete> del;
     del = DeleteTestRow(table.get(), 5 + i*10);
-    ASSERT_STATUS_OK(session->Apply(&del));
+    ASSERT_STATUS_OK(session->Apply(del.Pass()));
     del = DeleteTestRow(table.get(), 7 + i*10);
-    ASSERT_STATUS_OK(session->Apply(&del));
+    ASSERT_STATUS_OK(session->Apply(del.Pass()));
   }
   ASSERT_NO_FATAL_FAILURE(WrappedFlush(session));
 
@@ -581,9 +581,9 @@ TEST_F(ClientTest, TestScanMultiTablet) {
   for (int i = 1; i < 5; ++i) {
     gscoped_ptr<KuduDelete> del;
     del = DeleteTestRow(table.get(), 2 + i*10);
-    ASSERT_STATUS_OK(session->Apply(&del));
+    ASSERT_STATUS_OK(session->Apply(del.Pass()));
     del = DeleteTestRow(table.get(), 3 + i*10);
-    ASSERT_STATUS_OK(session->Apply(&del));
+    ASSERT_STATUS_OK(session->Apply(del.Pass()));
   }
   ASSERT_NO_FATAL_FAILURE(WrappedFlush(session));
 
@@ -785,13 +785,26 @@ TEST_F(ClientTest, TestInsertSingleRowManualBatch) {
   ASSERT_STATUS_OK(insert->mutable_row()->SetUInt32("int_val", 54321));
   ASSERT_STATUS_OK(insert->mutable_row()->SetStringCopy("string_val", "hello world"));
 
-  Status s = session->Apply(&insert);
+  KuduInsert* ptr = insert.get();
+  Status s = session->Apply(insert.Pass());
   ASSERT_EQ("Illegal state: Key not specified: "
             "INSERT uint32 int_val=54321, string string_val=hello world",
             s.ToString());
 
+  // Get error
+  ASSERT_EQ(session->CountPendingErrors(), 1) << "Should report bad key to error container";
+  vector<KuduError*> errs;
+  ElementDeleter del_errs(&errs);
+  bool overflow;
+  session->GetPendingErrors(&errs, &overflow);
+  ASSERT_EQ(errs.size(), 1);
+  KuduWriteOperation* failed_op = errs.front()->release_failed_op().release();
+  ASSERT_EQ(failed_op, ptr) << "Should be able to retrieve failed operation";
+  insert.reset(ptr);
+
+  // Retry
   ASSERT_STATUS_OK(insert->mutable_row()->SetUInt32("key", 12345));
-  ASSERT_STATUS_OK(session->Apply(&insert));
+  ASSERT_STATUS_OK(session->Apply(insert.Pass()));
   ASSERT_TRUE(insert == NULL) << "Successful insert should take ownership";
   ASSERT_TRUE(session->HasPendingOperations()) << "Should be pending until we Flush";
 
@@ -807,7 +820,7 @@ static Status ApplyInsertToSession(KuduSession* session,
   RETURN_NOT_OK(insert->mutable_row()->SetUInt32("key", row_key));
   RETURN_NOT_OK(insert->mutable_row()->SetUInt32("int_val", int_val));
   RETURN_NOT_OK(insert->mutable_row()->SetStringCopy("string_val", string_val));
-  return session->Apply(&insert);
+  return session->Apply(insert.Pass());
 }
 
 static Status ApplyUpdateToSession(KuduSession* session,
@@ -817,7 +830,7 @@ static Status ApplyUpdateToSession(KuduSession* session,
   gscoped_ptr<KuduUpdate> update = table->NewUpdate();
   RETURN_NOT_OK(update->mutable_row()->SetUInt32("key", row_key));
   RETURN_NOT_OK(update->mutable_row()->SetUInt32("int_val", int_val));
-  return session->Apply(&update);
+  return session->Apply(update.Pass());
 }
 
 static Status ApplyDeleteToSession(KuduSession* session,
@@ -825,7 +838,7 @@ static Status ApplyDeleteToSession(KuduSession* session,
                                    int row_key) {
   gscoped_ptr<KuduDelete> del = table->NewDelete();
   RETURN_NOT_OK(del->mutable_row()->SetUInt32("key", row_key));
-  return session->Apply(&del);
+  return session->Apply(del.Pass());
 }
 
 // Test which does an async flush and then drops the reference

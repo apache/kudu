@@ -184,7 +184,7 @@ class ChainGenerator {
     CHECK_OK(insert->mutable_row()->SetUInt64(kKeyColumnName, this_key));
     CHECK_OK(insert->mutable_row()->SetUInt64(kInsertTsColumnName, ts));
     CHECK_OK(insert->mutable_row()->SetUInt64(kLinkColumnName, prev_key_));
-    RETURN_NOT_OK_PREPEND(session->Apply(&insert),
+    RETURN_NOT_OK_PREPEND(session->Apply(insert.Pass()),
                           Substitute("Unable to apply insert with key $0 at ts $1",
                                      this_key, ts));
     prev_key_ = this_key;

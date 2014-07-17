@@ -357,6 +357,7 @@ class KuduError {
  private:
   KuduError(gscoped_ptr<KuduWriteOperation> failed_op, const Status& error);
   friend class internal::Batcher;
+  friend class KuduSession;
 
   gscoped_ptr<KuduWriteOperation> failed_op_;
   Status status_;
@@ -487,11 +488,7 @@ class KuduSession : public std::tr1::enable_shared_from_this<KuduSession> {
   // TODO: add "doAs" ability here for proxy servers to be able to act on behalf of
   // other users, assuming access rights.
 
-  // Apply the write operation
-  //
-  // If this returns an OK status, then the session has taken ownership of the
-  // pointer and the gscoped_ptr will be reset to NULL. On error, the gscoped_ptr
-  // is left alone (eg so that the caller may log an error message with it).
+  // Apply the write operation. Transfers the write_op's ownership to the KuduSession.
   //
   // The behavior of this function depends on the current flush mode. Regardless
   // of flush mode, however, Apply may begin to perform processing in the background
@@ -499,19 +496,27 @@ class KuduSession : public std::tr1::enable_shared_from_this<KuduSession> {
   // queued into the PendingErrors structure prior to flushing, even in MANUAL_FLUSH
   // mode.
   //
+  // In case of any error, which may occur during flushing or because the write_op
+  // is malformed, the write_op is stored in the session's error collector which
+  // may be retrieved at any time.
+  //
   // This is thread safe.
-  Status Apply(gscoped_ptr<KuduInsert>* write_op) WARN_UNUSED_RESULT;
-  Status Apply(gscoped_ptr<KuduUpdate>* write_op) WARN_UNUSED_RESULT;
-  Status Apply(gscoped_ptr<KuduDelete>* write_op) WARN_UNUSED_RESULT;
+  Status Apply(gscoped_ptr<KuduWriteOperation> write_op) WARN_UNUSED_RESULT;
+  // Aliases to derived classes provided for convenience.
+  Status Apply(gscoped_ptr<KuduInsert> write_op) WARN_UNUSED_RESULT;
+  Status Apply(gscoped_ptr<KuduUpdate> write_op) WARN_UNUSED_RESULT;
+  Status Apply(gscoped_ptr<KuduDelete> write_op) WARN_UNUSED_RESULT;
 
   // Similar to the above, except never blocks. Even in the flush modes that return
   // immediately, StatusCallback is triggered with the result. The callback may
   // be called by a reactor thread, or in some cases may be called inline by
   // the same thread which calls ApplyAsync().
   // TODO: not yet implemented.
-  void ApplyAsync(gscoped_ptr<KuduInsert>* write_op, StatusCallback cb);
-  void ApplyAsync(gscoped_ptr<KuduUpdate>* write_op, StatusCallback cb);
-  void ApplyAsync(gscoped_ptr<KuduDelete>* write_op, StatusCallback cb);
+  void ApplyAsync(gscoped_ptr<KuduWriteOperation> write_op, StatusCallback cb);
+  // Aliases to derived classes provided for convenience
+  void ApplyAsync(gscoped_ptr<KuduInsert> write_op, StatusCallback cb);
+  void ApplyAsync(gscoped_ptr<KuduUpdate> write_op, StatusCallback cb);
+  void ApplyAsync(gscoped_ptr<KuduDelete> write_op, StatusCallback cb);
 
   // Flush any pending writes.
   //
@@ -607,9 +612,6 @@ class KuduSession : public std::tr1::enable_shared_from_this<KuduSession> {
   // Swap in a new Batcher instance, returning the old one in '*old_batcher', unless it is
   // NULL.
   void NewBatcher(scoped_refptr<internal::Batcher>* old_batcher);
-
-  // Base class call for Apply's templates
-  Status Apply(KuduWriteOperation* write_op) WARN_UNUSED_RESULT;
 
   // The client that this session is associated with.
   const std::tr1::shared_ptr<KuduClient> client_;
