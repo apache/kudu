@@ -4,8 +4,6 @@
 
 #include <boost/bind.hpp>
 #include <boost/foreach.hpp>
-#include <boost/thread/locks.hpp>
-#include <boost/thread/mutex.hpp>
 #include <glog/logging.h>
 
 #include "kudu/client/client.h"
@@ -72,7 +70,7 @@ void RemoteTabletServer::DnsResolutionFinished(const HostPort& hp,
           << (*addrs)[0].ToString();
 
   {
-    boost::lock_guard<simple_spinlock> l(lock_);
+    lock_guard<simple_spinlock> l(&lock_);
     proxy_.reset(new TabletServerServiceProxy(client->data_->messenger_, (*addrs)[0]));
   }
   user_callback.Run(s);
@@ -83,7 +81,7 @@ void RemoteTabletServer::RefreshProxy(KuduClient* client,
                                       bool force) {
   HostPort hp;
   {
-    boost::unique_lock<simple_spinlock> l(lock_);
+    unique_lock<simple_spinlock> l(&lock_);
 
     if (proxy_ && !force) {
       // Already have a proxy created.
@@ -107,7 +105,7 @@ void RemoteTabletServer::RefreshProxy(KuduClient* client,
 void RemoteTabletServer::Update(const master::TSInfoPB& pb) {
   CHECK_EQ(pb.permanent_uuid(), uuid_);
 
-  boost::lock_guard<simple_spinlock> l(lock_);
+  lock_guard<simple_spinlock> l(&lock_);
 
   rpc_hostports_.clear();
   BOOST_FOREACH(const HostPortPB& hostport_pb, pb.rpc_addresses()) {
@@ -116,7 +114,7 @@ void RemoteTabletServer::Update(const master::TSInfoPB& pb) {
 }
 
 shared_ptr<TabletServerServiceProxy> RemoteTabletServer::proxy() const {
-  boost::lock_guard<simple_spinlock> l(lock_);
+  lock_guard<simple_spinlock> l(&lock_);
   CHECK(proxy_);
   return proxy_;
 }
@@ -126,7 +124,7 @@ string RemoteTabletServer::ToString() const {
 }
 
 void RemoteTabletServer::GetHostPorts(vector<HostPort>* host_ports) const {
-  boost::lock_guard<simple_spinlock> l(lock_);
+  lock_guard<simple_spinlock> l(&lock_);
   *host_ports = rpc_hostports_;
 }
 
@@ -137,7 +135,7 @@ void RemoteTablet::Refresh(const TabletServerMap& tservers,
                            const google::protobuf::RepeatedPtrField
                              <TabletLocationsPB_ReplicaPB>& replicas) {
   // Adopt the data from the successful response.
-  boost::lock_guard<simple_spinlock> l(lock_);
+  lock_guard<simple_spinlock> l(&lock_);
   replicas_.clear();
   BOOST_FOREACH(const TabletLocationsPB_ReplicaPB& r, replicas) {
     RemoteReplica rep;
@@ -151,7 +149,7 @@ void RemoteTablet::Refresh(const TabletServerMap& tservers,
 void RemoteTablet::MarkReplicaFailed(RemoteTabletServer *ts) {
   LOG(WARNING) << "Replica " << tablet_id_ << " on ts " << ts->ToString() << " has failed";
 
-  boost::lock_guard<simple_spinlock> l(lock_);
+  lock_guard<simple_spinlock> l(&lock_);
   BOOST_FOREACH(RemoteReplica& rep, replicas_) {
     if (rep.ts == ts) {
       rep.failed = true;
@@ -161,7 +159,7 @@ void RemoteTablet::MarkReplicaFailed(RemoteTabletServer *ts) {
 
 int RemoteTablet::GetNumFailedReplicas() const {
   int failed = 0;
-  boost::lock_guard<simple_spinlock> l(lock_);
+  lock_guard<simple_spinlock> l(&lock_);
   BOOST_FOREACH(const RemoteReplica& rep, replicas_) {
     if (rep.failed) {
       failed++;
@@ -171,7 +169,7 @@ int RemoteTablet::GetNumFailedReplicas() const {
 }
 
 RemoteTabletServer* RemoteTablet::FirstTServer() const {
-  boost::lock_guard<simple_spinlock> l(lock_);
+  lock_guard<simple_spinlock> l(&lock_);
   BOOST_FOREACH(const RemoteReplica& rep, replicas_) {
     if (!rep.failed) {
       return rep.ts;
@@ -181,7 +179,7 @@ RemoteTabletServer* RemoteTablet::FirstTServer() const {
 }
 
 RemoteTabletServer* RemoteTablet::LeaderTServer() const {
-  boost::lock_guard<simple_spinlock> l(lock_);
+  lock_guard<simple_spinlock> l(&lock_);
   BOOST_FOREACH(const RemoteReplica& replica, replicas_) {
     if (!replica.failed && replica.role == QuorumPeerPB::LEADER) {
       return replica.ts;
@@ -195,7 +193,7 @@ bool RemoteTablet::HasLeader() const {
 }
 
 void RemoteTablet::GetRemoteTabletServers(vector<RemoteTabletServer*>* servers) const {
-  boost::lock_guard<simple_spinlock> l(lock_);
+  lock_guard<simple_spinlock> l(&lock_);
   BOOST_FOREACH(const RemoteReplica& replica, replicas_) {
     if (replica.failed) {
       continue;
@@ -311,7 +309,7 @@ void MetaCache::GetTableLocationsCb(InFlightLookup* ifl) {
     return;
   }
 
-  boost::unique_lock<rw_spinlock> l(lock_);
+  unique_lock<rw_spinlock> l(&lock_);
   SliceTabletMap& tablets_by_key = LookupOrInsert(&tablets_by_table_and_key_,
                                                   ifl->table_name, SliceTabletMap());
   BOOST_FOREACH(const TabletLocationsPB& loc, ifl->resp.tablet_locations()) {
@@ -388,7 +386,7 @@ void MetaCache::SendRpc(InFlightLookup* ifl, const Status& s) {
 bool MetaCache::LookupTabletByKeyFastPath(const KuduTable* table,
                                           const Slice& key,
                                           scoped_refptr<RemoteTablet>* remote_tablet) {
-  boost::shared_lock<rw_spinlock> l(lock_);
+  shared_lock<rw_spinlock> l(&lock_);
   const SliceTabletMap* tablets = FindOrNull(tablets_by_table_and_key_, table->name());
   if (PREDICT_FALSE(!tablets)) {
     // No cache available for this table.
@@ -483,7 +481,7 @@ void MetaCache::LookupTabletByID(const string& tablet_id,
 }
 
 void MetaCache::MarkTSFailed(RemoteTabletServer* ts) {
-  boost::shared_lock<rw_spinlock> l(lock_);
+  shared_lock<rw_spinlock> l(&lock_);
 
   // TODO: replace with a ts->tablet multimap for faster lookup?
   BOOST_FOREACH(const TabletMap::value_type& tablet, tablets_by_id_) {

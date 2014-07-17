@@ -1,7 +1,6 @@
 // Copyright (c) 2013, Cloudera, inc.
 // All rights reserved.
 
-#include <boost/thread/locks.hpp>
 #include <glog/logging.h>
 
 #include "kudu/rpc/rpc_controller.h"
@@ -18,7 +17,7 @@ RpcController::~RpcController() {
 }
 
 void RpcController::Reset() {
-  boost::lock_guard<simple_spinlock> l(lock_);
+  lock_guard<simple_spinlock> l(&lock_);
   if (call_) {
     CHECK(finished());
   }
@@ -47,7 +46,7 @@ const ErrorStatusPB* RpcController::error_response() const {
 }
 
 void RpcController::set_timeout(const MonoDelta& timeout) {
-  boost::lock_guard<simple_spinlock> l(lock_);
+  lock_guard<simple_spinlock> l(&lock_);
   DCHECK(!call_ || call_->state() == OutboundCall::READY);
   timeout_ = timeout;
 }
@@ -57,7 +56,7 @@ void RpcController::set_deadline(const MonoTime& deadline) {
 }
 
 const MonoDelta &RpcController::timeout() const {
-  boost::lock_guard<simple_spinlock> l(lock_);
+  lock_guard<simple_spinlock> l(&lock_);
   return timeout_;
 }
 

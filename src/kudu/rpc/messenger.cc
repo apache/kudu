@@ -8,7 +8,6 @@
 #include <unistd.h>
 
 #include <boost/foreach.hpp>
-#include <boost/thread/locks.hpp>
 #include <glog/logging.h>
 #include <list>
 #include <set>
@@ -106,7 +105,7 @@ void Messenger::AllExternalReferencesDropped() {
 }
 
 void Messenger::Shutdown() {
-  boost::lock_guard<percpu_rwlock> guard(lock_);
+  lock_guard<percpu_rwlock> guard(&lock_);
   if (closing_) {
     return;
   }
@@ -141,7 +140,7 @@ Status Messenger::AddAcceptorPool(const Sockaddr &accept_addr,
   RETURN_NOT_OK(sock.GetSocketAddress(&remote));
   shared_ptr<AcceptorPool> acceptor_pool(new AcceptorPool(this, &sock, remote));
   RETURN_NOT_OK(acceptor_pool->Init(num_threads));
-  boost::lock_guard<percpu_rwlock> guard(lock_);
+  lock_guard<percpu_rwlock> guard(&lock_);
   acceptor_pools_.push_back(acceptor_pool);
   *pool = acceptor_pool;
   return Status::OK();
@@ -151,7 +150,7 @@ Status Messenger::AddAcceptorPool(const Sockaddr &accept_addr,
 Status Messenger::RegisterService(const string& service_name,
                                   const scoped_refptr<RpcService>& service) {
   DCHECK(service);
-  boost::lock_guard<percpu_rwlock> guard(lock_);
+  lock_guard<percpu_rwlock> guard(&lock_);
   // TODO: Key services on service name.
   rpc_service_ = service;
   return Status::OK();
@@ -159,7 +158,7 @@ Status Messenger::RegisterService(const string& service_name,
 
 // Unregister an RpcService.
 Status Messenger::UnregisterService(const string& service_name) {
-  boost::lock_guard<percpu_rwlock> guard(lock_);
+  lock_guard<percpu_rwlock> guard(&lock_);
   if (!rpc_service_) {
     return Status::ServiceUnavailable("Service is not registered");
   } else {
@@ -174,7 +173,7 @@ void Messenger::QueueOutboundCall(const shared_ptr<OutboundCall> &call) {
 }
 
 void Messenger::QueueInboundCall(gscoped_ptr<InboundCall> call) {
-  boost::shared_lock<rw_spinlock> guard(lock_.get_lock());
+  shared_lock<rw_spinlock> guard(&lock_.get_lock());
   if (PREDICT_FALSE(!rpc_service_)) {
     Status s = Status::ServiceUnavailable("RPC Service is not registered",
                                           call->ToString());
@@ -208,7 +207,7 @@ Messenger::Messenger(const MessengerBuilder &bld)
 }
 
 Messenger::~Messenger() {
-  boost::lock_guard<percpu_rwlock> guard(lock_);
+  lock_guard<percpu_rwlock> guard(&lock_);
   CHECK(closing_) << "Should have already shut down";
   STLDeleteElements(&reactors_);
 }
@@ -233,7 +232,7 @@ Status Messenger::Init() {
 
 Status Messenger::DumpRunningRpcs(const DumpRunningRpcsRequestPB& req,
                                   DumpRunningRpcsResponsePB* resp) {
-  boost::shared_lock<rw_spinlock> guard(lock_.get_lock());
+  shared_lock<rw_spinlock> guard(&lock_.get_lock());
   BOOST_FOREACH(Reactor* reactor, reactors_) {
     RETURN_NOT_OK(reactor->DumpRunningRpcs(req, resp));
   }

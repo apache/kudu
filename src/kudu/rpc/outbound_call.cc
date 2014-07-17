@@ -4,7 +4,6 @@
 #include <string>
 #include <vector>
 #include <boost/functional/hash.hpp>
-#include <boost/thread/locks.hpp>
 
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/rpc/outbound_call.h"
@@ -71,12 +70,12 @@ Status OutboundCall::SetRequestParam(const Message& message) {
 }
 
 Status OutboundCall::status() const {
-  boost::lock_guard<simple_spinlock> l(lock_);
+  lock_guard<simple_spinlock> l(&lock_);
   return status_;
 }
 
 const ErrorStatusPB* OutboundCall::error_pb() const {
-  boost::lock_guard<simple_spinlock> l(lock_);
+  lock_guard<simple_spinlock> l(&lock_);
   return error_pb_.get();
 }
 
@@ -102,12 +101,12 @@ string OutboundCall::StateName(State state) {
 }
 
 void OutboundCall::set_state(State new_state) {
-  boost::lock_guard<simple_spinlock> l(lock_);
+  lock_guard<simple_spinlock> l(&lock_);
   set_state_unlocked(new_state);
 }
 
 OutboundCall::State OutboundCall::state() const {
-  boost::lock_guard<simple_spinlock> l(lock_);
+  lock_guard<simple_spinlock> l(&lock_);
   return state_;
 }
 
@@ -190,7 +189,7 @@ void OutboundCall::SetSent() {
 void OutboundCall::SetFailed(const Status &status,
                              ErrorStatusPB* err_pb) {
   {
-    boost::lock_guard<simple_spinlock> l(lock_);
+    lock_guard<simple_spinlock> l(&lock_);
     status_ = status;
     if (status_.IsRemoteError()) {
       CHECK(err_pb);
@@ -205,7 +204,7 @@ void OutboundCall::SetFailed(const Status &status,
 
 void OutboundCall::SetTimedOut() {
   {
-    boost::lock_guard<simple_spinlock> l(lock_);
+    lock_guard<simple_spinlock> l(&lock_);
     // TODO: have a better error message which includes the call timeout,
     // remote host, how long it spent in the queue, other useful stuff.
     status_ = Status::TimedOut("Call timed out");
@@ -215,12 +214,12 @@ void OutboundCall::SetTimedOut() {
 }
 
 bool OutboundCall::IsTimedOut() const {
-  boost::lock_guard<simple_spinlock> l(lock_);
+  lock_guard<simple_spinlock> l(&lock_);
   return state_ == TIMED_OUT;
 }
 
 bool OutboundCall::IsFinished() const {
-  boost::lock_guard<simple_spinlock> l(lock_);
+  lock_guard<simple_spinlock> l(&lock_);
   switch (state_) {
     case READY:
     case ON_OUTBOUND_QUEUE:
@@ -243,7 +242,7 @@ string OutboundCall::ToString() const {
 
 void OutboundCall::DumpPB(const DumpRunningRpcsRequestPB& req,
                           RpcCallInProgressPB* resp) {
-  boost::lock_guard<simple_spinlock> l(lock_);
+  lock_guard<simple_spinlock> l(&lock_);
   resp->mutable_header()->CopyFrom(header_);
   resp->set_micros_elapsed(
     MonoTime::Now(MonoTime::FINE) .GetDeltaSince(start_time_).ToMicroseconds());

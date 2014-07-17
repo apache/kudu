@@ -3,7 +3,6 @@
 #include "kudu/client/batcher.h"
 
 #include <boost/bind.hpp>
-#include <boost/thread/locks.hpp>
 #include <glog/logging.h>
 #include <string>
 #include <tr1/memory>
@@ -181,23 +180,23 @@ class PerTSBuffer {
   }
 
   void AddOp(InFlightOp* op) {
-    boost::lock_guard<simple_spinlock> l(lock_);
+    lock_guard<simple_spinlock> l(&lock_);
     DCHECK_EQ(op->state, InFlightOp::kBufferedToTabletServer);
     ops_.push_back(op);
   }
 
   void SetProxyReady() {
-    boost::lock_guard<simple_spinlock> l(lock_);
+    lock_guard<simple_spinlock> l(&lock_);
     proxy_ready_ = true;
   }
 
   bool ProxyReady() const {
-    boost::lock_guard<simple_spinlock> l(lock_);
+    lock_guard<simple_spinlock> l(&lock_);
     return proxy_ready_;
   }
 
   void TakeOps(vector<InFlightOp*>* ops) {
-    boost::lock_guard<simple_spinlock> l(lock_);
+    lock_guard<simple_spinlock> l(&lock_);
     ops->clear();
     ops->swap(ops_);
   }
@@ -247,12 +246,12 @@ Batcher::Batcher(KuduClient* client,
 }
 
 void Batcher::Abort() {
-  boost::unique_lock<simple_spinlock> l(lock_);
+  unique_lock<simple_spinlock> l(&lock_);
   state_ = kAborted;
 
   vector<InFlightOp*> to_abort;
   BOOST_FOREACH(InFlightOp* op, ops_) {
-    boost::lock_guard<simple_spinlock> l(op->lock_);
+    lock_guard<simple_spinlock> l(&op->lock_);
     if (op->state == InFlightOp::kBufferedToTabletServer) {
       to_abort.push_back(op);
     }
@@ -287,18 +286,18 @@ Batcher::~Batcher() {
 
 void Batcher::SetTimeoutMillis(int millis) {
   CHECK_GE(millis, 0);
-  boost::lock_guard<simple_spinlock> l(lock_);
+  lock_guard<simple_spinlock> l(&lock_);
   timeout_ = MonoDelta::FromMilliseconds(millis);
 }
 
 
 bool Batcher::HasPendingOperations() const {
-  boost::lock_guard<simple_spinlock> l(lock_);
+  lock_guard<simple_spinlock> l(&lock_);
   return !ops_.empty();
 }
 
 int Batcher::CountBufferedOperations() const {
-  boost::lock_guard<simple_spinlock> l(lock_);
+  lock_guard<simple_spinlock> l(&lock_);
   if (state_ == kGatheringOps) {
     return ops_.size();
   } else {
@@ -311,7 +310,7 @@ int Batcher::CountBufferedOperations() const {
 void Batcher::CheckForFinishedFlush() {
   shared_ptr<KuduSession> session;
   {
-    boost::lock_guard<simple_spinlock> l(lock_);
+    lock_guard<simple_spinlock> l(&lock_);
     if (state_ != kFlushing || !ops_.empty()) {
       return;
     }
@@ -338,7 +337,7 @@ void Batcher::CheckForFinishedFlush() {
 
 void Batcher::FlushAsync(const StatusCallback& cb) {
   {
-    boost::lock_guard<simple_spinlock> l(lock_);
+    lock_guard<simple_spinlock> l(&lock_);
     CHECK_EQ(state_, kGatheringOps);
     state_ = kFlushing;
     flush_callback_ = cb;
@@ -388,7 +387,7 @@ Status Batcher::Add(gscoped_ptr<KuduWriteOperation> write_op) {
 void Batcher::AddInFlightOp(InFlightOp* op) {
   DCHECK_EQ(op->state, InFlightOp::kLookingUpTablet);
 
-  boost::lock_guard<simple_spinlock> l(lock_);
+  lock_guard<simple_spinlock> l(&lock_);
   CHECK_EQ(state_, kGatheringOps);
   InsertOrDie(&ops_, op);
 }
@@ -398,12 +397,12 @@ bool Batcher::IsAbortedUnlocked() const {
 }
 
 void Batcher::MarkHadErrors() {
-  boost::lock_guard<simple_spinlock> l(lock_);
+  lock_guard<simple_spinlock> l(&lock_);
   had_errors_ = true;
 }
 
 void Batcher::MarkInFlightOpFailed(InFlightOp* op, const Status& s) {
-  boost::lock_guard<simple_spinlock> l(lock_);
+  lock_guard<simple_spinlock> l(&lock_);
   MarkInFlightOpFailedUnlocked(op, s);
 }
 
@@ -422,7 +421,7 @@ void Batcher::TabletLookupFinished(InFlightOp* op, const Status& s) {
   // Acquire the batcher lock early to atomically:
   // 1. Test if the batcher was aborted, and
   // 2. Change the op state.
-  boost::unique_lock<simple_spinlock> l(lock_);
+  unique_lock<simple_spinlock> l(&lock_);
 
   if (IsAbortedUnlocked()) {
     VLOG(1) << "Aborted batch: TabletLookupFinished for " << op->write_op->ToString();
@@ -446,7 +445,7 @@ void Batcher::TabletLookupFinished(InFlightOp* op, const Status& s) {
     return;
   }
 
-  boost::unique_lock<simple_spinlock> l2(op->lock_);
+  unique_lock<simple_spinlock> l2(&op->lock_);
 
   RemoteTabletServer* ts = op->tablet->LeaderTServer();
   if (PREDICT_FALSE(ts == NULL)) {
@@ -508,7 +507,7 @@ void Batcher::FlushBuffersIfReady() {
   // 2. All outstanding ops have finished lookup. Why? To avoid a situation
   //    where ops are flushed one by one as they finish lookup.
   {
-    boost::lock_guard<simple_spinlock> l(lock_);
+    lock_guard<simple_spinlock> l(&lock_);
     if (state_ != kFlushing) {
       VLOG(2) << "FlushBuffersIfReady: batcher not yet in flushing state";
       return;
@@ -702,7 +701,7 @@ void Batcher::FinishRpc(InFlightRpc* rpc, const Status& s) {
 
   // Remove all the ops from the "in-flight" list.
   {
-    boost::lock_guard<simple_spinlock> l(lock_);
+    lock_guard<simple_spinlock> l(&lock_);
     BOOST_FOREACH(InFlightOp* op, rpc->ops) {
       CHECK_EQ(1, ops_.erase(op))
             << "Could not remove op " << op->ToString()

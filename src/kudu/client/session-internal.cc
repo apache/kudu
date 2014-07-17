@@ -2,8 +2,6 @@
 
 #include "kudu/client/session-internal.h"
 
-#include <boost/thread/locks.hpp>
-
 #include "kudu/client/batcher.h"
 #include "kudu/client/error_collector.h"
 
@@ -26,7 +24,7 @@ KuduSession::Data::~Data() {
 }
 
 void KuduSession::Data::Init(const shared_ptr<KuduSession>& session) {
-  boost::lock_guard<simple_spinlock> l(lock_);
+  lock_guard<simple_spinlock> l(&lock_);
   CHECK(!batcher_);
   NewBatcher(session, NULL);
 }
@@ -48,7 +46,7 @@ void KuduSession::Data::NewBatcher(const shared_ptr<KuduSession>& session,
 }
 
 void KuduSession::Data::FlushFinished(Batcher* batcher) {
-  boost::lock_guard<simple_spinlock> l(lock_);
+  lock_guard<simple_spinlock> l(&lock_);
   CHECK_EQ(flushed_batchers_.erase(batcher), 1);
 }
 

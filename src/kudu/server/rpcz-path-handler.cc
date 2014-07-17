@@ -2,6 +2,7 @@
 
 #include "kudu/server/rpcz-path-handler.h"
 
+#include <boost/bind.hpp>
 #include <tr1/memory>
 #include <fstream>
 #include <string>

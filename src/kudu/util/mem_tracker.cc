@@ -3,7 +3,6 @@
 #include "kudu/util/mem_tracker.h"
 
 #include <algorithm>
-#include <boost/thread/locks.hpp>
 #include <google/malloc_extension.h>
 #include <limits>
 
@@ -301,7 +300,7 @@ int64_t MemTracker::SpareCapacity() const {
 
 bool MemTracker::GcMemory(int64_t max_consumption) {
   DCHECK_GE(max_consumption, 0);
-  boost::lock_guard<simple_spinlock> l(gc_lock_);
+  lock_guard<simple_spinlock> l(&gc_lock_);
   if (consumption_metric_ != NULL) {
     UpdateConsumption();
   }

@@ -5,7 +5,6 @@
 #include <set>
 
 #include <boost/foreach.hpp>
-#include <boost/thread/locks.hpp>
 
 #include "kudu/gutil/atomicops.h"
 #include "kudu/gutil/casts.h"
@@ -94,7 +93,7 @@ MetricRegistry::~MetricRegistry() {
 }
 
 Histogram* MetricRegistry::FindHistogram(const std::string& name) const {
-  boost::lock_guard<simple_spinlock> l(lock_);
+  lock_guard<simple_spinlock> l(&lock_);
   return FindMetricUnlocked<Histogram>(name, MetricType::kHistogram);
 }
 
@@ -114,7 +113,7 @@ T* MetricRegistry::FindMetricUnlocked(const std::string& name,
 
 Counter* MetricRegistry::FindOrCreateCounter(const std::string& name,
                                              const CounterPrototype& proto) {
-  boost::lock_guard<simple_spinlock> l(lock_);
+  lock_guard<simple_spinlock> l(&lock_);
   Counter* counter = FindMetricUnlocked<Counter>(name, MetricType::kCounter);
   if (!counter) {
     counter = new Counter(proto);
@@ -149,7 +148,7 @@ template<typename T>
 Gauge* MetricRegistry::FindOrCreateGauge(const std::string& name,
                                          const GaugePrototype<T>& proto,
                                          const T& initial_value) {
-  boost::lock_guard<simple_spinlock> l(lock_);
+  lock_guard<simple_spinlock> l(&lock_);
   Gauge* gauge = FindMetricUnlocked<Gauge>(name, MetricType::kGauge);
   if (!gauge) {
     gauge = CreateGauge(name, proto, initial_value);
@@ -178,7 +177,7 @@ template<typename T>
 Gauge* MetricRegistry::FindOrCreateFunctionGauge(const std::string& name,
                                                  const GaugePrototype<T>& proto,
                                                  const boost::function<T()>& function) {
-  boost::lock_guard<simple_spinlock> l(lock_);
+  lock_guard<simple_spinlock> l(&lock_);
   Gauge* gauge = FindMetricUnlocked<Gauge>(name, MetricType::kGauge);
   if (!gauge) {
     gauge = CreateFunctionGauge(name, proto, function);
@@ -205,7 +204,7 @@ template Gauge* MetricRegistry::FindOrCreateFunctionGauge<string>(
 
 Histogram* MetricRegistry::FindOrCreateHistogram(const std::string& name,
                                                  const HistogramPrototype& proto) {
-  boost::lock_guard<simple_spinlock> l(lock_);
+  lock_guard<simple_spinlock> l(&lock_);
   Histogram* histogram = FindMetricUnlocked<Histogram>(name, MetricType::kHistogram);
   if (!histogram) {
     histogram = new Histogram(proto);
@@ -240,7 +239,7 @@ Status MetricRegistry::WriteAsJson(JsonWriter* writer,
   std::set<string> requested_detail_metrics_set;
   {
     // Snapshot the metrics in this registry (not guaranteed to be a consistent snapshot)
-    boost::lock_guard<simple_spinlock> l(lock_);
+    lock_guard<simple_spinlock> l(&lock_);
     BOOST_FOREACH(const UnorderedMetricMap::value_type& val, metrics_) {
       if (MatchMetricInList(val.first, requested_metrics)) {
         metrics.insert(val);
@@ -328,12 +327,12 @@ StringGauge::StringGauge(const GaugePrototype<string>& proto,
 }
 
 std::string StringGauge::value() const {
-  boost::lock_guard<simple_spinlock> l(lock_);
+  lock_guard<simple_spinlock> l(&lock_);
   return value_;
 }
 
 void StringGauge::set_value(const std::string& value) {
-  boost::lock_guard<simple_spinlock> l(lock_);
+  lock_guard<simple_spinlock> l(&lock_);
   value_ = value;
 }
 

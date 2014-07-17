@@ -3,7 +3,6 @@
 #include "kudu/util/trace.h"
 
 #include <boost/foreach.hpp>
-#include <boost/thread/locks.hpp>
 #include <iomanip>
 #include <ios>
 #include <ostream>
@@ -90,7 +89,7 @@ TraceEntry* Trace::NewEntry(int msg_len, const char* file_path, int line_number)
 }
 
 void Trace::AddEntry(TraceEntry* entry) {
-  boost::lock_guard<simple_spinlock> l(lock_);
+  lock_guard<simple_spinlock> l(&lock_);
   entry->next = NULL;
 
   if (entries_tail_ != NULL) {
@@ -109,7 +108,7 @@ void Trace::Dump(std::ostream* out, bool include_time_deltas) const {
   // too slow, if the output stream is a file, for example).
   vector<TraceEntry*> entries;
   {
-    boost::lock_guard<simple_spinlock> l(lock_);
+    lock_guard<simple_spinlock> l(&lock_);
     for (TraceEntry* cur = entries_head_;
          cur != NULL;
          cur = cur->next) {

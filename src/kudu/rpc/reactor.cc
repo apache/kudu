@@ -5,7 +5,6 @@
 #include <arpa/inet.h>
 #include <boost/intrusive/list.hpp>
 #include <boost/foreach.hpp>
-#include <boost/thread/locks.hpp>
 #include <ev++.h>
 #include <netinet/in.h>
 #include <stdlib.h>
@@ -495,7 +494,7 @@ Status Reactor::Init() {
 
 void Reactor::Shutdown() {
   {
-    boost::lock_guard<LockType> lock_guard(lock_);
+    lock_guard<LockType> l(&lock_);
     if (closing_) {
       return;
     }
@@ -523,7 +522,7 @@ const std::string &Reactor::name() const {
 }
 
 bool Reactor::closing() const {
-  boost::lock_guard<LockType> lock_guard(lock_);
+  lock_guard<LockType> l(&lock_);
   return closing_;
 }
 
@@ -634,10 +633,10 @@ void Reactor::QueueOutboundCall(const shared_ptr<OutboundCall> &call) {
 
 void Reactor::ScheduleReactorTask(ReactorTask *task) {
   {
-    boost::unique_lock<LockType> lock_guard(lock_);
+    unique_lock<LockType> l(&lock_);
     if (closing_) {
       // We guarantee the reactor lock is not taken when calling Abort().
-      lock_guard.unlock();
+      l.unlock();
       task->Abort(ShutdownError(false));
       return;
     }
@@ -647,7 +646,7 @@ void Reactor::ScheduleReactorTask(ReactorTask *task) {
 }
 
 bool Reactor::DrainTaskQueue(boost::intrusive::list<ReactorTask> *tasks) { // NOLINT(*)
-  boost::lock_guard<LockType> lock_guard(lock_);
+  lock_guard<LockType> l(&lock_);
   if (closing_) {
     return false;
   }

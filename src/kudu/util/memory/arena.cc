@@ -13,11 +13,12 @@
 // limitations under the License.
 //
 
-#include <boost/thread/locks.hpp>
+#include "kudu/util/memory/arena.h"
+
 #include <algorithm>
 
 #include "kudu/util/debug-util.h"
-#include "kudu/util/memory/arena.h"
+#include "kudu/util/locks.h"
 
 using std::copy;
 using std::max;
@@ -54,7 +55,7 @@ ArenaBase<THREADSAFE>::ArenaBase(size_t initial_buffer_size, size_t max_buffer_s
 
 template <bool THREADSAFE>
 void *ArenaBase<THREADSAFE>::AllocateBytesFallback(const size_t size, const size_t align) {
-  boost::lock_guard<mutex_type> lock(component_lock_);
+  lock_guard<mutex_type> lock(&component_lock_);
 
   // It's possible another thread raced with us and already allocated
   // a new component, in which case we should try the "fast path" again
@@ -126,7 +127,7 @@ void ArenaBase<THREADSAFE>::AddComponent(ArenaBase::Component *component) {
 
 template <bool THREADSAFE>
 void ArenaBase<THREADSAFE>::Reset() {
-  boost::lock_guard<mutex_type> lock(component_lock_);
+  lock_guard<mutex_type> lock(&component_lock_);
 
   if (PREDICT_FALSE(arena_.size() > 1)) {
     shared_ptr<Component> last = arena_.back();
@@ -150,7 +151,7 @@ void ArenaBase<THREADSAFE>::Reset() {
 
 template <bool THREADSAFE>
 size_t ArenaBase<THREADSAFE>::memory_footprint() const {
-  boost::lock_guard<mutex_type> lock(component_lock_);
+  lock_guard<mutex_type> lock(&component_lock_);
   return arena_footprint_;
 }
 

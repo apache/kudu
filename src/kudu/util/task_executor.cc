@@ -1,7 +1,6 @@
 // Copyright (c) 2013, Cloudera, inc.
 
 #include <boost/foreach.hpp>
-#include <boost/thread/locks.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 #include <string>
@@ -39,7 +38,7 @@ void FutureTask::Run() {
   set_state(kTaskFinishedState);
 
   {
-    boost::lock_guard<LockType> l(lock_);
+    lock_guard<LockType> l(&lock_);
     if (status_.ok()) {
       BOOST_FOREACH(ListenerCallback callback, listeners_) {
         callback->OnSuccess();
@@ -55,7 +54,7 @@ void FutureTask::Run() {
 }
 
 bool FutureTask::Abort() {
-  boost::lock_guard<LockType> l(lock_);
+  lock_guard<LockType> l(&lock_);
   if (state_ != kTaskFinishedState && task_->Abort()) {
     state_ = kTaskAbortedState;
     return true;
@@ -66,7 +65,7 @@ bool FutureTask::Abort() {
 // TODO: Consider making it so that all callbacks are invoked on the executor thread.
 void FutureTask::AddListener(
     std::tr1::shared_ptr<FutureCallback> callback) {
-  boost::lock_guard<LockType> l(lock_);
+  lock_guard<LockType> l(&lock_);
   if (state_ != kTaskFinishedState && state_ != kTaskAbortedState) {
     listeners_.push_back(callback);
   } else if (status_.ok()) {
@@ -77,17 +76,17 @@ void FutureTask::AddListener(
 }
 
 bool FutureTask::is_aborted() const {
-  boost::lock_guard<LockType> l(lock_);
+  lock_guard<LockType> l(&lock_);
   return state_ == kTaskAbortedState;
 }
 
 bool FutureTask::is_done() const {
-  boost::lock_guard<LockType> l(lock_);
+  lock_guard<LockType> l(&lock_);
   return state_ == kTaskFinishedState || state_ == kTaskAbortedState;
 }
 
 bool FutureTask::is_running() const {
-  boost::lock_guard<LockType> l(lock_);
+  lock_guard<LockType> l(&lock_);
   return state_ == kTaskRunningState;
 }
 
@@ -104,7 +103,7 @@ bool FutureTask::WaitFor(const MonoDelta& delta) {
 }
 
 bool FutureTask::set_state(TaskState state) {
-  boost::lock_guard<LockType> l(lock_);
+  lock_guard<LockType> l(&lock_);
   if (state_ == kTaskAbortedState) {
     return false;
   }

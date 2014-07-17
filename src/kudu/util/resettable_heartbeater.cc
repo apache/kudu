@@ -1,6 +1,5 @@
 // Copyright (c) 2014, Cloudera, inc.
 
-#include <boost/thread/locks.hpp>
 #include <glog/logging.h>
 
 #include "kudu/util/resettable_heartbeater.h"
@@ -92,7 +91,7 @@ void ResettableHeartbeaterThread::RunThread() {
 
     if (run_latch_.WaitUntil(next_heartbeat)) {
       // CountDownLatch reached 0
-      boost::lock_guard<simple_spinlock> lock(lock_);
+      lock_guard<simple_spinlock> lock(&lock_);
       // check if we were told to shutdown
       if (shutdown_) {
         // Latch fired -- exit loop
@@ -140,7 +139,7 @@ Status ResettableHeartbeaterThread::Stop() {
   }
 
   {
-    boost::lock_guard<simple_spinlock> lock(lock_);
+    lock_guard<simple_spinlock> l(&lock_);
     shutdown_ = true;
   }
 

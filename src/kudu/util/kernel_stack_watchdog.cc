@@ -4,7 +4,6 @@
 
 #include <boost/bind.hpp>
 #include <boost/foreach.hpp>
-#include <boost/thread/locks.hpp>
 #include <glog/logging.h>
 #include <gflags/gflags.h>
 #include <tr1/unordered_set>
@@ -43,12 +42,12 @@ void KernelStackWatchdog::Watch(pid_t pid, const char* label) {
   e.label = label;
   e.registered_time = MonoTime::Now(MonoTime::FINE);
 
-  boost::lock_guard<simple_spinlock> l(lock_);
+  lock_guard<simple_spinlock> l(&lock_);
   InsertOrDie(&watched_, pid, e);
 }
 
 void KernelStackWatchdog::StopWatching(pid_t pid) {
-  boost::lock_guard<simple_spinlock> l(lock_);
+  lock_guard<simple_spinlock> l(&lock_);
   watched_.erase(pid);
 }
 
@@ -66,7 +65,7 @@ void KernelStackWatchdog::RunThread() {
 
     PidMap pids;
     {
-      boost::lock_guard<simple_spinlock> l(lock_);
+      lock_guard<simple_spinlock> l(&lock_);
       pids = watched_;
     }
 

@@ -3,7 +3,6 @@
 #include "kudu/client/client.h"
 #include "kudu/client/error_collector.h"
 
-#include <boost/thread/locks.hpp>
 #include <vector>
 
 #include "kudu/gutil/stl_util.h"
@@ -20,17 +19,17 @@ ErrorCollector::~ErrorCollector() {
 }
 
 void ErrorCollector::AddError(gscoped_ptr<KuduError> error) {
-  boost::lock_guard<simple_spinlock> l(lock_);
+  lock_guard<simple_spinlock> l(&lock_);
   errors_.push_back(error.release());
 }
 
 int ErrorCollector::CountErrors() const {
-  boost::lock_guard<simple_spinlock> l(lock_);
+  lock_guard<simple_spinlock> l(&lock_);
   return errors_.size();
 }
 
 void ErrorCollector::GetErrors(std::vector<KuduError*>* errors, bool* overflowed) {
-  boost::lock_guard<simple_spinlock> l(lock_);
+  lock_guard<simple_spinlock> l(&lock_);
   errors->swap(errors_);
   *overflowed = false;
 }

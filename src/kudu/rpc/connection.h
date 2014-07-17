@@ -4,7 +4,6 @@
 #define KUDU_RPC_CONNECTION_H
 
 #include <boost/intrusive/list.hpp>
-#include <boost/utility.hpp>
 #include <ev++.h>
 #include <stdint.h>
 #include <tr1/memory>

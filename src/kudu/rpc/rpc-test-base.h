@@ -3,6 +3,7 @@
 #ifndef KUDU_RPC_RPC_TEST_BASE_H
 #define KUDU_RPC_RPC_TEST_BASE_H
 
+#include <boost/thread/thread.hpp>
 #include <algorithm>
 #include <list>
 #include <string>

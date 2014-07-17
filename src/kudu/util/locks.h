@@ -198,6 +198,77 @@ class percpu_rwlock {
   padded_lock *locks_;
 };
 
+// Simpler version of boost::lock_guard. Only supports the basic object
+// lifecycle and defers any error checking to the underlying mutex.
+template <typename Mutex>
+class lock_guard {
+ public:
+  explicit lock_guard(Mutex* m)
+    : m_(m) {
+    m_->lock();
+  }
+
+  ~lock_guard() {
+    m_->unlock();
+  }
+
+ private:
+  Mutex* m_;
+};
+
+// Simpler version of boost::unique_lock. Tracks lock acquisition and will
+// report attempts to double lock() or unlock().
+template <typename Mutex>
+class unique_lock {
+ public:
+  explicit unique_lock(Mutex* m)
+    : locked_(true),
+      m_(m) {
+    m_->lock();
+  }
+
+  ~unique_lock() {
+    if (locked_) {
+      m_->unlock();
+      locked_ = false;
+    }
+  }
+
+  void lock() {
+    DCHECK(!locked_);
+    m_->lock();
+    locked_ = true;
+  }
+
+  void unlock() {
+    DCHECK(locked_);
+    m_->unlock();
+    locked_ = false;
+  }
+
+ private:
+  bool locked_;
+  Mutex* m_;
+};
+
+// Simpler version of boost::shared_lock. Only supports the basic object
+// lifecycle and defers any error checking to the underlying mutex.
+template <typename Mutex>
+class shared_lock {
+ public:
+  explicit shared_lock(Mutex* m)
+    : m_(m) {
+    m_->lock_shared();
+  }
+
+  ~shared_lock() {
+    m_->unlock_shared();
+  }
+
+ private:
+  Mutex* m_;
+};
+
 } // namespace kudu
 
 #endif

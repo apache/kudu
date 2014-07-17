@@ -8,6 +8,7 @@
 #include <stdint.h>
 #include <tr1/memory>
 
+#include <list>
 #include <map>
 #include <set>
 #include <string>

@@ -2,7 +2,6 @@
 
 #include <boost/foreach.hpp>
 #include <boost/function.hpp>
-#include <boost/thread/locks.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 #include <limits>

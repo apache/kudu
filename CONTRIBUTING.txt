@@ -29,6 +29,12 @@ want boost in any public headers because it's notoriously bad at
 maintaining backwards compatibility, and passing data between two boost
 versions (one by the user, one by us) is a recipe for disaster.
 
+Additionally, we don't want the C++ client to depend on any Boost libraries.
+Libboost_system is particularly troublesome, as any Boost code that throws
+exceptions will grow a dependency on it. This has led to, amongst other
+things, no boost::{lock_guard,unique_lock,shared_lock} in any code consumed
+by the C++ client (such as common/ and util/).
+
 - Line length: up to 100 characters is OK
 
 The google guide says 80 characters, but that's a little short. Try to

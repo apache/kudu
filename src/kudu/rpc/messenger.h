@@ -2,7 +2,6 @@
 #ifndef KUDU_RPC_MESSENGER_H
 #define KUDU_RPC_MESSENGER_H
 
-#include <boost/thread/thread.hpp>
 #include <gtest/gtest.h>
 #include <stdint.h>
 #include <tr1/memory>
@@ -14,6 +13,7 @@
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/rpc/response_callback.h"
+#include "kudu/util/locks.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/sockaddr.h"
@@ -158,7 +158,7 @@ class Messenger {
   }
 
   bool closing() const {
-    boost::shared_lock<rw_spinlock> guard(lock_.get_lock());
+    shared_lock<rw_spinlock> guard(&lock_.get_lock());
     return closing_;
   }
 

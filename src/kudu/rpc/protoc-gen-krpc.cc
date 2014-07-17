@@ -611,7 +611,6 @@ class CodeGenerator : public ::google::protobuf::compiler::CodeGenerator {
       "#include \"$path_no_extension$.proxy.h\"\n"
       "\n"
       "#include \"kudu/rpc/outbound_call.h\"\n"
-      "#include \"kudu/rpc/messenger.h\"\n"
       "#include \"kudu/util/net/sockaddr.h\"\n"
       "\n"
       "$open_namespace$"

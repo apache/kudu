@@ -8,7 +8,6 @@
 #include <string>
 #include <vector>
 
-#include <boost/thread/thread.hpp>
 #include <sasl/sasl.h>
 
 #include "kudu/gutil/gscoped_ptr.h"

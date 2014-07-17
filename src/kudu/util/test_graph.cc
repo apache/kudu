@@ -3,12 +3,12 @@
 
 #include <boost/foreach.hpp>
 #include <boost/lexical_cast.hpp>
-#include <boost/thread/locks.hpp>
 #include <glog/logging.h>
 
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/stringprintf.h"
 #include "kudu/gutil/walltime.h"
+#include "kudu/util/locks.h"
 #include "kudu/util/status.h"
 #include "kudu/util/test_graph.h"
 #include "kudu/util/thread.h"
@@ -16,17 +16,17 @@
 namespace kudu {
 
 void TimeSeries::AddValue(double val) {
-  boost::lock_guard<PThreadSpinLock> l(lock_);
+  lock_guard<PThreadSpinLock> l(&lock_);
   val_ += val;
 }
 
 void TimeSeries::SetValue(double val) {
-  boost::lock_guard<PThreadSpinLock> l(lock_);
+  lock_guard<PThreadSpinLock> l(&lock_);
   val_ = val;
 }
 
 double TimeSeries::value() const {
-  boost::lock_guard<PThreadSpinLock> l(lock_);
+  lock_guard<PThreadSpinLock> l(&lock_);
   return val_;
 }
 
