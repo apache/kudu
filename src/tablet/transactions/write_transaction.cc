@@ -143,10 +143,13 @@ Status WriteTransaction::Prepare() {
   }
   RETURN_NOT_OK(CreatePreparedInsertsAndMutates(client_schema));
 
-  Tablet* tablet = state_->tablet_peer()->tablet();
-  tablet->FinishPrepare(state_.get());
-  TRACE("PREPARE: finished. Timestamp: $0",
-        state_->tablet_peer()->clock()->Stringify(state_->timestamp()));
+  TRACE("PREPARE: finished.");
+  return Status::OK();
+}
+
+Status WriteTransaction::Start() {
+  state_->tablet_peer()->tablet()->StartTransaction(state_.get());
+  TRACE("START. Timestamp: $0", state_->tablet_peer()->clock()->Stringify(state_->timestamp()));
   return Status::OK();
 }
 

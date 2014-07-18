@@ -83,8 +83,8 @@ class AlterSchemaTransaction : public Transaction {
  public:
   AlterSchemaTransaction(AlterSchemaTransactionState* tx_state, consensus::DriverType type);
 
-  virtual AlterSchemaTransactionState* state() OVERRIDE { return tx_state_.get(); }
-  virtual const AlterSchemaTransactionState* state() const OVERRIDE { return tx_state_.get(); }
+  virtual AlterSchemaTransactionState* state() OVERRIDE { return state_.get(); }
+  virtual const AlterSchemaTransactionState* state() const OVERRIDE { return state_.get(); }
 
   void NewReplicateMsg(gscoped_ptr<consensus::ReplicateMsg>* replicate_msg) OVERRIDE;
 
@@ -93,6 +93,9 @@ class AlterSchemaTransaction : public Transaction {
   // TODO: need a schema lock?
 
   virtual Status Prepare() OVERRIDE;
+
+  // Starts the AlterSchemaTransaction by assigning it a timestamp.
+  virtual Status Start() OVERRIDE;
 
   virtual void NewCommitAbortMessage(gscoped_ptr<consensus::CommitMsg>* commit_msg) OVERRIDE;
 
@@ -105,7 +108,7 @@ class AlterSchemaTransaction : public Transaction {
   virtual std::string ToString() const OVERRIDE;
 
  private:
-  gscoped_ptr<AlterSchemaTransactionState> tx_state_;
+  gscoped_ptr<AlterSchemaTransactionState> state_;
   DISALLOW_COPY_AND_ASSIGN(AlterSchemaTransaction);
 };
 

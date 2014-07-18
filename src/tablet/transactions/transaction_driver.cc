@@ -147,8 +147,7 @@ Status LeaderTransactionDriver::Execute() {
         mutable_state()->set_consensus_round(round.Pass());
 
         prepare_status = prepare_executor_->Submit(
-          boost::bind(&Transaction::Prepare, transaction_.get()),
-          boost::bind(&Transaction::AbortPrepare, transaction_.get()),
+          boost::bind(&LeaderTransactionDriver::PrepareAndStart, this),
           &prepare_task_future);
 
       } else {
@@ -170,6 +169,11 @@ Status LeaderTransactionDriver::Execute() {
   }
 
   return Status::OK();
+}
+
+Status LeaderTransactionDriver::PrepareAndStart() {
+  RETURN_NOT_OK(transaction_->Prepare());
+  return transaction_->Start();
 }
 
 void LeaderTransactionDriver::Abort() {
@@ -448,12 +452,17 @@ void ReplicaTransactionDriver::PrepareFinished(const Status& s) {
 
 void ReplicaTransactionDriver::PrepareOrLeaderCommitSucceeded() {
   boost::lock_guard<simple_spinlock> state_lock(lock_);
+
   // Atomically increase the number of calls.
   prepare_finished_calls_++;
   if (prepare_finished_calls_ < 2) {
     return;
   }
   CHECK_EQ(2, prepare_finished_calls_);
+
+  // Replicas must start the actual transaction in the same order as they
+  // receive it from the leader.
+  CHECK_OK(transaction_->Start());
 
   if (transaction_status_.ok()) {
     Status s = apply_executor_->Submit(boost::bind(&ReplicaTransactionDriver::ApplyAndCommit, this),

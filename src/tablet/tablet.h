@@ -80,9 +80,9 @@ class Tablet {
   // Open the tablet.
   Status Open();
 
-  // Finish the Prepare phase of a write transaction.
+  // Actually start a write transaction.
   //
-  // Start an MVCC transaction and assigns a timestamp for the transaction.
+  // Starts an MVCC transaction and assigns a timestamp for the transaction.
   // This also snapshots the current set of tablet components into the transaction
   // state.
   //
@@ -110,7 +110,7 @@ class Tablet {
   // are acquired for transactions determines their serialization order. If/when
   // we support multi-node serializable transactions, we'll have to acquire _all_
   // row locks (across all nodes) before obtaining a timestamp.
-  void FinishPrepare(WriteTransactionState* tx_state);
+  void StartTransaction(WriteTransactionState* tx_state);
 
   // TODO update tests so that we can remove Insert() and Mutate()
   // and use only InsertUnlocked() and MutateUnlocked().

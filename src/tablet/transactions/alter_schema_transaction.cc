@@ -5,6 +5,7 @@
 
 #include "common/wire_protocol.h"
 #include "rpc/rpc_context.h"
+#include "server/hybrid_clock.h"
 #include "tablet/tablet.h"
 #include "tablet/tablet_peer.h"
 #include "tablet/tablet_metrics.h"
@@ -37,7 +38,7 @@ string AlterSchemaTransactionState::ToString() const {
 AlterSchemaTransaction::AlterSchemaTransaction(AlterSchemaTransactionState* state,
                                                DriverType type)
     : Transaction(state, type, Transaction::ALTER_SCHEMA_TXN),
-      tx_state_(state) {
+      state_(state) {
 }
 
 void AlterSchemaTransaction::NewReplicateMsg(gscoped_ptr<ReplicateMsg>* replicate_msg) {
@@ -51,40 +52,42 @@ Status AlterSchemaTransaction::Prepare() {
 
   // Decode schema
   gscoped_ptr<Schema> schema(new Schema);
-  Status s = SchemaFromPB(tx_state_->request()->schema(), schema.get());
+  Status s = SchemaFromPB(state_->request()->schema(), schema.get());
   if (!s.ok()) {
-    tx_state_->completion_callback()->set_error(s, TabletServerErrorPB::INVALID_SCHEMA);
+    state_->completion_callback()->set_error(s, TabletServerErrorPB::INVALID_SCHEMA);
     return s;
   }
 
-  Tablet* tablet = tx_state_->tablet_peer()->tablet();
+  Tablet* tablet = state_->tablet_peer()->tablet();
   RETURN_NOT_OK(tablet->CreatePreparedAlterSchema(state(), schema.get()));
 
-  // now that we've acquired the locks set the transaction timestamp
-  tx_state_->set_timestamp(tx_state_->tablet_peer()->clock()->Now());
-
-  tx_state_->AddToAutoReleasePool(schema.release());
+  state_->AddToAutoReleasePool(schema.release());
 
   TRACE("PREPARE ALTER-SCHEMA: finished");
   return s;
 }
 
+Status AlterSchemaTransaction::Start() {
+  state_->set_timestamp(state_->tablet_peer()->clock()->Now());
+  TRACE("START. Timestamp: $0", server::HybridClock::GetPhysicalValue(state_->timestamp()));
+  return Status::OK();
+}
+
 void AlterSchemaTransaction::NewCommitAbortMessage(gscoped_ptr<CommitMsg>* commit_msg) {
   commit_msg->reset(new CommitMsg());
   (*commit_msg)->set_op_type(OP_ABORT);
-  (*commit_msg)->mutable_alter_schema_response()->CopyFrom(*tx_state_->response());
-  (*commit_msg)->set_timestamp(tx_state_->timestamp().ToUint64());
+  (*commit_msg)->mutable_alter_schema_response()->CopyFrom(*state_->response());
 }
 
 Status AlterSchemaTransaction::Apply(gscoped_ptr<CommitMsg>* commit_msg) {
   TRACE("APPLY ALTER-SCHEMA: Starting");
 
-  Tablet* tablet = tx_state_->tablet_peer()->tablet();
+  Tablet* tablet = state_->tablet_peer()->tablet();
   RETURN_NOT_OK(tablet->AlterSchema(state()));
 
   commit_msg->reset(new CommitMsg());
   (*commit_msg)->set_op_type(ALTER_SCHEMA_OP);
-  (*commit_msg)->set_timestamp(tx_state_->timestamp().ToUint64());
+  (*commit_msg)->set_timestamp(state_->timestamp().ToUint64());
   return Status::OK();
 }
 
@@ -96,7 +99,7 @@ void AlterSchemaTransaction::Finish() {
 }
 
 string AlterSchemaTransaction::ToString() const {
-  return Substitute("AlterSchemaTransaction [state=$0]", tx_state_->ToString());
+  return Substitute("AlterSchemaTransaction [state=$0]", state_->ToString());
 }
 
 }  // namespace tablet

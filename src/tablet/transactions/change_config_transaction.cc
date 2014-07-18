@@ -5,6 +5,7 @@
 
 #include "common/wire_protocol.h"
 #include "rpc/rpc_context.h"
+#include "server/hybrid_clock.h"
 #include "tablet/tablet.h"
 #include "tablet/tablet_peer.h"
 #include "tablet/tablet_metrics.h"
@@ -36,7 +37,7 @@ ChangeConfigTransaction::ChangeConfigTransaction(ChangeConfigTransactionState* t
                                                  DriverType type,
                                                  Semaphore* config_sem)
     : Transaction(tx_state, type, Transaction::CHANGE_CONFIG_TXN),
-      tx_state_(tx_state),
+      state_(tx_state),
       config_sem_(config_sem) {
 }
 
@@ -49,13 +50,10 @@ void ChangeConfigTransaction::NewReplicateMsg(gscoped_ptr<ReplicateMsg>* replica
 Status ChangeConfigTransaction::Prepare() {
   TRACE("PREPARE CHANGE CONFIG: Starting");
 
-  tx_state_->acquire_config_sem(config_sem_);
+  state_->acquire_config_sem(config_sem_);
 
-  // now that we've acquired the semaphore, set the transaction timestamp
-  tx_state_->set_timestamp(tx_state_->tablet_peer()->clock()->Now());
-
-  const QuorumPB& old_quorum = tx_state_->tablet_peer()->tablet()->metadata()->Quorum();
-  const QuorumPB& new_quorum = tx_state_->request()->new_config();
+  const QuorumPB& old_quorum = state_->tablet_peer()->tablet()->metadata()->Quorum();
+  const QuorumPB& new_quorum = state_->request()->new_config();
 
   Status s;
   if (old_quorum.seqno() >= new_quorum.seqno()) {
@@ -67,31 +65,37 @@ Status ChangeConfigTransaction::Prepare() {
   TRACE("PREPARE CHANGE CONFIG: finished (Status: $0)", s.ToString());
 
   if (!s.ok()) {
-    tx_state_->completion_callback()->set_error(s, TabletServerErrorPB::INVALID_CONFIG);
+    state_->completion_callback()->set_error(s, TabletServerErrorPB::INVALID_CONFIG);
   }
   return s;
+}
+
+Status ChangeConfigTransaction::Start() {
+  // now that we've acquired the semaphore, set the transaction timestamp
+  state_->set_timestamp(state_->tablet_peer()->clock()->Now());
+  TRACE("START. Timestamp: $0", server::HybridClock::GetPhysicalValue(state_->timestamp()));
+  return Status::OK();
 }
 
 void ChangeConfigTransaction::NewCommitAbortMessage(gscoped_ptr<CommitMsg>* commit_msg) {
   commit_msg->reset(new CommitMsg());
   (*commit_msg)->set_op_type(OP_ABORT);
-  (*commit_msg)->mutable_change_config_response()->CopyFrom(*tx_state_->response());
-  (*commit_msg)->set_timestamp(tx_state_->timestamp().ToUint64());
+  (*commit_msg)->mutable_change_config_response()->CopyFrom(*state_->response());
 }
 
 Status ChangeConfigTransaction::Apply(gscoped_ptr<CommitMsg>* commit_msg) {
   TRACE("APPLY CHANGE CONFIG: Starting");
 
   // change the config in the tablet metadata.
-  tx_state_->tablet_peer()->tablet()->metadata()->SetQuorum(tx_state_->request()->new_config());
-  RETURN_NOT_OK(tx_state_->tablet_peer()->tablet()->metadata()->Flush());
+  state_->tablet_peer()->tablet()->metadata()->SetQuorum(state_->request()->new_config());
+  RETURN_NOT_OK(state_->tablet_peer()->tablet()->metadata()->Flush());
 
   // Notify the peer that the consensus state (in this case the role) has changed.
-  tx_state_->tablet_peer()->ConsensusStateChanged();
+  state_->tablet_peer()->ConsensusStateChanged();
 
   commit_msg->reset(new CommitMsg());
   (*commit_msg)->set_op_type(CHANGE_CONFIG_OP);
-  (*commit_msg)->set_timestamp(tx_state_->timestamp().ToUint64());
+  (*commit_msg)->set_timestamp(state_->timestamp().ToUint64());
   return Status::OK();
 }
 
@@ -105,7 +109,7 @@ void ChangeConfigTransaction::Finish() {
 string ChangeConfigTransaction::ToString() const {
   return Substitute("ChangeConfigTransaction [type=$0, state=$1]",
                     DriverType_Name(type()),
-                    tx_state_->ToString());
+                    state_->ToString());
 }
 
 }  // namespace tablet

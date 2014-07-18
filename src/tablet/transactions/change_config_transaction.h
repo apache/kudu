@@ -29,8 +29,8 @@ class ChangeConfigTransactionState : public TransactionState {
   }
 
   ChangeConfigTransactionState(TabletPeer* tablet_peer,
-                                 const tserver::ChangeConfigRequestPB* request,
-                                 tserver::ChangeConfigResponsePB* response)
+                               const tserver::ChangeConfigRequestPB* request,
+                               tserver::ChangeConfigResponsePB* response)
       : TransactionState(tablet_peer),
         request_(request),
         response_(response) {
@@ -79,13 +79,16 @@ class ChangeConfigTransaction : public Transaction {
                           consensus::DriverType type,
                           Semaphore* config_sem);
 
-  virtual ChangeConfigTransactionState* state() OVERRIDE { return tx_state_.get(); }
-  virtual const ChangeConfigTransactionState* state() const OVERRIDE { return tx_state_.get(); }
+  virtual ChangeConfigTransactionState* state() OVERRIDE { return state_.get(); }
+  virtual const ChangeConfigTransactionState* state() const OVERRIDE { return state_.get(); }
 
   void NewReplicateMsg(gscoped_ptr<consensus::ReplicateMsg>* replicate_msg) OVERRIDE;
 
   // Executes a Prepare for the change config transaction.
   virtual Status Prepare() OVERRIDE;
+
+  // Starts the ChangeConfigTransaction by assigning it a timestamp.
+  virtual Status Start() OVERRIDE;
 
   virtual void NewCommitAbortMessage(gscoped_ptr<consensus::CommitMsg>* commit_msg) OVERRIDE;
 
@@ -99,7 +102,7 @@ class ChangeConfigTransaction : public Transaction {
 
  private:
 
-  gscoped_ptr<ChangeConfigTransactionState> tx_state_;
+  gscoped_ptr<ChangeConfigTransactionState> state_;
   DISALLOW_COPY_AND_ASSIGN(ChangeConfigTransaction);
   Semaphore* config_sem_;
 };

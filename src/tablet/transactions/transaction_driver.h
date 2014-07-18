@@ -153,17 +153,20 @@ class LeaderTransactionDriver : public TransactionDriver {
                           TaskExecutor* apply_executor,
                           simple_spinlock* prepare_replicate_lock);
 
-  virtual ~LeaderTransactionDriver() OVERRIDE;
-
   virtual Status ApplyAndCommit() OVERRIDE;
 
   virtual void ApplyAndCommitSucceeded() OVERRIDE;
 
   virtual void ApplyOrCommitFailed(const Status& status) OVERRIDE;
 
+  virtual ~LeaderTransactionDriver() OVERRIDE;
+
  private:
   friend class base::RefCountedThreadSafe<LeaderTransactionDriver>;
   FRIEND_TEST(TransactionTrackerTest, TestGetPending);
+
+  // Leaders execute Prepare() and Start() in sequence.
+  Status PrepareAndStart();
 
   void PrepareOrReplicateSucceeded();
 

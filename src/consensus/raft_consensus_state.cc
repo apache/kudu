@@ -265,7 +265,7 @@ Status ReplicaState::TriggerApplyUnlocked(gscoped_ptr<OperationPB> leader_commit
     return Status::IllegalState("Cannot trigger apply. Replica is not in kRunning state.");
   }
   ConsensusRound* context = FindPtrOrNull(pending_txns_,
-                                           leader_commit_op->commit().commited_op_id());
+                                          leader_commit_op->commit().commited_op_id());
   if (in_flight_commits_.empty()) {
     all_committed_before_id_.CopyFrom(leader_commit_op->id());
   }

@@ -775,7 +775,7 @@ Status TabletBootstrap::PlayWriteRequest(OperationPB* replicate_op,
   // TODO: KUDU-138: need to reuse the timestamp from the commit op!
   // But, we also need to make sure that the Mvcc Manager is aware of it
   // if we want to be able to support concurrent flush/compact during bootstrap.
-  tablet_->FinishPrepare(&tx_state);
+  tablet_->StartTransaction(&tx_state);
 
   // Use committed OpId for mem store anchoring.
   tx_state.mutable_op_id()->CopyFrom(replicate_op->id());

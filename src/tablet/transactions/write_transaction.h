@@ -262,6 +262,9 @@ class WriteTransaction : public Transaction {
   // is finished, the next one in the pipeline must take ownership of these.
   virtual Status Prepare() OVERRIDE;
 
+  // Actually starts the Mvcc transaction and assigns a timestamp to this transaction.
+  virtual Status Start() OVERRIDE;
+
   // Executes an Apply for a write transaction.
   //
   // Actually applies inserts/mutates into the tablet. After these start being

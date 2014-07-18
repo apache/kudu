@@ -233,7 +233,7 @@ Status Tablet::CreatePreparedInsert(const WriteTransactionState* tx_state,
   return Status::OK();
 }
 
-void Tablet::FinishPrepare(WriteTransactionState* tx_state) {
+void Tablet::StartTransaction(WriteTransactionState* tx_state) {
   boost::shared_lock<rw_spinlock> lock(component_lock_);
 
   gscoped_ptr<ScopedTransaction> mvcc_tx;
@@ -272,7 +272,7 @@ Status Tablet::InsertForTesting(WriteTransactionState *tx_state,
   // Create a "fake" OpId and set it in the TransactionState for anchoring.
   tx_state->mutable_op_id()->CopyFrom(MaximumOpId());
 
-  FinishPrepare(tx_state);
+  StartTransaction(tx_state);
 
   Status s = InsertUnlocked(tx_state, tx_state->rows()[0]);
   tx_state->commit();
@@ -378,7 +378,7 @@ Status Tablet::MutateRowForTesting(WriteTransactionState *tx_state,
   RETURN_NOT_OK(CreatePreparedMutate(tx_state, &row_key, changelist, &row_write));
   tx_state->add_prepared_row(row_write.Pass());
 
-  FinishPrepare(tx_state);
+  StartTransaction(tx_state);
 
   // Create a "fake" OpId and set it in the TransactionState for anchoring.
   tx_state->mutable_op_id()->CopyFrom(MaximumOpId());

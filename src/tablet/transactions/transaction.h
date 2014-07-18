@@ -75,6 +75,12 @@ class Transaction {
   // Not supported by default.
   virtual bool AbortPrepare() { return false; }
 
+  // Actually starts a transaction, assigning a timestamp to the transaction.
+  // LEADER replicas execute this in or right after Prepare(), while FOLLOWER/LEARNER
+  // replicas execute this right before the Apply() phase as the transaction's
+  // timestamp is only available on the LEADER's commit message.
+  virtual Status Start() = 0;
+
   // Executes the Apply() phase of the transaction, the actual actions of
   // this phase depend on the transaction type, but usually this is the
   // method where data-structures are changed.
@@ -174,7 +180,7 @@ class TransactionState {
   virtual std::string ToString() const = 0;
 
   // Sets the timestamp for the transaction
-  void set_timestamp(const Timestamp& timestamp) {
+  virtual void set_timestamp(const Timestamp& timestamp) {
     // make sure we set the timestamp only once
     DCHECK_EQ(timestamp_, Timestamp::kInvalidTimestamp);
     timestamp_ = timestamp;
