@@ -1,6 +1,8 @@
 // Copyright (c) 2013, Cloudera, inc.
 
 #include <boost/foreach.hpp>
+
+#include <algorithm>
 #include <string>
 #include <utility>
 
@@ -104,8 +106,7 @@ MergeIterator::MergeIterator(
   const Schema &schema,
   const vector<shared_ptr<RowwiseIterator> > &iters)
   : schema_(schema),
-    initted_(false),
-    prepared_count_(0) {
+    initted_(false) {
   CHECK_GT(iters.size(), 0);
   BOOST_FOREACH(const shared_ptr<RowwiseIterator> &iter, iters) {
     iters_.push_back(shared_ptr<MergeIterState>(new MergeIterState(iter)));
@@ -150,22 +151,21 @@ Status MergeIterator::InitSubIterators(ScanSpec *spec) {
   return Status::OK();
 }
 
-// TODO: Instead of relying on separate prepare, materialize, finish batch methods,
-// streamline this NextBlock() method in order to reduce cross-method state
-// now that the individual functions are private
 Status MergeIterator::NextBlock(RowBlock* dst) {
-  size_t n = dst->row_capacity();
-  if (dst->arena()) {
-    dst->arena()->Reset();
-  }
-  RETURN_NOT_OK(PrepareBatch(&n));
-  dst->Resize(n);
+  CHECK(initted_);
+  DCHECK_SCHEMA_EQ(dst->schema(), schema());
+
+  PrepareBatch(dst);
   RETURN_NOT_OK(MaterializeBlock(dst));
-  RETURN_NOT_OK(FinishBatch());
+
   return Status::OK();
 }
 
-Status MergeIterator::PrepareBatch(size_t *nrows) {
+void MergeIterator::PrepareBatch(RowBlock* dst) {
+  if (dst->arena()) {
+    dst->arena()->Reset();
+  }
+
   // We can always provide at least as many rows as are remaining
   // in the currently queued up blocks.
   size_t available = 0;
@@ -173,31 +173,22 @@ Status MergeIterator::PrepareBatch(size_t *nrows) {
     available += iter->remaining_in_block();
   }
 
-  if (available < *nrows) {
-    *nrows = available;
-  }
-
-  prepared_count_ = *nrows;
-
-  return Status::OK();
+  dst->Resize(std::min(dst->row_capacity(), available));
 }
 
 // TODO: this is an obvious spot to add codegen - there's a ton of branching
 // and such around the comparisons. A simple experiment indicated there's some
 // 2x to be gained.
 Status MergeIterator::MaterializeBlock(RowBlock *dst) {
-  CHECK(initted_);
-
-  DCHECK_SCHEMA_EQ(dst->schema(), schema());
-  DCHECK_LE(prepared_count_, dst->nrows());
-
-  for (size_t dst_row_idx = 0; dst_row_idx < prepared_count_; dst_row_idx++) {
+  for (size_t dst_row_idx = 0; dst_row_idx < dst->nrows(); dst_row_idx++) {
     RowBlockRow dst_row = dst->row(dst_row_idx);
 
     // Find the sub-iterator which is currently smallest
     MergeIterState *smallest = NULL;
     ssize_t smallest_idx = -1;
 
+    // Typically the number of iters_ is not that large, so using a priority
+    // queue is not worth it
     for (size_t i = 0; i < iters_.size(); i++) {
       shared_ptr<MergeIterState> &state = iters_[i];
 
@@ -220,11 +211,6 @@ Status MergeIterator::MaterializeBlock(RowBlock *dst) {
     }
   }
 
-  return Status::OK();
-}
-
-Status MergeIterator::FinishBatch() {
-  prepared_count_ = 0;
   return Status::OK();
 }
 
@@ -382,7 +368,6 @@ void UnionIterator::GetIteratorStats(std::vector<IteratorStats>* stats) const {
 
 MaterializingIterator::MaterializingIterator(const shared_ptr<ColumnwiseIterator> &iter)
   : iter_(iter),
-    prepared_count_(0),
     disallow_pushdown_for_tests_(!FLAGS_materializing_iterator_do_pushdown) {
 }
 
@@ -438,31 +423,21 @@ bool MaterializingIterator::HasNext() const {
   return iter_->HasNext();
 }
 
-// TODO: Instead of relying on separate prepare, materialize, finish batch methods,
-// streamline this NextBlock() method in order to reduce cross-method state
-// now that the individual functions are private
 Status MaterializingIterator::NextBlock(RowBlock* dst) {
   size_t n = dst->row_capacity();
   if (dst->arena()) {
     dst->arena()->Reset();
   }
-  RETURN_NOT_OK(PrepareBatch(&n));
+
+  RETURN_NOT_OK(iter_->PrepareBatch(&n));
   dst->Resize(n);
   RETURN_NOT_OK(MaterializeBlock(dst));
-  RETURN_NOT_OK(FinishBatch());
-  return Status::OK();
-}
+  RETURN_NOT_OK(iter_->FinishBatch());
 
-Status MaterializingIterator::PrepareBatch(size_t *nrows) {
-  RETURN_NOT_OK(iter_->PrepareBatch(nrows));
-  prepared_count_ = *nrows;
   return Status::OK();
 }
 
 Status MaterializingIterator::MaterializeBlock(RowBlock *dst) {
-  DCHECK_EQ(dst->nrows(), prepared_count_);
-  DCHECK_EQ(dst->selection_vector()->nrows(), prepared_count_);
-
   // Initialize the selection vector indicating which rows have been
   // been deleted.
   RETURN_NOT_OK(iter_->InitializeSelectionVector(dst->selection_vector()));
@@ -493,12 +468,8 @@ Status MaterializingIterator::MaterializeBlock(RowBlock *dst) {
     }
   }
   DVLOG(1) << dst->selection_vector()->CountSelected() << "/"
-           << prepared_count_ << " passed predicate";
+           << dst->nrows() << " passed predicate";
   return Status::OK();
-}
-
-Status MaterializingIterator::FinishBatch() {
-  return iter_->FinishBatch();
 }
 
 string MaterializingIterator::ToString() const {

@@ -49,9 +49,8 @@ class MergeIterator : public RowwiseIterator {
   virtual Status NextBlock(RowBlock* dst) OVERRIDE;
 
  private:
-  Status PrepareBatch(size_t *nrows);
-  Status MaterializeBlock(RowBlock *dst);
-  Status FinishBatch();
+  void PrepareBatch(RowBlock* dst);
+  Status MaterializeBlock(RowBlock* dst);
   Status InitSubIterators(ScanSpec *spec);
 
   const Schema schema_;
@@ -65,9 +64,6 @@ class MergeIterator : public RowwiseIterator {
   // The copies are allocated from this pool so they can be automatically freed
   // when the UnionIterator goes out of scope.
   ObjectPool<ScanSpec> scan_spec_copies_;
-
-
-  size_t prepared_count_;
 };
 
 
@@ -154,12 +150,9 @@ class MaterializingIterator : public RowwiseIterator {
   FRIEND_TEST(TestMaterializingIterator, TestPredicatePushdown);
   FRIEND_TEST(TestPredicateEvaluatingIterator, TestPredicateEvaluation);
 
-  Status PrepareBatch(size_t *nrows);
   Status MaterializeBlock(RowBlock *dst);
-  Status FinishBatch();
 
   shared_ptr<ColumnwiseIterator> iter_;
-  size_t prepared_count_;
 
   unordered_multimap<size_t, ColumnRangePredicate> preds_by_column_;
 

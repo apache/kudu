@@ -492,8 +492,8 @@ class MemRowSet::Iterator : public RowwiseIterator {
     iter_->SeekToStart();
   }
 
+  // Various helper functions called while getting the next RowBlock
   Status FetchRows(RowBlock* dst, size_t* fetched);
-
   Status ApplyMutationsToProjectedRow(const Mutation *mutation_head,
                                       RowBlockRow *dst_row,
                                       Arena *dst_arena) {

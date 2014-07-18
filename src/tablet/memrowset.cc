@@ -382,9 +382,12 @@ Status MemRowSet::Iterator::NextBlock(RowBlock *dst) {
     dst->Resize(0);
     return Status::OK();
   }
+  if (PREDICT_FALSE(dst->row_capacity() == 0)) {
+    return Status::OK();
+  }
 
   // Reset rowblock arena to eventually reach appropriate buffer size.
-  // Always allocating the full capacity is only a problem for the last
+  // Always allocating the full capacity is only a problem for the last block.
   dst->Resize(dst->row_capacity());
   if (dst->arena()) {
     dst->arena()->Reset();
