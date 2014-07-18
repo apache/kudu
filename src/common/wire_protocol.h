@@ -82,6 +82,7 @@ void AddRowToRowBlockPB(const RowBlockRow& row, RowwiseRowBlockPB* pb);
 // This only converts those rows whose selection vector entry is true.
 // If 'client_projection_schema' is not NULL, then only columns specified in
 // 'client_projection_schema' will be projected to 'pb'.
+// Requires that block.nrows() > 0
 void ConvertRowBlockToPB(const RowBlock& block, RowwiseRowBlockPB* pb,
                          const Schema* client_projection_schema);
 

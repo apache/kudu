@@ -477,6 +477,7 @@ static void CopyColumn(const RowBlock& block, int col_idx,
 
 void ConvertRowBlockToPB(const RowBlock& block, RowwiseRowBlockPB* pb,
                          const Schema* project_schema) {
+  DCHECK_GT(block.nrows(), 0);
   const Schema& schema = block.schema();
   string* data_buf = pb->mutable_rows();
   size_t old_size = data_buf->size();
