@@ -119,7 +119,7 @@ void MvccManager::CommitTransactionUnlocked(Timestamp timestamp,
                                             bool* was_earliest_in_flight) {
   DCHECK(clock_->IsAfter(timestamp))
     << "Trying to commit a transaction with a future timestamp: "
-    << timestamp.ToString();
+    << timestamp.ToString() << ". Current time: " << clock_->Stringify(clock_->Now());
 
   *was_earliest_in_flight = earliest_in_flight_ == timestamp;
 
@@ -373,14 +373,33 @@ void MvccSnapshot::AddCommittedTimestamp(Timestamp timestamp) {
 ////////////////////////////////////////////////////////////
 // ScopedTransaction
 ////////////////////////////////////////////////////////////
-ScopedTransaction::ScopedTransaction(MvccManager *mgr, bool start_at_latest)
+ScopedTransaction::ScopedTransaction(MvccManager *mgr, TimestampAssignmentType assignment_type)
   : committed_(false),
-    manager_(DCHECK_NOTNULL(mgr)) {
-  if (PREDICT_TRUE(!start_at_latest)) {
-    timestamp_ = mgr->StartTransaction();
-  } else {
-    timestamp_ = mgr->StartTransactionAtLatest();
+    manager_(DCHECK_NOTNULL(mgr)),
+    assignment_type_(assignment_type) {
+
+  switch (assignment_type_) {
+    case NOW: {
+      timestamp_ = mgr->StartTransaction();
+      break;
+    }
+    case NOW_LATEST: {
+      timestamp_ = mgr->StartTransactionAtLatest();
+      break;
+    }
+    default: {
+      LOG(FATAL) << "Illegal TransactionAssignmentType. Only NOW and NOW_LATEST are supported"
+          " by this ctor.";
+    }
   }
+}
+
+ScopedTransaction::ScopedTransaction(MvccManager *mgr, Timestamp timestamp)
+  : committed_(false),
+    manager_(DCHECK_NOTNULL(mgr)),
+    assignment_type_(PRE_ASSIGNED),
+    timestamp_(timestamp) {
+  CHECK_OK(mgr->StartTransactionAtTimestamp(timestamp));
 }
 
 ScopedTransaction::~ScopedTransaction() {
@@ -390,7 +409,21 @@ ScopedTransaction::~ScopedTransaction() {
 }
 
 void ScopedTransaction::Commit() {
-  manager_->CommitTransaction(timestamp_);
+  switch (assignment_type_) {
+    case NOW:
+    case NOW_LATEST: {
+      manager_->CommitTransaction(timestamp_);
+      break;
+    }
+    case PRE_ASSIGNED: {
+      manager_->OfflineCommitTransaction(timestamp_);
+      break;
+    }
+    default: {
+      LOG(FATAL) << "Unexpected transaction assignment type.";
+    }
+  }
+
   committed_ = true;
 }
 

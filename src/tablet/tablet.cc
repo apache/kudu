@@ -238,10 +238,20 @@ void Tablet::StartTransaction(WriteTransactionState* tx_state) {
 
   gscoped_ptr<ScopedTransaction> mvcc_tx;
   if (tx_state->external_consistency_mode() == COMMIT_WAIT) {
-    mvcc_tx.reset(new ScopedTransaction(&mvcc_, true));
+    mvcc_tx.reset(new ScopedTransaction(&mvcc_, ScopedTransaction::NOW_LATEST));
   } else {
-    mvcc_tx.reset(new ScopedTransaction(&mvcc_));
+    mvcc_tx.reset(new ScopedTransaction(&mvcc_, ScopedTransaction::NOW));
   }
+  tx_state->set_mvcc_tx(mvcc_tx.Pass());
+  tx_state->set_tablet_components(components_);
+}
+
+void Tablet::StartTransactionAtTimestamp(WriteTransactionState* tx_state,
+                                         Timestamp timestamp) {
+  boost::shared_lock<rw_spinlock> lock(component_lock_);
+
+  gscoped_ptr<ScopedTransaction> mvcc_tx;
+  mvcc_tx.reset(new ScopedTransaction(&mvcc_, timestamp));
   tx_state->set_mvcc_tx(mvcc_tx.Pass());
   tx_state->set_tablet_components(components_);
 }

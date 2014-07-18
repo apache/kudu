@@ -289,12 +289,29 @@ class MvccManager {
 // committed.
 class ScopedTransaction {
  public:
+
+  // How to assign the timestamp to this transaction:
+  // NOW - Based on the value obtained from clock_->Now().
+  // NOW_LATEST - Based on the value obtained from clock_->NowLatest().
+  // PRE_ASSIGNED - Based on the value passed in the ctor.
+  enum TimestampAssignmentType {
+    NOW,
+    NOW_LATEST,
+    PRE_ASSIGNED
+  };
+
   // Create a new transaction from the given MvccManager.
   // If 'latest' is true this transaction will use MvccManager::StartTransactionAtLatest()
   // instead of MvccManager::StartTransaction().
   //
   // The MvccManager must remain valid for the lifetime of this object.
-  explicit ScopedTransaction(MvccManager *manager, bool start_at_latest = false);
+  ScopedTransaction(MvccManager *manager, TimestampAssignmentType assignment_type = NOW);
+
+  // Like the ctor above but starts the transaction at a pre-defined timestamp.
+  // When this transaction is committed it will use MvccManager::OfflineCommitTransaction()
+  // so this is appropriate for offline replaying of transactions for replica catch-up or
+  // bootstrap.
+  explicit ScopedTransaction(MvccManager *manager, Timestamp timestamp);
 
   // Commit the transaction referenced by this scoped object, if it hasn't
   // already been committed.
@@ -310,6 +327,7 @@ class ScopedTransaction {
  private:
   bool committed_;
   MvccManager * const manager_;
+  TimestampAssignmentType assignment_type_;
   Timestamp timestamp_;
 
   DISALLOW_COPY_AND_ASSIGN(ScopedTransaction);

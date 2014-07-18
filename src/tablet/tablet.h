@@ -112,6 +112,11 @@ class Tablet {
   // row locks (across all nodes) before obtaining a timestamp.
   void StartTransaction(WriteTransactionState* tx_state);
 
+  // Same as the method above, but starts the transaction at a specified timestamp
+  // instead of acquiring one from the clock.
+  void StartTransactionAtTimestamp(WriteTransactionState* tx_state,
+                                   Timestamp timestamp);
+
   // TODO update tests so that we can remove Insert() and Mutate()
   // and use only InsertUnlocked() and MutateUnlocked().
 
