@@ -25,6 +25,12 @@ build/
 .metadata/
 *.iml
 
+# CMake-generated library export headers
+*_export.h
+
+# CMake-generated "make install" file
+install_manifest.txt
+
 # VIM/emacs stuff
 *.swp
 *~

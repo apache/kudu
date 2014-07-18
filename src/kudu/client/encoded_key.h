@@ -6,7 +6,7 @@
 #include <vector>
 
 #include "kudu/client/schema.h"
-#include "kudu/util/faststring.h"
+#include "kudu/gutil/kudu_export.h"
 
 namespace kudu {
 
@@ -17,7 +17,7 @@ namespace client {
 
 using std::string;
 
-class KuduEncodedKey {
+class KUDU_EXPORT KuduEncodedKey {
  public:
   ~KuduEncodedKey();
 
@@ -31,7 +31,7 @@ class KuduEncodedKey {
   gscoped_ptr<EncodedKey> key_;
 };
 
-class KuduEncodedKeyBuilder {
+class KUDU_EXPORT KuduEncodedKeyBuilder {
  public:
   explicit KuduEncodedKeyBuilder(const KuduSchema& schema);
   ~KuduEncodedKeyBuilder();

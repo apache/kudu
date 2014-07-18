@@ -5,8 +5,7 @@
 #include <stdint.h>
 #include <string>
 
-#include <gtest/gtest_prod.h>
-
+#include "kudu/gutil/gtest.h"
 #include "kudu/gutil/integral_types.h"
 
 struct timeval;

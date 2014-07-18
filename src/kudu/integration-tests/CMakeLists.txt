@@ -20,7 +20,12 @@ add_dependencies(integration-tests
 set(KUDU_TEST_LINK_LIBS integration-tests ${KUDU_MIN_TEST_LIBS})
 ADD_KUDU_TEST(alter_table-test)
 ADD_KUDU_TEST(registration-test RESOURCE_LOCK "master-web-port")
-ADD_KUDU_TEST(raft_consensus-itest)
+
+# Can't be used with the exported client; it references hidden symbols.
+if (NOT KUDU_EXPORTED_CLIENT)
+  ADD_KUDU_TEST(raft_consensus-itest)
+endif()
+
 ADD_KUDU_TEST(create-table-stress-test)
 ADD_KUDU_TEST(external_mini_cluster-test)
 ADD_KUDU_TEST(linked_list-test)

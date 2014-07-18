@@ -5,6 +5,7 @@
 #include <string>
 #include <vector>
 
+#include "kudu/gutil/kudu_export.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/util/slice.h"
 
@@ -20,7 +21,7 @@ class Schema;
 // This type contains a normal contiguous row, plus a bitfield indicating
 // which columns have been set. Additionally, this type may optionally own
 // copies of indirect data (eg STRING values).
-class KuduPartialRow {
+class KUDU_EXPORT KuduPartialRow {
  public:
   // The given Schema object must remain valid for the lifetime of this
   // row.

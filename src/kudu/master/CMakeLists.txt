@@ -24,7 +24,7 @@ set(MASTER_SRCS
   ts_manager.cc
 )
 
-add_library(master ${MASTER_SRCS} ${MASTER_PROTO_SRCS} ${MASTER_KRPC_SRCS})
+add_library(master ${MASTER_SRCS})
 target_link_libraries(master
   kudu_common
   tablet

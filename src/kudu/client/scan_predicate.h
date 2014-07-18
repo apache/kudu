@@ -3,6 +3,7 @@
 #define KUDU_CLIENT_SCAN_PREDICATE_H
 
 #include "kudu/client/schema.h"
+#include "kudu/gutil/kudu_export.h"
 
 namespace kudu {
 
@@ -10,7 +11,7 @@ class ColumnRangePredicate;
 
 namespace client {
 
-class KuduColumnRangePredicate {
+class KUDU_EXPORT KuduColumnRangePredicate {
  public:
   KuduColumnRangePredicate(const KuduColumnSchema &col,
                            const void* lower_bound,

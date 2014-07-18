@@ -8,18 +8,16 @@
 #include <cassert>
 
 #include "kudu/gutil/atomic_refcount.h"
+#include "kudu/gutil/kudu_export.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/threading/thread_collision_warner.h"
-
-// Unneeded define from Chromium
-#define BASE_EXPORT
 
 namespace base {
 namespace subtle {
 
 typedef Atomic32 AtomicRefCount;
 
-class BASE_EXPORT RefCountedBase {
+class KUDU_EXPORT RefCountedBase {
  public:
   bool HasOneRef() const { return ref_count_ == 1; }
 
@@ -43,7 +41,7 @@ class BASE_EXPORT RefCountedBase {
   DISALLOW_COPY_AND_ASSIGN(RefCountedBase);
 };
 
-class BASE_EXPORT RefCountedThreadSafeBase {
+class KUDU_EXPORT RefCountedThreadSafeBase {
  public:
   bool HasOneRef() const;
 

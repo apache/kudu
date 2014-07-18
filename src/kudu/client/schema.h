@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "kudu/gutil/gscoped_ptr.h"
+#include "kudu/gutil/kudu_export.h"
 
 namespace kudu {
 
@@ -24,7 +25,7 @@ class KuduColumnRangePredicate;
 class MetaCache;
 class KuduWriteOperation;
 
-class KuduColumnStorageAttributes {
+class KUDU_EXPORT KuduColumnStorageAttributes {
  public:
   enum EncodingType {
     AUTO_ENCODING = 0,
@@ -62,7 +63,7 @@ class KuduColumnStorageAttributes {
   CompressionType compression_;
 };
 
-class KuduColumnSchema {
+class KUDU_EXPORT KuduColumnSchema {
  public:
   enum DataType {
     UINT8 = 0,
@@ -96,7 +97,7 @@ class KuduColumnSchema {
   gscoped_ptr<ColumnSchema> col_;
 };
 
-class KuduSchema {
+class KUDU_EXPORT KuduSchema {
  public:
   KuduSchema();
   KuduSchema(const std::vector<KuduColumnSchema>& columns, int key_columns);

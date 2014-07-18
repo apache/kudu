@@ -25,6 +25,9 @@ set(CXX_COMMON_FLAGS "-msse4.2 -Wall -Wno-sign-compare -Wno-deprecated -pthread 
 # Allow linking of static libs into dynamic libs
 add_definitions(-fPIC)
 
+# We can safely use gtest.
+add_definitions(-DKUDU_HEADERS_USE_GTEST=1)
+
 # compiler flags for different build types (run 'cmake -DCMAKE_BUILD_TYPE=<type> .')
 # For all builds:
 # For CMAKE_BUILD_TYPE=Debug
@@ -122,6 +125,29 @@ elseif(NOT ("auto" MATCHES "^${KUDU_LINK}" OR
 else()
   # Remove all but the first letter.
   string(SUBSTRING "${KUDU_LINK}" 0 1 KUDU_LINK)
+endif()
+
+# For generate_export_header() and add_compiler_export_flags().
+include(GenerateExportHeader)
+
+if(KUDU_EXPORTED_CLIENT)
+  # Even though the exported client is a shared library, it needs
+  # intermediate static archives.
+  if("${KUDU_LINK}" STREQUAL "a")
+    message("Using static linking for exported client")
+    set(KUDU_LINK "s")
+  elseif("${KUDU_LINK}" STREQUAL "d")
+    message(SEND_ERROR "Cannot build exported client with dynamic linking")
+  endif()
+
+  # Compile all code with visibility flags:
+  # - default for classes annotated with KUDU_EXPORT.
+  # - hidden for classes annotated with KUDU_NO_EXPORT.
+  # - hidden for everything else.
+  add_compiler_export_flags()
+else()
+  # Make all symbols visible, even ones explicitly annotated with KUDU_NO_EXPORT.
+  add_definitions("-DKUDU_STATIC_DEFINE")
 endif()
 
 # Sanity check sanitizers; ASAN and TSAN imply static and dynamic linking
@@ -448,10 +474,14 @@ ADD_THIRDPARTY_LIB(squeasel
 ##
 ## Disabled with TSAN/ASAN as well as with gold+dynamic linking (see comment
 ## near definition of KUDU_USING_GOLD).
+##
+## Also disabled with the exported client; we don't want to force users to
+## use tcmalloc.
 find_package(GPerf REQUIRED)
 if (NOT "${KUDU_USE_ASAN}" AND
     NOT "${KUDU_USE_TSAN}" AND
-    NOT ("${KUDU_USING_GOLD}" AND "${KUDU_LINK}" STREQUAL "d"))
+    NOT ("${KUDU_USING_GOLD}" AND "${KUDU_LINK}" STREQUAL "d") AND
+    NOT "${KUDU_EXPORTED_CLIENT}")
   ADD_THIRDPARTY_LIB(tcmalloc
     STATIC_LIB "${TCMALLOC_STATIC_LIB}"
     SHARED_LIB "${TCMALLOC_LIBS}/libtcmalloc.so")

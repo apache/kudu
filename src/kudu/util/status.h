@@ -14,6 +14,8 @@
 #define KUDU_UTIL_STATUS_H_
 
 #include <string>
+
+#include "kudu/gutil/kudu_export.h"
 #include "kudu/util/slice.h"
 
 // Return the given status if it is not OK.
@@ -60,7 +62,7 @@
 
 namespace kudu {
 
-class Status {
+class KUDU_EXPORT Status {
  public:
   // Create a success status.
   Status() : state_(NULL) { }

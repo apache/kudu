@@ -7,12 +7,12 @@
 #include <tr1/unordered_set>
 #include <vector>
 
-#include <gtest/gtest_prod.h>
-
 #include "kudu/client/scan_predicate.h"
 #include "kudu/client/schema.h"
 #include "kudu/client/write_op.h"
 #include "kudu/gutil/gscoped_ptr.h"
+#include "kudu/gutil/gtest.h"
+#include "kudu/gutil/kudu_export.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/status.h"
@@ -35,7 +35,7 @@ class RemoteTabletServer;
 //
 // Note that KuduClients are shared amongst multiple threads and, as such,
 // are stored in shared pointers.
-class KuduClientBuilder {
+class KUDU_EXPORT KuduClientBuilder {
  public:
   KuduClientBuilder();
   ~KuduClientBuilder();
@@ -58,7 +58,7 @@ class KuduClientBuilder {
   // returned.
   Status Build(std::tr1::shared_ptr<KuduClient>* client);
  private:
-  class Data;
+  class KUDU_NO_EXPORT Data;
 
   gscoped_ptr<Data> data_;
 
@@ -89,7 +89,7 @@ class KuduClientBuilder {
 // as well.
 //
 // This class is thread-safe.
-class KuduClient : public std::tr1::enable_shared_from_this<KuduClient> {
+class KUDU_EXPORT KuduClient : public std::tr1::enable_shared_from_this<KuduClient> {
  public:
   gscoped_ptr<KuduTableCreator> NewTableCreator();
 
@@ -140,7 +140,7 @@ class KuduClient : public std::tr1::enable_shared_from_this<KuduClient> {
   const MonoDelta& default_admin_operation_timeout() const;
 
  private:
-  class Data;
+  class KUDU_NO_EXPORT Data;
 
   friend class KuduClientBuilder;
   friend class KuduScanner;
@@ -163,7 +163,7 @@ class KuduClient : public std::tr1::enable_shared_from_this<KuduClient> {
 };
 
 // Creates a new table with the desired options.
-class KuduTableCreator {
+class KUDU_EXPORT KuduTableCreator {
  public:
   ~KuduTableCreator();
 
@@ -199,7 +199,7 @@ class KuduTableCreator {
   // returned.
   Status Create();
  private:
-  class Data;
+  class KUDU_NO_EXPORT Data;
 
   friend class KuduClient;
 
@@ -218,7 +218,7 @@ class KuduTableCreator {
 // and the schema fetched for introspection.
 //
 // This class is thread-safe.
-class KuduTable : public base::RefCountedThreadSafe<KuduTable> {
+class KUDU_EXPORT KuduTable : public base::RefCountedThreadSafe<KuduTable> {
  public:
   ~KuduTable();
 
@@ -234,7 +234,7 @@ class KuduTable : public base::RefCountedThreadSafe<KuduTable> {
   KuduClient* client() const;
 
  private:
-  class Data;
+  class KUDU_NO_EXPORT Data;
 
   friend class KuduClient;
 
@@ -254,7 +254,7 @@ class KuduTable : public base::RefCountedThreadSafe<KuduTable> {
 //   alterer->table_name("table-name");
 //   alterer->add_nullable_column("col1", UINT32);
 //   alterer->Alter();
-class KuduTableAlterer {
+class KUDU_EXPORT KuduTableAlterer {
  public:
   ~KuduTableAlterer();
 
@@ -295,7 +295,7 @@ class KuduTableAlterer {
   // TODO: Add Edit column
 
  private:
-  class Data;
+  class KUDU_NO_EXPORT Data;
 
   friend class KuduClient;
 
@@ -308,7 +308,7 @@ class KuduTableAlterer {
 
 // An error which occurred in a given operation. This tracks the operation
 // which caused the error, along with whatever the actual error was.
-class KuduError {
+class KUDU_EXPORT KuduError {
  public:
   ~KuduError();
 
@@ -333,7 +333,7 @@ class KuduError {
   bool was_possibly_successful() const;
 
  private:
-  class Data;
+  class KUDU_NO_EXPORT Data;
 
   friend class internal::Batcher;
   friend class KuduSession;
@@ -402,7 +402,7 @@ class KuduError {
 // concept of a Session familiar.
 //
 // This class is not thread-safe except where otherwise specified.
-class KuduSession : public std::tr1::enable_shared_from_this<KuduSession> {
+class KUDU_EXPORT KuduSession : public std::tr1::enable_shared_from_this<KuduSession> {
  public:
   ~KuduSession();
 
@@ -578,7 +578,7 @@ class KuduSession : public std::tr1::enable_shared_from_this<KuduSession> {
   KuduClient* client() const;
 
  private:
-  class Data;
+  class KUDU_NO_EXPORT Data;
 
   friend class KuduClient;
   friend class internal::Batcher;
@@ -592,10 +592,8 @@ class KuduSession : public std::tr1::enable_shared_from_this<KuduSession> {
 
 // A single scanner. This class is not thread-safe, though different
 // scanners on different threads may share a single KuduTable object.
-class KuduScanner {
+class KUDU_EXPORT KuduScanner {
  public:
-  class Data;
-
   // The possible read modes for clients.
   enum ReadMode {
     // When READ_LATEST is specified the server will execute the read independently
@@ -692,6 +690,8 @@ class KuduScanner {
   std::string ToString() const;
 
  private:
+  class KUDU_NO_EXPORT Data;
+
   gscoped_ptr<Data> data_;
 
   DISALLOW_COPY_AND_ASSIGN(KuduScanner);

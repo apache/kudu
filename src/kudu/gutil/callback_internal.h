@@ -10,8 +10,9 @@
 
 #include <stddef.h>
 
-#include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/gscoped_ptr.h"
+#include "kudu/gutil/kudu_export.h"
+#include "kudu/gutil/ref_counted.h"
 
 template <typename T>
 class ScopedVector;
@@ -33,7 +34,7 @@ class BindStateBase : public RefCountedThreadSafe<BindStateBase> {
 
 // Holds the Callback methods that don't require specialization to reduce
 // template bloat.
-class BASE_EXPORT CallbackBase {
+class KUDU_EXPORT CallbackBase {
  public:
   // Returns true if Callback is null (doesn't refer to anything).
   bool is_null() const;

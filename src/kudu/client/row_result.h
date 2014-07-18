@@ -6,6 +6,7 @@
 
 #include <glog/logging.h>
 
+#include "kudu/gutil/kudu_export.h"
 #include "kudu/gutil/port.h"
 #include "kudu/util/slice.h"
 #include "kudu/util/status.h"
@@ -19,7 +20,7 @@ namespace client {
 // A single row result from a scan.
 //
 // Drawn extensively from ContiguousRow and KuduPartialRow.
-class KuduRowResult {
+class KUDU_EXPORT KuduRowResult {
  public:
   bool IsNull(const Slice& col_name) const;
   bool IsNull(int col_idx) const;
