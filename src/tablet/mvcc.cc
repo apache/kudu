@@ -143,9 +143,9 @@ void MvccManager::CommitTransactionUnlocked(Timestamp timestamp,
   }
 }
 
-void MvccManager::OfflineAdjustCurSnap(Timestamp now) {
+void MvccManager::OfflineAdjustSafeTime(Timestamp safe_time) {
   boost::lock_guard<LockType> l(lock_);
-  AdjustSafeTime(now);
+  AdjustSafeTime(safe_time);
 }
 
 // Remove any elements from 'v' which are < the given watermark.
@@ -160,26 +160,26 @@ static void FilterTimestamps(std::vector<Timestamp::val_type>* v,
   v->resize(j);
 }
 
-void MvccManager::AdjustSafeTime(Timestamp now) {
+void MvccManager::AdjustSafeTime(Timestamp safe_time) {
 
   // There are two possibilities:
   //
-  // 1) We still have an in-flight transaction earlier than clock_->Now().
+  // 1) We still have an in-flight transaction earlier than 'safe_time'.
   //    In this case, we update the watermark to that transaction's timestamp.
   //
-  // 2) There are no in-flight transactions earlier than clock_->Now().
+  // 2) There are no in-flight transactions earlier than 'safe_time'.
   //    (There may still be in-flight transactions with future timestamps due to
   //    commit-wait transactions which start in the future). In this case, we update
-  //    the watermark to 'now', since we know that no new transactions can start
+  //    the watermark to 'safe_time', since we know that no new transactions can start
   //    with an earlier timestamp.
   //
   // In either case, we have to add the newly committed ts only if it remains higher
   // than the new watermark.
 
-  if (earliest_in_flight_.CompareTo(now) < 0) {
+  if (earliest_in_flight_.CompareTo(safe_time) < 0) {
     cur_snap_.all_committed_before_ = earliest_in_flight_;
   } else {
-    cur_snap_.all_committed_before_ = now;
+    cur_snap_.all_committed_before_ = safe_time;
   }
 
   // Filter out any committed timestamps that now fall below the watermark

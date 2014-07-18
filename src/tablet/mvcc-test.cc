@@ -203,7 +203,7 @@ TEST_F(MvccTest, TestOfflineTransactions) {
   ASSERT_FALSE(snap1.IsCommitted(Timestamp(40)));
 
   // Now advance the watermark to the last committed transaction.
-  mgr.OfflineAdjustCurSnap(Timestamp(50));
+  mgr.OfflineAdjustSafeTime(Timestamp(50));
 
   ASSERT_EQ(mgr.GetSafeTimestamp().CompareTo(Timestamp(50)), 0);
 

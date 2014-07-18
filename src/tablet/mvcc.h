@@ -185,7 +185,7 @@ class MvccManager {
 
   // Used in conjunction with OfflineCommitTransaction() so that the mvcc
   // manager can trim state.
-  void OfflineAdjustCurSnap(Timestamp now);
+  void OfflineAdjustSafeTime(Timestamp safe_time);
 
   // Take a snapshot of the current MVCC state, which indicates which
   // transactions have been committed at the time of this call.
@@ -263,7 +263,7 @@ class MvccManager {
   void CommitTransactionUnlocked(Timestamp timestamp,
                                  bool* was_earliest);
 
-  void AdjustSafeTime(Timestamp now);
+  void AdjustSafeTime(Timestamp safe_time);
 
   typedef simple_spinlock LockType;
   mutable LockType lock_;
