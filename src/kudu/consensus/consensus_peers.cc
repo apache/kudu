@@ -8,6 +8,7 @@
 #include "kudu/consensus/consensus_peers.h"
 
 #include "kudu/common/wire_protocol.h"
+#include "kudu/consensus/consensus.h"
 #include "kudu/consensus/consensus_queue.h"
 #include "kudu/consensus/log.h"
 #include "kudu/gutil/map-util.h"
@@ -271,12 +272,14 @@ Status Peer::NewRemotePeer(const metadata::QuorumPeerPB& peer_pb,
                            const string& leader_uuid,
                            PeerMessageQueue* queue,
                            gscoped_ptr<PeerProxy> proxy,
+                           ReplicaTransactionFactory* txn_factory,
                            gscoped_ptr<Peer>* peer) {
 
   gscoped_ptr<Peer> new_peer(new Peer(peer_pb,
                                       tablet_id,
                                       leader_uuid,
                                       queue,
+                                      txn_factory,
                                       proxy.Pass()));
   RETURN_NOT_OK(new_peer->Init());
   peer->reset(new_peer.release());
@@ -303,6 +306,7 @@ Peer::Peer(const metadata::QuorumPeerPB& peer_pb,
            const string& tablet_id,
            const string& leader_uuid,
            PeerMessageQueue* queue,
+           ReplicaTransactionFactory* txn_factory,
            gscoped_ptr<PeerProxy> proxy)
     : peer_pb_(peer_pb),
       peer_impl_(new RemotePeer(this, tablet_id, leader_uuid, proxy.Pass())),
@@ -315,6 +319,7 @@ Peer::Peer(const metadata::QuorumPeerPB& peer_pb,
                                     MonoDelta::FromMilliseconds(
                                         FLAGS_leader_heartbeat_interval_ms),
                                     boost::bind(&Peer::SignalRequest, this, true))),
+      txn_factory_(txn_factory),
       state_(kPeerCreated) {
 }
 
@@ -343,16 +348,19 @@ Status Peer::SignalRequest(bool send_status_only_if_queue_empty) {
   // the peer has no pending request nor is sending: send the request
   queue_->RequestForPeer(peer_pb_.permanent_uuid(), peer_impl_->request());
 
-  // If the queue is empty, check if we were told to send a status-only
-  // message, if not just return.
-  if (PREDICT_FALSE(peer_impl_->request()->ops_size() == 0 && !send_status_only_if_queue_empty)) {
-    return Status::OK();
-  }
-
-  // If we're actually sending ops there's no need to heartbeat for a while,
-  // reset the heartbeater
-  if (PREDICT_FALSE(peer_impl_->request()->ops_size() == 0) && heartbeater_ != NULL) {
-    heartbeater_->Reset();
+  // Special case when we're sending no operations.
+  if (PREDICT_FALSE(peer_impl_->request()->ops_size() == 0)) {
+    // If we're not supposed to send status-only requests just return
+    if (!send_status_only_if_queue_empty) {
+      return Status::OK();
+    }
+    // Before sending a status only request, if there is a heartbeater
+    // we must reset it. We also need to set the request's safe timestamp
+    // as there are no commits and so the queue didn't select one.
+    if (heartbeater_ != NULL) {
+      heartbeater_->Reset();
+      peer_impl_->request()->set_safe_timestamp(txn_factory_->GetSafeTimestamp().ToUint64());
+    }
   }
 
   processing_ = peer_impl_->ProcessNextRequest();
@@ -368,6 +376,7 @@ Status Peer::SignalRequest(bool send_status_only_if_queue_empty) {
 void Peer::ProcessResponse(const ConsensusStatusPB& status) {
   DCHECK(status.IsInitialized());
   boost::lock_guard<simple_spinlock> lock(peer_lock_);
+  peer_impl_->request()->clear_safe_timestamp();
   bool more_pending;
   queue_->ResponseFromPeer(peer_pb_.permanent_uuid(), status, &more_pending);
   outstanding_req_latch_.CountDown();
@@ -385,6 +394,7 @@ void Peer::ProcessResponse(const ConsensusStatusPB& status) {
 
 void Peer::ProcessResponseError(const Status& status) {
   boost::lock_guard<simple_spinlock> lock(peer_lock_);
+  peer_impl_->request()->clear_safe_timestamp();
   // TODO handle the error.
   failed_attempts_++;
   LOG(WARNING) << "Couldn't send request to peer " << peer_pb_.permanent_uuid()

@@ -110,6 +110,14 @@ class TabletPeer : public base::RefCountedThreadSafe<TabletPeer>,
   virtual Status StartReplicaTransaction(
       gscoped_ptr<consensus::ConsensusRound> round) OVERRIDE;
 
+  // Used by consensus to update the latest safe timestmap received
+  // by the leader.
+  virtual void UpdateSafeTimestamp(Timestamp timestamp) OVERRIDE;
+
+  // Used by consensus to get the latest safe timestamp when sending
+  // heartbeat (status-only) messages.
+  virtual Timestamp GetSafeTimestamp() OVERRIDE;
+
   consensus::Consensus* consensus() { return consensus_.get(); }
 
   Tablet* tablet() const {

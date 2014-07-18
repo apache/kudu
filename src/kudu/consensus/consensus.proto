@@ -196,6 +196,8 @@ message ConsensusRequestPB {
   required bytes sender_uuid = 2;
   // sequence of operations to be replicated/executed by this peer
   repeated OperationPB ops = 3;
+  // the leader's safe timestamp at the time this batch was sent.
+  optional fixed64 safe_timestamp = 4;
 }
 
 message ConsensusResponsePB {

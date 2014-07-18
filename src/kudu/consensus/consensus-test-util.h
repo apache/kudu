@@ -374,12 +374,21 @@ class TestTransactionFactory : public ReplicaTransactionFactory {
     return Status::OK();
   }
 
+  virtual void UpdateSafeTimestamp(Timestamp timestamp) OVERRIDE {
+    safe_time_ = timestamp;
+  }
+
+  virtual Timestamp GetSafeTimestamp() OVERRIDE {
+    return safe_time_;
+  }
+
  void ShutDown() {
    pool_->Shutdown();
  }
 
  private:
   gscoped_ptr<ThreadPool> pool_;
+  Timestamp safe_time_;
 };
 
 // Consensus fault hooks impl. that simply counts the number of calls to

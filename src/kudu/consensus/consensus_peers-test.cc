@@ -47,7 +47,7 @@ class ConsensusPeersTest : public KuduTest {
   }
 
   NoOpTestPeerProxy* NewRemotePeer(const string& peer_name,
-                               gscoped_ptr<Peer>* peer) {
+                                   gscoped_ptr<Peer>* peer) {
     QuorumPeerPB peer_pb;
     peer_pb.set_permanent_uuid(peer_name);
     gscoped_ptr<PeerProxy> proxy;
@@ -58,6 +58,7 @@ class ConsensusPeersTest : public KuduTest {
                                  kLeaderUuid,
                                  &message_queue_,
                                  proxy.Pass(),
+                                 &txn_factory_,
                                  peer));
     return proxy_ptr;
   }
@@ -88,6 +89,7 @@ class ConsensusPeersTest : public KuduTest {
   LogOptions options_;
   vector<scoped_refptr<OperationStatusTracker> > statuses_;
   NoOpTestPeerProxyFactory peer_proxy_factory_;
+  TestTransactionFactory txn_factory_;
 };
 
 // Tests that a local peer is correctly built and tracked
