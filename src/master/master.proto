@@ -95,11 +95,13 @@ message SysTablesEntryPB {
   // Used on tablet-report to avoid sending "alter-table" notifications.
   required uint32 version = 2;
 
-  // Table schema: Lastest schema (every TS should have it at some point)
+  // Newest table schema (every TS will eventually have it).
   required SchemaPB schema = 3;
 
-  // Last schema that every TS had, before an alter operation.
-  // This is the schema provided to the user on client->GetSchema(tableName)
+  // Last table schema that is guaranteed to have reached every TS, though
+  // not necessarily the newest schema.
+  //
+  // This is the schema provided to the user on client->GetSchema(tableName).
   optional SchemaPB fully_applied_schema = 4;
 
   // Number of TS replicas

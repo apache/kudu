@@ -862,9 +862,12 @@ Status CatalogManager::GetTableSchema(const GetTableSchemaRequestPB* req,
   }
 
   if (l.data().pb.has_fully_applied_schema()) {
+    // An AlterTable is in progress; fully_applied_schema is the last
+    // schema that has reached every TS.
     CHECK(l.data().pb.state() == SysTablesEntryPB::kTableStateAltering);
     resp->mutable_schema()->CopyFrom(l.data().pb.fully_applied_schema());
   } else {
+    // There's no AlterTable, the regular schema is "fully applied".
     resp->mutable_schema()->CopyFrom(l.data().pb.schema());
   }
 
@@ -1563,9 +1566,9 @@ void CatalogManager::HandleTabletSchemaVersionReport(TabletInfo *tablet, uint32_
     return;
   }
 
-  // Update the state from altering to running and remove the last schema
-  DCHECK(l.mutable_data()->pb.has_fully_applied_schema());
-  l.mutable_data()->pb.mutable_fully_applied_schema()->Clear();
+  // Update the state from altering to running and remove the last fully
+  // applied schema (if it exists).
+  l.mutable_data()->pb.clear_fully_applied_schema();
   l.mutable_data()->set_state(SysTablesEntryPB::kTableStateRunning,
                               Substitute("Current schema version=$0", current_version));
 

@@ -279,4 +279,11 @@ TEST_F(AlterTableTest, TestRestartTSDuringAlter) {
   ASSERT_EQ(1, tablet_peer_->tablet()->metadata()->schema_version());
 }
 
+TEST_F(AlterTableTest, TestGetSchemaAfterAlterTable) {
+  ASSERT_STATUS_OK(AddNewU32Column(kTableName, "new-u32", 10));
+
+  Schema s;
+  ASSERT_STATUS_OK(GetSchema(kTableName, &s));
+}
+
 } // namespace kudu
