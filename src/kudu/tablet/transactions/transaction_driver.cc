@@ -286,7 +286,7 @@ Status LeaderTransactionDriver::ApplyAndCommit() {
     }
 
     if (PREDICT_TRUE(s.ok())) {
-      transaction_->PreCommit();
+      transaction_->PreCommit(commit_msg.get());
       s = mutable_state()->consensus_round()->Commit(commit_msg.Pass());
       if (PREDICT_TRUE(s.ok())) {
         transaction_->PostCommit();
@@ -531,7 +531,7 @@ Status ReplicaTransactionDriver::ApplyAndCommit() {
     s = transaction_->Apply(&commit_msg);
 
     if (PREDICT_TRUE(s.ok())) {
-      transaction_->PreCommit();
+      transaction_->PreCommit(commit_msg.get());
       s = mutable_state()->consensus_round()->Commit(commit_msg.Pass());
       if (PREDICT_TRUE(s.ok())) {
         transaction_->PostCommit();
@@ -569,6 +569,13 @@ void ReplicaTransactionDriver::ApplyAndCommitSucceeded() {
   scoped_refptr<ReplicaTransactionDriver> ref(this);
   boost::lock_guard<simple_spinlock> state_lock(lock_);
   transaction_->Finish();
+
+  // advance the clock to the leader's safe timestamp, if possible
+  Timestamp leader_safe_timestamp;
+  leader_safe_timestamp.FromUint64(
+      mutable_state()->consensus_round()->leader_commit_op()->commit().safe_timestamp());
+  state()->tablet_peer()->tablet()->mvcc_manager()->OfflineAdjustSafeTime(leader_safe_timestamp);
+
   txn_tracker_->Release(this);
 }
 

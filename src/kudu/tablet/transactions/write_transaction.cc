@@ -221,10 +221,12 @@ Status WriteTransaction::Apply(gscoped_ptr<CommitMsg>* commit_msg) {
   return Status::OK();
 }
 
-void WriteTransaction::PreCommit() {
+void WriteTransaction::PreCommit(CommitMsg* commmit_msg) {
   TRACE("PRECOMMIT: Releasing row locks");
   // Perform early lock release after we've applied all changes
   state()->release_row_locks();
+  commmit_msg->set_safe_timestamp(
+      state()->tablet_peer()->tablet()->mvcc_manager()->GetSafeTime().ToUint64());
 }
 
 void WriteTransaction::Finish() {

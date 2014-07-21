@@ -418,8 +418,11 @@ Status LinkedListTest::VerifyLinkedList(int64_t snapshot_timestamp,
   RETURN_NOT_OK(client_->OpenTable(kTableName, &table));
   KuduScanner scanner(table.get());
 
+  // We always perform snapshot reads so that we're sure that scans return repeatable
+  // reads.
+  RETURN_NOT_OK(scanner.SetReadMode(KuduScanner::READ_AT_SNAPSHOT));
+
   if (snapshot_timestamp != kNoSnapshot) {
-    RETURN_NOT_OK(scanner.SetReadMode(KuduScanner::READ_AT_SNAPSHOT));
     RETURN_NOT_OK(scanner.SetSnapshot(snapshot_timestamp));
   }
 

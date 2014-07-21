@@ -285,8 +285,9 @@ class WriteTransaction : public Transaction {
   // algorithm.
   virtual Status Apply(gscoped_ptr<consensus::CommitMsg>* commit_msg) OVERRIDE;
 
-  // Releases the row locks (Early Lock Release).
-  virtual void PreCommit() OVERRIDE;
+  // Releases the row locks (Early Lock Release) and sets the current safe timestamp
+  // in the commit message so that replicas can advance their own timestamps.
+  virtual void PreCommit(consensus::CommitMsg* commmit_msg) OVERRIDE;
 
   // Actually commits the mvcc transaction and updates the metrics.
   virtual void Finish() OVERRIDE;

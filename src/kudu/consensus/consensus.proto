@@ -80,6 +80,17 @@ message CommitMsg {
   optional tserver.AlterSchemaResponsePB alter_schema_response = 6;
   optional tserver.ChangeConfigResponsePB change_config_response = 7;
 
+  // The safe time before the operation was committed.
+  // All replicas set this before persisting the commit message so that, on
+  // replay, the safe time can be advanced offline (i.e. without using the clock)
+  // and MvccManager's state can be trimmed.
+  // The leader sets this after it has applied the changes and is enqueueing the
+  // the commit message to be stored in the local log and sent to replicas, but
+  // before actually committing the mvcc transaction.
+  // Followers/learners use the leader's safe timestamp to advance their own
+  // and do so right after committing their own local transaction.
+  optional fixed64 safe_timestamp = 8;
+
   optional NoOpResponsePB noop_response = 999;
 }
 

@@ -94,7 +94,7 @@ class Transaction {
   // Some transactions use this to perform pre-commit actions (e.g. write
   // transactions perform early lock release on this hook).
   // Default implementation does nothing.
-  virtual void PreCommit() {}
+  virtual void PreCommit(consensus::CommitMsg* commmit_msg) {}
 
   // Executed after the transaction has both been applied and submitted to
   // to consensus, but before we have confirmation the commit is durable.
