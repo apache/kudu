@@ -179,6 +179,10 @@ class MvccManager {
   // when possible.
   void CommitTransaction(Timestamp timestamp);
 
+  // Returns the current safe time, i.e. the minimum timestamp such that
+  // all transactions with timestamps lower than it have been committed.
+  Timestamp GetSafeTime();
+
   // Same as commit transaction but does not advance 'all_committed_before_'.
   // Used for bootstrap and delayed processing in FOLLOWERS/LEARNERS.
   void OfflineCommitTransaction(Timestamp timestamp);
