@@ -58,9 +58,6 @@ DEFINE_int32(async_rpc_timeout_ms, 10 * 1000, // 10 sec
 DEFINE_int32(assignment_timeout_ms, 10 * 1000, // 10 sec
              "Timeout used for the Master->TS assignment timeout. "
              "(Advanced option)");
-DEFINE_int32(alter_timeout_ms, 10 * 1000, // 10 sec
-             "Timeout used for the Master->TS alter request timeout. "
-             "(Advanced option)");
 DEFINE_int32(default_num_replicas, 1, // TODO switch to 3 and fix SelectReplicas()
              "Default number of replicas for tables that do have the num_replicas set. "
              "(Advanced option)");
@@ -246,17 +243,15 @@ void CatalogManagerBgTasks::Shutdown() {
 }
 
 void CatalogManagerBgTasks::Run() {
-  const int kMaxWaitMs = 60000;
-  const int kMinWaitMs = 1000;
+  const int kWaitMs = 1000;
   while (!NoBarrier_Load(&closing_)) {
     std::vector<scoped_refptr<TabletInfo> > to_delete;
     std::vector<scoped_refptr<TabletInfo> > to_process;
     catalog_manager_->ExtractTabletsToProcess(&to_delete, &to_process);
 
     // Process the pending assignments
-    int next_timeout_ms = kMaxWaitMs;
     if (!to_process.empty()) {
-      catalog_manager_->ProcessPendingAssignments(to_process, &next_timeout_ms);
+      catalog_manager_->ProcessPendingAssignments(to_process);
     }
 
     //if (!to_delete.empty()) {
@@ -267,7 +262,7 @@ void CatalogManagerBgTasks::Run() {
     //  - CreateTable will call Wake() to notify about the tablets to add
     //  - HandleReportedTablet/ProcessPendingAssignments will call WakeIfHasPendingUpdates()
     //    to notify about tablets creation.
-    Wait(std::max(next_timeout_ms, kMinWaitMs));
+    Wait(kWaitMs);
   }
   VLOG(1) << "Catalog manager background task thread shutting down";
 }
@@ -1475,18 +1470,15 @@ void CatalogManager::ExtractTabletsToProcess(
 }
 
 struct DeferredAssignmentActions {
-  DeferredAssignmentActions()
-    : next_timeout_ms(MathLimits<int>::kMax) {}
   vector<TabletInfo*> tablets_to_add;
   vector<TabletInfo*> tablets_to_update;
   vector<TabletInfo*> needs_create_rpc;
-  int next_timeout_ms;
 };
 
 void CatalogManager::HandleAssignPreparingTablet(TabletInfo* tablet,
                                                  DeferredAssignmentActions* deferred) {
   // The tablet was just created (probably by a CreateTable RPC).
-  // Update the state to "creating" to be reading for the creation request.
+  // Update the state to "creating" to be ready for the creation request.
   tablet->mutable_metadata()->mutable_dirty()->set_state(
     SysTabletsEntryPB::kTabletStateCreating, "Sending initial creation of tablet");
   deferred->tablets_to_update.push_back(tablet);
@@ -1496,19 +1488,15 @@ void CatalogManager::HandleAssignPreparingTablet(TabletInfo* tablet,
 
 void CatalogManager::HandleAssignCreatingTablet(TabletInfo* tablet,
                                                 DeferredAssignmentActions* deferred) {
-  MicrosecondsInt64 current_time = GetCurrentTimeMicros();
   MonoTime now = MonoTime::Now(MonoTime::FINE);
-
-  int remaining_timeout = FLAGS_assignment_timeout_ms -
+  int64_t remaining_timeout_ms = FLAGS_assignment_timeout_ms -
     tablet->TimeSinceLastUpdate(now).ToMilliseconds();
 
   // Skip the tablet if the assignment timeout is not yet expired
-  if (remaining_timeout > 0) {
+  if (remaining_timeout_ms > 0) {
     tablet->mutable_metadata()->AbortMutation();
     VLOG(2) << "Tablet " << tablet->ToString() << " still being created. "
-            << remaining_timeout << "ms remain until timeout.";
-
-    deferred->next_timeout_ms = std::min(deferred->next_timeout_ms, remaining_timeout);
+            << remaining_timeout_ms << "ms remain until timeout.";
     return;
   }
 
@@ -1532,7 +1520,7 @@ void CatalogManager::HandleAssignCreatingTablet(TabletInfo* tablet,
   tablet->mutable_metadata()->mutable_dirty()->set_state(
     SysTabletsEntryPB::kTabletStateReplaced,
     Substitute("Replaced by $0 at ts=$1",
-               replacement->tablet_id(), current_time));
+               replacement->tablet_id(), GetCurrentTimeMicros()));
 
   replacement->mutable_metadata()->mutable_dirty()->set_state(
     SysTabletsEntryPB::kTabletStateCreating,
@@ -1581,11 +1569,8 @@ void CatalogManager::HandleTabletSchemaVersionReport(TabletInfo *tablet, uint32_
 }
 
 void CatalogManager::ProcessPendingAssignments(
-    const std::vector<scoped_refptr<TabletInfo> >& tablets,
-    int *next_timeout_ms) {
+    const std::vector<scoped_refptr<TabletInfo> >& tablets) {
   VLOG(1) << "Processing pending assignments";
-
-  *next_timeout_ms = FLAGS_assignment_timeout_ms;
 
   DeferredAssignmentActions deferred;
 
@@ -1632,7 +1617,7 @@ void CatalogManager::ProcessPendingAssignments(
     LOG(FATAL) << "An error occurred while updating sys-tablets: " << s.ToString();
   }
 
-  // Send the "create tablet" requests to the servers. This is asynchronous / non-blocking.
+  // Send the CreateTablet() requests to the servers. This is asynchronous / non-blocking.
   SendCreateTabletRequests(deferred.needs_create_rpc);
 
   // Commit the changes in memory. This comes after the above sending of the RPCs,

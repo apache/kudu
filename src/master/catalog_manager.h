@@ -223,6 +223,8 @@ class TableInfo : public base::RefCountedThreadSafe<TableInfo> {
   void RemoveTask(MonitoredTask *task);
   void AbortTasks();
   void WaitTasksCompletion();
+
+  // Allow for showing outstanding tasks in the master UI.
   void GetTaskList(std::vector<scoped_refptr<MonitoredTask> > *tasks);
 
  private:
@@ -417,9 +419,7 @@ class CatalogManager {
 
   // Task that takes care of the tablet assignments/creations.
   // Loops through the "not created" tablets and sends a CreateTablet() request.
-  void ProcessPendingAssignments(
-    const std::vector<scoped_refptr<TabletInfo> >& tablets,
-    int *next_timeout_ms);
+  void ProcessPendingAssignments(const std::vector<scoped_refptr<TabletInfo> >& tablets);
 
   void SelectReplicasForTablets(const std::vector<TabletInfo*>& tablets,
                                 const TSDescriptorVector& ts_descs);
