@@ -136,14 +136,9 @@ TEST_F(TestCBTree, TestLeafNodeBigKVs) {
 // Setup the tree to fanout quicker, so we test internal node
 // splitting, etc.
 struct SmallFanoutTraits : public BTreeTraits {
-  static const size_t internal_node_size = 256;
-  static const size_t fanout = 4;
 
-  static const size_t leaf_node_size = 256;
-
-  // TODO: this should probably be dynamic, since we'd
-  // know the size of the value for fixed size tables
-  static const size_t leaf_max_entries = 4;
+  static const size_t internal_node_size = 84;
+  static const size_t leaf_node_size = 92;
 };
 
 void MakeKey(char *kbuf, size_t len, int i) {

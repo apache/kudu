@@ -27,6 +27,7 @@
 #include "util/memory/arena.h"
 #include "util/status.h"
 #include "gutil/macros.h"
+#include "gutil/mathlimits.h"
 #include "gutil/stringprintf.h"
 #include "gutil/port.h"
 
@@ -48,21 +49,10 @@ namespace btree {
 struct BTreeTraits {
   enum TraitConstants {
     // Number of bytes used per internal node.
-    internal_node_size = 256,
-
-    // The max number of children in an internal node.
-    fanout = 14,
-
-    // TODO: the leaf node parameters are basically hard coded now,
-    // these shouldn't be traits.
+    internal_node_size = 4 * CACHELINE_SIZE,
 
     // Number of bytes used by a leaf node.
-    leaf_node_size = 256,
-
-    // The max number of entries in a leaf node.
-    // TODO: this should probably be dynamic, since we'd
-    // know the size of the value for fixed size tables
-    leaf_max_entries = 11,
+    leaf_node_size = 4 * CACHELINE_SIZE,
 
     // Tests can set this trait to a non-zero value, which inserts
     // some pause-loops in key parts of the code to try to simulate
@@ -74,13 +64,9 @@ struct BTreeTraits {
 
 template<class T>
 inline void PrefetchMemory(const T *addr) {
-  int len = 4 * CACHELINE_SIZE;
-  size_t size = sizeof(T);
-  if (size + 1 < len) {
-    len = size + 1;
-  }
+  int size = std::min<int>(sizeof(T), 4 * CACHELINE_SIZE);
 
-  for (int i = 0; i < len; i += CACHELINE_SIZE) {
+  for (int i = 0; i < size; i += CACHELINE_SIZE) {
     prefetch(reinterpret_cast<const char *>(addr) + i, PREFETCH_HINT_T0);
   }
 }
@@ -234,19 +220,31 @@ struct VersionField {
 
 // Slice-like class for representing pointers to values in leaf nodes.
 // This is used in preference to a normal Slice only so that it can have
-// the same API as InlineSlice, and because it's shorter (only uses
-// 4 bytes for size instead of 8)
+// the same API as InlineSlice, and because it takes up less space
+// inside of the tree leaves themselves.
+//
+// Stores the length of its data as the first sizeof(uintptr_t) bytes of
+// the pointed-to data.
 class ValueSlice {
+ private:
+  // We have to use a word-size field to store the length of the slice so
+  // that the user's data starts at a word-aligned address.
+  // Otherwise, the user could not use atomic operations on pointers inside
+  // their value (eg the mutation linked list in an MRS).
+  typedef uintptr_t size_type;
  public:
   Slice as_slice() const {
-    return Slice(ptr_, len_);
+    return Slice(ptr_ + sizeof(size_type),
+                 *reinterpret_cast<const size_type*>(ptr_));
   }
 
   // Set this slice to a copy of 'src', allocated from alloc_arena.
   // The copy will be word-aligned. No memory ordering is implied.
   template<class ArenaType>
   void set(const Slice& src, ArenaType* alloc_arena) {
-    void* in_arena = alloc_arena->AllocateBytesAligned(src.size(), sizeof(void*));
+    uint8_t* in_arena = reinterpret_cast<uint8_t*>(
+      alloc_arena->AllocateBytesAligned(src.size() + sizeof(size_type),
+                                        sizeof(uint8_t*)));
     // No special CAS/etc are necessary here, since anyone calling this holds the
     // lock on the row. Concurrent readers never try to follow this pointer until
     // they've gotten a consistent snapshot.
@@ -254,13 +252,16 @@ class ValueSlice {
     // (This is different than the keys, where concurrent tree traversers may
     // actually try to follow the key indirection pointers from InlineSlice
     // without copying a snapshot first).
-    memcpy(in_arena, src.data(), src.size());
-    ptr_ = reinterpret_cast<const uint8_t*>(in_arena);
-    len_ = src.size();
+    DCHECK_LE(src.size(), MathLimits<size_type>::kMax)
+      << "Slice too large for btree";
+    size_type size = src.size();
+    memcpy(in_arena, &size, sizeof(size));
+    memcpy(in_arena + sizeof(size), src.data(), src.size());
+    ptr_ = const_cast<const uint8_t*>(in_arena);
   }
+
  private:
   const uint8_t* ptr_;
-  uint32_t len_;
 } PACKED;
 
 // Return the index of the first entry in the array which is
@@ -511,7 +512,7 @@ class PACKED InternalNode : public NodeBase<Traits> {
       << " into an internal node! Internal node keys should result "
       << " from splits and therefore be unique.";
 
-    if (PREDICT_FALSE(num_children_ == Traits::fanout)) {
+    if (PREDICT_FALSE(num_children_ == kFanout)) {
       return INSERT_FULL;
     }
 
@@ -577,7 +578,7 @@ class PACKED InternalNode : public NodeBase<Traits> {
     for (int i = 0; i < num_children_; i++) {
       DCHECK(!child_pointers_[i].is_null());
     }
-    for (int i = num_children_; i < Traits::fanout; i++) {
+    for (int i = num_children_; i < kFanout; i++) {
       // reset to NULL
       child_pointers_[i] = NodePtr<Traits>();
     }
@@ -610,21 +611,19 @@ class PACKED InternalNode : public NodeBase<Traits> {
     return num_children_ - 1;
   }
 
+  typedef InlineSlice<sizeof(void*), true> KeyInlineSlice;
+
   enum {
-    constant_overhead = (sizeof(NodeBase<Traits>)
-                         + sizeof(uint32) /* num_children_ */
-                         + (sizeof(void *) * Traits::fanout)), // child_pointers_
-    // Align the size down so that each InlineSlice is pointer-aligned,
-    // necessary for atomic operation.
-    key_inline_size = KUDU_ALIGN_DOWN((Traits::internal_node_size -
-                                       constant_overhead) / Traits::fanout,
-                                      sizeof(void *))
+    constant_overhead = sizeof(NodeBase<Traits>) // base class
+                      + sizeof(uint32_t), // num_children_
+    keyptr_space = Traits::internal_node_size - constant_overhead,
+    kFanout = keyptr_space / (sizeof(KeyInlineSlice) + sizeof(NodePtr<Traits>))
   };
 
-  typedef InlineSlice<key_inline_size, true> KeyInlineSlice;
-  KeyInlineSlice keys_[Traits::fanout];
-  NodePtr<Traits> child_pointers_[Traits::fanout];
-
+  // This ordering of members ensures KeyInlineSlices are properly aligned
+  // for atomic ops
+  KeyInlineSlice keys_[kFanout];
+  NodePtr<Traits> child_pointers_[kFanout];
   uint32_t num_children_;
 } PACKED;
 
@@ -672,12 +671,12 @@ class LeafNode : public NodeBase<Traits> {
   // new.
   InsertStatus InsertNew(size_t idx, const Slice &key, const Slice &val,
                          typename Traits::ArenaType* arena) {
-    if (PREDICT_FALSE(num_entries_ == Traits::leaf_max_entries)) {
+    if (PREDICT_FALSE(num_entries_ == kMaxEntries)) {
       // Full due to metadata
       return INSERT_FULL;
     }
 
-    DCHECK_LT(idx, Traits::leaf_max_entries);
+    DCHECK_LT(idx, kMaxEntries);
 
     this->SetInserting();
 
@@ -780,27 +779,20 @@ class LeafNode : public NodeBase<Traits> {
   friend class InternalNode<Traits>;
   friend class CBTreeIterator<Traits>;
 
-  LeafNode<Traits> *next_;
+  typedef InlineSlice<sizeof(void*), true> KeyInlineSlice;
 
   enum {
-    constant_overhead = sizeof(LeafNode<Traits> * /* next_ */) +
-                        sizeof(uint8_t /* num_entries_*/),
+    constant_overhead = sizeof(NodeBase<Traits>) // base class
+                        + sizeof(LeafNode<Traits>*) // next_
+                        + sizeof(uint8_t), // num_entries_
     kv_space = Traits::leaf_node_size - constant_overhead,
-
-    key_space = kv_space - sizeof(ValueSlice) * Traits::leaf_max_entries,
-    val_space = kv_space - key_space,
-
-    // Align the size down so that each InlineSlice is pointer-aligned,
-    // necessary for atomic operation.
-    key_inline_size = KUDU_ALIGN_DOWN(key_space / Traits::leaf_max_entries,
-                                      sizeof(void *))
+    kMaxEntries = kv_space / (sizeof(KeyInlineSlice) + sizeof(ValueSlice))
   };
 
-  typedef InlineSlice<key_inline_size, true> KeyInlineSlice;
-
-  KeyInlineSlice keys_[Traits::leaf_max_entries];
-  ValueSlice vals_[Traits::leaf_max_entries];
-
+  // This ordering of members keeps KeyInlineSlices so pointers are aligned
+  LeafNode<Traits>* next_;
+  KeyInlineSlice keys_[kMaxEntries];
+  ValueSlice vals_[kMaxEntries];
   uint8_t num_entries_;
 } PACKED;
 
@@ -1346,7 +1338,7 @@ class CBTree {
       default:
         CHECK(0) << "Unexpected result";
     }
-
+    return false;
   }
 
   // Splits the node 'node', returning the newly created right-sibling
