@@ -35,6 +35,9 @@ Timestamp MvccManager::StartTransaction() {
       return now;
     }
   }
+  // dummy return to avoid compiler warnings
+  LOG(FATAL) << "Unreachable, added to avoid compiler warning.";
+  return Timestamp::kInvalidTimestamp;
 }
 
 Timestamp MvccManager::StartTransactionAtLatest() {
