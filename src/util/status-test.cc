@@ -11,6 +11,8 @@
 #include <vector>
 #include "util/status.h"
 
+using std::string;
+
 namespace kudu {
 
 TEST(StatusTest, TestPosixCode) {

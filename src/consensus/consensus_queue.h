@@ -146,10 +146,10 @@ class PeerMessageQueue {
 
   int64_t GetQueuedOperationsSizeBytesForTests() const;
 
-  string ToString() const;
+  std::string ToString() const;
 
   // Dumps the contents of the queue to the provided string vector.
-  void DumpToStrings(std::vector<string>* lines) const;
+  void DumpToStrings(std::vector<std::string>* lines) const;
 
   void DumpToHtml(std::ostream& out) const;
 
@@ -185,9 +185,9 @@ class PeerMessageQueue {
   typedef std::tr1::unordered_map<OpId, Status> ErrorsMap;
   typedef std::pair<OpId, Status> ErrorEntry;
 
-  string ToStringUnlocked() const;
+  std::string ToStringUnlocked() const;
 
-  void DumpToStringsUnlocked(std::vector<string>* lines) const;
+  void DumpToStringsUnlocked(std::vector<std::string>* lines) const;
 
   // Trims the buffer, making sure it can accomodate the provided message.
   // Returns Status::OK() if the buffer was trimmed or otherwise had available

@@ -219,8 +219,8 @@ class Log {
 
   Log(const LogOptions &options,
       FsManager *fs_manager,
-      const string& log_path,
-      const string& tablet_id,
+      const std::string& log_path,
+      const std::string& tablet_id,
       MetricContext* parent_metric_context);
 
   // Initializes a new one or continues an existing log.
@@ -273,7 +273,7 @@ class Log {
 
   LogOptions options_;
   FsManager *fs_manager_;
-  string log_dir_;
+  std::string log_dir_;
 
   // The ID of the tablet this log is dedicated to.
   std::string tablet_id_;
@@ -288,7 +288,7 @@ class Log {
   std::tr1::shared_ptr<WritableFile> next_segment_file_;
 
   // The path for the next allocated segment.
-  string next_segment_path_;
+  std::string next_segment_path_;
 
   // Lock to protect modifications to previous_segments_ and log_state_.
   mutable percpu_rwlock state_lock_;

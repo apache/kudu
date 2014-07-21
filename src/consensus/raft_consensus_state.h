@@ -379,7 +379,7 @@ class MajorityOpStatusTracker : public OperationStatusTracker {
                           int total_peers_count);
 
   MajorityOpStatusTracker(gscoped_ptr<OperationPB> operation,
-                          const std::tr1::unordered_set<string>& voting_peers,
+                          const std::tr1::unordered_set<std::string>& voting_peers,
                           int majority,
                           int total_peers_count,
                           ThreadPool* callback_pool,

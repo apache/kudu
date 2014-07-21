@@ -42,7 +42,7 @@ class Master : public server::ServerBase {
   Status Start();
   void Shutdown();
 
-  string ToString() const;
+  std::string ToString() const;
 
   TSManager* ts_manager() { return ts_manager_.get(); }
 

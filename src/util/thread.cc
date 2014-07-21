@@ -375,7 +375,7 @@ Status ThreadJoiner::Join() {
       keep_trying = false;
     }
 
-    int wait_for = min(remaining_before_giveup, remaining_before_next_warn);
+    int wait_for = std::min(remaining_before_giveup, remaining_before_next_warn);
     try {
       if (thread_->thread_->timed_join(boost::posix_time::milliseconds(wait_for))) {
         return Status::OK();

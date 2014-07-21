@@ -34,7 +34,7 @@ class ConsensusRound;
 class ReplicaTransactionFactory;
 
 struct ConsensusOptions {
-  string tablet_id;
+  std::string tablet_id;
 };
 
 // After completing bootstrap, some of the results need to be plumbed through
@@ -183,7 +183,7 @@ class Consensus {
   virtual metadata::QuorumPeerPB::Role role() const = 0;
 
   // Returns the uuid of this peer.
-  virtual string peer_uuid() const = 0;
+  virtual std::string peer_uuid() const = 0;
 
   // Returns the current configuration of the quorum.
   // NOTE: Returns a copy, thus should not be used in a tight loop.

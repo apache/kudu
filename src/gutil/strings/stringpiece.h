@@ -120,11 +120,8 @@
 using __gnu_cxx::hash;
 using __gnu_cxx::hash_map;
 #include <iosfwd>
-using std::ostream;
 #include <limits>
-using std::numeric_limits;
 #include <string>
-using std::string;
 
 #include "gutil/integral_types.h"
 #include "gutil/port.h"
@@ -153,7 +150,7 @@ class StringPiece {
       length_ = static_cast<int>(length);
     }
   }
-  StringPiece(const string& str)  // NOLINT(runtime/explicit)
+  StringPiece(const std::string& str)  // NOLINT(runtime/explicit)
       : ptr_(str.data()), length_(0) {
     size_t length = str.size();
     assert(length <= static_cast<size_t>(std::numeric_limits<int>::max()));
@@ -231,7 +228,7 @@ class StringPiece {
     return 0;
   }
 
-  string as_string() const {
+  std::string as_string() const {
     return ToString();
   }
   // We also define ToString() here, since many other string-like
@@ -239,13 +236,13 @@ class StringPiece {
   // "ToString", and it's confusing to have the method that does that
   // for a StringPiece be called "as_string()".  We also leave the
   // "as_string()" method defined here for existing code.
-  string ToString() const {
-    if (ptr_ == NULL) return string();
-    return string(data(), size());
+  std::string ToString() const {
+    if (ptr_ == NULL) return std::string();
+    return std::string(data(), size());
   }
 
-  void CopyToString(string* target) const;
-  void AppendToString(string* target) const;
+  void CopyToString(std::string* target) const;
+  void AppendToString(std::string* target) const;
 
   bool starts_with(StringPiece x) const {
     return (length_ >= x.length_) && (memcmp(ptr_, x.ptr_, x.length_) == 0);

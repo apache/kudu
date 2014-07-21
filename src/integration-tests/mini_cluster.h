@@ -53,23 +53,23 @@ class MiniCluster {
   // 'idx' must be between 0 and 'num_tablet_servers' -1.
   tserver::MiniTabletServer* mini_tablet_server(int idx);
 
-  string GetMasterFsRoot();
+  std::string GetMasterFsRoot();
 
-  string GetTabletServerFsRoot(int idx);
+  std::string GetTabletServerFsRoot(int idx);
 
   // Wait for the given tablet to have 'expected_count' replicas
   // reported on the master.
   // Requires that the master has started.
   // Returns a bad Status if the tablet does not reach the required count
   // within kTabletReportWaitTimeSeconds.
-  Status WaitForReplicaCount(const string& tablet_id, int expected_count);
+  Status WaitForReplicaCount(const std::string& tablet_id, int expected_count);
 
   // Wait for the given tablet to have 'expected_count' replicas
   // reported on the master. Returns the locations in '*locations'.
   // Requires that the master has started;
   // Returns a bad Status if the tablet does not reach the required count
   // within kTabletReportWaitTimeSeconds.
-  Status WaitForReplicaCount(const string& tablet_id,
+  Status WaitForReplicaCount(const std::string& tablet_id,
                              int expected_count,
                              master::TabletLocationsPB* locations);
 

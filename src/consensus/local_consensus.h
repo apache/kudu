@@ -45,7 +45,7 @@ class LocalConsensus : public Consensus {
     return metadata::QuorumPeerPB::LEADER;
   }
 
-  virtual string peer_uuid() const OVERRIDE {
+  virtual std::string peer_uuid() const OVERRIDE {
     boost::lock_guard<simple_spinlock> lock(lock_);
     return peer_.permanent_uuid();
   }

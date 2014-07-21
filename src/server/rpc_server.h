@@ -23,7 +23,7 @@ class ServiceIf;
 struct RpcServerOptions {
   RpcServerOptions();
 
-  string rpc_bind_addresses;
+  std::string rpc_bind_addresses;
   uint32_t num_acceptors_per_address;
   uint32_t num_service_threads;
   uint16_t default_port;
@@ -39,7 +39,7 @@ class RpcServer {
   Status Start(gscoped_ptr<rpc::ServiceIf> service);
   void Shutdown();
 
-  string ToString() const;
+  std::string ToString() const;
 
   // Return the addresses that this server has successfully
   // bound to. Requires that the server has been Start()ed.

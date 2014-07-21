@@ -60,7 +60,7 @@ class TabletServer : public server::ServerBase {
   Status Start();
   void Shutdown();
 
-  string ToString() const;
+  std::string ToString() const;
 
   TSTabletManager* tablet_manager() { return tablet_manager_.get(); }
 

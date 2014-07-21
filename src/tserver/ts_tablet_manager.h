@@ -79,10 +79,11 @@ class TSTabletManager {
   //
   // If another tablet already exists with this ID, logs a DFATAL
   // and returns a bad Status.
-  Status CreateNewTablet(const string& table_id,
+  Status CreateNewTablet(const std::string& table_id,
                          const std::string& tablet_id,
-                         const std::string& start_key, const std::string& end_key,
-                         const string& table_name,
+                         const std::string& start_key,
+                         const std::string& end_key,
+                         const std::string& table_name,
                          const Schema& schema,
                          metadata::QuorumPB quorum,
                          scoped_refptr<tablet::TabletPeer>* tablet_peer);
@@ -97,7 +98,7 @@ class TSTabletManager {
                     scoped_refptr<tablet::TabletPeer>* tablet_peer) const;
 
   // Same as LookupTablet but doesn't acquired the shared lock.
-  bool LookupTabletUnlocked(const string& tablet_id,
+  bool LookupTabletUnlocked(const std::string& tablet_id,
                             scoped_refptr<tablet::TabletPeer>* tablet_peer) const;
 
   // Generate an incremental tablet report.
@@ -144,7 +145,7 @@ class TSTabletManager {
   Status PersistMasterBlock(const metadata::TabletMasterBlockPB& pb);
 
   // Load the given tablet's master block from the file system.
-  Status LoadMasterBlock(const string& tablet_id, metadata::TabletMasterBlockPB* block);
+  Status LoadMasterBlock(const std::string& tablet_id, metadata::TabletMasterBlockPB* block);
 
   // Open a tablet meta from the local file system by loading its master block.
   Status OpenTabletMeta(const std::string& tablet_id,
@@ -167,7 +168,7 @@ class TSTabletManager {
                       const scoped_refptr<tablet::TabletPeer>& tablet_peer);
 
   // Helper to generate the report for a single tablet.
-  void CreateReportedTabletPB(const string& tablet_id,
+  void CreateReportedTabletPB(const std::string& tablet_id,
                               const scoped_refptr<tablet::TabletPeer>& tablet_peer,
                               master::ReportedTabletPB* reported_tablet);
 

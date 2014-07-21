@@ -189,8 +189,8 @@ uint64 FingerprintInterleavedImplementation(const char *s, uint32 len) {
 #include <ext/hash_set>
 namespace __gnu_cxx {
 
-template class hash_set<string>;
-template class hash_map<string, string>;
+template class hash_set<std::string>;
+template class hash_map<std::string, std::string>;
 
 }  // namespace __gnu_cxx
 

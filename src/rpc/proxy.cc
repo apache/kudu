@@ -23,6 +23,7 @@
 #include "util/user.h"
 
 using google::protobuf::Message;
+using std::string;
 using std::tr1::shared_ptr;
 
 namespace kudu {

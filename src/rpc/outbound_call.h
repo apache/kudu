@@ -151,7 +151,7 @@ class OutboundCall {
  public:
 
   OutboundCall(const ConnectionId& conn_id,
-               const string& method,
+               const std::string& method,
                google::protobuf::Message* response_storage,
                RpcController* controller,
                const ResponseCallback& callback);
@@ -238,7 +238,7 @@ class OutboundCall {
     FINISHED_SUCCESS = 5
   };
 
-  static string StateName(State state);
+  static std::string StateName(State state);
 
   void set_state(State new_state);
   State state() const;

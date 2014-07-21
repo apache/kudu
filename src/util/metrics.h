@@ -100,6 +100,7 @@
 #include <gtest/gtest.h>
 
 #include "gutil/atomicops.h"
+#include "gutil/casts.h"
 #include "util/jsonwriter.h"
 #include "util/locks.h"
 #include "util/status.h"
@@ -217,7 +218,7 @@ class Metric {
 // Registry of all the metrics for a given subsystem.
 class MetricRegistry {
  public:
-  typedef std::tr1::unordered_map<string, Metric*> UnorderedMetricMap;
+  typedef std::tr1::unordered_map<std::string, Metric*> UnorderedMetricMap;
 
   MetricRegistry();
   ~MetricRegistry();
@@ -234,8 +235,8 @@ class MetricRegistry {
   // NOTE: Including all the counts and values can easily make the generated
   // json very large. Use with caution.
   Status WriteAsJson(JsonWriter* writer,
-                     const std::vector<string>& requested_metrics,
-                     const std::vector<string>& requested_detail_metrics) const;
+                     const std::vector<std::string>& requested_metrics,
+                     const std::vector<std::string>& requested_detail_metrics) const;
 
   Counter* FindOrCreateCounter(const std::string& name,
                                const CounterPrototype& proto);

@@ -16,6 +16,8 @@
 #include "util/slice.h"
 #include "util/status.h"
 
+using std::string;
+
 const char* kTwitterUrl = "https://stream.twitter.com/1.1/statuses/sample.json";
 
 // Defaults are for the "kudu-demo" app under the "KuduProject" account.

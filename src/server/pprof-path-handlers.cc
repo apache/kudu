@@ -30,6 +30,7 @@ DECLARE_string(heap_profile_dir);
 using std::endl;
 using std::ifstream;
 using std::ostringstream;
+using std::string;
 using std::stringstream;
 
 namespace kudu {

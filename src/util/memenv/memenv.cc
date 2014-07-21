@@ -23,6 +23,7 @@ namespace {
 
 using boost::mutex;
 using boost::lock_guard;
+using std::string;
 using std::vector;
 
 class FileState {

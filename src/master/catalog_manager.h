@@ -57,7 +57,7 @@ struct PersistentTabletInfo {
   // Helper to set the state of the tablet with a custom message.
   // Requires that the caller has prepared this object for write.
   // The change will only be visible after Commit().
-  void set_state(SysTabletsEntryPB::State state, const string& msg);
+  void set_state(SysTabletsEntryPB::State state, const std::string& msg);
 
   SysTabletsEntryPB pb;
 };
@@ -174,7 +174,7 @@ struct PersistentTableInfo {
   }
 
   // Helper to set the state of the tablet with a custom message.
-  void set_state(SysTablesEntryPB::State state, const string& msg);
+  void set_state(SysTablesEntryPB::State state, const std::string& msg);
 
   SysTablesEntryPB pb;
 };
@@ -354,7 +354,7 @@ class CatalogManager {
   // Return true if the table with the specified ID exists,
   // and set the table pointer to the TableInfo object
   // NOTE: This should only be used by tests or web-ui
-  bool GetTableInfo(const string& table_id, scoped_refptr<TableInfo> *table);
+  bool GetTableInfo(const std::string& table_id, scoped_refptr<TableInfo> *table);
 
   // Return all the available TableInfo, which also may include not running tables
   // NOTE: This should only be used by tests or web-ui
@@ -362,7 +362,7 @@ class CatalogManager {
 
   // Return true if the specified table name exists
   // NOTE: This should only be used by tests
-  bool TableNameExists(const string& table_name);
+  bool TableNameExists(const std::string& table_name);
 
   // Let the catalog manager know that the the given tablet server successfully
   // deleted the specified tablet.
@@ -390,8 +390,8 @@ class CatalogManager {
   // Leaves the tablet "write locked" with the new info in the
   // "dirty" state field.
   TabletInfo *CreateTabletInfo(TableInfo *table,
-                               const string& start_key,
-                               const string& end_key);
+                               const std::string& start_key,
+                               const std::string& end_key);
 
   // Builds the TabletLocationsPB for a tablet based on the provided TabletInfo.
   // Populates locs_pb and returns true on success.
@@ -467,8 +467,7 @@ class CatalogManager {
                                const scoped_refptr<TableInfo>& table,
                                TSDescriptor* ts_desc,
                                const std::string& reason);
-
-  string GenerateId() { return oid_generator_.Next(); }
+  std::string GenerateId() { return oid_generator_.Next(); }
 
 
   // TODO: the maps are a little wasteful of RAM, since the TableInfo/TabletInfo

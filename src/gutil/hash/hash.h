@@ -77,12 +77,6 @@
 #include <stdint.h>     // for uintptr_t
 #include <string.h>
 #include <algorithm>
-using std::copy;
-using std::max;
-using std::min;
-using std::reverse;
-using std::sort;
-using std::swap;
 #include <ext/hash_map>
 using __gnu_cxx::hash;
 using __gnu_cxx::hash_map;     // hacky way to make sure we import standard hash<> fns
@@ -90,10 +84,7 @@ using __gnu_cxx::hash_map;     // hacky way to make sure we import standard hash
 using __gnu_cxx::hash;
 using __gnu_cxx::hash_set;
 #include <string>
-using std::string;
 #include <utility>
-using std::make_pair;
-using std::pair;
 
 #include "gutil/casts.h"
 #include "gutil/int128.h"
@@ -186,10 +177,10 @@ inline uint64 CombineFingerprintHalves(uint32 hi, uint32 lo) {
   return result;
 }
 
-inline uint64 Fingerprint(const string& s) {
+inline uint64 Fingerprint(const std::string& s) {
   return Fingerprint(s.data(), static_cast<uint32>(s.size()));
 }
-inline uint64 Hash64StringWithSeed(const string& s, uint64 c) {
+inline uint64 Hash64StringWithSeed(const std::string& s, uint64 c) {
   return Hash64StringWithSeed(s.data(), static_cast<uint32>(s.size()), c);
 }
 inline uint64 Fingerprint(schar c) {
@@ -283,8 +274,8 @@ struct hash<std::basic_string<_CharT, _Traits, _Alloc> > {
 };
 
 // they don't define a hash for const string at all
-template<> struct hash<const string> {
-  size_t operator()(const string& k) const {
+template<> struct hash<const std::string> {
+  size_t operator()(const std::string& k) const {
     return HashTo32(k.data(), static_cast<uint32>(k.length()));
   }
 };
@@ -306,12 +297,12 @@ template<> struct hash<char const*> {
 
 // MSVC 10.0 and above have already defined this.
 #if !defined(_MSC_VER) || _MSC_VER < 1600
-template<> struct hash<string> {
-  size_t operator()(const string& k) const {
+template<> struct hash<std::string> {
+  size_t operator()(const std::string& k) const {
     return HashTo32(k.data(), k.length());
   }
   // Less than operator:
-  bool operator()(const string& a, const string& b) const {
+  bool operator()(const std::string& a, const std::string& b) const {
     return a < b;
   }
   static const size_t bucket_size = 4;  // These are required by MSVC
@@ -426,8 +417,8 @@ struct GoodFastHash<const std::basic_string<_CharT, _Traits, _Alloc> > {
 #include <ext/hash_set>
 namespace __gnu_cxx {
 
-extern template class hash_set<string>;
-extern template class hash_map<string, string>;
+extern template class hash_set<std::string>;
+extern template class hash_map<std::string, std::string>;
 
 }  // namespace __gnu_cxx
 

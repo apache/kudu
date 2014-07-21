@@ -17,6 +17,7 @@
 namespace kudu {
 namespace master {
 
+using std::string;
 using std::vector;
 using std::tr1::shared_ptr;
 

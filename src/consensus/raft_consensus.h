@@ -64,7 +64,7 @@ class RaftConsensus : public Consensus {
 
   virtual metadata::QuorumPeerPB::Role role() const OVERRIDE;
 
-  virtual string peer_uuid() const OVERRIDE;
+  virtual std::string peer_uuid() const OVERRIDE;
 
   virtual metadata::QuorumPB Quorum() const OVERRIDE;
 

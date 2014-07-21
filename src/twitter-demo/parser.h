@@ -22,7 +22,7 @@ struct TweetEvent {
   uint64_t tweet_id;
   std::string text;
   std::string source;
-  string created_at;
+  std::string created_at;
   // TODO: add geolocation
   uint64_t user_id;
   std::string user_name;
