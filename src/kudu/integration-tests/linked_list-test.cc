@@ -89,13 +89,13 @@ class LinkedListTest : public KuduTest {
  public:
   LinkedListTest()
     : schema_(boost::assign::list_of
-              (KuduColumnSchema(kKeyColumnName, UINT64))
-              (KuduColumnSchema(kLinkColumnName, UINT64))
-              (KuduColumnSchema(kInsertTsColumnName, UINT64)),
+              (KuduColumnSchema(kKeyColumnName, KuduColumnSchema::UINT64))
+              (KuduColumnSchema(kLinkColumnName, KuduColumnSchema::UINT64))
+              (KuduColumnSchema(kInsertTsColumnName, KuduColumnSchema::UINT64)),
               1),
       verify_projection_(boost::assign::list_of
-                         (KuduColumnSchema(kKeyColumnName, UINT64))
-                         (KuduColumnSchema(kLinkColumnName, UINT64)),
+                         (KuduColumnSchema(kKeyColumnName, KuduColumnSchema::UINT64))
+                         (KuduColumnSchema(kLinkColumnName, KuduColumnSchema::UINT64)),
                          1),
       latency_histogram_(1000000, 3) {
   }

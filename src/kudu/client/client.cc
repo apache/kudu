@@ -16,6 +16,7 @@
 #include "kudu/client/meta_cache.h"
 #include "kudu/client/row_result.h"
 #include "kudu/client/scanner-internal.h"
+#include "kudu/client/schema-internal.h"
 #include "kudu/client/session-internal.h"
 #include "kudu/client/table-internal.h"
 #include "kudu/client/table_alterer-internal.h"
@@ -39,8 +40,8 @@ using kudu::master::AlterTableResponsePB;
 using kudu::master::CreateTableRequestPB;
 using kudu::master::CreateTableResponsePB;
 using kudu::master::DeleteTableRequestPB;
-using kudu::master::DeleteTableResponsePB;
 using kudu::master::GetTableSchemaRequestPB;
+using kudu::master::DeleteTableResponsePB;
 using kudu::master::GetTableSchemaResponsePB;
 using kudu::master::MasterServiceProxy;
 using kudu::master::TabletLocationsPB;
@@ -541,7 +542,7 @@ KuduTableAlterer& KuduTableAlterer::rename_table(const string& new_name) {
 }
 
 KuduTableAlterer& KuduTableAlterer::add_column(const string& name,
-                                               DataType type,
+                                               KuduColumnSchema::DataType type,
                                                const void *default_value,
                                                KuduColumnStorageAttributes attributes) {
   if (default_value == NULL) {
@@ -551,20 +552,24 @@ KuduTableAlterer& KuduTableAlterer::add_column(const string& name,
 
   AlterTableRequestPB::Step* step = data_->alter_steps_.add_alter_schema_steps();
   step->set_type(AlterTableRequestPB::ADD_COLUMN);
-  ColumnStorageAttributes attr_priv(attributes.encoding(), attributes.compression());
-  ColumnSchemaToPB(ColumnSchema(name, type, false, default_value, default_value, attr_priv),
-                                step->mutable_add_column()->mutable_schema());
+  ColumnStorageAttributes attr_priv(ToInternalEncodingType(attributes.encoding()),
+                                    ToInternalCompressionType(attributes.compression()));
+  ColumnSchemaToPB(ColumnSchema(name, ToInternalDataType(type), false,
+                                default_value, default_value, attr_priv),
+                   step->mutable_add_column()->mutable_schema());
   return *this;
 }
 
 KuduTableAlterer& KuduTableAlterer::add_nullable_column(const string& name,
-                                                        DataType type,
+                                                        KuduColumnSchema::DataType type,
                                                         KuduColumnStorageAttributes attributes) {
   AlterTableRequestPB::Step* step = data_->alter_steps_.add_alter_schema_steps();
   step->set_type(AlterTableRequestPB::ADD_COLUMN);
-  ColumnStorageAttributes attr_priv(attributes.encoding(), attributes.compression());
-  ColumnSchemaToPB(ColumnSchema(name, type, true, NULL, NULL, attr_priv),
-                                step->mutable_add_column()->mutable_schema());
+  ColumnStorageAttributes attr_priv(ToInternalEncodingType(attributes.encoding()),
+                                    ToInternalCompressionType(attributes.compression()));
+  ColumnSchemaToPB(ColumnSchema(name, ToInternalDataType(type), true,
+                                NULL, NULL, attr_priv),
+                   step->mutable_add_column()->mutable_schema());
   return *this;
 }
 

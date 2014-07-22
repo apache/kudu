@@ -16,6 +16,7 @@
 #include "kudu/client/meta_cache.h"
 #include "kudu/client/session-internal.h"
 #include "kudu/client/write_op.h"
+#include "kudu/client/write_op-internal.h"
 #include "kudu/common/encoded_key.h"
 #include "kudu/common/row_operations.h"
 #include "kudu/common/wire_protocol.h"
@@ -587,7 +588,7 @@ void Batcher::FlushBuffer(RemoteTabletServer* ts, PerTSBuffer* buf) {
           << ", " << schema->DebugEncodedRowKey(tablet->end_key().ToString())
           << ")";
 
-      enc.Add(op->write_op->RowOperationType(), op->write_op->row());
+      enc.Add(ToInternalWriteType(op->write_op->type()), op->write_op->row());
 
       // Set the state now, even though we haven't yet sent it -- at this point
       // there is no return, and we're definitely going to send it. If we waited

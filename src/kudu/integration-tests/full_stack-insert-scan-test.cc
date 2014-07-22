@@ -81,16 +81,16 @@ class FullStackInsertScanTest : public KuduTest {
     random_(SeedRandom()),
     // schema has kNumIntCols contiguous columns of Int32 and Int64, in order.
     schema_(list_of
-            (KuduColumnSchema("key", UINT64))
-            (KuduColumnSchema("string_val", STRING))
-            (KuduColumnSchema("int32_val1", INT32))
-            (KuduColumnSchema("int32_val2", INT32))
-            (KuduColumnSchema("int32_val3", INT32))
-            (KuduColumnSchema("int32_val4", INT32))
-            (KuduColumnSchema("int64_val1", INT64))
-            (KuduColumnSchema("int64_val2", INT64))
-            (KuduColumnSchema("int64_val3", INT64))
-            (KuduColumnSchema("int64_val4", INT64)), 1),
+            (KuduColumnSchema("key", KuduColumnSchema::UINT64))
+            (KuduColumnSchema("string_val", KuduColumnSchema::STRING))
+            (KuduColumnSchema("int32_val1", KuduColumnSchema::INT32))
+            (KuduColumnSchema("int32_val2", KuduColumnSchema::INT32))
+            (KuduColumnSchema("int32_val3", KuduColumnSchema::INT32))
+            (KuduColumnSchema("int32_val4", KuduColumnSchema::INT32))
+            (KuduColumnSchema("int64_val1", KuduColumnSchema::INT64))
+            (KuduColumnSchema("int64_val2", KuduColumnSchema::INT64))
+            (KuduColumnSchema("int64_val3", KuduColumnSchema::INT64))
+            (KuduColumnSchema("int64_val4", KuduColumnSchema::INT64)), 1),
     sessions_(kNumInsertClients),
     tables_(kNumInsertClients) {
   }

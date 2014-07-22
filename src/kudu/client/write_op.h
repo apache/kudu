@@ -5,7 +5,6 @@
 #include <string>
 
 #include "kudu/common/partial_row.h"
-#include "kudu/common/wire_protocol.pb.h"
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/ref_counted.h"
 
@@ -32,6 +31,11 @@ class KuduTable;
 // scope to end while the KuduWriteOperation is still alive.
 class KuduWriteOperation {
  public:
+  enum Type {
+    INSERT = 1,
+    UPDATE = 2,
+    DELETE = 3,
+  };
   virtual ~KuduWriteOperation();
 
   // See KuduPartialRow API for field setters, etc.
@@ -41,7 +45,7 @@ class KuduWriteOperation {
   virtual std::string ToString() const = 0;
  protected:
   explicit KuduWriteOperation(KuduTable *table);
-  virtual RowOperationsPB::Type RowOperationType() const = 0;
+  virtual Type type() const = 0;
 
   scoped_refptr<KuduTable> const table_;
   KuduPartialRow row_;
@@ -70,8 +74,8 @@ class KuduInsert : public KuduWriteOperation {
   virtual std::string ToString() const OVERRIDE { return "INSERT " + row_.ToString(); }
 
  protected:
-  virtual RowOperationsPB::Type RowOperationType() const OVERRIDE {
-    return RowOperationsPB::INSERT;
+  virtual Type type() const OVERRIDE {
+    return INSERT;
   }
 
  private:
@@ -92,8 +96,8 @@ class KuduUpdate : public KuduWriteOperation {
   virtual std::string ToString() const OVERRIDE { return "UPDATE " + row_.ToString(); }
 
  protected:
-  virtual RowOperationsPB::Type RowOperationType() const OVERRIDE {
-    return RowOperationsPB::UPDATE;
+  virtual Type type() const OVERRIDE {
+    return UPDATE;
   }
 
  private:
@@ -113,8 +117,8 @@ class KuduDelete : public KuduWriteOperation {
   virtual std::string ToString() const OVERRIDE { return "DELETE " + row_.ToString(); }
 
  protected:
-  virtual RowOperationsPB::Type RowOperationType() const OVERRIDE {
-    return RowOperationsPB::DELETE;
+  virtual Type type() const OVERRIDE {
+    return DELETE;
   }
 
  private:

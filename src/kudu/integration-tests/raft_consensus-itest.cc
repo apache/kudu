@@ -6,6 +6,7 @@
 #include <boost/assign/list_of.hpp>
 
 #include "kudu/client/client.h"
+#include "kudu/client/schema-internal.h"
 #include "kudu/common/wire_protocol-test-util.h"
 #include "kudu/common/schema.h"
 #include "kudu/consensus/consensus_queue.h"
@@ -42,6 +43,9 @@ namespace tserver {
 
 using consensus::RaftConsensus;
 using consensus::ReplicaState;
+using client::FromInternalCompressionType;
+using client::FromInternalDataType;
+using client::FromInternalEncodingType;
 using client::KuduClient;
 using client::KuduClientBuilder;
 using client::KuduColumnSchema;
@@ -120,9 +124,10 @@ class DistConsensusTest : public TabletServerTest {
       if (col.has_read_default()) {
         CHECK_EQ(col.read_default_value(), col.write_default_value());
       }
-      KuduColumnStorageAttributes client_attrs(col.attributes().encoding(),
-                                               col.attributes().compression());
-      KuduColumnSchema client_col(col.name(), col.type_info()->type(),
+      KuduColumnStorageAttributes client_attrs(
+          FromInternalEncodingType(col.attributes().encoding()),
+          FromInternalCompressionType(col.attributes().compression()));
+      KuduColumnSchema client_col(col.name(), FromInternalDataType(col.type_info()->type()),
                                   col.is_nullable(), col.read_default_value(),
                                   client_attrs);
       client_cols.push_back(client_col);

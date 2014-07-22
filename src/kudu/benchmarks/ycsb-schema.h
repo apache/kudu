@@ -8,19 +8,23 @@
 #include "kudu/client/schema.h"
 
 namespace kudu {
+
+static const client::KuduColumnSchema::DataType kString =
+    client::KuduColumnSchema::STRING;
+
 inline client::KuduSchema CreateYCSBSchema() {
   return client::KuduSchema(boost::assign::list_of
-                (client::KuduColumnSchema("key", STRING))
-                (client::KuduColumnSchema("field0", STRING))
-                (client::KuduColumnSchema("field1", STRING))
-                (client::KuduColumnSchema("field2", STRING))
-                (client::KuduColumnSchema("field3", STRING))
-                (client::KuduColumnSchema("field4", STRING))
-                (client::KuduColumnSchema("field5", STRING))
-                (client::KuduColumnSchema("field6", STRING))
-                (client::KuduColumnSchema("field7", STRING))
-                (client::KuduColumnSchema("field8", STRING))
-                (client::KuduColumnSchema("field9", STRING))
+                (client::KuduColumnSchema("key", kString))
+                (client::KuduColumnSchema("field0", kString))
+                (client::KuduColumnSchema("field1", kString))
+                (client::KuduColumnSchema("field2", kString))
+                (client::KuduColumnSchema("field3", kString))
+                (client::KuduColumnSchema("field4", kString))
+                (client::KuduColumnSchema("field5", kString))
+                (client::KuduColumnSchema("field6", kString))
+                (client::KuduColumnSchema("field7", kString))
+                (client::KuduColumnSchema("field8", kString))
+                (client::KuduColumnSchema("field9", kString))
                 , 1);
 }
 

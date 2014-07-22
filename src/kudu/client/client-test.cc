@@ -63,10 +63,10 @@ class ClientTest : public KuduTest {
  public:
   ClientTest()
     : schema_(boost::assign::list_of
-              (KuduColumnSchema("key", UINT32))
-              (KuduColumnSchema("int_val", UINT32))
-              (KuduColumnSchema("string_val", STRING, true))
-              (KuduColumnSchema("non_null_with_default", UINT32, false,
+              (KuduColumnSchema("key", KuduColumnSchema::UINT32))
+              (KuduColumnSchema("int_val", KuduColumnSchema::UINT32))
+              (KuduColumnSchema("string_val", KuduColumnSchema::STRING, true))
+              (KuduColumnSchema("non_null_with_default", KuduColumnSchema::UINT32, false,
                                 &kNonNullDefault)),
               1) {
   }
@@ -1220,7 +1220,7 @@ TEST_F(ClientTest, TestBasicAlterOperations) {
   {
     Status s = client_->NewTableAlterer()
         ->table_name(kTable2Name)
-        .add_column("key", UINT32, NULL)
+        .add_column("key", KuduColumnSchema::UINT32, NULL)
         .Alter();
     ASSERT_TRUE(s.IsInvalidArgument());
     ASSERT_STR_CONTAINS(s.ToString(), "A new column must have a default value");
@@ -1266,7 +1266,7 @@ TEST_F(ClientTest, TestBasicAlterOperations) {
     ASSERT_STATUS_OK(client_->NewTableAlterer()
                      ->table_name(kTable2Name)
                      .drop_column("int_val")
-                     .add_nullable_column("new_col", UINT32)
+                     .add_nullable_column("new_col", KuduColumnSchema::UINT32)
                      .Alter());
     ASSERT_EQ(1, tablet_peer->tablet()->metadata()->schema_version());
   }
@@ -1276,8 +1276,9 @@ TEST_F(ClientTest, TestBasicAlterOperations) {
   {
     Status s = client_->NewTableAlterer()
         ->table_name(kTable2Name)
-        .add_nullable_column("new_string_val", STRING,
-                             KuduColumnStorageAttributes(GROUP_VARINT))
+        .add_nullable_column("new_string_val", KuduColumnSchema::STRING,
+                             KuduColumnStorageAttributes(
+                                 KuduColumnStorageAttributes::GROUP_VARINT))
         .Alter();
     ASSERT_TRUE(s.IsNotSupported());
     ASSERT_STR_CONTAINS(s.ToString(), "Unsupported type/encoding pair");
@@ -1287,8 +1288,9 @@ TEST_F(ClientTest, TestBasicAlterOperations) {
   {
     ASSERT_STATUS_OK(client_->NewTableAlterer()
                      ->table_name(kTable2Name)
-                     .add_nullable_column("new_string_val", STRING,
-                                          KuduColumnStorageAttributes(PREFIX_ENCODING))
+                     .add_nullable_column("new_string_val", KuduColumnSchema::STRING,
+                                          KuduColumnStorageAttributes(
+                                              KuduColumnStorageAttributes::PREFIX_ENCODING))
                      .Alter());
     ASSERT_EQ(2, tablet_peer->tablet()->metadata()->schema_version());
   }

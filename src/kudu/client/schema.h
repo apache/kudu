@@ -1,3 +1,4 @@
+
 // Copyright (c) 2014, Cloudera, inc.
 #ifndef KUDU_CLIENT_SCHEMA_H
 #define KUDU_CLIENT_SCHEMA_H
@@ -5,7 +6,6 @@
 #include <string>
 #include <vector>
 
-#include "kudu/common/common.pb.h"
 #include "kudu/gutil/gscoped_ptr.h"
 
 namespace kudu {
@@ -26,6 +26,22 @@ class KuduWriteOperation;
 
 class KuduColumnStorageAttributes {
  public:
+  enum EncodingType {
+    AUTO_ENCODING = 0,
+    PLAIN_ENCODING = 1,
+    PREFIX_ENCODING = 2,
+    GROUP_VARINT = 3,
+    RLE = 4,
+  };
+
+  enum CompressionType {
+    DEFAULT_COMPRESSION = 0,
+    NO_COMPRESSION = 1,
+    SNAPPY = 2,
+    LZ4 = 3,
+    ZLIB = 4,
+  };
+
   KuduColumnStorageAttributes(EncodingType encoding = AUTO_ENCODING,
                               CompressionType compression = DEFAULT_COMPRESSION)
   : encoding_(encoding),
@@ -48,6 +64,19 @@ class KuduColumnStorageAttributes {
 
 class KuduColumnSchema {
  public:
+  enum DataType {
+    UINT8 = 0,
+    INT8 = 1,
+    UINT16 = 2,
+    INT16 = 3,
+    UINT32 = 4,
+    INT32 = 5,
+    UINT64 = 6,
+    INT64 = 7,
+    STRING = 8,
+    BOOL = 9,
+  };
+
   KuduColumnSchema(const std::string &name,
                    DataType type,
                    bool is_nullable = false,

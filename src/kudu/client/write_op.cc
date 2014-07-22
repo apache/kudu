@@ -5,9 +5,19 @@
 #include "kudu/client/client.h"
 #include "kudu/common/encoded_key.h"
 #include "kudu/common/row.h"
+#include "kudu/common/wire_protocol.pb.h"
 
 namespace kudu {
 namespace client {
+
+RowOperationsPB_Type ToInternalWriteType(KuduWriteOperation::Type type) {
+  switch (type) {
+    case KuduWriteOperation::INSERT: return RowOperationsPB_Type_INSERT;
+    case KuduWriteOperation::UPDATE: return RowOperationsPB_Type_UPDATE;
+    case KuduWriteOperation::DELETE: return RowOperationsPB_Type_DELETE;
+    default: LOG(FATAL) << "Unexpected write operation type: " << type;
+  }
+}
 
 // WriteOperation --------------------------------------------------------------
 

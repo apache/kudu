@@ -267,14 +267,14 @@ class KuduTableAlterer {
   // Adds a new column to the table. The default value must be provided.
   // Optional.
   KuduTableAlterer& add_column(const std::string& name,
-                               DataType type,
+                               KuduColumnSchema::DataType type,
                                const void *default_value,
                                KuduColumnStorageAttributes attributes =
                                    KuduColumnStorageAttributes());
 
   // Adds a new nullable column to the table. Optional.
   KuduTableAlterer& add_nullable_column(const std::string& name,
-                                        DataType type,
+                                        KuduColumnSchema::DataType type,
                                         KuduColumnStorageAttributes attributes =
                                             KuduColumnStorageAttributes());
 

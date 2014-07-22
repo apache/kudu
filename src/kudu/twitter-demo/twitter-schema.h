@@ -16,17 +16,17 @@ using client::KuduSchema;
 
 inline KuduSchema CreateTwitterSchema() {
   return KuduSchema(boost::assign::list_of
-                (KuduColumnSchema("tweet_id", UINT64))
-                (KuduColumnSchema("text", STRING))
-                (KuduColumnSchema("source", STRING))
-                (KuduColumnSchema("created_at", STRING))
-                (KuduColumnSchema("user_id", UINT64))
-                (KuduColumnSchema("user_name", STRING))
-                (KuduColumnSchema("user_description", STRING))
-                (KuduColumnSchema("user_location", STRING))
-                (KuduColumnSchema("user_followers_count", UINT32))
-                (KuduColumnSchema("user_friends_count", UINT32))
-                (KuduColumnSchema("user_image_url", STRING)),
+                (KuduColumnSchema("tweet_id", KuduColumnSchema::UINT64))
+                (KuduColumnSchema("text", KuduColumnSchema::STRING))
+                (KuduColumnSchema("source", KuduColumnSchema::STRING))
+                (KuduColumnSchema("created_at", KuduColumnSchema::STRING))
+                (KuduColumnSchema("user_id", KuduColumnSchema::UINT64))
+                (KuduColumnSchema("user_name", KuduColumnSchema::STRING))
+                (KuduColumnSchema("user_description", KuduColumnSchema::STRING))
+                (KuduColumnSchema("user_location", KuduColumnSchema::STRING))
+                (KuduColumnSchema("user_followers_count", KuduColumnSchema::UINT32))
+                (KuduColumnSchema("user_friends_count", KuduColumnSchema::UINT32))
+                (KuduColumnSchema("user_image_url", KuduColumnSchema::STRING)),
                 1);
 }
 
