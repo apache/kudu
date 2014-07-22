@@ -45,8 +45,8 @@ class RpcLineItemDAO {
   gscoped_ptr<client::KuduScanner> current_scanner_;
   // Keeps track of all the orders batched for writing
   std::set<std::pair<uint32_t, uint32_t> > orders_in_request_;
-  const string master_address_;
-  const string table_name_;
+  const std::string master_address_;
+  const std::string table_name_;
   const int timeout_;
   const int batch_max_;
   int batch_size_;

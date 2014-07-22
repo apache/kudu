@@ -64,94 +64,92 @@ bool KuduRowResult::IsNull(const Slice& col_name) const {
 }
 
 Status KuduRowResult::GetInt8(const Slice& col_name, int8_t* val) const {
-  return Get<INT8>(col_name, val);
+  return Get<TypeTraits<INT8> >(col_name, val);
 }
 
 Status KuduRowResult::GetInt16(const Slice& col_name, int16_t* val) const {
-  return Get<INT16>(col_name, val);
+  return Get<TypeTraits<INT16> >(col_name, val);
 }
 
 Status KuduRowResult::GetInt32(const Slice& col_name, int32_t* val) const {
-  return Get<INT32>(col_name, val);
+  return Get<TypeTraits<INT32> >(col_name, val);
 }
 
 Status KuduRowResult::GetInt64(const Slice& col_name, int64_t* val) const {
-  return Get<INT64>(col_name, val);
+  return Get<TypeTraits<INT64> >(col_name, val);
 }
 
 Status KuduRowResult::GetUInt8(const Slice& col_name, uint8_t* val) const {
-  return Get<UINT8>(col_name, val);
+  return Get<TypeTraits<UINT8> >(col_name, val);
 }
 
 Status KuduRowResult::GetUInt16(const Slice& col_name, uint16_t* val) const {
-  return Get<UINT16>(col_name, val);
+  return Get<TypeTraits<UINT16> >(col_name, val);
 }
 
 Status KuduRowResult::GetUInt32(const Slice& col_name, uint32_t* val) const {
-  return Get<UINT32>(col_name, val);
+  return Get<TypeTraits<UINT32> >(col_name, val);
 }
 
 Status KuduRowResult::GetUInt64(const Slice& col_name, uint64_t* val) const {
-  return Get<UINT64>(col_name, val);
+  return Get<TypeTraits<UINT64> >(col_name, val);
 }
 
 Status KuduRowResult::GetString(const Slice& col_name, Slice* val) const {
-  return Get<STRING>(col_name, val);
+  return Get<TypeTraits<STRING> >(col_name, val);
 }
 
 Status KuduRowResult::GetInt8(int col_idx, int8_t* val) const {
-  return Get<INT8>(col_idx, val);
+  return Get<TypeTraits<INT8> >(col_idx, val);
 }
 
 Status KuduRowResult::GetInt16(int col_idx, int16_t* val) const {
-  return Get<INT16>(col_idx, val);
+  return Get<TypeTraits<INT16> >(col_idx, val);
 }
 
 Status KuduRowResult::GetInt32(int col_idx, int32_t* val) const {
-  return Get<INT32>(col_idx, val);
+  return Get<TypeTraits<INT32> >(col_idx, val);
 }
 
 Status KuduRowResult::GetInt64(int col_idx, int64_t* val) const {
-  return Get<INT64>(col_idx, val);
+  return Get<TypeTraits<INT64> >(col_idx, val);
 }
 
 Status KuduRowResult::GetUInt8(int col_idx, uint8_t* val) const {
-  return Get<UINT8>(col_idx, val);
+  return Get<TypeTraits<UINT8> >(col_idx, val);
 }
 
 Status KuduRowResult::GetUInt16(int col_idx, uint16_t* val) const {
-  return Get<UINT16>(col_idx, val);
+  return Get<TypeTraits<UINT16> >(col_idx, val);
 }
 
 Status KuduRowResult::GetUInt32(int col_idx, uint32_t* val) const {
-  return Get<UINT32>(col_idx, val);
+  return Get<TypeTraits<UINT32> >(col_idx, val);
 }
 
 Status KuduRowResult::GetUInt64(int col_idx, uint64_t* val) const {
-  return Get<UINT64>(col_idx, val);
+  return Get<TypeTraits<UINT64> >(col_idx, val);
 }
 
 Status KuduRowResult::GetString(int col_idx, Slice* val) const {
-  return Get<STRING>(col_idx, val);
+  return Get<TypeTraits<STRING> >(col_idx, val);
 }
 
-template<DataType TYPE>
-Status KuduRowResult::Get(const Slice& col_name,
-                          typename DataTypeTraits<TYPE>::cpp_type* val) const {
+template<typename T>
+Status KuduRowResult::Get(const Slice& col_name, typename T::cpp_type* val) const {
   int col_idx;
   RETURN_NOT_OK(FindColumn(*schema_, col_name, &col_idx));
-  return Get<TYPE>(col_idx, val);
+  return Get<T>(col_idx, val);
 }
 
-template<DataType TYPE>
-Status KuduRowResult::Get(int col_idx,
-                          typename DataTypeTraits<TYPE>::cpp_type* val) const {
+template<typename T>
+Status KuduRowResult::Get(int col_idx, typename T::cpp_type* val) const {
   const ColumnSchema& col = schema_->column(col_idx);
-  if (PREDICT_FALSE(col.type_info()->type() != TYPE)) {
+  if (PREDICT_FALSE(col.type_info()->type() != T::type)) {
     // TODO: at some point we could allow type coercion here.
     return Status::InvalidArgument(
         Substitute("invalid type $0 provided for column '$1' (expected $2)",
-                   DataTypeTraits<TYPE>::name(),
+                   T::name(),
                    col.name(), col.type_info()->name()));
   }
 

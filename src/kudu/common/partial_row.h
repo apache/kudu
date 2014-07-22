@@ -5,7 +5,6 @@
 #include <string>
 #include <vector>
 
-#include "kudu/common/types.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/util/slice.h"
 
@@ -135,23 +134,19 @@ class KuduPartialRow {
   friend class RowOperationsPBEncoder;
   friend class client::KuduWriteOperation;   // for row_data_.
 
-  template<DataType TYPE>
-  Status Set(const Slice& col_name,
-             const typename DataTypeTraits<TYPE>::cpp_type& val,
+  template<typename T>
+  Status Set(const Slice& col_name, const typename T::cpp_type& val,
              bool owned = false);
 
-  template<DataType TYPE>
-  Status Set(int col_idx,
-             const typename DataTypeTraits<TYPE>::cpp_type& val,
+  template<typename T>
+  Status Set(int col_idx, const typename T::cpp_type& val,
              bool owned = false);
 
-  template<DataType TYPE>
-  Status Get(const Slice& col_name,
-             typename DataTypeTraits<TYPE>::cpp_type* val) const;
+  template<typename T>
+  Status Get(const Slice& col_name, typename T::cpp_type* val) const;
 
-  template<DataType TYPE>
-  Status Get(int col_idx,
-             typename DataTypeTraits<TYPE>::cpp_type* val) const;
+  template<typename T>
+  Status Get(int col_idx, typename T::cpp_type* val) const;
 
 
   // If the given column is a string whose memory is owned by this instance,

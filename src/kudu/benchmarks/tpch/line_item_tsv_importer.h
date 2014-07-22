@@ -9,6 +9,7 @@
 
 #include "kudu/benchmarks/tpch/tpch-schemas.h"
 #include "kudu/common/partial_row.h"
+#include "kudu/gutil/strings/numbers.h"
 #include "kudu/gutil/strings/split.h"
 #include "kudu/gutil/strings/stringpiece.h"
 #include "kudu/util/status.h"

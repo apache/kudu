@@ -55,32 +55,32 @@ KuduPartialRow::~KuduPartialRow() {
   delete [] isset_bitmap_;
 }
 
-template<DataType TYPE>
+template<typename T>
 Status KuduPartialRow::Set(const Slice& col_name,
-                       const typename DataTypeTraits<TYPE>::cpp_type& val,
-                       bool owned) {
+                           const typename T::cpp_type& val,
+                           bool owned) {
   int col_idx;
   RETURN_NOT_OK(FindColumn(*schema_, col_name, &col_idx));
-  return Set<TYPE>(col_idx, val, owned);
+  return Set<T>(col_idx, val, owned);
 }
 
-template<DataType TYPE>
+template<typename T>
 Status KuduPartialRow::Set(int col_idx,
-                       const typename DataTypeTraits<TYPE>::cpp_type& val,
-                       bool owned) {
+                           const typename T::cpp_type& val,
+                           bool owned) {
   const ColumnSchema& col = schema_->column(col_idx);
-  if (PREDICT_FALSE(col.type_info()->type() != TYPE)) {
+  if (PREDICT_FALSE(col.type_info()->type() != T::type)) {
     // TODO: at some point we could allow type coercion here.
     return Status::InvalidArgument(
       Substitute("invalid type $0 provided for column '$1' (expected $2)",
-                 DataTypeTraits<TYPE>::name(),
+                 T::name(),
                  col.name(), col.type_info()->name()));
   }
 
   ContiguousRow row(schema_, row_data_);
 
   // If we're replacing an existing STRING value, deallocate the old value.
-  if (TYPE == STRING) DeallocateStringIfSet(col_idx);
+  if (T::type == STRING) DeallocateStringIfSet(col_idx);
 
   // Mark the column as set.
   BitmapSet(isset_bitmap_, col_idx);
@@ -116,66 +116,66 @@ void KuduPartialRow::DeallocateOwnedStrings() {
 //------------------------------------------------------------
 
 Status KuduPartialRow::SetInt8(const Slice& col_name, int8_t val) {
-  return Set<INT8>(col_name, val);
+  return Set<TypeTraits<INT8> >(col_name, val);
 }
 Status KuduPartialRow::SetInt16(const Slice& col_name, int16_t val) {
-  return Set<INT16>(col_name, val);
+  return Set<TypeTraits<INT16> >(col_name, val);
 }
 Status KuduPartialRow::SetInt32(const Slice& col_name, int32_t val) {
-  return Set<INT32>(col_name, val);
+  return Set<TypeTraits<INT32> >(col_name, val);
 }
 Status KuduPartialRow::SetInt64(const Slice& col_name, int64_t val) {
-  return Set<INT64>(col_name, val);
+  return Set<TypeTraits<INT64> >(col_name, val);
 }
 Status KuduPartialRow::SetUInt8(const Slice& col_name, uint8_t val) {
-  return Set<UINT8>(col_name, val);
+  return Set<TypeTraits<UINT8> >(col_name, val);
 }
 Status KuduPartialRow::SetUInt16(const Slice& col_name, uint16_t val) {
-  return Set<UINT16>(col_name, val);
+  return Set<TypeTraits<UINT16> >(col_name, val);
 }
 Status KuduPartialRow::SetUInt32(const Slice& col_name, uint32_t val) {
-  return Set<UINT32>(col_name, val);
+  return Set<TypeTraits<UINT32> >(col_name, val);
 }
 Status KuduPartialRow::SetUInt64(const Slice& col_name, uint64_t val) {
-  return Set<UINT64>(col_name, val);
+  return Set<TypeTraits<UINT64> >(col_name, val);
 }
 Status KuduPartialRow::SetString(const Slice& col_name, const Slice& val) {
-  return Set<STRING>(col_name, val, false);
+  return Set<TypeTraits<STRING> >(col_name, val, false);
 }
 
 Status KuduPartialRow::SetInt8(int col_idx, int8_t val) {
-  return Set<INT8>(col_idx, val);
+  return Set<TypeTraits<INT8> >(col_idx, val);
 }
 Status KuduPartialRow::SetInt16(int col_idx, int16_t val) {
-  return Set<INT16>(col_idx, val);
+  return Set<TypeTraits<INT16> >(col_idx, val);
 }
 Status KuduPartialRow::SetInt32(int col_idx, int32_t val) {
-  return Set<INT32>(col_idx, val);
+  return Set<TypeTraits<INT32> >(col_idx, val);
 }
 Status KuduPartialRow::SetInt64(int col_idx, int64_t val) {
-  return Set<INT64>(col_idx, val);
+  return Set<TypeTraits<INT64> >(col_idx, val);
 }
 Status KuduPartialRow::SetUInt8(int col_idx, uint8_t val) {
-  return Set<UINT8>(col_idx, val);
+  return Set<TypeTraits<UINT8> >(col_idx, val);
 }
 Status KuduPartialRow::SetUInt16(int col_idx, uint16_t val) {
-  return Set<UINT16>(col_idx, val);
+  return Set<TypeTraits<UINT16> >(col_idx, val);
 }
 Status KuduPartialRow::SetUInt32(int col_idx, uint32_t val) {
-  return Set<UINT32>(col_idx, val);
+  return Set<TypeTraits<UINT32> >(col_idx, val);
 }
 Status KuduPartialRow::SetUInt64(int col_idx, uint64_t val) {
-  return Set<UINT64>(col_idx, val);
+  return Set<TypeTraits<UINT64> >(col_idx, val);
 }
 Status KuduPartialRow::SetString(int col_idx, const Slice& val) {
-  return Set<STRING>(col_idx, val, false);
+  return Set<TypeTraits<STRING> >(col_idx, val, false);
 }
 
 Status KuduPartialRow::SetStringCopy(const Slice& col_name, const Slice& val) {
   uint8_t* relocated = new uint8_t[val.size()];
   memcpy(relocated, val.data(), val.size());
   Slice relocated_val(relocated, val.size());
-  Status s = Set<STRING>(col_name, relocated_val, true);
+  Status s = Set<TypeTraits<STRING> >(col_name, relocated_val, true);
   if (!s.ok()) {
     delete [] relocated;
   }
@@ -186,7 +186,7 @@ Status KuduPartialRow::SetStringCopy(int col_idx, const Slice& val) {
   uint8_t* relocated = new uint8_t[val.size()];
   memcpy(relocated, val.data(), val.size());
   Slice relocated_val(relocated, val.size());
-  Status s = Set<STRING>(col_idx, relocated_val, true);
+  Status s = Set<TypeTraits<STRING> >(col_idx, relocated_val, true);
   if (!s.ok()) {
     delete [] relocated;
   }
@@ -262,78 +262,77 @@ bool KuduPartialRow::IsNull(const Slice& col_name) const {
 }
 
 Status KuduPartialRow::GetInt8(const Slice& col_name, int8_t* val) const {
-  return Get<INT8>(col_name, val);
+  return Get<TypeTraits<INT8> >(col_name, val);
 }
 Status KuduPartialRow::GetInt16(const Slice& col_name, int16_t* val) const {
-  return Get<INT16>(col_name, val);
+  return Get<TypeTraits<INT16> >(col_name, val);
 }
 Status KuduPartialRow::GetInt32(const Slice& col_name, int32_t* val) const {
-  return Get<INT32>(col_name, val);
+  return Get<TypeTraits<INT32> >(col_name, val);
 }
 Status KuduPartialRow::GetInt64(const Slice& col_name, int64_t* val) const {
-  return Get<INT64>(col_name, val);
+  return Get<TypeTraits<INT64> >(col_name, val);
 }
 Status KuduPartialRow::GetUInt8(const Slice& col_name, uint8_t* val) const {
-  return Get<UINT8>(col_name, val);
+  return Get<TypeTraits<UINT8> >(col_name, val);
 }
 Status KuduPartialRow::GetUInt16(const Slice& col_name, uint16_t* val) const {
-  return Get<UINT16>(col_name, val);
+  return Get<TypeTraits<UINT16> >(col_name, val);
 }
 Status KuduPartialRow::GetUInt32(const Slice& col_name, uint32_t* val) const {
-  return Get<UINT32>(col_name, val);
+  return Get<TypeTraits<UINT32> >(col_name, val);
 }
 Status KuduPartialRow::GetUInt64(const Slice& col_name, uint64_t* val) const {
-  return Get<UINT64>(col_name, val);
+  return Get<TypeTraits<UINT64> >(col_name, val);
 }
 Status KuduPartialRow::GetString(const Slice& col_name, Slice* val) const {
-  return Get<STRING>(col_name, val);
+  return Get<TypeTraits<STRING> >(col_name, val);
 }
 
 Status KuduPartialRow::GetInt8(int col_idx, int8_t* val) const {
-  return Get<INT8>(col_idx, val);
+  return Get<TypeTraits<INT8> >(col_idx, val);
 }
 Status KuduPartialRow::GetInt16(int col_idx, int16_t* val) const {
-  return Get<INT16>(col_idx, val);
+  return Get<TypeTraits<INT16> >(col_idx, val);
 }
 Status KuduPartialRow::GetInt32(int col_idx, int32_t* val) const {
-  return Get<INT32>(col_idx, val);
+  return Get<TypeTraits<INT32> >(col_idx, val);
 }
 Status KuduPartialRow::GetInt64(int col_idx, int64_t* val) const {
-  return Get<INT64>(col_idx, val);
+  return Get<TypeTraits<INT64> >(col_idx, val);
 }
 Status KuduPartialRow::GetUInt8(int col_idx, uint8_t* val) const {
-  return Get<UINT8>(col_idx, val);
+  return Get<TypeTraits<UINT8> >(col_idx, val);
 }
 Status KuduPartialRow::GetUInt16(int col_idx, uint16_t* val) const {
-  return Get<UINT16>(col_idx, val);
+  return Get<TypeTraits<UINT16> >(col_idx, val);
 }
 Status KuduPartialRow::GetUInt32(int col_idx, uint32_t* val) const {
-  return Get<UINT32>(col_idx, val);
+  return Get<TypeTraits<UINT32> >(col_idx, val);
 }
 Status KuduPartialRow::GetUInt64(int col_idx, uint64_t* val) const {
-  return Get<UINT64>(col_idx, val);
+  return Get<TypeTraits<UINT64> >(col_idx, val);
 }
 Status KuduPartialRow::GetString(int col_idx, Slice* val) const {
-  return Get<STRING>(col_idx, val);
+  return Get<TypeTraits<STRING> >(col_idx, val);
 }
 
-template<DataType TYPE>
+template<typename T>
 Status KuduPartialRow::Get(const Slice& col_name,
-                       typename DataTypeTraits<TYPE>::cpp_type* val) const {
+                           typename T::cpp_type* val) const {
   int col_idx;
   RETURN_NOT_OK(FindColumn(*schema_, col_name, &col_idx));
-return Get<TYPE>(col_idx, val);
+  return Get<T>(col_idx, val);
 }
 
-template<DataType TYPE>
-Status KuduPartialRow::Get(int col_idx,
-                       typename DataTypeTraits<TYPE>::cpp_type* val) const {
+template<typename T>
+Status KuduPartialRow::Get(int col_idx, typename T::cpp_type* val) const {
   const ColumnSchema& col = schema_->column(col_idx);
-  if (PREDICT_FALSE(col.type_info()->type() != TYPE)) {
+  if (PREDICT_FALSE(col.type_info()->type() != T::type)) {
     // TODO: at some point we could allow type coercion here.
     return Status::InvalidArgument(
       Substitute("invalid type $0 provided for column '$1' (expected $2)",
-                 DataTypeTraits<TYPE>::name(),
+                 T::name(),
                  col.name(), col.type_info()->name()));
   }
 

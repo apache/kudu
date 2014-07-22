@@ -6,7 +6,6 @@
 
 #include <glog/logging.h>
 
-#include "kudu/common/types.h"
 #include "kudu/gutil/port.h"
 #include "kudu/util/slice.h"
 #include "kudu/util/status.h"
@@ -74,13 +73,11 @@ class KuduRowResult {
     row_data_ = row_data;
   }
 
-  template<DataType TYPE>
-  Status Get(const Slice& col_name,
-             typename DataTypeTraits<TYPE>::cpp_type* val) const;
+  template<typename T>
+  Status Get(const Slice& col_name, typename T::cpp_type* val) const;
 
-  template<DataType TYPE>
-  Status Get(int col_idx,
-             typename DataTypeTraits<TYPE>::cpp_type* val) const;
+  template<typename T>
+  Status Get(int col_idx, typename T::cpp_type* val) const;
 
   const Schema* schema_;
   const uint8_t* row_data_;
