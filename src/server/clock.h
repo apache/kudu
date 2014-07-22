@@ -3,6 +3,8 @@
 #ifndef KUDU_SERVER_CLOCK_H_
 #define KUDU_SERVER_CLOCK_H_
 
+#include <string>
+
 #include "common/common.pb.h"
 #include "common/timestamp.h"
 #include "gutil/ref_counted.h"
@@ -56,6 +58,9 @@ class Clock : public base::RefCountedThreadSafe<Clock> {
 
   // Register the clock metrics in the registry.
   virtual void RegisterMetrics(MetricRegistry* registry) = 0;
+
+  // Strigifies the provided timestamp according to this clock's internal format.
+  virtual std::string Stringify(Timestamp timestamp) = 0;
 
   virtual ~Clock() {}
 };

@@ -3,6 +3,8 @@
 #ifndef KUDU_SERVER_HYBRID_CLOCK_H_
 #define KUDU_SERVER_HYBRID_CLOCK_H_
 
+#include <string>
+
 #include <gtest/gtest.h>
 
 #include "server/clock.h"
@@ -74,6 +76,8 @@ class HybridClock : public Clock {
   // but the error is too high and, since we can't do anything about it,
   // LOG(FATAL)'s in that case.
   void NowWithError(Timestamp* timestamp, uint64_t* max_error_usec);
+
+  virtual std::string Stringify(Timestamp timestamp) OVERRIDE;
 
   // Static encoding/decoding methods for timestamps. Public mostly
   // for testing/debugging purposes.

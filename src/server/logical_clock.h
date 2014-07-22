@@ -3,6 +3,8 @@
 #ifndef KUDU_SERVER_LOGICAL_CLOCK_H_
 #define KUDU_SERVER_LOGICAL_CLOCK_H_
 
+#include <string>
+
 #include "server/clock.h"
 #include "util/status.h"
 
@@ -39,6 +41,8 @@ class LogicalClock : public Clock {
   virtual bool IsAfter(Timestamp t) OVERRIDE;
 
   virtual void RegisterMetrics(MetricRegistry* registry) OVERRIDE;
+
+  virtual std::string Stringify(Timestamp timestamp) OVERRIDE;
 
   // Logical clock doesn't support COMMIT_WAIT.
   virtual bool SupportsExternalConsistencyMode(ExternalConsistencyMode mode) OVERRIDE {

@@ -341,6 +341,12 @@ void HybridClock::RegisterMetrics(MetricRegistry* registry) {
       boost::bind(&HybridClock::ErrorForMetrics, this));
 }
 
+string HybridClock::Stringify(Timestamp timestamp) {
+  return Substitute("P: $0 msecs, L: $1",
+                    GetPhysicalValue(timestamp),
+                    GetLogicalValue(timestamp));
+}
+
 uint64_t HybridClock::GetTimeUsecs(ntptimeval* timeval) {
   return timeval->time.tv_sec * kNanosPerSec + timeval->time.tv_usec / divisor_;
 }

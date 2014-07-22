@@ -146,7 +146,7 @@ Status WriteTransaction::Prepare() {
   Tablet* tablet = state_->tablet_peer()->tablet();
   tablet->FinishPrepare(state_.get());
   TRACE("PREPARE: finished. Timestamp: $0",
-        server::HybridClock::GetPhysicalValue(state_->timestamp()));
+        state_->tablet_peer()->clock()->Stringify(state_->timestamp()));
   return Status::OK();
 }
 

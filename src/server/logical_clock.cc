@@ -5,6 +5,7 @@
 #include "server/logical_clock.h"
 
 #include "gutil/atomicops.h"
+#include "gutil/strings/substitute.h"
 #include "util/metrics.h"
 #include "util/status.h"
 
@@ -69,6 +70,10 @@ void LogicalClock::RegisterMetrics(MetricRegistry* registry) {
   METRIC_clock_timestamp.InstantiateFunctionGauge(
       ctx,
       boost::bind(&LogicalClock::NowForMetrics, this));
+}
+
+string LogicalClock::Stringify(Timestamp timestamp) {
+  return strings::Substitute("L: $0", timestamp.ToUint64());
 }
 
 }  // namespace server
