@@ -11,6 +11,7 @@
 #include "kudu/common/schema.h"
 #include "kudu/tablet/deltafile.h"
 #include "kudu/tablet/delta_compaction.h"
+#include "kudu/tablet/delta_iterator_merger.h"
 #include "kudu/gutil/strings/util.h"
 #include "kudu/gutil/algorithm.h"
 #include "kudu/util/test_macros.h"
@@ -58,63 +59,7 @@ class TestDeltaCompaction : public KuduTest {
     return Status::OK();
   }
 
-  Status OpenAsCompactionInput(const string& path,
-                               const Schema& projection,
-                               gscoped_ptr<DeltaCompactionInput> *dci) {
-    BlockId block_id(BaseName(path));
-    shared_ptr<DeltaFileReader> reader;
-    RETURN_NOT_OK(DeltaFileReader::Open(env_.get(), path, block_id, &reader, REDO));
-    CHECK_EQ(block_id, reader->block_id());
-    RETURN_NOT_OK(DeltaCompactionInput::Open(reader, projection, dci));
-    deltafile_idx_++;
-    return Status::OK();
-  }
-
-  Status FillDeltaFile(rowid_t first_row, int nrows, uint64_t timestamp_min,
-                       gscoped_ptr<DeltaCompactionInput> *dci) {
-    int limit = first_row + nrows;
-    string path = GetDeltaFilePath(deltafile_idx_);
-    gscoped_ptr<DeltaFileWriter> dfw;
-    RETURN_NOT_OK(GetDeltaFileWriter(path, schema_, &dfw));
-
-    faststring buf;
-
-    int64_t num_updates = 0;
-    for (int i = first_row; i < limit; i++) {
-      buf.clear();
-      RowChangeListEncoder update(&schema_, &buf);
-      uint32_t new_val = i;
-      update.AddColumnUpdate(0, &new_val);
-      int num_txns = random() % 3;
-      for (int j = 0, curr_timestamp = timestamp_min; j < num_txns; j++) {
-        DeltaKey key(i, Timestamp(curr_timestamp));
-        RETURN_NOT_OK(dfw->AppendDelta<REDO>(key, RowChangeList(buf)));
-        curr_timestamp++;
-        num_updates++;
-      }
-    }
-    DeltaStats stats(schema_.num_columns());
-    stats.IncrUpdateCount(0, num_updates);
-    RETURN_NOT_OK(dfw->WriteDeltaStats(stats));
-    RETURN_NOT_OK(dfw->Finish());
-    RETURN_NOT_OK(OpenAsCompactionInput(path, schema_, dci));
-    return Status::OK();
-  }
-
-  Status CreateMergedDeltaCompactionInput(gscoped_ptr<DeltaCompactionInput> *merged) {
-    vector<shared_ptr<DeltaCompactionInput> > inputs;
-    int min_timestamp = 0;
-    for (int i = 0; i < FLAGS_num_delta_files; i++) {
-      gscoped_ptr<DeltaCompactionInput> input;
-      RETURN_NOT_OK(FillDeltaFile(0, FLAGS_num_rows, min_timestamp, &input));
-      inputs.push_back(shared_ptr<DeltaCompactionInput>(input.release()));
-      min_timestamp += 2;
-    }
-    merged->reset(DeltaCompactionInput::Merge(schema_, inputs));
-    return Status::OK();
-  }
-
-  virtual void SetUp() OVERRIDE {
+ virtual void SetUp() OVERRIDE {
     KuduTest::SetUp();
     SeedRandom();
   }
@@ -123,46 +68,6 @@ class TestDeltaCompaction : public KuduTest {
   int64_t deltafile_idx_;
   Schema schema_;
 };
-
-TEST_F(TestDeltaCompaction, TestDeltaFileCompactionInput) {
-  gscoped_ptr<DeltaCompactionInput> input;
-  ASSERT_STATUS_OK(FillDeltaFile(0, FLAGS_num_rows, 0, &input));
-  vector<string> results;
-  ASSERT_STATUS_OK(DebugDumpDeltaCompactionInput(input.get(), &results, schema_));
-  BOOST_FOREACH(const string &str, results) {
-    VLOG(1) << str;
-  }
-  ASSERT_TRUE(is_sorted(results.begin(), results.end()));
-}
-
-TEST_F(TestDeltaCompaction, TestMerge) {
-  gscoped_ptr<DeltaCompactionInput> merged;
-  ASSERT_STATUS_OK(CreateMergedDeltaCompactionInput(&merged));
-  vector<string> results;
-  ASSERT_STATUS_OK(DebugDumpDeltaCompactionInput(merged.get(), &results, schema_));
-  BOOST_FOREACH(const string &str, results) {
-    VLOG(1) << str;
-  }
-  ASSERT_TRUE(is_sorted(results.begin(), results.end()));
-}
-
-TEST_F(TestDeltaCompaction, TestFlushDeltaCompactionInput) {
-  gscoped_ptr<DeltaCompactionInput> merged;
-  ASSERT_STATUS_OK(CreateMergedDeltaCompactionInput(&merged));
-  string path = GetDeltaFilePath(FLAGS_num_delta_files + 1);
-  gscoped_ptr<DeltaFileWriter> dfw;
-  ASSERT_STATUS_OK(GetDeltaFileWriter(path, schema_, &dfw));
-  ASSERT_STATUS_OK(FlushDeltaCompactionInput(merged.get(), dfw.get()));
-  ASSERT_STATUS_OK(dfw->Finish());
-  gscoped_ptr<DeltaCompactionInput> dci;
-  ASSERT_STATUS_OK(OpenAsCompactionInput(path, schema_, &dci));
-  vector<string> results;
-  ASSERT_STATUS_OK(DebugDumpDeltaCompactionInput(dci.get(), &results, schema_));
-  BOOST_FOREACH(const string &str, results) {
-    VLOG(1) << str;
-  }
-  ASSERT_TRUE(is_sorted(results.begin(), results.end()));
-}
 
 TEST_F(TestDeltaCompaction, TestMergeMultipleSchemas) {
   vector<Schema> schemas;
@@ -179,7 +84,7 @@ TEST_F(TestDeltaCompaction, TestMergeMultipleSchemas) {
   ASSERT_STATUS_OK(builder.AddColumn("c3", STRING, false, &default_c3, &default_c3));
   schemas.push_back(builder.Build());
 
-  vector<shared_ptr<DeltaCompactionInput> > inputs;
+  vector<shared_ptr<DeltaStore> > inputs;
 
   faststring buf;
   int row_id = 0;
@@ -229,35 +134,60 @@ TEST_F(TestDeltaCompaction, TestMergeMultipleSchemas) {
       // of this new schema will always be on rows [0, 1, 2, ...] while the
       // others will be on new rows. (N is tunable by changing kNumMultipleUpdates)
       DeltaKey key((i < kNumMultipleUpdates) ? i : row_id, Timestamp(curr_timestamp));
-      ASSERT_STATUS_OK(dfw->AppendDelta<REDO>(key, update.as_changelist()));
+      RowChangeList row_changes = update.as_changelist();
+      ASSERT_STATUS_OK(dfw->AppendDelta<REDO>(key, row_changes));
+      ASSERT_STATUS_OK(stats.UpdateStats(key.timestamp(), schema, row_changes));
       curr_timestamp++;
       row_id++;
     }
 
     ASSERT_STATUS_OK(dfw->WriteDeltaStats(stats));
     ASSERT_STATUS_OK(dfw->Finish());
-    gscoped_ptr<DeltaCompactionInput> dci;
-    ASSERT_STATUS_OK(OpenAsCompactionInput(path, schemas.back(), &dci));
-    inputs.push_back(shared_ptr<DeltaCompactionInput>(dci.release()));
+    shared_ptr<RandomAccessFile> reader;
+    env_util::OpenFileForRandom(env_.get(), path, &reader);
+    shared_ptr<DeltaFileReader> delta_reader;
+    BlockId block_id;
+    size_t size;
+    ASSERT_STATUS_OK(reader->Size(&size));
+    ASSERT_STATUS_OK(DeltaFileReader::Open(path, reader, size, block_id,
+                                           &delta_reader, REDO));
+    inputs.push_back(delta_reader);
     deltafile_idx++;
   }
 
   // Merge
-  gscoped_ptr<DeltaCompactionInput> merged(DeltaCompactionInput::Merge(schemas.back(), inputs));
+  MvccSnapshot snap(MvccSnapshot::CreateSnapshotIncludingAllTransactions());
+  const Schema& merge_schema = schemas.back();
+  shared_ptr<DeltaIterator> merge_iter(DeltaIteratorMerger::Create(inputs,
+                                                                   &merge_schema,
+                                                                   snap));
   string path = GetDeltaFilePath(deltafile_idx);
 
   gscoped_ptr<DeltaFileWriter> dfw;
-  ASSERT_STATUS_OK(GetDeltaFileWriter(path, merged->schema(), &dfw));
-  ASSERT_STATUS_OK(FlushDeltaCompactionInput(merged.get(), dfw.get()));
+  ASSERT_STATUS_OK(GetDeltaFileWriter(path,merge_schema, &dfw));
+  ASSERT_STATUS_OK(WriteDeltaIteratorToFile<REDO>(merge_iter.get(),
+                                                  merge_schema,
+                                                  ITERATE_OVER_ALL_ROWS,
+                                                  dfw.get()));
   ASSERT_STATUS_OK(dfw->Finish());
 
-  gscoped_ptr<DeltaCompactionInput> dci;
-  ASSERT_STATUS_OK(OpenAsCompactionInput(path, merged->schema(), &dci));
+  shared_ptr<RandomAccessFile> reader;
+  env_util::OpenFileForRandom(env_.get(), path, &reader);
+  shared_ptr<DeltaFileReader> delta_reader;
+  BlockId block_id;
+  size_t size;
+  ASSERT_STATUS_OK(reader->Size(&size));
+  ASSERT_STATUS_OK(DeltaFileReader::Open(path, reader, size, block_id,
+                                           &delta_reader, REDO));
+  DeltaIterator* raw_iter;
+  ASSERT_STATUS_OK(delta_reader->NewDeltaIterator(&merge_schema, snap, &raw_iter));
+  gscoped_ptr<DeltaIterator> scoped_iter(raw_iter);
 
   vector<string> results;
-  ASSERT_STATUS_OK(DebugDumpDeltaCompactionInput(dci.get(), &results, schemas.back()));
+  ASSERT_STATUS_OK(DebugDumpDeltaIterator(REDO, scoped_iter.get(), merge_schema,
+                                          ITERATE_OVER_ALL_ROWS, &results));
   BOOST_FOREACH(const string &str, results) {
-    VLOG(1) << str; // TODO: Verify output
+    VLOG(1) << str;
   }
   ASSERT_TRUE(is_sorted(results.begin(), results.end()));
 }

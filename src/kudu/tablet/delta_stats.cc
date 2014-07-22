@@ -22,6 +22,7 @@ void DeltaStats::Resize(size_t ncols) {
 }
 
 void DeltaStats::IncrUpdateCount(size_t col_idx, int64_t update_count) {
+  DCHECK_LT(col_idx, update_counts_.size());
   update_counts_[col_idx] += update_count;
 }
 
@@ -32,6 +33,8 @@ void DeltaStats::IncrDeleteCount(int64_t delete_count) {
 Status DeltaStats::UpdateStats(const Timestamp& timestamp,
                                const Schema& schema,
                                const RowChangeList& update) {
+  DCHECK_LE(schema.num_columns(), update_counts_.size());
+
   // We'd like to maintain per column statistics of updates and deletes.
   // Problem is that with updates, the column ids are encoded in the RowChangeList
   // itself. In the long term, we should use bitmaps in RowChangeList to represent

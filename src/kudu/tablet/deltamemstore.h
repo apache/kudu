@@ -103,7 +103,6 @@ class DeltaMemStore : public DeltaStore,
 
  private:
   friend class DMSIterator;
-  friend class DeltaCompactionInput;
 
   const DMSTree& tree() const {
     return tree_;

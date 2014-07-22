@@ -35,7 +35,6 @@ using std::tr1::shared_ptr;
 
 class DeltaFileIterator;
 class DeltaKey;
-class DeltaCompactionInput;
 template<DeltaType Type>
 struct ApplyingVisitor;
 template<DeltaType Type>
@@ -133,7 +132,6 @@ class DeltaFileReader : public DeltaStore,
 
  private:
   friend class DeltaFileIterator;
-  friend class DeltaCompactionInput;
 
   DISALLOW_COPY_AND_ASSIGN(DeltaFileReader);
 

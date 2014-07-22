@@ -37,7 +37,6 @@ namespace tablet {
 
 using std::tr1::shared_ptr;
 
-class DeltaCompactionInput;
 class DeltaMemStore;
 class DeltaFileReader;
 class OperationResultPB;
@@ -159,7 +158,7 @@ class DeltaTracker {
 
   FRIEND_TEST(TestRowSet, TestRowSetUpdate);
   FRIEND_TEST(TestRowSet, TestDMSFlush);
-  FRIEND_TEST(TestRowSet, TestMakeDeltaCompactionInput);
+  FRIEND_TEST(TestRowSet, TestMakeDeltaIteratorMergerUnlocked);
   FRIEND_TEST(TestRowSet, TestCompactStores);
   FRIEND_TEST(TestMajorDeltaCompaction, TestCompact);
 
@@ -177,18 +176,29 @@ class DeltaTracker {
   // Performs the actual compaction. Results of compaction are written to "data_writer",
   // while delta stores that underwent compaction are appended to "compacted_stores", while
   // their corresponding block ids are appended to "compacted_blocks".
+  //
+  // NOTE: the caller of this method should acquire or already hold an
+  // exclusive lock on 'compact_flush_lock_' before calling this
+  // method in order to protect 'redo_delta_stores_'.
   Status DoCompactStores(size_t start_idx, size_t end_idx,
                          const shared_ptr<WritableFile> &data_writer,
                          vector<shared_ptr<DeltaStore> > *compacted_stores,
                          std::vector<BlockId>* compacted_blocks);
 
-  // Creates a merged compaction input and captures the delta stores and
-  // delta block ids under compaction.
-  // The compaction input is only valid as long as this DeltaTracker.
-  Status MakeCompactionInput(size_t start_idx, size_t end_idx,
-                             vector<shared_ptr<DeltaStore > > *target_stores,
-                             vector<BlockId> *target_blocks,
-                             gscoped_ptr<DeltaCompactionInput> *out);
+  // Creates a merge delta iterator and captures the delta stores and
+  // delta blocks under compaction into 'target_stores' and
+  // 'target_blocks', respectively.  The merge iterator is stored in
+  // 'out'; 'out' is valid until this instance of DeltaTracker
+  // is destroyed.
+  //
+  // NOTE: the caller of this method must first acquire or already
+  // hold a lock on 'compact_flush_lock_'in order to guard against a
+  // race on 'redo_delta_stores_'.
+  Status MakeDeltaIteratorMergerUnlocked(size_t start_idx, size_t end_idx,
+                                         const Schema* schema,
+                                         vector<shared_ptr<DeltaStore > > *target_stores,
+                                         vector<BlockId> *target_blocks,
+                                         std::tr1::shared_ptr<DeltaIterator> *out);
 
   shared_ptr<metadata::RowSetMetadata> rowset_metadata_;
   Schema schema_;
@@ -211,7 +221,7 @@ class DeltaTracker {
   // The set of tracked UNDO delta stores
   SharedDeltaStoreVector undo_delta_stores_;
 
-  // read-write lock protecting dms_ and delta_stores_.
+  // read-write lock protecting dms_ and {redo,undo}_delta_stores_.
   // - Readers and mutators take this lock in shared mode.
   // - Flushers take this lock in exclusive mode before they modify the
   //   structure of the rowset.

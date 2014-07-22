@@ -81,15 +81,13 @@ Status DeltaIteratorMerger::FilterColumnsAndAppend(const metadata::ColumnIndexes
 }
 
 bool DeltaIteratorMerger::HasNext() {
-  if (iters_.empty()) {
-    return false;
-  }
   BOOST_FOREACH(const shared_ptr<DeltaIterator>& iter, iters_) {
-    if (!iter->HasNext()) {
-      return false;
+    if (iter->HasNext()) {
+      return true;
     }
   }
-  return true;
+
+  return false;
 }
 
 string DeltaIteratorMerger::ToString() const {

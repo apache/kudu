@@ -381,7 +381,7 @@ TEST_F(TestRowSet, TestRollingDiskRowSetWriter) {
   }
 }
 
-TEST_F(TestRowSet, TestMakeDeltaCompactionInput) {
+TEST_F(TestRowSet, TestMakeDeltaIteratorMergerUnlocked) {
   WriteTestRowSet();
 
   // Now open the DiskRowSet for read
@@ -393,11 +393,14 @@ TEST_F(TestRowSet, TestMakeDeltaCompactionInput) {
   int num_stores = dt->redo_delta_stores_.size();
   vector<shared_ptr<DeltaStore> > compacted_stores;
   vector<BlockId> compacted_blocks;
-  gscoped_ptr<DeltaCompactionInput> dci;
-  ASSERT_STATUS_OK(dt->MakeCompactionInput(0, num_stores - 1, &compacted_stores,
-                                           &compacted_blocks, &dci));
+  shared_ptr<DeltaIterator> merge_iter;
+  ASSERT_STATUS_OK(dt->MakeDeltaIteratorMergerUnlocked(0, num_stores - 1, &schema_,
+                                                       &compacted_stores,
+                                                       &compacted_blocks, &merge_iter));
   vector<string> results;
-  ASSERT_STATUS_OK(DebugDumpDeltaCompactionInput(dci.get(), &results, schema_));
+  ASSERT_STATUS_OK(DebugDumpDeltaIterator(REDO, merge_iter.get(), schema_,
+                                          ITERATE_OVER_ALL_ROWS,
+                                          &results));
   BOOST_FOREACH(const string &str, results) {
     VLOG(1) << str;
   }
@@ -432,11 +435,14 @@ TEST_F(TestRowSet, TestCompactStores) {
   // Verify that the resulting deltafile is valid
   vector<shared_ptr<DeltaStore> > compacted_stores;
   vector<BlockId> compacted_blocks;
-  gscoped_ptr<DeltaCompactionInput> dci;
-  ASSERT_STATUS_OK(dt->MakeCompactionInput(0, num_stores - 1, &compacted_stores,
-                                           &compacted_blocks, &dci));
+  shared_ptr<DeltaIterator> merge_iter;
+  ASSERT_STATUS_OK(dt->MakeDeltaIteratorMergerUnlocked(0, num_stores - 1, &schema_,
+                                                       &compacted_stores,
+                                                       &compacted_blocks, &merge_iter));
   vector<string> results;
-  ASSERT_STATUS_OK(DebugDumpDeltaCompactionInput(dci.get(), &results, schema_));
+  ASSERT_STATUS_OK(DebugDumpDeltaIterator(REDO, merge_iter.get(), schema_,
+                                          ITERATE_OVER_ALL_ROWS,
+                                          &results));
   BOOST_FOREACH(const string &str, results) {
     VLOG(1) << str;
   }

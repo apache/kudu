@@ -95,16 +95,15 @@ Status DeltaTracker::Open() {
   return Status::OK();
 }
 
-Status DeltaTracker::MakeCompactionInput(size_t start_idx, size_t end_idx,
-                                         vector<shared_ptr<DeltaStore> > *target_stores,
-                                         vector<BlockId> *target_blocks,
-                                         gscoped_ptr<DeltaCompactionInput> *out) {
-  boost::shared_lock<boost::shared_mutex> lock(component_lock_);
-
+Status DeltaTracker::MakeDeltaIteratorMergerUnlocked(size_t start_idx, size_t end_idx,
+                                                     const Schema* projection,
+                                                     vector<shared_ptr<DeltaStore> > *target_stores,
+                                                     vector<BlockId> *target_blocks,
+                                                     std::tr1::shared_ptr<DeltaIterator> *out) {
   CHECK(open_);
   CHECK_LE(start_idx, end_idx);
   CHECK_LT(end_idx, redo_delta_stores_.size());
-  vector<shared_ptr<DeltaCompactionInput> > inputs;
+  vector<shared_ptr<DeltaStore> > inputs;
   for (size_t idx = start_idx; idx <= end_idx; ++idx) {
     shared_ptr<DeltaStore> &delta_store = redo_delta_stores_[idx];
 
@@ -114,13 +113,13 @@ Status DeltaTracker::MakeCompactionInput(size_t start_idx, size_t end_idx,
     shared_ptr<DeltaFileReader> dfr = std::tr1::static_pointer_cast<DeltaFileReader>(delta_store);
 
     LOG(INFO) << "Preparing to compact delta file: " << dfr->path();
-    gscoped_ptr<DeltaCompactionInput> dci;
-    RETURN_NOT_OK(DeltaCompactionInput::Open(dfr, schema_, &dci));
-    inputs.push_back(shared_ptr<DeltaCompactionInput>(dci.release()));
+
+    inputs.push_back(delta_store);
     target_stores->push_back(delta_store);
     target_blocks->push_back(dfr->block_id());
   }
-  out->reset(DeltaCompactionInput::Merge(schema_, inputs));
+  *out = DeltaIteratorMerger::Create(inputs, projection,
+                                     MvccSnapshot::CreateSnapshotIncludingAllTransactions());
   return Status::OK();
 }
 
@@ -232,13 +231,22 @@ Status DeltaTracker::DoCompactStores(size_t start_idx, size_t end_idx,
          const shared_ptr<WritableFile> &data_writer,
          vector<shared_ptr<DeltaStore> > *compacted_stores,
          vector<BlockId> *compacted_blocks) {
-  gscoped_ptr<DeltaCompactionInput> inputs_merge;
-  RETURN_NOT_OK(MakeCompactionInput(start_idx, end_idx, compacted_stores,
-                                    compacted_blocks, &inputs_merge));
+  shared_ptr<DeltaIterator> inputs_merge;
+  Schema schema;
+  {
+    // Schema may be altered during a delta compaction.
+    boost::shared_lock<boost::shared_mutex> schema_lock(component_lock_);
+    schema = schema_;
+  }
+  RETURN_NOT_OK(MakeDeltaIteratorMergerUnlocked(start_idx, end_idx, &schema, compacted_stores,
+                                                compacted_blocks, &inputs_merge));
   LOG(INFO) << "Compacting " << (end_idx - start_idx + 1) << " delta files.";
-  DeltaFileWriter dfw(inputs_merge->schema(), data_writer);
+  DeltaFileWriter dfw(schema, data_writer);
   RETURN_NOT_OK(dfw.Start());
-  RETURN_NOT_OK(FlushDeltaCompactionInput(inputs_merge.get(), &dfw));
+  RETURN_NOT_OK(WriteDeltaIteratorToFile<REDO>(inputs_merge.get(),
+                                               schema,
+                                               ITERATE_OVER_ALL_ROWS,
+                                               &dfw));
   RETURN_NOT_OK(dfw.Finish());
   LOG(INFO) << "Succesfully compacted the specified delta files.";
   return Status::OK();
