@@ -11,12 +11,12 @@
 
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/ref_counted.h"
-#include "kudu/util/monotime.h"
 #include "kudu/master/master.pb.h"
 #include "kudu/master/ts_manager.h"
 #include "kudu/server/monitored_task.h"
 #include "kudu/util/cow_object.h"
 #include "kudu/util/locks.h"
+#include "kudu/util/monotime.h"
 #include "kudu/util/oid_generator.h"
 #include "kudu/util/status.h"
 

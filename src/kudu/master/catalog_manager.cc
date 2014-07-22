@@ -33,6 +33,7 @@
 #include <vector>
 
 #include "kudu/common/wire_protocol.h"
+#include "kudu/gutil/atomicops.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/mathlimits.h"
@@ -47,7 +48,9 @@
 #include "kudu/master/ts_descriptor.h"
 #include "kudu/master/ts_manager.h"
 #include "kudu/tserver/tserver_service.proxy.h"
+#include "kudu/rpc/messenger.h"
 #include "kudu/rpc/rpc_context.h"
+#include "kudu/util/monotime.h"
 #include "kudu/util/thread.h"
 #include "kudu/util/trace.h"
 #include "kudu/cfile/type_encodings.h"
@@ -56,7 +59,9 @@ DEFINE_int32(async_rpc_timeout_ms, 10 * 1000, // 10 sec
              "Timeout used for the Master->TS async rpc calls. "
              "(Advanced option)");
 DEFINE_int32(assignment_timeout_ms, 10 * 1000, // 10 sec
-             "Timeout used for the Master->TS assignment timeout. "
+             "Timeout used for Master->TS assignment requests. "
+             "(Advanced option)");
+DEFINE_int32(unresponsive_ts_rpc_timeout_ms, 30 * 1000, // 30 sec
              "(Advanced option)");
 DEFINE_int32(default_num_replicas, 1, // TODO switch to 3 and fix SelectReplicas()
              "Default number of replicas for tables that do have the num_replicas set. "
@@ -65,6 +70,8 @@ DEFINE_int32(default_num_replicas, 1, // TODO switch to 3 and fix SelectReplicas
 namespace kudu {
 namespace master {
 
+using base::subtle::NoBarrier_Load;
+using base::subtle::NoBarrier_CompareAndSwap;
 using cfile::TypeEncodingInfo;
 using metadata::QuorumPeerPB;
 using rpc::RpcContext;
@@ -247,10 +254,13 @@ void CatalogManagerBgTasks::Run() {
   while (!NoBarrier_Load(&closing_)) {
     std::vector<scoped_refptr<TabletInfo> > to_delete;
     std::vector<scoped_refptr<TabletInfo> > to_process;
+
+    // Get list of tablets not yet running or already replaced.
     catalog_manager_->ExtractTabletsToProcess(&to_delete, &to_process);
 
-    // Process the pending assignments
     if (!to_process.empty()) {
+      // Transition tablet assignment state from preparing to creating, send
+      // and schedule creation / deletion RPC messages, etc.
       catalog_manager_->ProcessPendingAssignments(to_process);
     }
 
@@ -284,7 +294,8 @@ string RequestorString(RpcContext* rpc) {
 } // anonymous namespace
 
 CatalogManager::CatalogManager(Master *master)
-  : master_(master), closing_(false) {
+  : master_(master),
+    closing_(false) {
 }
 
 CatalogManager::~CatalogManager() {
@@ -1036,6 +1047,9 @@ Status CatalogManager::HandleReportedTablet(TSDescriptor* ts_desc,
     return Status::OK();
   }
 
+  // TODO: The tablet should accept a leader report from someone who was not
+  // assigned as leader once we have leader election implemented.
+  // The role is returned in report.role().
   if (tablet_lock.data().IsQuorumLeader(ts_desc)) {
     if (report.has_schema_version() && !alter_requested) {
       HandleTabletSchemaVersionReport(tablet.get(), report.schema_version());
@@ -1070,76 +1084,152 @@ class AsyncTabletRequestTask : public MonitoredTask {
     : master_(master),
       permanent_uuid_(permanent_uuid),
       table_(table),
-      state_(kStatePreparing),
-      attempt_(0) {
+      start_ts_(MonoTime::Now(MonoTime::FINE)),
+      attempt_(0),
+      state_(kStateRunning) {
+    deadline_ = start_ts_;
+    deadline_.AddDelta(MonoDelta::FromMilliseconds(FLAGS_unresponsive_ts_rpc_timeout_ms));
   }
 
+  // Send the subclass RPC request.
   virtual Status Run() OVERRIDE {
-    state_ = kStateRunning;
-    start_ts_ = MonoTime::Now(MonoTime::FINE);
+    Status s = ResetTSProxy();
+    if (!s.ok()) {
+      LOG(WARNING) << "Unable to reset TS proxy: " << s.ToString();
+      MarkFailed();
+      UnregisterAsyncTask(); // May delete this.
+      return s.CloneAndPrepend("Failed to reset TS proxy");
+    }
 
-    RETURN_NOT_OK(ResetTSProxy());
+    // Calculate and set the timeout deadline.
+    MonoTime timeout = MonoTime::Now(MonoTime::FINE);
+    timeout.AddDelta(MonoDelta::FromMilliseconds(FLAGS_async_rpc_timeout_ms));
+    const MonoTime& deadline = MonoTime::Earliest(timeout, deadline_);
+    rpc_.set_deadline(deadline);
+
     SendRequest(++attempt_);
-
     return Status::OK();
   }
 
+  // Abort this task.
   virtual bool Abort() OVERRIDE {
-    state_ = kStateAborted;
+    MarkAborted();
     return true;
   }
 
-  virtual State state() const OVERRIDE { return state_; }
+  virtual State state() const OVERRIDE {
+    return static_cast<State>(NoBarrier_Load(&state_));
+  }
+
   virtual MonoTime start_timestamp() const OVERRIDE { return start_ts_; }
   virtual MonoTime completion_timestamp() const OVERRIDE { return end_ts_; }
 
  protected:
+  // Send an RPC request and register a callback.
   virtual void SendRequest(int attempt) = 0;
+
+  // Handle the response from the RPC request. On success, MarkSuccess() must
+  // be called to mutate the state_ variable. If retry is desired, then
+  // no state change is made. Retries will automatically be attempted as long
+  // as the state is kStateRunning and deadline_ has not yet passed.
   virtual void HandleResponse(int attempt) = 0;
+
+  // Return the id of the tablet that is the subject of the async request.
   virtual string tablet_id() const = 0;
 
-  // TODO: Parameterize max_attempts.
-  virtual int max_attempts() const { return 60; }
-
-  void Callback() {
-    CHECK_OK(kudu::Thread::Create("catalog manager", "task cb",
-        &AsyncTabletRequestTask::DeferredCallback, this, NULL));
+  // Transition from running -> complete.
+  void MarkComplete() {
+    NoBarrier_CompareAndSwap(&state_, kStateRunning, kStateComplete);
   }
 
-  void DeferredCallback() {
-    bool retry = (attempt_ < max_attempts() && state_ != kStateAborted);
+  // Transition from running -> aborted.
+  void MarkAborted() {
+    NoBarrier_CompareAndSwap(&state_, kStateRunning, kStateAborted);
+  }
+
+  // Transition from running -> failed.
+  void MarkFailed() {
+    NoBarrier_CompareAndSwap(&state_, kStateRunning, kStateFailed);
+  }
+
+  // Callback meant to be invoked from asynchronous RPC service proxy calls.
+  void RpcCallback() {
     if (!rpc_.status().ok()) {
       LOG(WARNING) << "TS " << permanent_uuid_ << ": " << type_name() << " RPC failed for tablet "
                    << tablet_id() << ": " << rpc_.status().ToString();
-      if (retry) {
-        usleep((1 + (attempt_ / 5)) * 1000000);
-        if ((retry = (state_ != kStateAborted))) {
-          WARN_NOT_OK(ResetTSProxy(), "Reset TS Proxy");
-        }
-      }
-    } else if (state_ != kStateAborted) {
-      HandleResponse(attempt_);
-      if (state_ != kStateComplete && retry) {
-        usleep((1 + (attempt_ / 5)) * 1000000);
+    } else if (state() != kStateAborted) {
+      HandleResponse(attempt_); // Modifies state_.
+    }
+
+    // Schedule a retry if the RPC call was not successful.
+    if (state() == kStateRunning) {
+      MonoTime now = MonoTime::Now(MonoTime::FINE);
+      // We assume it might take 10ms to process the request in the best case,
+      // fail if we have less than that amount of time remaining.
+      int64_t millis_remaining = deadline_.GetDeltaSince(now).ToMilliseconds() - 10;
+      // Exponential backoff with jitter.
+      int64_t base_delay_ms = 1 << (attempt_ + 3);  // 1st retry delayed 2^4 ms, 2nd 2^5, etc.
+      int64_t jitter_ms = rand() % 50;              // Add up to 50ms of additional random delay.
+      int64_t delay_millis = std::min<int64_t>(base_delay_ms + jitter_ms, millis_remaining);
+
+      if (delay_millis <= 0) {
+        LOG(WARNING) << "Request timed out: " << description();
+        MarkFailed();
+      } else {
+        MonoTime new_start_time = now;
+        new_start_time.AddDelta(MonoDelta::FromMilliseconds(delay_millis));
+        LOG(INFO) << "Scheduling retry of " << description() << " with a delay"
+                  << " of " << delay_millis << "ms (attempt = " << attempt_ << ")...";
+        master_->messenger()->ScheduleOnReactor(
+            boost::bind(&AsyncTabletRequestTask::RunDelayedTask, this, _1),
+            MonoDelta::FromMilliseconds(delay_millis));
+        return;
       }
     }
 
-    if (state_ != kStateComplete && retry) {
-      rpc_.Reset();
-      SendRequest(++attempt_);
-    } else {
-      if (!retry && state_ == kStateRunning) {
-        state_ = kStateFailed;
-      }
+    UnregisterAsyncTask();  // May call 'delete this'.
+  }
 
-      end_ts_ = MonoTime::Now(MonoTime::FINE);
-      if (table_ != NULL) {
-        table_->RemoveTask(this);
-      } else {
-        // This is a floating task (since the tablet does not exist)
-        // created as response to a tablet report.
-        Release();
-      }
+  Master * const master_;
+  const string permanent_uuid_;
+  const scoped_refptr<TableInfo> table_;
+
+  MonoTime start_ts_;
+  MonoTime end_ts_;
+  MonoTime deadline_;
+
+  int attempt_;
+  rpc::RpcController rpc_;
+  std::tr1::shared_ptr<tserver::TabletServerServiceProxy> ts_proxy_;
+
+ private:
+  // Callback for Reactor delayed task mechanism. Called either when it is time
+  // to execute the delayed task (with status == OK) or when the task
+  // is cancelled, i.e. when the scheduling timer is shut down (status != OK).
+  void RunDelayedTask(const Status& status) {
+    if (!status.ok()) {
+      LOG(WARNING) << "Async tablet task " << description() << " failed or was cancelled: "
+                   << status.ToString();
+      UnregisterAsyncTask();   // May delete this.
+      return;
+    }
+
+    string desc = description();  // Save in case we need to log after deletion.
+    Status s = Run();             // May delete this.
+    if (!s.ok()) {
+      LOG(WARNING) << "Async tablet task " << desc << " failed: " << s.ToString();
+    }
+  }
+
+  // Clean up request and release resources.
+  void UnregisterAsyncTask() {
+    end_ts_ = MonoTime::Now(MonoTime::FINE);
+    if (table_ != NULL) {
+      table_->RemoveTask(this);
+    } else {
+      // This is a floating task (since the table does not exist)
+      // created as response to a tablet report.
+      Release();  // May call "delete this";
     }
   }
 
@@ -1149,21 +1239,12 @@ class AsyncTabletRequestTask : public MonitoredTask {
     RETURN_NOT_OK(master_->ts_manager()->LookupTSByUUID(permanent_uuid_, &ts_desc));
     RETURN_NOT_OK(ts_desc->GetProxy(master_->messenger(), &ts_proxy));
     ts_proxy_.swap(ts_proxy);
+    rpc_.Reset();
     return Status::OK();
   }
 
- protected:
-  Master * const master_;
-  const string permanent_uuid_;
-  const scoped_refptr<TableInfo> table_;
-
-  MonoTime start_ts_;
-  MonoTime end_ts_;
-  volatile State state_;
-
-  int attempt_;
-  rpc::RpcController rpc_;
-  std::tr1::shared_ptr<tserver::TabletServerServiceProxy> ts_proxy_;
+  // Use state() and MarkX() accessors.
+  AtomicWord state_;
 };
 
 // Fire off the async create tablet.
@@ -1176,6 +1257,19 @@ class AsyncCreateTablet : public AsyncTabletRequestTask {
                     const scoped_refptr<TabletInfo>& tablet)
     : AsyncTabletRequestTask(master, permanent_uuid, tablet->table()),
       tablet_(tablet) {
+    deadline_ = start_ts_;
+    deadline_.AddDelta(MonoDelta::FromMilliseconds(FLAGS_assignment_timeout_ms));
+
+    TableMetadataLock table_lock(tablet_->table(), TableMetadataLock::READ);
+    const SysTabletsEntryPB& tablet_pb = tablet_->metadata().dirty().pb;
+
+    req_.set_table_id(tablet_->table()->id());
+    req_.set_tablet_id(tablet_->tablet_id());
+    req_.set_start_key(tablet_pb.start_key());
+    req_.set_end_key(tablet_pb.end_key());
+    req_.set_table_name(table_lock.data().pb.name());
+    req_.mutable_schema()->CopyFrom(table_lock.data().pb.schema());
+    req_.mutable_quorum()->CopyFrom(tablet_pb.quorum());
   }
 
   virtual string type_name() const OVERRIDE { return "Create Tablet"; }
@@ -1186,50 +1280,39 @@ class AsyncCreateTablet : public AsyncTabletRequestTask {
 
  protected:
   virtual string tablet_id() const OVERRIDE { return tablet_->tablet_id(); }
-  virtual int max_attempts() const OVERRIDE { return 1; }
 
   virtual void HandleResponse(int attempt) OVERRIDE {
-    if (resp_.has_error()) {
+    if (!resp_.has_error()) {
+      MarkComplete();
+    } else {
       Status s = StatusFromPB(resp_.error().status());
-      LOG(WARNING) << "CreateTablet RPC for tablet " << tablet_->tablet_id()
-                   << " on TS " << permanent_uuid_ << " failed: " << s.ToString();
-      state_ = kStateFailed;
+      if (s.IsAlreadyPresent()) {
+        LOG(INFO) << "CreateTablet RPC for tablet " << tablet_->tablet_id()
+                  << " on TS " << permanent_uuid_ << " returned already present: "
+                  << s.ToString();
+        MarkComplete();
+      } else {
+        LOG(WARNING) << "CreateTablet RPC for tablet " << tablet_->tablet_id()
+                     << " on TS " << permanent_uuid_ << " failed: " << s.ToString();
+      }
     }
   }
 
   virtual void SendRequest(int attempt) OVERRIDE {
-    tserver::CreateTabletRequestPB req;
-    {
-      TableMetadataLock table_lock(tablet_->table(), TableMetadataLock::READ);
-
-      const SysTabletsEntryPB& tablet_pb = tablet_->metadata().dirty().pb;
-
-      req.set_table_id(tablet_->table()->id());
-      req.set_tablet_id(tablet_->tablet_id());
-      req.set_start_key(tablet_pb.start_key());
-      req.set_end_key(tablet_pb.end_key());
-      req.set_table_name(table_lock.data().pb.name());
-      req.mutable_schema()->CopyFrom(table_lock.data().pb.schema());
-      req.mutable_quorum()->CopyFrom(tablet_pb.quorum());
-    }
-
-    rpc_.set_timeout(MonoDelta::FromMilliseconds(FLAGS_async_rpc_timeout_ms));
-    ts_proxy_->CreateTabletAsync(req, &resp_, &rpc_,
-                                 boost::bind(&AsyncCreateTablet::Callback, this));
+    ts_proxy_->CreateTabletAsync(req_, &resp_, &rpc_,
+                                 boost::bind(&AsyncCreateTablet::RpcCallback, this));
     VLOG(1) << "Send create tablet request to " << permanent_uuid_ << ":\n"
             << " (attempt " << attempt << "):\n"
-            << req.DebugString();
+            << req_.DebugString();
   }
 
  private:
   const scoped_refptr<TabletInfo> tablet_;
+  tserver::CreateTabletRequestPB req_;
   tserver::CreateTabletResponsePB resp_;
 };
 
-// Send the "Delete Tablet"
-// keeps retrying until we get an "ok" response.
-//  - Delete completed
-//  - TS has already deleted the tablet
+// Send a DeleteTablet() RPC request.
 class AsyncDeleteTablet : public AsyncTabletRequestTask {
  public:
   AsyncDeleteTablet(Master *master,
@@ -1241,10 +1324,6 @@ class AsyncDeleteTablet : public AsyncTabletRequestTask {
       tablet_id_(tablet_id),
       reason_(reason) {
     }
-
-  virtual bool Abort() OVERRIDE {
-    return false;
-  }
 
   virtual string type_name() const OVERRIDE { return "Delete Tablet"; }
 
@@ -1264,7 +1343,7 @@ class AsyncDeleteTablet : public AsyncTabletRequestTask {
         case TabletServerErrorPB::TABLET_NOT_FOUND:
           LOG(WARNING) << "TS " << permanent_uuid_ << ": delete failed for tablet " << tablet_id_
                        << " no further retry: " << status.ToString();
-          state_ = kStateComplete;
+          MarkComplete();
           break;
         default:
           LOG(WARNING) << "TS " << permanent_uuid_ << ": delete failed for tablet " << tablet_id_
@@ -1280,7 +1359,7 @@ class AsyncDeleteTablet : public AsyncTabletRequestTask {
         LOG(WARNING) << "Tablet " << tablet_id_ << " did not belong to a known table, but was "
                         "successfully deleted";
       }
-      state_ = kStateComplete;
+      MarkComplete();
       VLOG(1) << "TS " << permanent_uuid_ << ": delete complete on tablet " << tablet_id_;
     }
   }
@@ -1290,9 +1369,8 @@ class AsyncDeleteTablet : public AsyncTabletRequestTask {
     req.set_tablet_id(tablet_id_);
     req.set_reason(reason_);
 
-    rpc_.set_timeout(MonoDelta::FromMilliseconds(FLAGS_async_rpc_timeout_ms));
     ts_proxy_->DeleteTabletAsync(req, &resp_, &rpc_,
-                                 boost::bind(&AsyncDeleteTablet::Callback, this));
+                                 boost::bind(&AsyncDeleteTablet::RpcCallback, this));
     VLOG(1) << "Send delete tablet request to " << permanent_uuid_
             << " (attempt " << attempt << "):\n"
             << req.DebugString();
@@ -1337,7 +1415,7 @@ class AsyncAlterTable : public AsyncTabletRequestTask {
         case TabletServerErrorPB::TABLET_HAS_A_NEWER_SCHEMA:
           LOG(WARNING) << "TS " << permanent_uuid_ << ": alter failed for tablet "
                        << tablet_->ToString() << " no further retry: " << status.ToString();
-          state_ = kStateComplete;
+          MarkComplete();
           break;
         default:
           LOG(WARNING) << "TS " << permanent_uuid_ << ": alter failed for tablet "
@@ -1345,11 +1423,11 @@ class AsyncAlterTable : public AsyncTabletRequestTask {
           break;
       }
     } else {
-      state_ = kStateComplete;
+      MarkComplete();
       VLOG(1) << "TS " << permanent_uuid_ << ": alter complete on tablet " << tablet_->ToString();
     }
 
-    if (state_ == kStateComplete) {
+    if (state() == kStateComplete) {
       master_->catalog_manager()->HandleTabletSchemaVersionReport(tablet_.get(), schema_version_);
     } else {
       VLOG(1) << "Still waiting for other tablets to finish ALTER";
@@ -1368,9 +1446,8 @@ class AsyncAlterTable : public AsyncTabletRequestTask {
 
     l.Unlock();
 
-    rpc_.set_timeout(MonoDelta::FromMilliseconds(FLAGS_async_rpc_timeout_ms));
     ts_proxy_->AlterSchemaAsync(req, &resp_, &rpc_,
-                                boost::bind(&AsyncAlterTable::Callback, this));
+                                boost::bind(&AsyncAlterTable::RpcCallback, this));
     VLOG(1) << "Send alter table request to " << permanent_uuid_
             << " (attempt " << attempt << "):\n"
             << req.DebugString();

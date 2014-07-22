@@ -104,7 +104,7 @@ can mark the tablet as "running", if reported. If we don't receive a "tablet
 created" report after ASSIGNMENT-TIMEOUT-MSEC we replace the tablet with a new
 one, following these same steps for the new tablet.
 
-The Assignment is processed by the "CatalogManagerBgTasksThread". This thread
+The Assignment is processed by the "CatalogManagerBgTasks" thread. This thread
 is waiting for an event that can be:
 
 - Create Table (need to process the new tablet for assignment)
@@ -112,7 +112,7 @@ is waiting for an event that can be:
 
 This is the current control flow:
 
-- CatalogManagerBgTasksThread:
+- CatalogManagerBgTasks thread:
   1. Process Pending Assignments:
      - For each tablet pending assignment:
        - If tablet creation was already requested:

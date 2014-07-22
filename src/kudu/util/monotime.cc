@@ -155,6 +155,13 @@ MonoTime MonoTime::Max() {
   return MonoTime(std::numeric_limits<int64_t>::max());
 }
 
+const MonoTime& MonoTime::Earliest(const MonoTime& a, const MonoTime& b) {
+  if (b.nanos_ < a.nanos_) {
+    return b;
+  }
+  return a;
+}
+
 MonoTime::MonoTime()
   : nanos_(0) {
 }
