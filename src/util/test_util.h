@@ -76,7 +76,7 @@ class KuduTest : public ::testing::Test {
     return JoinPathSegments(test_dir_, relative_path);
   }
 
-  bool AllowSlowTests() {
+  static bool AllowSlowTests() {
     char *e = getenv(kSlowTestsEnvVariable);
     if ((e == NULL) ||
         (strlen(e) == 0) ||
@@ -114,6 +114,7 @@ class KuduTest : public ::testing::Test {
 
   gscoped_ptr<Env> env_;
   string test_dir_;
+  google::FlagSaver flag_saver_;  // Reset flags on every test.
 };
 
 } // namespace kudu
