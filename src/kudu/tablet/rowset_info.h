@@ -4,7 +4,6 @@
 
 #include <string>
 #include <vector>
-#include <gtest/gtest.h>
 
 namespace kudu {
 namespace tablet {

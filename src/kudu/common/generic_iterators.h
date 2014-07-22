@@ -2,7 +2,7 @@
 #ifndef KUDU_COMMON_MERGE_ITERATOR_H
 #define KUDU_COMMON_MERGE_ITERATOR_H
 
-#include <gtest/gtest.h>
+#include <gtest/gtest_prod.h>
 #include <tr1/memory>
 #include <tr1/unordered_map>
 #include <deque>

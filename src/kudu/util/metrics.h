@@ -97,7 +97,7 @@
 #include <tr1/unordered_map>
 #include <vector>
 
-#include <gtest/gtest.h>
+#include <gtest/gtest_prod.h>
 
 #include "kudu/gutil/atomicops.h"
 #include "kudu/gutil/casts.h"

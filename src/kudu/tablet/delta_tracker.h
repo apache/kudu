@@ -5,7 +5,7 @@
 
 #include <boost/thread/mutex.hpp>
 #include <boost/thread/shared_mutex.hpp>
-#include <gtest/gtest.h>
+#include <gtest/gtest_prod.h>
 #include <string>
 #include <vector>
 

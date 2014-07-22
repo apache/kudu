@@ -3,7 +3,7 @@
 #define KUDU_TSERVER_TS_TABLET_MANAGER_H
 
 #include <boost/thread/locks.hpp>
-#include <gtest/gtest.h>
+#include <gtest/gtest_prod.h>
 #include <string>
 #include <tr1/memory>
 #include <tr1/unordered_map>

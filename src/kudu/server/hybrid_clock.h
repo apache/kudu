@@ -5,10 +5,8 @@
 
 #include <string>
 
-#include <gtest/gtest.h>
-
-#include "kudu/server/clock.h"
 #include "kudu/gutil/ref_counted.h"
+#include "kudu/server/clock.h"
 #include "kudu/util/locks.h"
 #include "kudu/util/status.h"
 

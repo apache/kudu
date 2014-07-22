@@ -4,7 +4,6 @@
 #define KUDU_CFILE_CFILE_H
 
 #include <boost/utility.hpp>
-#include <gtest/gtest.h>
 #include <tr1/memory>
 #include <tr1/unordered_map>
 #include <stdint.h>

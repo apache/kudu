@@ -2,7 +2,7 @@
 #ifndef KUDU_TABLET_LAYER_BASEDATA_H
 #define KUDU_TABLET_LAYER_BASEDATA_H
 
-#include <gtest/gtest.h>
+#include <gtest/gtest_prod.h>
 #include <tr1/memory>
 #include <string>
 #include <vector>

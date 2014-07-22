@@ -5,7 +5,7 @@
 #ifndef KUDU_COMMON_ROW_CHANGELIST_H
 #define KUDU_COMMON_ROW_CHANGELIST_H
 
-#include <gtest/gtest.h>
+#include <gtest/gtest_prod.h>
 #include <string>
 #include <vector>
 

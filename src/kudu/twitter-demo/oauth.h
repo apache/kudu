@@ -2,7 +2,7 @@
 #ifndef KUDU_TWITTERDEMO_OAUTH_H
 #define KUDU_TWITTERDEMO_OAUTH_H
 
-#include <gtest/gtest.h>
+#include <gtest/gtest_prod.h>
 
 #include <string>
 #include <utility>

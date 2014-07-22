@@ -7,7 +7,7 @@
 #include <tr1/unordered_set>
 #include <vector>
 
-#include <gtest/gtest.h>
+#include <gtest/gtest_prod.h>
 
 #include "kudu/client/scan_predicate.h"
 #include "kudu/client/schema.h"

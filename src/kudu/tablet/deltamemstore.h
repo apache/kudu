@@ -2,7 +2,7 @@
 #ifndef KUDU_TABLET_DELTAMEMSTORE_H
 #define KUDU_TABLET_DELTAMEMSTORE_H
 
-#include <gtest/gtest.h>
+#include <gtest/gtest_prod.h>
 #include <string>
 #include <vector>
 #include <boost/thread/mutex.hpp>

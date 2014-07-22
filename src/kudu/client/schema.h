@@ -5,8 +5,6 @@
 #include <string>
 #include <vector>
 
-#include <gtest/gtest.h>
-
 #include "kudu/common/common.pb.h"
 #include "kudu/gutil/gscoped_ptr.h"
 

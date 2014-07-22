@@ -5,7 +5,7 @@
 
 #include <string>
 
-#include <gtest/gtest.h>
+#include <gtest/gtest_prod.h>
 
 #include "kudu/common/schema.h"
 #include "kudu/util/bitmap.h"

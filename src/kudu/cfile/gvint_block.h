@@ -6,6 +6,8 @@
 
 #include <vector>
 
+#include <gtest/gtest_prod.h>
+
 #include "kudu/cfile/block_encodings.h"
 
 namespace kudu {

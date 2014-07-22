@@ -8,7 +8,7 @@
 #define KUDU_TABLET_DISKROWSET_H_
 
 #include <boost/thread/mutex.hpp>
-#include <gtest/gtest.h>
+#include <gtest/gtest_prod.h>
 #include <string>
 #include <vector>
 

@@ -6,6 +6,7 @@
 #include <glog/logging.h>
 #include <curl/curl.h>
 #include <fstream>
+#include <iostream>
 
 #include "kudu/client/client.h"
 #include "kudu/gutil/macros.h"

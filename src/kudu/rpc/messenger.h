@@ -2,13 +2,14 @@
 #ifndef KUDU_RPC_MESSENGER_H
 #define KUDU_RPC_MESSENGER_H
 
-#include <gtest/gtest.h>
 #include <stdint.h>
 #include <tr1/memory>
 
 #include <list>
 #include <string>
 #include <vector>
+
+#include <gtest/gtest_prod.h>
 
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/ref_counted.h"

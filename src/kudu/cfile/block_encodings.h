@@ -6,7 +6,6 @@
 #include <stdint.h>
 
 #include <glog/logging.h>
-#include <gtest/gtest.h>
 
 #include "kudu/common/rowid.h"
 #include "kudu/cfile/cfile.pb.h"

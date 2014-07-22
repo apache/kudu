@@ -5,8 +5,6 @@
 #include <string>
 #include <tr1/memory>
 
-#include <gtest/gtest.h>
-
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/master/master_options.h"

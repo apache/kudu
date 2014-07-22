@@ -3,7 +3,7 @@
 #ifndef KUDU_TABLET_MVCC_H
 #define KUDU_TABLET_MVCC_H
 
-#include <gtest/gtest.h>
+#include <gtest/gtest_prod.h>
 #include <tr1/unordered_set>
 #include <string>
 #include <vector>
