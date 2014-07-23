@@ -29,6 +29,7 @@ inline Status FindColumn(const Schema& schema, const Slice& col_name, int* idx) 
 
 KuduPartialRow::KuduPartialRow(const Schema* schema)
   : schema_(schema) {
+  DCHECK(schema_->initialized());
   size_t column_bitmap_size = BitmapSize(schema_->num_columns());
   size_t row_size = ContiguousRowHelper::row_size(*schema);
 

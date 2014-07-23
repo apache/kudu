@@ -92,7 +92,6 @@ class DistConsensusTest : public TabletServerTest {
     cluster_.reset(new MiniCluster(env_.get(), test_dir_, kNumReplicas));
     ASSERT_STATUS_OK(cluster_->Start());
     ASSERT_STATUS_OK(cluster_->WaitForTabletServerCount(kNumReplicas));
-    CreateTestSchema(&schema_);
   }
 
   void CreateClient() {
@@ -358,7 +357,6 @@ class DistConsensusTest : public TabletServerTest {
   vector<ProxyDetails*> replicas_;
 
   QuorumPB quorum_;
-  Schema schema_;
   string tablet_id_;
 
   std::vector<scoped_refptr<kudu::Thread> > threads_;

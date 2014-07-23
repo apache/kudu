@@ -5,6 +5,7 @@
 
 #include "common/wire_protocol.h"
 
+#include <boost/assign/list_of.hpp>
 #include <string>
 
 #include "common/partial_row.h"
@@ -14,12 +15,12 @@
 
 namespace kudu {
 
-void CreateTestSchema(Schema* schema) {
-  CHECK(schema) << "Schema cannot be null.";
-  CHECK_OK(schema->Reset(boost::assign::list_of
-                         (ColumnSchema("key", UINT32))
-                         (ColumnSchema("int_val", UINT32))
-                         (ColumnSchema("string_val", STRING, true)), 1));
+Schema GetSimpleTestSchema() {
+  return Schema(boost::assign::list_of
+      (ColumnSchema("key", UINT32))
+      (ColumnSchema("int_val", UINT32))
+      (ColumnSchema("string_val", STRING, true)),
+      1);
 }
 
 void AddTestRowToPB(RowOperationsPB::Type op_type,
@@ -28,6 +29,7 @@ void AddTestRowToPB(RowOperationsPB::Type op_type,
                     uint32_t int_val,
                     const string& string_val,
                     RowOperationsPB* ops) {
+  DCHECK(schema.initialized());
   KuduPartialRow row(&schema);
   CHECK_OK(row.SetUInt32("key", key));
   CHECK_OK(row.SetUInt32("int_val", int_val));

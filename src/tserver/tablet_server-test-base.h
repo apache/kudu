@@ -74,9 +74,10 @@ class TabletServerTest : public KuduTest {
  public:
   typedef pair<uint32_t, uint32_t> KeyValue;
 
-  TabletServerTest() :
-    ts_test_metric_context_(&ts_test_metric_registry_, "ts_server-test") {
-    CreateTestSchema(&schema_);
+  TabletServerTest()
+    : schema_(GetSimpleTestSchema()),
+      ts_test_metric_context_(&ts_test_metric_registry_, "ts_server-test") {
+
     key_schema_ = schema_.CreateKeyProjection();
     rb_.reset(new RowBuilder(schema_));
   }
@@ -385,7 +386,7 @@ class TabletServerTest : public KuduTest {
   }
 
 
-  Schema schema_;
+  const Schema schema_;
   Schema key_schema_;
   gscoped_ptr<RowBuilder> rb_;
 

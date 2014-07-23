@@ -64,14 +64,14 @@ class LogTestBase : public KuduTest {
   typedef pair<int, int> DeltaId;
 
   LogTestBase()
-    : opid_anchor_registry_(new OpIdAnchorRegistry()) {
+    : schema_(GetSimpleTestSchema()),
+      opid_anchor_registry_(new OpIdAnchorRegistry()) {
   }
 
   virtual void SetUp() OVERRIDE {
     KuduTest::SetUp();
     current_id_ = 0;
     fs_manager_.reset(new FsManager(env_.get(), test_dir_));
-    CreateTestSchema(&schema_);
   }
 
   virtual void TearDown() OVERRIDE {
@@ -243,7 +243,7 @@ class LogTestBase : public KuduTest {
   }
 
  protected:
-  Schema schema_;
+  const Schema schema_;
   gscoped_ptr<Log> log_;
   gscoped_ptr<LogReader> log_reader_;
   gscoped_ptr<FsManager> fs_manager_;
