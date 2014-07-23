@@ -28,6 +28,9 @@ add_definitions(-fPIC)
 # We can safely use gtest.
 add_definitions(-DKUDU_HEADERS_USE_GTEST=1)
 
+# We can safely use glog.
+add_definitions(-DKUDU_HEADERS_USE_GLOG=1)
+
 # compiler flags for different build types (run 'cmake -DCMAKE_BUILD_TYPE=<type> .')
 # For all builds:
 # For CMAKE_BUILD_TYPE=Debug

@@ -71,7 +71,7 @@ using std::pair;
 #include <vector>
 using std::vector;
 
-#include <glog/logging.h>
+#include "kudu/gutil/logging.h"
 #include "kudu/gutil/logging-inl.h"
 
 //

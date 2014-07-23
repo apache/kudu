@@ -82,6 +82,7 @@ if (KUDU_EXPORTED_CLIENT)
     ../gutil/int128.h
     ../gutil/integral_types.h
     ../gutil/kudu_export.h
+    ../gutil/logging.h
     ../gutil/logging-inl.h
     ../gutil/macros.h
     ../gutil/move.h
@@ -144,18 +145,6 @@ if (KUDU_EXPORTED_CLIENT)
   install(FILES
     ${GTEST_INCLUDE_DIR}/gtest/gtest_prod.h
     DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/gtest)
-
-  # Headers: glog (thirdparty)
-  install(FILES
-    ${GLOG_INCLUDE_DIR}/glog/logging.h
-    ${GLOG_INCLUDE_DIR}/glog/log_severity.h
-    ${GLOG_INCLUDE_DIR}/glog/vlog_is_on.h
-    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/glog)
-
-  # Headers: gflags (thirdparty)
-  install(FILES
-    ${GFLAGS_INCLUDE_DIR}/gflags/gflags.h
-    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/gflags)
 endif()
 
 # Tests

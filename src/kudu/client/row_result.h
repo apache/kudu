@@ -4,8 +4,6 @@
 
 #include <string>
 
-#include <glog/logging.h>
-
 #include "kudu/gutil/kudu_export.h"
 #include "kudu/gutil/port.h"
 #include "kudu/util/slice.h"

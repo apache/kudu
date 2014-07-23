@@ -21,8 +21,7 @@
 #include <string.h>
 #include <string>
 
-#include <glog/logging.h>
-
+#include "kudu/gutil/logging.h"
 #include "kudu/gutil/strings/fastmem.h"
 #include "kudu/gutil/strings/stringpiece.h"
 #include "kudu/util/faststring.h"

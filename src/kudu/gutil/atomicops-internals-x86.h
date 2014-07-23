@@ -22,8 +22,9 @@
 #ifndef SUPERSONIC_OPENSOURCE_AUXILIARY_ATOMICOPS_INTERNALS_X86_H_
 #define SUPERSONIC_OPENSOURCE_AUXILIARY_ATOMICOPS_INTERNALS_X86_H_
 
-#include <glog/logging.h>
 #include <stdint.h>
+
+#include "kudu/gutil/logging.h"
 
 #define BASE_HAS_ATOMIC64 1  // Use only in tests and base/atomic*
 

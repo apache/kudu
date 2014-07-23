@@ -12,10 +12,10 @@
     ev_*;
 
     extern "C++" {
-      # protobuf
-      #
-      # Other members of the google namespace (including glog and gflags)
-      # are omitted, as the client headers directly depend on them.
-      *google::protobuf::*
+      # glog, gflags, and protobuf
+      *google::*;
+      fL*::FLAGS_*;
+      gflags_mutex_namespace::*;
+      glog_internal_namespace_::*
     };
 };

@@ -21,7 +21,7 @@ using std::vector;
 
 #include "kudu/gutil/int128.h"
 #include "kudu/gutil/integral_types.h"
-#include <glog/logging.h>
+#include "kudu/gutil/logging.h"
 #include "kudu/gutil/logging-inl.h"
 #include "kudu/gutil/type_traits.h"
 #include "kudu/gutil/strings/stringpiece.h"
