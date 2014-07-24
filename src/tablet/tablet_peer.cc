@@ -24,6 +24,7 @@
 #include "tablet/tablet_metrics.h"
 #include "tablet/tablet_bootstrap.h"
 #include "tablet/tablet.pb.h"
+#include "util/logging.h"
 #include "util/metrics.h"
 #include "util/stopwatch.h"
 #include "util/trace.h"
@@ -274,7 +275,7 @@ void TabletPeer::GetTabletStatusPB(TabletStatusPB* status_pb_out) const {
 
 Status TabletPeer::StartLogGCTask() {
   if (PREDICT_FALSE(!FLAGS_enable_log_gc)) {
-    LOG(INFO) << "Log GC is disabled, not deleting old write-ahead logs!";
+    KLOG_FIRST_N(INFO, 1) << "Log GC is disabled, not deleting old write-ahead logs!";
     return Status::OK();
   }
   shared_ptr<Future> future;

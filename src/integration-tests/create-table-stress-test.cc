@@ -127,7 +127,9 @@ TEST_F(CreateTableStressTest, RestartMasterDuringCreation) {
 
   for (int i = 0; i < 3; i++) {
     usleep(500);
+    LOG(INFO) << "Restarting master...";
     ASSERT_STATUS_OK(cluster_->mini_master()->Restart());
+    LOG(INFO) << "Master restarted.";
   }
 
   master::GetTableLocationsResponsePB resp;

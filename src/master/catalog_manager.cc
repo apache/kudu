@@ -102,10 +102,8 @@ class TableLoader : public SysTablesTable::Visitor {
       catalog_manager_->table_names_map_[l.data().name()] = table;
     }
 
-    LOG(INFO) << "Loaded table " << table->ToString();
-    if (VLOG_IS_ON(1)) {
-      VLOG(1) << "Metadata: " << metadata.DebugString();
-    }
+    LOG(INFO) << "Loaded metadata for table " << table->ToString();
+    VLOG(1) << "Metadata for table " << table->ToString() << ": " << metadata.ShortDebugString();
     l.Commit();
     return Status::OK();
   }
@@ -165,10 +163,9 @@ class TabletLoader : public SysTabletsTable::Visitor {
 
     TableMetadataLock table_lock(table.get(), TableMetadataLock::READ);
 
-    LOG(INFO) << "Loaded tablet " << tablet_id << " for table " << table->ToString();
-    if (VLOG_IS_ON(2)) {
-      VLOG(2) << "Metadata: " << metadata.DebugString();
-    }
+    LOG(INFO) << "Loaded metadata for tablet " << tablet_id
+              << " (table " << table->ToString() << ")";
+    VLOG(2) << "Metadata for tablet " << tablet_id << ": " << metadata.ShortDebugString();
 
     return Status::OK();
   }
@@ -1189,7 +1186,7 @@ class AsyncCreateTablet : public AsyncTabletRequestTask {
   virtual string type_name() const OVERRIDE { return "Create Tablet"; }
 
   virtual string description() const OVERRIDE {
-    return tablet_->ToString() + " Create Tablet RPC for TS=" + permanent_uuid_;
+    return "CreateTablet RPC for tablet " + tablet_->ToString() + " on TS " + permanent_uuid_;
   }
 
  protected:

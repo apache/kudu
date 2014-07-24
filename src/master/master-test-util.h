@@ -45,9 +45,8 @@ Status WaitForRunningTabletCount(MiniMaster* mini_master,
       }
     }
 
-    VLOG(1) << "Waiting for " << expected_count << " tablets for table \""
-            << table_name << "\". So far have "
-            << resp->tablet_locations_size();
+    LOG(INFO) << "Waiting for " << expected_count << " tablets for table "
+              << table_name << ". So far we have " << resp->tablet_locations_size();
 
     usleep(wait_time);
     wait_time = std::min(wait_time * 5 / 4, 1000000);

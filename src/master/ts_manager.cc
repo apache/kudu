@@ -62,11 +62,13 @@ Status TSManager::RegisterTS(const NodeInstancePB& instance,
     gscoped_ptr<TSDescriptor> new_desc;
     RETURN_NOT_OK(TSDescriptor::RegisterNew(instance, registration, &new_desc));
     InsertOrDie(&servers_by_id_, uuid, shared_ptr<TSDescriptor>(new_desc.release()));
-    LOG(INFO) << "Registered entirely new tablet server: " << instance.ShortDebugString();
+    LOG(INFO) << "Registered new tablet server { " << instance.ShortDebugString()
+              << " } with Master";
   } else {
     const shared_ptr<TSDescriptor>& found = FindOrDie(servers_by_id_, uuid);
     RETURN_NOT_OK(found->Register(instance, registration));
-    LOG(INFO) << "Re-registered tablet server: " << instance.ShortDebugString();
+    LOG(INFO) << "Re-registered known tablet server { " << instance.ShortDebugString()
+              << " } with Master";
   }
 
   return Status::OK();
