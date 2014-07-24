@@ -613,7 +613,7 @@ class PACKED InternalNode : public NodeBase<Traits> {
 
   typedef InlineSlice<sizeof(void*), true> KeyInlineSlice;
 
-  enum {
+  enum SpaceConstants {
     constant_overhead = sizeof(NodeBase<Traits>) // base class
                       + sizeof(uint32_t), // num_children_
     keyptr_space = Traits::internal_node_size - constant_overhead,
@@ -781,7 +781,10 @@ class LeafNode : public NodeBase<Traits> {
 
   typedef InlineSlice<sizeof(void*), true> KeyInlineSlice;
 
-  enum {
+  // It is necessary to name this enum so that DCHECKs can use its
+  // constants (the macros may attempt to specialize templates
+  // with the constants, which require a named type).
+  enum SpaceConstants {
     constant_overhead = sizeof(NodeBase<Traits>) // base class
                         + sizeof(LeafNode<Traits>*) // next_
                         + sizeof(uint8_t), // num_entries_
