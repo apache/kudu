@@ -6,7 +6,7 @@
 #
 # Environment variables may be used to customize operation:
 #   BUILD_TYPE: Default: DEBUG
-#     Maybe be one of ASAN|TSAN|LEAKCHECK|DEBUG|RELEASE|COVERAGE|LINT
+#     Maybe be one of ASAN|TSAN|LEAKCHECK|DEBUG|RELEASE|COVERAGE|LINT|CLIENT
 #
 #   KUDU_ALLOW_SLOW_TESTS   Default: 1
 #     Runs the "slow" version of the unit tests. Set to 0 to
@@ -128,6 +128,9 @@ elif [ "$BUILD_TYPE" = "LINT" ]; then
   cmake .
   make lint | tee $TEST_LOGDIR/lint.log
   exit $?
+elif [ "$BUILD_TYPE" = "CLIENT" ]; then
+  BUILD_TYPE=debug
+  cmake -DKUDU_EXPORTED_CLIENT=1 .
 fi
 
 # Only enable test core dumps for certain build types.

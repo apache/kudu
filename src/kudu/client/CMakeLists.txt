@@ -180,6 +180,9 @@ endif()
 if (KUDU_EXPORTED_CLIENT)
   # Test that there are no forbidden symbols in the exported client library.
   ADD_KUDU_TEST(client_symbol-test)
+
+  # Test that the client sample code works properly when built out-of-tree.
+  ADD_KUDU_TEST(client_samples-test RUN_SERIAL true)
 else()
   # Can't be used with the exported client; it references hidden symbols.
   set(KUDU_TEST_LINK_LIBS kudu_client integration-tests ${KUDU_MIN_TEST_LIBS})
