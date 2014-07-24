@@ -11,6 +11,7 @@
 
 #include "gutil/macros.h"
 #include "gutil/ref_counted.h"
+#include "tserver/tserver.pb.h"
 #include "util/locks.h"
 #include "util/metrics.h"
 #include "util/status.h"
@@ -20,6 +21,7 @@ namespace kudu {
 
 class FsManager;
 class Schema;
+class TaskExecutor;
 
 namespace master {
 class ReportedTabletPB;
@@ -178,13 +180,19 @@ class TSTabletManager {
   // NOTE: requires that the caller holds the lock.
   void MarkDirtyUnlocked(tablet::TabletPeer* tablet_peer);
 
+  TSTabletManagerStatePB state() const {
+    boost::shared_lock<rw_spinlock> lock(lock_);
+    return state_;
+  }
+
   FsManager* fs_manager_;
 
   TabletServer* server_;
 
   typedef std::tr1::unordered_map<std::string, scoped_refptr<tablet::TabletPeer> > TabletMap;
 
-  // Lock protecting tablet_map_, dirty_tablets_ and creates_in_progress_.
+  // Lock protecting tablet_map_, dirty_tablets_, state_, and
+  // creates_in_progress_.
   mutable rw_spinlock lock_;
 
   // Map from tablet ID to tablet
@@ -203,8 +211,14 @@ class TSTabletManager {
 
   MetricContext metric_ctx_;
 
+  TSTabletManagerStatePB state_;
+
   // Latch allowing to wait for the bootstraps to complete.
   gscoped_ptr<ThreadPool> bootstrap_pool_;
+
+  // Executors for apply transactions, shared between all tablets.
+  gscoped_ptr<TaskExecutor> leader_apply_executor_;
+  gscoped_ptr<TaskExecutor> replica_apply_executor_;
 
   DISALLOW_COPY_AND_ASSIGN(TSTabletManager);
 };

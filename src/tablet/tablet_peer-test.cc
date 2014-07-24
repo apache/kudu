@@ -63,6 +63,9 @@ class TabletPeerTest : public KuduTabletTest {
   virtual void SetUp() OVERRIDE {
     KuduTabletTest::SetUp();
 
+    ASSERT_STATUS_OK(TaskExecutorBuilder("ldr-apply").Build(&leader_apply_executor_));
+    ASSERT_STATUS_OK(TaskExecutorBuilder("repl-apply").Build(&replica_apply_executor_));
+
     rpc::MessengerBuilder builder(CURRENT_TEST_NAME());
     ASSERT_STATUS_OK(builder.Build(&messenger_));
 
@@ -76,6 +79,8 @@ class TabletPeerTest : public KuduTabletTest {
     tablet_peer_.reset(
       new TabletPeer(make_scoped_refptr(tablet()->metadata()),
                      quorum_peer,
+                     leader_apply_executor_.get(),
+                     replica_apply_executor_.get(),
                      NULL));
 
     gscoped_ptr<Log> log;
@@ -97,6 +102,8 @@ class TabletPeerTest : public KuduTabletTest {
 
   virtual void TearDown() OVERRIDE {
     tablet_peer_->Shutdown();
+    leader_apply_executor_->Shutdown();
+    replica_apply_executor_->Shutdown();
     KuduTabletTest::TearDown();
   }
 
@@ -201,6 +208,8 @@ class TabletPeerTest : public KuduTabletTest {
   gscoped_ptr<MetricContext> metric_ctx_;
   shared_ptr<Messenger> messenger_;
   scoped_refptr<TabletPeer> tablet_peer_;
+  gscoped_ptr<TaskExecutor> leader_apply_executor_;
+  gscoped_ptr<TaskExecutor> replica_apply_executor_;
 };
 
 // A Transaction that waits on the apply_continue latch inside of Apply().
@@ -363,7 +372,7 @@ TEST_F(TabletPeerTest, TestActiveTransactionPreventsLogGC) {
         &tablet_peer_->txn_tracker_,
         tablet_peer_->consensus(),
         tablet_peer_->prepare_executor_.get(),
-        tablet_peer_->leader_apply_executor_.get(),
+        tablet_peer_->leader_apply_executor_,
         &tablet_peer_->prepare_replicate_lock_,
         &driver);
 

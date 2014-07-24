@@ -62,20 +62,22 @@ using tserver::TabletServerErrorPB;
 // ============================================================================
 TabletPeer::TabletPeer(const scoped_refptr<TabletMetadata>& meta,
                        const QuorumPeerPB& quorum_peer,
+                       TaskExecutor* leader_apply_executor,
+                       TaskExecutor* replica_apply_executor,
                        MarkDirtyCallback mark_dirty_clbk)
   : meta_(meta),
     tablet_id_(meta->oid()),
     state_(metadata::BOOTSTRAPPING),
     quorum_peer_(quorum_peer),
     status_listener_(new TabletStatusListener(meta)),
+    leader_apply_executor_(leader_apply_executor),
+    replica_apply_executor_(replica_apply_executor),
     // prepare executor has a single thread as prepare must be done in order
     // of submission
     log_gc_shutdown_latch_(1),
     mark_dirty_clbk_(mark_dirty_clbk),
     config_sem_(1) {
   CHECK_OK(TaskExecutorBuilder("prepare").set_max_threads(1).Build(&prepare_executor_));
-  CHECK_OK(TaskExecutorBuilder("ldr-apply").Build(&leader_apply_executor_));
-  CHECK_OK(TaskExecutorBuilder("repl-apply").set_max_threads(1).Build(&replica_apply_executor_));
   CHECK_OK(TaskExecutorBuilder("log-gc").set_max_threads(1).Build(&log_gc_executor_));
 }
 
@@ -201,8 +203,6 @@ metadata::TabletStatePB TabletPeer::Shutdown() {
   }
 
   prepare_executor_->Shutdown();
-  leader_apply_executor_->Shutdown();
-  replica_apply_executor_->Shutdown();
 
   WARN_NOT_OK(log_->Close(), "Error closing the Log.");
 
@@ -410,7 +410,7 @@ void TabletPeer::NewLeaderTransactionDriver(Transaction* transaction,
                                   &txn_tracker_,
                                   consensus_.get(),
                                   prepare_executor_.get(),
-                                  leader_apply_executor_.get(),
+                                  leader_apply_executor_,
                                   &prepare_replicate_lock_,
                                   driver);
 }
@@ -421,7 +421,7 @@ void TabletPeer::NewReplicaTransactionDriver(Transaction* transaction,
                                    &txn_tracker_,
                                    consensus_.get(),
                                    prepare_executor_.get(),
-                                   replica_apply_executor_.get(),
+                                   replica_apply_executor_,
                                    driver);
 }
 

@@ -29,6 +29,7 @@
 #include "util/metrics.h"
 #include "util/pb_util.h"
 #include "util/stopwatch.h"
+#include "util/task_executor.h"
 #include "util/trace.h"
 
 static const int kNumTabletsToBoostrapSimultaneously = 4;
@@ -82,18 +83,28 @@ TSTabletManager::TSTabletManager(FsManager* fs_manager,
   : fs_manager_(fs_manager),
     server_(server),
     next_report_seq_(0),
-    metric_ctx_(metric_ctx) {
+    metric_ctx_(metric_ctx),
+    state_(MANAGER_INITIALIZING) {
   // TODO base the number of parallel tablet bootstraps on something related
   // to the number of physical devices.
   CHECK_OK(ThreadPoolBuilder("tablet-bootstrap")
       .set_max_threads(kNumTabletsToBoostrapSimultaneously)
       .Build(&bootstrap_pool_));
+  // TODO currently these are initialized to default values: no
+  // minimum number of threads, 500 ms idle timeout, and maximum
+  // number of threads equal to number of CPU cores. Instead, it
+  // likewise makes more sense to set this equal to the number of
+  // physical storage devices available to us.
+  CHECK_OK(TaskExecutorBuilder("ldr-apply").Build(&leader_apply_executor_));
+  CHECK_OK(TaskExecutorBuilder("repl-apply").Build(&replica_apply_executor_));
 }
 
 TSTabletManager::~TSTabletManager() {
 }
 
 Status TSTabletManager::Init() {
+  CHECK_EQ(state(), MANAGER_INITIALIZING);
+
   vector<string> children;
   RETURN_NOT_OK_PREPEND(fs_manager_->ListDir(fs_manager_->GetMasterBlockDir(), &children),
                         "Couldn't list master blocks");
@@ -118,6 +129,8 @@ Status TSTabletManager::Init() {
     scoped_refptr<TabletPeer> tablet_peer(
         new TabletPeer(meta,
                        quorum_peer,
+                       leader_apply_executor_.get(),
+                       replica_apply_executor_.get(),
                        boost::bind(&TSTabletManager::MarkTabletDirty, this, _1)));
     RegisterTablet(meta->oid(), tablet_peer);
 
@@ -126,10 +139,17 @@ Status TSTabletManager::Init() {
                                                          meta)));
   }
 
+  {
+    boost::lock_guard<rw_spinlock> lock(lock_);
+    state_ = MANAGER_RUNNING;
+  }
+
   return Status::OK();
 }
 
 Status TSTabletManager::WaitForAllBootstrapsToFinish() {
+  CHECK_EQ(state(), MANAGER_RUNNING);
+
   bootstrap_pool_->Wait();
 
   Status s = Status::OK();
@@ -153,6 +173,7 @@ Status TSTabletManager::CreateNewTablet(const string& table_id,
                                         const Schema& schema,
                                         QuorumPB quorum,
                                         scoped_refptr<TabletPeer>* tablet_peer) {
+  CHECK_EQ(state(), MANAGER_RUNNING);
 
   // If the quorum is specified to use local consensus, verify that the peer
   // matches up with our local info.
@@ -217,6 +238,8 @@ Status TSTabletManager::CreateNewTablet(const string& table_id,
   scoped_refptr<TabletPeer> new_peer(
       new TabletPeer(meta,
                      quorum_peer,
+                     leader_apply_executor_.get(),
+                     replica_apply_executor_.get(),
                      boost::bind(&TSTabletManager::MarkTabletDirty, this, _1)));
   RegisterTablet(meta->oid(), new_peer);
   // We can run this synchronously since there is nothing to bootstrap.
@@ -334,7 +357,28 @@ void TSTabletManager::OpenTablet(const scoped_refptr<TabletMetadata>& meta) {
 }
 
 void TSTabletManager::Shutdown() {
-  LOG(INFO) << "Shutting down tablet manager...";
+  {
+    boost::lock_guard<rw_spinlock> lock(lock_);
+    switch (state_) {
+      case MANAGER_QUIESCING: {
+        VLOG(1) << "Tablet manager shut down already in progress..";
+        return;
+      }
+      case MANAGER_SHUTDOWN: {
+        VLOG(1) << "Tablet manager has already been shut down.";
+        return;
+      }
+      case MANAGER_INITIALIZING:
+      case MANAGER_RUNNING: {
+        LOG(INFO) << "Shutting down tablet manager...";
+        state_ = MANAGER_QUIESCING;
+        break;
+      }
+      default: {
+        LOG(FATAL) << "Invalid state: " << TSTabletManagerStatePB_Name(state_);
+      }
+    }
+  }
 
   // Shut down the bootstrap pool, so new tablets are registered after this point.
   bootstrap_pool_->Shutdown();
@@ -349,6 +393,10 @@ void TSTabletManager::Shutdown() {
     peer->Shutdown();
   }
 
+  // Shut down the apply executors.
+  leader_apply_executor_->Shutdown();
+  replica_apply_executor_->Shutdown();
+
   {
     boost::lock_guard<rw_spinlock> l(lock_);
     // We don't expect anyone else to be modifying the map after we start the
@@ -356,8 +404,9 @@ void TSTabletManager::Shutdown() {
     CHECK_EQ(tablet_map_.size(), peers_to_shutdown.size())
       << "Map contents changed during shutdown!";
     tablet_map_.clear();
+
+    state_ = MANAGER_SHUTDOWN;
   }
-  // TODO: add a state variable?
 }
 
 Status TSTabletManager::PersistMasterBlock(const TabletMasterBlockPB& pb) {

@@ -321,3 +321,21 @@ message ScanResponsePB {
   // 'new_scan_request' set) and only for READ_AT_SNAPSHOT scans.
   optional fixed64 snap_timestamp = 6;
 }
+
+// Enum of the server's Tablet Manager state: currently this is only
+// used for assertions, but this can also be sent to the master.
+enum TSTabletManagerStatePB {
+  // Indicates that Tablet Manager is initializing.
+  MANAGER_INITIALIZING = 0;
+
+  // Indicates that Tablet Manager is running and can create new
+  // tablets.
+  MANAGER_RUNNING = 1;
+
+  // Indicates that tablet manager is shutting down and no new tablets
+  // can be created.
+  MANAGER_QUIESCING = 2;
+
+  // Tablet Manager has shutdown.
+  MANAGER_SHUTDOWN = 3;
+}

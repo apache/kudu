@@ -45,12 +45,16 @@ SysTable::SysTable(Master* master,
                    const string& name)
   : metric_ctx_(metrics, name),
     master_(master) {
+  CHECK_OK(TaskExecutorBuilder("ldr-apply").Build(&leader_apply_executor_));
+  CHECK_OK(TaskExecutorBuilder("repl-apply").Build(&replica_apply_executor_));
 }
 
 void SysTable::Shutdown() {
   if (tablet_peer_) {
     tablet_peer_->Shutdown();
   }
+  leader_apply_executor_->Shutdown();
+  replica_apply_executor_->Shutdown();
 }
 
 Status SysTable::Load(FsManager *fs_manager) {
@@ -115,6 +119,8 @@ Status SysTable::SetupTablet(const scoped_refptr<metadata::TabletMetadata>& meta
   // just points to SysTableStateChanged(), which currently LOG(FATAL)s.
   tablet_peer_.reset(new TabletPeer(metadata,
                                     quorum_peer,
+                                    leader_apply_executor_.get(),
+                                    replica_apply_executor_.get(),
                                     boost::bind(&SysTable::SysTableStateChanged, this, _1)));
   consensus::ConsensusBootstrapInfo consensus_info;
   RETURN_NOT_OK(BootstrapTablet(metadata,
