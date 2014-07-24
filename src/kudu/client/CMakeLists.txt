@@ -60,6 +60,7 @@ if (KUDU_EXPORTED_CLIENT)
 
   # Shared library.
   install(TARGETS client
+    EXPORT kudu_client
     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR})
 
   # Headers: gutil
@@ -145,6 +146,32 @@ if (KUDU_EXPORTED_CLIENT)
   install(FILES
     ${GTEST_INCLUDE_DIR}/gtest/gtest_prod.h
     DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/gtest)
+
+  # Client sample code.
+  #
+  # Can't use CMAKE_INSTALL_DOCDIR because we don't ever call project().
+  install(FILES
+    samples/CMakeLists.txt
+    samples/sample.cc
+    DESTINATION ${CMAKE_INSTALL_DATADIR}/doc/client/samples)
+
+  # Exported cmake file for just the library's targets.
+  #
+  # Should not be included directly by users.
+  install(EXPORT kudu_client
+    FILE clientTargets.cmake
+    DESTINATION ${CMAKE_INSTALL_DATADIR}/client/cmake)
+
+  # Exported cmake file for the library.
+  #
+  # This is the main entry point and should be included directly.
+  include(CMakePackageConfigHelpers)
+  configure_package_config_file(clientConfig.cmake.in ${CMAKE_CURRENT_BINARY_DIR}/clientConfig.cmake
+    INSTALL_DESTINATION ${CMAKE_INSTALL_DATADIR}/client/cmake
+    PATH_VARS CMAKE_INSTALL_INCLUDEDIR)
+  install(FILES
+    ${CMAKE_CURRENT_BINARY_DIR}/clientConfig.cmake
+    DESTINATION ${CMAKE_INSTALL_DATADIR}/client/cmake)
 endif()
 
 # Tests

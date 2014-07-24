@@ -31,6 +31,9 @@ build/
 # CMake-generated "make install" file
 install_manifest.txt
 
+# CMake-generated library export make file
+clientConfig.cmake
+
 # VIM/emacs stuff
 *.swp
 *~
