@@ -75,6 +75,11 @@ Status LogReader::Init(const string& tablet_wal_path) {
       scoped_refptr<ReadableLogSegment> segment;
       RETURN_NOT_OK(ReadableLogSegment::Open(env, fqp, &segment));
       DCHECK(segment);
+      if (!segment->IsInitialized()) {
+        // Skip blank segments.
+        LOG(WARNING) << "Skipping blank or empty segment: " << fqp;
+        continue;
+      }
       const OpId& op_id = segment->header().initial_id();
       InsertOrDie(&segments_, op_id, segment);
     }

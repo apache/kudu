@@ -112,15 +112,15 @@ TEST_F(LogTest, TestLogNotTrimmed) {
 // This happens when it's opened but nothing has been written.
 // The reader should gracefully handle this situation, but somehow expose that
 // the segment is uninitialized. See KUDU-140.
-TEST_F(LogTest, DISABLED_TestBlankLogFile) {
+TEST_F(LogTest, TestBlankLogFile) {
   BuildLog();
   Status s = LogReader::Open(fs_manager_.get(), kTestTablet, &log_reader_);
-  // The reader needs to be able to open the file, and we need to skip the
-  // segment somehow while reading.
+
+  // The reader needs to be able to open the directory, and we need to
+  // skip the segment while reading.
   ASSERT_TRUE(s.ok()) << s.ToString();
-  // TODO: Test that we handle the empty log segments properly so that bootstrap
-  // can move them aside or something like that.
-  FAIL() << "Ensure that we test when the ReadableLogSement is uninitialized";
+  ASSERT_EQ(log_reader_->size(), 0);
+  ASSERT_TRUE(log_reader_->segments().empty());
 }
 
 // Tests that the log reader reads up until some corrupt entry is found.

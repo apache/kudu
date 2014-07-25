@@ -105,19 +105,30 @@ Status ReadableLogSegment::Init() {
   DCHECK(!IsInitialized()) << "Can only call Init() once";
 
   // Check the size of the file.
-  // If it is zero, return Status::Uninitialized().
+  // If it is zero, return Status::OK() early.
   uint64_t file_size = 0;
   RETURN_NOT_OK(readable_file_->Size(&file_size));
   if (file_size == 0) {
-    return Status::Uninitialized(Substitute("Log segment file $0 is zero-length", path()));
+    VLOG(1) << "Log segment file $0 is zero-length: " << path();
+    return Status::OK();
   }
 
   uint32_t header_size = 0;
   RETURN_NOT_OK(ReadMagicAndHeaderLength(&header_size));
-  if (header_size == 0 || header_size > kLogSegmentMaxHeaderSize) {
-    return Status::Corruption(Substitute("File is corrupted. "
-        "Parsed header size: $0 is zero or bigger than max header size: $1",
-        header_size, kLogSegmentMaxHeaderSize));
+  if (header_size == 0) {
+    // If a log file has been pre-allocated but not initialized, then
+    // 'header_size' will be 0 even the file size is > 0; in this
+    // case, 'is_initialized_' remains set to false and return
+    // Status::OK() early. LogReader ignores segments where
+    // IsInitialized() returns false.
+    return Status::OK();
+  }
+
+  if (header_size > kLogSegmentMaxHeaderSize) {
+    return Status::Corruption(
+        Substitute("File is corrupted. "
+                   "Parsed header size: $0 is zero or bigger than max header size: $1",
+                   header_size, kLogSegmentMaxHeaderSize));
   }
 
   uint8_t header_space[header_size];
@@ -253,10 +264,12 @@ Status ReadableLogSegment::ParseMagicAndLength(const Slice &data, uint32_t *pars
                strlen(kLogSegmentNullHeader)) == 0) {
       // 12 bytes of NULLs, good enough for us to consider this a file that
       // was never written to (but apparently preallocated).
-      return Status::Uninitialized(
-          Substitute("Log segment file $0 has 12 initial NULL bytes instead of "
-                     "magic and header length: $1",
-                     path(), data.ToDebugString()));
+      LOG(WARNING) << "Log segment file " << path() << " has 12 initial NULL bytes instead of "
+                   << "magic and header length: " << data.ToDebugString()
+                   << " and will be treated as a blank segment.";
+      *parsed_len = 0;
+      return Status::OK();
+
     }
     // If no magic and not uninitialized, the file is considered corrupt.
     return Status::Corruption(Substitute("Invalid log segment file $0: Bad magic. $1",
