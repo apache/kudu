@@ -3,7 +3,6 @@
 #include <boost/thread/thread.hpp>
 #include <stdlib.h>
 
-#include "benchmarks/tpch/line_item_dao.h"
 #include "benchmarks/tpch/line_item_tsv_importer.h"
 #include "benchmarks/tpch/rpc_line_item_dao.h"
 #include "gutil/atomicops.h"

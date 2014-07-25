@@ -8,7 +8,6 @@
 //
 // Usage:
 //   tpch1 -tpch_path_to_data=/home/jdcryans/lineitem.tbl
-//         -tpch_path_to_tablet=/tmp/tpch1-test/tablet/
 //         -tpch_num_query_iterations=1
 //         -tpch_expected_matching_rows=12345
 //
@@ -42,30 +41,33 @@
 // 'N','O',74476040,111701729697.7,106118230307.6,110367043872.5,25.5,38249.1,0,2920374
 // 'R','F',37719753,56568041380.9,53741292684.6,55889619119.8,25.5,38250.9,0.1,1478870
 // ====
+#include <boost/bind.hpp>
+#include <boost/foreach.hpp>
+#include <tr1/unordered_map>
 #include <stdlib.h>
 
-#include <boost/tokenizer.hpp>
 #include <glog/logging.h>
 
-#include <map>
-
 #include "benchmarks/tpch/tpch-schemas.h"
-#include "benchmarks/tpch/line_item_dao.h"
-#include "benchmarks/tpch/local_line_item_dao.h"
 #include "benchmarks/tpch/rpc_line_item_dao.h"
 #include "benchmarks/tpch/line_item_tsv_importer.h"
 #include "gutil/gscoped_ptr.h"
 #include "gutil/hash/city.h"
 #include "gutil/strings/numbers.h"
+#include "integration-tests/mini_cluster.h"
+#include "master/mini_master.h"
+#include "util/env.h"
 #include "util/slice.h"
 #include "util/stopwatch.h"
 
 DEFINE_string(tpch_path_to_data, "/tmp/lineitem.tbl",
               "The full path to the '|' separated file containing the lineitem table.");
-DEFINE_string(tpch_path_to_tablet, "/tmp/tpch", "The full path to the tablet's directory.");
-DEFINE_string(tpch_query_mode, "local", "Write a <local> tablet or to a <remote> cluster");
 DEFINE_int32(tpch_num_query_iterations, 1, "Number of times the query will be run.");
 DEFINE_int32(tpch_expected_matching_rows, 5916591, "Number of rows that should match the query.");
+DEFINE_bool(use_mini_cluster, true,
+            "Create a mini cluster for the work to be performed against.");
+DEFINE_string(mini_cluster_base_dir, "/tmp/tpch",
+              "If using a mini cluster, directory for master/ts data.");
 DEFINE_string(master_address, "localhost",
               "Address of master for the cluster to operate on");
 DEFINE_int32(tpch_max_batch_size, 1000,
@@ -75,13 +77,16 @@ namespace kudu {
 
 using client::KuduColumnRangePredicate;
 using client::KuduColumnSchema;
+using client::KuduRowResult;
 using client::KuduSchema;
 
+using std::tr1::unordered_map;
+
 struct Result {
-  int l_quantity;
-  int l_extendedprice;
-  int l_discount;
-  int l_tax;
+  uint32_t l_quantity;
+  uint32_t l_extendedprice;
+  uint32_t l_discount;
+  uint32_t l_tax;
   int count;
   Result()
     : l_quantity(0), l_extendedprice(0), l_discount(0), l_tax(0), count(0) {
@@ -91,9 +96,6 @@ struct Result {
 // This struct is used for the keys while running the GROUP BY instead of manipulating strings
 struct SliceMapKey {
   Slice slice;
-  explicit SliceMapKey(const Slice &sl)
-    : slice(sl) {
-  }
 
   // This copies the string out of the result buffer
   void RelocateSlice() {
@@ -115,7 +117,7 @@ struct hash {
   }
 };
 
-void LoadLineItems(const string &path, LineItemDAO *dao) {
+void LoadLineItems(const string &path, RpcLineItemDAO *dao) {
   LineItemTsvImporter importer(path);
 
   while (importer.HasNextLine()) {
@@ -125,13 +127,7 @@ void LoadLineItems(const string &path, LineItemDAO *dao) {
   dao->FinishWriting();
 }
 
-// this function encapsulates the ugliness of efficiently getting the value
-template <class extract_type>
-const extract_type * ExtractColumn(RowBlock &block, int row, int column) {
-  return reinterpret_cast<const extract_type *>(block.column_block(column).cell_ptr(row));
-}
-
-void Tpch1(LineItemDAO *dao) {
+void Tpch1(RpcLineItemDAO *dao) {
   typedef unordered_map<SliceMapKey, Result*, hash> slice_map;
   typedef unordered_map<SliceMapKey, slice_map*, hash> slice_map_map;
 
@@ -143,26 +139,27 @@ void Tpch1(LineItemDAO *dao) {
 
   dao->OpenScanner(query_schema, preds);
 
-  Arena arena(32*1024, 256*1024);
-  RowBlock block(*query_schema.schema_, 1000, &arena);
   int matching_rows = 0;
   slice_map_map results;
   Result *r;
+  vector<KuduRowResult> rows;
   while (dao->HasMore()) {
-    dao->GetNext(&block);
-    RowBlockRow rb_row;
-    for (int i = 0; i < block.nrows(); i++) {
-      if (!block.selection_vector()->IsRowSelected(i)) continue;
-      rb_row = block.row(i);
+    dao->GetNext(&rows);
+    BOOST_FOREACH(const KuduRowResult& row, rows) {
       matching_rows++;
 
-      SliceMapKey l_returnflag(*ExtractColumn<Slice>(block, i, 1));
-      SliceMapKey l_linestatus(*ExtractColumn<Slice>(block, i, 2));
-
-      int l_quantity = *ExtractColumn<uint32_t>(block, i, 3);
-      int l_extendedprice = *ExtractColumn<uint32_t>(block, i, 4);
-      int l_discount = *ExtractColumn<uint32_t>(block, i, 5);
-      int l_tax = *ExtractColumn<uint32_t>(block, i, 6);
+      SliceMapKey l_returnflag;
+      CHECK_OK(row.GetString(1, &l_returnflag.slice));
+      SliceMapKey l_linestatus;
+      CHECK_OK(row.GetString(2, &l_linestatus.slice));
+      uint32_t l_quantity;
+      CHECK_OK(row.GetUInt32(3, &l_quantity));
+      uint32_t l_extendedprice;
+      CHECK_OK(row.GetUInt32(4, &l_extendedprice));
+      uint32_t l_discount;
+      CHECK_OK(row.GetUInt32(5, &l_discount));
+      uint32_t l_tax;
+      CHECK_OK(row.GetUInt32(6, &l_tax));
 
       slice_map *linestatus_map;
       slice_map_map::iterator it = results.find(l_returnflag);
@@ -188,6 +185,7 @@ void Tpch1(LineItemDAO *dao) {
       r->l_tax += l_tax;
       r->count++;
     }
+    rows.clear();
   }
   LOG(INFO) << "Result: ";
   for (slice_map_map::iterator ii = results.begin();
@@ -225,19 +223,24 @@ void Tpch1(LineItemDAO *dao) {
 int main(int argc, char **argv) {
   google::InitGoogleLogging(argv[0]);
   google::ParseCommandLineFlags(&argc, &argv, true);
-  gscoped_ptr<kudu::LineItemDAO> dao;
-  if (FLAGS_tpch_query_mode == "local") {
-    dao.reset(new kudu::LocalLineItemDAO(FLAGS_tpch_path_to_tablet));
+  const char * const kTableName = "tpch1";
+
+  gscoped_ptr<kudu::Env> env;
+  gscoped_ptr<kudu::MiniCluster> cluster;
+  string master_address;
+  if (FLAGS_use_mini_cluster) {
+    env.reset(new kudu::EnvWrapper(kudu::Env::Default()));
+    kudu::Status s = env->CreateDir(FLAGS_mini_cluster_base_dir);
+    CHECK(s.IsAlreadyPresent() || s.ok());
+    cluster.reset(new kudu::MiniCluster(env.get(), FLAGS_mini_cluster_base_dir, 1));
+    CHECK_OK(cluster->StartSync());
+    master_address = cluster->mini_master()->bound_rpc_addr().ToString();
   } else {
-    if (FLAGS_tpch_num_query_iterations > 0) {
-      LOG(FATAL) << "Currently it's only possible to import data with 'remote'"
-                 << ", not to query";
-    }
-    const char * const kTableName = "tpch1";
-    dao.reset(new kudu::RpcLineItemDAO(FLAGS_master_address, kTableName,
-                                        FLAGS_tpch_max_batch_size));
+    master_address = FLAGS_master_address;
   }
 
+  gscoped_ptr<kudu::RpcLineItemDAO> dao(new kudu::RpcLineItemDAO(master_address, kTableName,
+                                                                 FLAGS_tpch_max_batch_size));
   dao->Init();
 
   bool needs_loading = dao->IsTableEmpty();
@@ -254,5 +257,8 @@ int main(int argc, char **argv) {
     }
   }
 
+  if (cluster) {
+    cluster->Shutdown();
+  }
   return 0;
 }

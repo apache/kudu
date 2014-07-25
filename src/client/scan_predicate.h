@@ -7,7 +7,6 @@
 namespace kudu {
 
 class ColumnRangePredicate;
-class LocalLineItemDAO;
 
 namespace client {
 
@@ -24,7 +23,6 @@ class KuduColumnRangePredicate {
 
  private:
   friend class KuduScanner;
-  friend class kudu::LocalLineItemDAO;
 
   gscoped_ptr<ColumnRangePredicate> pred_;
 };

@@ -2,13 +2,13 @@
 #ifndef KUDU_TPCH_RPC_LINE_ITEM_DAO_H
 #define KUDU_TPCH_RPC_LINE_ITEM_DAO_H
 
+#include <boost/function.hpp>
 #include <set>
 #include <string>
 #include <tr1/memory>
 #include <utility>
 #include <vector>
 
-#include "benchmarks/tpch/line_item_dao.h"
 #include "benchmarks/tpch/tpch-schemas.h"
 #include "client/client.h"
 #include "client/row_result.h"
@@ -18,21 +18,20 @@
 
 namespace kudu {
 
-class RpcLineItemDAO : public LineItemDAO {
+class RpcLineItemDAO {
  public:
-  RpcLineItemDAO(const string& master_address, const string& table_name,
+  RpcLineItemDAO(const std::string& master_address, const std::string& table_name,
                  const int batch_size, const int mstimeout = 5000);
-  virtual void WriteLine(boost::function<void(KuduPartialRow*)> f) OVERRIDE;
-  virtual void MutateLine(boost::function<void(KuduPartialRow*)> f) OVERRIDE;
-  virtual void Init() OVERRIDE;
-  virtual void FinishWriting() OVERRIDE;
-  virtual void OpenScanner(const client::KuduSchema &query_schema,
-                           const std::vector<client::KuduColumnRangePredicate>& preds) OVERRIDE;
-  virtual bool HasMore() OVERRIDE;
-  virtual void GetNext(RowBlock *block) OVERRIDE;
-  void GetNext(std::vector<client::KuduRowResult> *rows);
-  virtual bool IsTableEmpty() OVERRIDE;
   ~RpcLineItemDAO();
+  void WriteLine(boost::function<void(KuduPartialRow*)> f);
+  void MutateLine(boost::function<void(KuduPartialRow*)> f);
+  void Init();
+  void FinishWriting();
+  void OpenScanner(const client::KuduSchema &query_schema,
+                   const std::vector<client::KuduColumnRangePredicate>& preds);
+  bool HasMore();
+  void GetNext(std::vector<client::KuduRowResult> *rows);
+  bool IsTableEmpty();
 
  private:
   // Sending the same key more than once in the same batch crashes the server

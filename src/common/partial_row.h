@@ -133,7 +133,6 @@ class KuduPartialRow {
 
  private:
   friend class RowOperationsPBEncoder;
-  friend class LocalLineItemDAO; // for as_row_data_.
   friend class client::KuduWriteOperation;   // for row_data_.
 
   template<DataType TYPE>

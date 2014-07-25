@@ -13,12 +13,7 @@
 namespace kudu {
 
 class ColumnSchema;
-class LineItemDAO;
-class LocalLineItemDAO;
-class LocalLineItemDAOTest;
 class Schema;
-
-void Tpch1(LineItemDAO*);
 
 namespace client {
 
@@ -96,9 +91,6 @@ class KuduSchema {
   friend class MetaCache;
   friend class KuduWriteOperation;
   friend class internal::Batcher;
-  friend class kudu::LocalLineItemDAO;
-  friend class kudu::LocalLineItemDAOTest;
-  friend void kudu::Tpch1(kudu::LineItemDAO*);
 
   gscoped_ptr<Schema> schema_;
 };

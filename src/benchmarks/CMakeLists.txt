@@ -1,17 +1,13 @@
 # Copyright (c) 2012, Cloudera, inc.
 
 set(TPCH_SRCS
-  tpch/local_line_item_dao.cc
   tpch/rpc_line_item_dao.cc
 )
 
 add_library(tpch ${TPCH_SRCS})
 target_link_libraries(tpch
   client
-  integration-tests
-  # Currently TPCH has a "local mode" which uses some server-side components
-  server_common
-  tserver)
+  integration-tests)
 
 # tpch1
 add_executable(tpch1 tpch/tpch1.cc)
@@ -35,4 +31,3 @@ target_link_libraries(rle
 # Tests
 set(KUDU_TEST_LINK_LIBS tpch ${KUDU_TEST_LINK_LIBS})
 ADD_KUDU_TEST(tpch/rpc_line_item_dao-test)
-ADD_KUDU_TEST(tpch/local_line_item_dao-test)

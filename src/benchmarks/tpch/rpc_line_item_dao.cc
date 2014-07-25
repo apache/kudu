@@ -23,8 +23,14 @@ using std::tr1::shared_ptr;
 namespace kudu {
 
 using client::KuduInsert;
+using client::KuduClient;
+using client::KuduClientOptions;
 using client::KuduColumnRangePredicate;
+using client::KuduError;
+using client::KuduRowResult;
+using client::KuduScanner;
 using client::KuduSchema;
+using client::KuduSession;
 using client::KuduUpdate;
 using std::vector;
 
@@ -32,7 +38,7 @@ namespace {
 
 class CountingCallback : public base::RefCountedThreadSafe<CountingCallback> {
   public:
-    CountingCallback(shared_ptr<client::KuduSession> session, Atomic32 *ctr)
+    CountingCallback(shared_ptr<KuduSession> session, Atomic32 *ctr)
       : session_(session),
         ctr_(ctr) {
       base::subtle::NoBarrier_AtomicIncrement(ctr_, 1);
@@ -53,20 +59,20 @@ class CountingCallback : public base::RefCountedThreadSafe<CountingCallback> {
       int nerrs = session_->CountPendingErrors();
       if (nerrs) {
         LOG(WARNING) << nerrs << " errors occured during last batch.";
-        vector<client::KuduError*> errors;
+        vector<KuduError*> errors;
         ElementDeleter d(&errors);
         bool overflow;
         session_->GetPendingErrors(&errors, &overflow);
         if (overflow) {
           LOG(WARNING) << "Error overflow occured";
         }
-        BOOST_FOREACH(client::KuduError* error, errors) {
+        BOOST_FOREACH(KuduError* error, errors) {
           LOG(WARNING) << "FAILED: " << error->failed_op().ToString();
         }
       }
     }
 
-    shared_ptr<client::KuduSession> session_;
+    shared_ptr<KuduSession> session_;
     Atomic32 *ctr_;
   };
 
@@ -75,9 +81,9 @@ class CountingCallback : public base::RefCountedThreadSafe<CountingCallback> {
 void RpcLineItemDAO::Init() {
   const KuduSchema schema = tpch::CreateLineItemSchema();
 
-  client::KuduClientOptions opts;
+  KuduClientOptions opts;
   opts.master_server_addr = master_address_;
-  CHECK_OK(client::KuduClient::Create(opts, &client_));
+  CHECK_OK(KuduClient::Create(opts, &client_));
   Status s = client_->OpenTable(table_name_, &client_table_);
   if (s.IsNotFound()) {
     CHECK_OK(client_->CreateTable(table_name_, schema));
@@ -88,7 +94,7 @@ void RpcLineItemDAO::Init() {
 
   session_ = client_->NewSession();
   session_->SetTimeoutMillis(timeout_);
-  CHECK_OK(session_->SetFlushMode(client::KuduSession::MANUAL_FLUSH));
+  CHECK_OK(session_->SetFlushMode(KuduSession::MANUAL_FLUSH));
 }
 
 void RpcLineItemDAO::WriteLine(boost::function<void(KuduPartialRow*)> f) {
@@ -141,7 +147,7 @@ void RpcLineItemDAO::FinishWriting() {
 
 void RpcLineItemDAO::OpenScanner(const KuduSchema& query_schema,
                                  const vector<KuduColumnRangePredicate>& preds) {
-  client::KuduScanner *scanner = new client::KuduScanner(client_table_.get());
+  KuduScanner *scanner = new KuduScanner(client_table_.get());
   current_scanner_.reset(scanner);
   CHECK_OK(current_scanner_->SetProjection(&query_schema));
   BOOST_FOREACH(const KuduColumnRangePredicate& pred, preds) {
@@ -159,15 +165,16 @@ bool RpcLineItemDAO::HasMore() {
 }
 
 
-void RpcLineItemDAO::GetNext(vector<client::KuduRowResult> *rows) {
+void RpcLineItemDAO::GetNext(vector<KuduRowResult> *rows) {
   CHECK_OK(current_scanner_->NextBatch(rows));
 }
 
 bool RpcLineItemDAO::IsTableEmpty() {
-  return true;
+  KuduScanner scanner(client_table_.get());
+  CHECK_OK(scanner.Open());
+  return !scanner.HasMoreRows();
 }
 
-void RpcLineItemDAO::GetNext(RowBlock *block) {}
 RpcLineItemDAO::~RpcLineItemDAO() {
   FinishWriting();
 }
