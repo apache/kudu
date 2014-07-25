@@ -421,16 +421,15 @@ class CatalogManager {
   // Loops through the "not created" tablets and sends a CreateTablet() request.
   void ProcessPendingAssignments(const std::vector<scoped_refptr<TabletInfo> >& tablets);
 
-  void SelectReplicasForTablets(const std::vector<TabletInfo*>& tablets,
-                                const TSDescriptorVector& ts_descs);
+  void SelectReplicasForTablet(const TSDescriptorVector& ts_descs, TabletInfo* tablet);
 
   // Select N Replicas from the online tablet servers
   // and populate the quorum object.
   //
   // This method is part of the "ProcessPendingAssignments()"
-  void SelectReplicas(metadata::QuorumPB *quorum,
-                      const TSDescriptorVector& ts_descs,
-                      int nreplicas);
+  void SelectReplicas(const TSDescriptorVector& ts_descs,
+                      int nreplicas,
+                      metadata::QuorumPB *quorum);
 
   void HandleAssignPreparingTablet(TabletInfo* tablet,
                                    DeferredAssignmentActions* deferred);

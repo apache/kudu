@@ -1684,7 +1684,10 @@ void CatalogManager::ProcessPendingAssignments(
   // For those tablets which need to be created in this round, assign replicas.
   TSDescriptorVector ts_descs;
   master_->ts_manager()->GetAllDescriptors(&ts_descs);
-  SelectReplicasForTablets(deferred.needs_create_rpc, ts_descs);
+
+  BOOST_FOREACH(TabletInfo *tablet, deferred.needs_create_rpc) {
+    SelectReplicasForTablet(ts_descs, tablet);
+  }
 
   // Update the sys-tablets with the new set of tablets/metadata.
   Status s = sys_tablets_->AddAndUpdateTablets(
@@ -1708,33 +1711,29 @@ void CatalogManager::ProcessPendingAssignments(
   }
 }
 
-void CatalogManager::SelectReplicasForTablets(const vector<TabletInfo*>& tablets,
-                                              const TSDescriptorVector& ts_descs) {
-  BOOST_FOREACH(TabletInfo *tablet, tablets) {
-    TableInfo *table = tablet->table();
+void CatalogManager::SelectReplicasForTablet(const TSDescriptorVector& ts_descs,
+                                             TabletInfo* tablet) {
+  TableMetadataLock table_guard(tablet->table(), TableMetadataLock::READ);
 
-    TableMetadataLock l(table, TableMetadataLock::READ);
-
-    int nreplicas = FLAGS_default_num_replicas;
-    if (l.data().pb.has_num_replicas()) {
-      nreplicas = l.data().pb.num_replicas();
-    }
-
-    if (ts_descs.size() < nreplicas) {
-      LOG(WARNING) << "Not enough Tablet Servers are online for table '" << l.data().name()
-                   << "'. Need at least " << nreplicas
-                   << " servers, but only " << ts_descs.size() << " are available";
-      continue;
-    }
-
-    // Select the set of replicas
-    metadata::QuorumPB *quorum = tablet->mutable_metadata()->mutable_dirty()->pb.mutable_quorum();
-    quorum->set_seqno(0);
-    // TODO allow the user to choose num replicas per table and
-    // and allow to choose local/dist quorum. See: KUDU-96
-    quorum->set_local(nreplicas == 1);
-    SelectReplicas(quorum, ts_descs, nreplicas);
+  int nreplicas = FLAGS_default_num_replicas;
+  if (table_guard.data().pb.has_num_replicas()) {
+    nreplicas = table_guard.data().pb.num_replicas();
   }
+
+  if (ts_descs.size() < nreplicas) {
+    LOG(WARNING) << "Not enough Tablet Servers are online for table '" << table_guard.data().name()
+                  << "'. Need at least " << nreplicas
+                  << " servers, but only " << ts_descs.size() << " are available";
+    return;
+  }
+
+  // Select the set of replicas
+  metadata::QuorumPB *quorum = tablet->mutable_metadata()->mutable_dirty()->pb.mutable_quorum();
+  quorum->set_seqno(0);
+  // TODO allow the user to choose num replicas per table and
+  // and allow to choose local/dist quorum. See: KUDU-96
+  quorum->set_local(nreplicas == 1);
+  SelectReplicas(ts_descs, nreplicas, quorum);
 }
 
 void CatalogManager::SendCreateTabletRequests(const vector<TabletInfo*>& tablets) {
@@ -1749,9 +1748,9 @@ void CatalogManager::SendCreateTabletRequests(const vector<TabletInfo*>& tablets
   }
 }
 
-void CatalogManager::SelectReplicas(metadata::QuorumPB *quorum,
-                                    const TSDescriptorVector& ts_descs,
-                                    int nreplicas) {
+void CatalogManager::SelectReplicas(const TSDescriptorVector& ts_descs,
+                                    int nreplicas,
+                                    metadata::QuorumPB *quorum) {
   // TODO: Select N Replicas
   // at the moment we have to scan all the tablets to build a map TS -> tablets
   // to know how many tablets a TS has... so, let's do a dumb assignment for now.
