@@ -183,7 +183,7 @@ class RowProjector {
   //
   // These are columns which are present in 'projection_' but not in 'base_schema',
   // and for which 'projection' has a default.
-  const vector<size_t> projection_defaults() const { return projection_defaults_; }
+  const vector<size_t>& projection_defaults() const { return projection_defaults_; }
 
  private:
   friend class Schema;

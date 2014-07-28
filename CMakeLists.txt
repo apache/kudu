@@ -529,6 +529,18 @@ ADD_THIRDPARTY_LIB(crcutil
   STATIC_LIB "${CRCUTIL_STATIC_LIB}"
   SHARED_LIB "${CRCUTIL_SHARED_LIB}")
 
+## llvm
+# Note that llvm has a unique cmake setup. See kudu/codegen/CMakeLists.txt
+# for details.
+set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} ${THIRDPARTY_PREFIX}/share/llvm)
+find_package(LLVM REQUIRED CONFIG)
+if(${LLVM_PACKAGE_VERSION} VERSION_LESS 3.4)
+  message(FATAL_ERROR "LLVM version (${LLVM_PACKAGE_VERSION}) must be at least 3.4")
+endif()
+message(STATUS "Found LLVM ${LLVM_PACKAGE_VERSION}")
+message(STATUS "Using LLVMConfig.cmake in: ${LLVM_DIR}")
+link_directories(${LLVM_LIBRARY_DIRS})
+
 ############################################################
 # Linker setup
 ############################################################
@@ -596,3 +608,4 @@ add_subdirectory(src/kudu/experiments)
 add_subdirectory(src/kudu/benchmarks)
 add_subdirectory(src/kudu/twitter-demo)
 add_subdirectory(src/kudu/tools)
+add_subdirectory(src/kudu/codegen)
