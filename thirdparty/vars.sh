@@ -78,3 +78,11 @@ CRCUTIL_DIR=$TP_DIR/crcutil-${CRCUTIL_VERSION}
 
 LIBUNWIND_VERSION=1.1a
 LIBUNWIND_DIR=$TP_DIR/libunwind-${LIBUNWIND_VERSION}
+
+# Our llvm tarball includes clang, extra clang tools, and compiler-rt.
+#
+# See http://clang.llvm.org/get_started.html for details on how they're laid
+# out in the llvm tarball.
+LLVM_VERSION=3.4.2
+LLVM_DIR=$TP_DIR/llvm-${LLVM_VERSION}.src
+LLVM_BUILD=$TP_DIR/llvm-${LLVM_VERSION}.build

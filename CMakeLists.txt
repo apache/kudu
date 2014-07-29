@@ -204,6 +204,12 @@ if ("${KUDU_USE_UBSAN}" OR "${KUDU_USE_ASAN}" OR "${KUDU_USE_TSAN}")
   # GCC 4.8 and 4.9 (latest as of this writing) don't allow you to specify a
   # sanitizer blacklist.
   if("${COMPILER_FAMILY}" STREQUAL "clang")
+    # Require clang 3.4 or newer; clang 3.3 has issues with TSAN and pthread
+    # symbol interception.
+    if("${COMPILER_VERSION}" VERSION_LESS "3.4")
+      message(SEND_ERROR "Must use clang 3.4 or newer to run a sanitizer build."
+        " Try using clang from thirdparty/")
+    endif()
     add_definitions("-fsanitize-blacklist=${CMAKE_CURRENT_SOURCE_DIR}/build-support/sanitize-blacklist.txt")
   else()
     message(WARNING "GCC does not support specifying a sanitizer blacklist. Known sanitizer check failures will not be suppressed.")

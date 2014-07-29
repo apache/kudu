@@ -7,6 +7,7 @@ gperftools-*
 gtest-*
 libev-*
 libunwind-*
+llvm-*
 protobuf-*
 snappy-*
 zlib-*

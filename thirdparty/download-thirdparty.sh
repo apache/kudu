@@ -128,5 +128,9 @@ if [ ! -d $LIBUNWIND_DIR ]; then
   fetch_and_expand libunwind-${LIBUNWIND_VERSION}.tar.gz
 fi
 
+if [ ! -d $LLVM_DIR ]; then
+  fetch_and_expand llvm-${LLVM_VERSION}.src.tar.gz
+fi
+
 echo "---------------"
 echo "Thirdparty dependencies downloaded successfully"

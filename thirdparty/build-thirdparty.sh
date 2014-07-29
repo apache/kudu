@@ -32,6 +32,7 @@ else
       "curl")       F_CURL=1 ;;
       "crcutil")    F_CRCUTIL=1 ;;
       "libunwind")  F_LIBUNWIND=1 ;;
+      "llvm")       F_LLVM=1 ;;
       *)            echo "Unknown module: $arg"; exit 1 ;;
     esac
   done
@@ -104,7 +105,7 @@ fi
 # build gtest
 if [ -n "$F_ALL" -o -n "$F_GTEST" ]; then
   cd $GTEST_DIR
-  CXXFLAGS=-fPIC cmake .
+  CXXFLAGS=-fPIC $PREFIX/bin/cmake .
   make -j$PARALLEL
 fi
 
@@ -132,7 +133,7 @@ fi
 # build lz4
 if [ -n "$F_ALL" -o -n "$F_LZ4" ]; then
   cd $LZ4_DIR
-  CFLAGS=-fPIC $PREFIX/bin/cmake -DCMAKE_INSTALL_PREFIX:PATH=$PREFIX $LZ4_DIR
+  CFLAGS=-fPIC $PREFIX/bin/cmake -DCMAKE_INSTALL_PREFIX:PATH=$PREFIX .
   make -j$PARALLEL install
 fi
 
@@ -211,6 +212,18 @@ fi
 # Copy gcovr tool into bin directory
 if [ -n "$F_ALL" -o -n "$F_GCOVR" ]; then
   cp -a $GCOVR_DIR/scripts/gcovr $PREFIX/bin/gcovr
+fi
+
+# build llvm
+if [ -n "$F_ALL" -o -n "$F_LLVM" ]; then
+  mkdir -p $LLVM_BUILD
+  cd $LLVM_BUILD
+  $PREFIX/bin/cmake \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DCMAKE_INSTALL_PREFIX=$PREFIX \
+    -DLLVM_TARGETS_TO_BUILD=X86 \
+    $LLVM_DIR
+  make -j$PARALLEL install
 fi
 
 # Remove any old thirdparty deps which hung around from previous versions

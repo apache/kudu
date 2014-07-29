@@ -13,7 +13,9 @@
 #     run the tests more quickly.
 #
 #   LLVM_DIR
-#     Path in which to find bin/clang and bin/clang++
+#     Path in which to find bin/clang and bin/clang++. Will only
+#     be used to bootstrap thirdparty/llvm; any clang-based
+#     compilation will then use the thirdparty version.
 #
 #   RUN_FLAKY_ONLY    Default: 0
 #     Only runs tests which have failed recently, if this is 1.
@@ -94,21 +96,39 @@ rm -Rf $TEST_LOGDIR
 rm -Rf $TEST_DEBUGDIR
 rm -rf CMakeCache.txt CMakeFiles src/*/CMakeFiles
 
+# Build all thirdparty dependencies with a pre-existing clang.
+#
+# This isn't necessary for most of them, but compiler-rt in thirdparty/llvm
+# doesn't compile with gcc 4.4, so we use a pre-existing clang to safely
+# bootstrap it.
+# - http://llvm.org/bugs/show_bug.cgi?id=16532
+# - http://code.google.com/p/address-sanitizer/issues/detail?id=146
+export CC=$LLVM_DIR/bin/clang
+export CXX=$LLVM_DIR/bin/clang++
 thirdparty/build-if-necessary.sh
+unset CC
+unset CXX
 
-export PATH=$(pwd)/thirdparty/installed/bin:$PATH
+# PATH=<toolchain_stuff>:$PATH
+if [ -f "$TOOLCHAIN" ]; then
+  source $TOOLCHAIN
+fi
+
+# PATH=<thirdparty_stuff>:<toolchain_stuff>:$PATH
+THIRDPARTY_BIN=$(pwd)/thirdparty/installed/bin
+export PATH=$THIRDPARTY_BIN:$PATH
 export PPROF_PATH=$(pwd)/thirdparty/installed/bin/pprof
 
 # Configure the build
 if [ "$BUILD_TYPE" = "ASAN" ]; then
   # NB: passing just "clang++" below causes an infinite loop, see
   # http://www.cmake.org/pipermail/cmake/2012-December/053071.html
-  CC=$LLVM_DIR/bin/clang CXX=$LLVM_DIR/bin/clang++ \
-    cmake -DKUDU_USE_ASAN=1 -DKUDU_USE_UBSAN=1 .
+  CC=$THIRDPARTY_BIN/clang CXX=$THIRDPARTY_BIN/clang++ \
+   cmake -DKUDU_USE_ASAN=1 -DKUDU_USE_UBSAN=1 .
   BUILD_TYPE=fastdebug
 elif [ "$BUILD_TYPE" = "TSAN" ]; then
-  CC=$LLVM_DIR/bin/clang CXX=$LLVM_DIR/bin/clang++ \
-    cmake -DKUDU_USE_TSAN=1
+  CC=$THIRDPARTY_BIN/clang CXX=$THIRDPARTY_BIN/clang++ \
+   cmake -DKUDU_USE_TSAN=1 .
   BUILD_TYPE=fastdebug
   EXTRA_TEST_FLAGS="$EXTRA_TEST_FLAGS -LE no_tsan"
 elif [ "$BUILD_TYPE" = "LEAKCHECK" ]; then
@@ -189,13 +209,9 @@ if [ "$DO_COVERAGE" == "1" ]; then
   ./thirdparty/gcovr-3.0/scripts/gcovr -r src/  -e '.*\.pb\..*' --xml > build/coverage.xml
 fi
 
-export PATH=$(pwd)/build/latest/:$PATH
-if [ -f "$TOOLCHAIN" ]; then
-  source $TOOLCHAIN
-fi
-
-
 if [ "$BUILD_JAVA" == "1" ]; then
+  # PATH=<build_output>:<thirdparty_stuff>:<toolchain_stuff>:$PATH
+  export PATH=$(pwd)/build/latest/:$PATH
   pushd java
   export TSAN_OPTIONS="$TSAN_OPTIONS suppressions=$ROOT/build-support/tsan-suppressions.txt history_size=7"
   set -x

@@ -32,6 +32,21 @@ $ NO_REBUILD_THIRDPARTY=1 cmake .
 If you are looking to manually run the protobuf compiler, the pprof tool,
 etc, you can find these in thirdparty/installed/bin/
 
+The LLVM thirdparty dependency will not build properly with gcc 4.4, which is
+the version of gcc shipped with RHEL6. On machines with the Cloudera
+toolchain, you can use LLVM 3.3 from the toolchain to bootstrap the thirdparty
+LLVM:
+
+$ export CC=/path/to/llvm-3.3/bin/clang
+$ export CXX=/path/to/llvm-3.3/bin/clang++
+$ thirdparty/build-if-necessary.sh
+
+If you don't have access to a newer compiler, you can build LLVM twice, once
+without the gcc 4.4 incompatible code, and once with. Add the flag
+-DLLVM_EXTERNAL_COMPILER_RT_BUILD=OFF to the cmake invocation for LLVM in
+thirdparty/build-thirdparty.sh. When built, that will yield an incomplete but
+otherwise workign LLVM 3.4. Then, using the CC/CXX environment variables as
+above, remove the aforementioned flag and rebuild LLVM using itself.
 
 Building kudu
 ------------------------------------------------------------
