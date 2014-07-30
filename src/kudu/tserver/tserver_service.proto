@@ -1,0 +1,35 @@
+// Copyright (c) 2013, Cloudera, inc.
+package kudu.tserver;
+
+import "kudu/common/common.proto";
+import "kudu/common/wire_protocol.proto";
+import "kudu/consensus/consensus.proto";
+import "kudu/tserver/tserver.proto";
+
+service TabletServerService {
+
+  rpc Ping(PingRequestPB) returns (PingResponsePB);
+  rpc Write(WriteRequestPB) returns (WriteResponsePB);
+  rpc Scan(ScanRequestPB) returns (ScanResponsePB);
+  rpc ListTablets(ListTabletsRequestPB) returns (ListTabletsResponsePB);
+
+  // ===========================================================================
+  // Internal Methods
+  //
+  // The following methods are only used for tserver<->master or tserver<->tserver
+  // comms and should not be accessible by clients.
+  // TODO enforce this through ACLS or something...
+  // ===========================================================================
+
+  rpc CreateTablet(CreateTabletRequestPB) returns (CreateTabletResponsePB);
+
+  rpc DeleteTablet(DeleteTabletRequestPB) returns (DeleteTabletResponsePB);
+
+  rpc ChangeConfig(ChangeConfigRequestPB) returns (ChangeConfigResponsePB);
+
+  rpc UpdateConsensus(kudu.consensus.ConsensusRequestPB) returns (kudu.consensus.ConsensusResponsePB);
+
+  rpc RequestConsensusVote(kudu.consensus.VoteRequestPB) returns (kudu.consensus.VoteResponsePB);
+
+  rpc AlterSchema(AlterSchemaRequestPB) returns (AlterSchemaResponsePB);
+}

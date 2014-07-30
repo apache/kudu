@@ -81,7 +81,7 @@ public final class KuduScanner {
 
   /**
    * The possible read modes for scanners.
-   * @see src/common/common.proto for a detailed explanations on the
+   * @see src/kudu/common/common.proto for a detailed explanations on the
    *      meaning and implications of each mode.
    */
   public enum ReadMode {
@@ -239,7 +239,7 @@ public final class KuduScanner {
   /**
    * Returns the ReadMode for this scanner.
    * @return the configured read mode for this scanner
-   * @see src/common/common.proto for information on ReadModes
+   * @see src/kudu/common/common.proto for information on ReadModes
    */
   public ReadMode getReadMode() {
     return this.readMode;

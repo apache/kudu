@@ -1,0 +1,210 @@
+// Copyright (c) 2013, Cloudera, inc.
+package kudu.consensus;
+
+import "kudu/common/common.proto";
+import "kudu/common/wire_protocol.proto";
+import "kudu/server/metadata.proto";
+import "kudu/tablet/tablet.proto";
+import "kudu/tserver/tserver.proto";
+
+// ===========================================================================
+//  Generic/Meta- Messages
+// ===========================================================================
+
+// An id for a generic state machine operation. Composed of the leaders' term
+// plus the index of the operation in that term, e.g., the <index>th operation
+// of the <term>th leader.
+message OpId {
+  required uint64 term = 1;
+  required uint64 index = 2;
+}
+
+// ===========================================================================
+//  External Consensus Messages
+// ===========================================================================
+
+// The types of operations that need a commit message, i.e. those that require
+// at least one round of the consensus algorithm.
+enum OperationType {
+  NO_OP = 1;
+  OP_ABORT = 2;
+  WRITE_OP = 3;
+  ALTER_SCHEMA_OP = 4;
+  CHANGE_CONFIG_OP = 5;
+}
+
+// The transaction driver type: indicates whether a transaction is
+// being executed on a leader or a replica.
+enum DriverType {
+  LEADER = 1;
+  REPLICA = 2;
+}
+
+// A wrapper around replicates and commits so that we can send to peers
+// in total order without having to rebuild order between replicates/commits.
+// Each operation must either have a replicate or a commit, but not both.
+message OperationPB {
+  required OpId id = 2;
+  optional ReplicateMsg replicate = 3;
+  optional CommitMsg commit = 4;
+}
+
+// A Replicate message, sent to replicas by leader to indicate this operation must
+// be stored in the WAL/SM log, as part of the first phase of the two phase
+// commit.
+message ReplicateMsg {
+  required OperationType op_type = 2;
+  optional tserver.WriteRequestPB write_request = 3;
+  optional tserver.AlterSchemaRequestPB alter_schema_request = 4;
+  optional tserver.ChangeConfigRequestPB change_config_request = 5;
+
+  optional NoOpRequestPB noop_request = 999;
+}
+
+// A commit message for a previous operation.
+// This is a commit in the consensus sense and may abort/commit any operation
+// that required a consensus round.
+message CommitMsg {
+  required OperationType op_type = 1;
+  // the id of the message this commit pertains to
+  optional OpId commited_op_id = 2;
+  // The transaction timestamp for the operation.
+  // This is present for all COMMITs, but not necessarily on ABORTs.
+  optional fixed64 timestamp = 3;
+  // The operations that were applied and/or failed in this transaction.
+  optional tablet.TxResultPB result = 4;
+  // The response to the write request, will contain the global status
+  // (OK or otherwise) and the row errors, if any.
+  optional tserver.WriteResponsePB write_response = 5;
+  // The response to the alter schema request
+  optional tserver.AlterSchemaResponsePB alter_schema_response = 6;
+  optional tserver.ChangeConfigResponsePB change_config_response = 7;
+
+  optional NoOpResponsePB noop_response = 999;
+}
+
+// ===========================================================================
+//  Internal Consensus Messages and State
+// ===========================================================================
+
+// NoOp requests, mostly used in tests.
+message NoOpRequestPB {
+ // Allows to set a dummy payload, for tests.
+ optional bytes payload_for_tests = 1;
+}
+
+// NoOp responses, mostly used in tests.
+message NoOpResponsePB {
+   // Allows to set a dummy payload, for tests.
+   optional bytes payload_for_tests = 1;
+}
+
+message PerOpErrorPB {
+  // The id of the operation that failed in the other peer.
+  required OpId id = 1;
+  // The Status explaining why the operation failed.
+  required AppStatusPB status = 2;
+}
+
+// Status message received in the peer responses.
+message ConsensusStatusPB {
+
+  // The last message received by the peer.
+  // Messages up to this one do not need re-sending.
+  required OpId received_watermark = 2;
+
+  // The last ReplicateMsg that was logged by the peer.
+  required OpId replicated_watermark = 1;
+
+  // The first commit applied by the peer before which all other commits
+  // have been applied. The timestamp of this commit is the 'safe' timestamp
+  // for the replica, i.e. were the replica and leader to be scanned at this
+  // timestamp they would return the same results.
+  //
+  // If safe_commit_watermark is S, then for all COMMIT messages with an
+  // OpId <= S, that commit has been applied at this replica.
+  // NOTE: that this *does not* imply that for a REPLICATE message with
+  // OpId <= S, that that replicate message has necessarily been committed.
+  // For example, with the following sequence:
+  //
+  // 1 REPLICATE insert A
+  // 2 REPLICATE insert B
+  // 3 COMMIT 1
+  //
+  // then safe_commit_watermark = 3 does not imply that "insert B" has
+  // been committed.
+  required OpId safe_commit_watermark = 3;
+
+  // Whether this status contains the full list of replicate messages which are
+  // missing commits.
+  optional bool includes_pending_ops = 4 [default = false];
+
+  // Pending operations, i.e. replicate messages for which no
+  // commit message has been received from the previous LEADER.
+  // Filled when 'detailed' is true.
+  repeated OperationPB pending_ops = 5;
+
+  // Per operation errors.
+  repeated PerOpErrorPB errors = 6;
+}
+
+// A request from a CANDIDATE peer that wishes to become leader of
+// the quorum serving tablet with 'tablet_id'.
+message VoteRequestPB {
+  required string tablet_id = 1;
+
+  // the uuid of the sender peer
+  required bytes candidate_uuid = 2;
+
+  // The CANDIDATE node status so that the voter node can
+  // decide whether to vote for it as LEADER.
+  required ConsensusStatusPB candidate_status = 3;
+}
+
+// A response from a replica to a leader election request.
+// The replica will compare its status with the requestor
+// status and answer 'aye = true' if it deems the requestor
+// may become leader or 'aye = false' otherwise.
+message VoteResponsePB {
+
+  // A generic error message (such as tablet not found).
+  optional tserver.TabletServerErrorPB error = 1;
+
+  // True if this peer voted for the requestor, false otherwise.
+  required bool aye = 2;
+
+  // The remaining watermarks for the voter peer, set if 'aye = true'.
+  // This will be a detailed status.
+  optional ConsensusStatusPB status = 4;
+}
+
+// A consensus request message, the basic unit of a consensus round.
+message ConsensusRequestPB {
+  required string tablet_id = 1;
+  // the uuid of the sender peer
+  required bytes sender_uuid = 2;
+  // sequence of operations to be replicated/executed by this peer
+  repeated OperationPB ops = 3;
+}
+
+message ConsensusResponsePB {
+  // A generic error message (such as tablet not found), per operation
+  // error messages are sent along with the consensus status.
+  optional tserver.TabletServerErrorPB error = 1;
+  optional ConsensusStatusPB status = 3;
+}
+
+// A message reflecting the status of an in-flight transaction.
+message TransactionStatusPB {
+  required OpId op_id = 1;
+  required OperationType tx_type = 2;
+  // Time the transaction has been in flight.
+  required int64 running_for_micros = 3;
+  // Quick human-readable description (e.g., ToString() output).
+  required string description = 4;
+
+  required DriverType driver_type = 5;
+  // If tracing is enabled when viewing the transaction, the trace
+  // buffer is copied here.
+  optional string trace_buffer = 6;
+}

@@ -3,7 +3,7 @@ All rights reserved.
 
 --------------------------------------------------------------------------------
 
-Some portions (src/gutil) copyright (c) Google inc and (c) The Chromium Authors
+Some portions (src/kudu/gutil) copyright (c) Google inc and (c) The Chromium Authors
 and licensed under the Apache 2.0 License or the under the BSD-style Chromium license:
 
 // Copyright (c) 2013 The Chromium Authors. All rights reserved.
@@ -36,11 +36,11 @@ and licensed under the Apache 2.0 License or the under the BSD-style Chromium li
 
 --------------------------------------------------------------------------------
 
-src/gutil/utf: Copyright (c) Lucent Technologies. see src/gutil/utf/LICENSE
+src/kudu/gutil/utf: Copyright (c) Lucent Technologies. see src/kudu/gutil/utf/LICENSE
 
 --------------------------------------------------------------------------------
 
-src/gutil/valgrind.h:
+src/kudu/gutil/valgrind.h:
 
    This file is part of Valgrind, a dynamic binary instrumentation
    framework.
@@ -80,12 +80,12 @@ src/gutil/valgrind.h:
 
 --------------------------------------------------------------------------------
 
-Some portions (parts of src/util) copyright (c) The LevelDB Authors and licensed
+Some portions (parts of src/kudu/util) copyright (c) The LevelDB Authors and licensed
 under the Apache 2.0 License.
 
 --------------------------------------------------------------------------------
 
-Some portions (parts of src/util) were ported from Java to C++, particularly
+Some portions (parts of src/kudu/util) were ported from Java to C++, particularly
 the HdrHistogram classes. The original Java source code was released into the
 public domain and has the following copyright notice:
 
@@ -96,7 +96,7 @@ public domain and has the following copyright notice:
 
 --------------------------------------------------------------------------------
 
-src/util/random-util.cc: some portions adapted from WebRTC project
+src/kudu/util/random-util.cc: some portions adapted from WebRTC project
 (modules/video_coding/main/test/test_util.cc)
 
 Copyright (c) 2011, The WebRTC project authors. All rights reserved.
@@ -131,7 +131,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 --------------------------------------------------------------------------------
 
-src/util/sync_point: adapted from the RocksDB project
+src/kudu/util/sync_point: adapted from the RocksDB project
 
 BSD License
 
@@ -194,7 +194,7 @@ any right in any patent claim of Facebook is invalid or unenforceable.
 
 --------------------------------------------------------------------------------
 
-src/server/url-coding.cc: some portions adapted from the Boost project
+src/kudu/server/url-coding.cc: some portions adapted from the Boost project
 
   Boost Software License - Version 1.0 - August 17th, 2003
 

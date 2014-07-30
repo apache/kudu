@@ -189,7 +189,7 @@ public class KuduClient {
   /**
    * Timestamp required for HybridTime external consistency through timestamp
    * propagation.
-   * @see src/common/common.proto
+   * @see src/kudu/common/common.proto
    */
   private long lastPropagatedTimestamp = NO_TIMESTAMP;
 
@@ -393,7 +393,7 @@ public class KuduClient {
    * The string is assumed to use the platform's default charset.
    * The scanner will be created with ReadMode.READ_LATEST
    * @return A new scanner for this table.
-   * @see src/common/common.proto for info on ReadModes
+   * @see src/kudu/common/common.proto for info on ReadModes
    */
   public KuduScanner newScanner(final KuduTable table, Schema schema) {
     checkIsClosed();
@@ -405,7 +405,7 @@ public class KuduClient {
    * are required for externally consistent reads. In this overload the server
    * will assign the snapshot timestamp.
    *
-   * @see src/common/common.proto for info on ReadModes and snapshot scanners
+   * @see src/kudu/common/common.proto for info on ReadModes and snapshot scanners
    */
   public KuduScanner newSnapshotScanner(final KuduTable table, Schema schema) {
     checkIsClosed();
@@ -416,7 +416,7 @@ public class KuduClient {
    * Like the above, also creates a Snapshot scanner, but allows to specify
    * the snapshot timestamp.
    *
-   * @see src/common/common.proto for info on ReadModes and snapshot scanners
+   * @see src/kudu/common/common.proto for info on ReadModes and snapshot scanners
    */
   public KuduScanner newSnapshotScanner(final KuduTable table,
     Schema schema, long timestamp, TimeUnit timeUnit) {

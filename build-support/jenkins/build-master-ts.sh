@@ -21,7 +21,7 @@ thirdparty/build-if-necessary.sh
 
 export PATH=$(pwd)/thirdparty/installed/bin:$PATH
 
-rm -rf CMakeCache.txt CMakeFiles src/*/CMakeFiles
+rm -rf CMakeCache.txt CMakeFiles src/kudu/*/CMakeFiles
 
 cmake . -DCMAKE_BUILD_TYPE=release -DKUDU_LINK=dynamic
 make clean

@@ -81,7 +81,7 @@ rm -Rf Testing/Temporary
 rm -f build.log
 rm -Rf $TEST_LOGDIR
 rm -Rf $TEST_DEBUGDIR
-rm -rf CMakeCache.txt CMakeFiles src/*/CMakeFiles
+rm -rf CMakeCache.txt CMakeFiles src/kudu/*/CMakeFiles
 
 # PATH=<toolchain_stuff>:$PATH
 export TOOLCHAIN=/mnt/toolchain/toolchain.sh

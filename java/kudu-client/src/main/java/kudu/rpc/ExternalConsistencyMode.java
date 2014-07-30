@@ -5,7 +5,7 @@ import kudu.Common;
 
 /**
  * The possible external consistency modes on which Kudu operates.
- * @see src/common/common.proto for a detailed explanations on the
+ * @see src/kudu/common/common.proto for a detailed explanations on the
  *      meaning and implications of each mode.
  */
 public enum ExternalConsistencyMode {
