@@ -824,7 +824,7 @@ public class KuduClient {
     // If we know this is going to the master, there's currently nothing we can lookup to find it.
     // Instead, we use our already-known location and hope the master's going to be there. Else,
     // this will get retried like any other RPC.
-    if (table.equals(MASTER_TABLE_HACK)) {
+    if (isMasterTable(table)) {
       Master.GetTableLocationsResponsePB.Builder responseBuilder = Master
           .GetTableLocationsResponsePB.newBuilder();
       responseBuilder.addTabletLocations(getMasterTableLocationPB());
@@ -843,7 +843,7 @@ public class KuduClient {
     Master.TabletLocationsPB.Builder locationBuilder = Master.TabletLocationsPB.newBuilder();
     locationBuilder.setStartKey(ByteString.copyFromUtf8(""));
     locationBuilder.setEndKey(ByteString.copyFromUtf8(""));
-    locationBuilder.setTabletId(ByteString.copyFromUtf8("MASTER_TABLE_HACK"));
+    locationBuilder.setTabletId(ByteString.copyFromUtf8(MASTER_TABLE_HACK));
     locationBuilder.setStale(false);
     Master.TabletLocationsPB.ReplicaPB.Builder replicaBuilder = Master.TabletLocationsPB
         .ReplicaPB.newBuilder();
@@ -1101,7 +1101,7 @@ public class KuduClient {
     return tabletPair.getValue();
   }
 
-  private TabletClient newClient(final String host, final int port) {
+  private TabletClient newClient(final String host, final int port, boolean isMasterTable) {
     final String hostport = host + ':' + port;
     TabletClient client;
     SocketChannel chan;
@@ -1111,7 +1111,7 @@ public class KuduClient {
         return client;
       }
       final TabletClientPipeline pipeline = new TabletClientPipeline();
-      client = pipeline.init();
+      client = pipeline.init(isMasterTable);
       chan = channelFactory.newChannel(pipeline);
       ip2client.put(hostport, client);  // This is guaranteed to return null.
     }
@@ -1366,6 +1366,10 @@ public class KuduClient {
     }
   }
 
+  private boolean isMasterTable(String tableName) {
+    return MASTER_TABLE_HACK.equals(tableName);
+  }
+
   private final class TabletClientPipeline extends DefaultChannelPipeline {
 
     private Logger log = LoggerFactory.getLogger(TabletClientPipeline.class);
@@ -1379,8 +1383,8 @@ public class KuduClient {
      */
     private boolean disconnected = false;
 
-    TabletClient init() {
-      final TabletClient client = new TabletClient(KuduClient.this);
+    TabletClient init(boolean isMasterTable) {
+      final TabletClient client = new TabletClient(KuduClient.this, isMasterTable);
       super.addLast("handler", client);
       return client;
     }
@@ -1546,7 +1550,8 @@ public class KuduClient {
           // from meta_cache.cc
           // TODO: if the TS advertises multiple host/ports, pick the right one
           // based on some kind of policy. For now just use the first always.
-          int index = addTabletClient(addresses.get(0).getHost(), addresses.get(0).getPort());
+          int index = addTabletClient(addresses.get(0).getHost(), addresses.get(0).getPort(),
+              isMasterTable(table));
           if (replica.getRole().equals(Metadata.QuorumPeerPB.Role.LEADER) &&
               index != NO_LEADER_INDEX) {
             leaderIndex = index;
@@ -1559,12 +1564,12 @@ public class KuduClient {
     }
 
     // Must be called with tabletServers synchronized
-    int addTabletClient(String host, int port) {
+    int addTabletClient(String host, int port, boolean isMasterTable) {
       String ip = getIP(host);
       if (ip == null) {
         return NO_LEADER_INDEX;
       }
-      TabletClient client = newClient(ip, port);
+      TabletClient client = newClient(ip, port, isMasterTable);
       tabletServers.add(client);
 
       synchronized (client) {

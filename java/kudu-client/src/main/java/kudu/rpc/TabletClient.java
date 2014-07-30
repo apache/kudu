@@ -90,6 +90,8 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
       0
   };
   public static final int CONNECTION_CTX_CALL_ID = -3;
+  private static final String MASTER_SERVICE_NAME = "kudu.master.MasterService";
+  private static final String TABLET_SERVER_SERVICE_NAME = "kudu.tserver.TabletServerService";
 
   /**
    * A monotonically increasing counter for RPC IDs.
@@ -129,10 +131,13 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
 
   private final KuduClient kuduClient;
 
+  private final String serviceName;
+
   private SecureRpcHelper secureRpcHelper;
 
-  public TabletClient(KuduClient client) {
+  public TabletClient(KuduClient client, boolean isMaster) {
     this.kuduClient = client;
+    this.serviceName = isMaster ? MASTER_SERVICE_NAME : TABLET_SERVER_SERVICE_NAME;
   }
 
   <R> void sendRpc(KuduRpc<R> rpc) {
@@ -625,7 +630,7 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
 
   private ChannelBuffer header() {
     RpcHeader.ConnectionContextPB.Builder builder = RpcHeader.ConnectionContextPB.newBuilder();
-    builder.setServiceName("TabletServerService"); // TODO set the right one?
+    builder.setServiceName(serviceName);
     RpcHeader.UserInformationPB.Builder userBuilder = RpcHeader.UserInformationPB.newBuilder();
     userBuilder.setEffectiveUser(SecureRpcHelper.USER_AND_PASSWORD); // TODO set real user
     userBuilder.setRealUser(SecureRpcHelper.USER_AND_PASSWORD);
