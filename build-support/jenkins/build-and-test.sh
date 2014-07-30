@@ -12,11 +12,6 @@
 #     Runs the "slow" version of the unit tests. Set to 0 to
 #     run the tests more quickly.
 #
-#   LLVM_DIR
-#     Path in which to find bin/clang and bin/clang++. Will only
-#     be used to bootstrap thirdparty/llvm; any clang-based
-#     compilation will then use the thirdparty version.
-#
 #   RUN_FLAKY_ONLY    Default: 0
 #     Only runs tests which have failed recently, if this is 1.
 #     Used by the kudu-flaky-tests jenkins build.
@@ -58,16 +53,8 @@ fi
 
 export KUDU_FLAKY_TEST_ATTEMPTS=${KUDU_FLAKY_TEST_ATTEMPTS:-1}
 export KUDU_ALLOW_SLOW_TESTS=${KUDU_ALLOW_SLOW_TESTS:-$DEFAULT_ALLOW_SLOW_TESTS}
-LLVM_DIR=${LLVM_DIR:-/opt/toolchain/llvm-3.3/}
 export KUDU_COMPRESS_TEST_OUTPUT=${KUDU_COMPRESS_TEST_OUTPUT:-1}
-export TOOLCHAIN=/mnt/toolchain/toolchain.sh
 BUILD_JAVA=${BUILD_JAVA:-1}
-
-if [ ! -d $LLVM_DIR ]; then
-  echo "No LLVM found ($LLVM_DIR does not exist)"
-  echo "Set LLVM_DIR to the prefix for clang"
-  exit 1
-fi
 
 # If they specified an explicit test directory, ensure it's going to be usable.
 if [ -n "$TEST_TMPDIR" ]; then
@@ -96,23 +83,13 @@ rm -Rf $TEST_LOGDIR
 rm -Rf $TEST_DEBUGDIR
 rm -rf CMakeCache.txt CMakeFiles src/*/CMakeFiles
 
-# Build all thirdparty dependencies with a pre-existing clang.
-#
-# This isn't necessary for most of them, but compiler-rt in thirdparty/llvm
-# doesn't compile with gcc 4.4, so we use a pre-existing clang to safely
-# bootstrap it.
-# - http://llvm.org/bugs/show_bug.cgi?id=16532
-# - http://code.google.com/p/address-sanitizer/issues/detail?id=146
-export CC=$LLVM_DIR/bin/clang
-export CXX=$LLVM_DIR/bin/clang++
-thirdparty/build-if-necessary.sh
-unset CC
-unset CXX
-
 # PATH=<toolchain_stuff>:$PATH
+export TOOLCHAIN=/mnt/toolchain/toolchain.sh
 if [ -f "$TOOLCHAIN" ]; then
   source $TOOLCHAIN
 fi
+
+thirdparty/build-if-necessary.sh
 
 # PATH=<thirdparty_stuff>:<toolchain_stuff>:$PATH
 THIRDPARTY_BIN=$(pwd)/thirdparty/installed/bin

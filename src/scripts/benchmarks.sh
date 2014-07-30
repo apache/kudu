@@ -116,10 +116,14 @@ write_mttablet_img_plots() {
 }
 
 build_kudu() {
+  # PATH=<toolchain_stuff>:$PATH
+  export TOOLCHAIN=/mnt/toolchain/toolchain.sh
+  if [ -f "$TOOLCHAIN" ]; then
+    source $TOOLCHAIN
+  fi
+
   # Build thirdparty
-  pushd thirdparty
-  ./build-if-necessary.sh
-  popd
+  thirdparty/build-if-necessary.sh
 
   # Build Kudu
   rm -rf CMakeCache.txt CMakeFiles

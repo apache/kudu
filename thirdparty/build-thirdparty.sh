@@ -218,11 +218,32 @@ fi
 if [ -n "$F_ALL" -o -n "$F_LLVM" ]; then
   mkdir -p $LLVM_BUILD
   cd $LLVM_BUILD
+
+  # Build LLVM with a pre-existing clang, if it exists.
+  #
+  # This isn't strictly necessary, but compiler-rt doesn't compile with
+  # gcc 4.4, so we use a pre-existing clang to safely bootstrap it.
+  #
+  # If we can't find clang, we'll use the system compiler and hope for
+  # the best.
+  # - http://llvm.org/bugs/show_bug.cgi?id=16532
+  # - http://code.google.com/p/address-sanitizer/issues/detail?id=146
+  CLANG=$(which clang || :)
+  CLANGXX=$(which clang++ || :)
+  if [ -n "$CLANG" -a -n "$CLANGXX" -a -z "$CC" -a -z "$CXX" ]; then
+    export CC=$CLANG
+    export CXX=$CLANGXX
+  fi
   $PREFIX/bin/cmake \
     -DCMAKE_BUILD_TYPE=Release \
     -DCMAKE_INSTALL_PREFIX=$PREFIX \
     -DLLVM_TARGETS_TO_BUILD=X86 \
     $LLVM_DIR
+  if [ -n $CLANG -a -n $CLANGXX ]; then
+    unset CC
+    unset CXX
+  fi
+
   make -j$PARALLEL install
 fi
 
