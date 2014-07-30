@@ -13,6 +13,7 @@ race:std::string::_Rep::_M_dispose
 # Protobuf's implementation of GoogleOnce doesn't properly annotate itself
 race:google::protobuf::GoogleOnceInitImpl
 race:google::protobuf::Message::GetReflection
+race:*::protobuf_AssignDescriptorsOnce
 
 # libunwind uses some double-checked locking which isn't perfectly safe.
 # Reported at http://savannah.nongnu.org/bugs/index.php?42677
