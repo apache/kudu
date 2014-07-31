@@ -42,7 +42,7 @@ class BlockId {
 
  private:
   friend class FsManager;
-  friend class BlockIdHash;
+  friend struct BlockIdHash;
 
   // Used for on-disk partition
   std::string hash0() const;
