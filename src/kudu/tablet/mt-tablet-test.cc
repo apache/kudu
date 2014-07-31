@@ -335,7 +335,7 @@ TYPED_TEST_CASE(MultiThreadedTabletTest, TabletTestHelperTypes);
 
 TYPED_TEST(MultiThreadedTabletTest, DoTestAllAtOnce) {
   if (1000 == FLAGS_inserts_per_thread) {
-    if (this->AllowSlowTests()) {
+    if (AllowSlowTests()) {
       FLAGS_inserts_per_thread = 50000;
     }
   }
@@ -374,7 +374,7 @@ TYPED_TEST(MultiThreadedTabletTest, DeleteAndReinsert) {
   this->StartThreads(10, &TestFixture::StubbornlyUpdateSameRowThread);
 
   // Run very quickly in dev builds, longer in slow builds.
-  float runtime_seconds = this->AllowSlowTests() ? 2 : 0.1;
+  float runtime_seconds = AllowSlowTests() ? 2 : 0.1;
   Stopwatch sw;
   sw.start();
   while (sw.elapsed().wall < runtime_seconds * NANOS_PER_SECOND &&

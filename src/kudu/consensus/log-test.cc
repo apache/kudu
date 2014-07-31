@@ -318,7 +318,7 @@ TEST_F(LogTest, TestLogReopenAndGC) {
 // Helper to measure the performance of the log.
 TEST_F(LogTest, TestWriteManyBatches) {
   uint64_t num_batches = 10;
-  if (this->AllowSlowTests()) {
+  if (AllowSlowTests()) {
     num_batches = FLAGS_num_batches;
   }
   BuildLog();

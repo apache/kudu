@@ -82,15 +82,29 @@ target_link_libraries(kudu_util
   rt)
 
 #######################################
+# kudu_test_util
+#######################################
+
+add_library(kudu_test_util
+  test_util.cc)
+target_link_libraries(kudu_test_util
+  gflags
+  glog
+  gtest
+  kudu_util)
+
+#######################################
 # kudu_test_main
 #######################################
 
-add_library(kudu_test_main test_main.cc)
+add_library(kudu_test_main
+  test_main.cc)
 target_link_libraries(kudu_test_main
   gflags
   glog
   gtest
   kudu_util
+  kudu_test_util
   rt)
 
 #######################################

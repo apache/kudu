@@ -9,9 +9,6 @@
 #include "kudu/util/pstack_watcher.h"
 #include "kudu/util/status.h"
 
-DEFINE_bool(test_leave_files, false,
-            "Whether to leave test files around after the test run");
-
 DEFINE_int32(test_timeout_after, 0,
              "Maximum total seconds allowed for all unit tests in the suite. Default: disabled");
 

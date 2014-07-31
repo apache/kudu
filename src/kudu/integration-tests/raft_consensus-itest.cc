@@ -432,7 +432,7 @@ TEST_F(DistConsensusTest, MultiThreadedMutateAndInsertThroughConsensus) {
   BuildAndStart();
 
   if (500 == FLAGS_client_inserts_per_thread) {
-    if (this->AllowSlowTests()) {
+    if (AllowSlowTests()) {
       FLAGS_client_inserts_per_thread = FLAGS_client_inserts_per_thread * 10;
       FLAGS_client_num_batches_per_thread = FLAGS_client_num_batches_per_thread * 10;
     }

@@ -476,7 +476,7 @@ ADD_THIRDPARTY_LIB(crcutil
 ############################################################
 # Linker setup
 ############################################################
-set(KUDU_MIN_TEST_LIBS kudu_test_main ${KUDU_BASE_LIBS})
+set(KUDU_MIN_TEST_LIBS kudu_test_main kudu_test_util ${KUDU_BASE_LIBS})
 set(KUDU_TEST_LINK_LIBS ${KUDU_MIN_TEST_LIBS})
 
 ############################################################
