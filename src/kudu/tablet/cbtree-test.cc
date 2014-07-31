@@ -269,37 +269,6 @@ TEST_F(TestCBTree, TestInsertAndVerify) {
   }
 }
 
-TEST_F(TestCBTree, TestUpdate) {
-  CBTree<SmallFanoutTraits> t;
-  ASSERT_TRUE(t.empty());
-
-  Slice key("key");
-  t.Insert(key, Slice("val1"));
-  VerifyGet(t, key, Slice("val1"));
-
-  ASSERT_FALSE(t.empty());
-
-  // Update with a value of the same size
-  {
-    PreparedMutation<SmallFanoutTraits> pm(key);
-    pm.Prepare(&t);
-    ASSERT_TRUE(pm.exists());
-    ASSERT_TRUE(pm.Update(Slice("val2")));
-
-    VerifyGet(t, key, Slice("val2"));
-  }
-
-  // Update with a value of shorter size
-  {
-    PreparedMutation<SmallFanoutTraits> pm(key);
-    pm.Prepare(&t);
-    ASSERT_TRUE(pm.exists());
-    ASSERT_TRUE(pm.Update(Slice("x")));
-
-    VerifyGet(t, key, Slice("x"));
-  }
-}
-
 template<class TREE, class COLLECTION>
 static void InsertRandomKeys(TREE *t, int n_keys,
                              COLLECTION *inserted) {

@@ -12,6 +12,11 @@
 // - We do not support removal of elements from the tree -- in the Kudu memrowset
 //   use case, we use a deletion bit to indicate a removed record, and end up
 //   actually removing the storage at compaction time.
+// - We do not support updating elements in the tree. Because we use MVCC, we
+//   only append new entries. A limited form of update is allowed in that data
+//   may be modified so long as the size is not changed. In that case, it is
+//   up to the user to provide concurrency control of the update (eg by using
+//   atomic operations or external locking)
 // - The leaf nodes are linked together with a "next" pointer. This makes
 //   scanning simpler (the Masstree implementation avoids this because it
 //   complicates the removal operation)
@@ -689,26 +694,6 @@ class LeafNode : public NodeBase<Traits> {
     return INSERT_SUCCESS;
   }
 
-  enum UpdateStatus {
-    UPDATE_NOTFOUND,
-    UPDATE_SUCCESS,
-    UPDATE_FULL
-  };
-
-  // Update an entry in this leaf node.
-  UpdateStatus Update(PreparedMutation<Traits> *mut, const Slice &new_val) {
-    DCHECK_EQ(this, mut->leaf());
-    DCHECK(VersionField::IsInserting(this->version_));
-    DCHECK_LT(mut->idx(), num_entries_);
-
-    if (PREDICT_FALSE(!mut->exists())) {
-      return UPDATE_NOTFOUND;
-    }
-
-    vals_[mut->idx()].set(new_val, mut->arena());
-    return UPDATE_SUCCESS;
-  }
-
   // Find the index of the first key which is >= the given
   // search key.
   // If the comparison is equal, then sets *exact to true.
@@ -806,7 +791,7 @@ class LeafNode : public NodeBase<Traits> {
 
 // A "scoped" object which holds a lock on a leaf node.
 // Instances should be prepared with CBTree::PrepareMutation()
-// and then used with a further Insert() or Update() call.
+// and then used with a further Insert() call.
 template<class Traits>
 class PreparedMutation {
  public:
@@ -830,14 +815,12 @@ class PreparedMutation {
 
   // Prepare a mutation against the given tree.
   //
-  // This prepared mutation may then be used with Insert()
-  // or [TODO] Update(). In between preparing the mutation and
-  // executing the mutation, the leaf node remains locked, so
-  // callers should endeavour to keep the critical section short.
+  // This prepared mutation may then be used with Insert().
+  // In between preparing and executing the insert, the leaf node remains
+  // locked, so callers should endeavour to keep the critical section short.
   //
   // If the returned PreparedMutation object is not used with
-  // Insert() or Update(), it will be automatically unlocked
-  // by its destructor.
+  // Insert(), it will be automatically unlocked by its destructor.
   void Prepare(CBTree<Traits> *tree) {
     CHECK(!prepared());
     this->tree_ = tree;
@@ -851,20 +834,11 @@ class PreparedMutation {
     return tree_->Insert(this, val);
   }
 
-  bool Update(const Slice &new_val) {
-    if (!exists()) {
-      return false;
-    }
-
-    return tree_->Update(this, new_val);
-  }
-
   // Return a slice referencing the existing data in the row.
   //
   // This is mutable data, but the size may not be changed.
   // This can be used for updating in place if the new data
-  // has the same size as the original data. Otherwise,
-  // use Update()
+  // has the same size as the original data.
   Slice current_mutable_value() {
     CHECK(prepared());
     Slice k, v;
@@ -1312,35 +1286,6 @@ class CBTree {
         break;
     }
     CHECK(0) << "should not get here";
-    return false;
-  }
-
-  bool Update(PreparedMutation<Traits> *mutation,
-              const Slice &val) {
-    CHECK(!frozen_);
-    CHECK_NOTNULL(mutation);
-    DCHECK_EQ(mutation->tree(), this);
-
-    LeafNode<Traits> *node = mutation->leaf();
-    DCHECK(node->IsLocked());
-    node->SetInserting(); // TODO: rename SetMutating
-
-    // After this function, the prepared mutation cannot be used
-    // again.
-    mutation->mark_done();
-
-    switch (node->Update(mutation, val)) {
-      case LeafNode<Traits>::UPDATE_NOTFOUND:
-        node->Unlock();
-      case LeafNode<Traits>::UPDATE_SUCCESS:
-        node->Unlock();
-        return true;
-      case LeafNode<Traits>::UPDATE_FULL:
-        CHECK(0) << "TODO: split on update";
-        break;
-      default:
-        CHECK(0) << "Unexpected result";
-    }
     return false;
   }
 
