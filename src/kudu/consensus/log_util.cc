@@ -75,12 +75,13 @@ Status ReadableLogSegment::Open(Env* env,
                                 scoped_refptr<ReadableLogSegment>* segment) {
   VLOG(1) << "Parsing wal segment: " << path;
   uint64_t file_size;
-  RETURN_NOT_OK(env->GetFileSize(path, &file_size));
+  RETURN_NOT_OK_PREPEND(env->GetFileSize(path, &file_size), "Unable to read file size");
   shared_ptr<RandomAccessFile> readable_file;
-  RETURN_NOT_OK(env_util::OpenFileForRandom(env, path, &readable_file));
+  RETURN_NOT_OK_PREPEND(env_util::OpenFileForRandom(env, path, &readable_file),
+                        "Unable to open file for reading");
 
   segment->reset(new ReadableLogSegment(path, file_size, readable_file));
-  RETURN_NOT_OK((*segment)->Init());
+  RETURN_NOT_OK_PREPEND((*segment)->Init(), "Unable to initialize segment");
   return Status::OK();
 }
 
@@ -107,7 +108,7 @@ Status ReadableLogSegment::Init() {
   // Check the size of the file.
   // If it is zero, return Status::OK() early.
   uint64_t file_size = 0;
-  RETURN_NOT_OK(readable_file_->Size(&file_size));
+  RETURN_NOT_OK_PREPEND(readable_file_->Size(&file_size), "Unable to read file size");
   if (file_size == 0) {
     VLOG(1) << "Log segment file $0 is zero-length: " << path();
     return Status::OK();
@@ -136,12 +137,14 @@ Status ReadableLogSegment::Init() {
   LogSegmentHeaderPB header;
 
   // Read and parse the log segment header.
-  RETURN_NOT_OK(ReadFully(readable_file_.get(), kLogSegmentMagicAndHeaderLength,
-                          header_size, &header_slice, header_space));
+  RETURN_NOT_OK_PREPEND(ReadFully(readable_file_.get(), kLogSegmentMagicAndHeaderLength,
+                                  header_size, &header_slice, header_space),
+                        "Unable to read fully");
 
-  RETURN_NOT_OK(pb_util::ParseFromArray(&header,
-                                        header_slice.data(),
-                                        header_size));
+  RETURN_NOT_OK_PREPEND(pb_util::ParseFromArray(&header,
+                                                header_slice.data(),
+                                                header_size),
+                        "Unable to parse protobuf");
 
   header_.CopyFrom(header);
   first_entry_offset_ = header_size + kLogSegmentMagicAndHeaderLength;

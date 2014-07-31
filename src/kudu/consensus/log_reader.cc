@@ -39,7 +39,8 @@ Status LogReader::OpenFromRecoveryDir(FsManager *fs_manager,
                                       gscoped_ptr<LogReader>* reader) {
   string recovery_path = fs_manager->GetTabletWalRecoveryDir(tablet_oid);
   gscoped_ptr<LogReader> log_reader(new LogReader(fs_manager, tablet_oid));
-  RETURN_NOT_OK(log_reader->Init(recovery_path))
+  RETURN_NOT_OK_PREPEND(log_reader->Init(recovery_path),
+                        "Unable to initialize log reader");
   reader->reset(log_reader.release());
   return Status::OK();
 }
@@ -65,15 +66,16 @@ Status LogReader::Init(const string& tablet_wal_path) {
   // list existing segment files
   vector<string> log_files;
 
-  RETURN_NOT_OK(env->GetChildren(tablet_wal_path,
-                                 &log_files));
+  RETURN_NOT_OK_PREPEND(env->GetChildren(tablet_wal_path, &log_files),
+                        "Unable to read children from path");
 
   // build a log segment from each file
   BOOST_FOREACH(const string &log_file, log_files) {
     if (HasPrefixString(log_file, FsManager::kWalFileNamePrefix)) {
       string fqp = JoinPathSegments(tablet_wal_path, log_file);
       scoped_refptr<ReadableLogSegment> segment;
-      RETURN_NOT_OK(ReadableLogSegment::Open(env, fqp, &segment));
+      RETURN_NOT_OK_PREPEND(ReadableLogSegment::Open(env, fqp, &segment),
+                            "Unable to open readable log segment");
       DCHECK(segment);
       if (!segment->IsInitialized()) {
         // Skip blank segments.
