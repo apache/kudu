@@ -84,7 +84,7 @@ class ClientTest : public KuduTest {
     FLAGS_max_clock_sync_error_usec = 10000000;
 
     // Start minicluster and wait for tablet servers to connect to master.
-    cluster_.reset(new MiniCluster(env_.get(), test_dir_, 1));
+    cluster_.reset(new MiniCluster(env_.get(), MiniClusterOptions()));
     ASSERT_STATUS_OK(cluster_->Start());
 
     // Connect to the cluster.

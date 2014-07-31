@@ -232,7 +232,9 @@ int main(int argc, char **argv) {
     env.reset(new kudu::EnvWrapper(kudu::Env::Default()));
     kudu::Status s = env->CreateDir(FLAGS_mini_cluster_base_dir);
     CHECK(s.IsAlreadyPresent() || s.ok());
-    cluster.reset(new kudu::MiniCluster(env.get(), FLAGS_mini_cluster_base_dir, 1));
+    kudu::MiniClusterOptions options;
+    options.data_root = FLAGS_mini_cluster_base_dir;
+    cluster.reset(new kudu::MiniCluster(env.get(), options));
     CHECK_OK(cluster->StartSync());
     master_address = cluster->mini_master()->bound_rpc_addr().ToString();
   } else {

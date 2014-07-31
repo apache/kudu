@@ -22,13 +22,31 @@ namespace tserver {
 class MiniTabletServer;
 }
 
+struct MiniClusterOptions {
+  MiniClusterOptions();
+
+  // Number of TS to start.
+  // Default: 1
+  int num_tablet_servers;
+
+  // Directory in which to store data.
+  // Default: "", which auto-generates a unique path for this cluster.
+  std::string data_root;
+
+  // RPC port for the master to run on.
+  // Defaults to 0 (an ephemeral port).
+  uint16_t master_rpc_port;
+
+  // List of RPC ports for the tservers to run on.
+  // Defaults to a list of 0 (ephemeral ports).
+  std::vector<uint16_t> tserver_rpc_ports;
+};
+
 // An in-process cluster with a MiniMaster and a configurable
 // number of MiniTabletServers for use in tests.
 class MiniCluster {
  public:
-  MiniCluster(Env* env,
-              const std::string& fs_root,
-              int num_tablet_servers);
+  MiniCluster(Env* env, const MiniClusterOptions& options);
    ~MiniCluster();
 
    // Start a cluster with a Master and 'num_tablet_servers' TabletServers.
@@ -91,6 +109,8 @@ class MiniCluster {
   Env* const env_;
   const std::string fs_root_;
   const int num_ts_initial_;
+  const uint16_t master_rpc_port_;
+  const std::vector<uint16_t> tserver_rpc_ports_;
 
   gscoped_ptr<master::MiniMaster> mini_master_;
   std::vector<std::tr1::shared_ptr<tserver::MiniTabletServer> > mini_tablet_servers_;

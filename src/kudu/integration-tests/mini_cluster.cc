@@ -4,17 +4,20 @@
 
 #include <boost/foreach.hpp>
 
+#include "kudu/client/client.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/master/mini_master.h"
 #include "kudu/master/catalog_manager.h"
 #include "kudu/master/master.h"
 #include "kudu/master/ts_descriptor.h"
 #include "kudu/master/ts_manager.h"
+#include "kudu/rpc/messenger.h"
 #include "kudu/tserver/mini_tablet_server.h"
 #include "kudu/tserver/tablet_server.h"
 #include "kudu/util/path_util.h"
 #include "kudu/util/status.h"
 #include "kudu/util/stopwatch.h"
+#include "kudu/util/test_util.h"
 
 using strings::Substitute;
 
@@ -27,13 +30,19 @@ using std::tr1::shared_ptr;
 using tserver::MiniTabletServer;
 using tserver::TabletServer;
 
-MiniCluster::MiniCluster(Env* env,
-                         const string& fs_root,
-                         int num_tablet_servers)
+MiniClusterOptions::MiniClusterOptions()
+  : num_tablet_servers(1),
+    data_root(JoinPathSegments(GetTestDataDirectory(), "minicluster-data")),
+    master_rpc_port(0) {
+}
+
+MiniCluster::MiniCluster(Env* env, const MiniClusterOptions& options)
   : running_(false),
     env_(env),
-    fs_root_(fs_root),
-    num_ts_initial_(num_tablet_servers) {
+    fs_root_(options.data_root),
+    num_ts_initial_(options.num_tablet_servers),
+    master_rpc_port_(options.master_rpc_port),
+    tserver_rpc_ports_(options.tserver_rpc_ports) {
 }
 
 MiniCluster::~MiniCluster() {
@@ -43,9 +52,12 @@ MiniCluster::~MiniCluster() {
 Status MiniCluster::Start() {
   CHECK(!fs_root_.empty()) << "No Fs root was provided";
   CHECK(!running_);
+  if (!env_->FileExists(fs_root_)) {
+    RETURN_NOT_OK(env_->CreateDir(fs_root_));
+  }
 
   // start the master (we need the port to set on the servers)
-  gscoped_ptr<MiniMaster> mini_master(new MiniMaster(env_, GetMasterFsRoot()));
+  gscoped_ptr<MiniMaster> mini_master(new MiniMaster(env_, GetMasterFsRoot(), master_rpc_port_));
   RETURN_NOT_OK_PREPEND(mini_master->Start(), "Couldn't start master");
   mini_master_.reset(mini_master.release());
 
@@ -79,8 +91,12 @@ Status MiniCluster::AddTabletServer() {
   }
   int new_idx = mini_tablet_servers_.size();
 
+  uint16_t ts_rpc_port = 0;
+  if (tserver_rpc_ports_.size() > new_idx) {
+    ts_rpc_port = tserver_rpc_ports_[new_idx];
+  }
   gscoped_ptr<MiniTabletServer> tablet_server(
-    new MiniTabletServer(env_, GetTabletServerFsRoot(new_idx)));
+    new MiniTabletServer(env_, GetTabletServerFsRoot(new_idx), ts_rpc_port));
   // set the master port
   tablet_server->options()->master_hostport = HostPort(mini_master_.get()->bound_rpc_addr());
   RETURN_NOT_OK(tablet_server->Start())

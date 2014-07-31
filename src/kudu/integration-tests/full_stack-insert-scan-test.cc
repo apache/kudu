@@ -139,7 +139,7 @@ class FullStackInsertScanTest : public KuduTest {
 
   void InitCluster() {
     // Start mini-cluster with 1 tserver, config client options
-    cluster_.reset(new MiniCluster(env_.get(), test_dir_, 1));
+    cluster_.reset(new MiniCluster(env_.get(), MiniClusterOptions()));
     ASSERT_OK(cluster_->Start());
     client_builder_.master_server_addr(
         cluster_->mini_master()->bound_rpc_addr().ToString());

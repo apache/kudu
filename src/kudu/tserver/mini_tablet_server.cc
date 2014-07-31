@@ -6,6 +6,7 @@
 
 #include "kudu/common/schema.h"
 #include "kudu/gutil/macros.h"
+#include "kudu/gutil/strings/substitute.h"
 #include "kudu/server/metadata.h"
 #include "kudu/server/rpc_server.h"
 #include "kudu/server/webserver.h"
@@ -30,18 +31,20 @@ using kudu::log::LogOptions;
 using kudu::metadata::QuorumPeerPB;
 using kudu::metadata::QuorumPB;
 using kudu::metadata::TabletMetadata;
+using strings::Substitute;
 
 namespace kudu {
 namespace tserver {
 
 MiniTabletServer::MiniTabletServer(Env* env,
-                                   const string& fs_root)
+                                   const string& fs_root,
+                                   uint16_t rpc_port)
   : started_(false),
     env_(env),
     fs_root_(fs_root) {
 
   // Start RPC server on loopback.
-  opts_.rpc_opts.rpc_bind_addresses = "127.0.0.1:0";
+  opts_.rpc_opts.rpc_bind_addresses = Substitute("127.0.0.1:$0", rpc_port);
   opts_.webserver_opts.port = 0;
   opts_.base_dir = fs_root;
 }

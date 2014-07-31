@@ -17,10 +17,11 @@ using strings::Substitute;
 namespace kudu {
 namespace master {
 
-MiniMaster::MiniMaster(Env* env, const string& fs_root)
+MiniMaster::MiniMaster(Env* env, const string& fs_root, uint16_t rpc_port)
   : running_(false),
     env_(env),
-    fs_root_(fs_root) {
+    fs_root_(fs_root),
+    rpc_port_(rpc_port) {
 }
 
 MiniMaster::~MiniMaster() {
@@ -29,7 +30,7 @@ MiniMaster::~MiniMaster() {
 
 Status MiniMaster::Start() {
   CHECK(!running_);
-  return StartOnPorts(0, 0);
+  return StartOnPorts(rpc_port_, 0);
 }
 
 void MiniMaster::Shutdown() {

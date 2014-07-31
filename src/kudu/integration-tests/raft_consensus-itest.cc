@@ -95,7 +95,10 @@ class DistConsensusTest : public TabletServerTest {
 
   void CreateCluster() {
     FLAGS_default_num_replicas = kNumReplicas;
-    cluster_.reset(new MiniCluster(env_.get(), test_dir_, kNumReplicas));
+    MiniClusterOptions opts;
+    opts.data_root = test_dir_;
+    opts.num_tablet_servers = kNumReplicas;
+    cluster_.reset(new MiniCluster(env_.get(), opts));
     ASSERT_STATUS_OK(cluster_->Start());
     ASSERT_STATUS_OK(cluster_->WaitForTabletServerCount(kNumReplicas));
   }

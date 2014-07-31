@@ -36,7 +36,7 @@ class SysTablesTest : public KuduTest {
     KuduTest::SetUp();
 
     // Start master
-    mini_master_.reset(new MiniMaster(Env::Default(), GetTestPath("Master")));
+    mini_master_.reset(new MiniMaster(Env::Default(), GetTestPath("Master"), 0));
     ASSERT_STATUS_OK(mini_master_->Start());
     master_ = mini_master_->master();
 

@@ -35,7 +35,7 @@ class MasterTest : public KuduTest {
     KuduTest::SetUp();
 
     // Start master
-    mini_master_.reset(new MiniMaster(Env::Default(), GetTestPath("Master")));
+    mini_master_.reset(new MiniMaster(Env::Default(), GetTestPath("Master"), 0));
     ASSERT_STATUS_OK(mini_master_->Start());
     master_ = mini_master_->master();
 
@@ -77,7 +77,7 @@ static void MakeHostPortPB(const string& host, uint32_t port, HostPortPB* pb) {
 // Test that shutting down a MiniMaster without starting it does not
 // SEGV.
 TEST_F(MasterTest, TestShutdownWithoutStart) {
-  MiniMaster m(Env::Default(), "/xxxx");
+  MiniMaster m(Env::Default(), "/xxxx", 0);
   m.Shutdown();
 }
 

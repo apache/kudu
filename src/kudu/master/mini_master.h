@@ -18,7 +18,7 @@ class Master;
 // An in-process Master meant for use in test cases.
 class MiniMaster {
  public:
-  MiniMaster(Env* env, const std::string& fs_root);
+  MiniMaster(Env* env, const std::string& fs_root, uint16_t rpc_port);
   ~MiniMaster();
 
   // Start a master running on the loopback interface and
@@ -44,6 +44,7 @@ class MiniMaster {
 
   ATTRIBUTE_MEMBER_UNUSED Env* const env_;
   const std::string fs_root_;
+  const uint16_t rpc_port_;
 
   gscoped_ptr<Master> master_;
 };

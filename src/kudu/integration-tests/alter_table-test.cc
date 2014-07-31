@@ -55,7 +55,7 @@ class AlterTableTest : public KuduTest {
 
     KuduTest::SetUp();
 
-    cluster_.reset(new MiniCluster(env_.get(), test_dir_, 1));
+    cluster_.reset(new MiniCluster(env_.get(), MiniClusterOptions()));
     ASSERT_STATUS_OK(cluster_->Start());
     ASSERT_STATUS_OK(cluster_->WaitForTabletServerCount(1));
 
