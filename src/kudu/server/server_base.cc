@@ -84,13 +84,12 @@ MetricContext* ServerBase::mutable_metric_context() const {
   return metric_ctx_.get();
 }
 
-Status ServerBase::GenerateInstanceID() {
+void ServerBase::GenerateInstanceID() {
   instance_pb_.reset(new NodeInstancePB);
   instance_pb_->set_permanent_uuid(fs_manager_->uuid());
   // TODO: maybe actually bump a sequence number on local disk instead of
   // using time.
   instance_pb_->set_instance_seqno(Env::Default()->NowMicros());
-  return Status::OK();
 }
 
 Status ServerBase::Init() {
@@ -107,8 +106,6 @@ Status ServerBase::Init() {
     s = fs_manager_->Open();
   }
   RETURN_NOT_OK_PREPEND(s, "Failed to load FS layout");
-
-  RETURN_NOT_OK(GenerateInstanceID());
 
   // Create the Messenger.
   rpc::MessengerBuilder builder("TODO: add a ToString for ServerBase");
@@ -165,6 +162,8 @@ Status ServerBase::DumpServerInfo(const string& path,
 }
 
 Status ServerBase::Start(gscoped_ptr<rpc::ServiceIf> rpc_impl) {
+  GenerateInstanceID();
+
   RETURN_NOT_OK(rpc_server_->Start(rpc_impl.Pass()));
 
   AddDefaultPathHandlers(web_server_.get());

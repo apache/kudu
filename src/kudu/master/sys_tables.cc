@@ -72,7 +72,7 @@ Status SysTable::Load(FsManager *fs_manager) {
   }
 
   QuorumPeerPB quorum_peer;
-  quorum_peer.set_permanent_uuid(master_->instance_pb().permanent_uuid());
+  quorum_peer.set_permanent_uuid(fs_manager->uuid());
 
   RETURN_NOT_OK(SetupTablet(metadata, quorum_peer));
   return Status::OK();
@@ -83,7 +83,7 @@ Status SysTable::CreateNew(FsManager *fs_manager) {
   SetupTabletMasterBlock(&master_block);
 
   QuorumPeerPB quorum_peer;
-  quorum_peer.set_permanent_uuid(master_->instance_pb().permanent_uuid());
+  quorum_peer.set_permanent_uuid(fs_manager->uuid());
 
   // TODO For dist consensus get the quorum with other peers.
   QuorumPB quorum;

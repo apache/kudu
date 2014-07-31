@@ -125,7 +125,7 @@ Status TSTabletManager::Init() {
     RETURN_NOT_OK_PREPEND(OpenTabletMeta(tablet, &meta),
                           "Failed to open tablet metadata for tablet: " + tablet);
     QuorumPeerPB quorum_peer;
-    quorum_peer.set_permanent_uuid(server_->instance_pb().permanent_uuid());
+    quorum_peer.set_permanent_uuid(fs_manager_->uuid());
     scoped_refptr<TabletPeer> tablet_peer(
         new TabletPeer(meta,
                        quorum_peer,

@@ -88,7 +88,7 @@ class ServerBase {
   gscoped_ptr<NodeInstancePB> instance_pb_;
 
  private:
-  Status GenerateInstanceID();
+  void GenerateInstanceID();
   Status DumpServerInfo(const std::string& path,
                         const std::string& format) const;
 
