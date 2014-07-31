@@ -5,7 +5,7 @@ $$
 $$ http://code.google.com/p/googletest/wiki/PumpManual
 $$
 
-$$ See comment for MAX_ARITY in base/bind.h.pump.
+$$ See comment for MAX_ARITY in kudu/gutil/bind.h.pump.
 $var MAX_ARITY = 7
 $range ARITY 0..MAX_ARITY
 
@@ -13,8 +13,8 @@ $range ARITY 0..MAX_ARITY
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef BASE_BIND_INTERNAL_H_
-#define BASE_BIND_INTERNAL_H_
+#ifndef KUDU_GUTIL_BIND_INTERNAL_H_
+#define KUDU_GUTIL_BIND_INTERNAL_H_
 
 #include "kudu/gutil/bind_helpers.h"
 #include "kudu/gutil/callback_internal.h"
@@ -22,15 +22,15 @@ $range ARITY 0..MAX_ARITY
 #include "kudu/gutil/template_util.h"
 
 #if defined(OS_WIN)
-#include "kudu/base/bind_internal_win.h"
+#include "kudu/gutil/bind_internal_win.h"
 #endif
 
 // During Chromium import, WeakPtr-related code was removed.
 
-namespace base {
+namespace kudu {
 namespace internal {
 
-// See base/callback.h for user documentation.
+// See kudu/gutil/callback.h for user documentation.
 //
 //
 // CONCEPTS:
@@ -136,7 +136,7 @@ class RunnableAdapter<R(T::*)($for ARG , [[A$(ARG)]])> {
  public:
   typedef R (RunType)(T*[[]]
 $if ARITY > 0[[, ]] $for ARG , [[A$(ARG)]]);
-  typedef true_type IsMethod;
+  typedef base::true_type IsMethod;
 
   explicit RunnableAdapter(R(T::*method)($for ARG , [[A$(ARG)]]))
       : method_(method) {
@@ -158,7 +158,7 @@ class RunnableAdapter<R(T::*)($for ARG , [[A$(ARG)]]) const> {
  public:
   typedef R (RunType)(const T*[[]]
 $if ARITY > 0[[, ]] $for ARG , [[A$(ARG)]]);
-  typedef true_type IsMethod;
+  typedef base::true_type IsMethod;
 
   explicit RunnableAdapter(R(T::*method)($for ARG , [[A$(ARG)]]) const)
       : method_(method) {
@@ -408,7 +408,7 @@ $if ARITY > 0[[, ]] $for ARG , [[typename P$(ARG)]]>
 struct BindState<Runnable, RunType, void($for ARG , [[P$(ARG)]])> : public BindStateBase {
   typedef Runnable RunnableType;
 
-  typedef false_type IsWeakCall;
+  typedef base::false_type IsWeakCall;
 
   typedef Invoker<$(ARITY), BindState, RunType> InvokerType;
   typedef typename InvokerType::UnboundRunType UnboundRunType;
@@ -459,6 +459,6 @@ $for ARG [[
 ]] $$ for ARITY
 
 }  // namespace internal
-}  // namespace base
+}  // namespace kudu
 
-#endif  // BASE_BIND_INTERNAL_H_
+#endif  // KUDU_GUTIL_BIND_INTERNAL_H_

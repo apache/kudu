@@ -63,7 +63,7 @@ struct LogOptions {
 // segments are rolled over and the Log continues in a new segment.
 
 // A readable log segment for recovery and follower catch-up.
-class ReadableLogSegment : public base::RefCountedThreadSafe<ReadableLogSegment> {
+class ReadableLogSegment : public RefCountedThreadSafe<ReadableLogSegment> {
  public:
   // Factory method to construct a ReadableLogSegment from a file on the FS.
   static Status Open(Env* env,
@@ -122,7 +122,7 @@ class ReadableLogSegment : public base::RefCountedThreadSafe<ReadableLogSegment>
   }
 
  private:
-  friend class base::RefCountedThreadSafe<ReadableLogSegment>;
+  friend class RefCountedThreadSafe<ReadableLogSegment>;
   ~ReadableLogSegment() {}
 
   // Helper functions called by Init().

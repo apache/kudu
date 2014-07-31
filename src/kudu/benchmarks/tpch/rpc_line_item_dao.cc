@@ -36,7 +36,7 @@ using std::vector;
 
 namespace {
 
-class CountingCallback : public base::RefCountedThreadSafe<CountingCallback> {
+class CountingCallback : public RefCountedThreadSafe<CountingCallback> {
   public:
     CountingCallback(shared_ptr<KuduSession> session, Atomic32 *ctr)
       : session_(session),
@@ -51,7 +51,7 @@ class CountingCallback : public base::RefCountedThreadSafe<CountingCallback> {
     }
 
     StatusCallback AsStatusCallback() {
-      return base::Bind(&CountingCallback::StatusCB, this);
+      return Bind(&CountingCallback::StatusCB, this);
     }
 
   private:

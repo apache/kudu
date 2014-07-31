@@ -4,7 +4,7 @@
 
 // This defines a set of argument wrappers and related factory methods that
 // can be used specify the refcounting and reference semantics of arguments
-// that are bound by the Bind() function in base/bind.h.
+// that are bound by the Bind() function in kudu/gutil/bind.h.
 //
 // It also defines a set of simple functions and utilities that people want
 // when using Callback<> and Bind().
@@ -12,8 +12,8 @@
 //
 // ARGUMENT BINDING WRAPPERS
 //
-// The wrapper functions are base::Unretained(), base::Owned(), base::Passed(),
-// base::ConstRef(), and base::IgnoreResult().
+// The wrapper functions are kudu::Unretained(), kudu::Owned(), kudu::Passed(),
+// kudu::ConstRef(), and kudu::IgnoreResult().
 //
 // Unretained() allows Bind() to bind a non-refcounted class, and to disable
 // refcounting on arguments that are refcounted objects.
@@ -140,8 +140,8 @@
 //                        In most cases MessageLoop::DeleteSoon() is a better
 //                        fit.
 
-#ifndef BASE_BIND_HELPERS_H_
-#define BASE_BIND_HELPERS_H_
+#ifndef KUDU_GUTIL_BIND_HELPERS_H_
+#define KUDU_GUTIL_BIND_HELPERS_H_
 
 #include <assert.h>
 
@@ -153,7 +153,7 @@
 #define BASE_EXPORT
 
 
-namespace base {
+namespace kudu {
 namespace internal {
 
 // Use the Substitution Failure Is Not An Error (SFINAE) trick to inspect T
@@ -262,21 +262,21 @@ class SupportsAddRefAndRelease {
 // Helpers to assert that arguments of a recounted type are bound with a
 // scoped_refptr.
 template <bool IsClasstype, typename T>
-struct UnsafeBindtoRefCountedArgHelper : false_type {
+struct UnsafeBindtoRefCountedArgHelper : base::false_type {
 };
 
 template <typename T>
 struct UnsafeBindtoRefCountedArgHelper<true, T>
-    : integral_constant<bool, SupportsAddRefAndRelease<T>::value> {
+    : base::integral_constant<bool, SupportsAddRefAndRelease<T>::value> {
 };
 
 template <typename T>
-struct UnsafeBindtoRefCountedArg : false_type {
+struct UnsafeBindtoRefCountedArg : base::false_type {
 };
 
 template <typename T>
 struct UnsafeBindtoRefCountedArg<T*>
-    : UnsafeBindtoRefCountedArgHelper<is_class<T>::value, T> {
+    : UnsafeBindtoRefCountedArgHelper<base::is_class<T>::value, T> {
 };
 
 template <typename T>
@@ -548,6 +548,6 @@ void DeletePointer(T* obj) {
   delete obj;
 }
 
-}  // namespace base
+}  // namespace kudu
 
 #endif  // BASE_BIND_HELPERS_H_

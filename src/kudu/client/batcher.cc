@@ -380,8 +380,8 @@ Status Batcher::Add(gscoped_ptr<KuduWriteOperation> write_op) {
   client_->data_->meta_cache_->LookupTabletByKey(op->write_op->table(),
                                                  op->key->encoded_key(),
                                                  &op->tablet,
-                                                 base::Bind(&Batcher::TabletLookupFinished,
-                                                            this, op));
+                                                 Bind(&Batcher::TabletLookupFinished,
+                                                      this, op));
   return Status::OK();
 }
 
@@ -485,7 +485,7 @@ void Batcher::TabletLookupFinished(InFlightOp* op, const Status& s) {
     // Even if we're not ready to flush, we should get the proxy ready
     // to go (eg DNS resolving the tablet server if it's not resolved).
     ts->RefreshProxy(client_,
-                     base::Bind(&Batcher::RefreshTSProxyFinished, this, ts, buf),
+                     Bind(&Batcher::RefreshTSProxyFinished, this, ts, buf),
                      false);
   } else {
     FlushBuffersIfReady();

@@ -218,7 +218,7 @@ class KUDU_EXPORT KuduTableCreator {
 // and the schema fetched for introspection.
 //
 // This class is thread-safe.
-class KUDU_EXPORT KuduTable : public base::RefCountedThreadSafe<KuduTable> {
+class KUDU_EXPORT KuduTable : public RefCountedThreadSafe<KuduTable> {
  public:
   ~KuduTable();
 

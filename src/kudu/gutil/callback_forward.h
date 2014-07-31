@@ -2,16 +2,16 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef BASE_CALLBACK_FORWARD_H_
-#define BASE_CALLBACK_FORWARD_H_
+#ifndef KUDU_GUTIL_CALLBACK_FORWARD_H_
+#define KUDU_GUTIL_CALLBACK_FORWARD_H_
 
-namespace base {
+namespace kudu {
 
 template <typename Sig>
 class Callback;
 
 typedef Callback<void(void)> Closure;
 
-}  // namespace base
+}  // namespace kudu
 
-#endif  // BASE_CALLBACK_FORWARD_H
+#endif  // KUDU_GUTIL_CALLBACK_FORWARD_H

@@ -91,8 +91,8 @@
 // some of the older compilers we have to support.
 // -------------------------------------------------------------------------
 
-#ifndef BASE_MEMORY_SCOPED_PTR_H_
-#define BASE_MEMORY_SCOPED_PTR_H_
+#ifndef KUDU_GUTIL_GSCOPED_PTR_H_
+#define KUDU_GUTIL_GSCOPED_PTR_H_
 
 // This is an implementation designed to match the anticipated future TR2
 // implementation of the scoped_ptr class, and its closely-related brethren,
@@ -109,7 +109,7 @@
 #include "kudu/gutil/type_traits.h"
 #include "kudu/gutil/move.h"
 
-namespace base {
+namespace kudu {
 
 namespace subtle {
 class RefCountedBase;
@@ -174,7 +174,7 @@ struct DefaultDeleter<T[n]> {
 // Function object which invokes 'free' on its parameter, which must be
 // a pointer. Can be used to store malloc-allocated pointers in gscoped_ptr:
 //
-// gscoped_ptr<int, base::FreeDeleter> foo_ptr(
+// gscoped_ptr<int, kudu::FreeDeleter> foo_ptr(
 //     static_cast<int*>(malloc(sizeof(int))));
 struct FreeDeleter {
   inline void operator()(void* ptr) const {
@@ -186,8 +186,8 @@ namespace internal {
 
 template <typename T> struct IsNotRefCounted {
   enum {
-    value = !base::is_convertible<T*, base::subtle::RefCountedBase*>::value &&
-        !base::is_convertible<T*, base::subtle::RefCountedThreadSafeBase*>::
+    value = !base::is_convertible<T*, kudu::subtle::RefCountedBase*>::value &&
+        !base::is_convertible<T*, kudu::subtle::RefCountedThreadSafeBase*>::
             value
   };
 };
@@ -296,7 +296,7 @@ class gscoped_ptr_impl {
 
 }  // namespace internal
 
-}  // namespace base
+}  // namespace kudu
 
 // A gscoped_ptr<T> is like a T*, except that the destructor of gscoped_ptr<T>
 // automatically deletes the pointer it holds (if any).
@@ -314,11 +314,11 @@ class gscoped_ptr_impl {
 // unique_ptr<> features. Known deficiencies include not supporting move-only
 // deleteres, function pointers as deleters, and deleters with reference
 // types.
-template <class T, class D = base::DefaultDeleter<T> >
+template <class T, class D = kudu::DefaultDeleter<T> >
 class gscoped_ptr {
   MOVE_ONLY_TYPE_FOR_CPP_03(gscoped_ptr, RValue)
 
-  COMPILE_ASSERT(base::internal::IsNotRefCounted<T>::value,
+  COMPILE_ASSERT(kudu::internal::IsNotRefCounted<T>::value,
                  T_is_refcounted_type_and_needs_scoped_refptr);
 
  public:
@@ -393,7 +393,7 @@ class gscoped_ptr {
   // Allow gscoped_ptr<element_type> to be used in boolean expressions, but not
   // implicitly convertible to a real bool (which is dangerous).
  private:
-  typedef base::internal::gscoped_ptr_impl<element_type, deleter_type>
+  typedef kudu::internal::gscoped_ptr_impl<element_type, deleter_type>
       gscoped_ptr::*Testable;
 
  public:
@@ -433,7 +433,7 @@ class gscoped_ptr {
  private:
   // Needed to reach into |impl_| in the constructor.
   template <typename U, typename V> friend class gscoped_ptr;
-  base::internal::gscoped_ptr_impl<element_type, deleter_type> impl_;
+  kudu::internal::gscoped_ptr_impl<element_type, deleter_type> impl_;
 
   // Forbid comparison of gscoped_ptr types.  If U != T, it totally
   // doesn't make sense, and if U == T, it still doesn't make sense
@@ -500,7 +500,7 @@ class gscoped_ptr<T[], D> {
   // Allow gscoped_ptr<element_type> to be used in boolean expressions, but not
   // implicitly convertible to a real bool (which is dangerous).
  private:
-  typedef base::internal::gscoped_ptr_impl<element_type, deleter_type>
+  typedef kudu::internal::gscoped_ptr_impl<element_type, deleter_type>
       gscoped_ptr::*Testable;
 
  public:
@@ -531,7 +531,7 @@ class gscoped_ptr<T[], D> {
   enum { type_must_be_complete = sizeof(element_type) };
 
   // Actually hold the data.
-  base::internal::gscoped_ptr_impl<element_type, deleter_type> impl_;
+  kudu::internal::gscoped_ptr_impl<element_type, deleter_type> impl_;
 
   // Disable initialization from any type other than element_type*, by
   // providing a constructor that matches such an initialization, but is
@@ -691,12 +691,12 @@ bool operator!=(C* p1, const gscoped_array<C>& p2) {
   return p1 != p2.get();
 }
 
-// DEPRECATED: Use gscoped_ptr<C, base::FreeDeleter> instead.
+// DEPRECATED: Use gscoped_ptr<C, kudu::FreeDeleter> instead.
 //
 // gscoped_ptr_malloc<> is similar to gscoped_ptr<>, but it accepts a
 // second template argument, the functor used to free the object.
 
-template<class C, class FreeProc = base::FreeDeleter>
+template<class C, class FreeProc = kudu::FreeDeleter>
 class gscoped_ptr_malloc {
   MOVE_ONLY_TYPE_FOR_CPP_03(gscoped_ptr_malloc, RValue)
 
@@ -827,4 +827,4 @@ gscoped_ptr<T> make_gscoped_ptr(T* ptr) {
   return gscoped_ptr<T>(ptr);
 }
 
-#endif  // BASE_MEMORY_SCOPED_PTR_H_
+#endif  // KUDU_GUTIL_GSCOPED_PTR_H_

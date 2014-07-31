@@ -96,7 +96,7 @@ typedef std::tr1::unordered_map<std::string, RemoteTabletServer*> TabletServerMa
 // the tablet's locations, status, etc.
 //
 // This class is thread-safe.
-class RemoteTablet : public base::RefCountedThreadSafe<RemoteTablet> {
+class RemoteTablet : public RefCountedThreadSafe<RemoteTablet> {
  public:
   RemoteTablet(const std::string& tablet_id,
                const Slice& start_key,
@@ -163,7 +163,7 @@ class RemoteTablet : public base::RefCountedThreadSafe<RemoteTablet> {
 // this class to look up a given tablet or server.
 //
 // This class will also be responsible for cache eviction policies, etc.
-class MetaCache : public base::RefCountedThreadSafe<MetaCache> {
+class MetaCache : public RefCountedThreadSafe<MetaCache> {
  public:
   // The passed 'client' object must remain valid as long as MetaCache is alive.
   explicit MetaCache(KuduClient* client);

@@ -24,7 +24,7 @@ class TransactionTracker;
 //
 // This class is refcounted, and subclasses must not define a public destructor.
 // This class and implementations are thread safe.
-class TransactionDriver : public base::RefCountedThreadSafe<TransactionDriver> {
+class TransactionDriver : public RefCountedThreadSafe<TransactionDriver> {
  public:
   // Perform any non-constructor initialization. Sets the transaction
   // that will be executed.
@@ -121,7 +121,7 @@ class TransactionDriver : public base::RefCountedThreadSafe<TransactionDriver> {
   scoped_refptr<Trace> trace_;
 
  private:
-  friend class base::RefCountedThreadSafe<TransactionDriver>;
+  friend class RefCountedThreadSafe<TransactionDriver>;
 
   const MonoTime start_time_;
 
@@ -162,7 +162,7 @@ class LeaderTransactionDriver : public TransactionDriver {
   virtual ~LeaderTransactionDriver() OVERRIDE;
 
  private:
-  friend class base::RefCountedThreadSafe<LeaderTransactionDriver>;
+  friend class RefCountedThreadSafe<LeaderTransactionDriver>;
   FRIEND_TEST(TransactionTrackerTest, TestGetPending);
 
   // Leaders execute Prepare() and Start() in sequence.
@@ -223,7 +223,7 @@ class ReplicaTransactionDriver : public TransactionDriver,
   virtual void ApplyOrCommitFailed(const Status& status) OVERRIDE;
 
  private:
-  friend class base::RefCountedThreadSafe<ReplicaTransactionDriver>;
+  friend class RefCountedThreadSafe<ReplicaTransactionDriver>;
 
   void PrepareFinished(const Status& status);
 

@@ -7,8 +7,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef BASE_BIND_H_
-#define BASE_BIND_H_
+#ifndef KUDU_GUTIL_BIND_H_
+#define KUDU_GUTIL_BIND_H_
 
 #include "kudu/gutil/bind_internal.h"
 #include "kudu/gutil/callback_internal.h"
@@ -17,7 +17,7 @@
 // Usage documentation
 // -----------------------------------------------------------------------------
 //
-// See base/callback.h for documentation.
+// See kudu/gutil/callback.h for documentation.
 //
 //
 // -----------------------------------------------------------------------------
@@ -25,7 +25,7 @@
 // -----------------------------------------------------------------------------
 //
 // If you're reading the implementation, before proceeding further, you should
-// read the top comment of base/bind_internal.h for a definition of common
+// read the top comment of kudu/gutil/bind_internal.h for a definition of common
 // terms and concepts.
 //
 // RETURN TYPES
@@ -51,10 +51,10 @@
 // need to crack open bind_internal.h.  On the other hand, it makes Bind()
 // harder to read.
 
-namespace base {
+namespace kudu {
 
 template <typename Functor>
-base::Callback<
+Callback<
     typename internal::BindState<
         typename internal::FunctorTraits<Functor>::RunnableType,
         typename internal::FunctorTraits<Functor>::RunType,
@@ -73,7 +73,7 @@ Bind(Functor functor) {
 }
 
 template <typename Functor, typename P1>
-base::Callback<
+Callback<
     typename internal::BindState<
         typename internal::FunctorTraits<Functor>::RunnableType,
         typename internal::FunctorTraits<Functor>::RunType,
@@ -96,7 +96,8 @@ Bind(Functor functor, const P1& p1) {
   // invoked function will receive a reference to the stored copy of the
   // argument and not the original.
   COMPILE_ASSERT(
-      !(is_non_const_reference<typename BoundFunctorTraits::A1Type>::value ),
+      !(base::is_non_const_reference<typename
+          BoundFunctorTraits::A1Type>::value ),
       do_not_bind_functions_with_nonconst_ref);
 
   // For methods, we need to be careful for parameter 1.  We do not require
@@ -108,7 +109,7 @@ Bind(Functor functor, const P1& p1) {
           !internal::NeedsScopedRefptrButGetsRawPtr<P1>::value,
       p1_is_refcounted_type_and_needs_scoped_refptr);
   COMPILE_ASSERT(!internal::HasIsMethodTag<RunnableType>::value ||
-                     !is_array<P1>::value,
+                     !base::is_array<P1>::value,
                  first_bound_argument_to_method_cannot_be_array);
   typedef internal::BindState<RunnableType, RunType,
       void(typename internal::CallbackParamTraits<P1>::StorageType)> BindState;
@@ -119,7 +120,7 @@ Bind(Functor functor, const P1& p1) {
 }
 
 template <typename Functor, typename P1, typename P2>
-base::Callback<
+Callback<
     typename internal::BindState<
         typename internal::FunctorTraits<Functor>::RunnableType,
         typename internal::FunctorTraits<Functor>::RunType,
@@ -143,8 +144,10 @@ Bind(Functor functor, const P1& p1, const P2& p2) {
   // invoked function will receive a reference to the stored copy of the
   // argument and not the original.
   COMPILE_ASSERT(
-      !(is_non_const_reference<typename BoundFunctorTraits::A1Type>::value ||
-          is_non_const_reference<typename BoundFunctorTraits::A2Type>::value ),
+      !(base::is_non_const_reference<typename
+          BoundFunctorTraits::A1Type>::value ||
+          base::is_non_const_reference<typename
+          BoundFunctorTraits::A2Type>::value ),
       do_not_bind_functions_with_nonconst_ref);
 
   // For methods, we need to be careful for parameter 1.  We do not require
@@ -156,7 +159,7 @@ Bind(Functor functor, const P1& p1, const P2& p2) {
           !internal::NeedsScopedRefptrButGetsRawPtr<P1>::value,
       p1_is_refcounted_type_and_needs_scoped_refptr);
   COMPILE_ASSERT(!internal::HasIsMethodTag<RunnableType>::value ||
-                     !is_array<P1>::value,
+                     !base::is_array<P1>::value,
                  first_bound_argument_to_method_cannot_be_array);
   COMPILE_ASSERT(!internal::NeedsScopedRefptrButGetsRawPtr<P2>::value,
                  p2_is_refcounted_type_and_needs_scoped_refptr);
@@ -170,7 +173,7 @@ Bind(Functor functor, const P1& p1, const P2& p2) {
 }
 
 template <typename Functor, typename P1, typename P2, typename P3>
-base::Callback<
+Callback<
     typename internal::BindState<
         typename internal::FunctorTraits<Functor>::RunnableType,
         typename internal::FunctorTraits<Functor>::RunType,
@@ -195,9 +198,12 @@ Bind(Functor functor, const P1& p1, const P2& p2, const P3& p3) {
   // invoked function will receive a reference to the stored copy of the
   // argument and not the original.
   COMPILE_ASSERT(
-      !(is_non_const_reference<typename BoundFunctorTraits::A1Type>::value ||
-          is_non_const_reference<typename BoundFunctorTraits::A2Type>::value ||
-          is_non_const_reference<typename BoundFunctorTraits::A3Type>::value ),
+      !(base::is_non_const_reference<typename
+          BoundFunctorTraits::A1Type>::value ||
+          base::is_non_const_reference<typename
+          BoundFunctorTraits::A2Type>::value ||
+          base::is_non_const_reference<typename
+          BoundFunctorTraits::A3Type>::value ),
       do_not_bind_functions_with_nonconst_ref);
 
   // For methods, we need to be careful for parameter 1.  We do not require
@@ -209,7 +215,7 @@ Bind(Functor functor, const P1& p1, const P2& p2, const P3& p3) {
           !internal::NeedsScopedRefptrButGetsRawPtr<P1>::value,
       p1_is_refcounted_type_and_needs_scoped_refptr);
   COMPILE_ASSERT(!internal::HasIsMethodTag<RunnableType>::value ||
-                     !is_array<P1>::value,
+                     !base::is_array<P1>::value,
                  first_bound_argument_to_method_cannot_be_array);
   COMPILE_ASSERT(!internal::NeedsScopedRefptrButGetsRawPtr<P2>::value,
                  p2_is_refcounted_type_and_needs_scoped_refptr);
@@ -226,7 +232,7 @@ Bind(Functor functor, const P1& p1, const P2& p2, const P3& p3) {
 }
 
 template <typename Functor, typename P1, typename P2, typename P3, typename P4>
-base::Callback<
+Callback<
     typename internal::BindState<
         typename internal::FunctorTraits<Functor>::RunnableType,
         typename internal::FunctorTraits<Functor>::RunType,
@@ -252,10 +258,14 @@ Bind(Functor functor, const P1& p1, const P2& p2, const P3& p3, const P4& p4) {
   // invoked function will receive a reference to the stored copy of the
   // argument and not the original.
   COMPILE_ASSERT(
-      !(is_non_const_reference<typename BoundFunctorTraits::A1Type>::value ||
-          is_non_const_reference<typename BoundFunctorTraits::A2Type>::value ||
-          is_non_const_reference<typename BoundFunctorTraits::A3Type>::value ||
-          is_non_const_reference<typename BoundFunctorTraits::A4Type>::value ),
+      !(base::is_non_const_reference<typename
+          BoundFunctorTraits::A1Type>::value ||
+          base::is_non_const_reference<typename
+          BoundFunctorTraits::A2Type>::value ||
+          base::is_non_const_reference<typename
+          BoundFunctorTraits::A3Type>::value ||
+          base::is_non_const_reference<typename
+          BoundFunctorTraits::A4Type>::value ),
       do_not_bind_functions_with_nonconst_ref);
 
   // For methods, we need to be careful for parameter 1.  We do not require
@@ -267,7 +277,7 @@ Bind(Functor functor, const P1& p1, const P2& p2, const P3& p3, const P4& p4) {
           !internal::NeedsScopedRefptrButGetsRawPtr<P1>::value,
       p1_is_refcounted_type_and_needs_scoped_refptr);
   COMPILE_ASSERT(!internal::HasIsMethodTag<RunnableType>::value ||
-                     !is_array<P1>::value,
+                     !base::is_array<P1>::value,
                  first_bound_argument_to_method_cannot_be_array);
   COMPILE_ASSERT(!internal::NeedsScopedRefptrButGetsRawPtr<P2>::value,
                  p2_is_refcounted_type_and_needs_scoped_refptr);
@@ -288,7 +298,7 @@ Bind(Functor functor, const P1& p1, const P2& p2, const P3& p3, const P4& p4) {
 
 template <typename Functor, typename P1, typename P2, typename P3, typename P4,
     typename P5>
-base::Callback<
+Callback<
     typename internal::BindState<
         typename internal::FunctorTraits<Functor>::RunnableType,
         typename internal::FunctorTraits<Functor>::RunType,
@@ -316,11 +326,16 @@ Bind(Functor functor, const P1& p1, const P2& p2, const P3& p3, const P4& p4,
   // invoked function will receive a reference to the stored copy of the
   // argument and not the original.
   COMPILE_ASSERT(
-      !(is_non_const_reference<typename BoundFunctorTraits::A1Type>::value ||
-          is_non_const_reference<typename BoundFunctorTraits::A2Type>::value ||
-          is_non_const_reference<typename BoundFunctorTraits::A3Type>::value ||
-          is_non_const_reference<typename BoundFunctorTraits::A4Type>::value ||
-          is_non_const_reference<typename BoundFunctorTraits::A5Type>::value ),
+      !(base::is_non_const_reference<typename
+          BoundFunctorTraits::A1Type>::value ||
+          base::is_non_const_reference<typename
+          BoundFunctorTraits::A2Type>::value ||
+          base::is_non_const_reference<typename
+          BoundFunctorTraits::A3Type>::value ||
+          base::is_non_const_reference<typename
+          BoundFunctorTraits::A4Type>::value ||
+          base::is_non_const_reference<typename
+          BoundFunctorTraits::A5Type>::value ),
       do_not_bind_functions_with_nonconst_ref);
 
   // For methods, we need to be careful for parameter 1.  We do not require
@@ -332,7 +347,7 @@ Bind(Functor functor, const P1& p1, const P2& p2, const P3& p3, const P4& p4,
           !internal::NeedsScopedRefptrButGetsRawPtr<P1>::value,
       p1_is_refcounted_type_and_needs_scoped_refptr);
   COMPILE_ASSERT(!internal::HasIsMethodTag<RunnableType>::value ||
-                     !is_array<P1>::value,
+                     !base::is_array<P1>::value,
                  first_bound_argument_to_method_cannot_be_array);
   COMPILE_ASSERT(!internal::NeedsScopedRefptrButGetsRawPtr<P2>::value,
                  p2_is_refcounted_type_and_needs_scoped_refptr);
@@ -356,7 +371,7 @@ Bind(Functor functor, const P1& p1, const P2& p2, const P3& p3, const P4& p4,
 
 template <typename Functor, typename P1, typename P2, typename P3, typename P4,
     typename P5, typename P6>
-base::Callback<
+Callback<
     typename internal::BindState<
         typename internal::FunctorTraits<Functor>::RunnableType,
         typename internal::FunctorTraits<Functor>::RunType,
@@ -385,12 +400,18 @@ Bind(Functor functor, const P1& p1, const P2& p2, const P3& p3, const P4& p4,
   // invoked function will receive a reference to the stored copy of the
   // argument and not the original.
   COMPILE_ASSERT(
-      !(is_non_const_reference<typename BoundFunctorTraits::A1Type>::value ||
-          is_non_const_reference<typename BoundFunctorTraits::A2Type>::value ||
-          is_non_const_reference<typename BoundFunctorTraits::A3Type>::value ||
-          is_non_const_reference<typename BoundFunctorTraits::A4Type>::value ||
-          is_non_const_reference<typename BoundFunctorTraits::A5Type>::value ||
-          is_non_const_reference<typename BoundFunctorTraits::A6Type>::value ),
+      !(base::is_non_const_reference<typename
+          BoundFunctorTraits::A1Type>::value ||
+          base::is_non_const_reference<typename
+          BoundFunctorTraits::A2Type>::value ||
+          base::is_non_const_reference<typename
+          BoundFunctorTraits::A3Type>::value ||
+          base::is_non_const_reference<typename
+          BoundFunctorTraits::A4Type>::value ||
+          base::is_non_const_reference<typename
+          BoundFunctorTraits::A5Type>::value ||
+          base::is_non_const_reference<typename
+          BoundFunctorTraits::A6Type>::value ),
       do_not_bind_functions_with_nonconst_ref);
 
   // For methods, we need to be careful for parameter 1.  We do not require
@@ -402,7 +423,7 @@ Bind(Functor functor, const P1& p1, const P2& p2, const P3& p3, const P4& p4,
           !internal::NeedsScopedRefptrButGetsRawPtr<P1>::value,
       p1_is_refcounted_type_and_needs_scoped_refptr);
   COMPILE_ASSERT(!internal::HasIsMethodTag<RunnableType>::value ||
-                     !is_array<P1>::value,
+                     !base::is_array<P1>::value,
                  first_bound_argument_to_method_cannot_be_array);
   COMPILE_ASSERT(!internal::NeedsScopedRefptrButGetsRawPtr<P2>::value,
                  p2_is_refcounted_type_and_needs_scoped_refptr);
@@ -429,7 +450,7 @@ Bind(Functor functor, const P1& p1, const P2& p2, const P3& p3, const P4& p4,
 
 template <typename Functor, typename P1, typename P2, typename P3, typename P4,
     typename P5, typename P6, typename P7>
-base::Callback<
+Callback<
     typename internal::BindState<
         typename internal::FunctorTraits<Functor>::RunnableType,
         typename internal::FunctorTraits<Functor>::RunType,
@@ -459,13 +480,20 @@ Bind(Functor functor, const P1& p1, const P2& p2, const P3& p3, const P4& p4,
   // invoked function will receive a reference to the stored copy of the
   // argument and not the original.
   COMPILE_ASSERT(
-      !(is_non_const_reference<typename BoundFunctorTraits::A1Type>::value ||
-          is_non_const_reference<typename BoundFunctorTraits::A2Type>::value ||
-          is_non_const_reference<typename BoundFunctorTraits::A3Type>::value ||
-          is_non_const_reference<typename BoundFunctorTraits::A4Type>::value ||
-          is_non_const_reference<typename BoundFunctorTraits::A5Type>::value ||
-          is_non_const_reference<typename BoundFunctorTraits::A6Type>::value ||
-          is_non_const_reference<typename BoundFunctorTraits::A7Type>::value ),
+      !(base::is_non_const_reference<typename
+          BoundFunctorTraits::A1Type>::value ||
+          base::is_non_const_reference<typename
+          BoundFunctorTraits::A2Type>::value ||
+          base::is_non_const_reference<typename
+          BoundFunctorTraits::A3Type>::value ||
+          base::is_non_const_reference<typename
+          BoundFunctorTraits::A4Type>::value ||
+          base::is_non_const_reference<typename
+          BoundFunctorTraits::A5Type>::value ||
+          base::is_non_const_reference<typename
+          BoundFunctorTraits::A6Type>::value ||
+          base::is_non_const_reference<typename
+          BoundFunctorTraits::A7Type>::value ),
       do_not_bind_functions_with_nonconst_ref);
 
   // For methods, we need to be careful for parameter 1.  We do not require
@@ -477,7 +505,7 @@ Bind(Functor functor, const P1& p1, const P2& p2, const P3& p3, const P4& p4,
           !internal::NeedsScopedRefptrButGetsRawPtr<P1>::value,
       p1_is_refcounted_type_and_needs_scoped_refptr);
   COMPILE_ASSERT(!internal::HasIsMethodTag<RunnableType>::value ||
-                     !is_array<P1>::value,
+                     !base::is_array<P1>::value,
                  first_bound_argument_to_method_cannot_be_array);
   COMPILE_ASSERT(!internal::NeedsScopedRefptrButGetsRawPtr<P2>::value,
                  p2_is_refcounted_type_and_needs_scoped_refptr);
@@ -506,6 +534,6 @@ Bind(Functor functor, const P1& p1, const P2& p2, const P3& p3, const P4& p4,
           p7));
 }
 
-}  // namespace base
+}  // namespace kudu
 
-#endif  // BASE_BIND_H_
+#endif  // KUDU_GUTIL_BIND_H_

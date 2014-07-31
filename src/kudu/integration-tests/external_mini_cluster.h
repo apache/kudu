@@ -139,7 +139,7 @@ class ExternalMiniCluster {
   DISALLOW_COPY_AND_ASSIGN(ExternalMiniCluster);
 };
 
-class ExternalDaemon : public base::RefCountedThreadSafe<ExternalDaemon> {
+class ExternalDaemon : public RefCountedThreadSafe<ExternalDaemon> {
  public:
   ExternalDaemon(const std::string& exe, const std::string& data_dir,
                  const std::vector<std::string>& extra_flags);
@@ -152,7 +152,7 @@ class ExternalDaemon : public base::RefCountedThreadSafe<ExternalDaemon> {
   virtual void Shutdown();
 
  protected:
-  friend class base::RefCountedThreadSafe<ExternalDaemon>;
+  friend class RefCountedThreadSafe<ExternalDaemon>;
   virtual ~ExternalDaemon();
   Status StartProcess(const std::vector<std::string>& flags);
 
@@ -176,7 +176,7 @@ class ExternalMaster : public ExternalDaemon {
   Status Start();
 
  private:
-  friend class base::RefCountedThreadSafe<ExternalMaster>;
+  friend class RefCountedThreadSafe<ExternalMaster>;
   virtual ~ExternalMaster();
 };
 
@@ -191,7 +191,7 @@ class ExternalTabletServer : public ExternalDaemon {
  private:
   const std::string master_addr_;
 
-  friend class base::RefCountedThreadSafe<ExternalTabletServer>;
+  friend class RefCountedThreadSafe<ExternalTabletServer>;
   virtual ~ExternalTabletServer();
 };
 

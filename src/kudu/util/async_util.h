@@ -32,7 +32,7 @@ class Synchronizer {
     //
     // Note: this means the returned callback _must_ go out of scope before
     // its synchronizer.
-    return base::Bind(&Synchronizer::StatusCB, base::Unretained(this));
+    return Bind(&Synchronizer::StatusCB, Unretained(this));
   }
   Status Wait() {
     l.Wait();

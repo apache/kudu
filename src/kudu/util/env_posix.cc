@@ -781,7 +781,7 @@ class PosixEnv : public Env {
 
     // FTS requires a non-const copy of the name. strdup it and free() when
     // we leave scope.
-    gscoped_ptr<char, base::FreeDeleter> name_dup(strdup(name.c_str()));
+    gscoped_ptr<char, FreeDeleter> name_dup(strdup(name.c_str()));
     char *(paths[]) = { name_dup.get(), NULL };
 
     // FTS_NOCHDIR is important here to make this thread-safe.

@@ -127,7 +127,7 @@ void InsertConsumer::ConsumeJSON(const Slice& json_slice) {
   }
   if (do_flush) {
     VLOG(1) << "Sending batch of " << session_->CountBufferedOperations();
-    session_->FlushAsync(base::Bind(&InsertConsumer::BatchFinished, base::Unretained(this)));
+    session_->FlushAsync(Bind(&InsertConsumer::BatchFinished, Unretained(this)));
   }
 }
 

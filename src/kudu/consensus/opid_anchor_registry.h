@@ -22,7 +22,7 @@ class OpIdAnchor;
 // the WAL that reference as-yet unflushed in-memory operations.
 //
 // This class is thread-safe.
-class OpIdAnchorRegistry : public base::RefCountedThreadSafe<OpIdAnchorRegistry> {
+class OpIdAnchorRegistry : public RefCountedThreadSafe<OpIdAnchorRegistry> {
  public:
   OpIdAnchorRegistry();
 
@@ -57,7 +57,7 @@ class OpIdAnchorRegistry : public base::RefCountedThreadSafe<OpIdAnchorRegistry>
   size_t GetAnchorCountForTests() const;
 
  private:
-  friend class base::RefCountedThreadSafe<OpIdAnchorRegistry>;
+  friend class RefCountedThreadSafe<OpIdAnchorRegistry>;
   ~OpIdAnchorRegistry();
 
   typedef std::multimap<consensus::OpId, OpIdAnchor*, OpIdCompareFunctor> OpIdMultiMap;

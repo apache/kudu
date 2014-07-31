@@ -43,7 +43,7 @@ typedef boost::function<void(TabletPeer*)> MarkDirtyCallback;
 // state machine through a consensus algorithm, which makes sure that other
 // peers see the same updates in the same order. In addition to this, this
 // class also splits the work and coordinates multi-threaded execution.
-class TabletPeer : public base::RefCountedThreadSafe<TabletPeer>,
+class TabletPeer : public RefCountedThreadSafe<TabletPeer>,
                    public consensus::ReplicaTransactionFactory {
  public:
 
@@ -192,7 +192,7 @@ class TabletPeer : public base::RefCountedThreadSafe<TabletPeer>,
                                    scoped_refptr<ReplicaTransactionDriver>* driver);
 
  private:
-  friend class base::RefCountedThreadSafe<TabletPeer>;
+  friend class RefCountedThreadSafe<TabletPeer>;
   friend class TabletPeerTest;
   FRIEND_TEST(TabletPeerTest, TestMRSAnchorPreventsLogGC);
   FRIEND_TEST(TabletPeerTest, TestDMSAnchorPreventsLogGC);

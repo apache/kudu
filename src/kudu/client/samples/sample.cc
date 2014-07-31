@@ -122,7 +122,7 @@ static Status InsertRows(scoped_refptr<KuduTable>& table, int num_rows) {
   }
 
   // Test asynchronous flush.
-  session->FlushAsync(base::Bind(&StatusCB));
+  session->FlushAsync(Bind(&StatusCB));
 
   // Look at the session's errors.
   vector<KuduError*> errors;

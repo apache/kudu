@@ -24,7 +24,7 @@ namespace server {
 //     i.e. for any two calls, i.e. Now returns timestamp1 and timestamp2, it must
 //     hold that timestamp1 < timestamp2.
 // 2 - Update() must never set the clock backwards (corollary of 1)
-class Clock : public base::RefCountedThreadSafe<Clock> {
+class Clock : public RefCountedThreadSafe<Clock> {
  public:
 
   // Initializes the clock.

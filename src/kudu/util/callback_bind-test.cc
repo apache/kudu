@@ -7,8 +7,6 @@
 
 namespace kudu {
 
-using base::Bind;
-using base::Callback;
 using std::string;
 
 static int Return5() {
@@ -20,7 +18,7 @@ TEST(CallbackBindTest, TestFreeFunction) {
   ASSERT_EQ(5, func_cb.Run());
 }
 
-class Ref : public base::RefCountedThreadSafe<Ref> {
+class Ref : public RefCountedThreadSafe<Ref> {
  public:
   int Foo() { return 3; }
 };

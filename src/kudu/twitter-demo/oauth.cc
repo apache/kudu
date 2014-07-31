@@ -14,7 +14,6 @@ extern "C" {
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/strings/util.h"
 
-using base::FreeDeleter;
 using std::pair;
 using std::string;
 using std::vector;

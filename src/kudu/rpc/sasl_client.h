@@ -130,7 +130,7 @@ class SaslClient {
 
   string plain_auth_user_;
   string plain_pass_;
-  gscoped_ptr<sasl_secret_t, base::FreeDeleter> psecret_;
+  gscoped_ptr<sasl_secret_t, FreeDeleter> psecret_;
 
   SaslNegotiationState::Type client_state_;
 

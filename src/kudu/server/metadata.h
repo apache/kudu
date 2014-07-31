@@ -53,7 +53,7 @@ extern const int64 kNoDurableMemStore;
 // At startup, the TSTabletManager will load a TabletMetadata for each
 // master block found in the master block directory, and then instantiate
 // tablets from this data.
-class TabletMetadata : public base::RefCountedThreadSafe<TabletMetadata> {
+class TabletMetadata : public RefCountedThreadSafe<TabletMetadata> {
  public:
   // Create metadata for a new tablet. This assumes that the given master block
   // has not been written before, and writes out the initial superblock with
@@ -189,7 +189,7 @@ class TabletMetadata : public base::RefCountedThreadSafe<TabletMetadata> {
   RowSetMetadata *GetRowSetForTests(int64_t id);
 
  private:
-  friend class base::RefCountedThreadSafe<TabletMetadata>;
+  friend class RefCountedThreadSafe<TabletMetadata>;
 
   // Compile time assert that no one deletes TabletMetadata objects.
   ~TabletMetadata();

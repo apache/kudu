@@ -11,7 +11,7 @@
 
 namespace kudu {
 
-class MonitoredTask : public base::RefCountedThreadSafe<MonitoredTask>,
+class MonitoredTask : public RefCountedThreadSafe<MonitoredTask>,
                       public Task {
   public:
     enum State {

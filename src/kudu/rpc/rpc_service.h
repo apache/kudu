@@ -10,7 +10,7 @@ namespace rpc {
 
 class InboundCall;
 
-class RpcService : public base::RefCountedThreadSafe<RpcService> {
+class RpcService : public RefCountedThreadSafe<RpcService> {
  public:
   virtual ~RpcService() {}
 

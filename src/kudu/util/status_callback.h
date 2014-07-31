@@ -10,7 +10,7 @@ class Status;
 
 // A callback which takes a Status. This is typically used for functions which
 // produce asynchronous results and may fail.
-typedef base::Callback<void(const Status& status)> StatusCallback;
+typedef Callback<void(const Status& status)> StatusCallback;
 
 } // namespace kudu
 

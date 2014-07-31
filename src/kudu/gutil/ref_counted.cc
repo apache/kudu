@@ -7,7 +7,7 @@
 #include <glog/logging.h>
 #include "kudu/gutil/threading/thread_collision_warner.h"
 
-namespace base {
+namespace kudu {
 
 namespace subtle {
 
@@ -52,7 +52,7 @@ bool RefCountedBase::Release() const {
 }
 
 bool RefCountedThreadSafeBase::HasOneRef() const {
-  return RefCountIsOne(
+  return base::RefCountIsOne(
       &const_cast<RefCountedThreadSafeBase*>(this)->ref_count_);
 }
 
@@ -73,15 +73,15 @@ void RefCountedThreadSafeBase::AddRef() const {
 #ifndef NDEBUG
   DCHECK(!in_dtor_);
 #endif
-  RefCountInc(&ref_count_);
+  base::RefCountInc(&ref_count_);
 }
 
 bool RefCountedThreadSafeBase::Release() const {
 #ifndef NDEBUG
   DCHECK(!in_dtor_);
-  DCHECK(!RefCountIsZero(&ref_count_));
+  DCHECK(!base::RefCountIsZero(&ref_count_));
 #endif
-  if (!RefCountDec(&ref_count_)) {
+  if (!base::RefCountDec(&ref_count_)) {
 #ifndef NDEBUG
     in_dtor_ = true;
 #endif
@@ -92,4 +92,4 @@ bool RefCountedThreadSafeBase::Release() const {
 
 }  // namespace subtle
 
-}  // namespace base
+}  // namespace kudu

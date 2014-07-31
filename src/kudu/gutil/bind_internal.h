@@ -7,8 +7,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef BASE_BIND_INTERNAL_H_
-#define BASE_BIND_INTERNAL_H_
+#ifndef KUDU_GUTIL_BIND_INTERNAL_H_
+#define KUDU_GUTIL_BIND_INTERNAL_H_
 
 #include "kudu/gutil/bind_helpers.h"
 #include "kudu/gutil/callback_internal.h"
@@ -16,15 +16,15 @@
 #include "kudu/gutil/template_util.h"
 
 #if defined(OS_WIN)
-#include "kudu/base/bind_internal_win.h"
+#include "kudu/gutil/bind_internal_win.h"
 #endif
 
 // During Chromium import, WeakPtr-related code was removed.
 
-namespace base {
+namespace kudu {
 namespace internal {
 
-// See base/callback.h for user documentation.
+// See kudu/gutil/callback.h for user documentation.
 //
 //
 // CONCEPTS:
@@ -124,7 +124,7 @@ template <typename R, typename T>
 class RunnableAdapter<R(T::*)()> {
  public:
   typedef R (RunType)(T*);
-  typedef true_type IsMethod;
+  typedef base::true_type IsMethod;
 
   explicit RunnableAdapter(R(T::*method)())
       : method_(method) {
@@ -143,7 +143,7 @@ template <typename R, typename T>
 class RunnableAdapter<R(T::*)() const> {
  public:
   typedef R (RunType)(const T*);
-  typedef true_type IsMethod;
+  typedef base::true_type IsMethod;
 
   explicit RunnableAdapter(R(T::*method)() const)
       : method_(method) {
@@ -180,7 +180,7 @@ template <typename R, typename T, typename A1>
 class RunnableAdapter<R(T::*)(A1)> {
  public:
   typedef R (RunType)(T*, A1);
-  typedef true_type IsMethod;
+  typedef base::true_type IsMethod;
 
   explicit RunnableAdapter(R(T::*method)(A1))
       : method_(method) {
@@ -199,7 +199,7 @@ template <typename R, typename T, typename A1>
 class RunnableAdapter<R(T::*)(A1) const> {
  public:
   typedef R (RunType)(const T*, A1);
-  typedef true_type IsMethod;
+  typedef base::true_type IsMethod;
 
   explicit RunnableAdapter(R(T::*method)(A1) const)
       : method_(method) {
@@ -237,7 +237,7 @@ template <typename R, typename T, typename A1, typename A2>
 class RunnableAdapter<R(T::*)(A1, A2)> {
  public:
   typedef R (RunType)(T*, A1, A2);
-  typedef true_type IsMethod;
+  typedef base::true_type IsMethod;
 
   explicit RunnableAdapter(R(T::*method)(A1, A2))
       : method_(method) {
@@ -257,7 +257,7 @@ template <typename R, typename T, typename A1, typename A2>
 class RunnableAdapter<R(T::*)(A1, A2) const> {
  public:
   typedef R (RunType)(const T*, A1, A2);
-  typedef true_type IsMethod;
+  typedef base::true_type IsMethod;
 
   explicit RunnableAdapter(R(T::*method)(A1, A2) const)
       : method_(method) {
@@ -298,7 +298,7 @@ template <typename R, typename T, typename A1, typename A2, typename A3>
 class RunnableAdapter<R(T::*)(A1, A2, A3)> {
  public:
   typedef R (RunType)(T*, A1, A2, A3);
-  typedef true_type IsMethod;
+  typedef base::true_type IsMethod;
 
   explicit RunnableAdapter(R(T::*method)(A1, A2, A3))
       : method_(method) {
@@ -320,7 +320,7 @@ template <typename R, typename T, typename A1, typename A2, typename A3>
 class RunnableAdapter<R(T::*)(A1, A2, A3) const> {
  public:
   typedef R (RunType)(const T*, A1, A2, A3);
-  typedef true_type IsMethod;
+  typedef base::true_type IsMethod;
 
   explicit RunnableAdapter(R(T::*method)(A1, A2, A3) const)
       : method_(method) {
@@ -365,7 +365,7 @@ template <typename R, typename T, typename A1, typename A2, typename A3,
 class RunnableAdapter<R(T::*)(A1, A2, A3, A4)> {
  public:
   typedef R (RunType)(T*, A1, A2, A3, A4);
-  typedef true_type IsMethod;
+  typedef base::true_type IsMethod;
 
   explicit RunnableAdapter(R(T::*method)(A1, A2, A3, A4))
       : method_(method) {
@@ -389,7 +389,7 @@ template <typename R, typename T, typename A1, typename A2, typename A3,
 class RunnableAdapter<R(T::*)(A1, A2, A3, A4) const> {
  public:
   typedef R (RunType)(const T*, A1, A2, A3, A4);
-  typedef true_type IsMethod;
+  typedef base::true_type IsMethod;
 
   explicit RunnableAdapter(R(T::*method)(A1, A2, A3, A4) const)
       : method_(method) {
@@ -437,7 +437,7 @@ template <typename R, typename T, typename A1, typename A2, typename A3,
 class RunnableAdapter<R(T::*)(A1, A2, A3, A4, A5)> {
  public:
   typedef R (RunType)(T*, A1, A2, A3, A4, A5);
-  typedef true_type IsMethod;
+  typedef base::true_type IsMethod;
 
   explicit RunnableAdapter(R(T::*method)(A1, A2, A3, A4, A5))
       : method_(method) {
@@ -462,7 +462,7 @@ template <typename R, typename T, typename A1, typename A2, typename A3,
 class RunnableAdapter<R(T::*)(A1, A2, A3, A4, A5) const> {
  public:
   typedef R (RunType)(const T*, A1, A2, A3, A4, A5);
-  typedef true_type IsMethod;
+  typedef base::true_type IsMethod;
 
   explicit RunnableAdapter(R(T::*method)(A1, A2, A3, A4, A5) const)
       : method_(method) {
@@ -513,7 +513,7 @@ template <typename R, typename T, typename A1, typename A2, typename A3,
 class RunnableAdapter<R(T::*)(A1, A2, A3, A4, A5, A6)> {
  public:
   typedef R (RunType)(T*, A1, A2, A3, A4, A5, A6);
-  typedef true_type IsMethod;
+  typedef base::true_type IsMethod;
 
   explicit RunnableAdapter(R(T::*method)(A1, A2, A3, A4, A5, A6))
       : method_(method) {
@@ -540,7 +540,7 @@ template <typename R, typename T, typename A1, typename A2, typename A3,
 class RunnableAdapter<R(T::*)(A1, A2, A3, A4, A5, A6) const> {
  public:
   typedef R (RunType)(const T*, A1, A2, A3, A4, A5, A6);
-  typedef true_type IsMethod;
+  typedef base::true_type IsMethod;
 
   explicit RunnableAdapter(R(T::*method)(A1, A2, A3, A4, A5, A6) const)
       : method_(method) {
@@ -594,7 +594,7 @@ template <typename R, typename T, typename A1, typename A2, typename A3,
 class RunnableAdapter<R(T::*)(A1, A2, A3, A4, A5, A6, A7)> {
  public:
   typedef R (RunType)(T*, A1, A2, A3, A4, A5, A6, A7);
-  typedef true_type IsMethod;
+  typedef base::true_type IsMethod;
 
   explicit RunnableAdapter(R(T::*method)(A1, A2, A3, A4, A5, A6, A7))
       : method_(method) {
@@ -622,7 +622,7 @@ template <typename R, typename T, typename A1, typename A2, typename A3,
 class RunnableAdapter<R(T::*)(A1, A2, A3, A4, A5, A6, A7) const> {
  public:
   typedef R (RunType)(const T*, A1, A2, A3, A4, A5, A6, A7);
-  typedef true_type IsMethod;
+  typedef base::true_type IsMethod;
 
   explicit RunnableAdapter(R(T::*method)(A1, A2, A3, A4, A5, A6, A7) const)
       : method_(method) {
@@ -2432,7 +2432,7 @@ template <typename Runnable, typename RunType>
 struct BindState<Runnable, RunType, void()> : public BindStateBase {
   typedef Runnable RunnableType;
 
-  typedef false_type IsWeakCall;
+  typedef base::false_type IsWeakCall;
 
   typedef Invoker<0, BindState, RunType> InvokerType;
   typedef typename InvokerType::UnboundRunType UnboundRunType;
@@ -2449,7 +2449,7 @@ template <typename Runnable, typename RunType, typename P1>
 struct BindState<Runnable, RunType, void(P1)> : public BindStateBase {
   typedef Runnable RunnableType;
 
-  typedef false_type IsWeakCall;
+  typedef base::false_type IsWeakCall;
 
   typedef Invoker<1, BindState, RunType> InvokerType;
   typedef typename InvokerType::UnboundRunType UnboundRunType;
@@ -2474,7 +2474,7 @@ template <typename Runnable, typename RunType, typename P1, typename P2>
 struct BindState<Runnable, RunType, void(P1, P2)> : public BindStateBase {
   typedef Runnable RunnableType;
 
-  typedef false_type IsWeakCall;
+  typedef base::false_type IsWeakCall;
 
   typedef Invoker<2, BindState, RunType> InvokerType;
   typedef typename InvokerType::UnboundRunType UnboundRunType;
@@ -2503,7 +2503,7 @@ template <typename Runnable, typename RunType, typename P1, typename P2,
 struct BindState<Runnable, RunType, void(P1, P2, P3)> : public BindStateBase {
   typedef Runnable RunnableType;
 
-  typedef false_type IsWeakCall;
+  typedef base::false_type IsWeakCall;
 
   typedef Invoker<3, BindState, RunType> InvokerType;
   typedef typename InvokerType::UnboundRunType UnboundRunType;
@@ -2536,7 +2536,7 @@ struct BindState<Runnable, RunType, void(P1, P2, P3,
     P4)> : public BindStateBase {
   typedef Runnable RunnableType;
 
-  typedef false_type IsWeakCall;
+  typedef base::false_type IsWeakCall;
 
   typedef Invoker<4, BindState, RunType> InvokerType;
   typedef typename InvokerType::UnboundRunType UnboundRunType;
@@ -2573,7 +2573,7 @@ struct BindState<Runnable, RunType, void(P1, P2, P3, P4,
     P5)> : public BindStateBase {
   typedef Runnable RunnableType;
 
-  typedef false_type IsWeakCall;
+  typedef base::false_type IsWeakCall;
 
   typedef Invoker<5, BindState, RunType> InvokerType;
   typedef typename InvokerType::UnboundRunType UnboundRunType;
@@ -2613,7 +2613,7 @@ struct BindState<Runnable, RunType, void(P1, P2, P3, P4, P5,
     P6)> : public BindStateBase {
   typedef Runnable RunnableType;
 
-  typedef false_type IsWeakCall;
+  typedef base::false_type IsWeakCall;
 
   typedef Invoker<6, BindState, RunType> InvokerType;
   typedef typename InvokerType::UnboundRunType UnboundRunType;
@@ -2656,7 +2656,7 @@ struct BindState<Runnable, RunType, void(P1, P2, P3, P4, P5, P6,
     P7)> : public BindStateBase {
   typedef Runnable RunnableType;
 
-  typedef false_type IsWeakCall;
+  typedef base::false_type IsWeakCall;
 
   typedef Invoker<7, BindState, RunType> InvokerType;
   typedef typename InvokerType::UnboundRunType UnboundRunType;
@@ -2697,6 +2697,6 @@ struct BindState<Runnable, RunType, void(P1, P2, P3, P4, P5, P6,
 };
 
 }  // namespace internal
-}  // namespace base
+}  // namespace kudu
 
-#endif  // BASE_BIND_INTERNAL_H_
+#endif  // KUDU_GUTIL_BIND_INTERNAL_H_

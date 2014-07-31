@@ -29,17 +29,17 @@ $var MAX_ARITY = 7
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef BASE_BIND_H_
-#define BASE_BIND_H_
+#ifndef KUDU_GUTIL_BIND_H_
+#define KUDU_GUTIL_BIND_H_
 
-#include "kudu/base/bind_internal.h"
-#include "kudu/base/callback_internal.h"
+#include "kudu/gutil/bind_internal.h"
+#include "kudu/gutil/callback_internal.h"
 
 // -----------------------------------------------------------------------------
 // Usage documentation
 // -----------------------------------------------------------------------------
 //
-// See base/callback.h for documentation.
+// See kudu/gutil/callback.h for documentation.
 //
 //
 // -----------------------------------------------------------------------------
@@ -47,7 +47,7 @@ $var MAX_ARITY = 7
 // -----------------------------------------------------------------------------
 //
 // If you're reading the implementation, before proceeding further, you should
-// read the top comment of base/bind_internal.h for a definition of common
+// read the top comment of kudu/gutil/bind_internal.h for a definition of common
 // terms and concepts.
 //
 // RETURN TYPES
@@ -73,7 +73,7 @@ $var MAX_ARITY = 7
 // need to crack open bind_internal.h.  On the other hand, it makes Bind()
 // harder to read.
 
-namespace base {
+namespace kudu {
 
 $range ARITY 0..MAX_ARITY
 $for ARITY [[
@@ -81,7 +81,7 @@ $range ARG 1..ARITY
 
 template <typename Functor[[]]
 $if ARITY > 0 [[, ]] $for ARG , [[typename P$(ARG)]]>
-base::Callback<
+Callback<
     typename internal::BindState<
         typename internal::FunctorTraits<Functor>::RunnableType,
         typename internal::FunctorTraits<Functor>::RunType,
@@ -108,7 +108,7 @@ $if ARITY > 0 [[
   // argument and not the original.
   COMPILE_ASSERT(
       !($for ARG || [[
-is_non_const_reference<typename BoundFunctorTraits::A$(ARG)Type>::value ]]),
+base::is_non_const_reference<typename BoundFunctorTraits::A$(ARG)Type>::value ]]),
       do_not_bind_functions_with_nonconst_ref);
 
 ]]
@@ -127,7 +127,7 @@ $if ARG == 1 [[
           !internal::NeedsScopedRefptrButGetsRawPtr<P$(ARG)>::value,
       p$(ARG)_is_refcounted_type_and_needs_scoped_refptr);
   COMPILE_ASSERT(!internal::HasIsMethodTag<RunnableType>::value ||
-                     !is_array<P$(ARG)>::value,
+                     !base::is_array<P$(ARG)>::value,
                  first_bound_argument_to_method_cannot_be_array);
 ]] $else [[
   COMPILE_ASSERT(!internal::NeedsScopedRefptrButGetsRawPtr<P$(ARG)>::value,
@@ -148,6 +148,6 @@ $if ARITY > 0 [[, ]] $for ARG , [[p$(ARG)]]));
 
 ]]  $$ for ARITY
 
-}  // namespace base
+}  // namespace kudu
 
-#endif  // BASE_BIND_H_
+#endif  // KUDU_GUTIL_BIND_H_

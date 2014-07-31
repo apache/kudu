@@ -7,15 +7,15 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef BASE_CALLBACK_H_
-#define BASE_CALLBACK_H_
+#ifndef KUDU_GUTIL_CALLBACK_H_
+#define KUDU_GUTIL_CALLBACK_H_
 
 #include "kudu/gutil/callback_forward.h"
 #include "kudu/gutil/callback_internal.h"
 #include "kudu/gutil/template_util.h"
 
 // NOTE: Header files that do not require the full definition of Callback or
-// Closure should #include "kudu/base/callback_forward.h" instead of this file.
+// Closure should #include "kudu/gutil/callback_forward.h" instead of this file.
 
 // -----------------------------------------------------------------------------
 // Introduction
@@ -31,8 +31,8 @@
 // much like lexical closures are used in other languages. For example, it
 // is used in Chromium code to schedule tasks on different MessageLoops.
 //
-// A callback with no unbound input parameters (base::Callback<void(void)>)
-// is called a base::Closure. Note that this is NOT the same as what other
+// A callback with no unbound input parameters (kudu::Callback<void(void)>)
+// is called a kudu::Closure. Note that this is NOT the same as what other
 // languages refer to as a closure -- it does not retain a reference to its
 // enclosing environment.
 //
@@ -53,7 +53,7 @@
 // BINDING A BARE FUNCTION
 //
 //   int Return5() { return 5; }
-//   base::Callback<int(void)> func_cb = base::Bind(&Return5);
+//   kudu::Callback<int(void)> func_cb = kudu::Bind(&Return5);
 //   LOG(INFO) << func_cb.Run();  // Prints 5.
 //
 // BINDING A CLASS METHOD
@@ -61,13 +61,13 @@
 //   The first argument to bind is the member function to call, the second is
 //   the object on which to call it.
 //
-//   class Ref : public base::RefCountedThreadSafe<Ref> {
+//   class Ref : public kudu::RefCountedThreadSafe<Ref> {
 //    public:
 //     int Foo() { return 3; }
 //     void PrintBye() { LOG(INFO) << "bye."; }
 //   };
 //   scoped_refptr<Ref> ref = new Ref();
-//   base::Callback<void(void)> ref_cb = base::Bind(&Ref::Foo, ref);
+//   kudu::Callback<void(void)> ref_cb = kudu::Bind(&Ref::Foo, ref);
 //   LOG(INFO) << ref_cb.Run();  // Prints out 3.
 //
 //   By default the object must support RefCounted or you will get a compiler
@@ -80,14 +80,14 @@
 //   Callbacks can be run with their "Run" method, which has the same
 //   signature as the template argument to the callback.
 //
-//   void DoSomething(const base::Callback<void(int, std::string)>& callback) {
+//   void DoSomething(const kudu::Callback<void(int, std::string)>& callback) {
 //     callback.Run(5, "hello");
 //   }
 //
 //   Callbacks can be run more than once (they don't get deleted or marked when
-//   run). However, this precludes using base::Passed (see below).
+//   run). However, this precludes using kudu::Passed (see below).
 //
-//   void DoSomething(const base::Callback<double(double)>& callback) {
+//   void DoSomething(const kudu::Callback<double(double)>& callback) {
 //     double myresult = callback.Run(3.14159);
 //     myresult += callback.Run(2.71828);
 //   }
@@ -98,7 +98,7 @@
 //   specified in the Callback template type:
 //
 //   void MyFunc(int i, const std::string& str) {}
-//   base::Callback<void(int, const std::string&)> cb = base::Bind(&MyFunc);
+//   kudu::Callback<void(int, const std::string&)> cb = kudu::Bind(&MyFunc);
 //   cb.Run(23, "hello, world");
 //
 // PASSING BOUND INPUT PARAMETERS
@@ -109,18 +109,18 @@
 //   calling.
 //
 //   void MyFunc(int i, const std::string& str) {}
-//   base::Callback<void(void)> cb = base::Bind(&MyFunc, 23, "hello world");
+//   kudu::Callback<void(void)> cb = kudu::Bind(&MyFunc, 23, "hello world");
 //   cb.Run();
 //
-//   A callback with no unbound input parameters (base::Callback<void(void)>)
-//   is called a base::Closure. So we could have also written:
+//   A callback with no unbound input parameters (kudu::Callback<void(void)>)
+//   is called a kudu::Closure. So we could have also written:
 //
-//   base::Closure cb = base::Bind(&MyFunc, 23, "hello world");
+//   kudu::Closure cb = kudu::Bind(&MyFunc, 23, "hello world");
 //
 //   When calling member functions, bound parameters just go after the object
 //   pointer.
 //
-//   base::Closure cb = base::Bind(&MyClass::MyFunc, this, 23, "hello world");
+//   kudu::Closure cb = kudu::Bind(&MyClass::MyFunc, this, 23, "hello world");
 //
 // PARTIAL BINDING OF PARAMETERS
 //
@@ -128,7 +128,7 @@
 //   the rest when you execute the callback.
 //
 //   void MyFunc(int i, const std::string& str) {}
-//   base::Callback<void(const std::string&)> cb = base::Bind(&MyFunc, 23);
+//   kudu::Callback<void(const std::string&)> cb = kudu::Bind(&MyFunc, 23);
 //   cb.Run("hello world");
 //
 //   When calling a function bound parameters are first, followed by unbound
@@ -141,7 +141,7 @@
 //
 // BINDING A CLASS METHOD WITH WEAK POINTERS
 //
-//   base::Bind(&MyClass::Foo, GetWeakPtr());
+//   kudu::Bind(&MyClass::Foo, GetWeakPtr());
 //
 //   The callback will not be issued if the object is destroyed at the time
 //   it's issued. DANGER: weak pointers are not threadsafe, so don't use this
@@ -149,7 +149,7 @@
 //
 // BINDING A CLASS METHOD WITH MANUAL LIFETIME MANAGEMENT
 //
-//   base::Bind(&MyClass::Foo, base::Unretained(this));
+//   kudu::Bind(&MyClass::Foo, kudu::Unretained(this));
 //
 //   This disables all lifetime management on the object. You're responsible
 //   for making sure the object is alive at the time of the call. You break it,
@@ -158,7 +158,7 @@
 // BINDING A CLASS METHOD AND HAVING THE CALLBACK OWN THE CLASS
 //
 //   MyClass* myclass = new MyClass;
-//   base::Bind(&MyClass::Foo, base::Owned(myclass));
+//   kudu::Bind(&MyClass::Foo, kudu::Owned(myclass));
 //
 //   The object will be deleted when the callback is destroyed, even if it's
 //   not run (like if you post a task during shutdown). Potentially useful for
@@ -170,8 +170,8 @@
 //   that doesn't expect a return value.
 //
 //   int DoSomething(int arg) { cout << arg << endl; }
-//   base::Callback<void<int>) cb =
-//       base::Bind(base::IgnoreResult(&DoSomething));
+//   kudu::Callback<void<int>) cb =
+//       kudu::Bind(kudu::IgnoreResult(&DoSomething));
 //
 //
 // -----------------------------------------------------------------------------
@@ -180,13 +180,13 @@
 //
 // Bound parameters are specified as arguments to Bind() and are passed to the
 // function. A callback with no parameters or no unbound parameters is called a
-// Closure (base::Callback<void(void)> and base::Closure are the same thing).
+// Closure (kudu::Callback<void(void)> and kudu::Closure are the same thing).
 //
 // PASSING PARAMETERS OWNED BY THE CALLBACK
 //
 //   void Foo(int* arg) { cout << *arg << endl; }
 //   int* pn = new int(1);
-//   base::Closure foo_callback = base::Bind(&foo, base::Owned(pn));
+//   kudu::Closure foo_callback = kudu::Bind(&foo, kudu::Owned(pn));
 //
 //   The parameter will be deleted when the callback is destroyed, even if it's
 //   not run (like if you post a task during shutdown).
@@ -196,7 +196,7 @@
 //   void TakesOwnership(scoped_ptr<Foo> arg) {}
 //   scoped_ptr<Foo> f(new Foo);
 //   // f becomes null during the following call.
-//   base::Closure cb = base::Bind(&TakesOwnership, base::Passed(&f));
+//   kudu::Closure cb = kudu::Bind(&TakesOwnership, kudu::Passed(&f));
 //
 //   Ownership of the parameter will be with the callback until the it is run,
 //   when ownership is passed to the callback function. This means the callback
@@ -207,23 +207,18 @@
 //
 //   void TakesOneRef(scoped_refptr<Foo> arg) {}
 //   scoped_refptr<Foo> f(new Foo)
-//   base::Closure cb = base::Bind(&TakesOneRef, f);
+//   kudu::Closure cb = kudu::Bind(&TakesOneRef, f);
 //
 //   This should "just work." The closure will take a reference as long as it
 //   is alive, and another reference will be taken for the called function.
 //
 // PASSING PARAMETERS BY REFERENCE
 //
-//   Const references are *copied* unless ConstRef is used. Example:
-//
-//   void foo(const int& arg) { printf("%d %p\n", arg, &arg); }
+//   void foo(int arg) { cout << arg << endl }
 //   int n = 1;
-//   base::Closure has_copy = base::Bind(&foo, n);
-//   base::Closure has_ref = base::Bind(&foo, base::ConstRef(n));
+//   kudu::Closure has_ref = kudu::Bind(&foo, kudu::ConstRef(n));
 //   n = 2;
-//   foo(n);                        // Prints "2 0xaaaaaaaaaaaa"
-//   has_copy.Run();                // Prints "1 0xbbbbbbbbbbbb"
-//   has_ref.Run();                 // Prints "2 0xaaaaaaaaaaaa"
+//   has_ref.Run();  // Prints "2"
 //
 //   Normally parameters are copied in the closure. DANGER: ConstRef stores a
 //   const reference instead, referencing the original parameter. This means
@@ -285,7 +280,7 @@
 // To change this behavior, we introduce a set of argument wrappers
 // (e.g., Unretained(), and ConstRef()).  These are simple container templates
 // that are passed by value, and wrap a pointer to argument.  See the
-// file-level comment in base/bind_helpers.h for more info.
+// file-level comment in kudu/gutil/bind_helpers.h for more info.
 //
 // These types are passed to the Unwrap() functions, and the MaybeRefcount()
 // functions respectively to modify the behavior of Bind().  The Unwrap()
@@ -347,7 +342,7 @@
 //      Bind(&Foo, "test");
 //      Bind(&Bar, "test");  // This fails because ptr is not const.
 
-namespace base {
+namespace kudu {
 
 // First, we forward declare the Callback class template. This informs the
 // compiler that the template only has 1 type parameter which is the function
@@ -765,6 +760,6 @@ class Callback<R(A1, A2, A3, A4, A5, A6, A7)> : public internal::CallbackBase {
 // will be used in a lot of APIs with delayed execution.
 typedef Callback<void(void)> Closure;
 
-}  // namespace base
+}  // namespace kudu
 
-#endif  // BASE_CALLBACK_H
+#endif  // KUDU_GUTIL_CALLBACK_H

@@ -1653,7 +1653,7 @@ TEST_F(ClientTest, TestMasterLookupPermits) {
 
 // Define callback for deadlock simulation, as well as various helper methods.
 namespace {
-  class DLSCallback : public base::RefCountedThreadSafe<DLSCallback> {
+  class DLSCallback : public RefCountedThreadSafe<DLSCallback> {
   public:
     explicit DLSCallback(Atomic32* i)
       : i(i) {}
@@ -1662,7 +1662,7 @@ namespace {
       NoBarrier_AtomicIncrement(i, 1);
     }
     StatusCallback AsStatusCallback() {
-      return base::Bind(&DLSCallback::StatusCB, this);
+      return Bind(&DLSCallback::StatusCB, this);
     }
   private:
     Atomic32* const i;

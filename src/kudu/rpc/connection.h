@@ -50,7 +50,7 @@ class ReactorThread;
 // This class is not fully thread-safe.  It is accessed only from the context of a
 // single ReactorThread except where otherwise specified.
 //
-class Connection : public base::RefCountedThreadSafe<Connection> {
+class Connection : public RefCountedThreadSafe<Connection> {
  public:
   enum Direction {
     // This host is sending calls via this connection.

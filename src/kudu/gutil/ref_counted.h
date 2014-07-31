@@ -12,7 +12,7 @@
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/threading/thread_collision_warner.h"
 
-namespace base {
+namespace kudu {
 namespace subtle {
 
 typedef Atomic32 AtomicRefCount;
@@ -70,10 +70,10 @@ class KUDU_EXPORT RefCountedThreadSafeBase {
 // knock-off of WebKit's RefCounted<T> class.  To use this guy just extend your
 // class from it like so:
 //
-//   class MyFoo : public base::RefCounted<MyFoo> {
+//   class MyFoo : public RefCounted<MyFoo> {
 //    ...
 //    private:
-//     friend class base::RefCounted<MyFoo>;
+//     friend class RefCounted<MyFoo>;
 //     ~MyFoo();
 //   };
 //
@@ -120,14 +120,14 @@ struct DefaultRefCountedThreadSafeTraits {
 //
 // A thread-safe variant of RefCounted<T>
 //
-//   class MyFoo : public base::RefCountedThreadSafe<MyFoo> {
+//   class MyFoo : public RefCountedThreadSafe<MyFoo> {
 //    ...
 //   };
 //
 // If you're using the default trait, then you should add compile time
 // asserts that no one else is deleting your object.  i.e.
 //    private:
-//     friend class base::RefCountedThreadSafe<MyFoo>;
+//     friend class RefCountedThreadSafe<MyFoo>;
 //     ~MyFoo();
 template <class T, typename Traits = DefaultRefCountedThreadSafeTraits<T> >
 class RefCountedThreadSafe : public subtle::RefCountedThreadSafeBase {
@@ -160,7 +160,7 @@ class RefCountedThreadSafe : public subtle::RefCountedThreadSafeBase {
 //
 template<typename T>
 class RefCountedData
-    : public base::RefCountedThreadSafe< base::RefCountedData<T> > {
+    : public kudu::RefCountedThreadSafe< kudu::RefCountedData<T> > {
  public:
   RefCountedData() : data() {}
   RefCountedData(const T& in_value) : data(in_value) {}
@@ -168,11 +168,11 @@ class RefCountedData
   T data;
 
  private:
-  friend class base::RefCountedThreadSafe<base::RefCountedData<T> >;
+  friend class kudu::RefCountedThreadSafe<kudu::RefCountedData<T> >;
   ~RefCountedData() {}
 };
 
-}  // namespace base
+}  // namespace kudu
 
 //
 // A smart pointer class for reference counted objects.  Use this class instead

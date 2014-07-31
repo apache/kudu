@@ -30,7 +30,7 @@ using std::vector;
 
 namespace {
 
-class CustomLatchCallback : public base::RefCountedThreadSafe<CustomLatchCallback> {
+class CustomLatchCallback : public RefCountedThreadSafe<CustomLatchCallback> {
  public:
   CustomLatchCallback(CountDownLatch* latch, vector<Status>* errors)
       : latch_(latch),
@@ -45,7 +45,7 @@ class CustomLatchCallback : public base::RefCountedThreadSafe<CustomLatchCallbac
   }
 
   StatusCallback AsStatusCallback() {
-    return base::Bind(&CustomLatchCallback::StatusCB, this);
+    return Bind(&CustomLatchCallback::StatusCB, this);
   }
 
  private:

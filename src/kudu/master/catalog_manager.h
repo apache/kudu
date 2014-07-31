@@ -87,7 +87,7 @@ struct TabletReplica {
 // spin-lock.
 //
 // The object is owned/managed by the CatalogManager, and exposed for testing.
-class TabletInfo : public base::RefCountedThreadSafe<TabletInfo> {
+class TabletInfo : public RefCountedThreadSafe<TabletInfo> {
  public:
   typedef PersistentTabletInfo cow_state;
 
@@ -131,7 +131,7 @@ class TabletInfo : public base::RefCountedThreadSafe<TabletInfo> {
   CowObject<PersistentTabletInfo>* mutable_metadata() { return &metadata_; }
 
  private:
-  friend class base::RefCountedThreadSafe<TabletInfo>;
+  friend class RefCountedThreadSafe<TabletInfo>;
   ~TabletInfo();
 
   const std::string tablet_id_;
@@ -186,7 +186,7 @@ struct PersistentTableInfo {
 //
 // The non-persistent information about the table is protected by an internal
 // spin-lock.
-class TableInfo : public base::RefCountedThreadSafe<TableInfo> {
+class TableInfo : public RefCountedThreadSafe<TableInfo> {
  public:
   typedef PersistentTableInfo cow_state;
 
@@ -228,7 +228,7 @@ class TableInfo : public base::RefCountedThreadSafe<TableInfo> {
   void GetTaskList(std::vector<scoped_refptr<MonitoredTask> > *tasks);
 
  private:
-  friend class base::RefCountedThreadSafe<TableInfo>;
+  friend class RefCountedThreadSafe<TableInfo>;
   ~TableInfo();
 
   void AddTabletUnlocked(TabletInfo* tablet);

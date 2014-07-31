@@ -37,7 +37,7 @@ class ErrorCollector;
 // reference, and all of the in-flight operations hold others. This allows the client
 // session to be destructed while ops are still in-flight, without the async callbacks
 // attempting to access a destructed Batcher.
-class Batcher : public base::RefCountedThreadSafe<Batcher> {
+class Batcher : public RefCountedThreadSafe<Batcher> {
  public:
   // Create a new batcher associated with the given session.
   //
@@ -83,7 +83,7 @@ class Batcher : public base::RefCountedThreadSafe<Batcher> {
   void FlushAsync(const StatusCallback& cb);
 
  private:
-  friend class base::RefCountedThreadSafe<Batcher>;
+  friend class RefCountedThreadSafe<Batcher>;
   ~Batcher();
 
   // Add an op to the in-flight set and increment the ref-count.

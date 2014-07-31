@@ -94,7 +94,7 @@ class ThreadJoiner {
 // These constraints allow us to access thread internals without any locks.
 //
 // TODO: Consider allowing fragment IDs as category parameters.
-class Thread : public base::RefCountedThreadSafe<Thread> {
+class Thread : public RefCountedThreadSafe<Thread> {
  public:
   // This constructor pattern mimics that in boost::thread. There is
   // one constructor for each number of arguments that the thread

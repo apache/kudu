@@ -50,7 +50,7 @@ struct TraceEntry;
 // be used such that file/line numbers are automatically included, etc.
 //
 // This class is thread-safe.
-class Trace : public base::RefCountedThreadSafe<Trace> {
+class Trace : public RefCountedThreadSafe<Trace> {
  public:
   Trace();
 
@@ -99,7 +99,7 @@ class Trace : public base::RefCountedThreadSafe<Trace> {
 
  private:
   friend class ScopedAdoptTrace;
-  friend class base::RefCountedThreadSafe<Trace>;
+  friend class RefCountedThreadSafe<Trace>;
   ~Trace();
 
   // The current trace for this thread. Threads should only set this using

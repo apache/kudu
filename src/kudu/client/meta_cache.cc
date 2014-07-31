@@ -98,8 +98,8 @@ void RemoteTabletServer::RefreshProxy(KuduClient* client,
 
   vector<Sockaddr>* addrs = new vector<Sockaddr>();
   client->data_->dns_resolver_->ResolveAddresses(
-    hp, addrs, base::Bind(&RemoteTabletServer::DnsResolutionFinished,
-                          base::Unretained(this), hp, addrs, client, cb));
+    hp, addrs, Bind(&RemoteTabletServer::DnsResolutionFinished,
+                    Unretained(this), hp, addrs, client, cb));
 }
 
 void RemoteTabletServer::Update(const master::TSInfoPB& pb) {

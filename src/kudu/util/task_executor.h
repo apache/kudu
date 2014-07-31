@@ -154,7 +154,7 @@ class FutureCallback {
   // The FutureCallback must remain in scope for as long as any generated
   // StatusCallbacks.
   StatusCallback AsStatusCallback() {
-    return base::Bind(&FutureCallback::StatusCB, base::Unretained(this));
+    return Bind(&FutureCallback::StatusCB, Unretained(this));
   }
 
   virtual ~FutureCallback() {

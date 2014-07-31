@@ -36,7 +36,7 @@ extern const char kConsensusQueueParentTrackerId[];
 // This class is ref. counted and takes ownership of the tracked operation.
 //
 // NOTE: Implementations of this class must be thread safe.
-class OperationStatusTracker : public base::RefCountedThreadSafe<OperationStatusTracker> {
+class OperationStatusTracker : public RefCountedThreadSafe<OperationStatusTracker> {
  public:
   explicit OperationStatusTracker(gscoped_ptr<OperationPB> operation);
 

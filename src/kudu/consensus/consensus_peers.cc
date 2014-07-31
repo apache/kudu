@@ -137,8 +137,7 @@ class LocalPeer : public PeerImpl {
 
     CHECK_OK(log_->Reserve(&ops[0], ops.size(), &reserved_entry_batch));
     CHECK_OK(log_->AsyncAppend(reserved_entry_batch,
-                               base::Bind(&LocalPeer::LogAppendCallback,
-                                          base::Unretained(this))));
+                               Bind(&LocalPeer::LogAppendCallback, Unretained(this))));
     return true;
   }
 

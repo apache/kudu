@@ -34,7 +34,6 @@ DEFINE_string(twitter_firehose_file, "/dev/fd/0",
               "File to read firehose data from, if 'file' is configured.");
 
 
-using base::FreeDeleter;
 using std::string;
 using std::tr1::shared_ptr;
 

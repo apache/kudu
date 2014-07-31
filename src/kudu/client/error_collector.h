@@ -18,7 +18,7 @@ class KuduInsert;
 
 namespace internal {
 
-class ErrorCollector : public base::RefCountedThreadSafe<ErrorCollector> {
+class ErrorCollector : public RefCountedThreadSafe<ErrorCollector> {
  public:
   ErrorCollector();
 
@@ -31,7 +31,7 @@ class ErrorCollector : public base::RefCountedThreadSafe<ErrorCollector> {
   void GetErrors(std::vector<KuduError*>* errors, bool* overflowed);
 
  private:
-  friend class base::RefCountedThreadSafe<ErrorCollector>;
+  friend class RefCountedThreadSafe<ErrorCollector>;
   virtual ~ErrorCollector();
 
   mutable simple_spinlock lock_;

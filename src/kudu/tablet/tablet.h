@@ -539,7 +539,7 @@ class Tablet::Iterator : public RowwiseIterator {
 // Structure which represents the components of the tablet's storage.
 // This structure is immutable -- a transaction can grab it and be sure
 // that it won't change.
-struct TabletComponents : public base::RefCountedThreadSafe<TabletComponents> {
+struct TabletComponents : public RefCountedThreadSafe<TabletComponents> {
   TabletComponents(const shared_ptr<MemRowSet>& mrs,
                    const shared_ptr<RowSetTree>& rs_tree);
   const shared_ptr<MemRowSet> memrowset;

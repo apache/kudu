@@ -30,7 +30,7 @@ Status GetLoggedInUser(string* user_name) {
     bufsize = 16384;    // Should be more than enough, per the man page.
   }
 
-  gscoped_ptr<char[], base::FreeDeleter> buf(static_cast<char *>(malloc(bufsize)));
+  gscoped_ptr<char[], FreeDeleter> buf(static_cast<char *>(malloc(bufsize)));
   if (buf.get() == NULL) {
     return Status::RuntimeError("Malloc failed", ErrnoToString(errno), errno);
   }

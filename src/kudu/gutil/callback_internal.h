@@ -5,8 +5,8 @@
 // This file contains utility functions and classes that help the
 // implementation, and management of the Callback objects.
 
-#ifndef BASE_CALLBACK_INTERNAL_H_
-#define BASE_CALLBACK_INTERNAL_H_
+#ifndef KUDU_GUTIL_CALLBACK_INTERNAL_H_
+#define KUDU_GUTIL_CALLBACK_INTERNAL_H_
 
 #include <stddef.h>
 
@@ -17,7 +17,7 @@
 template <typename T>
 class ScopedVector;
 
-namespace base {
+namespace kudu {
 namespace internal {
 
 // BindStateBase is used to provide an opaque handle that the Callback
@@ -72,13 +72,13 @@ class KUDU_EXPORT CallbackBase {
 // destructive way.
 template <typename T> struct IsMoveOnlyType {
   template <typename U>
-  static YesType Test(const typename U::MoveOnlyTypeForCPP03*);
+  static base::YesType Test(const typename U::MoveOnlyTypeForCPP03*);
 
   template <typename U>
-  static NoType Test(...);
+  static base::NoType Test(...);
 
-  static const bool value = sizeof(Test<T>(0)) == sizeof(YesType) &&
-                            !is_const<T>::value;
+  static const bool value = sizeof(Test<T>(0)) == sizeof(base::YesType) &&
+                            !base::is_const<T>::value;
 };
 
 // This is a typetraits object that's used to take an argument type, and
@@ -163,16 +163,16 @@ struct CallbackParamTraits<T, true> {
 // parameter to another callback. This is to support Callbacks that return
 // the movable-but-not-copyable types whitelisted above.
 template <typename T>
-typename enable_if<!IsMoveOnlyType<T>::value, T>::type& CallbackForward(T& t) {
+typename base::enable_if<!IsMoveOnlyType<T>::value, T>::type& CallbackForward(T& t) {
   return t;
 }
 
 template <typename T>
-typename enable_if<IsMoveOnlyType<T>::value, T>::type CallbackForward(T& t) {
+typename base::enable_if<IsMoveOnlyType<T>::value, T>::type CallbackForward(T& t) {
   return t.Pass();
 }
 
 }  // namespace internal
-}  // namespace base
+}  // namespace kudu
 
-#endif  // BASE_CALLBACK_INTERNAL_H_
+#endif  // KUDU_GUTIL_CALLBACK_INTERNAL_H_
