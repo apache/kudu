@@ -22,6 +22,7 @@
 #include "kudu/util/pb_util.h"
 #include "kudu/util/stopwatch.h"
 #include "kudu/util/subprocess.h"
+#include "kudu/util/test_util.h"
 
 using std::string;
 using std::tr1::shared_ptr;
@@ -70,23 +71,8 @@ Status ExternalMiniCluster::HandleOptions() {
 
   data_root_ = opts_.data_root;
   if (data_root_.empty()) {
-    // If they don't specify a data root, use the current gtest
-    // directory.
-    const ::testing::TestInfo* const test_info =
-      ::testing::UnitTest::GetInstance()->current_test_info();
-    if (!test_info) {
-      return Status::InvalidArgument("Must specify 'data_root' unless running in a gtest");
-    }
-    string dir;
-    CHECK_OK(Env::Default()->GetTestDirectory(&dir));
-
-    dir += Substitute(
-      "/$0.$1.$2",
-      StringReplace(test_info->test_case_name(), "/", "_", true).c_str(),
-      StringReplace(test_info->name(), "/", "_", true).c_str(),
-      Env::Default()->NowMicros());
-    ignore_result(Env::Default()->CreateDir(dir));
-    data_root_ = JoinPathSegments(dir, "minicluster-data");
+    // If they don't specify a data root, use the current gtest directory.
+    data_root_ = JoinPathSegments(GetTestDataDirectory(), "minicluster-data");
   }
 
   return Status::OK();

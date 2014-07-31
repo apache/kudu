@@ -10,7 +10,8 @@ target_link_libraries(integration-tests
   tserver
   master
   client
-  kudu_fs)
+  kudu_fs
+  kudu_test_util)
 add_dependencies(integration-tests
   kudu-tablet_server
   kudu-master)
