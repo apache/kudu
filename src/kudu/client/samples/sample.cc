@@ -105,16 +105,16 @@ static void StatusCB(const Status& status) {
 
 static Status InsertRows(scoped_refptr<KuduTable>& table, int num_rows) {
   shared_ptr<KuduSession> session = table->client()->NewSession();
-  RETURN_NOT_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
+  KUDU_RETURN_NOT_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
   session->SetTimeoutMillis(5000);
 
   for (int i = 0; i < num_rows; i++) {
     gscoped_ptr<KuduInsert> insert = table->NewInsert();
     KuduPartialRow* row = insert->mutable_row();
-    RETURN_NOT_OK(row->SetUInt32("key", i));
-    RETURN_NOT_OK(row->SetUInt32("integer_val", i * 2));
-    RETURN_NOT_OK(row->SetUInt32("non_null_with_default", i * 5));
-    RETURN_NOT_OK(session->Apply(insert.Pass()));
+    KUDU_RETURN_NOT_OK(row->SetUInt32("key", i));
+    KUDU_RETURN_NOT_OK(row->SetUInt32("integer_val", i * 2));
+    KUDU_RETURN_NOT_OK(row->SetUInt32("non_null_with_default", i * 5));
+    KUDU_RETURN_NOT_OK(session->Apply(insert.Pass()));
   }
   Status s = session->Flush();
   if (s.ok()) {
@@ -144,17 +144,17 @@ static Status ScanRows(scoped_refptr<KuduTable>& table) {
                                 &lower_bound, &upper_bound);
 
   KuduScanner scanner(table.get());
-  RETURN_NOT_OK(scanner.AddConjunctPredicate(pred));
-  RETURN_NOT_OK(scanner.Open());
+  KUDU_RETURN_NOT_OK(scanner.AddConjunctPredicate(pred));
+  KUDU_RETURN_NOT_OK(scanner.Open());
   vector<KuduRowResult> results;
   while (scanner.HasMoreRows()) {
-    RETURN_NOT_OK(scanner.NextBatch(&results));
+    KUDU_RETURN_NOT_OK(scanner.NextBatch(&results));
     for (vector<KuduRowResult>::iterator iter = results.begin();
         iter != results.end();
         iter++, lower_bound++) {
       const KuduRowResult& result = *iter;
       uint32_t val;
-      RETURN_NOT_OK(result.GetUInt32("key", &val));
+      KUDU_RETURN_NOT_OK(result.GetUInt32("key", &val));
       if (val != lower_bound) {
         stringstream out;
         out << "Scan returned the wrong results. Expected key "
@@ -178,7 +178,7 @@ int main(int argc, char* argv[]) {
 
   // Create and connect a client.
   shared_ptr<KuduClient> client;
-  CHECK_OK(CreateClient("127.0.0.1", &client));
+  KUDU_CHECK_OK(CreateClient("127.0.0.1", &client));
   LOG(INFO) << "Created a client connection";
 
   // Create a schema.
@@ -187,30 +187,30 @@ int main(int argc, char* argv[]) {
 
   // Create a table with that schema.
   bool exists;
-  CHECK_OK(DoesTableExist(client, kTableName, &exists));
+  KUDU_CHECK_OK(DoesTableExist(client, kTableName, &exists));
   if (exists) {
     client->DeleteTable(kTableName);
     LOG(INFO) << "Deleting old table before creating new one";
   }
-  CHECK_OK(CreateTable(client, kTableName, schema, 10));
+  KUDU_CHECK_OK(CreateTable(client, kTableName, schema, 10));
   LOG(INFO) << "Created a table";
 
   // Alter the table.
-  CHECK_OK(AlterTable(client, kTableName));
+  KUDU_CHECK_OK(AlterTable(client, kTableName));
   LOG(INFO) << "Altered a table";
 
   // Insert some rows into the table.
   scoped_refptr<KuduTable> table;
-  CHECK_OK(client->OpenTable(kTableName, &table));
-  CHECK_OK(InsertRows(table, 1000));
+  KUDU_CHECK_OK(client->OpenTable(kTableName, &table));
+  KUDU_CHECK_OK(InsertRows(table, 1000));
   LOG(INFO) << "Inserted some rows into a table";
 
   // Scan some rows.
-  CHECK_OK(ScanRows(table));
+  KUDU_CHECK_OK(ScanRows(table));
   LOG(INFO) << "Scanned some rows out of a table";
 
   // Delete the table.
-  CHECK_OK(client->DeleteTable(kTableName));
+  KUDU_CHECK_OK(client->DeleteTable(kTableName));
   LOG(INFO) << "Deleted a table";
 
   // Done!

@@ -19,14 +19,14 @@
 #include "kudu/util/slice.h"
 
 // Return the given status if it is not OK.
-#define RETURN_NOT_OK(s) do { \
+#define KUDU_RETURN_NOT_OK(s) do { \
     ::kudu::Status _s = (s); \
     if (PREDICT_FALSE(!_s.ok())) return _s;     \
   } while (0);
 
 // Return the given status if it is not OK, but first clone it and
 // prepend the given message.
-#define RETURN_NOT_OK_PREPEND(s, msg) do { \
+#define KUDU_RETURN_NOT_OK_PREPEND(s, msg) do { \
     ::kudu::Status _s = (s); \
     if (PREDICT_FALSE(!_s.ok())) return _s.CloneAndPrepend(msg); \
   } while (0);
@@ -34,31 +34,41 @@
 // Return 'to_return' if 'to_call' returns a bad status.
 // The substitution for 'to_return' may reference the variable
 // 's' for the bad status.
-#define RETURN_NOT_OK_RET(to_call, to_return) do { \
+#define KUDU_RETURN_NOT_OK_RET(to_call, to_return) do { \
     ::kudu::Status s = (to_call); \
     if (PREDICT_FALSE(!s.ok())) return (to_return);  \
   } while (0);
 
 // Emit a warning if 'to_call' returns a bad status.
-#define WARN_NOT_OK(to_call, warning_prefix) do { \
+#define KUDU_WARN_NOT_OK(to_call, warning_prefix) do { \
     ::kudu::Status _s = (to_call); \
     if (PREDICT_FALSE(!_s.ok())) { \
       LOG(WARNING) << (warning_prefix) << ": " << _s.ToString();  \
     } \
   } while (0);
 
-#define LOG_AND_RETURN(level, status) do { \
+#define KUDU_LOG_AND_RETURN(level, status) do { \
     ::kudu::Status _s = (status); \
     LOG(level) << _s.ToString(); \
     return _s; \
   } while (0);
 
-#define CHECK_OK_PREPEND(to_call, msg) do { \
+#define KUDU_CHECK_OK_PREPEND(to_call, msg) do { \
   ::kudu::Status _s = (to_call); \
   CHECK(_s.ok()) << (msg) << ": " << _s.ToString(); \
   } while (0);
 
-#define CHECK_OK(s) CHECK_OK_PREPEND(s, "Bad status")
+#define KUDU_CHECK_OK(s) KUDU_CHECK_OK_PREPEND(s, "Bad status")
+
+#ifdef KUDU_HEADERS_USE_SHORT_STATUS_MACROS
+#define RETURN_NOT_OK         KUDU_RETURN_NOT_OK
+#define RETURN_NOT_OK_PREPEND KUDU_RETURN_NOT_OK_PREPEND
+#define RETURN_NOT_OK_RET     KUDU_RETURN_NOT_OK_RET
+#define WARN_NOT_OK           KUDU_WARN_NOT_OK
+#define LOG_AND_RETURN        KUDU_LOG_AND_RETURN
+#define CHECK_OK_PREPEND      KUDU_CHECK_OK_PREPEND
+#define CHECK_OK              KUDU_CHECK_OK
+#endif
 
 namespace kudu {
 
