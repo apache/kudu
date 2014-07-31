@@ -181,6 +181,9 @@ class TabletMetadata : public RefCountedThreadSafe<TabletMetadata> {
   // and sets 'super_block' to it.
   Status ToSuperBlock(shared_ptr<TabletSuperBlockPB> *super_block);
 
+  // Fully replace a superblock (used for bootstrap).
+  Status ReplaceSuperBlock(const TabletSuperBlockPB &pb);
+
   // ==========================================================================
   // Stuff used by the tests
   // ==========================================================================
@@ -214,6 +217,10 @@ class TabletMetadata : public RefCountedThreadSafe<TabletMetadata> {
   Status LoadFromDisk();
 
   Status ReadSuperBlock(TabletSuperBlockPB *pb);
+
+  // Fully replace superblock.
+  // Calling thread must hold lock_.
+  Status ReplaceSuperBlockUnlocked(const TabletSuperBlockPB &pb);
 
   Status UpdateAndFlushUnlocked(const RowSetMetadataIds& to_remove,
                                 const RowSetMetadataVector& to_add,

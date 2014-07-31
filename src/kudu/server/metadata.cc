@@ -288,12 +288,27 @@ Status TabletMetadata::UpdateAndFlushUnlocked(
   shared_ptr<TabletSuperBlockPB> pb(new TabletSuperBlockPB());
   RETURN_NOT_OK(ToSuperBlockUnlocked(&pb, new_rowsets));
 
+  RETURN_NOT_OK(ReplaceSuperBlockUnlocked(*pb));
+  rowsets_ = new_rowsets;
+  if (super_block != NULL) {
+    super_block->swap(pb);
+  }
+  TRACE("Metadata flushed");
+  return Status::OK();
+}
+
+Status TabletMetadata::ReplaceSuperBlock(const TabletSuperBlockPB &pb) {
+  boost::lock_guard<LockType> l(lock_);
+  return ReplaceSuperBlockUnlocked(pb);
+}
+
+Status TabletMetadata::ReplaceSuperBlockUnlocked(const TabletSuperBlockPB &pb) {
   // Flush
   BlockId a_blk(master_block_.block_a());
   BlockId b_blk(master_block_.block_b());
   if (sblk_sequence_ & 1) {
     TRACE("Writing metadata block");
-    RETURN_NOT_OK(fs_manager_->WriteMetadataBlock(a_blk, *(pb.get())));
+    RETURN_NOT_OK(fs_manager_->WriteMetadataBlock(a_blk, pb));
     TRACE("Deleting old metadata block");
     Status s = fs_manager_->DeleteBlock(b_blk);
     if (!s.ok() && !s.IsNotFound()) {
@@ -302,7 +317,7 @@ Status TabletMetadata::UpdateAndFlushUnlocked(
     }
   } else {
     TRACE("Writing metadata block");
-    RETURN_NOT_OK(fs_manager_->WriteMetadataBlock(b_blk, *(pb.get())));
+    RETURN_NOT_OK(fs_manager_->WriteMetadataBlock(b_blk, pb));
     TRACE("Deleting old metadata block");
     Status s = fs_manager_->DeleteBlock(a_blk);
     if (!s.ok() && !s.IsNotFound()) {
@@ -312,11 +327,6 @@ Status TabletMetadata::UpdateAndFlushUnlocked(
   }
 
   sblk_sequence_++;
-  rowsets_ = new_rowsets;
-  if (super_block != NULL) {
-    super_block->swap(pb);
-  }
-  TRACE("Metadata flushed");
   return Status::OK();
 }
 
