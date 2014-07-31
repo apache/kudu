@@ -125,6 +125,10 @@ build_kudu() {
   # Build thirdparty
   thirdparty/build-if-necessary.sh
 
+  # PATH=<thirdparty_stuff>:<toolchain_stuff>:$PATH
+  export PATH=$BASE_DIR/thirdparty/installed/bin:$PATH
+  export PPROF_PATH=$BASE_DIR/thirdparty/installed/bin/pprof
+
   # Build Kudu
   rm -rf CMakeCache.txt CMakeFiles
 
@@ -537,9 +541,6 @@ fi
 # Set up environment.
 ulimit -m $[3000*1000]
 ulimit -c unlimited   # gather core dumps
-
-export PATH=$BASE_DIR/thirdparty/installed/bin:$PATH
-export PPROF_PATH=$BASE_DIR/thirdparty/installed/bin/pprof
 
 # Create output directories if needed.
 [ -d "$LOGDIR" ] || mkdir -p "$LOGDIR"
