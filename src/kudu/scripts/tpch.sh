@@ -45,7 +45,7 @@ NUM_PROCS=$(cat /proc/cpuinfo | grep processor | wc -l)
 make -j${NUM_PROCS} 2>&1 | tee build.log
 
 export TBL_PATH=/home/jdcryans/lineitem.tbl
-export SCRIPT_PATH=src/scripts/write-jobs-stats-to-mysql.py
+export SCRIPT_PATH=src/kudu/scripts/write-jobs-stats-to-mysql.py
 
 # warming up the OS buffer
 cat $TBL_PATH > /dev/null
