@@ -656,21 +656,21 @@ class PosixEnv : public Env {
   virtual Status NewRandomAccessFile(const std::string& fname,
                                      RandomAccessFile** result) OVERRIDE {
     *result = NULL;
-    Status s;
+    uint64_t file_size;
+    RETURN_NOT_OK_PREPEND(GetFileSize(fname, &file_size),
+                          Substitute("Unable to get size of file $0", fname));
     int fd = open(fname.c_str(), O_RDONLY);
     if (fd < 0) {
-      s = IOError(fname, errno);
-    } else if (sizeof(void*) >= 8) {
+      return IOError(fname, errno);
+    }
+    Status s = Status::OK();
+    if (file_size > 0 && sizeof(void*) >= 8) {
       // Use mmap when virtual address-space is plentiful.
-      uint64_t size;
-      s = GetFileSize(fname, &size);
-      if (s.ok()) {
-        void* base = mmap(NULL, size, PROT_READ, MAP_SHARED, fd, 0);
-        if (base != MAP_FAILED) {
-          *result = new PosixMmapReadableFile(fname, base, size);
-        } else {
-          s = IOError(fname, errno);
-        }
+      void* base = mmap(NULL, file_size, PROT_READ, MAP_SHARED, fd, 0);
+      if (base != MAP_FAILED) {
+        *result = new PosixMmapReadableFile(fname, base, file_size);
+      } else {
+        s = IOError(Substitute("mmap() failed on file $0", fname), errno);
       }
       close(fd);
     } else {

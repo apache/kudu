@@ -12,6 +12,7 @@
 
 #include "kudu/gutil/strings/util.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/util/path_util.h"
 #include "kudu/util/stopwatch.h"
 #include "kudu/util/status.h"
 #include "kudu/util/test_util.h"
@@ -321,8 +322,8 @@ class ShortReadRandomAccessFile : public RandomAccessFile {
   const shared_ptr<RandomAccessFile> wrapped_;
 };
 
+// Write 'size' bytes of data to a file, with a simple pattern stored in it.
 static void WriteTestFile(Env* env, const string& path, size_t size) {
-  // Write 64KB of data to a file, with a simple pattern stored in it.
   shared_ptr<WritableFile> wf;
   ASSERT_STATUS_OK(env_util::OpenFileForWrite(env, path, &wf));
   faststring data;
@@ -382,6 +383,18 @@ TEST_F(TestEnv, TestGetExecutablePath) {
   string p;
   ASSERT_STATUS_OK(Env::Default()->GetExecutablePath(&p));
   ASSERT_TRUE(HasSuffixString(p, "env-test")) << p;
+}
+
+TEST_F(TestEnv, TestOpenEmptyRandomAccessFile) {
+  Env* env = Env::Default();
+  string test_file = JoinPathSegments(GetTestDataDirectory(), "test_file");
+  ASSERT_NO_FATAL_FAILURE(WriteTestFile(env, test_file, 0));
+  RandomAccessFile* readable_file;
+  ASSERT_OK(env->NewRandomAccessFile(test_file, &readable_file));
+  shared_ptr<RandomAccessFile> deleter(readable_file);
+  uint64_t size;
+  ASSERT_OK(readable_file->Size(&size));
+  ASSERT_EQ(0, size);
 }
 
 }  // namespace kudu
