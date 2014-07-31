@@ -38,7 +38,7 @@ target_link_libraries(master
   rpc_header_proto)
 
 # Tests
-set(KUDU_TEST_LINK_LIBS master master_proto client ${KUDU_MIN_TEST_LIBS})
+set(KUDU_TEST_LINK_LIBS master master_proto kudu_client ${KUDU_MIN_TEST_LIBS})
 ADD_KUDU_TEST(catalog_manager-test)
 ADD_KUDU_TEST(master-test RESOURCE_LOCK "master-web-port")
 ADD_KUDU_TEST(sys_tables-test RESOURCE_LOCK "master-web-port")

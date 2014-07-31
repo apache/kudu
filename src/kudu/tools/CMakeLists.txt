@@ -1,7 +1,7 @@
 # Copyright (c) 2014, Cloudera, inc.
 
 set(LINK_LIBS
-  client
+  kudu_client
   log
   consensus
   tserver

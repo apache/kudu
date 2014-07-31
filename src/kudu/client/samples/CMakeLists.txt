@@ -4,8 +4,8 @@
 
 cmake_minimum_required(VERSION 2.8)
 
-find_package(client REQUIRED)
-include_directories(${CLIENT_INCLUDE_DIR})
+find_package(kuduClient REQUIRED)
+include_directories(${KUDU_CLIENT_INCLUDE_DIR})
 
 add_executable(sample sample.cc)
-target_link_libraries(sample client)
+target_link_libraries(sample kudu_client)

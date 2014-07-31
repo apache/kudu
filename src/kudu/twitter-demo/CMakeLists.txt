@@ -21,7 +21,7 @@ else()
   endif()
 
   target_link_libraries(twitter_demo
-    client
+    kudu_client
     ${LIBOAUTH_LIBRARY}
     ${CURL_LIBRARIES}
     ${KUDU_BASE_LIBS})

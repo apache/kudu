@@ -6,7 +6,7 @@ set(TPCH_SRCS
 
 add_library(tpch ${TPCH_SRCS})
 target_link_libraries(tpch
-  client
+  kudu_client
   integration-tests)
 
 # tpch1
@@ -18,7 +18,7 @@ target_link_libraries(tpch1
 # ms3_demo
 add_executable(ms3_demo tpch/ms3_demo.cc tpch/rpc_line_item_dao.cc)
 target_link_libraries(ms3_demo
-  client
+  kudu_client
   tpch
   ${KUDU_TEST_LINK_LIBS})
 

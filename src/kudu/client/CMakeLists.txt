@@ -29,7 +29,7 @@ if (KUDU_EXPORTED_CLIENT)
   set(CLIENT_LIBS_VISIBILITY "LINK_PRIVATE")
 endif()
 
-add_library(client ${CLIENT_LINKAGE} ${CLIENT_SRCS})
+add_library(kudu_client ${CLIENT_LINKAGE} ${CLIENT_SRCS})
 set(CLIENT_LIBS
   kudu_common
   master_proto
@@ -42,13 +42,13 @@ set(CLIENT_LIBS
 
 if (KUDU_EXPORTED_CLIENT)
   # Hide symbols using a linker version script.
-  set_target_properties(client
+  set_target_properties(kudu_client
     PROPERTIES LINK_FLAGS -Wl,--version-script=symbols.map)
 endif()
-target_link_libraries(client ${CLIENT_LIBS_VISIBILITY} ${CLIENT_LIBS})
+target_link_libraries(kudu_client ${CLIENT_LIBS_VISIBILITY} ${CLIENT_LIBS})
 
 # Generate kudu_export.h.
-generate_export_header(client
+generate_export_header(kudu_client
   BASE_NAME kudu
   EXPORT_FILE_NAME ${CMAKE_SOURCE_DIR}/src/kudu/gutil/kudu_export.h)
 
@@ -59,8 +59,8 @@ if (KUDU_EXPORTED_CLIENT)
   include(GNUInstallDirs)
 
   # Shared library.
-  install(TARGETS client
-    EXPORT kudu_client
+  install(TARGETS kudu_client
+    EXPORT kudu_client_export_set
     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR})
 
   # Headers: gutil
@@ -153,31 +153,32 @@ if (KUDU_EXPORTED_CLIENT)
   install(FILES
     samples/CMakeLists.txt
     samples/sample.cc
-    DESTINATION ${CMAKE_INSTALL_DATADIR}/doc/client/samples)
+    DESTINATION ${CMAKE_INSTALL_DATADIR}/doc/kuduClient/samples)
 
   # Exported cmake file for just the library's targets.
   #
   # Should not be included directly by users.
-  install(EXPORT kudu_client
-    FILE clientTargets.cmake
-    DESTINATION ${CMAKE_INSTALL_DATADIR}/client/cmake)
+  install(EXPORT kudu_client_export_set
+    FILE kuduClientTargets.cmake
+    DESTINATION ${CMAKE_INSTALL_DATADIR}/kuduClient/cmake)
 
   # Exported cmake file for the library.
   #
   # This is the main entry point and should be included directly.
   include(CMakePackageConfigHelpers)
   configure_package_config_file(clientConfig.cmake.in ${CMAKE_CURRENT_BINARY_DIR}/clientConfig.cmake
-    INSTALL_DESTINATION ${CMAKE_INSTALL_DATADIR}/client/cmake
+    INSTALL_DESTINATION ${CMAKE_INSTALL_DATADIR}/kuduClient/cmake
     PATH_VARS CMAKE_INSTALL_INCLUDEDIR)
   install(FILES
     ${CMAKE_CURRENT_BINARY_DIR}/clientConfig.cmake
-    DESTINATION ${CMAKE_INSTALL_DATADIR}/client/cmake)
+    DESTINATION ${CMAKE_INSTALL_DATADIR}/kuduClient/cmake
+    RENAME kuduClientConfig.cmake)
 endif()
 
 # Tests
 
 # Can't be used with the exported client; it references hidden symbols.
 if (NOT KUDU_EXPORTED_CLIENT)
-  set(KUDU_TEST_LINK_LIBS client integration-tests ${KUDU_MIN_TEST_LIBS})
+  set(KUDU_TEST_LINK_LIBS kudu_client integration-tests ${KUDU_MIN_TEST_LIBS})
   ADD_KUDU_TEST(client-test)
 endif()

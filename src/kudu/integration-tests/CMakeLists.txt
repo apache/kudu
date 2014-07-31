@@ -9,7 +9,7 @@ add_library(integration-tests ${INTEGRATION_TESTS_SRCS})
 target_link_libraries(integration-tests
   tserver
   master
-  client
+  kudu_client
   kudu_fs
   kudu_test_util)
 add_dependencies(integration-tests
@@ -31,5 +31,5 @@ ADD_KUDU_TEST(external_mini_cluster-test)
 ADD_KUDU_TEST(linked_list-test)
 
 # Some tests have additional dependencies
-set(KUDU_TEST_LINK_LIBS client ${KUDU_TEST_LINK_LIBS})
+set(KUDU_TEST_LINK_LIBS kudu_client ${KUDU_TEST_LINK_LIBS})
 ADD_KUDU_TEST(full_stack-insert-scan-test)
