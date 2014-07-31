@@ -386,8 +386,8 @@ Status RaftConsensus::Update(const ConsensusRequestPB* request,
 
   if (PREDICT_FALSE(VLOG_IS_ON(1))) {
     if (request->ops_size() == 0) {
-      VLOG_WITH_PREFIX(1) <<  "Replica replied to status only request. Replica: "
-          << state_->ToString() << " Status: " << status->ShortDebugString();
+      VLOG(1) << state_->LogPrefix() << "Replica replied to status only request. Replica: "
+              << state_->ToString() << " Status: " << status->ShortDebugString();
     }
   }
   RETURN_NOT_OK(ExecuteHook(POST_UPDATE));
