@@ -785,10 +785,6 @@ Status TabletBootstrap::PlayWriteRequest(OperationPB* replicate_op,
                                     commit_op.commit().result()));
   }
 
-  Timestamp safe_timestamp;
-  safe_timestamp.FromUint64(commit_op.commit().safe_timestamp());
-  tablet_->mvcc_manager()->OfflineAdjustSafeTime(safe_timestamp);
-
   // Append the commit msg to the log but replace the result with the new one
   LogEntryPB commit_entry;
   commit_entry.set_type(OPERATION);
