@@ -21,7 +21,6 @@
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/stringprintf.h"
-#include "kudu/server/clock.h"
 #include "kudu/server/metadata.h"
 #include "kudu/tablet/transactions/write_util.h"
 #include "kudu/tserver/tserver.pb.h"
@@ -149,8 +148,7 @@ class LogTestBase : public KuduTest {
 
   // Append a commit log entry containing one entry for the insert and one
   // for the mutate.
-  void AppendCommit(int index, int original_op_index, Timestamp timestamp,
-                    bool sync = APPEND_SYNC) {
+  void AppendCommit(int index, int original_op_index, bool sync = APPEND_SYNC) {
     // The mrs id for the insert.
     const int kTargetMrsId = 1;
 
@@ -158,24 +156,18 @@ class LogTestBase : public KuduTest {
     const int kTargetRsId = 0;
     const int kTargetDeltaId = 0;
 
-    AppendCommit(index,
-                 original_op_index,
-                 kTargetMrsId,
-                 kTargetRsId,
-                 kTargetDeltaId,
-                 timestamp,
-                 sync);
+    AppendCommit(index, original_op_index, kTargetMrsId, kTargetRsId, kTargetDeltaId, sync);
   }
 
   void AppendCommit(int index, int original_op_index, int mrs_id, int rs_id, int dms_id,
-                    Timestamp timestamp, bool sync = APPEND_SYNC) {
+                    bool sync = APPEND_SYNC) {
     LogEntryPB log_entry;
     log_entry.set_type(OPERATION);
     OperationPB* operation = log_entry.mutable_operation();
 
     CommitMsg* commit = operation->mutable_commit();
     commit->set_op_type(WRITE_OP);
-    commit->set_timestamp(timestamp.value());
+    commit->set_timestamp(Timestamp(original_op_index).ToUint64());
 
     OpId* original_op_id = commit->mutable_commited_op_id();
     original_op_id->set_term(0);
@@ -213,12 +205,10 @@ class LogTestBase : public KuduTest {
   }
 
     // Appends 'count' ReplicateMsgs and the corresponding CommitMsgs to the log
-  void AppendReplicateBatchAndCommitEntryPairsToLog(int count,
-                                                    const scoped_refptr<server::Clock>& clock,
-                                                    bool sync = true) {
+  void AppendReplicateBatchAndCommitEntryPairsToLog(int count, bool sync = true) {
     for (int i = 0; i < count; i++) {
       AppendReplicateBatch(current_id_);
-      AppendCommit(current_id_ + 1, current_id_, clock->Now());
+      AppendCommit(current_id_ + 1, current_id_);
       current_id_ += 2;
     }
   }

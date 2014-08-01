@@ -24,8 +24,6 @@
 #include "kudu/util/stopwatch.h"
 
 DECLARE_int32(heartbeat_interval_ms);
-DECLARE_bool(use_hybrid_clock);
-DECLARE_int32(max_clock_sync_error_usec);
 
 namespace kudu {
 
@@ -51,13 +49,6 @@ class RegistrationTest : public KuduTest {
     FLAGS_heartbeat_interval_ms = 10;
 
     KuduTest::SetUp();
-
-    // Use the hybrid clock for TS tests
-    FLAGS_use_hybrid_clock = true;
-
-    // increase the max error tolerance, for tests, to 10 seconds.
-    FLAGS_max_clock_sync_error_usec = 10000000;
-
 
     cluster_.reset(new MiniCluster(env_.get(), test_dir_, 1));
     ASSERT_STATUS_OK(cluster_->Start());

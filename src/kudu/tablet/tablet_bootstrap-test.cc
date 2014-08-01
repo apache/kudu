@@ -35,8 +35,6 @@ using server::LogicalClock;
 
 class BootstrapTest : public LogTestBase {
  protected:
-  BootstrapTest()
-    : clock_(LogicalClock::CreateStartingAt(Timestamp::kInitialTimestamp)) {}
 
   void SetUp() OVERRIDE {
     LogTestBase::SetUp();
@@ -78,7 +76,7 @@ class BootstrapTest : public LogTestBase {
     // Now attempt to recover the log
     RETURN_NOT_OK(BootstrapTablet(
         meta,
-        clock_,
+        scoped_refptr<Clock>(LogicalClock::CreateStartingAt(Timestamp::kInitialTimestamp)),
         NULL,
         listener.get(),
         tablet,
@@ -107,7 +105,6 @@ class BootstrapTest : public LogTestBase {
   }
 
   TabletMasterBlockPB master_block_;
-  scoped_refptr<Clock> clock_;
 };
 
 // Tests a normal bootstrap scenario
@@ -117,7 +114,7 @@ TEST_F(BootstrapTest, TestBootstrap) {
   AppendReplicateBatch(current_id_);
   ASSERT_STATUS_OK(RollLog());
 
-  AppendCommit(current_id_ + 1, current_id_, clock_->Now());
+  AppendCommit(current_id_ + 1, current_id_);
 
   shared_ptr<Tablet> tablet;
   ConsensusBootstrapInfo boot_info;
@@ -147,7 +144,7 @@ TEST_F(BootstrapTest, TestOrphanCommit) {
   ASSERT_STATUS_OK(RollLog());
 
   // Step 2) Write the corresponding COMMIT in the second segment.
-  AppendCommit(current_id_ + 1, current_id_, clock_->Now());
+  AppendCommit(current_id_ + 1, current_id_);
 
   shared_ptr<Tablet> tablet;
   ConsensusBootstrapInfo boot_info;
@@ -163,8 +160,7 @@ TEST_F(BootstrapTest, TestOrphanCommit) {
   // Step 4) Create an orphanned commit by first adding a commit to
   // the newly rolled logfile, and then by removing the previous
   // commits.
-  AppendCommit(current_id_ + 1, current_id_, clock_->Now());
-
+  AppendCommit(current_id_ + 1, current_id_);
   ReadableLogSegmentMap segments;
   log_->GetReadableLogSegments(&segments);
   fs_manager_->env()->DeleteFile(segments.begin()->second->path());
@@ -195,7 +191,7 @@ TEST_F(BootstrapTest, TestNonOrphansAfterOrphanCommit) {
   AppendReplicateBatch(current_id_);
   ASSERT_STATUS_OK(RollLog());
 
-  AppendCommit(current_id_ + 1, current_id_, clock_->Now());
+  AppendCommit(current_id_ + 1, current_id_);
 
   ReadableLogSegmentMap segments;
   log_->GetReadableLogSegments(&segments);
@@ -204,7 +200,7 @@ TEST_F(BootstrapTest, TestNonOrphansAfterOrphanCommit) {
   current_id_ += 2;
 
   AppendReplicateBatch(current_id_);
-  AppendCommit(current_id_ + 1, current_id_, 2, 1, 0, clock_->Now());
+  AppendCommit(current_id_ + 1, current_id_, 2, 1, 0);
 
   shared_ptr<Tablet> tablet;
   ConsensusBootstrapInfo boot_info;
