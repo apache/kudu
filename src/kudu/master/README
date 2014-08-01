@@ -169,3 +169,55 @@ will send an AlterTable request to that TS at that time.
 When the Master first comes online after being restarted, a full tablet report
 will be requested from each TS, and the tablet schema version sent on the next
 heartbeat will be used to determine if a given TS needs an AlterTable() call.
+
+============================================================
+Heartbeats and TSManager
+============================================================
+
+Heartbeats are sent by the TS to the master. Per master.proto, a
+heartbeat contains:
+
+1. Node instance information: permanent uuid, node sequence number
+(which is incremented each time the node is started).
+
+2. (Optional) registration. Sent either at TS startup or if the master
+responded to a previous heartbeat with "needs register" (see
+'Handling heartbeats' below for an explanation of when this response
+will be sent).
+
+3. (Optional) tablet report. Sent either when tablet information has
+changed, or if the master responded to a previous heartbeat with
+"needs a full tablet report" (see "Handling heartbeats" below for an
+explanation of when this response will be sent).
+
+Handling heartbeats
+-------------------
+
+Upon receiving a heartbeat from a TS, the master will:
+
+1) Check if the heartbeat has registration info. If so, register
+the TS instance with TSManager (see "TSManager" below for more
+details).
+
+2) Retrieve a TSDescriptor from TSManager. If the TSDescriptor
+is not found, reply to the TS with "need re-register" field set to
+true, and return early.
+
+3) Update the heartbeat time (see "TSManager" below) in the
+registration object.
+
+4) If the heartbeat contains a tablet report, the Catalog Manager will
+process the report and update its cache as well as the system tables
+(see "Catalog Manager" above). Otherwise, the master will respond to
+the TS requesting a full tablet report.
+
+5) Send a success respond to the TS.
+
+TSManager
+---------
+
+TSManager provides in-memory storage for information sent by the
+tablet server to the master (tablet servers that have been heard from,
+heartbeats, tablet reports, etc...). The information is stored in a
+map, where the key is the permanent uuid of a tablet server and the
+value is (a pointer to) a TSDescriptor.
