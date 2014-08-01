@@ -129,14 +129,12 @@ Status RaftConsensus::CreateOrUpdatePeersUnlocked() {
                             "Could not obtain a remote proxy to the peer.");
 
       gscoped_ptr<Peer> remote_peer;
-      RETURN_NOT_OK(
-          Peer::NewRemotePeer(peer_pb,
-                              state_->GetOptions().tablet_id,
-                              state_->GetPeerUuid(),
-                              &queue_,
-                              peer_proxy.Pass(),
-                              state_->GetReplicaTransactionFactory(),
-                              &remote_peer))
+      RETURN_NOT_OK(Peer::NewRemotePeer(peer_pb,
+                                        state_->GetOptions().tablet_id,
+                                        state_->GetPeerUuid(),
+                                        &queue_,
+                                        peer_proxy.Pass(),
+                                        &remote_peer))
       peers_.insert(pair<string, Peer*>(peer_pb.permanent_uuid(), remote_peer.release()));
     }
   }
@@ -392,12 +390,6 @@ Status RaftConsensus::Update(const ConsensusRequestPB* request,
           << state_->ToString() << " Status: " << status->ShortDebugString();
     }
   }
-
-  // If there is a batch-level safe timestamp, use it.
-  if (request->has_safe_timestamp()) {
-    state_->UpdateSafeTimestamp(request->safe_timestamp());
-  }
-
   RETURN_NOT_OK(ExecuteHook(POST_UPDATE));
   return Status::OK();
 }

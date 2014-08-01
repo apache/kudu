@@ -403,15 +403,6 @@ Status TabletPeer::StartReplicaTransaction(gscoped_ptr<ConsensusRound> round) {
   return Status::OK();
 }
 
-Timestamp TabletPeer::GetSafeTimestamp() {
-  DCHECK(CheckRunning().ok());
-  return tablet_->mvcc_manager()->GetSafeTime();
-}
-
-void TabletPeer::UpdateSafeTimestamp(Timestamp timestamp) {
-  DCHECK(CheckRunning().ok());
-  tablet_->mvcc_manager()->OfflineAdjustSafeTime(timestamp);
-}
 
 
 void TabletPeer::NewLeaderTransactionDriver(Transaction* transaction,

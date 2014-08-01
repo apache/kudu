@@ -117,8 +117,6 @@ class ReplicaState {
 
   const metadata::QuorumPB& GetCurrentConfigUnlocked() const;
 
-  ReplicaTransactionFactory* GetReplicaTransactionFactory() const;
-
   void IncrementConfigSeqNoUnlocked();
 
   // Returns the current majority count.
@@ -142,10 +140,6 @@ class ReplicaState {
 
   // Triggers a Apply() in the bound 'replica_operation_factory_'..
   Status TriggerApplyUnlocked(gscoped_ptr<OperationPB> leader_commit_op);
-
-  // Updates a FOLLOWER/LEARNER's safe timestamp with the LEADER's
-  // latest safe timestamp.
-  void UpdateSafeTimestamp(uint64_t safe_timestamp);
 
   // Updates the last replicated operation.
   // This must be called under a lock and triggers the replication callbacks

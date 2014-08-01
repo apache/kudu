@@ -6,7 +6,6 @@
 #include <string>
 #include <tr1/memory>
 
-#include "kudu/common/timestamp.h"
 #include "kudu/rpc/response_callback.h"
 #include "kudu/server/metadata.pb.h"
 #include "kudu/util/locks.h"
@@ -38,7 +37,6 @@ class OpId;
 class PeerProxy;
 class PeerImpl;
 class PeerMessageQueue;
-class ReplicaTransactionFactory;
 
 // A peer in consensus (local or remote).
 //
@@ -134,7 +132,6 @@ class Peer {
                               const std::string& leader_uuid,
                               PeerMessageQueue* queue,
                               gscoped_ptr<PeerProxy> proxy,
-                              ReplicaTransactionFactory* txn_factory,
                               gscoped_ptr<Peer>* peer);
 
  protected:
@@ -151,7 +148,6 @@ class Peer {
        const std::string& tablet_id,
        const std::string& leader_uuid,
        PeerMessageQueue* queue,
-       ReplicaTransactionFactory* txn_factory,
        gscoped_ptr<PeerProxy> proxy);
 
   metadata::QuorumPeerPB peer_pb_;
@@ -170,8 +166,6 @@ class Peer {
   // whenever we go more than 'FLAGS_leader_heartbeat_interval_ms'
   // without sending actual data.
   gscoped_ptr<ResettableHeartbeater> heartbeater_;
-
-  ReplicaTransactionFactory* txn_factory_;
 
   enum State {
     kPeerCreated,

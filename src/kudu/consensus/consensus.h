@@ -13,7 +13,6 @@
 #include "kudu/util/task_executor.h"
 
 namespace kudu {
-class Timestamp;
 
 namespace server {
 class Clock;
@@ -287,15 +286,6 @@ class ReplicaCommitContinuation {
 class ReplicaTransactionFactory {
  public:
   virtual Status StartReplicaTransaction(gscoped_ptr<ConsensusRound> context) = 0;
-
-  // Updates the replica transaction factory with the latest safe timestamp
-  // received from the LEADER.
-  virtual void UpdateSafeTimestamp(Timestamp timestamp) = 0;
-
-  // Fetches the latest safe timestamp from the ReplicaTransactionFactory. Usually
-  // used when the leader needs to send status-only message to replicas.
-  virtual Timestamp GetSafeTimestamp() = 0;
-
   virtual ~ReplicaTransactionFactory() {}
 };
 

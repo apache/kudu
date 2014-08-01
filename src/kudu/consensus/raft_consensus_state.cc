@@ -3,7 +3,6 @@
 #include <algorithm>
 #include <boost/foreach.hpp>
 
-#include "kudu/common/timestamp.h"
 #include "kudu/consensus/raft_consensus_state.h"
 #include "kudu/consensus/log_util.h"
 #include "kudu/gutil/map-util.h"
@@ -205,10 +204,6 @@ int ReplicaState::GetAllPeersCountUnlocked() const {
   return current_quorum_.peers_size();
 }
 
-ReplicaTransactionFactory* ReplicaState::GetReplicaTransactionFactory() const {
-  return txn_factory_;
-}
-
 const string& ReplicaState::GetPeerUuid() const {
   return peer_uuid_;
 }
@@ -279,13 +274,6 @@ Status ReplicaState::TriggerApplyUnlocked(gscoped_ptr<OperationPB> leader_commit
       leader_commit_op.Pass()));
   return Status::OK();
 }
-
-void ReplicaState::UpdateSafeTimestamp(uint64_t safe_timestamp) {
-  Timestamp timestamp;
-  timestamp.FromUint64(safe_timestamp);
-  txn_factory_->UpdateSafeTimestamp(timestamp);
-}
-
 
 void ReplicaState::UpdateLastReplicatedOpIdUnlocked(const OpId& op_id) {
   DCHECK(update_lock_.is_locked());
