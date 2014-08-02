@@ -12,6 +12,9 @@
 # be retried on failure up to the specified number of times. This can be
 # used in the gerrit workflow to prevent annoying false -1s caused by
 # tests that are known to be flaky in master.
+#
+# If KUDU_REPORT_TEST_RESULTS is non-zero, then tests are reported to the
+# central test server.
 
 ME=$(dirname $BASH_SOURCE)
 ROOT=$(readlink -f $ME/..)
@@ -93,6 +96,21 @@ for ATTEMPT_NUMBER in $(seq 1 $TEST_EXECUTION_ATTEMPTS) ; do
   if zgrep --silent "ThreadSanitizer" $LOGFILE ; then
     echo ThreadSanitizer failures in $LOGFILE
     STATUS=1
+  fi
+
+  if [ -n "$KUDU_REPORT_TEST_RESULTS" ]; then
+    echo reporting results
+    $ROOT/build-support/report-test.sh "$TEST_EXECUTABLE" "$LOGFILE" "$STATUS" &
+
+    # On success, we'll do "best effort" reporting, and disown the subprocess.
+    # On failure, we want to upload the failed test log. So, in that case,
+    # wait for the report-test.sh job to finish, lest we accidentally run
+    # a test retry and upload the wrong log.
+    if [ "$STATUS" -eq "0" ]; then
+      disown
+    else
+      wait
+    fi
   fi
 
   if [ "$STATUS" -eq "0" ]; then
