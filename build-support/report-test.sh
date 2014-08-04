@@ -27,9 +27,9 @@ STATUS=$3
 TEST_RESULT_SERVER=${TEST_RESULT_SERVER:-localhost:8080}
 REPORT_TIMEOUT=${REPORT_TIMEOUT:-10}
 
-# On Jenkins, we'll have a BUILD_ID variable set. Otherwise,
+# On Jenkins, we'll have this variable set. Otherwise,
 # report the build ID as non-jenkins.
-BUILD_ID=${BUILD_ID:-non-jenkins}
+BUILD_ID=${BUILD_TAG:-non-jenkins}
 
 # Figure out the current git revision, and append a "-dirty" tag if it's
 # not a pristine checkout
@@ -43,7 +43,7 @@ fi
 # sanitizers
 
 CMAKECACHE=$ROOT/CMakeCache.txt
-BUILD_CONFIG=$(grep BUILD_TYPE $CMAKECACHE | cut -f 2 -d=)
+BUILD_CONFIG=$(grep '^CMAKE_BUILD_TYPE:' $CMAKECACHE | cut -f 2 -d=)
 if grep -q "KUDU_USE_ASAN:UNINITIALIZED=1" $CMAKECACHE ; then
   BUILD_CONFIG="$BUILD_CONFIG asan"
 fi
