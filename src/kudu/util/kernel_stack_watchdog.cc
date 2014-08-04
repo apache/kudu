@@ -52,16 +52,12 @@ void KernelStackWatchdog::StopWatching(pid_t pid) {
 }
 
 void KernelStackWatchdog::RunThread() {
-  MonoTime next_check_time = MonoTime::Now(MonoTime::FINE);
+  MonoDelta delta = MonoDelta::FromMilliseconds(FLAGS_hung_kernel_task_check_interval_ms);
   while (true) {
-    if (finish_.WaitUntil(next_check_time)) {
+    if (finish_.WaitFor(delta)) {
       // Watchdog exiting.
       break;
     }
-    MonoTime now = MonoTime::Now(MonoTime::FINE);
-    next_check_time = now;
-    next_check_time.AddDelta(MonoDelta::FromMilliseconds(
-                               FLAGS_hung_kernel_task_check_interval_ms));
 
     PidMap pids;
     {
@@ -73,6 +69,7 @@ void KernelStackWatchdog::RunThread() {
       pid_t p = map_entry.first;
       const Entry& e = map_entry.second;
 
+      MonoTime now = MonoTime::Now(MonoTime::FINE);
       int paused_ms = now.GetDeltaSince(e.registered_time).ToMilliseconds();
       if (paused_ms > FLAGS_hung_kernel_task_threshold_ms) {
         faststring ret;

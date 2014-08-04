@@ -265,9 +265,7 @@ void Heartbeater::Thread::RunThread() {
   last_hb_response_.set_needs_full_tablet_report(true);
 
   while (true) {
-    MonoTime next_heartbeat = MonoTime::Now(MonoTime::FINE);
-    next_heartbeat.AddDelta(MonoDelta::FromMilliseconds(GetMillisUntilNextHeartbeat()));
-    if (run_latch_.WaitUntil(next_heartbeat)) {
+    if (run_latch_.WaitFor(MonoDelta::FromMilliseconds(GetMillisUntilNextHeartbeat()))) {
       // Latch fired -- exit loop
       VLOG(1) << "Heartbeat thread finished";
       return;

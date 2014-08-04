@@ -60,11 +60,15 @@ void ConditionVariable::Wait() {
 
 bool ConditionVariable::TimedWait(const MonoDelta& max_time) {
   base::ThreadRestrictions::AssertWaitAllowed();
-  int64 usecs = max_time.ToMicroseconds();
+
+  // Negative delta means we've already timed out.
+  int64 nsecs = max_time.ToNanoseconds();
+  if (nsecs < 0) {
+    return false;
+  }
+
   struct timespec relative_time;
-  relative_time.tv_sec = usecs / MonoTime::kMicrosecondsPerSecond;
-  relative_time.tv_nsec =
-      (usecs % MonoTime::kMicrosecondsPerSecond) * MonoTime::kNanosecondsPerMicrosecond;
+  max_time.ToTimeSpec(&relative_time);
 
 #if !defined(NDEBUG)
   user_lock_->CheckHeldAndUnmark();
@@ -103,7 +107,8 @@ bool ConditionVariable::TimedWait(const MonoDelta& max_time) {
 #endif  // OS_ANDROID && HAVE_PTHREAD_COND_TIMEDWAIT_MONOTONIC
 #endif  // OS_MACOSX
 
-  DCHECK(rv == 0 || rv == ETIMEDOUT);
+  DCHECK(rv == 0 || rv == ETIMEDOUT)
+    << "unexpected pthread_cond_timedwait return value: " << rv;
 #if !defined(NDEBUG)
   user_lock_->CheckUnheldAndMark();
 #endif

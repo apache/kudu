@@ -86,10 +86,7 @@ void ResettableHeartbeaterThread::RunThread() {
   VLOG(1) << "Heartbeater: " << name_ << " thread starting";
 
   while (true) {
-    MonoTime next_heartbeat = MonoTime::Now(MonoTime::FINE);
-    next_heartbeat.AddDelta(period_);
-
-    if (run_latch_.WaitUntil(next_heartbeat)) {
+    if (run_latch_.WaitFor(period_)) {
       // CountDownLatch reached 0
       lock_guard<simple_spinlock> lock(&lock_);
       // check if we were told to shutdown
