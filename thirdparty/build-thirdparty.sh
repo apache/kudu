@@ -105,8 +105,12 @@ fi
 # build gtest
 if [ -n "$F_ALL" -o -n "$F_GTEST" ]; then
   cd $GTEST_DIR
-  CXXFLAGS=-fPIC $PREFIX/bin/cmake .
-  make -j$PARALLEL
+  # Run the static library build, then the shared library build.
+  for SHARED in OFF ON; do
+    rm -rf CMakeCache.txt CMakeFiles/
+    CXXFLAGS=-fPIC $PREFIX/bin/cmake -DBUILD_SHARED_LIBS=$SHARED .
+    make -j$PARALLEL
+  done
 fi
 
 # build protobuf

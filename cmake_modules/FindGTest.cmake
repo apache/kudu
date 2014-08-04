@@ -24,42 +24,55 @@
 #
 # This module defines
 # GTEST_INCLUDE_DIR, where to find gtest include files, etc.
-# GTEST_LIBRARIES, the libraries to link against to use gtest.
 # GTest_FOUND, If false, do not try to use gtest.
+# GTEST_STATIC_LIBRARY, Location of libgtest.a
+# GTEST_SHARED_LIBRARY, Location of libttest.so
 
 # also defined, but not for general use are
 # GTEST_LIBRARY, where to find the GTest library.
 
+set(GTEST_SEARCH_PATH ${CMAKE_SOURCE_DIR}/thirdparty/gtest-1.6.0)
+
 set(GTEST_H gtest/gtest.h)
 
 find_path(GTEST_INCLUDE_DIR ${GTEST_H}
-  PATHS ${CMAKE_SOURCE_DIR}/thirdparty/gtest-1.6.0/include
+  PATHS ${GTEST_SEARCH_PATH}/include
         NO_DEFAULT_PATH
   DOC   "Path to the ${GTEST_H} file"
 )
 
-find_library(GTEST_LIBRARY NAMES gtest
-  PATHS ${CMAKE_SOURCE_DIR}/thirdparty/gtest-1.6.0
+find_library(GTEST_LIBRARY
+  NAMES gtest
+  PATHS ${GTEST_SEARCH_PATH}
         NO_DEFAULT_PATH
   DOC   "Google's framework for writing C++ tests (gtest)"
 )
 
-find_library(GTEST_MAIN_LIBRARY NAMES gtest_main
-  PATHS ${CMAKE_SOURCE_DIR}/thirdparty/gtest-1.6.0
-        NO_DEFAULT_PATH
-  DOC   "Google's framework for writing C++ tests (gtest_main)"
-)
+# Kudu does not use the gtest_main library (we have kudu_test_main).
+#find_library(GTEST_MAIN_LIBRARY_PATH
+#  NAMES gtest_main
+#  PATHS GTEST_SEARCH_PATH
+#        NO_DEFAULT_PATH
+#  DOC   "Google's framework for writing C++ tests (gtest_main)"
+#)
 
-if(GTEST_INCLUDE_DIR AND GTEST_LIBRARY AND GTEST_MAIN_LIBRARY)
-  set(GTEST_LIBRARIES ${GTEST_LIBRARY} ${GTEST_MAIN_LIBRARY})
-  set(GTEST_FOUND TRUE)
-else(GTEST_INCLUDE_DIR AND GTEST_LIBRARY AND GTEST_MAIN_LIBRARY)
+if(GTEST_INCLUDE_DIR AND GTEST_LIBRARY)
+  set(GTEST_STATIC_LIBRARY ${GTEST_SEARCH_PATH}/libgtest.a)
+  if(EXISTS "${GTEST_STATIC_LIBRARY}")
+    set(GTEST_FOUND TRUE)
+  endif()
+
+  set(GTEST_SHARED_LIBRARY ${GTEST_SEARCH_PATH}/libgtest.so)
+  if(EXISTS "${GTEST_SHARED_LIBRARY}")
+    set(GTEST_FOUND TRUE)
+  endif()
+else()
   set(GTEST_FOUND FALSE)
-endif(GTEST_INCLUDE_DIR AND GTEST_LIBRARY AND GTEST_MAIN_LIBRARY)
+endif()
 
 if(GTEST_FOUND)
   if(NOT GTest_FIND_QUIETLY)
-    message(STATUS "Found the GTest library: ${GTEST_LIBRARY}")
+    message(STATUS "Found the GTest library: ${GTEST_STATIC_LIBRARY} ${GTEST_SHARED_LIBRARY}")
   endif(NOT GTest_FIND_QUIETLY)
 else(GTEST_FOUND)
   if(NOT GTest_FIND_QUIETLY)
@@ -71,5 +84,8 @@ else(GTEST_FOUND)
   endif(NOT GTest_FIND_QUIETLY)
 endif(GTEST_FOUND)
 
-mark_as_advanced(GTEST_INCLUDE_DIR GTEST_LIBRARIES)
+mark_as_advanced(
+  GTEST_INCLUDE_DIR
+  GTEST_STATIC_LIBRARY
+  GTEST_SHARED_LIBRARY)
 
