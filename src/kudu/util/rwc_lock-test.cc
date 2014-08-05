@@ -1,17 +1,21 @@
 // Copyright (c) 2013, Cloudera, inc.
 
+#include <boost/thread/thread.hpp>
+#include <boost/foreach.hpp>
+#include <string>
+#include <vector>
+
 #include "kudu/gutil/atomicops.h"
 #include "kudu/util/rwc_lock.h"
 #include "kudu/util/test_util.h"
 #include "kudu/util/locks.h"
 
-#include <boost/thread/thread.hpp>
-#include <boost/foreach.hpp>
-
 namespace kudu {
 
 using base::subtle::NoBarrier_Load;
 using base::subtle::Release_Store;
+using std::string;
+using std::vector;
 
 class RWCLockTest : public KuduTest {};
 

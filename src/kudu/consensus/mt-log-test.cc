@@ -12,6 +12,7 @@
 
 #include "kudu/gutil/algorithm.h"
 #include "kudu/gutil/ref_counted.h"
+#include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/random_util.h"
 #include "kudu/util/thread.h"
 #include "kudu/util/task_executor.h"

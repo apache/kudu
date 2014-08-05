@@ -2,6 +2,8 @@
 #include <boost/assign/list_of.hpp>
 #include <gtest/gtest.h>
 #include <rapidjson/document.h>
+#include <string>
+#include <vector>
 
 #include "kudu/util/hdr_histogram.h"
 #include "kudu/util/jsonwriter.h"
@@ -9,6 +11,8 @@
 #include "kudu/util/test_util.h"
 
 using boost::assign::list_of;
+using std::string;
+using std::vector;
 
 namespace kudu {
 

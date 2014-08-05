@@ -7,6 +7,7 @@
 
 #include "kudu/util/hexdump.h"
 #include "kudu/util/memcmpable_varint.h"
+#include "kudu/util/random.h"
 #include "kudu/util/stopwatch.h"
 #include "kudu/util/test_util.h"
 

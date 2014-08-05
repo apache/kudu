@@ -18,12 +18,17 @@
 #include <boost/utility.hpp>
 #include <gtest/gtest.h>
 #include <math.h>
+#include <string>
+#include <vector>
 
 #include "kudu/gutil/mathlimits.h"
 #include "kudu/util/rle-encoding.h"
 #include "kudu/util/bit-stream-utils.h"
 #include "kudu/util/hexdump.h"
 #include "kudu/util/test_util.h"
+
+using std::string;
+using std::vector;
 
 namespace kudu {
 

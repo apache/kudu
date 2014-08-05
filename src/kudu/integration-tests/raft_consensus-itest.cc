@@ -38,7 +38,6 @@ DEFINE_int64(client_num_batches_per_thread, 50,
              "In how many batches to group the rows, for each client");
 
 namespace kudu {
-
 namespace tserver {
 
 using consensus::RaftConsensus;
@@ -60,8 +59,10 @@ using master::TSInfoPB;
 using master::MiniMaster;
 using metadata::QuorumPB;
 using metadata::QuorumPeerPB;
+using rpc::RpcController;
 using std::vector;
 using std::tr1::shared_ptr;
+using tablet::TabletPeer;
 using tserver::TabletServer;
 
 static const int kMaxRetries = 20;

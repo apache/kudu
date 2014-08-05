@@ -4,10 +4,13 @@
 #include <boost/foreach.hpp>
 #include <gtest/gtest.h>
 #include <gflags/gflags.h>
+#include <string>
+#include <vector>
 
 #include "kudu/benchmarks/tpch/rpc_line_item_dao.h"
 #include "kudu/benchmarks/tpch/tpch-schemas.h"
 #include "kudu/common/partial_row.h"
+#include "kudu/gutil/stringprintf.h"
 #include "kudu/integration-tests/mini_cluster.h"
 #include "kudu/master/mini_master.h"
 #include "kudu/util/status.h"
@@ -18,6 +21,8 @@ namespace kudu {
 using client::KuduColumnRangePredicate;
 using client::KuduRowResult;
 using client::KuduSchema;
+using std::string;
+using std::vector;
 
 class RpcLineItemDAOTest : public KuduTest {
 

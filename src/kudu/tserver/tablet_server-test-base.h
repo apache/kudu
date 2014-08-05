@@ -23,6 +23,7 @@
 #include "kudu/consensus/log_reader.h"
 #include "kudu/gutil/atomicops.h"
 #include "kudu/gutil/stl_util.h"
+#include "kudu/gutil/strings/substitute.h"
 #include "kudu/tablet/maintenance_manager.h"
 #include "kudu/tablet/tablet.h"
 #include "kudu/tablet/tablet_peer.h"
@@ -43,18 +44,6 @@ DECLARE_bool(use_hybrid_clock);
 DECLARE_bool(log_force_fsync_all);
 DECLARE_int32(max_clock_sync_error_usec);
 DECLARE_bool(enable_maintenance_manager);
-
-using std::string;
-using std::tr1::shared_ptr;
-using base::subtle::Atomic64;
-using base::subtle::Barrier_AtomicIncrement;
-using kudu::log::LogEntryPB;
-using kudu::log::LogReader;
-using kudu::rpc::Messenger;
-using kudu::rpc::MessengerBuilder;
-using kudu::rpc::RpcController;
-using kudu::tablet::Tablet;
-using kudu::tablet::TabletPeer;
 
 namespace kudu {
 namespace tserver {
@@ -144,7 +133,7 @@ class TabletServerTest : public KuduTest {
     ASSERT_STATUS_OK(SchemaToPB(schema_, req.mutable_schema()));
 
     WriteResponsePB resp;
-    RpcController controller;
+    rpc::RpcController controller;
     controller.set_timeout(MonoDelta::FromSeconds(FLAGS_rpc_timeout));
     string new_string_val(strings::Substitute("mutated$0", row_idx));
 
@@ -163,7 +152,7 @@ class TabletServerTest : public KuduTest {
 
   void CreateClientProxy(const Sockaddr &addr, gscoped_ptr<TabletServerServiceProxy>* proxy) {
     if (!client_messenger_) {
-      MessengerBuilder bld("Client");
+      rpc::MessengerBuilder bld("Client");
       ASSERT_STATUS_OK(bld.Build(&client_messenger_));
     }
     proxy->reset(new TabletServerServiceProxy(client_messenger_, addr));
@@ -206,7 +195,7 @@ class TabletServerTest : public KuduTest {
     req.set_tablet_id(tablet_id);
 
     WriteResponsePB resp;
-    RpcController controller;
+    rpc::RpcController controller;
 
     RowOperationsPB* data = req.mutable_row_operations();
 
@@ -268,7 +257,7 @@ class TabletServerTest : public KuduTest {
       proxy = proxy_.get();
     }
 
-    RpcController rpc;
+    rpc::RpcController rpc;
     rpc.set_timeout(MonoDelta::FromSeconds(FLAGS_rpc_timeout));
     ScanRequestPB req;
     ScanResponsePB resp;
@@ -345,7 +334,7 @@ class TabletServerTest : public KuduTest {
                                 const char *expected_message) {
     ScanRequestPB req;
     ScanResponsePB resp;
-    RpcController rpc;
+    rpc::RpcController rpc;
 
     NewScanRequestPB* scan = req.mutable_new_scan_request();
     scan->set_tablet_id(kTabletId);
@@ -366,7 +355,7 @@ class TabletServerTest : public KuduTest {
   // Open a new scanner which scans all of the columns in the table.
   void OpenScannerWithAllColumns(ScanResponsePB* resp) {
     ScanRequestPB req;
-    RpcController rpc;
+    rpc::RpcController rpc;
 
     // Set up a new request with no predicates, all columns.
     const Schema& projection = schema_;
@@ -391,10 +380,10 @@ class TabletServerTest : public KuduTest {
   Schema key_schema_;
   gscoped_ptr<RowBuilder> rb_;
 
-  shared_ptr<Messenger> client_messenger_;
+  shared_ptr<rpc::Messenger> client_messenger_;
 
   gscoped_ptr<MiniTabletServer> mini_server_;
-  scoped_refptr<TabletPeer> tablet_peer_;
+  scoped_refptr<tablet::TabletPeer> tablet_peer_;
   gscoped_ptr<TabletServerServiceProxy> proxy_;
 
   MetricRegistry ts_test_metric_registry_;

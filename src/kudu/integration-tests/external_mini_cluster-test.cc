@@ -4,6 +4,7 @@
 #include <gtest/gtest.h>
 
 #include "kudu/integration-tests/external_mini_cluster.h"
+#include "kudu/gutil/strings/util.h"
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/test_util.h"
 

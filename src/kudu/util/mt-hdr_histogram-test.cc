@@ -5,6 +5,7 @@
 
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/stl_util.h"
+#include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/hdr_histogram.h"
 #include "kudu/util/status.h"
 #include "kudu/util/test_util.h"

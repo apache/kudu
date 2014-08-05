@@ -10,6 +10,8 @@
 #include <gtest/gtest.h>
 #include <boost/foreach.hpp>
 
+#include "kudu/gutil/strings/util.h"
+#include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/stopwatch.h"
 #include "kudu/util/status.h"
 #include "kudu/util/test_util.h"

@@ -5,11 +5,15 @@
 #include <boost/bind.hpp>
 #include <boost/foreach.hpp>
 #include <gtest/gtest.h>
+#include <vector>
 
+#include "kudu/gutil/strings/util.h"
 #include "kudu/util/countdown_latch.h"
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/test_util.h"
+
+using std::vector;
 
 namespace kudu {
 
