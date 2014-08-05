@@ -177,8 +177,11 @@ endif()
 
 # Tests
 
-# Can't be used with the exported client; it references hidden symbols.
-if (NOT KUDU_EXPORTED_CLIENT)
+if (KUDU_EXPORTED_CLIENT)
+  # Test that there are no forbidden symbols in the exported client library.
+  ADD_KUDU_TEST(client_symbol-test)
+else()
+  # Can't be used with the exported client; it references hidden symbols.
   set(KUDU_TEST_LINK_LIBS kudu_client integration-tests ${KUDU_MIN_TEST_LIBS})
   ADD_KUDU_TEST(client-test)
 endif()

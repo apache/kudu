@@ -327,19 +327,32 @@ include_directories(src)
 # Testing
 ############################################################
 
-# Add a new test case. Additional arguments after the
-# name of the test will be passed to SET_TESTS_PROPERTIES
-function(ADD_KUDU_TEST REL_TEST_BINARY)
-  set(TEST_PATH "${EXECUTABLE_OUTPUT_PATH}/${REL_TEST_BINARY}")
-  get_filename_component(SRC_DIR ${TEST_PATH} PATH)
-  get_filename_component(TEST_BINARY ${TEST_PATH} NAME)
-  add_executable(${TEST_BINARY} "${REL_TEST_BINARY}.cc")
-  add_test(${TEST_BINARY} ${CMAKE_SOURCE_DIR}/build-support/run-test.sh
-    "${BUILD_OUTPUT_ROOT_DIRECTORY}/${TEST_BINARY}")
-  if(ARGN)
-    set_tests_properties(${TEST_BINARY} PROPERTIES ${ARGN})
+# Add a new test case, with or without an executable that should be built.
+#
+# REL_TEST_NAME is the name of the test. It may be a single component
+# (e.g. monotime-test) or contain additional components (e.g.
+# net/net_util-test). Either way, the last component must be a globally
+# unique name.
+#
+# Arguments after the test name will be passed to set_tests_properties().
+function(ADD_KUDU_TEST REL_TEST_NAME)
+  get_filename_component(TEST_NAME ${REL_TEST_NAME} NAME)
+
+  if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/${REL_TEST_NAME}.cc)
+    # This test has a corresponding .cc file, set it up as an executable.
+    set(TEST_PATH "${EXECUTABLE_OUTPUT_PATH}/${TEST_NAME}")
+    add_executable(${TEST_NAME} "${REL_TEST_NAME}.cc")
+    target_link_libraries(${TEST_NAME} ${KUDU_TEST_LINK_LIBS})
+  else()
+    # No executable, just invoke the test (probably a script) directly.
+    set(TEST_PATH ${CMAKE_CURRENT_SOURCE_DIR}/${REL_TEST_NAME})
   endif()
-  target_link_libraries(${TEST_BINARY} ${KUDU_TEST_LINK_LIBS})
+
+  add_test(${TEST_NAME}
+    ${CMAKE_SOURCE_DIR}/build-support/run-test.sh ${TEST_PATH})
+  if(ARGN)
+    set_tests_properties(${TEST_NAME} PROPERTIES ${ARGN})
+  endif()
 endfunction()
 
 enable_testing()
