@@ -23,6 +23,7 @@ set(TABLET_SRCS
   multi_column_writer.cc
   mutation.cc
   mvcc.cc
+  row_op.cc
   rowset.cc
   rowset_info.cc
   rowset_tree.cc

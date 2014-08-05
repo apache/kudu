@@ -72,6 +72,20 @@ class LockManager {
 class ScopedRowLock {
   MOVE_ONLY_TYPE_FOR_CPP_03(ScopedRowLock, RValue);
  public:
+
+  // Construct an initially-unlocked lock holder.
+  // You can later assign this to actually hold a lock using
+  // the emulated move-constructor:
+  //   ScopedRowLock l;
+  //   l = ScopedRowLock(...); // use the ctor below
+  // or
+  //   l = other_row_lock.Pass();
+  ScopedRowLock()
+    : manager_(NULL),
+      acquired_(false),
+      entry_(NULL) {
+  }
+
   // Lock row in the given LockManager. The 'key' slice must remain
   // valid and un-changed for the duration of this object's lifetime.
   ScopedRowLock(LockManager *manager, const TransactionState* ctx,

@@ -12,6 +12,7 @@
 #include "kudu/gutil/walltime.h"
 #include "kudu/rpc/rpc_context.h"
 #include "kudu/server/hybrid_clock.h"
+#include "kudu/tablet/row_op.h"
 #include "kudu/tablet/tablet.h"
 #include "kudu/tablet/tablet_peer.h"
 #include "kudu/tablet/tablet_metrics.h"
@@ -106,41 +107,27 @@ Status WriteTransaction::Apply(gscoped_ptr<CommitMsg>* commit_msg) {
   TRACE("APPLY: Starting");
 
   Tablet* tablet = state()->tablet_peer()->tablet();
+
+  tablet->ApplyRowOperations(state());
+
+  // Add per-row errors to the result, update metrics.
   int i = 0;
-  // TODO for now we're just warning on this status. This status indicates if
-  // _any_ insert or mutation failed consider writing OP_ABORT if all failed.
-  Status s;
-  int ctr = 0;
-  VLOG(2) <<  "Write Transaction at " << reinterpret_cast<size_t>(this) << ":\n";
-  BOOST_FOREACH(const PreparedRowWrite *row, state()->rows()) {
-    VLOG(2) << "(" << reinterpret_cast<size_t>(this) << "#"
-              << ctr++ << ") " << ((row->write_type() == PreparedRowWrite::INSERT) ?
-                                   "insertion" : "mutation");
-    switch (row->write_type()) {
-      case PreparedRowWrite::INSERT: {
-        s = tablet->InsertUnlocked(state(), row);
-        break;
-      }
-      case PreparedRowWrite::MUTATE: {
-        s = tablet->MutateRowUnlocked(state(), row);
-        break;
-      }
-    }
-    if (PREDICT_FALSE(!s.ok())) {
+  BOOST_FOREACH(const RowOp* op, state()->row_ops()) {
+    if (state()->response() != NULL && op->result->has_failed_status()) {
       // Replicas disregard the per row errors, for now
       // TODO check the per-row errors against the leader's, at least in debug mode
-      if (state()->response() != NULL) {
-        WriteResponsePB::PerRowErrorPB* error = state()->response()->add_per_row_errors();
-        error->set_row_index(i);
-        StatusToPB(s, error->mutable_error());
-      }
+      WriteResponsePB::PerRowErrorPB* error = state()->response()->add_per_row_errors();
+      error->set_row_index(i);
+      error->mutable_error()->CopyFrom(op->result->failed_status());
     }
+
+    state()->UpdateMetricsForOp(*op);
     i++;
   }
-  WARN_NOT_OK(s, "Some row writes failed.");
 
+  // Create the Commit message
   commit_msg->reset(new CommitMsg());
-  (*commit_msg)->mutable_result()->CopyFrom(state()->Result());
+  state()->ReleaseTxResultPB((*commit_msg)->mutable_result());
   (*commit_msg)->set_op_type(WRITE_OP);
   (*commit_msg)->set_timestamp(state()->timestamp().ToUint64());
 
@@ -175,6 +162,7 @@ void WriteTransaction::Finish() {
     // Tablet code itself instead of this wrapper code?
     metrics->rows_inserted->IncrementBy(state_->metrics().successful_inserts);
     metrics->rows_updated->IncrementBy(state_->metrics().successful_updates);
+    metrics->rows_deleted->IncrementBy(state_->metrics().successful_deletes);
 
     if (type() == consensus::LEADER) {
       if (state()->external_consistency_mode() == COMMIT_WAIT) {
@@ -211,10 +199,10 @@ WriteTransactionState::WriteTransactionState(TabletPeer* tablet_peer,
                                              const tserver::WriteRequestPB *request,
                                              tserver::WriteResponsePB *response)
   : TransactionState(tablet_peer),
-    failed_operations_(0),
     request_(request),
     response_(response),
-    mvcc_tx_(NULL) {
+    mvcc_tx_(NULL),
+    schema_at_decode_time_(NULL) {
   if (request) {
     external_consistency_mode_ = request->external_consistency_mode();
   } else {
@@ -222,33 +210,6 @@ WriteTransactionState::WriteTransactionState(TabletPeer* tablet_peer,
   }
 }
 
-Status WriteTransactionState::AddInsert(const Timestamp &timestamp, int64_t mrs_id) {
-  if (PREDICT_TRUE(mvcc_tx_.get() != NULL)) {
-    DCHECK_EQ(mvcc_tx_->timestamp(), timestamp)
-        << "tx_id doesn't match the id of the ongoing transaction";
-  }
-  OperationResultPB* insert = result_pb_.add_ops();
-  insert->add_mutated_stores()->set_mrs_id(mrs_id);
-  tx_metrics_.successful_inserts++;
-  return Status::OK();
-}
-
-void WriteTransactionState::AddFailedOperation(const Status &status) {
-  OperationResultPB* insert = result_pb_.add_ops();
-  StatusToPB(status, insert->mutable_failed_status());
-  failed_operations_++;
-}
-
-Status WriteTransactionState::AddMutation(const Timestamp &timestamp,
-                                            gscoped_ptr<OperationResultPB> result) {
-  if (PREDICT_FALSE(mvcc_tx_.get() != NULL)) {
-    DCHECK_EQ(mvcc_tx_->timestamp(), timestamp)
-        << "tx_id doesn't match the id of the ongoing transaction";
-  }
-  result_pb_.mutable_ops()->AddAllocated(result.release());
-  tx_metrics_.successful_updates++;
-  return Status::OK();
-}
 
 void WriteTransactionState::set_mvcc_tx(gscoped_ptr<ScopedTransaction> mvcc_tx) {
   DCHECK(mvcc_tx_.get() == NULL) << "Mvcc transaction already started/set.";
@@ -277,9 +238,36 @@ void WriteTransactionState::commit() {
   response_ = NULL;
 }
 
+void WriteTransactionState::ReleaseTxResultPB(TxResultPB* result) const {
+  result->Clear();
+  result->mutable_ops()->Reserve(row_ops_.size());
+  BOOST_FOREACH(RowOp* op, row_ops_) {
+    result->mutable_ops()->AddAllocated(CHECK_NOTNULL(op->result.release()));
+  }
+}
+
+void WriteTransactionState::UpdateMetricsForOp(const RowOp& op) {
+  if (op.result->has_failed_status()) {
+    return;
+  }
+  switch (op.decoded_op.type) {
+    case RowOperationsPB::INSERT:
+      tx_metrics_.successful_inserts++;
+      break;
+    case RowOperationsPB::UPDATE:
+      tx_metrics_.successful_updates++;
+      break;
+    case RowOperationsPB::DELETE:
+      tx_metrics_.successful_deletes++;
+      break;
+  }
+}
+
 void WriteTransactionState::release_row_locks() {
   // free the row locks
-  STLDeleteElements(&rows_);
+  BOOST_FOREACH(RowOp* op, row_ops_) {
+    op->row_lock.Release();
+  }
 }
 
 WriteTransactionState::~WriteTransactionState() {
@@ -288,11 +276,11 @@ WriteTransactionState::~WriteTransactionState() {
 
 void WriteTransactionState::Reset() {
   commit();
-  result_pb_.Clear();
+  STLDeleteElements(&row_ops_);
   tx_metrics_.Reset();
-  failed_operations_ = 0;
   timestamp_ = Timestamp::kInvalidTimestamp;
   tablet_components_ = NULL;
+  schema_at_decode_time_ = NULL;
 }
 
 string WriteTransactionState::ToString() const {
@@ -307,61 +295,24 @@ string WriteTransactionState::ToString() const {
   // NOTE: we'll eventually need to gate this by some flag if we want to avoid
   // user data escaping into the log. See KUDU-387.
   const size_t kMaxToStringify = 3;
-  string rows_str = "[";
-  for (int i = 0; i < std::min(rows_.size(), kMaxToStringify); i++) {
+  string row_ops_str = "[";
+  for (int i = 0; i < std::min(row_ops_.size(), kMaxToStringify); i++) {
     if (i > 0) {
-      rows_str.append(", ");
+      row_ops_str.append(", ");
     }
-    rows_str.append(rows_[i]->ToString());
+    row_ops_str.append(row_ops_[i]->ToString(*DCHECK_NOTNULL(schema_at_decode_time_)));
   }
-  if (rows_.size() > kMaxToStringify) {
-    rows_str.append(", ...");
+  if (row_ops_.size() > kMaxToStringify) {
+    row_ops_str.append(", ...");
   }
-  rows_str.append("]");
+  row_ops_str.append("]");
 
   return Substitute("WriteTransactionState $0 [op_id=($1), ts=$2, rows=$3]",
                     this,
                     op_id().ShortDebugString(),
                     ts_str,
-                    rows_str);
-}
-
-PreparedRowWrite::PreparedRowWrite(const ConstContiguousRow* row,
-                                   gscoped_ptr<RowSetKeyProbe> probe,
-                                   ScopedRowLock lock)
-    : row_(row),
-      row_key_(NULL),
-      probe_(probe.Pass()),
-      row_lock_(lock.Pass()),
-      op_type_(INSERT) {
-}
-
-PreparedRowWrite::PreparedRowWrite(const ConstContiguousRow* row_key,
-                                   const RowChangeList& changelist,
-                                   gscoped_ptr<RowSetKeyProbe> probe,
-                                   ScopedRowLock lock)
-    : row_(NULL),
-      row_key_(row_key),
-      changelist_(changelist),
-      probe_(probe.Pass()),
-      row_lock_(lock.Pass()),
-      op_type_(MUTATE) {
-}
-
-string PreparedRowWrite::ToString() const {
-  switch (op_type_) {
-    case INSERT:
-      return Substitute("INSERT $0", row_->schema()->DebugRowKey(*row_));
-    case MUTATE:
-      return Substitute("MUTATE $0", row_key_->schema()->DebugRowKey(*row_key_));
-      break;
-    default:
-      LOG(FATAL);
-  }
-  return ""; // silence spurious "no return" warning
+                    row_ops_str);
 }
 
 }  // namespace tablet
 }  // namespace kudu
-
-

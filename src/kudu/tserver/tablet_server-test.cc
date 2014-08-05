@@ -30,6 +30,7 @@ DEFINE_int32(single_threaded_insert_latency_bench_insert_rows, 1000,
 // Declare these metrics prototypes for simpler unit testing of their behavior.
 METRIC_DECLARE_counter(rows_inserted);
 METRIC_DECLARE_counter(rows_updated);
+METRIC_DECLARE_counter(rows_deleted);
 
 namespace kudu {
 namespace tserver {
@@ -285,8 +286,11 @@ TEST_F(TabletServerTest, TestInsertAndMutate) {
       METRIC_rows_inserted.Instantiate(*tablet->tablet()->GetMetricContext());
   Counter* rows_updated =
       METRIC_rows_updated.Instantiate(*tablet->tablet()->GetMetricContext());
+  Counter* rows_deleted =
+      METRIC_rows_deleted.Instantiate(*tablet->tablet()->GetMetricContext());
   ASSERT_EQ(0, rows_inserted->value());
   ASSERT_EQ(0, rows_updated->value());
+  ASSERT_EQ(0, rows_deleted->value());
   tablet.reset();
 
   RpcController controller;
@@ -365,7 +369,8 @@ TEST_F(TabletServerTest, TestInsertAndMutate) {
     SCOPED_TRACE(resp.DebugString());
     ASSERT_FALSE(resp.has_error())<< resp.ShortDebugString();
     ASSERT_EQ(0, resp.per_row_errors().size());
-    ASSERT_EQ(4, rows_updated->value());
+    ASSERT_EQ(3, rows_updated->value());
+    ASSERT_EQ(1, rows_deleted->value());
     controller.Reset();
   }
 
@@ -387,7 +392,7 @@ TEST_F(TabletServerTest, TestInsertAndMutate) {
   }
 
   ASSERT_EQ(3, rows_inserted->value());
-  ASSERT_EQ(4, rows_updated->value());
+  ASSERT_EQ(3, rows_updated->value());
 
   // At this point, we have two rows left (row key 2 and 3).
   VerifyRows(schema_, boost::assign::list_of(KeyValue(2, 3))

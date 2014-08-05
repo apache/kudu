@@ -25,6 +25,7 @@ struct TransactionMetrics {
   void Reset();
   int successful_inserts;
   int successful_updates;
+  int successful_deletes;
   uint64_t commit_wait_duration_usec;
 };
 

@@ -35,6 +35,7 @@
 #include "kudu/tablet/tablet_metrics.h"
 #include "kudu/tablet/rowset_info.h"
 #include "kudu/tablet/rowset_tree.h"
+#include "kudu/tablet/row_op.h"
 #include "kudu/tablet/svg_dump.h"
 #include "kudu/tablet/transactions/alter_schema_transaction.h"
 #include "kudu/tablet/transactions/write_transaction.h"
@@ -207,55 +208,39 @@ Status Tablet::NewRowIterator(const Schema &projection,
 
 Status Tablet::DecodeWriteOperations(const Schema* client_schema,
                                      WriteTransactionState* tx_state) {
+  DCHECK_EQ(tx_state->row_ops().size(), 0);
+
   // TODO: acquire schema lock in tx_state
   // The Schema needs to be held constant while any transactions are between
   // PREPARE and APPLY stages
   TRACE("PREPARE: Decoding operations");
+  vector<DecodedRowOperation> ops;
+
+  // Decode the ops
   RowOperationsPBDecoder dec(&tx_state->request()->row_operations(),
                              client_schema,
                              schema_.get(),
                              tx_state->arena());
-  return dec.DecodeOperations(tx_state->mutable_decoded_ops());
+  RETURN_NOT_OK(dec.DecodeOperations(&ops));
+
+  // Create RowOp objects for each
+  vector<RowOp*> row_ops;
+  ops.reserve(ops.size());
+  BOOST_FOREACH(const DecodedRowOperation& op, ops) {
+    row_ops.push_back(new RowOp(op));
+  }
+
+  tx_state->mutable_row_ops()->swap(row_ops);
+  tx_state->set_schema_at_decode_time(schema_.get());
+
+  return Status::OK();
 }
 
 Status Tablet::AcquireRowLocks(WriteTransactionState* tx_state) {
-  TRACE("PREPARE: Acquiring locks for $0 operations", tx_state->decoded_ops().size());
+  TRACE("PREPARE: Acquiring locks for $0 operations", tx_state->row_ops().size());
 
-  BOOST_FOREACH(const DecodedRowOperation& op, tx_state->decoded_ops()) {
-    gscoped_ptr<PreparedRowWrite> row_write;
-
-    switch (op.type) {
-      case RowOperationsPB::INSERT:
-      {
-        // TODO pass 'row_ptr' to the PreparedRowWrite once we get rid of the
-        // old API that has a Mutate method that receives the row as a reference.
-        // TODO: allocating ConstContiguousRow is kind of a waste since it is just
-        // a {schema, ptr} pair itself and probably cheaper to copy around.
-        ConstContiguousRow *row = tx_state->AddToAutoReleasePool(
-          new ConstContiguousRow(schema_.get(), op.row_data));
-        RETURN_NOT_OK(CreatePreparedInsert(tx_state, row, &row_write));
-        break;
-      }
-      case RowOperationsPB::UPDATE:
-      case RowOperationsPB::DELETE:
-      {
-        const uint8_t* row_key_ptr = op.row_data;
-        const RowChangeList& mutation = op.changelist;
-
-        // TODO pass 'row_key_ptr' to the PreparedRowWrite once we get rid of the
-        // old API that has a Mutate method that receives the row as a reference.
-        // TODO: allocating ConstContiguousRow is kind of a waste since it is just
-        // a {schema, ptr} pair itself and probably cheaper to copy around.
-        ConstContiguousRow* row_key = new ConstContiguousRow(&key_schema_, row_key_ptr);
-        row_key = tx_state->AddToAutoReleasePool(row_key);
-        RETURN_NOT_OK(CreatePreparedMutate(tx_state, row_key, mutation, &row_write));
-        break;
-      }
-      default:
-        LOG(FATAL) << "Bad type: " << op.type;
-    }
-
-    tx_state->add_prepared_row(row_write.Pass());
+  BOOST_FOREACH(RowOp* op, *tx_state->mutable_row_ops()) {
+    RETURN_NOT_OK(AcquireLockForOp(tx_state, op));
   }
   TRACE("PREPARE: locks acquired");
   return Status::OK();
@@ -274,21 +259,16 @@ Status Tablet::CheckRowInTablet(const tablet::RowSetKeyProbe& probe) const {
   return Status::OK();
 }
 
-Status Tablet::CreatePreparedInsert(const WriteTransactionState* tx_state,
-                                    const ConstContiguousRow* row,
-                                    gscoped_ptr<PreparedRowWrite>* row_write) {
-  gscoped_ptr<tablet::RowSetKeyProbe> probe(new tablet::RowSetKeyProbe(*row));
-
-  RETURN_NOT_OK(CheckRowInTablet(*probe));
+Status Tablet::AcquireLockForOp(WriteTransactionState* tx_state, RowOp* op) {
+  ConstContiguousRow row_key(&key_schema_, op->decoded_op.row_data);
+  op->key_probe.reset(new tablet::RowSetKeyProbe(row_key));
+  RETURN_NOT_OK(CheckRowInTablet(*op->key_probe));
 
   ScopedRowLock row_lock(&lock_manager_,
                          tx_state,
-                         probe->encoded_key_slice(),
+                         op->key_probe->encoded_key_slice(),
                          LockManager::LOCK_EXCLUSIVE);
-  row_write->reset(new PreparedRowWrite(row, probe.Pass(), row_lock.Pass()));
-
-  // when we have a more advanced lock manager, acquiring the row lock might fail
-  // but for now always return OK.
+  op->row_lock = row_lock.Pass();
   return Status::OK();
 }
 
@@ -331,32 +311,37 @@ Status Tablet::InsertForTesting(WriteTransactionState *tx_state,
     RETURN_NOT_OK(schema_->VerifyProjectionCompatibility(*row.schema()));
     RETURN_NOT_OK(row_projector.Init());
   }
-  const ConstContiguousRow* proj_row = ProjectRowForInsert(tx_state, schema_.get(),
-                                                           row_projector, row.row_data());
+  ConstContiguousRow proj_row = ProjectRowForInsert(tx_state, schema_.get(),
+                                                    row_projector, row.row_data());
 
-  gscoped_ptr<PreparedRowWrite> row_write;
-  RETURN_NOT_OK(CreatePreparedInsert(tx_state, proj_row, &row_write));
-  tx_state->add_prepared_row(row_write.Pass());
+  DecodedRowOperation decoded_op;
+  decoded_op.type = RowOperationsPB::INSERT;
+  decoded_op.row_data = proj_row.row_data();
+  RowOp* new_op = new RowOp(decoded_op);
+  tx_state->mutable_row_ops()->push_back(new_op);
+  tx_state->set_schema_at_decode_time(schema_.get());
+
+  RETURN_NOT_OK(AcquireLockForOp(tx_state, new_op))
 
   // Create a "fake" OpId and set it in the TransactionState for anchoring.
   tx_state->mutable_op_id()->CopyFrom(MaximumOpId());
 
   StartTransaction(tx_state);
 
-  Status s = InsertUnlocked(tx_state, tx_state->rows()[0]);
+  Status s = InsertUnlocked(tx_state, new_op);
   tx_state->commit();
   return s;
 }
 
 Status Tablet::InsertUnlocked(WriteTransactionState *tx_state,
-                              const PreparedRowWrite* insert) {
+                              RowOp* insert) {
   const TabletComponents* comps = DCHECK_NOTNULL(tx_state->tablet_components());
 
   CHECK(open_) << "must Open() first!";
   // make sure that the WriteTransactionState has the component lock and that
-  // there the PreparedRowWrite has the row lock.
-  DCHECK(insert->has_row_lock()) << "PreparedRowWrite must hold the row lock.";
-  DCHECK_KEY_PROJECTION_SCHEMA_EQ(key_schema_, *insert->row()->schema());
+  // there the RowOp has the row lock.
+  DCHECK(insert->has_row_lock()) << "RowOp must hold the row lock.";
+  DCHECK_EQ(tx_state->schema_at_decode_time(), schema_.get()) << "Raced against schema change";
   DCHECK(tx_state->op_id().IsInitialized()) << "TransactionState OpId needed for anchoring";
 
   ProbeStats stats;
@@ -367,58 +352,41 @@ Status Tablet::InsertUnlocked(WriteTransactionState *tx_state,
   // First, ensure that it is a unique key by checking all the open RowSets.
   if (FLAGS_tablet_do_dup_key_checks) {
     vector<RowSet *> to_check;
-    comps->rowsets->FindRowSetsWithKeyInRange(insert->probe()->encoded_key_slice(), &to_check);
+    comps->rowsets->FindRowSetsWithKeyInRange(insert->key_probe->encoded_key_slice(),
+                                              &to_check);
 
     BOOST_FOREACH(const RowSet *rowset, to_check) {
       bool present = false;
-      RETURN_NOT_OK(rowset->CheckRowPresent(*insert->probe(), &present, &stats));
+      RETURN_NOT_OK(rowset->CheckRowPresent(*insert->key_probe, &present, &stats));
       if (PREDICT_FALSE(present)) {
         Status s = Status::AlreadyPresent("key already present");
         if (metrics_) {
           metrics_->insertions_failed_dup_key->Increment();
         }
-        tx_state->AddFailedOperation(s);
+        insert->SetFailed(s);
         return s;
       }
     }
   }
 
   Timestamp ts = tx_state->timestamp();
+  ConstContiguousRow row(schema_.get(), insert->decoded_op.row_data);
 
   // TODO: the Insert() call below will re-encode the key, which is a
   // waste. Should pass through the KeyProbe structure perhaps.
 
   // Now try to insert into memrowset. The memrowset itself will return
   // AlreadyPresent if it has already been inserted there.
-  Status s = comps->memrowset->Insert(ts, *insert->row(), tx_state->op_id());
+  Status s = comps->memrowset->Insert(ts, row, tx_state->op_id());
   if (PREDICT_TRUE(s.ok())) {
-    RETURN_NOT_OK(tx_state->AddInsert(ts, comps->memrowset->mrs_id()));
+    insert->SetInsertSucceeded(comps->memrowset->mrs_id());
   } else {
     if (s.IsAlreadyPresent() && metrics_) {
       metrics_->insertions_failed_dup_key->Increment();
     }
-    tx_state->AddFailedOperation(s);
+    insert->SetFailed(s);
   }
   return s;
-}
-
-Status Tablet::CreatePreparedMutate(const WriteTransactionState* tx_state,
-                                    const ConstContiguousRow* row_key,
-                                    const RowChangeList& changelist,
-                                    gscoped_ptr<PreparedRowWrite>* row_write) {
-  gscoped_ptr<tablet::RowSetKeyProbe> probe(new tablet::RowSetKeyProbe(*row_key));
-
-  RETURN_NOT_OK(CheckRowInTablet(*probe));
-
-  ScopedRowLock row_lock(&lock_manager_,
-                         tx_state,
-                         probe->encoded_key_slice(),
-                         LockManager::LOCK_EXCLUSIVE);
-  row_write->reset(new PreparedRowWrite(row_key, changelist, probe.Pass(), row_lock.Pass()));
-
-  // when we have a more advanced lock manager, acquiring the row lock might fail
-  // but for now always return OK.
-  return Status::OK();
 }
 
 Status Tablet::MutateRowForTesting(WriteTransactionState *tx_state,
@@ -429,7 +397,7 @@ Status Tablet::MutateRowForTesting(WriteTransactionState *tx_state,
   DCHECK_SCHEMA_EQ(key_schema_, *row_key.schema());
   DCHECK_KEY_PROJECTION_SCHEMA_EQ(key_schema_, update_schema);
   DCHECK(tx_state) << "you must have a transaction context";
-  CHECK(tx_state->rows().empty()) << "WriteTransactionState must have no PreparedRowWrites.";
+  CHECK(tx_state->row_ops().empty()) << "WriteTransactionState must have no RowOps.";
 
   // Convert the client RowChangeList to a server RowChangeList (with IDs)
   // TODO: We have now three places where we do the projection (RPC, Tablet, Bootstrap)
@@ -441,33 +409,37 @@ Status Tablet::MutateRowForTesting(WriteTransactionState *tx_state,
     RETURN_NOT_OK(update_schema.GetProjectionMapping(*schema_.get(), &delta_projector));
   }
 
-  RowChangeList changelist = ProjectMutation(tx_state, delta_projector, update);
 
-  gscoped_ptr<PreparedRowWrite> row_write;
-  RETURN_NOT_OK(CreatePreparedMutate(tx_state, &row_key, changelist, &row_write));
-  tx_state->add_prepared_row(row_write.Pass());
+  DecodedRowOperation decoded_op;
+  decoded_op.row_data = row_key.row_data();
+  decoded_op.changelist = ProjectMutation(tx_state, delta_projector, update);
+  decoded_op.type = update.is_delete() ? RowOperationsPB::DELETE : RowOperationsPB::UPDATE;
+  RowOp* new_op = new RowOp(decoded_op);
+  tx_state->mutable_row_ops()->push_back(new_op);
+  tx_state->set_schema_at_decode_time(schema_.get());
 
-  StartTransaction(tx_state);
-
+  RETURN_NOT_OK(AcquireLockForOp(tx_state, new_op))
   // Create a "fake" OpId and set it in the TransactionState for anchoring.
   tx_state->mutable_op_id()->CopyFrom(MaximumOpId());
+  StartTransaction(tx_state);
 
-  Status s = MutateRowUnlocked(tx_state, tx_state->rows()[0]);
+  Status s = MutateRowUnlocked(tx_state, new_op);
   tx_state->commit();
   return s;
 }
 
 Status Tablet::MutateRowUnlocked(WriteTransactionState *tx_state,
-                                 const PreparedRowWrite* mutate) {
+                                 RowOp* mutate) {
   DCHECK(tx_state != NULL) << "you must have a WriteTransactionState";
   DCHECK(tx_state->op_id().IsInitialized()) << "TransactionState OpId needed for anchoring";
+  DCHECK_EQ(tx_state->schema_at_decode_time(), schema_.get());
 
   gscoped_ptr<OperationResultPB> result(new OperationResultPB());
 
   const TabletComponents* comps = DCHECK_NOTNULL(tx_state->tablet_components());
 
   // Validate the update.
-  RowChangeListDecoder rcl_decoder(schema_.get(), mutate->changelist());
+  RowChangeListDecoder rcl_decoder(schema_.get(), mutate->decoded_op.changelist);
   Status s = rcl_decoder.Init();
   if (rcl_decoder.is_reinsert()) {
     // REINSERT mutations are the byproduct of an INSERT on top of a ghost
@@ -475,10 +447,9 @@ Status Tablet::MutateRowUnlocked(WriteTransactionState *tx_state,
     s = Status::InvalidArgument("User may not specify REINSERT mutations");
   }
   if (!s.ok()) {
-    tx_state->AddFailedOperation(s);
+    mutate->SetFailed(s);
     return s;
   }
-
 
   Timestamp ts = tx_state->timestamp();
 
@@ -488,17 +459,17 @@ Status Tablet::MutateRowUnlocked(WriteTransactionState *tx_state,
 
   // First try to update in memrowset.
   s = comps->memrowset->MutateRow(ts,
-                            *mutate->probe(),
-                            mutate->changelist(),
+                            *mutate->key_probe,
+                            mutate->decoded_op.changelist,
                             tx_state->op_id(),
                             &stats,
                             result.get());
   if (s.ok()) {
-    RETURN_NOT_OK(tx_state->AddMutation(ts, result.Pass()));
+    mutate->SetMutateSucceeded(result.Pass());
     return s;
   }
   if (!s.IsNotFound()) {
-    tx_state->AddFailedOperation(s);
+    mutate->SetFailed(s);
     return s;
   }
 
@@ -508,23 +479,51 @@ Status Tablet::MutateRowUnlocked(WriteTransactionState *tx_state,
   // based on recent statistics - eg if a rowset is getting
   // updated frequently, pick that one first.
   vector<RowSet *> to_check;
-  comps->rowsets->FindRowSetsWithKeyInRange(mutate->probe()->encoded_key_slice(), &to_check);
+  comps->rowsets->FindRowSetsWithKeyInRange(mutate->key_probe->encoded_key_slice(),
+                                            &to_check);
   BOOST_FOREACH(RowSet *rs, to_check) {
-    s = rs->MutateRow(ts, *mutate->probe(), mutate->changelist(), tx_state->op_id(),
-                      &stats, result.get());
+    s = rs->MutateRow(ts,
+                      *mutate->key_probe,
+                      mutate->decoded_op.changelist,
+                      tx_state->op_id(),
+                      &stats,
+                      result.get());
     if (s.ok()) {
-      RETURN_NOT_OK(tx_state->AddMutation(ts, result.Pass()));
+      mutate->SetMutateSucceeded(result.Pass());
       return s;
     }
     if (!s.IsNotFound()) {
-      tx_state->AddFailedOperation(s);
+      mutate->SetFailed(s);
       return s;
     }
   }
 
   s = Status::NotFound("key not found");
-  tx_state->AddFailedOperation(s);
+  mutate->SetFailed(s);
   return s;
+}
+
+void Tablet::ApplyRowOperations(WriteTransactionState* tx_state) {
+  BOOST_FOREACH(RowOp* row_op, *tx_state->mutable_row_ops()) {
+    ApplyRowOperation(tx_state, row_op);
+  }
+}
+
+void Tablet::ApplyRowOperation(WriteTransactionState* tx_state,
+                               RowOp* row_op) {
+  switch (row_op->decoded_op.type) {
+    case RowOperationsPB::INSERT:
+      ignore_result(InsertUnlocked(tx_state, row_op));
+      return;
+
+    case RowOperationsPB::UPDATE:
+    case RowOperationsPB::DELETE:
+      ignore_result(MutateRowUnlocked(tx_state, row_op));
+      return;
+
+    default:
+      LOG(FATAL) << RowOperationsPB::Type_Name(row_op->decoded_op.type);
+  }
 }
 
 void Tablet::ModifyRowSetTree(const RowSetTree& old_tree,

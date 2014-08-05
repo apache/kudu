@@ -37,7 +37,7 @@ struct DecodedRowOperation {
 
   // For INSERT, the whole projected row.
   // For UPDATE or DELETE, the row key.
-  uint8_t* row_data;
+  const uint8_t* row_data;
 
   // For UPDATE and DELETE types, the changelist
   RowChangeList changelist;

@@ -48,7 +48,7 @@ class AlterSchemaTransactionState;
 class CompactionPolicy;
 class MemRowSet;
 class MvccSnapshot;
-class PreparedRowWrite;
+struct RowOp;
 class RowSetsInCompaction;
 class RowSetTree;
 struct TabletComponents;
@@ -87,6 +87,11 @@ class Tablet {
                                WriteTransactionState* tx_state);
 
   // Acquire locks for each of the operations in the given txn.
+  //
+  // Note that, if this fails, it's still possible that the transaction
+  // state holds _some_ of the locks. In that case, we expect that
+  // the transaction will still clean them up when it is aborted (or
+  // otherwise destructed).
   Status AcquireRowLocks(WriteTransactionState* tx_state);
 
   // Finish the Prepare phase of a write transaction.
@@ -129,21 +134,6 @@ class Tablet {
   void StartTransactionAtTimestamp(WriteTransactionState* tx_state,
                                    Timestamp timestamp);
 
-  // TODO update tests so that we can remove Insert() and Mutate()
-  // and use only InsertUnlocked() and MutateUnlocked().
-
-  // Creates a PreparedRowWrite with write_type() INSERT, acquires the row lock
-  // for the row and creates a probe for later use. 'row_write' is set to the
-  // PreparedRowWrite if this method returns OK.
-  //
-  // TODO when we get to remove the locked versions of Insert/Mutate we
-  // can make the PreparedRowWrite own the row and can revert to passing just
-  // the raw row data, but right now we need to pass the built ConstContinuousRow
-  // as there are cases where row is passed as a reference (old API).
-  Status CreatePreparedInsert(const WriteTransactionState* tx_state,
-                              const ConstContiguousRow* row,
-                              gscoped_ptr<PreparedRowWrite>* row_write);
-
   // Insert a new row into the tablet.
   //
   // The provided 'data' slice should have length equivalent to this
@@ -156,26 +146,16 @@ class Tablet {
   // Returns Status::AlreadyPresent() if an entry with the same key is already
   // present in the tablet.
   // Returns Status::OK unless allocation fails.
-  Status InsertForTesting(WriteTransactionState *tx_state, const ConstContiguousRow& row);
-
-  // A version of Insert that does not acquire locks and instead assumes that
-  // they were already acquired. Requires that handles for the relevant locks
-  // and Mvcc transaction are present in the transaction context.
-  Status InsertUnlocked(WriteTransactionState *tx_state,
-                        const PreparedRowWrite* insert);
-
-  // Creates a PreparedRowWrite with write_type() MUTATE, acquires the row lock
-  // for the row and creates a probe for later use. 'row_write' is set to the
-  // PreparedRowWrite if this method returns OK.
   //
-  // TODO when we get to remove the locked versions of Insert/Mutate we
-  // can make the PreparedRowWrite own the row and can revert to passing just
-  // the raw row data, but right now we need to pass the built ConstContinuousRow
-  // as there are cases where row is passed as a reference (old API).
-  Status CreatePreparedMutate(const WriteTransactionState* tx_state,
-                              const ConstContiguousRow* row_key,
-                              const RowChangeList& changelist,
-                              gscoped_ptr<PreparedRowWrite>* row_write);
+  // TODO update tests so that we can remove InsertForTesting() and Mutate()
+  // and use only InsertUnlocked() and MutateUnlocked().
+  Status InsertForTesting(WriteTransactionState *tx_state,
+                          const ConstContiguousRow& row);
+
+  // Acquires the row lock for the given operation, setting it in the
+  // RowOp struct. This also sets the row op's RowSetKeyProbe.
+  Status AcquireLockForOp(WriteTransactionState* tx_state,
+                          RowOp* op);
 
   // Update a row in this tablet.
   // The specified schema is the full user schema necessary to decode
@@ -188,11 +168,13 @@ class Tablet {
                              const Schema& update_schema,
                              const RowChangeList& update);
 
-  // A version of MutateRow that does not acquire locks and instead assumes
-  // they were already acquired. Requires that handles for the relevant locks
-  // and Mvcc transaction are present in the transaction context.
-  Status MutateRowUnlocked(WriteTransactionState *tx_state,
-                           const PreparedRowWrite* mutate);
+  // Apply all of the row operations associated with this transaction.
+  void ApplyRowOperations(WriteTransactionState* tx_state);
+
+  // Apply a single row operation, which must already be prepared.
+  // The result is set back into row_op->result
+  void ApplyRowOperation(WriteTransactionState* tx_state,
+                         RowOp* row_op);
 
   // Create a new row iterator which yields the rows as of the current MVCC
   // state of this tablet.
@@ -349,6 +331,18 @@ class Tablet {
   friend class Iterator;
 
   Status FlushUnlocked();
+
+  // A version of Insert that does not acquire locks and instead assumes that
+  // they were already acquired. Requires that handles for the relevant locks
+  // and MVCC transaction are present in the transaction state.
+  Status InsertUnlocked(WriteTransactionState *tx_state,
+                        RowOp* insert);
+
+  // A version of MutateRow that does not acquire locks and instead assumes
+  // they were already acquired. Requires that handles for the relevant locks
+  // and MVCC transaction are present in the transaction state.
+  Status MutateRowUnlocked(WriteTransactionState *tx_state,
+                           RowOp* mutate);
 
   // Capture a set of iterators which, together, reflect all of the data in the tablet.
   //

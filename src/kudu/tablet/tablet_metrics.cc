@@ -10,6 +10,8 @@ METRIC_DEFINE_counter(rows_inserted, kudu::MetricUnit::kRows,
     "Number of rows inserted into this tablet since service start");
 METRIC_DEFINE_counter(rows_updated, kudu::MetricUnit::kRows,
     "Number of row update operations performed on this tablet since service start");
+METRIC_DEFINE_counter(rows_deleted, kudu::MetricUnit::kRows,
+    "Number of row delete operations performed on this tablet since service start");
 METRIC_DEFINE_counter(insertions_failed_dup_key, kudu::MetricUnit::kRows,
                       "Number of inserts which failed because the key already existed");
 METRIC_DEFINE_counter(scans_started, kudu::MetricUnit::kRequests,
@@ -58,6 +60,7 @@ namespace tablet {
 TabletMetrics::TabletMetrics(const MetricContext& metric_ctx)
   : MINIT(rows_inserted),
     MINIT(rows_updated),
+    MINIT(rows_deleted),
     MINIT(insertions_failed_dup_key),
     MINIT(scans_started),
     MINIT(blooms_consulted),

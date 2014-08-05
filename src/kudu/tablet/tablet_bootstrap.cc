@@ -25,6 +25,7 @@
 #include "kudu/server/clock.h"
 #include "kudu/server/metadata.h"
 #include "kudu/tablet/lock_manager.h"
+#include "kudu/tablet/row_op.h"
 #include "kudu/tablet/tablet.h"
 #include "kudu/tablet/transactions/alter_schema_transaction.h"
 #include "kudu/tablet/transactions/change_config_transaction.h"
@@ -68,7 +69,6 @@ using metadata::TabletSuperBlockPB;
 using metadata::RowSetMetadata;
 using server::Clock;
 using tablet::OperationResultPB;
-using tablet::PreparedRowWrite;
 using tablet::Tablet;
 using tserver::AlterSchemaRequestPB;
 using tserver::ChangeConfigRequestPB;
@@ -155,21 +155,27 @@ class TabletBootstrap {
                            const RowOperationsPB& ops_pb,
                            const TxResultPB& result);
 
-  // Play a single insert operation.
-  Status PlayInsert(WriteTransactionState* tx_state,
-                    const DecodedRowOperation& op,
-                    const OperationResultPB& op_result);
+  // Pass through all of the decoded operations in tx_state. For
+  // each op:
+  // - if it was previously failed, mark as failed
+  // - if it previously succeeded but was flushed, mark as skipped
+  // - otherwise, re-apply to the tablet being bootstrapped.
+  Status FilterAndApplyOperations(WriteTransactionState* tx_state,
+                                  const TxResultPB& orig_result);
 
-  // Plays a single mutation.
-  Status PlayMutation(WriteTransactionState* tx_state,
-                      const DecodedRowOperation& op,
+  // Filter a single insert operation, setting it to failed if
+  // it was already flushed.
+  Status FilterInsert(WriteTransactionState* tx_state,
+                      RowOp* op,
+                      const OperationResultPB& op_result);
+
+  // Filter a single mutate operation, setting it to failed if
+  // it was already flushed.
+  Status FilterMutate(WriteTransactionState* tx_state,
+                      RowOp* op,
                       const OperationResultPB& op_result);
 
   bool WasStoreAlreadyFlushed(const MemStoreTargetPB& target);
-
-  // Applies a mutation
-  Status ApplyMutation(WriteTransactionState* tx_state,
-                       const DecodedRowOperation& op);
 
   // Handlers for each type of message seen in the log during replay.
   Status HandleEntry(ReplayState* state, LogEntryPB* entry);
@@ -770,7 +776,7 @@ Status TabletBootstrap::PlayWriteRequest(OperationPB* replicate_op,
                                          const OperationPB& commit_op) {
   WriteRequestPB* write = replicate_op->mutable_replicate()->mutable_write_request();
 
-  WriteTransactionState tx_state;
+  WriteTransactionState tx_state(NULL, write, NULL);
   tx_state.mutable_op_id()->CopyFrom(replicate_op->id());
 
   // TODO: KUDU-138: need to reuse the timestamp from the commit op!
@@ -782,6 +788,7 @@ Status TabletBootstrap::PlayWriteRequest(OperationPB* replicate_op,
   tx_state.mutable_op_id()->CopyFrom(replicate_op->id());
 
   if (write->has_row_operations()) {
+    // TODO: get rid of redundant params below - they can be gotten from the Request
     RETURN_NOT_OK(PlayRowOperations(&tx_state,
                                     write->schema(),
                                     write->row_operations(),
@@ -795,7 +802,7 @@ Status TabletBootstrap::PlayWriteRequest(OperationPB* replicate_op,
   new_commit_op->mutable_id()->CopyFrom(commit_op.id());
   CommitMsg* commit = new_commit_op->mutable_commit();
   commit->CopyFrom(commit_op.commit());
-  commit->mutable_result()->CopyFrom(tx_state.Result());
+  tx_state.ReleaseTxResultPB(commit->mutable_result());
   RETURN_NOT_OK(log_->Append(&commit_entry));
 
   return Status::OK();
@@ -865,16 +872,26 @@ Status TabletBootstrap::PlayRowOperations(WriteTransactionState* tx_state,
                         "Couldn't decode client schema");
 
   arena_.Reset();
-  vector<DecodedRowOperation> decoded_ops;
-  shared_ptr<Schema> schema(tablet_->schema_unlocked());
-  RowOperationsPBDecoder dec(&ops_pb, &inserts_schema, schema.get(), &arena_);
-  RETURN_NOT_OK_PREPEND(dec.DecodeOperations(&decoded_ops),
+
+  RETURN_NOT_OK_PREPEND(tablet_->DecodeWriteOperations(&inserts_schema, tx_state),
                         Substitute("Could not decode row operations: $0",
                                    ops_pb.ShortDebugString()));
+  CHECK_EQ(tx_state->row_ops().size(), result.ops_size());
 
+  // Run AcquireRowLocks, Apply, etc!
+  RETURN_NOT_OK_PREPEND(tablet_->AcquireRowLocks(tx_state),
+                        "Failed to acquire row locks");
+
+  RETURN_NOT_OK(FilterAndApplyOperations(tx_state, result));
+
+  return Status::OK();
+}
+
+Status TabletBootstrap::FilterAndApplyOperations(WriteTransactionState* tx_state,
+                                                 const TxResultPB& orig_result) {
   int32_t op_idx = 0;
-  BOOST_FOREACH(const DecodedRowOperation& op, decoded_ops) {
-    const OperationResultPB& op_result = result.ops(op_idx++);
+  BOOST_FOREACH(RowOp* op, *tx_state->mutable_row_ops()) {
+    const OperationResultPB& op_result = orig_result.ops(op_idx++);
     // check if the operation failed in the original transaction
     if (PREDICT_FALSE(op_result.has_failed_status())) {
       if (VLOG_IS_ON(1)) {
@@ -883,32 +900,50 @@ Status TabletBootstrap::PlayRowOperations(WriteTransactionState* tx_state,
                 << op_idx - 1 << " original error: "
                 << op_result.failed_status().DebugString();
       }
-      tx_state->AddFailedOperation(Status::RuntimeError("Row operation failed previously."));
+      op->SetFailed(Status::RuntimeError("Row operation failed previously."));
       continue;
     }
 
-    switch (op.type) {
+    // Check if it should be filtered out because it's already flushed.
+    switch (op->decoded_op.type) {
       case RowOperationsPB::INSERT:
-        RETURN_NOT_OK(PlayInsert(tx_state, op, op_result));
+        RETURN_NOT_OK(FilterInsert(tx_state, op, op_result));
         break;
       case RowOperationsPB::UPDATE:
       case RowOperationsPB::DELETE:
-        RETURN_NOT_OK(PlayMutation(tx_state, op, op_result));
+        RETURN_NOT_OK(FilterMutate(tx_state, op, op_result));
         break;
       default:
-        LOG(FATAL) << "Bad op type: " << op.type;
+        LOG(FATAL) << "Bad op type: " << op->decoded_op.type;
         break;
+    }
+    if (op->result != NULL) {
+      continue;
+    }
+
+    // Actually apply it.
+    tablet_->ApplyRowOperation(tx_state, op);
+    DCHECK(op->result != NULL);
+
+    // We expect that the above Apply() will always succeed, because we're
+    // applying an operation that we know succeeded before the server
+    // restarted. If it doesn't succeed, something is wrong and we are
+    // diverging from our prior state, so bail.
+    if (op->result->has_failed_status()) {
+      return Status::Corruption("Operation which previously succeeded failed "
+                                "during log replay",
+                                Substitute("Op: $0\nFailure: $1",
+                                           op->ToString(*tablet_->schema_unlocked()),
+                                           op->result->failed_status().ShortDebugString()));
     }
   }
   return Status::OK();
 }
 
-Status TabletBootstrap::PlayInsert(WriteTransactionState* tx_state,
-                                   const DecodedRowOperation& op,
-                                   const OperationResultPB& op_result) {
-  DCHECK(op.type == RowOperationsPB::INSERT)
-    << RowOperationsPB::Type_Name(op.type);
-
+Status TabletBootstrap::FilterInsert(WriteTransactionState* tx_state,
+                                     RowOp* op,
+                                     const OperationResultPB& op_result) {
+  DCHECK_EQ(op->decoded_op.type, RowOperationsPB::INSERT);
 
   if (PREDICT_FALSE(op_result.mutated_stores_size() != 1 ||
                     !op_result.mutated_stores(0).has_mrs_id())) {
@@ -924,37 +959,17 @@ Status TabletBootstrap::PlayInsert(WriteTransactionState* tx_state,
               << " latest durable mrs id: " << tablet_->metadata()->last_durable_mrs_id();
     }
 
-    tx_state->AddFailedOperation(Status::AlreadyPresent("Row to insert was already flushed."));
-    return Status::OK();
-  }
-
-  shared_ptr<Schema> schema(tablet_->schema_unlocked());
-  const ConstContiguousRow* row = tx_state->AddToAutoReleasePool(
-    new ConstContiguousRow(schema.get(), op.row_data));
-
-  gscoped_ptr<PreparedRowWrite> prepared_row;
-  // TODO maybe we shouldn't acquire the row lock on replay?
-  RETURN_NOT_OK(tablet_->CreatePreparedInsert(tx_state, row, &prepared_row));
-
-  // apply the insert to the tablet
-  RETURN_NOT_OK_PREPEND(tablet_->InsertUnlocked(tx_state, prepared_row.get()),
-                        Substitute("Failed to insert row $0. Reason",
-                                   row->schema()->DebugRow(*row)));
-
-  if (VLOG_IS_ON(1)) {
-    VLOG(1) << "Applied Insert. OpId: "
-            << tx_state->op_id().DebugString()
-            << " row: " << row->schema()->DebugRow(*row);
+    op->SetFailed(Status::AlreadyPresent("Row to insert was already flushed."));
   }
   return Status::OK();
 }
 
-Status TabletBootstrap::PlayMutation(WriteTransactionState* tx_state,
-                                     const DecodedRowOperation& op,
+Status TabletBootstrap::FilterMutate(WriteTransactionState* tx_state,
+                                     RowOp* op,
                                      const OperationResultPB& op_result) {
-  DCHECK(op.type == RowOperationsPB::UPDATE ||
-         op.type == RowOperationsPB::DELETE)
-    << RowOperationsPB::Type_Name(op.type);
+  DCHECK(op->decoded_op.type == RowOperationsPB::UPDATE ||
+         op->decoded_op.type == RowOperationsPB::DELETE)
+    << RowOperationsPB::Type_Name(op->decoded_op.type);
 
   int num_mutated_stores = op_result.mutated_stores_size();
   if (PREDICT_FALSE(num_mutated_stores == 0 || num_mutated_stores > 2)) {
@@ -970,7 +985,7 @@ Status TabletBootstrap::PlayMutation(WriteTransactionState* tx_state,
       num_unflushed_stores++;
     } else {
       if (VLOG_IS_ON(1)) {
-        string mutation = op.changelist.ToString(*tablet_->schema_unlocked().get());
+        string mutation = op->decoded_op.changelist.ToString(*tablet_->schema_unlocked().get());
         VLOG(1) << "Skipping mutation to " << mutated_store.ShortDebugString()
                 << " that was already flushed. "
                 << "OpId: " << tx_state->op_id().DebugString();
@@ -980,7 +995,7 @@ Status TabletBootstrap::PlayMutation(WriteTransactionState* tx_state,
 
   if (num_unflushed_stores == 0) {
     // The mutation was fully flushed.
-    tx_state->AddFailedOperation(Status::AlreadyPresent("Update was already flushed."));
+    op->SetFailed(Status::AlreadyPresent("Update was already flushed."));
     return Status::OK();
   }
 
@@ -995,10 +1010,8 @@ Status TabletBootstrap::PlayMutation(WriteTransactionState* tx_state,
                 << "targets";
   }
 
-  RETURN_NOT_OK(ApplyMutation(tx_state, op));
   return Status::OK();
 }
-
 
 bool TabletBootstrap::WasStoreAlreadyFlushed(const MemStoreTargetPB& target) {
   if (target.has_mrs_id()) {
@@ -1033,28 +1046,6 @@ bool TabletBootstrap::WasStoreAlreadyFlushed(const MemStoreTargetPB& target) {
     return false;
   }
 }
-
-Status TabletBootstrap::ApplyMutation(WriteTransactionState* tx_state,
-                                      const DecodedRowOperation& op) {
-  shared_ptr<Schema> schema(tablet_->schema_unlocked());
-  gscoped_ptr<ConstContiguousRow> row_key(
-    new ConstContiguousRow(schema.get(), op.row_data));
-  gscoped_ptr<PreparedRowWrite> prepared_row;
-  // TODO maybe we shouldn't acquire the row lock on replay?
-  RETURN_NOT_OK(tablet_->CreatePreparedMutate(tx_state, row_key.get(),
-                                              op.changelist,
-                                              &prepared_row));
-
-  RETURN_NOT_OK(tablet_->MutateRowUnlocked(tx_state, prepared_row.get()));
-
-  if (VLOG_IS_ON(1)) {
-    VLOG(1) << "Applied Mutation. OpId: " << tx_state->op_id().DebugString()
-            << " row key: " << schema.get()->DebugRowKey(*row_key)
-            << " mutation: " << op.changelist.ToString(*schema.get());
-  }
-  return Status::OK();
-}
-
 Status TabletBootstrap::UpdateClock(uint64_t timestamp) {
   Timestamp ts;
   RETURN_NOT_OK(ts.FromUint64(timestamp));

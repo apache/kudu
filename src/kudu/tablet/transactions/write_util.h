@@ -32,10 +32,10 @@ class WriteTransactionState;
 // No projection is performed if the two schemas are the same.
 //
 // TODO: this is now only used by the testing code path
-const ConstContiguousRow* ProjectRowForInsert(WriteTransactionState* tx_state,
-                                              const Schema* tablet_schema,
-                                              const RowProjector& row_projector,
-                                              const uint8_t *user_row_ptr);
+ConstContiguousRow ProjectRowForInsert(WriteTransactionState* tx_state,
+                                       const Schema* tablet_schema,
+                                       const RowProjector& row_projector,
+                                       const uint8_t* user_row_ptr);
 
 
 

@@ -9,6 +9,7 @@
 #include "kudu/common/iterator.h"
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/casts.h"
+#include "kudu/tablet/row_op.h"
 #include "kudu/tablet/tablet.h"
 #include "kudu/tablet/tablet-harness.h"
 #include "kudu/tablet/transactions/alter_schema_transaction.h"
@@ -104,8 +105,8 @@ class KuduRowSetTest : public KuduTabletTest {
 
 // Helper to get the last mutation result on the transaction context.
 static inline const OperationResultPB& last_mutation(const WriteTransactionState &tx_state) {
-  CHECK_GE(tx_state.Result().ops_size(), 1);
-  return tx_state.Result().ops(tx_state.Result().ops_size() - 1);
+  CHECK_GE(tx_state.row_ops().size(), 1);
+  return *CHECK_NOTNULL(tx_state.row_ops().back()->result.get());
 }
 
 static inline Status IterateToStringList(RowwiseIterator *iter,

@@ -188,15 +188,19 @@ TYPED_TEST(TestTablet, TestInsertDuplicateKey) {
 
   WriteTransactionState tx_state;
   ASSERT_STATUS_OK(this->tablet()->InsertForTesting(&tx_state, row));
-  ASSERT_EQ(1, tx_state.Result().ops().size());
+  TxResultPB result;
+  tx_state.ReleaseTxResultPB(&result);
+  ASSERT_EQ(1, result.ops().size());
 
   // Insert again, should fail!
   tx_state.Reset();
   Status s = this->tablet()->InsertForTesting(&tx_state, row);
   ASSERT_TRUE(s.IsAlreadyPresent()) <<
     "expected AlreadyPresent, but got: " << s.ToString();
-  ASSERT_EQ(1, tx_state.Result().ops().size());
-  ASSERT_FALSE(tx_state.is_all_success());
+  tx_state.ReleaseTxResultPB(&result);
+  ASSERT_EQ(1, result.ops().size());
+
+  ASSERT_TRUE(result.ops(0).has_failed_status()) << result.DebugString();
 
   ASSERT_EQ(1, this->TabletCount());
 
@@ -210,7 +214,8 @@ TYPED_TEST(TestTablet, TestInsertDuplicateKey) {
   ASSERT_TRUE(s.IsAlreadyPresent())
     << "expected AlreadyPresent, but got: " << s.ToString()
     << " Inserting: " << rb.data().ToDebugString();
-  ASSERT_EQ(1, tx_state.Result().ops().size());
+  tx_state.ReleaseTxResultPB(&result);
+  ASSERT_EQ(1, result.ops().size());
 
   ASSERT_EQ(1, this->TabletCount());
 }

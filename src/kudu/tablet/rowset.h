@@ -192,7 +192,7 @@ class RowSetKeyProbe {
   }
 
  private:
-  const ConstContiguousRow& row_key_;
+  const ConstContiguousRow row_key_;
   gscoped_ptr<EncodedKey> encoded_key_;
   BloomKeyProbe bloom_probe_;
 };

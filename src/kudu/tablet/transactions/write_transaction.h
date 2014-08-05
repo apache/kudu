@@ -31,20 +31,25 @@ class WriteResponsePB;
 }
 
 namespace tablet {
-class PreparedRowWrite;
+struct RowOp;
 class RowSetKeyProbe;
 struct TabletComponents;
 
-// A transaction context for a batch of inserts/mutates. This class holds and
-// owns most everything related to a transaction, including the acquired locks
-// (row and component), the PreparedRowWrites, the Replicate and Commit messages.
-// With the exception of the rows (ConstContiguousRow), and the mutations
-// (RowChangeList), all the transaction related pointers are owned by this class
+// A TransactionState for a batch of inserts/mutates. This class holds and
+// owns most everything related to a transaction, including:
+// - A RowOp structure for each of the rows being inserted or mutated, which itself
+//   contains:
+//   - decoded/projected data
+//   - row lock reference
+//   - result of this particular insert/mutate operation, once executed
+// - the Replicate and Commit PB messages
+//
+// All the transaction related pointers are owned by this class
 // and destroyed on Reset() or by the destructor.
 //
-// IMPORTANT: All the acquired locks will not be released unless the transaction
-// context is either destroyed or Reset() or release_locks() is called, beware of
-// this when using the transaction context or there will be lock leaks.
+// IMPORTANT: All the acquired locks will not be released unless the TransactionState
+// is either destroyed or Reset() or release_locks() is called. Beware of this
+// or else there will be lock leaks.
 //
 // Used when logging to WAL in that we keep track of where inserts/updates
 // were applied and add that information to the commit message that is stored
@@ -52,50 +57,20 @@ struct TabletComponents;
 //
 // NOTE: this class isn't thread safe.
 class WriteTransactionState : public TransactionState {
-
  public:
   WriteTransactionState(TabletPeer* tablet_peer = NULL,
                         const tserver::WriteRequestPB *request = NULL,
                         tserver::WriteResponsePB *response = NULL);
   virtual ~WriteTransactionState();
 
-  // Adds an applied insert to this TransactionState, including the
-  // id of the MemRowSet to which it was applied.
-  Status AddInsert(const Timestamp &tx_id,
-                   int64_t mrs_id);
-
-  // Adds a failed operation to this TransactionState, including the status
-  // explaining why the operation failed.
-  void AddFailedOperation(const Status &status);
-
-  // Adds an applied mutation to this TransactionState, including the
-  // tablet id, the mvcc transaction id, the mutation that was applied
-  // and the delta stores that were mutated.
-  Status AddMutation(const Timestamp &tx_id,
-                     gscoped_ptr<OperationResultPB> result);
-
-  // Adds a missed mutation to this TransactionState.
-  // Missed mutations are the ones that are applied on Phase 2 of compaction
-  // and reflect updates to the old DeltaMemStore that were not yet present
-  // in the new DeltaMemStore.
-  // The passed 'changelist' is copied into a protobuf and does not need to
-  // be alive after this method returns.
-  Status AddMissedMutation(const Timestamp& timestamp,
-                           gscoped_ptr<RowwiseRowBlockPB> row_key,
-                           const RowChangeList& changelist,
-                           gscoped_ptr<OperationResultPB> result);
-
-  bool is_all_success() const {
-    return failed_operations_ == 0;
-  }
-
   // Returns the result of this transaction in its protocol buffers form.
   // The transaction result holds information on exactly which memory stores
   // were mutated in the context of this transaction and can be used to
   // perform recovery.
-  const TxResultPB& Result() const {
-    return result_pb_;
-  }
+  //
+  // This releases part of the state of the transaction, and will crash
+  // if called more than once.
+  void ReleaseTxResultPB(TxResultPB* result) const;
 
   // Returns the original client request for this transaction, if there was
   // one.
@@ -117,6 +92,14 @@ class WriteTransactionState : public TransactionState {
   // Called exactly once during PREPARE
   void set_tablet_components(const scoped_refptr<const TabletComponents>& components);
 
+  void set_schema_at_decode_time(const Schema* schema) {
+    schema_at_decode_time_ = schema;
+  }
+
+  const Schema* schema_at_decode_time() const {
+    return schema_at_decode_time_;
+  }
+
   const TabletComponents* tablet_components() const {
     return tablet_components_.get();
   }
@@ -128,26 +111,17 @@ class WriteTransactionState : public TransactionState {
   // Note: request_ and response_ are set to NULL after this method returns.
   void commit();
 
-  // Adds a PreparedRowWrite to be managed by this transaction context, as
-  // created in the prepare phase.
-  void add_prepared_row(gscoped_ptr<PreparedRowWrite> row) {
-    DCHECK(!mvcc_tx_) << "Must not add row locks after acquiring timestamp!";
-    rows_.push_back(row.release());
-  }
-
   // Returns all the prepared row writes for this transaction. Usually called
   // on the apply phase to actually make changes to the tablet.
-  vector<PreparedRowWrite *> &rows() {
-    return rows_;
+  const std::vector<RowOp*>& row_ops() const {
+    return row_ops_;
   }
 
-  const std::vector<DecodedRowOperation>& decoded_ops() const {
-    return decoded_ops_;
+  std::vector<RowOp*>* mutable_row_ops() {
+    return &row_ops_;
   }
 
-  std::vector<DecodedRowOperation>* mutable_decoded_ops() {
-    return &decoded_ops_;
-  }
+  void UpdateMetricsForOp(const RowOp& op);
 
   // Releases all the row locks acquired by this transaction.
   void release_row_locks();
@@ -162,9 +136,6 @@ class WriteTransactionState : public TransactionState {
  private:
   DISALLOW_COPY_AND_ASSIGN(WriteTransactionState);
 
-  TxResultPB result_pb_;
-  int32_t failed_operations_;
-
   // pointers to the rpc context, request and response, lifecyle
   // is managed by the rpc subsystem. These pointers maybe NULL if the
   // transaction was not initiated by an RPC call.
@@ -172,16 +143,18 @@ class WriteTransactionState : public TransactionState {
   tserver::WriteResponsePB* response_;
 
   // The row operations which are decoded from the request during PREPARE
-  std::vector<DecodedRowOperation> decoded_ops_;
-
-  // the rows and locks as transformed/acquired by the prepare task
-  vector<PreparedRowWrite*> rows_;
+  std::vector<RowOp*> row_ops_;
 
   // The MVCC transaction, set up during PREPARE phase
   gscoped_ptr<ScopedTransaction> mvcc_tx_;
 
   // The tablet components, acquired at the same time as mvcc_tx_ is set.
   scoped_refptr<const TabletComponents> tablet_components_;
+
+  // The Schema of the tablet when the transaction was first decoded.
+  // This is verified at APPLY time to ensure we don't have races against
+  // schema change.
+  const Schema* schema_at_decode_time_;
 };
 
 // Executes a write transaction.
@@ -234,14 +207,12 @@ class WriteTransactionState : public TransactionState {
 //    Prepare() complete. When PrepareSucceeded() is is called twice (independently
 //    of who finishes first) Apply() is called, asynchronously.
 //
-// 5) When Apply() starts execution the TransactionState must have been
-//    passed all the PreparedRowWrites (each containing a row lock) and the
-//    'component_lock'. Apply() starts the mvcc transaction and calls
-//    Tablet::InsertUnlocked/Tablet::MutateUnlocked with each of the
-//    PreparedRowWrites. Apply() keeps track of any single row errors
-//    that might have occurred while inserting/mutating and sets those in
-//    WriteResponse. TransactionState is passed with each insert/mutate
-//    to keep track of which in-memory stores were mutated.
+// 5) When Apply() starts execution the RowOps within the WriteTransactionState
+//    must all have been prepared (i.e row locks obtained, etc).
+//    Apply() starts the mvcc transaction and calls Tablet::Apply() which performs
+//    all of the actual underlying operations, saving their results (and mutation
+//    records) in the fields of each RowOp struct.
+//
 //    After all the inserts/mutates are performed Apply() releases row
 //    locks (see 'Implementation Techniques for Main Memory Database Systems',
 //    DeWitt et. al.). It then readies the CommitMsg with the TXResultPB in
@@ -269,9 +240,9 @@ class WriteTransaction : public Transaction {
 
   // Executes a Prepare for a write transaction
   //
-  // Acquires all the relevant row locks for the transaction, the tablet
-  // component_lock in shared mode and starts an Mvcc transaction. When the task
-  // is finished, the next one in the pipeline must take ownership of these.
+  // Decodes the operations in the request PB and acquires row locks for each of the
+  // affected rows. This results in adding 'RowOp' objects for each of the operations
+  // into the WriteTransactionState.
   virtual Status Prepare() OVERRIDE;
 
   // Actually starts the Mvcc transaction and assigns a timestamp to this transaction.
@@ -313,70 +284,6 @@ class WriteTransaction : public Transaction {
 
  private:
   DISALLOW_COPY_AND_ASSIGN(WriteTransaction);
-};
-
-// A context for a single row in a transaction. Contains the row, the probe
-// and the row lock for an insert, or the row_key, the probe, the mutation
-// and the row lock, for a mutation.
-//
-// This class owns the 'probe' and the 'row_lock' but does not own the 'row', 'row_key'
-// or 'mutations'. The non-owned data structures are expected to last for the lifetime
-// of this class.
-class PreparedRowWrite {
- public:
-  enum Type {
-    INSERT,
-    MUTATE
-  };
-
-  const ConstContiguousRow* row() const {
-    return row_;
-  }
-
-  const ConstContiguousRow* row_key() const {
-    return row_key_;
-  }
-
-  const RowSetKeyProbe* probe() const {
-    return probe_.get();
-  }
-
-  const RowChangeList& changelist() const {
-    return changelist_;
-  }
-
-  bool has_row_lock() const {
-    return row_lock_.acquired();
-  }
-
-  const Type write_type() const {
-    return op_type_;
-  }
-
-  std::string ToString() const;
-
- private:
-
-  friend class Tablet;
-
-  // ctor for inserts
-  PreparedRowWrite(const ConstContiguousRow* row,
-                   const gscoped_ptr<RowSetKeyProbe> probe,
-                   ScopedRowLock lock);
-
-  // ctor for mutations
-  PreparedRowWrite(const ConstContiguousRow* row_key,
-                   const RowChangeList& mutations,
-                   const gscoped_ptr<RowSetKeyProbe> probe,
-                   ScopedRowLock lock);
-
-  const ConstContiguousRow *row_;
-  const ConstContiguousRow *row_key_;
-  const RowChangeList changelist_;
-
-  const gscoped_ptr<RowSetKeyProbe> probe_;
-  const ScopedRowLock row_lock_;
-  const Type op_type_;
 };
 
 }  // namespace tablet

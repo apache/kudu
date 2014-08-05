@@ -23,6 +23,7 @@ struct TabletMetrics {
   // Operation rates
   Counter* rows_inserted;
   Counter* rows_updated;
+  Counter* rows_deleted;
   Counter* insertions_failed_dup_key;
   Counter* scans_started;
 
