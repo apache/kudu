@@ -2,7 +2,6 @@
 // All rights reserved.
 
 #include <boost/foreach.hpp>
-#include <boost/lexical_cast.hpp>
 #include <glog/logging.h>
 
 #include "kudu/gutil/ref_counted.h"

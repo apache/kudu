@@ -7,7 +7,6 @@
 
 #include <algorithm>
 #include <boost/foreach.hpp>
-#include <boost/lexical_cast.hpp>
 #include <tr1/unordered_set>
 #include <utility>
 #include <vector>
@@ -17,6 +16,7 @@
 #include "kudu/gutil/strings/numbers.h"
 #include "kudu/gutil/strings/split.h"
 #include "kudu/gutil/strings/strip.h"
+#include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/strings/util.h"
 #include "kudu/util/errno.h"
 #include "kudu/util/net/net_util.h"
@@ -24,6 +24,7 @@
 
 using std::tr1::unordered_set;
 using std::vector;
+using strings::Substitute;
 
 namespace kudu {
 
@@ -99,7 +100,7 @@ Status HostPort::ResolveAddresses(vector<Sockaddr>* addresses) const {
 }
 
 string HostPort::ToString() const {
-  return host_ + ":" + boost::lexical_cast<string>(port_);
+  return Substitute("$0:$1", host_, port_);
 }
 
 bool IsPrivilegedPort(uint16_t port) {

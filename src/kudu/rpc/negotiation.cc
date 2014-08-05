@@ -6,12 +6,12 @@
 #include <sys/time.h>
 #include <sys/select.h>
 
-#include <boost/lexical_cast.hpp>
 #include <string>
 
 #include <glog/logging.h>
 
 #include "kudu/gutil/stringprintf.h"
+#include "kudu/gutil/strings/substitute.h"
 #include "kudu/rpc/blocking_ops.h"
 #include "kudu/rpc/connection.h"
 #include "kudu/rpc/reactor.h"
@@ -26,6 +26,7 @@ namespace kudu {
 namespace rpc {
 
 using std::tr1::shared_ptr;
+using strings::Substitute;
 
 // Client: Send ConnectionContextPB message based on information stored in the Connection object.
 static Status SendConnectionContext(Connection* conn, const MonoTime& deadline) {
@@ -53,7 +54,7 @@ static Status RecvConnectionContext(Connection* conn, const MonoTime& deadline) 
 
   if (header.call_id() != kConnectionContextCallId) {
     return Status::IllegalState("Expected ConnectionContext callid, received",
-        boost::lexical_cast<string>(header.call_id()));
+        Substitute("$0", header.call_id()));
   }
 
   ConnectionContextPB conn_context;

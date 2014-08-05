@@ -4,7 +4,6 @@
 
 #include <boost/foreach.hpp>
 #include <boost/intrusive/list.hpp>
-#include <boost/lexical_cast.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 #include <stdint.h>
@@ -14,6 +13,7 @@
 #include <vector>
 
 #include "kudu/gutil/map-util.h"
+#include "kudu/gutil/strings/substitute.h"
 #include "kudu/rpc/auth_store.h"
 #include "kudu/rpc/rpc_introspection.pb.h"
 #include "kudu/rpc/constants.h"
@@ -31,6 +31,7 @@
 
 using std::tr1::shared_ptr;
 using std::vector;
+using strings::Substitute;
 
 namespace kudu {
 namespace rpc {
@@ -424,8 +425,8 @@ void Connection::HandleIncomingCall(gscoped_ptr<InboundTransfer> transfer) {
     LOG(WARNING) << ToString() << ": received call ID " << call->call_id() <<
       " but was already processing this ID! Ignoring";
     reactor_thread_->DestroyConnection(
-      this, Status::RuntimeError("Deceived duplicate call id",
-                                 boost::lexical_cast<string>(call->call_id())));
+      this, Status::RuntimeError("Received duplicate call id",
+                                 Substitute("$0", call->call_id())));
     return;
   }
 
