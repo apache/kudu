@@ -99,8 +99,8 @@
 
 #include <gtest/gtest_prod.h>
 
-#include "kudu/gutil/atomicops.h"
 #include "kudu/gutil/casts.h"
+#include "kudu/util/atomic.h"
 #include "kudu/util/jsonwriter.h"
 #include "kudu/util/locks.h"
 #include "kudu/util/status.h"
@@ -384,7 +384,7 @@ class StringGauge : public Gauge {
   DISALLOW_COPY_AND_ASSIGN(StringGauge);
 };
 
-// Lock-free implementation for types that are convertible to/from Atomic64.
+// Lock-free implementation for types that are convertible to/from int64_t.
 template <typename T>
 class AtomicGauge : public Gauge {
  public:
@@ -398,16 +398,16 @@ class AtomicGauge : public Gauge {
       value_(initial_value) {
   }
   T value() const {
-    return static_cast<T>(base::subtle::Release_Load(&value_));
+    return static_cast<T>(value_.Load(kMemOrderRelease));
   }
   virtual void set_value(const T& value) {
-    base::subtle::NoBarrier_Store(&value_, static_cast<base::subtle::Atomic64>(value));
+    value_.Store(static_cast<int64_t>(value), kMemOrderNoBarrier);
   }
   void Increment() {
-    IncrementBy(1);
+    value_.IncrementBy(1, kMemOrderNoBarrier);
   }
   virtual void IncrementBy(int64_t amount) {
-    base::subtle::NoBarrier_AtomicIncrement(&value_, amount);
+    value_.IncrementBy(amount, kMemOrderNoBarrier);
   }
   void Decrement() {
     IncrementBy(-1);
@@ -420,7 +420,7 @@ class AtomicGauge : public Gauge {
   virtual void WriteValue(JsonWriter* writer) const OVERRIDE {
     writer->Value(value());
   }
-  base::subtle::Atomic64 value_;
+  AtomicInt<int64_t> value_;
  private:
   DISALLOW_COPY_AND_ASSIGN(AtomicGauge);
 };
@@ -444,20 +444,11 @@ class HighWaterMark : public AtomicGauge<T> {
 
   // Return the current value.
   T current_value() const {
-    return static_cast<T>(base::subtle::NoBarrier_Load(&current_value_));
+    return static_cast<T>(current_value_.Load(kMemOrderNoBarrier));
   }
 
   void UpdateMax(int64_t value) {
-    while (true) {
-      int64_t old_value = base::subtle::NoBarrier_Load(&value_);
-      int64_t new_value = std::max(old_value, value);
-      if (PREDICT_TRUE(base::subtle::NoBarrier_CompareAndSwap(
-              &value_,
-              old_value,
-              new_value) == old_value)) {
-        break;
-      }
-    }
+    value_.StoreMax(value, kMemOrderNoBarrier);
   }
 
   // If current value + 'delta' is <= 'max', increment current value
@@ -469,11 +460,9 @@ class HighWaterMark : public AtomicGauge<T> {
       if (new_val > max) {
         return false;
       }
-      if (PREDICT_TRUE(base::subtle::NoBarrier_CompareAndSwap(
-              &current_value_,
-              static_cast<base::subtle::Atomic64>(old_val),
-              static_cast<base::subtle::Atomic64>(new_val)) ==
-                       static_cast<base::subtle::Atomic64>(old_val))) {
+      if (PREDICT_TRUE(current_value_.CompareAndSwap(static_cast<int64_t>(old_val),
+                                                     static_cast<int64_t>(new_val),
+                                                     kMemOrderNoBarrier))) {
         UpdateMax(new_val);
         return true;
       }
@@ -481,12 +470,12 @@ class HighWaterMark : public AtomicGauge<T> {
   }
 
   virtual void IncrementBy(int64_t amount) OVERRIDE {
-    UpdateMax(base::subtle::NoBarrier_AtomicIncrement(&current_value_, amount));
+    UpdateMax(current_value_.IncrementBy(amount, kMemOrderNoBarrier));
   }
 
   virtual void set_value(const T& value) OVERRIDE {
     int64_t v = static_cast<int64_t>(value);
-    base::subtle::NoBarrier_Store(&current_value_, v);
+    current_value_.Store(v, kMemOrderNoBarrier);
     UpdateMax(v);
   }
  protected:
@@ -501,7 +490,7 @@ class HighWaterMark : public AtomicGauge<T> {
 
   using AtomicGauge<T>::value_;
  private:
-  base::subtle::Atomic64 current_value_;
+  AtomicInt<int64_t> current_value_;
 };
 
 // A Gauge that calls back to a function to get its value.
@@ -570,7 +559,7 @@ class Counter : public Metric {
 
   explicit Counter(const CounterPrototype& proto);
 
-  base::subtle::Atomic64 value_;
+  AtomicInt<int64_t> value_;
   const MetricUnit::Type unit_;
   const std::string description_;
   DISALLOW_COPY_AND_ASSIGN(Counter);

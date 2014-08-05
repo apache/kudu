@@ -361,7 +361,7 @@ Counter::Counter(const CounterPrototype& proto)
 }
 
 int64_t Counter::value() const {
-  return base::subtle::NoBarrier_Load(&value_);
+  return value_.Load(kMemOrderNoBarrier);
 }
 
 void Counter::Increment() {
@@ -369,7 +369,7 @@ void Counter::Increment() {
 }
 
 void Counter::IncrementBy(int64_t amount) {
-  base::subtle::NoBarrier_AtomicIncrement(&value_, amount);
+  value_.IncrementBy(amount, kMemOrderNoBarrier);
 }
 
 Status Counter::WriteAsJson(const string& name,
