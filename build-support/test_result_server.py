@@ -240,36 +240,39 @@ class TRServer(object):
     <h1>{{ test_name |e }} flakiness over recent revisions</h1>
     {% for r in revision_rows %}
       <h4>{{ r.revision }} (Failed {{ r.num_failures }} / {{ r.num_runs }})</h4>
-      <table class="table">
-        <tr>
-          <th>time</th>
-          <th>build</th>
-          <th>rev</th>
-          <th>machine</th>
-          <th>test</th>
-          <th>config</th>
-          <th>exit code</th>
-        </tr>
-        {% for run in r.runs %}
-          <tr {% if run.status != 0 %}
-                style="background-color: #faa;"
-              {% else %}
-                style="background-color: #afa;"
-              {% endif %}>
-            <td>{{ run.timestamp |e }}</td>
-            <td>{{ run.build_id |e }}</td>
-            <td>{{ run.revision |e }}</td>
-            <td>{{ run.hostname |e }}</td>
-            <td>{{ run.test_name |e }}</td>
-            <td>{{ run.build_config |e }}</td>
-            <td>{{ run.status |e }}
-              {% if run.log_key %}
-                <a href="/download_log?key={{ run.log_key |e }}">failure log</a>
-              {% endif %}
-            </td>
+      <a data-toggle="collapse" href="#rev-{{r.revision|e}}">details</a>
+      <div class="collapse" id="rev-{{r.revision}}">
+        <table class="table">
+          <tr>
+            <th>time</th>
+            <th>build</th>
+            <th>rev</th>
+            <th>machine</th>
+            <th>test</th>
+            <th>config</th>
+            <th>exit code</th>
           </tr>
-        {% endfor %}
-      </table>
+          {% for run in r.runs %}
+            <tr {% if run.status != 0 %}
+                  style="background-color: #faa;"
+                {% else %}
+                  style="background-color: #afa;"
+                {% endif %}>
+              <td>{{ run.timestamp |e }}</td>
+              <td>{{ run.build_id |e }}</td>
+              <td>{{ run.revision |e }}</td>
+              <td>{{ run.hostname |e }}</td>
+              <td>{{ run.test_name |e }}</td>
+              <td>{{ run.build_config |e }}</td>
+              <td>{{ run.status |e }}
+                {% if run.log_key %}
+                  <a href="/download_log?key={{ run.log_key |e }}">failure log</a>
+                {% endif %}
+              </td>
+            </tr>
+          {% endfor %}
+        </table>
+      </div>
     {% endfor %}
     """).render(revision_rows=revision_rows, test_name=test_name))
 
@@ -289,6 +292,7 @@ class TRServer(object):
       <link rel="stylesheet" href="//maxcdn.bootstrapcdn.com/bootstrap/3.2.0/css/bootstrap.min.css" />
     </head>
     <body>
+      <script src="//ajax.googleapis.com/ajax/libs/jquery/1.11.1/jquery.min.js"></script>
       <script src="//maxcdn.bootstrapcdn.com/bootstrap/3.2.0/js/bootstrap.min.js"></script>
       <div class="container-fluid">
       {{ body }}
