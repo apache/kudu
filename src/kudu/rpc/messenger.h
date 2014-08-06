@@ -4,6 +4,7 @@
 
 #include <stdint.h>
 #include <tr1/memory>
+#include <tr1/unordered_map>
 
 #include <list>
 #include <string>
@@ -90,7 +91,7 @@ class MessengerBuilder {
 };
 
 // A Messenger is a container for the reactor threads which run event loops
-// for the RPC service. If the process is a server, a Messenger can also have
+// for the RPC services. If the process is a server, a Messenger can also have
 // one or more attached AcceptorPools which accept RPC connections. In this case,
 // calls received over the connection are enqueued into the messenger's service_queue
 // for processing by a ServicePool.
@@ -105,6 +106,7 @@ class Messenger {
   friend class Proxy;
   friend class Reactor;
   typedef std::vector<std::tr1::shared_ptr<AcceptorPool> > acceptor_vec_t;
+  typedef std::tr1::unordered_map<std::string, scoped_refptr<RpcService> > RpcServicesMap;
 
   static const uint64_t UNKNOWN_CALL_ID = 0;
 
@@ -181,7 +183,7 @@ class Messenger {
 
   const std::string name_;
 
-  // protects closing_, acceptor_pools_, rpc_service_.
+  // Protects closing_, acceptor_pools_, rpc_services_.
   mutable percpu_rwlock lock_;
 
   bool closing_;
@@ -192,9 +194,8 @@ class Messenger {
   // be listening.
   acceptor_vec_t acceptor_pools_;
 
-  // RPC service that handles inbound requests.
-  // TODO: Allow multiple services to be registered.
-  scoped_refptr<RpcService> rpc_service_;
+  // RPC services that handle inbound requests.
+  RpcServicesMap rpc_services_;
 
   std::vector<Reactor*> reactors_;
 

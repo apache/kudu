@@ -70,6 +70,10 @@ class InboundCall {
     return header_.call_id();
   }
 
+  const std::string &service_name() const {
+    return service_name_;
+  }
+
   // Serializes 'response' into the InboundCall's internal buffer, and marks
   // the call as a success. Enqueues the response back to the connection
   // that made the call.
@@ -169,6 +173,9 @@ class InboundCall {
 
   // Timing information related to this RPC call.
   InboundCallTiming timing_;
+
+  // Proto service this calls belongs to. Used for routing.
+  std::string service_name_;
 
   DISALLOW_COPY_AND_ASSIGN(InboundCall);
 };

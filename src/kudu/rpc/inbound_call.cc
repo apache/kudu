@@ -27,7 +27,8 @@ namespace rpc {
 
 InboundCall::InboundCall(Connection* conn)
   : conn_(conn),
-    trace_(new Trace) {
+    trace_(new Trace),
+    service_name_(conn_->service_name()) {
   RecordCallReceived();
 }
 

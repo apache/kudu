@@ -14,6 +14,7 @@
 #include <string>
 
 #include "kudu/gutil/gscoped_ptr.h"
+#include "kudu/gutil/map-util.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/rpc/acceptor_pool.h"
 #include "kudu/rpc/connection.h"
@@ -112,8 +113,8 @@ void Messenger::Shutdown() {
   VLOG(1) << "shutting down messenger " << name_;
   closing_ = true;
 
-  DCHECK(!rpc_service_) << "Unregister RPC services before shutting down Messenger";
-  rpc_service_ = NULL;
+  DCHECK(rpc_services_.empty()) << "Unregister RPC services before shutting down Messenger";
+  rpc_services_.clear();
 
   BOOST_FOREACH(const shared_ptr<AcceptorPool>& acceptor_pool, acceptor_pools_) {
     acceptor_pool->Shutdown();
@@ -151,20 +152,21 @@ Status Messenger::RegisterService(const string& service_name,
                                   const scoped_refptr<RpcService>& service) {
   DCHECK(service);
   lock_guard<percpu_rwlock> guard(&lock_);
-  // TODO: Key services on service name.
-  rpc_service_ = service;
-  return Status::OK();
+  if (InsertIfNotPresent(&rpc_services_, service_name, service)) {
+    return Status::OK();
+  } else {
+    return Status::AlreadyPresent("This service is already present");
+  }
 }
 
 // Unregister an RpcService.
 Status Messenger::UnregisterService(const string& service_name) {
   lock_guard<percpu_rwlock> guard(&lock_);
-  if (!rpc_service_) {
-    return Status::ServiceUnavailable("Service is not registered");
+  if (rpc_services_.erase(service_name)) {
+    return Status::OK();
   } else {
-    rpc_service_ = NULL;
+    return Status::ServiceUnavailable("Service is not registered");
   }
-  return Status::OK();
 }
 
 void Messenger::QueueOutboundCall(const shared_ptr<OutboundCall> &call) {
@@ -174,7 +176,8 @@ void Messenger::QueueOutboundCall(const shared_ptr<OutboundCall> &call) {
 
 void Messenger::QueueInboundCall(gscoped_ptr<InboundCall> call) {
   shared_lock<rw_spinlock> guard(&lock_.get_lock());
-  if (PREDICT_FALSE(!rpc_service_)) {
+  scoped_refptr<RpcService>* service = FindOrNull(rpc_services_, call->service_name());
+  if (!service) {
     Status s = Status::ServiceUnavailable("RPC Service is not registered",
                                           call->ToString());
     LOG(INFO) << s.ToString();
@@ -183,7 +186,7 @@ void Messenger::QueueInboundCall(gscoped_ptr<InboundCall> call) {
   }
 
   // The RpcService will respond to the client on success or failure.
-  WARN_NOT_OK(rpc_service_->QueueInboundCall(call.Pass()), "Unable to handle RPC call");
+  WARN_NOT_OK((*service)->QueueInboundCall(call.Pass()), "Unable to handle RPC call");
 }
 
 void Messenger::RegisterInboundSocket(Socket *new_socket, const Sockaddr &remote) {
