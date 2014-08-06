@@ -17,15 +17,19 @@
 #include "kudu/gutil/strings/split.h"
 #include "kudu/gutil/walltime.h"
 #include "kudu/integration-tests/external_mini_cluster.h"
+#include "kudu/util/blocking_queue.h"
+#include "kudu/util/hdr_histogram.h"
 #include "kudu/util/random.h"
 #include "kudu/util/stopwatch.h"
-#include "kudu/util/hdr_histogram.h"
+#include "kudu/util/thread.h"
 
 namespace kudu {
 
 static const char* const kKeyColumnName = "rand_key";
 static const char* const kLinkColumnName = "link_to";
 static const char* const kInsertTsColumnName = "insert_ts";
+static const char* const kUpdatedColumnName = "updated";
+static const bool kUpdatedColumnDefault = false;
 
 class LinkedListTester {
  public:
@@ -33,28 +37,31 @@ class LinkedListTester {
                    const std::string& table_name,
                    int num_chains,
                    int num_tablets,
-                   int num_replicas)
+                   int num_replicas,
+                   bool enable_mutation)
     : schema_(boost::assign::list_of
                 (client::KuduColumnSchema(kKeyColumnName, client::KuduColumnSchema::UINT64))
                 (client::KuduColumnSchema(kLinkColumnName, client::KuduColumnSchema::UINT64))
-                (client::KuduColumnSchema(kInsertTsColumnName, client::KuduColumnSchema::UINT64)),
+                (client::KuduColumnSchema(kInsertTsColumnName, client::KuduColumnSchema::UINT64))
+                (client::KuduColumnSchema(kUpdatedColumnName, client::KuduColumnSchema::BOOL,
+                                          false, &kUpdatedColumnDefault)),
               1),
       verify_projection_(boost::assign::list_of
                            (client::KuduColumnSchema(kKeyColumnName,
                                                      client::KuduColumnSchema::UINT64))
                            (client::KuduColumnSchema(kLinkColumnName,
-                                                     client::KuduColumnSchema::UINT64)),
+                                                     client::KuduColumnSchema::UINT64))
+                           (client::KuduColumnSchema(kUpdatedColumnName,
+                                                     client::KuduColumnSchema::BOOL,
+                                                     false, &kUpdatedColumnDefault)),
                          1),
       table_name_(table_name),
       num_chains_(num_chains),
       num_tablets_(num_tablets),
       num_replicas_(num_replicas),
+      enable_mutation_(enable_mutation),
       latency_histogram_(1000000, 3),
       client_(client) {
-  }
-
-  void set_client(const std::tr1::shared_ptr<client::KuduClient>& client) {
-    client_ = client;
   }
 
   // Create the table.
@@ -64,7 +71,8 @@ class LinkedListTester {
   //
   // Runs for the amount of time designated by 'run_for'.
   // Sets *written_count to the number of rows inserted.
-  Status LoadLinkedList(const MonoDelta& run_for, int64_t* written_count);
+  Status LoadLinkedList(const MonoDelta& run_for,
+                        int64_t* written_count);
 
   Status VerifyLinkedList(int64_t expected, int64_t* verified_count);
 
@@ -78,6 +86,9 @@ class LinkedListTester {
 
   void DumpInsertHistogram(bool print_flags);
 
+  // Flushes the session and, if there are any per-row errors, logs them.
+  static Status WrappedFlush(client::KuduSession* session);
+
  protected:
   const client::KuduSchema schema_;
   const client::KuduSchema verify_projection_;
@@ -85,6 +96,7 @@ class LinkedListTester {
   const int num_chains_;
   const int num_tablets_;
   const int num_replicas_;
+  const bool enable_mutation_;
   HdrHistogram latency_histogram_;
   std::tr1::shared_ptr<client::KuduClient> client_;
 };
@@ -145,6 +157,54 @@ class LinkedListChainGenerator {
   DISALLOW_COPY_AND_ASSIGN(LinkedListChainGenerator);
 };
 
+// A thread that updates the timestamps of rows whose keys are put in its BlockingQueue.
+class ScopedRowUpdater {
+ public:
+
+  // Create and start a new ScopedUpdater. 'table' must remain valid for
+  // the lifetime of this object.
+  explicit ScopedRowUpdater(client::KuduTable* table)
+    : table_(table),
+      to_update_(kuint64max) { // no limit
+    CHECK_OK(Thread::Create("linked_list-test", "updater",
+                            &ScopedRowUpdater::RowUpdaterThread, this, &updater_));
+  }
+
+  ~ScopedRowUpdater() {
+    to_update_.Shutdown();
+    if (updater_) {
+      updater_->Join();
+    }
+  }
+
+  BlockingQueue<uint64_t>* to_update() { return &to_update_; }
+
+ private:
+  void RowUpdaterThread() {
+    std::tr1::shared_ptr<client::KuduSession> session(table_->client()->NewSession());
+    session->SetTimeoutMillis(15000);
+    CHECK_OK(session->SetFlushMode(client::KuduSession::MANUAL_FLUSH));
+
+    uint64_t next_key;
+    int64_t updated_count = 0;
+    while (to_update_.BlockingGet(&next_key)) {
+      gscoped_ptr<client::KuduUpdate> update(table_->NewUpdate());
+      CHECK_OK(update->mutable_row()->SetUInt64(kKeyColumnName, next_key));
+      CHECK_OK(update->mutable_row()->SetBool(kUpdatedColumnName, true));
+      CHECK_OK(session->Apply(update.Pass()));
+      if (++updated_count % 50 == 0) {
+        CHECK_OK(LinkedListTester::WrappedFlush(session.get()));
+      }
+    }
+
+    CHECK_OK(LinkedListTester::WrappedFlush(session.get()));
+  }
+
+  client::KuduTable* table_;
+  BlockingQueue<uint64_t> to_update_;
+  scoped_refptr<Thread> updater_;
+};
+
 std::vector<string> LinkedListTester::GenerateSplitKeys(const client::KuduSchema& schema) {
   client::KuduEncodedKeyBuilder key_builder(schema);
   gscoped_ptr<client::KuduEncodedKey> key;
@@ -171,7 +231,8 @@ Status LinkedListTester::CreateLinkedListTable() {
   return Status::OK();
 }
 
-Status LinkedListTester::LoadLinkedList(const MonoDelta& run_for, int64_t *written_count) {
+Status LinkedListTester::LoadLinkedList(const MonoDelta& run_for,
+                                        int64_t *written_count) {
   scoped_refptr<client::KuduTable> table;
   RETURN_NOT_OK(client_->OpenTable(table_name_, &table));
 
@@ -183,6 +244,7 @@ Status LinkedListTester::LoadLinkedList(const MonoDelta& run_for, int64_t *writt
   RETURN_NOT_OK_PREPEND(session->SetFlushMode(client::KuduSession::MANUAL_FLUSH),
                         "Couldn't set flush mode");
 
+  ScopedRowUpdater updater(table.get());
   std::vector<LinkedListChainGenerator*> chains;
   ElementDeleter d(&chains);
   for (int i = 0; i < num_chains_; i++) {
@@ -211,24 +273,19 @@ Status LinkedListTester::LoadLinkedList(const MonoDelta& run_for, int64_t *writt
     }
 
     MicrosecondsInt64 st = GetCurrentTimeMicros();
-    Status s = session->Flush();
+    Status s = WrappedFlush(session.get());
     int64_t elapsed = GetCurrentTimeMicros() - st;
     latency_histogram_.Increment(elapsed);
 
-    if (!s.ok()) {
-      std::vector<client::KuduError*> errors;
-      bool overflow;
-      session->GetPendingErrors(&errors, &overflow);
-      BOOST_FOREACH(client::KuduError* err, errors) {
-        LOG(WARNING) << "Flush error for row " << err->failed_op().ToString()
-                     << ": " << err->status().ToString();
-        s = err->status();
-        delete err;
-      }
-
-      return s;
-    }
+    RETURN_NOT_OK(s);
     (*written_count) += chains.size();
+
+    if (enable_mutation_) {
+      // Rows have been inserted; they're now safe to update.
+      BOOST_FOREACH(LinkedListChainGenerator* chain, chains) {
+        updater.to_update()->Put(chain->prev_key());
+      }
+    }
   }
 }
 
@@ -290,6 +347,8 @@ Status LinkedListTester::VerifyLinkedList(int64_t expected, int64_t* verified_co
   seen_key.reserve(expected);
   seen_link_to.reserve(expected);
 
+  int errors = 0;
+
   Stopwatch sw;
   sw.start();
   while (scanner.HasMoreRows()) {
@@ -297,12 +356,20 @@ Status LinkedListTester::VerifyLinkedList(int64_t expected, int64_t* verified_co
     BOOST_FOREACH(const client::KuduRowResult& row, rows) {
       uint64_t key;
       uint64_t link;
+      bool updated;
       RETURN_NOT_OK(row.GetUInt64(0, &key));
       RETURN_NOT_OK(row.GetUInt64(1, &link));
+      RETURN_NOT_OK(row.GetBool(2, &updated));
       seen_key.push_back(key);
       if (link != 0) {
         // Links to entry 0 don't count - the first inserts use this link
         seen_link_to.push_back(link);
+      }
+
+      if (updated != enable_mutation_) {
+        LOG(ERROR) << "Entry " << key << " was incorrectly "
+                   << (enable_mutation_ ? "not " : "") << "updated";
+        errors++;
       }
     }
     rows.clear();
@@ -315,9 +382,6 @@ Status LinkedListTester::VerifyLinkedList(int64_t expected, int64_t* verified_co
   std::sort(seen_key.begin(), seen_key.end());
   std::sort(seen_link_to.begin(), seen_link_to.end());
   LOG(INFO) << "Done sorting";
-
-
-  int errors = 0;
 
   // Verify that no key was seen multiple times or linked to multiple times
   VerifyNoDuplicateEntries(seen_key, &errors, "Seen row key multiple times");
@@ -387,6 +451,22 @@ Status LinkedListTester::WaitAndVerify(int seconds_to_run, int64_t expected) {
     break;
   }
   return Status::OK();
+}
+
+Status LinkedListTester::WrappedFlush(client::KuduSession* session) {
+  Status s = session->Flush();
+  if (!s.ok()) {
+    std::vector<client::KuduError*> errors;
+    ElementDeleter d(&errors);
+    bool overflow;
+    session->GetPendingErrors(&errors, &overflow);
+    CHECK(!overflow);
+    BOOST_FOREACH(const client::KuduError* e, errors) {
+      LOG(INFO) << "Op " << e->failed_op().ToString()
+                      << " had status " << e->status().ToString();
+    }
+  }
+  return s;
 }
 
 } // namespace kudu

@@ -63,6 +63,10 @@ bool KuduRowResult::IsNull(const Slice& col_name) const {
   return IsNull(col_idx);
 }
 
+Status KuduRowResult::GetBool(const Slice& col_name, bool* val) const {
+  return Get<TypeTraits<BOOL> >(col_name, val);
+}
+
 Status KuduRowResult::GetInt8(const Slice& col_name, int8_t* val) const {
   return Get<TypeTraits<INT8> >(col_name, val);
 }
@@ -97,6 +101,10 @@ Status KuduRowResult::GetUInt64(const Slice& col_name, uint64_t* val) const {
 
 Status KuduRowResult::GetString(const Slice& col_name, Slice* val) const {
   return Get<TypeTraits<STRING> >(col_name, val);
+}
+
+Status KuduRowResult::GetBool(int col_idx, bool* val) const {
+  return Get<TypeTraits<BOOL> >(col_idx, val);
 }
 
 Status KuduRowResult::GetInt8(int col_idx, int8_t* val) const {

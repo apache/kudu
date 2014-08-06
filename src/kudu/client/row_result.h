@@ -26,6 +26,8 @@ class KUDU_EXPORT KuduRowResult {
   // These getters return a bad Status if the type does not match,
   // the value is unset, or the value is NULL. Otherwise they return
   // the current set value in *val.
+  Status GetBool(const Slice& col_name, bool* val) const WARN_UNUSED_RESULT;
+
   Status GetInt8(const Slice& col_name, int8_t* val) const WARN_UNUSED_RESULT;
   Status GetInt16(const Slice& col_name, int16_t* val) const WARN_UNUSED_RESULT;
   Status GetInt32(const Slice& col_name, int32_t* val) const WARN_UNUSED_RESULT;
@@ -39,6 +41,8 @@ class KUDU_EXPORT KuduRowResult {
   // Same as above getters, but with numeric column indexes.
   // These are faster since they avoid a hashmap lookup, so should
   // be preferred in performance-sensitive code.
+  Status GetBool(int col_idx, bool* val) const WARN_UNUSED_RESULT;
+
   Status GetInt8(int col_idx, int8_t* val) const WARN_UNUSED_RESULT;
   Status GetInt16(int col_idx, int16_t* val) const WARN_UNUSED_RESULT;
   Status GetInt32(int col_idx, int32_t* val) const WARN_UNUSED_RESULT;

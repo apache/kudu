@@ -115,6 +115,9 @@ void KuduPartialRow::DeallocateOwnedStrings() {
 // Setters
 //------------------------------------------------------------
 
+Status KuduPartialRow::SetBool(const Slice& col_name, bool val) {
+  return Set<TypeTraits<BOOL> >(col_name, val);
+}
 Status KuduPartialRow::SetInt8(const Slice& col_name, int8_t val) {
   return Set<TypeTraits<INT8> >(col_name, val);
 }
@@ -143,6 +146,9 @@ Status KuduPartialRow::SetString(const Slice& col_name, const Slice& val) {
   return Set<TypeTraits<STRING> >(col_name, val, false);
 }
 
+Status KuduPartialRow::SetBool(int col_idx, bool val) {
+  return Set<TypeTraits<BOOL> >(col_idx, val);
+}
 Status KuduPartialRow::SetInt8(int col_idx, int8_t val) {
   return Set<TypeTraits<INT8> >(col_idx, val);
 }
@@ -261,6 +267,9 @@ bool KuduPartialRow::IsNull(const Slice& col_name) const {
   return IsNull(col_idx);
 }
 
+Status KuduPartialRow::GetBool(const Slice& col_name, bool* val) const {
+  return Get<TypeTraits<BOOL> >(col_name, val);
+}
 Status KuduPartialRow::GetInt8(const Slice& col_name, int8_t* val) const {
   return Get<TypeTraits<INT8> >(col_name, val);
 }
@@ -289,6 +298,9 @@ Status KuduPartialRow::GetString(const Slice& col_name, Slice* val) const {
   return Get<TypeTraits<STRING> >(col_name, val);
 }
 
+Status KuduPartialRow::GetBool(int col_idx, bool* val) const {
+  return Get<TypeTraits<BOOL> >(col_idx, val);
+}
 Status KuduPartialRow::GetInt8(int col_idx, int8_t* val) const {
   return Get<TypeTraits<INT8> >(col_idx, val);
 }

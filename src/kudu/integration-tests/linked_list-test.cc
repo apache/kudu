@@ -57,7 +57,7 @@ DEFINE_int32(num_chains, 50, "Number of parallel chains to generate");
 DEFINE_int32(num_tablets, 3, "Number of tablets over which to split the data");
 DEFINE_int32(num_tablet_servers, 3, "Number of tablet servers to start");
 DEFINE_int32(num_replicas, 3, "Number of replicas per tablet server");
-
+DEFINE_bool(enable_mutation, false, "Enable periodic mutation of inserted rows");
 DEFINE_string(ts_flags, "", "Flags to pass through to tablet servers");
 
 namespace kudu {
@@ -70,6 +70,14 @@ class LinkedListTest : public KuduTest {
     KuduTest::SetUp();
     SeedRandom();
 
+    LOG(INFO) << "Configuration:";
+    LOG(INFO) << "--------------";
+    LOG(INFO) << FLAGS_num_chains << " chains";
+    LOG(INFO) << FLAGS_num_tablets << " tablets";
+    LOG(INFO) << FLAGS_num_tablet_servers << " tablet servers";
+    LOG(INFO) << FLAGS_num_replicas << " replicas per TS";
+    LOG(INFO) << "Mutations " << (FLAGS_enable_mutation ? "on" : "off");
+    LOG(INFO) << "--------------";
     RestartCluster();
   }
 
@@ -94,7 +102,10 @@ class LinkedListTest : public KuduTest {
     KuduClientBuilder builder;
     ASSERT_STATUS_OK(cluster_->CreateClient(builder, &client_));
     tester_.reset(new LinkedListTester(client_, kTableName,
-                                       FLAGS_num_chains, FLAGS_num_tablets, FLAGS_num_replicas));
+                                       FLAGS_num_chains,
+                                       FLAGS_num_tablets,
+                                       FLAGS_num_replicas,
+                                       FLAGS_enable_mutation));
   }
 
  protected:
@@ -114,7 +125,8 @@ TEST_F(LinkedListTest, TestLoadAndVerify) {
   ASSERT_STATUS_OK(tester_->CreateLinkedListTable());
 
   int64_t written = 0;
-  ASSERT_STATUS_OK(tester_->LoadLinkedList(MonoDelta::FromSeconds(FLAGS_seconds_to_run), &written));
+  ASSERT_STATUS_OK(tester_->LoadLinkedList(MonoDelta::FromSeconds(FLAGS_seconds_to_run),
+                                           &written));
 
   // TODO: currently we don't use hybridtime on the C++ client, so it's possible when we
   // scan after writing we may not see all of our writes (we may scan a replica). So,
