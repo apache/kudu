@@ -31,6 +31,7 @@ struct MiniClusterOptions {
 
   // Directory in which to store data.
   // Default: "", which auto-generates a unique path for this cluster.
+  // The default may only be used from a gtest unit test.
   std::string data_root;
 
   // RPC port for the master to run on.

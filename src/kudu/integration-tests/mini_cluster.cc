@@ -32,14 +32,14 @@ using tserver::TabletServer;
 
 MiniClusterOptions::MiniClusterOptions()
   : num_tablet_servers(1),
-    data_root(JoinPathSegments(GetTestDataDirectory(), "minicluster-data")),
     master_rpc_port(0) {
 }
 
 MiniCluster::MiniCluster(Env* env, const MiniClusterOptions& options)
   : running_(false),
     env_(env),
-    fs_root_(options.data_root),
+    fs_root_(!options.data_root.empty() ? options.data_root :
+                JoinPathSegments(GetTestDataDirectory(), "minicluster-data")),
     num_ts_initial_(options.num_tablet_servers),
     master_rpc_port_(options.master_rpc_port),
     tserver_rpc_ports_(options.tserver_rpc_ports) {
