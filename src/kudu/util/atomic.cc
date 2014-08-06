@@ -14,12 +14,11 @@ AtomicInt<T>::AtomicInt(T initial_value) {
 }
 
 template<typename T>
-T AtomicInt<T>::FatalMemOrderNotSupported(const char* caller,
+void AtomicInt<T>::FatalMemOrderNotSupported(const char* caller,
                                           const char* requested,
                                           const char* supported) {
   LOG(FATAL) << caller << " does not support " << requested << ": only "
              << supported << " are supported.";
-  return 0;
 }
 
 template
@@ -27,5 +26,9 @@ class AtomicInt<int32_t>;
 
 template
 class AtomicInt<int64_t>;
+
+AtomicBool::AtomicBool(bool value)
+    : underlying_(value) {
+}
 
 } // namespace kudu

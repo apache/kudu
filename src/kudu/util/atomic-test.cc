@@ -9,15 +9,16 @@
 
 namespace kudu {
 
+using std::vector;
+using boost::assign::list_of;
+
 // TODO Add some multi-threaded tests; currently AtomicInt is just a
 // wrapper around 'atomicops.h', but should the underlying
 // implemention change, it would help to have tests that make sure
 // invariants are preserved in a multi-threaded environment.
 TEST(Atomic, BasicOps) {
-  std::vector<MemoryOrder> memory_orders = boost::assign::list_of
-      (kMemOrderNoBarrier)
-      (kMemOrderRelease)
-      (kMemOrderAcquire);
+  vector<MemoryOrder> memory_orders =
+      list_of(kMemOrderNoBarrier)(kMemOrderRelease)(kMemOrderAcquire);
 
   BOOST_FOREACH(const MemoryOrder mem_order, memory_orders) {
     AtomicInt<int64_t> i(0);
@@ -39,13 +40,30 @@ TEST(Atomic, BasicOps) {
     EXPECT_EQ(11, i.Load(mem_order));
   }
 
-  memory_orders = boost::assign::list_of
-      (kMemOrderBarrier)
-      (kMemOrderNoBarrier);
+  memory_orders = list_of(kMemOrderBarrier)(kMemOrderNoBarrier);
   BOOST_FOREACH(const MemoryOrder mem_order, memory_orders) {
     AtomicInt<int64_t> i(0);
     EXPECT_EQ(1, i.Increment(mem_order));
     EXPECT_EQ(3, i.IncrementBy(2, mem_order));
+  }
+}
+
+TEST(Atomic, AtomicBool) {
+  vector<MemoryOrder> memory_orders =
+      list_of(kMemOrderNoBarrier)(kMemOrderRelease)(kMemOrderAcquire);
+
+  BOOST_FOREACH(const MemoryOrder mem_order, memory_orders) {
+    AtomicBool b(false);
+    EXPECT_EQ(false, b.Load(mem_order));
+    b.Store(true, mem_order);
+    EXPECT_EQ(true, b.Load(mem_order));
+    EXPECT_TRUE(b.CompareAndSwap(true, false, mem_order));
+    EXPECT_EQ(false, b.Load(mem_order));
+    EXPECT_FALSE(b.CompareAndSwap(true, false, mem_order));
+    EXPECT_EQ(false, b.CompareAndSwapVal(false, true, mem_order));
+    EXPECT_EQ(true, b.Load(mem_order));
+    EXPECT_EQ(true, b.Exchange(false, mem_order));
+    EXPECT_EQ(false, b.Load(mem_order));
   }
 }
 
