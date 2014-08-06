@@ -238,6 +238,10 @@ if [ -n "$F_ALL" -o -n "$F_LLVM" ]; then
     export CC=$CLANG
     export CXX=$CLANGXX
   fi
+
+  # Rebuild the CMake cache every time.
+  rm -Rf CMakeCache.txt CMakeFiles/
+
   $PREFIX/bin/cmake \
     -DCMAKE_BUILD_TYPE=Release \
     -DCMAKE_INSTALL_PREFIX=$PREFIX \
