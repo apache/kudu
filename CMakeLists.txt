@@ -8,6 +8,13 @@ if ("$ENV{NO_REBUILD_THIRDPARTY}" STREQUAL "")
   execute_process(COMMAND thirdparty/build-if-necessary.sh)
 endif()
 
+# Generate a Clang compile_commands.json "compilation database" file for use
+# with various development tools, such as Vim's YouCompleteMe plugin.
+# See http://clang.llvm.org/docs/JSONCompilationDatabase.html
+if ("$ENV{CMAKE_EXPORT_COMPILE_COMMANDS}" STREQUAL "1")
+  set(CMAKE_EXPORT_COMPILE_COMMANDS 1)
+endif()
+
 ############################################################
 # Compiler flags
 ############################################################

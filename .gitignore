@@ -25,6 +25,9 @@ build/
 .metadata/
 *.iml
 
+# CMake-generated Clang compilation database file
+compile_commands.json
+
 # CMake-generated library export headers
 *_export.h
 
