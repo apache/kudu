@@ -18,11 +18,11 @@ namespace client {
 
 namespace internal {
 class Batcher;
+class MetaCache;
 } // namespace internal
 
 class KuduClient;
 class KuduColumnRangePredicate;
-class MetaCache;
 class KuduWriteOperation;
 
 class KUDU_EXPORT KuduColumnStorageAttributes {
@@ -113,13 +113,13 @@ class KUDU_EXPORT KuduSchema {
   KuduSchema CreateKeyProjection() const;
 
  private:
-  friend class KuduClient;
-  friend class KuduTableCreator;
   friend class KuduEncodedKeyBuilder;
+  friend class KuduClient;
   friend class KuduScanner;
-  friend class MetaCache;
+  friend class KuduTableCreator;
   friend class KuduWriteOperation;
   friend class internal::Batcher;
+  friend class internal::MetaCache;
 
   gscoped_ptr<Schema> schema_;
 };

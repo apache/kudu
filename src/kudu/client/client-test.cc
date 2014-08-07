@@ -1428,11 +1428,11 @@ TEST_F(ClientTest, TestReplicatedMultiTabletTableFailover) {
 
   // Find the first replica that will be scanned.
   Synchronizer sync;
-  scoped_refptr<RemoteTablet> rt;
+  scoped_refptr<internal::RemoteTablet> rt;
   client_->data_->meta_cache_->LookupTabletByKey(table.get(), Slice(),
                                                  &rt, sync.AsStatusCallback());
   ASSERT_STATUS_OK(sync.Wait());
-  RemoteTabletServer *rts;
+  internal::RemoteTabletServer *rts;
   ASSERT_STATUS_OK(client_->data_->GetTabletServer(client_.get(),
                                                    rt->tablet_id(),
                                                    KuduClient::FIRST_REPLICA, &rts));

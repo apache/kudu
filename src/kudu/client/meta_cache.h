@@ -37,8 +37,11 @@ class TSInfoPB;
 
 namespace client {
 
+class ClientTest_TestMasterLookupPermits_Test;
 class KuduClient;
 class KuduTable;
+
+namespace internal {
 
 // The information cached about a given tablet server in the cluster.
 //
@@ -88,7 +91,6 @@ struct RemoteReplica {
 };
 
 struct InFlightLookup;
-struct InFlightRefresh;
 
 typedef std::tr1::unordered_map<std::string, RemoteTabletServer*> TabletServerMap;
 
@@ -204,7 +206,7 @@ class MetaCache : public RefCountedThreadSafe<MetaCache> {
   void ReleaseMasterLookupPermit();
 
  private:
-  FRIEND_TEST(ClientTest, TestMasterLookupPermits);
+  FRIEND_TEST(client::ClientTest, TestMasterLookupPermits);
 
   // Lookup the given tablet by key, only consulting local information.
   // Returns true and sets *remote_tablet if successful.
@@ -278,6 +280,7 @@ class MetaCache : public RefCountedThreadSafe<MetaCache> {
   DISALLOW_COPY_AND_ASSIGN(MetaCache);
 };
 
+} // namespace internal
 } // namespace client
 } // namespace kudu
 #endif /* KUDU_CLIENT_META_CACHE_H */

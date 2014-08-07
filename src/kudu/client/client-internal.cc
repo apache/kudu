@@ -27,6 +27,9 @@ using strings::Substitute;
 
 namespace client {
 
+using internal::RemoteTablet;
+using internal::RemoteTabletServer;
+
 KuduClient::Data::Data() {
 }
 

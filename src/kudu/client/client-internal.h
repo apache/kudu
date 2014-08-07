@@ -34,7 +34,7 @@ class KuduClient::Data {
   Status GetTabletServer(KuduClient* client,
                          const std::string& tablet_id,
                          ReplicaSelection selection,
-                         RemoteTabletServer** ts);
+                         internal::RemoteTabletServer** ts);
 
   Status IsCreateTableInProgress(const std::string& table_name,
                                  const MonoTime& deadline,
@@ -47,18 +47,19 @@ class KuduClient::Data {
 
   bool IsLocalHostPort(const HostPort& hp) const;
 
-  bool IsTabletServerLocal(const RemoteTabletServer& rts) const;
+  bool IsTabletServerLocal(const internal::RemoteTabletServer& rts) const;
 
   // Returns the closest, non-failed replica to the client.
   //
   // Returns NULL if there are no tablet servers, or if they've all failed.
   // Given that the replica list may change at any time, callers should
   // always check the result against NULL.
-  RemoteTabletServer* PickClosestReplica(const scoped_refptr<RemoteTablet>& rt) const;
+  internal::RemoteTabletServer* PickClosestReplica(
+      const scoped_refptr<internal::RemoteTablet>& rt) const;
 
   std::tr1::shared_ptr<rpc::Messenger> messenger_;
   gscoped_ptr<DnsResolver> dns_resolver_;
-  scoped_refptr<MetaCache> meta_cache_;
+  scoped_refptr<internal::MetaCache> meta_cache_;
 
   // Set of hostnames and IPs on the local host.
   // This is initialized at client startup.

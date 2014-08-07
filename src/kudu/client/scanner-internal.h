@@ -100,7 +100,7 @@ class KuduScanner::Data {
   const EncodedKey* end_key_;
 
   // The tablet we're scanning.
-  scoped_refptr<RemoteTablet> remote_;
+  scoped_refptr<internal::RemoteTablet> remote_;
 
   enum { kRpcTimeoutMillis = 5000 };
 

@@ -22,6 +22,8 @@ using tserver::ScanResponsePB;
 
 namespace client {
 
+using internal::RemoteTabletServer;
+
 static const int64_t kNoTimestamp = -1;
 
 KuduScanner::Data::Data(KuduTable* table)

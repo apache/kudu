@@ -38,6 +38,7 @@ using std::tr1::shared_ptr;
 
 namespace kudu {
 namespace client {
+namespace internal {
 
 ////////////////////////////////////////////////////////////
 
@@ -497,5 +498,6 @@ void MetaCache::ReleaseMasterLookupPermit() {
   master_lookup_sem_.Release();
 }
 
+} // namespace internal
 } // namespace client
 } // namespace kudu

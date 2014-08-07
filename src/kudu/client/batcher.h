@@ -20,15 +20,15 @@ namespace client {
 class KuduClient;
 class KuduSession;
 class KuduWriteOperation;
-class RemoteTabletServer;
 
 namespace internal {
 
 struct InFlightOp;
 struct InFlightRpc;
-class PerTSBuffer;
 
+class PerTSBuffer;
 class ErrorCollector;
+class RemoteTabletServer;
 
 // A Batcher is the class responsible for collecting row operations, routing them to the
 // correct tablet server, and possibly batching them together for better efficiency.

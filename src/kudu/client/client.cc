@@ -65,6 +65,7 @@ static const int kHtTimestampBitsToShift = 12;
 
 using internal::Batcher;
 using internal::ErrorCollector;
+using internal::MetaCache;
 
 // Retry helper, takes a function like: Status funcName(const MonoTime& deadline, bool *retry, ...)
 // The function should set the retry flag (default true) if the function should
