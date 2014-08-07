@@ -4,6 +4,7 @@ package kudu.tserver;
 import "kudu/common/common.proto";
 import "kudu/common/wire_protocol.proto";
 import "kudu/consensus/consensus.proto";
+import "kudu/tserver/remote_bootstrap.proto";
 import "kudu/tserver/tserver.proto";
 
 service TabletServerService {
@@ -32,4 +33,17 @@ service TabletServerService {
   rpc RequestConsensusVote(kudu.consensus.VoteRequestPB) returns (kudu.consensus.VoteResponsePB);
 
   rpc AlterSchema(AlterSchemaRequestPB) returns (AlterSchemaResponsePB);
+
+  // TODO: Remove once we have multi-service support in RPC. Duplicates RemoteBootstrapService.
+  rpc BeginRemoteBootstrapSession(BeginRemoteBootstrapSessionRequestPB)
+      returns (BeginRemoteBootstrapSessionResponsePB);
+
+  rpc CheckSessionActive(CheckRemoteBootstrapSessionActiveRequestPB)
+      returns (CheckRemoteBootstrapSessionActiveResponsePB);
+
+  rpc FetchData(FetchDataRequestPB)
+      returns (FetchDataResponsePB);
+
+  rpc EndRemoteBootstrapSession(EndRemoteBootstrapSessionRequestPB)
+      returns (EndRemoteBootstrapSessionResponsePB);
 }

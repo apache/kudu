@@ -20,19 +20,11 @@
 
 namespace kudu {
 
-class FsManager;
 class MaintenanceManager;
-class Webserver;
-
-namespace rpc {
-class Messenger;
-class ServicePool;
-}
 
 namespace tserver {
 
 class Heartbeater;
-class MutatorManager;
 class ScannerManager;
 class TabletServerPathHandlers;
 class TSTabletManager;

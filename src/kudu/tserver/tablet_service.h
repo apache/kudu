@@ -12,6 +12,7 @@ namespace kudu {
 class RowwiseIterator;
 class Schema;
 class Status;
+class TaskExecutor;
 
 namespace tablet {
 class TabletPeer;
@@ -20,6 +21,7 @@ class TransactionState;
 
 namespace tserver {
 
+class RemoteBootstrapServiceIf;
 class TabletServer;
 
 class TabletServiceImpl : public TabletServerServiceIf {
@@ -60,6 +62,26 @@ class TabletServiceImpl : public TabletServerServiceIf {
                                kudu::consensus::ConsensusResponsePB *resp,
                                ::kudu::rpc::RpcContext *context) OVERRIDE;
 
+  // TODO: Move this to its own service once we put in service multiplexing support
+  // in the RPC protocol.
+  virtual void BeginRemoteBootstrapSession(const BeginRemoteBootstrapSessionRequestPB* req,
+                                   BeginRemoteBootstrapSessionResponsePB* resp,
+                                   rpc::RpcContext* context) OVERRIDE;
+
+  virtual void CheckSessionActive(const CheckRemoteBootstrapSessionActiveRequestPB* req,
+                                  CheckRemoteBootstrapSessionActiveResponsePB* resp,
+                                  rpc::RpcContext* context) OVERRIDE;
+
+  virtual void FetchData(const FetchDataRequestPB* req,
+                         FetchDataResponsePB* resp,
+                         rpc::RpcContext* context) OVERRIDE;
+
+  virtual void EndRemoteBootstrapSession(const EndRemoteBootstrapSessionRequestPB* req,
+                                 EndRemoteBootstrapSessionResponsePB* resp,
+                                 rpc::RpcContext* context) OVERRIDE;
+
+  virtual void Shutdown() OVERRIDE;
+
   virtual void RequestConsensusVote(const kudu::consensus::VoteRequestPB* req,
                                     kudu::consensus::VoteResponsePB* resp,
                                     ::kudu::rpc::RpcContext* context) OVERRIDE;
@@ -91,6 +113,7 @@ class TabletServiceImpl : public TabletServerServiceIf {
                               const scoped_refptr<tablet::TabletPeer>& tablet_peer);
 
   TabletServer* server_;
+  gscoped_ptr<RemoteBootstrapServiceIf> remote_bootstrap_service_;
 };
 
 } // namespace tserver

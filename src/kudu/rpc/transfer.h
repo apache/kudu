@@ -6,6 +6,7 @@
 #include <boost/intrusive/list.hpp>
 #include <boost/function.hpp>
 #include <boost/utility.hpp>
+#include <gflags/gflags.h>
 #include <stdint.h>
 #include <string>
 #include <vector>
@@ -13,6 +14,8 @@
 #include "kudu/rpc/rpc_header.pb.h"
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/status.h"
+
+DECLARE_int32(rpc_max_message_size);
 
 namespace google {
   namespace protobuf {

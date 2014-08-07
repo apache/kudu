@@ -330,14 +330,14 @@ Status TabletMetadata::ReplaceSuperBlockUnlocked(const TabletSuperBlockPB &pb) {
   return Status::OK();
 }
 
-Status TabletMetadata::ToSuperBlock(shared_ptr<TabletSuperBlockPB> *super_block) {
+Status TabletMetadata::ToSuperBlock(shared_ptr<TabletSuperBlockPB> *super_block) const {
   // acquire the lock so that rowsets_ doesn't get changed until we're finished.
   boost::lock_guard<LockType> l(lock_);
   return ToSuperBlockUnlocked(super_block, rowsets_);
 }
 
 Status TabletMetadata::ToSuperBlockUnlocked(shared_ptr<TabletSuperBlockPB> *super_block,
-                                            const RowSetMetadataVector& rowsets) {
+                                            const RowSetMetadataVector& rowsets) const {
 
   // Convert to protobuf
   gscoped_ptr<TabletSuperBlockPB> pb(new TabletSuperBlockPB());

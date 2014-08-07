@@ -179,7 +179,8 @@ class TabletMetadata : public RefCountedThreadSafe<TabletMetadata> {
 
   // Creates a TabletSuperBlockPB that reflects the current tablet metadata
   // and sets 'super_block' to it.
-  Status ToSuperBlock(shared_ptr<TabletSuperBlockPB> *super_block);
+  // FIXME: This should probably accept a gscoped_ptr*.
+  Status ToSuperBlock(shared_ptr<TabletSuperBlockPB> *super_block) const;
 
   // Fully replace a superblock (used for bootstrap).
   Status ReplaceSuperBlock(const TabletSuperBlockPB &pb);
@@ -228,7 +229,7 @@ class TabletMetadata : public RefCountedThreadSafe<TabletMetadata> {
                                 shared_ptr<TabletSuperBlockPB> *super_block);
 
   Status ToSuperBlockUnlocked(shared_ptr<TabletSuperBlockPB> *super_block,
-                              const RowSetMetadataVector& rowsets);
+                              const RowSetMetadataVector& rowsets) const;
 
   enum State {
     kNotLoadedYet,

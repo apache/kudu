@@ -14,13 +14,14 @@
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/escaping.h"
 #include "kudu/rpc/rpc_context.h"
+#include "kudu/server/hybrid_clock.h"
 #include "kudu/tablet/tablet_bootstrap.h"
+#include "kudu/tserver/remote_bootstrap_service.h"
 #include "kudu/tablet/tablet_peer.h"
 #include "kudu/tablet/tablet_metrics.h"
 #include "kudu/tablet/transactions/alter_schema_transaction.h"
 #include "kudu/tablet/transactions/change_config_transaction.h"
 #include "kudu/tablet/transactions/write_transaction.h"
-#include "kudu/server/hybrid_clock.h"
 #include "kudu/tserver/scanners.h"
 #include "kudu/tserver/tablet_server.h"
 #include "kudu/tserver/ts_tablet_manager.h"
@@ -28,22 +29,6 @@
 #include "kudu/util/monotime.h"
 #include "kudu/util/status.h"
 #include "kudu/util/trace.h"
-
-using kudu::consensus::ConsensusRequestPB;
-using kudu::consensus::ConsensusResponsePB;
-using kudu::consensus::VoteRequestPB;
-using kudu::consensus::VoteResponsePB;
-using kudu::metadata::QuorumPB;
-using kudu::metadata::QuorumPeerPB;
-using kudu::rpc::RpcContext;
-using kudu::tablet::TabletPeer;
-using kudu::tablet::AlterSchemaTransactionState;
-using kudu::tablet::ChangeConfigTransactionState;
-using kudu::tablet::WriteTransactionState;
-using kudu::tablet::TransactionCompletionCallback;
-using std::tr1::shared_ptr;
-using std::vector;
-using google::protobuf::RepeatedPtrField;
 
 DEFINE_int32(tablet_server_default_scan_batch_size_bytes, 1024 * 1024,
              "The default size for batches of scan results");
@@ -54,7 +39,25 @@ DEFINE_int32(tablet_server_scan_batch_size_rows, 100,
              "The number of rows to batch for servicing scan requests.");
 
 namespace kudu {
+
+class TaskExecutor;
+
 namespace tserver {
+
+using consensus::ConsensusRequestPB;
+using consensus::ConsensusResponsePB;
+using consensus::VoteRequestPB;
+using consensus::VoteResponsePB;
+using google::protobuf::RepeatedPtrField;
+using rpc::RpcContext;
+using std::tr1::shared_ptr;
+using std::vector;
+using tablet::AlterSchemaTransactionState;
+using tablet::ChangeConfigTransactionState;
+using tablet::TabletPeer;
+using tablet::TabletStatusPB;
+using tablet::TransactionCompletionCallback;
+using tablet::WriteTransactionState;
 
 typedef ListTabletsResponsePB::StatusAndSchemaPB StatusAndSchemaPB;
 
@@ -133,7 +136,10 @@ class RpcTransactionCompletionCallback : public TransactionCompletionCallback {
 
 TabletServiceImpl::TabletServiceImpl(TabletServer* server)
   : TabletServerServiceIf(server->metric_context()),
-    server_(server) {
+    server_(server),
+    remote_bootstrap_service_(new RemoteBootstrapServiceImpl(server_->fs_manager(),
+                                            server_->tablet_manager(),
+                                            server_->metric_context())) {
 }
 
 template<class RespClass>
@@ -470,6 +476,36 @@ void TabletServiceImpl::ListTablets(const ListTabletsRequestPB* req,
                         status->mutable_schema()));
   }
   context->RespondSuccess();
+}
+
+// TODO: Get rid of this dispatching once we have support for multiple RPC
+// services multiplexed on a single port. See KUDU-256.
+void TabletServiceImpl::BeginRemoteBootstrapSession(const BeginRemoteBootstrapSessionRequestPB* req,
+                                                    BeginRemoteBootstrapSessionResponsePB* resp,
+                                                    rpc::RpcContext* context) {
+  remote_bootstrap_service_->BeginRemoteBootstrapSession(req, resp, context);
+}
+
+void TabletServiceImpl::CheckSessionActive(const CheckRemoteBootstrapSessionActiveRequestPB* req,
+                                           CheckRemoteBootstrapSessionActiveResponsePB* resp,
+                                           rpc::RpcContext* context) {
+  remote_bootstrap_service_->CheckSessionActive(req, resp, context);
+}
+
+void TabletServiceImpl::FetchData(const FetchDataRequestPB* req,
+                                  FetchDataResponsePB* resp,
+                                  rpc::RpcContext* context) {
+  remote_bootstrap_service_->FetchData(req, resp, context);
+}
+
+void TabletServiceImpl::EndRemoteBootstrapSession(const EndRemoteBootstrapSessionRequestPB* req,
+                                                  EndRemoteBootstrapSessionResponsePB* resp,
+                                                  rpc::RpcContext* context) {
+  remote_bootstrap_service_->EndRemoteBootstrapSession(req, resp, context);
+}
+
+void TabletServiceImpl::Shutdown() {
+  remote_bootstrap_service_->Shutdown();
 }
 
 // Extract a void* pointer suitable for use in a ColumnRangePredicate from the

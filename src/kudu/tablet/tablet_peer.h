@@ -25,6 +25,10 @@ namespace rpc {
 class Messenger;
 }
 
+namespace tserver {
+class CatchUpServiceTest;
+}
+
 namespace tablet {
 class ChangeConfigTransactionState;
 class LeaderTransactionDriver;

@@ -12,6 +12,7 @@
 
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/ref_counted.h"
+#include "kudu/tserver/tablet_peer_lookup.h"
 #include "kudu/tserver/tserver.pb.h"
 #include "kudu/util/locks.h"
 #include "kudu/util/metrics.h"
@@ -51,7 +52,7 @@ typedef std::tr1::unordered_set<std::string> CreatesInProgressSet;
 // TODO: will also be responsible for keeping the local metadata about
 // which tablets are hosted on this server persistent on disk, as well
 // as re-opening all the tablets at startup, etc.
-class TSTabletManager {
+class TSTabletManager : public tserver::TabletPeerLookupIf {
  public:
   // Construct the tablet manager.
   // 'fs_manager' must remain valid until this object is destructed.
@@ -59,7 +60,7 @@ class TSTabletManager {
                   TabletServer* server,
                   const MetricContext& metric_ctx);
 
-  ~TSTabletManager();
+  virtual ~TSTabletManager();
 
   // Load all master blocks from disk, and open their respective tablets.
   // Upon return of this method all existing tablets are registered, but
@@ -103,6 +104,10 @@ class TSTabletManager {
   // Same as LookupTablet but doesn't acquired the shared lock.
   bool LookupTabletUnlocked(const std::string& tablet_id,
                             scoped_refptr<tablet::TabletPeer>* tablet_peer) const;
+
+  virtual Status GetTabletPeer(const std::string& tablet_id,
+                               scoped_refptr<tablet::TabletPeer>* tablet_peer) const
+                               OVERRIDE;
 
   // Generate an incremental tablet report.
   //

@@ -447,6 +447,15 @@ bool TSTabletManager::LookupTabletUnlocked(const string& tablet_id,
   return true;
 }
 
+Status TSTabletManager::GetTabletPeer(const string& tablet_id,
+                                      scoped_refptr<tablet::TabletPeer>* tablet_peer) const {
+  if (LookupTablet(tablet_id, tablet_peer)) {
+    return Status::OK();
+  } else {
+    return Status::NotFound("Tablet not found", tablet_id);
+  }
+}
+
 void TSTabletManager::GetTabletPeers(vector<scoped_refptr<TabletPeer> >* tablet_peers) const {
   boost::shared_lock<rw_spinlock> shared_lock(lock_);
   AppendValuesFromMap(tablet_map_, tablet_peers);

@@ -17,6 +17,9 @@
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/net/socket.h"
 
+DEFINE_int32(rpc_max_message_size, (8 * 1024 * 1024),
+             "The maximum size of a message that any RPC that the server will accept.");
+
 namespace kudu {
 namespace rpc {
 
@@ -30,9 +33,6 @@ using std::string;
     }                                                           \
     return status;                                              \
   }
-
-DEFINE_int32(rpc_max_message_size, (8 * 1024 * 1024),
-	     "The maximum size of a message that any RPC that the server will accept.");
 
 TransferCallbacks::~TransferCallbacks()
 {}
