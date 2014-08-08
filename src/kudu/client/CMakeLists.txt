@@ -10,6 +10,7 @@ set(CLIENT_SRCS
   error-internal.cc
   meta_cache.cc
   row_result.cc
+  rpc.cc
   scan_predicate.cc
   scanner-internal.cc
   session-internal.cc

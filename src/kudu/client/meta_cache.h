@@ -43,6 +43,8 @@ class KuduTable;
 
 namespace internal {
 
+class LookupRpc;
+
 // The information cached about a given tablet server in the cluster.
 //
 // This class is thread-safe.
@@ -89,8 +91,6 @@ struct RemoteReplica {
   metadata::QuorumPeerPB::Role role;
   bool failed;
 };
-
-struct InFlightLookup;
 
 typedef std::tr1::unordered_map<std::string, RemoteTabletServer*> TabletServerMap;
 
@@ -209,7 +209,13 @@ class MetaCache : public RefCountedThreadSafe<MetaCache> {
   void ReleaseMasterLookupPermit();
 
  private:
+  friend class LookupRpc;
+
   FRIEND_TEST(client::ClientTest, TestMasterLookupPermits);
+
+  // Called on the slow LookupTablet path when the master responds. Populates
+  // the tablet caches and returns a reference to the first one.
+  const scoped_refptr<RemoteTablet>& ProcessLookupResponse(const LookupRpc& rpc);
 
   // Lookup the given tablet by key, only consulting local information.
   // Returns true and sets *remote_tablet if successful.
@@ -232,16 +238,6 @@ class MetaCache : public RefCountedThreadSafe<MetaCache> {
   //
   // NOTE: Must be called with lock_ held.
   void UpdateTabletServer(const master::TSInfoPB& pb);
-
-  // Called on the slow LookupTablet path when the master responds. Populates
-  // the tablet caches and invokes the user-specified callback.
-  void GetTableLocationsCb(InFlightLookup* ifl);
-
-  // Sends a master lookup RPC.
-  //
-  // If invoked for an RPC retry, 's' may be non-OK if the lookup was aborted
-  // before it fired (e.g. the reactor thread shut down).
-  void SendRpc(InFlightLookup* ifl, const Status& s);
 
   KuduClient* client_;
 

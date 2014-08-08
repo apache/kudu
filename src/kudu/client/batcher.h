@@ -2,6 +2,10 @@
 #ifndef KUDU_CLIENT_BATCHER_H
 #define KUDU_CLIENT_BATCHER_H
 
+#include <tr1/memory>
+#include <tr1/unordered_set>
+#include <tr1/unordered_map>
+
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/ref_counted.h"
@@ -9,10 +13,6 @@
 #include "kudu/util/debug-util.h"
 #include "kudu/util/locks.h"
 #include "kudu/util/status.h"
-
-#include <tr1/memory>
-#include <tr1/unordered_set>
-#include <tr1/unordered_map>
 
 namespace kudu {
 namespace client {
@@ -24,11 +24,11 @@ class KuduWriteOperation;
 namespace internal {
 
 struct InFlightOp;
-struct InFlightRpc;
 
 class PerTSBuffer;
 class ErrorCollector;
 class RemoteTabletServer;
+class WriteRpc;
 
 // A Batcher is the class responsible for collecting row operations, routing them to the
 // correct tablet server, and possibly batching them together for better efficiency.
@@ -84,6 +84,8 @@ class Batcher : public RefCountedThreadSafe<Batcher> {
 
  private:
   friend class RefCountedThreadSafe<Batcher>;
+  friend class WriteRpc;
+
   ~Batcher();
 
   // Add an op to the in-flight set and increment the ref-count.
@@ -109,21 +111,14 @@ class Batcher : public RefCountedThreadSafe<Batcher> {
   void FlushBuffersIfReady();
   void FlushBuffer(RemoteTabletServer* ts, PerTSBuffer* buf);
 
-  // Sends a write RPC.
-  //
-  // If invoked for an RPC retry, 's' may be non-OK if the lookup was aborted
-  // before it fired (e.g. the reactor thread shut down).
-  void SendRpc(InFlightRpc* rpc, const Status& s);
-
-  // Cleans up an RPC, scooping out any errors and passing them up to the
-  // batcher.
-  void FinishRpc(InFlightRpc* rpc, const Status& s);
+  // Cleans up an RPC response, scooping out any errors and passing them up
+  // to the batcher.
+  void ProcessWriteResponse(const WriteRpc& rpc, const Status& s);
 
   // Async Callbacks.
   void TabletLookupFinished(InFlightOp* op, const Status& s);
   void RefreshTSProxyFinished(RemoteTabletServer* ts, PerTSBuffer* buf,
                               const Status& status);
-  void WriteRpcFinished(InFlightRpc* rpc);
 
   // See note about lock ordering in batcher.cc
   mutable simple_spinlock lock_;

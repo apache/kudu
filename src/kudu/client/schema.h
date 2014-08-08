@@ -17,8 +17,8 @@ class Schema;
 namespace client {
 
 namespace internal {
-class Batcher;
 class MetaCache;
+class WriteRpc;
 } // namespace internal
 
 class KuduClient;
@@ -119,8 +119,8 @@ class KUDU_EXPORT KuduSchema {
   friend class KuduScanner;
   friend class KuduTableCreator;
   friend class KuduWriteOperation;
-  friend class internal::Batcher;
   friend class internal::MetaCache;
+  friend class internal::WriteRpc;
 
   gscoped_ptr<Schema> schema_;
 };

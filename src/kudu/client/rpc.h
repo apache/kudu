@@ -1,0 +1,115 @@
+// Copyright (c) 2014, Cloudera, inc.
+#ifndef KUDU_CLIENT_RPC_H
+#define KUDU_CLIENT_RPC_H
+
+#include <string>
+
+#include "kudu/gutil/callback.h"
+#include "kudu/rpc/rpc_controller.h"
+#include "kudu/util/monotime.h"
+#include "kudu/util/status_callback.h"
+
+namespace kudu {
+
+namespace master {
+class MasterServiceProxy;
+} // namespace master
+
+namespace rpc {
+class Messenger;
+} // namespace rpc
+
+namespace client {
+
+namespace internal {
+
+class MetaCache;
+class RemoteTablet;
+class Rpc;
+
+// Retries certain kinds of failed RPCs.
+class RpcRetrier {
+ public:
+  RpcRetrier(const MonoTime& deadline,
+             const std::tr1::shared_ptr<rpc::Messenger>& messenger)
+    : attempt_num_(1),
+      deadline_(deadline),
+      messenger_(messenger) {
+    if (deadline_.Initialized()) {
+      controller_.set_deadline(deadline_);
+    }
+    controller_.Reset();
+  }
+
+  // Tries to handle a failed RPC.
+  //
+  // If it was handled (e.g. scheduled for retry in the future), returns
+  // true. In this case, callers should ensure that 'rpc' remains alive.
+  //
+  // Otherwise, returns false and writes the controller status to
+  // 'out_status'.
+  bool HandleResponse(Rpc* rpc, Status* out_status);
+
+  // Called when an RPC that was rescheduled is ready to send.
+  void SendRpcRescheduled(Rpc* rpc, const Status& status);
+
+  rpc::RpcController& controller() { return controller_; }
+
+ private:
+  // The next sent rpc will be the nth attempt (indexed from 1).
+  int attempt_num_;
+
+  // If the remote end is busy, the RPC will be retried (with a small
+  // delay) until this deadline is reached.
+  //
+  // May be uninitialized.
+  MonoTime deadline_;
+
+  // Messenger to use when sending the RPC.
+  std::tr1::shared_ptr<rpc::Messenger> messenger_;
+
+  // RPC controller to use when sending the RPC.
+  rpc::RpcController controller_;
+
+  DISALLOW_COPY_AND_ASSIGN(RpcRetrier);
+};
+
+// An in-flight remote procedure call to some server.
+class Rpc {
+ public:
+  Rpc(const MonoTime& deadline,
+      const std::tr1::shared_ptr<rpc::Messenger>& messenger)
+  : retrier_(deadline, messenger) {
+  }
+
+  virtual ~Rpc() {}
+
+  // Asynchronously sends the RPC to the remote end.
+  //
+  // Subclasses should use SendRpcCb() below as the callback function.
+  virtual void SendRpc() = 0;
+
+  // Returns a string representation of the RPC.
+  virtual std::string ToString() const = 0;
+
+ protected:
+  RpcRetrier& retrier() { return retrier_; }
+
+ private:
+  friend class RpcRetrier;
+
+  // Callback for SendRpc(). If 'status' is not OK, something failed
+  // before the RPC was sent.
+  virtual void SendRpcCb(const Status& status) = 0;
+
+  // Used to retry some failed RPCs.
+  RpcRetrier retrier_;
+
+  DISALLOW_COPY_AND_ASSIGN(Rpc);
+};
+
+} // namespace internal
+} // namespace client
+} // namespace kudu
+
+#endif

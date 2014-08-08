@@ -14,6 +14,7 @@
 #include "kudu/client/client-internal.h"
 #include "kudu/client/error_collector.h"
 #include "kudu/client/meta_cache.h"
+#include "kudu/client/rpc.h"
 #include "kudu/client/session-internal.h"
 #include "kudu/client/write_op.h"
 #include "kudu/client/write_op-internal.h"
@@ -27,17 +28,21 @@
 #include "kudu/tserver/tserver_service.proxy.h"
 #include "kudu/util/debug-util.h"
 
-using kudu::rpc::ErrorStatusPB;
-using kudu::rpc::RpcController;
-using kudu::tserver::WriteRequestPB;
-using kudu::tserver::WriteResponsePB;
-using kudu::tserver::WriteResponsePB_PerRowErrorPB;
-
 using std::pair;
 using std::tr1::unordered_map;
+using strings::Substitute;
 
 namespace kudu {
+
+using rpc::ErrorStatusPB;
+using rpc::Messenger;
+using rpc::RpcController;
+using tserver::WriteRequestPB;
+using tserver::WriteResponsePB;
+using tserver::WriteResponsePB_PerRowErrorPB;
+
 namespace client {
+
 namespace internal {
 
 // About lock ordering in this file:
@@ -122,7 +127,7 @@ struct InFlightOp {
     // it will enter this state.
     //
     // OWNERSHIP: when entering this state, the op is removed from PerTSBuffer's 'ops_'
-    // vector and ownership is transfered to an InFlightRPC's 'ops_' vector. The op still
+    // vector and ownership is transfered to a WriteRPC's 'ops_' vector. The op still
     // remains in the Batcher::ops_ set.
     kRequestSent
   };
@@ -143,31 +148,127 @@ struct InFlightOp {
   }
 };
 
-// An RPC which is in-flight to the remote server.
+// A Write RPC which is in-flight to a tablet server.
 //
 // Keeps a reference on the owning batcher while alive.
-struct InFlightRpc {
-  explicit InFlightRpc(Batcher* batcher, RemoteTabletServer* dst_ts)
-    : batcher(batcher),
-      ts(dst_ts),
-      attempt(0) {
-  }
+class WriteRpc : public Rpc {
+ public:
+  WriteRpc(const scoped_refptr<Batcher>& batcher,
+           const RemoteTabletServer* ts,
+           const vector<InFlightOp*>& ops,
+           const MonoTime& deadline,
+           const shared_ptr<Messenger>& messenger);
+  virtual ~WriteRpc();
+  virtual void SendRpc() OVERRIDE;
+  virtual string ToString() const OVERRIDE;
 
-  ~InFlightRpc() {
-    STLDeleteElements(&ops);
-  }
+  const RemoteTabletServer* ts() const { return ts_; }
+  const vector<InFlightOp*>& ops() const { return ops_; }
+  const WriteResponsePB& resp() const { return resp_; }
 
-  scoped_refptr<Batcher> batcher;
-  RemoteTabletServer* ts;
-  int attempt;
-  RpcController controller;
-  WriteRequestPB request;
-  WriteResponsePB response;
+ private:
+  virtual void SendRpcCb(const Status& status) OVERRIDE;
+
+  // Pointer back to the batcher. Processes the write response when it
+  // completes, regardless of success or failure.
+  scoped_refptr<Batcher> batcher_;
+
+  // Proxy to the tablet server servicing this write.
+  const RemoteTabletServer* ts_;
+
+  // Request body.
+  WriteRequestPB req_;
+
+  // Response body.
+  WriteResponsePB resp_;
 
   // Operations which were batched into this RPC.
   // These operations are in kRequestSent state.
-  vector<InFlightOp*> ops;
+  vector<InFlightOp*> ops_;
 };
+
+WriteRpc::WriteRpc(const scoped_refptr<Batcher>& batcher,
+                   const RemoteTabletServer* ts,
+                   const vector<InFlightOp*>& ops,
+                   const MonoTime& deadline,
+                   const shared_ptr<Messenger>& messenger)
+  : Rpc(deadline, messenger),
+    batcher_(batcher),
+    ts_(ts),
+    ops_(ops) {
+
+  // All of the ops for a given tablet obviously correspond to the same table,
+  // so we'll just grab the table from the first.
+  const KuduTable* table = ops_[0]->write_op->table();
+  const Schema* schema = table->schema().schema_.get();
+  const RemoteTablet* tablet = ops_[0]->tablet.get();
+
+  req_.set_tablet_id(tablet->tablet_id());
+  // Set up schema
+
+  CHECK_OK(SchemaToPB(*schema, req_.mutable_schema()));
+
+  RowOperationsPB* requested = req_.mutable_row_operations();
+
+  // Add the rows
+  int ctr = 0;
+  RowOperationsPBEncoder enc(requested);
+  BOOST_FOREACH(InFlightOp* op, ops_) {
+    DCHECK(op->key->InRange(op->tablet->start_key(), op->tablet->end_key()))
+                << "Row " << schema->DebugEncodedRowKey(op->key->encoded_key().ToString())
+                << " not in range (" << schema->DebugEncodedRowKey(tablet->start_key().ToString())
+                << ", " << schema->DebugEncodedRowKey(tablet->end_key().ToString())
+                << ")";
+
+    enc.Add(ToInternalWriteType(op->write_op->type()), op->write_op->row());
+
+    // Set the state now, even though we haven't yet sent it -- at this point
+    // there is no return, and we're definitely going to send it. If we waited
+    // until after we sent it, the RPC callback could fire before we got a chance
+    // to change its state to 'sent'.
+    op->state = InFlightOp::kRequestSent;
+    VLOG(3) << ++ctr << ". Encoded row " << op->write_op->ToString();
+  }
+
+  if (VLOG_IS_ON(2)) {
+    VLOG(2) << "Created batch for " << tablet->tablet_id() << ":\n"
+        << req_.ShortDebugString();
+  }
+}
+
+WriteRpc::~WriteRpc() {
+  STLDeleteElements(&ops_);
+}
+
+void WriteRpc::SendRpc() {
+  ts_->proxy()->WriteAsync(req_, &resp_, &retrier().controller(),
+                           boost::bind(&WriteRpc::SendRpcCb, this, Status::OK()));
+}
+
+string WriteRpc::ToString() const {
+  return Substitute("Write($0, $1 ops)", ts_->ToString(), ops_.size());
+}
+
+void WriteRpc::SendRpcCb(const Status& status) {
+  gscoped_ptr<WriteRpc> delete_me(this); // delete on scope exit
+
+  // Prefer early failures over controller failures.
+  Status new_status = status;
+  if (new_status.ok() && retrier().HandleResponse(this, &new_status)) {
+    ignore_result(delete_me.release());
+    return;
+  }
+
+  // Prefer controller failures over response failures.
+  if (new_status.ok() && resp_.has_error()) {
+    new_status = StatusFromPB(resp_.error().status());
+  }
+
+  if (!new_status.ok()) {
+    LOG(WARNING) << ToString() << " failed: " << new_status.ToString();
+  }
+  batcher_->ProcessWriteResponse(*this, new_status);
+}
 
 // Buffer which corresponds to a particular tablet server.
 // Contains ops which are in kBufferedToTabletServer or kRequestSent
@@ -211,29 +312,6 @@ class PerTSBuffer {
 
   DISALLOW_COPY_AND_ASSIGN(PerTSBuffer);
 };
-
-namespace {
-
-// Simple class which releases a reference count on the given object upon
-// its destructor.
-template<class T>
-class ScopedRefReleaser {
- public:
-  explicit ScopedRefReleaser(T* obj) : obj_(obj) {}
-  ~ScopedRefReleaser() {
-    if (obj_) {
-      obj_->Release();
-    }
-  }
-
-  void cancel() {
-    obj_ = NULL;
-  }
- private:
-  DISALLOW_COPY_AND_ASSIGN(ScopedRefReleaser);
-  T* obj_;
-};
-} // anonymous namespace
 
 Batcher::Batcher(KuduClient* client,
                  ErrorCollector* error_collector,
@@ -546,152 +624,43 @@ void Batcher::FlushBuffer(RemoteTabletServer* ts, PerTSBuffer* buf) {
   vector<InFlightOp*> ops; // owns ops
   buf->TakeOps(&ops);
 
-  // For each tablet, create a new InFlightRpc and gather all of the
-  // ops into it. The InFlightRpcs take ownership of the ops.
-  // The InFlightRpc objects themselves are freed when the RPC callback completes.
-  unordered_map<RemoteTablet*, InFlightRpc*> rpcs;
+  // Partition the ops into per-tablet groups.
+  unordered_map<RemoteTablet*, vector<InFlightOp*> > tablet_to_ops;
   BOOST_FOREACH(InFlightOp* op, ops) {
-    InFlightRpc* rpc = FindPtrOrNull(rpcs, op->tablet.get());
-    if (!rpc) {
-      rpc = new InFlightRpc(this, ts);
-      InsertOrDie(&rpcs, op->tablet.get(), rpc);
-    }
-    rpc->ops.push_back(op);
-    DCHECK_EQ(op->write_op->table(), rpc->ops[0]->write_op->table());
+    vector<InFlightOp*>& tablet_ops = LookupOrInsert(&tablet_to_ops,
+                                                     op->tablet.get(),
+                                                     vector<InFlightOp*>());
+    tablet_ops.push_back(op);
   }
 
-  // For each tablet, create and send an RPC.
-  typedef pair<RemoteTablet*, InFlightRpc*> entry_type;
-  BOOST_FOREACH(const entry_type& entry, rpcs) {
-    InFlightRpc* rpc = entry.second;
-    // All of the ops for a given tablet obviously correspond to the same table,
-    // so we'll just grab the table from the first.
-    const KuduTable* table = rpc->ops[0]->write_op->table();
-    const Schema* schema = table->schema().schema_.get();
-    const RemoteTablet* tablet = entry.first;
-
-    rpc->request.Clear();
-    rpc->request.set_tablet_id(tablet->tablet_id());
-    // Set up schema
-
-    CHECK_OK(SchemaToPB(*schema, rpc->request.mutable_schema()));
-
-    RowOperationsPB* requested = rpc->request.mutable_row_operations();
-
-    // Add the rows
-    int ctr = 0;
-    RowOperationsPBEncoder enc(requested);
-    BOOST_FOREACH(InFlightOp* op, rpc->ops) {
-      DCHECK(op->key->InRange(op->tablet->start_key(), op->tablet->end_key()))
-          << "Row " << schema->DebugEncodedRowKey(op->key->encoded_key().ToString())
-          << " not in range (" << schema->DebugEncodedRowKey(tablet->start_key().ToString())
-          << ", " << schema->DebugEncodedRowKey(tablet->end_key().ToString())
-          << ")";
-
-      enc.Add(ToInternalWriteType(op->write_op->type()), op->write_op->row());
-
-      // Set the state now, even though we haven't yet sent it -- at this point
-      // there is no return, and we're definitely going to send it. If we waited
-      // until after we sent it, the RPC callback could fire before we got a chance
-      // to change its state to 'sent'.
-      op->state = InFlightOp::kRequestSent;
-      VLOG(3) << ++ctr << ". Encoded row " << op->write_op->ToString();
-    }
-
-    if (VLOG_IS_ON(2)) {
-      VLOG(2) << "Created batch for " << entry.first->tablet_id() << ":\n"
-              << rpc->request.ShortDebugString();
-    }
-
-    SendRpc(rpc, Status::OK());
-  }
-}
-
-void Batcher::SendRpc(InFlightRpc* rpc, const Status& s) {
-  Status new_status = s;
-
-  // Has this RPC timed out?
-  if (deadline_.Initialized()) {
-    MonoTime now = MonoTime::Now(MonoTime::FINE);
-    if (deadline_.ComesBefore(now)) {
-      new_status = Status::TimedOut("Write timed out");
-    }
-  }
-
-  if (!new_status.ok()) {
-    FinishRpc(rpc, new_status);
-    return;
-  }
-
-  rpc->controller.Reset();
-
-  // Compute the new RPC deadline, then send it.
+  // Create and send an RPC that aggregates each tablet's ops. Each RPC is
+  // freed when its callback completes.
   //
-  // The 'rpc' object will be released by the callback.
-  if (deadline_.Initialized()) {
-    rpc->controller.set_deadline(deadline_);
+  // The RPC object takes ownership of its ops.
+  typedef pair<RemoteTablet*, vector<InFlightOp*> > entry_type;
+  BOOST_FOREACH(const entry_type& entry, tablet_to_ops) {
+    const vector<InFlightOp*>& tablet_ops = entry.second;
+
+    WriteRpc* rpc = new WriteRpc(this,
+                                 ts,
+                                 tablet_ops,
+                                 deadline_,
+                                 client_->data_->messenger_);
+    rpc->SendRpc();
   }
-  rpc->ts->proxy()->WriteAsync(rpc->request, &rpc->response, &rpc->controller,
-                               boost::bind(&Batcher::WriteRpcFinished, this, rpc));
 }
 
-void Batcher::WriteRpcFinished(InFlightRpc* rpc) {
+void Batcher::ProcessWriteResponse(const WriteRpc& rpc,
+                                   const Status& s) {
   // TODO: there is a potential race here -- if the Batcher gets destructed while
   // RPCs are in-flight, then accessing state_ will crash. We probably need to keep
   // track of the in-flight RPCs, and in the destructor, change each of them to an
   // "aborted" state.
   CHECK_EQ(state_, kFlushing);
 
-  // Must extract the actual "too busy" error from the ErrorStatusPB.
-  Status s = rpc->controller.status();
-  bool retry = false;
-  if (s.IsRemoteError()) {
-    const ErrorStatusPB* err = rpc->controller.error_response();
-    if (err &&
-        err->has_code() &&
-        err->code() == ErrorStatusPB::ERROR_SERVER_TOO_BUSY) {
-      retry = true;
-    }
-  }
-  if (s.ok() && rpc->response.has_error()) {
-    s = StatusFromPB(rpc->response.error().status());
-  }
-  if (s.ok()) {
-    VLOG(2) << "Write RPC success: " << rpc->response.DebugString();
-  } else {
-    VLOG(2) << "Write RPC failed: " << s.ToString();
-
-    if (retry) {
-      // Retry provided we haven't exceeded the deadline.
-      if (!deadline_.Initialized() || // no deadline --> retry forever
-          MonoTime::Now(MonoTime::FINE).ComesBefore(deadline_)) {
-        // Add some jitter to the retry delay.
-        //
-        // If the delay causes us to miss our deadline, SendRpc will fail
-        // the RPC on our behalf.
-        int num_ms = ++rpc->attempt + ((rand() % 5));
-        client_->data_->messenger_->ScheduleOnReactor(
-            boost::bind(&Batcher::SendRpc, this, rpc, _1),
-            MonoDelta::FromMilliseconds(num_ms));
-        return;
-      } else {
-        VLOG(2) <<
-            strings::Substitute("Failing RPC to $0, deadline exceeded: $1",
-                                rpc->ts->ToString(), deadline_.ToString());
-      }
-    }
-  }
-
-  FinishRpc(rpc, s);
-}
-
-void Batcher::FinishRpc(InFlightRpc* rpc, const Status& s) {
-  // Make sure after this method that the ops and the RPC are deleted.
-  gscoped_ptr<InFlightRpc> scoped_rpc(rpc);
-
   if (!s.ok()) {
     // Mark each of the rows in the write op as failed, since the whole RPC failed.
-    BOOST_FOREACH(InFlightOp* op, rpc->ops) {
+    BOOST_FOREACH(InFlightOp* op, rpc.ops()) {
       gscoped_ptr<KuduError> error(new KuduError(op->write_op.Pass(), s));
       error_collector_->AddError(error.Pass());
     }
@@ -703,7 +672,7 @@ void Batcher::FinishRpc(InFlightRpc* rpc, const Status& s) {
   // Remove all the ops from the "in-flight" list.
   {
     lock_guard<simple_spinlock> l(&lock_);
-    BOOST_FOREACH(InFlightOp* op, rpc->ops) {
+    BOOST_FOREACH(InFlightOp* op, rpc.ops()) {
       CHECK_EQ(1, ops_.erase(op))
             << "Could not remove op " << op->ToString()
             << " from in-flight list";
@@ -711,19 +680,19 @@ void Batcher::FinishRpc(InFlightRpc* rpc, const Status& s) {
   }
 
   // Check individual row errors.
-  BOOST_FOREACH(const WriteResponsePB_PerRowErrorPB& err_pb, rpc->response.per_row_errors()) {
+  BOOST_FOREACH(const WriteResponsePB_PerRowErrorPB& err_pb, rpc.resp().per_row_errors()) {
     // TODO: handle case where we get one of the more specific TS errors
-    // like the tablet not being hosted, or too busy?
+    // like the tablet not being hosted?
 
-    if (err_pb.row_index() >= rpc->ops.size()) {
+    if (err_pb.row_index() >= rpc.ops().size()) {
       LOG(ERROR) << "Received a per_row_error for an out-of-bound op index "
                  << err_pb.row_index() << " (sent only "
-                 << rpc->ops.size() << " ops)";
-      LOG(ERROR) << "Response from TS " << rpc->ts->ToString() << ":\n"
-                 << rpc->response.DebugString();
+                 << rpc.ops().size() << " ops)";
+      LOG(ERROR) << "Response from TS " << rpc.ts()->ToString() << ":\n"
+                 << rpc.resp().DebugString();
       continue;
     }
-    gscoped_ptr<KuduWriteOperation> op = rpc->ops[err_pb.row_index()]->write_op.Pass();
+    gscoped_ptr<KuduWriteOperation> op = rpc.ops()[err_pb.row_index()]->write_op.Pass();
     VLOG(1) << "Error on op " << op->ToString() << ": "
             << err_pb.error().ShortDebugString();
     Status op_status = StatusFromPB(err_pb.error());
