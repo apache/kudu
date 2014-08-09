@@ -130,7 +130,12 @@ elif [ "$BUILD_TYPE" = "LINT" ]; then
   exit $?
 elif [ "$BUILD_TYPE" = "CLIENT" ]; then
   BUILD_TYPE=debug
-  cmake -DKUDU_EXPORTED_CLIENT=1 .
+  # Older versions of gcc suffer from at least one visibility-related bug
+  # such that unexpected symbols are included in the client library.
+  #
+  # See KUDU-455 for details.
+  CC=$THIRDPARTY_BIN/clang CXX=$THIRDPARTY_BIN/clang++ \
+    cmake -DKUDU_EXPORTED_CLIENT=1 .
 fi
 
 # Only enable test core dumps for certain build types.
