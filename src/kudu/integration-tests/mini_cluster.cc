@@ -108,7 +108,9 @@ void MiniCluster::Shutdown() {
   BOOST_FOREACH(const shared_ptr<MiniTabletServer>& tablet_server, mini_tablet_servers_) {
     tablet_server->Shutdown();
   }
-  mini_master_->Shutdown();
+  if (mini_master_) {
+    mini_master_->Shutdown();
+  }
   running_ = false;
 }
 
