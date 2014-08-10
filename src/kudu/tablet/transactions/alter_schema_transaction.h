@@ -5,6 +5,8 @@
 
 #include <string>
 
+#include <boost/thread/shared_mutex.hpp>
+
 #include "kudu/gutil/macros.h"
 #include "kudu/tablet/transactions/transaction.h"
 #include "kudu/util/task_executor.h"
@@ -60,6 +62,12 @@ class AlterSchemaTransactionState : public TransactionState {
     return request_->schema_version();
   }
 
+  void AcquireSchemaLock(boost::shared_mutex* l);
+
+  // Release the acquired schema lock.
+  // Crashes if the lock was not already acquired.
+  void ReleaseSchemaLock();
+
   // Note: request_ and response_ are set to NULL after this method returns.
   void commit() {
     // Make the request NULL since after this transaction commits
@@ -73,9 +81,15 @@ class AlterSchemaTransactionState : public TransactionState {
  private:
   DISALLOW_COPY_AND_ASSIGN(AlterSchemaTransactionState);
 
+  // The new (target) Schema.
   const Schema* schema_;
+
+  // The original RPC request and response.
   const tserver::AlterSchemaRequestPB *request_;
   tserver::AlterSchemaResponsePB *response_;
+
+  // The lock held on the tablet's schema_lock_.
+  boost::unique_lock<boost::shared_mutex> schema_lock_;
 };
 
 // Executes the alter schema transaction,.

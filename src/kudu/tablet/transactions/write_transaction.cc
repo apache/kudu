@@ -145,9 +145,10 @@ Status WriteTransaction::Apply(gscoped_ptr<CommitMsg>* commit_msg) {
 }
 
 void WriteTransaction::PreCommit() {
-  TRACE("PRECOMMIT: Releasing row locks");
+  TRACE("PRECOMMIT: Releasing row and schema locks");
   // Perform early lock release after we've applied all changes
   state()->release_row_locks();
+  state()->ReleaseSchemaLock();
 }
 
 void WriteTransaction::Finish() {
@@ -224,13 +225,28 @@ void WriteTransactionState::set_tablet_components(
   tablet_components_ = components;
 }
 
+void WriteTransactionState::AcquireSchemaLock(boost::shared_mutex* schema_lock) {
+  TRACE("Acquiring schema lock in shared mode");
+  schema_lock_ = boost::shared_lock<boost::shared_mutex>(*schema_lock);
+  TRACE("Acquired schema lock");
+}
+
+void WriteTransactionState::ReleaseSchemaLock() {
+  schema_lock_ = boost::shared_lock<boost::shared_mutex>();
+  TRACE("Released schema lock");
+}
+
 void WriteTransactionState::commit() {
   if (mvcc_tx_.get() != NULL) {
     // commit the transaction
     mvcc_tx_->Commit();
   }
   mvcc_tx_.reset();
+
+  // TODO: do we really need to release here, given that we also release in
+  // WriteTransaction::PreCommit()?
   release_row_locks();
+  ReleaseSchemaLock();
 
   // Make the request NULL since after this transaction commits
   // the request may be deleted at any moment.

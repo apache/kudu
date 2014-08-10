@@ -32,7 +32,10 @@ using std::tr1::shared_ptr;
 using client::KuduClient;
 using client::KuduClientBuilder;
 using client::KuduColumnSchema;
+using client::KuduInsert;
 using client::KuduSchema;
+using client::KuduSession;
+using client::KuduTable;
 using master::MiniMaster;
 using master::AlterTableRequestPB;
 using master::AlterTableResponsePB;
@@ -44,7 +47,8 @@ class AlterTableTest : public KuduTest {
   AlterTableTest()
     : schema_(boost::assign::list_of
               (KuduColumnSchema("c1", KuduColumnSchema::UINT32)),
-              1) {
+              1),
+      stop_threads_(false) {
   }
 
   virtual void SetUp() OVERRIDE {
@@ -128,6 +132,8 @@ class AlterTableTest : public KuduTest {
       .Alter();
   }
 
+  void InserterThread();
+
  protected:
   static const char *kTableName;
 
@@ -137,6 +143,8 @@ class AlterTableTest : public KuduTest {
   KuduSchema schema_;
 
   scoped_refptr<TabletPeer> tablet_peer_;
+
+  AtomicBool stop_threads_;
 };
 
 const char *AlterTableTest::kTableName = "fake-table";
@@ -265,6 +273,58 @@ TEST_F(AlterTableTest, TestGetSchemaAfterAlterTable) {
 
   KuduSchema s;
   ASSERT_STATUS_OK(client_->GetTableSchema(kTableName, &s));
+}
+
+void AlterTableTest::InserterThread() {
+  shared_ptr<KuduSession> session = client_->NewSession();
+  scoped_refptr<KuduTable> table;
+  CHECK_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
+  session->SetTimeoutMillis(15 * 1000);
+
+  CHECK_OK(client_->OpenTable(kTableName, &table));
+  uint32_t i = 0;
+  while (!stop_threads_.Load()) {
+    gscoped_ptr<KuduInsert> insert = table->NewInsert();
+    // Endian-swap the key so that we spew inserts randomly
+    // instead of just a sequential write pattern. This way
+    // compactions may actually be triggered.
+    uint32_t key = bswap_32(i++);
+    CHECK_OK(insert->mutable_row()->SetUInt32(0, key));
+    CHECK_OK(session->Apply(insert.Pass()));
+
+    if (i % 50 == 0) {
+      CHECK_OK(session->Flush());
+      CHECK_EQ(0, session->CountPendingErrors());
+    }
+  }
+
+  CHECK_OK(session->Flush());
+}
+
+// Test altering a table while also sending a lot of writes,
+// checking for races between the two.
+TEST_F(AlterTableTest, TestAlterUnderWriteLoad) {
+  scoped_refptr<Thread> writer;
+  CHECK_OK(Thread::Create("test", "writer",
+                          boost::bind(&AlterTableTest::InserterThread, this),
+                          &writer));
+
+  // Add columns until we reach 10.
+  for (int i = 2; i < 10; i++) {
+    if (AllowSlowTests()) {
+      // In slow test mode, let more writes accumulate in between
+      // alters, so that we get enough writes to cause flushes,
+      // compactions, etc.
+      sleep(3);
+    }
+
+    ASSERT_STATUS_OK(AddNewU32Column(kTableName,
+                                     strings::Substitute("c$0", i),
+                                     i));
+  }
+
+  stop_threads_.Store(true);
+  writer->Join();
 }
 
 } // namespace kudu

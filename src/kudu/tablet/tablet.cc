@@ -210,7 +210,10 @@ Status Tablet::DecodeWriteOperations(const Schema* client_schema,
                                      WriteTransactionState* tx_state) {
   DCHECK_EQ(tx_state->row_ops().size(), 0);
 
-  // TODO: acquire schema lock in tx_state
+  // Acquire the schema lock in shared mode, so that the schema doesn't
+  // change while this transaction is in-flight.
+  tx_state->AcquireSchemaLock(&schema_lock_);
+
   // The Schema needs to be held constant while any transactions are between
   // PREPARE and APPLY stages
   TRACE("PREPARE: Decoding operations");
@@ -695,6 +698,8 @@ Status Tablet::CreatePreparedAlterSchema(AlterSchemaTransactionState *tx_state,
   // Alter schema must run when no reads/writes are in progress.
   // However, compactions and flushes can continue to run in parallel
   // with the schema change,
+  tx_state->AcquireSchemaLock(&schema_lock_);
+
   tx_state->set_schema(schema);
   return Status::OK();
 }
@@ -746,7 +751,7 @@ Status Tablet::AlterSchema(AlterSchemaTransactionState *tx_state) {
     RETURN_NOT_OK(ReplaceMemRowSetUnlocked(*schema_.get(), &input, &old_ms));
   }
 
-  // TODO: release a schema lock?
+  tx_state->ReleaseSchemaLock();
 
   // Flush the old MemRowSet
   boost::lock_guard<boost::mutex> lock(rowsets_flush_lock_);

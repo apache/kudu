@@ -1,5 +1,7 @@
 // Copyright (c) 2013, Cloudera, inc.
 
+#include <glog/logging.h>
+
 #include "kudu/tablet/transactions/alter_schema_transaction.h"
 #include "kudu/tablet/transactions/write_util.h"
 
@@ -34,6 +36,19 @@ string AlterSchemaTransactionState::ToString() const {
                     schema_ == NULL ? "(none)" : schema_->ToString(),
                     request_ == NULL ? "(none)" : request_->ShortDebugString());
 }
+
+void AlterSchemaTransactionState::AcquireSchemaLock(boost::shared_mutex* l) {
+  TRACE("Acquiring schema lock in exclusive mode");
+  schema_lock_ = boost::unique_lock<boost::shared_mutex>(*l);
+  TRACE("Acquired schema lock");
+}
+
+void AlterSchemaTransactionState::ReleaseSchemaLock() {
+  CHECK(schema_lock_.owns_lock());
+  schema_lock_ = boost::unique_lock<boost::shared_mutex>();
+  TRACE("Released schema lock");
+}
+
 
 AlterSchemaTransaction::AlterSchemaTransaction(AlterSchemaTransactionState* state,
                                                DriverType type)

@@ -3,6 +3,7 @@
 #ifndef KUDU_TABLET_WRITE_TRANSACTION_H_
 #define KUDU_TABLET_WRITE_TRANSACTION_H_
 
+#include <boost/thread/shared_mutex.hpp>
 #include <string>
 #include <vector>
 
@@ -92,6 +93,16 @@ class WriteTransactionState : public TransactionState {
   // Called exactly once during PREPARE
   void set_tablet_components(const scoped_refptr<const TabletComponents>& components);
 
+  // Take a shared lock on the given schema lock.
+  // This is required prior to decoding rows so that the schema does
+  // not change in between performing the projection and applying
+  // the writes.
+  void AcquireSchemaLock(boost::shared_mutex* schema_lock);
+
+  // Release the already-acquired schema lock.
+  void ReleaseSchemaLock();
+
+
   void set_schema_at_decode_time(const Schema* schema) {
     schema_at_decode_time_ = schema;
   }
@@ -150,6 +161,10 @@ class WriteTransactionState : public TransactionState {
 
   // The tablet components, acquired at the same time as mvcc_tx_ is set.
   scoped_refptr<const TabletComponents> tablet_components_;
+
+  // A lock held on the tablet's schema. Prevents concurrent schema change
+  // from racing with a write.
+  boost::shared_lock<boost::shared_mutex> schema_lock_;
 
   // The Schema of the tablet when the transaction was first decoded.
   // This is verified at APPLY time to ensure we don't have races against

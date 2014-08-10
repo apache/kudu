@@ -6,6 +6,8 @@
 #include <string>
 #include <vector>
 
+#include <boost/thread/shared_mutex.hpp>
+
 #include "kudu/common/iterator.h"
 #include "kudu/common/predicate_encoder.h"
 #include "kudu/common/schema.h"
@@ -414,30 +416,23 @@ class Tablet {
 
   Status CheckRowInTablet(const tablet::RowSetKeyProbe& probe) const;
 
+  // Lock protecting schema_ and key_schema_.
+  //
+  // Writers take this lock in shared mode before decoding and projecting
+  // their requests. They hold the lock until after APPLY.
+  //
+  // Readers take this lock in shared mode only long enough to copy the
+  // current schema into the iterator, after which all projection is taken
+  // care of based on that copy.
+  //
+  // On an AlterSchema, this is taken in exclusive mode during Prepare() and
+  // released after the schema change has been applied.
+  mutable boost::shared_mutex schema_lock_;
+
   shared_ptr<Schema> schema_;
   const Schema key_schema_;
+
   scoped_refptr<metadata::TabletMetadata> metadata_;
-
-  // The current components of the tablet. These should always be read
-  // or swapped under the component_lock.
-  scoped_refptr<TabletComponents> components_;
-  log::OpIdAnchorRegistry* opid_anchor_registry_;
-  std::tr1::shared_ptr<MemTracker> mem_tracker_;
-  shared_ptr<MemRowSet> memrowset_;
-  shared_ptr<RowSetTree> rowsets_;
-
-  gscoped_ptr<MetricContext> metric_context_;
-  gscoped_ptr<TabletMetrics> metrics_;
-
-  int64_t next_mrs_id_;
-
-  // A pointer to the server's clock.
-  scoped_refptr<server::Clock> clock_;
-
-  MvccManager mvcc_;
-  LockManager lock_manager_;
-
-  gscoped_ptr<CompactionPolicy> compaction_policy_;
 
   // Lock protecting access to the 'components_' member (i.e the rowsets in the tablet)
   //
@@ -457,6 +452,31 @@ class Tablet {
   // is active, a writer comes along, then all future short readers will be blocked.
   // TODO: now that this is single-threaded again, we should change it to rw_spinlock
   mutable rw_spinlock component_lock_;
+
+  // The current components of the tablet. These should always be read
+  // or swapped under the component_lock.
+  scoped_refptr<TabletComponents> components_;
+
+
+
+  log::OpIdAnchorRegistry* opid_anchor_registry_;
+  std::tr1::shared_ptr<MemTracker> mem_tracker_;
+  shared_ptr<MemRowSet> memrowset_;
+  shared_ptr<RowSetTree> rowsets_;
+
+  gscoped_ptr<MetricContext> metric_context_;
+  gscoped_ptr<TabletMetrics> metrics_;
+
+  int64_t next_mrs_id_;
+
+  // A pointer to the server's clock.
+  scoped_refptr<server::Clock> clock_;
+
+  MvccManager mvcc_;
+  LockManager lock_manager_;
+
+  gscoped_ptr<CompactionPolicy> compaction_policy_;
+
 
   // Lock protecting the selection of rowsets for compaction.
   // Only one thread may run the compaction selection algorithm at a time

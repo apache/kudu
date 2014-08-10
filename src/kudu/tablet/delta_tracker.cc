@@ -467,15 +467,17 @@ Status DeltaTracker::AlterSchema(const Schema& schema) {
 }
 
 size_t DeltaTracker::DeltaMemStoreSize() const {
+  boost::shared_lock<boost::shared_mutex> lock(component_lock_);
   return dms_->memory_footprint();
 }
 
 size_t DeltaTracker::CountRedoDeltaStores() const {
-  boost::lock_guard<boost::shared_mutex> lock(component_lock_);
+  boost::shared_lock<boost::shared_mutex> lock(component_lock_);
   return redo_delta_stores_.size();
 }
 
 const Schema& DeltaTracker::schema() const {
+  boost::shared_lock<boost::shared_mutex> lock(component_lock_);
   return dms_->schema();
 }
 
