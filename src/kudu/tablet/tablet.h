@@ -19,6 +19,7 @@
 #include "kudu/tablet/mvcc.h"
 #include "kudu/tablet/rowset.h"
 #include "kudu/util/locks.h"
+#include "kudu/util/semaphore.h"
 #include "kudu/util/slice.h"
 #include "kudu/util/status.h"
 
@@ -470,7 +471,7 @@ class Tablet {
   // We take this lock when flushing the tablet's rowsets in Tablet::Flush.  We
   // don't want to have two flushes in progress at once, in case the one which
   // started earlier completes after the one started later.
-  mutable boost::mutex rowsets_flush_lock_;
+  mutable Semaphore rowsets_flush_sem_;
 
   bool open_;
 

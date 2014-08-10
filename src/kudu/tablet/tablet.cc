@@ -109,6 +109,7 @@ Tablet::Tablet(const scoped_refptr<TabletMetadata>& metadata,
     next_mrs_id_(0),
     clock_(clock),
     mvcc_(clock),
+    rowsets_flush_sem_(1),
     open_(false) {
   CHECK(schema_->has_column_ids());
   compaction_policy_.reset(CreateCompactionPolicy());
@@ -505,7 +506,7 @@ Status Tablet::DeleteCompactionInputs(const RowSetsInCompaction &input) {
 }
 
 Status Tablet::Flush() {
-  boost::lock_guard<boost::mutex> lock(rowsets_flush_lock_);
+  boost::lock_guard<Semaphore> lock(rowsets_flush_sem_);
   return FlushUnlocked();
 }
 
@@ -619,6 +620,11 @@ Status Tablet::AlterSchema(AlterSchemaTransactionState *tx_state) {
   DCHECK(key_schema_.KeyEquals(*DCHECK_NOTNULL(tx_state->schema()))) <<
     "Schema keys cannot be altered";
 
+  // Prevent any concurrent flushes. Otherwise, we run into issues where
+  // we have an MRS in the rowset tree, and we can't alter its schema
+  // in-place.
+  boost::lock_guard<Semaphore> lock(rowsets_flush_sem_);
+
   RowSetsInCompaction input;
   shared_ptr<MemRowSet> old_ms;
   {
@@ -666,7 +672,6 @@ Status Tablet::AlterSchema(AlterSchemaTransactionState *tx_state) {
   tx_state->ReleaseSchemaLock();
 
   // Flush the old MemRowSet
-  boost::lock_guard<boost::mutex> lock(rowsets_flush_lock_);
   return FlushInternal(input, old_ms, *tx_state->schema());
 }
 
@@ -701,9 +706,12 @@ class FlushMRSOp : public MaintenanceOp {
   }
 
   virtual void UpdateStats(MaintenanceOpStats* stats) OVERRIDE {
+    boost::lock_guard<simple_spinlock> l(lock_);
+
     {
-      boost::mutex::scoped_try_lock guard(tablet_->rowsets_flush_lock_);
-      stats->runnable = guard.owns_lock();
+      boost::unique_lock<Semaphore> lock(tablet_->rowsets_flush_sem_,
+                                         boost::defer_lock);
+      stats->runnable = lock.try_lock();
     }
     stats->ram_anchored = tablet_->MemRowSetSize();
     // TODO: add a field to MemRowSet storing how old a timestamp it contains
@@ -731,16 +739,22 @@ class FlushMRSOp : public MaintenanceOp {
   }
 
   virtual bool Prepare() OVERRIDE {
-    // Try to acquire the rowsets_flush_lock_.  If we can't, the Prepare step
+    // Try to acquire the rowsets_flush_sem_.  If we can't, the Prepare step
     // fails.  This also implies that only one instance of FlushMRSOp can be
     // running at once.
-    return tablet_->rowsets_flush_lock_.try_lock();
+    return tablet_->rowsets_flush_sem_.try_lock();
   }
 
   virtual void Perform() OVERRIDE {
+    CHECK(!tablet_->rowsets_flush_sem_.try_lock());
+
     tablet_->FlushUnlocked();
-    time_since_flush_.start();
-    tablet_->rowsets_flush_lock_.unlock();
+
+    {
+      boost::lock_guard<simple_spinlock> l(lock_);
+      time_since_flush_.start();
+    }
+    tablet_->rowsets_flush_sem_.unlock();
   }
 
  private:
@@ -748,6 +762,8 @@ class FlushMRSOp : public MaintenanceOp {
     kFlushDueToTimeMs = 120 * 1000
   };
 
+  // Lock protecting time_since_flush_
+  mutable simple_spinlock lock_;
   Stopwatch time_since_flush_;
 
   Tablet *const tablet_;

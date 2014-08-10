@@ -26,6 +26,7 @@
 #include "kudu/util/stopwatch.h"
 
 DECLARE_int32(heartbeat_interval_ms);
+DECLARE_int32(flush_threshold_mb);
 
 namespace kudu {
 
@@ -328,6 +329,9 @@ void AlterTableTest::InserterThread() {
 // Test altering a table while also sending a lot of writes,
 // checking for races between the two.
 TEST_F(AlterTableTest, TestAlterUnderWriteLoad) {
+  // Increase chances of a race between flush and alter.
+  FLAGS_flush_threshold_mb = 3;
+
   scoped_refptr<Thread> writer;
   CHECK_OK(Thread::Create("test", "writer",
                           boost::bind(&AlterTableTest::InserterThread, this),
