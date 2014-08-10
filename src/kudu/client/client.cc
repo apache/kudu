@@ -590,6 +590,11 @@ KuduTableAlterer& KuduTableAlterer::rename_column(const string& old_name,
   return *this;
 }
 
+KuduTableAlterer& KuduTableAlterer::timeout(const MonoDelta& timeout) {
+  data_->timeout_ = timeout;
+  return *this;
+}
+
 Status KuduTableAlterer::Alter() {
   if (!data_->alter_steps_.table().has_table_name()) {
     return Status::InvalidArgument("Missing table name");
@@ -607,10 +612,12 @@ Status KuduTableAlterer::Alter() {
   AlterTableResponsePB resp;
   RpcController rpc;
 
+  MonoDelta timeout = data_->timeout_.Initialized() ?
+    data_->timeout_ :
+    data_->client_->default_admin_operation_timeout();
   MonoTime deadline = MonoTime::Now(MonoTime::FINE);
-  deadline.AddDelta(MonoDelta::FromMilliseconds(60 * 1000));
-
-  rpc.set_timeout(data_->client_->default_admin_operation_timeout());
+  deadline.AddDelta(timeout);
+  rpc.set_timeout(timeout);
   RETURN_NOT_OK(data_->client_->data_->master_proxy_->AlterTable(data_->alter_steps_, &resp, &rpc));
   if (resp.has_error()) {
     return StatusFromPB(resp.error().status());

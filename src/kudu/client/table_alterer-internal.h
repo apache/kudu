@@ -22,6 +22,8 @@ class KuduTableAlterer::Data {
 
   master::AlterTableRequestPB alter_steps_;
 
+  MonoDelta timeout_;
+
   DISALLOW_COPY_AND_ASSIGN(Data);
 };
 

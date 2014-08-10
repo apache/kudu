@@ -290,6 +290,12 @@ class KUDU_EXPORT KuduTableAlterer {
   KuduTableAlterer& rename_column(const std::string& old_name,
                                   const std::string& new_name);
 
+  // Set the timeout for the operation. This includes any waiting
+  // after the alter has been submitted (i.e if the alter is slow
+  // to be performed on a large table, it may time out and then
+  // later be successful).
+  KuduTableAlterer& timeout(const MonoDelta& timeout);
+
   // Alters the table.
   //
   // The return value may indicate an error in the alter operation, or a
