@@ -65,7 +65,8 @@ class TRServer(object):
                                reduced_redundancy=True)
 
   def connect_mysql(self):
-    if hasattr(self.thread_local, "db"):
+    if hasattr(self.thread_local, "db") and \
+          self.thread_local.db is not None:
       return self.thread_local.db
 
     host = os.environ["MYSQLHOST"]
@@ -76,9 +77,32 @@ class TRServer(object):
     logging.info("Connected to MySQL at %s" % host)
     return self.thread_local.db
 
+  def execute_query(self, query, *args):
+    """ Execute a query, automatically reconnecting on disconnection. """
+    # We'll try up to 3 times to reconnect
+    MAX_ATTEMPTS = 3
+
+    # Error code for the "MySQL server has gone away" error.
+    MYSQL_SERVER_GONE_AWAY = 2006
+
+    attempt_num = 0
+    while True:
+      c = self.connect_mysql().cursor(MySQLdb.cursors.DictCursor)
+      attempt_num = attempt_num + 1
+      try:
+        c.execute(query, *args)
+        return c
+      except MySQLdb.OperationalError as err:
+        if err.args[0] == MYSQL_SERVER_GONE_AWAY and attempt_num < MAX_ATTEMPTS:
+          logging.warn("Forcing reconnect to MySQL: %s" % err)
+          self.thread_local.db = None
+          continue
+        else:
+          raise
+
+
   def ensure_table(self):
-    c = self.connect_mysql().cursor()
-    c.execute("""
+    c = self.execute_query("""
       CREATE TABLE IF NOT EXISTS test_results (
         id int not null auto_increment primary key,
         timestamp timestamp not null default current_timestamp,
@@ -114,11 +138,11 @@ class TRServer(object):
 
     logging.info("Handling report: %s" % repr(args))
 
-    c = self.connect_mysql().cursor()
-    c.execute("INSERT INTO test_results(build_id, revision, build_config, hostname, test_name, status, log_key) "
-              "VALUES (%(build_id)s, %(revision)s, %(build_config)s, %(hostname)s, %(test_name)s,"
-              "%(status)s, %(log_key)s)",
-              args)
+    self.execute_query(
+      "INSERT INTO test_results(build_id, revision, build_config, hostname, test_name, status, log_key) "
+      "VALUES (%(build_id)s, %(revision)s, %(build_config)s, %(hostname)s, %(test_name)s,"
+      "%(status)s, %(log_key)s)",
+      args)
     return "Success!\n"
 
   @cherrypy.expose
@@ -130,10 +154,10 @@ class TRServer(object):
 
   def recently_failed_html(self):
     """ Return an HTML report of recently failed tests """
-    c = self.connect_mysql().cursor(MySQLdb.cursors.DictCursor)
-    c.execute("SELECT * from test_results WHERE status != 0 "
-              "AND timestamp > NOW() - INTERVAL 1 WEEK "
-              "ORDER BY timestamp DESC")
+    c = self.execute_query(
+      "SELECT * from test_results WHERE status != 0 "
+      "AND timestamp > NOW() - INTERVAL 1 WEEK "
+      "ORDER BY timestamp DESC")
     failed_tests = c.fetchall()
     template = Template("""
     <h1>Failed in last week</h1>
@@ -170,8 +194,8 @@ class TRServer(object):
 
   def flaky_report_html(self):
     """ Return an HTML report of recently flaky tests """
-    c = self.connect_mysql().cursor(MySQLdb.cursors.DictCursor)
-    c.execute("""SELECT
+    c = self.execute_query(
+              """SELECT
                    test_name,
                    revision,
                    MIN(timestamp) AS first_run,
@@ -205,10 +229,10 @@ class TRServer(object):
 
   @cherrypy.expose
   def test_drilldown(self, test_name):
-    c = self.connect_mysql().cursor(MySQLdb.cursors.DictCursor)
 
     # Get summary statistics for the test, grouped by revision
-    c.execute("""SELECT
+    c = self.execute_query(
+              """SELECT
                    revision,
                    MIN(timestamp) AS first_run,
                    SUM(IF(status != 0, 1, 0)) AS num_failures,
