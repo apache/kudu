@@ -350,7 +350,7 @@ Status Peer::SignalRequest(bool send_status_only_if_queue_empty) {
 
   // If we're actually sending ops there's no need to heartbeat for a while,
   // reset the heartbeater
-  if (PREDICT_FALSE(peer_impl_->request()->ops_size() == 0) && heartbeater_ != NULL) {
+  if (PREDICT_FALSE(peer_impl_->request()->ops_size() != 0) && heartbeater_ != NULL) {
     heartbeater_->Reset();
   }
 
