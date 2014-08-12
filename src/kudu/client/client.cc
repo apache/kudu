@@ -281,8 +281,13 @@ KuduTableCreator& KuduTableCreator::num_replicas(int num_replicas) {
   return *this;
 }
 
-KuduTableCreator& KuduTableCreator::wait_for_assignment(bool wait) {
-  data_->wait_for_assignment_ = wait;
+KuduTableCreator& KuduTableCreator::timeout(const MonoDelta& timeout) {
+  data_->timeout_ = timeout;
+  return *this;
+}
+
+KuduTableCreator& KuduTableCreator::wait(bool wait) {
+  data_->wait_ = wait;
   return *this;
 }
 
@@ -297,7 +302,12 @@ Status KuduTableCreator::Create() {
   CreateTableRequestPB req;
   CreateTableResponsePB resp;
   RpcController rpc;
-  rpc.set_timeout(data_->client_->default_admin_operation_timeout());
+  MonoDelta timeout = data_->timeout_.Initialized() ?
+    data_->timeout_ :
+    data_->client_->default_admin_operation_timeout();
+  MonoTime deadline = MonoTime::Now(MonoTime::FINE);
+  deadline.AddDelta(timeout);
+  rpc.set_timeout(timeout);
 
   // Build request.
   req.set_name(data_->table_name_);
@@ -318,10 +328,7 @@ Status KuduTableCreator::Create() {
   }
 
   // Spin until the table is fully created, if requested.
-  if (data_->wait_for_assignment_) {
-    // TODO: make the wait time configurable
-    MonoTime deadline = MonoTime::Now(MonoTime::FINE);
-    deadline.AddDelta(MonoDelta::FromSeconds(15));
+  if (data_->wait_) {
     RETURN_NOT_OK(RetryFunc(deadline,
                             "Waiting on Create Table to be completed",
                             "Timeout out waiting for Table Creation",
@@ -595,6 +602,11 @@ KuduTableAlterer& KuduTableAlterer::timeout(const MonoDelta& timeout) {
   return *this;
 }
 
+KuduTableAlterer& KuduTableAlterer::wait(bool wait) {
+  data_->wait_ = wait;
+  return *this;
+}
+
 Status KuduTableAlterer::Alter() {
   if (!data_->alter_steps_.table().has_table_name()) {
     return Status::InvalidArgument("Missing table name");
@@ -623,14 +635,16 @@ Status KuduTableAlterer::Alter() {
     return StatusFromPB(resp.error().status());
   }
 
-  string alter_name = data_->alter_steps_.has_new_table_name() ?
-      data_->alter_steps_.new_table_name() : data_->alter_steps_.table().table_name();
-  RETURN_NOT_OK(RetryFunc(deadline,
-        "Waiting on Alter Table to be completed",
-        "Timeout out waiting for AlterTable",
-        boost::bind(&KuduClient::Data::IsAlterTableInProgress,
-                    data_->client_->data_.get(),
-                    alter_name, _1, _2)));
+  if (data_->wait_) {
+    string alter_name = data_->alter_steps_.has_new_table_name() ?
+        data_->alter_steps_.new_table_name() : data_->alter_steps_.table().table_name();
+    RETURN_NOT_OK(RetryFunc(deadline,
+                            "Waiting on Alter Table to be completed",
+                            "Timeout out waiting for AlterTable",
+                            boost::bind(&KuduClient::Data::IsAlterTableInProgress,
+                                        data_->client_->data_.get(),
+                                        alter_name, _1, _2)));
+  }
 
   return Status::OK();
 }

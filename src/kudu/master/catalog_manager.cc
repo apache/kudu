@@ -1627,7 +1627,7 @@ void CatalogManager::HandleTabletSchemaVersionReport(TabletInfo *tablet, uint32_
   }
 
   uint32_t current_version = l.data().pb.version();
-  if (version != current_version && !table->IsAlterInProgress(current_version)) {
+  if (table->IsAlterInProgress(current_version)) {
     return;
   }
 

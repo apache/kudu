@@ -7,7 +7,8 @@ namespace kudu {
 namespace client {
 
 KuduTableAlterer::Data::Data(KuduClient* client)
-  : client_(client) {
+  : client_(client),
+    wait_(true) {
 }
 
 KuduTableAlterer::Data::~Data() {

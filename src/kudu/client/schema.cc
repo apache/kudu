@@ -182,5 +182,9 @@ KuduSchema KuduSchema::CreateKeyProjection() const {
   return projection;
 }
 
+size_t KuduSchema::num_columns() const {
+  return schema_->num_columns();
+}
+
 } // namespace client
 } // namespace kudu

@@ -191,11 +191,17 @@ class KUDU_EXPORT KuduTableCreator {
   // If not provided (or if <= 0), falls back to the server-side default.
   KuduTableCreator& num_replicas(int n_replicas);
 
-  // Wait for all tablets to be assigned after creating the table.
+  // Set the timeout for the operation. This includes any waiting
+  // after the create has been submitted (i.e if the create is slow
+  // to be performed for a large table, it may time out and then
+  // later be successful).
+  KuduTableCreator& timeout(const MonoDelta& timeout);
+
+  // Wait for the table to be fully created before returning.
   // Optional.
   //
   // If not provided, defaults to true.
-  KuduTableCreator& wait_for_assignment(bool wait);
+  KuduTableCreator& wait(bool wait);
 
   // Creates the table.
   //
@@ -295,6 +301,12 @@ class KUDU_EXPORT KuduTableAlterer {
   // to be performed on a large table, it may time out and then
   // later be successful).
   KuduTableAlterer& timeout(const MonoDelta& timeout);
+
+  // Wait for the table to be fully altered before returning.
+  // Optional.
+  //
+  // If not provided, defaults to true.
+  KuduTableAlterer& wait(bool wait);
 
   // Alters the table.
   //

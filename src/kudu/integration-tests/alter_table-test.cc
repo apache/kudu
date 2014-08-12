@@ -8,7 +8,9 @@
 
 #include "kudu/client/schema.h"
 #include "kudu/client/client.h"
+#include "kudu/client/encoded_key.h"
 #include "kudu/gutil/gscoped_ptr.h"
+#include "kudu/gutil/stl_util.h"
 #include "kudu/integration-tests/mini_cluster.h"
 #include "kudu/master/mini_master.h"
 #include "kudu/master/master.h"
@@ -32,6 +34,9 @@ using std::tr1::shared_ptr;
 using client::KuduClient;
 using client::KuduClientBuilder;
 using client::KuduColumnSchema;
+using client::KuduEncodedKey;
+using client::KuduEncodedKeyBuilder;
+using client::KuduError;
 using client::KuduInsert;
 using client::KuduSchema;
 using client::KuduSession;
@@ -133,6 +138,25 @@ class AlterTableTest : public KuduTest {
   }
 
   void InserterThread();
+
+  Status CreateSplitTable(const string& table_name) {
+    vector<string> keys;
+    KuduEncodedKeyBuilder key_builder(schema_);
+    gscoped_ptr<KuduEncodedKey> key;
+    for (uint32_t i = 1; i < 10; i++) {
+      uint32_t val = i * 100;
+      key_builder.Reset();
+      key_builder.AddColumnKey(&val);
+      key.reset(key_builder.BuildEncodedKey());
+      keys.push_back(key->ToString());
+    }
+    return client_->NewTableCreator()
+        ->table_name(table_name)
+        .schema(&schema_)
+        .num_replicas(1)
+        .split_keys(keys)
+        .Create();
+  }
 
  protected:
   static const char *kTableName;
@@ -325,6 +349,75 @@ TEST_F(AlterTableTest, TestAlterUnderWriteLoad) {
 
   stop_threads_.Store(true);
   writer->Join();
+}
+
+TEST_F(AlterTableTest, TestInsertAfterAlterTable) {
+  const char *kSplitTableName = "split-table";
+
+  // Create a new table with 10 tablets.
+  //
+  // With more tablets, there's a greater chance that the TS will heartbeat
+  // after some but not all tablets have finished altering.
+  ASSERT_OK(CreateSplitTable(kSplitTableName));
+
+  // Add a column, and immediately try to insert a row including that
+  // new column.
+  ASSERT_OK(AddNewU32Column(kSplitTableName, "new-u32", 10));
+  scoped_refptr<KuduTable> table;
+  ASSERT_OK(client_->OpenTable(kSplitTableName, &table));
+  gscoped_ptr<KuduInsert> insert = table->NewInsert();
+  ASSERT_OK(insert->mutable_row()->SetUInt32("c1", 1));
+  ASSERT_OK(insert->mutable_row()->SetUInt32("new-u32", 1));
+  shared_ptr<KuduSession> session = client_->NewSession();
+  ASSERT_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
+  session->SetTimeoutMillis(15000);
+  ASSERT_OK(session->Apply(insert.Pass()));
+  Status s = session->Flush();
+  if (!s.ok()) {
+    ASSERT_EQ(1, session->CountPendingErrors());
+    vector<KuduError*> errors;
+    ElementDeleter d(&errors);
+    bool overflow;
+    session->GetPendingErrors(&errors, &overflow);
+    ASSERT_FALSE(overflow);
+    ASSERT_EQ(1, errors.size());
+    ASSERT_OK(errors[0]->status()); // will fail
+  }
+}
+
+// Disabled because, at the time of writing, it fails with:
+//
+// transaction_driver.cc:324] Commit failed in transaction:
+//   AlterSchemaTransaction [state=AlterSchemaTransactionState ...]
+//   with Status: Not implemented: AlterSchema not supported by MemRowSet
+TEST_F(AlterTableTest, DISABLED_TestMultipleAlters) {
+  const char *kSplitTableName = "split-table";
+  const size_t kNumNewCols = 10;
+  const uint32_t kDefaultValue = 10;
+
+  // Create a new table with 10 tablets.
+  //
+  // With more tablets, there's a greater chance that the TS will heartbeat
+  // after some but not all tablets have finished altering.
+  ASSERT_OK(CreateSplitTable(kSplitTableName));
+
+  // Issue a bunch of new alters without waiting for them to finish.
+  for (int i = 0; i < kNumNewCols; i++) {
+    ASSERT_OK(client_->NewTableAlterer()
+              ->table_name(kSplitTableName)
+              .add_column(strings::Substitute("new_col$0", i),
+                          KuduColumnSchema::UINT32, &kDefaultValue)
+              .wait(false)
+              .Alter());
+  }
+
+  // Now wait. This should block on all of them.
+  WaitAlterTableCompletion(kSplitTableName, 50);
+
+  // All new columns should be present.
+  KuduSchema new_schema;
+  ASSERT_OK(client_->GetTableSchema(kSplitTableName, &new_schema));
+  ASSERT_EQ(kNumNewCols + schema_.num_columns(), new_schema.num_columns());
 }
 
 } // namespace kudu

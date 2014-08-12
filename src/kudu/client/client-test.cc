@@ -1193,11 +1193,6 @@ TEST_F(ClientTest, TestWriteWithBadSchema) {
 }
 
 TEST_F(ClientTest, TestBasicAlterOperations) {
-  // TODO: These tests explicitly use a single-tablet table (client_table2_),
-  // because multi-tablet tables are prone to deadlocking.
-  //
-  // See KUDU-273 for more details.
-
   // test that missing the table's name throws an error
   {
     Status s = client_->NewTableAlterer()
@@ -1210,7 +1205,7 @@ TEST_F(ClientTest, TestBasicAlterOperations) {
   // test that having no steps throws an error
   {
     Status s = client_->NewTableAlterer()
-        ->table_name(kTable2Name)
+        ->table_name(kTableName)
         .Alter();
     ASSERT_TRUE(s.IsInvalidArgument());
     ASSERT_STR_CONTAINS(s.ToString(), "No alter steps provided");
@@ -1219,7 +1214,7 @@ TEST_F(ClientTest, TestBasicAlterOperations) {
   // test that adding a non-nullable column with no default value throws an error
   {
     Status s = client_->NewTableAlterer()
-        ->table_name(kTable2Name)
+        ->table_name(kTableName)
         .add_column("key", KuduColumnSchema::UINT32, NULL)
         .Alter();
     ASSERT_TRUE(s.IsInvalidArgument());
@@ -1229,7 +1224,7 @@ TEST_F(ClientTest, TestBasicAlterOperations) {
   // test that remove key should throws an error
   {
     Status s = client_->NewTableAlterer()
-        ->table_name(kTable2Name)
+        ->table_name(kTableName)
         .drop_column("key")
         .Alter();
     ASSERT_TRUE(s.IsInvalidArgument());
@@ -1239,7 +1234,7 @@ TEST_F(ClientTest, TestBasicAlterOperations) {
   // test that renaming a key should throws an error
   {
     Status s = client_->NewTableAlterer()
-        ->table_name(kTable2Name)
+        ->table_name(kTableName)
         .rename_column("key", "key2")
         .Alter();
     ASSERT_TRUE(s.IsInvalidArgument());
@@ -1249,7 +1244,7 @@ TEST_F(ClientTest, TestBasicAlterOperations) {
   // test that renaming to an already-existing name throws an error
   {
     Status s = client_->NewTableAlterer()
-        ->table_name(kTable2Name)
+        ->table_name(kTableName)
         .rename_column("int_val", "string_val")
         .Alter();
     ASSERT_TRUE(s.IsAlreadyPresent());
@@ -1257,14 +1252,14 @@ TEST_F(ClientTest, TestBasicAlterOperations) {
   }
 
   // Need a tablet peer for the next set of tests.
-  string tablet_id = GetFirstTabletId(client_table2_.get());
+  string tablet_id = GetFirstTabletId(client_table_.get());
   scoped_refptr<TabletPeer> tablet_peer;
   ASSERT_TRUE(cluster_->mini_tablet_server(0)->server()->tablet_manager()->LookupTablet(
       tablet_id, &tablet_peer));
 
   {
     ASSERT_STATUS_OK(client_->NewTableAlterer()
-                     ->table_name(kTable2Name)
+                     ->table_name(kTableName)
                      .drop_column("int_val")
                      .add_nullable_column("new_col", KuduColumnSchema::UINT32)
                      .Alter());
@@ -1275,7 +1270,7 @@ TEST_F(ClientTest, TestBasicAlterOperations) {
   // type throws an error
   {
     Status s = client_->NewTableAlterer()
-        ->table_name(kTable2Name)
+        ->table_name(kTableName)
         .add_nullable_column("new_string_val", KuduColumnSchema::STRING,
                              KuduColumnStorageAttributes(
                                  KuduColumnStorageAttributes::GROUP_VARINT))
@@ -1287,7 +1282,7 @@ TEST_F(ClientTest, TestBasicAlterOperations) {
 
   {
     ASSERT_STATUS_OK(client_->NewTableAlterer()
-                     ->table_name(kTable2Name)
+                     ->table_name(kTableName)
                      .add_nullable_column("new_string_val", KuduColumnSchema::STRING,
                                           KuduColumnStorageAttributes(
                                               KuduColumnStorageAttributes::PREFIX_ENCODING))
@@ -1298,7 +1293,7 @@ TEST_F(ClientTest, TestBasicAlterOperations) {
   {
     const char *kRenamedTableName = "RenamedTable";
     ASSERT_STATUS_OK(client_->NewTableAlterer()
-                     ->table_name(kTable2Name)
+                     ->table_name(kTableName)
                      .rename_table(kRenamedTableName)
                      .Alter());
     ASSERT_EQ(3, tablet_peer->tablet()->metadata()->schema_version());
@@ -1306,18 +1301,18 @@ TEST_F(ClientTest, TestBasicAlterOperations) {
 
     CatalogManager *catalog_manager = cluster_->mini_master()->master()->catalog_manager();
     ASSERT_TRUE(catalog_manager->TableNameExists(kRenamedTableName));
-    ASSERT_FALSE(catalog_manager->TableNameExists(kTable2Name));
+    ASSERT_FALSE(catalog_manager->TableNameExists(kTableName));
   }
 }
 
 TEST_F(ClientTest, TestDeleteTable) {
-  string tablet_id = GetFirstTabletId(client_table2_.get());
+  string tablet_id = GetFirstTabletId(client_table_.get());
 
   // Remove the table
   // NOTE that it returns when the operation is completed on the master side
-  ASSERT_STATUS_OK(client_->DeleteTable(kTable2Name));
+  ASSERT_STATUS_OK(client_->DeleteTable(kTableName));
   CatalogManager *catalog_manager = cluster_->mini_master()->master()->catalog_manager();
-  ASSERT_FALSE(catalog_manager->TableNameExists(kTable2Name));
+  ASSERT_FALSE(catalog_manager->TableNameExists(kTableName));
 
   // Wait until the table is removed from the TS
   int wait_time = 1000;
@@ -1332,7 +1327,7 @@ TEST_F(ClientTest, TestDeleteTable) {
   ASSERT_FALSE(tablet_found);
 
   // Try to open the deleted table
-  Status s = client_->OpenTable(kTable2Name, &client_table_);
+  Status s = client_->OpenTable(kTableName, &client_table_);
   ASSERT_TRUE(s.IsNotFound());
   ASSERT_STR_CONTAINS(s.ToString(), "The table does not exist");
 }

@@ -24,9 +24,11 @@ class KuduTableCreator::Data {
 
   std::vector<std::string> split_keys_;
 
-  bool wait_for_assignment_;
-
   int num_replicas_;
+
+  MonoDelta timeout_;
+
+  bool wait_;
 
   DISALLOW_COPY_AND_ASSIGN(Data);
 };

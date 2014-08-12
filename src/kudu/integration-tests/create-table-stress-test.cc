@@ -88,7 +88,7 @@ void CreateTableStressTest::CreateBigTable(const string& table_name, int num_tab
                    ->table_name(table_name)
                    .schema(&schema_)
                    .split_keys(keys)
-                   .wait_for_assignment(false)
+                   .wait(false)
                    .Create());
 }
 

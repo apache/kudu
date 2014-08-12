@@ -24,6 +24,8 @@ class KuduTableAlterer::Data {
 
   MonoDelta timeout_;
 
+  bool wait_;
+
   DISALLOW_COPY_AND_ASSIGN(Data);
 };
 
