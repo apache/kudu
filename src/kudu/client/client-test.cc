@@ -10,6 +10,7 @@
 
 #include "kudu/client/client.h"
 #include "kudu/client/client-internal.h"
+#include "kudu/client/client-test-util.h"
 #include "kudu/client/encoded_key.h"
 #include "kudu/client/meta_cache.h"
 #include "kudu/client/row_result.h"
@@ -159,7 +160,7 @@ class ClientTest : public KuduTest {
       gscoped_ptr<KuduInsert> insert(BuildTestRow(table, i));
       ASSERT_STATUS_OK(session->Apply(insert.Pass()));
     }
-    ASSERT_NO_FATAL_FAILURE(WrappedFlush(session));
+    FlushSessionOrDie(session);
     ASSERT_NO_FATAL_FAILURE(CheckNoRpcOverflow());
   }
 
@@ -171,7 +172,7 @@ class ClientTest : public KuduTest {
       gscoped_ptr<KuduUpdate> update(UpdateTestRow(table, i));
       ASSERT_STATUS_OK(session->Apply(update.Pass()));
     }
-    ASSERT_NO_FATAL_FAILURE(WrappedFlush(session));
+    FlushSessionOrDie(session);
     ASSERT_NO_FATAL_FAILURE(CheckNoRpcOverflow());
   }
 
@@ -183,7 +184,7 @@ class ClientTest : public KuduTest {
       gscoped_ptr<KuduDelete> del(DeleteTestRow(table, i));
       ASSERT_STATUS_OK(session->Apply(del.Pass()))
     }
-    ASSERT_NO_FATAL_FAILURE(WrappedFlush(session));
+    FlushSessionOrDie(session);
     ASSERT_NO_FATAL_FAILURE(CheckNoRpcOverflow());
   }
 
@@ -362,22 +363,6 @@ class ClientTest : public KuduTest {
     ASSERT_STATUS_OK(client_->OpenTable(table_name, table));
   }
 
-  void WrappedFlush(const shared_ptr<KuduSession>& session) {
-    Status s = session->Flush();
-    if (!s.ok()) {
-      vector<KuduError*> errors;
-      ElementDeleter d(&errors);
-      bool overflow;
-      session->GetPendingErrors(&errors, &overflow);
-      ASSERT_FALSE(overflow);
-      BOOST_FOREACH(const KuduError* e, errors) {
-        LOG(INFO) << "Op " << e->failed_op().ToString()
-                  << " had status " << e->status().ToString();
-      }
-      ASSERT_STATUS_OK(s); // will fail
-    }
-  }
-
   void DoApplyWithoutFlushTest(int sleep_micros);
 
   enum WhichServerToKill {
@@ -531,7 +516,7 @@ TEST_F(ClientTest, TestScanMultiTablet) {
     insert = BuildTestRow(table.get(), 7 + (i * 10));
     ASSERT_STATUS_OK(session->Apply(insert.Pass()));
   }
-  ASSERT_NO_FATAL_FAILURE(WrappedFlush(session));
+  FlushSessionOrDie(session);
 
   // Run through various scans.
   ASSERT_EQ(16, CountRowsFromClient(table.get(), kNoBound, kNoBound));
@@ -553,7 +538,7 @@ TEST_F(ClientTest, TestScanMultiTablet) {
     update = UpdateTestRow(table.get(), 5 + i * 10);
     ASSERT_STATUS_OK(session->Apply(update.Pass()));
   }
-  ASSERT_NO_FATAL_FAILURE(WrappedFlush(session));
+  FlushSessionOrDie(session);
 
   // Check all counts the same (make sure updates don't change # of rows)
   ASSERT_EQ(16, CountRowsFromClient(table.get(), kNoBound, kNoBound));
@@ -575,7 +560,7 @@ TEST_F(ClientTest, TestScanMultiTablet) {
     del = DeleteTestRow(table.get(), 7 + i*10);
     ASSERT_STATUS_OK(session->Apply(del.Pass()));
   }
-  ASSERT_NO_FATAL_FAILURE(WrappedFlush(session));
+  FlushSessionOrDie(session);
 
   // Check counts changed accordingly
   ASSERT_EQ(8, CountRowsFromClient(table.get(), kNoBound, kNoBound));
@@ -597,7 +582,7 @@ TEST_F(ClientTest, TestScanMultiTablet) {
     del = DeleteTestRow(table.get(), 3 + i*10);
     ASSERT_STATUS_OK(session->Apply(del.Pass()));
   }
-  ASSERT_NO_FATAL_FAILURE(WrappedFlush(session));
+  FlushSessionOrDie(session);
 
   // Check counts changed accordingly
   ASSERT_EQ(0, CountRowsFromClient(table.get(), kNoBound, kNoBound));
@@ -820,7 +805,7 @@ TEST_F(ClientTest, TestInsertSingleRowManualBatch) {
   ASSERT_TRUE(insert == NULL) << "Successful insert should take ownership";
   ASSERT_TRUE(session->HasPendingOperations()) << "Should be pending until we Flush";
 
-  ASSERT_NO_FATAL_FAILURE(WrappedFlush(session));
+  FlushSessionOrDie(session);
 }
 
 static Status ApplyInsertToSession(KuduSession* session,
@@ -896,7 +881,7 @@ TEST_F(ClientTest, TestMultipleMultiRowManualBatches) {
       row_key++;
     }
     ASSERT_TRUE(session->HasPendingOperations()) << "Should be pending until we Flush";
-    ASSERT_NO_FATAL_FAILURE(WrappedFlush(session));
+    FlushSessionOrDie(session);
     ASSERT_FALSE(session->HasPendingOperations()) << "Should have no more pending ops after flush";
   }
 
@@ -922,7 +907,7 @@ TEST_F(ClientTest, TestBatchWithPartialError) {
 
   // Insert a row with key "1"
   ASSERT_STATUS_OK(ApplyInsertToSession(session.get(), client_table_, 1, 1, "original row"));
-  ASSERT_NO_FATAL_FAILURE(WrappedFlush(session));
+  FlushSessionOrDie(session);
 
   // Now make a batch that has key "1" (which will fail) along with
   // key "2" which will succeed. Flushing should return an error.
@@ -959,7 +944,7 @@ TEST_F(ClientTest, TestBatchWithPartialError) {
 TEST_F(ClientTest, TestEmptyBatch) {
   shared_ptr<KuduSession> session = client_->NewSession();
   ASSERT_STATUS_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
-  ASSERT_NO_FATAL_FAILURE(WrappedFlush(session));
+  FlushSessionOrDie(session);
 }
 
 void ClientTest::DoTestWriteWithDeadServer(WhichServerToKill which) {
@@ -1039,10 +1024,10 @@ TEST_F(ClientTest, TestMutationsWork) {
   shared_ptr<KuduSession> session = client_->NewSession();
   ASSERT_STATUS_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
   ASSERT_STATUS_OK(ApplyInsertToSession(session.get(), client_table_, 1, 1, "original row"));
-  ASSERT_NO_FATAL_FAILURE(WrappedFlush(session));
+  FlushSessionOrDie(session);
 
   ASSERT_STATUS_OK(ApplyUpdateToSession(session.get(), client_table_, 1, 2));
-  ASSERT_NO_FATAL_FAILURE(WrappedFlush(session));
+  FlushSessionOrDie(session);
   vector<string> rows;
   ScanRowsToStrings(client_table_.get(), &rows);
   ASSERT_EQ(1, rows.size());
@@ -1051,7 +1036,7 @@ TEST_F(ClientTest, TestMutationsWork) {
   rows.clear();
 
   ASSERT_STATUS_OK(ApplyDeleteToSession(session.get(), client_table_, 1));
-  ASSERT_NO_FATAL_FAILURE(WrappedFlush(session));
+  FlushSessionOrDie(session);
   ScanRowsToStrings(client_table_.get(), &rows);
   ASSERT_EQ(0, rows.size());
 }
@@ -1061,9 +1046,9 @@ TEST_F(ClientTest, TestMutateDeletedRow) {
   shared_ptr<KuduSession> session = client_->NewSession();
   ASSERT_STATUS_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
   ASSERT_STATUS_OK(ApplyInsertToSession(session.get(), client_table_, 1, 1, "original row"));
-  ASSERT_NO_FATAL_FAILURE(WrappedFlush(session));
+  FlushSessionOrDie(session);
   ASSERT_STATUS_OK(ApplyDeleteToSession(session.get(), client_table_, 1));
-  ASSERT_NO_FATAL_FAILURE(WrappedFlush(session));
+  FlushSessionOrDie(session);
   ScanRowsToStrings(client_table_.get(), &rows);
   ASSERT_EQ(0, rows.size());
 
@@ -1535,7 +1520,7 @@ TEST_F(ClientTest, TestRandomWriteOperation) {
     // Test correctness every so often
     if (i % 50 == 0) {
       LOG(INFO) << "Correctness test " << i;
-      ASSERT_NO_FATAL_FAILURE(WrappedFlush(session));
+      FlushSessionOrDie(session);
       ASSERT_NO_FATAL_FAILURE(CheckCorrectness(&scanner, row, nrows));
       LOG(INFO) << "...complete";
       changed.clear();
@@ -1576,7 +1561,7 @@ TEST_F(ClientTest, TestRandomWriteOperation) {
   }
 
   // And one more time for the last batch.
-  ASSERT_NO_FATAL_FAILURE(WrappedFlush(session));
+  FlushSessionOrDie(session);
   ASSERT_NO_FATAL_FAILURE(CheckCorrectness(&scanner, row, nrows));
 }
 
@@ -1591,7 +1576,7 @@ TEST_F(ClientTest, DISABLED_TestSeveralRowMutatesPerBatch) {
   LOG(INFO) << "Testing insert/update in same batch, key " << 1 << ".";
   ASSERT_STATUS_OK(ApplyInsertToSession(session.get(), client_table_, 1, 1, ""));
   ASSERT_STATUS_OK(ApplyUpdateToSession(session.get(), client_table_, 1, 2));
-  ASSERT_NO_FATAL_FAILURE(WrappedFlush(session));
+  FlushSessionOrDie(session);
   vector<string> rows;
   ScanRowsToStrings(client_table_.get(), &rows);
   ASSERT_EQ(1, rows.size());
@@ -1603,7 +1588,7 @@ TEST_F(ClientTest, DISABLED_TestSeveralRowMutatesPerBatch) {
   LOG(INFO) << "Testing insert/delete in same batch, key " << 2 << ".";
   // Test insert/delete
   ASSERT_STATUS_OK(ApplyInsertToSession(session.get(), client_table_, 2, 1, ""));
-  ASSERT_NO_FATAL_FAILURE(WrappedFlush(session));
+  FlushSessionOrDie(session);
   ScanRowsToStrings(client_table_.get(), &rows);
   ASSERT_EQ(1, rows.size());
   ASSERT_EQ("(uint32 key=1, uint32 int_val=2, string string_val=, "
@@ -1614,14 +1599,14 @@ TEST_F(ClientTest, DISABLED_TestSeveralRowMutatesPerBatch) {
   LOG(INFO) << "Testing update/delete in same batch, key " << 1 << ".";
   ASSERT_STATUS_OK(ApplyUpdateToSession(session.get(), client_table_, 1, 1));
   ASSERT_STATUS_OK(ApplyDeleteToSession(session.get(), client_table_, 1));
-  ASSERT_NO_FATAL_FAILURE(WrappedFlush(session));
+  FlushSessionOrDie(session);
   ScanRowsToStrings(client_table_.get(), &rows);
   ASSERT_EQ(0, rows.size());
 
   // Test delete/insert (insert a row first)
   LOG(INFO) << "Inserting row for delete/insert test, key " << 1 << ".";
   ASSERT_STATUS_OK(ApplyInsertToSession(session.get(), client_table_, 1, 1, ""));
-  ASSERT_NO_FATAL_FAILURE(WrappedFlush(session));
+  FlushSessionOrDie(session);
   ScanRowsToStrings(client_table_.get(), &rows);
   ASSERT_EQ(1, rows.size());
   ASSERT_EQ("(uint32 key=1, uint32 int_val=1, string string_val=, "
@@ -1630,7 +1615,7 @@ TEST_F(ClientTest, DISABLED_TestSeveralRowMutatesPerBatch) {
   LOG(INFO) << "Testing delete/insert in same batch, key " << 1 << ".";
   ASSERT_STATUS_OK(ApplyDeleteToSession(session.get(), client_table_, 1));
   ASSERT_STATUS_OK(ApplyInsertToSession(session.get(), client_table_, 1, 2, ""));
-  ASSERT_NO_FATAL_FAILURE(WrappedFlush(session));
+  FlushSessionOrDie(session);
   ScanRowsToStrings(client_table_.get(), &rows);
   ASSERT_EQ(1, rows.size());
   ASSERT_EQ("(uint32 key=1, uint32 int_val=2, string string_val=, "
@@ -1749,7 +1734,7 @@ TEST_F(ClientTest, DISABLED_TestDeadlockSimulation) {
   ASSERT_STATUS_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
   for (int i = 0; i < kNumRows; ++i)
     ASSERT_STATUS_OK(ApplyInsertToSession(session.get(), client_table_, i, i,  ""));
-  ASSERT_NO_FATAL_FAILURE(WrappedFlush(session));
+  FlushSessionOrDie(session);
 
   // Check both clients see rows
   int fwd = CountRowsFromClient(client_table_.get());

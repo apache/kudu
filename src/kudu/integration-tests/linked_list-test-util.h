@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "kudu/client/client.h"
+#include "kudu/client/client-test-util.h"
 #include "kudu/client/encoded_key.h"
 #include "kudu/client/row_result.h"
 #include "kudu/gutil/stl_util.h"
@@ -96,9 +97,6 @@ class LinkedListTester {
   std::vector<std::string> GenerateSplitKeys(const client::KuduSchema& schema);
 
   void DumpInsertHistogram(bool print_flags);
-
-  // Flushes the session and, if there are any per-row errors, logs them.
-  static Status WrappedFlush(client::KuduSession* session);
 
  protected:
   const client::KuduSchema schema_;
@@ -205,11 +203,11 @@ class ScopedRowUpdater {
       CHECK_OK(update->mutable_row()->SetBool(kUpdatedColumnName, true));
       CHECK_OK(session->Apply(update.Pass()));
       if (++updated_count % 50 == 0) {
-        CHECK_OK(LinkedListTester::WrappedFlush(session.get()));
+        FlushSessionOrDie(session);
       }
     }
 
-    CHECK_OK(LinkedListTester::WrappedFlush(session.get()));
+    FlushSessionOrDie(session);
   }
 
   client::KuduTable* table_;
@@ -315,11 +313,10 @@ Status LinkedListTester::LoadLinkedList(const MonoDelta& run_for,
     }
 
     MonoTime start(MonoTime::Now(MonoTime::FINE));
-    Status s = WrappedFlush(session.get());
+    FlushSessionOrDie(session);
     MonoDelta elapsed = MonoTime::Now(MonoTime::FINE).GetDeltaSince(start);
     latency_histogram_.Increment(elapsed.ToMicroseconds());
 
-    RETURN_NOT_OK(s);
     (*written_count) += chains.size();
 
     if (enable_mutation_) {
@@ -478,22 +475,6 @@ Status LinkedListTester::WaitAndVerify(int seconds_to_run, int64_t expected) {
   } while (!s.ok());
 
   return Status::OK();
-}
-
-Status LinkedListTester::WrappedFlush(client::KuduSession* session) {
-  Status s = session->Flush();
-  if (!s.ok()) {
-    std::vector<client::KuduError*> errors;
-    ElementDeleter d(&errors);
-    bool overflow;
-    session->GetPendingErrors(&errors, &overflow);
-    CHECK(!overflow);
-    BOOST_FOREACH(const client::KuduError* e, errors) {
-      LOG(INFO) << "Op " << e->failed_op().ToString()
-                      << " had status " << e->status().ToString();
-    }
-  }
-  return s;
 }
 
 /////////////////////////////////////////////////////////////

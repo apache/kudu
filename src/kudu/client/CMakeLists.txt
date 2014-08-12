@@ -176,6 +176,15 @@ if (KUDU_EXPORTED_CLIENT)
     RENAME kuduClientConfig.cmake)
 endif()
 
+# Test utility library
+
+# This code is useful for other tests which use the client, but isn't
+# part of the client itself (ie we don't want to ship it to customers,
+# and therefore don't need to worry about export strictness)
+add_library(kudu_client_test_util
+  client-test-util.cc)
+target_link_libraries(kudu_client_test_util kudu_client)
+
 # Tests
 
 if (KUDU_EXPORTED_CLIENT)
