@@ -138,7 +138,7 @@ Status KuduScanner::Data::OpenTablet(const Slice& key) {
 
     // On error, mark any replicas hosted by this TS as failed, then try
     // another replica.
-    table_->client()->data_->meta_cache_->MarkTSFailed(ts);
+    table_->client()->data_->meta_cache_->MarkTSFailed(ts, s);
   }
   RETURN_NOT_OK(CheckForErrors());
 

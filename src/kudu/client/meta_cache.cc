@@ -147,8 +147,10 @@ void RemoteTablet::Refresh(const TabletServerMap& tservers,
   }
 }
 
-void RemoteTablet::MarkReplicaFailed(RemoteTabletServer *ts) {
-  LOG(WARNING) << "Replica " << tablet_id_ << " on ts " << ts->ToString() << " has failed";
+void RemoteTablet::MarkReplicaFailed(RemoteTabletServer *ts,
+                                     const Status& status) {
+  LOG(WARNING) << "Replica " << tablet_id_ << " on ts " << ts->ToString() << " has failed: "
+               << status.ToString();
 
   lock_guard<simple_spinlock> l(&lock_);
   BOOST_FOREACH(RemoteReplica& rep, replicas_) {
@@ -481,12 +483,15 @@ void MetaCache::LookupTabletByID(const string& tablet_id,
   *remote_tablet = FindOrDie(tablets_by_id_, tablet_id);
 }
 
-void MetaCache::MarkTSFailed(RemoteTabletServer* ts) {
+void MetaCache::MarkTSFailed(RemoteTabletServer* ts,
+                             const Status& status) {
   shared_lock<rw_spinlock> l(&lock_);
+
+  Status ts_status = status.CloneAndPrepend("TS failed");
 
   // TODO: replace with a ts->tablet multimap for faster lookup?
   BOOST_FOREACH(const TabletMap::value_type& tablet, tablets_by_id_) {
-    tablet.second->MarkReplicaFailed(ts);
+    tablet.second->MarkReplicaFailed(ts, ts_status);
   }
 }
 

@@ -115,7 +115,10 @@ class RemoteTablet : public RefCountedThreadSafe<RemoteTablet> {
 
   // Mark any replicas of this tablet hosted by 'ts' as failed. They will
   // not be returned in future cache lookups.
-  void MarkReplicaFailed(RemoteTabletServer *ts);
+  //
+  // The provided status is used for logging.
+  void MarkReplicaFailed(RemoteTabletServer *ts,
+                         const Status& status);
 
   // Return the number of replicas for this tablet that have failed.
   int GetNumFailedReplicas() const;
@@ -196,7 +199,7 @@ class MetaCache : public RefCountedThreadSafe<MetaCache> {
 
   // Mark any replicas of any tablets hosted by 'ts' as failed. They will
   // not be returned in future cache lookups.
-  void MarkTSFailed(RemoteTabletServer* ts);
+  void MarkTSFailed(RemoteTabletServer* ts, const Status& status);
 
   // Acquire or release a permit to perform a (slow) master lookup.
   //
