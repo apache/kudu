@@ -150,7 +150,8 @@ class AlterTableTest : public KuduTest {
 
   enum VerifyPattern {
     C1_MATCHES_INDEX,
-    C1_IS_DEADBEEF
+    C1_IS_DEADBEEF,
+    C1_DOESNT_EXIST
   };
 
   void VerifyRows(int start_row, int num_rows, VerifyPattern pattern);
@@ -381,6 +382,10 @@ void AlterTableTest::VerifyRows(int start_row, int num_rows, VerifyPattern patte
       }
       verified++;
 
+      if (pattern == C1_DOESNT_EXIST) {
+        continue;
+      }
+
       uint32_t c1 = 0;
       CHECK_OK(row.GetUInt32(1, &c1));
 
@@ -391,6 +396,8 @@ void AlterTableTest::VerifyRows(int start_row, int num_rows, VerifyPattern patte
         case C1_IS_DEADBEEF:
           CHECK_EQ(0xdeadbeef, c1);
           break;
+        default:
+          LOG(FATAL);
       }
     }
   }
@@ -423,6 +430,29 @@ TEST_F(AlterTableTest, DISABLED_TestDropAndAddNewColumn) {
 
   LOG(INFO) << "Verifying that the new default shows up";
   VerifyRows(0, kNumRows, C1_IS_DEADBEEF);
+}
+
+// Test dropping a column and then bootstrapping a tablet.
+// This is a regression test for KUDU-462.
+TEST_F(AlterTableTest, DISABLED_TestBootstrapAfterColumnRemoved) {
+  FLAGS_flush_threshold_mb = 3;
+
+  const int kNumRows = AllowSlowTests() ? 100000 : 1000;
+  InsertRows(0, kNumRows);
+  VerifyRows(0, kNumRows, C1_MATCHES_INDEX);
+
+  LOG(INFO) << "Dropping c1";
+  ASSERT_STATUS_OK(client_->NewTableAlterer()
+                   ->table_name(kTableName)
+                   .drop_column("c1")
+                   .Alter());
+
+  LOG(INFO) << "Inserting more rows";
+  InsertRows(kNumRows, kNumRows);
+
+  ASSERT_NO_FATAL_FAILURE(RestartTabletServer());
+
+  VerifyRows(0, kNumRows * 2, C1_DOESNT_EXIST);
 }
 
 // Thread which inserts rows into the table.
