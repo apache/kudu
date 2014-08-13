@@ -225,14 +225,14 @@ void WriteTransactionState::set_tablet_components(
   tablet_components_ = components;
 }
 
-void WriteTransactionState::AcquireSchemaLock(boost::shared_mutex* schema_lock) {
+void WriteTransactionState::AcquireSchemaLock(rw_semaphore* schema_lock) {
   TRACE("Acquiring schema lock in shared mode");
-  schema_lock_ = boost::shared_lock<boost::shared_mutex>(*schema_lock);
+  schema_lock_ = boost::shared_lock<rw_semaphore>(*schema_lock);
   TRACE("Acquired schema lock");
 }
 
 void WriteTransactionState::ReleaseSchemaLock() {
-  schema_lock_ = boost::shared_lock<boost::shared_mutex>();
+  schema_lock_ = boost::shared_lock<rw_semaphore>();
   TRACE("Released schema lock");
 }
 

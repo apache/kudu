@@ -37,15 +37,15 @@ string AlterSchemaTransactionState::ToString() const {
                     request_ == NULL ? "(none)" : request_->ShortDebugString());
 }
 
-void AlterSchemaTransactionState::AcquireSchemaLock(boost::shared_mutex* l) {
+void AlterSchemaTransactionState::AcquireSchemaLock(rw_semaphore* l) {
   TRACE("Acquiring schema lock in exclusive mode");
-  schema_lock_ = boost::unique_lock<boost::shared_mutex>(*l);
+  schema_lock_ = boost::unique_lock<rw_semaphore>(*l);
   TRACE("Acquired schema lock");
 }
 
 void AlterSchemaTransactionState::ReleaseSchemaLock() {
   CHECK(schema_lock_.owns_lock());
-  schema_lock_ = boost::unique_lock<boost::shared_mutex>();
+  schema_lock_ = boost::unique_lock<rw_semaphore>();
   TRACE("Released schema lock");
 }
 

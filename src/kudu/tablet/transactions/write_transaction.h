@@ -97,7 +97,7 @@ class WriteTransactionState : public TransactionState {
   // This is required prior to decoding rows so that the schema does
   // not change in between performing the projection and applying
   // the writes.
-  void AcquireSchemaLock(boost::shared_mutex* schema_lock);
+  void AcquireSchemaLock(rw_semaphore* schema_lock);
 
   // Release the already-acquired schema lock.
   void ReleaseSchemaLock();
@@ -164,7 +164,7 @@ class WriteTransactionState : public TransactionState {
 
   // A lock held on the tablet's schema. Prevents concurrent schema change
   // from racing with a write.
-  boost::shared_lock<boost::shared_mutex> schema_lock_;
+  boost::shared_lock<rw_semaphore> schema_lock_;
 
   // The Schema of the tablet when the transaction was first decoded.
   // This is verified at APPLY time to ensure we don't have races against

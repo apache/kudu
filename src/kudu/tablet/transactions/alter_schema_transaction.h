@@ -62,7 +62,7 @@ class AlterSchemaTransactionState : public TransactionState {
     return request_->schema_version();
   }
 
-  void AcquireSchemaLock(boost::shared_mutex* l);
+  void AcquireSchemaLock(rw_semaphore* l);
 
   // Release the acquired schema lock.
   // Crashes if the lock was not already acquired.
@@ -89,7 +89,7 @@ class AlterSchemaTransactionState : public TransactionState {
   tserver::AlterSchemaResponsePB *response_;
 
   // The lock held on the tablet's schema_lock_.
-  boost::unique_lock<boost::shared_mutex> schema_lock_;
+  boost::unique_lock<rw_semaphore> schema_lock_;
 };
 
 // Executes the alter schema transaction,.

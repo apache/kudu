@@ -267,7 +267,7 @@ class Tablet {
   }
 
   shared_ptr<Schema> schema() const {
-    boost::shared_lock<rw_spinlock> lock(component_lock_);
+    boost::shared_lock<rw_semaphore> lock(schema_lock_);
     return schema_;
   }
 
@@ -427,7 +427,7 @@ class Tablet {
   //
   // On an AlterSchema, this is taken in exclusive mode during Prepare() and
   // released after the schema change has been applied.
-  mutable boost::shared_mutex schema_lock_;
+  mutable rw_semaphore schema_lock_;
 
   shared_ptr<Schema> schema_;
   const Schema key_schema_;

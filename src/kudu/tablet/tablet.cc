@@ -723,6 +723,7 @@ Status Tablet::AlterSchema(AlterSchemaTransactionState *tx_state) {
               << " version " << metadata_->schema_version()
               << " to " << tx_state->schema()->ToString()
               << " version " << tx_state->schema_version();
+    DCHECK(schema_lock_.is_locked());
     schema_.reset(new Schema(*tx_state->schema()));
     metadata_->SetSchema(*schema_, tx_state->schema_version());
     if (tx_state->has_new_table_name()) {
