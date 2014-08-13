@@ -84,6 +84,7 @@ Atomic32 SpinLock::SpinLoop(int64 initial_wait_timestamp,
                             Atomic32* wait_cycles) {
   int c = adaptive_spin_count;
   while (base::subtle::NoBarrier_Load(&lockword_) != kSpinLockFree && --c > 0) {
+    base::subtle::PauseCPU();
   }
   Atomic32 spin_loop_wait_cycles = CalculateWaitCycles(initial_wait_timestamp);
   Atomic32 lock_value =

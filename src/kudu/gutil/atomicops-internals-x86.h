@@ -154,6 +154,13 @@ inline void NoBarrier_Store(volatile Atomic32* ptr, Atomic32 value) {
   *ptr = value;
 }
 
+// Issue the x86 "pause" instruction, which tells the CPU that we
+// are in a spinlock wait loop and should allow other hyperthreads
+// to run, not speculate memory access, etc.
+inline void PauseCPU() {
+  __asm__ __volatile__("pause" : : : "memory");
+}
+
 #if defined(__x86_64__)
 
 // 64-bit implementations of memory barrier can be simpler, because it

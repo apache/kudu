@@ -275,6 +275,8 @@ Atomic64 Release_Load(volatile const Atomic64* ptr);
 
 void MemoryBarrier();
 
+void PauseCPU();
+
 #endif  // 0
 
 

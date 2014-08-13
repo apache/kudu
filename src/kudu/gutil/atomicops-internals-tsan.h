@@ -380,6 +380,9 @@ inline void MemoryBarrier() {
   __tsan_atomic_thread_fence(__tsan_memory_order_seq_cst);
 }
 
+inline void PauseCPU() {
+}
+
 }  // namespace base::subtle
 }  // namespace base
 
