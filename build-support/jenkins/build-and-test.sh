@@ -39,6 +39,8 @@ set -o pipefail
 # gather core dumps
 ulimit -c unlimited
 
+EXIT_STATUS=0
+
 BUILD_TYPE=${BUILD_TYPE:-DEBUG}
 BUILD_TYPE=$(echo "$BUILD_TYPE" | tr a-z A-Z) # capitalize
 
@@ -65,6 +67,10 @@ if [ -n "$TEST_TMPDIR" ]; then
     echo "Error: Test output directory ($TEST_TMPDIR) is not writable on $(hostname) by user $(whoami)"
     exit 1
   fi
+  TEST_DATADIR=$TEST_TMPDIR
+else
+  # Keep in sync with Env::GetTestDirectory.
+  TEST_DATADIR=/tmp/kudutest-$UID
 fi
 
 ROOT=$(readlink -f $(dirname "$BASH_SOURCE")/../..)
@@ -165,7 +171,9 @@ cmake . -DCMAKE_BUILD_TYPE=${BUILD_TYPE}
 
 # our tests leave lots of data lying around, clean up before we run
 make clean
-rm -Rf /tmp/kudutest-$UID
+if [ -d "$TEST_DATADIR" ]; then
+  rm -Rf $TEST_DATADIR/*
+fi
 
 # actually do the build
 NUM_PROCS=$(cat /proc/cpuinfo | grep processor | wc -l)
@@ -188,6 +196,18 @@ if [ "$RUN_FLAKY_ONLY" == "1" ] ; then
 fi
 
 ctest -j$NUM_PROCS $EXTRA_TEST_FLAGS
+
+# If all tests passed, ensure that they cleaned up their test output.
+if [ $? = 0 ]; then
+  TEST_DATADIR_CONTENTS=$(ls $TEST_DATADIR)
+  if [ -n "$TEST_DATADIR_CONTENTS" ]; then
+    echo "All tests passed yet some left behind their test output"
+    for SUBDIR in $TEST_DATADIR_CONTENTS; do
+      echo $SUBDIR
+    done
+    EXIT_STATUS=1
+  fi
+fi
 
 if [ "$DO_COVERAGE" == "1" ]; then
   echo Generating coverage report...
@@ -215,9 +235,11 @@ if [ "$HEAPCHECK" = normal ]; then
     for FTEST in $FAILED_TESTS; do
       echo $FTEST
     done
-    exit 1
+    EXIT_STATUS=1
   else
     echo "All tests heap checked properly"
   fi
 fi
 set -e
+
+exit $EXIT_STATUS

@@ -22,6 +22,8 @@ namespace kudu {
 
 static const char* const kSlowTestsEnvVariable = "KUDU_ALLOW_SLOW_TESTS";
 
+static const uint64 kTestBeganAtMicros = Env::Default()->NowMicros();
+
 ///////////////////////////////////////////////////
 // KuduTest
 ///////////////////////////////////////////////////
@@ -86,10 +88,6 @@ bool AllowSlowTests() {
   return false;
 }
 
-// Call srand() with a random seed based on the current time, reporting
-// that seed to the logs. The time-based seed may be overridden by passing
-// --test_random_seed= from the CLI in order to reproduce a failed randomized
-// test. Returns the seed.
 int SeedRandom() {
   int seed;
   // Initialize random seed
@@ -104,9 +102,7 @@ int SeedRandom() {
   return seed;
 }
 
-// Return a per-test directory to store test data in.
-// This may on be called from within a gtest unit test.
-std::string GetTestDataDirectory() {
+string GetTestDataDirectory() {
   const ::testing::TestInfo* const test_info =
     ::testing::UnitTest::GetInstance()->current_test_info();
   CHECK(test_info) << "Must be running in a gtest unit test to call this function";
@@ -117,8 +113,11 @@ std::string GetTestDataDirectory() {
     "/$0.$1.$2-$3",
     StringReplace(test_info->test_case_name(), "/", "_", true).c_str(),
     StringReplace(test_info->name(), "/", "_", true).c_str(),
-    Env::Default()->NowMicros(), getpid());
-  CHECK_OK(Env::Default()->CreateDir(dir));
+    kTestBeganAtMicros,
+    getpid());
+  Status s = Env::Default()->CreateDir(dir);
+  CHECK(s.IsAlreadyPresent() || s.ok())
+    << "Could not create directory " << dir << ": " << s.ToString();
   return dir;
 }
 

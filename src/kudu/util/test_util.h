@@ -41,8 +41,10 @@ bool AllowSlowTests();
 // test. Returns the seed.
 int SeedRandom();
 
-// Return a per-test directory to store test data in.
-// This may on be called from within a gtest unit test.
+// Return a per-test directory in which to store test data. Guaranteed to
+// return the same directory every time for a given unit test.
+//
+// May only be called from within a gtest unit test.
 std::string GetTestDataDirectory();
 
 } // namespace kudu
