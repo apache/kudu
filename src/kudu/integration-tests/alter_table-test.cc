@@ -148,6 +148,15 @@ class AlterTableTest : public KuduTest {
       .Alter();
   }
 
+  enum VerifyPattern {
+    C1_MATCHES_INDEX,
+    C1_IS_DEADBEEF
+  };
+
+  void VerifyRows(int start_row, int num_rows, VerifyPattern pattern);
+
+  void InsertRows(int start_row, int num_rows);
+
   void InserterThread();
   void UpdaterThread();
   void ScannerThread();
@@ -315,6 +324,105 @@ TEST_F(AlterTableTest, TestGetSchemaAfterAlterTable) {
 
   KuduSchema s;
   ASSERT_STATUS_OK(client_->GetTableSchema(kTableName, &s));
+}
+
+void AlterTableTest::InsertRows(int start_row, int num_rows) {
+  shared_ptr<KuduSession> session = client_->NewSession();
+  scoped_refptr<KuduTable> table;
+  CHECK_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
+  session->SetTimeoutMillis(15 * 1000);
+  CHECK_OK(client_->OpenTable(kTableName, &table));
+
+  // Insert a bunch of rows with the current schema
+  for (int i = start_row; i < start_row + num_rows; i++) {
+    gscoped_ptr<KuduInsert> insert = table->NewInsert();
+    // Endian-swap the key so that we spew inserts randomly
+    // instead of just a sequential write pattern. This way
+    // compactions may actually be triggered.
+    uint32_t key = bswap_32(i);
+    CHECK_OK(insert->mutable_row()->SetUInt32(0, key));
+
+    if (table->schema().num_columns() > 1) {
+      CHECK_OK(insert->mutable_row()->SetUInt32(1, i));
+    }
+
+    CHECK_OK(session->Apply(insert.Pass()));
+
+    if (i % 50 == 0) {
+      FlushSessionOrDie(session);
+    }
+  }
+
+  FlushSessionOrDie(session);
+}
+
+// Verify that the 'num_rows' starting with 'start_row' fit the given pattern.
+// Note that the 'start_row' here is not a row key, but the pre-transformation row
+// key (InsertRows swaps endianness so that we random-write instead of sequential-write)
+void AlterTableTest::VerifyRows(int start_row, int num_rows, VerifyPattern pattern) {
+  scoped_refptr<KuduTable> table;
+  CHECK_OK(client_->OpenTable(kTableName, &table));
+  KuduScanner scanner(table.get());
+  CHECK_OK(scanner.Open());
+
+  int verified = 0;
+  vector<KuduRowResult> results;
+  while (scanner.HasMoreRows()) {
+    results.clear();
+    CHECK_OK(scanner.NextBatch(&results));
+
+    BOOST_FOREACH(const KuduRowResult& row, results) {
+      uint32_t key = 0;
+      CHECK_OK(row.GetUInt32(0, &key));
+      uint32_t row_idx = bswap_32(key);
+      if (row_idx < start_row || row_idx >= start_row + num_rows) {
+        // Outside the range we're verifying
+        continue;
+      }
+      verified++;
+
+      uint32_t c1 = 0;
+      CHECK_OK(row.GetUInt32(1, &c1));
+
+      switch (pattern) {
+        case C1_MATCHES_INDEX:
+          CHECK_EQ(row_idx, c1);
+          break;
+        case C1_IS_DEADBEEF:
+          CHECK_EQ(0xdeadbeef, c1);
+          break;
+      }
+    }
+  }
+  CHECK_EQ(verified, num_rows);
+}
+
+// Test inserting/updating some data, dropping a column, and adding a new one
+// with the same name. Data should not "reappear" from the old column.
+//
+// This is a regression test for KUDU-461.
+TEST_F(AlterTableTest, DISABLED_TestDropAndAddNewColumn) {
+  // Reduce flush threshold so that we get both on-disk data
+  // for the alter as well as in-MRS data.
+  // This also increases chances of a race.
+  FLAGS_flush_threshold_mb = 3;
+
+  const int kNumRows = AllowSlowTests() ? 100000 : 1000;
+  InsertRows(0, kNumRows);
+
+  LOG(INFO) << "Verifying initial pattern";
+  VerifyRows(0, kNumRows, C1_MATCHES_INDEX);
+
+  LOG(INFO) << "Dropping and adding back c1";
+  ASSERT_STATUS_OK(client_->NewTableAlterer()
+                   ->table_name(kTableName)
+                   .drop_column("c1")
+                   .Alter());
+
+  ASSERT_STATUS_OK(AddNewU32Column(kTableName, "c1", 0xdeadbeef));
+
+  LOG(INFO) << "Verifying that the new default shows up";
+  VerifyRows(0, kNumRows, C1_IS_DEADBEEF);
 }
 
 // Thread which inserts rows into the table.
