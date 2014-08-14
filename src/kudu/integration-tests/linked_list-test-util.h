@@ -17,6 +17,7 @@
 #include "kudu/gutil/strings/split.h"
 #include "kudu/gutil/walltime.h"
 #include "kudu/integration-tests/external_mini_cluster.h"
+#include "kudu/tablet/tablet.h"
 #include "kudu/util/blocking_queue.h"
 #include "kudu/util/hdr_histogram.h"
 #include "kudu/util/random.h"
@@ -31,6 +32,10 @@ static const char* const kInsertTsColumnName = "insert_ts";
 static const char* const kUpdatedColumnName = "updated";
 static const bool kUpdatedColumnDefault = false;
 
+// Provides methods for writing data and reading it back in such a way that
+// facilitates checking for data integrity.
+// NOTE: Users of this class must enable the hybrid clock by setting
+// FLAGS_use_hybrid_clock = true.
 class LinkedListTester {
  public:
   LinkedListTester(const std::tr1::shared_ptr<client::KuduClient>& client,
@@ -74,15 +79,21 @@ class LinkedListTester {
   Status LoadLinkedList(const MonoDelta& run_for,
                         int64_t* written_count);
 
-  Status VerifyLinkedList(int64_t expected, int64_t* verified_count);
+  // Run the verify step on a table with RPCs.
+  Status VerifyLinkedListRemote(int64_t expected, int64_t* verified_count);
 
-  // A variant of VerifyLinkedList that is more robust towards ongoing
+  // Run the verify step on a specific tablet.
+  Status VerifyLinkedListLocal(const tablet::Tablet* tablet,
+                               int64_t expected,
+                               int64_t* verified_count);
+
+  // A variant of VerifyLinkedListRemote that is more robust towards ongoing
   // bootstrapping and replication.
   Status WaitAndVerify(int seconds_to_run, int64_t expected);
 
   // Generates a vector of keys for the table such that each tablet is
   // responsible for an equal fraction of the uint64 key space.
-  std::vector<string> GenerateSplitKeys(const client::KuduSchema& schema);
+  std::vector<std::string> GenerateSplitKeys(const client::KuduSchema& schema);
 
   void DumpInsertHistogram(bool print_flags);
 
@@ -129,6 +140,7 @@ class LinkedListChainGenerator {
     // intersect.
     uint64_t this_key = (Rand64() << 8) | chain_idx_;
     uint64_t ts = GetCurrentTimeMicros();
+
     gscoped_ptr<client::KuduInsert> insert = table->NewInsert();
     CHECK_OK(insert->mutable_row()->SetUInt64(kKeyColumnName, this_key));
     CHECK_OK(insert->mutable_row()->SetUInt64(kInsertTsColumnName, ts));
@@ -205,6 +217,36 @@ class ScopedRowUpdater {
   scoped_refptr<Thread> updater_;
 };
 
+// Helper class to hold results from a linked list scan and perform the
+// verification step on the data.
+class LinkedListVerifier {
+ public:
+  LinkedListVerifier(int num_chains, bool enable_mutation, int64_t expected);
+
+  // Start the scan timer. The duration between starting the scan and verifying
+  // the data is logged in the VerifyData() step, so this should be called
+  // immediately before starting the table(t) scan.
+  void StartScanTimer();
+
+  // Register a new row result during the verify step.
+  void RegisterResult(uint64_t key, uint64_t link, bool updated);
+
+  // Run the common verify step once the scanned data is stored.
+  Status VerifyData(int64_t* verified_count);
+
+ private:
+  int num_chains_;
+  bool enable_mutation_;
+  std::vector<uint64_t> seen_key_;
+  std::vector<uint64_t> seen_link_to_;
+  int errors_;
+  Stopwatch scan_timer_;
+};
+
+/////////////////////////////////////////////////////////////
+// LinkedListTester
+/////////////////////////////////////////////////////////////
+
 std::vector<string> LinkedListTester::GenerateSplitKeys(const client::KuduSchema& schema) {
   client::KuduEncodedKeyBuilder key_builder(schema);
   gscoped_ptr<client::KuduEncodedKey> key;
@@ -259,7 +301,6 @@ Status LinkedListTester::LoadLinkedList(const MonoDelta& run_for,
       DumpInsertHistogram(false);
     }
 
-
     if (deadline.ComesBefore(MonoTime::Now(MonoTime::COARSE))) {
       LOG(INFO) << "Finished inserting list. Added " << (*written_count) << " in chain";
       LOG(INFO) << "Last entries inserted had keys:";
@@ -272,10 +313,10 @@ Status LinkedListTester::LoadLinkedList(const MonoDelta& run_for,
       RETURN_NOT_OK(chain->GenerateNextInsert(table.get(), session.get()));
     }
 
-    MicrosecondsInt64 st = GetCurrentTimeMicros();
+    MonoTime start(MonoTime::Now(MonoTime::FINE));
     Status s = WrappedFlush(session.get());
-    int64_t elapsed = GetCurrentTimeMicros() - st;
-    latency_histogram_.Increment(elapsed);
+    MonoDelta elapsed = MonoTime::Now(MonoTime::FINE).GetDeltaSince(start);
+    latency_histogram_.Increment(elapsed.ToMicroseconds());
 
     RETURN_NOT_OK(s);
     (*written_count) += chains.size();
@@ -334,23 +375,18 @@ static void VerifyNoDuplicateEntries(const std::vector<uint64_t>& ints, int* err
   }
 }
 
-Status LinkedListTester::VerifyLinkedList(int64_t expected, int64_t* verified_count) {
+Status LinkedListTester::VerifyLinkedListRemote(int64_t expected, int64_t* verified_count) {
   scoped_refptr<client::KuduTable> table;
   RETURN_NOT_OK(client_->OpenTable(table_name_, &table));
+
   client::KuduScanner scanner(table.get());
   RETURN_NOT_OK_PREPEND(scanner.SetProjection(&verify_projection_), "Bad projection");
   RETURN_NOT_OK_PREPEND(scanner.Open(), "Couldn't open scanner");
 
+  LinkedListVerifier verifier(num_chains_, enable_mutation_, expected);
+  verifier.StartScanTimer();
+
   std::vector<client::KuduRowResult> rows;
-  std::vector<uint64_t> seen_key;
-  std::vector<uint64_t> seen_link_to;
-  seen_key.reserve(expected);
-  seen_link_to.reserve(expected);
-
-  int errors = 0;
-
-  Stopwatch sw;
-  sw.start();
   while (scanner.HasMoreRows()) {
     RETURN_NOT_OK(scanner.NextBatch(&rows));
     BOOST_FOREACH(const client::KuduRowResult& row, rows) {
@@ -360,52 +396,48 @@ Status LinkedListTester::VerifyLinkedList(int64_t expected, int64_t* verified_co
       RETURN_NOT_OK(row.GetUInt64(0, &key));
       RETURN_NOT_OK(row.GetUInt64(1, &link));
       RETURN_NOT_OK(row.GetBool(2, &updated));
-      seen_key.push_back(key);
-      if (link != 0) {
-        // Links to entry 0 don't count - the first inserts use this link
-        seen_link_to.push_back(link);
-      }
 
-      if (updated != enable_mutation_) {
-        LOG(ERROR) << "Entry " << key << " was incorrectly "
-                   << (enable_mutation_ ? "not " : "") << "updated";
-        errors++;
-      }
+      verifier.RegisterResult(key, link, updated);
     }
     rows.clear();
   }
-  *verified_count = seen_key.size();
-  LOG(INFO) << "Done collecting results (" << (*verified_count) << " rows in "
-            << sw.elapsed().wall_millis() << "ms)";
 
-  LOG(INFO) << "Sorting results before verification of linked list structure...";
-  std::sort(seen_key.begin(), seen_key.end());
-  std::sort(seen_link_to.begin(), seen_link_to.end());
-  LOG(INFO) << "Done sorting";
+  return verifier.VerifyData(verified_count);
+}
 
-  // Verify that no key was seen multiple times or linked to multiple times
-  VerifyNoDuplicateEntries(seen_key, &errors, "Seen row key multiple times");
-  VerifyNoDuplicateEntries(seen_link_to, &errors, "Seen link to row multiple times");
-  // Verify that every key that was linked to was present
-  std::vector<uint64_t> broken_links = STLSetDifference(seen_link_to, seen_key);
-  BOOST_FOREACH(uint64_t broken, broken_links) {
-    LOG(ERROR) << "Entry " << broken << " was linked to but not present";
-    errors++;
+Status LinkedListTester::VerifyLinkedListLocal(const tablet::Tablet* tablet,
+                                               int64_t expected,
+                                               int64_t* verified_count) {
+  LinkedListVerifier verifier(num_chains_, enable_mutation_, expected);
+  verifier.StartScanTimer();
+
+  const shared_ptr<Schema>& tablet_schema = tablet->schema();
+  // Cannot use schemas with col indexes in a scan (assertions fire).
+  Schema projection(tablet_schema->columns(), tablet_schema->num_key_columns());
+  gscoped_ptr<RowwiseIterator> iter;
+  RETURN_NOT_OK_PREPEND(tablet->NewRowIterator(projection, &iter),
+                        "Cannot create new row iterator");
+  RETURN_NOT_OK_PREPEND(iter->Init(NULL), "Cannot initialize row iterator");
+
+  Arena arena(1024, 1024);
+  RowBlock block(projection, 100, &arena);
+  while (iter->HasNext()) {
+    RETURN_NOT_OK(iter->NextBlock(&block));
+    for (int i = 0; i < block.nrows(); i++) {
+      uint64_t key;
+      uint64_t link;
+      bool updated;
+
+      const RowBlockRow& row = block.row(i);
+      key = *tablet_schema->ExtractColumnFromRow<UINT64>(row, 0);
+      link = *tablet_schema->ExtractColumnFromRow<UINT64>(row, 1);
+      updated = *tablet_schema->ExtractColumnFromRow<BOOL>(row, 3);
+
+      verifier.RegisterResult(key, link, updated);
+    }
   }
 
-  // Verify that only the expected number of keys were seen but not linked to.
-  // Only the last "batch" should have this characteristic.
-  std::vector<uint64_t> not_linked_to = STLSetDifference(seen_key, seen_link_to);
-  if (not_linked_to.size() != num_chains_) {
-    LOG(ERROR) << "Had " << not_linked_to.size() << " entries which were seen but not"
-               << " linked to. Expected only " << num_chains_;
-    errors++;
-  }
-
-  if (errors > 0) {
-    return Status::Corruption("Had one or more errors during verification (see log)");
-  }
-  return Status::OK();
+  return verifier.VerifyData(verified_count);
 }
 
 Status LinkedListTester::WaitAndVerify(int seconds_to_run, int64_t expected) {
@@ -414,7 +446,7 @@ Status LinkedListTester::WaitAndVerify(int seconds_to_run, int64_t expected) {
   Stopwatch sw;
   sw.start();
   while (true) {
-    Status s = VerifyLinkedList(expected, &seen);
+    Status s = VerifyLinkedListRemote(expected, &seen);
 
     // TODO: when we enable hybridtime consistency for the scans,
     // then we should not allow !s.ok() here. But, with READ_LATEST
@@ -467,6 +499,71 @@ Status LinkedListTester::WrappedFlush(client::KuduSession* session) {
     }
   }
   return s;
+}
+
+/////////////////////////////////////////////////////////////
+// LinkedListVerifier
+/////////////////////////////////////////////////////////////
+
+LinkedListVerifier::LinkedListVerifier(int num_chains, bool enable_mutation, int64_t expected)
+  : num_chains_(num_chains),
+    enable_mutation_(enable_mutation),
+    errors_(0) {
+  seen_key_.reserve(expected);
+  seen_link_to_.reserve(expected);
+}
+
+void LinkedListVerifier::StartScanTimer() {
+  scan_timer_.start();
+}
+
+void LinkedListVerifier::RegisterResult(uint64_t key, uint64_t link, bool updated) {
+  seen_key_.push_back(key);
+  if (link != 0) {
+    // Links to entry 0 don't count - the first inserts use this link
+    seen_link_to_.push_back(link);
+  }
+
+  if (updated != enable_mutation_) {
+    LOG(ERROR) << "Entry " << key << " was incorrectly "
+      << (enable_mutation_ ? "not " : "") << "updated";
+    errors_++;
+  }
+}
+
+Status LinkedListVerifier::VerifyData(int64_t* verified_count) {
+  *verified_count = seen_key_.size();
+  LOG(INFO) << "Done collecting results (" << (*verified_count) << " rows in "
+            << scan_timer_.elapsed().wall_millis() << "ms)";
+
+  LOG(INFO) << "Sorting results before verification of linked list structure...";
+  std::sort(seen_key_.begin(), seen_key_.end());
+  std::sort(seen_link_to_.begin(), seen_link_to_.end());
+  LOG(INFO) << "Done sorting";
+
+  // Verify that no key was seen multiple times or linked to multiple times
+  VerifyNoDuplicateEntries(seen_key_, &errors_, "Seen row key multiple times");
+  VerifyNoDuplicateEntries(seen_link_to_, &errors_, "Seen link to row multiple times");
+  // Verify that every key that was linked to was present
+  std::vector<uint64_t> broken_links = STLSetDifference(seen_link_to_, seen_key_);
+  BOOST_FOREACH(uint64_t broken, broken_links) {
+    LOG(ERROR) << "Entry " << broken << " was linked to but not present";
+    errors_++;
+  }
+
+  // Verify that only the expected number of keys were seen but not linked to.
+  // Only the last "batch" should have this characteristic.
+  std::vector<uint64_t> not_linked_to = STLSetDifference(seen_key_, seen_link_to_);
+  if (not_linked_to.size() != num_chains_) {
+    LOG(ERROR) << "Had " << not_linked_to.size() << " entries which were seen but not"
+               << " linked to. Expected only " << num_chains_;
+    errors_++;
+  }
+
+  if (errors_ > 0) {
+    return Status::Corruption("Had one or more errors during verification (see log)");
+  }
+  return Status::OK();
 }
 
 } // namespace kudu
