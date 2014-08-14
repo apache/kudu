@@ -66,6 +66,9 @@ DEFINE_int32(unresponsive_ts_rpc_timeout_ms, 30 * 1000, // 30 sec
 DEFINE_int32(default_num_replicas, 1, // TODO switch to 3 and fix SelectReplicas()
              "Default number of replicas for tables that do have the num_replicas set. "
              "(Advanced option)");
+DEFINE_int32(catalog_manager_bg_task_wait_ms, 1000,
+             "Amount of time the catalog manager background task thread waits "
+             "between runs");
 
 namespace kudu {
 namespace master {
@@ -250,7 +253,6 @@ void CatalogManagerBgTasks::Shutdown() {
 }
 
 void CatalogManagerBgTasks::Run() {
-  const int kWaitMs = 1000;
   while (!NoBarrier_Load(&closing_)) {
     std::vector<scoped_refptr<TabletInfo> > to_delete;
     std::vector<scoped_refptr<TabletInfo> > to_process;
@@ -272,7 +274,7 @@ void CatalogManagerBgTasks::Run() {
     //  - CreateTable will call Wake() to notify about the tablets to add
     //  - HandleReportedTablet/ProcessPendingAssignments will call WakeIfHasPendingUpdates()
     //    to notify about tablets creation.
-    Wait(kWaitMs);
+    Wait(FLAGS_catalog_manager_bg_task_wait_ms);
   }
   VLOG(1) << "Catalog manager background task thread shutting down";
 }
