@@ -60,21 +60,22 @@ template<bool READ>
 llvm::Function* MakeProjection(const string& name,
                                ModuleBuilder* mbuilder,
                                const NoCodegenRowProjector& proj) {
-  // Extract information from ModuleBuilder
-  Module* module = mbuilder->module();
+  // Get the IRBuilder
   ModuleBuilder::LLVMBuilder* builder = mbuilder->builder();
-  LLVMContext& context = module->getContext();
+  LLVMContext& context = builder->getContext();
 
   // Extract schema information from projector
   const Schema& base_schema = *proj.base_schema();
   const Schema& projection = *proj.projection();
 
   // Create the function after providing a declaration
-  Type* llvm_ptr_t = Type::getInt8PtrTy(context);
-  vector<Type*> argtypes = list_of<Type*>(llvm_ptr_t)(llvm_ptr_t)(llvm_ptr_t);
+  vector<Type*> argtypes = list_of<Type*>
+    (Type::getInt8PtrTy(context))
+    (PointerType::getUnqual(mbuilder->GetType("class.kudu::RowBlockRow")))
+    (PointerType::getUnqual(mbuilder->GetType("class.kudu::Arena")));
   FunctionType* fty =
     FunctionType::get(Type::getVoidTy(context), argtypes, false);
-  Function* f = Function::Create(fty, Function::ExternalLinkage, name, module);
+  Function* f = mbuilder->Create(fty, name);
 
   // Get the function's Arguments
   Function::arg_iterator it = f->arg_begin();

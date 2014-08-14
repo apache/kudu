@@ -19,8 +19,8 @@ namespace codegen {
 
 class RowProjector;
 
-// CodeGenerator is a top-level class that manages an LLVM context,
-// ExecutionEngine initialization, native target loading,
+// CodeGenerator is a top-level class that manages a per-module
+// LLVM context, ExecutionEngine initialization, native target loading,
 // and memory management.
 //
 // This generator is intended for JIT compilation of functions that
@@ -54,7 +54,6 @@ class CodeGenerator {
  private:
   static void GlobalInit();
 
-  gscoped_ptr<llvm::LLVMContext> context_;
   // TODO static ObjectCache shared b/w engines
 
   DISALLOW_COPY_AND_ASSIGN(CodeGenerator);

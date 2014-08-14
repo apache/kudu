@@ -17,6 +17,7 @@ namespace llvm {
 
 class ExecutionEngine;
 class Function;
+class FunctionType;
 class LLVMContext;
 class Module;
 class Type;
@@ -51,10 +52,10 @@ class ModuleBuilder {
   // Provide alias so template arguments can be changed in one place
   typedef llvm::IRBuilder<> LLVMBuilder;
 
-  // Creates a builder with the given context, does not take ownership.
-  explicit ModuleBuilder(llvm::LLVMContext* context);
+  // Creates a builder with a fresh module and context.
+  ModuleBuilder();
 
-  // Does not delete own module, should be managed externally.
+  // Deletes own module and context if they have not been compiled.
   ~ModuleBuilder();
 
   // Inits a new module with parsed precompiled data from the
@@ -62,8 +63,13 @@ class ModuleBuilder {
   // TODO: with multiple *.ll files, each file should be loaded on demand
   Status Init();
 
-  // Assorted function-building utility methods
+  // Create a new, empty function in the module with external linkage
+  llvm::Function* Create(llvm::FunctionType* fty, const std::string& name);
+  // Retrieve a precompiled type
+  llvm::Type* GetType(const std::string& name);
+  // Retrieve a precompiled function
   llvm::Function* GetFunction(const std::string& name);
+  // Get the LLVM wrapper for a constant pointer value of type i8*
   llvm::Value* GetPointerValue(void* ptr) const;
 
   // TODO function attributes
@@ -73,7 +79,6 @@ class ModuleBuilder {
   // TODO if the number of functions to be precompiled gets too large,
   // this class could use some mapping to manage multiple .ll files
 
-  llvm::Module* module() { return module_; }
   LLVMBuilder* builder() { return &builder_; }
 
   // Once a function is complete, it may be offered to the module builder
@@ -91,9 +96,13 @@ class ModuleBuilder {
   }
 
   // Compiles all promised functions. Builder may not be used after
-  // this method, only destructed. Writes the generated execution engine
-  // for the module into the parameter pointer if no errors occur.
-  Status Compile(gscoped_ptr<llvm::ExecutionEngine>* ee);
+  // this method, only destructed. Upon success, releases ownership
+  // of the execution engine through the 'out' parameter.
+  //
+  // After this method has been called, the jit-compiled code may be
+  // called as long as 'out' remains alive. Once 'out' destructs,
+  // the code will be freed.
+  Status Compile(gscoped_ptr<llvm::ExecutionEngine>* out);
 
  private:
   // The different states a ModuleBuilder can be in.
@@ -117,10 +126,10 @@ class ModuleBuilder {
   static const char* const kKuduIRFile;
 
   MBState state_;
-  LLVMBuilder builder_;
   std::vector<JITFuture> futures_;
-  llvm::LLVMContext* context_; // not owned
-  llvm::Module* module_; // not owned
+  gscoped_ptr<llvm::LLVMContext> context_;
+  gscoped_ptr<llvm::Module> module_;
+  LLVMBuilder builder_;
 
   DISALLOW_COPY_AND_ASSIGN(ModuleBuilder);
 };

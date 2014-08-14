@@ -8,6 +8,7 @@
 #include "kudu/codegen/llvm_include.h"
 #include <llvm/ExecutionEngine/ExecutionEngine.h>
 #include <llvm/IR/LLVMContext.h>
+#include <llvm/IR/Module.h>
 #include <llvm/Support/TargetSelect.h>
 
 #include "kudu/codegen/module_builder.h"
@@ -22,6 +23,7 @@ DEFINE_bool(codegen_dump_functions, false, "Whether to print the LLVM IR"
 
 using llvm::ExecutionEngine;
 using llvm::LLVMContext;
+using llvm::Module;
 using std::string;
 
 namespace kudu {
@@ -37,8 +39,8 @@ void CodeGenerator::GlobalInit() {
   llvm::InitializeNativeTargetAsmParser();
 }
 
-CodeGenerator::CodeGenerator()
-  : context_(new LLVMContext()) {
+CodeGenerator::CodeGenerator() {
+  static GoogleOnceType once = GOOGLE_ONCE_INIT;
   GoogleOnceInit(&once, &CodeGenerator::GlobalInit);
 }
 
@@ -47,9 +49,12 @@ CodeGenerator::~CodeGenerator() {}
 Status CodeGenerator::CompileRowProjector(const Schema* base,
                                           const Schema* proj,
                                           gscoped_ptr<RowProjector>* out) {
-  // Load new functions into module by creating the row projector
-  ModuleBuilder mbuilder(context_.get());
+  // Generate a module builder
+  ModuleBuilder mbuilder;
   RETURN_NOT_OK(mbuilder.Init());
+
+
+  // Load new functions into module by creating the row projector
   gscoped_ptr<RowProjector> ret(new RowProjector(base, proj, &mbuilder));
 
   // Compile and get execution engine

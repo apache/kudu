@@ -8,9 +8,7 @@
 
 #include "kudu/codegen/module_builder.h"
 
-#include <algorithm>
 #include <cstdlib>
-#include <ostream>
 #include <sstream>
 #include <string>
 
@@ -38,6 +36,7 @@ using llvm::ConstantInt;
 using llvm::EngineBuilder;
 using llvm::ExecutionEngine;
 using llvm::Function;
+using llvm::FunctionType;
 using llvm::IntegerType;
 using llvm::LLVMContext;
 using llvm::Module;
@@ -88,8 +87,10 @@ bool ModuleContains(const Module& m, const Function* fptr) {
 const char* const ModuleBuilder::kKuduIRFile =
   KUDU_CODEGEN_MODULE_BUILDER_PRECOMPILED_LL;
 
-ModuleBuilder::ModuleBuilder(LLVMContext* context)
-  : state_(kUninitialized), builder_(*context), context_(context) {}
+ModuleBuilder::ModuleBuilder()
+  : state_(kUninitialized),
+    context_(new LLVMContext()),
+    builder_(*context_) {}
 
 ModuleBuilder::~ModuleBuilder() {}
 
@@ -97,7 +98,7 @@ Status ModuleBuilder::Init() {
   CHECK_EQ(state_, kUninitialized) << "Cannot Init() twice";
   // Parse IR file
   SMDiagnostic err;
-  module_ = llvm::ParseIRFile(kKuduIRFile, err, *context_);
+  module_.reset(llvm::ParseIRFile(kKuduIRFile, err, *context_));
   if (!module_) {
     return Status::ConfigurationError("Could not parse IR file",
                                       ToString(err));
@@ -113,9 +114,26 @@ Status ModuleBuilder::Init() {
   return Status::OK();
 }
 
-Function* ModuleBuilder::GetFunction(const std::string& name) {
+Function* ModuleBuilder::Create(FunctionType* fty, const string& name) {
   CHECK_EQ(state_, kBuilding);
+  return Function::Create(fty, Function::ExternalLinkage, name, module_.get());
+}
+
+Function* ModuleBuilder::GetFunction(const string& name) {
+  CHECK_EQ(state_, kBuilding);
+  // All extern "C" functions are guaranteed to have the same
+  // exact name as declared in the source file.
   return CHECK_NOTNULL(module_->getFunction(name));
+}
+
+Type* ModuleBuilder::GetType(const string& name) {
+  CHECK_EQ(state_, kBuilding);
+  // Technically clang is not obligated to name every
+  // class as "class.kudu::ClassName" but so long as there
+  // are no naming conflicts in the LLVM context it appears
+  // to do so (naming conflicts are avoided by having 1 context
+  // per module)
+  return CHECK_NOTNULL(module_->getTypeByName(name));
 }
 
 Value* ModuleBuilder::GetPointerValue(void* ptr) const {
@@ -142,8 +160,9 @@ void ModuleBuilder::AddJITPromise(llvm::Function* llvm_f,
   futures_.push_back(fut);
 }
 
-Status ModuleBuilder::Compile(gscoped_ptr<ExecutionEngine>* ee) {
+Status ModuleBuilder::Compile(gscoped_ptr<ExecutionEngine>* out) {
   CHECK_EQ(state_, kBuilding);
+
   // Attempt to generate the engine
   string str;
 #ifdef NDEBUG
@@ -151,7 +170,7 @@ Status ModuleBuilder::Compile(gscoped_ptr<ExecutionEngine>* ee) {
 #else
   Level opt_level = llvm::CodeGenOpt::None;
 #endif
-  gscoped_ptr<ExecutionEngine> local_engine(EngineBuilder(module_)
+  gscoped_ptr<ExecutionEngine> local_engine(EngineBuilder(module_.get())
                                             .setErrorStr(&str)
                                             .setUseMCJIT(true)
                                             .setOptLevel(opt_level)
@@ -181,8 +200,14 @@ Status ModuleBuilder::Compile(gscoped_ptr<ExecutionEngine>* ee) {
     }
   }
 
+  // For LLVM 3.4, generated code lasts exactly as long as the execution engine
+  // that created it does. Furthermore, if the module is removed from the
+  // engine's ownership, neither the context nor the module have to stick
+  // around for the jitted code to run. NOTE: this may change in LLVM 3.5
+  CHECK(local_engine->removeModule(module_.get())); // releases ownership
+
   // Upon success write to the output parameter
-  *ee = local_engine.Pass();
+  *out = local_engine.Pass();
   state_ = kCompiled;
   return Status::OK();
 }
