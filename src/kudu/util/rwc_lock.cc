@@ -4,13 +4,27 @@
 
 #include <glog/logging.h>
 
+#ifndef NDEBUG
+#include <sys/syscall.h>
+#include "kudu/gutil/walltime.h"
+#include "kudu/util/debug-util.h"
+#include "kudu/util/env.h"
+#endif // NDEBUG
+
 namespace kudu {
 
 RWCLock::RWCLock()
   : no_mutators_(&lock_),
     no_readers_(&lock_),
     reader_count_(0),
+#ifdef NDEBUG
     write_locked_(false) {
+#else
+    write_locked_(false),
+    last_writer_tid_(0),
+    last_writelock_acquire_time_(0) {
+  last_writer_backtrace_[0] = '\0';
+#endif // NDEBUG
 }
 
 RWCLock::~RWCLock() {
@@ -42,6 +56,11 @@ void RWCLock::WriteLock() {
   while (write_locked_) {
     no_mutators_.Wait();
   }
+#ifndef NDEBUG
+  last_writelock_acquire_time_ = GetCurrentTimeMicros();
+  last_writer_tid_ = static_cast<pid_t>(syscall(SYS_gettid));
+  HexStackTraceToString(last_writer_backtrace_, kBacktraceBufSize);
+#endif // NDEBUG
   write_locked_ = true;
 }
 
@@ -49,6 +68,9 @@ void RWCLock::WriteUnlock() {
   MutexLock l(lock_);
   DCHECK(write_locked_);
   write_locked_ = false;
+#ifndef NDEBUG
+  last_writer_backtrace_[0] = '\0';
+#endif // NDEBUG
   no_mutators_.Signal();
 }
 
@@ -67,6 +89,9 @@ void RWCLock::UpgradeToCommitLock() {
 void RWCLock::CommitUnlock() {
   DCHECK_EQ(0, reader_count_);
   write_locked_ = false;
+#ifndef NDEBUG
+  last_writer_backtrace_[0] = '\0';
+#endif // NDEBUG
   no_mutators_.Broadcast();
   lock_.unlock();
 }

@@ -26,7 +26,7 @@ namespace kudu {
 // - A single thread may hold the Write lock, potentially at the
 //   same time as any number of readers.
 // - A single thread may hold the Commit lock, but this lock is completely
-//   exlusive (no concurrent readers or writers).
+//   exclusive (no concurrent readers or writers).
 //
 // A typical use case for this type of lock is when a structure is read often,
 // occasionally updated, and the update operation can take a long time. In this
@@ -98,6 +98,13 @@ class RWCLock {
   ConditionVariable no_mutators_, no_readers_;
   int reader_count_;
   bool write_locked_;
+
+#ifndef NDEBUG
+  static const int kBacktraceBufSize = 1024;
+  uint64_t last_writer_tid_;
+  int64_t last_writelock_acquire_time_;
+  char last_writer_backtrace_[kBacktraceBufSize];
+#endif // NDEBUG
 
   DISALLOW_COPY_AND_ASSIGN(RWCLock);
 };
