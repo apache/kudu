@@ -146,7 +146,10 @@ void Log::AppendThread::Shutdown() {
 
   LogEntryBatchQueue* queue = log_->entry_queue();
   queue->Shutdown();
-  CHECK_OK(ThreadJoiner(thread_.get()).Join())
+  if (thread_) {
+    CHECK_OK(ThreadJoiner(thread_.get()).Join());
+    thread_.reset();
+  }
 
   VLOG(1) << "Log append thread for tablet " << log_->tablet_id() << " is shut down";
 }
@@ -599,7 +602,7 @@ Status Log::Close() {
   }
 
   allocation_executor_->Shutdown();
-  if (append_thread_.get() != NULL) {
+  if (append_thread_) {
     append_thread_->Shutdown();
     VLOG(1) << "Append thread Shutdown()";
   }
