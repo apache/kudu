@@ -440,8 +440,14 @@ class CatalogManager : public tserver::TabletPeerLookupIf {
 
   void HandleAssignPreparingTablet(TabletInfo* tablet,
                                    DeferredAssignmentActions* deferred);
+
+  // Assign tablets and send CreateTablet RPCs to tablet servers.
+  // The out param 'new_tablets' should have any newly-created TabletInfo
+  // objects appended to it.
   void HandleAssignCreatingTablet(TabletInfo* tablet,
-                                  DeferredAssignmentActions* deferred);
+                                  DeferredAssignmentActions* deferred,
+                                  std::vector<scoped_refptr<TabletInfo> >* new_tablets);
+
   void HandleTabletSchemaVersionReport(TabletInfo *tablet,
                                        uint32_t version);
 

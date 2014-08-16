@@ -1586,14 +1586,14 @@ void CatalogManager::HandleAssignPreparingTablet(TabletInfo* tablet,
 }
 
 void CatalogManager::HandleAssignCreatingTablet(TabletInfo* tablet,
-                                                DeferredAssignmentActions* deferred) {
+                                                DeferredAssignmentActions* deferred,
+                                                vector<scoped_refptr<TabletInfo> >* new_tablets) {
   MonoTime now = MonoTime::Now(MonoTime::FINE);
   int64_t remaining_timeout_ms = FLAGS_assignment_timeout_ms -
     tablet->TimeSinceLastUpdate(now).ToMilliseconds();
 
   // Skip the tablet if the assignment timeout is not yet expired
   if (remaining_timeout_ms > 0) {
-    tablet->mutable_metadata()->AbortMutation();
     VLOG(2) << "Tablet " << tablet->ToString() << " still being created. "
             << remaining_timeout_ms << "ms remain until timeout.";
     return;
@@ -1616,11 +1616,13 @@ void CatalogManager::HandleAssignCreatingTablet(TabletInfo* tablet,
     tablet_map_[replacement->tablet_id()] = replacement;
   }
 
+  // Mark old tablet as replaced.
   tablet->mutable_metadata()->mutable_dirty()->set_state(
     SysTabletsEntryPB::kTabletStateReplaced,
     Substitute("Replaced by $0 at ts=$1",
                replacement->tablet_id(), GetCurrentTimeMicros()));
 
+  // Mark new tablet as being created.
   replacement->mutable_metadata()->mutable_dirty()->set_state(
     SysTabletsEntryPB::kTabletStateCreating,
     Substitute("Replacement for $0", tablet->tablet_id()));
@@ -1631,6 +1633,8 @@ void CatalogManager::HandleAssignCreatingTablet(TabletInfo* tablet,
   VLOG(1) << "Replaced tablet " << tablet->tablet_id()
           << " with " << replacement->tablet_id()
           << " (Table " << tablet->table()->ToString() << ")";
+
+  new_tablets->push_back(replacement);
 }
 
 // TODO: we could batch the IO onto a background thread.
@@ -1667,9 +1671,40 @@ void CatalogManager::HandleTabletSchemaVersionReport(TabletInfo *tablet, uint32_
   LOG(INFO) << table->ToString() << " - Alter table completed version=" << current_version;
 }
 
+// Helper class to commit TabletInfo mutations at the end of a scope.
+class ScopedTabletInfoUnlocker {
+ public:
+  explicit ScopedTabletInfoUnlocker(const std::vector<scoped_refptr<TabletInfo> >* tablets)
+    : tablets_(DCHECK_NOTNULL(tablets)) {
+  }
+
+  // Commit the transactions.
+  ~ScopedTabletInfoUnlocker() {
+    BOOST_FOREACH(const scoped_refptr<TabletInfo>& tablet, *tablets_) {
+      tablet->mutable_metadata()->CommitMutation();
+    }
+  }
+
+ private:
+  const std::vector<scoped_refptr<TabletInfo> >* tablets_;
+};
+
 void CatalogManager::ProcessPendingAssignments(
     const std::vector<scoped_refptr<TabletInfo> >& tablets) {
   VLOG(1) << "Processing pending assignments";
+
+  // Take write locks on all tablets to be processed, and ensure that they are
+  // unlocked at the end of this scope.
+  BOOST_FOREACH(const scoped_refptr<TabletInfo>& tablet, tablets) {
+    tablet->mutable_metadata()->StartMutation();
+  }
+  ScopedTabletInfoUnlocker unlocker_in(&tablets);
+
+  // Any tablets created by the helper functions will also be created in a
+  // locked state, so we must ensure they are unlocked before we return to
+  // avoid deadlocks.
+  std::vector<scoped_refptr<TabletInfo> > new_tablets;
+  ScopedTabletInfoUnlocker unlocker_out(&new_tablets);
 
   DeferredAssignmentActions deferred;
 
@@ -1677,7 +1712,6 @@ void CatalogManager::ProcessPendingAssignments(
   // it may be in. The actions required for the tablet are collected
   // into 'deferred'.
   BOOST_FOREACH(const scoped_refptr<TabletInfo>& tablet, tablets) {
-    tablet->mutable_metadata()->StartMutation();
     SysTabletsEntryPB::State t_state = tablet->metadata().state().pb.state();
 
     switch (t_state) {
@@ -1686,7 +1720,7 @@ void CatalogManager::ProcessPendingAssignments(
         break;
 
       case SysTabletsEntryPB::kTabletStateCreating:
-        HandleAssignCreatingTablet(tablet.get(), &deferred);
+        HandleAssignCreatingTablet(tablet.get(), &deferred, &new_tablets);
         break;
 
       default:
@@ -1721,16 +1755,6 @@ void CatalogManager::ProcessPendingAssignments(
 
   // Send the CreateTablet() requests to the servers. This is asynchronous / non-blocking.
   SendCreateTabletRequests(deferred.needs_create_rpc);
-
-  // Commit the changes in memory. This comes after the above sending of the RPCs,
-  // to ensure that no one else tries to mutate the TabletInfos while we're
-  // doing this.
-  BOOST_FOREACH(TabletInfo* t, deferred.tablets_to_add) {
-    t->mutable_metadata()->CommitMutation();
-  }
-  BOOST_FOREACH(TabletInfo* t, deferred.tablets_to_update) {
-    t->mutable_metadata()->CommitMutation();
-  }
 }
 
 void CatalogManager::SelectReplicasForTablet(const TSDescriptorVector& ts_descs,
@@ -1780,6 +1804,9 @@ void CatalogManager::SelectReplicas(const TSDescriptorVector& ts_descs,
   // Using a static variable here ensures that we round-robin our assignments.
   // TODO: In the future we should do something smarter based on number of tablets currently
   // running on each server, since round-robin may get unbalanced after moves/deletes.
+
+  DCHECK_EQ(0, quorum->peers_size()) << "Quorum not empty: " << quorum->ShortDebugString();
+
   static int index = rand();
   for (int i = 0; i < nreplicas; ++i) {
     const TSDescriptor *ts = ts_descs[index++ % ts_descs.size()].get();
