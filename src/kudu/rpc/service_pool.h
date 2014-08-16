@@ -4,6 +4,7 @@
 #define KUDU_SERVICE_POOL_H
 
 #include <tr1/memory>
+#include <string>
 #include <vector>
 
 #include "kudu/gutil/macros.h"
@@ -51,6 +52,8 @@ class ServicePool : public RpcService {
   const Counter* RpcsQueueOverflowMetric() const {
     return rpcs_queue_overflow_;
   }
+
+  const std::string service_name() const;
 
  private:
   void RunThread();

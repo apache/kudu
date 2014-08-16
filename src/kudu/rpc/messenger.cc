@@ -159,6 +159,12 @@ Status Messenger::RegisterService(const string& service_name,
   }
 }
 
+Status Messenger::UnregisterAllServices() {
+  lock_guard<percpu_rwlock> guard(&lock_);
+  rpc_services_.clear();
+  return Status::OK();
+}
+
 // Unregister an RpcService.
 Status Messenger::UnregisterService(const string& service_name) {
   lock_guard<percpu_rwlock> guard(&lock_);
@@ -260,6 +266,16 @@ void Messenger::ScheduleOnReactor(const boost::function<void(const Status&)>& fu
 
   DelayedTask* task = new DelayedTask(func, when);
   chosen->ScheduleReactorTask(task);
+}
+
+const scoped_refptr<RpcService> Messenger::rpc_service(const string& service_name) const {
+  lock_guard<percpu_rwlock> guard(&lock_);
+  scoped_refptr<RpcService> service;
+  if (FindCopy(rpc_services_, service_name, &service)) {
+    return service;
+  } else {
+    return scoped_refptr<RpcService>(NULL);
+  }
 }
 
 } // namespace rpc

@@ -144,8 +144,8 @@ class ClientTest : public KuduTest {
   }
 
   void CheckNoRpcOverflow() {
-    ASSERT_EQ(0, cluster_->mini_tablet_server(0)->server()->
-        rpc_server()->service_pool()->RpcsQueueOverflowMetric()->value());
+    ASSERT_EQ(0, cluster_->mini_tablet_server(0)->server()->rpc_server()->
+        service_pool("kudu.tserver.TabletServerService")->RpcsQueueOverflowMetric()->value());
   }
 
   // Inserts 'num_rows' test rows via RPC.

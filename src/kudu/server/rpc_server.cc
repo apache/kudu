@@ -7,6 +7,7 @@
 
 #include <gflags/gflags.h>
 
+#include "kudu/gutil/casts.h"
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/rpc/acceptor_pool.h"
@@ -40,8 +41,8 @@ RpcServerOptions::RpcServerOptions()
 }
 
 RpcServer::RpcServer(const RpcServerOptions& opts)
-  : options_(opts),
-    initted_(false) {
+  : server_state_(UNINITIALIZED),
+    options_(opts) {
 }
 
 RpcServer::~RpcServer() {
@@ -54,7 +55,7 @@ string RpcServer::ToString() const {
 }
 
 Status RpcServer::Init(const std::tr1::shared_ptr<Messenger>& messenger) {
-  CHECK(!initted_);
+  CHECK_EQ(server_state_, UNINITIALIZED);
   messenger_ = messenger;
 
   RETURN_NOT_OK(ParseAddressList(options_.rpc_bind_addresses,
@@ -67,19 +68,23 @@ Status RpcServer::Init(const std::tr1::shared_ptr<Messenger>& messenger) {
     }
   }
 
-  initted_ = true;
+  server_state_ = INITIALIZED;
   return Status::OK();
 }
 
-Status RpcServer::Start(gscoped_ptr<rpc::ServiceIf> service) {
-  CHECK(initted_);
-
-  // Create the Service pool
+Status RpcServer::RegisterService(gscoped_ptr<rpc::ServiceIf> service) {
+  CHECK_EQ(server_state_, INITIALIZED);
   const MetricContext& metric_ctx = *messenger_->metric_context();
-  service_name_ = service->service_name();
-  service_pool_ = new rpc::ServicePool(service.Pass(), metric_ctx, options_.service_queue_length);
-  RETURN_NOT_OK(service_pool_->Init(options_.num_service_threads));
-  RETURN_NOT_OK(messenger_->RegisterService(service_name_, service_pool_));
+  string service_name = service->service_name();
+  scoped_refptr<rpc::ServicePool> service_pool =
+    new rpc::ServicePool(service.Pass(), metric_ctx, options_.service_queue_length);
+  RETURN_NOT_OK(service_pool->Init(options_.num_service_threads));
+  RETURN_NOT_OK(messenger_->RegisterService(service_name, service_pool));
+  return Status::OK();
+}
+
+Status RpcServer::Start() {
+  CHECK_EQ(server_state_, INITIALIZED);
 
   // Create the Acceptor pools (one per bind address)
   vector<shared_ptr<AcceptorPool> > new_acceptor_pools;
@@ -93,6 +98,7 @@ Status RpcServer::Start(gscoped_ptr<rpc::ServiceIf> service) {
   }
   acceptor_pools_.swap(new_acceptor_pools);
 
+  server_state_ = STARTED;
   return Status::OK();
 }
 
@@ -102,18 +108,20 @@ void RpcServer::Shutdown() {
   }
   acceptor_pools_.clear();
 
-  if (service_pool_) {
-    WARN_NOT_OK(messenger_->UnregisterService(service_name_),
-                Substitute("Unable to unregister service $0", service_name_));
-    service_pool_->Shutdown();
+  if (messenger_) {
+    WARN_NOT_OK(messenger_->UnregisterAllServices(), "Unable to unregister our services");
   }
 }
 
 void RpcServer::GetBoundAddresses(vector<Sockaddr>* addresses) const {
-  CHECK(initted_);
+  CHECK_EQ(server_state_, STARTED);
   BOOST_FOREACH(const shared_ptr<AcceptorPool>& pool, acceptor_pools_) {
     addresses->push_back(pool->bind_address());
   }
+}
+
+const rpc::ServicePool* RpcServer::service_pool(const string& service_name) const {
+  return down_cast<rpc::ServicePool*>(messenger_->rpc_service(service_name).get());
 }
 
 } // namespace kudu

@@ -133,6 +133,8 @@ class Messenger {
   // Unregister currently-registered RpcService.
   Status UnregisterService(const std::string& service_name);
 
+  Status UnregisterAllServices();
+
   // Queue a call for transmission. This will pick the appropriate reactor,
   // and enqueue a task on that reactor to assign and send the call.
   void QueueOutboundCall(const std::tr1::shared_ptr<OutboundCall> &call);
@@ -166,6 +168,8 @@ class Messenger {
   }
 
   MetricContext* metric_context() const { return metric_ctx_.get(); }
+
+  const scoped_refptr<RpcService> rpc_service(const std::string& service_name) const;
 
  private:
   FRIEND_TEST(TestRpc, TestConnectionKeepalive);

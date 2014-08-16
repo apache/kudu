@@ -71,7 +71,8 @@ class ServerBase {
   virtual ~ServerBase();
 
   Status Init();
-  Status Start(gscoped_ptr<rpc::ServiceIf> rpc_impl);
+  Status RegisterService(gscoped_ptr<rpc::ServiceIf> rpc_impl);
+  Status Start();
   void Shutdown();
 
   gscoped_ptr<MetricRegistry> metric_registry_;

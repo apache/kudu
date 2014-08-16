@@ -36,7 +36,10 @@ class RpcServer {
   ~RpcServer();
 
   Status Init(const std::tr1::shared_ptr<rpc::Messenger>& messenger);
-  Status Start(gscoped_ptr<rpc::ServiceIf> service);
+  // Services need to be registered after Init'ing, but before Start'ing.
+  // The service's ownership will be given to a ServicePool.
+  Status RegisterService(gscoped_ptr<rpc::ServiceIf> service);
+  Status Start();
   void Shutdown();
 
   std::string ToString() const;
@@ -45,21 +48,27 @@ class RpcServer {
   // bound to. Requires that the server has been Start()ed.
   void GetBoundAddresses(std::vector<Sockaddr>* addresses) const;
 
-  const scoped_refptr<rpc::ServicePool> service_pool() const {
-    return service_pool_;
-  }
+  const rpc::ServicePool* service_pool(const std::string& service_name) const;
 
  private:
+  enum ServerState {
+    // Default state when the rpc server is constructed.
+    UNINITIALIZED,
+    // State after Init() was called.
+    INITIALIZED,
+    // State after Start() was called.
+    STARTED
+  };
+  ServerState server_state_;
+
   const RpcServerOptions options_;
-  bool initted_;
   std::tr1::shared_ptr<rpc::Messenger> messenger_;
-  std::string service_name_;
 
   // Parsed addresses to bind RPC to. Set by Init()
   std::vector<Sockaddr> rpc_bind_addresses_;
 
   std::vector<std::tr1::shared_ptr<rpc::AcceptorPool> > acceptor_pools_;
-  scoped_refptr<rpc::ServicePool> service_pool_;
+
   DISALLOW_COPY_AND_ASSIGN(RpcServer);
 };
 

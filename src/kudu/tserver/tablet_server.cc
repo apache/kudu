@@ -17,6 +17,7 @@
 #include "kudu/tserver/tablet_service.h"
 #include "kudu/tserver/ts_tablet_manager.h"
 #include "kudu/tserver/tserver-path-handlers.h"
+#include "kudu/tserver/remote_bootstrap.service.h"
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/status.h"
@@ -90,7 +91,10 @@ Status TabletServer::WaitInited() {
 Status TabletServer::Start() {
   CHECK(initted_);
 
-  RETURN_NOT_OK(ServerBase::Start(gscoped_ptr<ServiceIf>(new TabletServiceImpl(this))));
+  gscoped_ptr<ServiceIf> ts_service(new TabletServiceImpl(this));
+
+  RETURN_NOT_OK(ServerBase::RegisterService(ts_service.Pass()));
+  RETURN_NOT_OK(ServerBase::Start());
   RETURN_NOT_OK(heartbeater_->Start());
   RETURN_NOT_OK(maintenance_manager_->Init());
   return Status::OK();

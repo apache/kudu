@@ -161,10 +161,14 @@ Status ServerBase::DumpServerInfo(const string& path,
   return Status::OK();
 }
 
-Status ServerBase::Start(gscoped_ptr<rpc::ServiceIf> rpc_impl) {
+Status ServerBase::RegisterService(gscoped_ptr<rpc::ServiceIf> rpc_impl) {
+  return rpc_server_->RegisterService(rpc_impl.Pass());
+}
+
+Status ServerBase::Start() {
   GenerateInstanceID();
 
-  RETURN_NOT_OK(rpc_server_->Start(rpc_impl.Pass()));
+  RETURN_NOT_OK(rpc_server_->Start());
 
   AddDefaultPathHandlers(web_server_.get());
   AddRpczPathHandlers(messenger_, web_server_.get());

@@ -62,7 +62,9 @@ Status Master::Start() {
   CHECK_EQ(kInitialized, state_);
 
   gscoped_ptr<ServiceIf> impl(new MasterServiceImpl(this));
-  RETURN_NOT_OK(ServerBase::Start(impl.Pass()));
+
+  RETURN_NOT_OK(ServerBase::RegisterService(impl.Pass()));
+  RETURN_NOT_OK(ServerBase::Start());
 
   state_ = kRunning;
   return Status::OK();
