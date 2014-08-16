@@ -42,6 +42,7 @@ namespace kudu {
 namespace tablet {
 
 using boost::shared_lock;
+using consensus::ChangeConfigRequestPB;
 using consensus::CommitMsg;
 using consensus::ConsensusBootstrapInfo;
 using consensus::ConsensusRound;
@@ -71,7 +72,6 @@ using server::Clock;
 using tablet::OperationResultPB;
 using tablet::Tablet;
 using tserver::AlterSchemaRequestPB;
-using tserver::ChangeConfigRequestPB;
 using tserver::WriteRequestPB;
 using std::tr1::shared_ptr;
 using strings::Substitute;

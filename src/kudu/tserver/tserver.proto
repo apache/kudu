@@ -184,23 +184,6 @@ message DeleteTabletResponsePB {
   optional TabletServerErrorPB error = 1;
 }
 
-// A configuration change request for the tablet with 'tablet_id'.
-message ChangeConfigRequestPB {
-  required bytes tablet_id = 1;
-
-  // The old config seqno to perform CAS style quorum config changes.
-  optional int64 old_config = 2;
-
-  // The new configuration to set the quorum to.
-  required kudu.metadata.QuorumPB new_config = 3;
-}
-
-// The configuration change response. If any immediate error occurred
-// the 'error' field is set with it.
-message ChangeConfigResponsePB {
-  optional TabletServerErrorPB error = 1;
-}
-
 // A range predicate on one of the columns in the underlying
 // data.
 message ColumnRangePredicatePB {

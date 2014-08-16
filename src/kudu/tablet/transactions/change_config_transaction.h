@@ -23,22 +23,22 @@ namespace tablet {
 class ChangeConfigTransactionState : public TransactionState {
  public:
   explicit ChangeConfigTransactionState(TabletPeer* tablet_peer,
-                                        const tserver::ChangeConfigRequestPB* request)
+                                        const consensus::ChangeConfigRequestPB* request)
     : TransactionState(tablet_peer),
       request_(request),
       response_(NULL) {
   }
 
   ChangeConfigTransactionState(TabletPeer* tablet_peer,
-                               const tserver::ChangeConfigRequestPB* request,
-                               tserver::ChangeConfigResponsePB* response)
+                               const consensus::ChangeConfigRequestPB* request,
+                               consensus::ChangeConfigResponsePB* response)
       : TransactionState(tablet_peer),
         request_(request),
         response_(response) {
   }
 
-  const tserver::ChangeConfigRequestPB* request() const { return request_; }
-  tserver::ChangeConfigResponsePB* response() { return response_; }
+  const consensus::ChangeConfigRequestPB* request() const { return request_; }
+  consensus::ChangeConfigResponsePB* response() { return response_; }
 
   void acquire_config_sem(Semaphore* sem) {
     config_lock_ = boost::unique_lock<Semaphore>(*sem);
@@ -68,8 +68,8 @@ class ChangeConfigTransactionState : public TransactionState {
  private:
   DISALLOW_COPY_AND_ASSIGN(ChangeConfigTransactionState);
 
-  const tserver::ChangeConfigRequestPB *request_;
-  tserver::ChangeConfigResponsePB *response_;
+  const consensus::ChangeConfigRequestPB *request_;
+  consensus::ChangeConfigResponsePB *response_;
   boost::unique_lock<Semaphore> config_lock_;
 };
 

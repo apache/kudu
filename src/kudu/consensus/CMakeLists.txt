@@ -1,16 +1,19 @@
 # Copyright (c) 2012, Cloudera, inc.
 
-PROTOBUF_GENERATE_CPP(CONSENSUS_PROTO_SRCS CONSENSUS_PROTO_HDRS
+KRPC_GENERATE(CONSENSUS_KRPC_SRCS CONSENSUS_KRPC_HDRS
   SOURCE_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../..
   BINARY_ROOT ${CMAKE_CURRENT_BINARY_DIR}/../..
   PROTO_FILES consensus.proto)
 
-add_library(consensus_proto ${CONSENSUS_PROTO_SRCS} ${CONSENSUS_PROTO_HDRS})
+add_library(consensus_proto ${CONSENSUS_KRPC_SRCS} ${CONSENSUS_KRPC_HDRS})
 target_link_libraries(consensus_proto
-  tserver_proto protobuf
+  tserver_proto
+  protobuf
   kudu_common_proto
   cfile_proto
   metadata_proto
+  krpc
+  wire_protocol_proto
   tablet_proto)
 
 PROTOBUF_GENERATE_CPP(LOG_PROTO_SRCS LOG_PROTO_HDRS
@@ -52,7 +55,6 @@ set(CONSENSUS_SRCS
 
 add_library(consensus ${CONSENSUS_SRCS})
 target_link_libraries(consensus
-  tserver_service_proto
   consensus_proto
   kudu_common
   log)

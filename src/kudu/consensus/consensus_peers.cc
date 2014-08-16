@@ -9,11 +9,11 @@
 
 #include "kudu/common/wire_protocol.h"
 #include "kudu/consensus/consensus_queue.h"
+#include "kudu/consensus/consensus.proxy.h"
 #include "kudu/consensus/log.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/substitute.h"
-#include "kudu/tserver/tserver_service.proxy.h"
 #include "kudu/util/logging.h"
 #include "kudu/util/net/net_util.h"
 
@@ -33,7 +33,6 @@ using std::tr1::unordered_map;
 using rpc::Messenger;
 using rpc::RpcController;
 using strings::Substitute;
-using tserver::TabletServerServiceProxy;
 
 class PeerImpl {
  public:
@@ -423,9 +422,9 @@ Peer::~Peer() {
 }
 
 RpcPeerProxy::RpcPeerProxy(gscoped_ptr<HostPort> hostport,
-                           gscoped_ptr<TabletServerServiceProxy> ts_proxy)
+                           gscoped_ptr<ConsensusServiceProxy> consensus_proxy)
     : hostport_(hostport.Pass()),
-      ts_proxy_(ts_proxy.Pass()) {
+      consensus_proxy_(consensus_proxy.Pass()) {
 }
 
 Status RpcPeerProxy::UpdateAsync(const ConsensusRequestPB* request,
@@ -433,7 +432,7 @@ Status RpcPeerProxy::UpdateAsync(const ConsensusRequestPB* request,
                                  rpc::RpcController* controller,
                                  const rpc::ResponseCallback& callback) {
   controller->set_timeout(MonoDelta::FromMilliseconds(FLAGS_consensus_rpc_timeout_ms));
-  ts_proxy_->UpdateConsensusAsync(*request, response, controller, callback);
+  consensus_proxy_->UpdateConsensusAsync(*request, response, controller, callback);
   return Status::OK();
 }
 
@@ -456,8 +455,8 @@ Status RpcPeerProxyFactory::NewProxy(const QuorumPeerPB& peer_pb,
     << "resolves to " << addrs.size() << " different addresses. Using "
     << addrs[0].ToString();
   }
-  gscoped_ptr<TabletServerServiceProxy> new_proxy(
-      new TabletServerServiceProxy(messenger_, addrs[0]));
+  gscoped_ptr<ConsensusServiceProxy> new_proxy(
+      new ConsensusServiceProxy(messenger_, addrs[0]));
   proxy->reset(new RpcPeerProxy(hostport.Pass(), new_proxy.Pass()));
   return Status::OK();
 }

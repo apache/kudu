@@ -25,11 +25,8 @@ class Messenger;
 class RpcController;
 }
 
-namespace tserver {
-class TabletServerServiceProxy;
-}
-
 namespace consensus {
+class ConsensusServiceProxy;
 class ConsensusRequestPB;
 class ConsensusResponsePB;
 class ConsensusStatusPB;
@@ -205,7 +202,7 @@ class PeerProxyFactory {
 class RpcPeerProxy : public PeerProxy {
  public:
   RpcPeerProxy(gscoped_ptr<HostPort> hostport,
-               gscoped_ptr<tserver::TabletServerServiceProxy> ts_proxy);
+               gscoped_ptr<ConsensusServiceProxy> consensus_proxy);
 
   virtual Status UpdateAsync(const ConsensusRequestPB* request,
                              ConsensusResponsePB* response,
@@ -215,7 +212,7 @@ class RpcPeerProxy : public PeerProxy {
   virtual ~RpcPeerProxy();
  public:
   gscoped_ptr<HostPort> hostport_;
-  gscoped_ptr<tserver::TabletServerServiceProxy> ts_proxy_;
+  gscoped_ptr<ConsensusServiceProxy> consensus_proxy_;
 };
 
 // PeerProxyFactory implementation that generates RPCPeerProxies

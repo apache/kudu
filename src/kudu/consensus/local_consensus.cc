@@ -21,8 +21,6 @@ using log::LogEntryBatch;
 using metadata::QuorumPB;
 using metadata::QuorumPeerPB;
 using std::tr1::shared_ptr;
-using tserver::ChangeConfigRequestPB;
-using tserver::ChangeConfigResponsePB;
 
 LocalConsensus::LocalConsensus(const ConsensusOptions& options)
     : options_(options),

@@ -49,6 +49,23 @@ message OperationPB {
   optional CommitMsg commit = 4;
 }
 
+// A configuration change request for the tablet with 'tablet_id'.
+message ChangeConfigRequestPB {
+  required bytes tablet_id = 1;
+
+  // The old config seqno to perform CAS style quorum config changes.
+  optional int64 old_config = 2;
+
+  // The new configuration to set the quorum to.
+  required kudu.metadata.QuorumPB new_config = 3;
+}
+
+// The configuration change response. If any immediate error occurred
+// the 'error' field is set with it.
+message ChangeConfigResponsePB {
+  optional tserver.TabletServerErrorPB error = 1;
+}
+
 // A Replicate message, sent to replicas by leader to indicate this operation must
 // be stored in the WAL/SM log, as part of the first phase of the two phase
 // commit.
@@ -56,7 +73,7 @@ message ReplicateMsg {
   required OperationType op_type = 2;
   optional tserver.WriteRequestPB write_request = 3;
   optional tserver.AlterSchemaRequestPB alter_schema_request = 4;
-  optional tserver.ChangeConfigRequestPB change_config_request = 5;
+  optional ChangeConfigRequestPB change_config_request = 5;
 
   optional NoOpRequestPB noop_request = 999;
 }
@@ -78,7 +95,7 @@ message CommitMsg {
   optional tserver.WriteResponsePB write_response = 5;
   // The response to the alter schema request
   optional tserver.AlterSchemaResponsePB alter_schema_response = 6;
-  optional tserver.ChangeConfigResponsePB change_config_response = 7;
+  optional ChangeConfigResponsePB change_config_response = 7;
 
   optional NoOpResponsePB noop_response = 999;
 }
@@ -207,4 +224,12 @@ message TransactionStatusPB {
   // If tracing is enabled when viewing the transaction, the trace
   // buffer is copied here.
   optional string trace_buffer = 6;
+}
+
+service ConsensusService {
+  rpc ChangeConfig(ChangeConfigRequestPB) returns (ChangeConfigResponsePB);
+
+  rpc UpdateConsensus(ConsensusRequestPB) returns (ConsensusResponsePB);
+
+  rpc RequestConsensusVote(VoteRequestPB) returns (VoteResponsePB);
 }

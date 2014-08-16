@@ -46,6 +46,8 @@ namespace tserver {
 
 using consensus::ConsensusRequestPB;
 using consensus::ConsensusResponsePB;
+using consensus::ChangeConfigRequestPB;
+using consensus::ChangeConfigResponsePB;
 using consensus::VoteRequestPB;
 using consensus::VoteResponsePB;
 using google::protobuf::RepeatedPtrField;
@@ -58,6 +60,38 @@ using tablet::TabletPeer;
 using tablet::TabletStatusPB;
 using tablet::TransactionCompletionCallback;
 using tablet::WriteTransactionState;
+
+namespace {
+// Lookup the given tablet, ensuring that it both exists and is RUNNING.
+// If it is not, responds to the RPC associated with 'context' after setting
+// resp->mutable_error() to indicate the failure reason.
+//
+// Returns true if successful.
+template<class RespClass>
+bool LookupTabletOrRespond(TabletPeerLookupIf* tablet_manager,
+                           const string& tablet_id,
+                           scoped_refptr<TabletPeer>* peer,
+                           RespClass* resp,
+                           rpc::RpcContext* context) {
+  if (PREDICT_FALSE(!tablet_manager->GetTabletPeer(tablet_id, peer).ok())) {
+    SetupErrorAndRespond(resp->mutable_error(),
+                         Status::NotFound("Tablet not found"),
+                         TabletServerErrorPB::TABLET_NOT_FOUND, context);
+    return false;
+  }
+
+  // Check RUNNING state.
+  metadata::TabletStatePB state = (*peer)->state();
+  if (PREDICT_FALSE(state != metadata::RUNNING)) {
+    Status s = Status::ServiceUnavailable("Tablet not RUNNING",
+                                          metadata::TabletStatePB_Name(state));
+    SetupErrorAndRespond(resp->mutable_error(), s,
+                         TabletServerErrorPB::TABLET_NOT_RUNNING, context);
+    return false;
+  }
+  return true;
+}
+} // namespace
 
 typedef ListTabletsResponsePB::StatusAndSchemaPB StatusAndSchemaPB;
 
@@ -142,30 +176,6 @@ TabletServiceImpl::TabletServiceImpl(TabletServer* server)
                                             server_->metric_context())) {
 }
 
-template<class RespClass>
-bool TabletServiceImpl::LookupTabletOrRespond(const string& tablet_id,
-                                              scoped_refptr<TabletPeer>* peer,
-                                              RespClass* resp,
-                                              rpc::RpcContext* context) {
-  // Check that it exists.
-  if (PREDICT_FALSE(!server_->tablet_manager()->LookupTablet(tablet_id, peer))) {
-    SetupErrorAndRespond(resp->mutable_error(),
-                         Status::NotFound("Tablet not found"),
-                         TabletServerErrorPB::TABLET_NOT_FOUND, context);
-    return false;
-  }
-
-  // Check RUNNING state.
-  metadata::TabletStatePB state = (*peer)->state();
-  if (PREDICT_FALSE(state != metadata::RUNNING)) {
-    Status s = Status::ServiceUnavailable("Tablet not RUNNING",
-                                          metadata::TabletStatePB_Name(state));
-    SetupErrorAndRespond(resp->mutable_error(), s,
-                         TabletServerErrorPB::TABLET_NOT_RUNNING, context);
-    return false;
-  }
-  return true;
-}
 
 void TabletServiceImpl::Ping(const PingRequestPB* req,
                              PingResponsePB* resp,
@@ -179,7 +189,8 @@ void TabletServiceImpl::AlterSchema(const AlterSchemaRequestPB* req,
   DVLOG(3) << "Received Alter Schema RPC: " << req->DebugString();
 
   scoped_refptr<TabletPeer> tablet_peer;
-  if (!LookupTabletOrRespond(req->tablet_id(), &tablet_peer, resp, context)) return;
+  if (!LookupTabletOrRespond(server_->tablet_manager(),
+                             req->tablet_id(), &tablet_peer, resp, context)) return;
 
   uint32_t schema_version = tablet_peer->tablet()->metadata()->schema_version();
 
@@ -289,7 +300,8 @@ void TabletServiceImpl::DeleteTablet(const DeleteTabletRequestPB* req,
   VLOG(1) << "Full request: " << req->DebugString();
 
   scoped_refptr<TabletPeer> tablet_peer;
-  if (!LookupTabletOrRespond(req->tablet_id(), &tablet_peer, resp, context)) return;
+  if (!LookupTabletOrRespond(server_->tablet_manager(),
+                             req->tablet_id(), &tablet_peer, resp, context)) return;
 
   Status s = server_->tablet_manager()->DeleteTablet(tablet_peer);
   if (PREDICT_FALSE(!s.ok())) {
@@ -307,37 +319,14 @@ void TabletServiceImpl::DeleteTablet(const DeleteTabletRequestPB* req,
   context->RespondSuccess();
 }
 
-void TabletServiceImpl::ChangeConfig(const ChangeConfigRequestPB* req,
-                                     ChangeConfigResponsePB* resp,
-                                     rpc::RpcContext* context) {
-  DVLOG(3) << "Received Change Config RPC: " << req->DebugString();
-
-  scoped_refptr<TabletPeer> tablet_peer;
-  if (!LookupTabletOrRespond(req->tablet_id(), &tablet_peer, resp, context)) return;
-
-  ChangeConfigTransactionState *tx_state =
-    new ChangeConfigTransactionState(tablet_peer.get(), req, resp);
-
-  tx_state->set_completion_callback(gscoped_ptr<TransactionCompletionCallback>(
-      new RpcTransactionCompletionCallback(context, resp)).Pass());
-
-  // Submit the change config op. The RPC will be responded to asynchronously.
-  Status s = tablet_peer->SubmitChangeConfig(tx_state);
-  if (PREDICT_FALSE(!s.ok())) {
-    SetupErrorAndRespond(resp->mutable_error(), s,
-                         TabletServerErrorPB::UNKNOWN_ERROR,
-                         context);
-    return;
-  }
-}
-
 void TabletServiceImpl::Write(const WriteRequestPB* req,
                               WriteResponsePB* resp,
                               rpc::RpcContext* context) {
   DVLOG(3) << "Received Write RPC: " << req->DebugString();
 
   scoped_refptr<TabletPeer> tablet_peer;
-  if (!LookupTabletOrRespond(req->tablet_id(), &tablet_peer, resp, context)) return;
+  if (!LookupTabletOrRespond(server_->tablet_manager(),
+                             req->tablet_id(), &tablet_peer, resp, context)) return;
 
   if (req->external_consistency_mode() != NO_CONSISTENCY) {
     if (!server_->clock()->SupportsExternalConsistencyMode(req->external_consistency_mode())) {
@@ -383,14 +372,47 @@ void TabletServiceImpl::Write(const WriteRequestPB* req,
   return;
 }
 
-void TabletServiceImpl::UpdateConsensus(const ConsensusRequestPB* req,
+ConsensusServiceImpl::ConsensusServiceImpl(const MetricContext& metric_context,
+                                           TabletPeerLookupIf* tablet_manager)
+  : ConsensusServiceIf(metric_context),
+    tablet_manager_(tablet_manager) {
+}
+
+void ConsensusServiceImpl::ChangeConfig(const consensus::ChangeConfigRequestPB* req,
+                                        ChangeConfigResponsePB* resp,
+                                        rpc::RpcContext* context) {
+  DVLOG(3) << "Received Change Config RPC: " << req->DebugString();
+
+  scoped_refptr<TabletPeer> tablet_peer;
+  if (!LookupTabletOrRespond(tablet_manager_,
+                             req->tablet_id(), &tablet_peer, resp, context)) return;
+
+  ChangeConfigTransactionState *tx_state =
+    new ChangeConfigTransactionState(tablet_peer.get(), req, resp);
+
+  tx_state->set_completion_callback(gscoped_ptr<TransactionCompletionCallback>(
+      new RpcTransactionCompletionCallback(context, resp)).Pass());
+
+  // Submit the change config op. The RPC will be responded to asynchronously.
+  Status s = tablet_peer->SubmitChangeConfig(tx_state);
+  if (PREDICT_FALSE(!s.ok())) {
+    SetupErrorAndRespond(resp->mutable_error(), s,
+                         TabletServerErrorPB::UNKNOWN_ERROR,
+                         context);
+    return;
+  }
+}
+
+
+void ConsensusServiceImpl::UpdateConsensus(const ConsensusRequestPB* req,
                                         ConsensusResponsePB* resp,
                                         rpc::RpcContext* context) {
   DVLOG(3) << "Received Consensus Update RPC: " << req->DebugString();
 
   scoped_refptr<TabletPeer> tablet_peer;
 
-  if (!LookupTabletOrRespond(req->tablet_id(), &tablet_peer, resp, context)) return;
+  if (!LookupTabletOrRespond(tablet_manager_,
+                             req->tablet_id(), &tablet_peer, resp, context)) return;
 
   DCHECK(tablet_peer) << "Null tablet peer";
 
@@ -412,13 +434,13 @@ void TabletServiceImpl::UpdateConsensus(const ConsensusRequestPB* req,
   context->RespondSuccess();
 }
 
-void TabletServiceImpl::RequestConsensusVote(const VoteRequestPB* req,
+void ConsensusServiceImpl::RequestConsensusVote(const VoteRequestPB* req,
                                              VoteResponsePB* resp,
                                              rpc::RpcContext* context) {
   DVLOG(3) << "Received Consensus Request Vote RPC: " << req->DebugString();
 
   scoped_refptr<TabletPeer> tablet_peer;
-  if (!LookupTabletOrRespond(req->tablet_id(), &tablet_peer, resp, context))
+  if (!LookupTabletOrRespond(tablet_manager_, req->tablet_id(), &tablet_peer, resp, context))
     return;
 
   DCHECK(tablet_peer) << "Null tablet peer";
@@ -606,7 +628,8 @@ void TabletServiceImpl::HandleNewScanRequest(const ScanRequestPB* req,
 
   const NewScanRequestPB& scan_pb = req->new_scan_request();
   scoped_refptr<TabletPeer> tablet_peer;
-  if (!LookupTabletOrRespond(scan_pb.tablet_id(), &tablet_peer, resp, context)) return;
+  if (!LookupTabletOrRespond(server_->tablet_manager(),
+                             scan_pb.tablet_id(), &tablet_peer, resp, context)) return;
 
   // Create the user's requested projection.
   // TODO: add test cases for bad projections including 0 columns

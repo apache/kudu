@@ -92,9 +92,13 @@ Status TabletServer::Start() {
   CHECK(initted_);
 
   gscoped_ptr<ServiceIf> ts_service(new TabletServiceImpl(this));
+  gscoped_ptr<ServiceIf> consensus_service(new ConsensusServiceImpl(metric_context(),
+                                                                    tablet_manager_.get()));
 
   RETURN_NOT_OK(ServerBase::RegisterService(ts_service.Pass()));
+  RETURN_NOT_OK(ServerBase::RegisterService(consensus_service.Pass()));
   RETURN_NOT_OK(ServerBase::Start());
+
   RETURN_NOT_OK(heartbeater_->Start());
   RETURN_NOT_OK(maintenance_manager_->Init());
   return Status::OK();

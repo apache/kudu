@@ -38,9 +38,6 @@ using metadata::QuorumPB;
 using metadata::QuorumPeerPB;
 using std::tr1::shared_ptr;
 using strings::Substitute;
-using tserver::ChangeConfigRequestPB;
-using tserver::ChangeConfigResponsePB;
-using tserver::TabletServerServiceProxy;
 
 RaftConsensus::RaftConsensus(const ConsensusOptions& options,
                              gscoped_ptr<PeerProxyFactory> proxy_factory,

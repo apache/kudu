@@ -3,7 +3,6 @@ package kudu.tserver;
 
 import "kudu/common/common.proto";
 import "kudu/common/wire_protocol.proto";
-import "kudu/consensus/consensus.proto";
 import "kudu/tserver/remote_bootstrap.proto";
 import "kudu/tserver/tserver.proto";
 
@@ -25,12 +24,6 @@ service TabletServerService {
   rpc CreateTablet(CreateTabletRequestPB) returns (CreateTabletResponsePB);
 
   rpc DeleteTablet(DeleteTabletRequestPB) returns (DeleteTabletResponsePB);
-
-  rpc ChangeConfig(ChangeConfigRequestPB) returns (ChangeConfigResponsePB);
-
-  rpc UpdateConsensus(kudu.consensus.ConsensusRequestPB) returns (kudu.consensus.ConsensusResponsePB);
-
-  rpc RequestConsensusVote(kudu.consensus.VoteRequestPB) returns (kudu.consensus.VoteResponsePB);
 
   rpc AlterSchema(AlterSchemaRequestPB) returns (AlterSchemaResponsePB);
 

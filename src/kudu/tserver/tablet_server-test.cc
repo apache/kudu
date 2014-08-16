@@ -18,6 +18,8 @@ using kudu::server::HybridClock;
 using kudu::tablet::Tablet;
 using kudu::tablet::TabletPeer;
 using strings::Substitute;
+using kudu::consensus::ChangeConfigRequestPB;
+using kudu::consensus::ChangeConfigResponsePB;
 
 DEFINE_int32(single_threaded_insert_latency_bench_warmup_rows, 100,
              "Number of rows to insert in the warmup phase of the single threaded"
@@ -1395,7 +1397,7 @@ TEST_F(TabletServerTest, TestChangeConfiguration) {
 
   {
     SCOPED_TRACE(req.DebugString());
-    ASSERT_STATUS_OK(proxy_->ChangeConfig(req, &resp, &rpc));
+    ASSERT_STATUS_OK(consensus_proxy_->ChangeConfig(req, &resp, &rpc));
     SCOPED_TRACE(resp.DebugString());
     ASSERT_FALSE(resp.has_error());
     rpc.Reset();
@@ -1422,7 +1424,7 @@ TEST_F(TabletServerTest, TestChangeConfiguration) {
 
   {
     SCOPED_TRACE(req.DebugString());
-    ASSERT_STATUS_OK(proxy_->ChangeConfig(req, &resp, &rpc));
+    ASSERT_STATUS_OK(consensus_proxy_->ChangeConfig(req, &resp, &rpc));
     SCOPED_TRACE(resp.DebugString());
     ASSERT_TRUE(resp.has_error());
     ASSERT_EQ(TabletServerErrorPB::INVALID_CONFIG, resp.error().code());
@@ -1465,7 +1467,7 @@ TEST_F(TabletServerTest, TestChangeConfiguration_TsTabletManagerReportsNewRoles)
     peer->set_role(random_role);
     {
       SCOPED_TRACE(req.DebugString());
-      ASSERT_STATUS_OK(proxy_->ChangeConfig(req, &resp, &rpc));
+      ASSERT_STATUS_OK(consensus_proxy_->ChangeConfig(req, &resp, &rpc));
       SCOPED_TRACE(resp.DebugString());
       ASSERT_FALSE(resp.has_error());
       rpc.Reset();
@@ -1495,7 +1497,7 @@ TEST_F(TabletServerTest, TestChangeConfiguration_TestEqualSeqNoIsRejected) {
   // Send the call
   {
     SCOPED_TRACE(req.DebugString());
-    ASSERT_STATUS_OK(proxy_->ChangeConfig(req, &resp, &rpc));
+    ASSERT_STATUS_OK(consensus_proxy_->ChangeConfig(req, &resp, &rpc));
     SCOPED_TRACE(resp.DebugString());
     ASSERT_FALSE(resp.has_error());
     rpc.Reset();
@@ -1508,7 +1510,7 @@ TEST_F(TabletServerTest, TestChangeConfiguration_TestEqualSeqNoIsRejected) {
 
   {
     SCOPED_TRACE(req.DebugString());
-    ASSERT_STATUS_OK(proxy_->ChangeConfig(req, &resp, &rpc));
+    ASSERT_STATUS_OK(consensus_proxy_->ChangeConfig(req, &resp, &rpc));
     SCOPED_TRACE(resp.DebugString());
     ASSERT_TRUE(resp.has_error());
     ASSERT_EQ(TabletServerErrorPB::INVALID_CONFIG, resp.error().code());
@@ -1522,7 +1524,7 @@ TEST_F(TabletServerTest, TestChangeConfiguration_TestEqualSeqNoIsRejected) {
 
   {
     SCOPED_TRACE(req.DebugString());
-    ASSERT_STATUS_OK(proxy_->ChangeConfig(req, &resp, &rpc));
+    ASSERT_STATUS_OK(consensus_proxy_->ChangeConfig(req, &resp, &rpc));
     SCOPED_TRACE(resp.DebugString());
     ASSERT_TRUE(resp.has_error());
     ASSERT_EQ(TabletServerErrorPB::INVALID_CONFIG, resp.error().code());

@@ -7,6 +7,8 @@
 
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/tserver/tserver_service.service.h"
+#include "kudu/tserver/tablet_peer_lookup.h"
+#include "kudu/consensus/consensus.service.h"
 
 namespace kudu {
 class RowwiseIterator;
@@ -44,9 +46,6 @@ class TabletServiceImpl : public TabletServerServiceIf {
                            AlterSchemaResponsePB* resp,
                            rpc::RpcContext* context) OVERRIDE;
 
-  virtual void ChangeConfig(const ChangeConfigRequestPB* req, ChangeConfigResponsePB* resp,
-                            rpc::RpcContext* context) OVERRIDE;
-
   virtual void Write(const WriteRequestPB* req, WriteResponsePB* resp,
                    rpc::RpcContext* context) OVERRIDE;
 
@@ -57,10 +56,6 @@ class TabletServiceImpl : public TabletServerServiceIf {
   virtual void ListTablets(const ListTabletsRequestPB* req,
                            ListTabletsResponsePB* resp,
                            rpc::RpcContext* context) OVERRIDE;
-
-  virtual void UpdateConsensus(const kudu::consensus::ConsensusRequestPB *req,
-                               kudu::consensus::ConsensusResponsePB *resp,
-                               ::kudu::rpc::RpcContext *context) OVERRIDE;
 
   // TODO: Move this to its own service once we put in service multiplexing support
   // in the RPC protocol.
@@ -82,22 +77,7 @@ class TabletServiceImpl : public TabletServerServiceIf {
 
   virtual void Shutdown() OVERRIDE;
 
-  virtual void RequestConsensusVote(const kudu::consensus::VoteRequestPB* req,
-                                    kudu::consensus::VoteResponsePB* resp,
-                                    ::kudu::rpc::RpcContext* context) OVERRIDE;
-
  private:
-  // Lookup the given tablet, ensuring that it both exists and is RUNNING.
-  // If it is not, responds to the RPC associated with 'context' after setting
-  // resp->mutable_error() to indicate the failure reason.
-  //
-  // Returns true if successful.
-  template<class RespClass>
-  bool LookupTabletOrRespond(const std::string& tablet_id,
-                             scoped_refptr<tablet::TabletPeer>* peer,
-                             RespClass* resp,
-                             rpc::RpcContext* context);
-
   void HandleNewScanRequest(const ScanRequestPB* req,
                             ScanResponsePB* resp,
                             rpc::RpcContext* context);
@@ -114,6 +94,26 @@ class TabletServiceImpl : public TabletServerServiceIf {
 
   TabletServer* server_;
   gscoped_ptr<RemoteBootstrapServiceIf> remote_bootstrap_service_;
+};
+
+class ConsensusServiceImpl : public consensus::ConsensusServiceIf {
+ public:
+  explicit ConsensusServiceImpl(const MetricContext& metric_context,
+                                TabletPeerLookupIf* tablet_manager_);
+  virtual void ChangeConfig(const kudu::consensus::ChangeConfigRequestPB* req,
+                            kudu::consensus::ChangeConfigResponsePB* resp,
+                            rpc::RpcContext* context) OVERRIDE;
+
+  virtual void UpdateConsensus(const kudu::consensus::ConsensusRequestPB *req,
+                               kudu::consensus::ConsensusResponsePB *resp,
+                               ::kudu::rpc::RpcContext *context) OVERRIDE;
+
+  virtual void RequestConsensusVote(const kudu::consensus::VoteRequestPB* req,
+                                    kudu::consensus::VoteResponsePB* resp,
+                                    ::kudu::rpc::RpcContext* context) OVERRIDE;
+
+ private:
+  TabletPeerLookupIf* tablet_manager_;
 };
 
 } // namespace tserver
