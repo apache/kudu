@@ -75,11 +75,11 @@ class TransactionDriver : public RefCountedThreadSafe<TransactionDriver> {
 
   // Calls Transaction::Apply() followed by Consensus::Commit() with the
   // results from the Apply().
-  virtual Status ApplyAndCommit() = 0;
+  virtual Status Apply() = 0;
 
   // Called when both Transaction::Apply() and Consensus::Commit() successfully
   // completed. When this is called the commit message was appended to the WAL.
-  virtual void ApplyAndCommitSucceeded() = 0;
+  virtual void Finalize() = 0;
 
   // Called if ApplyAndCommit() failed for some reason, or if
   // Consensus::Commit() failed afterwards.
@@ -129,7 +129,93 @@ class TransactionDriver : public RefCountedThreadSafe<TransactionDriver> {
 };
 
 // Leader transaction driver.
-// For how write transactions are executed see: tablet/transactions/write_transaction.h.
+//
+// Leader transaction execution is illustrated in the next diagram. (Further
+// illustration of the inner workings of the consensus system can be found
+// in consensus/consensus.h).
+//
+//                  1 Execute()
+//                       +
+//                       |
+//             +---------v----------+
+//             |                    |
+//             |   2 Prepare()      |
+//             |                    |
+//             +---------+----------+
+//                       |
+//                       |
+//             +---------v----------+
+//       succ. |                    | fails
+//             |                    |
+//      +------v------+     +-------v------+
+//      |             |     |              |
+//      |3 Replicate()|     |  FAIL(Reply) |
+//      |             |     |              |
+//      +------+------+     +-------^------+
+//             |                    |
+//             |                    | fails
+//             +--------------------+
+//             |
+//             |
+//             +----------+ succeeds
+//                        |
+//             +----------v---------+
+//             |                    |
+//             |    4 Apply()       |
+//             |                    |
+//             +----------+---------+
+//                        |
+//                        |
+//             +----------v---------+
+//      succ.  |                    | fails
+//             |                    |
+//      +------v-------+    +-------v------+
+//      |              |    |              |
+//      |SUCCESS(Reply)|    | ABORT(Reply) |
+//      |              |    |              |
+//      +------+-------+    +-------+------+
+//             |                    |
+//             +----------+---------+
+//                        |
+//                        |
+//             +----------v---------+
+//             |                    |
+//             |    5 Finalize()    |
+//             |                    |
+//             +----------+---------+
+//                        |
+//                        v
+//                  Destroy/Cleanup
+//
+//  1 - Execute() is called on the LeaderTransactionDriver. The transaction's
+//      prepare is queued in the 'prepare_executor_'. The method returns immediately.
+//  2 - On Prepare(), messages are decoded and locks acquired. When Prepare() completes
+//      successfully, the transaction is assigned a timestamp. If Prepare() fails, the
+//      transaction is simply cancelled/destroyed and the client notified. If Prepare()
+//      fails the transaction had no side-effects.
+//  3 - If Replicate() succeeds (i.e a majority of peers ACKed the operation), it can be
+//      considered committed. This is the point of no return: from here on, a commit or
+//      abort message must eventually be stored in the WAL. It it succeeds Apply() is
+//      called. If it fails for some reason e.g. the transaction could not be replicated
+//      because a majority of peers is down, the transaction will never be committed and
+//      the client is notified.
+//  4 - When Apply() is called changes are made to the in-memory data structures. These
+//      changes are not visible to clients yet. After Apply() completes, if successful,
+//      the client is replied to immediately, locks are released[1] and changes are made
+//      visible.
+//      Whether successful or not, before returning, Apply() appends a CommitMsg to the
+//      WAL reflecting whether the transaction was successful and which data structures
+//      where mutated.
+//      Changes to data structure are not allowed to be made durable though, as the CommitMsg
+//      hasn't been persisted yet, but it is safe to reply to the client as the transaction
+//      is now guaranteed to survive failures.
+//  5 - Finalize() is called when the ApplyMsg has been made durable and performs some cleanup
+//      and updates metrics.
+//      In-mem data structures that contain the changes made by the transaction can now
+//      be made durable.
+//
+// [1] - see 'Implementation Techniques for Main Memory Database Systems', DeWitt et. al.
+//
 //
 // This class is thread safe.
 class LeaderTransactionDriver : public TransactionDriver {
@@ -153,9 +239,9 @@ class LeaderTransactionDriver : public TransactionDriver {
                           TaskExecutor* apply_executor,
                           simple_spinlock* prepare_replicate_lock);
 
-  virtual Status ApplyAndCommit() OVERRIDE;
+  virtual Status Apply() OVERRIDE;
 
-  virtual void ApplyAndCommitSucceeded() OVERRIDE;
+  virtual void Finalize() OVERRIDE;
 
   virtual void ApplyOrCommitFailed(const Status& status) OVERRIDE;
 
@@ -168,7 +254,7 @@ class LeaderTransactionDriver : public TransactionDriver {
   // Leaders execute Prepare() and Start() in sequence.
   Status PrepareAndStart();
 
-  void PrepareOrReplicateSucceeded();
+  void PrepareAndReplicateSucceeded();
 
   void PrepareOrReplicateFailed(const Status& status);
 
@@ -180,9 +266,7 @@ class LeaderTransactionDriver : public TransactionDriver {
   // has COMMIT_WAIT external consistency.
   Status CommitWait();
 
-  // Lock that protects that, on Execute(), Transaction::Prepare() and
-  // Consensus::Replicate() are submitted in one go across transactions.
-  simple_spinlock* prepare_replicate_lock_;
+  std::tr1::shared_ptr<FutureCallback> prepare_and_replicate_finished_callback_;
 
   DISALLOW_COPY_AND_ASSIGN(LeaderTransactionDriver);
 };
@@ -216,9 +300,9 @@ class ReplicaTransactionDriver : public TransactionDriver,
 
   virtual Status AbortAndCommit();
 
-  virtual Status ApplyAndCommit() OVERRIDE;
+  virtual Status Apply() OVERRIDE;
 
-  virtual void ApplyAndCommitSucceeded() OVERRIDE;
+  virtual void Finalize() OVERRIDE;
 
   virtual void ApplyOrCommitFailed(const Status& status) OVERRIDE;
 

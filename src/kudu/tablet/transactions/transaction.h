@@ -80,6 +80,8 @@ class Transaction {
   // LEADER replicas execute this in or right after Prepare(), while FOLLOWER/LEARNER
   // replicas execute this right before the Apply() phase as the transaction's
   // timestamp is only available on the LEADER's commit message.
+  // Once Started(), state might have leaked to other replicas/local log and the
+  // transaction can't be cancelled without issuing an abort message.
   virtual Status Start() = 0;
 
   // Executes the Apply() phase of the transaction, the actual actions of
