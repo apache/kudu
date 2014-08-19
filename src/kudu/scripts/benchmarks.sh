@@ -132,11 +132,6 @@ build_kudu() {
   # Build Kudu
   rm -rf CMakeCache.txt CMakeFiles
 
-  # Workaround for temporary issue where if we build llvm with clang but
-  # kudu with gcc, we fail to compile.
-  export CC=$BASE_DIR/thirdparty/installed/bin/clang
-  export CXX=$BASE_DIR/thirdparty/installed/bin/clang++
-
   BUILD_TYPE=release
   # Workaround for gperftools issue #497
   export LD_BIND_NOW=1

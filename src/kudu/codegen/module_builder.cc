@@ -16,6 +16,7 @@
 
 #include <boost/foreach.hpp>
 #include <glog/logging.h>
+#include "kudu/codegen/llvm_include.h"
 #include <llvm/ExecutionEngine/MCJIT.h>
 #include <llvm/ExecutionEngine/ExecutionEngine.h>
 #include <llvm/IR/IRBuilder.h>

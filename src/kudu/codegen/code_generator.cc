@@ -5,6 +5,7 @@
 #include <string>
 
 #include <glog/logging.h>
+#include "kudu/codegen/llvm_include.h"
 #include <llvm/ExecutionEngine/ExecutionEngine.h>
 #include <llvm/IR/LLVMContext.h>
 #include <llvm/Support/TargetSelect.h>

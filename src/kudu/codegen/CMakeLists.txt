@@ -41,12 +41,6 @@ target_link_libraries(codegen
   kudu_util
   gutil)
 
-## Special #define workaround for including LLVM
-# LLVM's file llvm/Support/Valgrind.h conflicts
-# with our kudu/gutil/dynamic_annotations.h. This define
-# activates LLVM's header guard.
-add_definitions(-DLLVM_SUPPORT_VALGRIND_H)
-
 #######################################
 # Precompiling to LLVM bytecode
 #######################################
