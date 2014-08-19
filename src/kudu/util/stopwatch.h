@@ -14,15 +14,21 @@
 namespace kudu {
 
 // Macro for logging timing of a block. Usage:
-//   LOG_TIMING(INFO, "doing some task") {
+//   LOG_TIMING_IF(INFO, FLAGS_should_record_time, "doing some task") {
 //     ... some task which takes some time
 //   }
-// yields a log like:
+// If FLAGS_should_record_time is true, yields a log like:
 // I1102 14:35:51.726186 23082 file.cc:167] Time spent doing some task:
 //   real 3.729s user 3.570s sys 0.150s
-#define LOG_TIMING(severity, description) \
+// The task will always execute regardless of whether the timing information is
+// printed.
+#define LOG_TIMING_IF(severity, condition, description) \
   for (kudu::sw_internal::LogTiming _l(__FILE__, __LINE__, google::severity, description, \
-          -1, true); !_l.HasRun(); _l.MarkHasRun())
+          -1, (condition)); !_l.HasRun(); _l.MarkHasRun())
+
+// Alias for LOG_TIMING_IF(severity, true, description)
+#define LOG_TIMING(severity, description) \
+  LOG_TIMING_IF(severity, true, (description))
 
 // Macro to log the time spent in the rest of the block.
 #define SCOPED_LOG_TIMING(severity, description) \
