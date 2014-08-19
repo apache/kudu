@@ -46,9 +46,6 @@ using std::vector;
 DECLARE_bool(codegen_dump_functions);
 
 namespace kudu {
-
-typedef RowProjector NoCodegenRowProjector;
-
 namespace codegen {
 
 namespace {
@@ -56,10 +53,12 @@ namespace {
 // Generates a schema-to-schema projection function of the form:
 // void(int8_t* src, RowBlockRow* row, Arena* arena)
 // Requires src is a contiguous row of the base schema.
+// Uses CHECKs to make sure projection is well-formed. Use
+// kudu::RowProjector::Init() to return an error status instead.
 template<bool READ>
 llvm::Function* MakeProjection(const string& name,
                                ModuleBuilder* mbuilder,
-                               const NoCodegenRowProjector& proj) {
+                               const kudu::RowProjector& proj) {
   // Get the IRBuilder
   ModuleBuilder::LLVMBuilder* builder = mbuilder->builder();
   LLVMContext& context = builder->getContext();
@@ -127,7 +126,7 @@ llvm::Function* MakeProjection(const string& name,
   src_bitmap->setName("src_bitmap");
 
   // Copy base data
-  BOOST_FOREACH(NoCodegenRowProjector::ProjectionIdxMapping pmap,
+  BOOST_FOREACH(const kudu::RowProjector::ProjectionIdxMapping& pmap,
                 proj.base_cols_mapping()) {
     // Retrieve information regarding this column-to-column transformation
     size_t proj_idx = pmap.first;
@@ -199,24 +198,35 @@ llvm::Function* MakeProjection(const string& name,
 
 } // anonymous namespace
 
-RowProjector::RowProjector(const Schema* base_schema, const Schema* projection,
-                           ModuleBuilder* builder)
+RowProjector::RowProjector(const Schema* base_schema, const Schema* projection)
   : read_f_(NULL),
     write_f_(NULL),
-    base_schema_(base_schema),
-    projection_(projection),
-    is_identity_(base_schema->Equals(*projection)) {
+    projector_(base_schema, projection) {}
 
-  // Make the read/write projection functions.
-  NoCodegenRowProjector proj(base_schema, projection);
-  CHECK_OK(proj.Init());
-  const string base_name = StrCat("Proj", reinterpret_cast<uintptr_t>(this));
-  Function* read = MakeProjection<true>(StrCat(base_name, "R"), builder, proj);
-  Function* write = MakeProjection<false>(StrCat(base_name, "W"), builder, proj);
+Status RowProjector::Create(const Schema* base_schema, const Schema* projection,
+                            ModuleBuilder* builder,
+                            gscoped_ptr<RowProjector>* out) {
+  // Create the rowprojector and initialize the mapping without code generation
+  gscoped_ptr<RowProjector> local_proj(new RowProjector(base_schema,
+                                                        projection));
+  kudu::RowProjector* no_codegen = &local_proj->projector_;
+  RETURN_NOT_OK(no_codegen->Init());
+
+  // Build the functions for code gen
+  const string base_name = StrCat("Proj",
+                                  reinterpret_cast<uintptr_t>(local_proj.get()));
+  Function* read = MakeProjection<true>(StrCat(base_name, "R"), builder,
+                                        *no_codegen);
+  Function* write = MakeProjection<false>(StrCat(base_name, "W"), builder,
+                                          *no_codegen);
 
   // Have the ModuleBuilder accept promises to compile the functions
-  builder->AddJITPromise(read, &read_f_);
-  builder->AddJITPromise(write, &write_f_);
+  builder->AddJITPromise(read, &local_proj->read_f_);
+  builder->AddJITPromise(write, &local_proj->write_f_);
+
+  // Upon success, write to out
+  *out = local_proj.Pass();
+  return Status::OK();
 }
 
 RowProjector::~RowProjector() {}

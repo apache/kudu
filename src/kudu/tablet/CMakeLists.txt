@@ -49,6 +49,7 @@ add_dependencies(tablet_proto
 set(TABLET_SRCS ${TABLET_SRCS} ${TABLET_PROTO_SRCS})
 add_library(tablet ${TABLET_SRCS})
 target_link_libraries(tablet
+  codegen
   kudu_common
   cfile
   gutil

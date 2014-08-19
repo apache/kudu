@@ -32,7 +32,7 @@ class RowProjector;
 // functions as a factory for the classes that use LLVM constructs dependent
 // on the CodeGenerator's information.
 //
-// This class is NOT thread-safe.
+// This class is thread-safe.
 //
 // The execution engine has a global lock for compilations. When a function
 // is compiling, other threads will be blocked on their own compilations or
@@ -41,6 +41,9 @@ class RowProjector;
 // codegen'd functions concurrently.
 //
 // This code generator should survive longer than any of its compiled objects.
+//
+// Code generation may be disabled globally at compile time by defining
+// the preprocessor macro KUDU_DISABLE_CODEGEN.
 class CodeGenerator {
  public:
   CodeGenerator();

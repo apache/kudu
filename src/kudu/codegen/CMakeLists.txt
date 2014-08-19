@@ -11,6 +11,7 @@
 
 add_library(codegen
   code_generator.cc
+  compilation_manager.cc
   module_builder.cc
   row_projector.cc
 )
@@ -40,6 +41,15 @@ target_link_libraries(codegen
   kudu_common
   kudu_util
   gutil)
+
+## Disabling codegen in the KUDU_EXPORTED_CLIENT build.
+# In the exported build, symbol visibility is hidden. Codegen relies on
+# visible symbols for runtime relocation. This #define allows us to compile
+# outward-facing interfaces for code generation which return error statuses
+# instead of crashing.
+if(KUDU_EXPORTED_CLIENT)
+  add_definitions(-DKUDU_DISABLE_CODEGEN)
+endif()
 
 #######################################
 # Precompiling to LLVM bytecode

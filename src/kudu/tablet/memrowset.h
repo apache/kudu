@@ -64,6 +64,8 @@ class MRSRow {
 
   const Slice &row_slice() const { return row_slice_; }
 
+  const uint8_t* row_data() const { return row_slice_.data(); }
+
   bool is_null(size_t col_idx) const {
     return ContiguousRowHelper::is_null(*schema(), row_slice_.data(), col_idx);
   }
@@ -357,7 +359,9 @@ class MemRowSet : public RowSet,
 // the time of construction, and potentially more current.
 class MemRowSet::Iterator : public RowwiseIterator {
  public:
-  virtual ~Iterator() {}
+  class MRSRowProjector;
+
+  virtual ~Iterator();
 
   virtual Status Init(ScanSpec *spec) OVERRIDE;
 
@@ -411,7 +415,7 @@ class MemRowSet::Iterator : public RowwiseIterator {
   }
 
   const Schema& schema() const OVERRIDE {
-    return *projector_.projection();
+    return *projection_;
   }
 
   virtual void GetIteratorStats(std::vector<IteratorStats>* stats) const OVERRIDE {
@@ -455,7 +459,11 @@ class MemRowSet::Iterator : public RowwiseIterator {
   const MvccSnapshot mvcc_snap_;
 
   // Mapping from projected column index back to memrowset column index.
-  RowProjector projector_;
+  // Relies on the MRSRowProjector interface to abstract from the two
+  // different implementations of the RowProjector, which may change
+  // at runtime (using vs. not using code generation).
+  const Schema* const projection_;
+  gscoped_ptr<MRSRowProjector> projector_;
   DeltaProjector delta_projector_;
 
   // Temporary buffer used for RowChangeList projection.

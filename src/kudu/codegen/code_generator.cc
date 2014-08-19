@@ -30,7 +30,19 @@ namespace kudu {
 namespace codegen {
 
 namespace {
+
 GoogleOnceType once = GOOGLE_ONCE_INIT;
+
+// Returns Status::OK() if codegen is not disabled and an error status indicating
+// that codegen has been disabled otherwise.
+Status CheckCodegenEnabled() {
+#ifdef KUDU_DISABLE_CODEGEN
+  return Status::NotSupported("Code generation has been disabled at compile time.");
+#else
+  return Status::OK();
+#endif
+}
+
 } // anonymous namespace
 
 void CodeGenerator::GlobalInit() {
@@ -49,13 +61,15 @@ CodeGenerator::~CodeGenerator() {}
 Status CodeGenerator::CompileRowProjector(const Schema* base,
                                           const Schema* proj,
                                           gscoped_ptr<RowProjector>* out) {
+  RETURN_NOT_OK(CheckCodegenEnabled());
+
   // Generate a module builder
   ModuleBuilder mbuilder;
   RETURN_NOT_OK(mbuilder.Init());
 
-
   // Load new functions into module by creating the row projector
-  gscoped_ptr<RowProjector> ret(new RowProjector(base, proj, &mbuilder));
+  gscoped_ptr<RowProjector> ret;
+  RETURN_NOT_OK(RowProjector::Create(base, proj, &mbuilder, &ret));
 
   // Compile and get execution engine
   gscoped_ptr<ExecutionEngine> ee;

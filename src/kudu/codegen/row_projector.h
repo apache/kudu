@@ -4,7 +4,9 @@
 #define KUDU_CODEGEN_ROW_PROJECTOR_H
 
 #include <iosfwd>
+#include <vector>
 
+#include "kudu/common/row.h"
 #include "kudu/common/rowblock.h"
 #include "kudu/common/schema.h"
 #include "kudu/gutil/gscoped_ptr.h"
@@ -27,7 +29,7 @@ class ModuleBuilder;
 
 // This projector behaves the almost the same way as a tablet/RowProjector except that
 // it only supports certain row types, and expects a regular Arena. Furthermore,
-// the Reset() and Init() public methods are unsupported.
+// the Reset() public method is unsupported.
 //
 // See documentation for RowProjector. Any differences in the API will be explained
 // in this class.
@@ -41,29 +43,22 @@ class ModuleBuilder;
 // TODO: remove the above paragraph when TakeEngine() method is removed.
 class RowProjector {
  public:
-  // Requires that all parameters remain valid for the lifetime of this
-  // object, except the builder, which is only needed for the duration
-  // of the constructor.
+  typedef kudu::RowProjector::ProjectionIdxMapping ProjectionIdxMapping;
+  // Requires that both schemas remain valid for the lifetime of this
+  // object.
   //
-  // Constructor uses the provided builder to build the functions. It
+  // Factory uses the provided builder to build the functions. It
   // does not generate any code, make any optimizations, or finalize
   // the current object. The builder's Compile() method should be called
   // before any of its functions are used.
-  RowProjector(const Schema* base_schema, const Schema* projection,
-               ModuleBuilder* builder);
+  //
+  // Upon success, writes the output to the parameter pointer.
+  static Status Create(const Schema* base_schema, const Schema* projection,
+                       ModuleBuilder* builder, gscoped_ptr<RowProjector>* out);
   ~RowProjector();
 
-  template<class ContiguousRowType>
-  Status ProjectRowForRead(const ContiguousRowType& src_row,
-                           RowBlockRow* dst_row,
-                           Arena* dst_arena) const {
-    DCHECK_SCHEMA_EQ(*base_schema_, *src_row.schema());
-    DCHECK_SCHEMA_EQ(*projection_, *dst_row->schema());
-    DCHECK(read_f_ != NULL)
-      << "Promise to compile read function not fullfilled by ModuleBuilder";
-    read_f_(src_row.row_data(), dst_row, dst_arena);
-    return Status::OK(); // TODO use acutal error checking
-  }
+  // Nop method for interface compatibility with kudu::RowProjector.
+  Status Init() { return Status::OK(); }
 
   // Takes ownership of execution engine. This is only a temporary
   // method employed to maintain the engine's lifetime exactly
@@ -72,27 +67,49 @@ class RowProjector {
   // TODO: RowProjector should not be aware of the execution engine.
   void TakeEngine(gscoped_ptr<llvm::ExecutionEngine> engine);
 
-  // Warning: the projection schema should have write-defaults for columns
-  // not present in the base. There was no check for default write
-  // columns during this class' initialization. Calling this method without
-  // specified defaults yields undefined behavior.
+  template<class ContiguousRowType>
+  Status ProjectRowForRead(const ContiguousRowType& src_row,
+                           RowBlockRow* dst_row,
+                           Arena* dst_arena) const {
+    DCHECK_SCHEMA_EQ(*base_schema(), *src_row.schema());
+    DCHECK_SCHEMA_EQ(*projection(), *dst_row->schema());
+    DCHECK(read_f_ != NULL)
+      << "Promise to compile read function not fullfilled by ModuleBuilder";
+    read_f_(src_row.row_data(), dst_row, dst_arena);
+    return Status::OK(); // TODO use acutal error checking
+  }
+
+  // Warning: the projection schema should have write-defaults defined
+  // if it has default columns. There was no check for default write
+  // columns during this class' initialization.
   template<class ContiguousRowType>
   Status ProjectRowForWrite(const ContiguousRowType& src_row,
                             RowBlockRow* dst_row,
                             Arena* dst_arena) const {
-    DCHECK_SCHEMA_EQ(*base_schema_, *src_row.schema());
-    DCHECK_SCHEMA_EQ(*projection_, *dst_row->schema());
+    DCHECK_SCHEMA_EQ(*base_schema(), *src_row.schema());
+    DCHECK_SCHEMA_EQ(*projection(), *dst_row->schema());
     DCHECK(write_f_ != NULL)
       << "Promise to compile write function not fullfilled by ModuleBuilder";
     write_f_(src_row.row_data(), dst_row, dst_arena);
     return Status::OK(); // TODO use acutal error checking
   }
 
-  bool is_identity() const { return is_identity_; }
-  const Schema* projection() const { return projection_; }
-  const Schema* base_schema() const { return base_schema_; }
+  const vector<ProjectionIdxMapping>& base_cols_mapping() const {
+    return projector_.base_cols_mapping();
+  }
+  const vector<ProjectionIdxMapping>& adapter_cols_mapping() const {
+    return projector_.adapter_cols_mapping();
+  }
+  const vector<size_t>& projection_defaults() const {
+    return projector_.projection_defaults();
+  }
+  bool is_identity() const { return projector_.is_identity(); }
+  const Schema* projection() const { return projector_.projection(); }
+  const Schema* base_schema() const { return projector_.base_schema(); }
 
  private:
+  RowProjector(const Schema* base_schema, const Schema* projection);
+
   gscoped_ptr<llvm::ExecutionEngine> engine_;
 
   // Initially set to null, the function pointers are initialized once
@@ -101,9 +118,7 @@ class RowProjector {
   ProjectionFunction read_f_;
   ProjectionFunction write_f_;
 
-  const Schema* const base_schema_;
-  const Schema* const projection_;
-  const bool is_identity_;
+  kudu::RowProjector projector_;
 
   DISALLOW_COPY_AND_ASSIGN(RowProjector);
 };
