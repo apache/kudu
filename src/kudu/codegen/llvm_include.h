@@ -14,7 +14,13 @@
 
 // If LLVM was built with clang, then it assumes certain compiler runtime
 // libraries area available to it when they are not under a gcc build.
-// We need to manually change some #defines in case the compiler is not clang
+// We need to manually change some #defines in case the compiler is not clang.
+// We retrieve the definitions once in llvm-config.h, then activate the header
+// guard. We undefine the problematic macros.
+//
+// This addresses the following bug:
+// http://llvm.org/bugs/show_bug.cgi?id=18566
+// NOTE: this should be fixed in LLVM 3.5.
 #ifndef __clang__
 #include <llvm/Config/llvm-config.h>
 #undef HAVE_SANITIZER_MSAN_INTERFACE_H
