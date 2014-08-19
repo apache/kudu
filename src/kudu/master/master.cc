@@ -16,12 +16,14 @@
 #include "kudu/master/master-path-handlers.h"
 #include "kudu/master/sys_tables.h"
 #include "kudu/master/ts_manager.h"
+#include "kudu/tserver/tablet_service.h"
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/status.h"
 
 using std::vector;
 using kudu::rpc::ServiceIf;
+using kudu::tserver::ConsensusServiceImpl;
 
 namespace kudu {
 namespace master {
@@ -62,8 +64,11 @@ Status Master::Start() {
   CHECK_EQ(kInitialized, state_);
 
   gscoped_ptr<ServiceIf> impl(new MasterServiceImpl(this));
+  gscoped_ptr<ServiceIf> consensus_service(new ConsensusServiceImpl(metric_context(),
+                                                                    catalog_manager_.get()));
 
   RETURN_NOT_OK(ServerBase::RegisterService(impl.Pass()));
+  RETURN_NOT_OK(ServerBase::RegisterService(consensus_service.Pass()));
   RETURN_NOT_OK(ServerBase::Start());
 
   state_ = kRunning;

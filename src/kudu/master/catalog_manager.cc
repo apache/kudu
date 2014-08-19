@@ -81,6 +81,7 @@ using rpc::RpcContext;
 using std::string;
 using std::vector;
 using strings::Substitute;
+using tablet::TabletPeer;
 using tserver::TabletServerErrorPB;
 
 ////////////////////////////////////////////////////////////
@@ -1075,6 +1076,25 @@ Status CatalogManager::HandleReportedTablet(TSDescriptor* ts_desc,
     }
   }
 
+  return Status::OK();
+}
+
+Status CatalogManager::GetTabletPeer(const string& tablet_id,
+                                     scoped_refptr<TabletPeer>* tablet_peer) const {
+  // Note: CatalogManager has only two tables, 'sys_tables' and
+  // 'sys_tablets'; both have only one tablet. As a result, this
+  // method is implemented as a simple if/else.
+  boost::shared_lock<LockType> l(lock_);
+  CHECK(sys_tables_.get() != NULL) << "sys_tables_ must be initialized!";
+  CHECK(sys_tablets_.get() != NULL) << "sys_tablets_ must be initialized!";
+  if (sys_tables_->tablet_id() == tablet_id) {
+    *tablet_peer = sys_tables_->tablet_peer();
+  } else if (sys_tablets_->tablet_id() == tablet_id) {
+    *tablet_peer = sys_tablets_->tablet_peer();
+  } else {
+    return Status::NotFound(Substitute("no SysTable exists with tablet_id $0 in CatalogManager",
+                                       tablet_id));
+  }
   return Status::OK();
 }
 

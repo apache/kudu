@@ -77,8 +77,18 @@ class SysTable {
   scoped_refptr<tablet::TabletPeer> tablet_peer_;
 
  private:
+  friend class CatalogManager;
+
   Status SetupTablet(const scoped_refptr<metadata::TabletMetadata>& metadata,
                      const metadata::QuorumPeerPB& quorum_peer);
+
+  const scoped_refptr<tablet::TabletPeer>& tablet_peer() const {
+    return tablet_peer_;
+  }
+
+  std::string tablet_id() const {
+    return tablet_peer_->tablet_id();
+  }
 
   Master* master_;
 };

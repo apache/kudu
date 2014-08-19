@@ -33,6 +33,7 @@ target_link_libraries(master
   krpc
   gutil
   kudu_util
+  tserver
   tserver_service_proto
   master_proto
   rpc_header_proto)
