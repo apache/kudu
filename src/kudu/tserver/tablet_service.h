@@ -7,7 +7,6 @@
 
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/tserver/tserver_service.service.h"
-#include "kudu/tserver/tablet_peer_lookup.h"
 #include "kudu/consensus/consensus.service.h"
 
 namespace kudu {
@@ -25,6 +24,7 @@ namespace tserver {
 
 class RemoteBootstrapServiceIf;
 class TabletServer;
+class TabletPeerLookupIf;
 
 class TabletServiceImpl : public TabletServerServiceIf {
  public:
@@ -98,19 +98,23 @@ class TabletServiceImpl : public TabletServerServiceIf {
 
 class ConsensusServiceImpl : public consensus::ConsensusServiceIf {
  public:
-  explicit ConsensusServiceImpl(const MetricContext& metric_context,
-                                TabletPeerLookupIf* tablet_manager_);
-  virtual void ChangeConfig(const kudu::consensus::ChangeConfigRequestPB* req,
-                            kudu::consensus::ChangeConfigResponsePB* resp,
+  ConsensusServiceImpl(const MetricContext& metric_context,
+                       TabletPeerLookupIf* tablet_manager_);
+
+  virtual ~ConsensusServiceImpl();
+
+  virtual void ChangeConfig(const consensus::ChangeConfigRequestPB* req,
+                            consensus::ChangeConfigResponsePB* resp,
                             rpc::RpcContext* context) OVERRIDE;
 
-  virtual void UpdateConsensus(const kudu::consensus::ConsensusRequestPB *req,
-                               kudu::consensus::ConsensusResponsePB *resp,
-                               ::kudu::rpc::RpcContext *context) OVERRIDE;
+  virtual void UpdateConsensus(const consensus::ConsensusRequestPB *req,
+                               consensus::ConsensusResponsePB *resp,
+                               rpc::RpcContext *context) OVERRIDE;
 
-  virtual void RequestConsensusVote(const kudu::consensus::VoteRequestPB* req,
-                                    kudu::consensus::VoteResponsePB* resp,
-                                    ::kudu::rpc::RpcContext* context) OVERRIDE;
+  virtual void RequestConsensusVote(const consensus::VoteRequestPB* req,
+                                    consensus::VoteResponsePB* resp,
+                                    rpc::RpcContext* context) OVERRIDE;
+
 
  private:
   TabletPeerLookupIf* tablet_manager_;

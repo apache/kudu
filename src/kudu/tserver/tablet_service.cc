@@ -378,6 +378,9 @@ ConsensusServiceImpl::ConsensusServiceImpl(const MetricContext& metric_context,
     tablet_manager_(tablet_manager) {
 }
 
+ConsensusServiceImpl::~ConsensusServiceImpl() {
+}
+
 void ConsensusServiceImpl::ChangeConfig(const consensus::ChangeConfigRequestPB* req,
                                         ChangeConfigResponsePB* resp,
                                         rpc::RpcContext* context) {
@@ -405,8 +408,8 @@ void ConsensusServiceImpl::ChangeConfig(const consensus::ChangeConfigRequestPB* 
 
 
 void ConsensusServiceImpl::UpdateConsensus(const ConsensusRequestPB* req,
-                                        ConsensusResponsePB* resp,
-                                        rpc::RpcContext* context) {
+                                           ConsensusResponsePB* resp,
+                                           rpc::RpcContext* context) {
   DVLOG(3) << "Received Consensus Update RPC: " << req->DebugString();
 
   scoped_refptr<TabletPeer> tablet_peer;
@@ -435,8 +438,8 @@ void ConsensusServiceImpl::UpdateConsensus(const ConsensusRequestPB* req,
 }
 
 void ConsensusServiceImpl::RequestConsensusVote(const VoteRequestPB* req,
-                                             VoteResponsePB* resp,
-                                             rpc::RpcContext* context) {
+                                                VoteResponsePB* resp,
+                                                rpc::RpcContext* context) {
   DVLOG(3) << "Received Consensus Request Vote RPC: " << req->DebugString();
 
   scoped_refptr<TabletPeer> tablet_peer;
