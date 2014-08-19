@@ -51,7 +51,7 @@ class TestCompaction : public KuduRowSetTest {
     CHECK_OK(builder.AddKeyColumn("key", STRING));
     CHECK_OK(builder.AddColumn("val", UINT32));
     CHECK_OK(builder.AddNullableColumn("nullable_val", UINT32));
-    return builder.Build();
+    return builder.BuildWithoutIds();
   }
 
   // Insert n_rows rows of data.

@@ -327,6 +327,10 @@ LockManager::LockStatus LockManager::Lock(const Slice& key,
     // we opt to perform more fine grained locking, possibly letting transactions
     // release a portion of the locks they no longer need, this no longer is OK.
     if (ANNOTATE_UNPROTECTED_READ((*entry)->holder_) == tx) {
+      // TODO: this is likely to be problematic even today: if you issue two
+      // UPDATEs for the same row in the same transaction, we can get:
+      // "deltamemstore.cc:74] Check failed: !mutation.exists() Already have an entry ..."
+      LOG(WARNING) << "Double-lock for key " << key.ToDebugString();
       return LOCK_ALREADY_ACQUIRED;
     }
 

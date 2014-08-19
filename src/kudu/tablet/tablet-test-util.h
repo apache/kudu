@@ -30,7 +30,8 @@ using std::vector;
 class KuduTabletTest : public KuduTest {
  public:
   explicit KuduTabletTest(const Schema& schema)
-    : schema_(schema) {
+  : schema_(schema.CopyWithColumnIds()),
+    client_schema_(schema) {
   }
 
   virtual void SetUp() OVERRIDE {
@@ -55,6 +56,10 @@ class KuduTabletTest : public KuduTest {
     return schema_;
   }
 
+  const Schema &client_schema() const {
+    return client_schema_;
+  }
+
   server::Clock* clock() {
     return harness_->clock();
   }
@@ -77,8 +82,13 @@ class KuduTabletTest : public KuduTest {
     return harness_->tablet();
   }
 
+  TabletHarness* harness() {
+    return harness_.get();
+  }
+
  protected:
   const Schema schema_;
+  const Schema client_schema_;
 
   gscoped_ptr<TabletHarness> harness_;
 };
@@ -102,12 +112,6 @@ class KuduRowSetTest : public KuduTabletTest {
  protected:
   shared_ptr<metadata::RowSetMetadata> rowset_meta_;
 };
-
-// Helper to get the last mutation result on the transaction context.
-static inline const OperationResultPB& last_mutation(const WriteTransactionState &tx_state) {
-  CHECK_GE(tx_state.row_ops().size(), 1);
-  return *CHECK_NOTNULL(tx_state.row_ops().back()->result.get());
-}
 
 static inline Status IterateToStringList(RowwiseIterator *iter,
                                          vector<string> *out,
@@ -173,7 +177,7 @@ static inline void VerifySnapshotsHaveSameResult(Tablet* tablet,
     for (int i = 0; i < expected_rows[idx]->size(); i++) {
       DVLOG(1) << "Got from DRS: " << collector[i];
       DVLOG(1) << "Expected: " << (*expected_rows[idx])[i];
-      ASSERT_EQ(collector[i], (*expected_rows[idx])[i]);
+      ASSERT_EQ((*expected_rows[idx])[i], collector[i]);
     }
     idx++;
   }

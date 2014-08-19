@@ -32,7 +32,7 @@ class CompositePushdownTest : public KuduTabletTest {
   }
 
   void FillTestTablet() {
-    RowBuilder rb(schema_);
+    RowBuilder rb(client_schema_);
 
     uint32_t nrows = 10 * 12 * 28;
     int i = 0;
@@ -61,7 +61,7 @@ class CompositePushdownTest : public KuduTabletTest {
     SCOPED_TRACE(descr);
 
     gscoped_ptr<RowwiseIterator> iter;
-    ASSERT_STATUS_OK(tablet()->NewRowIterator(schema_, &iter));
+    ASSERT_STATUS_OK(tablet()->NewRowIterator(client_schema_, &iter));
     ASSERT_STATUS_OK(iter->Init(spec));
     ASSERT_TRUE(spec->predicates().empty()) << "Should have accepted all predicates";
     LOG_TIMING(INFO, descr) {

@@ -91,10 +91,10 @@ class RemoteBootstrapTest : public KuduTabletTest {
     for (uint32_t i = 0; i < 1000; i++) {
       WriteRequestPB req;
       req.set_tablet_id(tablet_peer_->tablet_id());
-      ASSERT_OK(SchemaToPB(schema_, req.mutable_schema()));
+      ASSERT_OK(SchemaToPB(client_schema_, req.mutable_schema()));
       RowOperationsPB* data = req.mutable_row_operations();
       RowOperationsPBEncoder enc(data);
-      KuduPartialRow row(&schema_);
+      KuduPartialRow row(&client_schema_);
 
       string key = Substitute("key$0", i);
       ASSERT_OK(row.SetString(0, key));
@@ -110,6 +110,7 @@ class RemoteBootstrapTest : public KuduTabletTest {
           new tablet::LatchTransactionCompletionCallback<WriteResponsePB>(&latch, &resp)).Pass());
       ASSERT_OK(tablet_peer_->SubmitWrite(state));
       latch.Wait();
+      ASSERT_FALSE(resp.has_error()) << "Request failed: " << resp.error().ShortDebugString();
       ASSERT_EQ(0, resp.per_row_errors_size()) << "Insert error: " << resp.ShortDebugString();
     }
     ASSERT_OK(tablet()->Flush());

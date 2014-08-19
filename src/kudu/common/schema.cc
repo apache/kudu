@@ -168,6 +168,20 @@ Status Schema::CreatePartialSchema(const vector<size_t>& col_indexes,
   return Status::OK();
 }
 
+Schema Schema::CopyWithColumnIds() const {
+  CHECK(!has_column_ids());
+  vector<size_t> ids;
+  for (int i = 0; i < num_columns(); i++) {
+    ids.push_back(i);
+  }
+  return Schema(cols_, ids, num_key_columns_);
+}
+
+Schema Schema::CopyWithoutColumnIds() const {
+  CHECK(has_column_ids());
+  return Schema(cols_, num_key_columns_);
+}
+
 Status Schema::VerifyProjectionCompatibility(const Schema& projection) const {
   DCHECK(has_column_ids()) "The server schema must have IDs";
 

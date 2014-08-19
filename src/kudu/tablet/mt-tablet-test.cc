@@ -8,6 +8,7 @@
 
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/tablet/local_tablet_writer.h"
 #include "kudu/tablet/tablet-test-base.h"
 #include "kudu/util/countdown_latch.h"
 #include "kudu/util/test_graph.h"
@@ -39,6 +40,7 @@ class MultiThreadedTabletTest : public TabletTestBase<SETUP> {
   // letting us refer to the members otherwise.
   typedef TabletTestBase<SETUP> superclass;
   using superclass::schema_;
+  using superclass::client_schema_;
   using superclass::tablet;
   using superclass::setup_;
  public:
@@ -76,21 +78,21 @@ class MultiThreadedTabletTest : public TabletTestBase<SETUP> {
 
     shared_ptr<TimeSeries> updates = ts_collector_.GetTimeSeries("updated");
 
-    // TODO: move the update code into the SETUP class
+    LocalTabletWriter writer(this->tablet().get(), &this->client_schema_);
 
     Arena tmp_arena(1024, 1024);
     RowBlock block(schema_, 1, &tmp_arena);
-    RowBlockRow rb_row = block.row(0);
     faststring update_buf;
 
     uint64_t updates_since_last_report = 0;
     int col_idx = schema.num_key_columns() == 1 ? 2 : 3;
     LOG(INFO) << "Update thread using schema: " << schema.ToString();
-    RowBuilder rb(schema.CreateKeyProjection());
+
+    KuduPartialRow row(&client_schema_);
 
     while (running_insert_count_.count() > 0) {
       gscoped_ptr<RowwiseIterator> iter;
-      CHECK_OK(tablet()->NewRowIterator(schema_, &iter));
+      CHECK_OK(tablet()->NewRowIterator(client_schema_, &iter));
       CHECK_OK(iter->Init(NULL));
 
       while (iter->HasNext() && running_insert_count_.count() > 0) {
@@ -104,19 +106,24 @@ class MultiThreadedTabletTest : public TabletTestBase<SETUP> {
           continue;
         }
 
-        rb.Reset();
-        // Rebuild the key by extracting the cells from the row
-        setup_.BuildRowKeyFromExistingRow(&rb, rb_row);
+
+        RowBlockRow rb_row = block.row(0);
         if (rand() % 10 == 7) {
-          // Increment the "update count"
-          uint32_t old_val = *schema.ExtractColumnFromRow<UINT32>(rb_row, col_idx);
-          // Issue an update
-          uint32_t new_val = old_val + 1;
-          update_buf.clear();
-          RowChangeListEncoder(&schema_, &update_buf).AddColumnUpdate(col_idx, &new_val);
-          WriteTransactionState dummy;
-          CHECK_OK(tablet()->MutateRowForTesting(&dummy, rb.row(), schema_,
-                                                RowChangeList(update_buf)));
+          // Increment the "val"
+          const uint32_t *old_val = schema.ExtractColumnFromRow<UINT32>(rb_row, col_idx);
+          // Issue an update. In the NullableValue setup, many of the rows start with
+          // NULL here, so we have to check for it.
+          uint32_t new_val;
+          if (old_val != NULL) {
+            new_val = *old_val + 1;
+          } else {
+            new_val = 0;
+          }
+
+          // Rebuild the key by extracting the cells from the row
+          setup_.BuildRowKeyFromExistingRow(&row, rb_row);
+          CHECK_OK(row.SetUInt32(col_idx, new_val));
+          CHECK_OK(writer.Update(row));
 
           if (++updates_since_last_report >= 10) {
             updates->AddValue(updates_since_last_report);
@@ -153,7 +160,7 @@ class MultiThreadedTabletTest : public TabletTestBase<SETUP> {
 
     while (running_insert_count_.count() > 0) {
       gscoped_ptr<RowwiseIterator> iter;
-      CHECK_OK(tablet()->NewRowIterator(schema_, &iter));
+      CHECK_OK(tablet()->NewRowIterator(client_schema_, &iter));
       CHECK_OK(iter->Init(NULL));
 
       for (int i = 0; i < max_iters && iter->HasNext(); i++) {
@@ -261,11 +268,12 @@ class MultiThreadedTabletTest : public TabletTestBase<SETUP> {
   // with a different value.
   void DeleteAndReinsertCycleThread(int tid) {
     uint32_t iteration = 0;
+    LocalTabletWriter writer(this->tablet().get(), &this->client_schema_);
+
     while (running_insert_count_.count() > 0) {
       for (int i = 0; i < 100; i++) {
-        this->InsertTestRows(tid, 1, iteration++);
-        WriteTransactionState tx_state;
-        CHECK_OK(this->DeleteTestRow(&tx_state, tid));
+        CHECK_OK(this->InsertTestRow(&writer, tid, iteration++));
+        CHECK_OK(this->DeleteTestRow(&writer, tid));
       }
     }
   }
@@ -276,11 +284,10 @@ class MultiThreadedTabletTest : public TabletTestBase<SETUP> {
   // succeed in UPDATING a ghost row.
   void StubbornlyUpdateSameRowThread(int tid) {
     uint32_t iteration = 0;
+    LocalTabletWriter writer(this->tablet().get(), &this->client_schema_);
     while (running_insert_count_.count() > 0) {
-      WriteTransactionState tx_state;
       for (int i = 0; i < 100; i++) {
-        tx_state.Reset();
-        Status s = this->UpdateTestRow(&tx_state, tid, iteration++);
+        Status s = this->UpdateTestRow(&writer, tid, iteration++);
         if (!s.ok() && !s.IsNotFound()) {
           // We expect "not found", but not any other errors.
           CHECK_OK(s);

@@ -52,7 +52,7 @@ class TestRowSet : public KuduRowSetTest {
     SchemaBuilder builder;
     CHECK_OK(builder.AddKeyColumn("key", STRING));
     CHECK_OK(builder.AddColumn("val", UINT32));
-    return builder.Build();
+    return builder.BuildWithoutIds();
   }
 
   void BuildRowKey(RowBuilder *rb, int row_idx) {

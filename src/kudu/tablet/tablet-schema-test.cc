@@ -30,7 +30,7 @@ class TestTabletSchema : public KuduTabletTest {
 
   void InsertRows(const Schema& schema, size_t first_key, size_t nrows) {
     for (size_t i = first_key; i < nrows; ++i) {
-      InsertRow(schema, i);
+      InsertRow(client_schema_, i);
 
       // Half of the rows will be on disk
       // and the other half in the MemRowSet
@@ -140,7 +140,7 @@ TEST_F(TestTabletSchema, TestWrite) {
 
   // Insert with base/old schema
   size_t s2Key = kNumBaseRows + 1;
-  InsertRow(schema_, s2Key);
+  InsertRow(client_schema_, s2Key);
 
   // Verify the default value
   std::vector<std::pair<string, string> > keys;
@@ -156,7 +156,7 @@ TEST_F(TestTabletSchema, TestWrite) {
   VerifyTabletRows(s2, keys);
 
   // Re-Insert with base/old schema
-  InsertRow(schema_, s2Key);
+  InsertRow(client_schema_, s2Key);
   VerifyTabletRows(s2, keys);
 
   // Try compact all (different schemas)
@@ -168,9 +168,9 @@ TEST_F(TestTabletSchema, TestWrite) {
 TEST_F(TestTabletSchema, TestReInsert) {
   // Insert some rows with the base schema
   size_t s1Key = 0;
-  InsertRow(schema_, s1Key);
-  DeleteRow(schema_, s1Key);
-  InsertRow(schema_, s1Key);
+  InsertRow(client_schema_, s1Key);
+  DeleteRow(client_schema_, s1Key);
+  InsertRow(client_schema_, s1Key);
 
   // Add one column with a default value
   const uint32_t c2_write_default = 5;
@@ -183,7 +183,7 @@ TEST_F(TestTabletSchema, TestReInsert) {
 
   // Insert with base/old schema
   size_t s2Key = 1;
-  InsertRow(schema_, s2Key);
+  InsertRow(client_schema_, s2Key);
 
   // Verify the default value
   std::vector<std::pair<string, string> > keys;
@@ -203,7 +203,7 @@ TEST_F(TestTabletSchema, TestRenameProjection) {
   std::vector<std::pair<string, string> > keys;
 
   // Insert with the base schema
-  InsertRow(schema_, 1);
+  InsertRow(client_schema_, 1);
 
   // Switch schema to s2
   SchemaBuilder builder(tablet()->metadata()->schema());
@@ -239,12 +239,12 @@ TEST_F(TestTabletSchema, TestDeleteAndReAddColumn) {
   std::vector<std::pair<string, string> > keys;
 
   // Insert and Mutate with the base schema
-  InsertRow(schema_, 1);
-  MutateRow(schema_, /* key= */ 1, /* col_idx= */ 1, /* new_val= */ 2);
+  InsertRow(client_schema_, 1);
+  MutateRow(client_schema_, /* key= */ 1, /* col_idx= */ 1, /* new_val= */ 2);
 
   keys.clear();
   keys.push_back(std::pair<string, string>("key=1", "c1=2"));
-  VerifyTabletRows(schema_, keys);
+  VerifyTabletRows(client_schema_, keys);
 
   // Switch schema to s2
   SchemaBuilder builder(tablet()->metadata()->schema());

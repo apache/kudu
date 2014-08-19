@@ -61,7 +61,7 @@ class TestMajorDeltaCompaction : public KuduRowSetTest {
   // expected_state_.
   void WriteTestTablet(int nrows) {
     WriteTransactionState tx_state;
-    RowBuilder rb(schema_);
+    RowBuilder rb(client_schema_);
 
     for (int i = 0; i < nrows; i++) {
       ExpectedRow row;
@@ -89,8 +89,8 @@ class TestMajorDeltaCompaction : public KuduRowSetTest {
   void UpdateRows(int nrows, bool even) {
     WriteTransactionState tx_state;
     faststring update_buf;
-    RowChangeListEncoder update(&schema_, &update_buf);
-    RowBuilder rb(schema_.CreateKeyProjection());
+    RowChangeListEncoder update(&client_schema_, &update_buf);
+    RowBuilder rb(client_schema_.CreateKeyProjection());
     for (int idx = 0; idx < nrows; idx++) {
       ExpectedRow* row = &expected_state_[idx];
       if ((idx % 2 == 0) == even) {
@@ -111,7 +111,7 @@ class TestMajorDeltaCompaction : public KuduRowSetTest {
         update.AddColumnUpdate(3, &row->val3);
         update.AddColumnUpdate(4, &val4_slice);
         ASSERT_STATUS_OK(tablet()->MutateRowForTesting(
-            &tx_state, rb.row(), schema_, RowChangeList(update_buf)));
+            &tx_state, rb.row(), client_schema_, RowChangeList(update_buf)));
       }
     }
   }
@@ -120,7 +120,7 @@ class TestMajorDeltaCompaction : public KuduRowSetTest {
   // expected_state_.
   void VerifyData() {
     gscoped_ptr<RowwiseIterator> row_iter;
-    ASSERT_STATUS_OK(tablet()->NewRowIterator(schema_, &row_iter));
+    ASSERT_STATUS_OK(tablet()->NewRowIterator(client_schema_, &row_iter));
     ASSERT_STATUS_OK(row_iter->Init(NULL));
     vector<string> results;
     ASSERT_STATUS_OK(IterateToStringList(row_iter.get(), &results));

@@ -41,7 +41,7 @@ class TabletPushdownTest : public KuduTabletTest,
   }
 
   void FillTestTablet() {
-    RowBuilder rb(schema_);
+    RowBuilder rb(client_schema_);
 
     nrows_ = 2100;
     if (AllowSlowTests()) {
@@ -73,7 +73,7 @@ class TabletPushdownTest : public KuduTabletTest,
   // expected rows are returned.
   void TestScanYieldsExpectedResults(ScanSpec spec) {
     gscoped_ptr<RowwiseIterator> iter;
-    ASSERT_STATUS_OK(tablet()->NewRowIterator(schema_, &iter));
+    ASSERT_STATUS_OK(tablet()->NewRowIterator(client_schema_, &iter));
     ASSERT_STATUS_OK(iter->Init(&spec));
     ASSERT_TRUE(spec.predicates().empty()) << "Should have accepted all predicates";
 
