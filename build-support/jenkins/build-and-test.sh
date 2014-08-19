@@ -102,6 +102,18 @@ THIRDPARTY_BIN=$(pwd)/thirdparty/installed/bin
 export PATH=$THIRDPARTY_BIN:$PATH
 export PPROF_PATH=$(pwd)/thirdparty/installed/bin/pprof
 
+# Temporary workaround for issue with codegen code from 416887379205a64ba20ef33ce7581d2c15847368:
+#
+# This commit broke the benchmarks build. In particular, the issue is
+# that, on machines with an old gcc, we build thirdparty LLVM with
+# clang. In that case, it picks up "HAVE_SANITIZER_MSAN_INTERFACE_H"
+# in llvm-config.h. Then when we try to compile _our_ code with gcc,
+# it thinks msan should be available, but in fact is not.
+#
+# If we always compile our code with clang, then we shouldn't have a mismatch.
+export CC=$THIRDPARTY_BIN/clang
+export CXX=$THIRDPARTY_BIN/clang++
+
 # Configure the build
 if [ "$BUILD_TYPE" = "ASAN" ]; then
   # NB: passing just "clang++" below causes an infinite loop, see
