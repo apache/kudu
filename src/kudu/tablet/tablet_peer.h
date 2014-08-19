@@ -80,6 +80,10 @@ class TabletPeer : public RefCountedThreadSafe<TabletPeer>,
   // Check that the tablet is in a RUNNING state.
   Status CheckRunning() const;
 
+  // Wait until the tablet is in a RUNNING state or if there's a timeout.
+  // TODO have a way to wait for any state?
+  Status WaitUntilRunning(const MonoDelta& delta);
+
   // Submits a write to a tablet and executes it asynchronously.
   // The caller is expected to build and pass a TrasactionContext that points
   // to the RPC WriteRequest, WriteResponse, RpcContext and to the tablet's
@@ -247,6 +251,9 @@ class TabletPeer : public RefCountedThreadSafe<TabletPeer>,
   // TODO move this to TabletServer.
   gscoped_ptr<TaskExecutor> log_gc_executor_;
   CountDownLatch log_gc_shutdown_latch_;
+
+  // Latch that goes down to 0 when the tablet is in RUNNING state.
+  CountDownLatch tablet_running_latch_;
 
   scoped_refptr<server::Clock> clock_;
 

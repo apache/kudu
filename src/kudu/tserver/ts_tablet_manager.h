@@ -220,8 +220,8 @@ class TSTabletManager : public tserver::TabletPeerLookupIf {
 
   TSTabletManagerStatePB state_;
 
-  // Latch allowing to wait for the bootstraps to complete.
-  gscoped_ptr<ThreadPool> bootstrap_pool_;
+  // Thread pool used to open the tablets async, whether bootstrap is required or not.
+  gscoped_ptr<ThreadPool> open_tablet_pool_;
 
   // Executors for apply transactions, shared between all tablets.
   gscoped_ptr<TaskExecutor> leader_apply_executor_;

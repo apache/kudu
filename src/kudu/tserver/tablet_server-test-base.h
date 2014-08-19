@@ -121,9 +121,18 @@ class TabletServerTest : public KuduTest {
     ASSERT_STATUS_OK(mini_server_->AddTestTablet(kTableId, kTabletId, schema_));
     ASSERT_TRUE(mini_server_->server()->tablet_manager()->LookupTablet(kTabletId, &tablet_peer_));
 
+    // Creating a tablet is async, we wait here instead of having to handle errors later.
+    ASSERT_STATUS_OK(WaitForTabletRunning(kTabletId));
+
     // Connect to it.
     ASSERT_NO_FATAL_FAILURE(CreateClientProxies(mini_server_->bound_rpc_addr(),
                                                 &proxy_, &admin_proxy_, &consensus_proxy_));
+  }
+
+  Status WaitForTabletRunning(const char *tablet_id) {
+    scoped_refptr<tablet::TabletPeer> tablet_peer;
+    RETURN_NOT_OK(mini_server_->server()->tablet_manager()->GetTabletPeer(tablet_id, &tablet_peer));
+    return tablet_peer->WaitUntilRunning(MonoDelta::FromMilliseconds(2000));
   }
 
   void UpdateTestRowRemote(int tid,

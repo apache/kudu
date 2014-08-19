@@ -1601,6 +1601,8 @@ TEST_F(TabletServerTest, TestWriteOutOfBounds) {
       tabletId, SchemaBuilder(schema_).Build(),
       mini_server_->CreateLocalQuorum(), NULL));
 
+  ASSERT_STATUS_OK(WaitForTabletRunning(tabletId));
+
   WriteRequestPB req;
   WriteResponsePB resp;
   RpcController controller;

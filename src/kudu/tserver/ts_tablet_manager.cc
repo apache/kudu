@@ -32,7 +32,8 @@
 #include "kudu/util/task_executor.h"
 #include "kudu/util/trace.h"
 
-static const int kNumTabletsToBoostrapSimultaneously = 4;
+DEFINE_int32(num_tablets_to_open_simultaneously, 50,
+    "Number of threads available to open tablets.");
 
 namespace kudu {
 namespace tserver {
@@ -87,9 +88,11 @@ TSTabletManager::TSTabletManager(FsManager* fs_manager,
     state_(MANAGER_INITIALIZING) {
   // TODO base the number of parallel tablet bootstraps on something related
   // to the number of physical devices.
+  // Right now it's set to be the same as the number of RPC handlers so that we
+  // can process as many of them in parallel as we can.
   CHECK_OK(ThreadPoolBuilder("tablet-bootstrap")
-      .set_max_threads(kNumTabletsToBoostrapSimultaneously)
-      .Build(&bootstrap_pool_));
+      .set_max_threads(FLAGS_num_tablets_to_open_simultaneously)
+      .Build(&open_tablet_pool_));
   // TODO currently these are initialized to default values: no
   // minimum number of threads, 500 ms idle timeout, and maximum
   // number of threads equal to number of CPU cores. Instead, it
@@ -134,9 +137,9 @@ Status TSTabletManager::Init() {
                        boost::bind(&TSTabletManager::MarkTabletDirty, this, _1)));
     RegisterTablet(meta->oid(), tablet_peer);
 
-    RETURN_NOT_OK(bootstrap_pool_->SubmitFunc(boost::bind(&TSTabletManager::OpenTablet,
-                                                         this,
-                                                         meta)));
+    RETURN_NOT_OK(open_tablet_pool_->SubmitFunc(boost::bind(&TSTabletManager::OpenTablet,
+                                                this,
+                                                meta)));
   }
 
   {
@@ -150,7 +153,7 @@ Status TSTabletManager::Init() {
 Status TSTabletManager::WaitForAllBootstrapsToFinish() {
   CHECK_EQ(state(), MANAGER_RUNNING);
 
-  bootstrap_pool_->Wait();
+  open_tablet_pool_->Wait();
 
   Status s = Status::OK();
 
@@ -243,7 +246,9 @@ Status TSTabletManager::CreateNewTablet(const string& table_id,
                      boost::bind(&TSTabletManager::MarkTabletDirty, this, _1)));
   RegisterTablet(meta->oid(), new_peer);
   // We can run this synchronously since there is nothing to bootstrap.
-  OpenTablet(meta);
+  RETURN_NOT_OK(open_tablet_pool_->SubmitFunc(boost::bind(&TSTabletManager::OpenTablet,
+                                              this,
+                                              meta)));
 
   if (tablet_peer) {
     *tablet_peer = new_peer;
@@ -381,7 +386,7 @@ void TSTabletManager::Shutdown() {
   }
 
   // Shut down the bootstrap pool, so new tablets are registered after this point.
-  bootstrap_pool_->Shutdown();
+  open_tablet_pool_->Shutdown();
 
   // Take a snapshot of the peers list -- that way we don't have to hold
   // on to the lock while shutting them down, which might cause a lock
@@ -425,8 +430,6 @@ void TSTabletManager::RegisterTablet(const std::string& tablet_id,
   if (!InsertIfNotPresent(&tablet_map_, tablet_id, tablet_peer)) {
     LOG(FATAL) << "Unable to register tablet peer " << tablet_id << ": already registered!";
   }
-
-  MarkDirtyUnlocked(tablet_peer.get());
 
   LOG(INFO) << "Registered tablet " << tablet_id;
 }

@@ -76,6 +76,7 @@ TabletPeer::TabletPeer(const scoped_refptr<TabletMetadata>& meta,
     // prepare executor has a single thread as prepare must be done in order
     // of submission
     log_gc_shutdown_latch_(1),
+    tablet_running_latch_(1),
     mark_dirty_clbk_(mark_dirty_clbk),
     config_sem_(1) {
   CHECK_OK(TaskExecutorBuilder("prepare").set_max_threads(1).Build(&prepare_executor_));
@@ -148,6 +149,7 @@ Status TabletPeer::Start(const ConsensusBootstrapInfo& bootstrap_info) {
     boost::lock_guard<simple_spinlock> lock(lock_);
     CHECK_EQ(state_, metadata::CONFIGURING);
     state_ = metadata::RUNNING;
+    tablet_running_latch_.CountDown();
   }
 
   RETURN_NOT_OK(StartLogGCTask());
@@ -225,6 +227,20 @@ Status TabletPeer::CheckRunning() const {
       return Status::ServiceUnavailable(Substitute("The tablet is not in a running state: $0",
                                                    metadata::TabletStatePB_Name(state_)));
     }
+  }
+  return Status::OK();
+}
+
+Status TabletPeer::WaitUntilRunning(const MonoDelta& delta) {
+  {
+    boost::lock_guard<simple_spinlock> lock(lock_);
+    if (state_ == metadata::QUIESCING || state_ == metadata::SHUTDOWN) {
+      return Status::IllegalState("The tablet is already shutting down or shutdown");
+    }
+  }
+  if (!tablet_running_latch_.WaitFor(delta)) {
+    return Status::TimedOut(Substitute("The tablet is not in RUNNING state after waiting: $0",
+                                       metadata::TabletStatePB_Name(state_)));
   }
   return Status::OK();
 }

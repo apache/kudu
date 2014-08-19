@@ -55,12 +55,18 @@ class TsTabletManagerTest : public KuduTest {
                          const std::string& start_key,
                          const std::string& end_key,
                          const Schema& schema,
-                         scoped_refptr<tablet::TabletPeer>* tablet_peer) {
-    return tablet_manager_->CreateNewTablet(tablet_id, tablet_id, start_key, end_key,
-                                            tablet_id,
-                                            SchemaBuilder(schema).Build(),
-                                            quorum_,
-                                            tablet_peer);
+                         scoped_refptr<tablet::TabletPeer>* out_tablet_peer) {
+    scoped_refptr<tablet::TabletPeer> tablet_peer;
+    RETURN_NOT_OK(tablet_manager_->CreateNewTablet(tablet_id, tablet_id, start_key, end_key,
+                                                   tablet_id,
+                                                   SchemaBuilder(schema).Build(),
+                                                   quorum_,
+                                                   &tablet_peer));
+    if (out_tablet_peer) {
+      (*out_tablet_peer) = tablet_peer;
+    }
+
+    return tablet_peer->WaitUntilRunning(MonoDelta::FromMilliseconds(2000));
   }
 
  protected:
@@ -150,11 +156,14 @@ TEST_F(TsTabletManagerTest, TestTabletReports) {
 
   // Create a tablet and do another incremental report - should include the tablet.
   ASSERT_STATUS_OK(CreateNewTablet("tablet-1", "", "", schema_, NULL));
-  tablet_manager_->GenerateIncrementalTabletReport(&report);
-  ASSERT_TRUE(report.is_incremental());
-  ASSERT_EQ(1, report.updated_tablets().size());
+  int updated_tablets = 0;
+  while (updated_tablets != 1) {
+    tablet_manager_->GenerateIncrementalTabletReport(&report);
+    updated_tablets = report.updated_tablets().size();
+    ASSERT_TRUE(report.is_incremental());
+    CheckSequenceNumber(&seqno, report);
+  }
   ASSERT_EQ("tablet-1", report.updated_tablets(0).tablet_id());
-  CheckSequenceNumber(&seqno, report);
 
   // If we don't acknowledge the report, and ask for another incremental report,
   // it should include the tablet again.
@@ -174,11 +183,14 @@ TEST_F(TsTabletManagerTest, TestTabletReports) {
 
   // Create a second tablet, and ensure the incremental report shows it.
   ASSERT_STATUS_OK(CreateNewTablet("tablet-2", "", "", schema_, NULL));
-  tablet_manager_->GenerateIncrementalTabletReport(&report);
-  ASSERT_TRUE(report.is_incremental());
-  ASSERT_EQ(1, report.updated_tablets().size());
+  updated_tablets = 0;
+  while (updated_tablets != 1) {
+    tablet_manager_->GenerateIncrementalTabletReport(&report);
+    updated_tablets = report.updated_tablets().size();
+    ASSERT_TRUE(report.is_incremental());
+    CheckSequenceNumber(&seqno, report);
+  }
   ASSERT_EQ("tablet-2", report.updated_tablets(0).tablet_id());
-  CheckSequenceNumber(&seqno, report);
   tablet_manager_->MarkTabletReportAcknowledged(report);
 
   // Asking for a full tablet report should re-report both tablets
