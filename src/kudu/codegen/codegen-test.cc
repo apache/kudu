@@ -31,8 +31,9 @@ class CodegenTest : public KuduTest {
  public:
   CodegenTest()
     : random_(SeedRandom()),
-      // Set the arena size as small as possible to catch errors during relocation.
-      projections_arena_(kIndirectPerProjection * 2, kIndirectPerProjection * 2) {
+      // Set the arena size as small as possible to catch errors during relocation,
+      // for its initial size and its eventual max size.
+      projections_arena_(16, kIndirectPerProjection * 2) {
     // Create the base schema.
     vector<ColumnSchema> cols = list_of
       (ColumnSchema("key           ", UINT64       ))
@@ -164,9 +165,9 @@ void CodegenTest::ProjectTestRows(RowProjectorType* rp, RowBlock* rb) {
     ConstContiguousRow src = *test_rows_[i];
     RowBlockRow dst = rb->row(i);
     if (READ) {
-      rp->ProjectRowForRead(src, &dst, &projections_arena_);
+      CHECK_OK(rp->ProjectRowForRead(src, &dst, &projections_arena_));
     } else {
-      rp->ProjectRowForWrite(src, &dst, &projections_arena_);
+      CHECK_OK(rp->ProjectRowForWrite(src, &dst, &projections_arena_));
     }
   }
 }

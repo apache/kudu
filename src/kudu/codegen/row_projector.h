@@ -75,8 +75,11 @@ class RowProjector {
     DCHECK_SCHEMA_EQ(*projection(), *dst_row->schema());
     DCHECK(read_f_ != NULL)
       << "Promise to compile read function not fullfilled by ModuleBuilder";
-    read_f_(src_row.row_data(), dst_row, dst_arena);
-    return Status::OK(); // TODO use acutal error checking
+    if (PREDICT_TRUE(read_f_(src_row.row_data(), dst_row, dst_arena))) {
+      return Status::OK();
+    }
+    return Status::IOError("out of memory copying slice during projection. "
+                           "Base schema row: ", base_schema()->DebugRow(src_row));
   }
 
   // Warning: the projection schema should have write-defaults defined
@@ -90,8 +93,11 @@ class RowProjector {
     DCHECK_SCHEMA_EQ(*projection(), *dst_row->schema());
     DCHECK(write_f_ != NULL)
       << "Promise to compile write function not fullfilled by ModuleBuilder";
-    write_f_(src_row.row_data(), dst_row, dst_arena);
-    return Status::OK(); // TODO use acutal error checking
+    if (PREDICT_TRUE(write_f_(src_row.row_data(), dst_row, dst_arena))) {
+      return Status::OK();
+    }
+    return Status::IOError("out of memory copying slice during projection. "
+                           "Base schema row: ", base_schema()->DebugRow(src_row));
   }
 
   const vector<ProjectionIdxMapping>& base_cols_mapping() const {
@@ -114,7 +120,7 @@ class RowProjector {
 
   // Initially set to null, the function pointers are initialized once
   // the functions are jitted.
-  typedef void(*ProjectionFunction)(const uint8_t*, RowBlockRow*, Arena*);
+  typedef bool(*ProjectionFunction)(const uint8_t*, RowBlockRow*, Arena*);
   ProjectionFunction read_f_;
   ProjectionFunction write_f_;
 

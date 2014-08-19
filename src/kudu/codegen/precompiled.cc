@@ -25,23 +25,19 @@
 
 namespace kudu {
 
-static void BasicCopyCell(uint64_t size, uint8_t* src, uint8_t* dst,
+// Returns whether copy was successful (fails iff slice relocation fails,
+// which can only occur if is_string is true)
+static bool BasicCopyCell(uint64_t size, uint8_t* src, uint8_t* dst,
                           bool is_string, Arena* arena) {
   // Relocate indirect data
   if (is_string) {
-    // TODO: there should be some error checking here to make sure that
-    // the relocation was successful. Returning the error value would be
-    // preferrable over bringing in glog code in the middle of
-    // the projection function.
-    if (PREDICT_FALSE(!arena->RelocateSlice(*reinterpret_cast<Slice*>(src),
-                                            reinterpret_cast<Slice*>(dst)))) {
-      abort();
-    }
-    return;
+    return PREDICT_TRUE(arena->RelocateSlice(*reinterpret_cast<Slice*>(src),
+                                             reinterpret_cast<Slice*>(dst)));
   }
 
   // Copy direct data
   memcpy(dst, src, size);
+  return true;
 }
 
 extern "C" {
@@ -59,7 +55,7 @@ extern "C" {
 //       any potential naming conflicts.
 
 
-// declare void @_PrecompiledCopyCellToRowBlock(
+// declare i1 @_PrecompiledCopyCellToRowBlock(
 //   i64 size, i8* src, RowBlockRow* dst, i64 col, i1 is_string, Arena* arena)
 //
 //   Performs the same function as CopyCell, copying size bytes of the
@@ -67,21 +63,25 @@ extern "C" {
 //   to by dst, copying indirect data to the parameter arena if is_string
 //   is true. Will hard crash if insufficient memory is available for
 //   relocation. Copies size bytes directly from the src cell.
-void _PrecompiledCopyCellToRowBlock(uint64_t size, uint8_t* src, RowBlockRow* dst,
+//   Returns whether successful. If not, out-of-memory during relocation of
+//   slices has occured, which can only happen if is_string is true.
+bool _PrecompiledCopyCellToRowBlock(uint64_t size, uint8_t* src, RowBlockRow* dst,
                                     uint64_t col, bool is_string, Arena* arena) {
   uint8_t* dst_cell = dst->mutable_cell_ptr(col);
-  BasicCopyCell(size, src, dst_cell, is_string, arena);
+  return BasicCopyCell(size, src, dst_cell, is_string, arena);
 }
 
-// declare void @_PrecompiledCopyCellToRowBlockNullable(
+// declare i1 @_PrecompiledCopyCellToRowBlockNullable(
 //   i64 size, i8* src, RowBlockRow* dst, i64 col, i1 is_string, Arena* arena,
 //   i8* src_bitmap, i64 bitmap_idx)
 //
 //   Performs the same function as _PrecompiledCopyCellToRowBlock but for nullable
 //   columns. Checks the parameter bitmap at the specified index and updates
 //   The row's bitmap accordingly. Then goes on to copy the cell over if it
-//   is not null
-void _PrecompiledCopyCellToRowBlockNullable(
+//   is not null.
+//   Returns whether successful. If not, out-of-memory during relocation of
+//   slices has occured, which can only happen if is_string is true.
+bool _PrecompiledCopyCellToRowBlockNullable(
   uint64_t size, uint8_t* src, RowBlockRow* dst, uint64_t col, bool is_string,
   Arena* arena, uint8_t* src_bitmap, uint64_t bitmap_idx) {
   // Using this method implies the nullablity of the column.
@@ -89,8 +89,8 @@ void _PrecompiledCopyCellToRowBlockNullable(
   bool is_null = BitmapTest(src_bitmap, bitmap_idx);
   dst->cell(col).set_null(is_null);
   // No more copies necessary if null
-  if (is_null) return;
-  _PrecompiledCopyCellToRowBlock(size, src, dst, col, is_string, arena);
+  if (is_null) return true;
+  return _PrecompiledCopyCellToRowBlock(size, src, dst, col, is_string, arena);
 }
 
 } // extern "C"

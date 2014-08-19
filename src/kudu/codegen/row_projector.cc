@@ -12,6 +12,7 @@
 #include <llvm/ExecutionEngine/ExecutionEngine.h>
 #include <llvm/IR/Argument.h>
 #include <llvm/IR/BasicBlock.h>
+#include <llvm/IR/Constants.h>
 #include <llvm/IR/Function.h>
 #include <llvm/IR/IRBuilder.h>
 #include <llvm/IR/Module.h>
@@ -30,6 +31,7 @@ class LLVMContext;
 using boost::assign::list_of;
 using llvm::Argument;
 using llvm::BasicBlock;
+using llvm::ConstantInt;
 using llvm::ExecutionEngine;
 using llvm::Function;
 using llvm::FunctionType;
@@ -51,8 +53,11 @@ namespace codegen {
 namespace {
 
 // Generates a schema-to-schema projection function of the form:
-// void(int8_t* src, RowBlockRow* row, Arena* arena)
+// bool(int8_t* src, RowBlockRow* row, Arena* arena)
 // Requires src is a contiguous row of the base schema.
+// Returns a boolean indicating success. Failure can only occur if a string
+// relocation fails.
+//
 // Uses CHECKs to make sure projection is well-formed. Use
 // kudu::RowProjector::Init() to return an error status instead.
 template<bool READ>
@@ -73,7 +78,7 @@ llvm::Function* MakeProjection(const string& name,
     (PointerType::getUnqual(mbuilder->GetType("class.kudu::RowBlockRow")))
     (PointerType::getUnqual(mbuilder->GetType("class.kudu::Arena")));
   FunctionType* fty =
-    FunctionType::get(Type::getVoidTy(context), argtypes, false);
+    FunctionType::get(Type::getInt1Ty(context), argtypes, false);
   Function* f = mbuilder->Create(fty, name);
 
   // Get the function's Arguments
@@ -91,27 +96,33 @@ llvm::Function* MakeProjection(const string& name,
   // Project row function in IR (note: values in angle brackets are
   // constants whose values are determined right now, at JIT time).
   //
-  // define void @name(i8* %src, i8* %rbrow, i8* %arena)
+  // define i1 @name(i8* %src, i8* %rbrow, i8* %arena)
   // entry:
   //   %src_bitmap = getelementptr i8* %src, i64 <offset to bitmap>
   //   <for each base column to projection column mapping>
-  //   %src_cell = getelementptr i8* %src, i64 <base offset>
-  //   call void @CopyCellToRowBlock(i64 <type size>, i8* %src_cell,
-  //                                 RowBlockRow* %rbrow, i64 <column index>,
-  //                                 i1 <is string>, Arena* %arena)**
+  //     %src_cell = getelementptr i8* %src, i64 <base offset>
+  //     %result = call i1 @CopyCellToRowBlock(
+  //       i64 <type size>, i8* %src_cell, RowBlockRow* %rbrow,
+  //       i64 <column index>, i1 <is string>, Arena* %arena)**
+  //   %success = and %success, %result***
   //   <end implicit for each>
   //   <for each projection column that needs defaults>
-  //   %src_cell = inttoptr i64 <default value location> to i8*
-  //   call void @CopyCellToRowBlock(i64 <type size>, i8* %src_cell,
-  //                                 RowBlockRow* %rbrow, i64 <column index>,
-  //                                 i1 <is string>, Arena* %arena)
+  //     %src_cell = inttoptr i64 <default value location> to i8*
+  //     %result = call i1 @CopyCellToRowBlock(
+  //       i64 <type size>, i8* %src_cell, RowBlockRow* %rbrow,
+  //       i64 <column index>, i1 <is string>, Arena* %arena)
+  //   %success = and %success, %result***
   //   <end implicit for each>
-  //   ret void
+  //   ret i1 %success
   //
   // **If the column is nullable, then the call is replaced with
-  // call void @CopyCellToRowBlockNullable(
+  // call i1 @CopyCellToRowBlockNullable(
   //   i64 <type size>, i8* %src_cell, RowBlockRow* %rbrow, i64 <column index>,
   //   i1 <is_string>, Arena* %arena, i8* src_bitmap, i64 <bitmap_idx>)
+  // ***Technically, llvm ir does not support mutable registers. Thus,
+  // this is implemented by having "success" be the most recent result
+  // register of the last "and" instruction. The different "success" values
+  // can be differentiated by using a success_update_number.
 
   // Retrieve copy cell to rowblock functions
   Function* copy_cell_not_null =
@@ -124,6 +135,8 @@ llvm::Function* MakeProjection(const string& name,
   builder->SetInsertPoint(BasicBlock::Create(context, "entry", f));
   Value* src_bitmap = builder->CreateConstGEP1_64(src, base_schema.byte_size());
   src_bitmap->setName("src_bitmap");
+  Value* success = builder->getInt1(true);
+  int success_update_number = 0;
 
   // Copy base data
   BOOST_FOREACH(const kudu::RowProjector::ProjectionIdxMapping& pmap,
@@ -139,7 +152,7 @@ llvm::Function* MakeProjection(const string& name,
     Value* src_cell = builder->CreateConstGEP1_64(src, src_offset);
     src_cell->setName(StrCat("src_cell_base_", base_idx));
     Value* col_idx = builder->getInt64(proj_idx);
-    Value* is_string = builder->getInt1(col.type_info()->type() == STRING);
+    ConstantInt* is_string = builder->getInt1(col.type_info()->type() == STRING);
     vector<Value*> args = list_of<Value*>
       (size)(src_cell)(rbrow)(col_idx)(is_string)(arena);
 
@@ -151,8 +164,11 @@ llvm::Function* MakeProjection(const string& name,
       to_call = copy_cell_nullable;
     }
 
-    // Make the call
-    builder->CreateCall(to_call, args);
+    // Make the call and check the return value
+    Value* result = builder->CreateCall(to_call, args);
+    result->setName(StrCat("result_b", base_idx, "_p", proj_idx));
+    success = builder->CreateAnd(success, result);
+    success->setName(StrCat("success", success_update_number++));
   }
 
   // TODO: Copy adapted base data
@@ -177,16 +193,19 @@ llvm::Function* MakeProjection(const string& name,
     Value* size = builder->getInt64(col.type_info()->size());
     Value* src_cell = mbuilder->GetPointerValue(const_cast<void*>(dfl));
     Value* col_idx = builder->getInt64(dfl_idx);
-    Value* is_string = builder->getInt1(col.type_info()->type() == STRING);
+    ConstantInt* is_string = builder->getInt1(col.type_info()->type() == STRING);
 
-    // Make the call
-    builder->CreateCall(copy_cell_not_null, list_of
-                        (size)(src_cell)(rbrow)(col_idx)(is_string)(arena)
-                        .convert_to_container<vector<Value*> >());
+    // Make the call and check the return value
+    vector<Value*> args = list_of
+      (size)(src_cell)(rbrow)(col_idx)(is_string)(arena);
+    Value* result = builder->CreateCall(copy_cell_not_null, args);
+    result->setName(StrCat("result_dfl", dfl_idx));
+    success = builder->CreateAnd(success, result);
+    success->setName(StrCat("success", success_update_number++));
   }
 
   // Return
-  builder->CreateRetVoid();
+  builder->CreateRet(success);
 
   if (FLAGS_codegen_dump_functions) {
     LOG(INFO) << "Dumping " << (READ? "read" : "write") << " projection:";
