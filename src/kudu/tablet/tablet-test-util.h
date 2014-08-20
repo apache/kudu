@@ -2,6 +2,7 @@
 #ifndef KUDU_TABLET_TABLET_TEST_UTIL_H
 #define KUDU_TABLET_TABLET_TEST_UTIL_H
 
+#include <algorithm>
 #include <gflags/gflags.h>
 #include <string>
 #include <vector>
@@ -205,6 +206,20 @@ static inline string InitAndDumpIterator(gscoped_ptr<RowwiseIterator> iter) {
   vector<string> out;
   CHECK_OK(IterateToStringList(iter.get(), &out));
   return JoinStrings(out, "\n");
+}
+
+// Dump all of the rows of the tablet into the given vector.
+static Status DumpTablet(const Tablet& tablet,
+                         const Schema& projection,
+                         vector<string>* out) {
+  gscoped_ptr<RowwiseIterator> iter;
+  RETURN_NOT_OK(tablet.NewRowIterator(projection, &iter));
+  RETURN_NOT_OK(iter->Init(NULL));
+  std::vector<string> rows;
+  RETURN_NOT_OK(IterateToStringList(iter.get(), &rows));
+  std::sort(rows.begin(), rows.end());
+  out->swap(rows);
+  return Status::OK();
 }
 
 // Write a single row to the given RowSetWriter (which may be of the rolling

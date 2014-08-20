@@ -7,11 +7,13 @@
 #include <gtest/gtest.h>
 
 #include "kudu/common/generic_iterators.h"
+#include "kudu/common/partial_row.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/strings/util.h"
 #include "kudu/server/logical_clock.h"
 #include "kudu/tablet/cfile_set.h"
 #include "kudu/tablet/delta_compaction.h"
+#include "kudu/tablet/local_tablet_writer.h"
 #include "kudu/tablet/tablet-test-util.h"
 #include "kudu/tablet/diskrowset-test-base.h"
 #include "kudu/util/test_util.h"
@@ -60,8 +62,8 @@ class TestMajorDeltaCompaction : public KuduRowSetTest {
   // Insert data into tablet_, setting up equivalent state in
   // expected_state_.
   void WriteTestTablet(int nrows) {
-    WriteTransactionState tx_state;
-    RowBuilder rb(client_schema_);
+    LocalTabletWriter writer(tablet().get(), &client_schema_);
+    KuduPartialRow ins_row(&client_schema_);
 
     for (int i = 0; i < nrows; i++) {
       ExpectedRow row;
@@ -71,14 +73,13 @@ class TestMajorDeltaCompaction : public KuduRowSetTest {
       row.val3 = i * 10;
       row.val4 = StringPrintf("b %08d", i * 10);
 
-      rb.Reset();
-      tx_state.Reset();
-      rb.AddString(row.key);
-      rb.AddUint32(row.val1);
-      rb.AddString(row.val2);
-      rb.AddUint32(row.val3);
-      rb.AddString(row.val4);
-      ASSERT_STATUS_OK_FAST(tablet()->InsertForTesting(&tx_state, rb.row()));
+      int col = 0;
+      CHECK_OK(ins_row.SetString(col++, row.key));
+      CHECK_OK(ins_row.SetUInt32(col++, row.val1));
+      CHECK_OK(ins_row.SetString(col++, row.val2));
+      CHECK_OK(ins_row.SetUInt32(col++, row.val3));
+      CHECK_OK(ins_row.SetString(col++, row.val4));
+      ASSERT_STATUS_OK_FAST(writer.Insert(ins_row));
       expected_state_.push_back(row);
     }
   }
@@ -87,18 +88,13 @@ class TestMajorDeltaCompaction : public KuduRowSetTest {
   // value of 'even'.
   // Makes corresponding updates in expected_state_.
   void UpdateRows(int nrows, bool even) {
-    WriteTransactionState tx_state;
-    faststring update_buf;
-    RowChangeListEncoder update(&client_schema_, &update_buf);
-    RowBuilder rb(client_schema_.CreateKeyProjection());
+    LocalTabletWriter writer(tablet().get(), &client_schema_);
+    KuduPartialRow prow(&client_schema_);
     for (int idx = 0; idx < nrows; idx++) {
       ExpectedRow* row = &expected_state_[idx];
       if ((idx % 2 == 0) == even) {
-        tx_state.Reset();
-
         // Set key
-        rb.Reset();
-        rb.AddString(row->key);
+        CHECK_OK(prow.SetString(0, row->key));
 
         // Update the data
         row->val1 *= 2;
@@ -106,12 +102,10 @@ class TestMajorDeltaCompaction : public KuduRowSetTest {
         row->val4.append("[U]");
 
         // Apply the updates.
-        Slice val4_slice(row->val4);
-        update.AddColumnUpdate(1, &row->val1);
-        update.AddColumnUpdate(3, &row->val3);
-        update.AddColumnUpdate(4, &val4_slice);
-        ASSERT_STATUS_OK(tablet()->MutateRowForTesting(
-            &tx_state, rb.row(), client_schema_, RowChangeList(update_buf)));
+        CHECK_OK(prow.SetUInt32(1, row->val1));
+        CHECK_OK(prow.SetUInt32(3, row->val3));
+        CHECK_OK(prow.SetString(4, row->val4));
+        ASSERT_STATUS_OK(writer.Update(prow));
       }
     }
   }

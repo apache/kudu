@@ -757,8 +757,10 @@ TEST_F(TabletServerTest, TestScan) {
     DrainScannerToStrings(resp.scanner_id(), schema_, &results));
   ASSERT_EQ(num_rows, results.size());
 
+  KuduPartialRow row(&schema_);
   for (int i = 0; i < num_rows; i++) {
-    string expected = schema_.DebugRow(BuildTestRow(i));
+    BuildTestRow(i, &row);
+    string expected = "(" + row.ToString() + ")";
     ASSERT_EQ(expected, results[i]);
   }
 

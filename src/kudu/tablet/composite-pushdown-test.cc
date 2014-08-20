@@ -32,21 +32,19 @@ class CompositePushdownTest : public KuduTabletTest {
   }
 
   void FillTestTablet() {
-    RowBuilder rb(client_schema_);
-
     uint32_t nrows = 10 * 12 * 28;
     int i = 0;
-    WriteTransactionState tx_state;
+
+    LocalTabletWriter writer(tablet().get(), &client_schema_);
+    KuduPartialRow row(&client_schema_);
     for (uint16_t year = 2000; year <= 2010; year++) {
       for (uint8_t month = 1; month <= 12; month++) {
         for (uint8_t day = 1; day <= 28; day++) {
-          rb.Reset();
-          rb.AddUint16(year);
-          rb.AddUint8(month);
-          rb.AddUint8(day);
-          rb.AddString(StringPrintf("%d/%02d/%02d", year, month, day));
-          tx_state.Reset();
-          ASSERT_STATUS_OK_FAST(tablet()->InsertForTesting(&tx_state, rb.row()));
+          CHECK_OK(row.SetUInt16(0, year));
+          CHECK_OK(row.SetUInt8(1, month));
+          CHECK_OK(row.SetUInt8(2, day));
+          CHECK_OK(row.SetStringCopy(3, StringPrintf("%d/%02d/%02d", year, month, day)));
+          ASSERT_STATUS_OK_FAST(writer.Insert(row));
 
           if (i == nrows * 9 / 10) {
             ASSERT_STATUS_OK(tablet()->Flush());

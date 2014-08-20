@@ -149,26 +149,10 @@ class Tablet {
   // present in the tablet.
   // Returns Status::OK unless allocation fails.
   //
-  // TODO update tests so that we can remove InsertForTesting() and Mutate()
-  // and use only InsertUnlocked() and MutateUnlocked().
-  Status InsertForTesting(WriteTransactionState *tx_state,
-                          const ConstContiguousRow& row);
-
   // Acquires the row lock for the given operation, setting it in the
   // RowOp struct. This also sets the row op's RowSetKeyProbe.
   Status AcquireLockForOp(WriteTransactionState* tx_state,
                           RowOp* op);
-
-  // Update a row in this tablet.
-  // The specified schema is the full user schema necessary to decode
-  // the update RowChangeList.
-  //
-  // If the row does not exist in this tablet, returns
-  // Status::NotFound().
-  Status MutateRowForTesting(WriteTransactionState *tx_state,
-                             const ConstContiguousRow& row_key,
-                             const Schema& update_schema,
-                             const RowChangeList& update);
 
   // Apply all of the row operations associated with this transaction.
   void ApplyRowOperations(WriteTransactionState* tx_state);

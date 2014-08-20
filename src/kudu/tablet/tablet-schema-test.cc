@@ -30,7 +30,7 @@ class TestTabletSchema : public KuduTabletTest {
 
   void InsertRows(const Schema& schema, size_t first_key, size_t nrows) {
     for (size_t i = first_key; i < nrows; ++i) {
-      InsertRow(client_schema_, i);
+      InsertRow(schema, i);
 
       // Half of the rows will be on disk
       // and the other half in the MemRowSet
@@ -41,43 +41,34 @@ class TestTabletSchema : public KuduTabletTest {
   }
 
   void InsertRow(const Schema& schema, size_t key) {
-    RowBuilder rb(schema);
-    rb.AddUint32(key);
-    rb.AddUint32(key);
-    WriteTransactionState tx_state;
-    ASSERT_STATUS_OK(tablet()->InsertForTesting(&tx_state, rb.row()));
+    LocalTabletWriter writer(tablet().get(), &schema);
+    KuduPartialRow row(&schema);
+    CHECK_OK(row.SetUInt32(0, key));
+    CHECK_OK(row.SetUInt32(1, key));
+    ASSERT_STATUS_OK(writer.Insert(row));
   }
 
   void DeleteRow(const Schema& schema, size_t key) {
-    RowBuilder rb(schema.CreateKeyProjection());
-    rb.AddUint32(key);
-    faststring buf;
-    RowChangeListEncoder mutation(&schema, &buf);
-    mutation.SetToDelete();
-    WriteTransactionState tx_state;
-    ASSERT_STATUS_OK(tablet()->MutateRowForTesting(&tx_state, rb.row(), schema,
-                                                  mutation.as_changelist()));
+    LocalTabletWriter writer(tablet().get(), &schema);
+    KuduPartialRow row(&schema);
+    CHECK_OK(row.SetUInt32(0, key));
+    ASSERT_STATUS_OK(writer.Delete(row));
   }
 
-  void MutateRow(const Schema& schema, size_t key, size_t col_idx, size_t new_val) {
-    RowBuilder rb(schema.CreateKeyProjection());
-    rb.AddUint32(key);
-    faststring buf;
-    RowChangeListEncoder mutation(&schema, &buf);
-    mutation.AddColumnUpdate(col_idx, &new_val);
-    WriteTransactionState tx_state;
-    ASSERT_STATUS_OK(tablet()->MutateRowForTesting(&tx_state, rb.row(), schema,
-                                                  mutation.as_changelist()));
+  void MutateRow(const Schema& schema, size_t key, size_t col_idx, uint32_t new_val) {
+    LocalTabletWriter writer(tablet().get(), &schema);
+    KuduPartialRow row(&schema);
+    CHECK_OK(row.SetUInt32(0, key));
+    CHECK_OK(row.SetUInt32(col_idx, new_val));
+    ASSERT_STATUS_OK(writer.Update(row));
   }
 
   void VerifyTabletRows(const Schema& projection,
                         const std::vector<std::pair<string, string> >& keys) {
     typedef std::pair<string, string> StringPair;
-    gscoped_ptr<RowwiseIterator> iter;
-    ASSERT_STATUS_OK(tablet()->NewRowIterator(projection, &iter));
-    ASSERT_STATUS_OK(iter->Init(NULL));
-    std::vector<string> rows;
-    ASSERT_STATUS_OK(IterateToStringList(iter.get(), &rows));
+
+    vector<string> rows;
+    ASSERT_STATUS_OK(DumpTablet(*tablet(), projection, &rows));
     BOOST_FOREACH(const string& row, rows) {
       bool found = false;
       BOOST_FOREACH(const StringPair& k, keys) {
@@ -110,7 +101,7 @@ TEST_F(TestTabletSchema, TestRead) {
                     (ColumnSchema("c3", STRING)),
                     1);
 
-  InsertRows(schema_, 0, kNumRows);
+  InsertRows(client_schema_, 0, kNumRows);
 
   gscoped_ptr<RowwiseIterator> iter;
   ASSERT_STATUS_OK(tablet()->NewRowIterator(projection, &iter));
@@ -127,7 +118,7 @@ TEST_F(TestTabletSchema, TestWrite) {
   const size_t kNumBaseRows = 10;
 
   // Insert some rows with the base schema
-  InsertRows(schema_, 0, kNumBaseRows);
+  InsertRows(client_schema_, 0, kNumBaseRows);
 
   // Add one column with a default value
   const uint32_t c2_write_default = 5;
@@ -271,22 +262,27 @@ TEST_F(TestTabletSchema, TestModifyEmptyMemRowSet) {
   AlterSchema(builder.Build());
   Schema s2 = builder.BuildWithoutIds();
 
-  // Verify we can insert some new data
-  RowBuilder rb(s2);
-  rb.AddUint32(2);
-  rb.AddUint32(2);
-  rb.AddUint32(2);
-  WriteTransactionState tx_state;
-  ASSERT_STATUS_OK(tablet()->InsertForTesting(&tx_state, rb.row()));
-  MutateRow(s2, /* key= */ 2, /* col_idx= */ 0, /* new_val= */ 2);
-  //MutateRow(s2, /* key= */ 1, /* col_idx= */ 2, /* new_val= */ 2);
+  // Verify we can insert some new data.
+  // Inserts the row "(2, 2, 2)"
+  LocalTabletWriter writer(tablet().get(), &s2);
+  KuduPartialRow row(&s2);
+  CHECK_OK(row.SetUInt32(0, 2));
+  CHECK_OK(row.SetUInt32(1, 2));
+  CHECK_OK(row.SetUInt32(2, 2));
+  ASSERT_STATUS_OK(writer.Insert(row));
 
-  // Verify that the new 'c1' and 'c2' have the correct values.
-  keys.clear();
-  keys.push_back(std::pair<string, string>("key=2", "c1=2"));
-  VerifyTabletRows(s2, keys);
-  keys.push_back(std::pair<string, string>("key=2", "c2=2"));
-  VerifyTabletRows(s2, keys);
+  vector<string> rows;
+  ASSERT_STATUS_OK(DumpTablet(*tablet(), s2, &rows));
+  EXPECT_EQ("(uint32 key=2, uint32 c1=2, uint32 c2=2)", rows[0]);
+
+  // Update some columns.
+  MutateRow(s2, /* key= */ 2, /* col_idx= */ 2, /* new_val= */ 3);
+  ASSERT_STATUS_OK(DumpTablet(*tablet(), s2, &rows));
+  EXPECT_EQ("(uint32 key=2, uint32 c1=2, uint32 c2=3)", rows[0]);
+
+  MutateRow(s2, /* key= */ 2, /* col_idx= */ 1, /* new_val= */ 4);
+  ASSERT_STATUS_OK(DumpTablet(*tablet(), s2, &rows));
+  EXPECT_EQ("(uint32 key=2, uint32 c1=4, uint32 c2=3)", rows[0]);
 }
 
 } // namespace tablet

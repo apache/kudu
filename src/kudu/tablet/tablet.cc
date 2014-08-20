@@ -287,44 +287,6 @@ void Tablet::StartTransactionAtTimestamp(WriteTransactionState* tx_state,
   tx_state->set_tablet_components(components_);
 }
 
-Status Tablet::InsertForTesting(WriteTransactionState *tx_state,
-                                const ConstContiguousRow& row) {
-  CHECK(open_) << "must Open() first!";
-  DCHECK(tx_state) << "you must have a transaction context";
-
-  DCHECK_KEY_PROJECTION_SCHEMA_EQ(key_schema_, *row.schema());
-
-  // Convert the client row to a server row (with IDs)
-  // TODO: We have now three places where we do the projection (RPC, Tablet, Bootstrap)
-  //       One is the RPC side, the other is this method.
-  DCHECK(!row.schema()->has_column_ids());
-  RowProjector row_projector(row.schema(), schema_.get());
-  if (!row_projector.is_identity()) {
-    RETURN_NOT_OK(schema_->VerifyProjectionCompatibility(*row.schema()));
-    RETURN_NOT_OK(row_projector.Init());
-  }
-  ConstContiguousRow proj_row = ProjectRowForInsert(tx_state, schema_.get(),
-                                                    row_projector, row.row_data());
-
-  DecodedRowOperation decoded_op;
-  decoded_op.type = RowOperationsPB::INSERT;
-  decoded_op.row_data = proj_row.row_data();
-  RowOp* new_op = new RowOp(decoded_op);
-  tx_state->mutable_row_ops()->push_back(new_op);
-  tx_state->set_schema_at_decode_time(schema_.get());
-
-  RETURN_NOT_OK(AcquireLockForOp(tx_state, new_op))
-
-  // Create a "fake" OpId and set it in the TransactionState for anchoring.
-  tx_state->mutable_op_id()->CopyFrom(MaximumOpId());
-
-  StartTransaction(tx_state);
-
-  Status s = InsertUnlocked(tx_state, new_op);
-  tx_state->commit();
-  return s;
-}
-
 Status Tablet::InsertUnlocked(WriteTransactionState *tx_state,
                               RowOp* insert) {
   const TabletComponents* comps = DCHECK_NOTNULL(tx_state->tablet_components());
@@ -378,45 +340,6 @@ Status Tablet::InsertUnlocked(WriteTransactionState *tx_state,
     }
     insert->SetFailed(s);
   }
-  return s;
-}
-
-Status Tablet::MutateRowForTesting(WriteTransactionState *tx_state,
-                                   const ConstContiguousRow& row_key,
-                                   const Schema& update_schema,
-                                   const RowChangeList& update) {
-  // TODO: use 'probe' when calling UpdateRow on each rowset.
-  DCHECK_SCHEMA_EQ(key_schema_, *row_key.schema());
-  DCHECK_KEY_PROJECTION_SCHEMA_EQ(key_schema_, update_schema);
-  DCHECK(tx_state) << "you must have a transaction context";
-  CHECK(tx_state->row_ops().empty()) << "WriteTransactionState must have no RowOps.";
-
-  // Convert the client RowChangeList to a server RowChangeList (with IDs)
-  // TODO: We have now three places where we do the projection (RPC, Tablet, Bootstrap)
-  //       One is the RPC side, the other is this method that should be renamed MutateForTesting()
-  DCHECK(!update_schema.has_column_ids());
-  DeltaProjector delta_projector(&update_schema, schema_.get());
-  if (!delta_projector.is_identity()) {
-    RETURN_NOT_OK(schema_->VerifyProjectionCompatibility(update_schema));
-    RETURN_NOT_OK(update_schema.GetProjectionMapping(*schema_.get(), &delta_projector));
-  }
-
-
-  DecodedRowOperation decoded_op;
-  decoded_op.row_data = row_key.row_data();
-  decoded_op.changelist = ProjectMutation(tx_state, delta_projector, update);
-  decoded_op.type = update.is_delete() ? RowOperationsPB::DELETE : RowOperationsPB::UPDATE;
-  RowOp* new_op = new RowOp(decoded_op);
-  tx_state->mutable_row_ops()->push_back(new_op);
-  tx_state->set_schema_at_decode_time(schema_.get());
-
-  RETURN_NOT_OK(AcquireLockForOp(tx_state, new_op))
-  // Create a "fake" OpId and set it in the TransactionState for anchoring.
-  tx_state->mutable_op_id()->CopyFrom(MaximumOpId());
-  StartTransaction(tx_state);
-
-  Status s = MutateRowUnlocked(tx_state, new_op);
-  tx_state->commit();
   return s;
 }
 

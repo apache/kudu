@@ -25,10 +25,10 @@
 #include "kudu/gutil/atomicops.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/tablet/local_tablet_writer.h"
 #include "kudu/tablet/maintenance_manager.h"
 #include "kudu/tablet/tablet.h"
 #include "kudu/tablet/tablet_peer.h"
-#include "kudu/tablet/transactions/write_transaction.h"
 #include "kudu/tserver/mini_tablet_server.h"
 #include "kudu/tserver/tablet_server.h"
 #include "kudu/tserver/ts_tablet_manager.h"
@@ -168,10 +168,11 @@ class TabletServerTest : public KuduTest {
 
   // Inserts 'num_rows' test rows directly into the tablet (i.e not via RPC)
   void InsertTestRowsDirect(uint64_t start_row, uint64_t num_rows) {
-    tablet::WriteTransactionState tx_state;
+    tablet::LocalTabletWriter writer(tablet_peer_->tablet(), &schema_);
+    KuduPartialRow row(&schema_);
     for (uint64_t i = 0; i < num_rows; i++) {
-      CHECK_OK(tablet_peer_->tablet()->InsertForTesting(&tx_state, BuildTestRow(start_row + i)));
-      tx_state.Reset();
+      BuildTestRow(start_row + i, &row);
+      CHECK_OK(writer.Insert(row));
     }
   }
 
@@ -244,12 +245,10 @@ class TabletServerTest : public KuduTest {
     }
   }
 
-  ConstContiguousRow BuildTestRow(int index) {
-    rb_->Reset();
-    rb_->AddUint32(index);
-    rb_->AddUint32(index * 2);
-    rb_->AddString(StringPrintf("hello %d", index));
-    return rb_->row();
+  void BuildTestRow(int index, KuduPartialRow* row) {
+    CHECK_OK(row->SetUInt32(0, index));
+    CHECK_OK(row->SetUInt32(1, index * 2));
+    CHECK_OK(row->SetStringCopy(2, StringPrintf("hello %d", index)));
   }
 
   void DrainScannerToStrings(const string& scanner_id,
