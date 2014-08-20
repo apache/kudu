@@ -23,7 +23,11 @@ add_library(codegen
 set(LLVM_REQ_COMPONENTS
   irreader
   mcjit
-  native)
+  native
+  analysis
+  ipo
+  instrumentation
+)
 
 ## Add preprocessor defs and include directories
 include_directories(SYSTEM ${LLVM_INCLUDE_DIRS})

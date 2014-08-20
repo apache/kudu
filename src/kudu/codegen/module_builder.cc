@@ -15,17 +15,21 @@
 #include <boost/foreach.hpp>
 #include <glog/logging.h>
 #include "kudu/codegen/llvm_include.h"
+#include <llvm/LinkAllPasses.h>
+#include <llvm/Analysis/Passes.h>
 #include <llvm/ExecutionEngine/MCJIT.h>
 #include <llvm/ExecutionEngine/ExecutionEngine.h>
 #include <llvm/IR/IRBuilder.h>
 #include <llvm/IR/Function.h>
 #include <llvm/IR/LLVMContext.h>
 #include <llvm/IR/Module.h>
+#include <llvm/PassManager.h>
 #include <llvm/IR/Type.h>
 #include <llvm/IR/DerivedTypes.h>
 #include <llvm/IRReader/IRReader.h>
 #include <llvm/Support/SourceMgr.h>
 #include <llvm/Support/raw_os_ostream.h>
+#include <llvm/Transforms/IPO/PassManagerBuilder.h>
 
 #include "kudu/gutil/macros.h"
 #include "kudu/util/status.h"
@@ -36,10 +40,13 @@ using llvm::ConstantInt;
 using llvm::EngineBuilder;
 using llvm::ExecutionEngine;
 using llvm::Function;
+using llvm::FunctionPassManager;
 using llvm::FunctionType;
 using llvm::IntegerType;
 using llvm::LLVMContext;
 using llvm::Module;
+using llvm::PassManager;
+using llvm::PassManagerBuilder;
 using llvm::PointerType;
 using llvm::raw_os_ostream;
 using llvm::SMDiagnostic;
@@ -160,6 +167,43 @@ void ModuleBuilder::AddJITPromise(llvm::Function* llvm_f,
   futures_.push_back(fut);
 }
 
+namespace {
+
+void DoOptimizations(ExecutionEngine* engine,
+                     Module* module) {
+  PassManagerBuilder pass_builder;
+  pass_builder.OptLevel = 2;
+  // Don't optimize for code size (this corresponds to -O2/-O3)
+  pass_builder.SizeLevel = 0;
+  pass_builder.Inliner = llvm::createFunctionInliningPass();
+
+  FunctionPassManager fpm(module);
+  pass_builder.populateFunctionPassManager(fpm);
+  fpm.doInitialization();
+
+  // For each function in the module, optimize it
+  BOOST_FOREACH(Function& f, *module) {
+    // The bool return value here just indicates whether the passes did anything.
+    // We can safely expect that many functions are too small to do any optimization.
+    ignore_result(fpm.run(f));
+  }
+  fpm.doFinalization();
+
+  PassManager module_passes;
+
+  // Specifying the data layout is necessary for some optimizations (e.g. removing many of
+  // the loads/stores produced by structs).
+  // Transfers ownership of the data layout to module_passes.
+  module_passes.add(new llvm::DataLayout(module->getDataLayout()));
+  pass_builder.populateModulePassManager(module_passes);
+
+  // Same as above, the result here just indicates whether optimization made any changes.
+  // Don't need to check it.
+  ignore_result(module_passes.run(*module));
+}
+
+} // anonymous namespace
+
 Status ModuleBuilder::Compile(gscoped_ptr<ExecutionEngine>* out) {
   CHECK_EQ(state_, kBuilding);
 
@@ -180,6 +224,10 @@ Status ModuleBuilder::Compile(gscoped_ptr<ExecutionEngine>* out) {
                                       "Could not start ExecutionEngine",
                                       str);
   }
+
+#ifdef NDEBUG
+  DoOptimizations(local_engine.get(), module_.get());
+#endif
 
   // Compile the module
   // TODO add a pass to internalize the linkage of all functions except the
