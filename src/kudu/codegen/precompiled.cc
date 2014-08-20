@@ -67,7 +67,15 @@ extern "C" {
 //   slices has occured, which can only happen if is_string is true.
 bool _PrecompiledCopyCellToRowBlock(uint64_t size, uint8_t* src, RowBlockRow* dst,
                                     uint64_t col, bool is_string, Arena* arena) {
-  uint8_t* dst_cell = dst->mutable_cell_ptr(col);
+
+  // We manually compute the destination cell pointer here, rather than
+  // using dst->cell_ptr(), since we statically know the size of the column
+  // type. Using the normal access path would generate an 'imul' instruction,
+  // since it would be loading the column type info from the RowBlock object
+  // instead of our static parameter here.
+  size_t idx = dst->row_index();
+  const RowBlock* block = dst->row_block();
+  uint8_t* dst_cell = block->column_data_base_ptr(col) + idx * size;
   return BasicCopyCell(size, src, dst_cell, is_string, arena);
 }
 
