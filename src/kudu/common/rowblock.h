@@ -143,11 +143,7 @@ class RowBlock {
 
     const ColumnSchema& col_schema = schema_.column(col_idx);
     uint8_t *col_data = columns_data_[col_idx];
-    uint8_t *nulls_bitmap = NULL;
-    if (col_schema.is_nullable()) {
-      nulls_bitmap = col_data;
-      col_data += BitmapSize(row_capacity_);
-    }
+    uint8_t *nulls_bitmap = column_null_bitmaps_[col_idx];
 
     return ColumnBlock(col_schema.type_info(), nulls_bitmap, col_data, nrows, arena_);
   }
@@ -164,10 +160,11 @@ class RowBlock {
     for (size_t i = 0; i < schema_.num_columns(); ++i) {
       const ColumnSchema& col_schema = schema_.column(i);
       size_t col_size = col_schema.type_info()->size() * row_capacity_;
-      if (col_schema.is_nullable()) {
-        col_size += bitmap_size;
-      }
       memset(columns_data_[i], '\0', col_size);
+
+      if (column_null_bitmaps_[i] != NULL) {
+        memset(column_null_bitmaps_[i], '\0', bitmap_size);
+      }
     }
   }
 
@@ -203,6 +200,7 @@ class RowBlock {
 
   Schema schema_;
   std::vector<uint8_t *> columns_data_;
+  std::vector<uint8_t *> column_null_bitmaps_;
 
   // The maximum number of rows that can be stored in our allocated buffer.
   size_t row_capacity_;
