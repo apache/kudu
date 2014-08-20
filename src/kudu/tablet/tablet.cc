@@ -52,10 +52,6 @@ DEFINE_bool(tablet_do_dup_key_checks, true,
             "Whether to check primary keys for duplicate on insertion. "
             "Use at your own risk!");
 
-DEFINE_string(tablet_compaction_policy, "budget",
-              "Which compaction policy to use. Valid options are currently "
-              "'size' or 'budget'");
-
 DEFINE_int32(tablet_compaction_budget_mb, 128,
              "Budget for a single compaction, if the 'budget' compaction "
              "algorithm is selected");
@@ -90,14 +86,7 @@ static const int64_t kNoMrsFlushed = -1;
 static const char* const kTmpSuffix = ".tmp";
 
 static CompactionPolicy *CreateCompactionPolicy() {
-  if (FLAGS_tablet_compaction_policy == "size") {
-    return new SizeRatioCompactionPolicy();
-  } else if (FLAGS_tablet_compaction_policy == "budget") {
-    return new BudgetedCompactionPolicy(FLAGS_tablet_compaction_budget_mb);
-  } else {
-    LOG(FATAL) << "Unknown compaction policy: " << FLAGS_tablet_compaction_policy;
-  }
-  return NULL;
+  return new BudgetedCompactionPolicy(FLAGS_tablet_compaction_budget_mb);
 }
 
 TabletComponents::TabletComponents(const shared_ptr<MemRowSet>& mrs,

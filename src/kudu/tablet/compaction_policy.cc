@@ -48,51 +48,6 @@ namespace tablet {
 static const double kSupportAdjust = 1.01;
 
 ////////////////////////////////////////////////////////////
-// SizeRatioCompactionPolicy
-////////////////////////////////////////////////////////////
-
-static bool CompareBySize(const RowSetInfo& a,
-                          const RowSetInfo& b) {
-  return a.rowset()->EstimateOnDiskSize() < b.rowset()->EstimateOnDiskSize();
-}
-
-Status SizeRatioCompactionPolicy::PickRowSets(const RowSetTree &tree,
-                                              std::tr1::unordered_set<RowSet*>* picked,
-                                              double* quality) {
-  vector<RowSetInfo> candidates;
-  RowSetInfo::Collect(tree, &candidates);
-
-  // Sort the rowsets by their on-disk size
-  std::sort(candidates.begin(), candidates.end(), CompareBySize);
-  uint64_t accumulated_size = 0;
-  BOOST_FOREACH(const RowSetInfo &cand, candidates) {
-    RowSet* rs = cand.rowset();
-    uint64_t this_size = rs->EstimateOnDiskSize();
-    if (picked->size() < 2 || this_size < accumulated_size * 2) {
-      InsertOrDie(picked, rs);
-      accumulated_size += this_size;
-    } else {
-      break;
-    }
-  }
-
-  // Totally arbitrary quality calculation: make quality approach
-  // 1 as the number of included rowsets approaches 7 (same number that HBase
-  // uses for the max count of outstanding files before forcing a compaction).
-  // TODO We don't really support SizeRatio compaction anymore - should probably
-  // remove this code entirely.
-  if (picked->size() >= 7) {
-    *quality = 1;
-  } else {
-    *quality = 1/(8.0 - implicit_cast<double>(picked->size()));
-  }
-
-  DumpCompactionSVG(candidates, *picked);
-
-  return Status::OK();
-}
-
-////////////////////////////////////////////////////////////
 // BudgetedCompactionPolicy
 ////////////////////////////////////////////////////////////
 
