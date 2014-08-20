@@ -24,7 +24,7 @@ class OpIdAnchorRegistryTest : public KuduTest {
 TEST_F(OpIdAnchorRegistryTest, TestUpdateRegistration) {
   const string test_name = CURRENT_TEST_NAME();
   scoped_refptr<OpIdAnchorRegistry> reg(new OpIdAnchorRegistry());
-  OpId op_id(MinimumOpId());
+  OpId op_id(consensus::MinimumOpId());
   OpIdAnchor anchor;
 
   reg->Register(op_id, test_name, &anchor);

@@ -26,8 +26,8 @@ DEFINE_bool(mrs_use_codegen, false, "whether the memrowset should use code "
 namespace kudu { namespace tablet {
 
 using consensus::OpId;
+using consensus::OpIdLessThan;
 using log::OpIdAnchorRegistry;
-using log::OpIdLessThan;
 using std::pair;
 using strings::Substitute;
 

@@ -20,6 +20,7 @@
 #include "kudu/common/schema.h"
 #include "kudu/consensus/consensus.pb.h"
 #include "kudu/consensus/opid_anchor_registry.h"
+#include "kudu/consensus/opid_util.h"
 #include "kudu/gutil/atomicops.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/stl_util.h"
@@ -66,7 +67,7 @@ namespace tablet {
 
 using kudu::MaintenanceManager;
 using consensus::OpId;
-using log::MaximumOpId;
+using consensus::MaximumOpId;
 using log::OpIdAnchorRegistry;
 using metadata::RowSetMetadata;
 using metadata::RowSetMetadataIds;

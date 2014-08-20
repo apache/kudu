@@ -5,6 +5,7 @@
 #include <boost/foreach.hpp>
 #include <algorithm>
 
+#include "kudu/consensus/opid_util.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/util.h"

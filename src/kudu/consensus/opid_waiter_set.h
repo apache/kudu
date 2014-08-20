@@ -6,6 +6,7 @@
 #include <tr1/memory>
 
 #include "kudu/consensus/log_util.h"
+#include "kudu/consensus/opid_util.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/util/locks.h"
 
@@ -48,7 +49,7 @@ class OpIdWaiterSet {
  private:
   typedef std::multimap<consensus::OpId,
                         std::tr1::shared_ptr<FutureCallback>,
-                        log::OpIdBiggerThanFunctor > CallbackMap;
+                        OpIdBiggerThanFunctor > CallbackMap;
 
   CallbackMap callbacks_;
   ThreadPool* callback_pool_;

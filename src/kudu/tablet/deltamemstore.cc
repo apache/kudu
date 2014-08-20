@@ -14,8 +14,8 @@
 namespace kudu {
 namespace tablet {
 
+using consensus::OpIdLessThan;
 using log::OpIdAnchorRegistry;
-using log::OpIdLessThan;
 using std::tr1::shared_ptr;
 using strings::Substitute;
 

@@ -47,7 +47,7 @@ Status LocalConsensus::Init(const QuorumPeerPB& peer,
     // We are continuing after previously running.
   } else if (s.IsNotFound()) {
     // This is our very first startup! Sally forth!
-    initial = log::MinimumOpId();
+    initial = MinimumOpId();
   } else {
     LOG(FATAL) << "Unexpected status from Log::GetLastEntryOpId(): "
                << s.ToString();

@@ -5,6 +5,11 @@ KRPC_GENERATE(CONSENSUS_KRPC_SRCS CONSENSUS_KRPC_HDRS
   BINARY_ROOT ${CMAKE_CURRENT_BINARY_DIR}/../..
   PROTO_FILES consensus.proto)
 
+set(CONSENSUS_KRPC_SRCS
+  ${CONSENSUS_KRPC_SRCS}
+  opid_util.cc
+)
+
 add_library(consensus_proto ${CONSENSUS_KRPC_SRCS} ${CONSENSUS_KRPC_HDRS})
 target_link_libraries(consensus_proto
   tserver_admin_proto

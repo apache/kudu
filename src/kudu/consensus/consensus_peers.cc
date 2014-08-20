@@ -190,7 +190,7 @@ class RemotePeer : public PeerImpl {
 
   Status Init(OpId* initial_id) OVERRIDE {
     // TODO ask the remote peer for the initial id when we have catch up.
-    initial_id->CopyFrom(log::MinimumOpId());
+    initial_id->CopyFrom(MinimumOpId());
     request_.set_tablet_id(tablet_id_);
     request_.set_sender_uuid(leader_uuid_);
     return Status::OK();

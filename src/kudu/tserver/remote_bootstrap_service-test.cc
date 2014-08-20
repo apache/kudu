@@ -7,6 +7,7 @@
 
 #include "kudu/consensus/log.h"
 #include "kudu/consensus/log_util.h"
+#include "kudu/consensus/opid_util.h"
 #include "kudu/consensus/opid_anchor_registry.h"
 #include "kudu/rpc/rpc_header.pb.h"
 #include "kudu/rpc/transfer.h"
@@ -30,9 +31,9 @@ namespace kudu {
 namespace tserver {
 
 using env_util::ReadFully;
-using log::MaximumOpId;
-using log::MinimumOpId;
-using log::OpIdEquals;
+using consensus::MaximumOpId;
+using consensus::MinimumOpId;
+using consensus::OpIdEquals;
 using log::ReadableLogSegment;
 using log::ReadableLogSegmentMap;
 using rpc::ErrorStatusPB;

@@ -288,7 +288,7 @@ const OpId& ReplicaState::GetLastReplicatedOpIdUnlocked() const {
 
 void ReplicaState::UpdateLastReceivedOpIdUnlocked(const OpId& op_id) {
   DCHECK(update_lock_.is_locked());
-  DCHECK_LE(log::OpIdCompare(received_op_id_, op_id), 0);
+  DCHECK_LE(OpIdCompare(received_op_id_, op_id), 0);
   received_op_id_ = op_id;
 }
 
@@ -312,11 +312,11 @@ void ReplicaState::UpdateReplicaCommittedOpIdUnlocked(const OpId& commit_op_id,
                                                       const OpId& committed_op_id) {
   DCHECK(update_lock_.is_locked());
   CHECK_EQ(in_flight_commits_.erase(commit_op_id), 1) << commit_op_id.ShortDebugString();
-  if (log::OpIdEquals(commit_op_id, all_committed_before_id_)) {
+  if (OpIdEquals(commit_op_id, all_committed_before_id_)) {
     if (!in_flight_commits_.empty()) {
        all_committed_before_id_ = *std::min_element(in_flight_commits_.begin(),
                                                     in_flight_commits_.end(),
-                                                    log::OpIdLessThan);
+                                                    OpIdLessThan);
      } else {
        all_committed_before_id_ = commit_op_id;
      }
@@ -335,7 +335,7 @@ Status ReplicaState::RegisterOnReplicateCallback(
     const OpId& replicate_op_id,
     const shared_ptr<FutureCallback>& repl_callback) {
   UniqueLock lock(update_lock_);
-  if (PREDICT_TRUE(log::OpIdCompare(replicate_op_id, replicated_op_id_) > 0)) {
+  if (PREDICT_TRUE(OpIdCompare(replicate_op_id, replicated_op_id_) > 0)) {
     replicate_watchers_.RegisterCallback(replicate_op_id, repl_callback);
     return Status::OK();
   }
@@ -345,7 +345,7 @@ Status ReplicaState::RegisterOnReplicateCallback(
 Status ReplicaState::RegisterOnCommitCallback(const OpId& op_id,
                                               const shared_ptr<FutureCallback>& commit_callback) {
   UniqueLock lock(update_lock_);
-  if (PREDICT_TRUE(log::OpIdCompare(op_id, replicated_op_id_) > 0)) {
+  if (PREDICT_TRUE(OpIdCompare(op_id, replicated_op_id_) > 0)) {
     commit_watchers_.RegisterCallback(op_id, commit_callback);
     return Status::OK();
   }

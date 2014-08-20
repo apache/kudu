@@ -39,7 +39,7 @@ class TestCompaction : public KuduRowSetTest {
  public:
   TestCompaction()
     : KuduRowSetTest(CreateSchema()),
-      op_id_(log::MaximumOpId()),
+      op_id_(consensus::MaximumOpId()),
       row_builder_(schema_),
       mvcc_(scoped_refptr<server::Clock>(
               server::LogicalClock::CreateStartingAt(Timestamp::kInitialTimestamp))),

@@ -18,7 +18,7 @@ namespace kudu {
 namespace tserver {
 
 using consensus::OpId;
-using log::MinimumOpId;
+using consensus::MinimumOpId;
 using log::OpIdAnchorRegistry;
 using metadata::TabletMetadata;
 using metadata::TabletSuperBlockPB;

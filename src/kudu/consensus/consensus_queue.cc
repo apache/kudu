@@ -10,8 +10,9 @@
 #include <utility>
 
 #include "kudu/consensus/consensus_queue.h"
-#include "kudu/consensus/log_util.h"
 
+#include "kudu/consensus/log_util.h"
+#include "kudu/consensus/opid_util.h"
 #include "kudu/common/wire_protocol.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/stl_util.h"
@@ -48,7 +49,6 @@ namespace kudu {
 namespace consensus {
 
 using log::Log;
-using log::OpIdCompare;
 using metadata::QuorumPeerPB;
 using std::tr1::shared_ptr;
 using std::tr1::unordered_map;

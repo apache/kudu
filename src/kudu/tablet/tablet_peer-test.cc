@@ -33,13 +33,13 @@ namespace tablet {
 
 using consensus::CommitMsg;
 using consensus::Consensus;
+using consensus::MinimumOpId;
 using consensus::OpId;
+using consensus::OpIdEquals;
 using consensus::WRITE_OP;
 using log::Log;
 using log::LogOptions;
-using log::MinimumOpId;
 using log::OpIdAnchorRegistry;
-using log::OpIdEquals;
 using metadata::QuorumPeerPB;
 using rpc::Messenger;
 using server::Clock;

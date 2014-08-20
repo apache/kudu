@@ -25,7 +25,7 @@ using std::tr1::unordered_set;
 class TestDeltaMemStore : public KuduTest {
  public:
   TestDeltaMemStore()
-    : op_id_(log::MaximumOpId()),
+    : op_id_(consensus::MaximumOpId()),
       schema_(CreateSchema()),
       dms_(new DeltaMemStore(0, schema_, new log::OpIdAnchorRegistry())),
       mvcc_(scoped_refptr<server::Clock>(

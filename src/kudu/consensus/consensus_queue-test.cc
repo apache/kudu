@@ -57,7 +57,7 @@ class ConsensusQueueTest : public KuduTest {
 TEST_F(ConsensusQueueTest, TestGetAllMessages) {
   AppendReplicateMessagesToQueue(queue_.get(), 1, 100);
 
-  ASSERT_STATUS_OK(queue_->TrackPeer(kPeerUuid, log::MinimumOpId()));
+  ASSERT_STATUS_OK(queue_->TrackPeer(kPeerUuid, MinimumOpId()));
 
   ConsensusRequestPB request;
   ConsensusStatusPB status;
@@ -137,7 +137,7 @@ TEST_F(ConsensusQueueTest, TestGetPagedMessages) {
 
   AppendReplicateMessagesToQueue(queue_.get(), 1, 100);
 
-  queue_->TrackPeer(kPeerUuid, log::MinimumOpId());
+  queue_->TrackPeer(kPeerUuid, MinimumOpId());
   bool more_pending = false;
 
   ConsensusRequestPB request;
@@ -192,7 +192,7 @@ TEST_F(ConsensusQueueTest, TestAlwaysYieldsAtLeastOneMessage) {
 
   // Ensure that a request contains the message.
   ConsensusRequestPB request;
-  queue_->TrackPeer(kPeerUuid, log::MinimumOpId());
+  queue_->TrackPeer(kPeerUuid, MinimumOpId());
   queue_->RequestForPeer(kPeerUuid, &request);
   ASSERT_EQ(1, request.ops_size());
 

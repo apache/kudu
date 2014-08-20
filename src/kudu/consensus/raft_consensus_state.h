@@ -50,17 +50,17 @@ class ReplicaState {
 
   typedef std::tr1::unordered_map<consensus::OpId,
                                   ConsensusRound*,
-                                  log::OpIdHashFunctor,
-                                  log::OpIdEqualsFunctor> OpIdToRoundMap;
+                                  OpIdHashFunctor,
+                                  OpIdEqualsFunctor> OpIdToRoundMap;
 
   typedef std::set<consensus::OpId,
-                   log::OpIdCompareFunctor> OutstandingCommits;
+                   OpIdCompareFunctor> OutstandingCommits;
 
   typedef OpIdToRoundMap::value_type OpToRoundEntry;
 
   typedef std::multimap<consensus::OpId,
                         std::tr1::shared_ptr<FutureCallback>,
-                        log::OpIdBiggerThanFunctor > CallbackMap;
+                        OpIdBiggerThanFunctor > CallbackMap;
 
   ReplicaState(const ConsensusOptions& options,
                ThreadPool* callback_exec_pool);

@@ -413,7 +413,7 @@ Status RaftConsensus::UpdateReplica(const ConsensusRequestPB* request,
     // and one for COMMIT. Also filter out any ops which have already
     // been handled by a previous call to UpdateReplica()
     BOOST_FOREACH(const OperationPB& op, request->ops()) {
-      if (log::OpIdCompare(op.id(), state_->GetLastReceivedOpIdUnlocked()) <= 0) {
+      if (OpIdCompare(op.id(), state_->GetLastReceivedOpIdUnlocked()) <= 0) {
         VLOG_WITH_PREFIX(2) << "Skipping op id " << op.id().ShortDebugString()
             << " (already replicated/committed)";
         continue;
@@ -554,7 +554,7 @@ OpId RaftConsensus::GetLastOpIdFromLog() {
   Status s = log_->GetLastEntryOpId(&id);
   if (s.ok()) {
   } else if (s.IsNotFound()) {
-    id = log::MinimumOpId();
+    id = MinimumOpId();
   } else {
     LOG_WITH_PREFIX(FATAL) << "Unexpected status from Log::GetLastEntryOpId(): " << s.ToString();
   }

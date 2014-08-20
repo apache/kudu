@@ -7,6 +7,7 @@
 
 #include "kudu/consensus/consensus.pb.h"
 #include "kudu/consensus/log_util.h"
+#include "kudu/consensus/opid_util.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/util/locks.h"
@@ -60,7 +61,9 @@ class OpIdAnchorRegistry : public RefCountedThreadSafe<OpIdAnchorRegistry> {
   friend class RefCountedThreadSafe<OpIdAnchorRegistry>;
   ~OpIdAnchorRegistry();
 
-  typedef std::multimap<consensus::OpId, OpIdAnchor*, OpIdCompareFunctor> OpIdMultiMap;
+  typedef std::multimap<consensus::OpId,
+                        OpIdAnchor*,
+                        consensus::OpIdCompareFunctor> OpIdMultiMap;
 
   // Register a new anchor after taking the lock. See Register().
   void RegisterUnlocked(const consensus::OpId& op_id, const std::string& owner, OpIdAnchor* anchor);

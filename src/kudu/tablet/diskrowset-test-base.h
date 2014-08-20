@@ -40,7 +40,7 @@ class TestRowSet : public KuduRowSetTest {
   TestRowSet()
     : KuduRowSetTest(CreateTestSchema()),
       n_rows_(FLAGS_roundtrip_num_rows),
-      op_id_(log::MaximumOpId()),
+      op_id_(consensus::MaximumOpId()),
       mvcc_(scoped_refptr<server::Clock>(
           server::LogicalClock::CreateStartingAt(Timestamp::kInitialTimestamp))) {
     CHECK_GT(n_rows_, 0);

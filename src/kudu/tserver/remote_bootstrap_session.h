@@ -9,6 +9,7 @@
 
 #include "kudu/consensus/log_util.h"
 #include "kudu/consensus/opid_anchor_registry.h"
+#include "kudu/consensus/opid_util.h"
 #include "kudu/fs/block_id.h"
 #include "kudu/fs/fs_manager.h"
 #include "kudu/gutil/macros.h"
@@ -91,7 +92,7 @@ class RemoteBootstrapSession : public RefCountedThreadSafe<RemoteBootstrapSessio
   typedef std::tr1::unordered_map<BlockId, ImmutableRandomAccessFileInfo,
                                   BlockIdHash> BlockMap;
   typedef std::tr1::unordered_map<consensus::OpId, ImmutableRandomAccessFileInfo,
-                                  log::OpIdHashFunctor, log::OpIdEqualsFunctor> LogMap;
+                                  consensus::OpIdHashFunctor, consensus::OpIdEqualsFunctor> LogMap;
 
   ~RemoteBootstrapSession();
 

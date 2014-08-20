@@ -788,7 +788,7 @@ Status ReupdateMissedDeltas(const string &tablet_name,
 
   // When we apply the updates to the new DMS, there is no need to anchor them
   // since these stores are not yet part of the tablet.
-  const consensus::OpId max_op_id = log::MaximumOpId();
+  const consensus::OpId max_op_id = consensus::MaximumOpId();
 
   // The rowid where the current (front) delta tracker starts.
   int64_t delta_tracker_base_row = 0;

@@ -13,6 +13,7 @@
 
 #include "kudu/consensus/consensus.pb.h"
 #include "kudu/consensus/log_util.h"
+#include "kudu/consensus/opid_util.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/util/locks.h"
 #include "kudu/util/status.h"
@@ -178,7 +179,7 @@ class PeerMessageQueue {
   // An ordered map that serves as the buffer for the pending messages.
   typedef std::map<OpId,
                    scoped_refptr<OperationStatusTracker>,
-                   log::OpIdCompareFunctor> MessagesBuffer;
+                   OpIdCompareFunctor> MessagesBuffer;
 
   typedef std::tr1::unordered_map<std::string, ConsensusStatusPB*> WatermarksMap;
   typedef std::tr1::unordered_map<OpId, Status> ErrorsMap;

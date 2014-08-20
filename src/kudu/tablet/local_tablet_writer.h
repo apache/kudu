@@ -56,7 +56,7 @@ class LocalTabletWriter {
     tablet_->StartTransaction(tx_state_.get());
 
     // Create a "fake" OpId and set it in the TransactionState for anchoring.
-    tx_state_->mutable_op_id()->CopyFrom(log::MaximumOpId());
+    tx_state_->mutable_op_id()->CopyFrom(consensus::MaximumOpId());
     tablet_->ApplyRowOperations(tx_state_.get());
 
     tx_state_->commit();

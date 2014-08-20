@@ -3,6 +3,7 @@
 #include "kudu/consensus/consensus.h"
 
 #include "kudu/consensus/log_util.h"
+#include "kudu/consensus/opid_util.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/util/task_executor.h"
 
@@ -12,9 +13,9 @@ namespace consensus {
 using std::tr1::shared_ptr;
 
 ConsensusBootstrapInfo::ConsensusBootstrapInfo()
-  : last_commit_id(log::MinimumOpId()),
-    last_replicate_id(log::MinimumOpId()),
-    last_id(log::MinimumOpId()) {
+  : last_commit_id(MinimumOpId()),
+    last_replicate_id(MinimumOpId()),
+    last_id(MinimumOpId()) {
 }
 
 ConsensusBootstrapInfo::~ConsensusBootstrapInfo() {

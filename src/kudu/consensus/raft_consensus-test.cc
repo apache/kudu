@@ -10,6 +10,7 @@
 #include "kudu/consensus/log.h"
 #include "kudu/consensus/log_util.h"
 #include "kudu/consensus/opid_anchor_registry.h"
+#include "kudu/consensus/opid_util.h"
 #include "kudu/consensus/raft_consensus.h"
 #include "kudu/consensus/raft_consensus_state.h"
 #include "kudu/gutil/stl_util.h"
@@ -302,10 +303,10 @@ class RaftConsensusTest : public KuduTest {
                      string replica_id) {
     int l_repl_idx = 0;
     int l_comm_idx = 0;
-    OpId last_repl_op = log::MinimumOpId();
+    OpId last_repl_op = MinimumOpId();
     unordered_set<consensus::OpId,
-                  log::OpIdHashFunctor,
-                  log::OpIdEqualsFunctor> replication_ops;
+                  OpIdHashFunctor,
+                  OpIdEqualsFunctor> replication_ops;
 
     SCOPED_TRACE(PrintOnError(leader_ops, "leader"));
     SCOPED_TRACE(PrintOnError(replica_ops, replica_id));
@@ -316,16 +317,16 @@ class RaftConsensusTest : public KuduTest {
       // and that replicate op ids are monotonically increasing
       if (operation->has_replicate()) {
         ASSERT_LT(l_repl_idx, leader_replicates.size());
-        ASSERT_TRUE(log::OpIdEquals(leader_replicates[l_repl_idx], operation->id()))
+        ASSERT_TRUE(OpIdEquals(leader_replicates[l_repl_idx], operation->id()))
             << "Expected Leader Replicate: " << leader_replicates[l_repl_idx].ShortDebugString()
             << " To match replica: " << operation->id().ShortDebugString();
-        ASSERT_TRUE(log::OpIdCompare(operation->id(), last_repl_op) > 0);
+        ASSERT_TRUE(OpIdCompare(operation->id(), last_repl_op) > 0);
         last_repl_op = operation->id();
         replication_ops.insert(last_repl_op);
         l_repl_idx++;
       } else {
         ASSERT_LT(l_comm_idx, leader_commits.size());
-        ASSERT_TRUE(log::OpIdEquals(leader_commits[l_comm_idx], operation->id()))
+        ASSERT_TRUE(OpIdEquals(leader_commits[l_comm_idx], operation->id()))
             << "Expected Leader Commit: " << leader_commits[l_comm_idx].ShortDebugString()
             << " To match replica: " << operation->id().ShortDebugString();
         ASSERT_EQ(replication_ops.erase(operation->commit().commited_op_id()), 1);

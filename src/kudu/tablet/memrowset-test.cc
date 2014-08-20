@@ -29,7 +29,7 @@ using consensus::OpId;
 class TestMemRowSet : public ::testing::Test {
  public:
   TestMemRowSet()
-    : op_id_(log::MaximumOpId()),
+    : op_id_(consensus::MaximumOpId()),
       opid_anchor_registry_(new OpIdAnchorRegistry()),
       schema_(CreateSchema()),
       key_schema_(schema_.CreateKeyProjection()),

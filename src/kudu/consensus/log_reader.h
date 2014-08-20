@@ -6,6 +6,7 @@
 #include <vector>
 
 #include "kudu/consensus/log_util.h"
+#include "kudu/consensus/opid_util.h"
 #include "kudu/fs/fs_manager.h"
 
 namespace kudu {

@@ -16,6 +16,11 @@
 #include "kudu/util/env.h"
 
 namespace kudu {
+
+namespace consensus {
+struct OpIdCompareFunctor;
+} // namespace consensus
+
 namespace log {
 
 // Suffix for temprorary files
@@ -28,10 +33,10 @@ extern const int kLogMajorVersion;
 extern const int kLogMinorVersion;
 
 class ReadableLogSegment;
-struct OpIdCompareFunctor;
 
-typedef std::map<consensus::OpId, scoped_refptr<ReadableLogSegment>, OpIdCompareFunctor>
-        ReadableLogSegmentMap;
+typedef std::map<consensus::OpId,
+                 scoped_refptr<ReadableLogSegment>,
+                 consensus::OpIdCompareFunctor> ReadableLogSegmentMap;
 
 // Range of OpIds. The first item is inclusive, the second item is exclusive,
 // i.e.: [first, second).
@@ -208,51 +213,6 @@ class WritableLogSegment {
   DISALLOW_COPY_AND_ASSIGN(WritableLogSegment);
 };
 
-// TODO: move these functors into their own file named opid_functors.h
-// Returns true iff left == right.
-bool OpIdEquals(const consensus::OpId& left, const consensus::OpId& right);
-
-// Returns true iff left < right.
-bool OpIdLessThan(const consensus::OpId& left, const consensus::OpId& right);
-
-// Copies to_compare into target under the following conditions:
-// - If to_compare is initialized and target is not.
-// - If they are both initialized and to_compare is less than target.
-// Otherwise, does nothing.
-// If to_compare is copied into target, returns true, else false.
-bool CopyIfOpIdLessThan(const consensus::OpId& to_compare, consensus::OpId* target);
-
-// Return -1, 0, or 1.
-int OpIdCompare(const consensus::OpId& left, const consensus::OpId& right);
-
-// OpId hash functor. Suitable for use with std::unordered_map.
-struct OpIdHashFunctor {
-  size_t operator() (const consensus::OpId& id) const;
-};
-
-// OpId equals functor. Suitable for use with std::unordered_map.
-struct OpIdEqualsFunctor {
-  bool operator() (const consensus::OpId& left, const consensus::OpId& right) const;
-};
-
-// OpId compare() functor. Suitable for use with std::sort and std::map.
-struct OpIdCompareFunctor {
-  // Returns true iff left < right.
-  bool operator() (const consensus::OpId& left, const consensus::OpId& right) const;
-};
-
-// OpId comparison functor that returns true iff left > right. Suitable for use
-// td::sort and std::map to sort keys in increasing order.]
-struct OpIdBiggerThanFunctor {
-  bool operator() (const consensus::OpId& left, const consensus::OpId& right) const;
-};
-
-// Return the minimum possible OpId.
-consensus::OpId MinimumOpId();
-
-// Return the maximum possible OpId.
-consensus::OpId MaximumOpId();
-
 // Find WAL segments for deletion whose largest contained OpId is less than
 // earliest_needed_opid. We never identify the latest segment as stale.
 // For example, if we need to retain OpId 7, and the rolled log segments start
@@ -286,14 +246,6 @@ void CreateBatchFromAllocatedOperations(const consensus::OperationPB* const* ops
 bool IsLogFileName(const std::string& fname);
 
 }  // namespace log
-
-// This has to go in namespace 'consensus' for argument-dependent lookup to work.
-// TODO: We should probably move all of the OpId*Functors into the consensus namespace
-// to match where OpId itself is.
-namespace consensus {
-std::ostream& operator<<(std::ostream& os, const consensus::OpId& op_id);
-} // namespace consensus
-
 }  // namespace kudu
 
 #endif /* KUDU_CONSENSUS_LOG_UTIL_H_ */

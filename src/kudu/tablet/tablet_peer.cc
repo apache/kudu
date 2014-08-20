@@ -13,6 +13,7 @@
 #include "kudu/consensus/local_consensus.h"
 #include "kudu/consensus/log.h"
 #include "kudu/consensus/log_util.h"
+#include "kudu/consensus/opid_util.h"
 #include "kudu/consensus/opid_anchor_registry.h"
 #include "kudu/consensus/raft_consensus.h"
 #include "kudu/gutil/strings/substitute.h"
@@ -48,7 +49,6 @@ using consensus::RaftConsensus;
 using consensus::CHANGE_CONFIG_OP;
 using consensus::WRITE_OP;
 using consensus::OP_ABORT;
-using log::CopyIfOpIdLessThan;
 using log::Log;
 using log::OpIdAnchorRegistry;
 using metadata::QuorumPB;
@@ -376,7 +376,7 @@ void TabletPeer::GetEarliestNeededOpId(consensus::OpId* min_op_id) const {
 
   // Finally, if nothing is known or registered, just don't delete anything.
   if (!min_op_id->IsInitialized()) {
-    min_op_id->CopyFrom(log::MinimumOpId());
+    min_op_id->CopyFrom(consensus::MinimumOpId());
   }
 }
 

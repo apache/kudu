@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "kudu/consensus/log_util.h"
+#include "kudu/consensus/opid_util.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/spinlock.h"
 #include "kudu/util/async_util.h"

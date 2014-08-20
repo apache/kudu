@@ -5,6 +5,7 @@
 #include <vector>
 
 #include "kudu/consensus/log-test-base.h"
+#include "kudu/consensus/opid_util.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/tablet/mvcc.h"
 
@@ -16,6 +17,7 @@ namespace log {
 
 using std::tr1::shared_ptr;
 using std::tr1::unordered_map;
+using consensus::MinimumOpId;
 
 extern const char* kTestTable;
 extern const char* kTestTablet;

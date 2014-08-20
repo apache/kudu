@@ -451,7 +451,7 @@ Status Log::WriteHeader(const OpId& initial_op_id) {
 }
 
 Status Log::WriteHeaderForTests() {
-  OpId zero(MinimumOpId());
+  OpId zero(consensus::MinimumOpId());
   return WriteHeader(zero);
 }
 

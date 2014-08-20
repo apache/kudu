@@ -5,7 +5,6 @@
 #include <boost/thread/locks.hpp>
 #include <string>
 
-#include "kudu/consensus/log_util.h"
 #include "kudu/gutil/strings/substitute.h"
 
 namespace kudu {
