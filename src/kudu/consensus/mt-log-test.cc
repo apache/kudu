@@ -99,7 +99,13 @@ class MultiThreadedLogTest : public LogTestBase {
           request->set_tablet_id(kTestTablet);
           batch_ops.push_back(op.release());
         }
-        ASSERT_STATUS_OK(log_->Reserve(&batch_ops[0], batch_ops.size(), &entry_batch));
+
+        gscoped_ptr<log::LogEntryBatchPB> entry_batch_pb;
+        log::CreateBatchFromAllocatedOperations(&batch_ops[0],
+                                                batch_ops.size(),
+                                                &entry_batch_pb);
+
+        ASSERT_STATUS_OK(log_->Reserve(entry_batch_pb.Pass(), &entry_batch));
       } // lock_guard scope
       CustomLatchCallback* cb = new CustomLatchCallback(&latch, &errors);
       ASSERT_STATUS_OK(log_->AsyncAppend(entry_batch, cb->AsStatusCallback()));

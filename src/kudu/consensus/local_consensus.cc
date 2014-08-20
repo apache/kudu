@@ -126,7 +126,10 @@ Status LocalConsensus::Replicate(ConsensusRound* context) {
     // create the new op id for the entry.
     cur_op_id->set_index(next_op_id_index_++);
     // Reserve the correct slot in the log for the replication operation.
-    RETURN_NOT_OK(log_->Reserve(&op, 1, &reserved_entry_batch));
+    gscoped_ptr<log::LogEntryBatchPB> entry_batch;
+    log::CreateBatchFromAllocatedOperations(&op, 1, &entry_batch);
+
+    RETURN_NOT_OK(log_->Reserve(entry_batch.Pass(), &reserved_entry_batch));
   }
   // Serialize and mark the message as ready to be appended.
   // When the Log actually fsync()s this message to disk, 'repl_callback'
@@ -174,7 +177,10 @@ Status LocalConsensus::Commit(ConsensusRound* round) {
     boost::lock_guard<simple_spinlock> lock(lock_);
     commit_id->set_index(next_op_id_index_++);
     // Reserve the correct slot in the log for the commit operation.
-    RETURN_NOT_OK(log_->Reserve(&commit_op, 1, &reserved_entry_batch));
+    gscoped_ptr<log::LogEntryBatchPB> entry_batch;
+    log::CreateBatchFromAllocatedOperations(&commit_op, 1, &entry_batch);
+
+    RETURN_NOT_OK(log_->Reserve(entry_batch.Pass(), &reserved_entry_batch));
   }
   // Serialize and mark the message as ready to be appended.
   // When the Log actually fsync()s this message to disk, 'commit_clbk'

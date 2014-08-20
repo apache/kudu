@@ -74,10 +74,7 @@ class Log {
 
   ~Log();
 
-  // Reserves a spot in the log for operations in 'ops' (an array
-  // with size 'num_ops').
-  // We use C-style passing here to avoid having to allocate a vector
-  // in some hot paths.
+  // Reserves a spot in the log's queue for 'entry_batch'.
   //
   // 'reserved_entry' is initialized by this method and any resources
   // associated with it will be released in AsyncAppend().  In order
@@ -86,8 +83,7 @@ class Log {
   //
   // WARNING: the caller _must_ call AsyncAppend() or else the log
   // will "stall" and will never be able to make forward progress.
-  Status Reserve(const consensus::OperationPB* const * ops,
-                 int num_ops,
+  Status Reserve(gscoped_ptr<LogEntryBatchPB> entry_batch,
                  LogEntryBatch** reserved_entry);
 
   // Asynchronously appends 'entry' to the log. Once the append
@@ -228,11 +224,6 @@ class Log {
 
   // Make segments roll over.
   Status RollOver();
-
-  // Actually makes the reservation in the queue, after entries have
-  // beed added to a batch.
-  Status DoReserve(gscoped_ptr<LogEntryBatchPB> entry_batch,
-                   LogEntryBatch** reserved_entry);
 
   // Sets 'out' to a newly created temporary file (see
   // Env::NewTempWritableFile()) for a placeholder segment. Sets

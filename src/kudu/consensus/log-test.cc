@@ -68,7 +68,12 @@ TEST_F(LogTest, TestMultipleEntriesInABatch) {
   ops.push_back(&op2);
 
   LogEntryBatch* reserved_entry;
-  ASSERT_STATUS_OK(log_->Reserve(&ops[0], 2, &reserved_entry));
+
+  gscoped_ptr<log::LogEntryBatchPB> entry_batch;
+  log::CreateBatchFromAllocatedOperations(&ops[0], 2, &entry_batch);
+
+  ASSERT_STATUS_OK(log_->Reserve(entry_batch.Pass(), &reserved_entry));
+
   Synchronizer sync;
   ASSERT_STATUS_OK(log_->AsyncAppend(reserved_entry, sync.AsStatusCallback()));
   ASSERT_STATUS_OK(sync.Wait());

@@ -431,6 +431,21 @@ size_t FindStaleSegmentsPrefixSize(const ReadableLogSegmentMap& segment_map,
   return num_stale_segments;
 }
 
+void CreateBatchFromAllocatedOperations(const consensus::OperationPB* const* ops,
+                                        int num_ops,
+                                        gscoped_ptr<LogEntryBatchPB>* batch) {
+  gscoped_ptr<LogEntryBatchPB> entry_batch(new LogEntryBatchPB);
+  for (size_t i = 0; i < num_ops; i++) {
+    // We want to re-use the existing objects here, so const-casting allows
+    // us to put a reference in the new PB.
+    consensus::OperationPB* op = const_cast<consensus::OperationPB*>(ops[i]);
+    LogEntryPB* entry_pb = entry_batch->add_entry();
+    entry_pb->set_type(log::OPERATION);
+    entry_pb->set_allocated_operation(op);
+  }
+  batch->reset(entry_batch.release());
+}
+
 bool IsLogFileName(const string& fname) {
   if (HasPrefixString(fname, ".")) {
     // Hidden file or ./..

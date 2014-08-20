@@ -200,7 +200,11 @@ class LogTestBase : public KuduTest {
 
   void AppendAsync(OperationPB* operation) {
     LogEntryBatch* reserved_entry_batch;
-    ASSERT_STATUS_OK(log_->Reserve(&operation, 1, &reserved_entry_batch));
+
+    gscoped_ptr<log::LogEntryBatchPB> entry_batch;
+    log::CreateBatchFromAllocatedOperations(&operation, 1, &entry_batch);
+
+    ASSERT_STATUS_OK(log_->Reserve(entry_batch.Pass(), &reserved_entry_batch));
     ASSERT_STATUS_OK(log_->AsyncAppend(reserved_entry_batch));
   }
 

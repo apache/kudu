@@ -273,6 +273,14 @@ size_t FindStaleSegmentsPrefixSize(const ReadableLogSegmentMap& segment_map,
                                    const consensus::OpId& earliest_needed_opid,
                                    OpIdRange* initial_op_id_range);
 
+// Sets 'batch' to a newly created batch that contains the pre-allocated
+// OperationPB in 'ops'.
+// We use C-style passing here to avoid having to allocate a vector
+// in some hot paths.
+void CreateBatchFromAllocatedOperations(const consensus::OperationPB* const* ops,
+                                        int num_ops,
+                                        gscoped_ptr<LogEntryBatchPB>* batch);
+
 // Checks if 'fname' is a correctly formatted name of log segment
 // file.
 bool IsLogFileName(const std::string& fname);

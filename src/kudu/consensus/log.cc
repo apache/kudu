@@ -294,29 +294,13 @@ Status Log::RollOver() {
   return Status::OK();
 }
 
-Status Log::Reserve(const consensus::OperationPB* const* ops,
-                    int num_ops,
+Status Log::Reserve(gscoped_ptr<LogEntryBatchPB> entry_batch,
                     LogEntryBatch** reserved_entry) {
   DCHECK(reserved_entry != NULL);
   {
     boost::shared_lock<rw_spinlock> read_lock(state_lock_.get_lock());
     CHECK_EQ(kLogWriting, log_state_);
   }
-
-  gscoped_ptr<LogEntryBatchPB> entry_batch(new LogEntryBatchPB);
-  for (size_t i = 0; i < num_ops; i++) {
-    // We want to re-use the existing objects here, so const-casting allows
-    // us to put a reference in the new PB.
-    consensus::OperationPB* op = const_cast<consensus::OperationPB*>(ops[i]);
-    LogEntryPB* entry_pb = entry_batch->add_entry();
-    entry_pb->set_type(log::OPERATION);
-    entry_pb->set_allocated_operation(op);
-  }
-  return DoReserve(entry_batch.Pass(), reserved_entry);
-}
-
-Status Log::DoReserve(gscoped_ptr<LogEntryBatchPB> entry_batch,
-                    LogEntryBatch** reserved_entry) {
   int num_ops = entry_batch->entry_size();
   gscoped_ptr<LogEntryBatch> new_entry_batch(new LogEntryBatch(entry_batch.Pass(), num_ops));
   new_entry_batch->MarkReserved();
@@ -523,7 +507,7 @@ Status Log::WaitUntilAllFlushed() {
   gscoped_ptr<LogEntryBatchPB> entry_batch(new LogEntryBatchPB);
   entry_batch->add_entry()->set_type(log::FLUSH_MARKER);
   LogEntryBatch* reserved_entry_batch;
-  RETURN_NOT_OK(DoReserve(entry_batch.Pass(), &reserved_entry_batch));
+  RETURN_NOT_OK(Reserve(entry_batch.Pass(), &reserved_entry_batch));
   Synchronizer s;
   RETURN_NOT_OK(AsyncAppend(reserved_entry_batch, s.AsStatusCallback()));
   return s.Wait();

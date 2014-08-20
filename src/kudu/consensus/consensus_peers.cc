@@ -106,7 +106,6 @@ class LocalPeer : public PeerImpl {
     }
     response_.Clear();
 
-    LogEntryBatch* reserved_entry_batch;
     vector<const OperationPB*> ops;
     const OpId* last_replicated = NULL;
     const OpId* last_committed = NULL;
@@ -134,7 +133,11 @@ class LocalPeer : public PeerImpl {
       VLOG(2) << "Local peer appending to log: " << request_.ShortDebugString();
     }
 
-    CHECK_OK(log_->Reserve(&ops[0], ops.size(), &reserved_entry_batch));
+    gscoped_ptr<log::LogEntryBatchPB> entry_batch;
+    log::CreateBatchFromAllocatedOperations(&ops[0], ops.size(), &entry_batch);
+
+    LogEntryBatch* reserved_entry_batch;
+    CHECK_OK(log_->Reserve(entry_batch.Pass(), &reserved_entry_batch));
     CHECK_OK(log_->AsyncAppend(reserved_entry_batch,
                                Bind(&LocalPeer::LogAppendCallback, Unretained(this))));
     return true;
