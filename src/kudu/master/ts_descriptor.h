@@ -19,7 +19,7 @@ class Messenger;
 }
 
 namespace tserver {
-class TabletServerServiceProxy;
+class TabletServerAdminServiceProxy;
 }
 
 namespace master {
@@ -64,7 +64,7 @@ class TSDescriptor {
 
   // Return an RPC proxy to the Tablet Server.
   Status GetProxy(const std::tr1::shared_ptr<rpc::Messenger>& messenger,
-                  std::tr1::shared_ptr<tserver::TabletServerServiceProxy>* proxy);
+                  std::tr1::shared_ptr<tserver::TabletServerAdminServiceProxy>* proxy);
 
  private:
   explicit TSDescriptor(const std::string& perm_id);
@@ -82,7 +82,7 @@ class TSDescriptor {
 
   gscoped_ptr<TSRegistrationPB> registration_;
 
-  std::tr1::shared_ptr<tserver::TabletServerServiceProxy> proxy_;
+  std::tr1::shared_ptr<tserver::TabletServerAdminServiceProxy> proxy_;
 
   DISALLOW_COPY_AND_ASSIGN(TSDescriptor);
 };

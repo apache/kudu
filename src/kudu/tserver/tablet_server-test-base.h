@@ -32,6 +32,7 @@
 #include "kudu/tserver/mini_tablet_server.h"
 #include "kudu/tserver/tablet_server.h"
 #include "kudu/tserver/ts_tablet_manager.h"
+#include "kudu/tserver/tserver_admin.proxy.h"
 #include "kudu/tserver/tserver_service.proxy.h"
 #include "kudu/tserver/scanners.h"
 #include "kudu/util/test_graph.h"
@@ -122,7 +123,7 @@ class TabletServerTest : public KuduTest {
 
     // Connect to it.
     ASSERT_NO_FATAL_FAILURE(CreateClientProxies(mini_server_->bound_rpc_addr(),
-                                                &proxy_, &consensus_proxy_));
+                                                &proxy_, &admin_proxy_, &consensus_proxy_));
   }
 
   void UpdateTestRowRemote(int tid,
@@ -153,12 +154,14 @@ class TabletServerTest : public KuduTest {
   }
 
   void CreateClientProxies(const Sockaddr &addr, gscoped_ptr<TabletServerServiceProxy>* proxy,
-                         gscoped_ptr<consensus::ConsensusServiceProxy>* consensus_proxy) {
+                           gscoped_ptr<TabletServerAdminServiceProxy>* admin_proxy,
+                           gscoped_ptr<consensus::ConsensusServiceProxy>* consensus_proxy) {
     if (!client_messenger_) {
       rpc::MessengerBuilder bld("Client");
       ASSERT_STATUS_OK(bld.Build(&client_messenger_));
     }
     proxy->reset(new TabletServerServiceProxy(client_messenger_, addr));
+    admin_proxy->reset(new TabletServerAdminServiceProxy(client_messenger_, addr));
     consensus_proxy->reset(new consensus::ConsensusServiceProxy(client_messenger_, addr));
   }
 
@@ -298,7 +301,7 @@ class TabletServerTest : public KuduTest {
     ASSERT_TRUE(mini_server_->server()->tablet_manager()->LookupTablet(kTabletId, &tablet_peer_));
     // Connect to it.
     ASSERT_NO_FATAL_FAILURE(CreateClientProxies(mini_server_->bound_rpc_addr(),
-                                                &proxy_, &consensus_proxy_));
+                                                &proxy_, &admin_proxy_, &consensus_proxy_));
   }
 
   // Verifies that a set of expected rows (key, value) is present in the tablet.
@@ -389,6 +392,7 @@ class TabletServerTest : public KuduTest {
   gscoped_ptr<MiniTabletServer> mini_server_;
   scoped_refptr<tablet::TabletPeer> tablet_peer_;
   gscoped_ptr<TabletServerServiceProxy> proxy_;
+  gscoped_ptr<TabletServerAdminServiceProxy> admin_proxy_;
   gscoped_ptr<consensus::ConsensusServiceProxy> consensus_proxy_;
 
   MetricRegistry ts_test_metric_registry_;

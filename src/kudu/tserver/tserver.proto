@@ -75,21 +75,6 @@ message PingRequestPB {
 message PingResponsePB {
 }
 
-message AlterSchemaRequestPB {
-  required bytes tablet_id = 1;
-
-  // TODO: Replace with the table descriptor
-  // (Schema, Column IDs, Column Attributes)
-  required SchemaPB schema = 2;
-
-  required uint32 schema_version = 3;
-  optional string new_table_name = 4;
-}
-
-message AlterSchemaResponsePB {
-  optional TabletServerErrorPB error = 1;
-}
-
 // A batched set of insert/mutate requests.
 message WriteRequestPB {
   required bytes tablet_id = 1;
@@ -151,37 +136,6 @@ message ListTabletsResponsePB {
   }
 
   repeated StatusAndSchemaPB status_and_schema = 2;
-}
-
-// A create tablet request.
-message CreateTabletRequestPB {
-  required bytes table_id = 1;
-  required bytes tablet_id = 2;
-  // In the following keys, the non-string components are in big-endian order
-  required bytes start_key = 3;
-  required bytes end_key = 4;
-
-  required string table_name = 5;
-  required SchemaPB schema = 6;
-
-  // Initial quorum for the tablet.
-  required metadata.QuorumPB quorum = 7;
-}
-
-message CreateTabletResponsePB {
-  optional TabletServerErrorPB error = 1;
-}
-
-// A delete tablet request.
-message DeleteTabletRequestPB {
-  required bytes tablet_id = 1;
-
-  // Reason the tablet is being deleted (for logging purposes)
-  optional string reason = 2;
-}
-
-message DeleteTabletResponsePB {
-  optional TabletServerErrorPB error = 1;
 }
 
 // A range predicate on one of the columns in the underlying
@@ -303,22 +257,4 @@ message ScanResponsePB {
   // in the first response (i.e. the response to the request that had
   // 'new_scan_request' set) and only for READ_AT_SNAPSHOT scans.
   optional fixed64 snap_timestamp = 6;
-}
-
-// Enum of the server's Tablet Manager state: currently this is only
-// used for assertions, but this can also be sent to the master.
-enum TSTabletManagerStatePB {
-  // Indicates that Tablet Manager is initializing.
-  MANAGER_INITIALIZING = 0;
-
-  // Indicates that Tablet Manager is running and can create new
-  // tablets.
-  MANAGER_RUNNING = 1;
-
-  // Indicates that tablet manager is shutting down and no new tablets
-  // can be created.
-  MANAGER_QUIESCING = 2;
-
-  // Tablet Manager has shutdown.
-  MANAGER_SHUTDOWN = 3;
 }

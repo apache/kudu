@@ -13,20 +13,6 @@ service TabletServerService {
   rpc Scan(ScanRequestPB) returns (ScanResponsePB);
   rpc ListTablets(ListTabletsRequestPB) returns (ListTabletsResponsePB);
 
-  // ===========================================================================
-  // Internal Methods
-  //
-  // The following methods are only used for tserver<->master or tserver<->tserver
-  // comms and should not be accessible by clients.
-  // TODO enforce this through ACLS or something...
-  // ===========================================================================
-
-  rpc CreateTablet(CreateTabletRequestPB) returns (CreateTabletResponsePB);
-
-  rpc DeleteTablet(DeleteTabletRequestPB) returns (DeleteTabletResponsePB);
-
-  rpc AlterSchema(AlterSchemaRequestPB) returns (AlterSchemaResponsePB);
-
   // TODO: Remove once we have multi-service support in RPC. Duplicates RemoteBootstrapService.
   rpc BeginRemoteBootstrapSession(BeginRemoteBootstrapSessionRequestPB)
       returns (BeginRemoteBootstrapSessionResponsePB);

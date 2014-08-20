@@ -148,7 +148,7 @@ class DistConsensusTest : public TabletServerTest {
       vector<Sockaddr> addresses;
       host_port.ResolveAddresses(&addresses);
       gscoped_ptr<TabletServerServiceProxy> proxy;
-      CreateClientProxies(addresses[0], &proxy, &consensus_proxy_);
+      CreateClientProxies(addresses[0], &proxy, &admin_proxy_, &consensus_proxy_);
       if (replica_pb.role() == QuorumPeerPB::LEADER) {
         ProxyDetails* leader = new ProxyDetails();
         leader->proxy.reset(proxy.release());

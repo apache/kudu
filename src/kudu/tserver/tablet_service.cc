@@ -183,9 +183,15 @@ void TabletServiceImpl::Ping(const PingRequestPB* req,
   context->RespondSuccess();
 }
 
-void TabletServiceImpl::AlterSchema(const AlterSchemaRequestPB* req,
-                                    AlterSchemaResponsePB* resp,
-                                    rpc::RpcContext* context) {
+TabletServiceAdminImpl::TabletServiceAdminImpl(TabletServer* server)
+  : TabletServerAdminServiceIf(server->metric_context()),
+    server_(server) {
+}
+
+
+void TabletServiceAdminImpl::AlterSchema(const AlterSchemaRequestPB* req,
+                                         AlterSchemaResponsePB* resp,
+                                         rpc::RpcContext* context) {
   DVLOG(3) << "Received Alter Schema RPC: " << req->DebugString();
 
   scoped_refptr<TabletPeer> tablet_peer;
@@ -250,9 +256,9 @@ void TabletServiceImpl::AlterSchema(const AlterSchemaRequestPB* req,
   }
 }
 
-void TabletServiceImpl::CreateTablet(const CreateTabletRequestPB* req,
-                                     CreateTabletResponsePB* resp,
-                                     rpc::RpcContext* context) {
+void TabletServiceAdminImpl::CreateTablet(const CreateTabletRequestPB* req,
+                                          CreateTabletResponsePB* resp,
+                                          rpc::RpcContext* context) {
   LOG(INFO) << "Processing CreateTablet for tablet " << req->tablet_id()
             << " (table=" << req->table_name()
             << " [id=" << req->table_id() << "]), range=[\""
@@ -291,9 +297,9 @@ void TabletServiceImpl::CreateTablet(const CreateTabletRequestPB* req,
   context->RespondSuccess();
 }
 
-void TabletServiceImpl::DeleteTablet(const DeleteTabletRequestPB* req,
-                                     DeleteTabletResponsePB* resp,
-                                     rpc::RpcContext* context) {
+void TabletServiceAdminImpl::DeleteTablet(const DeleteTabletRequestPB* req,
+                                          DeleteTabletResponsePB* resp,
+                                          rpc::RpcContext* context) {
   LOG(INFO) << "Processing DeleteTablet for tablet " << req->tablet_id()
             << (req->has_reason() ? (" (" + req->reason() + ")") : "")
             << " from " << context->requestor_string();

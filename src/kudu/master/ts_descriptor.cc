@@ -4,7 +4,7 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/master/ts_descriptor.h"
 #include "kudu/master/master.pb.h"
-#include "kudu/tserver/tserver_service.proxy.h"
+#include "kudu/tserver/tserver_admin.proxy.h"
 #include "kudu/util/net/net_util.h"
 
 #include <boost/foreach.hpp>
@@ -97,7 +97,7 @@ void TSDescriptor::GetNodeInstancePB(NodeInstancePB* instance_pb) const {
 }
 
 Status TSDescriptor::GetProxy(const std::tr1::shared_ptr<rpc::Messenger>& messenger,
-                              std::tr1::shared_ptr<tserver::TabletServerServiceProxy>* proxy) {
+                              std::tr1::shared_ptr<tserver::TabletServerAdminServiceProxy>* proxy) {
   boost::lock_guard<simple_spinlock> l(lock_);
   if (proxy_ == NULL) {
     HostPort hostport;
@@ -118,7 +118,7 @@ Status TSDescriptor::GetProxy(const std::tr1::shared_ptr<rpc::Messenger>& messen
                    << addrs[0].ToString();
     }
 
-    proxy_.reset(new tserver::TabletServerServiceProxy(messenger, addrs[0]));
+    proxy_.reset(new tserver::TabletServerAdminServiceProxy(messenger, addrs[0]));
   }
   *proxy = proxy_;
   return Status::OK();

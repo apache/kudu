@@ -1250,7 +1250,7 @@ TEST_F(TabletServerTest, TestAlterSchema) {
   // Send the call
   {
     SCOPED_TRACE(req.DebugString());
-    ASSERT_STATUS_OK(proxy_->AlterSchema(req, &resp, &rpc));
+    ASSERT_STATUS_OK(admin_proxy_->AlterSchema(req, &resp, &rpc));
     SCOPED_TRACE(resp.DebugString());
     ASSERT_FALSE(resp.has_error());
   }
@@ -1299,7 +1299,7 @@ TEST_F(TabletServerTest, TestCreateTablet_TabletExists) {
   // Send the call
   {
     SCOPED_TRACE(req.DebugString());
-    ASSERT_STATUS_OK(proxy_->CreateTablet(req, &resp, &rpc));
+    ASSERT_STATUS_OK(admin_proxy_->CreateTablet(req, &resp, &rpc));
     SCOPED_TRACE(resp.DebugString());
     ASSERT_TRUE(resp.has_error());
     ASSERT_EQ(TabletServerErrorPB::TABLET_ALREADY_EXISTS, resp.error().code());
@@ -1321,7 +1321,7 @@ TEST_F(TabletServerTest, TestDeleteTablet) {
   // Send the call
   {
     SCOPED_TRACE(req.DebugString());
-    ASSERT_STATUS_OK(proxy_->DeleteTablet(req, &resp, &rpc));
+    ASSERT_STATUS_OK(admin_proxy_->DeleteTablet(req, &resp, &rpc));
     SCOPED_TRACE(resp.DebugString());
     ASSERT_FALSE(resp.has_error());
   }
@@ -1342,7 +1342,7 @@ TEST_F(TabletServerTest, TestDeleteTablet_TabletNotCreated) {
   // Send the call
   {
     SCOPED_TRACE(req.DebugString());
-    ASSERT_STATUS_OK(proxy_->DeleteTablet(req, &resp, &rpc));
+    ASSERT_STATUS_OK(admin_proxy_->DeleteTablet(req, &resp, &rpc));
     SCOPED_TRACE(resp.DebugString());
     ASSERT_TRUE(resp.has_error());
     ASSERT_EQ(TabletServerErrorPB::TABLET_NOT_FOUND, resp.error().code());
@@ -1366,8 +1366,8 @@ TEST_F(TabletServerTest, TestConcurrentDeleteTablet) {
 
   for (int i = 0; i < kNumDeletes; i++) {
     SCOPED_TRACE(req.DebugString());
-    proxy_->DeleteTabletAsync(req, &responses[i], &rpcs[i],
-                              boost::bind(&CountDownLatch::CountDown, &latch));
+    admin_proxy_->DeleteTabletAsync(req, &responses[i], &rpcs[i],
+                                    boost::bind(&CountDownLatch::CountDown, &latch));
   }
   latch.Wait();
 

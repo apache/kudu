@@ -7,7 +7,7 @@ KRPC_GENERATE(CONSENSUS_KRPC_SRCS CONSENSUS_KRPC_HDRS
 
 add_library(consensus_proto ${CONSENSUS_KRPC_SRCS} ${CONSENSUS_KRPC_HDRS})
 target_link_libraries(consensus_proto
-  tserver_proto
+  tserver_admin_proto
   protobuf
   kudu_common_proto
   cfile_proto

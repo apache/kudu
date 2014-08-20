@@ -7,6 +7,7 @@
 
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/tserver/tserver_service.service.h"
+#include "kudu/tserver/tserver_admin.service.h"
 #include "kudu/consensus/consensus.service.h"
 
 namespace kudu {
@@ -33,18 +34,6 @@ class TabletServiceImpl : public TabletServerServiceIf {
   virtual void Ping(const PingRequestPB* req,
                     PingResponsePB* resp,
                     rpc::RpcContext* context) OVERRIDE;
-
-  virtual void CreateTablet(const CreateTabletRequestPB* req,
-                            CreateTabletResponsePB* resp,
-                            rpc::RpcContext* context) OVERRIDE;
-
-  virtual void DeleteTablet(const DeleteTabletRequestPB* req,
-                            DeleteTabletResponsePB* resp,
-                            rpc::RpcContext* context) OVERRIDE;
-
-  virtual void AlterSchema(const AlterSchemaRequestPB* req,
-                           AlterSchemaResponsePB* resp,
-                           rpc::RpcContext* context) OVERRIDE;
 
   virtual void Write(const WriteRequestPB* req, WriteResponsePB* resp,
                    rpc::RpcContext* context) OVERRIDE;
@@ -94,6 +83,25 @@ class TabletServiceImpl : public TabletServerServiceIf {
 
   TabletServer* server_;
   gscoped_ptr<RemoteBootstrapServiceIf> remote_bootstrap_service_;
+};
+
+class TabletServiceAdminImpl : public TabletServerAdminServiceIf {
+ public:
+  explicit TabletServiceAdminImpl(TabletServer* server);
+  virtual void CreateTablet(const CreateTabletRequestPB* req,
+                            CreateTabletResponsePB* resp,
+                            rpc::RpcContext* context) OVERRIDE;
+
+  virtual void DeleteTablet(const DeleteTabletRequestPB* req,
+                            DeleteTabletResponsePB* resp,
+                            rpc::RpcContext* context) OVERRIDE;
+
+  virtual void AlterSchema(const AlterSchemaRequestPB* req,
+                           AlterSchemaResponsePB* resp,
+                           rpc::RpcContext* context) OVERRIDE;
+
+ private:
+  TabletServer* server_;
 };
 
 class ConsensusServiceImpl : public consensus::ConsensusServiceIf {

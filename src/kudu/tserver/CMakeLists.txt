@@ -35,6 +35,24 @@ target_link_libraries(tserver_proto
   wire_protocol_proto)
 
 #########################################
+# tserver_admin__proto
+#########################################
+
+KRPC_GENERATE(TSERVER_ADMIN_KRPC_SRCS TSERVER_ADMIN_KRPC_HDRS
+  SOURCE_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../..
+  BINARY_ROOT ${CMAKE_CURRENT_BINARY_DIR}/../..
+  PROTO_FILES tserver_admin.proto)
+
+add_library(tserver_admin_proto ${TSERVER_ADMIN_KRPC_SRCS}
+${TSERVER_ADMIN_KRPC_HDRS})
+target_link_libraries(tserver_admin_proto
+  protobuf
+  krpc
+  rpc_header_proto
+  tserver_proto
+  wire_protocol_proto)
+
+#########################################
 # tserver_service_proto
 #########################################
 
@@ -74,6 +92,7 @@ add_library(tserver ${TSERVER_SRCS})
 target_link_libraries(tserver
   protobuf
   tserver_proto
+  tserver_admin_proto
   tserver_service_proto
   remote_bootstrap_proto
   master_proto

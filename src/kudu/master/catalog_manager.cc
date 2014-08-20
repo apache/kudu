@@ -47,7 +47,7 @@
 #include "kudu/master/sys_tables.h"
 #include "kudu/master/ts_descriptor.h"
 #include "kudu/master/ts_manager.h"
-#include "kudu/tserver/tserver_service.proxy.h"
+#include "kudu/tserver/tserver_admin.proxy.h"
 #include "kudu/rpc/messenger.h"
 #include "kudu/rpc/rpc_context.h"
 #include "kudu/util/monotime.h"
@@ -1222,7 +1222,7 @@ class AsyncTabletRequestTask : public MonitoredTask {
 
   int attempt_;
   rpc::RpcController rpc_;
-  std::tr1::shared_ptr<tserver::TabletServerServiceProxy> ts_proxy_;
+  std::tr1::shared_ptr<tserver::TabletServerAdminServiceProxy> ts_proxy_;
 
  private:
   // Callback for Reactor delayed task mechanism. Called either when it is time
@@ -1257,7 +1257,7 @@ class AsyncTabletRequestTask : public MonitoredTask {
 
   Status ResetTSProxy() {
     std::tr1::shared_ptr<TSDescriptor> ts_desc;
-    std::tr1::shared_ptr<tserver::TabletServerServiceProxy> ts_proxy;
+    std::tr1::shared_ptr<tserver::TabletServerAdminServiceProxy> ts_proxy;
     RETURN_NOT_OK(master_->ts_manager()->LookupTSByUUID(permanent_uuid_, &ts_desc));
     RETURN_NOT_OK(ts_desc->GetProxy(master_->messenger(), &ts_proxy));
     ts_proxy_.swap(ts_proxy);
