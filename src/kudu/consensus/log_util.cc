@@ -435,6 +435,7 @@ void CreateBatchFromAllocatedOperations(const consensus::OperationPB* const* ops
                                         int num_ops,
                                         gscoped_ptr<LogEntryBatchPB>* batch) {
   gscoped_ptr<LogEntryBatchPB> entry_batch(new LogEntryBatchPB);
+  entry_batch->mutable_entry()->Reserve(num_ops);
   for (size_t i = 0; i < num_ops; i++) {
     // We want to re-use the existing objects here, so const-casting allows
     // us to put a reference in the new PB.
