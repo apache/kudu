@@ -1672,14 +1672,16 @@ void CatalogManager::HandleTabletSchemaVersionReport(TabletInfo *tablet, uint32_
 }
 
 // Helper class to commit TabletInfo mutations at the end of a scope.
-class ScopedTabletInfoUnlocker {
+namespace {
+
+class ScopedTabletInfoCommitter {
  public:
-  explicit ScopedTabletInfoUnlocker(const std::vector<scoped_refptr<TabletInfo> >* tablets)
+  explicit ScopedTabletInfoCommitter(const std::vector<scoped_refptr<TabletInfo> >* tablets)
     : tablets_(DCHECK_NOTNULL(tablets)) {
   }
 
   // Commit the transactions.
-  ~ScopedTabletInfoUnlocker() {
+  ~ScopedTabletInfoCommitter() {
     BOOST_FOREACH(const scoped_refptr<TabletInfo>& tablet, *tablets_) {
       tablet->mutable_metadata()->CommitMutation();
     }
@@ -1688,6 +1690,7 @@ class ScopedTabletInfoUnlocker {
  private:
   const std::vector<scoped_refptr<TabletInfo> >* tablets_;
 };
+} // anonymous namespace
 
 void CatalogManager::ProcessPendingAssignments(
     const std::vector<scoped_refptr<TabletInfo> >& tablets) {
@@ -1698,13 +1701,13 @@ void CatalogManager::ProcessPendingAssignments(
   BOOST_FOREACH(const scoped_refptr<TabletInfo>& tablet, tablets) {
     tablet->mutable_metadata()->StartMutation();
   }
-  ScopedTabletInfoUnlocker unlocker_in(&tablets);
+  ScopedTabletInfoCommitter unlocker_in(&tablets);
 
   // Any tablets created by the helper functions will also be created in a
   // locked state, so we must ensure they are unlocked before we return to
   // avoid deadlocks.
   std::vector<scoped_refptr<TabletInfo> > new_tablets;
-  ScopedTabletInfoUnlocker unlocker_out(&new_tablets);
+  ScopedTabletInfoCommitter unlocker_out(&new_tablets);
 
   DeferredAssignmentActions deferred;
 
