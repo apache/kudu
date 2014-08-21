@@ -75,6 +75,8 @@ class TransactionDriver : public RefCountedThreadSafe<TransactionDriver> {
 
   // Calls Transaction::Apply() followed by Consensus::Commit() with the
   // results from the Apply().
+  Status ApplyTask();
+
   virtual Status Apply() = 0;
 
   // Called when both Transaction::Apply() and Consensus::Commit() successfully
@@ -97,7 +99,6 @@ class TransactionDriver : public RefCountedThreadSafe<TransactionDriver> {
   TaskExecutor* apply_executor_;
 
   Status transaction_status_;
-  int prepare_finished_calls_;
 
   // Lock that synchronizes access to the transaction's state.
   mutable simple_spinlock lock_;
@@ -252,11 +253,12 @@ class LeaderTransactionDriver : public TransactionDriver {
   FRIEND_TEST(TransactionTrackerTest, TestGetPending);
 
   // Leaders execute Prepare() and Start() in sequence.
+  Status PrepareAndStartTask();
   Status PrepareAndStart();
 
-  void PrepareAndReplicateSucceeded();
+  void ReplicateSucceeded();
 
-  void PrepareOrReplicateFailed(const Status& status);
+  void ReplicateFailed(const Status& status);
 
   // Called when Transaction::Prepare() or Consensus::Replicate() failed,
   // after they have both completed.
@@ -265,8 +267,6 @@ class LeaderTransactionDriver : public TransactionDriver {
   // Called between Transaction::Apply() and Consensus::Commit() if the transaction
   // has COMMIT_WAIT external consistency.
   Status CommitWait();
-
-  std::tr1::shared_ptr<FutureCallback> prepare_and_replicate_finished_callback_;
 
   DISALLOW_COPY_AND_ASSIGN(LeaderTransactionDriver);
 };
@@ -311,11 +311,24 @@ class ReplicaTransactionDriver : public TransactionDriver,
 
   void PrepareFinished(const Status& status);
 
-  void PrepareOrLeaderCommitSucceeded();
+  // Called when either of the parallel phases finishes. If both phases
+  // have finished, takes care of triggering Apply.
+  void PrepareOrLeaderCommitFinishedUnlocked();
 
-  void PrepareOrLeaderCommitFailed(const Status& status);
+  // Starts the transaction and enqueues Apply to happen on the correct threadpool.
+  void StartAndTriggerApplyUnlocked();
 
   void HandlePrepareOrLeaderCommitFailure();
+
+  // Whether the PREPARE phase has finished. This is started as soon
+  // as we receive a REPLICATE message from the leader.
+  bool prepare_finished_;
+
+  // Whether the leader has committed yet. It's possible that we are
+  // still waiting on prepare_finished_ to become true. Only once
+  // prepare is done and the leader has committed may we proceed to
+  // Apply.
+  bool leader_committed_;
 
   std::tr1::shared_ptr<Future> apply_future_;
 

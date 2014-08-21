@@ -33,7 +33,6 @@ class TransactionTrackerTest : public KuduTest {
     }
 
     virtual ~TestTransactionDriver() {
-      prepare_finished_calls_ = 2;
     }
 
    private:

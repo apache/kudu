@@ -35,7 +35,6 @@ TransactionDriver::TransactionDriver(TransactionTracker *txn_tracker,
               boost::bind(&TransactionDriver::ApplyOrCommitFailed, this, _1))),
       prepare_executor_(prepare_executor),
       apply_executor_(apply_executor),
-      prepare_finished_calls_(0),
       trace_(new Trace()),
       start_time_(MonoTime::Now(MonoTime::FINE)) {
 }
@@ -44,6 +43,18 @@ void TransactionDriver::Init(Transaction* transaction) {
   boost::lock_guard<simple_spinlock> lock(lock_);
   transaction_.reset(transaction);
   txn_tracker_->Add(this);
+}
+
+// TaskExecutor forces submitted methods to return a Status so we handle whatever error
+// happen synchronously and always return Status::OK();
+// TODO: Consider exposing underlying ThreadPool::Submit()/SubmitFunc() methods in
+// TaskExecutor so we don't need to do this.
+Status TransactionDriver::ApplyTask() {
+  Status s = Apply();
+  if (!s.ok()) {
+    ApplyOrCommitFailed(s);
+  }
+  return Status::OK();
 }
 
 consensus::OpId TransactionDriver::GetOpId() {
@@ -105,36 +116,51 @@ LeaderTransactionDriver::LeaderTransactionDriver(TransactionTracker* txn_tracker
     : TransactionDriver(txn_tracker,
                         consensus,
                         prepare_executor,
-                        apply_executor),
-      prepare_and_replicate_finished_callback_(
-          new BoundFunctionCallback(
-              boost::bind(&LeaderTransactionDriver::PrepareAndReplicateSucceeded, this),
-              boost::bind(&LeaderTransactionDriver::PrepareOrReplicateFailed, this, _1))) {
+                        apply_executor) {
 }
 
 Status LeaderTransactionDriver::Execute() {
   ADOPT_TRACE(trace());
 
+  // TODO: we don't really need to use a future here -- the task itself
+  // handles triggering Replicate once it is complete. We should add
+  // a way to submit a simple Callback to the underlying threadpool.
   shared_ptr<Future> prepare_task_future;
   RETURN_NOT_OK(prepare_executor_->Submit(
-      boost::bind(&LeaderTransactionDriver::PrepareAndStart, this),
+      boost::bind(&LeaderTransactionDriver::PrepareAndStartTask, this),
       &prepare_task_future));
 
-  prepare_task_future->AddListener(prepare_and_replicate_finished_callback_);
+  return Status::OK();
+}
+
+Status LeaderTransactionDriver::PrepareAndStartTask() {
+  Status prepare_status = PrepareAndStart();
+  if (PREDICT_FALSE(!prepare_status.ok())) {
+    transaction_status_ = prepare_status;
+    HandlePrepareOrReplicateFailure();
+  }
   return Status::OK();
 }
 
 Status LeaderTransactionDriver::PrepareAndStart() {
+  // Actually prepare and start the transaction.
   RETURN_NOT_OK(transaction_->Prepare());
   RETURN_NOT_OK(transaction_->Start());
 
+  // Trigger the consensus replication.
   boost::lock_guard<simple_spinlock> lock(lock_);
-
   gscoped_ptr<ReplicateMsg> replicate_msg;
   transaction_->NewReplicateMsg(&replicate_msg);
-  gscoped_ptr<ConsensusRound> round(consensus_->NewRound(replicate_msg.Pass(),
-                                                         prepare_and_replicate_finished_callback_,
-                                                         commit_finished_callback_));
+
+  std::tr1::shared_ptr<FutureCallback> replicate_callback(
+    new BoundFunctionCallback(
+      boost::bind(&LeaderTransactionDriver::ReplicateSucceeded, this),
+      boost::bind(&LeaderTransactionDriver::ReplicateFailed, this, _1)));
+
+  gscoped_ptr<ConsensusRound> round(consensus_->NewRound(
+                                      replicate_msg.Pass(),
+                                      replicate_callback,
+                                      commit_finished_callback_));
 
   RETURN_NOT_OK(consensus_->Replicate(round.get()));
 
@@ -151,21 +177,17 @@ void LeaderTransactionDriver::Abort() {
   transaction_status_ = Status::Aborted("Transaction Aborted on request.");
 }
 
-void LeaderTransactionDriver::PrepareAndReplicateSucceeded() {
+void LeaderTransactionDriver::ReplicateSucceeded() {
   ADOPT_TRACE(trace());
+  TRACE("REPLICATE succeeded");
+
   // TODO: this is an ugly hack so that the Release() call doesn't delete the
   // object while we still hold the lock.
   scoped_refptr<LeaderTransactionDriver> ref(this);
   boost::lock_guard<simple_spinlock> lock(lock_);
 
-  // TODO Now that this method is called sequentially probably simplify this.
-  prepare_finished_calls_++;
-  if (prepare_finished_calls_ < 2) {
-    // Still waiting on the other task.
-    return;
-  }
-  CHECK_EQ(2, prepare_finished_calls_);
-
+  // Even though Replicate succeeded, it's possible that the transaction
+  // got Abort()ed.
   if (!transaction_status_.ok()) {
     HandlePrepareOrReplicateFailure();
     return;
@@ -173,7 +195,7 @@ void LeaderTransactionDriver::PrepareAndReplicateSucceeded() {
 
   shared_ptr<Future> apply_future;
   // TODO Allow to abort apply/commit. See KUDU-341
-  Status s = apply_executor_->Submit(boost::bind(&LeaderTransactionDriver::Apply, this),
+  Status s = apply_executor_->Submit(boost::bind(&LeaderTransactionDriver::ApplyTask, this),
                                      &apply_future);
   if (!s.ok()) {
     transaction_status_ = s;
@@ -181,20 +203,19 @@ void LeaderTransactionDriver::PrepareAndReplicateSucceeded() {
   }
 }
 
-void LeaderTransactionDriver::PrepareOrReplicateFailed(const Status& failure_reason) {
+void LeaderTransactionDriver::ReplicateFailed(const Status& failure_reason) {
   ADOPT_TRACE(trace());
+  TRACE("REPLICATE failed: $0", failure_reason.ToString());
   // TODO: this is an ugly hack so that the Release() call doesn't delete the
   // object while we still hold the lock.
   scoped_refptr<LeaderTransactionDriver> ref(this);
   boost::lock_guard<simple_spinlock> lock(lock_);
   transaction_status_ = failure_reason;
-  prepare_finished_calls_ = 2;
   HandlePrepareOrReplicateFailure();
 }
 
 void LeaderTransactionDriver::HandlePrepareOrReplicateFailure() {
   DCHECK(!transaction_status_.ok());
-  CHECK_EQ(2, prepare_finished_calls_);
 
   // set the error on the completion callback
   DCHECK_NOTNULL(mutable_state())->completion_callback()->set_error(transaction_status_);
@@ -223,26 +244,17 @@ void LeaderTransactionDriver::HandlePrepareOrReplicateFailure() {
   }
 }
 
-
-// Note: Transaction::Apply() and Consensus::Commit() are called in sequence, so there
-// is no reason for the Status returned by this function to be handled like the Status
-// returned from Transaction::Prepare() and Consensus::Replicate(), which are executed
-// concurrently. However TaskExecutor forces submitted methods to return a Status
-// so we handle whatever error happen synchronously and always return Status::OK();
-// TODO: Consider exposing underlying ThreadPool::Submit()/SubmitFunc() methods in
-// TaskExecutor.
 Status LeaderTransactionDriver::Apply() {
   ADOPT_TRACE(trace());
-  Status s;
   {
     boost::lock_guard<simple_spinlock> lock(lock_);
     gscoped_ptr<CommitMsg> commit_msg;
-    s = transaction_->Apply(&commit_msg);
+    CHECK_OK(transaction_->Apply(&commit_msg));
     // If the client requested COMMIT_WAIT as the external consistency mode
     // calculate the latest that the prepare timestamp could be and wait
     // until now.earliest > prepare_latest. Only after this are the locks
     // released.
-    if (s.ok() && mutable_state()->external_consistency_mode() == COMMIT_WAIT) {
+    if (mutable_state()->external_consistency_mode() == COMMIT_WAIT) {
       TRACE("APPLY: Commit Wait.");
       // If we can't commit wait and have already applied we might have consistency
       // issues if we still reply to the client that the operation was a success.
@@ -251,18 +263,9 @@ Status LeaderTransactionDriver::Apply() {
       CHECK_OK(CommitWait());
     }
 
-    if (PREDICT_TRUE(s.ok())) {
-      transaction_->PreCommit();
-      s = mutable_state()->consensus_round()->Commit(commit_msg.Pass());
-      if (PREDICT_TRUE(s.ok())) {
-        transaction_->PostCommit();
-      }
-    }
-  }
-
-  // If the apply or the commit failed, abort the transaction.
-  if (PREDICT_FALSE(!s.ok())) {
-    ApplyOrCommitFailed(s);
+    transaction_->PreCommit();
+    CHECK_OK(mutable_state()->consensus_round()->Commit(commit_msg.Pass()));
+    transaction_->PostCommit();
   }
 
   return Status::OK();
@@ -285,7 +288,6 @@ void LeaderTransactionDriver::ApplyOrCommitFailed(const Status& abort_reason) {
   // object while we still hold the lock.
   scoped_refptr<LeaderTransactionDriver> ref(this);
   boost::lock_guard<simple_spinlock> lock(lock_);
-  CHECK_EQ(prepare_finished_calls_, 2);
 
   LOG(WARNING) << "Commit failed in transaction: " << ToStringUnlocked()
       << " with Status: " << abort_reason.ToString();
@@ -322,9 +324,6 @@ Status LeaderTransactionDriver::CommitWait() {
 }
 
 LeaderTransactionDriver::~LeaderTransactionDriver() {
-  if (prepare_finished_calls_ < 2) {
-    HandlePrepareOrReplicateFailure();
-  }
 }
 
 ////////////////////////////////////////////////////////////
@@ -382,7 +381,6 @@ void ReplicaTransactionDriver::Abort() {
   // object while we still hold the lock.
   scoped_refptr<ReplicaTransactionDriver> ref(this);
   boost::lock_guard<simple_spinlock> state_lock(lock_);
-  prepare_finished_calls_ = 2;
   LOG(WARNING) << "Transaction aborted on request: " << ToStringUnlocked();
   transaction_->Finish();
   txn_tracker_->Release(this);
@@ -390,51 +388,70 @@ void ReplicaTransactionDriver::Abort() {
 
 Status ReplicaTransactionDriver::LeaderCommitted(gscoped_ptr<OperationPB> leader_commit_op) {
   ADOPT_TRACE(trace());
+  TRACE("Leader committed: $0",
+        OperationType_Name(leader_commit_op->commit().op_type()));
+
   OperationPB* leader_op;
+
   {
     boost::lock_guard<simple_spinlock> state_lock(lock_);
     mutable_state()->consensus_round()->SetLeaderCommitOp(leader_commit_op.Pass());
     leader_op = mutable_state()->consensus_round()->leader_commit_op();
+    CHECK(!leader_committed_) << "LeaderCommitted() called twice: " << ToStringUnlocked();
+    leader_committed_ = true;
+
+    if (leader_op->commit().op_type() == consensus::OP_ABORT) {
+      transaction_status_ = Status::Aborted("Leader aborted Operation");
+    }
+
+    PrepareOrLeaderCommitFinishedUnlocked();
   }
-  TRACE("Leader committed: $0",
-        OperationType_Name(leader_op->commit().op_type()));
-  // check if the leader aborted the transaction
-  if (leader_op->commit().op_type() == consensus::OP_ABORT) {
-    PrepareOrLeaderCommitFailed(Status::Aborted("Leader aborted Operation"));
-    // Note that we still return Status::OK() since aborting the same way as the leader
-    // is not an error.
-    return Status::OK();
-  }
-  PrepareOrLeaderCommitSucceeded();
+
   return Status::OK();
 }
 
 void ReplicaTransactionDriver::PrepareFinished(const Status& s) {
   ADOPT_TRACE(trace());
   TRACE("PrepareFinished: $0", s.ToString());
-  if (s.ok()) {
-    PrepareOrLeaderCommitSucceeded();
-  } else {
-    PrepareOrLeaderCommitFailed(s);
+
+  {
+    boost::lock_guard<simple_spinlock> state_lock(lock_);
+    CHECK(!prepare_finished_) << "PrepareFinished() called twice: " << ToStringUnlocked();
+    prepare_finished_ = true;
+
+    if (!s.ok()) {
+      transaction_status_ = s.CloneAndPrepend("Prepare failed");
+    }
+
+    PrepareOrLeaderCommitFinishedUnlocked();
   }
 }
 
-void ReplicaTransactionDriver::PrepareOrLeaderCommitSucceeded() {
-  boost::lock_guard<simple_spinlock> state_lock(lock_);
-
-  // Atomically increase the number of calls.
-  prepare_finished_calls_++;
-  if (prepare_finished_calls_ < 2) {
+void ReplicaTransactionDriver::PrepareOrLeaderCommitFinishedUnlocked() {
+  if (!prepare_finished_ || !leader_committed_) {
+    // We're still waiting on either the PREPARE to finish or the leader to commit.
+    // This function will get called again when the other parallel portion finishes.
     return;
   }
-  CHECK_EQ(2, prepare_finished_calls_);
 
+  if (!transaction_status_.ok()) {
+    // Abort the transaction if necessary.
+    CHECK_OK(apply_executor_->Submit(boost::bind(&ReplicaTransactionDriver::AbortAndCommit, this),
+                                     &apply_future_));
+    return;
+  }
+
+  // Otherwise continue with the Apply phase
+  StartAndTriggerApplyUnlocked();
+}
+
+void ReplicaTransactionDriver::StartAndTriggerApplyUnlocked() {
   // Replicas must start the actual transaction in the same order as they
   // receive it from the leader.
   CHECK_OK(transaction_->Start());
 
   if (transaction_status_.ok()) {
-    Status s = apply_executor_->Submit(boost::bind(&ReplicaTransactionDriver::Apply, this),
+    Status s = apply_executor_->Submit(boost::bind(&ReplicaTransactionDriver::ApplyTask, this),
                                        &apply_future_);
     if (PREDICT_TRUE(s.ok())) {
       return;
@@ -448,17 +465,6 @@ void ReplicaTransactionDriver::PrepareOrLeaderCommitSucceeded() {
                                    &apply_future_));
 }
 
-void ReplicaTransactionDriver::PrepareOrLeaderCommitFailed(const Status& failure_reason) {
-  boost::lock_guard<simple_spinlock> state_lock(lock_);
-  transaction_status_ = failure_reason;
-  prepare_finished_calls_++;
-  if (prepare_finished_calls_ < 2) {
-    return;
-  }
-  CHECK_OK(apply_executor_->Submit(boost::bind(&ReplicaTransactionDriver::AbortAndCommit, this),
-                                   &apply_future_));
-}
-
 Status ReplicaTransactionDriver::AbortAndCommit() {
   boost::lock_guard<simple_spinlock> state_lock(lock_);
   HandlePrepareOrLeaderCommitFailure();
@@ -467,7 +473,6 @@ Status ReplicaTransactionDriver::AbortAndCommit() {
 
 void ReplicaTransactionDriver::HandlePrepareOrLeaderCommitFailure() {
   DCHECK(!transaction_status_.ok());
-  CHECK_EQ(prepare_finished_calls_, 2);
 
   // If we're here one of two things happened:
   // - The leader sent an OP_ABORT, in which case we abort with the same message
@@ -489,10 +494,9 @@ void ReplicaTransactionDriver::HandlePrepareOrLeaderCommitFailure() {
       << "\n LeaderOp: " << leader_op->ShortDebugString();
 }
 
-// See: LeaderTransactionDriver::ApplyAndCommit();
 Status ReplicaTransactionDriver::Apply() {
   ADOPT_TRACE(trace());
-  TRACE("ApplyAndCommit()");
+  TRACE("Apply()");
   Status s;
   {
     boost::lock_guard<simple_spinlock> state_lock(lock_);
@@ -542,14 +546,15 @@ void ReplicaTransactionDriver::Finalize() {
 }
 
 ReplicaTransactionDriver::~ReplicaTransactionDriver() {
-  CHECK_EQ(prepare_finished_calls_, 2);
 }
 
 ReplicaTransactionDriver::ReplicaTransactionDriver(TransactionTracker* txn_tracker,
                                                    consensus::Consensus* consensus,
                                                    TaskExecutor* prepare_executor,
                                                    TaskExecutor* apply_executor)
-    : TransactionDriver(txn_tracker, consensus, prepare_executor, apply_executor) {
+  : TransactionDriver(txn_tracker, consensus, prepare_executor, apply_executor),
+    prepare_finished_(false),
+    leader_committed_(false) {
 }
 
 }  // namespace tablet
