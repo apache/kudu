@@ -93,10 +93,17 @@ llvm::Function* MakeProjection(const string& name,
   rbrow->setName("rbrow");
   arena->setName("arena");
 
+  // Mark our arguments as not aliasing. This eliminates a redundant
+  // load of rbrow->row_block_ and rbrow->row_index_ for each column.
+  // Note that these arguments are 1-based indexes.
+  f->setDoesNotAlias(1);
+  f->setDoesNotAlias(2);
+  f->setDoesNotAlias(3);
+
   // Project row function in IR (note: values in angle brackets are
   // constants whose values are determined right now, at JIT time).
   //
-  // define i1 @name(i8* %src, i8* %rbrow, i8* %arena)
+  // define i1 @name(i8* noalias %src, RowBlockRow* noalias %rbrow, Arena* noalias %arena)
   // entry:
   //   %src_bitmap = getelementptr i8* %src, i64 <offset to bitmap>
   //   <for each base column to projection column mapping>
