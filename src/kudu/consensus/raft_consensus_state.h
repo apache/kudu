@@ -101,10 +101,9 @@ class ReplicaState {
  public:
   typedef boost::unique_lock<simple_spinlock> UniqueLock;
 
-  typedef std::tr1::unordered_map<consensus::OpId,
-                                  ConsensusRound*,
-                                  OpIdHashFunctor,
-                                  OpIdEqualsFunctor> OpIdToRoundMap;
+  typedef std::map<consensus::OpId,
+                   ConsensusRound*,
+                   OpIdCompareFunctor> OpIdToRoundMap;
 
   typedef std::set<consensus::OpId,
                    OpIdCompareFunctor> OutstandingCommits;
@@ -218,10 +217,16 @@ class ReplicaState {
   // Enqueues a Prepare() in the ReplicaTransactionFactory.
   Status EnqueuePrepareUnlocked(gscoped_ptr<ConsensusRound> context);
 
-  // Marks the ReplicaTransaction as committed by the leader, meaning the
-  // transaction may Apply() (immediately if Prepare() has completed or
-  // when Prepare() completes, if not).
-  Status MarkConsensusCommittedUnlocked(gscoped_ptr<OperationPB> leader_commit_op);
+  // Marks ReplicaTransactions up to 'id' as committed by the leader, meaning the
+  // transaction may Apply() (immediately if Prepare() has completed or when Prepare()
+  // completes, if not).
+  Status MarkConsensusCommittedUpToUnlocked(const OpId& id);
+
+  // Returns the watermark below which all operations are known to
+  // be committed according to consensus.
+  //
+  // This must be called under a lock.
+  const OpId& GetCommittedOpIdUnlocked() const;
 
   // Updates the last replicated operation.
   // This must be called under a lock and triggers the replication callbacks
@@ -248,20 +253,12 @@ class ReplicaState {
   // committed.
   //
   // This must be called under a lock.
-  void UpdateReplicaCommittedOpIdUnlocked(const OpId& commit_op_id,
-                                          const OpId& committed_op_id);
+  void UpdateReplicaCommittedOpIdUnlocked(const OpId& committed_op_id);
 
   // Called at the very end of a commit to count down the latch.
   // After this method is called both the RaftConsensus instance and the ReplicaState
   // might be destroyed so it is no longer safe to query their state.
   void CountDownOutstandingCommitsIfShuttingDown();
-
-  // Returns the ID of the last commit operation.
-  // NOTE: this is the ID of the commit operation, _not_ the ID of the
-  // _committed_ operation.
-  //
-  // This must be called under a lock.
-  const OpId& GetSafeCommitOpIdUnlocked() const;
 
   // Waits for already triggered Apply()s to commit.
   Status WaitForOustandingApplies();
@@ -365,7 +362,7 @@ class ReplicaState {
   // Used when Role = FOLLOWER/CANDIDATE/LEARNER.
   OpIdToRoundMap pending_txns_;
 
-  // Set that tracks the outstanding commits/applies that are being executed asynchronously,
+  // Set that tracks the outstanding applies that are being executed asynchronously,
   // i.e. the operations for which we've received both the replica and commit messages
   // from the leader but which haven't yet committed in the replica.
   // The key is the id of the commit operation (vs. the id of the committed operation).
@@ -382,23 +379,19 @@ class ReplicaState {
   //  Used when Role = FOLLOWER/CANDIDATE/LEARNER.
   OpId replicated_op_id_;
 
-  // The id of the last received operations. Operations whose id is lower than or equal
+  // The id of the last received operation. Operations whose id is lower than or equal
   // to this id do not need to be resent by the leader.
   //  Used when Role = FOLLOWER/CANDIDATE/LEARNER.
   OpId received_op_id_;
 
-  // The id of the 'safe' commit operation for a replica (NOTE: this is the id of the commit
-  // operation itself, not of the replicate operation to which it refers, see consensus.proto).
-  // All commits before this one have been applied by the replica. Snapshot scans executed on
-  // the replica and on the leader with a timestamp which is less than the timestamp of this
-  // commit are guaranteed to return the same results.
-  //
+  // The id of the Apply that was last triggered when the last message from the leader
+  // was received. Initialized to MinimumOpId().
   // Used when Role = FOLLOWER/CANDIDATE/LEARNER.
-  OpId all_committed_before_id_;
+  OpId last_triggered_apply_;
 
-  // Latch that allows to wait on the outstanding commits to have completed..
+  // Latch that allows to wait on the outstanding applies to have completed..
   // Used when Role = FOLLOWER/CANDIDATE/LEARNER.
-  CountDownLatch in_flight_commits_latch_;
+  CountDownLatch in_flight_applies_latch_;
 
   // Multimap that stores the replicate callbacks in decreasing order.
   OpIdWaiterSet replicate_watchers_;

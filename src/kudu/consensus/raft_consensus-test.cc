@@ -132,12 +132,9 @@ class RaftConsensusTest : public KuduTest {
   }
 
   Status StartPeers() {
-    ConsensusBootstrapInfo boot_info;
-    boot_info.last_commit_id = MinimumOpId();
-
     for (int i = 0; i < quorum_.peers_size(); i++) {
       RaftConsensus* peer = peers_[i];
-      RETURN_NOT_OK(peer->Start(quorum_, boot_info.last_commit_id));
+      RETURN_NOT_OK(peer->Start(quorum_, MinimumOpId()));
     }
     return Status::OK();
   }
@@ -237,6 +234,8 @@ class RaftConsensusTest : public KuduTest {
         return;
       }
       CHECK(s.IsTimedOut());
+      LOG(INFO) << "Waiting for " << to_wait_for.ShortDebugString()
+          << " to be committed. Already timedout " << num_attempts << " times.";
       num_attempts++;
       if (num_attempts == 10) {
         LOG(ERROR) << "Max timeout attempts reached while waiting for commit: "
@@ -285,7 +284,7 @@ class RaftConsensusTest : public KuduTest {
                                    ReplicateWaitMode wait_mode,
                                    CommitMode commit_mode,
                                    OpId* last_op_id,
-                                   vector<ConsensusRound*>* rounds = NULL,
+                                   vector<ConsensusRound*>* rounds,
                                    shared_ptr<LatchCallback>* commit_clbk = NULL) {
     for (int i = 0; i < seq_size; i++) {
       gscoped_ptr<ConsensusRound> round;
@@ -295,9 +294,7 @@ class RaftConsensusTest : public KuduTest {
       if (commit_mode == COMMIT_ONE_BY_ONE) {
         CommitDummyMessage(round.get());
       }
-      if (rounds) {
-        rounds->push_back(round.release());
-      }
+      rounds->push_back(round.release());
     }
 
     if (wait_mode == WAIT_FOR_ALL_REPLICAS) {
@@ -413,10 +410,8 @@ class RaftConsensusTest : public KuduTest {
         replication_ops.insert(last_repl_op);
         l_repl_idx++;
       } else {
+        CHECK(operation->has_commit());
         ASSERT_LT(l_comm_idx, leader_commits.size());
-        ASSERT_TRUE(OpIdEquals(leader_commits[l_comm_idx], operation->id()))
-            << "Expected Leader Commit: " << leader_commits[l_comm_idx].ShortDebugString()
-            << " To match replica: " << operation->id().ShortDebugString();
         ASSERT_EQ(replication_ops.erase(operation->commit().commited_op_id()), 1);
         l_comm_idx++;
       }
@@ -737,11 +732,14 @@ TEST_F(RaftConsensusTest, TestLeaderPromotionWithQuiescedQuorum) {
 
   OpId last_op_id;
   shared_ptr<LatchCallback> last_commit_clbk;
+  vector<ConsensusRound*> rounds;
+  ElementDeleter deleter(&rounds);
   ReplicateSequenceOfMessages(10,
                               2, // The index of the initial leader.
                               WAIT_FOR_ALL_REPLICAS,
                               COMMIT_ONE_BY_ONE,
-                              &last_op_id, NULL,
+                              &last_op_id,
+                              &rounds,
                               &last_commit_clbk);
 
   // Make sure the last operation is committed everywhere
@@ -765,7 +763,8 @@ TEST_F(RaftConsensusTest, TestLeaderPromotionWithQuiescedQuorum) {
                               1, // The index of the new leader.
                               WAIT_FOR_MAJORITY,
                               COMMIT_ONE_BY_ONE,
-                              &last_op_id, NULL,
+                              &last_op_id,
+                              &rounds,
                               &last_commit_clbk);
 
   // Make sure the last operation is committed everywhere

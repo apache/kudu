@@ -131,14 +131,10 @@ class NoOpTestPeerProxy : public PeerProxy {
     response->set_responder_uuid(peer_pb_.permanent_uuid());
 
     if (request->ops_size() > 0) {
-      status->mutable_replicated_watermark()->CopyFrom(
-          request->ops(request->ops_size() - 1).id());
-      status->mutable_safe_commit_watermark()->CopyFrom(
-          request->ops(request->ops_size() - 1).id());
-      status->mutable_received_watermark()->CopyFrom(
+      status->mutable_last_received()->CopyFrom(
           request->ops(request->ops_size() - 1).id());
       last_status_.CopyFrom(*status);
-      peer_term_ = status->mutable_received_watermark()->term();
+      peer_term_ = status->mutable_last_received()->term();
     } else if (last_status_.IsInitialized()) {
       status->CopyFrom(last_status_);
     }
@@ -229,9 +225,7 @@ class LocalTestPeerProxy : public PeerProxy {
         s = consensus_->Update(&other_peer_req, &other_peer_resp);
         if (s.ok() && !other_peer_resp.has_error()) {
           CHECK(other_peer_resp.has_status());
-          CHECK(other_peer_resp.status().has_replicated_watermark());
-          CHECK(other_peer_resp.status().has_safe_commit_watermark());
-          CHECK(other_peer_resp.status().has_received_watermark());
+          CHECK(other_peer_resp.status().has_last_received());
         }
       } else {
         s = Status::NotFound("Other consensus instance was destroyed");
@@ -342,8 +336,7 @@ class TestReplicaDriver : public ReplicaCommitContinuation {
         pool_(pool) {
   }
 
-  virtual Status LeaderCommitted(gscoped_ptr<OperationPB> leader_commit_op) OVERRIDE {
-    round_->SetLeaderCommitOp(leader_commit_op.Pass());
+  virtual Status ConsensusCommitted() OVERRIDE {
     RETURN_NOT_OK(pool_->SubmitFunc(boost::bind(&TestReplicaDriver::ReplicaCommit, this)));
     return Status::OK();
   }
@@ -352,7 +345,7 @@ class TestReplicaDriver : public ReplicaCommitContinuation {
     // Normally the replica would have a different commit msg
     // but for tests we just copy the leader's message.
     gscoped_ptr<CommitMsg> msg(new CommitMsg);
-    msg->CopyFrom(round_->leader_commit_op()->commit());
+    msg->set_op_type(NO_OP);
     CHECK_OK(round_->Commit(msg.Pass()));
   }
 

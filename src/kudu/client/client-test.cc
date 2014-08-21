@@ -1408,6 +1408,12 @@ TEST_F(ClientTest, TestReplicatedMultiTabletTableFailover) {
   // Insert some data.
   ASSERT_NO_FATAL_FAILURE(InsertTestRows(table.get(), kNumRowsToWrite));
 
+  // TODO: we have to sleep here to make sure that the leader has time to
+  // propagate the writes to the followers. We can remove this once the
+  // followers run a leader election on their own and handle advancing
+  // the commit index.
+  usleep(1500 * 1000);
+
   // Find the first replica that will be scanned.
   Synchronizer sync;
   scoped_refptr<internal::RemoteTablet> rt;

@@ -108,6 +108,7 @@ Status RaftConsensus::Start(const metadata::QuorumPB& /* unused */,
   {
     ReplicaState::UniqueLock lock;
     RETURN_NOT_OK(state_->LockForStart(&lock));
+    queue_.Init(last_committed_op_id);
     RETURN_NOT_OK_PREPEND(state_->StartUnlocked(last_committed_op_id),
                           "Unable to start RAFT ReplicaState");
 
@@ -116,7 +117,6 @@ Status RaftConsensus::Start(const metadata::QuorumPB& /* unused */,
                           "Invalid state on RaftConsensus::Start()");
     initial_quorum.CopyFrom(state_->GetCommittedQuorumUnlocked());
   }
-
 
   // If we're marked as candidate emulate a leader election.
   // Temporary while we don't have the real thing.
@@ -145,11 +145,12 @@ Status RaftConsensus::EmulateElection() {
     // in flight, so make sure those assumptions hold.
     // The last thing we received should be a commit and it should also match
     // the safe commit op id.
-    if (!OpIdEquals(state_->GetLastReceivedOpIdUnlocked(), state_->GetSafeCommitOpIdUnlocked())) {
+    if (!OpIdEquals(state_->GetLastReceivedOpIdUnlocked(), state_->GetCommittedOpIdUnlocked())) {
       return Status::IllegalState(
-          Substitute("Replica is not ready to be leader. Last received OpId: $0, Safe OpId: $1",
+          Substitute("Replica is not ready to be leader. "
+                     "Last received OpId: $0, committed OpId: $1",
                      state_->GetLastReceivedOpIdUnlocked().ShortDebugString(),
-                     state_->GetSafeCommitOpIdUnlocked().DebugString()));
+                     state_->GetCommittedOpIdUnlocked().DebugString()));
     }
 
     QuorumPB new_quorum;
@@ -224,8 +225,9 @@ void RaftConsensus::BecomeLeaderResult(const Status& status) {
   CHECK_OK(state_->LockForRead(&lock));
   CHECK(status.ok()) << state_->LogPrefixUnlocked()
       << "Change config transaction failure unsupported. Status: " << status.ToString();
-  LOG(INFO) << "Quorum has accepted the change config transaction. New Effective quorum: "
-      << state_->GetCommittedQuorumUnlocked().ShortDebugString();
+  LOG_WITH_PREFIX(INFO)
+    << "Quorum has accepted the change config transaction. New Effective quorum: "
+    << state_->GetCommittedQuorumUnlocked().ShortDebugString();
 }
 
 Status RaftConsensus::BecomeReplicaUnlocked() {
@@ -404,48 +406,42 @@ OperationStatusTracker* RaftConsensus::CreateLeaderOnlyOperationStatusUnlocked(
                                      1, quorum_state.quorum_size);
 }
 
-Status RaftConsensus::LeaderCommitUnlocked(ConsensusRound* context,
+Status RaftConsensus::LeaderCommitUnlocked(ConsensusRound* round,
                                            OperationPB* commit_op) {
-  // entry for the CommitMsg
-  state_->NewIdUnlocked(commit_op->mutable_id());
 
-  // take ownership of the commit_op as this will go in the queue
-  gscoped_ptr<OperationPB> owned_op(context->release_commit_op());
+  // Sanity checks
+  // TODO remove this when we move commits out of operations.
+  DCHECK(commit_op->has_commit());
+  DCHECK(!commit_op->has_id());
+  DCHECK(commit_op->commit().has_commited_op_id());
 
-  // the commit callback is the very last thing to execute in a transaction
-  // so it needs to free all resources. We need release it from the
-  // ConsensusRound or we'd get a cycle. (callback would free the
-  // TransactionState which would free the ConsensusRound, which in turn
-  // would try to free the callback).
-  shared_ptr<FutureCallback> commit_clbk;
-  context->release_commit_callback(&commit_clbk);
-
-  scoped_refptr<OperationStatusTracker> status;
-  // If the context included a callback set it in the tracker, so that it gets
-  // called when the tracker reports IsDone(), if not just create a status tracker
-  // without a callback meaning the caller doesn't want to be notified when the
-  // operation completes.
-  if (PREDICT_TRUE(commit_clbk.get() != NULL)) {
-    status.reset(CreateLeaderOnlyOperationStatusUnlocked(owned_op.Pass(), commit_clbk));
-  } else {
-    status.reset(CreateLeaderOnlyOperationStatusUnlocked(owned_op.Pass()));
-  }
-
-  RETURN_NOT_OK_PREPEND(queue_.AppendOperation(status),
-                        "Could not append commit request to the queue");
+  // TODO right now we're just using the replica path to store the commits in the log
+  // that should work ok most of the time, but in some cases, if local disk appends/fsyncs
+  // are being slow, this might cause commits to come before the replicate messages
+  // they refer to in the log. This should be easy enough to handle but isn't yet.
 
   if (VLOG_IS_ON(1)) {
     VLOG_WITH_PREFIX(1) << "Leader appended commit. Leader: "
         << state_->ToStringUnlocked() << " Commit: " << commit_op->ShortDebugString();
   }
 
-  state_->UpdateLeaderCommittedOpIdUnlocked(commit_op->commit().commited_op_id());
+  // Copy the ids to update later as we can't be sure they will be alive
+  // after the log append.
+  OpId committed_op_id = commit_op->commit().commited_op_id();
+  RETURN_NOT_OK(AppendCommitToLogUnlocked(round, commit_op));
+  state_->UpdateLeaderCommittedOpIdUnlocked(committed_op_id);
 
   SignalRequestToPeers();
   return Status::OK();
 }
-Status RaftConsensus::ReplicaCommitUnlocked(ConsensusRound* context,
+Status RaftConsensus::ReplicaCommitUnlocked(ConsensusRound* round,
                                             OperationPB* commit_op) {
+
+  // Sanity checks
+  // TODO remove this when we move commits out of operations.
+  DCHECK(commit_op->has_commit());
+  DCHECK(!commit_op->has_id());
+  DCHECK(commit_op->commit().has_commited_op_id());
 
   if (VLOG_IS_ON(1)) {
     VLOG_WITH_PREFIX(1) << "Replica appending commit. Replica: "
@@ -454,21 +450,29 @@ Status RaftConsensus::ReplicaCommitUnlocked(ConsensusRound* context,
 
   // Copy the ids to update later as we can't be sure they will be alive
   // after the log append.
-  OpId commit_op_id = commit_op->id();
   OpId committed_op_id = commit_op->commit().commited_op_id();
+
+  RETURN_NOT_OK(AppendCommitToLogUnlocked(round, commit_op));
+
+  state_->UpdateReplicaCommittedOpIdUnlocked(committed_op_id);
+  return Status::OK();
+}
+
+Status RaftConsensus::AppendCommitToLogUnlocked(ConsensusRound* round,
+                                                OperationPB* commit_op) {
 
   gscoped_ptr<log::LogEntryBatchPB> entry_batch;
   log::CreateBatchFromAllocatedOperations(&commit_op, 1, &entry_batch);
 
   LogEntryBatch* reserved_entry_batch;
-  RETURN_NOT_OK(log_->Reserve(entry_batch.Pass(), &reserved_entry_batch));
+  CHECK_OK(log_->Reserve(entry_batch.Pass(), &reserved_entry_batch));
+
   // TODO: replace the FutureCallbacks in ConsensusContext with StatusCallbacks
   //
   // AsyncAppend takes ownership of 'ftscb'.
-  RETURN_NOT_OK(log_->AsyncAppend(reserved_entry_batch,
-                                  context->commit_callback()->AsStatusCallback()));
+  CHECK_OK(log_->AsyncAppend(reserved_entry_batch,
+                             round->commit_callback()->AsStatusCallback()));
 
-  state_->UpdateReplicaCommittedOpIdUnlocked(commit_op_id, committed_op_id);
   return Status::OK();
 }
 
@@ -478,22 +482,20 @@ Status RaftConsensus::Update(const ConsensusRequestPB* request,
   ConsensusStatusPB* status = response->mutable_status();
   response->set_responder_uuid(state_->GetPeerUuid());
 
+  if (PREDICT_FALSE(VLOG_IS_ON(1))) {
+    VLOG_WITH_PREFIX_LK(1) << "Replica received request: " << request->ShortDebugString();
+  }
+
   // see var declaration
   boost::lock_guard<simple_spinlock> lock(update_lock_);
-
-  // If there are any operations we update our state machine, otherwise just send the status.
-  if (PREDICT_TRUE(request->ops_size() > 0)) {
-    RETURN_NOT_OK(UpdateReplica(request, status));
-  }
+  RETURN_NOT_OK(UpdateReplica(request));
 
   {
     ReplicaState::UniqueLock lock;
     RETURN_NOT_OK(state_->LockForRead(&lock));
     TRACE("Updating watermarks");
     response->set_responder_term(state_->GetCurrentTermUnlocked());
-    status->mutable_replicated_watermark()->CopyFrom(state_->GetLastReplicatedOpIdUnlocked());
-    status->mutable_received_watermark()->CopyFrom(state_->GetLastReceivedOpIdUnlocked());
-    status->mutable_safe_commit_watermark()->CopyFrom(state_->GetSafeCommitOpIdUnlocked());
+    status->mutable_last_received()->CopyFrom(state_->GetLastReceivedOpIdUnlocked());
   }
 
   if (PREDICT_FALSE(VLOG_IS_ON(1))) {
@@ -506,11 +508,9 @@ Status RaftConsensus::Update(const ConsensusRequestPB* request,
   return Status::OK();
 }
 
-Status RaftConsensus::UpdateReplica(const ConsensusRequestPB* request,
-                                    ConsensusStatusPB* status) {
+Status RaftConsensus::UpdateReplica(const ConsensusRequestPB* request) {
   Synchronizer log_synchronizer;
   vector<const OperationPB*> replicate_ops;
-  vector<const OperationPB*> commit_ops;
 
 
   // The ordering of the following operations is crucial, read on for details.
@@ -588,6 +588,7 @@ Status RaftConsensus::UpdateReplica(const ConsensusRequestPB* request,
   //        test. Moreover we need to add more fault injection spots (well that
   //        and actually use the) for each of these steps.
   //        This will be done in a follow up patch.
+  OpId last_enqueued_prepare;
   int successfully_triggered_prepares = 0;
   {
     ReplicaState::UniqueLock lock;
@@ -618,17 +619,21 @@ Status RaftConsensus::UpdateReplica(const ConsensusRequestPB* request,
             << " (already replicated/committed)";
         continue;
       }
-      if (op.has_replicate()) {
+      if (PREDICT_TRUE(op.has_replicate())) {
         replicate_ops.push_back(&const_cast<OperationPB&>(op));
-      } else if (op.has_commit()) {
-        commit_ops.push_back(&op);
       } else {
         LOG_WITH_PREFIX(FATAL)<< "Unexpected op: " << op.ShortDebugString();
       }
     }
 
-    // no operations were received or all operations were duplicated, return.
-    if (PREDICT_FALSE(replicate_ops.empty() && commit_ops.empty())) return Status::OK();
+    // Only accept requests from a sender with a terms that is equal to or higher
+    // than our own.
+    if (PREDICT_FALSE(request->caller_term() < state_->GetCurrentTermUnlocked())) {
+      return Status::IllegalState(
+          Substitute("Sender peer's term: $0 is lower than this replica's term: $1.",
+                     request->caller_term(),
+                     state_->GetCurrentTermUnlocked()));
+    }
 
     // 1 - Enqueue the prepares
 
@@ -647,18 +652,25 @@ Status RaftConsensus::UpdateReplica(const ConsensusRequestPB* request,
       successfully_triggered_prepares++;
     }
 
-    // If we failed all prepares just reply right now without updating any watermarks.
-    // The leader will re-send.
+    // If we failed all prepares, issue a warning.
+    // TODO: this seems to always happen for the first couple round trips
+    // in a new term, since we can't prepare any WRITE_OPs while we're still
+    // in CONFIGURING mode.
     if (PREDICT_FALSE(!prepare_status.ok() && successfully_triggered_prepares == 0)) {
-      return Status::ServiceUnavailable(Substitute("Could not trigger prepares. Status: $0",
-                                                   prepare_status.ToString()));
+      LOG_WITH_PREFIX(WARNING) << "Could not trigger prepares. Status: "
+                               << prepare_status.ToString();
+    }
+
+    last_enqueued_prepare.CopyFrom(state_->GetLastReplicatedOpIdUnlocked());
+    if (successfully_triggered_prepares > 0) {
+      last_enqueued_prepare = replicate_ops[successfully_triggered_prepares - 1]->id();
     }
 
     // 2 - Enqueue the writes.
     // Now that we've triggered the prepares enqueue the operations to be written
     // to the WAL.
     LogEntryBatch* reserved_entry_batch;
-    if (PREDICT_TRUE(successfully_triggered_prepares != 0)) {
+    if (PREDICT_TRUE(successfully_triggered_prepares > 0)) {
       // Trigger the log append asap, if fsync() is on this might take a while
       // and we can't reply until this is done.
       gscoped_ptr<log::LogEntryBatchPB> entry_batch;
@@ -674,41 +686,21 @@ Status RaftConsensus::UpdateReplica(const ConsensusRequestPB* request,
 
     // 3 - Mark transactions as committed
 
-    // Choose the last operation to be applied. This will either be the last commit
-    // in the batch or the last commit whose id is lower than the id of the first failed
-    // prepare (if any prepare failed). This because we want the leader to re-send all
-    // messages after the failed prepare so we shouldn't apply any of them or we would
-    // run the risk of applying twice.
-    OpId dont_apply_after;
-    if (PREDICT_TRUE(prepare_status.ok())) {
-      dont_apply_after = commit_ops.size() == 0 ?
-          MinimumOpId() :
-          commit_ops[commit_ops.size() - 1]->id();
-    } else {
-      dont_apply_after = commit_ops.size() == 0 ?
-          MinimumOpId() :
-          replicate_ops[successfully_triggered_prepares - 1]->id();
+    // Choose the last operation to be applied. This will either be 'committed_index', if
+    // no prepare enqueuing failed, or the minimum between 'committed_index' and the id of
+    // the last successfully enqueued prepare, if some prepare failed to enqueue.
+    OpId dont_apply_after = request->committed_index();
+    if (CopyIfOpIdLessThan(last_enqueued_prepare, &dont_apply_after)) {
+      VLOG_WITH_PREFIX(2) << "Received commit index "
+                          << request->committed_index().ShortDebugString()
+                          << " from the leader but only marked up to "
+                          << last_enqueued_prepare.ShortDebugString()
+                          << " as committed due to failed prepares.";
     }
 
-    vector<const OperationPB*>::iterator iter = commit_ops.begin();
-
-    // Tolerating failed applies is complex in the current setting so we just crash.
-    // We can more easily do it when we change to have the leader send the 'commitIndex'
-    //
-    // NOTE: There is a subtle bug here in the current version because we're not properly
-    // replicating the commit messages. This because a new leader might disagree on the
-    // order of the commit messages. This is purposely left as is since when we get to
-    // changing leaders we'll have the more resilient 'commitIndex' approach in place.
-    while (iter != commit_ops.end() &&
-           !OpIdBiggerThan((*iter)->id(), dont_apply_after)) {
-      gscoped_ptr<OperationPB> op_copy(new OperationPB(**iter));
-      Status status = state_->MarkConsensusCommittedUnlocked(op_copy.Pass());
-      if (PREDICT_FALSE(!status.ok())) {
-        LOG_WITH_PREFIX(FATAL) << "Failed to apply: " << (*iter)->ShortDebugString()
-            << " Status: " << status.ToString();
-      }
-      iter++;
-    }
+    VLOG_WITH_PREFIX(2) << "Marking committed up to " << dont_apply_after.ShortDebugString();
+    TRACE(Substitute("Marking committed up to $0", dont_apply_after.ShortDebugString()));
+    CHECK_OK(state_->MarkConsensusCommittedUpToUnlocked(dont_apply_after));
 
     // We can now update the last received watermark.
     //
@@ -721,18 +713,13 @@ Status RaftConsensus::UpdateReplica(const ConsensusRequestPB* request,
     // last successful prepare (we're sure we didn't prepare or apply anything after
     // that).
     TRACE("Updating last received");
-    if (PREDICT_TRUE(prepare_status.ok())) {
-      state_->UpdateLastReceivedOpIdUnlocked(request->ops(request->ops_size() - 1).id());
-    } else  {
-      state_->UpdateLastReceivedOpIdUnlocked(
-          replicate_ops[successfully_triggered_prepares - 1]->id());
-    }
+    state_->UpdateLastReceivedOpIdUnlocked(last_enqueued_prepare);
   }
   // Release the lock while we wait for the log append to finish so that commits can go through.
   // We'll re-acquire it before we update the state again.
 
   // Update the last replicated op id
-  if (!replicate_ops.empty()) {
+  if (successfully_triggered_prepares > 0) {
 
     // 4 - We wait for the writes to be durable.
 
@@ -744,8 +731,7 @@ Status RaftConsensus::UpdateReplica(const ConsensusRequestPB* request,
 
     ReplicaState::UniqueLock lock;
     RETURN_NOT_OK(state_->LockForUpdate(&lock));
-    state_->UpdateLastReplicatedOpIdUnlocked(
-        replicate_ops[successfully_triggered_prepares - 1]->id());
+    state_->UpdateLastReplicatedOpIdUnlocked(last_enqueued_prepare);
   }
 
   if (PREDICT_FALSE(VLOG_IS_ON(1))) {

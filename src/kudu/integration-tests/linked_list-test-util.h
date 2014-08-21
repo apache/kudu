@@ -443,7 +443,7 @@ Status LinkedListTester::VerifyLinkedListLocal(const tablet::Tablet* tablet,
 
 Status LinkedListTester::WaitAndVerify(int seconds_to_run, int64_t expected) {
 
-  int64_t seen;
+  int64_t seen = 0;
   Stopwatch sw;
   sw.start();
 
@@ -463,7 +463,8 @@ Status LinkedListTester::WaitAndVerify(int seconds_to_run, int64_t expected) {
       // replication is enabled.
       const int kBaseTimeToWaitSecs = 3;
 
-      LOG(INFO) << "Table not yet ready: " << expected << "/" << seen << " rows";
+      LOG(INFO) << "Table not yet ready: " << seen << "/" << expected << " rows"
+                << " (status" << s.ToString() << ")";
       if (sw.elapsed().wall_seconds() > kBaseTimeToWaitSecs + seconds_to_run) {
         // We'll give it an equal amount of time to re-load the data as it took
         // to write it in. Typically it completes much faster than that.

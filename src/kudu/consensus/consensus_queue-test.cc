@@ -32,6 +32,7 @@ class ConsensusQueueTest : public KuduTest {
       : metric_context_(&metric_registry_, "queue-test"),
         queue_(new PeerMessageQueue(metric_context_)) {
     FLAGS_enable_data_block_fsync = false; // Keep unit tests fast.
+    queue_->Init(MinimumOpId());
   }
 
   Status AppendReplicateOp(gscoped_ptr<OperationPB> op,
@@ -72,9 +73,7 @@ TEST_F(ConsensusQueueTest, TestGetAllMessages) {
   // ask for a request. with normal flags this should get the whole queue.
   queue_->RequestForPeer(kPeerUuid, &request);
   ASSERT_EQ(request.ops_size(), 100);
-  response.mutable_status()->mutable_safe_commit_watermark()->CopyFrom(request.ops(99).id());
-  response.mutable_status()->mutable_replicated_watermark()->CopyFrom(request.ops(99).id());
-  response.mutable_status()->mutable_received_watermark()->CopyFrom(request.ops(99).id());
+  response.mutable_status()->mutable_last_received()->CopyFrom(request.ops(99).id());
   queue_->ResponseFromPeer(response, &more_pending);
   ASSERT_FALSE(more_pending) << "Queue still had requests pending";
 
@@ -109,9 +108,7 @@ TEST_F(ConsensusQueueTest, TestStartTrackingAfterStart) {
   // ask for a request, with normal flags this should get half the queue.
   queue_->RequestForPeer(kPeerUuid, &request);
   ASSERT_EQ(request.ops_size(), 50);
-  response.mutable_status()->mutable_safe_commit_watermark()->CopyFrom(request.ops(49).id());
-  response.mutable_status()->mutable_replicated_watermark()->CopyFrom(request.ops(49).id());
-  response.mutable_status()->mutable_received_watermark()->CopyFrom(request.ops(49).id());
+  response.mutable_status()->mutable_last_received()->CopyFrom(request.ops(49).id());
   queue_->ResponseFromPeer(response, &more_pending);
   ASSERT_FALSE(more_pending) << "Queue still had requests pending";
 
@@ -130,19 +127,25 @@ TEST_F(ConsensusQueueTest, TestGetPagedMessages) {
   // helper to estimate request size so that we can set the max batch size appropriately
   ConsensusRequestPB page_size_estimator;
   page_size_estimator.set_caller_term(14);
-  OperationPB* op = page_size_estimator.add_ops();
-  OpId* id = op->mutable_id();
-  id->set_index(0);
-  id->set_term(0);
-  ReplicateMsg* msg = op->mutable_replicate();
-  msg->set_op_type(NO_OP);
-  msg->mutable_noop_request()->set_payload_for_tests("");
+  OpId* committed_index = page_size_estimator.mutable_committed_index();
+  committed_index->set_index(0);
+  committed_index->set_term(0);
+
+  // We're going to add 100 messages to the queue so we make each page fetch 9 of those,
+  // for a total of 12 pages. The last page should have a single op.
+  for (int i = 0; i < 9; i++) {
+    OperationPB* op = page_size_estimator.add_ops();
+    OpId* id = op->mutable_id();
+    id->set_index(0);
+    id->set_term(0);
+    ReplicateMsg* msg = op->mutable_replicate();
+    msg->set_op_type(NO_OP);
+    msg->mutable_noop_request()->set_payload_for_tests("");
+  }
 
   // Save the current flag state.
   google::FlagSaver saver;
-  // we' going to add 100 messages to the queue so we make each page
-  // fetch 9 of those, for a total of 12 pages. The last page should have a single op
-  FLAGS_consensus_max_batch_size_bytes = 9 * page_size_estimator.ByteSize();
+  FLAGS_consensus_max_batch_size_bytes = page_size_estimator.ByteSize();
 
   AppendReplicateMessagesToQueue(queue_.get(), 1, 100);
 
@@ -155,19 +158,15 @@ TEST_F(ConsensusQueueTest, TestGetPagedMessages) {
   response.set_responder_term(14);
   for (int i = 0; i < 11; i++) {
     queue_->RequestForPeer(kPeerUuid, &request);
-    const OpId& last_req_id = request.ops(request.ops_size() -1).id();
-    response.mutable_status()->mutable_safe_commit_watermark()->CopyFrom(last_req_id);
-    response.mutable_status()->mutable_replicated_watermark()->CopyFrom(last_req_id);
-    response.mutable_status()->mutable_received_watermark()->CopyFrom(last_req_id);
+    response.mutable_status()->mutable_last_received()->CopyFrom(
+        request.ops(request.ops_size() -1).id());
     queue_->ResponseFromPeer(response, &more_pending);
     ASSERT_TRUE(more_pending);
   }
   queue_->RequestForPeer(kPeerUuid, &request);
   ASSERT_EQ(1, request.ops_size());
-  const OpId& last_req_id = request.ops(request.ops_size() -1).id();
-  response.mutable_status()->mutable_safe_commit_watermark()->CopyFrom(last_req_id);
-  response.mutable_status()->mutable_replicated_watermark()->CopyFrom(last_req_id);
-  response.mutable_status()->mutable_received_watermark()->CopyFrom(last_req_id);
+  response.mutable_status()->mutable_last_received()->CopyFrom(
+      request.ops(request.ops_size() -1).id());
   queue_->ResponseFromPeer(response, &more_pending);
   ASSERT_FALSE(more_pending);
 
@@ -228,17 +227,18 @@ TEST_F(ConsensusQueueTest, TestPeersDontAckBeyondWatermarks) {
   ConsensusResponsePB response;
   response.set_responder_uuid(kPeerUuid);
   response.set_responder_term(14);
+
   bool more_pending = false;
 
   // ask for a request, with normal flags this should get half the queue.
   queue_->RequestForPeer(kPeerUuid, &request);
   ASSERT_EQ(50, request.ops_size());
-  response.mutable_status()->mutable_safe_commit_watermark()->CopyFrom(request.ops(49).id());
-  response.mutable_status()->mutable_replicated_watermark()->CopyFrom(request.ops(49).id());
-  response.mutable_status()->mutable_received_watermark()->CopyFrom(request.ops(49).id());
+
+  response.mutable_status()->mutable_last_received()->CopyFrom(request.ops(49).id());
 
   AppendReplicateMessagesToQueue(queue_.get(), 101, 100, 1, 1, "", &statuses);
   response.set_responder_term(28);
+
   queue_->ResponseFromPeer(response, &more_pending);
   ASSERT_TRUE(more_pending) << "Queue didn't have anymore requests pending";
 
@@ -263,6 +263,7 @@ TEST_F(ConsensusQueueTest, TestPeersDontAckBeyondWatermarks) {
 TEST_F(ConsensusQueueTest, TestBufferTrimsWhenMessagesAreNotNeeded) {
   FLAGS_consensus_entry_cache_size_soft_limit_mb = 1;
   queue_.reset(new PeerMessageQueue(metric_context_));
+  queue_->Init(MinimumOpId());
 
   // generate a 128Kb dummy payload
   string test_payload(128 * 1024, '0');
@@ -294,6 +295,7 @@ TEST_F(ConsensusQueueTest, TestQueueRefusesRequestWhenFilled) {
   FLAGS_consensus_entry_cache_size_hard_limit_mb = 1;
 
   queue_.reset(new PeerMessageQueue(metric_context_));
+  queue_->Init(MinimumOpId());
 
   // generate a 128Kb dummy payload
   string test_payload(128 * 1024, '0');
@@ -310,20 +312,6 @@ TEST_F(ConsensusQueueTest, TestQueueRefusesRequestWhenFilled) {
   LOG(INFO) << queue_->ToString();
   ASSERT_TRUE(s.IsServiceUnavailable());
 
-  // but should still accept commits
-  {
-    op.reset(new OperationPB);
-    OpId* id = op->mutable_id();
-    id->set_term(10);
-    id->set_index(1);
-    CommitMsg* msg = op->mutable_commit();
-    msg->set_op_type(NO_OP);
-    msg->mutable_noop_response()->set_payload_for_tests(test_payload);
-    status.reset(new TestOpStatusTracker(op.Pass(), 1, 1));
-  }
-
-  ASSERT_STATUS_OK(queue_->AppendOperation(status));
-
   // now ack the first and second ops
   statuses[0]->AckPeer("");
   statuses[1]->AckPeer("");
@@ -332,11 +320,83 @@ TEST_F(ConsensusQueueTest, TestQueueRefusesRequestWhenFilled) {
   ASSERT_STATUS_OK(AppendReplicateOp(op.Pass(), 10, 2, test_payload, &status));
 }
 
+TEST_F(ConsensusQueueTest, TestQueueAdvancesCommittedIndex) {
+  // Track 3 different peers;
+  queue_->TrackPeer("peer-1", MinimumOpId());
+  queue_->TrackPeer("peer-2", MinimumOpId());
+  queue_->TrackPeer("peer-3", MinimumOpId());
+
+  // Append 10 messages to the queue with a majority of 2 for a total of 3 peers.
+  // This should add messages 0.1 -> 0.7, 1.1 -> 1.3 to the queue.
+  vector<scoped_refptr<OperationStatusTracker> > statuses;
+  AppendReplicateMessagesToQueue(queue_.get(), 1, 10, 2, 3);
+
+  // Since no operation was ack'd the committed_index should be
+  // MinimumOpId()
+  ASSERT_TRUE(OpIdEquals(MinimumOpId(), queue_->GetCommittedIndexForTests()));
+
+  // NOTE: We don't need to get operations from the queue. The queue
+  // only cares about what the peer reported as received, not what was sent.
+  ConsensusResponsePB response;
+  response.set_responder_term(1);
+  ConsensusStatusPB* status = response.mutable_status();
+  OpId* last_received = status->mutable_last_received();
+
+  bool more_pending;
+
+  // Ack the first five operations for peer-1
+  response.set_responder_uuid("peer-1");
+
+  last_received->set_term(0);
+  last_received->set_index(5);
+
+  queue_->ResponseFromPeer(response, &more_pending);
+  ASSERT_TRUE(more_pending);
+
+  // Committed index should be the same
+  ASSERT_TRUE(OpIdEquals(MinimumOpId(), queue_->GetCommittedIndexForTests()));
+
+  // Ack the first five operations for peer-2
+  response.set_responder_uuid("peer-2");
+
+  queue_->ResponseFromPeer(response, &more_pending);
+  ASSERT_TRUE(more_pending);
+
+  // Committed index should now have advanced to 0.5
+  OpId expected_committed_index;
+  expected_committed_index.set_term(0);
+  expected_committed_index.set_index(5);
+
+  ASSERT_TRUE(OpIdEquals(expected_committed_index, queue_->GetCommittedIndexForTests()));
+
+  // Ack all operations for peer-3
+  response.set_responder_uuid("peer-3");
+  last_received->set_term(1);
+  last_received->set_index(3);
+
+  queue_->ResponseFromPeer(response, &more_pending);
+  ASSERT_FALSE(more_pending);
+
+  // Committed index should be the same
+  ASSERT_TRUE(OpIdEquals(expected_committed_index, queue_->GetCommittedIndexForTests()));
+
+  // Ack the remaining operations for peer-1
+  response.set_responder_uuid("peer-1");
+  queue_->ResponseFromPeer(response, &more_pending);
+  ASSERT_FALSE(more_pending);
+
+  // Committed index should be the tail of the queue
+  expected_committed_index.set_term(1);
+  expected_committed_index.set_index(3);
+  ASSERT_TRUE(OpIdEquals(expected_committed_index, queue_->GetCommittedIndexForTests()));
+}
+
 TEST_F(ConsensusQueueTest, TestQueueHardAndSoftLimit) {
   FLAGS_consensus_entry_cache_size_soft_limit_mb = 1;
   FLAGS_consensus_entry_cache_size_hard_limit_mb = 2;
 
   queue_.reset(new PeerMessageQueue(metric_context_));
+  queue_->Init(MinimumOpId());
 
   const int kPayloadSize = 768 * 1024;
 
@@ -412,6 +472,7 @@ TEST_F(ConsensusQueueTest, TestGlobalHardLimit) {
  parent_tracker->Consume(6 * 1024 * 1024);
 
  queue_.reset(new PeerMessageQueue(metric_context_, kParentTrackerId));
+ queue_->Init(MinimumOpId());
 
  const int kPayloadSize = 768 * 1024;
 
@@ -456,6 +517,7 @@ TEST_F(ConsensusQueueTest, TestTrimWhenGlobalSoftLimitExceeded) {
  parent_tracker->Consume(1024);
 
  queue_.reset(new PeerMessageQueue(metric_context_, kParentTrackerId));
+ queue_->Init(MinimumOpId());
 
  const int kPayloadSize = 768 * 1024;
 

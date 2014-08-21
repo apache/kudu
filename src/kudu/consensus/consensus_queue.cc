@@ -100,8 +100,9 @@ PeerMessageQueue::PeerMessageQueue(const MetricContext& metric_ctx,
       global_max_ops_size_bytes_hard_(
           FLAGS_global_consensus_entry_cache_size_hard_limit_mb * 1024 * 1024),
       current_term_(MinimumOpId().term()),
+      committed_index_(MinimumOpId()),
       metrics_(metric_ctx),
-      state_(kQueueOpen) {
+      state_(kQueueConstructed) {
   uint64_t max_ops_size_bytes_soft = FLAGS_consensus_entry_cache_size_soft_limit_mb * 1024 * 1024;
   uint64_t global_max_ops_size_bytes_soft =
       FLAGS_global_consensus_entry_cache_size_soft_limit_mb * 1024 * 1024;
@@ -117,6 +118,13 @@ PeerMessageQueue::PeerMessageQueue(const MetricContext& metric_ctx,
                                        parent_tracker_.get());
 }
 
+void PeerMessageQueue::Init(const OpId& committed_index) {
+  CHECK_EQ(state_, kQueueConstructed);
+  CHECK(committed_index.IsInitialized());
+  committed_index_ = committed_index;
+  state_ = kQueueOpen;
+}
+
 Status PeerMessageQueue::TrackPeer(const string& uuid, const OpId& initial_watermark) {
   CHECK(!uuid.empty()) << "Got request to track peer with empty UUID";
   boost::lock_guard<simple_spinlock> lock(queue_lock_);
@@ -126,9 +134,9 @@ Status PeerMessageQueue::TrackPeer(const string& uuid, const OpId& initial_water
   DCHECK(initial_watermark.IsInitialized());
 
   TrackedPeer* tracked_peer = new TrackedPeer(uuid);
-  tracked_peer->peer_status.mutable_safe_commit_watermark()->CopyFrom(initial_watermark);
-  tracked_peer->peer_status.mutable_replicated_watermark()->CopyFrom(initial_watermark);
-  tracked_peer->peer_status.mutable_received_watermark()->CopyFrom(initial_watermark);
+  tracked_peer->CheckMonotonicTerms(initial_watermark.term());
+  tracked_peer->peer_status.mutable_last_received()->CopyFrom(initial_watermark);
+  tracked_peer->uuid = uuid;
 
   InsertOrDie(&watermarks_, uuid, tracked_peer);
   return Status::OK();
@@ -147,9 +155,15 @@ Status PeerMessageQueue::AppendOperation(scoped_refptr<OperationStatusTracker> s
   DCHECK_EQ(state_, kQueueOpen);
   const OperationPB* operation = status->operation();
 
-  DCHECK(operation->has_commit()
-         || operation->has_replicate()) << "Operation must be a commit or a replicate: "
-             << operation->DebugString();
+  // Check that terms are monotonically increasing
+  DCHECK_GE(status->op_id().term(), current_term_);
+  if (status->op_id().term() > current_term_) {
+    current_term_ = status->op_id().term();
+  }
+
+  // If this is a remote peer don't send the commit messages, these need to
+  // be written in line with the replicates, but only for the local peer.
+  CHECK(!operation->has_commit()) << "We don't allow commit messages in the replication queue.";
 
   // Check that terms are monotonically increasing
   DCHECK_GE(status->op_id().term(), current_term_);
@@ -207,7 +221,7 @@ Status PeerMessageQueue::AppendOperation(scoped_refptr<OperationStatusTracker> s
 }
 
 void PeerMessageQueue::RequestForPeer(const string& uuid,
-                                      ConsensusRequestPB* request) {
+                                      ConsensusRequestPB* request) const {
   // Clear the requests without deleting the entries, as they may be in use by other peers.
   request->mutable_ops()->ExtractSubrange(0, request->ops_size(), NULL);
   boost::lock_guard<simple_spinlock> lock(queue_lock_);
@@ -218,19 +232,21 @@ void PeerMessageQueue::RequestForPeer(const string& uuid,
                << ". Queue status: " << ToStringUnlocked();
   }
 
-  MessagesBuffer::iterator iter = messages_.upper_bound(peer->peer_status.received_watermark());
+  MessagesBuffer::const_iterator iter = messages_.upper_bound(peer->peer_status.last_received());
 
+  request->mutable_committed_index()->CopyFrom(committed_index_);
   request->set_caller_term(current_term_);
 
   // Add as many operations as we can to a request.
   OperationStatusTracker* ost = NULL;
   for (; iter != messages_.end(); iter++) {
     ost = (*iter).second.get();
+
     request->mutable_ops()->AddAllocated(ost->operation());
     if (request->ByteSize() > FLAGS_consensus_max_batch_size_bytes) {
 
       // Allow overflowing the max batch size in the case that we are sending
-      // exactly onle op. Otherwise we would never send the batch!
+      // exactly one op. Otherwise we would never send the batch!
       if (request->ops_size() > 1) {
         request->mutable_ops()->ReleaseLast();
       }
@@ -291,50 +307,41 @@ void PeerMessageQueue::ResponseFromPeer(const ConsensusResponsePB& response,
   // same term as our own.
   CHECK_EQ(response.responder_term(), current_term_);
 
-  MessagesBuffer::iterator iter;
-  // We always start processing messages from the lowest watermark
-  // (which might be the replicated or the committed one)
-  const OpId* lowest_watermark = &std::min(peer->peer_status.replicated_watermark(),
-                                           peer->peer_status.safe_commit_watermark(),
-                                           OpIdCompare);
-  iter = messages_.upper_bound(*lowest_watermark);
 
-  MessagesBuffer::iterator end_iter = messages_.upper_bound(response.status().received_watermark());
+  MessagesBuffer::iterator iter = messages_.upper_bound(peer->peer_status.last_received());
+
+  MessagesBuffer::iterator end_iter = messages_.upper_bound(response.status().last_received());
 
   if (PREDICT_FALSE(VLOG_IS_ON(2))) {
     VLOG(2) << "Received Response from Peer: " << response.responder_uuid() << ". Current Status: "
         << peer->peer_status.ShortDebugString() << ". Response: " << response.ShortDebugString();
   }
 
-  // We need to ack replicates and commits separately (commits are executed asynchonously).
-  // So for instance in the case of commits:
-  // - Check that the op is a commit
-  // - Check that it falls between the last ack'd commit watermark and the
-  //   incoming commit watermark
-  // If both checks pass ack it. The case for replicates is similar.
+  // The id of the last operation that becomes committed with this response, i.e. the
+  // id of the last message acknowledged by the responding peer that makes a replicate
+  // message committed.
+  const OpId* last_committed = &committed_index_;
+
   OperationStatusTracker* ost = NULL;
   for (;iter != end_iter; iter++) {
     ost = (*iter).second.get();
     bool was_done = ost->IsDone();
     bool was_all_done = ost->IsAllDone();
-    OperationPB* operation = ost->operation();
-    const OpId& id = operation->id();
 
-    if (operation->has_commit() &&
-        OpIdCompare(id, peer->peer_status.safe_commit_watermark()) > 0 &&
-        OpIdCompare(id, response.status().safe_commit_watermark()) <= 0) {
-      ost->AckPeer(peer->uuid);
-    } else if (operation->has_replicate() &&
-        OpIdCompare(id, peer->peer_status.replicated_watermark()) > 0 &&
-        OpIdCompare(id, response.status().replicated_watermark()) <= 0) {
-      ost->AckPeer(peer->uuid);
-    }
+    // Acknowledge that the peer logged the operation
+    ost->AckPeer(response.responder_uuid());
 
     if (ost->IsAllDone() && !was_all_done) {
       metrics_.num_all_done_ops->Increment();
       metrics_.num_majority_done_ops->Decrement();
     }
     if (ost->IsDone() && !was_done) {
+      // If this operation became IsDone() with this response
+      // update 'last_committed_' to match.
+      // Because the replication queue is traversed in order
+      // we're sure to update 'last_committed_' to monotonically
+      // increasing values.
+      last_committed = &ost->operation()->id();
       metrics_.num_majority_done_ops->Increment();
       metrics_.num_in_progress_ops->Decrement();
     }
@@ -342,8 +349,20 @@ void PeerMessageQueue::ResponseFromPeer(const ConsensusResponsePB& response,
 
   peer->peer_status.CopyFrom(response.status());
 
+  // Update the last_committed operation.
+  // This only changes the last_committed_ operation if one of the replicates became
+  // committed when this response was processed.
+
+  // TODO This is assuming no leader election, the rules for advancing the
+  // committed_index will have to change when we have it.
+  committed_index_.CopyFrom(*last_committed);
+
   // check if there are more messages pending.
   *more_pending = (iter != messages_.end());
+}
+
+OpId PeerMessageQueue::GetCommittedIndexForTests() const {
+  return committed_index_;
 }
 
 Status PeerMessageQueue::GetOperationStatus(const OpId& op_id,

@@ -54,12 +54,6 @@ void WriteTransaction::NewCommitAbortMessage(gscoped_ptr<CommitMsg>* commit_msg)
       (*commit_msg)->set_timestamp(state()->timestamp().ToUint64());
     }
     (*commit_msg)->mutable_write_response()->CopyFrom(*state_->response());
-  } else {
-    consensus::OperationPB* leader_op = state()->consensus_round()->leader_commit_op();
-    if (leader_op->commit().has_timestamp()) {
-      (*commit_msg)->set_timestamp(leader_op->commit().timestamp());
-    }
-    (*commit_msg)->mutable_write_response()->CopyFrom(leader_op->commit().write_response());
   }
 }
 
@@ -137,9 +131,6 @@ Status WriteTransaction::Apply(gscoped_ptr<CommitMsg>* commit_msg) {
   if (type() == consensus::LEADER) {
     state()->response()->set_write_timestamp(state()->timestamp().ToUint64());
     (*commit_msg)->mutable_write_response()->CopyFrom(*state()->response());
-  } else {
-    (*commit_msg)->mutable_write_response()->CopyFrom(
-        state()->consensus_round()->leader_commit_op()->commit().write_response());
   }
   return Status::OK();
 }

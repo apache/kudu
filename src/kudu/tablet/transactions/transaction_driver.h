@@ -296,7 +296,7 @@ class ReplicaTransactionDriver : public TransactionDriver,
 
   virtual ~ReplicaTransactionDriver() OVERRIDE;
 
-  virtual Status LeaderCommitted(gscoped_ptr<consensus::OperationPB> leader_commit_op) OVERRIDE;
+  virtual Status ConsensusCommitted() OVERRIDE;
 
   virtual Status AbortAndCommit();
 
@@ -311,9 +311,9 @@ class ReplicaTransactionDriver : public TransactionDriver,
 
   void PrepareFinished(const Status& status);
 
-  // Called when either of the parallel phases finishes. If both phases
-  // have finished, takes care of triggering Apply.
-  void PrepareOrLeaderCommitFinishedUnlocked();
+  // Called when Prepare() completes and when consensus considers the operation
+  // committed. If both phases have finished, takes care of triggering Apply.
+  void PrepareFinishedOrConsensusCommittedUnlocked();
 
   // Starts the transaction and enqueues Apply to happen on the correct threadpool.
   void StartAndTriggerApplyUnlocked();
@@ -324,11 +324,8 @@ class ReplicaTransactionDriver : public TransactionDriver,
   // as we receive a REPLICATE message from the leader.
   bool prepare_finished_;
 
-  // Whether the leader has committed yet. It's possible that we are
-  // still waiting on prepare_finished_ to become true. Only once
-  // prepare is done and the leader has committed may we proceed to
-  // Apply.
-  bool leader_committed_;
+  // Whether the transaction is considered committed by consensus.
+  bool consensus_committed_;
 
   std::tr1::shared_ptr<Future> apply_future_;
 

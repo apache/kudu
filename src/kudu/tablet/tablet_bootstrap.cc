@@ -337,6 +337,8 @@ Status TabletBootstrap::Bootstrap(shared_ptr<Tablet>* rebuilt_tablet,
     rebuilt_tablet->reset(tablet_.release());
     rebuilt_log->reset(log_.release());
     *opid_anchor_registry = opid_anchor_registry_;
+    consensus_info->last_id = consensus::MinimumOpId();
+    consensus_info->last_committed_id = consensus::MinimumOpId();
     return Status::OK();
   }
 
@@ -510,6 +512,7 @@ struct ReplayState {
   ReplayState() {
     prev_op_id.set_term(0);
     prev_op_id.set_index(0);
+    committed_op_id = prev_op_id;
   }
 
   ~ReplayState() {
@@ -545,6 +548,10 @@ struct ReplayState {
       // true. We're not yet 100% certain this is OK for other parts of the
       // system like log GC, so logging these at WARNING for now so we don't
       // forget to come back to it.
+      //
+      // Now that commit messages don't have IDs, though, we only call this
+      // on REPLICATEs and they should be in-order again, so we can probably
+      // restore this.
       string op_desc = op.has_replicate() ?
           Substitute("$0,$1 REPLICATE (Type: $2)",
                      op.id().term(),
@@ -567,15 +574,18 @@ struct ReplayState {
     return Status::OK();
   }
 
-  // The last message's id (regardless of type)
+  void UpdateCommittedOpId(const OpId& id) {
+    if (OpIdCompare(id, committed_op_id) > 0) {
+      committed_op_id = id;
+    }
+  }
+
+  // The last replicate message's id (regardless of type)
   OpId prev_op_id;
 
-  // The last COMMIT message's id
-  OpId last_commit_id;
-
-  // The last REPLICATE message's id
-  OpId last_replicate_id;
-
+  // The last operation known to be committed.
+  // All other operations with lower IDs are also committed.
+  OpId committed_op_id;
 
   // REPLICATE log entries whose corresponding COMMIT/ABORT record has
   // not yet been seen. Keyed by opid.
@@ -607,8 +617,6 @@ Status TabletBootstrap::HandleEntry(ReplayState* state, LogEntryPB* entry) {
 Status TabletBootstrap::HandleReplicateMessage(ReplayState* state, LogEntryPB* entry) {
   state->CheckSequentialOpId(entry->operation());
 
-  state->last_replicate_id = entry->operation().id();
-
   // Append the replicate message to the log as is
   RETURN_NOT_OK(log_->Append(entry));
 
@@ -630,17 +638,13 @@ Status TabletBootstrap::HandleCommitMessage(ReplayState* state, LogEntryPB* entr
   // TODO: on a term switch, the first commit in any term should discard any
   // pending REPLICATEs from the previous term.
 
-  // All log entries should have an OpId.
-  DCHECK(entry->operation().has_id()) << "Entry has no OpId: " << entry->DebugString();
-
-  state->last_commit_id = entry->operation().id();
+  DCHECK(!entry->operation().has_id()) << "Commit has an OpId: " << entry->DebugString();
 
   // Match up the COMMIT/ABORT record with the original entry that it's applied to.
   const OpId& committed_op_id = entry->operation().commit().commited_op_id();
+  state->UpdateCommittedOpId(committed_op_id);
 
   gscoped_ptr<LogEntryPB> existing_entry;
-  // Consensus commits must be sequentially increasing.
-  state->CheckSequentialOpId(entry->operation());
 
   // They should also have an associated replicate OpId (it may have been in a
   // deleted log segment though).
@@ -655,9 +659,21 @@ Status TabletBootstrap::HandleCommitMessage(ReplayState* state, LogEntryPB* entr
     BOOST_FOREACH(const OperationResultPB& op_result, commit.result().ops()) {
       BOOST_FOREACH(const MemStoreTargetPB& mutated_store, op_result.mutated_stores()) {
         if (!WasStoreAlreadyFlushed(mutated_store)) {
+          LOG(INFO) << "Printing Entries: ";
+          log::SegmentSequence seq;
+          CHECK_OK(log_reader_->GetSegmentsSnapshot(&seq));
+          BOOST_FOREACH(const scoped_refptr<ReadableLogSegment>& seg, seq) {
+            vector<LogEntryPB*> entries;
+            ElementDeleter deleter(&entries);
+            CHECK_OK(seg->ReadEntries(&entries));
+            BOOST_FOREACH(const LogEntryPB* entry, entries) {
+              LOG(INFO) << entry->ShortDebugString();
+            }
+          }
           return Status::Corruption(
               Substitute("Orphan commit $0 has a mutated store $1 that was NOT already flushed",
                          commit.ShortDebugString(), mutated_store.ShortDebugString()));
+
         }
       }
     }
@@ -665,6 +681,7 @@ Status TabletBootstrap::HandleCommitMessage(ReplayState* state, LogEntryPB* entr
   }
 
   delete entry;
+
   return Status::OK();
 }
 
@@ -778,9 +795,8 @@ Status TabletBootstrap::PlaySegments(ConsensusBootstrapInfo* consensus_info) {
   BOOST_FOREACH(OpToEntryMap::value_type& e, state.pending_replicates) {
     consensus_info->orphaned_replicates.push_back(e.second->release_operation());
   }
-  consensus_info->last_commit_id = state.last_commit_id;
-  consensus_info->last_replicate_id = state.last_replicate_id;
   consensus_info->last_id = state.prev_op_id;
+  consensus_info->last_committed_id = state.committed_op_id;
 
   // Log any pending REPLICATEs, maybe useful for diagnosis.
   if (!consensus_info->orphaned_replicates.empty()) {
@@ -827,7 +843,6 @@ Status TabletBootstrap::PlayWriteRequest(OperationPB* replicate_op,
   LogEntryPB commit_entry;
   commit_entry.set_type(OPERATION);
   OperationPB* new_commit_op = commit_entry.mutable_operation();
-  new_commit_op->mutable_id()->CopyFrom(commit_op.id());
   CommitMsg* commit = new_commit_op->mutable_commit();
   commit->CopyFrom(commit_op.commit());
   tx_state.ReleaseTxResultPB(commit->mutable_result());
@@ -856,7 +871,6 @@ Status TabletBootstrap::PlayAlterSchemaRequest(OperationPB* replicate_op,
   LogEntryPB commit_entry;
   commit_entry.set_type(OPERATION);
   OperationPB* new_commit_op = commit_entry.mutable_operation();
-  new_commit_op->mutable_id()->CopyFrom(commit_op.id());
   CommitMsg* commit = new_commit_op->mutable_commit();
   commit->CopyFrom(commit_op.commit());
   RETURN_NOT_OK(log_->Append(&commit_entry));
@@ -889,7 +903,6 @@ Status TabletBootstrap::PlayChangeConfigRequest(OperationPB* replicate_op,
   LogEntryPB commit_entry;
   commit_entry.set_type(OPERATION);
   OperationPB* new_commit_op = commit_entry.mutable_operation();
-  new_commit_op->mutable_id()->CopyFrom(commit_op.id());
   CommitMsg* commit = new_commit_op->mutable_commit();
   commit->CopyFrom(commit_op.commit());
   RETURN_NOT_OK(log_->Append(&commit_entry));

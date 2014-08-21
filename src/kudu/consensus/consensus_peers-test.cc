@@ -28,7 +28,9 @@ class ConsensusPeersTest : public KuduTest {
  public:
   ConsensusPeersTest()
     :  metric_context_(&metric_registry_, "peer-test"),
-       message_queue_(metric_context_) {}
+       message_queue_(metric_context_) {
+    message_queue_.Init(MinimumOpId());
+  }
 
   virtual void SetUp() OVERRIDE {
     KuduTest::SetUp();
@@ -72,7 +74,7 @@ class ConsensusPeersTest : public KuduTest {
 
   void CheckLastRemoteEntry(NoOpTestPeerProxy* proxy, int term, int index) {
     OpId id;
-    id.CopyFrom(proxy->last_status().replicated_watermark());
+    id.CopyFrom(proxy->last_status().last_received());
     ASSERT_EQ(id.term(), term);
     ASSERT_EQ(id.index(), index);
   }

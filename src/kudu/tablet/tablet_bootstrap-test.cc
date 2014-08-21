@@ -146,7 +146,7 @@ TEST_F(BootstrapTest, TestBootstrap) {
   AppendReplicateBatch(current_id_);
   ASSERT_STATUS_OK(RollLog());
 
-  AppendCommit(current_id_ + 1, current_id_);
+  AppendCommit(current_id_);
 
   shared_ptr<Tablet> tablet;
   ConsensusBootstrapInfo boot_info;
@@ -190,7 +190,7 @@ TEST_F(BootstrapTest, TestOrphanCommit) {
   ASSERT_STATUS_OK(RollLog());
 
   // Step 2) Write the corresponding COMMIT in the second segment.
-  AppendCommit(current_id_ + 1, current_id_);
+  AppendCommit(current_id_);
 
   shared_ptr<Tablet> tablet;
   ConsensusBootstrapInfo boot_info;
@@ -206,7 +206,7 @@ TEST_F(BootstrapTest, TestOrphanCommit) {
   // Step 4) Create an orphanned commit by first adding a commit to
   // the newly rolled logfile, and then by removing the previous
   // commits.
-  AppendCommit(current_id_ + 1, current_id_);
+  AppendCommit(current_id_);
   log::SegmentSequence segments;
   ASSERT_OK(log_->GetLogReader()->GetSegmentsSnapshot(&segments));
   fs_manager_->env()->DeleteFile(segments[0]->path());
@@ -237,7 +237,7 @@ TEST_F(BootstrapTest, TestNonOrphansAfterOrphanCommit) {
   AppendReplicateBatch(current_id_);
   ASSERT_STATUS_OK(RollLog());
 
-  AppendCommit(current_id_ + 1, current_id_);
+  AppendCommit(current_id_);
 
   log::SegmentSequence segments;
   ASSERT_OK(log_->GetLogReader()->GetSegmentsSnapshot(&segments));
@@ -246,7 +246,7 @@ TEST_F(BootstrapTest, TestNonOrphansAfterOrphanCommit) {
   current_id_ += 2;
 
   AppendReplicateBatch(current_id_);
-  AppendCommit(current_id_ + 1, current_id_, 2, 1, 0);
+  AppendCommit(current_id_, 2, 1, 0);
 
   shared_ptr<Tablet> tablet;
   ConsensusBootstrapInfo boot_info;
@@ -289,9 +289,6 @@ TEST_F(BootstrapTest, TestOrphanedReplicate) {
                       "this is a test mutate");
 
   // And it should also include the latest opids.
-  EXPECT_EQ("", boot_info.last_commit_id.ShortDebugString())
-    << "Commit ID should be uninitialized";
-  EXPECT_EQ("term: 0 index: 0", boot_info.last_replicate_id.ShortDebugString());
   EXPECT_EQ("term: 0 index: 0", boot_info.last_id.ShortDebugString());
 }
 

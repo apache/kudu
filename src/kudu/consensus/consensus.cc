@@ -17,9 +17,7 @@ using std::tr1::shared_ptr;
 using strings::Substitute;
 
 ConsensusBootstrapInfo::ConsensusBootstrapInfo()
-  : last_commit_id(MinimumOpId()),
-    last_replicate_id(MinimumOpId()),
-    last_id(MinimumOpId()) {
+  : last_id(MinimumOpId()) {
 }
 
 ConsensusBootstrapInfo::~ConsensusBootstrapInfo() {
@@ -35,6 +33,7 @@ ConsensusRound::ConsensusRound(Consensus* consensus,
       replicate_callback_(replicate_callback),
       commit_callback_(commit_callback),
       continuation_(NULL) {
+  DCHECK_NOTNULL(replicate_op_.get());
 }
 
 ConsensusRound::ConsensusRound(Consensus* consensus,
@@ -42,14 +41,11 @@ ConsensusRound::ConsensusRound(Consensus* consensus,
     : consensus_(consensus),
       replicate_op_(replicate_op.Pass()),
       continuation_(NULL) {
+  DCHECK_NOTNULL(replicate_op_.get());
 }
 
 Status ConsensusRound::Commit(gscoped_ptr<CommitMsg> commit) {
   commit_op_.reset(new OperationPB());
-  if (leader_commit_op_.get() != NULL) {
-    commit_op_->mutable_id()->CopyFrom(leader_commit_op_->id());
-    commit->set_timestamp(leader_commit_op_->commit().timestamp());
-  }
   commit_op_->set_allocated_commit(commit.release());
   commit_op_->mutable_commit()->mutable_commited_op_id()->CopyFrom(replicate_op_->id());
   return consensus_->Commit(this);

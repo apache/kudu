@@ -52,14 +52,11 @@ struct ConsensusBootstrapInfo {
   ConsensusBootstrapInfo();
   ~ConsensusBootstrapInfo();
 
-  // The id of the last COMMIT operation in the log
-  consensus::OpId last_commit_id;
-
-  // The id of the last REPLICATE operation in the log
-  consensus::OpId last_replicate_id;
-
   // The id of the last operation in the log
   consensus::OpId last_id;
+
+  // The id of the last committed operation in the log.
+  consensus::OpId last_committed_id;
 
   // REPLICATE messages which were in the log with no accompanying
   // COMMIT. These need to be passed along to consensus init in order
@@ -256,17 +253,20 @@ class Consensus {
 //
 // When a replica transaction is started with ReplicaTransactionFactory::StartTransaction()
 // the context is set with a commit continuation. Once the leader's commit message for this
-// transaction arrives consensus calls ReplicaCommitContinuation::LeaderCommitted() which
-// triggers the replica to apply/abort based on the leader's message.
+// transaction arrives consensus calls ReplicaCommitContinuation::ConsensusCommitted() which
+// triggers the replica to apply/abort.
 //
 // Commit continuations should execute in their own executor, but must execute in order,
-// i.e. the caller should not block until LeaderCommitted() completes but two subsequent
+// i.e. the caller should not block until ConsensusCommitted() completes but two subsequent
 // calls must complete in the order they were called. This because replicas must enforce
 // that operations are performed in the same order as the leader to keep monotonically
 // increasing timestamps.
 class ReplicaCommitContinuation {
  public:
-  virtual Status LeaderCommitted(gscoped_ptr<OperationPB> leader_commit_op) = 0;
+
+  // Called by consensus to notify that the operation has been ConsensusCommitted i.e.
+  // that the operation is now part of the state machine and should be applied.
+  virtual Status ConsensusCommitted() = 0;
 
   // Aborts the replica transaction, making the transaction release its
   // resources.
@@ -362,16 +362,8 @@ class ConsensusRound {
     return commit_op_.get();
   }
 
-  OperationPB* leader_commit_op() {
-    return leader_commit_op_.get();
-  }
-
   OperationPB* release_commit_op() {
     return commit_op_.release();
-  }
-
-  void SetLeaderCommitOp(gscoped_ptr<OperationPB> leader_commit_op) {
-    leader_commit_op_.reset(leader_commit_op.release());
   }
 
   void SetReplicaCommitContinuation(ReplicaCommitContinuation* continuation) {
@@ -388,10 +380,6 @@ class ConsensusRound {
   gscoped_ptr<OperationPB> replicate_op_;
   // This round's commit operation.
   gscoped_ptr<OperationPB> commit_op_;
-  // This rounds leader commit operation. This is only present in non-leader
-  // replicas and is required for the creation of the replica's commit
-  // message as it will share some information with the leader.
-  gscoped_ptr<OperationPB> leader_commit_op_;
   // The callback that is called once the replicate phase of this consensus
   // round is finished.
   std::tr1::shared_ptr<FutureCallback> replicate_callback_;

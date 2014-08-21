@@ -135,8 +135,21 @@ TEST_F(LinkedListTest, TestLoadAndVerify) {
   // we use WaitAndVerify here instead of a plain Verify.
   ASSERT_OK(tester_->WaitAndVerify(FLAGS_seconds_to_run, written));
 
+  LOG(INFO) << "Successfully verified " << written << " rows before killing any servers.";
+
+  // TODO: until we have automatic leader promotion, we need to sleep here for at least
+  // one consensus heartbeat period to ensure that the leader sends the commit index to
+  // all of the replicas before we kill it. Unless we are pushing new operations to the
+  // leader, it won't eagerly replicate commits until the next heartbeat.
+  //
+  // It may actually be a good idea to do a SignalRequest() or proactively schedule the
+  // next heartbeat a bit sooner whenever the commit index moves forward so that replicas
+  // stay in closer sync with the leader. (KUDU-528)
+  usleep(1500 * 1000);
+
   // Check in-memory state with a downed TS. Scans may try other replicas.
   if (can_kill_ts) {
+    LOG(INFO) << "Killing TS0 and verifying that we can still read all results";
     cluster_->tablet_server(0)->Shutdown();
     ASSERT_OK(tester_->WaitAndVerify(FLAGS_seconds_to_run, written));
   }
@@ -144,13 +157,23 @@ TEST_F(LinkedListTest, TestLoadAndVerify) {
   // Kill and restart the cluster, verify data remains.
   ASSERT_NO_FATAL_FAILURE(RestartCluster());
 
+  LOG(INFO) << "Verifying rows after restarting entire cluster.";
+
   // We need to loop here because the tablet may spend some time in BOOTSTRAPPING state
   // initially after a restart. TODO: Scanner should support its own retries in this circumstance.
   // Remove this loop once client is more fleshed out.
   ASSERT_OK(tester_->WaitAndVerify(FLAGS_seconds_to_run, written));
 
+  // TODO: another workaround here: currently we can't scan a tablet which is in
+  // CONFIGURING state. So, we need to sleep a couple seconds to wait for the tablet
+  // to get out of that state on the other servers. Otherwise, if we kill the leader
+  // below, those servers will get "stuck" there (since we don't auto-reelect)
+  usleep(1500 * 1000);
+
   // Check post-replication state with a downed TS.
   if (can_kill_ts) {
+    LOG(INFO) << "Verifying rows after shutting down TS 0.";
+
     cluster_->tablet_server(0)->Shutdown();
     ASSERT_OK(tester_->WaitAndVerify(FLAGS_seconds_to_run, written));
   }

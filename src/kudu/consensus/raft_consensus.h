@@ -152,8 +152,7 @@ class RaftConsensus : public Consensus {
   // and triggering the required transactions. This method won't return until all
   // operations have been stored in the log and all Prepares() have been completed,
   // and a replica cannot accept any more Update() requests until this is done.
-  Status UpdateReplica(const ConsensusRequestPB* request,
-                       ConsensusStatusPB* status);
+  Status UpdateReplica(const ConsensusRequestPB* request);
 
   // A leader commit, which appends to the message queue. Must be called
   // after LockForCommit().
@@ -163,6 +162,11 @@ class RaftConsensus : public Consensus {
   // after LockForCommit().
   Status ReplicaCommitUnlocked(ConsensusRound* context, OperationPB* commit_op);
 
+  // Asynchronously appends the given commit message to the log.
+  // When the append is complete, calls round->commit_callback().
+  Status AppendCommitToLogUnlocked(ConsensusRound* round,
+                                   OperationPB* commit_op);
+
   // Updates 'peers_' according to the new quorum config.
   Status CreateOrUpdatePeersUnlocked();
 
@@ -170,7 +174,7 @@ class RaftConsensus : public Consensus {
   // this actually waits for the commit round to reach a majority of peers, so that we know
   // we can proceed. If this returns Status::OK(), a majority of peers have accepted the new
   // configuration. The peer cannot perform any additional operations until this succeeds.
-  Status PushConfigurationToPeersUnlocked();
+  Status PushConfigurationToPeersUnlocked(const metadata::QuorumPB& new_config);
 
   OperationStatusTracker* CreateLeaderOnlyOperationStatusUnlocked(
       gscoped_ptr<OperationPB> operation,

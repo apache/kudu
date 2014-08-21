@@ -58,6 +58,15 @@ class MasterReplicationTest : public KuduTest {
     KuduTest::TearDown();
   }
 
+  // Wait for the commit index to propagate (need to wait for the
+  // consensus heartbeat). TODO: This is because we don't handle
+  // orphaned replicates. We could do something fancier here to
+  // probe the actual consensus state, but that would require a lot
+  // of plumbing, and this is just temporary.
+  void WaitForCommitsToPropagate() {
+    usleep(1500 * 1000);
+  }
+
   Status RestartCluster() {
     cluster_->Shutdown();
     RETURN_NOT_OK(cluster_->Start());
@@ -105,6 +114,9 @@ class MasterReplicationTest : public KuduTest {
 
     ASSERT_TRUE(cluster_->leader_mini_master()->master()
                 ->catalog_manager()->TableNameExists(new_table));
+
+    WaitForCommitsToPropagate();
+
     ASSERT_STATUS_OK(RestartCluster());
     ASSERT_NO_FATAL_FAILURE(VerifyTableExists(new_table));
   }
@@ -146,6 +158,7 @@ TEST_F(MasterReplicationTest, TestSysTablesReplication) {
   // Verify that it's created on the leader.
   ASSERT_TRUE(cluster_->leader_mini_master()->master()
               ->catalog_manager()->TableNameExists(kTableId1));
+  WaitForCommitsToPropagate();
 
   // CatalogManager currently reads from copy on write objects that
   // are only updated on the leader master. As a result, we must
@@ -161,6 +174,7 @@ TEST_F(MasterReplicationTest, TestSysTablesReplication) {
 
   // Repeat the same for the second table.
   ASSERT_STATUS_OK(CreateTable(leader_client, kTableId2));
+  WaitForCommitsToPropagate();
   ASSERT_STATUS_OK(RestartCluster());
   ASSERT_NO_FATAL_FAILURE(VerifyTableExists(kTableId2));
 }
@@ -186,6 +200,7 @@ TEST_F(MasterReplicationTest, TestManualPromotion) {
   // Verify that it's created on the leader.
   ASSERT_TRUE(cluster_->leader_mini_master()->master()
               ->catalog_manager()->TableNameExists(kTableId1));
+  WaitForCommitsToPropagate();
 
   // Now for every possible master, verify that it can be promoted to
   // the role of a leader.

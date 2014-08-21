@@ -378,11 +378,24 @@ Status Log::DoAppend(LogEntryBatch* entry_batch, bool caller_owns_operation) {
 
   // We keep track of the last-written OpId here.
   // This is needed to initialize Consensus on startup.
+  //
+  // TODO Probably remove the code below as it looks suspicious: Tablet peer uses this
+  // as 'safe' anchor as it believes it in the log, when it actually isn't, i.e. this
+  // is not the last durable operation. Either move this to tablet peer (since we're
+  // using in flights anyway no need to scan for ids here) or actually delay doing this
+  // until fsync() has been done. See KUDU-527.
+  //
+  // For now we just scan the operations looking for one with an id.
+  // NOTE: This could likely be done in the below loop, but the original code was here
+  // and we're likely to move this soon anyway, plus we don't want to keep reacquiring
+  // the lock.
   {
     boost::lock_guard<rw_spinlock> write_lock(last_entry_op_id_lock_);
-    last_entry_op_id_.CopyFrom(
-        entry_batch->entry_batch_pb_->entry(num_entries - 1).operation().id());
-    DCHECK(last_entry_op_id_.IsInitialized());
+    BOOST_FOREACH(const LogEntryPB& entry, entry_batch->entry_batch_pb_->entry()) {
+      if (entry.has_operation() && entry.operation().has_id()) {
+        last_entry_op_id_.CopyFrom(entry.operation().id());
+      }
+    }
   }
 
   OpId first_op_in_batch;
@@ -391,12 +404,12 @@ Status Log::DoAppend(LogEntryBatch* entry_batch, bool caller_owns_operation) {
     CHECK_EQ(OPERATION, entry_pb->type())
         << "Unexpected log entry type: " << entry_pb->DebugString();
 
-    DCHECK(entry_pb->IsInitialized());
-    if (entry_pb->operation().has_replicate()) CHECK(entry_pb->operation().has_id());
 
-    // TODO When we actually have commits without ids reverse the check below
-    // and test for an id before assigning it to 'first_op_with_id_in_segment'.
-    if (entry_pb->operation().has_commit()) CHECK(entry_pb->operation().has_id());
+    DCHECK(entry_pb->IsInitialized());
+
+    // REPLICATE messages have op ids, whereas COMMITs don't.
+    if (entry_pb->operation().has_replicate()) CHECK(entry_pb->operation().has_id());
+    if (entry_pb->operation().has_commit()) CHECK(!entry_pb->operation().has_id());
 
     // Store the id of the first operation in the batch so that if we roll over
     // to a new segment we already have the first entry for the footer index.
@@ -527,7 +540,7 @@ Status Log::GetLastEntryOpId(consensus::OpId* op_id) const {
 Status Log::GC(const consensus::OpId& min_op_id, int32_t* num_gced) {
   CHECK(min_op_id.IsInitialized()) << "Invalid min_op_id: " << min_op_id.ShortDebugString();
 
-  VLOG(1) << "Running Log GC on " << log_dir_;
+  LOG(INFO) << "Running Log GC on " << log_dir_;
   VLOG_TIMING(1, "Log GC") {
     SegmentSequence segments_to_delete;
 

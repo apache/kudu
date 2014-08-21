@@ -95,6 +95,10 @@ class PeerMessageQueue {
   explicit PeerMessageQueue(const MetricContext& metric_ctx,
                             const std::string& parent_tracker_id = kConsensusQueueParentTrackerId);
 
+  // Initialize the queue.
+  // All operations with ids <= 'committed_index' should be considered committed.
+  void Init(const OpId& committed_index);
+
   // Appends a operation that must be replicated to the quorum and associates
   // it with the provided 'status'.
   // The consensus operation will be associated with the provided 'status'
@@ -116,6 +120,10 @@ class PeerMessageQueue {
   // Assembles a request for a quorum peer, adding entries past 'op_id' up to
   // 'consensus_max_batch_size_bytes'.
   //
+  // Getting a request for a peer doesn't mutate the internal state of the
+  // queue in any way (which is why this method is marked const). Only
+  // when responses are processed are watermarks updated.
+  //
   // WARNING: In order to avoid copying the same messages to every peer,
   // entries are added to 'request' via AddAllocated() methods.
   // The owner of 'request' is expected not to delete the request prior
@@ -125,7 +133,7 @@ class PeerMessageQueue {
   // replace the old entries with new ones without de-allocating the old
   // ones if they are still required.
   void RequestForPeer(const std::string& uuid,
-                      ConsensusRequestPB* request);
+                      ConsensusRequestPB* request) const;
 
   // Updates the request queue with the latest response of a peer, returns
   // whether this peer has more requests pending.
@@ -151,6 +159,9 @@ class PeerMessageQueue {
   void Close();
 
   int64_t GetQueuedOperationsSizeBytesForTests() const;
+
+  // Returns the current consensus committed index, for tests.
+  OpId GetCommittedIndexForTests() const;
 
   std::string ToString() const;
 
@@ -248,6 +259,9 @@ class PeerMessageQueue {
   // rather than by snooping on what operations are appended to the queue.
   uint64_t current_term_;
 
+  // The index of the last operation to be considered committed.
+  OpId committed_index_;
+
   // The current watermark for each peer.
   // The queue owns the OpIds.
   WatermarksMap watermarks_;
@@ -270,6 +284,7 @@ class PeerMessageQueue {
   Metrics metrics_;
 
   enum State {
+    kQueueConstructed,
     kQueueOpen,
     kQueueClosed
   };

@@ -94,8 +94,6 @@ class LocalPeer : public PeerImpl {
             const OpId& initial_op)
       : PeerImpl(peer, tablet_id, leader_uuid),
         log_(log) {
-    last_replicated_.CopyFrom(initial_op);
-    safe_commit_.CopyFrom(initial_op);
     last_received_.CopyFrom(initial_op);
   }
 
@@ -135,9 +133,6 @@ class LocalPeer : public PeerImpl {
       }
     }
 
-    if (last_replicated != NULL) last_replicated_.CopyFrom(*last_replicated);
-    if (last_committed != NULL) safe_commit_.CopyFrom(*last_committed);
-
     last_received_.CopyFrom(*last_received);
 
     if (last_term != -1) {
@@ -164,9 +159,7 @@ class LocalPeer : public PeerImpl {
         VLOG(2) << "Local peer logged: " << request_.ShortDebugString();
       }
       ConsensusStatusPB* status = response_.mutable_status();
-      status->mutable_replicated_watermark()->CopyFrom(last_replicated_);
-      status->mutable_safe_commit_watermark()->CopyFrom(safe_commit_);
-      status->mutable_received_watermark()->CopyFrom(last_received_);
+      status->mutable_last_received()->CopyFrom(last_received_);
 
       request_.mutable_ops()->ExtractSubrange(0, request_.ops_size(), NULL);
       peer_->ProcessResponse(response_.status());

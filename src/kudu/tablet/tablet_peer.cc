@@ -157,7 +157,8 @@ Status TabletPeer::Start(const ConsensusBootstrapInfo& bootstrap_info) {
   VLOG(2) << "Quorum before starting: " << consensus_->Quorum().DebugString();
 
   // TODO: Remove first param from Consensus::Start(). It now does nothing.
-  RETURN_NOT_OK(consensus_->Start(consensus_->Quorum(), bootstrap_info.last_commit_id));
+  RETURN_NOT_OK(consensus_->Start(consensus_->Quorum(),
+                                  bootstrap_info.last_committed_id));
 
   return Status::OK();
 }
@@ -178,10 +179,8 @@ Status TabletPeer::StartPendingTransactions(QuorumPeerPB::Role my_role,
     }
     LOG(ERROR) << "Last OpId in the log: "
         << bootstrap_info.last_id.ShortDebugString();
-    LOG(ERROR) << "Last replicate OpId in the log: "
-        << bootstrap_info.last_replicate_id.ShortDebugString();
-    LOG(ERROR) << "Last commit OpId in the log: "
-        << bootstrap_info.last_commit_id.ShortDebugString();
+    LOG(ERROR) << "Last committed OpId in the log: "
+        << bootstrap_info.last_committed_id.ShortDebugString();
     LOG(FATAL) << "Dealing with orphaned operations is not implemented yet.";
   }
   return Status::OK();
@@ -301,6 +300,7 @@ Status TabletPeer::WaitUntilRunning(const MonoDelta& delta) {
     }
   }
   if (!tablet_running_latch_.WaitFor(delta)) {
+    boost::lock_guard<simple_spinlock> lock(lock_);
     return Status::TimedOut(Substitute("The tablet is not in RUNNING state after waiting: $0",
                                        TabletStatePB_Name(state_)));
   }

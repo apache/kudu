@@ -30,6 +30,7 @@ using std::string;
 using std::tr1::shared_ptr;
 using std::tr1::unordered_set;
 using strings::Substitute;
+using strings::SubstituteAndAppend;
 
 //////////////////////////////////////////////////
 // QuorumState
@@ -97,7 +98,7 @@ ReplicaState::ReplicaState(const ConsensusOptions& options,
     current_term_(0),
     next_index_(0),
     txn_factory_(txn_factory),
-    in_flight_commits_latch_(0),
+    in_flight_applies_latch_(0),
     replicate_watchers_(callback_exec_pool),
     commit_watchers_(callback_exec_pool),
     state_(kInitialized) {
@@ -111,9 +112,9 @@ Status ReplicaState::StartUnlocked(const OpId& initial_id) {
   DCHECK(update_lock_.is_locked());
   current_term_ = initial_id.term();
   next_index_ = initial_id.index() + 1;
-  all_committed_before_id_.CopyFrom(initial_id);
   replicated_op_id_.CopyFrom(initial_id);
   received_op_id_.CopyFrom(initial_id);
+  last_triggered_apply_.CopyFrom(initial_id);
   return Status::OK();
 }
 
@@ -218,7 +219,7 @@ Status ReplicaState::LockForShutdown(UniqueLock* lock) {
   }
   if (state_ != kShuttingDown) {
     state_ = kShuttingDown;
-    in_flight_commits_latch_.Reset(in_flight_commits_.size());
+    in_flight_applies_latch_.Reset(in_flight_commits_.size());
   }
   lock->swap(l);
   return Status::OK();
@@ -333,12 +334,18 @@ Status ReplicaState::CancelPendingTransactions() {
     if (state_ != kShuttingDown) {
       return Status::IllegalState("Can only wait for pending commits on kShuttingDown state.");
     }
-    LOG_WITH_PREFIX(INFO) << "Aborting " << pending_txns_.size() << " pending transactions.";
+    LOG_WITH_PREFIX(INFO) << "Trying to abort " << pending_txns_.size() << " pending transactions.";
     for (OpIdToRoundMap::iterator iter = pending_txns_.begin();
          iter != pending_txns_.end(); iter++) {
       ConsensusRound* round = (*iter).second;
-      if (round->leader_commit_op() == NULL) {
+      // We cancel only transactions whose applies have not yet been triggered.
+      if (in_flight_commits_.count((*iter).first) == 0) {
+        LOG_WITH_PREFIX(INFO) << "Aborting transaction as it isn't in flight: "
+            << (*iter).second->replicate_op()->ShortDebugString();
         round->GetReplicaCommitContinuation()->Abort();
+      } else {
+        LOG_WITH_PREFIX(INFO) << "Skipping txn abort as the apply already in flight: "
+            << (*iter).second->replicate_op()->ShortDebugString();
       }
     }
   }
@@ -351,10 +358,10 @@ Status ReplicaState::WaitForOustandingApplies() {
     if (state_ != kShuttingDown) {
       return Status::IllegalState("Can only wait for pending commits on kShuttingDown state.");
     }
-    LOG_WITH_PREFIX(INFO) << "Waiting on " << in_flight_commits_latch_.count()
-        << " outstanding commits.";
+    LOG_WITH_PREFIX(INFO) << "Waiting on " << in_flight_applies_latch_.count()
+        << " outstanding applies:";
   }
-  in_flight_commits_latch_.Wait();
+  in_flight_applies_latch_.Wait();
   LOG_WITH_PREFIX_LK(INFO) << "All local commits completed.";
   return Status::OK();
 }
@@ -368,26 +375,49 @@ Status ReplicaState::EnqueuePrepareUnlocked(gscoped_ptr<ConsensusRound> round) {
       return Status::IllegalState("Cannot trigger prepare. Replica is not in kRunning state.");
     }
   }
-  ConsensusRound* round_ptr = round.get();
+  ConsensusRound* round_ptr = DCHECK_NOTNULL(round.get());
   RETURN_NOT_OK(txn_factory_->StartReplicaTransaction(round.Pass()));
   InsertOrDie(&pending_txns_, round_ptr->replicate_op()->id(), round_ptr);
   return Status::OK();
 }
 
-Status ReplicaState::MarkConsensusCommittedUnlocked(gscoped_ptr<OperationPB> leader_commit_op) {
+
+Status ReplicaState::MarkConsensusCommittedUpToUnlocked(const OpId& id) {
   DCHECK(update_lock_.is_locked());
   if (PREDICT_FALSE(state_ != kRunning)) {
     return Status::IllegalState("Cannot trigger apply. Replica is not in kRunning state.");
   }
-  ConsensusRound* context = FindPtrOrNull(pending_txns_,
-                                          leader_commit_op->commit().commited_op_id());
-  if (in_flight_commits_.empty()) {
-    all_committed_before_id_.CopyFrom(leader_commit_op->id());
+
+  // If we already committed up to (or past) 'id' return.
+  // This can happen in the case that multiple UpdateConsensus() calls end
+  // up in the RPC queue at the same time, and then might get interleaved out
+  // of order.
+  if (OpIdCompare(last_triggered_apply_, id) >= 0) {
+    VLOG_WITH_PREFIX(2)
+      << "Already marked ops through " << last_triggered_apply_ << " as committed. "
+      << "Now trying to mark " << id << " which would be a no-op.";
+    return Status::OK();
   }
-  InsertOrDie(&in_flight_commits_, leader_commit_op->id());
-  RETURN_NOT_OK(DCHECK_NOTNULL(context)->GetReplicaCommitContinuation()->LeaderCommitted(
-      leader_commit_op.Pass()));
+
+  // Start at the operation after the last committed one.
+  OpIdToRoundMap::iterator iter = pending_txns_.upper_bound(last_triggered_apply_);
+  // Stop at the operation after the last one we must commit.
+  OpIdToRoundMap::iterator end_iter = pending_txns_.upper_bound(id);
+
+  for (; iter != end_iter; iter++) {
+    ConsensusRound* round = DCHECK_NOTNULL((*iter).second);
+    InsertOrDie(&in_flight_commits_, round->id());
+    RETURN_NOT_OK(round->GetReplicaCommitContinuation()->ConsensusCommitted());
+  }
+
+  last_triggered_apply_.CopyFrom(id);
+
   return Status::OK();
+}
+
+const OpId& ReplicaState::GetCommittedOpIdUnlocked() const {
+  DCHECK(update_lock_.is_locked());
+  return last_triggered_apply_;
 }
 
 void ReplicaState::UpdateLastReplicatedOpIdUnlocked(const OpId& op_id) {
@@ -413,37 +443,25 @@ const OpId& ReplicaState::GetLastReceivedOpIdUnlocked() const {
   return received_op_id_;
 }
 
-const OpId& ReplicaState::GetSafeCommitOpIdUnlocked() const {
-  DCHECK(update_lock_.is_locked());
-  return all_committed_before_id_;
-}
-
 void ReplicaState::UpdateLeaderCommittedOpIdUnlocked(const OpId& committed_op_id) {
   DCHECK(update_lock_.is_locked());
   commit_watchers_.MarkFinished(committed_op_id, OpIdWaiterSet::MARK_ONLY_THIS_OP);
 }
 
 
-void ReplicaState::UpdateReplicaCommittedOpIdUnlocked(const OpId& commit_op_id,
-                                                      const OpId& committed_op_id) {
+void ReplicaState::UpdateReplicaCommittedOpIdUnlocked(const OpId& committed_op_id) {
   DCHECK(update_lock_.is_locked());
-  CHECK_EQ(in_flight_commits_.erase(commit_op_id), 1) << commit_op_id.ShortDebugString();
-  if (OpIdEquals(commit_op_id, all_committed_before_id_)) {
-    if (!in_flight_commits_.empty()) {
-       all_committed_before_id_ = *std::min_element(in_flight_commits_.begin(),
-                                                    in_flight_commits_.end(),
-                                                    OpIdLessThan);
-     } else {
-       all_committed_before_id_ = commit_op_id;
-     }
-  }
-  CHECK_NOTNULL(EraseKeyReturnValuePtr(&pending_txns_, committed_op_id));
+  CHECK_EQ(in_flight_commits_.erase(committed_op_id), 1)
+    << "Trying to mark " << committed_op_id.ShortDebugString() << " as committed, but not "
+    << "in the in-flight set";
+  CHECK(EraseKeyReturnValuePtr(&pending_txns_, committed_op_id))
+    << "Couldn't remove " << committed_op_id.ShortDebugString() << " from the pending set";
   commit_watchers_.MarkFinished(committed_op_id, OpIdWaiterSet::MARK_ONLY_THIS_OP);
 }
 
 void ReplicaState::CountDownOutstandingCommitsIfShuttingDown() {
   if (PREDICT_FALSE(state_ == kShuttingDown)) {
-    in_flight_commits_latch_.CountDown();
+    in_flight_applies_latch_.CountDown();
   }
 }
 
@@ -512,13 +530,17 @@ string ReplicaState::ToStringUnlocked() const {
     role = active_quorum_state_->role;
   }
   string ret;
-  StrAppend(&ret, Substitute("Replica: $0, State: $1, Role: $2\n",
-                             peer_uuid_, state_, role));
-  StrAppend(&ret, "Watermarks: {Received: ", received_op_id_.ShortDebugString(),
-            " Replicated: ", replicated_op_id_.ShortDebugString(),
-            " Committed: ", all_committed_before_id_.ShortDebugString(), "}\n");
-  StrAppend(&ret, "Num. outstanding commits: ", in_flight_commits_.size(),
-            " IsLocked: ", update_lock_.is_locked());
+  SubstituteAndAppend(&ret, "Replica: $0, State: $1, Role: $2\n",
+                      peer_uuid_, state_,
+                      QuorumPeerPB::Role_Name(role));
+
+  SubstituteAndAppend(&ret, "Watermarks: {Received: $0 Replicated: $1 Committed: $2}\n",
+                      received_op_id_.ShortDebugString(),
+                      replicated_op_id_.ShortDebugString(),
+                      last_triggered_apply_.ShortDebugString());
+
+  SubstituteAndAppend(&ret, "Num. outstanding commits: $0 IsLocked: $1",
+                      in_flight_commits_.size(), update_lock_.is_locked());
   return ret;
 }
 

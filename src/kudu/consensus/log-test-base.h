@@ -139,7 +139,7 @@ class LogTestBase : public KuduTest {
 
   // Append a commit log entry containing one entry for the insert and one
   // for the mutate.
-  void AppendCommit(int index, int original_op_index, bool sync = APPEND_SYNC) {
+  void AppendCommit(int original_op_index, bool sync = APPEND_SYNC) {
     // The mrs id for the insert.
     const int kTargetMrsId = 1;
 
@@ -147,10 +147,10 @@ class LogTestBase : public KuduTest {
     const int kTargetRsId = 0;
     const int kTargetDeltaId = 0;
 
-    AppendCommit(index, original_op_index, kTargetMrsId, kTargetRsId, kTargetDeltaId, sync);
+    AppendCommit(original_op_index, kTargetMrsId, kTargetRsId, kTargetDeltaId, sync);
   }
 
-  void AppendCommit(int index, int original_op_index, int mrs_id, int rs_id, int dms_id,
+  void AppendCommit(int original_op_index, int mrs_id, int rs_id, int dms_id,
                     bool sync = APPEND_SYNC) {
     LogEntryPB log_entry;
     log_entry.set_type(OPERATION);
@@ -163,10 +163,6 @@ class LogTestBase : public KuduTest {
     OpId* original_op_id = commit->mutable_commited_op_id();
     original_op_id->set_term(0);
     original_op_id->set_index(original_op_index);
-
-    OpId* commit_id = operation->mutable_id();
-    commit_id->set_term(0);
-    commit_id->set_index(index);
 
     TxResultPB* result = commit->mutable_result();
 
@@ -203,8 +199,8 @@ class LogTestBase : public KuduTest {
   void AppendReplicateBatchAndCommitEntryPairsToLog(int count, bool sync = true) {
     for (int i = 0; i < count; i++) {
       AppendReplicateBatch(current_id_);
-      AppendCommit(current_id_ + 1, current_id_);
-      current_id_ += 2;
+      AppendCommit(current_id_);
+      current_id_ += 1;
     }
   }
 

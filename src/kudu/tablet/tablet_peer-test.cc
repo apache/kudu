@@ -336,18 +336,31 @@ TEST_F(TabletPeerTest, TestDMSAnchorPreventsLogGC) {
   ASSERT_EQ(2, segments.size());
   AssertNoLogAnchors();
 
+  OpId id;
+  log->GetLastEntryOpId(&id);
+  LOG(INFO) << "Before: " << id.ShortDebugString();
+
+
+  // We currently have no anchors and the last operation in the log is 0.3
+  // Before the below was ExecuteDeletesAndRollLogs(1) but that was breaking
+  // what I think is a wrong assertion.
+  // I.e. since 0.4 is the last operation that we know is in memory 0.4 is the
+  // last anchor we expect _and_ it's the last op in the log.
+  // Only if we apply two operations is the last anchored operation and the
+  // last operation in the log different.
+
   // Execute a mutation.
-  ASSERT_STATUS_OK(ExecuteDeletesAndRollLogs(1));
+  ASSERT_STATUS_OK(ExecuteDeletesAndRollLogs(2));
   AssertLogAnchorEarlierThanLogLatest();
   CHECK_GT(tablet()->opid_anchor_registry()->GetAnchorCountForTests(), 0);
   ASSERT_OK(log->GetLogReader()->GetSegmentsSnapshot(&segments));
-  ASSERT_EQ(3, segments.size());
+  ASSERT_EQ(4, segments.size());
 
   // Execute another couple inserts, but Flush it so it doesn't anchor.
   ASSERT_STATUS_OK(ExecuteInsertsAndRollLogs(2));
   ASSERT_STATUS_OK(tablet_peer_->tablet()->Flush());
   ASSERT_OK(log->GetLogReader()->GetSegmentsSnapshot(&segments));
-  ASSERT_EQ(5, segments.size());
+  ASSERT_EQ(6, segments.size());
 
   // Ensure the delta and last insert remain in the logs, anchored by the delta.
   // Note that this will allow GC of the 2nd insert done above.
@@ -355,7 +368,7 @@ TEST_F(TabletPeerTest, TestDMSAnchorPreventsLogGC) {
   ASSERT_STATUS_OK(log->GC(min_op_id, &num_gced));
   ASSERT_EQ(1, num_gced);
   ASSERT_OK(log->GetLogReader()->GetSegmentsSnapshot(&segments));
-  ASSERT_EQ(4, segments.size());
+  ASSERT_EQ(5, segments.size());
 
   // Flush DMS to release the anchor.
   tablet_peer_->tablet()->FlushBiggestDMS();
@@ -369,7 +382,7 @@ TEST_F(TabletPeerTest, TestDMSAnchorPreventsLogGC) {
   // segment.
   tablet_peer_->GetEarliestNeededOpId(&min_op_id);
   ASSERT_STATUS_OK(log->GC(min_op_id, &num_gced));
-  ASSERT_EQ(2, num_gced);
+  ASSERT_EQ(3, num_gced);
   ASSERT_OK(log->GetLogReader()->GetSegmentsSnapshot(&segments));
   ASSERT_EQ(2, segments.size());
 }

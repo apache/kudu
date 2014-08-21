@@ -40,7 +40,6 @@ LocalConsensus::LocalConsensus(const ConsensusOptions& options,
 
 Status LocalConsensus::Start(const metadata::QuorumPB& /* UNUSED */,
                              const OpId& last_committed_op_id) {
-
   CHECK_EQ(state_, kInitializing);
 
   boost::lock_guard<simple_spinlock> lock(lock_);
@@ -131,17 +130,11 @@ Status LocalConsensus::Commit(ConsensusRound* round) {
   // would try to free the callback).
   round->release_commit_callback(&commit_clbk);
 
-  // entry for the CommitMsg -- call mutable_id outside the lock
-  // since this can do an allocation
-  OpId* commit_id = commit_op->mutable_id();
-  commit_id->set_term(0);
-
   // Pre-cache the ByteSize outside of the lock, since this is somewhat
   // expensive.
   ignore_result(commit_op->ByteSize());
   {
     boost::lock_guard<simple_spinlock> lock(lock_);
-    commit_id->set_index(next_op_id_index_++);
     // Reserve the correct slot in the log for the commit operation.
     gscoped_ptr<log::LogEntryBatchPB> entry_batch;
     log::CreateBatchFromAllocatedOperations(&commit_op, 1, &entry_batch);

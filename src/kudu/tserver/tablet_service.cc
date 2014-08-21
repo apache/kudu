@@ -451,6 +451,11 @@ void ConsensusServiceImpl::UpdateConsensus(const ConsensusRequestPB* req,
   // Submit the update directly to the TabletPeer's Consensus instance.
   Status s = tablet_peer->consensus()->Update(req, resp);
   if (PREDICT_FALSE(!s.ok())) {
+    // Clear the response first, since a partially-filled response could
+    // result in confusing a caller, or in having missing required fields
+    // in embedded optional messages.
+    resp->Clear();
+
     SetupErrorAndRespond(resp->mutable_error(), s,
                          TabletServerErrorPB::UNKNOWN_ERROR,
                          context);

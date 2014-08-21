@@ -43,6 +43,7 @@ message ConsensusErrorPB {
 // plus the index of the operation in that term, e.g., the <index>th operation
 // of the <term>th leader.
 message OpId {
+  // The term of an operation or the leader's sequence id.
   required uint64 term = 1;
   required uint64 index = 2;
 }
@@ -103,8 +104,11 @@ enum DriverType {
 // in total order without having to rebuild order between replicates/commits.
 // Each operation must either have a replicate or a commit, but not both.
 message OperationPB {
-  required OpId id = 2;
+  optional OpId id = 2;
   optional ReplicateMsg replicate = 3;
+
+  // TODO: remove this from consensus PB and instead move it to be part of
+  // LogEntryPB with a different LogEntryType.
   optional CommitMsg commit = 4;
 }
 
@@ -185,40 +189,8 @@ message PerOpErrorPB {
 // Status message received in the peer responses.
 message ConsensusStatusPB {
 
-  // The last message received by the peer.
-  // Messages up to this one do not need re-sending.
-  optional OpId received_watermark = 2;
-
-  // The last ReplicateMsg that was logged by the peer.
-  optional OpId replicated_watermark = 1;
-
-  // The first commit applied by the peer before which all other commits
-  // have been applied. The timestamp of this commit is the 'safe' timestamp
-  // for the replica, i.e. were the replica and leader to be scanned at this
-  // timestamp they would return the same results.
-  //
-  // If safe_commit_watermark is S, then for all COMMIT messages with an
-  // OpId <= S, that commit has been applied at this replica.
-  // NOTE: that this *does not* imply that for a REPLICATE message with
-  // OpId <= S, that that replicate message has necessarily been committed.
-  // For example, with the following sequence:
-  //
-  // 1 REPLICATE insert A
-  // 2 REPLICATE insert B
-  // 3 COMMIT 1
-  //
-  // then safe_commit_watermark = 3 does not imply that "insert B" has
-  // been committed.
-  optional OpId safe_commit_watermark = 3;
-
-  // Whether this status contains the full list of replicate messages which are
-  // missing commits.
-  optional bool includes_pending_ops = 4 [default = false];
-
-  // Pending operations, i.e. replicate messages for which no
-  // commit message has been received from the previous LEADER.
-  // Filled when 'detailed' is true.
-  repeated OperationPB pending_ops = 5;
+  // The last message received (and replicated) by the peer.
+  required OpId last_received = 1;
 
   // Per operation errors.
   repeated PerOpErrorPB per_op_errors = 6;
@@ -273,8 +245,15 @@ message ConsensusRequestPB {
   // it will step down and enter FOLLOWER state (see Raft sec. 5.1).
   required uint64 caller_term = 3;
 
+  // The id of the last committed operation in the quorum. This is the
+  // id of the last operation the leader deemed committed from a consensus
+  // standpoint (not the last operation the leader applied).
+  //
+  // Raft calls this field 'leaderCommit'.
+  required OpId committed_index = 4;
+
   // sequence of operations to be replicated/executed by this peer
-  repeated OperationPB ops = 4;
+  repeated OperationPB ops = 5;
 }
 
 message ConsensusResponsePB {
