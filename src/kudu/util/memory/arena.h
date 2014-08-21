@@ -156,15 +156,25 @@ class ArenaBase {
   void AddComponent(Component *component);
 
   // Load the current component, with "Acquire" semantics (see atomicops.h)
+  // if the arena is meant to be thread-safe.
   inline Component* AcquireLoadCurrent() {
-    return reinterpret_cast<Component*>(
-      base::subtle::Acquire_Load(reinterpret_cast<AtomicWord*>(&current_)));
+    if (THREADSAFE) {
+      return reinterpret_cast<Component*>(
+        base::subtle::Acquire_Load(reinterpret_cast<AtomicWord*>(&current_)));
+    } else {
+      return current_;
+    }
   }
 
   // Store the current component, with "Release" semantics (see atomicops.h)
+  // if the arena is meant to be thread-safe.
   inline void ReleaseStoreCurrent(Component* c) {
-    base::subtle::Release_Store(reinterpret_cast<AtomicWord*>(&current_),
-                                reinterpret_cast<AtomicWord>(c));
+    if (THREADSAFE) {
+      base::subtle::Release_Store(reinterpret_cast<AtomicWord*>(&current_),
+                                  reinterpret_cast<AtomicWord>(c));
+    } else {
+      current_ = c;
+    }
   }
 
   BufferAllocator* const buffer_allocator_;
