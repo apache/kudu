@@ -209,7 +209,7 @@ static inline string InitAndDumpIterator(gscoped_ptr<RowwiseIterator> iter) {
 }
 
 // Dump all of the rows of the tablet into the given vector.
-static Status DumpTablet(const Tablet& tablet,
+static inline Status DumpTablet(const Tablet& tablet,
                          const Schema& projection,
                          vector<string>* out) {
   gscoped_ptr<RowwiseIterator> iter;
