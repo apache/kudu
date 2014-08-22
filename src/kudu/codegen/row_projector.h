@@ -63,15 +63,49 @@ class RowProjector {
     ProjectionFunction read() const { return read_f_; }
     ProjectionFunction write() const { return write_f_; }
 
+#ifndef NDEBUG
+    const Schema* base_schema() const { return &base_schema_; }
+    const Schema* projection() const { return &projection_; }
+#endif
+
    private:
     ProjectionFunction read_f_;
     ProjectionFunction write_f_;
-    // TODO: for safety, ifndef NDEBUG, we could store shared_ptr<Schema>
-    // for the base and projection here and then do actual CHECKs in code
-    // for schema compatibility when the CodegenFunctions instance is passed
-    // to RowProjectors.
+#ifndef NDEBUG
+    // In DEBUG mode, retain local copies of the schema to make sure
+    // that the projections a CodegenFunctions instance is used for
+    // make sense.
+    Schema base_schema_;
+    Schema projection_;
+#endif
   };
 
+  // This method defines what makes (base, projection) schema pairs compatible.
+  // In other words, this method can be thought of as the equivalence relation
+  // on the set of all well-formed (base, projection) schema pairs that
+  // partitions the set into equivalence classes which will have the exact
+  // same projection function code.
+  //
+  // This function can be decomposed as:
+  //   ProjectionsCompatible(base1, proj1, base2, proj2) :=
+  //     WELLFORMED(base1, proj1) &&
+  //     WELLFORMED(base2, proj2) &&
+  //     PROJEQUALS(base1, base2) &&
+  //     PROJEQUALS(proj1, proj2) &&
+  //     MAP(base1, proj1) == MAP(base2, proj2)
+  // where WELLFORMED checks that a projection is well-formed (i.e., a
+  // kudu::RowProjector can be initialized with the schema pair), PROJEQUAL
+  // is a relaxed version of the Schema::Equals() operator that is
+  // independent of column names and column IDs, and MAP addresses
+  // the actual dependency on column identification - which is the effect
+  // that those attributes have on the RowProjector's mapping (i.e., different
+  // names and IDs are ok, so long as the mapping is the same).
+  //
+  // Status::OK corresponds to true in the equivalence relation and other
+  // statuses correspond to false, explaining why the projections are
+  // incompatible.
+  static Status ProjectionsCompatible(const Schema& base1, const Schema& proj1,
+                                      const Schema& base2, const Schema& proj2);
 
   // Requires that both schemas remain valid for the lifetime of this
   // object. Also requires that both schemas are compatible with
@@ -83,7 +117,7 @@ class RowProjector {
 
   ~RowProjector();
 
-  Status Init() { return projector_.Init(); }
+  Status Init();
 
   template<class ContiguousRowType>
   Status ProjectRowForRead(const ContiguousRowType& src_row,
