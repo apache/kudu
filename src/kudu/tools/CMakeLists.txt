@@ -39,3 +39,26 @@ add_executable(kudu-fs_dump fs_dump-tool.cc)
 target_link_libraries(kudu-fs_dump
   ${LINK_LIBS}
   fs_tool)
+
+add_library(ksck
+    ksck.cc
+    ksck_remote.cc
+)
+target_link_libraries(ksck
+  master_proto
+  tserver_proto
+  tserver_service_proto
+  ${KUDU_BASE_LIBS}
+)
+
+add_executable(kudu-ksck ksck_main.cc)
+target_link_libraries(kudu-ksck
+  ksck
+)
+
+set(KUDU_TEST_LINK_LIBS
+  ksck
+  integration-tests
+  ${KUDU_MIN_TEST_LIBS})
+ADD_KUDU_TEST(ksck-test)
+ADD_KUDU_TEST(ksck_remote-test)
