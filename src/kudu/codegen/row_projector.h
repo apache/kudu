@@ -87,19 +87,24 @@ class RowProjector {
   // same projection function code.
   //
   // This function can be decomposed as:
+  //
   //   ProjectionsCompatible(base1, proj1, base2, proj2) :=
   //     WELLFORMED(base1, proj1) &&
   //     WELLFORMED(base2, proj2) &&
   //     PROJEQUALS(base1, base2) &&
   //     PROJEQUALS(proj1, proj2) &&
   //     MAP(base1, proj1) == MAP(base2, proj2)
+  //
   // where WELLFORMED checks that a projection is well-formed (i.e., a
   // kudu::RowProjector can be initialized with the schema pair), PROJEQUAL
   // is a relaxed version of the Schema::Equals() operator that is
   // independent of column names and column IDs, and MAP addresses
   // the actual dependency on column identification - which is the effect
   // that those attributes have on the RowProjector's mapping (i.e., different
-  // names and IDs are ok, so long as the mapping is the same).
+  // names and IDs are ok, so long as the mapping is the same). Note that
+  // key columns are not given any special meaning in projection. Types
+  // and nullability of columns must be exactly equal between the two
+  // schema pairs.
   //
   // Status::OK corresponds to true in the equivalence relation and other
   // statuses correspond to false, explaining why the projections are

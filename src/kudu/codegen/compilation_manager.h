@@ -4,22 +4,25 @@
 #define KUDU_CODEGEN_COMPILATION_MANAGER_H
 
 #include "kudu/codegen/code_generator.h"
+#include "kudu/codegen/code_cache.h"
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/singleton.h"
 #include "kudu/util/status.h"
 
 namespace kudu {
+
+class ThreadPool;
+
 namespace codegen {
 
 class RowProjector;
 
 // The compilation manager is a top-level class which manages the actual
 // delivery of a code generator's output by maintaining its own
-// threadpool and code cache (TODO: maintain a threadpool and code cache).
-// It accepts requests to compile various classes (all the ones that the
-// CodeGenerator offers) and attempts to retrieve a cached copy.
-// If no such copy exists, it adds a request to generate it.
+// threadpool and code cache. It accepts requests to compile various classes
+// (all the ones that the CodeGenerator offers) and attempts to retrieve a
+// cached copy. If no such copy exists, it adds a request to generate it.
 //
 // Class is thread safe.
 //
@@ -36,23 +39,35 @@ class RowProjector;
 // use in the first place.
 class CompilationManager {
  public:
+  // Waits for all async tasks to finish.
+  ~CompilationManager();
+
   static CompilationManager* GetSingleton() {
     return Singleton<CompilationManager>::get();
   }
 
-  // Enqueues the task to be compile asyncronously with a callback
-  // to call once compilation is complete. Upon success, out parameter
-  // is written to with the row projector.
-  // TODO: currently all requests are sychronous, offer async compilation
+  // If a codegenned row projector with compatible schemas (see
+  // codegen::RowProjector::ProjectionsCompatible) is ready,
+  // then it is written to 'out' and Status::OK() is returned.
+  // Otherwise, this enqueues a compilation task for the parameter
+  // schemas in the CompilationManager's thread pool and returns
+  // a failing status without waiting for compilation to finish.
   Status RequestRowProjector(const Schema* base_schema,
                              const Schema* projection,
                              gscoped_ptr<RowProjector>* out);
 
  private:
   friend class Singleton<CompilationManager>;
-  CompilationManager() {}
+  CompilationManager();
+
+  static void Shutdown();
 
   CodeGenerator generator_;
+  CodeCache cache_;
+  gscoped_ptr<ThreadPool> pool_;
+
+  static const int kDefaultCacheCapacity = 100;
+  static const int kThreadTimeoutMs = 100;
 
   DISALLOW_COPY_AND_ASSIGN(CompilationManager);
 };

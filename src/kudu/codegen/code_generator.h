@@ -45,6 +45,8 @@ namespace codegen {
 // the preprocessor macro KUDU_DISABLE_CODEGEN.
 class CodeGenerator {
  public:
+  // The constructor makes all the appropriate static LLVM initialization
+  // calls exactly once.
   CodeGenerator();
   ~CodeGenerator();
 

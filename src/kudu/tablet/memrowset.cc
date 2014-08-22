@@ -20,7 +20,7 @@
 
 DEFINE_int32(memrowset_throttle_mb, 0,
              "number of MB of RAM beyond which memrowset inserts will be throttled");
-DEFINE_bool(mrs_use_codegen, false, "whether the memrowset should use code "
+DEFINE_bool(mrs_use_codegen, true, "whether the memrowset should use code "
             "generation for iteration");
 
 namespace kudu { namespace tablet {

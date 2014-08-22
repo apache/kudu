@@ -10,6 +10,7 @@
 #######################################
 
 add_library(codegen
+  code_cache.cc
   code_generator.cc
   compilation_manager.cc
   jit_owner.cc

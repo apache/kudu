@@ -13,16 +13,23 @@ class ExecutionEngine;
 namespace kudu {
 namespace codegen {
 
-// Thin wrapper around llvm::ExecutionEngine to prevent header dependencies,
+// Wrapper around llvm::ExecutionEngine to prevent header dependencies,
 // which would be necessary for the engine's destructor. This class allows
 // for explicit lifetime management of jitted code.
 class JITCodeOwner : public RefCountedThreadSafe<JITCodeOwner> {
  public:
   explicit JITCodeOwner(gscoped_ptr<llvm::ExecutionEngine> engine);
 
- private:
+ protected:
   friend class RefCountedThreadSafe<JITCodeOwner>;
-  ~JITCodeOwner();
+  JITCodeOwner();
+  virtual ~JITCodeOwner();
+
+  // Steals, does not swap, the code owned by other. Deletes own
+  // engine if nonnull.
+  void Reset(JITCodeOwner* other);
+
+ private:
   gscoped_ptr<llvm::ExecutionEngine> engine_;
 
   DISALLOW_COPY_AND_ASSIGN(JITCodeOwner);
