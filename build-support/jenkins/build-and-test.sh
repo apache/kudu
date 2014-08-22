@@ -21,6 +21,11 @@
 #     from the kudu-test jenkins job, and allow those tests to
 #     be flaky in this build.
 #
+#   TEST_RESULT_SERVER  Default: none
+#     The host:port pair of a server running test_result_server.py.
+#     This must be configured for flaky test resistance or test result
+#     reporting to work.
+#
 #   BUILD_JAVA        Default: 1
 #     Build and test java code if this is set to 1.
 
@@ -75,6 +80,11 @@ fi
 
 ROOT=$(readlink -f $(dirname "$BASH_SOURCE")/../..)
 cd $ROOT
+
+list_flaky_tests() {
+  curl -s "http://$TEST_RESULT_SERVER/list_failed_tests?num_days=3&build_pattern=%25kudu-test%25"
+  return $?
+}
 
 TEST_LOGDIR="$ROOT/build/test-logs"
 TEST_DEBUGDIR="$ROOT/build/test-debug"
@@ -166,8 +176,8 @@ if [ "$KUDU_FLAKY_TEST_ATTEMPTS" -gt 1 ]; then
   export KUDU_FLAKY_TEST_LIST=$ROOT/build/flaky-tests.txt
   mkdir -p $(dirname $KUDU_FLAKY_TEST_LIST)
   echo -n > $KUDU_FLAKY_TEST_LIST
-  if $ROOT/build-support/jenkins/determine-flaky-tests.py --list-tests-only \
-    > $KUDU_FLAKY_TEST_LIST ; then
+    if [ -n "$TEST_RESULT_SERVER" ] && \
+        list_flaky_tests > $KUDU_FLAKY_TEST_LIST ; then
     echo Will retry flaky tests up to $KUDU_FLAKY_TEST_ATTEMPTS times:
     cat $KUDU_FLAKY_TEST_LIST
     echo ----------
@@ -192,8 +202,12 @@ make -j$NUM_PROCS 2>&1 | tee build.log
 # Run tests
 export GTEST_OUTPUT="xml:$TEST_LOGDIR/" # Enable JUnit-compatible XML output.
 if [ "$RUN_FLAKY_ONLY" == "1" ] ; then
+  if [ -z "$TEST_RESULT_SERVER" ]; then
+    echo Must set TEST_RESULT_SERVER to use RUN_FLAKY_ONLY
+    exit 1
+  fi
   echo Running flaky tests only:
-  $ROOT/build-support/jenkins/determine-flaky-tests.py -l | tee build/flaky-tests.txt
+  list_flaky_tests | tee build/flaky-tests.txt
   test_regex=$(perl -e '
     chomp(my @lines = <>);
     print join("|", map { "^" . quotemeta($_) . "\$" } @lines);

@@ -228,6 +228,21 @@ class TRServer(object):
     """).render(results=r)
 
   @cherrypy.expose
+  def list_failed_tests(self, build_pattern, num_days):
+    num_days = int(num_days)
+    c = self.execute_query(
+              """SELECT DISTINCT
+                   test_name
+                 FROM test_results
+                 WHERE timestamp > NOW() - INTERVAL %(num_days)s DAY
+                   AND status != 0
+                   AND build_id LIKE %(build_pattern)s""",
+              dict(build_pattern=build_pattern,
+                   num_days=num_days))
+    cherrypy.response.headers['Content-Type'] = 'text/plain'
+    return "\n".join(row['test_name'] for row in c.fetchall())
+
+  @cherrypy.expose
   def test_drilldown(self, test_name):
 
     # Get summary statistics for the test, grouped by revision
