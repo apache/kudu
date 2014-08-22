@@ -177,22 +177,6 @@ Status CFileReader::ReadAndParseFooter() {
   return Status::OK();
 }
 
-// Some of the File implementations from LevelDB attempt to be tricky
-// and just return a Slice into an mmapped region (or in-memory region).
-// But, this is hard to program against in terms of cache management, etc,
-// and in practice won't be useful in a libhdfs context.
-//
-// This function detects this case, where slice->data() doesn't match
-// the given buffer, and if so, memcpys the data into the buffer and
-// adjusts the Slice accordingly
-static void MatchReadSliceWithBuffer(Slice *slice,
-                                     uint8_t *buffer) {
-  if (slice->data() != buffer) {
-    memcpy(buffer, slice->data(), slice->size());
-    *slice = Slice(buffer, slice->size());
-  }
-}
-
 Status CFileReader::ReadBlock(const BlockPointer &ptr,
                               BlockCacheHandle *ret) const {
   CHECK(state_ == kInitialized) << "bad state: " << state_;
@@ -229,7 +213,11 @@ Status CFileReader::ReadBlock(const BlockPointer &ptr,
     block = ublock;
     scratch.reset(NULL);
   } else {
-    MatchReadSliceWithBuffer(&block, scratch.get());
+    // Some of the File implementations from LevelDB attempt to be tricky
+    // and just return a Slice into an mmapped region (or in-memory region).
+    // But, this is hard to program against in terms of cache management, etc,
+    // and in practice won't be useful in a libhdfs context.
+    block.relocate(scratch.get());
   }
 
   cache_->Insert(cache_id_, ptr.offset(), block, ret);

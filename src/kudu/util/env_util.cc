@@ -47,13 +47,6 @@ Status OpenFileForSequential(Env *env, const string &path,
   return Status::OK();
 }
 
-static void RelocateSlice(Slice* slice, uint8_t* dst) {
-  if (slice->data() != dst) {
-    memcpy(dst, slice->data(), slice->size());
-    *slice = Slice(dst, slice->size());
-  }
-}
-
 Status ReadFully(RandomAccessFile* file, uint64_t offset, size_t n,
                  Slice* result, uint8_t* scratch) {
 
@@ -80,7 +73,7 @@ Status ReadFully(RandomAccessFile* file, uint64_t offset, size_t n,
 
     // Otherwise, we're going to have to do more reads and stitch
     // each read together.
-    RelocateSlice(&this_result, dst);
+    this_result.relocate(dst);
     dst += this_result.size();
     rem -= this_result.size();
     offset += this_result.size();

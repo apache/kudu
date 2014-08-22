@@ -99,10 +99,8 @@ struct SliceMapKey {
 
   // This copies the string out of the result buffer
   void RelocateSlice() {
-    size_t size = slice.size();
-    uint8_t *buf = new uint8_t[size];
-    memcpy(buf, slice.data(), size);
-    slice = Slice(buf, size);
+    uint8_t *buf = new uint8_t[slice.size()];
+    slice.relocate(buf);
   }
 
   bool operator==(const SliceMapKey &other_key) const {

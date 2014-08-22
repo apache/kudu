@@ -129,6 +129,15 @@ class Slice {
     }
   };
 
+  // Relocates this slice's data into 'd' provided this isn't already the
+  // case. It is assumed that 'd' is large enough to fit the data.
+  void relocate(uint8_t* d) {
+    if (data_ != d) {
+      memcpy(d, data_, size_);
+      data_ = d;
+    }
+  }
+
  private:
   const uint8_t* data_;
   size_t size_;
