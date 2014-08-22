@@ -3,21 +3,22 @@
 #ifndef KUDU_CODEGEN_CODE_GENERATOR_H
 #define KUDU_CODEGEN_CODE_GENERATOR_H
 
-#include "kudu/gutil/gscoped_ptr.h"
+#include "kudu/codegen/row_projector.h"
+#include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/util/status.h"
 
 namespace llvm {
 class LLVMContext;
+class ExecutionEngine;
 } // namespace llvm
 
 namespace kudu {
 
 class Schema;
+class JITCodeOwner;
 
 namespace codegen {
-
-class RowProjector;
 
 // CodeGenerator is a top-level class that manages a per-module
 // LLVM context, ExecutionEngine initialization, native target loading,
@@ -40,8 +41,6 @@ class RowProjector;
 // compilation thread (See CompilationManager class). Threads may run
 // codegen'd functions concurrently.
 //
-// This code generator should survive longer than any of its compiled objects.
-//
 // Code generation may be disabled globally at compile time by defining
 // the preprocessor macro KUDU_DISABLE_CODEGEN.
 class CodeGenerator {
@@ -49,10 +48,11 @@ class CodeGenerator {
   CodeGenerator();
   ~CodeGenerator();
 
-  // Generates a row projector with compiled code. Code is freed when
-  // this object is destroyed. Writes to out parameter iff successful.
+  // Attempts to initialize row projector functions with compiled code that
+  // becomes owned by 'owner_out'. Writes to out parameters iff successful.
   Status CompileRowProjector(const Schema* base, const Schema* proj,
-                             gscoped_ptr<RowProjector>* out);
+                             RowProjector::CodegenFunctions* projector_out,
+                             scoped_refptr<JITCodeOwner>* owner_out);
 
  private:
   static void GlobalInit();

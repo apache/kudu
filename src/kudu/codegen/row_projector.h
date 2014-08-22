@@ -10,6 +10,7 @@
 #include "kudu/common/rowblock.h"
 #include "kudu/common/schema.h"
 #include "kudu/gutil/gscoped_ptr.h"
+#include "kudu/gutil/ref_counted.h"
 #include "kudu/util/slice.h"
 #include "kudu/util/status.h"
 
@@ -25,6 +26,7 @@ class Schema;
 
 namespace codegen {
 
+class JITCodeOwner;
 class ModuleBuilder;
 
 // This projector behaves the almost the same way as a tablet/RowProjector except that
@@ -34,38 +36,54 @@ class ModuleBuilder;
 // See documentation for RowProjector. Any differences in the API will be explained
 // in this class.
 //
-// A single RowProjector is tied to a ModuleBuilder at creation time,
-// so functions will always be compiled in the context of the thread that called
-// this object's constructor.
-//
-// Currently, the RowProjector guarantees its code is valid for the duration
-// of its lifetime, so long as it's compiled before it is used.
-// TODO: remove the above paragraph when TakeEngine() method is removed.
+// A RowProjector is built on top of compiled functions made for its pair
+// of schemas. If the row projector functions it is given at initialization
+// are incompatible with the schemas that are assigned to it, undefined behavior
+// will occur.
 class RowProjector {
  public:
   typedef kudu::RowProjector::ProjectionIdxMapping ProjectionIdxMapping;
+
+  // Class for containing compiled functions, whose validity is dependent
+  // on builder's ExecutionEngine.
+  class CodegenFunctions {
+   public:
+    CodegenFunctions()
+      : read_f_(NULL), write_f_(NULL) {}
+
+    // Adds the parameter schema's projection functions to the builder's
+    // module.
+    // Schemas need to be valid only for duration of this call.
+    // 'out' is not initialized until builder->Compile() is called and
+    // fulfills its JITPromises.
+    static Status Create(const Schema& base_schema, const Schema& projection,
+                         ModuleBuilder* builder, CodegenFunctions* out);
+
+    typedef bool(*ProjectionFunction)(const uint8_t*, RowBlockRow*, Arena*);
+    ProjectionFunction read() const { return read_f_; }
+    ProjectionFunction write() const { return write_f_; }
+
+   private:
+    ProjectionFunction read_f_;
+    ProjectionFunction write_f_;
+    // TODO: for safety, ifndef NDEBUG, we could store shared_ptr<Schema>
+    // for the base and projection here and then do actual CHECKs in code
+    // for schema compatibility when the CodegenFunctions instance is passed
+    // to RowProjectors.
+  };
+
+
   // Requires that both schemas remain valid for the lifetime of this
-  // object.
-  //
-  // Factory uses the provided builder to build the functions. It
-  // does not generate any code, make any optimizations, or finalize
-  // the current object. The builder's Compile() method should be called
-  // before any of its functions are used.
-  //
-  // Upon success, writes the output to the parameter pointer.
-  static Status Create(const Schema* base_schema, const Schema* projection,
-                       ModuleBuilder* builder, gscoped_ptr<RowProjector>* out);
+  // object. Also requires that both schemas are compatible with
+  // the schemas used to create the parameter codegen functions, which
+  // should already be compiled.
+  RowProjector(const Schema* base_schema, const Schema* projection,
+               const CodegenFunctions& functions,
+               const scoped_refptr<JITCodeOwner>& code);
+
   ~RowProjector();
 
-  // Nop method for interface compatibility with kudu::RowProjector.
-  Status Init() { return Status::OK(); }
-
-  // Takes ownership of execution engine. This is only a temporary
-  // method employed to maintain the engine's lifetime exactly
-  // as long as it needs to be maintained (that is, the lifetime of
-  // this class, the only code that uses it as of now).
-  // TODO: RowProjector should not be aware of the execution engine.
-  void TakeEngine(gscoped_ptr<llvm::ExecutionEngine> engine);
+  Status Init() { return projector_.Init(); }
 
   template<class ContiguousRowType>
   Status ProjectRowForRead(const ContiguousRowType& src_row,
@@ -73,9 +91,8 @@ class RowProjector {
                            Arena* dst_arena) const {
     DCHECK_SCHEMA_EQ(*base_schema(), *src_row.schema());
     DCHECK_SCHEMA_EQ(*projection(), *dst_row->schema());
-    DCHECK(read_f_ != NULL)
-      << "Promise to compile read function not fullfilled by ModuleBuilder";
-    if (PREDICT_TRUE(read_f_(src_row.row_data(), dst_row, dst_arena))) {
+    CodegenFunctions::ProjectionFunction f = functions_.read();
+    if (PREDICT_TRUE(f(src_row.row_data(), dst_row, dst_arena))) {
       return Status::OK();
     }
     return Status::IOError("out of memory copying slice during projection. "
@@ -91,9 +108,8 @@ class RowProjector {
                             Arena* dst_arena) const {
     DCHECK_SCHEMA_EQ(*base_schema(), *src_row.schema());
     DCHECK_SCHEMA_EQ(*projection(), *dst_row->schema());
-    DCHECK(write_f_ != NULL)
-      << "Promise to compile write function not fullfilled by ModuleBuilder";
-    if (PREDICT_TRUE(write_f_(src_row.row_data(), dst_row, dst_arena))) {
+    CodegenFunctions::ProjectionFunction f = functions_.write();
+    if (PREDICT_TRUE(f(src_row.row_data(), dst_row, dst_arena))) {
       return Status::OK();
     }
     return Status::IOError("out of memory copying slice during projection. "
@@ -116,15 +132,9 @@ class RowProjector {
  private:
   RowProjector(const Schema* base_schema, const Schema* projection);
 
-  gscoped_ptr<llvm::ExecutionEngine> engine_;
-
-  // Initially set to null, the function pointers are initialized once
-  // the functions are jitted.
-  typedef bool(*ProjectionFunction)(const uint8_t*, RowBlockRow*, Arena*);
-  ProjectionFunction read_f_;
-  ProjectionFunction write_f_;
-
   kudu::RowProjector projector_;
+  CodegenFunctions functions_;
+  scoped_refptr<JITCodeOwner> code_;
 
   DISALLOW_COPY_AND_ASSIGN(RowProjector);
 };

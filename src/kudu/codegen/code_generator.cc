@@ -11,6 +11,7 @@
 #include <llvm/IR/Module.h>
 #include <llvm/Support/TargetSelect.h>
 
+#include "kudu/codegen/jit_owner.h"
 #include "kudu/codegen/module_builder.h"
 #include "kudu/codegen/row_projector.h"
 #include "kudu/gutil/gscoped_ptr.h"
@@ -58,27 +59,23 @@ CodeGenerator::~CodeGenerator() {}
 
 Status CodeGenerator::CompileRowProjector(const Schema* base,
                                           const Schema* proj,
-                                          gscoped_ptr<RowProjector>* out) {
+                                          RowProjector::CodegenFunctions* projector_out,
+                                          scoped_refptr<JITCodeOwner>* owner_out) {
   RETURN_NOT_OK(CheckCodegenEnabled());
 
   // Generate a module builder
   ModuleBuilder mbuilder;
   RETURN_NOT_OK(mbuilder.Init());
 
-  // Load new functions into module by creating the row projector
-  gscoped_ptr<RowProjector> ret;
-  RETURN_NOT_OK(RowProjector::Create(base, proj, &mbuilder, &ret));
+  // Load new functions into module.
+  RETURN_NOT_OK(RowProjector::CodegenFunctions::Create(*base, *proj, &mbuilder,
+                                                       projector_out));
 
   // Compile and get execution engine
   gscoped_ptr<ExecutionEngine> ee;
   RETURN_NOT_OK(mbuilder.Compile(&ee));
 
-  // Offer engine ownership to the row projector so that generated code
-  // lives exactly as long as row projector does.
-  ret->TakeEngine(ee.Pass());
-
-  // Write to output parameter upon success.
-  *out = ret.Pass();
+  owner_out->reset(new JITCodeOwner(ee.Pass()));
   return Status::OK();
 }
 

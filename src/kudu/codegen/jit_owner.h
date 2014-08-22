@@ -1,0 +1,34 @@
+// Copyright 2014 Cloudera inc.
+
+#ifndef KUDU_CODEGEN_JIT_OWNER_H
+#define KUDU_CODEGEN_JIT_OWNER_H
+
+#include "kudu/gutil/gscoped_ptr.h"
+#include "kudu/gutil/ref_counted.h"
+
+namespace llvm {
+class ExecutionEngine;
+} // namespace llvm
+
+namespace kudu {
+namespace codegen {
+
+// Thin wrapper around llvm::ExecutionEngine to prevent header dependencies,
+// which would be necessary for the engine's destructor. This class allows
+// for explicit lifetime management of jitted code.
+class JITCodeOwner : public RefCountedThreadSafe<JITCodeOwner> {
+ public:
+  explicit JITCodeOwner(gscoped_ptr<llvm::ExecutionEngine> engine);
+
+ private:
+  friend class RefCountedThreadSafe<JITCodeOwner>;
+  ~JITCodeOwner();
+  gscoped_ptr<llvm::ExecutionEngine> engine_;
+
+  DISALLOW_COPY_AND_ASSIGN(JITCodeOwner);
+};
+
+} // namespace codegen
+} // namespace kudu
+
+#endif

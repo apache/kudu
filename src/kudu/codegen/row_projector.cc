@@ -18,9 +18,11 @@
 #include <llvm/IR/Module.h>
 #include <llvm/IR/Type.h>
 
+#include "kudu/codegen/jit_owner.h"
 #include "kudu/codegen/module_builder.h"
 #include "kudu/common/row.h"
 #include "kudu/common/schema.h"
+#include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/strcat.h"
 #include "kudu/util/status.h"
 
@@ -247,44 +249,45 @@ llvm::Function* MakeProjection(const string& name,
   return f;
 }
 
+// Convenience method to hide ugly but legal casts
+uintptr_t ptol(void* ptr) { return reinterpret_cast<uintptr_t>(ptr); }
+
 } // anonymous namespace
 
-RowProjector::RowProjector(const Schema* base_schema, const Schema* projection)
-  : read_f_(NULL),
-    write_f_(NULL),
-    projector_(base_schema, projection) {}
+Status RowProjector::CodegenFunctions::Create(const Schema& base_schema,
+                                              const Schema& projection,
+                                              ModuleBuilder* builder,
+                                              CodegenFunctions* out) {
+  // Use a no-codegen row projector to check validity and to build
+  // the codegen functions.
+  kudu::RowProjector no_codegen(&base_schema, &projection);
+  RETURN_NOT_OK(no_codegen.Init());
 
-Status RowProjector::Create(const Schema* base_schema, const Schema* projection,
-                            ModuleBuilder* builder,
-                            gscoped_ptr<RowProjector>* out) {
-  // Create the rowprojector and initialize the mapping without code generation
-  gscoped_ptr<RowProjector> local_proj(new RowProjector(base_schema,
-                                                        projection));
-  kudu::RowProjector* no_codegen = &local_proj->projector_;
-  RETURN_NOT_OK(no_codegen->Init());
-
-  // Build the functions for code gen
-  const string base_name = StrCat("Proj",
-                                  reinterpret_cast<uintptr_t>(local_proj.get()));
-  Function* read = MakeProjection<true>(StrCat(base_name, "R"), builder,
-                                        *no_codegen);
-  Function* write = MakeProjection<false>(StrCat(base_name, "W"), builder,
-                                          *no_codegen);
+  // Build the functions for code gen. No need to mangle for uniqueness;
+  // in the rare case we have two projectors in one module, LLVM takes
+  // care of uniquifying when making a GlobalValue.
+  Function* read = MakeProjection<true>("ProjRead", builder, no_codegen);
+  Function* write = MakeProjection<false>("ProjWrite", builder, no_codegen);
 
   // Have the ModuleBuilder accept promises to compile the functions
-  builder->AddJITPromise(read, &local_proj->read_f_);
-  builder->AddJITPromise(write, &local_proj->write_f_);
-
-  // Upon success, write to out
-  *out = local_proj.Pass();
+  builder->AddJITPromise(read, &out->read_f_);
+  builder->AddJITPromise(write, &out->write_f_);
   return Status::OK();
 }
 
-RowProjector::~RowProjector() {}
-
-void RowProjector::TakeEngine(gscoped_ptr<ExecutionEngine> engine) {
-  engine_ = engine.Pass();
+RowProjector::RowProjector(const Schema* base_schema, const Schema* projection,
+                           const CodegenFunctions& functions,
+                           const scoped_refptr<JITCodeOwner>& code)
+  : projector_(base_schema, projection),
+    functions_(functions),
+    code_(code) {
+  CHECK(functions.read() != NULL)
+    << "Promise to compile read function not fulfilled by ModuleBuilder";
+  CHECK(functions.write() != NULL)
+    << "Promise to compile write function not fulfilled by ModuleBuilder";
 }
+
+RowProjector::~RowProjector() {}
 
 ostream& operator<<(ostream& o, const RowProjector& rp) {
   o << "Row Projector s1->s2 with:\n"

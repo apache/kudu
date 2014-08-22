@@ -8,11 +8,13 @@
 #include <glog/logging.h>
 
 #include "kudu/codegen/code_generator.h"
+#include "kudu/codegen/jit_owner.h"
 #include "kudu/codegen/row_projector.h"
 #include "kudu/common/schema.h"
 #include "kudu/common/row.h"
 #include "kudu/common/rowblock.h"
 #include "kudu/gutil/gscoped_ptr.h"
+#include "kudu/gutil/ref_counted.h"
 #include "kudu/util/bitmap.h"
 #include "kudu/util/random.h"
 #include "kudu/util/random_util.h"
@@ -80,6 +82,8 @@ class CodegenTest : public KuduTest {
   // of the codegen projection and the non-codegen projection
   template<bool READ>
   void TestProjection(const Schema* proj);
+  // Generates a new row projector for the given projection schema.
+  Status Generate(const Schema* proj, gscoped_ptr<CodegenRP>* out);
 
   enum {
     // Base schema column indices
@@ -97,8 +101,6 @@ class CodegenTest : public KuduTest {
     kStrRWCol
   };
 
-  codegen::CodeGenerator generator_;
-
  private:
   // Projects the test rows into parameter rowblock using projector and
   // member projections_arena_ (should be Reset() manually).
@@ -113,6 +115,7 @@ class CodegenTest : public KuduTest {
   typedef const void* DefaultValueType;
   static const DefaultValueType kI32R, kI32W, kStrR, kStrW;
 
+  codegen::CodeGenerator generator_;
   Random random_;
   gscoped_ptr<ConstContiguousRow> test_rows_[kNumTestRows];
   Arena projections_arena_;
@@ -175,8 +178,7 @@ void CodegenTest::ProjectTestRows(RowProjectorType* rp, RowBlock* rb) {
 template<bool READ>
 void CodegenTest::TestProjection(const Schema* proj) {
   gscoped_ptr<CodegenRP> with;
-  ASSERT_OK(generator_.CompileRowProjector(&base_, proj, &with));
-  CHECK_NOTNULL(with.get());
+  ASSERT_OK(Generate(proj, &with));
   NoCodegenRP without(&base_, proj);
   ASSERT_OK(without.Init());
 
@@ -192,12 +194,20 @@ void CodegenTest::TestProjection(const Schema* proj) {
   CheckRowBlocksEqual(&rb_with, &rb_without, "Codegen", "Expected");
 }
 
+Status CodegenTest::Generate(const Schema* proj, gscoped_ptr<CodegenRP>* out) {
+  CodegenRP::CodegenFunctions functions;
+  scoped_refptr<codegen::JITCodeOwner> owner;
+  RETURN_NOT_OK(generator_.CompileRowProjector(&base_, proj, &functions, &owner));
+  out->reset(new CodegenRP(&base_, proj, functions, owner));
+  return Status::OK();
+}
+
+
 TEST_F(CodegenTest, ObservablesTest) {
   // Test when not identity
   Schema proj = base_.CreateKeyProjection();
   gscoped_ptr<CodegenRP> with;
-  CHECK_OK(generator_.CompileRowProjector(&base_, &proj, &with));
-  CHECK_NOTNULL(with.get());
+  CHECK_OK(Generate(&proj, &with));
   NoCodegenRP without(&base_, &proj);
   ASSERT_OK(without.Init());
   ASSERT_EQ(with->base_schema(), without.base_schema());
@@ -208,8 +218,7 @@ TEST_F(CodegenTest, ObservablesTest) {
   // Test when identity
   Schema iproj = *&base_;
   gscoped_ptr<CodegenRP> iwith;
-  CHECK_OK(generator_.CompileRowProjector(&base_, &iproj, &iwith));
-  CHECK_NOTNULL(iwith.get());
+  CHECK_OK(Generate(&iproj, &iwith))
   NoCodegenRP iwithout(&base_, &iproj);
   ASSERT_OK(iwithout.Init());
   ASSERT_EQ(iwith->base_schema(), iwithout.base_schema());
