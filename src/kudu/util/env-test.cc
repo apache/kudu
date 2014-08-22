@@ -318,6 +318,8 @@ class ShortReadRandomAccessFile : public RandomAccessFile {
     return wrapped_->Size(size);
   }
 
+  virtual string ToString() const OVERRIDE { return wrapped_->ToString(); }
+
  private:
   const shared_ptr<RandomAccessFile> wrapped_;
 };

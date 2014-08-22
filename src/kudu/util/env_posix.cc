@@ -82,6 +82,8 @@ class PosixSequentialFile: public SequentialFile {
     }
     return Status::OK();
   }
+
+  virtual string ToString() const OVERRIDE { return filename_; }
 };
 
 // pread() based random-access
@@ -115,6 +117,8 @@ class PosixRandomAccessFile: public RandomAccessFile {
     *size = st.st_size;
     return Status::OK();
   }
+
+  virtual string ToString() const OVERRIDE { return filename_; }
 };
 
 // mmap() based random-access
@@ -148,6 +152,8 @@ class PosixMmapReadableFile: public RandomAccessFile {
     *size = length_;
     return Status::OK();
   }
+
+  virtual string ToString() const OVERRIDE { return filename_; }
 };
 
 // We preallocate up to an extra megabyte and use memcpy to append new
@@ -230,6 +236,57 @@ class PosixMmapFile : public WritableFile {
     return true;
   }
 
+  Status DoWritev(const vector<Slice>& data_vector,
+                  size_t offset, size_t n) {
+    DCHECK_LE(n, IOV_MAX);
+
+    struct iovec iov[n];
+    size_t j = 0;
+    size_t nbytes = 0;
+
+    for (size_t i = offset; i < offset + n; i++) {
+      const Slice& data = data_vector[i];
+      iov[j].iov_base = const_cast<uint8_t*>(data.data());
+      iov[j].iov_len = data.size();
+      nbytes += data.size();
+      ++j;
+    }
+
+    size_t mem_offset = dst_ - base_;
+    size_t actual_offset = file_offset_ + mem_offset;
+
+    size_t left = nbytes;
+    while (left > 0) {
+      DCHECK_LE(base_, dst_);
+      DCHECK_LE(dst_, limit_);
+      size_t avail = limit_ - dst_;
+      if (avail == 0) {
+        if (!UnmapCurrentRegion() ||
+            !MapNewRegion()) {
+          return IOError(filename_, errno);
+        }
+      }
+      size_t n = (left <= avail) ? left : avail;
+      dst_ += n;
+      left -= n;
+    }
+
+    ssize_t written = pwritev(fd_, iov, n, actual_offset);
+
+    if (PREDICT_FALSE(written == -1)) {
+      int err = errno;
+      return IOError("writev error", err);
+    }
+
+    if (PREDICT_FALSE(written != nbytes)) {
+      return Status::IOError(
+          strings::Substitute("writev error: expected to write $0 bytes, wrote $1 bytes instead",
+                              nbytes, written));
+    }
+
+    return Status::OK();
+  }
+
  public:
   PosixMmapFile(const std::string& fname, int fd, size_t page_size, bool sync_on_close)
       : filename_(fname),
@@ -286,57 +343,6 @@ class PosixMmapFile : public WritableFile {
       src += n;
       left -= n;
     }
-    return Status::OK();
-  }
-
-  Status DoWritev(const vector<Slice>& data_vector,
-                  size_t offset, size_t n) {
-    DCHECK_LE(n, IOV_MAX);
-
-    struct iovec iov[n];
-    size_t j = 0;
-    size_t nbytes = 0;
-
-    for (size_t i = offset; i < offset + n; i++) {
-      const Slice& data = data_vector[i];
-      iov[j].iov_base = const_cast<uint8_t*>(data.data());
-      iov[j].iov_len = data.size();
-      nbytes += data.size();
-      ++j;
-    }
-
-    size_t mem_offset = dst_ - base_;
-    size_t actual_offset = file_offset_ + mem_offset;
-
-    size_t left = nbytes;
-    while (left > 0) {
-      DCHECK_LE(base_, dst_);
-      DCHECK_LE(dst_, limit_);
-      size_t avail = limit_ - dst_;
-      if (avail == 0) {
-        if (!UnmapCurrentRegion() ||
-            !MapNewRegion()) {
-          return IOError(filename_, errno);
-        }
-      }
-      size_t n = (left <= avail) ? left : avail;
-      dst_ += n;
-      left -= n;
-    }
-
-    ssize_t written = pwritev(fd_, iov, n, actual_offset);
-
-    if (PREDICT_FALSE(written == -1)) {
-      int err = errno;
-      return IOError("writev error", err);
-    }
-
-    if (PREDICT_FALSE(written != nbytes)) {
-      return Status::IOError(
-          strings::Substitute("writev error: expected to write $0 bytes, wrote $1 bytes instead",
-                              nbytes, written));
-    }
-
     return Status::OK();
   }
 
@@ -425,6 +431,8 @@ class PosixMmapFile : public WritableFile {
   virtual uint64_t Size() const OVERRIDE {
     return file_offset_ + (dst_ - base_);
   }
+
+  virtual string ToString() const OVERRIDE { return filename_; }
 };
 
 // Use non-memory mapped POSIX files to write data to a file.
@@ -566,6 +574,8 @@ class PosixWritableFile : public WritableFile {
   virtual uint64_t Size() const OVERRIDE {
     return filesize_;
   }
+
+  virtual string ToString() const OVERRIDE { return filename_; }
 
  private:
 

@@ -147,7 +147,7 @@ TEST_F(TestDeltaCompaction, TestMergeMultipleSchemas) {
     env_util::OpenFileForRandom(env_.get(), path, &reader);
     shared_ptr<DeltaFileReader> delta_reader;
     BlockId block_id;
-    ASSERT_STATUS_OK(DeltaFileReader::Open(path, reader, block_id,
+    ASSERT_STATUS_OK(DeltaFileReader::Open(reader, block_id,
                                            &delta_reader, REDO));
     inputs.push_back(delta_reader);
     deltafile_idx++;
@@ -173,7 +173,7 @@ TEST_F(TestDeltaCompaction, TestMergeMultipleSchemas) {
   env_util::OpenFileForRandom(env_.get(), path, &reader);
   shared_ptr<DeltaFileReader> delta_reader;
   BlockId block_id;
-  ASSERT_STATUS_OK(DeltaFileReader::Open(path, reader, block_id,
+  ASSERT_STATUS_OK(DeltaFileReader::Open(reader, block_id,
                                          &delta_reader, REDO));
   DeltaIterator* raw_iter;
   ASSERT_STATUS_OK(delta_reader->NewDeltaIterator(&merge_schema, snap, &raw_iter));

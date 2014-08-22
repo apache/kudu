@@ -20,12 +20,11 @@
 #include "kudu/common/types.h"
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
+#include "kudu/util/env.h"
 #include "kudu/util/rle-encoding.h"
 #include "kudu/util/status.h"
 
 namespace kudu {
-
-class WritableFile;
 
 namespace cfile {
 
@@ -87,6 +86,8 @@ class CFileWriter {
                        DataType type,
                        bool is_nullable,
                        shared_ptr<WritableFile> file);
+  ~CFileWriter();
+
   Status Start();
   Status Finish();
 
@@ -125,7 +126,7 @@ class CFileWriter {
   // More data may be written by Finish(), but this is an approximation.
   size_t written_size() const;
 
-  ~CFileWriter();
+  std::string ToString() const { return file_->ToString(); }
 
  private:
   DISALLOW_COPY_AND_ASSIGN(CFileWriter);

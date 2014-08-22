@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "kudu/cfile/block_cache.h"
+#include "kudu/cfile/cfile_reader.h"
 #include "kudu/cfile/cfile_writer.h"
 #include "kudu/cfile/index_btree.h"
 #include "kudu/cfile/string_plain_block.h"
@@ -24,10 +25,6 @@ namespace kudu {
 class WritableFile;
 class RandomAccessFile;
 class Env;
-
-namespace cfile {
-class CFileReader;
-}
 
 namespace tablet {
 
@@ -95,14 +92,13 @@ class DeltaFileReader : public DeltaStore,
   static const char * const kDeltaStatsEntryName;
 
   // Open the Delta File at the given path.
-  static Status Open(Env *env,
-                     const string &path,
+  static Status Open(Env* env,
+                     const string& path,
                      const BlockId& block_id,
                      std::tr1::shared_ptr<DeltaFileReader>* reader_out,
                      DeltaType delta_type);
 
-  static Status Open(const string& path,
-                     const shared_ptr<RandomAccessFile> &file,
+  static Status Open(const shared_ptr<RandomAccessFile>& file,
                      const BlockId& block_id,
                      std::tr1::shared_ptr<DeltaFileReader>* reader_out,
                      DeltaType delta_type);
@@ -119,14 +115,12 @@ class DeltaFileReader : public DeltaStore,
     return schema_;
   }
 
-  const string& path() const { return path_; }
-
   const BlockId& block_id() const { return block_id_; }
 
   virtual const DeltaStats& delta_stats() const OVERRIDE { return *delta_stats_; }
 
   virtual std::string ToString() const OVERRIDE {
-    return path();
+    return reader_->ToString();
   }
 
  private:
@@ -140,7 +134,6 @@ class DeltaFileReader : public DeltaStore,
 
   DeltaFileReader(const BlockId& block_id,
                   cfile::CFileReader *cf_reader,
-                  const string &path,
                   DeltaType delta_type);
 
   Status Init();
@@ -152,9 +145,6 @@ class DeltaFileReader : public DeltaStore,
   shared_ptr<cfile::CFileReader> reader_;
   gscoped_ptr<DeltaStats> delta_stats_;
   Schema schema_;
-
-  // The path of the file being read (should be used only for debugging)
-  const string path_;
 
   const BlockId block_id_;
 

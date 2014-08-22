@@ -182,18 +182,17 @@ Status DeltaFileWriter::WriteDeltaStats(const DeltaStats& stats) {
 // Reader
 ////////////////////////////////////////////////////////////
 
-Status DeltaFileReader::Open(Env *env,
-                             const string &path,
+Status DeltaFileReader::Open(Env* env,
+                             const string& path,
                              const BlockId& block_id,
                              shared_ptr<DeltaFileReader>* reader_out,
                              DeltaType delta_type) {
   shared_ptr<RandomAccessFile> file;
   RETURN_NOT_OK(env_util::OpenFileForRandom(env, path, &file));
-  return Open(path, file, block_id, reader_out, delta_type);
+  return Open(file, block_id, reader_out, delta_type);
 }
 
-Status DeltaFileReader::Open(const string& path,
-                             const shared_ptr<RandomAccessFile> &file,
+Status DeltaFileReader::Open(const shared_ptr<RandomAccessFile>& file,
                              const BlockId& block_id,
                              shared_ptr<DeltaFileReader>* reader_out,
                              DeltaType delta_type) {
@@ -202,7 +201,6 @@ Status DeltaFileReader::Open(const string& path,
 
   gscoped_ptr<DeltaFileReader> df_reader(new DeltaFileReader(block_id,
                                                              cf_reader.release(),
-                                                             path,
                                                              delta_type));
 
   RETURN_NOT_OK(df_reader->Init());
@@ -213,10 +211,8 @@ Status DeltaFileReader::Open(const string& path,
 
 DeltaFileReader::DeltaFileReader(const BlockId& block_id,
                                  CFileReader *cf_reader,
-                                 const string &path,
                                  DeltaType delta_type)
   : reader_(cf_reader),
-    path_(path),
     block_id_(block_id),
     delta_type_(delta_type) {
 }
@@ -738,7 +734,7 @@ bool DeltaFileIterator::HasNext() {
 }
 
 string DeltaFileIterator::ToString() const {
-  return "DeltaFileIterator(" + dfr_->path() + ")";
+  return "DeltaFileIterator(" + dfr_->ToString() + ")";
 }
 
 struct FilterAndAppendVisitor {
@@ -782,7 +778,7 @@ Status DeltaFileIterator::FilterColumnsAndAppend(const metadata::ColumnIndexes& 
 
 void DeltaFileIterator::FatalUnexpectedDelta(const DeltaKey &key, const Slice &deltas,
                                              const string &msg) {
-  LOG(FATAL) << "Saw unexpected delta type in deltafile " << dfr_->path() << ": "
+  LOG(FATAL) << "Saw unexpected delta type in deltafile " << dfr_->ToString() << ": "
              << " rcl=" << RowChangeList(deltas).ToString(dfr_->schema())
              << " key=" << key.ToString() << " (" << msg << ")";
 }

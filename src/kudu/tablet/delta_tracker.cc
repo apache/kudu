@@ -55,8 +55,7 @@ Status DeltaTracker::OpenDeltaReaders(const vector<BlockId>& blocks,
     }
 
     shared_ptr<DeltaFileReader> dfr;
-    s = DeltaFileReader::Open(block.ToString(), dfile,
-                              block, &dfr, type);
+    s = DeltaFileReader::Open(dfile, block, &dfr, type);
     if (!s.ok()) {
       LOG(ERROR) << "Failed to open " << DeltaType_Name(type)
                  << " delta file reader " << block.ToString() << ": "
@@ -111,7 +110,7 @@ Status DeltaTracker::MakeDeltaIteratorMergerUnlocked(size_t start_idx, size_t en
     ignore_result(down_cast<DeltaFileReader*>(delta_store.get()));
     shared_ptr<DeltaFileReader> dfr = std::tr1::static_pointer_cast<DeltaFileReader>(delta_store);
 
-    LOG(INFO) << "Preparing to compact delta file: " << dfr->path();
+    LOG(INFO) << "Preparing to compact delta file: " << dfr->ToString();
 
     inputs.push_back(delta_store);
     target_stores->push_back(delta_store);
@@ -371,11 +370,7 @@ Status DeltaTracker::FlushDMS(DeltaMemStore* dms,
   // Now re-open for read
   shared_ptr<RandomAccessFile> data_reader;
   RETURN_NOT_OK(rowset_metadata_->OpenDataBlock(block_id, &data_reader));
-  RETURN_NOT_OK(DeltaFileReader::Open(block_id.ToString(),
-                                      data_reader,
-                                      block_id,
-                                      dfr,
-                                      REDO));
+  RETURN_NOT_OK(DeltaFileReader::Open(data_reader, block_id, dfr, REDO));
   LOG(INFO) << "Reopened delta block for read: " << block_id.ToString();
 
   RETURN_NOT_OK(rowset_metadata_->CommitRedoDeltaDataBlock(dms->id(), block_id));

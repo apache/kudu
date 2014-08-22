@@ -68,8 +68,7 @@ TYPED_TEST(TestTablet, TestFlush) {
   ASSERT_STATUS_OK(rowset_meta->OpenDataBlock(undo_blocks[0], &dfile));
 
   shared_ptr<DeltaFileReader> dfr;
-  ASSERT_STATUS_OK(DeltaFileReader::Open(undo_blocks[0].ToString(), dfile,
-                                         undo_blocks[0], &dfr, UNDO));
+  ASSERT_STATUS_OK(DeltaFileReader::Open(dfile, undo_blocks[0], &dfr, UNDO));
   // Assert there were 'max_rows' deletions in the undo delta (one for each inserted row)
   ASSERT_EQ(dfr->delta_stats().delete_count(), max_rows);
 }

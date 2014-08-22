@@ -457,8 +457,7 @@ Status FsTool::DumpDeltaCFileBlockInternal(const Schema& schema,
   RETURN_NOT_OK(fs_manager_->OpenBlock(block_id, &block_reader));
   string path = fs_manager_->GetBlockPath(block_id);
   shared_ptr<DeltaFileReader> delta_reader;
-  RETURN_NOT_OK(DeltaFileReader::Open(path,
-                                      block_reader,
+  RETURN_NOT_OK(DeltaFileReader::Open(block_reader,
                                       block_id,
                                       &delta_reader,
                                       delta_type));

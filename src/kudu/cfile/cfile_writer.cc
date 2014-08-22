@@ -96,6 +96,9 @@ CFileWriter::CFileWriter(const WriterOptions &options,
   }
 }
 
+CFileWriter::~CFileWriter() {
+}
+
 Status CFileWriter::Start() {
   CHECK(state_ == kWriterInitialized) <<
     "bad state for Start(): " << state_;
@@ -403,9 +406,6 @@ Status CFileWriter::WriteRawData(const Slice& data) {
   }
   off_ += data.size();
   return s;
-}
-
-CFileWriter::~CFileWriter() {
 }
 
 } // namespace cfile

@@ -192,6 +192,10 @@ class SequentialFileImpl : public SequentialFile {
     return Status::OK();
   }
 
+  virtual string ToString() const OVERRIDE {
+    return "in-memory sequential file";
+  }
+
  private:
   FileState* file_;
   size_t pos_;
@@ -215,6 +219,10 @@ class RandomAccessFileImpl : public RandomAccessFile {
   virtual Status Size(uint64_t *size) const OVERRIDE {
     *size = file_->Size();
     return Status::OK();
+  }
+
+  virtual string ToString() const OVERRIDE {
+    return "in-memory random access file";
   }
 
  private:
@@ -249,9 +257,16 @@ class WritableFileImpl : public WritableFile {
   }
 
   virtual Status Close() OVERRIDE { return Status::OK(); }
+
   virtual Status Flush() OVERRIDE { return Status::OK(); }
+
   virtual Status Sync() OVERRIDE { return Status::OK(); }
+
   virtual uint64_t Size() const OVERRIDE { return file_->Size(); }
+
+  virtual string ToString() const OVERRIDE {
+    return "in-memory writable file";
+  }
 
  private:
   FileState* file_;

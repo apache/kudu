@@ -28,8 +28,6 @@
 
 namespace kudu {
 
-class RandomAccessFile;
-
 namespace cfile {
 
 class CFileHeaderPB;
@@ -136,6 +134,8 @@ class CFileReader {
     DCHECK(has_validx());
     return BlockPointer(footer_->validx_info().root_block());
   }
+
+  std::string ToString() const { return file_->ToString(); }
 
  private:
   DISALLOW_COPY_AND_ASSIGN(CFileReader);

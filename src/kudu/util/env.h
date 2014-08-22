@@ -193,6 +193,9 @@ class SequentialFile {
   //
   // REQUIRES: External synchronization
   virtual Status Skip(uint64_t n) = 0;
+
+  // Returns a string representation of the file suitable for debugging.
+  virtual std::string ToString() const = 0;
 };
 
 // A file abstraction for randomly reading the contents of a file.
@@ -215,6 +218,9 @@ class RandomAccessFile {
 
   // Returns the size of the file
   virtual Status Size(uint64_t *size) const = 0;
+
+  // Returns a string representation of the file suitable for debugging.
+  virtual std::string ToString() const = 0;
 };
 
 // Creation-time options for WritableFile
@@ -243,6 +249,7 @@ class WritableFile {
   // offset, whichever is bigger. In no case is the file truncated by this
   // operation.
   virtual Status PreAllocate(uint64_t size) = 0;
+
   virtual Status Append(const Slice& data) = 0;
 
   // If possible, uses scatter-gather I/O to efficiently append
@@ -251,10 +258,17 @@ class WritableFile {
   // For implementation specific quirks and details, see comments in
   // implementation source code (e.g., env_posix.cc)
   virtual Status AppendVector(const std::vector<Slice>& data_vector) = 0;
+
   virtual Status Close() = 0;
+
   virtual Status Flush() = 0;
+
   virtual Status Sync() = 0;
+
   virtual uint64_t Size() const = 0;
+
+  // Returns a string representation of the file suitable for debugging.
+  virtual std::string ToString() const = 0;
 
  private:
   // No copying allowed
