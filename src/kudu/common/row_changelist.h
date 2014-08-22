@@ -20,6 +20,7 @@
 
 namespace kudu {
 
+class RowBlockRow;
 
 // A RowChangeList is a wrapper around a Slice which contains a "changelist".
 //
@@ -232,27 +233,7 @@ class RowChangeListDecoder {
 
   // Applies this changes in this decoder to the specified row and saves the old
   // state of the row into the undo_encoder.
-  template<class RowType, class ArenaType>
-  Status ApplyRowUpdate(RowType *dst_row, ArenaType *arena, RowChangeListEncoder* undo_encoder) {
-    // TODO: Handle different schema
-    DCHECK(schema_->Equals(*dst_row->schema()));
-
-    while (HasNext()) {
-      size_t updated_col = 0xdeadbeef; // avoid un-initialized usage warning
-      const void *new_val = NULL;
-      RETURN_NOT_OK(DecodeNext(&updated_col, &new_val));
-
-      SimpleConstCell src(&schema_->column(updated_col), new_val);
-      typename RowType::Cell dst_cell = dst_row->cell(updated_col);
-
-      // save the old cell on the undo encoder
-      undo_encoder->AddColumnUpdate(updated_col, dst_cell.ptr());
-
-      // copy the new cell to the row
-      RETURN_NOT_OK(CopyCell(src, &dst_cell, arena));
-    }
-    return Status::OK();
-  }
+  Status ApplyRowUpdate(RowBlockRow *dst_row, Arena *arena, RowChangeListEncoder* undo_encoder);
 
   // TODO: It will be nice have the same function taking the destination type
   //       to been able to call the "alter type" adapter.

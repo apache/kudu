@@ -3,6 +3,7 @@
 
 #include <string>
 #include "kudu/common/row.h"
+#include "kudu/common/rowblock.h"
 #include "kudu/common/row_changelist.h"
 #include "kudu/common/schema.h"
 #include "kudu/gutil/strings/substitute.h"
@@ -123,6 +124,27 @@ Status RowChangeListDecoder::ProjectUpdate(const DeltaProjector& projector,
         return Status::NotSupported("Alter type is not implemented yet");
       }
     }
+  }
+  return Status::OK();
+}
+
+Status RowChangeListDecoder::ApplyRowUpdate(RowBlockRow *dst_row, Arena *arena,
+                                            RowChangeListEncoder* undo_encoder) {
+  DCHECK(schema_->Equals(*dst_row->schema()));
+
+  while (HasNext()) {
+    size_t updated_col = 0xdeadbeef; // avoid un-initialized usage warning
+    const void *new_val = NULL;
+    RETURN_NOT_OK(DecodeNext(&updated_col, &new_val));
+
+    SimpleConstCell src(&schema_->column(updated_col), new_val);
+    RowBlockRow::Cell dst_cell = dst_row->cell(updated_col);
+
+    // save the old cell on the undo encoder
+    undo_encoder->AddColumnUpdate(updated_col, dst_cell.ptr());
+
+    // copy the new cell to the row
+    RETURN_NOT_OK(CopyCell(src, &dst_cell, arena));
   }
   return Status::OK();
 }
