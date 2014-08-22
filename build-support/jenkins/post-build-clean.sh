@@ -22,4 +22,4 @@ find src -name \*.o -exec rm -f {} \;
 rm -Rf build/latest/
 
 # Clean up any java build artifacts
-find java -name target -print0 | xargs -0 rm -Rf
+find java -name \*.jar -delete -o -name \*.class -delete 
