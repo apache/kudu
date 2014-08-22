@@ -13,6 +13,7 @@
 #include "kudu/util/env_util.h"
 #include "kudu/util/status.h"
 #include "kudu/tablet/deltafile.h"
+#include "kudu/tablet/delta_applier.h"
 #include "kudu/tablet/delta_compaction.h"
 #include "kudu/tablet/delta_iterator_merger.h"
 #include "kudu/tablet/delta_store.h"

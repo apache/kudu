@@ -30,6 +30,7 @@ set(TABLET_SRCS
   svg_dump.cc
   deltafile.cc
   deltamemstore.cc
+  delta_applier.cc
   delta_compaction.cc
   delta_iterator_merger.cc
   delta_stats.cc
