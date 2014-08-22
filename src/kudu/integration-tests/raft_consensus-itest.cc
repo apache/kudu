@@ -10,6 +10,7 @@
 #include "kudu/common/wire_protocol-test-util.h"
 #include "kudu/common/schema.h"
 #include "kudu/consensus/consensus_queue.h"
+#include "kudu/consensus/consensus_peers.h"
 #include "kudu/consensus/raft_consensus.h"
 #include "kudu/consensus/raft_consensus_state.h"
 #include "kudu/gutil/strings/strcat.h"
@@ -376,6 +377,24 @@ class DistConsensusTest : public TabletServerTest {
   std::vector<scoped_refptr<kudu::Thread> > threads_;
   CountDownLatch inserters_;
 };
+
+// Test that we can retrieve the permanent uuid of a server running
+// consensus service via RPC.
+TEST_F(DistConsensusTest, TestGetPermanentUuid) {
+  BuildAndStart();
+
+  QuorumPeerPB peer;
+  peer.mutable_last_known_addr()->CopyFrom(leader_->ts_info.rpc_addresses(0));
+  const string expected_uuid = leader_->ts_info.permanent_uuid();
+
+  rpc::MessengerBuilder builder("test builder");
+  builder.set_num_reactors(1);
+  shared_ptr<rpc::Messenger> messenger;
+  ASSERT_STATUS_OK(builder.Build(&messenger));
+
+  ASSERT_STATUS_OK(consensus::SetPermanentUuidForRemotePeer(messenger, &peer));
+  ASSERT_EQ(expected_uuid, peer.permanent_uuid());
+}
 
 // TODO allow the scan to define an operation id, fetch the last id
 // from the leader and then use that id to make the replica wait

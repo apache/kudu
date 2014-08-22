@@ -131,11 +131,33 @@ Status TabletPeer::Init(const shared_ptr<Tablet>& tablet,
   return Status::OK();
 }
 
+// TODO move this to raft_consensus.cc
+Status TabletPeer::UpdatePermanentUuids() {
+  DCHECK(messenger_.get() != NULL);
+  QuorumPB config = meta_->Quorum();
+  bool altered = false;
+  BOOST_FOREACH(QuorumPeerPB& peer, *config.mutable_peers()) {
+    if (!peer.has_permanent_uuid()) {
+      LOG(INFO) << peer.ShortDebugString()
+                << " has no permanent_uuid. Determining permanent_uuid...";
+      RETURN_NOT_OK(consensus::SetPermanentUuidForRemotePeer(messenger_, &peer));
+      altered = true;
+    }
+  }
+  if (altered) {
+    meta_->SetQuorum(config);
+    RETURN_NOT_OK(meta_->Flush());
+  }
+  return Status::OK();
+}
+
 Status TabletPeer::Start(const ConsensusBootstrapInfo& bootstrap_info) {
   // Prevent any SubmitChangeConfig calls to try and modify the config
   // until consensus is booted and the actual configuration is stored in
   // the tablet meta.
   boost::lock_guard<Semaphore> config_lock(config_sem_);
+
+  RETURN_NOT_OK(UpdatePermanentUuids());
 
   gscoped_ptr<QuorumPB> actual_config;
   TRACE("Starting consensus");

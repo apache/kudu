@@ -138,6 +138,11 @@ class TabletPeer : public RefCountedThreadSafe<TabletPeer>,
   // Returns the current quorum configuration.
   const metadata::QuorumPB Quorum() const;
 
+  // If any peers in the quorum lack permanent uuids, get them via an
+  // RPC call and update.
+  // TODO: move this to raft_consensus.h.
+  Status UpdatePermanentUuids();
+
   // Returns the current role of this peer as accepted by the last configuration
   // round, that is the role which is set in the tablet metadata's quorum.
   // If a configuration has not yet been committed or if this peer is no longer

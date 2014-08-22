@@ -228,6 +228,12 @@ class RpcPeerProxyFactory : public PeerProxyFactory {
   std::tr1::shared_ptr<rpc::Messenger> messenger_;
 };
 
+// Query the consensus service at last known host/port that is
+// specified in 'remote_peer' and set the 'permanent_uuid' field based
+// on the response.
+Status SetPermanentUuidForRemotePeer(const std::tr1::shared_ptr<rpc::Messenger>& messenger,
+                                     metadata::QuorumPeerPB* remote_peer);
+
 }  // namespace consensus
 }  // namespace kudu
 

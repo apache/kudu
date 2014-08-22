@@ -377,6 +377,9 @@ class CatalogManager : public tserver::TabletPeerLookupIf {
   // See also: TabletPeerLookupIf, ConsensusServiceImpl.
   virtual Status GetTabletPeer(const std::string& tablet_id,
                                scoped_refptr<tablet::TabletPeer>* tablet_peer) const OVERRIDE;
+
+  virtual const NodeInstancePB& NodeInstance() const OVERRIDE;
+
  private:
   friend class TableLoader;
   friend class TabletLoader;

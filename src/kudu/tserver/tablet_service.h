@@ -123,6 +123,9 @@ class ConsensusServiceImpl : public consensus::ConsensusServiceIf {
                                     consensus::VoteResponsePB* resp,
                                     rpc::RpcContext* context) OVERRIDE;
 
+  virtual void GetNodeInstance(const consensus::GetNodeInstanceRequestPB* req,
+                               consensus::GetNodeInstanceResponsePB* resp,
+                               rpc::RpcContext* context) OVERRIDE;
 
  private:
   TabletPeerLookupIf* tablet_manager_;

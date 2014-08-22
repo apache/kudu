@@ -50,6 +50,9 @@ using consensus::ChangeConfigRequestPB;
 using consensus::ChangeConfigResponsePB;
 using consensus::VoteRequestPB;
 using consensus::VoteResponsePB;
+using consensus::GetNodeInstanceRequestPB;
+using consensus::GetNodeInstanceResponsePB;
+
 using google::protobuf::RepeatedPtrField;
 using rpc::RpcContext;
 using std::tr1::shared_ptr;
@@ -476,6 +479,14 @@ void ConsensusServiceImpl::RequestConsensusVote(const VoteRequestPB* req,
                          context);
     return;
   }
+  context->RespondSuccess();
+}
+
+void ConsensusServiceImpl::GetNodeInstance(const GetNodeInstanceRequestPB* req,
+                                            GetNodeInstanceResponsePB* resp,
+                                            rpc::RpcContext* context) {
+  DVLOG(3) << "Received Get Node Instance RPC: " << req->DebugString();
+  resp->mutable_node_instance()->CopyFrom(tablet_manager_->NodeInstance());
   context->RespondSuccess();
 }
 

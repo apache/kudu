@@ -1101,6 +1101,10 @@ Status CatalogManager::GetTabletPeer(const string& tablet_id,
   return Status::OK();
 }
 
+const NodeInstancePB& CatalogManager::NodeInstance() const {
+  return master_->instance_pb();
+}
+
 class AsyncTabletRequestTask : public MonitoredTask {
  public:
   AsyncTabletRequestTask(Master *master,

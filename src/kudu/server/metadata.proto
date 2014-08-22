@@ -140,7 +140,11 @@ message QuorumPeerPB {
     // Indicates that this peer does not know its role in this particular quorum.
     UNKNOWN = 5;
   };
-  required bytes permanent_uuid = 1;
+  // Permanent uuid is optional: QuorumPeerPB/QuorumPB instances may
+  // be created before the permanent uuid is known (e.g., when
+  // manually specifying a quorum for Master/CatalogManager);
+  // permament uuid can be retrieved at a later time through RPC.
+  optional bytes permanent_uuid = 1;
   // TODO: can we just make this field required and get rid of UNKNOWN?
   optional Role role = 2 [ default = UNKNOWN ];
   optional HostPortPB last_known_addr = 3;

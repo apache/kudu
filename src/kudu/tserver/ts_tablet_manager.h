@@ -110,6 +110,8 @@ class TSTabletManager : public tserver::TabletPeerLookupIf {
                                scoped_refptr<tablet::TabletPeer>* tablet_peer) const
                                OVERRIDE;
 
+  virtual const NodeInstancePB& NodeInstance() const OVERRIDE;
+
   // Generate an incremental tablet report.
   //
   // This will report any tablets which have changed since the last acknowleged

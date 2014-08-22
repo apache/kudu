@@ -10,6 +10,8 @@
 
 namespace kudu {
 
+class NodeInstancePB;
+
 namespace tablet {
 class TabletPeer;
 } // namespace tablet
@@ -23,6 +25,8 @@ class TabletPeerLookupIf {
  public:
   virtual Status GetTabletPeer(const std::string& tablet_id,
                                scoped_refptr<tablet::TabletPeer>* tablet_peer) const = 0;
+
+  virtual const NodeInstancePB& NodeInstance() const = 0;
 };
 
 } // namespace tserver

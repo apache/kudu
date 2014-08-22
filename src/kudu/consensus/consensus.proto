@@ -227,10 +227,19 @@ message TransactionStatusPB {
   optional string trace_buffer = 6;
 }
 
+message GetNodeInstanceRequestPB {
+}
+
+message GetNodeInstanceResponsePB {
+  required NodeInstancePB node_instance = 1;
+}
+
 service ConsensusService {
   rpc ChangeConfig(ChangeConfigRequestPB) returns (ChangeConfigResponsePB);
 
   rpc UpdateConsensus(ConsensusRequestPB) returns (ConsensusResponsePB);
 
   rpc RequestConsensusVote(VoteRequestPB) returns (VoteResponsePB);
+
+  rpc GetNodeInstance(GetNodeInstanceRequestPB) returns (GetNodeInstanceResponsePB);
 }

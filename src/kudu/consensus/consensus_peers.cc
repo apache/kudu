@@ -1,5 +1,6 @@
 // Copyright (c) 2013, Cloudera, inc.
 
+#include <algorithm>
 #include <gflags/gflags.h>
 #include <string>
 #include <utility>
@@ -19,6 +20,9 @@
 
 DEFINE_int32(consensus_rpc_timeout_ms, 1000,
              "Timeout used for all consensus internal RPC comms.");
+
+DEFINE_int32(quorum_get_node_instance_timeout_ms, 30000,
+             "Timeout for retrieving node instance data over RPC.");
 
 DECLARE_int32(leader_heartbeat_interval_ms);
 
@@ -441,31 +445,89 @@ Status RpcPeerProxy::UpdateAsync(const ConsensusRequestPB* request,
 
 RpcPeerProxy::~RpcPeerProxy() {}
 
+namespace {
+
+Status CreateConsensusServiceProxyForHost(const shared_ptr<Messenger>& messenger,
+                                          const HostPort& hostport,
+                                          gscoped_ptr<ConsensusServiceProxy>* new_proxy) {
+  vector<Sockaddr> addrs;
+  RETURN_NOT_OK(hostport.ResolveAddresses(&addrs));
+  if (addrs.size() > 1) {
+    LOG(WARNING)<< "Peer address '" << hostport.ToString() << "' "
+    << "resolves to " << addrs.size() << " different addresses. Using "
+    << addrs[0].ToString();
+  }
+  new_proxy->reset(new ConsensusServiceProxy(messenger, addrs[0]));
+  return Status::OK();
+}
+
+} // anonymous namespace
+
 RpcPeerProxyFactory::RpcPeerProxyFactory(const shared_ptr<Messenger>& messenger)
     : messenger_(messenger) {
 }
 
 Status RpcPeerProxyFactory::NewProxy(const QuorumPeerPB& peer_pb,
                                      gscoped_ptr<PeerProxy>* proxy) {
-
   gscoped_ptr<HostPort> hostport(new HostPort);
-  RETURN_NOT_OK(HostPortFromPB(peer_pb.last_known_addr(), hostport.get()))
-
-  vector<Sockaddr> addrs;
-  RETURN_NOT_OK(hostport->ResolveAddresses(&addrs));
-  if (addrs.size() > 1) {
-    LOG(WARNING)<< "Peer address '" << hostport->ToString() << "' "
-    << "resolves to " << addrs.size() << " different addresses. Using "
-    << addrs[0].ToString();
-  }
-  gscoped_ptr<ConsensusServiceProxy> new_proxy(
-      new ConsensusServiceProxy(messenger_, addrs[0]));
+  RETURN_NOT_OK(HostPortFromPB(peer_pb.last_known_addr(), hostport.get()));
+  gscoped_ptr<ConsensusServiceProxy> new_proxy;
+  RETURN_NOT_OK(CreateConsensusServiceProxyForHost(messenger_, *hostport, &new_proxy));
   proxy->reset(new RpcPeerProxy(hostport.Pass(), new_proxy.Pass()));
   return Status::OK();
 }
 
 RpcPeerProxyFactory::~RpcPeerProxyFactory() {}
 
+Status SetPermanentUuidForRemotePeer(const shared_ptr<Messenger>& messenger,
+                                     QuorumPeerPB* remote_peer) {
+  DCHECK(!remote_peer->has_permanent_uuid());
+  HostPort hostport;
+  RETURN_NOT_OK(HostPortFromPB(remote_peer->last_known_addr(), &hostport));
+  gscoped_ptr<ConsensusServiceProxy> proxy;
+  RETURN_NOT_OK(CreateConsensusServiceProxyForHost(messenger, hostport, &proxy));
+  GetNodeInstanceRequestPB req;
+  GetNodeInstanceResponsePB resp;
+  rpc::RpcController controller;
+
+  // TODO generalize this exponential backoff algorithm, as we do the
+  // same thing in catalog_manager.cc
+  // (AsyncTabletRequestTask::RpcCallBack).
+  MonoTime deadline = MonoTime::Now(MonoTime::FINE);
+  deadline.AddDelta(MonoDelta::FromMilliseconds(FLAGS_quorum_get_node_instance_timeout_ms));
+  int attempt = 1;
+  while (true) {
+    VLOG(2) << "Sending " << req.ShortDebugString();
+
+    controller.Reset();
+    Status s = proxy->GetNodeInstance(req, &resp, &controller);
+    if (s.ok()) {
+      if (controller.status().ok()) {
+        break;
+      }
+      s = controller.status();
+    }
+
+    LOG(WARNING) << "Error getting permanent uuid from " << hostport.ToString() << ": "
+                 << s.ToString();
+    MonoTime now = MonoTime::Now(MonoTime::FINE);
+    if (now.ComesBefore(deadline)) {
+      int64_t remaining_ms = deadline.GetDeltaSince(now).ToMilliseconds();
+      int64_t base_delay_ms = 1 << (attempt + 3); // 1st retry delayed 2^4 ms, 2nd 2^5, etc..
+      int64_t jitter_ms = rand() % 50; // Add up to 50ms of additional random delay.
+      int64_t delay_ms = std::min<int64_t>(base_delay_ms + jitter_ms, remaining_ms);
+      LOG(INFO) << "Sleeping " << delay_ms << " ms. before retrying...";
+      usleep(delay_ms * 1000);
+      LOG(INFO) << "Retrying, attempt " << attempt++;
+      continue;
+    }
+    LOG(ERROR) << "Getting permanent uuid from " << hostport.ToString()
+               << " timed out after "  << FLAGS_quorum_get_node_instance_timeout_ms << " ms.";
+    return s;
+  }
+  remote_peer->set_permanent_uuid(resp.node_instance().permanent_uuid());
+  return Status::OK();
+}
+
 }  // namespace consensus
 }  // namespace kudu
-
