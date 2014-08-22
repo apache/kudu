@@ -4,9 +4,10 @@
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 
+#include "kudu/gutil/strings/strcat.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/strings/util.h"
-
+#include "kudu/util/env.h"
 #include "kudu/util/path_util.h"
 #include "kudu/util/random.h"
 #include "kudu/util/spinlock_profiling.h"
@@ -17,6 +18,7 @@ DEFINE_bool(test_leave_files, false,
 DEFINE_int32(test_random_seed, 0, "Random seed to use for randomized tests");
 
 using std::string;
+using strings::Substitute;
 
 namespace kudu {
 
@@ -109,8 +111,7 @@ string GetTestDataDirectory() {
   string dir;
   CHECK_OK(Env::Default()->GetTestDirectory(&dir));
 
-  dir += strings::Substitute(
-    "/$0.$1.$2-$3",
+  dir += Substitute("/$0.$1.$2-$3",
     StringReplace(test_info->test_case_name(), "/", "_", true).c_str(),
     StringReplace(test_info->name(), "/", "_", true).c_str(),
     kTestBeganAtMicros,
@@ -118,6 +119,21 @@ string GetTestDataDirectory() {
   Status s = Env::Default()->CreateDir(dir);
   CHECK(s.IsAlreadyPresent() || s.ok())
     << "Could not create directory " << dir << ": " << s.ToString();
+  if (s.ok()) {
+    string metadata;
+
+    StrAppend(&metadata, Substitute("PID=$0\n", getpid()));
+
+    StrAppend(&metadata, Substitute("PPID=$0\n", getppid()));
+
+    char* jenkins_build_id = getenv("BUILD_ID");
+    if (jenkins_build_id) {
+      StrAppend(&metadata, Substitute("BUILD_ID=$0\n", jenkins_build_id));
+    }
+
+    CHECK_OK(WriteStringToFile(Env::Default(), metadata,
+                               Substitute("$0/test_metadata", dir)));
+  }
   return dir;
 }
 
