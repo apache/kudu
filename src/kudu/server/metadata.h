@@ -316,9 +316,8 @@ class RowSetMetadata {
   // We should provide this wrapper as part of FsManager and make this a pure
   // metadata container, without trying to funnel FS operations through it.
   Status OpenDataBlock(const BlockId& block_id,
-                       shared_ptr<RandomAccessFile> *reader, uint64_t *size) {
-    RETURN_NOT_OK(fs_manager()->OpenBlock(block_id, reader));
-    return (*reader)->Size(size);
+                       shared_ptr<RandomAccessFile> *reader) {
+    return fs_manager()->OpenBlock(block_id, reader);
   }
 
   Status NewBloomDataBlock(shared_ptr<WritableFile> *writer) {
@@ -326,8 +325,8 @@ class RowSetMetadata {
     return fs_manager()->CreateNewBlock(writer, &bloom_block_);
   }
 
-  Status OpenBloomDataBlock(shared_ptr<RandomAccessFile> *reader, uint64_t *size) {
-    return OpenDataBlock(bloom_block_, reader, size);
+  Status OpenBloomDataBlock(shared_ptr<RandomAccessFile> *reader) {
+    return OpenDataBlock(bloom_block_, reader);
   }
 
   Status NewAdHocIndexDataBlock(shared_ptr<WritableFile> *writer) {
@@ -335,8 +334,8 @@ class RowSetMetadata {
     return fs_manager()->CreateNewBlock(writer, &adhoc_index_block_);
   }
 
-  Status OpenAdHocIndexDataBlock(shared_ptr<RandomAccessFile> *reader, uint64_t *size) {
-    return OpenDataBlock(adhoc_index_block_, reader, size);
+  Status OpenAdHocIndexDataBlock(shared_ptr<RandomAccessFile> *reader) {
+    return OpenDataBlock(adhoc_index_block_, reader);
   }
 
   Status NewColumnDataBlock(size_t col_idx, shared_ptr<WritableFile> *writer) {
@@ -349,9 +348,9 @@ class RowSetMetadata {
 
   void SetColumnDataBlocks(const std::vector<BlockId>& blocks);
 
-  Status OpenColumnDataBlock(size_t col_idx, shared_ptr<RandomAccessFile> *reader, uint64_t *size) {
+  Status OpenColumnDataBlock(size_t col_idx, shared_ptr<RandomAccessFile> *reader) {
     DCHECK_LT(col_idx, column_blocks_.size());
-    return OpenDataBlock(column_blocks_[col_idx], reader, size);
+    return OpenDataBlock(column_blocks_[col_idx], reader);
   }
 
   Status NewDeltaDataBlock(shared_ptr<WritableFile> *writer, BlockId *block_id) {

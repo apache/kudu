@@ -47,16 +47,13 @@ class CFileIterator;
 
 class CFileReader {
  public:
-  // Open the cfile at the given path.
-  //
-  // When this method is used, there is no need to explicitly
-  // Init() the reader.
+  // Open a cfile for reading at the given path.
   static Status Open(Env *env, const string &path,
                      const ReaderOptions &options,
                      gscoped_ptr<CFileReader> *reader);
 
+  // Open a cfile for reading using an existing RandomAccessFile.
   static Status Open(const shared_ptr<RandomAccessFile>& file,
-                     uint64_t file_size,
                      const ReaderOptions& options,
                      gscoped_ptr<CFileReader> *reader);
 
@@ -146,8 +143,7 @@ class CFileReader {
   friend class CFileIterator;
 
   CFileReader(const ReaderOptions &options,
-              const shared_ptr<RandomAccessFile> &file,
-              uint64_t file_size);
+              const shared_ptr<RandomAccessFile> &file);
 
   Status ReadMagicAndLength(uint64_t offset, uint32_t *len);
   Status ReadAndParseHeader();
@@ -158,7 +154,7 @@ class CFileReader {
 #endif
   const ReaderOptions options_;
   const shared_ptr<RandomAccessFile> file_;
-  const uint64_t file_size_;
+  uint64_t file_size_; // effectively const, but set in Init()
 
   enum State {
     kUninitialized,

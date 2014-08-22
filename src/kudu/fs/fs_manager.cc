@@ -191,13 +191,6 @@ Status FsManager::CreateNewBlock(shared_ptr<WritableFile> *writer, BlockId *bloc
   return env_util::OpenFileForWrite(env_, path, writer);
 }
 
-Status FsManager::CreateBlockWithId(const BlockId& block_id, shared_ptr<WritableFile> *writer) {
-  RETURN_NOT_OK(CreateBlockDir(block_id));
-  string path = GetBlockPath(block_id);
-  VLOG(1) << "Creating new block with predetermined id " << block_id.ToString() << " at " << path;
-  return env_util::OpenFileForWrite(env_, path, writer);
-}
-
 Status FsManager::OpenBlock(const BlockId& block_id, shared_ptr<RandomAccessFile> *reader) {
   VLOG(1) << "OpenBlock: " << block_id.ToString();
   return env_util::OpenFileForRandom(env_, GetBlockPath(block_id), reader);

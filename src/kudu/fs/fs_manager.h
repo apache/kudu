@@ -74,10 +74,6 @@ class FsManager {
   Status CreateNewBlock(std::tr1::shared_ptr<WritableFile> *writer,
                         BlockId *block_id);
 
-  // Create a block with a predetermined BlockId.
-  Status CreateBlockWithId(const BlockId& block_id,
-                           std::tr1::shared_ptr<WritableFile> *writer);
-
   Status OpenBlock(const BlockId& block_id,
                    std::tr1::shared_ptr<RandomAccessFile> *reader);
 

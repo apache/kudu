@@ -431,10 +431,9 @@ Status FsTool::DumpCFileBlock(const std::string& block_id_str, const DumpOptions
 
 Status FsTool::DumpCFileBlockInternal(const BlockId& block_id, const DumpOptions& opts) {
   shared_ptr<RandomAccessFile> block_reader;
-  uint64_t file_size;
-  RETURN_NOT_OK(OpenBlockAsFile(block_id, &file_size, &block_reader));
+  RETURN_NOT_OK(fs_manager_->OpenBlock(block_id, &block_reader));
   gscoped_ptr<CFileReader> reader;
-  RETURN_NOT_OK(CFileReader::Open(block_reader, file_size, ReaderOptions(), &reader));
+  RETURN_NOT_OK(CFileReader::Open(block_reader, ReaderOptions(), &reader));
 
   std::cout << "CFile Header: " << std::endl << reader->header().ShortDebugString() << std::endl;
   std::cout << "Number of values: " << reader->footer().num_values() << std::endl;
@@ -455,13 +454,11 @@ Status FsTool::DumpDeltaCFileBlockInternal(const Schema& schema,
                                            const DumpOptions& opts) {
   // Open the delta reader
   shared_ptr<RandomAccessFile> block_reader;
-  uint64_t file_size;
-  RETURN_NOT_OK(OpenBlockAsFile(block_id, &file_size, &block_reader));
+  RETURN_NOT_OK(fs_manager_->OpenBlock(block_id, &block_reader));
   string path = fs_manager_->GetBlockPath(block_id);
   shared_ptr<DeltaFileReader> delta_reader;
   RETURN_NOT_OK(DeltaFileReader::Open(path,
                                       block_reader,
-                                      file_size,
                                       block_id,
                                       &delta_reader,
                                       delta_type));
@@ -547,17 +544,6 @@ Status FsTool::DumpDeltaCFileBlockInternal(const Schema& schema,
   }
 
   LOG(INFO) << "Processed " << ndeltas << " deltas, for total of " << nrows << " possible rows.";
-  return Status::OK();
-}
-
-Status FsTool::OpenBlockAsFile(const BlockId& block_id,
-                               uint64_t* file_size,
-                               shared_ptr<RandomAccessFile>* block_reader) {
-  RETURN_NOT_OK_PREPEND(fs_manager_->OpenBlock(block_id, block_reader),
-                        Substitute("Failed to open block $0", block_id.ToString()));
-  RETURN_NOT_OK_PREPEND((*block_reader)->Size(file_size),
-                        Substitute("Failed to determine the size of block $0",
-                                   block_id.ToString()));
   return Status::OK();
 }
 

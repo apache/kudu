@@ -57,7 +57,6 @@ class BloomFileReader {
                      gscoped_ptr<BloomFileReader> *reader);
 
   static Status Open(const shared_ptr<RandomAccessFile> &file,
-                     uint64_t file_size,
                      gscoped_ptr<BloomFileReader> *reader);
 
   // Check if the given key may be present in the file.

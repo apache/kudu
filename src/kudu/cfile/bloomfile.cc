@@ -116,16 +116,13 @@ Status BloomFileReader::Open(Env *env, const string &path,
 
   shared_ptr<RandomAccessFile> file;
   RETURN_NOT_OK(env_util::OpenFileForRandom(env, path, &file));
-  uint64_t size;
-  RETURN_NOT_OK(env->GetFileSize(path, &size));
-  return Open(file, size, reader);
+  return Open(file, reader);
 }
 
 Status BloomFileReader::Open(const shared_ptr<RandomAccessFile>& file,
-                             uint64_t file_size,
                              gscoped_ptr<BloomFileReader> *reader) {
   gscoped_ptr<CFileReader> cf_reader;
-  RETURN_NOT_OK(CFileReader::Open(file, file_size, ReaderOptions(), &cf_reader));
+  RETURN_NOT_OK(CFileReader::Open(file, ReaderOptions(), &cf_reader));
   if (cf_reader->is_compressed()) {
     return Status::Corruption("Unexpected compression for bloom file");
   }

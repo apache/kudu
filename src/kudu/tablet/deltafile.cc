@@ -189,19 +189,16 @@ Status DeltaFileReader::Open(Env *env,
                              DeltaType delta_type) {
   shared_ptr<RandomAccessFile> file;
   RETURN_NOT_OK(env_util::OpenFileForRandom(env, path, &file));
-  uint64_t size;
-  RETURN_NOT_OK(env->GetFileSize(path, &size));
-  return Open(path, file, size, block_id, reader_out, delta_type);
+  return Open(path, file, block_id, reader_out, delta_type);
 }
 
 Status DeltaFileReader::Open(const string& path,
                              const shared_ptr<RandomAccessFile> &file,
-                             uint64_t file_size,
                              const BlockId& block_id,
                              shared_ptr<DeltaFileReader>* reader_out,
                              DeltaType delta_type) {
   gscoped_ptr<CFileReader> cf_reader;
-  RETURN_NOT_OK(CFileReader::Open(file, file_size, cfile::ReaderOptions(), &cf_reader));
+  RETURN_NOT_OK(CFileReader::Open(file, cfile::ReaderOptions(), &cf_reader));
 
   gscoped_ptr<DeltaFileReader> df_reader(new DeltaFileReader(block_id,
                                                              cf_reader.release(),

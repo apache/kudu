@@ -45,9 +45,8 @@ Status DeltaTracker::OpenDeltaReaders(const vector<BlockId>& blocks,
                                       vector<shared_ptr<DeltaStore> >* stores,
                                       DeltaType type) {
   BOOST_FOREACH(const BlockId& block, blocks) {
-    size_t dsize = 0;
     shared_ptr<RandomAccessFile> dfile;
-    Status s = rowset_metadata_->OpenDataBlock(block, &dfile, &dsize);
+    Status s = rowset_metadata_->OpenDataBlock(block, &dfile);
     if (!s.ok()) {
       LOG(ERROR) << "Failed to open " << DeltaType_Name(type)
                  << " delta file " << block.ToString() << ": "
@@ -56,7 +55,7 @@ Status DeltaTracker::OpenDeltaReaders(const vector<BlockId>& blocks,
     }
 
     shared_ptr<DeltaFileReader> dfr;
-    s = DeltaFileReader::Open(block.ToString(), dfile, dsize,
+    s = DeltaFileReader::Open(block.ToString(), dfile,
                               block, &dfr, type);
     if (!s.ok()) {
       LOG(ERROR) << "Failed to open " << DeltaType_Name(type)
@@ -370,12 +369,10 @@ Status DeltaTracker::FlushDMS(DeltaMemStore* dms,
   VLOG(1) << "Delta block " << block_id.ToString() << " schema: " << dms->schema().ToString();
 
   // Now re-open for read
-  size_t data_size = 0;
   shared_ptr<RandomAccessFile> data_reader;
-  RETURN_NOT_OK(rowset_metadata_->OpenDataBlock(block_id, &data_reader, &data_size));
+  RETURN_NOT_OK(rowset_metadata_->OpenDataBlock(block_id, &data_reader));
   RETURN_NOT_OK(DeltaFileReader::Open(block_id.ToString(),
                                       data_reader,
-                                      data_size,
                                       block_id,
                                       dfr,
                                       REDO));

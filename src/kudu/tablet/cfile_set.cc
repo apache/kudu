@@ -31,13 +31,12 @@ using std::tr1::shared_ptr;
 
 static Status OpenReader(const shared_ptr<RowSetMetadata>& rowset_metadata, size_t col_idx,
                          gscoped_ptr<CFileReader> *new_reader) {
-  uint64_t data_size = 0;
   shared_ptr<RandomAccessFile> data_reader;
-  RETURN_NOT_OK(rowset_metadata->OpenColumnDataBlock(col_idx, &data_reader, &data_size));
+  RETURN_NOT_OK(rowset_metadata->OpenColumnDataBlock(col_idx, &data_reader));
 
   // TODO: somehow pass reader options in schema
   ReaderOptions opts;
-  return CFileReader::Open(data_reader, data_size, opts, new_reader);
+  return CFileReader::Open(data_reader, opts, new_reader);
 }
 
 ////////////////////////////////////////////////////////////
@@ -85,12 +84,11 @@ Status CFileSet::OpenAdHocIndexReader() {
     return Status::OK();
   }
 
-  uint64_t data_size = 0;
   shared_ptr<RandomAccessFile> data_reader;
-  RETURN_NOT_OK(rowset_metadata_->OpenAdHocIndexDataBlock(&data_reader, &data_size));
+  RETURN_NOT_OK(rowset_metadata_->OpenAdHocIndexDataBlock(&data_reader));
 
   ReaderOptions opts;
-  return CFileReader::Open(data_reader, data_size, opts, &ad_hoc_idx_reader_);
+  return CFileReader::Open(data_reader, opts, &ad_hoc_idx_reader_);
 }
 
 
@@ -99,11 +97,10 @@ Status CFileSet::OpenBloomReader() {
     return Status::OK();
   }
 
-  uint64_t data_size = 0;
   shared_ptr<RandomAccessFile> data_reader;
-  RETURN_NOT_OK(rowset_metadata_->OpenBloomDataBlock(&data_reader, &data_size));
+  RETURN_NOT_OK(rowset_metadata_->OpenBloomDataBlock(&data_reader));
 
-  Status s = BloomFileReader::Open(data_reader, data_size, &bloom_reader_);
+  Status s = BloomFileReader::Open(data_reader, &bloom_reader_);
   if (!s.ok()) {
     LOG(WARNING) << "Unable to open bloom file in " << rowset_metadata_->ToString() << ": "
                  << s.ToString();

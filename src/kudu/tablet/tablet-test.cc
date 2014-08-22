@@ -64,12 +64,11 @@ TYPED_TEST(TestTablet, TestFlush) {
   ASSERT_EQ(1, undo_blocks.size());
 
   // Read the undo delta, we should get one undo mutation (delete) for each row.
-  size_t dsize = 0;
   shared_ptr<RandomAccessFile> dfile;
-  ASSERT_STATUS_OK(rowset_meta->OpenDataBlock(undo_blocks[0], &dfile, &dsize));
+  ASSERT_STATUS_OK(rowset_meta->OpenDataBlock(undo_blocks[0], &dfile));
 
   shared_ptr<DeltaFileReader> dfr;
-  ASSERT_STATUS_OK(DeltaFileReader::Open(undo_blocks[0].ToString(), dfile, dsize,
+  ASSERT_STATUS_OK(DeltaFileReader::Open(undo_blocks[0].ToString(), dfile,
                                          undo_blocks[0], &dfr, UNDO));
   // Assert there were 'max_rows' deletions in the undo delta (one for each inserted row)
   ASSERT_EQ(dfr->delta_stats().delete_count(), max_rows);

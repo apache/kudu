@@ -103,7 +103,6 @@ class DeltaFileReader : public DeltaStore,
 
   static Status Open(const string& path,
                      const shared_ptr<RandomAccessFile> &file,
-                     uint64_t file_size,
                      const BlockId& block_id,
                      std::tr1::shared_ptr<DeltaFileReader>* reader_out,
                      DeltaType delta_type);

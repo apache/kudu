@@ -55,11 +55,9 @@ static Status ParseMagicAndLength(const Slice &data,
 }
 
 CFileReader::CFileReader(const ReaderOptions &options,
-                         const shared_ptr<RandomAccessFile> &file,
-                         uint64_t file_size) :
+                         const shared_ptr<RandomAccessFile> &file) :
   options_(options),
   file_(file),
-  file_size_(file_size),
   state_(kUninitialized),
   cache_(BlockCache::GetSingleton()),
   cache_id_(cache_->GenerateFileId()) {
@@ -71,16 +69,13 @@ Status CFileReader::Open(Env *env, const string &path,
                          gscoped_ptr<CFileReader> *reader) {
   shared_ptr<RandomAccessFile> file;
   RETURN_NOT_OK(env_util::OpenFileForRandom(env, path, &file));
-  uint64_t size;
-  RETURN_NOT_OK(env->GetFileSize(path, &size));
-  return Open(file, size, options, reader);
+  return Open(file, options, reader);
 }
 
 Status CFileReader::Open(const shared_ptr<RandomAccessFile>& file,
-                         uint64_t file_size,
                          const ReaderOptions& options,
                          gscoped_ptr<CFileReader> *reader) {
-  gscoped_ptr<CFileReader> reader_local(new CFileReader(options, file, file_size));
+  gscoped_ptr<CFileReader> reader_local(new CFileReader(options, file));
   RETURN_NOT_OK(reader_local->Init());
   reader->reset(reader_local.release());
   return Status::OK();
@@ -101,6 +96,7 @@ Status CFileReader::Init() {
   CHECK(state_ == kUninitialized) <<
     "should be uninitialized before Init()";
 
+  RETURN_NOT_OK(file_->Size(&file_size_));
   RETURN_NOT_OK(ReadAndParseHeader());
 
   RETURN_NOT_OK(ReadAndParseFooter());
