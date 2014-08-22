@@ -284,7 +284,7 @@ TEST_F(TestRowSet, TestFlushedUpdatesRespectMVCC) {
     {
       ScopedTransaction tx(&mvcc_);
       update.Reset();
-      update.AddColumnUpdate(1, &i);
+      update.AddColumnUpdate(schema_.column_id(1), &i);
       RowBuilder rb(schema_.CreateKeyProjection());
       rb.AddString(key_slice);
       RowSetKeyProbe probe(rb.row());

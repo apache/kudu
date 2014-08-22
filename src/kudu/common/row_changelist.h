@@ -112,7 +112,7 @@ class RowChangeListEncoder {
     dst_->append(row_data.data(), row_data.size());
   }
 
-  void AddColumnUpdate(size_t col_idx, const void *new_val);
+  void AddColumnUpdate(size_t col_id, const void *new_val);
 
   RowChangeList as_changelist() {
     DCHECK_GT(dst_->size(), 0);
@@ -180,14 +180,19 @@ class RowChangeListDecoder {
 
   // Sets bits in 'bitmap' that  correspond to column indexes that are
   // present in the underlying RowChangeList. The bitmap is not zeroed
-  // by this  function, it is  the caller's responsibility to  zero it
+  // by this function, it is the caller's responsibility to zero it
   // first.
   Status GetIncludedColumns(uint8_t* bitmap) {
     while (HasNext()) {
       size_t col_id = 0xdeadbeef;
       const void* col_val = NULL;
       RETURN_NOT_OK(DecodeNext(&col_id, &col_val));
-      size_t col_idx = schema_->find_column_by_id(col_id);
+      int col_idx = schema_->find_column_by_id(col_id);
+      // TODO: likely need to fix this to skip the column if it's not in the
+      // schema. This whole function is a little suspect that it's setting up
+      // a bitmap, only for the caller to iterate back through the bitmap.
+      // Maybe it should instead enqueue ids onto a vector, or just increment
+      // counts directly?
       CHECK_NE(col_idx, -1);
       BitmapSet(bitmap, col_idx);
     }
@@ -231,6 +236,10 @@ class RowChangeListDecoder {
   // 'column_indexes' must be sorted; 'out' must be
   // valid for the duration of this method, but not have been
   // previously initialized.
+  //
+  // TODO: 'column_indexes' is actually being treated like 'column_ids'
+  // in this function. No tests are currently failing, but this is almost
+  // certainly wrong. Need to track down callers.
   static Status RemoveColumnsFromChangeList(const RowChangeList& src,
                                             const std::vector<size_t>& column_indexes,
                                             const Schema& schema,

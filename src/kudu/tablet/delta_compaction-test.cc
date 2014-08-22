@@ -107,6 +107,9 @@ TEST_F(TestDeltaCompaction, TestMergeMultipleSchemas) {
       buf.clear();
       RowChangeListEncoder update(&schema, &buf);
       for (size_t col_idx = schema.num_key_columns(); col_idx < schema.num_columns(); ++col_idx) {
+        int col_id = schema.column_id(col_idx);
+        DCHECK_GE(col_id, 0);
+
         stats.IncrUpdateCount(col_idx, 1);
         const ColumnSchema& col_schema = schema.column(col_idx);
         int update_value = deltafile_idx * 100 + i;
@@ -114,14 +117,14 @@ TEST_F(TestDeltaCompaction, TestMergeMultipleSchemas) {
           case UINT32:
             {
               uint32_t u32_val = update_value;
-              update.AddColumnUpdate(col_idx, &u32_val);
+              update.AddColumnUpdate(col_id, &u32_val);
             }
             break;
           case STRING:
             {
               string s = boost::lexical_cast<string>(update_value);
               Slice str_val(s);
-              update.AddColumnUpdate(col_idx, &str_val);
+              update.AddColumnUpdate(col_id, &str_val);
             }
             break;
           default:

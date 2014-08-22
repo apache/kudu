@@ -104,7 +104,7 @@ class TestMemRowSet : public ::testing::Test {
     ScopedTransaction tx(&mvcc_);
     mutation_buf_.clear();
     RowChangeListEncoder update(&schema_, &mutation_buf_);
-    update.AddColumnUpdate(1, &new_val);
+    update.AddColumnUpdate(schema_.column_id(1), &new_val);
 
     RowBuilder rb(key_schema_);
     rb.AddString(Slice(key));

@@ -386,7 +386,7 @@ Status CatalogManager::CreateTable(const CreateTableRequestPB* req,
     SetupError(resp->mutable_error(), MasterErrorPB::INVALID_SCHEMA, s);
     return s;
   }
-  schema = SchemaBuilder(schema).Build();
+  schema = schema.CopyWithColumnIds();
 
   LOG(INFO) << "CreateTable from " << RequestorString(rpc)
             << ":\n" << req->DebugString();

@@ -100,8 +100,8 @@ class TestCompaction : public KuduRowSetTest {
     char keybuf[256];
     faststring update_buf;
     const Schema& schema = rowset->schema();
-    size_t col_idx = schema.find_column("val");
-    size_t nullable_col_idx = schema.find_column("nullable_val");
+    size_t col_id = schema.column_id(schema.find_column("val"));
+    size_t nullable_col_id = schema.column_id(schema.find_column("nullable_val"));
     for (uint32_t i = 0; i < n_rows; i++) {
       SCOPED_TRACE(i);
       ScopedTransaction tx(&mvcc_);
@@ -109,11 +109,11 @@ class TestCompaction : public KuduRowSetTest {
 
       update_buf.clear();
       RowChangeListEncoder update(&schema, &update_buf);
-      update.AddColumnUpdate(col_idx, &new_val);
+      update.AddColumnUpdate(col_id, &new_val);
       if (new_val % 2 == 0) {
-        update.AddColumnUpdate(nullable_col_idx, NULL);
+        update.AddColumnUpdate(nullable_col_id, NULL);
       } else {
-        update.AddColumnUpdate(nullable_col_idx, &new_val);
+        update.AddColumnUpdate(nullable_col_id, &new_val);
       }
 
       RowBuilder rb(schema.CreateKeyProjection());

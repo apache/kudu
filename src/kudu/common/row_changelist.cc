@@ -64,23 +64,16 @@ string RowChangeList::ToString(const Schema &schema) const {
   return ret;
 }
 
-void RowChangeListEncoder::AddColumnUpdate(size_t col_idx, const void *new_val) {
+void RowChangeListEncoder::AddColumnUpdate(size_t col_id, const void *new_val) {
   if (type_ == RowChangeList::kUninitialized) {
     SetType(RowChangeList::kUpdate);
   } else {
     DCHECK_EQ(RowChangeList::kUpdate, type_);
   }
 
-  const ColumnSchema& col_schema = schema_->column(col_idx);
+  const ColumnSchema& col_schema = schema_->column_by_id(col_id);
   const TypeInfo* ti = col_schema.type_info();
 
-  // TODO: Now that RowChangeList is only used on the server side,
-  // maybe it should always be using column IDs?
-  //
-  // Encode the column index if is coming from the client (no IDs)
-  // Encode the column ID if is coming from the server (with IDs)
-  // The MutateRow Projection step will figure out the client to server mapping.
-  size_t col_id = schema_->has_column_ids() ? schema_->column_id(col_idx) : col_idx;
   InlinePutVarint32(dst_, col_id);
 
   // If the column is nullable set the null flag
@@ -159,14 +152,12 @@ Status RowChangeListDecoder::ProjectUpdate(const DeltaProjector& projector,
       const void *col_val = NULL;
       RETURN_NOT_OK(decoder.DecodeNext(&col_id, &col_val));
 
-      size_t proj_id = 0xdeadbeef; // avoid un-initialized usage warning
-      if (projector.get_proj_col_from_base_id(col_id, &proj_id)) {
-        encoder.AddColumnUpdate(proj_id, col_val);
-      } else if (projector.get_proj_col_from_adapter_id(col_id, &proj_id)) {
-        // TODO: Handle the "different type" case (adapter_cols_mapping)
-        LOG(DFATAL) << "Alter type is not implemented yet";
-        return Status::NotSupported("Alter type is not implemented yet");
+      // If the new schema doesn't have this column, throw away the update.
+      if (projector.projection()->find_column_by_id(col_id) == Schema::kColumnNotFound) {
+        continue;
       }
+
+      encoder.AddColumnUpdate(col_id, col_val);
     }
   }
   return Status::OK();
@@ -177,15 +168,21 @@ Status RowChangeListDecoder::ApplyRowUpdate(RowBlockRow *dst_row, Arena *arena,
   DCHECK(schema_->Equals(*dst_row->schema()));
 
   while (HasNext()) {
-    size_t updated_col = 0xdeadbeef; // avoid un-initialized usage warning
+    size_t updated_col_id = 0xdeadbeef; // avoid un-initialized usage warning
     const void *new_val = NULL;
-    RETURN_NOT_OK(DecodeNext(&updated_col, &new_val));
+    RETURN_NOT_OK(DecodeNext(&updated_col_id, &new_val));
 
-    SimpleConstCell src(&schema_->column(updated_col), new_val);
-    RowBlockRow::Cell dst_cell = dst_row->cell(updated_col);
+    int dst_idx = dst_row->schema()->find_column_by_id(updated_col_id);
+    // TODO: I think this assertion may be invalid in some alter-table scenarios.
+    // As we expand test coverage for alter-table, it might fail and need some fixing.
+    CHECK_NE(dst_idx, Schema::kColumnNotFound);
+
+    SimpleConstCell src(&schema_->column_by_id(updated_col_id), new_val);
+
+    RowBlockRow::Cell dst_cell = dst_row->cell(dst_idx);
 
     // save the old cell on the undo encoder
-    undo_encoder->AddColumnUpdate(updated_col, dst_cell.ptr());
+    undo_encoder->AddColumnUpdate(updated_col_id, dst_cell.ptr());
 
     // copy the new cell to the row
     RETURN_NOT_OK(CopyCell(src, &dst_cell, arena));
@@ -243,10 +240,10 @@ Status RowChangeListDecoder::RemoveColumnsFromChangeList(const RowChangeList& sr
 
 Status RowChangeListDecoder::DecodeNext(size_t *col_id, const void ** val_out) {
   DCHECK_NE(type_, RowChangeList::kUninitialized) << "Must call Init()";
-  // Decode the column index.
+  // Decode the column id.
   uint32_t id;
   if (!GetVarint32(&remaining_, &id)) {
-    return Status::Corruption("Invalid column index varint in delta");
+    return Status::Corruption("Invalid column ID varint in delta");
   }
 
   *col_id = id;

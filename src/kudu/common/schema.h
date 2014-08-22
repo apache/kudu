@@ -348,8 +348,9 @@ class Schema {
 
   // Return the ColumnSchema corresponding to the given column ID.
   inline const ColumnSchema& column_by_id(size_t id) const {
-    DCHECK_LT(id, cols_.size());
-    return cols_[find_column_by_id(id)];
+    int idx = find_column_by_id(id);
+    DCHECK_GE(idx, 0);
+    return cols_[idx];
   }
 
   // Return the column ID corresponding to the given column index
@@ -369,11 +370,11 @@ class Schema {
   }
 
   // Return the column index corresponding to the given column,
-  // or -1 if the column is not in this schema.
+  // or kColumnNotFound if the column is not in this schema.
   int find_column(const StringPiece col_name) const {
     NameToIndexMap::const_iterator iter = name_to_index_.find(col_name);
     if (PREDICT_FALSE(iter == name_to_index_.end())) {
-      return -1;
+      return kColumnNotFound;
     } else {
       return (*iter).second;
     }
@@ -633,17 +634,20 @@ class Schema {
     return Status::OK();
   }
 
-  // Returns the column index given the column ID
+  // Returns the column index given the column ID.
+  // If no such column exists, returns kColumnNotFound.
   int find_column_by_id(size_t id) const {
-    if (has_column_ids()) {
-      IdToIndexMap::const_iterator iter = id_to_index_.find(id);
-      if (PREDICT_FALSE(iter == id_to_index_.end())) {
-        return -1;
-      }
-      return iter->second;
+    DCHECK(has_column_ids());
+    IdToIndexMap::const_iterator iter = id_to_index_.find(id);
+    if (PREDICT_FALSE(iter == id_to_index_.end())) {
+      return kColumnNotFound;
     }
-    return id;
+    return iter->second;
   }
+
+  enum {
+    kColumnNotFound = -1
+  };
 
  private:
 

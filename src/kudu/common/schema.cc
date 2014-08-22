@@ -18,6 +18,18 @@ using std::set;
 using std::tr1::unordered_set;
 using std::tr1::unordered_map;
 
+// In a new schema, we typically would start assigning column IDs at 0. However, this
+// makes it likely that in many test cases, the column IDs and the column indexes are
+// equal to each other, and it's easy to accidentally pass an index where we meant to pass
+// an ID, without having any issues. So, in DEBUG builds, we start assigning columns at ID
+// 10, ensuring that if we accidentally mix up IDs and indexes, we're likely to fire an
+// assertion or bad memory access.
+#ifdef NDEBUG
+static const int kFirstColumnId = 0;
+#else
+static const int kFirstColumnId = 10;
+#endif
+
 string ColumnStorageAttributes::ToString() const {
   return strings::Substitute("encoding=$0,compression=$1",
                              EncodingType_Name(encoding_),
@@ -172,7 +184,7 @@ Schema Schema::CopyWithColumnIds() const {
   CHECK(!has_column_ids());
   vector<size_t> ids;
   for (int i = 0; i < num_columns(); i++) {
-    ids.push_back(i);
+    ids.push_back(i + kFirstColumnId);
   }
   return Schema(cols_, ids, num_key_columns_);
 }
@@ -309,7 +321,7 @@ void SchemaBuilder::Reset() {
   col_ids_.clear();
   col_names_.clear();
   num_key_columns_ = 0;
-  next_id_ = 0;
+  next_id_ = kFirstColumnId;
 }
 
 void SchemaBuilder::Reset(const Schema& schema) {
@@ -322,9 +334,11 @@ void SchemaBuilder::Reset(const Schema& schema) {
 
   if (col_ids_.empty()) {
     for (int i = 0; i < cols_.size(); ++i) {
-      col_ids_.push_back(i);
+      col_ids_.push_back(i + kFirstColumnId);
     }
-    next_id_ = cols_.size();
+  }
+  if (col_ids_.empty()) {
+    next_id_ = kFirstColumnId;
   } else {
     next_id_ = *std::max_element(col_ids_.begin(), col_ids_.end()) + 1;
   }

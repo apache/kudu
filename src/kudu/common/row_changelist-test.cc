@@ -41,9 +41,13 @@ TEST_F(TestRowChangeList, TestEncodeDecodeUpdates) {
   Slice update2("update2");
   uint32 update3 = 12345;
 
-  rcl.AddColumnUpdate(0, &update1);
-  rcl.AddColumnUpdate(1, &update2);
-  rcl.AddColumnUpdate(2, &update3);
+  int c0_id = schema_.column_id(0);
+  int c1_id = schema_.column_id(1);
+  int c2_id = schema_.column_id(2);
+
+  rcl.AddColumnUpdate(c0_id, &update1);
+  rcl.AddColumnUpdate(c1_id, &update2);
+  rcl.AddColumnUpdate(c2_id, &update3);
 
   LOG(INFO) << "Encoded: " << HexDump(buf);
 
@@ -53,22 +57,22 @@ TEST_F(TestRowChangeList, TestEncodeDecodeUpdates) {
 
   RowChangeListDecoder decoder(&schema_, RowChangeList(buf));
   ASSERT_STATUS_OK(decoder.Init());
-  size_t idx;
+  size_t id;
   const void *val;
 
   ASSERT_TRUE(decoder.HasNext());
-  ASSERT_STATUS_OK(decoder.DecodeNext(&idx, &val));
-  ASSERT_EQ(0, idx);
+  ASSERT_STATUS_OK(decoder.DecodeNext(&id, &val));
+  ASSERT_EQ(c0_id, id);
   ASSERT_TRUE(update1 == *reinterpret_cast<const Slice *>(val));
 
   ASSERT_TRUE(decoder.HasNext());
-  ASSERT_STATUS_OK(decoder.DecodeNext(&idx, &val));
-  ASSERT_EQ(1, idx);
+  ASSERT_STATUS_OK(decoder.DecodeNext(&id, &val));
+  ASSERT_EQ(c1_id, id);
   ASSERT_TRUE(update2 == *reinterpret_cast<const Slice *>(val));
 
   ASSERT_TRUE(decoder.HasNext());
-  ASSERT_STATUS_OK(decoder.DecodeNext(&idx, &val));
-  ASSERT_EQ(2, idx);
+  ASSERT_STATUS_OK(decoder.DecodeNext(&id, &val));
+  ASSERT_EQ(c2_id, id);
 
   ASSERT_FALSE(decoder.HasNext());
 }

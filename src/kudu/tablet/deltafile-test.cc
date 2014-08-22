@@ -62,7 +62,7 @@ class TestDeltaFile : public ::testing::Test {
         buf.clear();
         RowChangeListEncoder update(&schema_, &buf);
         uint32_t new_val = timestamp + i;
-        update.AddColumnUpdate(0, &new_val);
+        update.AddColumnUpdate(schema_.column_id(0), &new_val);
         DeltaKey key(i, Timestamp(timestamp));
         RowChangeList rcl(buf);
         ASSERT_STATUS_OK_FAST(dfw.AppendDelta<REDO>(key, rcl));
