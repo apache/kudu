@@ -7,8 +7,8 @@
 #include <string>
 #include <vector>
 
-#include "kudu/cfile/cfile.h"
 #include "kudu/cfile/cfile_reader.h"
+#include "kudu/cfile/cfile_writer.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/util/bloom_filter.h"
 #include "kudu/util/env.h"
@@ -38,7 +38,7 @@ class BloomFileWriter {
 
   Status FinishCurrentBloomBlock();
 
-  gscoped_ptr<cfile::Writer> writer_;
+  gscoped_ptr<cfile::CFileWriter> writer_;
 
   BloomFilterBuilder bloom_builder_;
 

@@ -12,7 +12,7 @@
 #include <tr1/unordered_set>
 #include <vector>
 
-#include "kudu/cfile/cfile.h"
+#include "kudu/cfile/cfile_writer.h"
 #include "kudu/common/iterator.h"
 #include "kudu/common/row_changelist.h"
 #include "kudu/common/row_operations.h"

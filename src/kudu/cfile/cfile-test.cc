@@ -6,8 +6,8 @@
 
 #include <boost/assign/list_of.hpp>
 #include "kudu/cfile/cfile-test-base.h"
-#include "kudu/cfile/cfile.h"
 #include "kudu/cfile/cfile_reader.h"
+#include "kudu/cfile/cfile_writer.h"
 #include "kudu/cfile/cfile.pb.h"
 #include "kudu/cfile/index_block.h"
 #include "kudu/cfile/index_btree.h"
@@ -146,7 +146,7 @@ class TestCFile : public CFileTestBase {
     // Use a smaller block size to exercise multi-level indexing.
     opts.block_size = 128;
     opts.storage_attributes = ColumnStorageAttributes(encoding, compression);
-    Writer w(opts, data_type, true, sink);
+    CFileWriter w(opts, data_type, true, sink);
 
     ASSERT_STATUS_OK(w.Start());
 
@@ -182,7 +182,7 @@ class TestCFile : public CFileTestBase {
     opts.write_posidx = true;
     opts.block_size = 128;
     opts.storage_attributes = ColumnStorageAttributes(encoding, compression);
-    Writer w(opts, data_type, false, sink);
+    CFileWriter w(opts, data_type, false, sink);
 
     ASSERT_STATUS_OK(w.Start());
 
@@ -357,7 +357,7 @@ class TestCFile : public CFileTestBase {
     opts.write_validx = false;
     opts.block_size = FLAGS_cfile_test_block_size;
     opts.storage_attributes = ColumnStorageAttributes(PLAIN_ENCODING, compression);
-    Writer w(opts, STRING, false, sink);
+    CFileWriter w(opts, STRING, false, sink);
     ASSERT_STATUS_OK(w.Start());
     for (uint32_t i = 0; i < num_entries; i++) {
       vector<Slice> slices;
@@ -573,7 +573,7 @@ TEST_F(TestCFile, TestMetadata) {
     ASSERT_STATUS_OK(env_util::OpenFileForWrite(env_.get(), path, &sink));
     WriterOptions opts;
     opts.storage_attributes = ColumnStorageAttributes(GROUP_VARINT);
-    Writer w(opts, UINT32, false, sink);
+    CFileWriter w(opts, UINT32, false, sink);
 
     w.AddMetadataPair("key_in_header", "header value");
     ASSERT_STATUS_OK(w.Start());

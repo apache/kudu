@@ -14,7 +14,7 @@ class RowBlock;
 class Schema;
 
 namespace cfile {
-class Writer;
+class CFileWriter;
 } // namespace cfile
 
 namespace tablet {
@@ -44,7 +44,7 @@ class MultiColumnWriter {
   // Return the number of bytes written so far.
   size_t written_size() const;
 
-  cfile::Writer* writer_for_col_idx(int i) {
+  cfile::CFileWriter* writer_for_col_idx(int i) {
     DCHECK_LT(i, cfile_writers_.size());
     return cfile_writers_[i];
   }
@@ -60,7 +60,7 @@ class MultiColumnWriter {
 
   bool finished_;
 
-  std::vector<cfile::Writer *> cfile_writers_;
+  std::vector<cfile::CFileWriter *> cfile_writers_;
   std::vector<BlockId> block_ids_;
 
   DISALLOW_COPY_AND_ASSIGN(MultiColumnWriter);

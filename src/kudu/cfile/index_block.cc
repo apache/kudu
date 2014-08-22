@@ -2,7 +2,7 @@
 
 #include <boost/foreach.hpp>
 
-#include "kudu/cfile/cfile.h"
+#include "kudu/cfile/cfile_writer.h"
 #include "kudu/cfile/index_block.h"
 #include "kudu/util/protobuf_util.h"
 

@@ -2,7 +2,7 @@
 
 #include <gtest/gtest.h>
 
-#include "kudu/cfile/cfile.h"
+#include "kudu/cfile/cfile_writer.h"
 #include "kudu/cfile/index_btree.h"
 #include "kudu/util/hexdump.h"
 #include "kudu/util/status.h"

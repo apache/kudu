@@ -17,13 +17,13 @@ namespace cfile {
 using boost::ptr_vector;
 
 class CFileReader;
-class Writer;
+class CFileWriter;
 
 class IndexTreeBuilder {
  public:
   explicit IndexTreeBuilder(
     const WriterOptions *options,
-    Writer *writer);
+    CFileWriter *writer);
 
   // Append the given key into the index.
   // The key is copied into the builder's internal
@@ -46,7 +46,7 @@ class IndexTreeBuilder {
   Status FinishAndWriteBlock(size_t level, BlockPointer *written);
 
   const WriterOptions *options_;
-  Writer *writer_;
+  CFileWriter *writer_;
 
   ptr_vector<IndexBlockBuilder> idx_blocks_;
 

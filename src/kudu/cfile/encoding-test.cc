@@ -9,7 +9,7 @@
 #include <limits>
 
 #include "kudu/cfile/block_encodings.h"
-#include "kudu/cfile/cfile.h"
+#include "kudu/cfile/cfile_writer.h"
 #include "kudu/cfile/gvint_block.h"
 #include "kudu/cfile/string_plain_block.h"
 #include "kudu/cfile/string_prefix_block.h"

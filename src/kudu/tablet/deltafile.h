@@ -8,9 +8,9 @@
 #include <vector>
 
 #include "kudu/cfile/block_cache.h"
-#include "kudu/cfile/string_plain_block.h"
-#include "kudu/cfile/cfile.h"
+#include "kudu/cfile/cfile_writer.h"
 #include "kudu/cfile/index_btree.h"
+#include "kudu/cfile/string_plain_block.h"
 #include "kudu/common/columnblock.h"
 #include "kudu/common/schema.h"
 #include "kudu/gutil/gscoped_ptr.h"
@@ -71,7 +71,7 @@ class DeltaFileWriter {
 
   Status DoAppendDelta(const DeltaKey &key, const RowChangeList &delta);
 
-  gscoped_ptr<cfile::Writer> writer_;
+  gscoped_ptr<cfile::CFileWriter> writer_;
 
   // Buffer used as a temporary for storing the serialized form
   // of the deltas

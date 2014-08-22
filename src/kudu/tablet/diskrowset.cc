@@ -11,7 +11,7 @@
 #include "kudu/common/schema.h"
 #include "kudu/consensus/opid_anchor_registry.h"
 #include "kudu/cfile/bloomfile.h"
-#include "kudu/cfile/cfile.h"
+#include "kudu/cfile/cfile_writer.h"
 #include "kudu/cfile/type_encodings.h"
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/stl_util.h"
@@ -90,7 +90,7 @@ Status DiskRowSetWriter::InitAdHocIndexWriter() {
   opts.storage_attributes = ColumnStorageAttributes(PREFIX_ENCODING);
 
   // Create the CFile writer for the ad-hoc index.
-  ad_hoc_index_writer_.reset(new cfile::Writer(
+  ad_hoc_index_writer_.reset(new cfile::CFileWriter(
       opts,
       STRING,
       false,
@@ -186,7 +186,7 @@ Status DiskRowSetWriter::Finish() {
   return Status::OK();
 }
 
-cfile::Writer *DiskRowSetWriter::key_index_writer() {
+cfile::CFileWriter *DiskRowSetWriter::key_index_writer() {
   return ad_hoc_index_writer_ ? ad_hoc_index_writer_.get() : col_writer_->writer_for_col_idx(0);
 }
 

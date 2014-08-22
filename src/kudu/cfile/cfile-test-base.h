@@ -8,8 +8,8 @@
 #include <string>
 
 #include "kudu/cfile/cfile-test-base.h"
-#include "kudu/cfile/cfile.h"
 #include "kudu/cfile/cfile_reader.h"
+#include "kudu/cfile/cfile_writer.h"
 #include "kudu/cfile/cfile.pb.h"
 #include "kudu/common/columnblock.h"
 #include "kudu/gutil/stringprintf.h"
@@ -44,7 +44,7 @@ class CFileTestBase : public KuduTest {
     // indexing.
     opts.block_size = FLAGS_cfile_test_block_size;
     opts.storage_attributes = ColumnStorageAttributes(encoding, compression);
-    Writer w(opts, STRING, false, sink);
+    CFileWriter w(opts, STRING, false, sink);
 
     ASSERT_STATUS_OK(w.Start());
 
@@ -77,7 +77,7 @@ class CFileTestBase : public KuduTest {
     // indexing.
     opts.block_size = FLAGS_cfile_test_block_size;
     opts.storage_attributes = ColumnStorageAttributes(encoding, compression);
-    Writer w(opts, UINT32, false, sink);
+    CFileWriter w(opts, UINT32, false, sink);
 
     ASSERT_STATUS_OK(w.Start());
 

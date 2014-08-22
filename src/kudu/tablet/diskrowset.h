@@ -29,7 +29,7 @@ class RowBlock;
 
 namespace cfile {
 class BloomFileWriter;
-class Writer;
+class CFileWriter;
 }
 
 namespace log {
@@ -86,7 +86,7 @@ class DiskRowSetWriter {
 
   // Return the cfile::Writer responsible for writing the key index.
   // (the ad-hoc writer for composite keys, otherwise the key column writer)
-  cfile::Writer *key_index_writer();
+  cfile::CFileWriter *key_index_writer();
 
   metadata::RowSetMetadata *rowset_metadata_;
   BloomFilterSizing bloom_sizing_;
@@ -95,7 +95,7 @@ class DiskRowSetWriter {
   rowid_t written_count_;
   gscoped_ptr<MultiColumnWriter> col_writer_;
   gscoped_ptr<cfile::BloomFileWriter> bloom_writer_;
-  gscoped_ptr<cfile::Writer> ad_hoc_index_writer_;
+  gscoped_ptr<cfile::CFileWriter> ad_hoc_index_writer_;
 
   // The last encoded key written.
   faststring last_encoded_key_;

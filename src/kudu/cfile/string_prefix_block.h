@@ -42,7 +42,7 @@ class StringPrefixBlockBuilder : public BlockBuilder {
   faststring last_val_;
 
   // Restart points, offsets relative to start of block
-  vector<uint32_t> restarts_;
+  std::vector<uint32_t> restarts_;
 
   int val_count_;
   int vals_since_restart_;

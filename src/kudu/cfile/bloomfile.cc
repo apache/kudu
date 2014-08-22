@@ -7,8 +7,8 @@
 #include <tr1/memory>
 #include <string>
 
-#include "kudu/cfile/cfile.h"
 #include "kudu/cfile/bloomfile.h"
+#include "kudu/cfile/cfile_writer.h"
 #include "kudu/gutil/stringprintf.h"
 #include "kudu/gutil/sysinfo.h"
 #include "kudu/util/env.h"
@@ -34,7 +34,7 @@ BloomFileWriter::BloomFileWriter(const shared_ptr<WritableFile> &file,
   // Never use compression, regardless of the default settings, since
   // bloom filters are high-entropy data structures by their nature.
   opts.storage_attributes = ColumnStorageAttributes(PLAIN_ENCODING, NO_COMPRESSION);
-  writer_.reset(new cfile::Writer(opts, STRING, false, file));
+  writer_.reset(new cfile::CFileWriter(opts, STRING, false, file));
 }
 
 Status BloomFileWriter::Start() {

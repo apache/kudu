@@ -3,8 +3,8 @@
 #include <vector>
 
 #include "kudu/cfile/block_cache.h"
-#include "kudu/cfile/cfile.h"
 #include "kudu/cfile/cfile_reader.h"
+#include "kudu/cfile/cfile_writer.h"
 #include "kudu/cfile/index_btree.h"
 #include "kudu/common/key_encoder.h"
 #include "kudu/util/debug-util.h"
@@ -14,7 +14,7 @@ namespace cfile {
 
 IndexTreeBuilder::IndexTreeBuilder(
   const WriterOptions *options,
-  Writer *writer) :
+  CFileWriter *writer) :
   options_(options),
   writer_(writer) {
   idx_blocks_.push_back(CreateBlockBuilder(true));

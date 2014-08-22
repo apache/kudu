@@ -1,7 +1,7 @@
 // Copyright (c) 2012, Cloudera, inc
 
-#ifndef KUDU_CFILE_CFILE_H
-#define KUDU_CFILE_CFILE_H
+#ifndef KUDU_CFILE_CFILE_WRITER_H
+#define KUDU_CFILE_CFILE_WRITER_H
 
 #include <boost/utility.hpp>
 #include <tr1/memory>
@@ -81,12 +81,12 @@ class NullBitmapBuilder {
 };
 
 // Main class used to write a CFile.
-class Writer {
+class CFileWriter {
  public:
-  explicit Writer(const WriterOptions &options,
-                  DataType type,
-                  bool is_nullable,
-                  shared_ptr<WritableFile> file);
+  explicit CFileWriter(const WriterOptions &options,
+                       DataType type,
+                       bool is_nullable,
+                       shared_ptr<WritableFile> file);
   Status Start();
   Status Finish();
 
@@ -125,10 +125,10 @@ class Writer {
   // More data may be written by Finish(), but this is an approximation.
   size_t written_size() const;
 
-  ~Writer();
+  ~CFileWriter();
 
  private:
-  DISALLOW_COPY_AND_ASSIGN(Writer);
+  DISALLOW_COPY_AND_ASSIGN(CFileWriter);
 
   friend class IndexTreeBuilder;
 

@@ -14,9 +14,9 @@ add_library(cfile
   block_cache.cc
   block_compression.cc
   bloomfile.cc
-  cfile.cc
   cfile_reader.cc
   cfile_util.cc
+  cfile_writer.cc
   compression_codec.cc
   gvint_block.cc
   index_block.cc

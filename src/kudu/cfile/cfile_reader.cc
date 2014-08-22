@@ -9,8 +9,8 @@
 
 #include "kudu/cfile/block_cache.h"
 #include "kudu/cfile/block_pointer.h"
-#include "kudu/cfile/cfile.h"
 #include "kudu/cfile/cfile.pb.h"
+#include "kudu/cfile/cfile_writer.h" // for kMagicString
 #include "kudu/cfile/gvint_block.h"
 #include "kudu/cfile/index_block.h"
 #include "kudu/cfile/index_btree.h"

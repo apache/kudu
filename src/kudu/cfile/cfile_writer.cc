@@ -6,8 +6,8 @@
 #include <string>
 #include <utility>
 
-#include "kudu/cfile/cfile.h"
 #include "kudu/cfile/block_pointer.h"
+#include "kudu/cfile/cfile_writer.h"
 #include "kudu/cfile/index_block.h"
 #include "kudu/cfile/index_btree.h"
 #include "kudu/common/key_encoder.h"
@@ -48,14 +48,14 @@ WriterOptions::WriterOptions()
 
 
 ////////////////////////////////////////////////////////////
-// Writer
+// CFileWriter
 ////////////////////////////////////////////////////////////
 
 
-Writer::Writer(const WriterOptions &options,
-               DataType type,
-               bool is_nullable,
-               shared_ptr<WritableFile> file)
+CFileWriter::CFileWriter(const WriterOptions &options,
+                         DataType type,
+                         bool is_nullable,
+                         shared_ptr<WritableFile> file)
   : file_(file),
     off_(0),
     value_count_(0),
@@ -96,7 +96,7 @@ Writer::Writer(const WriterOptions &options,
   }
 }
 
-Status Writer::Start() {
+Status CFileWriter::Start() {
   CHECK(state_ == kWriterInitialized) <<
     "bad state for Start(): " << state_;
 
@@ -140,7 +140,7 @@ Status Writer::Start() {
   return Status::OK();
 }
 
-Status Writer::Finish() {
+Status CFileWriter::Finish() {
   CHECK(state_ == kWriterWriting) <<
     "Bad state for Finish(): " << state_;
 
@@ -188,13 +188,13 @@ Status Writer::Finish() {
   return file_->Close();
 }
 
-void Writer::AddMetadataPair(const Slice &key, const Slice &value) {
+void CFileWriter::AddMetadataPair(const Slice &key, const Slice &value) {
   CHECK_NE(state_, kWriterFinished);
 
   unflushed_metadata_.push_back(make_pair(key.ToString(), value.ToString()));
 }
 
-void Writer::FlushMetadataToPB(RepeatedPtrField<FileMetadataPairPB> *field) {
+void CFileWriter::FlushMetadataToPB(RepeatedPtrField<FileMetadataPairPB> *field) {
   typedef pair<string, string> ss_pair;
   BOOST_FOREACH(const ss_pair &entry, unflushed_metadata_) {
     FileMetadataPairPB *pb = field->Add();
@@ -204,7 +204,7 @@ void Writer::FlushMetadataToPB(RepeatedPtrField<FileMetadataPairPB> *field) {
   unflushed_metadata_.clear();
 }
 
-Status Writer::AppendEntries(const void *entries, size_t count) {
+Status CFileWriter::AppendEntries(const void *entries, size_t count) {
   DCHECK(!is_nullable_);
 
   int rem = count;
@@ -229,7 +229,9 @@ Status Writer::AppendEntries(const void *entries, size_t count) {
   return Status::OK();
 }
 
-Status Writer::AppendNullableEntries(const uint8_t *bitmap, const void *entries, size_t count) {
+Status CFileWriter::AppendNullableEntries(const uint8_t *bitmap,
+                                          const void *entries,
+                                          size_t count) {
   DCHECK(is_nullable_ && bitmap != NULL);
 
   const uint8_t *ptr = reinterpret_cast<const uint8_t *>(entries);
@@ -264,7 +266,7 @@ Status Writer::AppendNullableEntries(const uint8_t *bitmap, const void *entries,
   return Status::OK();
 }
 
-Status Writer::FinishCurDataBlock() {
+Status CFileWriter::FinishCurDataBlock() {
   uint32_t num_elems_in_block = data_block_->Count();
   if (is_nullable_) {
     num_elems_in_block = null_bitmap_builder_->nitems();
@@ -316,14 +318,14 @@ Status Writer::FinishCurDataBlock() {
   return s;
 }
 
-Status Writer::AppendRawBlock(const vector<Slice> &data_slices,
-                              size_t ordinal_pos,
-                              const void *validx_key,
-                              const char *name_for_log) {
+Status CFileWriter::AppendRawBlock(const vector<Slice> &data_slices,
+                                   size_t ordinal_pos,
+                                   const void *validx_key,
+                                   const char *name_for_log) {
   CHECK_EQ(state_, kWriterWriting);
 
   BlockPointer ptr;
-  Status s = AddBlock(data_slices, &ptr, "data");
+  Status s = AddBlock(data_slices, &ptr, name_for_log);
   if (!s.ok()) {
     LOG(WARNING) << "Unable to append block to file: " << s.ToString();
     return s;
@@ -353,16 +355,16 @@ Status Writer::AppendRawBlock(const vector<Slice> &data_slices,
   return s;
 }
 
-size_t Writer::written_size() const {
+size_t CFileWriter::written_size() const {
   // This is a low estimate, but that's OK -- this is checked after every block
   // write during flush/compact, so better to give a fast slightly-inaccurate result
   // than spend a lot of effort trying to improve accuracy by a few KB.
   return off_;
 }
 
-Status Writer::AddBlock(const vector<Slice> &data_slices,
-                        BlockPointer *block_ptr,
-                        const char *name_for_log) {
+Status CFileWriter::AddBlock(const vector<Slice> &data_slices,
+                             BlockPointer *block_ptr,
+                             const char *name_for_log) {
   uint64_t start_offset = off_;
 
   if (block_compressor_ != NULL) {
@@ -392,7 +394,7 @@ Status Writer::AddBlock(const vector<Slice> &data_slices,
   return Status::OK();
 }
 
-Status Writer::WriteRawData(const Slice& data) {
+Status CFileWriter::WriteRawData(const Slice& data) {
   Status s = file_->Append(data);
   if (!s.ok()) {
     LOG(WARNING) << "Unable to append slice of size "
@@ -403,7 +405,7 @@ Status Writer::WriteRawData(const Slice& data) {
   return s;
 }
 
-Writer::~Writer() {
+CFileWriter::~CFileWriter() {
 }
 
 } // namespace cfile

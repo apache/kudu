@@ -2,7 +2,7 @@
 
 #include <algorithm>
 
-#include "kudu/cfile/cfile.h"
+#include "kudu/cfile/cfile_writer.h"
 #include "kudu/cfile/gvint_block.h"
 #include "kudu/common/columnblock.h"
 #include "kudu/gutil/casts.h"

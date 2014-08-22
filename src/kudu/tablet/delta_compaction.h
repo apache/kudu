@@ -7,7 +7,7 @@
 #include <utility>
 #include <tr1/unordered_map>
 
-#include "kudu/cfile/cfile.h"
+#include "kudu/cfile/cfile_writer.h"
 #include "kudu/tablet/deltafile.h"
 
 namespace kudu {

@@ -2,14 +2,16 @@
 
 #include "kudu/tablet/multi_column_writer.h"
 
+#include "kudu/cfile/cfile_writer.h"
 #include "kudu/common/rowblock.h"
 #include "kudu/common/schema.h"
-#include "kudu/cfile/cfile.h"
 #include "kudu/fs/block_id.h"
 #include "kudu/gutil/stl_util.h"
 
 namespace kudu {
 namespace tablet {
+
+using cfile::CFileWriter;
 
 MultiColumnWriter::MultiColumnWriter(FsManager* fs,
                                      const Schema* schema)
@@ -55,11 +57,11 @@ Status MultiColumnWriter::Open() {
                           "Unable to open output file for column " + col.ToString());
 
     // Create the CFile writer itself.
-    gscoped_ptr<cfile::Writer> writer(new cfile::Writer(
-                                        opts,
-                                        col.type_info()->type(),
-                                        col.is_nullable(),
-                                        data_writer));
+    gscoped_ptr<CFileWriter> writer(new CFileWriter(
+        opts,
+        col.type_info()->type(),
+        col.is_nullable(),
+        data_writer));
     RETURN_NOT_OK_PREPEND(writer->Start(),
                           "Unable to Start() writer for column " + col.ToString());
 
@@ -87,7 +89,7 @@ Status MultiColumnWriter::AppendBlock(const RowBlock& block) {
 Status MultiColumnWriter::Finish() {
   CHECK(!finished_);
   for (int i = 0; i < schema_->num_columns(); i++) {
-    cfile::Writer *writer = cfile_writers_[i];
+    CFileWriter *writer = cfile_writers_[i];
     Status s = writer->Finish();
     if (!s.ok()) {
       LOG(WARNING) << "Unable to Finish writer for column " <<
@@ -106,7 +108,7 @@ std::vector<BlockId> MultiColumnWriter::FlushedBlocks() const {
 
 size_t MultiColumnWriter::written_size() const {
   size_t size = 0;
-  BOOST_FOREACH(const cfile::Writer *writer, cfile_writers_) {
+  BOOST_FOREACH(const CFileWriter *writer, cfile_writers_) {
     size += writer->written_size();
   }
   return size;

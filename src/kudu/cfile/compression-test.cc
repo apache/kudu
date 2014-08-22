@@ -4,10 +4,10 @@
 #include <glog/logging.h>
 #include <stdlib.h>
 
-#include "kudu/cfile/cfile.h"
-#include "kudu/cfile/cfile_reader.h"
-#include "kudu/cfile/cfile.pb.h"
 #include "kudu/cfile/cfile-test-base.h"
+#include "kudu/cfile/cfile_reader.h"
+#include "kudu/cfile/cfile_writer.h"
+#include "kudu/cfile/cfile.pb.h"
 #include "kudu/cfile/compression_codec.h"
 #include "kudu/cfile/index_block.h"
 #include "kudu/cfile/index_btree.h"

@@ -6,8 +6,8 @@
 #include "kudu/common/wire_protocol.h"
 #include "kudu/cfile/block_cache.h"
 #include "kudu/cfile/block_encodings.h"
-#include "kudu/cfile/cfile.h"
 #include "kudu/cfile/cfile_reader.h"
+#include "kudu/cfile/cfile_writer.h"
 #include "kudu/cfile/string_plain_block.h"
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/mathlimits.h"
@@ -80,7 +80,7 @@ DeltaFileWriter::DeltaFileWriter(const Schema &schema,
   opts.write_validx = true;
   opts.block_size = FLAGS_deltafile_block_size;
   opts.storage_attributes = ColumnStorageAttributes(PLAIN_ENCODING);
-  writer_.reset(new cfile::Writer(opts, STRING, false, file));
+  writer_.reset(new cfile::CFileWriter(opts, STRING, false, file));
 }
 
 

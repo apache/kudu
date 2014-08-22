@@ -4,7 +4,7 @@
 #include <algorithm>
 #include <string>
 
-#include "kudu/cfile/cfile.h"
+#include "kudu/cfile/cfile_writer.h"
 #include "kudu/cfile/string_prefix_block.h"
 #include "kudu/common/columnblock.h"
 #include "kudu/gutil/strings/substitute.h"
