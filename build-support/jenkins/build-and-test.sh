@@ -89,6 +89,16 @@ rm -Rf $TEST_LOGDIR
 rm -Rf $TEST_DEBUGDIR
 rm -rf CMakeCache.txt CMakeFiles src/kudu/*/CMakeFiles
 
+cleanup() {
+  echo Cleaning up all build artifacts...
+  $ROOT/build-support/jenkins/post-build-clean.sh
+}
+# If we're running inside Jenkins (the BUILD_ID is set), then install
+# an exit handler which will clean up all of our build results.
+if [ -n "$BUILD_ID" ]; then
+  trap cleanup EXIT
+fi
+
 # PATH=<toolchain_stuff>:$PATH
 export TOOLCHAIN=/mnt/toolchain/toolchain.sh
 if [ -f "$TOOLCHAIN" ]; then
