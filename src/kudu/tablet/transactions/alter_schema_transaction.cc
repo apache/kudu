@@ -3,7 +3,6 @@
 #include <glog/logging.h>
 
 #include "kudu/tablet/transactions/alter_schema_transaction.h"
-#include "kudu/tablet/transactions/write_util.h"
 
 #include "kudu/common/wire_protocol.h"
 #include "kudu/rpc/rpc_context.h"

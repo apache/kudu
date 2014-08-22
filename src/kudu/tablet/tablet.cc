@@ -39,7 +39,6 @@
 #include "kudu/tablet/svg_dump.h"
 #include "kudu/tablet/transactions/alter_schema_transaction.h"
 #include "kudu/tablet/transactions/write_transaction.h"
-#include "kudu/tablet/transactions/write_util.h"
 #include "kudu/util/bloom_filter.h"
 #include "kudu/util/env.h"
 #include "kudu/util/locks.h"

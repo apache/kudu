@@ -30,7 +30,6 @@
 #include "kudu/tablet/transactions/alter_schema_transaction.h"
 #include "kudu/tablet/transactions/change_config_transaction.h"
 #include "kudu/tablet/transactions/write_transaction.h"
-#include "kudu/tablet/transactions/write_util.h"
 #include "kudu/util/path_util.h"
 #include "kudu/util/locks.h"
 #include "kudu/util/logging.h"

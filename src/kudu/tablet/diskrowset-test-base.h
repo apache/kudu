@@ -19,7 +19,6 @@
 #include "kudu/server/logical_clock.h"
 #include "kudu/tablet/diskrowset.h"
 #include "kudu/tablet/tablet-test-util.h"
-#include "kudu/tablet/transactions/write_util.h"
 #include "kudu/util/env.h"
 #include "kudu/util/logging.h"
 #include "kudu/util/stopwatch.h"

@@ -22,7 +22,6 @@
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/stringprintf.h"
 #include "kudu/server/metadata.h"
-#include "kudu/tablet/transactions/write_util.h"
 #include "kudu/tserver/tserver.pb.h"
 #include "kudu/util/env_util.h"
 #include "kudu/util/path_util.h"

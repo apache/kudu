@@ -1,7 +1,6 @@
 // Copyright (c) 2013, Cloudera, inc.
 
 #include "kudu/tablet/transactions/change_config_transaction.h"
-#include "kudu/tablet/transactions/write_util.h"
 
 #include "kudu/common/wire_protocol.h"
 #include "kudu/rpc/rpc_context.h"

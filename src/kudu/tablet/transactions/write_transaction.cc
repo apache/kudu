@@ -16,7 +16,6 @@
 #include "kudu/tablet/tablet.h"
 #include "kudu/tablet/tablet_peer.h"
 #include "kudu/tablet/tablet_metrics.h"
-#include "kudu/tablet/transactions/write_util.h"
 #include "kudu/tserver/tserver.pb.h"
 #include "kudu/util/trace.h"
 

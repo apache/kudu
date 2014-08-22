@@ -11,7 +11,6 @@
 #include "kudu/server/logical_clock.h"
 #include "kudu/tablet/memrowset.h"
 #include "kudu/tablet/tablet-test-util.h"
-#include "kudu/tablet/transactions/write_util.h"
 #include "kudu/util/stopwatch.h"
 #include "kudu/util/test_macros.h"
 
