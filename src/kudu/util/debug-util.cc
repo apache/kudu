@@ -4,6 +4,8 @@
 
 #include <execinfo.h>
 #include <glog/logging.h>
+#include <string>
+
 #include "kudu/gutil/strings/numbers.h"
 
 // Evil hack to grab a function from glog
@@ -18,6 +20,12 @@ std::string GetStackTrace() {
   std::string s;
   google::glog_internal_namespace_::DumpStackTraceToString(&s);
   return s;
+}
+
+std::string GetStackTraceHex() {
+  char buf[1024];
+  HexStackTraceToString(buf, 1024);
+  return std::string(buf);
 }
 
 void HexStackTraceToString(char* buf, size_t size) {

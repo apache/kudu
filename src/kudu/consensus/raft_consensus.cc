@@ -172,7 +172,9 @@ Status RaftConsensus::PushConfigurationToPeersUnlocked() {
                         "Could not append change config replication req. to the queue");
 
   SignalRequestToPeers();
+  TRACE("Sent ChangeConfig REPLICATE to peers. Waiting on response.");
   repl_status->Wait();
+  TRACE("ChangeConfig replicated");
 
   LOG(INFO) << log_prefix << ": committing...";
 
@@ -194,8 +196,10 @@ Status RaftConsensus::PushConfigurationToPeersUnlocked() {
                         "Could not append change config commit req. to the queue");
 
   SignalRequestToPeers();
+  TRACE("Sent ChangeConfig COMMIT to peers. Waiting on response.");
   // Wait for the commit to complete
   commit_status->Wait();
+  TRACE("Committed ChangeConfig");
 
   LOG(INFO) << log_prefix << ": a majority of peers have accepted the new configuration. "
             << "Proceeding.";
@@ -446,6 +450,7 @@ Status RaftConsensus::UpdateReplica(const ConsensusRequestPB* request,
 
     // Trigger the replica Prepares() and Apply()s.
     // NOTE: This doesn't actually wait for the transactions to complete.
+    TRACE("Triggering prepare for $0 ops", replicate_ops.size());
     BOOST_FOREACH(const OperationPB* op, replicate_ops) {
       gscoped_ptr<OperationPB> op_copy(new OperationPB(*op));
 
@@ -455,11 +460,14 @@ Status RaftConsensus::UpdateReplica(const ConsensusRequestPB* request,
       CHECK_OK(state_->TriggerPrepareUnlocked(context.Pass()));
     }
 
+    TRACE("Triggering apply/commit for $0 ops", commit_ops.size());
     BOOST_FOREACH(const OperationPB* op, commit_ops) {
       gscoped_ptr<OperationPB> op_copy(new OperationPB(*op));
 
       CHECK_OK(state_->TriggerApplyUnlocked(op_copy.Pass()));
     }
+
+    TRACE("Updating last received");
     state_->UpdateLastReceivedOpIdUnlocked(request->ops(request->ops_size() - 1).id());
   }
 
@@ -483,6 +491,7 @@ Status RaftConsensus::UpdateReplica(const ConsensusRequestPB* request,
         << state_->ToString() << " Request: " << request->ShortDebugString();
   }
 
+  TRACE("UpdateReplicas() finished");
   return Status::OK();
 }
 

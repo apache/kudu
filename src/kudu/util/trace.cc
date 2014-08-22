@@ -5,7 +5,7 @@
 #include <boost/foreach.hpp>
 #include <iomanip>
 #include <ios>
-#include <ostream>
+#include <iostream>
 #include <strstream>
 #include <string>
 #include <vector>
@@ -162,6 +162,15 @@ string Trace::DumpToString(bool include_time_deltas) const {
   std::stringstream s;
   Dump(&s, include_time_deltas);
   return s.str();
+}
+
+void Trace::DumpCurrentTrace() {
+  Trace* t = CurrentTrace();
+  if (t == NULL) {
+    LOG(INFO) << "No trace is currently active.";
+    return;
+  }
+  t->Dump(&std::cerr, true);
 }
 
 } // namespace kudu

@@ -96,8 +96,9 @@ Status WriteTransaction::Prepare() {
 }
 
 Status WriteTransaction::Start() {
+  TRACE("Start()");
   state_->tablet_peer()->tablet()->StartTransaction(state_.get());
-  TRACE("START. Timestamp: $0", state_->tablet_peer()->clock()->Stringify(state_->timestamp()));
+  TRACE("Timestamp: $0", state_->tablet_peer()->clock()->Stringify(state_->timestamp()));
   return Status::OK();
 }
 

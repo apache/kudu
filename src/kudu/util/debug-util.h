@@ -9,6 +9,19 @@ namespace kudu {
 // Return the current stack trace, stringified.
 std::string GetStackTrace();
 
+// Return the current stack trace, in hex form. This is significantly
+// faster than GetStackTrace() above, so should be used in performance-critical
+// places like TRACE() calls. If you really need blazing-fast speed, though,
+// use HexStackTraceToString() into a stack-allocated buffer instead --
+// this call causes a heap allocation for the std::string.
+//
+// Note that this is much more useful in the context of a static binary,
+// since addr2line wouldn't know where shared libraries were mapped at
+// runtime.
+//
+// NOTE: This inherits the same async-safety issue as HexStackTraceToString()
+std::string GetStackTraceHex();
+
 // Collect the current stack trace in hex form into the given buffer.
 //
 // The resulting trace just includes the hex addresses, space-separated. This is suitable

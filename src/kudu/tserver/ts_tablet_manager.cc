@@ -34,6 +34,9 @@
 
 DEFINE_int32(num_tablets_to_open_simultaneously, 50,
     "Number of threads available to open tablets.");
+DEFINE_int32(tablet_start_warn_threshold_ms, 500,
+             "If a tablet takes more than this number of millis to start, issue "
+             "a warning with a trace.");
 
 namespace kudu {
 namespace tserver {
@@ -326,7 +329,7 @@ void TSTabletManager::OpenTablet(const scoped_refptr<TabletMetadata>& meta) {
     }
   }
 
-
+  MonoTime start(MonoTime::Now(MonoTime::FINE));
   LOG_TIMING(INFO, Substitute("starting tablet $0", tablet_id)) {
     TRACE("Initializing tablet peer");
 
@@ -357,6 +360,14 @@ void TSTabletManager::OpenTablet(const scoped_refptr<TabletMetadata>& meta) {
     {
       boost::lock_guard<rw_spinlock> lock(lock_);
       MarkDirtyUnlocked(tablet_peer.get());
+    }
+  }
+
+  int elapsed_ms = MonoTime::Now(MonoTime::FINE).GetDeltaSince(start).ToMilliseconds();
+  if (elapsed_ms > FLAGS_tablet_start_warn_threshold_ms) {
+    LOG(WARNING) << "Tablet startup for " << tablet_id << " took " << elapsed_ms << "ms";
+    if (Trace::CurrentTrace()) {
+      LOG(WARNING) << "Trace:\n" << Trace::CurrentTrace()->DumpToString(true);
     }
   }
 }

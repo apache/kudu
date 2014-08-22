@@ -623,6 +623,7 @@ Status Log::PreAllocateNewSegment() {
   RETURN_NOT_OK(CreatePlaceholderSegment(opts, &next_segment_path_, &next_segment_file_));
 
   if (options_.preallocate_segments) {
+    TRACE("Preallocating $0 byte segment in $1", max_segment_size_, next_segment_path_);
     // TODO (perf) zero the new segments -- this could result in
     // additional performance improvements.
     RETURN_NOT_OK(next_segment_file_->PreAllocate(max_segment_size_));

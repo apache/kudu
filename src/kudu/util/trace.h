@@ -97,6 +97,11 @@ class Trace : public RefCountedThreadSafe<Trace> {
     return threadlocal_trace_;
   }
 
+  // Simple function to dump the current trace to stderr, if one is
+  // available. This is meant for usage when debugging in gdb via
+  // 'call kudu::Trace::DumpCurrentTrace();'.
+  static void DumpCurrentTrace();
+
  private:
   friend class ScopedAdoptTrace;
   friend class RefCountedThreadSafe<Trace>;
