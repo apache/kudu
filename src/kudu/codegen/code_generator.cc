@@ -31,8 +31,6 @@ namespace codegen {
 
 namespace {
 
-GoogleOnceType once = GOOGLE_ONCE_INIT;
-
 // Returns Status::OK() if codegen is not disabled and an error status indicating
 // that codegen has been disabled otherwise.
 Status CheckCodegenEnabled() {

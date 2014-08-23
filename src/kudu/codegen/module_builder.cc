@@ -34,6 +34,14 @@
 #include "kudu/gutil/macros.h"
 #include "kudu/util/status.h"
 
+#ifndef CODEGEN_MODULE_BUILDER_DO_OPTIMIZATIONS
+#if NDEBUG
+#define CODEGEN_MODULE_BUILDER_DO_OPTIMIZATIONS 1
+#else
+#define CODEGEN_MODULE_BUILDER_DO_OPTIMIZATIONS 0
+#endif
+#endif
+
 using llvm::CodeGenOpt::Level;
 using llvm::ConstantExpr;
 using llvm::ConstantInt;
@@ -169,6 +177,8 @@ void ModuleBuilder::AddJITPromise(llvm::Function* llvm_f,
 
 namespace {
 
+#if CODEGEN_MODULE_BUILDER_DO_OPTIMIZATIONS
+
 void DoOptimizations(ExecutionEngine* engine,
                      Module* module) {
   PassManagerBuilder pass_builder;
@@ -202,6 +212,8 @@ void DoOptimizations(ExecutionEngine* engine,
   ignore_result(module_passes.run(*module));
 }
 
+#endif
+
 } // anonymous namespace
 
 Status ModuleBuilder::Compile(gscoped_ptr<ExecutionEngine>* out) {
@@ -225,7 +237,7 @@ Status ModuleBuilder::Compile(gscoped_ptr<ExecutionEngine>* out) {
                                       str);
   }
 
-#ifdef NDEBUG
+#if CODEGEN_MODULE_BUILDER_DO_OPTIMIZATIONS
   DoOptimizations(local_engine.get(), module_.get());
 #endif
 
