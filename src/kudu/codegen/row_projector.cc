@@ -305,7 +305,15 @@ Status RowProjector::Init() {
                                               *functions_.base_schema(),
                                               *functions_.projection()),
                         "Codegenned row projector's schemas incompatible "
-                        "with its functions' schemas: ");
+                        "with its functions' schemas:"
+                        "\n  projector base = " +
+                        projector_.base_schema()->ToString() +
+                        "\n  projector proj = " +
+                        projector_.projection()->ToString() +
+                        "\n  functions base = " +
+                        functions_.base_schema()->ToString() +
+                        "\n  functions proj = " +
+                        functions_.projection()->ToString());
 #endif
   return Status::OK();
 }
