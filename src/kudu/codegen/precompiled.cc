@@ -26,13 +26,19 @@
 namespace kudu {
 
 // Returns whether copy was successful (fails iff slice relocation fails,
-// which can only occur if is_string is true)
+// which can only occur if is_string is true).
+// If arena is NULL, then no relocation occurs.
 static bool BasicCopyCell(uint64_t size, uint8_t* src, uint8_t* dst,
                           bool is_string, Arena* arena) {
   // Relocate indirect data
   if (is_string) {
-    return PREDICT_TRUE(arena->RelocateSlice(*reinterpret_cast<Slice*>(src),
-                                             reinterpret_cast<Slice*>(dst)));
+    if (PREDICT_TRUE(arena != NULL)) {
+      return PREDICT_TRUE(arena->RelocateSlice(*reinterpret_cast<Slice*>(src),
+                                               reinterpret_cast<Slice*>(dst)));
+    }
+    // If arena is NULL, don't relocate, but do copy the pointers to the raw
+    // data (callers that pass arena as NULL should be sure that the indirect
+    // data will stay alive after the projections)
   }
 
   // Copy direct data
@@ -63,6 +69,7 @@ extern "C" {
 //   to by dst, copying indirect data to the parameter arena if is_string
 //   is true. Will hard crash if insufficient memory is available for
 //   relocation. Copies size bytes directly from the src cell.
+//   If arena is NULL then only the direct copy will occur.
 //   Returns whether successful. If not, out-of-memory during relocation of
 //   slices has occured, which can only happen if is_string is true.
 bool _PrecompiledCopyCellToRowBlock(uint64_t size, uint8_t* src, RowBlockRow* dst,
@@ -87,6 +94,8 @@ bool _PrecompiledCopyCellToRowBlock(uint64_t size, uint8_t* src, RowBlockRow* ds
 //   columns. Checks the parameter bitmap at the specified index and updates
 //   The row's bitmap accordingly. Then goes on to copy the cell over if it
 //   is not null.
+//   If arena is NULL then only the direct copy will occur (if the source
+//   bitmap indicates the cell itself is non-null).
 //   Returns whether successful. If not, out-of-memory during relocation of
 //   slices has occured, which can only happen if is_string is true.
 bool _PrecompiledCopyCellToRowBlockNullable(

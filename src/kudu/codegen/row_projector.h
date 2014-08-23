@@ -119,6 +119,7 @@ class RowProjector {
 
   Status Init();
 
+  // Ignores relocations if dst_arena == NULL
   template<class ContiguousRowType>
   Status ProjectRowForRead(const ContiguousRowType& src_row,
                            RowBlockRow* dst_row,
@@ -136,6 +137,7 @@ class RowProjector {
   // Warning: the projection schema should have write-defaults defined
   // if it has default columns. There was no check for default write
   // columns during this class' initialization.
+  // Ignores relocations if dst_arena == NULL
   template<class ContiguousRowType>
   Status ProjectRowForWrite(const ContiguousRowType& src_row,
                             RowBlockRow* dst_row,
