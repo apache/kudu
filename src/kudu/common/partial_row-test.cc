@@ -5,7 +5,6 @@
 
 #include "kudu/common/partial_row.h"
 #include "kudu/common/row.h"
-#include "kudu/common/row_changelist.h"
 #include "kudu/common/schema.h"
 #include "kudu/util/test_util.h"
 

@@ -7,7 +7,6 @@
 
 #include "kudu/common/row.h"
 #include "kudu/common/rowblock.h"
-#include "kudu/common/row_changelist.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/fastmem.h"
 #include "kudu/gutil/strings/substitute.h"

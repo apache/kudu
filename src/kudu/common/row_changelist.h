@@ -10,17 +10,17 @@
 #include <vector>
 
 #include "kudu/common/row.h"
-#include "kudu/common/schema.h"
 #include "kudu/gutil/casts.h"
-#include "kudu/util/coding.h"
-#include "kudu/util/coding-inl.h"
 #include "kudu/util/bitmap.h"
-#include "kudu/util/faststring.h"
-#include "kudu/util/memory/arena.h"
 
 namespace kudu {
 
+class faststring;
+
+class Arena;
+class ColumnBlock;
 class RowBlockRow;
+class Schema;
 
 // A RowChangeList is a wrapper around a Slice which contains a "changelist".
 //
@@ -112,44 +112,7 @@ class RowChangeListEncoder {
     dst_->append(row_data.data(), row_data.size());
   }
 
-  void AddColumnUpdate(size_t col_idx, const void *new_val) {
-    if (type_ == RowChangeList::kUninitialized) {
-      SetType(RowChangeList::kUpdate);
-    } else {
-      DCHECK_EQ(RowChangeList::kUpdate, type_);
-    }
-
-    const ColumnSchema& col_schema = schema_->column(col_idx);
-    const TypeInfo* ti = col_schema.type_info();
-
-    // TODO: Now that RowChangeList is only used on the server side,
-    // maybe it should always be using column IDs?
-    //
-    // Encode the column index if is coming from the client (no IDs)
-    // Encode the column ID if is coming from the server (with IDs)
-    // The MutateRow Projection step will figure out the client to server mapping.
-    size_t col_id = schema_->has_column_ids() ? schema_->column_id(col_idx) : col_idx;
-    InlinePutVarint32(dst_, col_id);
-
-    // If the column is nullable set the null flag
-    if (col_schema.is_nullable()) {
-      dst_->push_back(new_val == NULL);
-      if (new_val == NULL) return;
-    }
-
-    // Copy the new value itself
-    if (ti->type() == STRING) {
-      Slice src;
-      memcpy(&src, new_val, sizeof(Slice));
-
-      // If it's a Slice column, copy the length followed by the data.
-      InlinePutVarint32(dst_, src.size());
-      dst_->append(src.data(), src.size());
-    } else {
-      // Otherwise, just copy the data itself.
-      dst_->append(new_val, ti->size());
-    }
-  }
+  void AddColumnUpdate(size_t col_idx, const void *new_val);
 
   RowChangeList as_changelist() {
     DCHECK_GT(dst_->size(), 0);
@@ -235,33 +198,8 @@ class RowChangeListDecoder {
   // state of the row into the undo_encoder.
   Status ApplyRowUpdate(RowBlockRow *dst_row, Arena *arena, RowChangeListEncoder* undo_encoder);
 
-  // TODO: It will be nice have the same function taking the destination type
-  //       to been able to call the "alter type" adapter.
   // This method is used by MemRowSet, DeltaMemStore and DeltaFile.
-  template<class ColumnType, class ArenaType>
-  Status ApplyToOneColumn(size_t row_idx, ColumnType *dst_col, size_t col_idx, ArenaType *arena) {
-    DCHECK_EQ(RowChangeList::kUpdate, type_);
-
-    const ColumnSchema& col_schema = schema_->column(col_idx);
-    size_t col_id = schema_->column_id(col_idx);
-
-    // TODO: Handle the "different type" case (adapter_cols_mapping)
-    DCHECK_EQ(col_schema.type_info()->type(), dst_col->type_info()->type());
-
-    while (HasNext()) {
-      size_t updated_col = 0xdeadbeef; // avoid un-initialized usage warning
-      const void *new_val = NULL;
-      RETURN_NOT_OK(DecodeNext(&updated_col, &new_val));
-      if (updated_col == col_id) {
-        SimpleConstCell src(&col_schema, new_val);
-        typename ColumnType::Cell dst_cell = dst_col->cell(row_idx);
-        RETURN_NOT_OK(CopyCell(src, &dst_cell, arena));
-        // TODO: could potentially break; here if we're guaranteed to only have one update
-        // per column in a RowChangeList (which would make sense!)
-      }
-    }
-    return Status::OK();
-  }
+  Status ApplyToOneColumn(size_t row_idx, ColumnBlock* dst_col, size_t col_idx, Arena *arena);
 
   // If this changelist is a DELETE or REINSERT, twiddle '*deleted' to reference
   // the new state of the row. If it is an UPDATE, this call has no effect.
@@ -303,7 +241,7 @@ class RowChangeListDecoder {
   friend class RowChangeList;
 
   // Decode the next changed column.
-  // Sets *col_id to the changed column index.
+  // Sets *col_id to the changed column id.
   // Sets *val_out to point to the new value.
   //
   // *val_out may be set to temporary storage which is part of the
@@ -314,51 +252,7 @@ class RowChangeListDecoder {
   // be a temporary Slice object which is only temporarily valid.
   // But, that Slice object will itself point to data which is part
   // of the source data that was passed in.
-  Status DecodeNext(size_t *col_id, const void ** val_out) {
-    DCHECK_NE(type_, RowChangeList::kUninitialized) << "Must call Init()";
-    // Decode the column index.
-    uint32_t id;
-    if (!GetVarint32(&remaining_, &id)) {
-      return Status::Corruption("Invalid column index varint in delta");
-    }
-
-    *col_id = id;
-
-    const ColumnSchema& col_schema = schema_->column_by_id(id);
-    const TypeInfo* ti = col_schema.type_info();
-
-    // If the column is nullable check the null flag
-    if (col_schema.is_nullable()) {
-      if (remaining_.size() < 1) {
-        return Status::Corruption("Missing column nullable varint in delta");
-      }
-
-      int is_null = *remaining_.data();
-      remaining_.remove_prefix(1);
-
-      // The value is null
-      if (is_null) {
-        *val_out = NULL;
-        return Status::OK();
-      }
-    }
-
-    // Decode the value itself
-    if (ti->type() == STRING) {
-      if (!GetLengthPrefixedSlice(&remaining_, &last_decoded_slice_)) {
-        return Status::Corruption("invalid slice in delta");
-      }
-
-      *val_out = &last_decoded_slice_;
-
-    } else {
-      *val_out = remaining_.data();
-      remaining_.remove_prefix(ti->size());
-    }
-
-    return Status::OK();
-  }
-
+  Status DecodeNext(size_t *col_id, const void ** val_out);
 
   const Schema* schema_;
 

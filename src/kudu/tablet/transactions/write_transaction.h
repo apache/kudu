@@ -8,7 +8,6 @@
 #include <vector>
 
 #include "kudu/common/schema.h"
-#include "kudu/common/row_changelist.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/tablet/lock_manager.h"
 #include "kudu/tablet/mvcc.h"

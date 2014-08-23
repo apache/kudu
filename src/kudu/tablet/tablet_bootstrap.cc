@@ -9,7 +9,6 @@
 #include <vector>
 
 #include "kudu/common/partial_row.h"
-#include "kudu/common/row_changelist.h"
 #include "kudu/common/row_operations.h"
 #include "kudu/common/wire_protocol.h"
 #include "kudu/consensus/log.h"

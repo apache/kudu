@@ -10,7 +10,6 @@
 
 #include "kudu/common/partial_row.h"
 #include "kudu/common/row.h"
-#include "kudu/common/row_changelist.h"
 #include "kudu/common/row_operations.h"
 
 namespace kudu {

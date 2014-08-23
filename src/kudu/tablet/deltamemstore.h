@@ -8,7 +8,6 @@
 #include <boost/thread/mutex.hpp>
 
 #include "kudu/common/columnblock.h"
-#include "kudu/common/row_changelist.h"
 #include "kudu/common/rowblock.h"
 #include "kudu/common/schema.h"
 #include "kudu/gutil/atomicops.h"
@@ -25,6 +24,7 @@
 namespace kudu {
 
 class MemTracker;
+class RowChangeList;
 
 namespace tablet {
 

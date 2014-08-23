@@ -13,7 +13,6 @@
 #include <vector>
 
 #include "kudu/common/row.h"
-#include "kudu/common/row_changelist.h"
 #include "kudu/common/schema.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/tablet/delta_key.h"
@@ -26,6 +25,7 @@ namespace kudu {
 
 class MemTracker;
 class RowBlock;
+class RowChangeList;
 
 namespace cfile {
 class BloomFileWriter;

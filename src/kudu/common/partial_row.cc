@@ -9,7 +9,6 @@
 #include "kudu/common/wire_protocol.pb.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/bitmap.h"
-#include "kudu/common/row_changelist.h"
 #include "kudu/util/status.h"
 
 using strings::Substitute;
