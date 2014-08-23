@@ -101,5 +101,15 @@ bool _PrecompiledCopyCellToRowBlockNullable(
   return _PrecompiledCopyCellToRowBlock(size, src, dst, col, is_string, arena);
 }
 
+// declare void @_PrecompiledSetRowBlockCellSetNull
+//   RowBlockRow* %dst, i64 <column index>, i1 %is_null)
+//
+//   Sets the cell at column 'col' for destination RowBlockRow 'dst'
+//   to be marked as 'is_null' (requires the column is nullable).
+void _PrecompiledCopyCellToRowBlockSetNull(
+  RowBlockRow* dst, uint64_t col, bool is_null) {
+  dst->cell(col).set_null(is_null);
+}
+
 } // extern "C"
 } // namespace kudu

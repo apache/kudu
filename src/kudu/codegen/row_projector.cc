@@ -114,11 +114,17 @@ llvm::Function* MakeProjection(const string& name,
   //   %success = and %success, %result***
   //   <end implicit for each>
   //   <for each projection column that needs defaults>
-  //     %src_cell = inttoptr i64 <default value location> to i8*
-  //     %result = call i1 @CopyCellToRowBlock(
-  //       i64 <type size>, i8* %src_cell, RowBlockRow* %rbrow,
-  //       i64 <column index>, i1 <is string>, Arena* %arena)
-  //   %success = and %success, %result***
+  //     <if default column is nullable>
+  //       call void @CopyCellToRowBlockNullDefault(
+  //         RowBlockRow* %rbrow, i64 <column index>, i1 <is null>)
+  //     <end implicit if>
+  //     <if default value was not null>
+  //       %src_cell = inttoptr i64 <default value location> to i8*
+  //       %result = call i1 @CopyCellToRowBlock(
+  //         i64 <type size>, i8* %src_cell, RowBlockRow* %rbrow,
+  //         i64 <column index>, i1 <is string>, Arena* %arena)
+  //       %success = and %success, %result***
+  //     <end implicit if>
   //   <end implicit for each>
   //   ret i1 %success
   //
@@ -126,16 +132,22 @@ llvm::Function* MakeProjection(const string& name,
   // call i1 @CopyCellToRowBlockNullable(
   //   i64 <type size>, i8* %src_cell, RowBlockRow* %rbrow, i64 <column index>,
   //   i1 <is_string>, Arena* %arena, i8* src_bitmap, i64 <bitmap_idx>)
-  // ***Technically, llvm ir does not support mutable registers. Thus,
+  // ***If the column is nullable and the default value is NULL, then the
+  // call is replaced with
+  // call void @CopyCellToRowBlockSetNull(
+  //   RowBlockRow* %rbrow, i64 <column index>)
+  // ****Technically, llvm ir does not support mutable registers. Thus,
   // this is implemented by having "success" be the most recent result
   // register of the last "and" instruction. The different "success" values
   // can be differentiated by using a success_update_number.
 
-  // Retrieve copy cell to rowblock functions
+  // Retrieve appropriate precompiled rowblock cell functions
   Function* copy_cell_not_null =
     mbuilder->GetFunction("_PrecompiledCopyCellToRowBlock");
   Function* copy_cell_nullable =
     mbuilder->GetFunction("_PrecompiledCopyCellToRowBlockNullable");
+  Function* row_block_set_null =
+    mbuilder->GetFunction("_PrecompiledCopyCellToRowBlockSetNull");
 
   // Mark the helper functions as having internal linkage. Otherwise, MCJIT
   // assumes they might be overridden by some other shared object, and it
@@ -200,20 +212,22 @@ llvm::Function* MakeProjection(const string& name,
     const void* dfl = READ ? col.read_default_value() :
       col.write_default_value();
 
-    // If there are defaults, then at least READ default must be defined.
-    CHECK(!(READ && dfl == NULL))
-      << "Requested default value for projection index " << dfl_idx
-      << " in projection (s1, s2) with no default value specified:\n"
-      << "\ts1 = " << base_schema.ToString() << "\n"
-      << "\ts2 = " << projection.ToString();
-
     // Generate arguments
     Value* size = builder->getInt64(col.type_info()->size());
     Value* src_cell = mbuilder->GetPointerValue(const_cast<void*>(dfl));
     Value* col_idx = builder->getInt64(dfl_idx);
     ConstantInt* is_string = builder->getInt1(col.type_info()->type() == STRING);
 
-    // Make the call and check the return value
+    // Handle default columns that are nullable
+    if (col.is_nullable()) {
+      Value* is_null = builder->getInt1(dfl == NULL);
+      vector<Value*> args = list_of<Value*>(rbrow)(col_idx)(is_null);
+      builder->CreateCall(row_block_set_null, args);
+      // If dfl was NULL, we're done
+      if (dfl == NULL) continue;
+    }
+
+    // Make the copy cell call and check the return value
     vector<Value*> args = list_of
       (size)(src_cell)(rbrow)(col_idx)(is_string)(arena);
     Value* result = builder->CreateCall(copy_cell_not_null, args);
