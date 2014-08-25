@@ -5,7 +5,12 @@ include(CMakeParseArguments)
 
 # Make sure thirdparty stuff is up-to-date.
 if ("$ENV{NO_REBUILD_THIRDPARTY}" STREQUAL "")
-  execute_process(COMMAND thirdparty/build-if-necessary.sh)
+  execute_process(
+    COMMAND thirdparty/build-if-necessary.sh
+    RESULT_VARIABLE THIRDPARTY_SCRIPT_RESULT)
+  if (NOT (${THIRDPARTY_SCRIPT_RESULT} EQUAL 0))
+    message(FATAL_ERROR "Thirdparty was built unsuccessfully, terminating.")
+  endif()
 endif()
 
 # Generate a Clang compile_commands.json "compilation database" file for use
