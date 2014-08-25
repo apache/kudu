@@ -147,7 +147,7 @@ if(WIN32)
     set(CMAKE_FIND_LIBRARY_PREFIXES "lib" "")
 endif()
 
-find_library(PROTOBUF_LIBRARY NAMES libprotobuf.so
+find_library(PROTOBUF_LIBRARY NAMES libprotobuf${CMAKE_SHARED_LIBRARY_SUFFIX}
              DOC "The Google Protocol Buffers Library"
              PATHS ${THIRDPARTY_PREFIX}/lib
              NO_DEFAULT_PATH
@@ -157,7 +157,7 @@ find_file(PROTOBUF_STATIC_LIBRARY libprotobuf.a
          PATHS ${THIRDPARTY_PREFIX}/lib
          NO_DEFAULT_PATH)
 
-find_library(PROTOBUF_PROTOC_LIBRARY NAMES libprotoc.so
+find_library(PROTOBUF_PROTOC_LIBRARY NAMES libprotoc${CMAKE_SHARED_LIBRARY_SUFFIX}
              DOC "The Google Protocol Buffers Compiler Library"
              PATHS ${THIRDPARTY_PREFIX}/lib
              NO_DEFAULT_PATH

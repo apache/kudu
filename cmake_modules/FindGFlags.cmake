@@ -3,6 +3,7 @@
 #  GFLAGS_INCLUDE_DIR, directory containing headers
 #  GFLAGS_LIBS, directory containing gflag libraries
 #  GFLAGS_STATIC_LIB, path to libgflags.a
+#  GFLAGS_SHARED_LIB, path to libgflags' shared library
 #  GFLAGS_FOUND, whether gflags has been found
 
 set(GFLAGS_SEARCH_HEADER_PATHS  
@@ -23,8 +24,10 @@ find_library(GFLAGS_LIB_PATH NAMES gflags PATHS ${GFLAGS_SEARCH_LIB_PATH} NO_DEF
 
 if (GFLAGS_INCLUDE_DIR AND GFLAGS_LIB_PATH)
   set(GFLAGS_FOUND TRUE)
+  set(GFLAGS_LIB_NAME libgflags)
   set(GFLAGS_LIBS ${GFLAGS_SEARCH_LIB_PATH})
-  set(GFLAGS_STATIC_LIB ${GFLAGS_SEARCH_LIB_PATH}/libgflags.a)
+  set(GFLAGS_STATIC_LIB ${GFLAGS_SEARCH_LIB_PATH}/${GFLAGS_LIB_NAME}.a)
+  set(GFLAGS_SHARED_LIB ${GFLAGS_LIBS}/${GFLAGS_LIB_NAME}${CMAKE_SHARED_LIBRARY_SUFFIX})
 else ()
   set(GFLAGS_FOUND FALSE)
 endif ()
@@ -50,4 +53,5 @@ mark_as_advanced(
   GFLAGS_INCLUDE_DIR
   GFLAGS_LIBS
   GFLAGS_STATIC_LIB
+  GFLAGS_SHARED_LIB
 )

@@ -3,6 +3,7 @@
 #  ZLIB_INCLUDE_DIR, directory containing headers
 #  ZLIB_LIBS, directory containing zlib libraries
 #  ZLIB_STATIC_LIB, path to libz.a
+#  ZLIB_SHARED_LIB, path to libz's shared library
 #  ZLIB_FOUND, whether zlib has been found
 
 set(ZLIB_SEARCH_HEADER_PATHS
@@ -23,8 +24,10 @@ find_library(ZLIB_LIB_PATH NAMES z PATHS ${ZLIB_SEARCH_LIB_PATH} NO_DEFAULT_PATH
 
 if (ZLIB_INCLUDE_DIR AND ZLIB_LIB_PATH)
   set(ZLIB_FOUND TRUE)
+  set(ZLIB_LIB_NAME libz)
   set(ZLIB_LIBS ${ZLIB_SEARCH_LIB_PATH})
-  set(ZLIB_STATIC_LIB ${ZLIB_SEARCH_LIB_PATH}/libz.a)
+  set(ZLIB_STATIC_LIB ${ZLIB_SEARCH_LIB_PATH}/${ZLIB_LIB_NAME}.a)
+  set(ZLIB_SHARED_LIB ${ZLIB_LIBS}/${ZLIB_LIB_NAME}${CMAKE_SHARED_LIBRARY_SUFFIX})
 else ()
   set(ZLIB_FOUND FALSE)
 endif ()
@@ -50,4 +53,5 @@ mark_as_advanced(
   ZLIB_INCLUDE_DIR
   ZLIB_LIBS
   ZLIB_STATIC_LIB
+  ZLIB_SHARED_LIB
 )

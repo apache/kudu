@@ -2,7 +2,8 @@
 # This module defines
 #  GLOG_INCLUDE_DIR, directory containing headers
 #  GLOG_LIBS, directory containing glog libraries
-#  GLOG_STATIC_LIB, path to libglog.a (
+#  GLOG_STATIC_LIB, path to libglog.a
+#  GLOG_SHARED_LIB, path to libglog's shared library
 #  GLOG_FOUND, whether glog has been found
 
 set(GLOG_SEARCH_HEADER_PATHS
@@ -24,7 +25,9 @@ find_library(GLOG_LIB_PATH NAMES glog PATHS ${GLOG_SEARCH_LIB_PATH} NO_DEFAULT_P
 if (GLOG_INCLUDE_DIR AND GLOG_LIB_PATH)
   set(GLOG_FOUND TRUE)
   set(GLOG_LIBS ${GLOG_SEARCH_LIB_PATH})
-  set(GLOG_STATIC_LIB ${GLOG_SEARCH_LIB_PATH}/libglog.a)
+  set(GLOG_LIB_NAME libglog)
+  set(GLOG_STATIC_LIB ${GLOG_SEARCH_LIB_PATH}/${GLOG_LIB_NAME}.a)
+  set(GLOG_SHARED_LIB ${GLOG_LIBS}/${GLOG_LIB_NAME}${CMAKE_SHARED_LIBRARY_SUFFIX})
 else ()
   set(GLOG_FOUND FALSE)
 endif ()
@@ -50,4 +53,5 @@ mark_as_advanced(
   GLOG_INCLUDE_DIR
   GLOG_LIBS
   GLOG_STATIC_LIB
+  GLOG_SHARED_LIB
 )

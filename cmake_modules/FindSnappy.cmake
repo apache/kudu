@@ -3,6 +3,7 @@
 #  SNAPPY_INCLUDE_DIR, directory containing headers
 #  SNAPPY_LIBS, directory containing snappy libraries
 #  SNAPPY_STATIC_LIB, path to libsnappy.a
+#  SNAPPY_SHARED_LIB, path to libsnappy's shared library
 #  SNAPPY_FOUND, whether snappy has been found
 
 set(SNAPPY_SEARCH_HEADER_PATHS
@@ -23,8 +24,10 @@ find_library(SNAPPY_LIB_PATH NAMES snappy PATHS ${SNAPPY_SEARCH_LIB_PATH} NO_DEF
 
 if (SNAPPY_INCLUDE_DIR AND SNAPPY_LIB_PATH)
   set(SNAPPY_FOUND TRUE)
+  set(SNAPPY_LIB_NAME libsnappy)
   set(SNAPPY_LIBS ${SNAPPY_SEARCH_LIB_PATH})
-  set(SNAPPY_STATIC_LIB ${SNAPPY_SEARCH_LIB_PATH}/libsnappy.a)
+  set(SNAPPY_STATIC_LIB ${SNAPPY_SEARCH_LIB_PATH}/${SNAPPY_LIB_NAME}.a)
+  set(SNAPPY_SHARED_LIB ${SNAPPY_LIBS}/${SNAPPY_LIB_NAME}${CMAKE_SHARED_LIBRARY_SUFFIX})
 else ()
   set(SNAPPY_FOUND FALSE)
 endif ()
@@ -50,4 +53,5 @@ mark_as_advanced(
   SNAPPY_INCLUDE_DIR
   SNAPPY_LIBS
   SNAPPY_STATIC_LIB
+  SNAPPY_SHARED_LIB
 )

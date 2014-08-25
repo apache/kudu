@@ -427,23 +427,26 @@ find_package(GLog REQUIRED)
 include_directories(SYSTEM ${GLOG_INCLUDE_DIR})
 ADD_THIRDPARTY_LIB(glog
   STATIC_LIB "${GLOG_STATIC_LIB}"
-  SHARED_LIB "${GLOG_LIBS}/libglog.so")
+  SHARED_LIB "${GLOG_SHARED_LIB}")
 set(KUDU_BASE_LIBS ${KUDU_BASE_LIBS} glog)
 
 ## libunwind (dependent of glog)
-find_package(LibUnwind REQUIRED)
-include_directories(SYSTEM ${UNWIND_INCLUDE_DIR})
-ADD_THIRDPARTY_LIB(unwind
-  STATIC_LIB "${UNWIND_STATIC_LIB}"
-  SHARED_LIB "${UNWIND_SHARED_LIB}")
-set(KUDU_BASE_LIBS ${KUDU_BASE_LIBS} unwind)
+## Doesn't build on OSX.
+if (NOT APPLE)
+  find_package(LibUnwind REQUIRED)
+  include_directories(SYSTEM ${UNWIND_INCLUDE_DIR})
+  ADD_THIRDPARTY_LIB(unwind
+    STATIC_LIB "${UNWIND_STATIC_LIB}"
+    SHARED_LIB "${UNWIND_SHARED_LIB}")
+  set(KUDU_BASE_LIBS ${KUDU_BASE_LIBS} unwind)
+endif()
 
 ## GFlags
 find_package(GFlags REQUIRED)
 include_directories(SYSTEM ${GFLAGS_INCLUDE_DIR})
 ADD_THIRDPARTY_LIB(gflags
   STATIC_LIB "${GFLAGS_STATIC_LIB}"
-  SHARED_LIB "${GFLAGS_LIBS}/libgflags.so")
+  SHARED_LIB "${GFLAGS_SHARED_LIB}")
 set(KUDU_BASE_LIBS ${KUDU_BASE_LIBS} gflags)
 
 ## GTest
@@ -473,7 +476,7 @@ find_package(Snappy REQUIRED)
 include_directories(SYSTEM ${SNAPPY_INCLUDE_DIR})
 ADD_THIRDPARTY_LIB(snappy
   STATIC_LIB "${SNAPPY_STATIC_LIB}"
-  SHARED_LIB "${SNAPPY_LIBS}/libsnappy.so")
+  SHARED_LIB "${SNAPPY_SHARED_LIB}")
 
 ## Libev
 find_package(LibEv REQUIRED)
@@ -492,14 +495,18 @@ find_package(Zlib REQUIRED)
 include_directories(SYSTEM ${ZLIB_INCLUDE_DIR})
 ADD_THIRDPARTY_LIB(zlib
   STATIC_LIB "${ZLIB_STATIC_LIB}"
-  SHARED_LIB "${ZLIB_LIBS}/libz.so")
+  SHARED_LIB "${ZLIB_SHARED_LIB}")
 
 ## Squeasel
-find_package(Squeasel REQUIRED)
-include_directories(SYSTEM ${SQUEASEL_INCLUDE_DIR})
-ADD_THIRDPARTY_LIB(squeasel
-  STATIC_LIB "${SQUEASEL_STATIC_LIB}"
-  DEPS "${SQUEASEL_STATIC_LIB_DEPS}")
+## Doesn't build on OSX, skipping it means Kudu doesn't build!
+## TODO Make it work.
+if (NOT APPLE)
+  find_package(Squeasel REQUIRED)
+  include_directories(SYSTEM ${SQUEASEL_INCLUDE_DIR})
+  ADD_THIRDPARTY_LIB(squeasel
+    STATIC_LIB "${SQUEASEL_STATIC_LIB}"
+    DEPS "${SQUEASEL_STATIC_LIB_DEPS}")
+endif()
 
 ## Google PerfTools
 ##
@@ -515,10 +522,10 @@ if (NOT "${KUDU_USE_ASAN}" AND
     NOT "${KUDU_EXPORTED_CLIENT}")
   ADD_THIRDPARTY_LIB(tcmalloc
     STATIC_LIB "${TCMALLOC_STATIC_LIB}"
-    SHARED_LIB "${TCMALLOC_LIBS}/libtcmalloc.so")
+    SHARED_LIB "${TCMALLOC_SHARED_LIB}")
   ADD_THIRDPARTY_LIB(profiler
     STATIC_LIB "${PROFILER_STATIC_LIB}"
-    SHARED_LIB "${PROFILER_LIBS}/libprofiler.so")
+    SHARED_LIB "${PROFILER_SHARED_LIB}")
   set(KUDU_BASE_LIBS ${KUDU_BASE_LIBS} tcmalloc profiler)
   add_definitions("-DTCMALLOC_ENABLED")
   set(KUDU_TCMALLOC_AVAILABLE 1)

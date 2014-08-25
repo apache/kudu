@@ -3,7 +3,7 @@
 #  LIBEV_INCLUDE_DIR, directory containing headers
 #  LIBEV_LIBS, directory containing libev libraries
 #  LIBEV_STATIC_LIB, path to libev.a
-#  LIBEV_SHARED_LIB, path to libev.so
+#  LIBEV_SHARED_LIB, path to libev's shared library
 #  LIBEV_FOUND, whether libev has been found
 
 set(LIBEV_SEARCH_HEADER_PATHS  
@@ -25,10 +25,9 @@ find_library(LIBEV_LIB_PATH NAMES ev PATHS ${LIBEV_SEARCH_LIB_PATH} NO_DEFAULT_P
 if (LIBEV_INCLUDE_DIR AND LIBEV_LIB_PATH)
   set(LIBEV_FOUND TRUE)
   set(LIBEV_LIBS ${LIBEV_SEARCH_LIB_PATH})
-  set(LIBEV_STATIC_LIB ${LIBEV_SEARCH_LIB_PATH}/libev.a)
-  if(EXISTS ${LIBEV_SEARCH_LIB_PATH}/libev.so)
-    set(LIBEV_SHARED_LIB ${LIBEV_SEARCH_LIB_PATH}/libev.so)
-  endif()
+  set(LIBEV_LIB_NAME libev)
+  set(LIBEV_STATIC_LIB ${LIBEV_SEARCH_LIB_PATH}/${LIBEV_LIB_NAME}.a)
+  set(LIBEV_SHARED_LIB ${LIBEV_SEARCH_LIB_PATH}/${LIBEV_LIB_NAME}${CMAKE_SHARED_LIBRARY_SUFFIX})
 else ()
   set(LIBEV_FOUND FALSE)
 endif ()

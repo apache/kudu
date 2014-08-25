@@ -244,3 +244,16 @@ matters for the purpose of matching.
 
 Note that dynamic linking is incompatible with ASAN and static linking is incompatible
 with TSAN.
+
+
+Building on OSX
+------------------------------------------------------------
+
+Kudu currently doesn't build on OSX but some can find it useful to have the Eclipse CDT makefiles.
+Here are the issues:
+
+ - elf.h is missing on OSX but it can be obtained from this link (put it in /usr/local/include):
+   https://gist.githubusercontent.com/mlafeldt/3885346/raw/a2d96012828ea82e96a290ae56821c9cecd7023c/elf.h
+ - libunwind is disabled when building the 3rd party libraries but you can still use the one
+   provided by MacPorts.
+ - squeasel is also disabled because it doesn't build on OSX, and there's no workaround.

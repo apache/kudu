@@ -3,7 +3,7 @@
 #  CRCUTIL_INCLUDE_DIR, directory containing headers
 #  CRCUTIL_LIBS, directory containing crcutil libraries
 #  CRCUTIL_STATIC_LIB, path to libcrcutil.a
-#  CRCUTIL_SHARED_LIB, path to libcrcutil.so
+#  CRCUTIL_SHARED_LIB, path to libcrcutil's shared library
 #  CRCUTIL_FOUND, whether crcutil has been found
 
 set(CRCUTIL_SEARCH_HEADER_PATHS
@@ -26,8 +26,10 @@ find_library(CRCUTIL_LIB_PATH
 if (CRCUTIL_INCLUDE_DIR AND CRCUTIL_LIB_PATH)
   set(CRCUTIL_FOUND TRUE)
   set(CRCUTIL_LIBS ${CRCUTIL_SEARCH_LIB_PATH})
-  set(CRCUTIL_STATIC_LIB ${CRCUTIL_SEARCH_LIB_PATH}/libcrcutil.a)
-  set(CRCUTIL_SHARED_LIB ${CRCUTIL_SEARCH_LIB_PATH}/libcrcutil.so)
+  set(CRCUTIL_LIB_NAME libcrcutil)
+  set(CRCUTIL_STATIC_LIB ${CRCUTIL_SEARCH_LIB_PATH}/${CRCUTIL_LIB_NAME}.a)
+  set(CRCUTIL_SHARED_LIB
+      ${CRCUTIL_SEARCH_LIB_PATH}/${CRCUTIL_LIB_NAME}${CMAKE_SHARED_LIBRARY_SUFFIX})
 else ()
   set(CRCUTIL_FOUND FALSE)
 endif ()

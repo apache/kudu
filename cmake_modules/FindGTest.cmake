@@ -26,7 +26,7 @@
 # GTEST_INCLUDE_DIR, where to find gtest include files, etc.
 # GTest_FOUND, If false, do not try to use gtest.
 # GTEST_STATIC_LIBRARY, Location of libgtest.a
-# GTEST_SHARED_LIBRARY, Location of libttest.so
+# GTEST_SHARED_LIBRARY, Location of libttest's shared library
 
 # also defined, but not for general use are
 # GTEST_LIBRARY, where to find the GTest library.
@@ -55,14 +55,14 @@ find_library(GTEST_LIBRARY
 #        NO_DEFAULT_PATH
 #  DOC   "Google's framework for writing C++ tests (gtest_main)"
 #)
-
+set(GTEST_LIB_NAME libgtest)
 if(GTEST_INCLUDE_DIR AND GTEST_LIBRARY)
-  set(GTEST_STATIC_LIBRARY ${GTEST_SEARCH_PATH}/libgtest.a)
+  set(GTEST_STATIC_LIBRARY ${GTEST_SEARCH_PATH}/${GTEST_LIB_NAME}.a)
   if(EXISTS "${GTEST_STATIC_LIBRARY}")
     set(GTEST_FOUND TRUE)
   endif()
 
-  set(GTEST_SHARED_LIBRARY ${GTEST_SEARCH_PATH}/libgtest.so)
+  set(GTEST_SHARED_LIBRARY ${GTEST_SEARCH_PATH}/${GTEST_LIB_NAME}${CMAKE_SHARED_LIBRARY_SUFFIX})
   if(EXISTS "${GTEST_SHARED_LIBRARY}")
     set(GTEST_FOUND TRUE)
   endif()

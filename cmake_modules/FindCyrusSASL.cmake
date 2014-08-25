@@ -20,8 +20,9 @@
 # In practice, Cyrus-SASL is so commonly used and generally non-ABI-breaking that
 # we should be OK to depend on the host installation.
 
+
 find_path(CYRUS_SASL_INCLUDE_DIR sasl/sasl.h)
-find_library(CYRUS_SASL_SHARED_LIB NAMES libsasl2.so)
+find_library(CYRUS_SASL_SHARED_LIB NAMES "libsasl2${CMAKE_SHARED_LIBRARY_SUFFIX}")
 
 if (CYRUS_SASL_INCLUDE_DIR AND CYRUS_SASL_SHARED_LIB)
   set(CYRUS_SASL_FOUND TRUE)

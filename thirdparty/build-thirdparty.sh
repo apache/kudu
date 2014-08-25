@@ -5,6 +5,12 @@ set -x
 set -e
 TP_DIR=$(cd "$(dirname "$BASH_SOURCE")"; pwd)
 
+if [[ "$OSTYPE" =~ ^linux ]]; then
+  OS_LINUX=1
+elif [[ "$OSTYPE" == "darwin"* ]]; then
+  OS_OSX=1
+fi
+
 source $TP_DIR/vars.sh
 
 ################################################################################
@@ -41,9 +47,9 @@ fi
 ################################################################################
 
 # Determine how many parallel jobs to use for make based on the number of cores
-if [[ "$OSTYPE" =~ ^linux ]]; then
+if [ "$OS_LINUX" ]; then
   PARALLEL=$(grep -c processor /proc/cpuinfo)
-elif [[ "$OSTYPE" == "darwin"* ]]; then
+elif [ "$OS_OSX" ]; then
   PARALLEL=$(sysctl -n hw.ncpu)
 else
   echo Unsupported platform $OSTYPE
@@ -77,12 +83,15 @@ if [ -n "$F_ALL" -o -n "$F_GFLAGS" ]; then
 fi
 
 # build libunwind (glog consumes it)
-if [ -n "$F_ALL" -o -n "$F_LIBUNWIND" ]; then
-  cd $LIBUNWIND_DIR
-  # Disable minidebuginfo, which depends on liblzma, until/unless we decide to
-  # add liblzma to thirdparty.
-  ./configure --disable-minidebuginfo --with-pic --prefix=$PREFIX
-  make -j$PARALLEL install
+# It depends on link.h which is unavaible on OSX, use MacPorts' instead.
+if [ "$OS_LINUX" ]; then
+  if [ -n "$F_ALL" -o -n "$F_LIBUNWIND" ]; then
+    cd $LIBUNWIND_DIR
+    # Disable minidebuginfo, which depends on liblzma, until/unless we decide to
+    # add liblzma to thirdparty.
+    ./configure --disable-minidebuginfo --with-pic --prefix=$PREFIX
+    make -j$PARALLEL install
+  fi
 fi
 
 # build glog
@@ -157,14 +166,18 @@ if [ -n "$F_ALL" -o -n "$F_RAPIDJSON" ]; then
 fi
 
 # Build squeasel
-if [ -n "$F_ALL" -o -n "$F_SQUEASEL" ]; then
-  # Mongoose's Makefile builds a standalone web server, whereas we just want
-  # a static lib
-  cd $SQUEASEL_DIR
-  ${CC:-gcc} -fno-omit-frame-pointer -std=c99 -O3 -DNDEBUG -DNO_SSL_DL -fPIC -c squeasel.c
-  ar rs libsqueasel.a squeasel.o
-  cp libsqueasel.a $PREFIX/lib/
-  cp squeasel.h $PREFIX/include/
+# Disabled for OSX due to references to prctl and CLOCK_MONOTONIC, means you can't build Kudu
+# at the moment.
+if [ "$OS_LINUX" ]; then
+  if [ -n "$F_ALL" -o -n "$F_SQUEASEL" ]; then
+    # Mongoose's Makefile builds a standalone web server, whereas we just want
+    # a static lib
+    cd $SQUEASEL_DIR
+    ${CC:-gcc} -fno-omit-frame-pointer -std=c99 -O3 -DNDEBUG -DNO_SSL_DL -fPIC -c squeasel.c
+    ar rs libsqueasel.a squeasel.o
+    cp libsqueasel.a $PREFIX/lib/
+    cp squeasel.h $PREFIX/include/
+  fi
 fi
 
 # Build curl

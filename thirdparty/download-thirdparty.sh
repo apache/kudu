@@ -120,8 +120,16 @@ if [ ! -d $CURL_DIR ]; then
   fetch_and_expand curl-${CURL_VERSION}.tar.gz
 fi
 
+CRCUTIL_PATCHLEVEL=1
+delete_if_wrong_patchlevel crcutil-${CRCUTIL_VERSION} $CRCUTIL_PATCHLEVEL
 if [ ! -d $CRCUTIL_DIR ]; then
   fetch_and_expand crcutil-${CRCUTIL_VERSION}.tar.gz
+
+  pushd crcutil-${CRCUTIL_VERSION}
+  patch -p0 < $TP_DIR/patches/crcutil-fix-libtoolize-on-osx.patch
+  touch crcutil-$CRCUTIL_PATCHLEVEL
+  popd
+  echo
 fi
 
 if [ ! -d $LIBUNWIND_DIR ]; then
