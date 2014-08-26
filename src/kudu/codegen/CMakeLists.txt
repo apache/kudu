@@ -90,11 +90,15 @@ add_custom_command(
     ${IR_FLAGS}
     ${IR_SOURCE}
     -o ${IR_OUTPUT}
-  DEPENDS ${IR_SOURCE}
+  # We require an explicit dependency on kudu_common_proto because
+  # the IR source file relies on certain headers from kudu/common,
+  # which in turn indirectly rely on kudu/common/common.pb.h.
+  # IMPLICIT_DEPENDS performs a static file scan and thus isn't able
+  # to resolve common.pb.h against the appropriate protoc-based cmake
+  # target, a step that is necessary to dynamically generate the header file.
+  DEPENDS ${IR_SOURCE} kudu_common_proto
   IMPLICIT_DEPENDS ${IR_SOURCE})
-# Some versions of cmake don't pick up the implicit dependency on
-# kudu/common/common.pb.h, so it needs to be added manually.
-add_custom_target(create-ir DEPENDS kudu_common_proto ${IR_OUTPUT})
+add_custom_target(create-ir DEPENDS ${IR_OUTPUT})
 add_dependencies(codegen create-ir)
 
 ## Define the location of the .ll file
