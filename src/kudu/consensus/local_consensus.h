@@ -37,8 +37,7 @@ class LocalConsensus : public Consensus {
                       log::Log* log) OVERRIDE;
 
   virtual Status Start(const metadata::QuorumPB& initial_quorum,
-                       const ConsensusBootstrapInfo& bootstrap_info,
-                       gscoped_ptr<metadata::QuorumPB>* running_quorum) OVERRIDE;
+                       const OpId& last_committed_op_id) OVERRIDE;
 
   virtual Status Replicate(ConsensusRound* context) OVERRIDE;
 
@@ -88,6 +87,7 @@ class LocalConsensus : public Consensus {
   mutable simple_spinlock op_id_lock_;
 
   State state_;
+  ReplicaTransactionFactory* txn_factory_;
   log::Log* log_;
   scoped_refptr<server::Clock> clock_;
 

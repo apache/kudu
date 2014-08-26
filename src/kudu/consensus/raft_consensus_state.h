@@ -65,18 +65,20 @@ class ReplicaState {
   ReplicaState(const ConsensusOptions& options,
                ThreadPool* callback_exec_pool);
 
+  // TODO Merge into the ctor. see identical comment in RaftConsensus.
   Status Init(const std::string& peer_uuid,
-              ReplicaTransactionFactory* txn_factory,
-              uint64_t current_term,
-              uint64_t current_index);
+              ReplicaTransactionFactory* txn_factory);
+
+  Status StartUnlocked(const OpId& initial_id, const metadata::QuorumPB& initial_quorum);
 
   // Locks a replica down until the critical section of an append completes,
   // i.e. until the replicate message has been assigned an id and placed in
   // the log queue.
   // This also checks that the replica is in the appropriate
-  // state (role) to be updated and returns Status::IllegalState if that
-  // is not the case.
-  Status LockForReplicate(UniqueLock* lock) WARN_UNUSED_RESULT;
+  // state (role) to replicate the provided operation, that the operation
+  // contains a replicate message and is of the appropriate type, and returns
+  // Status::IllegalState if that is not the case.
+  Status LockForReplicate(UniqueLock* lock, const OperationPB& op) WARN_UNUSED_RESULT;
 
   // Locks a replica down until the critical section of a commit completes.
   // This succeeds for all states since a replica which has initiated
@@ -111,11 +113,13 @@ class ReplicaState {
   // is legal.
   Status ChangeConfigUnlocked(const metadata::QuorumPB& new_quorum);
 
-  Status SetChangeConfigSuccessfulUnlocked();
+  Status SetConfigDoneUnlocked();
 
   metadata::QuorumPeerPB::Role GetCurrentRoleUnlocked() const;
 
   const metadata::QuorumPB& GetCurrentConfigUnlocked() const;
+
+  ReplicaTransactionFactory* GetReplicaTransactionFactoryUnlocked() const;
 
   void IncrementConfigSeqNoUnlocked();
 
@@ -134,6 +138,9 @@ class ReplicaState {
   const ConsensusOptions& GetOptions() const;
 
   const std::string& GetLeaderUuidUnlocked() const;
+
+  // Returns the term set in the last config change round.
+  const uint64_t GetCurrentTermUnlocked() const;
 
   // Enqueues a Prepare() in the ReplicaTransactionFactory.
   Status EnqueuePrepareUnlocked(gscoped_ptr<ConsensusRound> context);

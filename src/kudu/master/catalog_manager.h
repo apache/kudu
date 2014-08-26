@@ -52,8 +52,9 @@ struct PersistentTabletInfo {
     return pb.state() == SysTabletsEntryPB::kTabletStateReplaced;
   }
 
-  // Returns true if the specified 'ts_desc' is the leader of the quorum
-  bool IsQuorumLeader(const TSDescriptor* ts_desc) const;
+  // Returns true if the specified 'ts_desc' is the leader or candidate
+  // of the quorum.
+  bool IsQuorumLeaderOrCandidate(const TSDescriptor* ts_desc) const;
 
   // Helper to set the state of the tablet with a custom message.
   // Requires that the caller has prepared this object for write.

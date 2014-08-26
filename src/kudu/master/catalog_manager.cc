@@ -1060,7 +1060,7 @@ Status CatalogManager::HandleReportedTablet(TSDescriptor* ts_desc,
   // TODO: The tablet should accept a leader report from someone who was not
   // assigned as leader once we have leader election implemented.
   // The role is returned in report.role().
-  if (tablet_lock.data().IsQuorumLeader(ts_desc)) {
+  if (tablet_lock.data().IsQuorumLeaderOrCandidate(ts_desc)) {
     if (report.has_schema_version() && !alter_requested) {
       HandleTabletSchemaVersionReport(tablet.get(), report.schema_version());
     }
@@ -1839,7 +1839,13 @@ void CatalogManager::SelectReplicas(const TSDescriptorVector& ts_descs,
   // Super hack for clusters where ts_descs.size() is a multiple of nreplicas, gives
   // us perfect distribution for the demo.
   QuorumPeerPB *leader = quorum->mutable_peers((index / ts_descs.size()) % nreplicas);
-  leader->set_role(QuorumPeerPB::LEADER);
+  // The master hints the node it wants as leader by making it start as a candidate.
+  // This makes the quorum skip leader election (the initial candidate has implicit votes)
+  // but the candidate still needs to successfully complete a config change to effectively
+  // become leader.
+  // TODO reconsider this when we have leader election. Todd suggests that we might
+  // want to run leader election all the time.
+  leader->set_role(QuorumPeerPB::CANDIDATE);
 }
 
 bool CatalogManager::BuildLocationsForTablet(const scoped_refptr<TabletInfo>& tablet,
@@ -2088,9 +2094,9 @@ bool TabletInfo::set_reported_schema_version(uint32_t version) {
   return false;
 }
 
-bool PersistentTabletInfo::IsQuorumLeader(const TSDescriptor* ts_desc) const {
+bool PersistentTabletInfo::IsQuorumLeaderOrCandidate(const TSDescriptor* ts_desc) const {
   BOOST_FOREACH(const QuorumPeerPB& peer, pb.quorum().peers()) {
-    if (peer.role() == QuorumPeerPB::LEADER &&
+    if ((peer.role() == QuorumPeerPB::LEADER || peer.role() == QuorumPeerPB::CANDIDATE) &&
         peer.permanent_uuid() == ts_desc->permanent_uuid()) {
       return true;
     }

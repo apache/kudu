@@ -1423,6 +1423,8 @@ TEST_F(TabletServerTest, TestChangeConfiguration) {
   QuorumPB* new_quorum = req.mutable_new_config();
   new_quorum->set_local(true);
   new_quorum->set_seqno(2);
+  QuorumPeerPB* peer = new_quorum->add_peers();
+  peer->set_permanent_uuid(mini_server_->server()->instance_pb().permanent_uuid());
 
   {
     SCOPED_TRACE(req.DebugString());

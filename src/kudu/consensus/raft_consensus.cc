@@ -7,6 +7,7 @@
 #include <iostream>
 #include <string>
 
+#include "kudu/common/wire_protocol.h"
 #include "kudu/consensus/log.h"
 #include "kudu/consensus/consensus_peers.h"
 #include "kudu/consensus/raft_consensus_state.h"
@@ -55,46 +56,109 @@ Status RaftConsensus::Init(const metadata::QuorumPeerPB& peer,
                            log::Log* log) {
   log_ = log;
   clock_ = clock;
-  OpId initial = GetLastOpIdFromLog();
   RETURN_NOT_OK(state_->Init(peer.permanent_uuid(),
-                             txn_factory,
-                             initial.term(),
-                             initial.index()));
+                             txn_factory));
   LOG_WITH_PREFIX_LK(INFO) << "Created Raft consensus for peer " << state_->ToString();
   return Status::OK();
 }
 
 Status RaftConsensus::Start(const metadata::QuorumPB& initial_quorum,
-                            const ConsensusBootstrapInfo& bootstrap_info,
-                            gscoped_ptr<metadata::QuorumPB>* running_quorum) {
+                            const OpId& last_committed_op_id) {
   RETURN_NOT_OK(ExecuteHook(PRE_START));
-
-  RETURN_NOT_OK_PREPEND(ChangeConfig(initial_quorum),
-                        "Failed to change to initial quorum config");
-
+  // TODO create a specialized method that does appropriate state
+  // checking for Start().
   ReplicaState::UniqueLock lock;
-  CHECK_OK(state_->LockForRead(&lock));
-  LOG_WITH_PREFIX(INFO) << "Started. Quorum: "
-      << state_->GetCurrentConfigUnlocked().ShortDebugString();
-  running_quorum->reset(new QuorumPB(state_->GetCurrentConfigUnlocked()));
+  RETURN_NOT_OK(state_->LockForConfigChange(&lock));
+
+  // TODO record the initial role assignment in the quorum metadata and record
+  // a vote for whoever was initially appointed leader by the master if this is
+  // the first quorum i.e. if the sequence number is equal to 0.
+  // This is important as to serialize the first leader assignment as any other
+  // future leader appointment.
+
+  RETURN_NOT_OK(state_->StartUnlocked(last_committed_op_id, initial_quorum));
+  if (state_->GetCurrentRoleUnlocked() == QuorumPeerPB::CANDIDATE ||
+      state_->GetCurrentRoleUnlocked() == QuorumPeerPB::LEADER) {
+    RETURN_NOT_OK(BecomeLeader());
+  } else {
+    RETURN_NOT_OK(BecomeReplica());
+  }
+
   RETURN_NOT_OK(ExecuteHook(POST_START));
   return Status::OK();
 }
 
-Status RaftConsensus::ChangeConfig(QuorumPB new_config) {
-  RETURN_NOT_OK(ExecuteHook(PRE_CONFIG_CHANGE));
+Status RaftConsensus::BecomeLeader() {
+  LOG_WITH_PREFIX(INFO) << "Becoming Leader";
+  // Get the current quorum and:
+  // - mark ourselves leader
+  // - increase the configuration sequence number
+  QuorumPB old_quorum = state_->GetCurrentConfigUnlocked();
+  gscoped_ptr<QuorumPB> new_quorum(new QuorumPB(old_quorum));
+  new_quorum->mutable_peers()->Clear();
+  new_quorum->set_seqno(old_quorum.seqno() + 1);
 
-  ReplicaState::UniqueLock lock;
-  CHECK_OK(state_->LockForConfigChange(&lock));
-  QuorumPB old_config = state_->GetCurrentConfigUnlocked();
-  RETURN_NOT_OK(state_->ChangeConfigUnlocked(new_config));
-  if (state_->GetCurrentRoleUnlocked() == QuorumPeerPB::LEADER) {
-    state_->IncrementConfigSeqNoUnlocked();
-    RETURN_NOT_OK(CreateOrUpdatePeersUnlocked());
-    RETURN_NOT_OK(PushConfigurationToPeersUnlocked());
+  // Change the role of the previous leader/candidate to follower
+  // and our own role to leader
+  BOOST_FOREACH(const QuorumPeerPB& old_peer, old_quorum.peers()) {
+    QuorumPeerPB* new_peer = new_quorum->add_peers();
+    new_peer->CopyFrom(old_peer);
+
+    if (new_peer->permanent_uuid() != state_->GetPeerUuid() &&
+        (new_peer->role() == QuorumPeerPB::LEADER || new_peer->role() == QuorumPeerPB::CANDIDATE)) {
+      new_peer->set_role(QuorumPeerPB::FOLLOWER);
+    }
+    if (new_peer->permanent_uuid() == state_->GetPeerUuid()) {
+      new_peer->set_role(QuorumPeerPB::LEADER);
+    }
+
   }
-  state_->SetChangeConfigSuccessfulUnlocked();
-  RETURN_NOT_OK(ExecuteHook(POST_CONFIG_CHANGE));
+
+  RETURN_NOT_OK(state_->ChangeConfigUnlocked(*new_quorum));
+  // Create the peers so that we're able to replicate messages remotely and locally
+  RETURN_NOT_OK(CreateOrUpdatePeersUnlocked());
+
+  // Initiate a leader side config change transaction. We need it to be leader
+  // side so that it acquires a timestamp and generally behaves like a leader
+  // transaction, e.g. it places the request in the replication queue and commits
+  // by itself, vs we having to manage all of that were we to use a replica side
+  // transaction.
+  RETURN_NOT_OK(state_->GetReplicaTransactionFactoryUnlocked()->SubmitConsensusChangeConfig(
+      new_quorum.Pass(),
+      Bind(&RaftConsensus::BecomeLeaderResult, Unretained(this))));
+
+  // After the change config transaction is queued, independently of whether it was successful
+  // we can become leader and start accepting writes, that is the term can officially start.
+  // This because any future writes will only ever commit if the change config transaction
+  // commits. This is advantageous in the sense that we don't have to block here waiting for
+  // something to be replicated to be correct, even if this peer starts accepting writes
+  // from this moment forward those will only ever be reported as committed (or applied for
+  // that matter) if the initial change config transaction succeeds.
+
+  // TODO we need to make sure that this transaction is the first transaction accepted, right
+  // now that is being assured by the fact that the prepare queue is single threaded, but if
+  // we ever move to multi-threaded prepare we need to make sure we call replicate on this first.
+  RETURN_NOT_OK(state_->SetConfigDoneUnlocked());
+
+  return Status::OK();
+}
+
+void RaftConsensus::BecomeLeaderResult(const Status& status) {
+  ReplicaState::UniqueLock lock;
+  CHECK_OK(state_->LockForRead(&lock));
+  CHECK(status.ok()) << state_->LogPrefixUnlocked()
+      << "Change config transaction failure unsupported. Status: " << status.ToString();
+  LOG(INFO) << "Quorum has accepted the change config transaction. New Effective quorum: "
+      << state_->GetCurrentConfigUnlocked().ShortDebugString();
+}
+
+Status RaftConsensus::BecomeReplica() {
+  // TODO start the failure detector.
+  LOG_WITH_PREFIX(INFO) << "Becoming Follower/Learner";
+  RETURN_NOT_OK(state_->SetConfigDoneUnlocked());
+  // clear the consensus replication queue evicting all state. We can reuse the
+  // queue should we become leader.
+  queue_.Clear();
   return Status::OK();
 }
 
@@ -117,7 +181,7 @@ Status RaftConsensus::CreateOrUpdatePeersUnlocked() {
                                        &queue_,
                                        log_,
                                        initial,
-                                       &local_peer))
+                                       &local_peer));
       peers_.insert(pair<string, Peer*>(peer_pb.permanent_uuid(), local_peer.release()));
     } else {
       VLOG_WITH_PREFIX(1) << "Adding remote peer. Peer: " << peer_pb.ShortDebugString();
@@ -131,7 +195,7 @@ Status RaftConsensus::CreateOrUpdatePeersUnlocked() {
                                         state_->GetPeerUuid(),
                                         &queue_,
                                         peer_proxy.Pass(),
-                                        &remote_peer))
+                                        &remote_peer));
       peers_.insert(pair<string, Peer*>(peer_pb.permanent_uuid(), remote_peer.release()));
     }
   }
@@ -142,83 +206,23 @@ Status RaftConsensus::CreateOrUpdatePeersUnlocked() {
       peers_.erase(iter);
     }
   }
+
   return Status::OK();
 }
 
-Status RaftConsensus::PushConfigurationToPeersUnlocked() {
-
-  OpId replicate_op_id;
-  state_->NewIdUnlocked(&replicate_op_id);
-  gscoped_ptr<OperationPB> replicate_op(new OperationPB());
-  replicate_op->mutable_id()->CopyFrom(replicate_op_id);
-  ReplicateMsg* replicate = replicate_op->mutable_replicate();
-  replicate->set_op_type(CHANGE_CONFIG_OP);
-  ChangeConfigRequestPB* cc_request = replicate->mutable_change_config_request();
-  cc_request->set_tablet_id(state_->GetOptions().tablet_id);
-  QuorumPB* new_config = cc_request->mutable_new_config();
-  new_config->CopyFrom(state_->GetCurrentConfigUnlocked());
-
-  const string log_prefix = Substitute("$0ChangeConfiguration(op=$1, seqno=$2)",
-                                       state_->LogPrefixUnlocked(),
-                                       replicate_op_id.ShortDebugString(),
-                                       new_config->seqno());
-  LOG(INFO) << log_prefix << ": replicating to peers...";
-  scoped_refptr<OperationStatusTracker> repl_status(
-      new MajorityOpStatusTracker(replicate_op.Pass(),
-                                  state_->GetCurrentVotingPeersUnlocked(),
-                                  state_->GetCurrentMajorityUnlocked(),
-                                  state_->GetAllPeersCountUnlocked()));
-  RETURN_NOT_OK_PREPEND(queue_.AppendOperation(repl_status),
-                        "Could not append change config replication req. to the queue");
-
-  SignalRequestToPeers();
-  TRACE("Sent ChangeConfig REPLICATE to peers. Waiting on response.");
-  repl_status->Wait();
-  TRACE("ChangeConfig replicated");
-
-  LOG(INFO) << log_prefix << ": committing...";
-
-  gscoped_ptr<OperationPB> commit_op(new OperationPB);
-  state_->NewIdUnlocked(commit_op->mutable_id());
-  CommitMsg* commit_msg = commit_op->mutable_commit();
-  commit_msg->set_op_type(CHANGE_CONFIG_OP);
-  commit_msg->mutable_commited_op_id()->CopyFrom(replicate_op_id);
-  commit_msg->mutable_change_config_response();
-  commit_msg->set_timestamp(clock_->Now().ToUint64());
-
-  scoped_refptr<OperationStatusTracker> commit_status(
-      new MajorityOpStatusTracker(commit_op.Pass(),
-                                  state_->GetCurrentVotingPeersUnlocked(),
-                                  state_->GetCurrentMajorityUnlocked(),
-                                  state_->GetAllPeersCountUnlocked()));
-
-  RETURN_NOT_OK_PREPEND(queue_.AppendOperation(commit_status),
-                        "Could not append change config commit req. to the queue");
-
-  SignalRequestToPeers();
-  TRACE("Sent ChangeConfig COMMIT to peers. Waiting on response.");
-  // Wait for the commit to complete
-  commit_status->Wait();
-  TRACE("Committed ChangeConfig");
-
-  LOG(INFO) << log_prefix << ": a majority of peers have accepted the new configuration. "
-            << "Proceeding.";
-  return Status::OK();
-}
-
-Status RaftConsensus::Replicate(ConsensusRound* context) {
+Status RaftConsensus::Replicate(ConsensusRound* round) {
 
   RETURN_NOT_OK(ExecuteHook(PRE_REPLICATE));
 
   {
     ReplicaState::UniqueLock lock;
-    RETURN_NOT_OK(state_->LockForReplicate(&lock));
+    RETURN_NOT_OK(state_->LockForReplicate(&lock, *round->replicate_op()));
 
-    state_->NewIdUnlocked(context->replicate_op()->mutable_id());
+    state_->NewIdUnlocked(round->replicate_op()->mutable_id());
 
     // the original instance of the replicate msg is owned by the consensus context
     // so we create a copy for the queue.
-    gscoped_ptr<OperationPB> queue_op(new OperationPB(*context->replicate_op()));
+    gscoped_ptr<OperationPB> queue_op(new OperationPB(*round->replicate_op()));
 
     scoped_refptr<OperationStatusTracker> status(
         new MajorityOpStatusTracker(queue_op.Pass(),
@@ -226,7 +230,7 @@ Status RaftConsensus::Replicate(ConsensusRound* context) {
                                     state_->GetCurrentMajorityUnlocked(),
                                     state_->GetAllPeersCountUnlocked(),
                                     callback_pool_.get(),
-                                    context->replicate_callback()));
+                                    round->replicate_callback()));
 
     Status s = queue_.AppendOperation(status);
     // Handle Status::ServiceUnavailable(), which means the queue is full.
@@ -265,9 +269,11 @@ Status RaftConsensus::Commit(ConsensusRound* context) {
   ReplicaState::UniqueLock lock;
   RETURN_NOT_OK(state_->LockForCommit(&lock));
   QuorumPeerPB::Role role = state_->GetCurrentRoleUnlocked();
-  if (role == QuorumPeerPB::LEADER) {
+  if (role == QuorumPeerPB::LEADER || role == QuorumPeerPB::CANDIDATE) {
     RETURN_NOT_OK(LeaderCommitUnlocked(context, context->commit_op()));
   } else {
+    DCHECK(role == QuorumPeerPB::FOLLOWER || role == QuorumPeerPB::LEARNER)
+        << "Unexpected role: " << QuorumPeerPB::Role_Name(role);
     RETURN_NOT_OK(ReplicaCommitUnlocked(context, context->commit_op()));
   }
   RETURN_NOT_OK(ExecuteHook(POST_COMMIT));
@@ -355,7 +361,7 @@ Status RaftConsensus::ReplicaCommitUnlocked(ConsensusRound* context,
   log::CreateBatchFromAllocatedOperations(&commit_op, 1, &entry_batch);
 
   LogEntryBatch* reserved_entry_batch;
-  CHECK_OK(log_->Reserve(entry_batch.Pass(), &reserved_entry_batch));
+  RETURN_NOT_OK(log_->Reserve(entry_batch.Pass(), &reserved_entry_batch));
   // TODO: replace the FutureCallbacks in ConsensusContext with StatusCallbacks
   //
   // AsyncAppend takes ownership of 'ftscb'.
@@ -390,6 +396,7 @@ Status RaftConsensus::Update(const ConsensusRequestPB* request,
 
   if (PREDICT_FALSE(VLOG_IS_ON(1))) {
     if (request->ops_size() == 0) {
+
       VLOG(1) << state_->LogPrefix() << "Replica replied to status only request. Replica: "
               << state_->ToString() << " Status: " << status->ShortDebugString();
     }
@@ -479,7 +486,7 @@ Status RaftConsensus::UpdateReplica(const ConsensusRequestPB* request,
   // TODO - These failure scenarios need to be exercised in an unit
   //        test. Moreover we need to add more fault injection spots (well that
   //        and actually use the) for each of these steps.
-  //        This will be done in a follow up patch (filed KUDU-502 for that)
+  //        This will be done in a follow up patch.
   int successfully_triggered_prepares = 0;
   {
     ReplicaState::UniqueLock lock;

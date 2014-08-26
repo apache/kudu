@@ -105,7 +105,8 @@ Status SysTable::CreateNew(FsManager *fs_manager) {
 }
 
 void SysTable::SysTableStateChanged(TabletPeer* tablet_peer) {
-  LOG(FATAL) << "TODO: state changes not handled for system tables";
+  LOG(INFO) << "SysTable state changed. New quorum config: "
+      << tablet_peer->Quorum().ShortDebugString();
 }
 
 Status SysTable::SetupTablet(const scoped_refptr<metadata::TabletMetadata>& metadata,
@@ -147,9 +148,39 @@ Status SysTable::SetupTablet(const scoped_refptr<metadata::TabletMetadata>& meta
   RETURN_NOT_OK_PREPEND(tablet_peer_->Start(consensus_info),
                         "Failed to Start() TabletPeer");
 
+  // We need to wait for the tablet to become online before proceeding.
+  // We just try forever since we can't do anything with the systable unless it is
+  // running, we just make sure to make it clear to the user the reason of the
+  // wait.
+  Status status = WaitUntilRunning();
+  if (!status.ok()) {
+    LOG(FATAL) << "Illegal State while waiting for the tablet to become online: "
+        << status.ToString();
+  }
+
   shared_ptr<Schema> schema(tablet->schema());
   schema_ = SchemaBuilder(*schema.get()).BuildWithoutIds();
   key_schema_ = schema_.CreateKeyProjection();
+  return Status::OK();
+}
+
+Status SysTable::WaitUntilRunning() {
+  int seconds_waited = 0;
+  while (true) {
+    Status status = tablet_peer_->WaitUntilRunning(MonoDelta::FromSeconds(1));
+    seconds_waited++;
+    if (status.ok()) {
+      LOG(INFO) << "SysTable tablet configured and running, proceeding with master startup.";
+      break;
+    }
+    if (status.IsTimedOut()) {
+      LOG(WARNING) << "SysTable tablet not online yet. Have been trying for "
+          << seconds_waited << " seconds.";
+      continue;
+    }
+    // if the status is not OK or TimedOut return it.
+    return status;
+  }
   return Status::OK();
 }
 

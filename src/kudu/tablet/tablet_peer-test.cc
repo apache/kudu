@@ -71,7 +71,7 @@ class TabletPeerTest : public KuduTabletTest {
 
     QuorumPeerPB quorum_peer;
     quorum_peer.set_permanent_uuid("test1");
-    quorum_peer.set_role(QuorumPeerPB::LEADER);
+    quorum_peer.set_role(QuorumPeerPB::CANDIDATE);
 
     metric_ctx_.reset(new MetricContext(&metric_registry_, CURRENT_TEST_NAME()));
 
@@ -81,7 +81,13 @@ class TabletPeerTest : public KuduTabletTest {
                      quorum_peer,
                      leader_apply_executor_.get(),
                      replica_apply_executor_.get(),
-                     NULL));
+                     boost::bind(&TabletPeerTest::TabletPeerStateChangedCallback, this, _1)));
+
+    QuorumPB quorum;
+    quorum.set_local(true);
+    quorum.set_seqno(0);
+    quorum.add_peers()->CopyFrom(quorum_peer);
+    tablet()->metadata()->SetQuorum(quorum);
 
     gscoped_ptr<Log> log;
     ASSERT_STATUS_OK(Log::Open(LogOptions(), fs_manager(), tablet()->tablet_id(),
@@ -93,11 +99,19 @@ class TabletPeerTest : public KuduTabletTest {
     // This flag is restored by the FlagSaver member at destruction time.
     FLAGS_enable_log_gc = false;
 
-    QuorumPB quorum;
-    quorum.set_local(true);
-    quorum.set_seqno(0);
     consensus::ConsensusBootstrapInfo boot_info;
     ASSERT_STATUS_OK(tablet_peer_->Start(boot_info));
+
+    ASSERT_STATUS_OK(tablet_peer_->WaitUntilRunning(MonoDelta::FromSeconds(10)));
+
+    // As we execute a change config txn on tablet peer start we need to
+    // also wait for the transaction to be cleaned up so that we don't
+    // have any explicit or implicit anchors when tests start.
+    tablet_peer_->txn_tracker_.WaitForAllToFinish();
+  }
+
+  void TabletPeerStateChangedCallback(TabletPeer* tablet_peer) {
+    LOG(INFO) << "Tablet peer state changed.";
   }
 
   virtual void TearDown() OVERRIDE {
@@ -180,13 +194,18 @@ class TabletPeerTest : public KuduTabletTest {
   }
 
   void AssertNoLogAnchors() {
+    // Make sure that there are no registered anchors in the registry
     CHECK_EQ(0, tablet()->opid_anchor_registry()->GetAnchorCountForTests());
     OpId earliest_opid;
+    // And that there are no in-flight transactions (which are implicit
+    // anchors) by comparing the TabletPeer's earliest needed OpId and the last
+    // entry in the log; if they match there is nothing in flight.
     tablet_peer_->GetEarliestNeededOpId(&earliest_opid);
     OpId last_log_opid;
     CHECK_OK(tablet_peer_->log_->GetLastEntryOpId(&last_log_opid));
     CHECK(OpIdEquals(earliest_opid, last_log_opid))
-      << "Found unexpected anchor: " << earliest_opid.ShortDebugString();
+      << "Found unexpected anchor: " << earliest_opid.ShortDebugString()
+      << " Last log entry: " << last_log_opid.ShortDebugString();
   }
 
   // Assert that the Log GC() anchor is earlier than the latest OpId in the Log.

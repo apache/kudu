@@ -36,75 +36,37 @@ Status LocalConsensus::Init(const QuorumPeerPB& peer,
   CHECK_EQ(state_, kNotInitialized);
   peer_ = peer;
   clock_ = clock;
+  txn_factory_ = txn_factory;
   log_ = log;
   state_ = kInitializing;
-
-  // Determine initial OpId
-  // TODO: do this in Start() using the ConsensusBootstrapInfo
-  OpId initial;
-  Status s = log->GetLastEntryOpId(&initial);
-  if (s.ok()) {
-    // We are continuing after previously running.
-  } else if (s.IsNotFound()) {
-    // This is our very first startup! Sally forth!
-    initial = MinimumOpId();
-  } else {
-    LOG(FATAL) << "Unexpected status from Log::GetLastEntryOpId(): "
-               << s.ToString();
-  }
-  next_op_id_index_ = initial.index() + 1;
-
   return Status::OK();
 }
 
 Status LocalConsensus::Start(const metadata::QuorumPB& initial_quorum,
-                             const ConsensusBootstrapInfo& bootstrap_info,
-                             gscoped_ptr<metadata::QuorumPB>* running_quorum) {
+                             const OpId& last_committed_op_id) {
   CHECK_EQ(state_, kInitializing);
 
   CHECK(initial_quorum.local()) << "Local consensus must be passed a local quorum";
-  CHECK_LE(initial_quorum.peers_size(), 1);
+  CHECK_EQ(initial_quorum.peers_size(), 1);
 
-  // Because this is the local consensus we always push the configuration,
-  // in the dist. impl. we only try and push if we're leader.
-  gscoped_ptr<ReplicateMsg> replicate_msg(new ReplicateMsg);
-  replicate_msg->set_op_type(CHANGE_CONFIG_OP);
-  ChangeConfigRequestPB* req = replicate_msg->mutable_change_config_request();
+  next_op_id_index_ = last_committed_op_id.index() + 1;
 
-  // FIXME: Seems like a hack to get the current tablet ID from the Log.
-  req->set_tablet_id(log_->tablet_id());
-  QuorumPB* new_config = req->mutable_new_config();
-  new_config->CopyFrom(initial_quorum);
-  new_config->set_seqno(initial_quorum.seqno() + 1);
-
-  shared_ptr<LatchCallback> replicate_clbk(new LatchCallback);
-  shared_ptr<LatchCallback> commit_clbk(new LatchCallback);
-  state_ = kConfiguring;
-
-  TRACE("Replicating initial config");
-  gscoped_ptr<ConsensusRound> round(NewRound(replicate_msg.Pass(),
-                                               replicate_clbk,
-                                               commit_clbk));
-  RETURN_NOT_OK(Replicate(round.get()));
-  RETURN_NOT_OK(replicate_clbk->Wait());
-
-  TRACE("Committing local config");
-  ChangeConfigResponsePB resp;
-  gscoped_ptr<CommitMsg> commit_msg(new CommitMsg);
-  commit_msg->set_op_type(CHANGE_CONFIG_OP);
-  commit_msg->mutable_commited_op_id()->CopyFrom(round->replicate_op()->id());
-  commit_msg->mutable_change_config_response()->CopyFrom(resp);
-  commit_msg->set_timestamp(clock_->Now().ToUint64());
-  RETURN_NOT_OK(round->Commit(commit_msg.Pass()));
-
-
-  RETURN_NOT_OK(commit_clbk->Wait());
-  TRACE("Consensus started");
-
-  running_quorum->reset(req->release_new_config());
+  gscoped_ptr<QuorumPB> new_quorum(new QuorumPB);
+  new_quorum->CopyFrom(initial_quorum);
+  new_quorum->mutable_peers(0)->set_role(QuorumPeerPB::LEADER);
+  new_quorum->set_seqno(initial_quorum.seqno() + 1);
 
   quorum_ = initial_quorum;
   state_ = kRunning;
+
+  NullCallback* null_clbk = new NullCallback;
+
+  // Initiate a config change transaction, as in the distributed case.
+  RETURN_NOT_OK(txn_factory_->SubmitConsensusChangeConfig(
+      new_quorum.Pass(),
+      null_clbk->AsStatusCallback()));
+
+  TRACE("Consensus started");
   return Status::OK();
 }
 
@@ -136,7 +98,6 @@ Status LocalConsensus::Replicate(ConsensusRound* context) {
   // is triggered.
   RETURN_NOT_OK(log_->AsyncAppend(reserved_entry_batch,
                                   context->replicate_callback()->AsStatusCallback()));
-
   return Status::OK();
 }
 

@@ -319,6 +319,8 @@ class TabletServerTest : public KuduTest {
     RETURN_NOT_OK(CreateClientProxies(mini_server_->bound_rpc_addr(),
                                       &proxy_, &admin_proxy_, &consensus_proxy_));
 
+    // Opening a tablet is async, we wait here instead of having to handle errors later.
+    RETURN_NOT_OK(WaitForTabletRunning(kTabletId));
     return Status::OK();
 
   }

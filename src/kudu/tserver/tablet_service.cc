@@ -430,15 +430,21 @@ void ConsensusServiceImpl::UpdateConsensus(const ConsensusRequestPB* req,
 
   scoped_refptr<TabletPeer> tablet_peer;
 
-  if (!LookupTabletOrRespond(tablet_manager_,
-                             req->tablet_id(), &tablet_peer, resp, context)) return;
+  // Lookup the tablet but don't check the state.
+  // We allow CONFIGURING as well as RUNNING.
+  if (PREDICT_FALSE(!tablet_manager_->GetTabletPeer(req->tablet_id(), &tablet_peer).ok())) {
+    SetupErrorAndRespond(resp->mutable_error(),
+                         Status::NotFound("Tablet not found"),
+                         TabletServerErrorPB::TABLET_NOT_FOUND, context);
+    return;
+  }
 
   DCHECK(tablet_peer) << "Null tablet peer";
 
-  // Can't answer update requests if peer is not RUNNING
-  if (tablet_peer->state() != metadata::RUNNING) {
+  // Can't answer update requests if peer is not RUNNING or CONFIGURING
+  if (tablet_peer->state() != metadata::RUNNING && tablet_peer->state() != metadata::CONFIGURING) {
     SetupErrorAndRespond(resp->mutable_error(),
-                         Status::ServiceUnavailable("Tablet Peer not in RUNNING state"),
+                         Status::ServiceUnavailable("Tablet Peer not in RUNNING/CONFIGURING state"),
                          TabletServerErrorPB::TABLET_NOT_RUNNING, context);
     return;
   }

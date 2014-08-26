@@ -118,6 +118,15 @@ class TabletPeer : public RefCountedThreadSafe<TabletPeer>,
   virtual Status StartReplicaTransaction(
       gscoped_ptr<consensus::ConsensusRound> round) OVERRIDE;
 
+  // Used by consensus to initiate a leader side configuration change transaction
+  // as part of the ReplicaTransactionFactory interface.
+  // Consensus calls this method whenever the local peer was elected leader so
+  // that the configuration change runs as a leader side transaction, uses the
+  // appropriate queues, obtains locks, is replicated and is assigned a timestamp,
+  // as usual.
+  Status SubmitConsensusChangeConfig(gscoped_ptr<metadata::QuorumPB> quorum,
+                                     const StatusCallback& callback) OVERRIDE;
+
   consensus::Consensus* consensus() { return consensus_.get(); }
 
   Tablet* tablet() const {
@@ -211,6 +220,9 @@ class TabletPeer : public RefCountedThreadSafe<TabletPeer>,
   FRIEND_TEST(TabletPeerTest, TestMRSAnchorPreventsLogGC);
   FRIEND_TEST(TabletPeerTest, TestDMSAnchorPreventsLogGC);
   FRIEND_TEST(TabletPeerTest, TestActiveTransactionPreventsLogGC);
+
+  static bool IsOpTypeAllowedInState(consensus::OperationType type,
+                                     metadata::TabletStatePB state);
 
   ~TabletPeer();
 

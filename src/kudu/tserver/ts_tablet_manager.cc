@@ -187,7 +187,7 @@ Status TSTabletManager::CreateNewTablet(const string& table_id,
     CHECK_EQ(1, quorum.peers_size());
     CHECK_EQ(server_->instance_pb().permanent_uuid(),
              quorum.peers(0).permanent_uuid());
-    CHECK_EQ(QuorumPeerPB::LEADER, quorum.peers(0).role());
+    CHECK_EQ(QuorumPeerPB::CANDIDATE, quorum.peers(0).role());
   }
 
   // Set the initial sequence number to -1, disregarding the passed sequence

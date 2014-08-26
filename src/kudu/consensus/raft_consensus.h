@@ -44,14 +44,16 @@ class RaftConsensus : public Consensus {
                 gscoped_ptr<PeerProxyFactory> peer_proxy_factory,
                 const MetricContext& metric_ctx);
 
+  // TODO merge this into the ctor, as well as the corresponding
+  // method in RaftConsensusState. Neither are actually ever
+  // returning anything other than Status::OK().
   virtual Status Init(const metadata::QuorumPeerPB& peer,
                       const scoped_refptr<server::Clock>& clock,
                       ReplicaTransactionFactory* txn_factory,
                       log::Log* log) OVERRIDE;
 
   virtual Status Start(const metadata::QuorumPB& initial_quorum,
-                       const ConsensusBootstrapInfo& bootstrap_info,
-                       gscoped_ptr<metadata::QuorumPB>* running_quorum) OVERRIDE;
+                       const OpId& last_committed_op_id) OVERRIDE;
 
   virtual Status Replicate(ConsensusRound* context) OVERRIDE;
 
@@ -105,7 +107,20 @@ class RaftConsensus : public Consensus {
   friend class RaftConsensusTest;
   FRIEND_TEST(RaftConsensusTest, TestReplicasHandleCommunicationErrors);
 
-  Status ChangeConfig(metadata::QuorumPB new_config);
+  // Makes the peer become leader.
+  // Assumes a majority of peers voted him leader for this term either
+  // explicitly when an election is triggered, or implicitly by master
+  // appointment.
+  // Returns OK once the change config transaction that has this peer as leader
+  // has been enqueued.
+  Status BecomeLeader();
+
+  // Makes the peer become a replica, i.e. a FOLLOWER or a LEARNER.
+  Status BecomeReplica();
+
+  // Called as a callback with the result of the config change transaction
+  // that establishes this peer as leader.
+  void BecomeLeaderResult(const Status& status);
 
   void ClosePeers();
 

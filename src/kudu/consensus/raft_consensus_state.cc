@@ -45,22 +45,24 @@ ReplicaState::ReplicaState(const ConsensusOptions& options,
 }
 
 Status ReplicaState::Init(const std::string& peer_uuid,
-                          ReplicaTransactionFactory* txn_factory,
-                          uint64_t current_term,
-                          uint64_t current_index) {
+                          ReplicaTransactionFactory* txn_factory) {
   UniqueLock l(update_lock_);
   CHECK_EQ(state_, kNotInitialized);
   peer_uuid_ = peer_uuid;
-  current_term_ = current_term;
-  next_index_ = current_index + 1;
   txn_factory_ = txn_factory;
-  OpId initial;
-  initial.set_term(current_term);
-  initial.set_index(current_index);
-  all_committed_before_id_.CopyFrom(initial);
-  replicated_op_id_.CopyFrom(initial);
-  received_op_id_.CopyFrom(initial);
   state_ = kInitialized;
+  return Status::OK();
+}
+
+Status ReplicaState::StartUnlocked(const OpId& initial_id,
+                                   const metadata::QuorumPB& initial_quorum) {
+  DCHECK(update_lock_.is_locked());
+  current_term_ = initial_id.term();
+  next_index_ = initial_id.index() + 1;
+  all_committed_before_id_.CopyFrom(initial_id);
+  replicated_op_id_.CopyFrom(initial_id);
+  received_op_id_.CopyFrom(initial_id);
+  RETURN_NOT_OK(ChangeConfigUnlocked(initial_quorum));
   return Status::OK();
 }
 
@@ -96,13 +98,25 @@ Status ReplicaState::LockForRead(UniqueLock* lock) {
   return Status::OK();
 }
 
-Status ReplicaState::LockForReplicate(UniqueLock* lock) {
+Status ReplicaState::LockForReplicate(UniqueLock* lock, const OperationPB& op) {
+  CHECK(op.has_replicate()) << "Only replicate operations are allowed. Op: "
+      << op.ShortDebugString();
   UniqueLock l(update_lock_);
   if (PREDICT_FALSE(state_ != kRunning)) {
     return Status::IllegalState("Replica not in running state");
   }
   switch (current_role_) {
     case QuorumPeerPB::LEADER:
+      lock->swap(l);
+      return Status::OK();
+    case QuorumPeerPB::CANDIDATE:
+      if (op.replicate().op_type() != CHANGE_CONFIG_OP) {
+        return Status::IllegalState("Only a change config round can be pushed while CANDIDATE.");
+      }
+      // TODO support true config change. Right now we only allow
+      // replicate calls while CANDIDATE if our term is 0, meaning
+      // we're the first CANDIDATE/LEADER of the quorum.
+      CHECK_EQ(current_term_, 0);
       lock->swap(l);
       return Status::OK();
     default:
@@ -153,7 +167,6 @@ Status ReplicaState::LockForShutdown(UniqueLock* lock) {
   }
   if (state_ != kShuttingDown) {
     state_ = kShuttingDown;
-    current_role_ = QuorumPeerPB::NON_PARTICIPANT;
     in_flight_commits_latch_.Reset(in_flight_commits_.size());
   }
   lock->swap(l);
@@ -164,10 +177,11 @@ Status ReplicaState::Shutdown() {
   CHECK_EQ(state_, kShuttingDown);
   UniqueLock l(update_lock_);
   state_ = kShutDown;
+  current_role_ = QuorumPeerPB::NON_PARTICIPANT;
   return Status::OK();
 }
 
-Status ReplicaState::SetChangeConfigSuccessfulUnlocked() {
+Status ReplicaState::SetConfigDoneUnlocked() {
   DCHECK(update_lock_.is_locked());
   CHECK_EQ(state_, kChangingConfig);
   state_ = kRunning;
@@ -182,6 +196,10 @@ metadata::QuorumPeerPB::Role ReplicaState::GetCurrentRoleUnlocked() const {
 const metadata::QuorumPB& ReplicaState::GetCurrentConfigUnlocked() const {
   DCHECK(update_lock_.is_locked());
   return current_quorum_;
+}
+
+ReplicaTransactionFactory* ReplicaState::GetReplicaTransactionFactoryUnlocked() const {
+  return txn_factory_;
 }
 
 void ReplicaState::IncrementConfigSeqNoUnlocked() {
@@ -217,13 +235,18 @@ const string& ReplicaState::GetLeaderUuidUnlocked() const {
   return leader_uuid_;
 }
 
+const uint64_t ReplicaState::GetCurrentTermUnlocked() const {
+  DCHECK(update_lock_.is_locked());
+  return current_term_;
+}
+
 Status ReplicaState::CancelPendingTransactions() {
   {
     UniqueLock lock(update_lock_);
     if (state_ != kShuttingDown) {
       return Status::IllegalState("Can only wait for pending commits on kShuttingDown state.");
     }
-    LOG_WITH_PREFIX(INFO) << "Aborting pending transactions.";
+    LOG_WITH_PREFIX(INFO) << "Aborting " << pending_txns_.size() << " pending transactions.";
     for (OpIdToRoundMap::iterator iter = pending_txns_.begin();
          iter != pending_txns_.end(); iter++) {
       ConsensusRound* round = (*iter).second;
@@ -249,13 +272,18 @@ Status ReplicaState::WaitForOustandingApplies() {
   return Status::OK();
 }
 
-Status ReplicaState::EnqueuePrepareUnlocked(gscoped_ptr<ConsensusRound> context) {
+Status ReplicaState::EnqueuePrepareUnlocked(gscoped_ptr<ConsensusRound> round) {
   DCHECK(update_lock_.is_locked());
   if (PREDICT_FALSE(state_ != kRunning)) {
-    return Status::IllegalState("Cannot trigger prepare. Replica is not in kRunning state.");
+    // Special case when we're configuring and this is a config change, refuse
+    // everything else.
+    if (round->replicate_op()->replicate().op_type() != CHANGE_CONFIG_OP) {
+      return Status::IllegalState("Cannot trigger prepare. Replica is not in kRunning state.");
+    }
   }
-  InsertOrDie(&pending_txns_, context->replicate_op()->id(), context.get());
-  CHECK_OK(txn_factory_->StartReplicaTransaction(context.Pass()));
+  ConsensusRound* round_ptr = round.get();
+  RETURN_NOT_OK(txn_factory_->StartReplicaTransaction(round.Pass()));
+  InsertOrDie(&pending_txns_, round_ptr->replicate_op()->id(), round_ptr);
   return Status::OK();
 }
 

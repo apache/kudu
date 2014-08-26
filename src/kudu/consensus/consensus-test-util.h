@@ -428,7 +428,7 @@ class TestTransactionFactory : public ReplicaTransactionFactory {
   }
 
   Status SubmitConsensusChangeConfig(gscoped_ptr<metadata::QuorumPB> quorum,
-                                     const StatusCallback& callback) {
+                                     const StatusCallback& callback) OVERRIDE {
     gscoped_ptr<OperationPB> replicate_op(new OperationPB);
     ReplicateMsg* replicate_msg = replicate_op->mutable_replicate();
     replicate_msg->set_op_type(CHANGE_CONFIG_OP);
@@ -464,9 +464,18 @@ class TestTransactionFactory : public ReplicaTransactionFactory {
     CHECK_OK(consensus_->Replicate(round));
   }
 
- void ShutDown() {
-   pool_->Shutdown();
- }
+  void WaitDone() {
+    pool_->Wait();
+  }
+
+  void ShutDown() {
+    WaitDone();
+    pool_->Shutdown();
+  }
+
+  ~TestTransactionFactory() {
+    ShutDown();
+  }
 
  private:
   gscoped_ptr<ThreadPool> pool_;

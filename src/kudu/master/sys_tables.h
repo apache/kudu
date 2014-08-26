@@ -90,6 +90,15 @@ class SysTable {
     return tablet_peer_->tablet_id();
   }
 
+  // Waits for the tablet to reach 'RUNNING' state.
+  //
+  // Contrary to tablet servers, in master we actually wait for the master tablet
+  // to become online synchronously, this allows us to fail fast if something fails
+  // and shouldn't induce the all-workers-blocked-waiting-for-tablets problem
+  // that we've seen in tablet servers since the master only has to boot a few
+  // tablets.
+  Status WaitUntilRunning();
+
   Master* master_;
 };
 

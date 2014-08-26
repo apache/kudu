@@ -29,6 +29,7 @@ namespace tserver {
 using log::Log;
 using log::LogOptions;
 using log::OpIdAnchorRegistry;
+using metadata::QuorumPB;
 using metadata::QuorumPeerPB;
 using rpc::Messenger;
 using rpc::MessengerBuilder;
@@ -73,9 +74,18 @@ class RemoteBootstrapTest : public KuduTabletTest {
     quorum_peer.set_permanent_uuid(fs_manager()->uuid());
     MetricContext metric_ctx(&metric_registry_, CURRENT_TEST_NAME());
 
-    tablet_peer_.reset(new TabletPeer(tablet()->metadata(), quorum_peer,
-                                      leader_apply_executor_.get(), replica_apply_executor_.get(),
-                                      NULL));
+    tablet_peer_.reset(
+        new TabletPeer(tablet()->metadata(), quorum_peer,
+                       leader_apply_executor_.get(), replica_apply_executor_.get(),
+                       boost::bind(&RemoteBootstrapTest::TabletPeerStateChangedCallback,
+                                   this, _1)));
+
+    // TODO similar to code in tablet_peer-test, consider refactor.
+    QuorumPB quorum;
+    quorum.set_local(true);
+    quorum.set_seqno(0);
+    quorum.add_peers()->CopyFrom(quorum_peer);
+    tablet()->metadata()->SetQuorum(quorum);
 
     shared_ptr<Messenger> messenger;
     MessengerBuilder mbuilder(CURRENT_TEST_NAME());
@@ -85,6 +95,13 @@ class RemoteBootstrapTest : public KuduTabletTest {
     CHECK_OK(tablet_peer_->Init(tablet(), clock(), messenger, log.Pass(), metric_ctx));
     consensus::ConsensusBootstrapInfo boot_info;
     CHECK_OK(tablet_peer_->Start(boot_info));
+
+    ASSERT_STATUS_OK(tablet_peer_->WaitUntilRunning(MonoDelta::FromSeconds(2)));
+  }
+
+
+  void TabletPeerStateChangedCallback(TabletPeer* tablet_peer) {
+    LOG(INFO) << "Tablet peer state changed.";
   }
 
   void PopulateTablet() {

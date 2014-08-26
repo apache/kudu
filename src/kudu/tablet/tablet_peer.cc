@@ -161,23 +161,10 @@ Status TabletPeer::Start(const ConsensusBootstrapInfo& bootstrap_info) {
 
   gscoped_ptr<QuorumPB> actual_config;
   TRACE("Starting consensus");
-  RETURN_NOT_OK(consensus_->Start(Quorum(), bootstrap_info, &actual_config));
-  meta_->SetQuorum(*actual_config.get());
 
   QuorumPeerPB::Role my_role = consensus::GetRoleInQuorum(quorum_peer_.permanent_uuid(), Quorum());
   RETURN_NOT_OK(StartPendingTransactions(my_role, bootstrap_info));
-
-  TRACE("Flushing metadata");
-  RETURN_NOT_OK(meta_->Flush());
-
-  {
-    boost::lock_guard<simple_spinlock> lock(lock_);
-    CHECK_EQ(state_, metadata::CONFIGURING);
-    state_ = metadata::RUNNING;
-    tablet_running_latch_.CountDown();
-  }
-
-  RETURN_NOT_OK(StartLogGCTask());
+  RETURN_NOT_OK(consensus_->Start(Quorum(), bootstrap_info.last_commit_id));
 
   return Status::OK();
 }
@@ -212,10 +199,44 @@ const metadata::QuorumPeerPB::Role TabletPeer::role() const {
   }
 }
 
+Status TabletPeer::SubmitConsensusChangeConfig(gscoped_ptr<QuorumPB> quorum,
+                                               const StatusCallback& callback) {
+  consensus::ChangeConfigRequestPB* cc_request = new consensus::ChangeConfigRequestPB();
+  cc_request->mutable_new_config()->CopyFrom(*quorum);
+  cc_request->set_tablet_id(tablet_->metadata()->oid());
+  ChangeConfigTransactionState* state = new ChangeConfigTransactionState(this, cc_request);
+  state->AddToAutoReleasePool(cc_request);
+  state->set_completion_callback(
+      gscoped_ptr<TransactionCompletionCallback>(
+          new StatusTransactionCompletionCallback(callback)));
+  return SubmitChangeConfig(state);
+}
+
 void TabletPeer::ConsensusStateChanged(const QuorumPB& old_quorum, const QuorumPB& new_quorum) {
+  QuorumPeerPB::Role new_role = consensus::GetRoleInQuorum(quorum_peer_.permanent_uuid(),
+                                                           new_quorum);
+
   LOG(INFO) << "Configuration changed for tablet: " << tablet_id_ << " in peer: "
       << quorum_peer_.permanent_uuid() << "\nChanged from:" << old_quorum.ShortDebugString()
       << "\nChanged to:" << new_quorum.ShortDebugString();
+
+  {
+    boost::lock_guard<simple_spinlock> lock(lock_);
+    // If we were configuring and now have a state other than non participant
+    // set the state to running.
+    // TODO this is currently a very simple impl. for the initial state change and should
+    // serve as place holder for things that need to happen at a tablet level
+    // when roles change, such as:
+    // - a change from FOLLOWER to LEADER might require queue coordination
+    // - a change from LEADER to FOLLOWER might require emptying queues
+    // - a change to NON_PARTICIPANT should likely trigger the destruction of
+    //   the tablet.
+    if (state_ == metadata::CONFIGURING && new_role != QuorumPeerPB::NON_PARTICIPANT) {
+      CHECK_OK(StartLogGCTask());
+      state_ = metadata::RUNNING;
+      tablet_running_latch_.CountDown();
+    }
+  }
 
   // NOTE: This callback must be called outside the peer lock or we risk
   // a deadlock.
@@ -312,7 +333,14 @@ Status TabletPeer::SubmitAlterSchema(AlterSchemaTransactionState *state) {
 }
 
 Status TabletPeer::SubmitChangeConfig(ChangeConfigTransactionState *state) {
-  RETURN_NOT_OK(CheckRunning());
+  {
+    boost::lock_guard<simple_spinlock> lock(lock_);
+    if (state_ != metadata::RUNNING && state_ != metadata::CONFIGURING) {
+      return Status::ServiceUnavailable(
+          Substitute("The tablet is not in a running/configuring state: $0",
+                     metadata::TabletStatePB_Name(state_)));
+    }
+  }
 
   ChangeConfigTransaction* transaction = new ChangeConfigTransaction(state,
                                                                      consensus::LEADER,
@@ -425,8 +453,26 @@ void TabletPeer::GetEarliestNeededOpId(consensus::OpId* min_op_id) const {
   }
 }
 
+bool TabletPeer::IsOpTypeAllowedInState(consensus::OperationType type,
+                                        metadata::TabletStatePB state) {
+  if (state == metadata::RUNNING) return true;
+  if (state == metadata::CONFIGURING) {
+    return type == CHANGE_CONFIG_OP;
+  }
+  return false;
+}
+
 Status TabletPeer::StartReplicaTransaction(gscoped_ptr<ConsensusRound> round) {
-  RETURN_NOT_OK(CheckRunning());
+  {
+    boost::lock_guard<simple_spinlock> lock(lock_);
+    consensus::OperationType op_type = round->replicate_op()->replicate().op_type();
+    if (!IsOpTypeAllowedInState(op_type, state_)) {
+      return Status::ServiceUnavailable(
+          Substitute("Tablet is not ready to accept operation. OpType: $0 Tablet State: $1",
+                     consensus::OperationType_Name(op_type),
+                     metadata::TabletStatePB_Name(state_)));
+    }
+  }
   consensus::ReplicateMsg* replicate_msg = round->replicate_op()->mutable_replicate();
   Transaction* transaction;
   switch (replicate_msg->op_type()) {

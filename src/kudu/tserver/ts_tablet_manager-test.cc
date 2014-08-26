@@ -184,13 +184,28 @@ TEST_F(TsTabletManagerTest, TestTabletReports) {
   // Create a second tablet, and ensure the incremental report shows it.
   ASSERT_STATUS_OK(CreateNewTablet("tablet-2", "", "", schema_, NULL));
   updated_tablets = 0;
-  while (updated_tablets != 1) {
+
+  // In this report we might get one or two tablets. We'll definitely
+  // have a report from tablet-2, which we just created, but since
+  // TabletPeer does not mark tablets dirty until after it commits the
+  // initial configuration change, there is a window for tablet-1 to
+  // have been marked dirty since the last report.
+  while (updated_tablets == 0) {
     tablet_manager_->GenerateIncrementalTabletReport(&report);
     updated_tablets = report.updated_tablets().size();
     ASSERT_TRUE(report.is_incremental());
     CheckSequenceNumber(&seqno, report);
   }
-  ASSERT_EQ("tablet-2", report.updated_tablets(0).tablet_id());
+
+  bool found_tablet_2 = false;
+  BOOST_FOREACH(const ::kudu::master::ReportedTabletPB& reported_tablet,
+                report.updated_tablets()) {
+    if (reported_tablet.tablet_id() == "tablet-2") {
+      found_tablet_2  = true;
+      break;
+    }
+  }
+  ASSERT_TRUE(found_tablet_2);
   tablet_manager_->MarkTabletReportAcknowledged(report);
 
   // Asking for a full tablet report should re-report both tablets

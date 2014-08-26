@@ -27,7 +27,7 @@ using tserver::TabletServerErrorPB;
 
 string ChangeConfigTransactionState::ToString() const {
   return Substitute("ChangeConfigTransactionState [timestamp=$0, request=$1]",
-                    timestamp().ToString(),
+                    has_timestamp() ? timestamp().ToString() : "NULL",
                     request_ == NULL ? "(none)" : request_->ShortDebugString());
 }
 

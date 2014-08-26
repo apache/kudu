@@ -60,7 +60,7 @@ class RaftConsensusTest : public KuduTest {
       QuorumPeerPB* peer_pb = quorum_.add_peers();
       peer_pb->set_permanent_uuid(Substitute("peer-$0", i));
       if (i == num - 1) {
-        peer_pb->set_role(QuorumPeerPB::LEADER);
+        peer_pb->set_role(QuorumPeerPB::CANDIDATE);
       } else {
         peer_pb->set_role(QuorumPeerPB::FOLLOWER);
       }
@@ -128,11 +128,11 @@ class RaftConsensusTest : public KuduTest {
 
   Status StartPeers() {
     ConsensusBootstrapInfo boot_info;
+    boot_info.last_commit_id = MinimumOpId();
 
     for (int i = 0; i < quorum_.peers_size(); i++) {
       RaftConsensus* peer = peers_[i];
-      gscoped_ptr<metadata::QuorumPB> running_quorum;
-      RETURN_NOT_OK(peer->Start(quorum_, boot_info, &running_quorum));
+      RETURN_NOT_OK(peer->Start(quorum_, boot_info.last_commit_id));
     }
     return Status::OK();
   }
@@ -171,12 +171,17 @@ class RaftConsensusTest : public KuduTest {
     return NULL;
   }
 
-  Status AppendDummyMessage(RaftConsensus* peer, gscoped_ptr<ConsensusRound>* round) {
+  Status AppendDummyMessage(RaftConsensus* peer,
+                            gscoped_ptr<ConsensusRound>* round,
+                            shared_ptr<LatchCallback>* req_commit_clbk = NULL) {
     gscoped_ptr<ReplicateMsg> msg(new ReplicateMsg());
     msg->set_op_type(NO_OP);
     msg->mutable_noop_request();
     shared_ptr<FutureCallback> replicate_clbk(new LatchCallback);
-    shared_ptr<FutureCallback> commit_clbk(new LatchCallback);
+    shared_ptr<LatchCallback> commit_clbk(new LatchCallback);
+    if (req_commit_clbk != NULL) {
+      *req_commit_clbk = commit_clbk;
+    }
     round->reset(peer->NewRound(msg.Pass(), replicate_clbk, commit_clbk));
     RETURN_NOT_OK(peer->Replicate(round->get()));
     return Status::OK();
@@ -266,10 +271,16 @@ class RaftConsensusTest : public KuduTest {
     }
   }
 
-  // Verifies that the replica's log match the leader's. This closes the log
-  // so if this is not the very last thing to be executed the log must be reopened
-  // after this.
+  // Verifies that the replica's log match the leader's. This deletes the
+  // peers (so we're sure that no further writes occur) and closes the logs
+  // so it must be the very last thing to run, in a test.
   void VerifyLogs() {
+    // Wait for in-flight transactions to be done. We're destroying the
+    // peers next and leader transactions won't be able to commit anymore.
+    BOOST_FOREACH(TestTransactionFactory* factory, txn_factories_) {
+      factory->WaitDone();
+    }
+    STLDeleteElements(&peers_);
     vector<OperationPB*> replica0_ops;
     ElementDeleter repl0_deleter(&replica0_ops);
     GatherOperations(0, logs_[0], &replica0_ops);
@@ -348,8 +359,8 @@ class RaftConsensusTest : public KuduTest {
   }
 
   ~RaftConsensusTest() {
-    STLDeleteElements(&peers_);
     STLDeleteElements(&txn_factories_);
+    STLDeleteElements(&peers_);
     STLDeleteElements(&logs_);
     STLDeleteElements(&fs_managers_);
   }
@@ -373,7 +384,8 @@ TEST_F(RaftConsensusTest, TestFollowersReplicateAndCommitMessage) {
 
   OpId last_op_id;
   gscoped_ptr<ConsensusRound> round;
-  ASSERT_STATUS_OK(AppendDummyMessage(GetLeader(), &round));
+  shared_ptr<LatchCallback> commit_clbk;
+  ASSERT_STATUS_OK(AppendDummyMessage(GetLeader(), &round, &commit_clbk));
   ASSERT_STATUS_OK(WaitForReplicate(round.get()));
   last_op_id.CopyFrom(round->id());
 
@@ -383,7 +395,16 @@ TEST_F(RaftConsensusTest, TestFollowersReplicateAndCommitMessage) {
   // Commit the operation
   ASSERT_STATUS_OK(CommitDummyMessage(round.get()));
 
-  // Wait for the followers commit the operations.
+  // Wait for everyone to commit the operations.
+
+  // We need to make sure the CommitMsg lands on the leaders log or the
+  // verification will fail. Since CommitMsgs are appended to the replication
+  // queue there is a scenario where they land in the followers log before
+  // landing on the leader's log. However we know that they are durable
+  // on the leader when the commit callback is triggered.
+  // We thus wait for the commit callback to trigger, ensuring durability
+  // on the leader and then for the commits to be present on the replicas.
+  ASSERT_STATUS_OK(commit_clbk.get()->Wait());
   WaitForCommitIfNotAlreadyPresent(last_op_id, GetFollower(0), 0);
   WaitForCommitIfNotAlreadyPresent(last_op_id, GetFollower(1), 1);
   VerifyLogs();
@@ -403,9 +424,10 @@ TEST_F(RaftConsensusTest, TestFollowersReplicateAndCommitSequence) {
 
   vector<ConsensusRound*> contexts;
   ElementDeleter deleter(&contexts);
+  shared_ptr<LatchCallback> commit_clbk;
   for (int i = 0; i < seq_size; i++) {
     gscoped_ptr<ConsensusRound> round;
-    ASSERT_STATUS_OK(AppendDummyMessage(GetLeader(), &round));
+    ASSERT_STATUS_OK(AppendDummyMessage(GetLeader(), &round, &commit_clbk));
     ASSERT_STATUS_OK(WaitForReplicate(round.get()));
     last_op_id.CopyFrom(round->id());
     contexts.push_back(round.release());
@@ -420,7 +442,9 @@ TEST_F(RaftConsensusTest, TestFollowersReplicateAndCommitSequence) {
     ASSERT_STATUS_OK(CommitDummyMessage(round));
   }
 
-  // Wait for the followers commit the operations.
+  // See comment at the end of TestFollowersReplicateAndCommitMessage
+  // for an explanation on this waiting sequence.
+  ASSERT_STATUS_OK(commit_clbk.get()->Wait());
   WaitForCommitIfNotAlreadyPresent(last_op_id, GetFollower(0), 0);
   WaitForCommitIfNotAlreadyPresent(last_op_id, GetFollower(1), 1);
   VerifyLogs();
@@ -524,9 +548,10 @@ TEST_F(RaftConsensusTest, TestReplicasHandleCommunicationErrors) {
   // replica proxies.
   vector<ConsensusRound*> contexts;
   ElementDeleter deleter(&contexts);
+  shared_ptr<LatchCallback> commit_clbk;
   for (int i = 0; i < 100; i++) {
     gscoped_ptr<ConsensusRound> round;
-    ASSERT_STATUS_OK(AppendDummyMessage(GetLeader(), &round));
+    ASSERT_STATUS_OK(AppendDummyMessage(GetLeader(), &round, &commit_clbk));
     ASSERT_STATUS_OK(CommitDummyMessage(round.get()));
     last_op_id.CopyFrom(round->id());
     contexts.push_back(round.release());
@@ -539,9 +564,13 @@ TEST_F(RaftConsensusTest, TestReplicasHandleCommunicationErrors) {
     }
   }
 
-  // Assert las operation was correctly committed
+  // Assert last operation was correctly replicated and committed.
   WaitForReplicateIfNotAlreadyPresent(last_op_id, GetFollower(0));
   WaitForReplicateIfNotAlreadyPresent(last_op_id, GetFollower(1));
+
+  // See comment at the end of TestFollowersReplicateAndCommitMessage
+  // for an explanation on this waiting sequence.
+  ASSERT_STATUS_OK(commit_clbk.get()->Wait());
   WaitForCommitIfNotAlreadyPresent(last_op_id, GetFollower(0), 0);
   WaitForCommitIfNotAlreadyPresent(last_op_id, GetFollower(1), 1);
   VerifyLogs();

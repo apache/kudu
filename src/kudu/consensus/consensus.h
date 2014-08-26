@@ -86,21 +86,18 @@ class Consensus {
                       log::Log* log) = 0;
 
   // Starts running the consensus algorithm.
+  //
+  // 'initial_quorum' originates from the master, if this is a new quorum
+  // or from the log if this was a pre-existing quorum (i.e. in case of
+  // crash).
+  //
   // The provided configuration is taken as a hint and may not be the
   // final configuration of the quorum. Specifically peer roles may
   // vary (e.g. if leader election was triggered) and even membership
   // may vary if the last known quorum configuration had different
   // members from the provided one.
-  //
-  // The results of the tablet bootstrap process are passed in as
-  // 'bootstrap_results'. This includes any operations which were REPLICATEd
-  // without being COMMITted before a crash.
-  //
-  // The actual configuration used after Start() completes is returned
-  // in 'running_quorum'.
   virtual Status Start(const metadata::QuorumPB& initial_quorum,
-                       const ConsensusBootstrapInfo& bootstrap_info,
-                       gscoped_ptr<metadata::QuorumPB>* running_quorum) = 0;
+                       const OpId& last_committed_op_id) = 0;
 
   // Creates a new ConsensusRound, the entity that owns all the data
   // structures required for a consensus round, such as the ReplicateMsg
@@ -286,6 +283,13 @@ class ReplicaCommitContinuation {
 class ReplicaTransactionFactory {
  public:
   virtual Status StartReplicaTransaction(gscoped_ptr<ConsensusRound> context) = 0;
+
+  // Makes the transaction factory initiate a leader driven configuration change
+  // transaction with the provided quorum.
+  // The provided callback will be called when the transaction completes.
+  virtual Status SubmitConsensusChangeConfig(gscoped_ptr<metadata::QuorumPB> quorum,
+                                             const StatusCallback& callback) = 0;
+
   virtual ~ReplicaTransactionFactory() {}
 };
 
