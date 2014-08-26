@@ -218,7 +218,7 @@ class LocalTestPeerProxy : public PeerProxy {
       boost::lock_guard<simple_spinlock> lock(lock_);
       if (PREDICT_TRUE(consensus_)) {
         s = consensus_->Update(&other_peer_req, &other_peer_resp);
-        if (!other_peer_resp.has_error()) {
+        if (s.ok() && !other_peer_resp.has_error()) {
           CHECK(other_peer_resp.has_status());
           CHECK(other_peer_resp.status().has_replicated_watermark());
           CHECK(other_peer_resp.status().has_safe_commit_watermark());
