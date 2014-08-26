@@ -8,10 +8,14 @@
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/singleton.h"
+#include "kudu/util/locks.h"
 #include "kudu/util/status.h"
 
 namespace kudu {
 
+class Counter;
+class MetricContext;
+class MetricRegistry;
 class ThreadPool;
 
 namespace codegen {
@@ -56,15 +60,29 @@ class CompilationManager {
                              const Schema* projection,
                              gscoped_ptr<RowProjector>* out);
 
+  // Sets CompilationManager to register its metrics with the parameter
+  // registry. If the CompilationManager already has metrics registered,
+  // then the old metrics are abandoned (the context is deleted and the
+  // old counters are no longer written to).
+  void RegisterMetrics(MetricRegistry* metric_registry);
+
  private:
   friend class Singleton<CompilationManager>;
   CompilationManager();
 
   static void Shutdown();
 
+  void UpdateCounts(bool hit);
+
   CodeGenerator generator_;
   CodeCache cache_;
   gscoped_ptr<ThreadPool> pool_;
+
+  // Read-write lock protects the metric members
+  rw_spinlock metric_lock_;
+  gscoped_ptr<MetricContext> metric_context_;
+  Counter* hit_counter_;
+  Counter* query_counter_;
 
   static const int kDefaultCacheCapacity = 100;
   static const int kThreadTimeoutMs = 100;

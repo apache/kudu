@@ -13,6 +13,9 @@
 #include "kudu/common/schema.h"
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/ref_counted.h"
+#include "kudu/util/locks.h"
+#include "kudu/util/logging.h"
+#include "kudu/util/metrics.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/status.h"
 #include "kudu/util/stopwatch.h"
@@ -21,6 +24,11 @@
 DEFINE_bool(time_codegen, false, "Whether to print time that each code "
             "generation request took.");
 
+METRIC_DEFINE_counter(code_cache_hits, kudu::MetricUnit::kCacheHits,
+                      "Number of codegen cache hits since start");
+METRIC_DEFINE_counter(code_cache_queries, kudu::MetricUnit::kCacheQueries,
+                      "Number of codegen cache queries (hits + misses) "
+                      "since start");
 namespace kudu {
 namespace codegen {
 
@@ -103,6 +111,15 @@ void CompilationManager::Shutdown() {
   GetSingleton()->pool_->Shutdown();
 }
 
+void CompilationManager::RegisterMetrics(MetricRegistry* metric_registry) {
+  lock_guard<rw_spinlock> lk(&metric_lock_);
+  metric_context_.reset(new MetricContext(metric_registry,
+                                          "compilation manager"));
+  hit_counter_ = METRIC_code_cache_hits.Instantiate(*metric_context_);
+  query_counter_ = METRIC_code_cache_queries.Instantiate(*metric_context_);
+}
+
+
 Status CompilationManager::RequestRowProjector(const Schema* base_schema,
                                                const Schema* projection,
                                                gscoped_ptr<RowProjector>* out) {
@@ -111,16 +128,25 @@ Status CompilationManager::RequestRowProjector(const Schema* base_schema,
 
   // If not cached, add a request to compilation pool
   if (!cached) {
+    UpdateCounts(false);
     shared_ptr<Runnable> task(
       new CompilationTask(*base_schema, *projection, &cache_, &generator_));
     RETURN_NOT_OK(pool_->Submit(task));
     return Status::NotFound("row projector not cached");
   }
 
+  UpdateCounts(true);
   const RowProjector::CodegenFunctions& functions =
     cached->row_projector_functions();
   out->reset(new RowProjector(base_schema, projection, functions, cached));
   return Status::OK();
+}
+
+void CompilationManager::UpdateCounts(bool hit) {
+  shared_lock<rw_spinlock> lk(&metric_lock_);
+  if (!metric_context_) return;
+  if (hit) hit_counter_->Increment();
+  query_counter_->Increment();
 }
 
 } // namespace codegen

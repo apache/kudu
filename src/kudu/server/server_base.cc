@@ -7,6 +7,7 @@
 #include <string>
 #include <vector>
 
+#include "kudu/codegen/compilation_manager.h"
 #include "kudu/common/wire_protocol.pb.h"
 #include "kudu/fs/fs_manager.h"
 #include "kudu/rpc/messenger.h"
@@ -95,6 +96,8 @@ void ServerBase::GenerateInstanceID() {
 Status ServerBase::Init() {
   tcmalloc::RegisterMetrics(metric_registry_.get());
   clock_->RegisterMetrics(metric_registry_.get());
+  codegen::CompilationManager::GetSingleton()->RegisterMetrics(
+    metric_registry_.get());
 
   InitSpinLockContentionProfiling();
 

@@ -30,6 +30,10 @@ using strings::Substitute;
 
 const char* MetricUnit::Name(Type unit) {
   switch (unit) {
+    case kCacheHits:
+      return "hits";
+    case kCacheQueries:
+      return "queries";
     case kCount:
       return "units";
     case kBytes:

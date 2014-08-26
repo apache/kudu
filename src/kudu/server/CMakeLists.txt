@@ -28,6 +28,7 @@ set(SERVER_COMMON_SRCS
 add_library(server_common ${SERVER_COMMON_SRCS})
 target_link_libraries(server_common
   kudu_common
+  codegen
   gutil
   kudu_fs
   kudu_util
