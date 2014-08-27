@@ -12,8 +12,9 @@
 #include "kudu/util/random.h"
 #include "kudu/util/spinlock_profiling.h"
 
-DEFINE_bool(test_leave_files, false,
-            "Whether to leave test files around after the test run");
+DEFINE_string(test_leave_files, "on_failure",
+              "Whether to leave test files around after the test run. "
+              " Valid values are 'always', 'on_failure', or 'never'");
 
 DEFINE_int32(test_random_seed, 0, "Random seed to use for randomized tests");
 
@@ -46,10 +47,10 @@ KuduTest::~KuduTest() {
   // method. This is better because it ensures that the child-class
   // dtor runs first -- so, if the child class is using a minicluster, etc,
   // we will shut that down before we remove files underneath.
-  if (FLAGS_test_leave_files) {
+  if (FLAGS_test_leave_files == "always") {
     LOG(INFO) << "-----------------------------------------------";
     LOG(INFO) << "--test_leave_files specified, leaving files in " << test_dir_;
-  } else if (HasFatalFailure()) {
+  } else if (FLAGS_test_leave_files == "on_failure" && HasFatalFailure()) {
     LOG(INFO) << "-----------------------------------------------";
     LOG(INFO) << "Had fatal failures, leaving test files at " << test_dir_;
   } else {
@@ -111,9 +112,15 @@ string GetTestDataDirectory() {
   string dir;
   CHECK_OK(Env::Default()->GetTestDirectory(&dir));
 
-  dir += Substitute("/$0.$1.$2-$3",
-    StringReplace(test_info->test_case_name(), "/", "_", true).c_str(),
-    StringReplace(test_info->name(), "/", "_", true).c_str(),
+  // The directory name includes some strings for specific reasons:
+  // - program name: identifies the directory to the test invoker
+  // - timestamp and pid: disambiguates with prior runs of the same test
+  //
+  // e.g. "env-test.TestEnv.TestReadFully.1409169025392361-23600"
+  dir += Substitute("/$0.$1.$2.$3-$4",
+    StringReplace(google::ProgramInvocationShortName(), "/", "_", true),
+    StringReplace(test_info->test_case_name(), "/", "_", true),
+    StringReplace(test_info->name(), "/", "_", true),
     kTestBeganAtMicros,
     getpid());
   Status s = Env::Default()->CreateDir(dir);

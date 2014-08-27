@@ -12,6 +12,11 @@
 #     Runs the "slow" version of the unit tests. Set to 0 to
 #     run the tests more quickly.
 #
+#   TEST_TMPDIR   Default: /tmp/kudutest-$UID
+#     Specifies the temporary directory where tests should write their
+#     data. It is expected that following the completion of all tests, this
+#     directory is empty (i.e. every test cleaned up after itself).
+#
 #   RUN_FLAKY_ONLY    Default: 0
 #     Only runs tests which have failed recently, if this is 1.
 #     Used by the kudu-flaky-tests jenkins build.
@@ -62,20 +67,13 @@ export KUDU_FLAKY_TEST_ATTEMPTS=${KUDU_FLAKY_TEST_ATTEMPTS:-1}
 export KUDU_ALLOW_SLOW_TESTS=${KUDU_ALLOW_SLOW_TESTS:-$DEFAULT_ALLOW_SLOW_TESTS}
 export KUDU_COMPRESS_TEST_OUTPUT=${KUDU_COMPRESS_TEST_OUTPUT:-1}
 BUILD_JAVA=${BUILD_JAVA:-1}
+export TEST_TMPDIR=${TEST_TMPDIR:-/tmp/kudutest-$UID}
 
-# If they specified an explicit test directory, ensure it's going to be usable.
-if [ -n "$TEST_TMPDIR" ]; then
-  if [ ! -d "$TEST_TMPDIR" ]; then
-    mkdir -p "$TEST_TMPDIR"
-  fi
-  if [ ! -w "$TEST_TMPDIR" ]; then
-    echo "Error: Test output directory ($TEST_TMPDIR) is not writable on $(hostname) by user $(whoami)"
-    exit 1
-  fi
-  TEST_DATADIR=$TEST_TMPDIR
-else
-  # Keep in sync with Env::GetTestDirectory.
-  TEST_DATADIR=/tmp/kudutest-$UID
+# Ensure that the test data directory is usable.
+mkdir -p "$TEST_TMPDIR"
+if [ ! -w "$TEST_TMPDIR" ]; then
+  echo "Error: Test output directory ($TEST_TMPDIR) is not writable on $(hostname) by user $(whoami)"
+  exit 1
 fi
 
 ROOT=$(readlink -f $(dirname "$BASH_SOURCE")/../..)
@@ -191,8 +189,8 @@ cmake . -DCMAKE_BUILD_TYPE=${BUILD_TYPE}
 
 # our tests leave lots of data lying around, clean up before we run
 make clean
-if [ -d "$TEST_DATADIR" ]; then
-  rm -Rf $TEST_DATADIR/*
+if [ -d "$TEST_TMPDIR" ]; then
+  rm -Rf $TEST_TMPDIR/*
 fi
 
 # actually do the build
@@ -223,10 +221,10 @@ ctest -j$NUM_PROCS $EXTRA_TEST_FLAGS
 
 # If all tests passed, ensure that they cleaned up their test output.
 if [ $? = 0 ]; then
-  TEST_DATADIR_CONTENTS=$(ls $TEST_DATADIR)
-  if [ -n "$TEST_DATADIR_CONTENTS" ]; then
+  TEST_TMPDIR_CONTENTS=$(ls $TEST_TMPDIR)
+  if [ -n "$TEST_TMPDIR_CONTENTS" ]; then
     echo "All tests passed yet some left behind their test output"
-    for SUBDIR in $TEST_DATADIR_CONTENTS; do
+    for SUBDIR in $TEST_TMPDIR_CONTENTS; do
       echo $SUBDIR
     done
     EXIT_STATUS=1

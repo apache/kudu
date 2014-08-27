@@ -4,7 +4,7 @@
 # Script which wraps running a test and redirects its output to a
 # test log directory.
 #
-# If $KUDU_COMPRESS_TEST_OUTPUT is non-empty, then the logs will be
+# If KUDU_COMPRESS_TEST_OUTPUT is non-empty, then the logs will be
 # gzip-compressed while they are written.
 #
 # If KUDU_FLAKY_TEST_ATTEMPTS is non-zero, and the test being run matches
@@ -82,6 +82,16 @@ ulimit -c $KUDU_TEST_ULIMIT_CORE
 
 # Run the actual test.
 for ATTEMPT_NUMBER in $(seq 1 $TEST_EXECUTION_ATTEMPTS) ; do
+  if [ $ATTEMPT_NUMBER -lt $TEST_EXECUTION_ATTEMPTS ]; then
+    # If the test fails, the test output may or may not be left behind,
+    # depending on whether the test cleaned up or exited immediately. Either
+    # way we need to clean it up. We do this by comparing the data directory
+    # contents before and after the test runs, and deleting anything new.
+    #
+    # The comm program requires that its two inputs be sorted.
+    TEST_TMPDIR_BEFORE=$(find $TEST_TMPDIR -maxdepth 1 -type d | sort)
+  fi
+
   echo "Running $TEST_NAME, redirecting output into $LOGFILE" \
     "(attempt ${ATTEMPT_NUMBER}/$TEST_EXECUTION_ATTEMPTS)"
   $TEST_EXECUTABLE "$@" --test_timeout_after $KUDU_TEST_TIMEOUT 2>&1 \
@@ -98,8 +108,27 @@ for ATTEMPT_NUMBER in $(seq 1 $TEST_EXECUTION_ATTEMPTS) ; do
     STATUS=1
   fi
 
+  if [ $ATTEMPT_NUMBER -lt $TEST_EXECUTION_ATTEMPTS ]; then
+    # Now delete any new test output.
+    TEST_TMPDIR_AFTER=$(find $TEST_TMPDIR -maxdepth 1 -type d | sort)
+    DIFF=$(comm -13 <(echo "$TEST_TMPDIR_BEFORE") \
+                    <(echo "$TEST_TMPDIR_AFTER"))
+    for DIR in $DIFF; do
+      # Multiple tests may be running concurrently. To avoid deleting the
+      # wrong directories, constrain to only directories beginning with the
+      # test name.
+      #
+      # This may delete old test directories belonging to this test, but
+      # that's not typically a concern when rerunning flaky tests.
+      if [[ $DIR =~ ^$TEST_TMPDIR/$TEST_NAME ]]; then
+        echo Deleting leftover flaky test directory "$DIR"
+        rm -Rf "$DIR"
+      fi
+    done
+  fi
+
   if [ -n "$KUDU_REPORT_TEST_RESULTS" ]; then
-    echo reporting results
+    echo Reporting results
     $ROOT/build-support/report-test.sh "$TEST_EXECUTABLE" "$LOGFILE" "$STATUS" &
 
     # On success, we'll do "best effort" reporting, and disown the subprocess.
