@@ -251,9 +251,6 @@ llvm::Function* MakeProjection(const string& name,
   return f;
 }
 
-// Convenience method to hide ugly but legal casts
-uintptr_t ptol(void* ptr) { return reinterpret_cast<uintptr_t>(ptr); }
-
 } // anonymous namespace
 
 Status RowProjector::CodegenFunctions::Create(const Schema& base_schema,
