@@ -9,8 +9,8 @@
 #include "kudu/util/status.h"
 
 namespace llvm {
-class LLVMContext;
 class ExecutionEngine;
+class LLVMContext;
 } // namespace llvm
 
 namespace kudu {
@@ -56,8 +56,6 @@ class CodeGenerator {
 
  private:
   static void GlobalInit();
-
-  // TODO static ObjectCache shared b/w engines
 
   DISALLOW_COPY_AND_ASSIGN(CodeGenerator);
 };

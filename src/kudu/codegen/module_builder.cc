@@ -58,6 +58,7 @@ using llvm::PassManagerBuilder;
 using llvm::PointerType;
 using llvm::raw_os_ostream;
 using llvm::SMDiagnostic;
+using llvm::TargetMachine;
 using llvm::Type;
 using llvm::Value;
 using std::ostream;
@@ -226,11 +227,12 @@ Status ModuleBuilder::Compile(gscoped_ptr<ExecutionEngine>* out) {
 #else
   Level opt_level = llvm::CodeGenOpt::None;
 #endif
-  gscoped_ptr<ExecutionEngine> local_engine(EngineBuilder(module_.get())
-                                            .setErrorStr(&str)
-                                            .setUseMCJIT(true)
-                                            .setOptLevel(opt_level)
-                                            .create());
+  EngineBuilder ebuilder(module_.get());
+  ebuilder.setErrorStr(&str);
+  ebuilder.setUseMCJIT(true);
+  ebuilder.setOptLevel(opt_level);
+  target_ = ebuilder.selectTarget();
+  gscoped_ptr<ExecutionEngine> local_engine(ebuilder.create(target_));
   if (!local_engine) {
     return Status::ConfigurationError("Code generation for module failed. "
                                       "Could not start ExecutionEngine",
@@ -270,6 +272,11 @@ Status ModuleBuilder::Compile(gscoped_ptr<ExecutionEngine>* out) {
   *out = local_engine.Pass();
   state_ = kCompiled;
   return Status::OK();
+}
+
+const TargetMachine& ModuleBuilder::GetTargetMachine() const {
+  CHECK_EQ(state_, kCompiled);
+  return *CHECK_NOTNULL(target_);
 }
 
 } // namespace codegen

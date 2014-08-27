@@ -22,12 +22,13 @@ add_library(codegen
 #######################################
 
 set(LLVM_REQ_COMPONENTS
+  analysis
   irreader
+  instrumentation
+  ipo
+  mcdisassembler
   mcjit
   native
-  analysis
-  ipo
-  instrumentation
 )
 
 ## Add preprocessor defs and include directories

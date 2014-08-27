@@ -20,6 +20,7 @@ class Function;
 class FunctionType;
 class LLVMContext;
 class Module;
+class TargetMachine;
 class Type;
 class Value;
 
@@ -104,6 +105,11 @@ class ModuleBuilder {
   // the code will be freed.
   Status Compile(gscoped_ptr<llvm::ExecutionEngine>* out);
 
+  // Retrieves the TargetMachine that the engine builder guessed was
+  // the native target. Can only be called after compilation, and before
+  // the Compile()'s ExecutionEngine is deleted.
+  const llvm::TargetMachine& GetTargetMachine() const;
+
  private:
   // The different states a ModuleBuilder can be in.
   enum MBState {
@@ -130,6 +136,7 @@ class ModuleBuilder {
   gscoped_ptr<llvm::LLVMContext> context_;
   gscoped_ptr<llvm::Module> module_;
   LLVMBuilder builder_;
+  llvm::TargetMachine* target_; // not owned
 
   DISALLOW_COPY_AND_ASSIGN(ModuleBuilder);
 };

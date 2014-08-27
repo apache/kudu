@@ -2,29 +2,67 @@
 
 #include "kudu/codegen/code_generator.h"
 
+#include <algorithm>
+#include <cctype>
+#include <sstream>
 #include <string>
 
 #include <glog/logging.h>
 #include "kudu/codegen/llvm_include.h"
+#include <llvm/ADT/StringRef.h>
 #include <llvm/ExecutionEngine/ExecutionEngine.h>
+#include <llvm/IR/Instructions.h>
 #include <llvm/IR/LLVMContext.h>
 #include <llvm/IR/Module.h>
+#include <llvm/MC/MCDisassembler.h>
+#include <llvm/MC/MCInst.h>
+#include <llvm/MC/MCInstPrinter.h>
+#include <llvm/Support/raw_os_ostream.h>
+#include <llvm/Support/StringRefMemoryObject.h>
+#include <llvm/Support/TargetRegistry.h>
 #include <llvm/Support/TargetSelect.h>
+#include <llvm/Target/TargetInstrInfo.h>
+#include <llvm/Target/TargetMachine.h>
+#include <llvm/Target/TargetRegisterInfo.h>
+#include <llvm/Target/TargetSubtargetInfo.h>
 
 #include "kudu/codegen/jit_owner.h"
 #include "kudu/codegen/module_builder.h"
 #include "kudu/codegen/row_projector.h"
 #include "kudu/gutil/gscoped_ptr.h"
+#include "kudu/gutil/macros.h"
 #include "kudu/gutil/once.h"
 #include "kudu/util/status.h"
 
-
 DEFINE_bool(codegen_dump_functions, false, "Whether to print the LLVM IR"
             " for generated functions");
+DEFINE_bool(codegen_dump_mc, false, "Whether to dump the disassembly of the"
+            " machine code for generated functions.");
+
+namespace llvm {
+class MCAsmInfo;
+class MCInstrInfo;
+class MCRegisterInfo;
+class MCSubtargetInfo;
+} // namespace llvm
 
 using llvm::ExecutionEngine;
 using llvm::LLVMContext;
+using llvm::MCAsmInfo;
+using llvm::MCDisassembler;
+using llvm::MCInst;
+using llvm::MCInstPrinter;
+using llvm::MCInstrInfo;
+using llvm::MCSubtargetInfo;
 using llvm::Module;
+using llvm::MCRegisterInfo;
+using llvm::MCSubtargetInfo;
+using llvm::raw_os_ostream;
+using llvm::ReturnInst;
+using llvm::StringRef;
+using llvm::StringRefMemoryObject;
+using llvm::Target;
+using llvm::TargetMachine;
 using std::string;
 
 namespace kudu {
@@ -42,12 +80,95 @@ Status CheckCodegenEnabled() {
 #endif
 }
 
+const char* ptr_from_i64(uint64_t addr) {
+  COMPILE_ASSERT(sizeof(uint64_t) <= sizeof(uintptr_t),
+                 cannot_represent_address_as_pointer);
+  uintptr_t iptr = addr;
+  return reinterpret_cast<char*>(iptr);
+}
+
+template<class FuncPtr>
+uint64_t i64_from_ptr(FuncPtr ptr) {
+  COMPILE_ASSERT(sizeof(uintptr_t) <= sizeof(uint64_t),
+                 cannot_represent_pointer_as_address);
+  // This cast is undefined prior to C++11 and only optionally supported even
+  // with it. However, we must use this because of the LLVM interface.
+  uintptr_t iptr = reinterpret_cast<uintptr_t>(reinterpret_cast<void*>(ptr));
+  return iptr;
+}
+
+// Prints assembly for a function pointed to by 'fptr' given a target
+// machine 'tm'. Method is more or less platform-independent, but relies
+// on the return instruction containing the "RET" string to terminate in
+// the right place. Prints at most 'max_instr' instructions.
+//
+// Returns number of lines printed.
+template<class FuncPtr>
+int DumpAsm(FuncPtr fptr, const TargetMachine& tm,
+            std::ostream* out, int max_instr) {
+  uint64_t base_addr = i64_from_ptr(fptr);
+
+  const MCInstrInfo& instr_info = *CHECK_NOTNULL(tm.getInstrInfo());
+  const MCRegisterInfo& register_info = *CHECK_NOTNULL(tm.getRegisterInfo());
+  const MCAsmInfo& asm_info = *CHECK_NOTNULL(tm.getMCAsmInfo());
+  const MCSubtargetInfo& subtarget_info = tm.getSubtarget<MCSubtargetInfo>();
+  gscoped_ptr<MCDisassembler> disas(
+    CHECK_NOTNULL(tm.getTarget().createMCDisassembler(subtarget_info)));
+
+  // LLVM uses these completely undocumented magic syntax constants which had
+  // to be found in lib/Target/$ARCH/MCTargetDesc/$(ARCH)TargetDesc.cpp.
+  // Apparently this controls stuff like AT&T vs Intel syntax for x86, but
+  // there aren't always multiple values to choose from on different architectures.
+  // It seems that there's an unspoken rule to implement SyntaxVariant = 0.
+  // This only has meaning for a *given* target, but at least the 0th syntax
+  // will always be defined, so that's what we use.
+  static const unsigned kSyntaxVariant = 0;
+  gscoped_ptr<MCInstPrinter> printer(
+    CHECK_NOTNULL(tm.getTarget().createMCInstPrinter(kSyntaxVariant, asm_info,
+                                                     instr_info, register_info,
+                                                     subtarget_info)));
+
+  // Make a memory object referring to the bytes with addresses ranging from
+  // base_addr to base_addr + (maximum number of bytes instructions take).
+  const size_t kInstrSizeMax = 16; // max on x86 is 15 bytes
+  StringRefMemoryObject mem_obj(StringRef(ptr_from_i64(base_addr),
+                                          max_instr * kInstrSizeMax));
+  uint64_t addr = 0;
+
+  for (int i = 0; i < max_instr; ++i) {
+    raw_os_ostream os(*out);
+    MCInst inst;
+    uint64_t size;
+    MCDisassembler::DecodeStatus stat =
+    disas->getInstruction(inst, size, mem_obj, addr, llvm::nulls(), llvm::nulls());
+    if (stat != MCDisassembler::Success) {
+      *out << "<ERROR at 0x" << std::hex << addr
+           << " (absolute 0x" << (addr + base_addr) << ")"
+           << ", skipping instruction>\n" << std::dec;
+    } else {
+      string annotations;
+      printer->printInst(&inst, os, annotations);
+      os << " " << annotations << "\n";
+      // We need to check the opcode name for "RET" instead of comparing
+      // the opcode to llvm::ReturnInst::getOpcode() because the native
+      // opcode may be different, there may different types of returns, etc.
+      string opname = printer->getOpcodeName(inst.getOpcode());
+      std::transform(opname.begin(), opname.end(), opname.begin(), toupper);
+      if (opname.find("RET") != string::npos) return i + 1;
+    }
+    addr += size;
+  }
+
+  return max_instr;
+}
+
 } // anonymous namespace
 
 void CodeGenerator::GlobalInit() {
   llvm::InitializeNativeTarget();
   llvm::InitializeNativeTargetAsmPrinter();
   llvm::InitializeNativeTargetAsmParser();
+  llvm::InitializeNativeTargetDisassembler();
 }
 
 CodeGenerator::CodeGenerator() {
@@ -74,6 +195,16 @@ Status CodeGenerator::CompileRowProjector(const Schema* base,
   // Compile and get execution engine
   gscoped_ptr<ExecutionEngine> ee;
   RETURN_NOT_OK(mbuilder.Compile(&ee));
+
+  if (FLAGS_codegen_dump_mc) {
+    static const int kInstrMax = 500;
+    std::stringstream sstr;
+    sstr << "Printing read projection function:\n";
+    int instrs = DumpAsm(i64_from_ptr(projector_out->read()),
+                         mbuilder.GetTargetMachine(), &sstr, kInstrMax);
+    sstr << "Printed " << instrs << " instructions.";
+    LOG(INFO) << sstr.str();
+  }
 
   owner_out->reset(new JITCodeOwner(ee.Pass()));
   return Status::OK();
