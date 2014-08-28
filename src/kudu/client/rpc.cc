@@ -5,6 +5,7 @@
 #include <boost/bind.hpp>
 #include <string>
 
+#include "kudu/gutil/basictypes.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/rpc/messenger.h"
 #include "kudu/rpc/rpc_header.pb.h"
@@ -22,8 +23,8 @@ namespace client {
 namespace internal {
 
 bool RpcRetrier::HandleResponse(Rpc* rpc, Status* out_status) {
-  DCHECK_NOTNULL(rpc);
-  DCHECK_NOTNULL(out_status);
+  ignore_result(DCHECK_NOTNULL(rpc));
+  ignore_result(DCHECK_NOTNULL(out_status));
 
   // Did we get a retryable error?
   Status controller_status = controller_.status();

@@ -77,7 +77,7 @@ class BlockingQueue {
   // Get an element from the queue.  Returns false if the queue is empty and
   // we were shut down prior to getting the element.
   bool BlockingGet(gscoped_ptr<T_VAL> *out) {
-    T t;
+    T t = NULL;
     bool got_element = BlockingGet(&t);
     if (!got_element) {
       return false;

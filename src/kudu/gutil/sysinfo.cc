@@ -1,11 +1,11 @@
 // -*- Mode: C++; c-basic-offset: 2; indent-tabs-mode: nil -*-
 // Copyright (c) 2006, Google Inc.
 // All rights reserved.
-// 
+//
 // Redistribution and use in source and binary forms, with or without
 // modification, are permitted provided that the following conditions are
 // met:
-// 
+//
 //     * Redistributions of source code must retain the above copyright
 // notice, this list of conditions and the following disclaimer.
 //     * Redistributions in binary form must reproduce the above
@@ -15,7 +15,7 @@
 //     * Neither the name of Google Inc. nor the names of its
 // contributors may be used to endorse or promote products derived from
 // this software without specific prior written permission.
-// 
+//
 // THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
 // "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
 // LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
@@ -110,18 +110,18 @@ static int64 EstimateCyclesPerSecond(const int estimate_time_ms) {
 static bool ReadIntFromFile(const char *file, int *value) {
   bool ret = false;
   int fd = open(file, O_RDONLY);
-  if (fd != -1) {
-    char line[1024];
-    char* err;
-    memset(line, '\0', sizeof(line));
-    read(fd, line, sizeof(line) - 1);
+  if (fd == -1) return ret;
+  char line[1024];
+  char* err;
+  memset(line, '\0', sizeof(line));
+  if (read(fd, line, sizeof(line) - 1) != -1) {
     const int temp_value = strtol(line, &err, 10);
     if (line[0] != '\0' && (*err == '\n' || *err == '\0')) {
       *value = temp_value;
       ret = true;
     }
-    close(fd);
   }
+  close(fd);
   return ret;
 }
 #endif
@@ -219,15 +219,15 @@ static void InitializeSystemInfo() {
     if (strncasecmp(line, "clock", sizeof("clock")-1) == 0) {
       const char* freqstr = strchr(line, ':');
       if (freqstr) {
-	// PowerPC frequencies are only reported as MHz (check 'show_cpuinfo'
-	// function at arch/powerpc/kernel/setup-common.c)
-	char *endp = strstr(line, "MHz");
-	if (endp) {
-	  *endp = 0;
-	  cpuinfo_cycles_per_second = strtod(freqstr+1, &err) * 1000000.0;
+        // PowerPC frequencies are only reported as MHz (check 'show_cpuinfo'
+        // function at arch/powerpc/kernel/setup-common.c)
+        char *endp = strstr(line, "MHz");
+        if (endp) {
+          *endp = 0;
+          cpuinfo_cycles_per_second = strtod(freqstr+1, &err) * 1000000.0;
           if (freqstr[1] != '\0' && *err == '\0' && cpuinfo_cycles_per_second > 0)
             saw_mhz = true;
-	}
+        }
       }
 #else
     // When parsing the "cpu MHz" and "bogomips" (fallback) entries, we only
