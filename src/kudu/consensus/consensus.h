@@ -398,6 +398,11 @@ class Consensus::ConsensusFaultHooks {
   virtual ~ConsensusFaultHooks() {}
 };
 
+// Helper to return the role of a peer within a quorum, or NON_PARTICIPANT is the peer does
+// not participate in the quorum.
+metadata::QuorumPeerPB::Role GetRoleInQuorum(const std::string& permanent_uuid,
+                                             const metadata::QuorumPB& quorum);
+
 } // namespace consensus
 } // namespace kudu
 
