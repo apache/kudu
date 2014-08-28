@@ -162,16 +162,17 @@ class TabletServerTest : public KuduTest {
     }
   }
 
-  void CreateClientProxies(const Sockaddr &addr, gscoped_ptr<TabletServerServiceProxy>* proxy,
-                           gscoped_ptr<TabletServerAdminServiceProxy>* admin_proxy,
-                           gscoped_ptr<consensus::ConsensusServiceProxy>* consensus_proxy) {
+  Status CreateClientProxies(const Sockaddr &addr, gscoped_ptr<TabletServerServiceProxy>* proxy,
+                             gscoped_ptr<TabletServerAdminServiceProxy>* admin_proxy,
+                             gscoped_ptr<consensus::ConsensusServiceProxy>* consensus_proxy) {
     if (!client_messenger_) {
       rpc::MessengerBuilder bld("Client");
-      ASSERT_STATUS_OK(bld.Build(&client_messenger_));
+      RETURN_NOT_OK(bld.Build(&client_messenger_));
     }
     proxy->reset(new TabletServerServiceProxy(client_messenger_, addr));
     admin_proxy->reset(new TabletServerAdminServiceProxy(client_messenger_, addr));
     consensus_proxy->reset(new consensus::ConsensusServiceProxy(client_messenger_, addr));
+    return Status::OK();
   }
 
  protected:
@@ -296,7 +297,7 @@ class TabletServerTest : public KuduTest {
     } while (resp.has_more_results());
   }
 
-  void ShutdownAndRebuildTablet() {
+  Status ShutdownAndRebuildTablet() {
     if (mini_server_.get()) {
       mini_server_->Shutdown();
     }
@@ -304,13 +305,18 @@ class TabletServerTest : public KuduTest {
     // Start server.
     mini_server_.reset(new MiniTabletServer(env_.get(), GetTestPath("TabletServerTest-fsroot"), 0));
     // this should open the tablet created on StartTabletServer()
-    ASSERT_STATUS_OK(mini_server_->Start());
-    ASSERT_STATUS_OK(mini_server_->WaitStarted());
+    RETURN_NOT_OK(mini_server_->Start());
+    RETURN_NOT_OK(mini_server_->WaitStarted());
 
-    ASSERT_TRUE(mini_server_->server()->tablet_manager()->LookupTablet(kTabletId, &tablet_peer_));
+    if (!mini_server_->server()->tablet_manager()->LookupTablet(kTabletId, &tablet_peer_)) {
+      return Status::NotFound("Tablet was not found");
+    }
     // Connect to it.
-    ASSERT_NO_FATAL_FAILURE(CreateClientProxies(mini_server_->bound_rpc_addr(),
-                                                &proxy_, &admin_proxy_, &consensus_proxy_));
+    RETURN_NOT_OK(CreateClientProxies(mini_server_->bound_rpc_addr(),
+                                      &proxy_, &admin_proxy_, &consensus_proxy_));
+
+    return Status::OK();
+
   }
 
   // Verifies that a set of expected rows (key, value) is present in the tablet.

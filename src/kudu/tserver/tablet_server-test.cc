@@ -1,6 +1,7 @@
 // Copyright (c) 2013, Cloudera, inc.
 #include "kudu/tserver/tablet_server-test-base.h"
 
+#include "kudu/consensus/log-test-base.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/master/master.pb.h"
 #include "kudu/server/hybrid_clock.h"
@@ -699,7 +700,7 @@ TEST_F(TabletServerTest, TestKUDU_176_RecoveryAfterMajorDeltaCompaction) {
   ANFF(VerifyRows(schema_, boost::assign::list_of(KeyValue(1, 2))));
 
   // Verify that data remains after a restart.
-  ANFF(ShutdownAndRebuildTablet());
+  ASSERT_STATUS_OK(ShutdownAndRebuildTablet());
   ANFF(VerifyRows(schema_, boost::assign::list_of(KeyValue(1, 2))));
 }
 
@@ -731,8 +732,34 @@ TEST_F(TabletServerTest, TestKUDU_177_RecoveryOfDMSEditsAfterMajorDeltaCompactio
   ANFF(VerifyRows(schema_, boost::assign::list_of(KeyValue(1, 3))));
 
   // Verify that the update remains after a restart.
-  ANFF(ShutdownAndRebuildTablet());
+  ASSERT_STATUS_OK(ShutdownAndRebuildTablet());
   ANFF(VerifyRows(schema_, boost::assign::list_of(KeyValue(1, 3))));
+}
+
+TEST_F(TabletServerTest, DISABLED_TestClientGetsErrorBackWhenRecoveryFailed) {
+  ANFF(InsertTestRowsRemote(0, 1, 7));
+
+  ASSERT_STATUS_OK(tablet_peer_->tablet()->Flush());
+  mini_server_->Shutdown();
+
+  ASSERT_STATUS_OK(log::CorruptLogFile(env_.get(), tablet_peer_->log(), 10));
+
+  ASSERT_FALSE(ShutdownAndRebuildTablet().ok());
+
+  // Connect to it.
+  ASSERT_STATUS_OK(CreateClientProxies(mini_server_->bound_rpc_addr(),
+                                       &proxy_, &admin_proxy_, &consensus_proxy_));
+
+  WriteRequestPB req;
+  req.set_tablet_id(kTabletId);
+
+  WriteResponsePB resp;
+  rpc::RpcController controller;
+
+  // We're expecting the write to fail.
+  ASSERT_STATUS_OK(DCHECK_NOTNULL(proxy_.get())->Write(req, &resp, &controller));
+  ASSERT_EQ(TabletServerErrorPB::TABLET_NOT_RUNNING, resp.error().code());
+  ASSERT_EQ("Tablet not RUNNING: FAILED", resp.error().status().message());
 }
 
 TEST_F(TabletServerTest, TestScan) {
