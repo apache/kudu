@@ -403,6 +403,8 @@ message GetTableSchemaResponsePB {
   // In case of an alter table in progress, this is the previous schema;
   // otherwise it is the latest schema.
   optional SchemaPB schema = 2;
+
+  optional int32 num_replicas = 3;
 }
 
 // ============================================================================

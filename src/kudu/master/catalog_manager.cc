@@ -877,6 +877,7 @@ Status CatalogManager::GetTableSchema(const GetTableSchemaRequestPB* req,
     // There's no AlterTable, the regular schema is "fully applied".
     resp->mutable_schema()->CopyFrom(l.data().pb.schema());
   }
+  resp->set_num_replicas(l.data().pb.num_replicas());
 
   return Status::OK();
 }
