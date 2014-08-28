@@ -39,6 +39,10 @@ struct ExternalMiniClusterOptions {
   ExternalMiniClusterOptions();
   ~ExternalMiniClusterOptions();
 
+  // Number of masters to start.
+  // Default: 1
+  int num_masters;
+
   // Number of TS to start.
   // Default: 1
   int num_tablet_servers;
@@ -58,6 +62,11 @@ struct ExternalMiniClusterOptions {
   // be substituted with the index of the tablet server or master.
   std::vector<std::string> extra_tserver_flags;
   std::vector<std::string> extra_master_flags;
+
+  // If more than one master is specified, list of ports for the
+  // masters in a quorum. Port at index 0 is used for the leader
+  // master.
+  std::vector<uint16_t> master_rpc_ports;
 };
 
 // A mini-cluster made up of subprocesses running each of the daemons
@@ -87,18 +96,47 @@ class ExternalMiniCluster {
   // Currently, this uses SIGKILL on each daemon for a non-graceful shutdown.
   void Shutdown();
 
-  // Return a pointer to the running master. This may be NULL if the cluster
-  // is not started.
-  ExternalMaster* master() { return master_.get(); }
+  // Return a pointer to the running leader master. This may be NULL
+  // if the cluster is not started.
+  // NOTE: currently this method always return master at index 0, but
+  // once leader elections are implemented, this will return the
+  // correct leader.
+  ExternalMaster* leader_master() { return master(0); }
+
+  // If this cluster is configured for a single non-distributed
+  // master, return the single master or NULL if the master is not
+  // started. Exits with a CHECK failure if there are multiple
+  // masters.
+  ExternalMaster* master() {
+    CHECK_EQ(masters_.size(), 1)
+        << "master() should not be used with multiple masters, use leader_master() instead.";
+    return master(0);
+  }
+
+  // Return master at 'idx' or NULL if the master at 'idx' has not
+  // been started.
+  ExternalMaster* master(int idx) {
+    CHECK_LT(idx, masters_.size());
+    return masters_[idx].get();
+  }
 
   ExternalTabletServer* tablet_server(int idx) {
     CHECK_LT(idx, tablet_servers_.size());
     return tablet_servers_[idx].get();
   }
 
-  // Return an RPC proxy to the running master. Requires that the master
-  // is running.
+  // Return an RPC proxy to the running leader master. Requires that
+  // the master is running.
+  std::tr1::shared_ptr<master::MasterServiceProxy> leader_master_proxy();
+
+  // If the cluster is configured for a single non-distributed master,
+  // return a proxy to that master. Requires that the single master is
+  // running.
   std::tr1::shared_ptr<master::MasterServiceProxy> master_proxy();
+
+  // Returns an RPC proxy to the master at 'idx'. Requires that the
+  // master at 'idx' is running.
+  std::tr1::shared_ptr<master::MasterServiceProxy> master_proxy(int idx);
 
   // Wait until the number of registered tablet servers reaches the given count.
   // Returns Status::TimedOut if the desired count is not achieved with the given
@@ -114,7 +152,9 @@ class ExternalMiniCluster {
                       std::tr1::shared_ptr<client::KuduClient>* client);
 
  private:
-  Status StartMaster();
+  Status StartSingleMaster();
+
+  Status StartDistributedMasters();
 
   std::string GetBinaryPath(const std::string& binary) const;
   std::string GetDataPath(const std::string& daemon_id) const;
@@ -131,7 +171,7 @@ class ExternalMiniCluster {
 
   bool started_;
 
-  scoped_refptr<ExternalMaster> master_;
+  std::vector<scoped_refptr<ExternalMaster> > masters_;
   std::vector<scoped_refptr<ExternalTabletServer> > tablet_servers_;
 
   std::tr1::shared_ptr<rpc::Messenger> messenger_;
@@ -173,11 +213,17 @@ class ExternalMaster : public ExternalDaemon {
   ExternalMaster(const std::string& exe, const std::string& data_dir,
                  const std::vector<std::string>& extra_flags);
 
+  ExternalMaster(const std::string& exe, const std::string& data_dir,
+                 const std::string& rpc_bind_address,
+                 const std::vector<std::string>& extra_flags);
+
   Status Start();
 
  private:
   friend class RefCountedThreadSafe<ExternalMaster>;
   virtual ~ExternalMaster();
+
+  const std::string rpc_bind_address_;
 };
 
 class ExternalTabletServer : public ExternalDaemon {

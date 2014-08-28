@@ -31,6 +31,9 @@ message MasterErrorPB {
 
     // The number of tablets requested for a new table is over the per TS limit.
     TOO_MANY_TABLETS = 5;
+
+    // Catalog manager is not yet initialized.
+    CATALOG_MANAGER_NOT_INITIALIZED = 6;
   }
 
   // The error code.
@@ -255,14 +258,16 @@ message GetTabletLocationsRequestPB {
 }
 
 message GetTabletLocationsResponsePB {
-  repeated TabletLocationsPB tablet_locations = 1;
+  optional MasterErrorPB error = 1;
+
+  repeated TabletLocationsPB tablet_locations = 2;
 
   // TODO: fill in Errors for bad tablet IDs.
   message Error {
     required bytes tablet_id = 1;
     required AppStatusPB status = 2;
   }
-  repeated Error errors = 2;
+  repeated Error errors = 3;
 }
 
 // ============================================================================
@@ -420,12 +425,14 @@ message ListTabletServersRequestPB {
 }
 
 message ListTabletServersResponsePB {
+  optional MasterErrorPB error = 1;
+
   message Entry {
     required NodeInstancePB instance_id = 1;
     optional TSRegistrationPB registration = 2;
     optional int32 millis_since_heartbeat = 3;
   }
-  repeated Entry servers = 1;
+  repeated Entry servers = 2;
 }
 
 service MasterService {

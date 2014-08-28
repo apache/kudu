@@ -99,6 +99,18 @@ Status HostPort::ResolveAddresses(vector<Sockaddr>* addresses) const {
   return Status::OK();
 }
 
+Status HostPort::ParseStrings(const string& comma_sep_addrs,
+                              uint16_t default_port,
+                              vector<HostPort>* res) {
+  vector<string> addr_strings = strings::Split(comma_sep_addrs, ",", strings::SkipEmpty());
+  BOOST_FOREACH(const string& addr_string, addr_strings) {
+    HostPort host_port;
+    RETURN_NOT_OK(host_port.ParseString(addr_string, default_port));
+    res->push_back(host_port);
+  }
+  return Status::OK();
+}
+
 string HostPort::ToString() const {
   return Substitute("$0:$1", host_, port_);
 }
@@ -110,15 +122,14 @@ bool IsPrivilegedPort(uint16_t port) {
 Status ParseAddressList(const std::string& addr_list,
                         uint16_t default_port,
                         std::vector<Sockaddr>* addresses) {
-  vector<string> addr_strings = strings::Split(addr_list, ",", strings::SkipEmpty());
-
+  vector<HostPort> host_ports;
+  RETURN_NOT_OK(HostPort::ParseStrings(addr_list, default_port, &host_ports));
   unordered_set<Sockaddr> uniqued;
 
-  BOOST_FOREACH(const string& addr_string, addr_strings) {
+  BOOST_FOREACH(const HostPort& host_port, host_ports) {
     vector<Sockaddr> this_addresses;
-    HostPort host_port;
-    RETURN_NOT_OK(host_port.ParseString(addr_string, default_port));
     RETURN_NOT_OK(host_port.ResolveAddresses(&this_addresses));
+
     // Only add the unique ones -- the user may have specified
     // some IP addresses in multiple ways
     BOOST_FOREACH(const Sockaddr& addr, this_addresses) {

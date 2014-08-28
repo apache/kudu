@@ -2,6 +2,7 @@
 
 #include "kudu/master/master.h"
 
+#include <boost/bind.hpp>
 #include <boost/foreach.hpp>
 #include <list>
 #include <vector>
@@ -19,6 +20,7 @@
 #include "kudu/tserver/tablet_service.h"
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/net/sockaddr.h"
+#include "kudu/util/task_executor.h"
 #include "kudu/util/status.h"
 
 using std::vector;
@@ -33,7 +35,8 @@ Master::Master(const MasterOptions& opts)
     state_(kStopped),
     ts_manager_(new TSManager()),
     catalog_manager_(new CatalogManager(this)),
-    path_handlers_(new MasterPathHandlers(this)) {
+    path_handlers_(new MasterPathHandlers(this)),
+    opts_(opts) {
 }
 
 Master::~Master() {
@@ -50,17 +53,22 @@ string Master::ToString() const {
 Status Master::Init() {
   CHECK_EQ(kStopped, state_);
 
+  RETURN_NOT_OK(TaskExecutorBuilder("init").set_max_threads(1).Build(&init_executor_));
+
   RETURN_NOT_OK(ServerBase::Init());
 
   RETURN_NOT_OK(path_handlers_->Register(web_server_.get()));
-
-  RETURN_NOT_OK(catalog_manager_->Init(is_first_run_));
 
   state_ = kInitialized;
   return Status::OK();
 }
 
 Status Master::Start() {
+  RETURN_NOT_OK(StartAsync());
+  return WaitForCatalogManagerInit();
+}
+
+Status Master::StartAsync() {
   CHECK_EQ(kInitialized, state_);
 
   gscoped_ptr<ServiceIf> impl(new MasterServiceImpl(this));
@@ -71,8 +79,29 @@ Status Master::Start() {
   RETURN_NOT_OK(ServerBase::RegisterService(consensus_service.Pass()));
   RETURN_NOT_OK(ServerBase::Start());
 
+  // Start initializing the catalog manager.
+  RETURN_NOT_OK(init_executor_->Submit(boost::bind(&Master::InitCatalogManager, this),
+                                       &init_future_));
+
   state_ = kRunning;
+
   return Status::OK();
+}
+
+Status Master::InitCatalogManager() {
+  if (catalog_manager_->IsInitialized()) {
+    return Status::IllegalState("catalog manager is already initialized");
+  }
+  RETURN_NOT_OK_PREPEND(catalog_manager_->Init(is_first_run_),
+                        "unable to initialize catalog manager");
+  return Status::OK();
+}
+
+Status Master::WaitForCatalogManagerInit() {
+  CHECK_EQ(state_, kRunning);
+
+  init_future_->Wait();
+  return init_future_->status();
 }
 
 void Master::Shutdown() {

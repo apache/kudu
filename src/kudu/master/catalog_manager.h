@@ -282,6 +282,7 @@ class CatalogManager : public tserver::TabletPeerLookupIf {
   virtual ~CatalogManager();
 
   Status Init(bool is_first_run);
+
   void Shutdown();
   Status CheckOnline() const;
 
@@ -381,9 +382,19 @@ class CatalogManager : public tserver::TabletPeerLookupIf {
 
   virtual const NodeInstancePB& NodeInstance() const OVERRIDE;
 
+  bool IsInitialized() const;
+
  private:
   friend class TableLoader;
   friend class TabletLoader;
+
+  // Helper for initializing 'sys_tables_' and 'sys_tablets_'. After
+  // calling this method, the caller should call WaitUntilRunning() on
+  // sys_tables_ and sys_tablets_ WITHOUT holding 'lock_' to wait for
+  // consensus to start for the respective tables.
+  //
+  // This method is thread-safe.
+  Status InitSysTablesAsync(bool is_first_run);
 
   // Helper for creating the inital Tablets of the table
   // based on the split-keys field in the request.
@@ -513,6 +524,8 @@ class CatalogManager : public tserver::TabletPeerLookupIf {
   // like the assignment and cleaner
   friend class CatalogManagerBgTasks;
   gscoped_ptr<CatalogManagerBgTasks> background_tasks_;
+
+  bool initted_;
 
   // Async operations are accessing some private methods
   // (TODO: this stuff should be deferred and done in the background thread)

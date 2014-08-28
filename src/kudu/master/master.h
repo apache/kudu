@@ -15,6 +15,8 @@
 namespace kudu {
 
 class RpcServer;
+class Future;
+class TaskExecutor;
 struct RpcServerOptions;
 
 namespace rpc {
@@ -38,6 +40,10 @@ class Master : public server::ServerBase {
 
   Status Init();
   Status Start();
+
+  Status StartAsync();
+  Status WaitForCatalogManagerInit();
+
   void Shutdown();
 
   std::string ToString() const;
@@ -45,6 +51,8 @@ class Master : public server::ServerBase {
   TSManager* ts_manager() { return ts_manager_.get(); }
 
   CatalogManager* catalog_manager() { return catalog_manager_.get(); }
+
+  const MasterOptions& opts() { return opts_; }
 
  private:
   friend class MasterTest;
@@ -57,11 +65,20 @@ class Master : public server::ServerBase {
 
   RpcServer *rpc_server() const { return rpc_server_.get(); }
 
+  Status InitCatalogManager();
+
   MasterState state_;
 
   gscoped_ptr<TSManager> ts_manager_;
   gscoped_ptr<CatalogManager> catalog_manager_;
   gscoped_ptr<MasterPathHandlers> path_handlers_;
+
+  // For initializing the catalog manager.
+  gscoped_ptr<TaskExecutor> init_executor_;
+
+  std::tr1::shared_ptr<Future> init_future_;
+
+  MasterOptions opts_;
 
   DISALLOW_COPY_AND_ASSIGN(Master);
 };

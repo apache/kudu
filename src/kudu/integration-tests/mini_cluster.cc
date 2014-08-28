@@ -5,6 +5,7 @@
 #include <boost/foreach.hpp>
 
 #include "kudu/client/client.h"
+#include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/master/mini_master.h"
 #include "kudu/master/catalog_manager.h"
@@ -31,8 +32,8 @@ using tserver::MiniTabletServer;
 using tserver::TabletServer;
 
 MiniClusterOptions::MiniClusterOptions()
-  : num_tablet_servers(1),
-    master_rpc_port(0) {
+ :  num_masters(1),
+    num_tablet_servers(1) {
 }
 
 MiniCluster::MiniCluster(Env* env, const MiniClusterOptions& options)
@@ -40,9 +41,12 @@ MiniCluster::MiniCluster(Env* env, const MiniClusterOptions& options)
     env_(env),
     fs_root_(!options.data_root.empty() ? options.data_root :
                 JoinPathSegments(GetTestDataDirectory(), "minicluster-data")),
+    num_masters_initial_(options.num_masters),
     num_ts_initial_(options.num_tablet_servers),
-    master_rpc_port_(options.master_rpc_port),
+    leader_master_idx_(0),
+    master_rpc_ports_(options.master_rpc_ports),
     tserver_rpc_ports_(options.tserver_rpc_ports) {
+  mini_masters_.resize(num_masters_initial_);
 }
 
 MiniCluster::~MiniCluster() {
@@ -52,14 +56,22 @@ MiniCluster::~MiniCluster() {
 Status MiniCluster::Start() {
   CHECK(!fs_root_.empty()) << "No Fs root was provided";
   CHECK(!running_);
+
+  if (num_masters_initial_ > 1) {
+    CHECK_GE(master_rpc_ports_.size(), num_masters_initial_);
+  }
+
   if (!env_->FileExists(fs_root_)) {
     RETURN_NOT_OK(env_->CreateDir(fs_root_));
   }
 
-  // start the master (we need the port to set on the servers)
-  gscoped_ptr<MiniMaster> mini_master(new MiniMaster(env_, GetMasterFsRoot(), master_rpc_port_));
-  RETURN_NOT_OK_PREPEND(mini_master->Start(), "Couldn't start master");
-  mini_master_.reset(mini_master.release());
+  // start the masters
+  if (num_masters_initial_ > 1) {
+    RETURN_NOT_OK_PREPEND(StartDistributedMasters(),
+                          "Couldn't start distributed masters");
+  } else {
+    RETURN_NOT_OK_PREPEND(StartSingleMaster(), "Couldn't start the single master");
+  }
 
   for (int i = 0; i < num_ts_initial_; i++) {
     RETURN_NOT_OK_PREPEND(AddTabletServer(),
@@ -70,6 +82,52 @@ Status MiniCluster::Start() {
                         "Waiting for tablet servers to start");
 
   running_ = true;
+  return Status::OK();
+}
+
+Status MiniCluster::StartDistributedMasters() {
+  CHECK_GE(master_rpc_ports_.size(), num_masters_initial_);
+  CHECK_GT(master_rpc_ports_.size(), 1);
+  uint16_t leader_port = master_rpc_ports_[leader_master_idx_];
+  vector<uint16_t> follower_ports;
+  for (int i = 0; i < num_masters_initial_; i++) {
+    if (i != leader_master_idx_) {
+      follower_ports.push_back(master_rpc_ports_[i]);
+    }
+  }
+
+  LOG(INFO) << "Creating distributed mini masters. Leader port: " << leader_port
+            << ", follower ports: " << JoinInts(follower_ports, ", ");
+
+  gscoped_ptr<MiniMaster> leader_mini_master(
+      new MiniMaster(env_, GetMasterFsRoot(leader_master_idx_), leader_port));
+  RETURN_NOT_OK_PREPEND(leader_mini_master->StartLeader(follower_ports),
+                        "Couldn't start leader master");
+  mini_masters_[leader_master_idx_] = shared_ptr<MiniMaster>(leader_mini_master.release());
+
+  for (int i = 0; i < num_masters_initial_; i++) {
+    if (i == leader_master_idx_) {
+      continue;
+    }
+
+    vector<uint16_t> peer_ports;
+    for (int j = 0; j < num_masters_initial_; j++) {
+      if (j != i && j != leader_master_idx_) {
+        peer_ports.push_back(master_rpc_ports_[j]);
+      }
+    }
+    gscoped_ptr<MiniMaster> follower_mini_master(
+        new MiniMaster(env_, GetMasterFsRoot(i), master_rpc_ports_[i]));
+    RETURN_NOT_OK_PREPEND(follower_mini_master->StartFollower(leader_port, peer_ports),
+                          Substitute("Couldn't start follower $0", i));
+    mini_masters_[i] = shared_ptr<MiniMaster>(follower_mini_master.release());
+  }
+  int i = 0;
+  BOOST_FOREACH(const shared_ptr<MiniMaster>& master, mini_masters_) {
+    LOG(INFO) << "Waiting to initialize catalog manager on master " << i++;
+    RETURN_NOT_OK_PREPEND(master->WaitForCatalogManagerInit(),
+                          Substitute("Could not initialize catalog manager on master $0", i));
+  }
   return Status::OK();
 }
 
@@ -85,8 +143,25 @@ Status MiniCluster::StartSync() {
   return Status::OK();
 }
 
+Status MiniCluster::StartSingleMaster() {
+  // If there's a single master, 'mini_masters_' must be size 1.
+  CHECK_EQ(mini_masters_.size(), 1);
+  CHECK_LE(master_rpc_ports_.size(), 1);
+  uint16_t master_rpc_port = 0;
+  if (master_rpc_ports_.size() == 1) {
+    master_rpc_port = master_rpc_ports_[0];
+  }
+
+  // start the master (we need the port to set on the servers).
+  gscoped_ptr<MiniMaster> mini_master(
+      new MiniMaster(env_, GetMasterFsRoot(0), master_rpc_port));
+  RETURN_NOT_OK_PREPEND(mini_master->Start(), "Couldn't start master");
+  mini_masters_[0] = shared_ptr<MiniMaster>(mini_master.release());
+  return Status::OK();
+}
+
 Status MiniCluster::AddTabletServer() {
-  if (!mini_master_) {
+  if (mini_masters_.empty()) {
     return Status::IllegalState("Master not yet initialized");
   }
   int new_idx = mini_tablet_servers_.size();
@@ -98,7 +173,8 @@ Status MiniCluster::AddTabletServer() {
   gscoped_ptr<MiniTabletServer> tablet_server(
     new MiniTabletServer(GetTabletServerFsRoot(new_idx), ts_rpc_port));
   // set the master port
-  tablet_server->options()->master_hostport = HostPort(mini_master_.get()->bound_rpc_addr());
+  tablet_server->options()->master_hostport =
+      HostPort(leader_mini_master()->bound_rpc_addr());
   RETURN_NOT_OK(tablet_server->Start())
   mini_tablet_servers_.push_back(shared_ptr<MiniTabletServer>(tablet_server.release()));
   return Status::OK();
@@ -108,10 +184,18 @@ void MiniCluster::Shutdown() {
   BOOST_FOREACH(const shared_ptr<MiniTabletServer>& tablet_server, mini_tablet_servers_) {
     tablet_server->Shutdown();
   }
-  if (mini_master_) {
-    mini_master_->Shutdown();
+  mini_tablet_servers_.clear();
+  BOOST_FOREACH(shared_ptr<MiniMaster>& master_server, mini_masters_) {
+    master_server->Shutdown();
+    master_server.reset();
   }
   running_ = false;
+}
+
+MiniMaster* MiniCluster::mini_master(int idx) {
+  CHECK_GE(idx, 0) << "Master idx must be >= 0";
+  CHECK_LT(idx, mini_masters_.size()) << "Master idx must be < num masters started";
+  return mini_masters_[idx].get();
 }
 
 MiniTabletServer* MiniCluster::mini_tablet_server(int idx) {
@@ -120,8 +204,8 @@ MiniTabletServer* MiniCluster::mini_tablet_server(int idx) {
   return mini_tablet_servers_[idx].get();
 }
 
-string MiniCluster::GetMasterFsRoot() {
-  return JoinPathSegments(fs_root_, "master-root");
+string MiniCluster::GetMasterFsRoot(int idx) {
+  return JoinPathSegments(fs_root_, Substitute("master-$0-root", idx));
 }
 
 string MiniCluster::GetTabletServerFsRoot(int idx) {
@@ -140,7 +224,7 @@ Status MiniCluster::WaitForReplicaCount(const string& tablet_id,
   Stopwatch sw;
   sw.start();
   while (sw.elapsed().wall_seconds() < kTabletReportWaitTimeSeconds) {
-    mini_master_->master()->catalog_manager()->GetTabletLocations(tablet_id, locations);
+    leader_mini_master()->master()->catalog_manager()->GetTabletLocations(tablet_id, locations);
     if ((locations->stale() && expected_count == 0) ||
         (!locations->stale() && locations->replicas_size() == expected_count)) {
       return Status::OK();
@@ -162,7 +246,7 @@ Status MiniCluster::WaitForTabletServerCount(int count,
   Stopwatch sw;
   sw.start();
   while (sw.elapsed().wall_seconds() < kRegistrationWaitTimeSeconds) {
-    mini_master_->master()->ts_manager()->GetAllDescriptors(descs);
+    leader_mini_master()->master()->ts_manager()->GetAllDescriptors(descs);
     if (descs->size() == count) {
       // GetAllDescriptors() may return servers that are no longer online.
       // Do a second step of verification to verify that the descs that we got
@@ -191,4 +275,3 @@ Status MiniCluster::WaitForTabletServerCount(int count,
 }
 
 } // namespace kudu
-

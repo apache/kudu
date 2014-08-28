@@ -302,7 +302,8 @@ string RequestorString(RpcContext* rpc) {
 
 CatalogManager::CatalogManager(Master *master)
   : master_(master),
-    closing_(false) {
+    closing_(false),
+    initted_(false) {
 }
 
 CatalogManager::~CatalogManager() {
@@ -310,6 +311,35 @@ CatalogManager::~CatalogManager() {
 }
 
 Status CatalogManager::Init(bool is_first_run) {
+  RETURN_NOT_OK(InitSysTablesAsync(is_first_run));
+
+  // WaitUntilRunning() must run outside of the lock as to prevent
+  // deadlock. This is safe as WaitUntilRunning waits for another
+  // thread to finish its work and doesn't itself depend on any state
+  // within CatalogManager.
+
+  RETURN_NOT_OK(sys_tables_->WaitUntilRunning());
+  RETURN_NOT_OK(sys_tablets_->WaitUntilRunning());
+
+  boost::lock_guard<LockType> l(lock_);
+
+  if (!is_first_run) {
+    TableLoader table_loader(this);
+    RETURN_NOT_OK(sys_tables_->VisitTables(&table_loader));
+
+    TabletLoader tablet_loader(this);
+    RETURN_NOT_OK(sys_tablets_->VisitTablets(&tablet_loader));
+  }
+
+  background_tasks_.reset(new CatalogManagerBgTasks(this));
+  RETURN_NOT_OK(background_tasks_->Init());
+
+  initted_ = true;
+
+  return Status::OK();
+}
+
+Status CatalogManager::InitSysTablesAsync(bool is_first_run) {
   boost::lock_guard<LockType> l(lock_);
 
   sys_tables_.reset(new SysTablesTable(master_, master_->metric_registry()));
@@ -321,18 +351,14 @@ Status CatalogManager::Init(bool is_first_run) {
   } else {
     RETURN_NOT_OK(sys_tables_->Load(master_->fs_manager()));
     RETURN_NOT_OK(sys_tablets_->Load(master_->fs_manager()));
-
-    TableLoader table_loader(this);
-    RETURN_NOT_OK(sys_tables_->VisitTables(&table_loader));
-
-    TabletLoader tablet_loader(this);
-    RETURN_NOT_OK(sys_tablets_->VisitTablets(&tablet_loader));
   }
 
-  background_tasks_.reset(new CatalogManagerBgTasks(this));
-  RETURN_NOT_OK(background_tasks_->Init());
-
   return Status::OK();
+}
+
+bool CatalogManager::IsInitialized() const {
+  boost::shared_lock<LockType> l(lock_);
+  return initted_;
 }
 
 void CatalogManager::Shutdown() {

@@ -25,6 +25,7 @@ namespace master {
 class Master;
 
 class Master;
+struct MasterOptions;
 class TableInfo;
 class TabletInfo;
 
@@ -81,6 +82,10 @@ class SysTable {
 
   Status SetupTablet(const scoped_refptr<tablet::TabletMetadata>& metadata,
                      const metadata::QuorumPeerPB& quorum_peer);
+
+  Status SetupDistributedQuorum(const MasterOptions& options,
+                                metadata::QuorumPeerPB* quorum_peer,
+                                metadata::QuorumPB* quorum);
 
   const scoped_refptr<tablet::TabletPeer>& tablet_peer() const {
     return tablet_peer_;

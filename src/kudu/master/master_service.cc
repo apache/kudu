@@ -21,6 +21,35 @@ using std::string;
 using std::vector;
 using std::tr1::shared_ptr;
 
+namespace {
+
+template<class RespClass>
+bool CheckCatalogManagerInitializedOrRespond(Master* master,
+                                             RespClass* resp,
+                                             rpc::RpcContext* rpc) {
+  if (PREDICT_FALSE(!master->catalog_manager()->IsInitialized())) {
+    SetupErrorAndRespond(resp->mutable_error(),
+                         Status::ServiceUnavailable("catalog manager has not been initialized"),
+                         MasterErrorPB::CATALOG_MANAGER_NOT_INITIALIZED,
+                         rpc);
+    return false;
+  }
+  return true;
+}
+
+} // anonymous namespace
+
+static void SetupErrorAndRespond(MasterErrorPB* error,
+                                 const Status& s,
+                                 MasterErrorPB::Code code,
+                                 rpc::RpcContext* rpc) {
+  StatusToPB(s, error->mutable_status());
+  error->set_code(code);
+  // TODO RespondSuccess() is better called 'Respond'.
+  rpc->RespondSuccess();
+}
+
+
 MasterServiceImpl::MasterServiceImpl(Master* server)
   : MasterServiceIf(server->metric_context()),
     server_(server) {
@@ -39,6 +68,12 @@ void MasterServiceImpl::TSHeartbeat(const TSHeartbeatRequestPB* req,
 
   shared_ptr<TSDescriptor> ts_desc;
   Status s;
+
+  if (!server_->catalog_manager()->IsInitialized()) {
+    LOG(WARNING) << "Catalog manager is not yet initialized, ignoring the heartbeat.";
+    rpc->RespondSuccess();
+    return;
+  }
 
   // If the TS is registering, register in the TS manager.
   if (req->has_registration()) {
@@ -98,6 +133,9 @@ void MasterServiceImpl::TSHeartbeat(const TSHeartbeatRequestPB* req,
 void MasterServiceImpl::GetTabletLocations(const GetTabletLocationsRequestPB* req,
                                            GetTabletLocationsResponsePB* resp,
                                            rpc::RpcContext* rpc) {
+  if (!CheckCatalogManagerInitializedOrRespond(server_, resp, rpc)) {
+    return;
+  }
 
   TSRegistrationPB reg;
   vector<TSDescriptor*> locs;
@@ -117,6 +155,10 @@ void MasterServiceImpl::GetTabletLocations(const GetTabletLocationsRequestPB* re
 void MasterServiceImpl::CreateTable(const CreateTableRequestPB* req,
                                     CreateTableResponsePB* resp,
                                     rpc::RpcContext* rpc) {
+  if (!CheckCatalogManagerInitializedOrRespond(server_, resp, rpc)) {
+    return;
+  }
+
   Status s = server_->catalog_manager()->CreateTable(req, resp, rpc);
   if (!s.ok() && !resp->has_error()) {
     StatusToPB(s, resp->mutable_error()->mutable_status());
@@ -124,9 +166,13 @@ void MasterServiceImpl::CreateTable(const CreateTableRequestPB* req,
   rpc->RespondSuccess();
 }
 
- void MasterServiceImpl::IsCreateTableDone(const IsCreateTableDoneRequestPB* req,
+void MasterServiceImpl::IsCreateTableDone(const IsCreateTableDoneRequestPB* req,
                                            IsCreateTableDoneResponsePB* resp,
                                            rpc::RpcContext* rpc) {
+  if (!CheckCatalogManagerInitializedOrRespond(server_, resp, rpc)) {
+    return;
+  }
+
   Status s = server_->catalog_manager()->IsCreateTableDone(req, resp);
   if (!s.ok() && !resp->has_error()) {
     StatusToPB(s, resp->mutable_error()->mutable_status());
@@ -137,6 +183,10 @@ void MasterServiceImpl::CreateTable(const CreateTableRequestPB* req,
 void MasterServiceImpl::DeleteTable(const DeleteTableRequestPB* req,
                                     DeleteTableResponsePB* resp,
                                     rpc::RpcContext* rpc) {
+  if (!CheckCatalogManagerInitializedOrRespond(server_, resp, rpc)) {
+    return;
+  }
+
   Status s = server_->catalog_manager()->DeleteTable(req, resp, rpc);
   if (!s.ok() && !resp->has_error()) {
     StatusToPB(s, resp->mutable_error()->mutable_status());
@@ -147,6 +197,10 @@ void MasterServiceImpl::DeleteTable(const DeleteTableRequestPB* req,
 void MasterServiceImpl::AlterTable(const AlterTableRequestPB* req,
                                    AlterTableResponsePB* resp,
                                    rpc::RpcContext* rpc) {
+  if (!CheckCatalogManagerInitializedOrRespond(server_, resp, rpc)) {
+    return;
+  }
+
   Status s = server_->catalog_manager()->AlterTable(req, resp, rpc);
   if (!s.ok() && !resp->has_error()) {
     StatusToPB(s, resp->mutable_error()->mutable_status());
@@ -157,6 +211,10 @@ void MasterServiceImpl::AlterTable(const AlterTableRequestPB* req,
 void MasterServiceImpl::IsAlterTableDone(const IsAlterTableDoneRequestPB* req,
                                          IsAlterTableDoneResponsePB* resp,
                                          rpc::RpcContext* rpc) {
+  if (!CheckCatalogManagerInitializedOrRespond(server_, resp, rpc)) {
+    return;
+  }
+
   Status s = server_->catalog_manager()->IsAlterTableDone(req, resp, rpc);
   if (!s.ok() && !resp->has_error()) {
     StatusToPB(s, resp->mutable_error()->mutable_status());
@@ -167,6 +225,10 @@ void MasterServiceImpl::IsAlterTableDone(const IsAlterTableDoneRequestPB* req,
 void MasterServiceImpl::ListTables(const ListTablesRequestPB* req,
                                    ListTablesResponsePB* resp,
                                    rpc::RpcContext* rpc) {
+  if (!CheckCatalogManagerInitializedOrRespond(server_, resp, rpc)) {
+    return;
+  }
+
   Status s = server_->catalog_manager()->ListTables(req, resp);
   if (!s.ok() && !resp->has_error()) {
     StatusToPB(s, resp->mutable_error()->mutable_status());
@@ -177,6 +239,10 @@ void MasterServiceImpl::ListTables(const ListTablesRequestPB* req,
 void MasterServiceImpl::GetTableLocations(const GetTableLocationsRequestPB* req,
                                           GetTableLocationsResponsePB* resp,
                                           rpc::RpcContext* rpc) {
+  if (!CheckCatalogManagerInitializedOrRespond(server_, resp, rpc)) {
+    return;
+  }
+
   Status s = server_->catalog_manager()->GetTableLocations(req, resp);
   if (!s.ok() && !resp->has_error()) {
     StatusToPB(s, resp->mutable_error()->mutable_status());
@@ -187,6 +253,10 @@ void MasterServiceImpl::GetTableLocations(const GetTableLocationsRequestPB* req,
 void MasterServiceImpl::GetTableSchema(const GetTableSchemaRequestPB* req,
                                        GetTableSchemaResponsePB* resp,
                                        rpc::RpcContext* rpc) {
+  if (!CheckCatalogManagerInitializedOrRespond(server_, resp, rpc)) {
+    return;
+  }
+
   Status s = server_->catalog_manager()->GetTableSchema(req, resp);
   if (!s.ok() && !resp->has_error()) {
     StatusToPB(s, resp->mutable_error()->mutable_status());
@@ -197,6 +267,10 @@ void MasterServiceImpl::GetTableSchema(const GetTableSchemaRequestPB* req,
 void MasterServiceImpl::ListTabletServers(const ListTabletServersRequestPB* req,
                                           ListTabletServersResponsePB* resp,
                                           rpc::RpcContext* rpc) {
+  if (!CheckCatalogManagerInitializedOrRespond(server_, resp, rpc)) {
+    return;
+  }
+
   vector<std::tr1::shared_ptr<TSDescriptor> > descs;
   server_->ts_manager()->GetAllDescriptors(&descs);
   BOOST_FOREACH(const std::tr1::shared_ptr<TSDescriptor>& desc, descs) {

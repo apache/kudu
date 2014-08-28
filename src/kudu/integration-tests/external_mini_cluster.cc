@@ -38,7 +38,8 @@ static double kProcessStartTimeoutSeconds = 10.0;
 static double kTabletServerRegistrationTimeoutSeconds = 10.0;
 
 ExternalMiniClusterOptions::ExternalMiniClusterOptions()
-  : num_tablet_servers(1) {
+    : num_masters(1),
+      num_tablet_servers(1) {
 }
 
 ExternalMiniClusterOptions::~ExternalMiniClusterOptions() {
@@ -48,6 +49,7 @@ ExternalMiniClusterOptions::~ExternalMiniClusterOptions() {
 ExternalMiniCluster::ExternalMiniCluster(const ExternalMiniClusterOptions& opts)
   : opts_(opts),
     started_(false) {
+  masters_.resize(opts_.num_masters, NULL);
 }
 
 ExternalMiniCluster::~ExternalMiniCluster() {
@@ -93,8 +95,13 @@ Status ExternalMiniCluster::Start() {
     RETURN_NOT_OK_PREPEND(s, "Could not create root dir " + data_root_);
   }
 
-  RETURN_NOT_OK_PREPEND(StartMaster(),
-                        "Failed to start Master");
+  if (opts_.num_masters != 1) {
+    RETURN_NOT_OK_PREPEND(StartDistributedMasters(),
+                          "Failed to add distributed masters");
+  } else {
+    RETURN_NOT_OK_PREPEND(StartSingleMaster(),
+                          Substitute("Failed to start a single Master"));
+  }
 
   for (int i = 1; i <= opts_.num_tablet_servers; i++) {
     RETURN_NOT_OK_PREPEND(AddTabletServer(),
@@ -109,10 +116,13 @@ Status ExternalMiniCluster::Start() {
 }
 
 void ExternalMiniCluster::Shutdown() {
-  if (master_) {
-    master_->Shutdown();
-    master_ = NULL;
+  BOOST_FOREACH(const scoped_refptr<ExternalDaemon>& master, masters_) {
+    if (master) {
+      master->Shutdown();
+    }
   }
+
+  masters_.clear();
 
   BOOST_FOREACH(const scoped_refptr<ExternalDaemon>& ts, tablet_servers_) {
     ts->Shutdown();
@@ -151,22 +161,83 @@ vector<string> SubstituteInFlags(const vector<string>& orig_flags,
 
 } // anonymous namespace
 
-Status ExternalMiniCluster::StartMaster() {
+Status ExternalMiniCluster::StartSingleMaster() {
   string exe = GetBinaryPath(kMasterBinaryName);
-  master_ = new ExternalMaster(exe, GetDataPath("master"),
-                               SubstituteInFlags(opts_.extra_master_flags, 0));
-  return master_->Start();
+  scoped_refptr<ExternalMaster> master =
+      new ExternalMaster(exe, GetDataPath("master"),
+                         SubstituteInFlags(opts_.extra_master_flags, 0));
+  RETURN_NOT_OK(master->Start());
+  masters_[0] = master;
+  return Status::OK();
+}
+
+Status ExternalMiniCluster::StartDistributedMasters() {
+  int num_masters = opts_.num_masters;
+
+  if (opts_.master_rpc_ports.size() != num_masters) {
+    LOG(FATAL) << num_masters << " masters requested, but only " <<
+        opts_.master_rpc_ports.size() << " ports specified in 'master_rpc_ports'";
+  }
+
+  // Master at index '0' will be leader Master.
+  string leader_addr = Substitute("127.0.0.1:$0", opts_.master_rpc_ports[0]);
+  vector<string> follower_addrs;
+  for (int i = 1; i < num_masters; i++) {
+    follower_addrs.push_back(Substitute("127.0.0.1:$0", opts_.master_rpc_ports[i]));
+  }
+  string follower_addrs_str = JoinStrings(follower_addrs, ",");
+
+  string exe = GetBinaryPath(kMasterBinaryName);
+
+  vector<string> leader_flags = opts_.extra_master_flags;
+  leader_flags.push_back("--leader");
+  leader_flags.push_back("--follower_addresses=" + follower_addrs_str);
+
+  scoped_refptr<ExternalMaster> leader = new ExternalMaster(exe, GetDataPath("master-0"),
+                                                            leader_addr,
+                                                            SubstituteInFlags(leader_flags, 0));
+  RETURN_NOT_OK_PREPEND(leader->Start(), "Couldn't start the leader Master");
+  masters_[0] = leader;
+
+  // Start the follower masters.
+  for (int i = 1; i < num_masters; i++) {
+    string curr_peer_addr;
+    vector<string> other_peer_addrs;
+    for (int j = 1; j < num_masters; j++) {
+      string addr = Substitute("127.0.0.1:$0", opts_.master_rpc_ports[j]);
+      if (j == i) {
+        curr_peer_addr = addr;
+      } else {
+        other_peer_addrs.push_back(addr);
+      }
+    }
+    string peer_addrs_str = JoinStrings(other_peer_addrs, ",");
+    vector<string> follower_flags = opts_.extra_master_flags;
+    follower_flags.push_back("--leader_address=" + leader_addr);
+    follower_flags.push_back("--follower_addresses=" + peer_addrs_str);
+    scoped_refptr<ExternalMaster> follower =
+        new ExternalMaster(exe,
+                           GetDataPath(Substitute("master-$0", i)),
+                           curr_peer_addr,
+                           SubstituteInFlags(follower_flags, i));
+    RETURN_NOT_OK_PREPEND(follower->Start(),
+                          Substitute("Unable to start follower Master at index $0", i));
+    masters_[i] = follower;
+  }
+
+  return Status::OK();
 }
 
 Status ExternalMiniCluster::AddTabletServer() {
-  CHECK(master_) << "Must have started master before adding tablet servers";
+  CHECK(leader_master() != NULL)
+      << "Must have started at least 1 master before adding tablet servers";
 
   int idx = tablet_servers_.size();
 
   string exe = GetBinaryPath(kTabletServerBinaryName);
   scoped_refptr<ExternalTabletServer> ts =
     new ExternalTabletServer(exe, GetDataPath(Substitute("ts-$0", idx)),
-                             master_->bound_rpc_hostport(),
+                             leader_master()->bound_rpc_hostport(),
                              SubstituteInFlags(opts_.extra_tserver_flags, idx));
   RETURN_NOT_OK(ts->Start());
   tablet_servers_.push_back(ts);
@@ -187,7 +258,7 @@ Status ExternalMiniCluster::WaitForTabletServerCount(int count, const MonoDelta&
     master::ListTabletServersResponsePB resp;
     rpc::RpcController rpc;
     rpc.set_timeout(remaining);
-    RETURN_NOT_OK_PREPEND(master_proxy()->ListTabletServers(req, &resp, &rpc),
+    RETURN_NOT_OK_PREPEND(leader_master_proxy()->ListTabletServers(req, &resp, &rpc),
                           "ListTabletServers RPC failed");
 
     // ListTabletServers() may return servers that are no longer online.
@@ -212,16 +283,26 @@ Status ExternalMiniCluster::WaitForTabletServerCount(int count, const MonoDelta&
   }
 }
 
+shared_ptr<MasterServiceProxy> ExternalMiniCluster::leader_master_proxy() {
+  return master_proxy(0);
+}
+
 shared_ptr<MasterServiceProxy> ExternalMiniCluster::master_proxy() {
+  CHECK_EQ(masters_.size(), 1);
+  return master_proxy(0);
+}
+
+shared_ptr<MasterServiceProxy> ExternalMiniCluster::master_proxy(int idx) {
+  CHECK_LT(idx, masters_.size());
   return shared_ptr<MasterServiceProxy>(
-    new MasterServiceProxy(messenger_, master_->bound_rpc_addr()));
+      new MasterServiceProxy(messenger_, CHECK_NOTNULL(master(idx))->bound_rpc_addr()));
 }
 
 Status ExternalMiniCluster::CreateClient(client::KuduClientBuilder& builder,
                                          shared_ptr<client::KuduClient>* client) {
   CHECK(started_);
 
-  return builder.master_server_addr(master_->bound_rpc_hostport().ToString())
+  return builder.master_server_addr(leader_master()->bound_rpc_hostport().ToString())
       .Build(client);
 }
 
@@ -359,7 +440,16 @@ const NodeInstancePB& ExternalDaemon::instance_id() const {
 ExternalMaster::ExternalMaster(const string& exe,
                                const string& data_dir,
                                const vector<string>& extra_flags)
-  : ExternalDaemon(exe, data_dir, extra_flags) {
+    : ExternalDaemon(exe, data_dir, extra_flags),
+      rpc_bind_address_("127.0.0.1:0") {
+}
+
+ExternalMaster::ExternalMaster(const string& exe,
+                               const string& data_dir,
+                               const string& rpc_bind_address,
+                               const std::vector<string>& extra_flags)
+    : ExternalDaemon(exe, data_dir, extra_flags),
+      rpc_bind_address_(rpc_bind_address) {
 }
 
 ExternalMaster::~ExternalMaster() {
@@ -368,7 +458,7 @@ ExternalMaster::~ExternalMaster() {
 Status ExternalMaster::Start() {
   vector<string> flags;
   flags.push_back("--master_base_dir=" + data_dir_);
-  flags.push_back("--master_rpc_bind_addresses=127.0.0.1:0");
+  flags.push_back("--master_rpc_bind_addresses=" + rpc_bind_address_);
   flags.push_back("--master_web_port=0");
   RETURN_NOT_OK(StartProcess(flags));
   return Status::OK();

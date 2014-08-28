@@ -75,6 +75,19 @@ Status SysTable::Load(FsManager *fs_manager) {
   QuorumPeerPB quorum_peer;
   quorum_peer.set_permanent_uuid(fs_manager->uuid());
 
+  if (master_->opts().IsDistributed()) {
+    LOG(INFO) << "Configuring the quorum for distributed operation...";
+    QuorumPB quorum = metadata->Quorum();
+    RETURN_NOT_OK(SetupDistributedQuorum(master_->opts(),
+                                         &quorum_peer,
+                                         &quorum));
+    if (quorum.has_seqno()) {
+      quorum.set_seqno(quorum.seqno() + 1);
+    }
+    quorum.add_peers()->CopyFrom(quorum_peer);
+    metadata->SetQuorum(quorum);
+    RETURN_NOT_OK(metadata->Flush());
+  }
   RETURN_NOT_OK(SetupTablet(metadata, quorum_peer));
   return Status::OK();
 }
@@ -86,10 +99,15 @@ Status SysTable::CreateNew(FsManager *fs_manager) {
   QuorumPeerPB quorum_peer;
   quorum_peer.set_permanent_uuid(fs_manager->uuid());
 
-  // TODO For dist consensus get the quorum with other peers.
   QuorumPB quorum;
-  quorum.set_local(true);
   quorum.set_seqno(0);
+
+  if (master_->opts().IsDistributed()) {
+    RETURN_NOT_OK(SetupDistributedQuorum(master_->opts(),
+                                         &quorum_peer, &quorum));
+  } else {
+    quorum.set_local(true);
+  }
   quorum.add_peers()->CopyFrom(quorum_peer);
 
   // Create the new Metadata
@@ -105,10 +123,49 @@ Status SysTable::CreateNew(FsManager *fs_manager) {
   return SetupTablet(metadata, quorum_peer);
 }
 
+Status SysTable::SetupDistributedQuorum(const MasterOptions& options,
+                                        QuorumPeerPB* quorum_peer, QuorumPB* quorum) {
+  DCHECK(options.IsDistributed());
+  quorum->set_local(false);
+  quorum->clear_peers();
+  BOOST_FOREACH(const HostPort& host_port, options.follower_addresses) {
+    QuorumPeerPB peer;
+    HostPortPB peer_host_port_pb;
+    RETURN_NOT_OK(HostPortToPB(host_port, &peer_host_port_pb));
+    peer.mutable_last_known_addr()->CopyFrom(peer_host_port_pb);
+    peer.set_role(QuorumPeerPB::FOLLOWER);
+    quorum->add_peers()->CopyFrom(peer);
+  }
+  if (options.leader) {
+    quorum_peer->set_role(QuorumPeerPB::CANDIDATE);
+  } else {
+    quorum_peer->set_role(QuorumPeerPB::FOLLOWER);
+    QuorumPeerPB leader;
+    HostPortPB leader_host_port_pb;
+    RETURN_NOT_OK(HostPortToPB(master_->opts().leader_address, &leader_host_port_pb));
+    leader.mutable_last_known_addr()->CopyFrom(leader_host_port_pb);
+    leader.set_role(QuorumPeerPB::CANDIDATE);
+    quorum->add_peers()->CopyFrom(leader);
+  }
+  VLOG(1) << "Distributed quorum configuration: " << quorum->ShortDebugString();
+  return Status::OK();
+}
+
 void SysTable::SysTableStateChanged(TabletPeer* tablet_peer) {
   LOG(INFO) << "SysTable state changed. New quorum config: "
       << tablet_peer->Quorum().ShortDebugString();
+  if (master_->opts().IsDistributed()) {
+    if (master_->opts().leader) {
+      CHECK_EQ(tablet_peer_->role(), QuorumPeerPB::LEADER)
+          << "Aborting master startup: the current node could not be set as the leader.";
+    } else {
+      CHECK_EQ(tablet_peer_->role(), QuorumPeerPB::FOLLOWER)
+          << "Aborting master startup: the current node could not be set as a follower.";
+    }
+  }
+  VLOG(1) << "This master's current role is: " << QuorumPeerPB::Role_Name(tablet_peer->role());
 }
+
 
 Status SysTable::SetupTablet(const scoped_refptr<tablet::TabletMetadata>& metadata,
                              const QuorumPeerPB& quorum_peer) {
@@ -118,9 +175,6 @@ Status SysTable::SetupTablet(const scoped_refptr<tablet::TabletMetadata>& metada
 
   // TODO: handle crash mid-creation of tablet? do we ever end up with a
   // partially created tablet here?
-  // TODO right now sys tables are hard coded to be single quorum, so the MarkDirty
-  // callback that allows to notify of state changes (such as consensus role changes)
-  // just points to SysTableStateChanged(), which currently LOG(FATAL)s.
   tablet_peer_.reset(new TabletPeer(metadata,
                                     quorum_peer,
                                     leader_apply_executor_.get(),
@@ -148,16 +202,6 @@ Status SysTable::SetupTablet(const scoped_refptr<tablet::TabletMetadata>& metada
 
   RETURN_NOT_OK_PREPEND(tablet_peer_->Start(consensus_info),
                         "Failed to Start() TabletPeer");
-
-  // We need to wait for the tablet to become online before proceeding.
-  // We just try forever since we can't do anything with the systable unless it is
-  // running, we just make sure to make it clear to the user the reason of the
-  // wait.
-  Status status = WaitUntilRunning();
-  if (!status.ok()) {
-    LOG(FATAL) << "Illegal State while waiting for the tablet to become online: "
-        << status.ToString();
-  }
 
   shared_ptr<Schema> schema(tablet->schema());
   schema_ = SchemaBuilder(*schema.get()).BuildWithoutIds();

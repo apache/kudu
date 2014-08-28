@@ -25,6 +25,10 @@ class MiniTabletServer;
 struct MiniClusterOptions {
   MiniClusterOptions();
 
+  // Number of master servers.
+  // Default: 1
+  int num_masters;
+
   // Number of TS to start.
   // Default: 1
   int num_tablet_servers;
@@ -34,9 +38,9 @@ struct MiniClusterOptions {
   // The default may only be used from a gtest unit test.
   std::string data_root;
 
-  // RPC port for the master to run on.
-  // Defaults to 0 (an ephemeral port).
-  uint16_t master_rpc_port;
+  // List of RPC ports for the master to run on.
+  // Defaults to a list 0 (ephemeral ports).
+  std::vector<uint16_t> master_rpc_ports;
 
   // List of RPC ports for the tservers to run on.
   // Defaults to a list of 0 (ephemeral ports).
@@ -50,8 +54,8 @@ class MiniCluster {
   MiniCluster(Env* env, const MiniClusterOptions& options);
    ~MiniCluster();
 
-   // Start a cluster with a Master and 'num_tablet_servers' TabletServers.
-   // All servers run on the loopback interface with ephemeral ports.
+  // Start a cluster with a Master and 'num_tablet_servers' TabletServers.
+  // All servers run on the loopback interface with ephemeral ports.
   Status Start();
 
   // Like the previous method but performs initialization synchronously, i.e.
@@ -61,18 +65,37 @@ class MiniCluster {
 
   void Shutdown();
 
+  // Setup a quorum of distributed masters, with count specified in
+  // 'options'. Requires that a reserve RPC port is specified in
+  // 'options' for each master.
+  Status StartDistributedMasters();
+
+  // Add a new standalone master to the cluster. The new master is started.
+  Status StartSingleMaster();
+
   // Add a new TS to the cluster. The new TS is started.
   // Requires that the master is already running.
   Status AddTabletServer();
 
-  // Returns the Master for this MiniCluster.
-  master::MiniMaster* mini_master() { return mini_master_.get(); }
+  // If this cluster is configured for a single non-distributed
+  // master, return the single master. Exits with a CHECK failure if
+  // there are multiple masters.
+  master::MiniMaster* mini_master() {
+    CHECK_EQ(mini_masters_.size(), 1);
+    return mini_master(0);
+  }
+
+  // Returns the leader Master for this MiniCluster.
+  master::MiniMaster* leader_mini_master() { return mini_master(leader_master_idx_); }
+
+  // Returns the Master at index 'idx' for this MiniCluster.
+  master::MiniMaster* mini_master(int idx);
 
   // Returns the TabletServer at index 'idx' of this MiniCluster.
   // 'idx' must be between 0 and 'num_tablet_servers' -1.
   tserver::MiniTabletServer* mini_tablet_server(int idx);
 
-  std::string GetMasterFsRoot();
+  std::string GetMasterFsRoot(int indx);
 
   std::string GetTabletServerFsRoot(int idx);
 
@@ -99,6 +122,13 @@ class MiniCluster {
   Status WaitForTabletServerCount(int count,
                                   std::vector<std::tr1::shared_ptr<master::TSDescriptor> >* descs);
 
+  void set_leader_master_idx(int idx) {
+    CHECK_LT(leader_master_idx_, mini_masters_.size());
+    leader_master_idx_ = idx;
+  }
+
+  int leader_master_idx() const { return leader_master_idx_; }
+
  private:
   enum {
     kTabletReportWaitTimeSeconds = 5,
@@ -109,11 +139,14 @@ class MiniCluster {
 
   Env* const env_;
   const std::string fs_root_;
+  const int num_masters_initial_;
   const int num_ts_initial_;
-  const uint16_t master_rpc_port_;
+  int leader_master_idx_;
+
+  const std::vector<uint16_t> master_rpc_ports_;
   const std::vector<uint16_t> tserver_rpc_ports_;
 
-  gscoped_ptr<master::MiniMaster> mini_master_;
+  std::vector<std::tr1::shared_ptr<master::MiniMaster> > mini_masters_;
   std::vector<std::tr1::shared_ptr<tserver::MiniTabletServer> > mini_tablet_servers_;
 };
 

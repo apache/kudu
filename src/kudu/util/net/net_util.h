@@ -37,6 +37,13 @@ class HostPort {
   uint16_t port() const { return port_; }
   void set_port(uint16_t port) { port_ = port; }
 
+  // Parse a comma separated list of "host:port" pairs into a vector
+  // HostPort objects. If no port is specified for an entry in the
+  // comma separated list, 'default_port' is used for that entry's
+  // pair.
+  static Status ParseStrings(
+      const std::string& comma_sep_addrs, uint16_t default_port, std::vector<HostPort>* res);
+
  private:
   std::string host_;
   uint16_t port_;
