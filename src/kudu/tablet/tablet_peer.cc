@@ -142,6 +142,9 @@ Status TabletPeer::Start(const ConsensusBootstrapInfo& bootstrap_info) {
   RETURN_NOT_OK(consensus_->Start(Quorum(), bootstrap_info, &actual_config));
   meta_->SetQuorum(*actual_config.get());
 
+  QuorumPeerPB::Role my_role = consensus::GetRoleInQuorum(quorum_peer_.permanent_uuid(), Quorum());
+  RETURN_NOT_OK(StartPendingTransactions(my_role, bootstrap_info));
+
   TRACE("Flushing metadata");
   RETURN_NOT_OK(meta_->Flush());
 
@@ -154,6 +157,17 @@ Status TabletPeer::Start(const ConsensusBootstrapInfo& bootstrap_info) {
 
   RETURN_NOT_OK(StartLogGCTask());
 
+  return Status::OK();
+}
+
+// TODO KUDU-255 - handle the bootstrap info properly. In particular:
+// - Pending transactions whose ids are lower than bootstrap_info.last_commit_id
+//   don't need to go through consensus. We can simply trigger the apply for those.
+// - Pending transactions whose ids are after the last committed operation id
+//   need to start regular transactions that will succeed or fail depending on
+//   who is the leader and what its state is.
+Status TabletPeer::StartPendingTransactions(QuorumPeerPB::Role my_role,
+                                            const ConsensusBootstrapInfo& bootstrap_info) {
   return Status::OK();
 }
 

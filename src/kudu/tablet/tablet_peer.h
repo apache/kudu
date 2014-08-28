@@ -208,6 +208,12 @@ class TabletPeer : public RefCountedThreadSafe<TabletPeer>,
 
   ~TabletPeer();
 
+  // After bootstrap is complete and consensus is setup this initiates the transactions
+  // that were not complete on bootstrap.
+  // Not implemented yet. See .cc file.
+  Status StartPendingTransactions(metadata::QuorumPeerPB::Role my_role,
+                                  const consensus::ConsensusBootstrapInfo& bootstrap_info);
+
   // Schedule the Log GC task to run in the executor.
   Status StartLogGCTask();
 
