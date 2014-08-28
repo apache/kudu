@@ -125,6 +125,10 @@ class ModuleBuilder {
   };
 
   void AddJITPromise(llvm::Function* llvm_f, FunctionAddress* actual_f);
+  // Returns a vector of the function names for the functions stored in the
+  // JITFutures. The pointers are valid so long as the futures_ vector's
+  // elements have valid llvm::Function* values.
+  std::vector<const char*> GetFunctionNames() const;
 
   // Absolute path to .ll file
   // TODO this should not be source-code dependent but rather configured

@@ -11,11 +11,13 @@
 #include <cstdlib>
 #include <sstream>
 #include <string>
+#include <vector>
 
 #include <boost/foreach.hpp>
 #include <glog/logging.h>
 #include "kudu/codegen/llvm_include.h"
 #include <llvm/LinkAllPasses.h>
+#include <llvm/ADT/StringRef.h>
 #include <llvm/Analysis/Passes.h>
 #include <llvm/ExecutionEngine/MCJIT.h>
 #include <llvm/ExecutionEngine/ExecutionEngine.h>
@@ -29,6 +31,7 @@
 #include <llvm/IRReader/IRReader.h>
 #include <llvm/Support/SourceMgr.h>
 #include <llvm/Support/raw_os_ostream.h>
+#include <llvm/Transforms/IPO.h>
 #include <llvm/Transforms/IPO/PassManagerBuilder.h>
 
 #include "kudu/gutil/macros.h"
@@ -64,6 +67,7 @@ using llvm::Value;
 using std::ostream;
 using std::string;
 using std::stringstream;
+using std::vector;
 
 namespace kudu {
 namespace codegen {
@@ -181,7 +185,8 @@ namespace {
 #if CODEGEN_MODULE_BUILDER_DO_OPTIMIZATIONS
 
 void DoOptimizations(ExecutionEngine* engine,
-                     Module* module) {
+                     Module* module,
+                     const vector<const char*>& external_functions) {
   PassManagerBuilder pass_builder;
   pass_builder.OptLevel = 2;
   // Don't optimize for code size (this corresponds to -O2/-O3)
@@ -206,6 +211,8 @@ void DoOptimizations(ExecutionEngine* engine,
   // the loads/stores produced by structs).
   // Transfers ownership of the data layout to module_passes.
   module_passes.add(new llvm::DataLayout(module->getDataLayout()));
+  // Internalize all functions that aren't explicitly specified with external linkage.
+  module_passes.add(llvm::createInternalizePass(external_functions));
   pass_builder.populateModulePassManager(module_passes);
 
   // Same as above, the result here just indicates whether optimization made any changes.
@@ -240,16 +247,10 @@ Status ModuleBuilder::Compile(gscoped_ptr<ExecutionEngine>* out) {
   }
 
 #if CODEGEN_MODULE_BUILDER_DO_OPTIMIZATIONS
-  DoOptimizations(local_engine.get(), module_.get());
+  DoOptimizations(local_engine.get(), module_.get(), GetFunctionNames());
 #endif
 
   // Compile the module
-  // TODO add a pass to internalize the linkage of all functions except the
-  // ones that are JITPromised
-  // TODO use various target machine options
-  // TODO various engine builder options (opt level, etc)
-  // TODO calling convention?
-  // TODO whole-module optimizations
   local_engine->finalizeObject();
 
   // Satisfy the promises
@@ -277,6 +278,15 @@ Status ModuleBuilder::Compile(gscoped_ptr<ExecutionEngine>* out) {
 const TargetMachine& ModuleBuilder::GetTargetMachine() const {
   CHECK_EQ(state_, kCompiled);
   return *CHECK_NOTNULL(target_);
+}
+
+vector<const char*> ModuleBuilder::GetFunctionNames() const {
+  vector<const char*> ret;
+  BOOST_FOREACH(const JITFuture& fut, futures_) {
+    const char* name = CHECK_NOTNULL(fut.llvm_f_)->getName().data();
+    ret.push_back(name);
+  }
+  return ret;
 }
 
 } // namespace codegen

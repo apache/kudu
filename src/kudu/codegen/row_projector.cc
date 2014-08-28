@@ -153,17 +153,6 @@ llvm::Function* MakeProjection(const string& name,
   Function* row_block_set_null =
     mbuilder->GetFunction("_PrecompiledCopyCellToRowBlockSetNull");
 
-  // Mark the helper functions as having internal linkage. Otherwise, MCJIT
-  // assumes they might be overridden by some other shared object, and it
-  // won't inline them.
-  //
-  // TODO: we could make this generic using an Internalize pass, but this
-  // is easy enough for now.
-  copy_cell_not_null->setVisibility(llvm::GlobalValue::DefaultVisibility);
-  copy_cell_nullable->setVisibility(llvm::GlobalValue::DefaultVisibility);
-  copy_cell_not_null->setLinkage(llvm::GlobalValue::InternalLinkage);
-  copy_cell_nullable->setLinkage(llvm::GlobalValue::InternalLinkage);
-
   // The bitmap for a contiguous row goes after the row data
   // See common/row.h ContiguousRowHelper class
   builder->SetInsertPoint(BasicBlock::Create(context, "entry", f));
