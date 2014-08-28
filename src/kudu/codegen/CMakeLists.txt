@@ -83,6 +83,11 @@ set(IR_FLAGS
   -Wno-c++11-extensions # OVERRIDE macro conflicts with c++11 override
   ${IR_INCLUDES})
 separate_arguments(IR_FLAGS)
+# Scrub ASAN from precompiled functions
+# The runtime linker for MCJIT fails to find asan functions referenced by
+# codegenned code that's generated with a module precompiled with the below
+# flags.
+list(REMOVE_ITEM IR_FLAGS "-fsanitize=address" "-DADDRESS_SANITIZER")
 
 add_custom_command(
   OUTPUT ${IR_OUTPUT}
