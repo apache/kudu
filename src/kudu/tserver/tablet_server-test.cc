@@ -736,7 +736,7 @@ TEST_F(TabletServerTest, TestKUDU_177_RecoveryOfDMSEditsAfterMajorDeltaCompactio
   ANFF(VerifyRows(schema_, boost::assign::list_of(KeyValue(1, 3))));
 }
 
-TEST_F(TabletServerTest, DISABLED_TestClientGetsErrorBackWhenRecoveryFailed) {
+TEST_F(TabletServerTest, TestClientGetsErrorBackWhenRecoveryFailed) {
   ANFF(InsertTestRowsRemote(0, 1, 7));
 
   ASSERT_STATUS_OK(tablet_peer_->tablet()->Flush());

@@ -374,7 +374,14 @@ void TabletServiceImpl::Write(const WriteRequestPB* req,
       new RpcTransactionCompletionCallback(context, resp)).Pass());
 
   // Submit the write. The RPC will be responded to asynchronously.
-  WARN_NOT_OK(tablet_peer->SubmitWrite(state), "Could not execute write transaction.");
+  Status s = tablet_peer->SubmitWrite(state);
+
+  // Check that we could submit the write
+  if (PREDICT_FALSE(!s.ok())) {
+    SetupErrorAndRespond(resp->mutable_error(), s,
+                               TabletServerErrorPB::UNKNOWN_ERROR,
+                               context);
+  }
   return;
 }
 
