@@ -8,6 +8,33 @@ import "kudu/tablet/tablet.proto";
 import "kudu/tserver/tserver_admin.proto";
 import "kudu/tserver/tserver.proto";
 
+// Consensus-specific errors use this protobuf
+message ConsensusErrorPB {
+  enum Code {
+    // An error which has no more specific error code.
+    // The code and message in 'status' may reveal more details.
+    //
+    // RPCs should avoid returning this, since callers will not be
+    // able to easily parse the error.
+    UNKNOWN_ERROR = 1;
+
+    // Invalid term.
+    // Sent by peers in response to leader RPCs whenever the term
+    // of one of the messages sent in a batch is lower than the
+    // the term the peer is expecting.
+    INVALID_TERM = 2;
+  }
+
+  // The error code.
+  required Code code = 1 [ default = UNKNOWN_ERROR ];
+
+  // The Status object for the error. This will include a textual
+  // message that may be more useful to present in log messages, etc,
+  // though its error code is less specific.
+  required AppStatusPB status = 2;
+}
+
+
 // ===========================================================================
 //  Generic/Meta- Messages
 // ===========================================================================
@@ -163,7 +190,12 @@ message ConsensusStatusPB {
   repeated OperationPB pending_ops = 5;
 
   // Per operation errors.
-  repeated PerOpErrorPB errors = 6;
+  repeated PerOpErrorPB per_op_errors = 6;
+
+  // When the last request failed for some consensus related (internal) reason.
+  // In some cases the error will have a specific code that the caller will
+  // have to handle in certain ways.
+  optional ConsensusErrorPB error = 7;
 }
 
 // A request from a CANDIDATE peer that wishes to become leader of
