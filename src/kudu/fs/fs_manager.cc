@@ -195,7 +195,9 @@ Status FsManager::CreateBlockWithId(const BlockId& block_id, shared_ptr<Writable
   RETURN_NOT_OK(CreateBlockDir(block_id));
   string path = GetBlockPath(block_id);
   VLOG(1) << "Creating new block with predetermined id " << block_id.ToString() << " at " << path;
-  return env_util::OpenFileForWrite(env_, path, writer);
+  RETURN_NOT_OK(env_util::OpenFileForWrite(env_, path, writer));
+  RETURN_NOT_OK((*writer)->SyncParentDir());
+  return Status::OK();
 }
 
 Status FsManager::OpenBlock(const BlockId& block_id, shared_ptr<RandomAccessFile> *reader) {
@@ -206,19 +208,31 @@ Status FsManager::OpenBlock(const BlockId& block_id, shared_ptr<RandomAccessFile
 Status FsManager::CreateBlockDir(const BlockId& block_id) {
   CHECK(!block_id.IsNull());
 
-  string path = GetDataRootDir();
-  RETURN_NOT_OK(CreateDirIfMissing(path));
+  string root_dir = GetDataRootDir();
+  bool root_created = false;
+  RETURN_NOT_OK(CreateDirIfMissing(root_dir, &root_created));
 
-  path = JoinPathSegments(path, block_id.hash0());
-  RETURN_NOT_OK(CreateDirIfMissing(path));
+  string path0 = JoinPathSegments(root_dir, block_id.hash0());
+  bool path0_created = false;
+  RETURN_NOT_OK(CreateDirIfMissing(path0, &path0_created));
 
-  path = JoinPathSegments(path, block_id.hash1());
-  RETURN_NOT_OK(CreateDirIfMissing(path));
+  string path1 = JoinPathSegments(path0, block_id.hash1());
+  bool path1_created = false;
+  RETURN_NOT_OK(CreateDirIfMissing(path1, &path1_created));
 
-  path = JoinPathSegments(path, block_id.hash2());
-  return CreateDirIfMissing(path);
+  string path2 = JoinPathSegments(path1, block_id.hash2());
+  bool path2_created = false;
+  RETURN_NOT_OK(CreateDirIfMissing(path2, &path2_created));
+
+  // No need to fsync path2 at this point, it should be fsync()ed when files are
+  // written into it.
+  if (path2_created) RETURN_NOT_OK(env_->SyncDir(path1));
+  if (path1_created) RETURN_NOT_OK(env_->SyncDir(path0));
+  if (path0_created) RETURN_NOT_OK(env_->SyncDir(root_dir));
+  if (root_created) RETURN_NOT_OK(env_->SyncDir(DirName(root_dir))); // Parent of root_dir.
+
+  return Status::OK();
 }
-
 
 // ==========================================================================
 //  Metadata read/write interfaces
