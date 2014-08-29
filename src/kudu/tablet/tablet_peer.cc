@@ -190,14 +190,15 @@ metadata::TabletStatePB TabletPeer::Shutdown() {
     prev_state = state_;
     state_ = metadata::QUIESCING;
   }
-  tablet_->UnregisterMaintenanceOps();
+
+  if (tablet_) tablet_->UnregisterMaintenanceOps();
 
   // Stop Log GC thread before we close the log.
   VLOG(1) << Substitute("TabletPeer: tablet $0: Shutting down Log GC thread...", tablet_id());
   log_gc_shutdown_latch_.CountDown();
   log_gc_executor_->Shutdown();
 
-  consensus_->Shutdown();
+  if (consensus_) consensus_->Shutdown();
 
   // TODO: KUDU-183: Keep track of the pending tasks and send an "abort" message.
   LOG_SLOW_EXECUTION(WARNING, 1000,
@@ -207,7 +208,9 @@ metadata::TabletStatePB TabletPeer::Shutdown() {
 
   prepare_executor_->Shutdown();
 
-  WARN_NOT_OK(log_->Close(), "Error closing the Log.");
+  if (log_) {
+    WARN_NOT_OK(log_->Close(), "Error closing the Log.");
+  }
 
   if (VLOG_IS_ON(1)) {
     VLOG(1) << "TabletPeer: tablet " << tablet_id() << " shut down!";
