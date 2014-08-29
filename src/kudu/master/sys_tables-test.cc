@@ -107,6 +107,7 @@ TEST_F(SysTablesTest, TestSysTablesOperations) {
     TableMetadataLock l(table.get(), TableMetadataLock::WRITE);
     l.mutable_data()->pb.set_name("testtb");
     l.mutable_data()->pb.set_version(0);
+    l.mutable_data()->pb.set_num_replicas(1);
     l.mutable_data()->pb.set_state(SysTablesEntryPB::kTableStatePreparing);
     ASSERT_STATUS_OK(SchemaToPB(Schema(), l.mutable_data()->pb.mutable_schema()));
     // Add the table

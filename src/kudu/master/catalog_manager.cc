@@ -531,6 +531,8 @@ TableInfo *CatalogManager::CreateTableInfo(const CreateTableRequestPB* req,
   metadata->set_version(0);
   if (req->has_num_replicas()) {
     metadata->set_num_replicas(req->num_replicas());
+  } else {
+    metadata->set_num_replicas(FLAGS_default_num_replicas);
   }
   // Use the Schema object passed in, since it has the column IDs already assigned,
   // whereas the user request PB does not.
@@ -1765,10 +1767,7 @@ void CatalogManager::SelectReplicasForTablet(const TSDescriptorVector& ts_descs,
                                              TabletInfo* tablet) {
   TableMetadataLock table_guard(tablet->table(), TableMetadataLock::READ);
 
-  int nreplicas = FLAGS_default_num_replicas;
-  if (table_guard.data().pb.has_num_replicas()) {
-    nreplicas = table_guard.data().pb.num_replicas();
-  }
+  int nreplicas = table_guard.data().pb.num_replicas();
 
   if (ts_descs.size() < nreplicas) {
     LOG(WARNING) << "Not enough Tablet Servers are online for table '" << table_guard.data().name()

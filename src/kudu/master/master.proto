@@ -105,7 +105,7 @@ message SysTablesEntryPB {
   optional SchemaPB fully_applied_schema = 4;
 
   // Number of TS replicas
-  optional int32 num_replicas = 5;
+  required int32 num_replicas = 5;
 
   // Debug state for the tablet
   required State state = 6;
