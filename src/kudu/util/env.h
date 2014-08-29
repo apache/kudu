@@ -265,6 +265,8 @@ class WritableFile {
 
   virtual Status Sync() = 0;
 
+  virtual Status SyncParentDir() = 0;
+
   virtual uint64_t Size() const = 0;
 
   // Returns a string representation of the file suitable for debugging.

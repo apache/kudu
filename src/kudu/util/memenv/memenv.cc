@@ -262,6 +262,8 @@ class WritableFileImpl : public WritableFile {
 
   virtual Status Sync() OVERRIDE { return Status::OK(); }
 
+  virtual Status SyncParentDir() OVERRIDE { return Status::OK(); }
+
   virtual uint64_t Size() const OVERRIDE { return file_->Size(); }
 
   virtual string ToString() const OVERRIDE {

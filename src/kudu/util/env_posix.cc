@@ -27,6 +27,7 @@
 #include "kudu/util/env.h"
 #include "kudu/util/errno.h"
 #include "kudu/util/logging.h"
+#include "kudu/util/path_util.h"
 #include "kudu/util/slice.h"
 #include "kudu/util/stopwatch.h"
 
@@ -428,6 +429,10 @@ class PosixMmapFile : public WritableFile {
     return s;
   }
 
+  virtual Status SyncParentDir() OVERRIDE {
+    return Env::Default()->SyncDir(DirName(filename_));
+  }
+
   virtual uint64_t Size() const OVERRIDE {
     return file_offset_ + (dst_ - base_);
   }
@@ -569,6 +574,10 @@ class PosixWritableFile : public WritableFile {
     }
     pending_sync_type_ = NONE;
     return Status::OK();
+  }
+
+  virtual Status SyncParentDir() OVERRIDE {
+    return Env::Default()->SyncDir(DirName(filename_));
   }
 
   virtual uint64_t Size() const OVERRIDE {
