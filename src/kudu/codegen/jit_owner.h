@@ -22,12 +22,7 @@ class JITCodeOwner : public RefCountedThreadSafe<JITCodeOwner> {
 
  protected:
   friend class RefCountedThreadSafe<JITCodeOwner>;
-  JITCodeOwner();
   virtual ~JITCodeOwner();
-
-  // Steals, does not swap, the code owned by other. Deletes own
-  // engine if nonnull.
-  void Reset(JITCodeOwner* other);
 
  private:
   gscoped_ptr<llvm::ExecutionEngine> engine_;

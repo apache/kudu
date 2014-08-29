@@ -14,6 +14,7 @@ add_library(codegen
   code_generator.cc
   compilation_manager.cc
   jit_owner.cc
+  jit_schema_pair.cc
   module_builder.cc
   row_projector.cc
 )

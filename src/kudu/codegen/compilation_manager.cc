@@ -9,14 +9,18 @@
 #include "kudu/codegen/code_cache.h"
 #include "kudu/codegen/code_generator.h"
 #include "kudu/codegen/jit_owner.h"
+#include "kudu/codegen/jit_schema_pair.h"
 #include "kudu/codegen/row_projector.h"
 #include "kudu/common/schema.h"
+#include "kudu/gutil/casts.h"
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/ref_counted.h"
+#include "kudu/util/faststring.h"
 #include "kudu/util/locks.h"
 #include "kudu/util/logging.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/monotime.h"
+#include "kudu/util/slice.h"
 #include "kudu/util/status.h"
 #include "kudu/util/stopwatch.h"
 #include "kudu/util/threadpool.h"
@@ -50,35 +54,36 @@ class CompilationTask : public Runnable {
 
   // Can only be run once.
   virtual void Run() {
-    // Check again to make sure we didn't compile it already.
-    // This can occur if we request the same schema pair while the
-    // first one's compiling.
-    if (cache_->Lookup(base_, proj_)) return;
-
-    RowProjector::CodegenFunctions rp_functions;
-    scoped_refptr<JITCodeOwner> owner;
-    Status s;
-    LOG_TIMING_IF(INFO, FLAGS_time_codegen, "code-generating row projector") {
-      s = generator_->CompileRowProjector(&base_, &proj_, &rp_functions, &owner);
-    }
-
-    if (s.ok()) {
-      CodeCache::JITPayload* payload =
-        new CodeCache::JITPayload(owner, rp_functions);
-      s = cache_->AddEntry(base_, proj_, make_scoped_refptr(payload));
-    }
-
     // We need to fail softly because the user could have just given
     // a malformed projection schema pair, but could be long gone by
     // now so there's nowhere to return the status to.
-    if (!s.ok()) {
-      LOG(WARNING) << "Failed compilation of row projector from base schema "
-                   << base_.ToString() << " to projection schema "
-                   << proj_.ToString() << ": " << s.ToString();
-    }
+    WARN_NOT_OK(RunWithStatus(),
+                "Failed compilation of row projector from base schema " +
+                base_.ToString() + " to projection schema " +
+                proj_.ToString());
   }
 
  private:
+  Status RunWithStatus() {
+    faststring fs;
+    RETURN_NOT_OK(JITSchemaPair::EncodeKey(base_, proj_, &fs));
+    Slice key(fs.data(), fs.size());
+
+    // Check again to make sure we didn't compile it already.
+    // This can occur if we request the same schema pair while the
+    // first one's compiling.
+    if (cache_->Lookup(key)) return Status::OK();
+
+    RowProjector::CodegenFunctions rp_functions;
+    scoped_refptr<JITSchemaPair> owner;
+    LOG_TIMING_IF(INFO, FLAGS_time_codegen, "code-generating schema pair") {
+      RETURN_NOT_OK(generator_->CompileSchemaPair(base_, proj_, &owner));
+    }
+
+    cache_->AddEntry(key, owner);
+    return Status::OK();
+  }
+
   Schema base_;
   Schema proj_;
   CodeCache* const cache_;
@@ -123,8 +128,12 @@ void CompilationManager::RegisterMetrics(MetricRegistry* metric_registry) {
 Status CompilationManager::RequestRowProjector(const Schema* base_schema,
                                                const Schema* projection,
                                                gscoped_ptr<RowProjector>* out) {
-  scoped_refptr<CodeCache::JITPayload> cached =
-    cache_.Lookup(*base_schema, *projection);
+  faststring fs;
+  RETURN_NOT_OK(JITSchemaPair::EncodeKey(*base_schema, *projection, &fs));
+  Slice key(fs.data(), fs.size());
+
+  scoped_refptr<JITSchemaPair> cached(
+    down_cast<JITSchemaPair*>(cache_.Lookup(key).get()));
 
   // If not cached, add a request to compilation pool
   if (!cached) {

@@ -27,11 +27,13 @@
 #include <llvm/Target/TargetSubtargetInfo.h>
 
 #include "kudu/codegen/jit_owner.h"
+#include "kudu/codegen/jit_schema_pair.h"
 #include "kudu/codegen/module_builder.h"
 #include "kudu/codegen/row_projector.h"
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/once.h"
+#include "kudu/gutil/ref_counted.h"
 #include "kudu/util/status.h"
 
 DEFINE_bool(codegen_dump_functions, false, "Whether to print the LLVM IR"
@@ -65,6 +67,9 @@ using llvm::TargetMachine;
 using std::string;
 
 namespace kudu {
+
+class Schema;
+
 namespace codegen {
 
 namespace {
@@ -189,6 +194,24 @@ Status CodeGenerator::CompileRowProjector(const Schema* base,
                                           const Schema* proj,
                                           RowProjector::CodegenFunctions* projector_out,
                                           scoped_refptr<JITCodeOwner>* owner_out) {
+  gscoped_ptr<ExecutionEngine> ee;
+  RETURN_NOT_OK(CompileRowProjector(*base, *proj, projector_out, &ee));
+  owner_out->reset(new JITCodeOwner(ee.Pass()));
+  return Status::OK();
+}
+
+Status CodeGenerator::CompileSchemaPair(const Schema& base, const Schema& proj,
+                                        scoped_refptr<JITSchemaPair>* owner_out) {
+  RowProjector::CodegenFunctions rp_functions;
+  gscoped_ptr<ExecutionEngine> ee;
+  RETURN_NOT_OK(CompileRowProjector(base, proj, &rp_functions, &ee));
+  owner_out->reset(new JITSchemaPair(ee.Pass(), rp_functions));
+  return Status::OK();
+}
+
+Status CodeGenerator::CompileRowProjector(const Schema& base, const Schema& proj,
+                                          RowProjector::CodegenFunctions* projector_out,
+                                          gscoped_ptr<ExecutionEngine>* owner_out) {
   RETURN_NOT_OK(CheckCodegenEnabled());
 
   // Generate a module builder
@@ -196,12 +219,11 @@ Status CodeGenerator::CompileRowProjector(const Schema* base,
   RETURN_NOT_OK(mbuilder.Init());
 
   // Load new functions into module.
-  RETURN_NOT_OK(RowProjector::CodegenFunctions::Create(*base, *proj, &mbuilder,
+  RETURN_NOT_OK(RowProjector::CodegenFunctions::Create(base, proj, &mbuilder,
                                                        projector_out));
 
   // Compile and get execution engine
-  gscoped_ptr<ExecutionEngine> ee;
-  RETURN_NOT_OK(mbuilder.Compile(&ee));
+  RETURN_NOT_OK(mbuilder.Compile(owner_out));
 
   if (FLAGS_codegen_dump_mc) {
     static const int kInstrMax = 500;
@@ -213,7 +235,6 @@ Status CodeGenerator::CompileRowProjector(const Schema* base,
     LOG(INFO) << sstr.str();
   }
 
-  owner_out->reset(new JITCodeOwner(ee.Pass()));
   return Status::OK();
 }
 

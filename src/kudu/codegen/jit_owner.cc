@@ -11,16 +11,10 @@ using llvm::ExecutionEngine;
 namespace kudu {
 namespace codegen {
 
-JITCodeOwner::JITCodeOwner() {}
-
 JITCodeOwner::JITCodeOwner(gscoped_ptr<ExecutionEngine> engine)
   : engine_(engine.Pass()) {}
 
 JITCodeOwner::~JITCodeOwner() {}
-
-void JITCodeOwner::Reset(JITCodeOwner* other) {
-  engine_ = other->engine_.Pass();
-}
 
 } // namespace codegen
 } // namespace kudu

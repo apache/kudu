@@ -4,8 +4,9 @@
 #define KUDU_CODEGEN_CODE_GENERATOR_H
 
 #include "kudu/codegen/row_projector.h"
-#include "kudu/gutil/ref_counted.h"
+#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
+#include "kudu/gutil/ref_counted.h"
 #include "kudu/util/status.h"
 
 namespace llvm {
@@ -16,9 +17,11 @@ class LLVMContext;
 namespace kudu {
 
 class Schema;
-class JITCodeOwner;
 
 namespace codegen {
+
+class JITCodeOwner;
+class JITSchemaPair;
 
 // CodeGenerator is a top-level class that manages a per-module
 // LLVM context, ExecutionEngine initialization, native target loading,
@@ -56,8 +59,19 @@ class CodeGenerator {
                              RowProjector::CodegenFunctions* projector_out,
                              scoped_refptr<JITCodeOwner>* owner_out);
 
+  // Generates all functions associated with a JITSchemaPair and writes them
+  // to 'owner_out' iff successful.
+  Status CompileSchemaPair(const Schema& base, const Schema& proj,
+                           scoped_refptr<JITSchemaPair>* owner_out);
+
  private:
   static void GlobalInit();
+
+  // TODO static ObjectCache shared b/w engines
+
+  Status CompileRowProjector(const Schema& base, const Schema& proj,
+                             RowProjector::CodegenFunctions* projector_out,
+                             gscoped_ptr<llvm::ExecutionEngine>* owner_out);
 
   DISALLOW_COPY_AND_ASSIGN(CodeGenerator);
 };

@@ -21,6 +21,7 @@
 #include <llvm/IR/Type.h>
 
 #include "kudu/codegen/jit_owner.h"
+#include "kudu/codegen/jit_schema_pair.h"
 #include "kudu/codegen/module_builder.h"
 #include "kudu/common/row.h"
 #include "kudu/common/schema.h"
@@ -286,10 +287,9 @@ RowProjector::~RowProjector() {}
 Status RowProjector::Init() {
   RETURN_NOT_OK(projector_.Init());
 #ifndef NDEBUG
-  RETURN_NOT_OK_PREPEND(ProjectionsCompatible(*projector_.base_schema(),
-                                              *projector_.projection(),
-                                              *functions_.base_schema(),
-                                              *functions_.projection()),
+  RETURN_NOT_OK_PREPEND(JITSchemaPair::ProjectionsCompatible(
+                          *projector_.base_schema(), *projector_.projection(),
+                          *functions_.base_schema(), *functions_.projection()),
                         "Codegenned row projector's schemas incompatible "
                         "with its functions' schemas:"
                         "\n  projector base = " +
@@ -301,67 +301,6 @@ Status RowProjector::Init() {
                         "\n  functions proj = " +
                         functions_.projection()->ToString());
 #endif
-  return Status::OK();
-}
-
-namespace {
-
-struct DefaultEquals {
-  template<class T>
-  bool operator()(const T& t1, const T& t2) { return t1 == t2; }
-};
-
-struct ColumnSchemaEqualsType {
-  bool operator()(const ColumnSchema& s1, const ColumnSchema& s2) {
-    return s1.EqualsType(s2);
-  }
-};
-
-template<class T, class Equals>
-bool ContainerEquals(const T& t1, const T& t2, const Equals& equals) {
-  if (t1.size() != t2.size()) return false;
-  if (!std::equal(t1.begin(), t1.end(), t2.begin(), equals)) return false;
-  return true;
-}
-
-template<class T>
-bool ContainerEquals(const T& t1, const T& t2) {
-  return ContainerEquals(t1, t2, DefaultEquals());
-}
-
-} // anonymous namespace
-
-// This presumes the order of the row projectors' mappings is the same, which
-// they will be because they were constructed in the same way.
-Status RowProjector::ProjectionsCompatible(const Schema& base1,
-                                           const Schema& proj1,
-                                           const Schema& base2,
-                                           const Schema& proj2) {
-  kudu::RowProjector rp1(&base1, &proj1), rp2(&base2, &proj2);
-  RETURN_NOT_OK_PREPEND(rp1.Init(), "(base1, proj1) projection "
-                        "schema pair not well formed: ");
-  RETURN_NOT_OK_PREPEND(rp2.Init(), "(base2, proj2) projection "
-                        "schema pair not well formed: ");
-
-  if (!ContainerEquals(base1.columns(), base2.columns(),
-                       ColumnSchemaEqualsType())) {
-    return Status::IllegalState("base schema types unequal");
-  }
-  if (!ContainerEquals(proj1.columns(), proj2.columns(),
-                       ColumnSchemaEqualsType())) {
-    return Status::IllegalState("projection schema types unequal");
-  }
-
-  if (!ContainerEquals(rp1.base_cols_mapping(), rp2.base_cols_mapping())) {
-    return Status::IllegalState("base column mappings do not match");
-  }
-  if (!ContainerEquals(rp1.adapter_cols_mapping(), rp2.adapter_cols_mapping())) {
-    return Status::IllegalState("adapter column mappings do not match");
-  }
-  if (!ContainerEquals(rp1.projection_defaults(), rp2.projection_defaults())) {
-    return Status::IllegalState("projection default indices do not match");
-  }
-
   return Status::OK();
 }
 
