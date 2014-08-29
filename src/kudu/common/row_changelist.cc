@@ -175,7 +175,7 @@ Status RowChangeListDecoder::ApplyRowUpdate(RowBlockRow *dst_row, Arena *arena,
     int dst_idx = dst_row->schema()->find_column_by_id(updated_col_id);
     // TODO: I think this assertion may be invalid in some alter-table scenarios.
     // As we expand test coverage for alter-table, it might fail and need some fixing.
-    CHECK_NE(dst_idx, Schema::kColumnNotFound);
+    CHECK_NE(dst_idx, static_cast<int>(Schema::kColumnNotFound));
 
     SimpleConstCell src(&schema_->column_by_id(updated_col_id), new_val);
 
