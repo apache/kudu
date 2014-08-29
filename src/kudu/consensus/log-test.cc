@@ -137,31 +137,7 @@ TEST_F(LogTest, TestCorruptLog) {
   AppendNoOps(&op_id, kNumEntries);
   ASSERT_STATUS_OK(log_->Close());
 
-  // Rewrite the file but truncate the last entry partially.
-  shared_ptr<RandomAccessFile> source;
-  const string log_path = log_->ActiveSegmentPathForTests();
-  ASSERT_STATUS_OK(env_util::OpenFileForRandom(env_.get(), log_path, &source));
-  uint64_t file_size;
-  ASSERT_STATUS_OK(env_.get()->GetFileSize(log_path, &file_size));
-
-  uint8_t entry_space[file_size];
-  Slice log_slice;
-
-  // Truncate by 10 bytes.
-  ASSERT_STATUS_OK(source->Read(0, file_size - 10, &log_slice, entry_space));
-
-  // We need to actually copy the slice or we run into trouble
-  // because we're reading and writing to the same file.
-  faststring copied;
-  copied.append(log_slice.data(), log_slice.size());
-
-  // Rewrite the file with the corrupt log.
-  shared_ptr<WritableFile> sink;
-  ASSERT_STATUS_OK(env_util::OpenFileForWrite(env_.get(), log_path, &sink));
-
-  ASSERT_STATUS_OK(sink->Append(Slice(copied)));
-  ASSERT_STATUS_OK(sink->Sync());
-  ASSERT_STATUS_OK(sink->Close());
+  ASSERT_STATUS_OK(CorruptLogFile(env_.get(), log_.get(), 10));
 
   BuildLogReader();
   ASSERT_EQ(1, log_reader_->size());

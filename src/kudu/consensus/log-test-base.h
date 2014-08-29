@@ -256,6 +256,39 @@ class LogTestBase : public KuduTest {
   scoped_refptr<OpIdAnchorRegistry> opid_anchor_registry_;
 };
 
+// Corrupts the last segment of the provided log by truncating the last
+// 'bytes_to_truncate' bytes of the file.
+Status CorruptLogFile(Env* env, Log* log, int bytes_to_truncate) {
+  // Rewrite the file but truncate the last entry partially.
+  shared_ptr<RandomAccessFile> source;
+  const string log_path = log->ActiveSegmentPathForTests();
+  RETURN_NOT_OK(env_util::OpenFileForRandom(env, log_path, &source));
+  uint64_t file_size;
+  RETURN_NOT_OK(env->GetFileSize(log_path, &file_size));
+
+  gscoped_array<uint8_t> scratch(new uint8_t[file_size]);
+  Slice log_slice;
+  RETURN_NOT_OK(env_util::ReadFully(source.get(),
+                                    0,
+                                    file_size - bytes_to_truncate,
+                                    &log_slice,
+                                    scratch.get()));
+
+  // We need to actually copy the slice or we run into trouble
+  // because we're reading and writing to the same file.
+  faststring copied;
+  copied.append(log_slice.data(), log_slice.size());
+
+  // Rewrite the file with the corrupt log.
+  shared_ptr<WritableFile> sink;
+  RETURN_NOT_OK(env_util::OpenFileForWrite(env, log_path, &sink));
+
+  RETURN_NOT_OK(sink->Append(Slice(copied)));
+  RETURN_NOT_OK(sink->Flush());
+  RETURN_NOT_OK(sink->Close());
+
+  return Status::OK();
+}
 
 } // namespace log
 } // namespace kudu
