@@ -58,7 +58,6 @@ using llvm::Module;
 using llvm::MCRegisterInfo;
 using llvm::MCSubtargetInfo;
 using llvm::raw_os_ostream;
-using llvm::ReturnInst;
 using llvm::StringRef;
 using llvm::StringRefMemoryObject;
 using llvm::Target;
@@ -152,6 +151,14 @@ int DumpAsm(FuncPtr fptr, const TargetMachine& tm,
       // We need to check the opcode name for "RET" instead of comparing
       // the opcode to llvm::ReturnInst::getOpcode() because the native
       // opcode may be different, there may different types of returns, etc.
+      // TODO: this may fail if there are multiple 'ret' instructions in one
+      // function (in separate branches). In order to avoid this problem,
+      // we need to offer the execution engine a custom memory manager
+      // which tracks the exact sizes of the desired emitted functions.
+      // In order to make a custom memory manager, we require enabling
+      // LLVM RTTI, since subclassing an LLVM interface would require
+      // identical RTTI settings between LLVM and Kudu (see:
+      // http://llvm.org/docs/Packaging.html#c-features).
       string opname = printer->getOpcodeName(inst.getOpcode());
       std::transform(opname.begin(), opname.end(), opname.begin(), toupper);
       if (opname.find("RET") != string::npos) return i + 1;
@@ -200,8 +207,8 @@ Status CodeGenerator::CompileRowProjector(const Schema* base,
     static const int kInstrMax = 500;
     std::stringstream sstr;
     sstr << "Printing read projection function:\n";
-    int instrs = DumpAsm(i64_from_ptr(projector_out->read()),
-                         mbuilder.GetTargetMachine(), &sstr, kInstrMax);
+    int instrs = DumpAsm(projector_out->read(), mbuilder.GetTargetMachine(),
+                         &sstr, kInstrMax);
     sstr << "Printed " << instrs << " instructions.";
     LOG(INFO) << sstr.str();
   }

@@ -15,6 +15,8 @@
 // are built with unstripped visible symbols, so this style of code generation
 // cannot be used in builds with settings that conflict with the required
 // visibility (e.g., the client library).
+// NOTE: This file is NOT compiled with ASAN annotations, even if Kudu
+// is being built with ASAN.
 
 #include <cstdlib>
 #include <cstring>

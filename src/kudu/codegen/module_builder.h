@@ -73,13 +73,6 @@ class ModuleBuilder {
   // Get the LLVM wrapper for a constant pointer value of type i8*
   llvm::Value* GetPointerValue(void* ptr) const;
 
-  // TODO function attributes
-
-  // TODO function pass manager
-
-  // TODO if the number of functions to be precompiled gets too large,
-  // this class could use some mapping to manage multiple .ll files
-
   LLVMBuilder* builder() { return &builder_; }
 
   // Once a function is complete, it may be offered to the module builder
