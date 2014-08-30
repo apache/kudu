@@ -197,7 +197,7 @@ void CodegenTest::TestProjection(const Schema* proj) {
 Status CodegenTest::Generate(const Schema* proj, gscoped_ptr<CodegenRP>* out) {
   CodegenRP::CodegenFunctions functions;
   scoped_refptr<codegen::JITCodeOwner> owner;
-  RETURN_NOT_OK(generator_.CompileRowProjector(&base_, proj, &functions, &owner));
+  RETURN_NOT_OK(generator_.CompileRowProjector(base_, *proj, &functions, &owner));
   out->reset(new CodegenRP(&base_, proj, functions, owner));
   return Status::OK();
 }

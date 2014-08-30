@@ -190,12 +190,12 @@ CodeGenerator::CodeGenerator() {
 
 CodeGenerator::~CodeGenerator() {}
 
-Status CodeGenerator::CompileRowProjector(const Schema* base,
-                                          const Schema* proj,
+Status CodeGenerator::CompileRowProjector(const Schema& base,
+                                          const Schema& proj,
                                           RowProjector::CodegenFunctions* projector_out,
                                           scoped_refptr<JITCodeOwner>* owner_out) {
   gscoped_ptr<ExecutionEngine> ee;
-  RETURN_NOT_OK(CompileRowProjector(*base, *proj, projector_out, &ee));
+  RETURN_NOT_OK(CompileRowProjector(base, proj, projector_out, &ee));
   owner_out->reset(new JITCodeOwner(ee.Pass()));
   return Status::OK();
 }

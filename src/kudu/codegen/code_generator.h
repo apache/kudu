@@ -55,7 +55,7 @@ class CodeGenerator {
 
   // Attempts to initialize row projector functions with compiled code that
   // becomes owned by 'owner_out'. Writes to out parameters iff successful.
-  Status CompileRowProjector(const Schema* base, const Schema* proj,
+  Status CompileRowProjector(const Schema& base, const Schema& proj,
                              RowProjector::CodegenFunctions* projector_out,
                              scoped_refptr<JITCodeOwner>* owner_out);
 
