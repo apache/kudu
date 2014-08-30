@@ -8,7 +8,7 @@
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/singleton.h"
-#include "kudu/util/locks.h"
+#include "kudu/util/atomic.h"
 #include "kudu/util/status.h"
 
 namespace kudu {
@@ -64,11 +64,11 @@ class CompilationManager {
   // Waits for all asynchronous compilation tasks to finish.
   void Wait();
 
-  // Sets CompilationManager to register its metrics with the parameter
-  // registry. If the CompilationManager already has metrics registered,
-  // then the old metrics are abandoned (the context is deleted and the
-  // old counters are no longer written to).
-  void RegisterMetrics(MetricRegistry* metric_registry);
+  // Sets up a metric registry to observe the compilation manager's metrics.
+  // This method is used instead of registering a counter with a given
+  // registry because the CompilationManager is a singleton and there would
+  // be lifetime issues if the manager was dependent on a single registry.
+  Status StartInstrumentation(MetricRegistry* metric_registry);
 
  private:
   friend class Singleton<CompilationManager>;
@@ -76,17 +76,12 @@ class CompilationManager {
 
   static void Shutdown();
 
-  void UpdateCounts(bool hit);
-
   CodeGenerator generator_;
   CodeCache cache_;
   gscoped_ptr<ThreadPool> pool_;
 
-  // Read-write lock protects the metric members
-  rw_spinlock metric_lock_;
-  gscoped_ptr<MetricContext> metric_context_;
-  Counter* hit_counter_;
-  Counter* query_counter_;
+  AtomicInt<int64_t> hit_counter_;
+  AtomicInt<int64_t> query_counter_;
 
   static const int kDefaultCacheCapacity = 100;
   static const int kThreadTimeoutMs = 100;

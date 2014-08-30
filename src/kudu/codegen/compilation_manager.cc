@@ -2,6 +2,8 @@
 
 #include "kudu/codegen/compilation_manager.h"
 
+#include <boost/bind.hpp>
+#include <boost/function.hpp>
 #include <cstdlib>
 #include <glog/logging.h>
 #include <gflags/gflags.h>
@@ -16,7 +18,6 @@
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/util/faststring.h"
-#include "kudu/util/locks.h"
 #include "kudu/util/logging.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/monotime.h"
@@ -28,11 +29,11 @@
 DEFINE_bool(time_codegen, false, "Whether to print time that each code "
             "generation request took.");
 
-METRIC_DEFINE_counter(code_cache_hits, kudu::MetricUnit::kCacheHits,
-                      "Number of codegen cache hits since start");
-METRIC_DEFINE_counter(code_cache_queries, kudu::MetricUnit::kCacheQueries,
-                      "Number of codegen cache queries (hits + misses) "
-                      "since start");
+METRIC_DEFINE_gauge_int64(code_cache_hits, kudu::MetricUnit::kCacheHits,
+                          "Number of codegen cache hits since start");
+METRIC_DEFINE_gauge_int64(code_cache_queries, kudu::MetricUnit::kCacheQueries,
+                          "Number of codegen cache queries (hits + misses) "
+                          "since start");
 namespace kudu {
 namespace codegen {
 
@@ -95,7 +96,9 @@ class CompilationTask : public Runnable {
 } // anonymous namespace
 
 CompilationManager::CompilationManager()
-  : cache_(kDefaultCacheCapacity) {
+  : cache_(kDefaultCacheCapacity),
+    hit_counter_(0),
+    query_counter_(0) {
   CHECK_OK(ThreadPoolBuilder("compiler_manager_pool")
            .set_min_threads(0)
            .set_max_threads(1)
@@ -120,14 +123,18 @@ void CompilationManager::Shutdown() {
   GetSingleton()->pool_->Shutdown();
 }
 
-void CompilationManager::RegisterMetrics(MetricRegistry* metric_registry) {
-  lock_guard<rw_spinlock> lk(&metric_lock_);
-  metric_context_.reset(new MetricContext(metric_registry,
-                                          "compilation manager"));
-  hit_counter_ = METRIC_code_cache_hits.Instantiate(*metric_context_);
-  query_counter_ = METRIC_code_cache_queries.Instantiate(*metric_context_);
+Status CompilationManager::StartInstrumentation(MetricRegistry* metric_registry) {
+  MetricContext ctx(DCHECK_NOTNULL(metric_registry), "CompilationManager");
+  boost::function<int64_t(void)> hits = boost::bind(&AtomicInt<int64_t>::Load,
+                                                    &hit_counter_,
+                                                    kMemOrderNoBarrier);
+  boost::function<int64_t(void)> queries = boost::bind(&AtomicInt<int64_t>::Load,
+                                                       &query_counter_,
+                                                       kMemOrderNoBarrier);
+  METRIC_code_cache_hits.InstantiateFunctionGauge(ctx, hits);
+  METRIC_code_cache_queries.InstantiateFunctionGauge(ctx, queries);
+  return Status::OK();
 }
-
 
 bool CompilationManager::RequestRowProjector(const Schema* base_schema,
                                              const Schema* projection,
@@ -138,12 +145,13 @@ bool CompilationManager::RequestRowProjector(const Schema* base_schema,
   if (!s.ok()) return false;
   Slice key(fs.data(), fs.size());
 
+  query_counter_.Increment();
+
   scoped_refptr<JITSchemaPair> cached(
     down_cast<JITSchemaPair*>(cache_.Lookup(key).get()));
 
   // If not cached, add a request to compilation pool
   if (!cached) {
-    UpdateCounts(false);
     shared_ptr<Runnable> task(
       new CompilationTask(*base_schema, *projection, &cache_, &generator_));
     WARN_NOT_OK(pool_->Submit(task),
@@ -151,18 +159,12 @@ bool CompilationManager::RequestRowProjector(const Schema* base_schema,
     return false;
   }
 
-  UpdateCounts(true);
+  hit_counter_.Increment();
+
   const RowProjector::CodegenFunctions& functions =
     cached->row_projector_functions();
   out->reset(new RowProjector(base_schema, projection, functions, cached));
   return true;
-}
-
-void CompilationManager::UpdateCounts(bool hit) {
-  shared_lock<rw_spinlock> lk(&metric_lock_);
-  if (!metric_context_) return;
-  if (hit) hit_counter_->Increment();
-  query_counter_->Increment();
 }
 
 } // namespace codegen

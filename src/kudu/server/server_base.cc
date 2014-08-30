@@ -52,6 +52,8 @@ ServerBase::ServerBase(const ServerBaseOptions& options,
     clock_ = LogicalClock::CreateStartingAt(Timestamp::kInitialTimestamp);
   }
   CHECK_OK(StartThreadInstrumentation(metric_registry_.get(), web_server_.get()));
+  CHECK_OK(codegen::CompilationManager::GetSingleton()->StartInstrumentation(
+             metric_registry_.get()));
 }
 
 ServerBase::~ServerBase() {
@@ -96,8 +98,6 @@ void ServerBase::GenerateInstanceID() {
 Status ServerBase::Init() {
   tcmalloc::RegisterMetrics(metric_registry_.get());
   clock_->RegisterMetrics(metric_registry_.get());
-  codegen::CompilationManager::GetSingleton()->RegisterMetrics(
-    metric_registry_.get());
 
   InitSpinLockContentionProfiling();
 
