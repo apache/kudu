@@ -236,6 +236,7 @@ class LinkedListVerifier {
 
  private:
   int num_chains_;
+  int64_t expected_;
   bool enable_mutation_;
   std::vector<uint64_t> seen_key_;
   std::vector<uint64_t> seen_link_to_;
@@ -408,6 +409,7 @@ Status LinkedListTester::VerifyLinkedListRemote(int64_t expected, int64_t* verif
 Status LinkedListTester::VerifyLinkedListLocal(const tablet::Tablet* tablet,
                                                int64_t expected,
                                                int64_t* verified_count) {
+  DCHECK(tablet != NULL);
   LinkedListVerifier verifier(num_chains_, enable_mutation_, expected);
   verifier.StartScanTimer();
 
@@ -445,8 +447,10 @@ Status LinkedListTester::WaitAndVerify(int seconds_to_run, int64_t expected) {
   int64_t seen;
   Stopwatch sw;
   sw.start();
-  while (true) {
-    Status s = VerifyLinkedListRemote(expected, &seen);
+
+  Status s;
+  do {
+    s = VerifyLinkedListRemote(expected, &seen);
 
     // TODO: when we enable hybridtime consistency for the scans,
     // then we should not allow !s.ok() here. But, with READ_LATEST
@@ -454,34 +458,25 @@ Status LinkedListTester::WaitAndVerify(int seconds_to_run, int64_t expected) {
     // up-to-date replica of another tablet, and end up with broken links
     // in the chain.
 
-    if (!s.ok() || expected != seen) {
+    if (!s.ok()) {
       // We'll give the tablets 3 seconds to start up regardless of how long we
       // inserted for. There's some fixed cost startup time, especially when
       // replication is enabled.
       const int kBaseTimeToWaitSecs = 3;
 
-      if (!s.ok()) {
-        LOG(INFO) << "Table not yet ready: " << s.ToString();
-      } else {
-        LOG(INFO) << "Table not yet ready: " << expected << "/" << seen << " rows";
-      }
+      LOG(INFO) << "Table not yet ready: " << expected << "/" << seen << " rows";
       if (sw.elapsed().wall_seconds() > kBaseTimeToWaitSecs + seconds_to_run) {
         // We'll give it an equal amount of time to re-load the data as it took
         // to write it in. Typically it completes much faster than that.
-        return Status::TimedOut("Timed out waiting for table to be accessible again.");
+        return Status::TimedOut("Timed out waiting for table to be accessible again",
+                                s.ToString());
       }
+
+      // Sleep and retry until timeout.
       usleep(20*1000);
-      continue;
     }
-    RETURN_NOT_OK(s);
-    if (expected != seen) {
-      return Status::IllegalState(strings::Substitute(
-          "Missing rows, but with no broken link in the chain. This means that "
-          "a suffix of the inserted rows went missing. Expected=$0, seen=$1.",
-          expected, seen));
-    }
-    break;
-  }
+  } while (!s.ok());
+
   return Status::OK();
 }
 
@@ -507,6 +502,7 @@ Status LinkedListTester::WrappedFlush(client::KuduSession* session) {
 
 LinkedListVerifier::LinkedListVerifier(int num_chains, bool enable_mutation, int64_t expected)
   : num_chains_(num_chains),
+    expected_(expected),
     enable_mutation_(enable_mutation),
     errors_(0) {
   seen_key_.reserve(expected);
@@ -563,6 +559,14 @@ Status LinkedListVerifier::VerifyData(int64_t* verified_count) {
   if (errors_ > 0) {
     return Status::Corruption("Had one or more errors during verification (see log)");
   }
+
+  if (expected_ != *verified_count) {
+    return Status::IllegalState(strings::Substitute(
+        "Missing rows, but with no broken link in the chain. This means that "
+        "a suffix of the inserted rows went missing. Expected=$0, seen=$1.",
+        expected_, *verified_count));
+  }
+
   return Status::OK();
 }
 
