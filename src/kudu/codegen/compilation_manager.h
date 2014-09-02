@@ -51,14 +51,15 @@ class CompilationManager {
   }
 
   // If a codegenned row projector with compatible schemas (see
-  // codegen::RowProjector::ProjectionsCompatible) is ready,
-  // then it is written to 'out' and Status::OK() is returned.
+  // codegen::JITSchemaPair::ProjectionsCompatible) is ready,
+  // then it is written to 'out' and true is returned.
   // Otherwise, this enqueues a compilation task for the parameter
   // schemas in the CompilationManager's thread pool and returns
-  // a failing status without waiting for compilation to finish.
-  Status RequestRowProjector(const Schema* base_schema,
-                             const Schema* projection,
-                             gscoped_ptr<RowProjector>* out);
+  // false. Upon any failure, false is returned.
+  // Does not write to 'out' if false is returned.
+  bool RequestRowProjector(const Schema* base_schema,
+                           const Schema* projection,
+                           gscoped_ptr<RowProjector>* out);
 
   // Waits for all asynchronous compilation tasks to finish.
   void Wait();

@@ -364,17 +364,11 @@ gscoped_ptr<MRSRowProjector> GenerateAppropriateProjector(
   // Attempt code-generated implementation
   if (FLAGS_mrs_use_codegen) {
     gscoped_ptr<codegen::RowProjector> actual;
-    Status s = codegen::CompilationManager::GetSingleton()->RequestRowProjector(
-      base, projection, &actual);
-
-    // Test if successful
-    if (s.ok()) {
+    if (codegen::CompilationManager::GetSingleton()->RequestRowProjector(
+          base, projection, &actual)) {
       return gscoped_ptr<MRSRowProjector>(
         new MRSRowProjectorImpl<codegen::RowProjector>(actual.Pass()));
     }
-    LOG(WARNING) << "Could not use codegen for row projector (proceeding "
-                 << "with default projector):\n"
-                 << s.ToString();
   }
 
   // Proceed with default implementation

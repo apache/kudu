@@ -129,11 +129,13 @@ void CompilationManager::RegisterMetrics(MetricRegistry* metric_registry) {
 }
 
 
-Status CompilationManager::RequestRowProjector(const Schema* base_schema,
-                                               const Schema* projection,
-                                               gscoped_ptr<RowProjector>* out) {
+bool CompilationManager::RequestRowProjector(const Schema* base_schema,
+                                             const Schema* projection,
+                                             gscoped_ptr<RowProjector>* out) {
   faststring fs;
-  RETURN_NOT_OK(JITSchemaPair::EncodeKey(*base_schema, *projection, &fs));
+  Status s = JITSchemaPair::EncodeKey(*base_schema, *projection, &fs);
+  WARN_NOT_OK(s, "RowProjector compilation request failed");
+  if (!s.ok()) return false;
   Slice key(fs.data(), fs.size());
 
   scoped_refptr<JITSchemaPair> cached(
@@ -144,15 +146,16 @@ Status CompilationManager::RequestRowProjector(const Schema* base_schema,
     UpdateCounts(false);
     shared_ptr<Runnable> task(
       new CompilationTask(*base_schema, *projection, &cache_, &generator_));
-    RETURN_NOT_OK(pool_->Submit(task));
-    return Status::NotFound("row projector not cached");
+    WARN_NOT_OK(pool_->Submit(task),
+                "RowProjector compilation request failed");
+    return false;
   }
 
   UpdateCounts(true);
   const RowProjector::CodegenFunctions& functions =
     cached->row_projector_functions();
   out->reset(new RowProjector(base_schema, projection, functions, cached));
-  return Status::OK();
+  return true;
 }
 
 void CompilationManager::UpdateCounts(bool hit) {
