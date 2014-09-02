@@ -159,24 +159,31 @@ class TRServer(object):
       "AND timestamp > NOW() - INTERVAL 1 WEEK "
       "ORDER BY timestamp DESC")
     failed_tests = c.fetchall()
+
+    prev_date = None
+    for t in failed_tests:
+      t['is_new_date'] = t['timestamp'].date() != prev_date
+      prev_date = t['timestamp'].date()
+
     template = Template("""
-    <h1>Failed in last week</h1>
+    <h1>Failures in last week</h1>
     <table class="table">
       <tr>
-        <th>time</th>
-        <th>build</th>
-        <th>rev</th>
-        <th>machine</th>
         <th>test</th>
         <th>config</th>
         <th>exit code</th>
+        <th>rev</th>
+        <th>machine</th>
+        <th>time</th>
+        <th>build</th>
       </tr>
       {% for run in failed_tests %}
+        {% if run.is_new_date %}
+          <tr class="new-date">
+            <th colspan="7">{{ run.timestamp.date()|e }}</th>
+          </tr>
+        {% endif %}
         <tr>
-          <td>{{ run.timestamp |e }}</td>
-          <td>{{ run.build_id |e }}</td>
-          <td>{{ run.revision |e }}</td>
-          <td>{{ run.hostname |e }}</td>
           <td><a href="/test_drilldown?test_name={{ run.test_name |urlencode }}">
               {{ run.test_name |e }}
               </a></td>
@@ -186,6 +193,10 @@ class TRServer(object):
               <a href="/download_log?key={{ run.log_key |urlencode }}">failure log</a>
             {% endif %}
           </td>
+          <td>{{ run.revision |e }}</td>
+          <td>{{ run.hostname |e }}</td>
+          <td>{{ run.timestamp |e }}</td>
+          <td>{{ run.build_id |e }}</td>
         </tr>
       {% endfor %}
     </table>
@@ -197,22 +208,19 @@ class TRServer(object):
     c = self.execute_query(
               """SELECT
                    test_name,
-                   revision,
-                   MIN(timestamp) AS first_run,
                    SUM(IF(status != 0, 1, 0)) AS num_failures,
                    COUNT(*) AS num_runs
                  FROM test_results
                  WHERE timestamp > NOW() - INTERVAL 1 WEEK
-                 GROUP BY test_name, revision
+                 GROUP BY test_name
                  HAVING num_failures > 0
-                 ORDER BY test_name, first_run DESC""")
+                 ORDER BY test_name""")
     r = c.fetchall()
     return Template("""
-    <h1>Flaky in last week</h1>
+    <h1>Flaky rate over last week</h1>
     <table class="table">
       <tr>
        <th>test</th>
-       <th>rev</th>
        <th>failure rate</th>
       </tr>
       {% for r in results %}
@@ -220,8 +228,9 @@ class TRServer(object):
         <td><a href="/test_drilldown?test_name={{ r.test_name |urlencode }}">
               {{ r.test_name |e }}
             </a></td>
-        <td>{{ r.revision |e }}</td>
-        <td>{{ r.num_failures |e }} / {{ r.num_runs }}</td>
+        <td>{{ r.num_failures |e }} / {{ r.num_runs }}
+            ({{ "%.2f"|format(r.num_failures / r.num_runs * 100) }}%)
+        </td>
       </tr>
       {% endfor %}
     </table>
@@ -253,7 +262,7 @@ class TRServer(object):
                    SUM(IF(status != 0, 1, 0)) AS num_failures,
                    COUNT(*) AS num_runs
                  FROM test_results
-                 WHERE timestamp > NOW() - INTERVAL 1 MONTH
+                 WHERE timestamp > NOW() - INTERVAL 1 WEEK
                    AND test_name = %(test_name)s
                  GROUP BY revision
                  ORDER BY first_run DESC""",
@@ -270,7 +279,8 @@ class TRServer(object):
     # Append the specific info on failures
     c.execute("SELECT * from test_results "
               "WHERE timestamp > NOW() - INTERVAL 1 WEEK "
-              "AND test_name = %(test_name)s",
+              "AND test_name = %(test_name)s "
+              "AND status != 0",
               dict(test_name=test_name))
     for failure in c.fetchall():
       rev_dict[failure['revision']]['runs'].append(failure)
@@ -279,17 +289,14 @@ class TRServer(object):
     <h1>{{ test_name |e }} flakiness over recent revisions</h1>
     {% for r in revision_rows %}
       <h4>{{ r.revision }} (Failed {{ r.num_failures }} / {{ r.num_runs }})</h4>
-      <a data-toggle="collapse" href="#rev-{{r.revision|e}}">details</a>
-      <div class="collapse" id="rev-{{r.revision}}">
+      {% if r.num_failures > 0 %}
         <table class="table">
           <tr>
             <th>time</th>
-            <th>build</th>
-            <th>rev</th>
-            <th>machine</th>
-            <th>test</th>
             <th>config</th>
             <th>exit code</th>
+            <th>machine</th>
+            <th>build</th>
           </tr>
           {% for run in r.runs %}
             <tr {% if run.status != 0 %}
@@ -298,28 +305,26 @@ class TRServer(object):
                   style="background-color: #afa;"
                 {% endif %}>
               <td>{{ run.timestamp |e }}</td>
-              <td>{{ run.build_id |e }}</td>
-              <td>{{ run.revision |e }}</td>
-              <td>{{ run.hostname |e }}</td>
-              <td>{{ run.test_name |e }}</td>
               <td>{{ run.build_config |e }}</td>
               <td>{{ run.status |e }}
                 {% if run.log_key %}
                   <a href="/download_log?key={{ run.log_key |e }}">failure log</a>
                 {% endif %}
               </td>
+              <td>{{ run.hostname |e }}</td>
+              <td>{{ run.build_id |e }}</td>
             </tr>
           {% endfor %}
         </table>
-      </div>
+      {% endif %}
     {% endfor %}
     """).render(revision_rows=revision_rows, test_name=test_name))
 
   @cherrypy.expose
   def index(self):
-    body = self.recently_failed_html()
+    body = self.flaky_report_html()
     body += "<hr/>"
-    body += self.flaky_report_html()
+    body += self.recently_failed_html()
     return self.render_container(body)
 
   def render_container(self, body):
@@ -329,6 +334,9 @@ class TRServer(object):
     <html>
       <head><title>Kudu test results</title>
       <link rel="stylesheet" href="//maxcdn.bootstrapcdn.com/bootstrap/3.2.0/css/bootstrap.min.css" />
+      <style>
+        .new-date { border-bottom: 2px solid #666; }
+      </style>
     </head>
     <body>
       <script src="//ajax.googleapis.com/ajax/libs/jquery/1.11.1/jquery.min.js"></script>
