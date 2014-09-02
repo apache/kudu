@@ -27,6 +27,7 @@ class RpcLineItemDAO {
   void MutateLine(boost::function<void(KuduPartialRow*)> f);
   void Init();
   void FinishWriting();
+  // Deletes previous scanner if one is open.
   void OpenScanner(const client::KuduSchema &query_schema,
                    const std::vector<client::KuduColumnRangePredicate>& preds);
   bool HasMore();

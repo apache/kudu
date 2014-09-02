@@ -6,6 +6,7 @@
 #include <gtest/gtest.h>
 #include <tr1/unordered_set>
 
+#include "kudu/codegen/compilation_manager.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/tablet/local_tablet_writer.h"
@@ -46,6 +47,18 @@ class MultiThreadedTabletTest : public TabletTestBase<SETUP> {
  public:
   virtual void SetUp() {
     superclass::SetUp();
+
+    // Warm up code cache with all the projections we'll be using.
+    gscoped_ptr<RowwiseIterator> iter;
+    CHECK_OK(tablet()->NewRowIterator(client_schema_, &iter));
+    uint64_t count;
+    CHECK_OK(tablet()->CountRows(&count));
+    shared_ptr<Schema> schema(tablet()->schema());
+    ColumnSchema valcol = schema->column(schema->find_column("val"));
+    valcol_projection_ = Schema(boost::assign::list_of(valcol), 0);
+    CHECK_OK(tablet()->NewRowIterator(valcol_projection_, &iter));
+    codegen::CompilationManager::GetSingleton()->Wait();
+
     ts_collector_.StartDumperThread();
   }
 
@@ -185,14 +198,8 @@ class MultiThreadedTabletTest : public TabletTestBase<SETUP> {
   uint64_t CountSum(const shared_ptr<TimeSeries> &scanned_ts) {
     Arena arena(1024, 1024); // unused, just scanning ints
 
-    // Scan a projection with only an int column.
-    // This is provided by both harnesses.
-    shared_ptr<Schema> schema(tablet()->schema());
-    ColumnSchema valcol = schema->column(schema->find_column("val"));
-    Schema projection = Schema(boost::assign::list_of(valcol), 0);
-
     static const int kBufInts = 1024*1024 / 8;
-    RowBlock block(projection, kBufInts, &arena);
+    RowBlock block(valcol_projection_, kBufInts, &arena);
     ColumnBlock column = block.column_block(0);
 
     uint64_t count_since_report = 0;
@@ -200,7 +207,7 @@ class MultiThreadedTabletTest : public TabletTestBase<SETUP> {
     uint64_t sum = 0;
 
     gscoped_ptr<RowwiseIterator> iter;
-    CHECK_OK(tablet()->NewRowIterator(projection, &iter));
+    CHECK_OK(tablet()->NewRowIterator(valcol_projection_, &iter));
     CHECK_OK(iter->Init(NULL));
 
     while (iter->HasNext()) {
@@ -332,6 +339,10 @@ class MultiThreadedTabletTest : public TabletTestBase<SETUP> {
 
   std::vector<scoped_refptr<kudu::Thread> > threads_;
   CountDownLatch running_insert_count_;
+
+  // Projection with only an int column.
+  // This is provided by both harnesses.
+  Schema valcol_projection_;
 
   TimeSeriesCollector ts_collector_;
 };

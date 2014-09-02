@@ -60,6 +60,9 @@ class CompilationManager {
                              const Schema* projection,
                              gscoped_ptr<RowProjector>* out);
 
+  // Waits for all asynchronous compilation tasks to finish.
+  void Wait();
+
   // Sets CompilationManager to register its metrics with the parameter
   // registry. If the CompilationManager already has metrics registered,
   // then the old metrics are abandoned (the context is deleted and the

@@ -112,6 +112,10 @@ CompilationManager::CompilationManager()
 
 CompilationManager::~CompilationManager() {}
 
+void CompilationManager::Wait() {
+  pool_->Wait();
+}
+
 void CompilationManager::Shutdown() {
   GetSingleton()->pool_->Shutdown();
 }

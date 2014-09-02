@@ -15,6 +15,7 @@
 #include "kudu/client/client.h"
 #include "kudu/client/row_result.h"
 #include "kudu/client/write_op.h"
+#include "kudu/codegen/compilation_manager.h"
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/split.h"
@@ -340,6 +341,13 @@ void FullStackInsertScanTest::InsertRows(CountDownLatch* start_latch, int id,
 
 void FullStackInsertScanTest::ScanProjection(const KuduSchema& schema,
                                              const string& msg) {
+  {
+    // Warmup codegen cache
+    KuduScanner scanner(reader_table_.get());
+    CHECK_OK(scanner.SetProjection(&schema));
+    CHECK_OK(scanner.Open());
+    codegen::CompilationManager::GetSingleton()->Wait();
+  }
   KuduScanner scanner(reader_table_.get());
   CHECK_OK(scanner.SetProjection(&schema));
   uint64_t nrows = 0;

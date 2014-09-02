@@ -51,6 +51,7 @@
 #include "kudu/benchmarks/tpch/tpch-schemas.h"
 #include "kudu/benchmarks/tpch/rpc_line_item_dao.h"
 #include "kudu/benchmarks/tpch/line_item_tsv_importer.h"
+#include "kudu/codegen/compilation_manager.h"
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/hash/city.h"
 #include "kudu/gutil/strings/numbers.h"
@@ -125,17 +126,28 @@ void LoadLineItems(const string &path, RpcLineItemDAO *dao) {
   dao->FinishWriting();
 }
 
+void OpenTpch1Scanner(RpcLineItemDAO* dao, KuduSchema* query_schema) {
+  query_schema->CopyFrom(tpch::CreateTpch1QuerySchema());
+  Slice date("1998-09-02");
+  vector<KuduColumnRangePredicate> preds;
+  KuduColumnRangePredicate pred1(query_schema->Column(0), NULL, &date);
+  preds.push_back(pred1);
+  dao->OpenScanner(*query_schema, preds);
+}
+
+void WarmupScanCache(RpcLineItemDAO* dao) {
+  // Warms up cache for the tpch1 query.
+  KuduSchema schema;
+  OpenTpch1Scanner(dao, &schema);
+  codegen::CompilationManager::GetSingleton()->Wait();
+}
+
 void Tpch1(RpcLineItemDAO *dao) {
   typedef unordered_map<SliceMapKey, Result*, hash> slice_map;
   typedef unordered_map<SliceMapKey, slice_map*, hash> slice_map_map;
 
-  KuduSchema query_schema(tpch::CreateTpch1QuerySchema());
-  Slice date("1998-09-02");
-  vector<KuduColumnRangePredicate> preds;
-  KuduColumnRangePredicate pred1(query_schema.Column(0), NULL, &date);
-  preds.push_back(pred1);
-
-  dao->OpenScanner(query_schema, preds);
+  KuduSchema schema;
+  OpenTpch1Scanner(dao, &schema);
 
   int matching_rows = 0;
   slice_map_map results;
@@ -242,6 +254,8 @@ int main(int argc, char **argv) {
   gscoped_ptr<kudu::RpcLineItemDAO> dao(new kudu::RpcLineItemDAO(master_address, kTableName,
                                                                  FLAGS_tpch_max_batch_size));
   dao->Init();
+
+  kudu::WarmupScanCache(dao.get());
 
   bool needs_loading = dao->IsTableEmpty();
   if (needs_loading) {
