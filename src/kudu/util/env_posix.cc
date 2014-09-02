@@ -42,6 +42,24 @@ namespace kudu {
 
 namespace {
 
+// Close file descriptor when object goes out of scope.
+class ScopedFdCloser {
+ public:
+  explicit ScopedFdCloser(int fd)
+    : fd_(fd) {
+  }
+
+  ~ScopedFdCloser() {
+    int err = ::close(fd_);
+    if (PREDICT_FALSE(err != 0)) {
+      PLOG(WARNING) << "Failed to close fd " << fd_;
+    }
+  }
+
+ private:
+  int fd_;
+};
+
 static Status IOError(const std::string& context, int err_number) {
   switch (err_number) {
     case ENOENT:
@@ -784,6 +802,7 @@ class PosixEnv : public Env {
     if ((dir_fd = open(dirname.c_str(), O_DIRECTORY|O_RDONLY)) == -1) {
       return IOError(dirname, errno);
     }
+    ScopedFdCloser fd_closer(dir_fd);
     if (fsync(dir_fd) != 0) {
       return IOError(dirname, errno);
     }
