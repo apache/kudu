@@ -99,9 +99,9 @@ class ModuleBuilder {
   Status Compile(gscoped_ptr<llvm::ExecutionEngine>* out);
 
   // Retrieves the TargetMachine that the engine builder guessed was
-  // the native target. Can only be called after compilation, and before
-  // the Compile()'s ExecutionEngine is deleted.
-  const llvm::TargetMachine& GetTargetMachine() const;
+  // the native target. Requires compilation is complete.
+  // Pointer is valid while Compile()'s ExecutionEngine is.
+  llvm::TargetMachine* GetTargetMachine() const;
 
  private:
   // The different states a ModuleBuilder can be in.

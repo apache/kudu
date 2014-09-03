@@ -26,8 +26,7 @@
 #include <llvm/Target/TargetRegisterInfo.h>
 #include <llvm/Target/TargetSubtargetInfo.h>
 
-#include "kudu/codegen/jit_owner.h"
-#include "kudu/codegen/jit_schema_pair.h"
+#include "kudu/codegen/jit_wrapper.h"
 #include "kudu/codegen/module_builder.h"
 #include "kudu/codegen/row_projector.h"
 #include "kudu/gutil/gscoped_ptr.h"
@@ -181,6 +180,9 @@ void CodeGenerator::GlobalInit() {
   llvm::InitializeNativeTargetAsmPrinter();
   llvm::InitializeNativeTargetAsmParser();
   llvm::InitializeNativeTargetDisassembler();
+  // TODO would be nice to just initialize the TargetMachine here, just once,
+  // instead of constantly retrieving it from the codegen classes' expired
+  // ModuleBuilders.
 }
 
 CodeGenerator::CodeGenerator() {
@@ -190,47 +192,19 @@ CodeGenerator::CodeGenerator() {
 
 CodeGenerator::~CodeGenerator() {}
 
-Status CodeGenerator::CompileRowProjector(const Schema& base,
-                                          const Schema& proj,
-                                          RowProjector::CodegenFunctions* projector_out,
-                                          scoped_refptr<JITCodeOwner>* owner_out) {
-  gscoped_ptr<ExecutionEngine> ee;
-  RETURN_NOT_OK(CompileRowProjector(base, proj, projector_out, &ee));
-  owner_out->reset(new JITCodeOwner(ee.Pass()));
-  return Status::OK();
-}
-
-Status CodeGenerator::CompileSchemaPair(const Schema& base, const Schema& proj,
-                                        scoped_refptr<JITSchemaPair>* owner_out) {
-  RowProjector::CodegenFunctions rp_functions;
-  gscoped_ptr<ExecutionEngine> ee;
-  RETURN_NOT_OK(CompileRowProjector(base, proj, &rp_functions, &ee));
-  owner_out->reset(new JITSchemaPair(ee.Pass(), rp_functions));
-  return Status::OK();
-}
 
 Status CodeGenerator::CompileRowProjector(const Schema& base, const Schema& proj,
-                                          RowProjector::CodegenFunctions* projector_out,
-                                          gscoped_ptr<ExecutionEngine>* owner_out) {
+                                          scoped_refptr<RowProjectorFunctions>* out) {
   RETURN_NOT_OK(CheckCodegenEnabled());
 
-  // Generate a module builder
-  ModuleBuilder mbuilder;
-  RETURN_NOT_OK(mbuilder.Init());
-
-  // Load new functions into module.
-  RETURN_NOT_OK(RowProjector::CodegenFunctions::Create(base, proj, &mbuilder,
-                                                       projector_out));
-
-  // Compile and get execution engine
-  RETURN_NOT_OK(mbuilder.Compile(owner_out));
+  TargetMachine* tm;
+  RETURN_NOT_OK(RowProjectorFunctions::Create(base, proj, out, &tm));
 
   if (FLAGS_codegen_dump_mc) {
     static const int kInstrMax = 500;
     std::stringstream sstr;
     sstr << "Printing read projection function:\n";
-    int instrs = DumpAsm(projector_out->read(), mbuilder.GetTargetMachine(),
-                         &sstr, kInstrMax);
+    int instrs = DumpAsm((*out)->read(), *tm, &sstr, kInstrMax);
     sstr << "Printed " << instrs << " instructions.";
     LOG(INFO) << sstr.str();
   }

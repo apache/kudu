@@ -20,13 +20,13 @@
 #include <llvm/IR/Module.h>
 #include <llvm/IR/Type.h>
 
-#include "kudu/codegen/jit_owner.h"
-#include "kudu/codegen/jit_schema_pair.h"
+#include "kudu/codegen/jit_wrapper.h"
 #include "kudu/codegen/module_builder.h"
 #include "kudu/common/row.h"
 #include "kudu/common/schema.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/strcat.h"
+#include "kudu/util/faststring.h"
 #include "kudu/util/status.h"
 
 namespace llvm {
@@ -243,10 +243,29 @@ llvm::Function* MakeProjection(const string& name,
 
 } // anonymous namespace
 
-Status RowProjector::CodegenFunctions::Create(const Schema& base_schema,
-                                              const Schema& projection,
-                                              ModuleBuilder* builder,
-                                              CodegenFunctions* out) {
+RowProjectorFunctions::RowProjectorFunctions(const Schema& base_schema,
+                                             const Schema& projection,
+                                             ProjectionFunction read_f,
+                                             ProjectionFunction write_f,
+                                             gscoped_ptr<JITCodeOwner> owner)
+  : JITWrapper(owner.Pass()),
+    base_schema_(base_schema),
+    projection_(projection),
+    read_f_(read_f),
+    write_f_(write_f) {
+  CHECK(read_f != NULL)
+    << "Promise to compile read function not fulfilled by ModuleBuilder";
+  CHECK(write_f != NULL)
+    << "Promise to compile write function not fulfilled by ModuleBuilder";
+}
+
+Status RowProjectorFunctions::Create(const Schema& base_schema,
+                                     const Schema& projection,
+                                     scoped_refptr<RowProjectorFunctions>* out,
+                                     llvm::TargetMachine** tm) {
+  ModuleBuilder builder;
+  RETURN_NOT_OK(builder.Init());
+
   // Use a no-codegen row projector to check validity and to build
   // the codegen functions.
   kudu::RowProjector no_codegen(&base_schema, &projection);
@@ -255,41 +274,192 @@ Status RowProjector::CodegenFunctions::Create(const Schema& base_schema,
   // Build the functions for code gen. No need to mangle for uniqueness;
   // in the rare case we have two projectors in one module, LLVM takes
   // care of uniquifying when making a GlobalValue.
-  Function* read = MakeProjection<true>("ProjRead", builder, no_codegen);
-  Function* write = MakeProjection<false>("ProjWrite", builder, no_codegen);
+  Function* read = MakeProjection<true>("ProjRead", &builder, no_codegen);
+  Function* write = MakeProjection<false>("ProjWrite", &builder, no_codegen);
 
   // Have the ModuleBuilder accept promises to compile the functions
-  builder->AddJITPromise(read, &out->read_f_);
-  builder->AddJITPromise(write, &out->write_f_);
+  ProjectionFunction read_f, write_f;
+  builder.AddJITPromise(read, &read_f);
+  builder.AddJITPromise(write, &write_f);
 
-#ifndef NDEBUG
-  out->base_schema_ = base_schema;
-  out->projection_ = projection;
-#endif
+  gscoped_ptr<JITCodeOwner> owner;
+  RETURN_NOT_OK(builder.Compile(&owner));
+
+  if (tm) {
+    *tm = builder.GetTargetMachine();
+  }
+  out->reset(new RowProjectorFunctions(base_schema, projection, read_f,
+                                       write_f, owner.Pass()));
+  return Status::OK();
+}
+
+namespace {
+// Convenience method which appends to a faststring
+template<typename T>
+void AddNext(faststring* fs, const T& val) {
+  fs->append(&val, sizeof(T));
+}
+} // anonymous namespace
+
+// Allocates space for and generates a key for a pair of schemas. The key
+// is unique according to the criteria defined in the CodeCache class'
+// block comment. In order to achieve this, we encode the schemas into
+// a contiguous array of bytes as follows, in sequence.
+//
+// (1 byte) unique type identifier for RowProjectorFunctions
+// (8 bytes) number, as unsigned long, of base columns
+// (5 bytes each) base column types, in order
+//   4 bytes for enum type
+//   1 byte for nullability
+// (8 bytes) number, as unsigned long, of projection columns
+// (5 bytes each) projection column types, in order
+//   4 bytes for enum type
+//   1 byte for nullablility
+// (8 bytes) number, as unsigned long, of base projection mappings
+// (16 bytes each) base projection mappings, in order
+// (24 bytes each) default projection columns, in order
+//   8 bytes for the index
+//   8 bytes for the read default
+//   8 bytes for the write default
+//
+// This could be made more efficient by removing unnecessary information
+// such as the top bits for many numbers, and using a thread-local buffer
+// (the code cache copies its own key anyway).
+// Respects IsCompatbile below.
+//
+// Writes to 'out' upon success.
+Status RowProjectorFunctions::EncodeKey(const Schema& base, const Schema& proj,
+                                        faststring* out) {
+  kudu::RowProjector projector(&base, &proj);
+  RETURN_NOT_OK(projector.Init());
+
+  AddNext(out, JITWrapper::ROW_PROJECTOR);
+  AddNext(out, base.num_columns());
+  BOOST_FOREACH(const ColumnSchema& col, base.columns()) {
+    AddNext(out, col.type_info()->type());
+    AddNext(out, col.is_nullable());
+  }
+  AddNext(out, proj.num_columns());
+  BOOST_FOREACH(const ColumnSchema& col, proj.columns()) {
+    AddNext(out, col.type_info()->type());
+    AddNext(out, col.is_nullable());
+  }
+  AddNext(out, projector.base_cols_mapping().size());
+  BOOST_FOREACH(const kudu::RowProjector::ProjectionIdxMapping& map,
+                projector.base_cols_mapping()) {
+    AddNext(out, map);
+  }
+  BOOST_FOREACH(size_t dfl_idx, projector.projection_defaults()) {
+    const ColumnSchema& col = proj.column(dfl_idx);
+    AddNext(out, dfl_idx);
+    AddNext(out, col.read_default_value());
+    AddNext(out, col.write_default_value());
+  }
 
   return Status::OK();
 }
 
-RowProjector::RowProjector(const Schema* base_schema, const Schema* projection,
-                           const CodegenFunctions& functions,
-                           const scoped_refptr<JITCodeOwner>& code)
-  : projector_(base_schema, projection),
-    functions_(functions),
-    code_(code) {
-  CHECK(functions.read() != NULL)
-    << "Promise to compile read function not fulfilled by ModuleBuilder";
-  CHECK(functions.write() != NULL)
-    << "Promise to compile write function not fulfilled by ModuleBuilder";
+Status RowProjectorFunctions::EncodeOwnKey(faststring* out) {
+  return EncodeKey(base_schema_, projection_, out);
 }
 
-RowProjector::~RowProjector() {}
+RowProjector::RowProjector(const Schema* base_schema, const Schema* projection,
+                           const scoped_refptr<RowProjectorFunctions>& functions)
+  : projector_(base_schema, projection),
+    functions_(functions) {}
+
+namespace {
+
+struct DefaultEquals {
+  template<class T>
+  bool operator()(const T& t1, const T& t2) { return t1 == t2; }
+};
+
+struct ColumnSchemaEqualsType {
+  bool operator()(const ColumnSchema& s1, const ColumnSchema& s2) {
+    return s1.EqualsType(s2);
+  }
+};
+
+template<class T, class Equals>
+bool ContainerEquals(const T& t1, const T& t2, const Equals& equals) {
+  if (t1.size() != t2.size()) return false;
+  if (!std::equal(t1.begin(), t1.end(), t2.begin(), equals)) return false;
+  return true;
+}
+
+template<class T>
+bool ContainerEquals(const T& t1, const T& t2) {
+  return ContainerEquals(t1, t2, DefaultEquals());
+}
+
+// This method defines what makes (base, projection) schema pairs compatible.
+// In other words, this method can be thought of as the equivalence relation
+// on the set of all well-formed (base, projection) schema pairs that
+// partitions the set into equivalence classes which will have the exact
+// same projection function code.
+//
+// This equivalence relation can be decomposed as:
+//
+//   ProjectionsCompatible((base1, proj1), (base2, proj2)) :=
+//     WELLFORMED(base1, proj1) &&
+//     WELLFORMED(base2, proj2) &&
+//     PROJEQUALS(base1, base2) &&
+//     PROJEQUALS(proj1, proj2) &&
+//     MAP(base1, proj1) == MAP(base2, proj2)
+//
+// where WELLFORMED checks that a projection is well-formed (i.e., a
+// kudu::RowProjector can be initialized with the schema pair), PROJEQUAL
+// is a relaxed version of the Schema::Equals() operator that is
+// independent of column names and column IDs, and MAP addresses
+// the actual dependency on column identification - which is the effect
+// that those attributes have on the RowProjector's mapping (i.e., different
+// names and IDs are ok, so long as the mapping is the same). Note that
+// key columns are not given any special meaning in projection. Types
+// and nullability of columns must be exactly equal between the two
+// schema pairs.
+//
+// Status::OK corresponds to true in the equivalence relation and other
+// statuses correspond to false, explaining why the projections are
+// incompatible.
+Status ProjectionsCompatible(const Schema& base1, const Schema& proj1,
+                             const Schema& base2, const Schema& proj2) {
+  kudu::RowProjector rp1(&base1, &proj1), rp2(&base2, &proj2);
+  RETURN_NOT_OK_PREPEND(rp1.Init(), "(base1, proj1) projection "
+                        "schema pair not well formed: ");
+  RETURN_NOT_OK_PREPEND(rp2.Init(), "(base2, proj2) projection "
+                        "schema pair not well formed: ");
+
+  if (!ContainerEquals(base1.columns(), base2.columns(),
+                       ColumnSchemaEqualsType())) {
+    return Status::IllegalState("base schema types unequal");
+  }
+  if (!ContainerEquals(proj1.columns(), proj2.columns(),
+                       ColumnSchemaEqualsType())) {
+    return Status::IllegalState("projection schema types unequal");
+  }
+
+  if (!ContainerEquals(rp1.base_cols_mapping(), rp2.base_cols_mapping())) {
+    return Status::IllegalState("base column mappings do not match");
+  }
+  if (!ContainerEquals(rp1.adapter_cols_mapping(), rp2.adapter_cols_mapping())) {
+    return Status::IllegalState("adapter column mappings do not match");
+  }
+  if (!ContainerEquals(rp1.projection_defaults(), rp2.projection_defaults())) {
+    return Status::IllegalState("projection default indices do not match");
+  }
+
+  return Status::OK();
+}
+
+} // anonymous namespace
 
 Status RowProjector::Init() {
   RETURN_NOT_OK(projector_.Init());
 #ifndef NDEBUG
-  RETURN_NOT_OK_PREPEND(JITSchemaPair::ProjectionsCompatible(
+  RETURN_NOT_OK_PREPEND(ProjectionsCompatible(
                           *projector_.base_schema(), *projector_.projection(),
-                          *functions_.base_schema(), *functions_.projection()),
+                          functions_->base_schema(), functions_->projection()),
                         "Codegenned row projector's schemas incompatible "
                         "with its functions' schemas:"
                         "\n  projector base = " +
@@ -297,9 +467,9 @@ Status RowProjector::Init() {
                         "\n  projector proj = " +
                         projector_.projection()->ToString() +
                         "\n  functions base = " +
-                        functions_.base_schema()->ToString() +
+                        functions_->base_schema().ToString() +
                         "\n  functions proj = " +
-                        functions_.projection()->ToString());
+                        functions_->projection().ToString());
 #endif
   return Status::OK();
 }

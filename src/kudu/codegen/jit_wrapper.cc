@@ -1,20 +1,21 @@
 // Copyright 2014 Cloudera inc.
-// Confidential Cloudera Information: Covered by NDA.
 
-#include "kudu/codegen/jit_owner.h"
+#include "kudu/codegen/jit_wrapper.h"
 
 #include <llvm/ExecutionEngine/ExecutionEngine.h>
+
 #include "kudu/gutil/gscoped_ptr.h"
+#include "kudu/util/faststring.h"
 
 using llvm::ExecutionEngine;
 
 namespace kudu {
 namespace codegen {
 
-JITCodeOwner::JITCodeOwner(gscoped_ptr<ExecutionEngine> engine)
-  : engine_(engine.Pass()) {}
+JITWrapper::JITWrapper(gscoped_ptr<JITCodeOwner> owner)
+  : owner_(owner.Pass()) {}
 
-JITCodeOwner::~JITCodeOwner() {}
+JITWrapper::~JITWrapper() {}
 
 } // namespace codegen
 } // namespace kudu

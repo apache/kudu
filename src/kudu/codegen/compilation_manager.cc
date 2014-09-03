@@ -11,8 +11,7 @@
 
 #include "kudu/codegen/code_cache.h"
 #include "kudu/codegen/code_generator.h"
-#include "kudu/codegen/jit_owner.h"
-#include "kudu/codegen/jit_schema_pair.h"
+#include "kudu/codegen/jit_wrapper.h"
 #include "kudu/codegen/row_projector.h"
 #include "kudu/common/schema.h"
 #include "kudu/gutil/casts.h"
@@ -67,22 +66,20 @@ class CompilationTask : public Runnable {
 
  private:
   Status RunWithStatus() {
-    faststring fs;
-    RETURN_NOT_OK(JITSchemaPair::EncodeKey(base_, proj_, &fs));
-    Slice key(fs.data(), fs.size());
+    faststring key;
+    RETURN_NOT_OK(RowProjectorFunctions::EncodeKey(base_, proj_, &key));
 
     // Check again to make sure we didn't compile it already.
     // This can occur if we request the same schema pair while the
     // first one's compiling.
     if (cache_->Lookup(key)) return Status::OK();
 
-    RowProjector::CodegenFunctions rp_functions;
-    scoped_refptr<JITSchemaPair> owner;
-    LOG_TIMING_IF(INFO, FLAGS_time_codegen, "code-generating schema pair") {
-      RETURN_NOT_OK(generator_->CompileSchemaPair(base_, proj_, &owner));
+    scoped_refptr<RowProjectorFunctions> functions;
+    LOG_TIMING_IF(INFO, FLAGS_time_codegen, "code-generating row projector") {
+      RETURN_NOT_OK(generator_->CompileRowProjector(base_, proj_, &functions));
     }
 
-    cache_->AddEntry(key, owner);
+    RETURN_NOT_OK(cache_->AddEntry(functions));
     return Status::OK();
   }
 
@@ -140,16 +137,14 @@ Status CompilationManager::StartInstrumentation(MetricRegistry* metric_registry)
 bool CompilationManager::RequestRowProjector(const Schema* base_schema,
                                              const Schema* projection,
                                              gscoped_ptr<RowProjector>* out) {
-  faststring fs;
-  Status s = JITSchemaPair::EncodeKey(*base_schema, *projection, &fs);
+  faststring key;
+  Status s = RowProjectorFunctions::EncodeKey(*base_schema, *projection, &key);
   WARN_NOT_OK(s, "RowProjector compilation request failed");
   if (!s.ok()) return false;
-  Slice key(fs.data(), fs.size());
-
   query_counter_.Increment();
 
-  scoped_refptr<JITSchemaPair> cached(
-    down_cast<JITSchemaPair*>(cache_.Lookup(key).get()));
+  scoped_refptr<RowProjectorFunctions> cached(
+    down_cast<RowProjectorFunctions*>(cache_.Lookup(key).get()));
 
   // If not cached, add a request to compilation pool
   if (!cached) {
@@ -162,9 +157,7 @@ bool CompilationManager::RequestRowProjector(const Schema* base_schema,
 
   hit_counter_.Increment();
 
-  const RowProjector::CodegenFunctions& functions =
-    cached->row_projector_functions();
-  out->reset(new RowProjector(base_schema, projection, functions, cached));
+  out->reset(new RowProjector(base_schema, projection, cached));
   return true;
 }
 

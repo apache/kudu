@@ -288,9 +288,9 @@ Status ModuleBuilder::Compile(gscoped_ptr<ExecutionEngine>* out) {
   return Status::OK();
 }
 
-const TargetMachine& ModuleBuilder::GetTargetMachine() const {
+TargetMachine* ModuleBuilder::GetTargetMachine() const {
   CHECK_EQ(state_, kCompiled);
-  return *CHECK_NOTNULL(target_);
+  return CHECK_NOTNULL(target_);
 }
 
 vector<const char*> ModuleBuilder::GetFunctionNames() const {

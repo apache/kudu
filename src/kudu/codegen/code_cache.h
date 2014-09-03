@@ -7,6 +7,7 @@
 #include "kudu/codegen/row_projector.h"
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/ref_counted.h"
+#include "kudu/util/faststring.h"
 
 namespace kudu {
 
@@ -15,7 +16,7 @@ class Schema;
 
 namespace codegen {
 
-class JITCodeOwner;
+class JITWrapper;
 
 // A code cache is a specialized LRU cache with the following services:
 //   1. It supports only one writer at a time, but multiple concurrent
@@ -23,11 +24,10 @@ class JITCodeOwner;
 //   2. If its items are taking too much space, it evicts the least-
 //      recently-used member of the cache.
 //
-// The cache takes shared ownership of its entry values, the JITCodeOwners,
+// The cache takes shared ownership of its entry values, the JITWrappers,
 // by incrementing their reference count.
-// The cache owns its own copies of the keys.
 //
-// LRU eviction does not guarantee that a JITCodeOwner is deleted, only that
+// LRU eviction does not guarantee that a JITWrapper is deleted, only that
 // the cache releases its shared ownership (by decrementing the reference
 // count) of the jit code.
 class CodeCache {
@@ -45,25 +45,27 @@ class CodeCache {
   // a custom memory manager into the CodeGenerator's execution engine which
   // intercepts allocation calls and tracks code size.
 
-  // Generates an empty code cache which stores at most 'capacity' JITCodeOwners.
+  // Generates an empty code cache which stores at most 'capacity' JITWrappers.
   // A JIT payload is defined to be the combination of objects which rely on jitted
   // code and the classes which own the jitted code.
   explicit CodeCache(size_t capacity);
   ~CodeCache();
 
-  // This function is NOT thread safe.
-  // Adds a new entry (key)->(owner) to cache.
-  // Overwrites the previous value if one exists. If insertion
-  // results in excess capacity, LRU eviction occurs.
-  void AddEntry(const Slice& key, const scoped_refptr<JITCodeOwner>& owner);
+  // This function is NOT thread safe (only one writer may call this at
+  // a time). Attempts to add a new entry 'wrapper' to the cache, using
+  // wrapper->EncodeOwnKey() as the key. Overwrites the previous value
+  // if one exists. If insertion results in excess capacity, LRU eviction
+  // occurs. Returns Status::OK() upon success.
+  Status AddEntry(const scoped_refptr<JITWrapper>& wrapper);
 
   // This function may be called from any thread concurrently with other
   // writes and reads to the cache. Looks in the cache for the specified key.
   // Returns a reference to the associated payload, or NULL if no such entry
   // exists in the cache.
-  scoped_refptr<JITCodeOwner> Lookup(const Slice& key);
+  scoped_refptr<JITWrapper> Lookup(const Slice& key);
 
  private:
+
   gscoped_ptr<Cache> cache_;
 
   DISALLOW_COPY_AND_ASSIGN(CodeCache);

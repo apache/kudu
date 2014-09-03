@@ -9,7 +9,6 @@
 #include <glog/logging.h>
 
 #include "kudu/codegen/code_generator.h"
-#include "kudu/codegen/jit_owner.h"
 #include "kudu/codegen/row_projector.h"
 #include "kudu/common/schema.h"
 #include "kudu/common/row.h"
@@ -196,10 +195,9 @@ void CodegenTest::TestProjection(const Schema* proj) {
 }
 
 Status CodegenTest::Generate(const Schema* proj, gscoped_ptr<CodegenRP>* out) {
-  CodegenRP::CodegenFunctions functions;
-  scoped_refptr<codegen::JITCodeOwner> owner;
-  RETURN_NOT_OK(generator_.CompileRowProjector(base_, *proj, &functions, &owner));
-  out->reset(new CodegenRP(&base_, proj, functions, owner));
+  scoped_refptr<codegen::RowProjectorFunctions> functions;
+  RETURN_NOT_OK(generator_.CompileRowProjector(base_, *proj, &functions));
+  out->reset(new CodegenRP(&base_, proj, functions));
   return Status::OK();
 }
 

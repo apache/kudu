@@ -7,6 +7,7 @@
 #include <iosfwd>
 #include <vector>
 
+#include "kudu/codegen/jit_wrapper.h"
 #include "kudu/common/row.h"
 #include "kudu/common/rowblock.h"
 #include "kudu/common/schema.h"
@@ -16,19 +17,53 @@
 #include "kudu/util/status.h"
 
 namespace llvm {
-class ExecutionEngine;
-class Function;
+class TargetMachine;
 } // namespace llvm
 
 namespace kudu {
 
 class Arena;
-class Schema;
 
 namespace codegen {
 
-class JITCodeOwner;
-class ModuleBuilder;
+// The JITWrapper for codegen::RowProjector functions. Contains
+// the compiled functions themselves as well as the schemas used
+// to generate them.
+class RowProjectorFunctions : public JITWrapper {
+ public:
+  // Compiles the row projector functions for the given base
+  // and projection.
+  // Writes the llvm::TargetMachine* used to 'tm' (if not NULL)
+  // and the functions to 'out' upon success.
+  static Status Create(const Schema& base_schema, const Schema& projection,
+                       scoped_refptr<RowProjectorFunctions>* out,
+                       llvm::TargetMachine** tm = NULL);
+
+  const Schema& base_schema() { return base_schema_; }
+  const Schema& projection() { return projection_; }
+
+  typedef bool(*ProjectionFunction)(const uint8_t*, RowBlockRow*, Arena*);
+  ProjectionFunction read() const { return read_f_; }
+  ProjectionFunction write() const { return write_f_; }
+
+  virtual Status EncodeOwnKey(faststring* out) OVERRIDE;
+
+  // Allows key encoding without creating an instance. Functionally
+  // equivalent to:
+  // scoped_refptr<RowProjectorFunctions> rpf;
+  // RETURN_NOT_OK(Create(base, proj, &rpf));
+  // return rpf->EncodeOwnKey(out);
+  static Status EncodeKey(const Schema& base, const Schema& proj,
+                          faststring* out);
+
+ private:
+  RowProjectorFunctions(const Schema& base_schema, const Schema& projection,
+                        ProjectionFunction read_f, ProjectionFunction write_f,
+                        gscoped_ptr<JITCodeOwner> owner);
+
+  Schema base_schema_, projection_;
+  ProjectionFunction read_f_, write_f_;
+};
 
 // This projector behaves the almost the same way as a tablet/RowProjector except that
 // it only supports certain row types, and expects a regular Arena. Furthermore,
@@ -36,60 +71,15 @@ class ModuleBuilder;
 //
 // See documentation for RowProjector. Any differences in the API will be explained
 // in this class.
-//
-// A RowProjector is built on top of compiled functions made for its pair
-// of schemas. If the row projector functions it is given at initialization
-// are incompatible with the schemas that are assigned to it, undefined behavior
-// will occur.
 class RowProjector {
  public:
   typedef kudu::RowProjector::ProjectionIdxMapping ProjectionIdxMapping;
 
-  // Class for containing compiled functions, whose validity is dependent
-  // on builder's ExecutionEngine.
-  class CodegenFunctions {
-   public:
-    CodegenFunctions()
-      : read_f_(NULL), write_f_(NULL) {}
-
-    // Adds the parameter schema's projection functions to the builder's
-    // module.
-    // Schemas need to be valid only for duration of this call.
-    // 'out' is not initialized until builder->Compile() is called and
-    // fulfills its JITPromises.
-    static Status Create(const Schema& base_schema, const Schema& projection,
-                         ModuleBuilder* builder, CodegenFunctions* out);
-
-    typedef bool(*ProjectionFunction)(const uint8_t*, RowBlockRow*, Arena*);
-    ProjectionFunction read() const { return read_f_; }
-    ProjectionFunction write() const { return write_f_; }
-
-#ifndef NDEBUG
-    const Schema* base_schema() const { return &base_schema_; }
-    const Schema* projection() const { return &projection_; }
-#endif
-
-   private:
-    ProjectionFunction read_f_;
-    ProjectionFunction write_f_;
-#ifndef NDEBUG
-    // In DEBUG mode, retain local copies of the schema to make sure
-    // that the projections a CodegenFunctions instance is used for
-    // make sense.
-    Schema base_schema_;
-    Schema projection_;
-#endif
-  };
-
   // Requires that both schemas remain valid for the lifetime of this
-  // object. Also requires that both schemas are compatible with
-  // the schemas used to create the parameter codegen functions, which
-  // should already be compiled.
+  // object. Also requires that the schemas are compatible with
+  // the schemas used to create 'functions'.
   RowProjector(const Schema* base_schema, const Schema* projection,
-               const CodegenFunctions& functions,
-               const scoped_refptr<JITCodeOwner>& code);
-
-  ~RowProjector();
+               const scoped_refptr<RowProjectorFunctions>& code);
 
   Status Init();
 
@@ -100,7 +90,7 @@ class RowProjector {
                            Arena* dst_arena) const {
     DCHECK_SCHEMA_EQ(*base_schema(), *src_row.schema());
     DCHECK_SCHEMA_EQ(*projection(), *dst_row->schema());
-    CodegenFunctions::ProjectionFunction f = functions_.read();
+    RowProjectorFunctions::ProjectionFunction f = functions_->read();
     if (PREDICT_TRUE(f(src_row.row_data(), dst_row, dst_arena))) {
       return Status::OK();
     }
@@ -118,7 +108,7 @@ class RowProjector {
                             Arena* dst_arena) const {
     DCHECK_SCHEMA_EQ(*base_schema(), *src_row.schema());
     DCHECK_SCHEMA_EQ(*projection(), *dst_row->schema());
-    CodegenFunctions::ProjectionFunction f = functions_.write();
+    RowProjectorFunctions::ProjectionFunction f = functions_->write();
     if (PREDICT_TRUE(f(src_row.row_data(), dst_row, dst_arena))) {
       return Status::OK();
     }
@@ -140,11 +130,8 @@ class RowProjector {
   const Schema* base_schema() const { return projector_.base_schema(); }
 
  private:
-  RowProjector(const Schema* base_schema, const Schema* projection);
-
   kudu::RowProjector projector_;
-  CodegenFunctions functions_;
-  scoped_refptr<JITCodeOwner> code_;
+  scoped_refptr<RowProjectorFunctions> functions_;
 
   DISALLOW_COPY_AND_ASSIGN(RowProjector);
 };

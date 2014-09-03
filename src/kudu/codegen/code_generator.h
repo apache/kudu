@@ -11,7 +11,6 @@
 #include "kudu/util/status.h"
 
 namespace llvm {
-class ExecutionEngine;
 class LLVMContext;
 } // namespace llvm
 
@@ -21,8 +20,7 @@ class Schema;
 
 namespace codegen {
 
-class JITCodeOwner;
-class JITSchemaPair;
+class RowProjectorFunctions;
 
 // CodeGenerator is a top-level class that manages a per-module
 // LLVM context, ExecutionEngine initialization, native target loading,
@@ -54,25 +52,15 @@ class CodeGenerator {
   CodeGenerator();
   ~CodeGenerator();
 
-  // Attempts to initialize row projector functions with compiled code that
-  // becomes owned by 'owner_out'. Writes to out parameters iff successful.
+  // Attempts to initialize row projector functions by compiling code
+  // for the parameter schemas. Writes to 'out' upon success.
   Status CompileRowProjector(const Schema& base, const Schema& proj,
-                             RowProjector::CodegenFunctions* projector_out,
-                             scoped_refptr<JITCodeOwner>* owner_out);
-
-  // Generates all functions associated with a JITSchemaPair and writes them
-  // to 'owner_out' iff successful.
-  Status CompileSchemaPair(const Schema& base, const Schema& proj,
-                           scoped_refptr<JITSchemaPair>* owner_out);
+                             scoped_refptr<RowProjectorFunctions>* out);
 
  private:
   static void GlobalInit();
 
   // TODO static ObjectCache shared b/w engines
-
-  Status CompileRowProjector(const Schema& base, const Schema& proj,
-                             RowProjector::CodegenFunctions* projector_out,
-                             gscoped_ptr<llvm::ExecutionEngine>* owner_out);
 
   DISALLOW_COPY_AND_ASSIGN(CodeGenerator);
 };
