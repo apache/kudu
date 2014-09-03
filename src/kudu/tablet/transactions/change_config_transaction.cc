@@ -10,7 +10,6 @@
 #include "kudu/tablet/tablet_metrics.h"
 #include "kudu/tserver/tserver.pb.h"
 #include "kudu/util/semaphore.h"
-#include "kudu/util/trace.h"
 
 namespace kudu {
 namespace tablet {
@@ -66,6 +65,8 @@ Status ChangeConfigTransaction::Prepare() {
   if (!s.ok()) {
     state_->completion_callback()->set_error(s, TabletServerErrorPB::INVALID_CONFIG);
   }
+
+  state_->set_old_quorum(old_quorum);
   return s;
 }
 
@@ -85,12 +86,14 @@ void ChangeConfigTransaction::NewCommitAbortMessage(gscoped_ptr<CommitMsg>* comm
 Status ChangeConfigTransaction::Apply(gscoped_ptr<CommitMsg>* commit_msg) {
   TRACE("APPLY CHANGE CONFIG: Starting");
 
-  // change the config in the tablet metadata.
+  // Change the config in the tablet metadata.
+  //
+  // NOTE: flushing the tablet metadata prior to writing the commit message to the log
+  // has the side effect that, if we crashed between these two operations, we might mistakenly
+  // think that the config change was not yet committed during bootstrap. That's OK, though,
+  // because the sequence numbers are used to make configuration changes idempotent.
   state_->tablet_peer()->tablet()->metadata()->SetQuorum(state_->request()->new_config());
   RETURN_NOT_OK(state_->tablet_peer()->tablet()->metadata()->Flush());
-
-  // Notify the peer that the consensus state (in this case the role) has changed.
-  state_->tablet_peer()->ConsensusStateChanged();
 
   commit_msg->reset(new CommitMsg());
   (*commit_msg)->set_op_type(CHANGE_CONFIG_OP);
@@ -102,6 +105,10 @@ void ChangeConfigTransaction::Finish() {
   // Now that all of the changes have been applied and the commit is durable
   // make the changes visible to readers.
   TRACE("APPLY CHANGE CONFIG: apply finished");
+
+  // Notify the peer that the consensus state has changed.
+  state_->tablet_peer()->ConsensusStateChanged(state_->old_quorum(),
+                                               state_->request()->new_config());
   state()->commit();
 }
 

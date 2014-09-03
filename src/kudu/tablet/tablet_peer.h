@@ -150,10 +150,11 @@ class TabletPeer : public RefCountedThreadSafe<TabletPeer>,
   const metadata::QuorumPeerPB::Role role() const;
 
   // Notifies the TabletPeer that the consensus state has changed.
-  // Currently this is called to active the TsTabletManager callback that allows to
+  // Currently this is called to activate the TsTabletManager callback that allows to
   // mark the tablet report as dirty, so that the master will eventually become
   // aware that the consensus role has changed for this peer.
-  void ConsensusStateChanged();
+  void ConsensusStateChanged(const metadata::QuorumPB& old_quorum,
+                             const metadata::QuorumPB& new_quorum);
 
   TabletStatusListener* status_listener() const {
     return status_listener_.get();

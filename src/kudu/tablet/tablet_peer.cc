@@ -212,11 +212,20 @@ const metadata::QuorumPeerPB::Role TabletPeer::role() const {
   }
 }
 
-void TabletPeer::ConsensusStateChanged() {
+void TabletPeer::ConsensusStateChanged(const QuorumPB& old_quorum, const QuorumPB& new_quorum) {
+  LOG(INFO) << "Configuration changed for tablet: " << tablet_id_ << " in peer: "
+      << quorum_peer_.permanent_uuid() << "\nChanged from:" << old_quorum.ShortDebugString()
+      << "\nChanged to:" << new_quorum.ShortDebugString();
+
+  // NOTE: This callback must be called outside the peer lock or we risk
+  // a deadlock.
   mark_dirty_clbk_(this);
 }
 
 metadata::TabletStatePB TabletPeer::Shutdown() {
+
+  LOG(INFO) << "Initiating TabletPeer shutdown for tablet: " << tablet_id_;
+
   metadata::TabletStatePB prev_state;
   {
     boost::lock_guard<simple_spinlock> lock(lock_);

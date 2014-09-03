@@ -10,6 +10,7 @@
 #include "kudu/tablet/transactions/transaction.h"
 #include "kudu/util/task_executor.h"
 #include "kudu/util/semaphore.h"
+#include "kudu/util/trace.h"
 
 namespace kudu {
 
@@ -40,7 +41,16 @@ class ChangeConfigTransactionState : public TransactionState {
   const consensus::ChangeConfigRequestPB* request() const { return request_; }
   consensus::ChangeConfigResponsePB* response() { return response_; }
 
+  void set_old_quorum(metadata::QuorumPB quorum) {
+    old_quorum_.CopyFrom(quorum);
+  }
+
+  // Returns the quorum that was configured before this transaction
+  // took place. Only available after the prepare phase.
+  const metadata::QuorumPB old_quorum() { return old_quorum_; }
+
   void acquire_config_sem(Semaphore* sem) {
+    TRACE("Acquiring the config sem.");
     config_lock_ = boost::unique_lock<Semaphore>(*sem);
   }
 
@@ -68,6 +78,7 @@ class ChangeConfigTransactionState : public TransactionState {
  private:
   DISALLOW_COPY_AND_ASSIGN(ChangeConfigTransactionState);
 
+  metadata::QuorumPB old_quorum_;
   const consensus::ChangeConfigRequestPB *request_;
   consensus::ChangeConfigResponsePB *response_;
   boost::unique_lock<Semaphore> config_lock_;
