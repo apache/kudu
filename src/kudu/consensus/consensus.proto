@@ -156,10 +156,10 @@ message ConsensusStatusPB {
 
   // The last message received by the peer.
   // Messages up to this one do not need re-sending.
-  required OpId received_watermark = 2;
+  optional OpId received_watermark = 2;
 
   // The last ReplicateMsg that was logged by the peer.
-  required OpId replicated_watermark = 1;
+  optional OpId replicated_watermark = 1;
 
   // The first commit applied by the peer before which all other commits
   // have been applied. The timestamp of this commit is the 'safe' timestamp
@@ -178,7 +178,7 @@ message ConsensusStatusPB {
   //
   // then safe_commit_watermark = 3 does not imply that "insert B" has
   // been committed.
-  required OpId safe_commit_watermark = 3;
+  optional OpId safe_commit_watermark = 3;
 
   // Whether this status contains the full list of replicate messages which are
   // missing commits.
