@@ -521,20 +521,32 @@ struct ReplayState {
   }
 
   // Return a Corruption status if 'id' seems to be out-of-sequence in the log.
-  Status CheckSequentialOpId(const OpId& id) {
-    if (!valid_sequence(prev_op_id, id)) {
+  Status CheckSequentialOpId(const OperationPB& op) {
+    if (!valid_sequence(prev_op_id, op.id())) {
       // TODO: we used to have this return a Corruption. However, in consensus
       // replicas, we get commits processed out-of-order, so it's no longer
       // true. We're not yet 100% certain this is OK for other parts of the
       // system like log GC, so logging these at WARNING for now so we don't
       // forget to come back to it.
+      string op_desc = op.has_replicate() ?
+          Substitute("$0,$1 REPLICATE (Type: $2)",
+                     op.id().term(),
+                     op.id().index(),
+                     OperationType_Name(op.replicate().op_type())) :
+          Substitute("$0,$1 COMMIT for $2,$3",
+                     op.id().term(),
+                     op.id().index(),
+                     op.commit().commited_op_id().term(),
+                     op.commit().commited_op_id().index());
+
       KLOG_FIRST_N(WARNING, 10) <<
-        Substitute("Unexpected opid $0 following opid $1",
-                   id.ShortDebugString(),
-                   prev_op_id.ShortDebugString());
+        Substitute("Unexpected opid $0 following opid $1. Operation: $2",
+                   op.id().ShortDebugString(),
+                   prev_op_id.ShortDebugString(),
+                   op_desc);
     }
 
-    prev_op_id.CopyFrom(id);
+    prev_op_id.CopyFrom(op.id());
     return Status::OK();
   }
 
@@ -576,7 +588,7 @@ Status TabletBootstrap::HandleEntry(ReplayState* state, LogEntryPB* entry) {
 }
 
 Status TabletBootstrap::HandleReplicateMessage(ReplayState* state, LogEntryPB* entry) {
-  state->CheckSequentialOpId(entry->operation().id());
+  state->CheckSequentialOpId(entry->operation());
 
   state->last_replicate_id = entry->operation().id();
 
@@ -611,7 +623,7 @@ Status TabletBootstrap::HandleCommitMessage(ReplayState* state, LogEntryPB* entr
 
   gscoped_ptr<LogEntryPB> existing_entry;
   // Consensus commits must be sequentially increasing.
-  state->CheckSequentialOpId(entry->operation().id());
+  state->CheckSequentialOpId(entry->operation());
 
   // They should also have an associated replicate OpId (it may have been in a
   // deleted log segment though).
