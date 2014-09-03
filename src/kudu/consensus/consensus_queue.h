@@ -139,6 +139,13 @@ class PeerMessageQueue {
   Status GetOperationStatus(const OpId& op_id,
                             scoped_refptr<OperationStatusTracker>* status);
 
+  // Clears all messages and tracked peers but still leaves the queue in state
+  // where it can be used again.
+  // Note: Pending messages must be handled before calling this method, i.e.
+  // any in flight operations must be either aborted or otherwise referenced
+  // elsewhere prior to calling this.
+  void Clear();
+
   // Closes the queue, peers are still allowed to call UntrackPeer() and
   // ResponseFromPeer() but no additional peers can be tracked or messages
   // queued.
@@ -199,6 +206,8 @@ class PeerMessageQueue {
   // (server-wide) hard limit.
   bool CheckHardLimitsNotViolated(size_t bytes) const;
 
+  void ClearUnlocked();
+
   // The total size of consensus entries to keep in memory.
   // This is a hard limit, i.e. messages in the queue are always discarded
   // down to this limit. If a peer has not yet replicated the messages
@@ -213,7 +222,6 @@ class PeerMessageQueue {
   WatermarksMap watermarks_;
   MessagesBuffer messages_;
   mutable simple_spinlock queue_lock_;
-  OpId low_watermark_;
 
   // Pointer to a parent memtracker for all consensus queues. This
   // exists to compute server-wide queue size and enforce a

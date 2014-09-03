@@ -457,10 +457,20 @@ void PeerMessageQueue::DumpToHtml(std::ostream& out) const {
   out << "</table>";
 }
 
+void PeerMessageQueue::Clear() {
+  boost::lock_guard<simple_spinlock> lock(queue_lock_);
+  ClearUnlocked();
+}
+
+void PeerMessageQueue::ClearUnlocked() {
+  messages_.clear();
+  STLDeleteValues(&watermarks_);
+}
+
 void PeerMessageQueue::Close() {
   boost::lock_guard<simple_spinlock> lock(queue_lock_);
   state_ = kQueueClosed;
-  STLDeleteValues(&watermarks_);
+  ClearUnlocked();
 }
 
 int64_t PeerMessageQueue::GetQueuedOperationsSizeBytesForTests() const {
