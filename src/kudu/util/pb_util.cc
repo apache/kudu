@@ -23,6 +23,7 @@
 #include "kudu/util/status.h"
 #include "kudu/util/env.h"
 #include "kudu/util/env_util.h"
+#include "kudu/util/path_util.h"
 
 using google::protobuf::FieldDescriptor;
 using google::protobuf::Message;
@@ -137,6 +138,7 @@ Status WritePBToPath(Env* env, const std::string& path, const MessageLite& msg) 
   RETURN_NOT_OK_PREPEND(file->Sync(), "Failed to Sync() " + path_tmp);
   RETURN_NOT_OK_PREPEND(file->Close(), "Failed to Close() " + path_tmp);
   RETURN_NOT_OK_PREPEND(env->RenameFile(path_tmp, path), "Failed to rename tmp file to " + path);
+  RETURN_NOT_OK_PREPEND(env->SyncDir(DirName(path)), "Failed to SyncDir() parent of " + path);
   tmp_deleter.Cancel();
   return Status::OK();
 }
