@@ -317,6 +317,20 @@ class LatchTransactionCompletionCallback : public TransactionCompletionCallback 
   ResponsePB* response_;
 };
 
+// A transaction completion callback that takes a StatusCallback and simply
+// calls it with the transaction status when it completes.
+class StatusTransactionCompletionCallback : public TransactionCompletionCallback {
+ public:
+  explicit StatusTransactionCompletionCallback(const StatusCallback& callback)
+   : callback_(callback) {
+  }
+
+  virtual void TransactionCompleted() OVERRIDE {
+    callback_.Run(status());
+  }
+ private:
+  StatusCallback callback_;
+};
 
 }  // namespace tablet
 }  // namespace kudu
