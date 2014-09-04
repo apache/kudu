@@ -209,6 +209,17 @@ class LatchCallback : public FutureCallback {
   DISALLOW_COPY_AND_ASSIGN(LatchCallback);
 };
 
+// A callback that does nothing. To be used when methods require a callback but
+// we have nothing to do there, e.g. tests/mocks/reduced func. impl.
+class NullCallback : public FutureCallback {
+ public:
+  NullCallback() {}
+
+  virtual void OnSuccess() OVERRIDE { delete this; }
+
+  virtual void OnFailure(const Status&) OVERRIDE { delete this; }
+};
+
 class BoundFunctionCallback : public FutureCallback {
  public:
   explicit BoundFunctionCallback(const boost::function<void()>& on_success)
