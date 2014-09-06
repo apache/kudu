@@ -359,10 +359,6 @@ Status RowProjectorFunctions::EncodeKey(const Schema& base, const Schema& proj,
   return Status::OK();
 }
 
-Status RowProjectorFunctions::EncodeOwnKey(faststring* out) {
-  return EncodeKey(base_schema_, projection_, out);
-}
-
 RowProjector::RowProjector(const Schema* base_schema, const Schema* projection,
                            const scoped_refptr<RowProjectorFunctions>& functions)
   : projector_(base_schema, projection),

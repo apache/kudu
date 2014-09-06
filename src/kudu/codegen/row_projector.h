@@ -46,13 +46,10 @@ class RowProjectorFunctions : public JITWrapper {
   ProjectionFunction read() const { return read_f_; }
   ProjectionFunction write() const { return write_f_; }
 
-  virtual Status EncodeOwnKey(faststring* out) OVERRIDE;
+  virtual Status EncodeOwnKey(faststring* out) OVERRIDE {
+    return EncodeKey(base_schema_, projection_, out);
+  }
 
-  // Allows key encoding without creating an instance. Functionally
-  // equivalent to:
-  // scoped_refptr<RowProjectorFunctions> rpf;
-  // RETURN_NOT_OK(Create(base, proj, &rpf));
-  // return rpf->EncodeOwnKey(out);
   static Status EncodeKey(const Schema& base, const Schema& proj,
                           faststring* out);
 
@@ -61,8 +58,8 @@ class RowProjectorFunctions : public JITWrapper {
                         ProjectionFunction read_f, ProjectionFunction write_f,
                         gscoped_ptr<JITCodeOwner> owner);
 
-  Schema base_schema_, projection_;
-  ProjectionFunction read_f_, write_f_;
+  const Schema base_schema_, projection_;
+  const ProjectionFunction read_f_, write_f_;
 };
 
 // This projector behaves the almost the same way as a tablet/RowProjector except that
