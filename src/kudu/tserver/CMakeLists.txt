@@ -77,6 +77,7 @@ target_link_libraries(tserver_service_proto
 set(TSERVER_SRCS
   heartbeater.cc
   mini_tablet_server.cc
+  remote_bootstrap_client.cc
   remote_bootstrap_service.cc
   remote_bootstrap_session.cc
   scanner_metrics.cc
@@ -119,6 +120,7 @@ target_link_libraries(kudu-tablet_server
 #########################################
 
 set(KUDU_TEST_LINK_LIBS tserver ${KUDU_MIN_TEST_LIBS})
+ADD_KUDU_TEST(remote_bootstrap_client-test)
 ADD_KUDU_TEST(remote_bootstrap_session-test)
 ADD_KUDU_TEST(remote_bootstrap_service-test)
 ADD_KUDU_TEST(tablet_server-test)

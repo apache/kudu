@@ -18,6 +18,7 @@ class RowBlock;
 class RowBlockRow;
 class RowChangeList;
 class Schema;
+class Sockaddr;
 
 // Convert the given C++ Status object into the equivalent Protobuf.
 void StatusToPB(const Status& status, AppStatusPB* pb);
@@ -30,6 +31,11 @@ Status HostPortToPB(const HostPort& host_port, HostPortPB* host_port_pb);
 
 // Returns the HostPort created from the specified protobuf.
 Status HostPortFromPB(const HostPortPB& host_port_pb, HostPort* host_port);
+
+// Returns a single socket address from a HostPort.
+// If the hostname resolves to multiple addresses, returns the first in the
+// list and logs a message in verbose mode.
+Status SockaddrFromHostPort(const HostPort& host_port, Sockaddr* addr);
 
 // Convert the specified schema to protobuf.
 Status SchemaToPB(const Schema& schema, SchemaPB *pb);

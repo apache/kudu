@@ -207,7 +207,8 @@ Status FsManager::CreateNewBlock(shared_ptr<WritableFile> *writer, BlockId *bloc
 }
 
 Status FsManager::CreateBlockWithId(const BlockId& block_id, shared_ptr<WritableFile> *writer) {
-  RETURN_NOT_OK(CreateBlockDir(block_id));
+  RETURN_NOT_OK_PREPEND(CreateBlockDir(block_id),
+                        Substitute("Unable to create block dir for block $0", block_id.ToString()));
   string path = GetBlockPath(block_id);
   VLOG(1) << "Creating new block with predetermined id " << block_id.ToString() << " at " << path;
   WritableFileOptions opts;
