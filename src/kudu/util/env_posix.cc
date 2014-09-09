@@ -725,7 +725,11 @@ class PosixEnv : public Env {
                                  const std::string& fname,
                                  WritableFile** result) OVERRIDE {
     Status s;
-    const int fd = open(fname.c_str(), O_CREAT | O_RDWR | O_TRUNC, 0644);
+    int flags = O_CREAT | O_RDWR | O_TRUNC;
+    if (!opts.overwrite_existing) {
+      flags |= O_EXCL;
+    }
+    const int fd = open(fname.c_str(), flags, 0644);
     if (fd < 0) {
       *result = NULL;
       s = IOError(fname, errno);

@@ -7,10 +7,15 @@
 
 #include <gtest/gtest.h>
 #include <string>
+#include <tr1/memory>
 #include <vector>
+
 #include "kudu/util/env.h"
+#include "kudu/util/env_util.h"
 #include "kudu/util/memenv/memenv.h"
 #include "kudu/util/test_macros.h"
+
+using std::tr1::shared_ptr;
 
 namespace kudu {
 
@@ -184,5 +189,20 @@ TEST_F(MemEnvTest, LargeWrite) {
   delete [] scratch;
 }
 
+TEST_F(MemEnvTest, Overwrite) {
+  // File does not exist, create it.
+  shared_ptr<WritableFile> writer;
+  ASSERT_OK(env_util::OpenFileForWrite(env_, "some file", &writer));
+
+  // File exists, overwrite it.
+  ASSERT_OK(env_util::OpenFileForWrite(env_, "some file", &writer));
+
+  // File exists, try to overwrite (and fail).
+  WritableFileOptions opts;
+  opts.overwrite_existing = false;
+  Status s = env_util::OpenFileForWrite(opts,
+                                        env_, "some file", &writer);
+  ASSERT_TRUE(s.IsAlreadyPresent());
+}
 
 }  // namespace kudu

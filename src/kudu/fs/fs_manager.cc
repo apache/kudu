@@ -180,15 +180,22 @@ BlockId FsManager::GenerateBlockId() {
 }
 
 Status FsManager::CreateNewBlock(shared_ptr<WritableFile> *writer, BlockId *block_id) {
-  // TODO: Add a NewWritableFile without O_TRUNC and remove the loop that is not atomic anyway...
+  WritableFileOptions opts;
+  opts.overwrite_existing = false;
   string path;
+  Status s;
+  BlockId new_block_id;
   do {
-    *block_id = GenerateBlockId();
-    RETURN_NOT_OK(CreateBlockDir(*block_id));
-    path = GetBlockPath(*block_id);
-  } while (env_->FileExists(path));
-  VLOG(1) << "NewBlock: " << block_id->ToString();
-  return env_util::OpenFileForWrite(env_, path, writer);
+    new_block_id = GenerateBlockId();
+    RETURN_NOT_OK(CreateBlockDir(new_block_id));
+    path = GetBlockPath(new_block_id);
+    s = env_util::OpenFileForWrite(opts, env_, path, writer);
+  } while (s.IsAlreadyPresent());
+  if (s.ok()) {
+    *block_id = new_block_id;
+    VLOG(1) << "NewBlock: " << block_id->ToString();
+  }
+  return s;
 }
 
 Status FsManager::CreateBlockWithId(const BlockId& block_id, shared_ptr<WritableFile> *writer) {

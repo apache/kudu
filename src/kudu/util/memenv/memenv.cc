@@ -309,17 +309,16 @@ class InMemoryEnv : public EnvWrapper {
     return Status::OK();
   }
 
-  virtual Status NewWritableFile(const WritableFileOptions& /* unused */,
+  virtual Status NewWritableFile(const WritableFileOptions& opts,
                                  const std::string& fname,
-                                 WritableFile** result) OVERRIDE {
-    return NewWritableFile(fname, result);
-  }
-
-  virtual Status NewWritableFile(const std::string& fname,
                                  WritableFile** result) OVERRIDE {
     MutexLock lock(mutex_);
     if (file_map_.find(fname) != file_map_.end()) {
-      DeleteFileInternal(fname);
+      if (opts.overwrite_existing) {
+        DeleteFileInternal(fname);
+      } else {
+        return Status::AlreadyPresent(fname, "File already exists");
+      }
     }
 
     FileState* file = new FileState();
@@ -328,6 +327,11 @@ class InMemoryEnv : public EnvWrapper {
 
     *result = new WritableFileImpl(file);
     return Status::OK();
+  }
+
+  virtual Status NewWritableFile(const std::string& fname,
+                                 WritableFile** result) OVERRIDE {
+    return NewWritableFile(WritableFileOptions(), fname, result);
   }
 
   virtual bool FileExists(const std::string& fname) OVERRIDE {

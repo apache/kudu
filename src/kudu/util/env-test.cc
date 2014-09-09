@@ -399,4 +399,22 @@ TEST_F(TestEnv, TestOpenEmptyRandomAccessFile) {
   ASSERT_EQ(0, size);
 }
 
+TEST_F(TestEnv, TestOverwrite) {
+  string test_path = GetTestPath("test_env_wf");
+
+  // File does not exist, create it.
+  shared_ptr<WritableFile> writer;
+  ASSERT_OK(env_util::OpenFileForWrite(env_.get(), test_path, &writer));
+
+  // File exists, overwrite it.
+  ASSERT_OK(env_util::OpenFileForWrite(env_.get(), test_path, &writer));
+
+  // File exists, try to overwrite (and fail).
+  WritableFileOptions opts;
+  opts.overwrite_existing = false;
+  Status s = env_util::OpenFileForWrite(opts,
+                                        env_.get(), test_path, &writer);
+  ASSERT_TRUE(s.IsAlreadyPresent());
+}
+
 }  // namespace kudu

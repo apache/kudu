@@ -231,9 +231,13 @@ struct WritableFileOptions {
   // Call Sync() during Close().
   bool sync_on_close;
 
+  // Overwrite existing files.
+  bool overwrite_existing;
+
   WritableFileOptions()
     : mmap_file(true),
-      sync_on_close(false) { }
+      sync_on_close(false),
+      overwrite_existing(true) { }
 };
 
 // A file abstraction for sequential writing.  The implementation
