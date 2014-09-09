@@ -75,6 +75,8 @@ class FsManager {
                         BlockId *block_id);
 
   // Create a block with a predetermined BlockId.
+  // Performs an fsync() on the parent dir after creating the block file.
+  // File is opened with options so that it will fsync() on close.
   Status CreateBlockWithId(const BlockId& block_id,
                            std::tr1::shared_ptr<WritableFile> *writer);
 

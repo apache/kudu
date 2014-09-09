@@ -182,6 +182,7 @@ BlockId FsManager::GenerateBlockId() {
 Status FsManager::CreateNewBlock(shared_ptr<WritableFile> *writer, BlockId *block_id) {
   WritableFileOptions opts;
   opts.overwrite_existing = false;
+  opts.sync_on_close = true;
   string path;
   Status s;
   BlockId new_block_id;
@@ -194,6 +195,7 @@ Status FsManager::CreateNewBlock(shared_ptr<WritableFile> *writer, BlockId *bloc
   if (s.ok()) {
     *block_id = new_block_id;
     VLOG(1) << "NewBlock: " << block_id->ToString();
+    RETURN_NOT_OK((*writer)->SyncParentDir());
   }
   return s;
 }
@@ -202,7 +204,9 @@ Status FsManager::CreateBlockWithId(const BlockId& block_id, shared_ptr<Writable
   RETURN_NOT_OK(CreateBlockDir(block_id));
   string path = GetBlockPath(block_id);
   VLOG(1) << "Creating new block with predetermined id " << block_id.ToString() << " at " << path;
-  RETURN_NOT_OK(env_util::OpenFileForWrite(env_, path, writer));
+  WritableFileOptions opts;
+  opts.sync_on_close = true;
+  RETURN_NOT_OK(env_util::OpenFileForWrite(opts, env_, path, writer));
   RETURN_NOT_OK((*writer)->SyncParentDir());
   return Status::OK();
 }
