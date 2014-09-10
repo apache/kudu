@@ -22,6 +22,10 @@
 #include "kudu/util/path_util.h"
 #include "kudu/util/pb_util.h"
 
+DEFINE_bool(enable_data_block_fsync, true,
+            "Whether to enable fsync() of data blocks, metadata, and their parent directories. "
+            "Disabling this flag may cause data loss in the event of a system crash.");
+
 using google::protobuf::MessageLite;
 using strings::Substitute;
 using std::tr1::shared_ptr;
@@ -182,7 +186,7 @@ BlockId FsManager::GenerateBlockId() {
 Status FsManager::CreateNewBlock(shared_ptr<WritableFile> *writer, BlockId *block_id) {
   WritableFileOptions opts;
   opts.overwrite_existing = false;
-  opts.sync_on_close = true;
+  opts.sync_on_close = FLAGS_enable_data_block_fsync;
   string path;
   Status s;
   BlockId new_block_id;
@@ -195,7 +199,9 @@ Status FsManager::CreateNewBlock(shared_ptr<WritableFile> *writer, BlockId *bloc
   if (s.ok()) {
     *block_id = new_block_id;
     VLOG(1) << "NewBlock: " << block_id->ToString();
-    RETURN_NOT_OK((*writer)->SyncParentDir());
+    if (FLAGS_enable_data_block_fsync) {
+      RETURN_NOT_OK((*writer)->SyncParentDir());
+    }
   }
   return s;
 }
@@ -205,9 +211,11 @@ Status FsManager::CreateBlockWithId(const BlockId& block_id, shared_ptr<Writable
   string path = GetBlockPath(block_id);
   VLOG(1) << "Creating new block with predetermined id " << block_id.ToString() << " at " << path;
   WritableFileOptions opts;
-  opts.sync_on_close = true;
+  opts.sync_on_close = FLAGS_enable_data_block_fsync;
   RETURN_NOT_OK(env_util::OpenFileForWrite(opts, env_, path, writer));
-  RETURN_NOT_OK((*writer)->SyncParentDir());
+  if (FLAGS_enable_data_block_fsync) {
+    RETURN_NOT_OK((*writer)->SyncParentDir());
+  }
   return Status::OK();
 }
 
@@ -237,10 +245,12 @@ Status FsManager::CreateBlockDir(const BlockId& block_id) {
 
   // No need to fsync path2 at this point, it should be fsync()ed when files are
   // written into it.
-  if (path2_created) RETURN_NOT_OK(env_->SyncDir(path1));
-  if (path1_created) RETURN_NOT_OK(env_->SyncDir(path0));
-  if (path0_created) RETURN_NOT_OK(env_->SyncDir(root_dir));
-  if (root_created) RETURN_NOT_OK(env_->SyncDir(DirName(root_dir))); // Parent of root_dir.
+  if (FLAGS_enable_data_block_fsync) {
+    if (path2_created) RETURN_NOT_OK(env_->SyncDir(path1));
+    if (path1_created) RETURN_NOT_OK(env_->SyncDir(path0));
+    if (path0_created) RETURN_NOT_OK(env_->SyncDir(root_dir));
+    if (root_created) RETURN_NOT_OK(env_->SyncDir(DirName(root_dir))); // Parent of root_dir.
+  }
 
   return Status::OK();
 }
