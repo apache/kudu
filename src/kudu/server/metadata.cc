@@ -153,6 +153,14 @@ Status TabletMetadata::LoadFromDisk() {
   RETURN_NOT_OK(ReadSuperBlock(&superblock));
   VLOG(1) << "Loaded tablet superblock " << superblock.DebugString();
 
+  RETURN_NOT_OK_PREPEND(LoadFromSuperBlockUnlocked(superblock),
+                        "Failed to load data from superblock protobuf");
+
+  state_ = kInitialized;
+  return Status::OK();
+}
+
+Status TabletMetadata::LoadFromSuperBlockUnlocked(const TabletSuperBlockPB& superblock) {
   // Verify that the tablet id matches with the one in the protobuf
   if (superblock.oid() != master_block_.tablet_id()) {
     return Status::Corruption("Expected id=" + master_block_.tablet_id() +
@@ -183,7 +191,6 @@ Status TabletMetadata::LoadFromDisk() {
     rowsets_.push_back(shared_ptr<RowSetMetadata>(rowset_meta.release()));
   }
 
-  state_ = kInitialized;
   return Status::OK();
 }
 
@@ -314,7 +321,10 @@ Status TabletMetadata::UpdateAndFlushUnlocked(
 
 Status TabletMetadata::ReplaceSuperBlock(const TabletSuperBlockPB &pb) {
   boost::lock_guard<LockType> l(lock_);
-  return ReplaceSuperBlockUnlocked(pb);
+  RETURN_NOT_OK_PREPEND(ReplaceSuperBlockUnlocked(pb), "Unable to replace superblock");
+  RETURN_NOT_OK_PREPEND(LoadFromSuperBlockUnlocked(pb),
+                        "Failed to load data from superblock protobuf");
+  return Status::OK();
 }
 
 Status TabletMetadata::ReplaceSuperBlockUnlocked(const TabletSuperBlockPB &pb) {

@@ -231,6 +231,9 @@ class TabletMetadata : public RefCountedThreadSafe<TabletMetadata> {
 
   Status LoadFromDisk();
 
+  // Update state of metadata to that of the given superblock PB.
+  Status LoadFromSuperBlockUnlocked(const TabletSuperBlockPB& superblock);
+
   Status ReadSuperBlock(TabletSuperBlockPB *pb);
 
   // Fully replace superblock.
