@@ -18,6 +18,7 @@
 #include "kudu/util/metrics.h"
 #include "kudu/util/test_util.h"
 
+DECLARE_bool(enable_data_block_fsync);
 DEFINE_bool(tablet_test_enable_metrics, false,
             "Enable metrics collection in tablet-tests");
 
@@ -31,8 +32,9 @@ using std::vector;
 class KuduTabletTest : public KuduTest {
  public:
   explicit KuduTabletTest(const Schema& schema)
-  : schema_(schema.CopyWithColumnIds()),
-    client_schema_(schema) {
+    : schema_(schema.CopyWithColumnIds()),
+      client_schema_(schema) {
+    FLAGS_enable_data_block_fsync = false; // Keep unit tests fast.
   }
 
   virtual void SetUp() OVERRIDE {
@@ -98,6 +100,7 @@ class KuduRowSetTest : public KuduTabletTest {
  public:
   explicit KuduRowSetTest(const Schema& schema)
     : KuduTabletTest(schema) {
+    FLAGS_enable_data_block_fsync = false; // Keep unit tests fast.
   }
 
   virtual void SetUp() OVERRIDE {

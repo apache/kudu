@@ -34,6 +34,7 @@
 #include "kudu/util/stopwatch.h"
 #include "kudu/util/test_util.h"
 
+DECLARE_bool(enable_data_block_fsync);
 DECLARE_int32(heartbeat_interval_ms);
 DECLARE_bool(use_hybrid_clock);
 DECLARE_int32(max_clock_sync_error_usec);
@@ -69,6 +70,7 @@ class ClientTest : public KuduTest {
               (KuduColumnSchema("non_null_with_default", KuduColumnSchema::UINT32, false,
                                 &kNonNullDefault)),
               1) {
+    FLAGS_enable_data_block_fsync = false; // Keep unit tests fast.
   }
 
   virtual void SetUp() OVERRIDE {

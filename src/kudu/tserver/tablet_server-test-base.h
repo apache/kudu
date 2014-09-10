@@ -46,6 +46,7 @@ DECLARE_bool(use_hybrid_clock);
 DECLARE_bool(log_force_fsync_all);
 DECLARE_int32(max_clock_sync_error_usec);
 DECLARE_bool(enable_maintenance_manager);
+DECLARE_bool(enable_data_block_fsync);
 
 namespace kudu {
 namespace tserver {
@@ -79,6 +80,9 @@ class TabletServerTest : public KuduTest {
     // Disable the maintenance ops manager since we want to trigger our own
     // maintenance operations at predetermined times.
     FLAGS_enable_maintenance_manager = false;
+
+    // Keep unit tests fast.
+    FLAGS_enable_data_block_fsync = false;
   }
 
   // Starts the tablet server, override to start it later.

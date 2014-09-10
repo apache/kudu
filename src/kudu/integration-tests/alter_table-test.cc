@@ -25,6 +25,7 @@
 #include "kudu/util/test_util.h"
 #include "kudu/util/stopwatch.h"
 
+DECLARE_bool(enable_data_block_fsync);
 DECLARE_int32(heartbeat_interval_ms);
 DECLARE_int32(flush_threshold_mb);
 
@@ -55,6 +56,7 @@ class AlterTableTest : public KuduTest {
               (KuduColumnSchema("c1", KuduColumnSchema::UINT32)),
               1),
       stop_threads_(false) {
+    FLAGS_enable_data_block_fsync = false; // Keep unit tests fast.
   }
 
   virtual void SetUp() OVERRIDE {

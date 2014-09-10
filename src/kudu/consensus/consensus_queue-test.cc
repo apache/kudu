@@ -12,6 +12,7 @@
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
+DECLARE_bool(enable_data_block_fsync);
 DECLARE_int32(consensus_max_batch_size_bytes);
 DECLARE_int32(consensus_entry_cache_size_soft_limit_mb);
 DECLARE_int32(consensus_entry_cache_size_hard_limit_mb);
@@ -29,7 +30,9 @@ class ConsensusQueueTest : public KuduTest {
  public:
   ConsensusQueueTest()
       : metric_context_(&metric_registry_, "queue-test"),
-        queue_(new PeerMessageQueue(metric_context_)) {}
+        queue_(new PeerMessageQueue(metric_context_)) {
+    FLAGS_enable_data_block_fsync = false; // Keep unit tests fast.
+  }
 
   Status AppendReplicateOp(gscoped_ptr<OperationPB> op,
                            int term, int index,

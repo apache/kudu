@@ -14,6 +14,7 @@
 #include "kudu/util/stopwatch.h"
 #include "kudu/util/test_macros.h"
 
+DECLARE_bool(enable_data_block_fsync);
 DEFINE_int32(roundtrip_num_rows, 10000,
              "Number of rows to use for the round-trip test");
 DEFINE_int32(num_scan_passes, 1,
@@ -35,6 +36,7 @@ class TestMemRowSet : public ::testing::Test {
       key_schema_(schema_.CreateKeyProjection()),
       mvcc_(scoped_refptr<server::Clock>(
               server::LogicalClock::CreateStartingAt(Timestamp::kInitialTimestamp))) {
+    FLAGS_enable_data_block_fsync = false; // Keep unit tests fast.
   }
 
   static Schema CreateSchema() {
