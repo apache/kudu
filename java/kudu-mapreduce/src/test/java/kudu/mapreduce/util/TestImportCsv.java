@@ -2,12 +2,14 @@
 package kudu.mapreduce.util;
 
 import kudu.ColumnSchema;
+import kudu.mapreduce.CommandLineParser;
 import kudu.mapreduce.HadoopTestingUtility;
 import kudu.rpc.BaseKuduTest;
 import kudu.rpc.CreateTableBuilder;
 import kudu.rpc.KuduScanner;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.mapreduce.Job;
+import org.apache.hadoop.util.GenericOptionsParser;
 import org.junit.AfterClass;
 import org.junit.BeforeClass;
 import org.junit.Test;
@@ -57,10 +59,12 @@ public class TestImportCsv extends BaseKuduTest {
       sb.append(",");
     }
     sb.deleteCharAt(sb.length() - 1);
-    String[] args = new String[] {sb.toString(), TABLE_NAME, data.toString(),
-        getMasterAddressAndPort()};
+    String[] args = new String[] {
+        "-D" + CommandLineParser.MASTER_ADDRESS_KEY + "=" + getMasterAddressAndPort(),
+        sb.toString(), TABLE_NAME, data.toString()};
 
-    Job job = ImportCsv.createSubmittableJob(conf, args);
+    GenericOptionsParser parser = new GenericOptionsParser(conf, args);
+    Job job = ImportCsv.createSubmittableJob(parser.getConfiguration(), parser.getRemainingArgs());
     assertTrue("Test job did not end properly", job.waitForCompletion(true));
 
     assertEquals(1, job.getCounters().findCounter(ImportCsv.Counters.BAD_LINES).getValue());

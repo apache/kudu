@@ -1,6 +1,7 @@
 // Copyright (c) 2014, Cloudera, inc.
 package kudu.mapreduce.util;
 
+import kudu.mapreduce.CommandLineParser;
 import kudu.mapreduce.KuduTableMapReduceUtil;
 import kudu.rpc.RowResult;
 import org.apache.hadoop.conf.Configuration;
@@ -20,7 +21,6 @@ import java.io.IOException;
 public class RowCounter extends Configured implements Tool {
 
   static final String NAME = "rowcounter";
-  static final String OPERATION_TIMEOUT_MS_KEY = "rowcounter.operation.timeout.ms";
   static final String COLUMN_PROJECTION_KEY = "rowcounter.column.projection";
 
   /** Counter enumeration to count the actual rows. */
@@ -51,12 +51,10 @@ public class RowCounter extends Configured implements Tool {
   public static Job createSubmittableJob(Configuration conf, String[] args)
       throws IOException, ClassNotFoundException {
 
-    long timeout = conf.getLong(OPERATION_TIMEOUT_MS_KEY, 10000);
     String columnProjection = conf.get(COLUMN_PROJECTION_KEY);
 
     Class<RowCounterMapper> mapperClass = RowCounterMapper.class;
     String tableName = args[0];
-    String masterAddress = args[1];
 
     String jobName = NAME + "_" + tableName;
     Job job = new Job(conf, jobName);
@@ -64,8 +62,7 @@ public class RowCounter extends Configured implements Tool {
     job.setMapperClass(mapperClass);
     job.setNumReduceTasks(0);
     job.setOutputFormatClass(NullOutputFormat.class);
-    KuduTableMapReduceUtil.initTableInputFormat(job, masterAddress, tableName, timeout,
-        columnProjection, true);
+    KuduTableMapReduceUtil.initTableInputFormat(job, tableName, columnProjection, true);
     return job;
   }
 
@@ -77,15 +74,15 @@ public class RowCounter extends Configured implements Tool {
       System.err.println("ERROR: " + errorMsg);
     }
     String usage =
-        "Usage: " + NAME + " <table.name> <master.address>\n\n" +
+        "Usage: " + NAME + " <table.name>\n\n" +
             "Counts all the rows in the given table.\n" +
             "\n" +
             "Other options that may be specified with -D include:\n" +
-            "  -D" + OPERATION_TIMEOUT_MS_KEY + "=10000 - how long this job waits for " +
-            "Kudu operations.\n" +
             "  -D" + COLUMN_PROJECTION_KEY + "=a,b,c - comma-separated list of columns to read " +
             "as part of the row count. By default, none are read so that the count is as fast " +
-            "as possible. When specifying columns that are keys, they must be at the beginning.\n";
+            "as possible. When specifying columns that are keys, they must be at the beginning" +
+            ".\n" +
+            CommandLineParser.getHelpSnippet();
 
     System.err.println(usage);
   }

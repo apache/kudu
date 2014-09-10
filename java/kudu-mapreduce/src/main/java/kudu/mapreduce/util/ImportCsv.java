@@ -15,6 +15,7 @@
  */
 package kudu.mapreduce.util;
 
+import kudu.mapreduce.CommandLineParser;
 import kudu.mapreduce.KuduTableMapReduceUtil;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.conf.Configured;
@@ -39,7 +40,6 @@ public class ImportCsv extends Configured implements Tool {
   static final String SEPARATOR_CONF_KEY = "importcsv.separator";
   static final String JOB_NAME_CONF_KEY = "importcsv.job.name";
   static final String SKIP_LINES_CONF_KEY = "importcsv.skip.bad.lines";
-  static final String OPERATION_TIMEOUT_MS_KEY = "importcsv.operation.timeout.ms";
   static final String COLUMNS_NAMES_KEY = "importcsv.column.names";
 
   /**
@@ -54,13 +54,10 @@ public class ImportCsv extends Configured implements Tool {
   public static Job createSubmittableJob(Configuration conf, String[] args)
       throws IOException, ClassNotFoundException {
 
-    long timeout = conf.getLong(OPERATION_TIMEOUT_MS_KEY, 10000);
-
     Class<ImportCsvMapper> mapperClass = ImportCsvMapper.class;
     conf.set(COLUMNS_NAMES_KEY, args[0]);
     String tableName = args[1];
     Path inputDir = new Path(args[2]);
-    String masterAddress = args[3];
 
     String jobName = conf.get(JOB_NAME_CONF_KEY, NAME + "_" + tableName);
     Job job = new Job(conf, jobName);
@@ -69,7 +66,7 @@ public class ImportCsv extends Configured implements Tool {
     job.setInputFormatClass(TextInputFormat.class);
     job.setMapperClass(mapperClass);
     job.setNumReduceTasks(0);
-    KuduTableMapReduceUtil.initTableOutputFormat(job, masterAddress, tableName, timeout, true);
+    KuduTableMapReduceUtil.initTableOutputFormat(job, tableName, true);
     return job;
   }
 
@@ -81,25 +78,24 @@ public class ImportCsv extends Configured implements Tool {
       System.err.println("ERROR: " + errorMsg);
     }
     String usage =
-        "Usage: " + NAME + " <colAa,colB,colC> <table.name> <input.dir> <master.address>\n\n" +
+        "Usage: " + NAME + " <colAa,colB,colC> <table.name> <input.dir>\n\n" +
             "Imports the given input directory of CSV data into the specified table.\n" +
             "\n" +
             "The column names of the CSV data must be specified in the form of " +
             "comma-separated column names.\n" +
             "Other options that may be specified with -D include:\n" +
             "  -D" + SKIP_LINES_CONF_KEY + "=false - fail if encountering an invalid line\n" +
-            "  -D" + OPERATION_TIMEOUT_MS_KEY + "=10000 - how long this job waits for " +
-            "Kudu operations\n" +
             "  '-D" + SEPARATOR_CONF_KEY + "=|' - eg separate on pipes instead of tabs\n" +
             "  -D" + JOB_NAME_CONF_KEY + "=jobName - use the specified mapreduce job name for the" +
-            " import\n";
+            " import.\n" +
+            CommandLineParser.getHelpSnippet();
 
     System.err.println(usage);
   }
 
   @Override
   public int run(String[] otherArgs) throws Exception {
-    if (otherArgs.length < 4) {
+    if (otherArgs.length < 3) {
       usage("Wrong number of arguments: " + otherArgs.length);
       return -1;
     }

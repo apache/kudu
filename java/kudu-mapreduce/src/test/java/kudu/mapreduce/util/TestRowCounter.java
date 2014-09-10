@@ -1,10 +1,12 @@
 // Copyright (c) 2014, Cloudera, inc.
 package kudu.mapreduce.util;
 
+import kudu.mapreduce.CommandLineParser;
 import kudu.mapreduce.HadoopTestingUtility;
 import kudu.rpc.BaseKuduTest;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.mapreduce.Job;
+import org.apache.hadoop.util.GenericOptionsParser;
 import org.junit.AfterClass;
 import org.junit.BeforeClass;
 import org.junit.Test;
@@ -40,8 +42,10 @@ public class TestRowCounter extends BaseKuduTest {
 
     createFourTabletsTableWithNineRows(TABLE_NAME);
 
-    String[] args = new String[] {TABLE_NAME, getMasterAddressAndPort()};
-    Job job = RowCounter.createSubmittableJob(conf, args);
+    String[] args = new String[] {
+        "-D" + CommandLineParser.MASTER_ADDRESS_KEY + "=" + getMasterAddressAndPort(), TABLE_NAME};
+    GenericOptionsParser parser = new GenericOptionsParser(conf, args);
+    Job job = RowCounter.createSubmittableJob(parser.getConfiguration(), parser.getRemainingArgs());
     assertTrue("Job did not end properly", job.waitForCompletion(true));
 
     assertEquals(9, job.getCounters().findCounter(RowCounter.Counters.ROWS).getValue());

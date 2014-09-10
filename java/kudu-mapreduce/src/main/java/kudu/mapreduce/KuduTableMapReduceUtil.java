@@ -55,13 +55,32 @@ public class KuduTableMapReduceUtil {
   private KuduTableMapReduceUtil() { }
 
   /**
-   * Setup the required configurations and classes to write to Kudu
-   * @param job Job to configure
-   * @param masterAddress hostname:port where the master is
-   * @param table Which table to write to
-   * @param operationTimeoutMs Timeout for operations to complete
-   * @param addDependencies If the job should add the Kudu dependencies to the distributed cache
-   * @throws IOException
+   * Sets up the required configurations and classes to write to Kudu. The generic options to
+   * connect to the cluster are used, see {@link CommandLineParser}.
+   * @param job a job to configure
+   * @param table a string that contains the name of the table to write to
+   * @param addDependencies whether the job should add the Kudu dependencies to the distributed
+   *                        cache
+   * @throws IOException If addDependencies is enabled and a problem is encountered reading
+   * files on the filesystem
+   */
+  public static void initTableOutputFormat(Job job, String table,
+                                           boolean addDependencies) throws IOException {
+    CommandLineParser parser = new CommandLineParser(job.getConfiguration());
+    initTableOutputFormat(job, parser.getMasterAddress(), table, parser.getOperationTimeoutMs(),
+        addDependencies);
+  }
+
+  /**
+   * Sets up the required configurations and classes to write to Kudu.
+   * @param job a job to configure
+   * @param masterAddress a string containing the master's hostname and port separated by a colon
+   * @param table a string that contains the name of the table to write to
+   * @param operationTimeoutMs a long that represents the timeout for operations to complete
+   * @param addDependencies whether the job should add the Kudu dependencies to the distributed
+   *                        cache
+   * @throws IOException If addDependencies is enabled and a problem is encountered reading
+   * files on the filesystem
    */
   public static void initTableOutputFormat(Job job, String masterAddress,
                                            String table, long operationTimeoutMs,
@@ -80,15 +99,36 @@ public class KuduTableMapReduceUtil {
   }
 
   /**
-   *
-   * @param job Job to configure
-   * @param masterAddress hostname:port where the master is
-   * @param table Which table to read from
-   * @param operationTimeoutMs Timeout for operations to complete
-   * @param columnProjection comma-separated list of columns to read, can be null in which case we
-   *                         read empty rows.
-   * @param addDependencies If the job should add the Kudu dependencies to the distributed cache
-   * @throws IOException
+   * Sets up the required configurations and classes to read from Kudu. The generic options to
+   * connect to the cluster are used, see {#CommandLineParser}.
+   * @param job a job to configure
+   * @param table a string that contains the name of the table to read from
+   * @param columnProjection a string containing a comma-separated list of columns to read.
+   *                         It can be null in which case we read empty rows
+   * @param addDependencies whether the job should add the Kudu dependencies to the distributed
+   *                        cache
+   * @throws IOException If addDependencies is enabled and a problem is encountered reading
+   * files on the filesystem
+   */
+  public static void initTableInputFormat(Job job, String table, String columnProjection,
+                                          boolean addDependencies) throws IOException {
+    CommandLineParser parser = new CommandLineParser(job.getConfiguration());
+    initTableInputFormat(job, parser.getMasterAddress(), table, parser.getOperationTimeoutMs(),
+        columnProjection, addDependencies);
+  }
+
+  /**
+   * Sets up the required configurations and classes to read from Kudu.
+   * @param job a job to configure
+   * @param masterAddress a string containing the master's hostname and port separated by a colon
+   * @param table a string that contains the name of the table to read from
+   * @param operationTimeoutMs a long that represents the timeout for operations to complete
+   * @param columnProjection a string containing a comma-separated list of columns to read.
+   *                         It can be null in which case we read empty rows
+   * @param addDependencies whether the job should add the Kudu dependencies to the distributed
+   *                        cache
+   * @throws IOException If addDependencies is enabled and a problem is encountered reading
+   * files on the filesystem
    */
   public static void initTableInputFormat(Job job, String masterAddress, String table,
                                           long operationTimeoutMs, String columnProjection,
