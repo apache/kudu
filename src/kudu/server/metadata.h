@@ -67,6 +67,7 @@ class TabletMetadata : public RefCountedThreadSafe<TabletMetadata> {
                           const Schema& schema,
                           const QuorumPB& quorum,
                           const std::string& start_key, const std::string& end_key,
+                          const TabletBootstrapStatePB& initial_remote_bootstrap_state,
                           scoped_refptr<TabletMetadata>* metadata);
 
   // Load existing metadata from disk given a master block.
@@ -96,6 +97,7 @@ class TabletMetadata : public RefCountedThreadSafe<TabletMetadata> {
                              const Schema& schema,
                              const QuorumPB& quorum,
                              const std::string& start_key, const std::string& end_key,
+                             const TabletBootstrapStatePB& initial_remote_bootstrap_state,
                              scoped_refptr<TabletMetadata>* metadata);
 
   const std::string& oid() const {
@@ -133,6 +135,12 @@ class TabletMetadata : public RefCountedThreadSafe<TabletMetadata> {
   // Return the current quorum config.
   // Note that this returns a copy so should not be used in a tight loop.
   QuorumPB Quorum() const;
+
+  // Update the remote bootstrapping state.
+  void set_remote_bootstrap_state(TabletBootstrapStatePB state);
+
+  // Return the remote bootstrapping state.
+  TabletBootstrapStatePB remote_bootstrap_state() const;
 
   // Increments flush pin count by one: if flush pin count > 0,
   // metadata will _not_ be flushed to disk during Flush().
@@ -215,7 +223,8 @@ class TabletMetadata : public RefCountedThreadSafe<TabletMetadata> {
                  const Schema& schema,
                  const QuorumPB& quorum,
                  const std::string& start_key,
-                 const std::string& end_key);
+                 const std::string& end_key,
+                 const TabletBootstrapStatePB& remote_bootstrap_state);
 
   // Constructor for loading an existing tablet.
   TabletMetadata(FsManager *fs_manager, const TabletMasterBlockPB& master_block);
@@ -264,6 +273,9 @@ class TabletMetadata : public RefCountedThreadSafe<TabletMetadata> {
   std::string table_name_;
 
   metadata::QuorumPB quorum_;
+
+  // The current state of remote bootstrap for the tablet.
+  TabletBootstrapStatePB remote_bootstrap_state_;
 
   // If this counter is > 0 then Flush() will not write any data to
   // disk.

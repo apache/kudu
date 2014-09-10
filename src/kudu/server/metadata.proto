@@ -27,6 +27,20 @@ message RowSetDataPB {
   optional BlockIdPB adhoc_index_block = 7;
 }
 
+// State flags indicating whether the tablet is in the middle of being copied
+// and is therefore not possible to bring up.
+enum TabletBootstrapStatePB {
+  // The tablet is set to REMOTE_BOOTSTRAP_COPYING state when in the middle of
+  // remote bootstrap while copying data files from a remote peer. If a tablet
+  // server crashes with a tablet in this state, the remote bootstrap process
+  // must be restarted for that tablet.
+  REMOTE_BOOTSTRAP_COPYING = 0;
+
+  // Fresh empty tablets and successfully copied tablets are set to the
+  // REMOTE_BOOTSTRAP_DONE state.
+  REMOTE_BOOTSTRAP_DONE = 1;
+}
+
 // The super-block keeps track of the tablet data blocks.
 // A tablet contains one or more RowSets, which contain
 // a set of blocks (one for each column), a set of delta blocks
@@ -61,9 +75,12 @@ message TabletSuperBlockPB {
   required SchemaPB schema = 8;
   required uint32 schema_version = 9;
 
+  // The last known remote bootstrap state of the tablet.
+  required TabletBootstrapStatePB remote_bootstrap_state = 10;
+
   // The latest QuorumPB this tablet was part of.
   // TODO make this required once dist consensus is fully integrated.
-  optional QuorumPB quorum = 10;
+  optional QuorumPB quorum = 11;
 }
 
 // The enum of tablet states.

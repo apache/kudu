@@ -98,7 +98,9 @@ Status SysTable::CreateNew(FsManager *fs_manager) {
                                                     table_name(),
                                                     BuildTableSchema(),
                                                     quorum,
-                                                    "", "", &metadata));
+                                                    "", "",
+                                                    metadata::REMOTE_BOOTSTRAP_DONE,
+                                                    &metadata));
   return SetupTablet(metadata, quorum_peer);
 }
 

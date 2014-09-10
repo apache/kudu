@@ -288,8 +288,18 @@ Status TabletBootstrap::Bootstrap(shared_ptr<Tablet>* rebuilt_tablet,
                                   gscoped_ptr<Log>* rebuilt_log,
                                   scoped_refptr<OpIdAnchorRegistry>* opid_anchor_registry,
                                   ConsensusBootstrapInfo* consensus_info) {
-
   string tablet_id = meta_->oid();
+
+  // Make sure we don't try to locally bootstrap a tablet that was in the middle
+  // of a remote bootstrap. It's likely that not all files were copied over
+  // successfully.
+  metadata::TabletBootstrapStatePB remote_bootstrap_state = meta_->remote_bootstrap_state();
+  if (remote_bootstrap_state != metadata::REMOTE_BOOTSTRAP_DONE) {
+    return Status::Corruption("Unable to locally bootstrap tablet " + tablet_id + ": " +
+                              "TabletMetadata bootstrap state is " +
+                              TabletBootstrapStatePB_Name(remote_bootstrap_state));
+  }
+
   meta_->PinFlush();
 
   listener_->StatusMessage("Bootstrap starting.");

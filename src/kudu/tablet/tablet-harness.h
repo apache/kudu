@@ -64,6 +64,7 @@ class TabletHarness {
                                                          server_schema,
                                                          quorum_,
                                                          "", "",
+                                                         metadata::REMOTE_BOOTSTRAP_DONE,
                                                          &metadata));
     RETURN_NOT_OK_PREPEND(metadata::TabletMetadata::PersistMasterBlock(
                             fs_manager_.get(), master_block),

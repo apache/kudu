@@ -232,6 +232,7 @@ Status TSTabletManager::CreateNewTablet(const string& table_id,
                               quorum,
                               start_key,
                               end_key,
+                              metadata::REMOTE_BOOTSTRAP_DONE,
                               &meta),
     "Couldn't create tablet metadata");
 

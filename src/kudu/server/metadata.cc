@@ -38,6 +38,7 @@ Status TabletMetadata::CreateNew(FsManager* fs_manager,
                                  const Schema& schema,
                                  const QuorumPB& quorum,
                                  const string& start_key, const string& end_key,
+                                 const TabletBootstrapStatePB& initial_remote_bootstrap_state,
                                  scoped_refptr<TabletMetadata>* metadata) {
   scoped_refptr<TabletMetadata> ret(new TabletMetadata(fs_manager,
                                                        master_block,
@@ -45,7 +46,8 @@ Status TabletMetadata::CreateNew(FsManager* fs_manager,
                                                        schema,
                                                        quorum,
                                                        start_key,
-                                                       end_key));
+                                                       end_key,
+                                                       initial_remote_bootstrap_state));
   RETURN_NOT_OK(ret->Flush());
   metadata->swap(ret);
   // TODO: should we verify that neither of the blocks referenced in the master block
@@ -68,6 +70,7 @@ Status TabletMetadata::LoadOrCreate(FsManager* fs_manager,
                                     const Schema& schema,
                                     const QuorumPB& quorum,
                                     const string& start_key, const string& end_key,
+                                    const TabletBootstrapStatePB& initial_remote_bootstrap_state,
                                     scoped_refptr<TabletMetadata>* metadata) {
   Status s = Load(fs_manager, master_block, metadata);
   if (s.ok()) {
@@ -79,7 +82,8 @@ Status TabletMetadata::LoadOrCreate(FsManager* fs_manager,
     return Status::OK();
   } else if (s.IsNotFound()) {
     return CreateNew(fs_manager, master_block, table_name, schema,
-                     quorum, start_key, end_key, metadata);
+                     quorum, start_key, end_key, initial_remote_bootstrap_state,
+                     metadata);
   } else {
     return s;
   }
@@ -112,7 +116,8 @@ TabletMetadata::TabletMetadata(FsManager *fs_manager,
                                const Schema& schema,
                                const QuorumPB& quorum,
                                const string& start_key,
-                               const string& end_key)
+                               const string& end_key,
+                               const TabletBootstrapStatePB& remote_bootstrap_state)
   : state_(kNotWrittenYet),
     start_key_(start_key), end_key_(end_key),
     fs_manager_(fs_manager),
@@ -124,6 +129,7 @@ TabletMetadata::TabletMetadata(FsManager *fs_manager,
     schema_version_(0),
     table_name_(table_name),
     quorum_(quorum),
+    remote_bootstrap_state_(remote_bootstrap_state),
     num_flush_pins_(0),
     needs_flush_(false) {
   CHECK(schema_.has_column_ids());
@@ -165,6 +171,8 @@ Status TabletMetadata::LoadFromDisk() {
                         "Failed to parse Schema from superblock " +
                         superblock.ShortDebugString());
   DCHECK(schema_.has_column_ids());
+
+  remote_bootstrap_state_ = superblock.remote_bootstrap_state();
 
   quorum_ = superblock.quorum();
 
@@ -364,6 +372,7 @@ Status TabletMetadata::ToSuperBlockUnlocked(shared_ptr<TabletSuperBlockPB> *supe
   RETURN_NOT_OK_PREPEND(SchemaToPB(schema_, pb->mutable_schema()),
                         "Couldn't serialize schema into superblock");
 
+  pb->set_remote_bootstrap_state(remote_bootstrap_state_);
   pb->mutable_quorum()->CopyFrom(quorum_);
 
   super_block->reset(pb.release());
@@ -462,6 +471,16 @@ void TabletMetadata::SetQuorum(const QuorumPB& quorum) {
 QuorumPB TabletMetadata::Quorum() const {
   boost::lock_guard<LockType> l(lock_);
   return quorum_;
+}
+
+void TabletMetadata::set_remote_bootstrap_state(TabletBootstrapStatePB state) {
+  boost::lock_guard<LockType> l(lock_);
+  remote_bootstrap_state_ = state;
+}
+
+TabletBootstrapStatePB TabletMetadata::remote_bootstrap_state() const {
+  boost::lock_guard<LockType> l(lock_);
+  return remote_bootstrap_state_;
 }
 
 // ============================================================================

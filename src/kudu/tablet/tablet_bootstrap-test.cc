@@ -30,6 +30,7 @@ using log::LogTestBase;
 using log::OpIdAnchorRegistry;
 using log::ReadableLogSegmentMap;
 using log::TabletMasterBlockPB;
+using metadata::TabletMetadata;
 using server::Clock;
 using server::LogicalClock;
 
@@ -44,15 +45,9 @@ class BootstrapTest : public LogTestBase {
     master_block_.set_block_b(fs_manager_->GenerateBlockId().ToString());
   }
 
-  Status BootstrapTestTablet(int mrs_id,
-                             int delta_id,
-                             shared_ptr<Tablet>* tablet,
-                             ConsensusBootstrapInfo* boot_info) {
+  Status LoadTestTabletMetadata(int mrs_id, int delta_id, scoped_refptr<TabletMetadata>* meta) {
     metadata::QuorumPB quorum;
     quorum.set_seqno(0);
-
-    scoped_refptr<metadata::TabletMetadata> meta;
-    scoped_refptr<OpIdAnchorRegistry> new_anchor_registry;
 
     RETURN_NOT_OK(metadata::TabletMetadata::LoadOrCreate(fs_manager_.get(),
                                                          master_block_,
@@ -63,14 +58,28 @@ class BootstrapTest : public LogTestBase {
                                                          quorum,
                                                          "",
                                                          "",
-                                                         &meta));
-    meta->SetLastDurableMrsIdForTests(mrs_id);
-    if (meta->GetRowSetForTests(0) != NULL) {
-      meta->GetRowSetForTests(0)->SetLastDurableRedoDmsIdForTests(delta_id);
+                                                         metadata::REMOTE_BOOTSTRAP_DONE,
+                                                         meta));
+    (*meta)->SetLastDurableMrsIdForTests(mrs_id);
+    if ((*meta)->GetRowSetForTests(0) != NULL) {
+      (*meta)->GetRowSetForTests(0)->SetLastDurableRedoDmsIdForTests(delta_id);
     }
-    meta->Flush();
+    return (*meta)->Flush();
+  }
 
+  Status PersistTestTabletMetadataState(metadata::TabletBootstrapStatePB state) {
+    scoped_refptr<TabletMetadata> meta;
+    RETURN_NOT_OK(LoadTestTabletMetadata(-1, -1, &meta));
+    meta->set_remote_bootstrap_state(state);
+    RETURN_NOT_OK(meta->Flush());
+    return Status::OK();
+  }
+
+  Status RunBootstrapOnTestTablet(const scoped_refptr<TabletMetadata>& meta,
+                                  shared_ptr<Tablet>* tablet,
+                                  ConsensusBootstrapInfo* boot_info) {
     gscoped_ptr<Log> new_log;
+    scoped_refptr<OpIdAnchorRegistry> new_anchor_registry;
     gscoped_ptr<TabletStatusListener> listener(new TabletStatusListener(meta));
 
     // Now attempt to recover the log
@@ -85,6 +94,18 @@ class BootstrapTest : public LogTestBase {
         boot_info));
     log_.reset(new_log.release());
 
+    return Status::OK();
+  }
+
+  Status BootstrapTestTablet(int mrs_id,
+                             int delta_id,
+                             shared_ptr<Tablet>* tablet,
+                             ConsensusBootstrapInfo* boot_info) {
+    scoped_refptr<TabletMetadata> meta;
+    RETURN_NOT_OK_PREPEND(LoadTestTabletMetadata(mrs_id, delta_id, &meta),
+                          "Unable to load test tablet metadata");
+    RETURN_NOT_OK_PREPEND(RunBootstrapOnTestTablet(meta, tablet, boot_info),
+                          "Unable to bootstrap test tablet");
     return Status::OK();
   }
 
@@ -123,6 +144,20 @@ TEST_F(BootstrapTest, TestBootstrap) {
   vector<string> results;
   IterateTabletRows(tablet.get(), &results);
   ASSERT_EQ(1, results.size());
+}
+
+// Tests attempting a local bootstrap of a tablet that was in the middle of a
+// remote bootstrap before "crashing".
+TEST_F(BootstrapTest, TestIncompleteRemoteBootstrap) {
+  BuildLog();
+
+  ASSERT_OK(PersistTestTabletMetadataState(metadata::REMOTE_BOOTSTRAP_COPYING));
+  shared_ptr<Tablet> tablet;
+  ConsensusBootstrapInfo boot_info;
+  Status s = BootstrapTestTablet(-1, -1, &tablet, &boot_info);
+  ASSERT_TRUE(s.IsCorruption()) << "Expected corruption: " << s.ToString();
+  ASSERT_STR_CONTAINS(s.ToString(), "TabletMetadata bootstrap state is REMOTE_BOOTSTRAP_COPYING");
+  LOG(INFO) << "State is still REMOTE_BOOTSTRAP_COPYING, as expected: " << s.ToString();
 }
 
 // Tests the KUDU-141 scenario: bootstrap when there is
