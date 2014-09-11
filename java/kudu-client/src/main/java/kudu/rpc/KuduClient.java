@@ -373,6 +373,48 @@ public class KuduClient {
   }
 
   /**
+   * Get the list of all the tables.
+   * @return a list of all the tables
+   */
+  public Deferred<ListTablesResponse> getTablesList() {
+    return getTablesList(null);
+  }
+
+  /**
+   * Get a list of table names. Passing a null filter returns all the tables. When a filter is
+   * specified, it only returns tables that satisfy a substring match.
+   * @param nameFilter an optional table name filter
+   * @return a deferred that contains the list of table names
+   */
+  public Deferred<ListTablesResponse> getTablesList(String nameFilter) {
+    ListTablesRequest rpc = new ListTablesRequest(this.masterTableHack, nameFilter);
+    return sendRpcToTablet(rpc);
+  }
+
+  /**
+   * Test if a table exists.
+   * @param name a non-null table name
+   * @return true if the table exists, else false
+   */
+  public Deferred<Boolean> tableExists(final String name) {
+    if (name == null) {
+      throw new IllegalArgumentException("The table name cannot be null");
+    }
+    return getTablesList().addCallbackDeferring(new Callback<Deferred<Boolean>,
+        ListTablesResponse>() {
+      @Override
+      public Deferred<Boolean> call(ListTablesResponse listTablesResponse) throws Exception {
+        for (String tableName : listTablesResponse.getTablesList()) {
+          if (name.equals(tableName)) {
+            return Deferred.fromResult(true);
+          }
+        }
+        return Deferred.fromResult(false);
+      }
+    });
+  }
+
+  /**
    * Open the table with the given name.
    * @param name table to open
    * @return a KuduTable if the table exists, else a MasterErrorException

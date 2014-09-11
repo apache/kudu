@@ -1,10 +1,6 @@
 // Copyright (c) 2014, Cloudera, inc.
 package kudu.rpc;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertNull;
-import static org.junit.Assert.fail;
-
 import kudu.ColumnSchema;
 import kudu.Schema;
 import kudu.Type;
@@ -13,6 +9,8 @@ import org.junit.Test;
 
 import java.util.ArrayList;
 import java.util.List;
+
+import static org.junit.Assert.*;
 
 public class TestKuduTable extends BaseKuduTest {
 
@@ -106,6 +104,20 @@ public class TestKuduTable extends BaseKuduTest {
 
     tablets = table.getTabletsLocations(getKeyInBytes(20), getKeyInBytes(10000), DEFAULT_SLEEP);
     assertEquals(11, tablets.size());
+
+
+    // Test listing tables.
+    assertEquals(0,
+        client.getTablesList(table1).join(DEFAULT_SLEEP).getTablesList().size());
+    assertEquals(1,
+        client.getTablesList(tableWithDefault).join(DEFAULT_SLEEP).getTablesList().size());
+    assertEquals(5,
+        client.getTablesList().join(DEFAULT_SLEEP).getTablesList().size());
+    assertFalse(client.getTablesList(tableWithDefault).
+        join(DEFAULT_SLEEP).getTablesList().isEmpty());
+
+    assertFalse(client.tableExists(table1).join(DEFAULT_SLEEP));
+    assertTrue(client.tableExists(tableWithDefault).join(DEFAULT_SLEEP));
   }
 
   public byte[] getKeyInBytes(int i) {
