@@ -1,35 +1,35 @@
 /**
- * Licensed to the Apache Software Foundation (ASF) under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership.  The ASF licenses this file
- * to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
+ * Portions copyright (c) 2014 Cloudera, Inc.
  *
- *     http://www.apache.org/licenses/LICENSE-2.0
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *   http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
- * limitations under the License.
+ * limitations under the License. See accompanying LICENSE file.
  */
+package kudu.mapreduce;
 
-package org.apache.hadoop.hbase.test;
-
-import java.io.DataInput;
-import java.io.DataOutput;
-import java.io.IOException;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Iterator;
-import java.util.List;
-import java.util.Random;
-import java.util.Set;
-import java.util.UUID;
-import java.util.concurrent.atomic.AtomicInteger;
-
+import com.stumbleupon.async.Callback;
+import com.stumbleupon.async.Deferred;
+import kudu.ColumnSchema;
+import kudu.Schema;
+import kudu.Type;
+import kudu.rpc.Bytes;
+import kudu.rpc.CreateTableBuilder;
+import kudu.rpc.KeyBuilder;
+import kudu.rpc.KuduClient;
+import kudu.rpc.KuduScanner;
+import kudu.rpc.KuduTable;
+import kudu.rpc.Operation;
+import kudu.rpc.RowResult;
+import kudu.rpc.SessionConfiguration;
+import kudu.rpc.SynchronousKuduSession;
 import org.apache.commons.cli.CommandLine;
 import org.apache.commons.cli.GnuParser;
 import org.apache.commons.cli.HelpFormatter;
@@ -39,31 +39,8 @@ import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.conf.Configured;
+import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
-import org.apache.hadoop.hbase.HBaseConfiguration;
-import org.apache.hadoop.hbase.HColumnDescriptor;
-import org.apache.hadoop.hbase.HRegionLocation;
-import org.apache.hadoop.hbase.HTableDescriptor;
-import org.apache.hadoop.hbase.IntegrationTestBase;
-import org.apache.hadoop.hbase.IntegrationTestingUtility;
-import org.apache.hadoop.hbase.IntegrationTests;
-import org.apache.hadoop.hbase.TableName;
-import org.apache.hadoop.hbase.client.Get;
-import org.apache.hadoop.hbase.client.HBaseAdmin;
-import org.apache.hadoop.hbase.client.HConnection;
-import org.apache.hadoop.hbase.client.HConnectionManager;
-import org.apache.hadoop.hbase.client.HTable;
-import org.apache.hadoop.hbase.client.Put;
-import org.apache.hadoop.hbase.client.Result;
-import org.apache.hadoop.hbase.client.ResultScanner;
-import org.apache.hadoop.hbase.client.Scan;
-import org.apache.hadoop.hbase.client.ScannerCallable;
-import org.apache.hadoop.hbase.io.ImmutableBytesWritable;
-import org.apache.hadoop.hbase.mapreduce.TableMapReduceUtil;
-import org.apache.hadoop.hbase.mapreduce.TableMapper;
-import org.apache.hadoop.hbase.mapreduce.TableRecordReaderImpl;
-import org.apache.hadoop.hbase.util.AbstractHBaseTool;
-import org.apache.hadoop.hbase.util.Bytes;
 import org.apache.hadoop.io.BytesWritable;
 import org.apache.hadoop.io.NullWritable;
 import org.apache.hadoop.io.Text;
@@ -87,107 +64,189 @@ import org.apache.hadoop.mapreduce.lib.output.SequenceFileOutputFormat;
 import org.apache.hadoop.mapreduce.lib.output.TextOutputFormat;
 import org.apache.hadoop.util.Tool;
 import org.apache.hadoop.util.ToolRunner;
-import org.junit.Test;
-import org.junit.experimental.categories.Category;
 
-import com.google.common.collect.Sets;
+import java.io.DataInput;
+import java.io.DataOutput;
+import java.io.IOException;
+import java.math.BigInteger;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Random;
+import java.util.UUID;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
+ * <p>
  * This is an integration test borrowed from goraci, written by Keith Turner,
  * which is in turn inspired by the Accumulo test called continous ingest (ci).
  * The original source code can be found here:
- * https://github.com/keith-turner/goraci
- * https://github.com/enis/goraci/
+ * <ul>
+ * <li>
+ * <a href="https://github.com/keith-turner/goraci">https://github.com/keith-turner/goraci</a>
+ * </li>
+ * <li>
+ * <a href="https://github.com/enis/goraci/">https://github.com/enis/goraci/</a>
+ * </li>
+ * </ul>
+ * </p>
  *
- * Apache Accumulo [0] has a simple test suite that verifies that data is not
+ * <p>
+ * Apache Accumulo has a simple test suite that verifies that data is not
  * lost at scale. This test suite is called continuous ingest. This test runs
  * many ingest clients that continually create linked lists containing 25
  * million nodes. At some point the clients are stopped and a map reduce job is
- * run to ensure no linked list has a hole. A hole indicates data was lost.··
+ * run to ensure no linked list has a hole. A hole indicates data was lost.
+ * </p>
  *
+ * <p>
  * The nodes in the linked list are random. This causes each linked list to
  * spread across the table. Therefore if one part of a table loses data, then it
  * will be detected by references in another part of the table.
+ * </p>
  *
+ * <h3>
  * THE ANATOMY OF THE TEST
+ * </h3>
  *
+ * <p>
  * Below is rough sketch of how data is written. For specific details look at
  * the Generator code.
+ * </p>
+ * <ol>
+ * <li>
+ * Write out 1 million nodes
+ * </li>
+ * <li>
+ * Flush the client
+ * </li>
+ * <li>
+ * Write out 1 million that reference previous million
+ * </li>
+ * <li>
+ * If this is the 25th set of 1 million nodes, then update 1st set of million to point to last
+ * </li>
+ * <li>
+ * Goto 1
+ * </li>
+ * </ol>
  *
- * 1 Write out 1 million nodes· 2 Flush the client· 3 Write out 1 million that
- * reference previous million· 4 If this is the 25th set of 1 million nodes,
- * then update 1st set of million to point to last· 5 goto 1
- *
+ * <p>
  * The key is that nodes only reference flushed nodes. Therefore a node should
  * never reference a missing node, even if the ingest client is killed at any
  * point in time.
+ * </p>
  *
+ * <p>
  * When running this test suite w/ Accumulo there is a script running in
- * parallel called the Aggitator that randomly and continuously kills server
- * processes.·· The outcome was that many data loss bugs were found in Accumulo
- * by doing this.· This test suite can also help find bugs that impact uptime
- * and stability when· run for days or weeks.··
+ * parallel called the Agitator that randomly and continuously kills server
+ * processes. The outcome was that many data loss bugs were found in Accumulo
+ * by doing this. This test suite can also help find bugs that impact uptime
+ * and stability when run for days or weeks.
+ * </p>
  *
- * This test suite consists the following· - a few Java programs· - a little
- * helper script to run the java programs - a maven script to build it.··
+ * <p>
+ * This test suite consists the following:
+ * </p>
+ * <ul>
+ * <li>
+ * A few Java programs
+ * </li>
+ * <li>
+ * A little helper script to run the java programs
+ * </li>
+ * <li>
+ * A maven script to build it.
+ * </li>
+ * </ul>
  *
+ * <p>
  * When generating data, its best to have each map task generate a multiple of
  * 25 million. The reason for this is that circular linked list are generated
  * every 25M. Not generating a multiple in 25M will result in some nodes in the
  * linked list not having references. The loss of an unreferenced node can not
  * be detected.
+ * </p>
  *
- *
+ * <h3>
  * Below is a description of the Java programs
+ * <h3>
  *
- * Generator - A map only job that generates data. As stated previously,·
+ * <ul>
+ * <li>
+ * Generator - A map only job that generates data. As stated previously,
  * its best to generate data in multiples of 25M.
- *
+ * </li>
+ * <li>
  * Verify - A map reduce job that looks for holes. Look at the counts after running. REFERENCED and
- * UNREFERENCED are· ok, any UNDEFINED counts are bad. Do not run at the· same
+ * UNREFERENCED are ok, any UNDEFINED counts are bad. Do not run at the same
  * time as the Generator.
- *
- * Walker - A standalong program that start following a linked list· and emits timing info.··
- *
+ * </li>
+ * <li>
  * Print - A standalone program that prints nodes in the linked list
+ * </li>
+ * <li>
+ * Delete - Disabled. A standalone program that deletes a single node
+ * </li>
+ * <li>
+ * Walker - Disabled. A standalong program that start following a linked list and emits timing
+ * info.
+ * </li>
+ * </ul>
  *
- * Delete - A standalone program that deletes a single node
+ * <h3>
+ * KUDU-SPECIFIC CHANGES
+ * </h3>
  *
- * This class can be run as a unit test, as an integration test, or from the command line
+ * <li>
+ * The 16 bytes row key is divided into two 8 byte long since we don't have a "bytes" type in
+ * Kudu. Note that the C++ client can store bytes directly in string columns. Using longs
+ * enables us to pretty print human readable keys than can then be passed back just as easily.
+ * </li>
+ * <li>
+ * The table can be pre-split when running the Generator. The row keys' first component will be
+ * spread over the Long.MIN_VALUE - Long.MAX_VALUE keyspace.
+ * </li>
+ * <li>
+ * The Walker and Deleter progams were disabled to save some time but they can be re-enabled then
+ * ported to Kudu without too much effort.
+ * </li>
+ * </ul>
  */
-@Category(IntegrationTests.class)
-public class IntegrationTestBigLinkedList extends IntegrationTestBase {
+public class IntegrationTestBigLinkedList extends Configured implements Tool {
   private static final byte[] NO_KEY = new byte[1];
 
-  protected static String TABLE_NAME_KEY = "IntegrationTestBigLinkedList.table";
+  protected static final String TABLE_NAME_KEY = "IntegrationTestBigLinkedList.table";
 
-  protected static String DEFAULT_TABLE_NAME = "IntegrationTestBigLinkedList";
+  protected static final String DEFAULT_TABLE_NAME = "IntegrationTestBigLinkedList";
 
-  private static byte[] FAMILY_NAME = Bytes.toBytes("meta");
+  /** Row key, two times 8 bytes. */
+  private static final String COLUMN_KEY_ONE = "key1";
+  private static final String COLUMN_KEY_TWO = "key2";
 
-  //link to the id of the prev node in the linked list
-  private static final byte[] COLUMN_PREV = Bytes.toBytes("prev");
+  /** Link to the id of the prev node in the linked list, two times 8 bytes. */
+  private static final String COLUMN_PREV_ONE = "prev1";
+  private static final String COLUMN_PREV_TWO = "prev2";
 
-  //identifier of the mapred task that generated this row
-  private static final byte[] COLUMN_CLIENT = Bytes.toBytes("client");
+  /** identifier of the mapred task that generated this row. */
+  private static final String COLUMN_CLIENT = "client";
 
-  //the id of the row within the same client.
-  private static final byte[] COLUMN_COUNT = Bytes.toBytes("count");
+  /** the id of the row within the same client. */
+  private static final String COLUMN_ROW_ID = "row_id";
 
-  /** How many rows to write per map task. This has to be a multiple of 25M */
+  /** How many rows to write per map task. This has to be a multiple of 25M. */
   private static final String GENERATOR_NUM_ROWS_PER_MAP_KEY
-    = "IntegrationTestBigLinkedList.generator.num_rows";
+      = "IntegrationTestBigLinkedList.generator.num_rows";
 
   private static final String GENERATOR_NUM_MAPPERS_KEY
-    = "IntegrationTestBigLinkedList.generator.map.tasks";
+      = "IntegrationTestBigLinkedList.generator.map.tasks";
 
   private static final String GENERATOR_WIDTH_KEY
-    = "IntegrationTestBigLinkedList.generator.width";
+      = "IntegrationTestBigLinkedList.generator.width";
 
   private static final String GENERATOR_WRAP_KEY
-    = "IntegrationTestBigLinkedList.generator.wrap";
-
-  protected int NUM_SLAVES_BASE = 3; // number of slaves for the cluster
+      = "IntegrationTestBigLinkedList.generator.wrap";
 
   private static final int MISSING_ROWS_TO_LOG = 50;
 
@@ -199,10 +258,10 @@ public class IntegrationTestBigLinkedList extends IntegrationTestBase {
   private String[] otherArgs;
 
   static class CINode {
-    byte[] key;
-    byte[] prev;
+    String key;
+    String prev;
     String client;
-    long count;
+    long rowId;
   }
 
   /**
@@ -325,26 +384,37 @@ public class IntegrationTestBigLinkedList extends IntegrationTestBase {
      *             |___________________________|
      */
     static class GeneratorMapper
-      extends Mapper<BytesWritable, NullWritable, NullWritable, NullWritable> {
+        extends Mapper<BytesWritable, NullWritable, NullWritable, NullWritable> {
 
-      byte[][] first = null;
-      byte[][] prev = null;
-      byte[][] current = null;
-      byte[] id;
-      long count = 0;
-      int i;
-      HTable table;
-      long numNodes;
-      long wrap;
-      int width;
+      private byte[][] first = null;
+      private byte[][] prev = null;
+      private byte[][] current = null;
+      private String id;
+      private long rowId = 0;
+      private int i;
+      private KuduClient client;
+      private KuduTable table;
+      private SynchronousKuduSession session;
+      private long numNodes;
+      private long wrap;
+      private int width;
+      private long timeout;
 
       @Override
       protected void setup(Context context) throws IOException, InterruptedException {
-        id = Bytes.toBytes("Job: "+context.getJobID() + " Task: " + context.getTaskAttemptID());
+        id = "Job: " + context.getJobID() + " Task: " + context.getTaskAttemptID();
         Configuration conf = context.getConfiguration();
-        table = new HTable(conf, getTableName(conf));
-        table.setAutoFlush(false, true);
-        table.setWriteBufferSize(4 * 1024 * 1024);
+        CommandLineParser parser = new CommandLineParser(conf);
+        timeout = parser.getOperationTimeoutMs();
+        client = parser.getClient();
+        try {
+          table = client.openTable(getTableName(conf)).join(timeout);
+        } catch (Exception e) {
+          throw new IOException(e);
+        }
+        session = client.newSynchronousSession();
+        session.setFlushMode(SessionConfiguration.FlushMode.MANUAL_FLUSH);
+        session.setMutationBufferSpace(WIDTH_DEFAULT);
         this.width = context.getConfiguration().getInt(GENERATOR_WIDTH_KEY, WIDTH_DEFAULT);
         current = new byte[this.width][];
         int wrapMultiplier = context.getConfiguration().getInt(GENERATOR_WRAP_KEY, WRAP_DEFAULT);
@@ -357,8 +427,14 @@ public class IntegrationTestBigLinkedList extends IntegrationTestBase {
       }
 
       @Override
-      protected void cleanup(Context context) throws IOException ,InterruptedException {
-        table.close();
+      protected void cleanup(Context context) throws IOException, InterruptedException {
+        try {
+          session.close();
+          client.shutdown().join(timeout);
+        } catch (Exception ex) {
+          // ugh.
+          throw new IOException(ex);
+        }
       }
 
       @Override
@@ -366,23 +442,26 @@ public class IntegrationTestBigLinkedList extends IntegrationTestBase {
         current[i] = new byte[key.getLength()];
         System.arraycopy(key.getBytes(), 0, current[i], 0, key.getLength());
         if (++i == current.length) {
-          persist(output, count, prev, current, id);
+          persist(output, current, false);
           i = 0;
 
-          if (first == null)
+          // Keep track of the first row so that we can point to it at the end.
+          if (first == null) {
             first = current;
+          }
           prev = current;
           current = new byte[this.width][];
 
-          count += current.length;
-          output.setStatus("Count " + count);
+          rowId += current.length;
+          output.setStatus("Count " + rowId);
 
-          if (count % wrap == 0) {
+          // Check if it's time to wrap up this batch.
+          if (rowId % wrap == 0) {
             // this block of code turns the 1 million linked list of length 25 into one giant
-            //circular linked list of 25 million
+            // circular linked list of 25 million.
             circularLeftShift(first);
 
-            persist(output, -1, prev, first, null);
+            persist(output, first, true);
 
             first = null;
             prev = null;
@@ -397,35 +476,50 @@ public class IntegrationTestBigLinkedList extends IntegrationTestBase {
         first[first.length - 1] = ez;
       }
 
-      private void persist(Context output, long count, byte[][] prev, byte[][] current, byte[] id)
+      private void persist(Context output, byte[][] data, boolean update)
           throws IOException {
-        for (int i = 0; i < current.length; i++) {
-          Put put = new Put(current[i]);
-          put.add(FAMILY_NAME, COLUMN_PREV, prev == null ? NO_KEY : prev[i]);
+        try {
+          for (int i = 0; i < data.length; i++) {
+            Operation put = update ? table.newUpdate() : table.newInsert();
 
-          if (count >= 0) {
-            put.add(FAMILY_NAME, COLUMN_COUNT, Bytes.toBytes(count + i));
-          }
-          if (id != null) {
-            put.add(FAMILY_NAME, COLUMN_CLIENT, id);
-          }
-          table.put(put);
+            put.addLong(COLUMN_KEY_ONE, Bytes.getLong(data[i]));
+            put.addLong(COLUMN_KEY_TWO, Bytes.getLong(data[i], 8));
 
-          if (i % 1000 == 0) {
-            // Tickle progress every so often else maprunner will think us hung
-            output.progress();
+            // prev is null for the first line, we'll update it at the end.
+            if (prev == null) {
+              put.setNull(COLUMN_PREV_ONE);
+              put.setNull(COLUMN_PREV_TWO);
+            } else {
+              put.addLong(COLUMN_PREV_ONE, Bytes.getLong(prev[i]));
+              put.addLong(COLUMN_PREV_TWO, Bytes.getLong(prev[i], 8));
+            }
+
+            // We don't update the row id or the client.
+            if (!update) {
+              put.addLong(COLUMN_ROW_ID, rowId + i);
+              put.addString(COLUMN_CLIENT, id);
+            }
+            session.apply(put);
+
+            if (i % 1000 == 0) {
+              // Tickle progress every so often else maprunner will think us hung
+              output.progress();
+            }
           }
+
+          session.flush();
+        } catch (Exception ex) {
+          throw new IOException(ex);
         }
-
-        table.flushCommits();
       }
     }
 
     @Override
     public int run(String[] args) throws Exception {
-      if (args.length < 3) {
+      if (args.length < 4) {
         System.out.println("Usage : " + Generator.class.getSimpleName() +
-            " <num mappers> <num nodes per map> <tmp output dir> [<width> <wrap multiplier>]");
+            " <num mappers> <num nodes per map> <num_tablets> <tmp output dir> [<width> <wrap " +
+            "multiplier>]");
         System.out.println("   where <num nodes per map> should be a multiple of " +
             " width*wrap multiplier, 25M by default");
         return 0;
@@ -433,25 +527,63 @@ public class IntegrationTestBigLinkedList extends IntegrationTestBase {
 
       int numMappers = Integer.parseInt(args[0]);
       long numNodes = Long.parseLong(args[1]);
-      Path tmpOutput = new Path(args[2]);
-      Integer width = (args.length < 4) ? null : Integer.parseInt(args[3]);
-      Integer wrapMuplitplier = (args.length < 5) ? null : Integer.parseInt(args[4]);
-      return run(numMappers, numNodes, tmpOutput, width, wrapMuplitplier);
+      int numTablets = Integer.parseInt(args[2]);
+      Path tmpOutput = new Path(args[3]);
+      Integer width = (args.length < 5) ? null : Integer.parseInt(args[4]);
+      Integer wrapMuplitplier = (args.length < 6) ? null : Integer.parseInt(args[5]);
+      return run(numMappers, numNodes, numTablets, tmpOutput, width, wrapMuplitplier);
     }
 
-    protected void createSchema() throws IOException {
-      HBaseAdmin admin = new HBaseAdmin(getConf());
-      TableName tableName = getTableName(getConf());
-      if (!admin.tableExists(tableName)) {
-        HTableDescriptor htd = new HTableDescriptor(getTableName(getConf()));
-        htd.addFamily(new HColumnDescriptor(FAMILY_NAME));
-        admin.createTable(htd);
+    protected void createSchema(int numTablets) throws Exception {
+      CommandLineParser parser = new CommandLineParser(getConf());
+      KuduClient client = parser.getClient();
+      try {
+        if (numTablets < 1) {
+          numTablets = 1;
+        }
+
+        String tableName = getTableName(getConf());
+
+        if (client.tableExists(tableName).join(parser.getOperationTimeoutMs())) {
+          return;
+        }
+
+        List<ColumnSchema> columns = new ArrayList<ColumnSchema>(6);
+        columns.add(new ColumnSchema(COLUMN_KEY_ONE, Type.INT64, true));
+        columns.add(new ColumnSchema(COLUMN_KEY_TWO, Type.INT64, true));
+        columns.add(new ColumnSchema(COLUMN_PREV_ONE, Type.INT64, false, true, null));
+        columns.add(new ColumnSchema(COLUMN_PREV_TWO, Type.INT64, false, true, null));
+        columns.add(new ColumnSchema(COLUMN_ROW_ID, Type.INT64, false));
+        columns.add(new ColumnSchema(COLUMN_CLIENT, Type.STRING, false));
+        Schema schema = new Schema(columns);
+
+        CreateTableBuilder builder = new CreateTableBuilder();
+        builder.setNumReplicas(parser.getNumReplicas());
+        if (numTablets > 1) {
+          BigInteger min = BigInteger.valueOf(Long.MIN_VALUE);
+          BigInteger max = BigInteger.valueOf(Long.MAX_VALUE);
+          BigInteger step = max.multiply(BigInteger.valueOf(2)).divide(BigInteger.valueOf
+              (numTablets));
+          LOG.info(min.longValue());
+          LOG.info(max.longValue());
+          LOG.info(step.longValue());
+          KeyBuilder keyBuilder = new KeyBuilder(schema);
+          for (int i = 1; i < numTablets; i++) {
+            long key = min.add(step.multiply(BigInteger.valueOf(i))).longValue();
+            LOG.info("key " + key);
+            builder.addSplitKey(keyBuilder.addLong(key));
+          }
+        }
+
+        client.createTable(tableName, schema, builder).join(parser.getOperationTimeoutMs());
+      } finally {
+        // Done with this client.
+        client.shutdown().join(parser.getOperationTimeoutMs());
       }
-      admin.close();
     }
 
     public int runRandomInputGenerator(int numMappers, long numNodes, Path tmpOutput,
-        Integer width, Integer wrapMuplitplier) throws Exception {
+                                       Integer width, Integer wrapMuplitplier) throws Exception {
       LOG.info("Running RandomInputGenerator with numMappers=" + numMappers
           + ", numNodes=" + numNodes);
       Job job = new Job(getConf());
@@ -476,10 +608,10 @@ public class IntegrationTestBigLinkedList extends IntegrationTestBase {
       return success ? 0 : 1;
     }
 
-    public int runGenerator(int numMappers, long numNodes, Path tmpOutput,
-        Integer width, Integer wrapMuplitplier) throws Exception {
+    public int runGenerator(int numMappers, long numNodes, int numTablets, Path tmpOutput,
+                            Integer width, Integer wrapMuplitplier) throws Exception {
       LOG.info("Running Generator with numMappers=" + numMappers +", numNodes=" + numNodes);
-      createSchema();
+      createSchema(numTablets);
 
       Job job = new Job(getConf());
 
@@ -499,22 +631,26 @@ public class IntegrationTestBigLinkedList extends IntegrationTestBase {
       job.setOutputFormatClass(NullOutputFormat.class);
 
       job.getConfiguration().setBoolean("mapred.map.tasks.speculative.execution", false);
-      TableMapReduceUtil.addDependencyJars(job);
-      TableMapReduceUtil.addDependencyJars(job.getConfiguration(), AbstractHBaseTool.class);
-      TableMapReduceUtil.initCredentials(job);
+      // If we fail, retrying will fail again in case we were able to flush at least once since
+      // we'll be creating duplicate rows. Better to just have one try.
+      job.getConfiguration().setInt("mapreduce.map.maxattempts", 1);
+      // Lack of YARN-445 means we can't auto-jstack on timeout, so disabling the timeout gives
+      // us a chance to do it manually.
+      job.getConfiguration().setInt("mapreduce.task.timeout", 0);
+      KuduTableMapReduceUtil.addDependencyJars(job);
 
       boolean success = job.waitForCompletion(true);
 
       return success ? 0 : 1;
     }
 
-    public int run(int numMappers, long numNodes, Path tmpOutput,
-        Integer width, Integer wrapMuplitplier) throws Exception {
+    public int run(int numMappers, long numNodes, int numTablets, Path tmpOutput,
+                   Integer width, Integer wrapMuplitplier) throws Exception {
       int ret = runRandomInputGenerator(numMappers, numNodes, tmpOutput, width, wrapMuplitplier);
       if (ret > 0) {
         return ret;
       }
-      return runGenerator(numMappers, numNodes, tmpOutput, width, wrapMuplitplier);
+      return runGenerator(numMappers, numNodes, numTablets, tmpOutput, width, wrapMuplitplier);
     }
   }
 
@@ -526,31 +662,37 @@ public class IntegrationTestBigLinkedList extends IntegrationTestBase {
 
     private static final Log LOG = LogFactory.getLog(Verify.class);
     private static final BytesWritable DEF = new BytesWritable(NO_KEY);
+    private static final byte[] rowKey = new byte[ROWKEY_LENGTH];
+    private static final byte[] prev = new byte[ROWKEY_LENGTH];
 
     private Job job;
 
-    public static class VerifyMapper extends TableMapper<BytesWritable, BytesWritable> {
+    public static class VerifyMapper extends Mapper<NullWritable, RowResult,
+        BytesWritable, BytesWritable> {
       private BytesWritable row = new BytesWritable();
       private BytesWritable ref = new BytesWritable();
 
       @Override
-      protected void map(ImmutableBytesWritable key, Result value, Context context)
+      protected void map(NullWritable key, RowResult value, Mapper.Context context)
           throws IOException ,InterruptedException {
-        byte[] rowKey = key.get();
+        Bytes.setLong(rowKey, value.getLong(0));
+        Bytes.setLong(rowKey, value.getLong(1), 8);
+
         row.set(rowKey, 0, rowKey.length);
         context.write(row, DEF);
-        byte[] prev = value.getValue(FAMILY_NAME, COLUMN_PREV);
-        if (prev != null && prev.length > 0) {
+        if (value.isNull(2)) {
+          LOG.warn(String.format("Prev is not set for: %s", Bytes.pretty(rowKey)));
+        } else {
+          Bytes.setLong(prev, value.getLong(2));
+          Bytes.setLong(prev, value.getLong(3), 8);
           ref.set(prev, 0, prev.length);
           context.write(ref, row);
-        } else {
-          LOG.warn(String.format("Prev is not set for: %s", Bytes.toStringBinary(rowKey)));
         }
       }
     }
 
     public static enum Counts {
-      UNREFERENCED, UNDEFINED, REFERENCED, CORRUPT, EXTRAREFERENCES
+      UNREFERENCED, UNDEFINED, REFERENCED, EXTRAREFERENCES
     }
 
     public static class VerifyReducer extends Reducer<BytesWritable,BytesWritable,Text,Text> {
@@ -585,9 +727,9 @@ public class IntegrationTestBigLinkedList extends IntegrationTestBase {
           for (byte[] ref : refs) {
             refsSb.append(comma);
             comma = ",";
-            refsSb.append(Bytes.toStringBinary(ref));
+            refsSb.append(Bytes.pretty(ref));
           }
-          keyString = Bytes.toStringBinary(key.getBytes(), 0, key.getLength());
+          keyString = Bytes.pretty(key.getBytes());
 
           LOG.error("Linked List error: Key = " + keyString + " References = " + refsSb.toString());
         }
@@ -632,7 +774,7 @@ public class IntegrationTestBigLinkedList extends IntegrationTestBase {
       String outputDir = args[0];
       int numReducers = Integer.parseInt(args[1]);
 
-       return run(outputDir, numReducers);
+      return run(outputDir, numReducers);
     }
 
     public int run(String outputDir, int numReducers) throws Exception {
@@ -648,17 +790,13 @@ public class IntegrationTestBigLinkedList extends IntegrationTestBase {
       job.setNumReduceTasks(numReducers);
       job.setJarByClass(getClass());
 
-      setJobScannerConf(job);
-
-      Scan scan = new Scan();
-      scan.addColumn(FAMILY_NAME, COLUMN_PREV);
-      scan.setCaching(10000);
-      scan.setCacheBlocks(false);
-
-      TableMapReduceUtil.initTableMapperJob(getTableName(getConf()).getName(), scan,
-          VerifyMapper.class, BytesWritable.class, BytesWritable.class, job);
-      TableMapReduceUtil.addDependencyJars(job.getConfiguration(), AbstractHBaseTool.class);
-
+      KuduTableMapReduceUtil.initTableInputFormat(job, getTableName(getConf()),
+          COLUMN_KEY_ONE + "," +  COLUMN_KEY_TWO + "," +
+          COLUMN_PREV_ONE + "," + COLUMN_PREV_TWO,
+          true);
+      job.setMapperClass(VerifyMapper.class);
+      job.setMapOutputKeyClass(BytesWritable.class);
+      job.setMapOutputValueClass(BytesWritable.class);
       job.getConfiguration().setBoolean("mapred.map.tasks.speculative.execution", false);
 
       job.setReducerClass(VerifyReducer.class);
@@ -703,25 +841,26 @@ public class IntegrationTestBigLinkedList extends IntegrationTestBase {
         success = false;
       }
 
+      // TODO Add the rows' location on failure.
       if (!success) {
-        Configuration conf = job.getConfiguration();
-        HConnection conn = HConnectionManager.getConnection(conf);
-        TableName tableName = getTableName(conf);
+        //Configuration conf = job.getConfiguration();
+        //HConnection conn = HConnectionManager.getConnection(conf);
+        //TableName tableName = getTableName(conf);
         CounterGroup g = counters.getGroup("undef");
         Iterator<Counter> it = g.iterator();
         while (it.hasNext()) {
           String keyString = it.next().getName();
-          byte[] key = Bytes.toBytes(keyString);
-          HRegionLocation loc = conn.relocateRegion(tableName, key);
-          LOG.error("undefined row " + keyString + ", " + loc);
+          //byte[] key = Bytes.toBytes(keyString);
+          //HRegionLocation loc = conn.relocateRegion(tableName, key);
+          LOG.error("undefined row " + keyString /*+ ", " + loc*/);
         }
         g = counters.getGroup("unref");
         it = g.iterator();
         while (it.hasNext()) {
           String keyString = it.next().getName();
-          byte[] key = Bytes.toBytes(keyString);
-          HRegionLocation loc = conn.relocateRegion(tableName, key);
-          LOG.error("unreferred row " + keyString + ", " + loc);
+          //byte[] key = Bytes.toBytes(keyString);
+          //HRegionLocation loc = conn.relocateRegion(tableName, key);
+          LOG.error("unreferred row " + keyString /*+ ", " + loc*/);
         }
       }
       return success;
@@ -738,22 +877,26 @@ public class IntegrationTestBigLinkedList extends IntegrationTestBase {
 
     IntegrationTestBigLinkedList it;
 
-    protected void runGenerator(int numMappers, long numNodes,
-        String outputDir, Integer width, Integer wrapMuplitplier) throws Exception {
+    FileSystem fs;
+
+    protected void runGenerator(int numMappers, long numNodes, int numTablets,
+                                String outputDir, Integer width, Integer wrapMuplitplier) throws Exception {
       Path outputPath = new Path(outputDir);
       UUID uuid = UUID.randomUUID(); //create a random UUID.
       Path generatorOutput = new Path(outputPath, uuid.toString());
 
       Generator generator = new Generator();
       generator.setConf(getConf());
-      int retCode = generator.run(numMappers, numNodes, generatorOutput, width, wrapMuplitplier);
+      int retCode = generator.run(numMappers, numNodes, numTablets, generatorOutput, width,
+          wrapMuplitplier);
       if (retCode > 0) {
         throw new RuntimeException("Generator failed with return code: " + retCode);
       }
+      fs.delete(generatorOutput, true);
     }
 
     protected void runVerify(String outputDir,
-        int numReducers, long expectedNumNodes) throws Exception {
+                             int numReducers, long expectedNumNodes) throws Exception {
       Path outputPath = new Path(outputDir);
       UUID uuid = UUID.randomUUID(); //create a random UUID.
       Path iterationOutput = new Path(outputPath, uuid.toString());
@@ -769,13 +912,15 @@ public class IntegrationTestBigLinkedList extends IntegrationTestBase {
         throw new RuntimeException("Verify.verify failed");
       }
 
+      fs.delete(iterationOutput, true);
       LOG.info("Verify finished with succees. Total nodes=" + expectedNumNodes);
     }
 
     @Override
     public int run(String[] args) throws Exception {
-      if (args.length < 5) {
-        System.err.println("Usage: Loop <num iterations> <num mappers> <num nodes per mapper> <output dir> <num reducers> [<width> <wrap multiplier>]");
+      if (args.length < 6) {
+        System.err.println("Usage: Loop <num iterations> <num mappers> <num nodes per mapper> " +
+            "<output dir> <num reducers> [<width> <wrap multiplier>]");
         return 1;
       }
       LOG.info("Running Loop with args:" + Arrays.deepToString(args));
@@ -783,20 +928,23 @@ public class IntegrationTestBigLinkedList extends IntegrationTestBase {
       int numIterations = Integer.parseInt(args[0]);
       int numMappers = Integer.parseInt(args[1]);
       long numNodes = Long.parseLong(args[2]);
-      String outputDir = args[3];
-      int numReducers = Integer.parseInt(args[4]);
-      Integer width = (args.length < 6) ? null : Integer.parseInt(args[5]);
-      Integer wrapMuplitplier = (args.length < 7) ? null : Integer.parseInt(args[6]);
+      int numTablets = Integer.parseInt(args[3]);
+      String outputDir = args[4];
+      int numReducers = Integer.parseInt(args[5]);
+      Integer width = (args.length < 6) ? null : Integer.parseInt(args[6]);
+      Integer wrapMuplitplier = (args.length < 8) ? null : Integer.parseInt(args[7]);
 
       long expectedNumNodes = 0;
 
       if (numIterations < 0) {
-        numIterations = Integer.MAX_VALUE; //run indefinitely (kind of)
+        numIterations = Integer.MAX_VALUE; // run indefinitely (kind of)
       }
+
+      fs = FileSystem.get(getConf());
 
       for (int i = 0; i < numIterations; i++) {
         LOG.info("Starting iteration = " + i);
-        runGenerator(numMappers, numNodes, outputDir, width, wrapMuplitplier);
+        runGenerator(numMappers, numNodes, numTablets, outputDir, width, wrapMuplitplier);
         expectedNumNodes += numMappers * numNodes;
 
         runVerify(outputDir, numReducers, expectedNumNodes);
@@ -813,8 +961,9 @@ public class IntegrationTestBigLinkedList extends IntegrationTestBase {
     @Override
     public int run(String[] args) throws Exception {
       Options options = new Options();
-      options.addOption("s", "start", true, "start key");
-      options.addOption("e", "end", true, "end key");
+      // TODO add start and stop rows
+      /*options.addOption("s", "start", true, "start key");
+      options.addOption("e", "end", true, "end key");*/
       options.addOption("l", "limit", true, "number to print");
 
       GnuParser parser = new GnuParser();
@@ -832,36 +981,55 @@ public class IntegrationTestBigLinkedList extends IntegrationTestBase {
         System.exit(-1);
       }
 
-      HTable table = new HTable(getConf(), getTableName(getConf()));
+      CommandLineParser cmdLineParser = new CommandLineParser(getConf());
+      long timeout = cmdLineParser.getOperationTimeoutMs();
+      KuduClient client = cmdLineParser.getClient();
 
-      Scan scan = new Scan();
-      scan.setBatch(10000);
+      KuduTable table = client.openTable(getTableName(getConf())).join(timeout);
+      KuduScanner scanner = client.newScanner(table, table.getSchema());
 
-      if (cmd.hasOption("s"))
+      // See previous TODO
+      /*if (cmd.hasOption("s")) {
         scan.setStartRow(Bytes.toBytesBinary(cmd.getOptionValue("s")));
-
-      if (cmd.hasOption("e"))
-        scan.setStopRow(Bytes.toBytesBinary(cmd.getOptionValue("e")));
-
-      int limit = 0;
-      if (cmd.hasOption("l"))
-        limit = Integer.parseInt(cmd.getOptionValue("l"));
-      else
-        limit = 100;
-
-      ResultScanner scanner = table.getScanner(scan);
-
-      CINode node = new CINode();
-      Result result = scanner.next();
-      int count = 0;
-      while (result != null && count++ < limit) {
-        node = getCINode(result, node);
-        System.out.printf("%s:%s:%012d:%s\n", Bytes.toStringBinary(node.key),
-            Bytes.toStringBinary(node.prev), node.count, node.client);
-        result = scanner.next();
       }
-      scanner.close();
-      table.close();
+
+      if (cmd.hasOption("e")) {
+        scan.setStopRow(Bytes.toBytesBinary(cmd.getOptionValue("e")));
+      }*/
+
+      final int limit = cmd.hasOption("l") ? Integer.parseInt(cmd.getOptionValue("l")) : 100;
+
+      final AtomicInteger count = new AtomicInteger();
+
+      Callback<Void, KuduScanner.RowResultIterator> cb =
+          new Callback<Void, KuduScanner.RowResultIterator>() {
+        @Override
+        public Void call(KuduScanner.RowResultIterator rowResults) throws Exception {
+          if (rowResults == null) {
+            return null;
+          }
+          CINode node = new CINode();
+          for (RowResult result : rowResults) {
+            node = getCINode(result, node);
+            System.out.printf("%s:%s:%012d:%s\n", node.key, node.prev, node.rowId, node.client);
+            if (count.incrementAndGet() == limit) {
+              break;
+            }
+          }
+          return null;
+        }
+      };
+
+      while (scanner.hasMoreRows() && count.get() < limit) {
+        Deferred<KuduScanner.RowResultIterator> data = scanner.nextRows();
+        data.addCallback(cb);
+        data.join(timeout);
+      }
+      Deferred<KuduScanner.RowResultIterator> closer = scanner.close();
+      closer.addCallback(cb);
+      closer.join(timeout);
+
+      client.shutdown().join(timeout);
 
       return 0;
     }
@@ -869,8 +1037,9 @@ public class IntegrationTestBigLinkedList extends IntegrationTestBase {
 
   /**
    * A stand alone program that deletes a single node.
+   * TODO
    */
-  private static class Delete extends Configured implements Tool {
+  /*private static class Delete extends Configured implements Tool {
     @Override
     public int run(String[] args) throws Exception {
       if (args.length != 1) {
@@ -880,7 +1049,7 @@ public class IntegrationTestBigLinkedList extends IntegrationTestBase {
       byte[] val = Bytes.toBytesBinary(args[0]);
 
       org.apache.hadoop.hbase.client.Delete delete
-        = new org.apache.hadoop.hbase.client.Delete(val);
+          = new org.apache.hadoop.hbase.client.Delete(val);
 
       HTable table = new HTable(getConf(), getTableName(getConf()));
 
@@ -891,12 +1060,14 @@ public class IntegrationTestBigLinkedList extends IntegrationTestBase {
       System.out.println("Delete successful");
       return 0;
     }
-  }
+  }*/
 
   /**
-   * A stand alone program that follows a linked list created by {@link Generator} and prints timing info.
+   * A stand alone program that follows a linked list created by {@link Generator}
+   * and prints timing info.
+   * TODO
    */
-  private static class Walker extends Configured implements Tool {
+  /*private static class Walker extends Configured implements Tool {
     @Override
     public int run(String[] args) throws IOException {
       Options options = new Options();
@@ -993,48 +1164,27 @@ public class IntegrationTestBigLinkedList extends IntegrationTestBase {
       Result result = table.get(get);
       return getCINode(result, node);
     }
+  }*/
+
+  static String getTableName(Configuration conf) {
+    return conf.get(TABLE_NAME_KEY, DEFAULT_TABLE_NAME);
   }
 
-  static TableName getTableName(Configuration conf) {
-    return TableName.valueOf(conf.get(TABLE_NAME_KEY, DEFAULT_TABLE_NAME));
-  }
+  private static CINode getCINode(RowResult result, CINode node) {
 
-  private static CINode getCINode(Result result, CINode node) {
-    node.key = Bytes.copy(result.getRow());
-    if (result.containsColumn(FAMILY_NAME, COLUMN_PREV)) {
-      node.prev = Bytes.copy(result.getValue(FAMILY_NAME, COLUMN_PREV));
+    node.key = getStringFromKeys(result.getLong(0), result.getLong(1));
+    if (result.isNull(2)) {
+      node.prev = "";
     } else {
-      node.prev = NO_KEY;
+      node.prev = getStringFromKeys(result.getLong(2), result.getLong(3));
     }
-    if (result.containsColumn(FAMILY_NAME, COLUMN_COUNT)) {
-      node.count = Bytes.toLong(result.getValue(FAMILY_NAME, COLUMN_COUNT));
-    } else {
-      node.count = -1;
-    }
-    if (result.containsColumn(FAMILY_NAME, COLUMN_CLIENT)) {
-      node.client = Bytes.toString(result.getValue(FAMILY_NAME, COLUMN_CLIENT));
-    } else {
-      node.client = "";
-    }
+    node.rowId = result.getInt(4);
+    node.client = result.getString(5);
     return node;
   }
 
-  protected IntegrationTestingUtility util;
-
-  @Override
-  public void setUpCluster() throws Exception {
-    util = getTestingUtil(getConf());
-    util.initializeCluster(util.isDistributedCluster() ? 1 : this.NUM_SLAVES_BASE);
-    this.setConf(util.getConfiguration());
-  }
-
-  @Test
-  public void testContinuousIngest() throws IOException, Exception {
-    //Loop <num iterations> <num mappers> <num nodes per mapper> <output dir> <num reducers>
-    int ret = ToolRunner.run(getTestingUtil(getConf()).getConfiguration(), new Loop(),
-        new String[] {"1", "1", "2000000",
-                     util.getDataTestDirOnTestFS("IntegrationTestBigLinkedList").toString(), "1"});
-    org.junit.Assert.assertEquals(0, ret);
+  private static String getStringFromKeys(long key1, long key2) {
+    return new StringBuilder().append(key1).append(",").append(key2).toString();
   }
 
   private void usage() {
@@ -1047,26 +1197,23 @@ public class IntegrationTestBigLinkedList extends IntegrationTestBase {
     System.err.println("                             REFERENCED and UNREFERENCED are ok");
     System.err.println("                             any UNDEFINED counts are bad. Do not");
     System.err.println("                             run at the same time as the Generator.");
-    System.err.println("  Walker                     A standalong program that starts ");
-    System.err.println("                             following a linked list and emits");
-    System.err.println("                             timing info.");
     System.err.println("  Print                      A standalone program that prints nodes");
     System.err.println("                             in the linked list.");
-    System.err.println("  Delete                     A standalone program that deletes a·");
-    System.err.println("                             single node.");
     System.err.println("  Loop                       A program to Loop through Generator and");
     System.err.println("                             Verify steps");
+    /* System.err.println("  Delete                     A standalone program that deletes a");
+    System.err.println("                             single node.");
+    System.err.println("  Walker                     A standalong program that starts ");
+    System.err.println("                             following a linked list and emits");
+    System.err.println("                             timing info.");*/
     System.err.println("\t  ");
     System.err.flush();
   }
 
-  @Override
-  protected void processOptions(CommandLine cmd) {
-    super.processOptions(cmd);
-    String[] args = cmd.getArgs();
+  protected void processOptions(String[] args) {
     //get the class, run with the conf
     if (args.length < 1) {
-      printUsage();
+      usage();
       throw new RuntimeException("Incorrect Number of args.");
     }
     toRun = args[0];
@@ -1074,9 +1221,9 @@ public class IntegrationTestBigLinkedList extends IntegrationTestBase {
   }
 
   @Override
-  public int runTestFromCommandLine() throws Exception {
-
+  public int run(String[] args) throws Exception {
     Tool tool = null;
+    processOptions(args);
     if (toRun.equals("Generator")) {
       tool = new Generator();
     } else if (toRun.equals("Verify")) {
@@ -1085,13 +1232,14 @@ public class IntegrationTestBigLinkedList extends IntegrationTestBase {
       Loop loop = new Loop();
       loop.it = this;
       tool = loop;
-    } else if (toRun.equals("Walker")) {
-      tool = new Walker();
+
     } else if (toRun.equals("Print")) {
       tool = new Print();
+    } /*else if (toRun.equals("Walker")) {
+      tool = new Walker();
     } else if (toRun.equals("Delete")) {
       tool = new Delete();
-    } else {
+    }*/ else {
       usage();
       throw new RuntimeException("Unknown arg");
     }
@@ -1099,19 +1247,8 @@ public class IntegrationTestBigLinkedList extends IntegrationTestBase {
     return ToolRunner.run(getConf(), tool, otherArgs);
   }
 
-  @Override
-  public String getTablename() {
-    Configuration c = getConf();
-    return c.get(TABLE_NAME_KEY, DEFAULT_TABLE_NAME);
-  }
-
-  @Override
-  protected Set<String> getColumnFamilies() {
-    return Sets.newHashSet(Bytes.toString(FAMILY_NAME));
-  }
-
   private static void setJobConf(Job job, int numMappers, long numNodes,
-      Integer width, Integer wrapMultiplier) {
+                                 Integer width, Integer wrapMultiplier) {
     job.getConfiguration().setInt(GENERATOR_NUM_MAPPERS_KEY, numMappers);
     job.getConfiguration().setLong(GENERATOR_NUM_ROWS_PER_MAP_KEY, numNodes);
     if (width != null) {
@@ -1122,16 +1259,8 @@ public class IntegrationTestBigLinkedList extends IntegrationTestBase {
     }
   }
 
-  private static void setJobScannerConf(Job job) {
-    // Make sure scanners log something useful to make debugging possible.
-    job.getConfiguration().setBoolean(ScannerCallable.LOG_SCANNER_ACTIVITY, true);
-    job.getConfiguration().setInt(TableRecordReaderImpl.LOG_PER_ROW_COUNT, 100000);
-  }
-
   public static void main(String[] args) throws Exception {
-    Configuration conf = HBaseConfiguration.create();
-    IntegrationTestingUtility.setUseDistributedCluster(conf);
-    int ret = ToolRunner.run(conf, new IntegrationTestBigLinkedList(), args);
+    int ret = ToolRunner.run(new IntegrationTestBigLinkedList(), args);
     System.exit(ret);
   }
 }

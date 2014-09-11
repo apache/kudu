@@ -22,6 +22,8 @@ public class CommandLineParser {
   public static final String MASTER_ADDRESS_DEFAULT = "127.0.0.1";
   public static final String OPERATION_TIMEOUT_MS_KEY = "kudu.operation.timeout.ms";
   public static final long OPERATION_TIMEOUT_MS_DEFAULT = 10000;
+  public static final String NUM_REPLICAS_KEY = "kudu.num.replicas";
+  public static final int NUM_REPLICAS_DEFAULT = 3;
 
   /**
    * Constructor that uses a Configuration that has already been through
@@ -49,6 +51,14 @@ public class CommandLineParser {
   }
 
   /**
+   * Get the number of replicas to use when configuring a new table.
+   * @return an int that represents the passed number of replicas to use, or the default value.
+   */
+  public int getNumReplicas() {
+    return conf.getInt(NUM_REPLICAS_KEY, NUM_REPLICAS_DEFAULT);
+  }
+
+  /**
    * Get a client connected to the configured Master.
    * @return a kudu client
    */
@@ -66,6 +76,8 @@ public class CommandLineParser {
       "  -D" + OPERATION_TIMEOUT_MS_KEY + "=TIME - how long this job waits for " +
           "Kudu operations, defaults to " + OPERATION_TIMEOUT_MS_DEFAULT + " \n"+
       "  -D" + MASTER_ADDRESS_KEY + "=ADDRESS - address to reach the Master, " +
-        "defaults to " + MASTER_ADDRESS_DEFAULT + " which is usually wrong.\n";
+        "defaults to " + MASTER_ADDRESS_DEFAULT + " which is usually wrong.\n" +
+      "  -D " + NUM_REPLICAS_KEY + "=NUM - number of replicas to use when configuring a new " +
+        "table, defaults to " + NUM_REPLICAS_DEFAULT;
   }
 }
