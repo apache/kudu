@@ -50,7 +50,8 @@ class MasterTest : public KuduTest {
     KuduTest::TearDown();
   }
 
-  void DoListTables(ListTablesResponsePB* resp);
+  void DoListTables(const ListTablesRequestPB& req, ListTablesResponsePB* resp);
+  void DoListAllTables(ListTablesResponsePB* resp);
   void CreateTable(const string& table_name,
                    const Schema& schema);
 
@@ -189,16 +190,21 @@ void MasterTest::CreateTable(const string& table_name,
   }
 }
 
-void MasterTest::DoListTables(ListTablesResponsePB* resp) {
-  ListTablesRequestPB req;
+void MasterTest::DoListTables(const ListTablesRequestPB& req, ListTablesResponsePB* resp) {
   RpcController controller;
   ASSERT_STATUS_OK(proxy_->ListTables(req, resp, &controller));
   SCOPED_TRACE(resp->DebugString());
   ASSERT_FALSE(resp->has_error());
 }
 
+void MasterTest::DoListAllTables(ListTablesResponsePB* resp) {
+  ListTablesRequestPB req;
+  DoListTables(req, resp);
+}
+
 TEST_F(MasterTest, TestCatalog) {
   const char *kTableName = "testtb";
+  const char *kOtherTableName = "tbtest";
   const Schema kTableSchema(boost::assign::list_of
                             (ColumnSchema("key", UINT32))
                             (ColumnSchema("v1", UINT64))
@@ -208,7 +214,7 @@ TEST_F(MasterTest, TestCatalog) {
   ASSERT_NO_FATAL_FAILURE(CreateTable(kTableName, kTableSchema));
 
   ListTablesResponsePB tables;
-  ASSERT_NO_FATAL_FAILURE(DoListTables(&tables));
+  ASSERT_NO_FATAL_FAILURE(DoListAllTables(&tables));
   ASSERT_EQ(1, tables.tables_size());
   ASSERT_EQ(kTableName, tables.tables(0).name());
 
@@ -225,7 +231,7 @@ TEST_F(MasterTest, TestCatalog) {
   }
 
   // List tables, should show no table
-  ASSERT_NO_FATAL_FAILURE(DoListTables(&tables));
+  ASSERT_NO_FATAL_FAILURE(DoListAllTables(&tables));
   ASSERT_EQ(0, tables.tables_size());
 
   // Re-create the table
@@ -234,9 +240,49 @@ TEST_F(MasterTest, TestCatalog) {
   // Restart the master, verify the table still shows up.
   ASSERT_STATUS_OK(mini_master_->Restart());
 
-  ASSERT_NO_FATAL_FAILURE(DoListTables(&tables));
+  ASSERT_NO_FATAL_FAILURE(DoListAllTables(&tables));
   ASSERT_EQ(1, tables.tables_size());
   ASSERT_EQ(kTableName, tables.tables(0).name());
+
+  // Test listing tables with a filter.
+  ASSERT_NO_FATAL_FAILURE(CreateTable(kOtherTableName, kTableSchema));
+
+  {
+    ListTablesRequestPB req;
+    req.set_name_filter("test");
+    DoListTables(req, &tables);
+    ASSERT_EQ(2, tables.tables_size());
+  }
+
+  {
+    ListTablesRequestPB req;
+    req.set_name_filter("tb");
+    DoListTables(req, &tables);
+    ASSERT_EQ(2, tables.tables_size());
+  }
+
+  {
+    ListTablesRequestPB req;
+    req.set_name_filter(kTableName);
+    DoListTables(req, &tables);
+    ASSERT_EQ(1, tables.tables_size());
+    ASSERT_EQ(kTableName, tables.tables(0).name());
+  }
+
+  {
+    ListTablesRequestPB req;
+    req.set_name_filter("btes");
+    DoListTables(req, &tables);
+    ASSERT_EQ(1, tables.tables_size());
+    ASSERT_EQ(kOtherTableName, tables.tables(0).name());
+  }
+
+  {
+    ListTablesRequestPB req;
+    req.set_name_filter("randomname");
+    DoListTables(req, &tables);
+    ASSERT_EQ(0, tables.tables_size());
+  }
 }
 
 } // namespace master

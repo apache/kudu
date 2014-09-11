@@ -300,7 +300,8 @@ message DeleteTableResponsePB {
 }
 
 message ListTablesRequestPB {
-  //optional string name_filter = 1;
+  // When used, only returns tables that satisfy a substring match on name_filter.
+  optional string name_filter = 1;
 }
 
 message ListTablesResponsePB {

@@ -894,8 +894,12 @@ Status CatalogManager::ListTables(const ListTablesRequestPB* req,
     TableMetadataLock ltm(entry.second.get(), TableMetadataLock::READ);
     if (!ltm.data().is_running()) continue;
 
-    // TODO: Add a name filter?
-    //if (!re_match(req->name_filter(), entry.second->name())) continue;
+    if (req->has_name_filter()) {
+      size_t found = ltm.data().name().find(req->name_filter());
+      if (found == string::npos) {
+        continue;
+      }
+    }
 
     ListTablesResponsePB::TableInfo *table = resp->add_tables();
     table->set_id(entry.second->id());
