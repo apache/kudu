@@ -34,6 +34,14 @@ bool OpIdLessThan(const OpId& left, const OpId& right) {
   return left.index() < right.index();
 }
 
+bool OpIdBiggerThan(const OpId& left, const OpId& right) {
+  DCHECK(left.IsInitialized());
+  DCHECK(right.IsInitialized());
+  if (left.term() > right.term()) return true;
+  if (left.term() < right.term()) return false;
+  return left.index() > right.index();
+}
+
 bool CopyIfOpIdLessThan(const consensus::OpId& to_compare, consensus::OpId* target) {
   if (to_compare.IsInitialized() &&
       (!target->IsInitialized() || OpIdLessThan(to_compare, *target))) {
@@ -56,9 +64,7 @@ bool OpIdCompareFunctor::operator() (const OpId& left, const OpId& right) const 
 }
 
 bool OpIdBiggerThanFunctor::operator() (const OpId& left, const OpId& right) const {
-  if (left.term() > right.term()) return true;
-  if (left.term() < right.term()) return false;
-  return left.index() > right.index();
+  return OpIdBiggerThan(left, right);
 }
 
 OpId MinimumOpId() {

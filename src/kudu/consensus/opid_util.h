@@ -16,6 +16,9 @@ bool OpIdEquals(const OpId& left, const OpId& right);
 // Returns true iff left < right.
 bool OpIdLessThan(const OpId& left, const OpId& right);
 
+// Returns true iff left > right.
+bool OpIdBiggerThan(const OpId& left, const OpId& right);
+
 // Copies to_compare into target under the following conditions:
 // - If to_compare is initialized and target is not.
 // - If they are both initialized and to_compare is less than target.
