@@ -68,9 +68,9 @@ Status CFileSet::Open() {
     gscoped_ptr<CFileReader> reader;
     RETURN_NOT_OK(OpenReader(rowset_metadata_, i, &reader));
     readers_[i].reset(reader.release());
-    LOG(INFO) << "Successfully opened cfile for column "
-              << schema().column(i).ToString()
-              << " in " << rowset_metadata_->ToString();
+    VLOG(1) << "Successfully opened cfile for column "
+            << schema().column(i).ToString()
+            << " in " << rowset_metadata_->ToString();
   }
 
   // Determine the upper and lower key bounds for this CFileSet.

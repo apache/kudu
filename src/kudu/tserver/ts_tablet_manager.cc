@@ -426,8 +426,7 @@ void TSTabletManager::Shutdown() {
 }
 
 Status TSTabletManager::PersistMasterBlock(const TabletMasterBlockPB& pb) {
-  string path = fs_manager_->GetMasterBlockPath(pb.tablet_id());
-  return pb_util::WritePBToPath(fs_manager_->env(), path, pb);
+  return TabletMetadata::PersistMasterBlock(fs_manager_, pb);
 }
 
 Status TSTabletManager::LoadMasterBlock(const string& tablet_id, TabletMasterBlockPB* block) {

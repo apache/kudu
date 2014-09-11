@@ -19,7 +19,8 @@ static const int kBufSize = 1024*1024;
 Status DumpIterator(const CFileReader& reader,
                     CFileIterator* it,
                     std::ostream* out,
-                    const DumpIteratorOptions& opts) {
+                    const DumpIteratorOptions& opts,
+                    int indent) {
 
   Arena arena(8192, 8*1024*1024);
   uint8_t buf[kBufSize];
@@ -39,6 +40,7 @@ Status DumpIterator(const CFileReader& reader,
     if (opts.print_rows) {
       if (reader.is_nullable()) {
         for (size_t i = 0; i < n; i++) {
+          strbuf.append(indent, ' ');
           const void *ptr = cb.nullable_cell_ptr(i);
           if (ptr != NULL) {
             type->AppendDebugStringForValue(ptr, &strbuf);
@@ -49,18 +51,19 @@ Status DumpIterator(const CFileReader& reader,
         }
       } else {
         for (size_t i = 0; i < n; i++) {
+          strbuf.append(indent, ' ');
           type->AppendDebugStringForValue(cb.cell_ptr(i), &strbuf);
           strbuf.push_back('\n');
         }
       }
+      *out << strbuf;
+      strbuf.clear();
     }
     arena.Reset();
-    *out << strbuf;
-    strbuf.clear();
     count += n;
   }
 
-  LOG(INFO) << "Dumped " << count << " rows";
+  VLOG(1) << "Dumped " << count << " rows";
 
   return Status::OK();
 }

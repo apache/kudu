@@ -94,7 +94,8 @@ struct DumpIteratorOptions {
 Status DumpIterator(const CFileReader& reader,
                     CFileIterator* it,
                     std::ostream* out,
-                    const DumpIteratorOptions& opts);
+                    const DumpIteratorOptions& opts,
+                    int indent);
 
 }  // namespace cfile
 }  // namespace kudu

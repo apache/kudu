@@ -53,6 +53,19 @@ using metadata::RowSetMetadata;
 using log::LogReader;
 using log::ReadableLogSegment;
 
+static const char* const kSeparatorLine =
+  "----------------------------------------------------------------------\n";
+
+namespace {
+string Indent(int indent) {
+  return string(indent, ' ');
+}
+
+string IndentString(const string& s, int indent) {
+  return Indent(indent) + StringReplace(s, "\n", "\n" + Indent(indent), true);
+}
+} // anonymous namespace
+
 FsTool::FsTool(const string& base_dir, DetailLevel detail_level)
     : initialized_(false),
       base_dir_(base_dir),
@@ -163,7 +176,7 @@ Status FsTool::ListAllTablets() {
     if (detail_level_ >= HEADERS_ONLY) {
       std::cout << "Tablet: " << tablet << std::endl;
       string path = JoinPathSegments(fs_manager_->GetMasterBlockDir(), tablet);
-      RETURN_NOT_OK(PrintTabletMetaInternal(path, tablet));
+      RETURN_NOT_OK(PrintTabletMetaInternal(path, tablet, 2));
     } else {
       std::cout << "\t" << tablet << std::endl;
     }
@@ -183,7 +196,7 @@ Status FsTool::ListSegmentsInDir(const string& segments_dir) {
     if (detail_level_ >= HEADERS_ONLY) {
       std::cout << "Segment: " << segment << std::endl;
       string path = JoinPathSegments(segments_dir, segment);
-      RETURN_NOT_OK(PrintLogSegmentHeader(path));
+      RETURN_NOT_OK(PrintLogSegmentHeader(path, 2));
     } else {
       std::cout << "\t" << segment << std::endl;
     }
@@ -191,7 +204,8 @@ Status FsTool::ListSegmentsInDir(const string& segments_dir) {
   return Status::OK();
 }
 
-Status FsTool::PrintLogSegmentHeader(const string& path) {
+Status FsTool::PrintLogSegmentHeader(const string& path,
+                                     int indent) {
   scoped_refptr<ReadableLogSegment> segment;
   Status s = ReadableLogSegment::Open(fs_manager_->env(),
                                       path,
@@ -207,32 +221,33 @@ Status FsTool::PrintLogSegmentHeader(const string& path) {
   }
   RETURN_NOT_OK_PREPEND(s, "Unexpected error reading log segment " + path);
 
-  std::cout << "Size: "
+  std::cout << Indent(indent) << "Size: "
             << HumanReadableNumBytes::ToStringWithoutRounding(segment->file_size())
             << std::endl;
-  std::cout << "Header: " << std::endl;
-  std::cout << segment->header().DebugString();
+  std::cout << Indent(indent) << "Header: " << std::endl;
+  std::cout << IndentString(segment->header().DebugString(), indent);
   return Status::OK();
 }
 
-Status FsTool::PrintTabletMeta(const string& tablet_id) {
+Status FsTool::PrintTabletMeta(const string& tablet_id, int indent) {
   string master_block_path;
   RETURN_NOT_OK(GetMasterBlockPath(tablet_id, &master_block_path));
-  return PrintTabletMetaInternal(master_block_path, tablet_id);
+  return PrintTabletMetaInternal(master_block_path, tablet_id, indent);
 }
 
 Status FsTool::PrintTabletMetaInternal(const string& master_block_path,
-                                       const string& tablet_id) {
+                                       const string& tablet_id,
+                                       int indent) {
   scoped_refptr<TabletMetadata> meta;
   RETURN_NOT_OK(LoadTabletMetadata(master_block_path, tablet_id, &meta));
 
   const Schema& schema = meta->schema();
 
-  std::cout << "Start key: " << schema.DebugEncodedRowKey(meta->start_key())
+  std::cout << Indent(indent) << "Start key: " << schema.DebugEncodedRowKey(meta->start_key())
             <<" End key: " << schema.DebugEncodedRowKey(meta->end_key()) << std::endl;
-  std::cout << "Table name: " << meta->table_name()
+  std::cout << Indent(indent) << "Table name: " << meta->table_name()
             << " Table id: " << meta->table_id() << std::endl;
-  std::cout << "Schema (version=" << meta->schema_version() << "): "
+  std::cout << Indent(indent) << "Schema (version=" << meta->schema_version() << "): "
             << schema.ToString() << std::endl;
   return Status::OK();
 }
@@ -336,7 +351,8 @@ Status FsTool::ListBlocksInRowSet(const Schema& schema,
 }
 
 Status FsTool::DumpTablet(const std::string& tablet_id,
-                          const DumpOptions& opts) {
+                          const DumpOptions& opts,
+                          int indent) {
   DCHECK(initialized_);
 
   string master_block_path;
@@ -346,7 +362,8 @@ Status FsTool::DumpTablet(const std::string& tablet_id,
   RETURN_NOT_OK(LoadTabletMetadata(master_block_path, tablet_id, &meta));
 
   if (meta->rowsets().empty()) {
-    std::cout << "No rowsets found on disk for tablet " << tablet_id << std::endl;
+    std::cout << Indent(indent) << "No rowsets found on disk for tablet "
+              << tablet_id << std::endl;
     return Status::OK();
   }
 
@@ -354,8 +371,9 @@ Status FsTool::DumpTablet(const std::string& tablet_id,
 
   size_t idx = 0;
   BOOST_FOREACH(const shared_ptr<RowSetMetadata>& rs_meta, meta->rowsets())  {
-    std::cout << "Dumping rowset " << idx++ << std::endl;
-    RETURN_NOT_OK(DumpRowSetInternal(meta->schema(), rs_meta, opts));
+    std::cout << std::endl << Indent(indent) << "Dumping rowset " << idx++
+              << std::endl << Indent(indent) << kSeparatorLine;
+    RETURN_NOT_OK(DumpRowSetInternal(meta->schema(), rs_meta, opts, indent + 2));
   }
 
   return Status::OK();
@@ -363,7 +381,8 @@ Status FsTool::DumpTablet(const std::string& tablet_id,
 
 Status FsTool::DumpRowSet(const string& tablet_id,
                           size_t rowset_idx,
-                          const DumpOptions& opts) {
+                          const DumpOptions& opts,
+                          int indent) {
   DCHECK(initialized_);
 
   string master_block_path;
@@ -378,65 +397,81 @@ Status FsTool::DumpRowSet(const string& tablet_id,
                    rowset_idx, tablet_id, meta->rowsets().size()));
   }
 
-  return DumpRowSetInternal(meta->schema(), meta->rowsets()[rowset_idx], opts);
+  return DumpRowSetInternal(meta->schema(), meta->rowsets()[rowset_idx], opts, indent);
 }
 
 Status FsTool::DumpRowSetInternal(const Schema& schema,
                                   const shared_ptr<RowSetMetadata>& rs_meta,
-                                  const DumpOptions& opts) {
+                                  const DumpOptions& opts,
+                                  int indent) {
 
-  std::cout << "RowSet metadata: " << rs_meta->ToString() << std::endl;
+  std::cout << Indent(indent) << "RowSet metadata: " << rs_meta->ToString() << std::endl
+            << std::endl;
 
   for (size_t col_idx = 0; col_idx < schema.num_columns(); ++col_idx) {
     if (rs_meta->HasColumnDataBlockForTests(col_idx)) {
-      std::cout << "Dumping column block for column " << schema.column(col_idx).ToString() << ": ";
-      std::cout << std::endl;
-      RETURN_NOT_OK(DumpCFileBlockInternal(rs_meta->column_block(col_idx), opts));
+      BlockId block = rs_meta->column_block(col_idx);
+      std::cout << Indent(indent) << "Dumping column block " << block << " for column "
+                << schema.column(col_idx).ToString() << ":" << std::endl;
+      std::cout << Indent(indent) << kSeparatorLine;
+      RETURN_NOT_OK(DumpCFileBlockInternal(block, opts, indent));
     } else {
-      std::cout << "No column data blocks for column "
+      std::cout << Indent(indent) << "No column data blocks for column "
                 << schema.column(col_idx).ToString() << ". " << std::endl;
     }
+    std::cout << std::endl;
   }
 
-
   BOOST_FOREACH(const BlockId& block, rs_meta->undo_delta_blocks()) {
-    std::cout << "Dumping undo delta block " << block.ToString() << ":" << std::endl;
+    std::cout << Indent(indent) << "Dumping undo delta block " << block << ":" << std::endl
+              << Indent(indent) << kSeparatorLine;
     RETURN_NOT_OK(DumpDeltaCFileBlockInternal(schema,
                                               rs_meta,
                                               block,
                                               tablet::UNDO,
-                                              opts));
+                                              opts,
+                                              indent));
+    std::cout << std::endl;
   }
 
   BOOST_FOREACH(const BlockId& block, rs_meta->redo_delta_blocks()) {
-    std::cout << "Dumping redo delta block " << block.ToString() << ":" << std::endl;
+    std::cout << Indent(indent) << "Dumping redo delta block " << block << ":" << std::endl
+              << Indent(indent) << kSeparatorLine;
     RETURN_NOT_OK(DumpDeltaCFileBlockInternal(schema,
                                               rs_meta,
                                               block,
                                               tablet::REDO,
-                                              opts));
+                                              opts,
+                                              indent));
+    std::cout << std::endl;
   }
 
   return Status::OK();
 }
 
-Status FsTool::DumpCFileBlock(const std::string& block_id_str, const DumpOptions &opts) {
+Status FsTool::DumpCFileBlock(const std::string& block_id_str,
+                              const DumpOptions &opts,
+                              int indent) {
   BlockId block_id(block_id_str);
   if (!fs_manager_->BlockExists(block_id)) {
     return Status::NotFound(Substitute("block '$0' does not exist under '$1'",
                                        block_id_str, base_dir_));
   }
-  return DumpCFileBlockInternal(block_id, opts);
+  return DumpCFileBlockInternal(block_id, opts, indent);
 }
 
-Status FsTool::DumpCFileBlockInternal(const BlockId& block_id, const DumpOptions& opts) {
+Status FsTool::DumpCFileBlockInternal(const BlockId& block_id,
+                                      const DumpOptions& opts,
+                                      int indent) {
   shared_ptr<RandomAccessFile> block_reader;
   RETURN_NOT_OK(fs_manager_->OpenBlock(block_id, &block_reader));
   gscoped_ptr<CFileReader> reader;
   RETURN_NOT_OK(CFileReader::Open(block_reader, ReaderOptions(), &reader));
 
-  std::cout << "CFile Header: " << std::endl << reader->header().ShortDebugString() << std::endl;
-  std::cout << "Number of values: " << reader->footer().num_values() << std::endl;
+  std::cout << Indent(indent) << "CFile Header: "
+            << reader->header().ShortDebugString() << std::endl;
+  std::cout << Indent(indent) << reader->footer().num_values()
+            << " values:" << std::endl;
 
   gscoped_ptr<CFileIterator> it;
   RETURN_NOT_OK(reader->NewIterator(&it));
@@ -444,14 +479,15 @@ Status FsTool::DumpCFileBlockInternal(const BlockId& block_id, const DumpOptions
   DumpIteratorOptions iter_opts;
   iter_opts.nrows = opts.nrows;
   iter_opts.print_rows = detail_level_ > HEADERS_ONLY;
-  return DumpIterator(*reader, it.get(), &std::cout, iter_opts);
+  return DumpIterator(*reader, it.get(), &std::cout, iter_opts, indent + 2);
 }
 
 Status FsTool::DumpDeltaCFileBlockInternal(const Schema& schema,
                                            const shared_ptr<RowSetMetadata>& rs_meta,
                                            const BlockId& block_id,
                                            DeltaType delta_type,
-                                           const DumpOptions& opts) {
+                                           const DumpOptions& opts,
+                                           int indent) {
   // Open the delta reader
   shared_ptr<RandomAccessFile> block_reader;
   RETURN_NOT_OK(fs_manager_->OpenBlock(block_id, &block_reader));
@@ -532,7 +568,7 @@ Status FsTool::DumpDeltaCFileBlockInternal(const Schema& schema,
                                                      &arena));
     BOOST_FOREACH(const DeltaKeyAndUpdate& upd, out) {
       if (detail_level_ > HEADERS_ONLY) {
-        std::cout << upd.key.ToString() << " "
+        std::cout << Indent(indent) << upd.key.ToString() << " "
                   << RowChangeList(upd.cell).ToString(schema) << std::endl;
         ++ndeltas;
       }
@@ -542,7 +578,7 @@ Status FsTool::DumpDeltaCFileBlockInternal(const Schema& schema,
     nrows += n;
   }
 
-  LOG(INFO) << "Processed " << ndeltas << " deltas, for total of " << nrows << " possible rows.";
+  VLOG(1) << "Processed " << ndeltas << " deltas, for total of " << nrows << " possible rows.";
   return Status::OK();
 }
 

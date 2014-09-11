@@ -80,6 +80,11 @@ class TabletMetadata : public RefCountedThreadSafe<TabletMetadata> {
                                 const std::string& expected_tablet_id,
                                 TabletMasterBlockPB* master_block);
 
+  // Write the given master block onto the file system.
+  static Status PersistMasterBlock(FsManager* fs,
+                                   const metadata::TabletMasterBlockPB& pb);
+
+
   // Try to load an existing tablet. If it does not exist, create it.
   // If it already existed, verifies that the schema of the tablet matches the
   // provided 'schema'.

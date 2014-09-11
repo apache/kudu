@@ -133,7 +133,7 @@ static int FsDumpToolMain(int argc, char** argv) {
                          argv[0]));
         return 2;
       }
-      CHECK_OK(fs_tool.DumpTablet(argv[2], opts));
+      CHECK_OK(fs_tool.DumpTablet(argv[2], opts, 0));
       break;
     }
     case DUMP_ROWSET: {
@@ -147,7 +147,7 @@ static int FsDumpToolMain(int argc, char** argv) {
       uint32_t rowset_idx;
       CHECK(safe_strtou32(argv[3], &rowset_idx))
           << "Invalid index specified: " << argv[2];
-      CHECK_OK(fs_tool.DumpRowSet(argv[2], rowset_idx, opts));
+      CHECK_OK(fs_tool.DumpRowSet(argv[2], rowset_idx, opts, 0));
       break;
     }
     case DUMP_CFILE_BLOCK: {
@@ -157,7 +157,7 @@ static int FsDumpToolMain(int argc, char** argv) {
                          " -base_dir /kudu dump_block <block_id>", argv[0]));
         return 2;
       }
-      CHECK_OK(fs_tool.DumpCFileBlock(argv[2], opts));
+      CHECK_OK(fs_tool.DumpCFileBlock(argv[2], opts, 0));
       break;
     }
     case PRINT_TABLET_META: {
@@ -166,7 +166,7 @@ static int FsDumpToolMain(int argc, char** argv) {
                                   " -base_dir /kudu print_meta <tablet_id>", argv[0]));
         return 2;
       }
-      CHECK_OK(fs_tool.PrintTabletMeta(argv[2]));
+      CHECK_OK(fs_tool.PrintTabletMeta(argv[2], 0));
       break;
     }
   }

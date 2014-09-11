@@ -99,6 +99,13 @@ Status TabletMetadata::OpenMasterBlock(Env* env,
   return Status::OK();
 }
 
+Status TabletMetadata::PersistMasterBlock(FsManager* fs_manager,
+                                          const TabletMasterBlockPB& pb) {
+  string path = fs_manager->GetMasterBlockPath(pb.tablet_id());
+  return pb_util::WritePBToPath(fs_manager->env(), path, pb);
+}
+
+
 TabletMetadata::TabletMetadata(FsManager *fs_manager,
                                const TabletMasterBlockPB& master_block,
                                const string& table_name,

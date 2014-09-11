@@ -39,7 +39,7 @@ void DumpFile(const string &path) {
     opts.print_rows = FLAGS_print_rows;
     for (int i = 0; i < FLAGS_num_iterations; i++) {
       CHECK_OK(it->SeekToFirst());
-      CHECK_OK(DumpIterator(*reader, it.get(), &cout, opts));
+      CHECK_OK(DumpIterator(*reader, it.get(), &cout, opts, 0));
     }
   }
 }

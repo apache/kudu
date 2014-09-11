@@ -65,7 +65,7 @@ class FsTool {
   Status ListAllTablets();
 
   // Prints the header for a log segment residing in 'path'.
-  Status PrintLogSegmentHeader(const std::string& path);
+  Status PrintLogSegmentHeader(const std::string& path, int indent);
 
   // Lists blocks for a tablet organized by rowset.
   Status ListBlocksForTablet(const std::string& tablet_id);
@@ -74,20 +74,25 @@ class FsTool {
   Status ListBlocksForAllTablets();
 
   // Prints the tablet metadata for a tablet 'tablet_id'.
-  Status PrintTabletMeta(const std::string& tablet_id);
+  Status PrintTabletMeta(const std::string& tablet_id,
+                         int indent);
 
   // Dumps all of the rowset in tablet. See also: DumpRowSet().
   Status DumpTablet(const std::string& tablet_id,
-                    const DumpOptions& opts);
+                    const DumpOptions& opts,
+                    int indent);
 
   // Dumps column blocks, all types of delta blocks for a given
   // rowset.
   Status DumpRowSet(const std::string& tablet_id,
                     size_t rowset_idx,
-                    const DumpOptions& opts);
+                    const DumpOptions& opts,
+                    int indent);
 
   Status DumpCFileBlock(const std::string& block_id,
-                        const DumpOptions& opts);
+                        const DumpOptions& opts,
+                        int indent);
+
  private:
   Status ListSegmentsInDir(const std::string& segments_dir);
 
@@ -102,22 +107,26 @@ class FsTool {
 
   Status DumpRowSetInternal(const Schema& schema,
                             const std::tr1::shared_ptr<metadata::RowSetMetadata>& rs_meta,
-                            const DumpOptions& opts);
+                            const DumpOptions& opts,
+                            int indent);
 
   Status GetMasterBlockPath(const std::string& tablet_id,
                             std::string* master_block_path);
 
   Status DumpCFileBlockInternal(const BlockId& block_id,
-                                const DumpOptions& opts);
+                                const DumpOptions& opts,
+                                int indent);
 
   Status DumpDeltaCFileBlockInternal(const Schema& schema,
                                      const std::tr1::shared_ptr<metadata::RowSetMetadata>& rs_meta,
                                      const BlockId& block_id,
                                      tablet::DeltaType delta_type,
-                                     const DumpOptions& opts);
+                                     const DumpOptions& opts,
+                                     int indent);
 
   Status PrintTabletMetaInternal(const std::string& master_block_path,
-                                 const std::string& tablet_id);
+                                 const std::string& tablet_id,
+                                 int indent);
 
   Status OpenBlockAsFile(const BlockId& block_id,
                          uint64_t* file_size,

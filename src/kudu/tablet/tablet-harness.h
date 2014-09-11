@@ -56,6 +56,7 @@ class TabletHarness {
 
     // Build the Tablet
     fs_manager_.reset(new FsManager(options_.env, options_.root_dir));
+    RETURN_NOT_OK(fs_manager_->CreateInitialFileSystemLayout());
     scoped_refptr<metadata::TabletMetadata> metadata;
     RETURN_NOT_OK(metadata::TabletMetadata::LoadOrCreate(fs_manager_.get(),
                                                          master_block,
@@ -64,6 +65,9 @@ class TabletHarness {
                                                          quorum_,
                                                          "", "",
                                                          &metadata));
+    RETURN_NOT_OK_PREPEND(metadata::TabletMetadata::PersistMasterBlock(
+                            fs_manager_.get(), master_block),
+                          "Couldn't persist test tablet master block");
     if (options_.enable_metrics) {
       metrics_registry_.reset(new MetricRegistry());
       metrics_.reset(new MetricContext(metrics_registry_.get(), "tablet-harness"));
