@@ -35,13 +35,17 @@ class TabletMetadata;
 // containing all the tablet metadata, so flushing the RowSetMetadata will
 // trigger a full TabletMetadata flush.
 //
-// The RowSet has also a mutable part, the Delta Blocks, which contains
-// the chain of updates applied to the "immutable" data in the RowSet.
-// The DeltaTracker is responsible for flushing the Delta-Memstore,
-// creating a new delta block, and flushing the RowSetMetadata.
+// Metadata writeback can be lazy: usage should generally be:
 //
-// Since the only mutable part of the RowSetMetadata is the Delta-Tracking,
-// There's a lock around the delta-blocks operations.
+//   1) create new files on disk (durably)
+//   2) change in-memory state to point to new files
+//   3) make corresponding change in RowSetMetadata in-memory
+//   4) trigger asynchronous flush
+//
+//   callback: when metadata has been written:
+//   1) remove old data files from disk
+//   2) remove log anchors corresponding to previously in-memory data
+//
 class RowSetMetadata {
  public:
   // Create a new RowSetMetadata
@@ -63,57 +67,34 @@ class RowSetMetadata {
 
   const Schema& schema() const { return schema_; }
 
-  // TODO: this is just a simple wrapper around FsManager.
-  // We should provide this wrapper as part of FsManager and make this a pure
-  // metadata container, without trying to funnel FS operations through it.
-  Status OpenDataBlock(const BlockId& block_id,
-                       shared_ptr<RandomAccessFile> *reader) {
-    return fs_manager()->OpenBlock(block_id, reader);
+  void set_bloom_block(const BlockId& block_id) {
+    DCHECK(bloom_block_.IsNull());
+    bloom_block_ = block_id;
   }
 
-  Status NewBloomDataBlock(shared_ptr<WritableFile> *writer) {
-    CHECK(bloom_block_.IsNull());
-    return fs_manager()->CreateNewBlock(writer, &bloom_block_);
-  }
-
-  Status OpenBloomDataBlock(shared_ptr<RandomAccessFile> *reader) {
-    return OpenDataBlock(bloom_block_, reader);
-  }
-
-  Status NewAdHocIndexDataBlock(shared_ptr<WritableFile> *writer) {
-    CHECK(adhoc_index_block_.IsNull());
-    return fs_manager()->CreateNewBlock(writer, &adhoc_index_block_);
-  }
-
-  Status OpenAdHocIndexDataBlock(shared_ptr<RandomAccessFile> *reader) {
-    return OpenDataBlock(adhoc_index_block_, reader);
-  }
-
-  Status NewColumnDataBlock(size_t col_idx, shared_ptr<WritableFile> *writer) {
-    BlockId block_id;
-    CHECK_EQ(column_blocks_.size(), col_idx);
-    RETURN_NOT_OK(fs_manager()->CreateNewBlock(writer, &block_id));
-    column_blocks_.push_back(block_id);
-    return Status::OK();
+  void set_adhoc_index_block(const BlockId& block_id) {
+    DCHECK(adhoc_index_block_.IsNull());
+    adhoc_index_block_ = block_id;
   }
 
   void SetColumnDataBlocks(const std::vector<BlockId>& blocks);
 
-  Status OpenColumnDataBlock(size_t col_idx, shared_ptr<RandomAccessFile> *reader) {
+  Status CommitRedoDeltaDataBlock(int64_t dms_id, const BlockId& block_id);
+
+  Status CommitUndoDeltaDataBlock(const BlockId& block_id);
+
+  BlockId bloom_block() const {
+    return bloom_block_;
+  }
+
+  BlockId adhoc_index_block() const {
+    return adhoc_index_block_;
+  }
+
+  BlockId column_data_block(int col_idx) {
     DCHECK_LT(col_idx, column_blocks_.size());
-    return OpenDataBlock(column_blocks_[col_idx], reader);
+    return column_blocks_[col_idx];
   }
-
-  Status NewDeltaDataBlock(shared_ptr<WritableFile> *writer, BlockId *block_id) {
-    return fs_manager()->CreateNewBlock(writer, block_id);
-  }
-
-  Status CommitRedoDeltaDataBlock(int64_t dms_id,
-                                  const BlockId& block_id);
-
-  Status OpenRedoDeltaDataBlock(size_t index,
-                                shared_ptr<RandomAccessFile> *reader,
-                                uint64_t *size);
 
   vector<BlockId> redo_delta_blocks() const {
     boost::lock_guard<LockType> l(deltas_lock_);
@@ -124,12 +105,6 @@ class RowSetMetadata {
     boost::lock_guard<LockType> l(deltas_lock_);
     return undo_delta_blocks_;
   }
-
-  Status CommitUndoDeltaDataBlock(const BlockId& block_id);
-
-  Status OpenUndoDeltaDataBlock(size_t index,
-                                shared_ptr<RandomAccessFile> *reader,
-                                uint64_t *size);
 
   TabletMetadata *tablet_metadata() const { return tablet_metadata_; }
 

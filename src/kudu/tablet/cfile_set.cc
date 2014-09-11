@@ -30,8 +30,10 @@ using std::tr1::shared_ptr;
 
 static Status OpenReader(const shared_ptr<RowSetMetadata>& rowset_metadata, size_t col_idx,
                          gscoped_ptr<CFileReader> *new_reader) {
+  FsManager* fs = rowset_metadata->fs_manager();
   shared_ptr<RandomAccessFile> data_reader;
-  RETURN_NOT_OK(rowset_metadata->OpenColumnDataBlock(col_idx, &data_reader));
+  BlockId block = rowset_metadata->column_data_block(col_idx);
+  RETURN_NOT_OK(fs->OpenBlock(block, &data_reader));
 
   // TODO: somehow pass reader options in schema
   ReaderOptions opts;
@@ -83,8 +85,9 @@ Status CFileSet::OpenAdHocIndexReader() {
     return Status::OK();
   }
 
+  FsManager* fs = rowset_metadata_->fs_manager();
   shared_ptr<RandomAccessFile> data_reader;
-  RETURN_NOT_OK(rowset_metadata_->OpenAdHocIndexDataBlock(&data_reader));
+  RETURN_NOT_OK(fs->OpenBlock(rowset_metadata_->adhoc_index_block(), &data_reader));
 
   ReaderOptions opts;
   return CFileReader::Open(data_reader, opts, &ad_hoc_idx_reader_);
@@ -96,8 +99,9 @@ Status CFileSet::OpenBloomReader() {
     return Status::OK();
   }
 
+  FsManager* fs = rowset_metadata_->fs_manager();
   shared_ptr<RandomAccessFile> data_reader;
-  RETURN_NOT_OK(rowset_metadata_->OpenBloomDataBlock(&data_reader));
+  RETURN_NOT_OK(fs->OpenBlock(rowset_metadata_->bloom_block(), &data_reader));
 
   Status s = BloomFileReader::Open(data_reader, &bloom_reader_);
   if (!s.ok()) {

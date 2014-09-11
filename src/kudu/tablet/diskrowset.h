@@ -23,6 +23,7 @@
 
 namespace kudu {
 
+class FsManager;
 class MemTracker;
 class RowBlock;
 class RowChangeList;

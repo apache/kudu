@@ -45,8 +45,8 @@ DiskRowSetWriter::DiskRowSetWriter(RowSetMetadata *rowset_metadata,
 {}
 
 Status DiskRowSetWriter::Open() {
-  col_writer_.reset(new MultiColumnWriter(rowset_metadata_->fs_manager(),
-                                          &schema()));
+  FsManager* fs = rowset_metadata_->fs_manager();
+  col_writer_.reset(new MultiColumnWriter(fs, &schema()));
   RETURN_NOT_OK(col_writer_->Open());
 
   // Open bloom filter.
@@ -62,14 +62,25 @@ Status DiskRowSetWriter::Open() {
 
 Status DiskRowSetWriter::InitBloomFileWriter() {
   shared_ptr<WritableFile> data_writer;
-  RETURN_NOT_OK(rowset_metadata_->NewBloomDataBlock(&data_writer));
+  BlockId block;
+  FsManager* fs = rowset_metadata_->fs_manager();
+  RETURN_NOT_OK_PREPEND(fs->CreateNewBlock(&data_writer, &block),
+                        "Couldn't allocate a block for bloom filter");
   bloom_writer_.reset(new cfile::BloomFileWriter(data_writer, bloom_sizing_));
-  return bloom_writer_->Start();
+  RETURN_NOT_OK(bloom_writer_->Start());
+  rowset_metadata_->set_bloom_block(block);
+  return Status::OK();
 }
 
 Status DiskRowSetWriter::InitAdHocIndexWriter() {
   shared_ptr<WritableFile> data_writer;
-  RETURN_NOT_OK(rowset_metadata_->NewAdHocIndexDataBlock(&data_writer));
+  BlockId block;
+  FsManager* fs = rowset_metadata_->fs_manager();
+  RETURN_NOT_OK_PREPEND(fs->CreateNewBlock(&data_writer, &block),
+                        "Couldn't allocate a block for compoound index");
+
+  rowset_metadata_->set_adhoc_index_block(block);
+
   // TODO: allow options to be configured, perhaps on a per-column
   // basis as part of the schema. For now use defaults.
   //
@@ -77,7 +88,7 @@ Status DiskRowSetWriter::InitAdHocIndexWriter() {
   // to figure out the encoding on the fly.
   cfile::WriterOptions opts;
 
-  // Index all columns by value
+  // Index the composite key by value
   opts.write_validx = true;
 
   // no need to index positions
@@ -240,10 +251,11 @@ Status RollingDiskRowSetWriter::RollWriter() {
   cur_writer_.reset(new DiskRowSetWriter(cur_drs_metadata_.get(), bloom_sizing_));
   RETURN_NOT_OK(cur_writer_->Open());
 
+  FsManager* fs = tablet_metadata_->fs_manager();
   shared_ptr<WritableFile> undo_data_file;
   shared_ptr<WritableFile> redo_data_file;
-  RETURN_NOT_OK(cur_drs_metadata_->NewDeltaDataBlock(&undo_data_file, &cur_undo_ds_block_id_));
-  RETURN_NOT_OK(cur_drs_metadata_->NewDeltaDataBlock(&redo_data_file, &cur_redo_ds_block_id_));
+  RETURN_NOT_OK(fs->CreateNewBlock(&undo_data_file, &cur_undo_ds_block_id_));
+  RETURN_NOT_OK(fs->CreateNewBlock(&redo_data_file, &cur_redo_ds_block_id_));
   cur_undo_writer_.reset(new DeltaFileWriter(schema_, undo_data_file));
   cur_redo_writer_.reset(new DeltaFileWriter(schema_, redo_data_file));
   cur_undo_delta_stats.reset(new DeltaStats(schema_.num_columns()));

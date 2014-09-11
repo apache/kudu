@@ -9,6 +9,7 @@
 
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/strip.h"
+#include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/env.h"
 #include "kudu/util/env_util.h"
 #include "kudu/util/status.h"
@@ -25,6 +26,7 @@ namespace kudu { namespace tablet {
 using boost::assign::list_of;
 using std::string;
 using std::tr1::shared_ptr;
+using strings::Substitute;
 
 DeltaTracker::DeltaTracker(const shared_ptr<RowSetMetadata>& rowset_metadata,
                            const Schema &schema,
@@ -42,9 +44,10 @@ DeltaTracker::DeltaTracker(const shared_ptr<RowSetMetadata>& rowset_metadata,
 Status DeltaTracker::OpenDeltaReaders(const vector<BlockId>& blocks,
                                       vector<shared_ptr<DeltaStore> >* stores,
                                       DeltaType type) {
+  FsManager* fs = rowset_metadata_->fs_manager();
   BOOST_FOREACH(const BlockId& block, blocks) {
     shared_ptr<RandomAccessFile> dfile;
-    Status s = rowset_metadata_->OpenDataBlock(block, &dfile);
+    Status s = fs->OpenBlock(block, &dfile);
     if (!s.ok()) {
       LOG(ERROR) << "Failed to open " << DeltaType_Name(type)
                  << " delta file " << block.ToString() << ": "
@@ -193,7 +196,9 @@ Status DeltaTracker::CompactStores(int start_idx, int end_idx) {
   shared_ptr<WritableFile> data_writer;
 
   // Open a writer for the new destination delta block
-  RETURN_NOT_OK(rowset_metadata_->NewDeltaDataBlock(&data_writer, &new_block_id));
+  FsManager* fs = rowset_metadata_->fs_manager();
+  RETURN_NOT_OK_PREPEND(fs->CreateNewBlock(&data_writer, &new_block_id),
+                        "Could not allocate delta block");
 
   // Merge and compact the stores and write and output to "data_writer"
   vector<shared_ptr<DeltaStore> > compacted_stores;
@@ -346,20 +351,15 @@ Status DeltaTracker::FlushDMS(DeltaMemStore* dms,
   // Open file for write.
   BlockId block_id;
   shared_ptr<WritableFile> data_writer;
-  Status s = rowset_metadata_->NewDeltaDataBlock(&data_writer, &block_id);
-  if (!s.ok()) {
-    LOG(WARNING) << "Unable to open delta output block " << block_id.ToString() << ": "
-                 << s.ToString();
-    return s;
-  }
+  FsManager* fs = rowset_metadata_->fs_manager();
+  RETURN_NOT_OK_PREPEND(fs->CreateNewBlock(&data_writer, &block_id),
+                        "Unable to allocate new delta data block");
 
   DeltaFileWriter dfw(dms->schema(), data_writer);
-  s = dfw.Start();
-  if (!s.ok()) {
-    LOG(WARNING) << "Unable to open delta output block " << block_id.ToString() << ": "
-                 << s.ToString();
-    return s;
-  }
+  RETURN_NOT_OK_PREPEND(dfw.Start(),
+                        Substitute("Unable to start writing to delta block $0",
+                                   block_id.ToString()));
+
   RETURN_NOT_OK(dms->FlushToFile(&dfw));
   RETURN_NOT_OK(dfw.Finish());
   LOG(INFO) << "Flushed delta block: " << block_id.ToString();
@@ -367,17 +367,15 @@ Status DeltaTracker::FlushDMS(DeltaMemStore* dms,
 
   // Now re-open for read
   shared_ptr<RandomAccessFile> data_reader;
-  RETURN_NOT_OK(rowset_metadata_->OpenDataBlock(block_id, &data_reader));
+  RETURN_NOT_OK(fs->OpenBlock(block_id, &data_reader));
   RETURN_NOT_OK(DeltaFileReader::Open(data_reader, block_id, dfr, REDO));
   LOG(INFO) << "Reopened delta block for read: " << block_id.ToString();
 
   RETURN_NOT_OK(rowset_metadata_->CommitRedoDeltaDataBlock(dms->id(), block_id));
   if (flush_type == FLUSH_METADATA) {
-    s = rowset_metadata_->Flush();
-    if (!s.ok()) {
-      LOG(ERROR) << "Unable to commit Delta block metadata for: " << block_id.ToString();
-      return s;
-    }
+    RETURN_NOT_OK_PREPEND(rowset_metadata_->Flush(),
+                          Substitute("Unable to commit Delta block metadata for: $0",
+                                     block_id.ToString()));
   }
   return Status::OK();
 }

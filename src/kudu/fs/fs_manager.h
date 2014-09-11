@@ -32,14 +32,6 @@ class InstanceMetadataPB;
 // but instead should interact with the storage in terms of "open the block xyz"
 // or "write a new schema metadata file for table kwz".
 //
-// The FsManager should never be accessed directly, but instead the "Metadata"
-// wrappers like "TableMetadata" or "TabletMetadata" should be used.
-// Those wrappers are also responsible for writing every transaction like
-// "add this new data file" to the related WALs.
-// The TabletMetadata is also responsible for keeping track of the tablet files;
-// each new file added/removed is added to the WAL and then flushed
-// to the "tablet/data-files" meta file.
-//
 // The current layout is:
 //    <kudu.root.dir>/data/
 //    <kudu.root.dir>/data/<prefix-0>/<prefix-2>/<prefix-4>/<name>
