@@ -34,20 +34,20 @@ namespace kudu {
 namespace tserver {
 
 using consensus::OpId;
-using metadata::ColumnDataPB;
 using metadata::QuorumPB;
 using metadata::QuorumPeerPB;
-using metadata::DeltaDataPB;
-using metadata::RowSetDataPB;
-using metadata::TabletMasterBlockPB;
-using metadata::TabletMetadata;
-using metadata::TabletSuperBlockPB;
 using rpc::Messenger;
 using std::string;
 using std::tr1::shared_ptr;
 using std::vector;
 using strings::Substitute;
+using tablet::ColumnDataPB;
+using tablet::DeltaDataPB;
+using tablet::RowSetDataPB;
+using tablet::TabletMasterBlockPB;
+using tablet::TabletMetadata;
 using tablet::TabletStatusListener;
+using tablet::TabletSuperBlockPB;
 
 RemoteBootstrapClient::RemoteBootstrapClient(FsManager* fs_manager,
                                              const shared_ptr<Messenger>& messenger,
@@ -65,7 +65,7 @@ Status RemoteBootstrapClient::RunRemoteBootstrap(TabletMetadata* meta,
                                                  TabletStatusListener* status_listener) {
   DCHECK(meta != NULL);
 
-  CHECK_EQ(metadata::REMOTE_BOOTSTRAP_COPYING, meta->remote_bootstrap_state());
+  CHECK_EQ(tablet::REMOTE_BOOTSTRAP_COPYING, meta->remote_bootstrap_state());
   const string& tablet_id = meta->oid();
 
   // Download all the files (serially, for now, but in parallel in the future).
@@ -173,7 +173,7 @@ Status RemoteBootstrapClient::BeginRemoteBootstrapSession(const std::string& tab
                                "Unable to begin remote bootstrap session");
 
   // TODO: Support retrying based on updated info from Master or quorum.
-  if (resp.superblock().remote_bootstrap_state() != metadata::REMOTE_BOOTSTRAP_DONE) {
+  if (resp.superblock().remote_bootstrap_state() != tablet::REMOTE_BOOTSTRAP_DONE) {
     Status s = Status::IllegalState("Leader of quorum (" + quorum.ShortDebugString() + ")" +
                                     " is currently remotely bootstrapping itself!",
                                     resp.superblock().ShortDebugString());

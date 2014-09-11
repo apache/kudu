@@ -17,10 +17,6 @@
 
 namespace kudu {
 
-namespace metadata {
-class TabletMetadata;
-}
-
 namespace rpc {
 class Messenger;
 }
@@ -51,7 +47,7 @@ class TabletPeer : public RefCountedThreadSafe<TabletPeer>,
                    public consensus::ReplicaTransactionFactory {
  public:
 
-  TabletPeer(const scoped_refptr<metadata::TabletMetadata>& meta,
+  TabletPeer(const scoped_refptr<TabletMetadata>& meta,
              const metadata::QuorumPeerPB& quorum_peer,
              TaskExecutor* leader_apply_executor,
              TaskExecutor* replica_apply_executor,
@@ -75,7 +71,7 @@ class TabletPeer : public RefCountedThreadSafe<TabletPeer>,
   // Returns the previous state value.
   // This function is a no-op and makes no state change if the previous state
   // was QUIESCING or SHUTDOWN.
-  metadata::TabletStatePB Shutdown();
+  TabletStatePB Shutdown();
 
   // Check that the tablet is in a RUNNING state.
   Status CheckRunning() const;
@@ -139,7 +135,7 @@ class TabletPeer : public RefCountedThreadSafe<TabletPeer>,
     return tablet_;
   }
 
-  const metadata::TabletStatePB state() const {
+  const TabletStatePB state() const {
     boost::lock_guard<simple_spinlock> lock(lock_);
     return state_;
   }
@@ -173,7 +169,7 @@ class TabletPeer : public RefCountedThreadSafe<TabletPeer>,
   // one.
   void SetFailed(const Status& error) {
     boost::lock_guard<simple_spinlock> lock(lock_);
-    state_ = metadata::FAILED;
+    state_ = FAILED;
     error_ = error;
   }
 
@@ -222,7 +218,7 @@ class TabletPeer : public RefCountedThreadSafe<TabletPeer>,
   FRIEND_TEST(TabletPeerTest, TestActiveTransactionPreventsLogGC);
 
   static bool IsOpTypeAllowedInState(consensus::OperationType type,
-                                     metadata::TabletStatePB state);
+                                     TabletStatePB state);
 
   ~TabletPeer();
 
@@ -238,11 +234,11 @@ class TabletPeer : public RefCountedThreadSafe<TabletPeer>,
   // Task that runs Log GC on a periodic basis.
   Status RunLogGC();
 
-  scoped_refptr<metadata::TabletMetadata> meta_;
+  scoped_refptr<TabletMetadata> meta_;
 
   const std::string tablet_id_;
 
-  metadata::TabletStatePB state_;
+  TabletStatePB state_;
   Status error_;
   TransactionTracker txn_tracker_;
   gscoped_ptr<log::Log> log_;

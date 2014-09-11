@@ -22,7 +22,6 @@ target_link_libraries(metadata_proto
 set(SERVER_COMMON_SRCS
   hybrid_clock.cc
   logical_clock.cc
-  metadata.cc
 )
 
 add_library(server_common ${SERVER_COMMON_SRCS})
@@ -41,7 +40,6 @@ target_link_libraries(server_common
 set(KUDU_TEST_LINK_LIBS server_common ${KUDU_MIN_TEST_LIBS})
 ADD_KUDU_TEST(hybrid_clock-test)
 ADD_KUDU_TEST(logical_clock-test)
-ADD_KUDU_TEST(metadata-test)
 
 #########################################
 # server_base_proto

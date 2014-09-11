@@ -29,6 +29,7 @@ using kudu::metadata::QuorumPB;
 using kudu::metadata::QuorumPeerPB;
 using kudu::tablet::LatchTransactionCompletionCallback;
 using kudu::tablet::Tablet;
+using kudu::tablet::TabletMasterBlockPB;
 using kudu::tablet::TabletPeer;
 using kudu::tserver::WriteRequestPB;
 using kudu::tserver::WriteResponsePB;
@@ -58,12 +59,12 @@ void SysTable::Shutdown() {
 }
 
 Status SysTable::Load(FsManager *fs_manager) {
-  metadata::TabletMasterBlockPB master_block;
+  tablet::TabletMasterBlockPB master_block;
   SetupTabletMasterBlock(&master_block);
 
   // Load Metadata Information from disk
-  scoped_refptr<metadata::TabletMetadata> metadata;
-  RETURN_NOT_OK(metadata::TabletMetadata::Load(fs_manager, master_block, &metadata));
+  scoped_refptr<tablet::TabletMetadata> metadata;
+  RETURN_NOT_OK(tablet::TabletMetadata::Load(fs_manager, master_block, &metadata));
 
   // Verify that the schema is the current one
   if (!metadata->schema().Equals(BuildTableSchema())) {
@@ -79,7 +80,7 @@ Status SysTable::Load(FsManager *fs_manager) {
 }
 
 Status SysTable::CreateNew(FsManager *fs_manager) {
-  metadata::TabletMasterBlockPB master_block;
+  TabletMasterBlockPB master_block;
   SetupTabletMasterBlock(&master_block);
 
   QuorumPeerPB quorum_peer;
@@ -92,14 +93,14 @@ Status SysTable::CreateNew(FsManager *fs_manager) {
   quorum.add_peers()->CopyFrom(quorum_peer);
 
   // Create the new Metadata
-  scoped_refptr<metadata::TabletMetadata> metadata;
-  RETURN_NOT_OK(metadata::TabletMetadata::CreateNew(fs_manager,
+  scoped_refptr<tablet::TabletMetadata> metadata;
+  RETURN_NOT_OK(tablet::TabletMetadata::CreateNew(fs_manager,
                                                     master_block,
                                                     table_name(),
                                                     BuildTableSchema(),
                                                     quorum,
                                                     "", "",
-                                                    metadata::REMOTE_BOOTSTRAP_DONE,
+                                                    tablet::REMOTE_BOOTSTRAP_DONE,
                                                     &metadata));
   return SetupTablet(metadata, quorum_peer);
 }
@@ -109,7 +110,7 @@ void SysTable::SysTableStateChanged(TabletPeer* tablet_peer) {
       << tablet_peer->Quorum().ShortDebugString();
 }
 
-Status SysTable::SetupTablet(const scoped_refptr<metadata::TabletMetadata>& metadata,
+Status SysTable::SetupTablet(const scoped_refptr<tablet::TabletMetadata>& metadata,
                              const QuorumPeerPB& quorum_peer) {
   shared_ptr<Tablet> tablet;
   gscoped_ptr<Log> log;
@@ -224,7 +225,7 @@ Schema SysTabletsTable::BuildTableSchema() {
   return builder.Build();
 }
 
-void SysTabletsTable::SetupTabletMasterBlock(metadata::TabletMasterBlockPB *master_block) {
+void SysTabletsTable::SetupTabletMasterBlock(TabletMasterBlockPB *master_block) {
   master_block->set_tablet_id(kSysTabletsTabletId);
   master_block->set_block_a("00000000000000000000000000000000");
   master_block->set_block_b("11111111111111111111111111111111");
@@ -351,7 +352,7 @@ Schema SysTablesTable::BuildTableSchema() {
   return builder.Build();
 }
 
-void SysTablesTable::SetupTabletMasterBlock(metadata::TabletMasterBlockPB *master_block) {
+void SysTablesTable::SetupTabletMasterBlock(TabletMasterBlockPB *master_block) {
   master_block->set_tablet_id(kSysTablesTabletId);
   master_block->set_block_a("22222222222222222222222222222222");
   master_block->set_block_b("33333333333333333333333333333333");

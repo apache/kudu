@@ -6,12 +6,14 @@
 #include <limits>
 #include <string>
 #include <vector>
+#include <tr1/memory>
+
 #include "kudu/common/generic_iterators.h"
 #include "kudu/gutil/stringprintf.h"
 #include "kudu/gutil/stl_util.h"
-#include "kudu/server/metadata.h"
+#include "kudu/tablet/rowset_metadata.h"
 
-using kudu::metadata::RowSetMetadata;
+using std::tr1::shared_ptr;
 
 namespace kudu { namespace tablet {
 

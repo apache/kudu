@@ -764,12 +764,12 @@ struct FilterAndAppendVisitor {
   }
 
   const DeltaFileIterator* dfi;
-  const metadata::ColumnIndexes& column_indexes;
+  const ColumnIndexes& column_indexes;
   vector<DeltaKeyAndUpdate>* out;
   Arena* arena;
 };
 
-Status DeltaFileIterator::FilterColumnsAndAppend(const metadata::ColumnIndexes& col_indexes,
+Status DeltaFileIterator::FilterColumnsAndAppend(const ColumnIndexes& col_indexes,
                                                  vector<DeltaKeyAndUpdate>* out,
                                                  Arena* arena) {
   FilterAndAppendVisitor visitor = {this, col_indexes, out, arena};

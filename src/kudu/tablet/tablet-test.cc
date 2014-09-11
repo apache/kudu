@@ -18,7 +18,6 @@
 namespace kudu {
 namespace tablet {
 
-using metadata::RowSetMetadata;
 using std::tr1::unordered_set;
 
 DEFINE_int32(testflush_num_inserts, 1000,
@@ -49,10 +48,10 @@ TYPED_TEST(TestTablet, TestFlush) {
 
   // Flush it.
   ASSERT_STATUS_OK(this->tablet()->Flush());
-  metadata::TabletMetadata* tablet_meta = this->tablet()->metadata();
+  TabletMetadata* tablet_meta = this->tablet()->metadata();
 
   // Make sure the files were created as expected.
-  metadata::RowSetMetadata* rowset_meta = tablet_meta->GetRowSetForTests(0);
+  RowSetMetadata* rowset_meta = tablet_meta->GetRowSetForTests(0);
   CHECK(rowset_meta) << "No row set found";
   ASSERT_TRUE(rowset_meta->HasColumnDataBlockForTests(0));
   ASSERT_TRUE(rowset_meta->HasColumnDataBlockForTests(1));

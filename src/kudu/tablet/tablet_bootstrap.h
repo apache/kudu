@@ -27,22 +27,19 @@ struct ConsensusBootstrapInfo;
 class OperationPB;
 } // namespace consensus
 
-namespace metadata {
-class TabletMetadata;
-}
-
 namespace server {
 class Clock;
 }
 
 namespace tablet {
 class Tablet;
+class TabletMetadata;
 
 // A listener for logging the tablet related statuses as well as
 // piping it into the web UI.
 class TabletStatusListener {
  public:
-  explicit TabletStatusListener(const scoped_refptr<metadata::TabletMetadata>& meta);
+  explicit TabletStatusListener(const scoped_refptr<TabletMetadata>& meta);
 
   ~TabletStatusListener();
 
@@ -66,7 +63,7 @@ class TabletStatusListener {
  private:
   mutable boost::shared_mutex lock_;
 
-  scoped_refptr<metadata::TabletMetadata> meta_;
+  scoped_refptr<TabletMetadata> meta_;
   std::string last_status_;
 
   DISALLOW_COPY_AND_ASSIGN(TabletStatusListener);
@@ -80,11 +77,11 @@ extern const char* kLogRecoveryDir;
 // TODO add functionality to fetch blocks and log segments from other TabletServers.
 // TODO make this async and allow the caller to check on the status of recovery
 // for monitoring purposes.
-Status BootstrapTablet(const scoped_refptr<metadata::TabletMetadata>& meta,
+Status BootstrapTablet(const scoped_refptr<TabletMetadata>& meta,
                        const scoped_refptr<server::Clock>& clock,
                        MetricContext* metric_context,
                        TabletStatusListener* status_listener,
-                       std::tr1::shared_ptr<tablet::Tablet>* rebuilt_tablet,
+                       std::tr1::shared_ptr<Tablet>* rebuilt_tablet,
                        gscoped_ptr<log::Log>* rebuilt_log,
                        scoped_refptr<log::OpIdAnchorRegistry>* opid_anchor_registry,
                        consensus::ConsensusBootstrapInfo* consensus_info);

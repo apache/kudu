@@ -27,6 +27,8 @@ set(TABLET_SRCS
   rowset_info.cc
   rowset_tree.cc
   svg_dump.cc
+  tablet_metadata.cc
+  rowset_metadata.cc
   deltafile.cc
   deltamemstore.cc
   delta_applier.cc
@@ -40,10 +42,14 @@ set(TABLET_SRCS
 PROTOBUF_GENERATE_CPP(TABLET_PROTO_SRCS TABLET_PROTO_HDRS
   SOURCE_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../..
   BINARY_ROOT ${CMAKE_CURRENT_BINARY_DIR}/../..
-  PROTO_FILES tablet.proto)
+  PROTO_FILES
+    tablet.proto
+    metadata.proto)
 
 add_library(tablet_proto ${TABLET_PROTO_SRCS} ${TABLET_PROTO_HDRS})
-add_dependencies(tablet_proto
+target_link_libraries(tablet_proto
+  fs_proto
+  metadata_proto
   kudu_common)
 
 set(TABLET_SRCS ${TABLET_SRCS} ${TABLET_PROTO_SRCS})
@@ -72,6 +78,7 @@ ADD_KUDU_TEST(tablet-pushdown-test)
 ADD_KUDU_TEST(tablet-schema-test)
 ADD_KUDU_TEST(tablet_bootstrap-test)
 ADD_KUDU_TEST(maintenance_manager-test)
+ADD_KUDU_TEST(metadata-test)
 ADD_KUDU_TEST(mvcc-test)
 ADD_KUDU_TEST(compaction-test)
 ADD_KUDU_TEST(lock_manager-test)

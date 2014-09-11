@@ -43,7 +43,7 @@ class TabletHarness {
   }
 
   Status Open() {
-    metadata::TabletMasterBlockPB master_block;
+    TabletMasterBlockPB master_block;
     master_block.set_table_id("KuduTableTestId");
     master_block.set_tablet_id(options_.tablet_id);
     master_block.set_block_a("00000000000000000000000000000000");
@@ -57,16 +57,16 @@ class TabletHarness {
     // Build the Tablet
     fs_manager_.reset(new FsManager(options_.env, options_.root_dir));
     RETURN_NOT_OK(fs_manager_->CreateInitialFileSystemLayout());
-    scoped_refptr<metadata::TabletMetadata> metadata;
-    RETURN_NOT_OK(metadata::TabletMetadata::LoadOrCreate(fs_manager_.get(),
+    scoped_refptr<TabletMetadata> metadata;
+    RETURN_NOT_OK(TabletMetadata::LoadOrCreate(fs_manager_.get(),
                                                          master_block,
                                                          "KuduTableTest",
                                                          server_schema,
                                                          quorum_,
                                                          "", "",
-                                                         metadata::REMOTE_BOOTSTRAP_DONE,
+                                                         REMOTE_BOOTSTRAP_DONE,
                                                          &metadata));
-    RETURN_NOT_OK_PREPEND(metadata::TabletMetadata::PersistMasterBlock(
+    RETURN_NOT_OK_PREPEND(TabletMetadata::PersistMasterBlock(
                             fs_manager_.get(), master_block),
                           "Couldn't persist test tablet master block");
     if (options_.enable_metrics) {

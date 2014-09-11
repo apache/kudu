@@ -56,7 +56,7 @@ class DeltaTracker {
     NO_FLUSH_METADATA
   };
 
-  DeltaTracker(const shared_ptr<metadata::RowSetMetadata>& rowset_metadata,
+  DeltaTracker(const shared_ptr<RowSetMetadata>& rowset_metadata,
                const Schema &schema,
                rowid_t num_rows,
                log::OpIdAnchorRegistry* opid_anchor_registry,
@@ -200,7 +200,7 @@ class DeltaTracker {
                                          vector<BlockId> *target_blocks,
                                          std::tr1::shared_ptr<DeltaIterator> *out);
 
-  shared_ptr<metadata::RowSetMetadata> rowset_metadata_;
+  shared_ptr<RowSetMetadata> rowset_metadata_;
   Schema schema_;
 
   // The number of rows in the DiskRowSet that this tracker is associated with.

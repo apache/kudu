@@ -148,7 +148,7 @@ static int TsCliMain(int argc, char** argv) {
       Schema schema;
       CHECK_OK(SchemaFromPB(status_and_schema.schema(), &schema));
       TabletStatusPB ts = status_and_schema.tablet_status();
-      string state = metadata::TabletStatePB_Name(ts.state());
+      string state = tablet::TabletStatePB_Name(ts.state());
       std::cout << "Tablet id: " << ts.tablet_id() << std::endl;
       std::cout << "State: " << state;
       std::cout << "Table name: " << ts.table_name() << std::endl;

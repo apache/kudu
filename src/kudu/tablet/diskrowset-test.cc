@@ -27,7 +27,6 @@ namespace tablet {
 
 using std::tr1::unordered_set;
 using util::gtl::is_sorted;
-using metadata::RowSetMetadata;
 
 // TODO: add test which calls CopyNextRows on an iterator with no more
 // rows - i think it segfaults!

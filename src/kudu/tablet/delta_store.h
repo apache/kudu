@@ -14,7 +14,7 @@
 #include "kudu/tablet/mvcc.h"
 #include "kudu/tablet/delta_key.h"
 #include "kudu/tablet/delta_stats.h"
-#include "kudu/server/metadata.h"
+#include "kudu/tablet/tablet_metadata.h"
 
 namespace kudu {
 
@@ -127,7 +127,7 @@ class DeltaIterator {
   //
   // The delta objects will be allocated out the provided Arena which
   // must be non-NULL.
-  virtual Status FilterColumnsAndAppend(const metadata::ColumnIndexes& col_indexes,
+  virtual Status FilterColumnsAndAppend(const ColumnIndexes& col_indexes,
                                         vector<DeltaKeyAndUpdate>* out,
                                         Arena* arena) = 0;
 

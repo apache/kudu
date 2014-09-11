@@ -79,7 +79,7 @@ class RemoteBootstrapSession : public RefCountedThreadSafe<RemoteBootstrapSessio
                             std::string* data, int64_t* log_file_size,
                             RemoteBootstrapErrorPB::Code* error_code);
 
-  const metadata::TabletSuperBlockPB& tablet_superblock() const { return tablet_superblock_; }
+  const tablet::TabletSuperBlockPB& tablet_superblock() const { return tablet_superblock_; }
 
   const log::ReadableLogSegmentMap& log_segments() const { return log_segments_; }
 
@@ -122,7 +122,7 @@ class RemoteBootstrapSession : public RefCountedThreadSafe<RemoteBootstrapSessio
 
   BlockMap blocks_; // Protected by session_lock_.
   LogMap logs_;     // Protected by session_lock_.
-  metadata::TabletSuperBlockPB tablet_superblock_;
+  tablet::TabletSuperBlockPB tablet_superblock_;
   log::ReadableLogSegmentMap log_segments_;
   log::OpIdAnchor log_anchor_;
 

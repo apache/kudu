@@ -33,11 +33,11 @@ class TabletReportPB;
 
 namespace metadata {
 class QuorumPB;
-class TabletMasterBlockPB;
-class TabletMetadata;
 } // namespace metadata
 
 namespace tablet {
+class TabletMasterBlockPB;
+class TabletMetadata;
 class TabletPeer;
 class TabletStatusPB;
 class TabletStatusListener;
@@ -153,14 +153,14 @@ class TSTabletManager : public tserver::TabletPeerLookupIf {
   typedef std::tr1::unordered_map<std::string, TabletReportState> DirtyMap;
 
   // Write the given master block onto the file system.
-  Status PersistMasterBlock(const metadata::TabletMasterBlockPB& pb);
+  Status PersistMasterBlock(const tablet::TabletMasterBlockPB& pb);
 
   // Load the given tablet's master block from the file system.
-  Status LoadMasterBlock(const std::string& tablet_id, metadata::TabletMasterBlockPB* block);
+  Status LoadMasterBlock(const std::string& tablet_id, tablet::TabletMasterBlockPB* block);
 
   // Open a tablet meta from the local file system by loading its master block.
   Status OpenTabletMeta(const std::string& tablet_id,
-                        scoped_refptr<metadata::TabletMetadata>* metadata);
+                        scoped_refptr<tablet::TabletMetadata>* metadata);
 
   // Open a tablet whose metadata has already been loaded/created.
   // This method does not return anything as it can be run asynchronously.
@@ -168,10 +168,10 @@ class TSTabletManager : public tserver::TabletPeerLookupIf {
   // If something wrong happened on bootstrap/initialization the relevant error
   // will be set on TabletPeer along with the state set to FAILED.
   // NOTE: The tablet must be registered prior to calling this method.
-  void OpenTablet(const scoped_refptr<metadata::TabletMetadata>& meta);
+  void OpenTablet(const scoped_refptr<tablet::TabletMetadata>& meta);
 
   // Open a tablet whose metadata has already been loaded.
-  void BootstrapAndInitTablet(const scoped_refptr<metadata::TabletMetadata>& meta,
+  void BootstrapAndInitTablet(const scoped_refptr<tablet::TabletMetadata>& meta,
                               scoped_refptr<tablet::TabletPeer>* peer);
 
   // Add the tablet to the tablet map.

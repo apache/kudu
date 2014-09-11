@@ -26,10 +26,6 @@ namespace kudu {
 using cfile::CFileReader;
 using cfile::IndexTreeIterator;
 using cfile::CFileIterator;
-using metadata::RowSetMetadata;
-using metadata::TabletMetadata;
-using metadata::ColumnIndexes;
-using metadata::ColumnWriters;
 using strings::Substitute;
 
 namespace tablet {
@@ -172,7 +168,7 @@ Status MajorDeltaCompaction::Compact() {
 }
 
 Status MajorDeltaCompaction::CreateMetadataUpdate(
-    metadata::RowSetMetadataUpdate* update) {
+    RowSetMetadataUpdate* update) {
   CHECK(update);
   CHECK_EQ(state_, kFinished);
 

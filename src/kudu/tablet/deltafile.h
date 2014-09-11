@@ -14,6 +14,7 @@
 #include "kudu/cfile/string_plain_block.h"
 #include "kudu/common/columnblock.h"
 #include "kudu/common/schema.h"
+#include "kudu/fs/block_id.h"
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/tablet/deltamemstore.h"
@@ -164,7 +165,7 @@ class DeltaFileIterator : public DeltaIterator {
   Status ApplyUpdates(size_t col_to_apply, ColumnBlock *dst) OVERRIDE;
   Status ApplyDeletes(SelectionVector *sel_vec) OVERRIDE;
   Status CollectMutations(vector<Mutation *> *dst, Arena *arena) OVERRIDE;
-  Status FilterColumnsAndAppend(const metadata::ColumnIndexes& col_indexes,
+  Status FilterColumnsAndAppend(const ColumnIndexes& col_indexes,
                                 vector<DeltaKeyAndUpdate>* out,
                                 Arena* arena) OVERRIDE;
   string ToString() const OVERRIDE;

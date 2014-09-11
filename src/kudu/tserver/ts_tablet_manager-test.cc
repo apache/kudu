@@ -22,7 +22,7 @@ namespace tserver {
 
 using master::TabletReportPB;
 using metadata::QuorumPB;
-using metadata::TabletMasterBlockPB;
+using tablet::TabletMasterBlockPB;
 using tablet::TabletPeer;
 using std::tr1::shared_ptr;
 

@@ -63,12 +63,7 @@ using log::OPERATION;
 using log::ReadableLogSegment;
 using log::ReadableLogSegmentMap;
 using metadata::QuorumPB;
-using metadata::TabletMetadata;
-using metadata::TabletSuperBlockPB;
-using metadata::RowSetMetadata;
 using server::Clock;
-using tablet::OperationResultPB;
-using tablet::Tablet;
 using tserver::AlterSchemaRequestPB;
 using tserver::WriteRequestPB;
 using std::tr1::shared_ptr;
@@ -87,7 +82,7 @@ struct ReplayState;
 // we need to set it before replay or we won't be able to re-rebuild.
 class TabletBootstrap {
  public:
-  TabletBootstrap(const scoped_refptr<metadata::TabletMetadata>& meta,
+  TabletBootstrap(const scoped_refptr<TabletMetadata>& meta,
                   const scoped_refptr<Clock>& clock,
                   MetricContext* metric_context,
                   TabletStatusListener* listener);
@@ -96,7 +91,7 @@ class TabletBootstrap {
   // state that is present in the log (additional soft state may be present
   // in other replicas).
   // A successful call will yield the rebuilt tablet and the rebuilt log.
-  Status Bootstrap(std::tr1::shared_ptr<tablet::Tablet>* rebuilt_tablet,
+  Status Bootstrap(std::tr1::shared_ptr<Tablet>* rebuilt_tablet,
                    gscoped_ptr<log::Log>* rebuilt_log,
                    scoped_refptr<log::OpIdAnchorRegistry>* opid_anchor_registry,
                    ConsensusBootstrapInfo* results);
@@ -190,7 +185,7 @@ class TabletBootstrap {
   // Removes the recovery directory.
   Status RemoveRecoveryDir();
 
-  scoped_refptr<metadata::TabletMetadata> meta_;
+  scoped_refptr<TabletMetadata> meta_;
   scoped_refptr<Clock> clock_;
   MetricContext* metric_context_;
   TabletStatusListener* listener_;
@@ -204,7 +199,7 @@ class TabletBootstrap {
   DISALLOW_COPY_AND_ASSIGN(TabletBootstrap);
 };
 
-TabletStatusListener::TabletStatusListener(const scoped_refptr<metadata::TabletMetadata>& meta)
+TabletStatusListener::TabletStatusListener(const scoped_refptr<TabletMetadata>& meta)
     : meta_(meta),
       last_status_("") {
 }
@@ -238,7 +233,7 @@ void TabletStatusListener::StatusMessage(const string& status) {
   last_status_ = status;
 }
 
-Status BootstrapTablet(const scoped_refptr<metadata::TabletMetadata>& meta,
+Status BootstrapTablet(const scoped_refptr<TabletMetadata>& meta,
                        const scoped_refptr<Clock>& clock,
                        MetricContext* metric_context,
                        TabletStatusListener* listener,
@@ -293,8 +288,8 @@ Status TabletBootstrap::Bootstrap(shared_ptr<Tablet>* rebuilt_tablet,
   // Make sure we don't try to locally bootstrap a tablet that was in the middle
   // of a remote bootstrap. It's likely that not all files were copied over
   // successfully.
-  metadata::TabletBootstrapStatePB remote_bootstrap_state = meta_->remote_bootstrap_state();
-  if (remote_bootstrap_state != metadata::REMOTE_BOOTSTRAP_DONE) {
+  TabletBootstrapStatePB remote_bootstrap_state = meta_->remote_bootstrap_state();
+  if (remote_bootstrap_state != REMOTE_BOOTSTRAP_DONE) {
     return Status::Corruption("Unable to locally bootstrap tablet " + tablet_id + ": " +
                               "TabletMetadata bootstrap state is " +
                               TabletBootstrapStatePB_Name(remote_bootstrap_state));

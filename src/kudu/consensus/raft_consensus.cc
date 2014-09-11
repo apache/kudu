@@ -38,6 +38,7 @@ using log::LogEntryBatch;
 using metadata::QuorumPB;
 using metadata::QuorumPeerPB;
 using std::tr1::shared_ptr;
+using std::tr1::unordered_set;
 using strings::Substitute;
 
 RaftConsensus::RaftConsensus(const ConsensusOptions& options,

@@ -182,7 +182,7 @@ TEST_F(RemoteBootstrapTest, TestSuperBlocksEqual) {
   faststring tablet_buf;
 
   {
-    const metadata::TabletSuperBlockPB& session_superblock = session_->tablet_superblock();
+    const tablet::TabletSuperBlockPB& session_superblock = session_->tablet_superblock();
     int size = session_superblock.ByteSize();
     session_buf.resize(size);
     uint8_t* session_dst = session_buf.data();
@@ -190,7 +190,7 @@ TEST_F(RemoteBootstrapTest, TestSuperBlocksEqual) {
   }
 
   {
-    shared_ptr<metadata::TabletSuperBlockPB> tablet_superblock;
+    shared_ptr<tablet::TabletSuperBlockPB> tablet_superblock;
     ASSERT_STATUS_OK(tablet()->metadata()->ToSuperBlock(&tablet_superblock));
     int size = tablet_superblock->ByteSize();
     tablet_buf.resize(size);
@@ -206,12 +206,12 @@ TEST_F(RemoteBootstrapTest, TestSuperBlocksEqual) {
 // Test fetching all files from tablet server, ensure the checksums for each
 // chunk and the total file sizes match.
 TEST_F(RemoteBootstrapTest, TestBlocksEqual) {
-  shared_ptr<metadata::TabletSuperBlockPB> tablet_superblock;
+  shared_ptr<tablet::TabletSuperBlockPB> tablet_superblock;
   ASSERT_STATUS_OK(tablet()->metadata()->ToSuperBlock(&tablet_superblock));
   for (int i = 0; i < tablet_superblock->rowsets_size(); i++) {
-    const metadata::RowSetDataPB& rowset = tablet_superblock->rowsets(i);
+    const tablet::RowSetDataPB& rowset = tablet_superblock->rowsets(i);
     for (int j = 0; j < rowset.columns_size(); j++) {
-      const metadata::ColumnDataPB& column = rowset.columns(j);
+      const tablet::ColumnDataPB& column = rowset.columns(j);
       const BlockIdPB& block_id_pb = column.block();
       BlockId block_id = BlockId::FromPB(block_id_pb);
 
@@ -248,10 +248,10 @@ TEST_F(RemoteBootstrapTest, TestBlocksEqual) {
 
 // Ensure that reading the last chunk of a block file closes the fd.
 TEST_F(RemoteBootstrapTest, TestBlockFileClosedOnLastRead) {
-  shared_ptr<metadata::TabletSuperBlockPB> tablet_superblock;
+  shared_ptr<tablet::TabletSuperBlockPB> tablet_superblock;
   ASSERT_STATUS_OK(tablet()->metadata()->ToSuperBlock(&tablet_superblock));
-  const metadata::RowSetDataPB& rowset = tablet_superblock->rowsets(0);
-  const metadata::ColumnDataPB& column = rowset.columns(0);
+  const tablet::RowSetDataPB& rowset = tablet_superblock->rowsets(0);
+  const tablet::ColumnDataPB& column = rowset.columns(0);
   const BlockIdPB& block_id_pb = column.block();
   BlockId block_id = BlockId::FromPB(block_id_pb);
 

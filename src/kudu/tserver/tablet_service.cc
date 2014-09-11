@@ -84,10 +84,10 @@ bool LookupTabletOrRespond(TabletPeerLookupIf* tablet_manager,
   }
 
   // Check RUNNING state.
-  metadata::TabletStatePB state = (*peer)->state();
-  if (PREDICT_FALSE(state != metadata::RUNNING)) {
+  tablet::TabletStatePB state = (*peer)->state();
+  if (PREDICT_FALSE(state != tablet::RUNNING)) {
     Status s = Status::ServiceUnavailable("Tablet not RUNNING",
-                                          metadata::TabletStatePB_Name(state));
+                                          tablet::TabletStatePB_Name(state));
     SetupErrorAndRespond(resp->mutable_error(), s,
                          TabletServerErrorPB::TABLET_NOT_RUNNING, context);
     return false;
@@ -442,7 +442,7 @@ void ConsensusServiceImpl::UpdateConsensus(const ConsensusRequestPB* req,
   DCHECK(tablet_peer) << "Null tablet peer";
 
   // Can't answer update requests if peer is not RUNNING or CONFIGURING
-  if (tablet_peer->state() != metadata::RUNNING && tablet_peer->state() != metadata::CONFIGURING) {
+  if (tablet_peer->state() != tablet::RUNNING && tablet_peer->state() != tablet::CONFIGURING) {
     SetupErrorAndRespond(resp->mutable_error(),
                          Status::ServiceUnavailable("Tablet Peer not in RUNNING/CONFIGURING state"),
                          TabletServerErrorPB::TABLET_NOT_RUNNING, context);
@@ -471,7 +471,7 @@ void ConsensusServiceImpl::RequestConsensusVote(const VoteRequestPB* req,
   DCHECK(tablet_peer) << "Null tablet peer";
 
   // Can't answer update requests if peer is not RUNNING
-  if (tablet_peer->state() != metadata::RUNNING) {
+  if (tablet_peer->state() != tablet::RUNNING) {
     SetupErrorAndRespond(resp->mutable_error(),
                          Status::ServiceUnavailable("Tablet Peer not in RUNNING state"),
                          TabletServerErrorPB::TABLET_NOT_RUNNING, context);

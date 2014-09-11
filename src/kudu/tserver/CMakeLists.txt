@@ -14,7 +14,7 @@ target_link_libraries(remote_bootstrap_proto
   protobuf
   krpc
   consensus_proto
-  metadata_proto
+  tablet_proto
   rpc_header_proto
   wire_protocol_proto)
 

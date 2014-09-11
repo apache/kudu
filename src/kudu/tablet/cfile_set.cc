@@ -22,7 +22,6 @@ namespace kudu { namespace tablet {
 
 using cfile::ReaderOptions;
 using cfile::DefaultColumnValueIterator;
-using metadata::RowSetMetadata;
 using std::tr1::shared_ptr;
 
 ////////////////////////////////////////////////////////////

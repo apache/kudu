@@ -114,7 +114,7 @@ class KuduRowSetTest : public KuduTabletTest {
   }
 
  protected:
-  shared_ptr<metadata::RowSetMetadata> rowset_meta_;
+  shared_ptr<RowSetMetadata> rowset_meta_;
 };
 
 static inline Status IterateToStringList(RowwiseIterator *iter,

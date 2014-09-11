@@ -5,7 +5,7 @@ import "kudu/common/wire_protocol.proto";
 import "kudu/consensus/consensus.proto";
 import "kudu/fs/fs.proto";
 import "kudu/rpc/rpc_header.proto";
-import "kudu/server/metadata.proto";
+import "kudu/tablet/metadata.proto";
 
 // Quorum remote bootstrap RPC calls.
 service RemoteBootstrapService {
@@ -87,7 +87,7 @@ message BeginRemoteBootstrapSessionResponsePB {
   required uint64 session_idle_timeout_millis = 2;
 
   // Active superblock at the time of the request.
-  required metadata.TabletSuperBlockPB superblock = 3;
+  required tablet.TabletSuperBlockPB superblock = 3;
 
   // Identifiers for the WAL segments available for download.
   // Each WAL segment is keyed on the first OpId contained in the file.

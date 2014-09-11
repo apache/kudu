@@ -9,6 +9,7 @@
 #include "kudu/consensus/opid_util.h"
 #include "kudu/consensus/opid_anchor_registry.h"
 #include "kudu/gutil/strings/fastmem.h"
+#include "kudu/tablet/metadata.pb.h"
 #include "kudu/tserver/remote_bootstrap.pb.h"
 #include "kudu/util/crc.h"
 #include "kudu/util/env_util.h"
@@ -46,9 +47,9 @@ class RemoteBootstrapTest : public TabletServerTest {
   };
 
   // Grab the first column block we find in the SuperBlock.
-  static BlockId FirstColumnBlockId(const metadata::TabletSuperBlockPB& superblock) {
-    const metadata::RowSetDataPB& rowset = superblock.rowsets(0);
-    const metadata::ColumnDataPB& column = rowset.columns(0);
+  static BlockId FirstColumnBlockId(const tablet::TabletSuperBlockPB& superblock) {
+    const tablet::RowSetDataPB& rowset = superblock.rowsets(0);
+    const tablet::ColumnDataPB& column = rowset.columns(0);
     const BlockIdPB& block_id_pb = column.block();
     return BlockId::FromPB(block_id_pb);
   }

@@ -34,7 +34,7 @@ class DeltaIteratorMerger : public DeltaIterator {
   virtual Status ApplyUpdates(size_t col_to_apply, ColumnBlock *dst) OVERRIDE;
   virtual Status ApplyDeletes(SelectionVector *sel_vec) OVERRIDE;
   virtual Status CollectMutations(vector<Mutation *> *dst, Arena *arena) OVERRIDE;
-  virtual Status FilterColumnsAndAppend(const metadata::ColumnIndexes& col_indexes,
+  virtual Status FilterColumnsAndAppend(const ColumnIndexes& col_indexes,
                                         vector<DeltaKeyAndUpdate>* out,
                                         Arena* arena) OVERRIDE;
   virtual bool HasNext() OVERRIDE;

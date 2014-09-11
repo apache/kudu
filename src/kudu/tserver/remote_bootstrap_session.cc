@@ -20,8 +20,8 @@ namespace tserver {
 using consensus::OpId;
 using consensus::MinimumOpId;
 using log::OpIdAnchorRegistry;
-using metadata::TabletMetadata;
-using metadata::TabletSuperBlockPB;
+using tablet::TabletMetadata;
+using tablet::TabletSuperBlockPB;
 using std::tr1::shared_ptr;
 using strings::Substitute;
 using tablet::TabletPeer;

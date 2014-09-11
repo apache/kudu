@@ -13,8 +13,8 @@
 #include "kudu/common/iterator.h"
 #include "kudu/common/schema.h"
 #include "kudu/gutil/macros.h"
-#include "kudu/server/metadata.h"
 #include "kudu/tablet/memrowset.h"
+#include "kudu/tablet/rowset_metadata.h"
 #include "kudu/util/env.h"
 #include "kudu/util/memory/arena.h"
 #include "kudu/util/slice.h"
@@ -41,7 +41,7 @@ class CFileSet : public std::tr1::enable_shared_from_this<CFileSet> {
  public:
   class Iterator;
 
-  explicit CFileSet(const shared_ptr<metadata::RowSetMetadata>& rowset_metadata);
+  explicit CFileSet(const shared_ptr<RowSetMetadata>& rowset_metadata);
 
   Status Open();
 
@@ -92,7 +92,7 @@ class CFileSet : public std::tr1::enable_shared_from_this<CFileSet> {
   // (the ad-hoc reader for composite keys, otherwise the key column reader)
   CFileReader *key_index_reader();
 
-  shared_ptr<metadata::RowSetMetadata> rowset_metadata_;
+  shared_ptr<RowSetMetadata> rowset_metadata_;
 
   std::string min_encoded_key_;
   std::string max_encoded_key_;

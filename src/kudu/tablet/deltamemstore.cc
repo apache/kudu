@@ -399,7 +399,7 @@ Status DMSIterator::CorruptionStatus(const string &message, rowid_t row,
   return Status::Corruption(ret);
 }
 
-Status DMSIterator::FilterColumnsAndAppend(const metadata::ColumnIndexes& col_indexes,
+Status DMSIterator::FilterColumnsAndAppend(const ColumnIndexes& col_indexes,
                                            vector<DeltaKeyAndUpdate>* out,
                                            Arena* arena) {
   return Status::InvalidArgument("FilterColumsAndAppend() is not supported by DMSIterator");

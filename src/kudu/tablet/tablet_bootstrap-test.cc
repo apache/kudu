@@ -6,10 +6,11 @@
 
 #include "kudu/common/iterator.h"
 #include "kudu/consensus/log_util.h"
+#include "kudu/server/logical_clock.h"
+#include "kudu/server/metadata.h"
 #include "kudu/tablet/tablet_bootstrap.h"
 #include "kudu/tablet/tablet-test-util.h"
-#include "kudu/server/metadata.h"
-#include "kudu/server/logical_clock.h"
+#include "kudu/tablet/tablet_metadata.h"
 
 namespace kudu {
 
@@ -30,8 +31,6 @@ using log::Log;
 using log::LogTestBase;
 using log::OpIdAnchorRegistry;
 using log::ReadableLogSegmentMap;
-using metadata::TabletMetadata;
-using metadata::TabletMasterBlockPB;
 using server::Clock;
 using server::LogicalClock;
 
@@ -50,17 +49,17 @@ class BootstrapTest : public LogTestBase {
     metadata::QuorumPB quorum;
     quorum.set_seqno(0);
 
-    RETURN_NOT_OK(metadata::TabletMetadata::LoadOrCreate(fs_manager_.get(),
-                                                         master_block_,
-                                                         log::kTestTable,
-                                                         // We need a schema with ids for
-                                                         // TabletMetadata::LoadOrCreate()
-                                                         SchemaBuilder(schema_).Build(),
-                                                         quorum,
-                                                         "",
-                                                         "",
-                                                         metadata::REMOTE_BOOTSTRAP_DONE,
-                                                         meta));
+    RETURN_NOT_OK(TabletMetadata::LoadOrCreate(fs_manager_.get(),
+                                               master_block_,
+                                               log::kTestTable,
+                                               // We need a schema with ids for
+                                               // TabletMetadata::LoadOrCreate()
+                                               SchemaBuilder(schema_).Build(),
+                                               quorum,
+                                               "",
+                                               "",
+                                               REMOTE_BOOTSTRAP_DONE,
+                                               meta));
     (*meta)->SetLastDurableMrsIdForTests(mrs_id);
     if ((*meta)->GetRowSetForTests(0) != NULL) {
       (*meta)->GetRowSetForTests(0)->SetLastDurableRedoDmsIdForTests(delta_id);
@@ -68,7 +67,7 @@ class BootstrapTest : public LogTestBase {
     return (*meta)->Flush();
   }
 
-  Status PersistTestTabletMetadataState(metadata::TabletBootstrapStatePB state) {
+  Status PersistTestTabletMetadataState(TabletBootstrapStatePB state) {
     scoped_refptr<TabletMetadata> meta;
     RETURN_NOT_OK(LoadTestTabletMetadata(-1, -1, &meta));
     meta->set_remote_bootstrap_state(state);
@@ -152,7 +151,7 @@ TEST_F(BootstrapTest, TestBootstrap) {
 TEST_F(BootstrapTest, TestIncompleteRemoteBootstrap) {
   BuildLog();
 
-  ASSERT_OK(PersistTestTabletMetadataState(metadata::REMOTE_BOOTSTRAP_COPYING));
+  ASSERT_OK(PersistTestTabletMetadataState(REMOTE_BOOTSTRAP_COPYING));
   shared_ptr<Tablet> tablet;
   ConsensusBootstrapInfo boot_info;
   Status s = BootstrapTestTablet(-1, -1, &tablet, &boot_info);

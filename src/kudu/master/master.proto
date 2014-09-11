@@ -4,6 +4,7 @@ package kudu.master;
 import "kudu/common/common.proto";
 import "kudu/common/wire_protocol.proto";
 import "kudu/server/metadata.proto";
+import "kudu/tablet/metadata.proto";
 
 ////////////////////////////////////////////////////////////
 // Common data structures
@@ -134,7 +135,7 @@ message TSRegistrationPB {
 
 message ReportedTabletPB {
   required bytes tablet_id = 1;
-  required metadata.TabletStatePB state = 2;
+  required tablet.TabletStatePB state = 2;
   required metadata.QuorumPeerPB.Role role = 3;
   optional AppStatusPB error = 4;
 

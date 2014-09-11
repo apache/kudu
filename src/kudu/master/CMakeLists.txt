@@ -8,6 +8,7 @@ KRPC_GENERATE(MASTER_KRPC_SRCS MASTER_KRPC_HDRS
 add_library(master_proto ${MASTER_KRPC_SRCS} ${MASTER_KRPC_HDRS})
 target_link_libraries(master_proto
   metadata_proto
+  tablet_proto
   wire_protocol_proto
   protobuf
   rpc_header_proto)

@@ -19,9 +19,11 @@
 #include "kudu/master/master.pb.h"
 #include "kudu/server/metadata.pb.h"
 #include "kudu/tablet/maintenance_manager.h"
+#include "kudu/tablet/metadata.pb.h"
 #include "kudu/tablet/tablet.pb.h"
 #include "kudu/tablet/tablet.h"
 #include "kudu/tablet/tablet_bootstrap.h"
+#include "kudu/tablet/tablet_metadata.h"
 #include "kudu/tablet/tablet_peer.h"
 #include "kudu/tserver/tablet_server.h"
 #include "kudu/util/env.h"
@@ -47,13 +49,13 @@ using master::ReportedTabletPB;
 using master::TabletReportPB;
 using metadata::QuorumPB;
 using metadata::QuorumPeerPB;
-using metadata::TabletMasterBlockPB;
-using metadata::TabletMetadata;
 using std::string;
 using std::tr1::shared_ptr;
 using std::vector;
 using strings::Substitute;
 using tablet::Tablet;
+using tablet::TabletMasterBlockPB;
+using tablet::TabletMetadata;
 using tablet::TabletPeer;
 using tablet::TabletStatusListener;
 using tablet::TabletStatusPB;
@@ -162,7 +164,7 @@ Status TSTabletManager::WaitForAllBootstrapsToFinish() {
 
   boost::shared_lock<rw_spinlock> shared_lock(lock_);
   BOOST_FOREACH(const TabletMap::value_type& entry, tablet_map_) {
-    if (entry.second->state() == metadata::FAILED) {
+    if (entry.second->state() == tablet::FAILED) {
       if (s.ok()) {
         s = entry.second->error();
       }
@@ -232,7 +234,7 @@ Status TSTabletManager::CreateNewTablet(const string& table_id,
                               quorum,
                               start_key,
                               end_key,
-                              metadata::REMOTE_BOOTSTRAP_DONE,
+                              tablet::REMOTE_BOOTSTRAP_DONE,
                               &meta),
     "Couldn't create tablet metadata");
 
@@ -264,10 +266,10 @@ Status TSTabletManager::DeleteTablet(const scoped_refptr<TabletPeer>& tablet_pee
   TRACE("Deleting tablet $0 (table=$1 [id=$2])", tablet_peer->tablet()->tablet_id(),
         tablet_peer->tablet()->metadata()->table_name(),
         tablet_peer->tablet()->metadata()->table_id());
-  metadata::TabletStatePB prev_state = tablet_peer->Shutdown();
-  if (prev_state == metadata::QUIESCING || prev_state == metadata::SHUTDOWN) {
+  tablet::TabletStatePB prev_state = tablet_peer->Shutdown();
+  if (prev_state == tablet::QUIESCING || prev_state == tablet::SHUTDOWN) {
     return Status::ServiceUnavailable("Tablet Peer not in RUNNING state",
-                                      metadata::TabletStatePB_Name(prev_state));
+                                      tablet::TabletStatePB_Name(prev_state));
   }
   boost::lock_guard<rw_spinlock> lock(lock_);
   CHECK_EQ(1, tablet_map_.erase(tablet_peer->tablet()->tablet_id()));
@@ -505,7 +507,7 @@ void TSTabletManager::CreateReportedTabletPB(const string& tablet_id,
                                              ReportedTabletPB* reported_tablet) {
   reported_tablet->set_tablet_id(tablet_id);
   reported_tablet->set_state(tablet_peer->state());
-  if (tablet_peer->state() == metadata::FAILED) {
+  if (tablet_peer->state() == tablet::FAILED) {
     AppStatusPB* error_status = reported_tablet->mutable_error();
     StatusToPB(tablet_peer->error(), error_status);
   }

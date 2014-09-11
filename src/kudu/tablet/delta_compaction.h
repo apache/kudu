@@ -41,7 +41,7 @@ class MajorDeltaCompaction {
                        CFileSet* base_data,
                        const shared_ptr<DeltaIterator>& delta_iter,
                        const std::vector<std::tr1::shared_ptr<DeltaStore> >& included_stores,
-                       const metadata::ColumnIndexes& col_indexes);
+                       const ColumnIndexes& col_indexes);
   ~MajorDeltaCompaction();
 
   // Executes the compaction.
@@ -52,7 +52,7 @@ class MajorDeltaCompaction {
   // 1) swaps out the old columns for the new ones
   // 2) removes the compacted deltas
   // 3) adds the new REDO delta which contains any uncompacted deltas
-  Status CreateMetadataUpdate(metadata::RowSetMetadataUpdate* update);
+  Status CreateMetadataUpdate(RowSetMetadataUpdate* update);
 
   // Apply the changes to the given delta tracker.
   Status UpdateDeltaTracker(DeltaTracker* tracker);
@@ -74,7 +74,7 @@ class MajorDeltaCompaction {
   Schema partial_schema_;
 
   // The column indexes to compact (relative to the base schema)
-  const metadata::ColumnIndexes column_indexes_;
+  const ColumnIndexes column_indexes_;
 
   // Mapping from base schema index to partial schema index.
   std::tr1::unordered_map<size_t, size_t> old_to_new_;

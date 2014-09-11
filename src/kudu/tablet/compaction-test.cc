@@ -29,7 +29,6 @@ DEFINE_int32(merge_benchmark_num_rows_per_rowset, 500000,
 namespace kudu {
 namespace tablet {
 
-using metadata::RowSetMetadata;
 using consensus::OpId;
 using log::OpIdAnchorRegistry;
 
@@ -287,14 +286,14 @@ class TestCompaction : public KuduRowSetTest {
     } else {
       // This test will load a tablet with id "KuduCompactionBenchTablet" that have
       // a 0000000 or 1111111 super-block id, in the specified root-dir.
-      metadata::TabletMasterBlockPB master_block;
+      TabletMasterBlockPB master_block;
       master_block.set_tablet_id("KuduCompactionBenchTablet");
       master_block.set_block_a("00000000000000000000000000000000");
       master_block.set_block_b("11111111111111111111111111111111");
 
       FsManager fs_manager(env_.get(), FLAGS_merge_benchmark_input_dir);
-      scoped_refptr<metadata::TabletMetadata> input_meta;
-      ASSERT_STATUS_OK(metadata::TabletMetadata::Load(&fs_manager, master_block, &input_meta));
+      scoped_refptr<TabletMetadata> input_meta;
+      ASSERT_STATUS_OK(TabletMetadata::Load(&fs_manager, master_block, &input_meta));
 
       BOOST_FOREACH(const shared_ptr<RowSetMetadata>& meta, input_meta->rowsets()) {
         shared_ptr<DiskRowSet> rs;

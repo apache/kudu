@@ -7,7 +7,8 @@
 #include <vector>
 
 #include "kudu/common/schema.h"
-#include "kudu/server/metadata.h"
+#include "kudu/tablet/rowset_metadata.h"
+#include "kudu/tablet/tablet_metadata.h"
 #include "kudu/gutil/strings/join.h"
 #include "kudu/util/status.h"
 #include "kudu/util/test_util.h"
@@ -17,7 +18,7 @@ using std::vector;
 using std::string;
 
 namespace kudu {
-namespace metadata {
+namespace tablet {
 
 class MetadataTest : public KuduTest {
  public:
@@ -114,5 +115,5 @@ TEST_F(MetadataTest, RSMD_TestReplaceDeltas_Bad_DoesntExist) {
             BlockId::JoinStrings(meta_->redo_delta_blocks()));
 }
 
-} // namespace metadata
+} // namespace tablet
 } // namespace kudu

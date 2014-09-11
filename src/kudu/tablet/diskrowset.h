@@ -16,7 +16,7 @@
 #include "kudu/common/schema.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/tablet/delta_key.h"
-#include "kudu/server/metadata.h"
+#include "kudu/tablet/rowset_metadata.h"
 #include "kudu/tablet/rowset.h"
 #include "kudu/util/bloom_filter.h"
 #include "kudu/util/locks.h"
@@ -49,7 +49,7 @@ class OperationResultPB;
 class DiskRowSetWriter {
  public:
   // TODO: document ownership of rowset_metadata
-  DiskRowSetWriter(metadata::RowSetMetadata *rowset_metadata,
+  DiskRowSetWriter(RowSetMetadata *rowset_metadata,
                    const BloomFilterSizing &bloom_sizing);
 
   ~DiskRowSetWriter();
@@ -88,7 +88,7 @@ class DiskRowSetWriter {
   // (the ad-hoc writer for composite keys, otherwise the key column writer)
   cfile::CFileWriter *key_index_writer();
 
-  metadata::RowSetMetadata *rowset_metadata_;
+  RowSetMetadata *rowset_metadata_;
   BloomFilterSizing bloom_sizing_;
 
   bool finished_;
@@ -110,7 +110,7 @@ class RollingDiskRowSetWriter {
   // Create a new rolling writer. The given 'tablet_metadata' must stay valid
   // for the lifetime of this writer, and is used to construct the new rowsets
   // that this RollingDiskRowSetWriter creates.
-  RollingDiskRowSetWriter(metadata::TabletMetadata* tablet_metadata,
+  RollingDiskRowSetWriter(TabletMetadata* tablet_metadata,
                           const Schema &schema,
                           const BloomFilterSizing &bloom_sizing,
                           size_t target_rowset_size);
@@ -147,7 +147,7 @@ class RollingDiskRowSetWriter {
 
   // Return the set of rowset paths that were written by this writer.
   // This must only be called after Finish() returns an OK result.
-  void GetWrittenRowSetMetadata(metadata::RowSetMetadataVector* metas) const;
+  void GetWrittenRowSetMetadata(RowSetMetadataVector* metas) const;
 
   uint64_t written_size() const { return written_size_; }
 
@@ -169,9 +169,9 @@ class RollingDiskRowSetWriter {
   };
   State state_;
 
-  metadata::TabletMetadata* tablet_metadata_;
+  TabletMetadata* tablet_metadata_;
   const Schema schema_;
-  shared_ptr<metadata::RowSetMetadata> cur_drs_metadata_;
+  shared_ptr<RowSetMetadata> cur_drs_metadata_;
   const BloomFilterSizing bloom_sizing_;
   const size_t target_rowset_size_;
 
@@ -193,7 +193,7 @@ class RollingDiskRowSetWriter {
 
   // RowSetMetadata objects for diskrowsets which have been successfully
   // written out.
-  metadata::RowSetMetadataVector written_drs_metas_;
+  RowSetMetadataVector written_drs_metas_;
 
   int64_t written_count_;
   uint64_t written_size_;
@@ -215,7 +215,7 @@ class DiskRowSet : public RowSet {
 
   // Open a rowset from disk.
   // If successful, sets *rowset to the newly open rowset
-  static Status Open(const shared_ptr<metadata::RowSetMetadata>& rowset_metadata,
+  static Status Open(const shared_ptr<RowSetMetadata>& rowset_metadata,
                      log::OpIdAnchorRegistry* opid_anchor_registry,
                      shared_ptr<DiskRowSet> *rowset,
                      const std::tr1::shared_ptr<MemTracker>& parent_tracker =
@@ -278,7 +278,7 @@ class DiskRowSet : public RowSet {
 
   size_t CountDeltaStores() const OVERRIDE;
 
-  Status MajorCompactDeltaStores(const metadata::ColumnIndexes& col_indexes);
+  Status MajorCompactDeltaStores(const ColumnIndexes& col_indexes);
 
   Status AlterSchema(const Schema& schema) OVERRIDE;
 
@@ -290,7 +290,7 @@ class DiskRowSet : public RowSet {
     return DCHECK_NOTNULL(delta_tracker_.get());
   }
 
-  shared_ptr<metadata::RowSetMetadata> metadata() OVERRIDE {
+  shared_ptr<RowSetMetadata> metadata() OVERRIDE {
     return rowset_metadata_;
   }
 
@@ -312,7 +312,7 @@ class DiskRowSet : public RowSet {
   friend class CompactionInput;
   friend class Tablet;
 
-  DiskRowSet(const shared_ptr<metadata::RowSetMetadata>& rowset_metadata,
+  DiskRowSet(const shared_ptr<RowSetMetadata>& rowset_metadata,
              log::OpIdAnchorRegistry* opid_anchor_registry,
              const std::tr1::shared_ptr<MemTracker>& parent_tracker);
 
@@ -320,9 +320,9 @@ class DiskRowSet : public RowSet {
 
   // Create a new major delta compaction object to compact the specified columns.
   MajorDeltaCompaction* NewMajorDeltaCompaction(
-    const metadata::ColumnIndexes& col_indexes) const;
+    const ColumnIndexes& col_indexes) const;
 
-  shared_ptr<metadata::RowSetMetadata> rowset_metadata_;
+  shared_ptr<RowSetMetadata> rowset_metadata_;
 
   bool open_;
 

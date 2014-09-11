@@ -149,7 +149,7 @@ class DMSIterator : public DeltaIterator {
 
   Status CollectMutations(vector<Mutation *> *dst, Arena *arena) OVERRIDE;
 
-  Status FilterColumnsAndAppend(const metadata::ColumnIndexes& col_indexes,
+  Status FilterColumnsAndAppend(const ColumnIndexes& col_indexes,
                                 vector<DeltaKeyAndUpdate>* out,
                                 Arena* arena) OVERRIDE;
 

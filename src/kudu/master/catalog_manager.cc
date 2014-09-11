@@ -82,6 +82,7 @@ using std::string;
 using std::vector;
 using strings::Substitute;
 using tablet::TabletPeer;
+using tablet::TabletStatePB;
 using tserver::TabletServerErrorPB;
 
 ////////////////////////////////////////////////////////////
@@ -1051,7 +1052,7 @@ Status CatalogManager::HandleReportedTablet(TSDescriptor* ts_desc,
   if (report.has_error()) {
     Status s = StatusFromPB(report.error());
     DCHECK(!s.ok());
-    DCHECK_EQ(report.state(), metadata::FAILED);
+    DCHECK_EQ(report.state(), tablet::FAILED);
     LOG(WARNING) << "Tablet " << tablet->ToString() << " has failed on TS "
                  << ts_desc->permanent_uuid() << ": " << s.ToString();
     return Status::OK();
@@ -1065,7 +1066,7 @@ Status CatalogManager::HandleReportedTablet(TSDescriptor* ts_desc,
       HandleTabletSchemaVersionReport(tablet.get(), report.schema_version());
     }
 
-    if (!tablet_lock.data().is_running() && report.state() == metadata::RUNNING) {
+    if (!tablet_lock.data().is_running() && report.state() == tablet::RUNNING) {
       DCHECK(tablet_lock.data().pb.state() == SysTabletsEntryPB::kTabletStateCreating);
       // Mark the tablet as running
       // TODO: we could batch the IO onto a background thread, or at least
@@ -2040,7 +2041,7 @@ std::string TabletInfo::ToString() const {
 }
 
 void TabletInfo::AddReplica(TSDescriptor* ts_desc,
-                            metadata::TabletStatePB state,
+                            TabletStatePB state,
                             QuorumPeerPB::Role role) {
   boost::lock_guard<simple_spinlock> l(lock_);
 

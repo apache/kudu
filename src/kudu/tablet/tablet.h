@@ -14,7 +14,8 @@
 #include "kudu/gutil/atomicops.h"
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
-#include "kudu/server/metadata.h"
+#include "kudu/tablet/rowset_metadata.h"
+#include "kudu/tablet/tablet_metadata.h"
 #include "kudu/tablet/lock_manager.h"
 #include "kudu/tablet/mvcc.h"
 #include "kudu/tablet/rowset.h"
@@ -74,7 +75,7 @@ class Tablet {
   // metrics in a sub-context of this context. Otherwise, no metrics are collected.
   //
   // TODO allow passing in a server-wide parent MemTracker.
-  Tablet(const scoped_refptr<metadata::TabletMetadata>& metadata,
+  Tablet(const scoped_refptr<TabletMetadata>& metadata,
          const scoped_refptr<server::Clock>& clock,
          const MetricContext* parent_metric_context,
          log::OpIdAnchorRegistry* opid_anchor_registry);
@@ -266,8 +267,8 @@ class Tablet {
   // Return the Lock Manager for this tablet
   LockManager* lock_manager() { return &lock_manager_; }
 
-  const metadata::TabletMetadata *metadata() const { return metadata_.get(); }
-  metadata::TabletMetadata *metadata() { return metadata_.get(); }
+  const TabletMetadata *metadata() const { return metadata_.get(); }
+  TabletMetadata *metadata() { return metadata_.get(); }
 
   void SetCompactionHooksForTests(const shared_ptr<CompactionFaultHooks> &hooks);
   void SetFlushHooksForTests(const shared_ptr<FlushFaultHooks> &hooks);
@@ -283,7 +284,7 @@ class Tablet {
   // a shared_ptr API for now?)
   //
   // TODO: Handle MVCC to support MemRowSet and handle deltas in DeltaMemStore
-  Status DoMajorDeltaCompaction(const metadata::ColumnIndexes& column_indexes,
+  Status DoMajorDeltaCompaction(const ColumnIndexes& column_indexes,
                                 shared_ptr<RowSet> input_rowset);
 
   // Method used by tests to retrieve all rowsets of this table. This
@@ -352,7 +353,7 @@ class Tablet {
                              int64_t mrs_being_flushed);
 
   Status FlushMetadata(const RowSetVector& to_remove,
-                       const metadata::RowSetMetadataVector& to_add,
+                       const RowSetMetadataVector& to_add,
                        int64_t mrs_being_flushed);
 
   static void ModifyRowSetTree(const RowSetTree& old_tree,
@@ -417,7 +418,7 @@ class Tablet {
   shared_ptr<Schema> schema_;
   const Schema key_schema_;
 
-  scoped_refptr<metadata::TabletMetadata> metadata_;
+  scoped_refptr<TabletMetadata> metadata_;
 
   // Lock protecting access to the 'components_' member (i.e the rowsets in the tablet)
   //

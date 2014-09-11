@@ -68,7 +68,7 @@ struct PersistentTabletInfo {
 // This is copyable so that no locking is needed.
 struct TabletReplica {
   TSDescriptor* ts_desc;
-  metadata::TabletStatePB state;
+  tablet::TabletStatePB state;
   metadata::QuorumPeerPB::Role role;
 };
 
@@ -97,7 +97,7 @@ class TabletInfo : public RefCountedThreadSafe<TabletInfo> {
 
   // Add a replica reported on the given server
   void AddReplica(TSDescriptor* ts_desc,
-                  metadata::TabletStatePB state,
+                  tablet::TabletStatePB state,
                   metadata::QuorumPeerPB::Role role);
 
   // Remove any replicas which were on this server.

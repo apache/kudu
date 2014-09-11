@@ -60,7 +60,7 @@ class RemoteBootstrapServiceTest : public RemoteBootstrapTest {
   }
 
   Status DoBeginValidRemoteBootstrapSession(string* session_id,
-                                            metadata::TabletSuperBlockPB* superblock = NULL,
+                                            tablet::TabletSuperBlockPB* superblock = NULL,
                                             uint64_t* idle_timeout_millis = NULL,
                                             vector<consensus::OpId>* first_op_ids = NULL) {
     BeginRemoteBootstrapSessionResponsePB resp;
@@ -164,7 +164,7 @@ class RemoteBootstrapServiceTest : public RemoteBootstrapTest {
 // Test beginning and ending a remote bootstrap session.
 TEST_F(RemoteBootstrapServiceTest, TestSimpleBeginEndSession) {
   string session_id;
-  metadata::TabletSuperBlockPB superblock;
+  tablet::TabletSuperBlockPB superblock;
   uint64_t idle_timeout_millis;
   vector<consensus::OpId> first_op_ids;
   ASSERT_OK(DoBeginValidRemoteBootstrapSession(&session_id,
@@ -315,7 +315,7 @@ TEST_F(RemoteBootstrapServiceTest, TestInvalidBlockOrOpId) {
 // Test invalid file offset error condition.
 TEST_F(RemoteBootstrapServiceTest, TestFetchInvalidBlockOffset) {
   string session_id;
-  metadata::TabletSuperBlockPB superblock;
+  tablet::TabletSuperBlockPB superblock;
   ASSERT_OK(DoBeginValidRemoteBootstrapSession(&session_id, &superblock));
 
   FetchDataResponsePB resp;
@@ -332,7 +332,7 @@ TEST_F(RemoteBootstrapServiceTest, TestFetchInvalidBlockOffset) {
 // Test that we are able to fetch an entire block.
 TEST_F(RemoteBootstrapServiceTest, TestFetchBlockAtOnce) {
   string session_id;
-  metadata::TabletSuperBlockPB superblock;
+  tablet::TabletSuperBlockPB superblock;
   ASSERT_OK(DoBeginValidRemoteBootstrapSession(&session_id, &superblock));
 
   // Local.
@@ -352,7 +352,7 @@ TEST_F(RemoteBootstrapServiceTest, TestFetchBlockAtOnce) {
 // Test that we are able to incrementally fetch blocks.
 TEST_F(RemoteBootstrapServiceTest, TestFetchBlockIncrementally) {
   string session_id;
-  metadata::TabletSuperBlockPB superblock;
+  tablet::TabletSuperBlockPB superblock;
   ASSERT_OK(DoBeginValidRemoteBootstrapSession(&session_id, &superblock));
 
   BlockId block_id = FirstColumnBlockId(superblock);
@@ -379,7 +379,7 @@ TEST_F(RemoteBootstrapServiceTest, TestFetchBlockIncrementally) {
 // Test that we are able to fetch log segments.
 TEST_F(RemoteBootstrapServiceTest, TestFetchLog) {
   string session_id;
-  metadata::TabletSuperBlockPB superblock;
+  tablet::TabletSuperBlockPB superblock;
   uint64_t idle_timeout_millis;
   vector<consensus::OpId> first_op_ids;
   ASSERT_OK(DoBeginValidRemoteBootstrapSession(&session_id,

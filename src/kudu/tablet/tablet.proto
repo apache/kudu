@@ -2,7 +2,7 @@
 package kudu.tablet;
 
 import "kudu/common/wire_protocol.proto";
-import "kudu/server/metadata.proto";
+import "kudu/tablet/metadata.proto";
 
 // Stores the id of the MemRowSet (for inserts or mutations against MRS)
 // or of the (row set, delta ID) pair for mutations against a DiskRowSet.
@@ -53,7 +53,7 @@ message DeltaStatsPB {
 message TabletStatusPB {
   required string tablet_id = 1;
   required string table_name = 2;
-  required metadata.TabletStatePB state = 3;
+  required TabletStatePB state = 3;
   required string last_status = 4;
   required string start_key = 5;
   required string end_key = 6;

@@ -53,7 +53,6 @@ using log::Log;
 using log::OpIdAnchorRegistry;
 using metadata::QuorumPB;
 using metadata::QuorumPeerPB;
-using metadata::TabletMetadata;
 using rpc::Messenger;
 using strings::Substitute;
 using tserver::TabletServerErrorPB;
@@ -68,7 +67,7 @@ TabletPeer::TabletPeer(const scoped_refptr<TabletMetadata>& meta,
                        MarkDirtyCallback mark_dirty_clbk)
   : meta_(meta),
     tablet_id_(meta->oid()),
-    state_(metadata::BOOTSTRAPPING),
+    state_(BOOTSTRAPPING),
     quorum_peer_(quorum_peer),
     status_listener_(new TabletStatusListener(meta)),
     leader_apply_executor_(leader_apply_executor),
@@ -85,7 +84,7 @@ TabletPeer::TabletPeer(const scoped_refptr<TabletMetadata>& meta,
 
 TabletPeer::~TabletPeer() {
   boost::lock_guard<simple_spinlock> lock(lock_);
-  CHECK_EQ(state_, metadata::SHUTDOWN);
+  CHECK_EQ(state_, SHUTDOWN);
 }
 
 Status TabletPeer::Init(const shared_ptr<Tablet>& tablet,
@@ -95,8 +94,8 @@ Status TabletPeer::Init(const shared_ptr<Tablet>& tablet,
                         const MetricContext& metric_ctx) {
   {
     boost::lock_guard<simple_spinlock> lock(lock_);
-    CHECK_EQ(state_, metadata::BOOTSTRAPPING);
-    state_ = metadata::CONFIGURING;
+    CHECK_EQ(state_, BOOTSTRAPPING);
+    state_ = CONFIGURING;
     tablet_ = tablet;
     clock_ = clock;
     messenger_ = messenger;
@@ -231,9 +230,9 @@ void TabletPeer::ConsensusStateChanged(const QuorumPB& old_quorum, const QuorumP
     // - a change from LEADER to FOLLOWER might require emptying queues
     // - a change to NON_PARTICIPANT should likely trigger the destruction of
     //   the tablet.
-    if (state_ == metadata::CONFIGURING && new_role != QuorumPeerPB::NON_PARTICIPANT) {
+    if (state_ == CONFIGURING && new_role != QuorumPeerPB::NON_PARTICIPANT) {
       CHECK_OK(StartLogGCTask());
-      state_ = metadata::RUNNING;
+      state_ = RUNNING;
       tablet_running_latch_.CountDown();
     }
   }
@@ -243,18 +242,18 @@ void TabletPeer::ConsensusStateChanged(const QuorumPB& old_quorum, const QuorumP
   mark_dirty_clbk_(this);
 }
 
-metadata::TabletStatePB TabletPeer::Shutdown() {
+TabletStatePB TabletPeer::Shutdown() {
 
   LOG(INFO) << "Initiating TabletPeer shutdown for tablet: " << tablet_id_;
 
-  metadata::TabletStatePB prev_state;
+  TabletStatePB prev_state;
   {
     boost::lock_guard<simple_spinlock> lock(lock_);
-    if (state_ == metadata::QUIESCING || state_ == metadata::SHUTDOWN) {
+    if (state_ == QUIESCING || state_ == SHUTDOWN) {
       return state_;
     }
     prev_state = state_;
-    state_ = metadata::QUIESCING;
+    state_ = QUIESCING;
   }
 
   if (tablet_) tablet_->UnregisterMaintenanceOps();
@@ -284,7 +283,7 @@ metadata::TabletStatePB TabletPeer::Shutdown() {
 
   {
     boost::lock_guard<simple_spinlock> lock(lock_);
-    state_ = metadata::SHUTDOWN;
+    state_ = SHUTDOWN;
   }
   return prev_state;
 }
@@ -292,9 +291,9 @@ metadata::TabletStatePB TabletPeer::Shutdown() {
 Status TabletPeer::CheckRunning() const {
   {
     boost::lock_guard<simple_spinlock> lock(lock_);
-    if (state_ != metadata::RUNNING) {
+    if (state_ != RUNNING) {
       return Status::ServiceUnavailable(Substitute("The tablet is not in a running state: $0",
-                                                   metadata::TabletStatePB_Name(state_)));
+                                                   TabletStatePB_Name(state_)));
     }
   }
   return Status::OK();
@@ -303,13 +302,13 @@ Status TabletPeer::CheckRunning() const {
 Status TabletPeer::WaitUntilRunning(const MonoDelta& delta) {
   {
     boost::lock_guard<simple_spinlock> lock(lock_);
-    if (state_ == metadata::QUIESCING || state_ == metadata::SHUTDOWN) {
+    if (state_ == QUIESCING || state_ == SHUTDOWN) {
       return Status::IllegalState("The tablet is already shutting down or shutdown");
     }
   }
   if (!tablet_running_latch_.WaitFor(delta)) {
     return Status::TimedOut(Substitute("The tablet is not in RUNNING state after waiting: $0",
-                                       metadata::TabletStatePB_Name(state_)));
+                                       TabletStatePB_Name(state_)));
   }
   return Status::OK();
 }
@@ -335,10 +334,10 @@ Status TabletPeer::SubmitAlterSchema(AlterSchemaTransactionState *state) {
 Status TabletPeer::SubmitChangeConfig(ChangeConfigTransactionState *state) {
   {
     boost::lock_guard<simple_spinlock> lock(lock_);
-    if (state_ != metadata::RUNNING && state_ != metadata::CONFIGURING) {
+    if (state_ != RUNNING && state_ != CONFIGURING) {
       return Status::ServiceUnavailable(
           Substitute("The tablet is not in a running/configuring state: $0",
-                     metadata::TabletStatePB_Name(state_)));
+                     TabletStatePB_Name(state_)));
     }
   }
 
@@ -454,9 +453,9 @@ void TabletPeer::GetEarliestNeededOpId(consensus::OpId* min_op_id) const {
 }
 
 bool TabletPeer::IsOpTypeAllowedInState(consensus::OperationType type,
-                                        metadata::TabletStatePB state) {
-  if (state == metadata::RUNNING) return true;
-  if (state == metadata::CONFIGURING) {
+                                        TabletStatePB state) {
+  if (state == RUNNING) return true;
+  if (state == CONFIGURING) {
     return type == CHANGE_CONFIG_OP;
   }
   return false;
@@ -470,7 +469,7 @@ Status TabletPeer::StartReplicaTransaction(gscoped_ptr<ConsensusRound> round) {
       return Status::ServiceUnavailable(
           Substitute("Tablet is not ready to accept operation. OpType: $0 Tablet State: $1",
                      consensus::OperationType_Name(op_type),
-                     metadata::TabletStatePB_Name(state_)));
+                     TabletStatePB_Name(state_)));
     }
   }
   consensus::ReplicateMsg* replicate_msg = round->replicate_op()->mutable_replicate();

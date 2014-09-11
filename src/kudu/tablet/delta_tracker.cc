@@ -23,9 +23,6 @@
 namespace kudu { namespace tablet {
 
 using boost::assign::list_of;
-using metadata::RowSetMetadata;
-
-using boost::assign::list_of;
 using std::string;
 using std::tr1::shared_ptr;
 
@@ -209,7 +206,7 @@ Status DeltaTracker::CompactStores(int start_idx, int end_idx) {
   LOG(INFO) << "Opened delta block for read: " << new_block_id.ToString();
 
   // Update the metadata accordingly
-  metadata::RowSetMetadataUpdate update;
+  RowSetMetadataUpdate update;
   update.ReplaceRedoDeltaBlocks(compacted_blocks, list_of(new_block_id));
   // TODO: need to have some error handling here -- if we somehow can't persist the
   // metadata, do we end up losing data on recovery?

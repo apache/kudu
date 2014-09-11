@@ -23,10 +23,6 @@ namespace log {
 class ReadableLogSegment;
 } // namespace log
 
-namespace metadata {
-class TabletMetadata;
-} // namespace metadata
-
 namespace tserver {
 
 class RemoteBootstrapSession;

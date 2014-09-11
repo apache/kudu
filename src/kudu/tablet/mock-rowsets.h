@@ -6,8 +6,8 @@
 #include <vector>
 
 #include "kudu/gutil/strings/substitute.h"
-#include "kudu/server/metadata.h"
 #include "kudu/tablet/rowset.h"
+#include "kudu/tablet/rowset_metadata.h"
 
 namespace kudu {
 namespace tablet {
@@ -63,10 +63,10 @@ class MockRowSet : public RowSet {
     LOG(FATAL) << "Unimplemented";
     return NULL;
   }
-  virtual shared_ptr<metadata::RowSetMetadata> metadata() OVERRIDE {
+  virtual shared_ptr<RowSetMetadata> metadata() OVERRIDE {
     LOG(FATAL) << "Unimplemented";
-    return shared_ptr<metadata::RowSetMetadata>(
-      reinterpret_cast<metadata::RowSetMetadata *>(NULL));
+    return shared_ptr<RowSetMetadata>(
+      reinterpret_cast<RowSetMetadata *>(NULL));
   }
   virtual Status AlterSchema(const Schema& schema) OVERRIDE {
     LOG(FATAL) << "Unimplemented";

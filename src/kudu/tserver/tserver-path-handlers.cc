@@ -166,8 +166,8 @@ void TabletServerPathHandlers::HandleTabletsPage(const Webserver::ArgumentMap &a
     if (status.has_estimated_on_disk_size()) {
       n_bytes = HumanReadableNumBytes::ToString(status.estimated_on_disk_size());
     }
-    string state = metadata::TabletStatePB_Name(status.state());
-    if (status.state() == metadata::FAILED) {
+    string state = tablet::TabletStatePB_Name(status.state());
+    if (status.state() == tablet::FAILED) {
       StrAppend(&state, ": ", EscapeForHtmlToString(peer->error().ToString()));
     }
     // TODO: would be nice to include some other stuff like memory usage
@@ -249,7 +249,7 @@ bool GetTabletPeer(TabletServer* tserver, const Webserver::ArgumentMap& args,
 
 bool TabletBootstrapping(const scoped_refptr<TabletPeer>& peer, const string& tablet_id,
                          std::stringstream* out) {
-  if (peer->state() == metadata::BOOTSTRAPPING) {
+  if (peer->state() == tablet::BOOTSTRAPPING) {
     (*out) << "Tablet " << EscapeForHtmlToString(tablet_id) << " is still bootstrapping";
     return false;
   }

@@ -30,17 +30,13 @@ using cfile::BloomFileWriter;
 using cfile::CFileReader;
 using cfile::ReaderOptions;
 using log::OpIdAnchorRegistry;
-using metadata::RowSetMetadata;
-using metadata::RowSetMetadataVector;
-using metadata::TabletMetadata;
-using metadata::ColumnIndexes;
 using std::string;
 using std::tr1::shared_ptr;
 
 const char *DiskRowSet::kMinKeyMetaEntryName = "min_key";
 const char *DiskRowSet::kMaxKeyMetaEntryName = "max_key";
 
-DiskRowSetWriter::DiskRowSetWriter(metadata::RowSetMetadata *rowset_metadata,
+DiskRowSetWriter::DiskRowSetWriter(RowSetMetadata *rowset_metadata,
                                    const BloomFilterSizing &bloom_sizing)
   : rowset_metadata_(rowset_metadata),
     bloom_sizing_(bloom_sizing),
@@ -413,7 +409,7 @@ Status DiskRowSet::MinorCompactDeltaStores() {
   return delta_tracker_->Compact();
 }
 
-Status DiskRowSet::MajorCompactDeltaStores(const metadata::ColumnIndexes& col_indexes) {
+Status DiskRowSet::MajorCompactDeltaStores(const ColumnIndexes& col_indexes) {
   // TODO: make this more fine-grained if possible. Will make sense
   // to re-touch this area once integrated with maintenance ops
   // scheduling.
@@ -438,7 +434,7 @@ Status DiskRowSet::MajorCompactDeltaStores(const metadata::ColumnIndexes& col_in
 
   // Update metadata.
   // TODO: think carefully about whether to update metadata or stores first!
-  metadata::RowSetMetadataUpdate update;
+  RowSetMetadataUpdate update;
   RETURN_NOT_OK(compaction->CreateMetadataUpdate(&update));
   RETURN_NOT_OK(rowset_metadata_->CommitUpdate(update));
 
@@ -457,7 +453,7 @@ Status DiskRowSet::MajorCompactDeltaStores(const metadata::ColumnIndexes& col_in
 }
 
 MajorDeltaCompaction* DiskRowSet::NewMajorDeltaCompaction(
-    const metadata::ColumnIndexes& col_indexes) const {
+    const ColumnIndexes& col_indexes) const {
   CHECK(open_);
   boost::shared_lock<rw_spinlock> lock(component_lock_.get_lock());
 

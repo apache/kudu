@@ -24,7 +24,6 @@ namespace tablet {
 
 using std::tr1::unordered_set;
 
-using metadata::RowSetMetadata;
 using strings::Substitute;
 using util::gtl::is_sorted;
 

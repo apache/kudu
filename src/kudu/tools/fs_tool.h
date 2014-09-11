@@ -21,7 +21,7 @@ class Schema;
 class BlockId;
 class RandomAccessFile;
 
-namespace metadata {
+namespace tablet {
 class TabletMetadata;
 class RowSetMetadata;
 }
@@ -97,16 +97,16 @@ class FsTool {
   Status ListSegmentsInDir(const std::string& segments_dir);
 
   Status ListBlocksInRowSet(const Schema& schema,
-                            const metadata::RowSetMetadata& rs_meta);
+                            const tablet::RowSetMetadata& rs_meta);
 
   Status LoadTabletMetadata(const std::string& master_block_path,
                             const std::string& tablet_id,
-                            scoped_refptr<metadata::TabletMetadata> *meta);
+                            scoped_refptr<tablet::TabletMetadata> *meta);
 
   Status GetTabletsInMasterBlockDir(std::vector<std::string>* tablets);
 
   Status DumpRowSetInternal(const Schema& schema,
-                            const std::tr1::shared_ptr<metadata::RowSetMetadata>& rs_meta,
+                            const std::tr1::shared_ptr<tablet::RowSetMetadata>& rs_meta,
                             const DumpOptions& opts,
                             int indent);
 
@@ -118,7 +118,7 @@ class FsTool {
                                 int indent);
 
   Status DumpDeltaCFileBlockInternal(const Schema& schema,
-                                     const std::tr1::shared_ptr<metadata::RowSetMetadata>& rs_meta,
+                                     const std::tr1::shared_ptr<tablet::RowSetMetadata>& rs_meta,
                                      const BlockId& block_id,
                                      tablet::DeltaType delta_type,
                                      const DumpOptions& opts,

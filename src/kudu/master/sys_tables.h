@@ -58,7 +58,7 @@ class SysTable {
 
   // Setup the 'master_block' with the IDs of the super-blocks for
   // the tablet of the sys-table.
-  virtual void SetupTabletMasterBlock(metadata::TabletMasterBlockPB *master_block) = 0;
+  virtual void SetupTabletMasterBlock(tablet::TabletMasterBlockPB *master_block) = 0;
 
   // Returns 'Status::OK()' if the WriteTranasction completed
   Status SyncWrite(const tserver::WriteRequestPB *req, tserver::WriteResponsePB *resp);
@@ -79,7 +79,7 @@ class SysTable {
  private:
   friend class CatalogManager;
 
-  Status SetupTablet(const scoped_refptr<metadata::TabletMetadata>& metadata,
+  Status SetupTablet(const scoped_refptr<tablet::TabletMetadata>& metadata,
                      const metadata::QuorumPeerPB& quorum_peer);
 
   const scoped_refptr<tablet::TabletPeer>& tablet_peer() const {
@@ -129,7 +129,7 @@ class SysTabletsTable : public SysTable {
   virtual const char *table_name() const OVERRIDE { return "sys.tablets"; }
 
   virtual Schema BuildTableSchema() OVERRIDE;
-  virtual void SetupTabletMasterBlock(metadata::TabletMasterBlockPB *master_block) OVERRIDE;
+  virtual void SetupTabletMasterBlock(tablet::TabletMasterBlockPB *master_block) OVERRIDE;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(SysTabletsTable);
@@ -165,7 +165,7 @@ class SysTablesTable : public SysTable {
   virtual const char *table_name() const OVERRIDE { return "sys.tables"; }
 
   virtual Schema BuildTableSchema() OVERRIDE;
-  virtual void SetupTabletMasterBlock(metadata::TabletMasterBlockPB *master_block) OVERRIDE;
+  virtual void SetupTabletMasterBlock(tablet::TabletMasterBlockPB *master_block) OVERRIDE;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(SysTablesTable);

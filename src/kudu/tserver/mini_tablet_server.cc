@@ -30,7 +30,6 @@ using kudu::log::Log;
 using kudu::log::LogOptions;
 using kudu::metadata::QuorumPeerPB;
 using kudu::metadata::QuorumPB;
-using kudu::metadata::TabletMetadata;
 using strings::Substitute;
 
 namespace kudu {

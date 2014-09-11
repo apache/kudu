@@ -26,9 +26,6 @@ class OpId;
 namespace metadata {
 class QuorumPB;
 class QuorumPeerPB;
-class TabletMasterBlockPB;
-class TabletMetadata;
-class TabletSuperBlockPB;
 } // namespace metadata
 
 namespace rpc {
@@ -38,7 +35,10 @@ class RpcController;
 } // namespace rpc
 
 namespace tablet {
+class TabletMasterBlockPB;
+class TabletMetadata;
 class TabletStatusListener;
+class TabletSuperBlockPB;
 } // namespace tablet
 
 namespace tserver {
@@ -65,7 +65,7 @@ class RemoteBootstrapClient {
 
   // Runs a "full" remote bootstrap, copying the physical layout of a tablet
   // from the leader of the specified quorum.
-  Status RunRemoteBootstrap(metadata::TabletMetadata* meta,
+  Status RunRemoteBootstrap(tablet::TabletMetadata* meta,
                             const metadata::QuorumPB& quorum,
                             tablet::TabletStatusListener* status_listener);
 
@@ -143,7 +143,7 @@ class RemoteBootstrapClient {
   std::tr1::shared_ptr<TabletServerServiceProxy> proxy_;
   std::string session_id_;
   uint64_t session_idle_timeout_millis_;
-  gscoped_ptr<metadata::TabletSuperBlockPB> superblock_;
+  gscoped_ptr<tablet::TabletSuperBlockPB> superblock_;
   std::vector<consensus::OpId> wal_initial_opids_;
 
   DISALLOW_COPY_AND_ASSIGN(RemoteBootstrapClient);

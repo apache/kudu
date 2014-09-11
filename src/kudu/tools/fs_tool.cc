@@ -47,9 +47,9 @@ using tablet::DeltaType;
 using tablet::MvccSnapshot;
 using tablet::Tablet;
 using tablet::CFileSet;
-using metadata::TabletMasterBlockPB;
-using metadata::TabletMetadata;
-using metadata::RowSetMetadata;
+using tablet::TabletMasterBlockPB;
+using tablet::TabletMetadata;
+using tablet::RowSetMetadata;
 using log::LogReader;
 using log::ReadableLogSegment;
 
@@ -254,7 +254,7 @@ Status FsTool::PrintTabletMetaInternal(const string& master_block_path,
 
 Status FsTool::LoadTabletMetadata(const string& master_block_path,
                                   const string& tablet_id,
-                                  scoped_refptr<metadata::TabletMetadata>* meta) {
+                                  scoped_refptr<tablet::TabletMetadata>* meta) {
   TabletMasterBlockPB master_block_pb;
   Status s = TabletMetadata::OpenMasterBlock(fs_manager_->env(),
                                              master_block_path,

@@ -269,9 +269,9 @@ class MemRowSet : public RowSet,
     return id_;
   }
 
-  std::tr1::shared_ptr<metadata::RowSetMetadata> metadata() OVERRIDE {
-    return std::tr1::shared_ptr<metadata::RowSetMetadata>(
-        reinterpret_cast<metadata::RowSetMetadata *>(NULL));
+  std::tr1::shared_ptr<RowSetMetadata> metadata() OVERRIDE {
+    return std::tr1::shared_ptr<RowSetMetadata>(
+        reinterpret_cast<RowSetMetadata *>(NULL));
   }
 
   Status AlterSchema(const Schema& schema) OVERRIDE;
