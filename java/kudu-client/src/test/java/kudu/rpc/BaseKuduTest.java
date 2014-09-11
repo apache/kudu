@@ -139,6 +139,7 @@ public class BaseKuduTest {
       if (client != null) {
         Deferred<ArrayList<Void>> d = client.shutdown();
         d.addErrback(defaultErrorCB);
+        d.join(DEFAULT_SLEEP);
       }
       if (startCluster) {
         if (master != null) {

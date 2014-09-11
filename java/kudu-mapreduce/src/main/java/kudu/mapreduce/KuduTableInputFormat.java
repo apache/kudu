@@ -54,6 +54,19 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+/**
+ * <p>
+ * This input format generates one split per tablet and the only location for each split is that
+ * tablet's leader.
+ * </p>
+ *
+ * <p>
+ * Hadoop doesn't have the concept of "closing" the input format so in order to release the
+ * resources we assume that once either {@link #getSplits(org.apache.hadoop.mapreduce.JobContext)}
+ * or {@link kudu.mapreduce.KuduTableInputFormat.TableRecordReader#close()} have been called that
+ * the object won't be used again and the KuduClient is shut down.
+ * </p>
+ */
 public class KuduTableInputFormat extends InputFormat<NullWritable, RowResult>
     implements Configurable {
 
@@ -131,8 +144,16 @@ public class KuduTableInputFormat extends InputFormat<NullWritable, RowResult>
       splits.add(split);
       LOG.debug("Split: " + split);
     }
-
+    shutdownClient();
     return splits;
+  }
+
+  private void shutdownClient() throws IOException {
+    try {
+      client.shutdown().join(operationTimeoutMs);
+    } catch (Exception e) {
+      throw new IOException(e);
+    }
   }
 
   /**
@@ -383,7 +404,12 @@ public class KuduTableInputFormat extends InputFormat<NullWritable, RowResult>
 
     @Override
     public void close() throws IOException {
-      scanner.close();
+      try {
+        scanner.close().join(operationTimeoutMs);
+      } catch (Exception e) {
+        throw new IOException(e);
+      }
+      shutdownClient();
     }
   }
 }

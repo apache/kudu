@@ -103,6 +103,10 @@ public class TestKuduTableInputFormat extends BaseKuduTest {
     }
     input.setConf(conf);
     List<InputSplit> splits = input.getSplits(null);
+
+    // We need to re-create the input format to reconnect the client.
+    input = new KuduTableInputFormat();
+    input.setConf(conf);
     RecordReader<NullWritable, RowResult> reader = input.createRecordReader(null, null);
     reader.initialize(Iterables.getOnlyElement(splits), null);
     return reader;

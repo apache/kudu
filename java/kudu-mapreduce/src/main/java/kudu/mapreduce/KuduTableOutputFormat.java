@@ -28,9 +28,21 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
- * Use {@link kudu.mapreduce.KuduTableMapReduceUtil#initTableOutputFormat} to correctly setup
- * this output format, then {@link kudu.mapreduce.KuduTableMapReduceUtil#getTableFromContext} to
- * get a KuduTable.
+ * <p>
+ * Use {@link
+ * KuduTableMapReduceUtil#initTableOutputFormat(org.apache.hadoop.mapreduce.Job, String, boolean)}
+ * to correctly setup this output format, then {@link
+ * KuduTableMapReduceUtil#getTableFromContext(org.apache.hadoop.mapreduce.TaskInputOutputContext)}
+ * to get a KuduTable.
+ * </p>
+ *
+ * <p>
+ * Hadoop doesn't have the concept of "closing" the output format so in order to release the
+ * resources we assume that once either
+ * {@link #checkOutputSpecs(org.apache.hadoop.mapreduce.JobContext)}
+ * or {@link TableRecordWriter#close(org.apache.hadoop.mapreduce.TaskAttemptContext)}
+ * have been called that the object won't be used again and the KuduClient is shut down.
+ * </p>
  */
 public class KuduTableOutputFormat extends OutputFormat<NullWritable,Operation>
     implements Configurable {
@@ -104,6 +116,14 @@ public class KuduTableOutputFormat extends OutputFormat<NullWritable,Operation>
     entries.set(MULTITON_KEY, multitonKey);
   }
 
+  private void shutdownClient() throws IOException {
+    try {
+      client.shutdown().join(operationTimeoutMs);
+    } catch (Exception e) {
+      throw new IOException(e);
+    }
+  }
+
   public static KuduTable getKuduTable(String multitonKey) {
     return MULTITON.get(multitonKey).getKuduTable();
   }
@@ -120,11 +140,13 @@ public class KuduTableOutputFormat extends OutputFormat<NullWritable,Operation>
   @Override
   public RecordWriter<NullWritable, Operation> getRecordWriter(TaskAttemptContext taskAttemptContext)
       throws IOException, InterruptedException {
-    return new TableRecordWriter(this.session, this.operationTimeoutMs);
+    return new TableRecordWriter(this.session);
   }
 
   @Override
-  public void checkOutputSpecs(JobContext jobContext) throws IOException, InterruptedException { }
+  public void checkOutputSpecs(JobContext jobContext) throws IOException, InterruptedException {
+    shutdownClient();
+  }
 
   @Override
   public OutputCommitter getOutputCommitter(TaskAttemptContext taskAttemptContext) throws
@@ -132,15 +154,13 @@ public class KuduTableOutputFormat extends OutputFormat<NullWritable,Operation>
     return new KuduTableOutputCommitter();
   }
 
-  protected static class TableRecordWriter extends RecordWriter<NullWritable, Operation> {
+  protected class TableRecordWriter extends RecordWriter<NullWritable, Operation> {
 
     private final AtomicLong rowsWithErrors = new AtomicLong();
     private final KuduSession session;
-    private final long operationTimeoutMs;
 
-    public TableRecordWriter(KuduSession session, long operationTimeoutMs) {
+    public TableRecordWriter(KuduSession session) {
       this.session = session;
-      this.operationTimeoutMs = operationTimeoutMs;
     }
 
     @Override
@@ -170,6 +190,7 @@ public class KuduTableOutputFormat extends OutputFormat<NullWritable,Operation>
         Deferred<ArrayList<OperationResponse>> d = session.close();
         d.addErrback(defaultErrorCB);
         d.join(operationTimeoutMs);
+        shutdownClient();
       } catch (Exception e) {
         // Same as for write, it will get registered in defaultErrorCB.
       } finally {
