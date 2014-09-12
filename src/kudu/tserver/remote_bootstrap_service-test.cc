@@ -11,8 +11,8 @@
 #include "kudu/consensus/opid_anchor_registry.h"
 #include "kudu/rpc/rpc_header.pb.h"
 #include "kudu/rpc/transfer.h"
-#include "kudu/tserver/remote_bootstrap.pb.h"
 #include "kudu/server/metadata.pb.h"
+#include "kudu/tserver/remote_bootstrap.pb.h"
 #include "kudu/tserver/tserver_service.pb.h"
 #include "kudu/tserver/tserver_service.proxy.h"
 #include "kudu/util/crc.h"
@@ -43,13 +43,12 @@ static const int kNumRolls = 2;
 
 class RemoteBootstrapServiceTest : public TabletServerTest {
  public:
-  RemoteBootstrapServiceTest()
-    : flag_saver_(new google::FlagSaver()) {
+  RemoteBootstrapServiceTest() {
+    // Poll for session expiration every 10 ms for the session timeout test.
+    FLAGS_remote_bootstrap_timeout_poll_period_ms = 10;
   }
 
   virtual void SetUp() OVERRIDE {
-    // Poll for session expiration every 10 ms for the session timeout test.
-    FLAGS_remote_bootstrap_timeout_poll_period_ms = 10;
     TabletServerTest::SetUp();
     // Prevent logs from being deleted out from under us until / unless we want
     // to test that we are anchoring correctly. Since GenerateTestData() does a
@@ -57,7 +56,7 @@ class RemoteBootstrapServiceTest : public TabletServerTest {
     // starting a remote bootstrap session.
     tablet_peer_->tablet()->opid_anchor_registry()->Register(MinimumOpId(), CURRENT_TEST_NAME(),
                                                              &anchor_);
-    GenerateTestData();
+    ASSERT_NO_FATAL_FAILURE(GenerateTestData());
   }
 
   virtual void TearDown() OVERRIDE {
@@ -71,8 +70,8 @@ class RemoteBootstrapServiceTest : public TabletServerTest {
     LOG_TIMING(INFO, "Loading test data") {
       for (int row_id = 0; row_id < kNumRolls * kIncr; row_id += kIncr) {
         InsertTestRowsRemote(0, row_id, kIncr);
-        CHECK_OK(tablet_peer_->tablet()->Flush());
-        CHECK_OK(tablet_peer_->log()->AllocateSegmentAndRollOver());
+        ASSERT_OK(tablet_peer_->tablet()->Flush());
+        ASSERT_OK(tablet_peer_->log()->AllocateSegmentAndRollOver());
       }
     }
   }
@@ -201,22 +200,21 @@ class RemoteBootstrapServiceTest : public TabletServerTest {
 
   // Read a block file from the file system fully into memory and return a
   // Slice pointing to it.
-  Slice ReadLocalBlockFile(const BlockId& block_id, faststring* scratch) {
+  Status ReadLocalBlockFile(const BlockId& block_id, faststring* scratch, Slice* slice) {
     shared_ptr<RandomAccessFile> block_file;
-    CHECK_OK(mini_server_->fs_manager()->OpenBlock(block_id, &block_file));
+    RETURN_NOT_OK(mini_server_->fs_manager()->OpenBlock(block_id, &block_file));
 
     uint64_t size = 0;
-    CHECK_OK(block_file->Size(&size));
+    RETURN_NOT_OK(block_file->Size(&size));
     scratch->resize(size);
-    Slice slice;
-    CHECK_OK(ReadFully(block_file.get(), 0, size, &slice, scratch->data()));
+    RETURN_NOT_OK(ReadFully(block_file.get(), 0, size, slice, scratch->data()));
 
     // Since the mmap will go away on return, copy the data into scratch.
-    if (slice.data() != scratch->data()) {
-      memcpy(scratch->data(), slice.data(), slice.size());
-      slice = Slice(scratch->data(), slice.size());
+    if (slice->data() != scratch->data()) {
+      memcpy(scratch->data(), slice->data(), slice->size());
+      *slice = Slice(scratch->data(), slice->size());
     }
-    return slice;
+    return Status::OK();
   }
 
   // Grab the first column block we find in the SuperBlock.
@@ -236,7 +234,6 @@ class RemoteBootstrapServiceTest : public TabletServerTest {
   }
 
   log::OpIdAnchor anchor_;
-  gscoped_ptr<google::FlagSaver> flag_saver_;
 };
 
 // Test beginning and ending a remote bootstrap session.
@@ -246,9 +243,9 @@ TEST_F(RemoteBootstrapServiceTest, TestSimpleBeginEndSession) {
   uint64_t idle_timeout_millis;
   vector<consensus::OpId> first_op_ids;
   ASSERT_OK(DoBeginValidRemoteBootstrapSession(&session_id,
-                                                      &superblock,
-                                                      &idle_timeout_millis,
-                                                      &first_op_ids));
+                                               &superblock,
+                                               &idle_timeout_millis,
+                                               &first_op_ids));
   // Basic validation of returned params.
   ASSERT_FALSE(session_id.empty());
   ASSERT_EQ(FLAGS_remote_bootstrap_idle_timeout_ms, idle_timeout_millis);
@@ -415,8 +412,9 @@ TEST_F(RemoteBootstrapServiceTest, TestFetchBlockAtOnce) {
 
   // Local.
   BlockId block_id = FirstColumnBlockId(superblock);
+  Slice local_data;
   faststring scratch;
-  Slice local_data = ReadLocalBlockFile(block_id, &scratch);
+  ASSERT_OK(ReadLocalBlockFile(block_id, &scratch, &local_data));
 
   // Remote.
   FetchDataResponsePB resp;
@@ -433,8 +431,9 @@ TEST_F(RemoteBootstrapServiceTest, TestFetchBlockIncrementally) {
   ASSERT_OK(DoBeginValidRemoteBootstrapSession(&session_id, &superblock));
 
   BlockId block_id = FirstColumnBlockId(superblock);
+  Slice local_data;
   faststring scratch;
-  Slice local_data = ReadLocalBlockFile(block_id, &scratch);
+  ASSERT_OK(ReadLocalBlockFile(block_id, &scratch, &local_data));
 
   // Grab the remote data in several chunks.
   int64_t block_size = local_data.size();
@@ -484,7 +483,7 @@ TEST_F(RemoteBootstrapServiceTest, TestFetchLog) {
   int64_t size = segment->file_size();
   scratch.resize(size);
   Slice slice;
-  CHECK_OK(ReadFully(segment->readable_file().get(), 0, size, &slice, scratch.data()));
+  ASSERT_OK(ReadFully(segment->readable_file().get(), 0, size, &slice, scratch.data()));
 
   AssertDataEqual(slice.data(), slice.size(), resp.chunk());
 }
