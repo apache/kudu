@@ -213,7 +213,7 @@ public final class KuduScanner {
   /**
    * Sets the maximum number of bytes returned at once by the scanner.
    * <p>
-   * HBase may actually return more than this many bytes because it will not
+   * Kudu may actually return more than this many bytes because it will not
    * truncate a rowResult in the middle.
    * @param max_num_bytes A strictly positive number of bytes.
    * @throws IllegalStateException if scanning already started.

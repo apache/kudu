@@ -536,19 +536,15 @@ public class KuduClient {
     }
     final RemoteTablet tablet = scanner.currentTablet();
     final TabletClient client = clientFor(tablet);
+    final KuduRpc<KuduScanner.Response> next_request = scanner.getNextRowsRequest();
+    final Deferred<KuduScanner.Response> d = next_request.getDeferred();
     if (client == null) {
       // Oops, we no longer know anything about this client or tabletSlice.  Our
       // cache was probably invalidated while the client was scanning.  This
       // means that we lost the connection to that TabletServer, so we have to
-      // re-open this scanner if we wanna keep scanning.
-      scanner.invalidate();        // Invalidate the scanner so that ...
-      Exception e = new NonRecoverableException("Scanner encountered a tablet server failure: " +
-          scanner);
-      return Deferred.fromError(e);
+      // try to re-connect and check if the scanner is still good.
+      return sendRpcToTablet(next_request);
     }
-    //num_scans.increment();
-    final KuduRpc<KuduScanner.Response> next_request = scanner.getNextRowsRequest();
-    final Deferred<KuduScanner.Response> d = next_request.getDeferred();
     client.sendRpc(next_request);
     return d;
   }
