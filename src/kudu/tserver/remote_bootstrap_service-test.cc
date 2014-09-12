@@ -1,5 +1,5 @@
 // Copyright (c) 2014, Cloudera, inc.
-#include "kudu/tserver/tablet_server-test-base.h"
+#include "kudu/tserver/remote_bootstrap-test-base.h"
 
 #include <boost/foreach.hpp>
 #include <gflags/gflags.h>
@@ -39,53 +39,14 @@ using log::ReadableLogSegmentMap;
 using rpc::ErrorStatusPB;
 using rpc::RpcController;
 
-static const int kNumRolls = 2;
-
-class RemoteBootstrapServiceTest : public TabletServerTest {
+class RemoteBootstrapServiceTest : public RemoteBootstrapTest {
  public:
   RemoteBootstrapServiceTest() {
     // Poll for session expiration every 10 ms for the session timeout test.
     FLAGS_remote_bootstrap_timeout_poll_period_ms = 10;
   }
 
-  virtual void SetUp() OVERRIDE {
-    TabletServerTest::SetUp();
-    // Prevent logs from being deleted out from under us until / unless we want
-    // to test that we are anchoring correctly. Since GenerateTestData() does a
-    // Flush(), Log GC is allowed to eat the logs before we get around to
-    // starting a remote bootstrap session.
-    tablet_peer_->tablet()->opid_anchor_registry()->Register(MinimumOpId(), CURRENT_TEST_NAME(),
-                                                             &anchor_);
-    ASSERT_NO_FATAL_FAILURE(GenerateTestData());
-  }
-
-  virtual void TearDown() OVERRIDE {
-    ASSERT_OK(tablet_peer_->tablet()->opid_anchor_registry()->Unregister(&anchor_));
-    TabletServerTest::TearDown();
-  }
-
  protected:
-  void GenerateTestData() {
-    const int kIncr = 50;
-    LOG_TIMING(INFO, "Loading test data") {
-      for (int row_id = 0; row_id < kNumRolls * kIncr; row_id += kIncr) {
-        InsertTestRowsRemote(0, row_id, kIncr);
-        ASSERT_OK(tablet_peer_->tablet()->Flush());
-        ASSERT_OK(tablet_peer_->log()->AllocateSegmentAndRollOver());
-      }
-    }
-  }
-
-  const std::string GetLocalUUID() const {
-    // FIXME: fs_manager()->uuid() fails. Problem?
-    //return mini_server_->fs_manager()->uuid();
-    return CURRENT_TEST_NAME();
-  }
-
-  const std::string& GetTabletId() const {
-    return tablet_peer_->tablet()->tablet_id();
-  }
-
   Status DoBeginRemoteBootstrapSession(const string& tablet_id,
                                        const string& requestor_uuid,
                                        BeginRemoteBootstrapSessionResponsePB* resp,
@@ -191,40 +152,6 @@ class RemoteBootstrapServiceTest : public TabletServerTest {
     LOG(INFO) << app_status.ToString();
   }
 
-  static void AssertDataEqual(const uint8_t* local, int64_t size, const DataChunkPB& remote) {
-    ASSERT_EQ(size, remote.data().size());
-    ASSERT_EQ(0, ::memcmp(local, remote.data().data(), size));
-    uint32_t crc32 = crc::Crc32c(local, size);
-    ASSERT_EQ(crc32, remote.crc32());
-  }
-
-  // Read a block file from the file system fully into memory and return a
-  // Slice pointing to it.
-  Status ReadLocalBlockFile(const BlockId& block_id, faststring* scratch, Slice* slice) {
-    shared_ptr<RandomAccessFile> block_file;
-    RETURN_NOT_OK(mini_server_->fs_manager()->OpenBlock(block_id, &block_file));
-
-    uint64_t size = 0;
-    RETURN_NOT_OK(block_file->Size(&size));
-    scratch->resize(size);
-    RETURN_NOT_OK(ReadFully(block_file.get(), 0, size, slice, scratch->data()));
-
-    // Since the mmap will go away on return, copy the data into scratch.
-    if (slice->data() != scratch->data()) {
-      memcpy(scratch->data(), slice->data(), slice->size());
-      *slice = Slice(scratch->data(), slice->size());
-    }
-    return Status::OK();
-  }
-
-  // Grab the first column block we find in the SuperBlock.
-  static BlockId FirstColumnBlockId(const metadata::TabletSuperBlockPB& superblock) {
-    const metadata::RowSetDataPB& rowset = superblock.rowsets(0);
-    const metadata::ColumnDataPB& column = rowset.columns(0);
-    const BlockIdPB& block_id_pb = column.block();
-    return BlockId::FromPB(block_id_pb);
-  }
-
   // Return BlockId in format suitable for a FetchData() call.
   static DataIdPB AsDataTypeId(const BlockId& block_id) {
     DataIdPB data_id;
@@ -232,8 +159,6 @@ class RemoteBootstrapServiceTest : public TabletServerTest {
     block_id.CopyToPB(data_id.mutable_block_id());
     return data_id;
   }
-
-  log::OpIdAnchor anchor_;
 };
 
 // Test beginning and ending a remote bootstrap session.
@@ -250,7 +175,7 @@ TEST_F(RemoteBootstrapServiceTest, TestSimpleBeginEndSession) {
   ASSERT_FALSE(session_id.empty());
   ASSERT_EQ(FLAGS_remote_bootstrap_idle_timeout_ms, idle_timeout_millis);
   ASSERT_TRUE(superblock.IsInitialized());
-  ASSERT_EQ(kNumRolls, first_op_ids.size());
+  ASSERT_EQ(kNumLogRolls, first_op_ids.size());
 
   EndRemoteBootstrapSessionResponsePB resp;
   RpcController controller;
@@ -414,7 +339,7 @@ TEST_F(RemoteBootstrapServiceTest, TestFetchBlockAtOnce) {
   BlockId block_id = FirstColumnBlockId(superblock);
   Slice local_data;
   faststring scratch;
-  ASSERT_OK(ReadLocalBlockFile(block_id, &scratch, &local_data));
+  ASSERT_OK(ReadLocalBlockFile(mini_server_->fs_manager(), block_id, &scratch, &local_data));
 
   // Remote.
   FetchDataResponsePB resp;
@@ -433,7 +358,7 @@ TEST_F(RemoteBootstrapServiceTest, TestFetchBlockIncrementally) {
   BlockId block_id = FirstColumnBlockId(superblock);
   Slice local_data;
   faststring scratch;
-  ASSERT_OK(ReadLocalBlockFile(block_id, &scratch, &local_data));
+  ASSERT_OK(ReadLocalBlockFile(mini_server_->fs_manager(), block_id, &scratch, &local_data));
 
   // Grab the remote data in several chunks.
   int64_t block_size = local_data.size();
@@ -461,7 +386,7 @@ TEST_F(RemoteBootstrapServiceTest, TestFetchLog) {
                                                       &superblock,
                                                       &idle_timeout_millis,
                                                       &first_op_ids));
-  ASSERT_EQ(kNumRolls, first_op_ids.size());
+  ASSERT_EQ(kNumLogRolls, first_op_ids.size());
   const consensus::OpId& op_id = *first_op_ids.begin();
 
   // Fetch the remote data.
