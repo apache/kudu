@@ -33,4 +33,11 @@ TEST(StatusTest, TestClonePrepend) {
   ASSERT_EQ(string("IO error: Heading: file error: msg2 (error 20)"), appended.ToString());
 }
 
+TEST(StatusTest, TestCloneAppend) {
+  Status remote_error = Status::RemoteError("Application error");
+  Status appended = remote_error.CloneAndAppend(Status::NotFound("Unknown tablet").ToString());
+  ASSERT_EQ(string("Remote error: Application error: Not found: Unknown tablet"),
+            appended.ToString());
+}
+
 }  // namespace kudu

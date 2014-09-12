@@ -232,6 +232,9 @@ class KUDU_EXPORT Status {
   // Return a new Status object with the same state plus an additional leading message.
   Status CloneAndPrepend(const Slice& msg) const;
 
+  // Same as CloneAndPrepend, but appends to the message instead.
+  Status CloneAndAppend(const Slice& msg) const;
+
  private:
   // OK status has a NULL state_.  Otherwise, state_ is a new[] array
   // of the following form:

@@ -149,4 +149,8 @@ Status Status::CloneAndPrepend(const Slice& msg) const {
   return Status(code(), msg, message(), posix_code());
 }
 
+Status Status::CloneAndAppend(const Slice& msg) const {
+  return Status(code(), message(), msg, posix_code());
+}
+
 }  // namespace kudu
