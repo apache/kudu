@@ -14,6 +14,10 @@ namespace kudu {
 
 class BlockIdPB;
 
+namespace fs {
+class FileBlockManager;
+} // namespace fs
+
 class BlockId {
  public:
   BlockId() {}
@@ -41,6 +45,7 @@ class BlockId {
   static BlockId FromPB(const BlockIdPB& pb);
 
  private:
+  friend class fs::FileBlockManager;
   friend class FsManager;
   friend struct BlockIdHash;
 

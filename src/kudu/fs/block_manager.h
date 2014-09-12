@@ -123,8 +123,9 @@ class BlockManager {
   // Deletes an existing block, allowing its space to be reclaimed by the
   // filesystem. The change is immediately made durable.
   //
-  // Blocks may not be deleted while they are open for reading or writing;
-  // any attempts to do so will fail.
+  // Blocks may be deleted while they are open for reading or writing;
+  // the actual deletion will take place after the last open reader or
+  // writer is closed.
   virtual Status DeleteBlock(const BlockId& block_id) = 0;
 };
 

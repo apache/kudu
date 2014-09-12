@@ -9,6 +9,7 @@ add_library(fs_proto ${FS_PROTO_SRCS} ${FS_PROTO_HDRS})
 
 add_library(kudu_fs
   block_id.cc
+  file_block_manager.cc
   fs_manager.cc)
 
 target_link_libraries(kudu_fs
@@ -18,4 +19,6 @@ target_link_libraries(kudu_fs
 
 # Tests
 set(KUDU_TEST_LINK_LIBS kudu_fs ${KUDU_MIN_TEST_LIBS})
+ADD_KUDU_TEST(block_manager-test)
+ADD_KUDU_TEST(block_manager-stress-test RUN_SERIAL true)
 ADD_KUDU_TEST(fs_manager-test)
