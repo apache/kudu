@@ -135,11 +135,13 @@ class ReplicaState {
 
   const std::string& GetLeaderUuidUnlocked() const;
 
-  // Triggers a Prepare() in the bound replica_operation_factory_
-  Status TriggerPrepareUnlocked(gscoped_ptr<ConsensusRound> context);
+  // Enqueues a Prepare() in the ReplicaTransactionFactory.
+  Status EnqueuePrepareUnlocked(gscoped_ptr<ConsensusRound> context);
 
-  // Triggers a Apply() in the bound 'replica_operation_factory_'..
-  Status TriggerApplyUnlocked(gscoped_ptr<OperationPB> leader_commit_op);
+  // Marks the ReplicaTransaction as committed by the leader, meaning the
+  // transaction may Apply() (immediately if Prepare() has completed or
+  // when Prepare() completes, if not).
+  Status MarkConsensusCommittedUnlocked(gscoped_ptr<OperationPB> leader_commit_op);
 
   // Updates the last replicated operation.
   // This must be called under a lock and triggers the replication callbacks

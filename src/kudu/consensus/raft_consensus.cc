@@ -404,15 +404,95 @@ Status RaftConsensus::UpdateReplica(const ConsensusRequestPB* request,
   vector<const OperationPB*> replicate_ops;
   vector<const OperationPB*> commit_ops;
 
+
+  // The ordering of the following operations is crucial, read on for details.
+  //
+  // The main requirements explained in more detail below are:
+  //
+  //   1) We must enqueue the prepares before we write to our local log.
+  //   2) If we were able to enqueue a prepare then we must be able to log it.
+  //   3) If we fail to enqueue a prepare, we must not attempt to enqueue any
+  //      later-indexed prepare or apply.
+  //
+  // See below for detailed rationale.
+  //
+  // The steps are:
+  //
+  // 0 - Split/Dedup
+  //
+  // We split the operations into replicates and commits and make sure that we don't
+  // don't do anything on operations we've already received in a previous call.
+  // This essentially makes this method idempotent.
+  //
+  // 1 - We enqueue the Prepare of the transactions.
+  //
+  // The actual prepares are enqueued in order but happen asynchronously so we don't
+  // have decoding/acquiring locks on the critical path.
+  //
+  // We need to do this first for a number of reasons:
+  // - Prepares, by themselves, are inconsequential, i.e. they do not mutate the
+  //   state machine so, were we to crash afterwards, having the prepares in-flight
+  //   won't hurt.
+  // - Prepares depend on factors external to consensus (the transaction drivers and
+  //   the tablet peer) so if for some reason they cannot be enqueued we must know
+  //   before we try write them to the WAL. Once enqueued, prepares that fail for
+  //   some reason (like an error while decoding a write) will have a corresponding
+  //   OP_ABORT commit message, so we are not concerned about having written them to
+  //   the wal.
+  // - The prepares corresponding to every operation that was logged must be in-flight
+  //   first. This because should we need to abort certain transactions (say a new leader
+  //   says they are not committed) we need to have those prepares in-flight so that
+  //   the transactions can be continued (in the abort path).
+  // - Failure to enqueue prepares is OK, we can continue and let the leader know that
+  //   we only went so far. The leader will re-send the remaining messages.
+  //
+  // 2 - We enqueue the writes to the WAL.
+  //
+  // We enqueue writes to the WAL, but only the operations that were successfully
+  // enqueued for prepare (for the reasons introduced above). This means that even
+  // if a prepare fails to enqueue, if any of the previous prepares were successfully
+  // submitted they must be written to the WAL.
+  // If writing to the WAL fails, we're in an inconsistent state and we crash. In this
+  // case, no one will ever know of the transactions we previously prepared so those are
+  // inconsequential.
+  //
+  // 3 - We mark the transactions as committed
+  //
+  // For each transaction which has been committed by the leader, we update the
+  // transaction state to reflect that. If the logging has already succeeded for that
+  // transaction, this will trigger the Apply phase. Otherwise, Apply will be triggered
+  // when the logging completes. In both cases the Apply phase executes asynchronously.
+  // This must, of course, happen after the prepares have been triggered as the same batch
+  // can both replicate/prepare and commit/apply an operation.
+  //
+  // Currently, if a prepare failed to enqueue we still trigger all applies for operations
+  // with an id lower than it (if we have them). This is important now as the leader will
+  // not re-send those commit messages. This will be moot when we move to the commit
+  // commitIndex way of doing things as we can simply ignore the applies as we know
+  // they will be triggered with the next successful batch.
+  //
+  // 4 - We wait for the writes to be durable.
+  //
+  // Before replying to the leader we wait for the writes to be durable. We then
+  // just update the last replicated watermark and respond.
+  //
+  // TODO - These failure scenarios need to be exercised in an unit
+  //        test. Moreover we need to add more fault injection spots (well that
+  //        and actually use the) for each of these steps.
+  //        This will be done in a follow up patch (filed KUDU-502 for that)
+  int successfully_triggered_prepares = 0;
   {
     ReplicaState::UniqueLock lock;
     RETURN_NOT_OK(state_->LockForUpdate(&lock));
     TRACE("Updating replica for $0 ops", request->ops_size());
 
+    // 0 - Split/Dedup
+
     // Split the operations into two lists, one for REPLICATE
     // and one for COMMIT. Also filter out any ops which have already
     // been handled by a previous call to UpdateReplica()
     BOOST_FOREACH(const OperationPB& op, request->ops()) {
+
       if (OpIdCompare(op.id(), state_->GetLastReceivedOpIdUnlocked()) <= 0) {
         VLOG_WITH_PREFIX(2) << "Skipping op id " << op.id().ShortDebugString()
             << " (already replicated/committed)";
@@ -430,51 +510,112 @@ Status RaftConsensus::UpdateReplica(const ConsensusRequestPB* request,
     // no operations were received or all operations were duplicated, return.
     if (PREDICT_FALSE(replicate_ops.empty() && commit_ops.empty())) return Status::OK();
 
-    // Only accept requests from the leader set in the last change config
-    if (PREDICT_FALSE(request->sender_uuid() != state_->GetLeaderUuidUnlocked())) {
-      return Status::IllegalState("Sender peer is not the leader of this quorum.");
+    // 1 - Enqueue the prepares
+
+    TRACE("Triggering prepare for $0 ops", replicate_ops.size());
+    Status prepare_status;
+    for (int i = 0; i < replicate_ops.size(); i++) {
+      gscoped_ptr<OperationPB> op_copy(new OperationPB(*replicate_ops[i]));
+      gscoped_ptr<ConsensusRound> context(new ConsensusRound(this, op_copy.Pass()));
+      prepare_status = state_->EnqueuePrepareUnlocked(context.Pass());
+      if (PREDICT_FALSE(!prepare_status.ok())) {
+        LOG_WITH_PREFIX(WARNING) << "Failed to prepare operation: "
+            << replicate_ops[i]->id().ShortDebugString() << " Status: "
+            << prepare_status.ToString();
+        break;
+      }
+      successfully_triggered_prepares++;
     }
 
+    // If we failed all prepares just reply right now without updating any watermarks.
+    // The leader will re-send.
+    if (PREDICT_FALSE(!prepare_status.ok() && successfully_triggered_prepares == 0)) {
+      return Status::ServiceUnavailable(Substitute("Could not trigger prepares. Status: $0",
+                                                   prepare_status.ToString()));
+    }
+
+    // 2 - Enqueue the writes.
+    // Now that we've triggered the prepares enqueue the operations to be written
+    // to the WAL.
     LogEntryBatch* reserved_entry_batch;
-    if (!replicate_ops.empty()) {
+    if (PREDICT_TRUE(successfully_triggered_prepares != 0)) {
       // Trigger the log append asap, if fsync() is on this might take a while
       // and we can't reply until this is done.
       gscoped_ptr<log::LogEntryBatchPB> entry_batch;
       log::CreateBatchFromAllocatedOperations(&replicate_ops[0],
-                                              replicate_ops.size(),
+                                              successfully_triggered_prepares,
                                               &entry_batch);
 
+      // Since we've prepared we need to be able to append (or we risk trying to apply
+      // later something that wasn't logged). We crash if we can't.
       CHECK_OK(log_->Reserve(entry_batch.Pass(), &reserved_entry_batch));
       CHECK_OK(log_->AsyncAppend(reserved_entry_batch, log_synchronizer.AsStatusCallback()));
     }
 
-    // Trigger the replica Prepares() and Apply()s.
-    // NOTE: This doesn't actually wait for the transactions to complete.
-    TRACE("Triggering prepare for $0 ops", replicate_ops.size());
-    BOOST_FOREACH(const OperationPB* op, replicate_ops) {
-      gscoped_ptr<OperationPB> op_copy(new OperationPB(*op));
+    // 3 - Mark transactions as committed
 
-      // For replicas we build a consensus context with the op in the request
-      // and two latch callbacks.
-      gscoped_ptr<ConsensusRound> context(new ConsensusRound(this, op_copy.Pass()));
-      CHECK_OK(state_->TriggerPrepareUnlocked(context.Pass()));
+    // Choose the last operation to be applied. This will either be the last commit
+    // in the batch or the last commit whose id is lower than the id of the first failed
+    // prepare (if any prepare failed). This because we want the leader to re-send all
+    // messages after the failed prepare so we shouldn't apply any of them or we would
+    // run the risk of applying twice.
+    OpId dont_apply_after;
+    if (PREDICT_TRUE(prepare_status.ok())) {
+      dont_apply_after = commit_ops.size() == 0 ?
+          MinimumOpId() :
+          commit_ops[commit_ops.size() - 1]->id();
+    } else {
+      dont_apply_after = commit_ops.size() == 0 ?
+          MinimumOpId() :
+          replicate_ops[successfully_triggered_prepares - 1]->id();
     }
 
-    TRACE("Triggering apply/commit for $0 ops", commit_ops.size());
-    BOOST_FOREACH(const OperationPB* op, commit_ops) {
-      gscoped_ptr<OperationPB> op_copy(new OperationPB(*op));
+    vector<const OperationPB*>::iterator iter = commit_ops.begin();
 
-      CHECK_OK(state_->TriggerApplyUnlocked(op_copy.Pass()));
+    // Tolerating failed applies is complex in the current setting so we just crash.
+    // We can more easily do it when we change to have the leader send the 'commitIndex'
+    //
+    // NOTE: There is a subtle bug here in the current version because we're not properly
+    // replicating the commit messages. This because a new leader might disagree on the
+    // order of the commit messages. This is purposely left as is since when we get to
+    // changing leaders we'll have the more resilient 'commitIndex' approach in place.
+    while (iter != commit_ops.end() &&
+           !OpIdBiggerThan((*iter)->id(), dont_apply_after)) {
+      gscoped_ptr<OperationPB> op_copy(new OperationPB(**iter));
+      Status status = state_->MarkConsensusCommittedUnlocked(op_copy.Pass());
+      if (PREDICT_FALSE(!status.ok())) {
+        LOG_WITH_PREFIX(FATAL) << "Failed to apply: " << (*iter)->ShortDebugString()
+            << " Status: " << status.ToString();
+      }
+      iter++;
     }
 
+    // We can now update the last received watermark.
+    //
+    // We do it here (and before we actually hear back from the wal whether things
+    // are durable) so that, if we receive another, possible duplicate, message
+    // that exercises this path we don't handle these messages twice.
+    //
+    // If all prepares were successful we just set the last received to the last
+    // message in the batch. If any prepare failed we set last received to the
+    // last successful prepare (we're sure we didn't prepare or apply anything after
+    // that).
     TRACE("Updating last received");
-    state_->UpdateLastReceivedOpIdUnlocked(request->ops(request->ops_size() - 1).id());
+    if (PREDICT_TRUE(prepare_status.ok())) {
+      state_->UpdateLastReceivedOpIdUnlocked(request->ops(request->ops_size() - 1).id());
+    } else  {
+      state_->UpdateLastReceivedOpIdUnlocked(
+          replicate_ops[successfully_triggered_prepares - 1]->id());
+    }
   }
+  // Release the lock while we wait for the log append to finish so that commits can go through.
+  // We'll re-acquire it before we update the state again.
 
   // Update the last replicated op id
   if (!replicate_ops.empty()) {
-    // Release the lock while we wait for the log append to finish, and re-acquire it to update
-    // the replica state.
+
+    // 4 - We wait for the writes to be durable.
+
     // Note that this is safe because dist consensus now only supports a single outstanding
     // request at a time and this way we can allow commits to proceed while we wait.
     TRACE("Waiting on the replicates to finish logging");
@@ -483,7 +624,8 @@ Status RaftConsensus::UpdateReplica(const ConsensusRequestPB* request,
 
     ReplicaState::UniqueLock lock;
     RETURN_NOT_OK(state_->LockForUpdate(&lock));
-    state_->UpdateLastReplicatedOpIdUnlocked(replicate_ops[replicate_ops.size() - 1]->id());
+    state_->UpdateLastReplicatedOpIdUnlocked(
+        replicate_ops[successfully_triggered_prepares - 1]->id());
   }
 
   if (PREDICT_FALSE(VLOG_IS_ON(1))) {
@@ -505,7 +647,7 @@ void RaftConsensus::SignalRequestToPeers(bool force_if_queue_empty) {
   for (; iter != peers_.end(); iter++) {
     Status s = (*iter).second->SignalRequest(force_if_queue_empty);
     if (PREDICT_FALSE(!s.ok())) {
-      LOG_WITH_PREFIX(WARNING) << "Peer was closed, removing from peers. Peer: "
+      LOG_WITH_PREFIX_LK(WARNING) << "Peer was closed, removing from peers. Peer: "
           << (*iter).second->peer_pb().ShortDebugString();
       peers_.erase(iter);
     }

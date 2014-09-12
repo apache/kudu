@@ -249,7 +249,7 @@ Status ReplicaState::WaitForOustandingApplies() {
   return Status::OK();
 }
 
-Status ReplicaState::TriggerPrepareUnlocked(gscoped_ptr<ConsensusRound> context) {
+Status ReplicaState::EnqueuePrepareUnlocked(gscoped_ptr<ConsensusRound> context) {
   DCHECK(update_lock_.is_locked());
   if (PREDICT_FALSE(state_ != kRunning)) {
     return Status::IllegalState("Cannot trigger prepare. Replica is not in kRunning state.");
@@ -259,7 +259,7 @@ Status ReplicaState::TriggerPrepareUnlocked(gscoped_ptr<ConsensusRound> context)
   return Status::OK();
 }
 
-Status ReplicaState::TriggerApplyUnlocked(gscoped_ptr<OperationPB> leader_commit_op) {
+Status ReplicaState::MarkConsensusCommittedUnlocked(gscoped_ptr<OperationPB> leader_commit_op) {
   DCHECK(update_lock_.is_locked());
   if (PREDICT_FALSE(state_ != kRunning)) {
     return Status::IllegalState("Cannot trigger apply. Replica is not in kRunning state.");
