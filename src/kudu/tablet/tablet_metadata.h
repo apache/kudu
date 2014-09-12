@@ -12,6 +12,7 @@
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/tablet/metadata.pb.h"
+#include "kudu/util/mutex.h"
 #include "kudu/util/status.h"
 
 namespace kudu {
@@ -138,17 +139,14 @@ class TabletMetadata : public RefCountedThreadSafe<TabletMetadata> {
 
   Status Flush();
 
-  Status UpdateAndFlush(const RowSetMetadataIds& to_remove,
-                        const RowSetMetadataVector& to_add,
-                        std::tr1::shared_ptr<TabletSuperBlockPB> *super_block);
-
   // Updates the metadata adding 'to_add' rowsets, removing 'to_remove' rowsets
-  // and updating the last durable MemRowSet. If 'super_block' is not NULL it
-  // will be set to the newly created TabletSuperBlockPB.
+  // and updating the last durable MemRowSet.
+  Status UpdateAndFlush(const RowSetMetadataIds& to_remove,
+                        const RowSetMetadataVector& to_add);
+
   Status UpdateAndFlush(const RowSetMetadataIds& to_remove,
                         const RowSetMetadataVector& to_add,
-                        int64_t last_durable_mrs_id,
-                        std::tr1::shared_ptr<TabletSuperBlockPB> *super_block);
+                        int64_t last_durable_mrs_id);
 
   // Create a new RowSetMetadata for this tablet.
   // Does not add the new rowset to the list of rowsets. Use one of the Update()
@@ -163,10 +161,8 @@ class TabletMetadata : public RefCountedThreadSafe<TabletMetadata> {
 
   void SetLastDurableMrsIdForTests(int64_t mrs_id) { last_durable_mrs_id_ = mrs_id; }
 
-  // Creates a TabletSuperBlockPB that reflects the current tablet metadata
-  // and sets 'super_block' to it.
-  // FIXME: This should probably accept a gscoped_ptr*.
-  Status ToSuperBlock(std::tr1::shared_ptr<TabletSuperBlockPB> *super_block) const;
+  // Sets *super_block to the serialized form of the current metadata.
+  Status ToSuperBlock(TabletSuperBlockPB* super_block) const;
 
   // Fully replace a superblock (used for bootstrap).
   Status ReplaceSuperBlock(const TabletSuperBlockPB &pb);
@@ -205,20 +201,22 @@ class TabletMetadata : public RefCountedThreadSafe<TabletMetadata> {
   Status LoadFromDisk();
 
   // Update state of metadata to that of the given superblock PB.
+  // Requires data_lock_.
   Status LoadFromSuperBlockUnlocked(const TabletSuperBlockPB& superblock);
 
   Status ReadSuperBlock(TabletSuperBlockPB *pb);
 
   // Fully replace superblock.
-  // Calling thread must hold lock_.
+  // Calling thread must hold flush_lock_.
   Status ReplaceSuperBlockUnlocked(const TabletSuperBlockPB &pb);
 
-  Status UpdateAndFlushUnlocked(const RowSetMetadataIds& to_remove,
-                                const RowSetMetadataVector& to_add,
-                                int64_t last_durable_mrs_id,
-                                std::tr1::shared_ptr<TabletSuperBlockPB> *super_block);
+  // Requires data_lock_.
+  Status UpdateUnlocked(const RowSetMetadataIds& to_remove,
+                        const RowSetMetadataVector& to_add,
+                        int64_t last_durable_mrs_id);
 
-  Status ToSuperBlockUnlocked(std::tr1::shared_ptr<TabletSuperBlockPB> *super_block,
+  // Requires data_lock_.
+  Status ToSuperBlockUnlocked(TabletSuperBlockPB* super_block,
                               const RowSetMetadataVector& rowsets) const;
 
   enum State {
@@ -228,8 +226,13 @@ class TabletMetadata : public RefCountedThreadSafe<TabletMetadata> {
   };
   State state_;
 
+  // Lock protecting the underlying data.
   typedef simple_spinlock LockType;
-  mutable LockType lock_;
+  mutable LockType data_lock_;
+
+  // Lock protecting flushing the data to disk.
+  // If taken together with data_lock_, must be acquired first.
+  mutable Mutex flush_lock_;
 
   std::string start_key_;
   std::string end_key_;

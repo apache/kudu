@@ -300,9 +300,9 @@ Status TabletBootstrap::Bootstrap(shared_ptr<Tablet>* rebuilt_tablet,
   listener_->StatusMessage("Bootstrap starting.");
 
   if (VLOG_IS_ON(1)) {
-    shared_ptr<TabletSuperBlockPB> super_block;
+    TabletSuperBlockPB super_block;
     RETURN_NOT_OK(meta_->ToSuperBlock(&super_block));
-    VLOG(1) << "Tablet Metadata: " << super_block->DebugString();
+    VLOG(1) << "Tablet Metadata: " << super_block.DebugString();
   }
 
   // Create new OpIdAnchorRegistry for use by the log and tablet.
@@ -478,8 +478,6 @@ Status TabletBootstrap::OpenNewLog() {
   OpId init;
   init.set_term(0);
   init.set_index(0);
-  shared_ptr<TabletSuperBlockPB> super_block;
-  RETURN_NOT_OK(tablet_->metadata()->ToSuperBlock(&super_block));
   RETURN_NOT_OK(Log::Open(LogOptions(),
                           tablet_->metadata()->fs_manager(),
                           tablet_->tablet_id(),

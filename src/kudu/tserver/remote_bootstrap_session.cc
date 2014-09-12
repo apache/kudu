@@ -54,10 +54,8 @@ Status RemoteBootstrapSession::Init() {
 
   // Look up the metadata.
   const TabletMetadata* metadata = tablet_peer_->shared_tablet()->metadata();
-  shared_ptr<TabletSuperBlockPB> tablet_superblock;
-  RETURN_NOT_OK_PREPEND(metadata->ToSuperBlock(&tablet_superblock),
+  RETURN_NOT_OK_PREPEND(metadata->ToSuperBlock(&tablet_superblock_),
                         Substitute("Unable to access superblock for tablet $0", tablet_id));
-  tablet_superblock_ = *tablet_superblock.get();
   // TODO: Anchor blocks once block GC is implemented. See KUDU-452.
 
   // Look up the log segments. To avoid races, we do a 2-phase thing where we

@@ -237,29 +237,33 @@ Status TabletMetadata::ReadSuperBlock(TabletSuperBlockPB *pb) {
 }
 
 Status TabletMetadata::UpdateAndFlush(const RowSetMetadataIds& to_remove,
-                                      const RowSetMetadataVector& to_add,
-                                      shared_ptr<TabletSuperBlockPB> *super_block) {
-  boost::lock_guard<LockType> l(lock_);
-  return UpdateAndFlushUnlocked(to_remove, to_add, last_durable_mrs_id_, super_block);
+                                      const RowSetMetadataVector& to_add) {
+  {
+    boost::lock_guard<LockType> l(data_lock_);
+    RETURN_NOT_OK(UpdateUnlocked(to_remove, to_add, last_durable_mrs_id_));
+  }
+  return Flush();
 }
 
 Status TabletMetadata::UpdateAndFlush(const RowSetMetadataIds& to_remove,
                                       const RowSetMetadataVector& to_add,
-                                      int64_t last_durable_mrs_id,
-                                      shared_ptr<TabletSuperBlockPB> *super_block) {
-  boost::lock_guard<LockType> l(lock_);
-  return UpdateAndFlushUnlocked(to_remove, to_add, last_durable_mrs_id, super_block);
+                                      int64_t last_durable_mrs_id) {
+  {
+    boost::lock_guard<LockType> l(data_lock_);
+    RETURN_NOT_OK(UpdateUnlocked(to_remove, to_add, last_durable_mrs_id));
+  }
+  return Flush();
 }
 
 void TabletMetadata::PinFlush() {
-  boost::lock_guard<LockType> l(lock_);
+  boost::lock_guard<LockType> l(data_lock_);
   CHECK_GE(num_flush_pins_, 0);
   num_flush_pins_++;
   VLOG(1) << "Number of flush pins: " << num_flush_pins_;
 }
 
 Status TabletMetadata::UnPinFlush() {
-  boost::lock_guard<LockType> l(lock_);
+  boost::lock_guard<LockType> l(data_lock_);
   CHECK_GT(num_flush_pins_, 0);
   num_flush_pins_--;
   if (needs_flush_) {
@@ -269,23 +273,31 @@ Status TabletMetadata::UnPinFlush() {
 }
 
 Status TabletMetadata::Flush() {
-  boost::lock_guard<LockType> l(lock_);
-  CHECK_GE(num_flush_pins_, 0);
-  if (num_flush_pins_ > 0) {
-    needs_flush_ = true;
-    LOG(INFO) << "Not flushing: waiting for " << num_flush_pins_ << " pins to be released.";
-    return Status::OK();
+  MutexLock l_flush(flush_lock_);
+
+  TabletSuperBlockPB pb;
+  {
+    boost::lock_guard<LockType> l(data_lock_);
+    CHECK_GE(num_flush_pins_, 0);
+    if (num_flush_pins_ > 0) {
+      needs_flush_ = true;
+      LOG(INFO) << "Not flushing: waiting for " << num_flush_pins_ << " pins to be released.";
+      return Status::OK();
+    }
+    needs_flush_ = false;
+
+    RETURN_NOT_OK(ToSuperBlockUnlocked(&pb, rowsets_));
   }
-  needs_flush_ = false;
-  return UpdateAndFlushUnlocked(RowSetMetadataIds(), RowSetMetadataVector(),
-                                last_durable_mrs_id_, NULL);
+  RETURN_NOT_OK(ReplaceSuperBlockUnlocked(pb));
+  TRACE("Metadata flushed");
+  return Status::OK();
 }
 
-Status TabletMetadata::UpdateAndFlushUnlocked(
+Status TabletMetadata::UpdateUnlocked(
     const RowSetMetadataIds& to_remove,
     const RowSetMetadataVector& to_add,
-    int64_t last_durable_mrs_id,
-    shared_ptr<TabletSuperBlockPB> *super_block) {
+    int64_t last_durable_mrs_id) {
+  DCHECK(data_lock_.is_locked());
   CHECK_NE(state_, kNotLoadedYet);
   DCHECK_GE(last_durable_mrs_id, last_durable_mrs_id_);
   last_durable_mrs_id_ = last_durable_mrs_id;
@@ -303,28 +315,28 @@ Status TabletMetadata::UpdateAndFlushUnlocked(
   BOOST_FOREACH(const shared_ptr<RowSetMetadata>& meta, to_add) {
     new_rowsets.push_back(meta);
   }
-
-  shared_ptr<TabletSuperBlockPB> pb(new TabletSuperBlockPB());
-  RETURN_NOT_OK(ToSuperBlockUnlocked(&pb, new_rowsets));
-
-  RETURN_NOT_OK(ReplaceSuperBlockUnlocked(*pb));
   rowsets_ = new_rowsets;
-  if (super_block != NULL) {
-    super_block->swap(pb);
-  }
-  TRACE("Metadata flushed");
+
+  TRACE("TabletMetadata updated");
   return Status::OK();
 }
 
 Status TabletMetadata::ReplaceSuperBlock(const TabletSuperBlockPB &pb) {
-  boost::lock_guard<LockType> l(lock_);
-  RETURN_NOT_OK_PREPEND(ReplaceSuperBlockUnlocked(pb), "Unable to replace superblock");
-  RETURN_NOT_OK_PREPEND(LoadFromSuperBlockUnlocked(pb),
-                        "Failed to load data from superblock protobuf");
+  {
+    MutexLock l(flush_lock_);
+    RETURN_NOT_OK_PREPEND(ReplaceSuperBlockUnlocked(pb), "Unable to replace superblock");
+  }
+
+  {
+    boost::lock_guard<LockType> l(data_lock_);
+    RETURN_NOT_OK_PREPEND(LoadFromSuperBlockUnlocked(pb),
+                          "Failed to load data from superblock protobuf");
+  }
   return Status::OK();
 }
 
 Status TabletMetadata::ReplaceSuperBlockUnlocked(const TabletSuperBlockPB &pb) {
+  flush_lock_.AssertAcquired();
   // Flush
   BlockId a_blk(master_block_.block_a());
   BlockId b_blk(master_block_.block_b());
@@ -352,37 +364,37 @@ Status TabletMetadata::ReplaceSuperBlockUnlocked(const TabletSuperBlockPB &pb) {
   return Status::OK();
 }
 
-Status TabletMetadata::ToSuperBlock(shared_ptr<TabletSuperBlockPB> *super_block) const {
+Status TabletMetadata::ToSuperBlock(TabletSuperBlockPB* super_block) const {
   // acquire the lock so that rowsets_ doesn't get changed until we're finished.
-  boost::lock_guard<LockType> l(lock_);
+  boost::lock_guard<LockType> l(data_lock_);
   return ToSuperBlockUnlocked(super_block, rowsets_);
 }
 
-Status TabletMetadata::ToSuperBlockUnlocked(shared_ptr<TabletSuperBlockPB> *super_block,
+Status TabletMetadata::ToSuperBlockUnlocked(TabletSuperBlockPB* super_block,
                                             const RowSetMetadataVector& rowsets) const {
-
+  DCHECK(data_lock_.is_locked());
   // Convert to protobuf
-  gscoped_ptr<TabletSuperBlockPB> pb(new TabletSuperBlockPB());
-  pb->set_sequence(sblk_sequence_);
-  pb->set_oid(oid());
-  pb->set_start_key(start_key_);
-  pb->set_end_key(end_key_);
-  pb->set_last_durable_mrs_id(last_durable_mrs_id_);
-  pb->set_schema_version(schema_version_);
-  pb->set_table_name(table_name_);
+  TabletSuperBlockPB pb;
+  pb.set_sequence(sblk_sequence_);
+  pb.set_oid(oid());
+  pb.set_start_key(start_key_);
+  pb.set_end_key(end_key_);
+  pb.set_last_durable_mrs_id(last_durable_mrs_id_);
+  pb.set_schema_version(schema_version_);
+  pb.set_table_name(table_name_);
 
   BOOST_FOREACH(const shared_ptr<RowSetMetadata>& meta, rowsets) {
-    meta->ToProtobuf(pb->add_rowsets());
+    meta->ToProtobuf(pb.add_rowsets());
   }
 
   DCHECK(schema_.has_column_ids());
-  RETURN_NOT_OK_PREPEND(SchemaToPB(schema_, pb->mutable_schema()),
+  RETURN_NOT_OK_PREPEND(SchemaToPB(schema_, pb.mutable_schema()),
                         "Couldn't serialize schema into superblock");
 
-  pb->set_remote_bootstrap_state(remote_bootstrap_state_);
-  pb->mutable_quorum()->CopyFrom(quorum_);
+  pb.set_remote_bootstrap_state(remote_bootstrap_state_);
+  pb.mutable_quorum()->CopyFrom(quorum_);
 
-  super_block->reset(pb.release());
+  super_block->Swap(&pb);
   return Status::OK();
 }
 
@@ -405,7 +417,7 @@ const RowSetMetadata *TabletMetadata::GetRowSetForTests(int64_t id) const {
 }
 
 RowSetMetadata *TabletMetadata::GetRowSetForTests(int64_t id) {
-  boost::lock_guard<LockType> l(lock_);
+  boost::lock_guard<LockType> l(data_lock_);
   BOOST_FOREACH(const shared_ptr<RowSetMetadata>& rowset_meta, rowsets_) {
     if (rowset_meta->id() == id) {
       return rowset_meta.get();
@@ -416,50 +428,50 @@ RowSetMetadata *TabletMetadata::GetRowSetForTests(int64_t id) {
 
 void TabletMetadata::SetSchema(const Schema& schema, uint32_t version) {
   DCHECK(schema.has_column_ids());
-  boost::lock_guard<LockType> l(lock_);
+  boost::lock_guard<LockType> l(data_lock_);
   schema_ = schema;
   schema_version_ = version;
 }
 
 void TabletMetadata::SetTableName(const string& table_name) {
-  boost::lock_guard<LockType> l(lock_);
+  boost::lock_guard<LockType> l(data_lock_);
   table_name_ = table_name;
 }
 
 const string& TabletMetadata::table_name() const {
-  boost::lock_guard<LockType> l(lock_);
+  boost::lock_guard<LockType> l(data_lock_);
   DCHECK_NE(state_, kNotLoadedYet);
   return table_name_;
 }
 
 uint32_t TabletMetadata::schema_version() const {
-  boost::lock_guard<LockType> l(lock_);
+  boost::lock_guard<LockType> l(data_lock_);
   DCHECK_NE(state_, kNotLoadedYet);
   return schema_version_;
 }
 
 Schema TabletMetadata::schema() const {
-  boost::lock_guard<LockType> l(lock_);
+  boost::lock_guard<LockType> l(data_lock_);
   return schema_;
 }
 
 void TabletMetadata::SetQuorum(const QuorumPB& quorum) {
-  boost::lock_guard<LockType> l(lock_);
+  boost::lock_guard<LockType> l(data_lock_);
   quorum_ = quorum;
 }
 
 QuorumPB TabletMetadata::Quorum() const {
-  boost::lock_guard<LockType> l(lock_);
+  boost::lock_guard<LockType> l(data_lock_);
   return quorum_;
 }
 
 void TabletMetadata::set_remote_bootstrap_state(TabletBootstrapStatePB state) {
-  boost::lock_guard<LockType> l(lock_);
+  boost::lock_guard<LockType> l(data_lock_);
   remote_bootstrap_state_ = state;
 }
 
 TabletBootstrapStatePB TabletMetadata::remote_bootstrap_state() const {
-  boost::lock_guard<LockType> l(lock_);
+  boost::lock_guard<LockType> l(data_lock_);
   return remote_bootstrap_state_;
 }
 

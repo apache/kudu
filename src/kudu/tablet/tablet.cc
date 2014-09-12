@@ -978,9 +978,9 @@ Status Tablet::FlushMetadata(const RowSetVector& to_remove,
 
   // If we're flushing an mrs update the latest durable one in the metadata
   if (mrs_being_flushed != kNoMrsFlushed) {
-    return metadata_->UpdateAndFlush(to_remove_meta, to_add, mrs_being_flushed, NULL);
+    return metadata_->UpdateAndFlush(to_remove_meta, to_add, mrs_being_flushed);
   }
-  return metadata_->UpdateAndFlush(to_remove_meta, to_add, NULL);
+  return metadata_->UpdateAndFlush(to_remove_meta, to_add);
 }
 
 Status Tablet::DoCompactionOrFlush(const Schema& schema,
