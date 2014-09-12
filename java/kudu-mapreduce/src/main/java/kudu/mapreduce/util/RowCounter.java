@@ -89,7 +89,7 @@ public class RowCounter extends Configured implements Tool {
 
   @Override
   public int run(String[] otherArgs) throws Exception {
-    if (otherArgs.length != 2) {
+    if (otherArgs.length != 1) {
       usage("Wrong number of arguments: " + otherArgs.length);
       return -1;
     }
