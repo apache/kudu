@@ -119,7 +119,7 @@ class RaftConsensusTest : public KuduTest {
   Status InitPeers() {
     for (int i = 0; i < quorum_.peers_size(); i++) {
       RaftConsensus* peer = peers_[i];
-      TestTransactionFactory* txn_factory = new TestTransactionFactory();
+      TestTransactionFactory* txn_factory = new TestTransactionFactory(peer);
       txn_factories_.push_back(txn_factory);
       RETURN_NOT_OK(peer->Init(quorum_.peers(i), clock_, txn_factory, logs_[i]));
     }
