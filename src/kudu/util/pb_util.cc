@@ -134,7 +134,6 @@ Status WritePBToPath(Env* env, const std::string& path, const MessageLite& msg) 
   if (!SerializeToWritableFile(msg, file.get())) {
     return Status::IOError("Failed to serialize to file");
   }
-  RETURN_NOT_OK_PREPEND(file->Flush(), "Failed to Flush() " + path_tmp);
   RETURN_NOT_OK_PREPEND(file->Sync(), "Failed to Sync() " + path_tmp);
   RETURN_NOT_OK_PREPEND(file->Close(), "Failed to Close() " + path_tmp);
   RETURN_NOT_OK_PREPEND(env->RenameFile(path_tmp, path), "Failed to rename tmp file to " + path);

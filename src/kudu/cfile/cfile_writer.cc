@@ -186,8 +186,6 @@ Status CFileWriter::Finish() {
   PutFixed32(&footer_str, footer.GetCachedSize());
 
   RETURN_NOT_OK(file_->Append(footer_str));
-  RETURN_NOT_OK(file_->Flush());
-
   return file_->Close();
 }
 

@@ -5,6 +5,7 @@
 
 #include <cstddef>
 #include <stdint.h>
+#include <vector>
 
 #include "kudu/gutil/gscoped_ptr.h"
 
@@ -51,7 +52,7 @@ class WritableBlock : public Block {
   virtual Status Append(const Slice& data) = 0;
 
   // Synchronizes all dirty block data and metadata with the disk. On
-  // success, guarantees that outstanding data is durable.
+  // success, guarantees that the entire block is durable.
   virtual Status Sync() = 0;
 
   // Returns the number of bytes successfully appended via Append().
@@ -127,6 +128,13 @@ class BlockManager {
   // the actual deletion will take place after the last open reader or
   // writer is closed.
   virtual Status DeleteBlock(const BlockId& block_id) = 0;
+
+  // Synchronizes all dirty data and metadata belonging to the provided
+  // blocks. Effectively like Sync() for each block but may be optimized
+  // for groups of blocks.
+  //
+  // On success, guarantees that outstanding data is durable.
+  virtual Status SyncBlocks(const std::vector<WritableBlock*>& blocks) = 0;
 };
 
 } // namespace fs

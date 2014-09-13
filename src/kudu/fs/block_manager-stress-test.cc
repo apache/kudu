@@ -185,11 +185,7 @@ void BlockManagerStressTest::WriterThread() {
     // We could sync them on close when the blocks are destructed but this
     // way we can check for errors.
     LOG(INFO) << "Syncing new blocks";
-    BOOST_FOREACH(WritableBlock* block, dirty_blocks) {
-      CHECK_OK(block->Sync());
-      LOG(INFO) << "Wrote " << block->BytesAppended() << " bytes to block "
-                << block->id().ToString();
-    }
+    CHECK_OK(bm_->SyncBlocks(dirty_blocks));
 
     // Publish the now sync'ed blocks to readers and deleters.
     {

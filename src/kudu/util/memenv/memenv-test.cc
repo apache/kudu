@@ -150,7 +150,8 @@ TEST_F(MemEnvTest, Misc) {
 
   // These are no-ops, but we test they return success.
   ASSERT_STATUS_OK(writable_file->Sync());
-  ASSERT_STATUS_OK(writable_file->Flush());
+  ASSERT_STATUS_OK(writable_file->Flush(WritableFile::FLUSH_SYNC));
+  ASSERT_STATUS_OK(writable_file->Flush(WritableFile::FLUSH_ASYNC));
   ASSERT_STATUS_OK(writable_file->Close());
   delete writable_file;
 }

@@ -258,7 +258,7 @@ class WritableFileImpl : public WritableFile {
 
   virtual Status Close() OVERRIDE { return Status::OK(); }
 
-  virtual Status Flush() OVERRIDE { return Status::OK(); }
+  virtual Status Flush(FlushMode mode) OVERRIDE { return Status::OK(); }
 
   virtual Status Sync() OVERRIDE { return Status::OK(); }
 

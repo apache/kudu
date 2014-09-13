@@ -18,6 +18,9 @@ using std::tr1::shared_ptr;
 using std::vector;
 using strings::Substitute;
 
+DEFINE_bool(block_coalesce_sync, true,
+            "Coalesce synchronization of data during SyncBlocks()");
+
 namespace kudu {
 namespace fs {
 
@@ -79,11 +82,27 @@ Status FileWritableBlock::Sync() {
 
   // Safer to synchronize data first, then metadata.
   RETURN_NOT_OK(writer_->Sync());
-  return block_manager_->SyncMetadata(block_id_);
+  return SyncMetadata();
 }
 
 size_t FileWritableBlock::BytesAppended() const {
   return bytes_appended_;
+}
+
+Status FileWritableBlock::SyncMetadata() {
+  DCHECK(!closed_);
+
+  string path2 = DirName(block_manager_->GetBlockPath(id()));
+  RETURN_NOT_OK(block_manager_->env()->SyncDir(path2));
+
+  string path1 = DirName(path2);
+  RETURN_NOT_OK(block_manager_->env()->SyncDir(path1));
+
+  string path0 = DirName(path1);
+  RETURN_NOT_OK(block_manager_->env()->SyncDir(path0));
+
+  string root_path = DirName(path0);
+  return block_manager_->env()->SyncDir(root_path);
 }
 
 ////////////////////////////////////////////////////////////
@@ -132,31 +151,19 @@ Status FileReadableBlock::Read(uint64_t offset, size_t length,
 // FileBlockManager
 ////////////////////////////////////////////////////////////
 
-Status FileBlockManager::CreateBlockDir(const BlockId& block_id, vector<string>* created_dirs) {
+Status FileBlockManager::CreateBlockDir(const BlockId& block_id) {
   CHECK(!block_id.IsNull());
   DCHECK(env_->FileExists(root_path_));
 
-  bool path0_created;
   string path0 = JoinPathSegments(root_path_, block_id.hash0());
-  RETURN_NOT_OK(CreateDirIfMissing(path0, &path0_created));
+  RETURN_NOT_OK(CreateDirIfMissing(path0));
 
-  bool path1_created;
   string path1 = JoinPathSegments(path0, block_id.hash1());
-  RETURN_NOT_OK(CreateDirIfMissing(path1, &path1_created));
+  RETURN_NOT_OK(CreateDirIfMissing(path1));
 
-  bool path2_created;
   string path2 = JoinPathSegments(path1, block_id.hash2());
-  RETURN_NOT_OK(CreateDirIfMissing(path2, &path2_created));
+  RETURN_NOT_OK(CreateDirIfMissing(path2));
 
-  if (path2_created) {
-    created_dirs->push_back(path1);
-  }
-  if (path1_created) {
-    created_dirs->push_back(path0);
-  }
-  if (path0_created) {
-    created_dirs->push_back(root_path_);
-  }
   return Status::OK();
 }
 
@@ -170,67 +177,17 @@ string FileBlockManager::GetBlockPath(const BlockId& block_id) const {
   return path;
 }
 
-Status FileBlockManager::CreateDirIfMissing(const string& path, bool* created) {
+Status FileBlockManager::CreateDirIfMissing(const string& path) {
   Status s = env_->CreateDir(path);
-  if (created) {
-    if (s.ok()) {
-      *created = true;
-    } else if (s.IsAlreadyPresent()) {
-      *created = false;
-    }
-  }
   return s.IsAlreadyPresent() ? Status::OK() : s;
-}
-
-Status FileBlockManager::SyncMetadata(const BlockId& block_id) {
-  CHECK(!block_id.IsNull());
-
-  string path0 = JoinPathSegments(root_path_, block_id.hash0());
-  string path1 = JoinPathSegments(path0, block_id.hash1());
-  string path2 = JoinPathSegments(path1, block_id.hash2());
-
-  // Figure out what directories to sync. Order is important.
-  vector<string> to_sync;
-  {
-    lock_guard<simple_spinlock> l(&lock_);
-    if (dirty_dirs_.erase(path2)) {
-      to_sync.push_back(path2);
-    }
-    if (dirty_dirs_.erase(path1)) {
-      to_sync.push_back(path1);
-    }
-    if (dirty_dirs_.erase(path0)) {
-      to_sync.push_back(path0);
-    }
-    if (dirty_dirs_.erase(root_path_)) {
-      to_sync.push_back(root_path_);
-    }
-  }
-
-  // Sync them.
-  BOOST_FOREACH(const string& s, to_sync) {
-    RETURN_NOT_OK(env_->SyncDir(s));
-  }
-  return Status::OK();
 }
 
 void FileBlockManager::CreateBlock(const BlockId& block_id,
                                    const string& path,
-                                   const vector<string>& created_dirs,
                                    const shared_ptr<WritableFile>& writer,
                                    const CreateBlockOptions& opts,
                                    gscoped_ptr<WritableBlock>* block) {
   VLOG(1) << "Creating new block " << block_id.ToString() << " at " << path;
-
-  // Update dirty_dirs_ with those provided as well as the block's
-  // directory, which may not have been created but is definitely dirty
-  // (because we added a file to it).
-  lock_guard<simple_spinlock> l(&lock_);
-  BOOST_FOREACH(const string& created, created_dirs) {
-    dirty_dirs_.insert(created);
-  }
-  dirty_dirs_.insert(DirName(path));
-
   block->reset(new FileWritableBlock(this, opts.sync_on_close, block_id, writer));
 }
 
@@ -254,16 +211,14 @@ FileBlockManager::~FileBlockManager() {
 Status FileBlockManager::CreateAnonymousBlock(gscoped_ptr<WritableBlock>* block,
                                               CreateBlockOptions opts) {
   string path;
-  vector<string> created_dirs;
   Status s;
   BlockId block_id;
   shared_ptr<WritableFile> writer;
 
   // Repeat in case of block id collisions (unlikely).
   do {
-    created_dirs.clear();
     block_id.SetId(oid_generator_.Next());
-    RETURN_NOT_OK(CreateBlockDir(block_id, &created_dirs));
+    RETURN_NOT_OK(CreateBlockDir(block_id));
     path = GetBlockPath(block_id);
     WritableFileOptions wr_opts;
     wr_opts.mmap_file = false;
@@ -271,7 +226,7 @@ Status FileBlockManager::CreateAnonymousBlock(gscoped_ptr<WritableBlock>* block,
     s = env_util::OpenFileForWrite(wr_opts, env_, path, &writer);
   } while (PREDICT_FALSE(s.IsAlreadyPresent()));
   if (s.ok()) {
-    CreateBlock(block_id, path, created_dirs, writer, opts, block);
+    CreateBlock(block_id, path, writer, opts, block);
   }
   return s;
 }
@@ -283,14 +238,13 @@ Status FileBlockManager::CreateNamedBlock(const BlockId& block_id,
   VLOG(1) << "Creating new block with predetermined id "
           << block_id.ToString() << " at " << path;
 
-  vector<string> created_dirs;
-  RETURN_NOT_OK(CreateBlockDir(block_id, &created_dirs));
+  RETURN_NOT_OK(CreateBlockDir(block_id));
   shared_ptr<WritableFile> writer;
   WritableFileOptions wr_opts;
   wr_opts.mmap_file = false;
   wr_opts.overwrite_existing = false;
   RETURN_NOT_OK(env_util::OpenFileForWrite(wr_opts, env_, path, &writer));
-  CreateBlock(block_id, path, created_dirs, writer, opts, block);
+  CreateBlock(block_id, path, writer, opts, block);
   return Status::OK();
 }
 
@@ -314,6 +268,24 @@ Status FileBlockManager::DeleteBlock(const BlockId& block_id) {
   // The block's directory hierarchy is left behind. We could prune it if
   // it's empty, but that's racy and leaving it isn't much overhead.
 
+  return Status::OK();
+}
+
+Status FileBlockManager::SyncBlocks(const vector<WritableBlock*>& blocks) {
+  if (FLAGS_block_coalesce_sync) {
+    // Ask the kernel to begin writing out each block's dirty data. This is
+    // done up-front to give the kernel opportunities to coalesce contiguous
+    // dirty pages.
+    BOOST_FOREACH(WritableBlock* block, blocks) {
+      FileWritableBlock* fwb = down_cast<FileWritableBlock*>(block);
+      RETURN_NOT_OK(fwb->writer_->Flush(WritableFile::FLUSH_ASYNC));
+    }
+  }
+
+  // Now wait for each block to actually become durable.
+  BOOST_FOREACH(WritableBlock* block, blocks) {
+    RETURN_NOT_OK(block->Sync());
+  }
   return Status::OK();
 }
 

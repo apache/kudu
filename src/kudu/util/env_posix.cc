@@ -418,7 +418,14 @@ class PosixMmapFile : public WritableFile {
     return s;
   }
 
-  virtual Status Flush() OVERRIDE {
+  virtual Status Flush(FlushMode mode) OVERRIDE {
+    int flags = SYNC_FILE_RANGE_WRITE;
+    if (mode == FLUSH_SYNC) {
+      flags |= SYNC_FILE_RANGE_WAIT_AFTER;
+    }
+    if (sync_file_range(fd_, 0, 0, flags) < 0) {
+      return IOError(filename_, errno);
+    }
     return Status::OK();
   }
 
@@ -574,7 +581,14 @@ class PosixWritableFile : public WritableFile {
     return s;
   }
 
-  virtual Status Flush() OVERRIDE {
+  virtual Status Flush(FlushMode mode) OVERRIDE {
+    int flags = SYNC_FILE_RANGE_WRITE;
+    if (mode == FLUSH_SYNC) {
+      flags |= SYNC_FILE_RANGE_WAIT_AFTER;
+    }
+    if (sync_file_range(fd_, 0, 0, flags) < 0) {
+      return IOError(filename_, errno);
+    }
     return Status::OK();
   }
 

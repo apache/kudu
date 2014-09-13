@@ -1,9 +1,18 @@
 // Copyright (c) 2014, Cloudera, inc.
 
 #include "kudu/fs/file_block_manager.h"
+#include "kudu/gutil/stl_util.h"
+#include "kudu/gutil/strings/substitute.h"
+#include "kudu/util/random.h"
+#include "kudu/util/stopwatch.h"
 #include "kudu/util/test_util.h"
 
 using std::string;
+using std::vector;
+using strings::Substitute;
+
+DEFINE_int32(num_blocks_sync, 1000,
+             "Number of blocks to simultaneously sync in SyncManyBlocksTest");
 
 namespace kudu {
 namespace fs {
@@ -113,6 +122,36 @@ TEST_F(BlockManagerTest, CloseTwiceTest) {
   ASSERT_OK(bm_->OpenBlock(written_block->id(), &read_block));
   ASSERT_OK(read_block->Close());
   ASSERT_OK(read_block->Close());
+}
+
+TEST_F(BlockManagerTest, SyncManyBlocksTest) {
+  if (!AllowSlowTests()) {
+    LOG(INFO) << "Not running in slow-tests mode";
+    return;
+  }
+  Random rand(SeedRandom());
+  vector<WritableBlock*> dirty_blocks;
+  ElementDeleter deleter(&dirty_blocks);
+  LOG(INFO) << "Creating " <<  FLAGS_num_blocks_sync << " blocks";
+  for (int i = 0; i < FLAGS_num_blocks_sync; i++) {
+    // Create a block.
+    gscoped_ptr<WritableBlock> written_block;
+    CreateBlockOptions opts;
+    ASSERT_OK(bm_->CreateAnonymousBlock(&written_block, opts));
+
+    // Write 64k bytes of random data into it.
+    uint8_t data[65536];
+    for (int i = 0; i < sizeof(data); i += sizeof(uint32_t)) {
+      data[i] = rand.Next();
+    }
+    written_block->Append(Slice(data, sizeof(data)));
+
+    dirty_blocks.push_back(written_block.release());
+  }
+
+  LOG_TIMING(INFO, Substitute("syncing $0 blocks", FLAGS_num_blocks_sync)) {
+    ASSERT_OK(bm_->SyncBlocks(dirty_blocks));
+  }
 }
 
 } // namespace fs

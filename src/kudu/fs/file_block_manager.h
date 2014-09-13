@@ -50,13 +50,15 @@ class FileWritableBlock : public WritableBlock {
                     const BlockId& block_id,
                     const std::tr1::shared_ptr<WritableFile>& writer);
 
-  // Back pointer to the block manager, used for any operations that
-  // require coalescing.
+  // Synchronize this block's dirty metadata to disk.
+  Status SyncMetadata();
+
+  // Back pointer to the block manager.
   //
   // Should remain alive for the lifetime of this block.
   FileBlockManager* block_manager_;
 
-  // Whether Sync() should be closed during Close().
+  // Whether Sync() should be called during Close().
   const bool sync_on_close_;
 
   // The block's identifier.
@@ -135,41 +137,32 @@ class FileBlockManager : public BlockManager {
 
   virtual Status DeleteBlock(const BlockId& block_id) OVERRIDE;
 
+  virtual Status SyncBlocks(const std::vector<WritableBlock*>& blocks) OVERRIDE;
+
  private:
   friend class FileWritableBlock;
 
   FileBlockManager(Env* env, const std::string& root_path);
 
   // Creates the parent directory hierarchy for the block with the given id.
-  Status CreateBlockDir(const BlockId& block_id, std::vector<std::string>* created_dirs);
+  Status CreateBlockDir(const BlockId& block_id);
 
   // Returns the path to a block with the given id.
   std::string GetBlockPath(const BlockId& block_id) const;
 
   // Creates a directory if it's not already present.
-  //
-  // On error, does not set 'created'.
-  Status CreateDirIfMissing(const std::string& path, bool* created = NULL);
-
-  // Synchronizes the metadata for a block with the given id.
-  Status SyncMetadata(const BlockId& block_id);
+  Status CreateDirIfMissing(const std::string& path);
 
   // Creates a new block.
   void CreateBlock(const BlockId& block_id, const std::string& path,
-                   const std::vector<std::string>& created_dirs,
                    const std::tr1::shared_ptr<WritableFile>& writer,
                    const CreateBlockOptions& opts,
                    gscoped_ptr<WritableBlock>* block);
 
-  // Protects 'dirty_dirs_'.
-  mutable simple_spinlock lock_;
-
-  // Tracks the block directories which are dirty from block creation. This
-  // lets us perform some simple coalescing when synchronizing metadata.
-  std::tr1::unordered_set<std::string> dirty_dirs_;
+  Env* env() const { return env_; }
 
   // For manipulating files.
-  Env *env_;
+  Env* env_;
 
   // Filesystem path where all block directories are found.
   const std::string root_path_;

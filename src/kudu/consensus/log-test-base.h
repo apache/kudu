@@ -277,7 +277,6 @@ Status CorruptLogFile(Env* env, Log* log, int bytes_to_truncate) {
   RETURN_NOT_OK(env_util::OpenFileForWrite(env, log_path, &sink));
 
   RETURN_NOT_OK(sink->Append(Slice(copied)));
-  RETURN_NOT_OK(sink->Flush());
   RETURN_NOT_OK(sink->Close());
 
   return Status::OK();

@@ -245,6 +245,11 @@ struct WritableFileOptions {
 // at a time to the file.
 class WritableFile {
  public:
+  enum FlushMode {
+    FLUSH_SYNC,
+    FLUSH_ASYNC
+  };
+
   WritableFile() { }
   virtual ~WritableFile();
 
@@ -265,7 +270,11 @@ class WritableFile {
 
   virtual Status Close() = 0;
 
-  virtual Status Flush() = 0;
+  // Flush all dirty data (not metadata) to disk.
+  //
+  // If the flush mode is synchronous, will wait for flush to finish and
+  // return a meaningful status.
+  virtual Status Flush(FlushMode mode) = 0;
 
   virtual Status Sync() = 0;
 
