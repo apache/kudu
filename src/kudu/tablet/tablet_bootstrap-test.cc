@@ -8,6 +8,7 @@
 #include "kudu/consensus/log_util.h"
 #include "kudu/tablet/tablet_bootstrap.h"
 #include "kudu/tablet/tablet-test-util.h"
+#include "kudu/server/metadata.h"
 #include "kudu/server/logical_clock.h"
 
 namespace kudu {
@@ -29,8 +30,8 @@ using log::Log;
 using log::LogTestBase;
 using log::OpIdAnchorRegistry;
 using log::ReadableLogSegmentMap;
-using log::TabletMasterBlockPB;
 using metadata::TabletMetadata;
+using metadata::TabletMasterBlockPB;
 using server::Clock;
 using server::LogicalClock;
 

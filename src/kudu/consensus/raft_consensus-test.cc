@@ -40,7 +40,6 @@ using log::LogReader;
 using log::ReadableLogSegmentMap;
 using metadata::QuorumPB;
 using metadata::QuorumPeerPB;
-using metadata::TabletSuperBlockPB;
 using rpc::RpcContext;
 using strings::Substitute;
 using strings::SubstituteAndAppend;

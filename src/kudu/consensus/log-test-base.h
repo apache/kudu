@@ -21,7 +21,6 @@
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/stringprintf.h"
-#include "kudu/server/metadata.h"
 #include "kudu/tserver/tserver.pb.h"
 #include "kudu/util/env_util.h"
 #include "kudu/util/path_util.h"
@@ -38,12 +37,6 @@ using consensus::OperationPB;
 using consensus::ReplicateMsg;
 using consensus::WRITE_OP;
 using consensus::NO_OP;
-
-using metadata::TabletSuperBlockPB;
-using metadata::TabletMasterBlockPB;
-using metadata::RowSetDataPB;
-using metadata::DeltaDataPB;
-using metadata::kNoDurableMemStore;
 
 using tserver::WriteRequestPB;
 

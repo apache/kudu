@@ -398,33 +398,6 @@ Status TabletMetadata::CreateRowSet(shared_ptr<RowSetMetadata> *rowset,
   return Status::OK();
 }
 
-Status TabletMetadata::CreateRowSetWithUpdatedColumns(const ColumnIndexes& col_indexes,
-                                                      const RowSetMetadata& src,
-                                                      shared_ptr<RowSetMetadata>* dst,
-                                                      ColumnWriters* writers) {
-  AtomicWord rowset_idx = Barrier_AtomicIncrement(&next_rowset_idx_, 1) - 1;
-  gscoped_ptr<RowSetMetadata> meta(new RowSetMetadata(this, rowset_idx, src.schema()));
-  for (size_t i = 0; i < src.schema().num_columns(); i++) {
-    if (std::binary_search(col_indexes.begin(), col_indexes.end(), i)) {
-      shared_ptr<WritableFile> out;
-      Status s = meta->NewColumnDataBlock(i, &out);
-      if (!s.ok()) {
-        LOG(WARNING) << "Unable to open output file for column " <<
-            src.schema().column(i).ToString() << " : " << s.ToString();
-        return s;
-      }
-      writers->insert(std::pair<size_t, shared_ptr<WritableFile> >(i, out));
-    } else {
-      meta->column_blocks_.push_back(src.column_blocks_[i]);
-    }
-  }
-  meta->bloom_block_ = src.bloom_block_;
-  meta->adhoc_index_block_ = src.adhoc_index_block_;
-
-  dst->reset(meta.release());
-  return Status::OK();
-}
-
 const RowSetMetadata *TabletMetadata::GetRowSetForTests(int64_t id) const {
   BOOST_FOREACH(const shared_ptr<RowSetMetadata>& rowset_meta, rowsets_) {
     if (rowset_meta->id() == id) {

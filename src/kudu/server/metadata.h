@@ -172,16 +172,6 @@ class TabletMetadata : public RefCountedThreadSafe<TabletMetadata> {
   // calls to do so.
   Status CreateRowSet(shared_ptr<RowSetMetadata> *rowset, const Schema& schema);
 
-  // Sets 'dst' to a new RowSetMetadata which differs from 'src' RowSetMetadata
-  // only by columns in 'col_indexes': new data blocks are created for columns in
-  // 'col_indexes', while other columns -- as well as the bloom and ad hoc index blocks --
-  // are shared with 'src'; sets 'writers' to a map from each column index in to a new
-  // WritableFile representing the data writer for that column.
-  Status CreateRowSetWithUpdatedColumns(const ColumnIndexes& col_indexes,
-                                        const RowSetMetadata& src,
-                                        shared_ptr<RowSetMetadata>* dst,
-                                        ColumnWriters* writers);
-
   const RowSetMetadataVector& rowsets() const { return rowsets_; }
 
   FsManager *fs_manager() const { return fs_manager_; }
