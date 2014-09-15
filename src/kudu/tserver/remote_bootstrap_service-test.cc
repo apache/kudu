@@ -175,7 +175,7 @@ TEST_F(RemoteBootstrapServiceTest, TestSimpleBeginEndSession) {
   ASSERT_FALSE(session_id.empty());
   ASSERT_EQ(FLAGS_remote_bootstrap_idle_timeout_ms, idle_timeout_millis);
   ASSERT_TRUE(superblock.IsInitialized());
-  ASSERT_EQ(kNumLogRolls, first_op_ids.size());
+  ASSERT_EQ(static_cast<int>(kNumLogRolls), first_op_ids.size());
 
   EndRemoteBootstrapSessionResponsePB resp;
   RpcController controller;
@@ -386,7 +386,7 @@ TEST_F(RemoteBootstrapServiceTest, TestFetchLog) {
                                                       &superblock,
                                                       &idle_timeout_millis,
                                                       &first_op_ids));
-  ASSERT_EQ(kNumLogRolls, first_op_ids.size());
+  ASSERT_EQ(static_cast<int>(kNumLogRolls), first_op_ids.size());
   const consensus::OpId& op_id = *first_op_ids.begin();
 
   // Fetch the remote data.
