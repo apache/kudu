@@ -183,12 +183,19 @@ class PeerMessageQueue {
 
  private:
 
+  struct TrackedPeer {
+    std::string uuid;
+    ConsensusStatusPB peer_status;
+
+    std::string ToString() const;
+  };
+
   // An ordered map that serves as the buffer for the pending messages.
   typedef std::map<OpId,
                    scoped_refptr<OperationStatusTracker>,
                    OpIdCompareFunctor> MessagesBuffer;
 
-  typedef std::tr1::unordered_map<std::string, ConsensusStatusPB*> WatermarksMap;
+  typedef std::tr1::unordered_map<std::string, TrackedPeer*> WatermarksMap;
   typedef std::tr1::unordered_map<OpId, Status> ErrorsMap;
   typedef std::pair<OpId, Status> ErrorEntry;
 

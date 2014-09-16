@@ -76,6 +76,12 @@ OperationStatusTracker::OperationStatusTracker(gscoped_ptr<OperationPB> operatio
   : operation_(operation.Pass()) {
 }
 
+std::string PeerMessageQueue::TrackedPeer::ToString() const {
+  return Substitute("Peer: $0, Status: $2",
+                    uuid,
+                    peer_status.ShortDebugString());
+}
+
 #define INSTANTIATE_METRIC(x) \
   AtomicGauge<int64_t>::Instantiate(x, metric_ctx)
 PeerMessageQueue::Metrics::Metrics(const MetricContext& metric_ctx)
@@ -115,19 +121,22 @@ Status PeerMessageQueue::TrackPeer(const string& uuid, const OpId& initial_water
   // TODO allow the queue to go and fetch requests from the log
   // up to a point.
   DCHECK(initial_watermark.IsInitialized());
-  ConsensusStatusPB* status = new ConsensusStatusPB();
-  status->mutable_safe_commit_watermark()->CopyFrom(initial_watermark);
-  status->mutable_replicated_watermark()->CopyFrom(initial_watermark);
-  status->mutable_received_watermark()->CopyFrom(initial_watermark);
-  InsertOrDie(&watermarks_, uuid, status);
+
+  TrackedPeer* tracked_peer = new TrackedPeer;
+  tracked_peer->peer_status.mutable_safe_commit_watermark()->CopyFrom(initial_watermark);
+  tracked_peer->peer_status.mutable_replicated_watermark()->CopyFrom(initial_watermark);
+  tracked_peer->peer_status.mutable_received_watermark()->CopyFrom(initial_watermark);
+  tracked_peer->uuid = uuid;
+
+  InsertOrDie(&watermarks_, uuid, tracked_peer);
   return Status::OK();
 }
 
 void PeerMessageQueue::UntrackPeer(const string& uuid) {
   boost::lock_guard<simple_spinlock> lock(queue_lock_);
-  ConsensusStatusPB* status = EraseKeyReturnValuePtr(&watermarks_, uuid);
-  if (status != NULL) {
-    delete status;
+  TrackedPeer* peer = EraseKeyReturnValuePtr(&watermarks_, uuid);
+  if (peer != NULL) {
+    delete peer;
   }
 }
 
@@ -195,9 +204,9 @@ void PeerMessageQueue::RequestForPeer(const string& uuid,
   request->mutable_ops()->ExtractSubrange(0, request->ops_size(), NULL);
   boost::lock_guard<simple_spinlock> lock(queue_lock_);
   DCHECK_EQ(state_, kQueueOpen);
-  const ConsensusStatusPB* current_status = FindOrDie(watermarks_, uuid);
+  const TrackedPeer* peer = FindOrDie(watermarks_, uuid);
 
-  MessagesBuffer::iterator iter = messages_.upper_bound(current_status->received_watermark());
+  MessagesBuffer::iterator iter = messages_.upper_bound(peer->peer_status.received_watermark());
 
   // Add as many operations as we can to a request.
   OperationStatusTracker* ost = NULL;
@@ -236,8 +245,9 @@ void PeerMessageQueue::ResponseFromPeer(const string& uuid,
                                         const ConsensusStatusPB& new_status,
                                         bool* more_pending) {
   boost::lock_guard<simple_spinlock> lock(queue_lock_);
-  ConsensusStatusPB* current_status = FindPtrOrNull(watermarks_, uuid);
-  if (PREDICT_FALSE(state_ == kQueueClosed || current_status == NULL)) {
+
+  TrackedPeer* peer = FindPtrOrNull(watermarks_, uuid);
+  if (PREDICT_FALSE(state_ == kQueueClosed || peer == NULL)) {
     LOG(WARNING) << "Queue is closed or peer was untracked, disregarding peer response.";
     *more_pending = false;
     return;
@@ -245,8 +255,8 @@ void PeerMessageQueue::ResponseFromPeer(const string& uuid,
   MessagesBuffer::iterator iter;
   // We always start processing messages from the lowest watermark
   // (which might be the replicated or the committed one)
-  const OpId* lowest_watermark = &std::min(current_status->replicated_watermark(),
-                                           current_status->safe_commit_watermark(),
+  const OpId* lowest_watermark = &std::min(peer->peer_status.replicated_watermark(),
+                                           peer->peer_status.safe_commit_watermark(),
                                            OpIdCompare);
   iter = messages_.upper_bound(*lowest_watermark);
 
@@ -254,7 +264,8 @@ void PeerMessageQueue::ResponseFromPeer(const string& uuid,
 
   if (PREDICT_FALSE(VLOG_IS_ON(2))) {
     VLOG(2) << "Received Response from Peer: " << uuid << ". Current Status: "
-        << current_status->ShortDebugString() << ". New Status: " << new_status.ShortDebugString();
+        << peer->peer_status.ShortDebugString() << ". New Status: "
+        << new_status.ShortDebugString();
   }
 
   // We need to ack replicates and commits separately (commits are executed asynchonously).
@@ -272,11 +283,11 @@ void PeerMessageQueue::ResponseFromPeer(const string& uuid,
     const OpId& id = operation->id();
 
     if (operation->has_commit() &&
-        OpIdCompare(id, current_status->safe_commit_watermark()) > 0 &&
+        OpIdCompare(id, peer->peer_status.safe_commit_watermark()) > 0 &&
         OpIdCompare(id, new_status.safe_commit_watermark()) <= 0) {
       ost->AckPeer(uuid);
     } else if (operation->has_replicate() &&
-        OpIdCompare(id, current_status->replicated_watermark()) > 0 &&
+        OpIdCompare(id, peer->peer_status.replicated_watermark()) > 0 &&
         OpIdCompare(id, new_status.replicated_watermark()) <= 0) {
       ost->AckPeer(uuid);
     }
@@ -291,11 +302,7 @@ void PeerMessageQueue::ResponseFromPeer(const string& uuid,
     }
   }
 
-  if (current_status == NULL) {
-    InsertOrUpdate(&watermarks_, uuid, new ConsensusStatusPB(new_status));
-  } else {
-    current_status->CopyFrom(new_status);
-  }
+  peer->peer_status.CopyFrom(new_status);
 
   // check if there are more messages pending.
   *more_pending = (iter != messages_.end());
@@ -387,9 +394,7 @@ void PeerMessageQueue::DumpToStringsUnlocked(vector<string>* lines) const {
   lines->push_back("Watermarks:");
   BOOST_FOREACH(const WatermarksMap::value_type& entry, watermarks_) {
     lines->push_back(
-        Substitute("Peer: $0 Watermark: $1",
-                   entry.first,
-                   (entry.second != NULL ? entry.second->ShortDebugString() : "NULL")));
+        Substitute("Peer: $0 Watermark: $1", entry.first, entry.second->ToString()));
   }
   int counter = 0;
   lines->push_back("Messages:");
@@ -423,10 +428,9 @@ void PeerMessageQueue::DumpToHtml(std::ostream& out) const {
   out << "<table>" << endl;;
   out << "  <tr><th>Peer</th><th>Watermark</th></tr>" << endl;
   BOOST_FOREACH(const WatermarksMap::value_type& entry, watermarks_) {
-    string watermark_str = (entry.second != NULL ? entry.second->ShortDebugString() : "NULL");
     out << Substitute("  <tr><td>$0</td><td>$1</td></tr>",
                       EscapeForHtmlToString(entry.first),
-                      EscapeForHtmlToString(watermark_str)) << endl;
+                      EscapeForHtmlToString(entry.second->ToString())) << endl;
   }
   out << "</table>" << endl;
 
