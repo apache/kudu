@@ -373,6 +373,7 @@ Status RaftConsensus::Update(const ConsensusRequestPB* request,
                              ConsensusResponsePB* response) {
   RETURN_NOT_OK(ExecuteHook(PRE_UPDATE));
   ConsensusStatusPB* status = response->mutable_status();
+  response->set_responder_uuid(state_->GetPeerUuid());
 
   // see var declaration
   boost::lock_guard<simple_spinlock> lock(update_lock_);
@@ -386,6 +387,7 @@ Status RaftConsensus::Update(const ConsensusRequestPB* request,
     ReplicaState::UniqueLock lock;
     RETURN_NOT_OK(state_->LockForRead(&lock));
     TRACE("Updating watermarks");
+    response->set_responder_term(state_->GetCurrentTermUnlocked());
     status->mutable_replicated_watermark()->CopyFrom(state_->GetLastReplicatedOpIdUnlocked());
     status->mutable_received_watermark()->CopyFrom(state_->GetLastReceivedOpIdUnlocked());
     status->mutable_safe_commit_watermark()->CopyFrom(state_->GetSafeCommitOpIdUnlocked());

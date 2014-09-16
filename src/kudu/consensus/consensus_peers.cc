@@ -9,8 +9,8 @@
 #include "kudu/consensus/consensus_peers.h"
 
 #include "kudu/common/wire_protocol.h"
-#include "kudu/consensus/consensus_queue.h"
 #include "kudu/consensus/consensus.proxy.h"
+#include "kudu/consensus/consensus_queue.h"
 #include "kudu/consensus/log.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/stl_util.h"
@@ -100,7 +100,8 @@ class LocalPeer : public PeerImpl {
   Status Init(OpId* initial_id) OVERRIDE {
     initial_id->CopyFrom(last_received_);
     request_.set_tablet_id(tablet_id_);
-    request_.set_sender_uuid(leader_uuid_);
+    request_.set_caller_uuid(leader_uuid_);
+    response_.set_responder_uuid(leader_uuid_);
     return Status::OK();
   }
 
@@ -108,7 +109,7 @@ class LocalPeer : public PeerImpl {
     if (PREDICT_FALSE(request_.ops_size() == 0)) {
       return false;
     }
-    response_.Clear();
+    response_.mutable_status()->Clear();
 
     vector<const OperationPB*> ops;
     const OpId* last_replicated = NULL;
@@ -196,7 +197,7 @@ class RemotePeer : public PeerImpl {
     // TODO ask the remote peer for the initial id when we have catch up.
     initial_id->CopyFrom(MinimumOpId());
     request_.set_tablet_id(tablet_id_);
-    request_.set_sender_uuid(leader_uuid_);
+    request_.set_caller_uuid(leader_uuid_);
     return Status::OK();
   }
 
@@ -323,6 +324,10 @@ Peer::Peer(const metadata::QuorumPeerPB& peer_pb,
       state_(kPeerCreated) {
 }
 
+void Peer::SetTermForTest(int term) {
+  peer_impl_->response_.set_responder_term(term);
+}
+
 Status Peer::Init() {
   boost::lock_guard<simple_spinlock> lock(peer_lock_);
   OpId initial_id;
@@ -374,7 +379,7 @@ void Peer::ProcessResponse(const ConsensusStatusPB& status) {
   DCHECK(status.IsInitialized());
   boost::lock_guard<simple_spinlock> lock(peer_lock_);
   bool more_pending;
-  queue_->ResponseFromPeer(peer_pb_.permanent_uuid(), status, &more_pending);
+  queue_->ResponseFromPeer(peer_impl_->response_, &more_pending);
   outstanding_req_latch_.CountDown();
   if (more_pending && state_ != kPeerClosed) {
     queue_->RequestForPeer(peer_pb_.permanent_uuid(), peer_impl_->request());

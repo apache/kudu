@@ -127,10 +127,9 @@ class PeerMessageQueue {
   void RequestForPeer(const std::string& uuid,
                       ConsensusRequestPB* request);
 
-  // Updates the request queue with the latest status of a peer, returns
+  // Updates the request queue with the latest response of a peer, returns
   // whether this peer has more requests pending.
-  void ResponseFromPeer(const std::string& uuid,
-                        const ConsensusStatusPB& status,
+  void ResponseFromPeer(const ConsensusResponsePB& response,
                         bool* more_pending);
 
   // Returns the OperationStatusTracker for the operation with id = 'op_id' by
@@ -184,10 +183,27 @@ class PeerMessageQueue {
  private:
 
   struct TrackedPeer {
+    explicit TrackedPeer(const std::string& uuid)
+      : uuid(uuid),
+        last_seen_term_(0) {
+    }
     std::string uuid;
     ConsensusStatusPB peer_status;
 
+    // Check that the terms seen from a given peer only increase
+    // monotonically.
+    void CheckMonotonicTerms(uint64_t term) {
+      DCHECK_GE(term, last_seen_term_);
+      last_seen_term_ = term;
+    }
+
     std::string ToString() const;
+
+   private:
+    // The last term we saw from a given peer.
+    // This is only used for sanity checking that a peer doesn't
+    // go backwards in time.
+    uint64_t last_seen_term_;
   };
 
   // An ordered map that serves as the buffer for the pending messages.
@@ -223,6 +239,14 @@ class PeerMessageQueue {
 
   // Server-wide version of 'max_ops_size_bytes_hard_'.
   uint64_t global_max_ops_size_bytes_hard_;
+
+  // The queue's owner current_term.
+  // Set by the last appended operation.
+  // If the queue owner's term is less than the term observed
+  // from another peer the queue owner must step down.
+  // TODO: it is likely to be cleaner to get this from the ConsensusMetadata
+  // rather than by snooping on what operations are appended to the queue.
+  uint64_t current_term_;
 
   // The current watermark for each peer.
   // The queue owns the OpIds.

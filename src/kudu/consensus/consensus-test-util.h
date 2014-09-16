@@ -115,9 +115,11 @@ static inline void AppendReplicateMessagesToQueue(
 // that the messages were received/replicated/committed.
 class NoOpTestPeerProxy : public PeerProxy {
  public:
-  NoOpTestPeerProxy()
+  explicit NoOpTestPeerProxy(const metadata::QuorumPeerPB& peer_pb)
     : delay_response_(false),
-      callback_(NULL) {
+      callback_(NULL),
+      peer_pb_(peer_pb),
+      peer_term_(0) {
     CHECK_OK(ThreadPoolBuilder("noop-peer-pool").set_max_threads(1).Build(&pool_));
   }
 
@@ -126,6 +128,8 @@ class NoOpTestPeerProxy : public PeerProxy {
                              rpc::RpcController* controller,
                              const rpc::ResponseCallback& callback) OVERRIDE {
     ConsensusStatusPB* status = response->mutable_status();
+    response->set_responder_uuid(peer_pb_.permanent_uuid());
+
     if (request->ops_size() > 0) {
       status->mutable_replicated_watermark()->CopyFrom(
           request->ops(request->ops_size() - 1).id());
@@ -134,9 +138,12 @@ class NoOpTestPeerProxy : public PeerProxy {
       status->mutable_received_watermark()->CopyFrom(
           request->ops(request->ops_size() - 1).id());
       last_status_.CopyFrom(*status);
+      peer_term_ = status->mutable_received_watermark()->term();
     } else if (last_status_.IsInitialized()) {
       status->CopyFrom(last_status_);
     }
+
+    response->set_responder_term(peer_term_);
 
     callback_ = &callback;
 
@@ -169,6 +176,8 @@ class NoOpTestPeerProxy : public PeerProxy {
   ConsensusStatusPB last_status_;
   bool delay_response_;
   const rpc::ResponseCallback* callback_;
+  metadata::QuorumPeerPB peer_pb_;
+  int peer_term_;
 };
 
 class NoOpTestPeerProxyFactory : public PeerProxyFactory {
@@ -176,7 +185,7 @@ class NoOpTestPeerProxyFactory : public PeerProxyFactory {
 
   virtual Status NewProxy(const metadata::QuorumPeerPB& peer_pb,
                           gscoped_ptr<PeerProxy>* proxy) OVERRIDE {
-    proxy->reset(new NoOpTestPeerProxy());
+    proxy->reset(new NoOpTestPeerProxy(peer_pb));
     return Status::OK();
   }
 };

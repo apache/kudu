@@ -112,6 +112,8 @@ class Peer {
 
   void Close();
 
+  void SetTermForTest(int term);
+
   ~Peer();
 
   // Creates a new local peer and makes the queue track it.

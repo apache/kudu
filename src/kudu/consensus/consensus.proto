@@ -245,17 +245,36 @@ message VoteResponsePB {
 // A consensus request message, the basic unit of a consensus round.
 message ConsensusRequestPB {
   required string tablet_id = 1;
-  // the uuid of the sender peer
-  required bytes sender_uuid = 2;
+
+  // The uuid of the peer making the call.
+  required bytes caller_uuid = 2;
+
+  // The caller's term. As only leaders can send messages,
+  // replicas will accept all messages as long as the term
+  // is equal to or higher than the last term they know about.
+  // If a leader receives a request with a term higher than its own,
+  // it will step down and enter FOLLOWER state (see Raft sec. 5.1).
+  required uint64 caller_term = 3;
+
   // sequence of operations to be replicated/executed by this peer
-  repeated OperationPB ops = 3;
+  repeated OperationPB ops = 4;
 }
 
 message ConsensusResponsePB {
+  // The uuid of the peer making the response.
+  optional bytes responder_uuid = 1;
+
+  // The current term of the peer making the response.
+  // This is used to update the caller (and make it step down if it is
+  // out of date).
+  optional uint64 responder_term = 2;
+
+  // The current consensus status of the receiver peer.
+  optional ConsensusStatusPB status = 3;
+
   // A generic error message (such as tablet not found), per operation
   // error messages are sent along with the consensus status.
-  optional tserver.TabletServerErrorPB error = 1;
-  optional ConsensusStatusPB status = 3;
+  optional tserver.TabletServerErrorPB error = 999;
 }
 
 // A message reflecting the status of an in-flight transaction.

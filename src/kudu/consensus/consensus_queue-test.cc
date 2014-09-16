@@ -63,16 +63,19 @@ TEST_F(ConsensusQueueTest, TestGetAllMessages) {
   ASSERT_STATUS_OK(queue_->TrackPeer(kPeerUuid, MinimumOpId()));
 
   ConsensusRequestPB request;
-  ConsensusStatusPB status;
+  ConsensusResponsePB response;
+  response.set_responder_uuid(kPeerUuid);
+  response.set_responder_term(14);
+
   bool more_pending = false;
 
   // ask for a request. with normal flags this should get the whole queue.
   queue_->RequestForPeer(kPeerUuid, &request);
   ASSERT_EQ(request.ops_size(), 100);
-  status.mutable_safe_commit_watermark()->CopyFrom(request.ops(99).id());
-  status.mutable_replicated_watermark()->CopyFrom(request.ops(99).id());
-  status.mutable_received_watermark()->CopyFrom(request.ops(99).id());
-  queue_->ResponseFromPeer(kPeerUuid, status, &more_pending);
+  response.mutable_status()->mutable_safe_commit_watermark()->CopyFrom(request.ops(99).id());
+  response.mutable_status()->mutable_replicated_watermark()->CopyFrom(request.ops(99).id());
+  response.mutable_status()->mutable_received_watermark()->CopyFrom(request.ops(99).id());
+  queue_->ResponseFromPeer(response, &more_pending);
   ASSERT_FALSE(more_pending) << "Queue still had requests pending";
 
   // if we ask for a new request, it should come back empty
@@ -98,16 +101,18 @@ TEST_F(ConsensusQueueTest, TestStartTrackingAfterStart) {
   ASSERT_STATUS_OK(queue_->TrackPeer(kPeerUuid, first_msg));
 
   ConsensusRequestPB request;
-  ConsensusStatusPB status;
+  ConsensusResponsePB response;
+  response.set_responder_uuid(kPeerUuid);
+  response.set_responder_term(14);
   bool more_pending = false;
 
   // ask for a request, with normal flags this should get half the queue.
   queue_->RequestForPeer(kPeerUuid, &request);
   ASSERT_EQ(request.ops_size(), 50);
-  status.mutable_safe_commit_watermark()->CopyFrom(request.ops(49).id());
-  status.mutable_replicated_watermark()->CopyFrom(request.ops(49).id());
-  status.mutable_received_watermark()->CopyFrom(request.ops(49).id());
-  queue_->ResponseFromPeer(kPeerUuid, status, &more_pending);
+  response.mutable_status()->mutable_safe_commit_watermark()->CopyFrom(request.ops(49).id());
+  response.mutable_status()->mutable_replicated_watermark()->CopyFrom(request.ops(49).id());
+  response.mutable_status()->mutable_received_watermark()->CopyFrom(request.ops(49).id());
+  queue_->ResponseFromPeer(response, &more_pending);
   ASSERT_FALSE(more_pending) << "Queue still had requests pending";
 
   // if we ask for a new request, it should come back empty
@@ -124,6 +129,7 @@ TEST_F(ConsensusQueueTest, TestGetPagedMessages) {
 
   // helper to estimate request size so that we can set the max batch size appropriately
   ConsensusRequestPB page_size_estimator;
+  page_size_estimator.set_caller_term(14);
   OperationPB* op = page_size_estimator.add_ops();
   OpId* id = op->mutable_id();
   id->set_index(0);
@@ -144,22 +150,25 @@ TEST_F(ConsensusQueueTest, TestGetPagedMessages) {
   bool more_pending = false;
 
   ConsensusRequestPB request;
-  ConsensusStatusPB status;
+  ConsensusResponsePB response;
+  response.set_responder_uuid(kPeerUuid);
+  response.set_responder_term(14);
   for (int i = 0; i < 11; i++) {
     queue_->RequestForPeer(kPeerUuid, &request);
-    ASSERT_EQ(9, request.ops_size());
-    status.mutable_safe_commit_watermark()->CopyFrom(request.ops(request.ops_size() -1).id());
-    status.mutable_replicated_watermark()->CopyFrom(request.ops(request.ops_size() -1).id());
-    status.mutable_received_watermark()->CopyFrom(request.ops(request.ops_size() -1).id());
-    queue_->ResponseFromPeer(kPeerUuid, status, &more_pending);
+    const OpId& last_req_id = request.ops(request.ops_size() -1).id();
+    response.mutable_status()->mutable_safe_commit_watermark()->CopyFrom(last_req_id);
+    response.mutable_status()->mutable_replicated_watermark()->CopyFrom(last_req_id);
+    response.mutable_status()->mutable_received_watermark()->CopyFrom(last_req_id);
+    queue_->ResponseFromPeer(response, &more_pending);
     ASSERT_TRUE(more_pending);
   }
   queue_->RequestForPeer(kPeerUuid, &request);
   ASSERT_EQ(1, request.ops_size());
-  status.mutable_safe_commit_watermark()->CopyFrom(request.ops(request.ops_size() -1).id());
-  status.mutable_replicated_watermark()->CopyFrom(request.ops(request.ops_size() -1).id());
-  status.mutable_received_watermark()->CopyFrom(request.ops(request.ops_size() -1).id());
-  queue_->ResponseFromPeer(kPeerUuid, status, &more_pending);
+  const OpId& last_req_id = request.ops(request.ops_size() -1).id();
+  response.mutable_status()->mutable_safe_commit_watermark()->CopyFrom(last_req_id);
+  response.mutable_status()->mutable_replicated_watermark()->CopyFrom(last_req_id);
+  response.mutable_status()->mutable_received_watermark()->CopyFrom(last_req_id);
+  queue_->ResponseFromPeer(response, &more_pending);
   ASSERT_FALSE(more_pending);
 
   // extract the ops from the request to avoid double free
@@ -212,21 +221,25 @@ TEST_F(ConsensusQueueTest, TestPeersDontAckBeyondWatermarks) {
   OpId first_msg;
   first_msg.set_term(7);
   first_msg.set_index(1);
+
   ASSERT_STATUS_OK(queue_->TrackPeer(kPeerUuid, first_msg));
 
   ConsensusRequestPB request;
-  ConsensusStatusPB status;
+  ConsensusResponsePB response;
+  response.set_responder_uuid(kPeerUuid);
+  response.set_responder_term(14);
   bool more_pending = false;
 
   // ask for a request, with normal flags this should get half the queue.
   queue_->RequestForPeer(kPeerUuid, &request);
   ASSERT_EQ(50, request.ops_size());
-  status.mutable_safe_commit_watermark()->CopyFrom(request.ops(49).id());
-  status.mutable_replicated_watermark()->CopyFrom(request.ops(49).id());
-  status.mutable_received_watermark()->CopyFrom(request.ops(49).id());
+  response.mutable_status()->mutable_safe_commit_watermark()->CopyFrom(request.ops(49).id());
+  response.mutable_status()->mutable_replicated_watermark()->CopyFrom(request.ops(49).id());
+  response.mutable_status()->mutable_received_watermark()->CopyFrom(request.ops(49).id());
 
   AppendReplicateMessagesToQueue(queue_.get(), 101, 100, 1, 1, "", &statuses);
-  queue_->ResponseFromPeer(kPeerUuid, status, &more_pending);
+  response.set_responder_term(28);
+  queue_->ResponseFromPeer(response, &more_pending);
   ASSERT_TRUE(more_pending) << "Queue didn't have anymore requests pending";
 
 

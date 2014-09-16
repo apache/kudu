@@ -98,6 +98,7 @@ PeerMessageQueue::PeerMessageQueue(const MetricContext& metric_ctx,
     : max_ops_size_bytes_hard_(FLAGS_consensus_entry_cache_size_hard_limit_mb * 1024 * 1024),
       global_max_ops_size_bytes_hard_(
           FLAGS_global_consensus_entry_cache_size_hard_limit_mb * 1024 * 1024),
+      current_term_(MinimumOpId().term()),
       metrics_(metric_ctx),
       state_(kQueueOpen) {
   uint64_t max_ops_size_bytes_soft = FLAGS_consensus_entry_cache_size_soft_limit_mb * 1024 * 1024;
@@ -122,11 +123,10 @@ Status PeerMessageQueue::TrackPeer(const string& uuid, const OpId& initial_water
   // up to a point.
   DCHECK(initial_watermark.IsInitialized());
 
-  TrackedPeer* tracked_peer = new TrackedPeer;
+  TrackedPeer* tracked_peer = new TrackedPeer(uuid);
   tracked_peer->peer_status.mutable_safe_commit_watermark()->CopyFrom(initial_watermark);
   tracked_peer->peer_status.mutable_replicated_watermark()->CopyFrom(initial_watermark);
   tracked_peer->peer_status.mutable_received_watermark()->CopyFrom(initial_watermark);
-  tracked_peer->uuid = uuid;
 
   InsertOrDie(&watermarks_, uuid, tracked_peer);
   return Status::OK();
@@ -148,6 +148,12 @@ Status PeerMessageQueue::AppendOperation(scoped_refptr<OperationStatusTracker> s
   DCHECK(operation->has_commit()
          || operation->has_replicate()) << "Operation must be a commit or a replicate: "
              << operation->DebugString();
+
+  // Check that terms are monotonically increasing
+  DCHECK_GE(status->op_id().term(), current_term_);
+  if (status->op_id().term() > current_term_) {
+    current_term_ = status->op_id().term();
+  }
 
   // Once either the local or global soft limit is exceeded...
   if (tracker_->AnyLimitExceeded()) {
@@ -208,6 +214,8 @@ void PeerMessageQueue::RequestForPeer(const string& uuid,
 
   MessagesBuffer::iterator iter = messages_.upper_bound(peer->peer_status.received_watermark());
 
+  request->set_caller_term(current_term_);
+
   // Add as many operations as we can to a request.
   OperationStatusTracker* ost = NULL;
   for (; iter != messages_.end(); iter++) {
@@ -241,17 +249,43 @@ void PeerMessageQueue::RequestForPeer(const string& uuid,
   }
 }
 
-void PeerMessageQueue::ResponseFromPeer(const string& uuid,
-                                        const ConsensusStatusPB& new_status,
+void PeerMessageQueue::ResponseFromPeer(const ConsensusResponsePB& response,
                                         bool* more_pending) {
   boost::lock_guard<simple_spinlock> lock(queue_lock_);
 
-  TrackedPeer* peer = FindPtrOrNull(watermarks_, uuid);
+  // The response must have the receiver's uuid set.
+  DCHECK(response.has_responder_uuid());
+
+  TrackedPeer* peer = FindPtrOrNull(watermarks_, response.responder_uuid());
   if (PREDICT_FALSE(state_ == kQueueClosed || peer == NULL)) {
-    LOG(WARNING) << "Queue is closed or peer was untracked, disregarding peer response.";
+    LOG(WARNING) << "Queue is closed or peer was untracked, disregarding peer response. Response: "
+        << response.ShortDebugString();
     *more_pending = false;
     return;
   }
+
+  // Sanity checks.
+  // Some of these can be eventually removed, but they are handy for now.
+
+  // Application level errors should be handled elsewhere
+  DCHECK(!response.has_error());
+
+  // We're not handling any consensus level errors yet so we check that
+  // consensus level errors are not present.
+  DCHECK(!response.status().has_error());
+
+  // Response must have a status as we're not yet handling consensus level
+  // errors.
+  DCHECK(response.has_status());
+
+  // The peer must have responded with a term that is greater than or equal to
+  // the last known term for that peer.
+  peer->CheckMonotonicTerms(response.responder_term());
+
+  // Right now we don't support leader election so the receiver must have the
+  // same term as our own.
+  CHECK_EQ(response.responder_term(), current_term_);
+
   MessagesBuffer::iterator iter;
   // We always start processing messages from the lowest watermark
   // (which might be the replicated or the committed one)
@@ -260,12 +294,11 @@ void PeerMessageQueue::ResponseFromPeer(const string& uuid,
                                            OpIdCompare);
   iter = messages_.upper_bound(*lowest_watermark);
 
-  MessagesBuffer::iterator end_iter = messages_.upper_bound(new_status.received_watermark());
+  MessagesBuffer::iterator end_iter = messages_.upper_bound(response.status().received_watermark());
 
   if (PREDICT_FALSE(VLOG_IS_ON(2))) {
-    VLOG(2) << "Received Response from Peer: " << uuid << ". Current Status: "
-        << peer->peer_status.ShortDebugString() << ". New Status: "
-        << new_status.ShortDebugString();
+    VLOG(2) << "Received Response from Peer: " << response.responder_uuid() << ". Current Status: "
+        << peer->peer_status.ShortDebugString() << ". Response: " << response.ShortDebugString();
   }
 
   // We need to ack replicates and commits separately (commits are executed asynchonously).
@@ -284,12 +317,12 @@ void PeerMessageQueue::ResponseFromPeer(const string& uuid,
 
     if (operation->has_commit() &&
         OpIdCompare(id, peer->peer_status.safe_commit_watermark()) > 0 &&
-        OpIdCompare(id, new_status.safe_commit_watermark()) <= 0) {
-      ost->AckPeer(uuid);
+        OpIdCompare(id, response.status().safe_commit_watermark()) <= 0) {
+      ost->AckPeer(peer->uuid);
     } else if (operation->has_replicate() &&
         OpIdCompare(id, peer->peer_status.replicated_watermark()) > 0 &&
-        OpIdCompare(id, new_status.replicated_watermark()) <= 0) {
-      ost->AckPeer(uuid);
+        OpIdCompare(id, response.status().replicated_watermark()) <= 0) {
+      ost->AckPeer(peer->uuid);
     }
 
     if (ost->IsAllDone() && !was_all_done) {
@@ -302,7 +335,7 @@ void PeerMessageQueue::ResponseFromPeer(const string& uuid,
     }
   }
 
-  peer->peer_status.CopyFrom(new_status);
+  peer->peer_status.CopyFrom(response.status());
 
   // check if there are more messages pending.
   *more_pending = (iter != messages_.end());

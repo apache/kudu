@@ -40,7 +40,7 @@ class ConsensusPeersTest : public KuduTest {
     peer_pb.set_permanent_uuid(peer_name);
     ASSERT_STATUS_OK(Peer::NewLocalPeer(peer_pb,
                                         kTabletId,
-                                        kLeaderUuid,
+                                        peer_name,
                                         &message_queue_,
                                         log,
                                         MinimumOpId(),
@@ -48,7 +48,7 @@ class ConsensusPeersTest : public KuduTest {
   }
 
   NoOpTestPeerProxy* NewRemotePeer(const string& peer_name,
-                               gscoped_ptr<Peer>* peer) {
+                                   gscoped_ptr<Peer>* peer) {
     QuorumPeerPB peer_pb;
     peer_pb.set_permanent_uuid(peer_name);
     gscoped_ptr<PeerProxy> proxy;
@@ -109,6 +109,11 @@ TEST_F(ConsensusPeersTest, TestLocalPeer) {
 
   // Append a bunch of messages to the queue
   AppendReplicateMessagesToQueue(&message_queue_, 1, 20, 1, 1, "", &statuses_);
+
+  // The above append ends up appending messages in term 2, so we
+  // update the peer's term to match.
+  local_peer->SetTermForTest(2);
+
   // signal the peer there are requests pending.
   local_peer->SignalRequest();
   // now wait on the status of the last operation
@@ -130,6 +135,11 @@ TEST_F(ConsensusPeersTest, TestRemotePeer) {
 
   // Append a bunch of messages to the queue
   AppendReplicateMessagesToQueue(&message_queue_, 1, 20, 1, 1, "", &statuses_);
+
+  // The above append ends up appending messages in term 2, so we
+  // update the peer's term to match.
+  remote_peer->SetTermForTest(2);
+
   // signal the peer there are requests pending.
   remote_peer->SignalRequest();
   // now wait on the status of the last operation
