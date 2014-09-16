@@ -275,7 +275,8 @@ Status LinkedListTester::CreateLinkedListTable() {
 Status LinkedListTester::LoadLinkedList(const MonoDelta& run_for,
                                         int64_t *written_count) {
   scoped_refptr<client::KuduTable> table;
-  RETURN_NOT_OK(client_->OpenTable(table_name_, &table));
+  RETURN_NOT_OK_PREPEND(client_->OpenTable(table_name_, &table),
+                        "Could not open table " + table_name_);
 
   MonoTime deadline = MonoTime::Now(MonoTime::COARSE);
   deadline.AddDelta(run_for);
@@ -309,7 +310,8 @@ Status LinkedListTester::LoadLinkedList(const MonoDelta& run_for,
       return Status::OK();
     }
     BOOST_FOREACH(LinkedListChainGenerator* chain, chains) {
-      RETURN_NOT_OK(chain->GenerateNextInsert(table.get(), session.get()));
+      RETURN_NOT_OK_PREPEND(chain->GenerateNextInsert(table.get(), session.get()),
+                            "Unable to generate next insert into linked list chain");
     }
 
     MonoTime start(MonoTime::Now(MonoTime::FINE));
