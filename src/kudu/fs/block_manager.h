@@ -94,6 +94,16 @@ class BlockManager {
  public:
   virtual ~BlockManager() {}
 
+  // Creates a new on-disk representation for this block manager.
+  //
+  // Returns an error if one already exists or cannot be created.
+  virtual Status Create() = 0;
+
+  // Opens an existing on-disk representation of this block manager.
+  //
+  // Returns an error if one does not exist or cannot be opened.
+  virtual Status Open() = 0;
+
   // Creates a new block using the provided options and opens it for
   // writing. The block's ID will be generated.
   //

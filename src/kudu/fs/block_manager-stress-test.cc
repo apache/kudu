@@ -57,12 +57,16 @@ class BlockManagerStressTest : public KuduTest {
   BlockManagerStressTest() :
     rand_(SeedRandom()),
     stop_latch_(1),
+    bm_(new FileBlockManager(env_.get(), GetTestPath("bm"))),
     total_blocks_written_(0),
     total_bytes_written_(0),
     total_blocks_read_(0),
     total_bytes_read_(0),
     total_blocks_deleted_(0) {
-    CHECK_OK(FileBlockManager::Create(env_.get(), test_dir_, &bm_));
+  }
+
+  virtual void SetUp() OVERRIDE {
+    CHECK_OK(bm_->Create());
   }
 
   void StartThreads() {

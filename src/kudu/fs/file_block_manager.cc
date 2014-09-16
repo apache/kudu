@@ -191,14 +191,6 @@ void FileBlockManager::CreateBlock(const BlockId& block_id,
   block->reset(new FileWritableBlock(this, opts.sync_on_close, block_id, writer));
 }
 
-Status FileBlockManager::Create(Env* env, const string& root_path,
-                                gscoped_ptr<BlockManager>* block_manager) {
-  gscoped_ptr<FileBlockManager> bm(new FileBlockManager(env, root_path));
-  RETURN_NOT_OK(bm->CreateDirIfMissing(root_path));
-  block_manager->reset(bm.release());
-  return Status::OK();
-}
-
 FileBlockManager::FileBlockManager(Env* env,
                                    const string& root_path) :
   env_(env),
@@ -206,6 +198,15 @@ FileBlockManager::FileBlockManager(Env* env,
 }
 
 FileBlockManager::~FileBlockManager() {
+}
+
+Status FileBlockManager::Create() {
+  return env_->CreateDir(root_path_);
+}
+
+Status FileBlockManager::Open() {
+  return env_->FileExists(root_path_) ? Status::OK() : Status::NotFound(
+      Substitute("FileBlockManager at $0 not found", root_path_));
 }
 
 Status FileBlockManager::CreateAnonymousBlock(gscoped_ptr<WritableBlock>* block,

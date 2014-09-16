@@ -19,8 +19,12 @@ namespace fs {
 
 class BlockManagerTest : public KuduTest {
  public:
-  BlockManagerTest() {
-    CHECK_OK(FileBlockManager::Create(env_.get(), test_dir_, &bm_));
+  BlockManagerTest() :
+    bm_(new FileBlockManager(env_.get(), GetTestPath("bm"))) {
+  }
+
+  virtual void SetUp() OVERRIDE {
+    CHECK_OK(bm_->Create());
   }
 
  protected:

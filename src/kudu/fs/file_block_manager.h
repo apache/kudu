@@ -117,13 +117,16 @@ class FileReadableBlock : public ReadableBlock {
 class FileBlockManager : public BlockManager {
  public:
 
-  // Creates a new BlockManager whose blocks will be found in 'root_path'.
+  // Creates a new in-memory instance of a FileBlockManager.
   //
   // 'env' should remain alive for the lifetime of the block manager.
-  static Status Create(Env* env, const std::string& root_path,
-                       gscoped_ptr<BlockManager>* block_manager);
+  FileBlockManager(Env* env, const std::string& root_path);
 
   virtual ~FileBlockManager();
+
+  virtual Status Create() OVERRIDE;
+
+  virtual Status Open() OVERRIDE;
 
   virtual Status CreateAnonymousBlock(gscoped_ptr<WritableBlock>* block,
                                       CreateBlockOptions opts = CreateBlockOptions()) OVERRIDE;
@@ -141,8 +144,6 @@ class FileBlockManager : public BlockManager {
 
  private:
   friend class FileWritableBlock;
-
-  FileBlockManager(Env* env, const std::string& root_path);
 
   // Creates the parent directory hierarchy for the block with the given id.
   Status CreateBlockDir(const BlockId& block_id);
