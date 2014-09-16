@@ -52,6 +52,7 @@ const char *FsManager::kCorruptedSuffix = ".corrupted";
 const char *FsManager::kInstanceMetadataFileName = "instance";
 const char *FsManager::kInstanceMetadataMagicNumber = "kuduinst";
 const char *FsManager::kTabletSuperBlockMagicNumber = "ksuprblk";
+const char *FsManager::kConsensusMetadataDirName = "consensus-meta";
 
 FsManager::FsManager(Env *env, const string& root_path)
   : env_(env),
@@ -94,6 +95,9 @@ Status FsManager::CreateInitialFileSystemLayout() {
   // Initialize master block dir
   RETURN_NOT_OK_PREPEND(CreateDirIfMissing(GetMasterBlockDir()),
                         "Unable to create master block directory");
+
+  // Initialize consensus metadata dir.
+  RETURN_NOT_OK(CreateDirIfMissing(GetConsensusMetadataDir()));
 
   if (!env_->FileExists(GetInstanceMetadataPath())) {
     RETURN_NOT_OK_PREPEND(CreateAndWriteInstanceMetadata(),

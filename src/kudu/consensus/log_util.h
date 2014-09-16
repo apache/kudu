@@ -15,6 +15,9 @@
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/util/env.h"
 
+// Used by other classes, now part of the API.
+DECLARE_bool(log_force_fsync_all);
+
 namespace kudu {
 
 namespace consensus {

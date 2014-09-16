@@ -132,6 +132,16 @@ class FsManager {
   // Return the path where InstanceMetadataPB is stored.
   std::string GetInstanceMetadataPath() const;
 
+  // Return the directory where the consensus metadata is stored.
+  std::string GetConsensusMetadataDir() const {
+    return JoinPathSegments(root_path_, kConsensusMetadataDirName);
+  }
+
+  // Return the path where ConsensusMetadataPB is stored.
+  std::string GetConsensusMetadataPath(const std::string& tablet_id) const {
+    return JoinPathSegments(GetConsensusMetadataDir(), tablet_id);
+  }
+
   // Generate a new block ID.
   BlockId GenerateBlockId();
 
@@ -184,6 +194,7 @@ class FsManager {
   static const char *kInstanceMetadataFileName;
   static const char *kInstanceMetadataMagicNumber;
   static const char *kTabletSuperBlockMagicNumber;
+  static const char *kConsensusMetadataDirName;
 
   Env *env_;
   std::string root_path_;

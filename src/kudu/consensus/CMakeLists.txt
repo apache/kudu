@@ -50,8 +50,9 @@ target_link_libraries(log
 
 set(CONSENSUS_SRCS
   consensus.cc
-  consensus_queue.cc
+  consensus_meta.cc
   consensus_peers.cc
+  consensus_queue.cc
   local_consensus.cc
   raft_consensus.cc
   raft_consensus_state.cc
@@ -74,8 +75,9 @@ set(KUDU_TEST_LINK_LIBS
   ${KUDU_MIN_TEST_LIBS}
 )
 
-ADD_KUDU_TEST(consensus_queue-test)
+ADD_KUDU_TEST(consensus_meta-test)
 ADD_KUDU_TEST(consensus_peers-test)
+ADD_KUDU_TEST(consensus_queue-test)
 ADD_KUDU_TEST(log-test)
 ADD_KUDU_TEST(mt-log-test)
 ADD_KUDU_TEST(opid_anchor_registry-test)

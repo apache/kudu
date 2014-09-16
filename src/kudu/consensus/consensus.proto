@@ -47,6 +47,20 @@ message OpId {
   required uint64 index = 2;
 }
 
+// This PB is used to serialize all of the persistent state needed for
+// Consensus that is not in the WAL, such as leader election and
+// communication on startup.
+message ConsensusMetadataPB {
+  // Last-committed quorum membership.
+  required kudu.metadata.QuorumPB committed_quorum = 1;
+
+  // Current quorum term number.
+  required uint64 current_term = 2;
+
+  // Permanent UUID of the candidate voted for in 'current_term', or NULL.
+  optional string voted_for = 3;
+}
+
 // ===========================================================================
 //  External Consensus Messages
 // ===========================================================================
