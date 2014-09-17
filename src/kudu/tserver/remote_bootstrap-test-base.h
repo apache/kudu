@@ -8,18 +8,17 @@
 
 #include "kudu/consensus/opid_util.h"
 #include "kudu/consensus/opid_anchor_registry.h"
+#include "kudu/fs/block_manager.h"
 #include "kudu/gutil/strings/fastmem.h"
 #include "kudu/tablet/metadata.pb.h"
 #include "kudu/tserver/remote_bootstrap.pb.h"
 #include "kudu/util/crc.h"
-#include "kudu/util/env_util.h"
 #include "kudu/util/stopwatch.h"
 #include "kudu/util/test_util.h"
 
 namespace kudu {
 namespace tserver {
 
-using env_util::ReadFully;
 using consensus::MinimumOpId;
 
 class RemoteBootstrapTest : public TabletServerTest {
@@ -90,13 +89,13 @@ class RemoteBootstrapTest : public TabletServerTest {
   // Slice pointing to it.
   Status ReadLocalBlockFile(FsManager* fs_manager, const BlockId& block_id,
                             faststring* scratch, Slice* slice) {
-    shared_ptr<RandomAccessFile> block_file;
-    RETURN_NOT_OK(fs_manager->OpenBlock(block_id, &block_file));
+    gscoped_ptr<fs::ReadableBlock> block;
+    RETURN_NOT_OK(fs_manager->OpenBlock(block_id, &block));
 
     uint64_t size = 0;
-    RETURN_NOT_OK(block_file->Size(&size));
+    RETURN_NOT_OK(block->Size(&size));
     scratch->resize(size);
-    RETURN_NOT_OK(ReadFully(block_file.get(), 0, size, slice, scratch->data()));
+    RETURN_NOT_OK(block->Read(0, size, slice, scratch->data()));
 
     // Since the mmap will go away on return, copy the data into scratch.
     if (slice->data() != scratch->data()) {

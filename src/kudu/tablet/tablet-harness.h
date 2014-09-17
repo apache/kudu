@@ -42,7 +42,7 @@ class TabletHarness {
       schema_(schema) {
   }
 
-  Status Open() {
+  Status Open(bool first_time) {
     TabletMasterBlockPB master_block;
     master_block.set_table_id("KuduTableTestId");
     master_block.set_tablet_id(options_.tablet_id);
@@ -56,7 +56,11 @@ class TabletHarness {
 
     // Build the Tablet
     fs_manager_.reset(new FsManager(options_.env, options_.root_dir));
-    RETURN_NOT_OK(fs_manager_->CreateInitialFileSystemLayout());
+    if (first_time) {
+      RETURN_NOT_OK(fs_manager_->CreateInitialFileSystemLayout());
+    }
+    RETURN_NOT_OK(fs_manager_->Open());
+
     scoped_refptr<TabletMetadata> metadata;
     RETURN_NOT_OK(TabletMetadata::LoadOrCreate(fs_manager_.get(),
                                                          master_block,

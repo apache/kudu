@@ -26,6 +26,7 @@ namespace kudu {
 using cfile::CFileReader;
 using cfile::IndexTreeIterator;
 using cfile::CFileIterator;
+using fs::WritableBlock;
 using strings::Substitute;
 
 namespace tablet {
@@ -145,10 +146,11 @@ Status MajorDeltaCompaction::OpenNewColumns() {
 }
 
 Status MajorDeltaCompaction::OpenNewDeltaBlock() {
-  shared_ptr<WritableFile> file;
-  RETURN_NOT_OK_PREPEND(fs_manager_->CreateNewBlock(&file, &new_delta_block_),
+  gscoped_ptr<WritableBlock> block;
+  RETURN_NOT_OK_PREPEND(fs_manager_->CreateNewBlock(&block),
                         "Unable to create delta output block");
-  delta_writer_.reset(new DeltaFileWriter(base_schema_, file));
+  new_delta_block_ = block->id();
+  delta_writer_.reset(new DeltaFileWriter(base_schema_, block.Pass()));
   return delta_writer_->Start();
 }
 

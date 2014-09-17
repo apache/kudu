@@ -35,12 +35,9 @@ using strings::Substitute;
 namespace kudu {
 namespace tserver {
 
-MiniTabletServer::MiniTabletServer(Env* env,
-                                   const string& fs_root,
+MiniTabletServer::MiniTabletServer(const string& fs_root,
                                    uint16_t rpc_port)
-  : started_(false),
-    env_(env),
-    fs_root_(fs_root) {
+  : started_(false) {
 
   // Start RPC server on loopback.
   opts_.rpc_opts.rpc_bind_addresses = Substitute("127.0.0.1:$0", rpc_port);
@@ -53,12 +50,6 @@ MiniTabletServer::~MiniTabletServer() {
 
 Status MiniTabletServer::Start() {
   CHECK(!started_);
-
-  // Init the filesystem manager.
-  // TODO: this is kind of redundant -- the TS class itself makes its own
-  // FsManager as well - do we need this? Confuses things.
-  fs_manager_.reset(new FsManager(env_, fs_root_));
-  RETURN_NOT_OK(fs_manager_->CreateInitialFileSystemLayout());
 
   gscoped_ptr<TabletServer> server(new TabletServer(opts_));
   RETURN_NOT_OK(server->Init());
@@ -121,10 +112,6 @@ const Sockaddr MiniTabletServer::bound_rpc_addr() const {
 const Sockaddr MiniTabletServer::bound_http_addr() const {
   CHECK(started_);
   return server_->first_http_address();
-}
-
-FsManager* MiniTabletServer::fs_manager() {
-  return CHECK_NOTNULL(fs_manager_.get());
 }
 
 } // namespace tserver

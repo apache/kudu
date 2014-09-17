@@ -11,8 +11,6 @@
 #include "kudu/tablet/delta_tracker.h"
 #include "kudu/gutil/algorithm.h"
 #include "kudu/gutil/strings/strcat.h"
-#include "kudu/util/env.h"
-#include "kudu/util/env_util.h"
 #include "kudu/util/memenv/memenv.h"
 #include "kudu/util/test_macros.h"
 
@@ -25,6 +23,8 @@ DEFINE_int32(n_verify, 1, "number of times to verify the updates"
 namespace kudu {
 namespace tablet {
 
+using fs::ReadableBlock;
+using fs::WritableBlock;
 using std::tr1::shared_ptr;
 using util::gtl::is_sorted;
 
@@ -37,8 +37,15 @@ class TestDeltaFile : public ::testing::Test {
     env_(NewMemEnv(Env::Default())),
     schema_(CreateSchema()),
     arena_(1024, 1024),
-    kTestBlock("test-block-id")
-  {}
+    kTestBlock("test-block-id") {
+  }
+
+ public:
+  void SetUp() OVERRIDE {
+    fs_manager_.reset(new FsManager(env_.get(), kTestPath));
+    ASSERT_OK(fs_manager_->CreateInitialFileSystemLayout());
+    ASSERT_OK(fs_manager_->Open());
+  }
 
   static Schema CreateSchema() {
     SchemaBuilder builder;
@@ -47,10 +54,9 @@ class TestDeltaFile : public ::testing::Test {
   }
 
   void WriteTestFile(int min_timestamp = 0, int max_timestamp = 0) {
-    shared_ptr<WritableFile> file;
-    ASSERT_STATUS_OK(env_util::OpenFileForWrite(env_.get(), kTestPath, &file));
-
-    DeltaFileWriter dfw(schema_, file);
+    gscoped_ptr<WritableBlock> block;
+    ASSERT_STATUS_OK(fs_manager_->CreateBlockWithId(kTestBlock, &block));
+    DeltaFileWriter dfw(schema_, block.Pass());
     ASSERT_STATUS_OK(dfw.Start());
 
     // Update even numbered rows.
@@ -84,10 +90,16 @@ class TestDeltaFile : public ::testing::Test {
     }
   }
 
+  Status OpenDeltaFileReader(const BlockId& block_id, shared_ptr<DeltaFileReader>* out) {
+    gscoped_ptr<ReadableBlock> block;
+    RETURN_NOT_OK(fs_manager_->OpenBlock(block_id, &block));
+    return DeltaFileReader::Open(block.Pass(), block_id, out, REDO);
+  }
+
   // TODO handle UNDO deltas
-  Status OpenDeltaFileIterator(const string& path, gscoped_ptr<DeltaIterator>* out) {
+  Status OpenDeltaFileIterator(const BlockId& block_id, gscoped_ptr<DeltaIterator>* out) {
     shared_ptr<DeltaFileReader> reader;
-    RETURN_NOT_OK(DeltaFileReader::Open(env_.get(), path, kTestBlock, &reader, REDO));
+    RETURN_NOT_OK(OpenDeltaFileReader(block_id, &reader));
     return OpenDeltaFileIteratorFromReader(REDO, reader, out);
   }
 
@@ -105,7 +117,7 @@ class TestDeltaFile : public ::testing::Test {
 
   void VerifyTestFile() {
     shared_ptr<DeltaFileReader> reader;
-    ASSERT_STATUS_OK(DeltaFileReader::Open(env_.get(), kTestPath, kTestBlock, &reader, REDO));
+    ASSERT_STATUS_OK(OpenDeltaFileReader(kTestBlock, &reader));
     ASSERT_EQ(((FLAGS_last_row_to_update - FLAGS_first_row_to_update) / 2) + 1,
               reader->delta_stats().update_count(0));
     ASSERT_EQ(0, reader->delta_stats().delete_count());
@@ -156,6 +168,7 @@ class TestDeltaFile : public ::testing::Test {
 
  protected:
   gscoped_ptr<Env> env_;
+  gscoped_ptr<FsManager> fs_manager_;
   Schema schema_;
   Arena arena_;
   const BlockId kTestBlock;
@@ -165,7 +178,7 @@ TEST_F(TestDeltaFile, TestDumpDeltaFileIterator) {
   WriteTestFile();
 
   gscoped_ptr<DeltaIterator> it;
-  Status s = OpenDeltaFileIterator(kTestPath, &it);
+  Status s = OpenDeltaFileIterator(kTestBlock, &it);
   if (s.IsNotFound()) {
     FAIL() << "Iterator fell outside of the range of an include-all snapshot";
   }
@@ -186,17 +199,16 @@ TEST_F(TestDeltaFile, TestDumpDeltaFileIterator) {
 TEST_F(TestDeltaFile, TestWriteDeltaFileIteratorToFile) {
   WriteTestFile();
   gscoped_ptr<DeltaIterator> it;
-  Status s = OpenDeltaFileIterator(kTestPath, &it);
+  Status s = OpenDeltaFileIterator(kTestBlock, &it);
   if (s.IsNotFound()) {
     FAIL() << "Iterator fell outside of the range of an include-all snapshot";
   }
   ASSERT_STATUS_OK(s);
 
-  shared_ptr<WritableFile> file;
-
-  const string kNewTestPath = StrCat(kTestPath, ".new");
-  ASSERT_STATUS_OK(env_util::OpenFileForWrite(env_.get(), kNewTestPath, &file))
-  DeltaFileWriter dfw(schema_, file);
+  gscoped_ptr<WritableBlock> block;
+  ASSERT_STATUS_OK(fs_manager_->CreateNewBlock(&block));
+  BlockId block_id(block->id());
+  DeltaFileWriter dfw(schema_, block.Pass());
   ASSERT_STATUS_OK(dfw.Start());
   ASSERT_STATUS_OK(WriteDeltaIteratorToFile<REDO>(it.get(),
                                                   schema_,
@@ -208,7 +220,7 @@ TEST_F(TestDeltaFile, TestWriteDeltaFileIteratorToFile) {
   // If delta stats are incorrect, then a Status::NotFound would be
   // returned.
 
-  ASSERT_STATUS_OK(OpenDeltaFileIterator(kNewTestPath, &it));
+  ASSERT_STATUS_OK(OpenDeltaFileIterator(block_id, &it));
   vector<string> it_contents;
   ASSERT_STATUS_OK(DebugDumpDeltaIterator(REDO,
                                           it.get(),
@@ -240,7 +252,7 @@ TEST_F(TestDeltaFile, TestCollectMutations) {
 
   {
     gscoped_ptr<DeltaIterator> it;
-    Status s = OpenDeltaFileIterator(kTestPath, &it);
+    Status s = OpenDeltaFileIterator(kTestBlock, &it);
     if (s.IsNotFound()) {
       FAIL() << "Iterator fell outside of the range of an include-all snapshot";
     }
@@ -278,7 +290,7 @@ TEST_F(TestDeltaFile, TestCollectMutations) {
 TEST_F(TestDeltaFile, TestSkipsDeltasOutOfRange) {
   WriteTestFile(10, 20);
   shared_ptr<DeltaFileReader> reader;
-  ASSERT_STATUS_OK(DeltaFileReader::Open(env_.get(), kTestPath, kTestBlock, &reader, REDO));
+  ASSERT_STATUS_OK(OpenDeltaFileReader(kTestBlock, &reader));
 
   gscoped_ptr<DeltaIterator> iter;
 

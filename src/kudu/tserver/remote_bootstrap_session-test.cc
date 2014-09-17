@@ -26,6 +26,7 @@
 namespace kudu {
 namespace tserver {
 
+using fs::ReadableBlock;
 using log::Log;
 using log::LogOptions;
 using log::OpIdAnchorRegistry;
@@ -69,8 +70,6 @@ class RemoteBootstrapTest : public KuduTabletTest {
                        NULL, &log));
 
     QuorumPeerPB quorum_peer;
-    CHECK_OK(fs_manager()->CreateInitialFileSystemLayout());
-    CHECK_OK(fs_manager()->Open());
     quorum_peer.set_permanent_uuid(fs_manager()->uuid());
     MetricContext metric_ctx(&metric_registry_, CURRENT_TEST_NAME());
 
@@ -228,12 +227,12 @@ TEST_F(RemoteBootstrapTest, TestBlocksEqual) {
       LOG(INFO) << "session block file has size of " << session_block_size
                 << " and CRC32C of " << session_crc << ": " << path;
 
-      shared_ptr<RandomAccessFile> tablet_block_file;
-      ASSERT_STATUS_OK(fs_manager()->OpenBlock(block_id, &tablet_block_file));
+      gscoped_ptr<ReadableBlock> tablet_block;
+      ASSERT_STATUS_OK(fs_manager()->OpenBlock(block_id, &tablet_block));
       uint64_t tablet_block_size = 0;
-      ASSERT_STATUS_OK(tablet_block_file->Size(&tablet_block_size));
+      ASSERT_STATUS_OK(tablet_block->Size(&tablet_block_size));
       buf.reserve(tablet_block_size);
-      ASSERT_STATUS_OK(tablet_block_file->Read(0, tablet_block_size, &data, buf.data()));
+      ASSERT_STATUS_OK(tablet_block->Read(0, tablet_block_size, &data, buf.data()));
       uint32_t tablet_crc = crc::Crc32c(data.data(), data.size());
       LOG(INFO) << "tablet  block file has size of " << tablet_block_size
                 << " and CRC32C of " << tablet_crc
@@ -255,10 +254,10 @@ TEST_F(RemoteBootstrapTest, TestBlockFileClosedOnLastRead) {
   const BlockIdPB& block_id_pb = column.block();
   BlockId block_id = BlockId::FromPB(block_id_pb);
 
-  shared_ptr<RandomAccessFile> tablet_block_file;
-  ASSERT_STATUS_OK(fs_manager()->OpenBlock(block_id, &tablet_block_file));
+  gscoped_ptr<ReadableBlock> tablet_block;
+  ASSERT_STATUS_OK(fs_manager()->OpenBlock(block_id, &tablet_block));
   uint64_t block_size = 0;
-  ASSERT_STATUS_OK(tablet_block_file->Size(&block_size));
+  ASSERT_STATUS_OK(tablet_block->Size(&block_size));
 
   // Grab data in several chunks.
   int64_t max_chunk_size = block_size / 5;

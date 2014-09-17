@@ -29,6 +29,8 @@ DEFINE_int32(num_delta_files, 3, "number of delta files");
 namespace kudu {
 namespace tablet {
 
+using fs::ReadableBlock;
+using fs::WritableBlock;
 using std::string;
 using std::vector;
 using util::gtl::is_sorted;
@@ -46,27 +48,37 @@ class TestDeltaCompaction : public KuduTest {
     return builder.Build();
   }
 
-  string GetDeltaFilePath(int64_t deltafile_idx) {
-    return GetTestPath(StringPrintf("%08ld", deltafile_idx));
-  }
-
-  Status GetDeltaFileWriter(string path, const Schema& schema,
-                            gscoped_ptr<DeltaFileWriter> *dfw) const {
-    shared_ptr<WritableFile> file;
-    RETURN_NOT_OK(env_util::OpenFileForWrite(env_.get(), path, &file));
-    dfw->reset(new DeltaFileWriter(schema, file));
+  Status GetDeltaFileWriter(const Schema& schema,
+                            gscoped_ptr<DeltaFileWriter>* dfw,
+                            BlockId* block_id) const {
+    gscoped_ptr<WritableBlock> block;
+    RETURN_NOT_OK(fs_manager_->CreateNewBlock(&block));
+    *block_id = block->id();
+    dfw->reset(new DeltaFileWriter(schema, block.Pass()));
     RETURN_NOT_OK((*dfw)->Start());
     return Status::OK();
   }
 
- virtual void SetUp() OVERRIDE {
+  Status GetDeltaFileReader(const BlockId& block_id,
+                            shared_ptr<DeltaFileReader>* dfr) const {
+    gscoped_ptr<ReadableBlock> block;
+    RETURN_NOT_OK(fs_manager_->OpenBlock(block_id, &block));
+    shared_ptr<DeltaFileReader> delta_reader;
+    return DeltaFileReader::Open(block.Pass(), block_id, dfr, REDO);
+  }
+
+  virtual void SetUp() OVERRIDE {
     KuduTest::SetUp();
     SeedRandom();
+    fs_manager_.reset(new FsManager(env_.get(), test_dir_));
+    ASSERT_OK(fs_manager_->CreateInitialFileSystemLayout());
+    ASSERT_OK(fs_manager_->Open());
   }
 
  protected:
   int64_t deltafile_idx_;
   Schema schema_;
+  gscoped_ptr<FsManager> fs_manager_;
 };
 
 TEST_F(TestDeltaCompaction, TestMergeMultipleSchemas) {
@@ -92,9 +104,9 @@ TEST_F(TestDeltaCompaction, TestMergeMultipleSchemas) {
   int deltafile_idx = 0;
   BOOST_FOREACH(const Schema& schema, schemas) {
     // Write the Deltas
-    string path = GetDeltaFilePath(deltafile_idx);
+    BlockId block_id;
     gscoped_ptr<DeltaFileWriter> dfw;
-    ASSERT_STATUS_OK(GetDeltaFileWriter(path, schema, &dfw));
+    ASSERT_STATUS_OK(GetDeltaFileWriter(schema, &dfw, &block_id));
 
     // Generate N updates with the new schema, some of them are on existing
     // rows others are on new rows (see kNumUpdates and kNumMultipleUpdates).
@@ -146,13 +158,9 @@ TEST_F(TestDeltaCompaction, TestMergeMultipleSchemas) {
 
     ASSERT_STATUS_OK(dfw->WriteDeltaStats(stats));
     ASSERT_STATUS_OK(dfw->Finish());
-    shared_ptr<RandomAccessFile> reader;
-    env_util::OpenFileForRandom(env_.get(), path, &reader);
-    shared_ptr<DeltaFileReader> delta_reader;
-    BlockId block_id;
-    ASSERT_STATUS_OK(DeltaFileReader::Open(reader, block_id,
-                                           &delta_reader, REDO));
-    inputs.push_back(delta_reader);
+    shared_ptr<DeltaFileReader> dfr;
+    ASSERT_STATUS_OK(GetDeltaFileReader(block_id, &dfr));
+    inputs.push_back(dfr);
     deltafile_idx++;
   }
 
@@ -162,24 +170,19 @@ TEST_F(TestDeltaCompaction, TestMergeMultipleSchemas) {
   shared_ptr<DeltaIterator> merge_iter(DeltaIteratorMerger::Create(inputs,
                                                                    &merge_schema,
                                                                    snap));
-  string path = GetDeltaFilePath(deltafile_idx);
-
   gscoped_ptr<DeltaFileWriter> dfw;
-  ASSERT_STATUS_OK(GetDeltaFileWriter(path,merge_schema, &dfw));
+  BlockId block_id;
+  ASSERT_STATUS_OK(GetDeltaFileWriter(merge_schema, &dfw, &block_id));
   ASSERT_STATUS_OK(WriteDeltaIteratorToFile<REDO>(merge_iter.get(),
                                                   merge_schema,
                                                   ITERATE_OVER_ALL_ROWS,
                                                   dfw.get()));
   ASSERT_STATUS_OK(dfw->Finish());
 
-  shared_ptr<RandomAccessFile> reader;
-  env_util::OpenFileForRandom(env_.get(), path, &reader);
-  shared_ptr<DeltaFileReader> delta_reader;
-  BlockId block_id;
-  ASSERT_STATUS_OK(DeltaFileReader::Open(reader, block_id,
-                                         &delta_reader, REDO));
+  shared_ptr<DeltaFileReader> dfr;
+  ASSERT_STATUS_OK(GetDeltaFileReader(block_id, &dfr));
   DeltaIterator* raw_iter;
-  ASSERT_STATUS_OK(delta_reader->NewDeltaIterator(&merge_schema, snap, &raw_iter));
+  ASSERT_STATUS_OK(dfr->NewDeltaIterator(&merge_schema, snap, &raw_iter));
   gscoped_ptr<DeltaIterator> scoped_iter(raw_iter);
 
   vector<string> results;

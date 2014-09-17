@@ -27,6 +27,7 @@ add_library(cfile
 
 target_link_libraries(cfile
   kudu_common
+  kudu_fs
   kudu_util
   gutil
   cfile_proto

@@ -96,7 +96,7 @@ Status MiniCluster::AddTabletServer() {
     ts_rpc_port = tserver_rpc_ports_[new_idx];
   }
   gscoped_ptr<MiniTabletServer> tablet_server(
-    new MiniTabletServer(env_, GetTabletServerFsRoot(new_idx), ts_rpc_port));
+    new MiniTabletServer(GetTabletServerFsRoot(new_idx), ts_rpc_port));
   // set the master port
   tablet_server->options()->master_hostport = HostPort(mini_master_.get()->bound_rpc_addr());
   RETURN_NOT_OK(tablet_server->Start())

@@ -12,9 +12,8 @@
 #include "kudu/cfile/cfile_writer.h"
 #include "kudu/cfile/cfile.pb.h"
 #include "kudu/common/columnblock.h"
+#include "kudu/fs/fs_manager.h"
 #include "kudu/gutil/stringprintf.h"
-#include "kudu/util/env.h"
-#include "kudu/util/env_util.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 #include "kudu/util/stopwatch.h"
@@ -29,14 +28,24 @@ namespace kudu {
 namespace cfile {
 
 class CFileTestBase : public KuduTest {
+ public:
+  void SetUp() OVERRIDE {
+    KuduTest::SetUp();
+
+    fs_manager_.reset(new FsManager(env_.get(), test_dir_));
+    ASSERT_OK(fs_manager_->CreateInitialFileSystemLayout());
+    ASSERT_OK(fs_manager_->Open());
+  }
+
  protected:
-  void WriteTestFileStrings(const string &path,
-                            EncodingType encoding,
+  void WriteTestFileStrings(EncodingType encoding,
                             CompressionType compression,
                             int num_entries,
-                            const char *format) {
-    shared_ptr<WritableFile> sink;
-    ASSERT_STATUS_OK(env_util::OpenFileForWrite(env_.get(), path, &sink));
+                            const char *format,
+                            BlockId* block_id) {
+    gscoped_ptr<fs::WritableBlock> sink;
+    ASSERT_OK(fs_manager_->CreateNewBlock(&sink));
+    *block_id = sink->id();
     WriterOptions opts;
     opts.write_posidx = true;
     opts.write_validx = true;
@@ -44,7 +53,7 @@ class CFileTestBase : public KuduTest {
     // indexing.
     opts.block_size = FLAGS_cfile_test_block_size;
     opts.storage_attributes = ColumnStorageAttributes(encoding, compression);
-    CFileWriter w(opts, STRING, false, sink);
+    CFileWriter w(opts, STRING, false, sink.Pass());
 
     ASSERT_STATUS_OK(w.Start());
 
@@ -65,19 +74,20 @@ class CFileTestBase : public KuduTest {
     ASSERT_STATUS_OK(w.Finish());
   }
 
-  void WriteTestFileUInt32(const string &path,
-                         EncodingType encoding,
-                         CompressionType compression,
-                         int num_entries) {
-    shared_ptr<WritableFile> sink;
-    ASSERT_STATUS_OK(env_util::OpenFileForWrite(env_.get(), path, &sink));
+  void WriteTestFileUInt32(EncodingType encoding,
+                           CompressionType compression,
+                           int num_entries,
+                           BlockId* block_id) {
+    gscoped_ptr<fs::WritableBlock> sink;
+    ASSERT_OK(fs_manager_->CreateNewBlock(&sink));
+    *block_id = sink->id();
     WriterOptions opts;
     opts.write_posidx = true;
     // Use a smaller block size to exercise multi-level
     // indexing.
     opts.block_size = FLAGS_cfile_test_block_size;
     opts.storage_attributes = ColumnStorageAttributes(encoding, compression);
-    CFileWriter w(opts, UINT32, false, sink);
+    CFileWriter w(opts, UINT32, false, sink.Pass());
 
     ASSERT_STATUS_OK(w.Start());
 
@@ -101,6 +111,9 @@ class CFileTestBase : public KuduTest {
 
     ASSERT_STATUS_OK(w.Finish());
   }
+
+  gscoped_ptr<FsManager> fs_manager_;
+
 };
 
 // Fast unrolled summing of a vector.
@@ -143,12 +156,13 @@ static void TimeReadFileForDataType(gscoped_ptr<CFileIterator> &iter, int &count
   LOG(INFO)<< "Count: " << count;
 }
 
-static void TimeReadFile(const string &path, size_t *count_ret) {
-  Env *env = Env::Default();
+static void TimeReadFile(FsManager* fs_manager, const BlockId& block_id, size_t *count_ret) {
   Status s;
 
+  gscoped_ptr<fs::ReadableBlock> source;
+  ASSERT_STATUS_OK(fs_manager->OpenBlock(block_id, &source));
   gscoped_ptr<CFileReader> reader;
-  ASSERT_STATUS_OK(CFileReader::Open(env, path, ReaderOptions(), &reader));
+  ASSERT_STATUS_OK(CFileReader::Open(source.Pass(), ReaderOptions(), &reader));
 
   gscoped_ptr<CFileIterator> iter;
   ASSERT_STATUS_OK(reader->NewIterator(&iter));

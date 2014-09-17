@@ -11,7 +11,6 @@
 #include "kudu/cfile/compression_codec.h"
 #include "kudu/cfile/index_block.h"
 #include "kudu/cfile/index_btree.h"
-#include "kudu/util/env.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 #include "kudu/util/status.h"
@@ -57,15 +56,17 @@ class TestCompression : public CFileTestBase {
  protected:
   void TestReadWriteCompressed(CompressionType compression) {
     const size_t nrows = 10000;
-    string path = GetTestPath("TestReadWriteCompressed");
+    BlockId block_id;
     size_t rdrows;
 
-    WriteTestFileStrings(path, PREFIX_ENCODING, compression, nrows, "hello %04d");
-    TimeReadFile(path, &rdrows);
+    WriteTestFileStrings(PREFIX_ENCODING, compression, nrows,
+                         "hello %04d", &block_id);
+    TimeReadFile(fs_manager_.get(), block_id, &rdrows);
     ASSERT_EQ(nrows, rdrows);
 
-    WriteTestFileUInt32(path, GROUP_VARINT, compression, nrows);
-    TimeReadFile(path, &rdrows);
+    WriteTestFileUInt32(GROUP_VARINT, compression, nrows,
+                        &block_id);
+    TimeReadFile(fs_manager_.get(), block_id, &rdrows);
     ASSERT_EQ(nrows, rdrows);
   }
 };

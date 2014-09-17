@@ -147,9 +147,9 @@ TEST_F(RegistrationTest, TestTabletReports) {
   // Restart the TS after clearing its master blocks. On restart, it will send
   // a full tablet report, without any of the tablets. This causes the
   // master to remove the tablet locations.
+  string master_block_dir = ts->server()->fs_manager()->GetMasterBlockDir();
   LOG(INFO) << "Shutting down TS, clearing data, and restarting it";
   ts->Shutdown();
-  string master_block_dir = ts->fs_manager()->GetMasterBlockDir();
   ASSERT_STATUS_OK(env_->DeleteRecursively(master_block_dir));
   ASSERT_STATUS_OK(env_->CreateDir(master_block_dir));
   ASSERT_STATUS_OK(ts->Start());

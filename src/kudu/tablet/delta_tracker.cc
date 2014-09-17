@@ -10,8 +10,6 @@
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/strip.h"
 #include "kudu/gutil/strings/substitute.h"
-#include "kudu/util/env.h"
-#include "kudu/util/env_util.h"
 #include "kudu/util/status.h"
 #include "kudu/tablet/deltafile.h"
 #include "kudu/tablet/delta_applier.h"
@@ -21,9 +19,12 @@
 #include "kudu/tablet/diskrowset.h"
 #include "kudu/tablet/tablet.pb.h"
 
-namespace kudu { namespace tablet {
+namespace kudu {
+namespace tablet {
 
 using boost::assign::list_of;
+using fs::ReadableBlock;
+using fs::WritableBlock;
 using std::string;
 using std::tr1::shared_ptr;
 using strings::Substitute;
@@ -45,27 +46,27 @@ Status DeltaTracker::OpenDeltaReaders(const vector<BlockId>& blocks,
                                       vector<shared_ptr<DeltaStore> >* stores,
                                       DeltaType type) {
   FsManager* fs = rowset_metadata_->fs_manager();
-  BOOST_FOREACH(const BlockId& block, blocks) {
-    shared_ptr<RandomAccessFile> dfile;
-    Status s = fs->OpenBlock(block, &dfile);
+  BOOST_FOREACH(const BlockId& block_id, blocks) {
+    gscoped_ptr<ReadableBlock> block;
+    Status s = fs->OpenBlock(block_id, &block);
     if (!s.ok()) {
       LOG(ERROR) << "Failed to open " << DeltaType_Name(type)
-                 << " delta file " << block.ToString() << ": "
+                 << " delta file " << block_id.ToString() << ": "
                  << s.ToString();
       return s;
     }
 
     shared_ptr<DeltaFileReader> dfr;
-    s = DeltaFileReader::Open(dfile, block, &dfr, type);
+    s = DeltaFileReader::Open(block.Pass(), block_id, &dfr, type);
     if (!s.ok()) {
       LOG(ERROR) << "Failed to open " << DeltaType_Name(type)
-                 << " delta file reader " << block.ToString() << ": "
+                 << " delta file reader " << block_id.ToString() << ": "
                  << s.ToString();
       return s;
     }
 
     LOG(INFO) << "Successfully opened " << DeltaType_Name(type)
-              << " delta file " << block.ToString();
+              << " delta file " << block_id.ToString();
     stores->push_back(dfr);
   }
   return Status::OK();
@@ -192,18 +193,18 @@ Status DeltaTracker::CompactStores(int start_idx, int end_idx) {
   CHECK_LE(start_idx, end_idx);
   CHECK_LT(end_idx, redo_delta_stores_.size());
   CHECK(open_);
-  BlockId new_block_id;
-  shared_ptr<WritableFile> data_writer;
 
   // Open a writer for the new destination delta block
   FsManager* fs = rowset_metadata_->fs_manager();
-  RETURN_NOT_OK_PREPEND(fs->CreateNewBlock(&data_writer, &new_block_id),
+  gscoped_ptr<WritableBlock> block;
+  RETURN_NOT_OK_PREPEND(fs->CreateNewBlock(&block),
                         "Could not allocate delta block");
+  BlockId new_block_id(block->id());
 
   // Merge and compact the stores and write and output to "data_writer"
   vector<shared_ptr<DeltaStore> > compacted_stores;
   vector<BlockId> compacted_blocks;
-  RETURN_NOT_OK(DoCompactStores(start_idx, end_idx, data_writer,
+  RETURN_NOT_OK(DoCompactStores(start_idx, end_idx, block.Pass(),
                 &compacted_stores, &compacted_blocks));
 
   // Update delta_stores_, removing the compacted delta files and inserted the new
@@ -229,7 +230,7 @@ Status DeltaTracker::CompactStores(int start_idx, int end_idx) {
 }
 
 Status DeltaTracker::DoCompactStores(size_t start_idx, size_t end_idx,
-         const shared_ptr<WritableFile> &data_writer,
+         gscoped_ptr<WritableBlock> block,
          vector<shared_ptr<DeltaStore> > *compacted_stores,
          vector<BlockId> *compacted_blocks) {
   shared_ptr<DeltaIterator> inputs_merge;
@@ -242,7 +243,7 @@ Status DeltaTracker::DoCompactStores(size_t start_idx, size_t end_idx,
   RETURN_NOT_OK(MakeDeltaIteratorMergerUnlocked(start_idx, end_idx, &schema, compacted_stores,
                                                 compacted_blocks, &inputs_merge));
   LOG(INFO) << "Compacting " << (end_idx - start_idx + 1) << " delta files.";
-  DeltaFileWriter dfw(schema, data_writer);
+  DeltaFileWriter dfw(schema, block.Pass());
   RETURN_NOT_OK(dfw.Start());
   RETURN_NOT_OK(WriteDeltaIteratorToFile<REDO>(inputs_merge.get(),
                                                schema,
@@ -349,13 +350,13 @@ Status DeltaTracker::FlushDMS(DeltaMemStore* dms,
                               shared_ptr<DeltaFileReader>* dfr,
                               MetadataFlushType flush_type) {
   // Open file for write.
-  BlockId block_id;
-  shared_ptr<WritableFile> data_writer;
   FsManager* fs = rowset_metadata_->fs_manager();
-  RETURN_NOT_OK_PREPEND(fs->CreateNewBlock(&data_writer, &block_id),
-                        "Unable to allocate new delta data block");
+  gscoped_ptr<WritableBlock> writable_block;
+  RETURN_NOT_OK_PREPEND(fs->CreateNewBlock(&writable_block),
+                        "Unable to allocate new delta data writable_block");
+  BlockId block_id(writable_block->id());
 
-  DeltaFileWriter dfw(dms->schema(), data_writer);
+  DeltaFileWriter dfw(dms->schema(), writable_block.Pass());
   RETURN_NOT_OK_PREPEND(dfw.Start(),
                         Substitute("Unable to start writing to delta block $0",
                                    block_id.ToString()));
@@ -366,9 +367,9 @@ Status DeltaTracker::FlushDMS(DeltaMemStore* dms,
   VLOG(1) << "Delta block " << block_id.ToString() << " schema: " << dms->schema().ToString();
 
   // Now re-open for read
-  shared_ptr<RandomAccessFile> data_reader;
-  RETURN_NOT_OK(fs->OpenBlock(block_id, &data_reader));
-  RETURN_NOT_OK(DeltaFileReader::Open(data_reader, block_id, dfr, REDO));
+  gscoped_ptr<ReadableBlock> readable_block;
+  RETURN_NOT_OK(fs->OpenBlock(block_id, &readable_block));
+  RETURN_NOT_OK(DeltaFileReader::Open(readable_block.Pass(), block_id, dfr, REDO));
   LOG(INFO) << "Reopened delta block for read: " << block_id.ToString();
 
   RETURN_NOT_OK(rowset_metadata_->CommitRedoDeltaDataBlock(dms->id(), block_id));

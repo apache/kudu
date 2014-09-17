@@ -17,7 +17,6 @@ namespace kudu {
 
 class BlockId;
 class FsManager;
-class WritableFile;
 
 namespace consensus {
 class OpId;
@@ -119,13 +118,19 @@ class RemoteBootstrapClient {
   // Does not replace the superblock.
   Status DownloadBlocks();
 
-  // Download a single block file.
-  // Data block file is opened with options so that it will fsync() on close.
+  // Download a single block.
+  // Data block is opened with options so that it will fsync() on close.
   Status DownloadBlock(const BlockId& block_id);
 
   // Download a single remote file. The block and WAL implementations delegate
   // to this method when downloading files.
-  Status DownloadFile(const DataIdPB& data_id, const std::tr1::shared_ptr<WritableFile>& writer);
+  //
+  // An Appendable is typically a WritableBlock (block) or WritableFile (WAL).
+  //
+  // Only used in one compilation unit, otherwise the implementation would
+  // need to be in the header.
+  template<class Appendable>
+  Status DownloadFile(const DataIdPB& data_id, Appendable* appendable);
 
   Status VerifyData(uint64_t offset, const DataChunkPB& resp);
 

@@ -4,7 +4,6 @@
 #define KUDU_FS_FS_MANAGER_H
 
 #include <iosfwd>
-#include <tr1/memory>
 #include <string>
 #include <vector>
 
@@ -20,6 +19,12 @@ class MessageLite;
 } // namespace google
 
 namespace kudu {
+
+namespace fs {
+class BlockManager;
+class ReadableBlock;
+class WritableBlock;
+} // namespace fs
 
 class BlockId;
 
@@ -63,25 +68,23 @@ class FsManager {
   //  Data read/write interfaces
   // ==========================================================================
 
-  Status CreateNewBlock(std::tr1::shared_ptr<WritableFile> *writer,
-                        BlockId *block_id);
+  // Creates a new anonymous block.
+  //
+  // Block will be synced on close.
+  Status CreateNewBlock(gscoped_ptr<fs::WritableBlock>* block);
 
-  // Create a block with a predetermined BlockId.
-  // Performs an fsync() on the parent dir after creating the block file.
-  // File is opened with options so that it will fsync() on close.
+  // Creates a new block with a predetermined ID.
+  //
+  // Block will be synced on close.
   Status CreateBlockWithId(const BlockId& block_id,
-                           std::tr1::shared_ptr<WritableFile> *writer);
+                           gscoped_ptr<fs::WritableBlock>* block);
 
   Status OpenBlock(const BlockId& block_id,
-                   std::tr1::shared_ptr<RandomAccessFile> *reader);
+                   gscoped_ptr<fs::ReadableBlock>* block);
 
-  Status DeleteBlock(const BlockId& block) {
-    return env_->DeleteFile(GetBlockPath(block));
-  }
+  Status DeleteBlock(const BlockId& block_id);
 
-  bool BlockExists(const BlockId& block) const {
-    return env_->FileExists(GetBlockPath(block));
-  }
+  bool BlockExists(const BlockId& block_id) const;
 
   // ==========================================================================
   //  Metadata read/write interfaces
@@ -152,6 +155,11 @@ class FsManager {
   }
 
  private:
+  // Select and create an instance of the appropriate block manager.
+  //
+  // Does not actually perform any on-disk operations.
+  void InitBlockManager();
+
   // Creates the parent directory hierarchy to contain the given block id.
   Status CreateBlockDir(const BlockId& block_id);
 
@@ -179,6 +187,8 @@ class FsManager {
   ObjectIdGenerator oid_generator_;
 
   gscoped_ptr<InstanceMetadataPB> metadata_;
+
+  gscoped_ptr<fs::BlockManager> block_manager_;
 
   DISALLOW_COPY_AND_ASSIGN(FsManager);
 };

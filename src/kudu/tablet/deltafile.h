@@ -22,11 +22,6 @@
 #include "kudu/tablet/tablet.pb.h"
 
 namespace kudu {
-
-class WritableFile;
-class RandomAccessFile;
-class Env;
-
 namespace tablet {
 
 using std::tr1::shared_ptr;
@@ -41,15 +36,14 @@ struct DeletingVisitor;
 class DeltaFileWriter {
  public:
   // Construct a new delta file writer.
-  // The writer takes ownership over the file and will Close it
-  // in Finish().
+  //
+  // The writer takes ownership of the block and will Close it in Finish().
   explicit DeltaFileWriter(const Schema &schema,
-                           const shared_ptr<WritableFile> &file);
+                           gscoped_ptr<fs::WritableBlock> block);
 
   Status Start();
 
-  // Finish writing the file, including closing the underlying WritableFile
-  // object (even if someone else has a reference to the same WritableFile).
+  // Finish writing the file, including closing the underlying block.
   Status Finish();
 
   // Append a given delta to the file. This must be called in ascending order
@@ -92,14 +86,7 @@ class DeltaFileReader : public DeltaStore,
   static const char * const kSchemaMetaEntryName;
   static const char * const kDeltaStatsEntryName;
 
-  // Open the Delta File at the given path.
-  static Status Open(Env* env,
-                     const string& path,
-                     const BlockId& block_id,
-                     std::tr1::shared_ptr<DeltaFileReader>* reader_out,
-                     DeltaType delta_type);
-
-  static Status Open(const shared_ptr<RandomAccessFile>& file,
+  static Status Open(gscoped_ptr<fs::ReadableBlock> file,
                      const BlockId& block_id,
                      std::tr1::shared_ptr<DeltaFileReader>* reader_out,
                      DeltaType delta_type);

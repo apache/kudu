@@ -339,7 +339,8 @@ TEST_F(RemoteBootstrapServiceTest, TestFetchBlockAtOnce) {
   BlockId block_id = FirstColumnBlockId(superblock);
   Slice local_data;
   faststring scratch;
-  ASSERT_OK(ReadLocalBlockFile(mini_server_->fs_manager(), block_id, &scratch, &local_data));
+  ASSERT_OK(ReadLocalBlockFile(mini_server_->server()->fs_manager(), block_id,
+                               &scratch, &local_data));
 
   // Remote.
   FetchDataResponsePB resp;
@@ -358,7 +359,8 @@ TEST_F(RemoteBootstrapServiceTest, TestFetchBlockIncrementally) {
   BlockId block_id = FirstColumnBlockId(superblock);
   Slice local_data;
   faststring scratch;
-  ASSERT_OK(ReadLocalBlockFile(mini_server_->fs_manager(), block_id, &scratch, &local_data));
+  ASSERT_OK(ReadLocalBlockFile(mini_server_->server()->fs_manager(), block_id,
+                               &scratch, &local_data));
 
   // Grab the remote data in several chunks.
   int64_t block_size = local_data.size();

@@ -69,10 +69,11 @@ class ReadableBlock : public Block {
   // Returns the on-disk size of a written block.
   virtual Status Size(size_t* sz) const = 0;
 
-  // Reads up to 'length' bytes beginning at 'offset' in the block. A slice
-  // referencing the results is written to 'result' and may be backed by
-  // memory in 'scratch'. As such, 'scratch' must be at least 'length' in
-  // size and must remain alive while 'result' is used.
+  // Reads exactly 'length' bytes beginning from 'offset' in the block,
+  // returning an error if fewer bytes exist. A slice referencing the
+  // results is written to 'result' and may be backed by memory in
+  // 'scratch'. As such, 'scratch' must be at least 'length' in size and
+  // must remain alive while 'result' is used.
   //
   // Does not modify 'result' on error (but may modify 'scratch').
   virtual Status Read(uint64_t offset, size_t length,

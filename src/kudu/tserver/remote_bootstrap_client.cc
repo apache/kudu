@@ -6,6 +6,7 @@
 
 #include "kudu/common/wire_protocol.h"
 #include "kudu/fs/block_id.h"
+#include "kudu/fs/block_manager.h"
 #include "kudu/fs/fs_manager.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/strings/util.h"
@@ -20,7 +21,6 @@
 #include "kudu/tserver/tserver_service.proxy.h"
 #include "kudu/util/crc.h"
 #include "kudu/util/env.h"
-#include "kudu/util/env_util.h"
 #include "kudu/util/net/net_util.h"
 
 DEFINE_int32(remote_bootstrap_begin_session_timeout_ms, 10000,
@@ -34,6 +34,7 @@ namespace kudu {
 namespace tserver {
 
 using consensus::OpId;
+using fs::WritableBlock;
 using metadata::QuorumPB;
 using metadata::QuorumPeerPB;
 using rpc::Messenger;
@@ -298,7 +299,7 @@ Status RemoteBootstrapClient::DownloadWAL(const OpId& initial_opid, uint64_t wal
                         "Unable to open file for writing");
   shared_ptr<WritableFile> refcounted_writer(writer);
 
-  RETURN_NOT_OK_PREPEND(DownloadFile(data_id, refcounted_writer),
+  RETURN_NOT_OK_PREPEND(DownloadFile(data_id, refcounted_writer.get()),
                         Substitute("Unable to download WAL segment with initial OpId $0",
                                    initial_opid.ShortDebugString()));
   return Status::OK();
@@ -310,17 +311,18 @@ Status RemoteBootstrapClient::DownloadBlock(const BlockId& block_id) {
   data_id.set_type(DataIdPB::BLOCK);
   block_id.CopyToPB(data_id.mutable_block_id());
 
-  shared_ptr<WritableFile> writer;
-  RETURN_NOT_OK_PREPEND(fs_manager_->CreateBlockWithId(block_id, &writer),
+  gscoped_ptr<WritableBlock> block;
+  RETURN_NOT_OK_PREPEND(fs_manager_->CreateBlockWithId(block_id, &block),
                         "Unable to create new block");
 
-  RETURN_NOT_OK_PREPEND(DownloadFile(data_id, writer),
+  RETURN_NOT_OK_PREPEND(DownloadFile(data_id, block.get()),
                         Substitute("Unable to download block $0", block_id.ToString()));
   return Status::OK();
 }
 
+template<class Appendable>
 Status RemoteBootstrapClient::DownloadFile(const DataIdPB& data_id,
-                                           const shared_ptr<WritableFile>& writer) {
+                                           Appendable* appendable) {
   uint64_t offset = 0;
   int32_t max_length = FLAGS_rpc_max_message_size - 1024; // Leave 1K for message headers.
 
@@ -346,7 +348,7 @@ Status RemoteBootstrapClient::DownloadFile(const DataIdPB& data_id,
                           Substitute("Error validating data item $0", data_id.ShortDebugString()));
 
     // Write the data.
-    RETURN_NOT_OK(writer->Append(resp.chunk().data()));
+    RETURN_NOT_OK(appendable->Append(resp.chunk().data()));
 
     if (offset + resp.chunk().data().size() == resp.chunk().total_data_length()) {
       done = true;

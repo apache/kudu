@@ -18,26 +18,29 @@
 
 DEFINE_bool(consult_bloom_filters, true, "Whether to consult bloom filters on row presence checks");
 
-namespace kudu { namespace tablet {
+namespace kudu {
+namespace tablet {
 
 using cfile::ReaderOptions;
 using cfile::DefaultColumnValueIterator;
+using fs::ReadableBlock;
 using std::tr1::shared_ptr;
 
 ////////////////////////////////////////////////////////////
 // Utilities
 ////////////////////////////////////////////////////////////
 
-static Status OpenReader(const shared_ptr<RowSetMetadata>& rowset_metadata, size_t col_idx,
+static Status OpenReader(const shared_ptr<RowSetMetadata>& rowset_metadata,
+                         size_t col_idx,
                          gscoped_ptr<CFileReader> *new_reader) {
   FsManager* fs = rowset_metadata->fs_manager();
-  shared_ptr<RandomAccessFile> data_reader;
-  BlockId block = rowset_metadata->column_data_block(col_idx);
-  RETURN_NOT_OK(fs->OpenBlock(block, &data_reader));
+  gscoped_ptr<ReadableBlock> block;
+  BlockId block_id = rowset_metadata->column_data_block(col_idx);
+  RETURN_NOT_OK(fs->OpenBlock(block_id, &block));
 
   // TODO: somehow pass reader options in schema
   ReaderOptions opts;
-  return CFileReader::Open(data_reader, opts, new_reader);
+  return CFileReader::Open(block.Pass(), opts, new_reader);
 }
 
 ////////////////////////////////////////////////////////////
@@ -86,11 +89,11 @@ Status CFileSet::OpenAdHocIndexReader() {
   }
 
   FsManager* fs = rowset_metadata_->fs_manager();
-  shared_ptr<RandomAccessFile> data_reader;
-  RETURN_NOT_OK(fs->OpenBlock(rowset_metadata_->adhoc_index_block(), &data_reader));
+  gscoped_ptr<ReadableBlock> block;
+  RETURN_NOT_OK(fs->OpenBlock(rowset_metadata_->adhoc_index_block(), &block));
 
   ReaderOptions opts;
-  return CFileReader::Open(data_reader, opts, &ad_hoc_idx_reader_);
+  return CFileReader::Open(block.Pass(), opts, &ad_hoc_idx_reader_);
 }
 
 
@@ -100,10 +103,10 @@ Status CFileSet::OpenBloomReader() {
   }
 
   FsManager* fs = rowset_metadata_->fs_manager();
-  shared_ptr<RandomAccessFile> data_reader;
-  RETURN_NOT_OK(fs->OpenBlock(rowset_metadata_->bloom_block(), &data_reader));
+  gscoped_ptr<ReadableBlock> block;
+  RETURN_NOT_OK(fs->OpenBlock(rowset_metadata_->bloom_block(), &block));
 
-  Status s = BloomFileReader::Open(data_reader, &bloom_reader_);
+  Status s = BloomFileReader::Open(block.Pass(), &bloom_reader_);
   if (!s.ok()) {
     LOG(WARNING) << "Unable to open bloom file in " << rowset_metadata_->ToString() << ": "
                  << s.ToString();

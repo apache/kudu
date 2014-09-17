@@ -31,14 +31,17 @@
 namespace kudu {
 namespace tools {
 
-using std::string;
-using std::tr1::shared_ptr;
-using std::vector;
 using cfile::CFileIterator;
 using cfile::CFileReader;
 using cfile::DumpIterator;
 using cfile::DumpIteratorOptions;
 using cfile::ReaderOptions;
+using fs::ReadableBlock;
+using log::LogReader;
+using log::ReadableLogSegment;
+using std::string;
+using std::tr1::shared_ptr;
+using std::vector;
 using strings::Substitute;
 using tablet::DeltaFileReader;
 using tablet::DeltaIterator;
@@ -50,8 +53,6 @@ using tablet::CFileSet;
 using tablet::TabletMasterBlockPB;
 using tablet::TabletMetadata;
 using tablet::RowSetMetadata;
-using log::LogReader;
-using log::ReadableLogSegment;
 
 static const char* const kSeparatorLine =
   "----------------------------------------------------------------------\n";
@@ -463,10 +464,10 @@ Status FsTool::DumpCFileBlock(const std::string& block_id_str,
 Status FsTool::DumpCFileBlockInternal(const BlockId& block_id,
                                       const DumpOptions& opts,
                                       int indent) {
-  shared_ptr<RandomAccessFile> block_reader;
-  RETURN_NOT_OK(fs_manager_->OpenBlock(block_id, &block_reader));
+  gscoped_ptr<ReadableBlock> block;
+  RETURN_NOT_OK(fs_manager_->OpenBlock(block_id, &block));
   gscoped_ptr<CFileReader> reader;
-  RETURN_NOT_OK(CFileReader::Open(block_reader, ReaderOptions(), &reader));
+  RETURN_NOT_OK(CFileReader::Open(block.Pass(), ReaderOptions(), &reader));
 
   std::cout << Indent(indent) << "CFile Header: "
             << reader->header().ShortDebugString() << std::endl;
@@ -489,11 +490,10 @@ Status FsTool::DumpDeltaCFileBlockInternal(const Schema& schema,
                                            const DumpOptions& opts,
                                            int indent) {
   // Open the delta reader
-  shared_ptr<RandomAccessFile> block_reader;
-  RETURN_NOT_OK(fs_manager_->OpenBlock(block_id, &block_reader));
-  string path = fs_manager_->GetBlockPath(block_id);
+  gscoped_ptr<ReadableBlock> readable_block;
+  RETURN_NOT_OK(fs_manager_->OpenBlock(block_id, &readable_block));
   shared_ptr<DeltaFileReader> delta_reader;
-  RETURN_NOT_OK(DeltaFileReader::Open(block_reader,
+  RETURN_NOT_OK(DeltaFileReader::Open(readable_block.Pass(),
                                       block_id,
                                       &delta_reader,
                                       delta_type));

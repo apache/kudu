@@ -2,15 +2,11 @@
 
 #include <glog/logging.h>
 #include <gtest/gtest.h>
-#include <tr1/memory>
 
-#include "kudu/fs/block_id.h"
+#include "kudu/fs/block_manager.h"
 #include "kudu/fs/fs_manager.h"
-#include "kudu/util/env_util.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
-
-using std::tr1::shared_ptr;
 
 namespace kudu {
 
@@ -22,6 +18,7 @@ class FsManagerTestBase : public KuduTest {
     // Initialize File-System Layout
     fs_manager_.reset(new FsManager(env_.get(), test_dir_));
     ASSERT_STATUS_OK(fs_manager_->CreateInitialFileSystemLayout());
+    ASSERT_STATUS_OK(fs_manager_->Open());
   }
 
   void TestReadWriteDataFile(const Slice& data) {
@@ -29,17 +26,16 @@ class FsManagerTestBase : public KuduTest {
     DCHECK_LT(data.size(), sizeof(buffer));
 
     // Test Write
-    BlockId block_id;
-    shared_ptr<WritableFile> writer;
-    ASSERT_STATUS_OK(fs_manager()->CreateNewBlock(&writer, &block_id));
+    gscoped_ptr<fs::WritableBlock> writer;
+    ASSERT_STATUS_OK(fs_manager()->CreateNewBlock(&writer));
     ASSERT_STATUS_OK(writer->Append(data));
     ASSERT_STATUS_OK(writer->Close());
 
     // Test Read
     Slice result;
-    shared_ptr<RandomAccessFile> reader;
-    ASSERT_STATUS_OK(fs_manager()->OpenBlock(block_id, &reader));
-    ASSERT_STATUS_OK(env_util::ReadFully(reader.get(), 0, data.size(), &result, buffer));
+    gscoped_ptr<fs::ReadableBlock> reader;
+    ASSERT_STATUS_OK(fs_manager()->OpenBlock(writer->id(), &reader));
+    ASSERT_STATUS_OK(reader->Read(0, data.size(), &result, buffer));
     ASSERT_EQ(data.size(), result.size());
     ASSERT_EQ(0, result.compare(data));
   }

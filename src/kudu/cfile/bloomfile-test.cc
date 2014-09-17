@@ -5,6 +5,7 @@
 #include <gtest/gtest.h>
 
 #include "kudu/cfile/bloomfile.h"
+#include "kudu/fs/fs_manager.h"
 #include "kudu/gutil/endian.h"
 #include "kudu/util/env.h"
 #include "kudu/util/memenv/memenv.h"
@@ -22,6 +23,9 @@ DEFINE_bool(benchmark_should_hit, false, "Set to true for the benchmark to query
 namespace kudu {
 namespace cfile {
 
+using fs::ReadableBlock;
+using fs::WritableBlock;
+
 static const int kKeyShift = 2;
 
 static void AppendBlooms(BloomFileWriter *bfw) {
@@ -38,10 +42,10 @@ static void AppendBlooms(BloomFileWriter *bfw) {
   }
 }
 
-static void WriteTestBloomFile(Env *env, const string &path) {
-  WritableFile *file;
-  ASSERT_STATUS_OK(env->NewWritableFile(path, &file));
-  shared_ptr<WritableFile> sink(file);
+static void WriteTestBloomFile(FsManager* fs_manager, BlockId* block_id) {
+  gscoped_ptr<WritableBlock> sink;
+  ASSERT_STATUS_OK(fs_manager->CreateNewBlock(&sink));
+  *block_id = sink->id();
 
   // Set sizing based on flags
   BloomFilterSizing sizing = BloomFilterSizing::BySizeAndFPRate(
@@ -51,19 +55,27 @@ static void WriteTestBloomFile(Env *env, const string &path) {
     << "Invalid parameters: --n_keys isn't set large enough to fill even "
     << "one bloom filter of the requested --bloom_size_bytes";
 
-  BloomFileWriter bfw(sink, sizing);
+  BloomFileWriter bfw(sink.Pass(), sizing);
 
   ASSERT_STATUS_OK(bfw.Start());
   AppendBlooms(&bfw);
   ASSERT_STATUS_OK(bfw.Finish());
 }
 
+static Status OpenBloomFile(FsManager* fs_manager, const BlockId& block_id,
+                            gscoped_ptr<BloomFileReader>* reader) {
+  gscoped_ptr<ReadableBlock> source;
+  RETURN_NOT_OK(fs_manager->OpenBlock(block_id, &source));
+
+  return BloomFileReader::Open(source.Pass(), reader);
+}
+
 // Verify that all the entries we put in the bloom file check as
 // present, and verify that entries we didn't put in have the
 // expected false positive rate.
-static void VerifyBloomFile(Env *env, const string &path) {
+static void VerifyBloomFile(FsManager* fs_manager, const BlockId& block_id) {
   gscoped_ptr<BloomFileReader> bfr;
-  ASSERT_STATUS_OK(BloomFileReader::Open(env, path, &bfr));
+  ASSERT_STATUS_OK(OpenBloomFile(fs_manager, block_id, &bfr));
 
   // Verify all the keys that we inserted probe as present.
   for (uint64_t i = 0; i < FLAGS_n_keys; i++) {
@@ -97,23 +109,26 @@ static void VerifyBloomFile(Env *env, const string &path) {
 
 TEST(TestBloomFile, TestWriteAndRead) {
   gscoped_ptr<Env> env(NewMemEnv(Env::Default()));
+  FsManager fs_manager(env.get(), "root");
+  ASSERT_STATUS_OK(fs_manager.CreateInitialFileSystemLayout());
+  ASSERT_STATUS_OK(fs_manager.Open());
 
-  string path("/test-bloomfile");
-  ASSERT_NO_FATAL_FAILURE(
-    WriteTestBloomFile(env.get(), path));
-  VerifyBloomFile(env.get(), path);
+  BlockId block_id;
+  ASSERT_NO_FATAL_FAILURE(WriteTestBloomFile(&fs_manager, &block_id));
+  VerifyBloomFile(&fs_manager, block_id);
 }
 
 #ifdef NDEBUG
 TEST(TestBloomFile, Benchmark) {
   gscoped_ptr<Env> env(NewMemEnv(Env::Default()));
+  FsManager fs_manager(env.get(), "root");
+  ASSERT_STATUS_OK(fs_manager.CreateInitialFileSystemLayout());
+  ASSERT_STATUS_OK(fs_manager.Open());
 
-  string path("/test-bloomfile");
-  ASSERT_NO_FATAL_FAILURE(
-    WriteTestBloomFile(env.get(), path));
-
+  BlockId block_id;
+  ASSERT_NO_FATAL_FAILURE(WriteTestBloomFile(&fs_manager, &block_id));
   gscoped_ptr<BloomFileReader> bfr;
-  ASSERT_STATUS_OK(BloomFileReader::Open(env.get(), path, &bfr));
+  ASSERT_STATUS_OK(OpenBloomFile(&fs_manager, block_id, &bfr));
 
   uint64_t count_present = 0;
   LOG_TIMING(INFO, StringPrintf("Running %ld queries", FLAGS_benchmark_queries)) {

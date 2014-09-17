@@ -18,6 +18,7 @@
 namespace kudu {
 namespace tablet {
 
+using fs::ReadableBlock;
 using std::tr1::unordered_set;
 
 DEFINE_int32(testflush_num_inserts, 1000,
@@ -63,11 +64,11 @@ TYPED_TEST(TestTablet, TestFlush) {
   ASSERT_EQ(1, undo_blocks.size());
 
   // Read the undo delta, we should get one undo mutation (delete) for each row.
-  shared_ptr<RandomAccessFile> dfile;
-  ASSERT_STATUS_OK(this->fs_manager()->OpenBlock(undo_blocks[0], &dfile));
+  gscoped_ptr<ReadableBlock> block;
+  ASSERT_STATUS_OK(this->fs_manager()->OpenBlock(undo_blocks[0], &block));
 
   shared_ptr<DeltaFileReader> dfr;
-  ASSERT_STATUS_OK(DeltaFileReader::Open(dfile, undo_blocks[0], &dfr, UNDO));
+  ASSERT_STATUS_OK(DeltaFileReader::Open(block.Pass(), undo_blocks[0], &dfr, UNDO));
   // Assert there were 'max_rows' deletions in the undo delta (one for each inserted row)
   ASSERT_EQ(dfr->delta_stats().delete_count(), max_rows);
 }
@@ -477,7 +478,7 @@ TYPED_TEST(TestTablet, TestRowIteratorComplex) {
     << "expected to see all inserted data through iterator.";
 }
 
-// Test that, when a tablet hsa flushed data and is
+// Test that, when a tablet has flushed data and is
 // reopened, that the data persists
 TYPED_TEST(TestTablet, TestInsertsPersist) {
   uint64_t max_rows = this->ClampRowCount(FLAGS_testiterator_num_inserts);

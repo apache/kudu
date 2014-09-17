@@ -3,7 +3,6 @@
 #ifndef KUDU_CFILE_CFILE_READER_H
 #define KUDU_CFILE_CFILE_READER_H
 
-#include <tr1/memory>
 #include <string>
 #include <vector>
 
@@ -15,10 +14,11 @@
 #include "kudu/cfile/cfile_util.h"
 #include "kudu/cfile/index_btree.h"
 #include "kudu/cfile/type_encodings.h"
+#include "kudu/fs/block_id.h"
+#include "kudu/fs/block_manager.h"
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/port.h"
-#include "kudu/util/env.h"
 #include "kudu/util/memory/arena.h"
 #include "kudu/util/object_pool.h"
 #include "kudu/util/rle-encoding.h"
@@ -27,31 +27,20 @@
 #include "kudu/common/key_encoder.h"
 
 namespace kudu {
-
 namespace cfile {
-
-class CFileHeaderPB;
-class CFileFooterPB;
-
-using std::string;
-using std::tr1::shared_ptr;
 
 class BlockCache;
 class BlockCacheHandle;
 class BlockDecoder;
 class BlockPointer;
+class CFileHeaderPB;
+class CFileFooterPB;
 class CFileIterator;
-
 
 class CFileReader {
  public:
-  // Open a cfile for reading at the given path.
-  static Status Open(Env *env, const string &path,
-                     const ReaderOptions &options,
-                     gscoped_ptr<CFileReader> *reader);
-
-  // Open a cfile for reading using an existing RandomAccessFile.
-  static Status Open(const shared_ptr<RandomAccessFile>& file,
+  // Open a cfile for reading using a previously opened block.
+  static Status Open(gscoped_ptr<fs::ReadableBlock> block,
                      const ReaderOptions& options,
                      gscoped_ptr<CFileReader> *reader);
 
@@ -135,7 +124,7 @@ class CFileReader {
     return BlockPointer(footer_->validx_info().root_block());
   }
 
-  std::string ToString() const { return file_->ToString(); }
+  std::string ToString() const { return block_->id().ToString(); }
 
  private:
   DISALLOW_COPY_AND_ASSIGN(CFileReader);
@@ -143,7 +132,7 @@ class CFileReader {
   friend class CFileIterator;
 
   CFileReader(const ReaderOptions &options,
-              const shared_ptr<RandomAccessFile> &file);
+              gscoped_ptr<fs::ReadableBlock> block);
 
   Status ReadMagicAndLength(uint64_t offset, uint32_t *len);
   Status ReadAndParseHeader();
@@ -153,7 +142,7 @@ class CFileReader {
   __attribute__((__unused__))
 #endif
   const ReaderOptions options_;
-  const shared_ptr<RandomAccessFile> file_;
+  const gscoped_ptr<fs::ReadableBlock> block_;
   uint64_t file_size_; // effectively const, but set in Init()
 
   enum State {

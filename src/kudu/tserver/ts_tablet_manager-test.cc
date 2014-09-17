@@ -41,14 +41,14 @@ class TsTabletManagerTest : public KuduTest {
     KuduTest::SetUp();
 
     mini_server_.reset(
-        new MiniTabletServer(env_.get(), GetTestPath("TsTabletManagerTest-fsroot"), 0));
+        new MiniTabletServer(GetTestPath("TsTabletManagerTest-fsroot"), 0));
     ASSERT_STATUS_OK(mini_server_->Start());
     mini_server_->FailHeartbeats();
 
     quorum_ = mini_server_->CreateLocalQuorum();
 
     tablet_manager_ = mini_server_->server()->tablet_manager();
-    fs_manager_ = mini_server_->fs_manager();
+    fs_manager_ = mini_server_->server()->fs_manager();
   }
 
   Status CreateNewTablet(const std::string& tablet_id,
@@ -120,7 +120,7 @@ TEST_F(TsTabletManagerTest, TestCreateTablet) {
   mini_server_->Shutdown();
   LOG(INFO) << "Restarting tablet manager";
   mini_server_.reset(
-      new MiniTabletServer(env_.get(), GetTestPath("TsTabletManagerTest-fsroot"), 0));
+      new MiniTabletServer(GetTestPath("TsTabletManagerTest-fsroot"), 0));
   ASSERT_STATUS_OK(mini_server_->Start());
   ASSERT_STATUS_OK(mini_server_->WaitStarted());
   tablet_manager_ = mini_server_->server()->tablet_manager();

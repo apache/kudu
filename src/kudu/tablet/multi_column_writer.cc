@@ -12,6 +12,7 @@ namespace kudu {
 namespace tablet {
 
 using cfile::CFileWriter;
+using fs::WritableBlock;
 
 MultiColumnWriter::MultiColumnWriter(FsManager* fs,
                                      const Schema* schema)
@@ -51,17 +52,17 @@ Status MultiColumnWriter::Open() {
     }
 
     // Open file for write.
-    shared_ptr<WritableFile> data_writer;
-    BlockId block_id;
-    RETURN_NOT_OK_PREPEND(fs_->CreateNewBlock(&data_writer, &block_id),
+    gscoped_ptr<WritableBlock> block;
+    RETURN_NOT_OK_PREPEND(fs_->CreateNewBlock(&block),
                           "Unable to open output file for column " + col.ToString());
+    BlockId block_id(block->id());
 
     // Create the CFile writer itself.
     gscoped_ptr<CFileWriter> writer(new CFileWriter(
         opts,
         col.type_info()->type(),
         col.is_nullable(),
-        data_writer));
+        block.Pass()));
     RETURN_NOT_OK_PREPEND(writer->Start(),
                           "Unable to Start() writer for column " + col.ToString());
 

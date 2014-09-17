@@ -3,7 +3,6 @@
 #define KUDU_CFILE_BLOOMFILE_H
 
 #include <boost/ptr_container/ptr_vector.hpp>
-#include <tr1/memory>
 #include <string>
 #include <vector>
 
@@ -11,7 +10,6 @@
 #include "kudu/cfile/cfile_writer.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/util/bloom_filter.h"
-#include "kudu/util/env.h"
 #include "kudu/util/faststring.h"
 #include "kudu/util/pthread_spinlock.h"
 #include "kudu/util/status.h"
@@ -19,11 +17,9 @@
 namespace kudu {
 namespace cfile {
 
-using std::tr1::shared_ptr;
-
 class BloomFileWriter {
  public:
-  BloomFileWriter(const shared_ptr<WritableFile> &file,
+  BloomFileWriter(gscoped_ptr<fs::WritableBlock> block,
                   const BloomFilterSizing &sizing);
 
   Status Start();
@@ -53,10 +49,7 @@ class BloomFileWriter {
 // shared!
 class BloomFileReader {
  public:
-  static Status Open(Env *env, const string &path,
-                     gscoped_ptr<BloomFileReader> *reader);
-
-  static Status Open(const shared_ptr<RandomAccessFile> &file,
+  static Status Open(gscoped_ptr<fs::ReadableBlock> block,
                      gscoped_ptr<BloomFileReader> *reader);
 
   // Check if the given key may be present in the file.

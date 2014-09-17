@@ -5,7 +5,6 @@
 #include "kudu/common/schema.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/tserver/tablet_server_options.h"
-#include "kudu/util/env.h"
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/status.h"
 
@@ -26,7 +25,7 @@ class TabletServer;
 // An in-process tablet server meant for use in test cases.
 class MiniTabletServer {
  public:
-  MiniTabletServer(Env* env, const std::string& fs_root, uint16_t rpc_port);
+  MiniTabletServer(const std::string& fs_root, uint16_t rpc_port);
   ~MiniTabletServer();
 
   // Return the options which will be used to start the tablet server.
@@ -67,8 +66,6 @@ class MiniTabletServer {
   const Sockaddr bound_rpc_addr() const;
   const Sockaddr bound_http_addr() const;
 
-  FsManager* fs_manager();
-
   const TabletServer* server() const { return server_.get(); }
   TabletServer* server() { return server_.get(); }
 
@@ -76,8 +73,6 @@ class MiniTabletServer {
 
  private:
   bool started_;
-  Env* const env_;
-  const std::string fs_root_;
 
   TabletServerOptions opts_;
 

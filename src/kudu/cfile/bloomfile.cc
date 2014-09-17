@@ -4,28 +4,28 @@
 #include <boost/thread/mutex.hpp>
 #include <sched.h>
 #include <unistd.h>
-#include <tr1/memory>
 #include <string>
 
 #include "kudu/cfile/bloomfile.h"
 #include "kudu/cfile/cfile_writer.h"
 #include "kudu/gutil/stringprintf.h"
 #include "kudu/gutil/sysinfo.h"
-#include "kudu/util/env.h"
-#include "kudu/util/env_util.h"
 #include "kudu/util/coding.h"
 #include "kudu/util/hexdump.h"
 #include "kudu/util/pb_util.h"
 #include "kudu/util/pthread_spinlock.h"
 
-namespace kudu { namespace cfile {
+namespace kudu {
+namespace cfile {
 
+using fs::ReadableBlock;
+using fs::WritableBlock;
 
 ////////////////////////////////////////////////////////////
 // Writer
 ////////////////////////////////////////////////////////////
 
-BloomFileWriter::BloomFileWriter(const shared_ptr<WritableFile> &file,
+BloomFileWriter::BloomFileWriter(gscoped_ptr<WritableBlock> block,
                                  const BloomFilterSizing &sizing)
   : bloom_builder_(sizing) {
   cfile::WriterOptions opts;
@@ -34,7 +34,7 @@ BloomFileWriter::BloomFileWriter(const shared_ptr<WritableFile> &file,
   // Never use compression, regardless of the default settings, since
   // bloom filters are high-entropy data structures by their nature.
   opts.storage_attributes = ColumnStorageAttributes(PLAIN_ENCODING, NO_COMPRESSION);
-  writer_.reset(new cfile::CFileWriter(opts, STRING, false, file));
+  writer_.reset(new cfile::CFileWriter(opts, STRING, false, block.Pass()));
 }
 
 Status BloomFileWriter::Start() {
@@ -111,18 +111,10 @@ Status BloomFileWriter::FinishCurrentBloomBlock() {
 // Reader
 ////////////////////////////////////////////////////////////
 
-Status BloomFileReader::Open(Env *env, const string &path,
-                             gscoped_ptr<BloomFileReader> *reader) {
-
-  shared_ptr<RandomAccessFile> file;
-  RETURN_NOT_OK(env_util::OpenFileForRandom(env, path, &file));
-  return Open(file, reader);
-}
-
-Status BloomFileReader::Open(const shared_ptr<RandomAccessFile>& file,
+Status BloomFileReader::Open(gscoped_ptr<ReadableBlock> block,
                              gscoped_ptr<BloomFileReader> *reader) {
   gscoped_ptr<CFileReader> cf_reader;
-  RETURN_NOT_OK(CFileReader::Open(file, ReaderOptions(), &cf_reader));
+  RETURN_NOT_OK(CFileReader::Open(block.Pass(), ReaderOptions(), &cf_reader));
   if (cf_reader->is_compressed()) {
     return Status::Corruption("Unexpected compression for bloom file");
   }

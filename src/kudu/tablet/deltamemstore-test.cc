@@ -7,7 +7,6 @@
 #include <tr1/unordered_set>
 
 #include "kudu/common/schema.h"
-#include "kudu/util/env_util.h"
 #include "kudu/gutil/casts.h"
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/server/logical_clock.h"
@@ -20,6 +19,7 @@
 namespace kudu {
 namespace tablet {
 
+using fs::WritableBlock;
 using std::tr1::unordered_set;
 
 class TestDeltaMemStore : public KuduTest {
@@ -30,6 +30,14 @@ class TestDeltaMemStore : public KuduTest {
       dms_(new DeltaMemStore(0, schema_, new log::OpIdAnchorRegistry())),
       mvcc_(scoped_refptr<server::Clock>(
           server::LogicalClock::CreateStartingAt(Timestamp::kInitialTimestamp))) {
+  }
+
+  void SetUp() OVERRIDE {
+    KuduTest::SetUp();
+
+    fs_manager_.reset(new FsManager(env_.get(), test_dir_));
+    ASSERT_OK(fs_manager_->CreateInitialFileSystemLayout());
+    ASSERT_OK(fs_manager_->Open());
   }
 
   static Schema CreateSchema() {
@@ -85,6 +93,7 @@ class TestDeltaMemStore : public KuduTest {
   const Schema schema_;
   shared_ptr<DeltaMemStore> dms_;
   MvccManager mvcc_;
+  gscoped_ptr<FsManager> fs_manager_;
 };
 
 static void GenerateRandomIndexes(uint32_t range, uint32_t count,
@@ -123,9 +132,9 @@ TEST_F(TestDeltaMemStore, TestUpdateCount) {
 
 
   // Flush the delta file so that the stats get updated.
-  shared_ptr<WritableFile> file;
-  ASSERT_STATUS_OK(env_util::OpenFileForWrite(env_.get(), GetTestPath("test_file"), &file));
-  DeltaFileWriter dfw(schema_, file);
+  gscoped_ptr<WritableBlock> block;
+  ASSERT_STATUS_OK(fs_manager_->CreateNewBlock(&block));
+  DeltaFileWriter dfw(schema_, block.Pass());
   ASSERT_STATUS_OK(dfw.Start());
   dms_->FlushToFile(&dfw);
 

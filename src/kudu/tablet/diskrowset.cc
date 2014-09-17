@@ -1,11 +1,11 @@
 // Copyright (c) 2012, Cloudera, inc.
 
+#include <algorithm>
+#include <boost/thread/locks.hpp>
 #include <glog/logging.h>
 #include <tr1/memory>
-#include <algorithm>
 #include <vector>
 
-#include <boost/thread/locks.hpp>
 #include "kudu/common/generic_iterators.h"
 #include "kudu/common/iterator.h"
 #include "kudu/common/schema.h"
@@ -24,11 +24,11 @@
 #include "kudu/util/locks.h"
 #include "kudu/util/status.h"
 
-namespace kudu { namespace tablet {
+namespace kudu {
+namespace tablet {
 
 using cfile::BloomFileWriter;
-using cfile::CFileReader;
-using cfile::ReaderOptions;
+using fs::WritableBlock;
 using log::OpIdAnchorRegistry;
 using std::string;
 using std::tr1::shared_ptr;
@@ -61,25 +61,24 @@ Status DiskRowSetWriter::Open() {
 }
 
 Status DiskRowSetWriter::InitBloomFileWriter() {
-  shared_ptr<WritableFile> data_writer;
-  BlockId block;
+  gscoped_ptr<WritableBlock> block;
   FsManager* fs = rowset_metadata_->fs_manager();
-  RETURN_NOT_OK_PREPEND(fs->CreateNewBlock(&data_writer, &block),
+  RETURN_NOT_OK_PREPEND(fs->CreateNewBlock(&block),
                         "Couldn't allocate a block for bloom filter");
-  bloom_writer_.reset(new cfile::BloomFileWriter(data_writer, bloom_sizing_));
+  rowset_metadata_->set_bloom_block(block->id());
+
+  bloom_writer_.reset(new cfile::BloomFileWriter(block.Pass(), bloom_sizing_));
   RETURN_NOT_OK(bloom_writer_->Start());
-  rowset_metadata_->set_bloom_block(block);
   return Status::OK();
 }
 
 Status DiskRowSetWriter::InitAdHocIndexWriter() {
-  shared_ptr<WritableFile> data_writer;
-  BlockId block;
+  gscoped_ptr<WritableBlock> block;
   FsManager* fs = rowset_metadata_->fs_manager();
-  RETURN_NOT_OK_PREPEND(fs->CreateNewBlock(&data_writer, &block),
+  RETURN_NOT_OK_PREPEND(fs->CreateNewBlock(&block),
                         "Couldn't allocate a block for compoound index");
 
-  rowset_metadata_->set_adhoc_index_block(block);
+  rowset_metadata_->set_adhoc_index_block(block->id());
 
   // TODO: allow options to be configured, perhaps on a per-column
   // basis as part of the schema. For now use defaults.
@@ -101,7 +100,7 @@ Status DiskRowSetWriter::InitAdHocIndexWriter() {
       opts,
       STRING,
       false,
-      data_writer));
+      block.Pass()));
   return ad_hoc_index_writer_->Start();
 
 }
@@ -252,12 +251,14 @@ Status RollingDiskRowSetWriter::RollWriter() {
   RETURN_NOT_OK(cur_writer_->Open());
 
   FsManager* fs = tablet_metadata_->fs_manager();
-  shared_ptr<WritableFile> undo_data_file;
-  shared_ptr<WritableFile> redo_data_file;
-  RETURN_NOT_OK(fs->CreateNewBlock(&undo_data_file, &cur_undo_ds_block_id_));
-  RETURN_NOT_OK(fs->CreateNewBlock(&redo_data_file, &cur_redo_ds_block_id_));
-  cur_undo_writer_.reset(new DeltaFileWriter(schema_, undo_data_file));
-  cur_redo_writer_.reset(new DeltaFileWriter(schema_, redo_data_file));
+  gscoped_ptr<WritableBlock> undo_data_block;
+  gscoped_ptr<WritableBlock> redo_data_block;
+  RETURN_NOT_OK(fs->CreateNewBlock(&undo_data_block));
+  RETURN_NOT_OK(fs->CreateNewBlock(&redo_data_block));
+  cur_undo_ds_block_id_ = undo_data_block->id();
+  cur_redo_ds_block_id_ = redo_data_block->id();
+  cur_undo_writer_.reset(new DeltaFileWriter(schema_, undo_data_block.Pass()));
+  cur_redo_writer_.reset(new DeltaFileWriter(schema_, redo_data_block.Pass()));
   cur_undo_delta_stats.reset(new DeltaStats(schema_.num_columns()));
   cur_redo_delta_stats.reset(new DeltaStats(schema_.num_columns()));
 

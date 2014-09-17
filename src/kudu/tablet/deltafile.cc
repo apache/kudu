@@ -1,5 +1,7 @@
 // Copyright (c) 2012, Cloudera, inc.
 
+#include "kudu/tablet/deltafile.h"
+
 #include <arpa/inet.h>
 #include <string>
 
@@ -11,12 +13,9 @@
 #include "kudu/cfile/string_plain_block.h"
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/mathlimits.h"
-#include "kudu/tablet/deltafile.h"
 #include "kudu/tablet/mutation.h"
 #include "kudu/tablet/mvcc.h"
 #include "kudu/util/coding-inl.h"
-#include "kudu/util/env.h"
-#include "kudu/util/env_util.h"
 #include "kudu/util/hexdump.h"
 #include "kudu/util/pb_util.h"
 
@@ -31,6 +30,8 @@ using cfile::BlockPointer;
 using cfile::IndexTreeIterator;
 using cfile::StringPlainBlockDecoder;
 using cfile::CFileReader;
+using fs::ReadableBlock;
+using fs::WritableBlock;
 
 namespace tablet {
 
@@ -70,7 +71,7 @@ Status DeltaStatsFromPB(const DeltaStatsPB& pb,
 } // namespace
 
 DeltaFileWriter::DeltaFileWriter(const Schema &schema,
-                                 const shared_ptr<WritableFile> &file) :
+                                 gscoped_ptr<WritableBlock> block) :
     schema_(schema)
 #ifndef NDEBUG
   ,has_appended_(false)
@@ -80,7 +81,7 @@ DeltaFileWriter::DeltaFileWriter(const Schema &schema,
   opts.write_validx = true;
   opts.block_size = FLAGS_deltafile_block_size;
   opts.storage_attributes = ColumnStorageAttributes(PLAIN_ENCODING);
-  writer_.reset(new cfile::CFileWriter(opts, STRING, false, file));
+  writer_.reset(new cfile::CFileWriter(opts, STRING, false, block.Pass()));
 }
 
 
@@ -182,22 +183,12 @@ Status DeltaFileWriter::WriteDeltaStats(const DeltaStats& stats) {
 // Reader
 ////////////////////////////////////////////////////////////
 
-Status DeltaFileReader::Open(Env* env,
-                             const string& path,
-                             const BlockId& block_id,
-                             shared_ptr<DeltaFileReader>* reader_out,
-                             DeltaType delta_type) {
-  shared_ptr<RandomAccessFile> file;
-  RETURN_NOT_OK(env_util::OpenFileForRandom(env, path, &file));
-  return Open(file, block_id, reader_out, delta_type);
-}
-
-Status DeltaFileReader::Open(const shared_ptr<RandomAccessFile>& file,
+Status DeltaFileReader::Open(gscoped_ptr<ReadableBlock> block,
                              const BlockId& block_id,
                              shared_ptr<DeltaFileReader>* reader_out,
                              DeltaType delta_type) {
   gscoped_ptr<CFileReader> cf_reader;
-  RETURN_NOT_OK(CFileReader::Open(file, cfile::ReaderOptions(), &cf_reader));
+  RETURN_NOT_OK(CFileReader::Open(block.Pass(), cfile::ReaderOptions(), &cf_reader));
 
   gscoped_ptr<DeltaFileReader> df_reader(new DeltaFileReader(block_id,
                                                              cf_reader.release(),

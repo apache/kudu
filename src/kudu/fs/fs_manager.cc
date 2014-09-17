@@ -10,6 +10,7 @@
 
 #include "kudu/fs/block_id.h"
 #include "kudu/fs/block_id-inl.h"
+#include "kudu/fs/file_block_manager.h"
 #include "kudu/fs/fs.pb.h"
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/numbers.h"
@@ -26,9 +27,16 @@ DEFINE_bool(enable_data_block_fsync, true,
             "Whether to enable fsync() of data blocks, metadata, and their parent directories. "
             "Disabling this flag may cause data loss in the event of a system crash.");
 
+DEFINE_string(block_manager, "file", "Which block manager to use for storage. "
+              "The only valid option is 'file'.");
+
 using google::protobuf::MessageLite;
 using strings::Substitute;
 using std::tr1::shared_ptr;
+using kudu::fs::CreateBlockOptions;
+using kudu::fs::FileBlockManager;
+using kudu::fs::ReadableBlock;
+using kudu::fs::WritableBlock;
 
 namespace kudu {
 
@@ -44,17 +52,28 @@ const char *FsManager::kCorruptedSuffix = ".corrupted";
 const char *FsManager::kInstanceMetadataFileName = "instance";
 
 FsManager::FsManager(Env *env, const string& root_path)
-  : env_(env), root_path_(root_path) {
+  : env_(env),
+    root_path_(root_path) {
   CHECK(!root_path_.empty());
+  InitBlockManager();
 }
 
 FsManager::~FsManager() {
+}
+
+void FsManager::InitBlockManager() {
+  if (FLAGS_block_manager == "file") {
+    block_manager_.reset(new FileBlockManager(env_, GetDataRootDir()));
+  } else {
+    LOG(FATAL) << "Invalid block manager: " << FLAGS_block_manager;
+  }
 }
 
 Status FsManager::Open() {
   gscoped_ptr<InstanceMetadataPB> pb(new InstanceMetadataPB);
   RETURN_NOT_OK(pb_util::ReadPBFromPath(env_, GetInstanceMetadataPath(), pb.get()));
   metadata_.reset(pb.release());
+  RETURN_NOT_OK(block_manager_->Open());
   LOG(INFO) << "Opened local filesystem: " << root_path_
             << std::endl << metadata_->DebugString();
   return Status::OK();
@@ -67,9 +86,6 @@ Status FsManager::CreateInitialFileSystemLayout() {
   // Initialize wals dir
   RETURN_NOT_OK(CreateDirIfMissing(GetWalsRootDir()));
 
-  // Initialize data dir
-  RETURN_NOT_OK(CreateDirIfMissing(GetDataRootDir()));
-
   // Initialize master block dir
   RETURN_NOT_OK(CreateDirIfMissing(GetMasterBlockDir()));
 
@@ -77,6 +93,7 @@ Status FsManager::CreateInitialFileSystemLayout() {
     RETURN_NOT_OK(CreateAndWriteInstanceMetadata());
   }
 
+  RETURN_NOT_OK(block_manager_->Create());
   return Status::OK();
 }
 
@@ -183,46 +200,29 @@ BlockId FsManager::GenerateBlockId() {
   return BlockId(oid_generator_.Next());
 }
 
-Status FsManager::CreateNewBlock(shared_ptr<WritableFile> *writer, BlockId *block_id) {
-  WritableFileOptions opts;
-  opts.overwrite_existing = false;
+Status FsManager::CreateNewBlock(gscoped_ptr<WritableBlock>* block) {
+  CreateBlockOptions opts;
   opts.sync_on_close = FLAGS_enable_data_block_fsync;
-  string path;
-  Status s;
-  BlockId new_block_id;
-  do {
-    new_block_id = GenerateBlockId();
-    RETURN_NOT_OK(CreateBlockDir(new_block_id));
-    path = GetBlockPath(new_block_id);
-    s = env_util::OpenFileForWrite(opts, env_, path, writer);
-  } while (s.IsAlreadyPresent());
-  if (s.ok()) {
-    *block_id = new_block_id;
-    VLOG(1) << "NewBlock: " << block_id->ToString();
-    if (FLAGS_enable_data_block_fsync) {
-      RETURN_NOT_OK((*writer)->SyncParentDir());
-    }
-  }
-  return s;
+  return block_manager_->CreateAnonymousBlock(block, opts);
 }
 
-Status FsManager::CreateBlockWithId(const BlockId& block_id, shared_ptr<WritableFile> *writer) {
-  RETURN_NOT_OK_PREPEND(CreateBlockDir(block_id),
-                        Substitute("Unable to create block dir for block $0", block_id.ToString()));
-  string path = GetBlockPath(block_id);
-  VLOG(1) << "Creating new block with predetermined id " << block_id.ToString() << " at " << path;
-  WritableFileOptions opts;
+Status FsManager::CreateBlockWithId(const BlockId& block_id, gscoped_ptr<WritableBlock>* block) {
+  CreateBlockOptions opts;
   opts.sync_on_close = FLAGS_enable_data_block_fsync;
-  RETURN_NOT_OK(env_util::OpenFileForWrite(opts, env_, path, writer));
-  if (FLAGS_enable_data_block_fsync) {
-    RETURN_NOT_OK((*writer)->SyncParentDir());
-  }
-  return Status::OK();
+  return block_manager_->CreateNamedBlock(block_id, block, opts);
 }
 
-Status FsManager::OpenBlock(const BlockId& block_id, shared_ptr<RandomAccessFile> *reader) {
-  VLOG(1) << "OpenBlock: " << block_id.ToString();
-  return env_util::OpenFileForRandom(env_, GetBlockPath(block_id), reader);
+Status FsManager::OpenBlock(const BlockId& block_id, gscoped_ptr<ReadableBlock>* block) {
+  return block_manager_->OpenBlock(block_id, block);
+}
+
+Status FsManager::DeleteBlock(const BlockId& block_id) {
+  return block_manager_->DeleteBlock(block_id);
+}
+
+bool FsManager::BlockExists(const BlockId& block_id) const {
+  gscoped_ptr<ReadableBlock> block;
+  return block_manager_->OpenBlock(block_id, &block).ok();
 }
 
 Status FsManager::CreateBlockDir(const BlockId& block_id) {
@@ -259,6 +259,8 @@ Status FsManager::CreateBlockDir(const BlockId& block_id) {
 // ==========================================================================
 //  Metadata read/write interfaces
 // ==========================================================================
+//
+// TODO: Route through BlockManager, but that means potentially supporting block renaming.
 
 Status FsManager::WriteMetadataBlock(const BlockId& block_id, const MessageLite& msg) {
   RETURN_NOT_OK(CreateBlockDir(block_id));

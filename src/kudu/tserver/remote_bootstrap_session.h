@@ -11,11 +11,13 @@
 #include "kudu/consensus/opid_anchor_registry.h"
 #include "kudu/consensus/opid_util.h"
 #include "kudu/fs/block_id.h"
-#include "kudu/fs/fs_manager.h"
+#include "kudu/fs/block_manager.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/ref_counted.h"
+#include "kudu/gutil/stl_util.h"
 #include "kudu/tserver/remote_bootstrap.pb.h"
 #include "kudu/server/metadata.pb.h"
+#include "kudu/util/env_util.h"
 #include "kudu/util/locks.h"
 #include "kudu/util/status.h"
 
@@ -34,8 +36,35 @@ class TabletPeerLookupIf;
 // Caches file size and holds a shared_ptr reference to a RandomAccessFile.
 // Assumes that the file underlying the RandomAccessFile is immutable.
 struct ImmutableRandomAccessFileInfo {
-  std::tr1::shared_ptr<RandomAccessFile> file;
-  int64_t file_size;
+  std::tr1::shared_ptr<RandomAccessFile> readable;
+  int64_t size;
+
+  ImmutableRandomAccessFileInfo(const std::tr1::shared_ptr<RandomAccessFile>& readable,
+                                int64_t size)
+  : readable(readable),
+    size(size) {
+  }
+
+  Status ReadFully(uint64_t offset, int64_t size, Slice* data, uint8_t* scratch) const {
+    return env_util::ReadFully(readable.get(), offset, size, data, scratch);
+  }
+};
+
+// Caches block size and holds an exclusive reference to a ReadableBlock.
+// Assumes that the block underlying the ReadableBlock is immutable.
+struct ImmutableReadableBlockInfo {
+  gscoped_ptr<fs::ReadableBlock> readable;
+  int64_t size;
+
+  ImmutableReadableBlockInfo(fs::ReadableBlock* readable,
+                             int64_t size)
+  : readable(readable),
+    size(size) {
+  }
+
+  Status ReadFully(uint64_t offset, int64_t size, Slice* data, uint8_t* scratch) const {
+    return readable->Read(offset, size, data, scratch);
+  }
 };
 
 // A potential Learner must establish a RemoteBootstrapSession with the leader in order
@@ -89,9 +118,9 @@ class RemoteBootstrapSession : public RefCountedThreadSafe<RemoteBootstrapSessio
  private:
   friend class RefCountedThreadSafe<RemoteBootstrapSession>;
 
-  typedef std::tr1::unordered_map<BlockId, ImmutableRandomAccessFileInfo,
+  typedef std::tr1::unordered_map<BlockId, ImmutableReadableBlockInfo*,
                                   BlockIdHash> BlockMap;
-  typedef std::tr1::unordered_map<consensus::OpId, ImmutableRandomAccessFileInfo,
+  typedef std::tr1::unordered_map<consensus::OpId, ImmutableRandomAccessFileInfo*,
                                   consensus::OpIdHashFunctor, consensus::OpIdEqualsFunctor> LogMap;
 
   ~RemoteBootstrapSession();
@@ -102,12 +131,12 @@ class RemoteBootstrapSession : public RefCountedThreadSafe<RemoteBootstrapSessio
 
   // Open block or look up cached block info.
   Status FindOrOpenBlock(const BlockId& block_id,
-                         ImmutableRandomAccessFileInfo* file_info,
+                         ImmutableReadableBlockInfo** block_info,
                          RemoteBootstrapErrorPB::Code* error_code);
 
   // Look up log segment in cache or log segment map.
   Status FindLogSegment(const consensus::OpId& segment_first_op_id,
-                        ImmutableRandomAccessFileInfo* file_info,
+                        ImmutableRandomAccessFileInfo** file_info,
                         RemoteBootstrapErrorPB::Code* error_code);
 
   // Unregister log anchor, if it's registered.
@@ -122,6 +151,9 @@ class RemoteBootstrapSession : public RefCountedThreadSafe<RemoteBootstrapSessio
 
   BlockMap blocks_; // Protected by session_lock_.
   LogMap logs_;     // Protected by session_lock_.
+  ValueDeleter blocks_deleter_;
+  ValueDeleter logs_deleter_;
+
   tablet::TabletSuperBlockPB tablet_superblock_;
   log::ReadableLogSegmentMap log_segments_;
   log::OpIdAnchor log_anchor_;

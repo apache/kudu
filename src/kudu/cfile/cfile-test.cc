@@ -14,11 +14,14 @@
 #include "kudu/common/columnblock.h"
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/stringprintf.h"
-#include "kudu/util/env.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/stopwatch.h"
 
-namespace kudu { namespace cfile {
+namespace kudu {
+namespace cfile {
+
+using fs::ReadableBlock;
+using fs::WritableBlock;
 
 // Abstract test data generator.
 // You must implement BuildTestValue() to return your test value.
@@ -135,18 +138,19 @@ class StringDataGenerator : public DataGenerator<Slice> {
 class TestCFile : public CFileTestBase {
  protected:
   template <class DataGeneratorType, DataType data_type>
-  void WriteTestFileWithNulls(const string &path,
-                              EncodingType encoding,
+  void WriteTestFileWithNulls(EncodingType encoding,
                               CompressionType compression,
-                              int num_entries) {
-    shared_ptr<WritableFile> sink;
-    ASSERT_STATUS_OK(env_util::OpenFileForWrite(env_.get(), path, &sink));
+                              int num_entries,
+                              BlockId* block_id) {
+    gscoped_ptr<WritableBlock> sink;
+    ASSERT_STATUS_OK(fs_manager_->CreateNewBlock(&sink));
+    *block_id = sink->id();
     WriterOptions opts;
     opts.write_posidx = true;
     // Use a smaller block size to exercise multi-level indexing.
     opts.block_size = 128;
     opts.storage_attributes = ColumnStorageAttributes(encoding, compression);
-    CFileWriter w(opts, data_type, true, sink);
+    CFileWriter w(opts, data_type, true, sink.Pass());
 
     ASSERT_STATUS_OK(w.Start());
 
@@ -172,17 +176,18 @@ class TestCFile : public CFileTestBase {
   }
 
   template <class DataGeneratorType, DataType data_type>
-  void WriteTestFileFixedSizeTypes(const string &path,
-                                   EncodingType encoding,
+  void WriteTestFileFixedSizeTypes(EncodingType encoding,
                                    CompressionType compression,
-                                   int num_entries) {
-    shared_ptr<WritableFile> sink;
-    ASSERT_STATUS_OK(env_util::OpenFileForWrite(env_.get(), path, &sink));
+                                   int num_entries,
+                                   BlockId* block_id) {
+    gscoped_ptr<WritableBlock> sink;
+    ASSERT_STATUS_OK(fs_manager_->CreateNewBlock(&sink));
+    *block_id = sink->id();
     WriterOptions opts;
     opts.write_posidx = true;
     opts.block_size = 128;
     opts.storage_attributes = ColumnStorageAttributes(encoding, compression);
-    CFileWriter w(opts, data_type, false, sink);
+    CFileWriter w(opts, data_type, false, sink.Pass());
 
     ASSERT_STATUS_OK(w.Start());
 
@@ -206,15 +211,16 @@ class TestCFile : public CFileTestBase {
 
   template <class DataGeneratorType, DataType data_type>
   void TestReadWriteFixedSizeTypes(EncodingType encoding) {
-    Env *env = env_.get();
-
-    const string path = GetTestPath("cfile");
-    WriteTestFileFixedSizeTypes<DataGeneratorType, data_type>(path, encoding,
+    BlockId block_id;
+    WriteTestFileFixedSizeTypes<DataGeneratorType, data_type>(encoding,
                                                               NO_COMPRESSION,
-                                                              10000);
+                                                              10000,
+                                                              &block_id);
 
+    gscoped_ptr<ReadableBlock> block;
+    ASSERT_STATUS_OK(fs_manager_->OpenBlock(block_id, &block));
     gscoped_ptr<CFileReader> reader;
-    ASSERT_STATUS_OK(CFileReader::Open(env, path, ReaderOptions(), &reader));
+    ASSERT_STATUS_OK(CFileReader::Open(block.Pass(), ReaderOptions(), &reader));
 
     BlockPointer ptr;
 
@@ -285,14 +291,16 @@ class TestCFile : public CFileTestBase {
       out[i] = 0;
     }
 
-    TimeReadFile(path, &n);
+    TimeReadFile(fs_manager_.get(), block_id, &n);
     ASSERT_EQ(10000, n);
   }
 
   template <class DataGeneratorType, DataType data_type>
-  void TimeSeekAndReadFileWithNulls(const string &path, size_t num_entries) {
+  void TimeSeekAndReadFileWithNulls(const BlockId& block_id, size_t num_entries) {
+    gscoped_ptr<ReadableBlock> block;
+    ASSERT_STATUS_OK(fs_manager_->OpenBlock(block_id, &block));
     gscoped_ptr<CFileReader> reader;
-    ASSERT_STATUS_OK(CFileReader::Open(env_.get(), path, ReaderOptions(), &reader));
+    ASSERT_STATUS_OK(CFileReader::Open(block.Pass(), ReaderOptions(), &reader));
     ASSERT_EQ(data_type, reader->data_type());
 
     gscoped_ptr<CFileIterator> iter;
@@ -337,27 +345,31 @@ class TestCFile : public CFileTestBase {
 
   template <class DataGeneratorType, DataType data_type>
   void TestNullTypes(EncodingType encoding, CompressionType compression) {
-    const string path = GetTestPath("testRaw");
-    WriteTestFileWithNulls<DataGeneratorType, data_type>(path, encoding, compression, 10000);
+    BlockId block_id;
+    WriteTestFileWithNulls<DataGeneratorType, data_type>(encoding,
+                                                         compression,
+                                                         10000,
+                                                         &block_id);
 
     size_t n;
-    TimeReadFile(path, &n);
+    TimeReadFile(fs_manager_.get(), block_id, &n);
     ASSERT_EQ(n, 10000);
 
-    TimeSeekAndReadFileWithNulls<DataGeneratorType, data_type>(path, n);
+    TimeSeekAndReadFileWithNulls<DataGeneratorType, data_type>(block_id, n);
   }
 
 
-  void TestReadWriteRawBlocks(const string &path, CompressionType compression, int num_entries) {
+  void TestReadWriteRawBlocks(CompressionType compression, int num_entries) {
     // Test Write
-    shared_ptr<WritableFile> sink;
-    ASSERT_STATUS_OK(env_util::OpenFileForWrite(env_.get(), path, &sink));
+    gscoped_ptr<WritableBlock> sink;
+    ASSERT_STATUS_OK(fs_manager_->CreateNewBlock(&sink));
+    BlockId id = sink->id();
     WriterOptions opts;
     opts.write_posidx = true;
     opts.write_validx = false;
     opts.block_size = FLAGS_cfile_test_block_size;
     opts.storage_attributes = ColumnStorageAttributes(PLAIN_ENCODING, compression);
-    CFileWriter w(opts, STRING, false, sink);
+    CFileWriter w(opts, STRING, false, sink.Pass());
     ASSERT_STATUS_OK(w.Start());
     for (uint32_t i = 0; i < num_entries; i++) {
       vector<Slice> slices;
@@ -370,8 +382,10 @@ class TestCFile : public CFileTestBase {
     ASSERT_STATUS_OK(w.Finish());
 
     // Test Read
+    gscoped_ptr<ReadableBlock> source;
+    ASSERT_STATUS_OK(fs_manager_->OpenBlock(id, &source));
     gscoped_ptr<CFileReader> reader;
-    ASSERT_STATUS_OK(CFileReader::Open(env_.get(), path, ReaderOptions(), &reader));
+    ASSERT_STATUS_OK(CFileReader::Open(source.Pass(), ReaderOptions(), &reader));
 
     gscoped_ptr<IndexTreeIterator> iter;
     iter.reset(IndexTreeIterator::Create(reader.get(), UINT32, reader->posidx_root()));
@@ -412,35 +426,35 @@ void CopyOne(CFileIterator *it,
 // They take way too long with debugging enabled.
 
 TEST_F(TestCFile, TestWrite100MFileInts) {
-  const string path = GetTestPath("Test100M");
+  BlockId block_id;
   LOG_TIMING(INFO, "writing 100m ints") {
     LOG(INFO) << "Starting writefile";
-    WriteTestFileUInt32(path, GROUP_VARINT, NO_COMPRESSION, 100000000);
+    WriteTestFileUInt32(GROUP_VARINT, NO_COMPRESSION, 100000000, &block_id);
     LOG(INFO) << "Done writing";
   }
 
   LOG_TIMING(INFO, "reading 100M ints") {
     LOG(INFO) << "Starting readfile";
     size_t n;
-    TimeReadFile(path, &n);
+    TimeReadFile(fs_manager_.get(), block_id, &n);
     ASSERT_EQ(100000000, n);
     LOG(INFO) << "End readfile";
   }
 }
 
 TEST_F(TestCFile, TestWrite100MFileStrings) {
-  const string path = GetTestPath("Test100MStrings");
+  BlockId block_id;
   LOG_TIMING(INFO, "writing 100M strings") {
     LOG(INFO) << "Starting writefile";
-    WriteTestFileStrings(path, PREFIX_ENCODING, NO_COMPRESSION,
-                         100000000, "hello %d");
+    WriteTestFileStrings(PREFIX_ENCODING, NO_COMPRESSION,
+                         100000000, "hello %d", &block_id);
     LOG(INFO) << "Done writing";
   }
 
   LOG_TIMING(INFO, "reading 100M strings") {
     LOG(INFO) << "Starting readfile";
     size_t n;
-    TimeReadFile(path, &n);
+    TimeReadFile(fs_manager_.get(), block_id, &n);
     ASSERT_EQ(100000000, n);
     LOG(INFO) << "End readfile";
   }
@@ -468,14 +482,15 @@ TEST_F(TestCFile, TestReadWriteStrings) {
                 (ColumnSchema("key", STRING)),
                 1);
 
-  Env *env = env_.get();
-
   const int nrows = 10000;
-  const string path = GetTestPath("cfile");
-  WriteTestFileStrings(path, PREFIX_ENCODING, NO_COMPRESSION, nrows, "hello %04d");
+  BlockId block_id;
+  WriteTestFileStrings(PREFIX_ENCODING, NO_COMPRESSION, nrows,
+                       "hello %04d", &block_id);
 
+  gscoped_ptr<ReadableBlock> block;
+  ASSERT_STATUS_OK(fs_manager_->OpenBlock(block_id, &block));
   gscoped_ptr<CFileReader> reader;
-  ASSERT_STATUS_OK(CFileReader::Open(env, path, ReaderOptions(), &reader));
+  ASSERT_STATUS_OK(CFileReader::Open(block.Pass(), ReaderOptions(), &reader));
 
   rowid_t reader_nrows;
   ASSERT_STATUS_OK(reader->CountRows(&reader_nrows));
@@ -565,15 +580,16 @@ TEST_F(TestCFile, TestReadWriteStrings) {
 
 // Test that metadata entries stored in the cfile are persisted.
 TEST_F(TestCFile, TestMetadata) {
-  const string path = GetTestPath("cfile");
+  BlockId block_id;
 
   // Write the file.
   {
-    shared_ptr<WritableFile> sink;
-    ASSERT_STATUS_OK(env_util::OpenFileForWrite(env_.get(), path, &sink));
+    gscoped_ptr<WritableBlock> sink;
+    ASSERT_STATUS_OK(fs_manager_->CreateNewBlock(&sink));
+    block_id = sink->id();
     WriterOptions opts;
     opts.storage_attributes = ColumnStorageAttributes(GROUP_VARINT);
-    CFileWriter w(opts, UINT32, false, sink);
+    CFileWriter w(opts, UINT32, false, sink.Pass());
 
     w.AddMetadataPair("key_in_header", "header value");
     ASSERT_STATUS_OK(w.Start());
@@ -587,8 +603,10 @@ TEST_F(TestCFile, TestMetadata) {
 
   // Read the file and ensure metadata is present.
   {
+    gscoped_ptr<ReadableBlock> source;
+    ASSERT_STATUS_OK(fs_manager_->OpenBlock(block_id, &source));
     gscoped_ptr<CFileReader> reader;
-    ASSERT_STATUS_OK(CFileReader::Open(env_.get(), path, ReaderOptions(), &reader));
+    ASSERT_STATUS_OK(CFileReader::Open(source.Pass(), ReaderOptions(), &reader));
     string val;
     ASSERT_TRUE(reader->GetMetadataEntry("key_in_header", &val));
     ASSERT_EQ(val, "header value");
@@ -643,11 +661,10 @@ TEST_F(TestCFile, TestDefaultColumnIter) {
 }
 
 TEST_F(TestCFile, TestAppendRaw) {
-  const string path = GetTestPath("testRaw");
-  TestReadWriteRawBlocks(path, NO_COMPRESSION, 1000);
-  TestReadWriteRawBlocks(path, SNAPPY, 1000);
-  TestReadWriteRawBlocks(path, LZ4, 1000);
-  TestReadWriteRawBlocks(path, ZLIB, 1000);
+  TestReadWriteRawBlocks(NO_COMPRESSION, 1000);
+  TestReadWriteRawBlocks(SNAPPY, 1000);
+  TestReadWriteRawBlocks(LZ4, 1000);
+  TestReadWriteRawBlocks(ZLIB, 1000);
 }
 
 TEST_F(TestCFile, TestNullInts) {

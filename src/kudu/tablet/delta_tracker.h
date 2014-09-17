@@ -18,7 +18,6 @@
 
 namespace kudu {
 
-class Env;
 class MemTracker;
 
 namespace consensus {
@@ -173,7 +172,7 @@ class DeltaTracker {
   // This collects all undo and redo stores.
   void CollectStores(vector<shared_ptr<DeltaStore> > *stores) const;
 
-  // Performs the actual compaction. Results of compaction are written to "data_writer",
+  // Performs the actual compaction. Results of compaction are written to "block",
   // while delta stores that underwent compaction are appended to "compacted_stores", while
   // their corresponding block ids are appended to "compacted_blocks".
   //
@@ -181,7 +180,7 @@ class DeltaTracker {
   // exclusive lock on 'compact_flush_lock_' before calling this
   // method in order to protect 'redo_delta_stores_'.
   Status DoCompactStores(size_t start_idx, size_t end_idx,
-                         const shared_ptr<WritableFile> &data_writer,
+                         gscoped_ptr<fs::WritableBlock> block,
                          vector<shared_ptr<DeltaStore> > *compacted_stores,
                          std::vector<BlockId>* compacted_blocks);
 

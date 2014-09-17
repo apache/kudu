@@ -3,6 +3,7 @@
 
 #include "kudu/gutil/strings/fastmem.h"
 #include "kudu/tserver/remote_bootstrap_client.h"
+#include "kudu/util/env_util.h"
 
 namespace kudu {
 namespace tserver {
@@ -14,6 +15,7 @@ class RemoteBootstrapClientTest : public RemoteBootstrapTest {
 
     fs_manager_.reset(new FsManager(Env::Default(), GetTestPath("client_tablet")));
     ASSERT_OK(fs_manager_->CreateInitialFileSystemLayout());
+    ASSERT_OK(fs_manager_->Open());
 
     tablet_peer_->WaitUntilRunning(MonoDelta::FromSeconds(10.0));
     rpc::MessengerBuilder(CURRENT_TEST_NAME()).Build(&messenger_);

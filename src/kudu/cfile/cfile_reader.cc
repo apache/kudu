@@ -18,13 +18,12 @@
 #include "kudu/gutil/mathlimits.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/coding.h"
-#include "kudu/util/env.h"
-#include "kudu/util/env_util.h"
 #include "kudu/util/object_pool.h"
 #include "kudu/util/rle-encoding.h"
 #include "kudu/util/slice.h"
 #include "kudu/util/status.h"
 
+using kudu::fs::ReadableBlock;
 using strings::Substitute;
 
 namespace kudu {
@@ -55,27 +54,18 @@ static Status ParseMagicAndLength(const Slice &data,
 }
 
 CFileReader::CFileReader(const ReaderOptions &options,
-                         const shared_ptr<RandomAccessFile> &file) :
+                         gscoped_ptr<ReadableBlock> block) :
   options_(options),
-  file_(file),
+  block_(block.Pass()),
   state_(kUninitialized),
   cache_(BlockCache::GetSingleton()),
   cache_id_(cache_->GenerateFileId()) {
 }
 
-
-Status CFileReader::Open(Env *env, const string &path,
-                         const ReaderOptions &options,
-                         gscoped_ptr<CFileReader> *reader) {
-  shared_ptr<RandomAccessFile> file;
-  RETURN_NOT_OK(env_util::OpenFileForRandom(env, path, &file));
-  return Open(file, options, reader);
-}
-
-Status CFileReader::Open(const shared_ptr<RandomAccessFile>& file,
+Status CFileReader::Open(gscoped_ptr<ReadableBlock> block,
                          const ReaderOptions& options,
                          gscoped_ptr<CFileReader> *reader) {
-  gscoped_ptr<CFileReader> reader_local(new CFileReader(options, file));
+  gscoped_ptr<CFileReader> reader_local(new CFileReader(options, block.Pass()));
   RETURN_NOT_OK(reader_local->Init());
   reader->reset(reader_local.release());
   return Status::OK();
@@ -86,8 +76,8 @@ Status CFileReader::ReadMagicAndLength(uint64_t offset, uint32_t *len) {
   uint8_t scratch[kMagicAndLengthSize];
   Slice slice;
 
-  RETURN_NOT_OK(env_util::ReadFully(file_.get(), offset, kMagicAndLengthSize,
-                                    &slice, scratch));
+  RETURN_NOT_OK(block_->Read(offset, kMagicAndLengthSize,
+                             &slice, scratch));
 
   return ParseMagicAndLength(slice, len);
 }
@@ -96,7 +86,7 @@ Status CFileReader::Init() {
   CHECK(state_ == kUninitialized) <<
     "should be uninitialized before Init()";
 
-  RETURN_NOT_OK(file_->Size(&file_size_));
+  RETURN_NOT_OK(block_->Size(&file_size_));
   RETURN_NOT_OK(ReadAndParseHeader());
 
   RETURN_NOT_OK(ReadAndParseFooter());
@@ -132,8 +122,8 @@ Status CFileReader::ReadAndParseHeader() {
   Slice header_slice;
   header_.reset(new CFileHeaderPB());
 
-  RETURN_NOT_OK(env_util::ReadFully(file_.get(), kMagicAndLengthSize, header_size,
-                                    &header_slice, header_space));
+  RETURN_NOT_OK(block_->Read(kMagicAndLengthSize, header_size,
+                             &header_slice, header_space));
   if (!header_->ParseFromArray(header_slice.data(), header_size)) {
     return Status::Corruption("Invalid cfile pb header");
   }
@@ -160,7 +150,8 @@ Status CFileReader::ReadAndParseFooter() {
   uint8_t footer_space[footer_size];
   Slice footer_slice;
   uint64_t off = file_size_ - kMagicAndLengthSize - footer_size;
-  RETURN_NOT_OK(env_util::ReadFully(file_.get(), off, footer_size, &footer_slice, footer_space));
+  RETURN_NOT_OK(block_->Read(off, footer_size,
+                             &footer_slice, footer_space));
   if (!footer_->ParseFromArray(footer_slice.data(), footer_size)) {
     return Status::Corruption("Invalid cfile pb footer");
   }
@@ -193,8 +184,8 @@ Status CFileReader::ReadBlock(const BlockPointer &ptr,
   // Cache miss: need to read ourselves.
   gscoped_array<uint8_t> scratch(new uint8_t[ptr.size()]);
   Slice block;
-  RETURN_NOT_OK(env_util::ReadFully(file_.get(), ptr.offset(), ptr.size(),
-                                    &block, scratch.get()));
+  RETURN_NOT_OK(block_->Read(ptr.offset(), ptr.size(),
+                             &block, scratch.get()));
   if (block.size() != ptr.size()) {
     return Status::IOError("Could not read full block length");
   }

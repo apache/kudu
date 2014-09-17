@@ -4,7 +4,6 @@
 #define KUDU_CFILE_CFILE_WRITER_H
 
 #include <boost/utility.hpp>
-#include <tr1/memory>
 #include <tr1/unordered_map>
 #include <stdint.h>
 #include <string>
@@ -18,6 +17,8 @@
 #include "kudu/cfile/type_encodings.h"
 #include "kudu/common/key_encoder.h"
 #include "kudu/common/types.h"
+#include "kudu/fs/block_id.h"
+#include "kudu/fs/block_manager.h"
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/util/env.h"
@@ -25,13 +26,7 @@
 #include "kudu/util/status.h"
 
 namespace kudu {
-
 namespace cfile {
-
-using std::string;
-using std::tr1::shared_ptr;
-using std::vector;
-using google::protobuf::RepeatedPtrField;
 
 class BlockPointer;
 class BTreeInfoPB;
@@ -85,7 +80,7 @@ class CFileWriter {
   explicit CFileWriter(const WriterOptions &options,
                        DataType type,
                        bool is_nullable,
-                       shared_ptr<WritableFile> file);
+                       gscoped_ptr<fs::WritableBlock> block);
   ~CFileWriter();
 
   Status Start();
@@ -126,7 +121,7 @@ class CFileWriter {
   // More data may be written by Finish(), but this is an approximation.
   size_t written_size() const;
 
-  std::string ToString() const { return file_->ToString(); }
+  std::string ToString() const { return block_->id().ToString(); }
 
  private:
   DISALLOW_COPY_AND_ASSIGN(CFileWriter);
@@ -146,10 +141,10 @@ class CFileWriter {
 
   // Flush the current unflushed_metadata_ entries into the given protobuf
   // field, clearing the buffer.
-  void FlushMetadataToPB(RepeatedPtrField<FileMetadataPairPB> *field);
+  void FlushMetadataToPB(google::protobuf::RepeatedPtrField<FileMetadataPairPB> *field);
 
-  // File being written.
-  shared_ptr<WritableFile> file_;
+  // Block being written.
+  gscoped_ptr<fs::WritableBlock> block_;
 
   // Current file offset.
   uint64_t off_;

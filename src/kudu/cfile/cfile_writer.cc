@@ -1,5 +1,7 @@
 // Copyright (c) 2012, Cloudera, inc
 
+#include "kudu/cfile/cfile_writer.h"
+
 #include <boost/foreach.hpp>
 #include <endian.h>
 #include <glog/logging.h>
@@ -7,16 +9,16 @@
 #include <utility>
 
 #include "kudu/cfile/block_pointer.h"
-#include "kudu/cfile/cfile_writer.h"
 #include "kudu/cfile/index_block.h"
 #include "kudu/cfile/index_btree.h"
 #include "kudu/common/key_encoder.h"
 #include "kudu/cfile/type_encodings.h"
-#include "kudu/util/env.h"
 #include "kudu/util/coding.h"
 #include "kudu/util/pb_util.h"
 #include "kudu/util/hexdump.h"
 
+using google::protobuf::RepeatedPtrField;
+using kudu::fs::WritableBlock;
 using std::string;
 
 DEFINE_int32(cfile_default_block_size, 256*1024, "The default block size to use in cfiles");
@@ -24,7 +26,8 @@ DEFINE_int32(cfile_default_block_size, 256*1024, "The default block size to use 
 DEFINE_string(cfile_default_compression_codec, "none",
               "Default cfile block compression codec.");
 
-namespace kudu { namespace cfile {
+namespace kudu {
+namespace cfile {
 
 const char kMagicString[] = "kuducfil";
 
@@ -55,8 +58,8 @@ WriterOptions::WriterOptions()
 CFileWriter::CFileWriter(const WriterOptions &options,
                          DataType type,
                          bool is_nullable,
-                         shared_ptr<WritableFile> file)
-  : file_(file),
+                         gscoped_ptr<WritableBlock> block)
+  : block_(block.Pass()),
     off_(0),
     value_count_(0),
     options_(options),
@@ -126,7 +129,7 @@ Status CFileWriter::Start() {
     return Status::Corruption("unable to encode header");
   }
 
-  RETURN_NOT_OK_PREPEND(file_->Append(Slice(buf)), "Couldn't write header");
+  RETURN_NOT_OK_PREPEND(block_->Append(Slice(buf)), "Couldn't write header");
   off_ += buf.size();
 
   BlockBuilder *bb;
@@ -185,8 +188,8 @@ Status CFileWriter::Finish() {
   footer_str.append(kMagicString);
   PutFixed32(&footer_str, footer.GetCachedSize());
 
-  RETURN_NOT_OK(file_->Append(footer_str));
-  return file_->Close();
+  RETURN_NOT_OK(block_->Append(footer_str));
+  return block_->Close();
 }
 
 void CFileWriter::AddMetadataPair(const Slice &key, const Slice &value) {
@@ -396,7 +399,7 @@ Status CFileWriter::AddBlock(const vector<Slice> &data_slices,
 }
 
 Status CFileWriter::WriteRawData(const Slice& data) {
-  Status s = file_->Append(data);
+  Status s = block_->Append(data);
   if (!s.ok()) {
     LOG(WARNING) << "Unable to append slice of size "
                 << data.size() << " at offset " << off_

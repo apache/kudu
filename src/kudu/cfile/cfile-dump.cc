@@ -7,7 +7,8 @@
 
 #include "kudu/cfile/cfile_reader.h"
 #include "kudu/cfile/cfile_util.h"
-#include "kudu/util/env.h"
+#include "kudu/fs/block_id.h"
+#include "kudu/fs/fs_manager.h"
 
 DEFINE_bool(print_meta, true, "print the header and footer from the file");
 DEFINE_bool(iterate_rows, true, "iterate each row in the file");
@@ -21,10 +22,13 @@ using std::string;
 using std::cout;
 using std::endl;
 
-void DumpFile(const string &path) {
-  Env *env = Env::Default();
+void DumpFile(const string& root_path, const string& block_id_str) {
+  BlockId block_id(block_id_str);
+  FsManager fs_manager(Env::Default(), root_path);
+  gscoped_ptr<fs::ReadableBlock> block;
+  CHECK_OK(fs_manager.OpenBlock(block_id, &block));
   gscoped_ptr<CFileReader> reader;
-  CHECK_OK(CFileReader::Open(env, path, ReaderOptions(), &reader));
+  CHECK_OK(CFileReader::Open(block.Pass(), ReaderOptions(), &reader));
 
   if (FLAGS_print_meta) {
     cout << "Header:\n" << reader->header().DebugString() << endl;
@@ -50,8 +54,8 @@ void DumpFile(const string &path) {
 int main(int argc, char **argv) {
   google::InitGoogleLogging(argv[0]);
   google::ParseCommandLineFlags(&argc, &argv, true);
-  if (argc != 2) {
-    std::cerr << "usage: " << argv[0] << " <path>" << std::endl;
+  if (argc != 3) {
+    std::cerr << "usage: " << argv[0] << " <root path> <block id>" << std::endl;
     return 1;
   }
 
@@ -59,7 +63,7 @@ int main(int argc, char **argv) {
     FLAGS_print_rows = false;
   }
 
-  kudu::cfile::DumpFile(argv[1]);
+  kudu::cfile::DumpFile(argv[1], argv[2]);
 
   return 0;
 }

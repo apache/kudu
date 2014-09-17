@@ -47,8 +47,9 @@ class KuduTabletTest : public KuduTest {
     string dir = root_dir.empty() ? test_dir_ : root_dir;
     TabletHarness::Options opts(dir);
     opts.enable_metrics = FLAGS_tablet_test_enable_metrics;
+    bool first_time = harness_ == NULL;
     harness_.reset(new TabletHarness(schema_, opts));
-    ASSERT_OK(harness_->Open());
+    ASSERT_OK(harness_->Open(first_time));
   }
 
   void TabletReOpen(const string& root_dir = "") {
