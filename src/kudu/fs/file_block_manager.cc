@@ -209,8 +209,8 @@ Status FileBlockManager::Open() {
       Substitute("FileBlockManager at $0 not found", root_path_));
 }
 
-Status FileBlockManager::CreateAnonymousBlock(gscoped_ptr<WritableBlock>* block,
-                                              CreateBlockOptions opts) {
+Status FileBlockManager::CreateAnonymousBlock(const CreateBlockOptions& opts,
+                                              gscoped_ptr<WritableBlock>* block) {
   string path;
   Status s;
   BlockId block_id;
@@ -232,9 +232,13 @@ Status FileBlockManager::CreateAnonymousBlock(gscoped_ptr<WritableBlock>* block,
   return s;
 }
 
-Status FileBlockManager::CreateNamedBlock(const BlockId& block_id,
-                                          gscoped_ptr<WritableBlock>* block,
-                                          CreateBlockOptions opts) {
+Status FileBlockManager::CreateAnonymousBlock(gscoped_ptr<WritableBlock>* block) {
+  return CreateAnonymousBlock(CreateBlockOptions(), block);
+}
+
+Status FileBlockManager::CreateNamedBlock(const CreateBlockOptions& opts,
+                                          const BlockId& block_id,
+                                          gscoped_ptr<WritableBlock>* block) {
   string path = GetBlockPath(block_id);
   VLOG(1) << "Creating new block with predetermined id "
           << block_id.ToString() << " at " << path;
@@ -247,6 +251,11 @@ Status FileBlockManager::CreateNamedBlock(const BlockId& block_id,
   RETURN_NOT_OK(env_util::OpenFileForWrite(wr_opts, env_, path, &writer));
   CreateBlock(block_id, path, writer, opts, block);
   return Status::OK();
+}
+
+Status FileBlockManager::CreateNamedBlock(const BlockId& block_id,
+                                          gscoped_ptr<WritableBlock>* block) {
+  return CreateNamedBlock(CreateBlockOptions(), block_id, block);
 }
 
 Status FileBlockManager::OpenBlock(const BlockId& block_id,

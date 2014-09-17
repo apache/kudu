@@ -203,13 +203,13 @@ BlockId FsManager::GenerateBlockId() {
 Status FsManager::CreateNewBlock(gscoped_ptr<WritableBlock>* block) {
   CreateBlockOptions opts;
   opts.sync_on_close = FLAGS_enable_data_block_fsync;
-  return block_manager_->CreateAnonymousBlock(block, opts);
+  return block_manager_->CreateAnonymousBlock(opts, block);
 }
 
 Status FsManager::CreateBlockWithId(const BlockId& block_id, gscoped_ptr<WritableBlock>* block) {
   CreateBlockOptions opts;
   opts.sync_on_close = FLAGS_enable_data_block_fsync;
-  return block_manager_->CreateNamedBlock(block_id, block, opts);
+  return block_manager_->CreateNamedBlock(opts, block_id, block);
 }
 
 Status FsManager::OpenBlock(const BlockId& block_id, gscoped_ptr<ReadableBlock>* block) {

@@ -128,12 +128,17 @@ class FileBlockManager : public BlockManager {
 
   virtual Status Open() OVERRIDE;
 
-  virtual Status CreateAnonymousBlock(gscoped_ptr<WritableBlock>* block,
-                                      CreateBlockOptions opts = CreateBlockOptions()) OVERRIDE;
+  virtual Status CreateAnonymousBlock(const CreateBlockOptions& opts,
+                                      gscoped_ptr<WritableBlock>* block) OVERRIDE;
+
+  virtual Status CreateAnonymousBlock(gscoped_ptr<WritableBlock>* block) OVERRIDE;
+
+  virtual Status CreateNamedBlock(const CreateBlockOptions& opts,
+                                  const BlockId& block_id,
+                                  gscoped_ptr<WritableBlock>* block) OVERRIDE;
 
   virtual Status CreateNamedBlock(const BlockId& block_id,
-                                  gscoped_ptr<WritableBlock>* block,
-                                  CreateBlockOptions opts = CreateBlockOptions()) OVERRIDE;
+                                  gscoped_ptr<WritableBlock>* block) OVERRIDE;
 
   virtual Status OpenBlock(const BlockId& block_id,
                            gscoped_ptr<ReadableBlock>* block) OVERRIDE;

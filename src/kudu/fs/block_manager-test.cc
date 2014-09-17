@@ -86,7 +86,7 @@ TEST_F(BlockManagerTest, SyncOnCloseTest) {
 
   CreateBlockOptions opts;
   opts.sync_on_close = true;
-  ASSERT_OK(bm_->CreateAnonymousBlock(&written_block, opts));
+  ASSERT_OK(bm_->CreateAnonymousBlock(opts, &written_block));
   ASSERT_OK(written_block->Append("test data"));
   ASSERT_OK(written_block->Close());
 }
@@ -140,8 +140,7 @@ TEST_F(BlockManagerTest, SyncManyBlocksTest) {
   for (int i = 0; i < FLAGS_num_blocks_sync; i++) {
     // Create a block.
     gscoped_ptr<WritableBlock> written_block;
-    CreateBlockOptions opts;
-    ASSERT_OK(bm_->CreateAnonymousBlock(&written_block, opts));
+    ASSERT_OK(bm_->CreateAnonymousBlock(&written_block));
 
     // Write 64k bytes of random data into it.
     uint8_t data[65536];
