@@ -1356,21 +1356,6 @@ public class KuduClient {
   private void removeClientFromCache(final TabletClient client,
                                      final SocketAddress remote) {
 
-    ArrayList<RemoteTablet> tablets = client2tablets.remove(client);
-    if (tablets != null) {
-      // Make a copy so we don't need to synchronize on it while iterating.
-      RemoteTablet[] tablets_copy;
-      synchronized (tablets) {
-        tablets_copy = tablets.toArray(new RemoteTablet[tablets.size()]);
-        tablets = null;
-        // If any other thread still has a reference to `tablets', their
-        // updates will be lost (and we don't care).
-      }
-      for (final RemoteTablet remoteTablet : tablets_copy) {
-        remoteTablet.removeTabletServer(client);
-      }
-    }
-
     if (remote == null) {
       return;  // Can't continue without knowing the remote address.
     }
@@ -1401,6 +1386,21 @@ public class KuduClient {
       LOG.warn("When expiring " + client + " from the client cache (host:port="
           + hostport + "), it was found that there was no entry"
           + " corresponding to " + remote + ".  This shouldn't happen.");
+    }
+
+    ArrayList<RemoteTablet> tablets = client2tablets.remove(client);
+    if (tablets != null) {
+      // Make a copy so we don't need to synchronize on it while iterating.
+      RemoteTablet[] tablets_copy;
+      synchronized (tablets) {
+        tablets_copy = tablets.toArray(new RemoteTablet[tablets.size()]);
+        tablets = null;
+        // If any other thread still has a reference to `tablets', their
+        // updates will be lost (and we don't care).
+      }
+      for (final RemoteTablet remoteTablet : tablets_copy) {
+        remoteTablet.removeTabletServer(client);
+      }
     }
   }
 
@@ -1608,11 +1608,16 @@ public class KuduClient {
         return NO_LEADER_INDEX;
       }
       TabletClient client = newClient(ip, port, isMasterTable);
-      tabletServers.add(client);
 
-      synchronized (client) {
-        final ArrayList<RemoteTablet> tablets = client2tablets.get(client);
+      final ArrayList<RemoteTablet> tablets = client2tablets.get(client);
+
+      if (tablets == null) {
+        // We raced with removeClientFromCache and lost. The client we got was just disconnected.
+        // Reconnect.
+        return addTabletClient(host, port, isMasterTable);
+      } else {
         synchronized (tablets) {
+          tabletServers.add(client);
           tablets.add(this);
         }
       }
