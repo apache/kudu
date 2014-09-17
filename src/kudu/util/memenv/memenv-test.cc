@@ -36,7 +36,10 @@ TEST_F(MemEnvTest, Basics) {
   WritableFile* writable_file;
   std::vector<std::string> children;
 
+  // Create the directory.
+  ASSERT_FALSE(env_->FileExists("/dir"));
   ASSERT_STATUS_OK(env_->CreateDir("/dir"));
+  ASSERT_TRUE(env_->FileExists("/dir"));
 
   // Check that the directory is empty.
   ASSERT_TRUE(!env_->FileExists("/dir/non_existent"));
@@ -88,6 +91,7 @@ TEST_F(MemEnvTest, Basics) {
   ASSERT_STATUS_OK(env_->GetChildren("/dir", &children));
   ASSERT_EQ(0, children.size());
   ASSERT_STATUS_OK(env_->DeleteDir("/dir"));
+  ASSERT_FALSE(env_->FileExists("/dir"));
 }
 
 TEST_F(MemEnvTest, ReadWrite) {

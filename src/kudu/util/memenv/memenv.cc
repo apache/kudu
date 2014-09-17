@@ -376,11 +376,14 @@ class InMemoryEnv : public EnvWrapper {
   }
 
   virtual Status CreateDir(const std::string& dirname) OVERRIDE {
+    WritableFile *file;
+    RETURN_NOT_OK(NewWritableFile(dirname, &file));
+    delete file;
     return Status::OK();
   }
 
   virtual Status DeleteDir(const std::string& dirname) OVERRIDE {
-    return Status::OK();
+    return DeleteFile(dirname);
   }
 
   virtual Status SyncDir(const std::string& dirname) OVERRIDE {
