@@ -84,7 +84,12 @@ class CFileWriter {
   ~CFileWriter();
 
   Status Start();
+
+  // Close the CFile and close the underlying writable block.
   Status Finish();
+
+  // Close the CFile and release the underlying writable block to 'closer'.
+  Status FinishAndReleaseBlock(fs::ScopedWritableBlockCloser* closer);
 
   bool finished() {
     return state_ == kWriterFinished;

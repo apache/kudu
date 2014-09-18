@@ -3,17 +3,20 @@
 #ifndef KUDU_FS_BLOCK_MANAGER_H
 #define KUDU_FS_BLOCK_MANAGER_H
 
+#include <boost/foreach.hpp>
 #include <cstddef>
 #include <stdint.h>
 #include <vector>
 
+#include "kudu/fs/block_id.h"
 #include "kudu/gutil/gscoped_ptr.h"
+#include "kudu/gutil/stl_util.h"
+#include "kudu/gutil/strings/substitute.h"
+#include "kudu/util/status.h"
 
 namespace kudu {
 
-class BlockId;
 class Slice;
-class Status;
 
 namespace fs {
 
@@ -191,6 +194,44 @@ class BlockManager {
   //
   // On success, guarantees that outstanding data is durable.
   virtual Status CloseBlocks(const std::vector<WritableBlock*>& blocks) = 0;
+};
+
+// Closes a group of blocks.
+//
+// Blocks must be closed explicitly via CloseBlocks(), otherwise they will
+// be deleted in the in the destructor.
+class ScopedWritableBlockCloser {
+ public:
+  ScopedWritableBlockCloser() {}
+
+  ~ScopedWritableBlockCloser() {
+    BOOST_FOREACH(WritableBlock* block, blocks_) {
+      WARN_NOT_OK(block->Abort(), strings::Substitute(
+          "Failed to abort block with id $0", block->id().ToString()));
+    }
+    STLDeleteElements(&blocks_);
+  }
+
+  void AddBlock(gscoped_ptr<WritableBlock> block) {
+    blocks_.push_back(block.release());
+  }
+
+  Status CloseBlocks() {
+    if (blocks_.empty()) {
+      return Status::OK();
+    }
+    ElementDeleter deleter(&blocks_);
+
+    // We assume every block is using the same block manager, so any
+    // block's manager will do.
+    BlockManager* bm = blocks_[0]->block_manager();
+    return bm->CloseBlocks(blocks_);
+  }
+
+  const std::vector<WritableBlock*>& blocks() const { return blocks_; }
+
+ private:
+  std::vector<WritableBlock*> blocks_;
 };
 
 } // namespace fs

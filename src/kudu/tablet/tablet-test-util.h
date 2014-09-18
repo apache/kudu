@@ -34,7 +34,10 @@ class KuduTabletTest : public KuduTest {
   explicit KuduTabletTest(const Schema& schema)
     : schema_(schema.CopyWithColumnIds()),
       client_schema_(schema) {
-    FLAGS_enable_data_block_fsync = false; // Keep unit tests fast.
+    // Keep unit tests fast, but only if no one has set the flag explicitly.
+    if (google::GetCommandLineFlagInfoOrDie("enable_data_block_fsync").is_default) {
+      FLAGS_enable_data_block_fsync = false;
+    }
   }
 
   virtual void SetUp() OVERRIDE {
@@ -101,7 +104,6 @@ class KuduRowSetTest : public KuduTabletTest {
  public:
   explicit KuduRowSetTest(const Schema& schema)
     : KuduTabletTest(schema) {
-    FLAGS_enable_data_block_fsync = false; // Keep unit tests fast.
   }
 
   virtual void SetUp() OVERRIDE {

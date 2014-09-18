@@ -17,6 +17,8 @@
 #include "kudu/util/test_macros.h"
 #include "kudu/util/stopwatch.h"
 
+DECLARE_bool(cfile_flush_block_on_finish);
+
 namespace kudu {
 namespace cfile {
 
@@ -715,6 +717,23 @@ TEST_F(TestCFile, TestNullPrefixStrings) {
 TEST_F(TestCFile, TestNullPlainStrings) {
   TestNullTypes<StringDataGenerator, STRING>(PREFIX_ENCODING, NO_COMPRESSION);
   TestNullTypes<StringDataGenerator, STRING>(PREFIX_ENCODING, LZ4);
+}
+
+TEST_F(TestCFile, TestReleaseBlock) {
+  gscoped_ptr<WritableBlock> sink;
+  ASSERT_STATUS_OK(fs_manager_->CreateNewBlock(&sink));
+  ASSERT_EQ(WritableBlock::CLEAN, sink->state());
+  BlockId id = sink->id();
+  WriterOptions opts;
+  CFileWriter w(opts, STRING, false, sink.Pass());
+  ASSERT_STATUS_OK(w.Start());
+  fs::ScopedWritableBlockCloser closer;
+  ASSERT_STATUS_OK(w.FinishAndReleaseBlock(&closer));
+  ASSERT_EQ(1, closer.blocks().size());
+  ASSERT_EQ(FLAGS_cfile_flush_block_on_finish ?
+      WritableBlock::FLUSHING : WritableBlock::DIRTY, closer.blocks()[0]->state());
+  ASSERT_STATUS_OK(closer.CloseBlocks());
+  ASSERT_EQ(0, closer.blocks().size());
 }
 
 

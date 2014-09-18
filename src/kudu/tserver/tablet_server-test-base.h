@@ -81,8 +81,10 @@ class TabletServerTest : public KuduTest {
     // maintenance operations at predetermined times.
     FLAGS_enable_maintenance_manager = false;
 
-    // Keep unit tests fast.
-    FLAGS_enable_data_block_fsync = false;
+    // Keep unit tests fast, but only if no one has set the flag explicitly.
+    if (google::GetCommandLineFlagInfoOrDie("enable_data_block_fsync").is_default) {
+      FLAGS_enable_data_block_fsync = false;
+    }
   }
 
   // Starts the tablet server, override to start it later.

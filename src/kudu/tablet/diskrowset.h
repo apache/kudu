@@ -14,6 +14,7 @@
 
 #include "kudu/common/row.h"
 #include "kudu/common/schema.h"
+#include "kudu/fs/block_manager.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/tablet/delta_key.h"
 #include "kudu/tablet/rowset_metadata.h"
@@ -62,7 +63,11 @@ class DiskRowSetWriter {
   // Rows must be appended in ascending order.
   Status AppendBlock(const RowBlock &block);
 
+  // Closes the CFiles and their underlying writable blocks.
   Status Finish();
+
+  // Closes the CFiles, releasing the underlying blocks to 'closer'.
+  Status FinishAndReleaseBlocks(fs::ScopedWritableBlockCloser* closer);
 
   rowid_t written_count() const {
     CHECK(finished_);
@@ -198,6 +203,10 @@ class RollingDiskRowSetWriter {
 
   int64_t written_count_;
   uint64_t written_size_;
+
+  // Syncs and closes all outstanding blocks when the rolling writer is
+  // destroyed.
+  fs::ScopedWritableBlockCloser block_closer_;
 
   DISALLOW_COPY_AND_ASSIGN(RollingDiskRowSetWriter);
 };

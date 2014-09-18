@@ -43,8 +43,11 @@ class DeltaFileWriter {
 
   Status Start();
 
-  // Finish writing the file, including closing the underlying block.
+  // Closes the delta file, including the underlying writable block.
   Status Finish();
+
+  // Closes the delta file, releasing the underlying block to 'closer'.
+  Status FinishAndReleaseBlock(fs::ScopedWritableBlockCloser* closer);
 
   // Append a given delta to the file. This must be called in ascending order
   // of (key, timestamp) for REDOS and ascending order of key, descending order

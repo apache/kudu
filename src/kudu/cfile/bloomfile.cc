@@ -19,6 +19,7 @@ namespace kudu {
 namespace cfile {
 
 using fs::ReadableBlock;
+using fs::ScopedWritableBlockCloser;
 using fs::WritableBlock;
 
 ////////////////////////////////////////////////////////////
@@ -42,10 +43,16 @@ Status BloomFileWriter::Start() {
 }
 
 Status BloomFileWriter::Finish() {
+  ScopedWritableBlockCloser closer;
+  RETURN_NOT_OK(FinishAndReleaseBlock(&closer));
+  return closer.CloseBlocks();
+}
+
+Status BloomFileWriter::FinishAndReleaseBlock(ScopedWritableBlockCloser* closer) {
   if (bloom_builder_.count() > 0) {
     RETURN_NOT_OK(FinishCurrentBloomBlock());
   }
-  return writer_->Finish();
+  return writer_->FinishAndReleaseBlock(closer);
 }
 
 size_t BloomFileWriter::written_size() const {

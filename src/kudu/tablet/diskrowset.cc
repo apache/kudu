@@ -28,6 +28,7 @@ namespace kudu {
 namespace tablet {
 
 using cfile::BloomFileWriter;
+using fs::ScopedWritableBlockCloser;
 using fs::WritableBlock;
 using log::OpIdAnchorRegistry;
 using std::string;
@@ -155,6 +156,12 @@ Status DiskRowSetWriter::AppendBlock(const RowBlock &block) {
 }
 
 Status DiskRowSetWriter::Finish() {
+  ScopedWritableBlockCloser closer;
+  RETURN_NOT_OK(FinishAndReleaseBlocks(&closer));
+  return closer.CloseBlocks();
+}
+
+Status DiskRowSetWriter::FinishAndReleaseBlocks(ScopedWritableBlockCloser* closer) {
   CHECK(!finished_);
 
   // Save the last encoded (max) key
@@ -165,15 +172,13 @@ Status DiskRowSetWriter::Finish() {
   }
 
   // Finish writing the columns themselves.
-  RETURN_NOT_OK(col_writer_->Finish());
+  RETURN_NOT_OK(col_writer_->FinishAndReleaseBlocks(closer));
 
   // Put the column data blocks in the metadata.
   rowset_metadata_->SetColumnDataBlocks(col_writer_->FlushedBlocks());
 
-
   if (ad_hoc_index_writer_ != NULL) {
-    // Finish ad hoc index.
-    Status s = ad_hoc_index_writer_->Finish();
+    Status s = ad_hoc_index_writer_->FinishAndReleaseBlock(closer);
     if (!s.ok()) {
       LOG(WARNING) << "Unable to Finish ad hoc index writer: " << s.ToString();
       return s;
@@ -181,14 +186,13 @@ Status DiskRowSetWriter::Finish() {
   }
 
   // Finish bloom.
-  Status s = bloom_writer_->Finish();
+  Status s = bloom_writer_->FinishAndReleaseBlock(closer);
   if (!s.ok()) {
     LOG(WARNING) << "Unable to Finish bloom filter writer: " << s.ToString();
     return s;
   }
 
   finished_ = true;
-
   return Status::OK();
 }
 
@@ -325,9 +329,9 @@ Status RollingDiskRowSetWriter::FinishCurrentWriter() {
   cur_undo_writer_->WriteDeltaStats(*cur_undo_delta_stats);
   cur_redo_writer_->WriteDeltaStats(*cur_redo_delta_stats);
 
-  RETURN_NOT_OK(cur_writer_->Finish());
-  RETURN_NOT_OK(cur_undo_writer_->Finish());
-  RETURN_NOT_OK(cur_redo_writer_->Finish());
+  RETURN_NOT_OK(cur_writer_->FinishAndReleaseBlocks(&block_closer_));
+  RETURN_NOT_OK(cur_undo_writer_->FinishAndReleaseBlock(&block_closer_));
+  RETURN_NOT_OK(cur_redo_writer_->FinishAndReleaseBlock(&block_closer_));
 
   // If the writer is not null _AND_ we've written something to the undo
   // delta store commit the undo delta block.
@@ -360,6 +364,8 @@ Status RollingDiskRowSetWriter::Finish() {
   DCHECK_EQ(state_, kStarted);
 
   RETURN_NOT_OK(FinishCurrentWriter());
+  RETURN_NOT_OK(block_closer_.CloseBlocks());
+
   state_ = kFinished;
   return Status::OK();
 }

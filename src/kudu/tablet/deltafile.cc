@@ -31,6 +31,7 @@ using cfile::IndexTreeIterator;
 using cfile::StringPlainBlockDecoder;
 using cfile::CFileReader;
 using fs::ReadableBlock;
+using fs::ScopedWritableBlockCloser;
 using fs::WritableBlock;
 
 namespace tablet {
@@ -90,8 +91,14 @@ Status DeltaFileWriter::Start() {
 }
 
 Status DeltaFileWriter::Finish() {
+  ScopedWritableBlockCloser closer;
+  RETURN_NOT_OK(FinishAndReleaseBlock(&closer));
+  return closer.CloseBlocks();
+}
+
+Status DeltaFileWriter::FinishAndReleaseBlock(ScopedWritableBlockCloser* closer) {
   RETURN_NOT_OK(WriteSchema());
-  return writer_->Finish();
+  return writer_->FinishAndReleaseBlock(closer);
 }
 
 Status DeltaFileWriter::DoAppendDelta(const DeltaKey &key,

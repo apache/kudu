@@ -5,14 +5,6 @@
 #include "kudu/util/countdown_latch.h"
 #include "kudu/util/stopwatch.h"
 
-DEFINE_int32(single_threaded_insert_latency_bench_warmup_rows, 100,
-             "Number of rows to insert in the warmup phase of the single threaded"
-             " tablet server insert latency micro-benchmark");
-
-DEFINE_int32(single_threaded_insert_latency_bench_insert_rows, 1000,
-             "Number of rows to insert in the testing phase of the single threaded"
-             " tablet server insert latency micro-benchmark");
-
 DEFINE_int32(num_inserter_threads, 8, "Number of inserter threads to run");
 DEFINE_int32(num_inserts_per_thread, 0, "Number of inserts from each thread");
 DECLARE_bool(enable_maintenance_manager);

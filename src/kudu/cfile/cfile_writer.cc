@@ -18,13 +18,15 @@
 #include "kudu/util/hexdump.h"
 
 using google::protobuf::RepeatedPtrField;
+using kudu::fs::ScopedWritableBlockCloser;
 using kudu::fs::WritableBlock;
 using std::string;
 
 DEFINE_int32(cfile_default_block_size, 256*1024, "The default block size to use in cfiles");
-
 DEFINE_string(cfile_default_compression_codec, "none",
               "Default cfile block compression codec.");
+DEFINE_bool(cfile_flush_block_on_finish, true,
+            "Asynchronously flush a written block when finished");
 
 namespace kudu {
 namespace cfile {
@@ -147,6 +149,12 @@ Status CFileWriter::Start() {
 }
 
 Status CFileWriter::Finish() {
+  ScopedWritableBlockCloser closer;
+  RETURN_NOT_OK(FinishAndReleaseBlock(&closer));
+  return closer.CloseBlocks();
+}
+
+Status CFileWriter::FinishAndReleaseBlock(ScopedWritableBlockCloser* closer) {
   CHECK(state_ == kWriterWriting) <<
     "Bad state for Finish(): " << state_;
 
@@ -189,7 +197,13 @@ Status CFileWriter::Finish() {
   PutFixed32(&footer_str, footer.GetCachedSize());
 
   RETURN_NOT_OK(block_->Append(footer_str));
-  return block_->Close();
+
+  // Done with this block, tell the kernel to start flushing dirty data.
+  if (FLAGS_cfile_flush_block_on_finish) {
+    RETURN_NOT_OK(block_->FlushDataAsync());
+  }
+  closer->AddBlock(block_.Pass());
+  return Status::OK();
 }
 
 void CFileWriter::AddMetadataPair(const Slice &key, const Slice &value) {

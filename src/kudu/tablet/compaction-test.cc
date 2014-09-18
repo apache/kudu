@@ -182,16 +182,23 @@ class TestCompaction : public KuduRowSetTest {
     }
   }
 
-  void DoCompact(const vector<shared_ptr<DiskRowSet> >& rowsets, const Schema& projection,
-                 shared_ptr<RowSetMetadata>* rowset_meta = NULL) {
-    MvccSnapshot merge_snap(mvcc_);
+  gscoped_ptr<CompactionInput> BuildCompactionInput(const MvccSnapshot& merge_snap,
+                                                    const vector<shared_ptr<DiskRowSet> >& rowsets,
+                                                    const Schema& projection) {
     vector<shared_ptr<CompactionInput> > merge_inputs;
     BOOST_FOREACH(const shared_ptr<DiskRowSet> &rs, rowsets) {
       merge_inputs.push_back(
-        shared_ptr<CompactionInput>(CompactionInput::Create(*rs, &projection, merge_snap)));
+          shared_ptr<CompactionInput>(CompactionInput::Create(*rs, &projection, merge_snap)));
     }
-
     gscoped_ptr<CompactionInput> compact_input(CompactionInput::Merge(merge_inputs, &projection));
+    return compact_input.Pass();
+  }
+
+  void DoCompact(const vector<shared_ptr<DiskRowSet> >& rowsets, const Schema& projection,
+                 shared_ptr<RowSetMetadata>* rowset_meta = NULL) {
+    MvccSnapshot merge_snap(mvcc_);
+    gscoped_ptr<CompactionInput> compact_input(BuildCompactionInput(merge_snap, rowsets,
+                                                                    projection));
     DoFlush(compact_input.get(), projection, merge_snap, rowset_meta);
   }
 
@@ -303,10 +310,19 @@ class TestCompaction : public KuduRowSetTest {
 
       CHECK(!rowsets.empty()) << "No rowsets found in " << FLAGS_merge_benchmark_input_dir;
     }
-
-    LOG_TIMING(INFO, "Compacting " +
+    LOG(INFO) << "Beginning compaction";
+    LOG_TIMING(INFO, "compacting " +
                std::string((OVERLAP_INPUTS ? "with overlap" : "without overlap"))) {
-      DoCompact(rowsets, schema_);
+      MvccSnapshot merge_snap(mvcc_);
+      gscoped_ptr<CompactionInput> compact_input(BuildCompactionInput(merge_snap, rowsets,
+                                                                      schema_));
+      // Use a low target row size to increase the number of resulting rowsets.
+      RollingDiskRowSetWriter rdrsw(tablet()->metadata(), schema_,
+                                    BloomFilterSizing::BySizeAndFPRate(32 * 1024, 0.01f),
+                                    1024 * 1024); // 1 MB
+      ASSERT_STATUS_OK(rdrsw.Open());
+      ASSERT_STATUS_OK(FlushCompactionInput(compact_input.get(), merge_snap, &rdrsw));
+      ASSERT_STATUS_OK(rdrsw.Finish());
     }
   }
 
@@ -603,7 +619,7 @@ TEST_F(TestCompaction, BenchmarkMergeWithoutOverlap) {
     LOG(INFO) << "Skipped: must enable slow tests.";
     return;
   }
-  DoBenchmark<false>();
+  ASSERT_NO_FATAL_FAILURE(DoBenchmark<false>());
 }
 
 // Benchmark for the compaction merge input when the inputs are entirely
@@ -613,7 +629,7 @@ TEST_F(TestCompaction, BenchmarkMergeWithOverlap) {
     LOG(INFO) << "Skipped: must enable slow tests.";
     return;
   }
-  DoBenchmark<true>();
+  ASSERT_NO_FATAL_FAILURE(DoBenchmark<true>());
 }
 #endif
 

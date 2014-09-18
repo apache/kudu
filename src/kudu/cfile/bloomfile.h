@@ -24,7 +24,12 @@ class BloomFileWriter {
 
   Status Start();
   Status AppendKeys(const Slice *keys, size_t n_keys);
+
+  // Close the bloom's CFile, closing the underlying writable block.
   Status Finish();
+
+  // Close the bloom's CFile, releasing the underlying block to 'closer'.
+  Status FinishAndReleaseBlock(fs::ScopedWritableBlockCloser* closer);
 
   // Estimate the amount of data already written to this file.
   size_t written_size() const;

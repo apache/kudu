@@ -17,6 +17,10 @@ namespace cfile {
 class CFileWriter;
 } // namespace cfile
 
+namespace fs {
+class ScopedWritableBlockCloser;
+} // namespace fs
+
 namespace tablet {
 
 // Wrapper which writes several columns in parallel corresponding to some
@@ -40,6 +44,10 @@ class MultiColumnWriter {
   //
   // The file's blocks may be retrieved using FlushedBlocks().
   Status Finish();
+
+  // Close the in-progress CFiles, releasing the underlying writable blocks
+  // to 'closer'.
+  Status FinishAndReleaseBlocks(fs::ScopedWritableBlockCloser* closer);
 
   // Return the number of bytes written so far.
   size_t written_size() const;

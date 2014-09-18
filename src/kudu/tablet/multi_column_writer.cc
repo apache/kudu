@@ -12,6 +12,7 @@ namespace kudu {
 namespace tablet {
 
 using cfile::CFileWriter;
+using fs::ScopedWritableBlockCloser;
 using fs::WritableBlock;
 
 MultiColumnWriter::MultiColumnWriter(FsManager* fs,
@@ -88,10 +89,16 @@ Status MultiColumnWriter::AppendBlock(const RowBlock& block) {
 }
 
 Status MultiColumnWriter::Finish() {
+  ScopedWritableBlockCloser closer;
+  RETURN_NOT_OK(FinishAndReleaseBlocks(&closer));
+  return closer.CloseBlocks();
+}
+
+Status MultiColumnWriter::FinishAndReleaseBlocks(ScopedWritableBlockCloser* closer) {
   CHECK(!finished_);
   for (int i = 0; i < schema_->num_columns(); i++) {
     CFileWriter *writer = cfile_writers_[i];
-    Status s = writer->Finish();
+    Status s = writer->FinishAndReleaseBlock(closer);
     if (!s.ok()) {
       LOG(WARNING) << "Unable to Finish writer for column " <<
         schema_->column(i).ToString() << ": " << s.ToString();
