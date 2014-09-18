@@ -21,6 +21,7 @@ import kudu.ColumnSchema;
 import kudu.Schema;
 import kudu.Type;
 import kudu.rpc.Bytes;
+import kudu.rpc.ColumnRangePredicate;
 import kudu.rpc.CreateTableBuilder;
 import kudu.rpc.KeyBuilder;
 import kudu.rpc.KuduClient;
@@ -30,6 +31,7 @@ import kudu.rpc.Operation;
 import kudu.rpc.RowResult;
 import kudu.rpc.SessionConfiguration;
 import kudu.rpc.SynchronousKuduSession;
+import kudu.rpc.Update;
 import org.apache.commons.cli.CommandLine;
 import org.apache.commons.cli.GnuParser;
 import org.apache.commons.cli.HelpFormatter;
@@ -221,6 +223,10 @@ public class IntegrationTestBigLinkedList extends Configured implements Tool {
 
   protected static final String DEFAULT_TABLE_NAME = "IntegrationTestBigLinkedList";
 
+  protected static final String HEADS_TABLE_NAME_KEY = "IntegrationTestBigLinkedList.heads_table";
+
+  protected static final String DEFAULT_HEADS_TABLE_NAME = "IntegrationTestBigLinkedListHeads";
+
   /** Row key, two times 8 bytes. */
   private static final String COLUMN_KEY_ONE = "key1";
   private static final String COLUMN_KEY_TWO = "key2";
@@ -234,6 +240,9 @@ public class IntegrationTestBigLinkedList extends Configured implements Tool {
 
   /** the id of the row within the same client. */
   private static final String COLUMN_ROW_ID = "row_id";
+
+  /** The number of times this row was updated. */
+  private static final String COLUMN_UPDATE_COUNT = "update_count";
 
   /** How many rows to write per map task. This has to be a multiple of 25M. */
   private static final String GENERATOR_NUM_ROWS_PER_MAP_KEY
@@ -262,6 +271,26 @@ public class IntegrationTestBigLinkedList extends Configured implements Tool {
     String prev;
     String client;
     long rowId;
+    int updateCount;
+  }
+
+  static Schema getTableSchema() {
+    List<ColumnSchema> columns = new ArrayList<ColumnSchema>(7);
+    columns.add(new ColumnSchema(COLUMN_KEY_ONE, Type.INT64, true));
+    columns.add(new ColumnSchema(COLUMN_KEY_TWO, Type.INT64, true));
+    columns.add(new ColumnSchema(COLUMN_PREV_ONE, Type.INT64, false, true, null));
+    columns.add(new ColumnSchema(COLUMN_PREV_TWO, Type.INT64, false, true, null));
+    columns.add(new ColumnSchema(COLUMN_ROW_ID, Type.INT64, false));
+    columns.add(new ColumnSchema(COLUMN_CLIENT, Type.STRING, false));
+    columns.add(new ColumnSchema(COLUMN_UPDATE_COUNT, Type.INT32, false));
+    return new Schema(columns);
+  }
+
+  static Schema getHeadsTableSchema() {
+    List<ColumnSchema> columns = new ArrayList<ColumnSchema>(2);
+    columns.add(new ColumnSchema(COLUMN_KEY_ONE, Type.INT64, true));
+    columns.add(new ColumnSchema(COLUMN_KEY_TWO, Type.INT64, true));
+    return new Schema(columns);
   }
 
   /**
@@ -395,6 +424,7 @@ public class IntegrationTestBigLinkedList extends Configured implements Tool {
       private KuduClient client;
       private KuduTable table;
       private SynchronousKuduSession session;
+      private KuduTable headsTable;
       private long numNodes;
       private long wrap;
       private int width;
@@ -409,12 +439,14 @@ public class IntegrationTestBigLinkedList extends Configured implements Tool {
         client = parser.getClient();
         try {
           table = client.openTable(getTableName(conf)).join(timeout);
+          headsTable = client.openTable(getHeadsTable(conf)).join(timeout);
         } catch (Exception e) {
           throw new IOException(e);
         }
         session = client.newSynchronousSession();
         session.setFlushMode(SessionConfiguration.FlushMode.MANUAL_FLUSH);
         session.setMutationBufferSpace(WIDTH_DEFAULT);
+
         this.width = context.getConfiguration().getInt(GENERATOR_WIDTH_KEY, WIDTH_DEFAULT);
         current = new byte[this.width][];
         int wrapMultiplier = context.getConfiguration().getInt(GENERATOR_WRAP_KEY, WRAP_DEFAULT);
@@ -463,6 +495,16 @@ public class IntegrationTestBigLinkedList extends Configured implements Tool {
 
             persist(output, first, true);
 
+            Operation insert = headsTable.newInsert();
+            insert.addLong(COLUMN_KEY_ONE,  Bytes.getLong(first[0]));
+            insert.addLong(COLUMN_KEY_TWO, Bytes.getLong(first[0], 8));
+            try {
+              session.apply(insert);
+              session.flush();
+            } catch (Exception e) {
+              throw new IOException("Couldn't flush the head row", e);
+            }
+
             first = null;
             prev = null;
           }
@@ -482,8 +524,11 @@ public class IntegrationTestBigLinkedList extends Configured implements Tool {
           for (int i = 0; i < data.length; i++) {
             Operation put = update ? table.newUpdate() : table.newInsert();
 
-            put.addLong(COLUMN_KEY_ONE, Bytes.getLong(data[i]));
-            put.addLong(COLUMN_KEY_TWO, Bytes.getLong(data[i], 8));
+            long keyOne = Bytes.getLong(data[i]);
+            long keyTwo = Bytes.getLong(data[i], 8);
+
+            put.addLong(COLUMN_KEY_ONE, keyOne);
+            put.addLong(COLUMN_KEY_TWO, keyTwo);
 
             // prev is null for the first line, we'll update it at the end.
             if (prev == null) {
@@ -494,10 +539,11 @@ public class IntegrationTestBigLinkedList extends Configured implements Tool {
               put.addLong(COLUMN_PREV_TWO, Bytes.getLong(prev[i], 8));
             }
 
-            // We don't update the row id or the client.
             if (!update) {
+              // We only add those for new inserts, we don't update the heads with a new row, etc.
               put.addLong(COLUMN_ROW_ID, rowId + i);
               put.addString(COLUMN_CLIENT, id);
+              put.addInt(COLUMN_UPDATE_COUNT, 0);
             }
             session.apply(put);
 
@@ -534,7 +580,13 @@ public class IntegrationTestBigLinkedList extends Configured implements Tool {
       return run(numMappers, numNodes, numTablets, tmpOutput, width, wrapMuplitplier);
     }
 
-    protected void createSchema(int numTablets) throws Exception {
+    protected void createTables(int numTablets) throws Exception {
+
+      createSchema(getTableName(getConf()), getTableSchema(), numTablets);
+      createSchema(getHeadsTable(getConf()), getHeadsTableSchema(), numTablets);
+    }
+
+    protected void createSchema(String tableName, Schema schema, int numTablets) throws Exception {
       CommandLineParser parser = new CommandLineParser(getConf());
       KuduClient client = parser.getClient();
       try {
@@ -542,20 +594,9 @@ public class IntegrationTestBigLinkedList extends Configured implements Tool {
           numTablets = 1;
         }
 
-        String tableName = getTableName(getConf());
-
         if (client.tableExists(tableName).join(parser.getOperationTimeoutMs())) {
           return;
         }
-
-        List<ColumnSchema> columns = new ArrayList<ColumnSchema>(6);
-        columns.add(new ColumnSchema(COLUMN_KEY_ONE, Type.INT64, true));
-        columns.add(new ColumnSchema(COLUMN_KEY_TWO, Type.INT64, true));
-        columns.add(new ColumnSchema(COLUMN_PREV_ONE, Type.INT64, false, true, null));
-        columns.add(new ColumnSchema(COLUMN_PREV_TWO, Type.INT64, false, true, null));
-        columns.add(new ColumnSchema(COLUMN_ROW_ID, Type.INT64, false));
-        columns.add(new ColumnSchema(COLUMN_CLIENT, Type.STRING, false));
-        Schema schema = new Schema(columns);
 
         CreateTableBuilder builder = new CreateTableBuilder();
         builder.setNumReplicas(parser.getNumReplicas());
@@ -611,7 +652,7 @@ public class IntegrationTestBigLinkedList extends Configured implements Tool {
     public int runGenerator(int numMappers, long numNodes, int numTablets, Path tmpOutput,
                             Integer width, Integer wrapMuplitplier) throws Exception {
       LOG.info("Running Generator with numMappers=" + numMappers +", numNodes=" + numNodes);
-      createSchema(numTablets);
+      createTables(numTablets);
 
       Job job = new Job(getConf());
 
@@ -679,6 +720,7 @@ public class IntegrationTestBigLinkedList extends Configured implements Tool {
         Bytes.setLong(rowKey, value.getLong(1), 8);
 
         row.set(rowKey, 0, rowKey.length);
+        // Emit that the row is defined
         context.write(row, DEF);
         if (value.isNull(2)) {
           LOG.warn(String.format("Prev is not set for: %s", Bytes.pretty(rowKey)));
@@ -686,12 +728,13 @@ public class IntegrationTestBigLinkedList extends Configured implements Tool {
           Bytes.setLong(prev, value.getLong(2));
           Bytes.setLong(prev, value.getLong(3), 8);
           ref.set(prev, 0, prev.length);
+          // Emit which row is referenced by this row.
           context.write(ref, row);
         }
       }
     }
 
-    public static enum Counts {
+    public enum Counts {
       UNREFERENCED, UNDEFINED, REFERENCED, EXTRAREFERENCES
     }
 
@@ -707,6 +750,7 @@ public class IntegrationTestBigLinkedList extends Configured implements Tool {
         int defCount = 0;
 
         refs.clear();
+        // We only expect two values, a DEF and a reference, but there might be more.
         for (BytesWritable type : values) {
           if (type.getLength() == DEF.getLength()) {
             defCount++;
@@ -791,7 +835,7 @@ public class IntegrationTestBigLinkedList extends Configured implements Tool {
       job.setJarByClass(getClass());
 
       KuduTableMapReduceUtil.initTableInputFormat(job, getTableName(getConf()),
-          COLUMN_KEY_ONE + "," +  COLUMN_KEY_TWO + "," +
+          COLUMN_KEY_ONE + "," + COLUMN_KEY_TWO + "," +
           COLUMN_PREV_ONE + "," + COLUMN_PREV_TWO,
           true);
       job.setMapperClass(VerifyMapper.class);
@@ -961,9 +1005,8 @@ public class IntegrationTestBigLinkedList extends Configured implements Tool {
     @Override
     public int run(String[] args) throws Exception {
       Options options = new Options();
-      // TODO add start and stop rows
-      /*options.addOption("s", "start", true, "start key");
-      options.addOption("e", "end", true, "end key");*/
+      options.addOption("s", "start", true, "start key, only the first component");
+      options.addOption("e", "end", true, "end key, only the first component");
       options.addOption("l", "limit", true, "number to print");
 
       GnuParser parser = new GnuParser();
@@ -988,14 +1031,17 @@ public class IntegrationTestBigLinkedList extends Configured implements Tool {
       KuduTable table = client.openTable(getTableName(getConf())).join(timeout);
       KuduScanner scanner = client.newScanner(table, table.getSchema());
 
-      // See previous TODO
-      /*if (cmd.hasOption("s")) {
-        scan.setStartRow(Bytes.toBytesBinary(cmd.getOptionValue("s")));
-      }
 
-      if (cmd.hasOption("e")) {
-        scan.setStopRow(Bytes.toBytesBinary(cmd.getOptionValue("e")));
-      }*/
+      if (cmd.hasOption("s") || cmd.hasOption("e") ) {
+        ColumnRangePredicate crpOne = new ColumnRangePredicate(table.getSchema().getColumn(0));
+        if (cmd.hasOption("s")) {
+          crpOne.setLowerBound(Long.parseLong(cmd.getOptionValue("s")));
+        }
+        if (cmd.hasOption("e")) {
+          crpOne.setUpperBound(Long.parseLong(cmd.getOptionValue("e")));
+        }
+        scanner.addColumnRangePredicate(crpOne);
+      }
 
       final int limit = cmd.hasOption("l") ? Integer.parseInt(cmd.getOptionValue("l")) : 100;
 
@@ -1011,7 +1057,7 @@ public class IntegrationTestBigLinkedList extends Configured implements Tool {
           CINode node = new CINode();
           for (RowResult result : rowResults) {
             node = getCINode(result, node);
-            System.out.printf("%s:%s:%012d:%s\n", node.key, node.prev, node.rowId, node.client);
+            printCINodeString(node);
             if (count.incrementAndGet() == limit) {
               break;
             }
@@ -1030,6 +1076,293 @@ public class IntegrationTestBigLinkedList extends Configured implements Tool {
       closer.join(timeout);
 
       client.shutdown().join(timeout);
+
+      return 0;
+    }
+  }
+
+  /**
+   * This tool needs to be run separately from the Generator-Verify loop. It can run while the
+   * other two are running or in between loops.
+   *
+   * Each mapper scans a "heads" table and, for each row, follows the circular linked list and
+   * updates their counter until it reaches the head of the list again.
+   */
+  private static class Updater extends Configured implements Tool {
+
+    private static final Log LOG = LogFactory.getLog(Updater.class);
+
+    private static final String MAX_LINK_UPDATES_PER_MAPPER = "kudu.updates.per.mapper";
+
+    public enum Counts {
+      // Stats on what we're updating.
+      UPDATED_LINKS,
+      UPDATED_NODES,
+      FIRST_UPDATE,
+      SECOND_UPDATE,
+      THIRD_UPDATE,
+      FOURTH_UPDATE,
+      MORE_THAN_FOUR_UPDATES,
+      // Stats on what's broken.
+      BROKEN_LINKS,
+      BAD_UPDATE_COUNTS
+    }
+
+    public static class UpdaterMapper extends Mapper<NullWritable, RowResult,
+        NullWritable, NullWritable> {
+      private KuduClient client;
+      private KuduTable table;
+      private SynchronousKuduSession session;
+      private long timeout;
+      private Schema scanSchema;
+      private long numUpdatesPerMapper;
+      private long linkUpdatesCount;
+
+      @Override
+      protected void setup(Context context) throws IOException, InterruptedException {
+        Configuration conf = context.getConfiguration();
+        CommandLineParser parser = new CommandLineParser(conf);
+        timeout = parser.getOperationTimeoutMs();
+        client = parser.getClient();
+        try {
+          table = client.openTable(getTableName(conf)).join(timeout);
+        } catch (Exception e) {
+          throw new IOException("Couldn't open the linked list table", e);
+        }
+        session = client.newSynchronousSession();
+        session.setTimeoutMillis(timeout);
+
+        Schema tableSchema = table.getSchema();
+
+        // Schema we use when getting rows from the linked list, we only need the reference and
+        // its update count.
+        List<ColumnSchema> scanSchemaList = new ArrayList<ColumnSchema>(4);
+        scanSchemaList.add(tableSchema.getColumn(COLUMN_PREV_ONE));
+        scanSchemaList.add(tableSchema.getColumn(COLUMN_PREV_TWO));
+        scanSchemaList.add(tableSchema.getColumn(COLUMN_UPDATE_COUNT));
+        scanSchemaList.add(tableSchema.getColumn(COLUMN_CLIENT));
+        scanSchema = new Schema(scanSchemaList);
+
+        numUpdatesPerMapper = conf.getLong(MAX_LINK_UPDATES_PER_MAPPER, 1);
+      }
+
+      @Override
+      protected void map(NullWritable key, RowResult value, Mapper.Context context)
+          throws IOException, InterruptedException {
+
+        if (linkUpdatesCount == numUpdatesPerMapper) {
+          return;
+        }
+
+        long headKeyOne = value.getLong(0);
+        long headKeyTwo = value.getLong(1);
+        long prevKeyOne = headKeyOne;
+        long prevKeyTwo = headKeyTwo;
+        int currentCount = -1;
+        int newCount = -1;
+        String client = null;
+
+        // Always printing this out, really useful when debugging.
+        LOG.info("Head: " + getStringFromKeys(headKeyOne, headKeyTwo));
+
+        do {
+          RowResult prev = nextNode(prevKeyOne, prevKeyTwo);
+          if (prev == null) {
+            context.getCounter(Counts.BROKEN_LINKS).increment(1);
+            LOG.warn(getStringFromKeys(prevKeyOne, prevKeyTwo) + " doesn't exist");
+            break;
+          }
+
+          // It's possible those columns are null, let's not break trying to read them.
+          if (prev.isNull(0) || prev.isNull(1)) {
+            context.getCounter(Counts.BROKEN_LINKS).increment(1);
+            LOG.warn(getStringFromKeys(prevKeyOne, prevKeyTwo) + " isn't referencing anywhere");
+            break;
+          }
+
+          int prevCount = prev.getInt(2);
+          String prevClient = prev.getString(3);
+          if (currentCount == -1) {
+            // First time we loop we discover what the count was and set the new one.
+            currentCount = prevCount;
+            newCount = currentCount + 1;
+            client = prevClient;
+          }
+
+          if (prevCount != currentCount) {
+            context.getCounter(Counts.BAD_UPDATE_COUNTS).increment(1);
+            LOG.warn(getStringFromKeys(prevKeyOne, prevKeyTwo) + " has a wrong updateCount, " +
+                prevCount + " instead of " + currentCount);
+            // Game over, there's corruption.
+            break;
+          }
+
+          if (!prevClient.equals(client)) {
+            context.getCounter(Counts.BROKEN_LINKS).increment(1);
+            LOG.warn(getStringFromKeys(prevKeyOne, prevKeyTwo) + " has the wrong client, " +
+                "bad reference? Bad client= " + prevClient);
+            break;
+          }
+
+          updateRow(prevKeyOne, prevKeyTwo, newCount);
+          context.getCounter(Counts.UPDATED_NODES).increment(1);
+          if (prevKeyOne % 10 == 0) {
+            context.progress();
+          }
+          prevKeyOne = prev.getLong(0);
+          prevKeyTwo = prev.getLong(1);
+        } while (headKeyOne != prevKeyOne && headKeyTwo != prevKeyTwo);
+
+        updateStatCounters(context, newCount);
+        context.getCounter(Counts.UPDATED_LINKS).increment(1);
+        linkUpdatesCount++;
+      }
+
+      /**
+       * Finds the next node in the linked list.
+       */
+      private RowResult nextNode(long prevKeyOne, long prevKeyTwo) throws IOException {
+        KuduScanner scanner = client.newScanner(table, scanSchema);
+
+        configureScannerForRandomRead(scanner, table, prevKeyOne, prevKeyTwo);
+
+        try {
+          return getOneRowResult(scanner, timeout);
+        } catch (Exception e) {
+          // Goes right out and fails the job.
+          throw new IOException("Couldn't read the following row: " +
+              getStringFromKeys(prevKeyOne, prevKeyTwo), e);
+        }
+      }
+
+      private void updateRow(long keyOne, long keyTwo, int newCount) throws IOException {
+        Update update = table.newUpdate();
+        update.addLong(COLUMN_KEY_ONE, keyOne);
+        update.addLong(COLUMN_KEY_TWO, keyTwo);
+        update.addInt(COLUMN_UPDATE_COUNT, newCount);
+        try {
+          session.apply(update);
+        } catch (Exception e) {
+          // Goes right out and fails the job.
+          throw new IOException("Couldn't update the following row: " +
+              getStringFromKeys(keyOne, keyTwo), e);
+        }
+      }
+
+      /**
+       * We keep some statistics about the linked list we update so that we can get a feel of
+       * what's being updated.
+       */
+      private void updateStatCounters(Mapper.Context context, int newCount) {
+        switch (newCount) {
+          case -1:
+          case 0:
+            // TODO We didn't event get the first node?
+            break;
+          case 1:
+            context.getCounter(Counts.FIRST_UPDATE).increment(1);
+            break;
+          case 2:
+            context.getCounter(Counts.SECOND_UPDATE).increment(1);
+            break;
+          case 3:
+            context.getCounter(Counts.THIRD_UPDATE).increment(1);
+            break;
+          case 4:
+            context.getCounter(Counts.FOURTH_UPDATE).increment(1);
+            break;
+          default:
+            context.getCounter(Counts.MORE_THAN_FOUR_UPDATES).increment(1);
+            break;
+        }
+      }
+
+      @Override
+      protected void cleanup(Context context) throws IOException, InterruptedException {
+        try {
+          session.close();
+          client.shutdown().join(timeout);
+        } catch (Exception ex) {
+          // Goes right out and fails the job.
+          throw new IOException("Coulnd't close the scanner after the task completed", ex);
+        }
+      }
+    }
+
+    public int run(long maxLinkUpdatesPerMapper) throws Exception {
+      LOG.info("Running Updater with maxLinkUpdatesPerMapper=" + maxLinkUpdatesPerMapper);
+
+      Job job = new Job(getConf());
+
+      job.setJobName("Link Updater");
+      job.setNumReduceTasks(0);
+      job.setJarByClass(getClass());
+
+      KuduTableMapReduceUtil.initTableInputFormat(job, getHeadsTable(getConf()),
+          COLUMN_KEY_ONE + "," +  COLUMN_KEY_TWO,
+          true);
+      job.setMapperClass(UpdaterMapper.class);
+      job.setMapOutputKeyClass(BytesWritable.class);
+      job.setMapOutputValueClass(BytesWritable.class);
+      job.getConfiguration().setBoolean("mapred.map.tasks.speculative.execution", false);
+      // If something fails we want to exit ASAP.
+      job.getConfiguration().setInt("mapreduce.map.maxattempts", 1);
+      // Lack of YARN-445 means we can't auto-jstack on timeout, so disabling the timeout gives
+      // us a chance to do it manually.
+      job.getConfiguration().setInt("mapreduce.task.timeout", 0);
+      job.getConfiguration().setLong(MAX_LINK_UPDATES_PER_MAPPER, maxLinkUpdatesPerMapper);
+
+      job.setOutputKeyClass(NullWritable.class);
+      job.setOutputValueClass(NullWritable.class);
+      job.setOutputFormatClass(NullOutputFormat.class);
+
+      KuduTableMapReduceUtil.addDependencyJars(job);
+
+      boolean success = job.waitForCompletion(true);
+
+      Counters counters = job.getCounters();
+
+      if (success) {
+        // Let's not continue looping if we have broken linked lists.
+        Counter brokenLinks = counters.findCounter(Counts.BROKEN_LINKS);
+        Counter badUpdates = counters.findCounter(Counts.BAD_UPDATE_COUNTS);
+        if (brokenLinks.getValue() > 0 || badUpdates.getValue() > 0) {
+          LOG.error("Corruption was detected, see the job's counters. Ending the update loop.");
+          success = false;
+        }
+      }
+      return success ? 0 : 1;
+    }
+
+    @Override
+    public int run(String[] args) throws Exception {
+      if (args.length < 2) {
+        System.err.println("Usage: Update <num iterations> <max link updates per mapper>");
+        System.err.println(" where <num iterations> will be 'infinite' if passed a negative value" +
+            " or zero");
+        return 1;
+      }
+      LOG.info("Running Loop with args:" + Arrays.deepToString(args));
+
+      int numIterations = Integer.parseInt(args[0]);
+      long maxUpdates = Long.parseLong(args[1]);
+
+      if (numIterations <= 0) {
+        numIterations = Integer.MAX_VALUE;
+      }
+
+      if (maxUpdates < 1) {
+        maxUpdates = 1;
+      }
+
+      for (int i = 0; i < numIterations; i++) {
+        LOG.info("Starting iteration = " + i);
+        int ret = run(maxUpdates);
+        if (ret != 0) {
+          LOG.error("Can't continue updating, last run failed.");
+          return ret;
+        }
+      }
 
       return 0;
     }
@@ -1065,126 +1398,140 @@ public class IntegrationTestBigLinkedList extends Configured implements Tool {
   /**
    * A stand alone program that follows a linked list created by {@link Generator}
    * and prints timing info.
-   * TODO
+   *
    */
-  /*private static class Walker extends Configured implements Tool {
+  private static class Walker extends Configured implements Tool {
+
+    private long timeout;
+    private KuduClient client;
+    private KuduTable table;
+
     @Override
     public int run(String[] args) throws IOException {
-      Options options = new Options();
-      options.addOption("n", "num", true, "number of queries");
-      options.addOption("s", "start", true, "key to start at, binary string");
-      options.addOption("l", "logevery", true, "log every N queries");
+      if (args.length < 1) {
+        System.err.println("Usage: Walker <start key> [<num nodes>]");
+        System.err.println(" where <num nodes> defaults to 100 nodes that will be printed out");
+        return 1;
+      }
+      int maxNumNodes = 100;
+      if (args.length == 2) {
+        maxNumNodes = Integer.parseInt(args[1]);
+      }
+      System.out.println("Running Walker with args:" + Arrays.deepToString(args));
 
-      GnuParser parser = new GnuParser();
-      CommandLine cmd = null;
+      String[] keys = args[0].split(",");
+      if (keys.length != 2) {
+        System.err.println("The row key must be formatted like key1,key2");
+        return 1;
+      }
+
+      long keyOne = Long.parseLong(keys[0]);
+      long keyTwo = Long.parseLong(keys[1]);
+
+      System.out.println("Walking with " + getStringFromKeys(keyOne, keyTwo));
+
       try {
-        cmd = parser.parse(options, args);
-        if (cmd.getArgs().length != 0) {
-          throw new ParseException("Command takes no arguments");
-        }
-      } catch (ParseException e) {
-        System.err.println("Failed to parse command line " + e.getMessage());
-        System.err.println();
-        HelpFormatter formatter = new HelpFormatter();
-        formatter.printHelp(getClass().getSimpleName(), options);
-        System.exit(-1);
+        walk(keyOne, keyTwo, maxNumNodes);
+      } catch (Exception e) {
+        throw new IOException(e);
       }
-
-      long maxQueries = Long.MAX_VALUE;
-      if (cmd.hasOption('n')) {
-        maxQueries = Long.parseLong(cmd.getOptionValue("n"));
-      }
-      Random rand = new Random();
-      boolean isSpecificStart = cmd.hasOption('s');
-      byte[] startKey = isSpecificStart ? Bytes.toBytesBinary(cmd.getOptionValue('s')) : null;
-      int logEvery = cmd.hasOption('l') ? Integer.parseInt(cmd.getOptionValue('l')) : 1;
-
-      HTable table = new HTable(getConf(), getTableName(getConf()));
-      long numQueries = 0;
-      // If isSpecificStart is set, only walk one list from that particular node.
-      // Note that in case of circular (or P-shaped) list it will walk forever, as is
-      // the case in normal run without startKey.
-      while (numQueries < maxQueries && (numQueries == 0 || !isSpecificStart)) {
-        if (!isSpecificStart) {
-          startKey = new byte[ROWKEY_LENGTH];
-          rand.nextBytes(startKey);
-        }
-        CINode node = findStartNode(table, startKey);
-        if (node == null && isSpecificStart) {
-          System.err.printf("Start node not found: %s \n", Bytes.toStringBinary(startKey));
-        }
-        numQueries++;
-        while (node != null && node.prev.length != NO_KEY.length && numQueries < maxQueries) {
-          byte[] prev = node.prev;
-          long t1 = System.currentTimeMillis();
-          node = getNode(prev, table, node);
-          long t2 = System.currentTimeMillis();
-          if (numQueries % logEvery == 0) {
-            System.out.printf("CQ %d: %d %s \n", numQueries, t2 - t1, Bytes.toStringBinary(prev));
-          }
-          numQueries++;
-          if (node == null) {
-            System.err.printf("UNDEFINED NODE %s \n", Bytes.toStringBinary(prev));
-          } else if (node.prev.length == NO_KEY.length) {
-            System.err.printf("TERMINATING NODE %s \n", Bytes.toStringBinary(node.key));
-          }
-        }
-      }
-
-      table.close();
       return 0;
     }
 
-    private static CINode findStartNode(HTable table, byte[] startKey) throws IOException {
-      Scan scan = new Scan();
-      scan.setStartRow(startKey);
-      scan.setBatch(1);
-      scan.addColumn(FAMILY_NAME, COLUMN_PREV);
+    private void walk(long headKeyOne, long headKeyTwo, int maxNumNodes) throws Exception {
+      CommandLineParser parser = new CommandLineParser(getConf());
+      timeout = parser.getOperationTimeoutMs();
+      client = parser.getClient();
+      table = client.openTable(getTableName(getConf())).join(timeout);
 
-      long t1 = System.currentTimeMillis();
-      ResultScanner scanner = table.getScanner(scan);
-      Result result = scanner.next();
-      long t2 = System.currentTimeMillis();
-      scanner.close();
+      long prevKeyOne = headKeyOne;
+      long prevKeyTwo = headKeyTwo;
+      CINode node = new CINode();
+      int nodesCount = 0;
 
-      if ( result != null) {
-        CINode node = getCINode(result, new CINode());
-        System.out.printf("FSR %d %s\n", t2 - t1, Bytes.toStringBinary(node.key));
-        return node;
-      }
-
-      System.out.println("FSR " + (t2 - t1));
-
-      return null;
+      do {
+        RowResult rr = nextNode(prevKeyOne, prevKeyTwo);
+        if (rr == null) {
+          System.err.println(getStringFromKeys(prevKeyOne, prevKeyTwo) + " doesn't exist!");
+          break;
+        }
+        getCINode(rr, node);
+        printCINodeString(node);
+        if (rr.isNull(2) || rr.isNull(3)) {
+          System.err.println("Last node didn't have a reference, breaking");
+          break;
+        }
+        prevKeyOne = rr.getLong(2);
+        prevKeyTwo = rr.getLong(3);
+        nodesCount++;
+      } while ((headKeyOne != prevKeyOne && headKeyTwo != prevKeyTwo) && (nodesCount <
+          maxNumNodes));
     }
 
-    private CINode getNode(byte[] row, HTable table, CINode node) throws IOException {
-      Get get = new Get(row);
-      get.addColumn(FAMILY_NAME, COLUMN_PREV);
-      Result result = table.get(get);
-      return getCINode(result, node);
-    }
-  }*/
+    private RowResult nextNode(long keyOne, long keyTwo) throws Exception {
+      KuduScanner scanner = client.newScanner(table, table.getSchema());
+      configureScannerForRandomRead(scanner, table, keyOne, keyTwo);
 
-  static String getTableName(Configuration conf) {
+      return getOneRowResult(scanner, timeout);
+    }
+  }
+
+  private static void configureScannerForRandomRead(KuduScanner scanner, KuduTable table,
+                                                    long keyOne, long keyTwo) {
+    ColumnRangePredicate crpOne = new ColumnRangePredicate(table.getSchema().getColumn(0));
+    crpOne.setLowerBound(keyOne);
+    crpOne.setUpperBound(keyOne);
+    scanner.addColumnRangePredicate(crpOne);
+
+    ColumnRangePredicate crpTwo = new ColumnRangePredicate(table.getSchema().getColumn(1));
+    crpTwo.setLowerBound(keyTwo);
+    crpTwo.setUpperBound(keyTwo);
+    scanner.addColumnRangePredicate(crpTwo);
+  }
+
+  private static String getTableName(Configuration conf) {
     return conf.get(TABLE_NAME_KEY, DEFAULT_TABLE_NAME);
+  }
+
+  private static String getHeadsTable(Configuration conf) {
+    return conf.get(HEADS_TABLE_NAME_KEY, DEFAULT_HEADS_TABLE_NAME);
   }
 
   private static CINode getCINode(RowResult result, CINode node) {
 
     node.key = getStringFromKeys(result.getLong(0), result.getLong(1));
-    if (result.isNull(2)) {
-      node.prev = "";
+    if (result.isNull(2) || result.isNull(3)) {
+      node.prev = "NO_REFERENCE";
     } else {
       node.prev = getStringFromKeys(result.getLong(2), result.getLong(3));
     }
     node.rowId = result.getInt(4);
     node.client = result.getString(5);
+    node.updateCount = result.getInt(6);
     return node;
+  }
+
+  private static void printCINodeString(CINode node) {
+    System.out.printf("%s:%s:%012d:%s:%s\n", node.key, node.prev, node.rowId, node.client,
+        node.updateCount);
   }
 
   private static String getStringFromKeys(long key1, long key2) {
     return new StringBuilder().append(key1).append(",").append(key2).toString();
+  }
+
+  private static RowResult getOneRowResult(KuduScanner scanner, long timeout) throws Exception {
+    scanner.setDeadlineMillis(timeout);
+
+    KuduScanner.RowResultIterator rowResults;
+    rowResults = scanner.nextRows().join(timeout);
+    if (rowResults.getNumRows() == 0) {
+      return null;
+    }
+    if (rowResults.getNumRows() > 1) {
+      throw new Exception("Received too many rows from scanner " + scanner);
+    }
+    return rowResults.next();
   }
 
   private void usage() {
@@ -1201,11 +1548,11 @@ public class IntegrationTestBigLinkedList extends Configured implements Tool {
     System.err.println("                             in the linked list.");
     System.err.println("  Loop                       A program to Loop through Generator and");
     System.err.println("                             Verify steps");
+    System.err.println("  Update                     A program to updade the nodes");
     /* System.err.println("  Delete                     A standalone program that deletes a");
-    System.err.println("                             single node.");
+    System.err.println("                             single node.");*/
     System.err.println("  Walker                     A standalong program that starts ");
-    System.err.println("                             following a linked list and emits");
-    System.err.println("                             timing info.");*/
+    System.err.println("                             following a linked list");
     System.err.println("\t  ");
     System.err.flush();
   }
@@ -1235,9 +1582,11 @@ public class IntegrationTestBigLinkedList extends Configured implements Tool {
 
     } else if (toRun.equals("Print")) {
       tool = new Print();
-    } /*else if (toRun.equals("Walker")) {
+    } else if (toRun.equals("Update")) {
+      tool = new Updater();
+    } else if (toRun.equals("Walker")) {
       tool = new Walker();
-    } else if (toRun.equals("Delete")) {
+    } /*else if (toRun.equals("Delete")) {
       tool = new Delete();
     }*/ else {
       usage();
