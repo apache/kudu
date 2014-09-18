@@ -49,8 +49,14 @@ class Cache {
   // must call this->Release(handle) when the returned mapping is no
   // longer needed.
   //
+  // Note that the 'key' Slice is copied into the internal storage of
+  // the cache. The caller may free or mutate the key data freely
+  // after this method returns.
+  //
   // When the inserted entry is no longer needed, the key and
-  // value will be passed to "deleter".
+  // value will be passed to "deleter". The key is only passed
+  // to the deleter for convenience -- the cache itself is responsible
+  // for managing the key's memory.
   virtual Handle* Insert(const Slice& key, void* value, size_t charge,
                          void (*deleter)(const Slice& key, void* value)) = 0;
 
