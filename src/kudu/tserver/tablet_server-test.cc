@@ -1494,21 +1494,22 @@ TEST_F(TabletServerTest, TestChangeConfiguration_TsTabletManagerReportsNewRoles)
   // loop and send multiple config. change requests where we change the
   // role of the peer. TSTabletManager should acknowledge the role changes.
   for (int i = 0; i < 10; i++) {
+    SCOPED_TRACE(Substitute("Iter: $0", i));
     QuorumPeerPB::Role random_role = RandomRole();
     peer->set_role(random_role);
-    {
-      SCOPED_TRACE(req.DebugString());
-      ASSERT_STATUS_OK(consensus_proxy_->ChangeConfig(req, &resp, &rpc));
-      SCOPED_TRACE(resp.DebugString());
-      ASSERT_FALSE(resp.has_error());
-      rpc.Reset();
-    }
+    SCOPED_TRACE("Request: " + req.ShortDebugString());
+    ASSERT_STATUS_OK(consensus_proxy_->ChangeConfig(req, &resp, &rpc));
+    SCOPED_TRACE("Response: " + resp.ShortDebugString());
+    ASSERT_FALSE(resp.has_error());
+    rpc.Reset();
     // Now check that the tablet report reports the correct role
     kudu::master::TabletReportPB report;
     mini_server_->server()->tablet_manager()->GenerateIncrementalTabletReport(&report);
-    ASSERT_EQ(report.updated_tablets_size(), 1);
+    ASSERT_EQ(report.updated_tablets_size(), 1) << report.ShortDebugString();
     kudu::master::ReportedTabletPB tablet_report = report.updated_tablets(0);
-    ASSERT_EQ(tablet_report.role(), random_role);
+    ASSERT_EQ(tablet_report.role(), random_role)
+      << "Tablet report: " << report.ShortDebugString() << "; "
+      << "Random role: " << QuorumPeerPB::Role_Name(random_role);
 
     new_quorum->set_seqno(new_quorum->seqno() + 1);
   }
