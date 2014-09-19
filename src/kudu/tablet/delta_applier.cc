@@ -15,7 +15,7 @@ namespace kudu {
 namespace tablet {
 
   // Construct. The base_iter and delta_iter should not be Initted.
-DeltaApplier::DeltaApplier(const shared_ptr<ColumnwiseIterator>& base_iter,
+DeltaApplier::DeltaApplier(const shared_ptr<CFileSet::Iterator>& base_iter,
                            const shared_ptr<DeltaIterator>& delta_iter)
   : base_iter_(base_iter),
     delta_iter_(delta_iter) {
@@ -27,7 +27,7 @@ DeltaApplier::~DeltaApplier() {
 Status DeltaApplier::Init(ScanSpec *spec) {
   RETURN_NOT_OK(base_iter_->Init(spec));
   RETURN_NOT_OK(delta_iter_->Init());
-  RETURN_NOT_OK(delta_iter_->SeekToOrdinal(0));
+  RETURN_NOT_OK(delta_iter_->SeekToOrdinal(base_iter_->cur_ordinal_idx()));
   return Status::OK();
 }
 
@@ -56,10 +56,6 @@ bool DeltaApplier::HasNext() const {
 
 Status DeltaApplier::PrepareBatch(size_t *nrows) {
   RETURN_NOT_OK(base_iter_->PrepareBatch(nrows));
-  if (*nrows == 0) {
-    return Status::NotFound("no more rows left");
-  }
-
   RETURN_NOT_OK(delta_iter_->PrepareBatch(*nrows));
   return Status::OK();
 }

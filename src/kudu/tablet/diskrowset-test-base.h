@@ -215,6 +215,26 @@ class TestRowSet : public KuduRowSetTest {
       }
   }
 
+  // Perform a random read of the given row key,
+  // asserting that the result matches 'expected_val'.
+  void VerifyRandomRead(const DiskRowSet& rs, const Slice& row_key,
+                        const string& expected_val) {
+    ScanSpec spec;
+    EncodedKeyBuilder key_builder(&schema_);
+    key_builder.AddColumnKey(&row_key);
+    EncodedKey* encoded_key = key_builder.BuildEncodedKey();
+    EncodedKeyRange range(encoded_key, encoded_key);
+    spec.AddEncodedRange(&range);
+
+    MvccSnapshot snap = MvccSnapshot::CreateSnapshotIncludingAllTransactions();
+    gscoped_ptr<RowwiseIterator> row_iter(rs.NewRowIterator(&schema_, snap));
+    CHECK_OK(row_iter->Init(&spec));
+    vector<string> rows;
+    IterateToStringList(row_iter.get(), &rows);
+    string result = JoinStrings(rows, "\n");
+    ASSERT_EQ(expected_val, result);
+  }
+
   // Iterate over a DiskRowSet, dumping occasional rows to the console,
   // using the given schema as a projection.
   static void IterateProjection(const DiskRowSet &rs, const Schema &schema,

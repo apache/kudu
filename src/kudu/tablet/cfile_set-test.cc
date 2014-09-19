@@ -241,7 +241,8 @@ TEST_F(TestCFileSet, TestRangeScan) {
   // Since the key column is the rowidx * 2, we need to divide the integer bounds
   // back down.
   EXPECT_EQ(lower / 2, cfile_iter->lower_bound_idx_);
-  EXPECT_EQ(upper / 2, cfile_iter->upper_bound_idx_);
+  // + 1 because the upper bound is exclusive
+  EXPECT_EQ(upper / 2 + 1, cfile_iter->upper_bound_idx_);
 
   // Read all the results.
   vector<string> results;

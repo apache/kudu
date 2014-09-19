@@ -62,7 +62,24 @@ class DataGenerator {
   virtual T BuildTestValue(size_t block_index, size_t value) = 0;
 
   bool TestValueShouldBeNull(size_t n) {
-    return !(n & 2);
+    // The NULL pattern alternates every 32 rows, cycling between:
+    //   32 NULL
+    //   32 alternating NULL/NOTNULL
+    //   32 NOT-NULL
+    //   32 alternating NULL/NOTNULL
+    // This is to ensure that we stress the run-length coding for
+    // NULL value.
+    switch ((n >> 6) & 3) {
+      case 0:
+        return true;
+      case 1:
+      case 3:
+        return n & 1;
+      case 2:
+        return false;
+      default:
+        LOG(FATAL);
+    }
   }
 
   virtual void Resize(size_t num_entries) {

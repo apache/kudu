@@ -128,7 +128,7 @@ class CFileSet::Iterator : public ColumnwiseIterator {
 
   virtual bool HasNext() const OVERRIDE {
     DCHECK(initted_);
-    return cur_idx_ <= upper_bound_idx_;
+    return cur_idx_ < upper_bound_idx_;
   }
 
   virtual string ToString() const OVERRIDE {
@@ -137,6 +137,12 @@ class CFileSet::Iterator : public ColumnwiseIterator {
 
   const Schema &schema() const OVERRIDE {
     return *projection_;
+  }
+
+  // Return the ordinal index of the next row to be returned from
+  // the iterator.
+  rowid_t cur_ordinal_idx() const {
+    return cur_idx_;
   }
 
   // Collect the IO statistics for each of the underlying columns.
@@ -185,9 +191,10 @@ class CFileSet::Iterator : public ColumnwiseIterator {
   // The total number of rows in the file
   rowid_t row_count_;
 
-  // Upper and lower (inclusive) bounds for this iterator, in terms of ordinal row indexes.
-  // Both of these bounds are _inclusive_, and are always set (even if there is no predicate).
-  // If there is no predicate, then the bounds will be [0, row_count_-1]
+  // Lower bound (inclusive) and upper bound (exclusive) for this iterator, in terms of
+  // ordinal row indexes.
+  // Both of these bounds are always set (even if there is no predicate).
+  // If there is no predicate, then the bounds will be [0, row_count_]
   rowid_t lower_bound_idx_;
   rowid_t upper_bound_idx_;
 

@@ -489,7 +489,7 @@ RowwiseIterator *DiskRowSet::NewRowIterator(const Schema *projection,
   CHECK(open_);
   boost::shared_lock<rw_spinlock> lock(component_lock_.get_lock());
 
-  shared_ptr<ColumnwiseIterator> base_iter(base_data_->NewIterator(projection));
+  shared_ptr<CFileSet::Iterator> base_iter(base_data_->NewIterator(projection));
   return new MaterializingIterator(
     shared_ptr<ColumnwiseIterator>(delta_tracker_->WrapIterator(base_iter,
                                                                 mvcc_snap)));

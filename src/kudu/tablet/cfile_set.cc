@@ -326,8 +326,7 @@ Status CFileSet::Iterator::PushdownRangeScanPredicate(ScanSpec *spec) {
   CHECK_GT(row_count_, 0);
 
   lower_bound_idx_ = 0;
-  // since upper_bound_idx is _inclusive_, subtract 1 from row_count
-  upper_bound_idx_ = row_count_ - 1;
+  upper_bound_idx_ = row_count_;
 
   if (spec == NULL) {
     // No predicate.
@@ -364,20 +363,24 @@ Status CFileSet::Iterator::PushdownRangeScanPredicate(ScanSpec *spec) {
       if (s.IsNotFound()) {
         // The upper bound is after the end of the key range - the existing upper bound
         // at EOF is correct.
+        VLOG(1) << "Pushed upper bound value "
+                << range->upper_bound().Stringify(key_schema)
+                << " as EOF (row_idx < " << upper_bound_idx_ << ")";
       } else {
         RETURN_NOT_OK(s);
 
+        rowid_t cur = key_iter_->GetCurrentOrdinal();
         if (exact) {
-          upper_bound_idx_ = std::min(upper_bound_idx_,
-                                      key_iter_->GetCurrentOrdinal());
+          // Upper bound is exclusive, so add one to ensure we include
+          // the row we seeked to.
+          upper_bound_idx_ = std::min(upper_bound_idx_, cur + 1);
         } else {
-          upper_bound_idx_ = std::min(upper_bound_idx_,
-                                      key_iter_->GetCurrentOrdinal() - 1);
+          upper_bound_idx_ = std::min(upper_bound_idx_, cur);
         }
 
         VLOG(1) << "Pushed upper bound value "
                 << range->upper_bound().Stringify(key_schema)
-                << " as row_idx <= " << upper_bound_idx_;
+                << " as row_idx < " << upper_bound_idx_;
         }
     }
   }
@@ -411,7 +414,7 @@ void CFileSet::Iterator::Unprepare() {
 Status CFileSet::Iterator::PrepareBatch(size_t *n) {
   DCHECK_EQ(prepared_count_, 0) << "Already prepared";
 
-  size_t remaining = upper_bound_idx_ + 1 - cur_idx_;
+  size_t remaining = upper_bound_idx_ - cur_idx_;
   if (*n > remaining) {
     *n = remaining;
   }

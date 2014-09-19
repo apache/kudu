@@ -14,6 +14,7 @@
 #include "kudu/gutil/macros.h"
 #include "kudu/server/metadata.h"
 #include "kudu/tablet/delta_store.h"
+#include "kudu/tablet/cfile_set.h"
 #include "kudu/util/status.h"
 
 namespace kudu {
@@ -61,7 +62,7 @@ class DeltaTracker {
                log::OpIdAnchorRegistry* opid_anchor_registry,
                MemTracker* parent_tracker = NULL);
 
-  ColumnwiseIterator *WrapIterator(const shared_ptr<ColumnwiseIterator> &base,
+  ColumnwiseIterator *WrapIterator(const shared_ptr<CFileSet::Iterator> &base,
                                    const MvccSnapshot &mvcc_snap) const;
 
   // TODO: this shouldn't need to return a shared_ptr, but there is some messiness

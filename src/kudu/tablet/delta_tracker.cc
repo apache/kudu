@@ -297,7 +297,7 @@ shared_ptr<DeltaIterator> DeltaTracker::NewDeltaFileIterator(
   return DeltaIteratorMerger::Create(*included_stores, schema, snap);
 }
 
-ColumnwiseIterator *DeltaTracker::WrapIterator(const shared_ptr<ColumnwiseIterator> &base,
+ColumnwiseIterator *DeltaTracker::WrapIterator(const shared_ptr<CFileSet::Iterator> &base,
                                                const MvccSnapshot &mvcc_snap) const {
   return new DeltaApplier(base, NewDeltaIterator(&base->schema(), mvcc_snap));
 }

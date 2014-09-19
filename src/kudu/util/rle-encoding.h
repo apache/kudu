@@ -94,7 +94,7 @@ class RleDecoder {
 
   RleDecoder() {}
 
-  // Skip n values, and returns the number of non-zero values skipped
+  // Skip n values, and returns the number of non-zero entries skipped.
   size_t Skip(size_t to_skip);
 
   // Gets the next value.  Returns false if there are no more.
@@ -352,7 +352,9 @@ inline size_t RleDecoder<T>::Skip(size_t to_skip) {
       size_t nskip = (repeat_count_ < to_skip) ? repeat_count_ : to_skip;
       repeat_count_ -= nskip;
       to_skip -= nskip;
-      set_count = current_value_ * nskip;
+      if (current_value_ != 0) {
+        set_count += nskip;
+      }
     } else {
       DCHECK(literal_count_ > 0);
       size_t nskip = (literal_count_ < to_skip) ? literal_count_ : to_skip;
@@ -362,7 +364,9 @@ inline size_t RleDecoder<T>::Skip(size_t to_skip) {
         T value = 0;
         bool result = bit_reader_.GetValue(bit_width_, &value);
         DCHECK(result);
-        set_count += value;
+        if (value != 0) {
+          set_count++;
+        }
       }
     }
   }

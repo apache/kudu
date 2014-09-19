@@ -91,6 +91,19 @@ bool AllowSlowTests() {
   return false;
 }
 
+void OverrideFlagForSlowTests(const std::string& flag_name,
+                              const std::string& new_value) {
+  // Ensure that the flag is valid.
+  google::GetCommandLineFlagInfoOrDie(flag_name.c_str());
+
+  // If we're not running slow tests, don't override it.
+  if (!AllowSlowTests()) {
+    return;
+  }
+  google::SetCommandLineOptionWithMode(flag_name.c_str(), new_value.c_str(),
+                                       google::SET_FLAG_IF_DEFAULT);
+}
+
 int SeedRandom() {
   int seed;
   // Initialize random seed

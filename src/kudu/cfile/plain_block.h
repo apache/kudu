@@ -129,7 +129,7 @@ class PlainBlockDecoder : public BlockDecoder {
       return;
     }
 
-    DCHECK_LT(pos, num_elems_);
+    DCHECK_LE(pos, num_elems_);
     cur_idx_ = pos;
   }
 

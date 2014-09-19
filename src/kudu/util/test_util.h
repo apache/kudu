@@ -35,6 +35,12 @@ class KuduTest : public ::testing::Test {
 // Returns true if slow tests are runtime-enabled.
 bool AllowSlowTests();
 
+// Override the given gflag to the new value, only in the case that
+// slow tests are enabled and the user hasn't otherwise overridden
+// it on the command line.
+void OverrideFlagForSlowTests(const std::string& flag_name,
+                              const std::string& new_value);
+
 // Call srand() with a random seed based on the current time, reporting
 // that seed to the logs. The time-based seed may be overridden by passing
 // --test_random_seed= from the CLI in order to reproduce a failed randomized

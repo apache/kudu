@@ -148,6 +148,35 @@ TEST_F(TestRowSet, TestRowSetUpdate) {
   VerifyUpdates(*rs, updated);
 }
 
+TEST_F(TestRowSet, TestRandomRead) {
+  // Write 100 rows.
+  WriteTestRowSet(100);
+  shared_ptr<DiskRowSet> rs;
+  ASSERT_STATUS_OK(OpenTestRowSet(&rs));
+
+  // Read un-updated row.
+  VerifyRandomRead(*rs, "hello 000000000000050",
+                   "(string key=hello 000000000000050, uint32 val=50)");
+
+  // Update the row.
+  OperationResultPB result;
+  ASSERT_STATUS_OK(UpdateRow(rs.get(), 50, 12345, &result));
+
+  // Read it again -- should see the updated value.
+  VerifyRandomRead(*rs, "hello 000000000000050",
+                   "(string key=hello 000000000000050, uint32 val=12345)");
+
+  // Try to read a row which comes before the first key.
+  // This should return no rows.
+  VerifyRandomRead(*rs, "aaaaa", "");
+
+  // Same with a row which falls between keys.
+  VerifyRandomRead(*rs, "hello 000000000000050_between_keys", "");
+
+  // And a row which falls after the last key.
+  VerifyRandomRead(*rs, "hello 000000000000101", "");
+}
+
 // Test Delete() support within a DiskRowSet.
 TEST_F(TestRowSet, TestDelete) {
   // Write and open a DiskRowSet with 2 rows.

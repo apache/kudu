@@ -199,7 +199,7 @@ void StringPlainBlockDecoder::SeekToPositionInBlock(uint pos) {
     return;
   }
 
-  DCHECK_LT(pos, num_elems_);
+  DCHECK_LE(pos, num_elems_);
   cur_idx_ = pos;
 }
 

@@ -253,7 +253,7 @@ void StringPrefixBlockDecoder::SeekToPositionInBlock(uint pos) {
     return;
   }
 
-  DCHECK_LT(pos, num_elems_);
+  DCHECK_LE(pos, num_elems_);
 
   int target_restart = pos/restart_interval_;
   SeekToRestartPoint(target_restart);
@@ -261,7 +261,7 @@ void StringPrefixBlockDecoder::SeekToPositionInBlock(uint pos) {
   // Seek forward to the right index
 
   // TODO: Seek calls should return a Status
-  CHECK(SkipForward(pos - cur_idx_).ok());
+  CHECK_OK(SkipForward(pos - cur_idx_));
   DCHECK_EQ(cur_idx_, pos);
 }
 
@@ -420,9 +420,18 @@ const uint8_t *StringPrefixBlockDecoder::DecodeEntryLengths(
 }
 
 Status StringPrefixBlockDecoder::SkipForward(int n) {
-  DCHECK_LT(cur_idx_ + n, num_elems_) <<
+  DCHECK_LE(cur_idx_ + n, num_elems_) <<
     "skip(" << n << ") curidx=" << cur_idx_
             << " num_elems=" << num_elems_;
+
+  // If we're seeking exactly to the end of the data, we don't
+  // need to actually prepare the next value (in fact, it would
+  // crash). So, short-circuit here.
+  if (PREDICT_FALSE(cur_idx_ + n == num_elems_)) {
+    cur_idx_ += n;
+    return Status::OK();
+  }
+
   // Probably a faster way to implement this using restarts,
   for (int i = 0; i < n; i++) {
     RETURN_NOT_OK(ParseNextValue());

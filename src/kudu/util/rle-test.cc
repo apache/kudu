@@ -457,17 +457,21 @@ TEST_F(TestRle, TestSkip) {
   RleEncoder<bool> encoder(&buffer, 1);
 
   // 0101010[1] 01010101 01
+  //        "A"
   for (int j = 0; j < 18; ++j) {
     encoder.Put(!!(j & 1));
   }
 
   // 0011[00] 11001100 11001100 11001100 11001100
+  //      "B"
   for (int j = 0; j < 19; ++j) {
     encoder.Put(!!(j & 1), 2);
   }
 
   // 000000000000 11[1111111111] 000000000000 111111111111
+  //                   "C"
   // 000000000000 111111111111 0[00000000000] 111111111111
+  //                                  "D"
   // 000000000000 111111111111 000000000000 111111111111
   for (int j = 0; j < 12; ++j) {
     encoder.Put(!!(j & 1), 12);
@@ -478,22 +482,26 @@ TEST_F(TestRle, TestSkip) {
   size_t run_length;
   RleDecoder<bool> decoder(buffer.data(), encoder.len(), 1);
 
-  decoder.Skip(7);
+  // position before "A"
+  ASSERT_EQ(3, decoder.Skip(7));
   run_length = decoder.GetNextRun(&val, MathLimits<size_t>::kMax);
   ASSERT_TRUE(val);
   ASSERT_EQ(1, run_length);
 
-  decoder.Skip(14);
+  // position before "B"
+  ASSERT_EQ(7, decoder.Skip(14));
   run_length = decoder.GetNextRun(&val, MathLimits<size_t>::kMax);
   ASSERT_FALSE(val);
   ASSERT_EQ(2, run_length);
 
-  decoder.Skip(46);
+  // position before "C"
+  ASSERT_EQ(18, decoder.Skip(46));
   run_length = decoder.GetNextRun(&val, MathLimits<size_t>::kMax);
   ASSERT_TRUE(val);
   ASSERT_EQ(10, run_length);
 
-  decoder.Skip(49);
+  // position before "D"
+  ASSERT_EQ(24, decoder.Skip(49));
   run_length = decoder.GetNextRun(&val, MathLimits<size_t>::kMax);
   ASSERT_FALSE(val);
   ASSERT_EQ(11, run_length);

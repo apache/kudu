@@ -12,6 +12,7 @@
 #include "kudu/common/schema.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/util/status.h"
+#include "kudu/tablet/cfile_set.h"
 
 namespace kudu {
 namespace tablet {
@@ -54,11 +55,11 @@ class DeltaApplier : public ColumnwiseIterator {
   DISALLOW_COPY_AND_ASSIGN(DeltaApplier);
 
   // Construct. The base_iter and delta_iter should not be Initted.
-  DeltaApplier(const std::tr1::shared_ptr<ColumnwiseIterator>& base_iter,
+  DeltaApplier(const std::tr1::shared_ptr<CFileSet::Iterator>& base_iter,
                const std::tr1::shared_ptr<DeltaIterator>& delta_iter);
   virtual ~DeltaApplier();
 
-  std::tr1::shared_ptr<ColumnwiseIterator> base_iter_;
+  std::tr1::shared_ptr<CFileSet::Iterator> base_iter_;
   std::tr1::shared_ptr<DeltaIterator> delta_iter_;
 };
 
