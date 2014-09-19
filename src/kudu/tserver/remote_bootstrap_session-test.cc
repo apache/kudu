@@ -9,7 +9,9 @@
 #include "kudu/common/partial_row.h"
 #include "kudu/common/row_operations.h"
 #include "kudu/common/schema.h"
+#include "kudu/consensus/consensus_meta.h"
 #include "kudu/consensus/log.h"
+#include "kudu/consensus/opid_util.h"
 #include "kudu/fs/block_id.h"
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/ref_counted.h"
@@ -26,6 +28,7 @@
 namespace kudu {
 namespace tserver {
 
+using consensus::ConsensusMetadata;
 using fs::ReadableBlock;
 using log::Log;
 using log::LogOptions;
@@ -69,12 +72,10 @@ class RemoteBootstrapTest : public KuduTabletTest {
     CHECK_OK(Log::Open(LogOptions(), fs_manager(), tablet()->tablet_id(),
                        NULL, &log));
 
-    QuorumPeerPB quorum_peer;
-    quorum_peer.set_permanent_uuid(fs_manager()->uuid());
     MetricContext metric_ctx(&metric_registry_, CURRENT_TEST_NAME());
 
     tablet_peer_.reset(
-        new TabletPeer(tablet()->metadata(), quorum_peer,
+        new TabletPeer(tablet()->metadata(),
                        leader_apply_executor_.get(), replica_apply_executor_.get(),
                        boost::bind(&RemoteBootstrapTest::TabletPeerStateChangedCallback,
                                    this, _1)));
@@ -82,9 +83,15 @@ class RemoteBootstrapTest : public KuduTabletTest {
     // TODO similar to code in tablet_peer-test, consider refactor.
     QuorumPB quorum;
     quorum.set_local(true);
-    quorum.set_seqno(0);
+    quorum.set_seqno(consensus::kUninitializedQuorumSeqNo);
+    QuorumPeerPB quorum_peer;
+    quorum_peer.set_permanent_uuid(fs_manager()->uuid());
     quorum.add_peers()->CopyFrom(quorum_peer);
-    tablet()->metadata()->SetQuorum(quorum);
+
+    gscoped_ptr<ConsensusMetadata> cmeta;
+    CHECK_OK(ConsensusMetadata::Create(tablet()->metadata()->fs_manager(),
+                                       tablet()->tablet_id(), quorum,
+                                       consensus::kMinimumTerm, &cmeta));
 
     shared_ptr<Messenger> messenger;
     MessengerBuilder mbuilder(CURRENT_TEST_NAME());

@@ -1524,6 +1524,9 @@ TEST_F(TabletServerTest, TestChangeConfiguration_TestEqualSeqNoIsRejected) {
 
   QuorumPB* new_quorum = req.mutable_new_config();
   new_quorum->set_local(true);
+  QuorumPeerPB* peer = new_quorum->add_peers();
+  peer->set_permanent_uuid(mini_server_->server()->instance_pb().permanent_uuid());
+
   new_quorum->set_seqno(1);
 
   // Send the call
@@ -1535,9 +1538,7 @@ TEST_F(TabletServerTest, TestChangeConfiguration_TestEqualSeqNoIsRejected) {
     rpc.Reset();
   }
 
-  // Now pass a new quorum with the same seq no
-  new_quorum = req.mutable_new_config();
-  new_quorum->set_local(true);
+  // Now pass the same new quorum with the same seq no
   new_quorum->set_seqno(1);
 
   {
@@ -1550,8 +1551,6 @@ TEST_F(TabletServerTest, TestChangeConfiguration_TestEqualSeqNoIsRejected) {
   }
 
   // Now pass a new quorum with a lower seq no
-  new_quorum = req.mutable_new_config();
-  new_quorum->set_local(true);
   new_quorum->set_seqno(0);
 
   {

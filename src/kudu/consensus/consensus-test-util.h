@@ -419,6 +419,20 @@ class TestLeaderDriver {
   ThreadPool* pool_;
 };
 
+// Fake, no-op ReplicaTransactionFactory that allows for instantiating and unit
+// testing RaftConsensusState. Does not actually support running transactions.
+class MockTransactionFactory : public ReplicaTransactionFactory {
+ public:
+  Status StartReplicaTransaction(gscoped_ptr<ConsensusRound> context) OVERRIDE {
+    return Status::OK();
+  }
+  Status SubmitConsensusChangeConfig(gscoped_ptr<metadata::QuorumPB> quorum,
+                                     const StatusCallback& callback) OVERRIDE {
+
+    return Status::OK();
+  }
+};
+
 // A transaction factory for tests, usually this is implemented by TabletPeer.
 class TestTransactionFactory : public ReplicaTransactionFactory {
  public:

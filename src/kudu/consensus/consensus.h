@@ -22,9 +22,18 @@ namespace log {
 class Log;
 }
 
+namespace master {
+class SysTable;
+}
+
 namespace metadata {
 class QuorumPB;
 class QuorumPeerPB;
+}
+
+namespace tablet {
+class ChangeConfigTransaction;
+class TabletPeer;
 }
 
 namespace consensus {
@@ -192,12 +201,23 @@ class Consensus {
 
   // Stops running the consensus algorithm.
   virtual void Shutdown() = 0;
+
  protected:
   friend class ConsensusRound;
+  friend class tablet::ChangeConfigTransaction;
+  friend class tablet::TabletPeer;
+  friend class master::SysTable;
 
   // Called by Consensus context to complete the commit of a consensus
   // round.
   virtual Status Commit(ConsensusRound* round) = 0;
+
+  // Persists the specified quorum to disk. This is an expensive operation.
+  // Note that the actual fsync() is controlled by ConsensusMeta, which may
+  // not sync to disk if --log_force_fsync_all is set to false.
+  //
+  // Protected so that it may only be called by friend classes.
+  virtual Status PersistQuorum(const metadata::QuorumPB& quorum) = 0;
 
   // Fault hooks for tests. In production code this will always be null.
   std::tr1::shared_ptr<ConsensusFaultHooks> fault_hooks_;

@@ -78,10 +78,6 @@ message TabletSuperBlockPB {
 
   // The last known remote bootstrap state of the tablet.
   required TabletBootstrapStatePB remote_bootstrap_state = 10;
-
-  // The latest QuorumPB this tablet was part of.
-  // TODO make this required once dist consensus is fully integrated.
-  optional metadata.QuorumPB quorum = 11;
 }
 
 // The enum of tablet states.

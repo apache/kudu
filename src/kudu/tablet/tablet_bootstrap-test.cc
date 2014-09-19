@@ -5,7 +5,9 @@
 #include <vector>
 
 #include "kudu/common/iterator.h"
+#include "kudu/consensus/consensus_meta.h"
 #include "kudu/consensus/log_util.h"
+#include "kudu/consensus/opid_util.h"
 #include "kudu/server/logical_clock.h"
 #include "kudu/server/metadata.h"
 #include "kudu/tablet/tablet_bootstrap.h"
@@ -27,6 +29,9 @@ using std::vector;
 using std::string;
 
 using consensus::ConsensusBootstrapInfo;
+using consensus::ConsensusMetadata;
+using consensus::kMinimumTerm;
+using consensus::kUninitializedQuorumSeqNo;
 using log::Log;
 using log::LogTestBase;
 using log::OpIdAnchorRegistry;
@@ -46,16 +51,12 @@ class BootstrapTest : public LogTestBase {
   }
 
   Status LoadTestTabletMetadata(int mrs_id, int delta_id, scoped_refptr<TabletMetadata>* meta) {
-    metadata::QuorumPB quorum;
-    quorum.set_seqno(0);
-
     RETURN_NOT_OK(TabletMetadata::LoadOrCreate(fs_manager_.get(),
                                                master_block_,
                                                log::kTestTable,
                                                // We need a schema with ids for
                                                // TabletMetadata::LoadOrCreate()
                                                SchemaBuilder(schema_).Build(),
-                                               quorum,
                                                "",
                                                "",
                                                REMOTE_BOOTSTRAP_DONE,
@@ -104,6 +105,14 @@ class BootstrapTest : public LogTestBase {
     scoped_refptr<TabletMetadata> meta;
     RETURN_NOT_OK_PREPEND(LoadTestTabletMetadata(mrs_id, delta_id, &meta),
                           "Unable to load test tablet metadata");
+
+    metadata::QuorumPB quorum;
+    quorum.set_seqno(kUninitializedQuorumSeqNo);
+    gscoped_ptr<ConsensusMetadata> cmeta;
+    RETURN_NOT_OK_PREPEND(ConsensusMetadata::Create(meta->fs_manager(), meta->oid(), quorum,
+                                                    kMinimumTerm, &cmeta),
+                          "Unable to create consensus metadata");
+
     RETURN_NOT_OK_PREPEND(RunBootstrapOnTestTablet(meta, tablet, boot_info),
                           "Unable to bootstrap test tablet");
     return Status::OK();
@@ -282,6 +291,21 @@ TEST_F(BootstrapTest, TestOrphanedReplicate) {
     << "Commit ID should be uninitialized";
   EXPECT_EQ("term: 0 index: 0", boot_info.last_replicate_id.ShortDebugString());
   EXPECT_EQ("term: 0 index: 0", boot_info.last_id.ShortDebugString());
+}
+
+// Bootstrap should fail if no ConsensusMetadata file exists.
+TEST_F(BootstrapTest, TestMissingConsensusMetadata) {
+  BuildLog();
+
+  scoped_refptr<TabletMetadata> meta;
+  ASSERT_OK(LoadTestTabletMetadata(-1, -1, &meta));
+
+  shared_ptr<Tablet> tablet;
+  ConsensusBootstrapInfo boot_info;
+  Status s = RunBootstrapOnTestTablet(meta, &tablet, &boot_info);
+
+  ASSERT_TRUE(s.IsNotFound());
+  ASSERT_STR_CONTAINS(s.ToString(), "Unable to load Consensus metadata");
 }
 
 } // namespace tablet

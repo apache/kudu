@@ -9,6 +9,7 @@
 #include <gflags/gflags.h>
 
 #include "kudu/consensus/consensus.h"
+#include "kudu/consensus/consensus_meta.h"
 #include "kudu/consensus/consensus_peers.h"
 #include "kudu/consensus/local_consensus.h"
 #include "kudu/consensus/log.h"
@@ -41,8 +42,9 @@ namespace tablet {
 
 using consensus::Consensus;
 using consensus::ConsensusBootstrapInfo;
-using consensus::ConsensusRound;
+using consensus::ConsensusMetadata;
 using consensus::ConsensusOptions;
+using consensus::ConsensusRound;
 using consensus::LocalConsensus;
 using consensus::OpId;
 using consensus::RaftConsensus;
@@ -61,14 +63,12 @@ using tserver::TabletServerErrorPB;
 //  Tablet Peer
 // ============================================================================
 TabletPeer::TabletPeer(const scoped_refptr<TabletMetadata>& meta,
-                       const QuorumPeerPB& quorum_peer,
                        TaskExecutor* leader_apply_executor,
                        TaskExecutor* replica_apply_executor,
                        MarkDirtyCallback mark_dirty_clbk)
   : meta_(meta),
     tablet_id_(meta->oid()),
     state_(BOOTSTRAPPING),
-    quorum_peer_(quorum_peer),
     status_listener_(new TabletStatusListener(meta)),
     leader_apply_executor_(leader_apply_executor),
     replica_apply_executor_(replica_apply_executor),
@@ -109,9 +109,14 @@ Status TabletPeer::Init(const shared_ptr<Tablet>& tablet,
     options.tablet_id = meta_->oid();
 
     TRACE("Creating consensus instance");
-    if (tablet_->metadata()->Quorum().local()) {
+
+    gscoped_ptr<ConsensusMetadata> cmeta;
+    RETURN_NOT_OK(ConsensusMetadata::Load(meta_->fs_manager(), tablet_id_, &cmeta));
+
+    if (cmeta->pb().committed_quorum().local()) {
       consensus_.reset(new LocalConsensus(options,
-                                          quorum_peer_.permanent_uuid(),
+                                          cmeta.Pass(),
+                                          meta_->fs_manager()->uuid(),
                                           clock_,
                                           this,
                                           log_.get()));
@@ -119,9 +124,10 @@ Status TabletPeer::Init(const shared_ptr<Tablet>& tablet,
       gscoped_ptr<consensus::PeerProxyFactory> rpc_factory(
           new consensus::RpcPeerProxyFactory(messenger_));
       consensus_.reset(new RaftConsensus(options,
+                                         cmeta.Pass(),
                                          rpc_factory.Pass(),
                                          metric_ctx,
-                                         quorum_peer_.permanent_uuid(),
+                                         meta_->fs_manager()->uuid(),
                                          clock_,
                                          this,
                                          log_.get()));
@@ -137,44 +143,21 @@ Status TabletPeer::Init(const shared_ptr<Tablet>& tablet,
   return Status::OK();
 }
 
-// TODO move this to raft_consensus.cc
-Status TabletPeer::UpdatePermanentUuids() {
-  DCHECK(messenger_.get() != NULL);
-  QuorumPB config = meta_->Quorum();
-  bool altered = false;
-  BOOST_FOREACH(QuorumPeerPB& peer, *config.mutable_peers()) {
-    if (!peer.has_permanent_uuid()) {
-      LOG(INFO) << peer.ShortDebugString()
-                << " has no permanent_uuid. Determining permanent_uuid...";
-      RETURN_NOT_OK(consensus::SetPermanentUuidForRemotePeer(messenger_, &peer));
-      altered = true;
-    }
-  }
-  if (altered) {
-    meta_->SetQuorum(config);
-    RETURN_NOT_OK(meta_->Flush());
-  }
-  return Status::OK();
-}
-
 Status TabletPeer::Start(const ConsensusBootstrapInfo& bootstrap_info) {
   // Prevent any SubmitChangeConfig calls to try and modify the config
   // until consensus is booted and the actual configuration is stored in
   // the tablet meta.
   boost::lock_guard<Semaphore> config_lock(config_sem_);
 
-  RETURN_NOT_OK(UpdatePermanentUuids());
-
-  gscoped_ptr<QuorumPB> actual_config;
   TRACE("Starting consensus");
 
-  QuorumPeerPB::Role my_role = consensus::GetRoleInQuorum(quorum_peer_.permanent_uuid(), Quorum());
+  QuorumPeerPB::Role my_role = consensus::GetRoleInQuorum(meta_->fs_manager()->uuid(), Quorum());
   RETURN_NOT_OK(StartPendingTransactions(my_role, bootstrap_info));
 
-  VLOG(2) << "Quorum before starting: " << Quorum().DebugString();
+  VLOG(2) << "Quorum before starting: " << consensus_->Quorum().DebugString();
 
-  RETURN_NOT_OK(Consensus::VerifyQuorum(Quorum()));
-  RETURN_NOT_OK(consensus_->Start(Quorum(), bootstrap_info.last_commit_id));
+  // TODO: Remove first param from Consensus::Start(). It now does nothing.
+  RETURN_NOT_OK(consensus_->Start(consensus_->Quorum(), bootstrap_info.last_commit_id));
 
   return Status::OK();
 }
@@ -205,22 +188,8 @@ Status TabletPeer::StartPendingTransactions(QuorumPeerPB::Role my_role,
 }
 
 const metadata::QuorumPB TabletPeer::Quorum() const {
-  return meta_->Quorum();
-}
-
-const metadata::QuorumPeerPB::Role TabletPeer::role() const {
-  boost::lock_guard<simple_spinlock> lock(lock_);
-  QuorumPB latest_config = meta_->Quorum();
-  if (!latest_config.IsInitialized()) {
-    return metadata::QuorumPeerPB::NON_PARTICIPANT;
-  } else {
-    BOOST_FOREACH(const QuorumPeerPB& peer, latest_config.peers()) {
-      if (peer.permanent_uuid() == quorum_peer_.permanent_uuid()) {
-        return peer.role();
-      }
-    }
-    return metadata::QuorumPeerPB::NON_PARTICIPANT;
-  }
+  CHECK(consensus_) << "consensus is null";
+  return consensus_->Quorum();
 }
 
 Status TabletPeer::SubmitConsensusChangeConfig(gscoped_ptr<QuorumPB> quorum,
@@ -237,12 +206,12 @@ Status TabletPeer::SubmitConsensusChangeConfig(gscoped_ptr<QuorumPB> quorum,
 }
 
 void TabletPeer::ConsensusStateChanged(const QuorumPB& old_quorum, const QuorumPB& new_quorum) {
-  QuorumPeerPB::Role new_role = consensus::GetRoleInQuorum(quorum_peer_.permanent_uuid(),
+  QuorumPeerPB::Role new_role = consensus::GetRoleInQuorum(meta_->fs_manager()->uuid(),
                                                            new_quorum);
 
   LOG(INFO) << "Configuration changed for tablet: " << tablet_id_ << " in peer: "
-      << quorum_peer_.permanent_uuid() << "\nChanged from:" << old_quorum.ShortDebugString()
-      << "\nChanged to:" << new_quorum.ShortDebugString();
+      << meta_->fs_manager()->uuid() << "\nChanged from: " << old_quorum.ShortDebugString()
+      << "\nChanged to: " << new_quorum.ShortDebugString();
 
   {
     boost::lock_guard<simple_spinlock> lock(lock_);

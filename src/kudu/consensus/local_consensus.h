@@ -7,9 +7,11 @@
 #include <vector>
 
 #include "kudu/consensus/consensus.h"
+#include "kudu/consensus/consensus_meta.h"
 
 namespace kudu {
 
+class FsManager;
 class FutureCallback;
 
 namespace metadata {
@@ -30,6 +32,7 @@ namespace consensus {
 class LocalConsensus : public Consensus {
  public:
   explicit LocalConsensus(const ConsensusOptions& options,
+                          gscoped_ptr<ConsensusMetadata> cmeta,
                           const std::string& peer_uuid,
                           const scoped_refptr<server::Clock>& clock,
                           ReplicaTransactionFactory* txn_factory,
@@ -40,18 +43,14 @@ class LocalConsensus : public Consensus {
 
   virtual Status Replicate(ConsensusRound* context) OVERRIDE;
 
-  metadata::QuorumPeerPB::Role role() const OVERRIDE {
-    return metadata::QuorumPeerPB::LEADER;
-  }
+  virtual metadata::QuorumPeerPB::Role role() const OVERRIDE;
 
   virtual std::string peer_uuid() const OVERRIDE {
     boost::lock_guard<simple_spinlock> lock(lock_);
     return peer_uuid_;
   }
 
-  metadata::QuorumPB Quorum() const OVERRIDE {
-    return quorum_;
-  }
+  virtual metadata::QuorumPB Quorum() const OVERRIDE;
 
   virtual void Shutdown() OVERRIDE;
 
@@ -66,11 +65,10 @@ class LocalConsensus : public Consensus {
   virtual Status RequestVote(const VoteRequestPB* request,
                              VoteResponsePB* response) OVERRIDE;
 
-  metadata::QuorumPB CurrentQuorum() const {
-    return quorum_;
-  }
-
+ protected:
   virtual Status Commit(ConsensusRound* context) OVERRIDE;
+
+  virtual Status PersistQuorum(const metadata::QuorumPB& quorum) OVERRIDE;
 
  private:
 
@@ -78,6 +76,7 @@ class LocalConsensus : public Consensus {
   metadata::QuorumPB quorum_;
 
   const ConsensusOptions options_;
+  const gscoped_ptr<ConsensusMetadata> cmeta_;
 
   int64 next_op_id_index_;
   // lock serializes the commit id generation and subsequent

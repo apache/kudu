@@ -42,6 +42,7 @@ using std::tr1::unordered_set;
 using strings::Substitute;
 
 RaftConsensus::RaftConsensus(const ConsensusOptions& options,
+                             gscoped_ptr<ConsensusMetadata> cmeta,
                              gscoped_ptr<PeerProxyFactory> proxy_factory,
                              const MetricContext& metric_ctx,
                              const std::string& peer_uuid,
@@ -56,10 +57,11 @@ RaftConsensus::RaftConsensus(const ConsensusOptions& options,
   state_.reset(new ReplicaState(options,
                                 callback_pool_.get(),
                                 peer_uuid,
+                                cmeta.Pass(),
                                 DCHECK_NOTNULL(txn_factory)));
 }
 
-Status RaftConsensus::Start(const metadata::QuorumPB& initial_quorum,
+Status RaftConsensus::Start(const metadata::QuorumPB& /* unused */,
                             const OpId& last_committed_op_id) {
   RETURN_NOT_OK(ExecuteHook(PRE_START));
   // TODO create a specialized method that does appropriate state
@@ -73,31 +75,44 @@ Status RaftConsensus::Start(const metadata::QuorumPB& initial_quorum,
   // This is important as to serialize the first leader assignment as any other
   // future leader appointment.
 
-  RETURN_NOT_OK(state_->StartUnlocked(last_committed_op_id, initial_quorum));
-  if (state_->GetCurrentRoleUnlocked() == QuorumPeerPB::CANDIDATE ||
-      state_->GetCurrentRoleUnlocked() == QuorumPeerPB::LEADER) {
-    RETURN_NOT_OK(BecomeLeader());
+  RETURN_NOT_OK_PREPEND(state_->StartUnlocked(last_committed_op_id),
+                        "Unable to start RAFT ReplicaState");
+
+  // Sanity checks.
+  const QuorumPB& quorum = state_->GetCommittedQuorumUnlocked();
+  CHECK(!state_->IsQuorumChangePendingUnlocked())
+      << "Attempting to become leader during a pending quorum change. "
+      << "Pending quorum: " << state_->GetPendingQuorumUnlocked().ShortDebugString() << "; "
+      << "Persisted quorum: " << quorum.ShortDebugString();
+  RETURN_NOT_OK_PREPEND(VerifyQuorum(quorum),
+                        "Invalid quorum found in RaftConsensus::Start()");
+
+  // Assume expected role.
+  metadata::QuorumPeerPB::Role role = state_->GetActiveQuorumStateUnlocked().role;
+  if (role == QuorumPeerPB::CANDIDATE || role == QuorumPeerPB::LEADER) {
+    RETURN_NOT_OK(BecomeLeaderUnlocked());
   } else {
-    RETURN_NOT_OK(BecomeReplica());
+    RETURN_NOT_OK(BecomeReplicaUnlocked());
   }
 
   RETURN_NOT_OK(ExecuteHook(POST_START));
   return Status::OK();
 }
 
-Status RaftConsensus::BecomeLeader() {
+Status RaftConsensus::BecomeLeaderUnlocked() {
   LOG_WITH_PREFIX(INFO) << "Becoming Leader";
   // Get the current quorum and:
   // - mark ourselves leader
   // - increase the configuration sequence number
-  QuorumPB old_quorum = state_->GetCurrentConfigUnlocked();
-  gscoped_ptr<QuorumPB> new_quorum(new QuorumPB(old_quorum));
+
+  QuorumPB committed_quorum = state_->GetCommittedQuorumUnlocked();
+  gscoped_ptr<QuorumPB> new_quorum(new QuorumPB(committed_quorum));
   new_quorum->mutable_peers()->Clear();
-  new_quorum->set_seqno(old_quorum.seqno() + 1);
+  new_quorum->set_seqno(committed_quorum.seqno() + 1);
 
   // Change the role of the previous leader/candidate to follower
   // and our own role to leader
-  BOOST_FOREACH(const QuorumPeerPB& old_peer, old_quorum.peers()) {
+  BOOST_FOREACH(const QuorumPeerPB& old_peer, committed_quorum.peers()) {
     QuorumPeerPB* new_peer = new_quorum->add_peers();
     new_peer->CopyFrom(old_peer);
 
@@ -108,10 +123,11 @@ Status RaftConsensus::BecomeLeader() {
     if (new_peer->permanent_uuid() == state_->GetPeerUuid()) {
       new_peer->set_role(QuorumPeerPB::LEADER);
     }
-
   }
 
-  RETURN_NOT_OK(state_->ChangeConfigUnlocked(*new_quorum));
+  // Set the pending quorum so that we can initialize the peer queues.
+  RETURN_NOT_OK(state_->SetPendingQuorumUnlocked(*new_quorum));
+
   // Create the peers so that we're able to replicate messages remotely and locally
   RETURN_NOT_OK(CreateOrUpdatePeersUnlocked());
 
@@ -146,10 +162,10 @@ void RaftConsensus::BecomeLeaderResult(const Status& status) {
   CHECK(status.ok()) << state_->LogPrefixUnlocked()
       << "Change config transaction failure unsupported. Status: " << status.ToString();
   LOG(INFO) << "Quorum has accepted the change config transaction. New Effective quorum: "
-      << state_->GetCurrentConfigUnlocked().ShortDebugString();
+      << state_->GetCommittedQuorumUnlocked().ShortDebugString();
 }
 
-Status RaftConsensus::BecomeReplica() {
+Status RaftConsensus::BecomeReplicaUnlocked() {
   // TODO start the failure detector.
   LOG_WITH_PREFIX(INFO) << "Becoming Follower/Learner";
   RETURN_NOT_OK(state_->SetConfigDoneUnlocked());
@@ -161,8 +177,18 @@ Status RaftConsensus::BecomeReplica() {
 
 Status RaftConsensus::CreateOrUpdatePeersUnlocked() {
   unordered_set<string> new_peers;
+
+  metadata::QuorumPB quorum;
+  if (state_->IsQuorumChangePendingUnlocked()) {
+    quorum = state_->GetPendingQuorumUnlocked();
+  } else {
+    quorum = state_->GetCommittedQuorumUnlocked();
+  }
+
+  VLOG(1) << "Updating peers from new quorum: " << quorum.ShortDebugString();
+
   // Create new peers
-  BOOST_FOREACH(const QuorumPeerPB& peer_pb, state_->GetCurrentConfigUnlocked().peers()) {
+  BOOST_FOREACH(const QuorumPeerPB& peer_pb, quorum.peers()) {
     new_peers.insert(peer_pb.permanent_uuid());
     Peer* peer = FindPtrOrNull(peers_, peer_pb.permanent_uuid());
     if (peer != NULL) {
@@ -179,7 +205,7 @@ Status RaftConsensus::CreateOrUpdatePeersUnlocked() {
                                        log_,
                                        initial,
                                        &local_peer));
-      peers_.insert(pair<string, Peer*>(peer_pb.permanent_uuid(), local_peer.release()));
+      InsertOrDie(&peers_, peer_pb.permanent_uuid(), local_peer.release());
     } else {
       VLOG_WITH_PREFIX(1) << "Adding remote peer. Peer: " << peer_pb.ShortDebugString();
       gscoped_ptr<PeerProxy> peer_proxy;
@@ -193,7 +219,7 @@ Status RaftConsensus::CreateOrUpdatePeersUnlocked() {
                                         &queue_,
                                         peer_proxy.Pass(),
                                         &remote_peer));
-      peers_.insert(pair<string, Peer*>(peer_pb.permanent_uuid(), remote_peer.release()));
+      InsertOrDie(&peers_, peer_pb.permanent_uuid(), remote_peer.release());
     }
   }
   // Delete old peers
@@ -221,11 +247,12 @@ Status RaftConsensus::Replicate(ConsensusRound* round) {
     // so we create a copy for the queue.
     gscoped_ptr<OperationPB> queue_op(new OperationPB(*round->replicate_op()));
 
+    const QuorumState& quorum_state = state_->GetActiveQuorumStateUnlocked();
     scoped_refptr<OperationStatusTracker> status(
         new MajorityOpStatusTracker(queue_op.Pass(),
-                                    state_->GetCurrentVotingPeersUnlocked(),
-                                    state_->GetCurrentMajorityUnlocked(),
-                                    state_->GetAllPeersCountUnlocked(),
+                                    quorum_state.voting_peers,
+                                    quorum_state.majority_size,
+                                    quorum_state.quorum_size,
                                     callback_pool_.get(),
                                     round->replicate_callback()));
 
@@ -245,7 +272,7 @@ Status RaftConsensus::Replicate(ConsensusRound* round) {
       // TODO Possibly evict a dangling peer from the quorum here.
       // TODO count of number of ops failed due to consensus queue overflow.
     }
-    RETURN_NOT_OK(s);
+    RETURN_NOT_OK_PREPEND(s, "Unable to append operation to consensus queue");
   }
 
   SignalRequestToPeers();
@@ -265,7 +292,7 @@ Status RaftConsensus::Commit(ConsensusRound* context) {
 
   ReplicaState::UniqueLock lock;
   RETURN_NOT_OK(state_->LockForCommit(&lock));
-  QuorumPeerPB::Role role = state_->GetCurrentRoleUnlocked();
+  QuorumPeerPB::Role role = state_->GetActiveQuorumStateUnlocked().role;
   if (role == QuorumPeerPB::LEADER || role == QuorumPeerPB::CANDIDATE) {
     RETURN_NOT_OK(LeaderCommitUnlocked(context, context->commit_op()));
   } else {
@@ -280,15 +307,27 @@ Status RaftConsensus::Commit(ConsensusRound* context) {
   return Status::OK();
 }
 
+Status RaftConsensus::PersistQuorum(const QuorumPB& quorum) {
+  RETURN_NOT_OK_PREPEND(VerifyQuorum(quorum),
+                        "Invalid quorum passed to RaftConsensus::PersistQuorum()");
+  ReplicaState::UniqueLock lock;
+  RETURN_NOT_OK(state_->LockForConfigChange(&lock));
+  RETURN_NOT_OK(state_->SetCommittedQuorumUnlocked(quorum));
+  // TODO: Update consensus peers if becoming leader.
+  RETURN_NOT_OK(state_->SetConfigDoneUnlocked());
+  return Status::OK();
+}
+
 OperationStatusTracker* RaftConsensus::CreateLeaderOnlyOperationStatusUnlocked(
     gscoped_ptr<OperationPB> operation,
     const shared_ptr<FutureCallback>& commit_callback) {
   unordered_set<string> leader_uuid_set(1);
   InsertOrDie(&leader_uuid_set, state_->GetPeerUuid());
+  const QuorumState& quorum_state = state_->GetActiveQuorumStateUnlocked();
   return new MajorityOpStatusTracker(operation.Pass(),
                                      leader_uuid_set,
                                      1,
-                                     state_->GetAllPeersCountUnlocked(),
+                                     quorum_state.quorum_size,
                                      callback_pool_.get(),
                                      commit_callback);
 }
@@ -297,8 +336,9 @@ OperationStatusTracker* RaftConsensus::CreateLeaderOnlyOperationStatusUnlocked(
     gscoped_ptr<OperationPB> operation) {
   unordered_set<string> leader_uuid_set(1);
   InsertOrDie(&leader_uuid_set, state_->GetPeerUuid());
+  const QuorumState& quorum_state = state_->GetActiveQuorumStateUnlocked();
   return new MajorityOpStatusTracker(operation.Pass(), leader_uuid_set,
-                                     1, state_->GetAllPeersCountUnlocked());
+                                     1, quorum_state.quorum_size);
 }
 
 Status RaftConsensus::LeaderCommitUnlocked(ConsensusRound* context,
@@ -712,7 +752,7 @@ OpId RaftConsensus::GetLastOpIdFromLog() {
 QuorumPeerPB::Role RaftConsensus::role() const {
   ReplicaState::UniqueLock lock;
   CHECK_OK(state_->LockForRead(&lock));
-  return state_->GetCurrentRoleUnlocked();
+  return GetRoleInQuorum(state_->GetPeerUuid(), state_->GetCommittedQuorumUnlocked());
 }
 
 string RaftConsensus::peer_uuid() const {
@@ -721,11 +761,10 @@ string RaftConsensus::peer_uuid() const {
   return state_->GetPeerUuid();
 }
 
-
 QuorumPB RaftConsensus::Quorum() const {
   ReplicaState::UniqueLock lock;
   CHECK_OK(state_->LockForRead(&lock));
-  return state_->GetCurrentConfigUnlocked();
+  return state_->GetCommittedQuorumUnlocked();
 }
 
 void RaftConsensus::DumpStatusHtml(std::ostream& out) const {
@@ -739,7 +778,7 @@ void RaftConsensus::DumpStatusHtml(std::ostream& out) const {
   {
     ReplicaState::UniqueLock lock;
     CHECK_OK(state_->LockForRead(&lock));
-    role = state_->GetCurrentRoleUnlocked();
+    role = state_->GetActiveQuorumStateUnlocked().role;
   }
   if (role == QuorumPeerPB::LEADER) {
     out << "<h2>Queue overview</h2>" << std::endl;

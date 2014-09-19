@@ -6,6 +6,7 @@
 #include "kudu/consensus/raft_consensus_state.h"
 #include "kudu/consensus/log_util.h"
 #include "kudu/gutil/map-util.h"
+#include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/strcat.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/status.h"
@@ -23,65 +24,96 @@
 namespace kudu {
 namespace consensus {
 
+using metadata::QuorumPB;
 using metadata::QuorumPeerPB;
 using std::string;
 using std::tr1::shared_ptr;
 using std::tr1::unordered_set;
 using strings::Substitute;
 
+//////////////////////////////////////////////////
+// QuorumState
+//////////////////////////////////////////////////
+
+gscoped_ptr<QuorumState> QuorumState::Build(const QuorumPB& quorum, const string& self_uuid) {
+  // Default this peer's role to non-participant.
+  QuorumPeerPB::Role role = QuorumPeerPB::NON_PARTICIPANT;
+
+  // Try to find the role set in the provided quorum.
+  std::tr1::unordered_set<string> voting_peers;
+  string leader_uuid;
+  BOOST_FOREACH(const QuorumPeerPB& peer_pb, quorum.peers()) {
+    if (peer_pb.permanent_uuid() == self_uuid) {
+      role = peer_pb.role();
+    }
+    if (peer_pb.role() == QuorumPeerPB::LEADER ||
+        peer_pb.role() == QuorumPeerPB::FOLLOWER) {
+      voting_peers.insert(peer_pb.permanent_uuid());
+    }
+    if (peer_pb.role() == QuorumPeerPB::LEADER) {
+      leader_uuid = peer_pb.permanent_uuid();
+    }
+
+  }
+
+  // TODO: Calculating the majority from the number of peers can cause problems
+  // without joint consensus. We should add a configuration parameter to
+  // QuorumPB defining what constitutes the majority.
+  int majority_size = (voting_peers.size() / 2) + 1;
+  int quorum_size = quorum.peers_size();
+  int64_t config_seqno = quorum.seqno();
+
+  gscoped_ptr<QuorumState> state(new QuorumState(role, leader_uuid, voting_peers,
+                                                 majority_size, quorum_size, config_seqno));
+  return state.Pass();
+}
+
+QuorumState::QuorumState(metadata::QuorumPeerPB::Role role,
+                         const std::string& leader_uuid,
+                         const std::tr1::unordered_set<std::string>& voting_peers,
+                         int majority_size,
+                         int quorum_size,
+                         int64_t config_seqno)
+  : role(role),
+    leader_uuid(leader_uuid),
+    voting_peers(voting_peers),
+    majority_size(majority_size),
+    quorum_size(quorum_size),
+    config_seqno(config_seqno) {
+}
+
+//////////////////////////////////////////////////
+// ReplicaState
+//////////////////////////////////////////////////
+
 ReplicaState::ReplicaState(const ConsensusOptions& options,
                            ThreadPool* callback_exec_pool,
                            const string& peer_uuid,
+                           gscoped_ptr<ConsensusMetadata> cmeta,
                            ReplicaTransactionFactory* txn_factory)
   : options_(options),
     peer_uuid_(peer_uuid),
-    current_role_(metadata::QuorumPeerPB::NON_PARTICIPANT),
-    current_majority_(-1),
+    cmeta_(cmeta.Pass()),
     current_term_(0),
     next_index_(0),
     txn_factory_(txn_factory),
     in_flight_commits_latch_(0),
     replicate_watchers_(callback_exec_pool),
-    commit_watchers_(callback_exec_pool) {
-  state_ = kInitialized;
+    commit_watchers_(callback_exec_pool),
+    state_(kInitialized) {
+  CHECK(cmeta_) << "ConsensusMeta passed as NULL";
+  UniqueLock l(update_lock_);
+  // Now that we know the peer UUID, refresh acting state from persistent state.
+  ResetActiveQuorumStateUnlocked(GetCommittedQuorumUnlocked());
 }
 
-Status ReplicaState::StartUnlocked(const OpId& initial_id,
-                                   const metadata::QuorumPB& initial_quorum) {
+Status ReplicaState::StartUnlocked(const OpId& initial_id) {
   DCHECK(update_lock_.is_locked());
   current_term_ = initial_id.term();
   next_index_ = initial_id.index() + 1;
   all_committed_before_id_.CopyFrom(initial_id);
   replicated_op_id_.CopyFrom(initial_id);
   received_op_id_.CopyFrom(initial_id);
-  RETURN_NOT_OK(ChangeConfigUnlocked(initial_quorum));
-  return Status::OK();
-}
-
-// TODO check that the role change is legal.
-Status ReplicaState::ChangeConfigUnlocked(const metadata::QuorumPB& new_quorum) {
-  DCHECK(update_lock_.is_locked());
-  // set this peer's role as non-participant
-  current_role_ = QuorumPeerPB::NON_PARTICIPANT;
-
-  voting_peers_.clear();
-
-  // try to find the role set in the quorum_config
-  BOOST_FOREACH(const QuorumPeerPB& peer_pb, new_quorum.peers()) {
-    if (peer_pb.permanent_uuid() == peer_uuid_) {
-      current_role_ = peer_pb.role();
-    }
-    if (peer_pb.role() == QuorumPeerPB::LEADER ||
-        peer_pb.role() == QuorumPeerPB::FOLLOWER) {
-      voting_peers_.insert(peer_pb.permanent_uuid());
-    }
-    if (peer_pb.role() == QuorumPeerPB::LEADER) {
-      leader_uuid_ = peer_pb.permanent_uuid();
-    }
-  }
-
-  current_quorum_ = new_quorum;
-  current_majority_ = (voting_peers_.size() / 2) + 1;
   return Status::OK();
 }
 
@@ -97,7 +129,7 @@ Status ReplicaState::LockForReplicate(UniqueLock* lock, const OperationPB& op) {
   if (PREDICT_FALSE(state_ != kRunning)) {
     return Status::IllegalState("Replica not in running state");
   }
-  switch (current_role_) {
+  switch (active_quorum_state_->role) {
     case QuorumPeerPB::LEADER:
       lock->swap(l);
       return Status::OK();
@@ -112,7 +144,9 @@ Status ReplicaState::LockForReplicate(UniqueLock* lock, const OperationPB& op) {
       lock->swap(l);
       return Status::OK();
     default:
-      return Status::IllegalState("Replica is not leader of this quorum.");
+      return Status::IllegalState(Substitute("Replica $0 is not leader of this quorum. Role: $1",
+                                             peer_uuid_,
+                                             QuorumPeerPB::Role_Name(active_quorum_state_->role)));
   }
 }
 
@@ -130,7 +164,7 @@ Status ReplicaState::LockForConfigChange(UniqueLock* lock) {
   // Can only change the config on non-initialized replicas for
   // now, later kRunning state will also be a valid state for
   // config changes.
-  CHECK_EQ(state_, kInitialized);
+  CHECK(state_ == kInitialized || state_ == kRunning) << "Unexpected state: " << state_;
   lock->swap(l);
   state_ = kChangingConfig;
   return Status::OK();
@@ -141,7 +175,7 @@ Status ReplicaState::LockForUpdate(UniqueLock* lock) {
   if (PREDICT_FALSE(state_ != kRunning)) {
     return Status::IllegalState("Replica not in running state");
   }
-  switch (current_role_) {
+  switch (active_quorum_state_->role) {
     case QuorumPeerPB::LEADER:
       return Status::IllegalState("Replica is leader of the quorum.");
     case QuorumPeerPB::NON_PARTICIPANT:
@@ -169,7 +203,6 @@ Status ReplicaState::Shutdown() {
   CHECK_EQ(state_, kShuttingDown);
   UniqueLock l(update_lock_);
   state_ = kShutDown;
-  current_role_ = QuorumPeerPB::NON_PARTICIPANT;
   return Status::OK();
 }
 
@@ -180,38 +213,74 @@ Status ReplicaState::SetConfigDoneUnlocked() {
   return Status::OK();
 }
 
-metadata::QuorumPeerPB::Role ReplicaState::GetCurrentRoleUnlocked() const {
+const QuorumState& ReplicaState::GetActiveQuorumStateUnlocked() const {
   DCHECK(update_lock_.is_locked());
-  return current_role_;
+  DCHECK(active_quorum_state_) << "Quorum state is not set";
+  return *active_quorum_state_;
 }
 
-const metadata::QuorumPB& ReplicaState::GetCurrentConfigUnlocked() const {
+bool ReplicaState::IsQuorumChangePendingUnlocked() const {
+  return pending_quorum_.get() != NULL;
+}
+
+// TODO check that the role change is legal.
+Status ReplicaState::SetPendingQuorumUnlocked(const metadata::QuorumPB& new_quorum) {
   DCHECK(update_lock_.is_locked());
-  return current_quorum_;
+  CHECK(!IsQuorumChangePendingUnlocked()) // TODO: Allow rollback of failed config chg txn?
+      << "Attempting to make pending quorum change while another is already pending: "
+      << "Pending quorum: " << pending_quorum_->ShortDebugString() << "; "
+      << "New quorum: " << new_quorum.ShortDebugString();
+  pending_quorum_.reset(new metadata::QuorumPB(new_quorum));
+  ResetActiveQuorumStateUnlocked(new_quorum);
+  return Status::OK();
+}
+
+const metadata::QuorumPB& ReplicaState::GetPendingQuorumUnlocked() const {
+  DCHECK(update_lock_.is_locked());
+  CHECK(IsQuorumChangePendingUnlocked()) << "No pending quorum";
+  return *pending_quorum_;
+}
+
+Status ReplicaState::SetCommittedQuorumUnlocked(const metadata::QuorumPB& new_quorum) {
+  DCHECK(update_lock_.is_locked());
+
+  // TODO: check that the role change is legal.
+
+  // Check that if pending quorum is set, new_quorum is equivalent.
+  if (IsQuorumChangePendingUnlocked()) {
+    // TODO: Prevent this from being possible once we have proper config change.
+    // See KUDU-513 for more details.
+    CHECK(pending_quorum_->SerializeAsString() == new_quorum.SerializeAsString())
+      << "Attempting to persist quorum change while a different one is pending: "
+      << "Pending quorum: " << pending_quorum_->ShortDebugString() << "; "
+      << "New quorum: " << new_quorum.ShortDebugString();
+  } else {
+    // Only update acting quorum members if this is a net-new transaction.
+    ResetActiveQuorumStateUnlocked(new_quorum);
+  }
+
+  cmeta_->mutable_pb()->mutable_committed_quorum()->CopyFrom(new_quorum);
+  RETURN_NOT_OK(cmeta_->Flush());
+  pending_quorum_.reset();
+
+  return Status::OK();
+}
+
+const metadata::QuorumPB& ReplicaState::GetCommittedQuorumUnlocked() const {
+  DCHECK(update_lock_.is_locked());
+  return cmeta_->pb().committed_quorum();
 }
 
 ReplicaTransactionFactory* ReplicaState::GetReplicaTransactionFactoryUnlocked() const {
   return txn_factory_;
 }
 
-void ReplicaState::IncrementConfigSeqNoUnlocked() {
+Status ReplicaState::IncrementConfigSeqNoUnlocked() {
   DCHECK(update_lock_.is_locked());
-  current_quorum_.set_seqno(current_quorum_.seqno() + 1);
-}
-
-int ReplicaState::GetCurrentMajorityUnlocked() const {
-  DCHECK(update_lock_.is_locked());
-  return current_majority_;
-}
-
-const unordered_set<string>& ReplicaState::GetCurrentVotingPeersUnlocked() const {
-  DCHECK(update_lock_.is_locked());
-  return voting_peers_;
-}
-
-int ReplicaState::GetAllPeersCountUnlocked() const {
-  DCHECK(update_lock_.is_locked());
-  return current_quorum_.peers_size();
+  cmeta_->mutable_pb()->mutable_committed_quorum()->set_seqno(
+      cmeta_->pb().committed_quorum().seqno() + 1);
+  RETURN_NOT_OK(cmeta_->Flush());
+  return Status::OK();
 }
 
 const string& ReplicaState::GetPeerUuid() const {
@@ -222,13 +291,9 @@ const ConsensusOptions& ReplicaState::GetOptions() const {
   return options_;
 }
 
-const string& ReplicaState::GetLeaderUuidUnlocked() const {
-  DCHECK(update_lock_.is_locked());
-  return leader_uuid_;
-}
-
 const uint64_t ReplicaState::GetCurrentTermUnlocked() const {
   DCHECK(update_lock_.is_locked());
+  // TODO: Hook into the persisted term later.
   return current_term_;
 }
 
@@ -400,15 +465,19 @@ string ReplicaState::LogPrefixUnlocked() const {
   return Substitute("T $0 P $1 [$2]: ",
                     options_.tablet_id,
                     GetPeerUuid(),
-                    QuorumPeerPB::Role_Name(GetCurrentRoleUnlocked()));
+                    QuorumPeerPB::Role_Name(active_quorum_state_->role));
 }
 
 
 string ReplicaState::ToString() const {
+  ReplicaState::UniqueLock lock(update_lock_);
+  QuorumPeerPB::Role role = QuorumPeerPB::NON_PARTICIPANT;
+  if (active_quorum_state_) {
+    role = active_quorum_state_->role;
+  }
   string ret;
   StrAppend(&ret, Substitute("Replica: $0, State: $1, Role: $2\n",
-                             peer_uuid_, state_,
-                             QuorumPeerPB::Role_Name(current_role_)));
+                             peer_uuid_, state_, role));
   StrAppend(&ret, "Watermarks: {Received: ", received_op_id_.ShortDebugString(),
             " Replicated: ", replicated_op_id_.ShortDebugString(),
             " Committed: ", all_committed_before_id_.ShortDebugString(), "}\n");
@@ -417,6 +486,14 @@ string ReplicaState::ToString() const {
   return ret;
 }
 
+void ReplicaState::ResetActiveQuorumStateUnlocked(const metadata::QuorumPB& quorum) {
+  DCHECK(update_lock_.is_locked());
+  active_quorum_state_ = QuorumState::Build(quorum, peer_uuid_).Pass();
+}
+
+//////////////////////////////////////////////////
+// OperationCallbackRunnable
+//////////////////////////////////////////////////
 
 OperationCallbackRunnable::OperationCallbackRunnable(const shared_ptr<FutureCallback>& callback)
   : callback_(callback) {}
@@ -471,6 +548,7 @@ MajorityOpStatusTracker::MajorityOpStatusTracker(gscoped_ptr<OperationPB> operat
 }
 
 void MajorityOpStatusTracker::AckPeer(const string& uuid) {
+  CHECK(!uuid.empty()) << "Peer acked with empty uuid";
   boost::lock_guard<simple_spinlock> lock(lock_);
   if (voting_peers_.count(uuid) != 0) {
     completion_latch_.CountDown();
@@ -485,7 +563,8 @@ void MajorityOpStatusTracker::AckPeer(const string& uuid) {
     VLOG(2) << "Peer: " << uuid << " ACK'd " << ToStringUnlocked();
   }
   DCHECK_LE(replicated_count_, total_peers_count_)
-    << "More replicates than expected. " << ToStringUnlocked();
+    << "More replicates than expected. " << ToStringUnlocked()
+    << "; Quorum: " << JoinStringsIterator(voting_peers_.begin(), voting_peers_.end(), ", ");
 }
 
 bool MajorityOpStatusTracker::IsDone() const {
@@ -513,7 +592,7 @@ std::string MajorityOpStatusTracker::ToString() const {
 }
 
 std::string MajorityOpStatusTracker::ToStringUnlocked() const {
-  return Substitute("MajorityOS. Id: $0 IsDone: $1 All Peers: $2, Voting Peers: $3, "
+  return Substitute("MajorityOpStatusTracker: Id: $0 IsDone: $1 All Peers: $2, Voting Peers: $3, "
                     "ACK'd Peers: $4, Majority: $5",
                     (operation_->has_id() ? operation_->id().ShortDebugString() : "NULL"),
                     IsDone(),

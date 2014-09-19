@@ -311,28 +311,34 @@ CatalogManager::~CatalogManager() {
 }
 
 Status CatalogManager::Init(bool is_first_run) {
-  RETURN_NOT_OK(InitSysTablesAsync(is_first_run));
+  RETURN_NOT_OK_PREPEND(InitSysTablesAsync(is_first_run),
+                        "Failed to initialize sys tables async");
 
   // WaitUntilRunning() must run outside of the lock as to prevent
   // deadlock. This is safe as WaitUntilRunning waits for another
   // thread to finish its work and doesn't itself depend on any state
   // within CatalogManager.
 
-  RETURN_NOT_OK(sys_tables_->WaitUntilRunning());
-  RETURN_NOT_OK(sys_tablets_->WaitUntilRunning());
+  RETURN_NOT_OK_PREPEND(sys_tables_->WaitUntilRunning(),
+                        "Failed waiting for sys tables to run");
+  RETURN_NOT_OK_PREPEND(sys_tablets_->WaitUntilRunning(),
+                        "Failed waiting for sys tablets to run");
 
   boost::lock_guard<LockType> l(lock_);
 
   if (!is_first_run) {
     TableLoader table_loader(this);
-    RETURN_NOT_OK(sys_tables_->VisitTables(&table_loader));
+    RETURN_NOT_OK_PREPEND(sys_tables_->VisitTables(&table_loader),
+                          "Failed while visiting sys tables");
 
     TabletLoader tablet_loader(this);
-    RETURN_NOT_OK(sys_tablets_->VisitTablets(&tablet_loader));
+    RETURN_NOT_OK_PREPEND(sys_tablets_->VisitTablets(&tablet_loader),
+                          "Failed while visiting sys tablets");
   }
 
   background_tasks_.reset(new CatalogManagerBgTasks(this));
-  RETURN_NOT_OK(background_tasks_->Init());
+  RETURN_NOT_OK_PREPEND(background_tasks_->Init(),
+                        "Failed to initialize catalog manager background tasks");
 
   initted_ = true;
 

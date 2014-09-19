@@ -513,7 +513,7 @@ Status SetPermanentUuidForRemotePeer(const shared_ptr<Messenger>& messenger,
       s = controller.status();
     }
 
-    LOG(WARNING) << "Error getting permanent uuid from " << hostport.ToString() << ": "
+    LOG(WARNING) << "Error getting permanent uuid from quorum peer " << hostport.ToString() << ": "
                  << s.ToString();
     MonoTime now = MonoTime::Now(MonoTime::FINE);
     if (now.ComesBefore(deadline)) {
@@ -524,11 +524,13 @@ Status SetPermanentUuidForRemotePeer(const shared_ptr<Messenger>& messenger,
       LOG(INFO) << "Sleeping " << delay_ms << " ms. before retrying...";
       usleep(delay_ms * 1000);
       LOG(INFO) << "Retrying, attempt " << attempt++;
-      continue;
+    } else {
+      s = Status::TimedOut(Substitute("Getting permanent uuid from $0 timed out after $1 ms.",
+                                      hostport.ToString(),
+                                      FLAGS_quorum_get_node_instance_timeout_ms),
+                           s.ToString());
+      return s;
     }
-    LOG(ERROR) << "Getting permanent uuid from " << hostport.ToString()
-               << " timed out after "  << FLAGS_quorum_get_node_instance_timeout_ms << " ms.";
-    return s;
   }
   remote_peer->set_permanent_uuid(resp.node_instance().permanent_uuid());
   return Status::OK();

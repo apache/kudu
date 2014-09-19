@@ -52,8 +52,6 @@ class TabletHarness {
     // Build a schema with IDs
     Schema server_schema = SchemaBuilder(schema_).Build();
 
-    quorum_.set_seqno(0);
-
     // Build the Tablet
     fs_manager_.reset(new FsManager(options_.env, options_.root_dir));
     if (first_time) {
@@ -66,7 +64,6 @@ class TabletHarness {
                                                          master_block,
                                                          "KuduTableTest",
                                                          server_schema,
-                                                         quorum_,
                                                          "", "",
                                                          REMOTE_BOOTSTRAP_DONE,
                                                          &metadata));
@@ -107,7 +104,6 @@ class TabletHarness {
 
   scoped_refptr<server::Clock> clock_;
   Schema schema_;
-  metadata::QuorumPB quorum_;
   std::tr1::shared_ptr<Tablet> tablet_;
   gscoped_ptr<FsManager> fs_manager_;
 };

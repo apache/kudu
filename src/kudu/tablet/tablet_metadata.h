@@ -49,7 +49,6 @@ class TabletMetadata : public RefCountedThreadSafe<TabletMetadata> {
                           const TabletMasterBlockPB& master_block,
                           const std::string& table_name,
                           const Schema& schema,
-                          const metadata::QuorumPB& quorum,
                           const std::string& start_key, const std::string& end_key,
                           const TabletBootstrapStatePB& initial_remote_bootstrap_state,
                           scoped_refptr<TabletMetadata>* metadata);
@@ -79,7 +78,6 @@ class TabletMetadata : public RefCountedThreadSafe<TabletMetadata> {
                              const TabletMasterBlockPB& master_block,
                              const std::string& table_name,
                              const Schema& schema,
-                             const metadata::QuorumPB& quorum,
                              const std::string& start_key, const std::string& end_key,
                              const TabletBootstrapStatePB& initial_remote_bootstrap_state,
                              scoped_refptr<TabletMetadata>* metadata);
@@ -113,12 +111,6 @@ class TabletMetadata : public RefCountedThreadSafe<TabletMetadata> {
   // Return the current schema of the metadata. Note that this returns
   // a copy so should not be used in a tight loop.
   Schema schema() const;
-
-  void SetQuorum(const metadata::QuorumPB& quorum);
-
-  // Return the current quorum config.
-  // Note that this returns a copy so should not be used in a tight loop.
-  metadata::QuorumPB Quorum() const;
 
   // Update the remote bootstrapping state.
   void set_remote_bootstrap_state(TabletBootstrapStatePB state);
@@ -190,7 +182,6 @@ class TabletMetadata : public RefCountedThreadSafe<TabletMetadata> {
                  const TabletMasterBlockPB& master_block,
                  const std::string& table_name,
                  const Schema& schema,
-                 const metadata::QuorumPB& quorum,
                  const std::string& start_key,
                  const std::string& end_key,
                  const TabletBootstrapStatePB& remote_bootstrap_state);
@@ -250,8 +241,6 @@ class TabletMetadata : public RefCountedThreadSafe<TabletMetadata> {
   Schema schema_;
   uint32_t schema_version_;
   std::string table_name_;
-
-  metadata::QuorumPB quorum_;
 
   // The current state of remote bootstrap for the tablet.
   TabletBootstrapStatePB remote_bootstrap_state_;

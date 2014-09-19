@@ -15,7 +15,9 @@ using metadata::QuorumPB;
 using std::string;
 using strings::Substitute;
 
-const char* kConsensusMetadataMagicNumber = "kconmeta";
+const int64_t kUninitializedQuorumSeqNo = -1;
+
+static const char* kConsensusMetadataMagicNumber = "kconmeta";
 
 Status ConsensusMetadata::Create(FsManager* fs_manager,
                                  const string& tablet_id,

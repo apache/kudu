@@ -3,12 +3,18 @@
 #ifndef KUDU_CONSENSUS_OPID_UTIL_H_
 #define KUDU_CONSENSUS_OPID_UTIL_H_
 
+#include <stdint.h>
+
 #include <iosfwd>
 #include <utility>
 
 namespace kudu {
 namespace consensus {
+
 class OpId;
+
+// Minimum possible term.
+extern const uint64_t kMinimumTerm;
 
 // Returns true iff left == right.
 bool OpIdEquals(const OpId& left, const OpId& right);

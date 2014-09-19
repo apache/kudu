@@ -56,8 +56,8 @@ MasterOptions::MasterOptions() {
       LOG(FATAL) << "Couldn't parse the leader_address flag: " << s.ToString();
     }
   } else if (!leader && FLAGS_follower_addresses != "") {
-    LOG(FATAL) << "Invalid configuration: leader flag is not set, leader_address is flag is not ",
-        "specified, but distributed mode is requested (follower_addresses flag is set).";
+    LOG(FATAL) << "Invalid configuration: leader flag is not set, leader_address is flag is not "
+               << "specified, but distributed mode is requested (follower_addresses flag is set).";
   }
 
   // TODO: Currently we require at least three masters for a

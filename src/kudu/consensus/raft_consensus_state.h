@@ -12,6 +12,7 @@
 
 #include "kudu/consensus/consensus.h"
 #include "kudu/consensus/consensus.pb.h"
+#include "kudu/consensus/consensus_meta.h"
 #include "kudu/consensus/consensus_queue.h"
 #include "kudu/consensus/log_util.h"
 #include "kudu/consensus/opid_waiter_set.h"
@@ -31,11 +32,63 @@ class Messenger;
 }
 
 namespace consensus {
-class ReplicaState;
+
+// Immutable cached state of a quorum, including lists of voting peers,
+// current role, and other information.
+// Instantiate using the static Build() method below.
+struct QuorumState {
+  // Build an immutable QuorumState object, given a quorum and the UUID of the
+  // current node. The object does not retain a reference to either quorum or
+  // self_uuid.
+  static gscoped_ptr<QuorumState> Build(const metadata::QuorumPB& quorum,
+                                        const std::string& self_uuid);
+
+  // The acting role of the current replica in the quorum.
+  const metadata::QuorumPeerPB::Role role;
+
+  // The UUID of the leader. This may be the same as the local peer, and
+  // changes over time (but not for the lifetime of this object).
+  const std::string leader_uuid;
+
+  // The UUIDs for the current set of peers whose votes/acks count towards
+  // majority.
+  const std::tr1::unordered_set<std::string> voting_peers;
+
+  // Current size of the quorum majority.
+  // Number of "yes" votes it takes to get elected.
+  const int majority_size;
+
+  // Cache of the total size of the active quorum.
+  const int quorum_size;
+
+  // Sequence number of the active quorum.
+  const int64_t config_seqno;
+
+ private:
+  // Private constructor called by static Build method.
+  QuorumState(metadata::QuorumPeerPB::Role role,
+              const std::string& leader_uuid,
+              const std::tr1::unordered_set<std::string>& voting_peers,
+              int majority_size,
+              int quorum_size,
+              int64_t config_seqno);
+};
 
 // Class that coordinates access to the replica state (independently of Role).
 // This has a 1-1 relationship with RaftConsensus and is essentially responsible for
 // keeping state and checking if state changes are viable.
+//
+// Note that, in the case of a LEADER role, there are two quorum states that
+// that are tracked: a pending and a committed quorum. The "active" state is
+// considered to be the pending quorum if it is non-null, otherwise the
+// committed quorum is the active quorum.
+//
+// When a replica becomes a leader of a quorum, it sets the pending quorum to
+// a new quorum declaring itself as leader and sets its "active" role to LEADER.
+// It then starts up ConsensusPeers for each member of the pending quorum and
+// tries to push a new configuration to the quorum. Once that configuration is
+// pushed to a majority of the cluster, it is considered committed and the
+// replica flushes that quorum to disk as the committed quorum.
 //
 // Each time an operation is to be performed on the replica the appropriate LockFor*()
 // method should be called. The LockFor*() methods check that the replica is in the
@@ -65,9 +118,10 @@ class ReplicaState {
   ReplicaState(const ConsensusOptions& options,
                ThreadPool* callback_exec_pool,
                const std::string& peer_uuid,
+               gscoped_ptr<ConsensusMetadata> cmeta,
                ReplicaTransactionFactory* txn_factory);
 
-  Status StartUnlocked(const OpId& initial_id, const metadata::QuorumPB& initial_quorum);
+  Status StartUnlocked(const OpId& initial_id);
 
   // Locks a replica down until the critical section of an append completes,
   // i.e. until the replicate message has been assigned an id and placed in
@@ -107,35 +161,45 @@ class ReplicaState {
   // finishes.
   Status Shutdown() WARN_UNUSED_RESULT;
 
-  // Changes the config for this replica. Checks that the role change
-  // is legal.
-  Status ChangeConfigUnlocked(const metadata::QuorumPB& new_quorum);
-
   Status SetConfigDoneUnlocked();
 
-  metadata::QuorumPeerPB::Role GetCurrentRoleUnlocked() const;
+  // Returns a const reference to the currently active quorum state, which may
+  // correspond to a quorum pending commit in the case of a leader currently
+  // pushing a config change round.
+  // The returned reference is only valid while the lock is held.
+  const QuorumState& GetActiveQuorumStateUnlocked() const;
 
-  const metadata::QuorumPB& GetCurrentConfigUnlocked() const;
+  // Returns true if pending_quorum_ is non-null, indicating that there is a
+  // quorum change currently in-flight but not yet committed.
+  bool IsQuorumChangePendingUnlocked() const;
+
+  // Sets the given quorum as pending commit. Does not persist into the quorum
+  // metadata. In order to be persisted, SetCommittedQuorumUnlocked() must be called.
+  //
+  // This is only currently used by the Leader, in order to set up the quorum
+  // state used to initialize the consensus queues and commit tracking before
+  // the ChangeConfigTransaction is started and subsequently committed.
+  Status SetPendingQuorumUnlocked(const metadata::QuorumPB& new_quorum);
+
+  // Return the pending quorum, or crash if one is not set.
+  const metadata::QuorumPB& GetPendingQuorumUnlocked() const;
+
+  // Changes the config for this replica. Checks that the role change
+  // is legal. Also checks that if the pending quorum is set, the persistent
+  // quorum matches it, and resets the pending quorum to null.
+  Status SetCommittedQuorumUnlocked(const metadata::QuorumPB& new_quorum);
+
+  // Return the persisted quorum.
+  const metadata::QuorumPB& GetCommittedQuorumUnlocked() const;
 
   ReplicaTransactionFactory* GetReplicaTransactionFactoryUnlocked() const;
 
-  void IncrementConfigSeqNoUnlocked();
-
-  // Returns the current majority count.
-  int GetCurrentMajorityUnlocked() const;
-
-  // Returns the set of voting peers (i.e. those whose ACK's count towards majority)
-  const std::tr1::unordered_set<std::string>& GetCurrentVotingPeersUnlocked() const;
-
-  // Returns the current total set of tracked peers.
-  int GetAllPeersCountUnlocked() const;
+  Status IncrementConfigSeqNoUnlocked();
 
   // Returns the uuid of the peer to which this replica state belongs.
   const std::string& GetPeerUuid() const;
 
   const ConsensusOptions& GetOptions() const;
-
-  const std::string& GetLeaderUuidUnlocked() const;
 
   // Returns the term set in the last config change round.
   const uint64_t GetCurrentTermUnlocked() const;
@@ -251,29 +315,28 @@ class ReplicaState {
   std::string LogPrefixUnlocked() const;
 
  private:
+  // Helper method to update the active quorum state for peers, etc.
+  void ResetActiveQuorumStateUnlocked(const metadata::QuorumPB& quorum);
+
   const ConsensusOptions options_;
 
   // The UUID of the local peer.
   const std::string peer_uuid_;
 
-  // The UUID of the leader. This changes over time, and may be the same as the local peer.
-  std::string leader_uuid_;
+  // Cache of the current active quorum state. May refer to either the pending
+  // or committed quorum. This can be tested by checking whether pending_quorum_
+  // is NULL.
+  gscoped_ptr<QuorumState> active_quorum_state_;
 
-  // The current role of the local peer.
-  metadata::QuorumPeerPB::Role current_role_;
+  // Quorum used by the peers when there is a pending config change operation.
+  gscoped_ptr<metadata::QuorumPB> pending_quorum_;
 
-  // The current number of nodes which represents a majority vote.
-  int current_majority_;
-
-  // The uuids for the current set of peers whose votes/acks count towards
-  // majority.
-  std::tr1::unordered_set<std::string> voting_peers_;
-
-  // The current set of nodes in the quorum.
-  metadata::QuorumPB current_quorum_;
+  // Consensus metadata persistence object.
+  gscoped_ptr<ConsensusMetadata> cmeta_;
 
   // Used by the LEADER. This is the current term for this leader.
   uint64_t current_term_;
+
   // Used by the LEADER. This is the index of the next operation generated
   // by this LEADER.
   uint64_t next_index_;

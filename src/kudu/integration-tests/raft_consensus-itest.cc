@@ -504,7 +504,7 @@ TEST_F(DistConsensusTest, TestInsertOnNonLeader) {
   ASSERT_TRUE(resp.has_error());
   Status s = StatusFromPB(resp.error().status());
   EXPECT_TRUE(s.IsIllegalState());
-  ASSERT_STR_CONTAINS(s.ToString(), "Replica is not leader of this quorum");
+  ASSERT_STR_CONTAINS(s.ToString(), "is not leader of this quorum. Role: FOLLOWER");
   // TODO: need to change the error code to be something like REPLICA_NOT_LEADER
   // so that the client can properly handle this case! plumbing this is a little difficult
   // so not addressing at the moment.

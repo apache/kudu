@@ -34,7 +34,6 @@ Status TabletMetadata::CreateNew(FsManager* fs_manager,
                                  const TabletMasterBlockPB& master_block,
                                  const string& table_name,
                                  const Schema& schema,
-                                 const QuorumPB& quorum,
                                  const string& start_key, const string& end_key,
                                  const TabletBootstrapStatePB& initial_remote_bootstrap_state,
                                  scoped_refptr<TabletMetadata>* metadata) {
@@ -42,7 +41,6 @@ Status TabletMetadata::CreateNew(FsManager* fs_manager,
                                                        master_block,
                                                        table_name,
                                                        schema,
-                                                       quorum,
                                                        start_key,
                                                        end_key,
                                                        initial_remote_bootstrap_state));
@@ -66,7 +64,6 @@ Status TabletMetadata::LoadOrCreate(FsManager* fs_manager,
                                     const TabletMasterBlockPB& master_block,
                                     const string& table_name,
                                     const Schema& schema,
-                                    const QuorumPB& quorum,
                                     const string& start_key, const string& end_key,
                                     const TabletBootstrapStatePB& initial_remote_bootstrap_state,
                                     scoped_refptr<TabletMetadata>* metadata) {
@@ -80,7 +77,7 @@ Status TabletMetadata::LoadOrCreate(FsManager* fs_manager,
     return Status::OK();
   } else if (s.IsNotFound()) {
     return CreateNew(fs_manager, master_block, table_name, schema,
-                     quorum, start_key, end_key, initial_remote_bootstrap_state,
+                     start_key, end_key, initial_remote_bootstrap_state,
                      metadata);
   } else {
     return s;
@@ -114,7 +111,6 @@ TabletMetadata::TabletMetadata(FsManager *fs_manager,
                                const TabletMasterBlockPB& master_block,
                                const string& table_name,
                                const Schema& schema,
-                               const QuorumPB& quorum,
                                const string& start_key,
                                const string& end_key,
                                const TabletBootstrapStatePB& remote_bootstrap_state)
@@ -128,7 +124,6 @@ TabletMetadata::TabletMetadata(FsManager *fs_manager,
     schema_(schema),
     schema_version_(0),
     table_name_(table_name),
-    quorum_(quorum),
     remote_bootstrap_state_(remote_bootstrap_state),
     num_flush_pins_(0),
     needs_flush_(false) {
@@ -181,8 +176,6 @@ Status TabletMetadata::LoadFromSuperBlockUnlocked(const TabletSuperBlockPB& supe
   DCHECK(schema_.has_column_ids());
 
   remote_bootstrap_state_ = superblock.remote_bootstrap_state();
-
-  quorum_ = superblock.quorum();
 
   BOOST_FOREACH(const RowSetDataPB& rowset_pb, superblock.rowsets()) {
     gscoped_ptr<RowSetMetadata> rowset_meta;
@@ -395,7 +388,6 @@ Status TabletMetadata::ToSuperBlockUnlocked(TabletSuperBlockPB* super_block,
                         "Couldn't serialize schema into superblock");
 
   pb.set_remote_bootstrap_state(remote_bootstrap_state_);
-  pb.mutable_quorum()->CopyFrom(quorum_);
 
   super_block->Swap(&pb);
   return Status::OK();
@@ -456,16 +448,6 @@ uint32_t TabletMetadata::schema_version() const {
 Schema TabletMetadata::schema() const {
   boost::lock_guard<LockType> l(data_lock_);
   return schema_;
-}
-
-void TabletMetadata::SetQuorum(const QuorumPB& quorum) {
-  boost::lock_guard<LockType> l(data_lock_);
-  quorum_ = quorum;
-}
-
-QuorumPB TabletMetadata::Quorum() const {
-  boost::lock_guard<LockType> l(data_lock_);
-  return quorum_;
 }
 
 void TabletMetadata::set_remote_bootstrap_state(TabletBootstrapStatePB state) {

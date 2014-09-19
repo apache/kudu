@@ -11,10 +11,12 @@
 #include "kudu/common/partial_row.h"
 #include "kudu/common/row_operations.h"
 #include "kudu/common/wire_protocol.h"
+#include "kudu/consensus/consensus_meta.h"
 #include "kudu/consensus/log.h"
 #include "kudu/consensus/log_reader.h"
 #include "kudu/consensus/log_util.h"
 #include "kudu/consensus/opid_anchor_registry.h"
+#include "kudu/consensus/opid_util.h"
 #include "kudu/fs/fs_manager.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/stl_util.h"
@@ -43,6 +45,7 @@ using boost::shared_lock;
 using consensus::ChangeConfigRequestPB;
 using consensus::CommitMsg;
 using consensus::ConsensusBootstrapInfo;
+using consensus::ConsensusMetadata;
 using consensus::ConsensusRound;
 using consensus::OperationPB;
 using consensus::OpId;
@@ -195,6 +198,8 @@ class TabletBootstrap {
 
   Arena arena_;
 
+  gscoped_ptr<ConsensusMetadata> cmeta_;
+
   DISALLOW_COPY_AND_ASSIGN(TabletBootstrap);
 };
 
@@ -284,6 +289,12 @@ Status TabletBootstrap::Bootstrap(shared_ptr<Tablet>* rebuilt_tablet,
                                   ConsensusBootstrapInfo* consensus_info) {
   string tablet_id = meta_->oid();
 
+  // Replay requires a valid Consensus metadata file to exist in order to
+  // compare the committed quorum seqno with the log entries and also to persist
+  // committed but unpersisted changes.
+  RETURN_NOT_OK_PREPEND(ConsensusMetadata::Load(meta_->fs_manager(), tablet_id, &cmeta_),
+                        "Unable to load Consensus metadata");
+
   // Make sure we don't try to locally bootstrap a tablet that was in the middle
   // of a remote bootstrap. It's likely that not all files were copied over
   // successfully.
@@ -342,6 +353,10 @@ Status TabletBootstrap::Bootstrap(shared_ptr<Tablet>* rebuilt_tablet,
   }
 
   RETURN_NOT_OK_PREPEND(PlaySegments(consensus_info), "Failed log replay. Reason");
+
+  // Flush the consensus metadata once at the end to persist our changes, if any.
+  cmeta_->Flush();
+
   RETURN_NOT_OK(tablet_->metadata()->UnPinFlush());
   RETURN_NOT_OK(RemoveRecoveryDir());
   listener_->StatusMessage("Bootstrap complete.");
@@ -856,13 +871,19 @@ Status TabletBootstrap::PlayChangeConfigRequest(OperationPB* replicate_op,
 
   QuorumPB quorum = change_config->new_config();
 
-  // if the sequence number is higher than the current one change the configuration
-  // otherwise skip it.
-  if (quorum.seqno() > tablet_->metadata()->Quorum().seqno()) {
-    tablet_->metadata()->SetQuorum(quorum);
+  // If the sequence number is higher than the committed one then change the
+  // configuration. Otherwise, skip it.
+  int64_t committed_seqno =  cmeta_->pb().committed_quorum().seqno();
+  if (quorum.seqno() > committed_seqno) {
+    VLOG(1) << "WAL replay found quorum configuration sequence number " << quorum.seqno()
+            << " that is greater than the committed seqno " << committed_seqno << ". "
+            << "Applying this configuration change.";
+    cmeta_->mutable_pb()->mutable_committed_quorum()->CopyFrom(quorum);
+    // We flush once at the end of bootstrap.
   } else {
-    VLOG(1) << "Configuration sequence number lower than current sequence number. "
-        "Skipping config change";
+    VLOG(1) << "WAL replay found quorum configuration sequence number " << quorum.seqno()
+            << ", which is less than or equal to the committed sequence number " << committed_seqno
+            << ". Skipping application of this config change.";
   }
 
   LogEntryPB commit_entry;

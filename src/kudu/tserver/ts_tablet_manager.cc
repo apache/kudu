@@ -11,8 +11,10 @@
 #include <vector>
 
 #include "kudu/common/wire_protocol.h"
+#include "kudu/consensus/consensus_meta.h"
 #include "kudu/consensus/log.h"
 #include "kudu/consensus/opid_anchor_registry.h"
+#include "kudu/consensus/opid_util.h"
 #include "kudu/fs/fs_manager.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/strings/util.h"
@@ -43,6 +45,7 @@ DEFINE_int32(tablet_start_warn_threshold_ms, 500,
 namespace kudu {
 namespace tserver {
 
+using consensus::ConsensusMetadata;
 using log::Log;
 using log::OpIdAnchorRegistry;
 using master::ReportedTabletPB;
@@ -132,11 +135,8 @@ Status TSTabletManager::Init() {
     scoped_refptr<TabletMetadata> meta;
     RETURN_NOT_OK_PREPEND(OpenTabletMeta(tablet, &meta),
                           "Failed to open tablet metadata for tablet: " + tablet);
-    QuorumPeerPB quorum_peer;
-    quorum_peer.set_permanent_uuid(fs_manager_->uuid());
     scoped_refptr<TabletPeer> tablet_peer(
         new TabletPeer(meta,
-                       quorum_peer,
                        leader_apply_executor_.get(),
                        replica_apply_executor_.get(),
                        boost::bind(&TSTabletManager::MarkTabletDirty, this, _1)));
@@ -231,7 +231,6 @@ Status TSTabletManager::CreateNewTablet(const string& table_id,
                               master_block,
                               table_name,
                               schema,
-                              quorum,
                               start_key,
                               end_key,
                               tablet::REMOTE_BOOTSTRAP_DONE,
@@ -242,11 +241,15 @@ Status TSTabletManager::CreateNewTablet(const string& table_id,
   RETURN_NOT_OK_PREPEND(PersistMasterBlock(master_block),
                         "Couldn't persist master block for new tablet");
 
-  QuorumPeerPB quorum_peer;
-  quorum_peer.set_permanent_uuid(server_->instance_pb().permanent_uuid());
+  // We must persist the consensus metadata to disk before starting a new
+  // tablet's TabletPeer and Consensus implementation.
+  gscoped_ptr<ConsensusMetadata> cmeta;
+  RETURN_NOT_OK_PREPEND(ConsensusMetadata::Create(fs_manager_, tablet_id, quorum,
+                                                  consensus::kMinimumTerm, &cmeta),
+                        "Unable to create new ConsensusMeta for tablet " + tablet_id);
+
   scoped_refptr<TabletPeer> new_peer(
       new TabletPeer(meta,
-                     quorum_peer,
                      leader_apply_executor_.get(),
                      replica_apply_executor_.get(),
                      boost::bind(&TSTabletManager::MarkTabletDirty, this, _1)));
@@ -335,10 +338,6 @@ void TSTabletManager::OpenTablet(const scoped_refptr<TabletMetadata>& meta) {
   MonoTime start(MonoTime::Now(MonoTime::FINE));
   LOG_TIMING(INFO, Substitute("starting tablet $0", tablet_id)) {
     TRACE("Initializing tablet peer");
-
-    // Check the tablet metadata for the quorum
-    CHECK(tablet->metadata()->Quorum().IsInitialized());
-
     s =  tablet_peer->Init(tablet,
                            scoped_refptr<server::Clock>(server_->clock()),
                            server_->messenger(),
@@ -511,7 +510,13 @@ void TSTabletManager::CreateReportedTabletPB(const string& tablet_id,
     AppStatusPB* error_status = reported_tablet->mutable_error();
     StatusToPB(tablet_peer->error(), error_status);
   }
-  reported_tablet->set_role(tablet_peer->role());
+
+  // We cannot call role() until after consensus is initialized.
+  if (tablet_peer->consensus()) {
+    reported_tablet->set_role(tablet_peer->consensus()->role());
+  } else {
+    reported_tablet->set_role(QuorumPeerPB::NON_PARTICIPANT);
+  }
 
   if (tablet_peer->tablet() != NULL) {
     reported_tablet->set_schema_version(tablet_peer->tablet()->metadata()->schema_version());

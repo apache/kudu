@@ -23,24 +23,32 @@ using metadata::QuorumPeerPB;
 using std::tr1::shared_ptr;
 
 LocalConsensus::LocalConsensus(const ConsensusOptions& options,
+                               gscoped_ptr<ConsensusMetadata> cmeta,
                                const string& peer_uuid,
                                const scoped_refptr<server::Clock>& clock,
                                ReplicaTransactionFactory* txn_factory,
                                Log* log)
     : peer_uuid_(peer_uuid),
       options_(options),
+      cmeta_(cmeta.Pass()),
       next_op_id_index_(-1),
       state_(kInitializing),
       txn_factory_(DCHECK_NOTNULL(txn_factory)),
       log_(DCHECK_NOTNULL(log)) {
+  CHECK(cmeta_) << "Passed ConsensusMetadata object is NULL";
 }
 
-Status LocalConsensus::Start(const metadata::QuorumPB& initial_quorum,
+Status LocalConsensus::Start(const metadata::QuorumPB& /* UNUSED */,
                              const OpId& last_committed_op_id) {
+
   CHECK_EQ(state_, kInitializing);
 
+  boost::lock_guard<simple_spinlock> lock(lock_);
+
+  const QuorumPB& initial_quorum = cmeta_->pb().committed_quorum();
   CHECK(initial_quorum.local()) << "Local consensus must be passed a local quorum";
-  CHECK_EQ(initial_quorum.peers_size(), 1);
+  RETURN_NOT_OK_PREPEND(VerifyQuorum(initial_quorum),
+                        "Invalid quorum found in LocalConsensus::Start()");
 
   next_op_id_index_ = last_committed_op_id.index() + 1;
 
@@ -49,7 +57,6 @@ Status LocalConsensus::Start(const metadata::QuorumPB& initial_quorum,
   new_quorum->mutable_peers(0)->set_role(QuorumPeerPB::LEADER);
   new_quorum->set_seqno(initial_quorum.seqno() + 1);
 
-  quorum_ = initial_quorum;
   state_ = kRunning;
 
   NullCallback* null_clbk = new NullCallback;
@@ -92,6 +99,11 @@ Status LocalConsensus::Replicate(ConsensusRound* context) {
   RETURN_NOT_OK(log_->AsyncAppend(reserved_entry_batch,
                                   context->replicate_callback()->AsStatusCallback()));
   return Status::OK();
+}
+
+metadata::QuorumPeerPB::Role LocalConsensus::role() const {
+  boost::lock_guard<simple_spinlock> lock(lock_);
+  return cmeta_->pb().committed_quorum().peers().begin()->role();
 }
 
 Status LocalConsensus::Update(const ConsensusRequestPB* request,
@@ -142,6 +154,25 @@ Status LocalConsensus::Commit(ConsensusRound* round) {
   RETURN_NOT_OK(log_->AsyncAppend(reserved_entry_batch,
                                   commit_clbk->AsStatusCallback()));
   return Status::OK();
+}
+
+metadata::QuorumPB LocalConsensus::Quorum() const {
+  boost::lock_guard<simple_spinlock> lock(lock_);
+  return cmeta_->pb().committed_quorum();
+}
+
+Status LocalConsensus::PersistQuorum(const QuorumPB& quorum) {
+  RETURN_NOT_OK_PREPEND(VerifyQuorum(quorum),
+                        "Invalid quorum passed to LocalConsensus::PersistQuorum()");
+  TRACE(strings::Substitute("Persisting new quorum with seqno $0", quorum.seqno()));
+  boost::lock_guard<simple_spinlock> lock(lock_);
+  CHECK_LT(cmeta_->pb().committed_quorum().seqno(), quorum.seqno())
+    << "Quorum seqnos not monotonic: "
+    << "old quorum: " << cmeta_->pb().committed_quorum().ShortDebugString() << "; "
+    << "new quorum: " << quorum.ShortDebugString();
+
+  cmeta_->mutable_pb()->mutable_committed_quorum()->CopyFrom(quorum);
+  return cmeta_->Flush();
 }
 
 void LocalConsensus::Shutdown() {

@@ -9,9 +9,10 @@
 #include "kudu/consensus/consensus.pb.h"
 #include "kudu/gutil/port.h"
 
-
 namespace kudu {
 namespace consensus {
+
+const uint64_t kMinimumTerm = 0;
 
 int OpIdCompare(const OpId& first, const OpId& second) {
   if (PREDICT_TRUE(first.term() == second.term())) {

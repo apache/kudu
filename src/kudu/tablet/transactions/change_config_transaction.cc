@@ -50,7 +50,7 @@ Status ChangeConfigTransaction::Prepare() {
 
   state_->acquire_config_sem(config_sem_);
 
-  const QuorumPB& old_quorum = state_->tablet_peer()->tablet()->metadata()->Quorum();
+  const QuorumPB& old_quorum = state_->tablet_peer()->consensus()->Quorum();
   const QuorumPB& new_quorum = state_->request()->new_config();
 
   Status s;
@@ -86,14 +86,12 @@ void ChangeConfigTransaction::NewCommitAbortMessage(gscoped_ptr<CommitMsg>* comm
 Status ChangeConfigTransaction::Apply(gscoped_ptr<CommitMsg>* commit_msg) {
   TRACE("APPLY CHANGE CONFIG: Starting");
 
-  // Change the config in the tablet metadata.
+  // Change the quorum config in the consensus metadata.
   //
-  // NOTE: flushing the tablet metadata prior to writing the commit message to the log
-  // has the side effect that, if we crashed between these two operations, we might mistakenly
-  // think that the config change was not yet committed during bootstrap. That's OK, though,
-  // because the sequence numbers are used to make configuration changes idempotent.
-  state_->tablet_peer()->tablet()->metadata()->SetQuorum(state_->request()->new_config());
-  RETURN_NOT_OK(state_->tablet_peer()->tablet()->metadata()->Flush());
+  // TODO: Currently this only works for leadership changes.
+  const QuorumPB& quorum = state_->request()->new_config();
+  RETURN_NOT_OK_PREPEND(state_->tablet_peer()->consensus()->PersistQuorum(quorum),
+                        "Error persisting quorum during change config txn apply");
 
   commit_msg->reset(new CommitMsg());
   (*commit_msg)->set_op_type(CHANGE_CONFIG_OP);

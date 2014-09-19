@@ -68,6 +68,7 @@ class RaftConsensusTest : public KuduTest {
       hp->set_host("0");
       hp->set_port(0);
     }
+    quorum_.set_local(false);
     quorum_.set_seqno(0);
     options_.tablet_id = kTestTablet;
   }
@@ -100,8 +101,14 @@ class RaftConsensusTest : public KuduTest {
       proxy_factories.push_back(proxy_factory);
 
       TestTransactionFactory* txn_factory = new TestTransactionFactory();
+
+      gscoped_ptr<ConsensusMetadata> cmeta;
+      CHECK_OK(ConsensusMetadata::Create(fs_managers_[i], kTestTablet, quorum_,
+                                         consensus::kMinimumTerm, &cmeta));
+
       RaftConsensus* peer =
           new RaftConsensus(options_,
+                            cmeta.Pass(),
                             gscoped_ptr<PeerProxyFactory>(proxy_factory).Pass(),
                             MetricContext(metric_context_, Substitute("peer-$0", i)),
                             quorum_.peers(i).permanent_uuid(),
@@ -750,7 +757,7 @@ TEST_F(RaftConsensusTest, DISABLED_TestLeaderPromotionWithQuiescedQuorum) {
 
   // ... and make peer 1 become leader
   RaftConsensus* new_leader = GetPeer(1);
-  ASSERT_STATUS_OK(new_leader->BecomeLeader());
+  ASSERT_STATUS_OK(new_leader->BecomeLeaderUnlocked());
 
   // ... replicating a set of messages to peer 1 should now be possible.
   ReplicateSequenceOfMessages(10,

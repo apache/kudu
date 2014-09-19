@@ -9,9 +9,11 @@
 #include "kudu/common/timestamp.h"
 #include "kudu/common/wire_protocol.h"
 #include "kudu/common/wire_protocol-test-util.h"
+#include "kudu/consensus/consensus_meta.h"
 #include "kudu/consensus/log.h"
 #include "kudu/consensus/log_reader.h"
 #include "kudu/consensus/log_util.h"
+#include "kudu/consensus/opid_util.h"
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/rpc/messenger.h"
@@ -35,6 +37,7 @@ namespace tablet {
 using consensus::ConsensusBootstrapInfo;
 using consensus::CommitMsg;
 using consensus::Consensus;
+using consensus::ConsensusMetadata;
 using consensus::MinimumOpId;
 using consensus::OpId;
 using consensus::OpIdEquals;
@@ -71,25 +74,28 @@ class TabletPeerTest : public KuduTabletTest {
     rpc::MessengerBuilder builder(CURRENT_TEST_NAME());
     ASSERT_STATUS_OK(builder.Build(&messenger_));
 
-    QuorumPeerPB quorum_peer;
-    quorum_peer.set_permanent_uuid("test1");
-    quorum_peer.set_role(QuorumPeerPB::CANDIDATE);
 
     metric_ctx_.reset(new MetricContext(&metric_registry_, CURRENT_TEST_NAME()));
 
     // "Bootstrap" and start the TabletPeer.
     tablet_peer_.reset(
       new TabletPeer(make_scoped_refptr(tablet()->metadata()),
-                     quorum_peer,
                      leader_apply_executor_.get(),
                      replica_apply_executor_.get(),
                      boost::bind(&TabletPeerTest::TabletPeerStateChangedCallback, this, _1)));
 
+    QuorumPeerPB quorum_peer;
+    quorum_peer.set_permanent_uuid(tablet()->metadata()->fs_manager()->uuid());
+    quorum_peer.set_role(QuorumPeerPB::CANDIDATE);
     QuorumPB quorum;
     quorum.set_local(true);
-    quorum.set_seqno(0);
+    quorum.set_seqno(consensus::kUninitializedQuorumSeqNo);
     quorum.add_peers()->CopyFrom(quorum_peer);
-    tablet()->metadata()->SetQuorum(quorum);
+
+    gscoped_ptr<ConsensusMetadata> cmeta;
+    ASSERT_OK(ConsensusMetadata::Create(tablet()->metadata()->fs_manager(),
+                                        tablet()->tablet_id(), quorum,
+                                        consensus::kMinimumTerm, &cmeta));
 
     gscoped_ptr<Log> log;
     ASSERT_STATUS_OK(Log::Open(LogOptions(), fs_manager(), tablet()->tablet_id(),

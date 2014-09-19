@@ -80,11 +80,18 @@ class SysTable {
  private:
   friend class CatalogManager;
 
-  Status SetupTablet(const scoped_refptr<tablet::TabletMetadata>& metadata,
-                     const metadata::QuorumPeerPB& quorum_peer);
+  Status SetupTablet(const scoped_refptr<tablet::TabletMetadata>& metadata);
 
-  Status SetupDistributedQuorum(const MasterOptions& options,
-                                metadata::QuorumPeerPB* quorum_peer,
+  // Use the master options to generate a new quorum.
+  // In addition, resolve all UUIDs of this quorum.
+  //
+  // Note: The current node adds itself to the quorum whether leader or
+  // follower, depending on whether the Master options leader flag is
+  // set. Even if the local node should be a follower, it should not be listed
+  // in the Master options followers list, as it will add itself automatically.
+  //
+  // TODO: Revisit this whole thing when integrating leader election.
+  Status SetupDistributedQuorum(const MasterOptions& options, int64_t seqno,
                                 metadata::QuorumPB* quorum);
 
   const scoped_refptr<tablet::TabletPeer>& tablet_peer() const {

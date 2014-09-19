@@ -10,7 +10,11 @@
 #include "kudu/common/partial_row.h"
 #include "kudu/common/row_operations.h"
 #include "kudu/common/wire_protocol.h"
+#include "kudu/consensus/consensus.h"
+#include "kudu/consensus/consensus_meta.h"
+#include "kudu/consensus/consensus_peers.h"
 #include "kudu/consensus/opid_anchor_registry.h"
+#include "kudu/consensus/opid_util.h"
 #include "kudu/fs/fs_manager.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/master/catalog_manager.h"
@@ -23,6 +27,7 @@
 #include "kudu/tserver/tserver.pb.h"
 #include "kudu/util/pb_util.h"
 
+using kudu::consensus::ConsensusMetadata;
 using kudu::log::Log;
 using kudu::log::OpIdAnchorRegistry;
 using kudu::metadata::QuorumPB;
@@ -72,23 +77,7 @@ Status SysTable::Load(FsManager *fs_manager) {
     return(Status::Corruption("Unexpected schema", metadata->schema().ToString()));
   }
 
-  QuorumPeerPB quorum_peer;
-  quorum_peer.set_permanent_uuid(fs_manager->uuid());
-
-  if (master_->opts().IsDistributed()) {
-    LOG(INFO) << "Configuring the quorum for distributed operation...";
-    QuorumPB quorum = metadata->Quorum();
-    RETURN_NOT_OK(SetupDistributedQuorum(master_->opts(),
-                                         &quorum_peer,
-                                         &quorum));
-    if (quorum.has_seqno()) {
-      quorum.set_seqno(quorum.seqno() + 1);
-    }
-    quorum.add_peers()->CopyFrom(quorum_peer);
-    metadata->SetQuorum(quorum);
-    RETURN_NOT_OK(metadata->Flush());
-  }
-  RETURN_NOT_OK(SetupTablet(metadata, quorum_peer));
+  RETURN_NOT_OK(SetupTablet(metadata));
   return Status::OK();
 }
 
@@ -96,84 +85,127 @@ Status SysTable::CreateNew(FsManager *fs_manager) {
   TabletMasterBlockPB master_block;
   SetupTabletMasterBlock(&master_block);
 
-  QuorumPeerPB quorum_peer;
-  quorum_peer.set_permanent_uuid(fs_manager->uuid());
-
-  QuorumPB quorum;
-  quorum.set_seqno(0);
-
-  if (master_->opts().IsDistributed()) {
-    RETURN_NOT_OK(SetupDistributedQuorum(master_->opts(),
-                                         &quorum_peer, &quorum));
-  } else {
-    quorum.set_local(true);
-  }
-  quorum.add_peers()->CopyFrom(quorum_peer);
-
   // Create the new Metadata
   scoped_refptr<tablet::TabletMetadata> metadata;
   RETURN_NOT_OK(tablet::TabletMetadata::CreateNew(fs_manager,
                                                     master_block,
                                                     table_name(),
                                                     BuildTableSchema(),
-                                                    quorum,
                                                     "", "",
                                                     tablet::REMOTE_BOOTSTRAP_DONE,
                                                     &metadata));
-  return SetupTablet(metadata, quorum_peer);
+
+  const int64_t kInitialSeqno = 0;
+  QuorumPB quorum;
+  if (master_->opts().IsDistributed()) {
+    RETURN_NOT_OK_PREPEND(SetupDistributedQuorum(master_->opts(), kInitialSeqno, &quorum),
+                          "Failed to initialize distributed quorum");
+  } else {
+    quorum.set_seqno(kInitialSeqno);
+    quorum.set_local(true);
+    QuorumPeerPB* peer = quorum.add_peers();
+    peer->set_permanent_uuid(fs_manager->uuid());
+    peer->set_role(QuorumPeerPB::LEADER);
+  }
+
+  string tablet_id = metadata->oid();
+  gscoped_ptr<ConsensusMetadata> cmeta;
+  RETURN_NOT_OK_PREPEND(ConsensusMetadata::Create(fs_manager, tablet_id, quorum,
+                                                  consensus::kMinimumTerm, &cmeta),
+                        "Unable to persist consensus metadata for tablet " + tablet_id);
+
+  return SetupTablet(metadata);
 }
 
-Status SysTable::SetupDistributedQuorum(const MasterOptions& options,
-                                        QuorumPeerPB* quorum_peer, QuorumPB* quorum) {
+Status SysTable::SetupDistributedQuorum(const MasterOptions& options, int64_t seqno,
+                                        QuorumPB* quorum) {
   DCHECK(options.IsDistributed());
-  quorum->set_local(false);
-  quorum->clear_peers();
+
+  QuorumPB new_quorum;
+  new_quorum.set_seqno(seqno);
+  new_quorum.set_local(false);
+
+  // Build the set of followers from our server options.
   BOOST_FOREACH(const HostPort& host_port, options.follower_addresses) {
     QuorumPeerPB peer;
     HostPortPB peer_host_port_pb;
     RETURN_NOT_OK(HostPortToPB(host_port, &peer_host_port_pb));
     peer.mutable_last_known_addr()->CopyFrom(peer_host_port_pb);
     peer.set_role(QuorumPeerPB::FOLLOWER);
-    quorum->add_peers()->CopyFrom(peer);
+    new_quorum.add_peers()->CopyFrom(peer);
   }
-  if (options.leader) {
-    quorum_peer->set_role(QuorumPeerPB::CANDIDATE);
-  } else {
-    quorum_peer->set_role(QuorumPeerPB::FOLLOWER);
-    QuorumPeerPB leader;
-    HostPortPB leader_host_port_pb;
-    RETURN_NOT_OK(HostPortToPB(master_->opts().leader_address, &leader_host_port_pb));
-    leader.mutable_last_known_addr()->CopyFrom(leader_host_port_pb);
-    leader.set_role(QuorumPeerPB::CANDIDATE);
-    quorum->add_peers()->CopyFrom(leader);
-  }
+
+  // Add the local peer.
+  QuorumPeerPB* local_peer = new_quorum.add_peers();
+  // Look up my own address and put it in.
   HostPortPB self_host_port;
   self_host_port.set_port(master_->first_rpc_address().port());
-  RETURN_NOT_OK_PREPEND(GetHostname(self_host_port.mutable_host()),
-                        "Unable to determine the local hostname!");
-  quorum_peer->mutable_last_known_addr()->CopyFrom(self_host_port);
-  VLOG(1) << "Distributed quorum configuration: " << quorum->ShortDebugString();
+  self_host_port.set_host(master_->first_rpc_address().host());
+  local_peer->mutable_last_known_addr()->CopyFrom(self_host_port);
+  local_peer->set_role(options.leader ? QuorumPeerPB::LEADER : QuorumPeerPB::FOLLOWER);
+
+  // If we are not the leader, add the leader in as well.
+  if (!options.leader) {
+    QuorumPeerPB* leader = new_quorum.add_peers();
+    leader->set_role(QuorumPeerPB::CANDIDATE);
+    HostPortPB leader_host_port_pb;
+    RETURN_NOT_OK(HostPortToPB(master_->opts().leader_address, &leader_host_port_pb));
+    leader->mutable_last_known_addr()->CopyFrom(leader_host_port_pb);
+  }
+
+  // Now resolve UUIDs.
+  // By the time a SysTable is created and initted, the masters should be
+  // starting up, so this should be fine to do.
+  DCHECK(master_->messenger());
+  QuorumPB resolved_quorum = new_quorum;
+  resolved_quorum.clear_peers();
+  BOOST_FOREACH(const QuorumPeerPB& peer, new_quorum.peers()) {
+    if (peer.has_permanent_uuid()) {
+      resolved_quorum.add_peers()->CopyFrom(peer);
+    } else {
+      LOG(INFO) << peer.ShortDebugString()
+                << " has no permanent_uuid. Determining permanent_uuid...";
+      QuorumPeerPB new_peer = peer;
+      // TODO: Use ConsensusMetadata to cache the results of these lookups so
+      // we only require RPC access to the full quorum on first startup.
+      // See KUDU-526.
+      RETURN_NOT_OK_PREPEND(consensus::SetPermanentUuidForRemotePeer(master_->messenger(),
+                                                                     &new_peer),
+                            Substitute("Unable to resolve UUID for peer $0",
+                                       peer.ShortDebugString()));
+      resolved_quorum.add_peers()->CopyFrom(new_peer);
+    }
+  }
+
+  RETURN_NOT_OK(consensus::Consensus::VerifyQuorum(resolved_quorum));
+  VLOG(1) << "Distributed quorum configuration: " << resolved_quorum.ShortDebugString();
+
+  *quorum = resolved_quorum;
   return Status::OK();
 }
 
 void SysTable::SysTableStateChanged(TabletPeer* tablet_peer) {
-  LOG(INFO) << "SysTable state changed. New quorum config: "
-      << tablet_peer->Quorum().ShortDebugString();
+  string uuid = tablet_peer->consensus()->peer_uuid();
+  QuorumPB quorum = tablet_peer->consensus()->Quorum();
+  LOG(INFO) << "SysTable state changed. New quorum config: " << quorum.ShortDebugString();
   if (master_->opts().IsDistributed()) {
+    // TODO: Once leader election goes in this will need to be relaxed.
     if (master_->opts().leader) {
-      CHECK_EQ(tablet_peer_->role(), QuorumPeerPB::LEADER)
-          << "Aborting master startup: the current node could not be set as the leader.";
+      CHECK_EQ(tablet_peer_->consensus()->role(), QuorumPeerPB::LEADER)
+          << "Aborting master startup: the current peer (with uuid " << uuid << ") could not be "
+          << "set as LEADER. Committed quorum: " << quorum.ShortDebugString();
     } else {
-      CHECK_EQ(tablet_peer_->role(), QuorumPeerPB::FOLLOWER)
-          << "Aborting master startup: the current node could not be set as a follower.";
+      CHECK_EQ(tablet_peer_->consensus()->role(), QuorumPeerPB::FOLLOWER)
+          << "Aborting master startup: the current peer (with uuid " << uuid << ") could not be "
+          << "set as FOLLOWER. Committed quorum: " << quorum.ShortDebugString();
     }
   }
-  VLOG(1) << "This master's current role is: " << QuorumPeerPB::Role_Name(tablet_peer->role());
+  VLOG(1) << "This master's current role is: "
+          << QuorumPeerPB::Role_Name(tablet_peer->consensus()->role());
 }
 
 
-Status SysTable::SetupTablet(const scoped_refptr<tablet::TabletMetadata>& metadata,
-                             const QuorumPeerPB& quorum_peer) {
+Status SysTable::SetupTablet(const scoped_refptr<tablet::TabletMetadata>& metadata) {
   shared_ptr<Tablet> tablet;
   gscoped_ptr<Log> log;
   scoped_refptr<OpIdAnchorRegistry> opid_anchor_registry;
@@ -181,10 +213,10 @@ Status SysTable::SetupTablet(const scoped_refptr<tablet::TabletMetadata>& metada
   // TODO: handle crash mid-creation of tablet? do we ever end up with a
   // partially created tablet here?
   tablet_peer_.reset(new TabletPeer(metadata,
-                                    quorum_peer,
                                     leader_apply_executor_.get(),
                                     replica_apply_executor_.get(),
                                     boost::bind(&SysTable::SysTableStateChanged, this, _1)));
+
   consensus::ConsensusBootstrapInfo consensus_info;
   RETURN_NOT_OK(BootstrapTablet(metadata,
                                 scoped_refptr<server::Clock>(master_->clock()),
@@ -204,6 +236,22 @@ Status SysTable::SetupTablet(const scoped_refptr<tablet::TabletMetadata>& metada
                                            log.Pass(),
                                            *tablet->GetMetricContext()),
                         "Failed to Init() TabletPeer");
+
+  // Allow for statically and explicitly assigning the quorum and roles through
+  // the master configuration on startup.
+  //
+  // TODO: The following assumptions need revisiting:
+  // 1. We always believe the local config options for who is in the quorum.
+  // 2. We always want to look up all node's UUIDs on start (via RPC).
+  //    - TODO: Cache UUIDs. See KUDU-526.
+  if (master_->opts().IsDistributed()) {
+    LOG(INFO) << "Configuring the quorum for distributed operation...";
+    DCHECK(tablet_peer_) << "TablerPeer is NULL";
+    int64_t old_seqno = tablet_peer_->consensus()->Quorum().seqno();
+    QuorumPB quorum;
+    RETURN_NOT_OK(SetupDistributedQuorum(master_->opts(), old_seqno + 1, &quorum));
+    tablet_peer_->consensus()->PersistQuorum(quorum);
+  }
 
   RETURN_NOT_OK_PREPEND(tablet_peer_->Start(consensus_info),
                         "Failed to Start() TabletPeer");

@@ -48,10 +48,9 @@ class TabletPeer : public RefCountedThreadSafe<TabletPeer>,
  public:
 
   TabletPeer(const scoped_refptr<TabletMetadata>& meta,
-             const metadata::QuorumPeerPB& quorum_peer,
              TaskExecutor* leader_apply_executor,
              TaskExecutor* replica_apply_executor,
-             MarkDirtyCallback mark_dirty_func);
+             MarkDirtyCallback mark_dirty_clbk);
 
   // Initializes the TabletPeer, namely creating the Log and initializing
   // Consensus. 'local_peer' indicates whether this should serve the tablet
@@ -148,12 +147,6 @@ class TabletPeer : public RefCountedThreadSafe<TabletPeer>,
   // TODO: move this to raft_consensus.h.
   Status UpdatePermanentUuids();
 
-  // Returns the current role of this peer as accepted by the last configuration
-  // round, that is the role which is set in the tablet metadata's quorum.
-  // If a configuration has not yet been committed or if this peer is no longer
-  // part of the quorum this will return NON_PARTICIPANT.
-  const metadata::QuorumPeerPB::Role role() const;
-
   // Notifies the TabletPeer that the consensus state has changed.
   // Currently this is called to activate the TsTabletManager callback that allows to
   // mark the tablet report as dirty, so that the master will eventually become
@@ -243,7 +236,6 @@ class TabletPeer : public RefCountedThreadSafe<TabletPeer>,
   TransactionTracker txn_tracker_;
   gscoped_ptr<log::Log> log_;
   std::tr1::shared_ptr<Tablet> tablet_;
-  const metadata::QuorumPeerPB quorum_peer_;
   std::tr1::shared_ptr<rpc::Messenger> messenger_;
   gscoped_ptr<consensus::Consensus> consensus_;
   gscoped_ptr<TabletStatusListener> status_listener_;

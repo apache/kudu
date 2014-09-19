@@ -16,6 +16,7 @@
 #include "kudu/common/wire_protocol.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/stl_util.h"
+#include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/strings/strcat.h"
 #include "kudu/gutil/strings/human_readable.h"
@@ -117,6 +118,7 @@ PeerMessageQueue::PeerMessageQueue(const MetricContext& metric_ctx,
 }
 
 Status PeerMessageQueue::TrackPeer(const string& uuid, const OpId& initial_watermark) {
+  CHECK(!uuid.empty()) << "Got request to track peer with empty UUID";
   boost::lock_guard<simple_spinlock> lock(queue_lock_);
   DCHECK_EQ(state_, kQueueOpen);
   // TODO allow the queue to go and fetch requests from the log
@@ -210,7 +212,11 @@ void PeerMessageQueue::RequestForPeer(const string& uuid,
   request->mutable_ops()->ExtractSubrange(0, request->ops_size(), NULL);
   boost::lock_guard<simple_spinlock> lock(queue_lock_);
   DCHECK_EQ(state_, kQueueOpen);
-  const TrackedPeer* peer = FindOrDie(watermarks_, uuid);
+  const TrackedPeer* peer;
+  if (PREDICT_FALSE(!FindCopy(watermarks_, uuid, &peer))) {
+    LOG(FATAL) << "Unable to find peer with UUID " << uuid
+               << ". Queue status: " << ToStringUnlocked();
+  }
 
   MessagesBuffer::iterator iter = messages_.upper_bound(peer->peer_status.received_watermark());
 
@@ -251,6 +257,7 @@ void PeerMessageQueue::RequestForPeer(const string& uuid,
 
 void PeerMessageQueue::ResponseFromPeer(const ConsensusResponsePB& response,
                                         bool* more_pending) {
+  CHECK(!uuid.empty()) << "Got response from peer with empty UUID";
   boost::lock_guard<simple_spinlock> lock(queue_lock_);
 
   // The response must have the receiver's uuid set.

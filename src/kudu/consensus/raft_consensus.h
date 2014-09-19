@@ -10,6 +10,7 @@
 
 #include "kudu/consensus/consensus.h"
 #include "kudu/consensus/consensus.pb.h"
+#include "kudu/consensus/consensus_meta.h"
 #include "kudu/consensus/consensus_queue.h"
 
 namespace kudu {
@@ -41,6 +42,7 @@ class RaftConsensus : public Consensus {
   typedef std::tr1::unordered_map<std::string, Peer*> PeersMap;
 
   RaftConsensus(const ConsensusOptions& options,
+                gscoped_ptr<ConsensusMetadata> cmeta,
                 gscoped_ptr<PeerProxyFactory> peer_proxy_factory,
                 const MetricContext& metric_ctx,
                 const std::string& peer_uuid,
@@ -98,6 +100,8 @@ class RaftConsensus : public Consensus {
  protected:
   virtual Status Commit(ConsensusRound* context) OVERRIDE;
 
+  virtual Status PersistQuorum(const metadata::QuorumPB& quorum) OVERRIDE;
+
  private:
   friend class ReplicaState;
   friend class RaftConsensusTest;
@@ -110,10 +114,14 @@ class RaftConsensus : public Consensus {
   // appointment.
   // Returns OK once the change config transaction that has this peer as leader
   // has been enqueued.
-  Status BecomeLeader();
+  //
+  // The ReplicaState must be locked for quorum change before calling.
+  Status BecomeLeaderUnlocked();
 
   // Makes the peer become a replica, i.e. a FOLLOWER or a LEARNER.
-  Status BecomeReplica();
+  //
+  // The ReplicaState must be locked for quorum change before calling.
+  Status BecomeReplicaUnlocked();
 
   // Called as a callback with the result of the config change transaction
   // that establishes this peer as leader.

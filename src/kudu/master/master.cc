@@ -90,10 +90,10 @@ Status Master::StartAsync() {
 
 Status Master::InitCatalogManager() {
   if (catalog_manager_->IsInitialized()) {
-    return Status::IllegalState("catalog manager is already initialized");
+    return Status::IllegalState("Catalog manager is already initialized");
   }
   RETURN_NOT_OK_PREPEND(catalog_manager_->Init(is_first_run_),
-                        "unable to initialize catalog manager");
+                        "Unable to initialize catalog manager");
   return Status::OK();
 }
 
