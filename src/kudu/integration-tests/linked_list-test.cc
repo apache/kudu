@@ -122,6 +122,8 @@ TEST_F(LinkedListTest, TestLoadAndVerify) {
     FLAGS_seconds_to_run = AllowSlowTests() ? kDefaultRunTimeSlow : kDefaultRunTimeFast;
   }
 
+  bool can_kill_ts = FLAGS_num_tablet_servers > 1 && FLAGS_num_replicas > 2;
+
   ASSERT_STATUS_OK(tester_->CreateLinkedListTable());
 
   int64_t written = 0;
@@ -134,7 +136,7 @@ TEST_F(LinkedListTest, TestLoadAndVerify) {
   ASSERT_OK(tester_->WaitAndVerify(FLAGS_seconds_to_run, written));
 
   // Check in-memory state with a downed TS. Scans may try other replicas.
-  if (FLAGS_num_tablet_servers > 1) {
+  if (can_kill_ts) {
     cluster_->tablet_server(0)->Shutdown();
     ASSERT_OK(tester_->WaitAndVerify(FLAGS_seconds_to_run, written));
   }
@@ -148,7 +150,7 @@ TEST_F(LinkedListTest, TestLoadAndVerify) {
   ASSERT_OK(tester_->WaitAndVerify(FLAGS_seconds_to_run, written));
 
   // Check post-replication state with a downed TS.
-  if (FLAGS_num_tablet_servers > 1) {
+  if (can_kill_ts) {
     cluster_->tablet_server(0)->Shutdown();
     ASSERT_OK(tester_->WaitAndVerify(FLAGS_seconds_to_run, written));
   }
