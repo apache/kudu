@@ -41,6 +41,15 @@ class Block {
 
 // A block that has been opened for writing. There may only be a single
 // writing thread, and data may only be appended to the block.
+//
+// Sync() is an expensive operation, as it must flush both dirty block data
+// and metadata to disk. The block manager API provides two ways to improve
+// Sync() performance:
+// 1. FlushDataAsync() before Sync(). If there's enough work to be done
+//    between the two calls, there will be less outstanding I/O to wait for
+//    during Sync().
+// 2. SyncBlocks() on a group of blocks. This at least ensures that, when
+//    waiting on outstanding I/O, the waiting is done in parallel.
 class WritableBlock : public Block {
  public:
   virtual ~WritableBlock() {}
@@ -54,6 +63,15 @@ class WritableBlock : public Block {
   // Synchronizes all dirty block data and metadata with the disk. On
   // success, guarantees that the entire block is durable.
   virtual Status Sync() = 0;
+
+  // Begins an asynchronous flush of dirty block data to disk.
+  //
+  // This is purely a performance optimization for Sync(); if there is
+  // other work to be done between the final Append() and the future
+  // Sync(), FlushDataAsync() will reduce the amount of time spent waiting
+  // for outstanding I/O to complete in Sync(). This is analogous to
+  // readahead or prefetching.
+  virtual Status FlushDataAsync() = 0;
 
   // Returns the number of bytes successfully appended via Append().
   virtual size_t BytesAppended() const = 0;

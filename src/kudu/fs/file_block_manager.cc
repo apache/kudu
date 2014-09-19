@@ -85,6 +85,11 @@ Status FileWritableBlock::Sync() {
   return SyncMetadata();
 }
 
+Status FileWritableBlock::FlushDataAsync() {
+  DCHECK(!closed_);
+  return writer_->Flush(WritableFile::FLUSH_ASYNC);
+}
+
 size_t FileWritableBlock::BytesAppended() const {
   return bytes_appended_;
 }
@@ -287,8 +292,7 @@ Status FileBlockManager::SyncBlocks(const vector<WritableBlock*>& blocks) {
     // done up-front to give the kernel opportunities to coalesce contiguous
     // dirty pages.
     BOOST_FOREACH(WritableBlock* block, blocks) {
-      FileWritableBlock* fwb = down_cast<FileWritableBlock*>(block);
-      RETURN_NOT_OK(fwb->writer_->Flush(WritableFile::FLUSH_ASYNC));
+      RETURN_NOT_OK(block->FlushDataAsync());
     }
   }
 

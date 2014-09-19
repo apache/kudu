@@ -157,5 +157,16 @@ TEST_F(BlockManagerTest, SyncManyBlocksTest) {
   }
 }
 
+// Like SyncOnCloseTest, we can't really test that this "works", but we
+// can test that it doesn't break anything.
+TEST_F(BlockManagerTest, AsyncFlushDataTest) {
+  gscoped_ptr<WritableBlock> written_block;
+  ASSERT_OK(bm_->CreateAnonymousBlock(&written_block));
+  string test_data = "test data";
+  ASSERT_OK(written_block->Append(test_data));
+  ASSERT_OK(written_block->FlushDataAsync());
+  ASSERT_OK(written_block->Sync());
+}
+
 } // namespace fs
 } // namespace kudu

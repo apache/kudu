@@ -40,6 +40,8 @@ class FileWritableBlock : public WritableBlock {
 
   virtual Status Sync() OVERRIDE;
 
+  virtual Status FlushDataAsync() OVERRIDE;
+
   virtual size_t BytesAppended() const OVERRIDE;
 
  private:
