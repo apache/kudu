@@ -21,7 +21,7 @@ DECLARE_bool(log_force_fsync_all);
 namespace kudu {
 
 namespace consensus {
-struct OpIdCompareFunctor;
+struct OpIdBiggerThanFunctor;
 } // namespace consensus
 
 namespace log {
@@ -36,14 +36,6 @@ extern const int kLogMajorVersion;
 extern const int kLogMinorVersion;
 
 class ReadableLogSegment;
-
-typedef std::map<consensus::OpId,
-                 scoped_refptr<ReadableLogSegment>,
-                 consensus::OpIdCompareFunctor> ReadableLogSegmentMap;
-
-// Range of OpIds. The first item is inclusive, the second item is exclusive,
-// i.e.: [first, second).
-typedef std::pair<consensus::OpId, consensus::OpId> OpIdRange;
 
 // Options for the State Machine/Write Ahead Log
 struct LogOptions {
@@ -303,26 +295,6 @@ class WritableLogSegment {
 
   DISALLOW_COPY_AND_ASSIGN(WritableLogSegment);
 };
-
-// Find WAL segments for deletion whose largest contained OpId is less than
-// earliest_needed_opid. We never identify the latest segment as stale.
-// For example, if we need to retain OpId 7, and the rolled log segments start
-// with 0, 5, and 10, respectively, then we must retain the logs starting with
-// 10 and 5, but we can GC the log segment starting with OpId 0.
-// See comments in the implementation file for more details on the algorithm.
-//
-// Returns number of stale segments found.
-//
-// If the returned number of stale segments is non-zero, 'stale_op_id_range'
-// will be an interval of stale OpIds (the end being exclusive), starting at
-// the initial OpId of the first stale segment and ending at the initial OpId
-// of the first non-stale segment.
-//
-// Note: The range is based on initial OpId per segment because that is how each
-// segment is keyed in the ReadableLogSegmentMap.
-size_t FindStaleSegmentsPrefixSize(const ReadableLogSegmentMap& segment_map,
-                                   const consensus::OpId& earliest_needed_opid,
-                                   OpIdRange* initial_op_id_range);
 
 // Sets 'batch' to a newly created batch that contains the pre-allocated
 // OperationPB in 'ops'.

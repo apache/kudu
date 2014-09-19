@@ -114,6 +114,11 @@ class Log {
   // Syncs all state and closes the log.
   Status Close();
 
+  // Returns a reader that is able to read through the previous
+  // segments. The reader pointer is guaranteed to be live as long
+  // as the log itself is initialized and live.
+  LogReader* GetLogReader() const;
+
   void SetMaxSegmentSizeForTests(uint64_t max_segment_size) {
     max_segment_size_ = max_segment_size;
   }
@@ -154,26 +159,6 @@ class Log {
   //
   // This method is thread-safe.
   Status GC(const consensus::OpId& min_op_id, int* num_gced);
-
-  // Copies a "snapshot" of the previous_segments_ field into "segments".
-  // The caller should hold an anchor on the underlying OpIds to prevent the
-  // Log::GC() thread from deleting pointed-to log files while reading them,
-  // even though with the file descriptors open, they should remain readable.
-  //
-  // Because the Log does not do the anchoring for you, there is no guarantee
-  // that the segments will continue to exist once this function returns, unless
-  // you do the anchoring yourself.
-  // TODO: It would be more user-friendly to automatically anchor the earliest
-  // OpId returned as part of this call. See KUDU-284.
-  //
-  // This method is thread-safe.
-  void GetReadableLogSegments(ReadableLogSegmentMap* segments) const;
-
-  // Returns number of "rolled" log segments.
-  //
-  // This is not a constant-time operation.
-  // This method is thread-safe.
-  int GetNumReadableLogSegmentsForTests() const;
 
   // Returns the file system location of the currently active WAL segment.
   const std::string& ActiveSegmentPathForTests() const {
@@ -249,6 +234,10 @@ class Log {
   // associated logic will no longer be needed.
   Status DoAppend(LogEntryBatch* entry, bool caller_owns_operation = true);
 
+  // Replaces the last "empty" segment in 'log_reader_', i.e. the one currently
+  // being written to, by the same segment once properly closed.
+  Status ReplaceSegmentInReaderUnlocked();
+
   Status Sync();
 
   LogEntryBatchQueue* entry_queue() {
@@ -284,8 +273,8 @@ class Log {
 
   LogState log_state_;
 
-  // All previous (inactive) un-GC'd segments.
-  ReadableLogSegmentMap previous_segments_;
+  // A reader for the previous segments that were not yet GC'd.
+  gscoped_ptr<LogReader> reader_;
 
   // Lock to protect last_entry_op_id_, which is constantly written but
   // read occasionally by things like consensus and log GC.

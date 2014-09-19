@@ -386,6 +386,7 @@ TEST_F(RemoteBootstrapServiceTest, TestFetchLog) {
                                                &superblock,
                                                &idle_timeout_millis,
                                                &segment_seqnos));
+
   ASSERT_EQ(static_cast<int>(kNumLogRolls), segment_seqnos.size());
   uint64_t seg_seqno = *segment_seqnos.begin();
 
@@ -398,16 +399,16 @@ TEST_F(RemoteBootstrapServiceTest, TestFetchLog) {
   ASSERT_OK(DoFetchData(session_id, data_id, NULL, NULL, &resp, &controller));
 
   // Fetch the local data.
-  log::ReadableLogSegmentMap local_segments;
-  tablet_peer_->log()->GetReadableLogSegments(&local_segments);
+  log::SegmentSequence local_segments;
+  ASSERT_STATUS_OK(tablet_peer_->log()->GetLogReader()->GetSegmentsSnapshot(&local_segments));
 
-  uint64_t first_seg_seqno = (*local_segments.begin()).second->header().sequence_number();
+  uint64_t first_seg_seqno = (*local_segments.begin())->header().sequence_number();
 
 
   ASSERT_EQ(seg_seqno, first_seg_seqno)
       << "Expected equal sequence numbers: " << seg_seqno
       << " and " << first_seg_seqno;
-  const scoped_refptr<ReadableLogSegment>& segment = (*local_segments.begin()).second;
+  const scoped_refptr<ReadableLogSegment>& segment = local_segments[0];
   faststring scratch;
   int64_t size = segment->file_size();
   scratch.resize(size);

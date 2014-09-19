@@ -501,45 +501,6 @@ Status WritableLogSegment::WriteFooterAndClose(const LogSegmentFooterPB& footer)
   return Status::OK();
 }
 
-size_t FindStaleSegmentsPrefixSize(const ReadableLogSegmentMap& segment_map,
-                                   const consensus::OpId& earliest_needed_opid,
-                                   OpIdRange* initial_op_id_range) {
-  DCHECK(initial_op_id_range);
-  // We iterate in reverse order.
-  // Keep the 1st log segment with initial OpId less than or equal to the
-  // earliest needed OpId, and delete all the log segments preceding it
-  // (preceding meaning in natural order).
-  size_t num_stale_segments = 0;
-  bool seen_earlier_opid = false;
-  BOOST_REVERSE_FOREACH(const ReadableLogSegmentMap::value_type& entry, segment_map) {
-    const OpId& initial_op_id_in_segment = entry.first;
-    const scoped_refptr<ReadableLogSegment>& segment = entry.second;
-    if (consensus::OpIdLessThan(initial_op_id_in_segment, earliest_needed_opid) ||
-        consensus::OpIdEquals(initial_op_id_in_segment, earliest_needed_opid)) {
-      if (!seen_earlier_opid) {
-        // earliest_needed_opid may be in the middle of this segment, do not
-        // delete it (but earlier ones can go).
-        seen_earlier_opid = true;
-        initial_op_id_range->second = initial_op_id_in_segment;
-        initial_op_id_range->first = initial_op_id_in_segment;
-      } else {
-        // All the earlier logs can go.
-        num_stale_segments++;
-        initial_op_id_range->first = initial_op_id_in_segment;
-      }
-    } else {
-      CHECK(!seen_earlier_opid)
-          << Substitute("Greater OpId found in previous log segment, segments"
-                        " out of order! current: $0 in $1, earliest needed: $2",
-                        segment->footer().idx_entry(0).ShortDebugString(),
-                        segment->path(),
-                        earliest_needed_opid.ShortDebugString());
-    }
-  }
-
-  return num_stale_segments;
-}
-
 void CreateBatchFromAllocatedOperations(const consensus::OperationPB* const* ops,
                                         int num_ops,
                                         gscoped_ptr<LogEntryBatchPB>* batch) {

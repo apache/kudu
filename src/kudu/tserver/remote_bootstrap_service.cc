@@ -124,8 +124,8 @@ void RemoteBootstrapServiceImpl::BeginRemoteBootstrapSession(
 
   resp->mutable_superblock()->CopyFrom(session->tablet_superblock());
 
-  BOOST_FOREACH(const log::ReadableLogSegmentMap::value_type& entry, session->log_segments()) {
-    resp->add_wal_segment_seqnos(entry.second->header().sequence_number());
+  BOOST_FOREACH(const scoped_refptr<log::ReadableLogSegment>& segment, session->log_segments()) {
+    resp->add_wal_segment_seqnos(segment->header().sequence_number());
   }
 
   context->RespondSuccess();

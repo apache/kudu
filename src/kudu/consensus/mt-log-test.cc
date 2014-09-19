@@ -147,11 +147,12 @@ TEST_F(MultiThreadedLogTest, TestAppends) {
     ASSERT_NO_FATAL_FAILURE(Run());
   }
   ASSERT_STATUS_OK(log_->Close());
-  BuildLogReader();
-  ReadableLogSegmentMap map;
-  log_reader_->GetOldIndexFormat(&map);
-  BOOST_FOREACH(const ReadableLogSegmentMap::value_type& entry, map) {
-    ASSERT_STATUS_OK(entry.second->ReadEntries(&entries_));
+
+  SegmentSequence segments;
+  ASSERT_OK(log_->GetLogReader()->GetSegmentsSnapshot(&segments));
+
+  BOOST_FOREACH(const SegmentSequence::value_type& entry, segments) {
+    ASSERT_STATUS_OK(entry->ReadEntries(&entries_));
   }
   vector<uint32_t> ids;
   EntriesToIdList(&ids);

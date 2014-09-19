@@ -155,12 +155,11 @@ void DumpLog(const string &tserver_root_path, const string& tablet_oid) {
   FsManager fs_manager(env, tserver_root_path);
   CHECK_OK(LogReader::Open(&fs_manager, tablet_oid, &reader));
 
-  vector<LogEntryPB*> entries;
-  ElementDeleter deleter(&entries);
-  ReadableLogSegmentMap map;
-  reader->GetOldIndexFormat(&map);
-  BOOST_FOREACH(const ReadableLogSegmentMap::value_type& entry, map) {
-    PrintSegment(entry.second);
+  SegmentSequence segments;
+  CHECK_OK(reader->GetSegmentsSnapshot(&segments));
+
+  BOOST_FOREACH(const scoped_refptr<ReadableLogSegment>& segment, segments) {
+    PrintSegment(segment);
   }
 }
 

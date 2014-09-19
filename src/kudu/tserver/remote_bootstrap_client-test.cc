@@ -97,9 +97,9 @@ TEST_F(RemoteBootstrapClientTest, TestDownloadWalSegment) {
   ASSERT_OK(client_->DownloadWAL(seqno));
   ASSERT_TRUE(fs_manager_->Exists(path));
 
-  log::ReadableLogSegmentMap local_segments;
-  tablet_peer_->log()->GetReadableLogSegments(&local_segments);
-  const scoped_refptr<log::ReadableLogSegment>& segment = local_segments.begin()->second;
+  log::SegmentSequence local_segments;
+  ASSERT_OK(tablet_peer_->log()->GetLogReader()->GetSegmentsSnapshot(&local_segments));
+  const scoped_refptr<log::ReadableLogSegment>& segment = local_segments[0];
   string server_path = segment->path();
 
   // Compare the downloaded file with the source file.

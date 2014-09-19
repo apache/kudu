@@ -30,7 +30,7 @@ using consensus::ConsensusBootstrapInfo;
 using log::Log;
 using log::LogTestBase;
 using log::OpIdAnchorRegistry;
-using log::ReadableLogSegmentMap;
+using log::ReadableLogSegment;
 using server::Clock;
 using server::LogicalClock;
 
@@ -196,9 +196,9 @@ TEST_F(BootstrapTest, TestOrphanCommit) {
   // the newly rolled logfile, and then by removing the previous
   // commits.
   AppendCommit(current_id_ + 1, current_id_);
-  ReadableLogSegmentMap segments;
-  log_->GetReadableLogSegments(&segments);
-  fs_manager_->env()->DeleteFile(segments.begin()->second->path());
+  log::SegmentSequence segments;
+  ASSERT_OK(log_->GetLogReader()->GetSegmentsSnapshot(&segments));
+  fs_manager_->env()->DeleteFile(segments[0]->path());
 
   // Note: when GLOG_v=1, the test logs should include 'Ignoring
   // orphan commit: op_type: WRITE_OP...' line.
@@ -228,9 +228,9 @@ TEST_F(BootstrapTest, TestNonOrphansAfterOrphanCommit) {
 
   AppendCommit(current_id_ + 1, current_id_);
 
-  ReadableLogSegmentMap segments;
-  log_->GetReadableLogSegments(&segments);
-  fs_manager_->env()->DeleteFile(segments.begin()->second->path());
+  log::SegmentSequence segments;
+  ASSERT_OK(log_->GetLogReader()->GetSegmentsSnapshot(&segments));
+  fs_manager_->env()->DeleteFile(segments[0]->path());
 
   current_id_ += 2;
 

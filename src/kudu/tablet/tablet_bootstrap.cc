@@ -61,7 +61,6 @@ using log::LogReader;
 using log::OpIdAnchorRegistry;
 using log::OPERATION;
 using log::ReadableLogSegment;
-using log::ReadableLogSegmentMap;
 using metadata::QuorumPB;
 using server::Clock;
 using tserver::AlterSchemaRequestPB;
@@ -714,11 +713,11 @@ Status TabletBootstrap::PlaySegments(ConsensusBootstrapInfo* consensus_info) {
   RETURN_NOT_OK_PREPEND(OpenNewLog(), "Failed to open new log");
 
   ReplayState state;
+  log::SegmentSequence segments;
+  RETURN_NOT_OK(log_reader_->GetSegmentsSnapshot(&segments));
+
   int segment_count = 0;
-  ReadableLogSegmentMap map;
-  log_reader_->GetOldIndexFormat(&map);
-  BOOST_FOREACH(const ReadableLogSegmentMap::value_type& seg_entry, map) {
-    const scoped_refptr<ReadableLogSegment>& segment = seg_entry.second;
+  BOOST_FOREACH(const scoped_refptr<ReadableLogSegment>& segment, segments) {
 
     vector<LogEntryPB*> entries;
     ElementDeleter deleter(&entries);

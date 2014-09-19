@@ -71,11 +71,27 @@ Status RemoteBootstrapSession::Init() {
   string anchor_owner_token = Substitute("RemoteBootstrap-$0", session_id_);
 
   registry->Register(MinimumOpId(), anchor_owner_token, &log_anchor_);
-  tablet_peer_->log()->GetReadableLogSegments(&log_segments_);
+
+  // Get the current segments from the log.
+  RETURN_NOT_OK(tablet_peer_->log()->GetLogReader()->GetSegmentsSnapshot(&log_segments_));
+
+  // Remove the last one if it doesn't have a footer, i.e. if its currently being
+  // written to.
+  if (!log_segments_.empty() && !log_segments_.back()->HasFooter()) {
+    log_segments_.pop_back();
+  }
+
   // Re-anchor on the earliest OpId that we actually need.
   if (!log_segments_.empty()) {
-    // Anchor everything in log_segments.
-    const OpId& earliest = log_segments_.begin()->first;
+    // Look for the first operation in the segments and anchor it.
+    // The first segment in the sequence must have a footer and an operation with an id.
+    // TODO The first segment should always have an operation with id, but it
+    // might not if we crashed in the middle of doing log GC and didn't cleanup
+    // properly. See KUDU-254.
+    CHECK(log_segments_[0]->HasFooter());
+    CHECK_GT(log_segments_[0]->footer().idx_entry_size(), 0);
+    OpId earliest(log_segments_[0]->footer().idx_entry(0).id());
+    // Anchor on the earliest id found in the segments
     RETURN_NOT_OK(registry->UpdateRegistration(earliest, anchor_owner_token, &log_anchor_));
   } else {
     // No log segments returned, so no log anchors needed.
@@ -305,25 +321,18 @@ Status RemoteBootstrapSession::FindLogSegment(uint64_t segment_seqno,
     return Status::OK();
   }
 
-  // The below mimics what we'll do later on when instead of a map of 'log_segments_' we just
-  // get a vector.
   scoped_refptr<log::ReadableLogSegment> log_segment;
   int position = -1;
   if (!log_segments_.empty()) {
-    position = segment_seqno - (*log_segments_.begin()).second->header().sequence_number();
+    position = segment_seqno - log_segments_[0]->header().sequence_number();
   }
   if (position < 0 || position > log_segments_.size()) {
     *error_code = RemoteBootstrapErrorPB::WAL_SEGMENT_NOT_FOUND;
     return Status::NotFound(Substitute("Segment with sequence number $0 not found",
                                        segment_seqno));
   }
-
-  log::ReadableLogSegmentMap::iterator iter = log_segments_.begin();
-
-  for (int i = 0; i < position; i++) iter++;
-
-  log_segment = (*iter).second;
-  DCHECK_EQ(log_segment->header().sequence_number(), segment_seqno);
+  log_segment = log_segments_[position];
+  CHECK_EQ(log_segment->header().sequence_number(), segment_seqno);
 
   Status s = AddToCacheUnlocked(&logs_, segment_seqno, log_segment->readable_file(),
                                 file_info, error_code);

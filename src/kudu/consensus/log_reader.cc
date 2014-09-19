@@ -3,6 +3,7 @@
 #include "kudu/consensus/log_reader.h"
 
 #include <boost/foreach.hpp>
+#include <boost/thread/locks.hpp>
 #include <algorithm>
 
 #include "kudu/consensus/opid_util.h"
@@ -63,7 +64,10 @@ LogReader::LogReader(FsManager *fs_manager,
 }
 
 Status LogReader::Init(const string& tablet_wal_path) {
-  CHECK_EQ(state_, kLogReaderInitialized) << "bad state for Init(): " << state_;
+  {
+    boost::lock_guard<simple_spinlock> lock(lock_);
+    CHECK_EQ(state_, kLogReaderInitialized) << "bad state for Init(): " << state_;
+  }
   VLOG(1) << "Reading wal from path:" << tablet_wal_path;
 
   Env* env = fs_manager_->env();
@@ -89,11 +93,7 @@ Status LogReader::Init(const string& tablet_wal_path) {
       RETURN_NOT_OK_PREPEND(ReadableLogSegment::Open(env, fqp, &segment),
                             "Unable to open readable log segment");
       DCHECK(segment);
-      if (!segment->IsInitialized()) {
-        // Skip blank segments.
-        LOG(WARNING) << "Skipping blank or empty segment: " << fqp;
-        continue;
-      }
+      CHECK(segment->IsInitialized()) << "Uninitialized segment at: " << segment->path();
 
       if (!segment->HasFooter()) {
         LOG(WARNING) << "Segment: " << fqp << " was likely left in-progress "
@@ -108,49 +108,47 @@ Status LogReader::Init(const string& tablet_wal_path) {
   // Sort the segments by sequence number.
   std::sort(read_segments.begin(), read_segments.end(), LogSegmentSeqnoComparator());
 
-  string previous_seg_path;
-  int64_t previous_seg_seqno = -1;
-  BOOST_FOREACH(const SegmentSequence::value_type& entry, read_segments) {
-    VLOG(1) << " Log Reader Indexed: " << entry->footer().ShortDebugString();
-    // Check that the log segments are in sequence.
-    if (previous_seg_seqno != -1 && entry->header().sequence_number() != previous_seg_seqno + 1) {
-      return Status::Corruption(Substitute("Segment sequence numbers are not consecutive. "
-                "Previous segment: seqno $0, path $1; Current segment: seqno $2, path $3",
-                previous_seg_seqno, previous_seg_path,
-                entry->header().sequence_number(), entry->path()));
-      previous_seg_seqno++;
-    } else {
-      previous_seg_seqno = entry->header().sequence_number();
-    }
-    previous_seg_path = entry->path();
-    segments_.push_back(entry);
-  }
 
-  state_ = kLogReaderReading;
+  {
+    boost::lock_guard<simple_spinlock> lock(lock_);
+
+    string previous_seg_path;
+    int64_t previous_seg_seqno = -1;
+    BOOST_FOREACH(const SegmentSequence::value_type& entry, read_segments) {
+      VLOG(1) << " Log Reader Indexed: " << entry->footer().ShortDebugString();
+      // Check that the log segments are in sequence.
+      if (previous_seg_seqno != -1 && entry->header().sequence_number() != previous_seg_seqno + 1) {
+        return Status::Corruption(Substitute("Segment sequence numbers are not consecutive. "
+            "Previous segment: seqno $0, path $1; Current segment: seqno $2, path $3",
+            previous_seg_seqno, previous_seg_path,
+            entry->header().sequence_number(), entry->path()));
+        previous_seg_seqno++;
+      } else {
+        previous_seg_seqno = entry->header().sequence_number();
+      }
+      previous_seg_path = entry->path();
+      RETURN_NOT_OK(AppendSegmentUnlocked(entry));
+    }
+
+    state_ = kLogReaderReading;
+  }
   return Status::OK();
 }
 
 Status LogReader::InitEmptyReaderForTests() {
+  boost::lock_guard<simple_spinlock> lock(lock_);
   state_ = kLogReaderReading;
   return Status::OK();
 }
 
-void LogReader::GetOldIndexFormat(ReadableLogSegmentMap* map) {
-  DCHECK_EQ(state_ , kLogReaderReading) << "log reader was not Init()ed:"
-      << state_;
-
-  map->clear();
-  BOOST_FOREACH(const scoped_refptr<ReadableLogSegment>& segment, segments_) {
-    if (segment->footer().idx_entry_size() > 0) {
-      InsertOrDie(map, segment->footer().idx_entry(0).id(), segment);
-    }
-  }
-}
-
 Status LogReader::GetSegmentPrefixNotIncluding(const consensus::OpId& opid,
-                                            SegmentSequence* segments) const {
+                                               SegmentSequence* segments) const {
+  DCHECK(opid.IsInitialized());
   DCHECK(segments);
   segments->clear();
+
+  boost::lock_guard<simple_spinlock> lock(lock_);
+  CHECK_EQ(state_, kLogReaderReading);
 
   // This gives us the segment that might include 'opid'
   ReadableLogSegmentIndex::const_iterator pos = segments_idx_.lower_bound(opid);
@@ -171,10 +169,13 @@ Status LogReader::GetSegmentPrefixNotIncluding(const consensus::OpId& opid,
 }
 
 Status LogReader::GetSegmentSuffixIncluding(const consensus::OpId& opid,
-                                         SegmentSequence* segments) const {
+                                            SegmentSequence* segments) const {
   DCHECK(opid.IsInitialized());
   DCHECK(segments);
   segments->clear();
+
+  boost::lock_guard<simple_spinlock> lock(lock_);
+  CHECK_EQ(state_, kLogReaderReading);
 
   // This gives us the segment that might include 'opid'
   ReadableLogSegmentIndex::const_iterator pos = segments_idx_.lower_bound(opid);
@@ -198,11 +199,15 @@ Status LogReader::GetSegmentSuffixIncluding(const consensus::OpId& opid,
 }
 
 Status LogReader::GetSegmentsSnapshot(SegmentSequence* segments) const {
+  boost::lock_guard<simple_spinlock> lock(lock_);
+  CHECK_EQ(state_, kLogReaderReading);
   segments->assign(segments_.begin(), segments_.end());
   return Status::OK();
 }
 
 Status LogReader::TrimSegmentsUpToAndIncluding(uint64_t segment_sequence_number) {
+  boost::lock_guard<simple_spinlock> lock(lock_);
+  CHECK_EQ(state_, kLogReaderReading);
   SegmentSequence::iterator iter = segments_.begin();
   int num_deleted_segments = 0;
 
@@ -219,6 +224,8 @@ Status LogReader::TrimSegmentsUpToAndIncluding(uint64_t segment_sequence_number)
 }
 
 Status LogReader::ReplaceLastSegment(const scoped_refptr<ReadableLogSegment>& segment) {
+  boost::lock_guard<simple_spinlock> lock(lock_);
+  CHECK_EQ(state_, kLogReaderReading);
   // Make sure the segment we're replacing has the same sequence number
   CHECK(!segments_.empty());
   CHECK_EQ(segment->header().sequence_number(), segments_.back()->header().sequence_number());
@@ -242,9 +249,17 @@ Status LogReader::ReplaceLastSegment(const scoped_refptr<ReadableLogSegment>& se
 
 Status LogReader::AppendSegment(const scoped_refptr<ReadableLogSegment>& segment) {
   DCHECK(segment->IsInitialized());
-  if (!segment->HasFooter()) {
+  if (PREDICT_FALSE(!segment->HasFooter())) {
     RETURN_NOT_OK(segment->RebuildFooterByScanning());
   }
+  boost::lock_guard<simple_spinlock> lock(lock_);
+  return AppendSegmentUnlocked(segment);
+}
+
+Status LogReader::AppendSegmentUnlocked(const scoped_refptr<ReadableLogSegment>& segment) {
+  DCHECK(segment->IsInitialized());
+  DCHECK(segment->HasFooter());
+
   if (!segments_.empty()) {
     CHECK_EQ(segments_.back()->header().sequence_number() + 1,
              segment->header().sequence_number());
@@ -255,7 +270,12 @@ Status LogReader::AppendSegment(const scoped_refptr<ReadableLogSegment>& segment
       SegmentIdxPos pos;
       pos.entry_pb = pos_pb;
       pos.entry_segment_seqno = segment->header().sequence_number();
-      InsertOrDie(&segments_idx_, pos.entry_pb.id(), pos);
+      if (PREDICT_FALSE(!InsertIfNotPresent(&segments_idx_, pos.entry_pb.id(), pos))) {
+        LOG(FATAL) << "Tablet " << tablet_oid_ << ": Created two log segments containing "
+            << "the same OpId " << pos.entry_pb.id() << ": one segment has seqno "
+            << segment->header().sequence_number() << " and the other has seqno "
+            << segments_idx_[pos.entry_pb.id()].entry_segment_seqno;
+      }
     }
   }
   return Status::OK();
@@ -263,6 +283,8 @@ Status LogReader::AppendSegment(const scoped_refptr<ReadableLogSegment>& segment
 
 Status LogReader::AppendEmptySegment(const scoped_refptr<ReadableLogSegment>& segment) {
   DCHECK(segment->IsInitialized());
+  boost::lock_guard<simple_spinlock> lock(lock_);
+  CHECK_EQ(state_, kLogReaderReading);
   if (!segments_.empty()) {
     CHECK_EQ(segments_.back()->header().sequence_number() + 1,
              segment->header().sequence_number());
@@ -272,15 +294,23 @@ Status LogReader::AppendEmptySegment(const scoped_refptr<ReadableLogSegment>& se
 }
 
 const uint32_t LogReader::num_segments()  const {
+  boost::lock_guard<simple_spinlock> lock(lock_);
   return segments_.size();
 }
 
 string LogReader::ToString() const {
-  string ret = "Readers SegmentSequence: \n";
+  boost::lock_guard<simple_spinlock> lock(lock_);
+  string ret = "Reader's SegmentSequence: \n";
   BOOST_FOREACH(const SegmentSequence::value_type& entry, segments_) {
     ret.append(Substitute("Segment: $0 Footer: $1\n",
                           entry->header().sequence_number(),
-                          entry->footer().ShortDebugString()));
+                          !entry->HasFooter() ? "NONE" : entry->footer().ShortDebugString()));
+  }
+  ret.append("Reader's Segment Index: \n");
+  BOOST_FOREACH(const ReadableLogSegmentIndex::value_type& entry, segments_idx_) {
+    ret.append(Substitute("Op: $0 Segment: $1\n",
+                          entry.first.ShortDebugString(),
+                          entry.second.entry_segment_seqno));
   }
   return ret;
 }

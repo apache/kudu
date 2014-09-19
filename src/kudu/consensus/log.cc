@@ -232,22 +232,20 @@ Status Log::Init() {
   CHECK_EQ(kLogInitialized, log_state_);
 
   // Reader for previous segments.
-  gscoped_ptr<LogReader> previous_segments_reader;
   RETURN_NOT_OK(LogReader::Open(fs_manager_,
                                 tablet_id_,
-                                &previous_segments_reader));
+                                &reader_));
 
   // The case where we are continuing an existing log.
   // We must pick up where the previous WAL left off in terms of
   // sequence numbers.
-  if (previous_segments_reader->num_segments() != 0) {
-    previous_segments_reader->GetOldIndexFormat(&previous_segments_);
-    VLOG(1) << "Using existing " << previous_segments_.size()
+  if (reader_->num_segments() != 0) {
+    VLOG(1) << "Using existing " << reader_->num_segments()
             << " segments from path: " << fs_manager_->GetWalsRootDir();
 
-    const scoped_refptr<ReadableLogSegment>& segment = previous_segments_.rbegin()->second;
-    uint64_t last_written_seqno = segment->header().sequence_number();
-    active_segment_sequence_number_ = last_written_seqno + 1;
+    vector<scoped_refptr<ReadableLogSegment> > segments;
+    RETURN_NOT_OK(reader_->GetSegmentsSnapshot(&segments));
+    active_segment_sequence_number_ = segments.back()->header().sequence_number();
   }
 
   if (force_sync_all_) {
@@ -531,55 +529,41 @@ Status Log::GC(const consensus::OpId& min_op_id, int32_t* num_gced) {
 
   VLOG(1) << "Running Log GC on " << log_dir_;
   VLOG_TIMING(1, "Log GC") {
-    vector<string> stale_segment_paths;
+    SegmentSequence segments_to_delete;
 
     {
       boost::lock_guard<percpu_rwlock> l(state_lock_);
       CHECK_EQ(kLogWriting, log_state_);
 
-      OpIdRange initial_opids;
-      size_t num_stale_segments =
-          FindStaleSegmentsPrefixSize(previous_segments_, min_op_id, &initial_opids);
+      // Find the prefix of segments in the segment sequence that is guaranteed not to include
+      // 'min_op_id'.
+      RETURN_NOT_OK(reader_->GetSegmentPrefixNotIncluding(min_op_id, &segments_to_delete));
 
-      if (num_stale_segments > 0) {
-        LOG(INFO) << "Found " << num_stale_segments << " stale log segments.";
-        const ReadableLogSegmentMap::iterator& first = previous_segments_.find(initial_opids.first);
-        // Sanity check.
-        const OpId& earliest_available_opid = previous_segments_.begin()->first;
-        CHECK(OpIdEquals(initial_opids.first, earliest_available_opid))
-            << "OpIds should be equal: " << initial_opids.first.ShortDebugString()
-            << " and " << earliest_available_opid.ShortDebugString();
-        // The last OpId in the initial_opids range is not inclusive.
-        const ReadableLogSegmentMap::iterator& last = previous_segments_.find(initial_opids.second);
-        ReadableLogSegmentMap::iterator copy_iter = first;
-        while (copy_iter != last) {
-          stale_segment_paths.push_back(copy_iter->second->path());
-          copy_iter++;
-        }
-        previous_segments_.erase(first, last);
+      if (segments_to_delete.size() == 0) {
+        VLOG(1) << "No segments to delete.";
+        *num_gced = 0;
+        return Status::OK();
       }
+
+      // Trim the prefix of segments from the reader so that they are no longer
+      // referenced by the log.
+      reader_->TrimSegmentsUpToAndIncluding(
+          segments_to_delete[segments_to_delete.size() - 1]->header().sequence_number());
     }
 
     // Now that they are no longer referenced by the Log, delete the files.
     *num_gced = 0;
-    BOOST_FOREACH(const string& path, stale_segment_paths) {
-      LOG(INFO) << "Deleting Log file in path: " << path;
-      RETURN_NOT_OK(fs_manager_->env()->DeleteFile(path));
+    BOOST_FOREACH(const scoped_refptr<ReadableLogSegment>& segment, segments_to_delete) {
+      LOG(INFO) << "Deleting Log file in path: " << segment->path();
+      RETURN_NOT_OK(fs_manager_->env()->DeleteFile(segment->path()));
       (*num_gced)++;
     }
   }
   return Status::OK();
 }
 
-void Log::GetReadableLogSegments(ReadableLogSegmentMap* segments) const {
-  DCHECK(segments);
-  boost::shared_lock<rw_spinlock> l(state_lock_.get_lock());
-  *segments = previous_segments_;
-}
-
-int Log::GetNumReadableLogSegmentsForTests() const {
-  boost::shared_lock<rw_spinlock> l(state_lock_.get_lock());
-  return previous_segments_.size();
+LogReader* Log::GetLogReader() const {
+  return reader_.get();
 }
 
 Status Log::Close() {
@@ -599,6 +583,7 @@ Status Log::Close() {
     case kLogWriting:
       RETURN_NOT_OK(Sync());
       RETURN_NOT_OK(CloseCurrentSegment());
+      RETURN_NOT_OK(ReplaceSegmentInReaderUnlocked());
       log_state_ = kLogClosed;
       VLOG(1) << "Log closed";
       return Status::OK();
@@ -668,24 +653,20 @@ Status Log::SwitchToAllocatedSegment() {
 
   // Transform the currently-active segment into a readable one, since we
   // need to be able to replay the segments for other peers.
-  if (active_segment_.get() != NULL) {
-    // We should never switch to a new segment if we wrote nothing to the old one.
-    CHECK(active_segment_->IsHeaderWritten());
-    shared_ptr<RandomAccessFile> readable_file;
-    RETURN_NOT_OK(OpenFileForRandom(fs_manager_->env(), active_segment_->path(), &readable_file));
-    scoped_refptr<ReadableLogSegment> readable_segment(
-        new ReadableLogSegment(active_segment_->path(),
-                               readable_file));
-    // Note: active_segment_->header() will only contain an initialized PB if we
-    // wrote the header out.
-    readable_segment->Init(active_segment_->header(),
-                           active_segment_->footer(),
-                           active_segment_->first_entry_offset());
-    const OpId& op_id = readable_segment->footer().idx_entry(0).id();
-
-    boost::lock_guard<percpu_rwlock> l(state_lock_);
-    InsertOrDie(&previous_segments_, op_id, readable_segment);
+  {
+    if (active_segment_.get() != NULL) {
+      boost::lock_guard<percpu_rwlock> l(state_lock_);
+      CHECK_OK(ReplaceSegmentInReaderUnlocked());
+    }
   }
+
+  // Open the segment we just created in readable form and add it to the reader.
+  shared_ptr<RandomAccessFile> readable_file;
+  RETURN_NOT_OK(OpenFileForRandom(fs_manager_->env(), new_segment_path, &readable_file));
+  scoped_refptr<ReadableLogSegment> readable_segment(
+      new ReadableLogSegment(new_segment_path, readable_file));
+  RETURN_NOT_OK(readable_segment->Init(header, new_segment->first_entry_offset()));
+  RETURN_NOT_OK(reader_->AppendEmptySegment(readable_segment));
 
   // Now set 'active_segment_' to the new segment.
   active_segment_.reset(new_segment.release());
@@ -693,6 +674,23 @@ Status Log::SwitchToAllocatedSegment() {
   allocation_state_ = kAllocationNotStarted;
 
   return Status::OK();
+}
+
+Status Log::ReplaceSegmentInReaderUnlocked() {
+  // We should never switch to a new segment if we wrote nothing to the old one.
+  CHECK(active_segment_->IsClosed());
+  shared_ptr<RandomAccessFile> readable_file;
+  RETURN_NOT_OK(OpenFileForRandom(fs_manager_->env(), active_segment_->path(), &readable_file));
+  scoped_refptr<ReadableLogSegment> readable_segment(
+      new ReadableLogSegment(active_segment_->path(),
+                             readable_file));
+  // Note: active_segment_->header() will only contain an initialized PB if we
+  // wrote the header out.
+  RETURN_NOT_OK(readable_segment->Init(active_segment_->header(),
+                                       active_segment_->footer(),
+                                       active_segment_->first_entry_offset()));
+
+  return reader_->ReplaceLastSegment(readable_segment);
 }
 
 Status Log::CreatePlaceholderSegment(const WritableFileOptions& opts,

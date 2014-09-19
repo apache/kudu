@@ -79,10 +79,6 @@ class LogTestBase : public KuduTest {
                        &log_));
   }
 
-  void BuildLogReader() {
-    CHECK_OK(LogReader::Open(fs_manager_.get(), kTestTablet, &log_reader_));
-  }
-
   void CheckRightNumberOfSegmentFiles(int expected) {
     // Test that we actually have the expected number of files in the fs.
     // We should have n segments plus '.' and '..'
@@ -240,9 +236,8 @@ class LogTestBase : public KuduTest {
 
  protected:
   const Schema schema_;
-  gscoped_ptr<Log> log_;
-  gscoped_ptr<LogReader> log_reader_;
   gscoped_ptr<FsManager> fs_manager_;
+  gscoped_ptr<Log> log_;
   uint32_t current_id_;
   LogOptions options_;
   // Reusable entries vector that deletes the entries on destruction.

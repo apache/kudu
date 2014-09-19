@@ -91,12 +91,12 @@ TEST_F(LogTest, TestMultipleEntriesInABatch) {
   // RollOver() the batch so that we have a properly formed footer.
   ASSERT_STATUS_OK(log_->AllocateSegmentAndRollOver());
 
-  BuildLogReader();
   vector<LogEntryPB*> entries;
   ElementDeleter deleter(&entries);
-  ReadableLogSegmentMap map;
-  log_reader_->GetOldIndexFormat(&map);
-  ASSERT_STATUS_OK(map.begin()->second->ReadEntries(&entries));
+  SegmentSequence segments;
+  ASSERT_STATUS_OK(log_->GetLogReader()->GetSegmentsSnapshot(&segments));
+
+  ASSERT_STATUS_OK(segments[0]->ReadEntries(&entries));
 
   ASSERT_EQ(2, entries.size());
 
@@ -130,13 +130,12 @@ TEST_F(LogTest, TestLogNotTrimmed) {
 
   AppendNoOp(&opid);
 
-  BuildLogReader();
   vector<LogEntryPB*> entries;
   ElementDeleter deleter(&entries);
-  ReadableLogSegmentMap map;
-  log_reader_->GetOldIndexFormat(&map);
-  scoped_refptr<ReadableLogSegment> first_segment = map.begin()->second;
-  ASSERT_STATUS_OK(first_segment->ReadEntries(&entries));
+  SegmentSequence segments;
+  ASSERT_STATUS_OK(log_->GetLogReader()->GetSegmentsSnapshot(&segments));
+
+  ASSERT_STATUS_OK(segments[0]->ReadEntries(&entries));
   // Close after testing to ensure correct shutdown
   // TODO : put this in TearDown() with a test on log state?
   ASSERT_STATUS_OK(log_->Close());
@@ -148,17 +147,20 @@ TEST_F(LogTest, TestLogNotTrimmed) {
 // the segment is uninitialized. See KUDU-140.
 TEST_F(LogTest, TestBlankLogFile) {
   BuildLog();
-  Status s = LogReader::Open(fs_manager_.get(), kTestTablet, &log_reader_);
 
-  // The reader needs to be able to open the directory, and we need to
-  // skip the segment while reading.
-  ASSERT_TRUE(s.ok()) << s.ToString();
-  // We get one empty segment...
-  ASSERT_EQ(log_reader_->num_segments(), 1);
-  // But it has no entries, so nothing in the index.
-  ReadableLogSegmentMap map;
-  log_reader_->GetOldIndexFormat(&map);
-  ASSERT_TRUE(map.empty());
+  // The log's reader will have a segment...
+  ASSERT_EQ(log_->GetLogReader()->num_segments(), 1);
+
+  // ...and we're able to read from it.
+  vector<LogEntryPB*> entries;
+  ElementDeleter deleter(&entries);
+  SegmentSequence segments;
+  ASSERT_STATUS_OK(log_->GetLogReader()->GetSegmentsSnapshot(&segments));
+
+  ASSERT_STATUS_OK(segments[0]->ReadEntries(&entries));
+
+  // ...It's just that it's empty.
+  ASSERT_EQ(entries.size(), 0);
 }
 
 // Tests that the log reader reads up until some corrupt entry is found.
@@ -172,13 +174,13 @@ TEST_F(LogTest, TestCorruptLog) {
 
   ASSERT_STATUS_OK(CorruptLogFile(env_.get(), log_.get(), 40));
 
-  BuildLogReader();
-  ASSERT_EQ(1, log_reader_->num_segments());
-  ReadableLogSegmentMap map;
-  log_reader_->GetOldIndexFormat(&map);
-  scoped_refptr<ReadableLogSegment> first_segment = map.begin()->second;
-  Status status = first_segment->ReadEntries(&entries_);
-  ASSERT_TRUE(status.IsCorruption()) << "Got status: " << status.ToString();
+  ASSERT_EQ(1, log_->GetLogReader()->num_segments());
+
+  SegmentSequence segments;
+  ASSERT_STATUS_OK(log_->GetLogReader()->GetSegmentsSnapshot(&segments));
+
+  Status status = segments[0]->ReadEntries(&entries_);
+  ASSERT_TRUE(status.IsCorruption());
 
   // Last entry is corrupted but we should still see the previous ones.
   ASSERT_EQ(kNumEntries - 1, entries_.size());
@@ -194,17 +196,25 @@ TEST_F(LogTest, TestSegmentRollover) {
 
   OpId op_id(MinimumOpId());
   int num_entries = 0;
-  do {
-    ASSERT_STATUS_OK(AppendNoOps(&op_id, kNumEntriesPerBatch));
-    num_entries += kNumEntriesPerBatch;
-  } while (log_->GetNumReadableLogSegmentsForTests() < 3);
 
-  ASSERT_STATUS_OK(log_->Close());
-  BuildLogReader();
-  ReadableLogSegmentMap map;
-  log_reader_->GetOldIndexFormat(&map);
-  BOOST_FOREACH(const ReadableLogSegmentMap::value_type& entry, map) {
-    ASSERT_STATUS_OK(entry.second->ReadEntries(&entries_));
+  SegmentSequence segments;
+  ASSERT_OK(log_->GetLogReader()->GetSegmentsSnapshot(&segments));
+
+  while (segments.size() < 3) {
+    ASSERT_OK(AppendNoOps(&op_id, kNumEntriesPerBatch));
+    num_entries += kNumEntriesPerBatch;
+    // Update the segments
+    ASSERT_OK(log_->GetLogReader()->GetSegmentsSnapshot(&segments));
+  }
+
+  ASSERT_FALSE(segments.back()->HasFooter());
+  ASSERT_OK(log_->Close());
+
+  ASSERT_OK(log_->GetLogReader()->GetSegmentsSnapshot(&segments));
+  ASSERT_TRUE(segments.back()->HasFooter());
+
+  BOOST_FOREACH(const scoped_refptr<ReadableLogSegment>& entry, segments) {
+    ASSERT_STATUS_OK(entry->ReadEntries(&entries_));
   }
 
   ASSERT_EQ(num_entries, entries_.size());
@@ -217,6 +227,8 @@ TEST_F(LogTest, TestGCWithLogRunning) {
   vector<OpIdAnchor*> anchors;
   ElementDeleter deleter(&anchors);
 
+  SegmentSequence segments;
+
   const int kNumTotalSegments = 4;
   const int kNumOpsPerSegment = 5;
   int num_gced_segments;
@@ -225,25 +237,37 @@ TEST_F(LogTest, TestGCWithLogRunning) {
 
   ASSERT_STATUS_OK(AppendMultiSegmentSequence(kNumTotalSegments, kNumOpsPerSegment,
                                               &op_id, &anchors));
+
+  // We should get 4 anchors, each pointing at the beginning of a new segment
+  ASSERT_EQ(anchors.size(), 4);
+
   // Anchors should prevent GC.
-  ASSERT_EQ(3, log_->GetNumReadableLogSegmentsForTests());
+  ASSERT_OK(log_->GetLogReader()->GetSegmentsSnapshot(&segments))
+  ASSERT_EQ(4, segments.size());
   ASSERT_STATUS_OK(opid_anchor_registry_->GetEarliestRegisteredOpId(&anchored_opid));
   ASSERT_STATUS_OK(log_->GC(anchored_opid, &num_gced_segments));
-  ASSERT_EQ(3, log_->GetNumReadableLogSegmentsForTests());
+  ASSERT_OK(log_->GetLogReader()->GetSegmentsSnapshot(&segments))
+  ASSERT_EQ(4, segments.size());
 
   // Freeing the first 2 anchors should allow GC of them.
   ASSERT_STATUS_OK(opid_anchor_registry_->Unregister(anchors[0]));
   ASSERT_STATUS_OK(opid_anchor_registry_->Unregister(anchors[1]));
   ASSERT_STATUS_OK(opid_anchor_registry_->GetEarliestRegisteredOpId(&anchored_opid));
+  // We should now be anchored on op 0.10, i.e. on the 3rd segment
+  ASSERT_TRUE(consensus::OpIdEquals(anchors[2]->op_id, anchored_opid));
   ASSERT_STATUS_OK(log_->GC(anchored_opid, &num_gced_segments));
-  ASSERT_EQ(1, log_->GetNumReadableLogSegmentsForTests());
+  ASSERT_EQ(2, num_gced_segments);
+  ASSERT_OK(log_->GetLogReader()->GetSegmentsSnapshot(&segments))
+  ASSERT_EQ(2, segments.size());
 
   // Release the remaining "rolled segment" anchor. GC will not delete the
-  // last log.
+  // last rolled segment.
   ASSERT_STATUS_OK(opid_anchor_registry_->Unregister(anchors[2]));
   ASSERT_STATUS_OK(opid_anchor_registry_->GetEarliestRegisteredOpId(&anchored_opid));
   ASSERT_STATUS_OK(log_->GC(anchored_opid, &num_gced_segments));
-  ASSERT_EQ(1, log_->GetNumReadableLogSegmentsForTests());
+  ASSERT_EQ(0, num_gced_segments);
+  ASSERT_OK(log_->GetLogReader()->GetSegmentsSnapshot(&segments))
+  ASSERT_EQ(2, segments.size());
 
   ASSERT_STATUS_OK(log_->Close());
   CheckRightNumberOfSegmentFiles(2);
@@ -265,10 +289,10 @@ TEST_F(LogTest, TestWaitUntilAllFlushed) {
   ASSERT_STATUS_OK(log_->WaitUntilAllFlushed());
 
   // Make sure we only get 4 entries back and that no FLUSH_MARKER commit is found.
-  BuildLogReader();
-  ReadableLogSegmentMap map;
-  log_reader_->GetOldIndexFormat(&map);
-  ASSERT_STATUS_OK(map.begin()->second->ReadEntries(&entries_));
+  vector<scoped_refptr<ReadableLogSegment> > segments;
+  ASSERT_STATUS_OK(log_->GetLogReader()->GetSegmentsSnapshot(&segments));
+
+  ASSERT_STATUS_OK(segments[0]->ReadEntries(&entries_));
   ASSERT_EQ(entries_.size(), 4);
   for (int i = 0; i < 4 ; i++) {
     ASSERT_TRUE(entries_[i]->has_operation());
@@ -285,6 +309,8 @@ TEST_F(LogTest, TestWaitUntilAllFlushed) {
 TEST_F(LogTest, TestLogReopenAndGC) {
   BuildLog();
 
+  SegmentSequence segments;
+
   vector<OpIdAnchor*> anchors;
   ElementDeleter deleter(&anchors);
 
@@ -297,10 +323,12 @@ TEST_F(LogTest, TestLogReopenAndGC) {
   ASSERT_STATUS_OK(AppendMultiSegmentSequence(kNumTotalSegments, kNumOpsPerSegment,
                                               &op_id, &anchors));
   // Anchors should prevent GC.
-  ASSERT_EQ(2, log_->GetNumReadableLogSegmentsForTests());
+  ASSERT_OK(log_->GetLogReader()->GetSegmentsSnapshot(&segments))
+  ASSERT_EQ(3, segments.size());
   ASSERT_STATUS_OK(opid_anchor_registry_->GetEarliestRegisteredOpId(&anchored_opid));
   ASSERT_STATUS_OK(log_->GC(anchored_opid, &num_gced_segments));
-  ASSERT_EQ(2, log_->GetNumReadableLogSegmentsForTests());
+  ASSERT_OK(log_->GetLogReader()->GetSegmentsSnapshot(&segments))
+  ASSERT_EQ(3, segments.size());
 
   ASSERT_STATUS_OK(log_->Close());
 
@@ -309,7 +337,8 @@ TEST_F(LogTest, TestLogReopenAndGC) {
   BuildLog();
 
   // The "old" data consists of 3 segments. We still hold anchors.
-  ASSERT_EQ(3, log_->GetNumReadableLogSegmentsForTests());
+  ASSERT_OK(log_->GetLogReader()->GetSegmentsSnapshot(&segments))
+  ASSERT_EQ(4, segments.size());
 
   // Write to a new log segment, as if we had taken new requests and the
   // mem stores are holding anchors, but don't roll it.
@@ -323,10 +352,12 @@ TEST_F(LogTest, TestLogReopenAndGC) {
   ASSERT_STATUS_OK(opid_anchor_registry_->GetEarliestRegisteredOpId(&anchored_opid));
   ASSERT_STATUS_OK(log_->GC(anchored_opid, &num_gced_segments));
 
-  // After GC there should be only one left, because it's the first segment
-  // (counting in reverse order) that has an earlier initial OpId than the
-  // earliest one we are anchored on (which is in our active "new" segment).
-  ASSERT_EQ(1, log_->GetNumReadableLogSegmentsForTests());
+  // After GC there should be only one left, besides the one currently being
+  // written to, because it's the first segment (counting in reverse order)
+  // that has an earlier initial OpId than the earliest one we are anchored
+  // on (which is in our active "new" segment).
+  ASSERT_OK(log_->GetLogReader()->GetSegmentsSnapshot(&segments))
+  ASSERT_EQ(2, segments.size());
   ASSERT_STATUS_OK(log_->Close());
 
   CheckRightNumberOfSegmentFiles(2);
@@ -352,13 +383,14 @@ TEST_F(LogTest, TestWriteManyBatches) {
 
   LOG_TIMING(INFO, "Read all entries from Log") {
     LOG(INFO) << "Starting to read log";
-    BuildLogReader();
     uint32_t num_entries = 0;
-    ReadableLogSegmentMap map;
-    log_reader_->GetOldIndexFormat(&map);
-    BOOST_FOREACH(const ReadableLogSegmentMap::value_type& entry, map) {
+
+    vector<scoped_refptr<ReadableLogSegment> > segments;
+    ASSERT_STATUS_OK(log_->GetLogReader()->GetSegmentsSnapshot(&segments));
+
+    BOOST_FOREACH(const scoped_refptr<ReadableLogSegment> entry, segments) {
       STLDeleteElements(&entries_);
-      ASSERT_STATUS_OK(entry.second->ReadEntries(&entries_));
+      ASSERT_STATUS_OK(entry->ReadEntries(&entries_));
       num_entries += entries_.size();
     }
     ASSERT_EQ(num_entries, num_batches * 2);

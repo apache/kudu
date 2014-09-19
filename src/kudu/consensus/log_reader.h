@@ -11,6 +11,7 @@
 #include "kudu/consensus/log_util.h"
 #include "kudu/consensus/opid_util.h"
 #include "kudu/fs/fs_manager.h"
+#include "kudu/gutil/spinlock.h"
 
 namespace kudu {
 namespace log {
@@ -18,7 +19,7 @@ class Log;
 
 // Reads a set of segments from a given path. Segment headers and footers
 // are read and parsed, but entries are not.
-// NOTE: This class is not thread safe.
+// This class is thread safe.
 class LogReader {
  public:
   // Opens a LogReader on the default tablet log directory, and sets
@@ -32,12 +33,6 @@ class LogReader {
   static Status OpenFromRecoveryDir(FsManager *fs_manager,
                                     const std::string& tablet_oid,
                                     gscoped_ptr<LogReader> *reader);
-
-  // TODO this clears 'map' and inserts an 'old' index format (new index is
-  // reversed and cannot be used without the segment sequence).
-  // This is here for backwards compatibility so that patches can be split
-  // Subsequent patches will remove this.
-  void GetOldIndexFormat(ReadableLogSegmentMap* map);
 
   // Returns the biggest prefix of segments, from the current sequence, guaranteed
   // not to include 'opid'.
@@ -62,6 +57,12 @@ class LogReader {
   FRIEND_TEST(LogTest, TestLogReader);
   friend class Log;
   friend class LogTest;
+
+  enum State {
+    kLogReaderInitialized,
+    kLogReaderReading,
+    kLogReaderClosed
+  };
 
   // Simple struct that wraps SegmentIdxPosPB and adds the segment's sequence number
   // so that it can be used in the index.
@@ -113,7 +114,12 @@ class LogReader {
   // Expects 'segment' to be properly closed and to have footer.
   Status ReplaceLastSegment(const scoped_refptr<ReadableLogSegment>& segment);
 
-  DISALLOW_COPY_AND_ASSIGN(LogReader);
+  // Appends 'segment' to the segment sequence.
+  // Assumes that the segment was scanned, if no footer was found.
+  // To be used only internally, clients of this class with private access (i.e. friends)
+  // should use the thread safe version, AppendSegment(), which will also scan the segment
+  // if no footer is present.
+  Status AppendSegmentUnlocked(const scoped_refptr<ReadableLogSegment>& segment);
 
   LogReader(FsManager *fs_manager,
             const std::string& tablet_name);
@@ -143,13 +149,11 @@ class LogReader {
   // is present in 'segments_' but not here).
   ReadableLogSegmentIndex segments_idx_;
 
-  enum State {
-    kLogReaderInitialized,
-    kLogReaderReading,
-    kLogReaderClosed
-  };
+  mutable simple_spinlock lock_;
 
   State state_;
+
+  DISALLOW_COPY_AND_ASSIGN(LogReader);
 };
 
 }  // namespace log

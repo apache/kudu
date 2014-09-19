@@ -37,7 +37,6 @@ using log::Log;
 using log::LogEntryPB;
 using log::LogOptions;
 using log::LogReader;
-using log::ReadableLogSegmentMap;
 using metadata::QuorumPB;
 using metadata::QuorumPeerPB;
 using rpc::RpcContext;
@@ -313,10 +312,11 @@ class RaftConsensusTest : public KuduTest {
                                           &log_reader));
     vector<LogEntryPB*> entries;
     ElementDeleter deleter(&entries);
-    ReadableLogSegmentMap map;
-    log_reader->GetOldIndexFormat(&map);
-    BOOST_FOREACH(const ReadableLogSegmentMap::value_type& entry, map) {
-      ASSERT_STATUS_OK(entry.second->ReadEntries(&entries));
+    log::SegmentSequence segments;
+    ASSERT_STATUS_OK(log_reader->GetSegmentsSnapshot(&segments));
+
+    BOOST_FOREACH(const log::SegmentSequence::value_type& entry, segments) {
+      ASSERT_STATUS_OK(entry->ReadEntries(&entries));
     }
     BOOST_FOREACH(LogEntryPB* entry, entries) {
       operations->push_back(entry->release_operation());

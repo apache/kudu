@@ -110,7 +110,7 @@ class RemoteBootstrapSession : public RefCountedThreadSafe<RemoteBootstrapSessio
 
   const tablet::TabletSuperBlockPB& tablet_superblock() const { return tablet_superblock_; }
 
-  const log::ReadableLogSegmentMap& log_segments() const { return log_segments_; }
+  const log::SegmentSequence& log_segments() const { return log_segments_; }
 
   // Check if a block is currently open.
   bool IsBlockOpenForTests(const BlockId& block_id) const;
@@ -154,7 +154,10 @@ class RemoteBootstrapSession : public RefCountedThreadSafe<RemoteBootstrapSessio
   ValueDeleter logs_deleter_;
 
   tablet::TabletSuperBlockPB tablet_superblock_;
-  log::ReadableLogSegmentMap log_segments_;
+  // The sequence of log segments that will be sent in the course of this
+  // session.
+  log::SegmentSequence log_segments_;
+
   log::OpIdAnchor log_anchor_;
 
   DISALLOW_COPY_AND_ASSIGN(RemoteBootstrapSession);

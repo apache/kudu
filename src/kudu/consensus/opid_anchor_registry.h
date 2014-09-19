@@ -4,6 +4,7 @@
 
 #include <map>
 #include <string>
+#include <gtest/gtest_prod.h>
 
 #include "kudu/consensus/consensus.pb.h"
 #include "kudu/consensus/log_util.h"
@@ -84,6 +85,7 @@ class OpIdAnchor {
   ~OpIdAnchor();
 
  private:
+  FRIEND_TEST(LogTest, TestGCWithLogRunning);
   friend class OpIdAnchorRegistry;
 
   consensus::OpId op_id;
