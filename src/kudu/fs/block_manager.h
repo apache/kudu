@@ -52,6 +52,24 @@ class Block {
 //    waiting on outstanding I/O, the waiting is done in parallel.
 class WritableBlock : public Block {
  public:
+  enum State {
+    // There is no dirty data in the block.
+    CLEAN,
+
+    // There is some dirty data in the block.
+    DIRTY,
+
+    // There is an outstanding flush operation asynchronously flushing
+    // dirty block data to disk.
+    FLUSHING,
+
+    // The block has been synchronized with the disk.
+    SYNCED,
+
+    // The block is closed. No more operations can be performed on it.
+    CLOSED
+  };
+
   virtual ~WritableBlock() {}
 
   // Appends the chunk of data referenced by 'data' to the block.
@@ -62,6 +80,8 @@ class WritableBlock : public Block {
 
   // Synchronizes all dirty block data and metadata with the disk. On
   // success, guarantees that the entire block is durable.
+  //
+  // Data may not be written to the block after Sync() is called.
   virtual Status Sync() = 0;
 
   // Begins an asynchronous flush of dirty block data to disk.
@@ -71,10 +91,14 @@ class WritableBlock : public Block {
   // Sync(), FlushDataAsync() will reduce the amount of time spent waiting
   // for outstanding I/O to complete in Sync(). This is analogous to
   // readahead or prefetching.
+  //
+  // Data may not be written to the block after FlushDataAsync() is called.
   virtual Status FlushDataAsync() = 0;
 
   // Returns the number of bytes successfully appended via Append().
   virtual size_t BytesAppended() const = 0;
+
+  virtual State state() const = 0;
 };
 
 // A block that has been opened for reading. Multiple in-memory blocks may

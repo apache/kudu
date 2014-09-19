@@ -44,6 +44,8 @@ class FileWritableBlock : public WritableBlock {
 
   virtual size_t BytesAppended() const OVERRIDE;
 
+  virtual State state() const OVERRIDE;
+
  private:
   friend class FileBlockManager;
 
@@ -69,8 +71,7 @@ class FileWritableBlock : public WritableBlock {
   // The underlying opened file backing this block.
   std::tr1::shared_ptr<WritableFile> writer_;
 
-  // Whether this block has been closed.
-  bool closed_;
+  State state_;
 
   // The number of bytes successfully appended to the block.
   size_t bytes_appended_;

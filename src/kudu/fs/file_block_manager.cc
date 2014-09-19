@@ -36,7 +36,7 @@ FileWritableBlock::FileWritableBlock(FileBlockManager* block_manager,
   sync_on_close_(sync_on_close),
   block_id_(block_id),
   writer_(writer),
-  closed_(false),
+  state_(CLEAN),
   bytes_appended_(0) {
 }
 
@@ -46,7 +46,7 @@ FileWritableBlock::~FileWritableBlock() {
 }
 
 Status FileWritableBlock::Close() {
-  if (closed_) {
+  if (state_ == CLOSED) {
     return Status::OK();
   }
 
@@ -58,7 +58,7 @@ Status FileWritableBlock::Close() {
   }
   Status close = writer_->Close();
 
-  closed_ = true;
+  state_ = CLOSED;
   writer_.reset();
 
   // Prefer the result of Close() to that of Sync().
@@ -70,33 +70,49 @@ const BlockId& FileWritableBlock::id() const {
 }
 
 Status FileWritableBlock::Append(const Slice& data) {
-  DCHECK(!closed_);
+  DCHECK(state_ == CLEAN || state_ == DIRTY)
+      << "Invalid state: " << state_;
 
   RETURN_NOT_OK(writer_->Append(data));
+  state_ = DIRTY;
   bytes_appended_ += data.size();
   return Status::OK();
 }
 
 Status FileWritableBlock::Sync() {
-  DCHECK(!closed_);
+  DCHECK(state_ == CLEAN || state_ == DIRTY || state_ == FLUSHING || state_ == SYNCED)
+      << "Invalid state: " << state_;
 
-  // Safer to synchronize data first, then metadata.
-  RETURN_NOT_OK(writer_->Sync());
-  return SyncMetadata();
+  if (state_ == DIRTY || state_ == FLUSHING) {
+    // Safer to synchronize data first, then metadata.
+    RETURN_NOT_OK(writer_->Sync());
+    RETURN_NOT_OK(SyncMetadata());
+  }
+
+  state_ = SYNCED;
+  return Status::OK();
 }
 
 Status FileWritableBlock::FlushDataAsync() {
-  DCHECK(!closed_);
-  return writer_->Flush(WritableFile::FLUSH_ASYNC);
+  DCHECK(state_ == CLEAN || state_ == DIRTY || state_ == FLUSHING)
+      << "Invalid state: " << state_;
+  if (state_ == DIRTY) {
+    RETURN_NOT_OK(writer_->Flush(WritableFile::FLUSH_ASYNC));
+  }
+
+  state_ = FLUSHING;
+  return Status::OK();
 }
 
 size_t FileWritableBlock::BytesAppended() const {
   return bytes_appended_;
 }
 
-Status FileWritableBlock::SyncMetadata() {
-  DCHECK(!closed_);
+WritableBlock::State FileWritableBlock::state() const {
+  return state_;
+}
 
+Status FileWritableBlock::SyncMetadata() {
   string path2 = DirName(block_manager_->GetBlockPath(id()));
   RETURN_NOT_OK(block_manager_->env()->SyncDir(path2));
 

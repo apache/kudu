@@ -89,6 +89,11 @@ TEST_F(BlockManagerTest, SyncOnCloseTest) {
   ASSERT_OK(bm_->CreateAnonymousBlock(opts, &written_block));
   ASSERT_OK(written_block->Append("test data"));
   ASSERT_OK(written_block->Close());
+
+  ASSERT_OK(bm_->CreateAnonymousBlock(opts, &written_block));
+  ASSERT_OK(written_block->Sync());
+
+  ASSERT_OK(written_block->Close());
 }
 
 // Test that we can still read from an opened block after deleting it
@@ -166,6 +171,65 @@ TEST_F(BlockManagerTest, AsyncFlushDataTest) {
   ASSERT_OK(written_block->Append(test_data));
   ASSERT_OK(written_block->FlushDataAsync());
   ASSERT_OK(written_block->Sync());
+}
+
+TEST_F(BlockManagerTest, WritableBlockStateTest) {
+  gscoped_ptr<WritableBlock> written_block;
+
+  // Common flow: CLEAN->DIRTY->CLOSED.
+  ASSERT_OK(bm_->CreateAnonymousBlock(&written_block));
+  ASSERT_EQ(WritableBlock::CLEAN, written_block->state());
+  string test_data = "test data";
+  ASSERT_OK(written_block->Append(test_data));
+  ASSERT_EQ(WritableBlock::DIRTY, written_block->state());
+  ASSERT_OK(written_block->Append(test_data));
+  ASSERT_EQ(WritableBlock::DIRTY, written_block->state());
+  ASSERT_OK(written_block->Sync());
+  ASSERT_EQ(WritableBlock::SYNCED, written_block->state());
+  ASSERT_OK(written_block->Close());
+  ASSERT_EQ(WritableBlock::CLOSED, written_block->state());
+
+  // Test FLUSHING->CLEAN transition.
+  ASSERT_OK(bm_->CreateAnonymousBlock(&written_block));
+  ASSERT_OK(written_block->Append(test_data));
+  ASSERT_OK(written_block->FlushDataAsync());
+  ASSERT_EQ(WritableBlock::FLUSHING, written_block->state());
+  ASSERT_OK(written_block->Sync());
+  ASSERT_EQ(WritableBlock::SYNCED, written_block->state());
+
+  // Test FLUSHING->CLOSED transition.
+  ASSERT_OK(bm_->CreateAnonymousBlock(&written_block));
+  ASSERT_OK(written_block->Append(test_data));
+  ASSERT_OK(written_block->FlushDataAsync());
+  ASSERT_EQ(WritableBlock::FLUSHING, written_block->state());
+  ASSERT_OK(written_block->Close());
+  ASSERT_EQ(WritableBlock::CLOSED, written_block->state());
+
+  // Test CLEAN->CLOSED transition.
+  ASSERT_OK(bm_->CreateAnonymousBlock(&written_block));
+  ASSERT_OK(written_block->Close());
+  ASSERT_EQ(WritableBlock::CLOSED, written_block->state());
+
+  // Test FlushDataAsync() and Sync() no-ops.
+  ASSERT_OK(bm_->CreateAnonymousBlock(&written_block));
+  ASSERT_OK(written_block->FlushDataAsync());
+  ASSERT_EQ(WritableBlock::FLUSHING, written_block->state());
+  ASSERT_OK(written_block->Sync());
+  ASSERT_EQ(WritableBlock::SYNCED, written_block->state());
+
+  // Test DIRTY->CLOSED transition.
+  ASSERT_OK(bm_->CreateAnonymousBlock(&written_block));
+  ASSERT_OK(written_block->Append(test_data));
+  ASSERT_OK(written_block->Close());
+  ASSERT_EQ(WritableBlock::CLOSED, written_block->state());
+
+  // Test that sync_on_close leaves the block in CLOSED.
+  CreateBlockOptions opts;
+  opts.sync_on_close = true;
+  ASSERT_OK(bm_->CreateAnonymousBlock(opts, &written_block));
+  ASSERT_OK(written_block->Append(test_data));
+  ASSERT_OK(written_block->Close());
+  ASSERT_EQ(WritableBlock::CLOSED, written_block->state());
 }
 
 } // namespace fs
