@@ -27,6 +27,11 @@ namespace pb_util {
 
 using google::protobuf::MessageLite;
 
+enum SyncMode {
+  SYNC,
+  NO_SYNC
+};
+
 // See MessageLite::AppendToString
 bool AppendToString(const MessageLite &msg, faststring *output);
 
@@ -51,7 +56,9 @@ bool SerializeToWritableFile(const MessageLite& msg, WritableFile *wfile);
 Status ReadPBFromPath(Env* env, const std::string& path, MessageLite* msg);
 
 // Serialize a protobuf to the given path.
-Status WritePBToPath(Env* env, const std::string& path, const MessageLite& msg);
+//
+// If SyncMode SYNC is provided, ensures the changes are made durable.
+Status WritePBToPath(Env* env, const std::string& path, const MessageLite& msg, SyncMode sync);
 
 // Truncate any 'bytes' or 'string' fields of this message to max_len.
 // The text "<truncated>" is appended to any such truncated fields.

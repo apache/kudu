@@ -20,6 +20,7 @@ using strings::Substitute;
 
 DEFINE_bool(block_coalesce_sync, true,
             "Coalesce synchronization of data during SyncBlocks()");
+DECLARE_bool(enable_data_block_fsync);
 
 namespace kudu {
 namespace fs {
@@ -82,8 +83,8 @@ Status FileWritableBlock::Append(const Slice& data) {
 Status FileWritableBlock::Sync() {
   DCHECK(state_ == CLEAN || state_ == DIRTY || state_ == FLUSHING || state_ == SYNCED)
       << "Invalid state: " << state_;
-
-  if (state_ == DIRTY || state_ == FLUSHING) {
+  if ((state_ == DIRTY || state_ == FLUSHING) &&
+      FLAGS_enable_data_block_fsync) {
     // Safer to synchronize data first, then metadata.
     RETURN_NOT_OK(writer_->Sync());
     RETURN_NOT_OK(SyncMetadata());
@@ -293,8 +294,10 @@ Status FileBlockManager::OpenBlock(const BlockId& block_id,
 Status FileBlockManager::DeleteBlock(const BlockId& block_id) {
   string path = GetBlockPath(block_id);
   RETURN_NOT_OK(env_->DeleteFile(path));
-  WARN_NOT_OK(env_->SyncDir(DirName(path)),
-              "Failed to sync parent directory when deleting block");
+  if (FLAGS_enable_data_block_fsync) {
+    WARN_NOT_OK(env_->SyncDir(DirName(path)),
+                "Failed to sync parent directory when deleting block");
+  }
 
   // The block's directory hierarchy is left behind. We could prune it if
   // it's empty, but that's racy and leaving it isn't much overhead.

@@ -12,6 +12,8 @@
 #include "kudu/util/oid_generator.h"
 #include "kudu/util/path_util.h"
 
+DECLARE_bool(enable_data_block_fsync);
+
 namespace google {
 namespace protobuf {
 class MessageLite;

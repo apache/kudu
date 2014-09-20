@@ -123,7 +123,7 @@ bool SerializeToWritableFile(const MessageLite& msg, WritableFile *wfile) {
   return res && ostream.Flush();
 }
 
-Status WritePBToPath(Env* env, const std::string& path, const MessageLite& msg) {
+Status WritePBToPath(Env* env, const std::string& path, const MessageLite& msg, SyncMode sync) {
   const string path_tmp = path + kTmpSuffix;
 
   shared_ptr<WritableFile> file;
@@ -134,10 +134,14 @@ Status WritePBToPath(Env* env, const std::string& path, const MessageLite& msg) 
   if (!SerializeToWritableFile(msg, file.get())) {
     return Status::IOError("Failed to serialize to file");
   }
-  RETURN_NOT_OK_PREPEND(file->Sync(), "Failed to Sync() " + path_tmp);
+  if (sync == pb_util::SYNC) {
+    RETURN_NOT_OK_PREPEND(file->Sync(), "Failed to Sync() " + path_tmp);
+  }
   RETURN_NOT_OK_PREPEND(file->Close(), "Failed to Close() " + path_tmp);
   RETURN_NOT_OK_PREPEND(env->RenameFile(path_tmp, path), "Failed to rename tmp file to " + path);
-  RETURN_NOT_OK_PREPEND(env->SyncDir(DirName(path)), "Failed to SyncDir() parent of " + path);
+  if (sync == pb_util::SYNC) {
+    RETURN_NOT_OK_PREPEND(env->SyncDir(DirName(path)), "Failed to SyncDir() parent of " + path);
+  }
   tmp_deleter.Cancel();
   return Status::OK();
 }

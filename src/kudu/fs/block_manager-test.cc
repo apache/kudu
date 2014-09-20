@@ -87,7 +87,13 @@ TEST_F(BlockManagerTest, SyncOnCloseTest) {
   CreateBlockOptions opts;
   opts.sync_on_close = true;
   ASSERT_OK(bm_->CreateAnonymousBlock(opts, &written_block));
-  ASSERT_OK(written_block->Append("test data"));
+  string test_data = "test data";
+  ASSERT_OK(written_block->Append(test_data));
+  ASSERT_OK(written_block->Close());
+
+  opts.sync_on_close = false;
+  ASSERT_OK(bm_->CreateAnonymousBlock(opts, &written_block));
+  ASSERT_OK(written_block->Append(test_data));
   ASSERT_OK(written_block->Close());
 
   ASSERT_OK(bm_->CreateAnonymousBlock(opts, &written_block));

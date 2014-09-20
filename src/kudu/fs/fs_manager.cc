@@ -111,7 +111,9 @@ Status FsManager::CreateAndWriteInstanceMetadata() {
 
   const string path = GetInstanceMetadataPath();
 
-  RETURN_NOT_OK(pb_util::WritePBToPath(env_, path, new_instance));
+  // The instance metadata is written effectively once per TS, so the
+  // durability cost is negligible.
+  RETURN_NOT_OK(pb_util::WritePBToPath(env_, path, new_instance, pb_util::SYNC));
   LOG(INFO) << "Generated new instance metadata in path " << path << ":\n"
             << new_instance.DebugString();
   return Status::OK();
@@ -202,13 +204,13 @@ BlockId FsManager::GenerateBlockId() {
 
 Status FsManager::CreateNewBlock(gscoped_ptr<WritableBlock>* block) {
   CreateBlockOptions opts;
-  opts.sync_on_close = FLAGS_enable_data_block_fsync;
+  opts.sync_on_close = true;
   return block_manager_->CreateAnonymousBlock(opts, block);
 }
 
 Status FsManager::CreateBlockWithId(const BlockId& block_id, gscoped_ptr<WritableBlock>* block) {
   CreateBlockOptions opts;
-  opts.sync_on_close = FLAGS_enable_data_block_fsync;
+  opts.sync_on_close = true;
   return block_manager_->CreateNamedBlock(opts, block_id, block);
 }
 
@@ -269,7 +271,8 @@ Status FsManager::WriteMetadataBlock(const BlockId& block_id, const MessageLite&
   // Write the new metadata file
   shared_ptr<WritableFile> wfile;
   string path = GetBlockPath(block_id);
-  return pb_util::WritePBToPath(env_, path, msg);
+  return pb_util::WritePBToPath(env_, path, msg,
+      FLAGS_enable_data_block_fsync ? pb_util::SYNC : pb_util::NO_SYNC);
 }
 
 Status FsManager::ReadMetadataBlock(const BlockId& block_id, MessageLite *msg) {

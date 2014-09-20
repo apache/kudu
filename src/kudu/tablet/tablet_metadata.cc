@@ -103,7 +103,8 @@ Status TabletMetadata::OpenMasterBlock(Env* env,
 Status TabletMetadata::PersistMasterBlock(FsManager* fs_manager,
                                           const TabletMasterBlockPB& pb) {
   string path = fs_manager->GetMasterBlockPath(pb.tablet_id());
-  return pb_util::WritePBToPath(fs_manager->env(), path, pb);
+  return pb_util::WritePBToPath(fs_manager->env(), path, pb,
+      FLAGS_enable_data_block_fsync ? pb_util::SYNC : pb_util::NO_SYNC);
 }
 
 
