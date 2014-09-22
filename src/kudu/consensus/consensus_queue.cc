@@ -77,7 +77,7 @@ OperationStatusTracker::OperationStatusTracker(gscoped_ptr<OperationPB> operatio
 }
 
 std::string PeerMessageQueue::TrackedPeer::ToString() const {
-  return Substitute("Peer: $0, Status: $2",
+  return Substitute("Peer: $0, Status: $1",
                     uuid,
                     peer_status.ShortDebugString());
 }
