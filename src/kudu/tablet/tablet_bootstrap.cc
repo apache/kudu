@@ -497,6 +497,7 @@ Status TabletBootstrap::OpenNewLog() {
   RETURN_NOT_OK(Log::Open(LogOptions(),
                           tablet_->metadata()->fs_manager(),
                           tablet_->tablet_id(),
+                          *tablet_->schema(),
                           metric_context_,
                           &log_));
   // Disable sync temporarily in order to speed up appends during the

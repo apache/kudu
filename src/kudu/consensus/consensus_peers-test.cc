@@ -2,6 +2,8 @@
 
 #include <gtest/gtest.h>
 
+#include "kudu/common/schema.h"
+#include "kudu/common/wire_protocol-test-util.h"
 #include "kudu/consensus/consensus_peers.h"
 #include "kudu/consensus/consensus-test-util.h"
 #include "kudu/consensus/log.h"
@@ -28,7 +30,8 @@ class ConsensusPeersTest : public KuduTest {
  public:
   ConsensusPeersTest()
     :  metric_context_(&metric_registry_, "peer-test"),
-       message_queue_(metric_context_) {
+       message_queue_(metric_context_),
+       schema_(GetSimpleTestSchema()) {
     message_queue_.Init(MinimumOpId());
   }
 
@@ -87,6 +90,7 @@ class ConsensusPeersTest : public KuduTest {
   MetricRegistry metric_registry_;
   MetricContext metric_context_;
   PeerMessageQueue message_queue_;
+  const Schema schema_;
   gscoped_ptr<FsManager> fs_manager_;
   LogOptions options_;
   vector<scoped_refptr<OperationStatusTracker> > statuses_;
@@ -103,6 +107,7 @@ TEST_F(ConsensusPeersTest, TestLocalPeer) {
   CHECK_OK(Log::Open(options_,
                      fs_manager_.get(),
                      kTabletId,
+                     schema_,
                      NULL,
                      &log));
   NewLocalPeer(log.get(), "local-peer", &local_peer);
@@ -159,6 +164,7 @@ TEST_F(ConsensusPeersTest, TestLocalAndRemotePeers) {
   CHECK_OK(Log::Open(options_,
                      fs_manager_.get(),
                      kTabletId,
+                     schema_,
                      NULL,
                      &log));
   // Create a set of peers

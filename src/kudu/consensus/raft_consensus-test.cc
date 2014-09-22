@@ -4,6 +4,7 @@
 #include <boost/foreach.hpp>
 #include <gtest/gtest.h>
 
+#include "kudu/common/schema.h"
 #include "kudu/common/wire_protocol-test-util.h"
 #include "kudu/consensus/consensus.pb.h"
 #include "kudu/consensus/consensus-test-util.h"
@@ -50,7 +51,8 @@ class RaftConsensusTest : public KuduTest {
  public:
   RaftConsensusTest()
     : clock_(server::LogicalClock::CreateStartingAt(Timestamp(0))),
-      metric_context_(&metric_registry_, "raft-test") {}
+      metric_context_(&metric_registry_, "raft-test"),
+      schema_(GetSimpleTestSchema()) {}
 
   // Builds an initial quorum of 'num' elements.
   // Since we don't have leader election yet, the initial roles are pre-assigned.
@@ -86,6 +88,7 @@ class RaftConsensusTest : public KuduTest {
       RETURN_NOT_OK(Log::Open(options,
                               fs_manager,
                               kTestTablet,
+                              schema_,
                               NULL,
                               &log));
       Log* log_ptr = log.release();
@@ -452,6 +455,7 @@ class RaftConsensusTest : public KuduTest {
   scoped_refptr<server::Clock> clock_;
   MetricRegistry metric_registry_;
   MetricContext metric_context_;
+  const Schema schema_;
 };
 
 // Tests Replicate/Commit a single message through the leader.

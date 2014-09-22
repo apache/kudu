@@ -8,6 +8,7 @@
 #include <map>
 #include <vector>
 
+#include "kudu/common/schema.h"
 #include "kudu/consensus/log_util.h"
 #include "kudu/consensus/opid_util.h"
 #include "kudu/gutil/ref_counted.h"
@@ -70,6 +71,7 @@ class Log {
   static Status Open(const LogOptions &options,
                      FsManager *fs_manager,
                      const std::string& tablet_id,
+                     const Schema& schema,
                      MetricContext* parent_metric_context,
                      gscoped_ptr<Log> *log);
 
@@ -174,6 +176,12 @@ class Log {
   FsManager* GetFsManager();
 
   void SetLogFaultHooksForTests(const std::tr1::shared_ptr<LogFaultHooks> &hooks);
+
+  // Set the schema for the _next_ log segment.
+  //
+  // This method is thread-safe.
+  void SetSchemaForNextLogSegment(const Schema& schema);
+
  private:
   friend class LogTest;
   friend class LogTestBase;
@@ -200,6 +208,7 @@ class Log {
       FsManager *fs_manager,
       const std::string& log_path,
       const std::string& tablet_id,
+      const Schema& schema,
       MetricContext* parent_metric_context);
 
   // Initializes a new one or continues an existing log.
@@ -256,6 +265,12 @@ class Log {
   // The ID of the tablet this log is dedicated to.
   std::string tablet_id_;
 
+  // Lock to protect modifications to schema_.
+  mutable rw_spinlock schema_lock_;
+
+  // The current schema of the tablet this log is dedicated to.
+  Schema schema_;
+
   // The currently active segment being written.
   gscoped_ptr<WritableLogSegment> active_segment_;
 
@@ -268,7 +283,8 @@ class Log {
   // The path for the next allocated segment.
   std::string next_segment_path_;
 
-  // Lock to protect modifications to previous_segments_ and log_state_.
+  // Lock to protect modifications to previous_segments_ and
+  // log_state_.
   mutable percpu_rwlock state_lock_;
 
   LogState log_state_;

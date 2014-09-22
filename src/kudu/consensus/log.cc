@@ -2,6 +2,7 @@
 
 #include "kudu/consensus/log.h"
 
+#include "kudu/common/wire_protocol.h"
 #include "kudu/consensus/log_metrics.h"
 #include "kudu/consensus/log_reader.h"
 #include "kudu/consensus/log_util.h"
@@ -181,6 +182,7 @@ const uint64_t Log::kInitialLogSegmentSequenceNumber = 0L;
 Status Log::Open(const LogOptions &options,
                  FsManager *fs_manager,
                  const std::string& tablet_id,
+                 const Schema& schema,
                  MetricContext* parent_metrics_context,
                  gscoped_ptr<Log> *log) {
 
@@ -192,26 +194,24 @@ Status Log::Open(const LogOptions &options,
                                    fs_manager,
                                    tablet_wal_path,
                                    tablet_id,
+                                   schema,
                                    parent_metrics_context));
   RETURN_NOT_OK(new_log->Init());
   log->reset(new_log.release());
   return Status::OK();
 }
 
-// TODO It's inefficient to have an executor here with a fixed number
-// of threads: pre-allocations are relatively short lived and
-// infrequent. It makes sense to implement and use something like
-// Java's CachedThreadPool -- which has a min and max number of
-// threads, where min could be 0.
 Log::Log(const LogOptions &options,
          FsManager *fs_manager,
          const string& log_path,
          const string& tablet_id,
+         const Schema& schema,
          MetricContext* parent_metric_context)
   : options_(options),
     fs_manager_(fs_manager),
     log_dir_(log_path),
     tablet_id_(tablet_id),
+    schema_(schema),
     active_segment_sequence_number_(0),
     log_state_(kLogInitialized),
     max_segment_size_(options_.segment_size_mb * 1024 * 1024),
@@ -579,6 +579,11 @@ LogReader* Log::GetLogReader() const {
   return reader_.get();
 }
 
+void Log::SetSchemaForNextLogSegment(const Schema& schema) {
+  boost::lock_guard<rw_spinlock> l(schema_lock_);
+  schema_ = schema;
+}
+
 Status Log::Close() {
   if (log_hooks_) {
     RETURN_NOT_OK_PREPEND(log_hooks_->PreClose(),
@@ -661,6 +666,12 @@ Status Log::SwitchToAllocatedSegment() {
   header.set_minor_version(kLogMinorVersion);
   header.set_sequence_number(active_segment_sequence_number_);
   header.set_tablet_id(tablet_id_);
+
+  // Set the new segment's schema.
+  {
+    boost::shared_lock<rw_spinlock> l(schema_lock_);
+    RETURN_NOT_OK(SchemaToPB(schema_, header.mutable_schema()));
+  }
 
   RETURN_NOT_OK(new_segment->WriteHeaderAndOpen(header));
 

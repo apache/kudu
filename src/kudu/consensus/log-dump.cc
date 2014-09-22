@@ -74,15 +74,13 @@ void PrintIdOnly(const LogEntryPB& entry) {
 }
 
 void PrintDecodedWriteRequestPB(const string& indent,
+                                const Schema& tablet_schema,
                                 const WriteRequestPB& write) {
-  Schema decoded_schema;
-  CHECK_OK(SchemaFromPB(write.schema(), &decoded_schema));
-
-  // We need to assign dummy ids as the decoder expects them.
-  Schema schema_with_ids = SchemaBuilder(decoded_schema).Build();
+  Schema request_schema;
+  CHECK_OK(SchemaFromPB(write.schema(), &request_schema));
 
   Arena arena(32 * 1024, 1024 * 1024);
-  RowOperationsPBDecoder dec(&write.row_operations(), &decoded_schema, &schema_with_ids, &arena);
+  RowOperationsPBDecoder dec(&write.row_operations(), &request_schema, &tablet_schema, &arena);
   vector<DecodedRowOperation> ops;
   CHECK_OK(dec.DecodeOperations(&ops));
 
@@ -95,11 +93,13 @@ void PrintDecodedWriteRequestPB(const string& indent,
 
   int i = 0;
   BOOST_FOREACH(const DecodedRowOperation& op, ops) {
-    cout << indent << "op " << (i++) << ": " << op.ToString(decoded_schema) << endl;
+    // TODO (KUDU-515): Handle the case when a tablet's schema changes
+    // mid-segment.
+    cout << indent << "op " << (i++) << ": " << op.ToString(tablet_schema) << endl;
   }
 }
 
-void PrintDecoded(const LogEntryPB& entry) {
+void PrintDecoded(const LogEntryPB& entry, const Schema& tablet_schema) {
   CHECK_EQ(entry.type(), log::OPERATION);
 
   PrintIdOnly(entry);
@@ -110,7 +110,7 @@ void PrintDecoded(const LogEntryPB& entry) {
 
     const ReplicateMsg& replicate = entry.operation().replicate();
     if (replicate.op_type() == consensus::WRITE_OP) {
-      PrintDecodedWriteRequestPB(indent, replicate.write_request());
+      PrintDecodedWriteRequestPB(indent, tablet_schema, replicate.write_request());
     } else {
       cout << indent << replicate.ShortDebugString() << endl;
     }
@@ -130,6 +130,9 @@ void PrintSegment(const scoped_refptr<ReadableLogSegment>& segment) {
 
   if (print_type == DONT_PRINT) return;
 
+  Schema tablet_schema;
+  CHECK_OK(SchemaFromPB(segment->header().schema(), &tablet_schema));
+
   BOOST_FOREACH(LogEntryPB* entry, entries) {
 
     if (print_type == PRINT_PB) {
@@ -139,7 +142,7 @@ void PrintSegment(const scoped_refptr<ReadableLogSegment>& segment) {
 
       cout << "Entry:\n" << entry->DebugString();
     } else if (print_type == PRINT_DECODED) {
-      PrintDecoded(*entry);
+      PrintDecoded(*entry, tablet_schema);
     } else if (print_type == PRINT_ID) {
       PrintIdOnly(*entry);
     }

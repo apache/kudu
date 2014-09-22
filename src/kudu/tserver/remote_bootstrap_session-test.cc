@@ -70,6 +70,7 @@ class RemoteBootstrapTest : public KuduTabletTest {
   void SetUpTabletPeer() {
     gscoped_ptr<Log> log;
     CHECK_OK(Log::Open(LogOptions(), fs_manager(), tablet()->tablet_id(),
+                       *tablet()->schema(),
                        NULL, &log));
 
     MetricContext metric_ctx(&metric_registry_, CURRENT_TEST_NAME());

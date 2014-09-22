@@ -1,6 +1,7 @@
 // Copyright (c) 2013, Cloudera, inc.
 package kudu.log;
 
+import "kudu/common/common.proto";
 import "kudu/consensus/consensus.proto";
 import "kudu/server/metadata.proto";
 
@@ -41,6 +42,9 @@ message LogSegmentHeaderPB {
 
   // The tablet-specific sequence number of this WAL segment.
   required uint64 sequence_number = 6;
+
+  // Schema used when appending entries to this log.
+  required SchemaPB schema = 7;
 }
 
 // An entry in the footer's sparse index.

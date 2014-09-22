@@ -99,6 +99,7 @@ class TabletPeerTest : public KuduTabletTest {
 
     gscoped_ptr<Log> log;
     ASSERT_STATUS_OK(Log::Open(LogOptions(), fs_manager(), tablet()->tablet_id(),
+                               *tablet()->schema(),
                                metric_ctx_.get(), &log));
 
     ASSERT_STATUS_OK(tablet_peer_->Init(tablet(), clock(), messenger_, log.Pass(), *metric_ctx_));

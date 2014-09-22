@@ -9,6 +9,7 @@
 #include <string>
 #include "kudu/common/common.pb.h"
 #include "kudu/util/slice.h"
+#include "kudu/gutil/strings/escaping.h"
 #include "kudu/gutil/strings/numbers.h"
 
 namespace kudu {
@@ -185,7 +186,7 @@ struct DataTypeTraits<STRING> {
   }
   static void AppendDebugStringForValue(const void *val, string *str) {
     const Slice *s = reinterpret_cast<const Slice *>(val);
-    str->append(s->ToString());
+    str->append(strings::Utf8SafeCEscape(s->ToString()));
   }
 
   static int Compare(const void *lhs, const void *rhs) {

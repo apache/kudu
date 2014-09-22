@@ -77,6 +77,7 @@ class LogTestBase : public KuduTest {
     CHECK_OK(Log::Open(options_,
                        fs_manager_.get(),
                        kTestTablet,
+                       schema_,
                        NULL,
                        &log_));
   }
