@@ -2,6 +2,7 @@
 #ifndef KUDU_UTIL_LOCKS_H
 #define KUDU_UTIL_LOCKS_H
 
+#include <algorithm>
 #include <glog/logging.h>
 
 #include "kudu/gutil/atomicops.h"
@@ -204,7 +205,7 @@ template <typename Mutex>
 class lock_guard {
  public:
   explicit lock_guard(Mutex* m)
-    : m_(m) {
+    : m_(DCHECK_NOTNULL(m)) {
     m_->lock();
   }
 
@@ -214,6 +215,7 @@ class lock_guard {
 
  private:
   Mutex* m_;
+  DISALLOW_COPY_AND_ASSIGN(lock_guard<Mutex>);
 };
 
 // Simpler version of boost::unique_lock. Tracks lock acquisition and will
@@ -221,6 +223,11 @@ class lock_guard {
 template <typename Mutex>
 class unique_lock {
  public:
+  unique_lock()
+    : locked_(false),
+      m_(NULL) {
+  }
+
   explicit unique_lock(Mutex* m)
     : locked_(true),
       m_(m) {
@@ -246,9 +253,16 @@ class unique_lock {
     locked_ = false;
   }
 
+  void swap(unique_lock<Mutex>* other) {
+    DCHECK(other != NULL) << "The passed unique_lock is null";
+    std::swap(locked_, other->locked_);
+    std::swap(m_, other->m_);
+  }
+
  private:
   bool locked_;
   Mutex* m_;
+  DISALLOW_COPY_AND_ASSIGN(unique_lock<Mutex>);
 };
 
 // Simpler version of boost::shared_lock. Only supports the basic object
@@ -257,7 +271,7 @@ template <typename Mutex>
 class shared_lock {
  public:
   explicit shared_lock(Mutex* m)
-    : m_(m) {
+    : m_(DCHECK_NOTNULL(m)) {
     m_->lock_shared();
   }
 
@@ -267,6 +281,7 @@ class shared_lock {
 
  private:
   Mutex* m_;
+  DISALLOW_COPY_AND_ASSIGN(shared_lock<Mutex>);
 };
 
 } // namespace kudu
