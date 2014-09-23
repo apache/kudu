@@ -86,16 +86,15 @@ TEST_F(RemoteBootstrapClientTest, TestDownloadBlock) {
 
 // Basic WAL segment download unit test.
 TEST_F(RemoteBootstrapClientTest, TestDownloadWalSegment) {
-  const int kSeqNo = 0;
   ASSERT_OK(fs_manager_->CreateDirIfMissing(fs_manager_->GetTabletWalDir(GetTabletId())));
 
   ASSERT_OK(client_->BeginRemoteBootstrapSession(GetTabletId(),
                                                  tablet_peer_->Quorum(), NULL));
-  const consensus::OpId& op_id = *client_->wal_initial_opids_.begin();
-  string path = fs_manager_->GetWalSegmentFileName(GetTabletId(), kSeqNo);
+  uint64_t seqno = client_->wal_seqnos_[0];
+  string path = fs_manager_->GetWalSegmentFileName(GetTabletId(), seqno);
 
   ASSERT_FALSE(fs_manager_->Exists(path));
-  ASSERT_OK(client_->DownloadWAL(op_id, kSeqNo));
+  ASSERT_OK(client_->DownloadWAL(seqno));
   ASSERT_TRUE(fs_manager_->Exists(path));
 
   log::ReadableLogSegmentMap local_segments;

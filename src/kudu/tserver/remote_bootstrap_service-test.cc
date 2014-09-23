@@ -35,7 +35,6 @@ using consensus::MaximumOpId;
 using consensus::MinimumOpId;
 using consensus::OpIdEquals;
 using log::ReadableLogSegment;
-using log::ReadableLogSegmentMap;
 using rpc::ErrorStatusPB;
 using rpc::RpcController;
 
@@ -62,7 +61,7 @@ class RemoteBootstrapServiceTest : public RemoteBootstrapTest {
   Status DoBeginValidRemoteBootstrapSession(string* session_id,
                                             tablet::TabletSuperBlockPB* superblock = NULL,
                                             uint64_t* idle_timeout_millis = NULL,
-                                            vector<consensus::OpId>* first_op_ids = NULL) {
+                                            vector<uint64_t>* sequence_numbers = NULL) {
     BeginRemoteBootstrapSessionResponsePB resp;
     RpcController controller;
     RETURN_NOT_OK(DoBeginRemoteBootstrapSession(GetTabletId(), GetLocalUUID(), &resp, &controller));
@@ -73,10 +72,8 @@ class RemoteBootstrapServiceTest : public RemoteBootstrapTest {
     if (idle_timeout_millis) {
       *idle_timeout_millis = resp.session_idle_timeout_millis();
     }
-    if (first_op_ids) {
-      for (int i = 0; i < resp.first_op_ids_size(); i++) {
-        first_op_ids->push_back(resp.first_op_ids(i));
-      }
+    if (sequence_numbers) {
+      sequence_numbers->assign(resp.wal_segment_seqnos().begin(), resp.wal_segment_seqnos().end());
     }
     return Status::OK();
   }
@@ -166,16 +163,17 @@ TEST_F(RemoteBootstrapServiceTest, TestSimpleBeginEndSession) {
   string session_id;
   tablet::TabletSuperBlockPB superblock;
   uint64_t idle_timeout_millis;
-  vector<consensus::OpId> first_op_ids;
+  vector<uint64_t> segment_seqnos;
   ASSERT_OK(DoBeginValidRemoteBootstrapSession(&session_id,
                                                &superblock,
                                                &idle_timeout_millis,
-                                               &first_op_ids));
+                                               &segment_seqnos));
   // Basic validation of returned params.
   ASSERT_FALSE(session_id.empty());
   ASSERT_EQ(FLAGS_remote_bootstrap_idle_timeout_ms, idle_timeout_millis);
   ASSERT_TRUE(superblock.IsInitialized());
-  ASSERT_EQ(static_cast<int>(kNumLogRolls), first_op_ids.size());
+  // We should have number of segments = number of rolls
+  ASSERT_EQ(static_cast<int>(kNumLogRolls), segment_seqnos.size());
 
   EndRemoteBootstrapSessionResponsePB resp;
   RpcController controller;
@@ -261,13 +259,13 @@ TEST_F(RemoteBootstrapServiceTest, TestInvalidBlockOrOpId) {
                         Status::NotFound("").CodeAsString());
   }
 
-  // Invalid OpId for log fetch.
+  // Invalid Segment Sequence Number for log fetch.
   {
     FetchDataResponsePB resp;
     RpcController controller;
     DataIdPB data_id;
     data_id.set_type(DataIdPB::LOG_SEGMENT);
-    data_id.mutable_first_op_id()->CopyFrom(MaximumOpId());
+    data_id.set_wal_segment_seqno(31337);
     Status status = DoFetchData(session_id, data_id, NULL, NULL, &resp, &controller);
     ASSERT_REMOTE_ERROR(status, controller.error_response(),
                         RemoteBootstrapErrorPB::WAL_SEGMENT_NOT_FOUND,
@@ -285,7 +283,7 @@ TEST_F(RemoteBootstrapServiceTest, TestInvalidBlockOrOpId) {
     ASSERT_TRUE(status.IsInvalidArgument());
   }
 
-  // Empty data type id (no BlockId, no OpId);
+  // Empty data type id (no BlockId, no Segment Sequence Number);
   {
     FetchDataResponsePB resp;
     RpcController controller;
@@ -297,14 +295,14 @@ TEST_F(RemoteBootstrapServiceTest, TestInvalidBlockOrOpId) {
                         Status::InvalidArgument("").CodeAsString());
   }
 
-  // Both BlockId and OpId in the same "union" PB (illegal).
+  // Both BlockId and Segment Sequence Number in the same "union" PB (illegal).
   {
     FetchDataResponsePB resp;
     RpcController controller;
     DataIdPB data_id;
     data_id.set_type(DataIdPB::BLOCK);
     data_id.mutable_block_id()->set_id("8charnam");
-    data_id.mutable_first_op_id()->CopyFrom(MinimumOpId());
+    data_id.set_wal_segment_seqno(0);
     Status status = DoFetchData(session_id, data_id, NULL, NULL, &resp, &controller);
     ASSERT_REMOTE_ERROR(status, controller.error_response(),
                         RemoteBootstrapErrorPB::INVALID_REMOTE_BOOTSTRAP_REQUEST,
@@ -383,29 +381,33 @@ TEST_F(RemoteBootstrapServiceTest, TestFetchLog) {
   string session_id;
   tablet::TabletSuperBlockPB superblock;
   uint64_t idle_timeout_millis;
-  vector<consensus::OpId> first_op_ids;
+  vector<uint64_t> segment_seqnos;
   ASSERT_OK(DoBeginValidRemoteBootstrapSession(&session_id,
-                                                      &superblock,
-                                                      &idle_timeout_millis,
-                                                      &first_op_ids));
-  ASSERT_EQ(static_cast<int>(kNumLogRolls), first_op_ids.size());
-  const consensus::OpId& op_id = *first_op_ids.begin();
+                                               &superblock,
+                                               &idle_timeout_millis,
+                                               &segment_seqnos));
+  ASSERT_EQ(static_cast<int>(kNumLogRolls), segment_seqnos.size());
+  uint64_t seg_seqno = *segment_seqnos.begin();
 
   // Fetch the remote data.
   FetchDataResponsePB resp;
   RpcController controller;
   DataIdPB data_id;
   data_id.set_type(DataIdPB::LOG_SEGMENT);
-  data_id.mutable_first_op_id()->CopyFrom(op_id);
+  data_id.set_wal_segment_seqno(seg_seqno);
   ASSERT_OK(DoFetchData(session_id, data_id, NULL, NULL, &resp, &controller));
 
   // Fetch the local data.
-  ReadableLogSegmentMap local_segments;
+  log::ReadableLogSegmentMap local_segments;
   tablet_peer_->log()->GetReadableLogSegments(&local_segments);
-  ASSERT_TRUE(OpIdEquals(op_id, local_segments.begin()->first))
-      << "Expected equal OpIds: " << op_id.ShortDebugString()
-      << " and " << local_segments.begin()->first.ShortDebugString();
-  const scoped_refptr<ReadableLogSegment>& segment = local_segments.begin()->second;
+
+  uint64_t first_seg_seqno = (*local_segments.begin()).second->header().sequence_number();
+
+
+  ASSERT_EQ(seg_seqno, first_seg_seqno)
+      << "Expected equal sequence numbers: " << seg_seqno
+      << " and " << first_seg_seqno;
+  const scoped_refptr<ReadableLogSegment>& segment = (*local_segments.begin()).second;
   faststring scratch;
   int64_t size = segment->file_size();
   scratch.resize(size);

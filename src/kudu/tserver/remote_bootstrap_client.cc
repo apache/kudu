@@ -185,10 +185,7 @@ Status RemoteBootstrapClient::BeginRemoteBootstrapSession(const std::string& tab
   session_id_ = resp.session_id();
   session_idle_timeout_millis_ = resp.session_idle_timeout_millis();
   superblock_.reset(resp.release_superblock());
-  wal_initial_opids_.clear();
-  BOOST_FOREACH(const OpId& op_id, resp.first_op_ids()) {
-    wal_initial_opids_.push_back(op_id);
-  }
+  wal_seqnos_.assign(resp.wal_segment_seqnos().begin(), resp.wal_segment_seqnos().end());
 
   state_ = kSessionStarted;
 
@@ -237,13 +234,14 @@ Status RemoteBootstrapClient::DownloadWALs() {
   RETURN_NOT_OK(fs_manager_->env()->SyncDir(DirName(path))); // fsync() parent dir.
 
   // Download the WAL segments.
-  int num_segments = wal_initial_opids_.size();
+  int num_segments = wal_seqnos_.size();
   LOG(INFO) << "Starting download of " << num_segments << " WAL segments...";
-  uint64_t wal_seqno = 0;
-  BOOST_FOREACH(const OpId& op_id, wal_initial_opids_) {
-    UpdateStatusMessage(Substitute("Downloading WAL segment with seqno $0 ($1/$2)",
-                                   wal_seqno, wal_seqno + 1, num_segments));
-    RETURN_NOT_OK(DownloadWAL(op_id, wal_seqno++));
+  uint64_t counter = 0;
+  BOOST_FOREACH(uint64_t seg_seqno, wal_seqnos_) {
+    UpdateStatusMessage(Substitute("Downloading WAL segment with seq. number $0 ($1/$2)",
+                                   seg_seqno, counter + 1, num_segments));
+    RETURN_NOT_OK(DownloadWAL(seg_seqno));
+    ++counter;
   }
   return Status::OK();
 }
@@ -285,11 +283,11 @@ Status RemoteBootstrapClient::DownloadBlocks() {
   return Status::OK();
 }
 
-Status RemoteBootstrapClient::DownloadWAL(const OpId& initial_opid, uint64_t wal_segment_seqno) {
+Status RemoteBootstrapClient::DownloadWAL(uint64_t wal_segment_seqno) {
   VLOG(1) << "Downloading WAL segment with seqno " << wal_segment_seqno;
   DataIdPB data_id;
   data_id.set_type(DataIdPB::LOG_SEGMENT);
-  data_id.mutable_first_op_id()->CopyFrom(initial_opid);
+  data_id.set_wal_segment_seqno(wal_segment_seqno);
   string dest_path = fs_manager_->GetWalSegmentFileName(tablet_id_, wal_segment_seqno);
 
   WritableFileOptions opts;
@@ -298,8 +296,8 @@ Status RemoteBootstrapClient::DownloadWAL(const OpId& initial_opid, uint64_t wal
   RETURN_NOT_OK_PREPEND(fs_manager_->env()->NewWritableFile(opts, dest_path, &writer),
                         "Unable to open file for writing");
   RETURN_NOT_OK_PREPEND(DownloadFile(data_id, writer.get()),
-                        Substitute("Unable to download WAL segment with initial OpId $0",
-                                   initial_opid.ShortDebugString()));
+                        Substitute("Unable to download WAL segment with seq. number $0",
+                                   wal_segment_seqno));
   return Status::OK();
 }
 

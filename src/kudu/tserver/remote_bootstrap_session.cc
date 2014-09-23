@@ -4,6 +4,7 @@
 #include <algorithm>
 
 #include "kudu/consensus/log.h"
+#include "kudu/consensus/log_reader.h"
 #include "kudu/fs/block_id-inl.h"
 #include "kudu/fs/block_manager.h"
 #include "kudu/gutil/map-util.h"
@@ -204,15 +205,14 @@ Status RemoteBootstrapSession::GetBlockPiece(const BlockId& block_id,
   return Status::OK();
 }
 
-Status RemoteBootstrapSession::GetLogSegmentPiece(const consensus::OpId& segment_first_op_id,
+Status RemoteBootstrapSession::GetLogSegmentPiece(uint64_t segment_seqno,
                                                   uint64_t offset, int64_t client_maxlen,
                                                   std::string* data, int64_t* block_file_size,
                                                   RemoteBootstrapErrorPB::Code* error_code) {
   ImmutableRandomAccessFileInfo* file_info;
-  RETURN_NOT_OK(FindLogSegment(segment_first_op_id, &file_info, error_code));
+  RETURN_NOT_OK(FindLogSegment(segment_seqno, &file_info, error_code));
   RETURN_NOT_OK(ReadFileChunkToBuf(file_info, offset, client_maxlen,
-                                   Substitute("log segment $0",
-                                              segment_first_op_id.ShortDebugString()),
+                                   Substitute("log segment $0", segment_seqno),
                                    data, block_file_size, error_code));
 
   // Note: We do not eagerly close log segment files, since we share ownership
@@ -297,28 +297,40 @@ Status RemoteBootstrapSession::FindOrOpenBlock(const BlockId& block_id,
   return s;
 }
 
-Status RemoteBootstrapSession::FindLogSegment(const consensus::OpId& segment_first_op_id,
+Status RemoteBootstrapSession::FindLogSegment(uint64_t segment_seqno,
                                               ImmutableRandomAccessFileInfo** file_info,
                                               RemoteBootstrapErrorPB::Code* error_code) {
   boost::lock_guard<simple_spinlock> l(session_lock_);
-  if (FindCopy(logs_, segment_first_op_id, file_info)) {
+  if (FindCopy(logs_, segment_seqno, file_info)) {
     return Status::OK();
   }
 
+  // The below mimics what we'll do later on when instead of a map of 'log_segments_' we just
+  // get a vector.
   scoped_refptr<log::ReadableLogSegment> log_segment;
-  if (!FindCopy(log_segments_, segment_first_op_id, &log_segment)) {
+  int position = -1;
+  if (!log_segments_.empty()) {
+    position = segment_seqno - (*log_segments_.begin()).second->header().sequence_number();
+  }
+  if (position < 0 || position > log_segments_.size()) {
     *error_code = RemoteBootstrapErrorPB::WAL_SEGMENT_NOT_FOUND;
-    return Status::NotFound(Substitute("Segment with first OpId $0 not found",
-                                       segment_first_op_id.ShortDebugString()));
+    return Status::NotFound(Substitute("Segment with sequence number $0 not found",
+                                       segment_seqno));
   }
 
-  Status s = AddToCacheUnlocked(&logs_, segment_first_op_id, log_segment->readable_file(),
+  log::ReadableLogSegmentMap::iterator iter = log_segments_.begin();
+
+  for (int i = 0; i < position; i++) iter++;
+
+  log_segment = (*iter).second;
+  DCHECK_EQ(log_segment->header().sequence_number(), segment_seqno);
+
+  Status s = AddToCacheUnlocked(&logs_, segment_seqno, log_segment->readable_file(),
                                 file_info, error_code);
   if (!s.ok()) {
     s = s.CloneAndPrepend(
-            Substitute("Error accessing data for log segment with seqno $0 and first OpId $1",
-                       log_segment->header().sequence_number(),
-                       segment_first_op_id.ShortDebugString()));
+            Substitute("Error accessing data for log segment with seqno $0",
+                       segment_seqno));
     LOG(INFO) << s.ToString();
   }
   return s;

@@ -103,7 +103,7 @@ class RemoteBootstrapSession : public RefCountedThreadSafe<RemoteBootstrapSessio
   // Get a piece of a log segment.
   // The behavior and params are very similar to GetBlockPiece(), but this one
   // is only for sending WAL segment files.
-  Status GetLogSegmentPiece(const consensus::OpId& segment_first_op_id,
+  Status GetLogSegmentPiece(uint64_t segment_seqno,
                             size_t offset, int64_t client_maxlen,
                             std::string* data, int64_t* log_file_size,
                             RemoteBootstrapErrorPB::Code* error_code);
@@ -120,8 +120,7 @@ class RemoteBootstrapSession : public RefCountedThreadSafe<RemoteBootstrapSessio
 
   typedef std::tr1::unordered_map<BlockId, ImmutableReadableBlockInfo*,
                                   BlockIdHash> BlockMap;
-  typedef std::tr1::unordered_map<consensus::OpId, ImmutableRandomAccessFileInfo*,
-                                  consensus::OpIdHashFunctor, consensus::OpIdEqualsFunctor> LogMap;
+  typedef std::tr1::unordered_map<uint64_t, ImmutableRandomAccessFileInfo*> LogMap;
 
   ~RemoteBootstrapSession();
 
@@ -135,7 +134,7 @@ class RemoteBootstrapSession : public RefCountedThreadSafe<RemoteBootstrapSessio
                          RemoteBootstrapErrorPB::Code* error_code);
 
   // Look up log segment in cache or log segment map.
-  Status FindLogSegment(const consensus::OpId& segment_first_op_id,
+  Status FindLogSegment(uint64_t segment_seqno,
                         ImmutableRandomAccessFileInfo** file_info,
                         RemoteBootstrapErrorPB::Code* error_code);
 

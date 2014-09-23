@@ -125,7 +125,7 @@ void RemoteBootstrapServiceImpl::BeginRemoteBootstrapSession(
   resp->mutable_superblock()->CopyFrom(session->tablet_superblock());
 
   BOOST_FOREACH(const log::ReadableLogSegmentMap::value_type& entry, session->log_segments()) {
-    resp->add_first_op_ids()->CopyFrom(entry.first);
+    resp->add_wal_segment_seqnos(entry.second->header().sequence_number());
   }
 
   context->RespondSuccess();
@@ -192,8 +192,8 @@ void RemoteBootstrapServiceImpl::FetchData(const FetchDataRequestPB* req,
                       error_code, "Unable to get piece of data block");
   } else {
     // Fetching a log segment chunk.
-    const consensus::OpId& op_id = data_id.first_op_id();
-    RPC_RETURN_NOT_OK(session->GetLogSegmentPiece(op_id, offset, client_maxlen,
+    uint64_t segment_seqno = data_id.wal_segment_seqno();
+    RPC_RETURN_NOT_OK(session->GetLogSegmentPiece(segment_seqno, offset, client_maxlen,
                                                   data, &total_data_length, &error_code),
                       error_code, "Unable to get piece of log segment");
   }
@@ -255,16 +255,16 @@ Status RemoteBootstrapServiceImpl::ValidateFetchRequestDataId(
         const DataIdPB& data_id,
         RemoteBootstrapErrorPB::Code* app_error,
         const scoped_refptr<RemoteBootstrapSession>& session) const {
-  if (PREDICT_FALSE(data_id.has_block_id() && data_id.has_first_op_id())) {
+  if (PREDICT_FALSE(data_id.has_block_id() && data_id.has_wal_segment_seqno())) {
     *app_error = RemoteBootstrapErrorPB::INVALID_REMOTE_BOOTSTRAP_REQUEST;
     return Status::InvalidArgument(
-        Substitute("Only one of BlockId or OpId are required, but both were specified. "
-                   "DataTypeID: $0", data_id.ShortDebugString()));
-  } else if (PREDICT_FALSE(!data_id.has_block_id() && !data_id.has_first_op_id())) {
+        Substitute("Only one of BlockId or segment sequence number are required, "
+            "but both were specified. DataTypeID: $0", data_id.ShortDebugString()));
+  } else if (PREDICT_FALSE(!data_id.has_block_id() && !data_id.has_wal_segment_seqno())) {
     *app_error = RemoteBootstrapErrorPB::INVALID_REMOTE_BOOTSTRAP_REQUEST;
     return Status::InvalidArgument(
-        Substitute("Only one of BlockId or OpId are required, but neither were specified. "
-                   "DataTypeID: $0", data_id.ShortDebugString()));
+        Substitute("Only one of BlockId or segment sequence number are required, "
+            "but neither were specified. DataTypeID: $0", data_id.ShortDebugString()));
   }
 
   if (data_id.type() == DataIdPB::BLOCK) {
@@ -279,9 +279,10 @@ Status RemoteBootstrapServiceImpl::ValidateFetchRequestDataId(
       return Status::InvalidArgument("Invalid block id", data_id.block_id().id());
     }
   } else {
-    if (PREDICT_FALSE(!data_id.has_first_op_id())) {
-      return Status::InvalidArgument("first_op_id must be specified for type == LOG_SEGMENT",
-                                     data_id.ShortDebugString());
+    if (PREDICT_FALSE(!data_id.wal_segment_seqno())) {
+      return Status::InvalidArgument(
+          "segment sequence number must be specified for type == LOG_SEGMENT",
+          data_id.ShortDebugString());
     }
   }
 

@@ -112,7 +112,7 @@ class RemoteBootstrapClient {
   // Download a single WAL file.
   // Assumes the WAL directories have already been created.
   // WAL file is opened with options so that it will fsync() on close.
-  Status DownloadWAL(const consensus::OpId& initial_opid, uint64_t wal_segment_seqno);
+  Status DownloadWAL(uint64_t wal_segment_seqno);
 
   // Download all blocks belonging to a tablet sequentially.
   // Does not replace the superblock.
@@ -149,7 +149,7 @@ class RemoteBootstrapClient {
   std::string session_id_;
   uint64_t session_idle_timeout_millis_;
   gscoped_ptr<tablet::TabletSuperBlockPB> superblock_;
-  std::vector<consensus::OpId> wal_initial_opids_;
+  std::vector<uint64_t> wal_seqnos_;
 
   DISALLOW_COPY_AND_ASSIGN(RemoteBootstrapClient);
 };

@@ -90,8 +90,8 @@ message BeginRemoteBootstrapSessionResponsePB {
   required tablet.TabletSuperBlockPB superblock = 3;
 
   // Identifiers for the WAL segments available for download.
-  // Each WAL segment is keyed on the first OpId contained in the file.
-  repeated consensus.OpId first_op_ids = 4;
+  // Each WAL segment is keyed by its sequence number.
+  repeated uint64 wal_segment_seqnos = 4;
 }
 
 message CheckRemoteBootstrapSessionActiveRequestPB {
@@ -120,7 +120,7 @@ message DataIdPB {
 
   // Exactly one of these must be set.
   optional BlockIdPB block_id = 2;          // To fetch a block.
-  optional consensus.OpId first_op_id = 3;  // To fetch a log segment.
+  optional uint64 wal_segment_seqno = 3;    // To fetch a log segment.
 }
 
 message FetchDataRequestPB {
