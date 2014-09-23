@@ -51,12 +51,13 @@ namespace fs {
 // - delete all the blocks drained from the vector
 //
 // TODO: Don't delete all blocks ala "permgen".
+template <typename T>
 class BlockManagerStressTest : public KuduTest {
  public:
   BlockManagerStressTest() :
     rand_(SeedRandom()),
     stop_latch_(1),
-    bm_(new FileBlockManager(env_.get(), GetTestPath("bm"))),
+    bm_(new T(env_.get(), GetTestPath("bm"))),
     total_blocks_written_(0),
     total_bytes_written_(0),
     total_blocks_read_(0),
@@ -135,7 +136,8 @@ class BlockManagerStressTest : public KuduTest {
   AtomicInt<int64_t> total_blocks_deleted_;
 };
 
-void BlockManagerStressTest::WriterThread() {
+template <typename T>
+void BlockManagerStressTest<T>::WriterThread() {
   string thread_name = Thread::current_thread()->name();
   LOG(INFO) << "Thread " << thread_name << " starting";
 
@@ -207,7 +209,8 @@ void BlockManagerStressTest::WriterThread() {
   total_bytes_written_.IncrementBy(num_bytes_written);
 }
 
-void BlockManagerStressTest::ReaderThread() {
+template <typename T>
+void BlockManagerStressTest<T>::ReaderThread() {
   string thread_name = Thread::current_thread()->name();
   LOG(INFO) << "Thread " << thread_name << " starting";
 
@@ -272,7 +275,8 @@ void BlockManagerStressTest::ReaderThread() {
   total_bytes_read_.IncrementBy(num_bytes_read);
 }
 
-void BlockManagerStressTest::DeleterThread() {
+template <typename T>
+void BlockManagerStressTest<T>::DeleterThread() {
   string thread_name = Thread::current_thread()->name();
   LOG(INFO) << "Thread " << thread_name << " starting";
 
@@ -299,7 +303,11 @@ void BlockManagerStressTest::DeleterThread() {
   total_blocks_deleted_.IncrementBy(num_blocks_deleted);
 }
 
-TEST_F(BlockManagerStressTest, StressTest) {
+// What kinds of BlockManagers are supported?
+typedef ::testing::Types<FileBlockManager> BlockManagers;
+TYPED_TEST_CASE(BlockManagerStressTest, BlockManagers);
+
+TYPED_TEST(BlockManagerStressTest, StressTest) {
   if ((FLAGS_block_group_size & (FLAGS_block_group_size - 1)) != 0) {
     LOG(FATAL) << "block_group_size " << FLAGS_block_group_size
                << " is not a power of 2";
@@ -310,24 +318,24 @@ TEST_F(BlockManagerStressTest, StressTest) {
   }
 
   LOG(INFO) << "Starting all threads";
-  StartThreads();
+  this->StartThreads();
   usleep(FLAGS_test_duration_secs * 1000000);
   LOG(INFO) << "Stopping all threads";
-  StopThreads();
-  JoinThreads();
+  this->StopThreads();
+  this->JoinThreads();
 
   LOG(INFO) << "Printing test totals";
   LOG(INFO) << "--------------------";
   LOG(INFO) << Substitute("Wrote $0 blocks ($1 bytes) via $2 threads",
-                          total_blocks_written_.Load(),
-                          total_bytes_written_.Load(),
+                          this->total_blocks_written_.Load(),
+                          this->total_bytes_written_.Load(),
                           FLAGS_num_writer_threads);
   LOG(INFO) << Substitute("Read $0 blocks ($1 bytes) via $2 threads",
-                          total_blocks_read_.Load(),
-                          total_bytes_read_.Load(),
+                          this->total_blocks_read_.Load(),
+                          this->total_bytes_read_.Load(),
                           FLAGS_num_reader_threads);
   LOG(INFO) << Substitute("Deleted $0 blocks via $1 threads",
-                          total_blocks_deleted_.Load(),
+                          this->total_blocks_deleted_.Load(),
                           FLAGS_num_deleter_threads);
 }
 
