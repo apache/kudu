@@ -180,10 +180,6 @@ class Log {
     return active_segment_->path();
   }
 
-  // Forces the write of a header to the active segment.
-  // For testing recovery when only the header has been written, but no records.
-  Status WriteHeaderForTests();
-
   // Forces the Log to allocate a new segment and roll over.
   // This can be used to make sure all entries appended up to this point are
   // available in closed, readable segments.
@@ -196,6 +192,7 @@ class Log {
  private:
   friend class LogTest;
   friend class LogTestBase;
+  FRIEND_TEST(LogTest, TestMultipleEntriesInABatch);
 
   class AppendThread;
   class SegmentAllocationTask;
@@ -226,6 +223,9 @@ class Log {
   // Make segments roll over.
   Status RollOver();
 
+  // Writes the footer and closes the current segment.
+  Status CloseCurrentSegment();
+
   // Sets 'out' to a newly created temporary file (see
   // Env::NewTempWritableFile()) for a placeholder segment. Sets
   // 'result_path' to the fully qualified path to the unique filename
@@ -248,9 +248,6 @@ class Log {
   // TODO once Append() is removed, 'caller_owns_operation' and
   // associated logic will no longer be needed.
   Status DoAppend(LogEntryBatch* entry, bool caller_owns_operation = true);
-
-  // Write the log header. Does not call Sync().
-  Status WriteHeader(const consensus::OpId& initial_op_id);
 
   Status Sync();
 
@@ -293,6 +290,16 @@ class Log {
   // Lock to protect last_entry_op_id_, which is constantly written but
   // read occasionally by things like consensus and log GC.
   mutable rw_spinlock last_entry_op_id_lock_;
+
+  // An segment index entry for the first operation with an
+  // id that we've added to the last segment.
+  // Used to build the footer.
+  // TODO We could keep a collection of these for each
+  // segment to build a (less) sparse index.
+  SegmentIdxPosPB first_op_last_seg_;
+
+  // The total number of operations written to the last segment
+  int64_t total_ops_in_last_seg_;
 
   // The last known OpId written to this log (any segment).
   consensus::OpId last_entry_op_id_;

@@ -36,13 +36,39 @@ message LogSegmentHeaderPB {
   // Log format minor version.
   required uint32 minor_version = 2;
 
-  // The term/index when the segment was started.
-  // TODO: rename to initial_opid.
-  required consensus.OpId initial_id = 3;
-
   // The ID of the tablet this WAL segment stores entries for.
   required bytes tablet_id = 5;
 
   // The tablet-specific sequence number of this WAL segment.
   required uint64 sequence_number = 6;
+}
+
+// An entry in the footer's sparse index.
+// TODO for this to be really useful we need to keep the offset
+// of the entry so that we can skip, but since right now this
+// is only used to point to the first entry in each segment the
+// offset wouldn't really be useful yet.
+message SegmentIdxPosPB {
+  // The id of the pointed to operation.
+  required consensus.OpId id = 1;
+}
+
+// A footer for a log segment.
+//
+// Log segment footers might not be present (e.g. if the server
+// crashed) so they should contain no information that cannot
+// be obtained by actually reading the entries in the log.
+//
+// We use the footer to keep sparse index entries mapping
+// op_id->offset (right now we just keep the first entry with an
+// id in the log)
+message LogSegmentFooterPB {
+  // the total number of operations inside this segment
+  required uint64 num_entries = 1;
+  // the ids and the offsets of the batches that contain certain
+  // operations within this segment. Right now only points to the
+  // first operation with an id.
+  // NOTE: It is possible to have a valid segment without any
+  // operations with ids.
+  repeated SegmentIdxPosPB idx_entry = 2;
 }

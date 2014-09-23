@@ -77,19 +77,24 @@ class ReadableLogSegment : public RefCountedThreadSafe<ReadableLogSegment> {
 
   // Build a readable segment to read entries from the provided path.
   ReadableLogSegment(const std::string &path,
-                     uint64_t file_size,
                      const std::tr1::shared_ptr<RandomAccessFile>& readable_file);
 
   // Initialize the ReadableLogSegment.
   // This initializer provides methods for avoiding disk IO when creating a
-  // ReadableLogSegment from a WritableLogSegment (i.e. for log rolling).
-  // Note: This returns void, however will throw an assertion via DCHECK
-  // if the provided header PB is not initialized.
-  void Init(const LogSegmentHeaderPB& header,
-            uint64_t first_entry_offset);
+  // ReadableLogSegment for the current WritableLogSegment, i.e. for reading
+  // the log entries in the same segment that is currently being written to.
+  Status Init(const LogSegmentHeaderPB& header,
+              uint64_t first_entry_offset);
 
   // Initialize the ReadableLogSegment.
-  // This initializer will parse the log segment header.
+  // This initializer provides methods for avoiding disk IO when creating a
+  // ReadableLogSegment from a WritableLogSegment (i.e. for log rolling).
+  Status Init(const LogSegmentHeaderPB& header,
+              const LogSegmentFooterPB& footer,
+              uint64_t first_entry_offset);
+
+  // Initialize the ReadableLogSegment.
+  // This initializer will parse the log segment header and footer.
   // Note: This returns Status and may fail.
   Status Init();
 
@@ -99,6 +104,12 @@ class ReadableLogSegment : public RefCountedThreadSafe<ReadableLogSegment> {
   // the log entries read up to the corrupted are returned in the 'entries'
   // vector.
   Status ReadEntries(std::vector<LogEntryPB*>* entries);
+
+  // Rebuilds this segment's footer by scanning its entries.
+  // This is an expensive operation as it reads and parses the whole segment
+  // so it should be only used in the case of a crash, where the footer is
+  // missing because we didn't have the time to write it out.
+  Status RebuildFooterByScanning();
 
   bool IsInitialized() const {
     return is_initialized_;
@@ -110,8 +121,27 @@ class ReadableLogSegment : public RefCountedThreadSafe<ReadableLogSegment> {
   }
 
   const LogSegmentHeaderPB& header() const {
-    DCHECK(IsInitialized());
+    DCHECK(header_.IsInitialized());
     return header_;
+  }
+
+  // Indicates whether this segment has a footer.
+  //
+  // Segments that were properly closed, e.g. because they were rolled over,
+  // will have properly written footers. On the other hand if there was a
+  // crash and the segment was not closed properly the footer will be missing.
+  // In this case calling ReadEntries() will rebuild the footer.
+  bool HasFooter() const {
+    return footer_.IsInitialized();
+  }
+
+  // Returns this log segment's footer.
+  //
+  // If HasFooter() returns false this cannot be called.
+  const LogSegmentFooterPB& footer() const {
+    DCHECK(IsInitialized());
+    CHECK(HasFooter());
+    return footer_;
   }
 
   const std::tr1::shared_ptr<RandomAccessFile> readable_file() const {
@@ -131,8 +161,20 @@ class ReadableLogSegment : public RefCountedThreadSafe<ReadableLogSegment> {
   ~ReadableLogSegment() {}
 
   // Helper functions called by Init().
-  Status ReadMagicAndHeaderLength(uint32_t *len);
-  Status ParseMagicAndLength(const Slice &data, uint32_t *parsed_len);
+
+  Status ReadFileSize();
+
+  Status ReadHeader();
+
+  Status ReadHeaderMagicAndHeaderLength(uint32_t *len);
+
+  Status ParseHeaderMagicAndHeaderLength(const Slice &data, uint32_t *parsed_len);
+
+  Status ReadFooter();
+
+  Status ReadFooterMagicAndFooterLength(uint32_t *len);
+
+  Status ParseFooterMagicAndFooterLength(const Slice &data, uint32_t *parsed_len);
 
   // Reads length from the segment and sets *len to this value.
   // Also increments the passed offset* by the length of the entry.
@@ -148,14 +190,18 @@ class ReadableLogSegment : public RefCountedThreadSafe<ReadableLogSegment> {
   const std::string path_;
 
   // the size of the readable file
-  const uint64_t file_size_;
+  uint64_t file_size_;
 
   // a readable file for a log segment (used on replay)
   const std::tr1::shared_ptr<RandomAccessFile> readable_file_;
 
   bool is_initialized_;
 
+  bool is_corrupted_;
+
   LogSegmentHeaderPB header_;
+
+  LogSegmentFooterPB footer_;
 
   // the offset of the first entry in the log
   uint64_t first_entry_offset_;
@@ -169,9 +215,33 @@ class WritableLogSegment {
   WritableLogSegment(const std::string &path,
                      const std::tr1::shared_ptr<WritableFile>& writable_file);
 
-  // Writes out the segment header. Stores bytes written into header_bytes.
-  // Does _not_ sync the bytes written to disk.
-  Status WriteHeader(const LogSegmentHeaderPB& new_header);
+  // Opens the segment by writing the header.
+  Status WriteHeaderAndOpen(const LogSegmentHeaderPB& new_header);
+
+  // Closes the segment by writing the footer and then actually closing the
+  // underlying WritableFile.
+  Status WriteFooterAndClose(const LogSegmentFooterPB& footer);
+
+  bool IsClosed() {
+    return IsHeaderWritten() && IsFooterWritten();
+  }
+
+  uint64_t Size() const {
+    return writable_file_->Size();
+  }
+
+  // Appends the provided slice to the underlying WritableFile.
+  // Makes sure that the log segment has not been closed.
+  Status Append(const Slice& data) {
+    DCHECK(is_header_written_);
+    DCHECK(!is_footer_written_);
+    return writable_file_->Append(data);
+  }
+
+  // Makes sure the I/O buffers in the underlying writable file are flushed.
+  Status Sync() {
+    return writable_file_->Sync();
+  }
 
   // Returns true if the segment header has already been written to disk.
   bool IsHeaderWritten() const {
@@ -183,6 +253,15 @@ class WritableLogSegment {
     return header_;
   }
 
+  bool IsFooterWritten() const {
+    return is_footer_written_;
+  }
+
+  const LogSegmentFooterPB& footer() const {
+    DCHECK(IsFooterWritten());
+    return footer_;
+  }
+
   // Returns the parent directory where log segments are stored.
   const std::string &path() const {
     return path_;
@@ -192,11 +271,12 @@ class WritableLogSegment {
     return first_entry_offset_;
   }
 
+ private:
+
   const std::tr1::shared_ptr<WritableFile>& writable_file() const {
     return writable_file_;
   }
 
- private:
   // The path to the log file.
   const std::string path_;
 
@@ -205,7 +285,11 @@ class WritableLogSegment {
 
   bool is_header_written_;
 
+  bool is_footer_written_;
+
   LogSegmentHeaderPB header_;
+
+  LogSegmentFooterPB footer_;
 
   // the offset of the first entry in the log
   uint64_t first_entry_offset_;

@@ -21,6 +21,7 @@
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/stringprintf.h"
+#include "kudu/gutil/strings/substitute.h"
 #include "kudu/tserver/tserver.pb.h"
 #include "kudu/util/env_util.h"
 #include "kudu/util/path_util.h"

@@ -45,7 +45,6 @@ class LogTest : public LogTestBase {
     RETURN_NOT_OK(AppendNoOps(op_id, num_ops_per_segment));
     return Status::OK();
   }
-
 };
 
 // If we write more than one entry in a batch, we should be able to
@@ -53,32 +52,14 @@ class LogTest : public LogTestBase {
 TEST_F(LogTest, TestMultipleEntriesInABatch) {
   BuildLog();
 
-  OperationPB op1;
-  op1.mutable_replicate()->set_op_type(WRITE_OP);
-  OpId* op_id = op1.mutable_id();
-  op_id->set_term(0);
-  op_id->set_index(1);
+  OpId opid;
+  opid.set_term(0);
+  opid.set_index(1);
 
-  OperationPB op2;
-  op2.mutable_replicate()->set_op_type(WRITE_OP);
-  op_id = op2.mutable_id();
-  op_id->set_term(0);
-  op_id->set_index(1);
+  AppendNoOps(&opid, 2);
 
-  vector<const consensus::OperationPB*> ops;
-  ops.push_back(&op1);
-  ops.push_back(&op2);
-
-  LogEntryBatch* reserved_entry;
-
-  gscoped_ptr<log::LogEntryBatchPB> entry_batch;
-  log::CreateBatchFromAllocatedOperations(&ops[0], 2, &entry_batch);
-
-  ASSERT_STATUS_OK(log_->Reserve(entry_batch.Pass(), &reserved_entry));
-
-  Synchronizer sync;
-  ASSERT_STATUS_OK(log_->AsyncAppend(reserved_entry, sync.AsStatusCallback()));
-  ASSERT_STATUS_OK(sync.Wait());
+  // RollOver() the batch so that we have a properly formed footer.
+  ASSERT_STATUS_OK(log_->AllocateSegmentAndRollOver());
 
   BuildLogReader();
   vector<LogEntryPB*> entries;
@@ -96,7 +77,13 @@ TEST_F(LogTest, TestMultipleEntriesInABatch) {
 TEST_F(LogTest, TestFsync) {
   options_.force_fsync_all = true;
   BuildLog();
-  ASSERT_STATUS_OK(log_->WriteHeaderForTests());
+
+  OpId opid;
+  opid.set_term(0);
+  opid.set_index(1);
+
+  AppendNoOp(&opid);
+
   ASSERT_STATUS_OK(log_->Close());
 }
 
@@ -104,7 +91,13 @@ TEST_F(LogTest, TestFsync) {
 // properly closed.
 TEST_F(LogTest, TestLogNotTrimmed) {
   BuildLog();
-  ASSERT_STATUS_OK(log_->WriteHeaderForTests());
+
+  OpId opid;
+  opid.set_term(0);
+  opid.set_index(1);
+
+  AppendNoOp(&opid);
+
   BuildLogReader();
   vector<LogEntryPB*> entries;
   ElementDeleter deleter(&entries);
@@ -136,16 +129,16 @@ TEST_F(LogTest, TestCorruptLog) {
   const int kNumEntries = 4;
   BuildLog();
   OpId op_id(MinimumOpId());
-  AppendNoOps(&op_id, kNumEntries);
+  ASSERT_OK(AppendNoOps(&op_id, kNumEntries));
   ASSERT_STATUS_OK(log_->Close());
 
-  ASSERT_STATUS_OK(CorruptLogFile(env_.get(), log_.get(), 10));
+  ASSERT_STATUS_OK(CorruptLogFile(env_.get(), log_.get(), 40));
 
   BuildLogReader();
   ASSERT_EQ(1, log_reader_->size());
   const scoped_refptr<ReadableLogSegment>& first_segment = log_reader_->segments().begin()->second;
   Status status = first_segment->ReadEntries(&entries_);
-  ASSERT_TRUE(status.IsCorruption());
+  ASSERT_TRUE(status.IsCorruption()) << "Got status: " << status.ToString();
 
   // Last entry is corrupted but we should still see the previous ones.
   ASSERT_EQ(kNumEntries - 1, entries_.size());

@@ -83,7 +83,19 @@ Status LogReader::Init(const string& tablet_wal_path) {
         LOG(WARNING) << "Skipping blank or empty segment: " << fqp;
         continue;
       }
-      const OpId& op_id = segment->header().initial_id();
+      if (!segment->HasFooter()) {
+        LOG(WARNING) << "Segment: " << fqp << " was likely left in-progress "
+            "after a previous crash. Will try to rebuild footer by scanning data";
+        RETURN_NOT_OK(segment->RebuildFooterByScanning());
+      }
+
+      if (segment->footer().idx_entry_size() == 0) {
+        // Skip blank segments.
+        LOG(WARNING) << "Skipping blank or empty segment: " << fqp;
+        continue;
+      }
+
+      const OpId& op_id = segment->footer().idx_entry(0).id();
       InsertOrDie(&segments_, op_id, segment);
     }
   }

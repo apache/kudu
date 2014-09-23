@@ -46,10 +46,18 @@ using strings::SubstituteAndAppend;
 
 const char kTmpSuffix[] = ".tmp";
 
-const char kLogSegmentMagicString[] = "kudulogf";
+const char kLogSegmentHeaderMagicString[] = "kudulogf";
 
-// Header is prefixed with the magic (8 bytes) and the header length (4 bytes).
-const size_t kLogSegmentMagicAndHeaderLength = 12;
+// A magic that is written as the very last thing when a segment is closed.
+// Segments that were not closed (usually the last one being written) will not
+// have this magic.
+const char kLogSegmentFooterMagicString[] = "closedls";
+
+// Header is prefixed with the header magic (8 bytes) and the header length (4 bytes).
+const size_t kLogSegmentHeaderMagicAndHeaderLength = 12;
+
+// Footer is suffixed with the footer magic (8 bytes) and the footer length (4 bytes).
+const size_t kLogSegmentFooterMagicAndFooterLength  = 12;
 
 // Nulls the length of kLogSegmentMagicAndHeaderLength.
 // This is used to check the case where we have a nonzero-length empty log file.
@@ -61,8 +69,8 @@ const size_t kEntryLengthSize = 4;
 const int kLogMajorVersion = 1;
 const int kLogMinorVersion = 0;
 
-// Maximum log segment header size, in bytes (8 MB).
-const uint32_t kLogSegmentMaxHeaderSize = 8 * 1024 * 1024;
+// Maximum log segment header/footer size, in bytes (8 MB).
+const uint32_t kLogSegmentMaxHeaderOrFooterSize = 8 * 1024 * 1024;
 
 LogOptions::LogOptions()
 : segment_size_mb(FLAGS_log_segment_size_mb),
@@ -75,48 +83,117 @@ Status ReadableLogSegment::Open(Env* env,
                                 const string& path,
                                 scoped_refptr<ReadableLogSegment>* segment) {
   VLOG(1) << "Parsing wal segment: " << path;
-  uint64_t file_size;
-  RETURN_NOT_OK_PREPEND(env->GetFileSize(path, &file_size), "Unable to read file size");
   shared_ptr<RandomAccessFile> readable_file;
   RETURN_NOT_OK_PREPEND(env_util::OpenFileForRandom(env, path, &readable_file),
                         "Unable to open file for reading");
 
-  segment->reset(new ReadableLogSegment(path, file_size, readable_file));
+  segment->reset(new ReadableLogSegment(path, readable_file));
   RETURN_NOT_OK_PREPEND((*segment)->Init(), "Unable to initialize segment");
   return Status::OK();
 }
 
 ReadableLogSegment::ReadableLogSegment(const std::string &path,
-                                       uint64_t file_size,
                                        const shared_ptr<RandomAccessFile>& readable_file)
   : path_(path),
-    file_size_(file_size),
     readable_file_(readable_file),
-    is_initialized_(false) {
+    is_initialized_(false),
+    is_corrupted_(false) {
 }
 
-void ReadableLogSegment::Init(const LogSegmentHeaderPB& header, uint64_t first_entry_offset) {
+Status ReadableLogSegment::Init(const LogSegmentHeaderPB& header,
+                                const LogSegmentFooterPB& footer,
+                                uint64_t first_entry_offset) {
   DCHECK(!IsInitialized()) << "Can only call Init() once";
   DCHECK(header.IsInitialized()) << "Log segment header must be initialized";
+  DCHECK(footer.IsInitialized()) << "Log segment footer must be initialized";
+
+  RETURN_NOT_OK(ReadFileSize());
+
+  header_.CopyFrom(header);
+  footer_.CopyFrom(footer);
+  first_entry_offset_ = first_entry_offset;
+  is_initialized_ = true;
+
+  return Status::OK();
+}
+
+Status ReadableLogSegment::Init(const LogSegmentHeaderPB& header,
+                                uint64_t first_entry_offset) {
+  DCHECK(!IsInitialized()) << "Can only call Init() once";
+  DCHECK(header.IsInitialized()) << "Log segment header must be initialized";
+
+  RETURN_NOT_OK(ReadFileSize());
+
   header_.CopyFrom(header);
   first_entry_offset_ = first_entry_offset;
   is_initialized_ = true;
+
+  return Status::OK();
 }
 
 Status ReadableLogSegment::Init() {
   DCHECK(!IsInitialized()) << "Can only call Init() once";
 
+  RETURN_NOT_OK(ReadFileSize());
+
+  RETURN_NOT_OK(ReadHeader());
+
+  Status s = ReadFooter();
+  if (!s.ok()) {
+    LOG(WARNING) << "Could not read footer for segment: " << path_
+        << ". Status: " << s.ToString();
+  }
+
+  is_initialized_ = true;
+
+  return Status::OK();
+}
+
+Status ReadableLogSegment::RebuildFooterByScanning() {
+  DCHECK(!footer_.IsInitialized());
+  vector<LogEntryPB*> entries;
+  ElementDeleter deleter(&entries);
+  Status s = ReadEntries(&entries);
+
+  footer_.set_num_entries(entries.size());
+
+  // Rebuild the index, right now we're just keeping the first entry.
+  BOOST_FOREACH(const LogEntryPB* entry, entries) {
+    if (entry->has_operation() && entry->operation().has_id()) {
+      SegmentIdxPosPB* idx_pos = footer_.add_idx_entry();
+      idx_pos->mutable_id()->CopyFrom(entry->operation().id());
+      break;
+    }
+  }
+
+  // If we couldn't read the entries either (maybe some were
+  // corrupted) log that in WARNING, but return OK.
+  if (!s.ok()) {
+    LOG(WARNING) << "Segment: " << path_ << " had corrupted entries, "
+        "could not fully rebuild index. Only read " << entries.size() << " entries."
+        << " Status: " << s.ToString();
+    is_corrupted_ = true;
+  }
+  DCHECK(footer_.IsInitialized());
+  DCHECK_EQ(entries.size(), footer_.num_entries());
+
+  LOG(INFO) << "Successfully rebuilt footer for segment: " << path_ << ".";
+  return Status::OK();
+}
+
+Status ReadableLogSegment::ReadFileSize() {
   // Check the size of the file.
-  // If it is zero, return Status::OK() early.
-  uint64_t file_size = 0;
-  RETURN_NOT_OK_PREPEND(readable_file_->Size(&file_size), "Unable to read file size");
-  if (file_size == 0) {
+  RETURN_NOT_OK_PREPEND(readable_file_->Size(&file_size_), "Unable to read file size");
+  if (file_size_ == 0) {
     VLOG(1) << "Log segment file $0 is zero-length: " << path();
     return Status::OK();
   }
+  return Status::OK();
+}
 
-  uint32_t header_size = 0;
-  RETURN_NOT_OK(ReadMagicAndHeaderLength(&header_size));
+Status ReadableLogSegment::ReadHeader() {
+  uint32_t header_size;
+  RETURN_NOT_OK(ReadHeaderMagicAndHeaderLength(&header_size));
   if (header_size == 0) {
     // If a log file has been pre-allocated but not initialized, then
     // 'header_size' will be 0 even the file size is > 0; in this
@@ -126,11 +203,11 @@ Status ReadableLogSegment::Init() {
     return Status::OK();
   }
 
-  if (header_size > kLogSegmentMaxHeaderSize) {
+  if (header_size > kLogSegmentMaxHeaderOrFooterSize) {
     return Status::Corruption(
         Substitute("File is corrupted. "
                    "Parsed header size: $0 is zero or bigger than max header size: $1",
-                   header_size, kLogSegmentMaxHeaderSize));
+                   header_size, kLogSegmentMaxHeaderOrFooterSize));
   }
 
   uint8_t header_space[header_size];
@@ -138,7 +215,7 @@ Status ReadableLogSegment::Init() {
   LogSegmentHeaderPB header;
 
   // Read and parse the log segment header.
-  RETURN_NOT_OK_PREPEND(ReadFully(readable_file_.get(), kLogSegmentMagicAndHeaderLength,
+  RETURN_NOT_OK_PREPEND(ReadFully(readable_file_.get(), kLogSegmentHeaderMagicAndHeaderLength,
                                   header_size, &header_slice, header_space),
                         "Unable to read fully");
 
@@ -148,9 +225,115 @@ Status ReadableLogSegment::Init() {
                         "Unable to parse protobuf");
 
   header_.CopyFrom(header);
-  first_entry_offset_ = header_size + kLogSegmentMagicAndHeaderLength;
-  is_initialized_ = true;
+  first_entry_offset_ = header_size + kLogSegmentHeaderMagicAndHeaderLength;
 
+  return Status::OK();
+}
+
+
+Status ReadableLogSegment::ReadHeaderMagicAndHeaderLength(uint32_t *len) {
+  uint8_t scratch[kLogSegmentHeaderMagicAndHeaderLength];
+  Slice slice;
+  RETURN_NOT_OK(ReadFully(readable_file_.get(), 0, kLogSegmentHeaderMagicAndHeaderLength,
+                          &slice, scratch));
+  RETURN_NOT_OK(ParseHeaderMagicAndHeaderLength(slice, len));
+  return Status::OK();
+}
+
+Status ReadableLogSegment::ParseHeaderMagicAndHeaderLength(const Slice &data,
+                                                           uint32_t *parsed_len) {
+  RETURN_NOT_OK_PREPEND(data.check_size(kLogSegmentHeaderMagicAndHeaderLength),
+                        "Log segment file is too small to contain initial magic number");
+
+  if (memcmp(kLogSegmentHeaderMagicString, data.data(),
+             strlen(kLogSegmentHeaderMagicString)) != 0) {
+    // As a special case, we check whether the file was allocated but no header
+    // was written. We treat that case as an uninitialized file, much in the
+    // same way we treat zero-length files.
+    // Note: While the above comparison checks 8 bytes, this one checks the full 12
+    // to ensure we have a full 12 bytes of NULL data.
+    if (memcmp(kLogSegmentNullHeader, data.data(),
+               strlen(kLogSegmentNullHeader)) == 0) {
+      // 12 bytes of NULLs, good enough for us to consider this a file that
+      // was never written to (but apparently preallocated).
+      LOG(WARNING) << "Log segment file " << path() << " has 12 initial NULL bytes instead of "
+                   << "magic and header length: " << data.ToDebugString()
+                   << " and will be treated as a blank segment.";
+      *parsed_len = 0;
+      return Status::OK();
+    }
+    // If no magic and not uninitialized, the file is considered corrupt.
+    return Status::Corruption(Substitute("Invalid log segment file $0: Bad magic. $1",
+                                         path(), data.ToDebugString()));
+  }
+
+  *parsed_len = DecodeFixed32(data.data() + strlen(kLogSegmentHeaderMagicString));
+  return Status::OK();
+}
+
+Status ReadableLogSegment::ReadFooter() {
+  uint32_t footer_size;
+  RETURN_NOT_OK(ReadFooterMagicAndFooterLength(&footer_size));
+
+  if (footer_size == 0 || footer_size > kLogSegmentMaxHeaderOrFooterSize) {
+    return Status::NotFound(
+        Substitute("File is corrupted. "
+                   "Parsed header size: $0 is zero or bigger than max header size: $1",
+                   footer_size, kLogSegmentMaxHeaderOrFooterSize));
+  }
+
+  if (footer_size > (file_size_ - first_entry_offset_)) {
+    return Status::NotFound("Footer not found. File corrupted. "
+        "Decoded footer length pointed at a footer before the first entry.");
+  }
+
+  uint8_t footer_space[footer_size];
+  Slice footer_slice;
+
+  uint64_t footer_offset = file_size_ - kLogSegmentFooterMagicAndFooterLength - footer_size;
+
+  LogSegmentFooterPB footer;
+
+  // Read and parse the log segment footer.
+  RETURN_NOT_OK_PREPEND(ReadFully(readable_file_.get(), footer_offset,
+                                  footer_size, &footer_slice, footer_space),
+                        "Footer not found. Could not read fully.");
+
+  RETURN_NOT_OK_PREPEND(pb_util::ParseFromArray(&footer,
+                                                footer_slice.data(),
+                                                footer_size),
+                        "Unable to parse protobuf");
+
+  footer_.Swap(&footer);
+  return Status::OK();
+}
+
+Status ReadableLogSegment::ReadFooterMagicAndFooterLength(uint32_t *len) {
+  uint8_t scratch[kLogSegmentFooterMagicAndFooterLength];
+  Slice slice;
+
+  CHECK_GT(file_size_, kLogSegmentFooterMagicAndFooterLength);
+  RETURN_NOT_OK(ReadFully(readable_file_.get(),
+                          file_size_ - kLogSegmentFooterMagicAndFooterLength,
+                          kLogSegmentFooterMagicAndFooterLength,
+                          &slice,
+                          scratch));
+
+  RETURN_NOT_OK(ParseFooterMagicAndFooterLength(slice, len));
+  return Status::OK();
+}
+
+Status ReadableLogSegment::ParseFooterMagicAndFooterLength(const Slice &data,
+                                                           uint32_t *parsed_len) {
+  RETURN_NOT_OK_PREPEND(data.check_size(kLogSegmentFooterMagicAndFooterLength),
+                        "Slice is too small to contain final magic number");
+
+  if (memcmp(kLogSegmentFooterMagicString, data.data(),
+             strlen(kLogSegmentFooterMagicString)) != 0) {
+    return Status::NotFound("Footer not found. Footer magic doesn't match");
+  }
+
+  *parsed_len = DecodeFixed32(data.data() + strlen(kLogSegmentFooterMagicString));
   return Status::OK();
 }
 
@@ -162,7 +345,14 @@ Status ReadableLogSegment::ReadEntries(vector<LogEntryPB*>* entries) {
   VLOG(1) << "Reading segment entries offset: " << offset << " file size: "
           << file_size();
   faststring tmp_buf;
-  while (offset < file_size()) {
+
+  // If we have a footer we only read up to it. If we don't we likely crashed
+  // and always read to the end.
+  uint64_t read_up_to = footer_.IsInitialized() && !is_corrupted_ ?
+      file_size() - footer_.ByteSize() - kLogSegmentFooterMagicAndFooterLength :
+      file_size();
+
+  while (offset < read_up_to) {
     const uint64_t this_batch_offset = offset;
     recent_offsets[batches_read++ % recent_offsets.size()] = offset;
 
@@ -192,8 +382,8 @@ Status ReadableLogSegment::ReadEntries(vector<LogEntryPB*>* entries) {
                                                       NULL);
     } else {
       string err = "Log file corrupted. ";
-      SubstituteAndAppend(&err, "Failed trying to read batch #$0 at offset $1. ",
-                          batches_read, this_batch_offset);
+      SubstituteAndAppend(&err, "Failed trying to read batch #$0 at offset $1 for segment at $2. ",
+                          batches_read, this_batch_offset, path_);
       err.append("Prior batch offsets:");
       std::sort(recent_offsets.begin(), recent_offsets.end());
       BOOST_FOREACH(int64_t offset, recent_offsets) {
@@ -211,9 +401,10 @@ Status ReadableLogSegment::ReadEntries(vector<LogEntryPB*>* entries) {
 Status ReadableLogSegment::ReadEntryLength(uint64_t *offset, uint32_t *len) {
   uint8_t scratch[kEntryLengthSize];
   Slice slice;
-  RETURN_NOT_OK(ReadFully(readable_file().get(), *offset, kEntryLengthSize,
-                          &slice, scratch));
-  RETURN_NOT_OK(slice.check_size(kEntryLengthSize));
+  Status s = ReadFully(readable_file().get(), *offset, kEntryLengthSize,
+                       &slice, scratch);
+  if (!s.ok()) return Status::Corruption(Substitute("Could not read entry length. Cause: $0",
+                                                    s.ToString()));
   *offset += kEntryLengthSize;
   *len = DecodeFixed32(slice.data());
   return Status::OK();
@@ -231,56 +422,25 @@ Status ReadableLogSegment::ReadEntryBatch(uint64_t *offset,
   tmp_buf->clear();
   tmp_buf->resize(length);
   Slice entry_batch_slice;
-  RETURN_NOT_OK(readable_file()->Read(*offset,
-                                      length,
-                                      &entry_batch_slice,
-                                      tmp_buf->data()));
+
+  Status s =  readable_file()->Read(*offset,
+                                    length,
+                                    &entry_batch_slice,
+                                    tmp_buf->data());
+
+  if (!s.ok()) return Status::Corruption(Substitute("Could not read entry. Cause: $0",
+                                                    s.ToString()));
 
   gscoped_ptr<LogEntryBatchPB> read_entry_batch(new LogEntryBatchPB());
-  RETURN_NOT_OK(pb_util::ParseFromArray(read_entry_batch.get(),
-                                        entry_batch_slice.data(),
-                                        length));
+  s = pb_util::ParseFromArray(read_entry_batch.get(),
+                              entry_batch_slice.data(),
+                              length);
+
+  if (!s.ok()) return Status::Corruption(Substitute("Could parse PB. Cause: $0",
+                                                    s.ToString()));
+
   *offset += length;
   entry_batch->reset(read_entry_batch.release());
-  return Status::OK();
-}
-
-Status ReadableLogSegment::ReadMagicAndHeaderLength(uint32_t *len) {
-  uint8_t scratch[kLogSegmentMagicAndHeaderLength];
-  Slice slice;
-  RETURN_NOT_OK(ReadFully(readable_file_.get(), 0, kLogSegmentMagicAndHeaderLength,
-                          &slice, scratch));
-  RETURN_NOT_OK(ParseMagicAndLength(slice, len));
-  return Status::OK();
-}
-
-Status ReadableLogSegment::ParseMagicAndLength(const Slice &data, uint32_t *parsed_len) {
-  RETURN_NOT_OK_PREPEND(data.check_size(kLogSegmentMagicAndHeaderLength),
-                        "Log segment file is too small to contain initial magic number");
-
-  if (memcmp(kLogSegmentMagicString, data.data(), strlen(kLogSegmentMagicString)) != 0) {
-    // As a special case, we check whether the file was allocated but no header
-    // was written. We treat that case as an uninitialized file, much in the
-    // same way we treat zero-length files.
-    // Note: While the above comparison checks 8 bytes, this one checks the full 12
-    // to ensure we have a full 12 bytes of NULL data.
-    if (memcmp(kLogSegmentNullHeader, data.data(),
-               strlen(kLogSegmentNullHeader)) == 0) {
-      // 12 bytes of NULLs, good enough for us to consider this a file that
-      // was never written to (but apparently preallocated).
-      LOG(WARNING) << "Log segment file " << path() << " has 12 initial NULL bytes instead of "
-                   << "magic and header length: " << data.ToDebugString()
-                   << " and will be treated as a blank segment.";
-      *parsed_len = 0;
-      return Status::OK();
-
-    }
-    // If no magic and not uninitialized, the file is considered corrupt.
-    return Status::Corruption(Substitute("Invalid log segment file $0: Bad magic. $1",
-                                         path(), data.ToDebugString()));
-  }
-
-  *parsed_len = DecodeFixed32(data.data() + strlen(kLogSegmentMagicString));
   return Status::OK();
 }
 
@@ -290,17 +450,18 @@ WritableLogSegment::WritableLogSegment(
     const shared_ptr<WritableFile>& writable_file)
 : path_(path),
   writable_file_(writable_file),
-  is_header_written_(false) {
+  is_header_written_(false),
+  is_footer_written_(false) {
 }
 
-Status WritableLogSegment::WriteHeader(const LogSegmentHeaderPB& new_header) {
+Status WritableLogSegment::WriteHeaderAndOpen(const LogSegmentHeaderPB& new_header) {
   DCHECK(!IsHeaderWritten()) << "Can only call WriteHeader() once";
   DCHECK(new_header.IsInitialized())
       << "Log segment header must be initialized" << new_header.InitializationErrorString();
   faststring buf;
 
   // First the magic.
-  buf.append(kLogSegmentMagicString);
+  buf.append(kLogSegmentHeaderMagicString);
   // Then Length-prefixed header.
   PutFixed32(&buf, new_header.ByteSize());
   // Then Serialize the PB.
@@ -312,6 +473,30 @@ Status WritableLogSegment::WriteHeader(const LogSegmentHeaderPB& new_header) {
   header_.CopyFrom(new_header);
   first_entry_offset_ = buf.size();
   is_header_written_ = true;
+
+  return Status::OK();
+}
+
+Status WritableLogSegment::WriteFooterAndClose(const LogSegmentFooterPB& footer) {
+  DCHECK(IsHeaderWritten());
+  DCHECK(!IsFooterWritten());
+  DCHECK(footer.IsInitialized());
+
+  faststring buf;
+
+  if (!pb_util::AppendToString(footer, &buf)) {
+    return Status::Corruption("unable to encode header");
+  }
+
+  buf.append(kLogSegmentFooterMagicString);
+  PutFixed32(&buf, footer.ByteSize());
+
+  RETURN_NOT_OK_PREPEND(writable_file()->Append(Slice(buf)), "Could not write the footer");
+
+  footer_.CopyFrom(footer);
+  is_footer_written_ = true;
+
+  RETURN_NOT_OK(writable_file_->Close());
 
   return Status::OK();
 }
@@ -345,8 +530,8 @@ size_t FindStaleSegmentsPrefixSize(const ReadableLogSegmentMap& segment_map,
     } else {
       CHECK(!seen_earlier_opid)
           << Substitute("Greater OpId found in previous log segment, segments"
-                        " out of order! current: %s in %s, earliest needed: %s",
-                        segment->header().initial_id().ShortDebugString(),
+                        " out of order! current: $0 in $1, earliest needed: $2",
+                        segment->footer().idx_entry(0).ShortDebugString(),
                         segment->path(),
                         earliest_needed_opid.ShortDebugString());
     }

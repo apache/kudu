@@ -212,6 +212,7 @@ Log::Log(const LogOptions &options,
     fs_manager_(fs_manager),
     log_dir_(log_path),
     tablet_id_(tablet_id),
+    active_segment_sequence_number_(0),
     log_state_(kLogInitialized),
     max_segment_size_(options_.segment_size_mb * 1024 * 1024),
     entry_batch_queue_(FLAGS_group_commit_queue_size_bytes),
@@ -276,6 +277,25 @@ Status Log::AsyncAllocateSegment() {
   return Status::OK();
 }
 
+Status Log::CloseCurrentSegment() {
+  LogSegmentFooterPB footer;
+
+  if (!first_op_last_seg_.IsInitialized()) {
+    VLOG(1) << "Writing a segment without any operation with id. "
+        "Segment: " << active_segment_->path();
+  } else {
+    footer.add_idx_entry()->CopyFrom(first_op_last_seg_);
+  }
+
+  footer.set_num_entries(total_ops_in_last_seg_);
+  RETURN_NOT_OK(active_segment_->WriteFooterAndClose(footer));
+
+  total_ops_in_last_seg_ = 0;
+  first_op_last_seg_.Clear();
+
+  return Status::OK();
+}
+
 Status Log::RollOver() {
   SCOPED_LATENCY_METRIC(metrics_, roll_latency);
 
@@ -286,7 +306,7 @@ Status Log::RollOver() {
   DCHECK_EQ(allocation_state(), kAllocationFinished);
 
   RETURN_NOT_OK(Sync());
-  RETURN_NOT_OK(active_segment_->writable_file()->Close());
+  RETURN_NOT_OK(CloseCurrentSegment());
 
   RETURN_NOT_OK(SwitchToAllocatedSegment());
 
@@ -358,11 +378,16 @@ Status Log::DoAppend(LogEntryBatch* entry_batch, bool caller_owns_operation) {
     return Status::OK();
   }
 
-  // Keep track of the first OpId seen in this batch.
-  // This is needed for writing initial_opid into each log segment header.
-  OpId first_op_id;
-  first_op_id.CopyFrom(entry_batch->entry_batch_pb_->entry(0).operation().id());
-  DCHECK(first_op_id.IsInitialized());
+  // If we haven't seen an operation with an id in this segment yet, scan the
+  // entry batch looking for one.
+  if (!first_op_last_seg_.IsInitialized()) {
+    BOOST_FOREACH(const LogEntryPB& entry, entry_batch->entry_batch_pb_->entry()) {
+      if (entry.has_operation() && entry.operation().has_id()) {
+        first_op_last_seg_.mutable_id()->CopyFrom(entry.operation().id());
+        break;
+      }
+    }
+  }
 
   // We keep track of the last-written OpId here.
   // This is needed to initialize Consensus on startup.
@@ -377,8 +402,12 @@ Status Log::DoAppend(LogEntryBatch* entry_batch, bool caller_owns_operation) {
     LogEntryPB* entry_pb = entry_batch->entry_batch_pb_->mutable_entry(i);
     CHECK_EQ(OPERATION, entry_pb->type())
         << "Unexpected log entry type: " << entry_pb->DebugString();
-    DCHECK(entry_pb->operation().has_id());
-    DCHECK(entry_pb->operation().id().IsInitialized());
+
+    DCHECK(entry_pb->IsInitialized());
+    if (entry_pb->operation().has_replicate()) CHECK(entry_pb->operation().has_id());
+
+    // TODO When we actually have commits without ids reverse the check below
+    if (entry_pb->operation().has_commit()) CHECK(entry_pb->operation().has_id());
 
     if (caller_owns_operation) {
       // If the OperationPB was allocated by another thread, we must release
@@ -387,33 +416,25 @@ Status Log::DoAppend(LogEntryBatch* entry_batch, bool caller_owns_operation) {
     }
   }
 
-  // Write the header, if we've never written it before.
-  // We always lazily write the header on the first batch.
-  if (!active_segment_->IsHeaderWritten()) {
-    WriteHeader(first_op_id);
-  }
-
   if (metrics_) {
     metrics_->bytes_logged->IncrementBy(entry_batch_bytes);
   }
 
   // if the size of this entry overflows the current segment, get a new one
   if (allocation_state() == kAllocationNotStarted) {
-    if ((active_segment_->writable_file()->Size() + entry_batch_bytes + 4) > max_segment_size_) {
+    if ((active_segment_->Size() + entry_batch_bytes + 4) > max_segment_size_) {
       LOG(INFO) << "Max segment size reached. Starting new segment allocation. ";
       RETURN_NOT_OK(AsyncAllocateSegment());
       if (!options_.async_preallocate_segments) {
         LOG_SLOW_EXECUTION(WARNING, 50, "Log roll took a long time") {
           RETURN_NOT_OK(RollOver());
         }
-        WriteHeader(first_op_id);
       }
     }
   } else if (allocation_state() == kAllocationFinished) {
     LOG_SLOW_EXECUTION(WARNING, 50, "Log roll took a long time") {
       RETURN_NOT_OK(RollOver());
     }
-    WriteHeader(first_op_id);
   } else {
     VLOG(1) << "Segment allocation already in progress...";
   }
@@ -422,37 +443,16 @@ Status Log::DoAppend(LogEntryBatch* entry_batch, bool caller_owns_operation) {
     SCOPED_LATENCY_METRIC(metrics_, append_latency);
     SCOPED_WATCH_KERNEL_STACK();
 
-    RETURN_NOT_OK(active_segment_->writable_file()->Append(
+    RETURN_NOT_OK(active_segment_->Append(
       Slice(reinterpret_cast<uint8_t *>(&entry_batch_bytes), 4)));
-    RETURN_NOT_OK(active_segment_->writable_file()->Append(entry_batch_data));
-
+    RETURN_NOT_OK(active_segment_->Append(entry_batch_data));
+    total_ops_in_last_seg_ += entry_batch->count();
     if (log_hooks_) {
       RETURN_NOT_OK_PREPEND(log_hooks_->PostAppend(), "PostAppend hook failed");
     }
   }
   // TODO: Add a record checksum to each WAL record (see KUDU-109).
   return Status::OK();
-}
-
-Status Log::WriteHeader(const OpId& initial_op_id) {
-  CHECK(initial_op_id.IsInitialized())
-      << "Uninitialized OpId: " << initial_op_id.InitializationErrorString();
-  LogSegmentHeaderPB header;
-  DCHECK(!header.initial_id().IsInitialized())
-      << "Some OpId fields must be required, log invariant checks compromised";
-
-  header.set_major_version(kLogMajorVersion);
-  header.set_minor_version(kLogMinorVersion);
-  header.set_sequence_number(active_segment_sequence_number_);
-  header.set_tablet_id(tablet_id_);
-  header.mutable_initial_id()->CopyFrom(initial_op_id);
-
-  return active_segment_->WriteHeader(header);
-}
-
-Status Log::WriteHeaderForTests() {
-  OpId zero(consensus::MinimumOpId());
-  return WriteHeader(zero);
 }
 
 Status Log::AllocateSegmentAndRollOver() {
@@ -469,7 +469,7 @@ Status Log::Sync() {
 
   if (force_sync_all_) {
     LOG_SLOW_EXECUTION(WARNING, 50, "Fsync log took a long time") {
-      RETURN_NOT_OK(active_segment_->writable_file()->Sync());
+      RETURN_NOT_OK(active_segment_->Sync());
 
       if (log_hooks_) {
         RETURN_NOT_OK_PREPEND(log_hooks_->PostSyncIfFsyncEnabled(),
@@ -595,7 +595,7 @@ Status Log::Close() {
   switch (log_state_) {
     case kLogWriting:
       RETURN_NOT_OK(Sync());
-      RETURN_NOT_OK(active_segment_->writable_file()->Close());
+      RETURN_NOT_OK(CloseCurrentSegment());
       log_state_ = kLogClosed;
       VLOG(1) << "Log closed";
       return Status::OK();
@@ -654,6 +654,15 @@ Status Log::SwitchToAllocatedSegment() {
   gscoped_ptr<WritableLogSegment> new_segment(
       new WritableLogSegment(new_segment_path, next_segment_file_));
 
+  LogSegmentHeaderPB header;
+
+  header.set_major_version(kLogMajorVersion);
+  header.set_minor_version(kLogMinorVersion);
+  header.set_sequence_number(active_segment_sequence_number_);
+  header.set_tablet_id(tablet_id_);
+
+  RETURN_NOT_OK(new_segment->WriteHeaderAndOpen(header));
+
   // Transform the currently-active segment into a readable one, since we
   // need to be able to replay the segments for other peers.
   if (active_segment_.get() != NULL) {
@@ -663,12 +672,13 @@ Status Log::SwitchToAllocatedSegment() {
     RETURN_NOT_OK(OpenFileForRandom(fs_manager_->env(), active_segment_->path(), &readable_file));
     scoped_refptr<ReadableLogSegment> readable_segment(
         new ReadableLogSegment(active_segment_->path(),
-                               active_segment_->writable_file()->Size(),
                                readable_file));
     // Note: active_segment_->header() will only contain an initialized PB if we
     // wrote the header out.
-    readable_segment->Init(active_segment_->header(), active_segment_->first_entry_offset());
-    const OpId& op_id = readable_segment->header().initial_id();
+    readable_segment->Init(active_segment_->header(),
+                           active_segment_->footer(),
+                           active_segment_->first_entry_offset());
+    const OpId& op_id = readable_segment->footer().idx_entry(0).id();
 
     boost::lock_guard<percpu_rwlock> l(state_lock_);
     InsertOrDie(&previous_segments_, op_id, readable_segment);
