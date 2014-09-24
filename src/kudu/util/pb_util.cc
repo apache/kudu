@@ -29,6 +29,8 @@ using google::protobuf::FieldDescriptor;
 using google::protobuf::Message;
 using google::protobuf::MessageLite;
 using google::protobuf::Reflection;
+using kudu::pb_util::internal::SequentialFileFileInputStream;
+using kudu::pb_util::internal::WritableFileOutputStream;
 using std::string;
 using std::tr1::shared_ptr;
 using std::vector;

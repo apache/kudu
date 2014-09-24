@@ -12,6 +12,7 @@
 #include "kudu/util/status.h"
 #include "kudu/util/test_util.h"
 
+using kudu::pb_util::internal::WritableFileOutputStream;
 using std::tr1::shared_ptr;
 
 namespace kudu {
