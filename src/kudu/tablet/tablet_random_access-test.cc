@@ -16,6 +16,7 @@ DEFINE_int32(keyspace_size, 3000, "number of unique row keys to insert/mutate");
 DEFINE_int32(runtime_seconds, 1, "number of seconds to run the test");
 DEFINE_int32(sleep_between_flushes_ms, 100,
              "number of milliseconds to sleep between flushing or compacting");
+DEFINE_int32(update_delete_ratio, 4, "ratio of update:delete when mutating existing rows");
 
 using std::string;
 using std::vector;
@@ -43,6 +44,11 @@ class TestRandomAccess : public KuduTabletTest {
     expected_tablet_state_.resize(FLAGS_keyspace_size);
   }
 
+  virtual void SetUp() OVERRIDE {
+    KuduTabletTest::SetUp();
+    writer_.reset(new LocalTabletWriter(tablet().get(), &client_schema_));
+  }
+
   // Pick a random row of the table, verify its current state, and then
   // modify it in some way (eg inserting if it doesn't exist yet, or
   // performing a random update if it does).
@@ -54,23 +60,31 @@ class TestRandomAccess : public KuduTabletTest {
     string val_in_table = GetRow(key);
     ASSERT_EQ("(" + cur_val + ")", val_in_table);
 
+    int new_val = rand();
     if (cur_val.empty()) {
       // If there is no row, then insert one.
-      cur_val = InsertRow(key, rand());
+      cur_val = InsertRow(key, new_val);
     } else {
-      // TODO: we could add deletes to this test as well.
-      cur_val = MutateRow(key, rand());
+      if (new_val % (FLAGS_update_delete_ratio + 1) == 0) {
+        cur_val = DeleteRow(key);
+      } else {
+        cur_val = MutateRow(key, new_val);
+      }
     }
   }
 
   void DoRandomOps() {
+    int op_count = 0;
     Stopwatch s;
     s.start();
     while (s.elapsed().wall_seconds() < FLAGS_runtime_seconds) {
       for (int i = 0; i < 100; i++) {
         ASSERT_NO_FATAL_FAILURE(DoRandomOp());
+        op_count++;
       }
     }
+    LOG(INFO) << "Ran " << op_count << " ops "
+              << "(" << (op_count / s.elapsed().wall_seconds()) << " ops/sec)";
   }
 
   // Wakes up periodically to perform a flush or compaction.
@@ -87,7 +101,6 @@ class TestRandomAccess : public KuduTabletTest {
   // Insert the given key/value pair, returning the new stringified
   // value of the row.
   string InsertRow(int key, int val) {
-    LocalTabletWriter writer(tablet().get(), &client_schema_);
     KuduPartialRow row(&client_schema_);
     CHECK_OK(row.SetInt32(0, key));
     if (val & 1) {
@@ -95,14 +108,13 @@ class TestRandomAccess : public KuduTabletTest {
     } else {
       CHECK_OK(row.SetInt32(1, val));
     }
-    CHECK_OK(writer.Insert(row));
+    CHECK_OK(writer_->Insert(row));
     return row.ToString();
   }
 
   // Update the given key/value pair, returning the new stringified
   // value of the row.
   string MutateRow(int key, uint32_t new_val) {
-    LocalTabletWriter writer(tablet().get(), &client_schema_);
     KuduPartialRow row(&client_schema_);
     CHECK_OK(row.SetInt32(0, key));
     if (new_val & 1) {
@@ -110,8 +122,15 @@ class TestRandomAccess : public KuduTabletTest {
     } else {
       CHECK_OK(row.SetInt32(1, new_val));
     }
-    CHECK_OK(writer.Update(row));
+    CHECK_OK(writer_->Update(row));
     return row.ToString();
+  }
+
+  string DeleteRow(int key) {
+    KuduPartialRow row(&client_schema_);
+    CHECK_OK(row.SetInt32(0, key));
+    CHECK_OK(writer_->Delete(row));
+    return "";
   }
 
   // Random-read the given row, returning its current value.
@@ -158,6 +177,8 @@ class TestRandomAccess : public KuduTabletTest {
   // Latch triggered when the main thread is finished performing
   // operations. This stops the compact/flush thread.
   CountDownLatch done_;
+
+  gscoped_ptr<LocalTabletWriter> writer_;
 };
 
 TEST_F(TestRandomAccess, Test) {
