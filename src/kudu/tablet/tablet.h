@@ -197,8 +197,9 @@ class Tablet {
   Status AlterSchema(AlterSchemaTransactionState* tx_state);
 
   // Prints current RowSet layout, taking a snapshot of the current RowSet interval
-  // tree. Optionally prints XML header
-  void PrintRSLayout(std::ostream* o, bool header = false);
+  // tree. Also prints the log of the compaction algorithm as evaluated
+  // on the current layout.
+  void PrintRSLayout(std::ostream* o);
 
   // Flags to change the behavior of compaction.
   enum CompactFlag {

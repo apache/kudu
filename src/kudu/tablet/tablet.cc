@@ -46,6 +46,7 @@
 #include "kudu/util/mem_tracker.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/trace.h"
+#include "kudu/util/url-coding.h"
 #include "kudu/util/stopwatch.h"
 
 DEFINE_bool(tablet_do_dup_key_checks, true,
@@ -880,7 +881,7 @@ Status Tablet::PickRowSetsToCompact(RowSetsInCompaction *picked,
   } else {
     // Let the policy decide which rowsets to compact.
     double quality = 0;
-    RETURN_NOT_OK(compaction_policy_->PickRowSets(*rowsets_copy, &picked_set, &quality));
+    RETURN_NOT_OK(compaction_policy_->PickRowSets(*rowsets_copy, &picked_set, &quality, NULL));
     VLOG(2) << "Compaction quality: " << quality;
   }
 
@@ -1227,7 +1228,7 @@ void Tablet::UpdateCompactionStats(MaintenanceOpStats* stats) {
 
   {
     boost::lock_guard<boost::mutex> compact_lock(compact_select_lock_);
-    WARN_NOT_OK(compaction_policy_->PickRowSets(*rowsets_copy, &picked_set_ignored, &quality),
+    WARN_NOT_OK(compaction_policy_->PickRowSets(*rowsets_copy, &picked_set_ignored, &quality, NULL),
                 Substitute("Couldn't determine compaction quality for $0", tablet_id()));
   }
 
@@ -1393,18 +1394,41 @@ size_t Tablet::num_rowsets() const {
   return components_->rowsets->all_rowsets().size();
 }
 
-void Tablet::PrintRSLayout(ostream* o, bool header) {
+void Tablet::PrintRSLayout(ostream* o) {
   shared_ptr<RowSetTree> rowsets_copy;
   {
     boost::shared_lock<rw_spinlock> lock(component_lock_);
     rowsets_copy = components_->rowsets;
   }
-  // Simulate doing a compaction with no rowsets chosen to simply display
-  // the current layout
+  // Run the compaction policy in order to get its log and highlight those
+  // rowsets which would be compacted next.
+  vector<string> log;
+  unordered_set<RowSet*> picked;
+  double quality;
+  Status s = compaction_policy_->PickRowSets(*rowsets_copy, &picked, &quality, &log);
+  if (!s.ok()) {
+    *o << "<b>Error:</b> " << EscapeForHtmlToString(s.ToString());
+    return;
+  }
+
+  if (!picked.empty()) {
+    *o << "<p>";
+    *o << "Highlighted rowsets indicate those that would be compacted next if a "
+       << "compaction were to run on this tablet.";
+    *o << "</p>";
+  }
+
   vector<RowSetInfo> min, max;
   RowSetInfo::CollectOrdered(*rowsets_copy, &min, &max);
-  unordered_set<RowSet*> picked;
-  DumpCompactionSVG(min, picked, o, header);
+  DumpCompactionSVG(min, picked, o, false);
+
+  *o << "<h2>Compaction policy log</h2>" << std::endl;
+
+  *o << "<pre>" << std::endl;
+  BOOST_FOREACH(const string& s, log) {
+    *o << EscapeForHtmlToString(s) << std::endl;
+  }
+  *o << "</pre>" << std::endl;
 }
 
 Tablet::Iterator::Iterator(const Tablet *tablet,

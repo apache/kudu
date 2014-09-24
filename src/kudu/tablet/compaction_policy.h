@@ -6,6 +6,7 @@
 #include "kudu/util/slice.h"
 #include "kudu/util/status.h"
 
+#include <string>
 #include <vector>
 #include <tr1/unordered_set>
 
@@ -33,10 +34,14 @@ class CompactionPolicy {
   // is running.
   //
   // *quality is set to represent how effective the compaction will be on
-  // reducing IO in the tablet. TODO: determine the units/ranges of this thing
+  // reducing IO in the tablet. TODO: determine the units/ranges of this thing.
+  //
+  // If 'log' is not NULL, then a verbose log of the compaction selection
+  // process will be appended to it.
   virtual Status PickRowSets(const RowSetTree &tree,
                              std::tr1::unordered_set<RowSet*>* picked,
-                             double* quality) = 0;
+                             double* quality,
+                             std::vector<std::string>* log) = 0;
 
   // Return the size at which flush/compact should "roll" to new files. Some
   // compaction policies may prefer to deal with small constant-size files
@@ -60,7 +65,8 @@ class BudgetedCompactionPolicy : public CompactionPolicy {
 
   virtual Status PickRowSets(const RowSetTree &tree,
                              std::tr1::unordered_set<RowSet*>* picked,
-                             double* quality) OVERRIDE;
+                             double* quality,
+                             std::vector<std::string>* log);
 
   virtual uint64_t target_rowset_size() const OVERRIDE;
 

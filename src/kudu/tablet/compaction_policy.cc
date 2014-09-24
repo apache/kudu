@@ -7,6 +7,7 @@
 
 #include <algorithm>
 #include <utility>
+#include <string>
 #include <vector>
 
 #include "kudu/gutil/map-util.h"
@@ -187,10 +188,14 @@ class UpperBoundCalculator {
 
 Status BudgetedCompactionPolicy::PickRowSets(const RowSetTree &tree,
                                              unordered_set<RowSet*>* picked,
-                                             double* quality) {
+                                             double* quality,
+                                             std::vector<std::string>* log) {
   vector<RowSetInfo> asc_min_key, asc_max_key;
   SetupKnapsackInput(tree, &asc_min_key, &asc_max_key);
   if (asc_max_key.empty()) {
+    if (log) {
+      LOG_STRING(INFO, log) << "No rowsets to compact";
+    }
     // nothing to compact.
     return Status::OK();
   }
@@ -298,16 +303,16 @@ Status BudgetedCompactionPolicy::PickRowSets(const RowSetTree &tree,
   }
 
   // Log the input and output of the selection.
-  if (VLOG_IS_ON(1)) {
-    VLOG(1) << "Budgeted compaction selection:";
+  if (VLOG_IS_ON(1) || log != NULL) {
+    LOG_STRING(INFO, log) << "Budgeted compaction selection:";
     BOOST_FOREACH(RowSetInfo &cand, asc_min_key) {
       const char *checkbox = "[ ]";
       if (ContainsKey(best_chosen, cand.rowset())) {
         checkbox = "[x]";
       }
-      VLOG(1) << "  " << checkbox << " " << cand.ToString();
+      LOG_STRING(INFO, log) << "  " << checkbox << " " << cand.ToString();
     }
-    VLOG(1) << "Solution value: " << best_optimal;
+    LOG_STRING(INFO, log) << "Solution value: " << best_optimal;
   }
 
   *quality = best_optimal;
