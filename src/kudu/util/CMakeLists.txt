@@ -149,7 +149,6 @@ ADD_KUDU_TEST(net/dns_resolver-test)
 ADD_KUDU_TEST(net/net_util-test)
 ADD_KUDU_TEST(object_pool-test)
 ADD_KUDU_TEST(os-util-test)
-ADD_KUDU_TEST(pb_util-test)
 ADD_KUDU_TEST(random_util-test)
 ADD_KUDU_TEST(resettable_heartbeater-test)
 ADD_KUDU_TEST(rle-test)
@@ -188,3 +187,25 @@ target_link_libraries(jsonwriter_test_proto
 ADD_KUDU_TEST(jsonwriter-test)
 target_link_libraries(jsonwriter-test
   jsonwriter_test_proto)
+
+#######################################
+# proto_container_test_proto
+#######################################
+
+PROTOBUF_GENERATE_CPP(PROTO_CONTAINER_TEST_PROTO_SRCS PROTO_CONTAINER_TEST_PROTO_HDRS
+  SOURCE_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../..
+  BINARY_ROOT ${CMAKE_CURRENT_BINARY_DIR}/../..
+  PROTO_FILES proto_container_test.proto)
+add_library(proto_container_test_proto
+  ${PROTO_CONTAINER_TEST_PROTO_SRCS}
+  ${PROTO_CONTAINER_TEST_PROTO_HDRS})
+target_link_libraries(proto_container_test_proto
+  protobuf)
+
+#######################################
+# pb_util-test
+#######################################
+
+ADD_KUDU_TEST(pb_util-test)
+target_link_libraries(pb_util-test
+  proto_container_test_proto)

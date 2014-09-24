@@ -1,0 +1,9 @@
+// Copyright (c) 2014 Cloudera, Inc.
+package kudu;
+
+// Arbitrary protobuf to test writing a containerized protobuf.
+message ProtoContainerTestPB {
+  required string name = 1;
+  required int32 value = 2;
+  optional string note = 3;
+}

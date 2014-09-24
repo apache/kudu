@@ -25,6 +25,9 @@ class KuduTest : public ::testing::Test {
   virtual void SetUp() OVERRIDE;
 
  protected:
+  // Returns absolute path based on a unit test-specific work directory, given
+  // a relative path. Useful for writing test files that should be deleted after
+  // the test ends.
   std::string GetTestPath(const std::string& relative_path);
 
   gscoped_ptr<Env> env_;
