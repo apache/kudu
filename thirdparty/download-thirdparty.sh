@@ -66,7 +66,7 @@ fi
 # Check that the gperftools patch has been applied.
 # If you add or remove patches, bump the patchlevel below to ensure
 # that any new Jenkins builds pick up your patches.
-GPERFTOOLS_PATCHLEVEL=1
+GPERFTOOLS_PATCHLEVEL=2
 delete_if_wrong_patchlevel gperftools-${GPERFTOOLS_VERSION} $GPERFTOOLS_PATCHLEVEL
 
 if [ ! -d gperftools-${GPERFTOOLS_VERSION} ]; then
@@ -74,6 +74,7 @@ if [ ! -d gperftools-${GPERFTOOLS_VERSION} ]; then
 
   pushd gperftools-${GPERFTOOLS_VERSION}
   patch -p1 < $TP_DIR/patches/gperftools-issue-560-Revert-issue-481.patch
+  patch -p1 < $TP_DIR/patches/gperftools-Change-default-TCMALLOC_TRANSFER_NUM_OBJ-to-40.patch
   touch patchlevel-$GPERFTOOLS_PATCHLEVEL
   popd
   echo
