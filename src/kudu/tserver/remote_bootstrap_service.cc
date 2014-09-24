@@ -73,7 +73,8 @@ RemoteBootstrapServiceImpl::RemoteBootstrapServiceImpl(FsManager* fs_manager,
     tablet_peer_lookup_(CHECK_NOTNULL(tablet_peer_lookup)),
     metric_ctx_(metric_ctx),
     shutdown_latch_(1) {
-  CHECK_OK(Thread::Create("foo", "bar", &RemoteBootstrapServiceImpl::EndExpiredSessions, this,
+  CHECK_OK(Thread::Create("remote-bootstrap", "rb-session-exp",
+                          &RemoteBootstrapServiceImpl::EndExpiredSessions, this,
                           &session_expiration_thread_));
 }
 
