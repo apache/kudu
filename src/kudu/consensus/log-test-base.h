@@ -234,6 +234,23 @@ class LogTestBase : public KuduTest {
     return log_->RollOver();
   }
 
+  string DumpSegmentsToString(const SegmentSequence& segments) {
+    string dump;
+    BOOST_FOREACH(const scoped_refptr<ReadableLogSegment>& segment, segments) {
+      dump.append("------------\n");
+      strings::SubstituteAndAppend(&dump, "Segment: $0, Path: $1\n",
+                                   segment->header().sequence_number(), segment->path());
+      strings::SubstituteAndAppend(&dump, "Header: $0\n",
+                                   segment->header().ShortDebugString());
+      if (segment->HasFooter()) {
+        strings::SubstituteAndAppend(&dump, "Footer: $0\n", segment->footer().ShortDebugString());
+      } else {
+        dump.append("Footer: None or corrupt.");
+      }
+    }
+    return dump;
+  }
+
  protected:
   const Schema schema_;
   gscoped_ptr<FsManager> fs_manager_;

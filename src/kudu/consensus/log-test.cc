@@ -214,7 +214,12 @@ TEST_F(LogTest, TestSegmentRollover) {
   ASSERT_TRUE(segments.back()->HasFooter());
 
   BOOST_FOREACH(const scoped_refptr<ReadableLogSegment>& entry, segments) {
-    ASSERT_STATUS_OK(entry->ReadEntries(&entries_));
+    Status s = entry->ReadEntries(&entries_);
+    if (!s.ok()) {
+      FAIL() << "Failed to read entries in segment: " << entry->path()
+          << ". Status: " << s.ToString()
+          << ".\nSegments: " << DumpSegmentsToString(segments);
+    }
   }
 
   ASSERT_EQ(num_entries, entries_.size());
@@ -243,11 +248,11 @@ TEST_F(LogTest, TestGCWithLogRunning) {
 
   // Anchors should prevent GC.
   ASSERT_OK(log_->GetLogReader()->GetSegmentsSnapshot(&segments))
-  ASSERT_EQ(4, segments.size());
+  ASSERT_EQ(4, segments.size()) << DumpSegmentsToString(segments);
   ASSERT_STATUS_OK(opid_anchor_registry_->GetEarliestRegisteredOpId(&anchored_opid));
   ASSERT_STATUS_OK(log_->GC(anchored_opid, &num_gced_segments));
   ASSERT_OK(log_->GetLogReader()->GetSegmentsSnapshot(&segments))
-  ASSERT_EQ(4, segments.size());
+  ASSERT_EQ(4, segments.size()) << DumpSegmentsToString(segments);
 
   // Freeing the first 2 anchors should allow GC of them.
   ASSERT_STATUS_OK(opid_anchor_registry_->Unregister(anchors[0]));
@@ -256,18 +261,18 @@ TEST_F(LogTest, TestGCWithLogRunning) {
   // We should now be anchored on op 0.10, i.e. on the 3rd segment
   ASSERT_TRUE(consensus::OpIdEquals(anchors[2]->op_id, anchored_opid));
   ASSERT_STATUS_OK(log_->GC(anchored_opid, &num_gced_segments));
-  ASSERT_EQ(2, num_gced_segments);
+  ASSERT_EQ(2, num_gced_segments) << DumpSegmentsToString(segments);
   ASSERT_OK(log_->GetLogReader()->GetSegmentsSnapshot(&segments))
-  ASSERT_EQ(2, segments.size());
+  ASSERT_EQ(2, segments.size()) << DumpSegmentsToString(segments);
 
   // Release the remaining "rolled segment" anchor. GC will not delete the
   // last rolled segment.
   ASSERT_STATUS_OK(opid_anchor_registry_->Unregister(anchors[2]));
   ASSERT_STATUS_OK(opid_anchor_registry_->GetEarliestRegisteredOpId(&anchored_opid));
   ASSERT_STATUS_OK(log_->GC(anchored_opid, &num_gced_segments));
-  ASSERT_EQ(0, num_gced_segments);
+  ASSERT_EQ(0, num_gced_segments) << DumpSegmentsToString(segments);
   ASSERT_OK(log_->GetLogReader()->GetSegmentsSnapshot(&segments))
-  ASSERT_EQ(2, segments.size());
+  ASSERT_EQ(2, segments.size()) << DumpSegmentsToString(segments);
 
   ASSERT_STATUS_OK(log_->Close());
   CheckRightNumberOfSegmentFiles(2);
