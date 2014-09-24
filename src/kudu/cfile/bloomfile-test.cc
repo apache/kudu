@@ -1,155 +1,57 @@
 // Copyright (c) 2013, Cloudera, inc.
 
-#include <arpa/inet.h>
-#include <glog/logging.h>
-#include <gtest/gtest.h>
-
-#include "kudu/cfile/bloomfile.h"
-#include "kudu/fs/fs_manager.h"
-#include "kudu/gutil/endian.h"
-#include "kudu/util/env.h"
-#include "kudu/util/memenv/memenv.h"
-#include "kudu/util/stopwatch.h"
-#include "kudu/util/test_macros.h"
-
-
-DEFINE_int32(bloom_size_bytes, 4*1024, "Size of each bloom filter");
-DEFINE_int32(n_keys, 10*1000, "Number of keys to insert into the file");
-DEFINE_double(fp_rate, 0.01f, "False positive rate to aim for");
-
-DEFINE_int64(benchmark_queries, 1000000, "Number of probes to benchmark");
-DEFINE_bool(benchmark_should_hit, false, "Set to true for the benchmark to query rows which match");
+#include "kudu/cfile/bloomfile-test-base.h"
 
 namespace kudu {
 namespace cfile {
 
-using fs::ReadableBlock;
-using fs::WritableBlock;
+class BloomFileTest : public BloomFileTestBase {
 
-static const int kKeyShift = 2;
+ protected:
+  void VerifyBloomFile() {
+    // Verify all the keys that we inserted probe as present.
+    for (uint64_t i = 0; i < FLAGS_n_keys; i++) {
+      uint64_t i_byteswapped = BigEndian::FromHost64(i << kKeyShift);
+      Slice s(reinterpret_cast<char *>(&i_byteswapped), sizeof(i));
 
-static void AppendBlooms(BloomFileWriter *bfw) {
-  uint64_t key_buf;
-  Slice key_slice(reinterpret_cast<const uint8_t *>(&key_buf),
-                  sizeof(key_buf));
-
-  for (uint64_t i = 0; i < FLAGS_n_keys; i++) {
-    // Shift the key left a bit so that while querying, we can
-    // get a good mix of hits and misses while still staying within
-    // the real key range.
-    key_buf = BigEndian::FromHost64(i << kKeyShift);
-    ASSERT_STATUS_OK_FAST(bfw->AppendKeys(&key_slice, 1));
-  }
-}
-
-static void WriteTestBloomFile(FsManager* fs_manager, BlockId* block_id) {
-  gscoped_ptr<WritableBlock> sink;
-  ASSERT_STATUS_OK(fs_manager->CreateNewBlock(&sink));
-  *block_id = sink->id();
-
-  // Set sizing based on flags
-  BloomFilterSizing sizing = BloomFilterSizing::BySizeAndFPRate(
-    FLAGS_bloom_size_bytes, FLAGS_fp_rate);
-  ASSERT_NEAR(sizing.n_bytes(), FLAGS_bloom_size_bytes, FLAGS_bloom_size_bytes * 0.05);
-  ASSERT_GT(FLAGS_n_keys, sizing.expected_count())
-    << "Invalid parameters: --n_keys isn't set large enough to fill even "
-    << "one bloom filter of the requested --bloom_size_bytes";
-
-  BloomFileWriter bfw(sink.Pass(), sizing);
-
-  ASSERT_STATUS_OK(bfw.Start());
-  AppendBlooms(&bfw);
-  ASSERT_STATUS_OK(bfw.Finish());
-}
-
-static Status OpenBloomFile(FsManager* fs_manager, const BlockId& block_id,
-                            gscoped_ptr<BloomFileReader>* reader) {
-  gscoped_ptr<ReadableBlock> source;
-  RETURN_NOT_OK(fs_manager->OpenBlock(block_id, &source));
-
-  return BloomFileReader::Open(source.Pass(), reader);
-}
-
-// Verify that all the entries we put in the bloom file check as
-// present, and verify that entries we didn't put in have the
-// expected false positive rate.
-static void VerifyBloomFile(FsManager* fs_manager, const BlockId& block_id) {
-  gscoped_ptr<BloomFileReader> bfr;
-  ASSERT_STATUS_OK(OpenBloomFile(fs_manager, block_id, &bfr));
-
-  // Verify all the keys that we inserted probe as present.
-  for (uint64_t i = 0; i < FLAGS_n_keys; i++) {
-    uint64_t i_byteswapped = BigEndian::FromHost64(i << kKeyShift);
-    Slice s(reinterpret_cast<char *>(&i_byteswapped), sizeof(i));
-
-    bool present = false;
-    ASSERT_STATUS_OK_FAST(bfr->CheckKeyPresent(BloomKeyProbe(s), &present));
-    ASSERT_TRUE(present);
-  }
-
-  int positive_count = 0;
-  // Check that the FP rate for keys we didn't insert is what we expect.
-  for (uint64 i = 0; i < FLAGS_n_keys; i++) {
-    uint64_t key = random();
-    Slice s(reinterpret_cast<char *>(&key), sizeof(key));
-
-    bool present = false;
-    ASSERT_STATUS_OK_FAST(bfr->CheckKeyPresent(BloomKeyProbe(s), &present));
-    if (present) {
-      positive_count++;
+      bool present = false;
+      ASSERT_STATUS_OK_FAST(bfr_->CheckKeyPresent(BloomKeyProbe(s), &present));
+      ASSERT_TRUE(present);
     }
+
+    int positive_count = 0;
+    // Check that the FP rate for keys we didn't insert is what we expect.
+    for (uint64 i = 0; i < FLAGS_n_keys; i++) {
+      uint64_t key = random();
+      Slice s(reinterpret_cast<char *>(&key), sizeof(key));
+
+      bool present = false;
+      ASSERT_STATUS_OK_FAST(bfr_->CheckKeyPresent(BloomKeyProbe(s), &present));
+      if (present) {
+        positive_count++;
+      }
+    }
+
+    double fp_rate = static_cast<double>(positive_count) / FLAGS_n_keys;
+    LOG(INFO) << "fp_rate: " << fp_rate << "(" << positive_count << "/" << FLAGS_n_keys << ")";
+    ASSERT_LT(fp_rate, FLAGS_fp_rate + FLAGS_fp_rate * 0.20f)
+      << "Should be no more than 1.2x the expected FP rate";
   }
-
-  double fp_rate = static_cast<double>(positive_count) / FLAGS_n_keys;
-  LOG(INFO) << "fp_rate: " << fp_rate << "(" << positive_count << "/" << FLAGS_n_keys << ")";
-  ASSERT_LT(fp_rate, FLAGS_fp_rate + FLAGS_fp_rate * 0.20f)
-    << "Should be no more than 1.2x the expected FP rate";
-}
+};
 
 
-TEST(TestBloomFile, TestWriteAndRead) {
-  gscoped_ptr<Env> env(NewMemEnv(Env::Default()));
-  FsManager fs_manager(env.get(), "root");
-  ASSERT_STATUS_OK(fs_manager.CreateInitialFileSystemLayout());
-  ASSERT_STATUS_OK(fs_manager.Open());
-
-  BlockId block_id;
-  ASSERT_NO_FATAL_FAILURE(WriteTestBloomFile(&fs_manager, &block_id));
-  VerifyBloomFile(&fs_manager, block_id);
+TEST_F(BloomFileTest, TestWriteAndRead) {
+  ASSERT_NO_FATAL_FAILURE(WriteTestBloomFile());
+  ASSERT_STATUS_OK(OpenBloomFile());
+  VerifyBloomFile();
 }
 
 #ifdef NDEBUG
-TEST(TestBloomFile, Benchmark) {
-  gscoped_ptr<Env> env(NewMemEnv(Env::Default()));
-  FsManager fs_manager(env.get(), "root");
-  ASSERT_STATUS_OK(fs_manager.CreateInitialFileSystemLayout());
-  ASSERT_STATUS_OK(fs_manager.Open());
+TEST_F(BloomFileTest, Benchmark) {
+  ASSERT_NO_FATAL_FAILURE(WriteTestBloomFile());
+  ASSERT_STATUS_OK(OpenBloomFile());
 
-  BlockId block_id;
-  ASSERT_NO_FATAL_FAILURE(WriteTestBloomFile(&fs_manager, &block_id));
-  gscoped_ptr<BloomFileReader> bfr;
-  ASSERT_STATUS_OK(OpenBloomFile(&fs_manager, block_id, &bfr));
-
-  uint64_t count_present = 0;
-  LOG_TIMING(INFO, StringPrintf("Running %ld queries", FLAGS_benchmark_queries)) {
-
-    for (uint64_t i = 0; i < FLAGS_benchmark_queries; i++) {
-      uint64_t key = random() % FLAGS_n_keys;
-      key <<= kKeyShift;
-      if (!FLAGS_benchmark_should_hit) {
-        // Since the keys are bitshifted, setting the last bit
-        // ensures that none of the queries will match.
-        key |= 1;
-      }
-
-      key = BigEndian::FromHost64(key);
-
-      Slice s(reinterpret_cast<uint8_t *>(&key), sizeof(key));
-      bool present;
-      CHECK_OK(bfr->CheckKeyPresent(BloomKeyProbe(s), &present));
-      if (present) count_present++;
-    }
-  }
+  uint64_t count_present = ReadBenchmark();
 
   double hit_rate = static_cast<double>(count_present) /
     static_cast<double>(FLAGS_benchmark_queries);

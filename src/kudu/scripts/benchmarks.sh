@@ -24,6 +24,7 @@ MT_TABLET_TEST=mt-tablet-test
 RPC_BENCH_TEST=RpcBenchBenchmark
 CBTREE_TEST=cbtree-test
 BLOOM_TEST=BloomfileBenchmark
+MT_BLOOM_TEST=MultithreadedBloomfileBenchmark
 WIRE_PROTOCOL_TEST=WireProtocolBenchmark
 COMPACT_MERGE_BENCH=CompactBenchMerge
 WITH_OVERLAP=Overlap
@@ -171,6 +172,13 @@ run_benchmarks() {
       --n_keys=100000 --gtest_filter=*Benchmark &> $LOGDIR/$BLOOM_TEST$i.log
   done
 
+  # run mt-bloomfile-test 5 times. 20-30 seconds per run.
+  # The block cache is set to 1MB to generate churn.
+  for i in $(seq 1 $NUM_SAMPLES); do
+    ./build/latest/mt-bloomfile-test --benchmark_queries=2000000 --bloom_size_bytes=32768 \
+      --n_keys=5000000 --block_cache_capacity_mb=1 &> $LOGDIR/$MT_BLOOM_TEST$i.log
+  done
+
   # run wire_protocol-test 5 times. 6 seconds per run
   for i in $(seq 1 $NUM_SAMPLES); do
     KUDU_ALLOW_SLOW_TESTS=true ./build/latest/wire_protocol-test --gtest_filter=*Benchmark \
@@ -293,6 +301,13 @@ parse_and_record_all_results() {
     record_result $BUILD_IDENTIFIER $BLOOM_TEST $i $real
   done
 
+  # Parse out the real time from: "Time spent Running 2000000 queries: real 28.193s user 26.903s sys 1.032s"
+  # Many threads output their value, we keep the last;
+  for i in $(seq 1 $NUM_SAMPLES); do
+    real=`grep "Time spent Running" $LOGDIR/$MT_BLOOM_TEST$i.log | tail -n1 | ./parse_real_out.sh`
+    record_result $BUILD_IDENTIFIER $MT_BLOOM_TEST $i $real
+  done
+
   # Parse out the real time from: "Time spent Converting to PB: real 5.962s  user 5.918s sys 0.025s"
   for i in $(seq 1 $NUM_SAMPLES); do
     real=`grep "Time spent Converting" $LOGDIR/$WIRE_PROTOCOL_TEST$i.log | ./parse_real_out.sh`
@@ -413,6 +428,7 @@ load_stats_and_generate_plots() {
   load_and_generate_plot "${MEMROWSET_BENCH}Scan%" memrowset-bench-scan
 
   load_and_generate_plot $BLOOM_TEST bloom-test
+  load_and_generate_plot $MT_BLOOM_TEST mt-bloom-test
 
   load_and_generate_plot $WIRE_PROTOCOL_TEST wire-protocol-test
 

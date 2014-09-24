@@ -41,6 +41,7 @@ ADD_KUDU_TEST(index-test)
 ADD_KUDU_TEST(cfile-test)
 ADD_KUDU_TEST(encoding-test LABELS no_tsan)
 ADD_KUDU_TEST(bloomfile-test)
+ADD_KUDU_TEST(mt-bloomfile-test)
 ADD_KUDU_TEST(block_cache-test)
 ADD_KUDU_TEST(compression-test)
 
