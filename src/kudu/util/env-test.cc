@@ -391,9 +391,8 @@ TEST_F(TestEnv, TestOpenEmptyRandomAccessFile) {
   Env* env = Env::Default();
   string test_file = JoinPathSegments(GetTestDataDirectory(), "test_file");
   ASSERT_NO_FATAL_FAILURE(WriteTestFile(env, test_file, 0));
-  RandomAccessFile* readable_file;
+  gscoped_ptr<RandomAccessFile> readable_file;
   ASSERT_OK(env->NewRandomAccessFile(test_file, &readable_file));
-  shared_ptr<RandomAccessFile> deleter(readable_file);
   uint64_t size;
   ASSERT_OK(readable_file->Size(&size));
   ASSERT_EQ(0, size);

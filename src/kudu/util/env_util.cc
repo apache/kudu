@@ -25,25 +25,25 @@ Status OpenFileForWrite(Env* env, const string& path,
 Status OpenFileForWrite(const WritableFileOptions& opts,
                         Env *env, const string &path,
                         shared_ptr<WritableFile> *file) {
-  WritableFile *w;
+  gscoped_ptr<WritableFile> w;
   RETURN_NOT_OK(env->NewWritableFile(opts, path, &w));
-  file->reset(w);
+  file->reset(w.release());
   return Status::OK();
 }
 
 Status OpenFileForRandom(Env *env, const string &path,
                          shared_ptr<RandomAccessFile> *file) {
-  RandomAccessFile *r;
+  gscoped_ptr<RandomAccessFile> r;
   RETURN_NOT_OK(env->NewRandomAccessFile(path, &r));
-  file->reset(r);
+  file->reset(r.release());
   return Status::OK();
 }
 
 Status OpenFileForSequential(Env *env, const string &path,
                              shared_ptr<SequentialFile> *file) {
-  SequentialFile *r;
+  gscoped_ptr<SequentialFile> r;
   RETURN_NOT_OK(env->NewSequentialFile(path, &r));
-  file->reset(r);
+  file->reset(r.release());
   return Status::OK();
 }
 

@@ -286,32 +286,30 @@ class InMemoryEnv : public EnvWrapper {
 
   // Partial implementation of the Env interface.
   virtual Status NewSequentialFile(const std::string& fname,
-                                   SequentialFile** result) OVERRIDE {
+                                   gscoped_ptr<SequentialFile>* result) OVERRIDE {
     MutexLock lock(mutex_);
     if (file_map_.find(fname) == file_map_.end()) {
-      *result = NULL;
       return Status::IOError(fname, "File not found");
     }
 
-    *result = new SequentialFileImpl(file_map_[fname]);
+    result->reset(new SequentialFileImpl(file_map_[fname]));
     return Status::OK();
   }
 
   virtual Status NewRandomAccessFile(const std::string& fname,
-                                     RandomAccessFile** result) OVERRIDE {
+                                     gscoped_ptr<RandomAccessFile>* result) OVERRIDE {
     MutexLock lock(mutex_);
     if (file_map_.find(fname) == file_map_.end()) {
-      *result = NULL;
       return Status::IOError(fname, "File not found");
     }
 
-    *result = new RandomAccessFileImpl(file_map_[fname]);
+    result->reset(new RandomAccessFileImpl(file_map_[fname]));
     return Status::OK();
   }
 
   virtual Status NewWritableFile(const WritableFileOptions& opts,
                                  const std::string& fname,
-                                 WritableFile** result) OVERRIDE {
+                                 gscoped_ptr<WritableFile>* result) OVERRIDE {
     MutexLock lock(mutex_);
     if (file_map_.find(fname) != file_map_.end()) {
       if (opts.overwrite_existing) {
@@ -325,12 +323,12 @@ class InMemoryEnv : public EnvWrapper {
     file->Ref();
     file_map_[fname] = file;
 
-    *result = new WritableFileImpl(file);
+    result->reset(new WritableFileImpl(file));
     return Status::OK();
   }
 
   virtual Status NewWritableFile(const std::string& fname,
-                                 WritableFile** result) OVERRIDE {
+                                 gscoped_ptr<WritableFile>* result) OVERRIDE {
     return NewWritableFile(WritableFileOptions(), fname, result);
   }
 
@@ -376,10 +374,8 @@ class InMemoryEnv : public EnvWrapper {
   }
 
   virtual Status CreateDir(const std::string& dirname) OVERRIDE {
-    WritableFile *file;
-    RETURN_NOT_OK(NewWritableFile(dirname, &file));
-    delete file;
-    return Status::OK();
+    gscoped_ptr<WritableFile> file;
+    return NewWritableFile(dirname, &file);
   }
 
   virtual Status DeleteDir(const std::string& dirname) OVERRIDE {

@@ -49,7 +49,7 @@ class Env {
   //
   // The returned file will only be accessed by one thread at a time.
   virtual Status NewSequentialFile(const std::string& fname,
-                                   SequentialFile** result) = 0;
+                                   gscoped_ptr<SequentialFile>* result) = 0;
 
   // Create a brand new random access read-only file with the
   // specified name.  On success, stores a pointer to the new file in
@@ -59,7 +59,7 @@ class Env {
   //
   // The returned file may be concurrently accessed by multiple threads.
   virtual Status NewRandomAccessFile(const std::string& fname,
-                                     RandomAccessFile** result) = 0;
+                                     gscoped_ptr<RandomAccessFile>* result) = 0;
 
   // Create an object that writes to a new file with the specified
   // name.  Deletes any existing file with the same name and creates a
@@ -69,14 +69,14 @@ class Env {
   //
   // The returned file will only be accessed by one thread at a time.
   virtual Status NewWritableFile(const std::string& fname,
-                                 WritableFile** result) = 0;
+                                 gscoped_ptr<WritableFile>* result) = 0;
 
 
   // Like the previous NewWritableFile, but allows options to be
   // specified.
   virtual Status NewWritableFile(const WritableFileOptions& opts,
                                  const std::string& fname,
-                                 WritableFile** result) = 0;
+                                 gscoped_ptr<WritableFile>* result) = 0;
 
   // Creates a new WritableFile provided the name_template parameter.
   // The last six characters of name_template must be "XXXXXX" and these are
@@ -324,18 +324,18 @@ class EnvWrapper : public Env {
   Env* target() const { return target_; }
 
   // The following text is boilerplate that forwards all methods to target()
-  Status NewSequentialFile(const std::string& f, SequentialFile** r) OVERRIDE {
+  Status NewSequentialFile(const std::string& f, gscoped_ptr<SequentialFile>* r) OVERRIDE {
     return target_->NewSequentialFile(f, r);
   }
-  Status NewRandomAccessFile(const std::string& f, RandomAccessFile** r) OVERRIDE {
+  Status NewRandomAccessFile(const std::string& f, gscoped_ptr<RandomAccessFile>* r) OVERRIDE {
     return target_->NewRandomAccessFile(f, r);
   }
-  Status NewWritableFile(const std::string& f, WritableFile** r) OVERRIDE {
+  Status NewWritableFile(const std::string& f, gscoped_ptr<WritableFile>* r) OVERRIDE {
     return target_->NewWritableFile(f, r);
   }
   Status NewWritableFile(const WritableFileOptions& o,
                          const std::string& f,
-                         WritableFile** r) OVERRIDE {
+                         gscoped_ptr<WritableFile>* r) OVERRIDE {
     return target_->NewWritableFile(o, f, r);
   }
   Status NewTempWritableFile(const WritableFileOptions& o, const std::string& t,

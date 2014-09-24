@@ -693,20 +693,18 @@ class PosixEnv : public Env {
   }
 
   virtual Status NewSequentialFile(const std::string& fname,
-                                   SequentialFile** result) OVERRIDE {
+                                   gscoped_ptr<SequentialFile>* result) OVERRIDE {
     FILE* f = fopen(fname.c_str(), "r");
     if (f == NULL) {
-      *result = NULL;
       return IOError(fname, errno);
     } else {
-      *result = new PosixSequentialFile(fname, f);
+      result->reset(new PosixSequentialFile(fname, f));
       return Status::OK();
     }
   }
 
   virtual Status NewRandomAccessFile(const std::string& fname,
-                                     RandomAccessFile** result) OVERRIDE {
-    *result = NULL;
+                                     gscoped_ptr<RandomAccessFile>* result) OVERRIDE {
     uint64_t file_size;
     RETURN_NOT_OK_PREPEND(GetFileSize(fname, &file_size),
                           Substitute("Unable to get size of file $0", fname));
@@ -719,25 +717,25 @@ class PosixEnv : public Env {
       // Use mmap when virtual address-space is plentiful.
       void* base = mmap(NULL, file_size, PROT_READ, MAP_SHARED, fd, 0);
       if (base != MAP_FAILED) {
-        *result = new PosixMmapReadableFile(fname, base, file_size);
+        result->reset(new PosixMmapReadableFile(fname, base, file_size));
       } else {
         s = IOError(Substitute("mmap() failed on file $0", fname), errno);
       }
       close(fd);
     } else {
-      *result = new PosixRandomAccessFile(fname, fd);
+      result->reset(new PosixRandomAccessFile(fname, fd));
     }
     return s;
   }
 
   virtual Status NewWritableFile(const std::string& fname,
-                                 WritableFile** result) OVERRIDE {
+                                 gscoped_ptr<WritableFile>* result) OVERRIDE {
     return NewWritableFile(WritableFileOptions(), fname, result);
   }
 
   virtual Status NewWritableFile(const WritableFileOptions& opts,
                                  const std::string& fname,
-                                 WritableFile** result) OVERRIDE {
+                                 gscoped_ptr<WritableFile>* result) OVERRIDE {
     Status s;
     int flags = O_CREAT | O_RDWR | O_TRUNC;
     if (!opts.overwrite_existing) {
@@ -745,12 +743,11 @@ class PosixEnv : public Env {
     }
     const int fd = open(fname.c_str(), flags, 0644);
     if (fd < 0) {
-      *result = NULL;
       s = IOError(fname, errno);
     } else {
       gscoped_ptr<WritableFile> writable_file;
       InstantiateNewWritableFile(fname, fd, opts, &writable_file);
-      *result = writable_file.release();
+      result->reset(writable_file.release());
     }
     return s;
   }

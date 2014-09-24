@@ -294,12 +294,10 @@ Status RemoteBootstrapClient::DownloadWAL(const OpId& initial_opid, uint64_t wal
 
   WritableFileOptions opts;
   opts.sync_on_close = true;
-  WritableFile* writer;
+  gscoped_ptr<WritableFile> writer;
   RETURN_NOT_OK_PREPEND(fs_manager_->env()->NewWritableFile(opts, dest_path, &writer),
                         "Unable to open file for writing");
-  shared_ptr<WritableFile> refcounted_writer(writer);
-
-  RETURN_NOT_OK_PREPEND(DownloadFile(data_id, refcounted_writer.get()),
+  RETURN_NOT_OK_PREPEND(DownloadFile(data_id, writer.get()),
                         Substitute("Unable to download WAL segment with initial OpId $0",
                                    initial_opid.ShortDebugString()));
   return Status::OK();

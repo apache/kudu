@@ -160,9 +160,7 @@ class RemoteBootstrapTest : public KuduTabletTest {
     CHECK_OK(writable_file->Append(Slice(data.data(), data.size())));
     CHECK_OK(writable_file->Close());
 
-    SequentialFile* readable_file;
-    CHECK_OK(Env::Default()->NewSequentialFile(*path, &readable_file));
-    file->reset(readable_file);
+    CHECK_OK(Env::Default()->NewSequentialFile(*path, file));
   }
 
   MetricRegistry metric_registry_;

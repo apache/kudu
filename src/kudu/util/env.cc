@@ -25,7 +25,7 @@ FileLock::~FileLock() {
 static Status DoWriteStringToFile(Env* env, const Slice& data,
                                   const std::string& fname,
                                   bool should_sync) {
-  WritableFile* file;
+  gscoped_ptr<WritableFile> file;
   Status s = env->NewWritableFile(fname, &file);
   if (!s.ok()) {
     return s;
@@ -37,7 +37,7 @@ static Status DoWriteStringToFile(Env* env, const Slice& data,
   if (s.ok()) {
     s = file->Close();
   }
-  delete file;  // Will auto-close if we did not close above
+  file.reset();  // Will auto-close if we did not close above
   if (!s.ok()) {
     WARN_NOT_OK(env->DeleteFile(fname),
                 "Failed to delete partially-written file " + fname);
@@ -58,16 +58,16 @@ Status WriteStringToFileSync(Env* env, const Slice& data,
 
 Status ReadFileToString(Env* env, const std::string& fname, faststring* data) {
   data->clear();
-  SequentialFile* file;
+  gscoped_ptr<SequentialFile> file;
   Status s = env->NewSequentialFile(fname, &file);
   if (!s.ok()) {
     return s;
   }
   static const int kBufferSize = 8192;
-  uint8_t* space = new uint8_t[kBufferSize];
+  gscoped_ptr<uint8_t[]> scratch(new uint8_t[kBufferSize]);
   while (true) {
     Slice fragment;
-    s = file->Read(kBufferSize, &fragment, space);
+    s = file->Read(kBufferSize, &fragment, scratch.get());
     if (!s.ok()) {
       break;
     }
@@ -76,8 +76,6 @@ Status ReadFileToString(Env* env, const std::string& fname, faststring* data) {
       break;
     }
   }
-  delete[] space;
-  delete file;
   return s;
 }
 

@@ -33,7 +33,7 @@ class MemEnvTest : public ::testing::Test {
 
 TEST_F(MemEnvTest, Basics) {
   uint64_t file_size;
-  WritableFile* writable_file;
+  gscoped_ptr<WritableFile> writable_file;
   std::vector<std::string> children;
 
   // Create the directory.
@@ -49,7 +49,7 @@ TEST_F(MemEnvTest, Basics) {
 
   // Create a file.
   ASSERT_STATUS_OK(env_->NewWritableFile("/dir/f", &writable_file));
-  delete writable_file;
+  writable_file.reset();
 
   // Check that the file exists.
   ASSERT_TRUE(env_->FileExists("/dir/f"));
@@ -62,7 +62,7 @@ TEST_F(MemEnvTest, Basics) {
   // Write to the file.
   ASSERT_STATUS_OK(env_->NewWritableFile("/dir/f", &writable_file));
   ASSERT_STATUS_OK(writable_file->Append("abc"));
-  delete writable_file;
+  writable_file.reset();
 
   // Check for expected size.
   ASSERT_STATUS_OK(env_->GetFileSize("/dir/f", &file_size));
@@ -77,8 +77,8 @@ TEST_F(MemEnvTest, Basics) {
   ASSERT_EQ(3, file_size);
 
   // Check that opening non-existent file fails.
-  SequentialFile* seq_file;
-  RandomAccessFile* rand_file;
+  gscoped_ptr<SequentialFile> seq_file;
+  gscoped_ptr<RandomAccessFile> rand_file;
   ASSERT_TRUE(!env_->NewSequentialFile("/dir/non_existent", &seq_file).ok());
   ASSERT_TRUE(!seq_file);
   ASSERT_TRUE(!env_->NewRandomAccessFile("/dir/non_existent", &rand_file).ok());
@@ -95,45 +95,48 @@ TEST_F(MemEnvTest, Basics) {
 }
 
 TEST_F(MemEnvTest, ReadWrite) {
-  WritableFile* writable_file;
-  SequentialFile* seq_file;
-  RandomAccessFile* rand_file;
   Slice result;
   uint8_t scratch[100];
 
   ASSERT_STATUS_OK(env_->CreateDir("/dir"));
 
-  ASSERT_STATUS_OK(env_->NewWritableFile("/dir/f", &writable_file));
-  ASSERT_STATUS_OK(writable_file->Append("hello "));
-  ASSERT_STATUS_OK(writable_file->Append("world"));
-  delete writable_file;
+  {
+    gscoped_ptr<WritableFile> writable_file;
+    ASSERT_STATUS_OK(env_->NewWritableFile("/dir/f", &writable_file));
+    ASSERT_STATUS_OK(writable_file->Append("hello "));
+    ASSERT_STATUS_OK(writable_file->Append("world"));
+  }
 
-  // Read sequentially.
-  ASSERT_STATUS_OK(env_->NewSequentialFile("/dir/f", &seq_file));
-  ASSERT_STATUS_OK(seq_file->Read(5, &result, scratch)); // Read "hello".
-  ASSERT_EQ(0, result.compare("hello"));
-  ASSERT_STATUS_OK(seq_file->Skip(1));
-  ASSERT_STATUS_OK(seq_file->Read(1000, &result, scratch)); // Read "world".
-  ASSERT_EQ(0, result.compare("world"));
-  ASSERT_STATUS_OK(seq_file->Read(1000, &result, scratch)); // Try reading past EOF.
-  ASSERT_EQ(0, result.size());
-  ASSERT_STATUS_OK(seq_file->Skip(100)); // Try to skip past end of file.
-  ASSERT_STATUS_OK(seq_file->Read(1000, &result, scratch));
-  ASSERT_EQ(0, result.size());
-  delete seq_file;
+  {
+    // Read sequentially.
+    gscoped_ptr<SequentialFile> seq_file;
+    ASSERT_STATUS_OK(env_->NewSequentialFile("/dir/f", &seq_file));
+    ASSERT_STATUS_OK(seq_file->Read(5, &result, scratch)); // Read "hello".
+    ASSERT_EQ(0, result.compare("hello"));
+    ASSERT_STATUS_OK(seq_file->Skip(1));
+    ASSERT_STATUS_OK(seq_file->Read(1000, &result, scratch)); // Read "world".
+    ASSERT_EQ(0, result.compare("world"));
+    ASSERT_STATUS_OK(seq_file->Read(1000, &result, scratch)); // Try reading past EOF.
+    ASSERT_EQ(0, result.size());
+    ASSERT_STATUS_OK(seq_file->Skip(100)); // Try to skip past end of file.
+    ASSERT_STATUS_OK(seq_file->Read(1000, &result, scratch));
+    ASSERT_EQ(0, result.size());
+  }
 
-  // Random reads.
-  ASSERT_STATUS_OK(env_->NewRandomAccessFile("/dir/f", &rand_file));
-  ASSERT_STATUS_OK(rand_file->Read(6, 5, &result, scratch)); // Read "world".
-  ASSERT_EQ(0, result.compare("world"));
-  ASSERT_STATUS_OK(rand_file->Read(0, 5, &result, scratch)); // Read "hello".
-  ASSERT_EQ(0, result.compare("hello"));
-  ASSERT_STATUS_OK(rand_file->Read(10, 100, &result, scratch)); // Read "d".
-  ASSERT_EQ(0, result.compare("d"));
+  {
+    // Random reads.
+    gscoped_ptr<RandomAccessFile> rand_file;
+    ASSERT_STATUS_OK(env_->NewRandomAccessFile("/dir/f", &rand_file));
+    ASSERT_STATUS_OK(rand_file->Read(6, 5, &result, scratch)); // Read "world".
+    ASSERT_EQ(0, result.compare("world"));
+    ASSERT_STATUS_OK(rand_file->Read(0, 5, &result, scratch)); // Read "hello".
+    ASSERT_EQ(0, result.compare("hello"));
+    ASSERT_STATUS_OK(rand_file->Read(10, 100, &result, scratch)); // Read "d".
+    ASSERT_EQ(0, result.compare("d"));
 
-  // Too high offset.
-  ASSERT_TRUE(!rand_file->Read(1000, 5, &result, scratch).ok());
-  delete rand_file;
+    // Too high offset.
+    ASSERT_TRUE(!rand_file->Read(1000, 5, &result, scratch).ok());
+  }
 }
 
 TEST_F(MemEnvTest, Locks) {
@@ -149,7 +152,7 @@ TEST_F(MemEnvTest, Misc) {
   ASSERT_STATUS_OK(env_->GetTestDirectory(&test_dir));
   ASSERT_TRUE(!test_dir.empty());
 
-  WritableFile* writable_file;
+  gscoped_ptr<WritableFile> writable_file;
   ASSERT_STATUS_OK(env_->NewWritableFile("/a/b", &writable_file));
 
   // These are no-ops, but we test they return success.
@@ -157,41 +160,38 @@ TEST_F(MemEnvTest, Misc) {
   ASSERT_STATUS_OK(writable_file->Flush(WritableFile::FLUSH_SYNC));
   ASSERT_STATUS_OK(writable_file->Flush(WritableFile::FLUSH_ASYNC));
   ASSERT_STATUS_OK(writable_file->Close());
-  delete writable_file;
 }
 
 TEST_F(MemEnvTest, LargeWrite) {
   const size_t kWriteSize = 300 * 1024;
-  uint8_t* scratch = new uint8_t[kWriteSize * 2];
+  gscoped_ptr<uint8_t[]> scratch(new uint8_t[kWriteSize * 2]);
 
   std::string write_data;
   for (size_t i = 0; i < kWriteSize; ++i) {
     write_data.append(1, static_cast<char>(i));
   }
 
-  WritableFile* writable_file;
+  gscoped_ptr<WritableFile> writable_file;
   ASSERT_STATUS_OK(env_->NewWritableFile("/dir/f", &writable_file));
   ASSERT_STATUS_OK(writable_file->Append("foo"));
   ASSERT_STATUS_OK(writable_file->Append(write_data));
-  delete writable_file;
+  writable_file.reset();
 
-  SequentialFile* seq_file;
+  gscoped_ptr<SequentialFile> seq_file;
   Slice result;
   ASSERT_STATUS_OK(env_->NewSequentialFile("/dir/f", &seq_file));
-  ASSERT_STATUS_OK(seq_file->Read(3, &result, scratch)); // Read "foo".
+  ASSERT_STATUS_OK(seq_file->Read(3, &result, scratch.get())); // Read "foo".
   ASSERT_EQ(0, result.compare("foo"));
 
   size_t read = 0;
   std::string read_data;
   while (read < kWriteSize) {
-    ASSERT_STATUS_OK(seq_file->Read(kWriteSize - read, &result, scratch));
+    ASSERT_STATUS_OK(seq_file->Read(kWriteSize - read, &result, scratch.get()));
     read_data.append(reinterpret_cast<const char *>(result.data()),
                      result.size());
     read += result.size();
   }
   ASSERT_TRUE(write_data == read_data);
-  delete seq_file;
-  delete [] scratch;
 }
 
 TEST_F(MemEnvTest, Overwrite) {
