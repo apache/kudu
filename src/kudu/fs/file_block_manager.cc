@@ -18,8 +18,8 @@ using std::tr1::shared_ptr;
 using std::vector;
 using strings::Substitute;
 
-DEFINE_bool(block_coalesce_sync, true,
-            "Coalesce synchronization of data during SyncBlocks()");
+DEFINE_bool(block_coalesce_close, true,
+            "Coalesce synchronization of data during CloseBlocks()");
 DECLARE_bool(enable_data_block_fsync);
 
 namespace kudu {
@@ -30,11 +30,9 @@ namespace fs {
 ////////////////////////////////////////////////////////////
 
 FileWritableBlock::FileWritableBlock(FileBlockManager* block_manager,
-                                     bool sync_on_close,
                                      const BlockId& block_id,
                                      const shared_ptr<WritableFile>& writer) :
   block_manager_(block_manager),
-  sync_on_close_(sync_on_close),
   block_id_(block_id),
   writer_(writer),
   state_(CLEAN),
@@ -52,8 +50,14 @@ Status FileWritableBlock::Close() {
   }
 
   Status sync;
-  if (sync_on_close_) {
-    sync = Sync();
+  if ((state_ == DIRTY || state_ == FLUSHING) &&
+      FLAGS_enable_data_block_fsync) {
+    // Safer to synchronize data first, then metadata.
+    VLOG(3) << "Syncing block " << id();
+    sync = writer_->Sync();
+    if (sync.ok()) {
+      sync = SyncMetadata();
+    }
     WARN_NOT_OK(sync, Substitute("Failed to sync when closing block $0",
                                  block_id_.ToString()));
   }
@@ -64,6 +68,10 @@ Status FileWritableBlock::Close() {
 
   // Prefer the result of Close() to that of Sync().
   return !close.ok() ? close : sync;
+}
+
+BlockManager* FileWritableBlock::block_manager() const {
+  return block_manager_;
 }
 
 const BlockId& FileWritableBlock::id() const {
@@ -77,20 +85,6 @@ Status FileWritableBlock::Append(const Slice& data) {
   RETURN_NOT_OK(writer_->Append(data));
   state_ = DIRTY;
   bytes_appended_ += data.size();
-  return Status::OK();
-}
-
-Status FileWritableBlock::Sync() {
-  DCHECK(state_ == CLEAN || state_ == DIRTY || state_ == FLUSHING || state_ == SYNCED)
-      << "Invalid state: " << state_;
-  if ((state_ == DIRTY || state_ == FLUSHING) &&
-      FLAGS_enable_data_block_fsync) {
-    // Safer to synchronize data first, then metadata.
-    RETURN_NOT_OK(writer_->Sync());
-    RETURN_NOT_OK(SyncMetadata());
-  }
-
-  state_ = SYNCED;
   return Status::OK();
 }
 
@@ -210,7 +204,7 @@ void FileBlockManager::CreateBlock(const BlockId& block_id,
                                    const CreateBlockOptions& opts,
                                    gscoped_ptr<WritableBlock>* block) {
   VLOG(1) << "Creating new block " << block_id.ToString() << " at " << path;
-  block->reset(new FileWritableBlock(this, opts.sync_on_close, block_id, writer));
+  block->reset(new FileWritableBlock(this, block_id, writer));
 }
 
 FileBlockManager::FileBlockManager(Env* env,
@@ -305,8 +299,9 @@ Status FileBlockManager::DeleteBlock(const BlockId& block_id) {
   return Status::OK();
 }
 
-Status FileBlockManager::SyncBlocks(const vector<WritableBlock*>& blocks) {
-  if (FLAGS_block_coalesce_sync) {
+Status FileBlockManager::CloseBlocks(const vector<WritableBlock*>& blocks) {
+  VLOG(3) << "Closing " << blocks.size() << " blocks";
+  if (FLAGS_block_coalesce_close) {
     // Ask the kernel to begin writing out each block's dirty data. This is
     // done up-front to give the kernel opportunities to coalesce contiguous
     // dirty pages.
@@ -315,9 +310,9 @@ Status FileBlockManager::SyncBlocks(const vector<WritableBlock*>& blocks) {
     }
   }
 
-  // Now wait for each block to actually become durable.
+  // Now close each block, waiting for each to become durable.
   BOOST_FOREACH(WritableBlock* block, blocks) {
-    RETURN_NOT_OK(block->Sync());
+    RETURN_NOT_OK(block->Close());
   }
   return Status::OK();
 }

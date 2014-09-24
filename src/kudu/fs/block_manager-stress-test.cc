@@ -40,9 +40,8 @@ namespace fs {
 //   - pick the next block to write a piece to at random
 //   - write one piece at a time (default 64k) of data generated using
 //     that block's PRNG seed
-// - sync the blocks
-// - add the blocks to the block_id vector (write locked)
 // - close the blocks
+// - add the blocks to the block_id vector (write locked)
 // reading threads (default 8) that do the following in a tight loop:
 // - read one block id at random from block_id vector (read locked)
 // - read the block fully into memory, parsing its seed
@@ -184,12 +183,12 @@ void BlockManagerStressTest::WriterThread() {
       total_dirty_bytes += data.length();
     }
 
-    // Sync all dirty blocks.
+    // Close all dirty blocks.
     //
-    // We could sync them on close when the blocks are destructed but this
-    // way we can check for errors.
-    LOG(INFO) << "Syncing new blocks";
-    CHECK_OK(bm_->SyncBlocks(dirty_blocks));
+    // We could close them implicitly when the blocks are destructed but
+    // this way we can check for errors.
+    LOG(INFO) << "Closing new blocks";
+    CHECK_OK(bm_->CloseBlocks(dirty_blocks));
 
     // Publish the now sync'ed blocks to readers and deleters.
     {

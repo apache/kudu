@@ -34,11 +34,11 @@ class FileWritableBlock : public WritableBlock {
 
   virtual Status Close() OVERRIDE;
 
+  virtual BlockManager* block_manager() const OVERRIDE;
+
   virtual const BlockId& id() const OVERRIDE;
 
   virtual Status Append(const Slice& data) OVERRIDE;
-
-  virtual Status Sync() OVERRIDE;
 
   virtual Status FlushDataAsync() OVERRIDE;
 
@@ -50,7 +50,6 @@ class FileWritableBlock : public WritableBlock {
   friend class FileBlockManager;
 
   FileWritableBlock(FileBlockManager* block_manager,
-                    bool sync_on_close,
                     const BlockId& block_id,
                     const std::tr1::shared_ptr<WritableFile>& writer);
 
@@ -61,9 +60,6 @@ class FileWritableBlock : public WritableBlock {
   //
   // Should remain alive for the lifetime of this block.
   FileBlockManager* block_manager_;
-
-  // Whether Sync() should be called during Close().
-  const bool sync_on_close_;
 
   // The block's identifier.
   const BlockId block_id_;
@@ -112,11 +108,6 @@ class FileReadableBlock : public ReadableBlock {
 };
 
 // The file-backed block manager.
-//
-// This implementation does NOT use mmap-backed files when writing. That's
-// because PosixMmapFile doesn't guarantee that the file has the right size
-// following a Sync(). The file is only "right sized" during Close(). This
-// violates the Block::Sync() contract.
 class FileBlockManager : public BlockManager {
  public:
 
@@ -148,7 +139,7 @@ class FileBlockManager : public BlockManager {
 
   virtual Status DeleteBlock(const BlockId& block_id) OVERRIDE;
 
-  virtual Status SyncBlocks(const std::vector<WritableBlock*>& blocks) OVERRIDE;
+  virtual Status CloseBlocks(const std::vector<WritableBlock*>& blocks) OVERRIDE;
 
  private:
   friend class FileWritableBlock;

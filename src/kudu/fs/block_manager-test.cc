@@ -11,8 +11,8 @@ using std::string;
 using std::vector;
 using strings::Substitute;
 
-DEFINE_int32(num_blocks_sync, 1000,
-             "Number of blocks to simultaneously sync in SyncManyBlocksTest");
+DEFINE_int32(num_blocks_close, 1000,
+             "Number of blocks to simultaneously close in CloseManyBlocksTest");
 
 namespace kudu {
 namespace fs {
@@ -43,7 +43,6 @@ TEST_F(BlockManagerTest, EndToEndTest) {
   // Write some data to it.
   string test_data = "test data";
   ASSERT_OK(written_block->Append(test_data));
-  ASSERT_OK(written_block->Sync());
   ASSERT_OK(written_block->Close());
 
   // Read the data back.
@@ -77,29 +76,6 @@ TEST_F(BlockManagerTest, AnonymousBlockTest) {
   ASSERT_OK(bm_->DeleteBlock(written_block->id()));
   ASSERT_TRUE(bm_->OpenBlock(written_block->id(), NULL)
               .IsNotFound());
-}
-
-// Test that sync_on_close=true doesn't cause any problems (we can't
-// actually test the durability).
-TEST_F(BlockManagerTest, SyncOnCloseTest) {
-  gscoped_ptr<WritableBlock> written_block;
-
-  CreateBlockOptions opts;
-  opts.sync_on_close = true;
-  ASSERT_OK(bm_->CreateAnonymousBlock(opts, &written_block));
-  string test_data = "test data";
-  ASSERT_OK(written_block->Append(test_data));
-  ASSERT_OK(written_block->Close());
-
-  opts.sync_on_close = false;
-  ASSERT_OK(bm_->CreateAnonymousBlock(opts, &written_block));
-  ASSERT_OK(written_block->Append(test_data));
-  ASSERT_OK(written_block->Close());
-
-  ASSERT_OK(bm_->CreateAnonymousBlock(opts, &written_block));
-  ASSERT_OK(written_block->Sync());
-
-  ASSERT_OK(written_block->Close());
 }
 
 // Test that we can still read from an opened block after deleting it
@@ -139,7 +115,7 @@ TEST_F(BlockManagerTest, CloseTwiceTest) {
   ASSERT_OK(read_block->Close());
 }
 
-TEST_F(BlockManagerTest, SyncManyBlocksTest) {
+TEST_F(BlockManagerTest, CloseManyBlocksTest) {
   if (!AllowSlowTests()) {
     LOG(INFO) << "Not running in slow-tests mode";
     return;
@@ -147,8 +123,8 @@ TEST_F(BlockManagerTest, SyncManyBlocksTest) {
   Random rand(SeedRandom());
   vector<WritableBlock*> dirty_blocks;
   ElementDeleter deleter(&dirty_blocks);
-  LOG(INFO) << "Creating " <<  FLAGS_num_blocks_sync << " blocks";
-  for (int i = 0; i < FLAGS_num_blocks_sync; i++) {
+  LOG(INFO) << "Creating " <<  FLAGS_num_blocks_close << " blocks";
+  for (int i = 0; i < FLAGS_num_blocks_close; i++) {
     // Create a block.
     gscoped_ptr<WritableBlock> written_block;
     ASSERT_OK(bm_->CreateAnonymousBlock(&written_block));
@@ -163,20 +139,19 @@ TEST_F(BlockManagerTest, SyncManyBlocksTest) {
     dirty_blocks.push_back(written_block.release());
   }
 
-  LOG_TIMING(INFO, Substitute("syncing $0 blocks", FLAGS_num_blocks_sync)) {
-    ASSERT_OK(bm_->SyncBlocks(dirty_blocks));
+  LOG_TIMING(INFO, Substitute("closing $0 blocks", FLAGS_num_blocks_close)) {
+    ASSERT_OK(this->bm_->CloseBlocks(dirty_blocks));
   }
 }
 
-// Like SyncOnCloseTest, we can't really test that this "works", but we
-// can test that it doesn't break anything.
-TEST_F(BlockManagerTest, AsyncFlushDataTest) {
+// We can't really test that FlushDataAsync() "works", but we can test that
+// it doesn't break anything.
+TEST_F(BlockManagerTest, FlushDataAsyncTest) {
   gscoped_ptr<WritableBlock> written_block;
   ASSERT_OK(bm_->CreateAnonymousBlock(&written_block));
   string test_data = "test data";
   ASSERT_OK(written_block->Append(test_data));
   ASSERT_OK(written_block->FlushDataAsync());
-  ASSERT_OK(written_block->Sync());
 }
 
 TEST_F(BlockManagerTest, WritableBlockStateTest) {
@@ -190,18 +165,8 @@ TEST_F(BlockManagerTest, WritableBlockStateTest) {
   ASSERT_EQ(WritableBlock::DIRTY, written_block->state());
   ASSERT_OK(written_block->Append(test_data));
   ASSERT_EQ(WritableBlock::DIRTY, written_block->state());
-  ASSERT_OK(written_block->Sync());
-  ASSERT_EQ(WritableBlock::SYNCED, written_block->state());
   ASSERT_OK(written_block->Close());
   ASSERT_EQ(WritableBlock::CLOSED, written_block->state());
-
-  // Test FLUSHING->CLEAN transition.
-  ASSERT_OK(bm_->CreateAnonymousBlock(&written_block));
-  ASSERT_OK(written_block->Append(test_data));
-  ASSERT_OK(written_block->FlushDataAsync());
-  ASSERT_EQ(WritableBlock::FLUSHING, written_block->state());
-  ASSERT_OK(written_block->Sync());
-  ASSERT_EQ(WritableBlock::SYNCED, written_block->state());
 
   // Test FLUSHING->CLOSED transition.
   ASSERT_OK(bm_->CreateAnonymousBlock(&written_block));
@@ -216,23 +181,13 @@ TEST_F(BlockManagerTest, WritableBlockStateTest) {
   ASSERT_OK(written_block->Close());
   ASSERT_EQ(WritableBlock::CLOSED, written_block->state());
 
-  // Test FlushDataAsync() and Sync() no-ops.
+  // Test FlushDataAsync() no-op.
   ASSERT_OK(bm_->CreateAnonymousBlock(&written_block));
   ASSERT_OK(written_block->FlushDataAsync());
   ASSERT_EQ(WritableBlock::FLUSHING, written_block->state());
-  ASSERT_OK(written_block->Sync());
-  ASSERT_EQ(WritableBlock::SYNCED, written_block->state());
 
   // Test DIRTY->CLOSED transition.
   ASSERT_OK(bm_->CreateAnonymousBlock(&written_block));
-  ASSERT_OK(written_block->Append(test_data));
-  ASSERT_OK(written_block->Close());
-  ASSERT_EQ(WritableBlock::CLOSED, written_block->state());
-
-  // Test that sync_on_close leaves the block in CLOSED.
-  CreateBlockOptions opts;
-  opts.sync_on_close = true;
-  ASSERT_OK(bm_->CreateAnonymousBlock(opts, &written_block));
   ASSERT_OK(written_block->Append(test_data));
   ASSERT_OK(written_block->Close());
   ASSERT_EQ(WritableBlock::CLOSED, written_block->state());
