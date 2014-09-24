@@ -262,7 +262,9 @@ class RaftConsensusTest : public KuduTest {
                                           &log_reader));
     vector<LogEntryPB*> entries;
     ElementDeleter deleter(&entries);
-    BOOST_FOREACH(const ReadableLogSegmentMap::value_type& entry, log_reader->segments()) {
+    ReadableLogSegmentMap map;
+    log_reader->GetOldIndexFormat(&map);
+    BOOST_FOREACH(const ReadableLogSegmentMap::value_type& entry, map) {
       ASSERT_STATUS_OK(entry.second->ReadEntries(&entries));
     }
     BOOST_FOREACH(LogEntryPB* entry, entries) {

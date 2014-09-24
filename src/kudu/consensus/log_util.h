@@ -64,6 +64,10 @@ struct LogOptions {
   LogOptions();
 };
 
+
+// A sequence of segments, ordered by increasing sequence number.
+typedef std::vector<scoped_refptr<ReadableLogSegment> > SegmentSequence;
+
 // A segment of the log can either be a ReadableLogSegment (for replay and
 // consensus catch-up) or a WritableLogSegment (where the Log actually stores
 // state). LogSegments have a maximum size defined in LogOptions (set from the

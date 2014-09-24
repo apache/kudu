@@ -45,6 +45,36 @@ class LogTest : public LogTestBase {
     RETURN_NOT_OK(AppendNoOps(op_id, num_ops_per_segment));
     return Status::OK();
   }
+
+  Status AppendNewEmptySegmentToReader(int sequence_number,
+                                       int first_op_index,
+                                       LogReader* reader) {
+    string fqp = GetTestPath(strings::Substitute("wal-00000000$0", sequence_number));
+    gscoped_ptr<WritableFile> w_log_seg;
+    RETURN_NOT_OK(fs_manager_->env()->NewWritableFile(fqp, &w_log_seg));
+    gscoped_ptr<RandomAccessFile> r_log_seg;
+    RETURN_NOT_OK(fs_manager_->env()->NewRandomAccessFile(fqp, &r_log_seg));
+
+    scoped_refptr<ReadableLogSegment> readable_segment(
+        new ReadableLogSegment(fqp, shared_ptr<RandomAccessFile>(r_log_seg.release())));
+
+    LogSegmentHeaderPB header;
+    header.set_sequence_number(sequence_number);
+    header.set_major_version(0);
+    header.set_minor_version(0);
+    header.set_tablet_id(kTestTablet);
+
+    LogSegmentFooterPB footer;
+    footer.set_num_entries(10);
+    SegmentIdxPosPB* pb = footer.add_idx_entry();
+    OpId* opid = pb->mutable_id();
+    opid->set_term(0);
+    opid->set_index(first_op_index);
+
+    RETURN_NOT_OK(readable_segment->Init(header, footer, 0));
+    RETURN_NOT_OK(reader->AppendSegment(readable_segment));
+    return Status::OK();
+  }
 };
 
 // If we write more than one entry in a batch, we should be able to
@@ -64,7 +94,9 @@ TEST_F(LogTest, TestMultipleEntriesInABatch) {
   BuildLogReader();
   vector<LogEntryPB*> entries;
   ElementDeleter deleter(&entries);
-  ASSERT_STATUS_OK(log_reader_->segments().begin()->second->ReadEntries(&entries));
+  ReadableLogSegmentMap map;
+  log_reader_->GetOldIndexFormat(&map);
+  ASSERT_STATUS_OK(map.begin()->second->ReadEntries(&entries));
 
   ASSERT_EQ(2, entries.size());
 
@@ -101,7 +133,9 @@ TEST_F(LogTest, TestLogNotTrimmed) {
   BuildLogReader();
   vector<LogEntryPB*> entries;
   ElementDeleter deleter(&entries);
-  const scoped_refptr<ReadableLogSegment>& first_segment = log_reader_->segments().begin()->second;
+  ReadableLogSegmentMap map;
+  log_reader_->GetOldIndexFormat(&map);
+  scoped_refptr<ReadableLogSegment> first_segment = map.begin()->second;
   ASSERT_STATUS_OK(first_segment->ReadEntries(&entries));
   // Close after testing to ensure correct shutdown
   // TODO : put this in TearDown() with a test on log state?
@@ -119,8 +153,12 @@ TEST_F(LogTest, TestBlankLogFile) {
   // The reader needs to be able to open the directory, and we need to
   // skip the segment while reading.
   ASSERT_TRUE(s.ok()) << s.ToString();
-  ASSERT_EQ(log_reader_->size(), 0);
-  ASSERT_TRUE(log_reader_->segments().empty());
+  // We get one empty segment...
+  ASSERT_EQ(log_reader_->num_segments(), 1);
+  // But it has no entries, so nothing in the index.
+  ReadableLogSegmentMap map;
+  log_reader_->GetOldIndexFormat(&map);
+  ASSERT_TRUE(map.empty());
 }
 
 // Tests that the log reader reads up until some corrupt entry is found.
@@ -135,8 +173,10 @@ TEST_F(LogTest, TestCorruptLog) {
   ASSERT_STATUS_OK(CorruptLogFile(env_.get(), log_.get(), 40));
 
   BuildLogReader();
-  ASSERT_EQ(1, log_reader_->size());
-  const scoped_refptr<ReadableLogSegment>& first_segment = log_reader_->segments().begin()->second;
+  ASSERT_EQ(1, log_reader_->num_segments());
+  ReadableLogSegmentMap map;
+  log_reader_->GetOldIndexFormat(&map);
+  scoped_refptr<ReadableLogSegment> first_segment = map.begin()->second;
   Status status = first_segment->ReadEntries(&entries_);
   ASSERT_TRUE(status.IsCorruption()) << "Got status: " << status.ToString();
 
@@ -161,7 +201,9 @@ TEST_F(LogTest, TestSegmentRollover) {
 
   ASSERT_STATUS_OK(log_->Close());
   BuildLogReader();
-  BOOST_FOREACH(const ReadableLogSegmentMap::value_type& entry, log_reader_->segments()) {
+  ReadableLogSegmentMap map;
+  log_reader_->GetOldIndexFormat(&map);
+  BOOST_FOREACH(const ReadableLogSegmentMap::value_type& entry, map) {
     ASSERT_STATUS_OK(entry.second->ReadEntries(&entries_));
   }
 
@@ -224,7 +266,9 @@ TEST_F(LogTest, TestWaitUntilAllFlushed) {
 
   // Make sure we only get 4 entries back and that no FLUSH_MARKER commit is found.
   BuildLogReader();
-  ASSERT_STATUS_OK(log_reader_->segments().begin()->second->ReadEntries(&entries_));
+  ReadableLogSegmentMap map;
+  log_reader_->GetOldIndexFormat(&map);
+  ASSERT_STATUS_OK(map.begin()->second->ReadEntries(&entries_));
   ASSERT_EQ(entries_.size(), 4);
   for (int i = 0; i < 4 ; i++) {
     ASSERT_TRUE(entries_[i]->has_operation());
@@ -310,7 +354,9 @@ TEST_F(LogTest, TestWriteManyBatches) {
     LOG(INFO) << "Starting to read log";
     BuildLogReader();
     uint32_t num_entries = 0;
-    BOOST_FOREACH(const ReadableLogSegmentMap::value_type& entry, log_reader_->segments()) {
+    ReadableLogSegmentMap map;
+    log_reader_->GetOldIndexFormat(&map);
+    BOOST_FOREACH(const ReadableLogSegmentMap::value_type& entry, map) {
       STLDeleteElements(&entries_);
       ASSERT_STATUS_OK(entry.second->ReadEntries(&entries_));
       num_entries += entries_.size();
@@ -318,6 +364,96 @@ TEST_F(LogTest, TestWriteManyBatches) {
     ASSERT_EQ(num_entries, num_batches * 2);
     LOG(INFO) << "End readfile";
   }
+}
+
+// This tests that querying LogReader works.
+// This sets up a reader with some segments to query which amount to the
+// following index:
+// Index entries (first op in the segment, segment number):
+// - {0.40, seg004}
+// - {0.20, seg003}
+// - {0.10, seg002}
+TEST_F(LogTest, TestLogReader) {
+  LogReader reader(fs_manager_.get(), kTestTablet);
+  reader.InitEmptyReaderForTests();
+  ASSERT_STATUS_OK(AppendNewEmptySegmentToReader(2, 10, &reader));
+  ASSERT_STATUS_OK(AppendNewEmptySegmentToReader(3, 20, &reader));
+  ASSERT_STATUS_OK(AppendNewEmptySegmentToReader(4, 40, &reader));
+
+  OpId op;
+  op.set_term(0);
+  SegmentSequence segments;
+
+  // Queries for segment prefixes (used for GC)
+
+  // Asking the reader the prefix of segments that does not include op 0.1
+  // should return the empty set.
+  op.set_index(1);
+  ASSERT_OK(reader.GetSegmentPrefixNotIncluding(op, &segments));
+  ASSERT_TRUE(segments.empty());
+
+  // .. same for op 0.10
+  op.set_index(10);
+  ASSERT_OK(reader.GetSegmentPrefixNotIncluding(op, &segments));
+  ASSERT_TRUE(segments.empty());
+
+  // Asking for the prefix of segments not including op 0.20 should return
+  // the first segment, since 0.20 is the first operation in segment 3.
+  op.set_index(20);
+  ASSERT_OK(reader.GetSegmentPrefixNotIncluding(op, &segments));
+  ASSERT_EQ(segments.size(), 1);
+  ASSERT_EQ(segments[0]->header().sequence_number(), 2);
+
+  // Asking for 0.40 should include the first two.
+  op.set_index(40);
+  ASSERT_OK(reader.GetSegmentPrefixNotIncluding(op, &segments));
+  ASSERT_EQ(segments.size(), 2);
+  ASSERT_EQ(segments[0]->header().sequence_number(), 2);
+  ASSERT_EQ(segments[1]->header().sequence_number(), 3);
+
+  // Asking for anything higher should still return the first two.
+  op.set_index(1000);
+  ASSERT_OK(reader.GetSegmentPrefixNotIncluding(op, &segments));
+  ASSERT_EQ(segments.size(), 2);
+  ASSERT_EQ(segments[0]->header().sequence_number(), 2);
+  ASSERT_EQ(segments[1]->header().sequence_number(), 3);
+
+  // Queries for segment suffixes (useful to seek to segments, e.g. when
+  // when serving ops from the log)
+
+  // Asking the reader for the suffix of segments sure to include 0.1 should
+  // return Status::NotFound();
+  op.set_index(1);
+  ASSERT_TRUE(reader.GetSegmentSuffixIncluding(op, &segments).IsNotFound());
+
+  // ... asking for 0.10 should return all three segments
+  op.set_index(10);
+  ASSERT_OK(reader.GetSegmentSuffixIncluding(op, &segments));
+  ASSERT_EQ(segments.size(), 3);
+
+  // ... asking for 0.15 should return all three segments
+  op.set_index(15);
+  ASSERT_OK(reader.GetSegmentSuffixIncluding(op, &segments));
+  ASSERT_EQ(segments.size(), 3);
+
+  // ... asking for 0.20 should return segments 3, 4
+  op.set_index(20);
+  ASSERT_OK(reader.GetSegmentSuffixIncluding(op, &segments));
+  ASSERT_EQ(segments.size(), 2);
+  ASSERT_EQ(segments[0]->header().sequence_number(), 3);
+  ASSERT_EQ(segments[1]->header().sequence_number(), 4);
+
+  // ... asking for 0.40 should return segments 4
+  op.set_index(40);
+  ASSERT_OK(reader.GetSegmentSuffixIncluding(op, &segments));
+  ASSERT_EQ(segments.size(), 1);
+  ASSERT_EQ(segments[0]->header().sequence_number(), 4);
+
+  // ... asking for anything higher should return segment 4
+  op.set_index(1000);
+  ASSERT_OK(reader.GetSegmentSuffixIncluding(op, &segments));
+  ASSERT_EQ(segments.size(), 1);
+  ASSERT_EQ(segments[0]->header().sequence_number(), 4);
 }
 
 } // namespace log

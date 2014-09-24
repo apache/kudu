@@ -154,7 +154,9 @@ void DumpLog(const string &tserver_root_path, const string& tablet_oid) {
 
   vector<LogEntryPB*> entries;
   ElementDeleter deleter(&entries);
-  BOOST_FOREACH(const ReadableLogSegmentMap::value_type& entry, reader->segments()) {
+  ReadableLogSegmentMap map;
+  reader->GetOldIndexFormat(&map);
+  BOOST_FOREACH(const ReadableLogSegmentMap::value_type& entry, map) {
     PrintSegment(entry.second);
   }
 }

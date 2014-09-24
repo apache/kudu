@@ -240,8 +240,8 @@ Status Log::Init() {
   // The case where we are continuing an existing log.
   // We must pick up where the previous WAL left off in terms of
   // sequence numbers.
-  if (previous_segments_reader->size() != 0) {
-    previous_segments_ = previous_segments_reader->segments();
+  if (previous_segments_reader->num_segments() != 0) {
+    previous_segments_reader->GetOldIndexFormat(&previous_segments_);
     VLOG(1) << "Using existing " << previous_segments_.size()
             << " segments from path: " << fs_manager_->GetWalsRootDir();
 

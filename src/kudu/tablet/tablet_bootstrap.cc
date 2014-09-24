@@ -714,9 +714,10 @@ Status TabletBootstrap::PlaySegments(ConsensusBootstrapInfo* consensus_info) {
   RETURN_NOT_OK_PREPEND(OpenNewLog(), "Failed to open new log");
 
   ReplayState state;
-  const ReadableLogSegmentMap& segments = log_reader_->segments();
   int segment_count = 0;
-  BOOST_FOREACH(const ReadableLogSegmentMap::value_type& seg_entry, segments) {
+  ReadableLogSegmentMap map;
+  log_reader_->GetOldIndexFormat(&map);
+  BOOST_FOREACH(const ReadableLogSegmentMap::value_type& seg_entry, map) {
     const scoped_refptr<ReadableLogSegment>& segment = seg_entry.second;
 
     vector<LogEntryPB*> entries;
@@ -755,7 +756,7 @@ Status TabletBootstrap::PlaySegments(ConsensusBootstrapInfo* consensus_info) {
     // plus give info about number of MB processed, but this is better than
     // nothing.
     listener_->StatusMessage(Substitute("Bootstrap replayed $0/$1 log segments.",
-                                        segment_count + 1, log_reader_->size()));
+                                        segment_count + 1, log_reader_->num_segments()));
     segment_count++;
   }
 
