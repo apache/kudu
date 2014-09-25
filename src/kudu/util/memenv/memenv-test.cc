@@ -5,17 +5,22 @@
 // Modified for kudu:
 // - use gtest
 
+#include <boost/foreach.hpp>
 #include <gtest/gtest.h>
 #include <string>
 #include <tr1/memory>
+#include <tr1/unordered_set>
 #include <vector>
 
+#include "kudu/gutil/map-util.h"
 #include "kudu/util/env.h"
 #include "kudu/util/env_util.h"
 #include "kudu/util/memenv/memenv.h"
 #include "kudu/util/test_macros.h"
 
+using std::string;
 using std::tr1::shared_ptr;
+using std::tr1::unordered_set;
 
 namespace kudu {
 
@@ -208,6 +213,37 @@ TEST_F(MemEnvTest, Overwrite) {
   Status s = env_util::OpenFileForWrite(opts,
                                         env_, "some file", &writer);
   ASSERT_TRUE(s.IsAlreadyPresent());
+}
+
+TEST_F(MemEnvTest, TempFile) {
+  string tmpl = "foo.XXXXXX";
+  string bad_tmpl = "foo.YYY";
+
+  string path;
+  gscoped_ptr<WritableFile> file;
+
+  // Ensure we don't accept a bad template.
+  Status s = env_->NewTempWritableFile(WritableFileOptions(), bad_tmpl, &path, &file);
+  ASSERT_TRUE(s.IsInvalidArgument()) << "Should not accept bad template: " << s.ToString();
+  ASSERT_STR_CONTAINS(s.ToString(), "must end with the string XXXXXX");
+
+  // Create multiple temp files, ensure no collisions.
+  unordered_set<string> paths;
+  for (int i = 0; i < 10; i++) {
+    ASSERT_OK(env_->NewTempWritableFile(WritableFileOptions(), tmpl, &path, &file));
+    VLOG(1) << "Created temporary file at path " << path;
+    ASSERT_EQ(path.length(), tmpl.length()) << "Template and final path should have same length";
+    ASSERT_NE(path, tmpl) << "Template and final path should differ";
+    ASSERT_OK(file->Append("Hello, tempfile.\n"));
+    ASSERT_OK(file->Close());
+    ASSERT_FALSE(ContainsKey(paths, path)) << "Created " << path << " twice!";
+    InsertOrDie(&paths, path); // Will crash if we have a duplicate.
+  }
+
+  // Delete the files we created.
+  BOOST_FOREACH(const string& p, paths) {
+    ASSERT_OK(env_->DeleteFile(p));
+  }
 }
 
 }  // namespace kudu

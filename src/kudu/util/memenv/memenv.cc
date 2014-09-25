@@ -11,9 +11,15 @@
 #include <map>
 #include <string>
 #include <vector>
+
+#include "kudu/gutil/map-util.h"
+#include "kudu/gutil/stringprintf.h"
+#include "kudu/gutil/strings/strip.h"
+#include "kudu/gutil/walltime.h"
 #include "kudu/util/env.h"
 #include "kudu/util/mutex.h"
 #include "kudu/util/memenv/memenv.h"
+#include "kudu/util/random.h"
 #include "kudu/util/status.h"
 
 namespace kudu {
@@ -311,7 +317,7 @@ class InMemoryEnv : public EnvWrapper {
                                  const std::string& fname,
                                  gscoped_ptr<WritableFile>* result) OVERRIDE {
     MutexLock lock(mutex_);
-    if (file_map_.find(fname) != file_map_.end()) {
+    if (ContainsKey(file_map_, fname)) {
       if (opts.overwrite_existing) {
         DeleteFileInternal(fname);
       } else {
@@ -319,17 +325,38 @@ class InMemoryEnv : public EnvWrapper {
       }
     }
 
-    FileState* file = new FileState();
-    file->Ref();
-    file_map_[fname] = file;
-
-    result->reset(new WritableFileImpl(file));
+    CreateAndRegisterNewWritableFileUnlocked(fname, result);
     return Status::OK();
   }
 
   virtual Status NewWritableFile(const std::string& fname,
                                  gscoped_ptr<WritableFile>* result) OVERRIDE {
     return NewWritableFile(WritableFileOptions(), fname, result);
+  }
+
+  virtual Status NewTempWritableFile(const WritableFileOptions& opts,
+                                     const std::string& name_template,
+                                     std::string* created_filename,
+                                     gscoped_ptr<WritableFile>* result) OVERRIDE {
+    // Not very random, but InMemoryEnv is basically a test env.
+    Random random(GetCurrentTimeMicros());
+    while (true) {
+      string stripped;
+      if (!TryStripSuffixString(name_template, "XXXXXX", &stripped)) {
+        return Status::InvalidArgument("Name template must end with the string XXXXXX",
+                                       name_template);
+      }
+      uint32_t num = random.Next() % 999999; // Ensure it's <= 6 digits long.
+      string path = StringPrintf("%s%06u", stripped.c_str(), num);
+
+      MutexLock lock(mutex_);
+      if (!ContainsKey(file_map_, path)) {
+        CreateAndRegisterNewWritableFileUnlocked(path, result);
+        *created_filename = path;
+        return Status::OK();
+      }
+    }
+    // Unreachable.
   }
 
   virtual bool FileExists(const std::string& fname) OVERRIDE {
@@ -352,15 +379,6 @@ class InMemoryEnv : public EnvWrapper {
     }
 
     return Status::OK();
-  }
-
-  void DeleteFileInternal(const std::string& fname) {
-    if (file_map_.find(fname) == file_map_.end()) {
-      return;
-    }
-
-    file_map_[fname]->Unref();
-    file_map_.erase(fname);
   }
 
   virtual Status DeleteFile(const std::string& fname) OVERRIDE {
@@ -447,6 +465,24 @@ class InMemoryEnv : public EnvWrapper {
   }
 
  private:
+  void DeleteFileInternal(const std::string& fname) {
+    if (!ContainsKey(file_map_, fname)) {
+      return;
+    }
+
+    file_map_[fname]->Unref();
+    file_map_.erase(fname);
+  }
+
+  // Create new internal representation of a file
+  void CreateAndRegisterNewWritableFileUnlocked(const string& path,
+                                                gscoped_ptr<WritableFile>* result) {
+      FileState* file = new FileState();
+      file->Ref();
+      file_map_[path] = file;
+      result->reset(new WritableFileImpl(file));
+  }
+
   // Map from filenames to FileState objects, representing a simple file system.
   typedef std::map<std::string, FileState*> FileSystem;
   Mutex mutex_;
