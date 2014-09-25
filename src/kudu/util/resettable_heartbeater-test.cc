@@ -16,24 +16,22 @@
 
 namespace kudu {
 
-static const int64_t kSleepPeriodMsecs = 100;
-static const int kNumPeriodsToWait = 3;
-// Wait a large multiple (in the worst case) of the required time before we
-// time out to avoid test flakiness.
-static const uint64_t kMaxWaitMsecs = kSleepPeriodMsecs * kNumPeriodsToWait * 20;
+// Number of heartbeats we want to observe before allowing the test to end.
+static const int kNumHeartbeats = 2;
 
 class ResettableHeartbeaterTest : public KuduTest {
  public:
   ResettableHeartbeaterTest()
     : KuduTest(),
-      latch_(kNumPeriodsToWait) {
+      latch_(kNumHeartbeats) {
   }
 
  protected:
-  void CreateHeartbeater(const MonoDelta period, const std::string& name) {
+  void CreateHeartbeater(uint64_t period_ms, const std::string& name) {
+    period_ms_ = period_ms;
     heartbeater_.reset(
         new ResettableHeartbeater(name,
-                                  period,
+                                  MonoDelta::FromMilliseconds(period_ms),
                                   boost::bind(&ResettableHeartbeaterTest::HeartbeatFunction,
                                               this)));
   }
@@ -44,19 +42,24 @@ class ResettableHeartbeaterTest : public KuduTest {
   }
 
   void WaitForCountDown() {
-    CHECK(latch_.WaitFor(MonoDelta::FromMilliseconds(kMaxWaitMsecs)))
-        << "Failed to count down " << kNumPeriodsToWait << " times in " << kMaxWaitMsecs
+    // Wait a large multiple (in the worst case) of the required time before we
+    // time out and fail the test. Large to avoid test flakiness.
+    const uint64_t kMaxWaitMillis = period_ms_ * kNumHeartbeats * 20;
+    CHECK(latch_.WaitFor(MonoDelta::FromMilliseconds(kMaxWaitMillis)))
+        << "Failed to count down " << kNumHeartbeats << " times in " << kMaxWaitMillis
         << " ms: latch count == " << latch_.count();
   }
 
   CountDownLatch latch_;
+  uint64_t period_ms_;
   gscoped_ptr<ResettableHeartbeater> heartbeater_;
 };
 
 // Tests that if Reset() is not called the heartbeat method is called
 // the expected number of times.
 TEST_F(ResettableHeartbeaterTest, TestRegularHeartbeats) {
-  CreateHeartbeater(MonoDelta::FromMilliseconds(kSleepPeriodMsecs), CURRENT_TEST_NAME());
+  const int64_t kHeartbeatPeriodMillis = 100; // Heartbeat every 100ms.
+  CreateHeartbeater(kHeartbeatPeriodMillis, CURRENT_TEST_NAME());
   ASSERT_STATUS_OK(heartbeater_->Start());
   WaitForCountDown();
   ASSERT_STATUS_OK(heartbeater_->Stop());
@@ -66,12 +69,19 @@ TEST_F(ResettableHeartbeaterTest, TestRegularHeartbeats) {
 // the heartbeat period the heartbeat method never gets called.
 // After we stop resetting heartbeats should resume as normal
 TEST_F(ResettableHeartbeaterTest, TestResetHeartbeats) {
-  CreateHeartbeater(MonoDelta::FromMilliseconds(kSleepPeriodMsecs), CURRENT_TEST_NAME());
+  const int64_t kHeartbeatPeriodMillis = 800;   // Heartbeat every 800ms.
+  const int64_t kNumResetSlicesPerPeriod = 40;  // Reset 40 times per heartbeat period.
+  // Reset once every 800ms / 40 = 20ms.
+  const int64_t kResetPeriodMillis = kHeartbeatPeriodMillis / kNumResetSlicesPerPeriod;
+
+  CreateHeartbeater(kHeartbeatPeriodMillis, CURRENT_TEST_NAME());
   ASSERT_STATUS_OK(heartbeater_->Start());
-  for (int i = 0; i < 10; i++) {
-    usleep(kSleepPeriodMsecs / 4 * 1000);
+  // Call Reset() in a loop for 2 heartbeat periods' worth of time, with sleeps
+  // in-between as defined above.
+  for (int i = 0; i < kNumResetSlicesPerPeriod * 2; i++) {
     heartbeater_->Reset();
-    ASSERT_EQ(kNumPeriodsToWait, latch_.count());
+    ASSERT_EQ(kNumHeartbeats, latch_.count()); // Ensure we haven't counted down, yet.
+    usleep(kResetPeriodMillis * 1000);
   }
   WaitForCountDown();
   ASSERT_STATUS_OK(heartbeater_->Stop());
