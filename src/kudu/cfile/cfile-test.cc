@@ -459,6 +459,24 @@ TEST_F(TestCFile, TestWrite100MFileInts) {
   }
 }
 
+TEST_F(TestCFile, TestWrite100MFileNullableInts) {
+  BlockId block_id;
+  LOG_TIMING(INFO, "writing 100m nullable ints") {
+    LOG(INFO) << "Starting writefile";
+    WriteTestFileWithNulls<UInt32DataGenerator, UINT32>(
+      PLAIN_ENCODING, NO_COMPRESSION, 100000000, &block_id);
+    LOG(INFO) << "Done writing";
+  }
+
+  LOG_TIMING(INFO, "reading 100M nullable ints") {
+    LOG(INFO) << "Starting readfile";
+    size_t n;
+    TimeReadFile(fs_manager_.get(), block_id, &n);
+    ASSERT_EQ(100000000, n);
+    LOG(INFO) << "End readfile";
+  }
+}
+
 TEST_F(TestCFile, TestWrite100MFileStrings) {
   BlockId block_id;
   LOG_TIMING(INFO, "writing 100M strings") {
