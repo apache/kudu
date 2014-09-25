@@ -6,6 +6,7 @@
 #include <string>
 
 #include "kudu/cfile/block_encodings.h"
+#include "kudu/cfile/cfile_util.h"
 #include "kudu/common/columnblock.h"
 #include "kudu/util/coding.h"
 #include "kudu/util/coding-inl.h"
@@ -13,8 +14,6 @@
 
 namespace kudu {
 namespace cfile {
-
-struct WriterOptions;
 
 template<typename Type>
 inline Type Decode(const uint8_t *ptr) {
@@ -33,6 +32,9 @@ class PlainBlockBuilder : public BlockBuilder {
  public:
   explicit PlainBlockBuilder(const WriterOptions *options)
       : options_(options) {
+    // Reserve enough space for the block, plus a bit of slop since
+    // we often overrun the block by a few values.
+    buffer_.reserve(kHeaderSize + options_->block_size + 1024);
     Reset();
   }
 
