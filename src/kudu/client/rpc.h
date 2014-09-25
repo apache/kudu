@@ -68,6 +68,10 @@ class RpcRetrier {
 
   const MonoTime& deadline() { return deadline_; }
 
+  const std::tr1::shared_ptr<rpc::Messenger>& messenger() const {
+    return messenger_;
+  }
+
  private:
   // Called when an RPC comes up for retrying. Actually sends the RPC.
   void DelayedRetryCb(Rpc* rpc, const Status& status);

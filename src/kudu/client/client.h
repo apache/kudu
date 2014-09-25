@@ -46,9 +46,10 @@ class KUDU_EXPORT KuduClientBuilder {
   KuduClientBuilder();
   ~KuduClientBuilder();
 
-  // The RPC address of the master. Required.
-  //
-  // TODO: switch to vector of addresses when we have a replicated master.
+  // Add RPC addresses of multiple masters.
+  KuduClientBuilder& master_server_addrs(const std::vector<std::string>& addrs);
+
+  // Add an RPC address of a master. At least one master is required.
   KuduClientBuilder& master_server_addr(const std::string& addr);
 
   // The default timeout used for administrative operations (e.g. CreateTable,
@@ -56,6 +57,11 @@ class KUDU_EXPORT KuduClientBuilder {
   //
   // If not provided, defaults to 5s.
   KuduClientBuilder& default_admin_operation_timeout(const MonoDelta& timeout);
+
+  // The default timeout for determining the leader master. Optional.
+  //
+  // If not provided, defaults to 15s.
+  KuduClientBuilder& default_select_master_timeout(const MonoDelta& timeout);
 
   // Creates the client.
   //
@@ -141,7 +147,7 @@ class KUDU_EXPORT KuduClient : public std::tr1::enable_shared_from_this<KuduClie
     FIRST_REPLICA
   };
 
-  const std::string& master_server_addr() const;
+  const std::vector<std::string>& master_server_addrs() const;
 
   const MonoDelta& default_admin_operation_timeout() const;
 

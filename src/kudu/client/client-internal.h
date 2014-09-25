@@ -3,6 +3,7 @@
 #define KUDU_CLIENT_CLIENT_INTERNAL_H
 
 #include <string>
+#include <vector>
 
 #include "kudu/client/client.h"
 #include "kudu/util/net/net_util.h"
@@ -10,6 +11,7 @@
 namespace kudu {
 
 class DnsResolver;
+class HostPort;
 
 namespace master {
 class MasterServiceProxy;
@@ -57,6 +59,14 @@ class KuduClient::Data {
   internal::RemoteTabletServer* PickClosestReplica(
       const scoped_refptr<internal::RemoteTablet>& rt) const;
 
+  // Sets 'master_proxy_' to the proxy the leader master by cycling
+  // through servers listed in 'master_server_addrs_' until one
+  // responds with a quorum configuration that contains the leader
+  // master or 'default_select_master_timeout_' passes.
+  //
+  // Works with both a distributed and non-distributed configuration.
+  Status SetMasterServerProxy();
+
   std::tr1::shared_ptr<rpc::Messenger> messenger_;
   gscoped_ptr<DnsResolver> dns_resolver_;
   scoped_refptr<internal::MetaCache> meta_cache_;
@@ -66,10 +76,11 @@ class KuduClient::Data {
   std::tr1::unordered_set<std::string> local_host_names_;
 
   // Options the client was built with.
-  std::string master_server_addr_;
+  std::vector<std::string> master_server_addrs_;
   MonoDelta default_admin_operation_timeout_;
+  MonoDelta default_select_master_timeout_;
 
-  // Proxy to the master.
+  // Proxy to the leader master.
   std::tr1::shared_ptr<master::MasterServiceProxy> master_proxy_;
 
   DISALLOW_COPY_AND_ASSIGN(Data);

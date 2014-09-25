@@ -73,11 +73,26 @@ class MasterReplicationTest : public KuduTest {
     return Status::OK();
   }
 
+  // This method is meant to be run in a separate thread.
+  void StartClusterDelayed(int64_t micros) {
+    LOG(INFO) << "Sleeping for "  << micros << " micro seconds...";
+    usleep(micros);
+    LOG(INFO) << "Attempting to start the cluster...";
+    CHECK_OK(cluster_->Start());
+  }
+
+  void ListMasterServerAddrs(vector<string>* out) {
+    for (int i = 0; i < num_masters_; i++) {
+      out->push_back(cluster_->mini_master(i)->bound_rpc_addr().ToString());
+    }
+  }
+
   Status CreateLeaderClient(shared_ptr<KuduClient>* out) {
-    return KuduClientBuilder()
-        .master_server_addr(cluster_->leader_mini_master()
-                            ->bound_rpc_addr().ToString())
-        .Build(out);
+    KuduClientBuilder builder;
+    for (int i = 0; i < num_masters_; i++) {
+      builder.master_server_addr(cluster_->mini_master(i)->bound_rpc_addr().ToString());
+    }
+    return builder.Build(out);
   }
 
 
@@ -93,6 +108,13 @@ class MasterReplicationTest : public KuduTest {
         .Create();
   }
 
+  void PromoteMaster(int orig_master_idx, int new_master_idx) {
+    LOG(INFO) << "Previous configuration: leader at index " << orig_master_idx;
+    LOG(INFO) << "New configuration: leader at index " << new_master_idx;
+    cluster_->Shutdown();
+    cluster_->set_leader_master_idx(new_master_idx);
+    ASSERT_STATUS_OK(cluster_->Start());
+  }
   // Test promoting a follower at 'new_master_idx' to the role of
   // a leader, previously occupied by the node at 'orig_master_idx':
   //
@@ -102,11 +124,7 @@ class MasterReplicationTest : public KuduTest {
   void TestPromoteMaster(int orig_master_idx, int new_master_idx,
                          const std::string& existing_table,
                          const std::string& new_table) {
-    LOG(INFO) << "Previous configuration: leader at index " << orig_master_idx;
-    LOG(INFO) << "New configuration: leader at index " << new_master_idx;
-    cluster_->Shutdown();
-    cluster_->set_leader_master_idx(new_master_idx);
-    ASSERT_STATUS_OK(cluster_->Start());
+    ASSERT_NO_FATAL_FAILURE(PromoteMaster(orig_master_idx, new_master_idx));
     ASSERT_NO_FATAL_FAILURE(VerifyTableExists(existing_table));
     shared_ptr<KuduClient> leader_client;
     ASSERT_STATUS_OK(CreateLeaderClient(&leader_client));
@@ -221,6 +239,80 @@ TEST_F(MasterReplicationTest, TestManualPromotion) {
     // This be remove once we're done with KUDU-255.
     sleep(2);
   }
+}
+
+// Test that we can still establish a client connection if the first
+// master server is down, but a leader server is still up.
+TEST_F(MasterReplicationTest, TestClientConnectionFirstNodeDown) {
+  // Save the RPC addresses of all the master servers while they are
+  // still running, since MiniMaster::bound_rpc_addr() only works if
+  // the server is running.
+  vector<string> master_addrs;
+  ListMasterServerAddrs(&master_addrs);
+
+  // Promote master at index '1' to leader and shut down the master at
+  // index '0'.
+  ASSERT_NO_FATAL_FAILURE(PromoteMaster(0, 1));
+  cluster_->mini_master(0)->master()->Shutdown();
+
+  // Create the client.
+  shared_ptr<KuduClient> client;
+  KuduClientBuilder builder;
+  builder.master_server_addrs(master_addrs);
+  ASSERT_STATUS_OK(builder.Build(&client));
+
+  // Make sure we are able to connect and create a table.
+  ASSERT_STATUS_OK(CreateTable(client, kTableId1));
+  ASSERT_TRUE(cluster_->leader_mini_master()->master()
+              ->catalog_manager()->TableNameExists(kTableId1));
+}
+
+
+// When all masters are down, test that we can timeout the connection
+// attempts after a specified deadline.
+TEST_F(MasterReplicationTest, TestTimeoutWhenAllMastersAreDown) {
+  vector<string> master_addrs;
+  ListMasterServerAddrs(&master_addrs);
+
+  cluster_->Shutdown();
+
+  shared_ptr<KuduClient> client;
+  KuduClientBuilder builder;
+  builder.master_server_addrs(master_addrs);
+  builder.default_select_master_timeout(MonoDelta::FromMilliseconds(100));
+  Status s = builder.Build(&client);
+  EXPECT_TRUE(!s.ok());
+  EXPECT_TRUE(s.IsTimedOut());
+
+  // We need to reset 'cluster_' so that TearDown() can run correctly.
+  cluster_.reset();
+}
+
+// Shut the cluster down, start initializing the client, and then
+// bring the cluster back up during the initialization (but before the
+// timeout can elapse).
+TEST_F(MasterReplicationTest, TestCycleThroughAllMasters) {
+  vector<string> master_addrs;
+  ListMasterServerAddrs(&master_addrs);
+
+  // Shut the cluster down and ...
+  cluster_->Shutdown();
+  // ... start the cluster after a delay.
+  scoped_refptr<kudu::Thread> start_thread;
+  ASSERT_STATUS_OK(Thread::Create("TestCycleThroughAllMasters", "start_thread",
+                                  &MasterReplicationTest::StartClusterDelayed,
+                                  this,
+                                  100 * 1000, // start after 100 millis.
+                                  &start_thread));
+
+  // Verify that the client doesn't give up even though the entire
+  // cluster is down for 100 milliseconds.
+  shared_ptr<KuduClient> client;
+  KuduClientBuilder builder;
+  builder.master_server_addrs(master_addrs);
+  EXPECT_OK(builder.Build(&client));
+
+  ASSERT_STATUS_OK(ThreadJoiner(start_thread.get()).Join());
 }
 
 } // namespace master

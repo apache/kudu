@@ -3,6 +3,7 @@
 #define KUDU_CLIENT_CLIENT_BUILDER_INTERNAL_H
 
 #include <string>
+#include <vector>
 
 #include "kudu/client/client.h"
 
@@ -15,8 +16,9 @@ class KuduClientBuilder::Data {
   Data();
   ~Data();
 
-  std::string master_server_addr_;
+  std::vector<std::string> master_server_addrs_;
   MonoDelta default_admin_operation_timeout_;
+  MonoDelta default_select_master_timeout_;
 
   DISALLOW_COPY_AND_ASSIGN(Data);
 };

@@ -115,13 +115,25 @@ KuduClientBuilder::KuduClientBuilder() {
 KuduClientBuilder::~KuduClientBuilder() {
 }
 
+KuduClientBuilder& KuduClientBuilder::master_server_addrs(const vector<string>& addrs) {
+  BOOST_FOREACH(const string& addr, addrs) {
+    data_->master_server_addrs_.push_back(addr);
+  }
+  return *this;
+}
+
 KuduClientBuilder& KuduClientBuilder::master_server_addr(const string& addr) {
-  data_->master_server_addr_ = addr;
+  data_->master_server_addrs_.push_back(addr);
   return *this;
 }
 
 KuduClientBuilder& KuduClientBuilder::default_admin_operation_timeout(const MonoDelta& timeout) {
   data_->default_admin_operation_timeout_ = timeout;
+  return *this;
+}
+
+KuduClientBuilder& KuduClientBuilder::default_select_master_timeout(const MonoDelta& timeout) {
+  data_->default_select_master_timeout_ = timeout;
   return *this;
 }
 
@@ -132,22 +144,14 @@ Status KuduClientBuilder::Build(shared_ptr<KuduClient>* client) {
   MessengerBuilder builder("client");
   RETURN_NOT_OK(builder.Build(&c->data_->messenger_));
 
-  // Init proxy.
-  vector<Sockaddr> addrs;
-  RETURN_NOT_OK(ParseAddressList(data_->master_server_addr_,
-                                 master::Master::kDefaultPort, &addrs));
-  if (addrs.empty()) {
-    return Status::InvalidArgument("No master address specified");
-  }
-  if (addrs.size() > 1) {
-    LOG(WARNING) << "Specified master server address '" << data_->master_server_addr_ << "' "
-                 << "resolved to multiple IPs. Using " << addrs[0].ToString();
-  }
-  c->data_->master_proxy_.reset(new MasterServiceProxy(c->data_->messenger_, addrs[0]));
+  c->data_->master_server_addrs_ = data_->master_server_addrs_;
+  c->data_->default_select_master_timeout_ = data_->default_select_master_timeout_;
+
+  RETURN_NOT_OK(c->data_->SetMasterServerProxy());
 
   c->data_->meta_cache_.reset(new MetaCache(c.get()));
   c->data_->dns_resolver_.reset(new DnsResolver());
-  c->data_->master_server_addr_ = data_->master_server_addr_;
+
   c->data_->default_admin_operation_timeout_ = data_->default_admin_operation_timeout_;
 
   // Init local host names used for locality decisions.
@@ -242,8 +246,8 @@ shared_ptr<KuduSession> KuduClient::NewSession() {
   return ret;
 }
 
-const std::string& KuduClient::master_server_addr() const {
-  return data_->master_server_addr_;
+const std::vector<std::string>& KuduClient::master_server_addrs() const {
+  return data_->master_server_addrs_;
 }
 
 const MonoDelta& KuduClient::default_admin_operation_timeout() const {
