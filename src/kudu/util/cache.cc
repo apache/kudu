@@ -4,8 +4,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file. See the AUTHORS file for names of contributors.
 
+#include <boost/foreach.hpp>
 #include <glog/logging.h>
-
 #include <stdlib.h>
 #include <tr1/memory>
 #include <vector>
@@ -115,8 +115,8 @@ class HandleTable {
   }
 
   void Resize() {
-    uint32_t new_length = 4;
-    while (new_length < elems_) {
+    uint32_t new_length = 16;
+    while (new_length < elems_ * 1.5) {
       new_length *= 2;
     }
     LRUHandle** new_list = new LRUHandle*[new_length];
@@ -161,7 +161,11 @@ class LRUCache {
  private:
   void LRU_Remove(LRUHandle* e);
   void LRU_Append(LRUHandle* e);
-  void Unref(LRUHandle* e);
+  // Just reduce the reference count by 1.
+  // Return true if last reference
+  bool Unref(LRUHandle* e);
+  // Call deleter and free
+  void FreeEntry(LRUHandle* e);
 
   // Initialized before use.
   size_t capacity_;
@@ -191,25 +195,30 @@ LRUCache::~LRUCache() {
   for (LRUHandle* e = lru_.next; e != &lru_; ) {
     LRUHandle* next = e->next;
     DCHECK_EQ(e->refs, 1);  // Error if caller has an unreleased handle
-    Unref(e);
+    if (Unref(e)) {
+      FreeEntry(e);
+    }
     e = next;
   }
 }
 
-void LRUCache::Unref(LRUHandle* e) {
+bool LRUCache::Unref(LRUHandle* e) {
   DCHECK_GT(e->refs, 0);
   e->refs--;
-  if (e->refs <= 0) {
-    usage_ -= e->charge;
-    (*e->deleter)(e->key(), e->value);
-    mem_tracker_->Release(e->charge);
-    free(e);
-  }
+  return e->refs == 0;
+}
+
+void LRUCache::FreeEntry(LRUHandle* e) {
+  DCHECK_EQ(e->refs, 0);
+  (*e->deleter)(e->key(), e->value);
+  mem_tracker_->Release(e->charge);
+  free(e);
 }
 
 void LRUCache::LRU_Remove(LRUHandle* e) {
   e->next->prev = e->prev;
   e->prev->next = e->next;
+  usage_ -= e->charge;
 }
 
 void LRUCache::LRU_Append(LRUHandle* e) {
@@ -218,6 +227,7 @@ void LRUCache::LRU_Append(LRUHandle* e) {
   e->prev = lru_.prev;
   e->prev->next = e;
   e->next->prev = e;
+  usage_ += e->charge;
 }
 
 Cache::Handle* LRUCache::Lookup(const Slice& key, uint32_t hash) {
@@ -232,17 +242,25 @@ Cache::Handle* LRUCache::Lookup(const Slice& key, uint32_t hash) {
 }
 
 void LRUCache::Release(Cache::Handle* handle) {
-  lock_guard<MutexType> l(&mutex_);
-  Unref(reinterpret_cast<LRUHandle*>(handle));
+  LRUHandle* e = reinterpret_cast<LRUHandle*>(handle);
+  bool last_reference = false;
+  {
+    lock_guard<MutexType> l(&mutex_);
+    last_reference = Unref(e);
+  }
+  if (last_reference) {
+    FreeEntry(e);
+  }
 }
 
 Cache::Handle* LRUCache::Insert(
     const Slice& key, uint32_t hash, void* value, size_t charge,
     void (*deleter)(const Slice& key, void* value)) {
-  lock_guard<MutexType> l(&mutex_);
 
   LRUHandle* e = reinterpret_cast<LRUHandle*>(
       malloc(sizeof(LRUHandle)-1 + key.size()));
+  LRUHandle* to_remove_head = NULL;
+
   e->value = value;
   e->deleter = deleter;
   e->charge = charge;
@@ -251,31 +269,58 @@ Cache::Handle* LRUCache::Insert(
   e->refs = 2;  // One from LRUCache, one for the returned handle
   memcpy(e->key_data, key.data(), key.size());
   mem_tracker_->Consume(charge);
-  LRU_Append(e);
-  usage_ += charge;
 
-  LRUHandle* old = table_.Insert(e);
-  if (old != NULL) {
-    LRU_Remove(old);
-    Unref(old);
+  {
+    lock_guard<MutexType> l(&mutex_);
+
+    LRU_Append(e);
+
+    LRUHandle* old = table_.Insert(e);
+    if (old != NULL) {
+      LRU_Remove(old);
+      if (Unref(old)) {
+        old->next = to_remove_head;
+        to_remove_head = old;
+      }
+    }
+
+    while (usage_ > capacity_ && lru_.next != &lru_) {
+      LRUHandle* old = lru_.next;
+      LRU_Remove(old);
+      table_.Remove(old->key(), old->hash);
+      if (Unref(old)) {
+        old->next = to_remove_head;
+        to_remove_head = old;
+      }
+    }
   }
 
-  while (usage_ > capacity_ && lru_.next != &lru_) {
-    LRUHandle* old = lru_.next;
-    LRU_Remove(old);
-    table_.Remove(old->key(), old->hash);
-    Unref(old);
+  // we free the entries here outside of mutex for
+  // performance reasons
+  while (to_remove_head != NULL) {
+    LRUHandle* next = to_remove_head->next;
+    FreeEntry(to_remove_head);
+    to_remove_head = next;
   }
 
   return reinterpret_cast<Cache::Handle*>(e);
 }
 
 void LRUCache::Erase(const Slice& key, uint32_t hash) {
-  lock_guard<MutexType> l(&mutex_);
-  LRUHandle* e = table_.Remove(key, hash);
-  if (e != NULL) {
-    LRU_Remove(e);
-    Unref(e);
+  LRUHandle* e;
+  bool last_reference = false;
+  {
+    lock_guard<MutexType> l(&mutex_);
+    e = table_.Remove(key, hash);
+    if (e != NULL) {
+      LRU_Remove(e);
+      last_reference = Unref(e);
+    }
+  }
+  // mutex not held here
+  // last_reference will only be true if e != NULL
+  if (last_reference) {
+    FreeEntry(e);
   }
 }
 
