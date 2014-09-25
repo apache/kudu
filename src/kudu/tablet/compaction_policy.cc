@@ -66,9 +66,7 @@ uint64_t BudgetedCompactionPolicy::target_rowset_size() const {
 void BudgetedCompactionPolicy::SetupKnapsackInput(const RowSetTree &tree,
                                                   vector<RowSetInfo>* min_key,
                                                   vector<RowSetInfo>* max_key) {
-  // Enforce a minimum size of 1MB, since otherwise the knapsack algorithm
-  // will always pick up small rowsets no matter what.
-  RowSetInfo::CollectOrdered(tree, min_key, max_key, 1);
+  RowSetInfo::CollectOrdered(tree, min_key, max_key);
 
   if (min_key->size() < 2) {
     // require at least 2 rowsets to compact

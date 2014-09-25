@@ -19,14 +19,12 @@ class RowSetInfo {
  public:
 
   // Appends the rowsets in no order without the cdf values set.
-  static void Collect(const RowSetTree& tree, std::vector<RowSetInfo>* rsvec,
-                      int min_size_mb = 0);
+  static void Collect(const RowSetTree& tree, std::vector<RowSetInfo>* rsvec);
   // Appends the rowsets in min-key and max-key sorted order, with
   // cdf values set.
   static void CollectOrdered(const RowSetTree& tree,
                              std::vector<RowSetInfo>* min_key,
-                             std::vector<RowSetInfo>* max_key,
-                             int min_size_mb = 0);
+                             std::vector<RowSetInfo>* max_key);
 
   int size_mb() const { return size_mb_; }
 
@@ -58,7 +56,7 @@ class RowSetInfo {
   bool Intersects(const RowSetInfo& other) const;
 
  private:
-  explicit RowSetInfo(RowSet* rs, double init_cdf, int min_size_mb);
+  explicit RowSetInfo(RowSet* rs, double init_cdf);
 
   static void FinalizeCDFVector(std::vector<RowSetInfo>* vec,
                                 double quot);

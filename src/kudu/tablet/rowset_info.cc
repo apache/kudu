@@ -24,6 +24,10 @@ using std::tr1::shared_ptr;
 using std::tr1::unordered_map;
 using std::vector;
 
+// Enforce a minimum size of 1MB, since otherwise the knapsack algorithm
+// will always pick up small rowsets no matter what.
+static const int kMinSizeMb = 1;
+
 namespace kudu {
 namespace tablet {
 
@@ -152,18 +156,16 @@ void CheckCollectOrderedCorrectness(const vector<RowSetInfo>& min_key,
 
 // RowSetInfo class ---------------------------------------------------
 
-void RowSetInfo::Collect(const RowSetTree& tree, vector<RowSetInfo>* rsvec,
-                         int min_size_mb) {
+void RowSetInfo::Collect(const RowSetTree& tree, vector<RowSetInfo>* rsvec) {
   rsvec->reserve(tree.all_rowsets().size());
   BOOST_FOREACH(const shared_ptr<RowSet>& ptr, tree.all_rowsets()) {
-    rsvec->push_back(RowSetInfo(ptr.get(), 0, min_size_mb));
+    rsvec->push_back(RowSetInfo(ptr.get(), 0));
   }
 }
 
 void RowSetInfo::CollectOrdered(const RowSetTree& tree,
                                 vector<RowSetInfo>* min_key,
-                                vector<RowSetInfo>* max_key,
-                                int min_size_mb) {
+                                vector<RowSetInfo>* max_key) {
   // Resize
   size_t len = tree.all_rowsets().size();
   min_key->reserve(min_key->size() + len);
@@ -208,7 +210,7 @@ void RowSetInfo::CollectOrdered(const RowSetTree& tree,
 
     // Add/remove current RowSetInfo
     if (rse.endpoint_ == RowSetTree::START) {
-      min_key->push_back(RowSetInfo(rs, total_width, min_size_mb));
+      min_key->push_back(RowSetInfo(rs, total_width));
       // Store reference from vector. This is safe b/c of reserve() above.
       active.insert(std::make_pair(rs, &min_key->back()));
     } else if (rse.endpoint_ == RowSetTree::STOP) {
@@ -234,13 +236,12 @@ void RowSetInfo::CollectOrdered(const RowSetTree& tree,
   FinalizeCDFVector(max_key, total_width);
 }
 
-RowSetInfo::RowSetInfo(RowSet* rs, double init_cdf, int min_size_mb)
+RowSetInfo::RowSetInfo(RowSet* rs, double init_cdf)
   : rowset_(rs),
     size_mb_(std::max(implicit_cast<int>(rs->EstimateOnDiskSize() / 1024 / 1024),
-                      min_size_mb)),
+                      kMinSizeMb)),
     cdf_min_key_(init_cdf),
     cdf_max_key_(init_cdf) {
-  DCHECK_GE(min_size_mb, 0);
 }
 
 void RowSetInfo::FinalizeCDFVector(vector<RowSetInfo>* vec,
