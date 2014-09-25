@@ -229,7 +229,7 @@ MaintenanceOp* MaintenanceManager::FindBestOp() {
   MaintenanceOp* most_mem_anchored_op = NULL;
   int32_t ts_anchored_secs = 0;
   MaintenanceOp* ts_anchored_secs_op = NULL;
-  uint64_t best_perf_improvement = 0;
+  double best_perf_improvement = 0;
   MaintenanceOp* best_perf_improvement_op = NULL;
   BOOST_FOREACH(OpMapTy::value_type &val, ops_) {
     MaintenanceOp* op(val.first);

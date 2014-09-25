@@ -36,8 +36,8 @@ struct MaintenanceOpStats {
   int32_t ts_anchored_secs;
 
   // The estimated performance improvement-- how good it is to do this on some
-  // absolute scale from 0 to 2*64.
-  uint64_t perf_improvement;
+  // absolute scale (yet TBD).
+  double perf_improvement;
 
   // Zero all stats.
   void Clear();
