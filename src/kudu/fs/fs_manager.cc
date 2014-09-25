@@ -50,6 +50,8 @@ const char *FsManager::kMasterBlockDirName = "master-blocks";
 const char *FsManager::kDataDirName = "data";
 const char *FsManager::kCorruptedSuffix = ".corrupted";
 const char *FsManager::kInstanceMetadataFileName = "instance";
+const char *FsManager::kInstanceMetadataMagicNumber = "kuduinst";
+const char *FsManager::kTabletSuperBlockMagicNumber = "ksuprblk";
 
 FsManager::FsManager(Env *env, const string& root_path)
   : env_(env),
@@ -71,7 +73,8 @@ void FsManager::InitBlockManager() {
 
 Status FsManager::Open() {
   gscoped_ptr<InstanceMetadataPB> pb(new InstanceMetadataPB);
-  RETURN_NOT_OK(pb_util::ReadPBFromPath(env_, GetInstanceMetadataPath(), pb.get()));
+  RETURN_NOT_OK(pb_util::ReadPBContainerFromPath(env_, GetInstanceMetadataPath(),
+                                                 kInstanceMetadataMagicNumber, pb.get()));
   metadata_.reset(pb.release());
   RETURN_NOT_OK(block_manager_->Open());
   LOG(INFO) << "Opened local filesystem: " << root_path_
@@ -81,19 +84,23 @@ Status FsManager::Open() {
 
 Status FsManager::CreateInitialFileSystemLayout() {
   // Initialize root
-  RETURN_NOT_OK(CreateDirIfMissing(root_path_));
+  RETURN_NOT_OK_PREPEND(CreateDirIfMissing(root_path_),
+                        "Unable to create FSManager root");
 
   // Initialize wals dir
-  RETURN_NOT_OK(CreateDirIfMissing(GetWalsRootDir()));
+  RETURN_NOT_OK_PREPEND(CreateDirIfMissing(GetWalsRootDir()),
+                        "Unable to create WAL directory");
 
   // Initialize master block dir
-  RETURN_NOT_OK(CreateDirIfMissing(GetMasterBlockDir()));
+  RETURN_NOT_OK_PREPEND(CreateDirIfMissing(GetMasterBlockDir()),
+                        "Unable to create master block directory");
 
   if (!env_->FileExists(GetInstanceMetadataPath())) {
-    RETURN_NOT_OK(CreateAndWriteInstanceMetadata());
+    RETURN_NOT_OK_PREPEND(CreateAndWriteInstanceMetadata(),
+                          "Unable to create instance metadata");
   }
 
-  RETURN_NOT_OK(block_manager_->Create());
+  RETURN_NOT_OK_PREPEND(block_manager_->Create(), "Unable to create block manager");
   return Status::OK();
 }
 
@@ -113,7 +120,8 @@ Status FsManager::CreateAndWriteInstanceMetadata() {
 
   // The instance metadata is written effectively once per TS, so the
   // durability cost is negligible.
-  RETURN_NOT_OK(pb_util::WritePBToPath(env_, path, new_instance, pb_util::SYNC));
+  RETURN_NOT_OK(pb_util::WritePBContainerToPath(env_, path, kInstanceMetadataMagicNumber,
+                                                new_instance, pb_util::SYNC));
   LOG(INFO) << "Generated new instance metadata in path " << path << ":\n"
             << new_instance.DebugString();
   return Status::OK();
@@ -271,7 +279,7 @@ Status FsManager::WriteMetadataBlock(const BlockId& block_id, const MessageLite&
   // Write the new metadata file
   shared_ptr<WritableFile> wfile;
   string path = GetBlockPath(block_id);
-  return pb_util::WritePBToPath(env_, path, msg,
+  return pb_util::WritePBContainerToPath(env_, path, kTabletSuperBlockMagicNumber, msg,
       FLAGS_enable_data_block_fsync ? pb_util::SYNC : pb_util::NO_SYNC);
 }
 
@@ -279,7 +287,7 @@ Status FsManager::ReadMetadataBlock(const BlockId& block_id, MessageLite *msg) {
   VLOG(1) << "Reading Metadata Block " << block_id.ToString();
 
   string path = GetBlockPath(block_id);
-  Status s = pb_util::ReadPBFromPath(env_, path, msg);
+  Status s = pb_util::ReadPBContainerFromPath(env_, path, kTabletSuperBlockMagicNumber, msg);
   if (s.IsNotFound()) {
     return s;
   }

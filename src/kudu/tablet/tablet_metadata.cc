@@ -24,6 +24,7 @@ namespace kudu {
 namespace tablet {
 
 const int64 kNoDurableMemStore = -1;
+static const char* kMasterBlockMagicNumber = "kmstrblk";
 
 // ============================================================================
 //  Tablet Metadata
@@ -90,7 +91,8 @@ Status TabletMetadata::OpenMasterBlock(Env* env,
                                        const string& master_block_path,
                                        const string& expected_tablet_id,
                                        TabletMasterBlockPB* master_block) {
-  RETURN_NOT_OK(pb_util::ReadPBFromPath(env, master_block_path, master_block));
+  RETURN_NOT_OK(pb_util::ReadPBContainerFromPath(env, master_block_path, kMasterBlockMagicNumber,
+                                                 master_block));
   if (expected_tablet_id != master_block->tablet_id()) {
     LOG_AND_RETURN(ERROR, Status::Corruption(
         strings::Substitute("Corrupt master block $0: PB has wrong tablet ID",
@@ -103,7 +105,7 @@ Status TabletMetadata::OpenMasterBlock(Env* env,
 Status TabletMetadata::PersistMasterBlock(FsManager* fs_manager,
                                           const TabletMasterBlockPB& pb) {
   string path = fs_manager->GetMasterBlockPath(pb.tablet_id());
-  return pb_util::WritePBToPath(fs_manager->env(), path, pb,
+  return pb_util::WritePBContainerToPath(fs_manager->env(), path, kMasterBlockMagicNumber, pb,
       FLAGS_enable_data_block_fsync ? pb_util::SYNC : pb_util::NO_SYNC);
 }
 

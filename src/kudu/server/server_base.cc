@@ -155,6 +155,7 @@ Status ServerBase::DumpServerInfo(const string& path,
     string json = JsonWriter::ToJson(status);
     RETURN_NOT_OK(WriteStringToFile(options_.env, Slice(json), path));
   } else if (boost::iequals(format, "pb")) {
+    // TODO: Use PB container format?
     RETURN_NOT_OK(pb_util::WritePBToPath(options_.env, path, status,
                                          pb_util::NO_SYNC)); // durability doesn't matter
   } else {

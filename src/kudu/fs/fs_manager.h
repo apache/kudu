@@ -182,6 +182,8 @@ class FsManager {
   static const char *kWalDirName;
   static const char *kCorruptedSuffix;
   static const char *kInstanceMetadataFileName;
+  static const char *kInstanceMetadataMagicNumber;
+  static const char *kTabletSuperBlockMagicNumber;
 
   Env *env_;
   std::string root_path_;
