@@ -34,6 +34,8 @@ class FileWritableBlock : public WritableBlock {
 
   virtual Status Close() OVERRIDE;
 
+  virtual Status Abort() OVERRIDE;
+
   virtual BlockManager* block_manager() const OVERRIDE;
 
   virtual const BlockId& id() const OVERRIDE;
@@ -47,6 +49,11 @@ class FileWritableBlock : public WritableBlock {
   virtual State state() const OVERRIDE;
 
  private:
+  enum SyncMode {
+    SYNC,
+    NO_SYNC
+  };
+
   friend class FileBlockManager;
 
   FileWritableBlock(FileBlockManager* block_manager,
@@ -55,6 +62,9 @@ class FileWritableBlock : public WritableBlock {
 
   // Synchronize this block's dirty metadata to disk.
   Status SyncMetadata();
+
+  // Close the block, optionally synchronizing dirty data and metadata.
+  Status Close(SyncMode mode);
 
   // Back pointer to the block manager.
   //

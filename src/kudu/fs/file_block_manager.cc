@@ -45,29 +45,12 @@ FileWritableBlock::~FileWritableBlock() {
 }
 
 Status FileWritableBlock::Close() {
-  if (state_ == CLOSED) {
-    return Status::OK();
-  }
+  return Close(SYNC);
+}
 
-  Status sync;
-  if ((state_ == DIRTY || state_ == FLUSHING) &&
-      FLAGS_enable_data_block_fsync) {
-    // Safer to synchronize data first, then metadata.
-    VLOG(3) << "Syncing block " << id();
-    sync = writer_->Sync();
-    if (sync.ok()) {
-      sync = SyncMetadata();
-    }
-    WARN_NOT_OK(sync, Substitute("Failed to sync when closing block $0",
-                                 block_id_.ToString()));
-  }
-  Status close = writer_->Close();
-
-  state_ = CLOSED;
-  writer_.reset();
-
-  // Prefer the result of Close() to that of Sync().
-  return !close.ok() ? close : sync;
+Status FileWritableBlock::Abort() {
+  RETURN_NOT_OK(Close(NO_SYNC));
+  return block_manager()->DeleteBlock(id());
 }
 
 BlockManager* FileWritableBlock::block_manager() const {
@@ -121,6 +104,32 @@ Status FileWritableBlock::SyncMetadata() {
   return block_manager_->env()->SyncDir(root_path);
 }
 
+Status FileWritableBlock::Close(SyncMode mode) {
+  if (state_ == CLOSED) {
+    return Status::OK();
+  }
+
+  Status sync;
+  if (mode == SYNC &&
+      (state_ == DIRTY || state_ == FLUSHING) &&
+      FLAGS_enable_data_block_fsync) {
+    // Safer to synchronize data first, then metadata.
+    VLOG(3) << "Syncing block " << id();
+    sync = writer_->Sync();
+    if (sync.ok()) {
+      sync = SyncMetadata();
+    }
+    WARN_NOT_OK(sync, Substitute("Failed to sync when closing block $0",
+                                 block_id_.ToString()));
+  }
+  Status close = writer_->Close();
+
+  state_ = CLOSED;
+  writer_.reset();
+
+  // Prefer the result of Close() to that of Sync().
+  return !close.ok() ? close : sync;
+}
 ////////////////////////////////////////////////////////////
 // FileReadableBlock
 ////////////////////////////////////////////////////////////

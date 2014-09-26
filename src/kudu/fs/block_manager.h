@@ -70,6 +70,10 @@ class WritableBlock : public Block {
   // that the entire block is durable.
   virtual Status Close() = 0;
 
+  // Like Close() but does not synchronize dirty data or metadata to disk.
+  // Meaning, after a successful Abort(), the block no longer exists.
+  virtual Status Abort() = 0;
+
   // Get a pointer back to this block's manager.
   virtual BlockManager* block_manager() const = 0;
 

@@ -193,5 +193,24 @@ TEST_F(BlockManagerTest, WritableBlockStateTest) {
   ASSERT_EQ(WritableBlock::CLOSED, written_block->state());
 }
 
+TEST_F(BlockManagerTest, AbortTest) {
+  gscoped_ptr<WritableBlock> written_block;
+  ASSERT_OK(bm_->CreateAnonymousBlock(&written_block));
+  string test_data = "test data";
+  ASSERT_OK(written_block->Append(test_data));
+  ASSERT_OK(written_block->Abort());
+  ASSERT_EQ(WritableBlock::CLOSED, written_block->state());
+  ASSERT_TRUE(this->bm_->OpenBlock(written_block->id(), NULL)
+              .IsNotFound());
+
+  ASSERT_OK(bm_->CreateAnonymousBlock(&written_block));
+  ASSERT_OK(written_block->Append(test_data));
+  ASSERT_OK(written_block->FlushDataAsync());
+  ASSERT_OK(written_block->Abort());
+  ASSERT_EQ(WritableBlock::CLOSED, written_block->state());
+  ASSERT_TRUE(this->bm_->OpenBlock(written_block->id(), NULL)
+              .IsNotFound());
+}
+
 } // namespace fs
 } // namespace kudu
