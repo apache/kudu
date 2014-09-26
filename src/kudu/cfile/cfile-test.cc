@@ -25,216 +25,13 @@ namespace cfile {
 using fs::ReadableBlock;
 using fs::WritableBlock;
 
-// Abstract test data generator.
-// You must implement BuildTestValue() to return your test value.
-//    Usage example:
-//        StringDataGenerator datagen;
-//        datagen.Build(10);
-//        for (int i = 0; i < datagen.block_entries(); ++i) {
-//          bool is_null = BitmpTest(datagen.null_bitmap(), i);
-//          Slice& v = datagen[i];
-//        }
-template <class T>
-class DataGenerator {
- public:
-  DataGenerator() :
-    values_(NULL),
-    null_bitmap_(NULL),
-    block_entries_(0),
-    total_entries_(0)
-  {}
-
-  void Build(size_t num_entries) {
-    Build(total_entries_, num_entries);
-    total_entries_ += num_entries;
-  }
-
-  // Build "num_entries" using (offset + i) as value
-  // You can get the data values and the null bitmap using values() and null_bitmap()
-  // both are valid until the class is destructed or until Build() is called again.
-  void Build(size_t offset, size_t num_entries) {
-    Resize(num_entries);
-
-    for (size_t i = 0; i < num_entries; ++i) {
-      BitmapChange(null_bitmap_.get(), i, !TestValueShouldBeNull(offset + i));
-      values_[i] = BuildTestValue(i, offset + i);
-    }
-  }
-
-  virtual T BuildTestValue(size_t block_index, size_t value) = 0;
-
-  bool TestValueShouldBeNull(size_t n) {
-    // The NULL pattern alternates every 32 rows, cycling between:
-    //   32 NULL
-    //   32 alternating NULL/NOTNULL
-    //   32 NOT-NULL
-    //   32 alternating NULL/NOTNULL
-    // This is to ensure that we stress the run-length coding for
-    // NULL value.
-    switch ((n >> 6) & 3) {
-      case 0:
-        return true;
-      case 1:
-      case 3:
-        return n & 1;
-      case 2:
-        return false;
-      default:
-        LOG(FATAL);
-    }
-  }
-
-  virtual void Resize(size_t num_entries) {
-    if (block_entries_ >= num_entries) {
-      block_entries_ = num_entries;
-      return;
-    }
-
-    values_.reset(new T[num_entries]);
-    null_bitmap_.reset(new uint8_t[BitmapSize(num_entries)]);
-    block_entries_ = num_entries;
-  }
-
-  size_t block_entries() const { return block_entries_; }
-  size_t total_entries() const { return total_entries_; }
-
-  const T *values() const { return values_.get(); }
-  const uint8_t *null_bitmap() const { return null_bitmap_.get(); }
-
-  const T& operator[](size_t index) const {
-    return values_[index];
-  }
-
-  virtual ~DataGenerator() {}
-
- private:
-  gscoped_array<T> values_;
-  gscoped_array<uint8_t> null_bitmap_;
-  size_t block_entries_;
-  size_t total_entries_;
-};
-
-class UInt32DataGenerator : public DataGenerator<uint32_t> {
- public:
-  uint32_t BuildTestValue(size_t block_index, size_t value) OVERRIDE {
-    return value * 10;
-  }
-};
-
-class Int32DataGenerator : public DataGenerator<int32_t> {
- public:
-  int32_t BuildTestValue(size_t block_index, size_t value) OVERRIDE {
-    return (value * 10) *(value % 2 == 0 ? -1 : 1);
-  }
-};
-
-class StringDataGenerator : public DataGenerator<Slice> {
- public:
-  Slice BuildTestValue(size_t block_index, size_t value) OVERRIDE {
-    char *buf = data_buffer_[block_index].data;
-    int len = snprintf(buf, kItemBufferSize - 1, "ITEM-%zu", value);
-    DCHECK_LT(len, kItemBufferSize);
-    return Slice(buf, len);
-  }
-
-  void Resize(size_t num_entries) OVERRIDE {
-    if (num_entries > block_entries()) {
-      data_buffer_.reset(new Buffer[num_entries]);
-    }
-    DataGenerator<Slice>::Resize(num_entries);
-  }
-
- private:
-  static const int kItemBufferSize = 16;
-
-  struct Buffer {
-    char data[kItemBufferSize];
-  };
-
-  gscoped_array<Buffer> data_buffer_;
-};
-
 class TestCFile : public CFileTestBase {
  protected:
-  template <class DataGeneratorType, DataType data_type>
-  void WriteTestFileWithNulls(EncodingType encoding,
-                              CompressionType compression,
-                              int num_entries,
-                              BlockId* block_id) {
-    gscoped_ptr<WritableBlock> sink;
-    ASSERT_STATUS_OK(fs_manager_->CreateNewBlock(&sink));
-    *block_id = sink->id();
-    WriterOptions opts;
-    opts.write_posidx = true;
-    // Use a smaller block size to exercise multi-level indexing.
-    opts.block_size = 128;
-    opts.storage_attributes = ColumnStorageAttributes(encoding, compression);
-    CFileWriter w(opts, data_type, true, sink.Pass());
-
-    ASSERT_STATUS_OK(w.Start());
-
-    DataGeneratorType data_generator;
-
-    // Append given number of values to the test tree
-    const size_t kBufferSize = 8192;
-    size_t i = 0;
-    while (i < num_entries) {
-      int towrite = std::min(num_entries - i, kBufferSize);
-
-      data_generator.Build(towrite);
-      DCHECK_EQ(towrite, data_generator.block_entries());
-
-      ASSERT_STATUS_OK_FAST(w.AppendNullableEntries(data_generator.null_bitmap(),
-                                                    data_generator.values(),
-                                                    towrite));
-
-      i += towrite;
-    }
-
-    ASSERT_STATUS_OK(w.Finish());
-  }
-
-  template <class DataGeneratorType, DataType data_type>
-  void WriteTestFileFixedSizeTypes(EncodingType encoding,
-                                   CompressionType compression,
-                                   int num_entries,
-                                   BlockId* block_id) {
-    gscoped_ptr<WritableBlock> sink;
-    ASSERT_STATUS_OK(fs_manager_->CreateNewBlock(&sink));
-    *block_id = sink->id();
-    WriterOptions opts;
-    opts.write_posidx = true;
-    opts.block_size = 128;
-    opts.storage_attributes = ColumnStorageAttributes(encoding, compression);
-    CFileWriter w(opts, data_type, false, sink.Pass());
-
-    ASSERT_STATUS_OK(w.Start());
-
-    DataGeneratorType data_generator;
-
-    // Append given number of values to the test tree
-    const size_t kBufferSize = 8192;
-    size_t i = 0;
-    while (i < num_entries) {
-      int towrite = std::min(num_entries - i, kBufferSize);
-
-      data_generator.Build(towrite);
-      DCHECK_EQ(towrite, data_generator.block_entries());
-
-      ASSERT_STATUS_OK_FAST(w.AppendEntries(data_generator.values(), towrite));
-      i += towrite;
-    }
-
-    ASSERT_STATUS_OK(w.Finish());
-  }
-
-  template <class DataGeneratorType, DataType data_type>
+  template <class DataGeneratorType>
   void TestReadWriteFixedSizeTypes(EncodingType encoding) {
     BlockId block_id;
-    WriteTestFileFixedSizeTypes<DataGeneratorType, data_type>(encoding,
-                                                              NO_COMPRESSION,
-                                                              10000,
-                                                              &block_id);
+    DataGeneratorType generator;
+    WriteTestFile(&generator, encoding, NO_COMPRESSION, 10000, SMALL_BLOCKSIZE, &block_id);
 
     gscoped_ptr<ReadableBlock> block;
     ASSERT_STATUS_OK(fs_manager_->OpenBlock(block_id, &block));
@@ -261,7 +58,7 @@ class TestCFile : public CFileTestBase {
     ASSERT_EQ(0u, iter->GetCurrentOrdinal());
 
     // Fetch all data.
-    ScopedColumnBlock<data_type> out(10000);
+    ScopedColumnBlock<DataGeneratorType::kDataType> out(10000);
     size_t n = 10000;
     ASSERT_STATUS_OK(iter->CopyNextValues(&n, &out));
     ASSERT_EQ(10000, n);
@@ -314,21 +111,21 @@ class TestCFile : public CFileTestBase {
     ASSERT_EQ(10000, n);
   }
 
-  template <class DataGeneratorType, DataType data_type>
-  void TimeSeekAndReadFileWithNulls(const BlockId& block_id, size_t num_entries) {
+  template <class DataGeneratorType>
+  void TimeSeekAndReadFileWithNulls(DataGeneratorType* generator,
+                                    const BlockId& block_id, size_t num_entries) {
     gscoped_ptr<ReadableBlock> block;
     ASSERT_STATUS_OK(fs_manager_->OpenBlock(block_id, &block));
     gscoped_ptr<CFileReader> reader;
     ASSERT_STATUS_OK(CFileReader::Open(block.Pass(), ReaderOptions(), &reader));
-    ASSERT_EQ(data_type, reader->data_type());
+    ASSERT_EQ(DataGeneratorType::kDataType, reader->data_type());
 
     gscoped_ptr<CFileIterator> iter;
     ASSERT_STATUS_OK(reader->NewIterator(&iter) );
 
     Arena arena(8192, 8*1024*1024);
-    ScopedColumnBlock<data_type> cb(10);
+    ScopedColumnBlock<DataGeneratorType::kDataType> cb(10);
 
-    DataGeneratorType data_generator;
     const int kNumLoops = AllowSlowTests() ? num_entries : 10;
     for (int loop = 0; loop < kNumLoops; loop++) {
       // Seek to a random point in the file,
@@ -347,13 +144,13 @@ class TestCFile : public CFileTestBase {
         ASSERT_EQ(n, std::min(num_entries - read_offset, cb.nrows()));
 
         // Verify that the block data is correct.
-        data_generator.Build(read_offset, n);
+        generator->Build(read_offset, n);
         for (size_t j = 0; j < n; ++j) {
           SCOPED_TRACE(j);
-          bool expected_null = data_generator.TestValueShouldBeNull(read_offset + j);
+          bool expected_null = generator->TestValueShouldBeNull(read_offset + j);
           ASSERT_EQ(expected_null, cb.is_null(j));
           if (!expected_null) {
-            ASSERT_EQ(data_generator[j], cb[j]);
+            ASSERT_EQ((*generator)[j], cb[j]);
           }
         }
         cb.arena()->Reset();
@@ -362,19 +159,18 @@ class TestCFile : public CFileTestBase {
     }
   }
 
-  template <class DataGeneratorType, DataType data_type>
-  void TestNullTypes(EncodingType encoding, CompressionType compression) {
+  template <class DataGeneratorType>
+  void TestNullTypes(DataGeneratorType* generator, EncodingType encoding,
+                     CompressionType compression) {
     BlockId block_id;
-    WriteTestFileWithNulls<DataGeneratorType, data_type>(encoding,
-                                                         compression,
-                                                         10000,
-                                                         &block_id);
+    WriteTestFile(generator, encoding, compression, 10000, SMALL_BLOCKSIZE, &block_id);
 
     size_t n;
     TimeReadFile(fs_manager_.get(), block_id, &n);
     ASSERT_EQ(n, 10000);
 
-    TimeSeekAndReadFileWithNulls<DataGeneratorType, data_type>(block_id, n);
+    generator->Reset();
+    TimeSeekAndReadFileWithNulls(generator, block_id, n);
   }
 
 
@@ -448,7 +244,8 @@ TEST_F(TestCFile, TestWrite100MFileInts) {
   BlockId block_id;
   LOG_TIMING(INFO, "writing 100m ints") {
     LOG(INFO) << "Starting writefile";
-    WriteTestFileUInt32(GROUP_VARINT, NO_COMPRESSION, 100000000, &block_id);
+    UInt32DataGenerator<false> generator;
+    WriteTestFile(&generator, GROUP_VARINT, NO_COMPRESSION, 100000000, NO_FLAGS, &block_id);
     LOG(INFO) << "Done writing";
   }
 
@@ -465,8 +262,8 @@ TEST_F(TestCFile, TestWrite100MFileNullableInts) {
   BlockId block_id;
   LOG_TIMING(INFO, "writing 100m nullable ints") {
     LOG(INFO) << "Starting writefile";
-    WriteTestFileWithNulls<UInt32DataGenerator, UINT32>(
-      PLAIN_ENCODING, NO_COMPRESSION, 100000000, &block_id);
+    UInt32DataGenerator<true> generator;
+    WriteTestFile(&generator, PLAIN_ENCODING, NO_COMPRESSION, 100000000, NO_FLAGS, &block_id);
     LOG(INFO) << "Done writing";
   }
 
@@ -483,8 +280,8 @@ TEST_F(TestCFile, TestWrite100MFileStrings) {
   BlockId block_id;
   LOG_TIMING(INFO, "writing 100M strings") {
     LOG(INFO) << "Starting writefile";
-    WriteTestFileStrings(PREFIX_ENCODING, NO_COMPRESSION,
-                         100000000, "hello %d", &block_id);
+    StringDataGenerator<false> generator("hello %zu");
+    WriteTestFile(&generator, PREFIX_ENCODING, NO_COMPRESSION, 100000000, NO_FLAGS, &block_id);
     LOG(INFO) << "Done writing";
   }
 
@@ -499,12 +296,12 @@ TEST_F(TestCFile, TestWrite100MFileStrings) {
 #endif
 
 TEST_F(TestCFile, TestFixedSizeReadWriteUInt32) {
-  TestReadWriteFixedSizeTypes<UInt32DataGenerator, UINT32>(GROUP_VARINT);
-  TestReadWriteFixedSizeTypes<UInt32DataGenerator, UINT32>(PLAIN_ENCODING);
+  TestReadWriteFixedSizeTypes<UInt32DataGenerator<false> >(GROUP_VARINT);
+  TestReadWriteFixedSizeTypes<UInt32DataGenerator<false> >(PLAIN_ENCODING);
 }
 
 TEST_F(TestCFile, TestFixedSizeReadWriteInt32) {
-  TestReadWriteFixedSizeTypes<Int32DataGenerator, INT32>(PLAIN_ENCODING);
+  TestReadWriteFixedSizeTypes<Int32DataGenerator<false> >(PLAIN_ENCODING);
 }
 
 void EncodeStringKey(const Schema &schema, const Slice& key,
@@ -521,8 +318,9 @@ TEST_F(TestCFile, TestReadWriteStrings) {
 
   const int nrows = 10000;
   BlockId block_id;
-  WriteTestFileStrings(PREFIX_ENCODING, NO_COMPRESSION, nrows,
-                       "hello %04d", &block_id);
+  StringDataGenerator<false> generator("hello %04d");
+  WriteTestFile(&generator, PREFIX_ENCODING, NO_COMPRESSION, nrows,
+                SMALL_BLOCKSIZE | WRITE_VALIDX, &block_id);
 
   gscoped_ptr<ReadableBlock> block;
   ASSERT_STATUS_OK(fs_manager_->OpenBlock(block_id, &block));
@@ -705,18 +503,21 @@ TEST_F(TestCFile, TestAppendRaw) {
 }
 
 TEST_F(TestCFile, TestNullInts) {
-  TestNullTypes<UInt32DataGenerator, UINT32>(GROUP_VARINT, NO_COMPRESSION);
-  TestNullTypes<UInt32DataGenerator, UINT32>(GROUP_VARINT, LZ4);
+  UInt32DataGenerator<true> generator;
+  TestNullTypes(&generator, GROUP_VARINT, NO_COMPRESSION);
+  TestNullTypes(&generator, GROUP_VARINT, LZ4);
 }
 
 TEST_F(TestCFile, TestNullPrefixStrings) {
-  TestNullTypes<StringDataGenerator, STRING>(PLAIN_ENCODING, NO_COMPRESSION);
-  TestNullTypes<StringDataGenerator, STRING>(PLAIN_ENCODING, LZ4);
+  StringDataGenerator<true> generator("hello %zu");
+  TestNullTypes(&generator, PLAIN_ENCODING, NO_COMPRESSION);
+  TestNullTypes(&generator, PLAIN_ENCODING, LZ4);
 }
 
 TEST_F(TestCFile, TestNullPlainStrings) {
-  TestNullTypes<StringDataGenerator, STRING>(PREFIX_ENCODING, NO_COMPRESSION);
-  TestNullTypes<StringDataGenerator, STRING>(PREFIX_ENCODING, LZ4);
+  StringDataGenerator<true> generator("hello %zu");
+  TestNullTypes(&generator, PREFIX_ENCODING, NO_COMPRESSION);
+  TestNullTypes(&generator, PREFIX_ENCODING, LZ4);
 }
 
 TEST_F(TestCFile, TestReleaseBlock) {

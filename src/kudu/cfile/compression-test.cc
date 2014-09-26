@@ -59,15 +59,22 @@ class TestCompression : public CFileTestBase {
     BlockId block_id;
     size_t rdrows;
 
-    WriteTestFileStrings(PREFIX_ENCODING, compression, nrows,
-                         "hello %04d", &block_id);
-    TimeReadFile(fs_manager_.get(), block_id, &rdrows);
-    ASSERT_EQ(nrows, rdrows);
+    {
+      StringDataGenerator<false> string_gen("hello %04d");
+      WriteTestFile(&string_gen, PREFIX_ENCODING, compression, nrows,
+                    WRITE_VALIDX, &block_id);
 
-    WriteTestFileUInt32(GROUP_VARINT, compression, nrows,
-                        &block_id);
-    TimeReadFile(fs_manager_.get(), block_id, &rdrows);
-    ASSERT_EQ(nrows, rdrows);
+      TimeReadFile(fs_manager_.get(), block_id, &rdrows);
+      ASSERT_EQ(nrows, rdrows);
+    }
+
+    {
+      UInt32DataGenerator<false> int_gen;
+      WriteTestFile(&int_gen, GROUP_VARINT, compression, nrows,
+                    NO_FLAGS, &block_id);
+      TimeReadFile(fs_manager_.get(), block_id, &rdrows);
+      ASSERT_EQ(nrows, rdrows);
+    }
   }
 };
 
