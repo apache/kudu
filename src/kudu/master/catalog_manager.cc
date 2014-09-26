@@ -69,6 +69,9 @@ DEFINE_int32(default_num_replicas, 1, // TODO switch to 3 and fix SelectReplicas
 DEFINE_int32(catalog_manager_bg_task_wait_ms, 1000,
              "Amount of time the catalog manager background task thread waits "
              "between runs");
+DEFINE_int32(max_create_tablets_per_ts, 20,
+             "The number of tablets per TS that can be requested for a new table. "
+             "(Advanced option)");
 
 namespace kudu {
 namespace master {
@@ -388,6 +391,14 @@ Status CatalogManager::CreateTable(const CreateTableRequestPB* req,
     return s;
   }
   schema = schema.CopyWithColumnIds();
+
+  int max_tablets = FLAGS_max_create_tablets_per_ts * master_->ts_manager()->GetCount();
+  if (req->num_replicas() > 1 && max_tablets > 0 && req->pre_split_keys_size() > max_tablets) {
+    Status s = Status::InvalidArgument(Substitute("The number of tablets requested is over the "
+                                                  "permitted maximum ($0)", max_tablets));
+    SetupError(resp->mutable_error(), MasterErrorPB::TOO_MANY_TABLETS, s);
+    return s;
+  }
 
   LOG(INFO) << "CreateTable from " << RequestorString(rpc)
             << ":\n" << req->DebugString();

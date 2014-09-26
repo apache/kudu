@@ -80,6 +80,11 @@ void TSManager::GetAllDescriptors(std::vector<std::tr1::shared_ptr<TSDescriptor>
   AppendValuesFromMap(servers_by_id_, descs);
 }
 
+int TSManager::GetCount() const {
+  boost::shared_lock<rw_spinlock> l(lock_);
+  return servers_by_id_.size();
+}
+
 } // namespace master
 } // namespace kudu
 

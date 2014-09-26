@@ -28,6 +28,9 @@ message MasterErrorPB {
 
     // The name requested for the table is already in use
     TABLE_ALREADY_PRESENT = 4;
+
+    // The number of tablets requested for a new table is over the per TS limit.
+    TOO_MANY_TABLETS = 5;
   }
 
   // The error code.

@@ -62,6 +62,9 @@ class TSManager {
   // list.
   void GetAllDescriptors(std::vector<std::tr1::shared_ptr<TSDescriptor> >* descs) const;
 
+  // Get the TS count.
+  int GetCount() const;
+
  private:
   mutable rw_spinlock lock_;
 
