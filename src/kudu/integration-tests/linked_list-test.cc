@@ -158,8 +158,14 @@ TEST_F(LinkedListTest, TestLoadAndVerify) {
   ASSERT_NO_FATAL_FAILURE(RestartCluster());
   // Sleep a little bit, so that the tablet is proably in bootstrapping state.
   usleep(100 * 1000);
+
+  // TODO The below is disabled until KUDU-255 is fixed. Restarting while bootstrapping
+  // increases the chances of having pending transactions on tablet start and those
+  // aren't handled yet.
+
   // Restart while bootstrapping
-  ASSERT_NO_FATAL_FAILURE(RestartCluster());
+  // ASSERT_NO_FATAL_FAILURE(RestartCluster());
+
   ASSERT_OK(tester_->WaitAndVerify(FLAGS_seconds_to_run, written));
 
   // Dump the performance info at the very end, so it's easy to read. On a failed

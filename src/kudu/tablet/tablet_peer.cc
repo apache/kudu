@@ -176,6 +176,20 @@ Status TabletPeer::Start(const ConsensusBootstrapInfo& bootstrap_info) {
 //   who is the leader and what its state is.
 Status TabletPeer::StartPendingTransactions(QuorumPeerPB::Role my_role,
                                             const ConsensusBootstrapInfo& bootstrap_info) {
+  if (!bootstrap_info.orphaned_replicates.empty()) {
+    LOG(ERROR) << "Found orphaned replicates:";
+    BOOST_FOREACH(const consensus::OperationPB* orphaned_op,
+                  bootstrap_info.orphaned_replicates) {
+      LOG(ERROR) << "Pending operation: " << orphaned_op->ShortDebugString();
+    }
+    LOG(ERROR) << "Last OpId in the log: "
+        << bootstrap_info.last_id.ShortDebugString();
+    LOG(ERROR) << "Last replicate OpId in the log: "
+        << bootstrap_info.last_replicate_id.ShortDebugString();
+    LOG(ERROR) << "Last commit OpId in the log: "
+        << bootstrap_info.last_commit_id.ShortDebugString();
+    LOG(FATAL) << "Dealing with orphaned operations is not implemented yet.";
+  }
   return Status::OK();
 }
 
