@@ -60,9 +60,6 @@ class FileWritableBlock : public WritableBlock {
                     const BlockId& block_id,
                     const std::tr1::shared_ptr<WritableFile>& writer);
 
-  // Synchronize this block's dirty metadata to disk.
-  Status SyncMetadata();
-
   // Close the block, optionally synchronizing dirty data and metadata.
   Status Close(SyncMode mode);
 
@@ -155,21 +152,34 @@ class FileBlockManager : public BlockManager {
   friend class FileWritableBlock;
 
   // Creates the parent directory hierarchy for the block with the given id.
-  Status CreateBlockDir(const BlockId& block_id);
+  Status CreateBlockDir(const BlockId& block_id, std::vector<std::string>* created_dirs);
 
   // Returns the path to a block with the given id.
   std::string GetBlockPath(const BlockId& block_id) const;
 
   // Creates a directory if it's not already present.
-  Status CreateDirIfMissing(const std::string& path);
+  //
+  // On error, does not set 'created'.
+  Status CreateDirIfMissing(const std::string& path, bool* created = NULL);
+
+  // Synchronizes the metadata for a block with the given id.
+  Status SyncMetadata(const BlockId& block_id);
 
   // Creates a new block.
   void CreateBlock(const BlockId& block_id, const std::string& path,
+                   const std::vector<std::string>& created_dirs,
                    const std::tr1::shared_ptr<WritableFile>& writer,
                    const CreateBlockOptions& opts,
                    gscoped_ptr<WritableBlock>* block);
 
   Env* env() const { return env_; }
+
+  // Protects 'dirty_dirs_'.
+  mutable simple_spinlock lock_;
+
+  // Tracks the block directories which are dirty from block creation. This
+  // lets us perform some simple coalescing when synchronizing metadata.
+  std::tr1::unordered_set<std::string> dirty_dirs_;
 
   // For manipulating files.
   Env* env_;

@@ -91,20 +91,6 @@ WritableBlock::State FileWritableBlock::state() const {
   return state_;
 }
 
-Status FileWritableBlock::SyncMetadata() {
-  string path2 = DirName(block_manager_->GetBlockPath(id()));
-  RETURN_NOT_OK(block_manager_->env()->SyncDir(path2));
-
-  string path1 = DirName(path2);
-  RETURN_NOT_OK(block_manager_->env()->SyncDir(path1));
-
-  string path0 = DirName(path1);
-  RETURN_NOT_OK(block_manager_->env()->SyncDir(path0));
-
-  string root_path = DirName(path0);
-  return block_manager_->env()->SyncDir(root_path);
-}
-
 Status FileWritableBlock::Close(SyncMode mode) {
   if (state_ == CLOSED) {
     return Status::OK();
@@ -118,7 +104,7 @@ Status FileWritableBlock::Close(SyncMode mode) {
     VLOG(3) << "Syncing block " << id();
     sync = writer_->Sync();
     if (sync.ok()) {
-      sync = SyncMetadata();
+      sync = block_manager_->SyncMetadata(block_id_);
     }
     WARN_NOT_OK(sync, Substitute("Failed to sync when closing block $0",
                                  block_id_.ToString()));
@@ -131,6 +117,7 @@ Status FileWritableBlock::Close(SyncMode mode) {
   // Prefer the result of Close() to that of Sync().
   return !close.ok() ? close : sync;
 }
+
 ////////////////////////////////////////////////////////////
 // FileReadableBlock
 ////////////////////////////////////////////////////////////
@@ -177,19 +164,31 @@ Status FileReadableBlock::Read(uint64_t offset, size_t length,
 // FileBlockManager
 ////////////////////////////////////////////////////////////
 
-Status FileBlockManager::CreateBlockDir(const BlockId& block_id) {
+Status FileBlockManager::CreateBlockDir(const BlockId& block_id, vector<string>* created_dirs) {
   CHECK(!block_id.IsNull());
   DCHECK(env_->FileExists(root_path_));
 
+  bool path0_created;
   string path0 = JoinPathSegments(root_path_, block_id.hash0());
-  RETURN_NOT_OK(CreateDirIfMissing(path0));
+  RETURN_NOT_OK(CreateDirIfMissing(path0, &path0_created));
 
+  bool path1_created;
   string path1 = JoinPathSegments(path0, block_id.hash1());
-  RETURN_NOT_OK(CreateDirIfMissing(path1));
+  RETURN_NOT_OK(CreateDirIfMissing(path1, &path1_created));
 
+  bool path2_created;
   string path2 = JoinPathSegments(path1, block_id.hash2());
-  RETURN_NOT_OK(CreateDirIfMissing(path2));
+  RETURN_NOT_OK(CreateDirIfMissing(path2, &path2_created));
 
+  if (path2_created) {
+    created_dirs->push_back(path1);
+  }
+  if (path1_created) {
+    created_dirs->push_back(path0);
+  }
+  if (path0_created) {
+    created_dirs->push_back(root_path_);
+  }
   return Status::OK();
 }
 
@@ -203,17 +202,69 @@ string FileBlockManager::GetBlockPath(const BlockId& block_id) const {
   return path;
 }
 
-Status FileBlockManager::CreateDirIfMissing(const string& path) {
+Status FileBlockManager::CreateDirIfMissing(const string& path, bool* created) {
   Status s = env_->CreateDir(path);
+  if (created) {
+    if (s.ok()) {
+      *created = true;
+    } else if (s.IsAlreadyPresent()) {
+      *created = false;
+    }
+  }
   return s.IsAlreadyPresent() ? Status::OK() : s;
+}
+
+Status FileBlockManager::SyncMetadata(const BlockId& block_id) {
+  CHECK(!block_id.IsNull());
+
+  string path0 = JoinPathSegments(root_path_, block_id.hash0());
+  string path1 = JoinPathSegments(path0, block_id.hash1());
+  string path2 = JoinPathSegments(path1, block_id.hash2());
+
+  // Figure out what directories to sync. Order is important.
+  vector<string> to_sync;
+  {
+    lock_guard<simple_spinlock> l(&lock_);
+    if (dirty_dirs_.erase(path2)) {
+      to_sync.push_back(path2);
+    }
+    if (dirty_dirs_.erase(path1)) {
+      to_sync.push_back(path1);
+    }
+    if (dirty_dirs_.erase(path0)) {
+      to_sync.push_back(path0);
+    }
+    if (dirty_dirs_.erase(root_path_)) {
+      to_sync.push_back(root_path_);
+    }
+  }
+
+  // Sync them.
+  BOOST_FOREACH(const string& s, to_sync) {
+    RETURN_NOT_OK(env_->SyncDir(s));
+  }
+  return Status::OK();
 }
 
 void FileBlockManager::CreateBlock(const BlockId& block_id,
                                    const string& path,
+                                   const vector<string>& created_dirs,
                                    const shared_ptr<WritableFile>& writer,
                                    const CreateBlockOptions& opts,
                                    gscoped_ptr<WritableBlock>* block) {
   VLOG(1) << "Creating new block " << block_id.ToString() << " at " << path;
+
+  {
+    // Update dirty_dirs_ with those provided as well as the block's
+    // directory, which may not have been created but is definitely dirty
+    // (because we added a file to it).
+    lock_guard<simple_spinlock> l(&lock_);
+    BOOST_FOREACH(const string& created, created_dirs) {
+      dirty_dirs_.insert(created);
+    }
+    dirty_dirs_.insert(DirName(path));
+  }
+
   block->reset(new FileWritableBlock(this, block_id, writer));
 }
 
@@ -238,14 +289,16 @@ Status FileBlockManager::Open() {
 Status FileBlockManager::CreateAnonymousBlock(const CreateBlockOptions& opts,
                                               gscoped_ptr<WritableBlock>* block) {
   string path;
+  vector<string> created_dirs;
   Status s;
   BlockId block_id;
   shared_ptr<WritableFile> writer;
 
   // Repeat in case of block id collisions (unlikely).
   do {
+    created_dirs.clear();
     block_id.SetId(oid_generator_.Next());
-    RETURN_NOT_OK(CreateBlockDir(block_id));
+    RETURN_NOT_OK(CreateBlockDir(block_id, &created_dirs));
     path = GetBlockPath(block_id);
     WritableFileOptions wr_opts;
     wr_opts.mmap_file = false;
@@ -253,7 +306,7 @@ Status FileBlockManager::CreateAnonymousBlock(const CreateBlockOptions& opts,
     s = env_util::OpenFileForWrite(wr_opts, env_, path, &writer);
   } while (PREDICT_FALSE(s.IsAlreadyPresent()));
   if (s.ok()) {
-    CreateBlock(block_id, path, writer, opts, block);
+    CreateBlock(block_id, path, created_dirs, writer, opts, block);
   }
   return s;
 }
@@ -269,13 +322,14 @@ Status FileBlockManager::CreateNamedBlock(const CreateBlockOptions& opts,
   VLOG(1) << "Creating new block with predetermined id "
           << block_id.ToString() << " at " << path;
 
-  RETURN_NOT_OK(CreateBlockDir(block_id));
+  vector<string> created_dirs;
+  RETURN_NOT_OK(CreateBlockDir(block_id, &created_dirs));
   shared_ptr<WritableFile> writer;
   WritableFileOptions wr_opts;
   wr_opts.mmap_file = false;
   wr_opts.overwrite_existing = false;
   RETURN_NOT_OK(env_util::OpenFileForWrite(wr_opts, env_, path, &writer));
-  CreateBlock(block_id, path, writer, opts, block);
+  CreateBlock(block_id, path, created_dirs, writer, opts, block);
   return Status::OK();
 }
 
