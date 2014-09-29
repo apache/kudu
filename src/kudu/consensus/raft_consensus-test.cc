@@ -52,8 +52,9 @@ class RaftConsensusTest : public KuduTest {
     : clock_(server::LogicalClock::CreateStartingAt(Timestamp(0))),
       metric_context_(&metric_registry_, "raft-test") {}
 
-  // Builds an initial quorum of 'num' elements where the first
-  // element is the leader.
+  // Builds an initial quorum of 'num' elements.
+  // Since we don't have leader election yet, the initial roles are pre-assigned.
+  // The last peer (index 'num - 1') always starts out as CANDIDATE.
   void BuildInitialQuorumPB(int num) {
     for (int i = 0; i < num; i++) {
       QuorumPeerPB* peer_pb = quorum_.add_peers();
@@ -147,18 +148,16 @@ class RaftConsensusTest : public KuduTest {
     return Status::OK();
   }
 
-  RaftConsensus* GetLeader() {
-    return peers_[peers_.size() - 1];
+  RaftConsensus* GetPeer(int peer_idx) {
+    CHECK_GE(peer_idx, 0);
+    CHECK_LT(peer_idx, peers_.size());
+    return DCHECK_NOTNULL(peers_[peer_idx]);
   }
 
-  RaftConsensus* GetFollower(int idx) {
-    return peers_[idx];
-  }
-
-  LocalTestPeerProxy* GetFollowerProxy(int idx) {
-    RaftConsensus* follower = GetFollower(idx);
+  LocalTestPeerProxy* GetLeaderProxyToPeer(int peer_idx, int leader_idx) {
+    RaftConsensus* follower = GetPeer(peer_idx);
     BOOST_FOREACH(LocalTestPeerProxy* proxy, down_cast<LocalTestPeerProxyFactory*>(
-        GetLeader()->peer_proxy_factory_.get())->GetProxies()) {
+        GetPeer(leader_idx)->peer_proxy_factory_.get())->GetProxies()) {
       if (proxy->GetTarget()->peer_uuid() == follower->peer_uuid()) {
         return proxy;
       }
@@ -167,7 +166,7 @@ class RaftConsensusTest : public KuduTest {
     return NULL;
   }
 
-  Status AppendDummyMessage(RaftConsensus* peer,
+  Status AppendDummyMessage(int peer_idx,
                             gscoped_ptr<ConsensusRound>* round,
                             shared_ptr<LatchCallback>* req_commit_clbk = NULL) {
     gscoped_ptr<ReplicateMsg> msg(new ReplicateMsg());
@@ -178,6 +177,7 @@ class RaftConsensusTest : public KuduTest {
     if (req_commit_clbk != NULL) {
       *req_commit_clbk = commit_clbk;
     }
+    RaftConsensus* peer = GetPeer(peer_idx);
     round->reset(peer->NewRound(msg.Pass(), replicate_clbk, commit_clbk));
     RETURN_NOT_OK(peer->Replicate(round->get()));
     return Status::OK();
@@ -199,9 +199,10 @@ class RaftConsensusTest : public KuduTest {
         round->replicate_callback().get())->WaitFor(delta);
   }
 
-  void WaitForReplicateIfNotAlreadyPresent(const OpId& to_wait_for, RaftConsensus* replica) {
+  void WaitForReplicateIfNotAlreadyPresent(const OpId& to_wait_for, int peer_idx) {
+    RaftConsensus* peer = GetPeer(peer_idx);
     shared_ptr<LatchCallback> clbk(new LatchCallback);
-    Status s = replica->RegisterOnReplicateCallback(to_wait_for, clbk);
+    Status s = peer->RegisterOnReplicateCallback(to_wait_for, clbk);
     if (s.IsAlreadyPresent()) {
       return;
     }
@@ -209,8 +210,13 @@ class RaftConsensusTest : public KuduTest {
     clbk->Wait();
   }
 
-  void WaitForCommitIfNotAlreadyPresent(const OpId& to_wait_for, RaftConsensus* replica, int idx) {
+  // Waits for an operation to be (database) committed in the replica at index
+  // 'peer_idx'. If the operation was already committed this returns immediately.
+  void WaitForCommitIfNotAlreadyPresent(const OpId& to_wait_for,
+                                        int peer_idx,
+                                        int leader_idx) {
     shared_ptr<LatchCallback> clbk(new LatchCallback);
+    RaftConsensus* replica = GetPeer(peer_idx);
     Status s = replica->RegisterOnCommitCallback(to_wait_for, clbk);
     if (s.IsAlreadyPresent()) {
       return;
@@ -229,7 +235,7 @@ class RaftConsensusTest : public KuduTest {
         LOG(ERROR) << "Max timeout attempts reached while waiting for commit: "
             << to_wait_for.ShortDebugString() << " on replica. Dumping state and quitting.";
         vector<string> lines;
-        GetLeader()->queue_.DumpToStrings(&lines);
+        GetPeer(leader_idx)->queue_.DumpToStrings(&lines);
         BOOST_FOREACH(const string& line, lines) {
           LOG(ERROR) << line;
         }
@@ -237,7 +243,7 @@ class RaftConsensusTest : public KuduTest {
         // Gather the replica and leader operations for printing
         vector<OperationPB*> replica_ops;
         ElementDeleter repl0_deleter(&replica_ops);
-        GatherOperations(idx, replica->log(), &replica_ops);
+        GatherOperations(peer_idx, replica->log(), &replica_ops);
         vector<OperationPB*> leader_ops;
         ElementDeleter leader_deleter(&leader_ops);
         int leader_idx = peers_.size() - 1;
@@ -378,18 +384,24 @@ class RaftConsensusTest : public KuduTest {
 
 // Tests Replicate/Commit a single message through the leader.
 TEST_F(RaftConsensusTest, TestFollowersReplicateAndCommitMessage) {
+  // Constants with the indexes of peers with certain roles,
+  // since peers don't change roles in this test.
+  const int kFollower0Idx = 0;
+  const int kFollower1Idx = 1;
+  const int kLeaderidx = 2;
+
   ASSERT_STATUS_OK(BuildAndStartQuorum(3));
 
   OpId last_op_id;
   gscoped_ptr<ConsensusRound> round;
   shared_ptr<LatchCallback> commit_clbk;
-  ASSERT_STATUS_OK(AppendDummyMessage(GetLeader(), &round, &commit_clbk));
+  ASSERT_STATUS_OK(AppendDummyMessage(kLeaderidx, &round, &commit_clbk));
   ASSERT_STATUS_OK(WaitForReplicate(round.get()));
   last_op_id.CopyFrom(round->id());
 
   // Wait for the followers replicate the operations.
-  WaitForReplicateIfNotAlreadyPresent(last_op_id, GetFollower(0));
-  WaitForReplicateIfNotAlreadyPresent(last_op_id, GetFollower(1));
+  WaitForReplicateIfNotAlreadyPresent(last_op_id, kFollower0Idx);
+  WaitForReplicateIfNotAlreadyPresent(last_op_id, kFollower1Idx);
   // Commit the operation
   ASSERT_STATUS_OK(CommitDummyMessage(round.get()));
 
@@ -403,14 +415,19 @@ TEST_F(RaftConsensusTest, TestFollowersReplicateAndCommitMessage) {
   // We thus wait for the commit callback to trigger, ensuring durability
   // on the leader and then for the commits to be present on the replicas.
   ASSERT_STATUS_OK(commit_clbk.get()->Wait());
-  WaitForCommitIfNotAlreadyPresent(last_op_id, GetFollower(0), 0);
-  WaitForCommitIfNotAlreadyPresent(last_op_id, GetFollower(1), 1);
+  WaitForCommitIfNotAlreadyPresent(last_op_id, kFollower0Idx, kLeaderidx);
+  WaitForCommitIfNotAlreadyPresent(last_op_id, kFollower1Idx, kLeaderidx);
   VerifyLogs();
 }
 
 // Tests Replicate/Commit a sequence of messages through the leader.
 // First a sequence of replicates and then a sequence of commits.
 TEST_F(RaftConsensusTest, TestFollowersReplicateAndCommitSequence) {
+  // Constants with the indexes of peers with certain roles,
+  // since peers don't change roles in this test.
+  const int kFollower0Idx = 0;
+  const int kFollower1Idx = 1;
+  const int kLeaderidx = 2;
 
   int seq_size = AllowSlowTests() ? 1000 : 100;
 
@@ -425,15 +442,15 @@ TEST_F(RaftConsensusTest, TestFollowersReplicateAndCommitSequence) {
   shared_ptr<LatchCallback> commit_clbk;
   for (int i = 0; i < seq_size; i++) {
     gscoped_ptr<ConsensusRound> round;
-    ASSERT_STATUS_OK(AppendDummyMessage(GetLeader(), &round, &commit_clbk));
+    ASSERT_STATUS_OK(AppendDummyMessage(kLeaderidx, &round, &commit_clbk));
     ASSERT_STATUS_OK(WaitForReplicate(round.get()));
     last_op_id.CopyFrom(round->id());
     contexts.push_back(round.release());
   }
 
   // Wait for the followers replicate the operations.
-  WaitForReplicateIfNotAlreadyPresent(last_op_id, GetFollower(0));
-  WaitForReplicateIfNotAlreadyPresent(last_op_id, GetFollower(1));
+  WaitForReplicateIfNotAlreadyPresent(last_op_id, kFollower0Idx);
+  WaitForReplicateIfNotAlreadyPresent(last_op_id, kFollower1Idx);
 
   // Commit the operations, but wait for the replicates to finish first
   BOOST_FOREACH(ConsensusRound* round, contexts) {
@@ -443,12 +460,18 @@ TEST_F(RaftConsensusTest, TestFollowersReplicateAndCommitSequence) {
   // See comment at the end of TestFollowersReplicateAndCommitMessage
   // for an explanation on this waiting sequence.
   ASSERT_STATUS_OK(commit_clbk.get()->Wait());
-  WaitForCommitIfNotAlreadyPresent(last_op_id, GetFollower(0), 0);
-  WaitForCommitIfNotAlreadyPresent(last_op_id, GetFollower(1), 1);
+  WaitForCommitIfNotAlreadyPresent(last_op_id, kFollower0Idx, kLeaderidx);
+  WaitForCommitIfNotAlreadyPresent(last_op_id, kFollower1Idx, kLeaderidx);
   VerifyLogs();
 }
 
 TEST_F(RaftConsensusTest, TestConsensusContinuesIfAMinorityFallsBehind) {
+  // Constants with the indexes of peers with certain roles,
+  // since peers don't change roles in this test.
+  const int kFollower0Idx = 0;
+  const int kFollower1Idx = 1;
+  const int kLeaderidx = 2;
+
   ASSERT_STATUS_OK(BuildAndStartQuorum(3));
 
   OpId last_replicate;
@@ -457,14 +480,14 @@ TEST_F(RaftConsensusTest, TestConsensusContinuesIfAMinorityFallsBehind) {
   {
     // lock one of the replicas down by obtaining the state lock
     // and never letting it go.
-    ReplicaState* follower0_rs = GetFollower(0)->GetReplicaStateForTests();
+    ReplicaState* follower0_rs = GetPeer(kFollower0Idx)->GetReplicaStateForTests();
     ReplicaState::UniqueLock lock;
     ASSERT_STATUS_OK(follower0_rs->LockForRead(&lock));
 
     // replicate and commit 10 messages
     for (int i = 0; i < 10; i++) {
       gscoped_ptr<ConsensusRound> round;
-      ASSERT_STATUS_OK(AppendDummyMessage(GetLeader(), &round));
+      ASSERT_STATUS_OK(AppendDummyMessage(kLeaderidx, &round));
       last_replicate.CopyFrom(round->id());
       // if the locked replica was stopping consensus we would hang here
       WaitForReplicate(round.get());
@@ -474,17 +497,23 @@ TEST_F(RaftConsensusTest, TestConsensusContinuesIfAMinorityFallsBehind) {
     // Follower 1 should be fine (Were we to wait for follower0's replicate
     // this would hang here). We know he must have replicated but make sure
     // by calling Wait().
-    WaitForReplicateIfNotAlreadyPresent(last_replicate, GetFollower(1));
-    WaitForCommitIfNotAlreadyPresent(last_replicate, GetFollower(1), 1);
+    WaitForReplicateIfNotAlreadyPresent(last_replicate, kFollower1Idx);
+    WaitForCommitIfNotAlreadyPresent(last_replicate, kFollower1Idx, kLeaderidx);
   }
 
   // After we let the lock go the remaining follower should get up-to-date
-  WaitForReplicateIfNotAlreadyPresent(last_replicate, GetFollower(0));
-  WaitForCommitIfNotAlreadyPresent(last_replicate, GetFollower(0), 0);
+  WaitForReplicateIfNotAlreadyPresent(last_replicate, kFollower0Idx);
+  WaitForCommitIfNotAlreadyPresent(last_replicate, kFollower0Idx, kLeaderidx);
   VerifyLogs();
 }
 
 TEST_F(RaftConsensusTest, TestConsensusStopsIfAMajorityFallsBehind) {
+  // Constants with the indexes of peers with certain roles,
+  // since peers don't change roles in this test.
+  const int kFollower0Idx = 0;
+  const int kFollower1Idx = 1;
+  const int kLeaderidx = 2;
+
   ASSERT_STATUS_OK(BuildAndStartQuorum(3));
 
   OpId last_op_id;
@@ -493,16 +522,16 @@ TEST_F(RaftConsensusTest, TestConsensusStopsIfAMajorityFallsBehind) {
   {
     // lock two of the replicas down by obtaining the state locks
     // and never letting them go.
-    ReplicaState* follower0_rs = GetFollower(0)->GetReplicaStateForTests();
+    ReplicaState* follower0_rs = GetPeer(kFollower0Idx)->GetReplicaStateForTests();
     ReplicaState::UniqueLock lock0;
     ASSERT_STATUS_OK(follower0_rs->LockForRead(&lock0));
 
-    ReplicaState* follower1_rs = GetFollower(1)->GetReplicaStateForTests();
+    ReplicaState* follower1_rs = GetPeer(1)->GetReplicaStateForTests();
     ReplicaState::UniqueLock lock1;
     ASSERT_STATUS_OK(follower1_rs->LockForRead(&lock1));
 
     // Append a single message to the queue
-    ASSERT_STATUS_OK(AppendDummyMessage(GetLeader(), &round));
+    ASSERT_STATUS_OK(AppendDummyMessage(kLeaderidx, &round));
     last_op_id.CopyFrom(round->id());
     // This should timeout.
     Status status = TimedWaitForReplicate(round.get(), MonoDelta::FromMilliseconds(500));
@@ -512,16 +541,22 @@ TEST_F(RaftConsensusTest, TestConsensusStopsIfAMajorityFallsBehind) {
   // and we commit.
   CommitDummyMessage(round.get());
   // Assert that everything was ok
-  WaitForReplicateIfNotAlreadyPresent(last_op_id, GetFollower(0));
-  WaitForReplicateIfNotAlreadyPresent(last_op_id, GetFollower(1));
-  WaitForCommitIfNotAlreadyPresent(last_op_id, GetFollower(0), 0);
-  WaitForCommitIfNotAlreadyPresent(last_op_id, GetFollower(1), 1);
+  WaitForReplicateIfNotAlreadyPresent(last_op_id, kFollower0Idx);
+  WaitForReplicateIfNotAlreadyPresent(last_op_id, kFollower1Idx);
+  WaitForCommitIfNotAlreadyPresent(last_op_id, kFollower0Idx, kLeaderidx);
+  WaitForCommitIfNotAlreadyPresent(last_op_id, kFollower1Idx, kLeaderidx);
   VerifyLogs();
 }
 
 // If some communication error happens the leader will resend the request to the
 // peers. This tests that the peers handle repeated requests.
 TEST_F(RaftConsensusTest, TestReplicasHandleCommunicationErrors) {
+  // Constants with the indexes of peers with certain roles,
+  // since peers don't change roles in this test.
+  const int kFollower0Idx = 0;
+  const int kFollower1Idx = 1;
+  const int kLeaderidx = 2;
+
   ASSERT_STATUS_OK(BuildAndStartQuorum(3));
 
   OpId last_op_id;
@@ -530,17 +565,17 @@ TEST_F(RaftConsensusTest, TestReplicasHandleCommunicationErrors) {
   // replicas get the commit the leader is guaranteed to also
   // have gotten it)
   gscoped_ptr<ConsensusRound> round;
-  ASSERT_STATUS_OK(AppendDummyMessage(GetLeader(), &round));
-  GetFollowerProxy(0)->InjectCommFaultLeaderSide();
-  GetFollowerProxy(1)->InjectCommFaultLeaderSide();
+  ASSERT_STATUS_OK(AppendDummyMessage(kLeaderidx, &round));
+  GetLeaderProxyToPeer(kFollower0Idx, kLeaderidx)->InjectCommFaultLeaderSide();
+  GetLeaderProxyToPeer(kFollower1Idx, kLeaderidx)->InjectCommFaultLeaderSide();
 
   last_op_id = round->id();
 
   ASSERT_STATUS_OK(CommitDummyMessage(round.get()));
-  GetFollowerProxy(0)->InjectCommFaultLeaderSide();
-  GetFollowerProxy(1)->InjectCommFaultLeaderSide();
-  WaitForCommitIfNotAlreadyPresent(last_op_id, GetFollower(0), 0);
-  WaitForCommitIfNotAlreadyPresent(last_op_id, GetFollower(1), 1);
+  GetLeaderProxyToPeer(kFollower0Idx, kLeaderidx)->InjectCommFaultLeaderSide();
+  GetLeaderProxyToPeer(kFollower1Idx, kLeaderidx)->InjectCommFaultLeaderSide();
+  WaitForCommitIfNotAlreadyPresent(last_op_id, kFollower0Idx, kLeaderidx);
+  WaitForCommitIfNotAlreadyPresent(last_op_id, kFollower1Idx, kLeaderidx);
 
   // Append a sequence of messages, and keep injecting errors into the
   // replica proxies.
@@ -549,28 +584,28 @@ TEST_F(RaftConsensusTest, TestReplicasHandleCommunicationErrors) {
   shared_ptr<LatchCallback> commit_clbk;
   for (int i = 0; i < 100; i++) {
     gscoped_ptr<ConsensusRound> round;
-    ASSERT_STATUS_OK(AppendDummyMessage(GetLeader(), &round, &commit_clbk));
+    ASSERT_STATUS_OK(AppendDummyMessage(kLeaderidx, &round, &commit_clbk));
     ASSERT_STATUS_OK(CommitDummyMessage(round.get()));
     last_op_id.CopyFrom(round->id());
     contexts.push_back(round.release());
 
     // inject comm faults
     if (i % 2 == 0) {
-      GetFollowerProxy(0)->InjectCommFaultLeaderSide();
+      GetLeaderProxyToPeer(kFollower0Idx, kLeaderidx)->InjectCommFaultLeaderSide();
     } else {
-      GetFollowerProxy(1)->InjectCommFaultLeaderSide();
+      GetLeaderProxyToPeer(kFollower1Idx, kLeaderidx)->InjectCommFaultLeaderSide();
     }
   }
 
   // Assert last operation was correctly replicated and committed.
-  WaitForReplicateIfNotAlreadyPresent(last_op_id, GetFollower(0));
-  WaitForReplicateIfNotAlreadyPresent(last_op_id, GetFollower(1));
+  WaitForReplicateIfNotAlreadyPresent(last_op_id, kFollower0Idx);
+  WaitForReplicateIfNotAlreadyPresent(last_op_id, kFollower1Idx);
 
   // See comment at the end of TestFollowersReplicateAndCommitMessage
   // for an explanation on this waiting sequence.
   ASSERT_STATUS_OK(commit_clbk.get()->Wait());
-  WaitForCommitIfNotAlreadyPresent(last_op_id, GetFollower(0), 0);
-  WaitForCommitIfNotAlreadyPresent(last_op_id, GetFollower(1), 1);
+  WaitForCommitIfNotAlreadyPresent(last_op_id, kFollower0Idx, kLeaderidx);
+  WaitForCommitIfNotAlreadyPresent(last_op_id, kFollower1Idx, kLeaderidx);
   VerifyLogs();
 }
 
@@ -578,9 +613,15 @@ TEST_F(RaftConsensusTest, TestReplicasHandleCommunicationErrors) {
 // to replicas by simply pushing nothing after the configuration round
 // and still expecting for the replicas Update() hooks to be called.
 TEST_F(RaftConsensusTest, TestLeaderHeartbeats) {
+  // Constants with the indexes of peers with certain roles,
+  // since peers don't change roles in this test.
+  const int kFollower0Idx = 0;
+  const int kFollower1Idx = 1;
+  const int kLeaderidx = 2;
+
   ASSERT_STATUS_OK(BuildQuorum(3));
-  RaftConsensus* replica0 = GetFollower(0);
-  RaftConsensus* replica1 = GetFollower(1);
+  RaftConsensus* replica0 = GetPeer(kFollower0Idx);
+  RaftConsensus* replica1 = GetPeer(kFollower1Idx);
 
   shared_ptr<CounterHooks> counter_hook_rpl0(
       new CounterHooks(replica0->GetFaultHooks()));
@@ -599,8 +640,8 @@ TEST_F(RaftConsensusTest, TestLeaderHeartbeats) {
   OpId config_round;
   config_round.set_term(0);
   config_round.set_index(1);
-  WaitForCommitIfNotAlreadyPresent(config_round, GetFollower(0), 0);
-  WaitForCommitIfNotAlreadyPresent(config_round, GetFollower(1), 1);
+  WaitForCommitIfNotAlreadyPresent(config_round, kFollower0Idx, kLeaderidx);
+  WaitForCommitIfNotAlreadyPresent(config_round, kFollower1Idx, kLeaderidx);
 
   int repl0_init_count = counter_hook_rpl0->num_pre_update_calls();
   int repl1_init_count = counter_hook_rpl1->num_pre_update_calls();
