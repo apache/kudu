@@ -102,6 +102,7 @@ class RaftConsensus : public Consensus {
   friend class ReplicaState;
   friend class RaftConsensusTest;
   FRIEND_TEST(RaftConsensusTest, TestReplicasHandleCommunicationErrors);
+  FRIEND_TEST(RaftConsensusTest, DISABLED_TestLeaderPromotionWithQuiescedQuorum);
 
   // Makes the peer become leader.
   // Assumes a majority of peers voted him leader for this term either

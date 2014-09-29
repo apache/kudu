@@ -280,7 +280,7 @@ class RaftConsensusTest : public KuduTest {
                                    ReplicateWaitMode wait_mode,
                                    CommitMode commit_mode,
                                    OpId* last_op_id,
-                                   vector<ConsensusRound*>* rounds,
+                                   vector<ConsensusRound*>* rounds = NULL,
                                    shared_ptr<LatchCallback>* commit_clbk = NULL) {
     for (int i = 0; i < seq_size; i++) {
       gscoped_ptr<ConsensusRound> round;
@@ -290,7 +290,9 @@ class RaftConsensusTest : public KuduTest {
       if (commit_mode == COMMIT_ONE_BY_ONE) {
         CommitDummyMessage(round.get());
       }
-      rounds->push_back(round.release());
+      if (rounds) {
+        rounds->push_back(round.release());
+      }
     }
 
     if (wait_mode == WAIT_FOR_ALL_REPLICAS) {
@@ -698,6 +700,49 @@ TEST_F(RaftConsensusTest, TestLeaderHeartbeats) {
   ASSERT_LE(repl0_final_count - repl0_init_count, 4);
   ASSERT_GE(repl1_final_count - repl1_init_count, 3);
   ASSERT_LE(repl1_final_count - repl1_init_count, 4);
+}
+
+// After creating the initial quorum, this test writes a small sequence
+// of messages to the initial leader. It then shuts down the current
+// leader, makes another peer become leader and writes a sequence of
+// messages to it. The new leader and the follower should agree on the
+// sequence of messages.
+TEST_F(RaftConsensusTest, DISABLED_TestLeaderPromotionWithQuiescedQuorum) {
+  ASSERT_STATUS_OK(BuildAndStartQuorum(3));
+
+  OpId last_op_id;
+  shared_ptr<LatchCallback> last_commit_clbk;
+  ReplicateSequenceOfMessages(10,
+                              2, // The index of the initial leader.
+                              WAIT_FOR_ALL_REPLICAS,
+                              COMMIT_ONE_BY_ONE,
+                              &last_op_id, NULL,
+                              &last_commit_clbk);
+
+  // Make sure the last operation is committed everywhere
+  ASSERT_STATUS_OK(last_commit_clbk.get()->Wait());
+  WaitForCommitIfNotAlreadyPresent(last_op_id, 0, 2);
+  WaitForCommitIfNotAlreadyPresent(last_op_id, 1, 2);
+
+  // Now shutdown the current leader
+  RaftConsensus* current_leader = GetPeer(2);
+  current_leader->Shutdown();
+
+  // ... and make peer 1 become leader
+  RaftConsensus* new_leader = GetPeer(1);
+  ASSERT_STATUS_OK(new_leader->BecomeLeader());
+
+  // ... replicating a set of messages to peer 1 should now be possible.
+  ReplicateSequenceOfMessages(10,
+                              1, // The index of the new leader.
+                              WAIT_FOR_ALL_REPLICAS,
+                              COMMIT_ONE_BY_ONE,
+                              &last_op_id, NULL,
+                              &last_commit_clbk);
+
+  // Make sure the last operation is committed everywhere
+  ASSERT_STATUS_OK(last_commit_clbk.get()->Wait());
+  WaitForCommitIfNotAlreadyPresent(last_op_id, 0, 1);
 }
 
 }  // namespace consensus
