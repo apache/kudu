@@ -92,6 +92,10 @@ Status TabletPeer::Init(const shared_ptr<Tablet>& tablet,
                         const shared_ptr<Messenger>& messenger,
                         gscoped_ptr<Log> log,
                         const MetricContext& metric_ctx) {
+
+  DCHECK(tablet) << "A TabletPeer must be provided with a Tablet";
+  DCHECK(log) << "A TabletPeer must be provided with a Log";
+
   {
     boost::lock_guard<simple_spinlock> lock(lock_);
     CHECK_EQ(state_, BOOTSTRAPPING);
@@ -106,20 +110,23 @@ Status TabletPeer::Init(const shared_ptr<Tablet>& tablet,
 
     TRACE("Creating consensus instance");
     if (tablet_->metadata()->Quorum().local()) {
-      consensus_.reset(new LocalConsensus(options));
+      consensus_.reset(new LocalConsensus(options,
+                                          quorum_peer_.permanent_uuid(),
+                                          clock_,
+                                          this,
+                                          log_.get()));
     } else {
       gscoped_ptr<consensus::PeerProxyFactory> rpc_factory(
           new consensus::RpcPeerProxyFactory(messenger_));
-      consensus_.reset(new RaftConsensus(options,  rpc_factory.Pass(), metric_ctx));
+      consensus_.reset(new RaftConsensus(options,
+                                         rpc_factory.Pass(),
+                                         metric_ctx,
+                                         quorum_peer_.permanent_uuid(),
+                                         clock_,
+                                         this,
+                                         log_.get()));
     }
   }
-
-  DCHECK(tablet_) << "A TabletPeer must be provided with a Tablet";
-  DCHECK(log_) << "A TabletPeer must be provided with a Log";
-
-  TRACE("Initting consensus impl");
-  RETURN_NOT_OK_PREPEND(consensus_->Init(quorum_peer_, clock_, this, log_.get()),
-                        "Could not initialize consensus");
 
   if (tablet_->metrics() != NULL) {
     TRACE("Starting instrumentation");

@@ -22,24 +22,17 @@ using metadata::QuorumPB;
 using metadata::QuorumPeerPB;
 using std::tr1::shared_ptr;
 
-LocalConsensus::LocalConsensus(const ConsensusOptions& options)
-    : options_(options),
+LocalConsensus::LocalConsensus(const ConsensusOptions& options,
+                               const string& peer_uuid,
+                               const scoped_refptr<server::Clock>& clock,
+                               ReplicaTransactionFactory* txn_factory,
+                               Log* log)
+    : peer_uuid_(peer_uuid),
+      options_(options),
       next_op_id_index_(-1),
-      state_(kNotInitialized),
-      log_(NULL) {
-}
-
-Status LocalConsensus::Init(const QuorumPeerPB& peer,
-                            const scoped_refptr<server::Clock>& clock,
-                            ReplicaTransactionFactory* txn_factory,
-                            Log* log) {
-  CHECK_EQ(state_, kNotInitialized);
-  peer_ = peer;
-  clock_ = clock;
-  txn_factory_ = txn_factory;
-  log_ = log;
-  state_ = kInitializing;
-  return Status::OK();
+      state_(kInitializing),
+      txn_factory_(DCHECK_NOTNULL(txn_factory)),
+      log_(DCHECK_NOTNULL(log)) {
 }
 
 Status LocalConsensus::Start(const metadata::QuorumPB& initial_quorum,

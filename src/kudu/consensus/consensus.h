@@ -77,14 +77,6 @@ class Consensus {
   class ConsensusFaultHooks;
   Consensus() {}
 
-  // Initializes Consensus.
-  // Note: Consensus does not own the Log and must be provided a fully built
-  // one on startup.
-  virtual Status Init(const metadata::QuorumPeerPB& peer,
-                      const scoped_refptr<server::Clock>& clock,
-                      ReplicaTransactionFactory* txn_factory,
-                      log::Log* log) = 0;
-
   // Starts running the consensus algorithm.
   //
   // 'initial_quorum' originates from the master, if this is a new quorum

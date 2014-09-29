@@ -43,24 +43,20 @@ using strings::Substitute;
 
 RaftConsensus::RaftConsensus(const ConsensusOptions& options,
                              gscoped_ptr<PeerProxyFactory> proxy_factory,
-                             const MetricContext& metric_ctx)
-    : log_(NULL),
+                             const MetricContext& metric_ctx,
+                             const std::string& peer_uuid,
+                             const scoped_refptr<server::Clock>& clock,
+                             ReplicaTransactionFactory* txn_factory,
+                             log::Log* log)
+    : log_(DCHECK_NOTNULL(log)),
+      clock_(clock),
       peer_proxy_factory_(proxy_factory.Pass()),
       queue_(metric_ctx) {
   CHECK_OK(ThreadPoolBuilder("raft-op-cb").set_max_threads(1).Build(&callback_pool_));
-  state_.reset(new ReplicaState(options, callback_pool_.get()));
-}
-
-Status RaftConsensus::Init(const metadata::QuorumPeerPB& peer,
-                           const scoped_refptr<server::Clock>& clock,
-                           ReplicaTransactionFactory* txn_factory,
-                           log::Log* log) {
-  log_ = log;
-  clock_ = clock;
-  RETURN_NOT_OK(state_->Init(peer.permanent_uuid(),
-                             txn_factory));
-  LOG_WITH_PREFIX_LK(INFO) << "Created Raft consensus for peer " << state_->ToString();
-  return Status::OK();
+  state_.reset(new ReplicaState(options,
+                                callback_pool_.get(),
+                                peer_uuid,
+                                DCHECK_NOTNULL(txn_factory)));
 }
 
 Status RaftConsensus::Start(const metadata::QuorumPB& initial_quorum,

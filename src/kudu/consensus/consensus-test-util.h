@@ -413,8 +413,12 @@ class TestLeaderDriver {
 // A transaction factory for tests, usually this is implemented by TabletPeer.
 class TestTransactionFactory : public ReplicaTransactionFactory {
  public:
-  explicit TestTransactionFactory(Consensus* consensus) : consensus_(consensus) {
+  TestTransactionFactory() : consensus_(NULL) {
     CHECK_OK(ThreadPoolBuilder("test-txn-factory").set_max_threads(1).Build(&pool_));
+  }
+
+  void SetConsensus(Consensus* consensus) {
+    consensus_ = consensus;
   }
 
   Status StartReplicaTransaction(gscoped_ptr<ConsensusRound> context) OVERRIDE {

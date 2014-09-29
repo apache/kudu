@@ -30,28 +30,20 @@ using std::tr1::unordered_set;
 using strings::Substitute;
 
 ReplicaState::ReplicaState(const ConsensusOptions& options,
-                           ThreadPool* callback_exec_pool)
+                           ThreadPool* callback_exec_pool,
+                           const string& peer_uuid,
+                           ReplicaTransactionFactory* txn_factory)
   : options_(options),
+    peer_uuid_(peer_uuid),
     current_role_(metadata::QuorumPeerPB::NON_PARTICIPANT),
     current_majority_(-1),
     current_term_(0),
     next_index_(0),
-    txn_factory_(NULL),
+    txn_factory_(txn_factory),
     in_flight_commits_latch_(0),
     replicate_watchers_(callback_exec_pool),
-    commit_watchers_(callback_exec_pool),
-    state_(kNotInitialized) {
-
-}
-
-Status ReplicaState::Init(const std::string& peer_uuid,
-                          ReplicaTransactionFactory* txn_factory) {
-  UniqueLock l(update_lock_);
-  CHECK_EQ(state_, kNotInitialized);
-  peer_uuid_ = peer_uuid;
-  txn_factory_ = txn_factory;
+    commit_watchers_(callback_exec_pool) {
   state_ = kInitialized;
-  return Status::OK();
 }
 
 Status ReplicaState::StartUnlocked(const OpId& initial_id,

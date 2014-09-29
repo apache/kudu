@@ -29,12 +29,11 @@ namespace consensus {
 // This class is not thread safe.
 class LocalConsensus : public Consensus {
  public:
-  explicit LocalConsensus(const ConsensusOptions& options);
-
-  virtual Status Init(const metadata::QuorumPeerPB& peer,
-                      const scoped_refptr<server::Clock>& clock,
-                      ReplicaTransactionFactory* txn_factory,
-                      log::Log* log) OVERRIDE;
+  explicit LocalConsensus(const ConsensusOptions& options,
+                          const std::string& peer_uuid,
+                          const scoped_refptr<server::Clock>& clock,
+                          ReplicaTransactionFactory* txn_factory,
+                          log::Log* log);
 
   virtual Status Start(const metadata::QuorumPB& initial_quorum,
                        const OpId& last_committed_op_id) OVERRIDE;
@@ -47,7 +46,7 @@ class LocalConsensus : public Consensus {
 
   virtual std::string peer_uuid() const OVERRIDE {
     boost::lock_guard<simple_spinlock> lock(lock_);
-    return peer_.permanent_uuid();
+    return peer_uuid_;
   }
 
   metadata::QuorumPB Quorum() const OVERRIDE {
@@ -75,7 +74,7 @@ class LocalConsensus : public Consensus {
 
  private:
 
-  metadata::QuorumPeerPB peer_;
+  const std::string peer_uuid_;
   metadata::QuorumPB quorum_;
 
   const ConsensusOptions options_;

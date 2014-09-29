@@ -63,11 +63,9 @@ class ReplicaState {
                         OpIdBiggerThanFunctor > CallbackMap;
 
   ReplicaState(const ConsensusOptions& options,
-               ThreadPool* callback_exec_pool);
-
-  // TODO Merge into the ctor. see identical comment in RaftConsensus.
-  Status Init(const std::string& peer_uuid,
-              ReplicaTransactionFactory* txn_factory);
+               ThreadPool* callback_exec_pool,
+               const std::string& peer_uuid,
+               ReplicaTransactionFactory* txn_factory);
 
   Status StartUnlocked(const OpId& initial_id, const metadata::QuorumPB& initial_quorum);
 
@@ -256,7 +254,7 @@ class ReplicaState {
   const ConsensusOptions options_;
 
   // The UUID of the local peer.
-  std::string peer_uuid_;
+  const std::string peer_uuid_;
 
   // The UUID of the leader. This changes over time, and may be the same as the local peer.
   std::string leader_uuid_;
@@ -332,10 +330,7 @@ class ReplicaState {
   mutable simple_spinlock update_lock_;
 
   enum State {
-    // State replicas start in.
-    kNotInitialized,
-    // State after the replica is initialized with initial ids and
-    // a peer.
+    // State after the replica is built.
     kInitialized,
     // State signaling the replica is changing configs. Replicas
     // need both the replicate and the commit message for the config

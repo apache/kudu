@@ -97,11 +97,19 @@ class RaftConsensusTest : public KuduTest {
     for (int i = 0; i < quorum_.peers_size(); i++) {
       LocalTestPeerProxyFactory* proxy_factory = new LocalTestPeerProxyFactory();
       proxy_factories.push_back(proxy_factory);
+
+      TestTransactionFactory* txn_factory = new TestTransactionFactory();
       RaftConsensus* peer =
           new RaftConsensus(options_,
                             gscoped_ptr<PeerProxyFactory>(proxy_factory).Pass(),
-                            MetricContext(metric_context_, Substitute("peer-$0", i)));
+                            MetricContext(metric_context_, Substitute("peer-$0", i)),
+                            quorum_.peers(i).permanent_uuid(),
+                            clock_,
+                            txn_factory,
+                            logs_[i]);
 
+      txn_factory->SetConsensus(peer);
+      txn_factories_.push_back(txn_factory);
       peers_.push_back(peer);
     }
 
@@ -113,16 +121,6 @@ class RaftConsensusTest : public KuduTest {
         proxy_factory->AddPeer(quorum_.peers(j), peers_[j]);
       }
     }
-  }
-
-  Status InitPeers() {
-    for (int i = 0; i < quorum_.peers_size(); i++) {
-      RaftConsensus* peer = peers_[i];
-      TestTransactionFactory* txn_factory = new TestTransactionFactory(peer);
-      txn_factories_.push_back(txn_factory);
-      RETURN_NOT_OK(peer->Init(quorum_.peers(i), clock_, txn_factory, logs_[i]));
-    }
-    return Status::OK();
   }
 
   Status StartPeers() {
@@ -140,7 +138,6 @@ class RaftConsensusTest : public KuduTest {
     BuildInitialQuorumPB(num);
     RETURN_NOT_OK(BuildFsManagersAndLogs());
     BuildPeers();
-    RETURN_NOT_OK(InitPeers());
     return Status::OK();
   }
 

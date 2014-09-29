@@ -42,15 +42,11 @@ class RaftConsensus : public Consensus {
 
   RaftConsensus(const ConsensusOptions& options,
                 gscoped_ptr<PeerProxyFactory> peer_proxy_factory,
-                const MetricContext& metric_ctx);
-
-  // TODO merge this into the ctor, as well as the corresponding
-  // method in RaftConsensusState. Neither are actually ever
-  // returning anything other than Status::OK().
-  virtual Status Init(const metadata::QuorumPeerPB& peer,
-                      const scoped_refptr<server::Clock>& clock,
-                      ReplicaTransactionFactory* txn_factory,
-                      log::Log* log) OVERRIDE;
+                const MetricContext& metric_ctx,
+                const std::string& peer_uuid,
+                const scoped_refptr<server::Clock>& clock,
+                ReplicaTransactionFactory* txn_factory,
+                log::Log* log);
 
   virtual Status Start(const metadata::QuorumPB& initial_quorum,
                        const OpId& last_committed_op_id) OVERRIDE;
