@@ -15,7 +15,7 @@
 #include "kudu/util/env.h"
 #include "kudu/util/pb_util.h"
 
-DEFINE_bool(print_headers, true, "print the log segment headers");
+DEFINE_bool(print_headers, true, "print the log segment headers/footers");
 DEFINE_string(print_entries, "decoded",
               "How to print entries:\n"
               "  false|0|no = don't print\n"
@@ -143,6 +143,9 @@ void PrintSegment(const scoped_refptr<ReadableLogSegment>& segment) {
     } else if (print_type == PRINT_ID) {
       PrintIdOnly(*entry);
     }
+  }
+  if (FLAGS_print_headers && segment->HasFooter()) {
+    cout << "Footer:\n" << segment->footer().DebugString();
   }
 }
 
