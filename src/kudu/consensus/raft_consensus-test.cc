@@ -256,6 +256,52 @@ class RaftConsensusTest : public KuduTest {
     }
   }
 
+  // Used in ReplicateSequenceOfMessages() to specify whether
+  // we should wait for all replicas to have replicated the
+  // sequence or just a majority.
+  enum ReplicateWaitMode {
+    WAIT_FOR_ALL_REPLICAS,
+    WAIT_FOR_MAJORITY
+  };
+
+  // Used in ReplicateSequenceOfMessages() to specify whether
+  // we should also commit the messages in the sequence
+  enum CommitMode {
+    DONT_COMMIT,
+    COMMIT_ONE_BY_ONE
+  };
+
+  // Replicates a sequence of messages to the peer passed as leader.
+  // Optionally waits for the messages to be replicated to followers.
+  // 'last_op_id' is set to the id of the last replicated operation.
+  // The operations are only committed if 'commit_one_by_one' is true.
+  void ReplicateSequenceOfMessages(int seq_size,
+                                   int leader_idx,
+                                   ReplicateWaitMode wait_mode,
+                                   CommitMode commit_mode,
+                                   OpId* last_op_id,
+                                   vector<ConsensusRound*>* rounds,
+                                   shared_ptr<LatchCallback>* commit_clbk = NULL) {
+    for (int i = 0; i < seq_size; i++) {
+      gscoped_ptr<ConsensusRound> round;
+      ASSERT_STATUS_OK(AppendDummyMessage(2, &round, commit_clbk));
+      ASSERT_STATUS_OK(WaitForReplicate(round.get()));
+      last_op_id->CopyFrom(round->id());
+      if (commit_mode == COMMIT_ONE_BY_ONE) {
+        CommitDummyMessage(round.get());
+      }
+      rounds->push_back(round.release());
+    }
+
+    if (wait_mode == WAIT_FOR_ALL_REPLICAS) {
+      for (int i = 0; i < peers_.size(); i++) {
+        if (i != leader_idx) {
+          WaitForReplicateIfNotAlreadyPresent(*last_op_id, 0);
+        }
+      }
+    }
+  }
+
   void GatherOperations(int idx, Log* log, vector<OperationPB* >* operations) {
     ASSERT_STATUS_OK(log->WaitUntilAllFlushed());
     log->Close();
@@ -393,17 +439,19 @@ TEST_F(RaftConsensusTest, TestFollowersReplicateAndCommitMessage) {
   ASSERT_STATUS_OK(BuildAndStartQuorum(3));
 
   OpId last_op_id;
-  gscoped_ptr<ConsensusRound> round;
+  vector<ConsensusRound*> rounds;
+  ElementDeleter deleter(&rounds);
   shared_ptr<LatchCallback> commit_clbk;
-  ASSERT_STATUS_OK(AppendDummyMessage(kLeaderidx, &round, &commit_clbk));
-  ASSERT_STATUS_OK(WaitForReplicate(round.get()));
-  last_op_id.CopyFrom(round->id());
+  ReplicateSequenceOfMessages(1,
+                              kLeaderidx,
+                              WAIT_FOR_ALL_REPLICAS,
+                              DONT_COMMIT,
+                              &last_op_id,
+                              &rounds,
+                              &commit_clbk);
 
-  // Wait for the followers replicate the operations.
-  WaitForReplicateIfNotAlreadyPresent(last_op_id, kFollower0Idx);
-  WaitForReplicateIfNotAlreadyPresent(last_op_id, kFollower1Idx);
   // Commit the operation
-  ASSERT_STATUS_OK(CommitDummyMessage(round.get()));
+  ASSERT_STATUS_OK(CommitDummyMessage(rounds[0]));
 
   // Wait for everyone to commit the operations.
 
@@ -433,27 +481,21 @@ TEST_F(RaftConsensusTest, TestFollowersReplicateAndCommitSequence) {
 
   ASSERT_STATUS_OK(BuildAndStartQuorum(3));
 
-  // We'll append seq_size messages so we register the callback for op seq_size + 1
-  // (to account for the initial configuration op).
   OpId last_op_id;
-
-  vector<ConsensusRound*> contexts;
-  ElementDeleter deleter(&contexts);
+  vector<ConsensusRound*> rounds;
+  ElementDeleter deleter(&rounds);
   shared_ptr<LatchCallback> commit_clbk;
-  for (int i = 0; i < seq_size; i++) {
-    gscoped_ptr<ConsensusRound> round;
-    ASSERT_STATUS_OK(AppendDummyMessage(kLeaderidx, &round, &commit_clbk));
-    ASSERT_STATUS_OK(WaitForReplicate(round.get()));
-    last_op_id.CopyFrom(round->id());
-    contexts.push_back(round.release());
-  }
 
-  // Wait for the followers replicate the operations.
-  WaitForReplicateIfNotAlreadyPresent(last_op_id, kFollower0Idx);
-  WaitForReplicateIfNotAlreadyPresent(last_op_id, kFollower1Idx);
+  ReplicateSequenceOfMessages(seq_size,
+                              kLeaderidx,
+                              WAIT_FOR_ALL_REPLICAS,
+                              DONT_COMMIT,
+                              &last_op_id,
+                              &rounds,
+                              &commit_clbk);
 
   // Commit the operations, but wait for the replicates to finish first
-  BOOST_FOREACH(ConsensusRound* round, contexts) {
+  BOOST_FOREACH(ConsensusRound* round, rounds) {
     ASSERT_STATUS_OK(CommitDummyMessage(round));
   }
 
@@ -475,8 +517,8 @@ TEST_F(RaftConsensusTest, TestConsensusContinuesIfAMinorityFallsBehind) {
   ASSERT_STATUS_OK(BuildAndStartQuorum(3));
 
   OpId last_replicate;
-  vector<ConsensusRound*> contexts;
-  ElementDeleter deleter(&contexts);
+  vector<ConsensusRound*> rounds;
+  ElementDeleter deleter(&rounds);
   {
     // lock one of the replicas down by obtaining the state lock
     // and never letting it go.
@@ -484,16 +526,15 @@ TEST_F(RaftConsensusTest, TestConsensusContinuesIfAMinorityFallsBehind) {
     ReplicaState::UniqueLock lock;
     ASSERT_STATUS_OK(follower0_rs->LockForRead(&lock));
 
-    // replicate and commit 10 messages
-    for (int i = 0; i < 10; i++) {
-      gscoped_ptr<ConsensusRound> round;
-      ASSERT_STATUS_OK(AppendDummyMessage(kLeaderidx, &round));
-      last_replicate.CopyFrom(round->id());
-      // if the locked replica was stopping consensus we would hang here
-      WaitForReplicate(round.get());
-      CommitDummyMessage(round.get());
-      contexts.push_back(round.release());
-    }
+    // If the locked replica would stop consensus we would hang here
+    // as we wait for operations to be replicated to a majority.
+    ReplicateSequenceOfMessages(10,
+                                kLeaderidx,
+                                WAIT_FOR_MAJORITY,
+                                COMMIT_ONE_BY_ONE,
+                                &last_replicate,
+                                &rounds);
+
     // Follower 1 should be fine (Were we to wait for follower0's replicate
     // this would hang here). We know he must have replicated but make sure
     // by calling Wait().
