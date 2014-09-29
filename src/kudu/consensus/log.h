@@ -296,7 +296,7 @@ class Log {
   // Used to build the footer.
   // TODO We could keep a collection of these for each
   // segment to build a (less) sparse index.
-  SegmentIdxPosPB first_op_last_seg_;
+  SegmentIdxPosPB first_op_in_seg_;
 
   // The total number of operations written to the last segment
   int64_t total_ops_in_last_seg_;

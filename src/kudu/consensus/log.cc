@@ -280,18 +280,18 @@ Status Log::AsyncAllocateSegment() {
 Status Log::CloseCurrentSegment() {
   LogSegmentFooterPB footer;
 
-  if (!first_op_last_seg_.IsInitialized()) {
+  if (!first_op_in_seg_.IsInitialized()) {
     VLOG(1) << "Writing a segment without any operation with id. "
         "Segment: " << active_segment_->path();
   } else {
-    footer.add_idx_entry()->CopyFrom(first_op_last_seg_);
+    footer.add_idx_entry()->CopyFrom(first_op_in_seg_);
   }
 
   footer.set_num_entries(total_ops_in_last_seg_);
   RETURN_NOT_OK(active_segment_->WriteFooterAndClose(footer));
 
   total_ops_in_last_seg_ = 0;
-  first_op_last_seg_.Clear();
+  first_op_in_seg_.Clear();
 
   return Status::OK();
 }
@@ -378,17 +378,6 @@ Status Log::DoAppend(LogEntryBatch* entry_batch, bool caller_owns_operation) {
     return Status::OK();
   }
 
-  // If we haven't seen an operation with an id in this segment yet, scan the
-  // entry batch looking for one.
-  if (!first_op_last_seg_.IsInitialized()) {
-    BOOST_FOREACH(const LogEntryPB& entry, entry_batch->entry_batch_pb_->entry()) {
-      if (entry.has_operation() && entry.operation().has_id()) {
-        first_op_last_seg_.mutable_id()->CopyFrom(entry.operation().id());
-        break;
-      }
-    }
-  }
-
   // We keep track of the last-written OpId here.
   // This is needed to initialize Consensus on startup.
   {
@@ -398,6 +387,7 @@ Status Log::DoAppend(LogEntryBatch* entry_batch, bool caller_owns_operation) {
     DCHECK(last_entry_op_id_.IsInitialized());
   }
 
+  OpId first_op_in_batch;
   for (size_t i = 0; i < num_entries; i++) {
     LogEntryPB* entry_pb = entry_batch->entry_batch_pb_->mutable_entry(i);
     CHECK_EQ(OPERATION, entry_pb->type())
@@ -407,7 +397,14 @@ Status Log::DoAppend(LogEntryBatch* entry_batch, bool caller_owns_operation) {
     if (entry_pb->operation().has_replicate()) CHECK(entry_pb->operation().has_id());
 
     // TODO When we actually have commits without ids reverse the check below
+    // and test for an id before assigning it to 'first_op_with_id_in_segment'.
     if (entry_pb->operation().has_commit()) CHECK(entry_pb->operation().has_id());
+
+    // Store the id of the first operation in the batch so that if we roll over
+    // to a new segment we already have the first entry for the footer index.
+    if (!first_op_in_batch.IsInitialized()) {
+      first_op_in_batch.CopyFrom(entry_pb->operation().id());
+    }
 
     if (caller_owns_operation) {
       // If the OperationPB was allocated by another thread, we must release
@@ -437,6 +434,12 @@ Status Log::DoAppend(LogEntryBatch* entry_batch, bool caller_owns_operation) {
     }
   } else {
     VLOG(1) << "Segment allocation already in progress...";
+  }
+
+  // If we haven't seen an operation with an id in this segment yet add 'first_op_in_batch'
+  // to the footer.
+  if (!first_op_in_seg_.IsInitialized()) {
+    first_op_in_seg_.mutable_id()->CopyFrom(first_op_in_batch);
   }
 
   LOG_SLOW_EXECUTION(WARNING, 50, "Append to log took a long time") {

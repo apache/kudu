@@ -189,13 +189,13 @@ TEST_F(LogTest, TestCorruptLog) {
 TEST_F(LogTest, TestSegmentRollover) {
   BuildLog();
   // Set a small segment size so that we have roll overs.
-  log_->SetMaxSegmentSizeForTests(1024);
+  log_->SetMaxSegmentSizeForTests(990);
   const int kNumEntriesPerBatch = 100;
 
   OpId op_id(MinimumOpId());
   int num_entries = 0;
   do {
-    AppendNoOps(&op_id, kNumEntriesPerBatch);
+    ASSERT_STATUS_OK(AppendNoOps(&op_id, kNumEntriesPerBatch));
     num_entries += kNumEntriesPerBatch;
   } while (log_->GetNumReadableLogSegmentsForTests() < 3);
 
