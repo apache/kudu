@@ -51,7 +51,7 @@ void MasterPathHandlers::HandleTabletServers(const Webserver::ArgumentMap& args,
     TSRegistrationPB reg;
     desc->GetRegistration(&reg);
     *output << Substitute("<tr><th>$0</th><td>$1</td><td><code>$2</code></td></tr>\n",
-                          TSRegistrationPBToHtml(reg, desc->permanent_uuid()),
+                          RegistrationToHtml(reg, desc->permanent_uuid()),
                           time_since_hb,
                           EscapeForHtmlToString(reg.ShortDebugString()));
   }
@@ -145,6 +145,39 @@ void MasterPathHandlers::HandleTablePage(const Webserver::ArgumentMap &args,
   HtmlOutputTaskList(task_list, output);
 }
 
+void MasterPathHandlers::HandleMasters(const Webserver::ArgumentMap& args,
+                                       std::stringstream* output) {
+  vector<ListMastersResponsePB::Entry> masters;
+  Status s = master_->ListMasters(&masters);
+  if (!s.ok()) {
+    s = s.CloneAndPrepend("Unable to list Masters");
+    LOG(WARNING) << s.ToString();
+    *output << "<h1>" << s.ToString() << "</h1>\n";
+    return;
+  }
+  *output << "<h1> Masters </h1>\n";
+  *output <<  "<table class='table table-striped'>\n";
+  *output <<  "  <tr><th>Registration</th><th>Role</th></tr>\n";
+
+  BOOST_FOREACH(const ListMastersResponsePB::Entry& master, masters) {
+    if (master.has_error()) {
+      Status error = StatusFromPB(master.error());
+      *output << Substitute("  <tr><td colspan=2><font color='red'><b>$0</b></font></td></tr>\n",
+                            EscapeForHtmlToString(error.ToString()));
+      continue;
+    }
+    string reg_text = RegistrationToHtml(master.registration(),
+                                         master.instance_id().permanent_uuid());
+    if (master.local()) {
+      reg_text = Substitute("<b>$0</b>", reg_text);
+    }
+    *output << Substitute("  <tr><td>$0</td><td>$1</td></tr>\n", reg_text,
+                          master.has_role() ?  QuorumPeerPB_Role_Name(master.role()) : "N/A");
+  }
+
+  *output << "</table>";
+}
+
 Status MasterPathHandlers::Register(Webserver* server) {
   bool is_styled = true;
   bool is_on_nav_bar = true;
@@ -157,6 +190,9 @@ Status MasterPathHandlers::Register(Webserver* server) {
   server->RegisterPathHandler("/table",
                               boost::bind(&MasterPathHandlers::HandleTablePage, this, _1, _2),
                               is_styled, false);
+  server->RegisterPathHandler("/masterz",
+                              boost::bind(&MasterPathHandlers::HandleMasters, this, _1, _2),
+                              is_styled, is_on_nav_bar);
   return Status::OK();
 }
 
@@ -197,11 +233,12 @@ string MasterPathHandlers::TSDescriptorToHtml(const TSDescriptor& desc) const {
   if (reg.rpc_addresses().size() > 0) {
     link_text = reg.rpc_addresses(0).host();
   }
-  return TSRegistrationPBToHtml(reg, link_text);
+  return RegistrationToHtml(reg, link_text);
 }
 
-string MasterPathHandlers::TSRegistrationPBToHtml(const TSRegistrationPB& reg,
-                                                  const std::string& link_text) const {
+template<class RegistrationType>
+string MasterPathHandlers::RegistrationToHtml(const RegistrationType& reg,
+                                              const std::string& link_text) const {
   string link_html = EscapeForHtmlToString(link_text);
   if (reg.http_addresses().size() > 0) {
     link_html = Substitute("<a href=\"http://$0:$1/\">$2</a>",

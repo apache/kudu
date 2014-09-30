@@ -62,6 +62,15 @@ class MasterServiceImpl : public MasterServiceIf {
   virtual void ListTabletServers(const ListTabletServersRequestPB* req,
                                  ListTabletServersResponsePB* resp,
                                  rpc::RpcContext* rpc) OVERRIDE;
+
+  virtual void ListMasters(const ListMastersRequestPB* req,
+                           ListMastersResponsePB* resp,
+                           rpc::RpcContext* rpc) OVERRIDE;
+
+  virtual void GetMasterRegistration(const GetMasterRegistrationRequestPB* req,
+                                     GetMasterRegistrationResponsePB* resp,
+                                     rpc::RpcContext* rpc) OVERRIDE;
+
  private:
   Master* server_;
 

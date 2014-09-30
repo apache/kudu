@@ -38,6 +38,8 @@ class MasterPathHandlers {
                             std::stringstream* output);
   void HandleTablePage(const Webserver::ArgumentMap &args,
                        std::stringstream *output);
+  void HandleMasters(const Webserver::ArgumentMap& args,
+                     std::stringstream* output);
 
   // Convert location of quorum members to HTML, indicating the roles
   // of each tablet server in a quorum.
@@ -47,11 +49,13 @@ class MasterPathHandlers {
   // tablet server's own webserver if specified in 'desc'.
   std::string TSDescriptorToHtml(const TSDescriptor& desc) const;
 
-  // Convert the specified TSRegistrationPB to HTML, adding a link to
-  // the tablet server's own web server (if specified in 'reg') with
-  // anchor text 'link_text'.
-  std::string TSRegistrationPBToHtml(const TSRegistrationPB& reg,
-                                     const std::string& link_text) const;
+  // Convert the specified server registration to HTML, adding a link
+  // to the server's own web server (if specified in 'reg') with
+  // anchor text 'link_text'. 'RegistrationType' must be
+  // TSRegistrationPB or MasterRegistrationPB.
+  template<class RegistrationType>
+  std::string RegistrationToHtml(const RegistrationType& reg,
+                                 const std::string& link_text) const;
 
   Master* master_;
   DISALLOW_COPY_AND_ASSIGN(MasterPathHandlers);

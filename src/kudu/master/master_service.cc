@@ -13,6 +13,7 @@
 #include "kudu/master/ts_descriptor.h"
 #include "kudu/master/ts_manager.h"
 #include "kudu/rpc/rpc_context.h"
+#include "kudu/server/webserver.h"
 
 namespace kudu {
 namespace master {
@@ -278,6 +279,32 @@ void MasterServiceImpl::ListTabletServers(const ListTabletServersRequestPB* req,
     desc->GetNodeInstancePB(entry->mutable_instance_id());
     desc->GetRegistration(entry->mutable_registration());
     entry->set_millis_since_heartbeat(desc->TimeSinceHeartbeat().ToMilliseconds());
+  }
+  rpc->RespondSuccess();
+}
+
+void MasterServiceImpl::ListMasters(const ListMastersRequestPB* req,
+                                    ListMastersResponsePB* resp,
+                                    rpc::RpcContext* rpc) {
+  vector<ListMastersResponsePB::Entry> masters;
+  Status s = server_->ListMasters(&masters);
+  if (!s.ok()) {
+    StatusToPB(s, resp->mutable_error());
+  } else {
+    BOOST_FOREACH(const ListMastersResponsePB::Entry& master, masters) {
+      resp->add_masters()->CopyFrom(master);
+    }
+  }
+  rpc->RespondSuccess();
+}
+
+void MasterServiceImpl::GetMasterRegistration(const GetMasterRegistrationRequestPB* req,
+                                              GetMasterRegistrationResponsePB* resp,
+                                              rpc::RpcContext* rpc) {
+  resp->mutable_instance_id()->CopyFrom(server_->instance_pb());
+  Status s = server_->GetMasterRegistration(resp->mutable_registration());
+  if (!s.ok()) {
+    StatusToPB(s, resp->mutable_error());
   }
   rpc->RespondSuccess();
 }

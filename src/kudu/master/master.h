@@ -4,10 +4,12 @@
 
 #include <string>
 #include <tr1/memory>
+#include <vector>
 
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/master/master_options.h"
+#include "kudu/master/master.pb.h"
 #include "kudu/server/server_base.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/status.h"
@@ -54,6 +56,18 @@ class Master : public server::ServerBase {
 
   const MasterOptions& opts() { return opts_; }
 
+  // Get the RPC and HTTP addresses for this master instance.
+  Status GetMasterRegistration(MasterRegistrationPB* registration) const;
+
+  // Get node instance, quorum role, RPC and HTTP addresses for all
+  // masters.
+  //
+  // TODO move this to a separate class to be re-used in TS and
+  // client; cache this information with a TTL (possibly in another
+  // SysTable), so that we don't have to perform an RPC call on every
+  // request.
+  Status ListMasters(std::vector<ListMastersResponsePB::Entry>* masters) const;
+
  private:
   friend class MasterTest;
 
@@ -62,8 +76,6 @@ class Master : public server::ServerBase {
     kInitialized,
     kRunning
   };
-
-  RpcServer *rpc_server() const { return rpc_server_.get(); }
 
   Status InitCatalogManager();
 
