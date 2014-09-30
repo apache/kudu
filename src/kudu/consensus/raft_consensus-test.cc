@@ -44,6 +44,7 @@ using strings::Substitute;
 using strings::SubstituteAndAppend;
 
 const char* kTestTablet = "TestTablet";
+const int kDontVerify = -1;
 
 class RaftConsensusTest : public KuduTest {
  public:
@@ -283,7 +284,7 @@ class RaftConsensusTest : public KuduTest {
                                    shared_ptr<LatchCallback>* commit_clbk = NULL) {
     for (int i = 0; i < seq_size; i++) {
       gscoped_ptr<ConsensusRound> round;
-      ASSERT_STATUS_OK(AppendDummyMessage(2, &round, commit_clbk));
+      ASSERT_STATUS_OK(AppendDummyMessage(leader_idx, &round, commit_clbk));
       ASSERT_STATUS_OK(WaitForReplicate(round.get()));
       last_op_id->CopyFrom(round->id());
       if (commit_mode == COMMIT_ONE_BY_ONE) {
@@ -326,22 +327,28 @@ class RaftConsensusTest : public KuduTest {
   // Verifies that the replica's log match the leader's. This deletes the
   // peers (so we're sure that no further writes occur) and closes the logs
   // so it must be the very last thing to run, in a test.
-  void VerifyLogs() {
+  void VerifyLogs(int leader_idx = 2, int replica0_idx = 0, int replica1_idx = 1) {
     // Wait for in-flight transactions to be done. We're destroying the
     // peers next and leader transactions won't be able to commit anymore.
+
+    string leader_name = GetPeer(leader_idx)->peer_uuid();
+    string replica0_name = GetPeer(replica0_idx)->peer_uuid();
+    string replica1_name = replica1_idx != kDontVerify ? GetPeer(replica1_idx)->peer_uuid() : "";
     BOOST_FOREACH(TestTransactionFactory* factory, txn_factories_) {
       factory->WaitDone();
     }
     STLDeleteElements(&peers_);
     vector<OperationPB*> replica0_ops;
     ElementDeleter repl0_deleter(&replica0_ops);
-    GatherOperations(0, logs_[0], &replica0_ops);
+    GatherOperations(replica0_idx, logs_[replica0_idx], &replica0_ops);
     vector<OperationPB*> replica1_ops;
     ElementDeleter repl1_deleter(&replica1_ops);
-    GatherOperations(1, logs_[1], &replica1_ops);
+    if (replica1_idx != kDontVerify) {
+      GatherOperations(replica1_idx, logs_[replica1_idx], &replica1_ops);
+    }
     vector<OperationPB*> leader_ops;
     ElementDeleter leader_deleter(&leader_ops);
-    GatherOperations(2, logs_[2], &leader_ops);
+    GatherOperations(leader_idx, logs_[leader_idx], &leader_ops);
 
     // gather the leader's replicates and commits, the replicas
     // must have seen the same operations in the same order.
@@ -355,15 +362,28 @@ class RaftConsensusTest : public KuduTest {
       }
     }
 
-    VerifyReplica(leader_replicates, leader_commits, leader_ops, replica0_ops, "peer-0");
-    VerifyReplica(leader_replicates, leader_commits, leader_ops, replica1_ops, "peer-1");
+    VerifyReplica(leader_replicates,
+                  leader_commits,
+                  leader_ops,
+                  replica0_ops,
+                  leader_name,
+                  replica0_name);
+    if (replica1_idx != kDontVerify) {
+      VerifyReplica(leader_replicates,
+                    leader_commits,
+                    leader_ops,
+                    replica1_ops,
+                    leader_name,
+                    replica1_name);
+    }
   }
 
   void VerifyReplica(const vector<OpId>& leader_replicates,
                      const vector<OpId>& leader_commits,
                      const vector<OperationPB*>& leader_ops,
                      const vector<OperationPB*>& replica_ops,
-                     string replica_id) {
+                     string leader_name,
+                     string replica_name) {
     int l_repl_idx = 0;
     int l_comm_idx = 0;
     OpId last_repl_op = MinimumOpId();
@@ -371,8 +391,8 @@ class RaftConsensusTest : public KuduTest {
                   OpIdHashFunctor,
                   OpIdEqualsFunctor> replication_ops;
 
-    SCOPED_TRACE(PrintOnError(leader_ops, "leader"));
-    SCOPED_TRACE(PrintOnError(replica_ops, replica_id));
+    SCOPED_TRACE(PrintOnError(leader_ops, Substitute("Leader: $0", leader_name)));
+    SCOPED_TRACE(PrintOnError(replica_ops, Substitute("Replica: $0", replica_name)));
     for (int i = 0; i < replica_ops.size(); i++) {
       OperationPB* operation = replica_ops[i];
       // check that the operations appear in the same order as the leaders
@@ -743,6 +763,7 @@ TEST_F(RaftConsensusTest, DISABLED_TestLeaderPromotionWithQuiescedQuorum) {
   // Make sure the last operation is committed everywhere
   ASSERT_STATUS_OK(last_commit_clbk.get()->Wait());
   WaitForCommitIfNotAlreadyPresent(last_op_id, 0, 1);
+  VerifyLogs(1, 0, kDontVerify);
 }
 
 }  // namespace consensus
