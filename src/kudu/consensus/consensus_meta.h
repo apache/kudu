@@ -19,6 +19,8 @@ namespace consensus {
 
 // Provides methods to read and persist consensus-related metadata.
 //
+// This corresponds to Raft Figure 2's "Persistent state on all servers".
+//
 // This class is not thread-safe and requires external synchronization.
 class ConsensusMetadata {
  public:

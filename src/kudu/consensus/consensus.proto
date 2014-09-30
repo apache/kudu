@@ -54,10 +54,27 @@ message ConsensusMetadataPB {
   // Last-committed quorum membership.
   required kudu.metadata.QuorumPB committed_quorum = 1;
 
-  // Current quorum term number.
+  // Latest term this server has seen.
+  // When a quorum is first created, initialized to 0.
+  //
+  // Whenever a new election is started, the candidate increments this by one
+  // and requests votes from peers.
+  //
+  // If any RPC or RPC response is received from another node containing a term higher
+  // than this one, the server should step down to FOLLOWER and set its current_term to
+  // match the caller's term.
+  //
+  // If a follower receives an UpdateConsensus RPC with a term lower than this
+  // term, then that implies that the RPC is coming from a former LEADER who has
+  // not realized yet that its term is over. In that case, we will reject the
+  // UpdateConsensus() call with ConsensusErrorPB::INVALID_TERM.
+  //
+  // If a follower receives a RequestConsensusVote() RPC with an earlier term,
+  // the vote is denied.
   required uint64 current_term = 2;
 
-  // Permanent UUID of the candidate voted for in 'current_term', or NULL.
+  // Permanent UUID of the candidate voted for in 'current_term', or not present
+  // if no vote was made in the current term.
   optional string voted_for = 3;
 }
 
