@@ -16,13 +16,15 @@
 #include <gflags/gflags.h>
 
 #include "kudu/gutil/stringprintf.h"
+#include "kudu/gutil/strings/substitute.h"
 #include "kudu/tablet/mvcc.h"
 #include "kudu/util/countdown_latch.h"
-#include "kudu/util/monotime.h"
+#include "kudu/util/stopwatch.h"
 #include "kudu/util/thread.h"
 
 using std::pair;
 using std::tr1::shared_ptr;
+using strings::Substitute;
 
 DEFINE_int32(maintenance_manager_num_threads, 4,
        "Size of the maintenance manager thread pool.");
@@ -298,12 +300,9 @@ MaintenanceOp* MaintenanceManager::FindBestOp() {
 }
 
 void MaintenanceManager::LaunchOp(MaintenanceOp* op) {
-  MonoTime start_time(MonoTime::Now(MonoTime::FINE));
-  op->Perform();
-  MonoTime end_time(MonoTime::Now(MonoTime::FINE));
-  MonoDelta delta(end_time.GetDeltaSince(start_time));
-  LOG(INFO) << StringPrintf("MaintenanceManager ran %s in %0.5gs",
-                            op->name().c_str(), delta.ToSeconds());
+  LOG_TIMING(INFO, Substitute("running $0", op->name())) {
+    op->Perform();
+  }
   boost::lock_guard<boost::mutex> guard(lock_);
   running_ops_--;
   op->running_--;
