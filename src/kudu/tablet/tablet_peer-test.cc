@@ -32,6 +32,7 @@ DECLARE_bool(enable_log_gc);
 namespace kudu {
 namespace tablet {
 
+using consensus::ConsensusBootstrapInfo;
 using consensus::CommitMsg;
 using consensus::Consensus;
 using consensus::MinimumOpId;
@@ -99,16 +100,19 @@ class TabletPeerTest : public KuduTabletTest {
     // Disable Log GC. We will call it manually.
     // This flag is restored by the FlagSaver member at destruction time.
     FLAGS_enable_log_gc = false;
+  }
 
-    consensus::ConsensusBootstrapInfo boot_info;
-    ASSERT_STATUS_OK(tablet_peer_->Start(boot_info));
+  Status StartPeer(const ConsensusBootstrapInfo& info) {
+    RETURN_NOT_OK(tablet_peer_->Start(info));
 
-    ASSERT_STATUS_OK(tablet_peer_->WaitUntilRunning(MonoDelta::FromSeconds(10)));
+    RETURN_NOT_OK(tablet_peer_->WaitUntilRunning(MonoDelta::FromSeconds(10)));
 
     // As we execute a change config txn on tablet peer start we need to
     // also wait for the transaction to be cleaned up so that we don't
     // have any explicit or implicit anchors when tests start.
     tablet_peer_->txn_tracker_.WaitForAllToFinish();
+
+    return Status::OK();
   }
 
   void TabletPeerStateChangedCallback(TabletPeer* tablet_peer) {
@@ -257,6 +261,9 @@ class DelayedApplyTransaction : public WriteTransaction {
 
 // Ensure that Log::GC() doesn't delete logs when the MRS has an anchor.
 TEST_F(TabletPeerTest, TestMRSAnchorPreventsLogGC) {
+  ConsensusBootstrapInfo info;
+  ASSERT_STATUS_OK(StartPeer(info));
+
   Log* log = tablet_peer_->log_.get();
   OpId min_op_id;
   int32_t num_gced;
@@ -295,6 +302,9 @@ TEST_F(TabletPeerTest, TestMRSAnchorPreventsLogGC) {
 
 // Ensure that Log::GC() doesn't delete logs when the DMS has an anchor.
 TEST_F(TabletPeerTest, TestDMSAnchorPreventsLogGC) {
+  ConsensusBootstrapInfo info;
+  ASSERT_STATUS_OK(StartPeer(info));
+
   Log* log = tablet_peer_->log_.get();
   OpId min_op_id;
   int32_t num_gced;
@@ -360,6 +370,9 @@ TEST_F(TabletPeerTest, TestDMSAnchorPreventsLogGC) {
 
 // Ensure that Log::GC() doesn't compact logs with OpIds of active transactions.
 TEST_F(TabletPeerTest, TestActiveTransactionPreventsLogGC) {
+  ConsensusBootstrapInfo info;
+  ASSERT_STATUS_OK(StartPeer(info));
+
   Log* log = tablet_peer_->log_.get();
   OpId min_op_id;
   int32_t num_gced;
