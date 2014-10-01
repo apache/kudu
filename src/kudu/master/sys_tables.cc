@@ -147,6 +147,11 @@ Status SysTable::SetupDistributedQuorum(const MasterOptions& options,
     leader.set_role(QuorumPeerPB::CANDIDATE);
     quorum->add_peers()->CopyFrom(leader);
   }
+  HostPortPB self_host_port;
+  self_host_port.set_port(master_->first_rpc_address().port());
+  RETURN_NOT_OK_PREPEND(GetHostname(self_host_port.mutable_host()),
+                        "Unable to determine the local hostname!");
+  quorum_peer->mutable_last_known_addr()->CopyFrom(self_host_port);
   VLOG(1) << "Distributed quorum configuration: " << quorum->ShortDebugString();
   return Status::OK();
 }
