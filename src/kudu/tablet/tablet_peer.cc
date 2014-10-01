@@ -172,6 +172,8 @@ Status TabletPeer::Start(const ConsensusBootstrapInfo& bootstrap_info) {
   RETURN_NOT_OK(StartPendingTransactions(my_role, bootstrap_info));
 
   VLOG(2) << "Quorum before starting: " << Quorum().DebugString();
+
+  RETURN_NOT_OK(Consensus::VerifyQuorum(Quorum()));
   RETURN_NOT_OK(consensus_->Start(Quorum(), bootstrap_info.last_commit_id));
 
   return Status::OK();
