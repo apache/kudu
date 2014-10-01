@@ -41,6 +41,33 @@ using std::tr1::shared_ptr;
 using std::tr1::unordered_set;
 using strings::Substitute;
 
+Status RaftConsensus::MakePeerLeaderInQuorum(const string& peer_uuid,
+                                             const QuorumPB& old_quorum,
+                                             QuorumPB* new_quorum) {
+  new_quorum->Clear();
+  new_quorum->CopyFrom(old_quorum);
+  new_quorum->clear_peers();
+  bool found_peer = false;
+  BOOST_FOREACH(const QuorumPeerPB& old_peer, old_quorum.peers()) {
+    QuorumPeerPB* new_peer = new_quorum->add_peers();
+    new_peer->CopyFrom(old_peer);
+    if (new_peer->permanent_uuid() == peer_uuid) {
+      new_peer->set_role(QuorumPeerPB::LEADER);
+      found_peer = true;
+      continue;
+    }
+    if (new_peer->role() == QuorumPeerPB::LEADER ||
+        new_peer->role() == QuorumPeerPB::CANDIDATE) {
+      new_peer->set_role(QuorumPeerPB::FOLLOWER);
+    }
+  }
+  if (!found_peer) {
+    return Status::IllegalState(Substitute("Cannot find peer: $0 in quorum: $1",
+                                           peer_uuid, old_quorum.ShortDebugString()));
+  }
+  return Status::OK();
+}
+
 RaftConsensus::RaftConsensus(const ConsensusOptions& options,
                              gscoped_ptr<ConsensusMetadata> cmeta,
                              gscoped_ptr<PeerProxyFactory> proxy_factory,
@@ -61,73 +88,110 @@ RaftConsensus::RaftConsensus(const ConsensusOptions& options,
                                 DCHECK_NOTNULL(txn_factory)));
 }
 
+Status RaftConsensus::VerifyQuorumAndCheckThatNoChangeIsPendingUnlocked(const QuorumPB& quorum) {
+  // Sanity checks.
+  if (state_->IsQuorumChangePendingUnlocked()) {
+    return Status::IllegalState(Substitute("Attempting to become leader "
+        "during a pending quorum change. Pending quorum: $0, Persisted quorum: "
+        "$1", state_->GetPendingQuorumUnlocked().ShortDebugString(),
+        quorum.ShortDebugString()));
+  }
+  return VerifyQuorum(quorum);
+}
+
+
 Status RaftConsensus::Start(const metadata::QuorumPB& /* unused */,
                             const OpId& last_committed_op_id) {
   RETURN_NOT_OK(ExecuteHook(PRE_START));
-  // TODO create a specialized method that does appropriate state
-  // checking for Start().
-  ReplicaState::UniqueLock lock;
-  RETURN_NOT_OK(state_->LockForConfigChange(&lock));
 
-  // TODO record the initial role assignment in the quorum metadata and record
-  // a vote for whoever was initially appointed leader by the master if this is
-  // the first quorum i.e. if the sequence number is equal to 0.
-  // This is important as to serialize the first leader assignment as any other
-  // future leader appointment.
+  QuorumPB initial_quorum;
+  {
+    ReplicaState::UniqueLock lock;
+    RETURN_NOT_OK(state_->LockForStart(&lock));
+    RETURN_NOT_OK_PREPEND(state_->StartUnlocked(last_committed_op_id),
+                          "Unable to start RAFT ReplicaState");
 
-  RETURN_NOT_OK_PREPEND(state_->StartUnlocked(last_committed_op_id),
-                        "Unable to start RAFT ReplicaState");
+    RETURN_NOT_OK_PREPEND(VerifyQuorumAndCheckThatNoChangeIsPendingUnlocked(
+                              state_->GetCommittedQuorumUnlocked()),
+                          "Invalid state on RaftConsensus::Start()");
+    initial_quorum.CopyFrom(state_->GetCommittedQuorumUnlocked());
+  }
 
-  // Sanity checks.
-  const QuorumPB& quorum = state_->GetCommittedQuorumUnlocked();
-  CHECK(!state_->IsQuorumChangePendingUnlocked())
-      << "Attempting to become leader during a pending quorum change. "
-      << "Pending quorum: " << state_->GetPendingQuorumUnlocked().ShortDebugString() << "; "
-      << "Persisted quorum: " << quorum.ShortDebugString();
-  RETURN_NOT_OK_PREPEND(VerifyQuorum(quorum),
-                        "Invalid quorum found in RaftConsensus::Start()");
 
-  // Assume expected role.
-  metadata::QuorumPeerPB::Role role = state_->GetActiveQuorumStateUnlocked().role;
-  if (role == QuorumPeerPB::CANDIDATE || role == QuorumPeerPB::LEADER) {
-    RETURN_NOT_OK(BecomeLeaderUnlocked());
-  } else {
-    RETURN_NOT_OK(BecomeReplicaUnlocked());
+  // If we're marked as candidate emulate a leader election.
+  // Temporary while we don't have the real thing.
+  QuorumPeerPB::Role my_role = GetRoleInQuorum(state_->GetPeerUuid(), initial_quorum);
+  switch (my_role) {
+    case QuorumPeerPB::CANDIDATE:
+    case QuorumPeerPB::LEADER:
+      RETURN_NOT_OK(EmulateElection());
+      break;
+    default:
+      RETURN_NOT_OK(ChangeConfig());
   }
 
   RETURN_NOT_OK(ExecuteHook(POST_START));
   return Status::OK();
 }
 
-Status RaftConsensus::BecomeLeaderUnlocked() {
-  LOG_WITH_PREFIX(INFO) << "Becoming Leader";
-  // Get the current quorum and:
-  // - mark ourselves leader
-  // - increase the configuration sequence number
+Status RaftConsensus::EmulateElection() {
 
-  QuorumPB committed_quorum = state_->GetCommittedQuorumUnlocked();
-  gscoped_ptr<QuorumPB> new_quorum(new QuorumPB(committed_quorum));
-  new_quorum->mutable_peers()->Clear();
-  new_quorum->set_seqno(committed_quorum.seqno() + 1);
+  QuorumPB new_quorum;
+  {
+    ReplicaState::UniqueLock lock;
+    RETURN_NOT_OK(state_->LockForConfigChange(&lock));
 
-  // Change the role of the previous leader/candidate to follower
-  // and our own role to leader
-  BOOST_FOREACH(const QuorumPeerPB& old_peer, committed_quorum.peers()) {
-    QuorumPeerPB* new_peer = new_quorum->add_peers();
-    new_peer->CopyFrom(old_peer);
-
-    if (new_peer->permanent_uuid() != state_->GetPeerUuid() &&
-        (new_peer->role() == QuorumPeerPB::LEADER || new_peer->role() == QuorumPeerPB::CANDIDATE)) {
-      new_peer->set_role(QuorumPeerPB::FOLLOWER);
+    // Right now we only tolerate changes when there isn't stuff
+    // in flight, so make sure those assumptions hold.
+    // The last thing we received should be a commit and it should also match
+    // the safe commit op id.
+    if (!OpIdEquals(state_->GetLastReceivedOpIdUnlocked(), state_->GetSafeCommitOpIdUnlocked())) {
+      return Status::IllegalState(
+          Substitute("Replica is not ready to be leader. Last received OpId: $0, Safe OpId: $1",
+                     state_->GetLastReceivedOpIdUnlocked().ShortDebugString(),
+                     state_->GetSafeCommitOpIdUnlocked().DebugString()));
     }
-    if (new_peer->permanent_uuid() == state_->GetPeerUuid()) {
-      new_peer->set_role(QuorumPeerPB::LEADER);
-    }
+
+    QuorumPB new_quorum;
+    RETURN_NOT_OK(MakePeerLeaderInQuorum(state_->GetPeerUuid(),
+                                         state_->GetCommittedQuorumUnlocked(),
+                                         &new_quorum));
+    new_quorum.set_seqno(state_->GetCommittedQuorumUnlocked().seqno() + 1);
+    // Increment the term.
+    state_->IncrementTermUnlocked();
+    RETURN_NOT_OK_PREPEND(VerifyQuorumAndCheckThatNoChangeIsPendingUnlocked(new_quorum),
+                          "Invalid state on RaftConsensus::EmulateElection()");
+    RETURN_NOT_OK(state_->SetPendingQuorumUnlocked(new_quorum));
+    return ChangeConfigUnlocked();
+  }
+}
+
+Status RaftConsensus::ChangeConfig() {
+  ReplicaState::UniqueLock lock;
+  RETURN_NOT_OK(state_->LockForConfigChange(&lock));
+  RETURN_NOT_OK(ChangeConfigUnlocked());
+  return Status::OK();
+}
+
+Status RaftConsensus::ChangeConfigUnlocked() {
+  switch (state_->GetActiveQuorumStateUnlocked().role) {
+    case QuorumPeerPB::LEADER:
+      RETURN_NOT_OK(BecomeLeaderUnlocked());
+      break;
+    case QuorumPeerPB::LEARNER:
+    case QuorumPeerPB::FOLLOWER:
+      RETURN_NOT_OK(BecomeReplicaUnlocked());
+      break;
+    default:
+      LOG(FATAL) << "Unexpected role: "
+          << QuorumPeerPB::Role_Name(state_->GetActiveQuorumStateUnlocked().role);
   }
 
-  // Set the pending quorum so that we can initialize the peer queues.
-  RETURN_NOT_OK(state_->SetPendingQuorumUnlocked(*new_quorum));
+  return Status::OK();
+}
 
+Status RaftConsensus::BecomeLeaderUnlocked() {
+  LOG_WITH_PREFIX(INFO) << "Becoming Leader";
   // Create the peers so that we're able to replicate messages remotely and locally
   RETURN_NOT_OK(CreateOrUpdatePeersUnlocked());
 
@@ -137,7 +201,7 @@ Status RaftConsensus::BecomeLeaderUnlocked() {
   // by itself, vs we having to manage all of that were we to use a replica side
   // transaction.
   RETURN_NOT_OK(state_->GetReplicaTransactionFactoryUnlocked()->SubmitConsensusChangeConfig(
-      new_quorum.Pass(),
+      gscoped_ptr<QuorumPB>(new QuorumPB(state_->GetPendingQuorumUnlocked())).Pass(),
       Bind(&RaftConsensus::BecomeLeaderResult, Unretained(this))));
 
   // After the change config transaction is queued, independently of whether it was successful
@@ -152,7 +216,6 @@ Status RaftConsensus::BecomeLeaderUnlocked() {
   // now that is being assured by the fact that the prepare queue is single threaded, but if
   // we ever move to multi-threaded prepare we need to make sure we call replicate on this first.
   RETURN_NOT_OK(state_->SetConfigDoneUnlocked());
-
   return Status::OK();
 }
 
@@ -530,6 +593,18 @@ Status RaftConsensus::UpdateReplica(const ConsensusRequestPB* request,
   {
     ReplicaState::UniqueLock lock;
     RETURN_NOT_OK(state_->LockForUpdate(&lock));
+
+    // Do term checks first:
+    if (PREDICT_FALSE(request->caller_term() != state_->GetCurrentTermUnlocked())) {
+      // Eventually we'll respond error here but right now just check.
+      CHECK_OK(state_->SetCurrentTermUnlocked(request->caller_term()));
+      // - Since we don't handle in-flights when the terms change yet
+      //   make sure that we don't have any.
+      CHECK_EQ(state_->GetNumPendingTxnsUnlocked(), 0);
+    }
+
+    // TODO check for the log matching property in a follow-up patch.
+
     TRACE("Updating replica for $0 ops", request->ops_size());
 
     // 0 - Split/Dedup
@@ -719,7 +794,6 @@ void RaftConsensus::Shutdown() {
   }
   CHECK_OK(state_->CancelPendingTransactions());
   CHECK_OK(state_->WaitForOustandingApplies());
-  STLDeleteValues(&peers_);
   LOG_WITH_PREFIX_LK(INFO) << "Raft consensus Shutdown!";
   CHECK_OK(state_->Shutdown());
   CHECK_OK(ExecuteHook(POST_SHUTDOWN));
@@ -795,8 +869,8 @@ ReplicaState* RaftConsensus::GetReplicaStateForTests() {
 
 RaftConsensus::~RaftConsensus() {
   Shutdown();
+  STLDeleteValues(&peers_);
 }
 
 }  // namespace consensus
 }  // namespace kudu
-

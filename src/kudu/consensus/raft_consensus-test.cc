@@ -253,9 +253,7 @@ class RaftConsensusTest : public KuduTest {
         GatherOperations(peer_idx, replica->log(), &replica_ops);
         vector<OperationPB*> leader_ops;
         ElementDeleter leader_deleter(&leader_ops);
-        int leader_idx = peers_.size() - 1;
         GatherOperations(leader_idx, logs_[leader_idx], &leader_ops);
-
         SCOPED_TRACE(PrintOnError(leader_ops, "leader"));
         SCOPED_TRACE(PrintOnError(replica_ops, replica->peer_uuid()));
         FAIL() << "Replica did not commit.";
@@ -708,7 +706,7 @@ TEST_F(RaftConsensusTest, TestLeaderHeartbeats) {
   // Wait for the config round to get committed and count the number
   // of update calls, calls after that will be heartbeats.
   OpId config_round;
-  config_round.set_term(0);
+  config_round.set_term(1);
   config_round.set_index(1);
   WaitForCommitIfNotAlreadyPresent(config_round, kFollower0Idx, kLeaderidx);
   WaitForCommitIfNotAlreadyPresent(config_round, kFollower1Idx, kLeaderidx);
@@ -734,7 +732,7 @@ TEST_F(RaftConsensusTest, TestLeaderHeartbeats) {
 // leader, makes another peer become leader and writes a sequence of
 // messages to it. The new leader and the follower should agree on the
 // sequence of messages.
-TEST_F(RaftConsensusTest, DISABLED_TestLeaderPromotionWithQuiescedQuorum) {
+TEST_F(RaftConsensusTest, TestLeaderPromotionWithQuiescedQuorum) {
   ASSERT_STATUS_OK(BuildAndStartQuorum(3));
 
   OpId last_op_id;
@@ -757,12 +755,15 @@ TEST_F(RaftConsensusTest, DISABLED_TestLeaderPromotionWithQuiescedQuorum) {
 
   // ... and make peer 1 become leader
   RaftConsensus* new_leader = GetPeer(1);
-  ASSERT_STATUS_OK(new_leader->BecomeLeaderUnlocked());
+
+  // This will make peer-1 change itself to leader, change peer-2 to
+  // follower and submit a config change.
+  ASSERT_STATUS_OK(new_leader->EmulateElection());
 
   // ... replicating a set of messages to peer 1 should now be possible.
   ReplicateSequenceOfMessages(10,
                               1, // The index of the new leader.
-                              WAIT_FOR_ALL_REPLICAS,
+                              WAIT_FOR_MAJORITY,
                               COMMIT_ONE_BY_ONE,
                               &last_op_id, NULL,
                               &last_commit_clbk);

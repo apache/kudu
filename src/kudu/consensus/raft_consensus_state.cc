@@ -117,6 +117,31 @@ Status ReplicaState::StartUnlocked(const OpId& initial_id) {
   return Status::OK();
 }
 
+void ReplicaState::IncrementTermUnlocked() {
+  DCHECK(update_lock_.is_locked());
+  current_term_++;
+}
+
+Status ReplicaState::SetCurrentTermUnlocked(uint64_t new_term) {
+  DCHECK(update_lock_.is_locked());
+  if (new_term < current_term_) {
+    return Status::IllegalState(
+        Substitute("Cannot change term to a term that is lower than the current one. "
+            "Current: $0, Proposed: $1", current_term_, new_term));
+  }
+  current_term_ = new_term;
+  return Status::OK();
+}
+
+
+Status ReplicaState::LockForStart(UniqueLock* lock) {
+  UniqueLock l(update_lock_);
+  CHECK_EQ(state_, kInitialized) << "Illegal state for Start()."
+      << " Replica is not in kInitialized state";
+  lock->swap(l);
+  return Status::OK();
+}
+
 Status ReplicaState::LockForRead(UniqueLock* lock) {
   *lock = UniqueLock(update_lock_);
   return Status::OK();
@@ -297,6 +322,11 @@ const uint64_t ReplicaState::GetCurrentTermUnlocked() const {
   return current_term_;
 }
 
+int ReplicaState::GetNumPendingTxnsUnlocked() const {
+  DCHECK(update_lock_.is_locked());
+  return pending_txns_.size();
+}
+
 Status ReplicaState::CancelPendingTransactions() {
   {
     UniqueLock lock(update_lock_);
@@ -375,6 +405,7 @@ void ReplicaState::UpdateLastReceivedOpIdUnlocked(const OpId& op_id) {
   DCHECK(update_lock_.is_locked());
   DCHECK_LE(OpIdCompare(received_op_id_, op_id), 0);
   received_op_id_ = op_id;
+  next_index_ = op_id.index() + 1;
 }
 
 const OpId& ReplicaState::GetLastReceivedOpIdUnlocked() const {

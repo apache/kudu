@@ -53,6 +53,11 @@ class RaftConsensus : public Consensus {
   virtual Status Start(const metadata::QuorumPB& initial_quorum,
                        const OpId& last_committed_op_id) OVERRIDE;
 
+  // Emulates an election by increasing the term number, marking
+  // this peer as leader, marking the previous leader as follower
+  // and calling ChangeConfig() with the resulting quorum.
+  Status EmulateElection();
+
   virtual Status Replicate(ConsensusRound* context) OVERRIDE;
 
   virtual Status Update(const ConsensusRequestPB* request,
@@ -108,12 +113,26 @@ class RaftConsensus : public Consensus {
   FRIEND_TEST(RaftConsensusTest, TestReplicasHandleCommunicationErrors);
   FRIEND_TEST(RaftConsensusTest, DISABLED_TestLeaderPromotionWithQuiescedQuorum);
 
+  // Copies 'old_quorum' to 'new_quorum' but makes the peer with 'peer_uuid'
+  // LEADER and whoever was LEADER/CANDIDATE before, if anyone, FOLLOWER.
+  // Returns Status::IllegalState() if the peer cannot be found.
+  static Status MakePeerLeaderInQuorum(const std::string& peer_uuid,
+                                       const metadata::QuorumPB& old_quorum,
+                                       metadata::QuorumPB* new_quorum);
+
+  // Verifies that 'quorum' is well formed and that no config change is in-flight.
+  Status VerifyQuorumAndCheckThatNoChangeIsPendingUnlocked(const metadata::QuorumPB& quorum);
+
+  // Same as below but acquires the lock through LockForChangeConfig first.
+  Status ChangeConfig();
+
+  // Changes this peer's configuration. Calls BecomeLeader(),
+  // BecomeFollower() if appropriate.
+  Status ChangeConfigUnlocked();
+
   // Makes the peer become leader.
-  // Assumes a majority of peers voted him leader for this term either
-  // explicitly when an election is triggered, or implicitly by master
-  // appointment.
   // Returns OK once the change config transaction that has this peer as leader
-  // has been enqueued.
+  // has been enqueued, the transaction will complete asynchronously.
   //
   // The ReplicaState must be locked for quorum change before calling.
   Status BecomeLeaderUnlocked();

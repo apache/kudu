@@ -238,8 +238,9 @@ class LocalTestPeerProxy : public PeerProxy {
       }
     }
     if (!s.ok()) {
-      LOG(WARNING) << "Could not update replica. With request: "
-          << other_peer_req.ShortDebugString() << " Status: " << s.ToString();
+      LOG(WARNING) << "Could not update replica "
+          << ". With request: " << other_peer_req.ShortDebugString()
+          << " Status: " << s.ToString();
       tserver::TabletServerErrorPB* error = other_peer_resp.mutable_error();
             error->set_code(tserver::TabletServerErrorPB::UNKNOWN_ERROR);
             StatusToPB(s, error->mutable_status());

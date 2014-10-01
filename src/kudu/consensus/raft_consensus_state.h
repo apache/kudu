@@ -123,6 +123,17 @@ class ReplicaState {
 
   Status StartUnlocked(const OpId& initial_id);
 
+  // Increments this peers term.
+  void IncrementTermUnlocked();
+
+  // Checks if the term change is legal and sets 'current_term'
+  // to 'new_term' if so.
+  Status SetCurrentTermUnlocked(uint64_t new_term);
+
+  // Locks a replica in preparation for StartUnlocked(). Makes
+  // sure the replica is in kInitialized state.
+  Status LockForStart(UniqueLock* lock);
+
   // Locks a replica down until the critical section of an append completes,
   // i.e. until the replicate message has been assigned an id and placed in
   // the log queue.
@@ -306,6 +317,10 @@ class ReplicaState {
   // a part of the state machine. Basically restores the id gen to the state it was before
   // generating 'id'.
   void RollbackIdGenUnlocked(const OpId& id);
+
+  // Returns the number of transactions that are currently in the pending state
+  // i.e. transactions for which Prepare() is done or under way.
+  int GetNumPendingTxnsUnlocked() const;
 
   std::string ToString() const;
 
