@@ -4,6 +4,7 @@
 
 #include "kudu/gutil/macros.h"
 #include "kudu/tablet/mvcc.h"
+#include "kudu/tablet/tablet.pb.h"
 #include "kudu/util/countdown_latch.h"
 #include "kudu/util/thread.h"
 #include "kudu/util/threadpool.h"
@@ -75,7 +76,7 @@ class MaintenanceOp {
 
   uint32_t running() { return running_; }
 
-  std::string name() const;
+  std::string name() const { return name_; }
 
  private:
   DISALLOW_COPY_AND_ASSIGN(MaintenanceOp);
@@ -127,6 +128,8 @@ class MaintenanceManager : public std::tr1::enable_shared_from_this<MaintenanceM
   // If the Op is currently running, it will not be interrupted.  However, this
   // function will block until the Op is finished.
   void UnregisterOp(MaintenanceOp* op);
+
+  void GetMaintenanceManagerStatusDump(tablet::MaintenanceManagerStatusPB* out_pb);
 
   static const Options DEFAULT_OPTIONS;
 

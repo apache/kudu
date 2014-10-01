@@ -42,6 +42,9 @@ DEFINE_bool(enable_maintenance_manager, true,
 
 namespace kudu {
 
+using kudu::tablet::MaintenanceManagerStatusPB;
+using kudu::tablet::MaintenanceManagerStatusPB_MaintenanceOpPB;
+
 MaintenanceOpStats::MaintenanceOpStats() {
   Clear();
 }
@@ -66,10 +69,6 @@ MaintenanceOp::~MaintenanceOp() {
 void MaintenanceOp::Unregister() {
   CHECK(manager_.get()) << "Op " << name_ << " was never registered.";
   manager_->UnregisterOp(this);
-}
-
-std::string MaintenanceOp::name() const {
-  return name_;
 }
 
 const MaintenanceManager::Options MaintenanceManager::DEFAULT_OPTIONS = {
@@ -335,6 +334,27 @@ Status MaintenanceManager::CalculateMemTotal(uint64_t* total) {
 #else
 #error "please implement CalculateMemTotal for this platform"
 #endif
+}
+
+void MaintenanceManager::GetMaintenanceManagerStatusDump(MaintenanceManagerStatusPB* out_pb) {
+  DCHECK(out_pb != NULL);
+  boost::lock_guard<boost::mutex> guard(lock_);
+  MaintenanceOp* best_op = FindBestOp();
+  BOOST_FOREACH(MaintenanceManager::OpMapTy::value_type& val, ops_) {
+    MaintenanceManagerStatusPB_MaintenanceOpPB* op_pb = out_pb->add_registered_operations();
+    MaintenanceOp* op(val.first);
+    MaintenanceOpStats& stat(val.second);
+    op_pb->set_name(op->name());
+    op_pb->set_running(op->running());
+    op_pb->set_runnable(stat.runnable);
+    op_pb->set_ram_anchored_bytes(stat.ram_anchored);
+    op_pb->set_ts_anchored_secs(stat.ts_anchored_secs);
+    op_pb->set_perf_improvement(stat.perf_improvement);
+
+    if (best_op == op) {
+      out_pb->mutable_best_op()->CopyFrom(*op_pb);
+    }
+  }
 }
 
 } // namespace kudu

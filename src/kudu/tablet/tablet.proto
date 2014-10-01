@@ -59,3 +59,21 @@ message TabletStatusPB {
   required string end_key = 6;
   optional int64 estimated_on_disk_size = 7;
 }
+
+// Used to present the maintenance manager's internal state.
+message MaintenanceManagerStatusPB {
+  message MaintenanceOpPB {
+    required string name = 1;
+    // Number of times this operation is currently running.
+    required uint32 running = 2;
+    required bool runnable = 3;
+    required uint64 ram_anchored_bytes = 4;
+    required int32 ts_anchored_secs = 5;
+    required double perf_improvement = 6;
+  }
+
+  // The next operation that would run.
+  optional MaintenanceOpPB best_op = 1;
+
+  repeated MaintenanceOpPB registered_operations = 2;
+}

@@ -14,6 +14,7 @@
 #include "kudu/gutil/strings/numbers.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/server/webui_util.h"
+#include "kudu/tablet/maintenance_manager.h"
 #include "kudu/tablet/tablet.pb.h"
 #include "kudu/tablet/tablet_bootstrap.h"
 #include "kudu/tablet/tablet_peer.h"
@@ -25,6 +26,9 @@
 using kudu::consensus::TransactionStatusPB;
 using kudu::metadata::QuorumPB;
 using kudu::metadata::QuorumPeerPB;
+using kudu::MaintenanceManager;
+using kudu::tablet::MaintenanceManagerStatusPB;
+using kudu::tablet::MaintenanceManagerStatusPB_MaintenanceOpPB;
 using kudu::tablet::TabletPeer;
 using kudu::tablet::TabletStatusPB;
 using kudu::tablet::Transaction;
@@ -68,6 +72,10 @@ Status TabletServerPathHandlers::Register(Webserver* server) {
     "/dashboards",
     boost::bind(&TabletServerPathHandlers::HandleDashboardsPage, this, _1, _2),
     true /* styled */, true /* is_on_nav_bar */);
+  server->RegisterPathHandler(
+    "/maintenance-manager",
+    boost::bind(&TabletServerPathHandlers::HandleMaintenanceManagerPage, this, _1, _2),
+    true /* styled */, false /* is_on_nav_bar */);
 
   return Status::OK();
 }
@@ -411,12 +419,65 @@ void TabletServerPathHandlers::HandleDashboardsPage(const Webserver::ArgumentMap
   *output << "<h3>Dashboards</h3>\n";
   *output << "<table class='table table-striped'>\n";
   *output << "  <tr><th>Dashboard</th><th>Description</th></tr>\n";
-  *output << Substitute("  <tr><td>$0</td><td>$1</td></tr>\n",
-                        "<a href=\"scanz\">Scans</a>",
-                        "List of scanners that are currently running.");
-  *output << Substitute("  <tr><td>$0</td><td>$1</td></tr>\n",
-                        "<a href=\"transactionz\">Transactions</a>",
-                        "List of transactions that are currently running.");
+  *output << GetDashboardLine("scanz", "Scans", "List of scanners that are currently running.");
+  *output << GetDashboardLine("transactionz", "Transactions", "List of transactions that are "
+                                                              "currently running.");
+  *output << GetDashboardLine("maintenance-manager", "Maintenance Manager",
+                              "List of operations that are currently running and those "
+                              "that are registered.");
+}
+
+string TabletServerPathHandlers::GetDashboardLine(const std::string& link,
+                                                  const std::string& text,
+                                                  const std::string& desc) {
+  return Substitute("  <tr><td><a href=\"$0\">$1</a></td><td>$2</td></tr>\n",
+                    EscapeForHtmlToString(link),
+                    EscapeForHtmlToString(text),
+                    EscapeForHtmlToString(desc));
+}
+
+void TabletServerPathHandlers::HandleMaintenanceManagerPage(const Webserver::ArgumentMap &args,
+                                                            std::stringstream* output) {
+  *output << "<h1>Maintenance Manager state</h1>\n";
+  MaintenanceManager* manager = tserver_->maintenance_manager();
+  MaintenanceManagerStatusPB pb;
+  manager->GetMaintenanceManagerStatusDump(&pb);
+
+  *output << "<h3>Best maintenance operation to run: ";
+  if (pb.has_best_op()) {
+    *output << EscapeForHtmlToString(pb.best_op().name());
+  } else {
+    *output << "None";
+  }
+  *output << "</h3>\n";
+
+  int ops_count = pb.registered_operations_size();
+
+  *output << "<h3>Running operations</h3>\n";
+  *output << "<table class='table table-striped'>\n";
+  *output << "  <tr><th>Name</th><th>Instances running</th></tr>\n";
+  for (int i = 0; i < ops_count; i++) {
+    MaintenanceManagerStatusPB_MaintenanceOpPB op_pb = pb.registered_operations(i);
+    if (op_pb.running() > 0) {
+      *output <<  Substitute("<tr><td>$0</td><td>$1</td></tr>\n",
+                             EscapeForHtmlToString(op_pb.name()),
+                             op_pb.running());
+    }
+  }
+  *output << "</table>\n";
+
+  *output << "<h3>Other registered operations</h3>\n";
+  *output << "<table class='table table-striped'>\n";
+  *output << "  <tr><th>Name</th><th>RAM anchored</th></tr>\n";
+  for (int i = 0; i < ops_count; i++) {
+    MaintenanceManagerStatusPB_MaintenanceOpPB op_pb = pb.registered_operations(i);
+    if (op_pb.running() == 0) {
+      *output <<  Substitute("<tr><td>$0</td><td>$1</td></tr>\n",
+                             EscapeForHtmlToString(op_pb.name()),
+                             HumanReadableNumBytes::ToString(op_pb.ram_anchored_bytes()));
+    }
+  }
+  *output << "</table>\n";
 }
 
 } // namespace tserver

@@ -47,9 +47,13 @@ class TabletServerPathHandlers {
                                  std::stringstream* output);
   void HandleDashboardsPage(const Webserver::ArgumentMap& args,
                             std::stringstream* output);
+  void HandleMaintenanceManagerPage(const Webserver::ArgumentMap& args,
+                                    std::stringstream* output);
   std::string QuorumPBToHtml(const metadata::QuorumPB& quorum) const;
   std::string ScannerToHtml(const Scanner& scanner) const;
   std::string IteratorStatsToHtml(const std::vector<IteratorStats>& stats) const;
+  std::string GetDashboardLine(const std::string& link,
+                               const std::string& text, const std::string& desc);
 
   TabletServer* tserver_;
 
