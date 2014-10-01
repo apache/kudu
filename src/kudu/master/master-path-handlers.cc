@@ -156,7 +156,7 @@ Status MasterPathHandlers::Register(Webserver* server) {
                               is_styled, is_on_nav_bar);
   server->RegisterPathHandler("/table",
                               boost::bind(&MasterPathHandlers::HandleTablePage, this, _1, _2),
-                              is_styled, is_on_nav_bar);
+                              is_styled, false);
   return Status::OK();
 }
 

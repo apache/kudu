@@ -43,7 +43,7 @@ Status TabletServerPathHandlers::Register(Webserver* server) {
   server->RegisterPathHandler(
     "/scanz",
     boost::bind(&TabletServerPathHandlers::HandleScansPage, this, _1, _2),
-    true /* styled */, true /* is_on_nav_bar */);
+    true /* styled */, false /* is_on_nav_bar */);
   server->RegisterPathHandler(
     "/tablets",
     boost::bind(&TabletServerPathHandlers::HandleTabletsPage, this, _1, _2),
@@ -55,7 +55,7 @@ Status TabletServerPathHandlers::Register(Webserver* server) {
   server->RegisterPathHandler(
     "/transactionz",
     boost::bind(&TabletServerPathHandlers::HandleTransactionsPage, this, _1, _2),
-    true /* styled */, true /* is_on_nav_bar */);
+    true /* styled */, false /* is_on_nav_bar */);
   server->RegisterPathHandler(
     "/tablet-rowsetlayout-svg",
     boost::bind(&TabletServerPathHandlers::HandleTabletSVGPage, this, _1, _2),
@@ -64,6 +64,10 @@ Status TabletServerPathHandlers::Register(Webserver* server) {
     "/tablet-consensus-status",
     boost::bind(&TabletServerPathHandlers::HandleConsensusStatusPage, this, _1, _2),
     true /* styled */, false /* is_on_nav_bar */);
+  server->RegisterPathHandler(
+    "/dashboards",
+    boost::bind(&TabletServerPathHandlers::HandleDashboardsPage, this, _1, _2),
+    true /* styled */, true /* is_on_nav_bar */);
 
   return Status::OK();
 }
@@ -399,6 +403,20 @@ string TabletServerPathHandlers::IteratorStatsToHtml(const vector<IteratorStats>
   }
   html << "</table>\n";
   return html.str();
+}
+
+void TabletServerPathHandlers::HandleDashboardsPage(const Webserver::ArgumentMap &args,
+                                                    std::stringstream* output) {
+
+  *output << "<h3>Dashboards</h3>\n";
+  *output << "<table class='table table-striped'>\n";
+  *output << "  <tr><th>Dashboard</th><th>Description</th></tr>\n";
+  *output << Substitute("  <tr><td>$0</td><td>$1</td></tr>\n",
+                        "<a href=\"scanz\">Scans</a>",
+                        "List of scanners that are currently running.");
+  *output << Substitute("  <tr><td>$0</td><td>$1</td></tr>\n",
+                        "<a href=\"transactionz\">Transactions</a>",
+                        "List of transactions that are currently running.");
 }
 
 } // namespace tserver

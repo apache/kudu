@@ -45,6 +45,8 @@ class TabletServerPathHandlers {
                            std::stringstream* output);
   void HandleConsensusStatusPage(const Webserver::ArgumentMap& args,
                                  std::stringstream* output);
+  void HandleDashboardsPage(const Webserver::ArgumentMap& args,
+                            std::stringstream* output);
   std::string QuorumPBToHtml(const metadata::QuorumPB& quorum) const;
   std::string ScannerToHtml(const Scanner& scanner) const;
   std::string IteratorStatsToHtml(const std::vector<IteratorStats>& stats) const;
