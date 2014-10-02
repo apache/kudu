@@ -77,6 +77,28 @@ Status SysTable::Load(FsManager *fs_manager) {
     return(Status::Corruption("Unexpected schema", metadata->schema().ToString()));
   }
 
+  // Allow for statically and explicitly assigning the quorum and roles through
+  // the master configuration on startup.
+  //
+  // TODO: The following assumptions need revisiting:
+  // 1. We always believe the local config options for who is in the quorum.
+  // 2. We always want to look up all node's UUIDs on start (via RPC).
+  //    - TODO: Cache UUIDs. See KUDU-526.
+  if (master_->opts().IsDistributed()) {
+    LOG(INFO) << "Configuring the quorum for distributed operation...";
+
+    string tablet_id = metadata->oid();
+    gscoped_ptr<ConsensusMetadata> cmeta;
+    RETURN_NOT_OK_PREPEND(ConsensusMetadata::Load(fs_manager, tablet_id, &cmeta),
+                          "Unable to load consensus metadata for tablet " + tablet_id);
+
+    int64_t old_seqno = cmeta->pb().committed_quorum().seqno();
+    RETURN_NOT_OK(SetupDistributedQuorum(master_->opts(), old_seqno + 1,
+                                         cmeta->mutable_pb()->mutable_committed_quorum()));
+    RETURN_NOT_OK_PREPEND(cmeta->Flush(),
+                          "Unable to persist consensus metadata for tablet " + tablet_id);
+  }
+
   RETURN_NOT_OK(SetupTablet(metadata));
   return Status::OK();
 }
@@ -204,7 +226,6 @@ void SysTable::SysTableStateChanged(TabletPeer* tablet_peer) {
           << QuorumPeerPB::Role_Name(tablet_peer->consensus()->role());
 }
 
-
 Status SysTable::SetupTablet(const scoped_refptr<tablet::TabletMetadata>& metadata) {
   shared_ptr<Tablet> tablet;
   gscoped_ptr<Log> log;
@@ -236,22 +257,6 @@ Status SysTable::SetupTablet(const scoped_refptr<tablet::TabletMetadata>& metada
                                            log.Pass(),
                                            *tablet->GetMetricContext()),
                         "Failed to Init() TabletPeer");
-
-  // Allow for statically and explicitly assigning the quorum and roles through
-  // the master configuration on startup.
-  //
-  // TODO: The following assumptions need revisiting:
-  // 1. We always believe the local config options for who is in the quorum.
-  // 2. We always want to look up all node's UUIDs on start (via RPC).
-  //    - TODO: Cache UUIDs. See KUDU-526.
-  if (master_->opts().IsDistributed()) {
-    LOG(INFO) << "Configuring the quorum for distributed operation...";
-    DCHECK(tablet_peer_) << "TablerPeer is NULL";
-    int64_t old_seqno = tablet_peer_->consensus()->Quorum().seqno();
-    QuorumPB quorum;
-    RETURN_NOT_OK(SetupDistributedQuorum(master_->opts(), old_seqno + 1, &quorum));
-    tablet_peer_->consensus()->PersistQuorum(quorum);
-  }
 
   RETURN_NOT_OK_PREPEND(tablet_peer_->Start(consensus_info),
                         "Failed to Start() TabletPeer");
