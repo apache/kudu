@@ -107,7 +107,9 @@ class BootstrapTest : public LogTestBase {
                           "Unable to load test tablet metadata");
 
     metadata::QuorumPB quorum;
+    quorum.set_local(true);
     quorum.set_seqno(kUninitializedQuorumSeqNo);
+    quorum.add_peers()->set_permanent_uuid(meta->fs_manager()->uuid());
     gscoped_ptr<ConsensusMetadata> cmeta;
     RETURN_NOT_OK_PREPEND(ConsensusMetadata::Create(meta->fs_manager(), meta->oid(), quorum,
                                                     kMinimumTerm, &cmeta),

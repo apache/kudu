@@ -34,6 +34,7 @@ class RaftConsensusStateTest : public KuduTest {
     ASSERT_OK(fs_manager_.Open());
 
     // Initialize test quorum.
+    quorum_.set_local(true);
     quorum_.set_seqno(kInitialSeqno);
     quorum_.add_peers()->set_permanent_uuid(fs_manager_.uuid());
 

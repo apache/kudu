@@ -1,6 +1,7 @@
 // Copyright (c) 2014 Cloudera, Inc.
 #include "kudu/consensus/consensus_meta.h"
 
+#include "kudu/consensus/consensus.h"
 #include "kudu/consensus/consensus.pb.h"
 #include "kudu/consensus/log_util.h"
 #include "kudu/fs/fs_manager.h"
@@ -45,6 +46,11 @@ Status ConsensusMetadata::Load(FsManager* fs_manager,
 }
 
 Status ConsensusMetadata::Flush() {
+  // Sanity test to ensure we never write out a bad quorum.
+  RETURN_NOT_OK_PREPEND(Consensus::VerifyQuorum(pb_.committed_quorum()),
+                        "Invalid quorum in ConsensusMetadata, cannot flush to disk");
+
+  // Create directories if needed.
   string dir = fs_manager_->GetConsensusMetadataDir();
   bool created_dir = false;
   RETURN_NOT_OK_PREPEND(fs_manager_->CreateDirIfMissing(dir, &created_dir),

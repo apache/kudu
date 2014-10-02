@@ -64,6 +64,8 @@ class LogTestBase : public KuduTest {
     KuduTest::SetUp();
     current_id_ = 0;
     fs_manager_.reset(new FsManager(env_.get(), test_dir_));
+    ASSERT_OK(fs_manager_->CreateInitialFileSystemLayout());
+    ASSERT_OK(fs_manager_->Open());
   }
 
   virtual void TearDown() OVERRIDE {
