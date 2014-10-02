@@ -304,6 +304,12 @@ class InMemoryEnv : public EnvWrapper {
 
   virtual Status NewRandomAccessFile(const std::string& fname,
                                      gscoped_ptr<RandomAccessFile>* result) OVERRIDE {
+    return NewRandomAccessFile(RandomAccessFileOptions(), fname, result);
+  }
+
+  virtual Status NewRandomAccessFile(const RandomAccessFileOptions& opts,
+                                     const std::string& fname,
+                                     gscoped_ptr<RandomAccessFile>* result) OVERRIDE {
     MutexLock lock(mutex_);
     if (file_map_.find(fname) == file_map_.end()) {
       return Status::IOError(fname, "File not found");

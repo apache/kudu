@@ -28,6 +28,8 @@ class RandomAccessFile;
 class SequentialFile;
 class Slice;
 class WritableFile;
+
+struct RandomAccessFileOptions;
 struct WritableFileOptions;
 
 class Env {
@@ -59,6 +61,11 @@ class Env {
   //
   // The returned file may be concurrently accessed by multiple threads.
   virtual Status NewRandomAccessFile(const std::string& fname,
+                                     gscoped_ptr<RandomAccessFile>* result) = 0;
+
+  // Like the previous NewRandomAccessFile, but allows options to be specified.
+  virtual Status NewRandomAccessFile(const RandomAccessFileOptions& opts,
+                                     const std::string& fname,
                                      gscoped_ptr<RandomAccessFile>* result) = 0;
 
   // Create an object that writes to a new file with the specified
@@ -240,6 +247,15 @@ struct WritableFileOptions {
       overwrite_existing(true) { }
 };
 
+// Options specified when a file is opened for random access.
+struct RandomAccessFileOptions {
+  // Use memory-mapped I/O if supported.
+  bool mmap_file;
+
+  RandomAccessFileOptions()
+    : mmap_file(true) {}
+};
+
 // A file abstraction for sequential writing.  The implementation
 // must provide buffering since callers may append small fragments
 // at a time to the file.
@@ -327,8 +343,14 @@ class EnvWrapper : public Env {
   Status NewSequentialFile(const std::string& f, gscoped_ptr<SequentialFile>* r) OVERRIDE {
     return target_->NewSequentialFile(f, r);
   }
-  Status NewRandomAccessFile(const std::string& f, gscoped_ptr<RandomAccessFile>* r) OVERRIDE {
+  Status NewRandomAccessFile(const std::string& f,
+                             gscoped_ptr<RandomAccessFile>* r) OVERRIDE {
     return target_->NewRandomAccessFile(f, r);
+  }
+  Status NewRandomAccessFile(const RandomAccessFileOptions& opts,
+                             const std::string& f,
+                             gscoped_ptr<RandomAccessFile>* r) OVERRIDE {
+    return target_->NewRandomAccessFile(opts, f, r);
   }
   Status NewWritableFile(const std::string& f, gscoped_ptr<WritableFile>* r) OVERRIDE {
     return target_->NewWritableFile(f, r);

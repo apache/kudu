@@ -705,27 +705,38 @@ class PosixEnv : public Env {
 
   virtual Status NewRandomAccessFile(const std::string& fname,
                                      gscoped_ptr<RandomAccessFile>* result) OVERRIDE {
-    uint64_t file_size;
-    RETURN_NOT_OK_PREPEND(GetFileSize(fname, &file_size),
-                          Substitute("Unable to get size of file $0", fname));
+    return NewRandomAccessFile(RandomAccessFileOptions(), fname, result);
+  }
+
+  virtual Status NewRandomAccessFile(const RandomAccessFileOptions& opts,
+                                     const std::string& fname,
+                                     gscoped_ptr<RandomAccessFile>* result) OVERRIDE {
     int fd = open(fname.c_str(), O_RDONLY);
     if (fd < 0) {
       return IOError(fname, errno);
     }
-    Status s = Status::OK();
-    if (file_size > 0 && sizeof(void*) >= 8) {
-      // Use mmap when virtual address-space is plentiful.
-      void* base = mmap(NULL, file_size, PROT_READ, MAP_SHARED, fd, 0);
-      if (base != MAP_FAILED) {
-        result->reset(new PosixMmapReadableFile(fname, base, file_size));
-      } else {
-        s = IOError(Substitute("mmap() failed on file $0", fname), errno);
+
+    if (opts.mmap_file) {
+      uint64_t file_size;
+      RETURN_NOT_OK_PREPEND(GetFileSize(fname, &file_size),
+                            Substitute("Unable to get size of file $0", fname));
+
+      if (file_size > 0 && sizeof(void*) >= 8) {
+        // Use mmap when virtual address-space is plentiful.
+        void* base = mmap(NULL, file_size, PROT_READ, MAP_SHARED, fd, 0);
+        Status s;
+        if (base != MAP_FAILED) {
+          result->reset(new PosixMmapReadableFile(fname, base, file_size));
+        } else {
+          s = IOError(Substitute("mmap() failed on file $0", fname), errno);
+        }
+        close(fd);
+        return s;
       }
-      close(fd);
-    } else {
-      result->reset(new PosixRandomAccessFile(fname, fd));
     }
-    return s;
+
+    result->reset(new PosixRandomAccessFile(fname, fd));
+    return Status::OK();
   }
 
   virtual Status NewWritableFile(const std::string& fname,

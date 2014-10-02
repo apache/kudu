@@ -341,8 +341,19 @@ Status ReadableLogSegment::ReadEntries(vector<LogEntryPB*>* entries) {
   vector<int64_t> recent_offsets(4, -1);
   int batches_read = 0;
 
+  // If we don't have a footer, it's likely this is the segment that
+  // we're currently writing to. We should refresh the size since it may
+  // have grown since last we read it.
+  if (!footer_.IsInitialized()) {
+    VLOG(1) << "Refreshing file size to read in-progress log segment "
+            << path_;
+    RETURN_NOT_OK_PREPEND(ReadFileSize(),
+                          "Could not refresh file size");
+  }
+
   uint64_t offset = first_entry_offset();
-  VLOG(1) << "Reading segment entries offset: " << offset << " file size: "
+  VLOG(1) << "Reading segment entries from "
+          << path_ << ": offset=" << offset << " file_size="
           << file_size();
   faststring tmp_buf;
 
