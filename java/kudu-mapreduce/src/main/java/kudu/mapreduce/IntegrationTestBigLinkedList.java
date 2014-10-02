@@ -446,6 +446,7 @@ public class IntegrationTestBigLinkedList extends Configured implements Tool {
         session = client.newSynchronousSession();
         session.setFlushMode(SessionConfiguration.FlushMode.MANUAL_FLUSH);
         session.setMutationBufferSpace(WIDTH_DEFAULT);
+        session.setTimeoutMillis(timeout);
 
         this.width = context.getConfiguration().getInt(GENERATOR_WIDTH_KEY, WIDTH_DEFAULT);
         current = new byte[this.width][];
