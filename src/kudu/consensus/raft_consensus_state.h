@@ -362,10 +362,12 @@ class ReplicaState {
   // Used when Role = FOLLOWER/CANDIDATE/LEARNER.
   OpIdToRoundMap pending_txns_;
 
-  // Set that tracks the outstanding applies that are being executed asynchronously,
-  // i.e. the operations for which we've received both the replica and commit messages
-  // from the leader but which haven't yet committed in the replica.
-  // The key is the id of the commit operation (vs. the id of the committed operation).
+  // Set that tracks the outstanding applies that are being executed asynchronously.
+  //
+  // These operations have been replicated and committed by consensus, but not yet
+  // completed on the local replica.
+  //
+  // The key is the OpId of the operation being applied.
   // Used when Role = FOLLOWER/CANDIDATE/LEARNER.
   OutstandingCommits in_flight_commits_;
 

@@ -162,7 +162,7 @@ Status TabletPeer::Start(const ConsensusBootstrapInfo& bootstrap_info) {
 }
 
 // TODO KUDU-255 - handle the bootstrap info properly. In particular:
-// - Pending transactions whose ids are lower than bootstrap_info.last_commit_id
+// - Pending transactions whose ids are lower than bootstrap_info.last_committed_id
 //   don't need to go through consensus. We can simply trigger the apply for those.
 // - Pending transactions whose ids are after the last committed operation id
 //   need to start regular transactions that will succeed or fail depending on

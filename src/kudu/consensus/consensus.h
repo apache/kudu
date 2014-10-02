@@ -145,22 +145,23 @@ class Consensus {
   virtual Status Replicate(ConsensusRound* context) = 0;
 
   // Messages sent from LEADER to FOLLOWERS and LEARNERS to update their
-  // state machines.
+  // state machines. This is equivalent to "AppendEntries()" in Raft
+  // terminology.
+  //
   // ConsensusRequestPB contains a sequence of 0 or more operations to apply
   // on the replica. If there are 0 operations the request is considered
-  // 'status-only' i.e. the leader is just asking how far the replica has
-  // received/replicated/committed the operations and the replica replies
-  // as such.
-  // If the sequence contains 1 or more operations they will be applied
-  // in the same order as the leader.
-  // In particular, replicates are stored in the log in the same order as
-  // the leader and Prepare()s are triggered in the same order as the
-  // replicates.
-  // Commit operations have two ids, the "commit_id' which is monotonically
-  // increasing and the 'committed_op_id' which might not be monotonically
-  // increasing (as the leader may commit out-of-order).
-  // Replicas Apply() the commits as soon as the corresponding Prepare()s
-  // are done *and* the CommitMsg has been received from the LEADER.
+  // 'status-only' i.e. the leader is communicating with the follower only
+  // in order to pass back and forth information on watermarks (eg committed
+  // operation ID, replicated op id, etc).
+  //
+  // If the sequence contains 1 or more operations they will be replicated
+  // in the same order as the leader, and submitted for asynchronous Prepare
+  // in the same order.
+  //
+  // The leader also provides information on the index of the latest
+  // operation considered committed by consensus. The replica uses this
+  // information to update the state of any pending (previously replicated/prepared)
+  // transactions.
   virtual Status Update(const ConsensusRequestPB* request,
                         ConsensusResponsePB* response) = 0;
 

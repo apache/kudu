@@ -79,21 +79,16 @@ class LocalConsensus : public Consensus {
   const ConsensusOptions options_;
   const gscoped_ptr<ConsensusMetadata> cmeta_;
 
+  // Protects 'next_op_id_index_', 'state_', etc.
+  mutable simple_spinlock lock_;
+
+  // Protected by lock_
   int64 next_op_id_index_;
-  // lock serializes the commit id generation and subsequent
-  // task (log) submission as well as replicate id generation
-  // and subsequent task submission.
-  mutable simple_spinlock op_id_lock_;
 
   State state_;
   ReplicaTransactionFactory* txn_factory_;
   log::Log* log_;
   scoped_refptr<server::Clock> clock_;
-
-  // lock serializes the commit id generation and subsequent
-  // task (log) submission as well as replicate id generation
-  // and subsequent task submission.
-  mutable simple_spinlock lock_;
 
 };
 
