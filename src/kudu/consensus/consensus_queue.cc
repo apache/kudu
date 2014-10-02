@@ -257,11 +257,9 @@ void PeerMessageQueue::RequestForPeer(const string& uuid,
 
 void PeerMessageQueue::ResponseFromPeer(const ConsensusResponsePB& response,
                                         bool* more_pending) {
-  CHECK(!uuid.empty()) << "Got response from peer with empty UUID";
+  CHECK(response.has_responder_uuid() && !response.responder_uuid().empty())
+      << "Got response from peer with empty UUID";
   boost::lock_guard<simple_spinlock> lock(queue_lock_);
-
-  // The response must have the receiver's uuid set.
-  DCHECK(response.has_responder_uuid());
 
   TrackedPeer* peer = FindPtrOrNull(watermarks_, response.responder_uuid());
   if (PREDICT_FALSE(state_ == kQueueClosed || peer == NULL)) {
