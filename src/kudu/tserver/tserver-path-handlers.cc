@@ -28,6 +28,7 @@ using kudu::metadata::QuorumPB;
 using kudu::metadata::QuorumPeerPB;
 using kudu::MaintenanceManager;
 using kudu::tablet::MaintenanceManagerStatusPB;
+using kudu::tablet::MaintenanceManagerStatusPB_CompletedOpPB;
 using kudu::tablet::MaintenanceManagerStatusPB_MaintenanceOpPB;
 using kudu::tablet::TabletPeer;
 using kudu::tablet::TabletStatusPB;
@@ -466,7 +467,19 @@ void TabletServerPathHandlers::HandleMaintenanceManagerPage(const Webserver::Arg
   }
   *output << "</table>\n";
 
-  *output << "<h3>Other registered operations</h3>\n";
+  *output << "<h3>Recent completed operations</h3>\n";
+  *output << "<table class='table table-striped'>\n";
+  *output << "  <tr><th>Name</th><th>Duration</th><th>Time since op started</th></tr>\n";
+  for (int i = 0; i < pb.completed_operations_size(); i++) {
+    MaintenanceManagerStatusPB_CompletedOpPB op_pb = pb.completed_operations(i);
+    *output <<  Substitute("<tr><td>$0</td><td>$1</td><td>$2</td></tr>\n",
+                           EscapeForHtmlToString(op_pb.name()),
+                           HumanReadableElapsedTime::ToShortString(op_pb.duration_secs()),
+                           HumanReadableElapsedTime::ToShortString(op_pb.secs_since_start()));
+  }
+  *output << "</table>\n";
+
+  *output << "<h3>Non-running operations</h3>\n";
   *output << "<table class='table table-striped'>\n";
   *output << "  <tr><th>Name</th><th>RAM anchored</th></tr>\n";
   for (int i = 0; i < ops_count; i++) {

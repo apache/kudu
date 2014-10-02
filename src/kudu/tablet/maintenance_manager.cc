@@ -37,12 +37,15 @@ DEFINE_int64(maintenance_manager_memory_limit, 0,
 DEFINE_int64(maintenance_manager_max_ts_anchored_secs, 0,
        "We will try not to let entries sit in the write-ahead log for "
        "longer than this interval in milliseconds.");
+DEFINE_int32(maintenance_manager_history_size, 8,
+       "Number of completed operations the manager is keeping track of.");
 DEFINE_bool(enable_maintenance_manager, true,
        "Enable the maintenance manager, runs compaction and tablet cleaning tasks.");
 
 namespace kudu {
 
 using kudu::tablet::MaintenanceManagerStatusPB;
+using kudu::tablet::MaintenanceManagerStatusPB_CompletedOpPB;
 using kudu::tablet::MaintenanceManagerStatusPB_MaintenanceOpPB;
 
 MaintenanceOpStats::MaintenanceOpStats() {
@@ -76,6 +79,7 @@ const MaintenanceManager::Options MaintenanceManager::DEFAULT_OPTIONS = {
   0,
   0,
   0,
+  0,
 };
 
 MaintenanceManager::MaintenanceManager(const Options& options)
@@ -91,9 +95,14 @@ MaintenanceManager::MaintenanceManager(const Options& options)
           FLAGS_maintenance_manager_memory_limit : options.memory_limit),
     max_ts_anchored_secs_(options.max_ts_anchored_secs <= 0 ?
           FLAGS_maintenance_manager_max_ts_anchored_secs :
-          options.max_ts_anchored_secs) {
+          options.max_ts_anchored_secs),
+    completed_ops_count_(0) {
   CHECK_OK(ThreadPoolBuilder("MaintenanceMgr").set_min_threads(num_threads_)
                .set_max_threads(num_threads_).Build(&thread_pool_));
+  uint32_t history_size = options.history_size == 0 ?
+                          FLAGS_maintenance_manager_history_size :
+                          options.history_size;
+  completed_ops_.resize(history_size);
 }
 
 MaintenanceManager::~MaintenanceManager() {
@@ -299,10 +308,20 @@ MaintenanceOp* MaintenanceManager::FindBestOp() {
 }
 
 void MaintenanceManager::LaunchOp(MaintenanceOp* op) {
+  MonoTime start_time(MonoTime::Now(MonoTime::FINE));
   LOG_TIMING(INFO, Substitute("running $0", op->name())) {
     op->Perform();
   }
+  MonoTime end_time(MonoTime::Now(MonoTime::FINE));
+  MonoDelta delta(end_time.GetDeltaSince(start_time));
   boost::lock_guard<boost::mutex> guard(lock_);
+
+  CompletedOp& completed_op = completed_ops_[completed_ops_count_ % completed_ops_.size()];
+  completed_op.name = op->name();
+  completed_op.duration_secs = delta.ToSeconds();
+  completed_op.start_mono_time = start_time;
+  completed_ops_count_++;
+
   running_ops_--;
   op->running_--;
   op->cond_.notify_one();
@@ -353,6 +372,17 @@ void MaintenanceManager::GetMaintenanceManagerStatusDump(MaintenanceManagerStatu
 
     if (best_op == op) {
       out_pb->mutable_best_op()->CopyFrom(*op_pb);
+    }
+  }
+
+  BOOST_FOREACH(const CompletedOp& completed_op, completed_ops_) {
+    if (!completed_op.name.empty()) {
+      MaintenanceManagerStatusPB_CompletedOpPB* completed_pb = out_pb->add_completed_operations();
+      completed_pb->set_name(completed_op.name);
+      completed_pb->set_duration_secs(completed_op.duration_secs);
+
+      MonoDelta delta(MonoTime::Now(MonoTime::FINE).GetDeltaSince(completed_op.start_mono_time));
+      completed_pb->set_secs_since_start(delta.ToSeconds());
     }
   }
 }

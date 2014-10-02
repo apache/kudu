@@ -4,12 +4,16 @@
 #include <tr1/memory>
 #include <vector>
 
+#include "kudu/gutil/strings/substitute.h"
 #include "kudu/tablet/maintenance_manager.h"
+#include "kudu/tablet/tablet.pb.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/thread.h"
 
 using std::tr1::shared_ptr;
 using std::vector;
+using strings::Substitute;
+using kudu::tablet::MaintenanceManagerStatusPB;
 
 namespace kudu {
 
@@ -176,6 +180,40 @@ TEST(MaintenanceManagerTest, TestMemoryPressure) {
   op.WaitForState(OP_FINISHED);
   manager->UnregisterOp(&op);
   ThreadJoiner(thread.get()).Join();
+  manager->Shutdown();
+}
+
+// Test adding operations and make sure that the history of recently completed operations
+// is correct in that it wraps around and doesn't grow.
+TEST(MaintenanceManagerTest, TestCompletedOpsHistory) {
+  int history_size = 4;
+  MaintenanceManager::Options options;
+  options.num_threads = 2;
+  options.polling_interval_ms = 1;
+  options.memory_limit = 1000;
+  options.max_ts_anchored_secs = 1000;
+  options.history_size = history_size;
+
+  shared_ptr<MaintenanceManager> manager(new MaintenanceManager(options));
+  ASSERT_STATUS_OK(manager->Init());
+
+  for (int i = 0; i < 5; i++) {
+    string name = Substitute("op$0", i);
+    TestMaintenanceOp op(name, OP_RUNNABLE);
+    op.set_perf_improvement(1);
+    op.set_ram_anchored(100);
+    manager->RegisterOp(&op);
+
+    CHECK_EQ(true, op.WaitForStateWithTimeout(OP_FINISHED, 20));
+    manager->UnregisterOp(&op);
+
+    MaintenanceManagerStatusPB status_pb;
+    manager->GetMaintenanceManagerStatusDump(&status_pb);
+    // The size should be at most the history_size.
+    ASSERT_GE(history_size, status_pb.completed_operations_size());
+    // See that we have the right name, even if we wrap around.
+    ASSERT_EQ(name, status_pb.completed_operations(i % 4).name());
+  }
   manager->Shutdown();
 }
 

@@ -5,12 +5,14 @@
 #include "kudu/gutil/macros.h"
 #include "kudu/tablet/mvcc.h"
 #include "kudu/tablet/tablet.pb.h"
+#include "kudu/util/monotime.h"
 #include "kudu/util/countdown_latch.h"
 #include "kudu/util/thread.h"
 #include "kudu/util/threadpool.h"
 
 #include <boost/thread/condition_variable.hpp>
 #include <boost/thread/mutex.hpp>
+#include <vector>
 #include <map>
 #include <set>
 #include <stdint.h>
@@ -102,6 +104,13 @@ struct MaintenanceOpComparator {
   }
 };
 
+// Holds the information regarding a recently completed operation.
+struct CompletedOp {
+  std::string name;
+  int duration_secs;
+  MonoTime start_mono_time;
+};
+
 // The MaintenanceManager manages the scheduling of background operations such
 // as flushes or compactions.  It runs these operations in the background, in a
 // thread pool.  It uses information provided in MaintenanceOpStats objects to
@@ -113,6 +122,7 @@ class MaintenanceManager : public std::tr1::enable_shared_from_this<MaintenanceM
     int32_t polling_interval_ms;
     int64_t memory_limit;
     int32_t max_ts_anchored_secs;
+    uint32_t history_size;
   };
 
   explicit MaintenanceManager(const Options& options);
@@ -160,6 +170,10 @@ class MaintenanceManager : public std::tr1::enable_shared_from_this<MaintenanceM
   int32_t polling_interval_ms_;
   int64_t memory_limit_;
   int32_t max_ts_anchored_secs_;
+  // Vector used as a circular buffer for recently completed ops. Elements need to be added at
+  // the completed_ops_count_ % the vector's size and then the count needs to be incremented.
+  std::vector<CompletedOp> completed_ops_;
+  int64_t completed_ops_count_;
 
   DISALLOW_COPY_AND_ASSIGN(MaintenanceManager);
 };
