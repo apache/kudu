@@ -520,7 +520,7 @@ struct ReplayState {
   }
 
   // Return true if 'b' is allowed to immediately follow 'a' in the log.
-  bool valid_sequence(const OpId& a, const OpId& b) {
+  static bool valid_sequence(const OpId& a, const OpId& b) {
     if (a.term() == 0 && a.index() == 0) {
       // Not initialized - can start with any opid.
       return true;
@@ -541,33 +541,17 @@ struct ReplayState {
   }
 
   // Return a Corruption status if 'id' seems to be out-of-sequence in the log.
-  Status CheckSequentialOpId(const OperationPB& op) {
-    if (!valid_sequence(prev_op_id, op.id())) {
-      // TODO: we used to have this return a Corruption. However, in consensus
-      // replicas, we get commits processed out-of-order, so it's no longer
-      // true. We're not yet 100% certain this is OK for other parts of the
-      // system like log GC, so logging these at WARNING for now so we don't
-      // forget to come back to it.
-      //
-      // Now that commit messages don't have IDs, though, we only call this
-      // on REPLICATEs and they should be in-order again, so we can probably
-      // restore this.
-      string op_desc = op.has_replicate() ?
-          Substitute("$0,$1 REPLICATE (Type: $2)",
-                     op.id().term(),
-                     op.id().index(),
-                     OperationType_Name(op.replicate().op_type())) :
-          Substitute("$0,$1 COMMIT for $2,$3",
-                     op.id().term(),
-                     op.id().index(),
-                     op.commit().commited_op_id().term(),
-                     op.commit().commited_op_id().index());
-
-      KLOG_FIRST_N(WARNING, 10) <<
-        Substitute("Unexpected opid $0 following opid $1. Operation: $2",
-                   op.id().ShortDebugString(),
+  Status CheckSequentialReplicateId(const OperationPB& op) {
+    DCHECK(op.has_replicate());
+    if (PREDICT_FALSE(!valid_sequence(prev_op_id, op.id()))) {
+      string op_desc = Substitute("$0,$1 REPLICATE (Type: $2)",
+                                  op.id().term(),
+                                  op.id().index(),
+                                  OperationType_Name(op.replicate().op_type()));
+      return Status::Corruption(
+        Substitute("Unexpected opid following opid $0. Operation: $1",
                    prev_op_id.ShortDebugString(),
-                   op_desc);
+                   op_desc));
     }
 
     prev_op_id.CopyFrom(op.id());
@@ -580,7 +564,7 @@ struct ReplayState {
     }
   }
 
-  // The last replicate message's id (regardless of type)
+  // The last replicate message's ID.
   OpId prev_op_id;
 
   // The last operation known to be committed.
@@ -615,7 +599,7 @@ Status TabletBootstrap::HandleEntry(ReplayState* state, LogEntryPB* entry) {
 }
 
 Status TabletBootstrap::HandleReplicateMessage(ReplayState* state, LogEntryPB* entry) {
-  state->CheckSequentialOpId(entry->operation());
+  RETURN_NOT_OK(state->CheckSequentialReplicateId(entry->operation()));
 
   // Append the replicate message to the log as is
   RETURN_NOT_OK(log_->Append(entry));
