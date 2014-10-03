@@ -203,32 +203,42 @@ message ConsensusStatusPB {
 
 // A request from a CANDIDATE peer that wishes to become leader of
 // the quorum serving tablet with 'tablet_id'.
+// See RAFT sec. 5.2.
 message VoteRequestPB {
+  // Identifies the tablet quorum a the vote is being requested for.
   required string tablet_id = 1;
 
-  // the uuid of the sender peer
+  // The uuid of the sending peer.
   required bytes candidate_uuid = 2;
+
+  // The term we are requesting a vote for.
+  // If this term is higher than the callee's term, the callee will update its
+  // own term to match, and if it is the current leader it will step down.
+  required uint64 candidate_term = 3;
 
   // The CANDIDATE node status so that the voter node can
   // decide whether to vote for it as LEADER.
-  required ConsensusStatusPB candidate_status = 3;
+  //
+  // In particular, this includes the last OpId persisted in the candidate's
+  // log, which corresponds to the lastLogIndex and lastLogTerm fields in Raft.
+  // A replica must vote no for a candidate that has an OpId lower than them.
+  required ConsensusStatusPB candidate_status = 4;
 }
 
 // A response from a replica to a leader election request.
-// The replica will compare its status with the requestor
-// status and answer 'aye = true' if it deems the requestor
-// may become leader or 'aye = false' otherwise.
 message VoteResponsePB {
+  // The uuid of the node sending the reply.
+  required bytes responder_uuid = 1;
+
+  // The term of the node sending the reply.
+  // Allows the candidate to update itself if it is behind.
+  required uint64 responder_term = 2;
+
+  // True if this peer voted for the caller, false otherwise.
+  required bool vote_granted = 3;
 
   // A generic error message (such as tablet not found).
-  optional tserver.TabletServerErrorPB error = 1;
-
-  // True if this peer voted for the requestor, false otherwise.
-  required bool aye = 2;
-
-  // The remaining watermarks for the voter peer, set if 'aye = true'.
-  // This will be a detailed status.
-  optional ConsensusStatusPB status = 4;
+  optional tserver.TabletServerErrorPB error = 999;
 }
 
 // A consensus request message, the basic unit of a consensus round.
