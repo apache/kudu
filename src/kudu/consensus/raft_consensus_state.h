@@ -323,6 +323,7 @@ class ReplicaState {
   int GetNumPendingTxnsUnlocked() const;
 
   std::string ToString() const;
+  std::string ToStringUnlocked() const;
 
   // A common prefix that should be in any log messages emitted,
   // identifying the tablet and peer.

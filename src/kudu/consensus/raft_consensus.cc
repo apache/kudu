@@ -436,7 +436,7 @@ Status RaftConsensus::LeaderCommitUnlocked(ConsensusRound* context,
 
   if (VLOG_IS_ON(1)) {
     VLOG_WITH_PREFIX(1) << "Leader appended commit. Leader: "
-        << state_->ToString() << " Commit: " << commit_op->ShortDebugString();
+        << state_->ToStringUnlocked() << " Commit: " << commit_op->ShortDebugString();
   }
 
   state_->UpdateLeaderCommittedOpIdUnlocked(commit_op->commit().commited_op_id());
@@ -449,7 +449,7 @@ Status RaftConsensus::ReplicaCommitUnlocked(ConsensusRound* context,
 
   if (VLOG_IS_ON(1)) {
     VLOG_WITH_PREFIX(1) << "Replica appending commit. Replica: "
-        << state_->ToString() << " Commit: " << commit_op->ShortDebugString();
+        << state_->ToStringUnlocked() << " Commit: " << commit_op->ShortDebugString();
   }
 
   // Copy the ids to update later as we can't be sure they will be alive
@@ -498,7 +498,6 @@ Status RaftConsensus::Update(const ConsensusRequestPB* request,
 
   if (PREDICT_FALSE(VLOG_IS_ON(1))) {
     if (request->ops_size() == 0) {
-
       VLOG(1) << state_->LogPrefix() << "Replica replied to status only request. Replica: "
               << state_->ToString() << " Status: " << status->ShortDebugString();
     }

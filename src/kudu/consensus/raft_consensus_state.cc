@@ -502,6 +502,11 @@ string ReplicaState::LogPrefixUnlocked() const {
 
 string ReplicaState::ToString() const {
   ReplicaState::UniqueLock lock(update_lock_);
+  return ToStringUnlocked();
+}
+
+string ReplicaState::ToStringUnlocked() const {
+  DCHECK(update_lock_.is_locked());
   QuorumPeerPB::Role role = QuorumPeerPB::NON_PARTICIPANT;
   if (active_quorum_state_) {
     role = active_quorum_state_->role;
