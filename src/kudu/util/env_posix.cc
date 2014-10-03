@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file. See the AUTHORS file for names of contributors.
 
+#include <boost/foreach.hpp>
 #include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
@@ -255,57 +256,6 @@ class PosixMmapFile : public WritableFile {
     return true;
   }
 
-  Status DoWritev(const vector<Slice>& data_vector,
-                  size_t offset, size_t n) {
-    DCHECK_LE(n, IOV_MAX);
-
-    struct iovec iov[n];
-    size_t j = 0;
-    size_t nbytes = 0;
-
-    for (size_t i = offset; i < offset + n; i++) {
-      const Slice& data = data_vector[i];
-      iov[j].iov_base = const_cast<uint8_t*>(data.data());
-      iov[j].iov_len = data.size();
-      nbytes += data.size();
-      ++j;
-    }
-
-    size_t mem_offset = dst_ - base_;
-    size_t actual_offset = file_offset_ + mem_offset;
-
-    size_t left = nbytes;
-    while (left > 0) {
-      DCHECK_LE(base_, dst_);
-      DCHECK_LE(dst_, limit_);
-      size_t avail = limit_ - dst_;
-      if (avail == 0) {
-        if (!UnmapCurrentRegion() ||
-            !MapNewRegion()) {
-          return IOError(filename_, errno);
-        }
-      }
-      size_t n = (left <= avail) ? left : avail;
-      dst_ += n;
-      left -= n;
-    }
-
-    ssize_t written = pwritev(fd_, iov, n, actual_offset);
-
-    if (PREDICT_FALSE(written == -1)) {
-      int err = errno;
-      return IOError("writev error", err);
-    }
-
-    if (PREDICT_FALSE(written != nbytes)) {
-      return Status::IOError(
-          strings::Substitute("writev error: expected to write $0 bytes, wrote $1 bytes instead",
-                              nbytes, written));
-    }
-
-    return Status::OK();
-  }
-
  public:
   PosixMmapFile(const std::string& fname, int fd, size_t page_size, bool sync_on_close)
       : filename_(fname),
@@ -365,21 +315,10 @@ class PosixMmapFile : public WritableFile {
     return Status::OK();
   }
 
-  // Uses pwritev to perform scatter-gather I/O. Note that on systems
-  // other than Linux, it may be neccessary to call Sync() after each
-  // AppendVector() if we also plan to read from this file.
   virtual Status AppendVector(const vector<Slice>& data_vector) OVERRIDE {
-    // TODO (perf) : investigate what the optimal number of vectors to
-    //               pass to writev at one time is or if it matters.
-    static const size_t kIovMaxElements = IOV_MAX;
-
-    for (size_t i = 0; i < data_vector.size(); i += kIovMaxElements) {
-      size_t n = std::min(data_vector.size() - i, kIovMaxElements);
-      RETURN_NOT_OK(DoWritev(data_vector, i, n));
+    BOOST_FOREACH(const Slice& data, data_vector) {
+      RETURN_NOT_OK(Append(data));
     }
-
-    pending_sync_ = true;
-
     return Status::OK();
   }
 
@@ -445,9 +384,10 @@ class PosixMmapFile : public WritableFile {
       // bytes to be synced.
       size_t p1 = TruncateToPageBoundary(last_sync_ - base_);
       size_t p2 = TruncateToPageBoundary(dst_ - base_ - 1);
-      last_sync_ = dst_;
       if (msync(base_ + p1, p2 - p1 + page_size_, MS_SYNC) < 0) {
         s = IOError(filename_, errno);
+      } else {
+        last_sync_ = dst_;
       }
     }
 
@@ -489,39 +429,18 @@ class PosixWritableFile : public WritableFile {
   }
 
   virtual Status Append(const Slice& data) OVERRIDE {
-    const uint8_t* src = data.data();
-    size_t left = data.size();
-
-    // If we're writing beyond the pre-allocated portion of the file,
-    // make sure fsync() is executed on the next Sync(). Otherwise,
-    // the next call to Sync() will invoke fdatasync().
-    if (PREDICT_FALSE(filesize_ + left > pre_allocated_size_)) {
-      pending_sync_type_ = FSYNC;
-    } else {
-      pending_sync_type_ = FDATASYNC;
-    }
-
-    while (left != 0) {
-      ssize_t done = write(fd_, src, left);
-      if (done < 0) {
-        return IOError(filename_, errno);
-      }
-
-      left -= done;
-      src += done;
-    }
-
-    filesize_ += data.size();
-
-    return Status::OK();
+    vector<Slice> data_vector;
+    data_vector.push_back(data);
+    return AppendVector(data_vector);
   }
 
   virtual Status AppendVector(const vector<Slice>& data_vector) OVERRIDE {
     static const size_t kIovMaxElements = IOV_MAX;
 
-    for (size_t i = 0; i < data_vector.size(); i += kIovMaxElements) {
+    Status s;
+    for (size_t i = 0; i < data_vector.size() && s.ok(); i += kIovMaxElements) {
       size_t n = std::min(data_vector.size() - i, kIovMaxElements);
-      RETURN_NOT_OK(DoWritev(data_vector, i, n));
+      s = DoWritev(data_vector, i, n);
     }
 
     if (PREDICT_FALSE(filesize_ > pre_allocated_size_)) {
@@ -530,7 +449,7 @@ class PosixWritableFile : public WritableFile {
       pending_sync_type_ = FDATASYNC;
     }
 
-    return Status::OK();
+    return s;
   }
 
   virtual Status PreAllocate(uint64_t size) OVERRIDE {
@@ -544,7 +463,7 @@ class PosixWritableFile : public WritableFile {
         return IOError(filename_, errno);
       }
     } else {
-      pre_allocated_size_ = filesize_ + size;
+      pre_allocated_size_ = offset + size;
     }
     return Status::OK();
   }
