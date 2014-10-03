@@ -155,7 +155,7 @@ void BlockManagerStressTest::WriterThread() {
       const uint32_t seed = rand_.Next();
       Slice seed_slice(reinterpret_cast<const uint8_t*>(&seed), sizeof(seed));
       LOG(INFO) << "Creating block " << block->id().ToString() << " with seed " << seed;
-      block->Append(seed_slice);
+      CHECK_OK(block->Append(seed_slice));
 
       dirty_blocks.push_back(block.release());
       dirty_block_rands.push_back(Random(seed));
@@ -179,7 +179,7 @@ void BlockManagerStressTest::WriterThread() {
         const uint32_t next_int = rand.Next();
         data.append(&next_int, sizeof(next_int));
       }
-      block->Append(data);
+      CHECK_OK(block->Append(data));
       total_dirty_bytes += data.length();
     }
 
