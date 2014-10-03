@@ -524,6 +524,46 @@ TEST_F(DistConsensusTest, TestInsertOnNonLeader) {
   AssertAllReplicasAgree(0);
 }
 
+TEST_F(DistConsensusTest, TestEmulateLeaderElection) {
+  BuildAndStart();
+
+  int num_iters = AllowSlowTests() ? 10 : 1;
+
+  InsertTestRowsRemoteThread(0, 0,
+                             FLAGS_client_inserts_per_thread * num_iters,
+                             FLAGS_client_num_batches_per_thread,
+                             leader_->tserver_proxy.get());
+
+  AssertAllReplicasAgree(FLAGS_client_inserts_per_thread * num_iters);
+
+  // Now shutdown the current leader.
+  leader_->tserver->Shutdown();
+
+  // Select the last replica to be leader.
+  TServerDetails* replica = replicas_.back();
+  replicas_.pop_back();
+
+  // Make the new replica leader.
+  consensus::MakePeerLeaderRequestPB request;
+  request.set_tablet_id(tablet_id_);
+
+  consensus::MakePeerLeaderResponsePB response;
+  RpcController controller;
+
+  ASSERT_OK(replica->consensus_proxy->MakePeerLeader(request, &response, &controller));
+  ASSERT_FALSE(response.has_error()) << "Got an error back: " << response.DebugString();
+  leader_.reset(replica);
+
+  // Insert a bunch more rows.
+  InsertTestRowsRemoteThread(0, FLAGS_client_inserts_per_thread * num_iters,
+                             FLAGS_client_inserts_per_thread * num_iters,
+                             FLAGS_client_num_batches_per_thread,
+                             leader_->tserver_proxy.get());
+
+  // Make sure the two remaining replicas agree.
+  AssertAllReplicasAgree(FLAGS_client_inserts_per_thread * num_iters * 2);
+}
+
 TEST_F(DistConsensusTest, TestInsertWhenTheQueueIsFull) {
   FLAGS_consensus_entry_cache_size_soft_limit_mb = 0;
   FLAGS_consensus_entry_cache_size_hard_limit_mb = 1;

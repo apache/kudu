@@ -295,6 +295,20 @@ message GetNodeInstanceResponsePB {
   required NodeInstancePB node_instance = 1;
 }
 
+// Message that makes the local peer LEADER if it isn't so already.
+// Assumes that a tablet with 'tablet_id' exists and that the local peer is a
+// FOLLOWER of that tablet's quorum. If the peer is already CANDIDATE or
+// LEADER of the tablet this has no effect.
+message MakePeerLeaderRequestPB {
+  // the id of the tablet
+  required bytes tablet_id = 1;
+}
+
+message MakePeerLeaderResponsePB {
+  // A generic error message (such as tablet not found).
+  optional tserver.TabletServerErrorPB error = 1;
+}
+
 service ConsensusService {
   rpc ChangeConfig(ChangeConfigRequestPB) returns (ChangeConfigResponsePB);
 
@@ -303,4 +317,6 @@ service ConsensusService {
   rpc RequestConsensusVote(VoteRequestPB) returns (VoteResponsePB);
 
   rpc GetNodeInstance(GetNodeInstanceRequestPB) returns (GetNodeInstanceResponsePB);
+
+  rpc MakePeerLeader(MakePeerLeaderRequestPB) returns (MakePeerLeaderResponsePB);
 }

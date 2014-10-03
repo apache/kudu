@@ -48,10 +48,12 @@ using consensus::ConsensusRequestPB;
 using consensus::ConsensusResponsePB;
 using consensus::ChangeConfigRequestPB;
 using consensus::ChangeConfigResponsePB;
-using consensus::VoteRequestPB;
-using consensus::VoteResponsePB;
 using consensus::GetNodeInstanceRequestPB;
 using consensus::GetNodeInstanceResponsePB;
+using consensus::MakePeerLeaderRequestPB;
+using consensus::MakePeerLeaderResponsePB;
+using consensus::VoteRequestPB;
+using consensus::VoteResponsePB;
 
 using google::protobuf::RepeatedPtrField;
 using rpc::RpcContext;
@@ -494,10 +496,41 @@ void ConsensusServiceImpl::RequestConsensusVote(const VoteRequestPB* req,
 }
 
 void ConsensusServiceImpl::GetNodeInstance(const GetNodeInstanceRequestPB* req,
-                                            GetNodeInstanceResponsePB* resp,
-                                            rpc::RpcContext* context) {
+                                           GetNodeInstanceResponsePB* resp,
+                                           rpc::RpcContext* context) {
   DVLOG(3) << "Received Get Node Instance RPC: " << req->DebugString();
   resp->mutable_node_instance()->CopyFrom(tablet_manager_->NodeInstance());
+  context->RespondSuccess();
+}
+
+void ConsensusServiceImpl::MakePeerLeader(const MakePeerLeaderRequestPB* req,
+                                          MakePeerLeaderResponsePB* resp,
+                                          rpc::RpcContext* context) {
+  DVLOG(3) << "Received Make Peer Leader RPC: " << req->DebugString();
+  scoped_refptr<TabletPeer> tablet_peer;
+  if (!LookupTabletOrRespond(tablet_manager_,
+                             req->tablet_id(),
+                             &tablet_peer,
+                             resp,
+                             context)) {
+    return;
+  }
+
+  // Can't make peer LEADER if it's not RUNNING.
+  if (tablet_peer->state() != tablet::RUNNING) {
+    SetupErrorAndRespond(resp->mutable_error(),
+                         Status::ServiceUnavailable("Tablet Peer not in RUNNING state"),
+                         TabletServerErrorPB::TABLET_NOT_RUNNING, context);
+    return;
+  }
+
+  Status s = tablet_peer->consensus()->EmulateElection();
+  if (PREDICT_FALSE(!s.ok())) {
+    SetupErrorAndRespond(resp->mutable_error(), s,
+                         TabletServerErrorPB::UNKNOWN_ERROR,
+                         context);
+    return;
+  }
   context->RespondSuccess();
 }
 
