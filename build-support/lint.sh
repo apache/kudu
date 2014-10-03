@@ -24,13 +24,13 @@ done
 
 if $ONLY_CHANGED; then
   FILES=$(git diff --name-only $($ME/get-upstream-commit.sh)  \
-    | egrep  '\.(cc|h)$' | grep -v gutil)
+    | egrep  '\.(cc|h)$' | grep -v "gutil\|trace_event")
   if [ -z "$FILES" ]; then
     echo No source files changed
     exit 0
   fi
 else
-  FILES=$(find $ROOT/src -name '*.cc' -or -name '*.h' | grep -v "\.pb\.\|\.service\.\|\.proxy\.\|\.krpc\.\|gutil")
+  FILES=$(find $ROOT/src -name '*.cc' -or -name '*.h' | grep -v "\.pb\.\|\.service\.\|\.proxy\.\|\.krpc\.\|gutil\|trace_event")
 fi
 
 cd $ROOT
