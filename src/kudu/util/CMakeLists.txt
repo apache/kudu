@@ -29,6 +29,8 @@ add_library(kudu_util
   crc.cc
   curl_util.cc
   debug-util.cc
+  debug/trace_event_impl.cc
+  debug/trace_event_impl_constants.cc
   env.cc env_posix.cc env_util.cc
   errno.cc
   faststring.cc

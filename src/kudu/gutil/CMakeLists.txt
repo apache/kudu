@@ -6,6 +6,7 @@ bits.cc
 callback_internal.cc
 dynamic_annotations.c
 ref_counted.cc
+ref_counted_memory.cc
 stringprintf.cc
 strings/memutil.cc
 strings/charset.cc

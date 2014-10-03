@@ -2,23 +2,27 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef BASE_MEMORY_REF_COUNTED_MEMORY_H_
-#define BASE_MEMORY_REF_COUNTED_MEMORY_H_
+#ifndef KUDU_GUTIL_REF_COUNTED_MEMORY_H_
+#define KUDU_GUTIL_REF_COUNTED_MEMORY_H_
 
 #include <string>
 #include <vector>
 
-#include "base/base_export.h"
-#include "base/compiler_specific.h"
-#include "base/memory/ref_counted.h"
+#include "kudu/gutil/macros.h"
+#include "kudu/gutil/ref_counted.h"
+#include "kudu/gutil/port.h"
 
-namespace base {
+#ifndef BASE_EXPORT
+#define BASE_EXPORT
+#endif
+
+namespace kudu {
 
 // A generic interface to memory. This object is reference counted because one
 // of its two subclasses own the data they carry, and we need to have
 // heterogeneous containers of these two types of memory.
 class BASE_EXPORT RefCountedMemory
-    : public base::RefCountedThreadSafe<RefCountedMemory> {
+    : public RefCountedThreadSafe<RefCountedMemory> {
  public:
   // Retrieves a pointer to the beginning of the data we point to. If the data
   // is empty, this will return NULL.
@@ -36,7 +40,7 @@ class BASE_EXPORT RefCountedMemory
   }
 
  protected:
-  friend class base::RefCountedThreadSafe<RefCountedMemory>;
+  friend class RefCountedThreadSafe<RefCountedMemory>;
   RefCountedMemory();
   virtual ~RefCountedMemory();
 };
@@ -124,7 +128,7 @@ class BASE_EXPORT RefCountedString : public RefCountedMemory {
 // An implementation of RefCountedMemory that holds a chunk of memory
 // previously allocated with malloc or calloc, and that therefore must be freed
 // using free().
-class BASE_EXPORT RefCountedMallocedMemory : public base::RefCountedMemory {
+class BASE_EXPORT RefCountedMallocedMemory : public RefCountedMemory {
  public:
   RefCountedMallocedMemory(void* data, size_t length);
 
@@ -141,6 +145,6 @@ class BASE_EXPORT RefCountedMallocedMemory : public base::RefCountedMemory {
   DISALLOW_COPY_AND_ASSIGN(RefCountedMallocedMemory);
 };
 
-}  // namespace base
+}  // namespace kudu
 
-#endif  // BASE_MEMORY_REF_COUNTED_MEMORY_H_
+#endif  // KUDU_GUTIL_REF_COUNTED_MEMORY_H_

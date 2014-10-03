@@ -2,13 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "base/memory/ref_counted_memory.h"
+#include "kudu/gutil/ref_counted_memory.h"
 
 #include <stdlib.h>
 
-#include "base/logging.h"
+#include "kudu/gutil/logging.h"
 
-namespace base {
+namespace kudu {
 
 bool RefCountedMemory::Equals(
     const scoped_refptr<RefCountedMemory>& other) const {
@@ -97,4 +97,4 @@ RefCountedMallocedMemory::~RefCountedMallocedMemory() {
   free(data_);
 }
 
-}  //  namespace base
+}  //  namespace kudu

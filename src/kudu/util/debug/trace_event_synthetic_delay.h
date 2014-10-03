@@ -29,13 +29,11 @@
 // Note that a single delay may begin on one thread and end on another. This
 // implies that a single delay cannot not be applied in several threads at once.
 
-#ifndef BASE_DEBUG_TRACE_EVENT_SYNTHETIC_DELAY_H_
-#define BASE_DEBUG_TRACE_EVENT_SYNTHETIC_DELAY_H_
+#ifndef KUDU_UTIL_DEBUG_TRACE_EVENT_SYNTHETIC_DELAY_H_
+#define KUDU_UTIL_DEBUG_TRACE_EVENT_SYNTHETIC_DELAY_H_
 
-#include "base/atomicops.h"
-#include "base/debug/trace_event.h"
-#include "base/synchronization/lock.h"
-#include "base/time/time.h"
+#include "kudu/gutil/atomicops.h"
+#include "util/debug/trace_event.h"
 
 // Apply a named delay in the current scope.
 #define TRACE_EVENT_SYNTHETIC_DELAY(name)                                     \
@@ -64,7 +62,7 @@
 template <typename Type>
 struct DefaultSingletonTraits;
 
-namespace base {
+namespace kudu {
 namespace debug {
 
 // Time source for computing delay durations. Used for testing.
@@ -72,7 +70,7 @@ class TRACE_EVENT_API_CLASS_EXPORT TraceEventSyntheticDelayClock {
  public:
   TraceEventSyntheticDelayClock();
   virtual ~TraceEventSyntheticDelayClock();
-  virtual base::TimeTicks Now() = 0;
+  virtual MicrosecondsInt64 Now() = 0;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(TraceEventSyntheticDelayClock);
@@ -139,7 +137,7 @@ class TRACE_EVENT_API_CLASS_EXPORT TraceEventSyntheticDelay {
 TRACE_EVENT_API_CLASS_EXPORT void ResetTraceEventSyntheticDelays();
 
 }  // namespace debug
-}  // namespace base
+}  // namespace kudu
 
 namespace trace_event_internal {
 
@@ -151,16 +149,16 @@ class TRACE_EVENT_API_CLASS_EXPORT ScopedSyntheticDelay {
   ~ScopedSyntheticDelay();
 
  private:
-  base::debug::TraceEventSyntheticDelay* delay_impl_;
+  kudu::debug::TraceEventSyntheticDelay* delay_impl_;
   base::TimeTicks end_time_;
 
   DISALLOW_COPY_AND_ASSIGN(ScopedSyntheticDelay);
 };
 
 // Helper for registering delays. Do not use directly.
-TRACE_EVENT_API_CLASS_EXPORT base::debug::TraceEventSyntheticDelay*
+TRACE_EVENT_API_CLASS_EXPORT kudu::debug::TraceEventSyntheticDelay*
     GetOrCreateDelay(const char* name, base::subtle::AtomicWord* impl_ptr);
 
 }  // namespace trace_event_internal
 
-#endif /* BASE_DEBUG_TRACE_EVENT_SYNTHETIC_DELAY_H_ */
+#endif /* KUDU_UTIL_DEBUG_TRACE_EVENT_SYNTHETIC_DELAY_H_ */
