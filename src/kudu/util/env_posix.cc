@@ -8,6 +8,7 @@
 #include <fcntl.h>
 #include <fts.h>
 #include <glog/logging.h>
+#include <linux/falloc.h>
 #include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -67,6 +68,8 @@ static Status IOError(const std::string& context, int err_number) {
       return Status::NotFound(context, ErrnoToString(err_number), err_number);
     case EEXIST:
       return Status::AlreadyPresent(context, ErrnoToString(err_number), err_number);
+    case EOPNOTSUPP:
+      return Status::NotSupported(context, ErrnoToString(err_number), err_number);
   }
   return Status::IOError(context, ErrnoToString(err_number), err_number);
 }
@@ -358,11 +361,15 @@ class PosixMmapFile : public WritableFile {
   }
 
   virtual Status Flush(FlushMode mode) OVERRIDE {
+    return FlushRange(mode, 0, 0);
+  }
+
+  virtual Status FlushRange(FlushMode mode, uint64_t offset, uint64_t length) OVERRIDE {
     int flags = SYNC_FILE_RANGE_WRITE;
     if (mode == FLUSH_SYNC) {
       flags |= SYNC_FILE_RANGE_WAIT_AFTER;
     }
-    if (sync_file_range(fd_, 0, 0, flags) < 0) {
+    if (sync_file_range(fd_, offset, length, flags) < 0) {
       return IOError(filename_, errno);
     }
     return Status::OK();
@@ -403,6 +410,13 @@ class PosixMmapFile : public WritableFile {
   }
 
   virtual string ToString() const OVERRIDE { return filename_; }
+
+  virtual Status PunchHole(uint64_t offset, uint64_t length) OVERRIDE {
+    if (fallocate(fd_, FALLOC_FL_PUNCH_HOLE | FALLOC_FL_KEEP_SIZE, offset, length) < 0) {
+      return IOError(filename_, errno);
+    }
+    return Status::OK();
+  }
 };
 
 // Use non-memory mapped POSIX files to write data to a file.
@@ -501,11 +515,15 @@ class PosixWritableFile : public WritableFile {
   }
 
   virtual Status Flush(FlushMode mode) OVERRIDE {
+    return FlushRange(mode, 0, 0);
+  }
+
+  virtual Status FlushRange(FlushMode mode, uint64_t offset, uint64_t length) OVERRIDE {
     int flags = SYNC_FILE_RANGE_WRITE;
     if (mode == FLUSH_SYNC) {
       flags |= SYNC_FILE_RANGE_WAIT_AFTER;
     }
-    if (sync_file_range(fd_, 0, 0, flags) < 0) {
+    if (sync_file_range(fd_, offset, length, flags) < 0) {
       return IOError(filename_, errno);
     }
     return Status::OK();
@@ -536,6 +554,13 @@ class PosixWritableFile : public WritableFile {
   }
 
   virtual string ToString() const OVERRIDE { return filename_; }
+
+  virtual Status PunchHole(uint64_t offset, uint64_t length) OVERRIDE {
+    if (fallocate(fd_, FALLOC_FL_PUNCH_HOLE | FALLOC_FL_KEEP_SIZE, offset, length) < 0) {
+      return IOError(filename_, errno);
+    }
+    return Status::OK();
+  }
 
  private:
 
@@ -825,6 +850,23 @@ class PosixEnv : public Env {
       s = IOError(fname, errno);
     } else {
       *size = sbuf.st_size;
+    }
+    return s;
+  }
+
+  virtual Status GetFileSizeOnDisk(const std::string& fname, uint64_t* size) OVERRIDE {
+    Status s;
+    struct stat sbuf;
+    if (stat(fname.c_str(), &sbuf) != 0) {
+      *size = 0;
+      s = IOError(fname, errno);
+    } else {
+      // From stat(2):
+      //
+      //   The st_blocks field indicates the number of blocks allocated to
+      //   the file, 512-byte units. (This may be smaller than st_size/512
+      //   when the file has holes.)
+      *size = sbuf.st_blocks * 512;
     }
     return s;
   }

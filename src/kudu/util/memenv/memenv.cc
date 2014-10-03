@@ -266,6 +266,10 @@ class WritableFileImpl : public WritableFile {
 
   virtual Status Flush(FlushMode mode) OVERRIDE { return Status::OK(); }
 
+  virtual Status FlushRange(FlushMode mode, uint64_t offset, uint64_t length) OVERRIDE {
+    return Status::OK();
+  }
+
   virtual Status Sync() OVERRIDE { return Status::OK(); }
 
   virtual Status SyncParentDir() OVERRIDE { return Status::OK(); }
@@ -275,6 +279,8 @@ class WritableFileImpl : public WritableFile {
   virtual string ToString() const OVERRIDE {
     return "in-memory writable file";
   }
+
+  virtual Status PunchHole(uint64_t offset, uint64_t length) OVERRIDE { return Status::OK(); }
 
  private:
   FileState* file_;
@@ -440,6 +446,10 @@ class InMemoryEnv : public EnvWrapper {
 
     *file_size = file_map_[fname]->Size();
     return Status::OK();
+  }
+
+  virtual Status GetFileSizeOnDisk(const std::string& fname, uint64_t* file_size) OVERRIDE {
+    return GetFileSize(fname, file_size);
   }
 
   virtual Status RenameFile(const std::string& src,

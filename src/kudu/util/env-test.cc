@@ -1,10 +1,11 @@
 // Copyright (c) 2013, Cloudera, inc.
 // All rights reserved.
 
-#include <string>
-#include <tr1/memory>
-#include <sys/types.h>
 #include <fcntl.h>
+#include <linux/falloc.h>
+#include <string>
+#include <sys/types.h>
+#include <tr1/memory>
 
 #include <glog/logging.h>
 #include <gtest/gtest.h>
@@ -48,10 +49,18 @@ class TestEnv : public KuduTest {
     int err = fallocate(fd, 0, 0, 4096);
     if (err != 0) {
       PCHECK(errno == ENOTSUP);
-      fallocate_supported_ = false;
     } else {
       fallocate_supported_ = true;
+
+      err = fallocate(fd, FALLOC_FL_KEEP_SIZE | FALLOC_FL_PUNCH_HOLE,
+                      1024, 1024);
+      if (err != 0) {
+        PCHECK(errno == ENOTSUP);
+      } else {
+        fallocate_punch_hole_supported_ = true;
+      }
     }
+
     close(fd);
 
     checked = true;
@@ -261,10 +270,38 @@ class TestEnv : public KuduTest {
     }
   }
 
+  void DoTestHolePunch(const WritableFileOptions& opts) {
+    LOG(INFO) << "Testing PunchHole() with mmap "
+              << (opts.mmap_file ? "enabled" : "disabled");
+
+    string test_path = GetTestPath("test_env_wf");
+    shared_ptr<WritableFile> file;
+    ASSERT_STATUS_OK(env_util::OpenFileForWrite(opts, env_.get(), test_path, &file));
+
+    // Write 1 MB. The size and size-on-disk both agree.
+    uint8_t scratch[kOneMb];
+    Slice slice(scratch, kOneMb);
+    ASSERT_STATUS_OK(file->Append(slice));
+    ASSERT_STATUS_OK(file->Sync());
+    ASSERT_EQ(kOneMb, file->Size());
+    uint64_t size_on_disk;
+    ASSERT_STATUS_OK(env_->GetFileSizeOnDisk(test_path, &size_on_disk));
+    ASSERT_EQ(kOneMb, size_on_disk);
+
+    // Punch some data out at byte marker 4096. Now the two sizes diverge.
+    uint64_t punch_amount = 4096 * 4;
+    ASSERT_STATUS_OK(file->PunchHole(4096, punch_amount));
+    ASSERT_EQ(kOneMb, file->Size());
+    ASSERT_STATUS_OK(env_->GetFileSizeOnDisk(test_path, &size_on_disk));
+    ASSERT_EQ(kOneMb - punch_amount, size_on_disk);
+  }
+
   static bool fallocate_supported_;
+  static bool fallocate_punch_hole_supported_;
 };
 
 bool TestEnv::fallocate_supported_ = false;
+bool TestEnv::fallocate_punch_hole_supported_ = false;
 
 TEST_F(TestEnv, TestPreallocate) {
   if (!fallocate_supported_) {
@@ -291,6 +328,18 @@ TEST_F(TestEnv, TestConsecutivePreallocate) {
   ASSERT_NO_FATAL_FAILURE(DoTestConsecutivePreallocate(opts));
   opts.mmap_file = false;
   ASSERT_NO_FATAL_FAILURE(DoTestConsecutivePreallocate(opts));
+}
+
+TEST_F(TestEnv, TestHolePunch) {
+  if (!fallocate_punch_hole_supported_) {
+    LOG(INFO) << "hole punching not supported, skipping test";
+    return;
+  }
+  WritableFileOptions opts;
+  opts.mmap_file = true;
+  ASSERT_NO_FATAL_FAILURE(DoTestHolePunch(opts));
+  opts.mmap_file = false;
+  ASSERT_NO_FATAL_FAILURE(DoTestHolePunch(opts));
 }
 
 class ShortReadRandomAccessFile : public RandomAccessFile {

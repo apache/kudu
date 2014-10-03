@@ -123,8 +123,14 @@ class Env {
   // This should operate safely, not following any symlinks, etc.
   virtual Status DeleteRecursively(const std::string &dirname) = 0;
 
-  // Store the size of fname in *file_size.
+  // Store the logical size of fname in *file_size.
   virtual Status GetFileSize(const std::string& fname, uint64_t* file_size) = 0;
+
+  // Store the physical size of fname in *file_size.
+  //
+  // This differs from GetFileSize() in that it returns the actual amount
+  // of space consumed by the file, not the user-facing file size.
+  virtual Status GetFileSizeOnDisk(const std::string& fname, uint64_t* file_size) = 0;
 
   // Rename file src to target.
   virtual Status RenameFile(const std::string& src,
@@ -259,6 +265,10 @@ struct RandomAccessFileOptions {
 // A file abstraction for sequential writing.  The implementation
 // must provide buffering since callers may append small fragments
 // at a time to the file.
+//
+// Note that some methods (e.g. FlushRange) aren't truly sequential in
+// nature, but it's simpler to include them than to create a new
+// (mostly duplicated) non-sequential writable file abstraction.
 class WritableFile {
  public:
   enum FlushMode {
@@ -292,6 +302,10 @@ class WritableFile {
   // return a meaningful status.
   virtual Status Flush(FlushMode mode) = 0;
 
+  // Like Flush() but for a specific byte range in the file. If 'length' is
+  // 0, all bytes from 'offset' to the end of the file are flushed.
+  virtual Status FlushRange(FlushMode mode, uint64_t offset, uint64_t length) = 0;
+
   virtual Status Sync() = 0;
 
   virtual Status SyncParentDir() = 0;
@@ -301,6 +315,12 @@ class WritableFile {
   // Returns a string representation of the file suitable for debugging.
   virtual std::string ToString() const = 0;
 
+  // Deallocates space from the file, effectively "punching a hole" in it.
+  // The space will be reclaimed by the filesystem and reads to that range
+  // will return zeroes. Useful for making whole files sparse.
+  //
+  // Filesystems that don't implement this will return an error.
+  virtual Status PunchHole(uint64_t offset, uint64_t length) = 0;
  private:
   // No copying allowed
   WritableFile(const WritableFile&);
@@ -375,6 +395,9 @@ class EnvWrapper : public Env {
   Status DeleteRecursively(const std::string& d) OVERRIDE { return target_->DeleteRecursively(d); }
   Status GetFileSize(const std::string& f, uint64_t* s) OVERRIDE {
     return target_->GetFileSize(f, s);
+  }
+  Status GetFileSizeOnDisk(const std::string& f, uint64_t* s) OVERRIDE {
+    return target_->GetFileSizeOnDisk(f, s);
   }
   Status RenameFile(const std::string& s, const std::string& t) OVERRIDE {
     return target_->RenameFile(s, t);
