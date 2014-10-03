@@ -100,15 +100,15 @@ Status RaftConsensus::VerifyQuorumAndCheckThatNoChangeIsPendingUnlocked(const Qu
 }
 
 
-Status RaftConsensus::Start(const OpId& last_committed_op_id) {
+Status RaftConsensus::Start(const ConsensusBootstrapInfo& info) {
   RETURN_NOT_OK(ExecuteHook(PRE_START));
 
   QuorumPB initial_quorum;
   {
     ReplicaState::UniqueLock lock;
     RETURN_NOT_OK(state_->LockForStart(&lock));
-    queue_.Init(last_committed_op_id);
-    RETURN_NOT_OK_PREPEND(state_->StartUnlocked(last_committed_op_id),
+    queue_.Init(info.last_committed_id);
+    RETURN_NOT_OK_PREPEND(state_->StartUnlocked(info.last_id),
                           "Unable to start RAFT ReplicaState");
 
     RETURN_NOT_OK_PREPEND(VerifyQuorumAndCheckThatNoChangeIsPendingUnlocked(

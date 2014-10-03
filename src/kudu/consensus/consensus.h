@@ -88,7 +88,7 @@ class Consensus {
   Consensus() {}
 
   // Starts running the consensus algorithm.
-  virtual Status Start(const OpId& last_committed_op_id) = 0;
+  virtual Status Start(const ConsensusBootstrapInfo& info) = 0;
 
   // Emulates a leader election by simply making this peer leader.
   virtual Status EmulateElection() = 0;

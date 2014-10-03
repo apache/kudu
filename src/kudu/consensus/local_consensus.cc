@@ -38,7 +38,7 @@ LocalConsensus::LocalConsensus(const ConsensusOptions& options,
   CHECK(cmeta_) << "Passed ConsensusMetadata object is NULL";
 }
 
-Status LocalConsensus::Start(const OpId& last_committed_op_id) {
+Status LocalConsensus::Start(const ConsensusBootstrapInfo& info) {
   CHECK_EQ(state_, kInitializing);
 
   boost::lock_guard<simple_spinlock> lock(lock_);
@@ -48,7 +48,7 @@ Status LocalConsensus::Start(const OpId& last_committed_op_id) {
   RETURN_NOT_OK_PREPEND(VerifyQuorum(initial_quorum),
                         "Invalid quorum found in LocalConsensus::Start()");
 
-  next_op_id_index_ = last_committed_op_id.index() + 1;
+  next_op_id_index_ = info.last_id.index() + 1;
 
   gscoped_ptr<QuorumPB> new_quorum(new QuorumPB);
   new_quorum->CopyFrom(initial_quorum);
