@@ -781,5 +781,58 @@ TEST_F(RaftConsensusTest, TestLeaderPromotionWithQuiescedQuorum) {
   VerifyLogs(1, 0, kDontVerify);
 }
 
+TEST_F(RaftConsensusTest, TestReplicasEnforceTheLogMatchingProperty) {
+  ASSERT_STATUS_OK(BuildAndStartQuorum(3));
+
+  OpId last_op_id;
+  shared_ptr<LatchCallback> last_commit_clbk;
+  vector<ConsensusRound*> rounds;
+  ElementDeleter deleter(&rounds);
+  ReplicateSequenceOfMessages(10,
+                              2, // The index of the initial leader.
+                              WAIT_FOR_ALL_REPLICAS,
+                              COMMIT_ONE_BY_ONE,
+                              &last_op_id,
+                              &rounds,
+                              &last_commit_clbk);
+
+  // Make sure the last operation is committed everywhere
+  ASSERT_STATUS_OK(last_commit_clbk->Wait());
+  WaitForCommitIfNotAlreadyPresent(last_op_id, 0, 2);
+  WaitForCommitIfNotAlreadyPresent(last_op_id, 1, 2);
+
+  // Now replicas should only accept operations with
+  // 'last_id' as the preceding id.
+  ConsensusRequestPB req;
+  ConsensusResponsePB resp;
+
+  req.set_caller_uuid(GetPeer(2)->peer_uuid());
+  req.set_caller_term(last_op_id.term());
+  req.mutable_preceding_id()->CopyFrom(last_op_id);
+
+  OperationPB* op = req.add_ops();
+  OpId* id = op->mutable_id();
+  id->set_term(last_op_id.term());
+  id->set_index(last_op_id.index() + 1);
+  ReplicateMsg* replicate = op->mutable_replicate();
+  replicate->set_op_type(NO_OP);
+
+  // Appending this message to peer0 should work and update
+  // its 'last_received' to 'id'.
+  ASSERT_OK(GetPeer(0)->Update(&req, &resp));
+  ASSERT_TRUE(OpIdEquals(resp.status().last_received(), *id));
+
+  // Now skip one message in the same term. The replica should
+  // complain with the right error message.
+  req.mutable_preceding_id()->set_index(id->index() + 1);
+  id->set_index(id->index() + 2);
+  // Appending this message to peer0 should return a Status::IllegalState
+  // referring to the log matching property.
+  Status s = GetPeer(0)->Update(&req, &resp);
+  ASSERT_TRUE(s.IsIllegalState());
+  ASSERT_STR_CONTAINS(s.ToString(), "Log matching property violated");
+}
+
+
 }  // namespace consensus
 }  // namespace kudu

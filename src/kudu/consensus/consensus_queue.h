@@ -262,6 +262,10 @@ class PeerMessageQueue {
   // The index of the last operation to be considered committed.
   OpId committed_index_;
 
+  // The id of the operation immediately preceding the first operation
+  // in the queue.
+  OpId preceding_first_op_in_queue_;
+
   // The current watermark for each peer.
   // The queue owns the OpIds.
   WatermarksMap watermarks_;

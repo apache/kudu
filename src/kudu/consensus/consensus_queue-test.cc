@@ -130,6 +130,9 @@ TEST_F(ConsensusQueueTest, TestGetPagedMessages) {
   OpId* committed_index = page_size_estimator.mutable_committed_index();
   committed_index->set_index(0);
   committed_index->set_term(0);
+  OpId* preceding_id = page_size_estimator.mutable_preceding_id();
+  preceding_id->set_index(0);
+  preceding_id->set_term(0);
 
   // We're going to add 100 messages to the queue so we make each page fetch 9 of those,
   // for a total of 12 pages. The last page should have a single op.

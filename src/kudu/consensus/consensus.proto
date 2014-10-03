@@ -255,15 +255,23 @@ message ConsensusRequestPB {
   // it will step down and enter FOLLOWER state (see Raft sec. 5.1).
   required uint64 caller_term = 3;
 
+  // The id of the operation immediately preceding the first
+  // operation in 'ops'. If the replica is receiving 'ops' for
+  // the first time 'preceding_id' must match the replica's
+  // last operation.
+  //
+  // This must be set if 'ops' is non-empty.
+  optional OpId preceding_id = 4;
+
   // The id of the last committed operation in the quorum. This is the
   // id of the last operation the leader deemed committed from a consensus
   // standpoint (not the last operation the leader applied).
   //
   // Raft calls this field 'leaderCommit'.
-  required OpId committed_index = 4;
+  required OpId committed_index = 5;
 
   // sequence of operations to be replicated/executed by this peer
-  repeated OperationPB ops = 5;
+  repeated OperationPB ops = 6;
 }
 
 message ConsensusResponsePB {

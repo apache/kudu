@@ -122,6 +122,7 @@ void PeerMessageQueue::Init(const OpId& committed_index) {
   CHECK_EQ(state_, kQueueConstructed);
   CHECK(committed_index.IsInitialized());
   committed_index_ = committed_index;
+  preceding_first_op_in_queue_ = committed_index;
   state_ = kQueueOpen;
 }
 
@@ -232,7 +233,24 @@ void PeerMessageQueue::RequestForPeer(const string& uuid,
                << ". Queue status: " << ToStringUnlocked();
   }
 
-  MessagesBuffer::const_iterator iter = messages_.upper_bound(peer->peer_status.last_received());
+  // We don't actually start sending on 'lower_bound' but we seek to
+  // it to get the preceding_id.
+  MessagesBuffer::const_iterator iter = messages_.lower_bound(peer->peer_status.last_received());
+
+  // If "lower_bound" points to the beginning of the queue and it is not the exact same as the
+  // 'peer_status.last_received()' it means we're sending a batch including the very first message
+  // in the queue, meaning we'll have to use to 'preceeding_first_op_in_queue_' to get the
+  // 'preceding_id'.
+  if (messages_.empty() ||
+      (iter == messages_.begin() &&
+       !OpIdEquals((*iter).first, peer->peer_status.last_received()))) {
+    request->mutable_preceding_id()->CopyFrom(preceding_first_op_in_queue_);
+  // ... otherwise 'preceding_id' is the first element in the iterator and we start sending
+  // on the element after that.
+  } else {
+    request->mutable_preceding_id()->CopyFrom((*iter).first);
+    iter++;
+  }
 
   request->mutable_committed_index()->CopyFrom(committed_index_);
   request->set_caller_term(current_term_);
@@ -412,6 +430,7 @@ Status PeerMessageQueue::TrimBufferForMessage(const OperationPB* operation) {
     metrics_.queue_size_bytes->DecrementBy(bytes_to_decrement);
 
     tracker_->Release(bytes_to_decrement);
+    preceding_first_op_in_queue_.CopyFrom((*iter).first);
     messages_.erase(iter++);
   }
   return Status::OK();

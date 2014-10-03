@@ -81,7 +81,6 @@ Status RaftConsensus::Start(const ConsensusBootstrapInfo& info) {
   {
     ReplicaState::UniqueLock lock;
     RETURN_NOT_OK(state_->LockForStart(&lock));
-    queue_.Init(info.last_committed_id);
     RETURN_NOT_OK_PREPEND(state_->StartUnlocked(info.last_id),
                           "Unable to start RAFT ReplicaState");
 
@@ -166,6 +165,9 @@ Status RaftConsensus::ChangeConfigUnlocked() {
 
 Status RaftConsensus::BecomeLeaderUnlocked() {
   LOG_WITH_PREFIX(INFO) << "Becoming Leader";
+
+  queue_.Init(state_->GetCommittedOpIdUnlocked());
+
   // Create the peers so that we're able to replicate messages remotely and locally
   RETURN_NOT_OK(CreateOrUpdatePeersUnlocked());
 
@@ -553,11 +555,12 @@ Status RaftConsensus::UpdateReplica(const ConsensusRequestPB* request) {
       CHECK_EQ(state_->GetNumPendingTxnsUnlocked(), 0);
     }
 
-    // TODO check for the log matching property in a follow-up patch.
-
     TRACE("Updating replica for $0 ops", request->ops_size());
 
     // 0 - Split/Dedup
+
+    // The id of the operation immediately before the first one we'll prepare/replicate.
+    OpId preceding_id(request->preceding_id());
 
     // Split the operations into two lists, one for REPLICATE
     // and one for COMMIT. Also filter out any ops which have already
@@ -567,12 +570,13 @@ Status RaftConsensus::UpdateReplica(const ConsensusRequestPB* request) {
       if (OpIdCompare(op.id(), state_->GetLastReceivedOpIdUnlocked()) <= 0) {
         VLOG_WITH_PREFIX(2) << "Skipping op id " << op.id().ShortDebugString()
             << " (already replicated/committed)";
+        preceding_id.CopyFrom(op.id());
         continue;
       }
       if (PREDICT_TRUE(op.has_replicate())) {
         replicate_ops.push_back(&const_cast<OperationPB&>(op));
       } else {
-        LOG_WITH_PREFIX(FATAL)<< "Unexpected op: " << op.ShortDebugString();
+        LOG_WITH_PREFIX(FATAL) << "Unexpected op: " << op.ShortDebugString();
       }
     }
 
@@ -583,6 +587,16 @@ Status RaftConsensus::UpdateReplica(const ConsensusRequestPB* request) {
           Substitute("Sender peer's term: $0 is lower than this replica's term: $1.",
                      request->caller_term(),
                      state_->GetCurrentTermUnlocked()));
+    }
+
+    // Enforce the log matching property, if we're about to prepare operations.
+    if (!OpIdEquals(state_->GetLastReplicatedOpIdUnlocked(),
+                    preceding_id)) {
+      return Status::IllegalState(
+          Substitute(Substitute("Log matching property violated."
+              " Last replicated by replica: $0. Preceding OpId from leader: $1.",
+              state_->GetLastReplicatedOpIdUnlocked().ShortDebugString(),
+              preceding_id.ShortDebugString())));
     }
 
     // 1 - Enqueue the prepares
