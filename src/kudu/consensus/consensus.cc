@@ -17,7 +17,8 @@ using std::tr1::shared_ptr;
 using strings::Substitute;
 
 ConsensusBootstrapInfo::ConsensusBootstrapInfo()
-  : last_id(MinimumOpId()) {
+  : last_id(MinimumOpId()),
+    last_committed_id(MinimumOpId()) {
 }
 
 ConsensusBootstrapInfo::~ConsensusBootstrapInfo() {
