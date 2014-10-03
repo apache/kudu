@@ -95,6 +95,8 @@ class MiniCluster {
   // 'idx' must be between 0 and 'num_tablet_servers' -1.
   tserver::MiniTabletServer* mini_tablet_server(int idx);
 
+  int num_tablet_servers() const { return mini_tablet_servers_.size(); }
+
   std::string GetMasterFsRoot(int indx);
 
   std::string GetTabletServerFsRoot(int idx);

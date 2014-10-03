@@ -76,9 +76,12 @@ class DistConsensusTest : public TabletServerTest {
       : inserters_(FLAGS_num_client_threads) {
   }
 
-  struct ProxyDetails {
+  struct TServerDetails {
     master::TSInfoPB ts_info;
-    gscoped_ptr<TabletServerServiceProxy> proxy;
+    gscoped_ptr<TabletServerServiceProxy> tserver_proxy;
+    gscoped_ptr<TabletServerAdminServiceProxy> tserver_admin_proxy;
+    gscoped_ptr<consensus::ConsensusServiceProxy> consensus_proxy;
+    TabletServer* tserver;
   };
 
   virtual void SetUp() OVERRIDE {
@@ -143,23 +146,33 @@ class DistConsensusTest : public TabletServerTest {
   void CreateLeaderAndReplicaProxies(const TabletLocationsPB& locations) {
     leader_.reset();
     STLDeleteElements(&replicas_);
+    unordered_map<string, TabletServer*> tservers;
+    for (int i = 0; i < cluster_->num_tablet_servers(); i++) {
+      TabletServer* tserver = DCHECK_NOTNULL(cluster_->mini_tablet_server(i)->server());
+      InsertOrDie(&tservers, tserver->instance_pb().permanent_uuid(), tserver);
+    }
+
     BOOST_FOREACH(const TabletLocationsPB::ReplicaPB& replica_pb, locations.replicas()) {
       HostPort host_port;
       ASSERT_STATUS_OK(HostPortFromPB(replica_pb.ts_info().rpc_addresses(0), &host_port));
       vector<Sockaddr> addresses;
       host_port.ResolveAddresses(&addresses);
-      gscoped_ptr<TabletServerServiceProxy> proxy;
-      CreateClientProxies(addresses[0], &proxy, &admin_proxy_, &consensus_proxy_);
+
+      TabletServer* tserver = FindOrDie(tservers, replica_pb.ts_info().permanent_uuid());
+
+      gscoped_ptr<TServerDetails> peer(new TServerDetails());
+      peer->ts_info.CopyFrom(replica_pb.ts_info());
+      peer->tserver = tserver;
+
+      ASSERT_OK(CreateClientProxies(addresses[0],
+                                    &peer->tserver_proxy,
+                                    &peer->tserver_admin_proxy,
+                                    &peer->consensus_proxy));
+
       if (replica_pb.role() == QuorumPeerPB::LEADER) {
-        ProxyDetails* leader = new ProxyDetails();
-        leader->proxy.reset(proxy.release());
-        leader->ts_info.CopyFrom(replica_pb.ts_info());
-        leader_.reset(leader);
+        leader_.reset(peer.release());
       } else if (replica_pb.role() == QuorumPeerPB::FOLLOWER) {
-        ProxyDetails* replica = new ProxyDetails();
-        replica->proxy.reset(proxy.release());
-        replica->ts_info.CopyFrom(replica_pb.ts_info());
-        replicas_.push_back(replica);
+        replicas_.push_back(peer.release());
       }
     }
   }
@@ -272,7 +285,7 @@ class DistConsensusTest : public TabletServerTest {
       usleep(10000 * counter);
       vector<string> leader_results;
       vector<string> replica_results;
-      ScanReplica(leader_->proxy.get(), &leader_results);
+      ScanReplica(leader_->tserver_proxy.get(), &leader_results);
 
       if (expected_result_count != -1 && leader_results.size() != expected_result_count) {
         if (counter >= kMaxRetries) {
@@ -282,10 +295,10 @@ class DistConsensusTest : public TabletServerTest {
         continue;
       }
 
-      ProxyDetails* last_replica;
+      TServerDetails* last_replica;
       bool all_replicas_matched = true;
-      BOOST_FOREACH(ProxyDetails* replica, replicas_) {
-        ScanReplica(replica->proxy.get(), &replica_results);
+      BOOST_FOREACH(TServerDetails* replica, replicas_) {
+        ScanReplica(replica->tserver_proxy.get(), &replica_results);
         last_replica = replica;
         SCOPED_TRACE(DumpToString(leader_->ts_info, leader_results,
                                   replica->ts_info, replica_results));
@@ -368,8 +381,8 @@ class DistConsensusTest : public TabletServerTest {
   gscoped_ptr<MiniCluster> cluster_;
   shared_ptr<KuduClient> client_;
   scoped_refptr<KuduTable> table_;
-  gscoped_ptr<ProxyDetails> leader_;
-  vector<ProxyDetails*> replicas_;
+  gscoped_ptr<TServerDetails> leader_;
+  vector<TServerDetails*> replicas_;
 
   QuorumPB quorum_;
   string tablet_id_;
@@ -408,7 +421,7 @@ TEST_F(DistConsensusTest, TestInsertAndMutateThroughConsensus) {
     InsertTestRowsRemoteThread(0, i * FLAGS_client_inserts_per_thread,
                                FLAGS_client_inserts_per_thread,
                                FLAGS_client_num_batches_per_thread,
-                               leader_->proxy.get());
+                               leader_->tserver_proxy.get());
   }
   AssertAllReplicasAgree(FLAGS_client_inserts_per_thread * num_iters);
 }
@@ -427,7 +440,7 @@ TEST_F(DistConsensusTest, TestFailedTransaction) {
   RpcController controller;
   controller.set_timeout(MonoDelta::FromSeconds(FLAGS_rpc_timeout));
 
-  ASSERT_STATUS_OK(DCHECK_NOTNULL(leader_->proxy.get())->Write(req, &resp, &controller));
+  ASSERT_STATUS_OK(DCHECK_NOTNULL(leader_->tserver_proxy.get())->Write(req, &resp, &controller));
   ASSERT_TRUE(resp.has_error());
 
   // Add a proper row so that we can verify that all of the replicas continue
@@ -440,7 +453,7 @@ TEST_F(DistConsensusTest, TestFailedTransaction) {
   controller.Reset();
   controller.set_timeout(MonoDelta::FromSeconds(FLAGS_rpc_timeout));
 
-  ASSERT_STATUS_OK(DCHECK_NOTNULL(leader_->proxy.get())->Write(req, &resp, &controller));
+  ASSERT_STATUS_OK(DCHECK_NOTNULL(leader_->tserver_proxy.get())->Write(req, &resp, &controller));
   SCOPED_TRACE(resp.ShortDebugString());
   ASSERT_FALSE(resp.has_error());
 
@@ -468,7 +481,7 @@ TEST_F(DistConsensusTest, MultiThreadedMutateAndInsertThroughConsensus) {
                                   this, i, i * FLAGS_client_inserts_per_thread,
                                   FLAGS_client_inserts_per_thread,
                                   FLAGS_client_num_batches_per_thread,
-                                  leader_->proxy.get(),
+                                  leader_->tserver_proxy.get(),
                                   &new_thread));
     threads_.push_back(new_thread);
   }
@@ -499,7 +512,7 @@ TEST_F(DistConsensusTest, TestInsertOnNonLeader) {
   ASSERT_STATUS_OK(SchemaToPB(schema_, req.mutable_schema()));
   AddTestRowToPB(RowOperationsPB::INSERT, schema_, 1234, 5678,
                  "hello world via RPC", req.mutable_row_operations());
-  ASSERT_STATUS_OK(replicas_[0]->proxy->Write(req, &resp, &rpc));
+  ASSERT_STATUS_OK(replicas_[0]->tserver_proxy->Write(req, &resp, &rpc));
   SCOPED_TRACE(resp.DebugString());
   ASSERT_TRUE(resp.has_error());
   Status s = StatusFromPB(resp.error().status());
@@ -560,7 +573,7 @@ TEST_F(DistConsensusTest, TestInsertWhenTheQueueIsFull) {
       AddTestRowToPB(RowOperationsPB::INSERT, schema_, key, key,
                      test_payload, data);
       key++;
-      ASSERT_OK(leader_->proxy->Write(req, &resp, &rpc));
+      ASSERT_OK(leader_->tserver_proxy->Write(req, &resp, &rpc));
 
       if (resp.has_error()) {
         s = StatusFromPB(resp.error().status());
@@ -586,7 +599,7 @@ TEST_F(DistConsensusTest, TestInsertWhenTheQueueIsFull) {
     AddTestRowToPB(RowOperationsPB::INSERT, schema_, key, key,
                    test_payload, data);
     key++;
-    ASSERT_OK(leader_->proxy->Write(req, &resp, &rpc));
+    ASSERT_OK(leader_->tserver_proxy->Write(req, &resp, &rpc));
     if (resp.has_error()) {
       s = StatusFromPB(resp.error().status());
     } else {
