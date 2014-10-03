@@ -41,6 +41,8 @@ class LocalConsensus : public Consensus {
   virtual Status Start(const metadata::QuorumPB& initial_quorum,
                        const OpId& last_committed_op_id) OVERRIDE;
 
+  virtual Status EmulateElection() OVERRIDE { return Status::OK(); }
+
   virtual Status Replicate(ConsensusRound* context) OVERRIDE;
 
   virtual metadata::QuorumPeerPB::Role role() const OVERRIDE;

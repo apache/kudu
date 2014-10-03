@@ -56,7 +56,7 @@ class RaftConsensus : public Consensus {
   // Emulates an election by increasing the term number, marking
   // this peer as leader, marking the previous leader as follower
   // and calling ChangeConfig() with the resulting quorum.
-  Status EmulateElection();
+  virtual Status EmulateElection() OVERRIDE;
 
   virtual Status Replicate(ConsensusRound* context) OVERRIDE;
 
