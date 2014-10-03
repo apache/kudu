@@ -50,8 +50,7 @@ class RaftConsensus : public Consensus {
                 ReplicaTransactionFactory* txn_factory,
                 log::Log* log);
 
-  virtual Status Start(const metadata::QuorumPB& initial_quorum,
-                       const OpId& last_committed_op_id) OVERRIDE;
+  virtual Status Start(const OpId& last_committed_op_id) OVERRIDE;
 
   // Emulates an election by increasing the term number, marking
   // this peer as leader, marking the previous leader as follower

@@ -156,9 +156,7 @@ Status TabletPeer::Start(const ConsensusBootstrapInfo& bootstrap_info) {
 
   VLOG(2) << "Quorum before starting: " << consensus_->Quorum().DebugString();
 
-  // TODO: Remove first param from Consensus::Start(). It now does nothing.
-  RETURN_NOT_OK(consensus_->Start(consensus_->Quorum(),
-                                  bootstrap_info.last_committed_id));
+  RETURN_NOT_OK(consensus_->Start(bootstrap_info.last_committed_id));
 
   return Status::OK();
 }

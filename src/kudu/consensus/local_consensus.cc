@@ -38,8 +38,7 @@ LocalConsensus::LocalConsensus(const ConsensusOptions& options,
   CHECK(cmeta_) << "Passed ConsensusMetadata object is NULL";
 }
 
-Status LocalConsensus::Start(const metadata::QuorumPB& /* UNUSED */,
-                             const OpId& last_committed_op_id) {
+Status LocalConsensus::Start(const OpId& last_committed_op_id) {
   CHECK_EQ(state_, kInitializing);
 
   boost::lock_guard<simple_spinlock> lock(lock_);

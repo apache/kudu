@@ -100,8 +100,7 @@ Status RaftConsensus::VerifyQuorumAndCheckThatNoChangeIsPendingUnlocked(const Qu
 }
 
 
-Status RaftConsensus::Start(const metadata::QuorumPB& /* unused */,
-                            const OpId& last_committed_op_id) {
+Status RaftConsensus::Start(const OpId& last_committed_op_id) {
   RETURN_NOT_OK(ExecuteHook(PRE_START));
 
   QuorumPB initial_quorum;

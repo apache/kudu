@@ -88,18 +88,7 @@ class Consensus {
   Consensus() {}
 
   // Starts running the consensus algorithm.
-  //
-  // 'initial_quorum' originates from the master, if this is a new quorum
-  // or from the log if this was a pre-existing quorum (i.e. in case of
-  // crash).
-  //
-  // The provided configuration is taken as a hint and may not be the
-  // final configuration of the quorum. Specifically peer roles may
-  // vary (e.g. if leader election was triggered) and even membership
-  // may vary if the last known quorum configuration had different
-  // members from the provided one.
-  virtual Status Start(const metadata::QuorumPB& initial_quorum,
-                       const OpId& last_committed_op_id) = 0;
+  virtual Status Start(const OpId& last_committed_op_id) = 0;
 
   // Emulates a leader election by simply making this peer leader.
   virtual Status EmulateElection() = 0;

@@ -38,8 +38,7 @@ class LocalConsensus : public Consensus {
                           ReplicaTransactionFactory* txn_factory,
                           log::Log* log);
 
-  virtual Status Start(const metadata::QuorumPB& initial_quorum,
-                       const OpId& last_committed_op_id) OVERRIDE;
+  virtual Status Start(const OpId& last_committed_op_id) OVERRIDE;
 
   virtual Status EmulateElection() OVERRIDE { return Status::OK(); }
 

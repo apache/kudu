@@ -134,7 +134,7 @@ class RaftConsensusTest : public KuduTest {
   Status StartPeers() {
     for (int i = 0; i < quorum_.peers_size(); i++) {
       RaftConsensus* peer = peers_[i];
-      RETURN_NOT_OK(peer->Start(quorum_, MinimumOpId()));
+      RETURN_NOT_OK(peer->Start(MinimumOpId()));
     }
     return Status::OK();
   }
