@@ -217,9 +217,15 @@ class Tablet {
   // Update the statistics for performing a compaction.
   void UpdateCompactionStats(MaintenanceOpStats* stats);
 
-  // Returns the exact current size of the MRS, in bytes.
+  // Returns the exact current size of the MRS, in bytes. A value greater than 0 doesn't imply
+  // that the MRS has data, only that it has allocated that amount of memory.
   // This method takes a read lock on component_lock_ and is thread-safe.
   size_t MemRowSetSize() const;
+
+  // Returns true if the MRS is empty, else false. Doesn't rely on size and
+  // actually verifies that the MRS has no elements.
+  // This method takes a read lock on component_lock_ and is thread-safe.
+  bool MemRowSetEmpty() const;
 
   // Estimate the total on-disk size of this tablet, in bytes.
   size_t EstimateOnDiskSize() const;

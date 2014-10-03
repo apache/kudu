@@ -548,7 +548,8 @@ void RowSetsInCompaction::DumpToLog() const {
   LOG(INFO) << "Selected " << rowsets_.size() << " rowsets to compact:";
   // Dump the selected rowsets to the log, and collect corresponding iterators.
   BOOST_FOREACH(const shared_ptr<RowSet> &rs, rowsets_) {
-    LOG(INFO) << rs->ToString() << "(" << rs->EstimateOnDiskSize() << " bytes)";
+    LOG(INFO) << rs->ToString() << "(current size on disk: ~"
+              << rs->EstimateOnDiskSize() << " bytes)";
   }
 }
 

@@ -57,8 +57,9 @@ DEFINE_int32(tablet_compaction_budget_mb, 128,
              "Budget for a single compaction, if the 'budget' compaction "
              "algorithm is selected");
 
-DEFINE_int32(flush_threshold_mb, 64, "Minimum memrowset size to flush");
-
+DEFINE_int32(flush_threshold_mb, 64,
+             "Size at which MemRowSet flushes are triggered. "
+             "A MRS can still flush below this threshold if it if hasn't flushed in a while");
 
 METRIC_DEFINE_gauge_uint64(memrowset_size, kudu::MetricUnit::kBytes,
                            "Size of this tablet's memrowset");
@@ -725,7 +726,7 @@ class FlushMRSOp : public MaintenanceOp {
       // heuristics, it will do for now.
       int extra_mb = stats->ram_anchored / 1024 / 1024;
       stats->perf_improvement = extra_mb;
-    } else if (stats->ram_anchored > 0 &&
+    } else if (!tablet_->MemRowSetEmpty() &&
                time_since_flush_.elapsed().wall_millis() > kFlushDueToTimeMs) {
       // Even if we aren't over the threshold, consider flushing if we haven't flushed
       // in a long time. But, don't give it a large perf_improvement score. We should
@@ -1326,6 +1327,13 @@ size_t Tablet::MemRowSetSize() const {
   GetComponents(&comps);
 
   return comps->memrowset->memory_footprint();
+}
+
+bool Tablet::MemRowSetEmpty() const {
+  scoped_refptr<TabletComponents> comps;
+  GetComponents(&comps);
+
+  return comps->memrowset->empty();
 }
 
 size_t Tablet::EstimateOnDiskSize() const {
