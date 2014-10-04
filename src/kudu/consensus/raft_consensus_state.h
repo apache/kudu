@@ -122,13 +122,6 @@ class ReplicaState {
 
   Status StartUnlocked(const OpId& initial_id);
 
-  // Increments this peers term.
-  void IncrementTermUnlocked();
-
-  // Checks if the term change is legal and sets 'current_term'
-  // to 'new_term' if so.
-  Status SetCurrentTermUnlocked(uint64_t new_term);
-
   // Locks a replica in preparation for StartUnlocked(). Makes
   // sure the replica is in kInitialized state.
   Status LockForStart(UniqueLock* lock);
@@ -161,6 +154,9 @@ class ReplicaState {
   Status LockForShutdown(UniqueLock* lock) WARN_UNUSED_RESULT;
 
   Status LockForConfigChange(UniqueLock* lock) WARN_UNUSED_RESULT;
+
+  // Lock for use during leader election while running.
+  Status LockForElection(UniqueLock* lock) WARN_UNUSED_RESULT;
 
   // Obtains the lock for a state read, does not check state.
   Status LockForRead(UniqueLock* lock) WARN_UNUSED_RESULT;
@@ -202,6 +198,28 @@ class ReplicaState {
   // Return the persisted quorum.
   const metadata::QuorumPB& GetCommittedQuorumUnlocked() const;
 
+  // Increments this peer's term and sets 'has voted' to no for the current
+  // term.
+  Status IncrementTermUnlocked() WARN_UNUSED_RESULT;
+
+  // Checks if the term change is legal. If so, sets 'current_term'
+  // to 'new_term' and sets 'has voted' to no for the current term.
+  Status SetCurrentTermUnlocked(uint64_t new_term) WARN_UNUSED_RESULT;
+
+  // Returns the term set in the last config change round.
+  const uint64_t GetCurrentTermUnlocked() const;
+
+  // Return whether this peer has voted in the current term.
+  const bool HasVotedCurrentTermUnlocked() const;
+
+  // Record replica's vote for the current term, then flush the consensus
+  // metadata to disk.
+  Status SetVotedForCurrentTermUnlocked(const std::string& uuid) WARN_UNUSED_RESULT;
+
+  // Return replica's vote for the current term.
+  // The vote must be set; use HasVotedCurrentTermUnlocked() to check.
+  const std::string& GetVotedForCurrentTermUnlocked() const;
+
   ReplicaTransactionFactory* GetReplicaTransactionFactoryUnlocked() const;
 
   Status IncrementConfigSeqNoUnlocked();
@@ -210,9 +228,6 @@ class ReplicaState {
   const std::string& GetPeerUuid() const;
 
   const ConsensusOptions& GetOptions() const;
-
-  // Returns the term set in the last config change round.
-  const uint64_t GetCurrentTermUnlocked() const;
 
   // Enqueues a Prepare() in the ReplicaTransactionFactory.
   Status EnqueuePrepareUnlocked(gscoped_ptr<ConsensusRound> context);
@@ -346,9 +361,6 @@ class ReplicaState {
 
   // Consensus metadata persistence object.
   gscoped_ptr<ConsensusMetadata> cmeta_;
-
-  // Used by the LEADER. This is the current term for this leader.
-  uint64_t current_term_;
 
   // Used by the LEADER. This is the index of the next operation generated
   // by this LEADER.

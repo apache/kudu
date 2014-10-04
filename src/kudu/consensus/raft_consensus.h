@@ -50,6 +50,8 @@ class RaftConsensus : public Consensus {
                 ReplicaTransactionFactory* txn_factory,
                 log::Log* log);
 
+  virtual ~RaftConsensus();
+
   virtual Status Start(const ConsensusBootstrapInfo& info) OVERRIDE;
 
   // Emulates an election by increasing the term number, marking
@@ -98,8 +100,6 @@ class RaftConsensus : public Consensus {
   Status RegisterOnCommitCallback(
       const OpId& op_id,
       const std::tr1::shared_ptr<FutureCallback>& commit_callback);
-
-  virtual ~RaftConsensus();
 
  protected:
   virtual Status Commit(gscoped_ptr<CommitMsg> commit,
@@ -158,6 +158,47 @@ class RaftConsensus : public Consensus {
 
   OpId GetLastOpIdFromLog();
 
+  // Step down as leader. Stop accepting write requests, etc.
+  // Must hold both 'update_lock_' and the ReplicaState lock.
+  Status StepDownIfLeaderUnlocked();
+
+  // Return header string for RequestVote log messages.
+  std::string GetRequestVoteLogHeader() const;
+
+  // Fill VoteResponsePB with the following information:
+  // - Update responder_term to current local term.
+  // - Set vote_granted to true.
+  void FillVoteResponseVoteGranted(VoteResponsePB* response);
+
+  // Fill VoteResponsePB with the following information:
+  // - Update responder_term to current local term.
+  // - Set vote_granted to false.
+  // - Set consensus_error.code to the given code.
+  void FillVoteResponseVoteDenied(ConsensusErrorPB::Code error_code, VoteResponsePB* response);
+
+  // Respond to VoteRequest that the candidate is not in the quorum.
+  Status RequestVoteRespondNotInQuorum(const VoteRequestPB* request, VoteResponsePB* response);
+
+  // Respond to VoteRequest that the candidate has an old term.
+  Status RequestVoteRespondInvalidTerm(const VoteRequestPB* request, VoteResponsePB* response);
+
+  // Respond to VoteRequest that we already granted our vote to the candidate.
+  Status RequestVoteRespondVoteAlreadyGranted(const VoteRequestPB* request,
+                                              VoteResponsePB* response);
+
+  // Respond to VoteRequest that we already granted our vote to someone else.
+  Status RequestVoteRespondAlreadyVotedForOther(const VoteRequestPB* request,
+                                                VoteResponsePB* response);
+
+  // Respond to VoteRequest that the candidate's last-logged OpId is too old.
+  Status RequestVoteRespondLastOpIdTooOld(const OpId& local_last_opid,
+                                          const VoteRequestPB* request,
+                                          VoteResponsePB* response);
+
+  // Respond to VoteRequest that the vote is granted for candidate.
+  Status RequestVoteRespondVoteGranted(const VoteRequestPB* request,
+                                       VoteResponsePB* response);
+
   log::Log* log_;
   scoped_refptr<server::Clock> clock_;
   gscoped_ptr<PeerProxyFactory> peer_proxy_factory_;
@@ -171,6 +212,9 @@ class RaftConsensus : public Consensus {
 
   // TODO hack to serialize updates due to repeated/out-of-order messages
   // should probably be refactored out.
+  //
+  // Lock ordering note: If both this lock and the ReplicaState lock are to be
+  // taken, this lock must be taken first.
   mutable simple_spinlock update_lock_;
 
   DISALLOW_COPY_AND_ASSIGN(RaftConsensus);

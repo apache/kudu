@@ -23,6 +23,19 @@ message ConsensusErrorPB {
     // of one of the messages sent in a batch is lower than the
     // the term the peer is expecting.
     INVALID_TERM = 2;
+
+    // For leader election.
+    // The last OpId logged by the candidate is older than the last OpId logged
+    // by the local peer.
+    LAST_OPID_TOO_OLD = 3;
+
+    // For leader election.
+    // The local replica has already voted for another candidate in this term.
+    ALREADY_VOTED = 4;
+
+    // The replica does not recognize the caller's request as coming from a
+    // member of the quorum.
+    NOT_IN_QUORUM = 5;
   }
 
   // The error code.
@@ -236,6 +249,10 @@ message VoteResponsePB {
 
   // True if this peer voted for the caller, false otherwise.
   required bool vote_granted = 3;
+
+  // TODO: Migrate ConsensusService to the AppStatusPB RPC style and merge these errors.
+  // Error message from the consensus implementation.
+  optional ConsensusErrorPB consensus_error = 998;
 
   // A generic error message (such as tablet not found).
   optional tserver.TabletServerErrorPB error = 999;

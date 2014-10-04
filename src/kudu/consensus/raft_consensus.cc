@@ -62,6 +62,11 @@ RaftConsensus::RaftConsensus(const ConsensusOptions& options,
                                 DCHECK_NOTNULL(txn_factory)));
 }
 
+RaftConsensus::~RaftConsensus() {
+  Shutdown();
+  STLDeleteValues(&peers_);
+}
+
 Status RaftConsensus::VerifyQuorumAndCheckThatNoChangeIsPendingUnlocked(const QuorumPB& quorum) {
   // Sanity checks.
   if (state_->IsQuorumChangePendingUnlocked()) {
@@ -72,7 +77,6 @@ Status RaftConsensus::VerifyQuorumAndCheckThatNoChangeIsPendingUnlocked(const Qu
   }
   return VerifyQuorum(quorum);
 }
-
 
 Status RaftConsensus::Start(const ConsensusBootstrapInfo& info) {
   RETURN_NOT_OK(ExecuteHook(PRE_START));
@@ -131,7 +135,7 @@ Status RaftConsensus::EmulateElection() {
                                          &new_quorum));
     new_quorum.set_seqno(state_->GetCommittedQuorumUnlocked().seqno() + 1);
     // Increment the term.
-    state_->IncrementTermUnlocked();
+    RETURN_NOT_OK(state_->IncrementTermUnlocked());
     RETURN_NOT_OK_PREPEND(VerifyQuorumAndCheckThatNoChangeIsPendingUnlocked(new_quorum),
                           "Invalid state on RaftConsensus::EmulateElection()");
     RETURN_NOT_OK(state_->SetPendingQuorumUnlocked(new_quorum));
@@ -277,6 +281,7 @@ Status RaftConsensus::Replicate(ConsensusRound* round) {
 
   RETURN_NOT_OK(ExecuteHook(PRE_REPLICATE));
 
+  boost::lock_guard<simple_spinlock> lock(update_lock_);
   {
     ReplicaState::UniqueLock lock;
     RETURN_NOT_OK(state_->LockForReplicate(&lock, *round->replicate_op()));
@@ -480,6 +485,7 @@ Status RaftConsensus::UpdateReplica(const ConsensusRequestPB* request) {
     // Do term checks first:
     if (PREDICT_FALSE(request->caller_term() != state_->GetCurrentTermUnlocked())) {
       // Eventually we'll respond error here but right now just check.
+      CHECK_OK(StepDownIfLeaderUnlocked());
       CHECK_OK(state_->SetCurrentTermUnlocked(request->caller_term()));
       // - Since we don't handle in-flights when the terms change yet
       //   make sure that we don't have any.
@@ -626,6 +632,7 @@ Status RaftConsensus::UpdateReplica(const ConsensusRequestPB* request) {
 
     ReplicaState::UniqueLock lock;
     RETURN_NOT_OK(state_->LockForUpdate(&lock));
+
     state_->UpdateLastReplicatedOpIdUnlocked(last_enqueued_prepare);
   }
 
@@ -638,9 +645,61 @@ Status RaftConsensus::UpdateReplica(const ConsensusRequestPB* request) {
   return Status::OK();
 }
 
-Status RaftConsensus::RequestVote(const VoteRequestPB* request,
-                                  VoteResponsePB* response) {
-  return Status::NotSupported("Not Implemented yet.");
+Status RaftConsensus::RequestVote(const VoteRequestPB* request, VoteResponsePB* response) {
+  // We must acquire the update lock in order to ensure that this vote action
+  // takes place between requests.
+  // Lock ordering: The update lock must be acquired before the ReplicaState lock.
+  lock_guard<simple_spinlock> update_guard(&update_lock_);
+
+  // Acquire the replica state lock so we can read / modify the consensus state.
+  ReplicaState::UniqueLock state_guard;
+  RETURN_NOT_OK(state_->LockForElection(&state_guard));
+
+  response->set_responder_uuid(state_->GetPeerUuid());
+
+  QuorumPeerPB::Role role = GetRoleInQuorum(request->candidate_uuid(),
+                                            state_->GetCommittedQuorumUnlocked());
+  // Candidate is not a member of the quorum.
+  if (role == QuorumPeerPB::NON_PARTICIPANT) {
+    return RequestVoteRespondNotInQuorum(request, response);
+  }
+
+  // Candidate is running behind.
+  if (request->candidate_term() < state_->GetCurrentTermUnlocked()) {
+    return RequestVoteRespondInvalidTerm(request, response);
+  }
+
+  // We already voted this term.
+  if (request->candidate_term() == state_->GetCurrentTermUnlocked() &&
+      state_->HasVotedCurrentTermUnlocked()) {
+
+    // Already voted for the same candidate in the current term.
+    if (state_->GetVotedForCurrentTermUnlocked() == request->candidate_uuid()) {
+      return RequestVoteRespondVoteAlreadyGranted(request, response);
+    }
+
+    // Voted for someone else in current term.
+    return RequestVoteRespondAlreadyVotedForOther(request, response);
+  }
+
+  // The term advanced.
+  if (request->candidate_term() > state_->GetCurrentTermUnlocked()) {
+    RETURN_NOT_OK_PREPEND(StepDownIfLeaderUnlocked(),
+        Substitute("Could not step down in RequestVote. Current term: $0, candidate term: $1",
+                   state_->GetCurrentTermUnlocked(), request->candidate_term()));
+    // Update our own term.
+    RETURN_NOT_OK(state_->SetCurrentTermUnlocked(request->candidate_term()));
+  }
+
+  // Candidate must have last-logged OpId at least as large as our own to get
+  // our vote.
+  OpId local_last_logged_opid = GetLastOpIdFromLog();
+  if (OpIdLessThan(request->candidate_status().last_received(), local_last_logged_opid)) {
+    return RequestVoteRespondLastOpIdTooOld(local_last_logged_opid, request, response);
+  }
+
+  // Passed all our checks. Vote granted.
+  return RequestVoteRespondVoteGranted(request, response);
 }
 
 void RaftConsensus::SignalRequestToPeers(bool force_if_queue_empty) {
@@ -703,6 +762,119 @@ OpId RaftConsensus::GetLastOpIdFromLog() {
   return id;
 }
 
+Status RaftConsensus::StepDownIfLeaderUnlocked() {
+  // TODO: Implement me.
+  if (state_->GetActiveQuorumStateUnlocked().role == QuorumPeerPB::LEADER) {
+    LOG(INFO) << Substitute("Tablet $0: Replica $1 stepping down as leader. TODO: implement.",
+                            state_->GetOptions().tablet_id, state_->GetPeerUuid());
+  }
+  return Status::OK();
+}
+
+std::string RaftConsensus::GetRequestVoteLogHeader() const {
+  return Substitute("Tablet $0: Replica $1: Leader election vote request",
+                    state_->GetOptions().tablet_id,
+                    state_->GetPeerUuid());
+}
+
+void RaftConsensus::FillVoteResponseVoteGranted(VoteResponsePB* response) {
+  response->set_responder_term(state_->GetCurrentTermUnlocked());
+  response->set_vote_granted(true);
+}
+
+void RaftConsensus::FillVoteResponseVoteDenied(ConsensusErrorPB::Code error_code,
+                                                 VoteResponsePB* response) {
+  response->set_responder_term(state_->GetCurrentTermUnlocked());
+  response->set_vote_granted(false);
+  response->mutable_consensus_error()->set_code(error_code);
+}
+
+Status RaftConsensus::RequestVoteRespondNotInQuorum(const VoteRequestPB* request,
+                                                    VoteResponsePB* response) {
+  FillVoteResponseVoteDenied(ConsensusErrorPB::NOT_IN_QUORUM, response);
+  string msg = Substitute("$0: Not considering vote for candidate $1 in term $2 due to "
+                          "candidate not being a member of the quorum in current term $3. "
+                          "Quorum: $4",
+                          GetRequestVoteLogHeader(),
+                          request->candidate_uuid(),
+                          request->candidate_term(),
+                          state_->GetCurrentTermUnlocked(),
+                          state_->GetCommittedQuorumUnlocked().ShortDebugString());
+  LOG(INFO) << msg;
+  StatusToPB(Status::InvalidArgument(msg), response->mutable_consensus_error()->mutable_status());
+  return Status::OK();
+}
+
+Status RaftConsensus::RequestVoteRespondInvalidTerm(const VoteRequestPB* request,
+                                                    VoteResponsePB* response) {
+  FillVoteResponseVoteDenied(ConsensusErrorPB::INVALID_TERM, response);
+  string msg = Substitute("$0: Denying vote to candidate $1 for earlier term $2. "
+                          "Current term is $3.",
+                          GetRequestVoteLogHeader(),
+                          request->candidate_uuid(),
+                          request->candidate_term(),
+                          state_->GetCurrentTermUnlocked());
+  LOG(INFO) << msg;
+  StatusToPB(Status::InvalidArgument(msg), response->mutable_consensus_error()->mutable_status());
+  return Status::OK();
+}
+
+Status RaftConsensus::RequestVoteRespondVoteAlreadyGranted(const VoteRequestPB* request,
+                                                           VoteResponsePB* response) {
+  FillVoteResponseVoteGranted(response);
+  LOG(INFO) << Substitute("$0: Already granted yes vote for candidate $1 in term $2. "
+                          "Re-sending same reply.",
+                          GetRequestVoteLogHeader(),
+                          request->candidate_uuid(),
+                          request->candidate_term());
+  return Status::OK();
+}
+
+Status RaftConsensus::RequestVoteRespondAlreadyVotedForOther(const VoteRequestPB* request,
+                                                             VoteResponsePB* response) {
+  FillVoteResponseVoteDenied(ConsensusErrorPB::ALREADY_VOTED, response);
+  string msg = Substitute("$0: Denying vote to candidate $1 in current term $2: "
+                          "Already voted for candidate $3 in this term.",
+                          GetRequestVoteLogHeader(),
+                          request->candidate_uuid(),
+                          state_->GetCurrentTermUnlocked(),
+                          state_->GetVotedForCurrentTermUnlocked());
+  LOG(INFO) << msg;
+  StatusToPB(Status::InvalidArgument(msg), response->mutable_consensus_error()->mutable_status());
+  return Status::OK();
+}
+
+Status RaftConsensus::RequestVoteRespondLastOpIdTooOld(const OpId& local_last_logged_opid,
+                                                       const VoteRequestPB* request,
+                                                       VoteResponsePB* response) {
+  FillVoteResponseVoteDenied(ConsensusErrorPB::LAST_OPID_TOO_OLD, response);
+  string msg = Substitute("$0: Denying vote to candidate $1 for term $2 because "
+                          "replica has last-logged OpId of $3, which is greater than that of the "
+                          "candidate, which has last-logged OpId of $4.",
+                          GetRequestVoteLogHeader(),
+                          request->candidate_uuid(),
+                          request->candidate_term(),
+                          local_last_logged_opid.ShortDebugString(),
+                          request->candidate_status().last_received().ShortDebugString());
+  LOG(INFO) << msg;
+  StatusToPB(Status::InvalidArgument(msg), response->mutable_consensus_error()->mutable_status());
+  return Status::OK();
+}
+
+Status RaftConsensus::RequestVoteRespondVoteGranted(const VoteRequestPB* request,
+                                                    VoteResponsePB* response) {
+  FillVoteResponseVoteGranted(response);
+
+  // Persist our vote.
+  RETURN_NOT_OK(state_->SetVotedForCurrentTermUnlocked(request->candidate_uuid()));
+
+  LOG(INFO) << Substitute("$0: Granting yes vote for candidate $1 in term $2.",
+                          GetRequestVoteLogHeader(),
+                          request->candidate_uuid(),
+                          state_->GetCurrentTermUnlocked());
+  return Status::OK();
+}
+
 QuorumPeerPB::Role RaftConsensus::role() const {
   ReplicaState::UniqueLock lock;
   CHECK_OK(state_->LockForRead(&lock));
@@ -745,11 +917,6 @@ void RaftConsensus::DumpStatusHtml(std::ostream& out) const {
 
 ReplicaState* RaftConsensus::GetReplicaStateForTests() {
   return state_.get();
-}
-
-RaftConsensus::~RaftConsensus() {
-  Shutdown();
-  STLDeleteValues(&peers_);
 }
 
 }  // namespace consensus

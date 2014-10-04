@@ -7,6 +7,7 @@
 #include "kudu/common/schema.h"
 #include "kudu/common/wire_protocol-test-util.h"
 #include "kudu/consensus/consensus.pb.h"
+#include "kudu/consensus/consensus.proxy.h"
 #include "kudu/consensus/consensus-test-util.h"
 #include "kudu/consensus/log.h"
 #include "kudu/consensus/log_util.h"
@@ -18,6 +19,7 @@
 #include "kudu/gutil/strings/strcat.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/consensus/log_reader.h"
+#include "kudu/rpc/messenger.h"
 #include "kudu/rpc/rpc_context.h"
 #include "kudu/server/metadata.h"
 #include "kudu/server/logical_clock.h"
@@ -437,9 +439,30 @@ class RaftConsensusTest : public KuduTest {
     return ret;
   }
 
+  // Read the ConsensusMetadata for the given peer from disk.
+  gscoped_ptr<ConsensusMetadata> ReadConsensusMetadataFromDisk(int peer_index) {
+    gscoped_ptr<ConsensusMetadata> cmeta;
+    CHECK_OK(ConsensusMetadata::Load(fs_managers_[peer_index], kTestTablet, &cmeta));
+    return cmeta.Pass();
+  }
+
+  // Assert that the durable term == term and that the peer that got the vote == voted_for.
+  void AssertDurableTermAndVote(int peer_index, uint64_t term, const std::string& voted_for) {
+    gscoped_ptr<ConsensusMetadata> cmeta = ReadConsensusMetadataFromDisk(peer_index);
+    ASSERT_EQ(term, cmeta->pb().current_term());
+    ASSERT_EQ(voted_for, cmeta->pb().voted_for());
+  }
+
+  // Assert that the durable term == term and that the peer has not yet voted.
+  void AssertDurableTermWithoutVote(int peer_index, uint64_t term) {
+    gscoped_ptr<ConsensusMetadata> cmeta = ReadConsensusMetadataFromDisk(peer_index);
+    ASSERT_EQ(term, cmeta->pb().current_term());
+    ASSERT_FALSE(cmeta->pb().has_voted_for());
+  }
+
   ~RaftConsensusTest() {
-    STLDeleteElements(&txn_factories_);
     STLDeleteElements(&peers_);
+    STLDeleteElements(&txn_factories_);
     STLDeleteElements(&logs_);
     STLDeleteElements(&fs_managers_);
   }
@@ -833,6 +856,123 @@ TEST_F(RaftConsensusTest, TestReplicasEnforceTheLogMatchingProperty) {
   ASSERT_STR_CONTAINS(s.ToString(), "Log matching property violated");
 }
 
+// Test that RequestVote performs according to "spec".
+TEST_F(RaftConsensusTest, TestRequestVote) {
+  ASSERT_STATUS_OK(BuildAndStartQuorum(3));
+
+  OpId last_op_id;
+  shared_ptr<LatchCallback> last_commit_clbk;
+  vector<ConsensusRound*> rounds;
+  ElementDeleter deleter(&rounds);
+  ReplicateSequenceOfMessages(10,
+                              2, // The index of the initial leader.
+                              WAIT_FOR_ALL_REPLICAS,
+                              COMMIT_ONE_BY_ONE,
+                              &last_op_id,
+                              &rounds,
+                              &last_commit_clbk);
+
+  // Make sure the last operation is committed everywhere
+  ASSERT_STATUS_OK(last_commit_clbk->Wait());
+  WaitForCommitIfNotAlreadyPresent(last_op_id, 0, 2);
+  WaitForCommitIfNotAlreadyPresent(last_op_id, 1, 2);
+
+  // Ensure last-logged OpId is > (0,0).
+  ASSERT_TRUE(OpIdLessThan(MinimumOpId(), last_op_id));
+
+  const int kPeerIndex = 1;
+  RaftConsensus* peer = GetPeer(kPeerIndex);
+
+  VoteRequestPB request;
+  request.set_tablet_id(kTestTablet);
+  request.mutable_candidate_status()->mutable_last_received()->CopyFrom(last_op_id);
+
+  //
+  // Test that replicas only vote yes for a single peer per term.
+  //
+
+  // Our first vote should be a yes.
+  VoteResponsePB response;
+  request.set_candidate_uuid("peer-0");
+  request.set_candidate_term(last_op_id.term() + 1);
+  ASSERT_OK(peer->RequestVote(&request, &response));
+  ASSERT_TRUE(response.vote_granted());
+  ASSERT_EQ(last_op_id.term() + 1, response.responder_term());
+  ASSERT_NO_FATAL_FAILURE(AssertDurableTermAndVote(kPeerIndex, last_op_id.term() + 1, "peer-0"));
+
+
+  // Ensure we get same response for same term and same UUID.
+  response.Clear();
+  ASSERT_OK(peer->RequestVote(&request, &response));
+  ASSERT_TRUE(response.vote_granted());
+
+  // Ensure we get a "no" for a different candidate UUID for that term.
+  response.Clear();
+  request.set_candidate_uuid("peer-2");
+  ASSERT_OK(peer->RequestVote(&request, &response));
+  ASSERT_FALSE(response.vote_granted());
+  ASSERT_TRUE(response.has_consensus_error());
+  ASSERT_EQ(ConsensusErrorPB::ALREADY_VOTED, response.consensus_error().code());
+  ASSERT_EQ(last_op_id.term() + 1, response.responder_term());
+  ASSERT_NO_FATAL_FAILURE(AssertDurableTermAndVote(kPeerIndex, last_op_id.term() + 1, "peer-0"));
+
+  //
+  // Test that replicas refuse votes for an old term.
+  //
+
+  // Increase the term of our candidate, which will cause the voter replica to
+  // increase its own term to match.
+  request.set_candidate_uuid("peer-0");
+  request.set_candidate_term(last_op_id.term() + 2);
+  response.Clear();
+  ASSERT_OK(peer->RequestVote(&request, &response));
+  ASSERT_TRUE(response.vote_granted());
+  ASSERT_EQ(last_op_id.term() + 2, response.responder_term());
+  ASSERT_NO_FATAL_FAILURE(AssertDurableTermAndVote(kPeerIndex, last_op_id.term() + 2, "peer-0"));
+
+  // Now try the old term.
+  // Note: Use the peer who "won" the election on the previous term (peer-0),
+  // although in practice the impl does not store historical vote data.
+  request.set_candidate_term(last_op_id.term() + 1);
+  response.Clear();
+  ASSERT_OK(peer->RequestVote(&request, &response));
+  ASSERT_FALSE(response.vote_granted());
+  ASSERT_TRUE(response.has_consensus_error());
+  ASSERT_EQ(ConsensusErrorPB::INVALID_TERM, response.consensus_error().code());
+  ASSERT_EQ(last_op_id.term() + 2, response.responder_term());
+  ASSERT_NO_FATAL_FAILURE(AssertDurableTermAndVote(kPeerIndex, last_op_id.term() + 2, "peer-0"));
+
+  //
+  // Ensure replicas vote no for someone who does not claim to be a member of
+  // the quorum.
+  //
+
+  request.set_candidate_uuid("unknown-replica");
+  request.set_candidate_term(last_op_id.term() + 3);
+  response.Clear();
+  ASSERT_OK(peer->RequestVote(&request, &response));
+  ASSERT_FALSE(response.vote_granted());
+  ASSERT_TRUE(response.has_consensus_error());
+  ASSERT_EQ(ConsensusErrorPB::NOT_IN_QUORUM, response.consensus_error().code());
+  // Also should not rev the term to match a non-member.
+  ASSERT_EQ(last_op_id.term() + 2, response.responder_term());
+  ASSERT_NO_FATAL_FAILURE(AssertDurableTermAndVote(kPeerIndex, last_op_id.term() + 2, "peer-0"));
+
+  //
+  // Ensure replicas vote no for an old op index.
+  //
+
+  request.set_candidate_uuid("peer-0");
+  request.set_candidate_term(last_op_id.term() + 3);
+  request.mutable_candidate_status()->mutable_last_received()->CopyFrom(MinimumOpId());
+  response.Clear();
+  ASSERT_OK(peer->RequestVote(&request, &response));
+  ASSERT_FALSE(response.vote_granted());
+  ASSERT_TRUE(response.has_consensus_error());
+  ASSERT_EQ(ConsensusErrorPB::LAST_OPID_TOO_OLD, response.consensus_error().code());
+  ASSERT_EQ(last_op_id.term() + 3, response.responder_term());
+  ASSERT_NO_FATAL_FAILURE(AssertDurableTermWithoutVote(kPeerIndex, last_op_id.term() + 3));
+}
 
 }  // namespace consensus
 }  // namespace kudu

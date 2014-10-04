@@ -96,7 +96,6 @@ ReplicaState::ReplicaState(const ConsensusOptions& options,
   : options_(options),
     peer_uuid_(peer_uuid),
     cmeta_(cmeta.Pass()),
-    current_term_(0),
     next_index_(0),
     txn_factory_(txn_factory),
     in_flight_applies_latch_(0),
@@ -111,30 +110,26 @@ ReplicaState::ReplicaState(const ConsensusOptions& options,
 
 Status ReplicaState::StartUnlocked(const OpId& initial_id) {
   DCHECK(update_lock_.is_locked());
-  current_term_ = initial_id.term();
+
+  // Handle term changes.
+  uint64_t current_term = cmeta_->mutable_pb()->current_term();
+  if (initial_id.term() < current_term) {
+    return Status::InvalidArgument(Substitute("Cannot start in older term. "
+                                              "Current term: $0, passed term: $1",
+                                              current_term, initial_id.term()));
+  }
+
+  CHECK_EQ(initial_id.term(), current_term)
+      << "Starting with term " << initial_id.term()
+      << " which is greater than last recorded term "
+      << current_term;
+
   next_index_ = initial_id.index() + 1;
   replicated_op_id_.CopyFrom(initial_id);
   received_op_id_.CopyFrom(initial_id);
   last_triggered_apply_.CopyFrom(initial_id);
   return Status::OK();
 }
-
-void ReplicaState::IncrementTermUnlocked() {
-  DCHECK(update_lock_.is_locked());
-  current_term_++;
-}
-
-Status ReplicaState::SetCurrentTermUnlocked(uint64_t new_term) {
-  DCHECK(update_lock_.is_locked());
-  if (new_term < current_term_) {
-    return Status::IllegalState(
-        Substitute("Cannot change term to a term that is lower than the current one. "
-            "Current: $0, Proposed: $1", current_term_, new_term));
-  }
-  current_term_ = new_term;
-  return Status::OK();
-}
-
 
 Status ReplicaState::LockForStart(UniqueLock* lock) {
   UniqueLock l(&update_lock_);
@@ -168,7 +163,7 @@ Status ReplicaState::LockForReplicate(UniqueLock* lock, const OperationPB& op) {
       // TODO support true config change. Right now we only allow
       // replicate calls while CANDIDATE if our term is 0, meaning
       // we're the first CANDIDATE/LEADER of the quorum.
-      CHECK_EQ(current_term_, 0);
+      CHECK_EQ(GetCurrentTermUnlocked(), 0);
       lock->swap(&l);
       return Status::OK();
     default:
@@ -195,6 +190,16 @@ Status ReplicaState::LockForConfigChange(UniqueLock* lock) {
   CHECK(state_ == kInitialized || state_ == kRunning) << "Unexpected state: " << state_;
   lock->swap(&l);
   state_ = kChangingConfig;
+  return Status::OK();
+}
+
+Status ReplicaState::LockForElection(UniqueLock* lock) {
+  UniqueLock l(&update_lock_);
+  if (!(state_ == kInitialized || state_ == kRunning)) {
+    return Status::IllegalState(Substitute("Unexpected ReplicaState for LockForElection: $0",
+                                           state_));
+  }
+  lock->swap(&l);
   return Status::OK();
 }
 
@@ -299,6 +304,51 @@ const metadata::QuorumPB& ReplicaState::GetCommittedQuorumUnlocked() const {
   return cmeta_->pb().committed_quorum();
 }
 
+Status ReplicaState::IncrementTermUnlocked() {
+  DCHECK(update_lock_.is_locked());
+  cmeta_->mutable_pb()->set_current_term(cmeta_->pb().current_term() + 1);
+  cmeta_->mutable_pb()->clear_voted_for();
+  RETURN_NOT_OK(cmeta_->Flush());
+  return Status::OK();
+}
+
+Status ReplicaState::SetCurrentTermUnlocked(uint64_t new_term) {
+  DCHECK(update_lock_.is_locked());
+  if (PREDICT_FALSE(new_term < GetCurrentTermUnlocked())) {
+    return Status::IllegalState(
+        Substitute("Cannot change term to a term that is lower than the current one. "
+            "Current: $0, Proposed: $1", GetCurrentTermUnlocked(), new_term));
+  }
+  cmeta_->mutable_pb()->set_current_term(new_term);
+  cmeta_->mutable_pb()->clear_voted_for();
+  RETURN_NOT_OK(cmeta_->Flush());
+  return Status::OK();
+}
+
+const uint64_t ReplicaState::GetCurrentTermUnlocked() const {
+  DCHECK(update_lock_.is_locked());
+  return cmeta_->pb().current_term();
+}
+
+const bool ReplicaState::HasVotedCurrentTermUnlocked() const {
+  DCHECK(update_lock_.is_locked());
+  return cmeta_->pb().has_voted_for();
+}
+
+Status ReplicaState::SetVotedForCurrentTermUnlocked(const std::string& uuid) {
+  DCHECK(update_lock_.is_locked());
+  cmeta_->mutable_pb()->set_voted_for(uuid);
+  RETURN_NOT_OK_PREPEND(cmeta_->Flush(),
+                        "Unable to flush consensus metadata after recording vote");
+  return Status::OK();
+}
+
+const std::string& ReplicaState::GetVotedForCurrentTermUnlocked() const {
+  DCHECK(update_lock_.is_locked());
+  DCHECK(cmeta_->pb().has_voted_for());
+  return cmeta_->pb().voted_for();
+}
+
 ReplicaTransactionFactory* ReplicaState::GetReplicaTransactionFactoryUnlocked() const {
   return txn_factory_;
 }
@@ -317,12 +367,6 @@ const string& ReplicaState::GetPeerUuid() const {
 
 const ConsensusOptions& ReplicaState::GetOptions() const {
   return options_;
-}
-
-const uint64_t ReplicaState::GetCurrentTermUnlocked() const {
-  DCHECK(update_lock_.is_locked());
-  // TODO: Hook into the persisted term later.
-  return current_term_;
 }
 
 int ReplicaState::GetNumPendingTxnsUnlocked() const {
@@ -497,15 +541,14 @@ Status ReplicaState::RegisterOnCommitCallback(const OpId& op_id,
 
 void ReplicaState::NewIdUnlocked(OpId* id) {
   DCHECK(update_lock_.is_locked());
-  id->set_term(current_term_);
+  id->set_term(GetCurrentTermUnlocked());
   id->set_index(next_index_++);
 }
 
 void ReplicaState::RollbackIdGenUnlocked(const OpId& id) {
   DCHECK(update_lock_.is_locked());
-  CHECK_EQ(current_term_, id.term());
+  CHECK_EQ(GetCurrentTermUnlocked(), id.term());
   CHECK_EQ(next_index_, id.index() + 1);
-  current_term_ = id.term();
   next_index_ = id.index();
 }
 
