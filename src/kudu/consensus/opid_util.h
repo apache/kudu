@@ -32,7 +32,9 @@ bool OpIdBiggerThan(const OpId& left, const OpId& right);
 // If to_compare is copied into target, returns true, else false.
 bool CopyIfOpIdLessThan(const OpId& to_compare, OpId* target);
 
-// Return -1, 0, or 1.
+// Return -1 if left < right,
+//         0 if equal,
+//         1 if left > right.
 int OpIdCompare(const OpId& left, const OpId& right);
 
 // OpId hash functor. Suitable for use with std::unordered_map.
