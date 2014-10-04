@@ -2,7 +2,6 @@
 #ifndef KUDU_CONSENSUS_RAFT_CONSENSUS_UTIL_H_
 #define KUDU_CONSENSUS_RAFT_CONSENSUS_UTIL_H_
 
-#include <boost/thread/locks.hpp>
 #include <map>
 #include <set>
 #include <string>
@@ -17,6 +16,7 @@
 #include "kudu/consensus/log_util.h"
 #include "kudu/consensus/opid_waiter_set.h"
 #include "kudu/gutil/port.h"
+#include "kudu/util/locks.h"
 #include "kudu/util/status.h"
 
 namespace kudu {
@@ -99,7 +99,7 @@ struct QuorumState {
 // which case a lock should be obtained prior to calling them.
 class ReplicaState {
  public:
-  typedef boost::unique_lock<simple_spinlock> UniqueLock;
+  typedef unique_lock<simple_spinlock> UniqueLock;
 
   typedef std::map<consensus::OpId,
                    ConsensusRound*,

@@ -103,7 +103,7 @@ ReplicaState::ReplicaState(const ConsensusOptions& options,
     commit_watchers_(callback_exec_pool),
     state_(kInitialized) {
   CHECK(cmeta_) << "ConsensusMeta passed as NULL";
-  UniqueLock l(update_lock_);
+  UniqueLock l(&update_lock_);
   // Now that we know the peer UUID, refresh acting state from persistent state.
   ResetActiveQuorumStateUnlocked(GetCommittedQuorumUnlocked());
 }
@@ -136,28 +136,29 @@ Status ReplicaState::SetCurrentTermUnlocked(uint64_t new_term) {
 
 
 Status ReplicaState::LockForStart(UniqueLock* lock) {
-  UniqueLock l(update_lock_);
+  UniqueLock l(&update_lock_);
   CHECK_EQ(state_, kInitialized) << "Illegal state for Start()."
       << " Replica is not in kInitialized state";
-  lock->swap(l);
+  lock->swap(&l);
   return Status::OK();
 }
 
 Status ReplicaState::LockForRead(UniqueLock* lock) {
-  *lock = UniqueLock(update_lock_);
+  UniqueLock l(&update_lock_);
+  lock->swap(&l);
   return Status::OK();
 }
 
 Status ReplicaState::LockForReplicate(UniqueLock* lock, const OperationPB& op) {
   CHECK(op.has_replicate()) << "Only replicate operations are allowed. Op: "
       << op.ShortDebugString();
-  UniqueLock l(update_lock_);
+  UniqueLock l(&update_lock_);
   if (PREDICT_FALSE(state_ != kRunning)) {
     return Status::IllegalState("Replica not in running state");
   }
   switch (active_quorum_state_->role) {
     case QuorumPeerPB::LEADER:
-      lock->swap(l);
+      lock->swap(&l);
       return Status::OK();
     case QuorumPeerPB::CANDIDATE:
       if (op.replicate().op_type() != CHANGE_CONFIG_OP) {
@@ -167,7 +168,7 @@ Status ReplicaState::LockForReplicate(UniqueLock* lock, const OperationPB& op) {
       // replicate calls while CANDIDATE if our term is 0, meaning
       // we're the first CANDIDATE/LEADER of the quorum.
       CHECK_EQ(current_term_, 0);
-      lock->swap(l);
+      lock->swap(&l);
       return Status::OK();
     default:
       return Status::IllegalState(Substitute("Replica $0 is not leader of this quorum. Role: $1",
@@ -177,27 +178,27 @@ Status ReplicaState::LockForReplicate(UniqueLock* lock, const OperationPB& op) {
 }
 
 Status ReplicaState::LockForCommit(UniqueLock* lock) {
-  UniqueLock l(update_lock_);
+  UniqueLock l(&update_lock_);
   if (PREDICT_FALSE(state_ != kRunning && state_ != kShuttingDown)) {
     return Status::IllegalState("Replica not in running state");
   }
-  lock->swap(l);
+  lock->swap(&l);
   return Status::OK();
 }
 
 Status ReplicaState::LockForConfigChange(UniqueLock* lock) {
-  UniqueLock l(update_lock_);
+  UniqueLock l(&update_lock_);
   // Can only change the config on non-initialized replicas for
   // now, later kRunning state will also be a valid state for
   // config changes.
   CHECK(state_ == kInitialized || state_ == kRunning) << "Unexpected state: " << state_;
-  lock->swap(l);
+  lock->swap(&l);
   state_ = kChangingConfig;
   return Status::OK();
 }
 
 Status ReplicaState::LockForUpdate(UniqueLock* lock) {
-  UniqueLock l(update_lock_);
+  UniqueLock l(&update_lock_);
   if (PREDICT_FALSE(state_ != kRunning)) {
     return Status::IllegalState("Replica not in running state");
   }
@@ -207,13 +208,13 @@ Status ReplicaState::LockForUpdate(UniqueLock* lock) {
     case QuorumPeerPB::NON_PARTICIPANT:
       return Status::IllegalState("Replica is not a participant of this quorum.");
     default:
-      lock->swap(l);
+      lock->swap(&l);
       return Status::OK();
   }
 }
 
 Status ReplicaState::LockForShutdown(UniqueLock* lock) {
-  UniqueLock l(update_lock_);
+  UniqueLock l(&update_lock_);
   if (state_ == kShutDown) {
     return Status::IllegalState("Replica is already shutdown");
   }
@@ -221,13 +222,13 @@ Status ReplicaState::LockForShutdown(UniqueLock* lock) {
     state_ = kShuttingDown;
     in_flight_applies_latch_.Reset(in_flight_commits_.size());
   }
-  lock->swap(l);
+  lock->swap(&l);
   return Status::OK();
 }
 
 Status ReplicaState::Shutdown() {
   CHECK_EQ(state_, kShuttingDown);
-  UniqueLock l(update_lock_);
+  UniqueLock l(&update_lock_);
   state_ = kShutDown;
   return Status::OK();
 }
@@ -330,7 +331,7 @@ int ReplicaState::GetNumPendingTxnsUnlocked() const {
 
 Status ReplicaState::CancelPendingTransactions() {
   {
-    UniqueLock lock(update_lock_);
+    UniqueLock lock(&update_lock_);
     if (state_ != kShuttingDown) {
       return Status::IllegalState("Can only wait for pending commits on kShuttingDown state.");
     }
@@ -354,7 +355,7 @@ Status ReplicaState::CancelPendingTransactions() {
 
 Status ReplicaState::WaitForOustandingApplies() {
   {
-    UniqueLock lock(update_lock_);
+    UniqueLock lock(&update_lock_);
     if (state_ != kShuttingDown) {
       return Status::IllegalState("Can only wait for pending commits on kShuttingDown state.");
     }
@@ -468,7 +469,7 @@ void ReplicaState::CountDownOutstandingCommitsIfShuttingDown() {
 Status ReplicaState::RegisterOnReplicateCallback(
     const OpId& replicate_op_id,
     const shared_ptr<FutureCallback>& repl_callback) {
-  UniqueLock lock(update_lock_);
+  UniqueLock lock(&update_lock_);
   if (PREDICT_TRUE(OpIdCompare(replicate_op_id, replicated_op_id_) > 0)) {
     replicate_watchers_.RegisterCallback(replicate_op_id, repl_callback);
     return Status::OK();
@@ -478,7 +479,7 @@ Status ReplicaState::RegisterOnReplicateCallback(
 
 Status ReplicaState::RegisterOnCommitCallback(const OpId& op_id,
                                               const shared_ptr<FutureCallback>& commit_callback) {
-  UniqueLock lock(update_lock_);
+  UniqueLock lock(&update_lock_);
   if (PREDICT_TRUE(OpIdCompare(op_id, replicated_op_id_) > 0)) {
     commit_watchers_.RegisterCallback(op_id, commit_callback);
     return Status::OK();
@@ -519,7 +520,7 @@ string ReplicaState::LogPrefixUnlocked() const {
 
 
 string ReplicaState::ToString() const {
-  ReplicaState::UniqueLock lock(update_lock_);
+  ReplicaState::UniqueLock lock(&update_lock_);
   return ToStringUnlocked();
 }
 
@@ -557,12 +558,12 @@ OperationCallbackRunnable::OperationCallbackRunnable(const shared_ptr<FutureCall
   : callback_(callback) {}
 
 void OperationCallbackRunnable::set_error(const Status& error) {
-  boost::lock_guard<simple_spinlock> lock(lock_);
+  lock_guard<simple_spinlock> lock(&lock_);
   error_ = error;
 }
 
 void OperationCallbackRunnable::Run() {
-  boost::lock_guard<simple_spinlock> lock(lock_);
+  lock_guard<simple_spinlock> lock(&lock_);
   if (PREDICT_TRUE(error_.ok())) {
     callback_->OnSuccess();
     return;
@@ -607,7 +608,7 @@ MajorityOpStatusTracker::MajorityOpStatusTracker(gscoped_ptr<OperationPB> operat
 
 void MajorityOpStatusTracker::AckPeer(const string& uuid) {
   CHECK(!uuid.empty()) << "Peer acked with empty uuid";
-  boost::lock_guard<simple_spinlock> lock(lock_);
+  lock_guard<simple_spinlock> lock(&lock_);
   if (voting_peers_.count(uuid) != 0) {
     completion_latch_.CountDown();
     if (IsDone() && runnable_.get() != NULL) {
@@ -630,7 +631,7 @@ bool MajorityOpStatusTracker::IsDone() const {
 }
 
 bool MajorityOpStatusTracker::IsAllDone() const {
-  boost::lock_guard<simple_spinlock> lock(lock_);
+  lock_guard<simple_spinlock> lock(&lock_);
   return replicated_count_ >= total_peers_count_;
 }
 
@@ -645,7 +646,7 @@ MajorityOpStatusTracker::~MajorityOpStatusTracker() {
 }
 
 std::string MajorityOpStatusTracker::ToString() const {
-  boost::lock_guard<simple_spinlock> lock(lock_);
+  lock_guard<simple_spinlock> lock(&lock_);
   return ToStringUnlocked();
 }
 
