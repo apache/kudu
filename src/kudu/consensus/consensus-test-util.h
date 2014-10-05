@@ -269,6 +269,10 @@ class LocalTestPeerProxy : public PeerProxy {
     return consensus_;
   }
 
+  ~LocalTestPeerProxy() {
+    pool_->Wait();
+  }
+
  private:
   gscoped_ptr<ThreadPool> pool_;
   const rpc::ResponseCallback* callback_;

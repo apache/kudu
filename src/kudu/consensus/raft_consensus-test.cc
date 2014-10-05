@@ -339,7 +339,9 @@ class RaftConsensusTest : public KuduTest {
     BOOST_FOREACH(TestTransactionFactory* factory, txn_factories_) {
       factory->WaitDone();
     }
-    STLDeleteElements(&peers_);
+    BOOST_FOREACH(RaftConsensus* peer, peers_) {
+      peer->Shutdown();
+    }
     vector<OperationPB*> replica0_ops;
     ElementDeleter repl0_deleter(&replica0_ops);
     GatherOperations(replica0_idx, logs_[replica0_idx], &replica0_ops);
