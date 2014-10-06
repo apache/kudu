@@ -10,6 +10,7 @@
 #include "kudu/common/wire_protocol.h"
 #include "kudu/consensus/log.h"
 #include "kudu/consensus/consensus_peers.h"
+#include "kudu/consensus/quorum_util.h"
 #include "kudu/consensus/raft_consensus_state.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/stl_util.h"
@@ -40,33 +41,6 @@ using metadata::QuorumPeerPB;
 using std::tr1::shared_ptr;
 using std::tr1::unordered_set;
 using strings::Substitute;
-
-Status RaftConsensus::MakePeerLeaderInQuorum(const string& peer_uuid,
-                                             const QuorumPB& old_quorum,
-                                             QuorumPB* new_quorum) {
-  new_quorum->Clear();
-  new_quorum->CopyFrom(old_quorum);
-  new_quorum->clear_peers();
-  bool found_peer = false;
-  BOOST_FOREACH(const QuorumPeerPB& old_peer, old_quorum.peers()) {
-    QuorumPeerPB* new_peer = new_quorum->add_peers();
-    new_peer->CopyFrom(old_peer);
-    if (new_peer->permanent_uuid() == peer_uuid) {
-      new_peer->set_role(QuorumPeerPB::LEADER);
-      found_peer = true;
-      continue;
-    }
-    if (new_peer->role() == QuorumPeerPB::LEADER ||
-        new_peer->role() == QuorumPeerPB::CANDIDATE) {
-      new_peer->set_role(QuorumPeerPB::FOLLOWER);
-    }
-  }
-  if (!found_peer) {
-    return Status::IllegalState(Substitute("Cannot find peer: $0 in quorum: $1",
-                                           peer_uuid, old_quorum.ShortDebugString()));
-  }
-  return Status::OK();
-}
 
 RaftConsensus::RaftConsensus(const ConsensusOptions& options,
                              gscoped_ptr<ConsensusMetadata> cmeta,

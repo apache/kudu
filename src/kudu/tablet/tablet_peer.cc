@@ -16,6 +16,7 @@
 #include "kudu/consensus/log_util.h"
 #include "kudu/consensus/opid_util.h"
 #include "kudu/consensus/opid_anchor_registry.h"
+#include "kudu/consensus/quorum_util.h"
 #include "kudu/consensus/raft_consensus.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/sysinfo.h"

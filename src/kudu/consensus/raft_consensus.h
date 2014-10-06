@@ -112,13 +112,6 @@ class RaftConsensus : public Consensus {
   FRIEND_TEST(RaftConsensusTest, TestReplicasHandleCommunicationErrors);
   FRIEND_TEST(RaftConsensusTest, DISABLED_TestLeaderPromotionWithQuiescedQuorum);
 
-  // Copies 'old_quorum' to 'new_quorum' but makes the peer with 'peer_uuid'
-  // LEADER and whoever was LEADER/CANDIDATE before, if anyone, FOLLOWER.
-  // Returns Status::IllegalState() if the peer cannot be found.
-  static Status MakePeerLeaderInQuorum(const std::string& peer_uuid,
-                                       const metadata::QuorumPB& old_quorum,
-                                       metadata::QuorumPB* new_quorum);
-
   // Verifies that 'quorum' is well formed and that no config change is in-flight.
   Status VerifyQuorumAndCheckThatNoChangeIsPendingUnlocked(const metadata::QuorumPB& quorum);
 

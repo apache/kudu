@@ -169,15 +169,5 @@ Status Consensus::ExecuteHook(HookPoint point) {
   return Status::OK();
 }
 
-metadata::QuorumPeerPB::Role GetRoleInQuorum(const std::string& permanent_uuid,
-                                             const metadata::QuorumPB& quorum) {
-  BOOST_FOREACH(const metadata::QuorumPeerPB& peer, quorum.peers()) {
-    if (peer.permanent_uuid() == permanent_uuid) {
-      return peer.role();
-    }
-  }
-  return metadata::QuorumPeerPB::NON_PARTICIPANT;
-}
-
 } // namespace consensus
 } // namespace kudu

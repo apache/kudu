@@ -54,9 +54,10 @@ set(CONSENSUS_SRCS
   consensus_peers.cc
   consensus_queue.cc
   local_consensus.cc
+  opid_waiter_set.cc
+  quorum_util.cc
   raft_consensus.cc
   raft_consensus_state.cc
-  opid_waiter_set.cc
 )
 
 add_library(consensus ${CONSENSUS_SRCS})
