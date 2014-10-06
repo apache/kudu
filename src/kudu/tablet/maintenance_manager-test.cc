@@ -7,6 +7,7 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/tablet/maintenance_manager.h"
 #include "kudu/tablet/tablet.pb.h"
+#include "kudu/util/metrics.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/thread.h"
 
@@ -14,6 +15,10 @@ using std::tr1::shared_ptr;
 using std::vector;
 using strings::Substitute;
 using kudu::tablet::MaintenanceManagerStatusPB;
+
+METRIC_DEFINE_gauge_uint32(running_gauge, kudu::MetricUnit::kMaintenanceOperations, "");
+
+METRIC_DEFINE_histogram(duration_histogram, kudu::MetricUnit::kSeconds, "", 60000000LU, 2);
 
 namespace kudu {
 
@@ -45,7 +50,10 @@ class TestMaintenanceOp : public MaintenanceOp {
       state_(state),
       ram_anchored_(500),
       ts_anchored_ms_(0),
-      perf_improvement_(0) { }
+      perf_improvement_(0),
+      metric_ctx_(&metric_registry_, "test"),
+      duration_histogram_(METRIC_duration_histogram.Instantiate(metric_ctx_)),
+      running_gauge_(AtomicGauge<uint32_t>::Instantiate(METRIC_running_gauge, metric_ctx_)) { }
 
   virtual ~TestMaintenanceOp() {
   }
@@ -124,6 +132,14 @@ class TestMaintenanceOp : public MaintenanceOp {
     perf_improvement_ = perf_improvement;
   }
 
+  virtual Histogram* DurationHistogram() {
+    return duration_histogram_;
+  }
+
+  virtual AtomicGauge<uint32_t>* RunningGauge() {
+    return running_gauge_;
+  }
+
  private:
   boost::mutex lock_;
   boost::condition_variable state_change_cond_;
@@ -131,6 +147,10 @@ class TestMaintenanceOp : public MaintenanceOp {
   uint64_t ram_anchored_;
   uint64_t ts_anchored_ms_;
   uint64_t perf_improvement_;
+  MetricRegistry metric_registry_;
+  MetricContext metric_ctx_;
+  Histogram* duration_histogram_;
+  AtomicGauge<uint32_t>* running_gauge_;
 };
 
 // Create an op and wait for it to start running.  Unregister it while it is

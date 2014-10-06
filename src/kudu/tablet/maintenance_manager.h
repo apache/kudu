@@ -22,6 +22,9 @@
 namespace kudu {
 
 class MaintenanceManager;
+class Histogram;
+template<class T>
+class AtomicGauge;
 
 struct MaintenanceOpStats {
   MaintenanceOpStats();
@@ -75,6 +78,12 @@ class MaintenanceOp {
   // Perform the operation.  This will be run without holding the maintenance
   // manager lock, and may take a long time.
   virtual void Perform() = 0;
+
+  // Returns the histogram for this op that tracks duration. Cannot be NULL.
+  virtual Histogram* DurationHistogram() = 0;
+
+  // Returns the gauge for this op that tracks when this op is running. Cannot be NULL.
+  virtual AtomicGauge<uint32_t>* RunningGauge() = 0;
 
   uint32_t running() { return running_; }
 

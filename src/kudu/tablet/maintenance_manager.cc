@@ -19,6 +19,7 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/tablet/mvcc.h"
 #include "kudu/util/countdown_latch.h"
+#include "kudu/util/metrics.h"
 #include "kudu/util/stopwatch.h"
 #include "kudu/util/thread.h"
 
@@ -309,18 +310,24 @@ MaintenanceOp* MaintenanceManager::FindBestOp() {
 
 void MaintenanceManager::LaunchOp(MaintenanceOp* op) {
   MonoTime start_time(MonoTime::Now(MonoTime::FINE));
+  op->RunningGauge()->Increment();
   LOG_TIMING(INFO, Substitute("running $0", op->name())) {
     op->Perform();
   }
+  op->RunningGauge()->Decrement();
   MonoTime end_time(MonoTime::Now(MonoTime::FINE));
   MonoDelta delta(end_time.GetDeltaSince(start_time));
   boost::lock_guard<boost::mutex> guard(lock_);
 
+  int duration = delta.ToSeconds();
+
   CompletedOp& completed_op = completed_ops_[completed_ops_count_ % completed_ops_.size()];
   completed_op.name = op->name();
-  completed_op.duration_secs = delta.ToSeconds();
+  completed_op.duration_secs = duration;
   completed_op.start_mono_time = start_time;
   completed_ops_count_++;
+
+  op->DurationHistogram()->Increment(duration);
 
   running_ops_--;
   op->running_--;

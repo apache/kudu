@@ -183,6 +183,7 @@ struct MetricUnit {
     kThreads,
     kTransactions,
     kScanners,
+    kMaintenanceOperations,
   };
   static const char* Name(Type unit);
 };

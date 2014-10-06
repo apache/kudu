@@ -53,10 +53,30 @@ METRIC_DEFINE_histogram(snapshot_scan_inflight_wait_duration,
   "Microseconds spent waiting for in-flight writes to complete for READ_AT_SNAPSHOT scans.",
   60000000LU, 2);
 
+METRIC_DEFINE_gauge_uint32(flush_dms_running, kudu::MetricUnit::kMaintenanceOperations,
+  "Number of delta MRS flushes currently running.");
+
+METRIC_DEFINE_gauge_uint32(flush_mrs_running, kudu::MetricUnit::kMaintenanceOperations,
+  "Number of MRS flushes currently running.");
+
+METRIC_DEFINE_gauge_uint32(compact_rs_running, kudu::MetricUnit::kMaintenanceOperations,
+  "Number of RS compactions currently running.");
+
+METRIC_DEFINE_histogram(flush_dms_duration, kudu::MetricUnit::kSeconds,
+  "Seconds spent flushing delta MRS.", 60000000LU, 2);
+
+METRIC_DEFINE_histogram(flush_mrs_duration, kudu::MetricUnit::kSeconds,
+  "Seconds spent flushing MRS.", 60000000LU, 2);
+
+METRIC_DEFINE_histogram(compact_rs_duration, kudu::MetricUnit::kSeconds,
+  "Seconds spent compacting RS.", 60000000LU, 2);
+
+
 namespace kudu {
 namespace tablet {
 
 #define MINIT(x) x(METRIC_##x.Instantiate(metric_ctx))
+#define GINIT(x) x(AtomicGauge<uint32_t>::Instantiate(METRIC_##x, metric_ctx))
 TabletMetrics::TabletMetrics(const MetricContext& metric_ctx)
   : MINIT(rows_inserted),
     MINIT(rows_updated),
@@ -72,9 +92,16 @@ TabletMetrics::TabletMetrics(const MetricContext& metric_ctx)
     MINIT(snapshot_scan_inflight_wait_duration),
     MINIT(write_op_duration_no_consistency),
     MINIT(write_op_duration_client_propagated_consistency),
-    MINIT(write_op_duration_commit_wait_consistency) {
+    MINIT(write_op_duration_commit_wait_consistency),
+    GINIT(flush_dms_running),
+    GINIT(flush_mrs_running),
+    GINIT(compact_rs_running),
+    MINIT(flush_dms_duration),
+    MINIT(flush_mrs_duration),
+    MINIT(compact_rs_duration) {
 }
 #undef MINIT
+#undef GINIT
 
 void TabletMetrics::AddProbeStats(const ProbeStats& stats) {
   blooms_consulted->IncrementBy(stats.blooms_consulted);

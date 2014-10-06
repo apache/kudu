@@ -60,6 +60,8 @@ const char* MetricUnit::Name(Type unit) {
       return "transactions";
     case kScanners:
       return "scanners";
+    case kMaintenanceOperations:
+      return "operations";
     default:
       return "UNKNOWN UNIT";
   }

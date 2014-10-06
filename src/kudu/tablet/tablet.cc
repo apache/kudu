@@ -755,6 +755,14 @@ class FlushMRSOp : public MaintenanceOp {
     tablet_->rowsets_flush_sem_.unlock();
   }
 
+  virtual Histogram* DurationHistogram() OVERRIDE {
+    return tablet_->metrics()->flush_mrs_duration;
+  }
+
+  virtual AtomicGauge<uint32_t>* RunningGauge() OVERRIDE {
+    return tablet_->metrics()->flush_mrs_running;
+  }
+
  private:
   enum {
     kFlushDueToTimeMs = 120 * 1000
@@ -811,6 +819,14 @@ class CompactRowSetsOp : public MaintenanceOp {
                 Substitute("Compaction failed on $0", tablet_->tablet_id()));
   }
 
+  virtual Histogram* DurationHistogram() OVERRIDE {
+    return tablet_->metrics()->compact_rs_duration;
+  }
+
+  virtual AtomicGauge<uint32_t>* RunningGauge() OVERRIDE {
+    return tablet_->metrics()->compact_rs_running;
+  }
+
  private:
   enum {
     kRefreshIntervalMs = 5000
@@ -850,6 +866,14 @@ class FlushDeltaMemStoresOp : public MaintenanceOp {
   virtual void Perform() OVERRIDE {
     WARN_NOT_OK(tablet_->FlushBiggestDMS(),
                 Substitute("Failed to flush biggest DMS on $0", tablet_->tablet_id()));
+  }
+
+  virtual Histogram* DurationHistogram() OVERRIDE {
+    return tablet_->metrics()->flush_dms_duration;
+  }
+
+  virtual AtomicGauge<uint32_t>* RunningGauge() OVERRIDE {
+    return tablet_->metrics()->flush_dms_running;
   }
 
  private:

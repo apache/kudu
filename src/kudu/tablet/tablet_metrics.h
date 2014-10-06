@@ -7,6 +7,8 @@
 namespace kudu {
 
 class Counter;
+template<class T>
+class AtomicGauge;
 class Histogram;
 class MetricContext;
 
@@ -39,6 +41,14 @@ struct TabletMetrics {
   Histogram* write_op_duration_no_consistency;
   Histogram* write_op_duration_client_propagated_consistency;
   Histogram* write_op_duration_commit_wait_consistency;
+
+  AtomicGauge<uint32_t>* flush_dms_running;
+  AtomicGauge<uint32_t>* flush_mrs_running;
+  AtomicGauge<uint32_t>* compact_rs_running;
+
+  Histogram* flush_dms_duration;
+  Histogram* flush_mrs_duration;
+  Histogram* compact_rs_duration;
 };
 
 class ProbeStatsSubmitter {
