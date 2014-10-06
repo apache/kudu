@@ -66,7 +66,6 @@ public class BaseKuduTest {
         + baseDirPath + "/ts-" + now, "--use_hybrid_clock=true", "--max_clock_sync_error_usec=10000000"};
 
       master = configureAndStartProcess(masterCmdLine);
-      Thread.sleep(300);
       tabletServer = configureAndStartProcess(tsCmdLine);
     }
 
@@ -99,10 +98,11 @@ public class BaseKuduTest {
    * stream and redirect that to LOG.
    * @param command Process and options
    * @return The started process
-   * @throws IOException Exception if an error prevents from starting the process (unrelated to
-   * in-process errors like if a data folder cannot be found).
+   * @throws Exception Exception if an error prevents us from starting the process,
+   * or if we were able to start the process but noticed that it was then killed (in which case
+   * we'll log the exit value).
    */
-  static Process configureAndStartProcess(String[] command) throws IOException {
+  static Process configureAndStartProcess(String[] command) throws Exception {
     ProcessBuilder processBuilder = new ProcessBuilder(command);
     processBuilder.redirectErrorStream(true);
     Process proc = processBuilder.start();
@@ -113,6 +113,15 @@ public class BaseKuduTest {
     thread.setName(command[0]);
     PROCESS_INPUT_PRINTERS.add(thread);
     thread.start();
+
+    Thread.sleep(300);
+    try {
+      int ev = proc.exitValue();
+      throw new Exception("We tried starting a process (" + command[0] + ") but it exited with " +
+          "value=" + ev);
+    } catch (IllegalThreadStateException ex) {
+      // This means the process is still alive, it's like reverse psychology.
+    }
     return proc;
   }
 
@@ -136,20 +145,23 @@ public class BaseKuduTest {
         }
       }
     } finally {
-      if (client != null) {
-        Deferred<ArrayList<Void>> d = client.shutdown();
-        d.addErrback(defaultErrorCB);
-        d.join(DEFAULT_SLEEP);
-      }
-      if (startCluster) {
-        if (master != null) {
-          master.destroy();
+      try {
+        if (client != null) {
+          Deferred<ArrayList<Void>> d = client.shutdown();
+          d.addErrback(defaultErrorCB);
+          d.join(DEFAULT_SLEEP);
         }
-        if (tabletServer != null) {
-          tabletServer.destroy();
-        }
-        for (Thread thread : PROCESS_INPUT_PRINTERS) {
-          thread.interrupt();
+      } finally {
+        if (startCluster) {
+          if (master != null) {
+            master.destroy();
+          }
+          if (tabletServer != null) {
+            tabletServer.destroy();
+          }
+          for (Thread thread : PROCESS_INPUT_PRINTERS) {
+            thread.interrupt();
+          }
         }
       }
     }
