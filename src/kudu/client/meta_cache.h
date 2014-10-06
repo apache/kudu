@@ -69,6 +69,9 @@ class RemoteTabletServer {
 
   void GetHostPorts(std::vector<HostPort>* host_ports) const;
 
+  // Returns the remote server's uuid.
+  std::string permanent_uuid() const;
+
  private:
   // Internal callback for DNS resolution.
   void DnsResolutionFinished(const HostPort& hp,

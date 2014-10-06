@@ -116,6 +116,10 @@ void RemoteTabletServer::Update(const master::TSInfoPB& pb) {
   }
 }
 
+string RemoteTabletServer::permanent_uuid() const {
+  return uuid_;
+}
+
 shared_ptr<TabletServerServiceProxy> RemoteTabletServer::proxy() const {
   lock_guard<simple_spinlock> l(&lock_);
   CHECK(proxy_);
