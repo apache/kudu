@@ -95,20 +95,8 @@ class ClientTest : public KuduTest {
                      .master_server_addr(cluster_->mini_master()->bound_rpc_addr().ToString())
                      .Build(&client_));
 
-    // Set up two test tables inside the server. One has a single split, just so
-    // that code is exercised a little more.
-    ASSERT_STATUS_OK(client_->NewTableCreator()
-                     ->table_name(kTableName)
-                     .schema(&schema_)
-                     .split_keys(GenerateSplitKeys())
-                     .Create());
-    ASSERT_STATUS_OK(client_->NewTableCreator()
-                     ->table_name(kTable2Name)
-                     .schema(&schema_)
-                     .Create());
-
-    ASSERT_STATUS_OK(client_->OpenTable(kTableName, &client_table_));
-    ASSERT_STATUS_OK(client_->OpenTable(kTable2Name, &client_table2_));
+    ASSERT_NO_FATAL_FAILURE(CreateTable(kTableName, 1, GenerateSplitKeys(), &client_table_));
+    ASSERT_NO_FATAL_FAILURE(CreateTable(kTable2Name, 1, vector<string>(), &client_table2_));
   }
 
   // Generate a set of split keys for tablets used in this test.
@@ -346,20 +334,30 @@ class ClientTest : public KuduTest {
     }
   }
 
-  void CreateReplicatedTable(const string& table_name, int num_replicas,
-                             scoped_refptr<KuduTable>* table) {
-    // Add more tablet servers to satisfy all replicas.
-    // We assume there's one TS to begin with.
-    for (int i = 0; i < num_replicas - 1; i++) {
+  // Creates a table with 'num_replicas', split into tablets based on 'split_keys'
+  // (or single tablet if 'split_keys' is empty).
+  void CreateTable(const string& table_name,
+                   int num_replicas,
+                   const vector<string>& split_keys,
+                   scoped_refptr<KuduTable>* table) {
+
+    bool added_replicas = false;
+    // Add more tablet servers to satisfy all replicas, if necessary.
+    while (cluster_->num_tablet_servers() < num_replicas) {
       ASSERT_STATUS_OK(cluster_->AddTabletServer());
+      added_replicas = true;
     }
-    ASSERT_STATUS_OK(cluster_->WaitForTabletServerCount(num_replicas));
-    ASSERT_STATUS_OK(client_->NewTableCreator()
-                     ->table_name(table_name)
-                     .schema(&schema_)
-                     .num_replicas(num_replicas)
-                     .split_keys(GenerateSplitKeys())
-                     .Create());
+
+    if (added_replicas) {
+      ASSERT_STATUS_OK(cluster_->WaitForTabletServerCount(num_replicas));
+    }
+
+    ASSERT_OK(client_->NewTableCreator()->table_name(table_name)
+              .schema(&schema_)
+              .num_replicas(num_replicas)
+              .split_keys(split_keys)
+              .Create());
+
     ASSERT_STATUS_OK(client_->OpenTable(table_name, table));
   }
 
@@ -1378,9 +1376,13 @@ TEST_F(ClientTest, TestStaleLocations) {
 TEST_F(ClientTest, TestReplicatedMultiTabletTable) {
   const string kReplicatedTable = "replicated";
   const int kNumRowsToWrite = 100;
+  const int kNumReplicas = 3;
 
   scoped_refptr<KuduTable> table;
-  ASSERT_NO_FATAL_FAILURE(CreateReplicatedTable(kReplicatedTable, 3, &table));
+  ASSERT_NO_FATAL_FAILURE(CreateTable(kReplicatedTable,
+                                      kNumReplicas,
+                                      GenerateSplitKeys(),
+                                      &table));
 
   // Should have no rows to begin with.
   ASSERT_EQ(0, CountRowsFromClient(table.get()));
@@ -1396,14 +1398,16 @@ TEST_F(ClientTest, TestReplicatedMultiTabletTable) {
 }
 
 TEST_F(ClientTest, TestReplicatedMultiTabletTableFailover) {
-  const string kReplicatedTable = "replicated_with_failover";
+  const string kReplicatedTable = "replicated_failover_on_reads";
   const int kNumRowsToWrite = 100;
   const int kNumReplicas = 3;
   const int kNumTries = 10;
 
   scoped_refptr<KuduTable> table;
-  ASSERT_NO_FATAL_FAILURE(CreateReplicatedTable(
-      kReplicatedTable, kNumReplicas, &table));
+  ASSERT_NO_FATAL_FAILURE(CreateTable(kReplicatedTable,
+                                      kNumReplicas,
+                                      GenerateSplitKeys(),
+                                      &table));
 
   // Insert some data.
   ASSERT_NO_FATAL_FAILURE(InsertTestRows(table.get(), kNumRowsToWrite));
