@@ -143,10 +143,13 @@ message ReportedTabletPB {
   required bytes tablet_id = 1;
   required tablet.TabletStatePB state = 2;
   required metadata.QuorumPeerPB.Role role = 3;
-  optional AppStatusPB error = 4;
 
-  // TODO: add configuration seqno, schema version, etc?
-  optional uint32 schema_version = 5;
+  // The quorum serving the tablet.
+  // This is only set if role == LEADER.
+  optional metadata.QuorumPB quorum = 4;
+
+  optional AppStatusPB error = 5;
+  optional uint32 schema_version = 6;
 }
 
 // Sent by the tablet server to report the set of tablets hosted by that TS.

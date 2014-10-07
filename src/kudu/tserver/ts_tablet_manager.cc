@@ -513,7 +513,10 @@ void TSTabletManager::CreateReportedTabletPB(const string& tablet_id,
 
   // We cannot call role() until after consensus is initialized.
   if (tablet_peer->consensus()) {
-    reported_tablet->set_role(tablet_peer->consensus()->role());
+    QuorumPB quorum = tablet_peer->Quorum();
+    reported_tablet->set_role(consensus::GetRoleInQuorum(server_->instance_pb().permanent_uuid(),
+                                                         quorum));
+    reported_tablet->mutable_quorum()->CopyFrom(quorum);
   } else {
     reported_tablet->set_role(QuorumPeerPB::NON_PARTICIPANT);
   }

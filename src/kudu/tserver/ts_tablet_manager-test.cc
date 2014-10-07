@@ -21,6 +21,7 @@ namespace kudu {
 namespace tserver {
 
 using master::TabletReportPB;
+using master::ReportedTabletPB;
 using metadata::QuorumPB;
 using tablet::TabletMasterBlockPB;
 using tablet::TabletPeer;
@@ -131,9 +132,26 @@ TEST_F(TsTabletManagerTest, TestCreateTablet) {
 }
 
 static void CheckSequenceNumber(int64_t *seqno,
-                                  const TabletReportPB &report) {
+                                const TabletReportPB &report) {
   ASSERT_LT(*seqno, report.sequence_number());
   *seqno = report.sequence_number();
+}
+
+static void CheckReportHasUpdatedTablet(const TabletReportPB& report,
+                                        const string& tablet_id) {
+  ASSERT_GE(report.updated_tablets_size(), 0);
+  bool found_tablet = false;
+  BOOST_FOREACH(ReportedTabletPB reported_tablet, report.updated_tablets()) {
+    if (reported_tablet.tablet_id() == tablet_id) {
+      found_tablet = true;
+      ASSERT_TRUE(reported_tablet.has_quorum());
+      ASSERT_EQ(reported_tablet.quorum().seqno(), 0);
+      ASSERT_EQ(reported_tablet.quorum().peers_size(), 1);
+      ASSERT_EQ(reported_tablet.quorum().peers(0).role(),
+                metadata::QuorumPeerPB::LEADER);
+    }
+  }
+  ASSERT_TRUE(found_tablet);
 }
 
 TEST_F(TsTabletManagerTest, TestTabletReports) {
@@ -163,14 +181,15 @@ TEST_F(TsTabletManagerTest, TestTabletReports) {
     ASSERT_TRUE(report.is_incremental());
     CheckSequenceNumber(&seqno, report);
   }
-  ASSERT_EQ("tablet-1", report.updated_tablets(0).tablet_id());
+
+  CheckReportHasUpdatedTablet(report, "tablet-1");
 
   // If we don't acknowledge the report, and ask for another incremental report,
   // it should include the tablet again.
   tablet_manager_->GenerateIncrementalTabletReport(&report);
   ASSERT_TRUE(report.is_incremental());
   ASSERT_EQ(1, report.updated_tablets().size());
-  ASSERT_EQ("tablet-1", report.updated_tablets(0).tablet_id());
+  CheckReportHasUpdatedTablet(report, "tablet-1");
   CheckSequenceNumber(&seqno, report);
 
   // Now acknowledge the last report, and further incrementals should be empty.
@@ -212,6 +231,8 @@ TEST_F(TsTabletManagerTest, TestTabletReports) {
   tablet_manager_->GenerateFullTabletReport(&report);
   ASSERT_FALSE(report.is_incremental());
   ASSERT_EQ(2, report.updated_tablets().size());
+  CheckReportHasUpdatedTablet(report, "tablet-1");
+  CheckReportHasUpdatedTablet(report, "tablet-2");
   CheckSequenceNumber(&seqno, report);
 }
 
