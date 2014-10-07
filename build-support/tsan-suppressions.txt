@@ -9,6 +9,7 @@ race:std::tr1::_Sp_counted_base
 race:std::string::_Rep::_M_refcopy
 race:std::string::_Rep::_M_grab
 race:std::string::_Rep::_M_dispose
+race:std::string::_Rep::_M_set_length_and_sharable
 
 # Protobuf's implementation of GoogleOnce doesn't properly annotate itself
 race:google::protobuf::GoogleOnceInitImpl
