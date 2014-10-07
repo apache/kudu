@@ -1088,9 +1088,8 @@ Status CatalogManager::HandleReportedTablet(TSDescriptor* ts_desc,
     alter_requested = true;
   }
 
-  table_lock.Unlock();
 
-  tablet->AddReplica(ts_desc, report.state(), report.role());
+  table_lock.Unlock();
 
   if (report.has_error()) {
     Status s = StatusFromPB(report.error());
@@ -1101,14 +1100,14 @@ Status CatalogManager::HandleReportedTablet(TSDescriptor* ts_desc,
     return Status::OK();
   }
 
-  // TODO: The tablet should accept a leader report from someone who was not
-  // assigned as leader once we have leader election implemented.
-  // The role is returned in report.role().
-  if (tablet_lock.data().IsQuorumLeaderOrCandidate(ts_desc)) {
-    if (report.has_schema_version() && !alter_requested) {
-      HandleTabletSchemaVersionReport(tablet.get(), report.schema_version());
-    }
+  if (report.has_schema_version() && !alter_requested) {
+    HandleTabletSchemaVersionReport(tablet.get(), report.schema_version());
+  }
 
+  int64 current_seqno = tablet_lock.data().pb.quorum().seqno();
+
+  if (report.has_quorum() && report.quorum().seqno() >= current_seqno) {
+    // If the tablet was not RUNNING mark it as such
     if (!tablet_lock.data().is_running() && report.state() == tablet::RUNNING) {
       DCHECK(tablet_lock.data().pb.state() == SysTabletsEntryPB::kTabletStateCreating);
       // Mark the tablet as running
@@ -1117,17 +1116,77 @@ Status CatalogManager::HandleReportedTablet(TSDescriptor* ts_desc,
       VLOG(1) << "Tablet " << tablet->ToString() << " is now online";
       tablet_lock.mutable_data()->set_state(SysTabletsEntryPB::kTabletStateRunning,
                                             "Tablet reported by leader");
-      Status s = sys_tablets_->UpdateTablets(boost::assign::list_of(tablet.get()));
-      if (!s.ok()) {
-        // panic-mode: abort the master
-        LOG(FATAL) << "An error occurred while updating sys-tablets: " << s.ToString();
-      }
+    }
 
-      tablet_lock.Commit();
+    // If a replica is reporting a new quorum, reset the tablet's replicas. Note that
+    // we leave out replicas who live in tablet servers who have not heartbeated to
+    // master yet.
+    if (report.quorum().seqno() > current_seqno) {
+      LOG(INFO) << "Tablet: " << tablet->tablet_id() << " reported quorum change."
+          " New quorum: " << report.quorum().ShortDebugString();
+      ResetTabletReplicasFromReportedQuorum(ts_desc, report, tablet, &tablet_lock);
+    // If some replica is reporting the same quorum we already know about and hasn't
+    // been added as replica, add it.
+    } else if (report.quorum().seqno() == current_seqno) {
+      AddReplicaToTabletIfNotFound(ts_desc, report, tablet);
     }
   }
 
+  // We update the tablets each time the someone reports it.
+  // This shouldn't be very frequent and should only happen when something in fact changed.
+  Status s = sys_tablets_->UpdateTablets(boost::assign::list_of(tablet.get()));
+  if (!s.ok()) {
+    // panic-mode: abort the master
+    LOG(FATAL) << "An error occurred while updating sys-tablets: " << s.ToString();
+  }
+  tablet_lock.Commit();
   return Status::OK();
+}
+
+void CatalogManager::ResetTabletReplicasFromReportedQuorum(TSDescriptor* ts_desc,
+                                                           const ReportedTabletPB& report,
+                                                           const scoped_refptr<TabletInfo>& tablet,
+                                                           TabletMetadataLock* tablet_lock) {
+  tablet_lock->mutable_data()->pb.mutable_quorum()->CopyFrom(report.quorum());
+  vector<TabletReplica> replicas;
+  BOOST_FOREACH(const metadata::QuorumPeerPB& peer, report.quorum().peers()) {
+    std::tr1::shared_ptr<TSDescriptor> ts_desc;
+    Status status = master_->ts_manager()->LookupTSByUUID(peer.permanent_uuid(), &ts_desc);
+    if (status.IsNotFound()) {
+      LOG(WARNING) << "Cannot find TabletServer descriptor for tablet replica. Tablet: "
+          << tablet->tablet_id() << " Peer: " << peer.ShortDebugString();
+      continue;
+    }
+    CHECK_OK(status);
+    TabletReplica replica;
+    replica.state = report.state();
+    replica.role = peer.role();
+    replica.ts_desc = ts_desc.get();
+    replicas.push_back(replica);
+  }
+  tablet->ResetReplicas(replicas);
+}
+
+void CatalogManager::AddReplicaToTabletIfNotFound(TSDescriptor* ts_desc,
+                                                  const ReportedTabletPB& report,
+                                                  const scoped_refptr<TabletInfo>& tablet) {
+  vector<TabletReplica> locations;
+  tablet->GetLocations(&locations);
+  bool found_replica = false;
+  BOOST_FOREACH(const TabletReplica& replica, locations) {
+    if (replica.ts_desc->permanent_uuid() == ts_desc->permanent_uuid()) {
+      found_replica = true;
+      break;
+    }
+  }
+  if (!found_replica) {
+    TabletReplica replica;
+    replica.state = report.state();
+    replica.role = report.role();
+    replica.ts_desc = ts_desc;
+    locations.push_back(replica);
+    tablet->ResetReplicas(locations);
+  }
 }
 
 Status CatalogManager::GetTabletPeer(const string& tablet_id,
@@ -1830,7 +1889,7 @@ void CatalogManager::SelectReplicasForTablet(const TSDescriptorVector& ts_descs,
 
   // Select the set of replicas
   metadata::QuorumPB *quorum = tablet->mutable_metadata()->mutable_dirty()->pb.mutable_quorum();
-  quorum->set_seqno(0);
+  quorum->set_seqno(-1);
   // TODO allow the user to choose num replicas per table and
   // and allow to choose local/dist quorum. See: KUDU-96
   quorum->set_local(nreplicas == 1);
@@ -2083,32 +2142,11 @@ std::string TabletInfo::ToString() const {
                     (table_ != NULL ? table_->ToString() : "MISSING"));
 }
 
-void TabletInfo::AddReplica(TSDescriptor* ts_desc,
-                            TabletStatePB state,
-                            QuorumPeerPB::Role role) {
+void TabletInfo::ResetReplicas(const std::vector<TabletReplica>& replicas) {
   boost::lock_guard<simple_spinlock> l(lock_);
 
   last_update_ts_ = MonoTime::Now(MonoTime::FINE);
-  BOOST_FOREACH(TabletReplica& replica, locations_) {
-    if (replica.ts_desc == ts_desc) {
-      // Just update the existing replica
-      VLOG(2) << tablet_id_ << " on " << ts_desc->permanent_uuid()
-              << " changed state from "
-              << TabletStatePB_Name(replica.state) << "->"
-              << TabletStatePB_Name(state);
-      replica.state = state;
-      replica.role = role;
-      return;
-    }
-  }
-  VLOG(2) << tablet_id_ << " reported on " << ts_desc->permanent_uuid()
-          << " in state " << TabletStatePB_Name(state);
-
-  TabletReplica r;
-  r.ts_desc = ts_desc;
-  r.state = state;
-  r.role = role;
-  locations_.push_back(r);
+  locations_.assign(replicas.begin(), replicas.end());
 }
 
 void TabletInfo::ClearReplicasOnTS(const TSDescriptor* ts) {
@@ -2134,16 +2172,6 @@ bool TabletInfo::set_reported_schema_version(uint32_t version) {
   if (version > reported_schema_version_) {
     reported_schema_version_ = version;
     return true;
-  }
-  return false;
-}
-
-bool PersistentTabletInfo::IsQuorumLeaderOrCandidate(const TSDescriptor* ts_desc) const {
-  BOOST_FOREACH(const QuorumPeerPB& peer, pb.quorum().peers()) {
-    if ((peer.role() == QuorumPeerPB::LEADER || peer.role() == QuorumPeerPB::CANDIDATE) &&
-        peer.permanent_uuid() == ts_desc->permanent_uuid()) {
-      return true;
-    }
   }
   return false;
 }

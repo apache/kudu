@@ -52,10 +52,6 @@ struct PersistentTabletInfo {
     return pb.state() == SysTabletsEntryPB::kTabletStateReplaced;
   }
 
-  // Returns true if the specified 'ts_desc' is the leader or candidate
-  // of the quorum.
-  bool IsQuorumLeaderOrCandidate(const TSDescriptor* ts_desc) const;
-
   // Helper to set the state of the tablet with a custom message.
   // Requires that the caller has prepared this object for write.
   // The change will only be visible after Commit().
@@ -95,10 +91,8 @@ class TabletInfo : public RefCountedThreadSafe<TabletInfo> {
 
   TabletInfo(const scoped_refptr<TableInfo>& table, const std::string& tablet_id);
 
-  // Add a replica reported on the given server
-  void AddReplica(TSDescriptor* ts_desc,
-                  tablet::TabletStatePB state,
-                  metadata::QuorumPeerPB::Role role);
+  // Resets the replicas in this tablet info.
+  void ResetReplicas(const std::vector<TabletReplica>& replicas);
 
   // Remove any replicas which were on this server.
   void ClearReplicasOnTS(const TSDescriptor* ts_desc);
@@ -431,6 +425,15 @@ class CatalogManager : public tserver::TabletPeerLookupIf {
   Status HandleReportedTablet(TSDescriptor* ts_desc,
                               const ReportedTabletPB& report,
                               ReportedTabletUpdatesPB *report_updates);
+
+  void ResetTabletReplicasFromReportedQuorum(TSDescriptor* ts_desc,
+                                             const ReportedTabletPB& report,
+                                             const scoped_refptr<TabletInfo>& tablet,
+                                             TabletMetadataLock* tablet_lock);
+
+  void AddReplicaToTabletIfNotFound(TSDescriptor* ts_desc,
+                                    const ReportedTabletPB& report,
+                                    const scoped_refptr<TabletInfo>& tablet);
 
   void ClearAllReplicasOnTS(TSDescriptor* ts_desc);
 

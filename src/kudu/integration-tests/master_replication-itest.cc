@@ -216,6 +216,10 @@ TEST_F(MasterReplicationTest, TestManualPromotion) {
                                               new_table_name));
     prev_leader_idx = i;
     prev_table_name = new_table_name;
+    // We need to sleep to make sure there are no pending transactions
+    // when we restart the cluster in TestPromoteMaster.
+    // This be remove once we're done with KUDU-255.
+    sleep(2);
   }
 }
 
