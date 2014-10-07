@@ -69,6 +69,8 @@ class MiniTabletServer {
   const TabletServer* server() const { return server_.get(); }
   TabletServer* server() { return server_.get(); }
 
+  bool is_started() const { return started_; }
+
   void FailHeartbeats();
 
  private:

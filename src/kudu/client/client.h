@@ -158,6 +158,7 @@ class KUDU_EXPORT KuduClient : public std::tr1::enable_shared_from_this<KuduClie
   friend class internal::RemoteTabletServer;
 
   FRIEND_TEST(ClientTest, TestReplicatedMultiTabletTableFailover);
+  FRIEND_TEST(ClientTest, TestReplicatedTabletWritesWithLeaderElection);
   FRIEND_TEST(ClientTest, TestMasterLookupPermits);
 
   KuduClient();

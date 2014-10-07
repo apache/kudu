@@ -16,6 +16,7 @@
 #include "kudu/client/row_result.h"
 #include "kudu/client/write_op.h"
 #include "kudu/common/wire_protocol.h"
+#include "kudu/consensus/consensus.proxy.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/atomicops.h"
 #include "kudu/integration-tests/mini_cluster.h"
@@ -23,6 +24,8 @@
 #include "kudu/master/master-test-util.h"
 #include "kudu/master/master.proxy.h"
 #include "kudu/master/mini_master.h"
+#include "kudu/master/ts_descriptor.h"
+#include "kudu/rpc/messenger.h"
 #include "kudu/server/hybrid_clock.h"
 #include "kudu/tablet/tablet_peer.h"
 #include "kudu/tablet/transactions/write_transaction.h"
@@ -135,13 +138,19 @@ class ClientTest : public KuduTest {
   }
 
   void CheckNoRpcOverflow() {
-    ASSERT_EQ(0, cluster_->mini_tablet_server(0)->server()->rpc_server()->
-        service_pool("kudu.tserver.TabletServerService")->RpcsQueueOverflowMetric()->value());
+    for (int i = 0; i < cluster_->num_tablet_servers(); i++) {
+      MiniTabletServer* server = cluster_->mini_tablet_server(i);
+      if (server->is_started()) {
+        ASSERT_EQ(0, server->server()->rpc_server()->
+                  service_pool("kudu.tserver.TabletServerService")->
+                  RpcsQueueOverflowMetric()->value());
+      }
+    }
   }
 
-  // Inserts 'num_rows' test rows via RPC.
-  void InsertTestRows(KuduTable* table, int num_rows, int first_row = 0) {
-    shared_ptr<KuduSession> session = client_->NewSession();
+  // Inserts 'num_rows' test rows using 'client'
+  void InsertTestRows(KuduClient* client, KuduTable* table, int num_rows, int first_row = 0) {
+    shared_ptr<KuduSession> session = client->NewSession();
     ASSERT_STATUS_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
     session->SetTimeoutMillis(5000);
     for (int i = first_row; i < num_rows + first_row; i++) {
@@ -150,6 +159,11 @@ class ClientTest : public KuduTest {
     }
     FlushSessionOrDie(session);
     ASSERT_NO_FATAL_FAILURE(CheckNoRpcOverflow());
+  }
+
+  // Inserts 'num_rows' using the default client.
+  void InsertTestRows(KuduTable* table, int num_rows, int first_row = 0) {
+    InsertTestRows(client_.get(), table, num_rows, first_row);
   }
 
   void UpdateTestRows(KuduTable* table, int lo, int hi) {
@@ -1462,6 +1476,117 @@ TEST_F(ClientTest, TestReplicatedMultiTabletTableFailover) {
     }
   }
   ASSERT_EQ(1, rt->GetNumFailedReplicas());
+}
+
+// This test that we can keep writing to a tablet when the leader
+// tablet dies.
+// This currently forces leader promotion through RPC and creates
+// a new client afterwards.
+// TODO Remove the leader promotion part when we have automated
+// leader election.
+// TODO Use the same client, when the client supports leader
+// failover.
+TEST_F(ClientTest, TestReplicatedTabletWritesWithLeaderElection) {
+  const string kReplicatedTable = "replicated_failover_on_writes";
+  const int kNumRowsToWrite = 100;
+  const int kNumReplicas = 3;
+
+  scoped_refptr<KuduTable> table;
+  ASSERT_NO_FATAL_FAILURE(CreateTable(kReplicatedTable,
+                                      kNumReplicas,
+                                      vector<string>(),
+                                      &table));
+
+  // Insert some data.
+  ASSERT_NO_FATAL_FAILURE(InsertTestRows(table.get(), kNumRowsToWrite));
+
+  // TODO: we have to sleep here to make sure that the leader has time to
+  // propagate the writes to the followers. We can remove this once the
+  // followers run a leader election on their own and handle advancing
+  // the commit index.
+  usleep(1500 * 1000);
+
+  // Find the leader replica
+  Synchronizer sync;
+  scoped_refptr<internal::RemoteTablet> rt;
+  client_->data_->meta_cache_->LookupTabletByKey(table.get(), Slice(),
+                                                 &rt, sync.AsStatusCallback());
+  ASSERT_STATUS_OK(sync.Wait());
+  internal::RemoteTabletServer *rts;
+  ASSERT_STATUS_OK(client_->data_->GetTabletServer(client_.get(),
+                                                   rt->tablet_id(),
+                                                   KuduClient::LEADER_ONLY,
+                                                   &rts));
+
+  int killed_server = -1;
+  // Kill the tserver that is serving the leader tablet.
+  for (int i = 0; i < cluster_->num_tablet_servers(); i++) {
+    MiniTabletServer* server = cluster_->mini_tablet_server(i);
+    if (server->server()->instance_pb().permanent_uuid() ==
+        rts->permanent_uuid()) {
+      server->Shutdown();
+      killed_server = i;
+    }
+  }
+
+  ASSERT_NE(killed_server, -1);
+
+  // Since we waited before, hopefully all replicas will be up to date
+  // and we can just promote another replica.
+  shared_ptr<rpc::Messenger> client_messenger;
+  rpc::MessengerBuilder bld("client");
+  ASSERT_OK(bld.Build(&client_messenger));
+  gscoped_ptr<consensus::ConsensusServiceProxy> new_leader_proxy;
+
+  for (int i = 0; i < cluster_->num_tablet_servers(); i++) {
+    MiniTabletServer* server = cluster_->mini_tablet_server(i);
+    if (i != killed_server) {
+      new_leader_proxy.reset(
+          new consensus::ConsensusServiceProxy(client_messenger,
+                                               server->bound_rpc_addr()));
+      break;
+    }
+  }
+
+  ASSERT_TRUE(new_leader_proxy.get() != NULL);
+
+  consensus::MakePeerLeaderRequestPB req;
+  consensus::MakePeerLeaderResponsePB resp;
+  rpc::RpcController controller;
+
+  req.set_tablet_id(rt->tablet_id());
+  ASSERT_OK(new_leader_proxy->MakePeerLeader(req, &resp, &controller));
+  ASSERT_FALSE(resp.has_error()) << "Got error. Response: " << resp.ShortDebugString();
+
+  // Wait for 2.5x the heartbeat period, we need the new leader to push its
+  // config round and for the master to know of the new leader.
+  // TODO remove this once we have automated client failover.
+  usleep(2500 * 1000);
+
+  // A new client should now write to the new leader.
+  shared_ptr<KuduClient> new_client;
+
+  ASSERT_STATUS_OK(KuduClientBuilder()
+                   .master_server_addr(cluster_->mini_master()->bound_rpc_addr().ToString())
+                   .Build(&new_client));
+
+  scoped_refptr<KuduTable> new_table;
+  ASSERT_STATUS_OK(new_client->OpenTable(kReplicatedTable, &new_table));
+
+  ASSERT_NO_FATAL_FAILURE(InsertTestRows(new_client.get(),
+                                         new_table.get(),
+                                         kNumRowsToWrite,
+                                         kNumRowsToWrite));
+
+  // TODO: we have to sleep here to make sure that the leader has time to
+  // propagate the writes to the followers. We can remove this once the
+  // followers run a leader election on their own and handle advancing
+  // the commit index.
+  usleep(1500 * 1000);
+
+  ASSERT_EQ(2 * kNumRowsToWrite, CountRowsFromClient(new_table.get(),
+                                                     KuduClient::FIRST_REPLICA,
+                                                     kNoBound, kNoBound));
 }
 
 namespace {
