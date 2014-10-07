@@ -130,9 +130,10 @@ Status RaftConsensus::EmulateElection() {
     }
 
     QuorumPB new_quorum;
-    RETURN_NOT_OK(MakePeerLeaderInQuorum(state_->GetPeerUuid(),
-                                         state_->GetCommittedQuorumUnlocked(),
-                                         &new_quorum));
+    RETURN_NOT_OK(GivePeerRoleInQuorum(state_->GetPeerUuid(),
+                                       QuorumPeerPB::LEADER,
+                                       state_->GetCommittedQuorumUnlocked(),
+                                       &new_quorum));
     new_quorum.set_seqno(state_->GetCommittedQuorumUnlocked().seqno() + 1);
     // Increment the term.
     RETURN_NOT_OK(state_->IncrementTermUnlocked());

@@ -12,12 +12,15 @@ class Status;
 
 namespace consensus {
 
-// Copies 'old_quorum' to 'new_quorum' but makes the peer with 'peer_uuid'
-// LEADER and whoever was LEADER/CANDIDATE before, if anyone, FOLLOWER.
-// Returns Status::IllegalState() if the peer cannot be found.
-Status MakePeerLeaderInQuorum(const std::string& peer_uuid,
-                              const metadata::QuorumPB& old_quorum,
-                              metadata::QuorumPB* new_quorum);
+// Copies 'old_quorum' to 'new_quorum' but gives the peer with 'peer_uuid'
+// the role in 'role'. Additionally, demotes all of the other peers to FOLLOWER
+// if they currently have a LEADER or CANDIDATE role.
+// Returns Status::IllegalState() if the specified peer cannot be found or if
+// the specified peer appears in the quorum more than once.
+Status GivePeerRoleInQuorum(const std::string& peer_uuid,
+                            metadata::QuorumPeerPB::Role role,
+                            const metadata::QuorumPB& old_quorum,
+                            metadata::QuorumPB* new_quorum);
 
 // Helper to return the role of a peer within a quorum, or NON_PARTICIPANT is the peer does
 // not participate in the quorum.

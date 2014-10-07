@@ -16,9 +16,10 @@ using metadata::QuorumPB;
 using metadata::QuorumPeerPB;
 using strings::Substitute;
 
-Status MakePeerLeaderInQuorum(const string& peer_uuid,
-                              const QuorumPB& old_quorum,
-                              QuorumPB* new_quorum) {
+Status GivePeerRoleInQuorum(const string& peer_uuid,
+                            metadata::QuorumPeerPB::Role new_role,
+                            const QuorumPB& old_quorum,
+                            QuorumPB* new_quorum) {
   new_quorum->Clear();
   new_quorum->CopyFrom(old_quorum);
   new_quorum->clear_peers();
@@ -26,18 +27,27 @@ Status MakePeerLeaderInQuorum(const string& peer_uuid,
   BOOST_FOREACH(const QuorumPeerPB& old_peer, old_quorum.peers()) {
     QuorumPeerPB* new_peer = new_quorum->add_peers();
     new_peer->CopyFrom(old_peer);
+
+    // Assume new role for local peer.
     if (new_peer->permanent_uuid() == peer_uuid) {
-      new_peer->set_role(QuorumPeerPB::LEADER);
+      if (PREDICT_FALSE(found_peer)) {
+        return Status::IllegalState(
+            Substitute("Peer $0 found in quorum multiple times: $1",
+                       peer_uuid, old_quorum.ShortDebugString()));
+      }
       found_peer = true;
+      new_peer->set_role(new_role);
       continue;
     }
+
+    // Demote any other leaders/candidates to followers.
     if (new_peer->role() == QuorumPeerPB::LEADER ||
         new_peer->role() == QuorumPeerPB::CANDIDATE) {
       new_peer->set_role(QuorumPeerPB::FOLLOWER);
     }
   }
   if (!found_peer) {
-    return Status::IllegalState(Substitute("Cannot find peer: $0 in quorum: $1",
+    return Status::IllegalState(Substitute("Cannot find peer $0 in quorum: $1",
                                            peer_uuid, old_quorum.ShortDebugString()));
   }
   return Status::OK();
