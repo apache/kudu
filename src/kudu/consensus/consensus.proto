@@ -310,7 +310,6 @@ message TransactionStatusPB {
   // Quick human-readable description (e.g., ToString() output).
   required string description = 4;
 
-  required DriverType driver_type = 5;
   // If tracing is enabled when viewing the transaction, the trace
   // buffer is copied here.
   optional string trace_buffer = 6;

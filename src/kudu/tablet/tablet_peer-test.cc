@@ -226,8 +226,10 @@ class TabletPeerTest : public KuduTabletTest {
     tablet_peer_->GetEarliestNeededOpId(&earliest_opid);
     OpId last_log_opid;
     CHECK_OK(tablet_peer_->log_->GetLastEntryOpId(&last_log_opid));
-    CHECK(!OpIdEquals(earliest_opid, last_log_opid))
-      << "Expected valid log anchor, got last log opid: " << earliest_opid.ShortDebugString();
+    CHECK(OpIdCompare(earliest_opid, last_log_opid) < 0)
+      << "Expected valid log anchor, got earliest opid: " << earliest_opid.ShortDebugString()
+      << " (expected any value earlier than last log id: " << last_log_opid.ShortDebugString()
+      << ")";
   }
 
   // We disable automatic log GC. Don't leak those changes.
@@ -256,7 +258,9 @@ class DelayedApplyTransaction : public WriteTransaction {
 
   virtual Status Apply(gscoped_ptr<CommitMsg>* commit_msg) OVERRIDE {
     apply_started_->CountDown();
+    LOG(INFO) << "Delaying apply...";
     apply_continue_->Wait();
+    LOG(INFO) << "Apply proceeding";
     return WriteTransaction::Apply(commit_msg);
   }
 
@@ -436,19 +440,13 @@ TEST_F(TabletPeerTest, TestActiveTransactionPreventsLogGC) {
                                                                        &apply_continue,
                                                                        tx_state);
 
-    scoped_refptr<LeaderTransactionDriver> driver;
+    scoped_refptr<TransactionDriver> driver;
+    tablet_peer_->NewLeaderTransactionDriver(transaction, &driver);
 
-    LeaderTransactionDriver::Create(
-        transaction,
-        &tablet_peer_->txn_tracker_,
-        tablet_peer_->consensus(),
-        tablet_peer_->prepare_executor_.get(),
-        tablet_peer_->leader_apply_executor_,
-        &tablet_peer_->prepare_replicate_lock_,
-        &driver);
-
-    ASSERT_STATUS_OK(driver->Execute());
+    ASSERT_STATUS_OK(driver->ExecuteAsync());
     apply_started.Wait();
+    ASSERT_TRUE(driver->GetOpId().IsInitialized())
+      << "By the time a transaction is applied, it should have an Opid";
     // The apply will hang until we CountDown() the continue latch.
     // Now, roll the log. Below, we execute a few more insertions with rolling.
     ASSERT_STATUS_OK(log->AllocateSegmentAndRollOver());

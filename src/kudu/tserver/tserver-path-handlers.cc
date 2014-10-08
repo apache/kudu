@@ -97,7 +97,7 @@ void TabletServerPathHandlers::HandleTransactionsPage(const Webserver::ArgumentM
     *output << "<h1>Transactions</h1>\n";
     *output << "<table class='table table-striped'>\n";
     *output << "   <tr><th>Tablet id</th><th>Op Id</th>"
-      "<th>Transaction Type</th><th>Driver Type</th><th>"
+      "<th>Transaction Type</th><th>"
       "Total time in-flight</th><th>Description</th></tr>\n";
   }
 
@@ -121,18 +121,16 @@ void TabletServerPathHandlers::HandleTransactionsPage(const Webserver::ArgumentM
 
       if (!as_text) {
         (*output) << Substitute(
-          "<tr><th>$0</th><th>$1</th><th>$2</th><th>$3</th><th>$4</th><th>$5</th></tr>\n",
+          "<tr><th>$0</th><th>$1</th><th>$2</th><th>$3</th><th>$4</th></tr>\n",
           EscapeForHtmlToString(peer->tablet_id()),
           EscapeForHtmlToString(inflight_tx.op_id().ShortDebugString()),
           OperationType_Name(inflight_tx.tx_type()),
-          DriverType_Name(inflight_tx.driver_type()),
           total_time_str,
           EscapeForHtmlToString(description));
       } else {
         (*output) << "Tablet: " << peer->tablet_id() << endl;
         (*output) << "Op ID: " << inflight_tx.op_id().ShortDebugString() << endl;
         (*output) << "Type: " << OperationType_Name(inflight_tx.tx_type()) << endl;
-        (*output) << "Driver: " << DriverType_Name(inflight_tx.driver_type()) << endl;
         (*output) << "Running: " << total_time_str;
         (*output) << description << endl;
         (*output) << endl;

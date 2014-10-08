@@ -18,24 +18,29 @@ namespace tablet {
 
 class TransactionTrackerTest : public KuduTest {
  public:
-  class TestTransactionDriver : public ReplicaTransactionDriver {
+  class NoOpTransaction : public Transaction {
    public:
-    explicit TestTransactionDriver(TransactionTracker* tracker)
-      : ReplicaTransactionDriver(tracker, NULL, NULL, NULL) {
+    NoOpTransaction()
+      : Transaction(NULL, consensus::LEADER, Transaction::WRITE_TXN) {
     }
 
-    virtual void Init(Transaction* transaction) {
-      TransactionDriver::Init(transaction);
+    virtual void NewReplicateMsg(gscoped_ptr<consensus::ReplicateMsg>* replicate_msg) OVERRIDE {
+      LOG(FATAL) << "Unimplemented for tests";
     }
 
-    virtual void ApplyOrCommitFailed(const Status& status) {
-      txn_tracker_->Release(this);
+    // Builds a commit abort message for this transaction.
+    virtual void NewCommitAbortMessage(gscoped_ptr<consensus::CommitMsg>* commit_msg) OVERRIDE {
+      LOG(FATAL) << "Unimplemented for tests";
     }
 
-    virtual ~TestTransactionDriver() {
+    virtual Status Prepare() OVERRIDE { return Status::OK(); }
+    virtual Status Start() OVERRIDE { return Status::OK(); }
+    virtual Status Apply(gscoped_ptr<consensus::CommitMsg>* commit_msg) OVERRIDE {
+      return Status::OK();
     }
-
-   private:
+    virtual std::string ToString() const OVERRIDE {
+      return "NoOp";
+    }
   };
 
   void RunTransactionsThread(CountDownLatch* finish_latch);
@@ -45,8 +50,8 @@ class TransactionTrackerTest : public KuduTest {
 
 TEST_F(TransactionTrackerTest, TestGetPending) {
   ASSERT_EQ(0, tracker_.GetNumPendingForTests());
-  scoped_refptr<TestTransactionDriver> driver(new TestTransactionDriver(&tracker_));
-  driver->Init(new WriteTransaction(new WriteTransactionState, consensus::LEADER));
+  scoped_refptr<TransactionDriver> driver(new TransactionDriver(&tracker_, NULL, NULL, NULL));
+  driver->Init(new NoOpTransaction(), consensus::LEADER);
 
   ASSERT_EQ(1, tracker_.GetNumPendingForTests());
 
@@ -56,7 +61,7 @@ TEST_F(TransactionTrackerTest, TestGetPending) {
   ASSERT_EQ(driver.get(), pending_transactions.front().get());
 
   // And mark the transaction as failed, which will cause it to unregister itself.
-  driver->ApplyOrCommitFailed(Status::IllegalState(""));
+  driver->Abort();
 
   ASSERT_EQ(0, tracker_.GetNumPendingForTests());
 }
@@ -65,10 +70,10 @@ TEST_F(TransactionTrackerTest, TestGetPending) {
 void TransactionTrackerTest::RunTransactionsThread(CountDownLatch* finish_latch) {
   const int kNumTransactions = 100;
   // Start a bunch of transactions.
-  vector<scoped_refptr<TestTransactionDriver> > drivers;
+  vector<scoped_refptr<TransactionDriver> > drivers;
   for (int i = 0; i < kNumTransactions; i++) {
-    scoped_refptr<TestTransactionDriver> driver(new TestTransactionDriver(&tracker_));
-    driver->Init(new WriteTransaction(new WriteTransactionState, consensus::LEADER));
+    scoped_refptr<TransactionDriver> driver(new TransactionDriver(&tracker_, NULL, NULL, NULL));
+    driver->Init(new NoOpTransaction(), consensus::LEADER);
 
     drivers.push_back(driver);
   }
@@ -81,9 +86,9 @@ void TransactionTrackerTest::RunTransactionsThread(CountDownLatch* finish_latch)
   usleep(1000);
 
   // Finish all the transactions
-  BOOST_FOREACH(const scoped_refptr<TestTransactionDriver>& driver, drivers) {
+  BOOST_FOREACH(const scoped_refptr<TransactionDriver>& driver, drivers) {
     // And mark the transaction as failed, which will cause it to unregister itself.
-    driver->ApplyOrCommitFailed(Status::IllegalState(""));
+    driver->Abort();
   }
 }
 

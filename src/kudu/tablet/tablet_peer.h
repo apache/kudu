@@ -198,10 +198,10 @@ class TabletPeer : public RefCountedThreadSafe<TabletPeer>,
   std::string tablet_id() const { return tablet_id_; }
 
   void NewLeaderTransactionDriver(Transaction* transaction,
-                                  scoped_refptr<LeaderTransactionDriver>* driver);
+                                  scoped_refptr<TransactionDriver>* driver);
 
   void NewReplicaTransactionDriver(Transaction* transaction,
-                                   scoped_refptr<ReplicaTransactionDriver>* driver);
+                                   scoped_refptr<TransactionDriver>* driver);
 
  private:
   friend class RefCountedThreadSafe<TabletPeer>;

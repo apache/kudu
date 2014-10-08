@@ -20,15 +20,71 @@ class TransactionTracker;
 // Base class for transaction drivers.
 //
 // TransactionDriver classes encapsulate the logic of coordinating the execution of
-// a transaction. There are Leader and Replica side implementations.
+// an operation. The exact triggering of the methods differs based on whether the
+// operation is being executed on a leader or replica, but the general flow is:
 //
-// This class is refcounted, and subclasses must not define a public destructor.
-// This class and implementations are thread safe.
-class TransactionDriver : public RefCountedThreadSafe<TransactionDriver> {
+//  1 - Init() is called on a newly created driver object.
+//      If the driver is instantiated from a REPLICA, then we know that
+//      the operation is already "REPLICATING" (and thus we don't need to
+//      trigger replication ourself later on).
+//
+//  2 - ExecuteAsync() is called. This submits PrepareAndStartTask() to prepare_executor_
+//      and returns immediately.
+//
+//  3 - PrepareAndStartTask() calls Prepare() and Start() on the transaction.
+//
+//      Once successfully prepared, if we have not yet replicated (i.e we are leader),
+//      also triggers consensus->Replicate() and changes the replication state to
+//      REPLICATING.
+//
+//      On the other hand, if we have already successfully replicated (eg we are the
+//      follower and ConsensusCommitted() has already been called, then we can move
+//      on to ApplyAsync().
+//
+//  4 - The Consensus implementation calls ConsensusCommitted()
+//
+//      This is triggered by consensus when the commit index moves past our own
+//      OpId. On followers, this can happen before Prepare() finishes, and thus
+//      we have to check whether we have already done step 3. On leaders, we
+//      don't start the consensus round until after Prepare, so this check always
+//      passes.
+//
+//      If Prepare() has already completed, then we trigger ApplyAsync().
+//
+//  5 - ApplyAsync() submits ApplyTask() to the apply_executor_.
+//      ApplyTask() calls transaction_->Apply().
+//
+//      When Apply() is called, changes are made to the in-memory data structures. These
+//      changes are not visible to clients yet. After Apply() completes, a CommitMsg
+//      is enqueued to the WAL in order to store information about the operation result
+//      and provide correct recovery.
+//
+//      Currently, we wait until the CommitMsg is durably persisted in the WAL before
+//      replying to clients. However, KUDU-120 provides a design which can reply _before_
+//      the CommitMsg is persisted, so long as we ensure that the CommitMsg is durable
+//      before any modified in-memory data structures are flushed.
+//
+//  5 - Finalize() is called when the CommitMsg has been made durable and performs some cleanup
+//      and updates metrics.
+//      In-mem data structures that contain the changes made by the transaction can now
+//      be made durable.
+//
+// [1] - see 'Implementation Techniques for Main Memory Database Systems', DeWitt et. al.
+//
+// This class is thread safe.
+class TransactionDriver : public RefCountedThreadSafe<TransactionDriver>,
+                          public consensus::ReplicaCommitContinuation {
+
  public:
+  TransactionDriver(TransactionTracker* txn_tracker,
+                    consensus::Consensus* consensus,
+                    TaskExecutor* prepare_executor,
+                    TaskExecutor* apply_executor);
+
   // Perform any non-constructor initialization. Sets the transaction
   // that will be executed.
-  virtual void Init(Transaction* transaction);
+  virtual void Init(Transaction* transaction,
+                    consensus::DriverType driver);
 
   // Returns the OpId of the transaction being executed or an uninitialized
   // OpId if none has been assigned. Returns a copy and thus should not
@@ -38,22 +94,24 @@ class TransactionDriver : public RefCountedThreadSafe<TransactionDriver> {
   // Submits the transaction for execution.
   // The returned status acknowledges any error on the submission process.
   // The transaction will be replied to asynchronously.
-  virtual Status Execute() = 0;
+  Status ExecuteAsync();
 
   // Aborts the transaction, if possible. Since transactions are executed in
   // multiple stages by multiple executors it might not be possible to stop
   // the transaction immediately, but this will make sure it is aborted
   // at the next synchronization point.
-  virtual void Abort() = 0;
+  virtual void Abort() OVERRIDE;
+
+  // Callback from Consensus when replication is complete, and thus the operation
+  // is considered "committed" from the consensus perspective (ie it will be
+  // applied on every node, and not ever truncated from the state machine history).
+  virtual Status ConsensusCommitted() OVERRIDE;
 
   virtual const std::tr1::shared_ptr<FutureCallback>& commit_finished_callback();
 
   virtual std::string ToString() const;
 
   virtual std::string ToStringUnlocked() const;
-
-  // Returns the type of the driver.
-  consensus::DriverType type() const;
 
   // Returns the type of the transaction being executed by this driver.
   Transaction::TransactionType tx_type() const;
@@ -65,28 +123,43 @@ class TransactionDriver : public RefCountedThreadSafe<TransactionDriver> {
 
   Trace* trace() { return trace_.get(); }
 
- protected:
-  TransactionDriver(TransactionTracker* txn_tracker,
-                    consensus::Consensus* consensus,
-                    TaskExecutor* prepare_executor,
-                    TaskExecutor* apply_executor);
+ private:
+  friend class RefCountedThreadSafe<TransactionDriver>;
 
-  virtual ~TransactionDriver() {}
+  ~TransactionDriver() {}
+
+  // The task submitted to the prepare threadpool to prepare and start
+  // the transaction. If PrepareAndStart() fails, calls HandleFailure.
+  Status PrepareAndStartTask();
+  // Actually prepare and start.
+  Status PrepareAndStart();
+
+  // Submits ApplyTask to the apply pool.
+  Status ApplyAsync();
+  // Task for running Apply(). If Apply() fails, delegates to
+  // ApplyOrCommitFailed().
+  Status ApplyTask();
 
   // Calls Transaction::Apply() followed by Consensus::Commit() with the
   // results from the Apply().
-  Status ApplyTask();
-
-  virtual Status Apply() = 0;
-
-  // Called when both Transaction::Apply() and Consensus::Commit() successfully
-  // completed. When this is called the commit message was appended to the WAL.
-  virtual void Finalize() = 0;
-
+  Status ApplyAndTriggerCommit();
   // Called if ApplyAndCommit() failed for some reason, or if
   // Consensus::Commit() failed afterwards.
   // This method will only be called once.
-  virtual void ApplyOrCommitFailed(const Status& status) = 0;
+  void ApplyOrCommitFailed(const Status& status);
+
+  // Sleeps until the transaction is allowed to commit based on the
+  // requested consistency mode.
+  Status CommitWait();
+
+  // Handle a failure in any of the stages of the operation.
+  // In some cases, this will end the operation and call its callback.
+  // In others, where we can't recover, this will FATAL.
+  void HandleFailure(const Status& s);
+
+  // Called when both Transaction::Apply() and Consensus::Commit() successfully
+  // completed. When this is called the commit message was appended to the WAL.
+  void Finalize();
 
   // Returns the mutable state of the transaction being executed by
   // this driver.
@@ -122,216 +195,34 @@ class TransactionDriver : public RefCountedThreadSafe<TransactionDriver> {
   scoped_refptr<Trace> trace_;
 
  private:
-  friend class RefCountedThreadSafe<TransactionDriver>;
 
   const MonoTime start_time_;
 
+  enum ReplicationState {
+    // The operation has not yet been sent to consensus for replication
+    NOT_REPLICATING,
+    // Replication has been triggered (either because we are the leader and triggered it,
+    // or because we are a follower and we started this operation in response to a
+    // leader's call)
+    REPLICATING,
+
+    // Replication has failed, and we are certain that no other may have received the
+    // operation (ie we failed before even sending the request off of our node).
+    REPLICATION_FAILED,
+
+    // Replication has succeeded. We know that this operation will not abort, so it is
+    // safe to Apply, Commit, etc.
+    REPLICATED
+  };
+  ReplicationState replication_state_;
+
+  enum PrepareState {
+    NOT_PREPARED,
+    PREPARED
+  };
+  PrepareState prepare_state_;
   DISALLOW_COPY_AND_ASSIGN(TransactionDriver);
 };
-
-// Leader transaction driver.
-//
-// Leader transaction execution is illustrated in the next diagram. (Further
-// illustration of the inner workings of the consensus system can be found
-// in consensus/consensus.h).
-//
-//                  1 Execute()
-//                       +
-//                       |
-//             +---------v----------+
-//             |                    |
-//             |   2 Prepare()      |
-//             |                    |
-//             +---------+----------+
-//                       |
-//                       |
-//             +---------v----------+
-//       succ. |                    | fails
-//             |                    |
-//      +------v------+     +-------v------+
-//      |             |     |              |
-//      |3 Replicate()|     |  FAIL(Reply) |
-//      |             |     |              |
-//      +------+------+     +-------^------+
-//             |                    |
-//             |                    | fails
-//             +--------------------+
-//             |
-//             |
-//             +----------+ succeeds
-//                        |
-//             +----------v---------+
-//             |                    |
-//             |    4 Apply()       |
-//             |                    |
-//             +----------+---------+
-//                        |
-//                        |
-//             +----------v---------+
-//      succ.  |                    | fails
-//             |                    |
-//      +------v-------+    +-------v------+
-//      |              |    |              |
-//      |SUCCESS(Reply)|    | ABORT(Reply) |
-//      |              |    |              |
-//      +------+-------+    +-------+------+
-//             |                    |
-//             +----------+---------+
-//                        |
-//                        |
-//             +----------v---------+
-//             |                    |
-//             |    5 Finalize()    |
-//             |                    |
-//             +----------+---------+
-//                        |
-//                        v
-//                  Destroy/Cleanup
-//
-//  1 - Execute() is called on the LeaderTransactionDriver. The transaction's
-//      prepare is queued in the 'prepare_executor_'. The method returns immediately.
-//  2 - On Prepare(), messages are decoded and locks acquired. When Prepare() completes
-//      successfully, the transaction is assigned a timestamp. If Prepare() fails, the
-//      transaction is simply cancelled/destroyed and the client notified. If Prepare()
-//      fails the transaction had no side-effects.
-//  3 - If Replicate() succeeds (i.e a majority of peers ACKed the operation), it can be
-//      considered committed. This is the point of no return: from here on, a commit or
-//      abort message must eventually be stored in the WAL. It it succeeds Apply() is
-//      called. If it fails for some reason e.g. the transaction could not be replicated
-//      because a majority of peers is down, the transaction will never be committed and
-//      the client is notified.
-//  4 - When Apply() is called changes are made to the in-memory data structures. These
-//      changes are not visible to clients yet. After Apply() completes, if successful,
-//      the client is replied to immediately, locks are released[1] and changes are made
-//      visible.
-//      Whether successful or not, before returning, Apply() appends a CommitMsg to the
-//      WAL reflecting whether the transaction was successful and which data structures
-//      where mutated.
-//      Changes to data structure are not allowed to be made durable though, as the CommitMsg
-//      hasn't been persisted yet, but it is safe to reply to the client as the transaction
-//      is now guaranteed to survive failures.
-//  5 - Finalize() is called when the ApplyMsg has been made durable and performs some cleanup
-//      and updates metrics.
-//      In-mem data structures that contain the changes made by the transaction can now
-//      be made durable.
-//
-// [1] - see 'Implementation Techniques for Main Memory Database Systems', DeWitt et. al.
-//
-//
-// This class is thread safe.
-class LeaderTransactionDriver : public TransactionDriver {
- public:
-  static void Create(Transaction* transaction,
-                     TransactionTracker* txn_tracker,
-                     consensus::Consensus* consensus,
-                     TaskExecutor* prepare_executor,
-                     TaskExecutor* apply_executor,
-                     simple_spinlock* prepare_replicate_lock,
-                     scoped_refptr<LeaderTransactionDriver>* driver);
-
-  virtual Status Execute() OVERRIDE;
-
-  virtual void Abort() OVERRIDE;
-
- protected:
-  LeaderTransactionDriver(TransactionTracker* txn_tracker,
-                          consensus::Consensus* consensus,
-                          TaskExecutor* prepare_executor,
-                          TaskExecutor* apply_executor,
-                          simple_spinlock* prepare_replicate_lock);
-
-  virtual Status Apply() OVERRIDE;
-
-  virtual void Finalize() OVERRIDE;
-
-  virtual void ApplyOrCommitFailed(const Status& status) OVERRIDE;
-
-  virtual ~LeaderTransactionDriver() OVERRIDE;
-
- private:
-  friend class RefCountedThreadSafe<LeaderTransactionDriver>;
-  FRIEND_TEST(TransactionTrackerTest, TestGetPending);
-
-  // Leaders execute Prepare() and Start() in sequence.
-  Status PrepareAndStartTask();
-  Status PrepareAndStart();
-
-  void ReplicateSucceeded();
-
-  void ReplicateFailed(const Status& status);
-
-  // Called when Transaction::Prepare() or Consensus::Replicate() failed,
-  // after they have both completed.
-  void HandlePrepareOrReplicateFailure();
-
-  // Called between Transaction::Apply() and Consensus::Commit() if the transaction
-  // has COMMIT_WAIT external consistency.
-  Status CommitWait();
-
-  DISALLOW_COPY_AND_ASSIGN(LeaderTransactionDriver);
-};
-
-// Replica version of the transaction driver.
-class ReplicaTransactionDriver : public TransactionDriver,
-                                 public consensus::ReplicaCommitContinuation {
- public:
-  static void Create(Transaction* transaction,
-                     TransactionTracker* txn_tracker,
-                     consensus::Consensus* consensus,
-                     TaskExecutor* prepare_executor,
-                     TaskExecutor* apply_executor,
-                     scoped_refptr<ReplicaTransactionDriver>* driver);
-
-  virtual void Init(Transaction* transaction) OVERRIDE;
-
-  virtual Status Execute() OVERRIDE;
-
-  virtual void Abort() OVERRIDE;
-
- protected:
-  ReplicaTransactionDriver(TransactionTracker* txn_tracker,
-                           consensus::Consensus* consensus,
-                           TaskExecutor* prepare_executor,
-                           TaskExecutor* apply_executor);
-
-  virtual ~ReplicaTransactionDriver() OVERRIDE;
-
-  virtual Status ConsensusCommitted() OVERRIDE;
-
-  virtual Status AbortAndCommit();
-
-  virtual Status Apply() OVERRIDE;
-
-  virtual void Finalize() OVERRIDE;
-
-  virtual void ApplyOrCommitFailed(const Status& status) OVERRIDE;
-
- private:
-  friend class RefCountedThreadSafe<ReplicaTransactionDriver>;
-
-  void PrepareFinished(const Status& status);
-
-  // Called when Prepare() completes and when consensus considers the operation
-  // committed. If both phases have finished, takes care of triggering Apply.
-  void PrepareFinishedOrConsensusCommittedUnlocked();
-
-  // Starts the transaction and enqueues Apply to happen on the correct threadpool.
-  void StartAndTriggerApplyUnlocked();
-
-  void HandlePrepareOrLeaderCommitFailure();
-
-  // Whether the PREPARE phase has finished. This is started as soon
-  // as we receive a REPLICATE message from the leader.
-  bool prepare_finished_;
-
-  // Whether the transaction is considered committed by consensus.
-  bool consensus_committed_;
-
-  std::tr1::shared_ptr<Future> apply_future_;
-
-  DISALLOW_COPY_AND_ASSIGN(ReplicaTransactionDriver);
-};
-
 
 }  // namespace tablet
 }  // namespace kudu

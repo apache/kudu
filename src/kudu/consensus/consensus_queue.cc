@@ -331,7 +331,6 @@ void PeerMessageQueue::ResponseFromPeer(const ConsensusResponsePB& response,
     // same term as our own.
     CHECK_EQ(response.responder_term(), current_term_);
 
-
     MessagesBuffer::iterator iter = messages_.upper_bound(peer->peer_status.last_received());
 
     MessagesBuffer::iterator end_iter = messages_.upper_bound(response.status().last_received());
