@@ -367,6 +367,9 @@ class DistConsensusTest : public TabletServerTest {
 
       ReplicaState::UniqueLock lock;
       CHECK_OK(state->LockForRead(&lock));
+      LOG_IF(INFO, sleep_time_usec > 0.0)
+          << "Delay injector thread for TS " << mini_tablet_server->server()->fs_manager()->uuid()
+          << " acquired ReplicaState lock, sleeping for " << sleep_time_usec << " usec...";
       usleep(sleep_time_usec);
     }
   }

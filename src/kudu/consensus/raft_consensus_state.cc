@@ -10,6 +10,7 @@
 #include "kudu/gutil/strings/strcat.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/status.h"
+#include "kudu/util/trace.h"
 
 // Convenience macros to prefix log messages with the id of the tablet and peer.
 // Do not obtain the state lock and should be used when holding the state_ lock
@@ -434,7 +435,10 @@ const OpId& ReplicaState::GetLastReplicatedOpIdUnlocked() const {
 
 void ReplicaState::UpdateLastReceivedOpIdUnlocked(const OpId& op_id) {
   DCHECK(update_lock_.is_locked());
-  DCHECK_LE(OpIdCompare(received_op_id_, op_id), 0);
+  DCHECK_LE(OpIdCompare(received_op_id_, op_id), 0)
+    << "Previously received OpId: " << received_op_id_.ShortDebugString()
+    << ", updated OpId: " << op_id.ShortDebugString()
+    << ", Trace:" << std::endl << Trace::CurrentTrace()->DumpToString(true);
   received_op_id_ = op_id;
   next_index_ = op_id.index() + 1;
 }

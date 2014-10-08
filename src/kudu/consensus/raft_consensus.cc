@@ -688,7 +688,7 @@ Status RaftConsensus::UpdateReplica(const ConsensusRequestPB* request) {
     // message in the batch. If any prepare failed we set last received to the
     // last successful prepare (we're sure we didn't prepare or apply anything after
     // that).
-    TRACE("Updating last received");
+    TRACE(Substitute("Updating last received op as $0", last_enqueued_prepare.ShortDebugString()));
     state_->UpdateLastReceivedOpIdUnlocked(last_enqueued_prepare);
   }
   // Release the lock while we wait for the log append to finish so that commits can go through.
