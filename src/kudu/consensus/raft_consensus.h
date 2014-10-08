@@ -175,13 +175,6 @@ class RaftConsensus : public Consensus {
   // configuration. The peer cannot perform any additional operations until this succeeds.
   Status PushConfigurationToPeersUnlocked(const metadata::QuorumPB& new_config);
 
-  OperationStatusTracker* CreateLeaderOnlyOperationStatusUnlocked(
-      gscoped_ptr<OperationPB> operation,
-      const std::tr1::shared_ptr<FutureCallback>& commit_callback);
-
-  OperationStatusTracker* CreateLeaderOnlyOperationStatusUnlocked(
-      gscoped_ptr<OperationPB> operation);
-
   OpId GetLastOpIdFromLog();
 
   log::Log* log_;

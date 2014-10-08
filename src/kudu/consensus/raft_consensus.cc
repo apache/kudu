@@ -382,29 +382,6 @@ Status RaftConsensus::PersistQuorum(const QuorumPB& quorum) {
   return Status::OK();
 }
 
-OperationStatusTracker* RaftConsensus::CreateLeaderOnlyOperationStatusUnlocked(
-    gscoped_ptr<OperationPB> operation,
-    const shared_ptr<FutureCallback>& commit_callback) {
-  unordered_set<string> leader_uuid_set(1);
-  InsertOrDie(&leader_uuid_set, state_->GetPeerUuid());
-  const QuorumState& quorum_state = state_->GetActiveQuorumStateUnlocked();
-  return new MajorityOpStatusTracker(operation.Pass(),
-                                     leader_uuid_set,
-                                     1,
-                                     quorum_state.quorum_size,
-                                     callback_pool_.get(),
-                                     commit_callback);
-}
-
-OperationStatusTracker* RaftConsensus::CreateLeaderOnlyOperationStatusUnlocked(
-    gscoped_ptr<OperationPB> operation) {
-  unordered_set<string> leader_uuid_set(1);
-  InsertOrDie(&leader_uuid_set, state_->GetPeerUuid());
-  const QuorumState& quorum_state = state_->GetActiveQuorumStateUnlocked();
-  return new MajorityOpStatusTracker(operation.Pass(), leader_uuid_set,
-                                     1, quorum_state.quorum_size);
-}
-
 Status RaftConsensus::LeaderCommitUnlocked(ConsensusRound* round,
                                            OperationPB* commit_op) {
 
