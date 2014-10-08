@@ -5,6 +5,7 @@
 #include <tr1/memory>
 #include <tr1/unordered_set>
 #include <tr1/unordered_map>
+#include <vector>
 
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
@@ -25,9 +26,8 @@ namespace internal {
 
 struct InFlightOp;
 
-class PerTSBuffer;
 class ErrorCollector;
-class RemoteTabletServer;
+class RemoteTablet;
 class WriteRpc;
 
 // A Batcher is the class responsible for collecting row operations, routing them to the
@@ -109,7 +109,7 @@ class Batcher : public RefCountedThreadSafe<Batcher> {
 
   void CheckForFinishedFlush();
   void FlushBuffersIfReady();
-  void FlushBuffer(RemoteTabletServer* ts, PerTSBuffer* buf);
+  void FlushBuffer(RemoteTablet* tablet, const std::vector<InFlightOp*>& ops);
 
   // Cleans up an RPC response, scooping out any errors and passing them up
   // to the batcher.
@@ -117,8 +117,6 @@ class Batcher : public RefCountedThreadSafe<Batcher> {
 
   // Async Callbacks.
   void TabletLookupFinished(InFlightOp* op, const Status& s);
-  void RefreshTSProxyFinished(RemoteTabletServer* ts, PerTSBuffer* buf,
-                              const Status& status);
 
   // See note about lock ordering in batcher.cc
   mutable simple_spinlock lock_;
@@ -148,8 +146,9 @@ class Batcher : public RefCountedThreadSafe<Batcher> {
 
   // All buffered or in-flight ops.
   std::tr1::unordered_set<InFlightOp*> ops_;
-  // Buffers for each tablet of ops that haven't yet been sent.
-  std::tr1::unordered_map<RemoteTabletServer*, PerTSBuffer*> per_ts_buffers_;
+  // Each tablet's buffered ops.
+  typedef std::tr1::unordered_map<RemoteTablet*, std::vector<InFlightOp*> > OpsMap;
+  OpsMap per_tablet_ops_;
 
   // Amount of time to wait for a given op, from start to finish.
   //

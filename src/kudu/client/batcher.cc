@@ -51,9 +51,6 @@ namespace internal {
 //   - Batcher::lock_
 //   - InFlightOp::lock_
 //
-// The PerTSBuffer::lock_ instance is below the other locks, and is safe
-// to take at any point, because we never take further locks while holding it.
-//
 // It's generally important to release all the locks before either calling
 // a user callback, or chaining to another async function, since that function
 // may also chain directly to the callback. Without releasing locks first,
@@ -120,15 +117,15 @@ struct InFlightOp {
     //      TODO: not implemented yet
     //
     // OWNERSHIP: When the operation is in this state, it is present in the 'ops_' set
-    // and also in a PerTSBuffer's 'ops_' vector.
+    // and also in the 'per_tablet_ops' map.
     kBufferedToTabletServer,
 
     // Once the operation has been flushed (either due to explicit Flush() or background flush)
     // it will enter this state.
     //
-    // OWNERSHIP: when entering this state, the op is removed from PerTSBuffer's 'ops_'
-    // vector and ownership is transfered to a WriteRPC's 'ops_' vector. The op still
-    // remains in the Batcher::ops_ set.
+    // OWNERSHIP: when entering this state, the op is removed from 'per_tablet_ops' map
+    // and ownership is transfered to a WriteRPC's 'ops_' vector. The op still
+    // remains in the 'ops_' set.
     kRequestSent
   };
   State state;
@@ -148,13 +145,15 @@ struct InFlightOp {
   }
 };
 
-// A Write RPC which is in-flight to a tablet server.
+// A Write RPC which is in-flight to a tablet. Initially, the RPC is sent
+// to the leader replica, but it may be retried with another replica if the
+// leader fails.
 //
 // Keeps a reference on the owning batcher while alive.
 class WriteRpc : public Rpc {
  public:
   WriteRpc(const scoped_refptr<Batcher>& batcher,
-           const RemoteTabletServer* ts,
+           RemoteTablet* const tablet,
            const vector<InFlightOp*>& ops,
            const MonoTime& deadline,
            const shared_ptr<Messenger>& messenger);
@@ -162,19 +161,21 @@ class WriteRpc : public Rpc {
   virtual void SendRpc() OVERRIDE;
   virtual string ToString() const OVERRIDE;
 
-  const RemoteTabletServer* ts() const { return ts_; }
+  const RemoteTablet* tablet() const { return tablet_; }
   const vector<InFlightOp*>& ops() const { return ops_; }
   const WriteResponsePB& resp() const { return resp_; }
 
  private:
+  void RefreshTSProxyFinished(RemoteTabletServer* ts, const Status& status);
+
   virtual void SendRpcCb(const Status& status) OVERRIDE;
 
   // Pointer back to the batcher. Processes the write response when it
   // completes, regardless of success or failure.
   scoped_refptr<Batcher> batcher_;
 
-  // Proxy to the tablet server servicing this write.
-  const RemoteTabletServer* ts_;
+  // The tablet that should receive this write.
+  RemoteTablet* const tablet_;
 
   // Request body.
   WriteRequestPB req_;
@@ -188,20 +189,19 @@ class WriteRpc : public Rpc {
 };
 
 WriteRpc::WriteRpc(const scoped_refptr<Batcher>& batcher,
-                   const RemoteTabletServer* ts,
+                   RemoteTablet* const tablet,
                    const vector<InFlightOp*>& ops,
                    const MonoTime& deadline,
                    const shared_ptr<Messenger>& messenger)
   : Rpc(deadline, messenger),
     batcher_(batcher),
-    ts_(ts),
+    tablet_(tablet),
     ops_(ops) {
 
   // All of the ops for a given tablet obviously correspond to the same table,
   // so we'll just grab the table from the first.
   const KuduTable* table = ops_[0]->write_op->table();
   const Schema* schema = table->schema().schema_.get();
-  const RemoteTablet* tablet = ops_[0]->tablet.get();
 
   req_.set_tablet_id(tablet->tablet_id());
   // Set up schema
@@ -241,12 +241,45 @@ WriteRpc::~WriteRpc() {
 }
 
 void WriteRpc::SendRpc() {
-  ts_->proxy()->WriteAsync(req_, &resp_, &retrier().controller(),
-                           boost::bind(&WriteRpc::SendRpcCb, this, Status::OK()));
+  // Choose a destination TS.
+  //
+  // The leader is (obviously) preferred, but we'll try a replica if the
+  // leader failed; it's possible that it is now the new leader.
+  RemoteTabletServer* ts = tablet_->LeaderTServer();
+  if (!ts) {
+    ts = tablet_->FirstTServer();
+  }
+  if (!ts) {
+    VLOG(1) << "No LEADER found for tablet " << tablet_->tablet_id()
+            << ": failing. TODO: ask Master for new TSes";
+    Status s = Status::ServiceUnavailable("No LEADER for tablet",
+                                          tablet_->tablet_id());
+    SendRpcCb(s);
+    return;
+  }
+
+  // Make sure we have a working proxy before sending out the RPC.
+  ts->RefreshProxy(batcher_->client_,
+                   Bind(&WriteRpc::RefreshTSProxyFinished, Unretained(this), ts),
+                   false);
 }
 
 string WriteRpc::ToString() const {
-  return Substitute("Write($0, $1 ops)", ts_->ToString(), ops_.size());
+  return Substitute("Write($0, $1 ops)", tablet_->tablet_id(), ops_.size());
+}
+
+void WriteRpc::RefreshTSProxyFinished(RemoteTabletServer* ts, const Status& status) {
+  // A failure in DNS resolution means the TS has failed.
+  if (!status.ok()) {
+    VLOG(1) << "Could not create proxy for TS " << ts->ToString()
+            << ", retrying with a new TS";
+    tablet_->MarkReplicaFailed(ts, status);
+    SendRpc();
+    return;
+  }
+
+  ts->proxy()->WriteAsync(req_, &resp_, &retrier().controller(),
+                          boost::bind(&WriteRpc::SendRpcCb, this, Status::OK()));
 }
 
 void WriteRpc::SendRpcCb(const Status& status) {
@@ -269,49 +302,6 @@ void WriteRpc::SendRpcCb(const Status& status) {
   }
   batcher_->ProcessWriteResponse(*this, new_status);
 }
-
-// Buffer which corresponds to a particular tablet server.
-// Contains ops which are in kBufferedToTabletServer or kRequestSent
-// states.
-//
-// This class is thread-safe.
-class PerTSBuffer {
- public:
-  PerTSBuffer() :
-    proxy_ready_(false) {
-  }
-
-  void AddOp(InFlightOp* op) {
-    lock_guard<simple_spinlock> l(&lock_);
-    DCHECK_EQ(op->state, InFlightOp::kBufferedToTabletServer);
-    ops_.push_back(op);
-  }
-
-  void SetProxyReady() {
-    lock_guard<simple_spinlock> l(&lock_);
-    proxy_ready_ = true;
-  }
-
-  bool ProxyReady() const {
-    lock_guard<simple_spinlock> l(&lock_);
-    return proxy_ready_;
-  }
-
-  void TakeOps(vector<InFlightOp*>* ops) {
-    lock_guard<simple_spinlock> l(&lock_);
-    ops->clear();
-    ops->swap(ops_);
-  }
-
- private:
-  // This lock is always safe to take - we never take any other locks while
-  // we hold it.
-  mutable simple_spinlock lock_;
-  vector<InFlightOp*> ops_;
-  bool proxy_ready_;
-
-  DISALLOW_COPY_AND_ASSIGN(PerTSBuffer);
-};
 
 Batcher::Batcher(KuduClient* client,
                  ErrorCollector* error_collector,
@@ -358,9 +348,6 @@ Batcher::~Batcher() {
     LOG(FATAL) << "ops_ not empty";
   }
   CHECK(ops_.empty());
-
-  // Remove the per-TS buffers
-  STLDeleteValues(&per_ts_buffers_);
 }
 
 void Batcher::SetTimeoutMillis(int millis) {
@@ -436,7 +423,7 @@ void Batcher::FlushAsync(const StatusCallback& cb) {
   // to flush would just be a no-op.
   //
   // If some of the operations are still in-flight, then they'll get sent
-  // when they hit the PerTSBuffer, since our state is now kFlushing.
+  // when they hit 'per_tablet_ops', since our state is now kFlushing.
   FlushBuffersIfReady();
 }
 
@@ -524,62 +511,22 @@ void Batcher::TabletLookupFinished(InFlightOp* op, const Status& s) {
     return;
   }
 
-  unique_lock<simple_spinlock> l2(&op->lock_);
+  {
+    lock_guard<simple_spinlock> l2(&op->lock_);
+    CHECK_EQ(op->state, InFlightOp::kLookingUpTablet);
+    CHECK(op->tablet != NULL);
 
-  RemoteTabletServer* ts = op->tablet->LeaderTServer();
-  if (PREDICT_FALSE(ts == NULL)) {
-    VLOG(1) << "No LEADER found for tablet " << op->tablet->tablet_id()
-            << ": failing. TODO: retry instead";
-    Status err = Status::ServiceUnavailable(
-      "No LEADER for tablet", op->tablet->tablet_id());
-    l2.unlock();
-    l.unlock();
-    MarkInFlightOpFailed(op, err);
-    CheckForFinishedFlush();
-    return;
+    op->state = InFlightOp::kBufferedToTabletServer;
+    per_tablet_ops_[op->tablet.get()].push_back(op);
   }
 
-  // We've figured out which tablet the row falls under.
-  // Next, we need to find the current locations of that tablet.
-  CHECK_EQ(op->state, InFlightOp::kLookingUpTablet);
-  CHECK(op->tablet != NULL);
-
-  bool needs_tsproxy_refresh = false;
-  PerTSBuffer* buf = FindPtrOrNull(per_ts_buffers_, ts);
-  if (buf == NULL) {
-    VLOG(2) << "Creating new PerTSBuffer for " << ts->ToString();
-    buf = new PerTSBuffer();
-    InsertOrDie(&per_ts_buffers_, ts, buf);
-    needs_tsproxy_refresh = true;
-  }
-
-  op->state = InFlightOp::kBufferedToTabletServer;
-  buf->AddOp(op);
-
-  l2.unlock();
   l.unlock();
 
-  if (needs_tsproxy_refresh) {
-    // Even if we're not ready to flush, we should get the proxy ready
-    // to go (eg DNS resolving the tablet server if it's not resolved).
-    ts->RefreshProxy(client_,
-                     Bind(&Batcher::RefreshTSProxyFinished, this, ts, buf),
-                     false);
-  } else {
-    FlushBuffersIfReady();
-  }
-}
-
-void Batcher::RefreshTSProxyFinished(RemoteTabletServer* ts, PerTSBuffer* buf,
-                                     const Status& status) {
-  CHECK(status.ok()) << "Failed to refresh TS proxy. TODO: handle this";
-  buf->SetProxyReady();
   FlushBuffersIfReady();
 }
 
-
 void Batcher::FlushBuffersIfReady() {
-  unordered_map<RemoteTabletServer*, PerTSBuffer*> bufs_copy;
+  unordered_map<RemoteTablet*, vector<InFlightOp*> > ops_copy;
 
   // We're only ready to flush if:
   // 1. The batcher is in the flushing state (i.e. FlushAsync was called).
@@ -597,57 +544,34 @@ void Batcher::FlushBuffersIfReady() {
               << " ops still in lookup";
       return;
     }
-    // Copy the list of buffers while we're under the lock.
-    bufs_copy = per_ts_buffers_;
+    // Take ownership of the ops while we're under the lock.
+    ops_copy.swap(per_tablet_ops_);
   }
 
-  // Now check each PerTSBuffer.
-  typedef std::pair<RemoteTabletServer*, PerTSBuffer*> entry_type;
-  BOOST_FOREACH(const entry_type& e, bufs_copy) {
-    RemoteTabletServer* ts = e.first;
-    PerTSBuffer* buf = e.second;
-
-    if (!buf->ProxyReady()) {
-      VLOG(2) << "FlushBuffersIfReady: proxy for " << ts->ToString()
-              << " not yet ready";
-      return;
-    }
+  // Now flush the ops for each tablet.
+  BOOST_FOREACH(const OpsMap::value_type& e, ops_copy) {
+    RemoteTablet* tablet = e.first;
+    const vector<InFlightOp*>& ops = e.second;
 
     VLOG(2) << "FlushBuffersIfReady: already in flushing state, immediately flushing to "
-            << ts->ToString();
-    FlushBuffer(ts, buf);
+            << tablet->tablet_id();
+    FlushBuffer(tablet, ops);
   }
 }
 
-void Batcher::FlushBuffer(RemoteTabletServer* ts, PerTSBuffer* buf) {
-  // Transfer all the ops out of the buffer. We now own the ops.
-  vector<InFlightOp*> ops; // owns ops
-  buf->TakeOps(&ops);
+void Batcher::FlushBuffer(RemoteTablet* tablet, const vector<InFlightOp*>& ops) {
+  CHECK(!ops.empty());
 
-  // Partition the ops into per-tablet groups.
-  unordered_map<RemoteTablet*, vector<InFlightOp*> > tablet_to_ops;
-  BOOST_FOREACH(InFlightOp* op, ops) {
-    vector<InFlightOp*>& tablet_ops = LookupOrInsert(&tablet_to_ops,
-                                                     op->tablet.get(),
-                                                     vector<InFlightOp*>());
-    tablet_ops.push_back(op);
-  }
-
-  // Create and send an RPC that aggregates each tablet's ops. Each RPC is
-  // freed when its callback completes.
+  // Create and send an RPC that aggregates the ops. The RPC is freed when
+  // its callback completes.
   //
-  // The RPC object takes ownership of its ops.
-  typedef pair<RemoteTablet*, vector<InFlightOp*> > entry_type;
-  BOOST_FOREACH(const entry_type& entry, tablet_to_ops) {
-    const vector<InFlightOp*>& tablet_ops = entry.second;
-
-    WriteRpc* rpc = new WriteRpc(this,
-                                 ts,
-                                 tablet_ops,
-                                 deadline_,
-                                 client_->data_->messenger_);
-    rpc->SendRpc();
-  }
+  // The RPC object takes ownership of the ops.
+  WriteRpc* rpc = new WriteRpc(this,
+                               tablet,
+                               ops,
+                               deadline_,
+                               client_->data_->messenger_);
+  rpc->SendRpc();
 }
 
 void Batcher::ProcessWriteResponse(const WriteRpc& rpc,
@@ -688,7 +612,7 @@ void Batcher::ProcessWriteResponse(const WriteRpc& rpc,
       LOG(ERROR) << "Received a per_row_error for an out-of-bound op index "
                  << err_pb.row_index() << " (sent only "
                  << rpc.ops().size() << " ops)";
-      LOG(ERROR) << "Response from TS " << rpc.ts()->ToString() << ":\n"
+      LOG(ERROR) << "Response from tablet " << rpc.tablet()->tablet_id() << ":\n"
                  << rpc.resp().DebugString();
       continue;
     }
