@@ -20,6 +20,7 @@ add_library(kudu_util
   bloom_filter.cc
   bitmap.cc
   cache.cc
+  cache_metrics.cc
   coding.cc
   condition_variable.cc
   crc.cc

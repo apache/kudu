@@ -13,10 +13,19 @@
 #include "kudu/gutil/hash/city.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/util/cache.h"
+#include "kudu/util/cache_metrics.h"
 #include "kudu/util/mem_tracker.h"
 #include "kudu/util/pthread_spinlock.h"
 
+#define DO_IF_METRICS(to_call) do { \
+    if (PREDICT_TRUE(metrics_)) { \
+      (to_call); \
+    } \
+  } while (0);
+
 namespace kudu {
+
+class MetricContext;
 
 Cache::~Cache() {
 }
@@ -150,6 +159,8 @@ class LRUCache {
   // Separate from constructor so caller can easily make an array of LRUCache
   void SetCapacity(size_t capacity) { capacity_ = capacity; }
 
+  void SetMetrics(CacheMetrics* metrics) { metrics_ = metrics; }
+
   // Like Cache methods, but with an extra "hash" parameter.
   Cache::Handle* Insert(const Slice& key, uint32_t hash,
                         void* value, size_t charge,
@@ -181,11 +192,14 @@ class LRUCache {
   HandleTable table_;
 
   MemTracker* mem_tracker_;
+
+  CacheMetrics* metrics_;
 };
 
 LRUCache::LRUCache(MemTracker* tracker)
  : usage_(0),
-   mem_tracker_(tracker) {
+   mem_tracker_(tracker),
+   metrics_(NULL) {
   // Make empty circular linked list
   lru_.next = &lru_;
   lru_.prev = &lru_;
@@ -212,6 +226,8 @@ void LRUCache::FreeEntry(LRUHandle* e) {
   DCHECK_EQ(e->refs, 0);
   (*e->deleter)(e->key(), e->value);
   mem_tracker_->Release(e->charge);
+  DO_IF_METRICS(metrics_->cache_usage->DecrementBy(e->charge));
+  DO_IF_METRICS(metrics_->evictions->Increment());
   free(e);
 }
 
@@ -231,12 +247,17 @@ void LRUCache::LRU_Append(LRUHandle* e) {
 }
 
 Cache::Handle* LRUCache::Lookup(const Slice& key, uint32_t hash) {
+
+  DO_IF_METRICS(metrics_->lookups->Increment());
   lock_guard<MutexType> l(&mutex_);
   LRUHandle* e = table_.Lookup(key, hash);
   if (e != NULL) {
     e->refs++;
     LRU_Remove(e);
     LRU_Append(e);
+    DO_IF_METRICS(metrics_->cache_hits->Increment());
+  } else {
+    DO_IF_METRICS(metrics_->cache_misses->Increment());
   }
   return reinterpret_cast<Cache::Handle*>(e);
 }
@@ -269,6 +290,8 @@ Cache::Handle* LRUCache::Insert(
   e->refs = 2;  // One from LRUCache, one for the returned handle
   memcpy(e->key_data, key.data(), key.size());
   mem_tracker_->Consume(charge);
+  DO_IF_METRICS(metrics_->cache_usage->IncrementBy(charge));
+  DO_IF_METRICS(metrics_->inserts->Increment());
 
   {
     lock_guard<MutexType> l(&mutex_);
@@ -330,6 +353,7 @@ static const int kNumShards = 1 << kNumShardBits;
 class ShardedLRUCache : public Cache {
  private:
   shared_ptr<MemTracker> mem_tracker_;
+  gscoped_ptr<CacheMetrics> metrics_;
   vector<LRUCache*> shards_;
   MutexType id_mutex_;
   uint64_t last_id_;
@@ -382,6 +406,13 @@ class ShardedLRUCache : public Cache {
   virtual uint64_t NewId() OVERRIDE {
     lock_guard<MutexType> l(&id_mutex_);
     return ++(last_id_);
+  }
+
+  virtual void SetMetrics(const MetricContext& metric_ctx) OVERRIDE {
+    metrics_.reset(new CacheMetrics(metric_ctx));
+    BOOST_FOREACH(LRUCache* cache, shards_) {
+      cache->SetMetrics(metrics_.get());
+    }
   }
 };
 

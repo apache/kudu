@@ -11,6 +11,7 @@
 #include "kudu/util/cache.h"
 #include "kudu/util/coding.h"
 #include "kudu/util/mem_tracker.h"
+#include "kudu/util/metrics.h"
 
 namespace kudu {
 
@@ -41,10 +42,14 @@ class CacheTest : public ::testing::Test {
   std::vector<int> deleted_values_;
   std::tr1::shared_ptr<MemTracker> mem_tracker_;
   Cache* cache_;
+  MetricRegistry metric_registry_;
 
-  CacheTest() : cache_(NewLRUCache(kCacheSize)) {
+  CacheTest()
+    : cache_(NewLRUCache(kCacheSize)) {
     current_ = this;
     CHECK(MemTracker::FindTracker("sharded_lru_cache", &mem_tracker_));
+    MetricContext metric_ctx(&metric_registry_, "test");
+    cache_->SetMetrics(metric_ctx);
   }
 
   ~CacheTest() {

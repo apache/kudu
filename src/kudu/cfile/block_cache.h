@@ -9,6 +9,9 @@
 #include "kudu/util/cache.h"
 
 namespace kudu {
+
+class MetricRegistry;
+
 namespace cfile {
 
 class BlockCacheHandle;
@@ -45,6 +48,12 @@ class BlockCache {
   // The inserted entry is returned in *inserted.
   void Insert(FileId file_id, uint64_t offset, const Slice &block_data,
               BlockCacheHandle *inserted);
+
+  // Pass a MetricContext to the cache to start recording metrics.
+  // This should be called before the block cache starts serving blocks.
+  // Not calling StartInstrumentation will simply result in no block cache-related metrics.
+  // Calling StartInstrumentation multiple times will reset the metrics each time.
+  void StartInstrumentation(MetricRegistry* metrics);
 
  private:
   DISALLOW_COPY_AND_ASSIGN(BlockCache);

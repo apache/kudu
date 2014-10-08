@@ -7,6 +7,7 @@
 #include <list>
 #include <vector>
 
+#include "kudu/cfile/block_cache.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/rpc/messenger.h"
 #include "kudu/rpc/service_if.h"
@@ -59,6 +60,8 @@ string Master::ToString() const {
 
 Status Master::Init() {
   CHECK_EQ(kStopped, state_);
+
+  cfile::BlockCache::GetSingleton()->StartInstrumentation(metric_context().metrics());
 
   RETURN_NOT_OK(TaskExecutorBuilder("init").set_max_threads(1).Build(&init_executor_));
 

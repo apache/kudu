@@ -184,6 +184,7 @@ struct MetricUnit {
     kTransactions,
     kScanners,
     kMaintenanceOperations,
+    kBlocks,
   };
   static const char* Name(Type unit);
 };

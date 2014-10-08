@@ -6,6 +6,7 @@
 #include <list>
 #include <vector>
 
+#include "kudu/cfile/block_cache.h"
 #include "kudu/fs/fs_manager.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/rpc/service_if.h"
@@ -62,6 +63,8 @@ Status TabletServer::ValidateMasterAddressResolution() const {
 
 Status TabletServer::Init() {
   CHECK(!initted_);
+
+  cfile::BlockCache::GetSingleton()->StartInstrumentation(metric_context().metrics());
 
   // Validate that the passed master address actually resolves.
   // We don't validate that we can connect at this point -- it should

@@ -6,12 +6,16 @@
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/singleton.h"
 #include "kudu/util/cache.h"
+#include "kudu/util/metrics.h"
 #include "kudu/util/slice.h"
 
 
 DEFINE_int64(block_cache_capacity_mb, 512, "block cache capacity in MB");
 
 namespace kudu {
+
+class MetricContext;
+
 namespace cfile {
 
 struct CacheKey {
@@ -73,6 +77,10 @@ void BlockCache::ValueDeleter(const Slice &key, void *value) {
   delete value_slice;
 }
 
+void BlockCache::StartInstrumentation(MetricRegistry* metrics) {
+  MetricContext metric_ctx(MetricContext(metrics, "blockcache"));
+  cache_->SetMetrics(metric_ctx);
+}
 
 } // namespace cfile
 } // namespace kudu

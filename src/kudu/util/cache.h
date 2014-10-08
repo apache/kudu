@@ -26,6 +26,8 @@
 namespace kudu {
 
 class Cache;
+struct CacheMetrics;
+class MetricContext;
 
 // Create a new cache with a fixed size capacity.  This implementation
 // of Cache uses a least-recently-used eviction policy.
@@ -88,6 +90,9 @@ class Cache {
   // client will allocate a new id at startup and prepend the id to
   // its cache keys.
   virtual uint64_t NewId() = 0;
+
+  // Pass a metric context in order to start recoding metrics.
+  virtual void SetMetrics(const MetricContext& metric_ctx) = 0;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(Cache);
