@@ -11,6 +11,7 @@
 
 #include "kudu/consensus/consensus_queue.h"
 
+#include "kudu/consensus/raft_consensus.h"
 #include "kudu/consensus/log_util.h"
 #include "kudu/consensus/opid_util.h"
 #include "kudu/common/wire_protocol.h"
@@ -94,9 +95,11 @@ PeerMessageQueue::Metrics::Metrics(const MetricContext& metric_ctx)
 }
 #undef INSTANTIATE_METRIC
 
-PeerMessageQueue::PeerMessageQueue(const MetricContext& metric_ctx,
+PeerMessageQueue::PeerMessageQueue(RaftConsensusQueueIface* consensus,
+                                   const MetricContext& metric_ctx,
                                    const std::string& parent_tracker_id)
-    : max_ops_size_bytes_hard_(FLAGS_consensus_entry_cache_size_hard_limit_mb * 1024 * 1024),
+    : consensus_(DCHECK_NOTNULL(consensus)),
+      max_ops_size_bytes_hard_(FLAGS_consensus_entry_cache_size_hard_limit_mb * 1024 * 1024),
       global_max_ops_size_bytes_hard_(
           FLAGS_global_consensus_entry_cache_size_hard_limit_mb * 1024 * 1024),
       current_term_(MinimumOpId().term()),
@@ -293,90 +296,99 @@ void PeerMessageQueue::ResponseFromPeer(const ConsensusResponsePB& response,
                                         bool* more_pending) {
   CHECK(response.has_responder_uuid() && !response.responder_uuid().empty())
       << "Got response from peer with empty UUID";
-  boost::lock_guard<simple_spinlock> lock(queue_lock_);
 
-  TrackedPeer* peer = FindPtrOrNull(watermarks_, response.responder_uuid());
-  if (PREDICT_FALSE(state_ == kQueueClosed || peer == NULL)) {
-    LOG(WARNING) << "Queue is closed or peer was untracked, disregarding peer response. Response: "
-        << response.ShortDebugString();
-    *more_pending = false;
-    return;
-  }
+  OpId updated_commit_index;
+  {
+    boost::lock_guard<simple_spinlock> lock(queue_lock_);
 
-  // Sanity checks.
-  // Some of these can be eventually removed, but they are handy for now.
-
-  // Application level errors should be handled elsewhere
-  DCHECK(!response.has_error());
-
-  // We're not handling any consensus level errors yet so we check that
-  // consensus level errors are not present.
-  DCHECK(!response.status().has_error());
-
-  // Response must have a status as we're not yet handling consensus level
-  // errors.
-  DCHECK(response.has_status());
-
-  // The peer must have responded with a term that is greater than or equal to
-  // the last known term for that peer.
-  peer->CheckMonotonicTerms(response.responder_term());
-
-  // Right now we don't support leader election so the receiver must have the
-  // same term as our own.
-  CHECK_EQ(response.responder_term(), current_term_);
-
-
-  MessagesBuffer::iterator iter = messages_.upper_bound(peer->peer_status.last_received());
-
-  MessagesBuffer::iterator end_iter = messages_.upper_bound(response.status().last_received());
-
-  if (PREDICT_FALSE(VLOG_IS_ON(2))) {
-    VLOG(2) << "Received Response from Peer: " << response.responder_uuid() << ". Current Status: "
-        << peer->peer_status.ShortDebugString() << ". Response: " << response.ShortDebugString();
-  }
-
-  // The id of the last operation that becomes committed with this response, i.e. the
-  // id of the last message acknowledged by the responding peer that makes a replicate
-  // message committed.
-  const OpId* last_committed = &committed_index_;
-
-  OperationStatusTracker* ost = NULL;
-  for (;iter != end_iter; iter++) {
-    ost = (*iter).second.get();
-    bool was_done = ost->IsDone();
-    bool was_all_done = ost->IsAllDone();
-
-    // Acknowledge that the peer logged the operation
-    ost->AckPeer(response.responder_uuid());
-
-    if (ost->IsAllDone() && !was_all_done) {
-      metrics_.num_all_done_ops->Increment();
-      metrics_.num_majority_done_ops->Decrement();
+    TrackedPeer* peer = FindPtrOrNull(watermarks_, response.responder_uuid());
+    if (PREDICT_FALSE(state_ == kQueueClosed || peer == NULL)) {
+      LOG(WARNING) << "Queue is closed or peer was untracked, disregarding peer response."
+          << " Response: " << response.ShortDebugString();
+      *more_pending = false;
+      return;
     }
-    if (ost->IsDone() && !was_done) {
-      // If this operation became IsDone() with this response
-      // update 'last_committed_' to match.
-      // Because the replication queue is traversed in order
-      // we're sure to update 'last_committed_' to monotonically
-      // increasing values.
-      last_committed = &ost->operation()->id();
-      metrics_.num_majority_done_ops->Increment();
-      metrics_.num_in_progress_ops->Decrement();
+
+    // Sanity checks.
+    // Some of these can be eventually removed, but they are handy for now.
+
+    // Application level errors should be handled elsewhere
+    DCHECK(!response.has_error());
+
+    // We're not handling any consensus level errors yet so we check that
+    // consensus level errors are not present.
+    DCHECK(!response.status().has_error());
+
+    // Response must have a status as we're not yet handling consensus level
+    // errors.
+    DCHECK(response.has_status());
+
+    // The peer must have responded with a term that is greater than or equal to
+    // the last known term for that peer.
+    peer->CheckMonotonicTerms(response.responder_term());
+
+    // Right now we don't support leader election so the receiver must have the
+    // same term as our own.
+    CHECK_EQ(response.responder_term(), current_term_);
+
+
+    MessagesBuffer::iterator iter = messages_.upper_bound(peer->peer_status.last_received());
+
+    MessagesBuffer::iterator end_iter = messages_.upper_bound(response.status().last_received());
+
+    if (PREDICT_FALSE(VLOG_IS_ON(2))) {
+      VLOG(2) << "Received Response from Peer: " << response.responder_uuid()
+          << ". Current Status: " << peer->peer_status.ShortDebugString()
+          << ". Response: " << response.ShortDebugString();
     }
+
+    // The id of the last operation that becomes committed with this response, i.e. the
+    // id of the last message acknowledged by the responding peer that makes a replicate
+    // message committed.
+    const OpId* last_committed = &committed_index_;
+
+    OperationStatusTracker* ost = NULL;
+    for (;iter != end_iter; iter++) {
+      ost = (*iter).second.get();
+      bool was_done = ost->IsDone();
+      bool was_all_done = ost->IsAllDone();
+
+      // Acknowledge that the peer logged the operation
+      ost->AckPeer(response.responder_uuid());
+
+      if (ost->IsAllDone() && !was_all_done) {
+        metrics_.num_all_done_ops->Increment();
+        metrics_.num_majority_done_ops->Decrement();
+      }
+      if (ost->IsDone() && !was_done) {
+        // If this operation became IsDone() with this response
+        // update 'last_committed_' to match.
+        // Because the replication queue is traversed in order
+        // we're sure to update 'last_committed_' to monotonically
+        // increasing values.
+        last_committed = &ost->operation()->id();
+        metrics_.num_majority_done_ops->Increment();
+        metrics_.num_in_progress_ops->Decrement();
+      }
+    }
+
+    peer->peer_status.CopyFrom(response.status());
+
+    // Update the last_committed operation.
+    // This only changes the last_committed_ operation if one of the replicates became
+    // committed when this response was processed.
+
+    // TODO This is assuming no leader election, the rules for advancing the
+    // committed_index will have to change when we have it.
+    committed_index_.CopyFrom(*last_committed);
+    updated_commit_index.CopyFrom(committed_index_);
+
+    // check if there are more messages pending.
+    *more_pending = (iter != messages_.end());
   }
 
-  peer->peer_status.CopyFrom(response.status());
-
-  // Update the last_committed operation.
-  // This only changes the last_committed_ operation if one of the replicates became
-  // committed when this response was processed.
-
-  // TODO This is assuming no leader election, the rules for advancing the
-  // committed_index will have to change when we have it.
-  committed_index_.CopyFrom(*last_committed);
-
-  // check if there are more messages pending.
-  *more_pending = (iter != messages_.end());
+  // It's OK that we do this without the lock as this is idempotent.
+  consensus_->UpdateCommittedIndex(updated_commit_index);
 }
 
 OpId PeerMessageQueue::GetCommittedIndexForTests() const {

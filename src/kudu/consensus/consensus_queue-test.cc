@@ -29,8 +29,9 @@ static const char* kPeerUuid = "a";
 class ConsensusQueueTest : public KuduTest {
  public:
   ConsensusQueueTest()
-      : metric_context_(&metric_registry_, "queue-test"),
-        queue_(new PeerMessageQueue(metric_context_)) {
+      : consensus_(new MockRaftConsensusQueueIface),
+        metric_context_(&metric_registry_, "queue-test"),
+        queue_(new PeerMessageQueue(consensus_.get(), metric_context_)) {
     FLAGS_enable_data_block_fsync = false; // Keep unit tests fast.
     queue_->Init(MinimumOpId());
   }
@@ -52,6 +53,7 @@ class ConsensusQueueTest : public KuduTest {
   }
 
  protected:
+  gscoped_ptr<MockRaftConsensusQueueIface> consensus_;
   MetricRegistry metric_registry_;
   MetricContext metric_context_;
   gscoped_ptr<PeerMessageQueue> queue_;
@@ -265,7 +267,7 @@ TEST_F(ConsensusQueueTest, TestPeersDontAckBeyondWatermarks) {
 // Tests that the buffer gets trimmed when messages are not being sent by any peer.
 TEST_F(ConsensusQueueTest, TestBufferTrimsWhenMessagesAreNotNeeded) {
   FLAGS_consensus_entry_cache_size_soft_limit_mb = 1;
-  queue_.reset(new PeerMessageQueue(metric_context_));
+  queue_.reset(new PeerMessageQueue(consensus_.get(), metric_context_));
   queue_->Init(MinimumOpId());
 
   // generate a 128Kb dummy payload
@@ -297,7 +299,7 @@ TEST_F(ConsensusQueueTest, TestQueueRefusesRequestWhenFilled) {
   FLAGS_consensus_entry_cache_size_soft_limit_mb = 0;
   FLAGS_consensus_entry_cache_size_hard_limit_mb = 1;
 
-  queue_.reset(new PeerMessageQueue(metric_context_));
+  queue_.reset(new PeerMessageQueue(consensus_.get(), metric_context_));
   queue_->Init(MinimumOpId());
 
   // generate a 128Kb dummy payload
@@ -398,7 +400,7 @@ TEST_F(ConsensusQueueTest, TestQueueHardAndSoftLimit) {
   FLAGS_consensus_entry_cache_size_soft_limit_mb = 1;
   FLAGS_consensus_entry_cache_size_hard_limit_mb = 2;
 
-  queue_.reset(new PeerMessageQueue(metric_context_));
+  queue_.reset(new PeerMessageQueue(consensus_.get(), metric_context_));
   queue_->Init(MinimumOpId());
 
   const int kPayloadSize = 768 * 1024;
@@ -474,7 +476,9 @@ TEST_F(ConsensusQueueTest, TestGlobalHardLimit) {
  // Exceed the global hard limit.
  parent_tracker->Consume(6 * 1024 * 1024);
 
- queue_.reset(new PeerMessageQueue(metric_context_, kParentTrackerId));
+ queue_.reset(new PeerMessageQueue(consensus_.get(),
+                                   metric_context_,
+                                   kParentTrackerId));
  queue_->Init(MinimumOpId());
 
  const int kPayloadSize = 768 * 1024;
@@ -519,7 +523,9 @@ TEST_F(ConsensusQueueTest, TestTrimWhenGlobalSoftLimitExceeded) {
  parent_tracker->Consume(4 * 1024 * 1024);
  parent_tracker->Consume(1024);
 
- queue_.reset(new PeerMessageQueue(metric_context_, kParentTrackerId));
+ queue_.reset(new PeerMessageQueue(consensus_.get(),
+                                   metric_context_,
+                                   kParentTrackerId));
  queue_->Init(MinimumOpId());
 
  const int kPayloadSize = 768 * 1024;

@@ -29,8 +29,9 @@ const char* kLeaderUuid = "test-peers-leader";
 class ConsensusPeersTest : public KuduTest {
  public:
   ConsensusPeersTest()
-    :  metric_context_(&metric_registry_, "peer-test"),
-       message_queue_(metric_context_),
+    :  consensus_(new MockRaftConsensusQueueIface),
+       metric_context_(&metric_registry_, "peer-test"),
+       message_queue_(consensus_.get(), metric_context_),
        schema_(GetSimpleTestSchema()) {
     message_queue_.Init(MinimumOpId());
   }
@@ -87,6 +88,7 @@ class ConsensusPeersTest : public KuduTest {
   }
 
  protected:
+  gscoped_ptr<MockRaftConsensusQueueIface> consensus_;
   MetricRegistry metric_registry_;
   MetricContext metric_context_;
   PeerMessageQueue message_queue_;

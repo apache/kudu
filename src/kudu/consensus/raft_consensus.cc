@@ -53,7 +53,7 @@ RaftConsensus::RaftConsensus(const ConsensusOptions& options,
     : log_(DCHECK_NOTNULL(log)),
       clock_(clock),
       peer_proxy_factory_(proxy_factory.Pass()),
-      queue_(metric_ctx) {
+      queue_(this, metric_ctx) {
   CHECK_OK(ThreadPoolBuilder("raft-op-cb").set_max_threads(1).Build(&callback_pool_));
   state_.reset(new ReplicaState(options,
                                 callback_pool_.get(),
@@ -287,19 +287,23 @@ Status RaftConsensus::Replicate(ConsensusRound* round) {
     RETURN_NOT_OK(state_->LockForReplicate(&lock, *round->replicate_op()));
 
     state_->NewIdUnlocked(round->replicate_op()->mutable_id());
+    RETURN_NOT_OK(state_->AddPendingOperation(round));
 
     // the original instance of the replicate msg is owned by the consensus context
     // so we create a copy for the queue.
     gscoped_ptr<OperationPB> queue_op(new OperationPB(*round->replicate_op()));
 
     const QuorumState& quorum_state = state_->GetActiveQuorumStateUnlocked();
+
+    // TODO Make QuorumState a scoped_refptr and pass it below.
+    // That way we can have operations in the queue that reference two
+    // different configs but still count things properly, without
+    // copying the args.
     scoped_refptr<OperationStatusTracker> status(
         new MajorityOpStatusTracker(queue_op.Pass(),
                                     quorum_state.voting_peers,
                                     quorum_state.majority_size,
-                                    quorum_state.quorum_size,
-                                    callback_pool_.get(),
-                                    round->replicate_callback()));
+                                    quorum_state.quorum_size));
 
     Status s = queue_.AppendOperation(status);
     // Handle Status::ServiceUnavailable(), which means the queue is full.
@@ -309,7 +313,7 @@ Status RaftConsensus::Replicate(ConsensusRound* round) {
       // actually append to the state machine, i.e. this makes the state
       // machine have continuous ids, for the same term, even if the queue
       // refused to add any more operations.
-      state_->RollbackIdGenUnlocked(*id);
+      state_->CancelPendingOperation(*id);
       LOG_WITH_PREFIX(WARNING) << ": Could not append replicate request "
                    << "to the queue. Queue is Full. "
                    << "Queue metrics: " << queue_.ToString();
@@ -326,6 +330,26 @@ Status RaftConsensus::Replicate(ConsensusRound* round) {
   return Status::OK();
 }
 
+void RaftConsensus::UpdateCommittedIndex(const OpId& committed_index) {
+  ReplicaState::UniqueLock lock;
+  CHECK_OK(state_->LockForCommit(&lock));
+  UpdateCommittedIndexUnlocked(committed_index);
+}
+
+void RaftConsensus::UpdateCommittedIndexUnlocked(const OpId& committed_index) {
+  VLOG_WITH_PREFIX(2) << "Marking committed up to " << committed_index.ShortDebugString();
+  TRACE("Marking committed up to $0", committed_index.ShortDebugString());
+  CHECK_OK(state_->MarkConsensusCommittedUpToUnlocked(committed_index));
+
+  QuorumPeerPB::Role role = state_->GetActiveQuorumStateUnlocked().role;
+  if (role == QuorumPeerPB::LEADER || role == QuorumPeerPB::CANDIDATE) {
+    // TODO Enable the below to make the leader pro-actively send the commit
+    // index to followers. Right now we're keeping this disabled as it causes
+    // certain errors to be more probable.
+    // SignalRequestToPeers(false);
+  }
+}
+
 Status RaftConsensus::Commit(gscoped_ptr<CommitMsg> commit,
                              const StatusCallback& cb) {
   DCHECK(commit->has_commited_op_id());
@@ -338,14 +362,7 @@ Status RaftConsensus::Commit(gscoped_ptr<CommitMsg> commit,
 
   ReplicaState::UniqueLock lock;
   RETURN_NOT_OK(state_->LockForCommit(&lock));
-  QuorumPeerPB::Role role = state_->GetActiveQuorumStateUnlocked().role;
-  if (role == QuorumPeerPB::LEADER || role == QuorumPeerPB::CANDIDATE) {
-    state_->UpdateLeaderCommittedOpIdUnlocked(committed_op_id);
-  } else {
-    DCHECK(role == QuorumPeerPB::FOLLOWER || role == QuorumPeerPB::LEARNER)
-      << "Unexpected role: " << QuorumPeerPB::Role_Name(role);
-    state_->UpdateReplicaCommittedOpIdUnlocked(committed_op_id);
-  }
+  state_->UpdateCommittedOpIdUnlocked(committed_op_id);
   RETURN_NOT_OK(ExecuteHook(POST_COMMIT));
 
   // NOTE: RaftConsensus instance might be destroyed after this call.
@@ -370,9 +387,7 @@ Status RaftConsensus::Update(const ConsensusRequestPB* request,
   ConsensusStatusPB* status = response->mutable_status();
   response->set_responder_uuid(state_->GetPeerUuid());
 
-  if (PREDICT_FALSE(VLOG_IS_ON(1))) {
-    VLOG_WITH_PREFIX_LK(1) << "Replica received request: " << request->ShortDebugString();
-  }
+  VLOG_WITH_PREFIX_LK(2) << "Replica received request: " << request->ShortDebugString();
 
   // see var declaration
   boost::lock_guard<simple_spinlock> lock(update_lock_);
@@ -542,14 +557,17 @@ Status RaftConsensus::UpdateReplica(const ConsensusRequestPB* request) {
     Status prepare_status;
     for (int i = 0; i < replicate_ops.size(); i++) {
       gscoped_ptr<OperationPB> op_copy(new OperationPB(*replicate_ops[i]));
-      gscoped_ptr<ConsensusRound> context(new ConsensusRound(this, op_copy.Pass()));
-      prepare_status = state_->EnqueuePrepareUnlocked(context.Pass());
+      gscoped_ptr<ConsensusRound> round(new ConsensusRound(this, op_copy.Pass()));
+      ConsensusRound* round_ptr = round.get();
+      prepare_status = state_->GetReplicaTransactionFactoryUnlocked()->
+          StartReplicaTransaction(round.Pass());
       if (PREDICT_FALSE(!prepare_status.ok())) {
         LOG_WITH_PREFIX(WARNING) << "Failed to prepare operation: "
             << replicate_ops[i]->id().ShortDebugString() << " Status: "
             << prepare_status.ToString();
         break;
       }
+      state_->AddPendingOperation(round_ptr);
       successfully_triggered_prepares++;
     }
 
@@ -723,6 +741,7 @@ void RaftConsensus::ClosePeers() {
 
 void RaftConsensus::Shutdown() {
   CHECK_OK(ExecuteHook(PRE_SHUTDOWN));
+
   LOG_WITH_PREFIX_LK(INFO) << "Raft consensus shutting down.";
   {
     ReplicaState::UniqueLock lock;

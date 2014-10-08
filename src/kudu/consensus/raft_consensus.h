@@ -35,7 +35,19 @@ class Peer;
 class PeerProxyFactory;
 class ReplicaState;
 
-class RaftConsensus : public Consensus {
+// The interface between RaftConsensus and the PeerMessageQueue.
+class RaftConsensusQueueIface {
+ public:
+  // Called by the queue each time the response for a peer is handled with
+  // the resulting commit index, triggering the apply for pending transactions.
+  // The implementation is idempotent, i.e. independently of the ordering of
+  // calls to this method only non-triggered applys will be started.
+  virtual void UpdateCommittedIndex(const OpId& committed_index) = 0;
+  virtual ~RaftConsensusQueueIface() {}
+};
+
+class RaftConsensus : public Consensus,
+                      public RaftConsensusQueueIface {
  public:
   class ConsensusFaultHooks;
 
@@ -101,6 +113,10 @@ class RaftConsensus : public Consensus {
       const OpId& op_id,
       const std::tr1::shared_ptr<FutureCallback>& commit_callback);
 
+  // Updates the committed_index and triggers the Apply()s for whatever
+  // transactions were pending.
+  // This is idempotent.
+  virtual void UpdateCommittedIndex(const OpId& commit_index) OVERRIDE;
  protected:
   virtual Status Commit(gscoped_ptr<CommitMsg> commit,
                         const StatusCallback& cb) OVERRIDE;
@@ -198,6 +214,8 @@ class RaftConsensus : public Consensus {
   // Respond to VoteRequest that the vote is granted for candidate.
   Status RequestVoteRespondVoteGranted(const VoteRequestPB* request,
                                        VoteResponsePB* response);
+
+  void UpdateCommittedIndexUnlocked(const OpId& committed_index);
 
   log::Log* log_;
   scoped_refptr<server::Clock> clock_;

@@ -11,6 +11,7 @@
 #include "kudu/consensus/consensus.h"
 #include "kudu/consensus/consensus_peers.h"
 #include "kudu/consensus/consensus_queue.h"
+#include "kudu/consensus/raft_consensus.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/countdown_latch.h"
@@ -690,6 +691,11 @@ class CounterHooks : public Consensus::ConsensusFaultHooks {
 
   // Lock that protects updates to the counters.
   mutable simple_spinlock lock_;
+};
+
+class MockRaftConsensusQueueIface : public RaftConsensusQueueIface {
+ protected:
+  virtual void UpdateCommittedIndex(const OpId&) OVERRIDE {}
 };
 
 }  // namespace consensus

@@ -29,6 +29,7 @@ class Log;
 }
 
 namespace consensus {
+class RaftConsensusQueueIface;
 
 // The id for the server-wide consensus queue MemTracker.
 extern const char kConsensusQueueParentTrackerId[];
@@ -92,7 +93,8 @@ class OperationStatusTracker : public RefCountedThreadSafe<OperationStatusTracke
 // modify it.
 class PeerMessageQueue {
  public:
-  explicit PeerMessageQueue(const MetricContext& metric_ctx,
+  explicit PeerMessageQueue(RaftConsensusQueueIface* consensus,
+                            const MetricContext& metric_ctx,
                             const std::string& parent_tracker_id = kConsensusQueueParentTrackerId);
 
   // Initialize the queue.
@@ -241,6 +243,8 @@ class PeerMessageQueue {
   bool CheckHardLimitsNotViolated(size_t bytes) const;
 
   void ClearUnlocked();
+
+  RaftConsensusQueueIface* consensus_;
 
   // The total size of consensus entries to keep in memory.
   // This is a hard limit, i.e. messages in the queue are always discarded

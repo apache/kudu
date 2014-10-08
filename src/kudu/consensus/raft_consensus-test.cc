@@ -207,7 +207,7 @@ class RaftConsensusTest : public KuduTest {
   }
   Status TimedWaitForReplicate(ConsensusRound* round, const MonoDelta& delta) {
     return down_cast<LatchCallback*, FutureCallback>(
-        round->replicate_callback().get())->WaitFor(delta);
+        DCHECK_NOTNULL(round)->replicate_callback().get())->WaitFor(delta);
   }
 
   void WaitForReplicateIfNotAlreadyPresent(const OpId& to_wait_for, int peer_idx) {
@@ -631,9 +631,12 @@ TEST_F(RaftConsensusTest, TestConsensusStopsIfAMajorityFallsBehind) {
     Status status = TimedWaitForReplicate(round.get(), MonoDelta::FromMilliseconds(500));
     ASSERT_TRUE(status.IsTimedOut());
   }
+
   // After we release the locks the operation should replicate to all replicas
   // and we commit.
+  ASSERT_OK(down_cast<LatchCallback*>(round->replicate_callback().get())->Wait());
   CommitDummyMessage(round.get());
+
   // Assert that everything was ok
   WaitForReplicateIfNotAlreadyPresent(last_op_id, kFollower0Idx);
   WaitForReplicateIfNotAlreadyPresent(last_op_id, kFollower1Idx);
@@ -660,12 +663,14 @@ TEST_F(RaftConsensusTest, TestReplicasHandleCommunicationErrors) {
   // have gotten it)
   gscoped_ptr<ConsensusRound> round;
   ASSERT_STATUS_OK(AppendDummyMessage(kLeaderidx, &round));
+  ConsensusRound* round_ptr = round.get();
   GetLeaderProxyToPeer(kFollower0Idx, kLeaderidx)->InjectCommFaultLeaderSide();
   GetLeaderProxyToPeer(kFollower1Idx, kLeaderidx)->InjectCommFaultLeaderSide();
 
   last_op_id = round->id();
 
-  ASSERT_STATUS_OK(CommitDummyMessage(round.get()));
+  ASSERT_OK(down_cast<LatchCallback*>(round_ptr->replicate_callback().get())->Wait());
+  ASSERT_STATUS_OK(CommitDummyMessage(round_ptr));
   GetLeaderProxyToPeer(kFollower0Idx, kLeaderidx)->InjectCommFaultLeaderSide();
   GetLeaderProxyToPeer(kFollower1Idx, kLeaderidx)->InjectCommFaultLeaderSide();
   WaitForCommitIfNotAlreadyPresent(last_op_id, kFollower0Idx, kLeaderidx);
@@ -679,7 +684,7 @@ TEST_F(RaftConsensusTest, TestReplicasHandleCommunicationErrors) {
   for (int i = 0; i < 100; i++) {
     gscoped_ptr<ConsensusRound> round;
     ASSERT_STATUS_OK(AppendDummyMessage(kLeaderidx, &round, &commit_clbk));
-    ASSERT_STATUS_OK(CommitDummyMessage(round.get()));
+    ConsensusRound* round_ptr = round.get();
     last_op_id.CopyFrom(round->id());
     contexts.push_back(round.release());
 
@@ -689,6 +694,9 @@ TEST_F(RaftConsensusTest, TestReplicasHandleCommunicationErrors) {
     } else {
       GetLeaderProxyToPeer(kFollower1Idx, kLeaderidx)->InjectCommFaultLeaderSide();
     }
+
+    ASSERT_OK(down_cast<LatchCallback*>(round_ptr->replicate_callback().get())->Wait());
+    ASSERT_STATUS_OK(CommitDummyMessage(round_ptr));
   }
 
   // Assert last operation was correctly replicated and committed.

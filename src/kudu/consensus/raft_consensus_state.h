@@ -232,6 +232,9 @@ class ReplicaState {
   // Enqueues a Prepare() in the ReplicaTransactionFactory.
   Status EnqueuePrepareUnlocked(gscoped_ptr<ConsensusRound> context);
 
+  // Add 'round' to the set of rounds waiting to be committed.
+  Status AddPendingOperation(ConsensusRound* round);
+
   // Marks ReplicaTransactions up to 'id' as committed by the leader, meaning the
   // transaction may Apply() (immediately if Prepare() has completed or when Prepare()
   // completes, if not).
@@ -258,7 +261,7 @@ class ReplicaState {
   // Returns the last received op id. This must be called under the lock.
   const OpId& GetLastReceivedOpIdUnlocked() const;
 
-  void UpdateLeaderCommittedOpIdUnlocked(const OpId& committed_op_id);
+  void UpdateCommittedOpIdUnlocked(const OpId& committed_op_id);
 
   // Updates the last committed operation including removing it from the pending commits
   // map and triggering any related callback registered for 'committed_op_id'.
@@ -328,7 +331,7 @@ class ReplicaState {
   // Used when, for some reason, an operation that failed before it could be considered
   // a part of the state machine. Basically restores the id gen to the state it was before
   // generating 'id'.
-  void RollbackIdGenUnlocked(const OpId& id);
+  void CancelPendingOperation(const OpId& id);
 
   // Returns the number of transactions that are currently in the pending state
   // i.e. transactions for which Prepare() is done or under way.
@@ -350,6 +353,8 @@ class ReplicaState {
 
   // The UUID of the local peer.
   const std::string peer_uuid_;
+
+  ThreadPool* callback_pool_;
 
   // Cache of the current active quorum state. May refer to either the pending
   // or committed quorum. This can be tested by checking whether pending_quorum_

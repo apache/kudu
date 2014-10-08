@@ -89,18 +89,19 @@ QuorumState::QuorumState(metadata::QuorumPeerPB::Role role,
 //////////////////////////////////////////////////
 
 ReplicaState::ReplicaState(const ConsensusOptions& options,
-                           ThreadPool* callback_exec_pool,
+                           ThreadPool* callback_pool,
                            const string& peer_uuid,
                            gscoped_ptr<ConsensusMetadata> cmeta,
                            ReplicaTransactionFactory* txn_factory)
   : options_(options),
     peer_uuid_(peer_uuid),
+    callback_pool_(callback_pool),
     cmeta_(cmeta.Pass()),
     next_index_(0),
     txn_factory_(txn_factory),
     in_flight_applies_latch_(0),
-    replicate_watchers_(callback_exec_pool),
-    commit_watchers_(callback_exec_pool),
+    replicate_watchers_(callback_pool),
+    commit_watchers_(callback_pool),
     state_(kInitialized) {
   CHECK(cmeta_) << "ConsensusMeta passed as NULL";
   UniqueLock l(&update_lock_);
@@ -412,7 +413,7 @@ Status ReplicaState::WaitForOustandingApplies() {
   return Status::OK();
 }
 
-Status ReplicaState::EnqueuePrepareUnlocked(gscoped_ptr<ConsensusRound> round) {
+Status ReplicaState::AddPendingOperation(ConsensusRound* round) {
   DCHECK(update_lock_.is_locked());
   if (PREDICT_FALSE(state_ != kRunning)) {
     // Special case when we're configuring and this is a config change, refuse
@@ -421,9 +422,7 @@ Status ReplicaState::EnqueuePrepareUnlocked(gscoped_ptr<ConsensusRound> round) {
       return Status::IllegalState("Cannot trigger prepare. Replica is not in kRunning state.");
     }
   }
-  ConsensusRound* round_ptr = DCHECK_NOTNULL(round.get());
-  RETURN_NOT_OK(txn_factory_->StartReplicaTransaction(round.Pass()));
-  InsertOrDie(&pending_txns_, round_ptr->replicate_op()->id(), round_ptr);
+  InsertOrDie(&pending_txns_, round->replicate_op()->id(), round);
   return Status::OK();
 }
 
@@ -453,7 +452,15 @@ Status ReplicaState::MarkConsensusCommittedUpToUnlocked(const OpId& id) {
   for (; iter != end_iter; iter++) {
     ConsensusRound* round = DCHECK_NOTNULL((*iter).second);
     InsertOrDie(&in_flight_commits_, round->id());
-    RETURN_NOT_OK(round->GetReplicaCommitContinuation()->ConsensusCommitted());
+
+    // TODO this is hacky right now, but we should fix this when
+    // todd's merged transaction drivers get in.
+    if (round->GetReplicaCommitContinuation() != NULL) {
+      RETURN_NOT_OK(round->GetReplicaCommitContinuation()->ConsensusCommitted());
+    } else {
+      RETURN_NOT_OK(callback_pool_->Submit(shared_ptr<Runnable>(
+          new OperationCallbackRunnable(round->replicate_callback()))));
+    }
   }
 
   last_triggered_apply_.CopyFrom(id);
@@ -492,13 +499,7 @@ const OpId& ReplicaState::GetLastReceivedOpIdUnlocked() const {
   return received_op_id_;
 }
 
-void ReplicaState::UpdateLeaderCommittedOpIdUnlocked(const OpId& committed_op_id) {
-  DCHECK(update_lock_.is_locked());
-  commit_watchers_.MarkFinished(committed_op_id, OpIdWaiterSet::MARK_ONLY_THIS_OP);
-}
-
-
-void ReplicaState::UpdateReplicaCommittedOpIdUnlocked(const OpId& committed_op_id) {
+void ReplicaState::UpdateCommittedOpIdUnlocked(const OpId& committed_op_id) {
   DCHECK(update_lock_.is_locked());
   CHECK_EQ(in_flight_commits_.erase(committed_op_id), 1)
     << "Trying to mark " << committed_op_id.ShortDebugString() << " as committed, but not "
@@ -545,11 +546,12 @@ void ReplicaState::NewIdUnlocked(OpId* id) {
   id->set_index(next_index_++);
 }
 
-void ReplicaState::RollbackIdGenUnlocked(const OpId& id) {
+void ReplicaState::CancelPendingOperation(const OpId& id) {
   DCHECK(update_lock_.is_locked());
   CHECK_EQ(GetCurrentTermUnlocked(), id.term());
   CHECK_EQ(next_index_, id.index() + 1);
   next_index_ = id.index();
+  ignore_result(DCHECK_NOTNULL(EraseKeyReturnValuePtr(&pending_txns_, id)));
 }
 
 string ReplicaState::LogPrefix() {
@@ -633,36 +635,11 @@ MajorityOpStatusTracker::MajorityOpStatusTracker(gscoped_ptr<OperationPB> operat
       runnable_(NULL) {
 }
 
-MajorityOpStatusTracker::MajorityOpStatusTracker(gscoped_ptr<OperationPB> operation,
-                                                 const unordered_set<string>& voting_peers,
-                                                 int majority,
-                                                 int total_peers_count,
-                                                 ThreadPool* callback_pool,
-                                                 const shared_ptr<FutureCallback>& callback)
-    : OperationStatusTracker(operation.Pass()),
-      majority_(majority),
-      voting_peers_(voting_peers),
-      total_peers_count_(total_peers_count),
-      replicated_count_(0),
-      completion_latch_(majority),
-      callback_pool_(callback_pool),
-      runnable_(new OperationCallbackRunnable(callback)) {
-  DCHECK_GT(majority, 0);
-  DCHECK_LE(majority, voting_peers.size());
-  DCHECK_LE(voting_peers.size(), total_peers_count_);
-  DCHECK_NOTNULL(runnable_->callback_.get());
-}
-
 void MajorityOpStatusTracker::AckPeer(const string& uuid) {
   CHECK(!uuid.empty()) << "Peer acked with empty uuid";
   lock_guard<simple_spinlock> lock(&lock_);
   if (voting_peers_.count(uuid) != 0) {
     completion_latch_.CountDown();
-    if (IsDone() && runnable_.get() != NULL) {
-      // TODO handle failed operations by setting an error on the OperationCallbackRunnable.
-      // The pool should always be alive when we do this, so we CHECK_OK()
-      CHECK_OK(callback_pool_->Submit(shared_ptr<Runnable>(runnable_.release())));
-    }
   }
   replicated_count_++;
   if (PREDICT_FALSE(VLOG_IS_ON(2))) {
