@@ -40,197 +40,158 @@ using strings::Substitute;
 
 class PeerImpl {
  public:
-  PeerImpl(Peer* peer,
-           const string& tablet_id,
-           const string& leader_uuid)
-      : peer_(peer),
-        tablet_id_(tablet_id),
-        leader_uuid_(leader_uuid) {
-  }
-
   // Initializes the Peer implementation and sets 'initial_id' to the last
   // id received by the replica.
   virtual Status Init(OpId* initial_id) = 0;
 
-  // Sends the next request, asynchronously. The peer lock must be acquired
-  // prior to calling this method.
-  // Returns false if there were no pending messages, and thus no request was
-  // sent.
-  virtual bool ProcessNextRequest() = 0;
 
-  virtual void RequestFinishedCallback() = 0;
+  // Return a string identifying what type of peer this is (eg "remote" or "local").
+  virtual string PeerTypeString() const = 0;
 
-  virtual ConsensusRequestPB* request() {
-    return &request_;
-  }
+  // Sends the next request, asynchronously. When the request is complete (eg the
+  // remote peer responds, or the local logging finishes), 'callback' is called.
+  // If 'callback' gets an OK status, then 'response' will contain the peer's
+  // response.
+  //
+  // The request pointer must remain valid and unmodified until the callback is called.
+  virtual void SendRequest(const ConsensusRequestPB* request,
+                           ConsensusResponsePB* response,
+                           const StatusCallback& callback) = 0;
 
-  const string& tablet_id() const { return tablet_id_; }
-
-  // On destruction release the operations as the peers don't
-  // own them.
-  virtual ~PeerImpl() {
-    request_.mutable_ops()->ExtractSubrange(0, request_.ops_size(), NULL);
-  }
-
- protected:
-  friend class Peer;
-
-  Peer* peer_;
-  const string tablet_id_;
-  const string leader_uuid_;
-  ConsensusRequestPB request_;
-  ConsensusResponsePB response_;
+  virtual ~PeerImpl() {}
 };
 
 // The local peer
 class LocalPeer : public PeerImpl {
  public:
-  LocalPeer(Peer* peer,
-            const string& tablet_id,
-            const string& leader_uuid,
-            log::Log* log,
-            const OpId& initial_op)
-      : PeerImpl(peer, tablet_id, leader_uuid),
-        log_(log) {
-    last_received_.CopyFrom(initial_op);
+  LocalPeer(log::Log* log,
+            const string& local_uuid)
+    : log_(log),
+      local_uuid_(local_uuid) {
   }
 
   Status Init(OpId* initial_id) OVERRIDE {
-    initial_id->CopyFrom(last_received_);
-    request_.set_tablet_id(tablet_id_);
-    request_.set_caller_uuid(leader_uuid_);
-    response_.set_responder_uuid(leader_uuid_);
-    return Status::OK();
+    Status s = log_->GetLastEntryOpId(initial_id);
+    if (s.IsNotFound()) {
+      *initial_id = MinimumOpId();
+      s = Status::OK();
+    }
+    last_replicated_ = *initial_id;
+    return s;
   }
 
-  bool ProcessNextRequest() OVERRIDE {
-    if (PREDICT_FALSE(request_.ops_size() == 0)) {
-      return false;
+  virtual void SendRequest(const ConsensusRequestPB* request,
+                           ConsensusResponsePB* response,
+                           const StatusCallback& callback) OVERRIDE {
+    if (PREDICT_FALSE(request->ops_size() == 0)) {
+      SetupResponse(response);
+      callback.Run(Status::OK());
+      return;
     }
-    response_.mutable_status()->Clear();
 
     vector<const ReplicateMsg*> ops;
-    for (int i = 0; i < request_.ops_size(); i++) {
-      ReplicateMsg* op = request_.mutable_ops(i);
-      ops.push_back(op);
+    ops.reserve(request->ops_size());
+
+    BOOST_FOREACH(const ReplicateMsg& op, request->ops()) {
+      ops.push_back(&op);
     }
 
-    last_received_.CopyFrom(ops.back()->id());
-    response_.set_responder_term(last_received_.term());
-
     if (PREDICT_FALSE(VLOG_IS_ON(2))) {
-      VLOG(2) << "Local peer appending to log: " << request_.ShortDebugString();
+      VLOG(2) << "Local peer appending to log: " << request->ShortDebugString();
     }
 
     CHECK_OK(log_->AsyncAppendReplicates(
                &ops[0], ops.size(),
-               Bind(&LocalPeer::LogAppendCallback, Unretained(this))));
-
-    return true;
+               Bind(&LocalPeer::LogAppendCallback,
+                    Unretained(this),
+                    Unretained(request),
+                    Unretained(response),
+                    callback)));
   }
 
-  void RequestFinishedCallback() OVERRIDE {
-    if (PREDICT_TRUE(status_.ok())) {
-      if (PREDICT_FALSE(VLOG_IS_ON(2))) {
-        VLOG(2) << "Local peer logged: " << request_.ShortDebugString();
-      }
-      ConsensusStatusPB* status = response_.mutable_status();
-      status->mutable_last_received()->CopyFrom(last_received_);
-
-      request_.mutable_ops()->ExtractSubrange(0, request_.ops_size(), NULL);
-      peer_->ProcessResponse(response_.status());
-    } else {
-      LOG(FATAL) << "Error while storing in the local log. Status: "
-          << status_.ToString();
-    }
+  virtual std::string PeerTypeString() const OVERRIDE {
+    return "local";
   }
 
  private:
-  void LogAppendCallback(const Status& status) {
-    status_ = status;
-    RequestFinishedCallback();
+  void SetupResponse(ConsensusResponsePB* response) {
+    response->Clear();
+    response->set_responder_term(last_replicated_.term());
+    response->set_responder_uuid(local_uuid_);
+    ConsensusStatusPB* status = response->mutable_status();
+    status->mutable_last_received()->CopyFrom(last_replicated_);
+  }
+
+  // Callback from Log::Append().
+  // This sets up a fake ConsensusResponsePB to look the same as
+  // a remote peer.
+  void LogAppendCallback(const ConsensusRequestPB* request,
+                         ConsensusResponsePB* response,
+                         const StatusCallback& peer_callback,
+                         const Status& log_status) {
+    if (!log_status.ok()) {
+      LOG(FATAL) << "Error while storing in the local log. Status: "
+          << log_status.ToString();
+    }
+    VLOG(2) << "Local peer logged: " << request->ShortDebugString();
+
+    // Update the replicated op ID
+    const ReplicateMsg& last_msg = request->ops(request->ops_size() - 1);
+    CHECK(last_msg.has_id());
+    last_replicated_ = last_msg.id();
+
+    SetupResponse(response);
+
+    peer_callback.Run(log_status);
   }
 
   log::Log* log_;
-  shared_ptr<FutureCallback> log_append_callback_;
-  Status status_;
+
+  // The UUID of the local server.
+  const std::string local_uuid_;
+
+  // The last opid which has been durably written to the local
+  // peer.
   OpId last_replicated_;
-  OpId safe_commit_;
-  OpId last_received_;
 };
 
 // A remote peer.
 class RemotePeer : public PeerImpl {
  public:
-  RemotePeer(Peer* peer,
-             const string& tablet_id,
-             const string& leader_uuid,
-             gscoped_ptr<PeerProxy> proxy)
-      : PeerImpl(peer, tablet_id, leader_uuid),
-        proxy_(proxy.Pass()),
-        callback_(boost::bind(&RemotePeer::RequestFinishedCallback, this)),
-        state_(kStateWaiting) {
+  explicit RemotePeer(gscoped_ptr<PeerProxy> proxy)
+    : proxy_(proxy.Pass()) {
   }
 
   Status Init(OpId* initial_id) OVERRIDE {
     // TODO ask the remote peer for the initial id when we have catch up.
     initial_id->CopyFrom(MinimumOpId());
-    request_.set_tablet_id(tablet_id_);
-    request_.set_caller_uuid(leader_uuid_);
+
     return Status::OK();
   }
 
-  bool ProcessNextRequest() OVERRIDE {
-    DCHECK_EQ(state_, kStateWaiting);
-    response_.Clear();
+  virtual void SendRequest(const ConsensusRequestPB* request,
+                           ConsensusResponsePB* response,
+                           const StatusCallback& callback) OVERRIDE {
     controller_.Reset();
-    if (PREDICT_FALSE(VLOG_IS_ON(2))) {
-      VLOG(2) << "Remote peer: " << peer_->peer_pb().permanent_uuid() <<" sending: "
-          << request_.ShortDebugString();
-    }
 
-    state_ = kStateSending;
     // TODO handle errors
-    CHECK_OK(proxy_->UpdateAsync(&request_, &response_, &controller_, callback_));
-    return true;
+    CHECK_OK(proxy_->UpdateAsync(
+               request, response, &controller_,
+               boost::bind(&RemotePeer::RequestCallback, this, callback)));
   }
 
-  virtual void RequestFinishedCallback() OVERRIDE {
-    DCHECK_EQ(state_, kStateSending);
-    state_ = kStateWaiting;
-    if (PREDICT_FALSE(!controller_.status().ok() || response_.has_error())) {
-      if (VLOG_IS_ON(1)) {
-        VLOG(1) << "Error connecting to peer: " << peer_->peer_pb().ShortDebugString()
-            << ". Response: " << response_.ShortDebugString()
-            << " Controller Status: " << controller_.status().ToString();
-      }
-      Status error;
-      if (!controller_.status().ok()) {
-        error = controller_.status();
-      } else {
-        error = StatusFromPB(response_.error().status());
-      }
-      peer_->ProcessResponseError(error);
-    } else {
-      if (PREDICT_FALSE(VLOG_IS_ON(2))) {
-        VLOG(2) << "Remote peer: " << peer_->peer_pb().permanent_uuid()
-            << " received from remote endpoint: " << response_.ShortDebugString();
-      }
-      peer_->ProcessResponse(response_.status());
-    }
+  virtual std::string PeerTypeString() const OVERRIDE {
+    return "remote";
   }
 
  private:
+  void RequestCallback(const StatusCallback& peer_callback) {
+    peer_callback.Run(controller_.status());
+  }
+
+
   gscoped_ptr<PeerProxy> proxy_;
   rpc::RpcController controller_;
-  rpc::ResponseCallback callback_;
-
-  enum State {
-    kStateSending,
-    kStateWaiting
-  };
-
-  State state_;
 };
 
 Status Peer::NewLocalPeer(const QuorumPeerPB& peer_pb,
@@ -238,14 +199,13 @@ Status Peer::NewLocalPeer(const QuorumPeerPB& peer_pb,
                           const string& leader_uuid,
                           PeerMessageQueue* queue,
                           Log* log,
-                          const OpId& initial_op,
                           gscoped_ptr<Peer>* peer) {
+  gscoped_ptr<PeerImpl> impl(new LocalPeer(log, leader_uuid));
   gscoped_ptr<Peer> new_peer(new Peer(peer_pb,
                                       tablet_id,
                                       leader_uuid,
                                       queue,
-                                      log,
-                                      initial_op));
+                                      impl.Pass()));
   RETURN_NOT_OK(new_peer->Init());
   peer->reset(new_peer.release());
   return Status::OK();
@@ -258,11 +218,12 @@ Status Peer::NewRemotePeer(const metadata::QuorumPeerPB& peer_pb,
                            gscoped_ptr<PeerProxy> proxy,
                            gscoped_ptr<Peer>* peer) {
 
+  gscoped_ptr<PeerImpl> impl(new RemotePeer(proxy.Pass()));
   gscoped_ptr<Peer> new_peer(new Peer(peer_pb,
                                       tablet_id,
                                       leader_uuid,
                                       queue,
-                                      proxy.Pass()));
+                                      impl.Pass()));
   RETURN_NOT_OK(new_peer->Init());
   peer->reset(new_peer.release());
   return Status::OK();
@@ -272,143 +233,166 @@ Peer::Peer(const metadata::QuorumPeerPB& peer_pb,
            const string& tablet_id,
            const string& leader_uuid,
            PeerMessageQueue* queue,
-           Log* log,
-           const OpId& initial_op)
-    : peer_pb_(peer_pb),
-      peer_impl_(new LocalPeer(this, tablet_id, leader_uuid, log, initial_op)),
+           gscoped_ptr<PeerImpl> impl)
+    : tablet_id_(tablet_id),
+      leader_uuid_(leader_uuid),
+      peer_pb_(peer_pb),
+      peer_impl_(impl.Pass()),
       queue_(queue),
-      processing_(false),
       failed_attempts_(0),
-      outstanding_req_latch_(0),
-      heartbeater_(NULL),
+      sem_(1),
+      heartbeater_(new ResettableHeartbeater(
+                     peer_pb.permanent_uuid(),
+                     MonoDelta::FromMilliseconds(
+                       FLAGS_leader_heartbeat_interval_ms),
+                     boost::bind(&Peer::SignalRequest, this, true))),
       state_(kPeerCreated) {
-}
 
-Peer::Peer(const metadata::QuorumPeerPB& peer_pb,
-           const string& tablet_id,
-           const string& leader_uuid,
-           PeerMessageQueue* queue,
-           gscoped_ptr<PeerProxy> proxy)
-    : peer_pb_(peer_pb),
-      peer_impl_(new RemotePeer(this, tablet_id, leader_uuid, proxy.Pass())),
-      queue_(queue),
-      processing_(false),
-      failed_attempts_(0),
-      outstanding_req_latch_(0),
-      heartbeater_(
-          new ResettableHeartbeater(peer_pb.permanent_uuid(),
-                                    MonoDelta::FromMilliseconds(
-                                        FLAGS_leader_heartbeat_interval_ms),
-                                    boost::bind(&Peer::SignalRequest, this, true))),
-      state_(kPeerCreated) {
 }
 
 void Peer::SetTermForTest(int term) {
-  peer_impl_->response_.set_responder_term(term);
+  response_.set_responder_term(term);
 }
 
 Status Peer::Init() {
-  boost::lock_guard<simple_spinlock> lock(peer_lock_);
+  boost::lock_guard<Semaphore> lock(sem_);
   OpId initial_id;
   RETURN_NOT_OK(peer_impl_->Init(&initial_id));
   RETURN_NOT_OK(queue_->TrackPeer(peer_pb_.permanent_uuid(), initial_id));
   if (heartbeater_) {
     RETURN_NOT_OK(heartbeater_->Start());
   }
-  state_ = kPeerIntitialized;
+  state_ = kPeerIdle;
   return Status::OK();
 }
 
-Status Peer::SignalRequest(bool send_status_only_if_queue_empty) {
-  boost::lock_guard<simple_spinlock> lock(peer_lock_);;
+Status Peer::SignalRequest(bool even_if_queue_empty) {
+  // If the peer is currently sending, return Status::OK().
+  // If there are new requests in the queue we'll get them on ProcessResponse().
+  if (!sem_.TryAcquire()) {
+    return Status::OK();
+  }
   if (PREDICT_FALSE(state_ == kPeerClosed)) {
+    sem_.Release();
     return Status::IllegalState("Peer was closed.");
   }
-  // If the peer is currently sending return Status::OK().
-  // If there are new requests in the queue we'll get them on ProcessResponse().
-  if (processing_) {
-    return Status::OK();
-  }
-  // the peer has no pending request nor is sending: send the request
-  queue_->RequestForPeer(peer_pb_.permanent_uuid(), peer_impl_->request());
 
+  DCHECK_EQ(state_, kPeerIdle);
+
+  SendNextRequest(even_if_queue_empty);
+  return Status::OK();
+}
+
+void Peer::SendNextRequest(bool even_if_queue_empty) {
+  // the peer has no pending request nor is sending: send the request
+  queue_->RequestForPeer(peer_pb_.permanent_uuid(), &request_);
+  request_.set_tablet_id(tablet_id_);
+  request_.set_caller_uuid(leader_uuid_);
+
+  bool req_has_ops = request_.ops_size() > 0;
   // If the queue is empty, check if we were told to send a status-only
   // message, if not just return.
-  if (PREDICT_FALSE(peer_impl_->request()->ops_size() == 0 && !send_status_only_if_queue_empty)) {
-    return Status::OK();
+  if (PREDICT_FALSE(!req_has_ops && !even_if_queue_empty)) {
+    sem_.Release();
+    return;
   }
 
   // If we're actually sending ops there's no need to heartbeat for a while,
   // reset the heartbeater
-  if (PREDICT_FALSE(peer_impl_->request()->ops_size() != 0) && heartbeater_ != NULL) {
+  if (req_has_ops) {
     heartbeater_->Reset();
   }
 
-  processing_ = peer_impl_->ProcessNextRequest();
-  if (processing_) {
-    DCHECK_EQ(outstanding_req_latch_.count(), 0);
-    outstanding_req_latch_.Reset(1);
-  } else {
-    outstanding_req_latch_.CountDown();
-  }
-  return Status::OK();
+  state_ = kPeerWaitingForResponse;
+
+  VLOG(2) << "Sending to peer " << peer_pb().permanent_uuid() << ": "
+          << request_.ShortDebugString();
+  peer_impl_->SendRequest(&request_, &response_,
+                          Bind(&Peer::ProcessResponse, Unretained(this)));
 }
 
-void Peer::ProcessResponse(const ConsensusStatusPB& status) {
-  DCHECK(status.IsInitialized());
-  boost::lock_guard<simple_spinlock> lock(peer_lock_);
-  bool more_pending;
-  queue_->ResponseFromPeer(peer_impl_->response_, &more_pending);
-  outstanding_req_latch_.CountDown();
-  if (more_pending && state_ != kPeerClosed) {
-    queue_->RequestForPeer(peer_pb_.permanent_uuid(), peer_impl_->request());
-    processing_ = peer_impl_->ProcessNextRequest();
-    if (processing_) {
-      outstanding_req_latch_.Reset(1);
-    }
-  } else {
-    processing_ = false;
+void Peer::ProcessResponse(const Status& status) {
+  DCHECK_EQ(0, sem_.GetValue())
+    << "Got a response when nothing was pending";
+  DCHECK_EQ(state_, kPeerWaitingForResponse);
+
+  if (!status.ok()) {
+    ProcessResponseError(status);
+    return;
+  }
+
+  if (response_.has_error()) {
+    ProcessResponseError(StatusFromPB(response_.error().status()));
+    return;
   }
   failed_attempts_ = 0;
+
+  DCHECK(response_.status().IsInitialized());
+  VLOG(2) << "Response from "
+          << peer_impl_->PeerTypeString() << " peer " << peer_pb().permanent_uuid() << ": "
+          << response_.ShortDebugString();
+
+
+  bool more_pending;
+  queue_->ResponseFromPeer(response_, &more_pending);
+  if (more_pending && state_ != kPeerClosed) {
+    SendNextRequest(true);
+  } else {
+    state_ = kPeerIdle;
+    sem_.Release();
+  }
 }
 
+namespace {
+
+std::string OpsRangeString(const ConsensusRequestPB& req) {
+  std::string ret;
+  ret.reserve(100);
+  ret.push_back('[');
+  if (req.ops_size() > 0) {
+    const OpId& first_op = req.ops(0).id();
+    const OpId& last_op = req.ops(req.ops_size() - 1).id();
+    strings::SubstituteAndAppend(&ret, "$0.$1-$2.$3",
+                                 first_op.term(), first_op.index(),
+                                 last_op.term(), last_op.index());
+  }
+  ret.push_back(']');
+  return ret;
+}
+
+} // anonymous namespace
+
 void Peer::ProcessResponseError(const Status& status) {
-  boost::lock_guard<simple_spinlock> lock(peer_lock_);
-  // TODO handle the error.
   failed_attempts_++;
   LOG(WARNING) << "Couldn't send request to peer " << peer_pb_.permanent_uuid()
-      << " for tablet " << peer_impl_->tablet_id() << ":"
+      << " for tablet " << tablet_id_
+      << " ops " << OpsRangeString(request_)
       << " Status: " << status.ToString() << ". Retrying in the next heartbeat period."
       << " Already tried " << failed_attempts_ << " times.";
-  outstanding_req_latch_.CountDown();
-  processing_ = false;
+  state_ = kPeerIdle;
+  sem_.Release();
 }
 
 void Peer::Close() {
   if (heartbeater_) {
     WARN_NOT_OK(heartbeater_->Stop(), "Could not stop heartbeater");
   }
-  {
-    boost::lock_guard<simple_spinlock> lock(peer_lock_);
-    // If the peer is already closed return.
-    if (state_ == kPeerClosed) return;
 
-    DCHECK_EQ(state_, kPeerIntitialized);
-    state_ = kPeerClosed;
-  }
+  // Acquire the semaphore to wait for any concurrent request to finish.
+  boost::lock_guard<Semaphore> l(sem_);
+  // If the peer is already closed return.
+  if (state_ == kPeerClosed) return;
+  DCHECK_EQ(state_, kPeerIdle);
+  state_ = kPeerClosed;
 
-  LOG(INFO) << "Closing peer: " << peer_pb_.permanent_uuid()
-      << " Waiting for outstanding requests to complete " << outstanding_req_latch_.count();
-  outstanding_req_latch_.Wait();
-
-  {
-    boost::lock_guard<simple_spinlock> lock(peer_lock_);
-    queue_->UntrackPeer(peer_pb_.permanent_uuid());
-  }
-
+  LOG(INFO) << "Closing peer: " << peer_pb_.permanent_uuid();
+  queue_->UntrackPeer(peer_pb_.permanent_uuid());
 }
 
 Peer::~Peer() {
+  // We don't own the ops (the queue does).
+  request_.mutable_ops()->ExtractSubrange(0, request_.ops_size(), NULL);
+
   Close();
 }
 

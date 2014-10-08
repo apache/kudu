@@ -6,12 +6,14 @@
 #include <string>
 #include <tr1/memory>
 
+#include "kudu/consensus/consensus.pb.h"
 #include "kudu/rpc/response_callback.h"
 #include "kudu/server/metadata.pb.h"
-#include "kudu/util/locks.h"
-#include "kudu/util/status.h"
 #include "kudu/util/countdown_latch.h"
+#include "kudu/util/locks.h"
 #include "kudu/util/resettable_heartbeater.h"
+#include "kudu/util/semaphore.h"
+#include "kudu/util/status.h"
 
 namespace kudu {
 class HostPort;
@@ -27,9 +29,6 @@ class RpcController;
 
 namespace consensus {
 class ConsensusServiceProxy;
-class ConsensusRequestPB;
-class ConsensusResponsePB;
-class ConsensusStatusPB;
 class OpId;
 class PeerProxy;
 class PeerImpl;
@@ -97,12 +96,6 @@ class Peer {
   // status-only requests.
   Status SignalRequest(bool force_if_queue_empty = false);
 
-  // Signals that a response was received from the peer.
-  void ProcessResponse(const ConsensusStatusPB& status);
-
-  // Signals there was an error sending the request to the peer.
-  void ProcessResponseError(const Status& status);
-
   const metadata::QuorumPeerPB& peer_pb() const { return peer_pb_; }
 
   // Returns the PeerProxy if this is a remote peer or NULL if it
@@ -122,7 +115,6 @@ class Peer {
                              const std::string& leader_uuid,
                              PeerMessageQueue* queue,
                              log::Log* log,
-                             const OpId& initial_op,
                              gscoped_ptr<Peer>* peer);
 
   // Creates a new remote peer and makes the queue track it.
@@ -133,29 +125,41 @@ class Peer {
                               gscoped_ptr<PeerProxy> proxy,
                               gscoped_ptr<Peer>* peer);
 
- protected:
-  // ctor for the local peer
+ private:
   Peer(const metadata::QuorumPeerPB& peer,
        const std::string& tablet_id,
        const std::string& leader_uuid,
        PeerMessageQueue* queue,
-       log::Log* log,
-       const OpId& initial_op);
+       gscoped_ptr<PeerImpl> impl);
 
-  // ctor for a remote peer
-  Peer(const metadata::QuorumPeerPB& peer,
-       const std::string& tablet_id,
-       const std::string& leader_uuid,
-       PeerMessageQueue* queue,
-       gscoped_ptr<PeerProxy> proxy);
+  void SendNextRequest(bool even_if_queue_empty);
+
+  // Signals that a response was received from the peer.
+  void ProcessResponse(const Status& status);
+
+  // Signals there was an error sending the request to the peer.
+  void ProcessResponseError(const Status& status);
+
+  const std::string& tablet_id() const { return tablet_id_; }
+
+  const std::string tablet_id_;
+  const std::string leader_uuid_;
 
   metadata::QuorumPeerPB peer_pb_;
   gscoped_ptr<PeerImpl> peer_impl_;
   PeerMessageQueue* queue_;
-  bool processing_;
   uint64_t failed_attempts_;
 
-  CountDownLatch outstanding_req_latch_;
+  // The last request sent.
+  ConsensusRequestPB request_;
+  // The last response received.
+  ConsensusResponsePB response_;
+
+  // Held if there is an outstanding request.
+  // This is used in order to ensure that we only have a single request
+  // oustanding at a time, and to wait for the outstanding requests
+  // at Close().
+  Semaphore sem_;
 
   // lock that protects Peer state changes
   mutable simple_spinlock peer_lock_;
@@ -168,7 +172,8 @@ class Peer {
 
   enum State {
     kPeerCreated,
-    kPeerIntitialized,
+    kPeerIdle,
+    kPeerWaitingForResponse,
     kPeerClosed
   };
 

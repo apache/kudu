@@ -49,7 +49,6 @@ class ConsensusPeersTest : public KuduTest {
                                         peer_name,
                                         &message_queue_,
                                         log,
-                                        MinimumOpId(),
                                         peer));
   }
 

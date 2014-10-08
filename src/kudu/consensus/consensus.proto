@@ -194,9 +194,6 @@ message ConsensusStatusPB {
   // The last message received (and replicated) by the peer.
   required OpId last_received = 1;
 
-  // Per operation errors.
-  repeated PerOpErrorPB per_op_errors = 6;
-
   // When the last request failed for some consensus related (internal) reason.
   // In some cases the error will have a specific code that the caller will
   // have to handle in certain ways.

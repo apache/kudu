@@ -658,21 +658,23 @@ TEST_F(RaftConsensusTest, TestReplicasHandleCommunicationErrors) {
 
   OpId last_op_id;
 
-  // Append a dummy message, make sure it gets to everyone (if both
-  // replicas get the commit the leader is guaranteed to also
-  // have gotten it)
+  // Append a dummy message, with faults injected on the first attempt
+  // to send the message.
   gscoped_ptr<ConsensusRound> round;
+  GetLeaderProxyToPeer(kFollower0Idx, kLeaderidx)->InjectCommFaultLeaderSide();
+  GetLeaderProxyToPeer(kFollower1Idx, kLeaderidx)->InjectCommFaultLeaderSide();
   ASSERT_STATUS_OK(AppendDummyMessage(kLeaderidx, &round));
-  ConsensusRound* round_ptr = round.get();
+
+  // We should successfully replicate it due to retries.
+  ASSERT_STATUS_OK(WaitForReplicate(round.get()));
+
+  // Inject more faults before committing.
   GetLeaderProxyToPeer(kFollower0Idx, kLeaderidx)->InjectCommFaultLeaderSide();
   GetLeaderProxyToPeer(kFollower1Idx, kLeaderidx)->InjectCommFaultLeaderSide();
+  ASSERT_STATUS_OK(CommitDummyMessage(round.get()));
 
+  // The commit should eventually reach both followers as well.
   last_op_id = round->id();
-
-  ASSERT_OK(down_cast<LatchCallback*>(round_ptr->replicate_callback().get())->Wait());
-  ASSERT_STATUS_OK(CommitDummyMessage(round_ptr));
-  GetLeaderProxyToPeer(kFollower0Idx, kLeaderidx)->InjectCommFaultLeaderSide();
-  GetLeaderProxyToPeer(kFollower1Idx, kLeaderidx)->InjectCommFaultLeaderSide();
   WaitForCommitIfNotAlreadyPresent(last_op_id, kFollower0Idx, kLeaderidx);
   WaitForCommitIfNotAlreadyPresent(last_op_id, kFollower1Idx, kLeaderidx);
 

@@ -141,7 +141,7 @@ class NoOpTestPeerProxy : public PeerProxy {
 
     response->set_responder_term(peer_term_);
 
-    callback_ = &callback;
+    callback_ = callback;
 
     if (!delay_response_) {
       RETURN_NOT_OK(Respond());
@@ -163,15 +163,14 @@ class NoOpTestPeerProxy : public PeerProxy {
   // Answers the peer.
   Status Respond() {
     delay_response_ = false;
-    CHECK_NOTNULL(callback_);
-    return pool_->SubmitFunc(*callback_);
+    return pool_->SubmitFunc(callback_);
   }
 
  private:
   gscoped_ptr<ThreadPool> pool_;
   ConsensusStatusPB last_status_;
   bool delay_response_;
-  const rpc::ResponseCallback* callback_;
+  rpc::ResponseCallback callback_;
   metadata::QuorumPeerPB peer_pb_;
   int peer_term_;
 };
@@ -203,7 +202,7 @@ class LocalTestPeerProxy : public PeerProxy {
                              rpc::RpcController* controller,
                              const rpc::ResponseCallback& callback) OVERRIDE {
     boost::lock_guard<simple_spinlock> lock(lock_);
-    callback_ = &callback;
+    callback_ = callback;
     RETURN_NOT_OK(pool_->SubmitFunc(boost::bind(&LocalTestPeerProxy::SendToOtherPeer,
                                                this, request, response)));
     return Status::OK();
@@ -211,13 +210,13 @@ class LocalTestPeerProxy : public PeerProxy {
 
   void SendToOtherPeer(const ConsensusRequestPB* request,
                        ConsensusResponsePB* response) {
-    // Copy the request and the response for the other peer so that ownership
+    // Copy the request for the other peer so that ownership
     // remains as close to the dist. impl. as possible.
     ConsensusRequestPB other_peer_req;
     other_peer_req.CopyFrom(*request);
-    ConsensusResponsePB other_peer_resp;
-    other_peer_resp.CopyFrom(*response);
 
+    // Give the other peer a clean response object to write to.
+    ConsensusResponsePB other_peer_resp;
     Status s;
     {
       boost::lock_guard<simple_spinlock> lock(lock_);
@@ -232,25 +231,27 @@ class LocalTestPeerProxy : public PeerProxy {
       }
     }
     if (!s.ok()) {
-      LOG(WARNING) << "Could not update replica "
-          << ". With request: " << other_peer_req.ShortDebugString()
-          << " Status: " << s.ToString();
+      LOG(WARNING) << "Could not update replica with request:"
+                   << other_peer_req.ShortDebugString()
+                   << " Status: " << s.ToString();
       tserver::TabletServerErrorPB* error = other_peer_resp.mutable_error();
             error->set_code(tserver::TabletServerErrorPB::UNKNOWN_ERROR);
             StatusToPB(s, error->mutable_status());
     }
-    response->CopyFrom(other_peer_resp);
-
     {
       boost::lock_guard<simple_spinlock> lock(lock_);
       if (PREDICT_FALSE(miss_comm_)) {
+        VLOG(2) << this << ": injecting fault on " << request->ShortDebugString();
         tserver::TabletServerErrorPB* error = response->mutable_error();
         error->set_code(tserver::TabletServerErrorPB::UNKNOWN_ERROR);
         StatusToPB(Status::IOError("Artificial error caused by communication failure injection."),
                    error->mutable_status());
         miss_comm_ = false;
+      } else {
+        response->CopyFrom(other_peer_resp);
+        VLOG(2) << this << ": not injecting fault for req: " << request->ShortDebugString();
       }
-      CHECK_OK(pool_->SubmitFunc(*callback_));
+      CHECK_OK(pool_->SubmitFunc(callback_));
     }
   }
 
@@ -261,6 +262,7 @@ class LocalTestPeerProxy : public PeerProxy {
 
   void InjectCommFaultLeaderSide() {
     boost::lock_guard<simple_spinlock> lock(lock_);
+    VLOG(2) << this << ": injecting fault next time";
     miss_comm_ = true;
   }
 
@@ -275,7 +277,7 @@ class LocalTestPeerProxy : public PeerProxy {
 
  private:
   gscoped_ptr<ThreadPool> pool_;
-  const rpc::ResponseCallback* callback_;
+  rpc::ResponseCallback callback_;
   Consensus* consensus_;
   mutable simple_spinlock lock_;
   bool miss_comm_;

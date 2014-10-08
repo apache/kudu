@@ -241,13 +241,11 @@ Status RaftConsensus::CreateOrUpdatePeersUnlocked() {
     if (peer_pb.permanent_uuid() == state_->GetPeerUuid()) {
       VLOG_WITH_PREFIX(1) << "Adding local peer. Peer: " << peer_pb.ShortDebugString();
       gscoped_ptr<Peer> local_peer;
-      OpId initial = GetLastOpIdFromLog();
       RETURN_NOT_OK(Peer::NewLocalPeer(peer_pb,
                                        state_->GetOptions().tablet_id,
                                        state_->GetPeerUuid(),
                                        &queue_,
                                        log_,
-                                       initial,
                                        &local_peer));
       InsertOrDie(&peers_, peer_pb.permanent_uuid(), local_peer.release());
     } else {
