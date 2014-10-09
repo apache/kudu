@@ -644,6 +644,10 @@ Status TabletBootstrap::HandleCommitMessage(ReplayState* state, LogEntryPB* entr
     BOOST_FOREACH(const OperationResultPB& op_result, commit.result().ops()) {
       BOOST_FOREACH(const MemStoreTargetPB& mutated_store, op_result.mutated_stores()) {
         if (!WasStoreAlreadyFlushed(mutated_store)) {
+          string error_msg = Substitute(
+              "Orphan commit $0 has a mutated store $1 that was NOT already flushed",
+              commit.ShortDebugString(), mutated_store.ShortDebugString());
+          LOG(ERROR) << error_msg;
           LOG(INFO) << "Printing Entries: ";
           log::SegmentSequence seq;
           CHECK_OK(log_reader_->GetSegmentsSnapshot(&seq));
@@ -655,10 +659,7 @@ Status TabletBootstrap::HandleCommitMessage(ReplayState* state, LogEntryPB* entr
               LOG(INFO) << entry->ShortDebugString();
             }
           }
-          return Status::Corruption(
-              Substitute("Orphan commit $0 has a mutated store $1 that was NOT already flushed",
-                         commit.ShortDebugString(), mutated_store.ShortDebugString()));
-
+          return Status::Corruption(error_msg);
         }
       }
     }
