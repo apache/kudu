@@ -75,8 +75,11 @@ Status KuduScanner::Data::OpenTablet(const Slice& key) {
   // TODO: scanners don't really require a leader. For now, however,
   // we always scan from the leader.
   Synchronizer sync;
+  MonoTime deadline = MonoTime::Now(MonoTime::FINE);
+  deadline.AddDelta(MonoDelta::FromMilliseconds(kRpcTimeoutMillis));
   table_->client()->data_->meta_cache_->LookupTabletByKey(table_,
                                                           key,
+                                                          deadline,
                                                           &remote_, sync.AsStatusCallback());
   RETURN_NOT_OK(sync.Wait());
 

@@ -178,18 +178,17 @@ class MetaCache : public RefCountedThreadSafe<MetaCache> {
   ~MetaCache();
 
   // Look up which tablet hosts the given key of the given table. When it
-  // is available, the tablet is stored in *remote_tablet and the callback is fired.
+  // is available, the tablet is stored in *remote_tablet and the callback
+  // is fired. Only tablets with non-failed LEADERs are considered.
   //
   // NOTE: the callback may be called from an IO thread or inline with
   // this call if the cached data is already available.
   //
-  // NOTE: the memory referenced by 'key' must remain valid until 'callback' is
-  // invoked.
-  //
-  // TODO: we probably need some kind of struct here for things
-  // like timeout/trace/etc.
+  // NOTE: the memory referenced by 'table' and 'key' must remain valid
+  // until 'callback' is invoked.
   void LookupTabletByKey(const KuduTable* table,
                          const Slice& key,
+                         const MonoTime& deadline,
                          scoped_refptr<RemoteTablet>* remote_tablet,
                          const StatusCallback& callback);
 
@@ -225,14 +224,6 @@ class MetaCache : public RefCountedThreadSafe<MetaCache> {
   bool LookupTabletByKeyFastPath(const KuduTable* table,
                                  const Slice& key,
                                  scoped_refptr<RemoteTablet>* remote_tablet);
-
-  // Variant of LookupTabletByKey that is invoked as a delayed task if a
-  // master lookup permit could not be acquired.
-  void LookupTabletByKeyCb(const Status& abort_status,
-                           const KuduTable* table,
-                           const Slice& key,
-                           scoped_refptr<RemoteTablet>* remote_tablet,
-                           const StatusCallback& callback);
 
   // Update our information about the given tablet server.
   //
@@ -275,9 +266,6 @@ class MetaCache : public RefCountedThreadSafe<MetaCache> {
   // Prevents master lookup "storms" by delaying master lookups when all
   // permits have been acquired.
   Semaphore master_lookup_sem_;
-
-  // Amount of time a slow lookup can consume before timing out.
-  MonoDelta timeout_;
 
   DISALLOW_COPY_AND_ASSIGN(MetaCache);
 };

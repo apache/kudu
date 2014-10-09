@@ -486,9 +486,15 @@ Status Batcher::Add(gscoped_ptr<KuduWriteOperation> write_op) {
   }
 
   // Increment our reference count for the outstanding callback.
+  //
+  // deadline_ is set in FlushAsync(), after all Add() calls are done, so
+  // here we're forced to create a new deadline.
+  MonoTime deadline = MonoTime::Now(MonoTime::FINE);
+  deadline.AddDelta(timeout_);
   base::RefCountInc(&outstanding_lookups_);
   client_->data_->meta_cache_->LookupTabletByKey(op->write_op->table(),
                                                  op->key->encoded_key(),
+                                                 deadline,
                                                  &op->tablet,
                                                  Bind(&Batcher::TabletLookupFinished,
                                                       this, op));

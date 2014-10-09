@@ -216,8 +216,7 @@ void RemoteTablet::GetRemoteTabletServers(vector<RemoteTabletServer*>* servers) 
 MetaCache::MetaCache(KuduClient* client)
   : client_(client),
     slice_data_arena_(16 * 1024, 128 * 1024), // arbitrarily chosen
-    master_lookup_sem_(50),
-    timeout_(MonoDelta::FromMilliseconds(5000)) { // TODO: make this configurable
+    master_lookup_sem_(50) {
 }
 
 MetaCache::~MetaCache() {
@@ -236,7 +235,8 @@ void MetaCache::UpdateTabletServer(const TSInfoPB& pb) {
   InsertOrDie(&ts_cache_, pb.permanent_uuid(), new RemoteTabletServer(pb));
 }
 
-// A GetTableLocations RPC which is in-flight to a master.
+// A (table,key) --> tablet lookup. May be in-flight to a master, or may be
+// handled locally.
 //
 // Keeps a reference on the owning metacache while alive.
 class LookupRpc : public Rpc {
@@ -244,7 +244,7 @@ class LookupRpc : public Rpc {
   LookupRpc(const scoped_refptr<MetaCache>& meta_cache,
             const shared_ptr<MasterServiceProxy>& master_proxy,
             const StatusCallback& user_cb,
-            const string& table_name,
+            const KuduTable* table,
             const Slice& key,
             scoped_refptr<RemoteTablet> *remote_tablet,
             const MonoTime& deadline,
@@ -254,14 +254,16 @@ class LookupRpc : public Rpc {
   virtual string ToString() const OVERRIDE;
 
   const GetTableLocationsResponsePB& resp() const { return resp_; }
-  const string& table_name() const { return table_name_; }
+  const string& table_name() const { return table_->name(); }
 
  private:
   virtual void SendRpcCb(const Status& status) OVERRIDE;
 
   // Pointer back to the tablet cache. Populated with location information
-  // when the lookup finishes successfully. When the RPC is destroyed, a
-  // master lookup permit is returned to the cache.
+  // if the lookup finishes successfully.
+  //
+  // When the RPC is destroyed, a master lookup permit is returned to the
+  // cache if one was acquired in the first place.
   scoped_refptr<MetaCache> meta_cache_;
 
   // Proxy to the master server servicing this lookup.
@@ -279,7 +281,7 @@ class LookupRpc : public Rpc {
   StatusCallback user_cb_;
 
   // Table to lookup.
-  string table_name_;
+  const KuduTable* table_;
 
   // Encoded key to lookup.
   Slice key_;
@@ -287,12 +289,15 @@ class LookupRpc : public Rpc {
   // When lookup finishes successfully, the selected tablet is
   // written here prior to invoking 'user_cb_'.
   scoped_refptr<RemoteTablet> *remote_tablet_;
+
+  // Whether this lookup has acquired a master lookup permit.
+  bool has_permit_;
 };
 
 LookupRpc::LookupRpc(const scoped_refptr<MetaCache>& meta_cache,
                      const shared_ptr<MasterServiceProxy>& master_proxy,
                      const StatusCallback& user_cb,
-                     const string& table_name,
+                     const KuduTable* table,
                      const Slice& key,
                      scoped_refptr<RemoteTablet> *remote_tablet,
                      const MonoTime& deadline,
@@ -301,28 +306,57 @@ LookupRpc::LookupRpc(const scoped_refptr<MetaCache>& meta_cache,
     meta_cache_(meta_cache),
     master_proxy_(master_proxy),
     user_cb_(user_cb),
-    table_name_(table_name),
+    table_(table),
     key_(key),
-    remote_tablet_(remote_tablet) {
+    remote_tablet_(remote_tablet),
+    has_permit_(false) {
+}
 
-  req_.mutable_table()->set_table_name(table_name_);
+LookupRpc::~LookupRpc() {
+  if (has_permit_) {
+    meta_cache_->ReleaseMasterLookupPermit();
+  }
+}
+
+void LookupRpc::SendRpc() {
+  const Schema* schema = table_->schema().schema_.get();
+
+  // Fast path: lookup in the cache.
+  if (PREDICT_TRUE(meta_cache_->LookupTabletByKeyFastPath(table_, key_, remote_tablet_)) &&
+      (*remote_tablet_)->HasLeader()) {
+    VLOG(3) << "Fast lookup: found tablet " << (*remote_tablet_)->tablet_id()
+            << " for " << schema->DebugEncodedRowKey(key_.ToString())
+            << " of " << table_->name();
+    user_cb_.Run(Status::OK());
+    delete this;
+    return;
+  }
+
+  // Slow path: must lookup the tablet in the master.
+  VLOG(3) << "Fast lookup: no tablet"
+          << " for " << schema->DebugEncodedRowKey(key_.ToString())
+          << " of " << table_->name();
+
+  has_permit_ = meta_cache_->AcquireMasterLookupPermit();
+  if (!has_permit_) {
+    // Couldn't get a permit, try again in a little while.
+    retrier().DelayedRetry(this);
+    return;
+  }
+
+  // Fill out the request.
+  req_.mutable_table()->set_table_name(table_->name());
   req_.set_start_key(key_.data(), key_.size());
 
   // The end key is left unset intentionally so that we'll prefetch some
   // additional tablets.
-}
 
-LookupRpc::~LookupRpc() {
-  meta_cache_->ReleaseMasterLookupPermit();
-}
-
-void LookupRpc::SendRpc() {
   master_proxy_->GetTableLocationsAsync(req_, &resp_, &retrier().controller(),
                                         boost::bind(&LookupRpc::SendRpcCb, this, Status::OK()));
 }
 
 string LookupRpc::ToString() const {
-  return Substitute("GetTableLocations($0, $1)", table_name_, key_.ToString());
+  return Substitute("GetTableLocations($0, $1)", table_->name(), key_.ToString());
 }
 
 void LookupRpc::SendRpcCb(const Status& status) {
@@ -423,63 +457,15 @@ bool MetaCache::LookupTabletByKeyFastPath(const KuduTable* table,
   return false;
 }
 
-void MetaCache::LookupTabletByKeyCb(const Status& abort_status,
-                                    const KuduTable* table,
-                                    const Slice& key,
-                                    scoped_refptr<RemoteTablet>* remote_tablet,
-                                    const StatusCallback& callback) {
-  if (!abort_status.ok()) {
-    LOG(WARNING) << "Rescheduled lookup failed: "
-                 << abort_status.ToString();
-    callback.Run(abort_status);
-  } else {
-    LookupTabletByKey(table, key, remote_tablet, callback);
-  }
-}
-
 void MetaCache::LookupTabletByKey(const KuduTable* table,
                                   const Slice& key,
+                                  const MonoTime& deadline,
                                   scoped_refptr<RemoteTablet>* remote_tablet,
                                   const StatusCallback& callback) {
-  const Schema* schema = table->schema().schema_.get();
-
-  // Fast path: lookup in the cache.
-  if (PREDICT_TRUE(LookupTabletByKeyFastPath(table, key, remote_tablet)) &&
-      (*remote_tablet)->HasLeader()) {
-    VLOG(3) << "Fast lookup: found tablet " << (*remote_tablet)->tablet_id()
-                    << " for " << schema->DebugEncodedRowKey(key.ToString())
-                    << " of " << table->name();
-    callback.Run(Status::OK());
-    return;
-  }
-
-  // Slow path: must lookup the tablet in the master.
-  VLOG(3) << "Fast lookup: no tablet"
-          << " for " << schema->DebugEncodedRowKey(key.ToString())
-          << " of " << table->name();
-
-  if (!AcquireMasterLookupPermit()) {
-    // Couldn't get a permit, try again in 1+rand(1..5) ms.
-    int num_ms = 1 + ((rand() % 5) + 1);
-    VLOG(3) << "All master lookup permits are held, will retry in "
-            << num_ms << " ms";
-    client_->data_->messenger_->ScheduleOnReactor(
-        boost::bind(&MetaCache::LookupTabletByKeyCb, this, _1, table, key,
-                    remote_tablet, callback),
-        MonoDelta::FromMilliseconds(num_ms));
-    return;
-  }
-
-  // Got a permit, construct and issue the lookup RPC.
-  MonoTime deadline;
-  if (timeout_.Initialized()) {
-    deadline = MonoTime::Now(MonoTime::FINE);
-    deadline.AddDelta(timeout_);
-  }
   LookupRpc* rpc = new LookupRpc(this,
                                  client_->data_->master_proxy_,
                                  callback,
-                                 table->name(),
+                                 table,
                                  key,
                                  remote_tablet,
                                  deadline,

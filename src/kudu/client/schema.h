@@ -17,7 +17,7 @@ class Schema;
 namespace client {
 
 namespace internal {
-class MetaCache;
+class LookupRpc;
 class WriteRpc;
 } // namespace internal
 
@@ -119,7 +119,7 @@ class KUDU_EXPORT KuduSchema {
   friend class KuduScanner;
   friend class KuduTableCreator;
   friend class KuduWriteOperation;
-  friend class internal::MetaCache;
+  friend class internal::LookupRpc;
   friend class internal::WriteRpc;
 
   gscoped_ptr<Schema> schema_;

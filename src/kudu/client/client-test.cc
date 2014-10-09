@@ -1436,6 +1436,7 @@ TEST_F(ClientTest, TestReplicatedMultiTabletTableFailover) {
   Synchronizer sync;
   scoped_refptr<internal::RemoteTablet> rt;
   client_->data_->meta_cache_->LookupTabletByKey(table.get(), Slice(),
+                                                 MonoTime::Max(),
                                                  &rt, sync.AsStatusCallback());
   ASSERT_STATUS_OK(sync.Wait());
   internal::RemoteTabletServer *rts;
@@ -1508,6 +1509,7 @@ TEST_F(ClientTest, TestReplicatedTabletWritesWithLeaderElection) {
   Synchronizer sync;
   scoped_refptr<internal::RemoteTablet> rt;
   client_->data_->meta_cache_->LookupTabletByKey(table.get(), Slice(),
+                                                 MonoTime::Max(),
                                                  &rt, sync.AsStatusCallback());
   ASSERT_STATUS_OK(sync.Wait());
   internal::RemoteTabletServer *rts;
