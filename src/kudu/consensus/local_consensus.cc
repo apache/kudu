@@ -117,38 +117,9 @@ Status LocalConsensus::RequestVote(const VoteRequestPB* request,
   return Status::NotSupported("LocalConsensus does not support RequestVote() calls.");
 }
 
-Status LocalConsensus::Commit(ConsensusRound* round) {
-
-  OperationPB* commit_op = DCHECK_NOTNULL(round->commit_op());
-  DCHECK(commit_op->has_commit()) << "A commit operation must have a commit.";
-
-  LogEntryBatch* reserved_entry_batch;
-  shared_ptr<FutureCallback> commit_clbk;
-
-  // The commit callback is the very last thing to execute in a transaction
-  // so it needs to free all resources. We need release it from the
-  // ConsensusRound or we'd get a cycle. (callback would free the
-  // TransactionState which would free the ConsensusRound, which in turn
-  // would try to free the callback).
-  round->release_commit_callback(&commit_clbk);
-
-  // Pre-cache the ByteSize outside of the lock, since this is somewhat
-  // expensive.
-  ignore_result(commit_op->ByteSize());
-  {
-    boost::lock_guard<simple_spinlock> lock(lock_);
-    // Reserve the correct slot in the log for the commit operation.
-    gscoped_ptr<log::LogEntryBatchPB> entry_batch;
-    log::CreateBatchFromAllocatedOperations(&commit_op, 1, &entry_batch);
-
-    RETURN_NOT_OK(log_->Reserve(entry_batch.Pass(), &reserved_entry_batch));
-  }
-  // Serialize and mark the message as ready to be appended.
-  // When the Log actually fsync()s this message to disk, 'commit_clbk'
-  // is triggered.
-  RETURN_NOT_OK(log_->AsyncAppend(reserved_entry_batch,
-                                  commit_clbk->AsStatusCallback()));
-  return Status::OK();
+Status LocalConsensus::Commit(gscoped_ptr<CommitMsg> commit,
+                              const StatusCallback& cb) {
+  return log_->AsyncAppendCommit(commit.Pass(), cb);
 }
 
 metadata::QuorumPB LocalConsensus::Quorum() const {

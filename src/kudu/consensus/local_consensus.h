@@ -67,7 +67,8 @@ class LocalConsensus : public Consensus {
                              VoteResponsePB* response) OVERRIDE;
 
  protected:
-  virtual Status Commit(ConsensusRound* context) OVERRIDE;
+  virtual Status Commit(gscoped_ptr<CommitMsg> commit,
+                        const StatusCallback& cb) OVERRIDE;
 
   virtual Status PersistQuorum(const metadata::QuorumPB& quorum) OVERRIDE;
 

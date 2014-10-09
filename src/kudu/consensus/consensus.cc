@@ -46,10 +46,8 @@ ConsensusRound::ConsensusRound(Consensus* consensus,
 }
 
 Status ConsensusRound::Commit(gscoped_ptr<CommitMsg> commit) {
-  commit_op_.reset(new OperationPB());
-  commit_op_->set_allocated_commit(commit.release());
-  commit_op_->mutable_commit()->mutable_commited_op_id()->CopyFrom(replicate_op_->id());
-  return consensus_->Commit(this);
+  commit->mutable_commited_op_id()->CopyFrom(replicate_op_->id());
+  return consensus_->Commit(commit.Pass(), commit_callback_->AsStatusCallback());
 }
 
 Status Consensus::VerifyQuorum(const metadata::QuorumPB& quorum) {

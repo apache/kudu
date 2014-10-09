@@ -321,24 +321,25 @@ Status RaftConsensus::Replicate(ConsensusRound* round) {
   return Status::OK();
 }
 
-// TODO (perf) we need to acquire the lock for the critical section of the leader's
-// commit (since it is generating an id and appending to the log) but we prob
-// could go lockless for the replica version, since the id is already assigned
-// and replicas are supposed to execute the commits in the same order as the
-// leader anyway.
-Status RaftConsensus::Commit(ConsensusRound* context) {
+Status RaftConsensus::Commit(gscoped_ptr<CommitMsg> commit,
+                             const StatusCallback& cb) {
+  DCHECK(commit->has_commited_op_id());
+  OpId committed_op_id = commit->commited_op_id();
+
+  VLOG_WITH_PREFIX(1) << "Appending COMMIT " << committed_op_id;
+
   RETURN_NOT_OK(ExecuteHook(PRE_COMMIT));
-  DCHECK_NOTNULL(context->commit_op());
+  RETURN_NOT_OK(log_->AsyncAppendCommit(commit.Pass(), cb));
 
   ReplicaState::UniqueLock lock;
   RETURN_NOT_OK(state_->LockForCommit(&lock));
   QuorumPeerPB::Role role = state_->GetActiveQuorumStateUnlocked().role;
   if (role == QuorumPeerPB::LEADER || role == QuorumPeerPB::CANDIDATE) {
-    RETURN_NOT_OK(LeaderCommitUnlocked(context, context->commit_op()));
+    state_->UpdateLeaderCommittedOpIdUnlocked(committed_op_id);
   } else {
     DCHECK(role == QuorumPeerPB::FOLLOWER || role == QuorumPeerPB::LEARNER)
-        << "Unexpected role: " << QuorumPeerPB::Role_Name(role);
-    RETURN_NOT_OK(ReplicaCommitUnlocked(context, context->commit_op()));
+      << "Unexpected role: " << QuorumPeerPB::Role_Name(role);
+    state_->UpdateReplicaCommittedOpIdUnlocked(committed_op_id);
   }
   RETURN_NOT_OK(ExecuteHook(POST_COMMIT));
 
@@ -355,76 +356,6 @@ Status RaftConsensus::PersistQuorum(const QuorumPB& quorum) {
   RETURN_NOT_OK(state_->SetCommittedQuorumUnlocked(quorum));
   // TODO: Update consensus peers if becoming leader.
   RETURN_NOT_OK(state_->SetConfigDoneUnlocked());
-  return Status::OK();
-}
-
-Status RaftConsensus::LeaderCommitUnlocked(ConsensusRound* round,
-                                           OperationPB* commit_op) {
-
-  // Sanity checks
-  // TODO remove this when we move commits out of operations.
-  DCHECK(commit_op->has_commit());
-  DCHECK(!commit_op->has_id());
-  DCHECK(commit_op->commit().has_commited_op_id());
-
-  // TODO right now we're just using the replica path to store the commits in the log
-  // that should work ok most of the time, but in some cases, if local disk appends/fsyncs
-  // are being slow, this might cause commits to come before the replicate messages
-  // they refer to in the log. This should be easy enough to handle but isn't yet.
-
-  if (VLOG_IS_ON(1)) {
-    VLOG_WITH_PREFIX(1) << "Leader appended commit. Leader: "
-        << state_->ToStringUnlocked() << " Commit: " << commit_op->ShortDebugString();
-  }
-
-  // Copy the ids to update later as we can't be sure they will be alive
-  // after the log append.
-  OpId committed_op_id = commit_op->commit().commited_op_id();
-  RETURN_NOT_OK(AppendCommitToLogUnlocked(round, commit_op));
-  state_->UpdateLeaderCommittedOpIdUnlocked(committed_op_id);
-
-  SignalRequestToPeers();
-  return Status::OK();
-}
-Status RaftConsensus::ReplicaCommitUnlocked(ConsensusRound* round,
-                                            OperationPB* commit_op) {
-
-  // Sanity checks
-  // TODO remove this when we move commits out of operations.
-  DCHECK(commit_op->has_commit());
-  DCHECK(!commit_op->has_id());
-  DCHECK(commit_op->commit().has_commited_op_id());
-
-  if (VLOG_IS_ON(1)) {
-    VLOG_WITH_PREFIX(1) << "Replica appending commit. Replica: "
-        << state_->ToStringUnlocked() << " Commit: " << commit_op->ShortDebugString();
-  }
-
-  // Copy the ids to update later as we can't be sure they will be alive
-  // after the log append.
-  OpId committed_op_id = commit_op->commit().commited_op_id();
-
-  RETURN_NOT_OK(AppendCommitToLogUnlocked(round, commit_op));
-
-  state_->UpdateReplicaCommittedOpIdUnlocked(committed_op_id);
-  return Status::OK();
-}
-
-Status RaftConsensus::AppendCommitToLogUnlocked(ConsensusRound* round,
-                                                OperationPB* commit_op) {
-
-  gscoped_ptr<log::LogEntryBatchPB> entry_batch;
-  log::CreateBatchFromAllocatedOperations(&commit_op, 1, &entry_batch);
-
-  LogEntryBatch* reserved_entry_batch;
-  CHECK_OK(log_->Reserve(entry_batch.Pass(), &reserved_entry_batch));
-
-  // TODO: replace the FutureCallbacks in ConsensusContext with StatusCallbacks
-  //
-  // AsyncAppend takes ownership of 'ftscb'.
-  CHECK_OK(log_->AsyncAppend(reserved_entry_batch,
-                             round->commit_callback()->AsStatusCallback()));
-
   return Status::OK();
 }
 

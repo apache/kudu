@@ -32,6 +32,7 @@ namespace kudu {
 namespace log {
 
 using consensus::OpId;
+using consensus::OperationPB;
 using env_util::OpenFileForRandom;
 using strings::Substitute;
 using std::tr1::shared_ptr;
@@ -347,6 +348,36 @@ Status Log::AsyncAppend(LogEntryBatch* entry_batch, const StatusCallback& callba
   TRACE("Serialized $0 byte log entry", entry_batch->total_size_bytes());
   entry_batch->MarkReady();
 
+  return Status::OK();
+}
+
+namespace {
+
+// Simply propagates to the provided 'callback', but takes
+// 'op' as a scoped ptr to ensure that it gets freed after the log
+// completes.
+void FreeOperationAndCallCallback(gscoped_ptr<OperationPB> op,
+                                  const StatusCallback& callback,
+                                  const Status& status) {
+  callback.Run(status);
+}
+
+} // anonymous namespace
+
+Status Log::AsyncAppendCommit(gscoped_ptr<consensus::CommitMsg> commit_msg,
+                              const StatusCallback& callback) {
+  gscoped_ptr<OperationPB> op(new OperationPB);
+  op->set_allocated_commit(commit_msg.release());
+
+  gscoped_ptr<LogEntryBatchPB> batch;
+  OperationPB* op_ptr = op.get();
+  CreateBatchFromAllocatedOperations(&op_ptr, 1, &batch);
+
+  LogEntryBatch* reserved_entry_batch;
+  RETURN_NOT_OK(Reserve(batch.Pass(), &reserved_entry_batch));
+
+  RETURN_NOT_OK(AsyncAppend(reserved_entry_batch,
+                            Bind(FreeOperationAndCallCallback, Passed(&op), callback)));
   return Status::OK();
 }
 

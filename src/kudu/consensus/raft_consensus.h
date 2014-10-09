@@ -102,7 +102,8 @@ class RaftConsensus : public Consensus {
   virtual ~RaftConsensus();
 
  protected:
-  virtual Status Commit(ConsensusRound* context) OVERRIDE;
+  virtual Status Commit(gscoped_ptr<CommitMsg> commit,
+                        const StatusCallback& cb) OVERRIDE;
 
   virtual Status PersistQuorum(const metadata::QuorumPB& quorum) OVERRIDE;
 
@@ -145,19 +146,6 @@ class RaftConsensus : public Consensus {
   // operations have been stored in the log and all Prepares() have been completed,
   // and a replica cannot accept any more Update() requests until this is done.
   Status UpdateReplica(const ConsensusRequestPB* request);
-
-  // A leader commit, which appends to the message queue. Must be called
-  // after LockForCommit().
-  Status LeaderCommitUnlocked(ConsensusRound* context, OperationPB* commit_op);
-
-  // A replica commit, which just stores in the local log. Must be called
-  // after LockForCommit().
-  Status ReplicaCommitUnlocked(ConsensusRound* context, OperationPB* commit_op);
-
-  // Asynchronously appends the given commit message to the log.
-  // When the append is complete, calls round->commit_callback().
-  Status AppendCommitToLogUnlocked(ConsensusRound* round,
-                                   OperationPB* commit_op);
 
   // Updates 'peers_' according to the new quorum config.
   Status CreateOrUpdatePeersUnlocked();

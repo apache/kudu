@@ -102,6 +102,18 @@ class Log {
   // TODO get rid of this method, transition to the asynchronous API
   Status Append(LogEntryPB* entry);
 
+  // Append the given commit message, asynchronously.
+  //
+  // TODO: implement the following:
+  //    If this commit message corresponds to an operation which has not yet been
+  //    logged, it will be buffered until its corresponding REPLICATE is appended.
+  //    This ensures that we never see a COMMIT in the log before its REPLICATE.
+  //
+  // Returns a bad status if the log is already shut down.
+  Status AsyncAppendCommit(gscoped_ptr<consensus::CommitMsg> commit_msg,
+                           const StatusCallback& callback);
+
+
   // Blocks the current thread until all the entries in the log queue
   // are flushed.
   Status WaitUntilAllFlushed();

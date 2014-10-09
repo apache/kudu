@@ -200,7 +200,8 @@ class Consensus {
 
   // Called by Consensus context to complete the commit of a consensus
   // round.
-  virtual Status Commit(ConsensusRound* round) = 0;
+  virtual Status Commit(gscoped_ptr<CommitMsg> commit_msg,
+                        const StatusCallback& cb) = 0;
 
   // Persists the specified quorum to disk. This is an expensive operation.
   // Note that the actual fsync() is controlled by ConsensusMeta, which may
@@ -348,14 +349,6 @@ class ConsensusRound {
     commit_callback_.reset();
   }
 
-  OperationPB* commit_op() {
-    return commit_op_.get();
-  }
-
-  OperationPB* release_commit_op() {
-    return commit_op_.release();
-  }
-
   void SetReplicaCommitContinuation(ReplicaCommitContinuation* continuation) {
     continuation_ = continuation;
   }
@@ -368,8 +361,6 @@ class ConsensusRound {
   Consensus* consensus_;
   // This round's replicate operation.
   gscoped_ptr<OperationPB> replicate_op_;
-  // This round's commit operation.
-  gscoped_ptr<OperationPB> commit_op_;
   // The callback that is called once the replicate phase of this consensus
   // round is finished.
   std::tr1::shared_ptr<FutureCallback> replicate_callback_;
