@@ -39,4 +39,23 @@ TEST(CallbackBindTest, TestPartialBind) {
   ASSERT_EQ(23, cb.Run("hello world"));
 }
 
+char IncrementChar(gscoped_ptr<char> in) {
+  return *in + 1;
+}
+
+TEST(CallbackBindTest, TestCallScopedPtrArg) {
+  // Calling a function with a gscoped_ptr argument is just like any other
+  // function which takes gscoped_ptr:
+  gscoped_ptr<char> foo(new char('x'));
+  Callback<char(gscoped_ptr<char>)> cb = Bind(&IncrementChar);
+  ASSERT_EQ('y', cb.Run(foo.Pass()));
+}
+
+TEST(CallbackBindTest, TestBindScopedPtrArg) {
+  // Binding a function with a gscoped_ptr argument requires using Passed()
+  gscoped_ptr<char> foo(new char('x'));
+  Callback<char(void)> cb = Bind(&IncrementChar, Passed(&foo));
+  ASSERT_EQ('y', cb.Run());
+}
+
 } // namespace kudu
