@@ -781,6 +781,12 @@ TEST_F(ClientTest, TestCloseScanner) {
   }
 }
 
+TEST_F(ClientTest, TestScanTimeout) {
+  KuduScanner scanner(client_table_.get());
+  ASSERT_STATUS_OK(scanner.SetTimeoutMillis(0));
+  ASSERT_TRUE(scanner.Open().IsTimedOut());
+}
+
 // Simplest case of inserting through the client API: a single row
 // with manual batching.
 TEST_F(ClientTest, TestInsertSingleRowManualBatch) {
@@ -961,6 +967,7 @@ TEST_F(ClientTest, TestEmptyBatch) {
 
 void ClientTest::DoTestWriteWithDeadServer(WhichServerToKill which) {
   shared_ptr<KuduSession> session = client_->NewSession();
+  session->SetTimeoutMillis(1000);
   ASSERT_STATUS_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
 
   // Shut down the server.

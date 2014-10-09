@@ -477,9 +477,6 @@ class KUDU_EXPORT KuduSession : public std::tr1::enable_shared_from_this<KuduSes
   void SetMutationBufferSpace(size_t size);
 
   // Set the timeout for writes made in this session.
-  //
-  // TODO: need to more carefully handle timeouts so that they include the
-  // time spent doing tablet lookups, etc.
   void SetTimeoutMillis(int millis);
 
   // Set priority for calls made from this session. Higher priority calls may skip
@@ -652,6 +649,9 @@ class KUDU_EXPORT KuduScanner {
     READ_AT_SNAPSHOT
   };
 
+  // Default scanner timeout.
+  enum { kRpcTimeoutMillis = 5000 };
+
   // Initialize the scanner. The given 'table' object must remain valid
   // for the lifetime of this scanner object.
   // TODO: should table be a const pointer?
@@ -709,6 +709,9 @@ class KUDU_EXPORT KuduScanner {
 
   // Sets the snapshot timestamp for scans in READ_AT_SNAPSHOT mode.
   Status SetSnapshot(uint64_t snapshot_timestamp_micros) WARN_UNUSED_RESULT;
+
+  // Sets the maximum time that Open() and NextBatch() are allowed to take.
+  Status SetTimeoutMillis(int millis);
 
   // Returns a string representation of this scan.
   std::string ToString() const;

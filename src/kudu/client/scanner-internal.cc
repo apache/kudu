@@ -39,7 +39,8 @@ KuduScanner::Data::Data(KuduTable* table)
     projected_row_size_(CalculateProjectedRowSize(*projection_)),
     spec_encoder_(table->schema().schema_.get()),
     start_key_(NULL),
-    end_key_(NULL) {
+    end_key_(NULL),
+    timeout_(MonoDelta::FromMilliseconds(kRpcTimeoutMillis)) {
 }
 
 KuduScanner::Data::~Data() {
@@ -72,15 +73,17 @@ void KuduScanner::Data::CopyPredicateBound(const ColumnSchema& col,
 }
 
 Status KuduScanner::Data::OpenTablet(const Slice& key) {
+  MonoTime deadline = MonoTime::Now(MonoTime::FINE);
+  deadline.AddDelta(timeout_);
+
   // TODO: scanners don't really require a leader. For now, however,
   // we always scan from the leader.
   Synchronizer sync;
-  MonoTime deadline = MonoTime::Now(MonoTime::FINE);
-  deadline.AddDelta(MonoDelta::FromMilliseconds(kRpcTimeoutMillis));
   table_->client()->data_->meta_cache_->LookupTabletByKey(table_,
                                                           key,
                                                           deadline,
-                                                          &remote_, sync.AsStatusCallback());
+                                                          &remote_,
+                                                          sync.AsStatusCallback());
   RETURN_NOT_OK(sync.Wait());
 
   // Scan it.
@@ -124,7 +127,7 @@ Status KuduScanner::Data::OpenTablet(const Slice& key) {
 
   for (;;) {
     controller_.Reset();
-    controller_.set_timeout(MonoDelta::FromMilliseconds(kRpcTimeoutMillis));
+    controller_.set_deadline(deadline);
     RemoteTabletServer *ts;
     RETURN_NOT_OK(table_->client()->data_->GetTabletServer(
         table_->client(),

@@ -705,6 +705,14 @@ Status KuduScanner::SetSelection(KuduClient::ReplicaSelection selection) {
   return Status::OK();
 }
 
+Status KuduScanner::SetTimeoutMillis(int millis) {
+  if (data_->open_) {
+    return Status::IllegalState("Timeout must be set before Open()");
+  }
+  data_->timeout_ = MonoDelta::FromMilliseconds(millis);
+  return Status::OK();
+}
+
 Status KuduScanner::AddConjunctPredicate(const KuduColumnRangePredicate& pred) {
   if (data_->open_) {
     return Status::IllegalState("Predicate must be set before Open()");
@@ -783,7 +791,7 @@ void KuduScanner::Close() {
   closer->scanner_id = data_->next_req_.scanner_id();
   data_->PrepareRequest(KuduScanner::Data::CLOSE);
   data_->next_req_.set_close_scanner(true);
-  closer->controller.set_timeout(MonoDelta::FromMilliseconds(data_->kRpcTimeoutMillis));
+  closer->controller.set_timeout(data_->timeout_);
   data_->proxy_->ScanAsync(data_->next_req_, &closer->response, &closer->controller,
                            boost::bind(&CloseCallback::Callback, closer.get()));
   ignore_result(closer.release());
@@ -821,7 +829,7 @@ Status KuduScanner::NextBatch(vector<KuduRowResult>* rows) {
     VLOG(1) << "Continuing scan " << ToString();
 
     data_->controller_.Reset();
-    data_->controller_.set_timeout(MonoDelta::FromMilliseconds(data_->kRpcTimeoutMillis));
+    data_->controller_.set_timeout(data_->timeout_);
     data_->PrepareRequest(KuduScanner::Data::CONTINUE);
     RETURN_NOT_OK(data_->proxy_->Scan(data_->next_req_,
                                       &data_->last_response_,

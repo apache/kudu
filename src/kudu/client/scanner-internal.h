@@ -102,7 +102,8 @@ class KuduScanner::Data {
   // The tablet we're scanning.
   scoped_refptr<internal::RemoteTablet> remote_;
 
-  enum { kRpcTimeoutMillis = 5000 };
+  // Timeout for scanner RPCs.
+  MonoDelta timeout_;
 
   DISALLOW_COPY_AND_ASSIGN(Data);
 };
