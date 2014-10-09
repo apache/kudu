@@ -66,6 +66,8 @@ class RpcRetrier {
 
   rpc::RpcController& controller() { return controller_; }
 
+  const MonoTime& deadline() { return deadline_; }
+
  private:
   // Called when an RPC comes up for retrying. Actually sends the RPC.
   void DelayedRetryCb(Rpc* rpc, const Status& status);

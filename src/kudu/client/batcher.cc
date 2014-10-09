@@ -4,6 +4,7 @@
 
 #include <boost/bind.hpp>
 #include <glog/logging.h>
+#include <set>
 #include <string>
 #include <tr1/memory>
 #include <tr1/unordered_map>
@@ -29,6 +30,7 @@
 #include "kudu/util/debug-util.h"
 
 using std::pair;
+using std::set;
 using std::tr1::unordered_map;
 using strings::Substitute;
 
@@ -161,14 +163,23 @@ class WriteRpc : public Rpc {
   virtual void SendRpc() OVERRIDE;
   virtual string ToString() const OVERRIDE;
 
+  const KuduTable* table() const {
+    // All of the ops for a given tablet obviously correspond to the same table,
+    // so we'll just grab the table from the first.
+    return ops_[0]->write_op->table();
+  }
   const RemoteTablet* tablet() const { return tablet_; }
   const vector<InFlightOp*>& ops() const { return ops_; }
   const WriteResponsePB& resp() const { return resp_; }
 
  private:
-  // Called when we refresh a TS proxy. Sends the RPC, provided there was
-  // no error.
-  void RefreshTSProxyFinished(const Status& status);
+  // Called when we finish a lookup (to find the new quorum leader). Retries
+  // the rpc after a short delay.
+  void LookupTabletCb(const Status& status);
+
+  // Called when we finish refreshing a TS proxy. Sends the RPC, provided
+  // there was no error.
+  void RefreshTSProxyCb(const Status& status);
 
   // Marks all replicas on current_ts_ as failed and retries the write on a
   // new replica.
@@ -186,8 +197,9 @@ class WriteRpc : public Rpc {
   // The TS receiving the write. May change if the write is retried.
   RemoteTabletServer* current_ts_;
 
-  // The last write failure seen, if any.
-  Status last_failure_;
+  // TSes that refused the write because they were followers at the time.
+  // Cleared when new quorum information arrives from the master.
+  set<RemoteTabletServer*> followers_;
 
   // Request body.
   WriteRequestPB req_;
@@ -211,10 +223,7 @@ WriteRpc::WriteRpc(const scoped_refptr<Batcher>& batcher,
     current_ts_(NULL),
     ops_(ops) {
 
-  // All of the ops for a given tablet obviously correspond to the same table,
-  // so we'll just grab the table from the first.
-  const KuduTable* table = ops_[0]->write_op->table();
-  const Schema* schema = table->schema().schema_.get();
+  const Schema* schema = table()->schema().schema_.get();
 
   req_.set_tablet_id(tablet->tablet_id());
   // Set up schema
@@ -254,37 +263,57 @@ WriteRpc::~WriteRpc() {
 }
 
 void WriteRpc::SendRpc() {
-  // Choose a destination TS. The leader is (obviously) preferred, but
-  // we'll try a random replica if the leader failed; it's possible that
-  // it is now the new leader.
-  //
-  // TODO: Guessing which replica is the new leader is wasteful; we should
-  // ask the master who it is (repeatedly, until the master knows or our
-  // deadline expires).
+  // Choose a destination TS according to the following algorithm:
+  // 1. Select the leader, provided:
+  //    a. One exists, and
+  //    b. It hasn't failed.
+  // 2. If there's no good leader select another replica, provided:
+  //    a. It hasn't failed, and
+  //    b. It hasn't rejected our write due to being a follower.
+  // 3. If we're out of appropriate replicas, force a lookup to the master
+  //    to fetch new quorum information.
+  // 4. When the lookup finishes, forget which replicas were followers and
+  //    retry the write (i.e. goto 1).
+  // 5. If we issue the write and it fails because the destination was a
+  //    follower, remember that fact and retry the write (i.e. goto 1).
+  // 6. Repeat steps 1-5 until the write succeeds, fails for other reasons,
+  //    or the write's deadline expires.
   current_ts_ = tablet_->LeaderTServer();
   if (!current_ts_) {
-    vector<RemoteTabletServer*> candidates;
-    tablet_->GetRemoteTabletServers(&candidates);
-    if (!candidates.empty()) {
-      current_ts_ = candidates[rand() % candidates.size()];
+    vector<RemoteTabletServer*> replicas;
+    tablet_->GetRemoteTabletServers(&replicas);
+    BOOST_FOREACH(RemoteTabletServer* ts, replicas) {
+      if (!ContainsKey(followers_, ts)) {
+        current_ts_ = ts;
+        break;
+      }
     }
   }
-  if (!current_ts_) {
-    gscoped_ptr<WriteRpc> delete_me(this);
-    VLOG(1) << "No LEADER found for tablet " << tablet_->tablet_id()
-            << ": failing. TODO: ask Master for new TSes";
-    Status s = !last_failure_.ok() ? last_failure_ :
-        Status::ServiceUnavailable("No LEADER for tablet", tablet_->tablet_id());
 
-    // Skip the retry logic in SendRpcCb(); if last_failure_ exists it'll
-    // lead to an infinite retry loop.
-    batcher_->ProcessWriteResponse(*this, s);
+  // If we've tried all replicas, force a lookup to the master to find the
+  // new leader. This relies on some properties of LookupTabletByKey():
+  // 1. The fast path only works when there's a non-failed leader (which we
+  //    known is untrue here).
+  // 2. The slow path always fetches quorum information and updates the
+  //    looked up tablet.
+  // Put another way, we don't care about the lookup results at all; we're
+  // just using it to fetch the latest quorum information.
+  //
+  // TODO: When we support tablet splits, we should let the lookup shift
+  // the write to another tablet (i.e. if it's since been split).
+  if (!current_ts_) {
+    batcher_->client_->data_->meta_cache_->LookupTabletByKey(table(),
+                                                             tablet_->start_key(),
+                                                             retrier().deadline(),
+                                                             NULL,
+                                                             Bind(&WriteRpc::LookupTabletCb,
+                                                                  Unretained(this)));
     return;
   }
 
   // Make sure we have a working proxy before sending out the RPC.
   current_ts_->RefreshProxy(batcher_->client_,
-                            Bind(&WriteRpc::RefreshTSProxyFinished, Unretained(this)),
+                            Bind(&WriteRpc::RefreshTSProxyCb, Unretained(this)),
                             false);
 }
 
@@ -292,7 +321,18 @@ string WriteRpc::ToString() const {
   return Substitute("Write($0, $1 ops)", tablet_->tablet_id(), ops_.size());
 }
 
-void WriteRpc::RefreshTSProxyFinished(const Status& status) {
+void WriteRpc::LookupTabletCb(const Status& status) {
+  // We should retry the RPC regardless of the outcome of the lookup, as
+  // leader election doesn't depend on the existence of a master at all.
+  //
+  // Retry() imposes a slight delay, which is desirable in a lookup loop,
+  // but unnecessary the first time through. Seeing as leader failures are
+  // rare, perhaps this doesn't matter.
+  followers_.clear();
+  retrier().DelayedRetry(this);
+}
+
+void WriteRpc::RefreshTSProxyCb(const Status& status) {
   // Fail to a replica in the event of a DNS resolution failure.
   if (!status.ok()) {
     FailToNewReplica(status);
@@ -307,7 +347,6 @@ void WriteRpc::FailToNewReplica(const Status& reason) {
   VLOG(1) << "Failing " << ToString() << " to a new replica: "
           << reason.ToString();
   tablet_->MarkReplicaFailed(current_ts_, reason);
-  last_failure_ = reason;
   retrier().DelayedRetry(this);
 }
 
@@ -332,11 +371,14 @@ void WriteRpc::SendRpcCb(const Status& status) {
     new_status = StatusFromPB(resp_.error().status());
   }
 
-  // Oops, we failed over to a replica that wasn't a LEADER. Try again.
+  // Oops, we failed over to a replica that wasn't a LEADER. Unlikely as
+  // we're using quorum information from the master, but still possible
+  // (e.g. leader restarted and became a FOLLOWER). Try again.
   //
   // TODO: IllegalState is obviously way too broad an error category for
   // this case.
   if (new_status.IsIllegalState()) {
+    followers_.insert(current_ts_);
     retrier().DelayedRetry(this);
     return;
   }

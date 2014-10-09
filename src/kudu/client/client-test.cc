@@ -992,7 +992,14 @@ void ClientTest::DoTestWriteWithDeadServer(WhichServerToKill which) {
   session->GetPendingErrors(&errors, &overflow);
   ASSERT_FALSE(overflow);
   ASSERT_EQ(1, errors.size());
-  ASSERT_TRUE(errors[0]->status().IsNetworkError());
+  switch (which) {
+    case DEAD_MASTER:
+      ASSERT_TRUE(errors[0]->status().IsNetworkError());
+      break;
+    case DEAD_TSERVER:
+      ASSERT_TRUE(errors[0]->status().IsTimedOut());
+      break;
+  }
   ASSERT_EQ(errors[0]->failed_op().ToString(),
             "INSERT uint32 key=1, uint32 int_val=1, string string_val=x");
 }

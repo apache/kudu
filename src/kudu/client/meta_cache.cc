@@ -322,11 +322,15 @@ void LookupRpc::SendRpc() {
   const Schema* schema = table_->schema().schema_.get();
 
   // Fast path: lookup in the cache.
-  if (PREDICT_TRUE(meta_cache_->LookupTabletByKeyFastPath(table_, key_, remote_tablet_)) &&
-      (*remote_tablet_)->HasLeader()) {
-    VLOG(3) << "Fast lookup: found tablet " << (*remote_tablet_)->tablet_id()
+  scoped_refptr<RemoteTablet> result;
+  if (PREDICT_TRUE(meta_cache_->LookupTabletByKeyFastPath(table_, key_, &result)) &&
+      result->HasLeader()) {
+    VLOG(3) << "Fast lookup: found tablet " << result->tablet_id()
             << " for " << schema->DebugEncodedRowKey(key_.ToString())
             << " of " << table_->name();
+    if (remote_tablet_) {
+      *remote_tablet_ = result;
+    }
     user_cb_.Run(Status::OK());
     delete this;
     return;
@@ -380,7 +384,11 @@ void LookupRpc::SendRpcCb(const Status& status) {
   }
 
   if (new_status.ok()) {
-    *remote_tablet_ = meta_cache_->ProcessLookupResponse(*this);
+    const scoped_refptr<RemoteTablet>& result =
+        meta_cache_->ProcessLookupResponse(*this);
+    if (remote_tablet_) {
+      *remote_tablet_ = result;
+    }
   } else {
     LOG(WARNING) << ToString() << " failed: " << new_status.ToString();
   }

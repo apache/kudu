@@ -178,8 +178,9 @@ class MetaCache : public RefCountedThreadSafe<MetaCache> {
   ~MetaCache();
 
   // Look up which tablet hosts the given key of the given table. When it
-  // is available, the tablet is stored in *remote_tablet and the callback
-  // is fired. Only tablets with non-failed LEADERs are considered.
+  // is available, the tablet is stored in 'remote_tablet' (if not NULL) and
+  // the callback is fired. Only tablets with non-failed LEADERs are
+  // considered.
   //
   // NOTE: the callback may be called from an IO thread or inline with
   // this call if the cached data is already available.
