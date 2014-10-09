@@ -166,7 +166,13 @@ class WriteRpc : public Rpc {
   const WriteResponsePB& resp() const { return resp_; }
 
  private:
-  void RefreshTSProxyFinished(RemoteTabletServer* ts, const Status& status);
+  // Called when we refresh a TS proxy. Sends the RPC, provided there was
+  // no error.
+  void RefreshTSProxyFinished(const Status& status);
+
+  // Marks all replicas on current_ts_ as failed and retries the write on a
+  // new replica.
+  void FailToNewReplica(const Status& reason);
 
   virtual void SendRpcCb(const Status& status) OVERRIDE;
 
@@ -176,6 +182,12 @@ class WriteRpc : public Rpc {
 
   // The tablet that should receive this write.
   RemoteTablet* const tablet_;
+
+  // The TS receiving the write. May change if the write is retried.
+  RemoteTabletServer* current_ts_;
+
+  // The last write failure seen, if any.
+  Status last_failure_;
 
   // Request body.
   WriteRequestPB req_;
@@ -196,6 +208,7 @@ WriteRpc::WriteRpc(const scoped_refptr<Batcher>& batcher,
   : Rpc(deadline, messenger),
     batcher_(batcher),
     tablet_(tablet),
+    current_ts_(NULL),
     ops_(ops) {
 
   // All of the ops for a given tablet obviously correspond to the same table,
@@ -241,54 +254,76 @@ WriteRpc::~WriteRpc() {
 }
 
 void WriteRpc::SendRpc() {
-  // Choose a destination TS.
+  // Choose a destination TS. The leader is (obviously) preferred, but
+  // we'll try a random replica if the leader failed; it's possible that
+  // it is now the new leader.
   //
-  // The leader is (obviously) preferred, but we'll try a replica if the
-  // leader failed; it's possible that it is now the new leader.
-  RemoteTabletServer* ts = tablet_->LeaderTServer();
-  if (!ts) {
-    ts = tablet_->FirstTServer();
+  // TODO: Guessing which replica is the new leader is wasteful; we should
+  // ask the master who it is (repeatedly, until the master knows or our
+  // deadline expires).
+  current_ts_ = tablet_->LeaderTServer();
+  if (!current_ts_) {
+    vector<RemoteTabletServer*> candidates;
+    tablet_->GetRemoteTabletServers(&candidates);
+    if (!candidates.empty()) {
+      current_ts_ = candidates[rand() % candidates.size()];
+    }
   }
-  if (!ts) {
+  if (!current_ts_) {
+    gscoped_ptr<WriteRpc> delete_me(this);
     VLOG(1) << "No LEADER found for tablet " << tablet_->tablet_id()
             << ": failing. TODO: ask Master for new TSes";
-    Status s = Status::ServiceUnavailable("No LEADER for tablet",
-                                          tablet_->tablet_id());
-    SendRpcCb(s);
+    Status s = !last_failure_.ok() ? last_failure_ :
+        Status::ServiceUnavailable("No LEADER for tablet", tablet_->tablet_id());
+
+    // Skip the retry logic in SendRpcCb(); if last_failure_ exists it'll
+    // lead to an infinite retry loop.
+    batcher_->ProcessWriteResponse(*this, s);
     return;
   }
 
   // Make sure we have a working proxy before sending out the RPC.
-  ts->RefreshProxy(batcher_->client_,
-                   Bind(&WriteRpc::RefreshTSProxyFinished, Unretained(this), ts),
-                   false);
+  current_ts_->RefreshProxy(batcher_->client_,
+                            Bind(&WriteRpc::RefreshTSProxyFinished, Unretained(this)),
+                            false);
 }
 
 string WriteRpc::ToString() const {
   return Substitute("Write($0, $1 ops)", tablet_->tablet_id(), ops_.size());
 }
 
-void WriteRpc::RefreshTSProxyFinished(RemoteTabletServer* ts, const Status& status) {
-  // A failure in DNS resolution means the TS has failed.
+void WriteRpc::RefreshTSProxyFinished(const Status& status) {
+  // Fail to a replica in the event of a DNS resolution failure.
   if (!status.ok()) {
-    VLOG(1) << "Could not create proxy for TS " << ts->ToString()
-            << ", retrying with a new TS";
-    tablet_->MarkReplicaFailed(ts, status);
-    SendRpc();
+    FailToNewReplica(status);
     return;
   }
 
-  ts->proxy()->WriteAsync(req_, &resp_, &retrier().controller(),
-                          boost::bind(&WriteRpc::SendRpcCb, this, Status::OK()));
+  current_ts_->proxy()->WriteAsync(req_, &resp_, &retrier().controller(),
+                                   boost::bind(&WriteRpc::SendRpcCb, this, Status::OK()));
+}
+
+void WriteRpc::FailToNewReplica(const Status& reason) {
+  VLOG(1) << "Failing " << ToString() << " to a new replica: "
+          << reason.ToString();
+  tablet_->MarkReplicaFailed(current_ts_, reason);
+  last_failure_ = reason;
+  retrier().DelayedRetry(this);
 }
 
 void WriteRpc::SendRpcCb(const Status& status) {
-  gscoped_ptr<WriteRpc> delete_me(this); // delete on scope exit
-
   // Prefer early failures over controller failures.
   Status new_status = status;
   if (new_status.ok() && retrier().HandleResponse(this, &new_status)) {
-    ignore_result(delete_me.release());
+    return;
+  }
+
+  // Failover to a replica in the event of any network failure.
+  //
+  // TODO: This is probably too harsh; some network failures should be
+  // retried on the current replica.
+  if (new_status.IsNetworkError()) {
+    FailToNewReplica(new_status);
     return;
   }
 
@@ -297,10 +332,20 @@ void WriteRpc::SendRpcCb(const Status& status) {
     new_status = StatusFromPB(resp_.error().status());
   }
 
+  // Oops, we failed over to a replica that wasn't a LEADER. Try again.
+  //
+  // TODO: IllegalState is obviously way too broad an error category for
+  // this case.
+  if (new_status.IsIllegalState()) {
+    retrier().DelayedRetry(this);
+    return;
+  }
+
   if (!new_status.ok()) {
     LOG(WARNING) << ToString() << " failed: " << new_status.ToString();
   }
   batcher_->ProcessWriteResponse(*this, new_status);
+  delete this;
 }
 
 Batcher::Batcher(KuduClient* client,

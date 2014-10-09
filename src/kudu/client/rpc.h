@@ -27,7 +27,12 @@ class MetaCache;
 class RemoteTablet;
 class Rpc;
 
-// Retries certain kinds of failed RPCs.
+// Provides utilities for retrying failed RPCs.
+//
+// All RPCs should use HandleResponse() to retry certain generic errors.
+//
+// An RPC may wish to Retry() directly if it encounters non-fatal errors
+// that are specific to it.
 class RpcRetrier {
  public:
   RpcRetrier(const MonoTime& deadline,
@@ -50,12 +55,21 @@ class RpcRetrier {
   // 'out_status'.
   bool HandleResponse(Rpc* rpc, Status* out_status);
 
-  // Called when an RPC that was rescheduled is ready to send.
-  void SendRpcRescheduled(Rpc* rpc, const Status& status);
+  // Retries an RPC at some point in the near future.
+  //
+  // If the RPC's deadline expires, the callback will fire with a timeout
+  // error when the RPC comes up for retrying. This is true even if the
+  // deadline has already expired at the time that Retry() was called.
+  //
+  // Callers should ensure that 'rpc' remains alive.
+  void DelayedRetry(Rpc* rpc);
 
   rpc::RpcController& controller() { return controller_; }
 
  private:
+  // Called when an RPC comes up for retrying. Actually sends the RPC.
+  void DelayedRetryCb(Rpc* rpc, const Status& status);
+
   // The next sent rpc will be the nth attempt (indexed from 1).
   int attempt_num_;
 

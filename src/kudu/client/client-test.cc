@@ -1484,8 +1484,6 @@ TEST_F(ClientTest, TestReplicatedMultiTabletTableFailover) {
 // a new client afterwards.
 // TODO Remove the leader promotion part when we have automated
 // leader election.
-// TODO Use the same client, when the client supports leader
-// failover.
 TEST_F(ClientTest, TestReplicatedTabletWritesWithLeaderElection) {
   const string kReplicatedTable = "replicated_failover_on_writes";
   const int kNumRowsToWrite = 100;
@@ -1558,23 +1556,8 @@ TEST_F(ClientTest, TestReplicatedTabletWritesWithLeaderElection) {
   ASSERT_OK(new_leader_proxy->MakePeerLeader(req, &resp, &controller));
   ASSERT_FALSE(resp.has_error()) << "Got error. Response: " << resp.ShortDebugString();
 
-  // Wait for 2.5x the heartbeat period, we need the new leader to push its
-  // config round and for the master to know of the new leader.
-  // TODO remove this once we have automated client failover.
-  usleep(2500 * 1000);
-
-  // A new client should now write to the new leader.
-  shared_ptr<KuduClient> new_client;
-
-  ASSERT_STATUS_OK(KuduClientBuilder()
-                   .master_server_addr(cluster_->mini_master()->bound_rpc_addr().ToString())
-                   .Build(&new_client));
-
-  scoped_refptr<KuduTable> new_table;
-  ASSERT_STATUS_OK(new_client->OpenTable(kReplicatedTable, &new_table));
-
-  ASSERT_NO_FATAL_FAILURE(InsertTestRows(new_client.get(),
-                                         new_table.get(),
+  ASSERT_NO_FATAL_FAILURE(InsertTestRows(client_.get(),
+                                         table.get(),
                                          kNumRowsToWrite,
                                          kNumRowsToWrite));
 
@@ -1584,7 +1567,7 @@ TEST_F(ClientTest, TestReplicatedTabletWritesWithLeaderElection) {
   // the commit index.
   usleep(1500 * 1000);
 
-  ASSERT_EQ(2 * kNumRowsToWrite, CountRowsFromClient(new_table.get(),
+  ASSERT_EQ(2 * kNumRowsToWrite, CountRowsFromClient(table.get(),
                                                      KuduClient::FIRST_REPLICA,
                                                      kNoBound, kNoBound));
 }
