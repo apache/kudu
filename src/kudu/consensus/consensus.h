@@ -41,6 +41,7 @@ namespace consensus {
 // forward declarations
 class ConsensusRound;
 class ReplicaTransactionFactory;
+class ConsensusCommitContinuation;
 
 struct ConsensusOptions {
   std::string tablet_id;
@@ -99,7 +100,7 @@ class Consensus : public RefCountedThreadSafe<Consensus> {
   // increase the reference count for the provided callbacks.
   ConsensusRound* NewRound(
       gscoped_ptr<ReplicateMsg> replicate_msg,
-      const std::tr1::shared_ptr<FutureCallback>& repl_callback,
+      ConsensusCommitContinuation* commit_continuation,
       const std::tr1::shared_ptr<FutureCallback>& commit_callback);
 
   // Called by a quorum client to replicate an entry to the state machine.
@@ -242,33 +243,30 @@ class Consensus : public RefCountedThreadSafe<Consensus> {
   DISALLOW_COPY_AND_ASSIGN(Consensus);
 };
 
-// A commit continuation for replicas.
-//
-// When a replica transaction is started with ReplicaTransactionFactory::StartTransaction()
-// the context is set with a commit continuation. Once the leader's commit message for this
-// transaction arrives consensus calls ReplicaCommitContinuation::ConsensusCommitted() which
-// triggers the replica to apply/abort.
-//
-// Commit continuations should execute in their own executor, but must execute in order,
-// i.e. the caller should not block until ConsensusCommitted() completes but two subsequent
-// calls must complete in the order they were called. This because replicas must enforce
-// that operations are performed in the same order as the leader to keep monotonically
-// increasing timestamps.
-class ReplicaCommitContinuation {
+// A commit continuation for consensus peers, called when consensus deems a transaction
+// committed or aborted.
+class ConsensusCommitContinuation {
  public:
 
-  // Called by consensus to notify that the operation has been ConsensusCommitted i.e.
-  // that the operation is now part of the state machine and should be applied.
-  virtual Status ConsensusCommitted() = 0;
+  // Called by consensus to notify that the operation has been considered either replicated,
+  // if 'status' is OK(), or that it has permanently failed to replicate if 'status' is anything
+  // else. If 'status' is OK() then the operation can be applied to the state machine, otherwise
+  // the operation should be aborted.
+  //
+  // TODO The only place where this is called right now is when consensus is
+  // shutting down and a replica needs to cancel transactions that are in flight.
+  // In this case those will be left as pending transactions that will be reprised
+  // on startup. That is ok for now, but once we have true operation abort, i.e.
+  // when consensus needs to cancel a transaction that already landed on disk,
+  // we will need to distinguish between a the current case and 'true' abort, as
+  // the latter requires an abort commit message.
+  virtual void ReplicationFinished(const Status& status) = 0;
 
-  // Aborts the replica transaction, making the transaction release its
-  // resources.
-  // Note that this is not equivalent to an OP_ABORT commit, which is issued by
-  // the LEADER, instead this is used when the replica is shutting down and needs
-  // to cancel pending transactions. This doesn't cause a commit message to be stored
-  // in the WAL.
-  virtual void Abort() = 0;
-  virtual ~ReplicaCommitContinuation() {}
+  StatusCallback AsStatusCallback() {
+    return Bind(&ConsensusCommitContinuation::ReplicationFinished, Unretained(this));
+  }
+
+  virtual ~ConsensusCommitContinuation() {}
 };
 
 // Factory for replica transactions.
@@ -313,7 +311,7 @@ class ConsensusRound {
   // callbacks prior to initiating the consensus round.
   ConsensusRound(Consensus* consensus,
                  gscoped_ptr<ReplicateMsg> replicate_msg,
-                 const std::tr1::shared_ptr<FutureCallback>& replicate_callback,
+                 ConsensusCommitContinuation* commit_continuation,
                  const std::tr1::shared_ptr<FutureCallback>& commit_callback);
 
   // Ctor used for follower/learner transactions. These transactions do not use the
@@ -342,37 +340,30 @@ class ConsensusRound {
     return commit_callback_;
   }
 
-  const std::tr1::shared_ptr<FutureCallback>& replicate_callback() {
-    return replicate_callback_;
-  }
-
   void release_commit_callback(std::tr1::shared_ptr<FutureCallback>* ret) {
     ret->swap(commit_callback_);
     commit_callback_.reset();
   }
 
-  void SetReplicaCommitContinuation(ReplicaCommitContinuation* continuation) {
+  void SetReplicaCommitContinuation(ConsensusCommitContinuation* continuation) {
     continuation_ = continuation;
   }
 
-  ReplicaCommitContinuation* GetReplicaCommitContinuation() {
+  ConsensusCommitContinuation* GetReplicaCommitContinuation() {
     return continuation_;
   }
 
  private:
   Consensus* consensus_;
-  // This round's replicate operation.
+  // This round's replicate message.
   gscoped_ptr<ReplicateMsg> replicate_msg_;
-  // The callback that is called once the replicate phase of this consensus
-  // round is finished.
-  std::tr1::shared_ptr<FutureCallback> replicate_callback_;
+
+  // The continuation that will be called once the transaction is
+  // deemed committed/aborted by consensus.
+  ConsensusCommitContinuation* continuation_;
   // The callback that is called once the commit phase of this consensus
   // round is finished.
   std::tr1::shared_ptr<FutureCallback> commit_callback_;
-  // The commit continuation for replicas. This is only set in non-leader
-  // replicas and is called once the leader's commit message is received
-  // and the replica can proceed with it's own Apply() and Commit().
-  ReplicaCommitContinuation* continuation_;
 };
 
 class Consensus::ConsensusFaultHooks {

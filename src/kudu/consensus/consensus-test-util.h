@@ -387,74 +387,33 @@ class LocalTestPeerProxyFactory : public PeerProxyFactory {
   vector<LocalTestPeerProxy*> proxies_;
 };
 
-// A simple implementation of ReplicaCommitContinuation for tests.
-// This is usually implemented by ReplicaTransactionDriver but here
-// we limit the implementation to the minimally required to have consensus
-// work.
-class TestReplicaDriver : public ReplicaCommitContinuation {
- public:
-  TestReplicaDriver(ThreadPool* pool, gscoped_ptr<ConsensusRound> round)
-      : round_(round.Pass()),
-        pool_(pool) {
-  }
-
-  virtual Status ConsensusCommitted() OVERRIDE {
-    RETURN_NOT_OK(pool_->SubmitFunc(boost::bind(&TestReplicaDriver::ReplicaCommit, this)));
-    return Status::OK();
-  }
-
-  void ReplicaCommit() {
-    // Normally the replica would have a different commit msg
-    // but for tests we just copy the leader's message.
-    gscoped_ptr<CommitMsg> msg(new CommitMsg);
-    msg->set_op_type(NO_OP);
-    CHECK_OK(round_->Commit(msg.Pass()));
-  }
-
-  // Called in all modes to delete the transaction and, transitively, the consensus
-  // round.
-  void Cleanup() {
-    delete this;
-  }
-
-  virtual void Abort() { Cleanup(); }
-
-  void Fatal(const Status& status) {
-    LOG(FATAL) << "TestReplicaDriver aborted with status: " << status.ToString();
-  }
-
-  gscoped_ptr<ConsensusRound> round_;
-
- private:
-  ThreadPool* pool_;
-};
-
-// A simple implementation of the leader driver for transactions.
-// This is usually implemented by LeaderTransactionDriver but here we
+// A simple implementation of the transaction driver.
+// This is usually implemented by TransactionDriver but here we
 // keep the implementation to the minimally required to have consensus
 // work.
-class TestLeaderDriver {
+class TestDriver : public ConsensusCommitContinuation {
  public:
-  explicit TestLeaderDriver(ThreadPool* pool)
+  explicit TestDriver(ThreadPool* pool)
       : pool_(pool) {
+  }
+
+  TestDriver(ThreadPool* pool, gscoped_ptr<ConsensusRound> round)
+      : round_(round.Pass()),
+        pool_(pool) {
   }
 
   void SetRound(gscoped_ptr<ConsensusRound> round) {
     round_.reset(round.release());
   }
 
-  // Does nothing but enqueue the commit, emulating an Apply
-  void TransactionReplicated() {
-    CHECK_OK(
-        pool_->SubmitFunc(boost::bind(&TestLeaderDriver::LeaderCommit, this)));
-  }
-
-  // The commit message has the exact same type of the replicate message, but
-  // no content.
-  void LeaderCommit() {
-    gscoped_ptr<CommitMsg> msg(new CommitMsg);
-    msg->set_op_type(round_->replicate_msg()->op_type());
-    CHECK_OK(round_->Commit(msg.Pass()));
+  // Does nothing but enqueue the Apply
+  virtual void ReplicationFinished(const Status& status) OVERRIDE {
+    if (status.IsAborted()) {
+      Cleanup();
+      return;
+    }
+    CHECK_OK(status);
+    CHECK_OK(pool_->SubmitFunc(boost::bind(&TestDriver::Apply, this)));
   }
 
   // Called in all modes to delete the transaction and, transitively, the consensus
@@ -463,15 +422,22 @@ class TestLeaderDriver {
     delete this;
   }
 
-  void Abort() {}
-
   void Fatal(const Status& status) {
-    LOG(FATAL) << "TestReplicaDriver aborted with status: " << status.ToString();
+    LOG(FATAL) << "TestDriver aborted with status: " << status.ToString();
   }
 
   gscoped_ptr<ConsensusRound> round_;
 
  private:
+
+  // The commit message has the exact same type of the replicate message, but
+  // no content.
+  void Apply() {
+    gscoped_ptr<CommitMsg> msg(new CommitMsg);
+    msg->set_op_type(round_->replicate_msg()->op_type());
+    CHECK_OK(round_->Commit(msg.Pass()));
+  }
+
   ThreadPool* pool_;
 };
 
@@ -501,11 +467,11 @@ class TestTransactionFactory : public ReplicaTransactionFactory {
   }
 
   Status StartReplicaTransaction(gscoped_ptr<ConsensusRound> context) OVERRIDE {
-    TestReplicaDriver* txn = new TestReplicaDriver(pool_.get(), context.Pass());
+    TestDriver* txn = new TestDriver(pool_.get(), context.Pass());
     txn->round_->SetReplicaCommitContinuation(txn);
     std::tr1::shared_ptr<FutureCallback> commit_clbk(
-        new BoundFunctionCallback(boost::bind(&TestReplicaDriver::Cleanup, txn),
-                                  boost::bind(&TestReplicaDriver::Fatal, txn, _1)));
+        new BoundFunctionCallback(boost::bind(&TestDriver::Cleanup, txn),
+                                  boost::bind(&TestDriver::Fatal, txn, _1)));
     txn->round_->SetCommitCallback(commit_clbk);
     return Status::OK();
   }
@@ -518,22 +484,16 @@ class TestTransactionFactory : public ReplicaTransactionFactory {
     cc_request->mutable_new_config()->CopyFrom(*quorum);
     cc_request->set_tablet_id("");
 
-    TestLeaderDriver* test_transaction = new TestLeaderDriver(pool_.get());
-
-    std::tr1::shared_ptr<FutureCallback> replicate_callback(
-        new BoundFunctionCallback(boost::bind(&TestLeaderDriver::TransactionReplicated,
-                                              test_transaction),
-                                  boost::bind(&TestLeaderDriver::Fatal, test_transaction, _1)));
+    TestDriver* test_transaction = new TestDriver(pool_.get());
 
     std::tr1::shared_ptr<FutureCallback> commit_clbk(
-        new BoundFunctionCallback(boost::bind(&TestLeaderDriver::Cleanup, test_transaction),
-                                  boost::bind(&TestLeaderDriver::Fatal, test_transaction, _1)));
+        new BoundFunctionCallback(boost::bind(&TestDriver::Cleanup, test_transaction),
+                                  boost::bind(&TestDriver::Fatal, test_transaction, _1)));
 
     gscoped_ptr<ConsensusRound> round(new ConsensusRound(consensus_,
                                                          replicate_msg.Pass(),
-                                                         replicate_callback,
+                                                         test_transaction,
                                                          commit_clbk));
-
     test_transaction->SetRound(round.Pass());
 
     RETURN_NOT_OK(pool_->SubmitFunc(boost::bind(&TestTransactionFactory::ReplicateAsync,

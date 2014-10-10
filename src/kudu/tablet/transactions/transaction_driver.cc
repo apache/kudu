@@ -153,14 +153,9 @@ Status TransactionDriver::PrepareAndStart() {
       gscoped_ptr<ReplicateMsg> replicate_msg;
       transaction_->NewReplicateMsg(&replicate_msg);
 
-      std::tr1::shared_ptr<FutureCallback> replicate_callback(
-        new BoundFunctionCallback(
-          boost::bind(&TransactionDriver::ConsensusCommitted, this),
-          boost::bind(&TransactionDriver::HandleFailure, this, _1)));
-
       gscoped_ptr<ConsensusRound> round(consensus_->NewRound(
                                           replicate_msg.Pass(),
-                                          replicate_callback,
+                                          this,
                                           commit_finished_callback_));
 
       {
@@ -173,6 +168,7 @@ Status TransactionDriver::PrepareAndStart() {
       if (PREDICT_FALSE(!s.ok())) {
         boost::lock_guard<simple_spinlock> lock(lock_);
         CHECK_EQ(replication_state_, REPLICATING);
+        transaction_status_ = s;
         replication_state_ = REPLICATION_FAILED;
         return s;
       }
@@ -199,15 +195,22 @@ Status TransactionDriver::PrepareAndStart() {
 void TransactionDriver::HandleFailure(const Status& s) {
   CHECK(!s.ok());
   TRACE("HandleFailure($0)", s.ToString());
-  transaction_status_ = s;
 
-  switch (replication_state_) {
+  ReplicationState repl_state_copy;
+
+  {
+    boost::lock_guard<simple_spinlock> lock(lock_);
+    transaction_status_ = s;
+    repl_state_copy = replication_state_;
+  }
+
+
+  switch (repl_state_copy) {
     case NOT_REPLICATING:
     case REPLICATION_FAILED:
     {
       VLOG(1) << "Transaction " << ToString() << " failed prior to replication success: "
-              << transaction_status_.ToString();
-      // great, we didn't send it anywhere, so we can just reply.
+              << s.ToString();
       transaction_->Finish();
       mutable_state()->completion_callback()->set_error(transaction_status_);
       mutable_state()->completion_callback()->TransactionCompleted();
@@ -218,23 +221,15 @@ void TransactionDriver::HandleFailure(const Status& s) {
     case REPLICATING:
     case REPLICATED:
     {
-      // If we fail after we've replicated an operation, we can't continue, since our
-      // state would diverge from the rest of the quorum (and potentially our state would
-      // not recover on restart if a Commit failed to persist).
-      //
-      // Some day, we may want to only mark this tablet as failed, rather than
-      // crash the whole server, but that's substantially more complicated.
+      LOG(FATAL) << "Cannot cancel transactions that have already replicated"
+          << ": " << transaction_status_.ToString()
+          << " transaction:" << ToString();
 
-      LOG(FATAL) << "Cannot deal with failed transactions that have already replicated"
-                 << ": " << transaction_status_.ToString()
-                 << " transaction:" << ToString();
     }
   }
 }
 
-
-// TODO: why does this return a status?
-Status TransactionDriver::ConsensusCommitted() {
+void TransactionDriver::ReplicationFinished(const Status& status) {
   {
     boost::lock_guard<simple_spinlock> op_id_lock(opid_lock_);
     // TODO: it's a bit silly that we have three copies of the opid:
@@ -249,35 +244,63 @@ Status TransactionDriver::ConsensusCommitted() {
   {
     boost::lock_guard<simple_spinlock> lock(lock_);
     CHECK_EQ(replication_state_, REPLICATING);
-    replication_state_ = REPLICATED;
+    if (status.ok()) {
+      replication_state_ = REPLICATED;
+    } else {
+      replication_state_ = REPLICATION_FAILED;
+    }
     prepare_state_copy = prepare_state_;
+  }
+
+  if (!status.ok()) {
+    HandleFailure(status);
+    return;
   }
 
   // If we have prepared and replicated, we're ready
   // to move ahead and apply this operation.
   if (prepare_state_copy == PREPARED) {
-    return ApplyAsync();
+    // We likely need to do cleanup if this fails so for now just
+    // CHECK_OK
+    CHECK_OK(ApplyAsync());
   }
-  return Status::OK();
 }
 
-void TransactionDriver::Abort() {
-  // TODO: this is an ugly hack so that the Release() call doesn't delete the
-  // object while we still hold the lock.
-  scoped_refptr<TransactionDriver> ref(this);
-  boost::lock_guard<simple_spinlock> state_lock(lock_);
-  transaction_status_ = Status::Aborted("");
-  LOG(WARNING) << "Transaction aborted on request: " << ToStringUnlocked();
-  transaction_->Finish();
-  txn_tracker_->Release(this);
+void TransactionDriver::Abort(const Status& status) {
+  CHECK(!status.ok());
+
+  ReplicationState repl_state_copy;
+  {
+    boost::lock_guard<simple_spinlock> lock(lock_);
+    repl_state_copy = replication_state_;
+    transaction_status_ = status;
+  }
+
+  // If the state is not NOT_REPLICATING we abort immediately and the transaction
+  // will never be replicated.
+  // In any other state we just set the transaction status, if the transaction's
+  // Apply hasn't started yet this prevents it from starting, but if it has then
+  // the transaction runs to completion.
+  if (repl_state_copy == NOT_REPLICATING) {
+    HandleFailure(status);
+  }
 }
 
 Status TransactionDriver::ApplyAsync() {
+
+  Status txn_status_copy;
   {
     boost::lock_guard<simple_spinlock> lock(lock_);
     DCHECK_EQ(replication_state_, REPLICATED);
     DCHECK_EQ(prepare_state_, PREPARED);
-    CHECK_OK(transaction_status_);
+    txn_status_copy = transaction_status_;
+  }
+
+  if (!txn_status_copy.ok()) {
+    HandleFailure(txn_status_copy);
+    // We return Status::OK() anyways as this was not a failure to submit
+    // the Apply(), likely someone called Abort();
+    return Status::OK();
   }
 
   shared_ptr<Future> apply_future;
@@ -287,6 +310,17 @@ Status TransactionDriver::ApplyAsync() {
 
 Status TransactionDriver::ApplyAndTriggerCommit() {
   ADOPT_TRACE(trace());
+
+  {
+     boost::lock_guard<simple_spinlock> lock(lock_);
+     DCHECK_EQ(replication_state_, REPLICATED);
+     DCHECK_EQ(prepare_state_, PREPARED);
+   }
+
+  // We need to ref-count ourself, since Commit() may run very quickly
+  // and end up calling Finalize() while we're still in this code.
+  scoped_refptr<TransactionDriver> ref(this);
+
   {
     gscoped_ptr<CommitMsg> commit_msg;
     CHECK_OK(transaction_->Apply(&commit_msg));
@@ -303,10 +337,6 @@ Status TransactionDriver::ApplyAndTriggerCommit() {
       // the apply either, so we just CHECK_OK for now.
       CHECK_OK(CommitWait());
     }
-
-    // We need to ref-count ourself, since Commit() may run very quickly
-    // and end up calling Finalize() while we're still in this code.
-    scoped_refptr<TransactionDriver> ref(this);
 
     transaction_->PreCommit();
     CHECK_OK(mutable_state()->consensus_round()->Commit(commit_msg.Pass()));
@@ -333,9 +363,7 @@ void TransactionDriver::Finalize() {
   scoped_refptr<TransactionDriver> ref(this);
   boost::lock_guard<simple_spinlock> lock(lock_);
   transaction_->Finish();
-  if (mutable_state()->completion_callback()) {
-    mutable_state()->completion_callback()->TransactionCompleted();
-  }
+  mutable_state()->completion_callback()->TransactionCompleted();
   txn_tracker_->Release(this);
 }
 

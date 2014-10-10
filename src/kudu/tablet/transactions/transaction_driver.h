@@ -73,7 +73,7 @@ class TransactionTracker;
 //
 // This class is thread safe.
 class TransactionDriver : public RefCountedThreadSafe<TransactionDriver>,
-                          public consensus::ReplicaCommitContinuation {
+                          public consensus::ConsensusCommitContinuation {
 
  public:
   TransactionDriver(TransactionTracker* txn_tracker,
@@ -100,12 +100,15 @@ class TransactionDriver : public RefCountedThreadSafe<TransactionDriver>,
   // multiple stages by multiple executors it might not be possible to stop
   // the transaction immediately, but this will make sure it is aborted
   // at the next synchronization point.
-  virtual void Abort() OVERRIDE;
+  virtual void Abort(const Status& status);
 
   // Callback from Consensus when replication is complete, and thus the operation
   // is considered "committed" from the consensus perspective (ie it will be
   // applied on every node, and not ever truncated from the state machine history).
-  virtual Status ConsensusCommitted() OVERRIDE;
+  // If status is anything different from OK() we don't proceed with the apply.
+  //
+  // see comment in the interface for an important TODO.
+  virtual void ReplicationFinished(const Status& status) OVERRIDE;
 
   virtual const std::tr1::shared_ptr<FutureCallback>& commit_finished_callback();
 
@@ -201,6 +204,7 @@ class TransactionDriver : public RefCountedThreadSafe<TransactionDriver>,
   enum ReplicationState {
     // The operation has not yet been sent to consensus for replication
     NOT_REPLICATING,
+
     // Replication has been triggered (either because we are the leader and triggered it,
     // or because we are a follower and we started this operation in response to a
     // leader's call)
@@ -210,8 +214,7 @@ class TransactionDriver : public RefCountedThreadSafe<TransactionDriver>,
     // operation (ie we failed before even sending the request off of our node).
     REPLICATION_FAILED,
 
-    // Replication has succeeded. We know that this operation will not abort, so it is
-    // safe to Apply, Commit, etc.
+    // Replication has succeeded.
     REPLICATED
   };
   ReplicationState replication_state_;
@@ -221,6 +224,7 @@ class TransactionDriver : public RefCountedThreadSafe<TransactionDriver>,
     PREPARED
   };
   PrepareState prepare_state_;
+
   DISALLOW_COPY_AND_ASSIGN(TransactionDriver);
 };
 

@@ -27,14 +27,12 @@ ConsensusBootstrapInfo::~ConsensusBootstrapInfo() {
 
 ConsensusRound::ConsensusRound(Consensus* consensus,
                                gscoped_ptr<ReplicateMsg> replicate_msg,
-                               const std::tr1::shared_ptr<FutureCallback>& replicate_callback,
+                               ConsensusCommitContinuation* commit_continuation,
                                const std::tr1::shared_ptr<FutureCallback>& commit_callback)
     : consensus_(consensus),
       replicate_msg_(replicate_msg.Pass()),
-      replicate_callback_(replicate_callback),
-      commit_callback_(commit_callback),
-      continuation_(NULL) {
-  DCHECK_NOTNULL(replicate_msg_.get());
+      continuation_(commit_continuation),
+      commit_callback_(commit_callback) {
 }
 
 ConsensusRound::ConsensusRound(Consensus* consensus,
@@ -131,9 +129,9 @@ Status Consensus::VerifyQuorum(const metadata::QuorumPB& quorum) {
 }
 
 ConsensusRound* Consensus::NewRound(gscoped_ptr<ReplicateMsg> replicate_msg,
-                                    const std::tr1::shared_ptr<FutureCallback>& repl_callback,
+                                    ConsensusCommitContinuation* commit_continuation,
                                     const std::tr1::shared_ptr<FutureCallback>& commit_callback) {
-  return new ConsensusRound(this, replicate_msg.Pass(), repl_callback, commit_callback);
+  return new ConsensusRound(this, replicate_msg.Pass(), commit_continuation, commit_callback);
 }
 
 void Consensus::SetFaultHooks(const std::tr1::shared_ptr<ConsensusFaultHooks>& hooks) {

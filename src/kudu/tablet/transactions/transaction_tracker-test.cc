@@ -18,10 +18,16 @@ namespace tablet {
 
 class TransactionTrackerTest : public KuduTest {
  public:
+  class NoOpTransactionState : public TransactionState {
+   public:
+    NoOpTransactionState() : TransactionState(NULL) {}
+    virtual std::string ToString() const OVERRIDE { return "NoOpTransactionState"; }
+  };
   class NoOpTransaction : public Transaction {
    public:
-    NoOpTransaction()
-      : Transaction(NULL, consensus::LEADER, Transaction::WRITE_TXN) {
+    explicit NoOpTransaction(NoOpTransactionState* state)
+      : Transaction(state, consensus::LEADER, Transaction::WRITE_TXN),
+        state_(state) {
     }
 
     virtual void NewReplicateMsg(gscoped_ptr<consensus::ReplicateMsg>* replicate_msg) OVERRIDE {
@@ -41,6 +47,8 @@ class TransactionTrackerTest : public KuduTest {
     virtual std::string ToString() const OVERRIDE {
       return "NoOp";
     }
+   private:
+    gscoped_ptr<NoOpTransactionState> state_;
   };
 
   void RunTransactionsThread(CountDownLatch* finish_latch);
@@ -51,7 +59,7 @@ class TransactionTrackerTest : public KuduTest {
 TEST_F(TransactionTrackerTest, TestGetPending) {
   ASSERT_EQ(0, tracker_.GetNumPendingForTests());
   scoped_refptr<TransactionDriver> driver(new TransactionDriver(&tracker_, NULL, NULL, NULL));
-  driver->Init(new NoOpTransaction(), consensus::LEADER);
+  driver->Init(new NoOpTransaction(new NoOpTransactionState), consensus::LEADER);
 
   ASSERT_EQ(1, tracker_.GetNumPendingForTests());
 
@@ -61,7 +69,7 @@ TEST_F(TransactionTrackerTest, TestGetPending) {
   ASSERT_EQ(driver.get(), pending_transactions.front().get());
 
   // And mark the transaction as failed, which will cause it to unregister itself.
-  driver->Abort();
+  driver->Abort(Status::Aborted(""));
 
   ASSERT_EQ(0, tracker_.GetNumPendingForTests());
 }
@@ -73,7 +81,7 @@ void TransactionTrackerTest::RunTransactionsThread(CountDownLatch* finish_latch)
   vector<scoped_refptr<TransactionDriver> > drivers;
   for (int i = 0; i < kNumTransactions; i++) {
     scoped_refptr<TransactionDriver> driver(new TransactionDriver(&tracker_, NULL, NULL, NULL));
-    driver->Init(new NoOpTransaction(), consensus::LEADER);
+    driver->Init(new NoOpTransaction(new NoOpTransactionState), consensus::LEADER);
 
     drivers.push_back(driver);
   }
@@ -88,7 +96,7 @@ void TransactionTrackerTest::RunTransactionsThread(CountDownLatch* finish_latch)
   // Finish all the transactions
   BOOST_FOREACH(const scoped_refptr<TransactionDriver>& driver, drivers) {
     // And mark the transaction as failed, which will cause it to unregister itself.
-    driver->Abort();
+    driver->Abort(Status::Aborted(""));
   }
 }
 

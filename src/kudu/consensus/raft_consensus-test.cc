@@ -23,6 +23,7 @@
 #include "kudu/rpc/rpc_context.h"
 #include "kudu/server/metadata.h"
 #include "kudu/server/logical_clock.h"
+#include "kudu/util/auto_release_pool.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
@@ -48,6 +49,22 @@ using strings::SubstituteAndAppend;
 
 const char* kTestTablet = "TestTablet";
 const int kDontVerify = -1;
+
+// A simple wrapper around a latch callback that can be used a consensus
+// commit continuation.
+class CommitContinuationLatchCallback : public ConsensusCommitContinuation {
+ public:
+
+  virtual void ReplicationFinished(const Status& status) {
+    if (status.ok()) {
+      callback_.OnSuccess();
+    } else {
+      callback_.OnFailure(status);
+    }
+  }
+
+  LatchCallback callback_;
+};
 
 class RaftConsensusTest : public KuduTest {
  public:
@@ -183,13 +200,17 @@ class RaftConsensusTest : public KuduTest {
     gscoped_ptr<ReplicateMsg> msg(new ReplicateMsg());
     msg->set_op_type(NO_OP);
     msg->mutable_noop_request();
-    shared_ptr<FutureCallback> replicate_clbk(new LatchCallback);
+    // These would normally be transactions with their own lifecycle, but
+    // here we just add them to the autorelease pool.
+    CommitContinuationLatchCallback* continuation = pool_.Add(new CommitContinuationLatchCallback);
+
     shared_ptr<LatchCallback> commit_clbk(new LatchCallback);
     if (req_commit_clbk != NULL) {
       *req_commit_clbk = commit_clbk;
     }
+
     RaftConsensus* peer = GetPeer(peer_idx);
-    round->reset(peer->NewRound(msg.Pass(), replicate_clbk, commit_clbk));
+    round->reset(peer->NewRound(msg.Pass(), continuation, commit_clbk));
     RETURN_NOT_OK(peer->Replicate(round->get()));
     return Status::OK();
   }
@@ -203,11 +224,12 @@ class RaftConsensusTest : public KuduTest {
   }
 
   Status WaitForReplicate(ConsensusRound* round) {
-    return down_cast<LatchCallback*, FutureCallback>(round->replicate_callback().get())->Wait();
+    return down_cast<CommitContinuationLatchCallback*>(
+        round->GetReplicaCommitContinuation())->callback_.Wait();
   }
   Status TimedWaitForReplicate(ConsensusRound* round, const MonoDelta& delta) {
-    return down_cast<LatchCallback*, FutureCallback>(
-        DCHECK_NOTNULL(round)->replicate_callback().get())->WaitFor(delta);
+    return down_cast<CommitContinuationLatchCallback*>(
+        round->GetReplicaCommitContinuation())->callback_.WaitFor(delta);
   }
 
   void WaitForReplicateIfNotAlreadyPresent(const OpId& to_wait_for, int peer_idx) {
@@ -479,6 +501,7 @@ class RaftConsensusTest : public KuduTest {
   MetricRegistry metric_registry_;
   MetricContext metric_context_;
   const Schema schema_;
+  AutoReleasePool pool_;
 };
 
 // Tests Replicate/Commit a single message through the leader.
@@ -634,7 +657,7 @@ TEST_F(RaftConsensusTest, TestConsensusStopsIfAMajorityFallsBehind) {
 
   // After we release the locks the operation should replicate to all replicas
   // and we commit.
-  ASSERT_OK(down_cast<LatchCallback*>(round->replicate_callback().get())->Wait());
+  ASSERT_OK(WaitForReplicate(round.get()));
   CommitDummyMessage(round.get());
 
   // Assert that everything was ok
@@ -668,7 +691,6 @@ TEST_F(RaftConsensusTest, TestReplicasHandleCommunicationErrors) {
   // We should successfully replicate it due to retries.
   ASSERT_STATUS_OK(WaitForReplicate(round.get()));
 
-  // Inject more faults before committing.
   GetLeaderProxyToPeer(kFollower0Idx, kLeaderidx)->InjectCommFaultLeaderSide();
   GetLeaderProxyToPeer(kFollower1Idx, kLeaderidx)->InjectCommFaultLeaderSide();
   ASSERT_STATUS_OK(CommitDummyMessage(round.get()));
@@ -697,7 +719,7 @@ TEST_F(RaftConsensusTest, TestReplicasHandleCommunicationErrors) {
       GetLeaderProxyToPeer(kFollower1Idx, kLeaderidx)->InjectCommFaultLeaderSide();
     }
 
-    ASSERT_OK(down_cast<LatchCallback*>(round_ptr->replicate_callback().get())->Wait());
+    ASSERT_OK(WaitForReplicate(round_ptr));
     ASSERT_STATUS_OK(CommitDummyMessage(round_ptr));
   }
 

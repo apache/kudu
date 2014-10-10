@@ -99,7 +99,7 @@ Status LocalConsensus::Replicate(ConsensusRound* context) {
   // When the Log actually fsync()s this message to disk, 'repl_callback'
   // is triggered.
   RETURN_NOT_OK(log_->AsyncAppend(reserved_entry_batch,
-                                  context->replicate_callback()->AsStatusCallback()));
+                                  context->GetReplicaCommitContinuation()->AsStatusCallback()));
   return Status::OK();
 }
 

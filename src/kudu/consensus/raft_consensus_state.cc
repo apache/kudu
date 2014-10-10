@@ -385,7 +385,8 @@ Status ReplicaState::CancelPendingTransactions() {
       if (in_flight_commits_.count((*iter).first) == 0) {
         LOG_WITH_PREFIX(INFO) << "Aborting transaction as it isn't in flight: "
             << (*iter).second->replicate_msg()->ShortDebugString();
-        round->GetReplicaCommitContinuation()->Abort();
+        round->GetReplicaCommitContinuation()->ReplicationFinished(
+            Status::Aborted("Transaction aborted"));
       } else {
         LOG_WITH_PREFIX(INFO) << "Skipping txn abort as the apply already in flight: "
             << (*iter).second->replicate_msg()->ShortDebugString();
@@ -451,15 +452,7 @@ Status ReplicaState::MarkConsensusCommittedUpToUnlocked(const OpId& id) {
   for (; iter != end_iter; iter++) {
     ConsensusRound* round = DCHECK_NOTNULL((*iter).second);
     InsertOrDie(&in_flight_commits_, round->id());
-
-    // TODO this is hacky right now, but we should fix this when
-    // todd's merged transaction drivers get in.
-    if (round->GetReplicaCommitContinuation() != NULL) {
-      RETURN_NOT_OK(round->GetReplicaCommitContinuation()->ConsensusCommitted());
-    } else {
-      RETURN_NOT_OK(callback_pool_->Submit(shared_ptr<Runnable>(
-          new OperationCallbackRunnable(round->replicate_callback()))));
-    }
+    round->GetReplicaCommitContinuation()->ReplicationFinished(Status::OK());
   }
 
   last_triggered_apply_.CopyFrom(id);
