@@ -21,6 +21,15 @@
 #include "kudu/util/env_util.h"
 #include "kudu/util/memenv/memenv.h"
 
+// Copied from falloc.h. Useful for older kernels that lack support for
+// hole punching; fallocate(2) will return EOPNOTSUPP.
+#ifndef FALLOC_FL_KEEP_SIZE
+#define FALLOC_FL_KEEP_SIZE 0x01 /* default is extend size */
+#endif
+#ifndef FALLOC_FL_PUNCH_HOLE
+#define FALLOC_FL_PUNCH_HOLE  0x02 /* de-allocates range */
+#endif
+
 namespace kudu {
 
 using std::string;
