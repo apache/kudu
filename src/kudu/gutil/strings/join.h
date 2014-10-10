@@ -115,6 +115,32 @@ string JoinStringsIterator(const ITERATOR& start,
                            const ITERATOR& end,
                            const StringPiece& delim);
 
+// Join the keys of a map using the specified delimiter.
+template<typename ITERATOR>
+void JoinKeysIterator(const ITERATOR& start,
+                      const ITERATOR& end,
+                      const StringPiece& delim,
+                      string *result) {
+  result->clear();
+  for (ITERATOR iter = start; iter != end; ++iter) {
+    if (iter == start) {
+      StrAppend(result, iter->first);
+    } else {
+      StrAppend(result, delim, iter->first);
+    }
+  }
+}
+
+template <typename ITERATOR>
+string JoinKeysIterator(const ITERATOR& start,
+                        const ITERATOR& end,
+                        const StringPiece& delim) {
+  string result;
+  JoinKeysIterator(start, end, delim, &result);
+  return result;
+}
+
+// Join the keys and values of a map using the specified delimiters.
 template<typename ITERATOR>
 void JoinKeysAndValuesIterator(const ITERATOR& start,
                                const ITERATOR& end,
