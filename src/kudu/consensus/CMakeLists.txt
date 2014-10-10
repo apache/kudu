@@ -53,6 +53,7 @@ set(CONSENSUS_SRCS
   consensus_meta.cc
   consensus_peers.cc
   consensus_queue.cc
+  leader_election.cc
   local_consensus.cc
   opid_waiter_set.cc
   quorum_util.cc
@@ -79,6 +80,7 @@ set(KUDU_TEST_LINK_LIBS
 ADD_KUDU_TEST(consensus_meta-test)
 ADD_KUDU_TEST(consensus_peers-test)
 ADD_KUDU_TEST(consensus_queue-test)
+ADD_KUDU_TEST(leader_election-test)
 ADD_KUDU_TEST(log-test)
 ADD_KUDU_TEST(mt-log-test)
 ADD_KUDU_TEST(opid_anchor_registry-test)
