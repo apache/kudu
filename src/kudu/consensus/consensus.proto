@@ -227,14 +227,14 @@ message VoteRequestPB {
 // A response from a replica to a leader election request.
 message VoteResponsePB {
   // The uuid of the node sending the reply.
-  required bytes responder_uuid = 1;
+  optional bytes responder_uuid = 1;
 
   // The term of the node sending the reply.
   // Allows the candidate to update itself if it is behind.
-  required uint64 responder_term = 2;
+  optional uint64 responder_term = 2;
 
   // True if this peer voted for the caller, false otherwise.
-  required bool vote_granted = 3;
+  optional bool vote_granted = 3;
 
   // TODO: Migrate ConsensusService to the AppStatusPB RPC style and merge these errors.
   // Error message from the consensus implementation.

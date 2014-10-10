@@ -43,6 +43,8 @@ class ConsensusRound;
 class ReplicaTransactionFactory;
 class ConsensusCommitContinuation;
 
+typedef uint64_t ConsensusTerm;
+
 struct ConsensusOptions {
   std::string tablet_id;
 };
