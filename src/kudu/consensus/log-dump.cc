@@ -28,7 +28,7 @@ DEFINE_int32(truncate_data, 100,
 namespace kudu {
 namespace log {
 
-using consensus::OperationPB;
+using consensus::CommitMsg;
 using consensus::OperationType;
 using consensus::ReplicateMsg;
 using tserver::WriteRequestPB;
@@ -60,16 +60,24 @@ static PrintEntryType ParsePrintType() {
 }
 
 void PrintIdOnly(const LogEntryPB& entry) {
-  cout << entry.operation().id().term() << "." << entry.operation().id().index() << "\t";
-  if (entry.operation().has_commit()) {
-    cout << "COMMIT " << entry.operation().commit().commited_op_id().term()
-         << "." << entry.operation().commit().commited_op_id().index();
-  } else if (entry.operation().has_replicate()) {
-    cout << "REPLICATE "
-         << OperationType_Name(entry.operation().replicate().op_type());
-  } else {
-    cout << "UNKNOWN";
+  switch (entry.type()) {
+    case log::REPLICATE:
+    {
+      cout << entry.replicate().id().term() << "." << entry.replicate().id().index() << "\t";
+      cout << "REPLICATE "
+           << OperationType_Name(entry.replicate().op_type());
+      break;
+    }
+    case log::COMMIT:
+    {
+      cout << "COMMIT " << entry.commit().commited_op_id().term()
+           << "." << entry.commit().commited_op_id().index();
+      break;
+    }
+    default:
+      cout << "UNKNOWN: " << entry.ShortDebugString();
   }
+
   cout << endl;
 }
 
@@ -100,23 +108,21 @@ void PrintDecodedWriteRequestPB(const string& indent,
 }
 
 void PrintDecoded(const LogEntryPB& entry, const Schema& tablet_schema) {
-  CHECK_EQ(entry.type(), log::OPERATION);
-
   PrintIdOnly(entry);
 
   const string indent = "\t";
-  if (entry.operation().has_replicate()) {
+  if (entry.has_replicate()) {
     // We can actually decode REPLICATE messages.
 
-    const ReplicateMsg& replicate = entry.operation().replicate();
+    const ReplicateMsg& replicate = entry.replicate();
     if (replicate.op_type() == consensus::WRITE_OP) {
       PrintDecodedWriteRequestPB(indent, tablet_schema, replicate.write_request());
     } else {
       cout << indent << replicate.ShortDebugString() << endl;
     }
-  } else if (entry.operation().has_commit()) {
+  } else if (entry.has_commit()) {
     // For COMMIT we'll just dump the PB
-    cout << indent << entry.operation().commit().ShortDebugString() << endl;
+    cout << indent << entry.commit().ShortDebugString() << endl;
   }
 }
 

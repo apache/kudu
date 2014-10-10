@@ -11,12 +11,12 @@
 namespace kudu {
 namespace tablet {
 
+using consensus::CommitMsg;
 using consensus::Consensus;
 using consensus::ConsensusRound;
 using consensus::ReplicateMsg;
 using consensus::CommitMsg;
 using consensus::DriverType;
-using consensus::OperationPB;
 using std::tr1::shared_ptr;
 
 ////////////////////////////////////////////////////////////

@@ -24,7 +24,6 @@ class OpIdAnchorRegistry;
 
 namespace consensus {
 struct ConsensusBootstrapInfo;
-class OperationPB;
 } // namespace consensus
 
 namespace server {

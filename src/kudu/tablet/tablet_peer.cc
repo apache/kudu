@@ -172,7 +172,7 @@ Status TabletPeer::StartPendingTransactions(QuorumPeerPB::Role my_role,
                                             const ConsensusBootstrapInfo& bootstrap_info) {
   if (!bootstrap_info.orphaned_replicates.empty()) {
     LOG(ERROR) << "Found orphaned replicates:";
-    BOOST_FOREACH(const consensus::OperationPB* orphaned_op,
+    BOOST_FOREACH(const consensus::ReplicateMsg* orphaned_op,
                   bootstrap_info.orphaned_replicates) {
       LOG(ERROR) << "Pending operation: " << orphaned_op->ShortDebugString();
     }
@@ -457,7 +457,7 @@ bool TabletPeer::IsOpTypeAllowedInState(consensus::OperationType type,
 Status TabletPeer::StartReplicaTransaction(gscoped_ptr<ConsensusRound> round) {
   {
     boost::lock_guard<simple_spinlock> lock(lock_);
-    consensus::OperationType op_type = round->replicate_op()->replicate().op_type();
+    consensus::OperationType op_type = round->replicate_msg()->op_type();
     if (!IsOpTypeAllowedInState(op_type, state_)) {
       return Status::ServiceUnavailable(
           Substitute("Tablet is not ready to accept operation. OpType: $0 Tablet State: $1",
@@ -465,7 +465,7 @@ Status TabletPeer::StartReplicaTransaction(gscoped_ptr<ConsensusRound> round) {
                      TabletStatePB_Name(state_)));
     }
   }
-  consensus::ReplicateMsg* replicate_msg = round->replicate_op()->mutable_replicate();
+  consensus::ReplicateMsg* replicate_msg = round->replicate_msg();
   Transaction* transaction;
   switch (replicate_msg->op_type()) {
     case WRITE_OP:

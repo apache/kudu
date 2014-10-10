@@ -38,8 +38,6 @@ using rpc::Messenger;
 using rpc::RpcController;
 using strings::Substitute;
 
-const int64_t kNoTermFound = -1;
-
 class PeerImpl {
  public:
   PeerImpl(Peer* peer,
@@ -111,33 +109,14 @@ class LocalPeer : public PeerImpl {
     }
     response_.mutable_status()->Clear();
 
-    vector<const OperationPB*> ops;
-    const OpId* last_replicated = NULL;
-    const OpId* last_committed = NULL;
-    const OpId* last_received = NULL;
-    int64_t last_term = kNoTermFound;
+    vector<const ReplicateMsg*> ops;
     for (int i = 0; i < request_.ops_size(); i++) {
-      OperationPB* op = request_.mutable_ops(i);
+      ReplicateMsg* op = request_.mutable_ops(i);
       ops.push_back(op);
-      last_received = &op->id();
-      if (op->has_id()) {
-        last_term = op->id().term();
-      }
-      if (op->has_replicate()) {
-        last_replicated = &op->id();
-        continue;
-      }
-      if (op->has_commit()) {
-        last_committed = &op->id();
-        continue;
-      }
     }
 
-    last_received_.CopyFrom(*last_received);
-
-    if (last_term != -1) {
-      response_.set_responder_term(last_term);
-    }
+    last_received_.CopyFrom(ops.back()->id());
+    response_.set_responder_term(last_received_.term());
 
     if (PREDICT_FALSE(VLOG_IS_ON(2))) {
       VLOG(2) << "Local peer appending to log: " << request_.ShortDebugString();

@@ -27,7 +27,7 @@ using strings::Substitute;
 // to complete.
 class TestOpStatusTracker : public OperationStatusTracker {
  public:
-  TestOpStatusTracker(gscoped_ptr<OperationPB> op, int n_majority, int total_peers)
+  TestOpStatusTracker(gscoped_ptr<ReplicateMsg> op, int n_majority, int total_peers)
     : OperationStatusTracker(op.Pass()),
       majority_latch_(n_majority),
       all_replicated_latch_(total_peers),
@@ -36,7 +36,7 @@ class TestOpStatusTracker : public OperationStatusTracker {
 
   void AckPeer(const string& uuid) OVERRIDE {
     if (PREDICT_FALSE(VLOG_IS_ON(2))) {
-      VLOG(2) << "Peer: " << uuid << " Ack'd op: " << operation_->ShortDebugString();
+      VLOG(2) << "Peer: " << uuid << " Ack'd op: " << replicate_msg_->ShortDebugString();
     }
     boost::lock_guard<simple_spinlock> lock(lock_);
     replicated_count_++;
@@ -68,7 +68,7 @@ class TestOpStatusTracker : public OperationStatusTracker {
   virtual std::string ToString() const OVERRIDE {
     boost::lock_guard<simple_spinlock> lock(lock_);
     return Substitute("Op: $0, IsDone: $1, IsAllDone: $2, ReplicatedCount: $3.",
-                      operation_->ShortDebugString(), IsDone(), IsAllDone(), replicated_count_);
+                      replicate_msg_->ShortDebugString(), IsDone(), IsAllDone(), replicated_count_);
   }
 
  private:
@@ -96,15 +96,14 @@ static inline void AppendReplicateMessagesToQueue(
     vector<scoped_refptr<OperationStatusTracker> >* statuses_collector = NULL) {
 
   for (int i = first; i < first + count; i++) {
-    gscoped_ptr<OperationPB> op(new OperationPB);
-    OpId* id = op->mutable_id();
+    gscoped_ptr<ReplicateMsg> msg(new ReplicateMsg);
+    OpId* id = msg->mutable_id();
     id->set_term(i / 7);
     id->set_index(i % 7);
-    ReplicateMsg* msg = op->mutable_replicate();
     msg->set_op_type(NO_OP);
     msg->mutable_noop_request()->set_payload_for_tests(dummy_payload);
     scoped_refptr<OperationStatusTracker> status(
-        new TestOpStatusTracker(op.Pass(), n_majority, total_peers));
+        new TestOpStatusTracker(msg.Pass(), n_majority, total_peers));
     CHECK_OK(queue->AppendOperation(status));
     if (statuses_collector) {
       statuses_collector->push_back(status);
@@ -396,7 +395,7 @@ class TestLeaderDriver {
   // no content.
   void LeaderCommit() {
     gscoped_ptr<CommitMsg> msg(new CommitMsg);
-    msg->set_op_type(round_->replicate_op()->replicate().op_type());
+    msg->set_op_type(round_->replicate_msg()->op_type());
     CHECK_OK(round_->Commit(msg.Pass()));
   }
 
@@ -455,8 +454,7 @@ class TestTransactionFactory : public ReplicaTransactionFactory {
 
   Status SubmitConsensusChangeConfig(gscoped_ptr<metadata::QuorumPB> quorum,
                                      const StatusCallback& callback) OVERRIDE {
-    gscoped_ptr<OperationPB> replicate_op(new OperationPB);
-    ReplicateMsg* replicate_msg = replicate_op->mutable_replicate();
+    gscoped_ptr<ReplicateMsg> replicate_msg(new ReplicateMsg);
     replicate_msg->set_op_type(CHANGE_CONFIG_OP);
     consensus::ChangeConfigRequestPB* cc_request = replicate_msg->mutable_change_config_request();
     cc_request->mutable_new_config()->CopyFrom(*quorum);
@@ -474,7 +472,7 @@ class TestTransactionFactory : public ReplicaTransactionFactory {
                                   boost::bind(&TestLeaderDriver::Fatal, test_transaction, _1)));
 
     gscoped_ptr<ConsensusRound> round(new ConsensusRound(consensus_,
-                                                         replicate_op.Pass(),
+                                                         replicate_msg.Pass(),
                                                          replicate_callback,
                                                          commit_clbk));
 

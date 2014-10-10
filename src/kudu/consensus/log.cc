@@ -31,8 +31,8 @@ static const char kSegmentPlaceholderFileTemplate[] = ".tmp.newsegmentXXXXXX";
 namespace kudu {
 namespace log {
 
+using consensus::CommitMsg;
 using consensus::OpId;
-using consensus::OperationPB;
 using env_util::OpenFileForRandom;
 using strings::Substitute;
 using std::tr1::shared_ptr;
@@ -280,7 +280,7 @@ Status Log::CloseCurrentSegment() {
   LogSegmentFooterPB footer;
 
   if (!first_op_in_seg_.IsInitialized()) {
-    VLOG(1) << "Writing a segment without any operation with id. "
+    VLOG(1) << "Writing a segment without any REPLICATE message. "
         "Segment: " << active_segment_->path();
   } else {
     footer.add_idx_entry()->CopyFrom(first_op_in_seg_);
@@ -351,33 +351,18 @@ Status Log::AsyncAppend(LogEntryBatch* entry_batch, const StatusCallback& callba
   return Status::OK();
 }
 
-namespace {
-
-// Simply propagates to the provided 'callback', but takes
-// 'op' as a scoped ptr to ensure that it gets freed after the log
-// completes.
-void FreeOperationAndCallCallback(gscoped_ptr<OperationPB> op,
-                                  const StatusCallback& callback,
-                                  const Status& status) {
-  callback.Run(status);
-}
-
-} // anonymous namespace
-
 Status Log::AsyncAppendCommit(gscoped_ptr<consensus::CommitMsg> commit_msg,
                               const StatusCallback& callback) {
-  gscoped_ptr<OperationPB> op(new OperationPB);
-  op->set_allocated_commit(commit_msg.release());
 
-  gscoped_ptr<LogEntryBatchPB> batch;
-  OperationPB* op_ptr = op.get();
-  CreateBatchFromAllocatedOperations(&op_ptr, 1, &batch);
+  gscoped_ptr<LogEntryBatchPB> batch(new LogEntryBatchPB);
+  LogEntryPB* entry = batch->add_entry();
+  entry->set_type(COMMIT);
+  entry->set_allocated_commit(commit_msg.release());
 
   LogEntryBatch* reserved_entry_batch;
   RETURN_NOT_OK(Reserve(batch.Pass(), &reserved_entry_batch));
 
-  RETURN_NOT_OK(AsyncAppend(reserved_entry_batch,
-                            Bind(FreeOperationAndCallCallback, Passed(&op), callback)));
+  RETURN_NOT_OK(AsyncAppend(reserved_entry_batch, callback));
   return Status::OK();
 }
 
@@ -416,15 +401,15 @@ Status Log::DoAppend(LogEntryBatch* entry_batch, bool caller_owns_operation) {
   // using in flights anyway no need to scan for ids here) or actually delay doing this
   // until fsync() has been done. See KUDU-527.
   //
-  // For now we just scan the operations looking for one with an id.
+  // For now we just scan the entries looking for a REPLICATE.
   // NOTE: This could likely be done in the below loop, but the original code was here
   // and we're likely to move this soon anyway, plus we don't want to keep reacquiring
   // the lock.
   {
     boost::lock_guard<rw_spinlock> write_lock(last_entry_op_id_lock_);
     BOOST_FOREACH(const LogEntryPB& entry, entry_batch->entry_batch_pb_->entry()) {
-      if (entry.has_operation() && entry.operation().has_id()) {
-        last_entry_op_id_.CopyFrom(entry.operation().id());
+      if (entry.has_replicate()) {
+        last_entry_op_id_.CopyFrom(entry.replicate().id());
       }
     }
   }
@@ -432,26 +417,19 @@ Status Log::DoAppend(LogEntryBatch* entry_batch, bool caller_owns_operation) {
   OpId first_op_in_batch;
   for (size_t i = 0; i < num_entries; i++) {
     LogEntryPB* entry_pb = entry_batch->entry_batch_pb_->mutable_entry(i);
-    CHECK_EQ(OPERATION, entry_pb->type())
-        << "Unexpected log entry type: " << entry_pb->DebugString();
+    DCHECK(entry_pb->IsInitialized() &&
+           (entry_pb->type() == REPLICATE || entry_pb->type() == COMMIT))
+      << "Unexpected log entry type: " << entry_pb->DebugString();
 
-
-    DCHECK(entry_pb->IsInitialized());
-
-    // REPLICATE messages have op ids, whereas COMMITs don't.
-    if (entry_pb->operation().has_replicate()) CHECK(entry_pb->operation().has_id());
-    if (entry_pb->operation().has_commit()) CHECK(!entry_pb->operation().has_id());
-
-    // Store the id of the first operation in the batch so that if we roll over
+    // Store the id of the first replicate in the batch so that if we roll over
     // to a new segment we already have the first entry for the footer index.
-    if (!first_op_in_batch.IsInitialized()) {
-      first_op_in_batch.CopyFrom(entry_pb->operation().id());
+    if (!first_op_in_batch.IsInitialized() && entry_pb->has_replicate()) {
+      first_op_in_batch.CopyFrom(entry_pb->replicate().id());
     }
 
+    // Our contract is that we don't free replicate messages after appending them.
     if (caller_owns_operation) {
-      // If the OperationPB was allocated by another thread, we must release
-      // it to avoid freeing the memory.
-      entry_pb->release_operation();
+      entry_pb->release_replicate();
     }
   }
 
@@ -478,7 +456,7 @@ Status Log::DoAppend(LogEntryBatch* entry_batch, bool caller_owns_operation) {
     VLOG(1) << "Segment allocation already in progress...";
   }
 
-  // If we haven't seen an operation with an id in this segment yet add 'first_op_in_batch'
+  // If we haven't seen a REPLICATE in this segment yet add 'first_op_in_batch'
   // to the footer.
   if (!first_op_in_seg_.IsInitialized()) {
     first_op_in_seg_.mutable_id()->CopyFrom(first_op_in_batch);

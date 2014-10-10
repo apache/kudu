@@ -113,18 +113,6 @@ enum DriverType {
   REPLICA = 2;
 }
 
-// A wrapper around replicates and commits so that we can send to peers
-// in total order without having to rebuild order between replicates/commits.
-// Each operation must either have a replicate or a commit, but not both.
-message OperationPB {
-  optional OpId id = 2;
-  optional ReplicateMsg replicate = 3;
-
-  // TODO: remove this from consensus PB and instead move it to be part of
-  // LogEntryPB with a different LogEntryType.
-  optional CommitMsg commit = 4;
-}
-
 // A configuration change request for the tablet with 'tablet_id'.
 message ChangeConfigRequestPB {
   required bytes tablet_id = 1;
@@ -146,6 +134,7 @@ message ChangeConfigResponsePB {
 // be stored in the WAL/SM log, as part of the first phase of the two phase
 // commit.
 message ReplicateMsg {
+  required OpId id = 1;
   required OperationType op_type = 2;
   optional tserver.WriteRequestPB write_request = 3;
   optional tserver.AlterSchemaRequestPB alter_schema_request = 4;
@@ -287,8 +276,12 @@ message ConsensusRequestPB {
   // Raft calls this field 'leaderCommit'.
   required OpId committed_index = 5;
 
-  // sequence of operations to be replicated/executed by this peer
-  repeated OperationPB ops = 6;
+  // Sequence of operations to be replicated by this peer.
+  // These will be committed when committed_index advances above their
+  // respective OpIds. In some cases committed_index can indicate that
+  // these operations are already committed, in which case they will be
+  // committed during the same request.
+  repeated ReplicateMsg ops = 6;
 }
 
 message ConsensusResponsePB {

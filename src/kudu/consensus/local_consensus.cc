@@ -71,14 +71,14 @@ Status LocalConsensus::Start(const ConsensusBootstrapInfo& info) {
 Status LocalConsensus::Replicate(ConsensusRound* context) {
   DCHECK_GE(state_, kConfiguring);
 
-  consensus::OperationPB* op = context->replicate_op();
+  consensus::ReplicateMsg* msg = context->replicate_msg();
 
-  OpId* cur_op_id = DCHECK_NOTNULL(op)->mutable_id();
+  OpId* cur_op_id = DCHECK_NOTNULL(msg)->mutable_id();
   cur_op_id->set_term(0);
 
   // Pre-cache the ByteSize outside of the lock, since this is somewhat
   // expensive.
-  ignore_result(op->ByteSize());
+  ignore_result(msg->ByteSize());
 
   LogEntryBatch* reserved_entry_batch;
   {
@@ -90,7 +90,7 @@ Status LocalConsensus::Replicate(ConsensusRound* context) {
     // It's important that we do this under the same lock as we generate
     // the op id, so that we log things in-order.
     gscoped_ptr<log::LogEntryBatchPB> entry_batch;
-    log::CreateBatchFromAllocatedOperations(&op, 1, &entry_batch);
+    log::CreateBatchFromAllocatedOperations(&msg, 1, &entry_batch);
 
     RETURN_NOT_OK(log_->Reserve(entry_batch.Pass(), &reserved_entry_batch));
   }

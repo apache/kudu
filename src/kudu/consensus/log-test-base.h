@@ -34,7 +34,6 @@ namespace log {
 
 using consensus::OpId;
 using consensus::CommitMsg;
-using consensus::OperationPB;
 using consensus::ReplicateMsg;
 using consensus::WRITE_OP;
 using consensus::NO_OP;
@@ -96,10 +95,8 @@ class LogTestBase : public KuduTest {
   void EntriesToIdList(vector<uint32_t>* ids) {
     BOOST_FOREACH(const LogEntryPB* entry, entries_) {
       VLOG(2) << "Entry contents: " << entry->DebugString();
-      if (entry->type() == OPERATION) {
-        if (PREDICT_TRUE(entry->operation().has_id())) {
-          ids->push_back(entry->operation().id().index());
-        }
+      if (entry->type() == REPLICATE) {
+        ids->push_back(entry->replicate().id().index());
       }
     }
   }
@@ -107,13 +104,11 @@ class LogTestBase : public KuduTest {
   // Appends a batch with size 2 (1 insert, 1 mutate) to the log.
   void AppendReplicateBatch(int index, bool sync = APPEND_SYNC) {
     LogEntryPB log_entry;
-    log_entry.set_type(OPERATION);
-    OperationPB* operation = log_entry.mutable_operation();
-
-    ReplicateMsg* replicate = operation->mutable_replicate();
+    log_entry.set_type(REPLICATE);
+    ReplicateMsg* replicate = log_entry.mutable_replicate();
     replicate->set_op_type(WRITE_OP);
 
-    OpId* op_id = operation->mutable_id();
+    OpId* op_id = replicate->mutable_id();
     op_id->set_term(0);
     op_id->set_index(index);
 
@@ -134,7 +129,7 @@ class LogTestBase : public KuduTest {
     if (sync) {
       AppendSync(&log_entry);
     } else {
-      AppendAsync(operation);
+      AppendAsync(&log_entry);
     }
   }
 
@@ -154,10 +149,8 @@ class LogTestBase : public KuduTest {
   void AppendCommit(int original_op_index, int mrs_id, int rs_id, int dms_id,
                     bool sync = APPEND_SYNC) {
     LogEntryPB log_entry;
-    log_entry.set_type(OPERATION);
-    OperationPB* operation = log_entry.mutable_operation();
-
-    CommitMsg* commit = operation->mutable_commit();
+    log_entry.set_type(COMMIT);
+    CommitMsg* commit = log_entry.mutable_commit();
     commit->set_op_type(WRITE_OP);
     commit->set_timestamp(Timestamp(original_op_index).ToUint64());
 
@@ -178,7 +171,7 @@ class LogTestBase : public KuduTest {
     if (sync) {
       AppendSync(&log_entry);
     } else {
-      AppendAsync(operation);
+      AppendAsync(&log_entry);
     }
   }
 
@@ -186,14 +179,9 @@ class LogTestBase : public KuduTest {
     ASSERT_STATUS_OK(log_->Append(log_entry));
   }
 
-  void AppendAsync(OperationPB* operation) {
-    LogEntryBatch* reserved_entry_batch;
-
-    gscoped_ptr<log::LogEntryBatchPB> entry_batch;
-    log::CreateBatchFromAllocatedOperations(&operation, 1, &entry_batch);
-
-    ASSERT_STATUS_OK(log_->Reserve(entry_batch.Pass(), &reserved_entry_batch));
-    ASSERT_STATUS_OK(log_->AsyncAppend(reserved_entry_batch));
+  void AppendAsync(LogEntryPB* operation) {
+    LOG(FATAL) << "TODO: this method is never called and code paths leading to it"
+               << " should be removed!";
   }
 
     // Appends 'count' ReplicateMsgs and the corresponding CommitMsgs to the log
@@ -208,10 +196,10 @@ class LogTestBase : public KuduTest {
   // Append a single NO_OP entry. Increments op_id by one.
   Status AppendNoOp(OpId* op_id) {
     LogEntryPB log_entry;
-    log_entry.set_type(OPERATION);
-    OperationPB* operation = log_entry.mutable_operation();
-    operation->mutable_id()->CopyFrom(*op_id);
-    operation->mutable_replicate()->set_op_type(NO_OP);
+    log_entry.set_type(REPLICATE);
+    ReplicateMsg* repl = log_entry.mutable_replicate();
+    repl->mutable_id()->CopyFrom(*op_id);
+    repl->set_op_type(NO_OP);
     RETURN_NOT_OK(log_->Append(&log_entry));
 
     // Increment op_id.

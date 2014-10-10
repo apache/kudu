@@ -254,12 +254,12 @@ class RaftConsensusTest : public KuduTest {
         }
 
         // Gather the replica and leader operations for printing
-        vector<OperationPB*> replica_ops;
+        vector<LogEntryPB*> replica_ops;
         ElementDeleter repl0_deleter(&replica_ops);
-        GatherOperations(peer_idx, replica->log(), &replica_ops);
-        vector<OperationPB*> leader_ops;
+        GatherLogEntries(peer_idx, replica->log(), &replica_ops);
+        vector<LogEntryPB*> leader_ops;
         ElementDeleter leader_deleter(&leader_ops);
-        GatherOperations(leader_idx, logs_[leader_idx], &leader_ops);
+        GatherLogEntries(leader_idx, logs_[leader_idx], &leader_ops);
         SCOPED_TRACE(PrintOnError(leader_ops, "leader"));
         SCOPED_TRACE(PrintOnError(replica_ops, replica->peer_uuid()));
         FAIL() << "Replica did not commit.";
@@ -313,24 +313,23 @@ class RaftConsensusTest : public KuduTest {
     }
   }
 
-  void GatherOperations(int idx, Log* log, vector<OperationPB* >* operations) {
+  void GatherLogEntries(int idx, Log* log, vector<LogEntryPB* >* entries) {
     ASSERT_STATUS_OK(log->WaitUntilAllFlushed());
     log->Close();
     gscoped_ptr<LogReader> log_reader;
     ASSERT_STATUS_OK(log::LogReader::Open(fs_managers_[idx],
                                           kTestTablet,
                                           &log_reader));
-    vector<LogEntryPB*> entries;
-    ElementDeleter deleter(&entries);
+    vector<LogEntryPB*> ret;
+    ElementDeleter deleter(&ret);
     log::SegmentSequence segments;
     ASSERT_STATUS_OK(log_reader->GetSegmentsSnapshot(&segments));
 
     BOOST_FOREACH(const log::SegmentSequence::value_type& entry, segments) {
-      ASSERT_STATUS_OK(entry->ReadEntries(&entries));
+      ASSERT_STATUS_OK(entry->ReadEntries(&ret));
     }
-    BOOST_FOREACH(LogEntryPB* entry, entries) {
-      operations->push_back(entry->release_operation());
-    }
+
+    entries->swap(ret);
   }
 
   // Verifies that the replica's log match the leader's. This deletes the
@@ -349,92 +348,97 @@ class RaftConsensusTest : public KuduTest {
     BOOST_FOREACH(RaftConsensus* peer, peers_) {
       peer->Shutdown();
     }
-    vector<OperationPB*> replica0_ops;
-    ElementDeleter repl0_deleter(&replica0_ops);
-    GatherOperations(replica0_idx, logs_[replica0_idx], &replica0_ops);
-    vector<OperationPB*> replica1_ops;
-    ElementDeleter repl1_deleter(&replica1_ops);
+    vector<LogEntryPB*> replica0_entries;
+    ElementDeleter repl0_deleter(&replica0_entries);
+    GatherLogEntries(replica0_idx, logs_[replica0_idx], &replica0_entries);
+    vector<LogEntryPB*> replica1_entries;
+    ElementDeleter repl1_deleter(&replica1_entries);
     if (replica1_idx != kDontVerify) {
-      GatherOperations(replica1_idx, logs_[replica1_idx], &replica1_ops);
+      GatherLogEntries(replica1_idx, logs_[replica1_idx], &replica1_entries);
     }
-    vector<OperationPB*> leader_ops;
-    ElementDeleter leader_deleter(&leader_ops);
-    GatherOperations(leader_idx, logs_[leader_idx], &leader_ops);
+    vector<LogEntryPB*> leader_entries;
+    ElementDeleter leader_deleter(&leader_entries);
+    GatherLogEntries(leader_idx, logs_[leader_idx], &leader_entries);
 
     // gather the leader's replicates and commits, the replicas
     // must have seen the same operations in the same order.
-    vector<OpId> leader_replicates;
-    vector<OpId> leader_commits;
-    BOOST_FOREACH(OperationPB* operation, leader_ops) {
-      if (operation->has_replicate()) {
-        leader_replicates.push_back(operation->id());
-      } else {
-        leader_commits.push_back(operation->id());
-      }
-    }
-
-    VerifyReplica(leader_replicates,
-                  leader_commits,
-                  leader_ops,
-                  replica0_ops,
+    VerifyReplica(leader_entries,
+                  replica0_entries,
                   leader_name,
                   replica0_name);
     if (replica1_idx != kDontVerify) {
-      VerifyReplica(leader_replicates,
-                    leader_commits,
-                    leader_ops,
-                    replica1_ops,
+      VerifyReplica(leader_entries,
+                    replica1_entries,
                     leader_name,
                     replica1_name);
     }
   }
 
-  void VerifyReplica(const vector<OpId>& leader_replicates,
-                     const vector<OpId>& leader_commits,
-                     const vector<OperationPB*>& leader_ops,
-                     const vector<OperationPB*>& replica_ops,
-                     string leader_name,
-                     string replica_name) {
-    int l_repl_idx = 0;
-    int l_comm_idx = 0;
-    OpId last_repl_op = MinimumOpId();
-    unordered_set<consensus::OpId,
-                  OpIdHashFunctor,
-                  OpIdEqualsFunctor> replication_ops;
-
-    SCOPED_TRACE(PrintOnError(leader_ops, Substitute("Leader: $0", leader_name)));
-    SCOPED_TRACE(PrintOnError(replica_ops, Substitute("Replica: $0", replica_name)));
-    for (int i = 0; i < replica_ops.size(); i++) {
-      OperationPB* operation = replica_ops[i];
-      // check that the operations appear in the same order as the leaders
-      // additionally check that no commit op appears before its replicate op
-      // and that replicate op ids are monotonically increasing
-      if (operation->has_replicate()) {
-        ASSERT_LT(l_repl_idx, leader_replicates.size());
-        ASSERT_TRUE(OpIdEquals(leader_replicates[l_repl_idx], operation->id()))
-            << "Expected Leader Replicate: " << leader_replicates[l_repl_idx].ShortDebugString()
-            << " To match replica: " << operation->id().ShortDebugString();
-        ASSERT_TRUE(OpIdCompare(operation->id(), last_repl_op) > 0);
-        last_repl_op = operation->id();
-        replication_ops.insert(last_repl_op);
-        l_repl_idx++;
-      } else {
-        CHECK(operation->has_commit());
-        ASSERT_LT(l_comm_idx, leader_commits.size());
-        ASSERT_EQ(replication_ops.erase(operation->commit().commited_op_id()), 1);
-        l_comm_idx++;
+  void ExtractReplicateIds(const vector<LogEntryPB*>& entries,
+                           vector<OpId>* ids) {
+    ids->reserve(entries.size() / 2);
+    BOOST_FOREACH(const LogEntryPB* entry, entries) {
+      if (entry->has_replicate()) {
+        ids->push_back(entry->replicate().id());
       }
     }
   }
 
-  string PrintOnError(const vector<OperationPB*>& replica_ops,
-                      string replica_id) {
+  void VerifyReplicateOrderMatches(const vector<LogEntryPB*>& leader_entries,
+                                   const vector<LogEntryPB*>& replica_entries) {
+    vector<OpId> leader_ids, replica_ids;
+    ExtractReplicateIds(leader_entries, &leader_ids);
+    ExtractReplicateIds(replica_entries, &replica_ids);
+    ASSERT_EQ(leader_ids.size(), replica_ids.size());
+    for (int i = 0; i < leader_ids.size(); i++) {
+      ASSERT_EQ(leader_ids[i].ShortDebugString(),
+                replica_ids[i].ShortDebugString());
+    }
+  }
+
+  void VerifyNoCommitsBeforeReplicates(const vector<LogEntryPB*>& entries) {
+    unordered_set<consensus::OpId,
+                  OpIdHashFunctor,
+                  OpIdEqualsFunctor> replication_ops;
+
+    BOOST_FOREACH(const LogEntryPB* entry, entries) {
+      if (entry->has_replicate()) {
+        ASSERT_TRUE(InsertIfNotPresent(&replication_ops, entry->replicate().id()))
+          << "REPLICATE op id showed up twice: " << entry->ShortDebugString();
+      } else if (entry->has_commit()) {
+        ASSERT_EQ(1, replication_ops.erase(entry->commit().commited_op_id()))
+          << "COMMIT came before associated REPLICATE: " << entry->ShortDebugString();
+      }
+    }
+  }
+
+  void VerifyReplica(const vector<LogEntryPB*>& leader_entries,
+                     const vector<LogEntryPB*>& replica_entries,
+                     const string& leader_name,
+                     const string& replica_name) {
+    SCOPED_TRACE(PrintOnError(leader_entries, Substitute("Leader: $0", leader_name)));
+    SCOPED_TRACE(PrintOnError(replica_entries, Substitute("Replica: $0", replica_name)));
+
+    // Check that the REPLICATE messages come in the same order on both nodes.
+    VerifyReplicateOrderMatches(leader_entries, replica_entries);
+
+    // Check that no COMMIT precedes its related REPLICATE on the replica
+    VerifyNoCommitsBeforeReplicates(replica_entries);
+
+    // TODO: We should also verify this for the leader. But, this doesn't hold true
+    // right now -- we need to make the leader log delay COMMITs until their respective
+    // REPLICATEs arrive.
+    // VerifyNoCommitsBeforeReplicates(leader_entries);
+
+  }
+
+  string PrintOnError(const vector<LogEntryPB*>& replica_entries,
+                      const string& replica_id) {
     string ret = "";
-    SubstituteAndAppend(&ret, "Replica Ops for replica: $0 Num. Replica Ops: $1\n",
-                        replica_id,
-                        replica_ops.size());
-    BOOST_FOREACH(OperationPB* replica_op, replica_ops) {
-      StrAppend(&ret, "Replica Operation: ", replica_op->ShortDebugString(), "\n");
+    SubstituteAndAppend(&ret, "$1 log entries for replica $0:\n",
+                        replica_id, replica_entries.size());
+    BOOST_FOREACH(LogEntryPB* replica_entry, replica_entries) {
+      StrAppend(&ret, "Replica log entry: ", replica_entry->ShortDebugString(), "\n");
     }
     return ret;
   }
@@ -841,11 +845,10 @@ TEST_F(RaftConsensusTest, TestReplicasEnforceTheLogMatchingProperty) {
   req.set_caller_term(last_op_id.term());
   req.mutable_preceding_id()->CopyFrom(last_op_id);
 
-  OperationPB* op = req.add_ops();
-  OpId* id = op->mutable_id();
+  ReplicateMsg* replicate = req.add_ops();
+  OpId* id = replicate->mutable_id();
   id->set_term(last_op_id.term());
   id->set_index(last_op_id.index() + 1);
-  ReplicateMsg* replicate = op->mutable_replicate();
   replicate->set_op_type(NO_OP);
 
   // Appending this message to peer0 should work and update

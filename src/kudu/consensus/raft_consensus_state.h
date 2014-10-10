@@ -133,7 +133,7 @@ class ReplicaState {
   // state (role) to replicate the provided operation, that the operation
   // contains a replicate message and is of the appropriate type, and returns
   // Status::IllegalState if that is not the case.
-  Status LockForReplicate(UniqueLock* lock, const OperationPB& op) WARN_UNUSED_RESULT;
+  Status LockForReplicate(UniqueLock* lock, const ReplicateMsg& msg) WARN_UNUSED_RESULT;
 
   // Locks a replica down until the critical section of a commit completes.
   // This succeeds for all states since a replica which has initiated
@@ -469,18 +469,10 @@ class OperationCallbackRunnable : public Runnable {
 class MajorityOpStatusTracker : public OperationStatusTracker {
  public:
 
-  MajorityOpStatusTracker(gscoped_ptr<OperationPB> operation,
+  MajorityOpStatusTracker(gscoped_ptr<ReplicateMsg> replicate_msg,
                           const std::tr1::unordered_set<std::string>& voting_peers,
                           int majority,
                           int total_peers_count);
-
-  MajorityOpStatusTracker(gscoped_ptr<OperationPB> operation,
-                          const std::tr1::unordered_set<std::string>& voting_peers,
-                          int majority,
-                          int total_peers_count,
-                          ThreadPool* callback_pool,
-                          const std::tr1::shared_ptr<FutureCallback>& callback);
-
 
   virtual void AckPeer(const std::string& uuid) OVERRIDE;
 

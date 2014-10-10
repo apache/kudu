@@ -61,7 +61,7 @@ struct ConsensusBootstrapInfo {
   // REPLICATE messages which were in the log with no accompanying
   // COMMIT. These need to be passed along to consensus init in order
   // to potentially commit them.
-  std::vector<consensus::OperationPB*> orphaned_replicates;
+  std::vector<consensus::ReplicateMsg*> orphaned_replicates;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(ConsensusBootstrapInfo);
@@ -98,7 +98,7 @@ class Consensus {
   // (and later on the CommitMsg). ConsensusRound will also point to and
   // increase the reference count for the provided callbacks.
   ConsensusRound* NewRound(
-      gscoped_ptr<ReplicateMsg> entry,
+      gscoped_ptr<ReplicateMsg> replicate_msg,
       const std::tr1::shared_ptr<FutureCallback>& repl_callback,
       const std::tr1::shared_ptr<FutureCallback>& commit_callback);
 
@@ -310,7 +310,7 @@ class ConsensusRound {
   // Ctor used for leader transactions. Leader transactions can and must specify the
   // callbacks prior to initiating the consensus round.
   ConsensusRound(Consensus* consensus,
-                 gscoped_ptr<OperationPB> replicate_op,
+                 gscoped_ptr<ReplicateMsg> replicate_msg,
                  const std::tr1::shared_ptr<FutureCallback>& replicate_callback,
                  const std::tr1::shared_ptr<FutureCallback>& commit_callback);
 
@@ -318,16 +318,16 @@ class ConsensusRound {
   // replicate callback and the commit callback is set later, after the transaction
   // is actually started.
   ConsensusRound(Consensus* consensus,
-                 gscoped_ptr<OperationPB> replicate_op);
+                 gscoped_ptr<ReplicateMsg> replicate_msg);
 
-  OperationPB* replicate_op() {
-    return replicate_op_.get();
+  ReplicateMsg* replicate_msg() {
+    return replicate_msg_.get();
   }
 
   // Returns the id of the (replicate) operation this context
   // refers to. This is only set _after_ Consensus::Replicate(context).
   OpId id() const {
-    return DCHECK_NOTNULL(replicate_op_.get())->id();
+    return DCHECK_NOTNULL(replicate_msg_.get())->id();
   }
 
   Status Commit(gscoped_ptr<CommitMsg> commit);
@@ -360,7 +360,7 @@ class ConsensusRound {
  private:
   Consensus* consensus_;
   // This round's replicate operation.
-  gscoped_ptr<OperationPB> replicate_op_;
+  gscoped_ptr<ReplicateMsg> replicate_msg_;
   // The callback that is called once the replicate phase of this consensus
   // round is finished.
   std::tr1::shared_ptr<FutureCallback> replicate_callback_;

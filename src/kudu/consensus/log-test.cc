@@ -173,7 +173,7 @@ TEST_F(LogTest, TestCorruptLog) {
   ASSERT_OK(AppendNoOps(&op_id, kNumEntries));
   ASSERT_STATUS_OK(log_->Close());
 
-  ASSERT_STATUS_OK(CorruptLogFile(env_.get(), log_.get(), 40));
+  ASSERT_STATUS_OK(CorruptLogFile(env_.get(), log_.get(), 35));
 
   ASSERT_EQ(1, log_->GetLogReader()->num_segments());
 
@@ -301,12 +301,11 @@ TEST_F(LogTest, TestWaitUntilAllFlushed) {
   ASSERT_STATUS_OK(segments[0]->ReadEntries(&entries_));
   ASSERT_EQ(entries_.size(), 4);
   for (int i = 0; i < 4 ; i++) {
-    ASSERT_TRUE(entries_[i]->has_operation());
     if (i % 2 == 0) {
-      ASSERT_TRUE(entries_[i]->operation().has_replicate());
+      ASSERT_TRUE(entries_[i]->has_replicate());
     } else {
-      ASSERT_TRUE(entries_[i]->operation().has_commit());
-      ASSERT_EQ(WRITE_OP, entries_[i]->operation().commit().op_type());
+      ASSERT_TRUE(entries_[i]->has_commit());
+      ASSERT_EQ(WRITE_OP, entries_[i]->commit().op_type());
     }
   }
 }

@@ -40,7 +40,7 @@ extern const char kConsensusQueueParentTrackerId[];
 // NOTE: Implementations of this class must be thread safe.
 class OperationStatusTracker : public RefCountedThreadSafe<OperationStatusTracker> {
  public:
-  explicit OperationStatusTracker(gscoped_ptr<OperationPB> operation);
+  explicit OperationStatusTracker(gscoped_ptr<ReplicateMsg> operation);
 
   // Called by PeerMessageQueue after a peer ACKs this operation.
   //
@@ -68,11 +68,11 @@ class OperationStatusTracker : public RefCountedThreadSafe<OperationStatusTracke
   virtual void Wait() = 0;
 
   const OpId& op_id() const {
-    return operation_->id();
+    return replicate_msg_->id();
   }
 
-  OperationPB* operation() {
-    return operation_.get();
+  ReplicateMsg* replicate_msg() {
+    return replicate_msg_.get();
   }
 
   virtual std::string ToString() const { return  IsDone() ? "Done" : "NotDone"; }
@@ -80,7 +80,7 @@ class OperationStatusTracker : public RefCountedThreadSafe<OperationStatusTracke
   virtual ~OperationStatusTracker() {}
 
  protected:
-  gscoped_ptr<OperationPB> operation_;
+  gscoped_ptr<ReplicateMsg> replicate_msg_;
 };
 
 // Tracks all the pending consensus operations on the LEADER side.
@@ -235,7 +235,7 @@ class PeerMessageQueue {
   // Trims the buffer, making sure it can accomodate the provided message.
   // Returns Status::OK() if the buffer was trimmed or otherwise had available
   // space or Status::ServiceUnavailable() if the queue could not free enough space.
-  Status TrimBufferForMessage(const OperationPB* operation);
+  Status TrimBufferForMessage(const ReplicateMsg* msg);
 
   // Check whether adding 'bytes' to the consensus queue would violate
   // either the local (per-tablet) hard limit or the global

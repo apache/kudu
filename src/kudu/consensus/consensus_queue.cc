@@ -74,8 +74,9 @@ METRIC_DEFINE_gauge_int64(queue_size_bytes, MetricUnit::kBytes,
 
 const char kConsensusQueueParentTrackerId[] = "consensus_queue_parent";
 
-OperationStatusTracker::OperationStatusTracker(gscoped_ptr<OperationPB> operation)
-  : operation_(operation.Pass()) {
+OperationStatusTracker::OperationStatusTracker(gscoped_ptr<ReplicateMsg> replicate_msg)
+  : replicate_msg_(replicate_msg.Pass()) {
+  DCHECK(replicate_msg_->has_id());
 }
 
 std::string PeerMessageQueue::TrackedPeer::ToString() const {
@@ -157,17 +158,13 @@ void PeerMessageQueue::UntrackPeer(const string& uuid) {
 Status PeerMessageQueue::AppendOperation(scoped_refptr<OperationStatusTracker> status) {
   boost::lock_guard<simple_spinlock> lock(queue_lock_);
   DCHECK_EQ(state_, kQueueOpen);
-  const OperationPB* operation = status->operation();
+  const ReplicateMsg* msg = status->replicate_msg();
 
   // Check that terms are monotonically increasing
   DCHECK_GE(status->op_id().term(), current_term_);
   if (status->op_id().term() > current_term_) {
     current_term_ = status->op_id().term();
   }
-
-  // If this is a remote peer don't send the commit messages, these need to
-  // be written in line with the replicates, but only for the local peer.
-  CHECK(!operation->has_commit()) << "We don't allow commit messages in the replication queue.";
 
   // Check that terms are monotonically increasing
   DCHECK_GE(status->op_id().term(), current_term_);
@@ -178,7 +175,7 @@ Status PeerMessageQueue::AppendOperation(scoped_refptr<OperationStatusTracker> s
   // Once either the local or global soft limit is exceeded...
   if (tracker_->AnyLimitExceeded()) {
     // .. try to trim the queue.
-    Status s  = TrimBufferForMessage(operation);
+    Status s  = TrimBufferForMessage(msg);
     if (PREDICT_FALSE(!s.ok() && (VLOG_IS_ON(2) || FLAGS_consensus_dump_queue_on_full))) {
       queue_lock_.unlock();
       LOG(INFO) << "Queue Full: Dumping State:";
@@ -197,14 +194,13 @@ Status PeerMessageQueue::AppendOperation(scoped_refptr<OperationStatusTracker> s
   // soft limit was exceeded
   // 2) We were unable to trim the queue to below any soft limits, but
   // hard limits were not violated.
-  // 3) 'operation' is a COMMIT instead of a REPLICATE.
   //
   // See also: TrimBufferForMessage() in this class.
-  metrics_.queue_size_bytes->IncrementBy(operation->SpaceUsed());
-  tracker_->Consume(operation->SpaceUsed());
+  metrics_.queue_size_bytes->IncrementBy(msg->SpaceUsed());
+  tracker_->Consume(msg->SpaceUsed());
 
   if (PREDICT_FALSE(VLOG_IS_ON(2))) {
-    VLOG(2) << "Appended operation to queue: " << operation->ShortDebugString() <<
+    VLOG(2) << "Appended REPLICATE to queue: " << msg->ShortDebugString() <<
         " Operation Status: " << status->ToString();
   }
   InsertOrDieNoPrint(&messages_, status->op_id(), status);
@@ -263,7 +259,7 @@ void PeerMessageQueue::RequestForPeer(const string& uuid,
   for (; iter != messages_.end(); iter++) {
     ost = (*iter).second.get();
 
-    request->mutable_ops()->AddAllocated(ost->operation());
+    request->mutable_ops()->AddAllocated(ost->replicate_msg());
     if (request->ByteSize() > FLAGS_consensus_max_batch_size_bytes) {
 
       // Allow overflowing the max batch size in the case that we are sending
@@ -366,7 +362,7 @@ void PeerMessageQueue::ResponseFromPeer(const ConsensusResponsePB& response,
         // Because the replication queue is traversed in order
         // we're sure to update 'last_committed_' to monotonically
         // increasing values.
-        last_committed = &ost->operation()->id();
+        last_committed = &ost->replicate_msg()->id();
         metrics_.num_majority_done_ops->Increment();
         metrics_.num_in_progress_ops->Decrement();
       }
@@ -406,15 +402,15 @@ Status PeerMessageQueue::GetOperationStatus(const OpId& op_id,
   return Status::OK();
 }
 
-Status PeerMessageQueue::TrimBufferForMessage(const OperationPB* operation) {
+Status PeerMessageQueue::TrimBufferForMessage(const ReplicateMsg* msg) {
   // TODO for now we're just trimming the buffer, but we need to handle when
   // the buffer is full but there is a peer hanging on to the queue (very delayed)
-  int32_t bytes = operation->SpaceUsed();
+  int32_t bytes = msg->SpaceUsed();
 
   MessagesBuffer::iterator iter = messages_.begin();
 
-  // If adding 'operation' to the queue would violate either a local
-  // or a global soft limit, try to trim any finished operations from
+  // If adding 'msg' to the queue would violate either a local
+  // or a global soft limit, try to trim any finished messages from
   // the queue and release the memory used to the mem tracker.
   while (bytes > tracker_->SpareCapacity()) {
     OperationStatusTracker* ost = NULL;
@@ -425,9 +421,8 @@ Status PeerMessageQueue::TrimBufferForMessage(const OperationPB* operation) {
       ost = (*iter).second.get();
     }
     if (ost == NULL || !ost->IsAllDone()) {
-      // return OK if we could trim the queue or if the operation was a commit
-      // in which case we always accept it.
-      if (CheckHardLimitsNotViolated(bytes) || operation->has_commit()) {
+      // return OK if we could trim the queue
+      if (CheckHardLimitsNotViolated(bytes)) {
         // parent_tracker_->consumption() in this case returns total
         // consumption by _ALL_ all consensus queues, i.e., the
         // server-wide consensus queue memory consumption.
@@ -436,7 +431,7 @@ Status PeerMessageQueue::TrimBufferForMessage(const OperationPB* operation) {
         return Status::ServiceUnavailable("Cannot append replicate message. Queue is full.");
       }
     }
-    uint64_t bytes_to_decrement = ost->operation()->SpaceUsed();
+    uint64_t bytes_to_decrement = ost->replicate_msg()->SpaceUsed();
     metrics_.total_num_ops->Decrement();
     metrics_.num_all_done_ops->Decrement();
     metrics_.queue_size_bytes->DecrementBy(bytes_to_decrement);
@@ -488,23 +483,12 @@ void PeerMessageQueue::DumpToStringsUnlocked(vector<string>* lines) const {
   lines->push_back("Messages:");
   BOOST_FOREACH(const MessagesBuffer::value_type entry, messages_) {
     const OpId& id = entry.second->op_id();
-    OperationPB* operation = entry.second->operation();
-    if (operation->has_replicate()) {
-      lines->push_back(
-          Substitute("Message[$0] $1.$2 : REPLICATE. Type: $3, Size: $4, Status: $5",
-                     counter++, id.term(), id.index(),
-                     OperationType_Name(operation->replicate().op_type()),
-                     operation->ByteSize(), entry.second->ToString()));
-    } else {
-      const OpId& committed_op_id = operation->commit().commited_op_id();
-      lines->push_back(
-          Substitute("Message[$0] $1.$2 : COMMIT. Committed OpId: $3.$4 "
-              "Type: $5, Size: $6, Status: $7",
-                     counter++, id.term(), id.index(), committed_op_id.index(),
-                     committed_op_id.term(),
-                     OperationType_Name(operation->commit().op_type()),
-                     operation->ByteSize(), entry.second->ToString()));
-    }
+    ReplicateMsg* msg = entry.second->replicate_msg();
+    lines->push_back(
+      Substitute("Message[$0] $1.$2 : REPLICATE. Type: $3, Size: $4, Status: $5",
+                 counter++, id.term(), id.index(),
+                 OperationType_Name(msg->op_type()),
+                 msg->ByteSize(), entry.second->ToString()));
   }
 }
 
@@ -529,22 +513,12 @@ void PeerMessageQueue::DumpToHtml(std::ostream& out) const {
   int counter = 0;
   BOOST_FOREACH(const MessagesBuffer::value_type entry, messages_) {
     const OpId& id = entry.second->op_id();
-    OperationPB* operation = entry.second->operation();
-    if (operation->has_replicate()) {
-      out << Substitute("<tr><th>$0</th><th>$1.$2</th><td>REPLICATE $3</td>"
-                        "<td>$4</td><td>$5</td></tr>",
-                        counter++, id.term(), id.index(),
-                        OperationType_Name(operation->replicate().op_type()),
-                        operation->ByteSize(), entry.second->ToString()) << endl;
-    } else {
-      const OpId& committed_op_id = operation->commit().commited_op_id();
-      out << Substitute("<tr><th>$0</th><th>$1.$2</th><td>COMMIT $5 $3.$4</td>"
-                        "<td>$6</td><td>$7</td></tr>",
-                        counter++, id.term(), id.index(), committed_op_id.index(),
-                        committed_op_id.term(),
-                        OperationType_Name(operation->commit().op_type()),
-                        operation->ByteSize(), entry.second->ToString()) << endl;
-    }
+    ReplicateMsg* msg = entry.second->replicate_msg();
+    out << Substitute("<tr><th>$0</th><th>$1.$2</th><td>REPLICATE $3</td>"
+                      "<td>$4</td><td>$5</td></tr>",
+                      counter++, id.term(), id.index(),
+                      OperationType_Name(msg->op_type()),
+                      msg->ByteSize(), entry.second->ToString()) << endl;
   }
   out << "</table>";
 }

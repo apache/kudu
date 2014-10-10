@@ -284,14 +284,14 @@ Status RaftConsensus::Replicate(ConsensusRound* round) {
   boost::lock_guard<simple_spinlock> lock(update_lock_);
   {
     ReplicaState::UniqueLock lock;
-    RETURN_NOT_OK(state_->LockForReplicate(&lock, *round->replicate_op()));
+    RETURN_NOT_OK(state_->LockForReplicate(&lock, *round->replicate_msg()));
 
-    state_->NewIdUnlocked(round->replicate_op()->mutable_id());
+    state_->NewIdUnlocked(round->replicate_msg()->mutable_id());
     RETURN_NOT_OK(state_->AddPendingOperation(round));
 
     // the original instance of the replicate msg is owned by the consensus context
     // so we create a copy for the queue.
-    gscoped_ptr<OperationPB> queue_op(new OperationPB(*round->replicate_op()));
+    gscoped_ptr<ReplicateMsg> queue_msg(new ReplicateMsg(*round->replicate_msg()));
 
     const QuorumState& quorum_state = state_->GetActiveQuorumStateUnlocked();
 
@@ -300,7 +300,7 @@ Status RaftConsensus::Replicate(ConsensusRound* round) {
     // different configs but still count things properly, without
     // copying the args.
     scoped_refptr<OperationStatusTracker> status(
-        new MajorityOpStatusTracker(queue_op.Pass(),
+        new MajorityOpStatusTracker(queue_msg.Pass(),
                                     quorum_state.voting_peers,
                                     quorum_state.majority_size,
                                     quorum_state.quorum_size));
@@ -308,7 +308,7 @@ Status RaftConsensus::Replicate(ConsensusRound* round) {
     Status s = queue_.AppendOperation(status);
     // Handle Status::ServiceUnavailable(), which means the queue is full.
     if (PREDICT_FALSE(s.IsServiceUnavailable())) {
-      gscoped_ptr<OpId> id(status->operation()->release_id());
+      gscoped_ptr<OpId> id(status->replicate_msg()->release_id());
       // Rollback the id gen. so that we reuse this id later, when we can
       // actually append to the state machine, i.e. this makes the state
       // machine have continuous ids, for the same term, even if the queue
@@ -413,7 +413,7 @@ Status RaftConsensus::Update(const ConsensusRequestPB* request,
 
 Status RaftConsensus::UpdateReplica(const ConsensusRequestPB* request) {
   Synchronizer log_synchronizer;
-  vector<const OperationPB*> replicate_ops;
+  vector<const ReplicateMsg*> replicate_msgs;
 
 
   // The ordering of the following operations is crucial, read on for details.
@@ -514,22 +514,16 @@ Status RaftConsensus::UpdateReplica(const ConsensusRequestPB* request) {
     // The id of the operation immediately before the first one we'll prepare/replicate.
     OpId preceding_id(request->preceding_id());
 
-    // Split the operations into two lists, one for REPLICATE
-    // and one for COMMIT. Also filter out any ops which have already
-    // been handled by a previous call to UpdateReplica()
-    BOOST_FOREACH(const OperationPB& op, request->ops()) {
-
-      if (OpIdCompare(op.id(), state_->GetLastReceivedOpIdUnlocked()) <= 0) {
-        VLOG_WITH_PREFIX(2) << "Skipping op id " << op.id().ShortDebugString()
+    // filter out any ops which have already been handled by a previous call
+    // to UpdateReplica()
+    BOOST_FOREACH(const ReplicateMsg& msg, request->ops()) {
+      if (OpIdCompare(msg.id(), state_->GetLastReceivedOpIdUnlocked()) <= 0) {
+        VLOG_WITH_PREFIX(2) << "Skipping op id " << msg.id().ShortDebugString()
             << " (already replicated/committed)";
-        preceding_id.CopyFrom(op.id());
+        preceding_id.CopyFrom(msg.id());
         continue;
       }
-      if (PREDICT_TRUE(op.has_replicate())) {
-        replicate_ops.push_back(&const_cast<OperationPB&>(op));
-      } else {
-        LOG_WITH_PREFIX(FATAL) << "Unexpected op: " << op.ShortDebugString();
-      }
+      replicate_msgs.push_back(&const_cast<ReplicateMsg&>(msg));
     }
 
     // Only accept requests from a sender with a terms that is equal to or higher
@@ -553,17 +547,17 @@ Status RaftConsensus::UpdateReplica(const ConsensusRequestPB* request) {
 
     // 1 - Enqueue the prepares
 
-    TRACE("Triggering prepare for $0 ops", replicate_ops.size());
+    TRACE("Triggering prepare for $0 ops", replicate_msgs.size());
     Status prepare_status;
-    for (int i = 0; i < replicate_ops.size(); i++) {
-      gscoped_ptr<OperationPB> op_copy(new OperationPB(*replicate_ops[i]));
-      gscoped_ptr<ConsensusRound> round(new ConsensusRound(this, op_copy.Pass()));
+    for (int i = 0; i < replicate_msgs.size(); i++) {
+      gscoped_ptr<ReplicateMsg> msg_copy(new ReplicateMsg(*replicate_msgs[i]));
+      gscoped_ptr<ConsensusRound> round(new ConsensusRound(this, msg_copy.Pass()));
       ConsensusRound* round_ptr = round.get();
       prepare_status = state_->GetReplicaTransactionFactoryUnlocked()->
           StartReplicaTransaction(round.Pass());
       if (PREDICT_FALSE(!prepare_status.ok())) {
         LOG_WITH_PREFIX(WARNING) << "Failed to prepare operation: "
-            << replicate_ops[i]->id().ShortDebugString() << " Status: "
+            << replicate_msgs[i]->id().ShortDebugString() << " Status: "
             << prepare_status.ToString();
         break;
       }
@@ -582,7 +576,7 @@ Status RaftConsensus::UpdateReplica(const ConsensusRequestPB* request) {
 
     last_enqueued_prepare.CopyFrom(state_->GetLastReplicatedOpIdUnlocked());
     if (successfully_triggered_prepares > 0) {
-      last_enqueued_prepare = replicate_ops[successfully_triggered_prepares - 1]->id();
+      last_enqueued_prepare = replicate_msgs[successfully_triggered_prepares - 1]->id();
     }
 
     // 2 - Enqueue the writes.
@@ -593,7 +587,7 @@ Status RaftConsensus::UpdateReplica(const ConsensusRequestPB* request) {
       // Trigger the log append asap, if fsync() is on this might take a while
       // and we can't reply until this is done.
       gscoped_ptr<log::LogEntryBatchPB> entry_batch;
-      log::CreateBatchFromAllocatedOperations(&replicate_ops[0],
+      log::CreateBatchFromAllocatedOperations(&replicate_msgs[0],
                                               successfully_triggered_prepares,
                                               &entry_batch);
 

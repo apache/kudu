@@ -146,9 +146,8 @@ Status ReplicaState::LockForRead(UniqueLock* lock) {
   return Status::OK();
 }
 
-Status ReplicaState::LockForReplicate(UniqueLock* lock, const OperationPB& op) {
-  CHECK(op.has_replicate()) << "Only replicate operations are allowed. Op: "
-      << op.ShortDebugString();
+Status ReplicaState::LockForReplicate(UniqueLock* lock, const ReplicateMsg& msg) {
+  DCHECK(!msg.has_id()) << "Should not have an ID yet: " << msg.ShortDebugString();
   UniqueLock l(&update_lock_);
   if (PREDICT_FALSE(state_ != kRunning)) {
     return Status::IllegalState("Replica not in running state");
@@ -158,7 +157,7 @@ Status ReplicaState::LockForReplicate(UniqueLock* lock, const OperationPB& op) {
       lock->swap(&l);
       return Status::OK();
     case QuorumPeerPB::CANDIDATE:
-      if (op.replicate().op_type() != CHANGE_CONFIG_OP) {
+      if (msg.op_type() != CHANGE_CONFIG_OP) {
         return Status::IllegalState("Only a change config round can be pushed while CANDIDATE.");
       }
       // TODO support true config change. Right now we only allow
@@ -388,11 +387,11 @@ Status ReplicaState::CancelPendingTransactions() {
       // We cancel only transactions whose applies have not yet been triggered.
       if (in_flight_commits_.count((*iter).first) == 0) {
         LOG_WITH_PREFIX(INFO) << "Aborting transaction as it isn't in flight: "
-            << (*iter).second->replicate_op()->ShortDebugString();
+            << (*iter).second->replicate_msg()->ShortDebugString();
         round->GetReplicaCommitContinuation()->Abort();
       } else {
         LOG_WITH_PREFIX(INFO) << "Skipping txn abort as the apply already in flight: "
-            << (*iter).second->replicate_op()->ShortDebugString();
+            << (*iter).second->replicate_msg()->ShortDebugString();
       }
     }
   }
@@ -418,11 +417,11 @@ Status ReplicaState::AddPendingOperation(ConsensusRound* round) {
   if (PREDICT_FALSE(state_ != kRunning)) {
     // Special case when we're configuring and this is a config change, refuse
     // everything else.
-    if (round->replicate_op()->replicate().op_type() != CHANGE_CONFIG_OP) {
+    if (round->replicate_msg()->op_type() != CHANGE_CONFIG_OP) {
       return Status::IllegalState("Cannot trigger prepare. Replica is not in kRunning state.");
     }
   }
-  InsertOrDie(&pending_txns_, round->replicate_op()->id(), round);
+  InsertOrDie(&pending_txns_, round->replicate_msg()->id(), round);
   return Status::OK();
 }
 
@@ -621,11 +620,11 @@ void OperationCallbackRunnable::Run() {
 }
 
 
-MajorityOpStatusTracker::MajorityOpStatusTracker(gscoped_ptr<OperationPB> operation,
+MajorityOpStatusTracker::MajorityOpStatusTracker(gscoped_ptr<ReplicateMsg> replicate_msg,
                                                  const unordered_set<string>& voting_peers,
                                                  int majority,
                                                  int total_peers_count)
-    : OperationStatusTracker(operation.Pass()),
+    : OperationStatusTracker(replicate_msg.Pass()),
       majority_(majority),
       voting_peers_(voting_peers),
       total_peers_count_(total_peers_count),
@@ -677,7 +676,7 @@ std::string MajorityOpStatusTracker::ToString() const {
 std::string MajorityOpStatusTracker::ToStringUnlocked() const {
   return Substitute("MajorityOpStatusTracker: Id: $0 IsDone: $1 All Peers: $2, Voting Peers: $3, "
                     "ACK'd Peers: $4, Majority: $5",
-                    (operation_->has_id() ? operation_->id().ShortDebugString() : "NULL"),
+                    op_id().ShortDebugString(),
                     IsDone(),
                     total_peers_count_,
                     voting_peers_.size(),

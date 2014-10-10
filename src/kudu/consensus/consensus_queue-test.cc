@@ -36,19 +36,17 @@ class ConsensusQueueTest : public KuduTest {
     queue_->Init(MinimumOpId());
   }
 
-  Status AppendReplicateOp(gscoped_ptr<OperationPB> op,
-                           int term, int index,
-                           const std::string& payload,
-                           scoped_refptr<OperationStatusTracker>* ost) {
-    op.reset(new OperationPB);
-    OpId* id = op->mutable_id();
+  Status AppendReplicateMsg(int term, int index,
+                            const std::string& payload,
+                            scoped_refptr<OperationStatusTracker>* ost) {
+    gscoped_ptr<ReplicateMsg> msg(new ReplicateMsg);
+    OpId* id = msg->mutable_id();
     id->set_term(term);
     id->set_index(index);
 
-    ReplicateMsg* msg = op->mutable_replicate();
     msg->set_op_type(NO_OP);
     msg->mutable_noop_request()->set_payload_for_tests(payload);
-    ost->reset(new TestOpStatusTracker(op.Pass(), 1, 1));
+    ost->reset(new TestOpStatusTracker(msg.Pass(), 1, 1));
     return queue_->AppendOperation(*ost);
   }
 
@@ -139,11 +137,10 @@ TEST_F(ConsensusQueueTest, TestGetPagedMessages) {
   // We're going to add 100 messages to the queue so we make each page fetch 9 of those,
   // for a total of 12 pages. The last page should have a single op.
   for (int i = 0; i < 9; i++) {
-    OperationPB* op = page_size_estimator.add_ops();
-    OpId* id = op->mutable_id();
+    ReplicateMsg* msg = page_size_estimator.add_ops();
+    OpId* id = msg->mutable_id();
     id->set_index(0);
     id->set_term(0);
-    ReplicateMsg* msg = op->mutable_replicate();
     msg->set_op_type(NO_OP);
     msg->mutable_noop_request()->set_payload_for_tests("");
   }
@@ -192,17 +189,16 @@ TEST_F(ConsensusQueueTest, TestAlwaysYieldsAtLeastOneMessage) {
   FLAGS_consensus_max_batch_size_bytes = 10000;
 
   // Append the large op to the queue
-  gscoped_ptr<OperationPB> op;
+  gscoped_ptr<ReplicateMsg> msg;
   scoped_refptr<OperationStatusTracker> status;
   {
-    op.reset(new OperationPB);
-    OpId* id = op->mutable_id();
+    msg.reset(new ReplicateMsg);
+    OpId* id = msg->mutable_id();
     id->set_term(0);
     id->set_index(1);
-    ReplicateMsg* msg = op->mutable_replicate();
     msg->set_op_type(NO_OP);
     msg->mutable_noop_request()->set_payload_for_tests(test_payload);
-    status.reset(new TestOpStatusTracker(op.Pass(), 1, 1));
+    status.reset(new TestOpStatusTracker(msg.Pass(), 1, 1));
   }
   ASSERT_STATUS_OK(queue_->AppendOperation(status));
 
@@ -308,11 +304,10 @@ TEST_F(ConsensusQueueTest, TestQueueRefusesRequestWhenFilled) {
   // append 8 messages to the queue, these should be allowed
   AppendReplicateMessagesToQueue(queue_.get(), 1, 7, 1, 1, test_payload, &statuses);
 
-  gscoped_ptr<OperationPB> op;
   scoped_refptr<OperationStatusTracker> status;
 
   // should fail with service unavailable
-  Status s = AppendReplicateOp(op.Pass(), 10, 1, test_payload, &status);
+  Status s = AppendReplicateMsg(10, 1, test_payload, &status);
 
   LOG(INFO) << queue_->ToString();
   ASSERT_TRUE(s.IsServiceUnavailable());
@@ -322,7 +317,7 @@ TEST_F(ConsensusQueueTest, TestQueueRefusesRequestWhenFilled) {
   statuses[1]->AckPeer("");
 
   // .. and try again
-  ASSERT_STATUS_OK(AppendReplicateOp(op.Pass(), 10, 2, test_payload, &status));
+  ASSERT_STATUS_OK(AppendReplicateMsg(10, 2, test_payload, &status));
 }
 
 TEST_F(ConsensusQueueTest, TestQueueAdvancesCommittedIndex) {
@@ -405,12 +400,11 @@ TEST_F(ConsensusQueueTest, TestQueueHardAndSoftLimit) {
 
   const int kPayloadSize = 768 * 1024;
 
-  gscoped_ptr<OperationPB> op;
   scoped_refptr<OperationStatusTracker> status_1;
   string payload(kPayloadSize, '0');
 
   // Soft limit should not be violated.
-  ASSERT_STATUS_OK(AppendReplicateOp(op.Pass(), 1, 1, payload, &status_1));
+  ASSERT_STATUS_OK(AppendReplicateMsg(1, 1, payload, &status_1));
 
   int size_with_one_msg = queue_->GetQueuedOperationsSizeBytesForTests();
   ASSERT_LT(size_with_one_msg, 1 * 1024 * 1024);
@@ -418,7 +412,7 @@ TEST_F(ConsensusQueueTest, TestQueueHardAndSoftLimit) {
   // Violating a soft limit, but not a hard limit should still allow
   // the operation to be added.
   scoped_refptr<OperationStatusTracker> status_2;
-  ASSERT_STATUS_OK(AppendReplicateOp(op.Pass(), 1, 2, payload, &status_2));
+  ASSERT_STATUS_OK(AppendReplicateMsg(1, 2, payload, &status_2));
 
   // Since the first operation is not yet done, we can't trim.
   int size_with_two_msgs = queue_->GetQueuedOperationsSizeBytesForTests();
@@ -431,7 +425,7 @@ TEST_F(ConsensusQueueTest, TestQueueHardAndSoftLimit) {
 
   // Verify that we have trimmed by appending a message that would
   // otherwise be rejected, since the queue max size limit is 2MB.
-  ASSERT_STATUS_OK(AppendReplicateOp(op.Pass(), 1, 3, payload, &status_3));
+  ASSERT_STATUS_OK(AppendReplicateMsg(1, 3, payload, &status_3));
 
   // The queue should be trimmed down to two messages.
   ASSERT_EQ(size_with_two_msgs, queue_->GetQueuedOperationsSizeBytesForTests());
@@ -441,7 +435,7 @@ TEST_F(ConsensusQueueTest, TestQueueHardAndSoftLimit) {
   status_2->AckPeer("");
   status_3->AckPeer("");
   scoped_refptr<OperationStatusTracker> status_4;
-  ASSERT_STATUS_OK(AppendReplicateOp(op.Pass(), 1, 4, payload, &status_4));
+  ASSERT_STATUS_OK(AppendReplicateMsg(1, 4, payload, &status_4));
 
   // Verify that the queue is trimmed down to just one message.
   ASSERT_EQ(size_with_one_msg, queue_->GetQueuedOperationsSizeBytesForTests());
@@ -450,7 +444,7 @@ TEST_F(ConsensusQueueTest, TestQueueHardAndSoftLimit) {
   // Add a small message such that soft limit is not violated.
   string small_payload(128 * 1024, '0');
   scoped_refptr<OperationStatusTracker> status_5;
-  ASSERT_STATUS_OK(AppendReplicateOp(op.Pass(), 1, 5, small_payload, &status_5));
+  ASSERT_STATUS_OK(AppendReplicateMsg(1, 5, small_payload, &status_5));
 
   // Verify that the queue is not trimmed.
   ASSERT_GT(queue_->GetQueuedOperationsSizeBytesForTests(), size_with_one_msg);
@@ -483,13 +477,12 @@ TEST_F(ConsensusQueueTest, TestGlobalHardLimit) {
 
  const int kPayloadSize = 768 * 1024;
 
- gscoped_ptr<OperationPB> op;
  scoped_refptr<OperationStatusTracker> status;
 
  string payload(kPayloadSize, '0');
 
  // Should fail with service unavailable.
- Status s = AppendReplicateOp(op.Pass(), 1, 1, payload, &status);
+ Status s = AppendReplicateMsg(1, 1, payload, &status);
 
  LOG(INFO) << queue_->ToString();
 
@@ -499,7 +492,7 @@ TEST_F(ConsensusQueueTest, TestGlobalHardLimit) {
 
  parent_tracker->Release(2 * 1024 * 1024);
 
- ASSERT_STATUS_OK(AppendReplicateOp(op.Pass(), 1, 1, payload, &status));
+ ASSERT_STATUS_OK(AppendReplicateMsg(1, 1, payload, &status));
 }
 
 TEST_F(ConsensusQueueTest, TestTrimWhenGlobalSoftLimitExceeded) {
@@ -530,12 +523,11 @@ TEST_F(ConsensusQueueTest, TestTrimWhenGlobalSoftLimitExceeded) {
 
  const int kPayloadSize = 768 * 1024;
 
- gscoped_ptr<OperationPB> op;
  scoped_refptr<OperationStatusTracker> status;
 
  string payload(kPayloadSize, '0');
 
- ASSERT_STATUS_OK(AppendReplicateOp(op.Pass(), 1, 1, payload, &status));
+ ASSERT_STATUS_OK(AppendReplicateMsg(1, 1, payload, &status));
 
  int size_with_one_msg = queue_->GetQueuedOperationsSizeBytesForTests();
 
@@ -544,7 +536,7 @@ TEST_F(ConsensusQueueTest, TestTrimWhenGlobalSoftLimitExceeded) {
  // If this goes through, that means the queue has been trimmed, otherwise
  // the hard limit would be violated and service unavailable status would
  // be returned.
- ASSERT_STATUS_OK(AppendReplicateOp(op.Pass(), 1, 2, payload, &status));
+ ASSERT_STATUS_OK(AppendReplicateMsg(1, 2, payload, &status));
 
  // Verify that there is only one message in the queue.
  ASSERT_EQ(size_with_one_msg, queue_->GetQueuedOperationsSizeBytesForTests());

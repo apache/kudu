@@ -26,27 +26,27 @@ ConsensusBootstrapInfo::~ConsensusBootstrapInfo() {
 }
 
 ConsensusRound::ConsensusRound(Consensus* consensus,
-                               gscoped_ptr<OperationPB> replicate_op,
+                               gscoped_ptr<ReplicateMsg> replicate_msg,
                                const std::tr1::shared_ptr<FutureCallback>& replicate_callback,
                                const std::tr1::shared_ptr<FutureCallback>& commit_callback)
     : consensus_(consensus),
-      replicate_op_(replicate_op.Pass()),
+      replicate_msg_(replicate_msg.Pass()),
       replicate_callback_(replicate_callback),
       commit_callback_(commit_callback),
       continuation_(NULL) {
-  DCHECK_NOTNULL(replicate_op_.get());
+  DCHECK_NOTNULL(replicate_msg_.get());
 }
 
 ConsensusRound::ConsensusRound(Consensus* consensus,
-                               gscoped_ptr<OperationPB> replicate_op)
+                               gscoped_ptr<ReplicateMsg> replicate_msg)
     : consensus_(consensus),
-      replicate_op_(replicate_op.Pass()),
+      replicate_msg_(replicate_msg.Pass()),
       continuation_(NULL) {
-  DCHECK_NOTNULL(replicate_op_.get());
+  DCHECK_NOTNULL(replicate_msg_.get());
 }
 
 Status ConsensusRound::Commit(gscoped_ptr<CommitMsg> commit) {
-  commit->mutable_commited_op_id()->CopyFrom(replicate_op_->id());
+  commit->mutable_commited_op_id()->CopyFrom(replicate_msg_->id());
   return consensus_->Commit(commit.Pass(), commit_callback_->AsStatusCallback());
 }
 
@@ -130,12 +130,10 @@ Status Consensus::VerifyQuorum(const metadata::QuorumPB& quorum) {
   return Status::OK();
 }
 
-ConsensusRound* Consensus::NewRound(gscoped_ptr<ReplicateMsg> entry,
+ConsensusRound* Consensus::NewRound(gscoped_ptr<ReplicateMsg> replicate_msg,
                                     const std::tr1::shared_ptr<FutureCallback>& repl_callback,
                                     const std::tr1::shared_ptr<FutureCallback>& commit_callback) {
-  gscoped_ptr<OperationPB> op(new OperationPB());
-  op->set_allocated_replicate(entry.release());
-  return new ConsensusRound(this, op.Pass(), repl_callback, commit_callback);
+  return new ConsensusRound(this, replicate_msg.Pass(), repl_callback, commit_callback);
 }
 
 void Consensus::SetFaultHooks(const std::tr1::shared_ptr<ConsensusFaultHooks>& hooks) {

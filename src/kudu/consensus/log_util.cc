@@ -159,9 +159,9 @@ Status ReadableLogSegment::RebuildFooterByScanning() {
 
   // Rebuild the index, right now we're just keeping the first entry.
   BOOST_FOREACH(const LogEntryPB* entry, entries) {
-    if (entry->has_operation() && entry->operation().has_id()) {
+    if (entry->has_replicate()) {
       SegmentIdxPosPB* idx_pos = footer_.add_idx_entry();
-      idx_pos->mutable_id()->CopyFrom(entry->operation().id());
+      idx_pos->mutable_id()->CopyFrom(entry->replicate().id());
       break;
     }
   }
@@ -512,18 +512,18 @@ Status WritableLogSegment::WriteFooterAndClose(const LogSegmentFooterPB& footer)
   return Status::OK();
 }
 
-void CreateBatchFromAllocatedOperations(const consensus::OperationPB* const* ops,
-                                        int num_ops,
+void CreateBatchFromAllocatedOperations(const consensus::ReplicateMsg* const* msgs,
+                                        int num_msgs,
                                         gscoped_ptr<LogEntryBatchPB>* batch) {
   gscoped_ptr<LogEntryBatchPB> entry_batch(new LogEntryBatchPB);
-  entry_batch->mutable_entry()->Reserve(num_ops);
-  for (size_t i = 0; i < num_ops; i++) {
+  entry_batch->mutable_entry()->Reserve(num_msgs);
+  for (size_t i = 0; i < num_msgs; i++) {
     // We want to re-use the existing objects here, so const-casting allows
     // us to put a reference in the new PB.
-    consensus::OperationPB* op = const_cast<consensus::OperationPB*>(ops[i]);
+    consensus::ReplicateMsg* msg = const_cast<consensus::ReplicateMsg*>(msgs[i]);
     LogEntryPB* entry_pb = entry_batch->add_entry();
-    entry_pb->set_type(log::OPERATION);
-    entry_pb->set_allocated_operation(op);
+    entry_pb->set_type(log::REPLICATE);
+    entry_pb->set_allocated_replicate(msg);
   }
   batch->reset(entry_batch.release());
 }
