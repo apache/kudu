@@ -582,19 +582,15 @@ Status RaftConsensus::UpdateReplica(const ConsensusRequestPB* request) {
     // 2 - Enqueue the writes.
     // Now that we've triggered the prepares enqueue the operations to be written
     // to the WAL.
-    LogEntryBatch* reserved_entry_batch;
     if (PREDICT_TRUE(successfully_triggered_prepares > 0)) {
       // Trigger the log append asap, if fsync() is on this might take a while
       // and we can't reply until this is done.
-      gscoped_ptr<log::LogEntryBatchPB> entry_batch;
-      log::CreateBatchFromAllocatedOperations(&replicate_msgs[0],
-                                              successfully_triggered_prepares,
-                                              &entry_batch);
-
-      // Since we've prepared we need to be able to append (or we risk trying to apply
+      //
+      // Since we've prepared, we need to be able to append (or we risk trying to apply
       // later something that wasn't logged). We crash if we can't.
-      CHECK_OK(log_->Reserve(entry_batch.Pass(), &reserved_entry_batch));
-      CHECK_OK(log_->AsyncAppend(reserved_entry_batch, log_synchronizer.AsStatusCallback()));
+      CHECK_OK(log_->AsyncAppendReplicates(&replicate_msgs[0],
+                                           successfully_triggered_prepares,
+                                           log_synchronizer.AsStatusCallback()));
     }
 
     // 3 - Mark transactions as committed

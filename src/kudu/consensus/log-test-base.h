@@ -101,11 +101,13 @@ class LogTestBase : public KuduTest {
     }
   }
 
+  static void CheckReplicateResult(gscoped_ptr<ReplicateMsg> msg, const Status& s) {
+    CHECK_OK(s);
+  }
+
   // Appends a batch with size 2 (1 insert, 1 mutate) to the log.
   void AppendReplicateBatch(int index, bool sync = APPEND_SYNC) {
-    LogEntryPB log_entry;
-    log_entry.set_type(REPLICATE);
-    ReplicateMsg* replicate = log_entry.mutable_replicate();
+    gscoped_ptr<ReplicateMsg> replicate(new ReplicateMsg);
     replicate->set_op_type(WRITE_OP);
 
     OpId* op_id = replicate->mutable_id();
@@ -126,11 +128,22 @@ class LogTestBase : public KuduTest {
                    batch_request->mutable_row_operations());
     batch_request->set_tablet_id(kTestTablet);
 
+    ReplicateMsg* replicate_ptr = replicate.get();
     if (sync) {
-      AppendSync(&log_entry);
+      Synchronizer s;
+      ASSERT_STATUS_OK(log_->AsyncAppendReplicates(&replicate_ptr, 1, s.AsStatusCallback()));
+      ASSERT_STATUS_OK(s.Wait());
     } else {
-      AppendAsync(&log_entry);
+      // AsyncAppendReplicates does not free the ReplicateMsg on completion, so we
+      // need to pass it through to our callback.
+      ASSERT_STATUS_OK(log_->AsyncAppendReplicates(&replicate_ptr, 1,
+                                                   Bind(&LogTestBase::CheckReplicateResult,
+                                                        Passed(&replicate))));
     }
+  }
+
+  static void CheckCommitResult(const Status& s) {
+    CHECK_OK(s);
   }
 
   // Append a commit log entry containing one entry for the insert and one
@@ -148,9 +161,7 @@ class LogTestBase : public KuduTest {
 
   void AppendCommit(int original_op_index, int mrs_id, int rs_id, int dms_id,
                     bool sync = APPEND_SYNC) {
-    LogEntryPB log_entry;
-    log_entry.set_type(COMMIT);
-    CommitMsg* commit = log_entry.mutable_commit();
+    gscoped_ptr<CommitMsg> commit(new CommitMsg);
     commit->set_op_type(WRITE_OP);
     commit->set_timestamp(Timestamp(original_op_index).ToUint64());
 
@@ -169,26 +180,20 @@ class LogTestBase : public KuduTest {
     target->set_rs_id(rs_id);
 
     if (sync) {
-      AppendSync(&log_entry);
+      Synchronizer s;
+      ASSERT_STATUS_OK(log_->AsyncAppendCommit(commit.Pass(), s.AsStatusCallback()));
+      ASSERT_STATUS_OK(s.Wait());
     } else {
-      AppendAsync(&log_entry);
+      ASSERT_STATUS_OK(log_->AsyncAppendCommit(commit.Pass(),
+                                               Bind(&LogTestBase::CheckCommitResult)));
     }
-  }
-
-  void AppendSync(LogEntryPB* log_entry) {
-    ASSERT_STATUS_OK(log_->Append(log_entry));
-  }
-
-  void AppendAsync(LogEntryPB* operation) {
-    LOG(FATAL) << "TODO: this method is never called and code paths leading to it"
-               << " should be removed!";
   }
 
     // Appends 'count' ReplicateMsgs and the corresponding CommitMsgs to the log
   void AppendReplicateBatchAndCommitEntryPairsToLog(int count, bool sync = true) {
     for (int i = 0; i < count; i++) {
-      AppendReplicateBatch(current_id_);
-      AppendCommit(current_id_);
+      AppendReplicateBatch(current_id_, sync);
+      AppendCommit(current_id_, sync);
       current_id_ += 1;
     }
   }

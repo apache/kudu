@@ -122,13 +122,10 @@ class LocalPeer : public PeerImpl {
       VLOG(2) << "Local peer appending to log: " << request_.ShortDebugString();
     }
 
-    gscoped_ptr<log::LogEntryBatchPB> entry_batch;
-    log::CreateBatchFromAllocatedOperations(&ops[0], ops.size(), &entry_batch);
+    CHECK_OK(log_->AsyncAppendReplicates(
+               &ops[0], ops.size(),
+               Bind(&LocalPeer::LogAppendCallback, Unretained(this))));
 
-    LogEntryBatch* reserved_entry_batch;
-    CHECK_OK(log_->Reserve(entry_batch.Pass(), &reserved_entry_batch));
-    CHECK_OK(log_->AsyncAppend(reserved_entry_batch,
-                               Bind(&LocalPeer::LogAppendCallback, Unretained(this))));
     return true;
   }
 

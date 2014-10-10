@@ -94,13 +94,19 @@ class Log {
   Status AsyncAppend(LogEntryBatch* entry,
                      const StatusCallback& callback);
 
-  // Like the method above, but without a callback.
-  Status AsyncAppend(LogEntryBatch* entry);
-
   // Synchronously append a new entry to the log.
   // Log does not take ownership of the passed 'entry'.
   // TODO get rid of this method, transition to the asynchronous API
   Status Append(LogEntryPB* entry);
+
+  // Append the given set of replicate messages, asynchronously.
+  // This requires that the replicates have already been assigned OpIds.
+  //
+  // Does not take ownership of the pointers (they must remain valid until
+  // the callback is called, and will not be freed by the log).
+  Status AsyncAppendReplicates(const consensus::ReplicateMsg* const* msgs,
+                               int num_msgs,
+                               const StatusCallback& callback);
 
   // Append the given commit message, asynchronously.
   //

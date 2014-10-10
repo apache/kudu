@@ -351,6 +351,19 @@ Status Log::AsyncAppend(LogEntryBatch* entry_batch, const StatusCallback& callba
   return Status::OK();
 }
 
+Status Log::AsyncAppendReplicates(const consensus::ReplicateMsg* const* msgs,
+                                  int num_msgs,
+                                  const StatusCallback& callback) {
+  gscoped_ptr<LogEntryBatchPB> batch;
+  CreateBatchFromAllocatedOperations(msgs, num_msgs, &batch);
+
+  LogEntryBatch* reserved_entry_batch;
+  RETURN_NOT_OK(Reserve(batch.Pass(), &reserved_entry_batch));
+
+  RETURN_NOT_OK(AsyncAppend(reserved_entry_batch, callback));
+  return Status::OK();
+}
+
 Status Log::AsyncAppendCommit(gscoped_ptr<consensus::CommitMsg> commit_msg,
                               const StatusCallback& callback) {
 
@@ -363,18 +376,6 @@ Status Log::AsyncAppendCommit(gscoped_ptr<consensus::CommitMsg> commit_msg,
   RETURN_NOT_OK(Reserve(batch.Pass(), &reserved_entry_batch));
 
   RETURN_NOT_OK(AsyncAppend(reserved_entry_batch, callback));
-  return Status::OK();
-}
-
-Status Log::AsyncAppend(LogEntryBatch* entry_batch) {
-  {
-    boost::shared_lock<rw_spinlock> read_lock(state_lock_.get_lock());
-    CHECK_EQ(kLogWriting, log_state_);
-  }
-
-  RETURN_NOT_OK(entry_batch->Serialize());
-  entry_batch->MarkReady();
-
   return Status::OK();
 }
 
