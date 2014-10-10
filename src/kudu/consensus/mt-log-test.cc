@@ -104,7 +104,7 @@ class MultiThreadedLogTest : public LogTestBase {
                                                 batch_replicates.size(),
                                                 &entry_batch_pb);
 
-        ASSERT_STATUS_OK(log_->Reserve(entry_batch_pb.Pass(), &entry_batch));
+        ASSERT_STATUS_OK(log_->Reserve(REPLICATE, entry_batch_pb.Pass(), &entry_batch));
       } // lock_guard scope
       CustomLatchCallback* cb = new CustomLatchCallback(&latch, &errors);
       ASSERT_STATUS_OK(log_->AsyncAppend(entry_batch, cb->AsStatusCallback()));

@@ -92,7 +92,8 @@ Status LocalConsensus::Replicate(ConsensusRound* context) {
     gscoped_ptr<log::LogEntryBatchPB> entry_batch;
     log::CreateBatchFromAllocatedOperations(&msg, 1, &entry_batch);
 
-    RETURN_NOT_OK(log_->Reserve(entry_batch.Pass(), &reserved_entry_batch));
+    RETURN_NOT_OK(log_->Reserve(log::REPLICATE, entry_batch.Pass(),
+                                &reserved_entry_batch));
   }
   // Serialize and mark the message as ready to be appended.
   // When the Log actually fsync()s this message to disk, 'repl_callback'

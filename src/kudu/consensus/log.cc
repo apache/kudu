@@ -314,15 +314,25 @@ Status Log::RollOver() {
   return Status::OK();
 }
 
-Status Log::Reserve(gscoped_ptr<LogEntryBatchPB> entry_batch,
+Status Log::Reserve(LogEntryTypePB type,
+                    gscoped_ptr<LogEntryBatchPB> entry_batch,
                     LogEntryBatch** reserved_entry) {
   DCHECK(reserved_entry != NULL);
   {
     boost::shared_lock<rw_spinlock> read_lock(state_lock_.get_lock());
     CHECK_EQ(kLogWriting, log_state_);
   }
+
+  // In DEBUG builds, verify that all of the entries in the batch match the specified type.
+  // In non-debug builds the foreach loop gets optimized out.
+  #ifndef NDEBUG
+  BOOST_FOREACH(const LogEntryPB& entry, entry_batch->entry()) {
+    DCHECK_EQ(entry.type(), type) << "Bad batch: " << entry_batch->DebugString();
+  }
+  #endif
+
   int num_ops = entry_batch->entry_size();
-  gscoped_ptr<LogEntryBatch> new_entry_batch(new LogEntryBatch(entry_batch.Pass(), num_ops));
+  gscoped_ptr<LogEntryBatch> new_entry_batch(new LogEntryBatch(type, entry_batch.Pass(), num_ops));
   new_entry_batch->MarkReserved();
 
   if (PREDICT_FALSE(!entry_batch_queue_.BlockingPut(new_entry_batch.get()))) {
@@ -359,7 +369,7 @@ Status Log::AsyncAppendReplicates(const consensus::ReplicateMsg* const* msgs,
   CreateBatchFromAllocatedOperations(msgs, num_msgs, &batch);
 
   LogEntryBatch* reserved_entry_batch;
-  RETURN_NOT_OK(Reserve(batch.Pass(), &reserved_entry_batch));
+  RETURN_NOT_OK(Reserve(REPLICATE, batch.Pass(), &reserved_entry_batch));
 
   RETURN_NOT_OK(AsyncAppend(reserved_entry_batch, callback));
   return Status::OK();
@@ -374,16 +384,13 @@ Status Log::AsyncAppendCommit(gscoped_ptr<consensus::CommitMsg> commit_msg,
   entry->set_allocated_commit(commit_msg.release());
 
   LogEntryBatch* reserved_entry_batch;
-  RETURN_NOT_OK(Reserve(batch.Pass(), &reserved_entry_batch));
+  RETURN_NOT_OK(Reserve(COMMIT, batch.Pass(), &reserved_entry_batch));
 
   RETURN_NOT_OK(AsyncAppend(reserved_entry_batch, callback));
   return Status::OK();
 }
 
 Status Log::DoAppend(LogEntryBatch* entry_batch, bool caller_owns_operation) {
-  // TODO (perf) make this more efficient, cache the highest id
-  // during LogEntryBatch::Serialize()
-
   size_t num_entries = entry_batch->count();
   DCHECK_GT(num_entries, 0) << "Cannot call DoAppend() with zero entries reserved";
 
@@ -396,41 +403,27 @@ Status Log::DoAppend(LogEntryBatch* entry_batch, bool caller_owns_operation) {
 
   // We keep track of the last-written OpId here.
   // This is needed to initialize Consensus on startup.
-  //
-  // TODO Probably remove the code below as it looks suspicious: Tablet peer uses this
-  // as 'safe' anchor as it believes it in the log, when it actually isn't, i.e. this
-  // is not the last durable operation. Either move this to tablet peer (since we're
-  // using in flights anyway no need to scan for ids here) or actually delay doing this
-  // until fsync() has been done. See KUDU-527.
-  //
-  // For now we just scan the entries looking for a REPLICATE.
-  // NOTE: This could likely be done in the below loop, but the original code was here
-  // and we're likely to move this soon anyway, plus we don't want to keep reacquiring
-  // the lock.
-  {
+  // We also retrieve the opid of the first operation in the batch so that, if
+  // we roll over to a new segment, we set the first operation in the footer
+  // immediately.
+  OpId first_opid_in_batch;
+  if (entry_batch->type_ == REPLICATE) {
+    first_opid_in_batch.CopyFrom(entry_batch->MinReplicateOpId());
+
+    // TODO Probably remove the code below as it looks suspicious: Tablet peer uses this
+    // as 'safe' anchor as it believes it in the log, when it actually isn't, i.e. this
+    // is not the last durable operation. Either move this to tablet peer (since we're
+    // using in flights anyway no need to scan for ids here) or actually delay doing this
+    // until fsync() has been done. See KUDU-527.
     boost::lock_guard<rw_spinlock> write_lock(last_entry_op_id_lock_);
-    BOOST_FOREACH(const LogEntryPB& entry, entry_batch->entry_batch_pb_->entry()) {
-      if (entry.has_replicate()) {
-        last_entry_op_id_.CopyFrom(entry.replicate().id());
-      }
-    }
+    last_entry_op_id_.CopyFrom(entry_batch->MaxReplicateOpId());
   }
 
-  OpId first_op_in_batch;
-  for (size_t i = 0; i < num_entries; i++) {
-    LogEntryPB* entry_pb = entry_batch->entry_batch_pb_->mutable_entry(i);
-    DCHECK(entry_pb->IsInitialized() &&
-           (entry_pb->type() == REPLICATE || entry_pb->type() == COMMIT))
-      << "Unexpected log entry type: " << entry_pb->DebugString();
-
-    // Store the id of the first replicate in the batch so that if we roll over
-    // to a new segment we already have the first entry for the footer index.
-    if (!first_op_in_batch.IsInitialized() && entry_pb->has_replicate()) {
-      first_op_in_batch.CopyFrom(entry_pb->replicate().id());
-    }
-
-    // Our contract is that we don't free replicate messages after appending them.
-    if (caller_owns_operation) {
+  // For REPLICATE batches, we expect the caller to free the actual entries if
+  // caller_owns_operation is set.
+  if (entry_batch->type_ == REPLICATE && caller_owns_operation) {
+    for (int i = 0; i < entry_batch->entry_batch_pb_->entry_size(); i++) {
+      LogEntryPB* entry_pb = entry_batch->entry_batch_pb_->mutable_entry(i);
       entry_pb->release_replicate();
     }
   }
@@ -458,10 +451,10 @@ Status Log::DoAppend(LogEntryBatch* entry_batch, bool caller_owns_operation) {
     VLOG(1) << "Segment allocation already in progress...";
   }
 
-  // If we haven't seen a REPLICATE in this segment yet add 'first_op_in_batch'
+  // If we haven't seen a REPLICATE in this segment yet, add the first REPLICATE op's id
   // to the footer.
-  if (!first_op_in_seg_.IsInitialized()) {
-    first_op_in_seg_.mutable_id()->CopyFrom(first_op_in_batch);
+  if (!first_op_in_seg_.IsInitialized() && entry_batch->type_ == REPLICATE) {
+    first_op_in_seg_.mutable_id()->CopyFrom(first_opid_in_batch);
   }
 
   LOG_SLOW_EXECUTION(WARNING, 50, "Append to log took a long time") {
@@ -512,7 +505,7 @@ Status Log::Sync() {
 Status Log::Append(LogEntryPB* phys_entry) {
   gscoped_ptr<LogEntryBatchPB> entry_batch_pb(new LogEntryBatchPB);
   entry_batch_pb->mutable_entry()->AddAllocated(phys_entry);
-  LogEntryBatch entry_batch(entry_batch_pb.Pass(), 1);
+  LogEntryBatch entry_batch(phys_entry->type(), entry_batch_pb.Pass(), 1);
   entry_batch.state_ = LogEntryBatch::kEntryReserved;
   Status s = entry_batch.Serialize();
   if (s.ok()) {
@@ -532,7 +525,7 @@ Status Log::WaitUntilAllFlushed() {
   gscoped_ptr<LogEntryBatchPB> entry_batch(new LogEntryBatchPB);
   entry_batch->add_entry()->set_type(log::FLUSH_MARKER);
   LogEntryBatch* reserved_entry_batch;
-  RETURN_NOT_OK(Reserve(entry_batch.Pass(), &reserved_entry_batch));
+  RETURN_NOT_OK(Reserve(FLUSH_MARKER, entry_batch.Pass(), &reserved_entry_batch));
   Synchronizer s;
   RETURN_NOT_OK(AsyncAppend(reserved_entry_batch, s.AsStatusCallback()));
   return s.Wait();
@@ -760,8 +753,10 @@ Log::~Log() {
   WARN_NOT_OK(Close(), "Error closing log");
 }
 
-LogEntryBatch::LogEntryBatch(gscoped_ptr<LogEntryBatchPB> entry_batch_pb, size_t count)
-    : entry_batch_pb_(entry_batch_pb.Pass()),
+LogEntryBatch::LogEntryBatch(LogEntryTypePB type,
+                             gscoped_ptr<LogEntryBatchPB> entry_batch_pb, size_t count)
+    : type_(type),
+      entry_batch_pb_(entry_batch_pb.Pass()),
       total_size_bytes_(
           PREDICT_FALSE(count == 1 && entry_batch_pb_->entry(0).type() == FLUSH_MARKER) ?
           0 : entry_batch_pb_->ByteSize()),

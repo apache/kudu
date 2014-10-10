@@ -86,7 +86,8 @@ class Log {
   //
   // WARNING: the caller _must_ call AsyncAppend() or else the log
   // will "stall" and will never be able to make forward progress.
-  Status Reserve(gscoped_ptr<LogEntryBatchPB> entry_batch,
+  Status Reserve(LogEntryTypePB type,
+                 gscoped_ptr<LogEntryBatchPB> entry_batch,
                  LogEntryBatch** reserved_entry);
 
   // Asynchronously appends 'entry' to the log. Once the append
@@ -361,6 +362,8 @@ class Log {
 // This class represents a batch of operations to be written and
 // synced to the log. It is opaque to the user and is managed by the
 // Log class.
+// A single batch must have only one type of entries in it (eg only
+// REPLICATEs or only COMMITs).
 class LogEntryBatch {
  public:
   ~LogEntryBatch();
@@ -369,7 +372,8 @@ class LogEntryBatch {
   friend class Log;
   friend struct LogEntryBatchLogicalSize;
 
-  LogEntryBatch(gscoped_ptr<LogEntryBatchPB> entry_batch_pb, size_t count);
+  LogEntryBatch(LogEntryTypePB type,
+                gscoped_ptr<LogEntryBatchPB> entry_batch_pb, size_t count);
 
   // Serializes contents of the entry to an internal buffer.
   Status Serialize();
@@ -416,6 +420,26 @@ class LogEntryBatch {
   size_t total_size_bytes() const {
     return total_size_bytes_;
   }
+
+  // The lowest OpId of a REPLICATE message in this batch.
+  // Requires that this be a REPLICATE batch.
+  consensus::OpId MinReplicateOpId() const {
+    DCHECK_EQ(REPLICATE, type_);
+    DCHECK(entry_batch_pb_->entry(0).replicate().IsInitialized());
+    return entry_batch_pb_->entry(0).replicate().id();
+  }
+
+  // The highest OpId of a REPLICATE message in this batch.
+  // Requires that this be a REPLICATE batch.
+  consensus::OpId MaxReplicateOpId() const {
+    DCHECK_EQ(REPLICATE, type_);
+    int idx = entry_batch_pb_->entry_size() - 1;
+    DCHECK(entry_batch_pb_->entry(idx).replicate().IsInitialized());
+    return entry_batch_pb_->entry(idx).replicate().id();
+  }
+
+  // The type of entries in this batch.
+  const LogEntryTypePB type_;
 
   // Contents of the log entries that will be written to disk.
   gscoped_ptr<LogEntryBatchPB> entry_batch_pb_;

@@ -173,7 +173,7 @@ TEST_F(LogTest, TestCorruptLog) {
   ASSERT_OK(AppendNoOps(&op_id, kNumEntries));
   ASSERT_STATUS_OK(log_->Close());
 
-  ASSERT_STATUS_OK(CorruptLogFile(env_.get(), log_.get(), 35));
+  ASSERT_STATUS_OK(CorruptLogFile(env_.get(), log_.get(), 30));
 
   ASSERT_EQ(1, log_->GetLogReader()->num_segments());
 
