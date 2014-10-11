@@ -33,6 +33,8 @@ class OpId;
 class PeerProxy;
 class PeerImpl;
 class PeerMessageQueue;
+class VoteRequestPB;
+class VoteResponsePB;
 
 // A peer in consensus (local or remote).
 //
@@ -192,6 +194,12 @@ class PeerProxy {
                              rpc::RpcController* controller,
                              const rpc::ResponseCallback& callback) = 0;
 
+  // Sends a RequestConsensusVote to a remote peer.
+  virtual Status RequestConsensusVoteAsync(const VoteRequestPB* request,
+                                           VoteResponsePB* response,
+                                           rpc::RpcController* controller,
+                                           const rpc::ResponseCallback& callback) = 0;
+
   virtual ~PeerProxy() {}
 };
 
@@ -216,6 +224,11 @@ class RpcPeerProxy : public PeerProxy {
                              ConsensusResponsePB* response,
                              rpc::RpcController* controller,
                              const rpc::ResponseCallback& callback) OVERRIDE;
+
+  virtual Status RequestConsensusVoteAsync(const VoteRequestPB* request,
+                                           VoteResponsePB* response,
+                                           rpc::RpcController* controller,
+                                           const rpc::ResponseCallback& callback) OVERRIDE;
 
   virtual ~RpcPeerProxy();
  public:

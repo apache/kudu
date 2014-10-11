@@ -405,6 +405,15 @@ Status RpcPeerProxy::UpdateAsync(const ConsensusRequestPB* request,
   return Status::OK();
 }
 
+Status RpcPeerProxy::RequestConsensusVoteAsync(const VoteRequestPB* request,
+                                               VoteResponsePB* response,
+                                               rpc::RpcController* controller,
+                                               const rpc::ResponseCallback& callback) {
+  controller->set_timeout(MonoDelta::FromMilliseconds(FLAGS_consensus_rpc_timeout_ms));
+  consensus_proxy_->RequestConsensusVoteAsync(*request, response, controller, callback);
+  return Status::OK();
+}
+
 RpcPeerProxy::~RpcPeerProxy() {}
 
 namespace {

@@ -51,13 +51,15 @@ class ConsensusPeersTest : public KuduTest {
                                         peer));
   }
 
-  NoOpTestPeerProxy* NewRemotePeer(const string& peer_name,
-                                   gscoped_ptr<Peer>* peer) {
+  DelayablePeerProxy<NoOpTestPeerProxy>* NewRemotePeer(
+      const string& peer_name,
+      gscoped_ptr<Peer>* peer) {
     QuorumPeerPB peer_pb;
     peer_pb.set_permanent_uuid(peer_name);
-    gscoped_ptr<PeerProxy> proxy;
-    CHECK_OK(peer_proxy_factory_.NewProxy(peer_pb, &proxy));
-    NoOpTestPeerProxy* proxy_ptr = down_cast<NoOpTestPeerProxy*, PeerProxy>(proxy.get());
+    DelayablePeerProxy<NoOpTestPeerProxy>* proxy_ptr =
+        new DelayablePeerProxy<NoOpTestPeerProxy>(
+            new NoOpTestPeerProxy(peer_pb));
+    gscoped_ptr<PeerProxy> proxy(proxy_ptr);
     CHECK_OK(Peer::NewRemotePeer(peer_pb,
                                  kTabletId,
                                  kLeaderUuid,
@@ -74,9 +76,9 @@ class ConsensusPeersTest : public KuduTest {
     ASSERT_EQ(id.index(), index);
   }
 
-  void CheckLastRemoteEntry(NoOpTestPeerProxy* proxy, int term, int index) {
+  void CheckLastRemoteEntry(DelayablePeerProxy<NoOpTestPeerProxy>* proxy, int term, int index) {
     OpId id;
-    id.CopyFrom(proxy->last_received());
+    id.CopyFrom(proxy->proxy()->last_received());
     ASSERT_EQ(id.term(), term);
     ASSERT_EQ(id.index(), index);
   }
@@ -100,7 +102,6 @@ class ConsensusPeersTest : public KuduTest {
   const Schema schema_;
   gscoped_ptr<FsManager> fs_manager_;
   LogOptions options_;
-  NoOpTestPeerProxyFactory peer_proxy_factory_;
 };
 
 // Tests that a local peer is correctly built and tracked
@@ -150,7 +151,8 @@ TEST_F(ConsensusPeersTest, TestLocalPeer) {
 TEST_F(ConsensusPeersTest, TestRemotePeer) {
   message_queue_.Init(MinimumOpId(), MinimumOpId().term(), 1);
   gscoped_ptr<Peer> remote_peer;
-  NoOpTestPeerProxy* proxy = NewRemotePeer("remote-peer", &remote_peer);
+  DelayablePeerProxy<NoOpTestPeerProxy>* proxy =
+      NewRemotePeer("remote-peer", &remote_peer);
 
   // Append a bunch of messages to the queue
   AppendReplicateMessagesToQueue(&message_queue_, 1, 20);
@@ -186,10 +188,12 @@ TEST_F(ConsensusPeersTest, TestLocalAndRemotePeers) {
   NewLocalPeer(log.get(), "local-peer", &local_peer);
 
   gscoped_ptr<Peer> remote_peer1;
-  NoOpTestPeerProxy* remote_peer1_proxy = NewRemotePeer("remote-peer1", &remote_peer1);
+  DelayablePeerProxy<NoOpTestPeerProxy>* remote_peer1_proxy =
+      NewRemotePeer("remote-peer1", &remote_peer1);
 
   gscoped_ptr<Peer> remote_peer2;
-  NoOpTestPeerProxy* remote_peer2_proxy = NewRemotePeer("remote-peer2", &remote_peer2);
+  DelayablePeerProxy<NoOpTestPeerProxy>* remote_peer2_proxy =
+      NewRemotePeer("remote-peer2", &remote_peer2);
 
   // Delay the response from the second remote peer.
   remote_peer2_proxy->DelayResponse();
@@ -214,10 +218,8 @@ TEST_F(ConsensusPeersTest, TestLocalAndRemotePeers) {
   CheckLastLogEntry(log.get(), first.term(), first.index());
   CheckLastRemoteEntry(remote_peer1_proxy, first.term(), first.index());
 
-  ASSERT_STATUS_OK(remote_peer2_proxy->Respond());
-
-
-  // Now wait until the queue receives the response, otherwise
+  ASSERT_STATUS_OK(remote_peer2_proxy->Respond(TestPeerProxy::kUpdate));
+  // Wait until all peers have replicated the message, otherwise
   // when we add the next one remote_peer2 might find the next message
   // in the queue and will replicate it, which is not what we want.
   while (!OpIdEquals(message_queue_.GetAllReplicatedIndexForTests(), first)) {

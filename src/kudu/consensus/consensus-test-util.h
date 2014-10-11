@@ -1,6 +1,7 @@
 // Copyright (c) 2013, Cloudera, inc.
 
 #include <boost/thread/locks.hpp>
+#include <map>
 #include <string>
 #include <tr1/unordered_map>
 #include <tr1/memory>
@@ -93,15 +94,166 @@ class MockRpcExactlyOnceTask : public Task {
   const rpc::ResponseCallback callback_;
 };
 
+// Abstract base class to build PeerProxy implementations on top of for testing.
+// Provides a single-threaded pool to run callbacks in and callback
+// registration/running, along with an enum to identify the supported methods.
+class TestPeerProxy : public PeerProxy {
+ public:
+  // Which PeerProxy method to invoke.
+  enum Method {
+    kUpdate,
+    kRequestVote,
+  };
+
+  TestPeerProxy() {
+    CHECK_OK(TaskExecutorBuilder("test-peer-pool").set_max_threads(1).Build(&executor_));
+  }
+
+ protected:
+  // Register the RPC callback in order to call later.
+  // We currently only support one request of each method being in flight at a time.
+  virtual void RegisterCallback(Method method, const std::tr1::shared_ptr<Task>& task) {
+    lock_guard<simple_spinlock> l(&lock_);
+    InsertOrDie(&tasks_, method, task);
+  }
+
+  // Answer the peer.
+  virtual Status Respond(Method method) {
+    lock_guard<simple_spinlock> l(&lock_);
+    std::tr1::shared_ptr<Task> task = FindOrDie(tasks_, method);
+    CHECK_EQ(1, tasks_.erase(method));
+    return executor_->Submit(task, NULL);
+  }
+
+  virtual Status RegisterCallbackAndRespond(Method method, const std::tr1::shared_ptr<Task>& task) {
+    RegisterCallback(method, task);
+    return Respond(method);
+  }
+
+  simple_spinlock lock_;
+  gscoped_ptr<TaskExecutor> executor_;
+  std::map<Method, std::tr1::shared_ptr<Task> > tasks_; // Protected by lock_.
+};
+
+template <typename ProxyType>
+class DelayablePeerProxy : public TestPeerProxy {
+ public:
+  // Add delayability of RPC responses to the delegated impl.
+  // This class takes ownership of 'proxy'.
+  explicit DelayablePeerProxy(ProxyType* proxy)
+    : proxy_(CHECK_NOTNULL(proxy)),
+      delay_response_(false),
+      latch_(1) {
+  }
+
+  // Delay the answer to the next response to this remote
+  // peer. The response callback will only be called on Respond().
+  virtual void DelayResponse() {
+    lock_guard<simple_spinlock> l(&lock_);
+    delay_response_ = true;
+    latch_.Reset(1); // Reset for the next time.
+  }
+
+  virtual void RespondUnlessDelayed(Method method) {
+    {
+      lock_guard<simple_spinlock> l(&lock_);
+      if (delay_response_) {
+        latch_.CountDown();
+        delay_response_ = false;
+        return;
+      }
+    }
+    CHECK_OK(TestPeerProxy::Respond(method));
+  }
+
+  virtual Status Respond(Method method) {
+    latch_.Wait();   // Wait until strictly after peer would have responded.
+    Status s = TestPeerProxy::Respond(method);
+    return s;
+  }
+
+  virtual Status UpdateAsync(const ConsensusRequestPB* request,
+                             ConsensusResponsePB* response,
+                             rpc::RpcController* controller,
+                             const rpc::ResponseCallback& callback) OVERRIDE {
+    std::tr1::shared_ptr<Task> task(
+        new MockRpcExactlyOnceTask<ConsensusResponsePB>(response, callback));
+    RegisterCallback(kUpdate, task);
+    return proxy_->UpdateAsync(request, response, controller,
+                               boost::bind(&DelayablePeerProxy::RespondUnlessDelayed,
+                                           this, kUpdate));
+  }
+
+  virtual Status RequestConsensusVoteAsync(const VoteRequestPB* request,
+                                           VoteResponsePB* response,
+                                           rpc::RpcController* controller,
+                                           const rpc::ResponseCallback& callback) OVERRIDE {
+    std::tr1::shared_ptr<Task> task(
+        new MockRpcExactlyOnceTask<VoteResponsePB>(response, callback));
+    RegisterCallback(kRequestVote, task);
+    return proxy_->RequestConsensusVoteAsync(request, response, controller,
+                                             boost::bind(&DelayablePeerProxy::RespondUnlessDelayed,
+                                                         this, kRequestVote));
+  }
+
+  ProxyType* proxy() const {
+    return proxy_.get();
+  }
+
+ protected:
+  simple_spinlock lock_;
+  gscoped_ptr<ProxyType> const proxy_;
+  bool delay_response_; // Protected by lock_.
+  CountDownLatch latch_;
+};
+
+// Allows complete mocking of a peer's responses.
+// You set the response, it will respond with that.
+class MockedPeerProxy : public TestPeerProxy {
+ public:
+  MockedPeerProxy() {
+  }
+
+  virtual void set_update_response(const ConsensusResponsePB& update_response) {
+    update_response_ = update_response;
+  }
+
+  virtual void set_vote_response(const VoteResponsePB& vote_response) {
+    vote_response_ = vote_response;
+  }
+
+  virtual Status UpdateAsync(const ConsensusRequestPB* request,
+                             ConsensusResponsePB* response,
+                             rpc::RpcController* controller,
+                             const rpc::ResponseCallback& callback) OVERRIDE {
+    *response = update_response_;
+    std::tr1::shared_ptr<Task> task(
+        new MockRpcExactlyOnceTask<ConsensusResponsePB>(response, callback));
+    return RegisterCallbackAndRespond(kUpdate, task);
+  }
+
+  virtual Status RequestConsensusVoteAsync(const VoteRequestPB* request,
+                                           VoteResponsePB* response,
+                                           rpc::RpcController* controller,
+                                           const rpc::ResponseCallback& callback) OVERRIDE {
+    *response = vote_response_;
+    std::tr1::shared_ptr<Task> task(
+        new MockRpcExactlyOnceTask<VoteResponsePB>(response, callback));
+    return RegisterCallbackAndRespond(kRequestVote, task);
+  }
+
+ protected:
+  ConsensusResponsePB update_response_;
+  VoteResponsePB vote_response_;
+};
+
 // Allows to test peers by emulating a noop remote endpoint that just replies
 // that the messages were received/replicated/committed.
-class NoOpTestPeerProxy : public PeerProxy {
+class NoOpTestPeerProxy : public TestPeerProxy {
  public:
+
   explicit NoOpTestPeerProxy(const metadata::QuorumPeerPB& peer_pb)
-    : delay_response_(false),
-      callback_(NULL),
-      peer_pb_(peer_pb) {
-    CHECK_OK(TaskExecutorBuilder("noop-peer-pool").set_max_threads(1).Build(&executor_));
+    : peer_pb_(peer_pb) {
     last_received_.CopyFrom(MinimumOpId());
   }
 
@@ -111,27 +263,38 @@ class NoOpTestPeerProxy : public PeerProxy {
                              const rpc::ResponseCallback& callback) OVERRIDE {
 
     response->Clear();
+    {
+      boost::lock_guard<simple_spinlock> lock(lock_);
+      if (OpIdLessThan(last_received_, request->preceding_id())) {
+        ConsensusErrorPB* error = response->mutable_status()->mutable_error();
+        error->set_code(ConsensusErrorPB::PRECEDING_ENTRY_DIDNT_MATCH);
+        StatusToPB(Status::IllegalState(""), error->mutable_status());
+      } else if (request->ops_size() > 0) {
+        last_received_.CopyFrom(request->ops(request->ops_size() - 1).id());
+      }
 
-    boost::lock_guard<simple_spinlock> lock(lock_);
-    if (OpIdLessThan(last_received_, request->preceding_id())) {
-      ConsensusErrorPB* error = response->mutable_status()->mutable_error();
-      error->set_code(ConsensusErrorPB::PRECEDING_ENTRY_DIDNT_MATCH);
-      StatusToPB(Status::IllegalState(""), error->mutable_status());
-    } else if (request->ops_size() > 0) {
-      last_received_.CopyFrom(request->ops(request->ops_size() - 1).id());
+      response->set_responder_uuid(peer_pb_.permanent_uuid());
+      response->set_responder_term(request->caller_term());
+      response->mutable_status()->mutable_last_received()->CopyFrom(last_received_);
     }
+    std::tr1::shared_ptr<Task> task(
+        new MockRpcExactlyOnceTask<ConsensusResponsePB>(response, callback));
+    return RegisterCallbackAndRespond(kUpdate, task);
+  }
 
-    response->set_responder_uuid(peer_pb_.permanent_uuid());
-    response->set_responder_term(request->caller_term());
-    response->mutable_status()->mutable_last_received()->CopyFrom(last_received_);
-
-    update_task_.reset(new MockRpcExactlyOnceTask<ConsensusResponsePB>(response, callback));
-
-    if (!delay_response_) {
-      RETURN_NOT_OK(RespondUnlocked());
+  virtual Status RequestConsensusVoteAsync(const VoteRequestPB* request,
+                                           VoteResponsePB* response,
+                                           rpc::RpcController* controller,
+                                           const rpc::ResponseCallback& callback) OVERRIDE {
+    {
+      boost::lock_guard<simple_spinlock> lock(lock_);
+      response->set_responder_uuid(peer_pb_.permanent_uuid());
+      response->set_responder_term(request->candidate_term());
+      response->set_vote_granted(true);
     }
-
-    return Status::OK();
+    std::tr1::shared_ptr<Task> task(
+        new MockRpcExactlyOnceTask<VoteResponsePB>(response, callback));
+    return RegisterCallbackAndRespond(kRequestVote, task);
   }
 
   const OpId& last_received() {
@@ -139,32 +302,10 @@ class NoOpTestPeerProxy : public PeerProxy {
     return last_received_;
   }
 
-  // Delays the answer to the next response to this remote
-  // peer. The response callback will only be called on Respond().
-  void DelayResponse() {
-    boost::lock_guard<simple_spinlock> lock(lock_);
-    delay_response_ = true;
-  }
-
-  // Answers the peer.
-  Status Respond() {
-    boost::lock_guard<simple_spinlock> lock(lock_);
-    return RespondUnlocked();
-  }
-
  private:
-  Status RespondUnlocked() {
-    delay_response_ = false;
-    return executor_->Submit(update_task_, NULL);
-  }
-
-  gscoped_ptr<TaskExecutor> executor_;
-  OpId last_received_;
-  bool delay_response_;
-  rpc::ResponseCallback callback_;
-  std::tr1::shared_ptr<Task> update_task_;
   const metadata::QuorumPeerPB peer_pb_;
-  mutable simple_spinlock lock_;
+  ConsensusStatusPB last_status_; // Protected by lock_.
+  OpId last_received_;            // Protected by lock_.
 };
 
 class NoOpTestPeerProxyFactory : public PeerProxyFactory {
@@ -180,7 +321,7 @@ class NoOpTestPeerProxyFactory : public PeerProxyFactory {
 // Allows to test remote peers by emulating an RPC.
 // Both the "remote" peer's RPC call and the caller peer's response are executed
 // asynchronously in a TaskExecutor.
-class LocalTestPeerProxy : public PeerProxy {
+class LocalTestPeerProxy : public TestPeerProxy {
  public:
   explicit LocalTestPeerProxy(Consensus* consensus)
     : consensus_(consensus),
@@ -192,19 +333,39 @@ class LocalTestPeerProxy : public PeerProxy {
                              ConsensusResponsePB* response,
                              rpc::RpcController* controller,
                              const rpc::ResponseCallback& callback) OVERRIDE {
-    boost::lock_guard<simple_spinlock> lock(lock_);
-    update_task_.reset(new MockRpcExactlyOnceTask<ConsensusResponsePB>(response, callback));
+    // Register callback.
+    std::tr1::shared_ptr<Task> task(
+        new MockRpcExactlyOnceTask<ConsensusResponsePB>(response, callback));
+    RegisterCallback(kUpdate, task);
+
+    // Run mock processing on another thread.
     std::tr1::shared_ptr<Task> processor(
         new MockRpcExactlyOnceTask<ConsensusResponsePB>(response,
-            boost::bind(&LocalTestPeerProxy::SendToOtherPeer,
+            boost::bind(&LocalTestPeerProxy::SendUpdateRequest,
                         this, request, response)));
     RETURN_NOT_OK(executor_->Submit(processor, NULL));
     return Status::OK();
   }
 
-  void SendToOtherPeer(const ConsensusRequestPB* request,
-                       ConsensusResponsePB* response) {
-    // Copy the request for the other peer so that ownership
+  virtual Status RequestConsensusVoteAsync(const VoteRequestPB* request,
+                                           VoteResponsePB* response,
+                                           rpc::RpcController* controller,
+                                           const rpc::ResponseCallback& callback) OVERRIDE {
+    std::tr1::shared_ptr<Task> task(
+        new MockRpcExactlyOnceTask<VoteResponsePB>(response, callback));
+    RegisterCallback(kRequestVote, task);
+
+    std::tr1::shared_ptr<Task> processor(
+        new MockRpcExactlyOnceTask<VoteResponsePB>(response,
+            boost::bind(&LocalTestPeerProxy::SendVoteRequest,
+                        this, request, response)));
+    RETURN_NOT_OK(executor_->Submit(processor, NULL));
+    return Status::OK();
+  }
+
+  void SendUpdateRequest(const ConsensusRequestPB* request,
+                         ConsensusResponsePB* response) {
+    // Copy the request and the response for the other peer so that ownership
     // remains as close to the dist. impl. as possible.
     ConsensusRequestPB other_peer_req;
     other_peer_req.CopyFrom(*request);
@@ -245,7 +406,50 @@ class LocalTestPeerProxy : public PeerProxy {
         response->CopyFrom(other_peer_resp);
         VLOG(2) << this << ": not injecting fault for req: " << request->ShortDebugString();
       }
-      CHECK_OK(executor_->Submit(update_task_, NULL));
+      CHECK_OK(Respond(kUpdate));
+    }
+  }
+
+  void SendVoteRequest(const VoteRequestPB* request,
+                       VoteResponsePB* response) {
+
+    // Copy the request and the response for the other peer so that ownership
+    // remains as close to the dist. impl. as possible.
+    VoteRequestPB other_peer_req;
+    other_peer_req.CopyFrom(*request);
+    VoteResponsePB other_peer_resp;
+    other_peer_resp.CopyFrom(*response);
+
+    // FIXME: This is one big massive copy & paste.
+    Status s;
+    {
+      boost::lock_guard<simple_spinlock> lock(lock_);
+      if (PREDICT_TRUE(consensus_)) {
+        s = consensus_->RequestVote(&other_peer_req, &other_peer_resp);
+      } else {
+        s = Status::NotFound("Other consensus instance was destroyed");
+      }
+    }
+    if (!s.ok()) {
+      LOG(WARNING) << "Could not update replica "
+          << ". With request: " << other_peer_req.ShortDebugString()
+          << " Status: " << s.ToString();
+      tserver::TabletServerErrorPB* error = other_peer_resp.mutable_error();
+            error->set_code(tserver::TabletServerErrorPB::UNKNOWN_ERROR);
+            StatusToPB(s, error->mutable_status());
+    }
+    response->CopyFrom(other_peer_resp);
+
+    {
+      boost::lock_guard<simple_spinlock> lock(lock_);
+      if (PREDICT_FALSE(miss_comm_)) {
+        tserver::TabletServerErrorPB* error = response->mutable_error();
+        error->set_code(tserver::TabletServerErrorPB::UNKNOWN_ERROR);
+        StatusToPB(Status::IOError("Artificial error caused by communication failure injection."),
+                   error->mutable_status());
+        miss_comm_ = false;
+      }
+      CHECK_OK(Respond(kRequestVote));
     }
   }
 
