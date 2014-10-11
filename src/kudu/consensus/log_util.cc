@@ -363,6 +363,7 @@ Status ReadableLogSegment::ReadEntries(vector<LogEntryPB*>* entries) {
       file_size() - footer_.ByteSize() - kLogSegmentFooterMagicAndFooterLength :
       file_size();
 
+  int num_entries_read = 0;
   while (offset < read_up_to) {
     const uint64_t this_batch_offset = offset;
     recent_offsets[batches_read++ % recent_offsets.size()] = offset;
@@ -387,6 +388,7 @@ Status ReadableLogSegment::ReadEntries(vector<LogEntryPB*>* entries) {
       }
       for (size_t i = 0; i < current_batch->entry_size(); ++i) {
         entries->push_back(current_batch->mutable_entry(i));
+        num_entries_read++;
       }
       current_batch->mutable_entry()->ExtractSubrange(0,
                                                       current_batch->entry_size(),
@@ -406,6 +408,13 @@ Status ReadableLogSegment::ReadEntries(vector<LogEntryPB*>* entries) {
       RETURN_NOT_OK_PREPEND(status, err);
     }
   }
+
+  if (footer_.num_entries() != num_entries_read) {
+    return Status::Corruption(
+      Substitute("Read $0 log entries from $1, but expected $2 based on the footeR",
+                 num_entries_read, path_, footer_.num_entries()));
+  }
+
   return Status::OK();
 }
 
