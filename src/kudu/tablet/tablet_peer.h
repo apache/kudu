@@ -237,7 +237,7 @@ class TabletPeer : public RefCountedThreadSafe<TabletPeer>,
   gscoped_ptr<log::Log> log_;
   std::tr1::shared_ptr<Tablet> tablet_;
   std::tr1::shared_ptr<rpc::Messenger> messenger_;
-  gscoped_ptr<consensus::Consensus> consensus_;
+  scoped_refptr<consensus::Consensus> consensus_;
   gscoped_ptr<TabletStatusListener> status_listener_;
   simple_spinlock prepare_replicate_lock_;
 

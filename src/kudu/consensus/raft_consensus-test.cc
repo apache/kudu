@@ -111,7 +111,7 @@ class RaftConsensusTest : public KuduTest {
       CHECK_OK(ConsensusMetadata::Create(fs_managers_[i], kTestTablet, quorum_,
                                          consensus::kMinimumTerm, &cmeta));
 
-      RaftConsensus* peer =
+      scoped_refptr<RaftConsensus> peer(
           new RaftConsensus(options_,
                             cmeta.Pass(),
                             gscoped_ptr<PeerProxyFactory>(proxy_factory).Pass(),
@@ -119,9 +119,9 @@ class RaftConsensusTest : public KuduTest {
                             quorum_.peers(i).permanent_uuid(),
                             clock_,
                             txn_factory,
-                            logs_[i]);
+                            logs_[i]));
 
-      txn_factory->SetConsensus(peer);
+      txn_factory->SetConsensus(peer.get());
       txn_factories_.push_back(txn_factory);
       peers_.push_back(peer);
     }
@@ -131,7 +131,7 @@ class RaftConsensusTest : public KuduTest {
     for (int i = 0; i < quorum_.peers_size(); i++) {
       LocalTestPeerProxyFactory* proxy_factory = proxy_factories[i];
       for (int j = 0; j < quorum_.peers_size(); j++) {
-        proxy_factory->AddPeer(quorum_.peers(j), peers_[j]);
+        proxy_factory->AddPeer(quorum_.peers(j), peers_[j].get());
       }
     }
   }
@@ -140,7 +140,7 @@ class RaftConsensusTest : public KuduTest {
     ConsensusBootstrapInfo boot_info;
 
     for (int i = 0; i < quorum_.peers_size(); i++) {
-      RaftConsensus* peer = peers_[i];
+      const scoped_refptr<RaftConsensus>& peer = peers_[i];
       RETURN_NOT_OK(peer->Start(boot_info));
     }
     return Status::OK();
@@ -162,7 +162,7 @@ class RaftConsensusTest : public KuduTest {
   RaftConsensus* GetPeer(int peer_idx) {
     CHECK_GE(peer_idx, 0);
     CHECK_LT(peer_idx, peers_.size());
-    return DCHECK_NOTNULL(peers_[peer_idx]);
+    return peers_[peer_idx].get();
   }
 
   LocalTestPeerProxy* GetLeaderProxyToPeer(int peer_idx, int leader_idx) {
@@ -345,7 +345,7 @@ class RaftConsensusTest : public KuduTest {
     BOOST_FOREACH(TestTransactionFactory* factory, txn_factories_) {
       factory->WaitDone();
     }
-    BOOST_FOREACH(RaftConsensus* peer, peers_) {
+    BOOST_FOREACH(const scoped_refptr<RaftConsensus>& peer, peers_) {
       peer->Shutdown();
     }
     vector<LogEntryPB*> replica0_entries;
@@ -465,7 +465,7 @@ class RaftConsensusTest : public KuduTest {
   }
 
   ~RaftConsensusTest() {
-    STLDeleteElements(&peers_);
+    peers_.clear();
     STLDeleteElements(&txn_factories_);
     STLDeleteElements(&logs_);
     STLDeleteElements(&fs_managers_);
@@ -476,7 +476,7 @@ class RaftConsensusTest : public KuduTest {
   QuorumPB quorum_;
   OpId initial_id_;
   vector<FsManager*> fs_managers_;
-  vector<RaftConsensus*> peers_;
+  vector<scoped_refptr<RaftConsensus> > peers_;
   vector<Log*> logs_;
   vector<TestTransactionFactory*> txn_factories_;
   scoped_refptr<server::Clock> clock_;

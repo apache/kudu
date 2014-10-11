@@ -78,7 +78,7 @@ struct ConsensusBootstrapInfo {
 // 1 - quiesce Consensus
 // 2 - close/destroy Log
 // 3 - destroy Consensus
-class Consensus {
+class Consensus : public RefCountedThreadSafe<Consensus> {
  public:
   class ConsensusFaultHooks;
 
@@ -183,8 +183,6 @@ class Consensus {
 
   virtual void DumpStatusHtml(std::ostream& out) const = 0;
 
-  virtual ~Consensus() {}
-
   void SetFaultHooks(const std::tr1::shared_ptr<ConsensusFaultHooks>& hooks);
 
   const std::tr1::shared_ptr<ConsensusFaultHooks>& GetFaultHooks() const;
@@ -194,9 +192,13 @@ class Consensus {
 
  protected:
   friend class ConsensusRound;
+  friend class RefCountedThreadSafe<Consensus>;
   friend class tablet::ChangeConfigTransaction;
   friend class tablet::TabletPeer;
   friend class master::SysTable;
+
+  // This class is refcounted.
+  virtual ~Consensus() {}
 
   // Called by Consensus context to complete the commit of a consensus
   // round.
