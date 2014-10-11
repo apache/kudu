@@ -422,14 +422,10 @@ class RaftConsensusTest : public KuduTest {
     // Check that the REPLICATE messages come in the same order on both nodes.
     VerifyReplicateOrderMatches(leader_entries, replica_entries);
 
-    // Check that no COMMIT precedes its related REPLICATE on the replica
+    // Check that no COMMIT precedes its related REPLICATE on both the replica
+    // and leader.
     VerifyNoCommitsBeforeReplicates(replica_entries);
-
-    // TODO: We should also verify this for the leader. But, this doesn't hold true
-    // right now -- we need to make the leader log delay COMMITs until their respective
-    // REPLICATEs arrive.
-    // VerifyNoCommitsBeforeReplicates(leader_entries);
-
+    VerifyNoCommitsBeforeReplicates(leader_entries);
   }
 
   string PrintOnError(const vector<LogEntryPB*>& replica_entries,
