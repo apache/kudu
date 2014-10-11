@@ -211,5 +211,9 @@ Status Master::ListMasters(std::vector<ListMastersResponsePB::Entry>* masters) c
   return Status::OK();
 }
 
+bool Master::IsLeader() const {
+  return !opts_.IsDistributed() || opts_.leader;
+}
+
 } // namespace master
 } // namespace kudu

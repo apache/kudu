@@ -38,6 +38,21 @@ bool CheckCatalogManagerInitializedOrRespond(Master* master,
   return true;
 }
 
+template<class RespClass>
+bool CheckIsLeaderOrRespond(Master* master,
+                            RespClass* resp,
+                            rpc::RpcContext* rpc) {
+  if (PREDICT_FALSE(!master->IsLeader())) {
+    SetupErrorAndRespond(resp->mutable_error(),
+                         Status::ServiceUnavailable("operation requested can only be executed "
+                                                    "on a leader master or a single node master"),
+                         MasterErrorPB::NOT_THE_LEADER,
+                         rpc);
+    return false;
+  }
+  return true;
+}
+
 } // anonymous namespace
 
 static void SetupErrorAndRespond(MasterErrorPB* error,
@@ -70,6 +85,19 @@ void MasterServiceImpl::TSHeartbeat(const TSHeartbeatRequestPB* req,
   shared_ptr<TSDescriptor> ts_desc;
   Status s;
 
+  if (!server_->IsLeader()) {
+    // For the time being, ignore heartbeats sent to non-leader distributed
+    // masters.
+    //
+    // TODO KUDU-493 Allow all master processes to receive heartbeat
+    // information: by having the TabletServers send heartbeats to all
+    // masters, or by storing heartbeat information in a replicated
+    // SysTable.
+    LOG(WARNING) << "Received a heartbeat, but this Master instance is not a leader or a "
+                 << "single Master.";
+    rpc->RespondSuccess();
+    return;
+  }
   if (!server_->catalog_manager()->IsInitialized()) {
     LOG(WARNING) << "Catalog manager is not yet initialized, ignoring the heartbeat.";
     rpc->RespondSuccess();
@@ -134,6 +162,11 @@ void MasterServiceImpl::TSHeartbeat(const TSHeartbeatRequestPB* req,
 void MasterServiceImpl::GetTabletLocations(const GetTabletLocationsRequestPB* req,
                                            GetTabletLocationsResponsePB* resp,
                                            rpc::RpcContext* rpc) {
+  if (!CheckIsLeaderOrRespond(server_, resp, rpc)) {
+    // TODO To improve master scalability, support serving
+    // GetTabletLocations() from followers.
+    return;
+  }
   if (!CheckCatalogManagerInitializedOrRespond(server_, resp, rpc)) {
     return;
   }
@@ -156,6 +189,9 @@ void MasterServiceImpl::GetTabletLocations(const GetTabletLocationsRequestPB* re
 void MasterServiceImpl::CreateTable(const CreateTableRequestPB* req,
                                     CreateTableResponsePB* resp,
                                     rpc::RpcContext* rpc) {
+  if (!CheckIsLeaderOrRespond(server_, resp, rpc)) {
+    return;
+  }
   if (!CheckCatalogManagerInitializedOrRespond(server_, resp, rpc)) {
     return;
   }
@@ -169,7 +205,10 @@ void MasterServiceImpl::CreateTable(const CreateTableRequestPB* req,
 
 void MasterServiceImpl::IsCreateTableDone(const IsCreateTableDoneRequestPB* req,
                                            IsCreateTableDoneResponsePB* resp,
-                                           rpc::RpcContext* rpc) {
+                                          rpc::RpcContext* rpc) {
+  if (!CheckIsLeaderOrRespond(server_, resp, rpc)) {
+    return;
+  }
   if (!CheckCatalogManagerInitializedOrRespond(server_, resp, rpc)) {
     return;
   }
@@ -184,6 +223,9 @@ void MasterServiceImpl::IsCreateTableDone(const IsCreateTableDoneRequestPB* req,
 void MasterServiceImpl::DeleteTable(const DeleteTableRequestPB* req,
                                     DeleteTableResponsePB* resp,
                                     rpc::RpcContext* rpc) {
+  if (!CheckIsLeaderOrRespond(server_, resp, rpc)) {
+    return;
+  }
   if (!CheckCatalogManagerInitializedOrRespond(server_, resp, rpc)) {
     return;
   }
@@ -198,6 +240,9 @@ void MasterServiceImpl::DeleteTable(const DeleteTableRequestPB* req,
 void MasterServiceImpl::AlterTable(const AlterTableRequestPB* req,
                                    AlterTableResponsePB* resp,
                                    rpc::RpcContext* rpc) {
+  if (!CheckIsLeaderOrRespond(server_, resp, rpc)) {
+    return;
+  }
   if (!CheckCatalogManagerInitializedOrRespond(server_, resp, rpc)) {
     return;
   }
@@ -212,6 +257,9 @@ void MasterServiceImpl::AlterTable(const AlterTableRequestPB* req,
 void MasterServiceImpl::IsAlterTableDone(const IsAlterTableDoneRequestPB* req,
                                          IsAlterTableDoneResponsePB* resp,
                                          rpc::RpcContext* rpc) {
+  if (!CheckIsLeaderOrRespond(server_, resp, rpc)) {
+    return;
+  }
   if (!CheckCatalogManagerInitializedOrRespond(server_, resp, rpc)) {
     return;
   }
@@ -226,6 +274,9 @@ void MasterServiceImpl::IsAlterTableDone(const IsAlterTableDoneRequestPB* req,
 void MasterServiceImpl::ListTables(const ListTablesRequestPB* req,
                                    ListTablesResponsePB* resp,
                                    rpc::RpcContext* rpc) {
+  if (!CheckIsLeaderOrRespond(server_, resp, rpc)) {
+    return;
+  }
   if (!CheckCatalogManagerInitializedOrRespond(server_, resp, rpc)) {
     return;
   }
@@ -240,6 +291,11 @@ void MasterServiceImpl::ListTables(const ListTablesRequestPB* req,
 void MasterServiceImpl::GetTableLocations(const GetTableLocationsRequestPB* req,
                                           GetTableLocationsResponsePB* resp,
                                           rpc::RpcContext* rpc) {
+  if (!CheckIsLeaderOrRespond(server_, resp, rpc)) {
+    // TODO To improve master scalability, support serving
+    // GetTableLocations() from followers.
+    return;
+  }
   if (!CheckCatalogManagerInitializedOrRespond(server_, resp, rpc)) {
     return;
   }
@@ -254,6 +310,9 @@ void MasterServiceImpl::GetTableLocations(const GetTableLocationsRequestPB* req,
 void MasterServiceImpl::GetTableSchema(const GetTableSchemaRequestPB* req,
                                        GetTableSchemaResponsePB* resp,
                                        rpc::RpcContext* rpc) {
+  if (!CheckIsLeaderOrRespond(server_, resp, rpc)) {
+    return;
+  }
   if (!CheckCatalogManagerInitializedOrRespond(server_, resp, rpc)) {
     return;
   }
@@ -268,6 +327,9 @@ void MasterServiceImpl::GetTableSchema(const GetTableSchemaRequestPB* req,
 void MasterServiceImpl::ListTabletServers(const ListTabletServersRequestPB* req,
                                           ListTabletServersResponsePB* resp,
                                           rpc::RpcContext* rpc) {
+  if (!CheckIsLeaderOrRespond(server_, resp, rpc)) {
+    return;
+  }
   if (!CheckCatalogManagerInitializedOrRespond(server_, resp, rpc)) {
     return;
   }

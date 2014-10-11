@@ -34,6 +34,11 @@ message MasterErrorPB {
 
     // Catalog manager is not yet initialized.
     CATALOG_MANAGER_NOT_INITIALIZED = 6;
+
+    // The operation attempted can only be invoked against either the
+    // leader or a single non-distributed master, which this node
+    // isn't.
+    NOT_THE_LEADER = 7;
   }
 
   // The error code.

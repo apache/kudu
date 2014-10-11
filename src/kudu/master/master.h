@@ -68,6 +68,11 @@ class Master : public server::ServerBase {
   // request.
   Status ListMasters(std::vector<ListMastersResponsePB::Entry>* masters) const;
 
+  // Returns true if this instance is the leader of a distributed
+  // master quorum or if this instance is a single master in a
+  // non-distributed master configuration.
+  bool IsLeader() const;
+
  private:
   friend class MasterTest;
 
