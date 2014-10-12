@@ -481,7 +481,7 @@ Status SetPermanentUuidForRemotePeer(const shared_ptr<Messenger>& messenger,
   deadline.AddDelta(MonoDelta::FromMilliseconds(FLAGS_quorum_get_node_instance_timeout_ms));
   int attempt = 1;
   while (true) {
-    VLOG(2) << "Sending " << req.ShortDebugString();
+    VLOG(2) << "Getting uuid from remote peer. Request: " << req.ShortDebugString();
 
     controller.Reset();
     Status s = proxy->GetNodeInstance(req, &resp, &controller);
@@ -500,9 +500,10 @@ Status SetPermanentUuidForRemotePeer(const shared_ptr<Messenger>& messenger,
       int64_t base_delay_ms = 1 << (attempt + 3); // 1st retry delayed 2^4 ms, 2nd 2^5, etc..
       int64_t jitter_ms = rand() % 50; // Add up to 50ms of additional random delay.
       int64_t delay_ms = std::min<int64_t>(base_delay_ms + jitter_ms, remaining_ms);
-      LOG(INFO) << "Sleeping " << delay_ms << " ms. before retrying...";
+      VLOG(1) << "Sleeping " << delay_ms << " ms. before retrying to get uuid from remote peer...";
       usleep(delay_ms * 1000);
-      LOG(INFO) << "Retrying, attempt " << attempt++;
+      LOG(INFO) << "Retrying to get permanent uuid for remote peer: "
+          << remote_peer->ShortDebugString() << " attempt: " << attempt++;
     } else {
       s = Status::TimedOut(Substitute("Getting permanent uuid from $0 timed out after $1 ms.",
                                       hostport.ToString(),
