@@ -391,7 +391,7 @@ Status RaftConsensus::Update(const ConsensusRequestPB* request,
 
   // see var declaration
   boost::lock_guard<simple_spinlock> lock(update_lock_);
-  RETURN_NOT_OK(UpdateReplica(request));
+  RETURN_NOT_OK(UpdateReplica(request, response));
 
   {
     ReplicaState::UniqueLock lock;
@@ -411,7 +411,8 @@ Status RaftConsensus::Update(const ConsensusRequestPB* request,
   return Status::OK();
 }
 
-Status RaftConsensus::UpdateReplica(const ConsensusRequestPB* request) {
+Status RaftConsensus::UpdateReplica(const ConsensusRequestPB* request,
+                                    ConsensusResponsePB* response) {
   Synchronizer log_synchronizer;
   vector<const ReplicateMsg*> replicate_msgs;
 
@@ -535,14 +536,18 @@ Status RaftConsensus::UpdateReplica(const ConsensusRequestPB* request) {
                      state_->GetCurrentTermUnlocked()));
     }
 
-    // Enforce the log matching property, if we're about to prepare operations.
-    if (!OpIdEquals(state_->GetLastReplicatedOpIdUnlocked(),
-                    preceding_id)) {
-      return Status::IllegalState(
-          Substitute(Substitute("Log matching property violated."
-              " Last replicated by replica: $0. Preceding OpId from leader: $1.",
-              state_->GetLastReplicatedOpIdUnlocked().ShortDebugString(),
-              preceding_id.ShortDebugString())));
+    // Enforce the log matching property.
+    if (!OpIdEquals(state_->GetLastReplicatedOpIdUnlocked(), preceding_id)) {
+      string error_msg = Substitute(
+          "Log matching property violated."
+          " Last replicated by replica: $0. Preceding OpId from leader: $1.",
+          state_->GetLastReplicatedOpIdUnlocked().ShortDebugString(),
+          preceding_id.ShortDebugString());
+      FillConsensusResponseError(response,
+                                 ConsensusErrorPB::PRECEDING_ENTRY_DIDNT_MATCH,
+                                 Status::IllegalState(error_msg));
+      LOG_WITH_PREFIX(INFO) << "Refusing update from remote peer: " << error_msg;
+      return Status::OK();
     }
 
     // 1 - Enqueue the prepares
@@ -651,6 +656,14 @@ Status RaftConsensus::UpdateReplica(const ConsensusRequestPB* request) {
 
   TRACE("UpdateReplicas() finished");
   return Status::OK();
+}
+
+void RaftConsensus::FillConsensusResponseError(ConsensusResponsePB* response,
+                                               ConsensusErrorPB::Code error_code,
+                                               const Status& status) {
+  ConsensusErrorPB* error = response->mutable_status()->mutable_error();
+  error->set_code(error_code);
+  StatusToPB(status, error->mutable_status());
 }
 
 Status RaftConsensus::RequestVote(const VoteRequestPB* request, VoteResponsePB* response) {
@@ -792,7 +805,7 @@ void RaftConsensus::FillVoteResponseVoteGranted(VoteResponsePB* response) {
 }
 
 void RaftConsensus::FillVoteResponseVoteDenied(ConsensusErrorPB::Code error_code,
-                                                 VoteResponsePB* response) {
+                                               VoteResponsePB* response) {
   response->set_responder_term(state_->GetCurrentTermUnlocked());
   response->set_vote_granted(false);
   response->mutable_consensus_error()->set_code(error_code);

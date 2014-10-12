@@ -161,7 +161,8 @@ class RaftConsensus : public Consensus,
   // and triggering the required transactions. This method won't return until all
   // operations have been stored in the log and all Prepares() have been completed,
   // and a replica cannot accept any more Update() requests until this is done.
-  Status UpdateReplica(const ConsensusRequestPB* request);
+  Status UpdateReplica(const ConsensusRequestPB* request,
+                       ConsensusResponsePB* response);
 
   // Updates 'peers_' according to the new quorum config.
   Status CreateOrUpdatePeersUnlocked();
@@ -180,6 +181,11 @@ class RaftConsensus : public Consensus,
 
   // Return header string for RequestVote log messages.
   std::string GetRequestVoteLogHeader() const;
+
+  // Fills the response with an error code and error message.
+  void FillConsensusResponseError(ConsensusResponsePB* response,
+                                  ConsensusErrorPB::Code error_code,
+                                  const Status& status);
 
   // Fill VoteResponsePB with the following information:
   // - Update responder_term to current local term.

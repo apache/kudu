@@ -856,11 +856,14 @@ TEST_F(RaftConsensusTest, TestReplicasEnforceTheLogMatchingProperty) {
   // complain with the right error message.
   req.mutable_preceding_id()->set_index(id->index() + 1);
   id->set_index(id->index() + 2);
-  // Appending this message to peer0 should return a Status::IllegalState
-  // referring to the log matching property.
-  Status s = GetPeer(0)->Update(&req, &resp);
-  ASSERT_TRUE(s.IsIllegalState());
-  ASSERT_STR_CONTAINS(s.ToString(), "Log matching property violated");
+  // Appending this message to peer0 should return a Status::OK
+  // but should contain an error referring to the log matching property.
+  ASSERT_OK(GetPeer(0)->Update(&req, &resp));
+  ASSERT_TRUE(resp.has_status());
+  ASSERT_TRUE(resp.status().has_error());
+  ASSERT_EQ(resp.status().error().code(), ConsensusErrorPB::PRECEDING_ENTRY_DIDNT_MATCH);
+  ASSERT_STR_CONTAINS(resp.status().error().status().message(),
+                      "Log matching property violated");
 }
 
 // Test that RequestVote performs according to "spec".

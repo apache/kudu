@@ -10,14 +10,11 @@ import "kudu/tserver/tserver.proto";
 
 // Consensus-specific errors use this protobuf
 message ConsensusErrorPB {
+  // The codes for consensus responses. These are set in the status when
+  // some consensus internal error occurs and require special handling
+  // by the caller. A generic error code is purposefully absent since
+  // generic errors should use tserver.TabletServerErrorPB.
   enum Code {
-    // An error which has no more specific error code.
-    // The code and message in 'status' may reveal more details.
-    //
-    // RPCs should avoid returning this, since callers will not be
-    // able to easily parse the error.
-    UNKNOWN_ERROR = 1;
-
     // Invalid term.
     // Sent by peers in response to leader RPCs whenever the term
     // of one of the messages sent in a batch is lower than the
@@ -36,10 +33,13 @@ message ConsensusErrorPB {
     // The replica does not recognize the caller's request as coming from a
     // member of the quorum.
     NOT_IN_QUORUM = 5;
+    
+    // The responder's last entry didn't match the caller's preceding entry.
+    PRECEDING_ENTRY_DIDNT_MATCH = 6;
   }
 
   // The error code.
-  required Code code = 1 [ default = UNKNOWN_ERROR ];
+  required Code code = 1;
 
   // The Status object for the error. This will include a textual
   // message that may be more useful to present in log messages, etc,
