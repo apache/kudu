@@ -50,6 +50,38 @@ class ConsensusQueueTest : public KuduTest {
     return queue_->AppendOperation(*ost);
   }
 
+  // Updates the peer's watermark in the queue so that it matches
+  // the operation we want.
+  void UpdatePeerWatermarkToOp(ConsensusRequestPB* request,
+                               ConsensusResponsePB* response,
+                               const OpId& last_received,
+                               bool* more_pending) {
+
+    ASSERT_STATUS_OK(queue_->TrackPeer(kPeerUuid));
+    response->set_responder_uuid(kPeerUuid);
+
+    // Ask for a request. The queue assumes the peer is up-to-date so
+    // this should contain no operations.
+    queue_->RequestForPeer(kPeerUuid, request);
+    ASSERT_EQ(request->ops_size(), 0);
+    response->set_responder_term(request->caller_term());
+
+    // Refuse saying that the log matching property check failed and
+    // that our last operation is actually 'last_received'.
+    RefuseWithLogPropertyMismatch(response, last_received);
+    queue_->ResponseFromPeer(*response, more_pending);
+    request->Clear();
+    response->mutable_status()->Clear();
+  }
+
+  void RefuseWithLogPropertyMismatch(ConsensusResponsePB* response,
+                                     const OpId& last_received) {
+    ConsensusStatusPB* status = response->mutable_status();
+    status->mutable_last_received()->CopyFrom(last_received);
+    ConsensusErrorPB* error = status->mutable_error();
+    error->set_code(ConsensusErrorPB::PRECEDING_ENTRY_DIDNT_MATCH);
+  }
+
  protected:
   gscoped_ptr<MockRaftConsensusQueueIface> consensus_;
   MetricRegistry metric_registry_;
@@ -61,16 +93,16 @@ class ConsensusQueueTest : public KuduTest {
 TEST_F(ConsensusQueueTest, TestGetAllMessages) {
   AppendReplicateMessagesToQueue(queue_.get(), 1, 100);
 
-  ASSERT_STATUS_OK(queue_->TrackPeer(kPeerUuid, MinimumOpId()));
-
   ConsensusRequestPB request;
   ConsensusResponsePB response;
   response.set_responder_uuid(kPeerUuid);
-  response.set_responder_term(14);
 
   bool more_pending = false;
+  UpdatePeerWatermarkToOp(&request, &response, MinimumOpId(), &more_pending);
+  ASSERT_TRUE(more_pending);
 
-  // ask for a request. with normal flags this should get the whole queue.
+  // Getting a new request should get all operations (i.e. all operations
+  // from MinimumOpId()).
   queue_->RequestForPeer(kPeerUuid, &request);
   ASSERT_EQ(request.ops_size(), 100);
   response.mutable_status()->mutable_last_received()->CopyFrom(request.ops(99).id());
@@ -92,20 +124,20 @@ TEST_F(ConsensusQueueTest, TestGetAllMessages) {
 TEST_F(ConsensusQueueTest, TestStartTrackingAfterStart) {
   AppendReplicateMessagesToQueue(queue_.get(), 1, 100);
 
-  // Start to track the peer after the queue has some messages in it
-  // at a point that is halfway through the current messages in the queue.
-  OpId first_msg;
-  first_msg.set_term(7);
-  first_msg.set_index(50);
-  ASSERT_STATUS_OK(queue_->TrackPeer(kPeerUuid, first_msg));
-
   ConsensusRequestPB request;
   ConsensusResponsePB response;
   response.set_responder_uuid(kPeerUuid);
-  response.set_responder_term(14);
   bool more_pending = false;
 
-  // ask for a request, with normal flags this should get half the queue.
+  // Peer already has some messages, last one being 7.50
+  OpId last_received;
+  last_received.set_term(7);
+  last_received.set_index(50);
+
+  UpdatePeerWatermarkToOp(&request, &response, last_received, &more_pending);
+  ASSERT_TRUE(more_pending);
+
+  // Getting a new request should get all operations after 7.50
   queue_->RequestForPeer(kPeerUuid, &request);
   ASSERT_EQ(request.ops_size(), 50);
   response.mutable_status()->mutable_last_received()->CopyFrom(request.ops(49).id());
@@ -151,13 +183,14 @@ TEST_F(ConsensusQueueTest, TestGetPagedMessages) {
 
   AppendReplicateMessagesToQueue(queue_.get(), 1, 100);
 
-  queue_->TrackPeer(kPeerUuid, MinimumOpId());
-  bool more_pending = false;
-
   ConsensusRequestPB request;
   ConsensusResponsePB response;
   response.set_responder_uuid(kPeerUuid);
-  response.set_responder_term(14);
+  bool more_pending = false;
+
+  UpdatePeerWatermarkToOp(&request, &response, MinimumOpId(), &more_pending);
+  ASSERT_TRUE(more_pending);
+
   for (int i = 0; i < 11; i++) {
     queue_->RequestForPeer(kPeerUuid, &request);
     response.mutable_status()->mutable_last_received()->CopyFrom(
@@ -202,9 +235,14 @@ TEST_F(ConsensusQueueTest, TestAlwaysYieldsAtLeastOneMessage) {
   }
   ASSERT_STATUS_OK(queue_->AppendOperation(status));
 
-  // Ensure that a request contains the message.
   ConsensusRequestPB request;
-  queue_->TrackPeer(kPeerUuid, MinimumOpId());
+  ConsensusResponsePB response;
+  response.set_responder_uuid(kPeerUuid);
+  bool more_pending = false;
+
+  UpdatePeerWatermarkToOp(&request, &response, MinimumOpId(), &more_pending);
+  ASSERT_TRUE(more_pending);
+
   queue_->RequestForPeer(kPeerUuid, &request);
   ASSERT_EQ(1, request.ops_size());
 
@@ -222,14 +260,13 @@ TEST_F(ConsensusQueueTest, TestPeersDontAckBeyondWatermarks) {
   first_msg.set_term(7);
   first_msg.set_index(50);
 
-  ASSERT_STATUS_OK(queue_->TrackPeer(kPeerUuid, first_msg));
-
   ConsensusRequestPB request;
   ConsensusResponsePB response;
   response.set_responder_uuid(kPeerUuid);
-  response.set_responder_term(14);
-
   bool more_pending = false;
+
+  UpdatePeerWatermarkToOp(&request, &response, first_msg, &more_pending);
+  ASSERT_TRUE(more_pending);
 
   // ask for a request, with normal flags this should get half the queue.
   queue_->RequestForPeer(kPeerUuid, &request);
@@ -320,9 +357,9 @@ TEST_F(ConsensusQueueTest, TestQueueRefusesRequestWhenFilled) {
 
 TEST_F(ConsensusQueueTest, TestQueueAdvancesCommittedIndex) {
   // Track 3 different peers;
-  queue_->TrackPeer("peer-1", MinimumOpId());
-  queue_->TrackPeer("peer-2", MinimumOpId());
-  queue_->TrackPeer("peer-3", MinimumOpId());
+  queue_->TrackPeer("peer-1");
+  queue_->TrackPeer("peer-2");
+  queue_->TrackPeer("peer-3");
 
   // Append 10 messages to the queue with a majority of 2 for a total of 3 peers.
   // This should add messages 0.1 -> 0.7, 1.8 -> 1.10 to the queue.

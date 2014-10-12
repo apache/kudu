@@ -133,19 +133,17 @@ void PeerMessageQueue::Init(const OpId& committed_index,
   state_ = kQueueOpen;
 }
 
-Status PeerMessageQueue::TrackPeer(const string& uuid, const OpId& initial_watermark) {
+Status PeerMessageQueue::TrackPeer(const string& uuid) {
   CHECK(!uuid.empty()) << "Got request to track peer with empty UUID";
   boost::lock_guard<simple_spinlock> lock(queue_lock_);
   DCHECK_EQ(state_, kQueueOpen);
   // TODO allow the queue to go and fetch requests from the log
   // up to a point.
-  DCHECK(initial_watermark.IsInitialized());
 
+  // We leave the peer's last_received watermark unitialized, we'll
+  // initialize it when we get the first response back from the peer.
   TrackedPeer* tracked_peer = new TrackedPeer(uuid);
-  tracked_peer->CheckMonotonicTerms(initial_watermark.term());
-  tracked_peer->peer_status.mutable_last_received()->CopyFrom(initial_watermark);
   tracked_peer->uuid = uuid;
-
   InsertOrDie(&watermarks_, uuid, tracked_peer);
   return Status::OK();
 }
@@ -236,17 +234,29 @@ void PeerMessageQueue::RequestForPeer(const string& uuid,
                << ". Queue status: " << ToStringUnlocked();
   }
 
+  request->mutable_committed_index()->CopyFrom(committed_index_);
+  request->set_caller_term(current_term_);
+
+  // If the peer's watermark is not initialized we set 'last_received'
+  // to the last operation in the queue, as per the raft paper. In this
+  // case this will end up being a status-only request.
+  OpId last_received;
+  if (!peer->peer_status.has_last_received()) {
+    last_received.CopyFrom(GetLastOp());
+  } else {
+    last_received.CopyFrom(peer->peer_status.last_received());
+  }
+
   // We don't actually start sending on 'lower_bound' but we seek to
   // it to get the preceding_id.
-  MessagesBuffer::const_iterator iter = messages_.lower_bound(peer->peer_status.last_received());
+  MessagesBuffer::const_iterator iter = messages_.lower_bound(last_received);
 
   // If "lower_bound" points to the beginning of the queue and it is not the exact same as the
   // 'peer_status.last_received()' it means we're sending a batch including the very first message
   // in the queue, meaning we'll have to use to 'preceeding_first_op_in_queue_' to get the
   // 'preceding_id'.
   if (messages_.empty() ||
-      (iter == messages_.begin() &&
-       !OpIdEquals((*iter).first, peer->peer_status.last_received()))) {
+      (iter == messages_.begin() && !OpIdEquals((*iter).first, last_received))) {
     request->mutable_preceding_id()->CopyFrom(preceding_first_op_in_queue_);
   // ... otherwise 'preceding_id' is the first element in the iterator and we start sending
   // on the element after that.
@@ -254,9 +264,6 @@ void PeerMessageQueue::RequestForPeer(const string& uuid,
     request->mutable_preceding_id()->CopyFrom((*iter).first);
     iter++;
   }
-
-  request->mutable_committed_index()->CopyFrom(committed_index_);
-  request->set_caller_term(current_term_);
 
   // Add as many operations as we can to a request.
   OperationStatusTracker* ost = NULL;
@@ -292,6 +299,27 @@ void PeerMessageQueue::RequestForPeer(const string& uuid,
   }
 }
 
+void PeerMessageQueue::HandleLogMatchingPropertyMismatch(TrackedPeer* peer,
+                                                         const ConsensusResponsePB& response,
+                                                         const ConsensusStatusPB& status) {
+  // Check that the peer is not asking for an operation that comes before the first
+  // operation in the queue (except MinimumOpId()) we don't handle those yet.
+  if (messages_.empty() || (!OpIdEquals(status.last_received(), MinimumOpId()) &&
+                            OpIdLessThan(status.last_received(), preceding_first_op_in_queue_))) {
+    LOG(FATAL) << "Unimplemented. Peer: " << response.responder_uuid() << " requested an "
+        << "operation: " << status.last_received().ShortDebugString() << " before the "
+        << "first operation in the queue: "
+        << (messages_.empty() ? "EMPTY" : (*messages_.begin()).first.ShortDebugString());
+  }
+
+  LOG(INFO) << "Peer: " << response.responder_uuid() << " replied that the Log Matching Property "
+      "check failed. Queue's last received watermark for peer: "
+      << (peer->peer_status.has_last_received() ?
+          peer->peer_status.last_received().ShortDebugString() : "NONE")
+      << ". Peer's actual last received watermark: " << status.last_received().ShortDebugString();
+  peer->peer_status.mutable_last_received()->CopyFrom(status.last_received());
+}
+
 void PeerMessageQueue::ResponseFromPeer(const ConsensusResponsePB& response,
                                         bool* more_pending) {
   CHECK(response.has_responder_uuid() && !response.responder_uuid().empty())
@@ -314,24 +342,39 @@ void PeerMessageQueue::ResponseFromPeer(const ConsensusResponsePB& response,
 
     // Application level errors should be handled elsewhere
     DCHECK(!response.has_error());
-
-    // We're not handling any consensus level errors yet so we check that
-    // consensus level errors are not present.
-    DCHECK(!response.status().has_error());
-
-    // Response must have a status as we're not yet handling consensus level
-    // errors.
+    // Responses should always have a status.
     DCHECK(response.has_status());
+
+    const ConsensusStatusPB& status = response.status();
+
+    if (status.has_error()) {
+      switch (status.error().code()) {
+        case ConsensusErrorPB::PRECEDING_ENTRY_DIDNT_MATCH: {
+          HandleLogMatchingPropertyMismatch(peer, response, status);
+          *more_pending = true;
+          return;
+          break;
+        }
+        default: {
+          LOG(FATAL) << "Unexpected consensus error. Response: " << response.ShortDebugString();
+        }
+      }
+    }
 
     // The peer must have responded with a term that is greater than or equal to
     // the last known term for that peer.
     peer->CheckMonotonicTerms(response.responder_term());
 
-    // Right now we don't support leader election so the receiver must have the
-    // same term as our own.
+    // If the responder didn't send an error back that must mean that it has
+    // the same term as ourselves.
     CHECK_EQ(response.responder_term(), current_term_);
 
-    MessagesBuffer::iterator iter = messages_.upper_bound(peer->peer_status.last_received());
+    MessagesBuffer::iterator iter;
+    if (!peer->peer_status.has_last_received()) {
+      iter = messages_.begin();
+    } else {
+      iter = messages_.upper_bound(peer->peer_status.last_received());
+    }
 
     MessagesBuffer::iterator end_iter = messages_.upper_bound(response.status().last_received());
 
@@ -471,7 +514,7 @@ bool PeerMessageQueue::CheckHardLimitsNotViolated(size_t bytes) const {
   return !local_limit_violated && !global_limit_violated;
 }
 
-const OpId& PeerMessageQueue::GetLastOp() {
+const OpId& PeerMessageQueue::GetLastOp() const {
   return messages_.empty() ? preceding_first_op_in_queue_ : (*messages_.rbegin()).first;
 }
 

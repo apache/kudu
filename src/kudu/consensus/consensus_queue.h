@@ -115,10 +115,8 @@ class PeerMessageQueue {
   // reason (e.g. the queue reached max size).
   Status AppendOperation(scoped_refptr<OperationStatusTracker> status);
 
-  // Makes the queue track this peer. Used when the peer already has
-  // state. The queue assumes the peer has both replicated and committed
-  // all messages prior to and including 'initial_watermark'.
-  Status TrackPeer(const std::string& uuid, const OpId& initial_watermark);
+  // Makes the queue track this peer.
+  Status TrackPeer(const std::string& uuid);
 
   // Makes the queue untrack the peer.
   // Requires that the peer was being tracked.
@@ -251,7 +249,13 @@ class PeerMessageQueue {
 
   // Returns the last operation in the message queue, or
   // 'preceding_first_op_in_queue_' if the queue is empty.
-  const OpId& GetLastOp();
+  const OpId& GetLastOp() const;
+
+  // Handles the case when a peer replies that the Log Matching Property check
+  // failed.
+  void HandleLogMatchingPropertyMismatch(TrackedPeer* peer,
+                                         const ConsensusResponsePB& response,
+                                         const ConsensusStatusPB& status);
 
   RaftConsensusQueueIface* consensus_;
 

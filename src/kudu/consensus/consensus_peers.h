@@ -172,6 +172,7 @@ class Peer {
 
   enum State {
     kPeerCreated,
+    kPeerStarted,
     kPeerIdle,
     kPeerWaitingForResponse,
     kPeerClosed

@@ -40,9 +40,8 @@ using strings::Substitute;
 
 class PeerImpl {
  public:
-  // Initializes the Peer implementation and sets 'initial_id' to the last
-  // id received by the replica.
-  virtual Status Init(OpId* initial_id) = 0;
+  // Initializes the Peer implementation.
+  virtual Status Init() = 0;
 
 
   // Return a string identifying what type of peer this is (eg "remote" or "local").
@@ -70,21 +69,20 @@ class LocalPeer : public PeerImpl {
       local_uuid_(local_uuid) {
   }
 
-  Status Init(OpId* initial_id) OVERRIDE {
-    Status s = log_->GetLastEntryOpId(initial_id);
-    if (s.IsNotFound()) {
-      *initial_id = MinimumOpId();
-      s = Status::OK();
+  Status Init() OVERRIDE {
+    Status status = log_->GetLastEntryOpId(&last_replicated_);
+    if (status.IsNotFound()) {
+      last_replicated_.CopyFrom(MinimumOpId());
+      return Status::OK();
     }
-    last_replicated_ = *initial_id;
-    return s;
+    return status;
   }
 
   virtual void SendRequest(const ConsensusRequestPB* request,
                            ConsensusResponsePB* response,
                            const StatusCallback& callback) OVERRIDE {
     if (PREDICT_FALSE(request->ops_size() == 0)) {
-      SetupResponse(response);
+      SetupResponse(response, request->caller_term());
       callback.Run(Status::OK());
       return;
     }
@@ -114,9 +112,9 @@ class LocalPeer : public PeerImpl {
   }
 
  private:
-  void SetupResponse(ConsensusResponsePB* response) {
+  void SetupResponse(ConsensusResponsePB* response, uint64_t term) {
     response->Clear();
-    response->set_responder_term(last_replicated_.term());
+    response->set_responder_term(term);
     response->set_responder_uuid(local_uuid_);
     ConsensusStatusPB* status = response->mutable_status();
     status->mutable_last_received()->CopyFrom(last_replicated_);
@@ -140,7 +138,7 @@ class LocalPeer : public PeerImpl {
     CHECK(last_msg.has_id());
     last_replicated_ = last_msg.id();
 
-    SetupResponse(response);
+    SetupResponse(response, request->caller_term());
 
     peer_callback.Run(log_status);
   }
@@ -162,10 +160,7 @@ class RemotePeer : public PeerImpl {
     : proxy_(proxy.Pass()) {
   }
 
-  Status Init(OpId* initial_id) OVERRIDE {
-    // TODO ask the remote peer for the initial id when we have catch up.
-    initial_id->CopyFrom(MinimumOpId());
-
+  Status Init() OVERRIDE {
     return Status::OK();
   }
 
@@ -176,8 +171,8 @@ class RemotePeer : public PeerImpl {
 
     // TODO handle errors
     CHECK_OK(proxy_->UpdateAsync(
-               request, response, &controller_,
-               boost::bind(&RemotePeer::RequestCallback, this, callback)));
+        request, response, &controller_,
+        boost::bind(&RemotePeer::RequestCallback, this, callback)));
   }
 
   virtual std::string PeerTypeString() const OVERRIDE {
@@ -206,7 +201,7 @@ Status Peer::NewLocalPeer(const QuorumPeerPB& peer_pb,
                                       leader_uuid,
                                       queue,
                                       impl.Pass()));
-  RETURN_NOT_OK(new_peer->Init());
+  CHECK_OK(new_peer->Init());
   peer->reset(new_peer.release());
   return Status::OK();
 }
@@ -254,9 +249,8 @@ void Peer::SetTermForTest(int term) {
 
 Status Peer::Init() {
   boost::lock_guard<Semaphore> lock(sem_);
-  OpId initial_id;
-  RETURN_NOT_OK(peer_impl_->Init(&initial_id));
-  RETURN_NOT_OK(queue_->TrackPeer(peer_pb_.permanent_uuid(), initial_id));
+  RETURN_NOT_OK(peer_impl_->Init());
+  RETURN_NOT_OK(queue_->TrackPeer(peer_pb_.permanent_uuid()));
   RETURN_NOT_OK(heartbeater_.Start());
   state_ = kPeerIdle;
   return Status::OK();
@@ -273,8 +267,15 @@ Status Peer::SignalRequest(bool even_if_queue_empty) {
     return Status::IllegalState("Peer was closed.");
   }
 
-  DCHECK_EQ(state_, kPeerIdle);
+  // For the first request sent by the peer, we send it even if the queue is empty,
+  // which it will always appear to be for the first request, since this is the
+  // negotiation round.
+  if (PREDICT_FALSE(state_ == kPeerStarted)) {
+    even_if_queue_empty = true;
+    state_ = kPeerIdle;
+  }
 
+  DCHECK_EQ(state_, kPeerIdle);
   SendNextRequest(even_if_queue_empty);
   return Status::OK();
 }
@@ -323,7 +324,7 @@ void Peer::ProcessResponse(const Status& status) {
   }
   failed_attempts_ = 0;
 
-  DCHECK(response_.status().IsInitialized());
+  DCHECK(response_.status().IsInitialized()) << "Response: " << response_.ShortDebugString();
   VLOG(2) << "Response from "
           << peer_impl_->PeerTypeString() << " peer " << peer_pb().permanent_uuid() << ": "
           << response_.ShortDebugString();

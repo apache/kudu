@@ -77,7 +77,7 @@ class ConsensusPeersTest : public KuduTest {
 
   void CheckLastRemoteEntry(NoOpTestPeerProxy* proxy, int term, int index) {
     OpId id;
-    id.CopyFrom(proxy->last_status().last_received());
+    id.CopyFrom(proxy->last_received());
     ASSERT_EQ(id.term(), term);
     ASSERT_EQ(id.index(), index);
   }

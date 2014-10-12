@@ -120,6 +120,7 @@ class NoOpTestPeerProxy : public PeerProxy {
       callback_(NULL),
       peer_pb_(peer_pb) {
     CHECK_OK(ThreadPoolBuilder("noop-peer-pool").set_max_threads(1).Build(&pool_));
+    last_received_.CopyFrom(MinimumOpId());
   }
 
   virtual Status UpdateAsync(const ConsensusRequestPB* request,
@@ -127,18 +128,20 @@ class NoOpTestPeerProxy : public PeerProxy {
                              rpc::RpcController* controller,
                              const rpc::ResponseCallback& callback) OVERRIDE {
 
+    response->Clear();
+
     boost::lock_guard<simple_spinlock> lock(lock_);
-    if (request->ops_size() > 0) {
-      last_status_.mutable_last_received()->CopyFrom(
-          request->ops(request->ops_size() - 1).id());
-    } else {
-      last_status_.mutable_last_received()->CopyFrom(
-          request->preceding_id());
+    if (OpIdLessThan(last_received_, request->preceding_id())) {
+      ConsensusErrorPB* error = response->mutable_status()->mutable_error();
+      error->set_code(ConsensusErrorPB::PRECEDING_ENTRY_DIDNT_MATCH);
+      StatusToPB(Status::IllegalState(""), error->mutable_status());
+    } else if (request->ops_size() > 0) {
+      last_received_.CopyFrom(request->ops(request->ops_size() - 1).id());
     }
 
     response->set_responder_uuid(peer_pb_.permanent_uuid());
     response->set_responder_term(request->caller_term());
-    response->mutable_status()->CopyFrom(last_status_);
+    response->mutable_status()->mutable_last_received()->CopyFrom(last_received_);
 
     callback_ = callback;
 
@@ -149,9 +152,9 @@ class NoOpTestPeerProxy : public PeerProxy {
     return Status::OK();
   }
 
-  const ConsensusStatusPB& last_status() {
+  const OpId& last_received() {
     boost::lock_guard<simple_spinlock> lock(lock_);
-    return last_status_;
+    return last_received_;
   }
 
   // Delays the answer to the next response to this remote
@@ -174,7 +177,7 @@ class NoOpTestPeerProxy : public PeerProxy {
   }
 
   gscoped_ptr<ThreadPool> pool_;
-  ConsensusStatusPB last_status_;
+  OpId last_received_;
   bool delay_response_;
   rpc::ResponseCallback callback_;
   const metadata::QuorumPeerPB peer_pb_;
@@ -230,7 +233,7 @@ class LocalTestPeerProxy : public PeerProxy {
         s = consensus_->Update(&other_peer_req, &other_peer_resp);
         if (s.ok() && !other_peer_resp.has_error()) {
           CHECK(other_peer_resp.has_status());
-          CHECK(other_peer_resp.status().has_last_received());
+          CHECK(other_peer_resp.status().IsInitialized());
         }
       } else {
         s = Status::NotFound("Other consensus instance was destroyed");
