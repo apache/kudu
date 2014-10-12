@@ -503,9 +503,6 @@ class MajorityOpStatusTracker : public OperationStatusTracker {
   // IsDone().
   CountDownLatch completion_latch_;
 
-  ThreadPool* callback_pool_;
-  gscoped_ptr<OperationCallbackRunnable> runnable_;
-
   // Lock that protects access to the state variables.
   mutable simple_spinlock lock_;
 };

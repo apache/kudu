@@ -629,9 +629,7 @@ MajorityOpStatusTracker::MajorityOpStatusTracker(gscoped_ptr<ReplicateMsg> repli
       voting_peers_(voting_peers),
       total_peers_count_(total_peers_count),
       replicated_count_(0),
-      completion_latch_(majority),
-      callback_pool_(NULL),
-      runnable_(NULL) {
+      completion_latch_(majority) {
 }
 
 void MajorityOpStatusTracker::AckPeer(const string& uuid) {
