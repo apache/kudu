@@ -170,7 +170,7 @@ Status RaftConsensus::ChangeConfigUnlocked() {
 Status RaftConsensus::BecomeLeaderUnlocked() {
   LOG_WITH_PREFIX(INFO) << "Becoming Leader";
 
-  queue_.Init(state_->GetCommittedOpIdUnlocked());
+  queue_.Init(state_->GetCommittedOpIdUnlocked(), state_->GetCurrentTermUnlocked());
 
   // Create the peers so that we're able to replicate messages remotely and locally
   RETURN_NOT_OK(CreateOrUpdatePeersUnlocked());

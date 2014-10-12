@@ -98,8 +98,13 @@ class PeerMessageQueue {
                             const std::string& parent_tracker_id = kConsensusQueueParentTrackerId);
 
   // Initialize the queue.
-  // All operations with ids <= 'committed_index' should be considered committed.
-  void Init(const OpId& committed_index);
+  // 'committed_index' corresponds to the id of the last committed operation,
+  // i.e. operations with ids <= 'committed_index' should be considered committed.
+  // 'current_term' corresponds to the leader's current term, this is different
+  // from 'committed_index.term()' if the leader has not yet committed an
+  // operation in the current term.
+  void Init(const OpId& committed_index,
+            uint64_t current_term);
 
   // Appends a operation that must be replicated to the quorum and associates
   // it with the provided 'status'.

@@ -122,10 +122,13 @@ PeerMessageQueue::PeerMessageQueue(RaftConsensusQueueIface* consensus,
                                        parent_tracker_.get());
 }
 
-void PeerMessageQueue::Init(const OpId& committed_index) {
+void PeerMessageQueue::Init(const OpId& committed_index,
+                            uint64_t current_term) {
+  boost::lock_guard<simple_spinlock> lock(queue_lock_);
   CHECK_EQ(state_, kQueueConstructed);
   CHECK(committed_index.IsInitialized());
   committed_index_ = committed_index;
+  current_term_ = current_term;
   preceding_first_op_in_queue_ = committed_index;
   state_ = kQueueOpen;
 }

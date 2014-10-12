@@ -33,7 +33,7 @@ class ConsensusPeersTest : public KuduTest {
        metric_context_(&metric_registry_, "peer-test"),
        message_queue_(consensus_.get(), metric_context_),
        schema_(GetSimpleTestSchema()) {
-    message_queue_.Init(MinimumOpId());
+    message_queue_.Init(MinimumOpId(), MinimumOpId().term());
   }
 
   virtual void SetUp() OVERRIDE {

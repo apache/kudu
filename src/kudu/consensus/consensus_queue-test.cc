@@ -33,7 +33,7 @@ class ConsensusQueueTest : public KuduTest {
         metric_context_(&metric_registry_, "queue-test"),
         queue_(new PeerMessageQueue(consensus_.get(), metric_context_)) {
     FLAGS_enable_data_block_fsync = false; // Keep unit tests fast.
-    queue_->Init(MinimumOpId());
+    queue_->Init(MinimumOpId(), MinimumOpId().term());
   }
 
   Status AppendReplicateMsg(int term, int index,
@@ -264,7 +264,7 @@ TEST_F(ConsensusQueueTest, TestPeersDontAckBeyondWatermarks) {
 TEST_F(ConsensusQueueTest, TestBufferTrimsWhenMessagesAreNotNeeded) {
   FLAGS_consensus_entry_cache_size_soft_limit_mb = 1;
   queue_.reset(new PeerMessageQueue(consensus_.get(), metric_context_));
-  queue_->Init(MinimumOpId());
+  queue_->Init(MinimumOpId(), MinimumOpId().term());
 
   // generate a 128Kb dummy payload
   string test_payload(128 * 1024, '0');
@@ -296,7 +296,7 @@ TEST_F(ConsensusQueueTest, TestQueueRefusesRequestWhenFilled) {
   FLAGS_consensus_entry_cache_size_hard_limit_mb = 1;
 
   queue_.reset(new PeerMessageQueue(consensus_.get(), metric_context_));
-  queue_->Init(MinimumOpId());
+  queue_->Init(MinimumOpId(), MinimumOpId().term());
 
   // generate a 128Kb dummy payload
   string test_payload(128 * 1024, '0');
@@ -396,7 +396,7 @@ TEST_F(ConsensusQueueTest, TestQueueHardAndSoftLimit) {
   FLAGS_consensus_entry_cache_size_hard_limit_mb = 2;
 
   queue_.reset(new PeerMessageQueue(consensus_.get(), metric_context_));
-  queue_->Init(MinimumOpId());
+  queue_->Init(MinimumOpId(), MinimumOpId().term());
 
   const int kPayloadSize = 768 * 1024;
 
@@ -473,7 +473,7 @@ TEST_F(ConsensusQueueTest, TestGlobalHardLimit) {
  queue_.reset(new PeerMessageQueue(consensus_.get(),
                                    metric_context_,
                                    kParentTrackerId));
- queue_->Init(MinimumOpId());
+ queue_->Init(MinimumOpId(), MinimumOpId().term());
 
  const int kPayloadSize = 768 * 1024;
 
@@ -519,7 +519,7 @@ TEST_F(ConsensusQueueTest, TestTrimWhenGlobalSoftLimitExceeded) {
  queue_.reset(new PeerMessageQueue(consensus_.get(),
                                    metric_context_,
                                    kParentTrackerId));
- queue_->Init(MinimumOpId());
+ queue_->Init(MinimumOpId(), MinimumOpId().term());
 
  const int kPayloadSize = 768 * 1024;
 
