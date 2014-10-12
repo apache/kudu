@@ -166,12 +166,6 @@ Status PeerMessageQueue::AppendOperation(scoped_refptr<OperationStatusTracker> s
     current_term_ = status->op_id().term();
   }
 
-  // Check that terms are monotonically increasing
-  DCHECK_GE(status->op_id().term(), current_term_);
-  if (status->op_id().term() > current_term_) {
-    current_term_ = status->op_id().term();
-  }
-
   // Once either the local or global soft limit is exceeded...
   if (tracker_->AnyLimitExceeded()) {
     // .. try to trim the queue.
