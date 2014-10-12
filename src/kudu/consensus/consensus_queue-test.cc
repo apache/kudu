@@ -96,7 +96,7 @@ TEST_F(ConsensusQueueTest, TestStartTrackingAfterStart) {
   // at a point that is halfway through the current messages in the queue.
   OpId first_msg;
   first_msg.set_term(7);
-  first_msg.set_index(1);
+  first_msg.set_index(50);
   ASSERT_STATUS_OK(queue_->TrackPeer(kPeerUuid, first_msg));
 
   ConsensusRequestPB request;
@@ -220,7 +220,7 @@ TEST_F(ConsensusQueueTest, TestPeersDontAckBeyondWatermarks) {
   // at a point that is halfway through the current messages in the queue.
   OpId first_msg;
   first_msg.set_term(7);
-  first_msg.set_index(1);
+  first_msg.set_index(50);
 
   ASSERT_STATUS_OK(queue_->TrackPeer(kPeerUuid, first_msg));
 
@@ -280,11 +280,11 @@ TEST_F(ConsensusQueueTest, TestGetOperationStatusTracker) {
   vector<scoped_refptr<OperationStatusTracker> > statuses;
   AppendReplicateMessagesToQueue(queue_.get(), 1, 100, 1, 1, "", &statuses);
 
-  // Try and acccess some random operation in the queue. In this case operation
-  // 3.4 corresponds to the 25th operation in the queue.
+  // Try and acccess some random operation in the queue. In this case
+  // the 25th operation in the queue.
   OpId op;
   op.set_term(3);
-  op.set_index(4);
+  op.set_index(25);
   scoped_refptr<OperationStatusTracker> status;
   queue_->GetOperationStatus(op, &status);
   ASSERT_EQ(statuses[24]->ToString(), status->ToString());
@@ -307,17 +307,15 @@ TEST_F(ConsensusQueueTest, TestQueueRefusesRequestWhenFilled) {
   scoped_refptr<OperationStatusTracker> status;
 
   // should fail with service unavailable
-  Status s = AppendReplicateMsg(10, 1, test_payload, &status);
+  Status s = AppendReplicateMsg(1, 8, test_payload, &status);
 
-  LOG(INFO) << queue_->ToString();
   ASSERT_TRUE(s.IsServiceUnavailable());
 
   // now ack the first and second ops
   statuses[0]->AckPeer("");
   statuses[1]->AckPeer("");
-
   // .. and try again
-  ASSERT_STATUS_OK(AppendReplicateMsg(10, 2, test_payload, &status));
+  ASSERT_STATUS_OK(AppendReplicateMsg(1, 8, test_payload, &status));
 }
 
 TEST_F(ConsensusQueueTest, TestQueueAdvancesCommittedIndex) {
@@ -327,7 +325,7 @@ TEST_F(ConsensusQueueTest, TestQueueAdvancesCommittedIndex) {
   queue_->TrackPeer("peer-3", MinimumOpId());
 
   // Append 10 messages to the queue with a majority of 2 for a total of 3 peers.
-  // This should add messages 0.1 -> 0.7, 1.1 -> 1.3 to the queue.
+  // This should add messages 0.1 -> 0.7, 1.8 -> 1.10 to the queue.
   vector<scoped_refptr<OperationStatusTracker> > statuses;
   AppendReplicateMessagesToQueue(queue_.get(), 1, 10, 2, 3);
 
@@ -372,7 +370,7 @@ TEST_F(ConsensusQueueTest, TestQueueAdvancesCommittedIndex) {
   // Ack all operations for peer-3
   response.set_responder_uuid("peer-3");
   last_received->set_term(1);
-  last_received->set_index(3);
+  last_received->set_index(10);
 
   queue_->ResponseFromPeer(response, &more_pending);
   ASSERT_FALSE(more_pending);
@@ -387,7 +385,7 @@ TEST_F(ConsensusQueueTest, TestQueueAdvancesCommittedIndex) {
 
   // Committed index should be the tail of the queue
   expected_committed_index.set_term(1);
-  expected_committed_index.set_index(3);
+  expected_committed_index.set_index(10);
   ASSERT_TRUE(OpIdEquals(expected_committed_index, queue_->GetCommittedIndexForTests()));
 }
 
@@ -483,8 +481,6 @@ TEST_F(ConsensusQueueTest, TestGlobalHardLimit) {
 
  // Should fail with service unavailable.
  Status s = AppendReplicateMsg(1, 1, payload, &status);
-
- LOG(INFO) << queue_->ToString();
 
  ASSERT_TRUE(s.IsServiceUnavailable());
 

@@ -163,6 +163,12 @@ Status PeerMessageQueue::AppendOperation(scoped_refptr<OperationStatusTracker> s
   DCHECK_EQ(state_, kQueueOpen);
   const ReplicateMsg* msg = status->replicate_msg();
 
+  // Before we change the queue's term, in debug mode, check that the indexes
+  // in the queue are consecutive.
+  DCHECK_EQ(GetLastOp().index() + 1, status->op_id().index())
+    << "Last op in the queue: " << GetLastOp().ShortDebugString()
+    << " operation being appended: " << status->op_id().ShortDebugString();
+
   // Check that terms are monotonically increasing
   DCHECK_GE(status->op_id().term(), current_term_);
   if (status->op_id().term() > current_term_) {
@@ -200,6 +206,7 @@ Status PeerMessageQueue::AppendOperation(scoped_refptr<OperationStatusTracker> s
     VLOG(2) << "Appended REPLICATE to queue: " << msg->ShortDebugString() <<
         " Operation Status: " << status->ToString();
   }
+
   InsertOrDieNoPrint(&messages_, status->op_id(), status);
   metrics_.total_num_ops->Increment();
 
@@ -463,6 +470,10 @@ bool PeerMessageQueue::CheckHardLimitsNotViolated(size_t bytes) const {
   }
 #endif
   return !local_limit_violated && !global_limit_violated;
+}
+
+const OpId& PeerMessageQueue::GetLastOp() {
+  return messages_.empty() ? preceding_first_op_in_queue_ : (*messages_.rbegin()).first;
 }
 
 void PeerMessageQueue::DumpToStrings(vector<string>* lines) const {

@@ -130,7 +130,7 @@ TEST_F(ConsensusPeersTest, TestLocalPeer) {
   // requests.
   statuses_[19]->Wait();
   // verify that the requests are in fact logged.
-  CheckLastLogEntry(log.get(), 2, 6);
+  CheckLastLogEntry(log.get(), 2, 20);
 }
 
 // Tests that a remote peer is correctly built and tracked
@@ -157,7 +157,7 @@ TEST_F(ConsensusPeersTest, TestRemotePeer) {
   statuses_[19]->Wait();
   // verify that the replicated watermark corresponds to the last replicated
   // message.
-  CheckLastRemoteEntry(proxy, 2, 6);
+  CheckLastRemoteEntry(proxy, 2, 20);
 }
 
 TEST_F(ConsensusPeersTest, TestLocalAndRemotePeers) {

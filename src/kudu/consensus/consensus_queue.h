@@ -249,6 +249,10 @@ class PeerMessageQueue {
 
   void ClearUnlocked();
 
+  // Returns the last operation in the message queue, or
+  // 'preceding_first_op_in_queue_' if the queue is empty.
+  const OpId& GetLastOp();
+
   RaftConsensusQueueIface* consensus_;
 
   // The total size of consensus entries to keep in memory.

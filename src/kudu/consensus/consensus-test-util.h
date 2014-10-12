@@ -99,7 +99,7 @@ static inline void AppendReplicateMessagesToQueue(
     gscoped_ptr<ReplicateMsg> msg(new ReplicateMsg);
     OpId* id = msg->mutable_id();
     id->set_term(i / 7);
-    id->set_index(i % 7);
+    id->set_index(i);
     msg->set_op_type(NO_OP);
     msg->mutable_noop_request()->set_payload_for_tests(dummy_payload);
     scoped_refptr<OperationStatusTracker> status(
