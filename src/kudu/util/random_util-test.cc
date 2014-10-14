@@ -35,7 +35,7 @@ TEST_F(RandomUtilTest, TestNormalDist) {
     sum += NormalDist(kMean, kStdDev);
   }
 
-  ASSERT_LE(abs((sum / static_cast<double>(kNumIters)) - kMean), kStdDev);
+  ASSERT_LE(fabs((sum / static_cast<double>(kNumIters)) - kMean), kStdDev);
 }
 
 namespace {
