@@ -118,8 +118,7 @@ class NoOpTestPeerProxy : public PeerProxy {
   explicit NoOpTestPeerProxy(const metadata::QuorumPeerPB& peer_pb)
     : delay_response_(false),
       callback_(NULL),
-      peer_pb_(peer_pb),
-      peer_term_(0) {
+      peer_pb_(peer_pb) {
     CHECK_OK(ThreadPoolBuilder("noop-peer-pool").set_max_threads(1).Build(&pool_));
   }
 
@@ -127,52 +126,59 @@ class NoOpTestPeerProxy : public PeerProxy {
                              ConsensusResponsePB* response,
                              rpc::RpcController* controller,
                              const rpc::ResponseCallback& callback) OVERRIDE {
-    ConsensusStatusPB* status = response->mutable_status();
-    response->set_responder_uuid(peer_pb_.permanent_uuid());
 
+    boost::lock_guard<simple_spinlock> lock(lock_);
     if (request->ops_size() > 0) {
-      status->mutable_last_received()->CopyFrom(
+      last_status_.mutable_last_received()->CopyFrom(
           request->ops(request->ops_size() - 1).id());
-      last_status_.CopyFrom(*status);
-      peer_term_ = status->mutable_last_received()->term();
-    } else if (last_status_.IsInitialized()) {
-      status->CopyFrom(last_status_);
+    } else {
+      last_status_.mutable_last_received()->CopyFrom(
+          request->preceding_id());
     }
 
-    response->set_responder_term(peer_term_);
+    response->set_responder_uuid(peer_pb_.permanent_uuid());
+    response->set_responder_term(request->caller_term());
+    response->mutable_status()->CopyFrom(last_status_);
 
     callback_ = callback;
 
     if (!delay_response_) {
-      RETURN_NOT_OK(Respond());
+      RETURN_NOT_OK(RespondUnlocked());
     }
 
     return Status::OK();
   }
 
   const ConsensusStatusPB& last_status() {
+    boost::lock_guard<simple_spinlock> lock(lock_);
     return last_status_;
   }
 
   // Delays the answer to the next response to this remote
   // peer. The response callback will only be called on Respond().
   void DelayResponse() {
+    boost::lock_guard<simple_spinlock> lock(lock_);
     delay_response_ = true;
   }
 
   // Answers the peer.
   Status Respond() {
+    boost::lock_guard<simple_spinlock> lock(lock_);
+    return RespondUnlocked();
+  }
+
+ private:
+  Status RespondUnlocked() {
     delay_response_ = false;
     return pool_->SubmitFunc(callback_);
   }
 
- private:
   gscoped_ptr<ThreadPool> pool_;
   ConsensusStatusPB last_status_;
   bool delay_response_;
   rpc::ResponseCallback callback_;
-  metadata::QuorumPeerPB peer_pb_;
-  int peer_term_;
+  const metadata::QuorumPeerPB peer_pb_;
+  mutable simple_spinlock lock_;
 };
 
 class NoOpTestPeerProxyFactory : public PeerProxyFactory {
