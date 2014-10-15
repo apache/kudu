@@ -137,12 +137,14 @@ Status ResettableHeartbeaterThread::Stop() {
 
   {
     lock_guard<simple_spinlock> l(&lock_);
+    if (shutdown_) {
+      return Status::OK();
+    }
     shutdown_ = true;
   }
 
   run_latch_.CountDown();
   RETURN_NOT_OK(ThreadJoiner(thread_.get()).Join());
-  thread_ = NULL;
   return Status::OK();
 }
 

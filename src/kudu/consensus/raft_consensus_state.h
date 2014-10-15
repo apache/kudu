@@ -187,7 +187,7 @@ class ReplicaState {
   // or otherwise can happen after this point.
   // Called after the quiescing phase (started with LockForShutdown())
   // finishes.
-  Status Shutdown() WARN_UNUSED_RESULT;
+  Status ShutdownUnlocked() WARN_UNUSED_RESULT;
 
   Status SetConfigDoneUnlocked();
 
@@ -369,7 +369,7 @@ class ReplicaState {
 
   // Return the current state of this object.
   // The update_lock_ must be held.
-  State state() const;
+  ReplicaState::State state() const;
 
  private:
   // Helper method to update the active quorum state for peers, etc.

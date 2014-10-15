@@ -221,10 +221,7 @@ Status ReplicaState::LockForUpdate(UniqueLock* lock) {
 
 Status ReplicaState::LockForShutdown(UniqueLock* lock) {
   UniqueLock l(&update_lock_);
-  if (state_ == kShutDown) {
-    return Status::IllegalState("Replica is already shutdown");
-  }
-  if (state_ != kShuttingDown) {
+  if (state_ != kShuttingDown && state_ != kShutDown) {
     state_ = kShuttingDown;
     in_flight_applies_latch_.Reset(in_flight_commits_.size());
   }
@@ -232,9 +229,9 @@ Status ReplicaState::LockForShutdown(UniqueLock* lock) {
   return Status::OK();
 }
 
-Status ReplicaState::Shutdown() {
+Status ReplicaState::ShutdownUnlocked() {
+  DCHECK(update_lock_.is_locked());
   CHECK_EQ(state_, kShuttingDown);
-  UniqueLock l(&update_lock_);
   state_ = kShutDown;
   return Status::OK();
 }

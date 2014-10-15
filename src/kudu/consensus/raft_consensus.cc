@@ -747,28 +747,48 @@ void RaftConsensus::SignalRequestToPeers(bool force_if_queue_empty) {
   }
 }
 
-void RaftConsensus::ClosePeers() {
-  PeersMap::iterator iter = peers_.begin();
-  for (; iter != peers_.end(); iter++) {
-    (*iter).second->Close();
-  }
-}
-
 void RaftConsensus::Shutdown() {
   CHECK_OK(ExecuteHook(PRE_SHUTDOWN));
 
-  LOG_WITH_PREFIX_LK(INFO) << "Raft consensus shutting down.";
+  // Peers must be closed outside of the lock to avoid a deadlock, since the
+  // peers hold their own Semaphore while acquiring the ReplicaState lock when
+  // calling UpdateCommittedIndex().
+  PeersMap peers;
   {
     ReplicaState::UniqueLock lock;
-    Status s = state_->LockForShutdown(&lock);
-    if (s.IsIllegalState()) return;
-    ClosePeers();
+    CHECK_OK(state_->LockForShutdown(&lock));
+    if (state_->state() == ReplicaState::kShutDown) {
+      // We have already shut down.
+      return;
+    }
+    LOG_WITH_PREFIX(INFO) << "Raft consensus shutting down.";
+    // Copy the peers map so we can close the peers outside the lock.
+    peers = peers_;
+  }
+
+  // Close the peers per above.
+  BOOST_FOREACH(const PeersMap::value_type& entry, peers) {
+    entry.second->Close();
+  }
+
+  // We must close the queue after we close the peers.
+  {
+    ReplicaState::UniqueLock lock;
+    CHECK_OK(state_->LockForShutdown(&lock));
     queue_.Close();
   }
+
   CHECK_OK(state_->CancelPendingTransactions());
   CHECK_OK(state_->WaitForOustandingApplies());
-  LOG_WITH_PREFIX_LK(INFO) << "Raft consensus Shutdown!";
-  CHECK_OK(state_->Shutdown());
+
+  {
+    ReplicaState::UniqueLock lock;
+    CHECK_OK(state_->LockForShutdown(&lock));
+    if (state_->state() != ReplicaState::kShutDown) {
+      LOG_WITH_PREFIX(INFO) << "Raft consensus Shutdown!";
+      CHECK_OK(state_->ShutdownUnlocked());
+    }
+  }
   CHECK_OK(ExecuteHook(POST_SHUTDOWN));
 }
 

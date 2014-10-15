@@ -155,8 +155,6 @@ class RaftConsensus : public Consensus,
   // that establishes this peer as leader.
   void BecomeLeaderResult(const Status& status);
 
-  void ClosePeers();
-
   // Updates the state in a replica by storing the received operations in the log
   // and triggering the required transactions. This method won't return until all
   // operations have been stored in the log and all Prepares() have been completed,
