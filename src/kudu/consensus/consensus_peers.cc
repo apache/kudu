@@ -241,11 +241,9 @@ Peer::Peer(const metadata::QuorumPeerPB& peer_pb,
       queue_(queue),
       failed_attempts_(0),
       sem_(1),
-      heartbeater_(new ResettableHeartbeater(
-                     peer_pb.permanent_uuid(),
-                     MonoDelta::FromMilliseconds(
-                       FLAGS_leader_heartbeat_interval_ms),
-                     boost::bind(&Peer::SignalRequest, this, true))),
+      heartbeater_(peer_pb.permanent_uuid(),
+                   MonoDelta::FromMilliseconds(FLAGS_leader_heartbeat_interval_ms),
+                   boost::bind(&Peer::SignalRequest, this, true)),
       state_(kPeerCreated) {
 
 }
@@ -259,9 +257,7 @@ Status Peer::Init() {
   OpId initial_id;
   RETURN_NOT_OK(peer_impl_->Init(&initial_id));
   RETURN_NOT_OK(queue_->TrackPeer(peer_pb_.permanent_uuid(), initial_id));
-  if (heartbeater_) {
-    RETURN_NOT_OK(heartbeater_->Start());
-  }
+  RETURN_NOT_OK(heartbeater_.Start());
   state_ = kPeerIdle;
   return Status::OK();
 }
@@ -300,7 +296,7 @@ void Peer::SendNextRequest(bool even_if_queue_empty) {
   // If we're actually sending ops there's no need to heartbeat for a while,
   // reset the heartbeater
   if (req_has_ops) {
-    heartbeater_->Reset();
+    heartbeater_.Reset();
   }
 
   state_ = kPeerWaitingForResponse;
@@ -374,9 +370,7 @@ void Peer::ProcessResponseError(const Status& status) {
 }
 
 void Peer::Close() {
-  if (heartbeater_) {
-    WARN_NOT_OK(heartbeater_->Stop(), "Could not stop heartbeater");
-  }
+  WARN_NOT_OK(heartbeater_.Stop(), "Could not stop heartbeater");
 
   // Acquire the semaphore to wait for any concurrent request to finish.
   boost::lock_guard<Semaphore> l(sem_);

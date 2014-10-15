@@ -168,7 +168,7 @@ class Peer {
   // This will send status only requests to the remote peers
   // whenever we go more than 'FLAGS_leader_heartbeat_interval_ms'
   // without sending actual data.
-  gscoped_ptr<ResettableHeartbeater> heartbeater_;
+  ResettableHeartbeater heartbeater_;
 
   enum State {
     kPeerCreated,
