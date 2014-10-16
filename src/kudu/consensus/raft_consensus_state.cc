@@ -616,69 +616,6 @@ void OperationCallbackRunnable::Run() {
   callback_->OnFailure(error_);
 }
 
-
-MajorityOpStatusTracker::MajorityOpStatusTracker(gscoped_ptr<ReplicateMsg> replicate_msg,
-                                                 const unordered_set<string>& voting_peers,
-                                                 int majority,
-                                                 int total_peers_count)
-    : OperationStatusTracker(replicate_msg.Pass()),
-      majority_(majority),
-      voting_peers_(voting_peers),
-      total_peers_count_(total_peers_count),
-      replicated_count_(0),
-      completion_latch_(majority) {
-}
-
-void MajorityOpStatusTracker::AckPeer(const string& uuid) {
-  CHECK(!uuid.empty()) << "Peer acked with empty uuid";
-  lock_guard<simple_spinlock> lock(&lock_);
-  if (voting_peers_.count(uuid) != 0) {
-    completion_latch_.CountDown();
-  }
-  replicated_count_++;
-  if (PREDICT_FALSE(VLOG_IS_ON(2))) {
-    VLOG(2) << "Peer: " << uuid << " ACK'd " << ToStringUnlocked();
-  }
-  DCHECK_LE(replicated_count_, total_peers_count_)
-    << "More replicates than expected. " << ToStringUnlocked()
-    << "; Quorum: " << JoinStringsIterator(voting_peers_.begin(), voting_peers_.end(), ", ");
-}
-
-bool MajorityOpStatusTracker::IsDone() const {
-  return completion_latch_.count() == 0;
-}
-
-bool MajorityOpStatusTracker::IsAllDone() const {
-  lock_guard<simple_spinlock> lock(&lock_);
-  return replicated_count_ >= total_peers_count_;
-}
-
-void MajorityOpStatusTracker::Wait() {
-  completion_latch_.Wait();
-}
-
-MajorityOpStatusTracker::~MajorityOpStatusTracker() {
-  if (!IsDone()) {
-    LOG(WARNING) << "Deleting incomplete Operation: " << ToString();
-  }
-}
-
-std::string MajorityOpStatusTracker::ToString() const {
-  lock_guard<simple_spinlock> lock(&lock_);
-  return ToStringUnlocked();
-}
-
-std::string MajorityOpStatusTracker::ToStringUnlocked() const {
-  return Substitute("MajorityOpStatusTracker: Id: $0 IsDone: $1 All Peers: $2, Voting Peers: $3, "
-                    "ACK'd Peers: $4, Majority: $5",
-                    op_id().ShortDebugString(),
-                    IsDone(),
-                    total_peers_count_,
-                    voting_peers_.size(),
-                    replicated_count_,
-                    majority_);
-}
-
 }  // namespace consensus
 }  // namespace kudu
 

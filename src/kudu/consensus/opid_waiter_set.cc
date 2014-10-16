@@ -24,7 +24,7 @@ OpIdWaiterSet::~OpIdWaiterSet() {
 }
 
 void OpIdWaiterSet::RegisterCallback(const OpId& op_id,
-                                       const shared_ptr<FutureCallback>& callback) {
+                                     const shared_ptr<FutureCallback>& callback) {
   DCHECK(callback);
   callbacks_.insert(CallbackMap::value_type(op_id, callback));
 }

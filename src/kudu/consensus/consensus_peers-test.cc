@@ -29,11 +29,10 @@ const char* kLeaderUuid = "test-peers-leader";
 class ConsensusPeersTest : public KuduTest {
  public:
   ConsensusPeersTest()
-    :  consensus_(new MockRaftConsensusQueueIface),
+    :  consensus_(new TestRaftConsensusQueueIface),
        metric_context_(&metric_registry_, "peer-test"),
        message_queue_(consensus_.get(), metric_context_),
        schema_(GetSimpleTestSchema()) {
-    message_queue_.Init(MinimumOpId(), MinimumOpId().term());
   }
 
   virtual void SetUp() OVERRIDE {
@@ -82,19 +81,25 @@ class ConsensusPeersTest : public KuduTest {
     ASSERT_EQ(id.index(), index);
   }
 
-  TestOpStatusTracker* test_status(OperationStatusTracker* status) {
-    return down_cast<TestOpStatusTracker*, OperationStatusTracker>(status);
+  // Registers a callback triggered when the op with the provided term and index
+  // is committed in the test consensus impl.
+  // This must be called _before_ the operation is committed.
+  void RegisterCallbackForOp(int term, int index, shared_ptr<LatchCallback>* clbk) {
+    OpId op;
+    op.set_term(term);
+    op.set_index(index);
+    clbk->reset(new LatchCallback);
+    consensus_->RegisterCallback(op, *clbk);
   }
 
  protected:
-  gscoped_ptr<MockRaftConsensusQueueIface> consensus_;
+  gscoped_ptr<TestRaftConsensusQueueIface> consensus_;
   MetricRegistry metric_registry_;
   MetricContext metric_context_;
   PeerMessageQueue message_queue_;
   const Schema schema_;
   gscoped_ptr<FsManager> fs_manager_;
   LogOptions options_;
-  vector<scoped_refptr<OperationStatusTracker> > statuses_;
   NoOpTestPeerProxyFactory peer_proxy_factory_;
 };
 
@@ -103,6 +108,8 @@ class ConsensusPeersTest : public KuduTest {
 // After the operations are considered done the log should
 // reflect the replicated messages.
 TEST_F(ConsensusPeersTest, TestLocalPeer) {
+  message_queue_.Init(MinimumOpId(), MinimumOpId().term(), 1);
+
   gscoped_ptr<Peer> local_peer;
   gscoped_ptr<Log> log;
   CHECK_OK(Log::Open(options_,
@@ -116,18 +123,21 @@ TEST_F(ConsensusPeersTest, TestLocalPeer) {
   local_peer->SignalRequest(true);
 
   // Append a bunch of messages to the queue
-  AppendReplicateMessagesToQueue(&message_queue_, 1, 20, 1, 1, "", &statuses_);
+  AppendReplicateMessagesToQueue(&message_queue_, 1, 20);
 
   // The above append ends up appending messages in term 2, so we
   // update the peer's term to match.
   local_peer->SetTermForTest(2);
 
+  shared_ptr<LatchCallback> clbk;
+  RegisterCallbackForOp(2, 20, &clbk);
+
   // signal the peer there are requests pending.
   local_peer->SignalRequest();
-  // now wait on the status of the last operation
-  // this will complete once the peer has logged all
+  // Now wait on the last operation, this will complete once the peer has logged all
   // requests.
-  statuses_[19]->Wait();
+  clbk->Wait();
+
   // verify that the requests are in fact logged.
   CheckLastLogEntry(log.get(), 2, 20);
 }
@@ -138,11 +148,12 @@ TEST_F(ConsensusPeersTest, TestLocalPeer) {
 // simulates the other endpoint) should reflect the replicated
 // messages.
 TEST_F(ConsensusPeersTest, TestRemotePeer) {
+  message_queue_.Init(MinimumOpId(), MinimumOpId().term(), 1);
   gscoped_ptr<Peer> remote_peer;
   NoOpTestPeerProxy* proxy = NewRemotePeer("remote-peer", &remote_peer);
 
   // Append a bunch of messages to the queue
-  AppendReplicateMessagesToQueue(&message_queue_, 1, 20, 1, 1, "", &statuses_);
+  AppendReplicateMessagesToQueue(&message_queue_, 1, 20);
 
   // The above append ends up appending messages in term 2, so we
   // update the peer's term to match.
@@ -153,13 +164,16 @@ TEST_F(ConsensusPeersTest, TestRemotePeer) {
   // now wait on the status of the last operation
   // this will complete once the peer has logged all
   // requests.
-  statuses_[19]->Wait();
+  shared_ptr<LatchCallback> clbk;
+  RegisterCallbackForOp(2, 20, &clbk);
+  clbk->Wait();
   // verify that the replicated watermark corresponds to the last replicated
   // message.
   CheckLastRemoteEntry(proxy, 2, 20);
 }
 
 TEST_F(ConsensusPeersTest, TestLocalAndRemotePeers) {
+  message_queue_.Init(MinimumOpId(), MinimumOpId().term(), 2);
   gscoped_ptr<Peer> local_peer;
   gscoped_ptr<Log> log;
   CHECK_OK(Log::Open(options_,
@@ -180,8 +194,15 @@ TEST_F(ConsensusPeersTest, TestLocalAndRemotePeers) {
   // Delay the response from the second remote peer.
   remote_peer2_proxy->DelayResponse();
 
-  // Append one message to the queue with majority = 2.
-  AppendReplicateMessagesToQueue(&message_queue_, 1, 1, 2, 3, "", &statuses_);
+  // Append one message to the queue.
+  AppendReplicateMessagesToQueue(&message_queue_, 1, 1);
+
+  OpId first;
+  first.set_term(0);
+  first.set_index(1);
+
+  shared_ptr<LatchCallback> clbk;
+  RegisterCallbackForOp(first.term(), first.index(), &clbk);
 
   local_peer->SignalRequest();
   remote_peer1->SignalRequest();
@@ -189,30 +210,36 @@ TEST_F(ConsensusPeersTest, TestLocalAndRemotePeers) {
 
   // Now wait for the message to be replicated, this should succeed since
   // majority = 2 and only one peer was delayed.
-  statuses_[0]->Wait();
-  CheckLastLogEntry(log.get(), 0, 1);
-  CheckLastRemoteEntry(remote_peer1_proxy, 0, 1);
-  ASSERT_EQ(2, test_status(statuses_[0].get())->replicated_count());
+  clbk->Wait();
+  CheckLastLogEntry(log.get(), first.term(), first.index());
+  CheckLastRemoteEntry(remote_peer1_proxy, first.term(), first.index());
 
   ASSERT_STATUS_OK(remote_peer2_proxy->Respond());
-  // Wait until all peers have replicated the message, otherwise
+
+
+  // Now wait until the queue receives the response, otherwise
   // when we add the next one remote_peer2 might find the next message
   // in the queue and will replicate it, which is not what we want.
-  test_status(statuses_[0].get())->WaitAllReplicated();
+  while (!OpIdEquals(message_queue_.GetAllReplicatedIndexForTests(), first)) {
+    usleep(1000);
+  }
 
   // Now append another message to the queue
-  AppendReplicateMessagesToQueue(&message_queue_, 2, 1, 2, 3, "", &statuses_);
+  AppendReplicateMessagesToQueue(&message_queue_, 2, 1);
+
+  RegisterCallbackForOp(0, 2, &clbk);
 
   // Signal a single peer
   remote_peer1->SignalRequest();
-  // IsDone should be false since only a single peer replicated the message
-  ASSERT_FALSE(statuses_[1]->IsDone());
+  // The callback should timeout since only a single peer replicated the message
+
+  ASSERT_TRUE(clbk->WaitFor(MonoDelta::FromMilliseconds(10)).IsTimedOut());
+
   // Signal another peer
   remote_peer2->SignalRequest();
   // We should now be able to wait on the status until the two peers (a majority)
   // have replicated the message.
-  statuses_[1]->Wait();
-  ASSERT_TRUE(statuses_[1]->IsDone());
+  clbk->Wait();
 }
 
 }  // namespace consensus

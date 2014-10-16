@@ -170,7 +170,9 @@ Status RaftConsensus::ChangeConfigUnlocked() {
 Status RaftConsensus::BecomeLeaderUnlocked() {
   LOG_WITH_PREFIX(INFO) << "Becoming Leader";
 
-  queue_.Init(state_->GetCommittedOpIdUnlocked(), state_->GetCurrentTermUnlocked());
+  queue_.Init(state_->GetCommittedOpIdUnlocked(),
+              state_->GetCurrentTermUnlocked(),
+              state_->GetActiveQuorumStateUnlocked().majority_size);
 
   // Create the peers so that we're able to replicate messages remotely and locally
   RETURN_NOT_OK(CreateOrUpdatePeersUnlocked());
@@ -290,23 +292,11 @@ Status RaftConsensus::Replicate(ConsensusRound* round) {
     // the original instance of the replicate msg is owned by the consensus context
     // so we create a copy for the queue.
     gscoped_ptr<ReplicateMsg> queue_msg(new ReplicateMsg(*round->replicate_msg()));
+    Status s = queue_.AppendOperation(queue_msg.Pass());
 
-    const QuorumState& quorum_state = state_->GetActiveQuorumStateUnlocked();
-
-    // TODO Make QuorumState a scoped_refptr and pass it below.
-    // That way we can have operations in the queue that reference two
-    // different configs but still count things properly, without
-    // copying the args.
-    scoped_refptr<OperationStatusTracker> status(
-        new MajorityOpStatusTracker(queue_msg.Pass(),
-                                    quorum_state.voting_peers,
-                                    quorum_state.majority_size,
-                                    quorum_state.quorum_size));
-
-    Status s = queue_.AppendOperation(status);
     // Handle Status::ServiceUnavailable(), which means the queue is full.
     if (PREDICT_FALSE(s.IsServiceUnavailable())) {
-      gscoped_ptr<OpId> id(status->replicate_msg()->release_id());
+      gscoped_ptr<OpId> id(round->replicate_msg()->release_id());
       // Rollback the id gen. so that we reuse this id later, when we can
       // actually append to the state machine, i.e. this makes the state
       // machine have continuous ids, for the same term, even if the queue

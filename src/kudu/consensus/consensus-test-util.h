@@ -11,6 +11,7 @@
 #include "kudu/consensus/consensus.h"
 #include "kudu/consensus/consensus_peers.h"
 #include "kudu/consensus/consensus_queue.h"
+#include "kudu/consensus/opid_waiter_set.h"
 #include "kudu/consensus/raft_consensus.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/strings/substitute.h"
@@ -33,61 +34,6 @@ namespace consensus {
 
 using strings::Substitute;
 
-// An operation status for tests that allows to wait for operations
-// to complete.
-class TestOpStatusTracker : public OperationStatusTracker {
- public:
-  TestOpStatusTracker(gscoped_ptr<ReplicateMsg> op, int n_majority, int total_peers)
-    : OperationStatusTracker(op.Pass()),
-      majority_latch_(n_majority),
-      all_replicated_latch_(total_peers),
-      replicated_count_(0) {
-  }
-
-  void AckPeer(const string& uuid) OVERRIDE {
-    if (PREDICT_FALSE(VLOG_IS_ON(2))) {
-      VLOG(2) << "Peer: " << uuid << " Ack'd op: " << replicate_msg_->ShortDebugString();
-    }
-    boost::lock_guard<simple_spinlock> lock(lock_);
-    replicated_count_++;
-    majority_latch_.CountDown();
-    all_replicated_latch_.CountDown();
-  }
-
-  bool IsDone() const OVERRIDE {
-    return majority_latch_.count() == 0;
-  }
-
-  bool IsAllDone() const OVERRIDE {
-    return all_replicated_latch_.count() == 0;
-  }
-
-  void Wait() OVERRIDE {
-    majority_latch_.Wait();
-  }
-
-  void WaitAllReplicated() {
-    all_replicated_latch_.Wait();
-  }
-
-  int replicated_count() const {
-    boost::lock_guard<simple_spinlock> lock(lock_);
-    return replicated_count_;
-  }
-
-  virtual std::string ToString() const OVERRIDE {
-    boost::lock_guard<simple_spinlock> lock(lock_);
-    return Substitute("Op: $0, IsDone: $1, IsAllDone: $2, ReplicatedCount: $3.",
-                      replicate_msg_->ShortDebugString(), IsDone(), IsAllDone(), replicated_count_);
-  }
-
- private:
-  CountDownLatch majority_latch_;
-  CountDownLatch all_replicated_latch_;
-  int replicated_count_;
-  mutable simple_spinlock lock_;
-};
-
 // Appends 'count' messages to 'queue' with different terms and indexes.
 //
 // An operation will only be considered done (TestOperationStatus::IsDone()
@@ -100,10 +46,7 @@ static inline void AppendReplicateMessagesToQueue(
     PeerMessageQueue* queue,
     int first,
     int count,
-    int n_majority = 1,
-    int total_peers = 1,
-    string dummy_payload = "",
-    vector<scoped_refptr<OperationStatusTracker> >* statuses_collector = NULL) {
+    string dummy_payload = "") {
 
   for (int i = first; i < first + count; i++) {
     gscoped_ptr<ReplicateMsg> msg(new ReplicateMsg);
@@ -112,12 +55,7 @@ static inline void AppendReplicateMessagesToQueue(
     id->set_index(i);
     msg->set_op_type(NO_OP);
     msg->mutable_noop_request()->set_payload_for_tests(dummy_payload);
-    scoped_refptr<OperationStatusTracker> status(
-        new TestOpStatusTracker(msg.Pass(), n_majority, total_peers));
-    CHECK_OK(queue->AppendOperation(status));
-    if (statuses_collector) {
-      statuses_collector->push_back(status);
-    }
+    CHECK_OK(queue->AppendOperation(msg.Pass()));
   }
 }
 
@@ -709,9 +647,27 @@ class CounterHooks : public Consensus::ConsensusFaultHooks {
   mutable simple_spinlock lock_;
 };
 
-class MockRaftConsensusQueueIface : public RaftConsensusQueueIface {
+class TestRaftConsensusQueueIface : public RaftConsensusQueueIface {
+ public:
+  TestRaftConsensusQueueIface() {
+    ThreadPoolBuilder("ci-waiters").set_max_threads(1).Build(&pool_);
+    committed_waiter_set_.reset(new OpIdWaiterSet(pool_.get()));
+  }
+
+  void RegisterCallback(const OpId& op_id,
+                        const std::tr1::shared_ptr<FutureCallback>& callback) {
+    boost::lock_guard<simple_spinlock> lock(lock_);
+    committed_waiter_set_->RegisterCallback(op_id, callback);
+  }
  protected:
-  virtual void UpdateCommittedIndex(const OpId&) OVERRIDE {}
+  virtual void UpdateCommittedIndex(const OpId& id) OVERRIDE {
+    boost::lock_guard<simple_spinlock> lock(lock_);
+    committed_waiter_set_->MarkFinished(id, OpIdWaiterSet::MARK_ALL_OPS_BEFORE);
+  }
+ private:
+  gscoped_ptr<ThreadPool> pool_;
+  gscoped_ptr<OpIdWaiterSet> committed_waiter_set_;
+  mutable simple_spinlock lock_;
 };
 
 }  // namespace consensus

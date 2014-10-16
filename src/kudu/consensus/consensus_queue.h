@@ -34,55 +34,6 @@ class RaftConsensusQueueIface;
 // The id for the server-wide consensus queue MemTracker.
 extern const char kConsensusQueueParentTrackerId[];
 
-// The status associated with each single quorum operation.
-// This class is ref. counted and takes ownership of the tracked operation.
-//
-// NOTE: Implementations of this class must be thread safe.
-class OperationStatusTracker : public RefCountedThreadSafe<OperationStatusTracker> {
- public:
-  explicit OperationStatusTracker(gscoped_ptr<ReplicateMsg> operation);
-
-  // Called by PeerMessageQueue after a peer ACKs this operation.
-  //
-  // This will never be called concurrently from multiple threads, since it is always
-  // called under the PeerMessageQueue lock. However, it may be called concurrently with the
-  // IsDone(), IsAllDone(), and Wait().
-  //
-  // This does not need to be idempotent for a given peer -- the PeerMessageQueue ensures
-  // that it is called at most once per peer.
-  virtual void AckPeer(const std::string& uuid) = 0;
-
-  // Whether enough/the right peers have ack'd the operation. This might
-  // change depending on the operation type or quorum composition.
-  // E.g. replication messages need to be ack'd by a majority while commit
-  // messages must be at least ack'd by the leader.
-  virtual bool IsDone() const = 0;
-
-  // Indicates whether all peers have ack'd the operation meaning it can be
-  // freed from the queue.
-  virtual bool IsAllDone() const = 0;
-
-  // Callers can use this to block until IsDone() becomes true or until
-  // a majority of peers report errors.
-  // TODO make this return a status on error.
-  virtual void Wait() = 0;
-
-  const OpId& op_id() const {
-    return replicate_msg_->id();
-  }
-
-  ReplicateMsg* replicate_msg() {
-    return replicate_msg_.get();
-  }
-
-  virtual std::string ToString() const { return  IsDone() ? "Done" : "NotDone"; }
-
-  virtual ~OperationStatusTracker() {}
-
- protected:
-  gscoped_ptr<ReplicateMsg> replicate_msg_;
-};
-
 // Tracks all the pending consensus operations on the LEADER side.
 // The PeerMessageQueue has the dual goal of keeping a single copy of a
 // request in memory (instead of creating a copy for each peer) and
@@ -103,17 +54,16 @@ class PeerMessageQueue {
   // 'current_term' corresponds to the leader's current term, this is different
   // from 'committed_index.term()' if the leader has not yet committed an
   // operation in the current term.
+  // Majority size corresponds to the number of peers that must have replicated
+  // a certain operation for it to be considered committed.
   void Init(const OpId& committed_index,
-            uint64_t current_term);
+            uint64_t current_term,
+            int majority_size);
 
-  // Appends a operation that must be replicated to the quorum and associates
-  // it with the provided 'status'.
-  // The consensus operation will be associated with the provided 'status'
-  // and, on return, 'status' can be inspected to track the operation's
-  // progress.
-  // Returns OK unless the operation could not be added to the queue for some
+  // Appends a message to be replicated to the quorum.
+  // Returns OK unless the message could not be added to the queue for some
   // reason (e.g. the queue reached max size).
-  Status AppendOperation(scoped_refptr<OperationStatusTracker> status);
+  Status AppendOperation(gscoped_ptr<ReplicateMsg> status);
 
   // Makes the queue track this peer.
   Status TrackPeer(const std::string& uuid);
@@ -145,12 +95,6 @@ class PeerMessageQueue {
   void ResponseFromPeer(const ConsensusResponsePB& response,
                         bool* more_pending);
 
-  // Returns the OperationStatusTracker for the operation with id = 'op_id' by
-  // setting 'status' to it and returning Status::OK() or returns Status::NotFound
-  // if no such operation can be found in the queue.
-  Status GetOperationStatus(const OpId& op_id,
-                            scoped_refptr<OperationStatusTracker>* status);
-
   // Clears all messages and tracked peers but still leaves the queue in state
   // where it can be used again.
   // Note: Pending messages must be handled before calling this method, i.e.
@@ -164,6 +108,9 @@ class PeerMessageQueue {
   void Close();
 
   int64_t GetQueuedOperationsSizeBytesForTests() const;
+
+  // Returns the last message replicated by all peers, for tests.
+  OpId GetAllReplicatedIndexForTests() const;
 
   // Returns the current consensus committed index, for tests.
   OpId GetCommittedIndexForTests() const;
@@ -222,9 +169,39 @@ class PeerMessageQueue {
     uint64_t last_seen_term_;
   };
 
+  enum State {
+    kQueueConstructed,
+    kQueueOpen,
+    kQueueClosed
+  };
+
+  struct QueueState {
+
+    // The first operation that has been replicated to all currently
+    // tracked peers.
+    OpId all_replicated_index;
+
+    // The index of the last operation to be considered committed.
+    OpId committed_index;
+
+    // The id of the operation immediately preceding the first operation
+    // in the queue.
+    OpId preceding_first_op_in_queue;
+
+    // The queue's owner current_term.
+    // Set by the last appended operation.
+    // If the queue owner's term is less than the term observed
+    // from another peer the queue owner must step down.
+    // TODO: it is likely to be cleaner to get this from the ConsensusMetadata
+    // rather than by snooping on what operations are appended to the queue.
+    uint64_t current_term;
+
+    State state;
+  };
+
   // An ordered map that serves as the buffer for the pending messages.
   typedef std::map<OpId,
-                   scoped_refptr<OperationStatusTracker>,
+                   ReplicateMsg*,
                    OpIdCompareFunctor> MessagesBuffer;
 
   typedef std::tr1::unordered_map<std::string, TrackedPeer*> WatermarksMap;
@@ -235,15 +212,16 @@ class PeerMessageQueue {
 
   void DumpToStringsUnlocked(std::vector<std::string>* lines) const;
 
-  // Trims the buffer, making sure it can accomodate the provided message.
-  // Returns Status::OK() if the buffer was trimmed or otherwise had available
-  // space or Status::ServiceUnavailable() if the queue could not free enough space.
-  Status TrimBufferForMessage(const ReplicateMsg* msg);
+  // Trims the buffer to free space, if we can.
+  void TrimBuffer();
+
+  // Updates the metrics based on index math.
+  void UpdateMetrics();
 
   // Check whether adding 'bytes' to the consensus queue would violate
   // either the local (per-tablet) hard limit or the global
   // (server-wide) hard limit.
-  bool CheckHardLimitsNotViolated(size_t bytes) const;
+  bool WouldHardLimitBeViolated(size_t bytes) const;
 
   void ClearUnlocked();
 
@@ -257,6 +235,17 @@ class PeerMessageQueue {
                                          const ConsensusResponsePB& response,
                                          const ConsensusStatusPB& status);
 
+  void AdvanceQueueWatermark(OpId* watermark,
+                             const OpId& replicated_before,
+                             const OpId& replicated_after,
+                             int num_peers_required);
+
+  // The size of the majority for the queue.
+  // TODO support changing majority sizes when quorums change.
+  int majority_size_;
+
+  QueueState queue_state_;
+
   RaftConsensusQueueIface* consensus_;
 
   // The total size of consensus entries to keep in memory.
@@ -267,21 +256,6 @@ class PeerMessageQueue {
 
   // Server-wide version of 'max_ops_size_bytes_hard_'.
   uint64_t global_max_ops_size_bytes_hard_;
-
-  // The queue's owner current_term.
-  // Set by the last appended operation.
-  // If the queue owner's term is less than the term observed
-  // from another peer the queue owner must step down.
-  // TODO: it is likely to be cleaner to get this from the ConsensusMetadata
-  // rather than by snooping on what operations are appended to the queue.
-  uint64_t current_term_;
-
-  // The index of the last operation to be considered committed.
-  OpId committed_index_;
-
-  // The id of the operation immediately preceding the first operation
-  // in the queue.
-  OpId preceding_first_op_in_queue_;
 
   // The current watermark for each peer.
   // The queue owns the OpIds.
@@ -303,14 +277,6 @@ class PeerMessageQueue {
   std::tr1::shared_ptr<MemTracker> tracker_;
 
   Metrics metrics_;
-
-  enum State {
-    kQueueConstructed,
-    kQueueOpen,
-    kQueueClosed
-  };
-
-  State state_;
 };
 
 }  // namespace consensus

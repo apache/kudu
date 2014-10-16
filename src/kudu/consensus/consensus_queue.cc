@@ -74,11 +74,6 @@ METRIC_DEFINE_gauge_int64(queue_size_bytes, MetricUnit::kBytes,
 
 const char kConsensusQueueParentTrackerId[] = "consensus_queue_parent";
 
-OperationStatusTracker::OperationStatusTracker(gscoped_ptr<ReplicateMsg> replicate_msg)
-  : replicate_msg_(replicate_msg.Pass()) {
-  DCHECK(replicate_msg_->has_id());
-}
-
 std::string PeerMessageQueue::TrackedPeer::ToString() const {
   return Substitute("Peer: $0, Status: $1",
                     uuid,
@@ -99,14 +94,12 @@ PeerMessageQueue::Metrics::Metrics(const MetricContext& metric_ctx)
 PeerMessageQueue::PeerMessageQueue(RaftConsensusQueueIface* consensus,
                                    const MetricContext& metric_ctx,
                                    const std::string& parent_tracker_id)
-    : consensus_(DCHECK_NOTNULL(consensus)),
+    : majority_size_(0),
+      consensus_(DCHECK_NOTNULL(consensus)),
       max_ops_size_bytes_hard_(FLAGS_consensus_entry_cache_size_hard_limit_mb * 1024 * 1024),
       global_max_ops_size_bytes_hard_(
           FLAGS_global_consensus_entry_cache_size_hard_limit_mb * 1024 * 1024),
-      current_term_(MinimumOpId().term()),
-      committed_index_(MinimumOpId()),
-      metrics_(metric_ctx),
-      state_(kQueueConstructed) {
+      metrics_(metric_ctx) {
   uint64_t max_ops_size_bytes_soft = FLAGS_consensus_entry_cache_size_soft_limit_mb * 1024 * 1024;
   uint64_t global_max_ops_size_bytes_soft =
       FLAGS_global_consensus_entry_cache_size_soft_limit_mb * 1024 * 1024;
@@ -120,23 +113,31 @@ PeerMessageQueue::PeerMessageQueue(RaftConsensusQueueIface* consensus,
   tracker_ = MemTracker::CreateTracker(max_ops_size_bytes_soft,
                                        Substitute("$0-$1", parent_tracker_id, metric_ctx.prefix()),
                                        parent_tracker_.get());
+
+  queue_state_.current_term = MinimumOpId().term();
+  queue_state_.committed_index = MinimumOpId();
+  queue_state_.all_replicated_index = MinimumOpId();
+  queue_state_.state = kQueueConstructed;
 }
 
 void PeerMessageQueue::Init(const OpId& committed_index,
-                            uint64_t current_term) {
+                            uint64_t current_term,
+                            int majority_size) {
   boost::lock_guard<simple_spinlock> lock(queue_lock_);
-  CHECK_EQ(state_, kQueueConstructed);
+  CHECK_EQ(queue_state_.state, kQueueConstructed);
+  DCHECK_GE(majority_size, 0);
   CHECK(committed_index.IsInitialized());
-  committed_index_ = committed_index;
-  current_term_ = current_term;
-  preceding_first_op_in_queue_ = committed_index;
-  state_ = kQueueOpen;
+  queue_state_.committed_index = committed_index;
+  queue_state_.current_term = current_term;
+  queue_state_.preceding_first_op_in_queue = committed_index;
+  queue_state_.state = kQueueOpen;
+  majority_size_ = majority_size;
 }
 
 Status PeerMessageQueue::TrackPeer(const string& uuid) {
   CHECK(!uuid.empty()) << "Got request to track peer with empty UUID";
   boost::lock_guard<simple_spinlock> lock(queue_lock_);
-  DCHECK_EQ(state_, kQueueOpen);
+  DCHECK_EQ(queue_state_.state, kQueueOpen);
   // TODO allow the queue to go and fetch requests from the log
   // up to a point.
 
@@ -156,30 +157,35 @@ void PeerMessageQueue::UntrackPeer(const string& uuid) {
   }
 }
 
-Status PeerMessageQueue::AppendOperation(scoped_refptr<OperationStatusTracker> status) {
+Status PeerMessageQueue::AppendOperation(gscoped_ptr<ReplicateMsg> msg) {
   boost::lock_guard<simple_spinlock> lock(queue_lock_);
-  DCHECK_EQ(state_, kQueueOpen);
-  const ReplicateMsg* msg = status->replicate_msg();
+  DCHECK_EQ(queue_state_.state, kQueueOpen);
+
+  ReplicateMsg* msg_ptr = DCHECK_NOTNULL(msg.get());
 
   // Before we change the queue's term, in debug mode, check that the indexes
   // in the queue are consecutive.
-  DCHECK_EQ(GetLastOp().index() + 1, status->op_id().index())
+  DCHECK_EQ(GetLastOp().index() + 1, msg_ptr->id().index())
     << "Last op in the queue: " << GetLastOp().ShortDebugString()
-    << " operation being appended: " << status->op_id().ShortDebugString();
+    << " operation being appended: " << msg_ptr->id().ShortDebugString();
 
   // Check that terms are monotonically increasing
-  DCHECK_GE(status->op_id().term(), current_term_);
-  if (status->op_id().term() > current_term_) {
-    current_term_ = status->op_id().term();
+  DCHECK_GE(msg_ptr->id().term(), queue_state_.current_term);
+  if (msg_ptr->id().term() > queue_state_.current_term) {
+    queue_state_.current_term = msg_ptr->id().term();
   }
 
   // Once either the local or global soft limit is exceeded...
   if (tracker_->AnyLimitExceeded()) {
     // .. try to trim the queue.
-    Status s  = TrimBufferForMessage(msg);
+    Status s;
+    if (WouldHardLimitBeViolated(msg_ptr->SpaceUsed())) {
+      s = Status::ServiceUnavailable("Cannot append replicate message. Queue is full.");
+    }
     if (PREDICT_FALSE(!s.ok() && (VLOG_IS_ON(2) || FLAGS_consensus_dump_queue_on_full))) {
       queue_lock_.unlock();
-      LOG(INFO) << "Queue Full: Dumping State:";
+      LOG(INFO) << "Queue Full. Can't Append: " << msg_ptr->id().ShortDebugString()
+          << ". Dumping State:";
       vector<string>  queue_dump;
       DumpToStringsUnlocked(&queue_dump);
       BOOST_FOREACH(const string& line, queue_dump) {
@@ -189,36 +195,16 @@ Status PeerMessageQueue::AppendOperation(scoped_refptr<OperationStatusTracker> s
     RETURN_NOT_OK(s);
   }
 
-  // If we get here, then either:
-  //
-  // 1) We were able to trim the queue such that no local or global
-  // soft limit was exceeded
-  // 2) We were unable to trim the queue to below any soft limits, but
-  // hard limits were not violated.
-  //
-  // See also: TrimBufferForMessage() in this class.
-  metrics_.queue_size_bytes->IncrementBy(msg->SpaceUsed());
-  tracker_->Consume(msg->SpaceUsed());
+  InsertOrDieNoPrint(&messages_, msg_ptr->id(), msg.release());
 
   if (PREDICT_FALSE(VLOG_IS_ON(2))) {
-    VLOG(2) << "Appended REPLICATE to queue: " << msg->ShortDebugString() <<
-        " Operation Status: " << status->ToString();
+    VLOG(2) << "Appended REPLICATE to queue: " << msg_ptr->ShortDebugString();
   }
 
-  InsertOrDieNoPrint(&messages_, status->op_id(), status);
+  metrics_.queue_size_bytes->IncrementBy(msg_ptr->SpaceUsed());
+  tracker_->Consume(msg_ptr->SpaceUsed());
   metrics_.total_num_ops->Increment();
-
-  // In tests some operations might already be IsAllDone().
-  if (PREDICT_FALSE(status->IsAllDone())) {
-    metrics_.num_all_done_ops->Increment();
-  // If we're just replicating to learners, some operations might already
-  // be IsDone().
-  } else if (PREDICT_FALSE(status->IsDone())) {
-    metrics_.num_majority_done_ops->Increment();
-  } else {
-    metrics_.num_in_progress_ops->Increment();
-  }
-
+  metrics_.num_in_progress_ops->Increment();
   return Status::OK();
 }
 
@@ -227,15 +213,15 @@ void PeerMessageQueue::RequestForPeer(const string& uuid,
   // Clear the requests without deleting the entries, as they may be in use by other peers.
   request->mutable_ops()->ExtractSubrange(0, request->ops_size(), NULL);
   boost::lock_guard<simple_spinlock> lock(queue_lock_);
-  DCHECK_EQ(state_, kQueueOpen);
+  DCHECK_EQ(queue_state_.state, kQueueOpen);
   const TrackedPeer* peer;
   if (PREDICT_FALSE(!FindCopy(watermarks_, uuid, &peer))) {
     LOG(FATAL) << "Unable to find peer with UUID " << uuid
                << ". Queue status: " << ToStringUnlocked();
   }
 
-  request->mutable_committed_index()->CopyFrom(committed_index_);
-  request->set_caller_term(current_term_);
+  request->mutable_committed_index()->CopyFrom(queue_state_.committed_index);
+  request->set_caller_term(queue_state_.current_term);
 
   // If the peer's watermark is not initialized we set 'last_received'
   // to the last operation in the queue, as per the raft paper. In this
@@ -257,7 +243,7 @@ void PeerMessageQueue::RequestForPeer(const string& uuid,
   // 'preceding_id'.
   if (messages_.empty() ||
       (iter == messages_.begin() && !OpIdEquals((*iter).first, last_received))) {
-    request->mutable_preceding_id()->CopyFrom(preceding_first_op_in_queue_);
+    request->mutable_preceding_id()->CopyFrom(queue_state_.preceding_first_op_in_queue);
   // ... otherwise 'preceding_id' is the first element in the iterator and we start sending
   // on the element after that.
   } else {
@@ -266,11 +252,11 @@ void PeerMessageQueue::RequestForPeer(const string& uuid,
   }
 
   // Add as many operations as we can to a request.
-  OperationStatusTracker* ost = NULL;
+  ReplicateMsg* msg = NULL;
   for (; iter != messages_.end(); iter++) {
-    ost = (*iter).second.get();
+    msg = (*iter).second;
 
-    request->mutable_ops()->AddAllocated(ost->replicate_msg());
+    request->mutable_ops()->AddAllocated(msg);
     if (request->ByteSize() > FLAGS_consensus_max_batch_size_bytes) {
 
       // Allow overflowing the max batch size in the case that we are sending
@@ -302,10 +288,24 @@ void PeerMessageQueue::RequestForPeer(const string& uuid,
 void PeerMessageQueue::HandleLogMatchingPropertyMismatch(TrackedPeer* peer,
                                                          const ConsensusResponsePB& response,
                                                          const ConsensusStatusPB& status) {
+
+  if (messages_.empty()) {
+    // If the peer is asking for MinimumOpId() and the queue is empty, that's ok.
+    if (OpIdEquals(status.last_received(), MinimumOpId())) {
+      peer->peer_status.mutable_last_received()->CopyFrom(status.last_received());
+      return;
+    }
+    // Otherwise fail.
+    LOG(FATAL) << "Unimplemented. Peer: " << response.responder_uuid() << " requested an "
+        << "operation: " << status.last_received().ShortDebugString() << " before the "
+        << "first operation in the queue: "
+        << (messages_.empty() ? "EMPTY" : (*messages_.begin()).first.ShortDebugString());
+  }
+
   // Check that the peer is not asking for an operation that comes before the first
   // operation in the queue (except MinimumOpId()) we don't handle those yet.
-  if (messages_.empty() || (!OpIdEquals(status.last_received(), MinimumOpId()) &&
-                            OpIdLessThan(status.last_received(), preceding_first_op_in_queue_))) {
+  if (!OpIdEquals(status.last_received(), MinimumOpId()) &&
+      OpIdLessThan(status.last_received(), queue_state_.preceding_first_op_in_queue)) {
     LOG(FATAL) << "Unimplemented. Peer: " << response.responder_uuid() << " requested an "
         << "operation: " << status.last_received().ShortDebugString() << " before the "
         << "first operation in the queue: "
@@ -320,17 +320,71 @@ void PeerMessageQueue::HandleLogMatchingPropertyMismatch(TrackedPeer* peer,
   peer->peer_status.mutable_last_received()->CopyFrom(status.last_received());
 }
 
+void PeerMessageQueue::AdvanceQueueWatermark(OpId* watermark,
+                                             const OpId& replicated_before,
+                                             const OpId& replicated_after,
+                                             int num_peers_required) {
+
+  if (VLOG_IS_ON(1)) {
+    VLOG(1) << "Updating watermark: " << watermark->ShortDebugString()
+        << "\nPeer last: " << replicated_before.ShortDebugString()
+        << " Peer current: " << replicated_after.ShortDebugString()
+        << "\nNum Peers required: " << num_peers_required;
+  }
+
+  // Update 'watermark', e.g. the commit index.
+  // We look at the last 'watermark', this response may only impact 'watermark'
+  // if it is currently lower than 'replicated_after'.
+  if (OpIdLessThan(*watermark, replicated_after)) {
+
+    // Go through the peer's watermarks, we want the highest watermark that
+    // 'num_peers_required' of peers has replicated. To find this we do the
+    // following:
+    // - Store all the peer's 'last_received' in a vector
+    // - Sort the vector
+    // - Find the vector.size() - 'num_peers_required' position, this
+    //   will be the new 'watermark'.
+    OpId min = MinimumOpId();
+    vector<const OpId*> watermarks;
+    BOOST_FOREACH(const WatermarksMap::value_type& peer, watermarks_) {
+      ConsensusStatusPB* status = &peer.second->peer_status;
+      if (status->has_last_received()) {
+        watermarks.push_back(&status->last_received());
+      } else {
+        watermarks.push_back(&min);
+      }
+    }
+    std::sort(watermarks.begin(), watermarks.end(), OpIdLessThanPtrFunctor());
+    watermark->CopyFrom(*watermarks[watermarks.size() - num_peers_required]);
+
+    if (VLOG_IS_ON(1)) {
+      VLOG(1) << "Updated watermark. New value: " << watermark->ShortDebugString();
+      VLOG(1) << "Peers: ";
+      BOOST_FOREACH(const WatermarksMap::value_type& peer, watermarks_) {
+        VLOG(1) << "Peer: " << peer.first  << " Watermark: "
+            << peer.second->peer_status.ShortDebugString();
+      }
+      VLOG(1) << "Sorted watermarks:";
+      BOOST_FOREACH(const OpId* watermark, watermarks) {
+        VLOG(1) << "Watermark: " << watermark->ShortDebugString();
+      }
+    }
+  }
+
+}
+
 void PeerMessageQueue::ResponseFromPeer(const ConsensusResponsePB& response,
                                         bool* more_pending) {
   CHECK(response.has_responder_uuid() && !response.responder_uuid().empty())
       << "Got response from peer with empty UUID";
+  DCHECK(response.IsInitialized()) << "Response: " << response.ShortDebugString();
 
   OpId updated_commit_index;
   {
     boost::lock_guard<simple_spinlock> lock(queue_lock_);
 
     TrackedPeer* peer = FindPtrOrNull(watermarks_, response.responder_uuid());
-    if (PREDICT_FALSE(state_ == kQueueClosed || peer == NULL)) {
+    if (PREDICT_FALSE(queue_state_.state == kQueueClosed || peer == NULL)) {
       LOG(WARNING) << "Queue is closed or peer was untracked, disregarding peer response."
           << " Response: " << response.ShortDebugString();
       *more_pending = false;
@@ -367,16 +421,7 @@ void PeerMessageQueue::ResponseFromPeer(const ConsensusResponsePB& response,
 
     // If the responder didn't send an error back that must mean that it has
     // the same term as ourselves.
-    CHECK_EQ(response.responder_term(), current_term_);
-
-    MessagesBuffer::iterator iter;
-    if (!peer->peer_status.has_last_received()) {
-      iter = messages_.begin();
-    } else {
-      iter = messages_.upper_bound(peer->peer_status.last_received());
-    }
-
-    MessagesBuffer::iterator end_iter = messages_.upper_bound(response.status().last_received());
+    CHECK_EQ(response.responder_term(), queue_state_.current_term);
 
     if (PREDICT_FALSE(VLOG_IS_ON(2))) {
       VLOG(2) << "Received Response from Peer: " << response.responder_uuid()
@@ -384,113 +429,83 @@ void PeerMessageQueue::ResponseFromPeer(const ConsensusResponsePB& response,
           << ". Response: " << response.ShortDebugString();
     }
 
-    // The id of the last operation that becomes committed with this response, i.e. the
-    // id of the last message acknowledged by the responding peer that makes a replicate
-    // message committed.
-    const OpId* last_committed = &committed_index_;
-
-    OperationStatusTracker* ost = NULL;
-    for (;iter != end_iter; iter++) {
-      ost = (*iter).second.get();
-      bool was_done = ost->IsDone();
-      bool was_all_done = ost->IsAllDone();
-
-      // Acknowledge that the peer logged the operation
-      ost->AckPeer(response.responder_uuid());
-
-      if (ost->IsAllDone() && !was_all_done) {
-        metrics_.num_all_done_ops->Increment();
-        metrics_.num_majority_done_ops->Decrement();
-      }
-      if (ost->IsDone() && !was_done) {
-        // If this operation became IsDone() with this response
-        // update 'last_committed_' to match.
-        // Because the replication queue is traversed in order
-        // we're sure to update 'last_committed_' to monotonically
-        // increasing values.
-        last_committed = &ost->replicate_msg()->id();
-        metrics_.num_majority_done_ops->Increment();
-        metrics_.num_in_progress_ops->Decrement();
-      }
+    OpId last_received;
+    if (!peer->peer_status.has_last_received()) {
+      last_received = MinimumOpId();
+    } else {
+      last_received = peer->peer_status.last_received();
     }
 
-    peer->peer_status.CopyFrom(response.status());
+    peer->peer_status.mutable_last_received()->CopyFrom(response.status().last_received());
 
-    // Update the last_committed operation.
-    // This only changes the last_committed_ operation if one of the replicates became
-    // committed when this response was processed.
+    // Advance the commit index.
+    AdvanceQueueWatermark(&queue_state_.committed_index,
+                          last_received,
+                          response.status().last_received(),
+                          majority_size_);
 
-    // TODO This is assuming no leader election, the rules for advancing the
-    // committed_index will have to change when we have it.
-    committed_index_.CopyFrom(*last_committed);
-    updated_commit_index.CopyFrom(committed_index_);
+    // Advance the all replicated index.
+    AdvanceQueueWatermark(&queue_state_.all_replicated_index,
+                          last_received,
+                          response.status().last_received(),
+                          watermarks_.size());
 
-    // check if there are more messages pending.
-    *more_pending = (iter != messages_.end());
+    updated_commit_index.CopyFrom(queue_state_.committed_index);
+    *more_pending = !OpIdEquals(response.status().last_received(), GetLastOp());
+
+    TrimBuffer();
+    UpdateMetrics();
   }
 
   // It's OK that we do this without the lock as this is idempotent.
   consensus_->UpdateCommittedIndex(updated_commit_index);
 }
 
-OpId PeerMessageQueue::GetCommittedIndexForTests() const {
-  return committed_index_;
-}
-
-Status PeerMessageQueue::GetOperationStatus(const OpId& op_id,
-                                            scoped_refptr<OperationStatusTracker>* status) {
+OpId PeerMessageQueue::GetAllReplicatedIndexForTests() const {
   boost::lock_guard<simple_spinlock> lock(queue_lock_);
-  MessagesBuffer::iterator iter = messages_.find(op_id);
-  if (iter == messages_.end()) {
-    return Status::NotFound("Operation is not in the queue.");
-  }
-  *status = (*iter).second;
-  return Status::OK();
+  return queue_state_.all_replicated_index;
 }
 
-Status PeerMessageQueue::TrimBufferForMessage(const ReplicateMsg* msg) {
-  // TODO for now we're just trimming the buffer, but we need to handle when
-  // the buffer is full but there is a peer hanging on to the queue (very delayed)
-  int32_t bytes = msg->SpaceUsed();
+OpId PeerMessageQueue::GetCommittedIndexForTests() const {
+  boost::lock_guard<simple_spinlock> lock(queue_lock_);
+  return queue_state_.committed_index;
+}
 
+void PeerMessageQueue::TrimBuffer() {
   MessagesBuffer::iterator iter = messages_.begin();
 
-  // If adding 'msg' to the queue would violate either a local
-  // or a global soft limit, try to trim any finished messages from
-  // the queue and release the memory used to the mem tracker.
-  while (bytes > tracker_->SpareCapacity()) {
-    OperationStatusTracker* ost = NULL;
-    // Handle the situation where this tablet's consensus queue is
-    // empty, but the global limits may have already been violated due
-    // to the other queues' memory consumption.
-    if (iter != messages_.end()) {
-      ost = (*iter).second.get();
-    }
-    if (ost == NULL || !ost->IsAllDone()) {
-      // return OK if we could trim the queue
-      if (CheckHardLimitsNotViolated(bytes)) {
-        // parent_tracker_->consumption() in this case returns total
-        // consumption by _ALL_ all consensus queues, i.e., the
-        // server-wide consensus queue memory consumption.
-        return Status::OK();
-      } else {
-        return Status::ServiceUnavailable("Cannot append replicate message. Queue is full.");
-      }
-    }
-    uint64_t bytes_to_decrement = ost->replicate_msg()->SpaceUsed();
-    metrics_.total_num_ops->Decrement();
-    metrics_.num_all_done_ops->Decrement();
-    metrics_.queue_size_bytes->DecrementBy(bytes_to_decrement);
-
-    tracker_->Release(bytes_to_decrement);
-    preceding_first_op_in_queue_.CopyFrom((*iter).first);
+  VLOG(1) << "Trimming buffer. Before stats: " << ToStringUnlocked();
+  while (iter != messages_.end() &&
+      OpIdCompare((*iter).first, queue_state_.all_replicated_index) <= 0) {
+    ReplicateMsg* msg = (*iter).second;
+    metrics_.queue_size_bytes->DecrementBy(msg->SpaceUsed());
+    queue_state_.preceding_first_op_in_queue.CopyFrom((*iter).first);
+    tracker_->Release(msg->SpaceUsed());
+    VLOG(1) << "Trimming queue. Deleting: " << msg->id().ShortDebugString();
+    delete msg;
     messages_.erase(iter++);
   }
-  return Status::OK();
+  VLOG(1) << "Trimming buffer. After stats: " << ToStringUnlocked();
+}
+
+void PeerMessageQueue::UpdateMetrics() {
+  // Since operations have consecutive indices we can update the metrics based
+  // on simple index math.
+  metrics_.total_num_ops->set_value(messages_.size());
+  metrics_.num_all_done_ops->set_value(
+      queue_state_.all_replicated_index.index() -
+      queue_state_.preceding_first_op_in_queue.index());
+  metrics_.num_majority_done_ops->set_value(
+      queue_state_.committed_index.index() -
+      queue_state_.preceding_first_op_in_queue.index());
+  metrics_.num_in_progress_ops->set_value(
+      messages_.empty() ? 0 :
+          (*messages_.rend()).first.index() -
+          queue_state_.committed_index.index());
 }
 
 
-bool PeerMessageQueue::CheckHardLimitsNotViolated(size_t bytes) const {
+bool PeerMessageQueue::WouldHardLimitBeViolated(size_t bytes) const {
   bool local_limit_violated = (bytes + tracker_->consumption()) > max_ops_size_bytes_hard_;
   bool global_limit_violated = (bytes + parent_tracker_->consumption())
       > global_max_ops_size_bytes_hard_;
@@ -511,11 +526,11 @@ bool PeerMessageQueue::CheckHardLimitsNotViolated(size_t bytes) const {
     }
   }
 #endif
-  return !local_limit_violated && !global_limit_violated;
+  return local_limit_violated || global_limit_violated;
 }
 
 const OpId& PeerMessageQueue::GetLastOp() const {
-  return messages_.empty() ? preceding_first_op_in_queue_ : (*messages_.rbegin()).first;
+  return messages_.empty() ? queue_state_.committed_index : (*messages_.rbegin()).first;
 }
 
 void PeerMessageQueue::DumpToStrings(vector<string>* lines) const {
@@ -532,13 +547,13 @@ void PeerMessageQueue::DumpToStringsUnlocked(vector<string>* lines) const {
   int counter = 0;
   lines->push_back("Messages:");
   BOOST_FOREACH(const MessagesBuffer::value_type entry, messages_) {
-    const OpId& id = entry.second->op_id();
-    ReplicateMsg* msg = entry.second->replicate_msg();
+    const OpId& id = entry.second->id();
+    ReplicateMsg* msg = entry.second;
     lines->push_back(
-      Substitute("Message[$0] $1.$2 : REPLICATE. Type: $3, Size: $4, Status: $5",
+      Substitute("Message[$0] $1.$2 : REPLICATE. Type: $3, Size: $4, Id: $5",
                  counter++, id.term(), id.index(),
                  OperationType_Name(msg->op_type()),
-                 msg->ByteSize(), entry.second->ToString()));
+                 msg->ByteSize(), entry.second->id().ShortDebugString()));
   }
 }
 
@@ -562,13 +577,13 @@ void PeerMessageQueue::DumpToHtml(std::ostream& out) const {
 
   int counter = 0;
   BOOST_FOREACH(const MessagesBuffer::value_type entry, messages_) {
-    const OpId& id = entry.second->op_id();
-    ReplicateMsg* msg = entry.second->replicate_msg();
+    const OpId& id = entry.second->id();
+    ReplicateMsg* msg = entry.second;
     out << Substitute("<tr><th>$0</th><th>$1.$2</th><td>REPLICATE $3</td>"
                       "<td>$4</td><td>$5</td></tr>",
                       counter++, id.term(), id.index(),
                       OperationType_Name(msg->op_type()),
-                      msg->ByteSize(), entry.second->ToString()) << endl;
+                      msg->ByteSize(), entry.second->id().ShortDebugString()) << endl;
   }
   out << "</table>";
 }
@@ -579,13 +594,13 @@ void PeerMessageQueue::Clear() {
 }
 
 void PeerMessageQueue::ClearUnlocked() {
-  messages_.clear();
+  STLDeleteValues(&messages_);
   STLDeleteValues(&watermarks_);
 }
 
 void PeerMessageQueue::Close() {
   boost::lock_guard<simple_spinlock> lock(queue_lock_);
-  state_ = kQueueClosed;
+  queue_state_.state = kQueueClosed;
   ClearUnlocked();
 }
 

@@ -470,51 +470,6 @@ class OperationCallbackRunnable : public Runnable {
    mutable simple_spinlock lock_;
 };
 
-// Status for operations that need to be ack's by a majority to be considered
-// committed.
-// IsDone becomes true when a 'majority' of peers have ACK'd the message
-// IsAllDone becomes true when all peers have ACK'd the message.
-class MajorityOpStatusTracker : public OperationStatusTracker {
- public:
-
-  MajorityOpStatusTracker(gscoped_ptr<ReplicateMsg> replicate_msg,
-                          const std::tr1::unordered_set<std::string>& voting_peers,
-                          int majority,
-                          int total_peers_count);
-
-  virtual void AckPeer(const std::string& uuid) OVERRIDE;
-
-  virtual bool IsDone() const OVERRIDE;
-
-  virtual bool IsAllDone() const OVERRIDE;
-
-  virtual void Wait() OVERRIDE;
-
-  virtual std::string ToString() const OVERRIDE;
-
-  virtual ~MajorityOpStatusTracker();
-
- private:
-  std::string ToStringUnlocked() const;
-
-  // The total number of peers in a majority.
-  const int majority_;
-  // The peer's whose acks count towards majority.
-  const std::tr1::unordered_set<std::string> voting_peers_;
-  // The total number of peers expected to replicate the operation.
-  const int total_peers_count_;
-
-  // How many peers have replicated this operation so far.
-  int replicated_count_;
-
-  // Latch that allows to wait for the operation to become
-  // IsDone().
-  CountDownLatch completion_latch_;
-
-  // Lock that protects access to the state variables.
-  mutable simple_spinlock lock_;
-};
-
 }  // namespace consensus
 }  // namespace kudu
 
