@@ -330,14 +330,28 @@ Status RaftConsensus::Replicate(ConsensusRound* round) {
 
 void RaftConsensus::UpdateCommittedIndex(const OpId& committed_index) {
   ReplicaState::UniqueLock lock;
-  CHECK_OK(state_->LockForCommit(&lock));
+  Status s = state_->LockForCommit(&lock);
+  if (PREDICT_FALSE(!s.ok())) {
+    LOG_WITH_PREFIX_LK(WARNING)
+        << "Unable to take state lock to update committed index: "
+        << s.ToString();
+    return;
+  }
   UpdateCommittedIndexUnlocked(committed_index);
 }
 
 void RaftConsensus::UpdateCommittedIndexUnlocked(const OpId& committed_index) {
   VLOG_WITH_PREFIX(2) << "Marking committed up to " << committed_index.ShortDebugString();
   TRACE("Marking committed up to $0", committed_index.ShortDebugString());
-  CHECK_OK(state_->MarkConsensusCommittedUpToUnlocked(committed_index));
+  Status s = state_->MarkConsensusCommittedUpToUnlocked(committed_index);
+  if (PREDICT_FALSE(!s.ok())) {
+    string msg = Substitute("Unable to mark committed up to $0: $1",
+                            committed_index.ShortDebugString(),
+                            s.ToString());
+    TRACE(msg);
+    LOG_WITH_PREFIX(WARNING) << msg;
+    return;
+  }
 
   QuorumPeerPB::Role role = state_->GetActiveQuorumStateUnlocked().role;
   if (role == QuorumPeerPB::LEADER || role == QuorumPeerPB::CANDIDATE) {

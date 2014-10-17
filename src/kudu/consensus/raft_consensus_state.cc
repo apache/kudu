@@ -428,6 +428,9 @@ Status ReplicaState::AddPendingOperation(ConsensusRound* round) {
 
 Status ReplicaState::MarkConsensusCommittedUpToUnlocked(const OpId& id) {
   DCHECK(update_lock_.is_locked());
+  if (PREDICT_FALSE(state_ == kShuttingDown || state_ == kShutDown)) {
+    return Status::ServiceUnavailable("Cannot trigger apply. Replica is shutting down.");
+  }
   if (PREDICT_FALSE(state_ != kRunning)) {
     return Status::IllegalState("Cannot trigger apply. Replica is not in kRunning state.");
   }
