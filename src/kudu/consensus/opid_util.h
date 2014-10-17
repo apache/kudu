@@ -47,6 +47,12 @@ struct OpIdEqualsFunctor {
   bool operator() (const OpId& left, const OpId& right) const;
 };
 
+// OpId less than functor for pointers.. Suitable for use with std::sort and std::map.
+struct OpIdLessThanPtrFunctor {
+  // Returns true iff left < right.
+  bool operator() (const OpId* left, const OpId* right) const;
+};
+
 // OpId compare() functor. Suitable for use with std::sort and std::map.
 struct OpIdCompareFunctor {
   // Returns true iff left < right.

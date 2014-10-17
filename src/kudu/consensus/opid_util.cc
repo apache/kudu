@@ -60,6 +60,10 @@ bool OpIdEqualsFunctor::operator() (const OpId& left, const OpId& right) const {
   return OpIdEquals(left, right);
 }
 
+bool OpIdLessThanPtrFunctor::operator() (const OpId* left, const OpId* right) const {
+  return OpIdLessThan(*left, *right);
+}
+
 bool OpIdCompareFunctor::operator() (const OpId& left, const OpId& right) const {
   return OpIdLessThan(left, right);
 }
