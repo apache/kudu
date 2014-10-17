@@ -370,7 +370,7 @@ class TestReplicaDriver : public ReplicaCommitContinuation {
     delete this;
   }
 
-  virtual void Abort() {}
+  virtual void Abort() { Cleanup(); }
 
   void Fatal(const Status& status) {
     LOG(FATAL) << "TestReplicaDriver aborted with status: " << status.ToString();
