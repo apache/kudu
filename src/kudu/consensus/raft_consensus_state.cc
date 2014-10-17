@@ -566,6 +566,10 @@ string ReplicaState::LogPrefixUnlocked() const {
                     QuorumPeerPB::Role_Name(active_quorum_state_->role));
 }
 
+ReplicaState::State ReplicaState::state() const {
+  DCHECK(update_lock_.is_locked());
+  return state_;
+}
 
 string ReplicaState::ToString() const {
   ReplicaState::UniqueLock lock(&update_lock_);

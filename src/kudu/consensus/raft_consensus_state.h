@@ -99,6 +99,28 @@ struct QuorumState {
 // which case a lock should be obtained prior to calling them.
 class ReplicaState {
  public:
+  enum State {
+    // State after the replica is built.
+    kInitialized,
+
+    // State signaling the replica is changing configs. Replicas
+    // need both the replicate message and commit watermark for it
+    // before proceeding.
+    kChangingConfig,
+
+    // State signaling the replica accepts requests (from clients
+    // if leader, from leader if follower)
+    kRunning,
+
+    // State signaling that the replica is shutting down and no longer accepting
+    // new transactions or commits.
+    kShuttingDown,
+
+    // State signaling the replica is shut down and does not accept
+    // any more requests.
+    kShutDown
+  };
+
   typedef unique_lock<simple_spinlock> UniqueLock;
 
   typedef std::map<consensus::OpId,
@@ -345,6 +367,10 @@ class ReplicaState {
   std::string LogPrefix();
   std::string LogPrefixUnlocked() const;
 
+  // Return the current state of this object.
+  // The update_lock_ must be held.
+  State state() const;
+
  private:
   // Helper method to update the active quorum state for peers, etc.
   void ResetActiveQuorumStateUnlocked(const metadata::QuorumPB& quorum);
@@ -419,24 +445,6 @@ class ReplicaState {
 
   // lock protecting state machine updates
   mutable simple_spinlock update_lock_;
-
-  enum State {
-    // State after the replica is built.
-    kInitialized,
-    // State signaling the replica is changing configs. Replicas
-    // need both the replicate and the commit message for the config
-    // change before proceeding.
-    kChangingConfig,
-    // State signaling the replica accepts requests (from clients
-    // if leader, from leader if follower)
-    kRunning,
-    // State signaling the replica is shutting down and only accepts commits
-    // from previously started transactions.
-    kShuttingDown,
-    // State signaling the replica is shutdown and does not accept
-    // any more requests.
-    kShutDown
-  };
 
   State state_;
 };
