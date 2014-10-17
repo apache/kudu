@@ -16,6 +16,7 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/countdown_latch.h"
 #include "kudu/util/locks.h"
+#include "kudu/util/task_executor.h"
 #include "kudu/util/threadpool.h"
 
 #define ASSERT_OPID_EQ(left, right) do { \
@@ -120,6 +121,40 @@ static inline void AppendReplicateMessagesToQueue(
   }
 }
 
+// Task to emulate the exactly-once calling behavior of RPC.
+// Sets an error in the response if the task is aborted and guarantees that
+// the callback will be invoked.
+// TODO: Should set an error in the controller but that is not currently
+// possible to mock. This should all probably go away and just use real RPCs.
+template<typename ResponseType>
+class MockRpcExactlyOnceTask : public Task {
+ public:
+  MockRpcExactlyOnceTask(ResponseType* response,
+                         const rpc::ResponseCallback& callback)
+    : response_(DCHECK_NOTNULL(response)),
+      callback_(callback) {
+  }
+
+  virtual Status Run() OVERRIDE {
+    callback_();
+    return Status::OK();
+  }
+
+  virtual bool Abort() OVERRIDE {
+    // TODO: Provide some way to mock a true RPC error in the RpcController?
+    tserver::TabletServerErrorPB* error = response_->mutable_error();
+    error->set_code(tserver::TabletServerErrorPB::UNKNOWN_ERROR);
+    StatusToPB(Status::IOError("Mocked RPC failure due to TaskExecutor shutdown."),
+               error->mutable_status());
+    callback_();
+    return true;
+  }
+
+ private:
+  ResponseType* const response_;
+  const rpc::ResponseCallback callback_;
+};
+
 // Allows to test peers by emulating a noop remote endpoint that just replies
 // that the messages were received/replicated/committed.
 class NoOpTestPeerProxy : public PeerProxy {
@@ -128,7 +163,7 @@ class NoOpTestPeerProxy : public PeerProxy {
     : delay_response_(false),
       callback_(NULL),
       peer_pb_(peer_pb) {
-    CHECK_OK(ThreadPoolBuilder("noop-peer-pool").set_max_threads(1).Build(&pool_));
+    CHECK_OK(TaskExecutorBuilder("noop-peer-pool").set_max_threads(1).Build(&executor_));
     last_received_.CopyFrom(MinimumOpId());
   }
 
@@ -152,7 +187,7 @@ class NoOpTestPeerProxy : public PeerProxy {
     response->set_responder_term(request->caller_term());
     response->mutable_status()->mutable_last_received()->CopyFrom(last_received_);
 
-    callback_ = callback;
+    update_task_.reset(new MockRpcExactlyOnceTask<ConsensusResponsePB>(response, callback));
 
     if (!delay_response_) {
       RETURN_NOT_OK(RespondUnlocked());
@@ -182,13 +217,14 @@ class NoOpTestPeerProxy : public PeerProxy {
  private:
   Status RespondUnlocked() {
     delay_response_ = false;
-    return pool_->SubmitFunc(callback_);
+    return executor_->Submit(update_task_, NULL);
   }
 
-  gscoped_ptr<ThreadPool> pool_;
+  gscoped_ptr<TaskExecutor> executor_;
   OpId last_received_;
   bool delay_response_;
   rpc::ResponseCallback callback_;
+  std::tr1::shared_ptr<Task> update_task_;
   const metadata::QuorumPeerPB peer_pb_;
   mutable simple_spinlock lock_;
 };
@@ -205,14 +241,13 @@ class NoOpTestPeerProxyFactory : public PeerProxyFactory {
 
 // Allows to test remote peers by emulating an RPC.
 // Both the "remote" peer's RPC call and the caller peer's response are executed
-// asynchronously in a ThreadPool.
+// asynchronously in a TaskExecutor.
 class LocalTestPeerProxy : public PeerProxy {
  public:
   explicit LocalTestPeerProxy(Consensus* consensus)
-    : callback_(NULL),
-      consensus_(consensus),
+    : consensus_(consensus),
       miss_comm_(false) {
-    CHECK_OK(ThreadPoolBuilder("noop-peer-pool").set_max_threads(1).Build(&pool_));
+    CHECK_OK(TaskExecutorBuilder("noop-peer-pool").set_max_threads(1).Build(&executor_));
   }
 
   virtual Status UpdateAsync(const ConsensusRequestPB* request,
@@ -220,9 +255,12 @@ class LocalTestPeerProxy : public PeerProxy {
                              rpc::RpcController* controller,
                              const rpc::ResponseCallback& callback) OVERRIDE {
     boost::lock_guard<simple_spinlock> lock(lock_);
-    callback_ = callback;
-    RETURN_NOT_OK(pool_->SubmitFunc(boost::bind(&LocalTestPeerProxy::SendToOtherPeer,
-                                               this, request, response)));
+    update_task_.reset(new MockRpcExactlyOnceTask<ConsensusResponsePB>(response, callback));
+    std::tr1::shared_ptr<Task> processor(
+        new MockRpcExactlyOnceTask<ConsensusResponsePB>(response,
+            boost::bind(&LocalTestPeerProxy::SendToOtherPeer,
+                        this, request, response)));
+    RETURN_NOT_OK(executor_->Submit(processor, NULL));
     return Status::OK();
   }
 
@@ -269,7 +307,7 @@ class LocalTestPeerProxy : public PeerProxy {
         response->CopyFrom(other_peer_resp);
         VLOG(2) << this << ": not injecting fault for req: " << request->ShortDebugString();
       }
-      CHECK_OK(pool_->SubmitFunc(callback_));
+      CHECK_OK(executor_->Submit(update_task_, NULL));
     }
   }
 
@@ -290,12 +328,12 @@ class LocalTestPeerProxy : public PeerProxy {
   }
 
   ~LocalTestPeerProxy() {
-    pool_->Wait();
+    executor_->Wait();
   }
 
  private:
-  gscoped_ptr<ThreadPool> pool_;
-  rpc::ResponseCallback callback_;
+  gscoped_ptr<TaskExecutor> executor_;
+  std::tr1::shared_ptr<Task> update_task_;
   Consensus* consensus_;
   mutable simple_spinlock lock_;
   bool miss_comm_;
