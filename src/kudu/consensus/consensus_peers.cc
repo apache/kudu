@@ -252,7 +252,7 @@ Status Peer::Init() {
   RETURN_NOT_OK(peer_impl_->Init());
   RETURN_NOT_OK(queue_->TrackPeer(peer_pb_.permanent_uuid()));
   RETURN_NOT_OK(heartbeater_.Start());
-  state_ = kPeerIdle;
+  state_ = kPeerStarted;
   return Status::OK();
 }
 
