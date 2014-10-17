@@ -18,6 +18,15 @@
 #include "kudu/util/locks.h"
 #include "kudu/util/threadpool.h"
 
+#define ASSERT_OPID_EQ(left, right) do { \
+  OpId left_ = (left); \
+  OpId right_ = (right); \
+  if (!consensus::OpIdEquals(left_, right_)) { \
+    FAIL() << "Value of: " << left_.ShortDebugString() \
+    << "\nExpected: " << right_.ShortDebugString(); \
+  } \
+  } while (0);
+
 namespace kudu {
 namespace consensus {
 
