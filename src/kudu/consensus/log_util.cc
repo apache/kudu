@@ -113,6 +113,7 @@ Status ReadableLogSegment::Init(const LogSegmentHeaderPB& header,
   footer_.CopyFrom(footer);
   first_entry_offset_ = first_entry_offset;
   is_initialized_ = true;
+  readable_to_offset_ = file_size();
 
   return Status::OK();
 }
@@ -127,6 +128,7 @@ Status ReadableLogSegment::Init(const LogSegmentHeaderPB& header,
   header_.CopyFrom(header);
   first_entry_offset_ = first_entry_offset;
   is_initialized_ = true;
+  readable_to_offset_ = file_size();
 
   return Status::OK();
 }
@@ -145,6 +147,7 @@ Status ReadableLogSegment::Init() {
   }
 
   is_initialized_ = true;
+  readable_to_offset_ = file_size();
 
   return Status::OK();
 }
@@ -341,27 +344,17 @@ Status ReadableLogSegment::ReadEntries(vector<LogEntryPB*>* entries) {
   vector<int64_t> recent_offsets(4, -1);
   int batches_read = 0;
 
-  // If we don't have a footer, it's likely this is the segment that
-  // we're currently writing to. We should refresh the size since it may
-  // have grown since last we read it.
-  if (!footer_.IsInitialized()) {
-    VLOG(1) << "Refreshing file size to read in-progress log segment "
-            << path_;
-    RETURN_NOT_OK_PREPEND(ReadFileSize(),
-                          "Could not refresh file size");
-  }
-
   uint64_t offset = first_entry_offset();
   VLOG(1) << "Reading segment entries from "
           << path_ << ": offset=" << offset << " file_size="
-          << file_size();
+          << file_size() << " readable_to_offset=" << readable_to_offset_;
   faststring tmp_buf;
 
   // If we have a footer we only read up to it. If we don't we likely crashed
   // and always read to the end.
   uint64_t read_up_to = footer_.IsInitialized() && !is_corrupted_ ?
       file_size() - footer_.ByteSize() - kLogSegmentFooterMagicAndFooterLength :
-      file_size();
+      readable_to_offset_;
 
   int num_entries_read = 0;
   while (offset < read_up_to) {
@@ -409,9 +402,9 @@ Status ReadableLogSegment::ReadEntries(vector<LogEntryPB*>* entries) {
     }
   }
 
-  if (footer_.num_entries() != num_entries_read) {
+  if (footer_.IsInitialized() && footer_.num_entries() != num_entries_read) {
     return Status::Corruption(
-      Substitute("Read $0 log entries from $1, but expected $2 based on the footeR",
+      Substitute("Read $0 log entries from $1, but expected $2 based on the footer",
                  num_entries_read, path_, footer_.num_entries()));
   }
 

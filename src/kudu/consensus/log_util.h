@@ -4,6 +4,7 @@
 #define KUDU_CONSENSUS_LOG_UTIL_H_
 
 #include <iosfwd>
+#include <gtest/gtest.h>
 #include <map>
 #include <string>
 #include <tr1/memory>
@@ -100,7 +101,7 @@ class ReadableLogSegment : public RefCountedThreadSafe<ReadableLogSegment> {
   // Reads all entries of the provided segment & adds them the 'entries' vector.
   // The 'entries' vector owns the read entries.
   // If the log is corrupted (i.e. the returned 'Status' is 'Corruption') all
-  // the log entries read up to the corrupted are returned in the 'entries'
+  // the log entries read up to the corrupted one are returned in the 'entries'
   // vector.
   Status ReadEntries(std::vector<LogEntryPB*>* entries);
 
@@ -155,8 +156,16 @@ class ReadableLogSegment : public RefCountedThreadSafe<ReadableLogSegment> {
     return first_entry_offset_;
   }
 
+  // Returns the full size of the file, if the segment is closed and has
+  // a footer, or the offset where the last written, non corrupt entry
+  // ends.
+  const uint64_t readable_up_to() const {
+    return readable_to_offset_;
+  }
+
  private:
   friend class RefCountedThreadSafe<ReadableLogSegment>;
+  FRIEND_TEST(LogTest, TestWriteAndReadToAndFromInProgressSegment);
   ~ReadableLogSegment() {}
 
   // Helper functions called by Init().
@@ -186,10 +195,20 @@ class ReadableLogSegment : public RefCountedThreadSafe<ReadableLogSegment> {
                         faststring* tmp_buf,
                         gscoped_ptr<LogEntryBatchPB>* entry_batch);
 
+  void UpdateReadableToOffset(uint64_t readable_to_offset) {
+    readable_to_offset_ = readable_to_offset;
+  }
+
   const std::string path_;
 
   // the size of the readable file
   uint64_t file_size_;
+
+  // The offset up to which we can read the file.
+  // For already written segments this is fixed and equal to the file size
+  // but for the segments currently written to this is the offset up to which
+  // we can read without the fear of reading garbage/zeros.
+  uint64_t readable_to_offset_;
 
   // a readable file for a log segment (used on replay)
   const std::tr1::shared_ptr<RandomAccessFile> readable_file_;

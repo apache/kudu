@@ -226,12 +226,25 @@ TEST_F(LogTest, TestSegmentRollover) {
   ASSERT_EQ(num_entries, entries_.size());
 }
 
-TEST_F(LogTest, TestWritableSegmentKeepsCorrectWrittenOffset) {
+TEST_F(LogTest, TestWriteAndReadToAndFromInProgressSegment) {
   const int kNumEntries = 4;
   BuildLog();
 
+  SegmentSequence segments;
+  ASSERT_OK(log_->GetLogReader()->GetSegmentsSnapshot(&segments));
+  ASSERT_EQ(segments.size(), 1);
+  scoped_refptr<ReadableLogSegment> readable_segment = segments[0];
+
   int header_size = log_->active_segment_->written_offset();
   ASSERT_GT(header_size, 0);
+  readable_segment->UpdateReadableToOffset(header_size);
+
+  vector<LogEntryPB*> entries;
+
+  // Reading the readable segment now should return OK but yield no
+  // entries.
+  ASSERT_OK(readable_segment->ReadEntries(&entries));
+  ASSERT_EQ(entries.size(), 0);
 
   // Dummy add_entry to help us estimate the size of what
   // gets written to disk.
@@ -252,6 +265,20 @@ TEST_F(LogTest, TestWritableSegmentKeepsCorrectWrittenOffset) {
   ASSERT_EQ(single_entry_size * kNumEntries + header_size, written_entries_size);
   ASSERT_EQ(written_entries_size, log_->active_segment_->written_offset());
 
+  // Updating the readable segment with the offset of the first entry should
+  // make it read a single entry even though there are several in the log.
+  readable_segment->UpdateReadableToOffset(header_size + single_entry_size);
+  ASSERT_OK(readable_segment->ReadEntries(&entries));
+  ASSERT_EQ(entries.size(), 1);
+  STLDeleteElements(&entries);
+
+  // Setting the readable segment to the full size of the file should yield
+  // all 4 entries.
+  readable_segment->UpdateReadableToOffset(log_->active_segment_->written_offset());
+  ASSERT_OK(readable_segment->ReadEntries(&entries));
+  ASSERT_EQ(entries.size(), 4);
+  STLDeleteElements(&entries);
+
   // Offset should get updated for an additional entry.
   ASSERT_OK(AppendNoOp(&op_id, &written_entries_size));
   ASSERT_EQ(single_entry_size * (kNumEntries + 1) + header_size,
@@ -262,6 +289,15 @@ TEST_F(LogTest, TestWritableSegmentKeepsCorrectWrittenOffset) {
   ASSERT_OK(log_->AllocateSegmentAndRollOver());
   ASSERT_EQ(header_size, log_->active_segment_->written_offset());
   written_entries_size = header_size;
+
+  // Now that we closed the original segment. If we get a segment from the reader
+  // again, we should get one with a footer and we should be able to read all entries.
+  ASSERT_OK(log_->GetLogReader()->GetSegmentsSnapshot(&segments));
+  ASSERT_EQ(segments.size(), 2);
+  readable_segment = segments[0];
+  ASSERT_OK(readable_segment->ReadEntries(&entries));
+  ASSERT_EQ(entries.size(), 5);
+  STLDeleteElements(&entries);
 
   // Offset should get updated for an additional entry, again.
   ASSERT_OK(AppendNoOp(&op_id, &written_entries_size));
