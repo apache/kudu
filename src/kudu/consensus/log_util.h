@@ -234,7 +234,11 @@ class WritableLogSegment {
   Status Append(const Slice& data) {
     DCHECK(is_header_written_);
     DCHECK(!is_footer_written_);
-    return writable_file_->Append(data);
+    Status s = writable_file_->Append(data);
+    if (PREDICT_TRUE(s.ok())) {
+      written_offset_ += data.size();
+    }
+    return s;
   }
 
   // Makes sure the I/O buffers in the underlying writable file are flushed.
@@ -270,6 +274,10 @@ class WritableLogSegment {
     return first_entry_offset_;
   }
 
+  const uint64_t written_offset() const {
+    return written_offset_;
+  }
+
  private:
 
   const std::tr1::shared_ptr<WritableFile>& writable_file() const {
@@ -292,6 +300,9 @@ class WritableLogSegment {
 
   // the offset of the first entry in the log
   uint64_t first_entry_offset_;
+
+  // The offset where the last written entry ends.
+  uint64_t written_offset_;
 
   DISALLOW_COPY_AND_ASSIGN(WritableLogSegment);
 };

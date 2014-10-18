@@ -471,7 +471,8 @@ WritableLogSegment::WritableLogSegment(
 : path_(path),
   writable_file_(writable_file),
   is_header_written_(false),
-  is_footer_written_(false) {
+  is_footer_written_(false),
+  written_offset_(0) {
 }
 
 Status WritableLogSegment::WriteHeaderAndOpen(const LogSegmentHeaderPB& new_header) {
@@ -492,6 +493,7 @@ Status WritableLogSegment::WriteHeaderAndOpen(const LogSegmentHeaderPB& new_head
 
   header_.CopyFrom(new_header);
   first_entry_offset_ = buf.size();
+  written_offset_ = first_entry_offset_;
   is_header_written_ = true;
 
   return Status::OK();
@@ -517,6 +519,8 @@ Status WritableLogSegment::WriteFooterAndClose(const LogSegmentFooterPB& footer)
   is_footer_written_ = true;
 
   RETURN_NOT_OK(writable_file_->Close());
+
+  written_offset_ += buf.size();
 
   return Status::OK();
 }

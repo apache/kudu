@@ -199,14 +199,23 @@ class LogTestBase : public KuduTest {
   }
 
   // Append a single NO_OP entry. Increments op_id by one.
-  Status AppendNoOp(OpId* op_id) {
+  // If non-NULL, and if the write is successful, 'size' is incremented
+  // by the size of the written operation.
+  Status AppendNoOp(OpId* op_id, int* size = NULL) {
     LogEntryPB log_entry;
     log_entry.set_type(REPLICATE);
     ReplicateMsg* repl = log_entry.mutable_replicate();
     repl->mutable_id()->CopyFrom(*op_id);
     repl->set_op_type(NO_OP);
     RETURN_NOT_OK(log_->Append(&log_entry));
-
+    if (size) {
+      // If we're tracking the sizes we need to account for the fact
+      // that the Log wraps the log entry in an LogEntryBatchPB and
+      // that entries are length-prefix encoded (+ 4 bytes).
+      LogEntryBatchPB batch;
+      batch.add_entry()->CopyFrom(log_entry);
+      *size += batch.ByteSize() + 4;
+    }
     // Increment op_id.
     op_id->set_index(op_id->index() + 1);
     return Status::OK();
@@ -214,9 +223,11 @@ class LogTestBase : public KuduTest {
 
   // Append a number of no-op entries to the log.
   // Increments op_id's index by the number of records written.
-  Status AppendNoOps(OpId* op_id, int num) {
+  // If non-NULL, 'size' keeps track of the size of the operations
+  // successfully written.
+  Status AppendNoOps(OpId* op_id, int num, int* size = NULL) {
     for (int i = 0; i < num; i++) {
-      RETURN_NOT_OK(AppendNoOp(op_id));
+      RETURN_NOT_OK(AppendNoOp(op_id, size));
     }
     return Status::OK();
   }

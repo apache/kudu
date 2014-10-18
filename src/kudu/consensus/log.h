@@ -216,6 +216,7 @@ class Log {
   friend class LogTest;
   friend class LogTestBase;
   FRIEND_TEST(LogTest, TestMultipleEntriesInABatch);
+  FRIEND_TEST(LogTest, TestWritableSegmentKeepsCorrectWrittenOffset);
 
   class AppendThread;
   class SegmentAllocationTask;
