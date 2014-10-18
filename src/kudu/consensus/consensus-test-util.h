@@ -664,6 +664,7 @@ class TestRaftConsensusQueueIface : public RaftConsensusQueueIface {
     boost::lock_guard<simple_spinlock> lock(lock_);
     committed_waiter_set_->MarkFinished(id, OpIdWaiterSet::MARK_ALL_OPS_BEFORE);
   }
+  virtual void NotifyTermChange(uint64_t term) OVERRIDE {}
  private:
   gscoped_ptr<ThreadPool> pool_;
   gscoped_ptr<OpIdWaiterSet> committed_waiter_set_;

@@ -407,7 +407,12 @@ void PeerMessageQueue::ResponseFromPeer(const ConsensusResponsePB& response,
           HandleLogMatchingPropertyMismatch(peer, response, status);
           *more_pending = true;
           return;
-          break;
+        }
+        case ConsensusErrorPB::INVALID_TERM: {
+          CHECK(response.has_responder_term());
+          consensus_->NotifyTermChange(response.responder_term());
+          *more_pending = true;
+          return;
         }
         default: {
           LOG(FATAL) << "Unexpected consensus error. Response: " << response.ShortDebugString();

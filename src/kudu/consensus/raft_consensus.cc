@@ -330,6 +330,21 @@ void RaftConsensus::UpdateCommittedIndex(const OpId& committed_index) {
   UpdateCommittedIndexUnlocked(committed_index);
 }
 
+void RaftConsensus::NotifyTermChange(uint64_t term) {
+  ReplicaState::UniqueLock lock;
+  Status s = state_->LockForCommit(&lock);
+  if (PREDICT_FALSE(!s.ok())) {
+    // We either have not started running or we have already shut down.
+    LOG_WITH_PREFIX_LK(INFO) << "Unable to respond to notification of term change to term " << term
+                             << ": " << s.ToString();
+    return;
+  }
+  if (state_->GetCurrentTermUnlocked() < term) {
+    CHECK_OK(state_->SetCurrentTermUnlocked(term));
+    CHECK_OK(StepDownIfLeaderUnlocked());
+  }
+}
+
 void RaftConsensus::UpdateCommittedIndexUnlocked(const OpId& committed_index) {
   VLOG_WITH_PREFIX(2) << "Marking committed up to " << committed_index.ShortDebugString();
   TRACE("Marking committed up to $0", committed_index.ShortDebugString());
@@ -502,12 +517,29 @@ Status RaftConsensus::UpdateReplica(const ConsensusRequestPB* request,
 
     // Do term checks first:
     if (PREDICT_FALSE(request->caller_term() != state_->GetCurrentTermUnlocked())) {
-      // Eventually we'll respond error here but right now just check.
-      CHECK_OK(StepDownIfLeaderUnlocked());
-      CHECK_OK(state_->SetCurrentTermUnlocked(request->caller_term()));
-      // - Since we don't handle in-flights when the terms change yet
-      //   make sure that we don't have any.
-      CHECK_EQ(state_->GetNumPendingTxnsUnlocked(), 0);
+
+      // If less, reject.
+      if (request->caller_term() < state_->GetCurrentTermUnlocked()) {
+        string msg = Substitute("Rejecting Update request from peer $0 for earlier term $1. "
+                                "Current term is $2.",
+                                request->caller_uuid(),
+                                request->caller_term(),
+                                state_->GetCurrentTermUnlocked());
+        LOG_WITH_PREFIX(INFO) << msg;
+        FillConsensusResponseError(response,
+                                   ConsensusErrorPB::INVALID_TERM,
+                                   Status::IllegalState(msg));
+        return Status::OK();
+      } else {
+        CHECK_OK(StepDownIfLeaderUnlocked());
+        Status s = state_->SetCurrentTermUnlocked(request->caller_term());
+        if (PREDICT_FALSE(!s.ok())) {
+          LOG_WITH_PREFIX(FATAL) << "Unable to set current term: " << s.ToString();
+        }
+        // - Since we don't handle in-flights when the terms change yet
+        //   make sure that we don't have any.
+        CHECK_EQ(state_->GetNumPendingTxnsUnlocked(), 0);
+      }
     }
 
     TRACE("Updating replica for $0 ops", request->ops_size());
@@ -527,15 +559,6 @@ Status RaftConsensus::UpdateReplica(const ConsensusRequestPB* request,
         continue;
       }
       replicate_msgs.push_back(&const_cast<ReplicateMsg&>(msg));
-    }
-
-    // Only accept requests from a sender with a terms that is equal to or higher
-    // than our own.
-    if (PREDICT_FALSE(request->caller_term() < state_->GetCurrentTermUnlocked())) {
-      return Status::IllegalState(
-          Substitute("Sender peer's term: $0 is lower than this replica's term: $1.",
-                     request->caller_term(),
-                     state_->GetCurrentTermUnlocked()));
     }
 
     // Enforce the log matching property.

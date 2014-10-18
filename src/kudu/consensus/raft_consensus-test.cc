@@ -934,7 +934,6 @@ TEST_F(RaftConsensusTest, TestRequestVote) {
   ASSERT_EQ(last_op_id.term() + 1, response.responder_term());
   ASSERT_NO_FATAL_FAILURE(AssertDurableTermAndVote(kPeerIndex, last_op_id.term() + 1, "peer-0"));
 
-
   // Ensure we get same response for same term and same UUID.
   response.Clear();
   ASSERT_OK(peer->RequestVote(&request, &response));
@@ -1006,6 +1005,18 @@ TEST_F(RaftConsensusTest, TestRequestVote) {
   ASSERT_EQ(ConsensusErrorPB::LAST_OPID_TOO_OLD, response.consensus_error().code());
   ASSERT_EQ(last_op_id.term() + 3, response.responder_term());
   ASSERT_NO_FATAL_FAILURE(AssertDurableTermWithoutVote(kPeerIndex, last_op_id.term() + 3));
+
+  // Send a "heartbeat" to the peer. It should be rejected.
+  ConsensusRequestPB req;
+  req.set_caller_term(last_op_id.term());
+  req.set_caller_uuid("peer-0");
+  req.mutable_committed_index()->CopyFrom(last_op_id);
+  ConsensusResponsePB res;
+  Status s = peer->Update(&req, &res);
+  ASSERT_EQ(last_op_id.term() + 3, res.responder_term());
+  ASSERT_TRUE(res.status().has_error());
+  ASSERT_EQ(ConsensusErrorPB::INVALID_TERM, res.status().error().code());
+  LOG(INFO) << "Follower rejected old heartbeat, as expected: " << res.ShortDebugString();
 }
 
 }  // namespace consensus

@@ -43,6 +43,11 @@ class RaftConsensusQueueIface {
   // The implementation is idempotent, i.e. independently of the ordering of
   // calls to this method only non-triggered applys will be started.
   virtual void UpdateCommittedIndex(const OpId& committed_index) = 0;
+
+  // Notify the Consensus implementation that a follower replied with a term
+  // higher than that established in the queue.
+  virtual void NotifyTermChange(uint64_t term) = 0;
+
   virtual ~RaftConsensusQueueIface() {}
 };
 
@@ -117,6 +122,8 @@ class RaftConsensus : public Consensus,
   // transactions were pending.
   // This is idempotent.
   virtual void UpdateCommittedIndex(const OpId& commit_index) OVERRIDE;
+
+  virtual void NotifyTermChange(uint64_t term) OVERRIDE;
  protected:
   virtual Status Commit(gscoped_ptr<CommitMsg> commit,
                         const StatusCallback& cb) OVERRIDE;
