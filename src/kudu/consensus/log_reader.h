@@ -121,6 +121,12 @@ class LogReader {
   // if no footer is present.
   Status AppendSegmentUnlocked(const scoped_refptr<ReadableLogSegment>& segment);
 
+  // Used by Log to update its LogReader on how far it is possible to read
+  // the current segment. Requires that the reader has at least one segment
+  // and that the last segment has no footer, meaning it is currently being
+  // written to.
+  void UpdateLastSegmentOffset(uint64_t readable_to_offset);
+
   LogReader(FsManager *fs_manager,
             const std::string& tablet_name);
 

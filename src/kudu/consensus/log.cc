@@ -520,6 +520,10 @@ Status Log::DoAppend(LogEntryBatch* entry_batch, bool caller_owns_operation) {
     RETURN_NOT_OK(active_segment_->Append(
       Slice(reinterpret_cast<uint8_t *>(&entry_batch_bytes), 4)));
     RETURN_NOT_OK(active_segment_->Append(entry_batch_data));
+
+    // Update the reader on how far it can read the active segment.
+    reader_->UpdateLastSegmentOffset(active_segment_->written_offset());
+
     total_ops_in_last_seg_ += entry_batch->count();
     if (log_hooks_) {
       RETURN_NOT_OK_PREPEND(log_hooks_->PostAppend(), "PostAppend hook failed");

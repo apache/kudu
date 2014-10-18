@@ -165,6 +165,7 @@ class ReadableLogSegment : public RefCountedThreadSafe<ReadableLogSegment> {
 
  private:
   friend class RefCountedThreadSafe<ReadableLogSegment>;
+  friend class LogReader;
   FRIEND_TEST(LogTest, TestWriteAndReadToAndFromInProgressSegment);
   ~ReadableLogSegment() {}
 

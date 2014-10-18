@@ -223,6 +223,16 @@ Status LogReader::TrimSegmentsUpToAndIncluding(uint64_t segment_sequence_number)
   return Status::OK();
 }
 
+void LogReader::UpdateLastSegmentOffset(uint64_t readable_to_offset) {
+  boost::lock_guard<simple_spinlock> lock(lock_);
+  CHECK_EQ(state_, kLogReaderReading);
+  DCHECK(!segments_.empty());
+  // Get the last segment
+  ReadableLogSegment* segment = segments_.back().get();
+  DCHECK(!segment->HasFooter());
+  segment->UpdateReadableToOffset(readable_to_offset);
+}
+
 Status LogReader::ReplaceLastSegment(const scoped_refptr<ReadableLogSegment>& segment) {
   boost::lock_guard<simple_spinlock> lock(lock_);
   CHECK_EQ(state_, kLogReaderReading);

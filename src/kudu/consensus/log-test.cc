@@ -5,6 +5,7 @@
 #include <vector>
 
 #include "kudu/consensus/log-test-base.h"
+#include "kudu/consensus/consensus-test-util.h"
 #include "kudu/consensus/opid_util.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/tablet/mvcc.h"
@@ -272,15 +273,16 @@ TEST_F(LogTest, TestWriteAndReadToAndFromInProgressSegment) {
   ASSERT_EQ(entries.size(), 1);
   STLDeleteElements(&entries);
 
-  // Setting the readable segment to the full size of the file should yield
-  // all 4 entries.
-  readable_segment->UpdateReadableToOffset(log_->active_segment_->written_offset());
+  // Now append another entry so that the Log sets the correct readable offset
+  // on the reader.
+  ASSERT_OK(AppendNoOps(&op_id, 1, &written_entries_size));
+
+  // Now the reader should be able to read all 5 entries.
   ASSERT_OK(readable_segment->ReadEntries(&entries));
-  ASSERT_EQ(entries.size(), 4);
+  ASSERT_EQ(entries.size(), 5);
   STLDeleteElements(&entries);
 
   // Offset should get updated for an additional entry.
-  ASSERT_OK(AppendNoOp(&op_id, &written_entries_size));
   ASSERT_EQ(single_entry_size * (kNumEntries + 1) + header_size,
             written_entries_size);
   ASSERT_EQ(written_entries_size, log_->active_segment_->written_offset());
