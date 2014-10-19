@@ -39,6 +39,19 @@ using metadata::QuorumPB;
 using metadata::QuorumPeerPB;
 using strings::Substitute;
 
+static gscoped_ptr<ReplicateMsg> CreateDummyReplicate(int term,
+                                                      int index,
+                                                      int payload_size) {
+    gscoped_ptr<ReplicateMsg> msg(new ReplicateMsg);
+    OpId* id = msg->mutable_id();
+    id->set_term(term);
+    id->set_index(index);
+
+    msg->set_op_type(NO_OP);
+    msg->mutable_noop_request()->mutable_payload_for_tests()->resize(payload_size);
+    return msg.Pass();
+}
+
 // Appends 'count' messages to 'queue' with different terms and indexes.
 //
 // An operation will only be considered done (TestOperationStatus::IsDone()
@@ -51,16 +64,12 @@ static inline void AppendReplicateMessagesToQueue(
     PeerMessageQueue* queue,
     int first,
     int count,
-    string dummy_payload = "") {
+    int payload_size = 0) {
 
   for (int i = first; i < first + count; i++) {
-    gscoped_ptr<ReplicateMsg> msg(new ReplicateMsg);
-    OpId* id = msg->mutable_id();
-    id->set_term(i / 7);
-    id->set_index(i);
-    msg->set_op_type(NO_OP);
-    msg->mutable_noop_request()->set_payload_for_tests(dummy_payload);
-    CHECK_OK(queue->AppendOperation(msg.Pass()));
+    int term = i / 7;
+    int index = i;
+    CHECK_OK(queue->AppendOperation(CreateDummyReplicate(term, index, payload_size)));
   }
 }
 
