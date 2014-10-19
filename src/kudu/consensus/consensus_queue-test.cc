@@ -110,34 +110,6 @@ class ConsensusQueueTest : public KuduTest {
   scoped_refptr<log::OpIdAnchorRegistry> registry_;
 };
 
-// This tests that the peer gets all the messages in the buffer
-TEST_F(ConsensusQueueTest, TestGetAllMessages) {
-  queue_->Init(consensus_.get(), MinimumOpId(), MinimumOpId().term(), 1);
-  AppendReplicateMessagesToQueue(queue_.get(), 1, 100);
-
-  ConsensusRequestPB request;
-  ConsensusResponsePB response;
-
-  bool more_pending = false;
-  UpdatePeerWatermarkToOp(&request, &response, MinimumOpId(), &more_pending);
-  ASSERT_TRUE(more_pending);
-
-  // Getting a new request should get all operations (i.e. all operations
-  // from MinimumOpId()).
-  queue_->RequestForPeer(kPeerUuid, &request);
-  ASSERT_EQ(request.ops_size(), 100);
-  response.mutable_status()->mutable_last_received()->CopyFrom(request.ops(99).id());
-  queue_->ResponseFromPeer(response, &more_pending);
-  ASSERT_FALSE(more_pending) << "Queue still had requests pending";
-
-  // if we ask for a new request, it should come back empty
-  queue_->RequestForPeer(kPeerUuid, &request);
-  ASSERT_EQ(0, request.ops_size());
-
-  // extract the ops from the request to avoid double free
-  request.mutable_ops()->ExtractSubrange(0, request.ops_size(), NULL);
- }
-
 // Tests that the queue is able to track a peer when it starts tracking a peer
 // after the initial message in the queue. In particular this creates a queue
 // with several messages and then starts to track a peer whose watermark
@@ -191,7 +163,8 @@ TEST_F(ConsensusQueueTest, TestGetPagedMessages) {
 
   // We're going to add 100 messages to the queue so we make each page fetch 9 of those,
   // for a total of 12 pages. The last page should have a single op.
-  for (int i = 0; i < 9; i++) {
+  const int kOpsPerRequest = 9;
+  for (int i = 0; i < kOpsPerRequest; i++) {
     page_size_estimator.mutable_ops()->AddAllocated(CreateDummyReplicate(0, 0, 0).release());
   }
 
@@ -210,7 +183,9 @@ TEST_F(ConsensusQueueTest, TestGetPagedMessages) {
   ASSERT_TRUE(more_pending);
 
   for (int i = 0; i < 11; i++) {
+    VLOG(1) << "Making request " << i;
     queue_->RequestForPeer(kPeerUuid, &request);
+    ASSERT_EQ(kOpsPerRequest, request.ops_size());
     response.mutable_status()->mutable_last_received()->CopyFrom(
         request.ops(request.ops_size() -1).id());
     queue_->ResponseFromPeer(response, &more_pending);
@@ -224,37 +199,6 @@ TEST_F(ConsensusQueueTest, TestGetPagedMessages) {
   ASSERT_FALSE(more_pending);
 
   // extract the ops from the request to avoid double free
-  request.mutable_ops()->ExtractSubrange(0, request.ops_size(), NULL);
-}
-
-// Ensure that the queue always sends at least one message to a peer,
-// even if that message is larger than the batch size. This ensures
-// that we don't get "stuck" in the case that a large message enters
-// the queue.
-TEST_F(ConsensusQueueTest, TestAlwaysYieldsAtLeastOneMessage) {
-  // generate a 2MB dummy payload
-  const int kPayloadSize = 2 * 1024 * 1024;
-  queue_->Init(consensus_.get(), MinimumOpId(), MinimumOpId().term(), 1);
-
-  // Set a small batch size -- smaller than the message we're appending.
-  google::FlagSaver saver;
-  FLAGS_consensus_max_batch_size_bytes = 10000;
-
-  // Append the large op to the queue
-  ASSERT_STATUS_OK(queue_->AppendOperation(CreateDummyReplicate(0, 1, kPayloadSize)));
-
-  ConsensusRequestPB request;
-  ConsensusResponsePB response;
-  response.set_responder_uuid(kPeerUuid);
-  bool more_pending = false;
-
-  UpdatePeerWatermarkToOp(&request, &response, MinimumOpId(), &more_pending);
-  ASSERT_TRUE(more_pending);
-
-  queue_->RequestForPeer(kPeerUuid, &request);
-  ASSERT_EQ(1, request.ops_size());
-
-  // extract the op from the request to avoid double free
   request.mutable_ops()->ExtractSubrange(0, request.ops_size(), NULL);
 }
 
@@ -299,42 +243,6 @@ TEST_F(ConsensusQueueTest, TestPeersDontAckBeyondWatermarks) {
 
   // extract the ops from the request to avoid double free
   request.mutable_ops()->ExtractSubrange(0, request.ops_size(), NULL);
-}
-
-TEST_F(ConsensusQueueTest, TestQueueRefusesRequestWhenFilled) {
-  FLAGS_consensus_entry_cache_size_soft_limit_mb = 0;
-  FLAGS_consensus_entry_cache_size_hard_limit_mb = 1;
-
-  queue_.reset(new PeerMessageQueue(metric_context_));
-  queue_->Init(consensus_.get(), MinimumOpId(), MinimumOpId().term(), 1);
-
-  // generate a 128Kb dummy payload
-  const int kPayloadSize = 128 * 1024;
-
-  // append 8 messages to the queue, these should be allowed
-  AppendReplicateMessagesToQueue(queue_.get(), 1, 7, kPayloadSize);
-
-  // should fail with service unavailable
-  Status s = AppendReplicateMsg(1, 8, kPayloadSize);
-  ASSERT_TRUE(s.IsServiceUnavailable());
-
-  // Now track a peer and ack the first two ops.
-  ConsensusRequestPB request;
-  ConsensusResponsePB response;
-  response.set_responder_uuid(kPeerUuid);
-  bool more_pending = false;
-
-  UpdatePeerWatermarkToOp(&request, &response, MinimumOpId(), &more_pending);
-  ASSERT_TRUE(more_pending);
-
-  OpId op;
-  op.set_term(1);
-  op.set_index(2);
-  response.mutable_status()->mutable_last_received()->CopyFrom(op);
-  queue_->ResponseFromPeer(response, &more_pending);
-  ASSERT_TRUE(more_pending);
-  // .. and try again
-  ASSERT_STATUS_OK(AppendReplicateMsg(1, 8, kPayloadSize));
 }
 
 TEST_F(ConsensusQueueTest, TestQueueAdvancesCommittedIndex) {
@@ -500,170 +408,6 @@ TEST_F(ConsensusQueueTest, TestQueueLoadsOperationsForPeer) {
 
   // The messages still belong to the queue so we have to release them.
   request.mutable_ops()->ExtractSubrange(0, request.ops().size(), NULL);
-}
-
-TEST_F(ConsensusQueueTest, TestQueueHardAndSoftLimit) {
-  FLAGS_consensus_entry_cache_size_soft_limit_mb = 1;
-  FLAGS_consensus_entry_cache_size_hard_limit_mb = 2;
-
-  queue_.reset(new PeerMessageQueue(metric_context_));
-  queue_->Init(consensus_.get(), MinimumOpId(), MinimumOpId().term(), 1);
-
-  ConsensusRequestPB request;
-  ConsensusResponsePB response;
-  response.set_responder_uuid(kPeerUuid);
-  bool more_pending = false;
-
-  UpdatePeerWatermarkToOp(&request, &response, MinimumOpId(), &more_pending);
-  ASSERT_TRUE(more_pending);
-
-  const int kPayloadSize = 768 * 1024;
-
-  // Soft limit should not be violated.
-  ASSERT_STATUS_OK(AppendReplicateMsg(1, 1, kPayloadSize));
-
-  int size_with_one_msg = queue_->GetQueuedOperationsSizeBytesForTests();
-  ASSERT_LT(size_with_one_msg, 1 * 1024 * 1024);
-
-  // Violating a soft limit, but not a hard limit should still allow
-  // the operation to be added.
-  ASSERT_STATUS_OK(AppendReplicateMsg(1, 2, kPayloadSize));
-
-  // Since the first operation is not yet done, we can't trim.
-  int size_with_two_msgs = queue_->GetQueuedOperationsSizeBytesForTests();
-  ASSERT_GE(size_with_two_msgs, 2 * 768 * 1024);
-  ASSERT_LT(size_with_two_msgs, 2 * 1024 * 1024);
-
-  OpId* op = response.mutable_status()->mutable_last_received();
-  response.set_responder_term(1);
-  op->set_term(1);
-  op->set_index(1);
-
-  queue_->ResponseFromPeer(response, &more_pending);
-  ASSERT_TRUE(more_pending);
-
-  // Verify that we have trimmed by appending a message that would
-  // otherwise be rejected, since the queue max size limit is 2MB.
-  ASSERT_STATUS_OK(AppendReplicateMsg(1, 3, kPayloadSize));
-
-  // The queue should be trimmed down to two messages.
-  ASSERT_EQ(size_with_two_msgs, queue_->GetQueuedOperationsSizeBytesForTests());
-
-  // Ack indexes 2 and 3
-  op->set_term(1);
-  op->set_index(3);
-  queue_->ResponseFromPeer(response, &more_pending);
-  ASSERT_FALSE(more_pending);
-
-  ASSERT_STATUS_OK(AppendReplicateMsg(1, 4, kPayloadSize));
-
-  // Verify that the queue is trimmed down to just one message.
-  ASSERT_EQ(size_with_one_msg, queue_->GetQueuedOperationsSizeBytesForTests());
-
-  op->set_term(1);
-  op->set_index(4);
-  queue_->ResponseFromPeer(response, &more_pending);
-  ASSERT_FALSE(more_pending);
-
-  // Add a small message such that soft limit is not violated.
-  const int kSmallPayloadSize = 128 * 1024;
-  ASSERT_STATUS_OK(AppendReplicateMsg(1, 5, kSmallPayloadSize));
-
-  // Verify that the queue is not trimmed.
-  ASSERT_GT(queue_->GetQueuedOperationsSizeBytesForTests(), 0);
-}
-
-TEST_F(ConsensusQueueTest, TestGlobalHardLimit) {
- FLAGS_consensus_entry_cache_size_soft_limit_mb = 1;
- FLAGS_global_consensus_entry_cache_size_soft_limit_mb = 4;
-
- FLAGS_consensus_entry_cache_size_hard_limit_mb = 2;
- FLAGS_global_consensus_entry_cache_size_hard_limit_mb = 5;
-
- const string kParentTrackerId = "TestGlobalHardLimit";
-
- shared_ptr<MemTracker> parent_tracker = MemTracker::CreateTracker(
-     FLAGS_consensus_entry_cache_size_soft_limit_mb * 1024 * 1024,
-     kParentTrackerId,
-     NULL);
-
- ASSERT_TRUE(parent_tracker.get() != NULL);
-
-
- // Exceed the global hard limit.
- parent_tracker->Consume(6 * 1024 * 1024);
-
- queue_.reset(new PeerMessageQueue(metric_context_,
-                                   kParentTrackerId));
- queue_->Init(consensus_.get(), MinimumOpId(), MinimumOpId().term(), 1);
-
- const int kPayloadSize = 768 * 1024;
-
- // Should fail with service unavailable.
- Status s = AppendReplicateMsg(1, 1, kPayloadSize);
-
- ASSERT_TRUE(s.IsServiceUnavailable());
-
- // Now release the memory.
-
- parent_tracker->Release(2 * 1024 * 1024);
-
- ASSERT_STATUS_OK(AppendReplicateMsg(1, 1, kPayloadSize));
-}
-
-TEST_F(ConsensusQueueTest, TestTrimWhenGlobalSoftLimitExceeded) {
-  FLAGS_consensus_entry_cache_size_soft_limit_mb = 1;
-  FLAGS_global_consensus_entry_cache_size_soft_limit_mb = 4;
-
-  FLAGS_consensus_entry_cache_size_hard_limit_mb = 2;
-  FLAGS_global_consensus_entry_cache_size_hard_limit_mb = 5;
-
-  const string kParentTrackerId = "TestGlobalSoftLimit";
-
-  shared_ptr<MemTracker> parent_tracker = MemTracker::CreateTracker(
-     FLAGS_consensus_entry_cache_size_soft_limit_mb * 1024 * 1024,
-     kParentTrackerId,
-     NULL);
-
- ASSERT_TRUE(parent_tracker.get() != NULL);
-
-
- // Exceed the global soft limit.
- parent_tracker->Consume(4 * 1024 * 1024);
- parent_tracker->Consume(1024);
-
- queue_.reset(new PeerMessageQueue(metric_context_,
-                                   kParentTrackerId));
- queue_->Init(consensus_.get(), MinimumOpId(), MinimumOpId().term(), 1);
-
- const int kPayloadSize = 768 * 1024;
-
- ASSERT_STATUS_OK(AppendReplicateMsg(1, 1, kPayloadSize));
-
- int size_with_one_msg = queue_->GetQueuedOperationsSizeBytesForTests();
-
- ConsensusRequestPB request;
- ConsensusResponsePB response;
- response.set_responder_uuid(kPeerUuid);
- bool more_pending = false;
- OpId id;
- id.set_term(1);
- id.set_index(1);
-
- UpdatePeerWatermarkToOp(&request, &response, id, &more_pending);
- ASSERT_TRUE(more_pending);
-
- response.mutable_status()->mutable_last_received()->CopyFrom(id);
- queue_->ResponseFromPeer(response, &more_pending);
- ASSERT_FALSE(more_pending);
-
- // If this goes through, that means the queue has been trimmed, otherwise
- // the hard limit would be violated and service unavailable status would
- // be returned.
- ASSERT_STATUS_OK(AppendReplicateMsg(1, 2, kPayloadSize));
-
- // Verify that there is only one message in the queue.
- ASSERT_EQ(size_with_one_msg, queue_->GetQueuedOperationsSizeBytesForTests());
 }
 
 }  // namespace consensus

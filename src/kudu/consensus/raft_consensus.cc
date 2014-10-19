@@ -304,6 +304,11 @@ Status RaftConsensus::BecomeReplicaUnlocked() {
   // Clear the consensus replication queue, evicting all state. We can reuse the
   // queue should we become leader.
   queue_->Clear();
+
+  // TODO: pretty certain there is a race here if the queue currently has an
+  // outstanding async log reader request -- the callback would fire on the
+  // emptied queue and crash. Perhaps instead we should create a new queue in
+  // this case instead of clearing the existing one.
   return Status::OK();
 }
 

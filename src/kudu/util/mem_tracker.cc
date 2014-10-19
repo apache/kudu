@@ -300,7 +300,11 @@ int64_t MemTracker::SpareCapacity() const {
 }
 
 bool MemTracker::GcMemory(int64_t max_consumption) {
-  DCHECK_GE(max_consumption, 0);
+  if (max_consumption < 0) {
+    // Impossible to GC enough memory to reach the goal.
+    return true;
+  }
+
   lock_guard<simple_spinlock> l(&gc_lock_);
   if (consumption_metric_ != NULL) {
     UpdateConsumption();

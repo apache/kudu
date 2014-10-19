@@ -102,8 +102,8 @@ class DistConsensusTest : public TabletServerTest {
 
     // If the caller passed no flags use the default ones.
     if (non_default_flags.empty()) {
-      opts.extra_tserver_flags.push_back("--consensus_entry_cache_size_soft_limit_mb=5");
-      opts.extra_tserver_flags.push_back("--consensus_entry_cache_size_hard_limit_mb=10");
+      opts.extra_tserver_flags.push_back("--log_cache_size_soft_limit_mb=5");
+      opts.extra_tserver_flags.push_back("--log_cache_size_hard_limit_mb=10");
       opts.extra_tserver_flags.push_back(strings::Substitute("--consensus_rpc_timeout_ms=$0",
                                                              FLAGS_consensus_rpc_timeout_ms));
     } else {
@@ -689,8 +689,8 @@ TEST_F(DistConsensusTest, TestRunLeaderElection) {
 
 TEST_F(DistConsensusTest, TestInsertWhenTheQueueIsFull) {
   vector<string> extra_flags;
-  extra_flags.push_back("--consensus_entry_cache_size_soft_limit_mb=0");
-  extra_flags.push_back("--consensus_entry_cache_size_hard_limit_mb=1");
+  extra_flags.push_back("--log_cache_size_soft_limit_mb=0");
+  extra_flags.push_back("--log_cache_size_hard_limit_mb=1");
   BuildAndStart(kNumReplicas, extra_flags);
   TServerDetails* replica = replicas_[0];
   ASSERT_TRUE(replica != NULL);

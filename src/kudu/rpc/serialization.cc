@@ -15,6 +15,8 @@
 #include "kudu/util/slice.h"
 #include "kudu/util/status.h"
 
+DECLARE_int32(rpc_max_message_size);
+
 using google::protobuf::MessageLite;
 using google::protobuf::io::CodedInputStream;
 using google::protobuf::io::CodedOutputStream;
@@ -38,6 +40,10 @@ Status SerializeMessage(const MessageLite& message,
   }
   int size = message.ByteSize();
   int size_with_delim = size + CodedOutputStream::VarintSize32(size);
+
+  if (size_with_delim > FLAGS_rpc_max_message_size) {
+    LOG(DFATAL) << "Sending too long of an RPC message (" << size_with_delim << " bytes)";
+  }
 
   param_buf->resize(size_with_delim);
   uint8_t* dst = param_buf->data();

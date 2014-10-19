@@ -13,6 +13,7 @@
 #include <vector>
 
 #include "kudu/consensus/consensus.pb.h"
+#include "kudu/consensus/log_cache.h"
 #include "kudu/consensus/log_util.h"
 #include "kudu/consensus/opid_util.h"
 #include "kudu/gutil/ref_counted.h"
@@ -36,12 +37,16 @@ class RaftConsensusQueueIface;
 // The id for the server-wide consensus queue MemTracker.
 extern const char kConsensusQueueParentTrackerId[];
 
-// Tracks all the pending consensus operations on the LEADER side.
-// The PeerMessageQueue has the dual goal of keeping a single copy of a
-// request in memory (instead of creating a copy for each peer) and
-// of centralizing watermark tracking for all peers.
+// Tracks the state of the peers and which transactions they have replicated.
+// Owns the LogCache which actually holds the replicate messages which are
+// en route to the various peers.
 //
-// TODO Right now this queue is able to track one outstanding operation
+// This also takes care of pushing requests to peers as new operations are
+// added, and notifying RaftConsensus when the commit index advances.
+//
+// This class is used only on the LEADER side.
+//
+// TODO Right now this class is able to track one outstanding operation
 // per peer. If we want to have more than one outstanding RPC we need to
 // modify it.
 class PeerMessageQueue {
@@ -121,20 +126,11 @@ class PeerMessageQueue {
   virtual void DumpToHtml(std::ostream& out) const;
 
   struct Metrics {
-    // Keeps track of the total number of operations in the queue.
-    AtomicGauge<int64_t>* total_num_ops;
-    // Keeps track of the number of ops. that are completed (IsAllDone() is true) but
-    // haven't been deleted from the queue (either because the buffer is not full,
-    // because there is a dangling operation with a lower id or just because
-    // TrimBuffer() hasn't been called yet).
-    AtomicGauge<int64_t>* num_all_done_ops;
     // Keeps track of the number of ops. that are completed by a majority but still need
     // to be replicated to a minority (IsDone() is true, IsAllDone() is false).
     AtomicGauge<int64_t>* num_majority_done_ops;
     // Keeps track of the number of ops. that are still in progress (IsDone() returns false).
     AtomicGauge<int64_t>* num_in_progress_ops;
-    // Keeps track of the total size of the queue, in bytes.
-    AtomicGauge<int64_t>* queue_size_bytes;
 
     explicit Metrics(const MetricContext& metric_ctx);
   };
@@ -187,9 +183,8 @@ class PeerMessageQueue {
     // The index of the last operation to be considered committed.
     OpId committed_index;
 
-    // The id of the operation immediately preceding the first operation
-    // in the queue.
-    OpId preceding_first_op_in_queue;
+    // The opid of the last operation appended to the queue.
+    OpId last_appended;
 
     // The queue's owner current_term.
     // Set by the last appended operation.
@@ -202,29 +197,14 @@ class PeerMessageQueue {
     State state;
   };
 
-  // An ordered map that serves as the buffer for the pending messages.
-  typedef std::map<OpId,
-                   ReplicateMsg*,
-                   OpIdCompareFunctor> MessagesBuffer;
-
   typedef std::tr1::unordered_map<std::string, TrackedPeer*> WatermarksMap;
-  typedef std::tr1::unordered_map<OpId, Status> ErrorsMap;
-  typedef std::pair<OpId, Status> ErrorEntry;
 
   std::string ToStringUnlocked() const;
 
   void DumpToStringsUnlocked(std::vector<std::string>* lines) const;
 
-  // Trims the buffer to free space, if we can.
-  void TrimBuffer();
-
   // Updates the metrics based on index math.
   void UpdateMetrics();
-
-  // Check whether adding 'bytes' to the consensus queue would violate
-  // either the local (per-tablet) hard limit or the global
-  // (server-wide) hard limit.
-  bool WouldHardLimitBeViolated(size_t bytes) const;
 
   void ClearUnlocked();
 
@@ -237,10 +217,6 @@ class PeerMessageQueue {
                              const OpId& replicated_after,
                              int num_peers_required);
 
-  void EntriesLoadedCallback(const Status& status,
-                             const std::vector<ReplicateMsg*>& replicates,
-                             const OpId& new_preceding_first_op_in_queue);
-
   // The size of the majority for the queue.
   // TODO support changing majority sizes when quorums change.
   int majority_size_;
@@ -249,37 +225,14 @@ class PeerMessageQueue {
 
   RaftConsensusQueueIface* consensus_;
 
-  // The total size of consensus entries to keep in memory.
-  // This is a hard limit, i.e. messages in the queue are always discarded
-  // down to this limit. If a peer has not yet replicated the messages
-  // selected to be discarded the peer will be evicted from the quorum.
-  uint64_t max_ops_size_bytes_hard_;
-
-  // Server-wide version of 'max_ops_size_bytes_hard_'.
-  uint64_t global_max_ops_size_bytes_hard_;
-
   // The current watermark for each peer.
   // The queue owns the OpIds.
   WatermarksMap watermarks_;
-  MessagesBuffer messages_;
-  mutable simple_spinlock queue_lock_;
+  mutable simple_spinlock queue_lock_; // TODO: rename
 
-  // Pointer to a parent memtracker for all consensus queues. This
-  // exists to compute server-wide queue size and enforce a
-  // server-wide memory limit.  When the first instance of a consensus
-  // queue is created, a new entry is added to MemTracker's static
-  // map; subsequent entries merely increment the refcount, so that
-  // the parent tracker can be deleted if all consensus queues are
-  // deleted (e.g., if all tablets are deleted from a server, or if
-  // the server is shutdown).
-  std::tr1::shared_ptr<MemTracker> parent_tracker_;
-
-  // A MemTracker for this instance.
-  std::tr1::shared_ptr<MemTracker> tracker_;
+  LogCache log_cache_;
 
   Metrics metrics_;
-
-  gscoped_ptr<log::AsyncLogReader> async_reader_;
 };
 
 }  // namespace consensus

@@ -57,6 +57,7 @@ set(CONSENSUS_SRCS
   consensus_queue.cc
   leader_election.cc
   local_consensus.cc
+  log_cache.cc
   opid_waiter_set.cc
   quorum_util.cc
   raft_consensus.cc
@@ -67,7 +68,8 @@ add_library(consensus ${CONSENSUS_SRCS})
 target_link_libraries(consensus
   consensus_proto
   kudu_common
-  log)
+  log
+  protobuf)
 
 set(KUDU_TEST_LINK_LIBS
   log
@@ -85,6 +87,7 @@ ADD_KUDU_TEST(consensus_peers-test)
 ADD_KUDU_TEST(consensus_queue-test)
 ADD_KUDU_TEST(leader_election-test)
 ADD_KUDU_TEST(log-test)
+ADD_KUDU_TEST(log_cache-test)
 ADD_KUDU_TEST(mt-log-test)
 ADD_KUDU_TEST(opid_anchor_registry-test)
 ADD_KUDU_TEST(raft_consensus_quorum-test)
