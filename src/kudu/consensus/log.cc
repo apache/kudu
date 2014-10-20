@@ -98,7 +98,7 @@ void Log::PostponeEarlyCommits(vector<LogEntryBatch*>* batches) {
           << "Currently don't support multiple COMMITs in a batch";
 
         const OpId& committed = batch->entry_batch_pb_->entry(0).commit().commited_op_id();
-        if (OpIdCompare(committed, max_repl_id) <= 0) {
+        if (max_repl_id.IsInitialized() && OpIdCompare(committed, max_repl_id) <= 0) {
           // If the commit is for an operation that we've already replicated (or already
           // seen in this loop), we can append it in its original position.
           ret_batches.push_back(batch);
@@ -124,7 +124,7 @@ void Log::PostponeEarlyCommits(vector<LogEntryBatch*>* batches) {
     LogEntryBatch* postponed = *iter;
 
     const OpId& committed = postponed->entry_batch_pb_->entry(0).commit().commited_op_id();
-    if (OpIdCompare(committed, max_repl_id) <= 0) {
+    if (max_repl_id.IsInitialized() && OpIdCompare(committed, max_repl_id) <= 0) {
       ret_batches.push_back(postponed);
       iter = postponed_commit_batches_.erase(iter);
     } else {

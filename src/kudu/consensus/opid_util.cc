@@ -15,6 +15,8 @@ namespace consensus {
 const uint64_t kMinimumTerm = 0;
 
 int OpIdCompare(const OpId& first, const OpId& second) {
+  DCHECK(first.IsInitialized());
+  DCHECK(second.IsInitialized());
   if (PREDICT_TRUE(first.term() == second.term())) {
     return first.index() < second.index() ? -1 : first.index() == second.index() ? 0 : 1;
   }
