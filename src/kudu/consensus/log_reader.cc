@@ -30,6 +30,7 @@ struct LogSegmentSeqnoComparator {
 }
 
 using consensus::OpId;
+using consensus::ReplicateMsg;
 using env_util::ReadFully;
 using strings::Substitute;
 
@@ -170,11 +171,11 @@ Status LogReader::GetSegmentPrefixNotIncluding(const consensus::OpId& opid,
 
 Status LogReader::GetSegmentSuffixIncluding(const consensus::OpId& opid,
                                             SegmentSequence* segments) const {
+  boost::lock_guard<simple_spinlock> lock(lock_);
   DCHECK(opid.IsInitialized());
   DCHECK(segments);
   segments->clear();
 
-  boost::lock_guard<simple_spinlock> lock(lock_);
   CHECK_EQ(state_, kLogReaderReading);
 
   // This gives us the segment that might include 'opid'
@@ -193,6 +194,67 @@ Status LogReader::GetSegmentSuffixIncluding(const consensus::OpId& opid,
     if (segment->header().sequence_number() >= (*pos).second.entry_segment_seqno) {
       segments->push_back(segment);
     }
+  }
+
+  return Status::OK();
+}
+
+Status LogReader::ReadAllReplicateEntries(const OpId starting_after,
+                                          const OpId up_to,
+                                          vector<ReplicateMsg*>* replicates) const {
+  DCHECK(starting_after.IsInitialized());
+  DCHECK(up_to.IsInitialized());
+
+  log::SegmentSequence segments_copy;
+  RETURN_NOT_OK(GetSegmentSuffixIncluding(starting_after, &segments_copy));
+
+  // Read the entries from the log
+  vector<log::LogEntryPB*> entries;
+  ElementDeleter deleter(&entries);
+  BOOST_FOREACH(const scoped_refptr<log::ReadableLogSegment>& segment, segments_copy) {
+    RETURN_NOT_OK(segment->ReadEntries(&entries));
+  }
+
+  // Now filter the entries to make sure we only get replicates and in the range
+  // we want.
+  OpId previous_entry;
+  bool found_start = false;
+  bool found_end = false;
+  BOOST_FOREACH(log::LogEntryPB* entry, entries) {
+    if (!entry->has_replicate()) continue;
+
+    if (!found_start) {
+      found_start = OpIdEquals(entry->replicate().id(), starting_after);
+      previous_entry.CopyFrom(entry->replicate().id());
+      continue;
+    }
+
+    DCHECK(found_start);
+    DCHECK_EQ(entry->replicate().id().index(), previous_entry.index() + 1);
+
+    ReplicateMsg* replicate = entry->release_replicate();
+
+    replicates->push_back(replicate);
+    previous_entry = replicate->id();
+
+    // If the current message is equal to 'to' we're done.
+    if (OpIdEquals(replicate->id(), up_to)) {
+      found_end = true;
+      break;
+    }
+  }
+
+  if (!found_start) {
+    return Status::NotFound(Substitute("Could not find 'starting_after' operation in the log."
+                                       " 'starting_after' was: $0",
+                                       starting_after.ShortDebugString()));
+  }
+
+  if (!found_end) {
+    return Status::NotFound(
+        Substitute("Could not find 'up_to operation in the log. 'up_to' was: $0, but last was: $1",
+                   up_to.ShortDebugString(),
+                   replicates->empty() ? "None" : replicates->back()->id().ShortDebugString()));
   }
 
   return Status::OK();

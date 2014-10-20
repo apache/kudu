@@ -48,6 +48,12 @@ class LogReader {
   // 'segments' will be cleared first.
   Status GetSegmentsSnapshot(SegmentSequence* segments) const;
 
+  // Reads all ReplicateMsgs from 'starting_after' exclusive, to 'up_to' inclusive.
+  Status ReadAllReplicateEntries(
+      const consensus::OpId starting_after,
+      const consensus::OpId up_to,
+      std::vector<consensus::ReplicateMsg*>* replicates) const;
+
   // Returns the number of segments.
   const uint32_t num_segments() const;
 
@@ -126,6 +132,9 @@ class LogReader {
   // and that the last segment has no footer, meaning it is currently being
   // written to.
   void UpdateLastSegmentOffset(uint64_t readable_to_offset);
+
+  Status GetSegmentSuffixIncludingUnlocked(const consensus::OpId& opid,
+                                           SegmentSequence* segments) const;
 
   LogReader(FsManager *fs_manager,
             const std::string& tablet_name);

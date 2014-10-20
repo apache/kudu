@@ -31,6 +31,7 @@ target_link_libraries(log_proto
   consensus_proto)
 
 set(LOG_SRCS
+  async_log_reader.cc
   log_util.cc
   log.cc
   log_reader.cc
@@ -77,6 +78,7 @@ set(KUDU_TEST_LINK_LIBS
   ${KUDU_MIN_TEST_LIBS}
 )
 
+ADD_KUDU_TEST(async_log_reader-test)
 ADD_KUDU_TEST(consensus_meta-test)
 ADD_KUDU_TEST(consensus_peers-test)
 ADD_KUDU_TEST(consensus_queue-test)
