@@ -793,7 +793,9 @@ class CounterHooks : public Consensus::ConsensusFaultHooks {
 
 class TestRaftConsensusQueueIface : public RaftConsensusQueueIface {
  public:
-  TestRaftConsensusQueueIface() {
+
+  explicit TestRaftConsensusQueueIface(log::Log* log)
+    : log_(log) {
     ThreadPoolBuilder("ci-waiters").set_max_threads(1).Build(&pool_);
     committed_waiter_set_.reset(new OpIdWaiterSet(pool_.get()));
   }
@@ -803,6 +805,9 @@ class TestRaftConsensusQueueIface : public RaftConsensusQueueIface {
     boost::lock_guard<simple_spinlock> lock(lock_);
     committed_waiter_set_->RegisterCallback(op_id, callback);
   }
+
+  log::Log* log() const OVERRIDE { return log_; }
+
  protected:
   virtual void UpdateCommittedIndex(const OpId& id) OVERRIDE {
     boost::lock_guard<simple_spinlock> lock(lock_);
@@ -813,6 +818,7 @@ class TestRaftConsensusQueueIface : public RaftConsensusQueueIface {
   gscoped_ptr<ThreadPool> pool_;
   gscoped_ptr<OpIdWaiterSet> committed_waiter_set_;
   mutable simple_spinlock lock_;
+  log::Log* log_;
 };
 
 }  // namespace consensus

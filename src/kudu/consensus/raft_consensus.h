@@ -48,6 +48,10 @@ class RaftConsensusQueueIface {
   // higher than that established in the queue.
   virtual void NotifyTermChange(uint64_t term) = 0;
 
+  // Returns a pointer to the Log so that the queue can load messages, if
+  // needed.
+  virtual log::Log* log() const = 0;
+
   virtual ~RaftConsensusQueueIface() {}
 };
 
@@ -84,7 +88,7 @@ class RaftConsensus : public Consensus,
   virtual Status RequestVote(const VoteRequestPB* request,
                              VoteResponsePB* response) OVERRIDE;
 
-  virtual log::Log* log() { return log_; }
+  virtual log::Log* log() const OVERRIDE { return log_; }
 
   virtual metadata::QuorumPeerPB::Role role() const OVERRIDE;
 

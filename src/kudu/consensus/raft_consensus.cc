@@ -950,8 +950,6 @@ QuorumPeerPB::Role RaftConsensus::role() const {
 }
 
 string RaftConsensus::peer_uuid() const {
-  ReplicaState::UniqueLock lock;
-  CHECK_OK(state_->LockForRead(&lock));
   return state_->GetPeerUuid();
 }
 

@@ -26,6 +26,7 @@ class MetricContext;
 
 namespace log {
 class Log;
+class AsyncLogReader;
 }
 
 namespace consensus {
@@ -75,10 +76,6 @@ class PeerMessageQueue {
   // Assembles a request for a quorum peer, adding entries past 'op_id' up to
   // 'consensus_max_batch_size_bytes'.
   //
-  // Getting a request for a peer doesn't mutate the internal state of the
-  // queue in any way (which is why this method is marked const). Only
-  // when responses are processed are watermarks updated.
-  //
   // WARNING: In order to avoid copying the same messages to every peer,
   // entries are added to 'request' via AddAllocated() methods.
   // The owner of 'request' is expected not to delete the request prior
@@ -88,7 +85,7 @@ class PeerMessageQueue {
   // replace the old entries with new ones without de-allocating the old
   // ones if they are still required.
   void RequestForPeer(const std::string& uuid,
-                      ConsensusRequestPB* request) const;
+                      ConsensusRequestPB* request);
 
   // Updates the request queue with the latest response of a peer, returns
   // whether this peer has more requests pending.
@@ -229,16 +226,14 @@ class PeerMessageQueue {
   // 'preceding_first_op_in_queue_' if the queue is empty.
   const OpId& GetLastOp() const;
 
-  // Handles the case when a peer replies that the Log Matching Property check
-  // failed.
-  void HandleLogMatchingPropertyMismatch(TrackedPeer* peer,
-                                         const ConsensusResponsePB& response,
-                                         const ConsensusStatusPB& status);
-
   void AdvanceQueueWatermark(OpId* watermark,
                              const OpId& replicated_before,
                              const OpId& replicated_after,
                              int num_peers_required);
+
+  void EntriesLoadedCallback(const Status& status,
+                             const std::vector<ReplicateMsg*>& replicates,
+                             const OpId& new_preceding_first_op_in_queue);
 
   // The size of the majority for the queue.
   // TODO support changing majority sizes when quorums change.
@@ -277,6 +272,8 @@ class PeerMessageQueue {
   std::tr1::shared_ptr<MemTracker> tracker_;
 
   Metrics metrics_;
+
+  gscoped_ptr<log::AsyncLogReader> async_reader_;
 };
 
 }  // namespace consensus

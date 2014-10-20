@@ -12,6 +12,9 @@
 #include "kudu/consensus/consensus_queue.h"
 
 #include "kudu/consensus/raft_consensus.h"
+#include "kudu/consensus/async_log_reader.h"
+#include "kudu/consensus/log.h"
+#include "kudu/consensus/log_reader.h"
 #include "kudu/consensus/log_util.h"
 #include "kudu/consensus/opid_util.h"
 #include "kudu/common/wire_protocol.h"
@@ -50,6 +53,7 @@ DEFINE_bool(consensus_dump_queue_on_full, false,
 namespace kudu {
 namespace consensus {
 
+using log::AsyncLogReader;
 using log::Log;
 using metadata::QuorumPeerPB;
 using std::tr1::shared_ptr;
@@ -132,6 +136,7 @@ void PeerMessageQueue::Init(const OpId& committed_index,
   queue_state_.preceding_first_op_in_queue = committed_index;
   queue_state_.state = kQueueOpen;
   majority_size_ = majority_size;
+  async_reader_.reset(new AsyncLogReader(consensus_->log()->GetLogReader()));
 }
 
 Status PeerMessageQueue::TrackPeer(const string& uuid) {
@@ -146,6 +151,7 @@ Status PeerMessageQueue::TrackPeer(const string& uuid) {
   TrackedPeer* tracked_peer = new TrackedPeer(uuid);
   tracked_peer->uuid = uuid;
   InsertOrDie(&watermarks_, uuid, tracked_peer);
+  queue_state_.all_replicated_index = MinimumOpId();
   return Status::OK();
 }
 
@@ -208,8 +214,54 @@ Status PeerMessageQueue::AppendOperation(gscoped_ptr<ReplicateMsg> msg) {
   return Status::OK();
 }
 
+void PeerMessageQueue::EntriesLoadedCallback(const Status& status,
+                                             const vector<ReplicateMsg*>& replicates,
+                                             const OpId& new_preceding_first_op_in_queue) {
+
+  // TODO deal with errors when loading operations.
+  CHECK_OK(status);
+
+  // OK, we're all done, we can now bulk load the operations into the queue.
+
+  // Note that we don't check queue limits. Were we to stop adding operations
+  // in the middle of the sequence the queue would have holes so it is possible
+  // that we're breaking queue limits right here.
+
+  // TODO enforce some sort of limit on how much can be loaded from disk
+  {
+    boost::lock_guard<simple_spinlock> lock(queue_lock_);
+    // We only actually append to the queue if it is still open.
+    if (queue_state_.state != PeerMessageQueue::kQueueOpen) {
+      // .. otherwise we delete the messages
+      BOOST_FOREACH(ReplicateMsg* replicate, replicates) {
+        delete replicate;
+      }
+
+      LOG(WARNING) << "Tried to load operations from disk but queue was not open.";
+      return;
+    }
+    BOOST_FOREACH(ReplicateMsg* replicate, replicates) {
+      InsertOrDieNoPrint(&messages_, replicate->id(), replicate);
+      tracker_->Consume(replicate->SpaceUsed());
+    }
+
+    CHECK(OpIdEquals(replicates.back()->id(),
+                     queue_state_.preceding_first_op_in_queue))
+      << "Expected: " << queue_state_.preceding_first_op_in_queue.ShortDebugString()
+      << " got: " << replicates.back()->id();
+
+    queue_state_.preceding_first_op_in_queue = new_preceding_first_op_in_queue;
+    queue_state_.all_replicated_index = new_preceding_first_op_in_queue;
+    UpdateMetrics();
+    LOG(INFO) << "Loaded operations in the queue form: "
+        << replicates.front()->id().ShortDebugString()
+        << " to: " << replicates.back()->id().ShortDebugString()
+        << " for a total of: " << replicates.size();
+  }
+}
+
 void PeerMessageQueue::RequestForPeer(const string& uuid,
-                                      ConsensusRequestPB* request) const {
+                                      ConsensusRequestPB* request) {
   // Clear the requests without deleting the entries, as they may be in use by other peers.
   request->mutable_ops()->ExtractSubrange(0, request->ops_size(), NULL);
   boost::lock_guard<simple_spinlock> lock(queue_lock_);
@@ -231,6 +283,24 @@ void PeerMessageQueue::RequestForPeer(const string& uuid,
     last_received.CopyFrom(GetLastOp());
   } else {
     last_received.CopyFrom(peer->peer_status.last_received());
+  }
+
+  // If the messages the peer needs haven't been loaded into the queue yet,
+  // load them.
+  if (OpIdCompare(last_received,
+                  queue_state_.preceding_first_op_in_queue) < 0) {
+    Status status = async_reader_->EnqueueAsyncRead(last_received,
+                                                    queue_state_.preceding_first_op_in_queue,
+                                                    Bind(&PeerMessageQueue::EntriesLoadedCallback,
+                                                         Unretained(this)));
+    // The loader is already loading something, or if the enqueue was successful
+    // just send a status only.
+    if (status.ok() || status.IsAlreadyPresent()) {
+      request->mutable_preceding_id()->CopyFrom(peer->peer_status.last_received());
+      return;
+    }
+    LOG(FATAL) << "Unimplemented: Unable to load operations into the queue for peer: "
+        << uuid << ". Status: " << status.ToString();
   }
 
   // We don't actually start sending on 'lower_bound' but we seek to
@@ -283,41 +353,6 @@ void PeerMessageQueue::RequestForPeer(const string& uuid,
       VLOG(2) << "Sending status only request to Peer: " << uuid;
     }
   }
-}
-
-void PeerMessageQueue::HandleLogMatchingPropertyMismatch(TrackedPeer* peer,
-                                                         const ConsensusResponsePB& response,
-                                                         const ConsensusStatusPB& status) {
-
-  if (messages_.empty()) {
-    // If the peer is asking for MinimumOpId() and the queue is empty, that's ok.
-    if (OpIdEquals(status.last_received(), MinimumOpId())) {
-      peer->peer_status.mutable_last_received()->CopyFrom(status.last_received());
-      return;
-    }
-    // Otherwise fail.
-    LOG(FATAL) << "Unimplemented. Peer: " << response.responder_uuid() << " requested an "
-        << "operation: " << status.last_received().ShortDebugString() << " before the "
-        << "first operation in the queue: "
-        << (messages_.empty() ? "EMPTY" : (*messages_.begin()).first.ShortDebugString());
-  }
-
-  // Check that the peer is not asking for an operation that comes before the first
-  // operation in the queue (except MinimumOpId()) we don't handle those yet.
-  if (!OpIdEquals(status.last_received(), MinimumOpId()) &&
-      OpIdLessThan(status.last_received(), queue_state_.preceding_first_op_in_queue)) {
-    LOG(FATAL) << "Unimplemented. Peer: " << response.responder_uuid() << " requested an "
-        << "operation: " << status.last_received().ShortDebugString() << " before the "
-        << "first operation in the queue: "
-        << (messages_.empty() ? "EMPTY" : (*messages_.begin()).first.ShortDebugString());
-  }
-
-  LOG(INFO) << "Peer: " << response.responder_uuid() << " replied that the Log Matching Property "
-      "check failed. Queue's last received watermark for peer: "
-      << (peer->peer_status.has_last_received() ?
-          peer->peer_status.last_received().ShortDebugString() : "NONE")
-      << ". Peer's actual last received watermark: " << status.last_received().ShortDebugString();
-  peer->peer_status.mutable_last_received()->CopyFrom(status.last_received());
 }
 
 void PeerMessageQueue::AdvanceQueueWatermark(OpId* watermark,
@@ -401,10 +436,19 @@ void PeerMessageQueue::ResponseFromPeer(const ConsensusResponsePB& response,
 
     const ConsensusStatusPB& status = response.status();
 
-    if (status.has_error()) {
+    if (PREDICT_FALSE(status.has_error())) {
       switch (status.error().code()) {
         case ConsensusErrorPB::PRECEDING_ENTRY_DIDNT_MATCH: {
-          HandleLogMatchingPropertyMismatch(peer, response, status);
+          LOG(INFO) << "Peer: " << response.responder_uuid() << " replied that the "
+              "Log Matching Property check failed. Queue's last received watermark for peer: "
+              << (peer->peer_status.has_last_received() ?
+                  peer->peer_status.last_received().ShortDebugString() : "NONE")
+              << ". Peer's actual last received watermark: "
+              << status.last_received().ShortDebugString();
+          peer->peer_status.mutable_last_received()->CopyFrom(status.last_received());
+          if (OpIdLessThan(status.last_received(), queue_state_.all_replicated_index)) {
+            queue_state_.all_replicated_index.CopyFrom(status.last_received());
+          }
           *more_pending = true;
           return;
         }
@@ -418,6 +462,20 @@ void PeerMessageQueue::ResponseFromPeer(const ConsensusResponsePB& response,
           LOG(FATAL) << "Unexpected consensus error. Response: " << response.ShortDebugString();
         }
       }
+    }
+
+    // If the peer's last received id is less than or equal to the queue's preceding we
+    // should have triggered queue loading before.
+    if (OpIdCompare(response.status().last_received(),
+                    queue_state_.preceding_first_op_in_queue) < 0) {
+      CHECK(async_reader_->IsReading());
+      CHECK(OpIdEquals(peer->peer_status.last_received(),
+                       response.status().last_received()));
+      // Ok we're still loading. We set more_pending to false so that
+      // there queue/peer don't spin back and forth. Likely when there's
+      // a new heartbeat to the peer the messages will be available.
+      *more_pending = false;
+      return;
     }
 
     // The peer must have responded with a term that is greater than or equal to
@@ -604,6 +662,7 @@ void PeerMessageQueue::ClearUnlocked() {
 }
 
 void PeerMessageQueue::Close() {
+  if (async_reader_) async_reader_->Shutdown();
   boost::lock_guard<simple_spinlock> lock(queue_lock_);
   queue_state_.state = kQueueClosed;
   ClearUnlocked();

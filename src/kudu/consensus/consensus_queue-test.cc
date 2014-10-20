@@ -4,9 +4,15 @@
 #include <gflags/gflags.h>
 #include <tr1/memory>
 
+#include "kudu/common/schema.h"
+#include "kudu/common/wire_protocol-test-util.h"
 #include "kudu/consensus/consensus_queue.h"
 #include "kudu/consensus/consensus-test-util.h"
+#include "kudu/consensus/opid_anchor_registry.h"
+#include "kudu/consensus/log.h"
 #include "kudu/consensus/log_util.h"
+#include "kudu/consensus/log_reader.h"
+#include "kudu/fs/fs_manager.h"
 #include "kudu/util/mem_tracker.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/test_macros.h"
@@ -25,15 +31,33 @@ namespace kudu {
 namespace consensus {
 
 static const char* kPeerUuid = "a";
+static const char* kTestTablet = "test-tablet";
 
 class ConsensusQueueTest : public KuduTest {
  public:
   ConsensusQueueTest()
-      : consensus_(new TestRaftConsensusQueueIface),
+      : schema_(GetSimpleTestSchema()),
         metric_context_(&metric_registry_, "queue-test"),
-        queue_(new PeerMessageQueue(consensus_.get(), metric_context_)) {
+        registry_(new log::OpIdAnchorRegistry) {
     FLAGS_enable_data_block_fsync = false; // Keep unit tests fast.
   }
+
+  virtual void SetUp() OVERRIDE {
+    KuduTest::SetUp();
+    fs_manager_.reset(new FsManager(env_.get(), test_dir_));
+    ASSERT_OK(fs_manager_->CreateInitialFileSystemLayout());
+    ASSERT_OK(fs_manager_->Open());
+    CHECK_OK(log::Log::Open(log::LogOptions(),
+                            fs_manager_.get(),
+                            kTestTablet,
+                            schema_,
+                            NULL,
+                            &log_));
+
+    consensus_.reset(new TestRaftConsensusQueueIface(log_.get()));
+    queue_.reset(new PeerMessageQueue(consensus_.get(), metric_context_));
+  }
+
 
   Status AppendReplicateMsg(int term, int index,
                             const std::string& payload) {
@@ -48,7 +72,9 @@ class ConsensusQueueTest : public KuduTest {
   }
 
   // Updates the peer's watermark in the queue so that it matches
-  // the operation we want.
+  // the operation we want, since the queue always assumes that
+  // when a peer gets tracked it's always tracked starting at the
+  // last operation in the queue
   void UpdatePeerWatermarkToOp(ConsensusRequestPB* request,
                                ConsensusResponsePB* response,
                                const OpId& last_received,
@@ -82,9 +108,13 @@ class ConsensusQueueTest : public KuduTest {
 
  protected:
   gscoped_ptr<TestRaftConsensusQueueIface> consensus_;
+  const Schema schema_;
+  gscoped_ptr<FsManager> fs_manager_;
   MetricRegistry metric_registry_;
   MetricContext metric_context_;
   gscoped_ptr<PeerMessageQueue> queue_;
+  gscoped_ptr<log::Log> log_;
+  scoped_refptr<log::OpIdAnchorRegistry> registry_;
 };
 
 // This tests that the peer gets all the messages in the buffer
@@ -370,6 +400,7 @@ TEST_F(ConsensusQueueTest, TestQueueAdvancesCommittedIndex) {
   queue_->ResponseFromPeer(response, &more_pending);
   ASSERT_TRUE(more_pending);
 
+
   // Committed index should now have advanced to 0.5
   OpId expected_committed_index;
   expected_committed_index.set_term(0);
@@ -397,6 +428,99 @@ TEST_F(ConsensusQueueTest, TestQueueAdvancesCommittedIndex) {
   expected_committed_index.set_term(1);
   expected_committed_index.set_index(10);
   ASSERT_OPID_EQ(queue_->GetCommittedIndexForTests(), expected_committed_index);
+}
+
+// In this test we append a sequence of operations to a log
+// and then start tracking a peer whose first required operation
+// is before the first operation in the queue.
+TEST_F(ConsensusQueueTest, TestQueueLoadsOperationsForPeer) {
+  for (int i = 1; i <= 100; i++) {
+    log::LogEntryPB log_entry;
+    log_entry.set_type(log::REPLICATE);
+    ReplicateMsg* repl = log_entry.mutable_replicate();
+    repl->mutable_id()->set_term(1);
+    repl->mutable_id()->set_index(i);
+    repl->set_op_type(NO_OP);
+    ASSERT_OK(log_->Append(&log_entry));
+    // Roll the log every 10 ops
+    if (i % 10 == 0) {
+      ASSERT_OK(log_->AllocateSegmentAndRollOver());
+    }
+  }
+  ASSERT_OK(log_->WaitUntilAllFlushed());
+
+  // Now reset the queue so that we can pass a new committed index,
+  // the last operation in the log.
+  queue_.reset(new PeerMessageQueue(consensus_.get(), metric_context_));
+  OpId committed_index;
+  committed_index.set_term(1);
+  committed_index.set_index(100);
+  queue_->Init(committed_index, 1, 1);
+
+  ConsensusRequestPB request;
+  ConsensusResponsePB response;
+  response.set_responder_uuid(kPeerUuid);
+  bool more_pending = false;
+
+  // The peer will actually be behind the first operation in the queue
+  // in this case about 50 operations before.
+  OpId peers_last_op;
+  peers_last_op.set_term(1);
+  peers_last_op.set_index(50);
+
+  // Now we start tracking the peer, this negotiation round should let
+  // the queue know how far along the peer is.
+  ASSERT_NO_FATAL_FAILURE(UpdatePeerWatermarkToOp(&request,
+                                                  &response,
+                                                  peers_last_op,
+                                                  &more_pending));
+
+  // The queue should reply that there are more messages for the peer.
+  ASSERT_TRUE(more_pending);
+
+  // When we get another request for the peer the queue should enqueue
+  // async loading of the missing operations.
+  queue_->RequestForPeer(kPeerUuid, &request);
+  // Since this just enqueued the op loading, the request should have
+  // no additional ops.
+  ASSERT_EQ(request.ops_size(), 0);
+
+  // The request's preceding_id should now match the peers last id.
+  ASSERT_OPID_EQ(request.preceding_id(), peers_last_op);
+
+  // When we now reply the same response as before (nothing changed
+  // from the peer's perspective) we should get that 'more_pending' is
+  // false. This is important or we would have a constant back and
+  // forth between the queue and the peer until the operations we
+  // want are loaded.
+  response.mutable_status()->mutable_last_received()->CopyFrom(peers_last_op);
+  queue_->ResponseFromPeer(response, &more_pending);
+  ASSERT_FALSE(more_pending);
+
+  // Spin a few times to give the queue loader a change to load the requests
+  // while at the same time adding more messages to the queue.
+  int expected_count = 50;
+  int current_index = 101;
+  while (request.ops_size() == 0) {
+    AppendReplicateMsg(1, current_index, "");
+    current_index++;
+    expected_count++;
+    queue_->RequestForPeer(kPeerUuid, &request);
+    if (request.ops_size() == 0) {
+      response.mutable_status()->mutable_last_received()->CopyFrom(peers_last_op);
+      queue_->ResponseFromPeer(response, &more_pending);
+    } else {
+      response.mutable_status()->mutable_last_received()->CopyFrom(
+          request.ops(request.ops_size() - 1).id());
+      queue_->ResponseFromPeer(response, &more_pending);
+    }
+    usleep(10);
+  }
+
+  ASSERT_EQ(request.ops_size(), expected_count);
+
+  // The messages still belong to the queue so we have to release them.
+  request.mutable_ops()->ExtractSubrange(0, request.ops().size(), NULL);
 }
 
 TEST_F(ConsensusQueueTest, TestQueueHardAndSoftLimit) {
