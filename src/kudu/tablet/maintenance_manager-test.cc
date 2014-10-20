@@ -224,7 +224,7 @@ TEST(MaintenanceManagerTest, TestCompletedOpsHistory) {
     op.set_ram_anchored(100);
     manager->RegisterOp(&op);
 
-    CHECK_EQ(true, op.WaitForStateWithTimeout(OP_FINISHED, 20));
+    CHECK_EQ(true, op.WaitForStateWithTimeout(OP_FINISHED, 200));
     manager->UnregisterOp(&op);
 
     MaintenanceManagerStatusPB status_pb;
