@@ -30,6 +30,9 @@
 
 DECLARE_int32(leader_heartbeat_interval_ms);
 
+#define REPLICATE_SEQUENCE_OF_MESSAGES(a, b, c, d, e, f, g) \
+  ASSERT_NO_FATAL_FAILURE(ReplicateSequenceOfMessages(a, b, c, d, e, f, g))
+
 namespace kudu {
 
 namespace rpc {
@@ -518,13 +521,13 @@ TEST_F(RaftConsensusTest, TestFollowersReplicateAndCommitMessage) {
   vector<ConsensusRound*> rounds;
   ElementDeleter deleter(&rounds);
   shared_ptr<LatchCallback> commit_clbk;
-  ReplicateSequenceOfMessages(1,
-                              kLeaderidx,
-                              WAIT_FOR_ALL_REPLICAS,
-                              DONT_COMMIT,
-                              &last_op_id,
-                              &rounds,
-                              &commit_clbk);
+  REPLICATE_SEQUENCE_OF_MESSAGES(1,
+                                 kLeaderidx,
+                                 WAIT_FOR_ALL_REPLICAS,
+                                 DONT_COMMIT,
+                                 &last_op_id,
+                                 &rounds,
+                                 &commit_clbk);
 
   // Commit the operation
   ASSERT_STATUS_OK(CommitDummyMessage(rounds[0]));
@@ -562,13 +565,13 @@ TEST_F(RaftConsensusTest, TestFollowersReplicateAndCommitSequence) {
   ElementDeleter deleter(&rounds);
   shared_ptr<LatchCallback> commit_clbk;
 
-  ReplicateSequenceOfMessages(seq_size,
-                              kLeaderidx,
-                              WAIT_FOR_ALL_REPLICAS,
-                              DONT_COMMIT,
-                              &last_op_id,
-                              &rounds,
-                              &commit_clbk);
+  REPLICATE_SEQUENCE_OF_MESSAGES(seq_size,
+                                 kLeaderidx,
+                                 WAIT_FOR_ALL_REPLICAS,
+                                 DONT_COMMIT,
+                                 &last_op_id,
+                                 &rounds,
+                                 &commit_clbk);
 
   // Commit the operations, but wait for the replicates to finish first
   BOOST_FOREACH(ConsensusRound* round, rounds) {
@@ -604,12 +607,13 @@ TEST_F(RaftConsensusTest, TestConsensusContinuesIfAMinorityFallsBehind) {
 
     // If the locked replica would stop consensus we would hang here
     // as we wait for operations to be replicated to a majority.
-    ReplicateSequenceOfMessages(10,
-                                kLeaderidx,
-                                WAIT_FOR_MAJORITY,
-                                COMMIT_ONE_BY_ONE,
-                                &last_replicate,
-                                &rounds);
+    ASSERT_NO_FATAL_FAILURE(ReplicateSequenceOfMessages(
+                              10,
+                              kLeaderidx,
+                              WAIT_FOR_MAJORITY,
+                              COMMIT_ONE_BY_ONE,
+                              &last_replicate,
+                              &rounds));
 
     // Follower 1 should be fine (Were we to wait for follower0's replicate
     // this would hang here). We know he must have replicated but make sure
@@ -797,13 +801,13 @@ TEST_F(RaftConsensusTest, TestLeaderPromotionWithQuiescedQuorum) {
   shared_ptr<LatchCallback> last_commit_clbk;
   vector<ConsensusRound*> rounds;
   ElementDeleter deleter(&rounds);
-  ReplicateSequenceOfMessages(10,
-                              2, // The index of the initial leader.
-                              WAIT_FOR_ALL_REPLICAS,
-                              COMMIT_ONE_BY_ONE,
-                              &last_op_id,
-                              &rounds,
-                              &last_commit_clbk);
+  REPLICATE_SEQUENCE_OF_MESSAGES(10,
+                                 2, // The index of the initial leader.
+                                 WAIT_FOR_ALL_REPLICAS,
+                                 COMMIT_ONE_BY_ONE,
+                                 &last_op_id,
+                                 &rounds,
+                                 &last_commit_clbk);
 
   // Make sure the last operation is committed everywhere
   ASSERT_STATUS_OK(last_commit_clbk.get()->Wait());
@@ -822,13 +826,13 @@ TEST_F(RaftConsensusTest, TestLeaderPromotionWithQuiescedQuorum) {
   ASSERT_STATUS_OK(new_leader->EmulateElection());
 
   // ... replicating a set of messages to peer 1 should now be possible.
-  ReplicateSequenceOfMessages(10,
-                              1, // The index of the new leader.
-                              WAIT_FOR_MAJORITY,
-                              COMMIT_ONE_BY_ONE,
-                              &last_op_id,
-                              &rounds,
-                              &last_commit_clbk);
+  REPLICATE_SEQUENCE_OF_MESSAGES(10,
+                                 1, // The index of the new leader.
+                                 WAIT_FOR_MAJORITY,
+                                 COMMIT_ONE_BY_ONE,
+                                 &last_op_id,
+                                 &rounds,
+                                 &last_commit_clbk);
 
   // Make sure the last operation is committed everywhere
   ASSERT_STATUS_OK(last_commit_clbk.get()->Wait());
@@ -843,13 +847,13 @@ TEST_F(RaftConsensusTest, TestReplicasEnforceTheLogMatchingProperty) {
   shared_ptr<LatchCallback> last_commit_clbk;
   vector<ConsensusRound*> rounds;
   ElementDeleter deleter(&rounds);
-  ReplicateSequenceOfMessages(10,
-                              2, // The index of the initial leader.
-                              WAIT_FOR_ALL_REPLICAS,
-                              COMMIT_ONE_BY_ONE,
-                              &last_op_id,
-                              &rounds,
-                              &last_commit_clbk);
+  REPLICATE_SEQUENCE_OF_MESSAGES(10,
+                                 2, // The index of the initial leader.
+                                 WAIT_FOR_ALL_REPLICAS,
+                                 COMMIT_ONE_BY_ONE,
+                                 &last_op_id,
+                                 &rounds,
+                                 &last_commit_clbk);
 
   // Make sure the last operation is committed everywhere
   ASSERT_STATUS_OK(last_commit_clbk->Wait());
@@ -898,13 +902,13 @@ TEST_F(RaftConsensusTest, TestRequestVote) {
   shared_ptr<LatchCallback> last_commit_clbk;
   vector<ConsensusRound*> rounds;
   ElementDeleter deleter(&rounds);
-  ReplicateSequenceOfMessages(10,
-                              2, // The index of the initial leader.
-                              WAIT_FOR_ALL_REPLICAS,
-                              COMMIT_ONE_BY_ONE,
-                              &last_op_id,
-                              &rounds,
-                              &last_commit_clbk);
+  REPLICATE_SEQUENCE_OF_MESSAGES(10,
+                                 2, // The index of the initial leader.
+                                 WAIT_FOR_ALL_REPLICAS,
+                                 COMMIT_ONE_BY_ONE,
+                                 &last_op_id,
+                                 &rounds,
+                                 &last_commit_clbk);
 
   // Make sure the last operation is committed everywhere
   ASSERT_STATUS_OK(last_commit_clbk->Wait());
