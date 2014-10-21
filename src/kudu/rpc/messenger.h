@@ -23,9 +23,8 @@
 
 namespace kudu {
 
-class FutureTask;
 class Socket;
-class TaskExecutor;
+class ThreadPool;
 
 namespace rpc {
 
@@ -156,7 +155,7 @@ class Messenger {
   void ScheduleOnReactor(const boost::function<void(const Status&)>& func,
                          MonoDelta when);
 
-  TaskExecutor* negotiation_executor() const { return negotiation_executor_.get(); }
+  ThreadPool* negotiation_pool() const { return negotiation_pool_.get(); }
 
   std::string name() const {
     return name_;
@@ -203,7 +202,7 @@ class Messenger {
 
   std::vector<Reactor*> reactors_;
 
-  gscoped_ptr<TaskExecutor> negotiation_executor_;
+  gscoped_ptr<ThreadPool> negotiation_pool_;
 
   gscoped_ptr<MetricContext> metric_ctx_;
 

@@ -7,6 +7,7 @@
 #include <limits>
 #include <string>
 
+#include "kudu/gutil/callback.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/sysinfo.h"
@@ -137,6 +138,12 @@ void ThreadPool::Shutdown() {
   while (num_threads_ > 0) {
     no_threads_cond_.Wait();
   }
+}
+
+Status ThreadPool::SubmitClosure(const Closure& task) {
+  // TODO: once all uses of boost::bind-based tasks are dead, implement this
+  // in a more straight-forward fashion.
+  return SubmitFunc(boost::bind(&Closure::Run, task));
 }
 
 Status ThreadPool::SubmitFunc(const boost::function<void()>& func) {

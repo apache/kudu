@@ -9,6 +9,7 @@
 #include <string>
 #include <vector>
 
+#include "kudu/gutil/callback_forward.h"
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/port.h"
@@ -109,6 +110,9 @@ class ThreadPool {
   //       should know about the non-execution of these tasks, or the runnable
   //       require an explicit "abort" notification to exit from the run loop.
   void Shutdown();
+
+  // Submit a function using the kudu Closure system.
+  Status SubmitClosure(const Closure& task) WARN_UNUSED_RESULT;
 
   // Submit a function binded using boost::bind(&FuncName, args...)
   Status SubmitFunc(const boost::function<void()>& func)

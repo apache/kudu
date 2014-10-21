@@ -151,7 +151,8 @@ static Status DisableSocketTimeouts(Connection* conn) {
 }
 
 // Perform client negotiation. We don't LOG() anything, we leave that to our caller.
-static Status DoClientNegotiation(Connection* conn, const MonoTime& deadline) {
+static Status DoClientNegotiation(Connection* conn,
+                                  const MonoTime& deadline) {
   RETURN_NOT_OK(WaitForClientConnect(conn, deadline));
   RETURN_NOT_OK(conn->SetNonBlocking(false));
   RETURN_NOT_OK(conn->InitSaslClient());
@@ -164,7 +165,8 @@ static Status DoClientNegotiation(Connection* conn, const MonoTime& deadline) {
 }
 
 // Perform server negotiation. We don't LOG() anything, we leave that to our caller.
-static Status DoServerNegotiation(Connection* conn, const MonoTime& deadline) {
+static Status DoServerNegotiation(Connection* conn,
+                                  const MonoTime& deadline) {
   RETURN_NOT_OK(conn->SetNonBlocking(false));
   RETURN_NOT_OK(conn->InitSaslServer());
   conn->sasl_server().set_deadline(deadline);
@@ -175,69 +177,26 @@ static Status DoServerNegotiation(Connection* conn, const MonoTime& deadline) {
   return Status::OK();
 }
 
-///
-/// ClientNegotiationTask
-///
-
-ClientNegotiationTask::ClientNegotiationTask(const scoped_refptr<Connection>& conn,
-                                             const MonoTime &deadline)
-  : conn_(conn),
-    deadline_(deadline) {
-}
-
-Status ClientNegotiationTask::Run() {
-  Status s = DoClientNegotiation(conn_.get(), deadline_);
-  if (PREDICT_FALSE(!s.ok())) {
-    s = s.CloneAndPrepend("RPC connection to " + conn_->remote().ToString() + " failed");
-    VLOG(1) << s.ToString();
-    return s;
+// Perform negotiation for a connection (either server or client)
+void Negotiation::RunNegotiation(const scoped_refptr<Connection>& conn,
+                                 const MonoTime& deadline) {
+  Status s;
+  if (conn->direction() == Connection::SERVER) {
+    s = DoServerNegotiation(conn.get(), deadline);
+  } else {
+    s = DoClientNegotiation(conn.get(), deadline);
   }
-  return Status::OK();
-}
 
-bool ClientNegotiationTask::Abort() {
-  return false;
-}
-
-///
-/// ServerNegotiationTask
-///
-
-ServerNegotiationTask::ServerNegotiationTask(const scoped_refptr<Connection>& conn,
-                                             const MonoTime &deadline)
-  : conn_(conn),
-    deadline_(deadline) {
-}
-
-Status ServerNegotiationTask::Run() {
-  Status s = DoServerNegotiation(conn_.get(), deadline_);
   if (PREDICT_FALSE(!s.ok())) {
-    s = s.CloneAndPrepend("Server connection negotiation failed. " + conn_->ToString());
+    string msg = Substitute("$0 connection negotiation failed: $1",
+                            conn->direction() == Connection::SERVER ? "server":"client",
+                            conn->ToString());
+    s = s.CloneAndPrepend(msg);
     LOG(WARNING) << s.ToString();
-    return s;
   }
-  return Status::OK();
+  conn->CompleteNegotiation(s);
 }
 
-bool ServerNegotiationTask::Abort() {
-  return false;
-}
-
-///
-/// NegotiationCallback
-///
-
-NegotiationCallback::NegotiationCallback(const scoped_refptr<Connection>& conn)
-  : conn_(conn) {
-}
-
-void NegotiationCallback::OnSuccess() {
-  conn_->CompleteNegotiation(Status::OK());
-}
-
-void NegotiationCallback::OnFailure(const Status& status) {
-  conn_->CompleteNegotiation(status);
-}
 
 } // namespace rpc
 } // namespace kudu

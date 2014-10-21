@@ -30,6 +30,7 @@
 #include "kudu/util/errno.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/thread.h"
+#include "kudu/util/threadpool.h"
 #include "kudu/util/status.h"
 #include "kudu/util/net/socket.h"
 
@@ -341,19 +342,8 @@ Status ReactorThread::StartConnectionNegotiation(const scoped_refptr<Connection>
     const MonoTime &deadline) {
   DCHECK(IsCurrentThread());
 
-  if (conn->direction() == Connection::SERVER) {
-    shared_ptr<Task> task(new ServerNegotiationTask(conn, deadline));
-    shared_ptr<FutureCallback> callback(new NegotiationCallback(conn));
-    shared_ptr<FutureTask> future_task(new FutureTask(task));
-    future_task->AddListener(callback);
-    RETURN_NOT_OK(reactor()->messenger()->negotiation_executor()->SubmitFutureTask(&future_task));
-  } else {
-    shared_ptr<Task> task(new ClientNegotiationTask(conn, deadline));
-    shared_ptr<FutureCallback> callback(new NegotiationCallback(conn));
-    shared_ptr<FutureTask> future_task(new FutureTask(task));
-    future_task->AddListener(callback);
-    RETURN_NOT_OK(reactor()->messenger()->negotiation_executor()->SubmitFutureTask(&future_task));
-  }
+  RETURN_NOT_OK(reactor()->messenger()->negotiation_pool()->SubmitClosure(
+                  Bind(&Negotiation::RunNegotiation, conn, deadline)));
   return Status::OK();
 }
 

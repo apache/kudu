@@ -6,6 +6,7 @@
 #include <tr1/memory>
 
 #include "kudu/gutil/atomicops.h"
+#include "kudu/gutil/bind.h"
 #include "kudu/util/countdown_latch.h"
 #include "kudu/util/threadpool.h"
 #include "kudu/util/test_macros.h"
@@ -62,8 +63,9 @@ TEST(TestThreadPool, TestSimpleTasks) {
   ASSERT_STATUS_OK(thread_pool->Submit(task));
   ASSERT_STATUS_OK(thread_pool->SubmitFunc(boost::bind(&SimpleTaskMethod, 20, &counter)));
   ASSERT_STATUS_OK(thread_pool->Submit(task));
+  ASSERT_STATUS_OK(thread_pool->SubmitClosure(Bind(&SimpleTaskMethod, 123, &counter)));
   thread_pool->Wait();
-  ASSERT_EQ(10 + 15 + 20 + 15, base::subtle::NoBarrier_Load(&counter));
+  ASSERT_EQ(10 + 15 + 20 + 15 + 123, base::subtle::NoBarrier_Load(&counter));
   thread_pool->Shutdown();
 }
 

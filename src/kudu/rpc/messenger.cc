@@ -29,7 +29,7 @@
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/socket.h"
 #include "kudu/util/status.h"
-#include "kudu/util/task_executor.h"
+#include "kudu/util/threadpool.h"
 #include "kudu/util/trace.h"
 
 using std::string;
@@ -121,10 +121,10 @@ void Messenger::Shutdown() {
   }
   acceptor_pools_.clear();
 
-  // Need to shut down negotiation executor before the reactors, since the
+  // Need to shut down negotiation pool before the reactors, since the
   // reactors close the Connection sockets, and may race against the negotiation
-  // thread's blocking reads & writes.
-  negotiation_executor_->Shutdown();
+  // threads' blocking reads & writes.
+  negotiation_pool_->Shutdown();
 
   BOOST_FOREACH(Reactor* reactor, reactors_) {
     reactor->Shutdown();
@@ -210,9 +210,9 @@ Messenger::Messenger(const MessengerBuilder &bld)
   for (int i = 0; i < bld.num_reactors_; i++) {
     reactors_.push_back(new Reactor(retain_self_, i, bld));
   }
-  CHECK_OK(TaskExecutorBuilder("negotiator")
+  CHECK_OK(ThreadPoolBuilder("negotiator")
               .set_max_threads(bld.num_negotiation_threads_)
-              .Build(&negotiation_executor_));
+              .Build(&negotiation_pool_));
 }
 
 Messenger::~Messenger() {
