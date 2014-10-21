@@ -388,8 +388,11 @@ Status ReplicaState::CancelPendingTransactions() {
         round->GetReplicaCommitContinuation()->ReplicationFinished(
             Status::Aborted("Transaction aborted"));
       } else {
+        // In this case we can't assume that the ConsensusRound for the pending transaction
+        // is still live. The commit callback might have already been triggered and the
+        // ConsensusRound deleted on transaction cleanup.
         LOG_WITH_PREFIX(INFO) << "Skipping txn abort as the apply already in flight: "
-            << (*iter).second->replicate_msg()->ShortDebugString();
+            << (*iter).first.ShortDebugString();
       }
     }
   }
