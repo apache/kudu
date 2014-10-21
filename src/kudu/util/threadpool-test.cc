@@ -8,6 +8,7 @@
 #include "kudu/gutil/atomicops.h"
 #include "kudu/gutil/bind.h"
 #include "kudu/util/countdown_latch.h"
+#include "kudu/util/promise.h"
 #include "kudu/util/threadpool.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/trace.h"
@@ -213,6 +214,21 @@ TEST(TestThreadPool, TestMaxQueueSize) {
   CHECK(s.IsServiceUnavailable()) << "Expected failure due to queue blowout:" << s.ToString();
   latch.CountDown();
   thread_pool->Wait();
+  thread_pool->Shutdown();
+}
+
+// Test that setting a promise from another thread yields
+// a value on the current thread.
+TEST(TestThreadPool, TestPromises) {
+  gscoped_ptr<ThreadPool> thread_pool;
+  ASSERT_STATUS_OK(ThreadPoolBuilder("test")
+      .set_min_threads(1).set_max_threads(1)
+      .set_max_queue_size(1).Build(&thread_pool));
+
+  Promise<int> my_promise;
+  ASSERT_STATUS_OK(thread_pool->SubmitClosure(
+                     Bind(&Promise<int>::Set, Unretained(&my_promise), 5)));
+  ASSERT_EQ(5, my_promise.Get());
   thread_pool->Shutdown();
 }
 

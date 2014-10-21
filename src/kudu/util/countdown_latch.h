@@ -47,14 +47,14 @@ class CountDownLatch {
 
   // Waits for the count on the latch to reach zero, or until 'until' time is reached.
   // Returns true if the count became zero, false otherwise.
-  bool WaitUntil(const MonoTime& when) {
+  bool WaitUntil(const MonoTime& when) const {
     MonoDelta relative = when.GetDeltaSince(MonoTime::Now(MonoTime::FINE));
     return WaitFor(relative);
   }
 
   // Waits for the count on the latch to reach zero, or until 'delta' time elapses.
   // Returns true if the count became zero, false otherwise.
-  bool WaitFor(const MonoDelta& delta) {
+  bool WaitFor(const MonoDelta& delta) const {
     MutexLock lock(lock_);
     while (count_ > 0) {
       if (!cond_.TimedWait(delta)) {

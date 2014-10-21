@@ -68,8 +68,8 @@ class TabletPeerTest : public KuduTabletTest {
   virtual void SetUp() OVERRIDE {
     KuduTabletTest::SetUp();
 
-    ASSERT_STATUS_OK(TaskExecutorBuilder("ldr-apply").Build(&leader_apply_executor_));
-    ASSERT_STATUS_OK(TaskExecutorBuilder("repl-apply").Build(&replica_apply_executor_));
+    ASSERT_STATUS_OK(ThreadPoolBuilder("ldr-apply").Build(&leader_apply_pool_));
+    ASSERT_STATUS_OK(ThreadPoolBuilder("repl-apply").Build(&replica_apply_pool_));
 
     rpc::MessengerBuilder builder(CURRENT_TEST_NAME());
     ASSERT_STATUS_OK(builder.Build(&messenger_));
@@ -80,8 +80,8 @@ class TabletPeerTest : public KuduTabletTest {
     // "Bootstrap" and start the TabletPeer.
     tablet_peer_.reset(
       new TabletPeer(make_scoped_refptr(tablet()->metadata()),
-                     leader_apply_executor_.get(),
-                     replica_apply_executor_.get(),
+                     leader_apply_pool_.get(),
+                     replica_apply_pool_.get(),
                      boost::bind(&TabletPeerTest::TabletPeerStateChangedCallback, this, _1)));
 
     QuorumPeerPB quorum_peer;
@@ -128,8 +128,8 @@ class TabletPeerTest : public KuduTabletTest {
 
   virtual void TearDown() OVERRIDE {
     tablet_peer_->Shutdown();
-    leader_apply_executor_->Shutdown();
-    replica_apply_executor_->Shutdown();
+    leader_apply_pool_->Shutdown();
+    replica_apply_pool_->Shutdown();
     KuduTabletTest::TearDown();
   }
 
@@ -241,8 +241,8 @@ class TabletPeerTest : public KuduTabletTest {
   gscoped_ptr<MetricContext> metric_ctx_;
   shared_ptr<Messenger> messenger_;
   scoped_refptr<TabletPeer> tablet_peer_;
-  gscoped_ptr<TaskExecutor> leader_apply_executor_;
-  gscoped_ptr<TaskExecutor> replica_apply_executor_;
+  gscoped_ptr<ThreadPool> leader_apply_pool_;
+  gscoped_ptr<ThreadPool> replica_apply_pool_;
 };
 
 // A Transaction that waits on the apply_continue latch inside of Apply().

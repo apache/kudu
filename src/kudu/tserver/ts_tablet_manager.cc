@@ -107,8 +107,8 @@ TSTabletManager::TSTabletManager(FsManager* fs_manager,
   // number of threads equal to number of CPU cores. Instead, it
   // likewise makes more sense to set this equal to the number of
   // physical storage devices available to us.
-  CHECK_OK(TaskExecutorBuilder("ldr-apply").Build(&leader_apply_executor_));
-  CHECK_OK(TaskExecutorBuilder("repl-apply").Build(&replica_apply_executor_));
+  CHECK_OK(ThreadPoolBuilder("ldr-apply").Build(&leader_apply_pool_));
+  CHECK_OK(ThreadPoolBuilder("repl-apply").Build(&replica_apply_pool_));
 }
 
 TSTabletManager::~TSTabletManager() {
@@ -138,8 +138,8 @@ Status TSTabletManager::Init() {
                           "Failed to open tablet metadata for tablet: " + tablet);
     scoped_refptr<TabletPeer> tablet_peer(
         new TabletPeer(meta,
-                       leader_apply_executor_.get(),
-                       replica_apply_executor_.get(),
+                       leader_apply_pool_.get(),
+                       replica_apply_pool_.get(),
                        boost::bind(&TSTabletManager::MarkTabletDirty, this, _1)));
     RegisterTablet(meta->oid(), tablet_peer);
 
@@ -251,8 +251,8 @@ Status TSTabletManager::CreateNewTablet(const string& table_id,
 
   scoped_refptr<TabletPeer> new_peer(
       new TabletPeer(meta,
-                     leader_apply_executor_.get(),
-                     replica_apply_executor_.get(),
+                     leader_apply_pool_.get(),
+                     replica_apply_pool_.get(),
                      boost::bind(&TSTabletManager::MarkTabletDirty, this, _1)));
   RegisterTablet(meta->oid(), new_peer);
   // We can run this synchronously since there is nothing to bootstrap.
@@ -413,8 +413,8 @@ void TSTabletManager::Shutdown() {
   }
 
   // Shut down the apply executors.
-  leader_apply_executor_->Shutdown();
-  replica_apply_executor_->Shutdown();
+  leader_apply_pool_->Shutdown();
+  replica_apply_pool_->Shutdown();
 
   {
     boost::lock_guard<rw_spinlock> l(lock_);

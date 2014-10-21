@@ -12,8 +12,7 @@
 #include "kudu/util/trace.h"
 
 namespace kudu {
-class TaskExecutor;
-
+class ThreadPool;
 namespace tablet {
 class TransactionTracker;
 
@@ -28,7 +27,7 @@ class TransactionTracker;
 //      the operation is already "REPLICATING" (and thus we don't need to
 //      trigger replication ourself later on).
 //
-//  2 - ExecuteAsync() is called. This submits PrepareAndStartTask() to prepare_executor_
+//  2 - ExecuteAsync() is called. This submits PrepareAndStartTask() to prepare_pool_
 //      and returns immediately.
 //
 //  3 - PrepareAndStartTask() calls Prepare() and Start() on the transaction.
@@ -51,7 +50,7 @@ class TransactionTracker;
 //
 //      If Prepare() has already completed, then we trigger ApplyAsync().
 //
-//  5 - ApplyAsync() submits ApplyTask() to the apply_executor_.
+//  5 - ApplyAsync() submits ApplyTask() to the apply_pool_.
 //      ApplyTask() calls transaction_->Apply().
 //
 //      When Apply() is called, changes are made to the in-memory data structures. These
@@ -78,8 +77,8 @@ class TransactionDriver : public RefCountedThreadSafe<TransactionDriver>,
  public:
   TransactionDriver(TransactionTracker* txn_tracker,
                     consensus::Consensus* consensus,
-                    TaskExecutor* prepare_executor,
-                    TaskExecutor* apply_executor);
+                    ThreadPool* prepare_pool,
+                    ThreadPool* apply_pool);
 
   // Perform any non-constructor initialization. Sets the transaction
   // that will be executed.
@@ -133,23 +132,19 @@ class TransactionDriver : public RefCountedThreadSafe<TransactionDriver>,
 
   // The task submitted to the prepare threadpool to prepare and start
   // the transaction. If PrepareAndStart() fails, calls HandleFailure.
-  Status PrepareAndStartTask();
+  void PrepareAndStartTask();
   // Actually prepare and start.
   Status PrepareAndStart();
 
   // Submits ApplyTask to the apply pool.
   Status ApplyAsync();
   // Task for running Apply(). If Apply() fails, delegates to
-  // ApplyOrCommitFailed().
-  Status ApplyTask();
+  // HandleFailure().
+  void ApplyTask();
 
   // Calls Transaction::Apply() followed by Consensus::Commit() with the
   // results from the Apply().
   Status ApplyAndTriggerCommit();
-  // Called if ApplyAndCommit() failed for some reason, or if
-  // Consensus::Commit() failed afterwards.
-  // This method will only be called once.
-  void ApplyOrCommitFailed(const Status& status);
 
   // Sleeps until the transaction is allowed to commit based on the
   // requested consistency mode.
@@ -171,8 +166,8 @@ class TransactionDriver : public RefCountedThreadSafe<TransactionDriver>,
   TransactionTracker* txn_tracker_;
   consensus::Consensus* consensus_;
   std::tr1::shared_ptr<FutureCallback> commit_finished_callback_;
-  TaskExecutor* prepare_executor_;
-  TaskExecutor* apply_executor_;
+  ThreadPool* prepare_pool_;
+  ThreadPool* apply_pool_;
 
   Status transaction_status_;
 

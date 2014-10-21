@@ -64,23 +64,23 @@ using tserver::TabletServerErrorPB;
 //  Tablet Peer
 // ============================================================================
 TabletPeer::TabletPeer(const scoped_refptr<TabletMetadata>& meta,
-                       TaskExecutor* leader_apply_executor,
-                       TaskExecutor* replica_apply_executor,
+                       ThreadPool* leader_apply_pool,
+                       ThreadPool* replica_apply_pool,
                        MarkDirtyCallback mark_dirty_clbk)
   : meta_(meta),
     tablet_id_(meta->oid()),
     state_(BOOTSTRAPPING),
     status_listener_(new TabletStatusListener(meta)),
-    leader_apply_executor_(leader_apply_executor),
-    replica_apply_executor_(replica_apply_executor),
+    leader_apply_pool_(leader_apply_pool),
+    replica_apply_pool_(replica_apply_pool),
     // prepare executor has a single thread as prepare must be done in order
     // of submission
     log_gc_shutdown_latch_(1),
     tablet_running_latch_(1),
     mark_dirty_clbk_(mark_dirty_clbk),
     config_sem_(1) {
-  CHECK_OK(TaskExecutorBuilder("prepare").set_max_threads(1).Build(&prepare_executor_));
-  CHECK_OK(TaskExecutorBuilder("log-gc").set_max_threads(1).Build(&log_gc_executor_));
+  CHECK_OK(ThreadPoolBuilder("prepare").set_max_threads(1).Build(&prepare_pool_));
+  CHECK_OK(ThreadPoolBuilder("log-gc").set_max_threads(1).Build(&log_gc_pool_));
 }
 
 TabletPeer::~TabletPeer() {
@@ -253,7 +253,7 @@ TabletStatePB TabletPeer::Shutdown() {
   // Stop Log GC thread before we close the log.
   VLOG(1) << Substitute("TabletPeer: tablet $0: Shutting down Log GC thread...", tablet_id());
   log_gc_shutdown_latch_.CountDown();
-  log_gc_executor_->Shutdown();
+  log_gc_pool_->Shutdown();
 
   if (consensus_) consensus_->Shutdown();
 
@@ -263,7 +263,7 @@ TabletStatePB TabletPeer::Shutdown() {
     txn_tracker_.WaitForAllToFinish();
   }
 
-  prepare_executor_->Shutdown();
+  prepare_pool_->Shutdown();
 
   if (log_) {
     WARN_NOT_OK(log_->Close(), "Error closing the Log.");
@@ -362,11 +362,10 @@ Status TabletPeer::StartLogGCTask() {
     KLOG_FIRST_N(INFO, 1) << "Log GC is disabled, not deleting old write-ahead logs!";
     return Status::OK();
   }
-  shared_ptr<Future> future;
-  return log_gc_executor_->Submit(boost::bind(&TabletPeer::RunLogGC, this), &future);
+  return log_gc_pool_->SubmitClosure(Bind(&TabletPeer::RunLogGC, Unretained(this)));
 }
 
-Status TabletPeer::RunLogGC() {
+void TabletPeer::RunLogGC() {
   do {
     OpId min_op_id;
     int32_t num_gced;
@@ -379,7 +378,6 @@ Status TabletPeer::RunLogGC() {
     // TODO: Possibly back off if num_gced == 0.
   } while (!log_gc_shutdown_latch_.WaitFor(
       MonoDelta::FromMilliseconds(FLAGS_log_gc_sleep_delay_ms)));
-  return Status::OK();
 }
 
 void TabletPeer::GetInFlightTransactions(Transaction::TraceType trace_type,
@@ -511,8 +509,8 @@ void TabletPeer::NewLeaderTransactionDriver(Transaction* transaction,
   scoped_refptr<TransactionDriver> ret = new TransactionDriver(
     &txn_tracker_,
     consensus_.get(),
-    prepare_executor_.get(),
-    leader_apply_executor_);
+    prepare_pool_.get(),
+    leader_apply_pool_);
   ret->Init(transaction, consensus::LEADER);
   driver->swap(ret);
 }
@@ -522,8 +520,8 @@ void TabletPeer::NewReplicaTransactionDriver(Transaction* transaction,
   scoped_refptr<TransactionDriver> ret = new TransactionDriver(
     &txn_tracker_,
     consensus_.get(),
-    prepare_executor_.get(),
-    leader_apply_executor_);
+    prepare_pool_.get(),
+    leader_apply_pool_);
   ret->Init(transaction, consensus::REPLICA);
   driver->swap(ret);
 }

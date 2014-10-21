@@ -48,8 +48,8 @@ class TabletPeer : public RefCountedThreadSafe<TabletPeer>,
  public:
 
   TabletPeer(const scoped_refptr<TabletMetadata>& meta,
-             TaskExecutor* leader_apply_executor,
-             TaskExecutor* replica_apply_executor,
+             ThreadPool* leader_apply_pool,
+             ThreadPool* replica_apply_pool,
              MarkDirtyCallback mark_dirty_clbk);
 
   // Initializes the TabletPeer, namely creating the Log and initializing
@@ -221,11 +221,11 @@ class TabletPeer : public RefCountedThreadSafe<TabletPeer>,
   Status StartPendingTransactions(metadata::QuorumPeerPB::Role my_role,
                                   const consensus::ConsensusBootstrapInfo& bootstrap_info);
 
-  // Schedule the Log GC task to run in the executor.
+  // Schedule the Log GC task to run in the pool.
   Status StartLogGCTask();
 
   // Task that runs Log GC on a periodic basis.
-  Status RunLogGC();
+  void RunLogGC();
 
   scoped_refptr<TabletMetadata> meta_;
 
@@ -245,23 +245,23 @@ class TabletPeer : public RefCountedThreadSafe<TabletPeer>,
   // smart pointers to data structures such as tablet_ and consensus_.
   mutable simple_spinlock lock_;
 
-  // IMPORTANT: correct execution of PrepareTask assumes that 'prepare_executor_'
+  // IMPORTANT: correct execution of PrepareTask assumes that 'prepare_pool_'
   // is single-threaded, moving to a multi-tablet setup where multiple TabletPeers
-  // use the same 'prepare_executor_' needs to enforce that, for a single
+  // use the same 'prepare_pool_' needs to enforce that, for a single
   // TabletPeer, PrepareTasks are executed *serially*.
-  // TODO move the prepare executor TabletServer.
-  gscoped_ptr<TaskExecutor> prepare_executor_;
+  // TODO move the prepare pool to TabletServer.
+  gscoped_ptr<ThreadPool> prepare_pool_;
 
-  // Executors for apply tasks for leader and replica
-  // transactions. These are multi-threaded executors,
+  // Pool for apply tasks for leader and replica
+  // transactions. These are multi-threaded pools,
   // constructor-injected by either the Master (for system tables) or
   // the Tablet server.
-  TaskExecutor* leader_apply_executor_;
-  TaskExecutor* replica_apply_executor_;
+  ThreadPool* leader_apply_pool_;
+  ThreadPool* replica_apply_pool_;
 
 
   // TODO move this to TabletServer.
-  gscoped_ptr<TaskExecutor> log_gc_executor_;
+  gscoped_ptr<ThreadPool> log_gc_pool_;
   CountDownLatch log_gc_shutdown_latch_;
 
   // Latch that goes down to 0 when the tablet is in RUNNING state.

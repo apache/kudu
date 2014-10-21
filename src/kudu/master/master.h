@@ -12,14 +12,14 @@
 #include "kudu/master/master.pb.h"
 #include "kudu/server/server_base.h"
 #include "kudu/util/metrics.h"
+#include "kudu/util/promise.h"
 #include "kudu/util/status.h"
 
 namespace kudu {
 
 class RpcServer;
-class Future;
-class TaskExecutor;
 struct RpcServerOptions;
+class ThreadPool;
 
 namespace rpc {
 class Messenger;
@@ -82,6 +82,7 @@ class Master : public server::ServerBase {
     kRunning
   };
 
+  void InitCatalogManagerTask();
   Status InitCatalogManager();
 
   MasterState state_;
@@ -91,9 +92,11 @@ class Master : public server::ServerBase {
   gscoped_ptr<MasterPathHandlers> path_handlers_;
 
   // For initializing the catalog manager.
-  gscoped_ptr<TaskExecutor> init_executor_;
+  gscoped_ptr<ThreadPool> init_pool_;
 
-  std::tr1::shared_ptr<Future> init_future_;
+  // The status of the master initialization. This is set
+  // by the async initialization task.
+  Promise<Status> init_status_;
 
   MasterOptions opts_;
 

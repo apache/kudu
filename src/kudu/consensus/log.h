@@ -15,15 +15,16 @@
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/spinlock.h"
 #include "kudu/util/async_util.h"
-#include "kudu/util/locks.h"
-#include "kudu/util/task_executor.h"
 #include "kudu/util/blocking_queue.h"
+#include "kudu/util/locks.h"
+#include "kudu/util/promise.h"
 #include "kudu/util/status.h"
 
 namespace kudu {
 
 class FsManager;
 class MetricContext;
+class ThreadPool;
 
 namespace log {
 
@@ -137,11 +138,12 @@ class Log {
   Status WaitUntilAllFlushed();
 
   // Kick off an asynchronous task that pre-allocates a new
-  // log-segment, initializing 'allocation_future_'. To check whether
-  // or not the task has finished, we can either use
-  // allocation_future_ or check if allocation_state() returns
-  // 'kAllocationFinished'.
+  // log-segment, setting 'allocation_status_'. To wait for the
+  // result of the task, use allocation_status_.Get().
   Status AsyncAllocateSegment();
+
+  // The closure submitted to allocation_pool_ to allocate a new segment.
+  void SegmentAllocationTask();
 
   // Syncs all state and closes the log.
   Status Close();
@@ -219,7 +221,6 @@ class Log {
   FRIEND_TEST(LogTest, TestWriteAndReadToAndFromInProgressSegment);
 
   class AppendThread;
-  class SegmentAllocationTask;
 
   // Log state.
   enum LogState {
@@ -366,17 +367,16 @@ class Log {
   // Thread writing to the log
   gscoped_ptr<AppendThread> append_thread_;
 
-  gscoped_ptr<TaskExecutor> allocation_executor_;
+  gscoped_ptr<ThreadPool> allocation_pool_;
 
   // If true, sync on all appends.
   bool force_sync_all_;
 
-  // The future for an asynchronous log segment preallocation task.
-  std::tr1::shared_ptr<kudu::Future> allocation_future_;
+  // The status of the most recent log-allocation action.
+  Promise<Status> allocation_status_;
 
   // Read-write lock to protect 'allocation_state_'.
   mutable boost::shared_mutex allocation_lock_;
-
   SegmentAllocationState allocation_state_;
 
   gscoped_ptr<MetricContext> metric_context_;

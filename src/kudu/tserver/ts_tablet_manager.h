@@ -24,7 +24,6 @@ namespace kudu {
 
 class FsManager;
 class Schema;
-class TaskExecutor;
 
 namespace master {
 class ReportedTabletPB;
@@ -226,8 +225,8 @@ class TSTabletManager : public tserver::TabletPeerLookupIf {
   gscoped_ptr<ThreadPool> open_tablet_pool_;
 
   // Executors for apply transactions, shared between all tablets.
-  gscoped_ptr<TaskExecutor> leader_apply_executor_;
-  gscoped_ptr<TaskExecutor> replica_apply_executor_;
+  gscoped_ptr<ThreadPool> leader_apply_pool_;
+  gscoped_ptr<ThreadPool> replica_apply_pool_;
 
   DISALLOW_COPY_AND_ASSIGN(TSTabletManager);
 };

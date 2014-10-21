@@ -72,8 +72,8 @@ class SysTable {
 
   MetricContext metric_ctx_;
 
-  gscoped_ptr<TaskExecutor> leader_apply_executor_;
-  gscoped_ptr<TaskExecutor> replica_apply_executor_;
+  gscoped_ptr<ThreadPool> leader_apply_pool_;
+  gscoped_ptr<ThreadPool> replica_apply_pool_;
 
   scoped_refptr<tablet::TabletPeer> tablet_peer_;
 

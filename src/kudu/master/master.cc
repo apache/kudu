@@ -22,7 +22,6 @@
 #include "kudu/tserver/tablet_service.h"
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/net/sockaddr.h"
-#include "kudu/util/task_executor.h"
 #include "kudu/util/status.h"
 
 DEFINE_int32(master_registration_rpc_timeout_ms, 1500,
@@ -63,7 +62,7 @@ Status Master::Init() {
 
   cfile::BlockCache::GetSingleton()->StartInstrumentation(metric_context().metrics());
 
-  RETURN_NOT_OK(TaskExecutorBuilder("init").set_max_threads(1).Build(&init_executor_));
+  RETURN_NOT_OK(ThreadPoolBuilder("init").set_max_threads(1).Build(&init_pool_));
 
   RETURN_NOT_OK(ServerBase::Init());
 
@@ -90,12 +89,16 @@ Status Master::StartAsync() {
   RETURN_NOT_OK(ServerBase::Start());
 
   // Start initializing the catalog manager.
-  RETURN_NOT_OK(init_executor_->Submit(boost::bind(&Master::InitCatalogManager, this),
-                                       &init_future_));
+  RETURN_NOT_OK(init_pool_->SubmitClosure(Bind(&Master::InitCatalogManagerTask,
+                                               Unretained(this))));
 
   state_ = kRunning;
 
   return Status::OK();
+}
+
+void Master::InitCatalogManagerTask() {
+  init_status_.Set(InitCatalogManager());
 }
 
 Status Master::InitCatalogManager() {
@@ -110,8 +113,7 @@ Status Master::InitCatalogManager() {
 Status Master::WaitForCatalogManagerInit() {
   CHECK_EQ(state_, kRunning);
 
-  init_future_->Wait();
-  return init_future_->status();
+  return init_status_.Get();
 }
 
 void Master::Shutdown() {

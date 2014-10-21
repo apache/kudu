@@ -26,16 +26,16 @@ using std::tr1::shared_ptr;
 
 TransactionDriver::TransactionDriver(TransactionTracker *txn_tracker,
                                      Consensus* consensus,
-                                     TaskExecutor* prepare_executor,
-                                     TaskExecutor* apply_executor)
+                                     ThreadPool* prepare_pool,
+                                     ThreadPool* apply_pool)
     : txn_tracker_(txn_tracker),
       consensus_(consensus),
       commit_finished_callback_(
           new BoundFunctionCallback(
               boost::bind(&TransactionDriver::Finalize, this),
               boost::bind(&TransactionDriver::HandleFailure, this, _1))),
-      prepare_executor_(prepare_executor),
-      apply_executor_(apply_executor),
+      prepare_pool_(prepare_pool),
+      apply_pool_(apply_pool),
       trace_(new Trace()),
       start_time_(MonoTime::Now(MonoTime::FINE)),
       replication_state_(NOT_REPLICATING),
@@ -57,16 +57,11 @@ void TransactionDriver::Init(Transaction* transaction,
   txn_tracker_->Add(this);
 }
 
-// TaskExecutor forces submitted methods to return a Status so we handle whatever error
-// happen synchronously and always return Status::OK();
-// TODO: Consider exposing underlying ThreadPool::Submit()/SubmitFunc() methods in
-// TaskExecutor so we don't need to do this.
-Status TransactionDriver::ApplyTask() {
+void TransactionDriver::ApplyTask() {
   Status s = ApplyAndTriggerCommit();
   if (!s.ok()) {
     HandleFailure(s);
   }
-  return Status::OK();
 }
 
 consensus::OpId TransactionDriver::GetOpId() {
@@ -104,26 +99,18 @@ string TransactionDriver::ToStringUnlocked() const {
 Status TransactionDriver::ExecuteAsync() {
   VLOG(2) << this << ": " << "ExecuteAsync()";
   ADOPT_TRACE(trace());
-
-  // TODO: we don't really need to use a future here -- the task itself
-  // handles triggering Replicate once it is complete. We should add
-  // a way to submit a simple Callback to the underlying threadpool.
-  shared_ptr<Future> prepare_task_future;
-  RETURN_NOT_OK(prepare_executor_->Submit(
-      boost::bind(&TransactionDriver::PrepareAndStartTask, this),
-      &prepare_task_future));
-
+  RETURN_NOT_OK(prepare_pool_->SubmitClosure(
+                  Bind(&TransactionDriver::PrepareAndStartTask, Unretained(this))));
   return Status::OK();
 }
 
-Status TransactionDriver::PrepareAndStartTask() {
+void TransactionDriver::PrepareAndStartTask() {
   VLOG(2) << this << ": " << "PrepareAndStart()";
   Status prepare_status = PrepareAndStart();
   VLOG(2) << this << ": prepare_status: " << prepare_status.ToString();
   if (PREDICT_FALSE(!prepare_status.ok())) {
     HandleFailure(prepare_status);
   }
-  return Status::OK();
 }
 
 Status TransactionDriver::PrepareAndStart() {
@@ -303,9 +290,7 @@ Status TransactionDriver::ApplyAsync() {
     return Status::OK();
   }
 
-  shared_ptr<Future> apply_future;
-  return apply_executor_->Submit(boost::bind(&TransactionDriver::ApplyTask, this),
-                                     &apply_future);
+  return apply_pool_->SubmitClosure(Bind(&TransactionDriver::ApplyTask, Unretained(this)));
 }
 
 Status TransactionDriver::ApplyAndTriggerCommit() {

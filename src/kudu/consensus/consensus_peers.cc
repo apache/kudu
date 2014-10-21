@@ -1,6 +1,7 @@
 // Copyright (c) 2013, Cloudera, inc.
 
 #include <algorithm>
+#include <boost/bind.hpp>
 #include <gflags/gflags.h>
 #include <string>
 #include <utility>

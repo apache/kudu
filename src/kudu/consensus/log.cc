@@ -20,6 +20,7 @@
 #include "kudu/util/path_util.h"
 #include "kudu/util/pb_util.h"
 #include "kudu/util/thread.h"
+#include "kudu/util/threadpool.h"
 #include "kudu/util/trace.h"
 #include "kudu/util/stopwatch.h"
 
@@ -216,24 +217,11 @@ void Log::AppendThread::Shutdown() {
   VLOG(1) << "Log append thread for tablet " << log_->tablet_id() << " is shut down";
 }
 
-// This task is submitted to allocation_executor_ in order to
+// This task is submitted to allocation_pool_ in order to
 // asynchronously pre-allocate new log segments.
-class Log::SegmentAllocationTask : public Task {
- public:
-  explicit SegmentAllocationTask(Log* log)
-    : log_(log) {
-  }
-
-  Status Run() OVERRIDE {
-    RETURN_NOT_OK(log_->PreAllocateNewSegment());
-    return Status::OK();
-  }
-
-  bool Abort() OVERRIDE { return false; }
- private:
-  Log* log_;
-  DISALLOW_COPY_AND_ASSIGN(SegmentAllocationTask);
-};
+void Log::SegmentAllocationTask() {
+  allocation_status_.Set(PreAllocateNewSegment());
+}
 
 const Status Log::kLogShutdownStatus(
     Status::ServiceUnavailable("WAL is shutting down", "", ESHUTDOWN));
@@ -281,7 +269,7 @@ Log::Log(const LogOptions &options,
     append_thread_(new AppendThread(this)),
     force_sync_all_(options_.force_fsync_all),
     allocation_state_(kAllocationNotStarted) {
-  CHECK_OK(TaskExecutorBuilder("log-alloc").set_max_threads(1).Build(&allocation_executor_));
+  CHECK_OK(ThreadPoolBuilder("log-alloc").set_max_threads(1).Build(&allocation_pool_));
   if (parent_metric_context) {
     metric_context_.reset(new MetricContext(*parent_metric_context,
                                             strings::Substitute("log.tablet-$0", tablet_id)));
@@ -318,8 +306,7 @@ Status Log::Init() {
 
   // We always create a new segment when the log starts.
   RETURN_NOT_OK(AsyncAllocateSegment());
-  allocation_future_->Wait();
-  RETURN_NOT_OK(allocation_future_->status());
+  RETURN_NOT_OK(allocation_status_.Get());
   RETURN_NOT_OK(SwitchToAllocatedSegment());
 
   RETURN_NOT_OK(append_thread_->Init());
@@ -330,10 +317,10 @@ Status Log::Init() {
 Status Log::AsyncAllocateSegment() {
   boost::lock_guard<boost::shared_mutex> lock_guard(allocation_lock_);
   CHECK_EQ(allocation_state_, kAllocationNotStarted);
-  allocation_future_.reset();
-  shared_ptr<Task> allocation_task(new SegmentAllocationTask(this));
+  allocation_status_.Reset();
   allocation_state_ = kAllocationInProgress;
-  RETURN_NOT_OK(allocation_executor_->Submit(allocation_task, &allocation_future_));
+  RETURN_NOT_OK(allocation_pool_->SubmitClosure(
+                  Bind(&Log::SegmentAllocationTask, Unretained(this))));
   return Status::OK();
 }
 
@@ -360,8 +347,7 @@ Status Log::RollOver() {
   SCOPED_LATENCY_METRIC(metrics_, roll_latency);
 
   // Check if any errors have occurred during allocation
-  allocation_future_->Wait();
-  RETURN_NOT_OK(allocation_future_->status());
+  RETURN_NOT_OK(allocation_status_.Get());
 
   DCHECK_EQ(allocation_state(), kAllocationFinished);
 
@@ -665,7 +651,7 @@ Status Log::Close() {
                           "PreClose hook failed");
   }
 
-  allocation_executor_->Shutdown();
+  allocation_pool_->Shutdown();
   if (append_thread_) {
     append_thread_->Shutdown();
     VLOG(1) << "Append thread Shutdown()";
