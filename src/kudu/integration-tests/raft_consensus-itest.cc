@@ -38,6 +38,9 @@ DEFINE_int64(client_inserts_per_thread, 500,
 DEFINE_int64(client_num_batches_per_thread, 50,
              "In how many batches to group the rows, for each client");
 
+#define ASSERT_ALL_REPLICAS_AGREE(count) \
+  ASSERT_NO_FATAL_FAILURE(AssertAllReplicasAgree(count))
+
 namespace kudu {
 namespace tserver {
 
@@ -278,7 +281,7 @@ class DistConsensusTest : public TabletServerTest {
     return ret;
   }
 
-  void AssertAllReplicasAgree(int expected_result_count = -1) {
+  void AssertAllReplicasAgree(int expected_result_count) {
 
     int counter = 0;
     while (true) {
@@ -426,7 +429,7 @@ TEST_F(DistConsensusTest, TestInsertAndMutateThroughConsensus) {
                                FLAGS_client_num_batches_per_thread,
                                leader_->tserver_proxy.get());
   }
-  AssertAllReplicasAgree(FLAGS_client_inserts_per_thread * num_iters);
+  ASSERT_ALL_REPLICAS_AGREE(FLAGS_client_inserts_per_thread * num_iters);
 }
 
 TEST_F(DistConsensusTest, TestFailedTransaction) {
@@ -460,7 +463,7 @@ TEST_F(DistConsensusTest, TestFailedTransaction) {
   SCOPED_TRACE(resp.ShortDebugString());
   ASSERT_FALSE(resp.has_error());
 
-  AssertAllReplicasAgree(1);
+  ASSERT_ALL_REPLICAS_AGREE(1);
 }
 
 // Inserts rows through consensus and also starts one delay injecting thread
@@ -500,7 +503,7 @@ TEST_F(DistConsensusTest, MultiThreadedMutateAndInsertThroughConsensus) {
    CHECK_OK(ThreadJoiner(thr.get()).Join());
   }
 
-  AssertAllReplicasAgree(FLAGS_client_inserts_per_thread * FLAGS_num_client_threads);
+  ASSERT_ALL_REPLICAS_AGREE(FLAGS_client_inserts_per_thread * FLAGS_num_client_threads);
 }
 
 TEST_F(DistConsensusTest, TestInsertOnNonLeader) {
@@ -524,7 +527,7 @@ TEST_F(DistConsensusTest, TestInsertOnNonLeader) {
   // TODO: need to change the error code to be something like REPLICA_NOT_LEADER
   // so that the client can properly handle this case! plumbing this is a little difficult
   // so not addressing at the moment.
-  AssertAllReplicasAgree(0);
+  ASSERT_ALL_REPLICAS_AGREE(0);
 }
 
 TEST_F(DistConsensusTest, TestEmulateLeaderElection) {
@@ -537,7 +540,7 @@ TEST_F(DistConsensusTest, TestEmulateLeaderElection) {
                              FLAGS_client_num_batches_per_thread,
                              leader_->tserver_proxy.get());
 
-  AssertAllReplicasAgree(FLAGS_client_inserts_per_thread * num_iters);
+  ASSERT_ALL_REPLICAS_AGREE(FLAGS_client_inserts_per_thread * num_iters);
 
   // Now shutdown the current leader.
   leader_->tserver->Shutdown();
@@ -564,7 +567,7 @@ TEST_F(DistConsensusTest, TestEmulateLeaderElection) {
                              leader_->tserver_proxy.get());
 
   // Make sure the two remaining replicas agree.
-  AssertAllReplicasAgree(FLAGS_client_inserts_per_thread * num_iters * 2);
+  ASSERT_ALL_REPLICAS_AGREE(FLAGS_client_inserts_per_thread * num_iters * 2);
 }
 
 TEST_F(DistConsensusTest, TestInsertWhenTheQueueIsFull) {
@@ -660,7 +663,7 @@ TEST_F(DistConsensusTest, TestInsertWhenTheQueueIsFull) {
     break;
   }
 
-  AssertAllReplicasAgree(successful_writes_counter);
+  ASSERT_ALL_REPLICAS_AGREE(successful_writes_counter);
 }
 
 }  // namespace tserver
