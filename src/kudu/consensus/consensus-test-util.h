@@ -60,40 +60,6 @@ static inline void AppendReplicateMessagesToQueue(
   }
 }
 
-// Task to emulate the exactly-once calling behavior of RPC.
-// Sets an error in the response if the task is aborted and guarantees that
-// the callback will be invoked.
-// TODO: Should set an error in the controller but that is not currently
-// possible to mock. This should all probably go away and just use real RPCs.
-template<typename ResponseType>
-class MockRpcExactlyOnceTask : public Task {
- public:
-  MockRpcExactlyOnceTask(ResponseType* response,
-                         const rpc::ResponseCallback& callback)
-    : response_(DCHECK_NOTNULL(response)),
-      callback_(callback) {
-  }
-
-  virtual Status Run() OVERRIDE {
-    callback_();
-    return Status::OK();
-  }
-
-  virtual bool Abort() OVERRIDE {
-    // TODO: Provide some way to mock a true RPC error in the RpcController?
-    tserver::TabletServerErrorPB* error = response_->mutable_error();
-    error->set_code(tserver::TabletServerErrorPB::UNKNOWN_ERROR);
-    StatusToPB(Status::IOError("Mocked RPC failure due to TaskExecutor shutdown."),
-               error->mutable_status());
-    callback_();
-    return true;
-  }
-
- private:
-  ResponseType* const response_;
-  const rpc::ResponseCallback callback_;
-};
-
 // Abstract base class to build PeerProxy implementations on top of for testing.
 // Provides a single-threaded pool to run callbacks in and callback
 // registration/running, along with an enum to identify the supported methods.
@@ -106,33 +72,33 @@ class TestPeerProxy : public PeerProxy {
   };
 
   TestPeerProxy() {
-    CHECK_OK(TaskExecutorBuilder("test-peer-pool").set_max_threads(1).Build(&executor_));
+    CHECK_OK(ThreadPoolBuilder("test-peer-pool").set_max_threads(1).Build(&pool_));
   }
 
  protected:
   // Register the RPC callback in order to call later.
   // We currently only support one request of each method being in flight at a time.
-  virtual void RegisterCallback(Method method, const std::tr1::shared_ptr<Task>& task) {
+  virtual void RegisterCallback(Method method, const rpc::ResponseCallback& callback) {
     lock_guard<simple_spinlock> l(&lock_);
-    InsertOrDie(&tasks_, method, task);
+    InsertOrDie(&callbacks_, method, callback);
   }
 
   // Answer the peer.
   virtual Status Respond(Method method) {
     lock_guard<simple_spinlock> l(&lock_);
-    std::tr1::shared_ptr<Task> task = FindOrDie(tasks_, method);
-    CHECK_EQ(1, tasks_.erase(method));
-    return executor_->Submit(task, NULL);
+    rpc::ResponseCallback callback = FindOrDie(callbacks_, method);
+    CHECK_EQ(1, callbacks_.erase(method));
+    return pool_->SubmitFunc(callback);
   }
 
-  virtual Status RegisterCallbackAndRespond(Method method, const std::tr1::shared_ptr<Task>& task) {
-    RegisterCallback(method, task);
+  virtual Status RegisterCallbackAndRespond(Method method, const rpc::ResponseCallback& callback) {
+    RegisterCallback(method, callback);
     return Respond(method);
   }
 
   simple_spinlock lock_;
-  gscoped_ptr<TaskExecutor> executor_;
-  std::map<Method, std::tr1::shared_ptr<Task> > tasks_; // Protected by lock_.
+  gscoped_ptr<ThreadPool> pool_;
+  std::map<Method, rpc::ResponseCallback> callbacks_; // Protected by lock_.
 };
 
 template <typename ProxyType>
@@ -176,9 +142,7 @@ class DelayablePeerProxy : public TestPeerProxy {
                              ConsensusResponsePB* response,
                              rpc::RpcController* controller,
                              const rpc::ResponseCallback& callback) OVERRIDE {
-    std::tr1::shared_ptr<Task> task(
-        new MockRpcExactlyOnceTask<ConsensusResponsePB>(response, callback));
-    RegisterCallback(kUpdate, task);
+    RegisterCallback(kUpdate, callback);
     return proxy_->UpdateAsync(request, response, controller,
                                boost::bind(&DelayablePeerProxy::RespondUnlessDelayed,
                                            this, kUpdate));
@@ -188,9 +152,7 @@ class DelayablePeerProxy : public TestPeerProxy {
                                            VoteResponsePB* response,
                                            rpc::RpcController* controller,
                                            const rpc::ResponseCallback& callback) OVERRIDE {
-    std::tr1::shared_ptr<Task> task(
-        new MockRpcExactlyOnceTask<VoteResponsePB>(response, callback));
-    RegisterCallback(kRequestVote, task);
+    RegisterCallback(kRequestVote, callback);
     return proxy_->RequestConsensusVoteAsync(request, response, controller,
                                              boost::bind(&DelayablePeerProxy::RespondUnlessDelayed,
                                                          this, kRequestVote));
@@ -227,9 +189,7 @@ class MockedPeerProxy : public TestPeerProxy {
                              rpc::RpcController* controller,
                              const rpc::ResponseCallback& callback) OVERRIDE {
     *response = update_response_;
-    std::tr1::shared_ptr<Task> task(
-        new MockRpcExactlyOnceTask<ConsensusResponsePB>(response, callback));
-    return RegisterCallbackAndRespond(kUpdate, task);
+    return RegisterCallbackAndRespond(kUpdate, callback);
   }
 
   virtual Status RequestConsensusVoteAsync(const VoteRequestPB* request,
@@ -237,9 +197,7 @@ class MockedPeerProxy : public TestPeerProxy {
                                            rpc::RpcController* controller,
                                            const rpc::ResponseCallback& callback) OVERRIDE {
     *response = vote_response_;
-    std::tr1::shared_ptr<Task> task(
-        new MockRpcExactlyOnceTask<VoteResponsePB>(response, callback));
-    return RegisterCallbackAndRespond(kRequestVote, task);
+    return RegisterCallbackAndRespond(kRequestVote, callback);
   }
 
  protected:
@@ -277,9 +235,7 @@ class NoOpTestPeerProxy : public TestPeerProxy {
       response->set_responder_term(request->caller_term());
       response->mutable_status()->mutable_last_received()->CopyFrom(last_received_);
     }
-    std::tr1::shared_ptr<Task> task(
-        new MockRpcExactlyOnceTask<ConsensusResponsePB>(response, callback));
-    return RegisterCallbackAndRespond(kUpdate, task);
+    return RegisterCallbackAndRespond(kUpdate, callback);
   }
 
   virtual Status RequestConsensusVoteAsync(const VoteRequestPB* request,
@@ -292,9 +248,7 @@ class NoOpTestPeerProxy : public TestPeerProxy {
       response->set_responder_term(request->candidate_term());
       response->set_vote_granted(true);
     }
-    std::tr1::shared_ptr<Task> task(
-        new MockRpcExactlyOnceTask<VoteResponsePB>(response, callback));
-    return RegisterCallbackAndRespond(kRequestVote, task);
+    return RegisterCallbackAndRespond(kRequestVote, callback);
   }
 
   const OpId& last_received() {
@@ -326,24 +280,16 @@ class LocalTestPeerProxy : public TestPeerProxy {
   explicit LocalTestPeerProxy(Consensus* consensus)
     : consensus_(consensus),
       miss_comm_(false) {
-    CHECK_OK(TaskExecutorBuilder("noop-peer-pool").set_max_threads(1).Build(&executor_));
+    CHECK_OK(ThreadPoolBuilder("noop-peer-pool").set_max_threads(1).Build(&pool_));
   }
 
   virtual Status UpdateAsync(const ConsensusRequestPB* request,
                              ConsensusResponsePB* response,
                              rpc::RpcController* controller,
                              const rpc::ResponseCallback& callback) OVERRIDE {
-    // Register callback.
-    std::tr1::shared_ptr<Task> task(
-        new MockRpcExactlyOnceTask<ConsensusResponsePB>(response, callback));
-    RegisterCallback(kUpdate, task);
-
-    // Run mock processing on another thread.
-    std::tr1::shared_ptr<Task> processor(
-        new MockRpcExactlyOnceTask<ConsensusResponsePB>(response,
-            boost::bind(&LocalTestPeerProxy::SendUpdateRequest,
-                        this, request, response)));
-    RETURN_NOT_OK(executor_->Submit(processor, NULL));
+    RegisterCallback(kUpdate, callback);
+    RETURN_NOT_OK(pool_->SubmitFunc(boost::bind(&LocalTestPeerProxy::SendUpdateRequest,
+                                                this, request, response)));
     return Status::OK();
   }
 
@@ -351,15 +297,9 @@ class LocalTestPeerProxy : public TestPeerProxy {
                                            VoteResponsePB* response,
                                            rpc::RpcController* controller,
                                            const rpc::ResponseCallback& callback) OVERRIDE {
-    std::tr1::shared_ptr<Task> task(
-        new MockRpcExactlyOnceTask<VoteResponsePB>(response, callback));
-    RegisterCallback(kRequestVote, task);
-
-    std::tr1::shared_ptr<Task> processor(
-        new MockRpcExactlyOnceTask<VoteResponsePB>(response,
-            boost::bind(&LocalTestPeerProxy::SendVoteRequest,
-                        this, request, response)));
-    RETURN_NOT_OK(executor_->Submit(processor, NULL));
+    RegisterCallback(kRequestVote, callback);
+    RETURN_NOT_OK(pool_->SubmitFunc(boost::bind(&LocalTestPeerProxy::SendVoteRequest,
+                                                this, request, response)));
     return Status::OK();
   }
 
@@ -470,11 +410,11 @@ class LocalTestPeerProxy : public TestPeerProxy {
   }
 
   ~LocalTestPeerProxy() {
-    executor_->Wait();
+    pool_->Wait();
   }
 
  private:
-  gscoped_ptr<TaskExecutor> executor_;
+  gscoped_ptr<ThreadPool> pool_;
   std::tr1::shared_ptr<Task> update_task_;
   Consensus* consensus_;
   mutable simple_spinlock lock_;
