@@ -326,7 +326,7 @@ class LocalTestPeerProxy : public TestPeerProxy {
       }
     }
     if (!s.ok()) {
-      LOG(WARNING) << "Could not update replica with request:"
+      LOG(WARNING) << "Could not Update replica with request: "
                    << other_peer_req.ShortDebugString()
                    << " Status: " << s.ToString();
       tserver::TabletServerErrorPB* error = other_peer_resp.mutable_error();
@@ -371,8 +371,8 @@ class LocalTestPeerProxy : public TestPeerProxy {
       }
     }
     if (!s.ok()) {
-      LOG(WARNING) << "Could not update replica "
-          << ". With request: " << other_peer_req.ShortDebugString()
+      LOG(WARNING) << "Could not RequestVote from replica with request: "
+          << other_peer_req.ShortDebugString()
           << " Status: " << s.ToString();
       tserver::TabletServerErrorPB* error = other_peer_resp.mutable_error();
             error->set_code(tserver::TabletServerErrorPB::UNKNOWN_ERROR);

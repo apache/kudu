@@ -50,7 +50,13 @@ using strings::Substitute;
 using strings::SubstituteAndAppend;
 
 const char* kTestTablet = "TestTablet";
-const int kDontVerify = -1;
+
+Status WaitUntilLeaderForTests(RaftConsensus* raft) {
+  while (raft->GetActiveRole() != QuorumPeerPB::LEADER) {
+    usleep(10000); // 10ms.
+  }
+  return Status::OK();
+}
 
 // A simple wrapper around a latch callback that can be used a consensus
 // commit continuation.
@@ -215,7 +221,8 @@ class RaftConsensusQuorumTest : public KuduTest {
 
     RaftConsensus* peer = GetPeer(peer_idx);
     round->reset(peer->NewRound(msg.Pass(), continuation, commit_clbk));
-    RETURN_NOT_OK(peer->Replicate(round->get()));
+    RETURN_NOT_OK_PREPEND(peer->Replicate(round->get()),
+                          Substitute("Unable to replicate to peer $0", peer_idx));
     return Status::OK();
   }
 
@@ -361,42 +368,33 @@ class RaftConsensusQuorumTest : public KuduTest {
   // Verifies that the replica's log match the leader's. This deletes the
   // peers (so we're sure that no further writes occur) and closes the logs
   // so it must be the very last thing to run, in a test.
-  void VerifyLogs(int leader_idx = 2, int replica0_idx = 0, int replica1_idx = 1) {
+  void VerifyLogs(int leader_idx, int first_replica_idx, int last_replica_idx) {
     // Wait for in-flight transactions to be done. We're destroying the
     // peers next and leader transactions won't be able to commit anymore.
-
-    string leader_name = GetPeer(leader_idx)->peer_uuid();
-    string replica0_name = GetPeer(replica0_idx)->peer_uuid();
-    string replica1_name = replica1_idx != kDontVerify ? GetPeer(replica1_idx)->peer_uuid() : "";
     BOOST_FOREACH(TestTransactionFactory* factory, txn_factories_) {
       factory->WaitDone();
     }
+
+    // Shut down all the peers.
     BOOST_FOREACH(const scoped_refptr<RaftConsensus>& peer, peers_) {
       peer->Shutdown();
     }
-    vector<LogEntryPB*> replica0_entries;
-    ElementDeleter repl0_deleter(&replica0_entries);
-    GatherLogEntries(replica0_idx, logs_[replica0_idx], &replica0_entries);
-    vector<LogEntryPB*> replica1_entries;
-    ElementDeleter repl1_deleter(&replica1_entries);
-    if (replica1_idx != kDontVerify) {
-      GatherLogEntries(replica1_idx, logs_[replica1_idx], &replica1_entries);
-    }
-    vector<LogEntryPB*> leader_entries;
-    ElementDeleter leader_deleter(&leader_entries);
-    GatherLogEntries(leader_idx, logs_[leader_idx], &leader_entries);
 
-    // gather the leader's replicates and commits, the replicas
-    // must have seen the same operations in the same order.
-    VerifyReplica(leader_entries,
-                  replica0_entries,
-                  leader_name,
-                  replica0_name);
-    if (replica1_idx != kDontVerify) {
+    vector<LogEntryPB*> leader_entries;
+    ElementDeleter leader_entry_deleter(&leader_entries);
+    GatherLogEntries(leader_idx, logs_[leader_idx], &leader_entries);
+    string leader_name = GetPeer(leader_idx)->peer_uuid();
+
+    for (int replica_idx = first_replica_idx; replica_idx < last_replica_idx; replica_idx++) {
+      vector<LogEntryPB*> replica_entries;
+      ElementDeleter replica_entry_deleter(&replica_entries);
+      GatherLogEntries(replica_idx, logs_[replica_idx], &replica_entries);
+
+      string replica_name = GetPeer(replica_idx)->peer_uuid();
       VerifyReplica(leader_entries,
-                    replica1_entries,
+                    replica_entries,
                     leader_name,
-                    replica1_name);
+                    replica_name);
     }
   }
 
@@ -545,7 +543,7 @@ TEST_F(RaftConsensusQuorumTest, TestFollowersReplicateAndCommitMessage) {
   ASSERT_STATUS_OK(commit_clbk.get()->Wait());
   WaitForCommitIfNotAlreadyPresent(last_op_id, kFollower0Idx, kLeaderidx);
   WaitForCommitIfNotAlreadyPresent(last_op_id, kFollower1Idx, kLeaderidx);
-  VerifyLogs();
+  VerifyLogs(2, 0, 1);
 }
 
 // Tests Replicate/Commit a sequence of messages through the leader.
@@ -584,7 +582,7 @@ TEST_F(RaftConsensusQuorumTest, TestFollowersReplicateAndCommitSequence) {
   ASSERT_STATUS_OK(commit_clbk.get()->Wait());
   WaitForCommitIfNotAlreadyPresent(last_op_id, kFollower0Idx, kLeaderidx);
   WaitForCommitIfNotAlreadyPresent(last_op_id, kFollower1Idx, kLeaderidx);
-  VerifyLogs();
+  VerifyLogs(2, 0, 1);
 }
 
 TEST_F(RaftConsensusQuorumTest, TestConsensusContinuesIfAMinorityFallsBehind) {
@@ -626,7 +624,7 @@ TEST_F(RaftConsensusQuorumTest, TestConsensusContinuesIfAMinorityFallsBehind) {
   // After we let the lock go the remaining follower should get up-to-date
   WaitForReplicateIfNotAlreadyPresent(last_replicate, kFollower0Idx);
   WaitForCommitIfNotAlreadyPresent(last_replicate, kFollower0Idx, kLeaderidx);
-  VerifyLogs();
+  VerifyLogs(2, 0, 1);
 }
 
 TEST_F(RaftConsensusQuorumTest, TestConsensusStopsIfAMajorityFallsBehind) {
@@ -670,7 +668,7 @@ TEST_F(RaftConsensusQuorumTest, TestConsensusStopsIfAMajorityFallsBehind) {
   WaitForReplicateIfNotAlreadyPresent(last_op_id, kFollower1Idx);
   WaitForCommitIfNotAlreadyPresent(last_op_id, kFollower0Idx, kLeaderidx);
   WaitForCommitIfNotAlreadyPresent(last_op_id, kFollower1Idx, kLeaderidx);
-  VerifyLogs();
+  VerifyLogs(2, 0, 1);
 }
 
 // If some communication error happens the leader will resend the request to the
@@ -737,7 +735,7 @@ TEST_F(RaftConsensusQuorumTest, TestReplicasHandleCommunicationErrors) {
   ASSERT_STATUS_OK(commit_clbk.get()->Wait());
   WaitForCommitIfNotAlreadyPresent(last_op_id, kFollower0Idx, kLeaderidx);
   WaitForCommitIfNotAlreadyPresent(last_op_id, kFollower1Idx, kLeaderidx);
-  VerifyLogs();
+  VerifyLogs(2, 0, 1);
 }
 
 // In this test we test the ability of the leader to send heartbeats
@@ -795,50 +793,66 @@ TEST_F(RaftConsensusQuorumTest, TestLeaderHeartbeats) {
 // leader, makes another peer become leader and writes a sequence of
 // messages to it. The new leader and the follower should agree on the
 // sequence of messages.
-TEST_F(RaftConsensusQuorumTest, TestLeaderPromotionWithQuiescedQuorum) {
-  ASSERT_STATUS_OK(BuildAndStartQuorum(3));
+TEST_F(RaftConsensusQuorumTest, TestLeaderElectionWithQuiescedQuorum) {
+  const int kInitialQuorumSize = 5;
+  ASSERT_STATUS_OK(BuildAndStartQuorum(kInitialQuorumSize));
 
   OpId last_op_id;
   shared_ptr<LatchCallback> last_commit_clbk;
   vector<ConsensusRound*> rounds;
   ElementDeleter deleter(&rounds);
-  REPLICATE_SEQUENCE_OF_MESSAGES(10,
-                                 2, // The index of the initial leader.
-                                 WAIT_FOR_ALL_REPLICAS,
-                                 COMMIT_ONE_BY_ONE,
-                                 &last_op_id,
-                                 &rounds,
-                                 &last_commit_clbk);
 
-  // Make sure the last operation is committed everywhere
-  ASSERT_STATUS_OK(last_commit_clbk.get()->Wait());
-  WaitForCommitIfNotAlreadyPresent(last_op_id, 0, 2);
-  WaitForCommitIfNotAlreadyPresent(last_op_id, 1, 2);
+  // Loop twice, successively shutting down the previous leader.
+  for (int current_quorum_size = kInitialQuorumSize;
+       current_quorum_size >= kInitialQuorumSize - 1;
+       current_quorum_size--) {
+    REPLICATE_SEQUENCE_OF_MESSAGES(10,
+                                   current_quorum_size - 1, // The index of the leader.
+                                   WAIT_FOR_ALL_REPLICAS,
+                                   COMMIT_ONE_BY_ONE,
+                                   &last_op_id,
+                                   &rounds,
+                                   &last_commit_clbk);
 
-  // Now shutdown the current leader
-  RaftConsensus* current_leader = GetPeer(2);
-  current_leader->Shutdown();
+    // Make sure the last operation is committed everywhere
+    ASSERT_STATUS_OK(last_commit_clbk.get()->Wait());
+    for (int i = 0; i < current_quorum_size - 1; i++) {
+      WaitForCommitIfNotAlreadyPresent(last_op_id, i, current_quorum_size - 1);
+    }
 
-  // ... and make peer 1 become leader
-  RaftConsensus* new_leader = GetPeer(1);
+    // Now shutdown the current leader.
+    LOG(INFO) << "Shutting down current leader with index " << (current_quorum_size - 1);
+    RaftConsensus* current_leader = GetPeer(current_quorum_size - 1);
+    current_leader->Shutdown();
 
-  // This will make peer-1 change itself to leader, change peer-2 to
-  // follower and submit a config change.
-  ASSERT_STATUS_OK(new_leader->EmulateElection());
+    // ... and make the peer before it become leader.
+    RaftConsensus* new_leader = GetPeer(current_quorum_size - 2);
 
-  // ... replicating a set of messages to peer 1 should now be possible.
-  REPLICATE_SEQUENCE_OF_MESSAGES(10,
-                                 1, // The index of the new leader.
-                                 WAIT_FOR_MAJORITY,
-                                 COMMIT_ONE_BY_ONE,
-                                 &last_op_id,
-                                 &rounds,
-                                 &last_commit_clbk);
+    // This will force an election in which we expect to make the last
+    // non-shutdown peer in the list become leader.
+    LOG(INFO) << "Running election for future leader with index " << (current_quorum_size - 1);
+    ASSERT_STATUS_OK(new_leader->StartElection());
+    WaitUntilLeaderForTests(new_leader);
+    LOG(INFO) << "Election won";
 
-  // Make sure the last operation is committed everywhere
-  ASSERT_STATUS_OK(last_commit_clbk.get()->Wait());
-  WaitForCommitIfNotAlreadyPresent(last_op_id, 0, 1);
-  VerifyLogs(1, 0, kDontVerify);
+    // ... replicating a set of messages to the new leader should now be possible.
+    REPLICATE_SEQUENCE_OF_MESSAGES(10,
+                                   current_quorum_size - 2, // The index of the new leader.
+                                   WAIT_FOR_MAJORITY,
+                                   COMMIT_ONE_BY_ONE,
+                                   &last_op_id,
+                                   &rounds,
+                                   &last_commit_clbk);
+
+    // Make sure the last operation is committed everywhere
+    ASSERT_STATUS_OK(last_commit_clbk.get()->Wait());
+    for (int i = 0; i < current_quorum_size - 2; i++) {
+      WaitForCommitIfNotAlreadyPresent(last_op_id, i, current_quorum_size - 2);
+    }
+  }
+  // We can only verify the logs of the peers that were not killed, due to the
+  // old leaders being out-of-date now.
+  VerifyLogs(2, 0, 1);
 }
 
 TEST_F(RaftConsensusQuorumTest, TestReplicasEnforceTheLogMatchingProperty) {

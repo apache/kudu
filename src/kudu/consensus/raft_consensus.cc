@@ -10,6 +10,7 @@
 #include "kudu/common/wire_protocol.h"
 #include "kudu/consensus/log.h"
 #include "kudu/consensus/consensus_peers.h"
+#include "kudu/consensus/leader_election.h"
 #include "kudu/consensus/quorum_util.h"
 #include "kudu/consensus/raft_consensus_state.h"
 #include "kudu/gutil/map-util.h"
@@ -65,6 +66,7 @@ RaftConsensus::RaftConsensus(const ConsensusOptions& options,
 RaftConsensus::~RaftConsensus() {
   Shutdown();
   STLDeleteValues(&peers_);
+  STLDeleteValues(&election_proxies_);
 }
 
 Status RaftConsensus::VerifyQuorumAndCheckThatNoChangeIsPendingUnlocked(const QuorumPB& quorum) {
@@ -92,6 +94,17 @@ Status RaftConsensus::Start(const ConsensusBootstrapInfo& info) {
 
     RETURN_NOT_OK_PREPEND(state_->StartUnlocked(info.last_id),
                           "Unable to start RAFT ReplicaState");
+  }
+
+  // TODO: Revisit the PeerProxy ownership model once we need to support
+  // quorum membership changes and after we refactor the Peer tests.
+  string local_uuid = peer_uuid();
+  STLDeleteValues(&election_proxies_);
+  BOOST_FOREACH(const QuorumPeerPB& peer, initial_quorum.peers()) {
+    if (peer.permanent_uuid() == local_uuid) continue;
+    gscoped_ptr<PeerProxy> proxy;
+    RETURN_NOT_OK(peer_proxy_factory_->NewProxy(peer, &proxy));
+    InsertOrDie(&election_proxies_, peer.permanent_uuid(), proxy.release());
   }
 
   // If we're marked as candidate emulate a leader election.
@@ -142,6 +155,67 @@ Status RaftConsensus::EmulateElection() {
     RETURN_NOT_OK(state_->SetPendingQuorumUnlocked(new_quorum));
     return ChangeConfigUnlocked();
   }
+}
+
+Status RaftConsensus::StartElection() {
+
+  scoped_refptr<LeaderElection> election;
+  {
+    ReplicaState::UniqueLock lock;
+    RETURN_NOT_OK(state_->LockForConfigChange(&lock));
+
+    // Right now we only tolerate changes when there isn't stuff
+    // in flight, so make sure those assumptions hold.
+    // The last thing we received should be a commit and it should also match
+    // the safe commit op id.
+    if (!OpIdEquals(state_->GetLastReceivedOpIdUnlocked(), state_->GetCommittedOpIdUnlocked())) {
+      return Status::IllegalState(
+          Substitute("Replica is not ready to be leader. "
+                     "Last received OpId: $0, committed OpId: $1",
+                     state_->GetLastReceivedOpIdUnlocked().ShortDebugString(),
+                     state_->GetCommittedOpIdUnlocked().DebugString()));
+    }
+
+    QuorumPB new_quorum;
+    RETURN_NOT_OK(GivePeerRoleInQuorum(state_->GetPeerUuid(),
+                                       QuorumPeerPB::CANDIDATE,
+                                       state_->GetCommittedQuorumUnlocked(),
+                                       &new_quorum));
+    new_quorum.set_seqno(state_->GetCommittedQuorumUnlocked().seqno() + 1);
+    // Increment the term.
+    RETURN_NOT_OK(state_->IncrementTermUnlocked());
+    RETURN_NOT_OK_PREPEND(VerifyQuorumAndCheckThatNoChangeIsPendingUnlocked(new_quorum),
+                          "Invalid state on RaftConsensus::StartElection()");
+    RETURN_NOT_OK(state_->SetPendingQuorumUnlocked(new_quorum));
+
+    LOG_WITH_PREFIX(INFO) << "Starting election with quorum: " << new_quorum.ShortDebugString();
+
+    // Initialize the VoteCounter.
+    QuorumState quorum_state = state_->GetActiveQuorumStateUnlocked();
+    gscoped_ptr<VoteCounter> counter(new VoteCounter(quorum_state.quorum_size,
+                                                     quorum_state.majority_size));
+    // Vote for ourselves.
+    RETURN_NOT_OK(state_->SetVotedForCurrentTermUnlocked(state_->GetPeerUuid()));
+    bool duplicate;
+    RETURN_NOT_OK(counter->RegisterVote(state_->GetPeerUuid(), VOTE_GRANTED, &duplicate));
+    CHECK(!duplicate) << state_->LogPrefixUnlocked()
+                      << "Inexplicable duplicate self-vote for term "
+                      << state_->GetCurrentTermUnlocked();
+
+    VoteRequestPB request;
+    request.set_candidate_uuid(state_->GetPeerUuid());
+    request.set_candidate_term(state_->GetCurrentTermUnlocked());
+    request.set_tablet_id(state_->GetOptions().tablet_id);
+    request.mutable_candidate_status()->mutable_last_received()->CopyFrom(GetLastOpIdFromLog());
+
+    election.reset(new LeaderElection(election_proxies_, request, counter.Pass(),
+                                      Bind(&RaftConsensus::ElectionCallback, this)));
+  }
+
+  // Start the election outside the lock.
+  election->Run();
+
+  return Status::OK();
 }
 
 Status RaftConsensus::ChangeConfig() {
@@ -806,6 +880,13 @@ void RaftConsensus::Shutdown() {
   CHECK_OK(ExecuteHook(POST_SHUTDOWN));
 }
 
+metadata::QuorumPeerPB::Role RaftConsensus::GetActiveRole() const {
+  ReplicaState::UniqueLock lock;
+  CHECK_OK(state_->LockForRead(&lock));
+  const QuorumState& state = state_->GetActiveQuorumStateUnlocked();
+  return state.role;
+}
+
 Status RaftConsensus::RegisterOnReplicateCallback(
     const OpId& op_id,
     const std::tr1::shared_ptr<FutureCallback>& repl_callback) {
@@ -983,6 +1064,54 @@ void RaftConsensus::DumpStatusHtml(std::ostream& out) const {
 
 ReplicaState* RaftConsensus::GetReplicaStateForTests() {
   return state_.get();
+}
+
+void RaftConsensus::ElectionCallback(const ElectionResult& result) {
+  if (result.decision == VOTE_DENIED) {
+    LOG_WITH_PREFIX(INFO) << "Leader election lost for term " << result.election_term
+                          << ". Reason: "
+                          << (!result.message.empty() ? result.message : "None given");
+
+    LOG_WITH_PREFIX_LK(FATAL)
+        << "This code path is not tested and should not occur in tests yet.";
+    return;
+  }
+
+  ReplicaState::UniqueLock lock;
+  Status s = state_->LockForConfigChange(&lock);
+  if (PREDICT_FALSE(!s.ok())) {
+    LOG_WITH_PREFIX(INFO) << "Received election callback for term "
+                          << result.election_term << " while not running: "
+                          << s.ToString();
+    return;
+  }
+
+  if (result.election_term != state_->GetCurrentTermUnlocked()) {
+    LOG_WITH_PREFIX(INFO) << "Leader election decision for defunct term "
+                          << result.election_term << ": "
+                          << (result.decision == VOTE_GRANTED ? "won" : "lost");
+    return;
+  }
+
+  LOG_WITH_PREFIX(INFO) << "Leader election won for term " << result.election_term;
+
+  // Sanity check.
+  QuorumState quorum_state = state_->GetActiveQuorumStateUnlocked();
+  CHECK_EQ(QuorumPeerPB::CANDIDATE, quorum_state.role);
+  CHECK(state_->IsQuorumChangePendingUnlocked());
+
+  // Convert role to LEADER.
+  QuorumPB new_quorum;
+  CHECK_OK(GivePeerRoleInQuorum(state_->GetPeerUuid(),
+                                QuorumPeerPB::LEADER,
+                                state_->GetPendingQuorumUnlocked(),
+                                &new_quorum));
+  new_quorum.set_seqno(state_->GetCommittedQuorumUnlocked().seqno() + 1);
+  CHECK_OK(VerifyQuorum(new_quorum));
+  CHECK_OK(state_->SetPendingQuorumUnlocked(new_quorum));
+
+  LOG(INFO) << "Calling BecomeLeaderUnlocked()...";
+  CHECK_OK(BecomeLeaderUnlocked());
 }
 
 }  // namespace consensus

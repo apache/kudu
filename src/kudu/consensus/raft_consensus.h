@@ -12,6 +12,7 @@
 #include "kudu/consensus/consensus.pb.h"
 #include "kudu/consensus/consensus_meta.h"
 #include "kudu/consensus/consensus_queue.h"
+#include "kudu/consensus/leader_election.h"
 
 namespace kudu {
 
@@ -80,6 +81,8 @@ class RaftConsensus : public Consensus,
   // and calling ChangeConfig() with the resulting quorum.
   virtual Status EmulateElection() OVERRIDE;
 
+  virtual Status StartElection() OVERRIDE;
+
   virtual Status Replicate(ConsensusRound* context) OVERRIDE;
 
   virtual Status Update(const ConsensusRequestPB* request,
@@ -99,6 +102,9 @@ class RaftConsensus : public Consensus,
   virtual void DumpStatusHtml(std::ostream& out) const OVERRIDE;
 
   virtual void Shutdown() OVERRIDE;
+
+  // Return the active (as opposed to committed) role.
+  metadata::QuorumPeerPB::Role GetActiveRole() const;
 
   // Returns the replica state for tests. This should never be used outside of
   // tests, in particular calling the LockFor* methods on the returned object
@@ -128,6 +134,7 @@ class RaftConsensus : public Consensus,
   virtual void UpdateCommittedIndex(const OpId& commit_index) OVERRIDE;
 
   virtual void NotifyTermChange(uint64_t term) OVERRIDE;
+
  protected:
   virtual Status Commit(gscoped_ptr<CommitMsg> commit,
                         const StatusCallback& cb) OVERRIDE;
@@ -232,6 +239,9 @@ class RaftConsensus : public Consensus,
 
   void UpdateCommittedIndexUnlocked(const OpId& committed_index);
 
+  // Callback for leader election driver.
+  void ElectionCallback(const ElectionResult& result);
+
   log::Log* log_;
   scoped_refptr<server::Clock> clock_;
   gscoped_ptr<PeerProxyFactory> peer_proxy_factory_;
@@ -242,6 +252,9 @@ class RaftConsensus : public Consensus,
   gscoped_ptr<ThreadPool> callback_pool_;
 
   gscoped_ptr<ReplicaState> state_;
+
+  // Proxies used during leader election. Initialized at startup.
+  LeaderElection::ProxyMap election_proxies_;
 
   // TODO hack to serialize updates due to repeated/out-of-order messages
   // should probably be refactored out.

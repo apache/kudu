@@ -96,6 +96,9 @@ class Consensus : public RefCountedThreadSafe<Consensus> {
   // Emulates a leader election by simply making this peer leader.
   virtual Status EmulateElection() = 0;
 
+  // Triggers a leader election.
+  virtual Status StartElection() = 0;
+
   // Creates a new ConsensusRound, the entity that owns all the data
   // structures required for a consensus round, such as the ReplicateMsg
   // (and later on the CommitMsg). ConsensusRound will also point to and
