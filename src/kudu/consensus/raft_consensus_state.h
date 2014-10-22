@@ -141,7 +141,7 @@ class ReplicaState {
 
   // Locks a replica in preparation for StartUnlocked(). Makes
   // sure the replica is in kInitialized state.
-  Status LockForStart(UniqueLock* lock);
+  Status LockForStart(UniqueLock* lock) const WARN_UNUSED_RESULT;
 
   // Locks a replica down until the critical section of an append completes,
   // i.e. until the replicate message has been assigned an id and placed in
@@ -150,30 +150,30 @@ class ReplicaState {
   // state (role) to replicate the provided operation, that the operation
   // contains a replicate message and is of the appropriate type, and returns
   // Status::IllegalState if that is not the case.
-  Status LockForReplicate(UniqueLock* lock, const ReplicateMsg& msg) WARN_UNUSED_RESULT;
+  Status LockForReplicate(UniqueLock* lock, const ReplicateMsg& msg) const WARN_UNUSED_RESULT;
 
   // Locks a replica down until the critical section of a commit completes.
   // This succeeds for all states since a replica which has initiated
   // a Prepare()/Replicate() must eventually commit even if it's state
   // has changed after the initial Append()/Update().
-  Status LockForCommit(UniqueLock* lock) WARN_UNUSED_RESULT;
+  Status LockForCommit(UniqueLock* lock) const WARN_UNUSED_RESULT;
 
   // Locks a replica down until an the critical section of an update completes.
   // Further updates from the same or some other leader will be blocked until
   // this completes. This also checks that the replica is in the appropriate
   // state (role) to be updated and returns Status::IllegalState if that
   // is not the case.
-  Status LockForUpdate(UniqueLock* lock) WARN_UNUSED_RESULT;
+  Status LockForUpdate(UniqueLock* lock) const WARN_UNUSED_RESULT;
 
   // Changes the role to non-participant and returns a lock that can be
   // used to make sure no state updates come in until Shutdown() is
   // completed.
   Status LockForShutdown(UniqueLock* lock) WARN_UNUSED_RESULT;
 
-  Status LockForConfigChange(UniqueLock* lock) WARN_UNUSED_RESULT;
+  Status LockForConfigChange(UniqueLock* lock) const WARN_UNUSED_RESULT;
 
   // Obtains the lock for a state read, does not check state.
-  Status LockForRead(UniqueLock* lock) WARN_UNUSED_RESULT;
+  Status LockForRead(UniqueLock* lock) const WARN_UNUSED_RESULT;
 
   // Completes the Shutdown() of this replica. No more operations, local
   // or otherwise can happen after this point.

@@ -134,7 +134,7 @@ Status ReplicaState::StartUnlocked(const OpId& initial_id) {
   return Status::OK();
 }
 
-Status ReplicaState::LockForStart(UniqueLock* lock) {
+Status ReplicaState::LockForStart(UniqueLock* lock) const {
   UniqueLock l(&update_lock_);
   CHECK_EQ(state_, kInitialized) << "Illegal state for Start()."
       << " Replica is not in kInitialized state";
@@ -142,13 +142,13 @@ Status ReplicaState::LockForStart(UniqueLock* lock) {
   return Status::OK();
 }
 
-Status ReplicaState::LockForRead(UniqueLock* lock) {
+Status ReplicaState::LockForRead(UniqueLock* lock) const {
   UniqueLock l(&update_lock_);
   lock->swap(&l);
   return Status::OK();
 }
 
-Status ReplicaState::LockForReplicate(UniqueLock* lock, const ReplicateMsg& msg) {
+Status ReplicaState::LockForReplicate(UniqueLock* lock, const ReplicateMsg& msg) const {
   DCHECK(!msg.has_id()) << "Should not have an ID yet: " << msg.ShortDebugString();
   UniqueLock l(&update_lock_);
   if (PREDICT_FALSE(state_ != kRunning)) {
@@ -175,7 +175,7 @@ Status ReplicaState::LockForReplicate(UniqueLock* lock, const ReplicateMsg& msg)
   }
 }
 
-Status ReplicaState::LockForCommit(UniqueLock* lock) {
+Status ReplicaState::LockForCommit(UniqueLock* lock) const {
   UniqueLock l(&update_lock_);
   if (PREDICT_FALSE(state_ != kRunning && state_ != kShuttingDown)) {
     return Status::IllegalState("Replica not in running state");
@@ -184,7 +184,7 @@ Status ReplicaState::LockForCommit(UniqueLock* lock) {
   return Status::OK();
 }
 
-Status ReplicaState::LockForConfigChange(UniqueLock* lock) {
+Status ReplicaState::LockForConfigChange(UniqueLock* lock) const {
   UniqueLock l(&update_lock_);
   // Can only change the config on running replicas.
   CHECK_EQ(kRunning, state_) << "Unexpected state: " << state_;
@@ -192,7 +192,7 @@ Status ReplicaState::LockForConfigChange(UniqueLock* lock) {
   return Status::OK();
 }
 
-Status ReplicaState::LockForUpdate(UniqueLock* lock) {
+Status ReplicaState::LockForUpdate(UniqueLock* lock) const {
   UniqueLock l(&update_lock_);
   if (PREDICT_FALSE(state_ != kRunning)) {
     return Status::IllegalState("Replica not in running state");
