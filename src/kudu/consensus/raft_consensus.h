@@ -136,7 +136,7 @@ class RaftConsensus : public Consensus,
 
  private:
   friend class ReplicaState;
-  friend class RaftConsensusTest;
+  friend class RaftConsensusQuorumTest;
   FRIEND_TEST(RaftConsensusTest, TestReplicasHandleCommunicationErrors);
   FRIEND_TEST(RaftConsensusTest, DISABLED_TestLeaderPromotionWithQuiescedQuorum);
 

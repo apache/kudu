@@ -86,7 +86,7 @@ ADD_KUDU_TEST(leader_election-test)
 ADD_KUDU_TEST(log-test)
 ADD_KUDU_TEST(mt-log-test)
 ADD_KUDU_TEST(opid_anchor_registry-test)
-ADD_KUDU_TEST(raft_consensus-test)
+ADD_KUDU_TEST(raft_consensus_quorum-test)
 ADD_KUDU_TEST(raft_consensus_state-test)
 
 #Tools

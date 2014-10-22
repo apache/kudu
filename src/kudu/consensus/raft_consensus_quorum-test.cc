@@ -68,9 +68,11 @@ class CommitContinuationLatchCallback : public ConsensusCommitContinuation {
   LatchCallback callback_;
 };
 
-class RaftConsensusTest : public KuduTest {
+// Test suite for tests that focus on multiple peer interaction, but
+// without integrating with other components, such as transactions.
+class RaftConsensusQuorumTest : public KuduTest {
  public:
-  RaftConsensusTest()
+  RaftConsensusQuorumTest()
     : clock_(server::LogicalClock::CreateStartingAt(Timestamp(0))),
       metric_context_(&metric_registry_, "raft-test"),
       schema_(GetSimpleTestSchema()) {}
@@ -484,7 +486,7 @@ class RaftConsensusTest : public KuduTest {
     ASSERT_FALSE(cmeta->pb().has_voted_for());
   }
 
-  ~RaftConsensusTest() {
+  ~RaftConsensusQuorumTest() {
     peers_.clear();
     STLDeleteElements(&txn_factories_);
     STLDeleteElements(&logs_);
@@ -507,7 +509,7 @@ class RaftConsensusTest : public KuduTest {
 };
 
 // Tests Replicate/Commit a single message through the leader.
-TEST_F(RaftConsensusTest, TestFollowersReplicateAndCommitMessage) {
+TEST_F(RaftConsensusQuorumTest, TestFollowersReplicateAndCommitMessage) {
   // Constants with the indexes of peers with certain roles,
   // since peers don't change roles in this test.
   const int kFollower0Idx = 0;
@@ -548,7 +550,7 @@ TEST_F(RaftConsensusTest, TestFollowersReplicateAndCommitMessage) {
 
 // Tests Replicate/Commit a sequence of messages through the leader.
 // First a sequence of replicates and then a sequence of commits.
-TEST_F(RaftConsensusTest, TestFollowersReplicateAndCommitSequence) {
+TEST_F(RaftConsensusQuorumTest, TestFollowersReplicateAndCommitSequence) {
   // Constants with the indexes of peers with certain roles,
   // since peers don't change roles in this test.
   const int kFollower0Idx = 0;
@@ -585,7 +587,7 @@ TEST_F(RaftConsensusTest, TestFollowersReplicateAndCommitSequence) {
   VerifyLogs();
 }
 
-TEST_F(RaftConsensusTest, TestConsensusContinuesIfAMinorityFallsBehind) {
+TEST_F(RaftConsensusQuorumTest, TestConsensusContinuesIfAMinorityFallsBehind) {
   // Constants with the indexes of peers with certain roles,
   // since peers don't change roles in this test.
   const int kFollower0Idx = 0;
@@ -627,7 +629,7 @@ TEST_F(RaftConsensusTest, TestConsensusContinuesIfAMinorityFallsBehind) {
   VerifyLogs();
 }
 
-TEST_F(RaftConsensusTest, TestConsensusStopsIfAMajorityFallsBehind) {
+TEST_F(RaftConsensusQuorumTest, TestConsensusStopsIfAMajorityFallsBehind) {
   // Constants with the indexes of peers with certain roles,
   // since peers don't change roles in this test.
   const int kFollower0Idx = 0;
@@ -673,7 +675,7 @@ TEST_F(RaftConsensusTest, TestConsensusStopsIfAMajorityFallsBehind) {
 
 // If some communication error happens the leader will resend the request to the
 // peers. This tests that the peers handle repeated requests.
-TEST_F(RaftConsensusTest, TestReplicasHandleCommunicationErrors) {
+TEST_F(RaftConsensusQuorumTest, TestReplicasHandleCommunicationErrors) {
   // Constants with the indexes of peers with certain roles,
   // since peers don't change roles in this test.
   const int kFollower0Idx = 0;
@@ -741,7 +743,7 @@ TEST_F(RaftConsensusTest, TestReplicasHandleCommunicationErrors) {
 // In this test we test the ability of the leader to send heartbeats
 // to replicas by simply pushing nothing after the configuration round
 // and still expecting for the replicas Update() hooks to be called.
-TEST_F(RaftConsensusTest, TestLeaderHeartbeats) {
+TEST_F(RaftConsensusQuorumTest, TestLeaderHeartbeats) {
   // Constants with the indexes of peers with certain roles,
   // since peers don't change roles in this test.
   const int kFollower0Idx = 0;
@@ -793,7 +795,7 @@ TEST_F(RaftConsensusTest, TestLeaderHeartbeats) {
 // leader, makes another peer become leader and writes a sequence of
 // messages to it. The new leader and the follower should agree on the
 // sequence of messages.
-TEST_F(RaftConsensusTest, TestLeaderPromotionWithQuiescedQuorum) {
+TEST_F(RaftConsensusQuorumTest, TestLeaderPromotionWithQuiescedQuorum) {
   ASSERT_STATUS_OK(BuildAndStartQuorum(3));
 
   OpId last_op_id;
@@ -839,7 +841,7 @@ TEST_F(RaftConsensusTest, TestLeaderPromotionWithQuiescedQuorum) {
   VerifyLogs(1, 0, kDontVerify);
 }
 
-TEST_F(RaftConsensusTest, TestReplicasEnforceTheLogMatchingProperty) {
+TEST_F(RaftConsensusQuorumTest, TestReplicasEnforceTheLogMatchingProperty) {
   ASSERT_STATUS_OK(BuildAndStartQuorum(3));
 
   OpId last_op_id;
@@ -894,7 +896,7 @@ TEST_F(RaftConsensusTest, TestReplicasEnforceTheLogMatchingProperty) {
 }
 
 // Test that RequestVote performs according to "spec".
-TEST_F(RaftConsensusTest, TestRequestVote) {
+TEST_F(RaftConsensusQuorumTest, TestRequestVote) {
   ASSERT_STATUS_OK(BuildAndStartQuorum(3));
 
   OpId last_op_id;
