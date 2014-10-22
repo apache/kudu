@@ -439,12 +439,18 @@ void PeerMessageQueue::ResponseFromPeer(const ConsensusResponsePB& response,
     if (PREDICT_FALSE(status.has_error())) {
       switch (status.error().code()) {
         case ConsensusErrorPB::PRECEDING_ENTRY_DIDNT_MATCH: {
-          LOG(INFO) << "Peer: " << response.responder_uuid() << " replied that the "
-              "Log Matching Property check failed. Queue's last received watermark for peer: "
-              << (peer->peer_status.has_last_received() ?
-                  peer->peer_status.last_received().ShortDebugString() : "NONE")
-              << ". Peer's actual last received watermark: "
-              << status.last_received().ShortDebugString();
+          if (peer->peer_status.has_last_received()) {
+            LOG(INFO) << "Peer: " << response.responder_uuid() << " replied that the "
+                "Log Matching Property check failed. Queue's last received watermark for peer: "
+                << peer->peer_status.last_received().ShortDebugString()
+                << ". Peer's actual last received watermark: "
+                << status.last_received().ShortDebugString();
+          } else {
+            // That's currently how we can detect that we able to connect to a peer.
+            LOG(INFO) << "Connected to peer: " << response.responder_uuid()
+                << " whose last received watermark is: "
+                << status.last_received().ShortDebugString();
+          }
           peer->peer_status.mutable_last_received()->CopyFrom(status.last_received());
           if (OpIdLessThan(status.last_received(), queue_state_.all_replicated_index)) {
             queue_state_.all_replicated_index.CopyFrom(status.last_received());
