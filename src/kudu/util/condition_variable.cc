@@ -46,7 +46,7 @@ ConditionVariable::~ConditionVariable() {
   DCHECK_EQ(0, rv);
 }
 
-void ConditionVariable::Wait() {
+void ConditionVariable::Wait() const {
   base::ThreadRestrictions::AssertWaitAllowed();
 #if !defined(NDEBUG)
   user_lock_->CheckHeldAndUnmark();
@@ -58,7 +58,7 @@ void ConditionVariable::Wait() {
 #endif
 }
 
-bool ConditionVariable::TimedWait(const MonoDelta& max_time) {
+bool ConditionVariable::TimedWait(const MonoDelta& max_time) const {
   base::ThreadRestrictions::AssertWaitAllowed();
 
   // Negative delta means we've already timed out.

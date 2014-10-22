@@ -38,7 +38,7 @@ class CountDownLatch {
 
   // Wait until the count on the latch reaches zero.
   // If the count is already zero, this returns immediately.
-  void Wait() {
+  void Wait() const {
     MutexLock lock(lock_);
     while (count_ > 0) {
       cond_.Wait();

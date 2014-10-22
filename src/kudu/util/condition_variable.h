@@ -84,12 +84,12 @@ class ConditionVariable {
 
   // Wait() releases the caller's critical section atomically as it starts to
   // sleep, and the reacquires it when it is signaled.
-  void Wait();
+  void Wait() const;
 
   // Like Wait(), but only waits up to a limited amount of time.
   //
   // Returns true if we were Signal()'ed, or false if 'max_time' elapsed.
-  bool TimedWait(const MonoDelta& max_time);
+  bool TimedWait(const MonoDelta& max_time) const;
 
   // Broadcast() revives all waiting threads.
   void Broadcast();
@@ -98,7 +98,7 @@ class ConditionVariable {
 
  private:
 
-  pthread_cond_t condition_;
+  mutable pthread_cond_t condition_;
   pthread_mutex_t* user_mutex_;
 
 #if !defined(NDEBUG)
