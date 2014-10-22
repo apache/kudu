@@ -103,11 +103,6 @@ class ReplicaState {
     // State after the replica is built.
     kInitialized,
 
-    // State signaling the replica is changing configs. Replicas
-    // need both the replicate message and commit watermark for it
-    // before proceeding.
-    kChangingConfig,
-
     // State signaling the replica accepts requests (from clients
     // if leader, from leader if follower)
     kRunning,
@@ -177,9 +172,6 @@ class ReplicaState {
 
   Status LockForConfigChange(UniqueLock* lock) WARN_UNUSED_RESULT;
 
-  // Lock for use during leader election while running.
-  Status LockForElection(UniqueLock* lock) WARN_UNUSED_RESULT;
-
   // Obtains the lock for a state read, does not check state.
   Status LockForRead(UniqueLock* lock) WARN_UNUSED_RESULT;
 
@@ -188,8 +180,6 @@ class ReplicaState {
   // Called after the quiescing phase (started with LockForShutdown())
   // finishes.
   Status ShutdownUnlocked() WARN_UNUSED_RESULT;
-
-  Status SetConfigDoneUnlocked();
 
   // Returns a const reference to the currently active quorum state, which may
   // correspond to a quorum pending commit in the case of a leader currently

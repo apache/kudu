@@ -129,6 +129,8 @@ Status ReplicaState::StartUnlocked(const OpId& initial_id) {
   replicated_op_id_.CopyFrom(initial_id);
   received_op_id_.CopyFrom(initial_id);
   last_triggered_apply_.CopyFrom(initial_id);
+
+  state_ = kRunning;
   return Status::OK();
 }
 
@@ -184,21 +186,8 @@ Status ReplicaState::LockForCommit(UniqueLock* lock) {
 
 Status ReplicaState::LockForConfigChange(UniqueLock* lock) {
   UniqueLock l(&update_lock_);
-  // Can only change the config on non-initialized replicas for
-  // now, later kRunning state will also be a valid state for
-  // config changes.
-  CHECK(state_ == kInitialized || state_ == kRunning) << "Unexpected state: " << state_;
-  lock->swap(&l);
-  state_ = kChangingConfig;
-  return Status::OK();
-}
-
-Status ReplicaState::LockForElection(UniqueLock* lock) {
-  UniqueLock l(&update_lock_);
-  if (!(state_ == kInitialized || state_ == kRunning)) {
-    return Status::IllegalState(Substitute("Unexpected ReplicaState for LockForElection: $0",
-                                           state_));
-  }
+  // Can only change the config on running replicas.
+  CHECK_EQ(kRunning, state_) << "Unexpected state: " << state_;
   lock->swap(&l);
   return Status::OK();
 }
@@ -233,13 +222,6 @@ Status ReplicaState::ShutdownUnlocked() {
   DCHECK(update_lock_.is_locked());
   CHECK_EQ(state_, kShuttingDown);
   state_ = kShutDown;
-  return Status::OK();
-}
-
-Status ReplicaState::SetConfigDoneUnlocked() {
-  DCHECK(update_lock_.is_locked());
-  CHECK_EQ(state_, kChangingConfig);
-  state_ = kRunning;
   return Status::OK();
 }
 

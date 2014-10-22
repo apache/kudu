@@ -42,6 +42,11 @@ class RaftConsensusStateTest : public KuduTest {
     ASSERT_OK(ConsensusMetadata::Create(&fs_manager_, kTabletId, quorum_, kInitialTerm, &cmeta));
     state_.reset(new ReplicaState(ConsensusOptions(), pool_.get(), fs_manager_.uuid(), cmeta.Pass(),
                                   txn_factory_.get()));
+
+    // Start up the ReplicaState.
+    ReplicaState::UniqueLock lock;
+    state_->LockForStart(&lock);
+    state_->StartUnlocked(MinimumOpId());
   }
 
  protected:

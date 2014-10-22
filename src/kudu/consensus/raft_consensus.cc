@@ -85,13 +85,13 @@ Status RaftConsensus::Start(const ConsensusBootstrapInfo& info) {
   {
     ReplicaState::UniqueLock lock;
     RETURN_NOT_OK(state_->LockForStart(&lock));
+
+    initial_quorum.CopyFrom(state_->GetCommittedQuorumUnlocked());
+    RETURN_NOT_OK_PREPEND(VerifyQuorumAndCheckThatNoChangeIsPendingUnlocked(initial_quorum),
+                          "Invalid state on RaftConsensus::Start()");
+
     RETURN_NOT_OK_PREPEND(state_->StartUnlocked(info.last_id),
                           "Unable to start RAFT ReplicaState");
-
-    RETURN_NOT_OK_PREPEND(VerifyQuorumAndCheckThatNoChangeIsPendingUnlocked(
-                              state_->GetCommittedQuorumUnlocked()),
-                          "Invalid state on RaftConsensus::Start()");
-    initial_quorum.CopyFrom(state_->GetCommittedQuorumUnlocked());
   }
 
   // If we're marked as candidate emulate a leader election.
@@ -198,7 +198,7 @@ Status RaftConsensus::BecomeLeaderUnlocked() {
   // TODO we need to make sure that this transaction is the first transaction accepted, right
   // now that is being assured by the fact that the prepare queue is single threaded, but if
   // we ever move to multi-threaded prepare we need to make sure we call replicate on this first.
-  RETURN_NOT_OK(state_->SetConfigDoneUnlocked());
+
   return Status::OK();
 }
 
@@ -215,8 +215,8 @@ void RaftConsensus::BecomeLeaderResult(const Status& status) {
 Status RaftConsensus::BecomeReplicaUnlocked() {
   // TODO start the failure detector.
   LOG_WITH_PREFIX(INFO) << "Becoming Follower/Learner";
-  RETURN_NOT_OK(state_->SetConfigDoneUnlocked());
-  // clear the consensus replication queue evicting all state. We can reuse the
+
+  // Clear the consensus replication queue, evicting all state. We can reuse the
   // queue should we become leader.
   queue_.Clear();
   return Status::OK();
@@ -395,7 +395,7 @@ Status RaftConsensus::PersistQuorum(const QuorumPB& quorum) {
   RETURN_NOT_OK(state_->LockForConfigChange(&lock));
   RETURN_NOT_OK(state_->SetCommittedQuorumUnlocked(quorum));
   // TODO: Update consensus peers if becoming leader.
-  RETURN_NOT_OK(state_->SetConfigDoneUnlocked());
+
   return Status::OK();
 }
 
@@ -700,7 +700,7 @@ Status RaftConsensus::RequestVote(const VoteRequestPB* request, VoteResponsePB* 
 
   // Acquire the replica state lock so we can read / modify the consensus state.
   ReplicaState::UniqueLock state_guard;
-  RETURN_NOT_OK(state_->LockForElection(&state_guard));
+  RETURN_NOT_OK(state_->LockForConfigChange(&state_guard));
 
   response->set_responder_uuid(state_->GetPeerUuid());
 
