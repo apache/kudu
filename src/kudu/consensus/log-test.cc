@@ -13,6 +13,8 @@
 DEFINE_int32(num_batches, 10000,
              "Number of batches to write to/read from the Log in TestWriteManyBatches");
 
+DECLARE_int32(log_min_segments_to_retain);
+
 namespace kudu {
 namespace log {
 
@@ -342,6 +344,17 @@ TEST_F(LogTest, TestGCWithLogRunning) {
   ASSERT_STATUS_OK(opid_anchor_registry_->GetEarliestRegisteredOpId(&anchored_opid));
   // We should now be anchored on op 0.10, i.e. on the 3rd segment
   ASSERT_TRUE(consensus::OpIdEquals(anchors[2]->op_id, anchored_opid));
+
+  // However, first, we'll try bumping the min retention threshold and
+  // verify that we don't GC any.
+  {
+    google::FlagSaver saver;
+    FLAGS_log_min_segments_to_retain = 10;
+    ASSERT_STATUS_OK(log_->GC(anchored_opid, &num_gced_segments));
+    ASSERT_EQ(0, num_gced_segments);
+  }
+
+  // Try again without the modified flag.
   ASSERT_STATUS_OK(log_->GC(anchored_opid, &num_gced_segments));
   ASSERT_EQ(2, num_gced_segments) << DumpSegmentsToString(segments);
   ASSERT_OK(log_->GetLogReader()->GetSegmentsSnapshot(&segments))

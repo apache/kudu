@@ -55,7 +55,7 @@ class LogReader {
       std::vector<consensus::ReplicateMsg*>* replicates) const;
 
   // Returns the number of segments.
-  const uint32_t num_segments() const;
+  const int num_segments() const;
 
   std::string ToString() const;
 

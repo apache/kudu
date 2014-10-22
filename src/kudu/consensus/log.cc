@@ -23,6 +23,10 @@
 #include "kudu/util/trace.h"
 #include "kudu/util/stopwatch.h"
 
+DEFINE_int32(log_min_segments_to_retain, 2,
+             "The minimum number of past log segments to keep at all times,"
+             " regardless of what is required for durability.");
+
 DEFINE_int32(group_commit_queue_size_bytes, 4 * 1024 * 1024,
              "Maximum size of the group commit queue in bytes");
 
@@ -618,6 +622,13 @@ Status Log::GC(const consensus::OpId& min_op_id, int32_t* num_gced) {
 
       if (segments_to_delete.size() == 0) {
         VLOG(1) << "No segments to delete.";
+        *num_gced = 0;
+        return Status::OK();
+      }
+
+      if (reader_->num_segments() - segments_to_delete.size() < FLAGS_log_min_segments_to_retain) {
+        VLOG(1) << "GCing " << reader_->num_segments() << " would not leave enough "
+                << " remaining segments to satisfy minimum retention requirement.";
         *num_gced = 0;
         return Status::OK();
       }

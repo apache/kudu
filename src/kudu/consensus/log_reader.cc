@@ -365,7 +365,7 @@ Status LogReader::AppendEmptySegment(const scoped_refptr<ReadableLogSegment>& se
   return Status::OK();
 }
 
-const uint32_t LogReader::num_segments()  const {
+const int LogReader::num_segments() const {
   boost::lock_guard<simple_spinlock> lock(lock_);
   return segments_.size();
 }
