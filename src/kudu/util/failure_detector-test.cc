@@ -16,30 +16,35 @@
 
 namespace kudu {
 
+// How often we expect a node to heartbeat to assert its "aliveness".
+static const int kExpectedHeartbeatPeriodMillis = 100;
+
 // Number of heartbeats after which the FD will consider the node dead.
-static const int kNumHeartbeats = 2;
-static const int kHeartbeatPeriodMillis = 100;
-// Let's check for failures every 100 msecs in average +- 10
-static const int kFailureMonitorMedianNanos = 100 * 1000 * 1000;
-static const int kFailureMonitorStddev = 10 * 1000 * 1000;
-static const char* kNodeName = "a";
-static const char* kTestTabletName = "t";
+static const int kMaxMissedHeartbeats = 2;
+
+// Let's check for failures every 100ms on average +/- 10ms.
+static const int kFailureMonitorMeanMillis = 100;
+static const int kFailureMonitorStddevMillis = 10;
+
+static const char* kNodeName = "node-1";
+static const char* kTestTabletName = "test-tablet";
 
 class FailureDetectorTest : public KuduTest {
  public:
   FailureDetectorTest()
     : KuduTest(),
-      latch_(kNumHeartbeats),
-      monitor_(new RandomizedFailureMonitor(kFailureMonitorMedianNanos,
-                                            kFailureMonitorStddev)) {
+      latch_(1),
+      monitor_(new RandomizedFailureMonitor(kFailureMonitorMeanMillis,
+                                            kFailureMonitorStddevMillis)) {
   }
 
   void FailureFunction(const std::string& name, const Status& status) {
     LOG(INFO) << "Detected failure of " << name;
     latch_.CountDown();
   }
+
  protected:
-  void WaitForCountDown() {
+  void WaitForFailure() {
     latch_.Wait();
   }
 
@@ -51,30 +56,37 @@ class FailureDetectorTest : public KuduTest {
 // that node everything is ok and that once we stop doing so the failure detection function
 // gets called.
 TEST_F(FailureDetectorTest, TestDetectsFailure) {
-  latch_.Reset(1);
   ASSERT_STATUS_OK(monitor_->Start());
 
-  scoped_refptr<FailureDetector> fd(new TimedFailureDetector(
-      MonoDelta::FromMilliseconds(kHeartbeatPeriodMillis * kNumHeartbeats)));
+  scoped_refptr<FailureDetector> detector(new TimedFailureDetector(
+      MonoDelta::FromMilliseconds(kExpectedHeartbeatPeriodMillis * kMaxMissedHeartbeats)));
 
-  monitor_->MonitorFailureDetector(kTestTabletName,
-                                   fd);
+  monitor_->MonitorFailureDetector(kTestTabletName, detector);
+  ASSERT_OK(detector->Track(kNodeName,
+                            MonoTime::Now(MonoTime::FINE),
+                            Bind(&FailureDetectorTest::FailureFunction, Unretained(this))));
 
-  ASSERT_OK(fd->Track(MonoTime::Now(MonoTime::FINE),
-                      kNodeName,
-                      Bind(&FailureDetectorTest::FailureFunction, Unretained(this))));
-  for (int i = 0; i < 10; i++) {
-    fd->MessageFrom(kNodeName, MonoTime::Now(MonoTime::FINE));
-    // we sleep for a heartbeat period.
-    usleep(100 * 1000);
-    // the latch shouldn't have counted down, since the node's been reporting that
+  const int kNumPeriodsToWait = 4;  // Num heartbeat periods to wait for a failure.
+  const int kUpdatesPerPeriod = 10; // Num updates we give per period to minimize test flakiness.
+
+  for (int i = 0; i < kNumPeriodsToWait * kUpdatesPerPeriod; i++) {
+    // Report in (heartbeat) to the detector.
+    ASSERT_OK(detector->MessageFrom(kNodeName, MonoTime::Now(MonoTime::FINE)));
+
+    // We sleep for a fraction of heartbeat period, to minimize test flakiness.
+    usleep((kExpectedHeartbeatPeriodMillis / kUpdatesPerPeriod) * 1000);
+
+    // The latch shouldn't have counted down, since the node's been reporting that
     // it's still alive.
     ASSERT_EQ(1, latch_.count());
   }
+
   // If we stop reporting he node is alive the failure callback is eventually
   // triggered and we exit.
-  WaitForCountDown();
-  ASSERT_STATUS_OK(monitor_->Stop());
+  WaitForFailure();
+
+  ASSERT_OK(monitor_->UnmonitorFailureDetector(kTestTabletName));
+  monitor_->Shutdown();
 }
 
 }  // namespace kudu
