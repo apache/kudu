@@ -43,10 +43,6 @@ fetch_and_expand() {
   echo
 }
 
-if [ ! -d gtest-${GTEST_VERSION} ]; then
-  fetch_and_expand gtest-${GTEST_VERSION}.zip
-fi
-
 GLOG_PATCHLEVEL=1
 delete_if_wrong_patchlevel glog-${GLOG_VERSION} $GLOG_PATCHLEVEL
 if [ ! -d glog-${GLOG_VERSION} ]; then
@@ -57,6 +53,10 @@ if [ ! -d glog-${GLOG_VERSION} ]; then
   touch patchlevel-$GLOG_PATCHLEVEL
   popd
   echo
+fi
+
+if [ ! -d gmock-${GMOCK_VERSION} ]; then
+  fetch_and_expand gmock-${GMOCK_VERSION}.zip
 fi
 
 if [ ! -d gflags-${GFLAGS_VERSION} ]; then

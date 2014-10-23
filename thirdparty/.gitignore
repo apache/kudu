@@ -3,6 +3,7 @@ crcutil-*
 cyrus-sasl-*
 gflags-*
 glog-*
+gmock-*
 gperftools-*
 gtest-*
 libev-*

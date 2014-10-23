@@ -93,7 +93,7 @@ add_library(kudu_test_util
 target_link_libraries(kudu_test_util
   gflags
   glog
-  gtest
+  gmock
   kudu_util)
 
 #######################################
@@ -105,7 +105,7 @@ add_library(kudu_test_main
 target_link_libraries(kudu_test_main
   gflags
   glog
-  gtest
+  gmock
   kudu_util
   kudu_test_util
   rt)

@@ -24,8 +24,8 @@ else
       "cmake")      F_CMAKE=1 ;;
       "gflags")     F_GFLAGS=1 ;;
       "glog")       F_GLOG=1 ;;
+      "gmock")      F_GMOCK=1 ;;
       "gperftools") F_GPERFTOOLS=1 ;;
-      "gtest")      F_GTEST=1 ;;
       "libev")      F_LIBEV=1 ;;
       "lz4")        F_LZ4=1 ;;
       "protobuf")   F_PROTOBUF=1 ;;
@@ -111,13 +111,13 @@ if [ -n "$F_ALL" -o -n "$F_GPERFTOOLS" ]; then
   make -j$PARALLEL install
 fi
 
-# build gtest
-if [ -n "$F_ALL" -o -n "$F_GTEST" ]; then
-  cd $GTEST_DIR
+# build gmock
+if [ -n "$F_ALL" -o -n "$F_GMOCK" ]; then
+  cd $GMOCK_DIR
   # Run the static library build, then the shared library build.
   for SHARED in OFF ON; do
     rm -rf CMakeCache.txt CMakeFiles/
-    CXXFLAGS=-fPIC $PREFIX/bin/cmake -DBUILD_SHARED_LIBS=$SHARED .
+    CXXFLAGS='-fPIC -g' $PREFIX/bin/cmake -DBUILD_SHARED_LIBS=$SHARED .
     make -j$PARALLEL
   done
 fi
