@@ -15,6 +15,7 @@
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/stringprintf.h"
 #include "kudu/gutil/strings/strip.h"
+#include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/walltime.h"
 #include "kudu/util/env.h"
 #include "kudu/util/mutex.h"
@@ -28,6 +29,7 @@ namespace {
 
 using std::string;
 using std::vector;
+using strings::Substitute;
 
 class FileState {
  public:
@@ -330,14 +332,25 @@ class InMemoryEnv : public EnvWrapper {
                                  gscoped_ptr<WritableFile>* result) OVERRIDE {
     MutexLock lock(mutex_);
     if (ContainsKey(file_map_, fname)) {
-      if (opts.overwrite_existing) {
-        DeleteFileInternal(fname);
-      } else {
-        return Status::AlreadyPresent(fname, "File already exists");
+      switch (opts.mode) {
+        case WritableFileOptions::CREATE_IF_NON_EXISTING_TRUNCATE:
+          DeleteFileInternal(fname);
+          break; // creates a new file below
+        case WritableFileOptions::CREATE_NON_EXISTING:
+          return Status::AlreadyPresent(fname, "File already exists");
+        case WritableFileOptions::OPEN_EXISTING:
+          result->reset(new WritableFileImpl(file_map_[fname]));
+          return Status::OK();
+        default:
+          return Status::NotSupported(Substitute("Unknown create mode $0",
+                                                 opts.mode));
       }
+    } else if (opts.mode == WritableFileOptions::OPEN_EXISTING) {
+      return Status::IOError(fname, "File not found");
     }
 
     CreateAndRegisterNewWritableFileUnlocked(fname, result);
+
     return Status::OK();
   }
 

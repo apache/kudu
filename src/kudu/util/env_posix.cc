@@ -202,13 +202,17 @@ class PosixMmapFile : public WritableFile {
   int fd_;
   size_t page_size_;
   bool sync_on_close_;
-  size_t map_size_;       // How much extra memory to map at a time
-  uint8_t *base_;            // The mapped region
-  uint8_t *limit_;           // Limit of the mapped region
-  uint8_t *dst_;             // Where to write next  (in range [base_,limit_])
-  uint8_t *last_sync_;       // Where have we synced up to
-  uint64_t file_offset_;  // Offset of base_ in file
-  uint64_t pre_allocated_size_;
+  size_t map_size_;             // How much extra memory to map at a time
+
+  // These addresses are only relevant to the current mapped region.
+  uint8_t* base_;               // The base of the mapped region
+  uint8_t* limit_;              // The limit of the mapped region
+  uint8_t* start_;              // The first empty byte in the mapped region
+  uint8_t* dst_;                // Where to write next (in range [start_,limit_])
+  uint8_t* last_sync_;          // Where have we synced up to
+
+  uint64_t filesize_;           // Overall file size
+  uint64_t pre_allocated_size_; // Number of bytes known to have been preallocated
 
   // Have we done an munmap of unsynced data?
   bool pending_sync_;
@@ -220,25 +224,29 @@ class PosixMmapFile : public WritableFile {
 
   size_t TruncateToPageBoundary(size_t s) {
     s -= (s & (page_size_ - 1));
-    assert((s % page_size_) == 0);
+    DCHECK((s % page_size_) == 0);
     return s;
   }
 
   bool UnmapCurrentRegion() {
     bool result = true;
     if (base_ != NULL) {
-      if (last_sync_ < limit_) {
+      if (last_sync_ < dst_) {
         // Defer syncing this data until next Sync() call, if any
         pending_sync_ = true;
       }
       if (munmap(base_, limit_ - base_) != 0) {
         result = false;
       }
-      file_offset_ += limit_ - base_;
+      // Account for file growth, taking care to exclude any existing
+      // file bits that were in the mapping.
+      filesize_ += limit_ - start_;
+
       base_ = NULL;
       limit_ = NULL;
-      last_sync_ = NULL;
+      start_ = NULL;
       dst_ = NULL;
+      last_sync_ = NULL;
 
       // Increase the amount we map the next time, but capped at 2MB
       if (map_size_ < (1<<20)) {
@@ -249,27 +257,40 @@ class PosixMmapFile : public WritableFile {
   }
 
   bool MapNewRegion() {
-    assert(base_ == NULL);
-    uint64_t required_space = file_offset_ + map_size_;
+    DCHECK(base_ == NULL);
+
+    // Mapped regions must be page-aligned.
+    //
+    // If we see a non page-aligned offset, existing file contents will be
+    // included in the mapped region but passed over in Append().
+    uint64_t map_offset = TruncateToPageBoundary(filesize_);
+
+    // Grow the file if the mapped region is to extend over the edge.
+    uint64_t required_space = map_offset + map_size_;
     if (required_space >= pre_allocated_size_) {
       if (ftruncate(fd_, required_space) < 0) {
         return false;
       }
     }
+
     void* ptr = mmap(NULL, map_size_, PROT_READ | PROT_WRITE, MAP_SHARED,
-                     fd_, file_offset_);
+                     fd_, map_offset);
     if (ptr == MAP_FAILED) {
       return false;
     }
     base_ = reinterpret_cast<uint8_t *>(ptr);
     limit_ = base_ + map_size_;
-    dst_ = base_;
-    last_sync_ = base_;
+
+    // Part of the mapping may already be used; skip over it.
+    start_ = base_ + (filesize_ - map_offset);
+    dst_ = start_;
+    last_sync_ = start_;
     return true;
   }
 
  public:
-  PosixMmapFile(const std::string& fname, int fd, size_t page_size, bool sync_on_close)
+  PosixMmapFile(const std::string& fname, int fd, uint64_t file_size,
+                size_t page_size, bool sync_on_close)
       : filename_(fname),
         fd_(fd),
         page_size_(page_size),
@@ -277,12 +298,13 @@ class PosixMmapFile : public WritableFile {
         map_size_(Roundup(65536, page_size)),
         base_(NULL),
         limit_(NULL),
+        start_(NULL),
         dst_(NULL),
         last_sync_(NULL),
-        file_offset_(0),
+        filesize_(file_size),
         pre_allocated_size_(0),
         pending_sync_(false) {
-    assert((page_size & (page_size - 1)) == 0);
+    DCHECK((page_size & (page_size - 1)) == 0);
   }
 
 
@@ -294,7 +316,7 @@ class PosixMmapFile : public WritableFile {
   }
 
   virtual Status PreAllocate(uint64_t size) OVERRIDE {
-    uint64_t offset = std::max(file_offset_, pre_allocated_size_);
+    uint64_t offset = std::max(filesize_, pre_allocated_size_);
     if (fallocate(fd_, 0, offset, size) < 0) {
       return IOError(filename_, errno);
     }
@@ -308,8 +330,8 @@ class PosixMmapFile : public WritableFile {
     const uint8_t *src = data.data();
     size_t left = data.size();
     while (left > 0) {
-      assert(base_ <= dst_);
-      assert(dst_ <= limit_);
+      DCHECK(start_ <= dst_);
+      DCHECK(dst_ <= limit_);
       size_t avail = limit_ - dst_;
       if (avail == 0) {
         if (!UnmapCurrentRegion() ||
@@ -341,7 +363,7 @@ class PosixMmapFile : public WritableFile {
       s = IOError(filename_, errno);
     } else if (unused > 0) {
       // Trim the extra space at the end of the file
-      if (ftruncate(fd_, file_offset_ - unused) < 0) {
+      if (ftruncate(fd_, filesize_ - unused) < 0) {
         s = IOError(filename_, errno);
       }
       pending_sync_ = true;
@@ -388,14 +410,19 @@ class PosixMmapFile : public WritableFile {
     Status s;
 
     if (pending_sync_) {
-      // Some unmapped data was not synced
+      // Some unmapped data was not synced, sync the entire file.
       pending_sync_ = false;
       if (fdatasync(fd_) < 0) {
         s = IOError(filename_, errno);
+      } else if (base_ != NULL) {
+        // If there's no mapped region, last_sync_ is irrelevant (it's
+        // relative to the current region).
+        last_sync_ = dst_;
       }
-    }
+    } else if (dst_ > last_sync_) {
+      // All unmapped data is synced, but let's sync any dirty pages
+      // within the current mapped region.
 
-    if (dst_ > last_sync_) {
       // Find the beginnings of the pages that contain the first and last
       // bytes to be synced.
       size_t p1 = TruncateToPageBoundary(last_sync_ - base_);
@@ -415,7 +442,7 @@ class PosixMmapFile : public WritableFile {
   }
 
   virtual uint64_t Size() const OVERRIDE {
-    return file_offset_ + (dst_ - base_);
+    return filesize_ + (dst_ - start_);
   }
 
   virtual string ToString() const OVERRIDE { return filename_; }
@@ -436,11 +463,12 @@ class PosixWritableFile : public WritableFile {
  public:
   PosixWritableFile(const std::string& fname,
                     int fd,
+                    uint64_t file_size,
                     bool sync_on_close)
       : filename_(fname),
         fd_(fd),
         sync_on_close_(sync_on_close),
-        filesize_(0),
+        filesize_(file_size),
         pre_allocated_size_(0),
         pending_sync_type_(NONE) {
   }
@@ -589,19 +617,19 @@ class PosixWritableFile : public WritableFile {
       ++j;
     }
 
-    ssize_t written = writev(fd_, iov, n);
+    ssize_t written = pwritev(fd_, iov, n, filesize_);
 
     if (PREDICT_FALSE(written == -1)) {
       int err = errno;
-      return IOError("writev error", err);
+      return IOError("pwritev error", err);
     }
 
     filesize_ += written;
 
     if (PREDICT_FALSE(written != nbytes)) {
       return Status::IOError(
-          strings::Substitute("writev error: expected to write $0 bytes, wrote $1 bytes instead",
-                              nbytes, written));
+          Substitute("pwritev error: expected to write $0 bytes, wrote $1 bytes instead",
+                     nbytes, written));
     }
 
     return Status::OK();
@@ -700,20 +728,24 @@ class PosixEnv : public Env {
   virtual Status NewWritableFile(const WritableFileOptions& opts,
                                  const std::string& fname,
                                  gscoped_ptr<WritableFile>* result) OVERRIDE {
-    Status s;
-    int flags = O_CREAT | O_RDWR | O_TRUNC;
-    if (!opts.overwrite_existing) {
-      flags |= O_EXCL;
+    int flags = O_RDWR;
+    switch (opts.mode) {
+      case WritableFileOptions::CREATE_IF_NON_EXISTING_TRUNCATE:
+        flags |= O_CREAT | O_TRUNC;
+        break;
+      case WritableFileOptions::CREATE_NON_EXISTING:
+        flags |= O_CREAT | O_EXCL;
+        break;
+      case WritableFileOptions::OPEN_EXISTING:
+        break;
+      default:
+        return Status::NotSupported(Substitute("Unknown create mode $0", opts.mode));
     }
     const int fd = open(fname.c_str(), flags, 0644);
     if (fd < 0) {
-      s = IOError(fname, errno);
-    } else {
-      gscoped_ptr<WritableFile> writable_file;
-      InstantiateNewWritableFile(fname, fd, opts, &writable_file);
-      result->reset(writable_file.release());
+      return IOError(fname, errno);
     }
-    return s;
+    return InstantiateNewWritableFile(fname, fd, opts, result);
   }
 
   virtual Status NewTempWritableFile(const WritableFileOptions& opts,
@@ -728,8 +760,7 @@ class PosixEnv : public Env {
                      errno);
     }
     *created_filename = fname.get();
-    InstantiateNewWritableFile(*created_filename, fd, opts, result);
-    return Status::OK();
+    return InstantiateNewWritableFile(*created_filename, fd, opts, result);
   }
 
   virtual bool FileExists(const std::string& fname) OVERRIDE {
@@ -977,15 +1008,20 @@ class PosixEnv : public Env {
     }
   };
 
-  void InstantiateNewWritableFile(const std::string& fname,
-                                  int fd,
-                                  const WritableFileOptions& opts,
-                                  gscoped_ptr<WritableFile>* result) {
-    if (opts.mmap_file) {
-      result->reset(new PosixMmapFile(fname, fd, page_size_, opts.sync_on_close));
-    } else {
-      result->reset(new PosixWritableFile(fname, fd, opts.sync_on_close));
+  Status InstantiateNewWritableFile(const std::string& fname,
+                                    int fd,
+                                    const WritableFileOptions& opts,
+                                    gscoped_ptr<WritableFile>* result) {
+    uint64_t file_size = 0;
+    if (opts.mode == WritableFileOptions::OPEN_EXISTING) {
+      RETURN_NOT_OK(GetFileSize(fname, &file_size));
     }
+    if (opts.mmap_file) {
+      result->reset(new PosixMmapFile(fname, fd, file_size, page_size_, opts.sync_on_close));
+    } else {
+      result->reset(new PosixWritableFile(fname, fd, file_size, opts.sync_on_close));
+    }
+    return Status::OK();
   }
 
   size_t page_size_;

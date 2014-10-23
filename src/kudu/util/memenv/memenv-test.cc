@@ -209,10 +209,43 @@ TEST_F(MemEnvTest, Overwrite) {
 
   // File exists, try to overwrite (and fail).
   WritableFileOptions opts;
-  opts.overwrite_existing = false;
+  opts.mode = WritableFileOptions::CREATE_NON_EXISTING;
   Status s = env_util::OpenFileForWrite(opts,
                                         env_, "some file", &writer);
   ASSERT_TRUE(s.IsAlreadyPresent());
+}
+
+TEST_F(MemEnvTest, Reopen) {
+  string first = "The quick brown fox";
+  string second = "jumps over the lazy dog";
+
+  // Create the file and write to it.
+  shared_ptr<WritableFile> writer;
+  ASSERT_OK(env_util::OpenFileForWrite(env_, "some file", &writer));
+  ASSERT_OK(writer->Append(first));
+  ASSERT_EQ(first.length(), writer->Size());
+  ASSERT_OK(writer->Close());
+
+  // Reopen it and append to it.
+  WritableFileOptions reopen_opts;
+  reopen_opts.mode = WritableFileOptions::OPEN_EXISTING;
+  ASSERT_OK(env_util::OpenFileForWrite(reopen_opts,
+                                       env_, "some file", &writer));
+  ASSERT_EQ(first.length(), writer->Size());
+  ASSERT_OK(writer->Append(second));
+  ASSERT_EQ(first.length() + second.length(), writer->Size());
+  ASSERT_OK(writer->Close());
+
+  // Check that the file has both strings.
+  shared_ptr<RandomAccessFile> reader;
+  ASSERT_OK(env_util::OpenFileForRandom(env_, "some file", &reader));
+  uint64_t size;
+  ASSERT_OK(reader->Size(&size));
+  ASSERT_EQ(first.length() + second.length(), size);
+  Slice s;
+  uint8_t scratch[size];
+  ASSERT_OK(env_util::ReadFully(reader.get(), 0, size, &s, scratch));
+  ASSERT_EQ(first + second, s.ToString());
 }
 
 TEST_F(MemEnvTest, TempFile) {

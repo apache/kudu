@@ -305,6 +305,44 @@ class TestEnv : public KuduTest {
     ASSERT_EQ(kOneMb - punch_amount, size_on_disk);
   }
 
+  void DoTestReopen(const WritableFileOptions& opts) {
+    LOG(INFO) << "Testing reopening behavior with mmap "
+              << (opts.mmap_file ? "enabled" : "disabled");
+
+    string test_path = GetTestPath("test_env_wf");
+    string first = "The quick brown fox";
+    string second = "jumps over the lazy dog";
+
+    // Create the file and write to it.
+    shared_ptr<WritableFile> writer;
+    ASSERT_OK(env_util::OpenFileForWrite(opts,
+                                         env_.get(), test_path, &writer));
+    ASSERT_OK(writer->Append(first));
+    ASSERT_EQ(first.length(), writer->Size());
+    ASSERT_OK(writer->Close());
+
+    // Reopen it and append to it.
+    WritableFileOptions reopen_opts = opts;
+    reopen_opts.mode = WritableFileOptions::OPEN_EXISTING;
+    ASSERT_OK(env_util::OpenFileForWrite(reopen_opts,
+                                         env_.get(), test_path, &writer));
+    ASSERT_EQ(first.length(), writer->Size());
+    ASSERT_OK(writer->Append(second));
+    ASSERT_EQ(first.length() + second.length(), writer->Size());
+    ASSERT_OK(writer->Close());
+
+    // Check that the file has both strings.
+    shared_ptr<RandomAccessFile> reader;
+    ASSERT_OK(env_util::OpenFileForRandom(env_.get(), test_path, &reader));
+    uint64_t size;
+    ASSERT_OK(reader->Size(&size));
+    ASSERT_EQ(first.length() + second.length(), size);
+    Slice s;
+    uint8_t scratch[size];
+    ASSERT_OK(env_util::ReadFully(reader.get(), 0, size, &s, scratch));
+    ASSERT_EQ(first + second, s.ToString());
+  }
+
   static bool fallocate_supported_;
   static bool fallocate_punch_hole_supported_;
 };
@@ -468,10 +506,18 @@ TEST_F(TestEnv, TestOverwrite) {
 
   // File exists, try to overwrite (and fail).
   WritableFileOptions opts;
-  opts.overwrite_existing = false;
+  opts.mode = WritableFileOptions::CREATE_NON_EXISTING;
   Status s = env_util::OpenFileForWrite(opts,
                                         env_.get(), test_path, &writer);
   ASSERT_TRUE(s.IsAlreadyPresent());
+}
+
+TEST_F(TestEnv, TestReopen) {
+  WritableFileOptions opts;
+  opts.mmap_file = true;
+  ASSERT_NO_FATAL_FAILURE(DoTestReopen(opts));
+  opts.mmap_file = false;
+  ASSERT_NO_FATAL_FAILURE(DoTestReopen(opts));
 }
 
 }  // namespace kudu

@@ -238,19 +238,33 @@ class RandomAccessFile {
 
 // Creation-time options for WritableFile
 struct WritableFileOptions {
+
+  // Governs if/how the file is created.
+  //
+  // enum value                      | file exists       | file does not exist
+  // --------------------------------+-------------------+--------------------
+  // CREATE_IF_NON_EXISTING_TRUNCATE | opens + truncates | creates
+  // CREATE_NON_EXISTING             | fails             | creates
+  // OPEN_EXISTING                   | opens             | fails
+  enum CreateMode {
+    CREATE_IF_NON_EXISTING_TRUNCATE,
+    CREATE_NON_EXISTING,
+    OPEN_EXISTING
+  };
+
   // Use memory-mapped I/O if supported.
   bool mmap_file;
 
   // Call Sync() during Close().
   bool sync_on_close;
 
-  // Overwrite existing files.
-  bool overwrite_existing;
+  // See CreateMode for details.
+  CreateMode mode;
 
   WritableFileOptions()
     : mmap_file(true),
       sync_on_close(false),
-      overwrite_existing(true) { }
+      mode(CREATE_IF_NON_EXISTING_TRUNCATE) { }
 };
 
 // Options specified when a file is opened for random access.

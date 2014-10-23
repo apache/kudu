@@ -301,7 +301,7 @@ Status FileBlockManager::CreateAnonymousBlock(const CreateBlockOptions& opts,
     RETURN_NOT_OK(CreateBlockDir(block_id, &created_dirs));
     path = GetBlockPath(block_id);
     WritableFileOptions wr_opts;
-    wr_opts.overwrite_existing = false;
+    wr_opts.mode = WritableFileOptions::CREATE_NON_EXISTING;
     s = env_util::OpenFileForWrite(wr_opts, env_, path, &writer);
   } while (PREDICT_FALSE(s.IsAlreadyPresent()));
   if (s.ok()) {
@@ -325,7 +325,7 @@ Status FileBlockManager::CreateNamedBlock(const CreateBlockOptions& opts,
   RETURN_NOT_OK(CreateBlockDir(block_id, &created_dirs));
   shared_ptr<WritableFile> writer;
   WritableFileOptions wr_opts;
-  wr_opts.overwrite_existing = false;
+  wr_opts.mode = WritableFileOptions::CREATE_NON_EXISTING;
   RETURN_NOT_OK(env_util::OpenFileForWrite(wr_opts, env_, path, &writer));
   CreateBlock(block_id, path, created_dirs, writer, opts, block);
   return Status::OK();
