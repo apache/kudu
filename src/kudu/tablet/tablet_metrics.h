@@ -36,6 +36,10 @@ struct TabletMetrics {
   Counter* mrs_consulted;
   Counter* bytes_flushed;
 
+  Histogram* blooms_consulted_per_op;
+  Histogram* keys_consulted_per_op;
+  Histogram* deltas_consulted_per_op;
+
   Histogram* commit_wait_duration;
   Histogram* snapshot_scan_inflight_wait_duration;
   Histogram* write_op_duration_no_consistency;

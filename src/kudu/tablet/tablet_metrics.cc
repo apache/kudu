@@ -28,6 +28,15 @@ METRIC_DEFINE_counter(mrs_consulted, kudu::MetricUnit::kProbes,
 METRIC_DEFINE_counter(bytes_flushed, kudu::MetricUnit::kBytes,
     "Number of bytes that have been flushed to disk by this tablet.");
 
+METRIC_DEFINE_histogram(blooms_consulted_per_op, kudu::MetricUnit::kProbes,
+                        "Number of times a bloom filter was consulted", 20, 2);
+
+METRIC_DEFINE_histogram(keys_consulted_per_op, kudu::MetricUnit::kProbes,
+                        "Number of times a key cfile was consulted", 20, 2);
+
+METRIC_DEFINE_histogram(deltas_consulted_per_op, kudu::MetricUnit::kProbes,
+                        "Number of times a delta file was consulted", 20, 2);
+
 METRIC_DEFINE_histogram(write_op_duration_no_consistency,
   kudu::MetricUnit::kMicroseconds,
   "Duration of Writes to this tablet with external consistency set to NO_CONSISTENCY.",
@@ -88,6 +97,9 @@ TabletMetrics::TabletMetrics(const MetricContext& metric_ctx)
     MINIT(deltas_consulted),
     MINIT(mrs_consulted),
     MINIT(bytes_flushed),
+    MINIT(blooms_consulted_per_op),
+    MINIT(keys_consulted_per_op),
+    MINIT(deltas_consulted_per_op),
     MINIT(commit_wait_duration),
     MINIT(snapshot_scan_inflight_wait_duration),
     MINIT(write_op_duration_no_consistency),
@@ -108,6 +120,10 @@ void TabletMetrics::AddProbeStats(const ProbeStats& stats) {
   keys_consulted->IncrementBy(stats.keys_consulted);
   deltas_consulted->IncrementBy(stats.deltas_consulted);
   mrs_consulted->IncrementBy(stats.mrs_consulted);
+
+  blooms_consulted_per_op->Increment(stats.blooms_consulted);
+  keys_consulted_per_op->Increment(stats.keys_consulted);
+  deltas_consulted_per_op->Increment(stats.deltas_consulted);
 }
 
 } // namespace tablet
