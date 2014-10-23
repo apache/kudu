@@ -8,6 +8,7 @@
 
 #include "kudu/consensus/consensus.h"
 #include "kudu/consensus/consensus_meta.h"
+#include "kudu/util/locks.h"
 
 namespace kudu {
 

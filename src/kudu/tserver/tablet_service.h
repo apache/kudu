@@ -14,7 +14,6 @@ namespace kudu {
 class RowwiseIterator;
 class Schema;
 class Status;
-class TaskExecutor;
 
 namespace tablet {
 class TabletPeer;

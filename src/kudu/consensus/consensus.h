@@ -4,6 +4,7 @@
 
 #include <iosfwd>
 #include <string>
+#include <tr1/memory>
 #include <vector>
 
 #include "kudu/consensus/consensus.pb.h"

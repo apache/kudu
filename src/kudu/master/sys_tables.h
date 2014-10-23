@@ -39,7 +39,7 @@ class SysTable {
            MetricRegistry* metrics,
            const string& name);
 
-  virtual ~SysTable() {}
+  virtual ~SysTable();
 
   // Allow for orderly shutdown of tablet peer, etc.
   virtual void Shutdown();

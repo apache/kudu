@@ -111,7 +111,7 @@ struct ElectionResult {
 //
 // The caller must pass a callback to the driver, which will be called exactly
 // once when a Yes/No decision has been made, except in case of Shutdown()
-// on the Messenger or test TaskExecutors, in which case no guarantee of a
+// on the Messenger or test ThreadPool, in which case no guarantee of a
 // callback is provided. In that case, we should not care about the election
 // result, because the server is ostensibly shutting down.
 //

@@ -7,13 +7,13 @@
 
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/util/monotime.h"
-#include "kudu/util/task_executor.h"
 
 namespace kudu {
 
-class MonitoredTask : public RefCountedThreadSafe<MonitoredTask>,
-                      public Task {
-  public:
+class MonitoredTask : public RefCountedThreadSafe<MonitoredTask> {
+ public:
+  virtual ~MonitoredTask() {}
+
     enum State {
       kStatePreparing,
       kStateRunning,
@@ -21,6 +21,9 @@ class MonitoredTask : public RefCountedThreadSafe<MonitoredTask>,
       kStateFailed,
       kStateAborted,
     };
+
+    // Abort the ongoing task.
+    virtual void Abort() = 0;
 
     // Task State
     virtual State state() const = 0;

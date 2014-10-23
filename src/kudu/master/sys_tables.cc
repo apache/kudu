@@ -26,6 +26,7 @@
 #include "kudu/tablet/tablet.h"
 #include "kudu/tserver/tserver.pb.h"
 #include "kudu/util/pb_util.h"
+#include "kudu/util/threadpool.h"
 
 using kudu::consensus::ConsensusMetadata;
 using kudu::log::Log;
@@ -53,6 +54,9 @@ SysTable::SysTable(Master* master,
     master_(master) {
   CHECK_OK(ThreadPoolBuilder("ldr-apply").Build(&leader_apply_pool_));
   CHECK_OK(ThreadPoolBuilder("repl-apply").Build(&replica_apply_pool_));
+}
+
+SysTable::~SysTable() {
 }
 
 void SysTable::Shutdown() {

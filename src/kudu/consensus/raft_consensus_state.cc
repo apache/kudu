@@ -592,27 +592,6 @@ void ReplicaState::ResetActiveQuorumStateUnlocked(const metadata::QuorumPB& quor
   active_quorum_state_ = QuorumState::Build(quorum, peer_uuid_).Pass();
 }
 
-//////////////////////////////////////////////////
-// OperationCallbackRunnable
-//////////////////////////////////////////////////
-
-OperationCallbackRunnable::OperationCallbackRunnable(const shared_ptr<FutureCallback>& callback)
-  : callback_(callback) {}
-
-void OperationCallbackRunnable::set_error(const Status& error) {
-  lock_guard<simple_spinlock> lock(&lock_);
-  error_ = error;
-}
-
-void OperationCallbackRunnable::Run() {
-  lock_guard<simple_spinlock> lock(&lock_);
-  if (PREDICT_TRUE(error_.ok())) {
-    callback_->OnSuccess();
-    return;
-  }
-  callback_->OnFailure(error_);
-}
-
 }  // namespace consensus
 }  // namespace kudu
 

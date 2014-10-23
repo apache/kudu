@@ -1,5 +1,6 @@
 // Copyright (c) 2013, Cloudera, inc.
 
+#include <boost/foreach.hpp>
 #include <boost/thread/locks.hpp>
 #include <map>
 #include <string>
@@ -274,7 +275,7 @@ class NoOpTestPeerProxyFactory : public PeerProxyFactory {
 
 // Allows to test remote peers by emulating an RPC.
 // Both the "remote" peer's RPC call and the caller peer's response are executed
-// asynchronously in a TaskExecutor.
+// asynchronously in a ThreadPool.
 class LocalTestPeerProxy : public TestPeerProxy {
  public:
   explicit LocalTestPeerProxy(Consensus* consensus)
@@ -415,7 +416,6 @@ class LocalTestPeerProxy : public TestPeerProxy {
 
  private:
   gscoped_ptr<ThreadPool> pool_;
-  std::tr1::shared_ptr<Task> update_task_;
   Consensus* consensus_;
   mutable simple_spinlock lock_;
   bool miss_comm_;

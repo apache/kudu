@@ -9,7 +9,7 @@
 
 #include "kudu/gutil/macros.h"
 #include "kudu/tablet/transactions/transaction.h"
-#include "kudu/util/task_executor.h"
+#include "kudu/util/locks.h"
 
 namespace kudu {
 

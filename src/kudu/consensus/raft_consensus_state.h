@@ -24,7 +24,6 @@ namespace kudu {
 class FutureCallback;
 class HostPort;
 class ReplicaState;
-class TaskExecutor;
 class ThreadPool;
 
 namespace rpc {
@@ -437,27 +436,6 @@ class ReplicaState {
   mutable simple_spinlock update_lock_;
 
   State state_;
-};
-
-// Callbacks are shared_ptrs that need to be kept alive until after they have executed.
-// As often callbacks are the very last thing to run on a transaction, they may in some
-// cases loose all the references to them before they actually get executed.
-// To address this we create a wrapper runnable that makes sure the reference
-// count for the operation callback is kept above 0 until the callback actually
-// runs.
-class OperationCallbackRunnable : public Runnable {
- public:
-  explicit OperationCallbackRunnable(const std::tr1::shared_ptr<FutureCallback>& callback);
-
-  void set_error(const Status& error);
-
-  virtual void Run() OVERRIDE;
-
- private:
-   friend class MajorityOpStatusTracker;
-   std::tr1::shared_ptr<FutureCallback> callback_;
-   Status error_;
-   mutable simple_spinlock lock_;
 };
 
 }  // namespace consensus

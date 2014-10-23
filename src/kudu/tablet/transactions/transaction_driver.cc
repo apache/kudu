@@ -7,6 +7,7 @@
 #include "kudu/tablet/transactions/transaction_tracker.h"
 #include "kudu/util/debug-util.h"
 #include "kudu/util/task_executor.h"
+#include "kudu/util/threadpool.h"
 #include "kudu/util/trace.h"
 
 namespace kudu {

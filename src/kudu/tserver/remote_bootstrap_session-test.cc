@@ -24,6 +24,7 @@
 #include "kudu/util/crc.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/test_util.h"
+#include "kudu/util/threadpool.h"
 
 namespace kudu {
 namespace tserver {

@@ -2,6 +2,7 @@
 
 #include "kudu/consensus/consensus.h"
 
+#include <boost/foreach.hpp>
 #include <set>
 
 #include "kudu/consensus/log_util.h"

@@ -34,7 +34,6 @@
 #include "kudu/util/metrics.h"
 #include "kudu/util/pb_util.h"
 #include "kudu/util/stopwatch.h"
-#include "kudu/util/task_executor.h"
 #include "kudu/util/trace.h"
 
 DEFINE_int32(num_tablets_to_open_simultaneously, 50,

@@ -39,9 +39,6 @@ DEFINE_int32(tablet_server_scan_batch_size_rows, 100,
              "The number of rows to batch for servicing scan requests.");
 
 namespace kudu {
-
-class TaskExecutor;
-
 namespace tserver {
 
 using consensus::ConsensusRequestPB;

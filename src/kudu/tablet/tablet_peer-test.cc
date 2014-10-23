@@ -28,6 +28,7 @@
 #include "kudu/util/metrics.h"
 #include "kudu/util/test_util.h"
 #include "kudu/util/test_macros.h"
+#include "kudu/util/threadpool.h"
 
 DECLARE_bool(enable_log_gc);
 

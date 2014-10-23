@@ -17,7 +17,6 @@
 
 namespace kudu {
 class FsManager;
-class TaskExecutor;
 
 namespace log {
 class ReadableLogSegment;

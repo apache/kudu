@@ -19,9 +19,9 @@ namespace kudu {
 typedef boost::lock_guard<simple_spinlock> Lock;
 typedef gscoped_ptr<Lock> ScopedLock;
 
-class TaskExecutor;
 class FutureCallback;
 class HostPort;
+class ThreadPool;
 
 namespace server {
 class Clock;

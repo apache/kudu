@@ -52,6 +52,7 @@
 #include "kudu/rpc/rpc_context.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/thread.h"
+#include "kudu/util/threadpool.h"
 #include "kudu/util/trace.h"
 #include "kudu/cfile/type_encodings.h"
 
@@ -1228,7 +1229,7 @@ class AsyncTabletRequestTask : public MonitoredTask {
   }
 
   // Send the subclass RPC request.
-  virtual Status Run() OVERRIDE {
+  Status Run() {
     Status s = ResetTSProxy();
     if (!s.ok()) {
       LOG(WARNING) << "Unable to reset TS proxy: " << s.ToString();
@@ -1248,9 +1249,8 @@ class AsyncTabletRequestTask : public MonitoredTask {
   }
 
   // Abort this task.
-  virtual bool Abort() OVERRIDE {
+  virtual void Abort() OVERRIDE {
     MarkAborted();
-    return true;
   }
 
   virtual State state() const OVERRIDE {

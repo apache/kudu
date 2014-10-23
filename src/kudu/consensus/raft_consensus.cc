@@ -17,6 +17,7 @@
 #include "kudu/gutil/stl_util.h"
 #include "kudu/server/clock.h"
 #include "kudu/server/metadata.h"
+#include "kudu/util/threadpool.h"
 #include "kudu/util/trace.h"
 #include "kudu/util/url-coding.h"
 

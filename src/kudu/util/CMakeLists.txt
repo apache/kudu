@@ -63,7 +63,6 @@ add_library(kudu_util
   string_case.cc
   subprocess.cc
   sync_point.cc
-  task_executor.cc
   test_graph.cc
   thread.cc
   threadlocal.cc
@@ -164,7 +163,6 @@ ADD_KUDU_TEST(status-test)
 ADD_KUDU_TEST(string_case-test)
 ADD_KUDU_TEST(subprocess-test)
 ADD_KUDU_TEST(sync_point-test)
-ADD_KUDU_TEST(task_executor-test)
 ADD_KUDU_TEST(thread-test)
 ADD_KUDU_TEST(threadpool-test)
 ADD_KUDU_TEST(url-coding-test)

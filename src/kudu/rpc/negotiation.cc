@@ -19,7 +19,6 @@
 #include "kudu/rpc/sasl_client.h"
 #include "kudu/rpc/sasl_common.h"
 #include "kudu/rpc/sasl_server.h"
-#include "kudu/util/task_executor.h"
 #include "kudu/util/status.h"
 
 namespace kudu {

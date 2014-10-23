@@ -13,7 +13,6 @@
 #include "kudu/tablet/mvcc.h"
 #include "kudu/tablet/tablet.pb.h"
 #include "kudu/tablet/transactions/transaction.h"
-#include "kudu/util/task_executor.h"
 
 namespace kudu {
 struct DecodedRowOperation;
