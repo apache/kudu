@@ -31,7 +31,7 @@
 # also defined, but not for general use are
 # GTEST_LIBRARY, where to find the GTest library.
 
-set(GTEST_SEARCH_PATH ${CMAKE_SOURCE_DIR}/thirdparty/gtest-1.6.0)
+set(GTEST_SEARCH_PATH ${CMAKE_SOURCE_DIR}/thirdparty/gtest-1.7.0)
 
 set(GTEST_H gtest/gtest.h)
 
