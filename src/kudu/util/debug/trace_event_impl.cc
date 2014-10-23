@@ -811,9 +811,21 @@ void TraceEvent::AppendPrettyPrinted(std::ostringstream* out) const {
 ////////////////////////////////////////////////////////////////////////////////
 
 string TraceResultBuffer::FlushTraceLogToString() {
+  return DoFlush(false);
+}
+
+string TraceResultBuffer::FlushTraceLogToStringButLeaveBufferIntact() {
+  return DoFlush(true);
+}
+
+string TraceResultBuffer::DoFlush(bool leave_intact) {
   TraceResultBuffer buf;
   TraceLog* tl = TraceLog::GetInstance();
-  tl->Flush(Bind(&TraceResultBuffer::Collect, Unretained(&buf)));
+  if (leave_intact) {
+    tl->FlushButLeaveBufferIntact(Bind(&TraceResultBuffer::Collect, Unretained(&buf)));
+  } else {
+    tl->Flush(Bind(&TraceResultBuffer::Collect, Unretained(&buf)));
+  }
   buf.json_.append("]}\n");
   return buf.json_;
 }

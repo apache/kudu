@@ -22,6 +22,7 @@
 #include "kudu/server/rpcz-path-handler.h"
 #include "kudu/server/server_base_options.h"
 #include "kudu/server/server_base.pb.h"
+#include "kudu/server/tracing-path-handlers.h"
 #include "kudu/util/thread.h"
 #include "kudu/util/env.h"
 #include "kudu/util/metrics.h"
@@ -187,6 +188,7 @@ Status ServerBase::Start() {
   AddDefaultPathHandlers(web_server_.get());
   AddRpczPathHandlers(messenger_, web_server_.get());
   RegisterMetricsJsonHandler(web_server_.get(), metric_registry_.get());
+  TracingPathHandlers::RegisterHandlers(web_server_.get());
   RETURN_NOT_OK(web_server_->Start());
 
   if (!options_.dump_info_path.empty()) {

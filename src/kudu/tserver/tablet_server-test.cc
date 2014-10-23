@@ -3,12 +3,14 @@
 #include "kudu/tserver/tablet_server-test-base.h"
 
 #include "kudu/consensus/log-test-base.h"
+#include "kudu/gutil/strings/escaping.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/master/master.pb.h"
 #include "kudu/server/hybrid_clock.h"
 #include "kudu/server/server_base.proxy.h"
 #include "kudu/util/crc.h"
 #include "kudu/util/curl_util.h"
+#include "kudu/util/url-coding.h"
 
 using std::string;
 using std::tr1::shared_ptr;
@@ -133,15 +135,15 @@ TEST_F(TabletServerTest, TestWebPages) {
   string addr = mini_server_->bound_http_addr().ToString();
 
   // Tablets page should list tablet.
-  ASSERT_OK(c.FetchURL(strings::Substitute("http://$0/tablets", addr),
+  ASSERT_OK(c.FetchURL(Substitute("http://$0/tablets", addr),
                               &buf));
   ASSERT_STR_CONTAINS(buf.ToString(), kTabletId);
   ASSERT_STR_CONTAINS(buf.ToString(), "<td>&lt;start of table&gt;</td>");
   ASSERT_STR_CONTAINS(buf.ToString(), "<td>&lt;end of table&gt;</td>");
 
   // Tablet page should include the schema.
-  ASSERT_OK(c.FetchURL(strings::Substitute("http://$0/tablet?id=$1", addr, kTabletId),
-                              &buf));
+  ASSERT_OK(c.FetchURL(Substitute("http://$0/tablet?id=$1", addr, kTabletId),
+                       &buf));
   ASSERT_STR_CONTAINS(buf.ToString(), "<th>key</th>");
   ASSERT_STR_CONTAINS(buf.ToString(), "<td>string NULLABLE</td>");
 
@@ -167,6 +169,28 @@ TEST_F(TabletServerTest, TestWebPages) {
     ASSERT_STR_CONTAINS(buf.ToString(), "tcmalloc.tcmalloc_max_total_thread_cache_bytes");
 #endif
   }
+
+  // Smoke-test the tracing infrastructure.
+  ASSERT_OK(c.FetchURL(
+                Substitute("http://$0/tracing/json/get_buffer_percent_full", addr, kTabletId),
+                &buf));
+  ASSERT_EQ(buf.ToString(), "0");
+
+  string enable_req_json = "{\"categoryFilter\":\"*\", \"useContinuousTracing\": \"true\","
+    " \"useSampling\": \"false\"}";
+  string req_b64;
+  Base64Escape(enable_req_json, &req_b64);
+
+  ASSERT_OK(c.FetchURL(Substitute("http://$0/tracing/json/begin_recording?$1",
+                                         addr,
+                                         req_b64), &buf));
+  ASSERT_EQ(buf.ToString(), "");
+  ASSERT_OK(c.FetchURL(Substitute("http://$0/tracing/json/end_recording", addr),
+                       &buf));
+  ASSERT_STR_CONTAINS(buf.ToString(), "__metadata");
+  ASSERT_OK(c.FetchURL(Substitute("http://$0/tracing/json/categories", addr),
+                       &buf));
+  ASSERT_STR_CONTAINS(buf.ToString(), "trace_event_overhead");
 }
 
 TEST_F(TabletServerTest, TestInsert) {

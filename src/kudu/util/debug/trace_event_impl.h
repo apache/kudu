@@ -237,10 +237,13 @@ class BASE_EXPORT TraceBuffer {
 class TraceResultBuffer {
  public:
   static std::string FlushTraceLogToString();
+  static std::string FlushTraceLogToStringButLeaveBufferIntact();
 
  private:
   TraceResultBuffer();
   ~TraceResultBuffer();
+
+  static std::string DoFlush(bool leave_intact);
 
   // Callback for TraceLog::Flush
   void Collect(const scoped_refptr<RefCountedString>& s,

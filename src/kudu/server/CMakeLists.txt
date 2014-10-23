@@ -71,6 +71,7 @@ set(SERVER_PROCESS_SRCS
   server_base.cc
   server_base_options.cc
   tcmalloc_metrics.cc
+  tracing-path-handlers.cc
   webserver.cc
   webserver_options.cc
   webui_util.cc
