@@ -132,7 +132,7 @@ class ThreadMgr {
   uint64_t ReadNumCurrentThreads();
 
   // Webpage callback; prints all threads by category
-  void ThreadPathHandler(const WebCallbackRegistry::ArgumentMap& args, stringstream* output);
+  void ThreadPathHandler(const WebCallbackRegistry::WebRequest& args, stringstream* output);
   void PrintThreadCategoryRows(const ThreadCategory& category, stringstream* output);
 };
 
@@ -221,12 +221,12 @@ void ThreadMgr::PrintThreadCategoryRows(const ThreadCategory& category,
   }
 }
 
-void ThreadMgr::ThreadPathHandler(const WebCallbackRegistry::ArgumentMap& args,
+void ThreadMgr::ThreadPathHandler(const WebCallbackRegistry::WebRequest& req,
     stringstream* output) {
   MutexLock l(lock_);
   vector<const ThreadCategory*> categories_to_print;
-  WebCallbackRegistry::ArgumentMap::const_iterator category_name = args.find("group");
-  if (category_name != args.end()) {
+  WebCallbackRegistry::ArgumentMap::const_iterator category_name = req.parsed_args.find("group");
+  if (category_name != req.parsed_args.end()) {
     string group = EscapeForHtmlToString(category_name->second);
     (*output) << "<h2>Thread Group: " << group << "</h2>" << endl;
     if (group != "all") {

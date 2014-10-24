@@ -78,8 +78,8 @@ struct Tags {
 
 // Writes the last FLAGS_web_log_bytes of the INFO logfile to a webpage
 // Note to get best performance, set GLOG_logbuflevel=-1 to prevent log buffering
-static void LogsHandler(const Webserver::ArgumentMap& args, std::stringstream* output) {
-  bool as_text = (args.find("raw") != args.end());
+static void LogsHandler(const Webserver::WebRequest& req, std::stringstream* output) {
+  bool as_text = (req.parsed_args.find("raw") != req.parsed_args.end());
   Tags tags(as_text);
   string logfile;
   GetFullLogFilename(google::INFO, &logfile);
@@ -106,16 +106,16 @@ static void LogsHandler(const Webserver::ArgumentMap& args, std::stringstream* o
 }
 
 // Registered to handle "/flags", and prints out all command-line flags and their values
-static void FlagsHandler(const Webserver::ArgumentMap& args, std::stringstream* output) {
-  bool as_text = (args.find("raw") != args.end());
+static void FlagsHandler(const Webserver::WebRequest& req, std::stringstream* output) {
+  bool as_text = (req.parsed_args.find("raw") != req.parsed_args.end());
   Tags tags(as_text);
   (*output) << tags.header << "Command-line Flags" << tags.end_header;
   (*output) << tags.pre_tag << CommandlineFlagsIntoString() << tags.end_pre_tag;
 }
 
 // Registered to handle "/memz", and prints out memory allocation statistics.
-static void MemUsageHandler(const Webserver::ArgumentMap& args, std::stringstream* output) {
-  bool as_text = (args.find("raw") != args.end());
+static void MemUsageHandler(const Webserver::WebRequest& req, std::stringstream* output) {
+  bool as_text = (req.parsed_args.find("raw") != req.parsed_args.end());
   Tags tags(as_text);
 
   (*output) << tags.pre_tag;
@@ -132,7 +132,7 @@ static void MemUsageHandler(const Webserver::ArgumentMap& args, std::stringstrea
 }
 
 // Registered to handle "/memtrackerz", and prints out to handle memory tracker information.
-static void MemTrackersHandler(const Webserver::ArgumentMap& args, std::stringstream* output) {
+static void MemTrackersHandler(const Webserver::WebRequest& req, std::stringstream* output) {
   *output << "<h1>Memory usage by subsystem</h1>\n";
   *output << "<table class='table table-striped'>\n";
   *output << "  <tr><th>Id</th><th>Parent</th><th>Limit</th><th>Current Consumption</th>"
@@ -170,10 +170,10 @@ void AddDefaultPathHandlers(Webserver* webserver) {
 
 
 static void WriteMetricsAsJson(const MetricRegistry* const metrics,
-    const Webserver::ArgumentMap& args, std::stringstream* output) {
+                               const Webserver::WebRequest& req, std::stringstream* output) {
   JsonWriter writer(output);
-  const string* requested_metrics_param = FindOrNull(args, "metrics");
-  const string* requested_detail_metrics_param = FindOrNull(args, "detailed_metrics");
+  const string* requested_metrics_param = FindOrNull(req.parsed_args, "metrics");
+  const string* requested_detail_metrics_param = FindOrNull(req.parsed_args, "detailed_metrics");
   vector<string> requested_metrics;
   vector<string> requested_detail_metrics;
 

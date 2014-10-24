@@ -33,21 +33,21 @@ class TabletServerPathHandlers {
   Status Register(Webserver* server);
 
  private:
-  void HandleScansPage(const Webserver::ArgumentMap& args,
+  void HandleScansPage(const Webserver::WebRequest& req,
                        std::stringstream* output);
-  void HandleTabletsPage(const Webserver::ArgumentMap& args,
+  void HandleTabletsPage(const Webserver::WebRequest& req,
                          std::stringstream* output);
-  void HandleTabletPage(const Webserver::ArgumentMap& args,
+  void HandleTabletPage(const Webserver::WebRequest& req,
                         std::stringstream* output);
-  void HandleTransactionsPage(const Webserver::ArgumentMap& args,
+  void HandleTransactionsPage(const Webserver::WebRequest& req,
                               std::stringstream* output);
-  void HandleTabletSVGPage(const Webserver::ArgumentMap& args,
+  void HandleTabletSVGPage(const Webserver::WebRequest& req,
                            std::stringstream* output);
-  void HandleConsensusStatusPage(const Webserver::ArgumentMap& args,
+  void HandleConsensusStatusPage(const Webserver::WebRequest& req,
                                  std::stringstream* output);
-  void HandleDashboardsPage(const Webserver::ArgumentMap& args,
+  void HandleDashboardsPage(const Webserver::WebRequest& req,
                             std::stringstream* output);
-  void HandleMaintenanceManagerPage(const Webserver::ArgumentMap& args,
+  void HandleMaintenanceManagerPage(const Webserver::WebRequest& req,
                                     std::stringstream* output);
   std::string QuorumPBToHtml(const metadata::QuorumPB& quorum) const;
   std::string ScannerToHtml(const Scanner& scanner) const;

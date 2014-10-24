@@ -41,7 +41,7 @@ const int PPROF_DEFAULT_SAMPLE_SECS = 30; // pprof default sample time in second
 
 // pprof asks for the url /pprof/cmdline to figure out what application it's profiling.
 // The server should respond by reading the contents of /proc/self/cmdline.
-static void PprofCmdLineHandler(const Webserver::ArgumentMap& args, stringstream* output) {
+static void PprofCmdLineHandler(const Webserver::WebRequest& req, stringstream* output) {
   ifstream cmd_line_file("/proc/self/cmdline", std::ios::in);
   if (!cmd_line_file.is_open()) {
     (*output) << "Unable to open file: /proc/self/cmdline";
@@ -54,13 +54,13 @@ static void PprofCmdLineHandler(const Webserver::ArgumentMap& args, stringstream
 // pprof asks for the url /pprof/heap to get heap information. This should be implemented
 // by calling HeapProfileStart(filename), continue to do work, and then, some number of
 // seconds later, call GetHeapProfile() followed by HeapProfilerStop().
-static void PprofHeapHandler(const Webserver::ArgumentMap& args, stringstream* output) {
+static void PprofHeapHandler(const Webserver::WebRequest& req, stringstream* output) {
 #ifndef TCMALLOC_ENABLED
   (*output) << "Heap profiling is not available without tcmalloc.";
 #else
-  Webserver::ArgumentMap::const_iterator it = args.find("seconds");
+  Webserver::ArgumentMap::const_iterator it = req.parsed_args.find("seconds");
   int seconds = PPROF_DEFAULT_SAMPLE_SECS;
-  if (it != args.end()) {
+  if (it != req.parsed_args.end()) {
     seconds = atoi(it->second.c_str());
   }
 
@@ -77,13 +77,13 @@ static void PprofHeapHandler(const Webserver::ArgumentMap& args, stringstream* o
 // pprof asks for the url /pprof/profile?seconds=XX to get cpu-profiling information.
 // The server should respond by calling ProfilerStart(), continuing to do its work,
 // and then, XX seconds later, calling ProfilerStop().
-static void PprofCpuProfileHandler(const Webserver::ArgumentMap& args, stringstream* output) {
+static void PprofCpuProfileHandler(const Webserver::WebRequest& req, stringstream* output) {
 #ifndef TCMALLOC_ENABLED
   (*output) << "CPU profiling is not available without tcmalloc.";
 #else
-  Webserver::ArgumentMap::const_iterator it = args.find("seconds");
+  Webserver::ArgumentMap::const_iterator it = req.parsed_args.find("seconds");
   int seconds = PPROF_DEFAULT_SAMPLE_SECS;
-  if (it != args.end()) {
+  if (it != req.parsed_args.end()) {
     seconds = atoi(it->second.c_str());
   }
   ostringstream tmp_prof_file_name;
@@ -105,7 +105,7 @@ static void PprofCpuProfileHandler(const Webserver::ArgumentMap& args, stringstr
 // pprof asks for the url /pprof/growth to get heap-profiling delta (growth) information.
 // The server should respond by calling:
 // MallocExtension::instance()->GetHeapGrowthStacks(&output);
-static void PprofGrowthHandler(const Webserver::ArgumentMap& args, stringstream* output) {
+static void PprofGrowthHandler(const Webserver::WebRequest& req, stringstream* output) {
 #ifndef TCMALLOC_ENABLED
   (*output) << "Growth profiling is not available without tcmalloc.";
 #else
@@ -132,7 +132,7 @@ static void PprofGrowthHandler(const Webserver::ArgumentMap& args, stringstream*
 // <hex address><tab><function name>
 // For instance:
 // 0x08b2dabd    _Update
-static void PprofSymbolHandler(const Webserver::ArgumentMap& args, stringstream* output) {
+static void PprofSymbolHandler(const Webserver::WebRequest& req, stringstream* output) {
   // TODO: Implement symbol resolution. Without this, the binary needs to be passed
   // to pprof to resolve all symbols.
   (*output) << "num_symbols: 0";

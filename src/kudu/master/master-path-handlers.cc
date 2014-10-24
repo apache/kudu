@@ -37,7 +37,7 @@ const int kSysTabletsEntryStatePrefixLen = 12; // kTabletState
 MasterPathHandlers::~MasterPathHandlers() {
 }
 
-void MasterPathHandlers::HandleTabletServers(const Webserver::ArgumentMap& args,
+void MasterPathHandlers::HandleTabletServers(const Webserver::WebRequest& req,
                                              std::stringstream* output) {
   vector<std::tr1::shared_ptr<TSDescriptor> > descs;
   master_->ts_manager()->GetAllDescriptors(&descs);
@@ -58,7 +58,7 @@ void MasterPathHandlers::HandleTabletServers(const Webserver::ArgumentMap& args,
   *output << "</table>\n";
 }
 
-void MasterPathHandlers::HandleCatalogManager(const Webserver::ArgumentMap& args,
+void MasterPathHandlers::HandleCatalogManager(const Webserver::WebRequest& req,
                                               std::stringstream* output) {
   *output << "<h1>Catalog Manager</h1>\n";
 
@@ -79,11 +79,11 @@ void MasterPathHandlers::HandleCatalogManager(const Webserver::ArgumentMap& args
   *output << "</table>\n";
 }
 
-void MasterPathHandlers::HandleTablePage(const Webserver::ArgumentMap &args,
+void MasterPathHandlers::HandleTablePage(const Webserver::WebRequest& req,
                                          std::stringstream *output) {
   // Parse argument.
   string table_id;
-  if (!FindCopy(args, "id", &table_id)) {
+  if (!FindCopy(req.parsed_args, "id", &table_id)) {
     // TODO: webserver should give a way to return a non-200 response code
     *output << "Missing 'id' argument";
     return;
@@ -145,7 +145,7 @@ void MasterPathHandlers::HandleTablePage(const Webserver::ArgumentMap &args,
   HtmlOutputTaskList(task_list, output);
 }
 
-void MasterPathHandlers::HandleMasters(const Webserver::ArgumentMap& args,
+void MasterPathHandlers::HandleMasters(const Webserver::WebRequest& req,
                                        std::stringstream* output) {
   vector<ListMastersResponsePB::Entry> masters;
   Status s = master_->ListMasters(&masters);

@@ -23,11 +23,11 @@ namespace kudu {
 namespace {
 
 void RpczPathHandler(const std::tr1::shared_ptr<Messenger>& messenger,
-                     const Webserver::ArgumentMap& args, stringstream* output) {
+                     const Webserver::WebRequest& req, stringstream* output) {
   DumpRunningRpcsRequestPB dump_req;
   DumpRunningRpcsResponsePB dump_resp;
 
-  string arg = FindWithDefault(args, "include_traces", "false");
+  string arg = FindWithDefault(req.parsed_args, "include_traces", "false");
   dump_req.set_include_traces(ParseLeadingBoolValue(arg.c_str(), false));
 
   messenger->DumpRunningRpcs(dump_req, &dump_resp);

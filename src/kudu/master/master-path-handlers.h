@@ -32,13 +32,13 @@ class MasterPathHandlers {
   Status Register(Webserver* server);
 
  private:
-  void HandleTabletServers(const Webserver::ArgumentMap& args,
+  void HandleTabletServers(const Webserver::WebRequest& req,
                            std::stringstream* output);
-  void HandleCatalogManager(const Webserver::ArgumentMap& args,
+  void HandleCatalogManager(const Webserver::WebRequest& req,
                             std::stringstream* output);
-  void HandleTablePage(const Webserver::ArgumentMap &args,
+  void HandleTablePage(const Webserver::WebRequest& req,
                        std::stringstream *output);
-  void HandleMasters(const Webserver::ArgumentMap& args,
+  void HandleMasters(const Webserver::WebRequest& req,
                      std::stringstream* output);
 
   // Convert location of quorum members to HTML, indicating the roles
@@ -61,7 +61,7 @@ class MasterPathHandlers {
   DISALLOW_COPY_AND_ASSIGN(MasterPathHandlers);
 };
 
-void HandleTabletServersPage(const Webserver::ArgumentMap& args, std::stringstream* output);
+void HandleTabletServersPage(const Webserver::WebRequest& req, std::stringstream* output);
 
 } // namespace master
 } // namespace kudu

@@ -82,14 +82,14 @@ Status TabletServerPathHandlers::Register(Webserver* server) {
 }
 
 
-void TabletServerPathHandlers::HandleTransactionsPage(const Webserver::ArgumentMap& args,
+void TabletServerPathHandlers::HandleTransactionsPage(const Webserver::WebRequest& req,
                                                       std::stringstream* output) {
-  bool as_text = ContainsKey(args, "raw");
+  bool as_text = ContainsKey(req.parsed_args, "raw");
 
   vector<scoped_refptr<TabletPeer> > peers;
   tserver_->tablet_manager()->GetTabletPeers(&peers);
 
-  string arg = FindWithDefault(args, "include_traces", "false");
+  string arg = FindWithDefault(req.parsed_args, "include_traces", "false");
   Transaction::TraceType trace_type = ParseLeadingBoolValue(
       arg.c_str(), false) ? Transaction::TRACE_TXNS : Transaction::NO_TRACE_TXNS;
 
@@ -151,7 +151,7 @@ string TabletLink(const string& id) {
 }
 } // anonymous namespace
 
-void TabletServerPathHandlers::HandleTabletsPage(const Webserver::ArgumentMap &args,
+void TabletServerPathHandlers::HandleTabletsPage(const Webserver::WebRequest& req,
                                                  std::stringstream *output) {
   vector<scoped_refptr<TabletPeer> > peers;
   tserver_->tablet_manager()->GetTabletPeers(&peers);
@@ -239,8 +239,8 @@ string TabletServerPathHandlers::QuorumPBToHtml(const QuorumPB& quorum) const {
 
 namespace {
 
-bool GetTabletID(const Webserver::ArgumentMap& args, string* id, std::stringstream *out) {
-  if (!FindCopy(args, "id", id)) {
+bool GetTabletID(const Webserver::WebRequest& req, string* id, std::stringstream *out) {
+  if (!FindCopy(req.parsed_args, "id", id)) {
     // TODO: webserver should give a way to return a non-200 response code
     (*out) << "Tablet missing 'id' argument";
     return false;
@@ -248,7 +248,7 @@ bool GetTabletID(const Webserver::ArgumentMap& args, string* id, std::stringstre
   return true;
 }
 
-bool GetTabletPeer(TabletServer* tserver, const Webserver::ArgumentMap& args,
+bool GetTabletPeer(TabletServer* tserver, const Webserver::WebRequest& req,
                    scoped_refptr<TabletPeer>* peer, const string& tablet_id,
                    std::stringstream *out) {
   if (!tserver->tablet_manager()->LookupTablet(tablet_id, peer)) {
@@ -270,22 +270,22 @@ bool TabletBootstrapping(const scoped_refptr<TabletPeer>& peer, const string& ta
 // Returns true if the tablet_id was properly specified, the
 // tablet is found, and is in a non-bootstrapping state.
 bool LoadTablet(TabletServer* tserver,
-                const Webserver::ArgumentMap& args,
+                const Webserver::WebRequest& req,
                 string* tablet_id, scoped_refptr<TabletPeer>* peer,
                 std::stringstream* out) {
-  if (!GetTabletID(args, tablet_id, out)) return false;
-  if (!GetTabletPeer(tserver, args, peer, *tablet_id, out)) return false;
+  if (!GetTabletID(req, tablet_id, out)) return false;
+  if (!GetTabletPeer(tserver, req, peer, *tablet_id, out)) return false;
   if (!TabletBootstrapping(*peer, *tablet_id, out)) return false;
   return true;
 }
 
 } // anonymous namespace
 
-void TabletServerPathHandlers::HandleTabletPage(const Webserver::ArgumentMap &args,
+void TabletServerPathHandlers::HandleTabletPage(const Webserver::WebRequest& req,
                                                 std::stringstream *output) {
   string tablet_id;
   scoped_refptr<TabletPeer> peer;
-  if (!LoadTablet(tserver_, args, &tablet_id, &peer, output)) return;
+  if (!LoadTablet(tserver_, req, &tablet_id, &peer, output)) return;
 
   string table_name = peer->tablet()->metadata()->table_name();
 
@@ -313,11 +313,11 @@ void TabletServerPathHandlers::HandleTabletPage(const Webserver::ArgumentMap &ar
   *output << "</ul>\n";
 }
 
-void TabletServerPathHandlers::HandleTabletSVGPage(const Webserver::ArgumentMap &args,
+void TabletServerPathHandlers::HandleTabletSVGPage(const Webserver::WebRequest& req,
                                                    std::stringstream* output) {
   string id;
   scoped_refptr<TabletPeer> peer;
-  if (!LoadTablet(tserver_, args, &id, &peer, output)) return;
+  if (!LoadTablet(tserver_, req, &id, &peer, output)) return;
 
   *output << "<h1>Rowset Layout Diagram for Tablet "
           << TabletLink(id) << "</h1>\n";
@@ -325,16 +325,16 @@ void TabletServerPathHandlers::HandleTabletSVGPage(const Webserver::ArgumentMap 
 
 }
 
-void TabletServerPathHandlers::HandleConsensusStatusPage(const Webserver::ArgumentMap& args,
+void TabletServerPathHandlers::HandleConsensusStatusPage(const Webserver::WebRequest& req,
                                                          std::stringstream* output) {
   string id;
   scoped_refptr<TabletPeer> peer;
-  if (!LoadTablet(tserver_, args, &id, &peer, output)) return;
+  if (!LoadTablet(tserver_, req, &id, &peer, output)) return;
 
   peer->consensus()->DumpStatusHtml(*output);
 }
 
-void TabletServerPathHandlers::HandleScansPage(const Webserver::ArgumentMap &args,
+void TabletServerPathHandlers::HandleScansPage(const Webserver::WebRequest& req,
                                                std::stringstream* output) {
   *output << "<h1>Scans</h1>\n";
   *output << "<table class='table table-striped'>\n";
@@ -412,7 +412,7 @@ string TabletServerPathHandlers::IteratorStatsToHtml(const vector<IteratorStats>
   return html.str();
 }
 
-void TabletServerPathHandlers::HandleDashboardsPage(const Webserver::ArgumentMap &args,
+void TabletServerPathHandlers::HandleDashboardsPage(const Webserver::WebRequest& req,
                                                     std::stringstream* output) {
 
   *output << "<h3>Dashboards</h3>\n";
@@ -435,7 +435,7 @@ string TabletServerPathHandlers::GetDashboardLine(const std::string& link,
                     EscapeForHtmlToString(desc));
 }
 
-void TabletServerPathHandlers::HandleMaintenanceManagerPage(const Webserver::ArgumentMap &args,
+void TabletServerPathHandlers::HandleMaintenanceManagerPage(const Webserver::WebRequest& req,
                                                             std::stringstream* output) {
   *output << "<h1>Maintenance Manager state</h1>\n";
   MaintenanceManager* manager = tserver_->maintenance_manager();

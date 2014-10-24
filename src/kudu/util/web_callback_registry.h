@@ -12,7 +12,16 @@ namespace kudu {
 class WebCallbackRegistry {
  public:
   typedef std::map<std::string, std::string> ArgumentMap;
-  typedef boost::function<void (const ArgumentMap& args, std::stringstream* output)>
+
+  struct WebRequest {
+    // The query string, parsed into key/value argument pairs.
+    ArgumentMap parsed_args;
+
+    // The raw query string passed in the URL. May be empty.
+    std::string query_string;
+  };
+
+  typedef boost::function<void (const WebRequest& args, std::stringstream* output)>
       PathHandlerCallback;
 
   virtual ~WebCallbackRegistry() {}

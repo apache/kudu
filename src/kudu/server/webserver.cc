@@ -27,6 +27,7 @@
 #include <glog/logging.h>
 #include <squeasel.h>
 
+#include "kudu/gutil/map-util.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/stringprintf.h"
 #include "kudu/gutil/strings/join.h"
@@ -59,7 +60,7 @@ Webserver::~Webserver() {
   STLDeleteValues(&path_handlers_);
 }
 
-void Webserver::RootHandler(const Webserver::ArgumentMap& args, stringstream* output) {
+void Webserver::RootHandler(const Webserver::WebRequest& args, stringstream* output) {
   (*output) << "<h2>Status Pages</h2>";
   BOOST_FOREACH(const PathHandlerMap::value_type& handler, path_handlers_) {
     if (handler.second->is_on_nav_bar()) {
@@ -273,24 +274,25 @@ int Webserver::RunPathHandler(const PathHandler& handler,
   // Should we render with css styles?
   bool use_style = true;
 
-  map<string, string> arguments;
+  WebRequest req;
   if (request_info->query_string != NULL) {
-    BuildArgumentMap(request_info->query_string, &arguments);
+    req.query_string = request_info->query_string;
+    BuildArgumentMap(request_info->query_string, &req.parsed_args);
   }
-  if (!handler.is_styled() || arguments.find("raw") != arguments.end()) {
+  if (!handler.is_styled() || ContainsKey(req.parsed_args, "raw")) {
     use_style = false;
   }
 
   stringstream output;
   if (use_style) BootstrapPageHeader(&output);
   BOOST_FOREACH(const PathHandlerCallback& callback_, handler.callbacks()) {
-    callback_(arguments, &output);
+    callback_(req, &output);
   }
   if (use_style) BootstrapPageFooter(&output);
 
   string str = output.str();
   // Without styling, render the page as plain text
-  if (arguments.find("raw") != arguments.end()) {
+  if (req.parsed_args.find("raw") != req.parsed_args.end()) {
     sq_printf(connection, "HTTP/1.1 200 OK\r\n"
               "Content-Type: text/plain\r\n"
               "Content-Length: %zd\r\n"
