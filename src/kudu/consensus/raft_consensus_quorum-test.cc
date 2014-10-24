@@ -130,11 +130,19 @@ class RaftConsensusQuorumTest : public KuduTest {
 
       gscoped_ptr<PeerMessageQueue> queue(new PeerMessageQueue(metrics));
 
+      gscoped_ptr<PeerManager> peer_manager(
+          new PeerManager(options_.tablet_id,
+                              quorum_.peers(i).permanent_uuid(),
+                              proxy_factory,
+                              queue.get(),
+                              logs_[i]));
+
       scoped_refptr<RaftConsensus> peer(
           new RaftConsensus(options_,
                             cmeta.Pass(),
                             gscoped_ptr<PeerProxyFactory>(proxy_factory).Pass(),
                             queue.Pass(),
+                            peer_manager.Pass(),
                             metrics,
                             quorum_.peers(i).permanent_uuid(),
                             clock_,

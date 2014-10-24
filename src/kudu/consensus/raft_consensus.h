@@ -34,6 +34,7 @@ class Messenger;
 namespace consensus {
 class Peer;
 class PeerProxyFactory;
+class PeerManager;
 class ReplicaState;
 
 // The interface between RaftConsensus and the PeerMessageQueue.
@@ -61,12 +62,11 @@ class RaftConsensus : public Consensus,
  public:
   class ConsensusFaultHooks;
 
-  typedef std::tr1::unordered_map<std::string, Peer*> PeersMap;
-
   RaftConsensus(const ConsensusOptions& options,
                 gscoped_ptr<ConsensusMetadata> cmeta,
                 gscoped_ptr<PeerProxyFactory> peer_proxy_factory,
                 gscoped_ptr<PeerMessageQueue> queue,
+                gscoped_ptr<PeerManager> peer_manager,
                 const MetricContext& metric_ctx,
                 const std::string& peer_uuid,
                 const scoped_refptr<server::Clock>& clock,
@@ -111,9 +111,6 @@ class RaftConsensus : public Consensus,
   // tests, in particular calling the LockFor* methods on the returned object
   // can cause consensus to deadlock.
   ReplicaState* GetReplicaStateForTests();
-
-  // Signals all peers of the current quorum that there is a new request pending.
-  void SignalRequestToPeers(bool force_if_queue_empty = false);
 
   // Registers a callback that will be triggered when the operation with 'op_id'
   // is replicated.
@@ -181,9 +178,6 @@ class RaftConsensus : public Consensus,
   Status UpdateReplica(const ConsensusRequestPB* request,
                        ConsensusResponsePB* response);
 
-  // Updates 'peers_' according to the new quorum config.
-  Status CreateOrUpdatePeersUnlocked();
-
   // Pushes a new quorum configuration to a majority of peers. Contrary to write operations,
   // this actually waits for the commit round to reach a majority of peers, so that we know
   // we can proceed. If this returns Status::OK(), a majority of peers have accepted the new
@@ -246,10 +240,10 @@ class RaftConsensus : public Consensus,
   log::Log* log_;
   scoped_refptr<server::Clock> clock_;
   gscoped_ptr<PeerProxyFactory> peer_proxy_factory_;
-  // The peers in the consensus quorum.
-  PeersMap peers_;
   // The queue of messages that must be sent to peers.
   gscoped_ptr<PeerMessageQueue> queue_;
+  // PeerManager that manages a set of consensus Peers.
+  gscoped_ptr<PeerManager> peer_manager_;
   gscoped_ptr<ThreadPool> callback_pool_;
 
   gscoped_ptr<ReplicaState> state_;

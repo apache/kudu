@@ -48,6 +48,7 @@ RaftConsensus::RaftConsensus(const ConsensusOptions& options,
                              gscoped_ptr<ConsensusMetadata> cmeta,
                              gscoped_ptr<PeerProxyFactory> proxy_factory,
                              gscoped_ptr<PeerMessageQueue> queue,
+                             gscoped_ptr<PeerManager> peer_manager,
                              const MetricContext& metric_ctx,
                              const std::string& peer_uuid,
                              const scoped_refptr<server::Clock>& clock,
@@ -56,7 +57,8 @@ RaftConsensus::RaftConsensus(const ConsensusOptions& options,
     : log_(DCHECK_NOTNULL(log)),
       clock_(clock),
       peer_proxy_factory_(proxy_factory.Pass()),
-      queue_(queue.Pass()) {
+      queue_(queue.Pass()),
+      peer_manager_(peer_manager.Pass()) {
   CHECK_OK(ThreadPoolBuilder("raft-op-cb").set_max_threads(1).Build(&callback_pool_));
   state_.reset(new ReplicaState(options,
                                 callback_pool_.get(),
@@ -67,7 +69,6 @@ RaftConsensus::RaftConsensus(const ConsensusOptions& options,
 
 RaftConsensus::~RaftConsensus() {
   Shutdown();
-  STLDeleteValues(&peers_);
   STLDeleteValues(&election_proxies_);
 }
 
@@ -228,8 +229,15 @@ Status RaftConsensus::BecomeLeaderUnlocked() {
                state_->GetCurrentTermUnlocked(),
                state_->GetActiveQuorumStateUnlocked().majority_size);
 
+  metadata::QuorumPB quorum;
+  if (state_->IsQuorumChangePendingUnlocked()) {
+    quorum = state_->GetPendingQuorumUnlocked();
+  } else {
+    quorum = state_->GetCommittedQuorumUnlocked();
+  }
+
   // Create the peers so that we're able to replicate messages remotely and locally
-  RETURN_NOT_OK(CreateOrUpdatePeersUnlocked());
+  RETURN_NOT_OK(peer_manager_->UpdateQuorum(quorum));
 
   // Initiate a leader side config change transaction. We need it to be leader
   // side so that it acquires a timestamp and generally behaves like a leader
@@ -286,62 +294,6 @@ Status RaftConsensus::BecomeReplicaUnlocked() {
   return Status::OK();
 }
 
-Status RaftConsensus::CreateOrUpdatePeersUnlocked() {
-  unordered_set<string> new_peers;
-
-  metadata::QuorumPB quorum;
-  if (state_->IsQuorumChangePendingUnlocked()) {
-    quorum = state_->GetPendingQuorumUnlocked();
-  } else {
-    quorum = state_->GetCommittedQuorumUnlocked();
-  }
-
-  VLOG(1) << "Updating peers from new quorum: " << quorum.ShortDebugString();
-
-  // Create new peers
-  BOOST_FOREACH(const QuorumPeerPB& peer_pb, quorum.peers()) {
-    new_peers.insert(peer_pb.permanent_uuid());
-    Peer* peer = FindPtrOrNull(peers_, peer_pb.permanent_uuid());
-    if (peer != NULL) {
-      continue;
-    }
-    if (peer_pb.permanent_uuid() == state_->GetPeerUuid()) {
-      VLOG_WITH_PREFIX(1) << "Adding local peer. Peer: " << peer_pb.ShortDebugString();
-      gscoped_ptr<Peer> local_peer;
-      RETURN_NOT_OK(Peer::NewLocalPeer(peer_pb,
-                                       state_->GetOptions().tablet_id,
-                                       state_->GetPeerUuid(),
-                                       queue_.get(),
-                                       log_,
-                                       &local_peer));
-      InsertOrDie(&peers_, peer_pb.permanent_uuid(), local_peer.release());
-    } else {
-      VLOG_WITH_PREFIX(1) << "Adding remote peer. Peer: " << peer_pb.ShortDebugString();
-      gscoped_ptr<PeerProxy> peer_proxy;
-      RETURN_NOT_OK_PREPEND(peer_proxy_factory_->NewProxy(peer_pb, &peer_proxy),
-                            "Could not obtain a remote proxy to the peer.");
-
-      gscoped_ptr<Peer> remote_peer;
-      RETURN_NOT_OK(Peer::NewRemotePeer(peer_pb,
-                                        state_->GetOptions().tablet_id,
-                                        state_->GetPeerUuid(),
-                                        queue_.get(),
-                                        peer_proxy.Pass(),
-                                        &remote_peer));
-      InsertOrDie(&peers_, peer_pb.permanent_uuid(), remote_peer.release());
-    }
-  }
-  // Delete old peers
-  PeersMap::iterator iter = peers_.begin();
-  for (; iter != peers_.end(); iter++) {
-    if (new_peers.count((*iter).first) == 0) {
-      peers_.erase(iter);
-    }
-  }
-
-  return Status::OK();
-}
-
 Status RaftConsensus::Replicate(ConsensusRound* round) {
 
   RETURN_NOT_OK(ExecuteHook(PRE_REPLICATE));
@@ -377,7 +329,7 @@ Status RaftConsensus::Replicate(ConsensusRound* round) {
     RETURN_NOT_OK_PREPEND(s, "Unable to append operation to consensus queue");
   }
 
-  SignalRequestToPeers();
+  peer_manager_->SignalRequest();
 
   RETURN_NOT_OK(ExecuteHook(POST_REPLICATE));
   return Status::OK();
@@ -813,25 +765,9 @@ Status RaftConsensus::RequestVote(const VoteRequestPB* request, VoteResponsePB* 
   return RequestVoteRespondVoteGranted(request, response);
 }
 
-void RaftConsensus::SignalRequestToPeers(bool force_if_queue_empty) {
-  PeersMap::iterator iter = peers_.begin();
-  for (; iter != peers_.end(); iter++) {
-    Status s = (*iter).second->SignalRequest(force_if_queue_empty);
-    if (PREDICT_FALSE(!s.ok())) {
-      LOG_WITH_PREFIX_LK(WARNING) << "Peer was closed, removing from peers. Peer: "
-          << (*iter).second->peer_pb().ShortDebugString();
-      peers_.erase(iter);
-    }
-  }
-}
-
 void RaftConsensus::Shutdown() {
   CHECK_OK(ExecuteHook(PRE_SHUTDOWN));
 
-  // Peers must be closed outside of the lock to avoid a deadlock, since the
-  // peers hold their own Semaphore while acquiring the ReplicaState lock when
-  // calling UpdateCommittedIndex().
-  PeersMap peers;
   {
     ReplicaState::UniqueLock lock;
     CHECK_OK(state_->LockForShutdown(&lock));
@@ -840,14 +776,10 @@ void RaftConsensus::Shutdown() {
       return;
     }
     LOG_WITH_PREFIX(INFO) << "Raft consensus shutting down.";
-    // Copy the peers map so we can close the peers outside the lock.
-    peers = peers_;
   }
 
-  // Close the peers per above.
-  BOOST_FOREACH(const PeersMap::value_type& entry, peers) {
-    entry.second->Close();
-  }
+  // Close the peer manager.
+  peer_manager_->Close();
 
   // We must close the queue after we close the peers.
   {

@@ -125,11 +125,25 @@ Status TabletPeer::Init(const shared_ptr<Tablet>& tablet,
     } else {
       gscoped_ptr<consensus::PeerProxyFactory> rpc_factory(
           new consensus::RpcPeerProxyFactory(messenger_));
+
+      // The message queue that keeps track of which operations need to be replicated
+      // where.
       gscoped_ptr<consensus::PeerMessageQueue> queue(new consensus::PeerMessageQueue(metric_ctx));
+
+      // A manager for the set of peers that actually send the operations both remotely
+      // and to the local wal.
+      gscoped_ptr<consensus::PeerManager> queue_monitor_(
+          new consensus::PeerManager(options.tablet_id,
+                                         meta_->fs_manager()->uuid(),
+                                         rpc_factory.get(),
+                                         queue.get(),
+                                         log_.get()));
+
       consensus_.reset(new RaftConsensus(options,
                                          cmeta.Pass(),
                                          rpc_factory.Pass(),
                                          queue.Pass(),
+                                         queue_monitor_.Pass(),
                                          metric_ctx,
                                          meta_->fs_manager()->uuid(),
                                          clock_,
