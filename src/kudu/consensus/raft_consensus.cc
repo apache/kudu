@@ -47,6 +47,7 @@ using strings::Substitute;
 RaftConsensus::RaftConsensus(const ConsensusOptions& options,
                              gscoped_ptr<ConsensusMetadata> cmeta,
                              gscoped_ptr<PeerProxyFactory> proxy_factory,
+                             gscoped_ptr<PeerMessageQueue> queue,
                              const MetricContext& metric_ctx,
                              const std::string& peer_uuid,
                              const scoped_refptr<server::Clock>& clock,
@@ -55,7 +56,7 @@ RaftConsensus::RaftConsensus(const ConsensusOptions& options,
     : log_(DCHECK_NOTNULL(log)),
       clock_(clock),
       peer_proxy_factory_(proxy_factory.Pass()),
-      queue_(this, metric_ctx) {
+      queue_(queue.Pass()) {
   CHECK_OK(ThreadPoolBuilder("raft-op-cb").set_max_threads(1).Build(&callback_pool_));
   state_.reset(new ReplicaState(options,
                                 callback_pool_.get(),
@@ -246,9 +247,10 @@ Status RaftConsensus::ChangeConfigUnlocked() {
 Status RaftConsensus::BecomeLeaderUnlocked() {
   LOG_WITH_PREFIX(INFO) << "Becoming Leader";
 
-  queue_.Init(state_->GetCommittedOpIdUnlocked(),
-              state_->GetCurrentTermUnlocked(),
-              state_->GetActiveQuorumStateUnlocked().majority_size);
+  queue_->Init(this,
+               state_->GetCommittedOpIdUnlocked(),
+               state_->GetCurrentTermUnlocked(),
+               state_->GetActiveQuorumStateUnlocked().majority_size);
 
   // Create the peers so that we're able to replicate messages remotely and locally
   RETURN_NOT_OK(CreateOrUpdatePeersUnlocked());
@@ -293,7 +295,7 @@ Status RaftConsensus::BecomeReplicaUnlocked() {
 
   // Clear the consensus replication queue, evicting all state. We can reuse the
   // queue should we become leader.
-  queue_.Clear();
+  queue_->Clear();
   return Status::OK();
 }
 
@@ -322,7 +324,7 @@ Status RaftConsensus::CreateOrUpdatePeersUnlocked() {
       RETURN_NOT_OK(Peer::NewLocalPeer(peer_pb,
                                        state_->GetOptions().tablet_id,
                                        state_->GetPeerUuid(),
-                                       &queue_,
+                                       queue_.get(),
                                        log_,
                                        &local_peer));
       InsertOrDie(&peers_, peer_pb.permanent_uuid(), local_peer.release());
@@ -336,7 +338,7 @@ Status RaftConsensus::CreateOrUpdatePeersUnlocked() {
       RETURN_NOT_OK(Peer::NewRemotePeer(peer_pb,
                                         state_->GetOptions().tablet_id,
                                         state_->GetPeerUuid(),
-                                        &queue_,
+                                        queue_.get(),
                                         peer_proxy.Pass(),
                                         &remote_peer));
       InsertOrDie(&peers_, peer_pb.permanent_uuid(), remote_peer.release());
@@ -368,7 +370,7 @@ Status RaftConsensus::Replicate(ConsensusRound* round) {
     // the original instance of the replicate msg is owned by the consensus context
     // so we create a copy for the queue.
     gscoped_ptr<ReplicateMsg> queue_msg(new ReplicateMsg(*round->replicate_msg()));
-    Status s = queue_.AppendOperation(queue_msg.Pass());
+    Status s = queue_->AppendOperation(queue_msg.Pass());
 
     // Handle Status::ServiceUnavailable(), which means the queue is full.
     if (PREDICT_FALSE(s.IsServiceUnavailable())) {
@@ -380,7 +382,7 @@ Status RaftConsensus::Replicate(ConsensusRound* round) {
       state_->CancelPendingOperation(*id);
       LOG_WITH_PREFIX(WARNING) << ": Could not append replicate request "
                    << "to the queue. Queue is Full. "
-                   << "Queue metrics: " << queue_.ToString();
+                   << "Queue metrics: " << queue_->ToString();
 
       // TODO Possibly evict a dangling peer from the quorum here.
       // TODO count of number of ops failed due to consensus queue overflow.
@@ -864,7 +866,7 @@ void RaftConsensus::Shutdown() {
   {
     ReplicaState::UniqueLock lock;
     CHECK_OK(state_->LockForShutdown(&lock));
-    queue_.Close();
+    queue_->Close();
   }
 
   CHECK_OK(state_->CancelPendingTransactions());
@@ -1045,7 +1047,7 @@ void RaftConsensus::DumpStatusHtml(std::ostream& out) const {
   out << "<h1>Raft Consensus State</h1>" << std::endl;
 
   out << "<h2>State</h2>" << std::endl;
-  out << "<pre>" << EscapeForHtmlToString(queue_.ToString()) << "</pre>" << std::endl;
+  out << "<pre>" << EscapeForHtmlToString(queue_->ToString()) << "</pre>" << std::endl;
 
   // Dump the queues on a leader.
   QuorumPeerPB::Role role;
@@ -1056,10 +1058,10 @@ void RaftConsensus::DumpStatusHtml(std::ostream& out) const {
   }
   if (role == QuorumPeerPB::LEADER) {
     out << "<h2>Queue overview</h2>" << std::endl;
-    out << "<pre>" << EscapeForHtmlToString(queue_.ToString()) << "</pre>" << std::endl;
+    out << "<pre>" << EscapeForHtmlToString(queue_->ToString()) << "</pre>" << std::endl;
     out << "<hr/>" << std::endl;
     out << "<h2>Queue details</h2>" << std::endl;
-    queue_.DumpToHtml(out);
+    queue_->DumpToHtml(out);
   }
 }
 

@@ -55,7 +55,7 @@ class ConsensusQueueTest : public KuduTest {
                             &log_));
 
     consensus_.reset(new TestRaftConsensusQueueIface(log_.get()));
-    queue_.reset(new PeerMessageQueue(consensus_.get(), metric_context_));
+    queue_.reset(new PeerMessageQueue(metric_context_));
   }
 
 
@@ -119,7 +119,7 @@ class ConsensusQueueTest : public KuduTest {
 
 // This tests that the peer gets all the messages in the buffer
 TEST_F(ConsensusQueueTest, TestGetAllMessages) {
-  queue_->Init(MinimumOpId(), MinimumOpId().term(), 1);
+  queue_->Init(consensus_.get(), MinimumOpId(), MinimumOpId().term(), 1);
   AppendReplicateMessagesToQueue(queue_.get(), 1, 100);
 
   ConsensusRequestPB request;
@@ -150,7 +150,7 @@ TEST_F(ConsensusQueueTest, TestGetAllMessages) {
 // with several messages and then starts to track a peer whose watermark
 // falls in the middle of the current messages in the queue.
 TEST_F(ConsensusQueueTest, TestStartTrackingAfterStart) {
-  queue_->Init(MinimumOpId(), MinimumOpId().term(), 1);
+  queue_->Init(consensus_.get(), MinimumOpId(), MinimumOpId().term(), 1);
   AppendReplicateMessagesToQueue(queue_.get(), 1, 100);
 
   ConsensusRequestPB request;
@@ -184,7 +184,7 @@ TEST_F(ConsensusQueueTest, TestStartTrackingAfterStart) {
 // Tests that the peers gets the messages pages, with the size of a page
 // being 'consensus_max_batch_size_bytes'
 TEST_F(ConsensusQueueTest, TestGetPagedMessages) {
-  queue_->Init(MinimumOpId(), MinimumOpId().term(), 1);
+  queue_->Init(consensus_.get(), MinimumOpId(), MinimumOpId().term(), 1);
 
   // helper to estimate request size so that we can set the max batch size appropriately
   ConsensusRequestPB page_size_estimator;
@@ -246,7 +246,7 @@ TEST_F(ConsensusQueueTest, TestGetPagedMessages) {
 TEST_F(ConsensusQueueTest, TestAlwaysYieldsAtLeastOneMessage) {
   // generate a 2MB dummy payload
   string test_payload(2 * 1024 * 1024, '0');
-  queue_->Init(MinimumOpId(), MinimumOpId().term(), 1);
+  queue_->Init(consensus_.get(), MinimumOpId(), MinimumOpId().term(), 1);
 
   // Set a small batch size -- smaller than the message we're appending.
   google::FlagSaver saver;
@@ -280,7 +280,7 @@ TEST_F(ConsensusQueueTest, TestAlwaysYieldsAtLeastOneMessage) {
 }
 
 TEST_F(ConsensusQueueTest, TestPeersDontAckBeyondWatermarks) {
-  queue_->Init(MinimumOpId(), MinimumOpId().term(), 1);
+  queue_->Init(consensus_.get(), MinimumOpId(), MinimumOpId().term(), 1);
   AppendReplicateMessagesToQueue(queue_.get(), 1, 100);
 
   // Start to track the peer after the queue has some messages in it
@@ -326,8 +326,8 @@ TEST_F(ConsensusQueueTest, TestQueueRefusesRequestWhenFilled) {
   FLAGS_consensus_entry_cache_size_soft_limit_mb = 0;
   FLAGS_consensus_entry_cache_size_hard_limit_mb = 1;
 
-  queue_.reset(new PeerMessageQueue(consensus_.get(), metric_context_));
-  queue_->Init(MinimumOpId(), MinimumOpId().term(), 1);
+  queue_.reset(new PeerMessageQueue(metric_context_));
+  queue_->Init(consensus_.get(), MinimumOpId(), MinimumOpId().term(), 1);
 
   // generate a 128Kb dummy payload
   string test_payload(128 * 1024, '0');
@@ -359,7 +359,7 @@ TEST_F(ConsensusQueueTest, TestQueueRefusesRequestWhenFilled) {
 }
 
 TEST_F(ConsensusQueueTest, TestQueueAdvancesCommittedIndex) {
-  queue_->Init(MinimumOpId(), MinimumOpId().term(), 2);
+  queue_->Init(consensus_.get(), MinimumOpId(), MinimumOpId().term(), 2);
   // Track 3 different peers;
   queue_->TrackPeer("peer-1");
   queue_->TrackPeer("peer-2");
@@ -451,11 +451,11 @@ TEST_F(ConsensusQueueTest, TestQueueLoadsOperationsForPeer) {
 
   // Now reset the queue so that we can pass a new committed index,
   // the last operation in the log.
-  queue_.reset(new PeerMessageQueue(consensus_.get(), metric_context_));
+  queue_.reset(new PeerMessageQueue(metric_context_));
   OpId committed_index;
   committed_index.set_term(1);
   committed_index.set_index(100);
-  queue_->Init(committed_index, 1, 1);
+  queue_->Init(consensus_.get(), committed_index, 1, 1);
 
   ConsensusRequestPB request;
   ConsensusResponsePB response;
@@ -527,8 +527,8 @@ TEST_F(ConsensusQueueTest, TestQueueHardAndSoftLimit) {
   FLAGS_consensus_entry_cache_size_soft_limit_mb = 1;
   FLAGS_consensus_entry_cache_size_hard_limit_mb = 2;
 
-  queue_.reset(new PeerMessageQueue(consensus_.get(), metric_context_));
-  queue_->Init(MinimumOpId(), MinimumOpId().term(), 1);
+  queue_.reset(new PeerMessageQueue(metric_context_));
+  queue_->Init(consensus_.get(), MinimumOpId(), MinimumOpId().term(), 1);
 
   ConsensusRequestPB request;
   ConsensusResponsePB response;
@@ -616,10 +616,9 @@ TEST_F(ConsensusQueueTest, TestGlobalHardLimit) {
  // Exceed the global hard limit.
  parent_tracker->Consume(6 * 1024 * 1024);
 
- queue_.reset(new PeerMessageQueue(consensus_.get(),
-                                   metric_context_,
+ queue_.reset(new PeerMessageQueue(metric_context_,
                                    kParentTrackerId));
- queue_->Init(MinimumOpId(), MinimumOpId().term(), 1);
+ queue_->Init(consensus_.get(), MinimumOpId(), MinimumOpId().term(), 1);
 
  const int kPayloadSize = 768 * 1024;
 
@@ -659,10 +658,9 @@ TEST_F(ConsensusQueueTest, TestTrimWhenGlobalSoftLimitExceeded) {
  parent_tracker->Consume(4 * 1024 * 1024);
  parent_tracker->Consume(1024);
 
- queue_.reset(new PeerMessageQueue(consensus_.get(),
-                                   metric_context_,
+ queue_.reset(new PeerMessageQueue(metric_context_,
                                    kParentTrackerId));
- queue_->Init(MinimumOpId(), MinimumOpId().term(), 1);
+ queue_->Init(consensus_.get(), MinimumOpId(), MinimumOpId().term(), 1);
 
  const int kPayloadSize = 768 * 1024;
 

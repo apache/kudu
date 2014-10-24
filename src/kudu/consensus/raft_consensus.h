@@ -66,6 +66,7 @@ class RaftConsensus : public Consensus,
   RaftConsensus(const ConsensusOptions& options,
                 gscoped_ptr<ConsensusMetadata> cmeta,
                 gscoped_ptr<PeerProxyFactory> peer_proxy_factory,
+                gscoped_ptr<PeerMessageQueue> queue,
                 const MetricContext& metric_ctx,
                 const std::string& peer_uuid,
                 const scoped_refptr<server::Clock>& clock,
@@ -248,7 +249,7 @@ class RaftConsensus : public Consensus,
   // The peers in the consensus quorum.
   PeersMap peers_;
   // The queue of messages that must be sent to peers.
-  PeerMessageQueue queue_;
+  gscoped_ptr<PeerMessageQueue> queue_;
   gscoped_ptr<ThreadPool> callback_pool_;
 
   gscoped_ptr<ReplicaState> state_;

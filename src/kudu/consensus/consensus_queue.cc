@@ -95,11 +95,9 @@ PeerMessageQueue::Metrics::Metrics(const MetricContext& metric_ctx)
 }
 #undef INSTANTIATE_METRIC
 
-PeerMessageQueue::PeerMessageQueue(RaftConsensusQueueIface* consensus,
-                                   const MetricContext& metric_ctx,
+PeerMessageQueue::PeerMessageQueue(const MetricContext& metric_ctx,
                                    const std::string& parent_tracker_id)
     : majority_size_(0),
-      consensus_(DCHECK_NOTNULL(consensus)),
       max_ops_size_bytes_hard_(FLAGS_consensus_entry_cache_size_hard_limit_mb * 1024 * 1024),
       global_max_ops_size_bytes_hard_(
           FLAGS_global_consensus_entry_cache_size_hard_limit_mb * 1024 * 1024),
@@ -124,13 +122,15 @@ PeerMessageQueue::PeerMessageQueue(RaftConsensusQueueIface* consensus,
   queue_state_.state = kQueueConstructed;
 }
 
-void PeerMessageQueue::Init(const OpId& committed_index,
+void PeerMessageQueue::Init(RaftConsensusQueueIface* consensus,
+                            const OpId& committed_index,
                             uint64_t current_term,
                             int majority_size) {
   boost::lock_guard<simple_spinlock> lock(queue_lock_);
   CHECK_EQ(queue_state_.state, kQueueConstructed);
   DCHECK_GE(majority_size, 0);
   CHECK(committed_index.IsInitialized());
+  consensus_ = consensus;
   queue_state_.committed_index = committed_index;
   queue_state_.current_term = current_term;
   queue_state_.preceding_first_op_in_queue = committed_index;

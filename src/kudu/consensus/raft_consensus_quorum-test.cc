@@ -138,11 +138,16 @@ class RaftConsensusQuorumTest : public KuduTest {
       CHECK_OK(ConsensusMetadata::Create(fs_managers_[i], kTestTablet, quorum_,
                                          consensus::kMinimumTerm, &cmeta));
 
+      MetricContext metrics(metric_context_, Substitute("peer-$0", i));
+
+      gscoped_ptr<PeerMessageQueue> queue(new PeerMessageQueue(metrics));
+
       scoped_refptr<RaftConsensus> peer(
           new RaftConsensus(options_,
                             cmeta.Pass(),
                             gscoped_ptr<PeerProxyFactory>(proxy_factory).Pass(),
-                            MetricContext(metric_context_, Substitute("peer-$0", i)),
+                            queue.Pass(),
+                            metrics,
                             quorum_.peers(i).permanent_uuid(),
                             clock_,
                             txn_factory,
@@ -281,7 +286,7 @@ class RaftConsensusQuorumTest : public KuduTest {
         LOG(ERROR) << "Max timeout attempts reached while waiting for commit: "
             << to_wait_for.ShortDebugString() << " on replica. Dumping state and quitting.";
         vector<string> lines;
-        GetPeer(leader_idx)->queue_.DumpToStrings(&lines);
+        GetPeer(leader_idx)->queue_->DumpToStrings(&lines);
         BOOST_FOREACH(const string& line, lines) {
           LOG(ERROR) << line;
         }

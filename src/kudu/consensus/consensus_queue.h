@@ -45,8 +45,7 @@ extern const char kConsensusQueueParentTrackerId[];
 // modify it.
 class PeerMessageQueue {
  public:
-  explicit PeerMessageQueue(RaftConsensusQueueIface* consensus,
-                            const MetricContext& metric_ctx,
+  explicit PeerMessageQueue(const MetricContext& metric_ctx,
                             const std::string& parent_tracker_id = kConsensusQueueParentTrackerId);
 
   // Initialize the queue.
@@ -57,21 +56,22 @@ class PeerMessageQueue {
   // operation in the current term.
   // Majority size corresponds to the number of peers that must have replicated
   // a certain operation for it to be considered committed.
-  void Init(const OpId& committed_index,
-            uint64_t current_term,
-            int majority_size);
+  virtual void Init(RaftConsensusQueueIface* consensus,
+                    const OpId& committed_index,
+                    uint64_t current_term,
+                    int majority_size);
 
   // Appends a message to be replicated to the quorum.
   // Returns OK unless the message could not be added to the queue for some
   // reason (e.g. the queue reached max size).
-  Status AppendOperation(gscoped_ptr<ReplicateMsg> status);
+  virtual Status AppendOperation(gscoped_ptr<ReplicateMsg> status);
 
   // Makes the queue track this peer.
-  Status TrackPeer(const std::string& uuid);
+  virtual Status TrackPeer(const std::string& uuid);
 
   // Makes the queue untrack the peer.
   // Requires that the peer was being tracked.
-  void UntrackPeer(const std::string& uuid);
+  virtual void UntrackPeer(const std::string& uuid);
 
   // Assembles a request for a quorum peer, adding entries past 'op_id' up to
   // 'consensus_max_batch_size_bytes'.
@@ -84,12 +84,12 @@ class PeerMessageQueue {
   // instance of ConsensusRequestPB to RequestForPeer(): the buffer will
   // replace the old entries with new ones without de-allocating the old
   // ones if they are still required.
-  void RequestForPeer(const std::string& uuid,
+  virtual void RequestForPeer(const std::string& uuid,
                       ConsensusRequestPB* request);
 
   // Updates the request queue with the latest response of a peer, returns
   // whether this peer has more requests pending.
-  void ResponseFromPeer(const ConsensusResponsePB& response,
+  virtual void ResponseFromPeer(const ConsensusResponsePB& response,
                         bool* more_pending);
 
   // Clears all messages and tracked peers but still leaves the queue in state
@@ -97,27 +97,27 @@ class PeerMessageQueue {
   // Note: Pending messages must be handled before calling this method, i.e.
   // any in flight operations must be either aborted or otherwise referenced
   // elsewhere prior to calling this.
-  void Clear();
+  virtual void Clear();
 
   // Closes the queue, peers are still allowed to call UntrackPeer() and
   // ResponseFromPeer() but no additional peers can be tracked or messages
   // queued.
-  void Close();
+  virtual void Close();
 
-  int64_t GetQueuedOperationsSizeBytesForTests() const;
+  virtual int64_t GetQueuedOperationsSizeBytesForTests() const;
 
   // Returns the last message replicated by all peers, for tests.
-  OpId GetAllReplicatedIndexForTests() const;
+  virtual OpId GetAllReplicatedIndexForTests() const;
 
   // Returns the current consensus committed index, for tests.
-  OpId GetCommittedIndexForTests() const;
+  virtual OpId GetCommittedIndexForTests() const;
 
-  std::string ToString() const;
+  virtual std::string ToString() const;
 
   // Dumps the contents of the queue to the provided string vector.
-  void DumpToStrings(std::vector<std::string>* lines) const;
+  virtual void DumpToStrings(std::vector<std::string>* lines) const;
 
-  void DumpToHtml(std::ostream& out) const;
+  virtual void DumpToHtml(std::ostream& out) const;
 
   struct Metrics {
     // Keeps track of the total number of operations in the queue.
@@ -138,7 +138,7 @@ class PeerMessageQueue {
     explicit Metrics(const MetricContext& metric_ctx);
   };
 
-  ~PeerMessageQueue();
+  virtual ~PeerMessageQueue();
 
  private:
 

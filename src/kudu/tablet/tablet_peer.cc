@@ -125,9 +125,11 @@ Status TabletPeer::Init(const shared_ptr<Tablet>& tablet,
     } else {
       gscoped_ptr<consensus::PeerProxyFactory> rpc_factory(
           new consensus::RpcPeerProxyFactory(messenger_));
+      gscoped_ptr<consensus::PeerMessageQueue> queue(new consensus::PeerMessageQueue(metric_ctx));
       consensus_.reset(new RaftConsensus(options,
                                          cmeta.Pass(),
                                          rpc_factory.Pass(),
+                                         queue.Pass(),
                                          metric_ctx,
                                          meta_->fs_manager()->uuid(),
                                          clock_,
