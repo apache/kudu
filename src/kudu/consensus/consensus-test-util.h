@@ -2,6 +2,7 @@
 
 #include <boost/foreach.hpp>
 #include <boost/thread/locks.hpp>
+#include <gmock/gmock.h>
 #include <map>
 #include <string>
 #include <tr1/unordered_map>
@@ -545,18 +546,22 @@ class TestDriver : public ConsensusCommitContinuation {
   ThreadPool* pool_;
 };
 
-// Fake, no-op ReplicaTransactionFactory that allows for instantiating and unit
+// Fake ReplicaTransactionFactory that allows for instantiating and unit
 // testing RaftConsensusState. Does not actually support running transactions.
 class MockTransactionFactory : public ReplicaTransactionFactory {
  public:
-  Status StartReplicaTransaction(gscoped_ptr<ConsensusRound> context) OVERRIDE {
-    return Status::OK();
+  virtual Status StartReplicaTransaction(gscoped_ptr<ConsensusRound> context) OVERRIDE {
+    return StartReplicaTransactionMock(context.get());
   }
-  Status SubmitConsensusChangeConfig(gscoped_ptr<metadata::QuorumPB> quorum,
-                                     const StatusCallback& callback) OVERRIDE {
+  MOCK_METHOD1(StartReplicaTransactionMock, Status(ConsensusRound* context));
 
-    return Status::OK();
+  virtual Status SubmitConsensusChangeConfig(
+      gscoped_ptr<metadata::QuorumPB> quorum,
+      const StatusCallback& callback) OVERRIDE {
+    return SubmitConsensusChangeConfigMock(quorum.get(), callback);
   }
+  MOCK_METHOD2(SubmitConsensusChangeConfigMock, Status(metadata::QuorumPB* quorum,
+                                                       const StatusCallback& callback));
 };
 
 // A transaction factory for tests, usually this is implemented by TabletPeer.
