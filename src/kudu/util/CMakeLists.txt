@@ -83,6 +83,11 @@ target_link_libraries(kudu_util
   glog
   rt)
 
+# We use MallocExtension and HeapChecker
+if(${KUDU_TCMALLOC_AVAILABLE})
+  target_link_libraries(kudu_util tcmalloc)
+endif()
+
 #######################################
 # kudu_test_util
 #######################################
