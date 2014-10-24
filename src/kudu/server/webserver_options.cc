@@ -2,15 +2,18 @@
 
 #include "kudu/server/webserver_options.h"
 
+#include <string>
 #include <gflags/gflags.h>
 #include <string.h>
 #include <stdlib.h>
+
+#include "kudu/gutil/strings/substitute.h"
 
 using std::string;
 
 namespace kudu {
 
-static const char* GetDefaultDocumentRoot();
+static std::string GetDefaultDocumentRoot();
 
 } // namespace kudu
 
@@ -22,8 +25,8 @@ DEFINE_int32(webserver_port, 25000, "Port to start debug webserver on");
 DEFINE_string(webserver_interface, "",
     "Interface to start debug webserver on. If blank, webserver binds to 0.0.0.0");
 DEFINE_string(webserver_doc_root, kudu::GetDefaultDocumentRoot(),
-    "Files under <webserver_doc_root>/www are accessible via the debug webserver. "
-    "Defaults to KUDU_HOME, or if KUDU_HOME is not set, disables the document "
+    "Files under <webserver_doc_root> are accessible via the debug webserver. "
+    "Defaults to $KUDU_HOME/www, or if $KUDU_HOME is not set, disables the document "
     "root");
 DEFINE_bool(enable_webserver_doc_root, true,
     "If true, webserver may serve static files from the webserver_doc_root");
@@ -42,10 +45,10 @@ DEFINE_int32(webserver_num_worker_threads, 50,
 namespace kudu {
 
 // Returns KUDU_HOME if set, otherwise we won't serve any static files.
-static const char* GetDefaultDocumentRoot() {
+static string GetDefaultDocumentRoot() {
   char* kudu_home = getenv("KUDU_HOME");
   // Empty document root means don't serve static files
-  return kudu_home ? kudu_home : "";
+  return kudu_home ? strings::Substitute("$0/www", kudu_home) : "";
 }
 
 WebserverOptions::WebserverOptions()

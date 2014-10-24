@@ -101,6 +101,10 @@ class Webserver : public WebCallbackRegistry {
   int BeginRequestCallback(struct sq_connection* connection,
                            struct sq_request_info* request_info);
 
+  int RunPathHandler(const PathHandler& handler,
+                     struct sq_connection* connection,
+                     struct sq_request_info* request_info);
+
   // Callback to funnel mongoose logs through glog.
   static int LogMessageCallbackStatic(const struct sq_connection* connection,
                                       const char* message);
@@ -121,7 +125,7 @@ class Webserver : public WebCallbackRegistry {
   // Map of path to a PathHandler containing a list of handlers for that
   // path. More than one handler may register itself with a path so that many
   // components may contribute to a single page.
-  typedef std::map<std::string, PathHandler> PathHandlerMap;
+  typedef std::map<std::string, PathHandler*> PathHandlerMap;
   PathHandlerMap path_handlers_;
 
   // The address of the interface on which to run this webserver.

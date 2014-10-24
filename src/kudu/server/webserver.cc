@@ -27,6 +27,7 @@
 #include <glog/logging.h>
 #include <squeasel.h>
 
+#include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/stringprintf.h"
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/numbers.h"
@@ -55,12 +56,13 @@ Webserver::Webserver(const WebserverOptions& opts)
 
 Webserver::~Webserver() {
   Stop();
+  STLDeleteValues(&path_handlers_);
 }
 
 void Webserver::RootHandler(const Webserver::ArgumentMap& args, stringstream* output) {
   (*output) << "<h2>Status Pages</h2>";
   BOOST_FOREACH(const PathHandlerMap::value_type& handler, path_handlers_) {
-    if (handler.second.is_on_nav_bar()) {
+    if (handler.second->is_on_nav_bar()) {
       (*output) << "<a href=\"" << handler.first << "\">" << handler.first << "</a><br/>";
     }
   }
@@ -241,23 +243,33 @@ int Webserver::BeginRequestCallbackStatic(struct sq_connection* connection) {
 
 int Webserver::BeginRequestCallback(struct sq_connection* connection,
                                     struct sq_request_info* request_info) {
-  if (!opts_.doc_root.empty() && opts_.enable_doc_root) {
-    if (strncmp(DOC_FOLDER, request_info->uri, DOC_FOLDER_LEN) == 0) {
-      VLOG(2) << "HTTP File access: " << request_info->uri;
+  PathHandler* handler;
+  {
+    boost::shared_lock<boost::shared_mutex> lock(path_handlers_lock_);
+    PathHandlerMap::const_iterator it = path_handlers_.find(request_info->uri);
+    if (it == path_handlers_.end()) {
       // Let Mongoose deal with this request; returning NULL will fall through
       // to the default handler which will serve files.
-      return 0;
+      if (!opts_.doc_root.empty() && opts_.enable_doc_root) {
+        VLOG(2) << "HTTP File access: " << request_info->uri;
+        return 0;
+      } else {
+        sq_printf(connection, "HTTP/1.1 404 Not Found\r\n"
+                  "Content-Type: text/plain\r\n\r\n");
+        sq_printf(connection, "No handler for URI %s\r\n\r\n", request_info->uri);
+        return 1;
+      }
     }
-  }
-  boost::shared_lock<boost::shared_mutex> lock(path_handlers_lock_);
-  PathHandlerMap::const_iterator it = path_handlers_.find(request_info->uri);
-  if (it == path_handlers_.end()) {
-    sq_printf(connection, "HTTP/1.1 404 Not Found\r\n"
-              "Content-Type: text/plain\r\n\r\n");
-    sq_printf(connection, "No handler for URI %s\r\n\r\n", request_info->uri);
-    return 1;
+    handler = it->second;
   }
 
+  return RunPathHandler(*handler, connection, request_info);
+}
+
+
+int Webserver::RunPathHandler(const PathHandler& handler,
+                              struct sq_connection* connection,
+                              struct sq_request_info* request_info) {
   // Should we render with css styles?
   bool use_style = true;
 
@@ -265,13 +277,13 @@ int Webserver::BeginRequestCallback(struct sq_connection* connection,
   if (request_info->query_string != NULL) {
     BuildArgumentMap(request_info->query_string, &arguments);
   }
-  if (!it->second.is_styled() || arguments.find("raw") != arguments.end()) {
+  if (!handler.is_styled() || arguments.find("raw") != arguments.end()) {
     use_style = false;
   }
 
   stringstream output;
   if (use_style) BootstrapPageHeader(&output);
-  BOOST_FOREACH(const PathHandlerCallback& callback_, it->second.callbacks()) {
+  BOOST_FOREACH(const PathHandlerCallback& callback_, handler.callbacks()) {
     callback_(arguments, &output);
   }
   if (use_style) BootstrapPageFooter(&output);
@@ -301,15 +313,15 @@ void Webserver::RegisterPathHandler(const string& path,
   PathHandlerMap::iterator it = path_handlers_.find(path);
   if (it == path_handlers_.end()) {
     it = path_handlers_.insert(
-        make_pair(path, PathHandler(is_styled, is_on_nav_bar))).first;
+        make_pair(path, new PathHandler(is_styled, is_on_nav_bar))).first;
   }
-  it->second.AddCallback(callback);
+  it->second->AddCallback(callback);
 }
 
 const char* const PAGE_HEADER = "<!DOCTYPE html>"
 " <html>"
 "   <head><title>Cloudera Kudu</title>"
-" <link href='www/bootstrap/css/bootstrap.min.css' rel='stylesheet' media='screen' />"
+" <link href='bootstrap/css/bootstrap.min.css' rel='stylesheet' media='screen' />"
 "  <style>"
 "  body {"
 "    padding-top: 60px; "
@@ -325,7 +337,7 @@ static const char* const NAVIGATION_BAR_PREFIX =
 "      <div class='navbar-inner'>"
 "        <div class='container'>"
 "          <a href='/'>"
-"            <img src=\"/www/logo.png\" width='55' height='52' alt=\"Kudu\" style=\"float:left\"/>"
+"            <img src=\"/logo.png\" width='55' height='52' alt=\"Kudu\" style=\"float:left\"/>"
 "          </a>"
 "          <div class='nav-collapse collapse'>"
 "            <ul class='nav'>";
@@ -342,7 +354,7 @@ void Webserver::BootstrapPageHeader(stringstream* output) {
   (*output) << PAGE_HEADER;
   (*output) << NAVIGATION_BAR_PREFIX;
   BOOST_FOREACH(const PathHandlerMap::value_type& handler, path_handlers_) {
-    if (handler.second.is_on_nav_bar()) {
+    if (handler.second->is_on_nav_bar()) {
       (*output) << "<li><a href=\"" << handler.first << "\">" << handler.first
                 << "</a></li>";
     }
