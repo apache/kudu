@@ -27,8 +27,10 @@ using std::pair;
 using std::tr1::shared_ptr;
 using strings::Substitute;
 
-DEFINE_int32(maintenance_manager_num_threads, 4,
-       "Size of the maintenance manager thread pool.");
+DEFINE_int32(maintenance_manager_num_threads, 1,
+       "Size of the maintenance manager thread pool. Beyond a value of '1', one thread is "
+       "reserved for emergency flushes. For spinning disks, the number of threads should "
+       "not be above the number of devices.");
 DEFINE_int32(maintenance_manager_polling_interval_ms, 250,
        "Polling interval for the maintenance manager scheduler, "
        "in milliseconds.");
