@@ -34,6 +34,8 @@
 namespace kudu {
 namespace consensus {
 
+using metadata::QuorumPB;
+using metadata::QuorumPeerPB;
 using strings::Substitute;
 
 // Appends 'count' messages to 'queue' with different terms and indexes.
@@ -59,6 +61,26 @@ static inline void AppendReplicateMessagesToQueue(
     msg->mutable_noop_request()->set_payload_for_tests(dummy_payload);
     CHECK_OK(queue->AppendOperation(msg.Pass()));
   }
+}
+
+// Builds a quorum of 'num' elements.
+// The initial roles are pre-assigned.
+// The last peer (index 'num - 1') always starts out as CANDIDATE.
+void BuildQuorumPBForTests(QuorumPB* quorum, int num) {
+  for (int i = 0; i < num; i++) {
+    QuorumPeerPB* peer_pb = quorum->add_peers();
+    peer_pb->set_permanent_uuid(Substitute("peer-$0", i));
+    if (i == num - 1) {
+      peer_pb->set_role(QuorumPeerPB::CANDIDATE);
+    } else {
+      peer_pb->set_role(QuorumPeerPB::FOLLOWER);
+    }
+    HostPortPB* hp = peer_pb->mutable_last_known_addr();
+    hp->set_host(Substitute("peer-$0.fake-domain-for-tests", i));
+    hp->set_port(0);
+  }
+  quorum->set_local(false);
+  quorum->set_seqno(0);
 }
 
 // Abstract base class to build PeerProxy implementations on top of for testing.

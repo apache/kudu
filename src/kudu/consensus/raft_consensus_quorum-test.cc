@@ -81,27 +81,15 @@ class RaftConsensusQuorumTest : public KuduTest {
   RaftConsensusQuorumTest()
     : clock_(server::LogicalClock::CreateStartingAt(Timestamp(0))),
       metric_context_(&metric_registry_, "raft-test"),
-      schema_(GetSimpleTestSchema()) {}
+      schema_(GetSimpleTestSchema()) {
+    options_.tablet_id = kTestTablet;
+  }
 
   // Builds an initial quorum of 'num' elements.
   // Since we don't have leader election yet, the initial roles are pre-assigned.
   // The last peer (index 'num - 1') always starts out as CANDIDATE.
   void BuildInitialQuorumPB(int num) {
-    for (int i = 0; i < num; i++) {
-      QuorumPeerPB* peer_pb = quorum_.add_peers();
-      peer_pb->set_permanent_uuid(Substitute("peer-$0", i));
-      if (i == num - 1) {
-        peer_pb->set_role(QuorumPeerPB::CANDIDATE);
-      } else {
-        peer_pb->set_role(QuorumPeerPB::FOLLOWER);
-      }
-      HostPortPB* hp = peer_pb->mutable_last_known_addr();
-      hp->set_host("0");
-      hp->set_port(0);
-    }
-    quorum_.set_local(false);
-    quorum_.set_seqno(0);
-    options_.tablet_id = kTestTablet;
+    BuildQuorumPBForTests(&quorum_, num);
   }
 
   Status BuildFsManagersAndLogs() {
