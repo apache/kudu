@@ -3,6 +3,7 @@
 #define KUDU_TABLET_TABLET_METRICS_H
 
 #include "kudu/gutil/macros.h"
+#include "kudu/tablet/rowset.h"
 
 namespace kudu {
 

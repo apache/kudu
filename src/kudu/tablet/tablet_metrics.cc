@@ -1,9 +1,9 @@
 // Copyright (c) 2013, Cloudera, inc.
-
-#include "kudu/tablet/rowset.h"
 #include "kudu/tablet/tablet_metrics.h"
 
+#include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/metrics.h"
+#include "kudu/util/trace.h"
 
 // Tablet-specific metrics.
 METRIC_DEFINE_counter(rows_inserted, kudu::MetricUnit::kRows,
@@ -80,6 +80,7 @@ METRIC_DEFINE_histogram(flush_mrs_duration, kudu::MetricUnit::kSeconds,
 METRIC_DEFINE_histogram(compact_rs_duration, kudu::MetricUnit::kSeconds,
   "Seconds spent compacting RS.", 60000000LU, 2);
 
+using strings::Substitute;
 
 namespace kudu {
 namespace tablet {
@@ -124,6 +125,11 @@ void TabletMetrics::AddProbeStats(const ProbeStats& stats) {
   blooms_consulted_per_op->Increment(stats.blooms_consulted);
   keys_consulted_per_op->Increment(stats.keys_consulted);
   deltas_consulted_per_op->Increment(stats.deltas_consulted);
+
+  TRACE(Substitute("ProbeStats: blooms_consulted=$0,keys_consulted=$1,"
+                   "deltas_consulted=$2,mrs_consulted=$3",
+                   stats.blooms_consulted, stats.keys_consulted,
+                   stats.deltas_consulted, stats.mrs_consulted));
 }
 
 } // namespace tablet
