@@ -36,6 +36,7 @@ DECLARE_int32(consensus_rpc_timeout_ms);
 namespace kudu {
 namespace tserver {
 
+using boost::assign::list_of;
 using consensus::ConsensusResponsePB;
 using consensus::ConsensusRequestPB;
 using consensus::MakeOpId;
@@ -82,8 +83,9 @@ class RaftConsensusITest : public TabletServerIntegrationTestBase {
   // Starts an external cluster with a single tablet and a number of replicas equal
   // to 'FLAGS_num_replicas'. The caller can pass 'ts_flags' to specify non-default
   // flags to pass to the tablet servers.
-  void BuildAndStart(const vector<std::string>& ts_flags) {
-    CreateCluster("raft_consensus-itest-cluster", ts_flags, vector<std::string>());
+  void BuildAndStart(const vector<string>& ts_flags,
+                     const vector<string>& master_flags = vector<string>()) {
+    CreateCluster("raft_consensus-itest-cluster", ts_flags, master_flags);
     CreateClient(&client_);
     CreateTable();
     WaitForTSAndQuorum();
@@ -379,6 +381,7 @@ TEST_F(RaftConsensusITest, TestGetPermanentUuid) {
   ASSERT_OK(consensus::SetPermanentUuidForRemotePeer(messenger, &peer));
   ASSERT_EQ(expected_uuid, peer.permanent_uuid());
 }
+
 
 // TODO allow the scan to define an operation id, fetch the last id
 // from the leader and then use that id to make the replica wait
@@ -711,6 +714,18 @@ TEST_F(RaftConsensusITest, TestAutomaticLeaderElection) {
   }
   // Verify the data on the remaining replicas.
   ASSERT_ALL_REPLICAS_AGREE(FLAGS_client_inserts_per_thread * kFinalNumReplicas);
+}
+
+// Single-replica leader election test.
+TEST_F(RaftConsensusITest, TestAutomaticLeaderElectionOneReplica) {
+  FLAGS_num_tablet_servers = 1;
+  FLAGS_num_replicas = 1;
+  vector<string> ts_flags = list_of("--enable_leader_failure_detection=true");
+  vector<string> master_flags = list_of("--catalog_manager_allow_local_consensus=false");
+  BuildAndStart(ts_flags, master_flags);
+
+  TServerDetails* leader;
+  ASSERT_OK(GetLeaderReplicaWithRetries(tablet_id_, &leader));
 }
 
 void RaftConsensusITest::StubbornlyWriteSameRowThread(int replica_idx, const AtomicBool* finish) {

@@ -3,6 +3,8 @@
 
 #include "kudu/consensus/leader_election.h"
 
+#include <boost/assign/list_of.hpp>
+#include <boost/foreach.hpp>
 #include <string>
 #include <vector>
 
@@ -46,26 +48,31 @@ typedef unordered_map<string, PeerProxy*> ProxyMap;
 // A proxy factory that serves proxies from a map.
 class FromMapPeerProxyFactory : public PeerProxyFactory {
  public:
-  explicit FromMapPeerProxyFactory(const ProxyMap& proxy_map) : proxy_map_(proxy_map) {}
+  explicit FromMapPeerProxyFactory(const ProxyMap* proxy_map)
+      : proxy_map_(proxy_map) {
+  }
 
   virtual Status NewProxy(const metadata::QuorumPeerPB& peer_pb,
                           gscoped_ptr<PeerProxy>* proxy) {
-    PeerProxy* proxy_ptr = FindPtrOrNull(proxy_map_, peer_pb.permanent_uuid());
+    PeerProxy* proxy_ptr = FindPtrOrNull(*proxy_map_, peer_pb.permanent_uuid());
     if (!proxy) return Status::NotFound("No proxy for peer.");
     proxy->reset(proxy_ptr);
     return Status::OK();
   }
+
  private:
-  const ProxyMap& proxy_map_;
+  // FYI, the tests may add and remove nodes from this map while we hold a
+  // reference to it.
+  const ProxyMap* const proxy_map_;
 };
 
 class LeaderElectionTest : public KuduTest {
  public:
   LeaderElectionTest()
     : tablet_id_("test-tablet"),
-      proxy_factory_(new FromMapPeerProxyFactory(proxies_)),
+      proxy_factory_(new FromMapPeerProxyFactory(&proxies_)),
       latch_(1) {
-    CHECK_OK(ThreadPoolBuilder("test-peer-pool").set_max_threads(3).Build(&pool_));
+    CHECK_OK(ThreadPoolBuilder("test-peer-pool").set_max_threads(5).Build(&pool_));
   }
 
   void ElectionCallback(const ElectionResult& result);
@@ -84,9 +91,9 @@ class LeaderElectionTest : public KuduTest {
   // num_grant must be at least 1, for the candidate to vote for itself.
   // num_grant + num_deny + num_error must add up to an odd number.
   scoped_refptr<LeaderElection> SetUpElectionWithGrantDenyErrorVotes(ConsensusTerm election_term,
-                                                                int num_grant,
-                                                                int num_deny,
-                                                                int num_error);
+                                                                     int num_grant,
+                                                                     int num_deny,
+                                                                     int num_error);
 
   const string tablet_id_;
   string candidate_uuid_;
@@ -240,28 +247,37 @@ scoped_refptr<LeaderElection> LeaderElectionTest::SetUpElectionWithGrantDenyErro
 
 // All peers respond "yes", no failures.
 TEST_F(LeaderElectionTest, TestPerfectElection) {
-  const int kNumVoters = 5;
-  const int kMajoritySize = 3;
-  const ConsensusTerm kElectionTerm = 2;
+  // Try quorum sizes of 1, 3, 5.
+  vector<int> quorum_sizes = boost::assign::list_of(1)(3)(5);
+  BOOST_FOREACH(int num_voters, quorum_sizes) {
+    LOG(INFO) << "Testing election with quorum size of " << num_voters;
+    int majority_size = (num_voters / 2) + 1;
+    ConsensusTerm election_term = 10 + num_voters; // Just to be able to differentiate.
 
-  InitUUIDs(kNumVoters);
-  InitNoOpPeerProxies();
-  gscoped_ptr<VoteCounter> counter = InitVoteCounter(kNumVoters, kMajoritySize);
+    InitUUIDs(num_voters);
+    InitNoOpPeerProxies();
+    gscoped_ptr<VoteCounter> counter = InitVoteCounter(num_voters, majority_size);
 
-  VoteRequestPB request;
-  request.set_candidate_uuid(candidate_uuid_);
-  request.set_candidate_term(kElectionTerm);
-  request.set_tablet_id(tablet_id_);
+    VoteRequestPB request;
+    request.set_candidate_uuid(candidate_uuid_);
+    request.set_candidate_term(election_term);
+    request.set_tablet_id(tablet_id_);
 
-  scoped_refptr<LeaderElection> election(
-      new LeaderElection(quorum_, proxy_factory_.get(), request, counter.Pass(),
-                         Bind(&LeaderElectionTest::ElectionCallback,
-                              Unretained(this))));
-  election->Run();
-  latch_.Wait();
+    scoped_refptr<LeaderElection> election(
+        new LeaderElection(quorum_, proxy_factory_.get(), request, counter.Pass(),
+                           Bind(&LeaderElectionTest::ElectionCallback,
+                                Unretained(this))));
+    election->Run();
+    latch_.Wait();
 
-  ASSERT_EQ(kElectionTerm, result_->election_term);
-  ASSERT_EQ(VOTE_GRANTED, result_->decision);
+    ASSERT_EQ(election_term, result_->election_term);
+    ASSERT_EQ(VOTE_GRANTED, result_->decision);
+
+    pool_->Wait();
+    proxies_.clear(); // We don't delete them; The election VoterState object
+                      // ends up owning them.
+    latch_.Reset(1);
+  }
 }
 
 // Test leader election when we encounter a peer with a higher term before we

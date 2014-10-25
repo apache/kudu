@@ -149,10 +149,6 @@ class LeaderElection : public RefCountedThreadSafe<LeaderElection> {
   // Run the election: send the vote request to followers.
   void Run();
 
-  // Invoke the registered ElectionDecisionCallback if we are ready to notify
-  // but have not yet. Calls the callback outside of holding a lock.
-  void InvokeDecisionCallbackIfNeeded();
-
  private:
   friend class RefCountedThreadSafe<LeaderElection>;
 
@@ -170,6 +166,10 @@ class LeaderElection : public RefCountedThreadSafe<LeaderElection> {
   // This class is refcounted.
   ~LeaderElection();
 
+  // Check to see if a decision has been made. If so, invoke decision callback.
+  // Calls the callback outside of holding a lock.
+  void CheckForDecision();
+
   // Callback called when the RPC responds.
   void VoteResponseRpcCallback(const std::string& voter_uuid);
 
@@ -186,7 +186,8 @@ class LeaderElection : public RefCountedThreadSafe<LeaderElection> {
   void HandleVoteDeniedUnlocked(const std::string& voter_uuid, const VoterState& state);
 
   // Returns a string to be prefixed to all log entries.
-  std::string GetLogPrefix() const;
+  // This method accesses const members and is thread safe.
+  std::string LogPrefixThreadSafe() const;
 
   // Helper to reference the term we are running the election for.
   ConsensusTerm election_term() const { return request_.candidate_term(); }

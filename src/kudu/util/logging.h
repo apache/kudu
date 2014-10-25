@@ -160,6 +160,12 @@ void LogCommandLineFlags();
 #define LOG_WITH_PREFIX_LK(severity) LOG(severity) << LogPrefix()
 #define VLOG_WITH_PREFIX_LK(verboselevel) LOG_IF(INFO, VLOG_IS_ON(verboselevel)) \
   << LogPrefix()
+
+// Same as above, but thread-safe.
+#define LOG_WITH_PREFIX_SAFE(severity) LOG(severity) << LogPrefixThreadSafe()
+#define VLOG_WITH_PREFIX_SAFE(verboselevel) LOG_IF(INFO, VLOG_IS_ON(verboselevel)) \
+  << LogPrefixThreadSafe()
+
 } // namespace kudu
 
 #endif // KUDU_UTIL_LOGGING_H

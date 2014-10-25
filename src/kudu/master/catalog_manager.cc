@@ -77,6 +77,8 @@ DEFINE_int32(catalog_manager_bg_task_wait_ms, 1000,
 DEFINE_int32(max_create_tablets_per_ts, 20,
              "The number of tablets per TS that can be requested for a new table. "
              "(Advanced option)");
+DEFINE_bool(catalog_manager_allow_local_consensus, true,
+            "Use local consensus when quorum size == 1");
 
 namespace kudu {
 namespace master {
@@ -2165,9 +2167,11 @@ Status CatalogManager::SelectReplicasForTablet(const TSDescriptorVector& ts_desc
 
   // Select the set of replicas
   metadata::QuorumPB *quorum = tablet->mutable_metadata()->mutable_dirty()->pb.mutable_quorum();
-  // TODO allow the user to choose num replicas per table and
-  // and allow to choose local/dist quorum. See: KUDU-96
-  quorum->set_local(nreplicas == 1);
+  if (nreplicas == 1 && FLAGS_catalog_manager_allow_local_consensus) {
+    quorum->set_local(true);
+  } else {
+    quorum->set_local(false);
+  }
   quorum->set_opid_index(consensus::kInvalidOpIdIndex);
   SelectReplicas(ts_descs, nreplicas, quorum);
   return Status::OK();

@@ -17,6 +17,7 @@
 #include "kudu/server/metadata.pb.h"
 #include "kudu/common/wire_protocol.h"
 #include "kudu/rpc/rpc_controller.cc"
+#include "kudu/util/logging.h"
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/status.h"
 
@@ -174,7 +175,13 @@ LeaderElection::~LeaderElection() {
 }
 
 void LeaderElection::Run() {
-  VLOG(1) << GetLogPrefix() << "Running leader election.";
+  VLOG_WITH_PREFIX_SAFE(1) << "Running leader election.";
+
+  // Check if we have already won the election (relevant if this is a
+  // single-node quorum, since we always pre-vote for ourselves).
+  CheckForDecision();
+
+  // The rest of the code below is for a typical multi-node quorum.
   BOOST_FOREACH(const std::string& voter_uuid, follower_uuids_) {
     VoterState* state = NULL;
     {
@@ -185,7 +192,7 @@ void LeaderElection::Run() {
     }
 
     // Send the RPC request.
-    LOG(INFO) << GetLogPrefix() << "Requesting vote from peer " << voter_uuid;
+    LOG_WITH_PREFIX_SAFE(INFO) << "Requesting vote from peer " << voter_uuid;
     Status s = state->proxy->RequestConsensusVoteAsync(
         &request_,
         &state->response,
@@ -195,21 +202,33 @@ void LeaderElection::Run() {
         boost::bind(&Closure::Run,
                     Bind(&LeaderElection::VoteResponseRpcCallback, this, voter_uuid)));
     if (PREDICT_FALSE(!s.ok())) {
-      LOG(WARNING) << GetLogPrefix() << "Failed to request vote from " << voter_uuid
+      LOG_WITH_PREFIX_SAFE(WARNING) << "Failed to request vote from " << voter_uuid
                    << ": " << s.ToString();
     }
   }
 }
 
-void LeaderElection::InvokeDecisionCallbackIfNeeded() {
+void LeaderElection::CheckForDecision() {
   bool to_respond = false;
   {
     lock_guard<Lock> guard(&lock_);
+    // Check if the vote has been newly decided.
+    if (!result_ && vote_counter_->IsDecided()) {
+      ElectionVote decision;
+      CHECK_OK(vote_counter_->GetDecision(&decision));
+      LOG_WITH_PREFIX_SAFE(INFO) << "Election decided. Result: candidate "
+                << ((decision == VOTE_GRANTED) ? "won." : "lost.");
+      result_.reset(new ElectionResult(election_term(), decision));
+    }
+    // Check whether to respond. This can happen as a result of either getting
+    // a majority vote or of something invalidating the election, like
+    // observing a higher term.
     if (result_ && !has_responded_) {
       has_responded_ = true;
       to_respond = true;
     }
   }
+
   // Respond outside of the lock.
   if (to_respond) {
     // This is thread-safe since result_ is write-once.
@@ -224,13 +243,13 @@ void LeaderElection::VoteResponseRpcCallback(const std::string& voter_uuid) {
 
     // Check for RPC errors.
     if (!state->rpc.status().ok()) {
-      LOG(WARNING) << GetLogPrefix() << "RPC error from VoteRequest() call to peer " << voter_uuid
+      LOG_WITH_PREFIX_SAFE(WARNING) << "RPC error from VoteRequest() call to peer " << voter_uuid
                   << ": " << state->rpc.status().ToString();
       RecordVoteUnlocked(voter_uuid, VOTE_DENIED);
 
     // Check for tablet errors.
     } else if (state->response.has_error()) {
-      LOG(WARNING) << GetLogPrefix() << "Tablet error from VoteRequest() call to peer "
+      LOG_WITH_PREFIX_SAFE(WARNING) << "Tablet error from VoteRequest() call to peer "
                    << voter_uuid << ": "
                    << StatusFromPB(state->response.error().status()).ToString();
       RecordVoteUnlocked(voter_uuid, VOTE_DENIED);
@@ -238,7 +257,7 @@ void LeaderElection::VoteResponseRpcCallback(const std::string& voter_uuid) {
     // If the peer changed their IP address, we shouldn't count this vote since
     // our knowledge of the quorum is in an inconsistent state.
     } else if (PREDICT_FALSE(voter_uuid != state->response.responder_uuid())) {
-      LOG(DFATAL) << GetLogPrefix() << "Received vote response from peer we thought had UUID "
+      LOG_WITH_PREFIX_SAFE(DFATAL) << "Received vote response from peer we thought had UUID "
                   << voter_uuid << ", but its actual UUID is " << state->response.responder_uuid();
       RecordVoteUnlocked(voter_uuid, VOTE_DENIED);
 
@@ -252,8 +271,8 @@ void LeaderElection::VoteResponseRpcCallback(const std::string& voter_uuid) {
     }
   }
 
-  // Call the decision callback outside the lock.
-  InvokeDecisionCallbackIfNeeded();
+  // Check for a decision outside the lock.
+  CheckForDecision();
 }
 
 void LeaderElection::RecordVoteUnlocked(const std::string& voter_uuid, ElectionVote vote) {
@@ -263,7 +282,7 @@ void LeaderElection::RecordVoteUnlocked(const std::string& voter_uuid, ElectionV
   bool duplicate;
   Status s = vote_counter_->RegisterVote(voter_uuid, vote, &duplicate);
   if (!s.ok()) {
-    LOG(WARNING) << GetLogPrefix() << "Error registering vote for peer " << voter_uuid
+    LOG_WITH_PREFIX_SAFE(WARNING) << "Error registering vote for peer " << voter_uuid
                  << ": " << s.ToString();
     return;
   }
@@ -271,17 +290,7 @@ void LeaderElection::RecordVoteUnlocked(const std::string& voter_uuid, ElectionV
     // Note: This is DFATAL because at the time of writing we do not support
     // retrying vote requests, so this should be impossible. It may be valid to
     // receive duplicate votes in the future if we implement retry.
-    LOG(DFATAL) << GetLogPrefix() << "Duplicate vote received from peer " << voter_uuid;
-    return;
-  }
-
-  // Respond if we have a decision.
-  if (!result_ && vote_counter_->IsDecided()) {
-    ElectionVote decision;
-    CHECK_OK(vote_counter_->GetDecision(&decision));
-    LOG(INFO) << GetLogPrefix() << "Election decided. Result: candidate "
-              << ((decision == VOTE_GRANTED) ? "won." : "lost.");
-    result_.reset(new ElectionResult(election_term(), decision));
+    LOG_WITH_PREFIX_SAFE(DFATAL) << "Duplicate vote received from peer " << voter_uuid;
   }
 }
 
@@ -292,10 +301,10 @@ void LeaderElection::HandleHigherTermUnlocked(const string& voter_uuid, const Vo
   string msg = Substitute("Vote denied by peer $0 with higher term. Message: $1",
                           state.response.responder_uuid(),
                           StatusFromPB(state.response.consensus_error().status()).ToString());
-  LOG(WARNING) << GetLogPrefix() << msg;
+  LOG_WITH_PREFIX_SAFE(WARNING) << msg;
 
   if (!result_) {
-    LOG(INFO) << GetLogPrefix() << "Cancelling election due to peer responding with higher term";
+    LOG_WITH_PREFIX_SAFE(INFO) << "Cancelling election due to peer responding with higher term";
     result_.reset(new ElectionResult(election_term(), VOTE_DENIED,
                                      state.response.responder_term(), msg));
   }
@@ -306,7 +315,7 @@ void LeaderElection::HandleVoteGrantedUnlocked(const string& voter_uuid, const V
   DCHECK_EQ(state.response.responder_term(), election_term());
   DCHECK(state.response.vote_granted());
 
-  LOG(INFO) << GetLogPrefix() << "Vote granted by peer " << voter_uuid;
+  LOG_WITH_PREFIX_SAFE(INFO) << "Vote granted by peer " << voter_uuid;
   RecordVoteUnlocked(voter_uuid, VOTE_GRANTED);
 }
 
@@ -320,12 +329,12 @@ void LeaderElection::HandleVoteDeniedUnlocked(const string& voter_uuid, const Vo
     return HandleHigherTermUnlocked(voter_uuid, state);
   }
 
-  LOG(INFO) << GetLogPrefix() << "Vote denied by peer " << voter_uuid << ". Message: "
+  LOG_WITH_PREFIX_SAFE(INFO) << "Vote denied by peer " << voter_uuid << ". Message: "
             << StatusFromPB(state.response.consensus_error().status()).ToString();
   RecordVoteUnlocked(voter_uuid, VOTE_DENIED);
 }
 
-std::string LeaderElection::GetLogPrefix() const {
+std::string LeaderElection::LogPrefixThreadSafe() const {
   return Substitute("T $0 P $1 [CANDIDATE]: Term $2 election: ",
                     request_.tablet_id(),
                     request_.candidate_uuid(),
