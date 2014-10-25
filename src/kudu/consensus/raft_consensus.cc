@@ -132,18 +132,6 @@ Status RaftConsensus::EmulateElection() {
     ReplicaState::UniqueLock lock;
     RETURN_NOT_OK(state_->LockForConfigChange(&lock));
 
-    // Right now we only tolerate changes when there isn't stuff
-    // in flight, so make sure those assumptions hold.
-    // The last thing we received should be a commit and it should also match
-    // the safe commit op id.
-    if (!OpIdEquals(state_->GetLastReceivedOpIdUnlocked(), state_->GetCommittedOpIdUnlocked())) {
-      return Status::IllegalState(
-          Substitute("Replica is not ready to be leader. "
-                     "Last received OpId: $0, committed OpId: $1",
-                     state_->GetLastReceivedOpIdUnlocked().ShortDebugString(),
-                     state_->GetCommittedOpIdUnlocked().DebugString()));
-    }
-
     QuorumPB new_quorum;
     RETURN_NOT_OK(GivePeerRoleInQuorum(state_->GetPeerUuid(),
                                        QuorumPeerPB::LEADER,
@@ -165,18 +153,6 @@ Status RaftConsensus::StartElection() {
   {
     ReplicaState::UniqueLock lock;
     RETURN_NOT_OK(state_->LockForConfigChange(&lock));
-
-    // Right now we only tolerate changes when there isn't stuff
-    // in flight, so make sure those assumptions hold.
-    // The last thing we received should be a commit and it should also match
-    // the safe commit op id.
-    if (!OpIdEquals(state_->GetLastReceivedOpIdUnlocked(), state_->GetCommittedOpIdUnlocked())) {
-      return Status::IllegalState(
-          Substitute("Replica is not ready to be leader. "
-                     "Last received OpId: $0, committed OpId: $1",
-                     state_->GetLastReceivedOpIdUnlocked().ShortDebugString(),
-                     state_->GetCommittedOpIdUnlocked().DebugString()));
-    }
 
     QuorumPB new_quorum;
     RETURN_NOT_OK(GivePeerRoleInQuorum(state_->GetPeerUuid(),
@@ -287,6 +263,17 @@ void RaftConsensus::BecomeLeaderResult(const Status& status) {
   LOG_WITH_PREFIX(INFO)
     << "Quorum has accepted the change config transaction. New Effective quorum: "
     << state_->GetCommittedQuorumUnlocked().ShortDebugString();
+
+  // Right now we only tolerate changes when there isn't stuff
+  // in flight, so make sure those assumptions hold.
+  // The last thing we received should be a commit and it should also match
+  // the safe commit op id.
+  if (!OpIdEquals(state_->GetLastReceivedOpIdUnlocked(), state_->GetCommittedOpIdUnlocked())) {
+    LOG_WITH_PREFIX(FATAL) << Substitute("Replica was not ready to be leader. "
+        "Last received OpId: $0, committed OpId: $1",
+        state_->GetLastReceivedOpIdUnlocked().ShortDebugString(),
+        state_->GetCommittedOpIdUnlocked().DebugString());
+  }
 }
 
 Status RaftConsensus::BecomeReplicaUnlocked() {

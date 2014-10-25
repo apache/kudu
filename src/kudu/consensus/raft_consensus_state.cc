@@ -416,6 +416,7 @@ Status ReplicaState::AddPendingOperation(ConsensusRound* round) {
       return Status::IllegalState("Cannot trigger prepare. Replica is not in kRunning state.");
     }
   }
+  UpdateLastReceivedOpIdUnlocked(round->id());
   InsertOrDie(&pending_txns_, round->replicate_msg()->id(), round);
   return Status::OK();
 }
@@ -536,10 +537,20 @@ void ReplicaState::NewIdUnlocked(OpId* id) {
 }
 
 void ReplicaState::CancelPendingOperation(const OpId& id) {
+  OpId previous = id;
+  previous.set_index(previous.index() - 1);
   DCHECK(update_lock_.is_locked());
   CHECK_EQ(GetCurrentTermUnlocked(), id.term());
   CHECK_EQ(next_index_, id.index() + 1);
   next_index_ = id.index();
+
+  // We don't use UpdateLastReceivedOpIdUnlocked because we're actually
+  // updating it back to a lower value and we need to avoid the checks
+  // that method has.
+
+  // This is only ok if we do _not_ release the lock after calling
+  // NewIdUnlocked() (which we don't in RaftConsensus::Replicate()).
+  received_op_id_ = previous;
   ignore_result(DCHECK_NOTNULL(EraseKeyReturnValuePtr(&pending_txns_, id)));
 }
 
