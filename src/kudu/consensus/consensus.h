@@ -212,13 +212,6 @@ class Consensus : public RefCountedThreadSafe<Consensus> {
   virtual Status Commit(gscoped_ptr<CommitMsg> commit_msg,
                         const StatusCallback& cb) = 0;
 
-  // Persists the specified quorum to disk. This is an expensive operation.
-  // Note that the actual fsync() is controlled by ConsensusMeta, which may
-  // not sync to disk if --log_force_fsync_all is set to false.
-  //
-  // Protected so that it may only be called by friend classes.
-  virtual Status PersistQuorum(const metadata::QuorumPB& quorum) = 0;
-
   // Fault hooks for tests. In production code this will always be null.
   std::tr1::shared_ptr<ConsensusFaultHooks> fault_hooks_;
 
@@ -299,12 +292,6 @@ class ConsensusCommitContinuation {
 class ReplicaTransactionFactory {
  public:
   virtual Status StartReplicaTransaction(gscoped_ptr<ConsensusRound> context) = 0;
-
-  // Makes the transaction factory initiate a leader driven configuration change
-  // transaction with the provided quorum.
-  // The provided callback will be called when the transaction completes.
-  virtual Status SubmitConsensusChangeConfig(gscoped_ptr<metadata::QuorumPB> quorum,
-                                             const StatusCallback& callback) = 0;
 
   virtual ~ReplicaTransactionFactory() {}
 };

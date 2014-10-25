@@ -41,28 +41,40 @@ LocalConsensus::LocalConsensus(const ConsensusOptions& options,
 Status LocalConsensus::Start(const ConsensusBootstrapInfo& info) {
   CHECK_EQ(state_, kInitializing);
 
-  boost::lock_guard<simple_spinlock> lock(lock_);
+  gscoped_ptr<ConsensusRound> round;
+  {
+    boost::lock_guard<simple_spinlock> lock(lock_);
 
-  const QuorumPB& initial_quorum = cmeta_->pb().committed_quorum();
-  CHECK(initial_quorum.local()) << "Local consensus must be passed a local quorum";
-  RETURN_NOT_OK_PREPEND(VerifyQuorum(initial_quorum),
-                        "Invalid quorum found in LocalConsensus::Start()");
+    const QuorumPB& initial_quorum = cmeta_->pb().committed_quorum();
+    CHECK(initial_quorum.local()) << "Local consensus must be passed a local quorum";
+    RETURN_NOT_OK_PREPEND(VerifyQuorum(initial_quorum),
+                          "Invalid quorum found in LocalConsensus::Start()");
 
-  next_op_id_index_ = info.last_id.index() + 1;
+    next_op_id_index_ = info.last_id.index() + 1;
 
-  gscoped_ptr<QuorumPB> new_quorum(new QuorumPB);
-  new_quorum->CopyFrom(initial_quorum);
-  new_quorum->mutable_peers(0)->set_role(QuorumPeerPB::LEADER);
-  new_quorum->set_seqno(initial_quorum.seqno() + 1);
+    gscoped_ptr<QuorumPB> new_quorum(new QuorumPB);
+    new_quorum->CopyFrom(initial_quorum);
+    new_quorum->mutable_peers(0)->set_role(QuorumPeerPB::LEADER);
+    new_quorum->set_seqno(initial_quorum.seqno() + 1);
 
-  state_ = kRunning;
+    gscoped_ptr<ReplicateMsg> replicate(new ReplicateMsg);
+    replicate->set_op_type(CHANGE_CONFIG_OP);
+    ChangeConfigRequestPB* cc_req = replicate->mutable_change_config_request();
+    cc_req->set_tablet_id(options_.tablet_id);
+    cc_req->mutable_old_config()->CopyFrom(initial_quorum);
+    cc_req->mutable_new_config()->CopyFrom(*new_quorum);
 
-  NullCallback* null_clbk = new NullCallback;
+    replicate->mutable_id()->set_term(0);
+    replicate->mutable_id()->set_index(next_op_id_index_);
 
-  // Initiate a config change transaction, as in the distributed case.
-  RETURN_NOT_OK(txn_factory_->SubmitConsensusChangeConfig(
-      new_quorum.Pass(),
-      null_clbk->AsStatusCallback()));
+    round.reset(new ConsensusRound(this, replicate.Pass()));
+    state_ = kRunning;
+  }
+
+  ConsensusRound* round_ptr = round.get();
+  RETURN_NOT_OK(txn_factory_->StartReplicaTransaction(round.Pass()));
+  Replicate(round_ptr);
+
 
   TRACE("Consensus started");
   return Status::OK();
@@ -94,6 +106,14 @@ Status LocalConsensus::Replicate(ConsensusRound* context) {
 
     RETURN_NOT_OK(log_->Reserve(log::REPLICATE, entry_batch.Pass(),
                                 &reserved_entry_batch));
+
+    // Local consensus transactions are always committed so we
+    // can just persist the quorum, if this is a change config.
+    if (context->replicate_msg()->op_type() == CHANGE_CONFIG_OP) {
+      cmeta_->mutable_pb()->mutable_committed_quorum()->CopyFrom(
+          context->replicate_msg()->change_config_request().new_config());
+      RETURN_NOT_OK(cmeta_->Flush());
+    }
   }
   // Serialize and mark the message as ready to be appended.
   // When the Log actually fsync()s this message to disk, 'repl_callback'
@@ -126,20 +146,6 @@ Status LocalConsensus::Commit(gscoped_ptr<CommitMsg> commit,
 metadata::QuorumPB LocalConsensus::Quorum() const {
   boost::lock_guard<simple_spinlock> lock(lock_);
   return cmeta_->pb().committed_quorum();
-}
-
-Status LocalConsensus::PersistQuorum(const QuorumPB& quorum) {
-  RETURN_NOT_OK_PREPEND(VerifyQuorum(quorum),
-                        "Invalid quorum passed to LocalConsensus::PersistQuorum()");
-  TRACE(strings::Substitute("Persisting new quorum with seqno $0", quorum.seqno()));
-  boost::lock_guard<simple_spinlock> lock(lock_);
-  CHECK_LT(cmeta_->pb().committed_quorum().seqno(), quorum.seqno())
-    << "Quorum seqnos not monotonic: "
-    << "old quorum: " << cmeta_->pb().committed_quorum().ShortDebugString() << "; "
-    << "new quorum: " << quorum.ShortDebugString();
-
-  cmeta_->mutable_pb()->mutable_committed_quorum()->CopyFrom(quorum);
-  return cmeta_->Flush();
 }
 
 void LocalConsensus::Shutdown() {

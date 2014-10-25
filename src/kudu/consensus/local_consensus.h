@@ -73,8 +73,6 @@ class LocalConsensus : public Consensus {
   virtual Status Commit(gscoped_ptr<CommitMsg> commit,
                         const StatusCallback& cb) OVERRIDE;
 
-  virtual Status PersistQuorum(const metadata::QuorumPB& quorum) OVERRIDE;
-
  private:
 
   const std::string peer_uuid_;

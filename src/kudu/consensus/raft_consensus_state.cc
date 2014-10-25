@@ -267,6 +267,7 @@ const metadata::QuorumPB& ReplicaState::GetPendingQuorumUnlocked() const {
 
 Status ReplicaState::SetCommittedQuorumUnlocked(const metadata::QuorumPB& new_quorum) {
   DCHECK(update_lock_.is_locked());
+  DCHECK(new_quorum.IsInitialized());
 
   // TODO: check that the role change is legal.
 
@@ -450,6 +451,14 @@ Status ReplicaState::MarkConsensusCommittedUpToUnlocked(const OpId& id) {
   for (; iter != end_iter; iter++) {
     ConsensusRound* round = DCHECK_NOTNULL((*iter).second);
     InsertOrDie(&in_flight_commits_, round->id());
+
+    // If we're committing a change config op, persist the new quorum first
+    if (PREDICT_FALSE(round->replicate_msg()->op_type() == CHANGE_CONFIG_OP)) {
+      DCHECK(round->replicate_msg()->change_config_request().has_new_config());
+      CHECK_OK(SetCommittedQuorumUnlocked(
+          round->replicate_msg()->change_config_request().new_config()));
+    }
+
     round->GetReplicaCommitContinuation()->ReplicationFinished(Status::OK());
   }
 

@@ -50,7 +50,9 @@ Status ChangeConfigTransaction::Prepare() {
 
   state_->acquire_config_sem(config_sem_);
 
-  const QuorumPB& old_quorum = state_->tablet_peer()->consensus()->Quorum();
+  DCHECK(state_->old_quorum().IsInitialized());
+  DCHECK(state_->request()->has_new_config());
+  const QuorumPB& old_quorum = state_->old_quorum();
   const QuorumPB& new_quorum = state_->request()->new_config();
 
   Status s;
@@ -66,7 +68,6 @@ Status ChangeConfigTransaction::Prepare() {
     state_->completion_callback()->set_error(s, TabletServerErrorPB::INVALID_CONFIG);
   }
 
-  state_->set_old_quorum(old_quorum);
   return s;
 }
 
@@ -85,13 +86,6 @@ void ChangeConfigTransaction::NewCommitAbortMessage(gscoped_ptr<CommitMsg>* comm
 
 Status ChangeConfigTransaction::Apply(gscoped_ptr<CommitMsg>* commit_msg) {
   TRACE("APPLY CHANGE CONFIG: Starting");
-
-  // Change the quorum config in the consensus metadata.
-  //
-  // TODO: Currently this only works for leadership changes.
-  const QuorumPB& quorum = state_->request()->new_config();
-  RETURN_NOT_OK_PREPEND(state_->tablet_peer()->consensus()->PersistQuorum(quorum),
-                        "Error persisting quorum during change config txn apply");
 
   commit_msg->reset(new CommitMsg());
   (*commit_msg)->set_op_type(CHANGE_CONFIG_OP);

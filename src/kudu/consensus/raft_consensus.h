@@ -137,8 +137,6 @@ class RaftConsensus : public Consensus,
   virtual Status Commit(gscoped_ptr<CommitMsg> commit,
                         const StatusCallback& cb) OVERRIDE;
 
-  virtual Status PersistQuorum(const metadata::QuorumPB& quorum) OVERRIDE;
-
  private:
   friend class ReplicaState;
   friend class RaftConsensusQuorumTest;
@@ -170,6 +168,8 @@ class RaftConsensus : public Consensus,
   // Called as a callback with the result of the config change transaction
   // that establishes this peer as leader.
   void BecomeLeaderResult(const Status& status);
+
+  Status AppendNewRoundToQueueUnlocked(ConsensusRound* round);
 
   // Updates the state in a replica by storing the received operations in the log
   // and triggering the required transactions. This method won't return until all

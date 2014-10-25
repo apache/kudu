@@ -229,32 +229,25 @@ Status RaftConsensus::BecomeLeaderUnlocked() {
                state_->GetCurrentTermUnlocked(),
                state_->GetActiveQuorumStateUnlocked().majority_size);
 
-  metadata::QuorumPB quorum;
-  if (state_->IsQuorumChangePendingUnlocked()) {
-    quorum = state_->GetPendingQuorumUnlocked();
-  } else {
-    quorum = state_->GetCommittedQuorumUnlocked();
-  }
+  CHECK(state_->IsQuorumChangePendingUnlocked());
 
   // Create the peers so that we're able to replicate messages remotely and locally
-  RETURN_NOT_OK(peer_manager_->UpdateQuorum(quorum));
+  RETURN_NOT_OK(peer_manager_->UpdateQuorum(state_->GetPendingQuorumUnlocked()));
 
-  // Initiate a leader side config change transaction. We need it to be leader
-  // side so that it acquires a timestamp and generally behaves like a leader
-  // transaction, e.g. it places the request in the replication queue and commits
-  // by itself, vs we having to manage all of that were we to use a replica side
-  // transaction.
-  RETURN_NOT_OK(state_->GetReplicaTransactionFactoryUnlocked()->SubmitConsensusChangeConfig(
-      gscoped_ptr<QuorumPB>(new QuorumPB(state_->GetPendingQuorumUnlocked())).Pass(),
-      Bind(&RaftConsensus::BecomeLeaderResult, Unretained(this))));
+  // Initiate a config change transaction. This is mostly acting as the NO_OP
+  // transaction that is sent at the beginning of every term change in raft.
+  // TODO implement NO_OP, consensus only, rounds and use those instead.
+  gscoped_ptr<ReplicateMsg> replicate(new ReplicateMsg);
+  replicate->set_op_type(CHANGE_CONFIG_OP);
+  ChangeConfigRequestPB* cc_req = replicate->mutable_change_config_request();
+  cc_req->set_tablet_id(state_->GetOptions().tablet_id);
+  cc_req->mutable_old_config()->CopyFrom(state_->GetCommittedQuorumUnlocked());
+  cc_req->mutable_new_config()->CopyFrom(state_->GetPendingQuorumUnlocked());
 
-  // After the change config transaction is queued, independently of whether it was successful
-  // we can become leader and start accepting writes, that is the term can officially start.
-  // This because any future writes will only ever commit if the change config transaction
-  // commits. This is advantageous in the sense that we don't have to block here waiting for
-  // something to be replicated to be correct, even if this peer starts accepting writes
-  // from this moment forward those will only ever be reported as committed (or applied for
-  // that matter) if the initial change config transaction succeeds.
+  gscoped_ptr<ConsensusRound> round(new ConsensusRound(this, replicate.Pass()));
+  RETURN_NOT_OK(AppendNewRoundToQueueUnlocked(round.get()));
+  RETURN_NOT_OK(state_->GetReplicaTransactionFactoryUnlocked()->StartReplicaTransaction(
+      round.Pass()));
 
   // TODO we need to make sure that this transaction is the first transaction accepted, right
   // now that is being assured by the fact that the prepare queue is single threaded, but if
@@ -302,36 +295,40 @@ Status RaftConsensus::Replicate(ConsensusRound* round) {
   {
     ReplicaState::UniqueLock lock;
     RETURN_NOT_OK(state_->LockForReplicate(&lock, *round->replicate_msg()));
-
-    state_->NewIdUnlocked(round->replicate_msg()->mutable_id());
-    RETURN_NOT_OK(state_->AddPendingOperation(round));
-
-    // the original instance of the replicate msg is owned by the consensus context
-    // so we create a copy for the queue.
-    gscoped_ptr<ReplicateMsg> queue_msg(new ReplicateMsg(*round->replicate_msg()));
-    Status s = queue_->AppendOperation(queue_msg.Pass());
-
-    // Handle Status::ServiceUnavailable(), which means the queue is full.
-    if (PREDICT_FALSE(s.IsServiceUnavailable())) {
-      gscoped_ptr<OpId> id(round->replicate_msg()->release_id());
-      // Rollback the id gen. so that we reuse this id later, when we can
-      // actually append to the state machine, i.e. this makes the state
-      // machine have continuous ids, for the same term, even if the queue
-      // refused to add any more operations.
-      state_->CancelPendingOperation(*id);
-      LOG_WITH_PREFIX(WARNING) << ": Could not append replicate request "
-                   << "to the queue. Queue is Full. "
-                   << "Queue metrics: " << queue_->ToString();
-
-      // TODO Possibly evict a dangling peer from the quorum here.
-      // TODO count of number of ops failed due to consensus queue overflow.
-    }
-    RETURN_NOT_OK_PREPEND(s, "Unable to append operation to consensus queue");
+    RETURN_NOT_OK(AppendNewRoundToQueueUnlocked(round));
   }
 
   peer_manager_->SignalRequest();
 
   RETURN_NOT_OK(ExecuteHook(POST_REPLICATE));
+  return Status::OK();
+}
+
+Status RaftConsensus::AppendNewRoundToQueueUnlocked(ConsensusRound* round) {
+  state_->NewIdUnlocked(round->replicate_msg()->mutable_id());
+  RETURN_NOT_OK(state_->AddPendingOperation(round));
+
+  // the original instance of the replicate msg is owned by the consensus context
+  // so we create a copy for the queue.
+  gscoped_ptr<ReplicateMsg> queue_msg(new ReplicateMsg(*round->replicate_msg()));
+  Status s = queue_->AppendOperation(queue_msg.Pass());
+
+  // Handle Status::ServiceUnavailable(), which means the queue is full.
+  if (PREDICT_FALSE(s.IsServiceUnavailable())) {
+    gscoped_ptr<OpId> id(round->replicate_msg()->release_id());
+    // Rollback the id gen. so that we reuse this id later, when we can
+    // actually append to the state machine, i.e. this makes the state
+    // machine have continuous ids, for the same term, even if the queue
+    // refused to add any more operations.
+    state_->CancelPendingOperation(*id);
+    LOG_WITH_PREFIX(WARNING) << ": Could not append replicate request "
+                 << "to the queue. Queue is Full. "
+                 << "Queue metrics: " << queue_->ToString();
+
+    // TODO Possibly evict a dangling peer from the quorum here.
+    // TODO count of number of ops failed due to consensus queue overflow.
+  }
+  RETURN_NOT_OK_PREPEND(s, "Unable to append operation to consensus queue");
   return Status::OK();
 }
 
@@ -401,17 +398,6 @@ Status RaftConsensus::Commit(gscoped_ptr<CommitMsg> commit,
 
   // NOTE: RaftConsensus instance might be destroyed after this call.
   state_->CountDownOutstandingCommitsIfShuttingDown();
-  return Status::OK();
-}
-
-Status RaftConsensus::PersistQuorum(const QuorumPB& quorum) {
-  RETURN_NOT_OK_PREPEND(VerifyQuorum(quorum),
-                        "Invalid quorum passed to RaftConsensus::PersistQuorum()");
-  ReplicaState::UniqueLock lock;
-  RETURN_NOT_OK(state_->LockForConfigChange(&lock));
-  RETURN_NOT_OK(state_->SetCommittedQuorumUnlocked(quorum));
-  // TODO: Update consensus peers if becoming leader.
-
   return Status::OK();
 }
 

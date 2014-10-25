@@ -207,19 +207,6 @@ const metadata::QuorumPB TabletPeer::Quorum() const {
   return consensus_->Quorum();
 }
 
-Status TabletPeer::SubmitConsensusChangeConfig(gscoped_ptr<QuorumPB> quorum,
-                                               const StatusCallback& callback) {
-  consensus::ChangeConfigRequestPB* cc_request = new consensus::ChangeConfigRequestPB();
-  cc_request->mutable_new_config()->CopyFrom(*quorum);
-  cc_request->set_tablet_id(tablet_->metadata()->oid());
-  ChangeConfigTransactionState* state = new ChangeConfigTransactionState(this, cc_request);
-  state->AddToAutoReleasePool(cc_request);
-  state->set_completion_callback(
-      gscoped_ptr<TransactionCompletionCallback>(
-          new StatusTransactionCompletionCallback(callback)));
-  return SubmitChangeConfig(state);
-}
-
 void TabletPeer::ConsensusStateChanged(const QuorumPB& old_quorum, const QuorumPB& new_quorum) {
   QuorumPeerPB::Role new_role = consensus::GetRoleInQuorum(meta_->fs_manager()->uuid(),
                                                            new_quorum);
@@ -351,6 +338,10 @@ Status TabletPeer::SubmitChangeConfig(ChangeConfigTransactionState *state) {
     }
   }
 
+  if (!state->old_quorum().IsInitialized()) {
+    state->set_old_quorum(consensus_->Quorum());
+    DCHECK(state->old_quorum().IsInitialized());
+  }
   ChangeConfigTransaction* transaction = new ChangeConfigTransaction(state,
                                                                      consensus::LEADER,
                                                                      &config_sem_);
@@ -495,10 +486,12 @@ Status TabletPeer::StartReplicaTransaction(gscoped_ptr<ConsensusRound> round) {
     {
       DCHECK(replicate_msg->has_change_config_request()) << "CHANGE_CONFIG_OP"
           " replica transaction must receive a ChangeConfigRequestPB";
-      transaction = new ChangeConfigTransaction(
-          new ChangeConfigTransactionState(this, replicate_msg->mutable_change_config_request()),
-          consensus::REPLICA,
-          &config_sem_);
+      DCHECK(replicate_msg->change_config_request().old_config().IsInitialized());
+      ChangeConfigTransactionState* state = new ChangeConfigTransactionState(
+          this,
+          replicate_msg->mutable_change_config_request());
+      state->set_old_quorum(replicate_msg->change_config_request().old_config());
+      transaction = new ChangeConfigTransaction(state, consensus::REPLICA, &config_sem_);
        break;
     }
     default:
@@ -518,8 +511,6 @@ Status TabletPeer::StartReplicaTransaction(gscoped_ptr<ConsensusRound> round) {
   RETURN_NOT_OK(driver->ExecuteAsync());
   return Status::OK();
 }
-
-
 
 void TabletPeer::NewLeaderTransactionDriver(Transaction* transaction,
                                             scoped_refptr<TransactionDriver>* driver) {

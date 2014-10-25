@@ -563,14 +563,9 @@ class MockTransactionFactory : public ReplicaTransactionFactory {
     return StartReplicaTransactionMock(context.get());
   }
   MOCK_METHOD1(StartReplicaTransactionMock, Status(ConsensusRound* context));
-
-  virtual Status SubmitConsensusChangeConfig(
-      gscoped_ptr<metadata::QuorumPB> quorum,
-      const StatusCallback& callback) OVERRIDE {
-    return SubmitConsensusChangeConfigMock(quorum.get(), callback);
-  }
-  MOCK_METHOD2(SubmitConsensusChangeConfigMock, Status(metadata::QuorumPB* quorum,
-                                                       const StatusCallback& callback));
+  MOCK_METHOD3(SubmitConsensusChangeConfig, Status(const metadata::QuorumPB&  old_quorum,
+                                                   const metadata::QuorumPB&  new_quorum,
+                                                   const StatusCallback& callback));
 };
 
 // A transaction factory for tests, usually this is implemented by TabletPeer.
@@ -591,32 +586,6 @@ class TestTransactionFactory : public ReplicaTransactionFactory {
         new BoundFunctionCallback(boost::bind(&TestDriver::Cleanup, txn),
                                   boost::bind(&TestDriver::Fatal, txn, _1)));
     txn->round_->SetCommitCallback(commit_clbk);
-    return Status::OK();
-  }
-
-  Status SubmitConsensusChangeConfig(gscoped_ptr<metadata::QuorumPB> quorum,
-                                     const StatusCallback& callback) OVERRIDE {
-    gscoped_ptr<ReplicateMsg> replicate_msg(new ReplicateMsg);
-    replicate_msg->set_op_type(CHANGE_CONFIG_OP);
-    consensus::ChangeConfigRequestPB* cc_request = replicate_msg->mutable_change_config_request();
-    cc_request->mutable_new_config()->CopyFrom(*quorum);
-    cc_request->set_tablet_id("");
-
-    TestDriver* test_transaction = new TestDriver(pool_.get());
-
-    std::tr1::shared_ptr<FutureCallback> commit_clbk(
-        new BoundFunctionCallback(boost::bind(&TestDriver::Cleanup, test_transaction),
-                                  boost::bind(&TestDriver::Fatal, test_transaction, _1)));
-
-    gscoped_ptr<ConsensusRound> round(new ConsensusRound(consensus_,
-                                                         replicate_msg.Pass(),
-                                                         test_transaction,
-                                                         commit_clbk));
-    test_transaction->SetRound(round.Pass());
-
-    RETURN_NOT_OK(pool_->SubmitFunc(boost::bind(&TestTransactionFactory::ReplicateAsync,
-                                                this,
-                                                test_transaction->round_.get())));
     return Status::OK();
   }
 

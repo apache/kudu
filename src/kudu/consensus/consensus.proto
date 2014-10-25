@@ -118,7 +118,7 @@ message ChangeConfigRequestPB {
   required bytes tablet_id = 1;
 
   // The old config seqno to perform CAS style quorum config changes.
-  optional int64 old_config = 2;
+  optional kudu.metadata.QuorumPB old_config = 2;
 
   // The new configuration to set the quorum to.
   required kudu.metadata.QuorumPB new_config = 3;
