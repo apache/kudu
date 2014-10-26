@@ -89,6 +89,7 @@ ADD_KUDU_TEST(mt-log-test)
 ADD_KUDU_TEST(opid_anchor_registry-test)
 ADD_KUDU_TEST(raft_consensus_quorum-test)
 ADD_KUDU_TEST(raft_consensus_state-test)
+ADD_KUDU_TEST(raft_consensus-test)
 
 #Tools
 add_executable(log-dump log-dump.cc)

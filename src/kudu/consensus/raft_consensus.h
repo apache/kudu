@@ -42,10 +42,15 @@ class ReplicaState;
 class RaftConsensusQueueIface {
  public:
   // Called by the queue each time the response for a peer is handled with
-  // the resulting commit index, triggering the apply for pending transactions.
+  // the resulting majority replicated index.
+  // The consensus implementation decides the commit index based on that
+  // and triggers the apply for pending transactions.
+  // 'committed_index' is set to the id of the last operation considered
+  // committed by consensus.
   // The implementation is idempotent, i.e. independently of the ordering of
   // calls to this method only non-triggered applys will be started.
-  virtual void UpdateCommittedIndex(const OpId& committed_index) = 0;
+  virtual void UpdateMajorityReplicated(const OpId& majority_replicated,
+                                        OpId* committed_index) = 0;
 
   // Notify the Consensus implementation that a follower replied with a term
   // higher than that established in the queue.
@@ -130,7 +135,8 @@ class RaftConsensus : public Consensus,
   // Updates the committed_index and triggers the Apply()s for whatever
   // transactions were pending.
   // This is idempotent.
-  virtual void UpdateCommittedIndex(const OpId& commit_index) OVERRIDE;
+  void UpdateMajorityReplicated(const OpId& majority_replicated,
+                                OpId* committed_index) OVERRIDE;
 
   virtual void NotifyTermChange(uint64_t term) OVERRIDE;
 
@@ -233,7 +239,8 @@ class RaftConsensus : public Consensus,
   Status RequestVoteRespondVoteGranted(const VoteRequestPB* request,
                                        VoteResponsePB* response);
 
-  void UpdateCommittedIndexUnlocked(const OpId& committed_index);
+  void UpdateMajorityReplicatedUnlocked(const OpId& majority_replicated,
+                                        OpId* committed_index);
 
   // Callback for leader election driver.
   void ElectionCallback(const ElectionResult& result);

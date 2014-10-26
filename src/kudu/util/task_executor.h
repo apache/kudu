@@ -8,6 +8,7 @@
 #include <boost/function.hpp>
 
 #include "kudu/gutil/macros.h"
+#include "kudu/util/auto_release_pool.h"
 #include "kudu/util/async_util.h"
 #include "kudu/util/countdown_latch.h"
 #include "kudu/util/status.h"

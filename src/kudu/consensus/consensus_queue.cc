@@ -120,6 +120,7 @@ PeerMessageQueue::PeerMessageQueue(const MetricContext& metric_ctx,
   queue_state_.current_term = MinimumOpId().term();
   queue_state_.committed_index = MinimumOpId();
   queue_state_.all_replicated_index = MinimumOpId();
+  queue_state_.majority_replicated_index = MinimumOpId();
   queue_state_.state = kQueueConstructed;
 }
 
@@ -133,6 +134,7 @@ void PeerMessageQueue::Init(RaftConsensusQueueIface* consensus,
   CHECK(committed_index.IsInitialized());
   consensus_ = consensus;
   queue_state_.committed_index = committed_index;
+  queue_state_.majority_replicated_index = committed_index;
   queue_state_.current_term = current_term;
   queue_state_.preceding_first_op_in_queue = committed_index;
   queue_state_.state = kQueueOpen;
@@ -415,7 +417,7 @@ void PeerMessageQueue::ResponseFromPeer(const ConsensusResponsePB& response,
       << "Got response from peer with empty UUID";
   DCHECK(response.IsInitialized()) << "Response: " << response.ShortDebugString();
 
-  OpId updated_commit_index;
+  OpId updated_majority_replicated_index;
   {
     boost::lock_guard<simple_spinlock> lock(queue_lock_);
 
@@ -509,7 +511,7 @@ void PeerMessageQueue::ResponseFromPeer(const ConsensusResponsePB& response,
     peer->peer_status.mutable_last_received()->CopyFrom(response.status().last_received());
 
     // Advance the commit index.
-    AdvanceQueueWatermark(&queue_state_.committed_index,
+    AdvanceQueueWatermark(&queue_state_.majority_replicated_index,
                           last_received,
                           response.status().last_received(),
                           majority_size_);
@@ -520,7 +522,7 @@ void PeerMessageQueue::ResponseFromPeer(const ConsensusResponsePB& response,
                           response.status().last_received(),
                           watermarks_.size());
 
-    updated_commit_index.CopyFrom(queue_state_.committed_index);
+    updated_majority_replicated_index.CopyFrom(queue_state_.majority_replicated_index);
     *more_pending = !OpIdEquals(response.status().last_received(), GetLastOp());
 
     TrimBuffer();
@@ -528,7 +530,17 @@ void PeerMessageQueue::ResponseFromPeer(const ConsensusResponsePB& response,
   }
 
   // It's OK that we do this without the lock as this is idempotent.
-  consensus_->UpdateCommittedIndex(updated_commit_index);
+  OpId new_committed_index;
+  consensus_->UpdateMajorityReplicated(updated_majority_replicated_index,
+                                       &new_committed_index);
+
+  {
+    boost::lock_guard<simple_spinlock> lock(queue_lock_);
+    if (new_committed_index.IsInitialized() &&
+        OpIdBiggerThan(new_committed_index, queue_state_.committed_index)) {
+      queue_state_.committed_index.CopyFrom(new_committed_index);
+    }
+  }
 }
 
 OpId PeerMessageQueue::GetAllReplicatedIndexForTests() const {
@@ -600,7 +612,7 @@ bool PeerMessageQueue::WouldHardLimitBeViolated(size_t bytes) const {
 }
 
 const OpId& PeerMessageQueue::GetLastOp() const {
-  return messages_.empty() ? queue_state_.committed_index : (*messages_.rbegin()).first;
+  return messages_.empty() ? queue_state_.preceding_first_op_in_queue : (*messages_.rbegin()).first;
 }
 
 void PeerMessageQueue::DumpToStrings(vector<string>* lines) const {

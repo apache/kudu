@@ -96,7 +96,8 @@ Status RaftConsensus::Start(const ConsensusBootstrapInfo& info) {
     RETURN_NOT_OK_PREPEND(VerifyQuorumAndCheckThatNoChangeIsPendingUnlocked(initial_quorum),
                           "Invalid state on RaftConsensus::Start()");
 
-    RETURN_NOT_OK_PREPEND(state_->StartUnlocked(info.last_id),
+    RETURN_NOT_OK_PREPEND(state_->StartUnlocked(info.last_id,
+                                                info.last_committed_id),
                           "Unable to start RAFT ReplicaState");
   }
 
@@ -333,7 +334,8 @@ Status RaftConsensus::AppendNewRoundToQueueUnlocked(ConsensusRound* round) {
   return Status::OK();
 }
 
-void RaftConsensus::UpdateCommittedIndex(const OpId& committed_index) {
+void RaftConsensus::UpdateMajorityReplicated(const OpId& majority_replicated,
+                                             OpId* committed_index) {
   ReplicaState::UniqueLock lock;
   Status s = state_->LockForCommit(&lock);
   if (PREDICT_FALSE(!s.ok())) {
@@ -342,7 +344,31 @@ void RaftConsensus::UpdateCommittedIndex(const OpId& committed_index) {
         << s.ToString();
     return;
   }
-  UpdateCommittedIndexUnlocked(committed_index);
+  UpdateMajorityReplicatedUnlocked(majority_replicated, committed_index);
+}
+
+void RaftConsensus::UpdateMajorityReplicatedUnlocked(const OpId& majority_replicated,
+                                                     OpId* committed_index) {
+  VLOG_WITH_PREFIX(1) << "Marking majority replicated up to "
+      << majority_replicated.ShortDebugString();
+  TRACE("Marking majority replicated up to $0", majority_replicated.ShortDebugString());
+  Status s = state_->UpdateMajorityReplicated(majority_replicated, committed_index);
+  if (PREDICT_FALSE(!s.ok())) {
+    string msg = Substitute("Unable to mark committed up to $0: $1",
+                            majority_replicated.ShortDebugString(),
+                            s.ToString());
+    TRACE(msg);
+    LOG_WITH_PREFIX(WARNING) << msg;
+    return;
+  }
+
+  QuorumPeerPB::Role role = state_->GetActiveQuorumStateUnlocked().role;
+  if (role == QuorumPeerPB::LEADER || role == QuorumPeerPB::CANDIDATE) {
+    // TODO Enable the below to make the leader pro-actively send the commit
+    // index to followers. Right now we're keeping this disabled as it causes
+    // certain errors to be more probable.
+    // SignalRequestToPeers(false);
+  }
 }
 
 void RaftConsensus::NotifyTermChange(uint64_t term) {
@@ -357,28 +383,6 @@ void RaftConsensus::NotifyTermChange(uint64_t term) {
   if (state_->GetCurrentTermUnlocked() < term) {
     CHECK_OK(state_->SetCurrentTermUnlocked(term));
     CHECK_OK(StepDownIfLeaderUnlocked());
-  }
-}
-
-void RaftConsensus::UpdateCommittedIndexUnlocked(const OpId& committed_index) {
-  VLOG_WITH_PREFIX(2) << "Marking committed up to " << committed_index.ShortDebugString();
-  TRACE("Marking committed up to $0", committed_index.ShortDebugString());
-  Status s = state_->MarkConsensusCommittedUpToUnlocked(committed_index);
-  if (PREDICT_FALSE(!s.ok())) {
-    string msg = Substitute("Unable to mark committed up to $0: $1",
-                            committed_index.ShortDebugString(),
-                            s.ToString());
-    TRACE(msg);
-    LOG_WITH_PREFIX(WARNING) << msg;
-    return;
-  }
-
-  QuorumPeerPB::Role role = state_->GetActiveQuorumStateUnlocked().role;
-  if (role == QuorumPeerPB::LEADER || role == QuorumPeerPB::CANDIDATE) {
-    // TODO Enable the below to make the leader pro-actively send the commit
-    // index to followers. Right now we're keeping this disabled as it causes
-    // certain errors to be more probable.
-    // SignalRequestToPeers(false);
   }
 }
 
@@ -643,7 +647,7 @@ Status RaftConsensus::UpdateReplica(const ConsensusRequestPB* request,
 
     VLOG_WITH_PREFIX(2) << "Marking committed up to " << dont_apply_after.ShortDebugString();
     TRACE(Substitute("Marking committed up to $0", dont_apply_after.ShortDebugString()));
-    CHECK_OK(state_->MarkConsensusCommittedUpToUnlocked(dont_apply_after));
+    CHECK_OK(state_->AdvanceCommittedIndex(dont_apply_after));
 
     // We can now update the last received watermark.
     //

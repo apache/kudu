@@ -137,7 +137,8 @@ class ReplicaState {
                gscoped_ptr<ConsensusMetadata> cmeta,
                ReplicaTransactionFactory* txn_factory);
 
-  Status StartUnlocked(const OpId& initial_id);
+  Status StartUnlocked(const OpId& last_in_wal,
+                       const OpId& last_committed_id);
 
   // Locks a replica in preparation for StartUnlocked(). Makes
   // sure the replica is in kInitialized state.
@@ -247,10 +248,13 @@ class ReplicaState {
   // Add 'round' to the set of rounds waiting to be committed.
   Status AddPendingOperation(ConsensusRound* round);
 
-  // Marks ReplicaTransactions up to 'id' as committed by the leader, meaning the
+  // Marks ReplicaTransactions up to 'id' as majority replicated, meaning the
   // transaction may Apply() (immediately if Prepare() has completed or when Prepare()
   // completes, if not).
-  Status MarkConsensusCommittedUpToUnlocked(const OpId& id);
+  Status UpdateMajorityReplicated(const OpId& majority_replicated,
+                                  OpId* committed_index);
+
+  Status AdvanceCommittedIndex(const OpId& committed_index);
 
   // Returns the watermark below which all operations are known to
   // be committed according to consensus.
@@ -422,7 +426,7 @@ class ReplicaState {
   // The id of the Apply that was last triggered when the last message from the leader
   // was received. Initialized to MinimumOpId().
   // Used when Role = FOLLOWER/CANDIDATE/LEARNER.
-  OpId last_triggered_apply_;
+  OpId last_committed_index_;
 
   // Latch that allows to wait on the outstanding applies to have completed..
   // Used when Role = FOLLOWER/CANDIDATE/LEARNER.

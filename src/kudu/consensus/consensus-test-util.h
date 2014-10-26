@@ -561,12 +561,9 @@ class TestDriver : public ConsensusCommitContinuation {
 class MockTransactionFactory : public ReplicaTransactionFactory {
  public:
   virtual Status StartReplicaTransaction(gscoped_ptr<ConsensusRound> context) OVERRIDE {
-    return StartReplicaTransactionMock(context.get());
+    return StartReplicaTransactionMock(context.release());
   }
   MOCK_METHOD1(StartReplicaTransactionMock, Status(ConsensusRound* context));
-  MOCK_METHOD3(SubmitConsensusChangeConfig, Status(const metadata::QuorumPB&  old_quorum,
-                                                   const metadata::QuorumPB&  new_quorum,
-                                                   const StatusCallback& callback));
 };
 
 // A transaction factory for tests, usually this is implemented by TabletPeer.
@@ -815,9 +812,12 @@ class TestRaftConsensusQueueIface : public RaftConsensusQueueIface {
   log::Log* log() const OVERRIDE { return log_; }
 
  protected:
-  virtual void UpdateCommittedIndex(const OpId& id) OVERRIDE {
+  virtual void UpdateMajorityReplicated(const OpId& majority_replicated,
+                                        OpId* committed_index) OVERRIDE {
     boost::lock_guard<simple_spinlock> lock(lock_);
-    committed_waiter_set_->MarkFinished(id, OpIdWaiterSet::MARK_ALL_OPS_BEFORE);
+    committed_waiter_set_->MarkFinished(majority_replicated,
+                                        OpIdWaiterSet::MARK_ALL_OPS_BEFORE);
+    committed_index->CopyFrom(majority_replicated);
   }
   virtual void NotifyTermChange(uint64_t term) OVERRIDE {}
  private:

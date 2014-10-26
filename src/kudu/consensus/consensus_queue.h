@@ -65,7 +65,7 @@ class PeerMessageQueue {
   // Appends a message to be replicated to the quorum.
   // Returns OK unless the message could not be added to the queue for some
   // reason (e.g. the queue reached max size).
-  virtual Status AppendOperation(gscoped_ptr<ReplicateMsg> status);
+  virtual Status AppendOperation(gscoped_ptr<ReplicateMsg> replicate);
 
   // Makes the queue track this peer.
   virtual Status TrackPeer(const std::string& uuid);
@@ -178,6 +178,11 @@ class PeerMessageQueue {
     // The first operation that has been replicated to all currently
     // tracked peers.
     OpId all_replicated_index;
+
+    // The index of the last operation replicated to a majority.
+    // This is usually the same as 'committed_index' but might not
+    // be if the terms changed.
+    OpId majority_replicated_index;
 
     // The index of the last operation to be considered committed.
     OpId committed_index;
