@@ -18,6 +18,9 @@
 #include "kudu/util/metrics.h"
 #include "kudu/util/test_util.h"
 
+#define ASSERT_REPORT_HAS_UPDATED_TABLET(report, tablet_id) \
+  ASSERT_NO_FATAL_FAILURE(AssertReportHasUpdatedTablet(report, tablet_id))
+
 namespace kudu {
 namespace tserver {
 
@@ -29,6 +32,7 @@ using tablet::TabletPeer;
 using std::tr1::shared_ptr;
 
 static const char* const kTabletId = "my-tablet-id";
+
 
 class TsTabletManagerTest : public KuduTest {
  public:
@@ -138,8 +142,8 @@ static void CheckSequenceNumber(int64_t *seqno,
   *seqno = report.sequence_number();
 }
 
-static void CheckReportHasUpdatedTablet(const TabletReportPB& report,
-                                        const string& tablet_id) {
+static void AssertReportHasUpdatedTablet(const TabletReportPB& report,
+                                         const string& tablet_id) {
   ASSERT_GE(report.updated_tablets_size(), 0);
   bool found_tablet = false;
   BOOST_FOREACH(ReportedTabletPB reported_tablet, report.updated_tablets()) {
@@ -183,14 +187,14 @@ TEST_F(TsTabletManagerTest, TestTabletReports) {
     CheckSequenceNumber(&seqno, report);
   }
 
-  CheckReportHasUpdatedTablet(report, "tablet-1");
+  ASSERT_REPORT_HAS_UPDATED_TABLET(report, "tablet-1");
 
   // If we don't acknowledge the report, and ask for another incremental report,
   // it should include the tablet again.
   tablet_manager_->GenerateIncrementalTabletReport(&report);
   ASSERT_TRUE(report.is_incremental());
   ASSERT_EQ(1, report.updated_tablets().size());
-  CheckReportHasUpdatedTablet(report, "tablet-1");
+  ASSERT_REPORT_HAS_UPDATED_TABLET(report, "tablet-1");
   CheckSequenceNumber(&seqno, report);
 
   // Now acknowledge the last report, and further incrementals should be empty.
@@ -232,8 +236,8 @@ TEST_F(TsTabletManagerTest, TestTabletReports) {
   tablet_manager_->GenerateFullTabletReport(&report);
   ASSERT_FALSE(report.is_incremental());
   ASSERT_EQ(2, report.updated_tablets().size());
-  CheckReportHasUpdatedTablet(report, "tablet-1");
-  CheckReportHasUpdatedTablet(report, "tablet-2");
+  ASSERT_REPORT_HAS_UPDATED_TABLET(report, "tablet-1");
+  ASSERT_REPORT_HAS_UPDATED_TABLET(report, "tablet-2");
   CheckSequenceNumber(&seqno, report);
 }
 
