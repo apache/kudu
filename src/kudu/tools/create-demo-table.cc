@@ -8,10 +8,12 @@
 #include <gflags/gflags.h>
 #include <iostream>
 #include <tr1/memory>
+#include <vector>
 
 #include "kudu/benchmarks/tpch/tpch-schemas.h"
 #include "kudu/benchmarks/ycsb-schema.h"
 #include "kudu/client/client.h"
+#include "kudu/gutil/strings/split.h"
 #include "kudu/tserver/tserver.pb.h"
 #include "kudu/tserver/tserver_service.proxy.h"
 #include "kudu/twitter-demo/twitter-schema.h"
@@ -21,13 +23,14 @@
 
 using std::string;
 using std::tr1::shared_ptr;
+using std::vector;
 using kudu::client::KuduClient;
 using kudu::client::KuduClientBuilder;
 using kudu::client::KuduSchema;
 using kudu::rpc::RpcController;
 
 DEFINE_string(master_address, "localhost",
-              "Address of master run against");
+              "Comma separated list of master addresses to run against.");
 
 static const char* const kTwitterTabletId = "twitter";
 static const char* const kTPCH1TabletId = "tpch1";
@@ -71,13 +74,16 @@ static int CreateDemoTable(int argc, char** argv) {
 
   string table_name = argv[1];
 
+  vector<string> addrs = strings::Split(FLAGS_master_address, ",");
+  CHECK(!addrs.empty()) << "At least one master address must be specified!";
+
   KuduSchema schema;
   CHECK_OK(GetDemoSchema(table_name, &schema));
 
   // Set up client.
   shared_ptr<KuduClient> client;
   CHECK_OK(KuduClientBuilder()
-           .master_server_addr(FLAGS_master_address)
+           .master_server_addrs(addrs)
            .Build(&client));
 
   CHECK_OK(client->NewTableCreator()
