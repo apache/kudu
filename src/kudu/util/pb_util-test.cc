@@ -183,7 +183,7 @@ TEST_F(TestPBUtil, TestPBContainerCorruption) {
   }
   s = ReadPBContainerFromPath(env_.get(), path_, kTestMagic, &test_pb);
   ASSERT_TRUE(s.IsCorruption()) << "Should be incorrect size: " << path_ << ": " << s.ToString();
-  ASSERT_STR_CONTAINS(s.ToString(), "Incorrect file size");
+  ASSERT_STR_CONTAINS(s.ToString(), "File size not large enough to be valid");
 
   // Test corrupted magic.
   ASSERT_OK(CreateKnownGoodContainerFile());
@@ -205,7 +205,7 @@ TEST_F(TestPBUtil, TestPBContainerCorruption) {
   ASSERT_OK(BitFlipFileByteRange(path_, 12, 2));
   s = ReadPBContainerFromPath(env_.get(), path_, kTestMagic, &test_pb);
   ASSERT_TRUE(s.IsCorruption()) << "Should be incorrect size: " << path_ << ": " << s.ToString();
-  ASSERT_STR_CONTAINS(s.ToString(), "Incorrect file size");
+  ASSERT_STR_CONTAINS(s.ToString(), "File size not large enough to be valid");
 
   // Test corrupted data (looks like bad checksum).
   ASSERT_OK(CreateKnownGoodContainerFile());
@@ -222,6 +222,77 @@ TEST_F(TestPBUtil, TestPBContainerCorruption) {
   ASSERT_TRUE(s.IsCorruption()) << "Should be incorrect checksum: " << path_ << ": "
                                 << s.ToString();
   ASSERT_STR_CONTAINS(s.ToString(), "Incorrect checksum");
+}
+
+TEST_F(TestPBUtil, TestMultipleMessages) {
+  ProtoContainerTestPB pb;
+  pb.set_name("foo");
+  pb.set_note("bar");
+
+  gscoped_ptr<WritableFile> writer;
+  ASSERT_OK(env_->NewWritableFile(path_, &writer));
+  WritablePBContainerFile pb_writer(writer.Pass());
+  ASSERT_OK(pb_writer.Init(kTestMagic));
+
+  for (int i = 0; i < 10; i++) {
+    pb.set_value(i);
+    ASSERT_OK(pb_writer.Append(pb));
+  }
+  ASSERT_OK(pb_writer.Close());
+
+  int pbs_read = 0;
+  gscoped_ptr<RandomAccessFile> reader;
+  ASSERT_OK(env_->NewRandomAccessFile(path_, &reader));
+  ReadablePBContainerFile pb_reader(reader.Pass());
+  ASSERT_OK(pb_reader.Init(kTestMagic));
+  for (int i = 0;; i++) {
+    ProtoContainerTestPB read_pb;
+    Status s = pb_reader.ReadNextPB(&read_pb);
+    if (s.IsEndOfFile()) {
+      break;
+    }
+    ASSERT_OK(s);
+    ASSERT_EQ(pb.name(), read_pb.name());
+    ASSERT_EQ(read_pb.value(), i);
+    ASSERT_EQ(pb.note(), read_pb.note());
+    pbs_read++;
+  }
+  ASSERT_EQ(10, pbs_read);
+  ASSERT_OK(pb_reader.Close());
+}
+
+TEST_F(TestPBUtil, TestInterleavedReadWrite) {
+  ProtoContainerTestPB pb;
+  pb.set_name("foo");
+  pb.set_note("bar");
+
+  // Open the file for writing and reading.
+  gscoped_ptr<WritableFile> writer;
+  ASSERT_OK(env_->NewWritableFile(path_, &writer));
+  WritablePBContainerFile pb_writer(writer.Pass());
+  gscoped_ptr<RandomAccessFile> reader;
+  ASSERT_OK(env_->NewRandomAccessFile(path_, &reader));
+  ReadablePBContainerFile pb_reader(reader.Pass());
+
+  // Write the header (writer) and validate it (reader).
+  ASSERT_OK(pb_writer.Init(kTestMagic));
+  ASSERT_OK(pb_reader.Init(kTestMagic));
+
+  for (int i = 0; i < 10; i++) {
+    // Write a message and read it back.
+    pb.set_value(i);
+    ASSERT_OK(pb_writer.Append(pb));
+    ProtoContainerTestPB read_pb;
+    ASSERT_OK(pb_reader.ReadNextPB(&read_pb));
+    ASSERT_EQ(pb.name(), read_pb.name());
+    ASSERT_EQ(read_pb.value(), i);
+    ASSERT_EQ(pb.note(), read_pb.note());
+  }
+
+  // After closing the writer, the reader should be out of data.
+  ASSERT_OK(pb_writer.Close());
+  ASSERT_TRUE(pb_reader.ReadNextPB(NULL).IsEndOfFile());
+  ASSERT_OK(pb_reader.Close());
 }
 
 } // namespace pb_util

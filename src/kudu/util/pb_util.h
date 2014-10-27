@@ -9,6 +9,8 @@
 #define KUDU_UTIL_PB_UTIL_H
 
 #include <string>
+
+#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/util/faststring.h"
 
 namespace google { namespace protobuf {
@@ -20,7 +22,9 @@ class Message;
 namespace kudu {
 
 class Env;
+class RandomAccessFile;
 class SequentialFile;
+class Slice;
 class Status;
 class WritableFile;
 
@@ -62,8 +66,6 @@ Status WritePBToPath(Env* env, const std::string& path, const MessageLite& msg, 
 // The text "<truncated>" is appended to any such truncated fields.
 void TruncateFields(google::protobuf::Message* message, int max_len);
 
-// Functions to read / write a "containerized" protobuf.
-//
 // A protobuf "container" has the following format (all integers in
 // little-endian byte order):
 //
@@ -80,24 +82,148 @@ void TruncateFields(google::protobuf::Message* message, int max_len);
 //                    Included so that this file format may be extended at some
 //                    later date while maintaining backwards compatibility.
 //
+//
+// The remaining container fields are repeated (in a group) for each protobuf message.
+//
+//
 // data size: 4 byte unsigned integer indicating the size of the encoded data.
 //
-//            Included so that it is easy to allocate memory all at once to hold
-//            the data portion, as well as arbitrarily define a point at which
-//            it would be too much memory to allocate to read the file. In such
-//            a scenario, it may make sense to simply fail and refuse to read
-//            the file.
+//            Included because PB messages aren't self-delimiting, and thus
+//            writing a stream of messages to the same file requires
+//            delimiting each with its size.
+//
+//            See https://developers.google.com/protocol-buffers/docs/techniques?hl=zh-cn#streaming
+//            for more details.
 //
 // data: "size" bytes of protobuf data encoded according to the schema.
 //
 //       Our payload.
 //
-// checksum: 4 byte unsigned integer containing the CRC32C checksum of the
-//           entire contents of the container file up to and including the last
-//           byte of "data".
+// checksum: 4 byte unsigned integer containing the CRC32C checksum of "data".
 //
 //           Included to ensure validity of the data on-disk.
 //
+//
+// It is worth describing the kinds of errors that can be detected by the
+// protobuf container and the kinds that cannot.
+//
+// The checksums in the container are independent, not rolling. As such,
+// they won't detect the disappearance or reordering of entire protobuf
+// messages, which can happen if a range of the file is collapsed (see
+// man fallocate(2)) or if the file is otherwise manually manipulated.
+// Moreover, the checksums do not protect against corruption in the data
+// size fields, though that is mitigated by validating each data size
+// against the remaining number of bytes in the container.
+//
+// Additionally, the container does not include footers or periodic
+// checkpoints. As such, it will not detect if entire protobuf messages
+// are truncated.
+//
+// That said, all corruption or truncation of the magic number or the
+// container version will be detected, as will most corruption/truncation
+// of the data size, data, and checksum (subject to CRC32 limitations).
+//
+// These tradeoffs in error detection are reasonable given the failure
+// environment that Kudu operates within. We tolerate failures such as
+// "kill -9" of the Kudu process, machine power loss, or fsync/fdatasync
+// failure, but not failures like runaway processes mangling data files
+// in arbitrary ways or attackers crafting malicious data files.
+//
+// The one kind of failure that clients must handle is truncation of entire
+// protobuf messages (see above). The protobuf container will not detect
+// these failures, so clients must tolerate them in some way.
+//
+// For further reading on what files might look like following a normal
+// filesystem failure, see:
+//
+// https://www.usenix.org/system/files/conference/osdi14/osdi14-paper-pillai.pdf
+
+// Protobuf container file opened for writing.
+//
+// Can be built around an existing file or a completely new file.
+//
+// Not thread-safe.
+class WritablePBContainerFile {
+ public:
+
+  // Initializes the class instance; writer must be open.
+  explicit WritablePBContainerFile(gscoped_ptr<WritableFile> writer);
+
+  // Closes the container if not already closed.
+  ~WritablePBContainerFile();
+
+  // Writes the magic number and container version to the container.
+  Status Init(const char* magic);
+
+  // Writes a protobuf message to the container, beginning with its size
+  // and ending with its CRC32 checksum.
+  Status Append(const MessageLite& msg);
+
+  // Asynchronously flushes all dirty container data to the filesystem.
+  Status Flush();
+
+  // Synchronizes all dirty container data to the filesystem.
+  //
+  // Note: the parent directory is _not_ synchronized. Because the
+  // container file was provided during construction, we don't know whether
+  // it was created or reopened, and parent directory synchronization is
+  // only needed in the former case.
+  Status Sync();
+
+  // Closes the container.
+  Status Close();
+
+ private:
+  bool closed_;
+
+  gscoped_ptr<WritableFile> writer_;
+};
+
+// Protobuf container file opened for reading.
+//
+// Can be built around a file with existing contents or an empty file (in
+// which case it's safe to interleave with WritablePBContainerFile).
+class ReadablePBContainerFile {
+ public:
+
+  // Initializes the class instance; reader must be open.
+  explicit ReadablePBContainerFile(gscoped_ptr<RandomAccessFile> reader);
+
+  // Closes the file if not already closed.
+  ~ReadablePBContainerFile();
+
+  // Reads the magic number and container version from the container and
+  // validates them.
+  Status Init(const char* magic);
+
+  // Reads a protobuf message from the container, validating its size and
+  // data using a CRC32 checksum.
+  Status ReadNextPB(MessageLite* msg);
+
+  // Closes the container.
+  Status Close();
+
+ private:
+  enum EofOK {
+    EOF_OK,
+    EOF_NOT_OK
+  };
+
+  // Reads exactly 'length' bytes from the container file into 'scratch',
+  // validating the correctness of the read both before and after and
+  // returning a slice of the bytes in 'result'.
+  //
+  // If 'eofOK' is EOF_OK, an EOF is returned as-is. Otherwise, it is
+  // considered to be an invalid short read and returned as an error.
+  Status ValidateAndRead(size_t length, EofOK eofOK,
+                         Slice* result, gscoped_ptr<uint8_t[]>* scratch);
+
+  size_t offset_;
+
+  gscoped_ptr<RandomAccessFile> reader_;
+};
+
+// Convenience functions for protobuf containers holding just one record.
 
 // Load a "containerized" protobuf, including magic number, size, and checksum,
 // from the given path.
