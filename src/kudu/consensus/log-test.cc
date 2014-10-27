@@ -611,5 +611,28 @@ TEST_F(LogTest, TestLogReader) {
   ASSERT_EQ(segments[0]->header().sequence_number(), 4);
 }
 
+// Test that, even if the LogReader's index is empty because no segments
+// have been properly closed, we can still read the entries as the reader
+// returns the current segment.
+TEST_F(LogTest, TestLogReaderReturnsLatestSegmentIfIndexEmpty) {
+  BuildLog();
+  AppendCommit(1, APPEND_ASYNC);
+  AppendReplicateBatch(1, APPEND_SYNC);
+
+  OpId id;
+  id.set_term(0);
+  id.set_index(1);
+  // The reader has nothing in the index, since we've only appended
+  // a small batch and have not rolled over.
+  SegmentSequence segments;
+  ASSERT_STATUS_OK(log_->GetLogReader()->GetSegmentSuffixIncluding(id, &segments));
+  ASSERT_EQ(segments.size(), 1);
+
+  vector<LogEntryPB*> entries;
+  ElementDeleter deleter(&entries);
+  ASSERT_STATUS_OK(segments[0]->ReadEntries(&entries));
+  ASSERT_EQ(2, entries.size());
+}
+
 } // namespace log
 } // namespace kudu

@@ -181,11 +181,21 @@ Status LogReader::GetSegmentSuffixIncluding(const consensus::OpId& opid,
   // This gives us the segment that might include 'opid'
   ReadableLogSegmentIndex::const_iterator pos = segments_idx_.lower_bound(opid);
 
-  // If we couldn't find a segment, that means the operation was already GC'd, return NotFound
-  if (pos == segments_idx_.end()) {
+  // If we couldn't find a segment, and the index contains entries,
+  // that means the operation was already GC'd, return NotFound
+  if (!segments_idx_.empty() && pos == segments_idx_.end()) {
     return Status::NotFound(
         Substitute("No segment currently contains, or might contain opid: $0",
                    opid.ShortDebugString()));
+  }
+
+  // If the segments index is empty however, the op we want may be in the current
+  // segment, so return the whole sequence.
+  if (segments_idx_.empty()) {
+    segments->assign(segments_.begin(), segments_.end());
+    // TODO here, likely, we should return something other than OK. We're not
+    // sure that the requested operation is going to be in one of the segments.
+    return Status::OK();
   }
 
 
