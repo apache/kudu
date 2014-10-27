@@ -60,6 +60,8 @@ void StatusToPB(const Status& status, AppStatusPB* pb) {
     pb->set_code(AppStatusPB::CONFIGURATION_ERROR);
   } else if (status.IsIncomplete()) {
     pb->set_code(AppStatusPB::INCOMPLETE);
+  } else if (status.IsEndOfFile()) {
+    pb->set_code(AppStatusPB::END_OF_FILE);
   } else {
     LOG(WARNING) << "Unknown error code translation from internal error "
                  << status.ToString() << ": sending UNKNOWN_ERROR";
@@ -121,6 +123,8 @@ Status StatusFromPB(const AppStatusPB& pb) {
       return Status::ConfigurationError(pb.message(), "", posix_code);
     case AppStatusPB::INCOMPLETE:
       return Status::Incomplete(pb.message(), "", posix_code);
+    case AppStatusPB::END_OF_FILE:
+      return Status::EndOfFile(pb.message(), "", posix_code);
     case AppStatusPB::UNKNOWN_ERROR:
     default:
       LOG(WARNING) << "Unknown error code in status: " << pb.ShortDebugString();

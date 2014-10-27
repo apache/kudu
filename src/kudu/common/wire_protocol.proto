@@ -35,6 +35,7 @@ message AppStatusPB {
     UNINITIALIZED = 15;
     CONFIGURATION_ERROR = 16;
     INCOMPLETE = 17;
+    END_OF_FILE = 18;
     UNKNOWN_ERROR = 999;
   }
 

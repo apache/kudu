@@ -154,6 +154,10 @@ class KUDU_EXPORT Status {
                            int64_t posix_code = -1) {
     return Status(kIncomplete, msg, msg2, posix_code);
   }
+  static Status EndOfFile(const Slice& msg, const Slice& msg2 = Slice(),
+                          int64_t posix_code = -1) {
+    return Status(kEndOfFile, msg, msg2, posix_code);
+  }
 
   // Returns true iff the status indicates success.
   bool ok() const { return (state_ == NULL); }
@@ -209,6 +213,9 @@ class KUDU_EXPORT Status {
   // Returns true iff the status indicates Incomplete.
   bool IsIncomplete() const { return code() == kIncomplete; }
 
+  // Returns true iff the status indicates end of file.
+  bool IsEndOfFile() const { return code() == kEndOfFile; }
+
   // Return a string representation of this status suitable for printing.
   // Returns the string "OK" for success.
   std::string ToString() const;
@@ -263,6 +270,7 @@ class KUDU_EXPORT Status {
     kUninitialized = 15,
     kConfigurationError = 16,
     kIncomplete = 17,
+    kEndOfFile = 18,
     // NOTE: Remember to duplicate these constants into wire_protocol.proto and
     // and to add StatusTo/FromPB ser/deser cases in wire_protocol.cc !
     //
