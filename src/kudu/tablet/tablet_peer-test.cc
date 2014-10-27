@@ -30,8 +30,6 @@
 #include "kudu/util/test_macros.h"
 #include "kudu/util/threadpool.h"
 
-DECLARE_bool(enable_log_gc);
-
 namespace kudu {
 namespace tablet {
 
@@ -104,10 +102,6 @@ class TabletPeerTest : public KuduTabletTest {
                                metric_ctx_.get(), &log));
 
     ASSERT_STATUS_OK(tablet_peer_->Init(tablet(), clock(), messenger_, log.Pass(), *metric_ctx_));
-
-    // Disable Log GC. We will call it manually.
-    // This flag is restored by the FlagSaver member at destruction time.
-    FLAGS_enable_log_gc = false;
   }
 
   Status StartPeer(const ConsensusBootstrapInfo& info) {

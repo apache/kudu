@@ -33,12 +33,6 @@
 #include "kudu/util/threadpool.h"
 #include "kudu/util/trace.h"
 
-DEFINE_bool(enable_log_gc, true,
-    "Enable garbage collection (deletion) of old write-ahead logs.");
-
-DEFINE_int32(log_gc_sleep_delay_ms, 10000,
-    "Number of milliseconds that each Log GC thread will sleep between runs.");
-
 namespace kudu {
 namespace tablet {
 
@@ -76,12 +70,10 @@ TabletPeer::TabletPeer(const scoped_refptr<TabletMetadata>& meta,
     replica_apply_pool_(replica_apply_pool),
     // prepare executor has a single thread as prepare must be done in order
     // of submission
-    log_gc_shutdown_latch_(1),
     tablet_running_latch_(1),
     mark_dirty_clbk_(mark_dirty_clbk),
     config_sem_(1) {
   CHECK_OK(ThreadPoolBuilder("prepare").set_max_threads(1).Build(&prepare_pool_));
-  CHECK_OK(ThreadPoolBuilder("log-gc").set_max_threads(1).Build(&log_gc_pool_));
 }
 
 TabletPeer::~TabletPeer() {
@@ -227,7 +219,6 @@ void TabletPeer::ConsensusStateChanged(const QuorumPB& old_quorum, const QuorumP
     // - a change to NON_PARTICIPANT should likely trigger the destruction of
     //   the tablet.
     if (state_ == CONFIGURING && new_role != QuorumPeerPB::NON_PARTICIPANT) {
-      CHECK_OK(StartLogGCTask());
       state_ = RUNNING;
       tablet_running_latch_.CountDown();
     }
@@ -253,11 +244,6 @@ TabletStatePB TabletPeer::Shutdown() {
   }
 
   if (tablet_) tablet_->UnregisterMaintenanceOps();
-
-  // Stop Log GC thread before we close the log.
-  VLOG(1) << Substitute("TabletPeer: tablet $0: Shutting down Log GC thread...", tablet_id());
-  log_gc_shutdown_latch_.CountDown();
-  log_gc_pool_->Shutdown();
 
   if (consensus_) consensus_->Shutdown();
 
@@ -365,27 +351,19 @@ void TabletPeer::GetTabletStatusPB(TabletStatusPB* status_pb_out) const {
   }
 }
 
-Status TabletPeer::StartLogGCTask() {
-  if (PREDICT_FALSE(!FLAGS_enable_log_gc)) {
-    KLOG_FIRST_N(INFO, 1) << "Log GC is disabled, not deleting old write-ahead logs!";
+Status TabletPeer::RunLogGC() {
+  if (!CheckRunning().ok()) {
     return Status::OK();
   }
-  return log_gc_pool_->SubmitClosure(Bind(&TabletPeer::RunLogGC, Unretained(this)));
-}
-
-void TabletPeer::RunLogGC() {
-  do {
-    OpId min_op_id;
-    int32_t num_gced;
-    GetEarliestNeededOpId(&min_op_id);
-    Status s = log_->GC(min_op_id, &num_gced);
-    if (!s.ok()) {
-      s = s.CloneAndPrepend("Unexpected error while running Log GC from TabletPeer");
-      LOG(ERROR) << s.ToString();
-    }
-    // TODO: Possibly back off if num_gced == 0.
-  } while (!log_gc_shutdown_latch_.WaitFor(
-      MonoDelta::FromMilliseconds(FLAGS_log_gc_sleep_delay_ms)));
+  OpId min_op_id;
+  int32_t num_gced;
+  GetEarliestNeededOpId(&min_op_id);
+  Status s = log_->GC(min_op_id, &num_gced);
+  if (!s.ok()) {
+    s = s.CloneAndPrepend("Unexpected error while running Log GC from TabletPeer");
+    LOG(ERROR) << s.ToString();
+  }
+  return Status::OK();
 }
 
 void TabletPeer::GetInFlightTransactions(Transaction::TraceType trace_type,

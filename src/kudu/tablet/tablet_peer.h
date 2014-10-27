@@ -194,6 +194,9 @@ class TabletPeer : public RefCountedThreadSafe<TabletPeer>,
   void NewReplicaTransactionDriver(Transaction* transaction,
                                    scoped_refptr<TransactionDriver>* driver);
 
+  // Tells the tablet's log to garbage collect.
+  Status RunLogGC();
+
  private:
   friend class RefCountedThreadSafe<TabletPeer>;
   friend class TabletPeerTest;
@@ -211,12 +214,6 @@ class TabletPeer : public RefCountedThreadSafe<TabletPeer>,
   // Not implemented yet. See .cc file.
   Status StartPendingTransactions(metadata::QuorumPeerPB::Role my_role,
                                   const consensus::ConsensusBootstrapInfo& bootstrap_info);
-
-  // Schedule the Log GC task to run in the pool.
-  Status StartLogGCTask();
-
-  // Task that runs Log GC on a periodic basis.
-  void RunLogGC();
 
   scoped_refptr<TabletMetadata> meta_;
 
@@ -249,11 +246,6 @@ class TabletPeer : public RefCountedThreadSafe<TabletPeer>,
   // the Tablet server.
   ThreadPool* leader_apply_pool_;
   ThreadPool* replica_apply_pool_;
-
-
-  // TODO move this to TabletServer.
-  gscoped_ptr<ThreadPool> log_gc_pool_;
-  CountDownLatch log_gc_shutdown_latch_;
 
   // Latch that goes down to 0 when the tablet is in RUNNING state.
   CountDownLatch tablet_running_latch_;

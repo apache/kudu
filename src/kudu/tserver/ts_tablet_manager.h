@@ -23,6 +23,7 @@
 namespace kudu {
 
 class FsManager;
+class MaintenanceOp;
 class Schema;
 
 namespace master {
@@ -139,6 +140,8 @@ class TSTabletManager : public tserver::TabletPeerLookupIf {
   // changes.
   void MarkTabletDirty(tablet::TabletPeer* tablet_peer);
 
+  Status RunAllLogGC();
+
  private:
   FRIEND_TEST(TsTabletManagerTest, TestPersistBlocks);
 
@@ -193,6 +196,8 @@ class TSTabletManager : public tserver::TabletPeerLookupIf {
     return state_;
   }
 
+  void RegisterMaintenanceOp();
+
   FsManager* fs_manager_;
 
   TabletServer* server_;
@@ -227,6 +232,8 @@ class TSTabletManager : public tserver::TabletPeerLookupIf {
   // Executors for apply transactions, shared between all tablets.
   gscoped_ptr<ThreadPool> leader_apply_pool_;
   gscoped_ptr<ThreadPool> replica_apply_pool_;
+
+  gscoped_ptr<MaintenanceOp> log_gc_op_;
 
   DISALLOW_COPY_AND_ASSIGN(TSTabletManager);
 };

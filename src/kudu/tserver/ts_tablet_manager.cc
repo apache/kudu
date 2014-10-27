@@ -2,6 +2,7 @@
 
 #include "kudu/tserver/ts_tablet_manager.h"
 
+#include <algorithm>
 #include <boost/thread/locks.hpp>
 #include <boost/thread/mutex.hpp>
 #include <boost/thread/shared_mutex.hpp>
@@ -41,6 +42,13 @@ DEFINE_int32(num_tablets_to_open_simultaneously, 50,
 DEFINE_int32(tablet_start_warn_threshold_ms, 500,
              "If a tablet takes more than this number of millis to start, issue "
              "a warning with a trace.");
+DEFINE_int32(log_gc_sleep_delay_ms, 10000,
+    "Minimum number of milliseconds that the maintenance manager will wait between log GC runs.");
+
+METRIC_DEFINE_gauge_uint32(log_gc_running, kudu::MetricUnit::kMaintenanceOperations,
+                           "Number of log GC operations currently running.");
+METRIC_DEFINE_histogram(log_gc_duration, kudu::MetricUnit::kSeconds,
+                        "Seconds spent garbage collecting the logs.", 60000000LU, 2);
 
 namespace kudu {
 namespace tserver {
@@ -146,6 +154,8 @@ Status TSTabletManager::Init() {
                                                 this,
                                                 meta)));
   }
+
+  RegisterMaintenanceOp();
 
   {
     boost::lock_guard<rw_spinlock> lock(lock_);
@@ -401,6 +411,9 @@ void TSTabletManager::Shutdown() {
   // Shut down the bootstrap pool, so new tablets are registered after this point.
   open_tablet_pool_->Shutdown();
 
+  // Stop the log GC maintenance operation.
+  log_gc_op_->Unregister();
+
   // Take a snapshot of the peers list -- that way we don't have to hold
   // on to the lock while shutting them down, which might cause a lock
   // inversion. (see KUDU-308 for example).
@@ -575,6 +588,84 @@ void TSTabletManager::MarkTabletReportAcknowledged(const TabletReportPB& report)
       ++it;
     }
   }
+}
+
+Status TSTabletManager::RunAllLogGC() {
+  TabletMap tablet_map_copy;
+  {
+    boost::shared_lock<rw_spinlock> shared_lock(lock_);
+    tablet_map_copy.insert(tablet_map_.begin(), tablet_map_.end());
+  }
+  BOOST_FOREACH(const TabletMap::value_type& entry, tablet_map_copy) {
+    tablet::TabletStatePB tablet_state = entry.second->state();
+    // Since we took a copy, the tablet might have been erased from the map. The scoped_refptr will
+    // still be good but the tablet might just be waiting to be destroyed.
+    if (tablet_state != tablet::QUIESCING && tablet_state != tablet::SHUTDOWN) {
+      WARN_NOT_OK(entry.second->RunLogGC(),
+                  Substitute("Failed to run log GC on tablet $0", entry.first));
+    }
+  }
+  return Status::OK();
+}
+
+// Maintenance task that runs log GC in all tablets. Will wait at least log_gc_sleep_delay_ms
+// between each run and after that the performance improvement is of 1 for each second elapsed after
+// the original delay.
+//
+// Only one LogGC op can run at a time.
+class LogGCOp : public MaintenanceOp {
+ public:
+  LogGCOp(TSTabletManager* tablet_manager, const MetricContext& metric_ctx)
+    : MaintenanceOp("LogGCOp"),
+      tablet_manager_(tablet_manager),
+      log_gc_duration_(METRIC_log_gc_duration.Instantiate(metric_ctx)),
+      log_gc_running_(AtomicGauge<uint32_t>::Instantiate(METRIC_log_gc_running, metric_ctx)) {
+    time_since_last_run_.start();
+  }
+
+  virtual void UpdateStats(MaintenanceOpStats* stats) OVERRIDE {
+    stats->ram_anchored = 0;
+    stats->ts_anchored_secs = 0;
+    stats->runnable = !lock_.is_locked();
+    double elapsed_ms = time_since_last_run_.elapsed().wall_millis();
+    if (elapsed_ms > FLAGS_log_gc_sleep_delay_ms) {
+      double extra_millis = elapsed_ms - FLAGS_log_gc_sleep_delay_ms;
+      stats->perf_improvement = std::max(extra_millis / 1000, 0.05);
+    }
+  }
+
+  virtual bool Prepare() OVERRIDE {
+    return lock_.try_lock();
+  }
+
+  virtual void Perform() OVERRIDE {
+    CHECK(!lock_.try_lock());
+
+    tablet_manager_->RunAllLogGC();
+    time_since_last_run_.start();
+
+    lock_.unlock();
+  }
+
+  virtual Histogram* DurationHistogram() OVERRIDE {
+    return log_gc_duration_;
+  }
+
+  virtual AtomicGauge<uint32_t>* RunningGauge() OVERRIDE {
+    return log_gc_running_;
+  }
+
+ private:
+  TSTabletManager* tablet_manager_;
+  mutable simple_spinlock lock_;
+  Stopwatch time_since_last_run_;
+  Histogram* log_gc_duration_;
+  AtomicGauge<uint32_t>* log_gc_running_;
+};
+
+void TSTabletManager::RegisterMaintenanceOp() {
+  log_gc_op_.reset(new LogGCOp(this, metric_ctx_));
+  server_->maintenance_manager()->RegisterOp(log_gc_op_.get());
 }
 
 } // namespace tserver
