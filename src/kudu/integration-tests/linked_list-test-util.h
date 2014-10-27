@@ -465,7 +465,7 @@ Status LinkedListTester::WaitAndVerify(int seconds_to_run, int64_t expected) {
       const int kBaseTimeToWaitSecs = 3;
 
       LOG(INFO) << "Table not yet ready: " << seen << "/" << expected << " rows"
-                << " (status" << s.ToString() << ")";
+                << " (status: " << s.ToString() << ")";
       if (sw.elapsed().wall_seconds() > kBaseTimeToWaitSecs + seconds_to_run) {
         // We'll give it an equal amount of time to re-load the data as it took
         // to write it in. Typically it completes much faster than that.

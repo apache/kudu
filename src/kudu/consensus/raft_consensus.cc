@@ -96,10 +96,18 @@ Status RaftConsensus::Start(const ConsensusBootstrapInfo& info) {
     RETURN_NOT_OK_PREPEND(VerifyQuorumAndCheckThatNoChangeIsPendingUnlocked(initial_quorum),
                           "Invalid state on RaftConsensus::Start()");
 
-    RETURN_NOT_OK_PREPEND(state_->StartUnlocked(info.last_id,
-                                                info.last_committed_id),
+    RETURN_NOT_OK_PREPEND(state_->StartUnlocked(info.last_id),
                           "Unable to start RAFT ReplicaState");
+
+    LOG_WITH_PREFIX(INFO) << "Replica starting. Triggering " << info.orphaned_replicates.size()
+        << " pending transactions.";
+    BOOST_FOREACH(ReplicateMsg* replicate, info.orphaned_replicates) {
+      RETURN_NOT_OK(StartReplicaTransactionUnlocked(
+          make_gscoped_ptr(new ReplicateMsg(*replicate))));
+    }
   }
+
+  state_->AdvanceCommittedIndex(info.last_committed_id);
 
   // TODO: Revisit the PeerProxy ownership model once we need to support
   // quorum membership changes and after we refactor the Peer tests.
@@ -236,6 +244,16 @@ Status RaftConsensus::BecomeLeaderUnlocked() {
   // Create the peers so that we're able to replicate messages remotely and locally
   RETURN_NOT_OK(peer_manager_->UpdateQuorum(state_->GetPendingQuorumUnlocked()));
 
+  // If we're becoming leader we need to add the pending operations that are not
+  // yet committed to the queue, so that the peers can replicate them, or acknowledge
+  // them as replicated.
+  vector<ConsensusRound*> rounds;
+  CHECK_OK(state_->GetUncommittedPendingOperationsUnlocked(&rounds));
+  BOOST_FOREACH(ConsensusRound* round, rounds) {
+    CHECK_OK(queue_->AppendOperation(gscoped_ptr<ReplicateMsg>(
+        new ReplicateMsg(*DCHECK_NOTNULL(round->replicate_msg())))));
+  }
+
   // Initiate a config change transaction. This is mostly acting as the NO_OP
   // transaction that is sent at the beginning of every term change in raft.
   // TODO implement NO_OP, consensus only, rounds and use those instead.
@@ -331,6 +349,7 @@ Status RaftConsensus::AppendNewRoundToQueueUnlocked(ConsensusRound* round) {
     // TODO count of number of ops failed due to consensus queue overflow.
   }
   RETURN_NOT_OK_PREPEND(s, "Unable to append operation to consensus queue");
+  state_->UpdateLastReceivedOpIdUnlocked(round->id());
   return Status::OK();
 }
 
@@ -391,7 +410,7 @@ Status RaftConsensus::Commit(gscoped_ptr<CommitMsg> commit,
   DCHECK(commit->has_commited_op_id());
   OpId committed_op_id = commit->commited_op_id();
 
-  VLOG_WITH_PREFIX(1) << "Appending COMMIT " << committed_op_id;
+  VLOG_WITH_PREFIX_LK(1) << "Appending COMMIT " << committed_op_id;
 
   RETURN_NOT_OK(ExecuteHook(PRE_COMMIT));
   RETURN_NOT_OK(log_->AsyncAppendCommit(commit.Pass(), cb));
@@ -434,6 +453,16 @@ Status RaftConsensus::Update(const ConsensusRequestPB* request,
   }
   RETURN_NOT_OK(ExecuteHook(POST_UPDATE));
   return Status::OK();
+}
+
+
+Status RaftConsensus::StartReplicaTransactionUnlocked(gscoped_ptr<ReplicateMsg> msg) {
+  VLOG_WITH_PREFIX(1) << "Starting transaction: " << msg->id().ShortDebugString();
+  gscoped_ptr<ConsensusRound> round(new ConsensusRound(this, msg.Pass()));
+  ConsensusRound* round_ptr = round.get();
+  RETURN_NOT_OK(state_->GetReplicaTransactionFactoryUnlocked()->
+      StartReplicaTransaction(round.Pass()));
+  return state_->AddPendingOperation(round_ptr);
 }
 
 Status RaftConsensus::UpdateReplica(const ConsensusRequestPB* request,
@@ -544,9 +573,6 @@ Status RaftConsensus::UpdateReplica(const ConsensusRequestPB* request,
         if (PREDICT_FALSE(!s.ok())) {
           LOG_WITH_PREFIX(FATAL) << "Unable to set current term: " << s.ToString();
         }
-        // - Since we don't handle in-flights when the terms change yet
-        //   make sure that we don't have any.
-        CHECK_EQ(state_->GetNumPendingTxnsUnlocked(), 0);
       }
     }
 
@@ -589,17 +615,13 @@ Status RaftConsensus::UpdateReplica(const ConsensusRequestPB* request,
     Status prepare_status;
     for (int i = 0; i < replicate_msgs.size(); i++) {
       gscoped_ptr<ReplicateMsg> msg_copy(new ReplicateMsg(*replicate_msgs[i]));
-      gscoped_ptr<ConsensusRound> round(new ConsensusRound(this, msg_copy.Pass()));
-      ConsensusRound* round_ptr = round.get();
-      prepare_status = state_->GetReplicaTransactionFactoryUnlocked()->
-          StartReplicaTransaction(round.Pass());
+      prepare_status = StartReplicaTransactionUnlocked(msg_copy.Pass());
       if (PREDICT_FALSE(!prepare_status.ok())) {
         LOG_WITH_PREFIX(WARNING) << "Failed to prepare operation: "
             << replicate_msgs[i]->id().ShortDebugString() << " Status: "
             << prepare_status.ToString();
         break;
       }
-      state_->AddPendingOperation(round_ptr);
       successfully_triggered_prepares++;
     }
 
@@ -639,13 +661,11 @@ Status RaftConsensus::UpdateReplica(const ConsensusRequestPB* request,
     OpId dont_apply_after = request->committed_index();
     if (CopyIfOpIdLessThan(last_enqueued_prepare, &dont_apply_after)) {
       VLOG_WITH_PREFIX(2) << "Received commit index "
-                          << request->committed_index().ShortDebugString()
-                          << " from the leader but only marked up to "
-                          << last_enqueued_prepare.ShortDebugString()
-                          << " as committed due to failed prepares.";
+          << request->committed_index().ShortDebugString() << " from the leader but only"
+          << " marked up to " << last_enqueued_prepare.ShortDebugString() << " as committed.";
     }
 
-    VLOG_WITH_PREFIX(2) << "Marking committed up to " << dont_apply_after.ShortDebugString();
+    VLOG_WITH_PREFIX(1) << "Marking committed up to " << dont_apply_after.ShortDebugString();
     TRACE(Substitute("Marking committed up to $0", dont_apply_after.ShortDebugString()));
     CHECK_OK(state_->AdvanceCommittedIndex(dont_apply_after));
 

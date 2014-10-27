@@ -178,8 +178,6 @@ Status PeerMessageQueue::AppendOperation(gscoped_ptr<ReplicateMsg> msg) {
     << "Last op in the queue: " << GetLastOp().ShortDebugString()
     << " operation being appended: " << msg_ptr->id().ShortDebugString();
 
-  // Check that terms are monotonically increasing
-  DCHECK_GE(msg_ptr->id().term(), queue_state_.current_term);
   if (msg_ptr->id().term() > queue_state_.current_term) {
     queue_state_.current_term = msg_ptr->id().term();
   }

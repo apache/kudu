@@ -760,7 +760,7 @@ TEST_F(TabletServerTest, TestClientGetsErrorBackWhenRecoveryFailed) {
   // We're expecting the write to fail.
   ASSERT_STATUS_OK(DCHECK_NOTNULL(proxy_.get())->Write(req, &resp, &controller));
   ASSERT_EQ(TabletServerErrorPB::TABLET_NOT_RUNNING, resp.error().code());
-  ASSERT_EQ("Tablet not RUNNING: FAILED", resp.error().status().message());
+  ASSERT_STR_CONTAINS(resp.error().status().message(), "FAILED");
 }
 
 TEST_F(TabletServerTest, TestScan) {
@@ -1539,8 +1539,11 @@ TEST_F(TabletServerTest, TestChangeConfiguration_TestEqualSeqNoIsRejected) {
     rpc.Reset();
   }
 
-  // Now pass the same new quorum with the same seq no
+  // Now pass the same new quorum with the same seq no, but add a peer.
+  // This should fail
   new_quorum->set_seqno(1);
+  peer = new_quorum->add_peers();
+  peer->set_permanent_uuid("fake_peer");
 
   {
     SCOPED_TRACE(req.DebugString());

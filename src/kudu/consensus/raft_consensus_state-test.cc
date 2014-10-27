@@ -47,7 +47,7 @@ class RaftConsensusStateTest : public KuduTest {
     // Start up the ReplicaState.
     ReplicaState::UniqueLock lock;
     ASSERT_OK(state_->LockForStart(&lock));
-    ASSERT_OK(state_->StartUnlocked(MinimumOpId(), MinimumOpId()));
+    ASSERT_OK(state_->StartUnlocked(MinimumOpId()));
   }
 
  protected:

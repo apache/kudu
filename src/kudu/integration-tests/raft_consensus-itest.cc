@@ -765,7 +765,7 @@ TEST_F(DistConsensusTest, TestInsertWhenTheQueueIsFull) {
   ASSERT_ALL_REPLICAS_AGREE(successful_writes_counter);
 }
 
-TEST_F(DistConsensusTest, DISABLED_MultiThreadedInsertWithFailovers) {
+TEST_F(DistConsensusTest, MultiThreadedInsertWithFailovers) {
   // Start a 7 node quorum cluster (since we can't bring leaders back we start with a
   // higher replica count so that we kill more leaders).
   BuildAndStart(7, vector<string>());

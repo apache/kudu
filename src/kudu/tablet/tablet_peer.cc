@@ -157,9 +157,6 @@ Status TabletPeer::Start(const ConsensusBootstrapInfo& bootstrap_info) {
 
   TRACE("Starting consensus");
 
-  QuorumPeerPB::Role my_role = consensus::GetRoleInQuorum(meta_->fs_manager()->uuid(), Quorum());
-  RETURN_NOT_OK(StartPendingTransactions(my_role, bootstrap_info));
-
   VLOG(2) << "Quorum before starting: " << consensus_->Quorum().DebugString();
 
   // TODO we likely should only change the state after starting consensus
@@ -175,29 +172,6 @@ Status TabletPeer::Start(const ConsensusBootstrapInfo& bootstrap_info) {
 
   RETURN_NOT_OK(consensus_->Start(bootstrap_info));
 
-  return Status::OK();
-}
-
-// TODO KUDU-255 - handle the bootstrap info properly. In particular:
-// - Pending transactions whose ids are lower than bootstrap_info.last_committed_id
-//   don't need to go through consensus. We can simply trigger the apply for those.
-// - Pending transactions whose ids are after the last committed operation id
-//   need to start regular transactions that will succeed or fail depending on
-//   who is the leader and what its state is.
-Status TabletPeer::StartPendingTransactions(QuorumPeerPB::Role my_role,
-                                            const ConsensusBootstrapInfo& bootstrap_info) {
-  if (!bootstrap_info.orphaned_replicates.empty()) {
-    LOG(ERROR) << "Found orphaned replicates:";
-    BOOST_FOREACH(const consensus::ReplicateMsg* orphaned_op,
-                  bootstrap_info.orphaned_replicates) {
-      LOG(ERROR) << "Pending operation: " << orphaned_op->ShortDebugString();
-    }
-    LOG(ERROR) << "Last OpId in the log: "
-        << bootstrap_info.last_id.ShortDebugString();
-    LOG(ERROR) << "Last committed OpId in the log: "
-        << bootstrap_info.last_committed_id.ShortDebugString();
-    LOG(FATAL) << "Dealing with orphaned operations is not implemented yet.";
-  }
   return Status::OK();
 }
 

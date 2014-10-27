@@ -111,27 +111,20 @@ ReplicaState::ReplicaState(const ConsensusOptions& options,
   ResetActiveQuorumStateUnlocked(GetCommittedQuorumUnlocked());
 }
 
-Status ReplicaState::StartUnlocked(const OpId& last_id_in_wal,
-                                   const OpId& last_committed_id) {
+Status ReplicaState::StartUnlocked(const OpId& last_id_in_wal) {
   DCHECK(update_lock_.is_locked());
 
-  // Handle term changes.
-  uint64_t current_term = cmeta_->mutable_pb()->current_term();
-  if (last_id_in_wal.term() < current_term) {
-    return Status::InvalidArgument(Substitute("Cannot start in older term. "
-                                              "Current term: $0, passed term: $1",
-                                              current_term, last_id_in_wal.term()));
-  }
-
-  CHECK_EQ(last_id_in_wal.term(), current_term)
-      << "Starting with term " << last_id_in_wal.term()
-      << " which is greater than last recorded term "
-      << current_term;
+  // Our last persisted term can be higher than the last persisted operation
+  // (i.e. if we called an election) but reverse should never happen.
+  CHECK_LE(last_id_in_wal.term(), cmeta_->mutable_pb()->current_term())
+      << "Last op in wal " << last_id_in_wal.term()
+      << "has a term  which is greater than last recorded term "
+      << cmeta_->mutable_pb()->current_term();
 
   next_index_ = last_id_in_wal.index() + 1;
   replicated_op_id_.CopyFrom(last_id_in_wal);
   received_op_id_.CopyFrom(last_id_in_wal);
-  last_committed_index_.CopyFrom(last_committed_id);
+  last_committed_index_.CopyFrom(MinimumOpId());
 
   state_ = kRunning;
   return Status::OK();
@@ -218,7 +211,6 @@ Status ReplicaState::LockForShutdown(UniqueLock* lock) {
   UniqueLock l(&update_lock_);
   if (state_ != kShuttingDown && state_ != kShutDown) {
     state_ = kShuttingDown;
-    in_flight_applies_latch_.Reset(in_flight_commits_.size());
   }
   lock->swap(&l);
   return Status::OK();
@@ -401,11 +393,21 @@ Status ReplicaState::WaitForOustandingApplies() {
     if (state_ != kShuttingDown) {
       return Status::IllegalState("Can only wait for pending commits on kShuttingDown state.");
     }
+    in_flight_applies_latch_.Reset(in_flight_commits_.size());
     LOG_WITH_PREFIX(INFO) << "Waiting on " << in_flight_applies_latch_.count()
         << " outstanding applies:";
   }
   in_flight_applies_latch_.Wait();
   LOG_WITH_PREFIX_LK(INFO) << "All local commits completed.";
+  return Status::OK();
+}
+
+Status ReplicaState::GetUncommittedPendingOperationsUnlocked(vector<ConsensusRound*>* ops) {
+  BOOST_FOREACH(const OpIdToRoundMap::value_type& entry, pending_txns_) {
+    if (entry.first.index() > last_committed_index_.index()) {
+      ops->push_back(entry.second);
+    }
+  }
   return Status::OK();
 }
 
@@ -419,7 +421,6 @@ Status ReplicaState::AddPendingOperation(ConsensusRound* round) {
     }
   }
 
-  UpdateLastReceivedOpIdUnlocked(round->id());
   InsertOrDie(&pending_txns_, round->replicate_msg()->id(), round);
   return Status::OK();
 }

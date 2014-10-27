@@ -356,6 +356,8 @@ void TSTabletManager::OpenTablet(const scoped_refptr<TabletMetadata>& meta) {
                            *tablet->GetMetricContext());
 
     if (!s.ok()) {
+      LOG(ERROR) << "Tablet failed to init: "
+          << tablet_id << " Status: " << s.ToString();
       tablet_peer->SetFailed(s);
       return;
     }
@@ -363,6 +365,8 @@ void TSTabletManager::OpenTablet(const scoped_refptr<TabletMetadata>& meta) {
     TRACE("Starting tablet peer");
     s = tablet_peer->Start(bootstrap_info);
     if (!s.ok()) {
+      LOG(ERROR) << "Tablet failed to start: "
+          << tablet_id << " Status: " << s.ToString();
       tablet_peer->SetFailed(s);
       return;
     }

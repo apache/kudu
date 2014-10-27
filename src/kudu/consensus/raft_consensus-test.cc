@@ -25,6 +25,7 @@ using metadata::QuorumPB;
 using std::string;
 using ::testing::_;
 using ::testing::AnyNumber;
+using ::testing::InSequence;
 using ::testing::Return;
 
 const char* kTestTablet = "TestTablet";
@@ -37,6 +38,7 @@ class MockQueue : public PeerMessageQueue {
                           uint64_t current_term,
                           int majority_size));
   virtual Status AppendOperation(gscoped_ptr<ReplicateMsg> replicate) OVERRIDE {
+    VLOG(1) << "Appending to mock queue: " << replicate->ShortDebugString();
     return AppendOperationMock(replicate.release());
   }
   MOCK_METHOD1(AppendOperationMock, Status(ReplicateMsg* replicate));
@@ -64,7 +66,7 @@ class RaftConsensusTest : public KuduTest {
       : clock_(server::LogicalClock::CreateStartingAt(Timestamp(0))),
         metric_context_(&metric_registry_, "raft-test"),
         schema_(GetSimpleTestSchema()) {
-    BuildQuorumPBForTests(&quorum_, 1);
+
     options_.tablet_id = kTestTablet;
   }
 
@@ -76,9 +78,7 @@ class RaftConsensusTest : public KuduTest {
     // TODO mock the Log too, since we're gonna mock the queue
     // monitors and pretty much everything else.
     fs_manager_.reset(new FsManager(env_.get(), test_path));
-    gscoped_ptr<ConsensusMetadata> cmeta;
-    CHECK_OK(ConsensusMetadata::Create(fs_manager_.get(), kTestTablet, quorum_,
-                                       consensus::kMinimumTerm, &cmeta));
+
     CHECK_OK(Log::Open(LogOptions(),
                        fs_manager_.get(),
                        kTestTablet,
@@ -86,7 +86,6 @@ class RaftConsensusTest : public KuduTest {
                        NULL,
                        &log_));
 
-    gscoped_ptr<PeerProxyFactory> proxy_factory(new LocalTestPeerProxyFactory());
     queue_ = new MockQueue(metric_context_);
     peer_manager_ = new MockPeerManager;
     txn_factory_.reset(new MockTransactionFactory);
@@ -95,6 +94,19 @@ class RaftConsensusTest : public KuduTest {
         .WillByDefault(Invoke(this, &RaftConsensusTest::StartReplicaTransaction));
     ON_CALL(*queue_, AppendOperationMock(_))
         .WillByDefault(Invoke(this, &RaftConsensusTest::AppendToLog));
+
+  }
+
+  void SetUpConsensus(QuorumPeerPB::Role initial_role = QuorumPeerPB::LEADER,
+                      int64_t initial_term = consensus::kMinimumTerm) {
+    BuildQuorumPBForTests(&quorum_, 1);
+    quorum_.mutable_peers(0)->set_role(initial_role);
+
+    gscoped_ptr<PeerProxyFactory> proxy_factory(new LocalTestPeerProxyFactory());
+
+    gscoped_ptr<ConsensusMetadata> cmeta;
+    CHECK_OK(ConsensusMetadata::Create(fs_manager_.get(), kTestTablet, quorum_,
+                                       initial_term, &cmeta));
 
     consensus_.reset(new RaftConsensus(options_,
                                        cmeta.Pass(),
@@ -131,8 +143,6 @@ class RaftConsensusTest : public KuduTest {
         .Times(AnyNumber());
     EXPECT_CALL(*peer_manager_, Close())
         .Times(1);
-    EXPECT_CALL(*queue_, AppendOperationMock(_))
-        .Times(AnyNumber());
     EXPECT_CALL(*queue_, Close())
             .Times(1);
   }
@@ -161,6 +171,12 @@ class RaftConsensusTest : public KuduTest {
     gscoped_ptr<CommitMsg> commit(new CommitMsg);
     commit->set_op_type(round->replicate_msg()->op_type());
     CHECK_OK(round->Commit(commit.Pass()));
+  }
+
+  void CommitRemainingRounds() {
+    BOOST_FOREACH(ConsensusRound* round, rounds_) {
+      CommitRound(round);
+    }
   }
 
   ~RaftConsensusTest() {
@@ -198,6 +214,7 @@ class RaftConsensusTest : public KuduTest {
 // Tests that the committed index moves along with the majority replicated
 // index when the terms are the same.
 TEST_F(RaftConsensusTest, TestCommittedIndexWhenInSameTerm) {
+  SetUpConsensus();
   SetUpGeneralExpectations();
   EXPECT_CALL(*peer_manager_, UpdateQuorum(_))
       .Times(1)
@@ -206,6 +223,9 @@ TEST_F(RaftConsensusTest, TestCommittedIndexWhenInSameTerm) {
       .Times(1);
   EXPECT_CALL(*txn_factory_, StartReplicaTransactionMock(_))
       .Times(1);
+  EXPECT_CALL(*queue_, AppendOperationMock(_))
+      .Times(11);
+
 
   ConsensusBootstrapInfo info;
   ASSERT_OK(consensus_->Start(info));
@@ -232,6 +252,7 @@ TEST_F(RaftConsensusTest, TestCommittedIndexWhenInSameTerm) {
 // Tests that, when terms change, the commit index only advances when the majority
 // replicated index is in the current term.
 TEST_F(RaftConsensusTest, TestCommittedIndexWhenTermsChange) {
+  SetUpConsensus();
   SetUpGeneralExpectations();
   EXPECT_CALL(*peer_manager_, UpdateQuorum(_))
       .Times(2)
@@ -240,6 +261,8 @@ TEST_F(RaftConsensusTest, TestCommittedIndexWhenTermsChange) {
       .Times(2);
   EXPECT_CALL(*txn_factory_, StartReplicaTransactionMock(_))
       .Times(2);
+  EXPECT_CALL(*queue_, AppendOperationMock(_))
+      .Times(4);
 
   ConsensusBootstrapInfo info;
   ASSERT_OK(consensus_->Start(info));
@@ -273,6 +296,105 @@ TEST_F(RaftConsensusTest, TestCommittedIndexWhenTermsChange) {
   CommitRound(last_config_round);
   CommitRound(round);
 }
+
+// Tests that consensus is able to handle pending operations. It tests this in two ways:
+// - It tests that consensus does the right thing with pending transactions from the the WAL.
+// - It tests that when a follower gets promoted to leader it does the right thing
+//   with the pending operations.
+TEST_F(RaftConsensusTest, TestPendingTransactions) {
+  // Start as follower, we'll promote the peer later.
+  SetUpConsensus(QuorumPeerPB::FOLLOWER, 10);
+
+  // Emulate a stateful system by having a bunch of operations in flight when consensus starts.
+  // Specifically we emulate we're on term 10, with 5 operations before the last known
+  // committed operation, 10.104, which should be committed immediately, and 5 operations after the
+  // last known committed operation, which should be pending but not yet committed.
+  ConsensusBootstrapInfo info;
+  info.last_id.set_term(10);
+  for (int i = 0; i < 10; i++) {
+    ReplicateMsg* replicate = new ReplicateMsg();
+    replicate->set_op_type(NO_OP);
+    info.last_id.set_index(100 + i);
+    replicate->mutable_id()->CopyFrom(info.last_id);
+    info.orphaned_replicates.push_back(replicate);
+  }
+
+  info.last_committed_id.set_term(10);
+  info.last_committed_id.set_index(104);
+
+  {
+    InSequence dummy;
+    // On start we expect 10 regular transactions to be started, with 5 of those having
+    // their commit continuation called immediately.
+    EXPECT_CALL(*txn_factory_, StartReplicaTransactionMock(_))
+        .Times(10);
+    // Queue gets cleared when the peer becomes follower.
+    EXPECT_CALL(*queue_, Clear())
+        .Times(1);
+  }
+
+  ASSERT_OK(consensus_->Start(info));
+
+  ASSERT_TRUE(testing::Mock::VerifyAndClearExpectations(queue_));
+  ASSERT_TRUE(testing::Mock::VerifyAndClearExpectations(txn_factory_.get()));
+  ASSERT_TRUE(testing::Mock::VerifyAndClearExpectations(peer_manager_));
+
+  // Now we test what this peer does with the pending operations once it's elected leader.
+  {
+    InSequence dummy;
+    // Queue gets initted when the peer becomes leader.
+    EXPECT_CALL(*queue_, Init(_, _, _, _))
+    .Times(1);
+    // Peer manager gets updated with the new set of peers to send stuff to.
+    EXPECT_CALL(*peer_manager_, UpdateQuorum(_))
+    .Times(1).WillOnce(Return(Status::OK()));
+    // The 5 pending operations should all be appended to the queue for replication
+    // with an additional change config operation for a total of 6 appended ops.
+    EXPECT_CALL(*queue_, AppendOperationMock(_))
+    .Times(6);
+    // One more transaction is started in the factory, for the config change.
+    EXPECT_CALL(*txn_factory_, StartReplicaTransactionMock(_))
+    .Times(1);
+  }
+
+  // Emulate an election, this will make this peer become leader and trigger the
+  // above set expectations.
+  ASSERT_OK(consensus_->EmulateElection());
+
+  ASSERT_TRUE(testing::Mock::VerifyAndClearExpectations(queue_));
+  ASSERT_TRUE(testing::Mock::VerifyAndClearExpectations(txn_factory_.get()));
+  ASSERT_TRUE(testing::Mock::VerifyAndClearExpectations(peer_manager_));
+
+  EXPECT_CALL(*peer_manager_, SignalRequest(_))
+      .Times(AnyNumber());
+  // In the end peer manager and the queue get closed.
+  EXPECT_CALL(*peer_manager_, Close())
+      .Times(1);
+  EXPECT_CALL(*queue_, Close())
+      .Times(1);
+
+  // Now tell consensus all original orphaned replicates were majority replicated.
+  // This should not advance the committed index because we haven't replicated
+  // anything in the current term.
+  OpId committed_index;
+  consensus_->UpdateMajorityReplicated(info.orphaned_replicates.back()->id(),
+                                       &committed_index);
+  // Should still be the last committed in the the wal.
+  ASSERT_OPID_EQ(committed_index, info.last_committed_id);
+
+  // Now mark the last operation (the config round) as committed.
+  // This should advance the committed index, since that round in on our current term,
+  // and we should be able to commit all previous rounds.
+  OpId cc_round_id = info.orphaned_replicates.back()->id();
+  cc_round_id.set_term(11);
+  cc_round_id.set_index(cc_round_id.index() + 1);
+  consensus_->UpdateMajorityReplicated(cc_round_id,
+                                       &committed_index);
+
+  ASSERT_OPID_EQ(committed_index, cc_round_id);
+  CommitRemainingRounds();
+}
+
 
 }  // namespace consensus
 }  // namespace kudu

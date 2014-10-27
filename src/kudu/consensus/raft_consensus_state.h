@@ -9,6 +9,7 @@
 #include <tr1/unordered_set>
 #include <tr1/unordered_map>
 #include <utility>
+#include <vector>
 
 #include "kudu/consensus/consensus.h"
 #include "kudu/consensus/consensus.pb.h"
@@ -137,8 +138,7 @@ class ReplicaState {
                gscoped_ptr<ConsensusMetadata> cmeta,
                ReplicaTransactionFactory* txn_factory);
 
-  Status StartUnlocked(const OpId& last_in_wal,
-                       const OpId& last_committed_id);
+  Status StartUnlocked(const OpId& last_in_wal);
 
   // Locks a replica in preparation for StartUnlocked(). Makes
   // sure the replica is in kInitialized state.
@@ -244,6 +244,9 @@ class ReplicaState {
 
   // Enqueues a Prepare() in the ReplicaTransactionFactory.
   Status EnqueuePrepareUnlocked(gscoped_ptr<ConsensusRound> context);
+
+  // Returns the operations that are not consensus committed.
+  Status GetUncommittedPendingOperationsUnlocked(std::vector<ConsensusRound*>* ops);
 
   // Add 'round' to the set of rounds waiting to be committed.
   Status AddPendingOperation(ConsensusRound* round);

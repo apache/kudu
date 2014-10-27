@@ -193,6 +193,8 @@ class RaftConsensus : public Consensus,
 
   OpId GetLastOpIdFromLog();
 
+  Status StartReplicaTransactionUnlocked(gscoped_ptr<ReplicateMsg> msg);
+
   // Step down as leader. Stop accepting write requests, etc.
   // Must hold both 'update_lock_' and the ReplicaState lock.
   Status StepDownIfLeaderUnlocked();

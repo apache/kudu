@@ -165,12 +165,6 @@ TEST_F(LinkedListTest, TestLoadAndVerify) {
   // Remove this loop once client is more fleshed out.
   ASSERT_OK(tester_->WaitAndVerify(FLAGS_seconds_to_run, written));
 
-  // TODO: another workaround here: currently we can't scan a tablet which is in
-  // CONFIGURING state. So, we need to sleep a couple seconds to wait for the tablet
-  // to get out of that state on the other servers. Otherwise, if we kill the leader
-  // below, those servers will get "stuck" there (since we don't auto-reelect)
-  usleep(1500 * 1000);
-
   // Check post-replication state with a downed TS.
   if (can_kill_ts) {
     LOG(INFO) << "Verifying rows after shutting down TS 0.";
@@ -183,12 +177,8 @@ TEST_F(LinkedListTest, TestLoadAndVerify) {
   // Sleep a little bit, so that the tablet is proably in bootstrapping state.
   usleep(100 * 1000);
 
-  // TODO The below is disabled until KUDU-255 is fixed. Restarting while bootstrapping
-  // increases the chances of having pending transactions on tablet start and those
-  // aren't handled yet.
-
   // Restart while bootstrapping
-  // ASSERT_NO_FATAL_FAILURE(RestartCluster());
+  ASSERT_NO_FATAL_FAILURE(RestartCluster());
 
   ASSERT_OK(tester_->WaitAndVerify(FLAGS_seconds_to_run, written));
 

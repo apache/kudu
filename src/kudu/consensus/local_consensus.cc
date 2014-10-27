@@ -42,6 +42,9 @@ LocalConsensus::LocalConsensus(const ConsensusOptions& options,
 Status LocalConsensus::Start(const ConsensusBootstrapInfo& info) {
   CHECK_EQ(state_, kInitializing);
 
+  CHECK(info.orphaned_replicates.empty())
+      << "LocalConsensus does not handle orphaned operations on start.";
+
   gscoped_ptr<ConsensusRound> round;
   {
     boost::lock_guard<simple_spinlock> lock(lock_);
