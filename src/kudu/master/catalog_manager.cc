@@ -1,4 +1,5 @@
 // Copyright (c) 2013, Cloudera, inc.
+// Confidential Cloudera Information: Covered by NDA.
 //
 // The catalog manager handles the current list of tables
 // and tablets in the cluster, as well as their current locations.

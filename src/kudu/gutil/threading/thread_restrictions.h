@@ -1,6 +1,7 @@
 // Copyright (c) 2014, Cloudera, inc.
+// Confidential Cloudera Information: Covered by NDA.
 //
-// Copyright (c) 2012, The Chromium Authors.
+// Some portions: Copyright (c) 2012, The Chromium Authors.
 //
 // TODO: the Chromium implementation here is heavily dependent
 // on their ThreadLocal stuff. So, just imported stubs here

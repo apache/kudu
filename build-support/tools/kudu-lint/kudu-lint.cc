@@ -1,6 +1,5 @@
 // Copyright (c) 2013, Cloudera, inc.
-//
-// Based somewhat on the example from 
+// Confidential Cloudera Information: Covered by NDA.
 
 #include "clang/AST/ASTContext.h"
 #include "clang/AST/ASTTypeTraits.h"
@@ -143,7 +142,9 @@ class ErrorPrinter : public MatchFinder::MatchCallback {
 
     // Recurse up the tree.
     while (true) {
-      if (const ClassTemplateSpecializationDecl* D = dyn_node.get<ClassTemplateSpecializationDecl>()) {
+      const ClassTemplateSpecializationDecl* D =
+          dyn_node.get<ClassTemplateSpecializationDecl>();
+      if (D) {
         *loc = D->getPointOfInstantiation();
         return true;
       }
@@ -168,8 +169,8 @@ class InsertAdjuster: public clang::tooling::ArgumentsAdjuster {
  public:
   enum Position { BEGIN, END };
 
-  InsertAdjuster(const CommandLineArguments &extra_, Position pos)
-    : extra_(extra_), pos_(pos) {
+  InsertAdjuster(const CommandLineArguments &extra, Position pos)
+    : extra_(extra), pos_(pos) {
   }
 
   InsertAdjuster(const char *extra_, Position pos)

@@ -1,4 +1,5 @@
 # Copyright (c) 2013, Cloudera, inc.
+# Confidential Cloudera Information: Covered by NDA.
 
 KRPC_GENERATE(MASTER_KRPC_SRCS MASTER_KRPC_HDRS
   SOURCE_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../..

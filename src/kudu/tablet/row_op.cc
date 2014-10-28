@@ -1,4 +1,5 @@
 // Copyright (c) 2014, Cloudera, inc.
+// Confidential Cloudera Information: Covered by NDA.
 
 #include "kudu/common/wire_protocol.h"
 #include "kudu/tablet/row_op.h"

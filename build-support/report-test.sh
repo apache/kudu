@@ -1,5 +1,6 @@
 #!/bin/bash
 # Copyright (c) 2014, Cloudera, inc.
+# Confidential Cloudera Information: Covered by NDA.
 #
 # Reports a test run to the central test server, which records
 # the results in a database. This is what drives our "flaky test dashboard".

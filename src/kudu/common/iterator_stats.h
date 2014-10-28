@@ -1,4 +1,5 @@
 // Copyright (c) 2014, Cloudera, inc.
+// Confidential Cloudera Information: Covered by NDA.
 #ifndef KUDU_COMMON_ITERATOR_STATS_H
 #define KUDU_COMMON_ITERATOR_STATS_H
 

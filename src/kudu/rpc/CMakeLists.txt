@@ -1,4 +1,5 @@
 # Copyright (c) 2013, Cloudera, inc.
+# Confidential Cloudera Information: Covered by NDA.
 
 #### Global header protobufs
 PROTOBUF_GENERATE_CPP(RPC_HEADER_PROTO_SRCS RPC_HEADER_PROTO_HDRS

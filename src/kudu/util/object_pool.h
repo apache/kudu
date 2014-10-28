@@ -1,4 +1,5 @@
 // Copyright (c) 2013, Cloudera, inc.
+// Confidential Cloudera Information: Covered by NDA.
 //
 // Simple pool/freelist for objects of the same type, typically used
 // in local context.

@@ -1,3 +1,5 @@
+# Copyright (c) 2014, Cloudera, inc.
+# Confidential Cloudera Information: Covered by NDA.
 race:_dl_deallocate_tls
 race:kudu::tablet::ScopedRowLock::Release
 

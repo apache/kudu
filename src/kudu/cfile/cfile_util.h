@@ -1,4 +1,5 @@
 // Copyright (c) 2013, Cloudera, inc.
+// Confidential Cloudera Information: Covered by NDA.
 #ifndef CFILE_UTIL_H_
 #define CFILE_UTIL_H_
 

@@ -1,6 +1,7 @@
 /*
  * Copyright (C) 2010-2012  The Async HBase Authors.  All rights reserved.
  * Portions copyright (c) 2014 Cloudera, Inc.
+ * Confidential Cloudera Information: Covered by NDA.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:

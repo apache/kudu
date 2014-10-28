@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2014 Cloudera, Inc.
+ * Confidential Cloudera Information: Covered by NDA.
  */
 package kudu.rpc;
 

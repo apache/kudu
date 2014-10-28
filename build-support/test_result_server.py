@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 # Copyright (c) 2014, Cloudera, inc.
+# Confidential Cloudera Information: Covered by NDA.
 #
 # Simple HTTP server which receives test results from the build slaves and
 # stores them in a MySQL database. The test logs are also stored in an S3 bucket.

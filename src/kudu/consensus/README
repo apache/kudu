@@ -1,3 +1,6 @@
+Copyright (c) 2014, Cloudera, inc.
+Confidential Cloudera Information: Covered by NDA.
+
 This document introduces how Kudu will handle log replication and consistency
 using an algorithm known as Viewstamped Replication (VS) and a series of 
 practical algorithms/techniques for recovery, reconfiguration, compactions etc.

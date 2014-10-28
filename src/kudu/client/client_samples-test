@@ -1,5 +1,6 @@
 #!/bin/bash -xe
 # Copyright (c) 2014, Cloudera, inc.
+# Confidential Cloudera Information: Covered by NDA.
 #
 # Tests that the Kudu client sample code can be built out-of-tree and runs
 # properly.

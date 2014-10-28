@@ -1,4 +1,5 @@
 // Copyright (c) 2013, Cloudera, inc.
+// Confidential Cloudera Information: Covered by NDA.
 
 #include <gtest/gtest.h>
 #include "kudu/util/object_pool.h"

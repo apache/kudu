@@ -1,4 +1,5 @@
 // Copyright (c) 2013, Cloudera, inc.
+// Confidential Cloudera Information: Covered by NDA.
 //
 // This file contains code derived from sqlite4, distributed in the public domain.
 //

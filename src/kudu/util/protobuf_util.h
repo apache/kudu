@@ -1,4 +1,5 @@
 // Copyright (c) 2012, Cloudera, inc.
+// Confidential Cloudera Information: Covered by NDA.
 #ifndef KUDU_UTIL_PROTOBUF_UTIL_H
 #define KUDU_UTIL_PROTOBUF_UTIL_H
 

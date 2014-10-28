@@ -1,4 +1,5 @@
 // Copyright (c) 2014, Cloudera, inc.
+// Confidential Cloudera Information: Covered by NDA.
 
 #include <gtest/gtest.h>
 #include <boost/assign/list_of.hpp>

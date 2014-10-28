@@ -1,4 +1,5 @@
 // Copyright (c) 2014 Cloudera, Inc.
+// Confidential Cloudera Information: Covered by NDA.
 
 #ifndef KUDU_UTIL_DEBUG_REF_COUNTED_H_
 #define KUDU_UTIL_DEBUG_REF_COUNTED_H_

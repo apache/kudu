@@ -1,4 +1,5 @@
 // Copyright 2014 Cloudera inc.
+// Confidential Cloudera Information: Covered by NDA.
 
 // Include this file before any LLVM dependencies are added.
 // Defines certain preprocessor macros which resolve conflicts

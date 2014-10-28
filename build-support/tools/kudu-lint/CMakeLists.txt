@@ -1,4 +1,5 @@
-# Copyright (c) 2013, Cloudera, inc.
+# Copyright (c) 2014, Cloudera, inc.
+# Confidential Cloudera Information: Covered by NDA.
 
 cmake_minimum_required(VERSION 2.8)
 

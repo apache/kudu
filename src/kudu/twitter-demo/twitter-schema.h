@@ -1,4 +1,5 @@
 // Copyright (c) 2013, Cloudera, inc.
+// Confidential Cloudera Information: Covered by NDA.
 //
 // Inline functions to create the Twitter schema
 #ifndef KUDU_TWITTER_DEMO_TWITTER_SCHEMA_H

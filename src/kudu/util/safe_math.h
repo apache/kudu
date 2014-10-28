@@ -1,4 +1,5 @@
 // Copyright (c) 2013, Cloudera, inc.
+// Confidential Cloudera Information: Covered by NDA.
 //
 // Inline functions for doing overflow-safe operations on integers.
 // These should be used when doing bounds checks on user-provided data,

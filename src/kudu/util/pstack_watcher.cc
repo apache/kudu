@@ -1,4 +1,5 @@
 // Copyright 2014 Cloudera Inc.
+// Confidential Cloudera Information: Covered by NDA.
 
 #include "kudu/util/pstack_watcher.h"
 

@@ -1,4 +1,5 @@
 // Copyright 2014 Cloudera inc.
+// Confidential Cloudera Information: Covered by NDA.
 
 // This file contains all of the functions that must be precompiled
 // to an LLVM IR format (note: not bitcode to preserve function

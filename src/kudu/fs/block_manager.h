@@ -1,4 +1,5 @@
 // Copyright (c) 2014, Cloudera, inc.
+// Confidential Cloudera Information: Covered by NDA.
 
 #ifndef KUDU_FS_BLOCK_MANAGER_H
 #define KUDU_FS_BLOCK_MANAGER_H

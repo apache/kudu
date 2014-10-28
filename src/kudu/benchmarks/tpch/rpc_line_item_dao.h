@@ -1,4 +1,5 @@
 // Copyright (c) 2013, Cloudera, inc.
+// Confidential Cloudera Information: Covered by NDA.
 #ifndef KUDU_TPCH_RPC_LINE_ITEM_DAO_H
 #define KUDU_TPCH_RPC_LINE_ITEM_DAO_H
 

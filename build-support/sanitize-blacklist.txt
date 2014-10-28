@@ -1,4 +1,6 @@
 # Copyright (c) 2013, Cloudera, inc.
+# Confidential Cloudera Information: Covered by NDA.
+#
 # Blacklist of things not to run the sanitizer on.
 
 # The safe math routines are expected to overflow, but anyone using them

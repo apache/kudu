@@ -1,3 +1,6 @@
+Copyright (c) 2013, Cloudera, inc.
+Confidential Cloudera Information:  Covered by NDA.
+
 A Tablet is a horizontal partition of a Kudu table, similar to tablets
 in BigTable or regions in HBase. Each tablet hosts a contiguous range
 of rows which does not overlap with any other tablet's range. Together,

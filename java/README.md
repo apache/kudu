@@ -1,3 +1,6 @@
+Copyright (c) 2014, Cloudera, inc.
+Confidential Cloudera Information: Covered by NDA.
+
 Asynchronous Native Java Client for Kudu
 
 System Requirements

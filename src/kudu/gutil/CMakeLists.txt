@@ -1,3 +1,6 @@
+# Copyright (c) 2014, Cloudera, inc.
+# Confidential Cloudera Information: Covered by NDA.
+
 add_library(gutil
 bits.cc
 callback_internal.cc

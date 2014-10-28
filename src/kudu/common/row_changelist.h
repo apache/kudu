@@ -1,4 +1,5 @@
 // Copyright (c) 2013, Cloudera, inc.
+// Confidential Cloudera Information: Covered by NDA.
 //
 // Row changelists are simply an encoded form of a list of updates to columns
 // within a row. These are stored within the delta memstore and delta files.

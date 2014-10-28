@@ -1,4 +1,5 @@
 // Copyright (c) 2014, Cloudera, inc.
+// Confidential Cloudera Information: Covered by NDA.
 package kudu.util;
 
 import java.util.concurrent.TimeUnit;

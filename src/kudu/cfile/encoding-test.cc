@@ -1,4 +1,5 @@
 // Copyright (c) 2012, Cloudera, inc.
+// Confidential Cloudera Information: Covered by NDA.
 
 #include <boost/foreach.hpp>
 #include <boost/ptr_container/ptr_vector.hpp>

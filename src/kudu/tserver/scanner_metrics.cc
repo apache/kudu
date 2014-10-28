@@ -1,4 +1,5 @@
 // Copyright (c) 2014, Cloudera, inc.
+// Confidential Cloudera Information: Covered by NDA.
 #include "kudu/tserver/scanner_metrics.h"
 
 #include "kudu/util/metrics.h"

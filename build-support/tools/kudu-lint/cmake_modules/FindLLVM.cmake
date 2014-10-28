@@ -1,3 +1,5 @@
+# Copyright (c) 2014, Cloudera, inc.
+# Confidential Cloudera Information: Covered by NDA.
 # Find LLVM
 #
 # It defines the following variables

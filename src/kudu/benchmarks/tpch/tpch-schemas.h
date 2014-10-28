@@ -1,4 +1,5 @@
 // Copyright (c) 2013, Cloudera, inc.
+// Confidential Cloudera Information: Covered by NDA.
 //
 // Inline functions to create the TPC-H schemas
 #ifndef KUDU_BENCHMARKS_TPCH_SCHEMAS_H

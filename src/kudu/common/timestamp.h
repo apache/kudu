@@ -1,4 +1,5 @@
 // Copyright (c) 2013, Cloudera, inc.
+// Confidential Cloudera Information: Covered by NDA.
 
 #ifndef KUDU_COMMON_TIMESTAMP_H_
 #define KUDU_COMMON_TIMESTAMP_H_

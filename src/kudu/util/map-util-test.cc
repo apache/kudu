@@ -1,4 +1,5 @@
 // Copyright (c) 2014, Cloudera, inc.
+// Confidential Cloudera Information: Covered by NDA.
 
 // This unit test belongs in gutil, but it depends on test_main which is
 // part of util.

@@ -1,4 +1,5 @@
 // Copyright (c) 2014, Cloudera, inc.
+// Confidential Cloudera Information: Covered by NDA.
 //
 // Utility methods for dealing with file paths.
 #ifndef KUDU_UTIL_PATH_UTIL_H

@@ -1,4 +1,5 @@
 // Copyright (c) 2013, Cloudera, inc.
+// Confidential Cloudera Information: Covered by NDA.
 //
 // Implements an Interval Tree. See http://en.wikipedia.org/wiki/Interval_tree
 // or CLRS for a full description of the data structure.

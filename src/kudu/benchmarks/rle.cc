@@ -1,4 +1,5 @@
 // Copyright (c) 2013, Cloudera, inc.
+// Confidential Cloudera Information: Covered by NDA.
 //
 // Micro benchmark for writing/reading bit streams and Kudu specific
 // run-length encoding (RLE) APIs. Currently only covers booleans and

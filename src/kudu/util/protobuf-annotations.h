@@ -1,4 +1,5 @@
 // Copyright (c) 2014, Cloudera, inc.
+// Confidential Cloudera Information: Covered by NDA.
 //
 // Simple header which is inserted into all of our generated protobuf code.
 // We use this to hook protobuf code up to TSAN annotations.

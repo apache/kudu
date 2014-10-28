@@ -1,4 +1,5 @@
 // Copyright (c) 2014 Cloudera Inc.
+// Confidential Cloudera Information: Covered by NDA.
 #ifndef KUDU_TSERVER_REMOTE_BOOTSTRAP_SESSION_H_
 #define KUDU_TSERVER_REMOTE_BOOTSTRAP_SESSION_H_
 

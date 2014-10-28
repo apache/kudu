@@ -1,4 +1,5 @@
 // Copyright 2014 Cloudera, Inc.
+// Confidential Cloudera Information: Covered by NDA.
 #ifndef KUDU_UTIL_THREADLOCAL_H_
 #define KUDU_UTIL_THREADLOCAL_H_
 

@@ -1,5 +1,6 @@
 #!/bin/bash
-# Copyright (c) 2013, Cloudera, inc.
+# Copyright (c) 2014, Cloudera, inc.
+# Confidential Cloudera Information: Covered by NDA.
 #
 # Script which tries to determine the most recent git hash in the current
 # branch which was checked in by gerrit. This commit hash is printed to

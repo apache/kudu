@@ -1,4 +1,5 @@
 // Copyright 2014 Cloudera inc.
+// Confidential Cloudera Information: Covered by NDA.
 
 // Requires that the location of the precompiled.ll file is defined
 #ifndef KUDU_CODEGEN_MODULE_BUILDER_PRECOMPILED_LL

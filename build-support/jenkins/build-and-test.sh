@@ -1,5 +1,6 @@
 #!/bin/bash
-# Copyright (c) 2013, Cloudera, inc.
+# Copyright (c) 2014, Cloudera, inc.
+# Confidential Cloudera Information: Covered by NDA.
 #
 # This script is invoked from the Jenkins builds to build Kudu
 # and run all the unit tests.

@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 # Copyright (c) 2013, Cloudera, inc.
+# Confidential Cloudera Information: Covered by NDA.
 # All rights reserved.
 #
 # Script which parses a test log for 'metrics: ' lines emited by

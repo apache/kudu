@@ -1,4 +1,5 @@
 // Copyright (c) 2012, Cloudera, inc.
+// Confidential Cloudera Information: Covered by NDA.
 //
 // This file implements a concurrent in-memory B-tree similar to the one
 // described in the MassTree paper;

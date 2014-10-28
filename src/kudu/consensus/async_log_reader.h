@@ -1,4 +1,5 @@
 // Copyright (c) 2013, Cloudera, inc.
+// Confidential Cloudera Information: Covered by NDA.
 #ifndef KUDU_LOG_ASYNC_LOG_READER_H_
 #define KUDU_LOG_ASYNC_LOG_READER_H_
 

@@ -1,4 +1,5 @@
 # Copyright (c) 2014, Cloudera, inc.
+# Confidential Cloudera Information: Covered by NDA.
 
 PROTOBUF_GENERATE_CPP(FS_PROTO_SRCS FS_PROTO_HDRS
   SOURCE_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../..

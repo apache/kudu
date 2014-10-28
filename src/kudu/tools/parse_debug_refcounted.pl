@@ -1,6 +1,7 @@
 #!/usr/bin/perl
 ######################################################################
 # Copyright (c) 2014 Cloudera, Inc.
+# Confidential Cloudera Information: Covered by NDA.
 ######################################################################
 # Tool to parse the output of "debug" refcounted objects.
 # This is helpful for tracking down ref-counting leaks.

@@ -1,5 +1,6 @@
 #!/bin/bash -x
 # Copyright (c) 2014, Cloudera, inc.
+# Confidential Cloudera Information: Covered by NDA.
 #
 # Script which runs on Jenkins slaves after the build/test to clean up
 # disk space used by build artifacts. Our build tends to "make clean"

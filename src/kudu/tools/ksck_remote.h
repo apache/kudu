@@ -1,4 +1,5 @@
 // Copyright (c) 2014, Cloudera, inc.
+// Confidential Cloudera Information: Covered by NDA.
 
 #ifndef KUDU_TOOLS_KSCK_REMOTE_H
 #define KUDU_TOOLS_KSCK_REMOTE_H

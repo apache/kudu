@@ -1,4 +1,5 @@
 // Copyright (c) 2013, Cloudera, inc.
+// Confidential Cloudera Information: Covered by NDA.
 
 #ifndef KUDU_SERVER_LOGICAL_CLOCK_H_
 #define KUDU_SERVER_LOGICAL_CLOCK_H_

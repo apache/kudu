@@ -1,3 +1,6 @@
+# Copyright (c) 2014, Cloudera, inc.
+# Confidential Cloudera Information: Covered by NDA.
+
 # rwlock-perf
 add_executable(rwlock-perf rwlock-perf.cc)
 target_link_libraries(rwlock-perf

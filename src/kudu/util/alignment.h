@@ -1,4 +1,5 @@
 // Copyright (c) 2013, Cloudera,inc.
+// Confidential Cloudera Information: Covered by NDA.
 //
 // Macros for dealing with memory alignment.
 #ifndef KUDU_UTIL_ALIGNMENT_H

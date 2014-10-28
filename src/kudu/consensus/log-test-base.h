@@ -1,4 +1,5 @@
 // Copyright (c) 2014, Cloudera, inc.
+// Confidential Cloudera Information: Covered by NDA.
 #ifndef KUDU_CONSENSUS_LOG_TEST_BASE_H
 #define KUDU_CONSENSUS_LOG_TEST_BASE_H
 

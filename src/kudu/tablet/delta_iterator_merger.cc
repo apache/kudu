@@ -1,4 +1,5 @@
 // Copyright (c) 2014, Cloudera, inc.
+// Confidential Cloudera Information: Covered by NDA.
 // All rights reserved.
 
 #include "kudu/tablet/delta_iterator_merger.h"

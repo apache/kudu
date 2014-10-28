@@ -1,4 +1,5 @@
 // Copyright(c) 2013, Cloudera, inc.
+// Confidential Cloudera Information: Covered by NDA.
 #include "kudu/tserver/scanners.h"
 
 #include <vector>

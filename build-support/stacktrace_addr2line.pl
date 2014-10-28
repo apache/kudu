@@ -1,4 +1,6 @@
 #!/usr/bin/perl
+# Copyright (c) 2014, Cloudera, inc.
+# Confidential Cloudera Information: Covered by NDA.
 #######################################################################
 # This script will convert a stack trace with addresses:
 #     @           0x5fb015 kudu::master::Master::Init()

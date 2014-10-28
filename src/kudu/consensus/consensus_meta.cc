@@ -1,4 +1,5 @@
 // Copyright (c) 2014 Cloudera, Inc.
+// Confidential Cloudera Information: Covered by NDA.
 #include "kudu/consensus/consensus_meta.h"
 
 #include "kudu/consensus/consensus.h"

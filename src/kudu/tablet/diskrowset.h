@@ -1,4 +1,5 @@
 // Copyright (c) 2012, Cloudera, inc.
+// Confidential Cloudera Information: Covered by NDA.
 //
 // A DiskRowSet is a horizontal slice of a Kudu tablet.
 // Each DiskRowSet contains data for a a disjoint set of keys.

@@ -1,4 +1,5 @@
 // Copyright (c) 2013, Cloudera, inc.
+// Confidential Cloudera Information: Covered by NDA.
 //
 // Classes used internally by pb_util.h.
 // This header should not be included by anything but pb_util and its tests.

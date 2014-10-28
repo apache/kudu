@@ -1,4 +1,5 @@
 // Copyright (c) 2013, Cloudera, inc.
+// Confidential Cloudera Information: Covered by NDA.
 
 #include <boost/lexical_cast.hpp>
 #include <glog/logging.h>

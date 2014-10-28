@@ -1,5 +1,6 @@
-Copyright (c) 2013, Cloudera, inc.
+Copyright (c) 2014, Cloudera, inc.
 All rights reserved.
+Confidential Cloudera Information: Covered by NDA.
 
 --------------------------------------------------------------------------------
 

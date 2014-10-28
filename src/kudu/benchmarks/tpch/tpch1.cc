@@ -1,4 +1,5 @@
 // Copyright (c) 2012, Cloudera, inc.
+// Confidential Cloudera Information: Covered by NDA.
 //
 // This utility will first try to load the data from the given path if the
 // tablet doesn't already exist at the given location. It will then run

@@ -1,3 +1,6 @@
+# Copyright (c) 2014, Cloudera, inc.
+# Confidential Cloudera Information: Covered by NDA.
+
 library(ggplot2)
 library(reshape)
 

@@ -1,4 +1,5 @@
 // Copyright (c) 2014 Cloudera Inc.
+// Confidential Cloudera Information: Covered by NDA.
 #include "kudu/tablet/tablet-test-util.h"
 
 #include <boost/assign/list_of.hpp>

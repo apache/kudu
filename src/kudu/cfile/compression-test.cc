@@ -1,4 +1,5 @@
 // Copyright (c) 2012, Cloudera, inc
+// Confidential Cloudera Information: Covered by NDA.
 #include <boost/scoped_array.hpp>
 #include <gtest/gtest.h>
 #include <glog/logging.h>

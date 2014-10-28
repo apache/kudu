@@ -1,4 +1,5 @@
 // Copyright (c) 2014, Cloudera Inc.
+// Confidential Cloudera Information: Covered by NDA.
 
 #ifndef KUDU_CONSENSUS_QUORUM_UTIL_H_
 #define KUDU_CONSENSUS_QUORUM_UTIL_H_

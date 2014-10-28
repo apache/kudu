@@ -1,4 +1,5 @@
 // Copyright (c) 2013, Cloudera, inc.
+// Confidential Cloudera Information: Covered by NDA.
 //
 // This is an alternate varint format, borrowed from sqlite4, that differs from the
 // varint in util/coding.h in that its serialized form can be compared with memcmp(),

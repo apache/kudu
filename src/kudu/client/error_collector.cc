@@ -1,4 +1,5 @@
 // Copyright (c) 2013, Cloudera, inc.
+// Confidential Cloudera Information: Covered by NDA.
 
 #include "kudu/client/client.h"
 #include "kudu/client/error_collector.h"

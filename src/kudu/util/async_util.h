@@ -1,4 +1,5 @@
 // Copyright (c) 2013, Cloudera, inc.
+// Confidential Cloudera Information: Covered by NDA.
 //
 // Utility functions which are handy when doing async/callback-based programming.
 #ifndef KUDU_UTIL_ASYNC_UTIL_H

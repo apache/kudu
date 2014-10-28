@@ -1,5 +1,9 @@
 #!/bin/bash -e
+# Copyright (c) 2014, Cloudera, inc.
+# Confidential Cloudera Information: Covered by NDA.
+#
 # Little script to parse the output from rpc-bench.
+
 
 FILE=$1
 if [[ -z $FILE || $FILE == "-h" || $FILE == "--help" ]]; then

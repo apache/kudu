@@ -1,5 +1,6 @@
 /*
  * Portions copyright (c) 2014 Cloudera, Inc.
+ * Confidential Cloudera Information: Covered by NDA.
  *
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file

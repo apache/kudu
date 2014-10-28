@@ -1,5 +1,6 @@
 #!/bin/bash
-# Copyright (c) 2013, Cloudera, inc.
+# Copyright (c) 2014, Cloudera, inc.
+# Confidential Cloudera Information: Covered by NDA.
 #
 # Script which wraps running a test and redirects its output to a
 # test log directory.

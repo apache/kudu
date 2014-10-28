@@ -1,4 +1,5 @@
 // Copyright (c) 2014, Cloudera, inc.
+// Confidential Cloudera Information: Covered by NDA.
 #ifndef KUDU_TSERVER_REMOTE_BOOTSTRAP_TEST_BASE_H_
 #define KUDU_TSERVER_REMOTE_BOOTSTRAP_TEST_BASE_H_
 

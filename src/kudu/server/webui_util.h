@@ -1,4 +1,5 @@
 // Copyright 2014 Cloudera Inc.
+// Confidential Cloudera Information: Covered by NDA.
 #ifndef KUDU_SERVER_WEBUI_UTIL_H
 #define KUDU_SERVER_WEBUI_UTIL_H
 

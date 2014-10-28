@@ -1,4 +1,5 @@
 // Copyright (c) 2012, Cloudera, inc,
+// Confidential Cloudera Information: Covered by NDA.
 #ifndef KUDU_BOOST_MUTEX_UTILS_H
 #define KUDU_BOOST_MUTEX_UTILS_H
 

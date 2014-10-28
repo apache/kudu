@@ -1,4 +1,5 @@
 // Copyright 2014 Cloudera inc.
+// Confidential Cloudera Information: Covered by NDA.
 
 #ifndef KUDU_CODEGEN_ROW_PROJECTOR_H
 #define KUDU_CODEGEN_ROW_PROJECTOR_H

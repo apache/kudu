@@ -1,4 +1,5 @@
 // Copyright (c) 2013, Cloudera, inc.
+// Confidential Cloudera Information: Covered by NDA.
 #ifndef KUDU_CFILE_TYPE_ENCODINGS_H_
 #define KUDU_CFILE_TYPE_ENCODINGS_H_
 

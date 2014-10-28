@@ -1,4 +1,5 @@
 // Copyright (c) 2014, Cloudera, inc.
+// Confidential Cloudera Information: Covered by NDA.
 //
 // Simple protoc plugin which inserts some code at the top of each generated protobuf.
 // Currently, this just adds an include of protobuf-annotations.h, a file which hooks up

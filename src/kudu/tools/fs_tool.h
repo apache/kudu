@@ -1,4 +1,5 @@
 // Copyright (c) 2014, Cloudera, inc.
+// Confidential Cloudera Information: Covered by NDA.
 //
 // Shared fields and methods for querying local files and directories
 #ifndef KUDU_TOOLS_FS_TOOL_H

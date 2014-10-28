@@ -1,4 +1,5 @@
 // Copyright (c) 2013, Cloudera, inc.
+// Confidential Cloudera Information: Covered by NDA.
 
 #include <boost/foreach.hpp>
 #include <boost/thread/locks.hpp>

@@ -1,4 +1,5 @@
 // Copyright (c) 2014, Cloudera, inc.
+// Confidential Cloudera Information: Covered by NDA.
 
 #ifndef KUDU_UTIL_FAILURE_DETECTOR_H_
 #define KUDU_UTIL_FAILURE_DETECTOR_H_

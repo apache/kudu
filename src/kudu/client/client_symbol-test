@@ -1,5 +1,6 @@
 #!/bin/bash
 # Copyright (c) 2014, Cloudera, inc.
+# Confidential Cloudera Information: Covered by NDA.
 #
 # Tests that the dynamic symbols visible in the public client library
 # (i.e. those available for runtime linking) are all approved Kudu symbols.

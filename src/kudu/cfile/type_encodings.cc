@@ -1,4 +1,5 @@
 // Copyright (c) 2013, Cloudera, inc.
+// Confidential Cloudera Information: Covered by NDA.
 #include "kudu/cfile/type_encodings.h"
 
 #include <tr1/unordered_map>

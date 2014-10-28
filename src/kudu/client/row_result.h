@@ -1,4 +1,5 @@
 // Copyright (c) 2014, Cloudera, inc.
+// Confidential Cloudera Information: Covered by NDA.
 #ifndef KUDU_CLIENT_ROW_RESULT_H
 #define KUDU_CLIENT_ROW_RESULT_H
 

@@ -1,4 +1,5 @@
 // Copyright (c) 2013, Cloudera, inc.
+// Confidential Cloudera Information: Covered by NDA.
 //
 // Base test class, with various utility functions.
 #ifndef KUDU_UTIL_TEST_UTIL_H

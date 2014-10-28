@@ -1,4 +1,5 @@
 // Copyright (c) 2012, Cloudera, inc.
+// Confidential Cloudera Information: Covered by NDA.
 #ifndef KUDU_CFILE_BLOCK_POINTER_H
 #define KUDU_CFILE_BLOCK_POINTER_H
 

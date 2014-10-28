@@ -1,6 +1,7 @@
 #!/bin/bash -xe
 ########################################################################
 # Copyright (c) 2014 Cloudera, Inc.
+# Confidential Cloudera Information: Covered by NDA.
 #
 # Run and compare benchmarks.
 #

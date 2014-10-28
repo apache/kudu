@@ -1,4 +1,5 @@
 // Copyright (c) 2013, Cloudera, inc.
+// Confidential Cloudera Information: Covered by NDA.
 //
 // Inline function to create the YCSB schema
 #ifndef KUDU_BENCHMARKS_YCSB_SCHEMA_H

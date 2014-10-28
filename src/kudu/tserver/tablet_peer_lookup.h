@@ -1,4 +1,5 @@
 // Copyright (c) 2014 Cloudera Inc.
+// Confidential Cloudera Information: Covered by NDA.
 #ifndef KUDU_TSERVER_TABLET_PEER_LOOKUP_H_
 #define KUDU_TSERVER_TABLET_PEER_LOOKUP_H_
 

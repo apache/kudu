@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 # Copyright (c) 2014, Cloudera, inc.
+# Confidential Cloudera Information: Covered by NDA.
 #
 # Script to look at recent Jenkins history and find any unit tests which have
 # recently failed. Outputs a list of these tests on stdout.

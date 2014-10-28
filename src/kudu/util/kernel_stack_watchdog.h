@@ -1,4 +1,5 @@
 // Copyright (c) 2013, Cloudera, inc.
+// Confidential Cloudera Information: Covered by NDA.
 //
 // This class defines a singleton thread which manages a map of other
 // thread IDs to watch. Before performing some kernel operation which

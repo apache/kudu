@@ -1,4 +1,5 @@
 // Copyright (c) 2013, Cloudera, inc.
+// Confidential Cloudera Information: Covered by NDA.
 #ifndef KUDU_TABLET_COMPACTION_POLICY_H
 #define KUDU_TABLET_COMPACTION_POLICY_H
 

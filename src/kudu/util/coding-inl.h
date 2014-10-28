@@ -1,4 +1,5 @@
 // Copyright (c) 2012, Cloudera, inc.
+// Confidential Cloudera Information: Covered by NDA.
 // Some portions Copyright (c) 2011 The LevelDB Authors.
 //
 // Endian-neutral encoding:

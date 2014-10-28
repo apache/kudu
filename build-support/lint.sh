@@ -1,4 +1,6 @@
 #!/bin/bash
+# Copyright (c) 2014, Cloudera, inc.
+# Confidential Cloudera Information: Covered by NDA.
 
 ME=$(dirname $BASH_SOURCE)
 ROOT=$(readlink -f $ME/..)

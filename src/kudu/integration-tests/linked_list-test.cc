@@ -1,4 +1,5 @@
 // Copyright (c) 2014, Cloudera, inc.
+// Confidential Cloudera Information: Covered by NDA.
 //
 // This is an integration test similar to TestLoadAndVerify in HBase.
 // It creates a table and writes linked lists into it, where each row

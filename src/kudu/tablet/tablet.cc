@@ -1,4 +1,5 @@
 // Copyright (c) 2012, Cloudera, inc.
+// Confidential Cloudera Information: Covered by NDA.
 #include <algorithm>
 #include <boost/assign/list_of.hpp>
 #include <boost/bind.hpp>

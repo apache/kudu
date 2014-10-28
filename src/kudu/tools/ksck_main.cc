@@ -1,4 +1,5 @@
 // Copyright (c) 2014, Cloudera, inc.
+// Confidential Cloudera Information: Covered by NDA.
 //
 // Command line tool to run Ksck against a cluster. Defaults to running against a local Master
 // on the default RPC port. It verifies that all the reported Tablet Servers are running and that

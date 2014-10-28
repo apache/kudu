@@ -1,4 +1,5 @@
 // Copyright (c) 2013, Cloudera, inc.
+// Confidential Cloudera Information: Covered by NDA.
 // All rights reserved.
 
 #include "kudu/util/string_case.h"

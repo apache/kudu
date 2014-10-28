@@ -1,6 +1,7 @@
 /**
  * Copyright (C) 2011 the original author or authors.
  * Portions copyright (c) 2014 Cloudera, Inc.
+ * Confidential Cloudera Information: Covered by NDA.
  *
  * See the LICENSE.txt file distributed with this work for additional
  * information regarding copyright ownership.

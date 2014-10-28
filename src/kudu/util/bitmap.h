@@ -1,4 +1,5 @@
 // Copyright (c) 2012, Cloudera, inc.
+// Confidential Cloudera Information: Covered by NDA.
 //
 // Utility functions for dealing with a byte array as if it were a bitmap.
 #ifndef KUDU_UTIL_BITMAP_H

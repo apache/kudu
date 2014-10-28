@@ -1,4 +1,5 @@
 // Copyright (c) 2013, Cloudera, inc.
+// Confidential Cloudera Information: Covered by NDA.
 // All rights reserved.
 #ifndef KUDU_COMMON_ENCODED_KEY_H
 #define KUDU_COMMON_ENCODED_KEY_H

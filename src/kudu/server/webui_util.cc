@@ -1,4 +1,5 @@
 // Copyright 2014 Cloudera Inc.
+// Confidential Cloudera Information: Covered by NDA.
 
 #include "kudu/server/webui_util.h"
 

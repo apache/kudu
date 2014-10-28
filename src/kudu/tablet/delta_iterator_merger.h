@@ -1,4 +1,5 @@
 // Copyright (c) 2014, Cloudera, inc.
+// Confidential Cloudera Information: Covered by NDA.
 // All rights reserved.
 #ifndef KUDU_TABLET_DELTA_ITERATOR_MERGER_H
 #define KUDU_TABLET_DELTA_ITERATOR_MERGER_H

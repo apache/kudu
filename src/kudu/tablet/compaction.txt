@@ -1,3 +1,6 @@
+Copyright (c) 2014, Cloudera, inc.
+Confidential Cloudera Information: Covered by NDA.
+
 This document explains the mechanics of performing a rowset flush/compaction.
 For details explaining how compactions are selected, see compaction-policy.txt.
 NOTE: this does not describe anything about flushing delta stores to delta files!

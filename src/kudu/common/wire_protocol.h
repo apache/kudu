@@ -1,4 +1,5 @@
 // Copyright (c) 2013, Cloudera, inc.
+// Confidential Cloudera Information: Covered by NDA.
 //
 // Helpers for dealing with the protobufs defined in wire_protocol.proto.
 #ifndef KUDU_COMMON_WIRE_PROTOCOL_H

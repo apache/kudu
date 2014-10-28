@@ -1,5 +1,6 @@
 #!/bin/bash
 # Copyright (c) 2014, Cloudera, inc.
+# Confidential Cloudera Information: Covered by NDA.
 #
 # Script which, when run from Jenkins, will hunt and kill any other jenkins
 # processes running on the same machine from a different build.

@@ -1,4 +1,5 @@
 // Copyright (c) 2014, Cloudera, inc.
+// Confidential Cloudera Information: Covered by NDA.
 //
 // Simple tool to send an CREATE TABLE request for one of the demo tablets.
 // This will eventually be replaced by a proper shell -- just a quick

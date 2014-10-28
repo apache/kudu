@@ -1,4 +1,5 @@
 // Copyright 2014 Cloudera, Inc.
+// Confidential Cloudera Information: Covered by NDA.
 #ifndef KUDU_UTIL_PSTACK_WATCHER_H
 #define KUDU_UTIL_PSTACK_WATCHER_H
 

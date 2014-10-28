@@ -1,3 +1,6 @@
+Copyright (c) 2014, Cloudera, inc.
+Confidential Cloudera Information: Covered by NDA.
+
 This document explains the policy of performing a compaction.
 For details explaining how compactions are implemented, see compaction.txt.
 

@@ -1,4 +1,5 @@
 // Copyright (c) 2013, Cloudera, inc.
+// Confidential Cloudera Information: Covered by NDA.
 #ifndef KUDU_MASTER_MASTER_OPTIONS_H
 #define KUDU_MASTER_MASTER_OPTIONS_H
 

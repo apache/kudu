@@ -1,4 +1,5 @@
 // Copyright (c) 2014 Cloudera, Inc.
+// Confidential Cloudera Information: Covered by NDA.
 #include "kudu/util/pb_util-internal.h"
 
 namespace kudu {

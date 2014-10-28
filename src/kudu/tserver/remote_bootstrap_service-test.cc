@@ -1,4 +1,5 @@
 // Copyright (c) 2014, Cloudera, inc.
+// Confidential Cloudera Information: Covered by NDA.
 #include "kudu/tserver/remote_bootstrap-test-base.h"
 
 #include <boost/foreach.hpp>

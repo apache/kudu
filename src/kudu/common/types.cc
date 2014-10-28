@@ -1,4 +1,5 @@
 // Copyright (c) 2012, Cloudera, inc.
+// Confidential Cloudera Information: Covered by NDA.
 
 #include <boost/shared_ptr.hpp>
 #include <tr1/unordered_map>
