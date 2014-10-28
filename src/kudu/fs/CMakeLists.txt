@@ -10,8 +10,10 @@ add_library(fs_proto ${FS_PROTO_SRCS} ${FS_PROTO_HDRS})
 
 add_library(kudu_fs
   block_id.cc
+  block_manager.cc
   file_block_manager.cc
-  fs_manager.cc)
+  fs_manager.cc
+  log_block_manager.cc)
 
 target_link_libraries(kudu_fs
   fs_proto

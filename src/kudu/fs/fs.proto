@@ -24,3 +24,34 @@ message InstanceMetadataPB {
 message BlockIdPB {
   required string id = 1;
 }
+
+// The kind of record.
+enum BlockRecordType {
+  CREATE = 1;
+  DELETE = 2;
+}
+
+// An element found in a container metadata file of the log-backed block
+// storage implementation.
+//
+// Each one tracks the existence (creation) or non-existence (deletion)
+// of a particular block. They are written sequentially, with subsequent
+// messages taking precedence over earlier ones (e.g. "CREATE foo" followed
+// by "DELETE foo" means that block foo does not exist).
+message BlockRecordPB {
+  // The unique identifier of the block.
+  required BlockIdPB block_id = 1;
+
+  // Whether this is a CREATE or a DELETE.
+  required BlockRecordType op_type = 2;
+
+  // The offset of the block in the container data file.
+  //
+  // Required for CREATE.
+  optional int64 offset = 3;
+
+  // The length of the block in the container data file.
+  //
+  // Required for CREATE.
+  optional int64 length = 4;
+}

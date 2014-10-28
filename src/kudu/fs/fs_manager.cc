@@ -12,6 +12,7 @@
 #include "kudu/fs/block_id.h"
 #include "kudu/fs/block_id-inl.h"
 #include "kudu/fs/file_block_manager.h"
+#include "kudu/fs/log_block_manager.h"
 #include "kudu/fs/fs.pb.h"
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/numbers.h"
@@ -29,13 +30,14 @@ DEFINE_bool(enable_data_block_fsync, true,
             "Disabling this flag may cause data loss in the event of a system crash.");
 
 DEFINE_string(block_manager, "file", "Which block manager to use for storage. "
-              "The only valid option is 'file'.");
+              "Valid options are 'file' and 'log'.");
 
 using google::protobuf::Message;
 using strings::Substitute;
 using std::tr1::shared_ptr;
 using kudu::fs::CreateBlockOptions;
 using kudu::fs::FileBlockManager;
+using kudu::fs::LogBlockManager;
 using kudu::fs::ReadableBlock;
 using kudu::fs::WritableBlock;
 
@@ -66,6 +68,8 @@ FsManager::~FsManager() {
 void FsManager::InitBlockManager() {
   if (FLAGS_block_manager == "file") {
     block_manager_.reset(new FileBlockManager(env_, GetDataRootDir()));
+  } else if (FLAGS_block_manager == "log") {
+    block_manager_.reset(new LogBlockManager(env_, GetDataRootDir()));
   } else {
     LOG(FATAL) << "Invalid block manager: " << FLAGS_block_manager;
   }

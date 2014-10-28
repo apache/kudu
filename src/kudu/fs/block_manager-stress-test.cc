@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "kudu/fs/file_block_manager.h"
+#include "kudu/fs/log_block_manager.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/util/atomic.h"
@@ -14,15 +15,15 @@
 #include "kudu/util/test_util.h"
 #include "kudu/util/thread.h"
 
-DEFINE_int32(test_duration_secs, 30, "Number of seconds to run the test");
+DEFINE_int32(test_duration_secs, 2, "Number of seconds to run the test");
 DEFINE_int32(num_writer_threads, 4, "Number of writer threads to run");
 DEFINE_int32(num_reader_threads, 8, "Number of reader threads to run");
 DEFINE_int32(num_deleter_threads, 1, "Number of deleter threads to run");
-DEFINE_int32(block_group_size, 16, "Number of blocks to write per block "
+DEFINE_int32(block_group_size, 8, "Number of blocks to write per block "
              "group. Must be power of 2");
-DEFINE_int32(block_group_bytes, 64 * 1024 * 1024,
+DEFINE_int32(block_group_bytes, 64 * 1024,
              "Total amount of data (in bytes) to write per block group");
-DEFINE_int32(num_bytes_per_write, 64 * 1024,
+DEFINE_int32(num_bytes_per_write, 64,
              "Number of bytes to write at a time");
 
 using std::string;
@@ -56,7 +57,7 @@ template <typename T>
 class BlockManagerStressTest : public KuduTest {
  public:
   BlockManagerStressTest() :
-    rand_(SeedRandom()),
+    rand_seed_(SeedRandom()),
     stop_latch_(1),
     bm_(new T(env_.get(), GetTestPath("bm"))),
     total_blocks_written_(0),
@@ -68,6 +69,16 @@ class BlockManagerStressTest : public KuduTest {
 
   virtual void SetUp() OVERRIDE {
     CHECK_OK(bm_->Create());
+  }
+
+  void RunTest(int secs) {
+    LOG(INFO) << "Starting all threads";
+    this->StartThreads();
+    usleep(secs * 1000000);
+    LOG(INFO) << "Stopping all threads";
+    this->StopThreads();
+    this->JoinThreads();
+    this->stop_latch_.Reset(1);
   }
 
   void StartThreads() {
@@ -108,8 +119,9 @@ class BlockManagerStressTest : public KuduTest {
   void DeleterThread();
 
  protected:
-  // Used to generate random data.
-  Random rand_;
+  // Used to generate random data. All PRNG instances are seeded with this
+  // value to ensure that the test is reproducible.
+  int rand_seed_;
 
   // Tells the threads to stop running.
   CountDownLatch stop_latch_;
@@ -142,6 +154,7 @@ void BlockManagerStressTest<T>::WriterThread() {
   string thread_name = Thread::current_thread()->name();
   LOG(INFO) << "Thread " << thread_name << " starting";
 
+  Random rand(rand_seed_);
   size_t num_blocks_written = 0;
   size_t num_bytes_written = 0;
   MonoDelta tight_loop(MonoDelta::FromSeconds(0));
@@ -155,7 +168,7 @@ void BlockManagerStressTest<T>::WriterThread() {
       gscoped_ptr<WritableBlock> block;
       CHECK_OK(bm_->CreateAnonymousBlock(&block));
 
-      const uint32_t seed = rand_.Next();
+      const uint32_t seed = rand.Next() + 1;
       Slice seed_slice(reinterpret_cast<const uint8_t*>(&seed), sizeof(seed));
       LOG(INFO) << "Creating block " << block->id().ToString() << " with seed " << seed;
       CHECK_OK(block->Append(seed_slice));
@@ -172,7 +185,7 @@ void BlockManagerStressTest<T>::WriterThread() {
     size_t total_dirty_bytes = 0;
     while (total_dirty_bytes < FLAGS_block_group_bytes) {
       // Pick the next block.
-      int next_block_idx = rand_.Skewed(log2(dirty_blocks.size()));
+      int next_block_idx = rand.Skewed(log2(dirty_blocks.size()));
       WritableBlock* block = dirty_blocks[next_block_idx];
       Random& rand = dirty_block_rands[next_block_idx];
 
@@ -215,6 +228,7 @@ void BlockManagerStressTest<T>::ReaderThread() {
   string thread_name = Thread::current_thread()->name();
   LOG(INFO) << "Thread " << thread_name << " starting";
 
+  Random rand(rand_seed_);
   size_t num_blocks_read = 0;
   size_t num_bytes_read = 0;
   MonoDelta tight_loop(MonoDelta::FromSeconds(0));
@@ -225,7 +239,7 @@ void BlockManagerStressTest<T>::ReaderThread() {
       shared_lock<rw_spinlock> l(&lock_);
       size_t num_blocks = written_blocks_.size();
       if (num_blocks > 0) {
-        uint32_t next_id = rand_.Uniform(num_blocks);
+        uint32_t next_id = rand.Uniform(num_blocks);
         const BlockId& block_id = written_blocks_[next_id];
         CHECK_OK(bm_->OpenBlock(block_id, &block));
       }
@@ -305,25 +319,29 @@ void BlockManagerStressTest<T>::DeleterThread() {
 }
 
 // What kinds of BlockManagers are supported?
-typedef ::testing::Types<FileBlockManager> BlockManagers;
+typedef ::testing::Types<FileBlockManager, LogBlockManager> BlockManagers;
 TYPED_TEST_CASE(BlockManagerStressTest, BlockManagers);
 
 TYPED_TEST(BlockManagerStressTest, StressTest) {
+  OverrideFlagForSlowTests("test_duration_secs", "30");
+  OverrideFlagForSlowTests("block_group_size", "16");
+  OverrideFlagForSlowTests("block_group_bytes",
+                           Substitute("$0", 64 * 1024 * 1024));
+  OverrideFlagForSlowTests("num_bytes_per_write",
+                           Substitute("$0", 64 * 1024));
+
   if ((FLAGS_block_group_size & (FLAGS_block_group_size - 1)) != 0) {
     LOG(FATAL) << "block_group_size " << FLAGS_block_group_size
                << " is not a power of 2";
   }
-  if (!AllowSlowTests()) {
-    LOG(INFO) << "Not running in slow-tests mode, skipping stress test";
-    return;
-  }
 
-  LOG(INFO) << "Starting all threads";
-  this->StartThreads();
-  usleep(FLAGS_test_duration_secs * 1000000);
-  LOG(INFO) << "Stopping all threads";
-  this->StopThreads();
-  this->JoinThreads();
+  LOG(INFO) << "Running on fresh block manager";
+  this->RunTest(FLAGS_test_duration_secs / 2);
+  LOG(INFO) << "Running on populated block manager";
+  this->bm_.reset(new TypeParam(this->env_.get(),
+                                this->GetTestPath("bm")));
+  ASSERT_OK(this->bm_->Open());
+  this->RunTest(FLAGS_test_duration_secs / 2);
 
   LOG(INFO) << "Printing test totals";
   LOG(INFO) << "--------------------";

@@ -31,7 +31,7 @@ DEFINE_string(cfile_default_compression_codec, "none",
 // 1. the cfile blocks are colocated with the WALs.
 // 2. The underlying hardware is a spinning disk.
 // 3. The underlying filesystem is either XFS or EXT4.
-// 4. block_coalesce_close is false (see fs/file_block_manager.cc).
+// 4. block_coalesce_close is false (see fs/block_manager.cc).
 //
 // When all conditions hold, this value ensures low latency for WAL writes.
 DEFINE_string(cfile_do_on_finish, "close",

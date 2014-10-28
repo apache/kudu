@@ -2,6 +2,7 @@
 // Confidential Cloudera Information: Covered by NDA.
 
 #include "kudu/fs/file_block_manager.h"
+#include "kudu/fs/log_block_manager.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/random.h"
@@ -12,7 +13,10 @@ using std::string;
 using std::vector;
 using strings::Substitute;
 
-DEFINE_int32(num_blocks_close, 1000,
+// LogBlockManager opens three files per container, and CloseManyBlocksTest
+// uses one container for each block. To simplify testing (i.e. no need to
+// raise the ulimit on open files), the default is kept low.
+DEFINE_int32(num_blocks_close, 333,
              "Number of blocks to simultaneously close in CloseManyBlocksTest");
 
 namespace kudu {
@@ -34,7 +38,7 @@ class BlockManagerTest : public KuduTest {
 };
 
 // What kinds of BlockManagers are supported?
-typedef ::testing::Types<FileBlockManager> BlockManagers;
+typedef ::testing::Types<FileBlockManager, LogBlockManager> BlockManagers;
 TYPED_TEST_CASE(BlockManagerTest, BlockManagers);
 
 // Test the entire lifecycle of a block.
@@ -78,6 +82,7 @@ TYPED_TEST(BlockManagerTest, AnonymousBlockTest) {
   gscoped_ptr<ReadableBlock> read_block;
 
   ASSERT_OK(this->bm_->CreateAnonymousBlock(&written_block));
+  ASSERT_OK(written_block->Close());
   ASSERT_OK(this->bm_->OpenBlock(written_block->id(), &read_block));
   ASSERT_OK(this->bm_->DeleteBlock(written_block->id()));
   ASSERT_TRUE(this->bm_->OpenBlock(written_block->id(), NULL)
@@ -92,6 +97,7 @@ TYPED_TEST(BlockManagerTest, ReadAfterDeleteTest) {
   ASSERT_OK(this->bm_->CreateAnonymousBlock(&written_block));
   string test_data = "test data";
   ASSERT_OK(written_block->Append(test_data));
+  ASSERT_OK(written_block->Close());
 
   // Open it for reading, then delete it. Subsequent opens should fail.
   gscoped_ptr<ReadableBlock> read_block;
@@ -215,6 +221,54 @@ TYPED_TEST(BlockManagerTest, AbortTest) {
   ASSERT_OK(written_block->Abort());
   ASSERT_EQ(WritableBlock::CLOSED, written_block->state());
   ASSERT_TRUE(this->bm_->OpenBlock(written_block->id(), NULL)
+              .IsNotFound());
+}
+
+TYPED_TEST(BlockManagerTest, PersistenceTest) {
+  // Create three blocks:
+  // 1. Empty.
+  // 2. Non-empty.
+  // 3. Deleted.
+  gscoped_ptr<WritableBlock> written_block1;
+  gscoped_ptr<WritableBlock> written_block2;
+  gscoped_ptr<WritableBlock> written_block3;
+  ASSERT_OK(this->bm_->CreateAnonymousBlock(&written_block1));
+  ASSERT_OK(written_block1->Close());
+  ASSERT_OK(this->bm_->CreateAnonymousBlock(&written_block2));
+  string test_data = "test data";
+  ASSERT_OK(written_block2->Append(test_data));
+  ASSERT_OK(written_block2->Close());
+  ASSERT_OK(this->bm_->CreateAnonymousBlock(&written_block3));
+  ASSERT_OK(written_block3->Append(test_data));
+  ASSERT_OK(written_block3->Close());
+  ASSERT_OK(this->bm_->DeleteBlock(written_block3->id()));
+
+  // Some block managers must be closed to fully synchronize their contents
+  // to disk (e.g. log_block_manager uses PosixMmapFiles for containers,
+  // which must be closed to be trimmed).
+  this->bm_.reset();
+
+  // Reopen the block manager. This may read block metadata from disk.
+  gscoped_ptr<TypeParam> new_block_manager(new TypeParam(this->env_.get(),
+                                                         this->GetTestPath("bm")));
+  ASSERT_OK(new_block_manager->Open());
+
+  // Test that the state of all three blocks is properly reflected.
+  gscoped_ptr<ReadableBlock> read_block;
+  ASSERT_OK(new_block_manager->OpenBlock(written_block1->id(), &read_block));
+  size_t sz;
+  ASSERT_OK(read_block->Size(&sz));
+  ASSERT_EQ(0, sz);
+  ASSERT_OK(read_block->Close());
+  ASSERT_OK(new_block_manager->OpenBlock(written_block2->id(), &read_block));
+  ASSERT_OK(read_block->Size(&sz));
+  ASSERT_EQ(test_data.length(), sz);
+  Slice data;
+  gscoped_ptr<uint8_t[]> scratch(new uint8_t[test_data.length()]);
+  ASSERT_OK(read_block->Read(0, test_data.length(), &data, scratch.get()));
+  ASSERT_EQ(test_data, data);
+  ASSERT_OK(read_block->Close());
+  ASSERT_TRUE(new_block_manager->OpenBlock(written_block3->id(), NULL)
               .IsNotFound());
 }
 

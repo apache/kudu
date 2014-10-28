@@ -15,6 +15,8 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/status.h"
 
+DECLARE_bool(block_coalesce_close);
+
 namespace kudu {
 
 class Slice;
