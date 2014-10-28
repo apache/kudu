@@ -98,7 +98,7 @@ Status FileWritableBlock::Close(SyncMode mode) {
 
   Status sync;
   if (mode == SYNC &&
-      (state_ == DIRTY || state_ == FLUSHING) &&
+      (state_ == CLEAN || state_ == DIRTY || state_ == FLUSHING) &&
       FLAGS_enable_data_block_fsync) {
     // Safer to synchronize data first, then metadata.
     VLOG(3) << "Syncing block " << id();
