@@ -107,6 +107,7 @@ void Trace::Dump(std::ostream* out, bool include_time_deltas) const {
   // (whereas doing the logging itself while holding the lock might be
   // too slow, if the output stream is a file, for example).
   vector<TraceEntry*> entries;
+  vector<scoped_refptr<Trace> > child_traces;
   {
     lock_guard<simple_spinlock> l(&lock_);
     for (TraceEntry* cur = entries_head_;
@@ -114,6 +115,8 @@ void Trace::Dump(std::ostream* out, bool include_time_deltas) const {
          cur = cur->next) {
       entries.push_back(cur);
     }
+
+    child_traces = child_traces_;
   }
 
   // Save original flags.
@@ -154,6 +157,11 @@ void Trace::Dump(std::ostream* out, bool include_time_deltas) const {
     *out << std::endl;
   }
 
+  BOOST_FOREACH(scoped_refptr<Trace> child_trace, child_traces) {
+    *out << "Related trace:" << std::endl;
+    *out << child_trace->DumpToString(include_time_deltas);
+  }
+
   // Restore stream flags.
   out->flags(save_flags);
 }
@@ -171,6 +179,12 @@ void Trace::DumpCurrentTrace() {
     return;
   }
   t->Dump(&std::cerr, true);
+}
+
+void Trace::AddChildTrace(Trace* child_trace) {
+  lock_guard<simple_spinlock> l(&lock_);
+  scoped_refptr<Trace> ptr(child_trace);
+  child_traces_.push_back(ptr);
 }
 
 } // namespace kudu

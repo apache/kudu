@@ -59,4 +59,20 @@ TEST_F(TraceTest, TestAttach) {
   EXPECT_EQ(XOutDigits(traceB->DumpToString(false)),
             "XXXX XX:XX:XX.XXXXXX trace-test.cc:XX] hello from traceB\n");
 }
+
+TEST_F(TraceTest, TestChildTrace) {
+  scoped_refptr<Trace> traceA(new Trace);
+  scoped_refptr<Trace> traceB(new Trace);
+  ADOPT_TRACE(traceA.get());
+  traceA->AddChildTrace(traceB.get());
+  TRACE("hello from traceA");
+  {
+    ADOPT_TRACE(traceB.get());
+    TRACE("hello from traceB");
+  }
+  EXPECT_EQ(XOutDigits(traceA->DumpToString(false)),
+            "XXXX XX:XX:XX.XXXXXX trace-test.cc:XX] hello from traceA\n"
+            "Related trace:\n"
+            "XXXX XX:XX:XX.XXXXXX trace-test.cc:XX] hello from traceB\n");
+}
 } // namespace kudu

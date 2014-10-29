@@ -4,6 +4,7 @@
 
 #include <iosfwd>
 #include <string>
+#include <vector>
 
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/strings/stringpiece.h"
@@ -92,6 +93,9 @@ class Trace : public RefCountedThreadSafe<Trace> {
   // Dump the trace buffer as a string.
   std::string DumpToString(bool include_time_deltas) const;
 
+  // Attaches the given trace which will get appended at the end when Dumping.
+  void AddChildTrace(Trace* child_trace);
+
   // Return the current trace attached to this thread, if there is one.
   static Trace* CurrentTrace() {
     return threadlocal_trace_;
@@ -127,6 +131,8 @@ class Trace : public RefCountedThreadSafe<Trace> {
   TraceEntry* entries_head_;
   // The tail of the linked list of entries (allocated inside arena_)
   TraceEntry* entries_tail_;
+
+  std::vector<scoped_refptr<Trace> > child_traces_;
 
   DISALLOW_COPY_AND_ASSIGN(Trace);
 };
