@@ -3,3 +3,4 @@
 --block_cache_capacity_mb=512
 --log_force_fsync_all=false
 --v=0
+--memrowset_throttle_mb=768
