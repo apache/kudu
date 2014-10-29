@@ -7,7 +7,9 @@
 #include <boost/assign/list_of.hpp>
 
 #include "kudu/client/client.h"
+#include "kudu/client/client-test-util.h"
 #include "kudu/client/schema-internal.h"
+#include "kudu/client/write_op.h"
 #include "kudu/common/wire_protocol-test-util.h"
 #include "kudu/common/schema.h"
 #include "kudu/consensus/consensus_queue.h"
@@ -54,7 +56,9 @@ using client::KuduClient;
 using client::KuduClientBuilder;
 using client::KuduColumnSchema;
 using client::KuduColumnStorageAttributes;
+using client::KuduInsert;
 using client::KuduSchema;
+using client::KuduSession;
 using client::KuduTable;
 using master::GetTableLocationsRequestPB;
 using master::GetTableLocationsResponsePB;
@@ -97,7 +101,8 @@ class DistConsensusTest : public TabletServerTest {
 
   void BuildAndStart() {
     CreateCluster();
-    CreateClient();
+    CreateClient(&client_);
+    CreateTable();
     WaitForAndGetQuorum();
   }
 
@@ -111,12 +116,14 @@ class DistConsensusTest : public TabletServerTest {
     ASSERT_STATUS_OK(cluster_->WaitForTabletServerCount(kNumReplicas));
   }
 
-  void CreateClient() {
+  void CreateClient(shared_ptr<KuduClient>* client) {
     // Connect to the cluster.
     ASSERT_STATUS_OK(KuduClientBuilder()
                      .master_server_addr(cluster_->mini_master()->bound_rpc_addr().ToString())
-                     .Build(&client_));
+                     .Build(client));
+  }
 
+  void CreateTable() {
     // Create a table with a single tablet, with three replicas.
     //
     // The tests here make extensive use of server schemas, but we need
@@ -340,7 +347,30 @@ class DistConsensusTest : public TabletServerTest {
                                   uint64_t count,
                                   uint64_t num_batches,
                                   TabletServerServiceProxy* proxy) {
-    TabletServerTest::InsertTestRowsRemote(tid, first_row, count, num_batches, proxy, tablet_id_);
+    shared_ptr<KuduClient> client;
+    CreateClient(&client);
+
+    scoped_refptr<KuduTable> table;
+    CHECK_OK(client->OpenTable(kTableId, &table));
+
+    shared_ptr<KuduSession> session = client->NewSession();
+    CHECK_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
+
+    for (int i = 0; i < num_batches; i++) {
+      uint64_t first_row_in_batch = first_row + (i * count / num_batches);
+      uint64_t last_row_in_batch = first_row_in_batch + count / num_batches;
+
+      for (int j = first_row_in_batch; j < last_row_in_batch; j++) {
+        gscoped_ptr<KuduInsert> insert = table->NewInsert();
+        KuduPartialRow* row = insert->mutable_row();
+        CHECK_OK(row->SetUInt32(0, j));
+        CHECK_OK(row->SetUInt32(1, j * 2));
+        CHECK_OK(row->SetStringCopy(2, Slice(StringPrintf("hello %d", j))));
+        CHECK_OK(session->Apply(insert.Pass()));
+      }
+      FlushSessionOrDie(session);
+    }
+
     inserters_.CountDown();
   }
 
