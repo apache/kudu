@@ -41,6 +41,9 @@ TransactionDriver::TransactionDriver(TransactionTracker *txn_tracker,
       start_time_(MonoTime::Now(MonoTime::FINE)),
       replication_state_(NOT_REPLICATING),
       prepare_state_(NOT_PREPARED) {
+  if (Trace::CurrentTrace()) {
+    Trace::CurrentTrace()->AddChildTrace(trace_.get());
+  }
 }
 
 void TransactionDriver::Init(Transaction* transaction,
