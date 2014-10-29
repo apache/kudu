@@ -343,11 +343,11 @@ class ConsensusRound {
     continuation_ = continuation;
   }
 
-  ConsensusCommitContinuation* GetReplicaCommitContinuation() {
-    return continuation_;
-  }
+  // If a continuation was set, notifies it that the round has been replicated.
+  void NotifyReplicationFinished(const Status& status);
 
  private:
+  friend class RaftConsensusQuorumTest;
   Consensus* consensus_;
   // This round's replicate message.
   gscoped_ptr<ReplicateMsg> replicate_msg_;

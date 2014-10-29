@@ -238,11 +238,11 @@ class RaftConsensusQuorumTest : public KuduTest {
 
   Status WaitForReplicate(ConsensusRound* round) {
     return down_cast<CommitContinuationLatchCallback*>(
-        round->GetReplicaCommitContinuation())->callback_.Wait();
+        round->continuation_)->callback_.Wait();
   }
   Status TimedWaitForReplicate(ConsensusRound* round, const MonoDelta& delta) {
     return down_cast<CommitContinuationLatchCallback*>(
-        round->GetReplicaCommitContinuation())->callback_.WaitFor(delta);
+        round->continuation_)->callback_.WaitFor(delta);
   }
 
   void WaitForReplicateIfNotAlreadyPresent(const OpId& to_wait_for, int peer_idx) {

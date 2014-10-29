@@ -50,6 +50,12 @@ Status ConsensusRound::Commit(gscoped_ptr<CommitMsg> commit) {
   return consensus_->Commit(commit.Pass(), commit_callback_->AsStatusCallback());
 }
 
+void ConsensusRound::NotifyReplicationFinished(const Status& status) {
+  if (PREDICT_TRUE(continuation_)) {
+    continuation_->ReplicationFinished(status);
+  }
+}
+
 Status Consensus::VerifyQuorum(const metadata::QuorumPB& quorum) {
   std::set<string> uuids;
   bool found_leader = false;

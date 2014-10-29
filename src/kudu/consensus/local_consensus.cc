@@ -81,10 +81,10 @@ Status LocalConsensus::Start(const ConsensusBootstrapInfo& info) {
   return Status::OK();
 }
 
-Status LocalConsensus::Replicate(ConsensusRound* context) {
+Status LocalConsensus::Replicate(ConsensusRound* round) {
   DCHECK_GE(state_, kConfiguring);
 
-  consensus::ReplicateMsg* msg = context->replicate_msg();
+  consensus::ReplicateMsg* msg = round->replicate_msg();
 
   OpId* cur_op_id = DCHECK_NOTNULL(msg)->mutable_id();
   cur_op_id->set_term(0);
@@ -110,17 +110,18 @@ Status LocalConsensus::Replicate(ConsensusRound* context) {
 
     // Local consensus transactions are always committed so we
     // can just persist the quorum, if this is a change config.
-    if (context->replicate_msg()->op_type() == CHANGE_CONFIG_OP) {
+    if (round->replicate_msg()->op_type() == CHANGE_CONFIG_OP) {
       cmeta_->mutable_pb()->mutable_committed_quorum()->CopyFrom(
-          context->replicate_msg()->change_config_request().new_config());
+          round->replicate_msg()->change_config_request().new_config());
       RETURN_NOT_OK(cmeta_->Flush());
     }
   }
   // Serialize and mark the message as ready to be appended.
   // When the Log actually fsync()s this message to disk, 'repl_callback'
   // is triggered.
-  RETURN_NOT_OK(log_->AsyncAppend(reserved_entry_batch,
-                                  context->GetReplicaCommitContinuation()->AsStatusCallback()));
+  RETURN_NOT_OK(log_->AsyncAppend(
+      reserved_entry_batch,
+      Bind(&ConsensusRound::NotifyReplicationFinished, Unretained(round))));
   return Status::OK();
 }
 
