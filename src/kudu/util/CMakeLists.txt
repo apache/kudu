@@ -136,6 +136,7 @@ ADD_KUDU_TEST(blocking_queue-test)
 ADD_KUDU_TEST(bloom_filter-test)
 ADD_KUDU_TEST(cache-test)
 ADD_KUDU_TEST(callback_bind-test)
+ADD_KUDU_TEST(countdown_latch-test)
 ADD_KUDU_TEST(crc-test RUN_SERIAL true) # has a benchmark
 ADD_KUDU_TEST(env-test LABELS no_tsan)
 ADD_KUDU_TEST(failure_detector-test)
