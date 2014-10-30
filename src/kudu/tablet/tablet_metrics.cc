@@ -126,10 +126,10 @@ void TabletMetrics::AddProbeStats(const ProbeStats& stats) {
   keys_consulted_per_op->Increment(stats.keys_consulted);
   deltas_consulted_per_op->Increment(stats.deltas_consulted);
 
-  TRACE(Substitute("ProbeStats: blooms_consulted=$0,keys_consulted=$1,"
-                   "deltas_consulted=$2,mrs_consulted=$3",
-                   stats.blooms_consulted, stats.keys_consulted,
-                   stats.deltas_consulted, stats.mrs_consulted));
+  TRACE("ProbeStats: blooms_consulted=$0,keys_consulted=$1,"
+        "deltas_consulted=$2,mrs_consulted=$3",
+        stats.blooms_consulted, stats.keys_consulted,
+        stats.deltas_consulted, stats.mrs_consulted);
 }
 
 } // namespace tablet
