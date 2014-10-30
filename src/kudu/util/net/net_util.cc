@@ -94,7 +94,7 @@ Status HostPort::ResolveAddresses(vector<Sockaddr>* addresses) const {
     if (addresses) {
       addresses->push_back(sockaddr);
     }
-    VLOG(1) << "Resolved address " << sockaddr.ToString()
+    VLOG(2) << "Resolved address " << sockaddr.ToString()
             << " for host/port " << ToString();
   }
   return Status::OK();
