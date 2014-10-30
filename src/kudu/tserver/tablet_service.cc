@@ -490,7 +490,7 @@ void ConsensusServiceImpl::MakePeerLeader(const MakePeerLeaderRequestPB* req,
     return;
   }
 
-  Status s = tablet_peer->consensus()->EmulateElection();
+  Status s = tablet_peer->consensus()->StartElection();
   if (PREDICT_FALSE(!s.ok())) {
     SetupErrorAndRespond(resp->mutable_error(), s,
                          TabletServerErrorPB::UNKNOWN_ERROR,

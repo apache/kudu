@@ -432,6 +432,63 @@ class DistConsensusTest : public TabletServerTest {
     }
   }
 
+  // Returns the index of the replica who is farthest ahead.
+  int GetFurthestAheadReplicaIdx() {
+    consensus::GetLastOpIdRequestPB opid_req;
+    consensus::GetLastOpIdResponsePB opid_resp;
+    opid_req.set_tablet_id(tablet_id_);
+    RpcController controller;
+
+    uint64 max_index = 0;
+    int max_replica_index = -1;
+
+    for (int i = 0; i < replicas_.size(); i++) {
+      controller.Reset();
+      opid_resp.Clear();
+      opid_req.set_tablet_id(tablet_id_);
+      CHECK_OK(replicas_[i]->consensus_proxy->GetLastOpId(opid_req, &opid_resp, &controller));
+      if (opid_resp.opid().index() > max_index) {
+        max_index = opid_resp.opid().index();
+        max_replica_index = i;
+      }
+    }
+
+    CHECK_NE(max_replica_index, -1);
+
+    return max_replica_index;
+  }
+
+
+  // Kills the current leader of the cluster. Before killing the leader this pauses all followers
+  // nodes in regular intervals so that we get an increased chance of stuff being pending all over.
+  void KillLeaderAndElectNewOne() {
+    BOOST_FOREACH(TServerDetails* ts, replicas_) {
+      CHECK_OK(ts->external_ts->Pause());
+      usleep(100 * 1000); // 100 ms
+    }
+    // When all are paused kill the leader.
+    leader_->external_ts->Shutdown();
+    // Resume the replicas.
+    BOOST_FOREACH(TServerDetails* ts, replicas_) {
+      CHECK_OK(ts->external_ts->Resume());
+    }
+
+    // Choose the guy with the longest log and elect it leader.
+    // TODO get rid of this we have automated elections.
+    int new_leader_idx = GetFurthestAheadReplicaIdx();
+
+    leader_.reset(replicas_[new_leader_idx]);
+    replicas_.erase(replicas_.begin() + new_leader_idx);
+
+    consensus::MakePeerLeaderRequestPB leader_req;
+    consensus::MakePeerLeaderResponsePB leader_resp;
+    RpcController controller;
+
+    leader_req.set_tablet_id(tablet_id_);
+    controller.Reset();
+    CHECK_OK(leader_->consensus_proxy->MakePeerLeader(leader_req, &leader_resp, &controller));
+  }
+
   virtual void TearDown() OVERRIDE {
     cluster_->Shutdown();
     STLDeleteElements(&replicas_);
@@ -706,6 +763,62 @@ TEST_F(DistConsensusTest, TestInsertWhenTheQueueIsFull) {
   }
 
   ASSERT_ALL_REPLICAS_AGREE(successful_writes_counter);
+}
+
+TEST_F(DistConsensusTest, DISABLED_MultiThreadedInsertWithFailovers) {
+  // Start a 7 node quorum cluster (since we can't bring leaders back we start with a
+  // higher replica count so that we kill more leaders).
+  BuildAndStart(7, vector<string>());
+
+  OverrideFlagForSlowTests(
+      "client_inserts_per_thread",
+      strings::Substitute("$0", (FLAGS_client_inserts_per_thread * 10)));
+  OverrideFlagForSlowTests(
+      "client_num_batches_per_thread",
+      strings::Substitute("$0", (FLAGS_client_num_batches_per_thread * 10)));
+
+  int num_threads = FLAGS_num_client_threads;
+
+  int64_t total_num_rows = num_threads * FLAGS_client_inserts_per_thread;
+
+  // We create three latches, that will be triggered when about 1/4, 1/2 and 3/4 of the
+  // rows are in. When each of these latches reaches a count of 0 we kill a leader.
+  CountDownLatch one_fourth(total_num_rows / 4);
+  CountDownLatch half(total_num_rows / 2);
+  CountDownLatch three_fourths(3 * (total_num_rows / 4));
+
+  vector<CountDownLatch*> latches;
+  latches.push_back(&one_fourth);
+  latches.push_back(&half);
+  latches.push_back(&three_fourths);
+
+  for (int i = 0; i < num_threads; i++) {
+    scoped_refptr<kudu::Thread> new_thread;
+    CHECK_OK(kudu::Thread::Create("test", strings::Substitute("ts-test$0", i),
+                                  &DistConsensusTest::InsertTestRowsRemoteThread,
+                                  this, i, i * FLAGS_client_inserts_per_thread,
+                                  FLAGS_client_inserts_per_thread,
+                                  FLAGS_client_num_batches_per_thread,
+                                  latches,
+                                  &new_thread));
+    threads_.push_back(new_thread);
+  }
+
+  one_fourth.Wait();
+  KillLeaderAndElectNewOne();
+  LOG(INFO) << "Killed the first leader.";
+  half.Wait();
+  KillLeaderAndElectNewOne();
+  LOG(INFO) << "Killed the second leader.";
+  three_fourths.Wait();
+  KillLeaderAndElectNewOne();
+  LOG(INFO) << "Killed the third leader.";
+
+  BOOST_FOREACH(scoped_refptr<kudu::Thread> thr, threads_) {
+   CHECK_OK(ThreadJoiner(thr.get()).Join());
+  }
+
+  ASSERT_ALL_REPLICAS_AGREE(FLAGS_client_inserts_per_thread * FLAGS_num_client_threads);
 }
 
 }  // namespace tserver
