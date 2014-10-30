@@ -125,6 +125,10 @@ class ExternalMiniCluster {
     return tablet_servers_[idx].get();
   }
 
+  int num_tablet_servers() const {
+    return tablet_servers_.size();
+  }
+
   // Return an RPC proxy to the running leader master. Requires that
   // the master is running.
   std::tr1::shared_ptr<master::MasterServiceProxy> leader_master_proxy();
