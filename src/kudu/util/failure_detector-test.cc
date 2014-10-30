@@ -34,7 +34,8 @@ class FailureDetectorTest : public KuduTest {
   FailureDetectorTest()
     : KuduTest(),
       latch_(1),
-      monitor_(new RandomizedFailureMonitor(kFailureMonitorMeanMillis,
+      monitor_(new RandomizedFailureMonitor(SeedRandom(),
+                                            kFailureMonitorMeanMillis,
                                             kFailureMonitorStddevMillis)) {
   }
 

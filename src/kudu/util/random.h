@@ -8,25 +8,37 @@
 
 #include <stdint.h>
 
+#include <cmath>
+
+#include "kudu/util/locks.h"
+
 namespace kudu {
+
+namespace random {
+namespace internal {
+
+static const uint32_t M = 2147483647L;   // 2^31-1
+const double kTwoPi = 6.283185307179586476925286;
+
+} // namespace internal
+} // namespace random
 
 // A very simple random number generator.  Not especially good at
 // generating truly random bits, but good enough for our needs in this
-// package.
+// package. This implementation is not thread-safe.
 class Random {
  private:
   uint32_t seed_;
  public:
   explicit Random(uint32_t s) : seed_(s & 0x7fffffffu) {
     // Avoid bad seeds.
-    if (seed_ == 0 || seed_ == 2147483647L) {
+    if (seed_ == 0 || seed_ == random::internal::M) {
       seed_ = 1;
     }
   }
 
   // Next pseudo-random 32-bit unsigned integer
   uint32_t Next() {
-    static const uint32_t M = 2147483647L;   // 2^31-1
     static const uint64_t A = 16807;  // bits 14, 8, 7, 5, 2, 1, 0
     // We are computing
     //       seed_ = (seed_ * A) % M,    where M = 2^31-1
@@ -37,12 +49,12 @@ class Random {
     uint64_t product = seed_ * A;
 
     // Compute (product % M) using the fact that ((x << 31) % M) == x.
-    seed_ = static_cast<uint32_t>((product >> 31) + (product & M));
+    seed_ = static_cast<uint32_t>((product >> 31) + (product & random::internal::M));
     // The first reduction may overflow by 1 bit, so we may need to
     // repeat.  mod == M is not possible; using > allows the faster
     // sign-bit-based test.
-    if (seed_ > M) {
-      seed_ -= M;
+    if (seed_ > random::internal::M) {
+      seed_ -= random::internal::M;
     }
     return seed_;
   }
@@ -72,7 +84,67 @@ class Random {
   uint32_t Skewed(int max_log) {
     return Uniform(1 << Uniform(max_log + 1));
   }
+
+  // Creates a normal distribution variable using the
+  // Box-Muller transform. See:
+  // http://en.wikipedia.org/wiki/Box%E2%80%93Muller_transform
+  // Adapted from WebRTC source code at:
+  // webrtc/trunk/modules/video_coding/main/test/test_util.cc
+  double Normal(double mean, double std_dev) {
+    double uniform1 = (Next() + 1.0) / (random::internal::M + 1.0);
+    double uniform2 = (Next() + 1.0) / (random::internal::M + 1.0);
+    return (mean + std_dev * sqrt(-2 * ::log(uniform1)) * cos(random::internal::kTwoPi * uniform2));
+  }
 };
+
+// Thread-safe wrapper around Random.
+class ThreadSafeRandom {
+ public:
+  explicit ThreadSafeRandom(uint32_t s)
+      : random_(s) {
+  }
+
+  uint32_t Next() {
+    lock_guard<simple_spinlock> l(&lock_);
+    return random_.Next();
+  }
+
+  uint32_t Next32() {
+    lock_guard<simple_spinlock> l(&lock_);
+    return random_.Next32();
+  }
+
+  uint64_t Next64() {
+    lock_guard<simple_spinlock> l(&lock_);
+    return random_.Next64();
+  }
+
+  uint32_t Uniform(int n) {
+    lock_guard<simple_spinlock> l(&lock_);
+    return random_.Uniform(n);
+  }
+
+  bool OneIn(int n) {
+    lock_guard<simple_spinlock> l(&lock_);
+    return random_.OneIn(n);
+  }
+
+  uint32_t Skewed(int max_log) {
+    lock_guard<simple_spinlock> l(&lock_);
+    return random_.Skewed(max_log);
+  }
+
+  double Normal(double mean, double std_dev) {
+    lock_guard<simple_spinlock> l(&lock_);
+    return random_.Normal(mean, std_dev);
+  }
+
+ private:
+  simple_spinlock lock_;
+  Random random_;
+};
+
+
 
 }  // namespace kudu
 

@@ -98,10 +98,12 @@ void TimedFailureDetector::CheckForFailures(const MonoTime& now) {
   }
 }
 
-RandomizedFailureMonitor::RandomizedFailureMonitor(int64_t period_mean_millis,
+RandomizedFailureMonitor::RandomizedFailureMonitor(uint32_t random_seed,
+                                                   int64_t period_mean_millis,
                                                    int64_t period_stddev_millis)
     : period_mean_millis_(period_mean_millis),
       period_stddev_millis_(period_stddev_millis),
+      random_(random_seed),
       run_latch_(0),
       shutdown_(false) {
 }
@@ -159,7 +161,7 @@ void RandomizedFailureMonitor::RunThread() {
   VLOG(1) << "Failure monitor thread starting";
 
   while (true) {
-    int64_t wait_millis = NormalDist(period_mean_millis_, period_stddev_millis_);
+    int64_t wait_millis = random_.Normal(period_mean_millis_, period_stddev_millis_);
     if (wait_millis < kMinWakeUpTimeMillis) {
       wait_millis = kMinWakeUpTimeMillis;
     }

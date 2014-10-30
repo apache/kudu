@@ -14,10 +14,10 @@
 #include "kudu/gutil/algorithm.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/substitute.h"
-#include "kudu/util/random_util.h"
+#include "kudu/util/locks.h"
+#include "kudu/util/random.h"
 #include "kudu/util/thread.h"
 #include "kudu/util/task_executor.h"
-#include "kudu/util/locks.h"
 
 DEFINE_int32(num_writer_threads, 4, "Number of threads writing to the log");
 DEFINE_int32(num_batches_per_thread, 2000, "Number of batches per thread");
@@ -60,10 +60,12 @@ extern const char *kTestTablet;
 
 class MultiThreadedLogTest : public LogTestBase {
  public:
+  MultiThreadedLogTest()
+      : random_(SeedRandom()) {
+  }
 
   virtual void SetUp() OVERRIDE {
     LogTestBase::SetUp();
-    SeedRandom();
   }
 
   void LogWriterThread(int thread_id) {
@@ -75,7 +77,7 @@ class MultiThreadedLogTest : public LogTestBase {
     for (int i = 0; i < FLAGS_num_batches_per_thread; i++) {
       LogEntryBatch* entry_batch;
       vector<const ReplicateMsg*> batch_replicates;
-      int num_ops = static_cast<int>(NormalDist(
+      int num_ops = static_cast<int>(random_.Normal(
           static_cast<double>(FLAGS_num_ops_per_batch_avg), 1.0));
       DVLOG(1) << num_ops << " ops in this batch";
       num_ops =  std::max(num_ops, 1);
@@ -134,6 +136,7 @@ class MultiThreadedLogTest : public LogTestBase {
     }
   }
  private:
+  Random random_;
   simple_spinlock lock_;
   vector<scoped_refptr<kudu::Thread> > threads_;
 };

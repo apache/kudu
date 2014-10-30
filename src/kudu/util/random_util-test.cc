@@ -23,7 +23,7 @@ class RandomUtilTest : public KuduTest {
 };
 
 
-// Tests that after certain number of invocations NormalDist(), the
+// Tests that after certain number of invocations Normal(), the
 // actual mean of all samples is within the specified standard
 // deviation of the target mean.
 TEST_F(RandomUtilTest, TestNormalDist) {
@@ -33,7 +33,7 @@ TEST_F(RandomUtilTest, TestNormalDist) {
 
   double sum = 0.0;
   for (int i = 0; i < kNumIters; ++i) {
-    sum += NormalDist(kMean, kStdDev);
+    sum += rng_.Normal(kMean, kStdDev);
   }
 
   ASSERT_LE(fabs((sum / static_cast<double>(kNumIters)) - kMean), kStdDev);

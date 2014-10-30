@@ -11,10 +11,6 @@ namespace kudu {
 
 class Random;
 
-// Creates a normal distribution variable using the
-// Box-Muller transform.
-double NormalDist(double mean, double std_dev);
-
 // Writes exactly n random bytes to dest using the parameter Random generator.
 // Note RandomString() does not null-terminate its strings, though '\0' could
 // be written to dest with the same probability as any other byte.

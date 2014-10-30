@@ -14,12 +14,12 @@
 #include "kudu/util/countdown_latch.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/locks.h"
+#include "kudu/util/random.h"
 #include "kudu/util/status_callback.h"
 
 namespace kudu {
 class MonoDelta;
 class MonoTime;
-class RandomizedFailureMonitorThread;
 class Status;
 class Thread;
 
@@ -115,7 +115,8 @@ class RandomizedFailureMonitor {
   // The minimum time the FailureMonitor will wait.
   static const int64_t kMinWakeUpTimeMillis;
 
-  RandomizedFailureMonitor(int64_t period_mean_millis,
+  RandomizedFailureMonitor(uint32_t random_seed,
+                           int64_t period_mean_millis,
                            int64_t period_std_dev_millis);
   ~RandomizedFailureMonitor();
 
@@ -142,6 +143,7 @@ class RandomizedFailureMonitor {
   // failure detectors.
   const int64_t period_mean_millis_;
   const int64_t period_stddev_millis_;
+  ThreadSafeRandom random_;
 
   scoped_refptr<Thread> thread_;
   CountDownLatch run_latch_;

@@ -18,7 +18,7 @@
 #include "kudu/master/master.proxy.h"
 #include "kudu/server/metadata.pb.h"
 #include "kudu/tserver/tablet_server-test-base.h"
-#include "kudu/util/random_util.h"
+#include "kudu/util/random.h"
 #include "kudu/util/stopwatch.h"
 #include "kudu/util/test_util.h"
 
@@ -68,7 +68,8 @@ static const int kConsensusRpcTimeoutForTests = 50;
 class DistConsensusTest : public TabletServerTest {
  public:
   DistConsensusTest()
-      : inserters_(FLAGS_num_client_threads) {
+      : random_(SeedRandom()),
+        inserters_(FLAGS_num_client_threads) {
   }
 
   struct TServerDetails {
@@ -418,7 +419,7 @@ class DistConsensusTest : public TabletServerTest {
       // longer than the the timeout a small (~5%) percentage of the times.
       // (95% corresponds to 1.64485, in a normalized (0,1) gaussian distribution).
       double sleep_time_usec = 1000 *
-          ((NormalDist(0, 1) * timeout_msec) / 1.64485);
+          ((random_.Normal(0, 1) * timeout_msec) / 1.64485);
 
       if (sleep_time_usec < 0) sleep_time_usec = 0;
 
@@ -507,6 +508,7 @@ class DistConsensusTest : public TabletServerTest {
   gscoped_ptr<TServerDetails> leader_;
   vector<TServerDetails*> replicas_;
 
+  Random random_;
   QuorumPB quorum_;
   string tablet_id_;
 
