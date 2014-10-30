@@ -189,6 +189,12 @@ class ExternalDaemon : public RefCountedThreadSafe<ExternalDaemon> {
   HostPort bound_http_hostport() const;
   const NodeInstancePB& instance_id() const;
 
+  // Sends a SIGSTOP signal to the daemon.
+  Status Pause();
+
+  // Sends a SIGCONT signal to the daemon.
+  Status Resume();
+
   virtual void Shutdown();
 
  protected:

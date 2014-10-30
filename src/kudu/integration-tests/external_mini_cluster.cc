@@ -395,6 +395,18 @@ Status ExternalDaemon::StartProcess(const vector<string>& user_flags) {
   return Status::OK();
 }
 
+Status ExternalDaemon::Pause() {
+  if (!process_) return Status::OK();
+  VLOG(1) << "Pausing " << exe_ << " with pid " << process_->pid();
+  return process_->Kill(SIGSTOP);
+}
+
+Status ExternalDaemon::Resume() {
+  if (!process_) return Status::OK();
+  VLOG(1) << "Resuming " << exe_ << " with pid " << process_->pid();
+  return process_->Kill(SIGCONT);
+}
+
 void ExternalDaemon::Shutdown() {
   if (!process_) return;
   LOG(INFO) << "Killing " << exe_ << " with pid " << process_->pid();
