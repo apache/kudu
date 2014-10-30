@@ -78,7 +78,7 @@ class TabletPeer : public RefCountedThreadSafe<TabletPeer>,
 
   // Wait until the tablet is in a RUNNING state or if there's a timeout.
   // TODO have a way to wait for any state?
-  Status WaitUntilRunning(const MonoDelta& delta);
+  Status WaitUntilConsensusRunning(const MonoDelta& delta);
 
   // Submits a write to a tablet and executes it asynchronously.
   // The caller is expected to build and pass a TrasactionContext that points
@@ -205,9 +205,6 @@ class TabletPeer : public RefCountedThreadSafe<TabletPeer>,
   FRIEND_TEST(TabletPeerTest, TestDMSAnchorPreventsLogGC);
   FRIEND_TEST(TabletPeerTest, TestActiveTransactionPreventsLogGC);
 
-  static bool IsOpTypeAllowedInState(consensus::OperationType type,
-                                     TabletStatePB state);
-
   ~TabletPeer();
 
   // After bootstrap is complete and consensus is setup this initiates the transactions
@@ -249,7 +246,7 @@ class TabletPeer : public RefCountedThreadSafe<TabletPeer>,
   ThreadPool* replica_apply_pool_;
 
   // Latch that goes down to 0 when the tablet is in RUNNING state.
-  CountDownLatch tablet_running_latch_;
+  CountDownLatch consensus_ready_latch_;
 
   scoped_refptr<server::Clock> clock_;
 

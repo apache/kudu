@@ -275,7 +275,7 @@ Status SysTable::SetupTablet(const scoped_refptr<tablet::TabletMetadata>& metada
 Status SysTable::WaitUntilRunning() {
   int seconds_waited = 0;
   while (true) {
-    Status status = tablet_peer_->WaitUntilRunning(MonoDelta::FromSeconds(1));
+    Status status = tablet_peer_->WaitUntilConsensusRunning(MonoDelta::FromSeconds(1));
     seconds_waited++;
     if (status.ok()) {
       LOG(INFO) << "SysTable tablet configured and running, proceeding with master startup.";

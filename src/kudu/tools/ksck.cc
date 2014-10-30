@@ -1,10 +1,13 @@
 // Copyright (c) 2014, Cloudera, inc.
 // Confidential Cloudera Information: Covered by NDA.
 
-#include "kudu/tools/ksck.h"
 #include <boost/foreach.hpp>
 #include <glog/logging.h>
+
+#include "kudu/tools/ksck.h"
+
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/util/monotime.h"
 
 namespace kudu {
 namespace tools {
@@ -97,7 +100,9 @@ Status Ksck::CheckTablesConsistency() {
   VLOG(1) << "Verifying each table";
   int bad_tables_count = 0;
   BOOST_FOREACH(const shared_ptr<KsckTable> &table, cluster_->tables()) {
-    if (!VerifyTable(table)) {
+    if (!VerifyTableWithTimeout(table,
+                                MonoDelta::FromSeconds(1),
+                                MonoDelta::FromMilliseconds(100))) {
       bad_tables_count++;
     }
   }
@@ -109,6 +114,24 @@ Status Ksck::CheckTablesConsistency() {
                                bad_tables_count, tables_count);
     return Status::Corruption(Substitute("$0 tables are bad", bad_tables_count));
   }
+}
+
+bool Ksck::VerifyTableWithTimeout(const shared_ptr<KsckTable>& table,
+                                  const MonoDelta& timeout,
+                                  const MonoDelta& retry_interval) {
+
+  MonoTime deadline = MonoTime::Now(MonoTime::COARSE);
+  deadline.AddDelta(timeout);
+  while (true) {
+    if (VerifyTable(table)) {
+      break;
+    }
+    if (deadline.ComesBefore(MonoTime::Now(MonoTime::COARSE))) {
+      return false;
+    }
+    usleep(retry_interval.ToMicroseconds());
+  }
+  return true;
 }
 
 bool Ksck::VerifyTable(const shared_ptr<KsckTable>& table) {

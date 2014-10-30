@@ -13,6 +13,7 @@
 #include "kudu/util/status.h"
 
 namespace kudu {
+class MonoDelta;
 namespace tools {
 
 // Representation of a tablet replica on a tablet server.
@@ -216,6 +217,9 @@ class Ksck {
 
  private:
   bool VerifyTable(const std::tr1::shared_ptr<KsckTable>& table);
+  bool VerifyTableWithTimeout(const std::tr1::shared_ptr<KsckTable>& table,
+                              const MonoDelta& timeout,
+                              const MonoDelta& retry_interval);
   bool VerifyTablet(const std::tr1::shared_ptr<KsckTablet>& tablet, int table_num_replicas);
 
   const std::tr1::shared_ptr<KsckCluster> cluster_;

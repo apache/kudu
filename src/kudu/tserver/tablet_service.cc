@@ -65,35 +65,6 @@ using tablet::TransactionCompletionCallback;
 using tablet::WriteTransactionState;
 
 namespace {
-// Lookup the given tablet, ensuring that it both exists and is RUNNING.
-// If it is not, responds to the RPC associated with 'context' after setting
-// resp->mutable_error() to indicate the failure reason.
-//
-// Returns true if successful.
-template<class RespClass>
-bool LookupRunningTabletOrRespond(TabletPeerLookupIf* tablet_manager,
-                                  const string& tablet_id,
-                                  RespClass* resp,
-                                  rpc::RpcContext* context,
-                                  scoped_refptr<TabletPeer>* peer) {
-  if (PREDICT_FALSE(!tablet_manager->GetTabletPeer(tablet_id, peer).ok())) {
-    SetupErrorAndRespond(resp->mutable_error(),
-                         Status::NotFound("Tablet not found"),
-                         TabletServerErrorPB::TABLET_NOT_FOUND, context);
-    return false;
-  }
-
-  // Check RUNNING state.
-  tablet::TabletStatePB state = (*peer)->state();
-  if (PREDICT_FALSE(state != tablet::RUNNING)) {
-    Status s = Status::ServiceUnavailable("Tablet not RUNNING",
-                                          tablet::TabletStatePB_Name(state));
-    SetupErrorAndRespond(resp->mutable_error(), s,
-                         TabletServerErrorPB::TABLET_NOT_RUNNING, context);
-    return false;
-  }
-  return true;
-}
 
 // Same as above, but allows CONFIGURING or RUNNING.
 template<class RespClass>
@@ -109,10 +80,10 @@ bool LookupTabletOrRespond(TabletPeerLookupIf* tablet_manager,
     return false;
   }
 
-  // Check RUNNING or CONFIGURING state.
+  // Check RUNNING state.
   tablet::TabletStatePB state = (*peer)->state();
-  if (PREDICT_FALSE(state != tablet::RUNNING && state != tablet::CONFIGURING)) {
-    Status s = Status::ServiceUnavailable("Tablet not RUNNING or CONFIGURING",
+  if (PREDICT_FALSE(state != tablet::RUNNING)) {
+    Status s = Status::ServiceUnavailable("Tablet not RUNNING",
                                           tablet::TabletStatePB_Name(state));
     SetupErrorAndRespond(resp->mutable_error(), s,
                          TabletServerErrorPB::TABLET_NOT_RUNNING, context);
@@ -224,8 +195,8 @@ void TabletServiceAdminImpl::AlterSchema(const AlterSchemaRequestPB* req,
   DVLOG(3) << "Received Alter Schema RPC: " << req->DebugString();
 
   scoped_refptr<TabletPeer> tablet_peer;
-  if (!LookupRunningTabletOrRespond(server_->tablet_manager(), req->tablet_id(), resp, context,
-                                    &tablet_peer)) {
+  if (!LookupTabletOrRespond(server_->tablet_manager(), req->tablet_id(), resp, context,
+                             &tablet_peer)) {
     return;
   }
 
@@ -337,8 +308,8 @@ void TabletServiceAdminImpl::DeleteTablet(const DeleteTabletRequestPB* req,
   VLOG(1) << "Full request: " << req->DebugString();
 
   scoped_refptr<TabletPeer> tablet_peer;
-  if (!LookupRunningTabletOrRespond(server_->tablet_manager(), req->tablet_id(), resp, context,
-                                    &tablet_peer)) {
+  if (!LookupTabletOrRespond(server_->tablet_manager(), req->tablet_id(), resp, context,
+                             &tablet_peer)) {
     return;
   }
 
@@ -364,8 +335,8 @@ void TabletServiceImpl::Write(const WriteRequestPB* req,
   DVLOG(3) << "Received Write RPC: " << req->DebugString();
 
   scoped_refptr<TabletPeer> tablet_peer;
-  if (!LookupRunningTabletOrRespond(server_->tablet_manager(), req->tablet_id(), resp, context,
-                                    &tablet_peer)) {
+  if (!LookupTabletOrRespond(server_->tablet_manager(), req->tablet_id(), resp, context,
+                             &tablet_peer)) {
     return;
   }
 
@@ -435,8 +406,8 @@ void ConsensusServiceImpl::ChangeConfig(const consensus::ChangeConfigRequestPB* 
   DVLOG(3) << "Received Change Config RPC: " << req->DebugString();
 
   scoped_refptr<TabletPeer> tablet_peer;
-  if (!LookupRunningTabletOrRespond(tablet_manager_, req->tablet_id(), resp, context,
-                                    &tablet_peer)) {
+  if (!LookupTabletOrRespond(tablet_manager_, req->tablet_id(), resp, context,
+                             &tablet_peer)) {
     return;
   }
 
@@ -719,8 +690,8 @@ void TabletServiceImpl::HandleNewScanRequest(const ScanRequestPB* req,
 
   const NewScanRequestPB& scan_pb = req->new_scan_request();
   scoped_refptr<TabletPeer> tablet_peer;
-  if (!LookupRunningTabletOrRespond(server_->tablet_manager(), scan_pb.tablet_id(), resp, context,
-                                    &tablet_peer)) {
+  if (!LookupTabletOrRespond(server_->tablet_manager(), scan_pb.tablet_id(), resp, context,
+                             &tablet_peer)) {
     return;
   }
 

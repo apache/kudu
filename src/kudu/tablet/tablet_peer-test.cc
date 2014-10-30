@@ -108,7 +108,7 @@ class TabletPeerTest : public KuduTabletTest {
   Status StartPeer(const ConsensusBootstrapInfo& info) {
     RETURN_NOT_OK(tablet_peer_->Start(info));
 
-    RETURN_NOT_OK(tablet_peer_->WaitUntilRunning(MonoDelta::FromSeconds(10)));
+    RETURN_NOT_OK(tablet_peer_->WaitUntilConsensusRunning(MonoDelta::FromSeconds(10)));
 
     // As we execute a change config txn on tablet peer start we need to
     // also wait for the transaction to be cleaned up so that we don't

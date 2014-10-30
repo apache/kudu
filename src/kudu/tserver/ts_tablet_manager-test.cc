@@ -68,7 +68,7 @@ class TsTabletManagerTest : public KuduTest {
       (*out_tablet_peer) = tablet_peer;
     }
 
-    return tablet_peer->WaitUntilRunning(MonoDelta::FromMilliseconds(2000));
+    return tablet_peer->WaitUntilConsensusRunning(MonoDelta::FromMilliseconds(2000));
   }
 
  protected:

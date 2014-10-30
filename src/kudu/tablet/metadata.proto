@@ -89,30 +89,19 @@ enum TabletStatePB {
   // available for RPC.
   BOOTSTRAPPING = 0;
 
-  // Indicates the Tablet is in the configuration phase. Tablet is available
-  // for internal RPC calls (i.e. from other Peers) but not available to
-  // clients.
-  // FOLLOWER Peers will remain in this state until a message containing the
-  // current configuration is received from the LEADER. Upon creating a new
-  // connection to a Peer, the LEADER always sends the current configuration
-  // first.
-  // LEADER Peers will remain in this state until they are able to replicate
-  // the configuration message where they are LEADER.
-  CONFIGURING = 1;
-
   // Once the configuration phase is over Peers are in RUNNING state. In this
   // state Peers are available for client RPCs.
-  RUNNING = 2;
+  RUNNING = 1;
 
   // The tablet failed to for some reason. TabletPeer::error() will return
   // the reason for the failure.
-  FAILED = 3;
+  FAILED = 2;
 
   // The Tablet is shutting down, and will not accept further requests.
-  QUIESCING = 4;
+  QUIESCING = 3;
 
   // The Tablet has been stopped.
-  SHUTDOWN = 5;
+  SHUTDOWN = 4;
 }
 
 // The master-block contains the two block-ids required to load the

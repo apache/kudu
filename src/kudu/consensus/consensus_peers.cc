@@ -381,7 +381,7 @@ void Peer::Close() {
   boost::lock_guard<Semaphore> l(sem_);
   // If the peer is already closed return.
   if (state_ == kPeerClosed) return;
-  DCHECK_EQ(state_, kPeerIdle);
+  DCHECK(state_ == kPeerIdle || state_ == kPeerStarted) << "Unexpected state: " << state_;
   state_ = kPeerClosed;
 
   LOG(INFO) << "Closing peer: " << peer_pb_.permanent_uuid();

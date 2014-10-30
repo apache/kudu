@@ -71,7 +71,7 @@ TabletPeer::TabletPeer(const scoped_refptr<TabletMetadata>& meta,
     replica_apply_pool_(replica_apply_pool),
     // prepare executor has a single thread as prepare must be done in order
     // of submission
-    tablet_running_latch_(1),
+    consensus_ready_latch_(1),
     mark_dirty_clbk_(mark_dirty_clbk),
     config_sem_(1) {
   CHECK_OK(ThreadPoolBuilder("prepare").set_max_threads(1).Build(&prepare_pool_));
@@ -94,7 +94,6 @@ Status TabletPeer::Init(const shared_ptr<Tablet>& tablet,
   {
     boost::lock_guard<simple_spinlock> lock(lock_);
     CHECK_EQ(state_, BOOTSTRAPPING);
-    state_ = CONFIGURING;
     tablet_ = tablet;
     clock_ = clock;
     messenger_ = messenger;
@@ -155,10 +154,6 @@ Status TabletPeer::Init(const shared_ptr<Tablet>& tablet,
 }
 
 Status TabletPeer::Start(const ConsensusBootstrapInfo& bootstrap_info) {
-  // Prevent any SubmitChangeConfig calls to try and modify the config
-  // until consensus is booted and the actual configuration is stored in
-  // the tablet meta.
-  boost::lock_guard<Semaphore> config_lock(config_sem_);
 
   TRACE("Starting consensus");
 
@@ -166,6 +161,17 @@ Status TabletPeer::Start(const ConsensusBootstrapInfo& bootstrap_info) {
   RETURN_NOT_OK(StartPendingTransactions(my_role, bootstrap_info));
 
   VLOG(2) << "Quorum before starting: " << consensus_->Quorum().DebugString();
+
+  // TODO we likely should only change the state after starting consensus
+  // but if we do that a lot of tests fail. We can't include Consensus::Start()
+  // with the lock either or we'd get a deadlock. We should investigate why
+  // this is happening and move the state change to the right place but this
+  // should be good enough for now.
+  {
+    boost::lock_guard<simple_spinlock> lock(lock_);
+    CHECK_EQ(state_, BOOTSTRAPPING);
+    state_ = RUNNING;
+  }
 
   RETURN_NOT_OK(consensus_->Start(bootstrap_info));
 
@@ -208,21 +214,11 @@ void TabletPeer::ConsensusStateChanged(const QuorumPB& old_quorum, const QuorumP
       << meta_->fs_manager()->uuid() << "\nChanged from: " << old_quorum.ShortDebugString()
       << "\nChanged to: " << new_quorum.ShortDebugString();
 
-  {
-    boost::lock_guard<simple_spinlock> lock(lock_);
-    // If we were configuring and now have a state other than non participant
-    // set the state to running.
-    // TODO this is currently a very simple impl. for the initial state change and should
-    // serve as place holder for things that need to happen at a tablet level
-    // when roles change, such as:
-    // - a change from FOLLOWER to LEADER might require queue coordination
-    // - a change from LEADER to FOLLOWER might require emptying queues
-    // - a change to NON_PARTICIPANT should likely trigger the destruction of
-    //   the tablet.
-    if (state_ == CONFIGURING && new_role != QuorumPeerPB::NON_PARTICIPANT) {
-      state_ = RUNNING;
-      tablet_running_latch_.CountDown();
-    }
+  // We count down the running latch on the role change cuz this signals
+  // when consensus is ready and other places are relying on that.
+  // TODO remove this latch and make people simply retry.
+  if (new_role != QuorumPeerPB::NON_PARTICIPANT) {
+    consensus_ready_latch_.CountDown();
   }
 
   // NOTE: This callback must be called outside the peer lock or we risk
@@ -282,14 +278,14 @@ Status TabletPeer::CheckRunning() const {
   return Status::OK();
 }
 
-Status TabletPeer::WaitUntilRunning(const MonoDelta& delta) {
+Status TabletPeer::WaitUntilConsensusRunning(const MonoDelta& delta) {
   {
     boost::lock_guard<simple_spinlock> lock(lock_);
     if (state_ == QUIESCING || state_ == SHUTDOWN) {
       return Status::IllegalState("The tablet is already shutting down or shutdown");
     }
   }
-  if (!tablet_running_latch_.WaitFor(delta)) {
+  if (!consensus_ready_latch_.WaitFor(delta)) {
     boost::lock_guard<simple_spinlock> lock(lock_);
     return Status::TimedOut(Substitute("The tablet is not in RUNNING state after waiting: $0",
                                        TabletStatePB_Name(state_)));
@@ -316,14 +312,7 @@ Status TabletPeer::SubmitAlterSchema(AlterSchemaTransactionState *state) {
 }
 
 Status TabletPeer::SubmitChangeConfig(ChangeConfigTransactionState *state) {
-  {
-    boost::lock_guard<simple_spinlock> lock(lock_);
-    if (state_ != RUNNING && state_ != CONFIGURING) {
-      return Status::ServiceUnavailable(
-          Substitute("The tablet is not in a running/configuring state: $0",
-                     TabletStatePB_Name(state_)));
-    }
-  }
+  RETURN_NOT_OK(CheckRunning());
 
   if (!state->old_quorum().IsInitialized()) {
     state->set_old_quorum(consensus_->Quorum());
@@ -429,26 +418,9 @@ void TabletPeer::GetEarliestNeededOpId(consensus::OpId* min_op_id) const {
   }
 }
 
-bool TabletPeer::IsOpTypeAllowedInState(consensus::OperationType type,
-                                        TabletStatePB state) {
-  if (state == RUNNING) return true;
-  if (state == CONFIGURING) {
-    return type == CHANGE_CONFIG_OP;
-  }
-  return false;
-}
-
 Status TabletPeer::StartReplicaTransaction(gscoped_ptr<ConsensusRound> round) {
-  {
-    boost::lock_guard<simple_spinlock> lock(lock_);
-    consensus::OperationType op_type = round->replicate_msg()->op_type();
-    if (!IsOpTypeAllowedInState(op_type, state_)) {
-      return Status::ServiceUnavailable(
-          Substitute("Tablet is not ready to accept operation. OpType: $0 Tablet State: $1",
-                     consensus::OperationType_Name(op_type),
-                     TabletStatePB_Name(state_)));
-    }
-  }
+  RETURN_NOT_OK(CheckRunning());
+
   consensus::ReplicateMsg* replicate_msg = round->replicate_msg();
   Transaction* transaction;
   switch (replicate_msg->op_type()) {

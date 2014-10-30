@@ -18,7 +18,7 @@ class RemoteBootstrapClientTest : public RemoteBootstrapTest {
     ASSERT_OK(fs_manager_->CreateInitialFileSystemLayout());
     ASSERT_OK(fs_manager_->Open());
 
-    tablet_peer_->WaitUntilRunning(MonoDelta::FromSeconds(10.0));
+    tablet_peer_->WaitUntilConsensusRunning(MonoDelta::FromSeconds(10.0));
     rpc::MessengerBuilder(CURRENT_TEST_NAME()).Build(&messenger_);
     client_.reset(new RemoteBootstrapClient(fs_manager_.get(),
                                             messenger_,

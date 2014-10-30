@@ -323,7 +323,20 @@ class ClientTest : public KuduTest {
       KuduColumnRangePredicate pred(table->schema().Column(0), NULL, &upper_bound);
       CHECK_OK(scanner.AddConjunctPredicate(pred));
     }
-    CHECK_OK(scanner.Open());
+
+    // Try a few times before we open the scanner. We're only scanning the leader
+    // but we might not know who that is yet.
+    int attempts = 0;
+    Status s;
+    do {
+      s = scanner.Open();
+      if (s.IsServiceUnavailable()) {
+        attempts++;
+        usleep(100 * 1000); // 100 ms
+      }
+    } while (s.IsServiceUnavailable() && attempts < 20);
+    CHECK_OK(s);
+
     int count = 0;
     vector<KuduRowResult> rows;
     while (scanner.HasMoreRows()) {

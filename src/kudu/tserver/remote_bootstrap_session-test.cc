@@ -105,7 +105,7 @@ class RemoteBootstrapTest : public KuduTabletTest {
     consensus::ConsensusBootstrapInfo boot_info;
     CHECK_OK(tablet_peer_->Start(boot_info));
 
-    ASSERT_STATUS_OK(tablet_peer_->WaitUntilRunning(MonoDelta::FromSeconds(2)));
+    ASSERT_STATUS_OK(tablet_peer_->WaitUntilConsensusRunning(MonoDelta::FromSeconds(2)));
   }
 
 
