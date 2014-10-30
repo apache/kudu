@@ -852,16 +852,13 @@ OpId RaftConsensus::GetLastOpIdFromLog() {
 Status RaftConsensus::StepDownIfLeaderUnlocked() {
   // TODO: Implement me.
   if (state_->GetActiveQuorumStateUnlocked().role == QuorumPeerPB::LEADER) {
-    LOG(INFO) << Substitute("Tablet $0: Replica $1 stepping down as leader. TODO: implement.",
-                            state_->GetOptions().tablet_id, state_->GetPeerUuid());
+    LOG_WITH_PREFIX(INFO) << "Stepping down as leader. TODO: implement.";
   }
   return Status::OK();
 }
 
-std::string RaftConsensus::GetRequestVoteLogHeader() const {
-  return Substitute("Tablet $0: Replica $1: Leader election vote request",
-                    state_->GetOptions().tablet_id,
-                    state_->GetPeerUuid());
+std::string RaftConsensus::GetRequestVoteLogPrefixUnlocked() const {
+  return state_->LogPrefixUnlocked() + "Leader election vote request";
 }
 
 void RaftConsensus::FillVoteResponseVoteGranted(VoteResponsePB* response) {
@@ -882,7 +879,7 @@ Status RaftConsensus::RequestVoteRespondNotInQuorum(const VoteRequestPB* request
   string msg = Substitute("$0: Not considering vote for candidate $1 in term $2 due to "
                           "candidate not being a member of the quorum in current term $3. "
                           "Quorum: $4",
-                          GetRequestVoteLogHeader(),
+                          GetRequestVoteLogPrefixUnlocked(),
                           request->candidate_uuid(),
                           request->candidate_term(),
                           state_->GetCurrentTermUnlocked(),
@@ -897,7 +894,7 @@ Status RaftConsensus::RequestVoteRespondInvalidTerm(const VoteRequestPB* request
   FillVoteResponseVoteDenied(ConsensusErrorPB::INVALID_TERM, response);
   string msg = Substitute("$0: Denying vote to candidate $1 for earlier term $2. "
                           "Current term is $3.",
-                          GetRequestVoteLogHeader(),
+                          GetRequestVoteLogPrefixUnlocked(),
                           request->candidate_uuid(),
                           request->candidate_term(),
                           state_->GetCurrentTermUnlocked());
@@ -911,7 +908,7 @@ Status RaftConsensus::RequestVoteRespondVoteAlreadyGranted(const VoteRequestPB* 
   FillVoteResponseVoteGranted(response);
   LOG(INFO) << Substitute("$0: Already granted yes vote for candidate $1 in term $2. "
                           "Re-sending same reply.",
-                          GetRequestVoteLogHeader(),
+                          GetRequestVoteLogPrefixUnlocked(),
                           request->candidate_uuid(),
                           request->candidate_term());
   return Status::OK();
@@ -922,7 +919,7 @@ Status RaftConsensus::RequestVoteRespondAlreadyVotedForOther(const VoteRequestPB
   FillVoteResponseVoteDenied(ConsensusErrorPB::ALREADY_VOTED, response);
   string msg = Substitute("$0: Denying vote to candidate $1 in current term $2: "
                           "Already voted for candidate $3 in this term.",
-                          GetRequestVoteLogHeader(),
+                          GetRequestVoteLogPrefixUnlocked(),
                           request->candidate_uuid(),
                           state_->GetCurrentTermUnlocked(),
                           state_->GetVotedForCurrentTermUnlocked());
@@ -938,7 +935,7 @@ Status RaftConsensus::RequestVoteRespondLastOpIdTooOld(const OpId& local_last_lo
   string msg = Substitute("$0: Denying vote to candidate $1 for term $2 because "
                           "replica has last-logged OpId of $3, which is greater than that of the "
                           "candidate, which has last-logged OpId of $4.",
-                          GetRequestVoteLogHeader(),
+                          GetRequestVoteLogPrefixUnlocked(),
                           request->candidate_uuid(),
                           request->candidate_term(),
                           local_last_logged_opid.ShortDebugString(),
@@ -956,7 +953,7 @@ Status RaftConsensus::RequestVoteRespondVoteGranted(const VoteRequestPB* request
   RETURN_NOT_OK(state_->SetVotedForCurrentTermUnlocked(request->candidate_uuid()));
 
   LOG(INFO) << Substitute("$0: Granting yes vote for candidate $1 in term $2.",
-                          GetRequestVoteLogHeader(),
+                          GetRequestVoteLogPrefixUnlocked(),
                           request->candidate_uuid(),
                           state_->GetCurrentTermUnlocked());
   return Status::OK();

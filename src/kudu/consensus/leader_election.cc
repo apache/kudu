@@ -317,7 +317,7 @@ void LeaderElection::HandleVoteDeniedUnlocked(const string& voter_uuid, const Vo
 }
 
 std::string LeaderElection::GetLogPrefix() const {
-  return Substitute("T $0 P $1: Term $2 election: ",
+  return Substitute("T $0 P $1 [CANDIDATE]: Term $2 election: ",
                     request_.tablet_id(),
                     request_.candidate_uuid(),
                     request_.candidate_term());

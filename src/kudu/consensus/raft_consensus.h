@@ -199,8 +199,8 @@ class RaftConsensus : public Consensus,
   // Must hold both 'update_lock_' and the ReplicaState lock.
   Status StepDownIfLeaderUnlocked();
 
-  // Return header string for RequestVote log messages.
-  std::string GetRequestVoteLogHeader() const;
+  // Return header string for RequestVote log messages. The ReplicaState lock must be held.
+  std::string GetRequestVoteLogPrefixUnlocked() const;
 
   // Fills the response with an error code and error message.
   void FillConsensusResponseError(ConsensusResponsePB* response,
