@@ -143,8 +143,6 @@ class RaftConsensus : public Consensus,
  private:
   friend class ReplicaState;
   friend class RaftConsensusQuorumTest;
-  FRIEND_TEST(RaftConsensusTest, TestReplicasHandleCommunicationErrors);
-  FRIEND_TEST(RaftConsensusTest, DISABLED_TestLeaderPromotionWithQuiescedQuorum);
 
   // Verifies that 'quorum' is well formed and that no config change is in-flight.
   Status VerifyQuorumAndCheckThatNoChangeIsPendingUnlocked(const metadata::QuorumPB& quorum);
