@@ -1023,5 +1023,12 @@ void RaftConsensus::ElectionCallback(const ElectionResult& result) {
   CHECK_OK(BecomeLeaderUnlocked());
 }
 
+Status RaftConsensus::GetLastReceivedOpId(OpId* id) {
+  ReplicaState::UniqueLock lock;
+  CHECK_OK(state_->LockForRead(&lock));
+  DCHECK_NOTNULL(id)->CopyFrom(state_->GetLastReceivedOpIdUnlocked());
+  return Status::OK();
+}
+
 }  // namespace consensus
 }  // namespace kudu

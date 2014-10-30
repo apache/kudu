@@ -198,6 +198,10 @@ class Consensus : public RefCountedThreadSafe<Consensus> {
   // Stops running the consensus algorithm.
   virtual void Shutdown() = 0;
 
+  // TEMPORARY: Allows to get the last received OpId by this replica
+  // TODO Remove once we have solid election.
+  virtual Status GetLastReceivedOpId(OpId* id) { return Status::NotFound("Not implemented."); }
+
  protected:
   friend class ConsensusRound;
   friend class RefCountedThreadSafe<Consensus>;

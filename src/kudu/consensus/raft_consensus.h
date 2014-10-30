@@ -134,6 +134,8 @@ class RaftConsensus : public Consensus,
 
   virtual void NotifyTermChange(uint64_t term) OVERRIDE;
 
+  virtual Status GetLastReceivedOpId(OpId* id);
+
  protected:
   virtual Status Commit(gscoped_ptr<CommitMsg> commit,
                         const StatusCallback& cb) OVERRIDE;

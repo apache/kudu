@@ -334,6 +334,17 @@ message MakePeerLeaderResponsePB {
   optional tserver.TabletServerErrorPB error = 1;
 }
 
+message GetLastOpIdRequestPB {
+  // the id of the tablet
+  required bytes tablet_id = 1;
+}
+
+message GetLastOpIdResponsePB {
+  optional OpId opid = 1;
+    // A generic error message (such as tablet not found).
+  optional tserver.TabletServerErrorPB error = 2;
+}
+
 service ConsensusService {
   rpc ChangeConfig(ChangeConfigRequestPB) returns (ChangeConfigResponsePB);
 
@@ -344,4 +355,6 @@ service ConsensusService {
   rpc GetNodeInstance(GetNodeInstanceRequestPB) returns (GetNodeInstanceResponsePB);
 
   rpc MakePeerLeader(MakePeerLeaderRequestPB) returns (MakePeerLeaderResponsePB);
+
+  rpc GetLastOpId(GetLastOpIdRequestPB) returns (GetLastOpIdResponsePB);
 }

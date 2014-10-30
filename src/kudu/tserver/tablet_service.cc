@@ -529,6 +529,31 @@ void ConsensusServiceImpl::MakePeerLeader(const MakePeerLeaderRequestPB* req,
   context->RespondSuccess();
 }
 
+void ConsensusServiceImpl::GetLastOpId(const consensus::GetLastOpIdRequestPB *req,
+                                       consensus::GetLastOpIdResponsePB *resp,
+                                       rpc::RpcContext *context) {
+  DVLOG(3) << "Received GetLastOpId RPC: " << req->DebugString();
+  scoped_refptr<TabletPeer> tablet_peer;
+  if (!LookupTabletOrRespond(tablet_manager_, req->tablet_id(), resp, context, &tablet_peer)) {
+    return;
+  }
+
+  if (tablet_peer->state() != tablet::RUNNING) {
+    SetupErrorAndRespond(resp->mutable_error(),
+                         Status::ServiceUnavailable("Tablet Peer not in RUNNING state"),
+                         TabletServerErrorPB::TABLET_NOT_RUNNING, context);
+    return;
+  }
+  Status s = tablet_peer->consensus()->GetLastReceivedOpId(resp->mutable_opid());
+  if (PREDICT_FALSE(!s.ok())) {
+    SetupErrorAndRespond(resp->mutable_error(), s,
+                         TabletServerErrorPB::UNKNOWN_ERROR,
+                         context);
+    return;
+  }
+  context->RespondSuccess();
+}
+
 void TabletServiceImpl::Scan(const ScanRequestPB* req,
                              ScanResponsePB* resp,
                              rpc::RpcContext* context) {
