@@ -635,5 +635,12 @@ TEST_F(LogTest, TestLogReaderReturnsLatestSegmentIfIndexEmpty) {
   ASSERT_EQ(2, entries.size());
 }
 
+TEST_F(LogTest, TestOpIdUtils) {
+  OpId id = consensus::MakeOpId(1, 2);
+  ASSERT_EQ("1.2", consensus::OpIdToString(id));
+  ASSERT_EQ(1, id.term());
+  ASSERT_EQ(2, id.index());
+}
+
 } // namespace log
 } // namespace kudu

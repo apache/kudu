@@ -9,6 +9,7 @@
 
 #include "kudu/consensus/consensus.pb.h"
 #include "kudu/gutil/port.h"
+#include "kudu/gutil/strings/substitute.h"
 
 namespace kudu {
 namespace consensus {
@@ -105,8 +106,22 @@ struct DeltaIdEqualsTo {
 };
 
 std::ostream& operator<<(std::ostream& os, const consensus::OpId& op_id) {
-  os << op_id.ShortDebugString();
+  os << OpIdToString(op_id);
   return os;
+}
+
+std::string OpIdToString(const OpId& op_id) {
+  if (!op_id.IsInitialized()) {
+    return "<uninitialized op>";
+  }
+  return strings::Substitute("$0.$1", op_id.term(), op_id.index());
+}
+
+OpId MakeOpId(int term, int index) {
+  OpId ret;
+  ret.set_index(index);
+  ret.set_term(term);
+  return ret;
 }
 
 } // namespace consensus

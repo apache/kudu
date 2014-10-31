@@ -7,6 +7,7 @@
 #include <stdint.h>
 
 #include <iosfwd>
+#include <string>
 #include <utility>
 
 namespace kudu {
@@ -73,6 +74,10 @@ OpId MinimumOpId();
 
 // Return the maximum possible OpId.
 OpId MaximumOpId();
+
+std::string OpIdToString(const OpId& id);
+
+OpId MakeOpId(int term, int index);
 
 }  // namespace consensus
 }  // namespace kudu
