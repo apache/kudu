@@ -620,14 +620,15 @@ class LogGCOp : public MaintenanceOp {
     : MaintenanceOp("LogGCOp"),
       tablet_manager_(tablet_manager),
       log_gc_duration_(METRIC_log_gc_duration.Instantiate(metric_ctx)),
-      log_gc_running_(AtomicGauge<uint32_t>::Instantiate(METRIC_log_gc_running, metric_ctx)) {
+      log_gc_running_(AtomicGauge<uint32_t>::Instantiate(METRIC_log_gc_running, metric_ctx)),
+      sem_(1) {
     time_since_last_run_.start();
   }
 
   virtual void UpdateStats(MaintenanceOpStats* stats) OVERRIDE {
     stats->ram_anchored = 0;
     stats->ts_anchored_secs = 0;
-    stats->runnable = !lock_.is_locked();
+    stats->runnable = sem_.GetValue() == 1;
     double elapsed_ms = time_since_last_run_.elapsed().wall_millis();
     if (elapsed_ms > FLAGS_log_gc_sleep_delay_ms) {
       double extra_millis = elapsed_ms - FLAGS_log_gc_sleep_delay_ms;
@@ -636,16 +637,16 @@ class LogGCOp : public MaintenanceOp {
   }
 
   virtual bool Prepare() OVERRIDE {
-    return lock_.try_lock();
+    return sem_.try_lock();
   }
 
   virtual void Perform() OVERRIDE {
-    CHECK(!lock_.try_lock());
+    CHECK(!sem_.try_lock());
 
     tablet_manager_->RunAllLogGC();
     time_since_last_run_.start();
 
-    lock_.unlock();
+    sem_.unlock();
   }
 
   virtual Histogram* DurationHistogram() OVERRIDE {
@@ -658,10 +659,10 @@ class LogGCOp : public MaintenanceOp {
 
  private:
   TSTabletManager* tablet_manager_;
-  mutable simple_spinlock lock_;
   Stopwatch time_since_last_run_;
   Histogram* log_gc_duration_;
   AtomicGauge<uint32_t>* log_gc_running_;
+  mutable Semaphore sem_;
 };
 
 void TSTabletManager::RegisterMaintenanceOp() {
