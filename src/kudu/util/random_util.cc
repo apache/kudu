@@ -6,8 +6,12 @@
 #include <cmath>
 #include <cstdlib>
 #include <cstring>
+#include <sys/types.h>
+#include <unistd.h>
 
+#include "kudu/util/env.h"
 #include "kudu/util/random.h"
+#include "kudu/gutil/walltime.h"
 
 namespace kudu {
 
@@ -37,6 +41,13 @@ void RandomString(void* dest, size_t n, Random* rng) {
     }
   }
   memcpy(cdest + i, &random, n - i);
+}
+
+uint32_t GetRandomSeed32() {
+  uint32_t seed = static_cast<uint32_t>(GetCurrentTimeMicros());
+  seed *= getpid();
+  seed *= Env::Default()->gettid();
+  return seed;
 }
 
 } // namespace kudu
