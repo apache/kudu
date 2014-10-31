@@ -211,6 +211,10 @@ class ReplicaState {
   // Return the persisted quorum.
   const metadata::QuorumPB& GetCommittedQuorumUnlocked() const;
 
+  // Return the "active" quorum - if there is a pending quorum return it;
+  // otherwise return the committed quorum.
+  const metadata::QuorumPB& GetActiveQuorumUnlocked() const;
+
   // Increments this peer's term and sets 'has voted' to no for the current
   // term.
   Status IncrementTermUnlocked() WARN_UNUSED_RESULT;

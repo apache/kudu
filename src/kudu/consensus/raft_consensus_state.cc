@@ -290,6 +290,14 @@ const metadata::QuorumPB& ReplicaState::GetCommittedQuorumUnlocked() const {
   return cmeta_->pb().committed_quorum();
 }
 
+const metadata::QuorumPB& ReplicaState::GetActiveQuorumUnlocked() const {
+  DCHECK(update_lock_.is_locked());
+  if (IsQuorumChangePendingUnlocked()) {
+    return GetPendingQuorumUnlocked();
+  }
+  return GetCommittedQuorumUnlocked();
+}
+
 Status ReplicaState::IncrementTermUnlocked() {
   DCHECK(update_lock_.is_locked());
   cmeta_->mutable_pb()->set_current_term(cmeta_->pb().current_term() + 1);
