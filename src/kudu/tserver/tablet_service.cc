@@ -66,7 +66,11 @@ using tablet::WriteTransactionState;
 
 namespace {
 
-// Same as above, but allows CONFIGURING or RUNNING.
+// Lookup the given tablet, ensuring that it both exists and is RUNNING.
+// If it is not, responds to the RPC associated with 'context' after setting
+// resp->mutable_error() to indicate the failure reason.
+//
+// Returns true if successful.
 template<class RespClass>
 bool LookupTabletOrRespond(TabletPeerLookupIf* tablet_manager,
                            const string& tablet_id,
@@ -85,6 +89,9 @@ bool LookupTabletOrRespond(TabletPeerLookupIf* tablet_manager,
   if (PREDICT_FALSE(state != tablet::RUNNING)) {
     Status s = Status::ServiceUnavailable("Tablet not RUNNING",
                                           tablet::TabletStatePB_Name(state));
+    if (state == tablet::FAILED) {
+      s = s.CloneAndAppend((*peer)->error().ToString());
+    }
     SetupErrorAndRespond(resp->mutable_error(), s,
                          TabletServerErrorPB::TABLET_NOT_RUNNING, context);
     return false;

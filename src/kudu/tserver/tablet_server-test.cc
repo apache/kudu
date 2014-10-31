@@ -760,7 +760,7 @@ TEST_F(TabletServerTest, TestClientGetsErrorBackWhenRecoveryFailed) {
   // We're expecting the write to fail.
   ASSERT_STATUS_OK(DCHECK_NOTNULL(proxy_.get())->Write(req, &resp, &controller));
   ASSERT_EQ(TabletServerErrorPB::TABLET_NOT_RUNNING, resp.error().code());
-  ASSERT_STR_CONTAINS(resp.error().status().message(), "FAILED");
+  ASSERT_STR_CONTAINS(resp.error().status().message(), "Tablet not RUNNING: FAILED");
 }
 
 TEST_F(TabletServerTest, TestScan) {
