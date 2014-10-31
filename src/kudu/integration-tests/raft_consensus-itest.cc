@@ -213,7 +213,6 @@ class DistConsensusTest : public TabletServerTest {
       if (num_retries >= kMaxRetries) {
         FAIL() << " Reached max. retries while looking up the quorum.";
       }
-      replicas_.clear();
       GetTableLocationsRequestPB req;
       GetTableLocationsResponsePB resp;
       RpcController controller;
