@@ -60,13 +60,30 @@ class KuduClient::Data {
   internal::RemoteTabletServer* PickClosestReplica(
       const scoped_refptr<internal::RemoteTablet>& rt) const;
 
-  // Sets 'master_proxy_' to the proxy the leader master by cycling
-  // through servers listed in 'master_server_addrs_' until one
-  // responds with a quorum configuration that contains the leader
-  // master or 'default_select_master_timeout_' passes.
+  // Sets 'master_proxy_' from the address specified by
+  // 'leader_host_port'.  Called by GetLeaderMasterRpc::SendRpcCb()
+  // upon successful completion.
+  Status LeaderMasterDetermined(const HostPort& leader_host_port);
+
+  // Asynchronously sets 'master_proxy_' to the leader master by
+  // cycling through servers listed in 'master_server_addrs_' until
+  // one responds with a quorum configuration that contains the leader
+  // master or 'default_select_master_timeout_' expires.
+  //
+  // Invokes 'cb' with the appropriate status when finished.
   //
   // Works with both a distributed and non-distributed configuration.
-  Status SetMasterServerProxy();
+  void SetMasterServerProxyAsync(KuduClient* client,
+                                 const StatusCallback& cb);
+
+  // Synchronous version of SetMasterServerProxyAsync method above.
+  //
+  // NOTE: since this uses a Synchronizer, this may not be invoked by
+  // a method that's on a reactor thread.
+  //
+  // TODO (KUDU-492): Get rid of this method and re-factor the client
+  // to lazily initialize 'master_proxy_'.
+  Status SetMasterServerProxy(KuduClient* client);
 
   std::tr1::shared_ptr<rpc::Messenger> messenger_;
   gscoped_ptr<DnsResolver> dns_resolver_;

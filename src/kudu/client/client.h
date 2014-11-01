@@ -32,6 +32,7 @@ class KuduWriteOperation;
 
 namespace internal {
 class Batcher;
+class GetLeaderMasterRpc;
 class MetaCache;
 class RemoteTablet;
 class RemoteTabletServer;
@@ -161,6 +162,7 @@ class KUDU_EXPORT KuduClient : public std::tr1::enable_shared_from_this<KuduClie
   friend class KuduTableAlterer;
   friend class KuduTableCreator;
   friend class internal::Batcher;
+  friend class internal::GetLeaderMasterRpc;
   friend class internal::MetaCache;
   friend class internal::RemoteTablet;
   friend class internal::RemoteTabletServer;

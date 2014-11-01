@@ -148,7 +148,7 @@ Status KuduClientBuilder::Build(shared_ptr<KuduClient>* client) {
   c->data_->master_server_addrs_ = data_->master_server_addrs_;
   c->data_->default_select_master_timeout_ = data_->default_select_master_timeout_;
 
-  RETURN_NOT_OK(c->data_->SetMasterServerProxy());
+  RETURN_NOT_OK(c->data_->SetMasterServerProxy(c.get()));
 
   c->data_->meta_cache_.reset(new MetaCache(c.get()));
   c->data_->dns_resolver_.reset(new DnsResolver());

@@ -177,11 +177,10 @@ RemoteTabletServer* KuduClient::Data::PickClosestReplica(
 
 namespace internal {
 
-// NOTE: This RPC may only be called synchronously: it is the callers
-// responsibility to de-allocate the RPC object when finished.
 class GetLeaderMasterRpc : public Rpc {
  public:
-  GetLeaderMasterRpc(const StatusCallback& cb,
+  GetLeaderMasterRpc(KuduClient* client,
+                     const StatusCallback& cb,
                      const vector<Sockaddr>& master_addrs,
                      const MonoTime& deadline,
                      const shared_ptr<rpc::Messenger>& messenger);
@@ -192,30 +191,28 @@ class GetLeaderMasterRpc : public Rpc {
 
   virtual ~GetLeaderMasterRpc();
 
-  const HostPort& leader_host_port() const {
-    return leader_host_port_;
-  }
-
  private:
   virtual void SendRpcCb(const Status& status) OVERRIDE;
 
-  // Sets 'leader_host_port_' to the host/port of the leader master if
+  // Sets 'leader_host_port' to the host/port of the leader master if
   // there is enough information in 'resp_' to do so.  Returns
   // 'Status::NotFound' if no leader master is found.
-  Status LeaderMasterHostPortFromResponse();
+  Status LeaderMasterHostPortFromResponse(HostPort* leader_host_port);
 
+  KuduClient* client_;
   StatusCallback cb_;
   int node_idx_;
   vector<Sockaddr> master_addrs_;
   ListMastersResponsePB resp_;
-  HostPort leader_host_port_;
 };
 
-GetLeaderMasterRpc::GetLeaderMasterRpc(const StatusCallback& cb,
+GetLeaderMasterRpc::GetLeaderMasterRpc(KuduClient* client,
+                                       const StatusCallback& cb,
                                        const vector<Sockaddr>& master_addrs,
                                        const MonoTime& deadline,
                                        const shared_ptr<rpc::Messenger>& messenger)
     : Rpc(deadline, messenger),
+      client_(client),
       cb_(cb),
       node_idx_(0),
       master_addrs_(master_addrs) {
@@ -245,7 +242,7 @@ std::string GetLeaderMasterRpc::ToString() const {
 GetLeaderMasterRpc::~GetLeaderMasterRpc() {
 }
 
-Status GetLeaderMasterRpc::LeaderMasterHostPortFromResponse() {
+Status GetLeaderMasterRpc::LeaderMasterHostPortFromResponse(HostPort* leader_host_port) {
   if (resp_.has_error()) {
     return StatusFromPB(resp_.error());
   }
@@ -259,7 +256,7 @@ Status GetLeaderMasterRpc::LeaderMasterHostPortFromResponse() {
       if (entry.local() && resp_.masters().size() == 1) {
         // Non-distributed master configuration: there is only one
         // entry in the list and it's a local entry.
-        return HostPortFromPB(entry.registration().rpc_addresses(0), &leader_host_port_);
+        return HostPortFromPB(entry.registration().rpc_addresses(0), leader_host_port);
       } else {
         return Status::IllegalState(
             Substitute("Every master in a distributed configuration must have a role,"
@@ -267,8 +264,7 @@ Status GetLeaderMasterRpc::LeaderMasterHostPortFromResponse() {
                        entry.ShortDebugString(), resp_.ShortDebugString()));
       }
     } else if (entry.role() == QuorumPeerPB::LEADER) {
-      // This is the leader of a distributed quorum.
-      return HostPortFromPB(entry.registration().rpc_addresses(0), &leader_host_port_);
+      return HostPortFromPB(entry.registration().rpc_addresses(0), leader_host_port);
     }
   }
   return Status::NotFound("No leader found. ListMastersResponse: " +
@@ -276,13 +272,19 @@ Status GetLeaderMasterRpc::LeaderMasterHostPortFromResponse() {
 }
 
 void GetLeaderMasterRpc::SendRpcCb(const Status& status) {
+  gscoped_ptr<GetLeaderMasterRpc> delete_me(this);
   Status new_status = status;
   if (new_status.ok() && retrier().HandleResponse(this, &new_status)) {
+    ignore_result(delete_me.release());
     return;
   }
 
   if (new_status.ok()) {
-    new_status = LeaderMasterHostPortFromResponse();
+    HostPort host_port;
+    new_status = LeaderMasterHostPortFromResponse(&host_port);
+    if (new_status.ok()) {
+      client_->data_->LeaderMasterDetermined(host_port);
+    }
   }
 
   // If there was a network error talking to the master at 'node_idx'
@@ -298,6 +300,7 @@ void GetLeaderMasterRpc::SendRpcCb(const Status& status) {
       retrier().controller().Reset();
       SendRpc();
     }
+    ignore_result(delete_me.release());
     return;
   }
   cb_.Run(new_status);
@@ -305,16 +308,36 @@ void GetLeaderMasterRpc::SendRpcCb(const Status& status) {
 
 } // namespace internal
 
-Status KuduClient::Data::SetMasterServerProxy() {
+Status KuduClient::Data::LeaderMasterDetermined(const HostPort& leader_host_port) {
+  Sockaddr leader_sock_addr;
+  RETURN_NOT_OK(SockaddrFromHostPort(leader_host_port, &leader_sock_addr));
+  master_proxy_.reset(new MasterServiceProxy(messenger_, leader_sock_addr));
+  return Status::OK();
+}
+
+Status KuduClient::Data::SetMasterServerProxy(KuduClient* client) {
+  Synchronizer sync;
+  SetMasterServerProxyAsync(client, sync.AsStatusCallback());
+  return sync.Wait();
+}
+
+void KuduClient::Data::SetMasterServerProxyAsync(KuduClient* client, const StatusCallback& cb) {
   MonoTime deadline = MonoTime::Now(MonoTime::FINE);
   deadline.AddDelta(default_select_master_timeout_);
   vector<Sockaddr> master_sockaddrs;
   BOOST_FOREACH(const string& master_server_addr, master_server_addrs_) {
     vector<Sockaddr> addrs;
-    RETURN_NOT_OK(ParseAddressList(master_server_addr, master::Master::kDefaultPort, &addrs));
+    Status s;
+    // TODO: Do address resolution asynchronously as well.
+    s = ParseAddressList(master_server_addr, master::Master::kDefaultPort, &addrs);
+    if (!s.ok()) {
+      cb.Run(s);
+      return;
+    }
     if (addrs.empty()) {
-      return Status::InvalidArgument(Substitute("No master address specified by '$0'",
-                                                 master_server_addr));
+      cb.Run(Status::InvalidArgument(Substitute("No master address specified by '$0'",
+                                                master_server_addr)));
+      return;
     }
     if (addrs.size() > 1) {
       LOG(WARNING) << "Specified master server address '" << master_server_addr << "' "
@@ -324,19 +347,12 @@ Status KuduClient::Data::SetMasterServerProxy() {
   }
 
   // See 'GetLeaderMasterRpc' above.
-  Synchronizer sync;
-  internal::GetLeaderMasterRpc rpc(sync.AsStatusCallback(),
-                                   master_sockaddrs,
-                                   deadline,
-                                   messenger_);
-  rpc.SendRpc();
-  RETURN_NOT_OK(sync.Wait());
-
-  // Instantiate 'master_proxy_'.
-  Sockaddr leader_sock_addr;
-  RETURN_NOT_OK(SockaddrFromHostPort(rpc.leader_host_port(), &leader_sock_addr));
-  master_proxy_.reset(new MasterServiceProxy(messenger_, leader_sock_addr));
-  return Status::OK();
+  internal::GetLeaderMasterRpc* rpc(new internal::GetLeaderMasterRpc(client,
+                                                                     cb,
+                                                                     master_sockaddrs,
+                                                                     deadline,
+                                                                     messenger_));
+  rpc->SendRpc();
 }
 
 } // namespace client
