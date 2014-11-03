@@ -96,6 +96,7 @@ Status ReadableLogSegment::Open(Env* env,
 ReadableLogSegment::ReadableLogSegment(const std::string &path,
                                        const shared_ptr<RandomAccessFile>& readable_file)
   : path_(path),
+    readable_to_offset_(0),
     readable_file_(readable_file),
     is_initialized_(false),
     is_corrupted_(false) {
@@ -114,7 +115,7 @@ Status ReadableLogSegment::Init(const LogSegmentHeaderPB& header,
   footer_.CopyFrom(footer);
   first_entry_offset_ = first_entry_offset;
   is_initialized_ = true;
-  readable_to_offset_ = file_size();
+  readable_to_offset_.Store(file_size());
 
   return Status::OK();
 }
@@ -129,7 +130,7 @@ Status ReadableLogSegment::Init(const LogSegmentHeaderPB& header,
   header_.CopyFrom(header);
   first_entry_offset_ = first_entry_offset;
   is_initialized_ = true;
-  readable_to_offset_ = file_size();
+  readable_to_offset_.Store(file_size());
 
   return Status::OK();
 }
@@ -148,9 +149,18 @@ Status ReadableLogSegment::Init() {
   }
 
   is_initialized_ = true;
-  readable_to_offset_ = file_size();
+
+  readable_to_offset_.Store(file_size());
 
   return Status::OK();
+}
+
+const uint64_t ReadableLogSegment::readable_up_to() const {
+  return readable_to_offset_.Load();
+}
+
+void ReadableLogSegment::UpdateReadableToOffset(uint64_t readable_to_offset) {
+  readable_to_offset_.Store(readable_to_offset);
 }
 
 Status ReadableLogSegment::RebuildFooterByScanning() {
@@ -346,16 +356,17 @@ Status ReadableLogSegment::ReadEntries(vector<LogEntryPB*>* entries) {
   int batches_read = 0;
 
   uint64_t offset = first_entry_offset();
+  uint64_t readable_to_offset = readable_to_offset_.Load();
   VLOG(1) << "Reading segment entries from "
           << path_ << ": offset=" << offset << " file_size="
-          << file_size() << " readable_to_offset=" << readable_to_offset_;
+          << file_size() << " readable_to_offset=" << readable_to_offset;
   faststring tmp_buf;
 
   // If we have a footer we only read up to it. If we don't we likely crashed
   // and always read to the end.
   uint64_t read_up_to = footer_.IsInitialized() && !is_corrupted_ ?
       file_size() - footer_.ByteSize() - kLogSegmentFooterMagicAndFooterLength :
-      readable_to_offset_;
+      readable_to_offset;
 
   int num_entries_read = 0;
   while (offset < read_up_to) {

@@ -15,6 +15,7 @@
 #include "kudu/consensus/log.pb.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/ref_counted.h"
+#include "kudu/util/atomic.h"
 #include "kudu/util/env.h"
 
 // Used by other classes, now part of the API.
@@ -160,9 +161,7 @@ class ReadableLogSegment : public RefCountedThreadSafe<ReadableLogSegment> {
   // Returns the full size of the file, if the segment is closed and has
   // a footer, or the offset where the last written, non corrupt entry
   // ends.
-  const uint64_t readable_up_to() const {
-    return readable_to_offset_;
-  }
+  const uint64_t readable_up_to() const;
 
  private:
   friend class RefCountedThreadSafe<ReadableLogSegment>;
@@ -197,9 +196,7 @@ class ReadableLogSegment : public RefCountedThreadSafe<ReadableLogSegment> {
                         faststring* tmp_buf,
                         gscoped_ptr<LogEntryBatchPB>* entry_batch);
 
-  void UpdateReadableToOffset(uint64_t readable_to_offset) {
-    readable_to_offset_ = readable_to_offset;
-  }
+  void UpdateReadableToOffset(uint64_t readable_to_offset);
 
   const std::string path_;
 
@@ -210,7 +207,10 @@ class ReadableLogSegment : public RefCountedThreadSafe<ReadableLogSegment> {
   // For already written segments this is fixed and equal to the file size
   // but for the segments currently written to this is the offset up to which
   // we can read without the fear of reading garbage/zeros.
-  uint64_t readable_to_offset_;
+  // This is atomic because the Log thread might be updating the segment's readable
+  // offset while an async reader is reading the segment's entries.
+  // is reading it.
+  AtomicInt<int64_t> readable_to_offset_;
 
   // a readable file for a log segment (used on replay)
   const std::tr1::shared_ptr<RandomAccessFile> readable_file_;
