@@ -23,6 +23,7 @@ namespace master {
 using client::KuduClient;
 using client::KuduClientBuilder;
 using client::KuduColumnSchema;
+using client::KuduScanner;
 using client::KuduSchema;
 using client::KuduTable;
 using std::vector;
@@ -300,6 +301,23 @@ TEST_F(MasterReplicationTest, TestCycleThroughAllMasters) {
   EXPECT_OK(builder.Build(&client));
 
   ASSERT_STATUS_OK(ThreadJoiner(start_thread.get()).Join());
+}
+
+TEST_F(MasterReplicationTest, TestLookupWhenMasterNoLongerLeader) {
+  shared_ptr<KuduClient> leader_client;
+  scoped_refptr<KuduTable> table;
+
+  // Create the first table.
+  ASSERT_STATUS_OK(CreateLeaderClient(&leader_client));
+  ASSERT_STATUS_OK(CreateTable(leader_client, kTableId1));
+  ASSERT_STATUS_OK(leader_client->OpenTable(kTableId1, &table));
+
+  // Promote master at index '1' to leader.
+  ASSERT_NO_FATAL_FAILURE(PromoteMaster(0, 1));
+  KuduScanner scanner(table.get());
+  KuduSchema empty_projection(vector<KuduColumnSchema>(), 0);
+  ASSERT_STATUS_OK(scanner.SetProjection(&empty_projection));
+  ASSERT_STATUS_OK(scanner.Open());
 }
 
 } // namespace master

@@ -85,6 +85,10 @@ class KuduClient::Data {
   // to lazily initialize 'master_proxy_'.
   Status SetMasterServerProxy(KuduClient* client);
 
+  master::MasterServiceProxy* master_proxy() const {
+    return master_proxy_.get();
+  }
+
   std::tr1::shared_ptr<rpc::Messenger> messenger_;
   gscoped_ptr<DnsResolver> dns_resolver_;
   scoped_refptr<internal::MetaCache> meta_cache_;

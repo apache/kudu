@@ -243,7 +243,6 @@ void MetaCache::UpdateTabletServer(const TSInfoPB& pb) {
 class LookupRpc : public Rpc {
  public:
   LookupRpc(const scoped_refptr<MetaCache>& meta_cache,
-            const shared_ptr<MasterServiceProxy>& master_proxy,
             const StatusCallback& user_cb,
             const KuduTable* table,
             const Slice& key,
@@ -260,15 +259,20 @@ class LookupRpc : public Rpc {
  private:
   virtual void SendRpcCb(const Status& status) OVERRIDE;
 
+  MasterServiceProxy* master_proxy() const {
+    return table_->client()->data_->master_proxy();
+  }
+
+  void ResetMasterLeaderAndRetry();
+
+  void NewLeaderMasterDeterminedCb(const Status& status);
+
   // Pointer back to the tablet cache. Populated with location information
   // if the lookup finishes successfully.
   //
   // When the RPC is destroyed, a master lookup permit is returned to the
   // cache if one was acquired in the first place.
   scoped_refptr<MetaCache> meta_cache_;
-
-  // Proxy to the master server servicing this lookup.
-  shared_ptr<MasterServiceProxy> master_proxy_;
 
   // Request body.
   GetTableLocationsRequestPB req_;
@@ -296,7 +300,6 @@ class LookupRpc : public Rpc {
 };
 
 LookupRpc::LookupRpc(const scoped_refptr<MetaCache>& meta_cache,
-                     const shared_ptr<MasterServiceProxy>& master_proxy,
                      const StatusCallback& user_cb,
                      const KuduTable* table,
                      const Slice& key,
@@ -305,7 +308,6 @@ LookupRpc::LookupRpc(const scoped_refptr<MetaCache>& meta_cache,
                      const shared_ptr<Messenger>& messenger)
   : Rpc(deadline, messenger),
     meta_cache_(meta_cache),
-    master_proxy_(master_proxy),
     user_cb_(user_cb),
     table_(table),
     key_(key),
@@ -342,7 +344,9 @@ void LookupRpc::SendRpc() {
           << " for " << schema->DebugEncodedRowKey(key_.ToString())
           << " of " << table_->name();
 
-  has_permit_ = meta_cache_->AcquireMasterLookupPermit();
+  if (!has_permit_) {
+    has_permit_ = meta_cache_->AcquireMasterLookupPermit();
+  }
   if (!has_permit_) {
     // Couldn't get a permit, try again in a little while.
     retrier().DelayedRetry(this);
@@ -356,12 +360,29 @@ void LookupRpc::SendRpc() {
   // The end key is left unset intentionally so that we'll prefetch some
   // additional tablets.
 
-  master_proxy_->GetTableLocationsAsync(req_, &resp_, &retrier().controller(),
-                                        boost::bind(&LookupRpc::SendRpcCb, this, Status::OK()));
+  master_proxy()->GetTableLocationsAsync(req_, &resp_, &retrier().controller(),
+                                         boost::bind(&LookupRpc::SendRpcCb, this, Status::OK()));
 }
 
 string LookupRpc::ToString() const {
   return Substitute("GetTableLocations($0, $1)", table_->name(), key_.ToString());
+}
+
+void LookupRpc::ResetMasterLeaderAndRetry() {
+  table_->client()->data_->SetMasterServerProxyAsync(
+      table_->client(),
+      Bind(&LookupRpc::NewLeaderMasterDeterminedCb,
+           Unretained(this)));
+}
+
+void LookupRpc::NewLeaderMasterDeterminedCb(const Status& status) {
+  if (status.ok()) {
+    retrier().controller().Reset();
+    SendRpc();
+  } else {
+    LOG(WARNING) << "Failed to determine new Master: " << status.ToString();
+    retrier().DelayedRetry(this);
+  }
 }
 
 void LookupRpc::SendRpcCb(const Status& status) {
@@ -376,7 +397,21 @@ void LookupRpc::SendRpcCb(const Status& status) {
 
   // Prefer controller failures over response failures.
   if (new_status.ok() && resp_.has_error()) {
+    if (resp_.error().code() == master::MasterErrorPB::NOT_THE_LEADER) {
+      LOG(WARNING) << "Leader Master has changed, re-trying...";
+      ResetMasterLeaderAndRetry();
+      ignore_result(delete_me.release());
+      return;
+    }
     new_status = StatusFromPB(resp_.error().status());
+  }
+
+  if (new_status.IsNetworkError()) {
+    LOG(WARNING) << "Encountered a network error from the Master: " << new_status.ToString()
+                 << ", retrying...";
+    ResetMasterLeaderAndRetry();
+    ignore_result(delete_me.release());
+    return;
   }
 
   // Prefer response failures over no tablets found.
@@ -472,7 +507,6 @@ void MetaCache::LookupTabletByKey(const KuduTable* table,
                                   scoped_refptr<RemoteTablet>* remote_tablet,
                                   const StatusCallback& callback) {
   LookupRpc* rpc = new LookupRpc(this,
-                                 client_->data_->master_proxy_,
                                  callback,
                                  table,
                                  key,
