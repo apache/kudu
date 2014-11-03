@@ -1590,12 +1590,12 @@ TEST_F(ClientTest, TestReplicatedTabletWritesWithLeaderElection) {
 
   ASSERT_TRUE(new_leader_proxy.get() != NULL);
 
-  consensus::MakePeerLeaderRequestPB req;
-  consensus::MakePeerLeaderResponsePB resp;
+  consensus::RunLeaderElectionRequestPB req;
+  consensus::RunLeaderElectionResponsePB resp;
   rpc::RpcController controller;
 
   req.set_tablet_id(rt->tablet_id());
-  ASSERT_OK(new_leader_proxy->MakePeerLeader(req, &resp, &controller));
+  ASSERT_OK(new_leader_proxy->RunLeaderElection(req, &resp, &controller));
   ASSERT_FALSE(resp.has_error()) << "Got error. Response: " << resp.ShortDebugString();
 
   ASSERT_NO_FATAL_FAILURE(InsertTestRows(client_.get(),

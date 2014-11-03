@@ -28,6 +28,7 @@ DEFINE_int64(client_inserts_per_thread, 500,
              "Number of rows inserted by each client thread");
 DEFINE_int64(client_num_batches_per_thread, 50,
              "In how many batches to group the rows, for each client");
+DECLARE_int32(consensus_rpc_timeout_ms);
 
 #define ASSERT_ALL_REPLICAS_AGREE(count) \
   ASSERT_NO_FATAL_FAILURE(AssertAllReplicasAgree(count))
@@ -80,6 +81,7 @@ class DistConsensusTest : public TabletServerTest {
 
   virtual void SetUp() OVERRIDE {
     KuduTest::SetUp();
+    FLAGS_consensus_rpc_timeout_ms = kConsensusRpcTimeoutForTests;
   }
 
   // Starts an external cluster with 'num_replicas'. The caller can pass
@@ -103,7 +105,7 @@ class DistConsensusTest : public TabletServerTest {
       opts.extra_tserver_flags.push_back("--consensus_entry_cache_size_soft_limit_mb=5");
       opts.extra_tserver_flags.push_back("--consensus_entry_cache_size_hard_limit_mb=10");
       opts.extra_tserver_flags.push_back(strings::Substitute("--consensus_rpc_timeout_ms=$0",
-                                                             kConsensusRpcTimeoutForTests));
+                                                             FLAGS_consensus_rpc_timeout_ms));
     } else {
       BOOST_FOREACH(const std::string& flag, non_default_flags) {
         opts.extra_tserver_flags.push_back(flag);
@@ -480,13 +482,13 @@ class DistConsensusTest : public TabletServerTest {
     leader_.reset(replicas_[new_leader_idx]);
     replicas_.erase(replicas_.begin() + new_leader_idx);
 
-    consensus::MakePeerLeaderRequestPB leader_req;
-    consensus::MakePeerLeaderResponsePB leader_resp;
+    consensus::RunLeaderElectionRequestPB leader_req;
+    consensus::RunLeaderElectionResponsePB leader_resp;
     RpcController controller;
 
     leader_req.set_tablet_id(tablet_id_);
     controller.Reset();
-    CHECK_OK(leader_->consensus_proxy->MakePeerLeader(leader_req, &leader_resp, &controller));
+    CHECK_OK(leader_->consensus_proxy->RunLeaderElection(leader_req, &leader_resp, &controller));
   }
 
   virtual void TearDown() OVERRIDE {
@@ -642,7 +644,10 @@ TEST_F(DistConsensusTest, TestInsertOnNonLeader) {
   ASSERT_ALL_REPLICAS_AGREE(0);
 }
 
-TEST_F(DistConsensusTest, TestEmulateLeaderElection) {
+TEST_F(DistConsensusTest, TestRunLeaderElection) {
+  // Reset consensus rpc timeout to the default value or the election might fail often.
+  FLAGS_consensus_rpc_timeout_ms = 1000;
+
   BuildAndStart(kNumReplicas, vector<string>());
 
   int num_iters = AllowSlowTests() ? 10 : 1;
@@ -662,13 +667,13 @@ TEST_F(DistConsensusTest, TestEmulateLeaderElection) {
   replicas_.pop_back();
 
   // Make the new replica leader.
-  consensus::MakePeerLeaderRequestPB request;
+  consensus::RunLeaderElectionRequestPB request;
   request.set_tablet_id(tablet_id_);
 
-  consensus::MakePeerLeaderResponsePB response;
+  consensus::RunLeaderElectionResponsePB response;
   RpcController controller;
 
-  ASSERT_OK(replica->consensus_proxy->MakePeerLeader(request, &response, &controller));
+  ASSERT_OK(replica->consensus_proxy->RunLeaderElection(request, &response, &controller));
   ASSERT_FALSE(response.has_error()) << "Got an error back: " << response.DebugString();
   leader_.reset(replica);
 
@@ -766,6 +771,9 @@ TEST_F(DistConsensusTest, TestInsertWhenTheQueueIsFull) {
 }
 
 TEST_F(DistConsensusTest, MultiThreadedInsertWithFailovers) {
+  // Reset consensus rpc timeout to the default value or the election might fail often.
+  FLAGS_consensus_rpc_timeout_ms = 1000;
+
   // Start a 7 node quorum cluster (since we can't bring leaders back we start with a
   // higher replica count so that we kill more leaders).
   BuildAndStart(7, vector<string>());

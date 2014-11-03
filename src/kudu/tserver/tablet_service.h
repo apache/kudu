@@ -127,8 +127,8 @@ class ConsensusServiceImpl : public consensus::ConsensusServiceIf {
                                consensus::GetNodeInstanceResponsePB* resp,
                                rpc::RpcContext* context) OVERRIDE;
 
-  virtual void MakePeerLeader(const consensus::MakePeerLeaderRequestPB* req,
-                              consensus::MakePeerLeaderResponsePB* resp,
+  virtual void RunLeaderElection(const consensus::RunLeaderElectionRequestPB* req,
+                              consensus::RunLeaderElectionResponsePB* resp,
                               rpc::RpcContext* context) OVERRIDE;
 
   virtual void GetLastOpId(const consensus::GetLastOpIdRequestPB *req,

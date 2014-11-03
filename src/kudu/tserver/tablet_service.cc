@@ -48,8 +48,8 @@ using consensus::ChangeConfigRequestPB;
 using consensus::ChangeConfigResponsePB;
 using consensus::GetNodeInstanceRequestPB;
 using consensus::GetNodeInstanceResponsePB;
-using consensus::MakePeerLeaderRequestPB;
-using consensus::MakePeerLeaderResponsePB;
+using consensus::RunLeaderElectionRequestPB;
+using consensus::RunLeaderElectionResponsePB;
 using consensus::VoteRequestPB;
 using consensus::VoteResponsePB;
 
@@ -481,10 +481,10 @@ void ConsensusServiceImpl::GetNodeInstance(const GetNodeInstanceRequestPB* req,
   context->RespondSuccess();
 }
 
-void ConsensusServiceImpl::MakePeerLeader(const MakePeerLeaderRequestPB* req,
-                                          MakePeerLeaderResponsePB* resp,
-                                          rpc::RpcContext* context) {
-  DVLOG(3) << "Received Make Peer Leader RPC: " << req->DebugString();
+void ConsensusServiceImpl::RunLeaderElection(const RunLeaderElectionRequestPB* req,
+                                             RunLeaderElectionResponsePB* resp,
+                                             rpc::RpcContext* context) {
+  DVLOG(3) << "Received Run Leader Election RPC: " << req->DebugString();
   scoped_refptr<TabletPeer> tablet_peer;
   if (!LookupTabletOrRespond(tablet_manager_, req->tablet_id(), resp, context, &tablet_peer)) {
     return;
