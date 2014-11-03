@@ -337,10 +337,22 @@ class ClientTest : public KuduTest {
     } while (s.IsServiceUnavailable() && attempts < 20);
     CHECK_OK(s);
 
+    attempts = 0;
     int count = 0;
     vector<KuduRowResult> rows;
     while (scanner.HasMoreRows()) {
-      CHECK_OK(scanner.NextBatch(&rows));
+      Status s = scanner.NextBatch(&rows);
+      // If we got service unavailable maybe we changed tablets and we don't know who is the
+      // leader for this one yet.
+      // When we make the scanner more fault tolerant (KUDU-547) we should be able to remove
+      // this retry logic.
+      if (s.IsServiceUnavailable() && attempts < 20) {
+        attempts++;
+        usleep(100 * 1000); // 100 ms
+        continue;
+      }
+      CHECK_OK(s);
+      attempts = 0;
       count += rows.size();
       rows.clear();
     }
