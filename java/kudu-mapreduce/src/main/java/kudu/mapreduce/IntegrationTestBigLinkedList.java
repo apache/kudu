@@ -33,6 +33,7 @@ import kudu.rpc.RowResult;
 import kudu.rpc.SessionConfiguration;
 import kudu.rpc.SynchronousKuduSession;
 import kudu.rpc.Update;
+import kudu.util.Pair;
 import org.apache.commons.cli.CommandLine;
 import org.apache.commons.cli.GnuParser;
 import org.apache.commons.cli.HelpFormatter;
@@ -1118,7 +1119,13 @@ public class IntegrationTestBigLinkedList extends Configured implements Tool {
       private long timeout;
       private Schema scanSchema;
       private long numUpdatesPerMapper;
-      private long linkUpdatesCount;
+
+      /**
+       * Processing each linked list takes minutes, meaning that it's easily possible for our
+       * scanner to timeout. Instead, we gather all the linked list heads that we need and
+       * process them all at once in the first map invocation.
+       */
+      private List<Pair<Long, Long>> headsCache;
 
       @Override
       protected void setup(Context context) throws IOException, InterruptedException {
@@ -1146,18 +1153,36 @@ public class IntegrationTestBigLinkedList extends Configured implements Tool {
         scanSchema = new Schema(scanSchemaList);
 
         numUpdatesPerMapper = conf.getLong(MAX_LINK_UPDATES_PER_MAPPER, 1);
+        headsCache = new ArrayList<Pair<Long, Long>>((int)numUpdatesPerMapper);
       }
 
       @Override
       protected void map(NullWritable key, RowResult value, Mapper.Context context)
           throws IOException, InterruptedException {
+        // Add as many heads as we need, then we skip the rest.
+        do {
+          if (headsCache.size() < numUpdatesPerMapper) {
+            value = (RowResult)context.getCurrentValue();
+            headsCache.add(new Pair<Long, Long>(value.getLong(0), value.getLong(1)));
+          }
+        } while (context.nextKeyValue());
 
-        if (linkUpdatesCount == numUpdatesPerMapper) {
-          return;
+        // At this point we've exhausted the scanner and hopefully gathered all the linked list
+        // heads we needed.
+        LOG.info("Processing " + headsCache.size() +
+            " linked lists, out of " + numUpdatesPerMapper);
+        processAllHeads(context);
+      }
+
+      private void processAllHeads(Mapper.Context context) throws IOException {
+        for (Pair<Long, Long> value : headsCache) {
+          processHead(value, context);
         }
+      }
 
-        long headKeyOne = value.getLong(0);
-        long headKeyTwo = value.getLong(1);
+      private void processHead(Pair<Long, Long> head, Mapper.Context context) throws IOException {
+        long headKeyOne = head.getFirst();
+        long headKeyTwo = head.getSecond();
         long prevKeyOne = headKeyOne;
         long prevKeyTwo = headKeyTwo;
         int currentCount = -1;
@@ -1217,7 +1242,6 @@ public class IntegrationTestBigLinkedList extends Configured implements Tool {
 
         updateStatCounters(context, newCount);
         context.getCounter(Counts.UPDATED_LINKS).increment(1);
-        linkUpdatesCount++;
       }
 
       /**
