@@ -217,6 +217,7 @@ TEST_F(CreateTableStressTest, TestGetTableLocationsOptions) {
     std::vector<scoped_refptr<master::TabletInfo> > tablets;
     table_info->GetAllTablets(&tablets);
     BOOST_FOREACH(const scoped_refptr<master::TabletInfo>& tablet_info, tablets) {
+      master::TabletMetadataLock l_tablet(tablet_info.get(), master::TabletMetadataLock::READ);
       const master::SysTabletsEntryPB& metadata = tablet_info->metadata().state().pb;
       LOG(INFO) << "  Tablet: " << tablet_info->ToString()
                 << " { start_key: "

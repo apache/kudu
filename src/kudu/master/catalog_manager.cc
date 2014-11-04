@@ -1967,11 +1967,12 @@ bool CatalogManager::BuildLocationsForTablet(const scoped_refptr<TabletInfo>& ta
     if (locs.empty() && l_tablet.data().pb.has_quorum()) {
       stale_quorum.CopyFrom(l_tablet.data().pb.quorum());
     }
+
+    locs_pb->set_start_key(tablet->metadata().state().pb.start_key());
+    locs_pb->set_end_key(tablet->metadata().state().pb.end_key());
   }
 
   locs_pb->set_tablet_id(tablet->tablet_id());
-  locs_pb->set_start_key(tablet->metadata().state().pb.start_key());
-  locs_pb->set_end_key(tablet->metadata().state().pb.end_key());
   locs_pb->set_stale(locs.empty());
 
   BOOST_FOREACH(const TabletReplica& replica, locs) {
@@ -2262,6 +2263,7 @@ bool TableInfo::IsAlterInProgress(uint32_t version) const {
 bool TableInfo::IsCreateInProgress() const {
   boost::lock_guard<simple_spinlock> l(lock_);
   BOOST_FOREACH(const TableInfo::TabletInfoMap::value_type& e, tablet_map_) {
+    TabletMetadataLock tablet_lock(e.second, TabletMetadataLock::READ);
     if (!e.second->metadata().state().is_running()) {
       return true;
     }

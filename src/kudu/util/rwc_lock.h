@@ -69,6 +69,14 @@ class RWCLock {
   // Useful for debug assertions.
   bool HasReaders() const;
 
+  // Return true if the current thread holds the write lock.
+  //
+  // In DEBUG mode this is accurate -- we track the current holder's tid.
+  // In non-DEBUG mode, this may sometimes return true even if another thread
+  // is in fact the holder.
+  // Thus, this is only really useful in the context of a DCHECK assertion.
+  bool HasWriteLock() const;
+
   // Boost-like wrappers, so boost lock guards work
   void lock_shared() { ReadLock(); }
   void unlock_shared() { ReadUnlock(); }

@@ -51,6 +51,15 @@ bool RWCLock::HasReaders() const {
   return reader_count_ > 0;
 }
 
+bool RWCLock::HasWriteLock() const {
+  MutexLock l(lock_);
+#ifndef NDEBUG
+  return last_writer_tid_ == static_cast<pid_t>(syscall(SYS_gettid));
+#else
+  return write_locked_;
+#endif
+}
+
 void RWCLock::WriteLock() {
   MutexLock l(lock_);
   // Wait for any other mutations to finish.

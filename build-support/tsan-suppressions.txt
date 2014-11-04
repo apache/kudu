@@ -54,8 +54,5 @@ signal:logging_fail
 # KUDU-186: sketchy synchronization in catalog manager
 race:kudu::master::CatalogManagerBgTasks::Shutdown
 
-# KUDU-187: missing read lock on IsCreateInProgress
-race:kudu::master::TableInfo::IsCreateInProgress
-
 # KUDU-189: unsynchronized access to 'state_' in DeferredCallback
 race:kudu::master::AsyncTabletRequestTask::DeferredCallback

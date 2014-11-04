@@ -60,16 +60,19 @@ class CowObject {
 
   // Return the current state, not reflecting any in-progress mutations.
   State& state() {
+    DCHECK(lock_.HasReaders() || lock_.HasWriteLock());
     return state_;
   }
 
   const State& state() const {
+    DCHECK(lock_.HasReaders() || lock_.HasWriteLock());
     return state_;
   }
 
   // Returns the current dirty state (i.e reflecting in-progress mutations).
   // Should only be called by a thread who previously called StartMutation().
   State* mutable_dirty() {
+    DCHECK(lock_.HasWriteLock());
     return DCHECK_NOTNULL(dirty_state_.get());
   }
 
