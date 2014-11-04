@@ -36,7 +36,8 @@ OutboundCall::OutboundCall(const ConnectionId& conn_id,
     controller_(DCHECK_NOTNULL(controller)),
     response_(DCHECK_NOTNULL(response_storage)) {
   DVLOG(4) << "OutboundCall " << this << " constructed with state_: " << StateName(state_)
-           << " and RPC timeout: " << controller->timeout().ToString();
+           << " and RPC timeout: "
+           << (controller->timeout().Initialized() ? controller->timeout().ToString() : "none");
   header_.set_method_name(method);
   header_.set_call_id(kInvalidCallId);
   start_time_ = MonoTime::Now(MonoTime::FINE);
