@@ -32,10 +32,13 @@
 
 import boto
 import cherrypy
+import gzip
 from jinja2 import Template
 import logging
 import MySQLdb
 import os
+import parse_test_failure
+from StringIO import StringIO
 import threading
 import uuid
 
@@ -153,6 +156,23 @@ class TRServer(object):
     k.key = key
     raise cherrypy.HTTPRedirect(k.generate_url(expiry))
 
+  @cherrypy.expose
+  def diagnose(self, key):
+    k = boto.s3.key.Key(self.s3_bucket)
+    k.key = key
+    log_text_gz = k.get_contents_as_string()
+    log_text = gzip.GzipFile(fileobj=StringIO(log_text_gz)).read()
+    summary = parse_test_failure.extract_failure_summary(log_text)
+    if not summary:
+      summary = "Unable to diagnose"
+    template = Template("""
+      <h1>Diagnosed failure</h1>
+      <code><pre>{{ summary|e }}</pre></code>
+      <h1>Full log</h1>
+      <code><pre>{{ log_text|e }}</pre></code>
+    """)
+    return self.render_container(template.render(summary=summary, log_text=log_text))
+
   def recently_failed_html(self):
     """ Return an HTML report of recently failed tests """
     c = self.execute_query(
@@ -191,7 +211,8 @@ class TRServer(object):
           <td>{{ run.build_config |e }}</td>
           <td>{{ run.status |e }}
             {% if run.log_key %}
-              <a href="/download_log?key={{ run.log_key |urlencode }}">failure log</a>
+              <a href="/download_log?key={{ run.log_key |urlencode }}">failure log</a> |
+              <a href="/diagnose?key={{ run.log_key |urlencode }}">diagnose</a>
             {% endif %}
           </td>
           <td>{{ run.revision |e }}</td>
@@ -309,7 +330,8 @@ class TRServer(object):
               <td>{{ run.build_config |e }}</td>
               <td>{{ run.status |e }}
                 {% if run.log_key %}
-                  <a href="/download_log?key={{ run.log_key |e }}">failure log</a>
+                  <a href="/download_log?key={{ run.log_key |urlencode }}">failure log</a> |
+                  <a href="/diagnose?key={{ run.log_key |urlencode }}">diagnose</a>
                 {% endif %}
               </td>
               <td>{{ run.hostname |e }}</td>

@@ -48,9 +48,7 @@ def remove_glog_lines(lines):
   """ Remove any lines from the list of strings which appear to be GLog messages. """
   return [l for l in lines if not GLOG_LINE_RE.search(l)]
 
-def main():
-  log_text = sys.stdin.read(MAX_MEMORY)
-
+def extract_failure_summary(log_text):
   cur_test_case = None
   errors = list()
 
@@ -109,7 +107,12 @@ def main():
       error_signature += "\n".join(consume_rest(line_iter))
       errors.append(error_signature)
 
-  print "\n\n".join(errors)
+  return "\n\n".join(errors)
+
+def main():
+  log_text = sys.stdin.read(MAX_MEMORY)
+  summary = extract_failure_summary(log_text)
+  print summary
 
 if __name__ == "__main__":
   main()
