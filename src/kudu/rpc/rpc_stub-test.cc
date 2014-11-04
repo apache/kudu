@@ -355,5 +355,36 @@ TEST_F(RpcStubTest, TestDumpCallsInFlight) {
   sleep.latch.Wait();
 }
 
+namespace {
+struct RefCountedTest : public RefCountedThreadSafe<RefCountedTest> {
+};
+
+// Test callback which takes a refcounted pointer.
+// We don't use this parameter, but it's used to validate that the bound callback
+// is cleared in TestCallbackClearedAfterRunning.
+void MyTestCallback(CountDownLatch* latch, scoped_refptr<RefCountedTest> my_refptr) {
+  latch->CountDown();
+}
+} // anonymous namespace
+
+// Verify that, after a call has returned, no copy of the call's callback
+// is held. This is important when the callback holds a refcounted ptr,
+// since we expect to be able to release that pointer when the call is done.
+TEST_F(RpcStubTest, TestCallbackClearedAfterRunning) {
+  CalculatorServiceProxy p(client_messenger_, server_addr_);
+
+  CountDownLatch latch(1);
+  scoped_refptr<RefCountedTest> my_refptr(new RefCountedTest);
+  RpcController controller;
+  AddRequestPB req;
+  req.set_x(10);
+  req.set_y(20);
+  AddResponsePB resp;
+  p.AddAsync(req, &resp, &controller,
+             boost::bind(MyTestCallback, &latch, my_refptr));
+  latch.Wait();
+  ASSERT_TRUE(my_refptr->HasOneRef());
+}
+
 } // namespace rpc
 } // namespace kudu

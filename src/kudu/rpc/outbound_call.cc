@@ -139,6 +139,9 @@ void OutboundCall::set_state_unlocked(State new_state) {
 
 void OutboundCall::CallCallback() {
   callback_();
+  // Clear the callback, since it may be holding onto reference counts
+  // via bound parameters.
+  callback_ = NULL;
 }
 
 void OutboundCall::SetResponse(gscoped_ptr<CallResponse> resp) {
