@@ -162,10 +162,8 @@ class LeaderElection : public RefCountedThreadSafe<LeaderElection> {
     explicit VoterState(PeerProxy* proxy);
 
     PeerProxy* const proxy;
-    gscoped_ptr<rpc::RpcController> rpc;
+    rpc::RpcController rpc;
     VoteResponsePB response;
-
-    DISALLOW_COPY_AND_ASSIGN(VoterState);
   };
 
   typedef std::tr1::unordered_map<std::string, VoterState*> VoterStateMap;

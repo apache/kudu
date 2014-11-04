@@ -184,7 +184,7 @@ void LeaderElection::Run() {
     Status s = state->proxy->RequestConsensusVoteAsync(
         &request_,
         &state->response,
-        state->rpc.get(),
+        &state->rpc,
         // We use gutil Bind() for the refcounting and boost::bind to adapt the
         // gutil Callback to a thunk.
         boost::bind(&Closure::Run,
@@ -217,14 +217,10 @@ void LeaderElection::VoteResponseRpcCallback(const std::string& voter_uuid) {
     lock_guard<Lock> guard(&lock_);
     VoterState* state = FindOrDie(voter_state_, voter_uuid);
 
-    // Break the circular ref caused by RpcController holding a ref to OutboundCall, which holds a
-    // ref to the callback being invoked right now, which holds a ref to |this|.
-    gscoped_ptr<rpc::RpcController> rpc = state->rpc.Pass();
-
     // Check for RPC errors.
-    if (!rpc->status().ok()) {
+    if (!state->rpc.status().ok()) {
       LOG(WARNING) << GetLogPrefix() << "RPC error from VoteRequest() call to peer " << voter_uuid
-                  << ": " << rpc->status().ToString();
+                  << ": " << state->rpc.status().ToString();
       RecordVoteUnlocked(voter_uuid, VOTE_DENIED);
 
     // Check for tablet errors.
@@ -332,8 +328,7 @@ std::string LeaderElection::GetLogPrefix() const {
 }
 
 LeaderElection::VoterState::VoterState(PeerProxy* proxy)
-  : proxy(DCHECK_NOTNULL(proxy)),
-    rpc(new rpc::RpcController()) {
+  : proxy(DCHECK_NOTNULL(proxy)) {
 }
 
 } // namespace consensus
