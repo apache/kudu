@@ -1,7 +1,8 @@
 # Copyright (c) 2014, Cloudera, inc.
 # Confidential Cloudera Information: Covered by NDA.
 
-cmake_minimum_required(VERSION 2.8)
+# Require cmake at least as new as the one in thirdparty/
+cmake_minimum_required(VERSION 2.8.10.2)
 
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/cmake_modules")
 include(CMakeParseArguments)
