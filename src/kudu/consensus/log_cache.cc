@@ -147,7 +147,8 @@ Status LogCache::ReadOps(const OpId& after_op,
   // load them.
   if (after_op.index() < preceding_first_op_.index()) {
     Status status = async_reader_->EnqueueAsyncRead(
-      after_op, preceding_first_op_, Bind(&LogCache::EntriesLoadedCallback, Unretained(this)));
+      after_op.index(), preceding_first_op_.index(),
+      Bind(&LogCache::EntriesLoadedCallback, Unretained(this), after_op));
     if (status.IsAlreadyPresent()) {
       // The log reader is already loading another part of the log. We'll try again at some
       // point.
@@ -203,10 +204,9 @@ Status LogCache::ReadOps(const OpId& after_op,
   return Status::OK();
 }
 
-void LogCache::EntriesLoadedCallback(const Status& status,
-                                     const vector<ReplicateMsg*>& replicates,
-                                     const OpId& new_preceding_first_op) {
-
+void LogCache::EntriesLoadedCallback(const OpId& new_preceding_first_op,
+                                     const Status& status,
+                                     const vector<ReplicateMsg*>& replicates) {
   // TODO deal with errors when loading operations.
   CHECK_OK(status);
 
@@ -222,7 +222,7 @@ void LogCache::EntriesLoadedCallback(const Status& status,
   {
     lock_guard<simple_spinlock> lock(&lock_);
     BOOST_FOREACH(ReplicateMsg* replicate, replicates) {
-      InsertOrDieNoPrint(&cache_, replicate->id().index(), replicate);
+      InsertOrDie(&cache_, replicate->id().index(), replicate);
       size_t size = replicate->SpaceUsed();
       tracker_->Consume(size);
       total_size += size;

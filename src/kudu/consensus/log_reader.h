@@ -36,13 +36,13 @@ class LogReader {
                                     gscoped_ptr<LogReader> *reader);
 
   // Returns the biggest prefix of segments, from the current sequence, guaranteed
-  // not to include 'opid'.
-  Status GetSegmentPrefixNotIncluding(const consensus::OpId& opid,
+  // not to include any replicate messages with indexes >= 'index'.
+  Status GetSegmentPrefixNotIncluding(int64_t index,
                                       SegmentSequence* segments) const;
 
-  // Returns the smallest suffix of segments, from the current sequence, guaranteed
-  // to include 'opid'.
-  Status GetSegmentSuffixIncluding(const consensus::OpId& opid,
+  // Returns the smallest suffix of segments, from the current sequence, which might
+  // contain REPLICATE messages with the given index.
+  Status GetSegmentSuffixIncluding(int64_t index,
                                    SegmentSequence* segments) const;
 
   // Copies a snapshot of the current sequence of segments into 'segments'.
@@ -51,8 +51,8 @@ class LogReader {
 
   // Reads all ReplicateMsgs from 'starting_after' exclusive, to 'up_to' inclusive.
   Status ReadAllReplicateEntries(
-      const consensus::OpId starting_after,
-      const consensus::OpId up_to,
+      const int64_t starting_after,
+      const int64_t up_to,
       std::vector<consensus::ReplicateMsg*>* replicates) const;
 
   // Returns the number of segments.
@@ -70,35 +70,6 @@ class LogReader {
     kLogReaderReading,
     kLogReaderClosed
   };
-
-  // Simple struct that wraps SegmentIdxPosPB and adds the segment's sequence number
-  // so that it can be used in the index.
-  struct SegmentIdxPos {
-    SegmentIdxPosPB entry_pb;
-    uint64_t entry_segment_seqno;
-  };
-
-  // The index of op_ids to segments.
-  // This is stored in reverse order so that if we query it for some operation
-  // it returns the segment that will contain it or the segment before
-  // (versus the segment after).
-  // Example -
-  // Index entries (first op in the segment, segment number):
-  // - {0.40, seg004}
-  // - {0.20, seg003}
-  // - {0.10, seg002}
-  //
-  // Example queries:
-  // - Segment that includes 0.15 (index.lower_bound(0.15)) -> {0.10, seg002}
-  // - Segment that includes 0.10 (index.lower_bound(0.10)) -> {0.10, seg002}
-  // - Segment that includes 0.1 (index.lower_bound(0.1)) -> end()
-  // - Segment that includes 0.100 (index.lower_bound(0.100)) -> {0.40, seg004}
-  //
-  typedef std::map<consensus::OpId,
-                   SegmentIdxPos,
-                   consensus::OpIdBiggerThanFunctor> ReadableLogSegmentIndex;
-
-  typedef ReadableLogSegmentIndex::value_type SegIdxEntry;
 
   // Appends 'segment' to the segments available for read by this reader.
   // Index entries in 'segment's footer will be added to the index.
@@ -134,9 +105,6 @@ class LogReader {
   // written to.
   void UpdateLastSegmentOffset(uint64_t readable_to_offset);
 
-  Status GetSegmentSuffixIncludingUnlocked(const consensus::OpId& opid,
-                                           SegmentSequence* segments) const;
-
   LogReader(FsManager *fs_manager,
             const std::string& tablet_name);
 
@@ -151,19 +119,7 @@ class LogReader {
 
   // The sequence of all current log segments in increasing sequence number
   // order.
-  // Note that not all segments in 'segments_' must be referred to in
-  // 'segments_idx_' (e.g. a segment with only entries without ids is
-  // present in 'segments_' but not present in 'segments_idx_').
-  // To be sure to read all entries from/up to a point, the correct
-  // segment should be looked up in the index, but then 'segments_' should
-  // be used to actually read the entries.
   SegmentSequence segments_;
-
-  // A sparse index of OpIds to segment sequence number and offset
-  // within the segment. Not all segments must be mapped here (for
-  // instance a segment that only contains operations without ids
-  // is present in 'segments_' but not here).
-  ReadableLogSegmentIndex segments_idx_;
 
   mutable simple_spinlock lock_;
 

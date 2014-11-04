@@ -3,6 +3,8 @@
 
 #include "kudu/consensus/log.h"
 
+#include <algorithm>
+
 #include "kudu/common/wire_protocol.h"
 #include "kudu/consensus/log_metrics.h"
 #include "kudu/consensus/log_reader.h"
@@ -104,12 +106,14 @@ void Log::PostponeEarlyCommits(vector<LogEntryBatch*>* batches) {
           << "Currently don't support multiple COMMITs in a batch";
 
         const OpId& committed = batch->entry_batch_pb_->entry(0).commit().commited_op_id();
-        if (max_repl_id.IsInitialized() && OpIdCompare(committed, max_repl_id) <= 0) {
+        if (max_repl_id.IsInitialized() && committed.index() <= max_repl_id.index()) {
           // If the commit is for an operation that we've already replicated (or already
           // seen in this loop), we can append it in its original position.
           ret_batches.push_back(batch);
         } else {
           // Otherwise we have to postpone it.
+          VLOG(3) << "Postponing commit for " << committed << ": max_repl is "
+                  << max_repl_id;
           postponed_commit_batches_.push_back(batch);
         }
         break;
@@ -130,7 +134,7 @@ void Log::PostponeEarlyCommits(vector<LogEntryBatch*>* batches) {
     LogEntryBatch* postponed = *iter;
 
     const OpId& committed = postponed->entry_batch_pb_->entry(0).commit().commited_op_id();
-    if (max_repl_id.IsInitialized() && OpIdCompare(committed, max_repl_id) <= 0) {
+    if (max_repl_id.IsInitialized() && committed.index() <= max_repl_id.index()) {
       ret_batches.push_back(postponed);
       iter = postponed_commit_batches_.erase(iter);
     } else {
@@ -264,7 +268,6 @@ Log::Log(const LogOptions &options,
     schema_(schema),
     active_segment_sequence_number_(0),
     log_state_(kLogInitialized),
-    total_ops_in_last_seg_(0),
     max_segment_size_(options_.segment_size_mb * 1024 * 1024),
     entry_batch_queue_(FLAGS_group_commit_queue_size_bytes),
     append_thread_(new AppendThread(this)),
@@ -326,20 +329,14 @@ Status Log::AsyncAllocateSegment() {
 }
 
 Status Log::CloseCurrentSegment() {
-  LogSegmentFooterPB footer;
-
-  if (!first_op_in_seg_.IsInitialized()) {
+  if (!footer_builder_.has_min_replicate_index()) {
     VLOG(1) << "Writing a segment without any REPLICATE message. "
         "Segment: " << active_segment_->path();
-  } else {
-    footer.add_idx_entry()->CopyFrom(first_op_in_seg_);
   }
+  VLOG(2) << "Segment footer for " << active_segment_->path()
+          << ": " << footer_builder_.ShortDebugString();
 
-  footer.set_num_entries(total_ops_in_last_seg_);
-  RETURN_NOT_OK(active_segment_->WriteFooterAndClose(footer));
-
-  total_ops_in_last_seg_ = 0;
-  first_op_in_seg_.Clear();
+  RETURN_NOT_OK(active_segment_->WriteFooterAndClose(footer_builder_));
 
   return Status::OK();
 }
@@ -450,13 +447,7 @@ Status Log::DoAppend(LogEntryBatch* entry_batch, bool caller_owns_operation) {
 
   // We keep track of the last-written OpId here.
   // This is needed to initialize Consensus on startup.
-  // We also retrieve the opid of the first operation in the batch so that, if
-  // we roll over to a new segment, we set the first operation in the footer
-  // immediately.
-  OpId first_opid_in_batch;
   if (entry_batch->type_ == REPLICATE) {
-    first_opid_in_batch.CopyFrom(entry_batch->MinReplicateOpId());
-
     // TODO Probably remove the code below as it looks suspicious: Tablet peer uses this
     // as 'safe' anchor as it believes it in the log, when it actually isn't, i.e. this
     // is not the last durable operation. Either move this to tablet peer (since we're
@@ -464,19 +455,6 @@ Status Log::DoAppend(LogEntryBatch* entry_batch, bool caller_owns_operation) {
     // until fsync() has been done. See KUDU-527.
     boost::lock_guard<rw_spinlock> write_lock(last_entry_op_id_lock_);
     last_entry_op_id_.CopyFrom(entry_batch->MaxReplicateOpId());
-  }
-
-  // For REPLICATE batches, we expect the caller to free the actual entries if
-  // caller_owns_operation is set.
-  if (entry_batch->type_ == REPLICATE && caller_owns_operation) {
-    for (int i = 0; i < entry_batch->entry_batch_pb_->entry_size(); i++) {
-      LogEntryPB* entry_pb = entry_batch->entry_batch_pb_->mutable_entry(i);
-      entry_pb->release_replicate();
-    }
-  }
-
-  if (metrics_) {
-    metrics_->bytes_logged->IncrementBy(entry_batch_bytes);
   }
 
   // if the size of this entry overflows the current segment, get a new one
@@ -498,12 +476,6 @@ Status Log::DoAppend(LogEntryBatch* entry_batch, bool caller_owns_operation) {
     VLOG(1) << "Segment allocation already in progress...";
   }
 
-  // If we haven't seen a REPLICATE in this segment yet, add the first REPLICATE op's id
-  // to the footer.
-  if (!first_op_in_seg_.IsInitialized() && entry_batch->type_ == REPLICATE) {
-    first_op_in_seg_.mutable_id()->CopyFrom(first_opid_in_batch);
-  }
-
   LOG_SLOW_EXECUTION(WARNING, 50, "Append to log took a long time") {
     SCOPED_LATENCY_METRIC(metrics_, append_latency);
     SCOPED_WATCH_KERNEL_STACK();
@@ -515,13 +487,52 @@ Status Log::DoAppend(LogEntryBatch* entry_batch, bool caller_owns_operation) {
     // Update the reader on how far it can read the active segment.
     reader_->UpdateLastSegmentOffset(active_segment_->written_offset());
 
-    total_ops_in_last_seg_ += entry_batch->count();
     if (log_hooks_) {
       RETURN_NOT_OK_PREPEND(log_hooks_->PostAppend(), "PostAppend hook failed");
     }
   }
+
+  if (metrics_) {
+    metrics_->bytes_logged->IncrementBy(entry_batch_bytes);
+  }
+
+  UpdateFooterForBatch(entry_batch);
+
+  // For REPLICATE batches, we expect the caller to free the actual entries if
+  // caller_owns_operation is set.
+  if (entry_batch->type_ == REPLICATE && caller_owns_operation) {
+    for (int i = 0; i < entry_batch->entry_batch_pb_->entry_size(); i++) {
+      LogEntryPB* entry_pb = entry_batch->entry_batch_pb_->mutable_entry(i);
+      entry_pb->release_replicate();
+    }
+  }
+
   // TODO: Add a record checksum to each WAL record (see KUDU-109).
   return Status::OK();
+}
+
+void Log::UpdateFooterForBatch(LogEntryBatch* batch) {
+  footer_builder_.set_num_entries(footer_builder_.num_entries() + batch->count());
+
+  // We keep track of the last-written OpId here.
+  // This is needed to initialize Consensus on startup.
+  // We also retrieve the opid of the first operation in the batch so that, if
+  // we roll over to a new segment, we set the first operation in the footer
+  // immediately.
+  if (batch->type_ == REPLICATE) {
+    // Update the index bounds for the current segment.
+    BOOST_FOREACH(const LogEntryPB& entry_pb, batch->entry_batch_pb_->entry()) {
+      int64_t index = entry_pb.replicate().id().index();
+      if (!footer_builder_.has_min_replicate_index() ||
+          index < footer_builder_.min_replicate_index()) {
+        footer_builder_.set_min_replicate_index(index);
+      }
+      if (!footer_builder_.has_max_replicate_index() ||
+          index > footer_builder_.max_replicate_index()) {
+        footer_builder_.set_max_replicate_index(index);
+      }
+    }
+  }
 }
 
 Status Log::AllocateSegmentAndRollOver() {
@@ -605,17 +616,19 @@ Status Log::GC(const consensus::OpId& min_op_id, int32_t* num_gced) {
 
       // Find the prefix of segments in the segment sequence that is guaranteed not to include
       // 'min_op_id'.
-      RETURN_NOT_OK(reader_->GetSegmentPrefixNotIncluding(min_op_id, &segments_to_delete));
+      RETURN_NOT_OK(reader_->GetSegmentPrefixNotIncluding(min_op_id.index(), &segments_to_delete));
+
+      int max_to_delete = std::max(reader_->num_segments() - FLAGS_log_min_segments_to_retain, 0);
+      if (segments_to_delete.size() > max_to_delete) {
+        VLOG(1) << "GCing " << segments_to_delete.size() << " in " << log_dir_
+                << " would not leave enough remaining segments to satisfy minimum "
+                << "retention requirement. Only GCing "
+                << max_to_delete << "/" << reader_->num_segments();
+        segments_to_delete.resize(max_to_delete);
+      }
 
       if (segments_to_delete.size() == 0) {
         VLOG(1) << "No segments to delete.";
-        *num_gced = 0;
-        return Status::OK();
-      }
-
-      if (reader_->num_segments() - segments_to_delete.size() < FLAGS_log_min_segments_to_retain) {
-        VLOG(1) << "GCing " << reader_->num_segments() << " would not leave enough "
-                << " remaining segments to satisfy minimum retention requirement.";
         *num_gced = 0;
         return Status::OK();
       }
@@ -725,12 +738,17 @@ Status Log::SwitchToAllocatedSegment() {
   gscoped_ptr<WritableLogSegment> new_segment(
       new WritableLogSegment(new_segment_path, next_segment_file_));
 
+  // Set up the new header and footer.
   LogSegmentHeaderPB header;
-
   header.set_major_version(kLogMajorVersion);
   header.set_minor_version(kLogMinorVersion);
   header.set_sequence_number(active_segment_sequence_number_);
   header.set_tablet_id(tablet_id_);
+
+  // Set up the new footer. This will be maintained as the segment is written.
+  footer_builder_.Clear();
+  footer_builder_.set_num_entries(0);
+
 
   // Set the new segment's schema.
   {

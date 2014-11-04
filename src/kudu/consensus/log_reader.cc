@@ -143,66 +143,50 @@ Status LogReader::InitEmptyReaderForTests() {
   return Status::OK();
 }
 
-Status LogReader::GetSegmentPrefixNotIncluding(const consensus::OpId& opid,
+Status LogReader::GetSegmentPrefixNotIncluding(int64_t index,
                                                SegmentSequence* segments) const {
-  DCHECK(opid.IsInitialized());
+  DCHECK_GE(index, 0);
   DCHECK(segments);
   segments->clear();
 
   boost::lock_guard<simple_spinlock> lock(lock_);
   CHECK_EQ(state_, kLogReaderReading);
 
-  // This gives us the segment that might include 'opid'
-  ReadableLogSegmentIndex::const_iterator pos = segments_idx_.lower_bound(opid);
-
-  // If we couldn't find a segment, that means the operation was already GC'd, just return.
-  if (pos == segments_idx_.end()) return Status::OK();
-
-  // Return all segments before, but not including 'pos'.
   BOOST_FOREACH(const scoped_refptr<ReadableLogSegment>& segment, segments_) {
-    if (segment->header().sequence_number() < (*pos).second.entry_segment_seqno) {
-      segments->push_back(segment);
-      continue;
+    // The last segment doesn't have a footer. Never include that one.
+    if (!segment->HasFooter()) {
+      break;
     }
-    break;
+    if (segment->footer().max_replicate_index() >= index) {
+      break;
+    }
+    // TODO: tests for edge cases here with backwards ordered replicates.
+    segments->push_back(segment);
   }
 
   return Status::OK();
 }
 
-Status LogReader::GetSegmentSuffixIncluding(const consensus::OpId& opid,
+Status LogReader::GetSegmentSuffixIncluding(int64_t index,
                                             SegmentSequence* segments) const {
+  DCHECK_GE(index, 0);
   boost::lock_guard<simple_spinlock> lock(lock_);
-  DCHECK(opid.IsInitialized());
   DCHECK(segments);
   segments->clear();
 
   CHECK_EQ(state_, kLogReaderReading);
 
-  // This gives us the segment that might include 'opid'
-  ReadableLogSegmentIndex::const_iterator pos = segments_idx_.lower_bound(opid);
-
-  // If we couldn't find a segment, and the index contains entries,
-  // that means the operation was already GC'd, return NotFound
-  if (!segments_idx_.empty() && pos == segments_idx_.end()) {
-    return Status::NotFound(
-        Substitute("No segment currently contains, or might contain opid: $0",
-                   opid.ShortDebugString()));
-  }
-
-  // If the segments index is empty however, the op we want may be in the current
-  // segment, so return the whole sequence.
-  if (segments_idx_.empty()) {
-    segments->assign(segments_.begin(), segments_.end());
-    // TODO here, likely, we should return something other than OK. We're not
-    // sure that the requested operation is going to be in one of the segments.
-    return Status::OK();
-  }
-
-
-  // Return all segments after, and including, 'pos'.
+  bool including = false;
   BOOST_FOREACH(const scoped_refptr<ReadableLogSegment>& segment, segments_) {
-    if (segment->header().sequence_number() >= (*pos).second.entry_segment_seqno) {
+    // Start including segments with the first one that contains a higher
+    // replicate ID (and include all later segments as well).
+    if (segment->HasFooter() && segment->footer().max_replicate_index() >= index) {
+      including = true;
+    }
+
+    // The last segment doesn't have a footer. Always include that one,
+    // even if no other segments matched.
+    if (!segment->HasFooter() || including) {
       segments->push_back(segment);
     }
   }
@@ -210,16 +194,25 @@ Status LogReader::GetSegmentSuffixIncluding(const consensus::OpId& opid,
   return Status::OK();
 }
 
-Status LogReader::ReadAllReplicateEntries(const OpId starting_after,
-                                          const OpId up_to,
+Status LogReader::ReadAllReplicateEntries(const int64_t starting_after,
+                                          const int64_t up_to,
                                           vector<ReplicateMsg*>* replicates) const {
-  DCHECK(starting_after.IsInitialized());
-  DCHECK(up_to.IsInitialized());
+  DCHECK_GE(starting_after, 0);
+  DCHECK_GT(up_to, starting_after);
 
+  int64_t num_entries = up_to - starting_after;
+  // Pre-reserve space in our result array. We'll fill in the messages as we go,
+  // letting later messages replace earlier (they may have been appended by later
+  // leaders).
+  replicates->assign(num_entries, static_cast<ReplicateMsg*>(NULL));
+
+  // Get all segments which might include 'starting_after' (and anything after it).
   log::SegmentSequence segments_copy;
   RETURN_NOT_OK(GetSegmentSuffixIncluding(starting_after, &segments_copy));
 
-  // Read the entries from the log
+  // Read the entries from the relevant segment(s).
+  // TODO: we should do this lazily - right now we're reading way more than
+  // necessary!
   vector<log::LogEntryPB*> entries;
   ElementDeleter deleter(&entries);
   BOOST_FOREACH(const scoped_refptr<log::ReadableLogSegment>& segment, segments_copy) {
@@ -228,44 +221,72 @@ Status LogReader::ReadAllReplicateEntries(const OpId starting_after,
 
   // Now filter the entries to make sure we only get replicates and in the range
   // we want.
-  OpId previous_entry;
-  bool found_start = false;
-  bool found_end = false;
   BOOST_FOREACH(log::LogEntryPB* entry, entries) {
+    if (entry->has_commit() &&
+        entry->commit().commited_op_id().index() >= up_to) {
+      // We know that once we see a commit for 'up_to' or higher, that it
+      // cannot be replaced in the log by a later REPLICATE.
+      // If we never see such a COMMIT, we'll read to the very end of the log.
+      break;
+    }
+
+    // Other than that, we only need to worry about REPLICATE messages.
     if (!entry->has_replicate()) continue;
 
-    if (!found_start) {
-      found_start = OpIdEquals(entry->replicate().id(), starting_after);
-      previous_entry.CopyFrom(entry->replicate().id());
+    int64_t repl_index = entry->replicate().id().index();
+    if (repl_index <= starting_after) {
+      // We don't care about replicates before our range.
+      continue;
+    }
+    if (repl_index > up_to) {
+      // Ignore anything coming after our target range. We can't
+      // break here, because we may have a replaced operation with
+      // an earlier index which comes later in the log.
       continue;
     }
 
-    DCHECK(found_start);
-    DCHECK_EQ(entry->replicate().id().index(), previous_entry.index() + 1);
+    // Compute the index in our output array.
+    int64_t relative_idx = repl_index - starting_after - 1;
+    DCHECK_LT(relative_idx, replicates->size());
+    DCHECK_GE(relative_idx, 0);
 
-    ReplicateMsg* replicate = entry->release_replicate();
-
-    replicates->push_back(replicate);
-    previous_entry = replicate->id();
-
-    // If the current message is equal to 'to' we're done.
-    if (OpIdEquals(replicate->id(), up_to)) {
-      found_end = true;
-      break;
-    }
+    // We may be replacing an earlier replicate with the same ID, in which case
+    // we need to delete it.
+    delete (*replicates)[relative_idx];
+    (*replicates)[relative_idx] = entry->release_replicate();
   }
 
-  if (!found_start) {
-    return Status::NotFound(Substitute("Could not find 'starting_after' operation in the log."
-                                       " 'starting_after' was: $0",
-                                       starting_after.ShortDebugString()));
-  }
-
-  if (!found_end) {
+  // Sanity-checks that we found what we were looking for.
+  // First, verify the common cases where our lower or upper bounds
+  // came before or after the beginning or end of the log, respectively.
+  if (replicates->front() == NULL) {
+    STLDeleteElements(replicates);
     return Status::NotFound(
-        Substitute("Could not find 'up_to operation in the log. 'up_to' was: $0, but last was: $1",
-                   up_to.ShortDebugString(),
-                   replicates->empty() ? "None" : replicates->back()->id().ShortDebugString()));
+      Substitute("Could not find operations starting at $0 in the log "
+                 "(perhaps they were already GCed)",
+                 starting_after + 1));
+  }
+  if (replicates->back() == NULL) {
+    STLDeleteElements(replicates);
+    return Status::NotFound(
+      Substitute("Could not find operations through $0 in the log "
+                 "(perhaps they were not yet written locally)",
+                 up_to));
+  }
+
+  // Even though the first and last op might be present, a corrupt log
+  // might be missing one in the middle. In this case, we'll return a
+  // Corruption instead of NotFound.
+  int found_count = 0;
+  BOOST_FOREACH(ReplicateMsg* msg, *replicates) {
+    if (msg == NULL) {
+      STLDeleteElements(replicates);
+      return Status::Corruption(
+        Substitute("Could not find operations $0 through $1 in the log (missing op $2)",
+                   starting_after + 1, up_to, starting_after + 1 + found_count));
+    } else {
+      found_count++;
+    }
   }
 
   return Status::OK();
@@ -307,25 +328,16 @@ void LogReader::UpdateLastSegmentOffset(uint64_t readable_to_offset) {
 }
 
 Status LogReader::ReplaceLastSegment(const scoped_refptr<ReadableLogSegment>& segment) {
+  // This is used to replace the last segment once we close it properly so it must
+  // have a footer.
+  DCHECK(segment->HasFooter());
+
   boost::lock_guard<simple_spinlock> lock(lock_);
   CHECK_EQ(state_, kLogReaderReading);
   // Make sure the segment we're replacing has the same sequence number
   CHECK(!segments_.empty());
   CHECK_EQ(segment->header().sequence_number(), segments_.back()->header().sequence_number());
   segments_[segments_.size() - 1] = segment;
-
-  // This is used to replace the last segment once we close it properly so it must
-  // have a footer.
-  DCHECK(segment->HasFooter());
-
-  // Add/replace the index entries if the segment has a footer.
-  BOOST_FOREACH(const SegmentIdxPosPB& pos_pb, segment->footer().idx_entry()) {
-    SegmentIdxPos pos;
-    pos.entry_pb = pos_pb;
-    pos.entry_segment_seqno = segment->header().sequence_number();
-    InsertOrDie(&segments_idx_, pos.entry_pb.id(), pos);
-  }
-
 
   return Status::OK();
 }
@@ -348,19 +360,6 @@ Status LogReader::AppendSegmentUnlocked(const scoped_refptr<ReadableLogSegment>&
              segment->header().sequence_number());
   }
   segments_.push_back(segment);
-  if (segment->footer().idx_entry_size() > 0) {
-    BOOST_FOREACH(const SegmentIdxPosPB& pos_pb, segment->footer().idx_entry()) {
-      SegmentIdxPos pos;
-      pos.entry_pb = pos_pb;
-      pos.entry_segment_seqno = segment->header().sequence_number();
-      if (PREDICT_FALSE(!InsertIfNotPresent(&segments_idx_, pos.entry_pb.id(), pos))) {
-        LOG(FATAL) << "Tablet " << tablet_oid_ << ": Created two log segments containing "
-            << "the same OpId " << pos.entry_pb.id() << ": one segment has seqno "
-            << segment->header().sequence_number() << " and the other has seqno "
-            << segments_idx_[pos.entry_pb.id()].entry_segment_seqno;
-      }
-    }
-  }
   return Status::OK();
 }
 
@@ -388,12 +387,6 @@ string LogReader::ToString() const {
     ret.append(Substitute("Segment: $0 Footer: $1\n",
                           entry->header().sequence_number(),
                           !entry->HasFooter() ? "NONE" : entry->footer().ShortDebugString()));
-  }
-  ret.append("Reader's Segment Index: \n");
-  BOOST_FOREACH(const ReadableLogSegmentIndex::value_type& entry, segments_idx_) {
-    ret.append(Substitute("Op: $0 Segment: $1\n",
-                          entry.first.ShortDebugString(),
-                          entry.second.entry_segment_seqno));
   }
   return ret;
 }

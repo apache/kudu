@@ -291,7 +291,7 @@ TEST_F(TabletPeerTest, TestMRSAnchorPreventsLogGC) {
   // Ensure nothing gets deleted.
   tablet_peer_->GetEarliestNeededOpId(&min_op_id);
   ASSERT_STATUS_OK(log->GC(min_op_id, &num_gced));
-  ASSERT_EQ(0, num_gced);
+  ASSERT_EQ(0, num_gced) << "earliest needed: " << min_op_id;
 
   // Flush MRS as needed to ensure that we don't have OpId anchors in the MRS.
   tablet_peer_->tablet()->Flush();
@@ -302,7 +302,7 @@ TEST_F(TabletPeerTest, TestMRSAnchorPreventsLogGC) {
   // OpId in the log.
   tablet_peer_->GetEarliestNeededOpId(&min_op_id);
   ASSERT_STATUS_OK(log->GC(min_op_id, &num_gced));
-  ASSERT_EQ(2, num_gced);
+  ASSERT_EQ(2, num_gced) << "earliest needed: " << min_op_id;
   ASSERT_STATUS_OK(log->GetLogReader()->GetSegmentsSnapshot(&segments));
   ASSERT_EQ(2, segments.size());
 }

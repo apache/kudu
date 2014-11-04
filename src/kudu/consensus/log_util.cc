@@ -171,12 +171,19 @@ Status ReadableLogSegment::RebuildFooterByScanning() {
 
   footer_.set_num_entries(entries.size());
 
-  // Rebuild the index, right now we're just keeping the first entry.
+  // Rebuild the min/max replicate index (by scanning)
   BOOST_FOREACH(const LogEntryPB* entry, entries) {
     if (entry->has_replicate()) {
-      SegmentIdxPosPB* idx_pos = footer_.add_idx_entry();
-      idx_pos->mutable_id()->CopyFrom(entry->replicate().id());
-      break;
+      int64_t index = entry->replicate().id().index();
+      // TODO: common code with Log::UpdateFooterForBatch
+      if (!footer_.has_min_replicate_index() ||
+          index < footer_.min_replicate_index()) {
+        footer_.set_min_replicate_index(index);
+      }
+      if (!footer_.has_max_replicate_index() ||
+          index > footer_.max_replicate_index()) {
+        footer_.set_max_replicate_index(index);
+      }
     }
   }
 
@@ -507,7 +514,7 @@ Status WritableLogSegment::WriteHeaderAndOpen(const LogSegmentHeaderPB& new_head
 Status WritableLogSegment::WriteFooterAndClose(const LogSegmentFooterPB& footer) {
   DCHECK(IsHeaderWritten());
   DCHECK(!IsFooterWritten());
-  DCHECK(footer.IsInitialized());
+  DCHECK(footer.IsInitialized()) << footer.InitializationErrorString();
 
   faststring buf;
 

@@ -85,13 +85,15 @@ Status RemoteBootstrapSession::Init() {
   // Re-anchor on the earliest OpId that we actually need.
   if (!log_segments_.empty()) {
     // Look for the first operation in the segments and anchor it.
-    // The first segment in the sequence must have a footer and an operation with an id.
+    // The first segment in the sequence must have a REPLICATE message.
     // TODO The first segment should always have an operation with id, but it
     // might not if we crashed in the middle of doing log GC and didn't cleanup
     // properly. See KUDU-254.
     CHECK(log_segments_[0]->HasFooter());
-    CHECK_GT(log_segments_[0]->footer().idx_entry_size(), 0);
-    OpId earliest(log_segments_[0]->footer().idx_entry(0).id());
+    int64_t min_repl_index = log_segments_[0]->footer().min_replicate_index();
+    CHECK_GT(min_repl_index, 0);
+    // TODO: need to change log anchoring to use only indexes and not OpIds.
+    OpId earliest = consensus::MakeOpId(0, min_repl_index);
     // Anchor on the earliest id found in the segments
     RETURN_NOT_OK(registry->UpdateRegistration(earliest, anchor_owner_token, &log_anchor_));
   } else {

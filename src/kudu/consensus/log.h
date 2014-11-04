@@ -286,6 +286,9 @@ class Log {
   // associated logic will no longer be needed.
   Status DoAppend(LogEntryBatch* entry, bool caller_owns_operation = true);
 
+  // Update footer_builder_ to reflect the log indexes seen in 'batch'.
+  void UpdateFooterForBatch(LogEntryBatch* batch);
+
   // Replaces the last "empty" segment in 'log_reader_', i.e. the one currently
   // being written to, by the same segment once properly closed.
   Status ReplaceSegmentInReaderUnlocked();
@@ -339,18 +342,13 @@ class Log {
   // read occasionally by things like consensus and log GC.
   mutable rw_spinlock last_entry_op_id_lock_;
 
-  // An segment index entry for the first operation with an
-  // id that we've added to the last segment.
-  // Used to build the footer.
-  // TODO We could keep a collection of these for each
-  // segment to build a (less) sparse index.
-  SegmentIdxPosPB first_op_in_seg_;
-
-  // The total number of operations written to the last segment
-  int64_t total_ops_in_last_seg_;
-
-  // The last known OpId written to this log (any segment).
+  // The last known OpId for a REPLICATE message appended to this log
+  // (any segment). NOTE: this op is not necessarily durable.
   consensus::OpId last_entry_op_id_;
+
+  // A footer being prepared for the current segment.
+  // When the segment is closed, it will be written.
+  LogSegmentFooterPB footer_builder_;
 
   // The maximum segment size, in bytes.
   uint64_t max_segment_size_;

@@ -50,16 +50,6 @@ message LogSegmentHeaderPB {
   required SchemaPB schema = 7;
 }
 
-// An entry in the footer's sparse index.
-// TODO for this to be really useful we need to keep the offset
-// of the entry so that we can skip, but since right now this
-// is only used to point to the first entry in each segment the
-// offset wouldn't really be useful yet.
-message SegmentIdxPosPB {
-  // The id of the pointed to operation.
-  required consensus.OpId id = 1;
-}
-
 // A footer for a log segment.
 //
 // Log segment footers might not be present (e.g. if the server
@@ -71,11 +61,16 @@ message SegmentIdxPosPB {
 // id in the log)
 message LogSegmentFooterPB {
   // the total number of operations inside this segment
-  required uint64 num_entries = 1;
-  // the ids and the offsets of the batches that contain certain
-  // operations within this segment. Right now only points to the
-  // first operation with an id.
-  // NOTE: It is possible to have a valid segment without any
-  // operations with ids.
-  repeated SegmentIdxPosPB idx_entry = 2;
+  required int64 num_entries = 1;
+
+  // The minimum and maximum index of a REPLICATE message in this segment.
+  // NOTE: because of log truncation, the min/max are not necessarily the first/last!
+  // For example, a log segment may contain entries "1.5, 1.6, 3.3, 2.3" due to multiple
+  // term changes.
+  //
+  // Because it's possible for a segment to have no replicate messages in it,
+  // these are optional. We set the default to -1 to avoid accidentally reading
+  // 0, which might look like a real log index.
+  optional int64 min_replicate_index = 2 [ default = -1 ];
+  optional int64 max_replicate_index = 3 [ default = -1 ];
 }

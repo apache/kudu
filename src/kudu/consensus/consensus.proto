@@ -58,8 +58,8 @@ message ConsensusErrorPB {
 // of the <term>th leader.
 message OpId {
   // The term of an operation or the leader's sequence id.
-  required uint64 term = 1;
-  required uint64 index = 2;
+  required int64 term = 1;
+  required int64 index = 2;
 }
 
 // This PB is used to serialize all of the persistent state needed for

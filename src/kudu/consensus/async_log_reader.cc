@@ -16,10 +16,10 @@ using consensus::OpId;
 using consensus::ReplicateMsg;
 using std::vector;
 
-Status AsyncLogReader::EnqueueAsyncRead(const OpId& starting_after,
-                                        const OpId& up_to,
+Status AsyncLogReader::EnqueueAsyncRead(int64_t starting_after,
+                                        int64_t up_to,
                                         const ReadDoneCallback& callback) {
-  DCHECK(consensus::OpIdLessThan(starting_after, up_to));
+  DCHECK_LT(starting_after, up_to);
 
   boost::lock_guard<simple_spinlock> lock(lock_);
 
@@ -38,8 +38,8 @@ Status AsyncLogReader::EnqueueAsyncRead(const OpId& starting_after,
   return Status::OK();
 }
 
-void AsyncLogReader::ReadEntriesAsync(const OpId& starting_after,
-                                      const OpId& up_to,
+void AsyncLogReader::ReadEntriesAsync(int64_t starting_after,
+                                      int64_t up_to,
                                       const ReadDoneCallback& callback) {
 
   {
@@ -51,7 +51,7 @@ void AsyncLogReader::ReadEntriesAsync(const OpId& starting_after,
   Status s = log_reader_->ReadAllReplicateEntries(starting_after,
                                                   up_to,
                                                   &replicates);
-  callback.Run(s, replicates, starting_after);
+  callback.Run(s, replicates);
 
   {
     boost::lock_guard<simple_spinlock> lock(lock_);

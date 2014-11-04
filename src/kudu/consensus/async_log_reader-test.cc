@@ -3,6 +3,7 @@
 
 #include "kudu/consensus/async_log_reader.h"
 #include "kudu/consensus/log-test-base.h"
+#include "kudu/consensus/opid_util.h"
 
 namespace kudu {
 namespace log {
@@ -34,8 +35,7 @@ class AsyncLogReaderTest : public LogTestBase {
   }
 
   void ReadPerformedCallback(const Status& status,
-                             const vector<ReplicateMsg*>& replicates,
-                             const OpId& starting_after) {
+                             const vector<ReplicateMsg*>& replicates) {
     {
       boost::lock_guard<simple_spinlock> lock(lock_);
       CHECK_EQ(expected_status_.CodeAsString(), status.CodeAsString())
@@ -57,21 +57,14 @@ class AsyncLogReaderTest : public LogTestBase {
 // Tests that the reader can read an existing range.
 TEST_F(AsyncLogReaderTest, TestReadExistingRange) {
   BuildLog();
-  OpId first;
-  first.set_term(1);
-  first.set_index(1);
+
+  // Append 1.1 through 1.50 across several segments
+  OpId first = consensus::MakeOpId(1, 1);
   AppendMultiSegmentSequence(5, 10, &first);
 
   AsyncLogReader reader(log_->GetLogReader());
   ASSERT_FALSE(reader.IsReading());
 
-
-  OpId last = first;
-  last.set_index(last.index() - 1);
-
-  OpId start_after;
-  start_after.set_term(1);
-  start_after.set_index(5);
 
   // Enqueue a read that spans several segments, starting after (but not
   // including) 'starting_after' and ending (and including) in 'last'.
@@ -83,7 +76,7 @@ TEST_F(AsyncLogReaderTest, TestReadExistingRange) {
     boost::lock_guard<simple_spinlock> lock(lock_);
     expected_status_ = Status::OK();
     expected_op_count_ = 45;
-    ASSERT_OK(reader.EnqueueAsyncRead(start_after, last,
+    ASSERT_OK(reader.EnqueueAsyncRead(5, 50,
                                       Bind(&AsyncLogReaderTest::ReadPerformedCallback,
                                            Unretained(this))));
     ASSERT_TRUE(reader.IsReading());
@@ -96,20 +89,11 @@ TEST_F(AsyncLogReaderTest, TestReadExistingRange) {
 // could not be found.
 TEST_F(AsyncLogReaderTest, TestReadWithNotFoundStart) {
   BuildLog();
-  OpId first;
-  first.set_term(1);
-  first.set_index(5);
+  OpId first = consensus::MakeOpId(1, 5);
   AppendMultiSegmentSequence(5, 10, &first);
 
   AsyncLogReader reader(log_->GetLogReader());
   ASSERT_FALSE(reader.IsReading());
-
-  OpId last = first;
-  last.set_index(last.index() -1);
-
-  OpId start_after;
-  start_after.set_term(1);
-  start_after.set_index(1);
 
 
   // Enqueue a read that spans several segments, starting after (but not
@@ -122,7 +106,7 @@ TEST_F(AsyncLogReaderTest, TestReadWithNotFoundStart) {
     boost::lock_guard<simple_spinlock> lock(lock_);
     expected_status_ = Status::NotFound("");
     expected_op_count_ = 0;
-    ASSERT_OK(reader.EnqueueAsyncRead(start_after, last,
+    ASSERT_OK(reader.EnqueueAsyncRead(1, 50,
                                       Bind(&AsyncLogReaderTest::ReadPerformedCallback,
                                            Unretained(this))));
   }

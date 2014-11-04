@@ -1,15 +1,20 @@
 // Copyright (c) 2013, Cloudera, inc.
 // Confidential Cloudera Information: Covered by NDA.
 
+#include <algorithm>
 #include <boost/bind.hpp>
+#include <boost/foreach.hpp>
 #include <boost/function.hpp>
+#include <glog/stl_logging.h>
 #include <vector>
 
 #include "kudu/consensus/log-test-base.h"
 #include "kudu/consensus/consensus-test-util.h"
 #include "kudu/consensus/opid_util.h"
 #include "kudu/gutil/stl_util.h"
+#include "kudu/gutil/strings/substitute.h"
 #include "kudu/tablet/mvcc.h"
+#include "kudu/util/random.h"
 
 DEFINE_int32(num_batches, 10000,
              "Number of batches to write to/read from the Log in TestWriteManyBatches");
@@ -21,10 +26,22 @@ namespace log {
 
 using std::tr1::shared_ptr;
 using std::tr1::unordered_map;
+using consensus::MakeOpId;
 using consensus::MinimumOpId;
+using strings::Substitute;
 
 extern const char* kTestTable;
 extern const char* kTestTablet;
+
+struct TestLogSequenceElem {
+  enum ElemType {
+    REPLICATE,
+    COMMIT,
+    ROLL
+  };
+  ElemType type;
+  OpId id;
+};
 
 class LogTest : public LogTestBase {
  public:
@@ -51,7 +68,7 @@ class LogTest : public LogTestBase {
   }
 
   Status AppendNewEmptySegmentToReader(int sequence_number,
-                                       int first_op_index,
+                                       int first_repl_index,
                                        LogReader* reader) {
     string fqp = GetTestPath(strings::Substitute("wal-00000000$0", sequence_number));
     gscoped_ptr<WritableFile> w_log_seg;
@@ -71,15 +88,18 @@ class LogTest : public LogTestBase {
 
     LogSegmentFooterPB footer;
     footer.set_num_entries(10);
-    SegmentIdxPosPB* pb = footer.add_idx_entry();
-    OpId* opid = pb->mutable_id();
-    opid->set_term(0);
-    opid->set_index(first_op_index);
+    footer.set_min_replicate_index(first_repl_index);
+    footer.set_max_replicate_index(first_repl_index + 9);
 
     RETURN_NOT_OK(readable_segment->Init(header, footer, 0));
     RETURN_NOT_OK(reader->AppendSegment(readable_segment));
     return Status::OK();
   }
+
+  void GenerateTestSequence(Random* rng, int seq_len,
+                            vector<TestLogSequenceElem>* ops,
+                            vector<int64_t>* terms_by_index);
+  void AppendTestSequence(const vector<TestLogSequenceElem>& seq);
 };
 
 // If we write more than one entry in a batch, we should be able to
@@ -370,6 +390,14 @@ TEST_F(LogTest, TestGCWithLogRunning) {
   ASSERT_OK(log_->GetLogReader()->GetSegmentsSnapshot(&segments))
   ASSERT_EQ(2, segments.size()) << DumpSegmentsToString(segments);
 
+  // Check that we get a NotFound if we try to read before the GCed point.
+  {
+    vector<ReplicateMsg*> repls;
+    ElementDeleter d(&repls);
+    Status s = log_->GetLogReader()->ReadAllReplicateEntries(1, 2, &repls);
+    ASSERT_TRUE(s.IsNotFound()) << s.ToString();
+  }
+
   ASSERT_STATUS_OK(log_->Close());
   CheckRightNumberOfSegmentFiles(2);
 
@@ -453,11 +481,9 @@ TEST_F(LogTest, TestLogReopenAndGC) {
   ASSERT_STATUS_OK(log_->GC(anchored_opid, &num_gced_segments));
 
   // After GC there should be only one left, besides the one currently being
-  // written to, because it's the first segment (counting in reverse order)
-  // that has an earlier initial OpId than the earliest one we are anchored
-  // on (which is in our active "new" segment).
-  ASSERT_OK(log_->GetLogReader()->GetSegmentsSnapshot(&segments))
-  ASSERT_EQ(2, segments.size());
+  // written to. That is because min_segments_to_retain defaults to 2.
+  ASSERT_OK(log_->GetLogReader()->GetSegmentsSnapshot(&segments));
+  ASSERT_EQ(2, segments.size()) << DumpSegmentsToString(segments);
   ASSERT_STATUS_OK(log_->Close());
 
   CheckRightNumberOfSegmentFiles(2);
@@ -524,17 +550,16 @@ TEST_F(LogTest, TestCommitsAreBufferedUntilReplicates) {
 
 // This tests that querying LogReader works.
 // This sets up a reader with some segments to query which amount to the
-// following index:
-// Index entries (first op in the segment, segment number):
-// - {0.40, seg004}
-// - {0.20, seg003}
-// - {0.10, seg002}
+// following:
+// seg002: 0.10 through 0.19
+// seg003: 0.20 through 0.29
+// seg004: 0.30 through 0.39
 TEST_F(LogTest, TestLogReader) {
   LogReader reader(fs_manager_.get(), kTestTablet);
   reader.InitEmptyReaderForTests();
   ASSERT_STATUS_OK(AppendNewEmptySegmentToReader(2, 10, &reader));
   ASSERT_STATUS_OK(AppendNewEmptySegmentToReader(3, 20, &reader));
-  ASSERT_STATUS_OK(AppendNewEmptySegmentToReader(4, 40, &reader));
+  ASSERT_STATUS_OK(AppendNewEmptySegmentToReader(4, 30, &reader));
 
   OpId op;
   op.set_term(0);
@@ -542,74 +567,62 @@ TEST_F(LogTest, TestLogReader) {
 
   // Queries for segment prefixes (used for GC)
 
-  // Asking the reader the prefix of segments that does not include op 0.1
+  // Asking the reader the prefix of segments that does not include op 1
   // should return the empty set.
-  op.set_index(1);
-  ASSERT_OK(reader.GetSegmentPrefixNotIncluding(op, &segments));
+  ASSERT_OK(reader.GetSegmentPrefixNotIncluding(1, &segments));
   ASSERT_TRUE(segments.empty());
 
-  // .. same for op 0.10
-  op.set_index(10);
-  ASSERT_OK(reader.GetSegmentPrefixNotIncluding(op, &segments));
+  // .. same for op 10
+  ASSERT_OK(reader.GetSegmentPrefixNotIncluding(10, &segments));
   ASSERT_TRUE(segments.empty());
 
-  // Asking for the prefix of segments not including op 0.20 should return
-  // the first segment, since 0.20 is the first operation in segment 3.
-  op.set_index(20);
-  ASSERT_OK(reader.GetSegmentPrefixNotIncluding(op, &segments));
+  // Asking for the prefix of segments not including op 20 should return
+  // the first segment, since 20 is the first operation in segment 3.
+  ASSERT_OK(reader.GetSegmentPrefixNotIncluding(20, &segments));
   ASSERT_EQ(segments.size(), 1);
   ASSERT_EQ(segments[0]->header().sequence_number(), 2);
 
-  // Asking for 0.40 should include the first two.
-  op.set_index(40);
-  ASSERT_OK(reader.GetSegmentPrefixNotIncluding(op, &segments));
+  // Asking for 30 should include the first two.
+  ASSERT_OK(reader.GetSegmentPrefixNotIncluding(30, &segments));
   ASSERT_EQ(segments.size(), 2);
   ASSERT_EQ(segments[0]->header().sequence_number(), 2);
   ASSERT_EQ(segments[1]->header().sequence_number(), 3);
 
-  // Asking for anything higher should still return the first two.
-  op.set_index(1000);
-  ASSERT_OK(reader.GetSegmentPrefixNotIncluding(op, &segments));
-  ASSERT_EQ(segments.size(), 2);
+  // Asking for anything higher should return all segments.
+  ASSERT_OK(reader.GetSegmentPrefixNotIncluding(1000, &segments));
+  ASSERT_EQ(segments.size(), 3);
   ASSERT_EQ(segments[0]->header().sequence_number(), 2);
   ASSERT_EQ(segments[1]->header().sequence_number(), 3);
 
   // Queries for segment suffixes (useful to seek to segments, e.g. when
   // when serving ops from the log)
 
-  // Asking the reader for the suffix of segments sure to include 0.1 should
-  // return Status::NotFound();
-  op.set_index(1);
-  ASSERT_TRUE(reader.GetSegmentSuffixIncluding(op, &segments).IsNotFound());
-
-  // ... asking for 0.10 should return all three segments
-  op.set_index(10);
-  ASSERT_OK(reader.GetSegmentSuffixIncluding(op, &segments));
+  // Asking the reader for the suffix of segments sure to include 1 should
+  // include all the segments.
+  ASSERT_OK(reader.GetSegmentSuffixIncluding(1, &segments));
   ASSERT_EQ(segments.size(), 3);
 
-  // ... asking for 0.15 should return all three segments
-  op.set_index(15);
-  ASSERT_OK(reader.GetSegmentSuffixIncluding(op, &segments));
+  // ... asking for 10 should return all three segments as well.
+  ASSERT_OK(reader.GetSegmentSuffixIncluding(10, &segments));
   ASSERT_EQ(segments.size(), 3);
 
-  // ... asking for 0.20 should return segments 3, 4
-  op.set_index(20);
-  ASSERT_OK(reader.GetSegmentSuffixIncluding(op, &segments));
+  // ... asking for 15 should return all three segments
+  ASSERT_OK(reader.GetSegmentSuffixIncluding(15, &segments));
+  ASSERT_EQ(segments.size(), 3);
+
+  // ... asking for 20 should return segments 3, 4
+  ASSERT_OK(reader.GetSegmentSuffixIncluding(20, &segments));
   ASSERT_EQ(segments.size(), 2);
   ASSERT_EQ(segments[0]->header().sequence_number(), 3);
   ASSERT_EQ(segments[1]->header().sequence_number(), 4);
 
-  // ... asking for 0.40 should return segments 4
-  op.set_index(40);
-  ASSERT_OK(reader.GetSegmentSuffixIncluding(op, &segments));
-  ASSERT_EQ(segments.size(), 1);
-  ASSERT_EQ(segments[0]->header().sequence_number(), 4);
+  // ... asking for 40 should return no segments
+  ASSERT_OK(reader.GetSegmentSuffixIncluding(40, &segments));
+  ASSERT_EQ(segments.size(), 0);
 
-  // ... asking for anything higher should return segment 4
-  op.set_index(1000);
-  ASSERT_OK(reader.GetSegmentSuffixIncluding(op, &segments));
-  ASSERT_EQ(segments.size(), 1);
-  ASSERT_EQ(segments[0]->header().sequence_number(), 4);
+  // ... asking for anything higher should return no segments
+  ASSERT_OK(reader.GetSegmentSuffixIncluding(1000, &segments));
+  ASSERT_EQ(segments.size(), 0);
 }
 
 // Test that, even if the LogReader's index is empty because no segments
@@ -620,13 +633,10 @@ TEST_F(LogTest, TestLogReaderReturnsLatestSegmentIfIndexEmpty) {
   AppendCommit(1, APPEND_ASYNC);
   AppendReplicateBatch(1, APPEND_SYNC);
 
-  OpId id;
-  id.set_term(0);
-  id.set_index(1);
   // The reader has nothing in the index, since we've only appended
   // a small batch and have not rolled over.
   SegmentSequence segments;
-  ASSERT_STATUS_OK(log_->GetLogReader()->GetSegmentSuffixIncluding(id, &segments));
+  ASSERT_STATUS_OK(log_->GetLogReader()->GetSegmentSuffixIncluding(1, &segments));
   ASSERT_EQ(segments.size(), 1);
 
   vector<LogEntryPB*> entries;
@@ -636,11 +646,170 @@ TEST_F(LogTest, TestLogReaderReturnsLatestSegmentIfIndexEmpty) {
 }
 
 TEST_F(LogTest, TestOpIdUtils) {
-  OpId id = consensus::MakeOpId(1, 2);
+  OpId id = MakeOpId(1, 2);
   ASSERT_EQ("1.2", consensus::OpIdToString(id));
   ASSERT_EQ(1, id.term());
   ASSERT_EQ(2, id.index());
 }
 
+std::ostream& operator<<(std::ostream& os, const TestLogSequenceElem& elem) {
+  switch (elem.type) {
+    case TestLogSequenceElem::ROLL:
+      os << "ROLL";
+      break;
+    case TestLogSequenceElem::REPLICATE:
+      os << "R" << elem.id;
+      break;
+    case TestLogSequenceElem::COMMIT:
+      os << "C" << elem.id;
+      break;
+  }
+  return os;
+}
+
+// Generates a plausible sequence of items in the log, including term changes, moving the
+// index backwards, log rolls, etc.
+//
+// NOTE: this log sequence may contain some aberrations which would not occur in a real
+// consensus log, but our API supports them. In the future we may want to add assertions
+// to the Log implementation that prevent such aberrations, in which case we'd need to
+// modify this.
+void LogTest::GenerateTestSequence(Random* rng, int seq_len,
+                                   vector<TestLogSequenceElem>* ops,
+                                   vector<int64_t>* terms_by_index) {
+  terms_by_index->assign(seq_len + 1, -1);
+  int64_t committed_index = 0;
+  int64_t max_repl_index = 0;
+
+  OpId id = MakeOpId(1, 0);
+  for (int i = 0; i < seq_len; i++) {
+    if (rng->OneIn(5)) {
+      // Reset term - it may stay the same, or go up/down
+      id.set_term(std::max(1L, id.term() + rng->Uniform(5) - 2));
+    }
+
+    // Advance index by exactly one
+    id.set_index(id.index() + 1);
+
+    if (rng->OneIn(5)) {
+      // Move index backward a bit, but not past the committed index
+      id.set_index(std::max(committed_index + 1, id.index() - rng->Uniform(5)));
+    }
+
+    // Roll the log sometimes
+    if (i != 0 && rng->OneIn(15)) {
+      TestLogSequenceElem op;
+      op.type = TestLogSequenceElem::ROLL;
+      ops->push_back(op);
+    }
+
+    TestLogSequenceElem op;
+    op.type = TestLogSequenceElem::REPLICATE;
+    op.id = id;
+    ops->push_back(op);
+    (*terms_by_index)[id.index()] = id.term();
+    max_repl_index = std::max(max_repl_index, id.index());
+
+    // Advance the commit index sometimes
+    if (rng->OneIn(5)) {
+      while (committed_index < id.index()) {
+        committed_index++;
+        TestLogSequenceElem op;
+        op.type = TestLogSequenceElem::COMMIT;
+        op.id = MakeOpId((*terms_by_index)[committed_index], committed_index);
+        ops->push_back(op);
+      }
+    }
+  }
+  terms_by_index->resize(max_repl_index + 1);
+}
+
+void LogTest::AppendTestSequence(const vector<TestLogSequenceElem>& seq) {
+  BOOST_FOREACH(const TestLogSequenceElem& e, seq) {
+    VLOG(1) << "Appending: " << e;
+    switch (e.type) {
+      case TestLogSequenceElem::REPLICATE:
+      {
+        OpId id(e.id);
+        ASSERT_OK(AppendNoOp(&id));
+        break;
+      }
+      case TestLogSequenceElem::COMMIT:
+      {
+        gscoped_ptr<CommitMsg> commit(new CommitMsg);
+        commit->set_op_type(NO_OP);
+        commit->mutable_commited_op_id()->CopyFrom(e.id);
+        Synchronizer s;
+        ASSERT_STATUS_OK(log_->AsyncAppendCommit(commit.Pass(), s.AsStatusCallback()));
+        ASSERT_STATUS_OK(s.Wait());
+      }
+      case TestLogSequenceElem::ROLL:
+      {
+        ASSERT_OK(RollLog());
+      }
+    }
+  }
+}
+
+static int RandInRange(Random* r, int min_inclusive, int max_inclusive) {
+  int width = max_inclusive - min_inclusive + 1;
+  return min_inclusive + r->Uniform(width);
+}
+
+// Test that if multiple REPLICATE entries are written for the same index,
+// that we read the latest one.
+//
+// This is a randomized test: we generate a plausible sequence of log messages,
+// write it out, and then read random ranges of log indexes, making sure we
+// always see the correct term for each REPLICATE message (i.e whichever term
+// was the last to append it).
+TEST_F(LogTest, TestReadLogWithReplacedReplicates) {
+  const int kSequenceLength = AllowSlowTests() ? 1000 : 50;
+
+  Random rng(SeedRandom());
+  vector<int64_t> terms_by_index;
+  vector<TestLogSequenceElem> seq;
+  GenerateTestSequence(&rng, kSequenceLength, &seq, &terms_by_index);
+  LOG(INFO) << "test sequence: " << seq;
+  const int64_t max_repl_index = terms_by_index.size() - 1;
+  LOG(INFO) << "max_repl_index: " << max_repl_index;
+
+  // Write the test sequence to the log.
+  // TODO: should consider adding batching here of multiple replicates
+  BuildLog();
+  AppendTestSequence(seq);
+
+  const int kNumRandomReads = 100;
+
+  // We'll advance 'gc_index' randomly through the log until we've gotten to
+  // the end. This ensures that, when we GC, we don't ever remove the latest
+  // version of a replicate message unintentionally.
+  LogReader* reader = log_->GetLogReader();
+  for (int gc_index = 0; gc_index < max_repl_index;) {
+    SCOPED_TRACE(Substitute("after GCing $0", gc_index));
+
+    // Test reading random ranges of indexes and verifying that we get back the
+    // REPLICATE messages with the correct terms
+    for (int random_read = 0; random_read < kNumRandomReads; random_read++) {
+      int start_index = RandInRange(&rng, gc_index, max_repl_index - 1);
+      int end_index = RandInRange(&rng, start_index + 1, max_repl_index);
+      SCOPED_TRACE(Substitute("Reading $0-$1", start_index, end_index));
+      vector<ReplicateMsg*> repls;
+      ElementDeleter d(&repls);
+      ASSERT_OK(reader->ReadAllReplicateEntries(start_index, end_index, &repls));
+      ASSERT_EQ(end_index - start_index, repls.size());
+      int expected_index = start_index + 1;
+      BOOST_FOREACH(const ReplicateMsg* repl, repls) {
+        ASSERT_EQ(expected_index, repl->id().index());
+        ASSERT_EQ(terms_by_index[expected_index], repl->id().term());
+        expected_index++;
+      }
+    }
+
+    int num_gced = 0;
+    ASSERT_OK(log_->GC(MakeOpId(0, gc_index), &num_gced));
+    gc_index += rng.Uniform(10);
+  }
+}
 } // namespace log
 } // namespace kudu

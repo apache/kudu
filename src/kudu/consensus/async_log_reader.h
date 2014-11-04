@@ -29,8 +29,8 @@ class AsyncLogReader {
   // AsyncLogReader assumes that the Callback will take ownership of the ReplicateMsgs.
   typedef Callback<
       void(const Status& resulting_status,
-           const std::vector<consensus::ReplicateMsg*>& read_replicates,
-           const consensus::OpId& starting_after)> ReadDoneCallback;
+           const std::vector<consensus::ReplicateMsg*>& read_replicates)>
+      ReadDoneCallback;
 
   explicit AsyncLogReader(LogReader* log_reader)
       : log_reader_(log_reader),
@@ -43,8 +43,8 @@ class AsyncLogReader {
   // where 'starting_after' is exclusive and 'up_to' is inclusive.
   // Returns Status::OK() if the enqueue was successful or Status::AlreadyPresent()
   // if the reader was already reading. Any other status means the read failed.
-  Status EnqueueAsyncRead(const consensus::OpId& starting_after,
-                          const consensus::OpId& up_to,
+  Status EnqueueAsyncRead(int64_t starting_after,
+                          int64_t up_to,
                           const ReadDoneCallback& callback);
 
   // Returns whether a read is happening.
@@ -56,8 +56,8 @@ class AsyncLogReader {
  private:
 
   // Actually performs the read from disk. Calls the callback when done.
-  void ReadEntriesAsync(const consensus::OpId& starting_after,
-                        const consensus::OpId& up_to,
+  void ReadEntriesAsync(int64_t starting_after,
+                        int64_t up_to,
                         const ReadDoneCallback& callback);
 
   LogReader* log_reader_;

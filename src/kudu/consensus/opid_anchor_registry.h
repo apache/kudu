@@ -63,6 +63,7 @@ class OpIdAnchorRegistry : public RefCountedThreadSafe<OpIdAnchorRegistry> {
   friend class RefCountedThreadSafe<OpIdAnchorRegistry>;
   ~OpIdAnchorRegistry();
 
+  // TODO: should compare by index!
   typedef std::multimap<consensus::OpId,
                         OpIdAnchor*,
                         consensus::OpIdCompareFunctor> OpIdMultiMap;
