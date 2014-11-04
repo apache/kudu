@@ -3,6 +3,7 @@
 
 #include "kudu/gutil/bind.h"
 #include "kudu/gutil/callback.h"
+#include "kudu/gutil/macros.h"
 
 #include <gtest/gtest.h>
 
@@ -22,6 +23,26 @@ TEST(CallbackBindTest, TestFreeFunction) {
 class Ref : public RefCountedThreadSafe<Ref> {
  public:
   int Foo() { return 3; }
+};
+
+// Simple class that helps with verifying ref counting.
+// Not thread-safe.
+struct RefCountable {
+  RefCountable()
+      : refs(0) {
+  }
+  void AddRef() const {
+    refs++;
+  }
+  void Release() const {
+    refs--;
+  }
+  void Print() const {
+    LOG(INFO) << "Hello. Refs: " << refs;
+  }
+
+  mutable int refs;
+  DISALLOW_COPY_AND_ASSIGN(RefCountable);
 };
 
 TEST(CallbackBindTest, TestClassMethod) {
@@ -57,6 +78,19 @@ TEST(CallbackBindTest, TestBindScopedPtrArg) {
   gscoped_ptr<char> foo(new char('x'));
   Callback<char(void)> cb = Bind(&IncrementChar, Passed(&foo));
   ASSERT_EQ('y', cb.Run());
+}
+
+// Test that the ref counting functionality works.
+TEST(CallbackBindTest, TestRefCounting) {
+  RefCountable countable;
+  {
+    ASSERT_EQ(0, countable.refs);
+    Closure cb = Bind(&RefCountable::Print, &countable);
+    ASSERT_EQ(1, countable.refs);
+    cb.Run();
+    ASSERT_EQ(1, countable.refs);
+  }
+  ASSERT_EQ(0, countable.refs);
 }
 
 } // namespace kudu
