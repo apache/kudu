@@ -508,7 +508,7 @@ class DistConsensusTest : public TabletServerTest {
   gscoped_ptr<TServerDetails> leader_;
   vector<TServerDetails*> replicas_;
 
-  Random random_;
+  ThreadSafeRandom random_;
   QuorumPB quorum_;
   string tablet_id_;
 
