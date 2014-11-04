@@ -185,6 +185,14 @@ class RaftConsensus : public Consensus,
   Status UpdateReplica(const ConsensusRequestPB* request,
                        ConsensusResponsePB* response);
 
+  // Check a request received from a leader, making sure:
+  // - The request is in the right term
+  // - The log matching property holds
+  // - Requests are de-duplicated so that we only process previously unprocessed requests.
+  Status SanityCheckAndDedupUpdateRequestUnlocked(const ConsensusRequestPB* request,
+                                                  ConsensusResponsePB* response,
+                                                  std::vector<const ReplicateMsg*>* replicate_msgs);
+
   // Pushes a new quorum configuration to a majority of peers. Contrary to write operations,
   // this actually waits for the commit round to reach a majority of peers, so that we know
   // we can proceed. If this returns Status::OK(), a majority of peers have accepted the new

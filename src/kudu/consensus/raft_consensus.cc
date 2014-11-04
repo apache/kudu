@@ -471,6 +471,68 @@ Status RaftConsensus::StartReplicaTransactionUnlocked(gscoped_ptr<ReplicateMsg> 
   return state_->AddPendingOperation(round_ptr);
 }
 
+Status RaftConsensus::SanityCheckAndDedupUpdateRequestUnlocked(
+    const ConsensusRequestPB* request,
+    ConsensusResponsePB* response,
+    vector<const ReplicateMsg*>* replicate_msgs) {
+
+  // Do term checks first:
+  if (PREDICT_FALSE(request->caller_term() != state_->GetCurrentTermUnlocked())) {
+
+    // If less, reject.
+    if (request->caller_term() < state_->GetCurrentTermUnlocked()) {
+      string msg = Substitute("Rejecting Update request from peer $0 for earlier term $1. "
+                              "Current term is $2.",
+                              request->caller_uuid(),
+                              request->caller_term(),
+                              state_->GetCurrentTermUnlocked());
+      LOG_WITH_PREFIX(INFO) << msg;
+      FillConsensusResponseError(response,
+                                 ConsensusErrorPB::INVALID_TERM,
+                                 Status::IllegalState(msg));
+      return Status::OK();
+    } else {
+      CHECK_OK(StepDownIfLeaderUnlocked());
+      Status s = state_->SetCurrentTermUnlocked(request->caller_term());
+      if (PREDICT_FALSE(!s.ok())) {
+        LOG_WITH_PREFIX(FATAL) << "Unable to set current term: " << s.ToString();
+      }
+    }
+  }
+
+  TRACE("Updating replica for $0 ops", request->ops_size());
+
+  // The id of the operation immediately before the first one we'll prepare/replicate.
+  OpId preceding_id(request->preceding_id());
+
+  // filter out any ops which have already been handled by a previous call
+  // to UpdateReplica()
+  BOOST_FOREACH(const ReplicateMsg& msg, request->ops()) {
+    if (OpIdCompare(msg.id(), state_->GetLastReceivedOpIdUnlocked()) <= 0) {
+      VLOG_WITH_PREFIX(2) << "Skipping op id " << msg.id().ShortDebugString()
+          << " (already replicated/committed)";
+      preceding_id.CopyFrom(msg.id());
+      continue;
+    }
+    replicate_msgs->push_back(&const_cast<ReplicateMsg&>(msg));
+  }
+
+  // Enforce the log matching property.
+  if (!OpIdEquals(state_->GetLastReplicatedOpIdUnlocked(), preceding_id)) {
+    string error_msg = Substitute(
+        "Log matching property violated."
+        " Last replicated by replica: $0. Preceding OpId from leader: $1.",
+        state_->GetLastReplicatedOpIdUnlocked().ShortDebugString(),
+        preceding_id.ShortDebugString());
+    FillConsensusResponseError(response,
+                               ConsensusErrorPB::PRECEDING_ENTRY_DIDNT_MATCH,
+                               Status::IllegalState(error_msg));
+    LOG_WITH_PREFIX(INFO) << "Refusing update from remote peer: " << error_msg;
+    return Status::OK();
+  }
+  return Status::OK();
+}
+
 Status RaftConsensus::UpdateReplica(const ConsensusRequestPB* request,
                                     ConsensusResponsePB* response) {
   Synchronizer log_synchronizer;
@@ -558,60 +620,12 @@ Status RaftConsensus::UpdateReplica(const ConsensusRequestPB* request,
     ReplicaState::UniqueLock lock;
     RETURN_NOT_OK(state_->LockForUpdate(&lock));
 
-    // Do term checks first:
-    if (PREDICT_FALSE(request->caller_term() != state_->GetCurrentTermUnlocked())) {
+    // 0 - Split/Check/Dedup
+    RETURN_NOT_OK(SanityCheckAndDedupUpdateRequestUnlocked(request,
+                                                           response,
+                                                           &replicate_msgs));
 
-      // If less, reject.
-      if (request->caller_term() < state_->GetCurrentTermUnlocked()) {
-        string msg = Substitute("Rejecting Update request from peer $0 for earlier term $1. "
-                                "Current term is $2.",
-                                request->caller_uuid(),
-                                request->caller_term(),
-                                state_->GetCurrentTermUnlocked());
-        LOG_WITH_PREFIX(INFO) << msg;
-        FillConsensusResponseError(response,
-                                   ConsensusErrorPB::INVALID_TERM,
-                                   Status::IllegalState(msg));
-        return Status::OK();
-      } else {
-        CHECK_OK(StepDownIfLeaderUnlocked());
-        Status s = state_->SetCurrentTermUnlocked(request->caller_term());
-        if (PREDICT_FALSE(!s.ok())) {
-          LOG_WITH_PREFIX(FATAL) << "Unable to set current term: " << s.ToString();
-        }
-      }
-    }
-
-    TRACE("Updating replica for $0 ops", request->ops_size());
-
-    // 0 - Split/Dedup
-
-    // The id of the operation immediately before the first one we'll prepare/replicate.
-    OpId preceding_id(request->preceding_id());
-
-    // filter out any ops which have already been handled by a previous call
-    // to UpdateReplica()
-    BOOST_FOREACH(const ReplicateMsg& msg, request->ops()) {
-      if (OpIdCompare(msg.id(), state_->GetLastReceivedOpIdUnlocked()) <= 0) {
-        VLOG_WITH_PREFIX(2) << "Skipping op id " << msg.id().ShortDebugString()
-            << " (already replicated/committed)";
-        preceding_id.CopyFrom(msg.id());
-        continue;
-      }
-      replicate_msgs.push_back(&const_cast<ReplicateMsg&>(msg));
-    }
-
-    // Enforce the log matching property.
-    if (!OpIdEquals(state_->GetLastReplicatedOpIdUnlocked(), preceding_id)) {
-      string error_msg = Substitute(
-          "Log matching property violated."
-          " Last replicated by replica: $0. Preceding OpId from leader: $1.",
-          state_->GetLastReplicatedOpIdUnlocked().ShortDebugString(),
-          preceding_id.ShortDebugString());
-      FillConsensusResponseError(response,
-                                 ConsensusErrorPB::PRECEDING_ENTRY_DIDNT_MATCH,
-                                 Status::IllegalState(error_msg));
-      LOG_WITH_PREFIX(INFO) << "Refusing update from remote peer: " << error_msg;
+    if (response->status().has_error()) {
       return Status::OK();
     }
 
