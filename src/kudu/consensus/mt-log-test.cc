@@ -136,7 +136,7 @@ class MultiThreadedLogTest : public LogTestBase {
     }
   }
  private:
-  Random random_;
+  ThreadSafeRandom random_;
   simple_spinlock lock_;
   vector<scoped_refptr<kudu::Thread> > threads_;
 };
