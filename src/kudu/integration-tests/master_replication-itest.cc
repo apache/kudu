@@ -312,10 +312,15 @@ TEST_F(MasterReplicationTest, TestLookupWhenMasterNoLongerLeader) {
   // Create the first table.
   ASSERT_STATUS_OK(CreateLeaderClient(&leader_client));
   ASSERT_STATUS_OK(CreateTable(leader_client, kTableId1));
-  ASSERT_STATUS_OK(leader_client->OpenTable(kTableId1, &table));
 
   // Promote master at index '1' to leader.
   ASSERT_NO_FATAL_FAILURE(PromoteMaster(0, 1));
+
+  // Make sure that 'GetTableSchema()' works when the leader master
+  // changes, even if the client has been initialized before.
+  ASSERT_STATUS_OK(leader_client->OpenTable(kTableId1, &table));
+
+  // Verify that we are able to get a (key, table) -> tablet mapping.
   KuduScanner scanner(table.get());
   KuduSchema empty_projection(vector<KuduColumnSchema>(), 0);
   ASSERT_STATUS_OK(scanner.SetProjection(&empty_projection));

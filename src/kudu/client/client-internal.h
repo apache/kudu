@@ -45,6 +45,10 @@ class KuduClient::Data {
   Status IsAlterTableInProgress(const std::string& table_name,
                                 const MonoTime& deadline,
                                 bool *alter_in_progress);
+  Status GetTableSchema(KuduClient* client,
+                        const std::string& table_name,
+                        const MonoTime& deadline,
+                        KuduSchema* schema);
 
   Status InitLocalHostNames();
 

@@ -18,6 +18,7 @@ class Schema;
 namespace client {
 
 namespace internal {
+class GetTableSchemaRpc;
 class LookupRpc;
 class WriteRpc;
 } // namespace internal
@@ -120,6 +121,7 @@ class KUDU_EXPORT KuduSchema {
   friend class KuduScanner;
   friend class KuduTableCreator;
   friend class KuduWriteOperation;
+  friend class internal::GetTableSchemaRpc;
   friend class internal::LookupRpc;
   friend class internal::WriteRpc;
 

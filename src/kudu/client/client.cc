@@ -207,25 +207,12 @@ Status KuduClient::IsAlterTableInProgress(const string& table_name,
 
 Status KuduClient::GetTableSchema(const string& table_name,
                                   KuduSchema* schema) {
-  GetTableSchemaRequestPB req;
-  GetTableSchemaResponsePB resp;
-  RpcController rpc;
-
-  req.mutable_table()->set_table_name(table_name);
-  rpc.set_timeout(default_admin_operation_timeout());
-  RETURN_NOT_OK(data_->master_proxy_->GetTableSchema(req, &resp, &rpc));
-  if (resp.has_error()) {
-    return StatusFromPB(resp.error().status());
-  }
-
-  Schema server_schema;
-  RETURN_NOT_OK(SchemaFromPB(resp.schema(), &server_schema));
-
-  // Remove the server IDs from the schema
-  gscoped_ptr<Schema> client_schema(new Schema());
-  client_schema->Reset(server_schema.columns(), server_schema.num_key_columns());
-  schema->schema_.swap(client_schema);
-  return Status::OK();
+  MonoTime deadline = MonoTime::Now(MonoTime::FINE);
+  deadline.AddDelta(default_admin_operation_timeout());
+  return data_->GetTableSchema(this,
+                               table_name,
+                               deadline,
+                               schema);
 }
 
 Status KuduClient::OpenTable(const string& table_name,
@@ -252,6 +239,13 @@ const std::vector<std::string>& KuduClient::master_server_addrs() const {
   return data_->master_server_addrs_;
 }
 
+void KuduClient::SetSelectMasterTimeoutMillis(int millis) {
+  data_->default_select_master_timeout_ = MonoDelta::FromMilliseconds(millis);
+}
+
+void KuduClient::SetAdminOperationTimeoutMillis(int millis) {
+  data_->default_admin_operation_timeout_ = MonoDelta::FromMilliseconds(millis);
+}
 const MonoDelta& KuduClient::default_admin_operation_timeout() const {
   return data_->default_admin_operation_timeout_;
 }

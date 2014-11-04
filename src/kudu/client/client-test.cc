@@ -429,18 +429,15 @@ TEST_F(ClientTest, TestBadTable) {
   ASSERT_STR_CONTAINS(s.ToString(), "Not found: The table does not exist");
 }
 
-// Test that, if the master is down, we get an appropriate error
-// message.
+// Test that, if the master is down, we re-try finding a new master,
+// and then exit after a timeout.
 TEST_F(ClientTest, TestMasterDown) {
   cluster_->mini_master()->Shutdown();
   scoped_refptr<KuduTable> t;
+  client_->SetAdminOperationTimeoutMillis(1000);
+  client_->SetSelectMasterTimeoutMillis(1000);
   Status s = client_->OpenTable("other-tablet", &t);
-  ASSERT_TRUE(s.IsNetworkError());
-  const string& msg = s.ToString();
-  ASSERT_TRUE(msg.find("Connection refused") != string::npos ||
-              msg.find("EOF") != string::npos ||
-              msg.find("Connection reset") != string::npos)
-      << "Unexpected client error message: " << msg;
+  ASSERT_TRUE(s.IsTimedOut());
 }
 
 TEST_F(ClientTest, TestScan) {
@@ -1027,6 +1024,8 @@ void ClientTest::DoTestWriteWithDeadServer(WhichServerToKill which) {
 
 // Test error handling cases where the master is down (tablet resolution fails)
 TEST_F(ClientTest, TestWriteWithDeadMaster) {
+  client_->SetAdminOperationTimeoutMillis(1000);
+  client_->SetSelectMasterTimeoutMillis(1000);
   DoTestWriteWithDeadServer(DEAD_MASTER);
 }
 

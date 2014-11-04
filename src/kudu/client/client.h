@@ -33,6 +33,7 @@ class KuduWriteOperation;
 namespace internal {
 class Batcher;
 class GetLeaderMasterRpc;
+class GetTableSchemaRpc;
 class LookupRpc;
 class MetaCache;
 class RemoteTablet;
@@ -152,6 +153,13 @@ class KUDU_EXPORT KuduClient : public std::tr1::enable_shared_from_this<KuduClie
 
   const std::vector<std::string>& master_server_addrs() const;
 
+  // Set the timeout for selecting a leader master.
+  void SetSelectMasterTimeoutMillis(int millis);
+
+  // Set the timeout for any operations that involve talking to the
+  // master.
+  void SetAdminOperationTimeoutMillis(int millis);
+
   const MonoDelta& default_admin_operation_timeout() const;
 
  private:
@@ -164,6 +172,7 @@ class KUDU_EXPORT KuduClient : public std::tr1::enable_shared_from_this<KuduClie
   friend class KuduTableCreator;
   friend class internal::Batcher;
   friend class internal::GetLeaderMasterRpc;
+  friend class internal::GetTableSchemaRpc;
   friend class internal::LookupRpc;
   friend class internal::MetaCache;
   friend class internal::RemoteTablet;

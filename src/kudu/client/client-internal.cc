@@ -9,6 +9,7 @@
 
 #include "kudu/client/meta_cache.h"
 #include "kudu/client/rpc.h"
+#include "kudu/common/schema.h"
 #include "kudu/common/wire_protocol.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/strings/join.h"
@@ -22,6 +23,8 @@
 
 namespace kudu {
 
+using master::GetTableSchemaRequestPB;
+using master::GetTableSchemaResponsePB;
 using master::IsAlterTableDoneRequestPB;
 using master::IsAlterTableDoneResponsePB;
 using master::IsCreateTableDoneRequestPB;
@@ -29,6 +32,7 @@ using master::IsCreateTableDoneResponsePB;
 using master::ListMastersRequestPB;
 using master::ListMastersResponsePB;
 using master::MasterServiceProxy;
+using master::MasterErrorPB;
 using metadata::QuorumPeerPB;
 
 using rpc::RpcController;
@@ -36,6 +40,8 @@ using strings::Substitute;
 
 namespace client {
 
+using internal::GetLeaderMasterRpc;
+using internal::GetTableSchemaRpc;
 using internal::RemoteTablet;
 using internal::RemoteTabletServer;
 using internal::Rpc;
@@ -177,6 +183,127 @@ RemoteTabletServer* KuduClient::Data::PickClosestReplica(
 
 namespace internal {
 
+// Gets a table's schema from the leader master. If the leader master
+// is down, waits for a new master to become the leader, and then gets
+// the table schema from the new leader master.
+//
+// TODO: When we implement the next fault tolerant client-master RPC
+// call (e.g., CreateTable/AlterTable), we should generalize this
+// method as to enable code sharing.
+class GetTableSchemaRpc : public Rpc {
+ public:
+  GetTableSchemaRpc(KuduClient* client,
+                    const StatusCallback& user_cb,
+                    const string& table_name,
+                    KuduSchema *out_schema,
+                    const MonoTime& deadline,
+                    const shared_ptr<rpc::Messenger>& messenger);
+
+  virtual void SendRpc() OVERRIDE;
+
+  virtual string ToString() const OVERRIDE;
+
+  virtual ~GetTableSchemaRpc();
+
+ private:
+  virtual void SendRpcCb(const Status& status) OVERRIDE;
+
+  void ResetLeaderMasterAndRetry();
+
+  void NewLeaderMasterDeterminedCb(const Status& status);
+
+  KuduClient* client_;
+  StatusCallback user_cb_;
+  const string table_name_;
+  KuduSchema* out_schema_;
+  GetTableSchemaResponsePB resp_;
+};
+
+GetTableSchemaRpc::GetTableSchemaRpc(KuduClient* client,
+                                     const StatusCallback& user_cb,
+                                     const string& table_name,
+                                     KuduSchema* out_schema,
+                                     const MonoTime& deadline,
+                                     const shared_ptr<rpc::Messenger>& messenger)
+    : Rpc(deadline, messenger),
+      client_(client),
+      user_cb_(user_cb),
+      table_name_(table_name),
+      out_schema_(out_schema) {
+  DCHECK_NOTNULL(client);
+  DCHECK_NOTNULL(out_schema);
+}
+
+GetTableSchemaRpc::~GetTableSchemaRpc() {
+}
+
+void GetTableSchemaRpc::SendRpc() {
+  GetTableSchemaRequestPB req;
+  req.mutable_table()->set_table_name(table_name_);
+  client_->data_->master_proxy()->GetTableSchemaAsync(
+      req, &resp_, &retrier().controller(),
+      boost::bind(&GetTableSchemaRpc::SendRpcCb, this, Status::OK()));
+}
+
+string GetTableSchemaRpc::ToString() const {
+  return Substitute("GetTableSchemaRpc(table_name=$0)",
+                    table_name_);
+}
+
+void GetTableSchemaRpc::ResetLeaderMasterAndRetry() {
+  client_->data_->SetMasterServerProxyAsync(
+      client_,
+      Bind(&GetTableSchemaRpc::NewLeaderMasterDeterminedCb,
+           Unretained(this)));
+}
+
+void GetTableSchemaRpc::NewLeaderMasterDeterminedCb(const Status& status) {
+  if (status.ok()) {
+    retrier().controller().Reset();
+    SendRpc();
+  } else {
+    LOG(WARNING) << "Failed to determine new Master: " << status.ToString();
+    retrier().DelayedRetry(this);
+  }
+}
+
+void GetTableSchemaRpc::SendRpcCb(const Status& status) {
+  Status new_status = status;
+  if (new_status.ok() && retrier().HandleResponse(this, &new_status)) {
+    return;
+  }
+
+  if (new_status.ok() && resp_.has_error()) {
+    if (resp_.error().code() == MasterErrorPB::NOT_THE_LEADER) {
+      LOG(WARNING) << "Leader Master has changed, re-trying...";
+      ResetLeaderMasterAndRetry();
+      return;
+    }
+    new_status = StatusFromPB(resp_.error().status());
+  }
+
+  if (new_status.IsNetworkError()) {
+    LOG(WARNING) << "Encountered a network error from the Master: " << new_status.ToString()
+                 << ", retrying...";
+    ResetLeaderMasterAndRetry();
+    return;
+  }
+
+  if (new_status.ok()) {
+    Schema server_schema;
+    new_status = SchemaFromPB(resp_.schema(), &server_schema);
+    if (new_status.ok()) {
+      gscoped_ptr<Schema> client_schema(new Schema());
+      client_schema->Reset(server_schema.columns(), server_schema.num_key_columns());
+      out_schema_->schema_.swap(client_schema);
+    }
+  } else {
+    LOG(WARNING) << ToString() << " failed: " << new_status.ToString();
+  }
+  user_cb_.Run(new_status);
+}
+
+
 class GetLeaderMasterRpc : public Rpc {
  public:
   GetLeaderMasterRpc(KuduClient* client,
@@ -235,7 +362,7 @@ std::string GetLeaderMasterRpc::ToString() const {
   BOOST_FOREACH(const Sockaddr& master_addr, master_addrs_) {
     master_addrs_str.push_back(master_addr.ToString());
   }
-  return Substitute("GetLeaderMasterRpc: idx = $0, master_addrs = $1",
+  return Substitute("GetLeaderMasterRpc(idx=$0, master_addrs=$1)",
                     node_idx_, JoinStrings(master_addrs_str, ","));
 }
 
@@ -308,6 +435,21 @@ void GetLeaderMasterRpc::SendRpcCb(const Status& status) {
 
 } // namespace internal
 
+Status KuduClient::Data::GetTableSchema(KuduClient* client,
+                                        const string& table_name,
+                                        const MonoTime& deadline,
+                                        KuduSchema* schema) {
+  Synchronizer sync;
+  GetTableSchemaRpc rpc(client,
+                        sync.AsStatusCallback(),
+                        table_name,
+                        schema,
+                        deadline,
+                        messenger_);
+  rpc.SendRpc();
+  return sync.Wait();
+}
+
 Status KuduClient::Data::LeaderMasterDetermined(const HostPort& leader_host_port) {
   Sockaddr leader_sock_addr;
   RETURN_NOT_OK(SockaddrFromHostPort(leader_host_port, &leader_sock_addr));
@@ -347,11 +489,11 @@ void KuduClient::Data::SetMasterServerProxyAsync(KuduClient* client, const Statu
   }
 
   // See 'GetLeaderMasterRpc' above.
-  internal::GetLeaderMasterRpc* rpc(new internal::GetLeaderMasterRpc(client,
-                                                                     cb,
-                                                                     master_sockaddrs,
-                                                                     deadline,
-                                                                     messenger_));
+  GetLeaderMasterRpc* rpc(new GetLeaderMasterRpc(client,
+                                                 cb,
+                                                 master_sockaddrs,
+                                                 deadline,
+                                                 messenger_));
   rpc->SendRpc();
 }
 
