@@ -52,18 +52,6 @@ DECLARE_bool(enable_data_block_fsync);
 namespace kudu {
 namespace tserver {
 
-static const int kSharedRegionSize = 4096;
-
-// NOTE: Supports up to 256 inserters/updaters
-struct SharedData {
-  // Keeps the last ACK'd insert for each inserter thread.
-  int64_t last_inserted[256];
-
-  // Returns the last value which one of the rows in the
-  // updater's thread was updated to.
-  int64_t last_updated[256];
-};
-
 class TabletServerTest : public KuduTest {
  public:
   typedef pair<uint32_t, uint32_t> KeyValue;
@@ -95,26 +83,7 @@ class TabletServerTest : public KuduTest {
     key_schema_ = schema_.CreateKeyProjection();
     rb_.reset(new RowBuilder(schema_));
 
-    CreateSharedRegion();
     StartTabletServer();
-  }
-
-  virtual void TearDown() OVERRIDE {
-    DeleteSharedRegion();
-    KuduTest::TearDown();
-  }
-
-  // create a shared region for the processes to be able to communicate
-  virtual void CreateSharedRegion() {
-    shared_region_ = mmap(NULL, kSharedRegionSize,
-                          PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS,
-                          -1, 0);
-    CHECK(shared_region_) << "Could not mmap: " << ErrnoToString(errno);
-    shared_data_ = reinterpret_cast<volatile SharedData*>(shared_region_);
-  }
-
-  virtual void DeleteSharedRegion() {
-    munmap(shared_region_, kSharedRegionSize);
   }
 
   virtual void StartTabletServer() {
@@ -163,7 +132,6 @@ class TabletServerTest : public KuduTest {
     SCOPED_TRACE(resp.DebugString());
     ASSERT_FALSE(resp.has_error())<< resp.ShortDebugString();
     ASSERT_EQ(0, resp.per_row_errors_size());
-    shared_data_->last_updated[tid] = new_val;
     if (ts) {
       ts->AddValue(1);
     }
@@ -251,7 +219,6 @@ class TabletServerTest : public KuduTest {
                     << first_row_in_batch << "-" << last_row_in_batch
                     << ": " << resp.DebugString();
       }
-      shared_data_->last_inserted[tid] = last_row_in_batch;
 
       inserted_since_last_report += count / num_batches;
       if ((inserted_since_last_report > 100) && ts) {
@@ -423,7 +390,6 @@ class TabletServerTest : public KuduTest {
   MetricRegistry ts_test_metric_registry_;
   MetricContext ts_test_metric_context_;
 
-  volatile SharedData* shared_data_;
   void* shared_region_;
 };
 
