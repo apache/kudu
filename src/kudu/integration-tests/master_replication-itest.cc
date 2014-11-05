@@ -107,7 +107,9 @@ class MasterReplicationTest : public KuduTest {
     cluster_->Shutdown();
     cluster_->set_leader_master_idx(new_master_idx);
     ASSERT_STATUS_OK(cluster_->Start());
+    ASSERT_STATUS_OK(cluster_->WaitForTabletServerCount(kNumTabletServerReplicas));
   }
+
   // Test promoting a follower at 'new_master_idx' to the role of
   // a leader, previously occupied by the node at 'orig_master_idx':
   //
