@@ -448,6 +448,7 @@ Status RaftConsensus::Update(const ConsensusRequestPB* request,
     TRACE("Updating watermarks");
     response->set_responder_term(state_->GetCurrentTermUnlocked());
     status->mutable_last_received()->CopyFrom(state_->GetLastReceivedOpIdUnlocked());
+    status->set_last_committed_idx(state_->GetCommittedOpIdUnlocked().index());
   }
 
   if (PREDICT_FALSE(VLOG_IS_ON(1))) {

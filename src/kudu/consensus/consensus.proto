@@ -195,10 +195,13 @@ message ConsensusStatusPB {
   // The last message received (and replicated) by the peer.
   required OpId last_received = 1;
 
+  // The last committed index that is known to the peer.
+  optional int64 last_committed_idx = 2;
+
   // When the last request failed for some consensus related (internal) reason.
   // In some cases the error will have a specific code that the caller will
   // have to handle in certain ways.
-  optional ConsensusErrorPB error = 7;
+  optional ConsensusErrorPB error = 3;
 }
 
 // A request from a CANDIDATE peer that wishes to become leader of
