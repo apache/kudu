@@ -383,6 +383,13 @@ TEST_F(RpcStubTest, TestCallbackClearedAfterRunning) {
   p.AddAsync(req, &resp, &controller,
              boost::bind(MyTestCallback, &latch, my_refptr));
   latch.Wait();
+
+  // The ref count should go back down to 1. However, we need to loop a little
+  // bit, since the deref is happening on another thread. If the other thread gets
+  // descheduled directly after calling our callback, we'd fail without these sleeps.
+  for (int i = 0; i < 100 && !my_refptr->HasOneRef(); i++) {
+    usleep(1000);
+  }
   ASSERT_TRUE(my_refptr->HasOneRef());
 }
 
