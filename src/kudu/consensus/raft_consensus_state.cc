@@ -375,7 +375,7 @@ Status ReplicaState::CancelPendingTransactions() {
       return Status::IllegalState("Can only wait for pending commits on kShuttingDown state.");
     }
     LOG_WITH_PREFIX(INFO) << "Trying to abort " << pending_txns_.size() << " pending transactions.";
-    for (OpIdToRoundMap::iterator iter = pending_txns_.begin();
+    for (IndexToRoundMap::iterator iter = pending_txns_.begin();
          iter != pending_txns_.end(); iter++) {
       ConsensusRound* round = (*iter).second;
       // We cancel only transactions whose applies have not yet been triggered.
@@ -387,8 +387,8 @@ Status ReplicaState::CancelPendingTransactions() {
         // In this case we can't assume that the ConsensusRound for the pending transaction
         // is still live. The commit callback might have already been triggered and the
         // ConsensusRound deleted on transaction cleanup.
-        LOG_WITH_PREFIX(INFO) << "Skipping txn abort as the apply already in flight: "
-            << (*iter).first.ShortDebugString();
+        LOG_WITH_PREFIX(INFO) << "Skipping txn abort as the apply already in flight for op index: "
+            << (*iter).first;
       }
     }
   }
@@ -411,8 +411,8 @@ Status ReplicaState::WaitForOustandingApplies() {
 }
 
 Status ReplicaState::GetUncommittedPendingOperationsUnlocked(vector<ConsensusRound*>* ops) {
-  BOOST_FOREACH(const OpIdToRoundMap::value_type& entry, pending_txns_) {
-    if (entry.first.index() > last_committed_index_.index()) {
+  BOOST_FOREACH(const IndexToRoundMap::value_type& entry, pending_txns_) {
+    if (entry.first > last_committed_index_.index()) {
       ops->push_back(entry.second);
     }
   }
@@ -429,10 +429,9 @@ Status ReplicaState::AddPendingOperation(ConsensusRound* round) {
     }
   }
 
-  InsertOrDie(&pending_txns_, round->replicate_msg()->id(), round);
+  InsertOrDie(&pending_txns_, round->replicate_msg()->id().index(), round);
   return Status::OK();
 }
-
 
 Status ReplicaState::UpdateMajorityReplicated(const OpId& majority_replicated,
                                               OpId* committed_index) {
@@ -496,17 +495,17 @@ Status ReplicaState::AdvanceCommittedIndex(const OpId& committed_index) {
   }
 
   // Start at the operation after the last committed one.
-  OpIdToRoundMap::iterator iter = pending_txns_.upper_bound(last_committed_index_);
+  IndexToRoundMap::iterator iter = pending_txns_.upper_bound(last_committed_index_.index());
   // Stop at the operation after the last one we must commit.
-  OpIdToRoundMap::iterator end_iter = pending_txns_.upper_bound(committed_index);
+  IndexToRoundMap::iterator end_iter = pending_txns_.upper_bound(committed_index.index());
 
   VLOG_WITH_PREFIX(1) << "Last triggered apply was: "
       <<  last_committed_index_.ShortDebugString()
-      << " Starting to apply from " << (*iter).first.ShortDebugString();
+      << " Starting to apply from log index: " << (*iter).first;
 
   for (; iter != end_iter; iter++) {
     ConsensusRound* round = DCHECK_NOTNULL((*iter).second);
-    InsertOrDie(&in_flight_commits_, round->id());
+    InsertOrDie(&in_flight_commits_, round->id().index());
 
     // If we're committing a change config op, persist the new quorum first
     if (PREDICT_FALSE(round->replicate_msg()->op_type() == CHANGE_CONFIG_OP)) {
@@ -556,10 +555,10 @@ const OpId& ReplicaState::GetLastReceivedOpIdUnlocked() const {
 
 void ReplicaState::UpdateCommittedOpIdUnlocked(const OpId& committed_op_id) {
   DCHECK(update_lock_.is_locked());
-  CHECK_EQ(in_flight_commits_.erase(committed_op_id), 1)
+  CHECK_EQ(in_flight_commits_.erase(committed_op_id.index()), 1)
     << "Trying to mark " << committed_op_id.ShortDebugString() << " as committed, but not "
     << "in the in-flight set";
-  CHECK(EraseKeyReturnValuePtr(&pending_txns_, committed_op_id))
+  CHECK(EraseKeyReturnValuePtr(&pending_txns_, committed_op_id.index()))
     << "Couldn't remove " << committed_op_id.ShortDebugString() << " from the pending set";
   commit_watchers_.MarkFinished(committed_op_id, OpIdWaiterSet::MARK_ONLY_THIS_OP);
 }
@@ -588,7 +587,7 @@ Status ReplicaState::RegisterOnCommitCallback(const OpId& op_id,
     commit_watchers_.RegisterCallback(op_id, commit_callback);
     return Status::OK();
   }
-  if (FindOrNull(pending_txns_, op_id) != NULL) {
+  if (FindOrNull(pending_txns_, op_id.index()) != NULL) {
     commit_watchers_.RegisterCallback(op_id, commit_callback);
     return Status::OK();
   }
@@ -616,7 +615,7 @@ void ReplicaState::CancelPendingOperation(const OpId& id) {
   // This is only ok if we do _not_ release the lock after calling
   // NewIdUnlocked() (which we don't in RaftConsensus::Replicate()).
   received_op_id_ = previous;
-  ignore_result(DCHECK_NOTNULL(EraseKeyReturnValuePtr(&pending_txns_, id)));
+  ignore_result(DCHECK_NOTNULL(EraseKeyReturnValuePtr(&pending_txns_, id.index())));
 }
 
 string ReplicaState::LogPrefix() {

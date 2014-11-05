@@ -119,18 +119,11 @@ class ReplicaState {
 
   typedef unique_lock<simple_spinlock> UniqueLock;
 
-  typedef std::map<consensus::OpId,
-                   ConsensusRound*,
-                   OpIdCompareFunctor> OpIdToRoundMap;
+  typedef std::map<int64_t, ConsensusRound*> IndexToRoundMap;
 
-  typedef std::set<consensus::OpId,
-                   OpIdCompareFunctor> OutstandingCommits;
+  typedef std::set<int64_t> OutstandingCommits;
 
-  typedef OpIdToRoundMap::value_type OpToRoundEntry;
-
-  typedef std::multimap<consensus::OpId,
-                        std::tr1::shared_ptr<FutureCallback>,
-                        OpIdBiggerThanFunctor > CallbackMap;
+  typedef IndexToRoundMap::value_type IndexToRoundEntry;
 
   ReplicaState(const ConsensusOptions& options,
                ThreadPool* callback_exec_pool,
@@ -345,6 +338,8 @@ class ReplicaState {
   // - replicate_op_id is before the most recent replicate message received
   //   and is not on the pending_commits set: the operation was already committed
   //   and this call returns Status::AlreadyPresent().
+  //
+  // TODO change this to take an index instead of an OpId.
   Status RegisterOnCommitCallback(
       const OpId& replicate_op_id,
       const std::tr1::shared_ptr<FutureCallback>& commit_callback);
@@ -398,45 +393,36 @@ class ReplicaState {
   // by this LEADER.
   uint64_t next_index_;
 
-  // OpId=>Context map that manages pending txns, i.e. operations for which we've
-  // received a replicate message from the leader but have yet to receive the commit
-  // message.
-  // The key is the id of the replicate operation for which we're expecting a commit
-  // message.
-  // Used when Role = FOLLOWER/CANDIDATE/LEARNER.
-  OpIdToRoundMap pending_txns_;
+  // Index=>Round map that manages pending ops, i.e. operations for which we've
+  // received a replicate message from the leader but have yet to be committed.
+  // The key is the index of the replicate operation.
+  IndexToRoundMap pending_txns_;
 
   // Set that tracks the outstanding applies that are being executed asynchronously.
   //
   // These operations have been replicated and committed by consensus, but not yet
   // completed on the local replica.
   //
-  // The key is the OpId of the operation being applied.
-  // Used when Role = FOLLOWER/CANDIDATE/LEARNER.
+  // The key is the index of the operation being applied.
   OutstandingCommits in_flight_commits_;
 
   // When we receive a message from a remote peer telling us to start a transaction, we use
   // this factory to start it.
-  // Used when Role = FOLLOWER/CANDIDATE/LEARNER.
   ReplicaTransactionFactory* txn_factory_;
 
   // The id if the last replicated operation. All replicate operations whose id is lower
   // than or equal to this one were already replicated.
-  //  Used when Role = FOLLOWER/CANDIDATE/LEARNER.
   OpId replicated_op_id_;
 
   // The id of the last received operation. Operations whose id is lower than or equal
   // to this id do not need to be resent by the leader.
-  //  Used when Role = FOLLOWER/CANDIDATE/LEARNER.
   OpId received_op_id_;
 
   // The id of the Apply that was last triggered when the last message from the leader
   // was received. Initialized to MinimumOpId().
-  // Used when Role = FOLLOWER/CANDIDATE/LEARNER.
   OpId last_committed_index_;
 
   // Latch that allows to wait on the outstanding applies to have completed..
-  // Used when Role = FOLLOWER/CANDIDATE/LEARNER.
   CountDownLatch in_flight_applies_latch_;
 
   // Multimap that stores the replicate callbacks in decreasing order.
