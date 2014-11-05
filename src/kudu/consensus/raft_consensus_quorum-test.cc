@@ -885,6 +885,7 @@ TEST_F(RaftConsensusQuorumTest, TestReplicasEnforceTheLogMatchingProperty) {
   req.set_caller_uuid(GetPeer(2)->peer_uuid());
   req.set_caller_term(last_op_id.term());
   req.mutable_preceding_id()->CopyFrom(last_op_id);
+  req.mutable_committed_index()->CopyFrom(last_op_id);
 
   ReplicateMsg* replicate = req.add_ops();
   OpId* id = replicate->mutable_id();

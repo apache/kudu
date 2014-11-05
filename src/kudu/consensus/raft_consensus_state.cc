@@ -193,8 +193,6 @@ Status ReplicaState::LockForUpdate(UniqueLock* lock) const {
     return Status::IllegalState("Replica not in running state");
   }
   switch (active_quorum_state_->role) {
-    case QuorumPeerPB::LEADER:
-      return Status::IllegalState("Replica is leader of the quorum.");
     case QuorumPeerPB::NON_PARTICIPANT:
       return Status::IllegalState("Replica is not a participant of this quorum.");
     default:
@@ -247,14 +245,7 @@ Status ReplicaState::SetCommittedQuorumUnlocked(const metadata::QuorumPB& new_qu
   DCHECK(update_lock_.is_locked());
   DCHECK(new_quorum.IsInitialized());
 
-  // TODO: check that the role change is legal.
-
-  // Check that if pending quorum is set, new_quorum is equivalent.
-  if (IsQuorumChangePendingUnlocked()) {
-  } else {
-    // Only update acting quorum members if this is a net-new transaction.
-    ResetActiveQuorumStateUnlocked(new_quorum);
-  }
+  ResetActiveQuorumStateUnlocked(new_quorum);
 
   cmeta_->mutable_pb()->mutable_committed_quorum()->CopyFrom(new_quorum);
   RETURN_NOT_OK(cmeta_->Flush());
@@ -275,6 +266,29 @@ const metadata::QuorumPB& ReplicaState::GetActiveQuorumUnlocked() const {
   }
   return GetCommittedQuorumUnlocked();
 }
+
+
+bool ReplicaState::IsOpCommittedOrPending(const OpId& op_id, bool* term_mismatch) {
+
+  *term_mismatch = false;
+
+  if (op_id.index() <= GetCommittedOpIdUnlocked().index()) {
+    return true;
+  }
+
+  if (op_id.index() > GetLastReceivedOpIdUnlocked().index()) {
+    return false;
+  }
+
+  ConsensusRound* round = DCHECK_NOTNULL(GetPendingOpByIndexOrNullUnlocked(op_id.index()));
+
+  if (round->id().term() != op_id.term()) {
+    *term_mismatch = true;
+    return false;
+  }
+  return true;
+}
+
 
 Status ReplicaState::IncrementTermUnlocked() {
   DCHECK(update_lock_.is_locked());
@@ -403,6 +417,43 @@ Status ReplicaState::GetUncommittedPendingOperationsUnlocked(vector<ConsensusRou
   return Status::OK();
 }
 
+Status ReplicaState::AbortOpsAfterUnlocked(int64_t new_preceding_idx) {
+  DCHECK(update_lock_.is_locked());
+  LOG_WITH_PREFIX(INFO) << "Aborting all transactions after (but not including): "
+      << new_preceding_idx << ". Current State: " << ToStringUnlocked();
+
+  DCHECK_GE(new_preceding_idx, 0);
+  OpId new_preceding;
+
+  IndexToRoundMap::iterator iter = pending_txns_.lower_bound(new_preceding_idx);
+
+  // Either the new preceding id is in the pendings set or it must be equal to the
+  // committed index since we can't truncate already committed operations.
+  if (iter != pending_txns_.end() && (*iter).first == new_preceding_idx) {
+    new_preceding = (*iter).second->replicate_msg()->id();
+    ++iter;
+  } else {
+    CHECK_EQ(new_preceding_idx, last_committed_index_.index());
+    new_preceding = last_committed_index_;
+  }
+
+  // This is the same as UpdateLastReceivedOpIdUnlocked() but we do it
+  // here to avoid the bounds check, since we're breaking monotonicity.
+  received_op_id_ = new_preceding;
+  next_index_ = new_preceding.index() + 1;
+
+  for (; iter != pending_txns_.end();) {
+    ConsensusRound* round = (*iter).second;
+    LOG(INFO) << "Aborting uncommitted operation due to leader change: "
+        << round->replicate_msg()->id();
+    round->NotifyReplicationFinished(Status::Aborted("Transaction aborted by new leader"));
+    // erase the entry from pendings
+    pending_txns_.erase(iter++);
+  }
+
+  return Status::OK();
+}
+
 Status ReplicaState::AddPendingOperation(ConsensusRound* round) {
   DCHECK(update_lock_.is_locked());
   if (PREDICT_FALSE(state_ != kRunning)) {
@@ -415,6 +466,11 @@ Status ReplicaState::AddPendingOperation(ConsensusRound* round) {
 
   InsertOrDie(&pending_txns_, round->replicate_msg()->id().index(), round);
   return Status::OK();
+}
+
+ConsensusRound* ReplicaState::GetPendingOpByIndexOrNullUnlocked(uint64_t index) {
+  DCHECK(update_lock_.is_locked());
+  return FindPtrOrNull(pending_txns_, index);
 }
 
 Status ReplicaState::UpdateMajorityReplicatedUnlocked(const OpId& majority_replicated,
@@ -464,7 +520,7 @@ Status ReplicaState::AdvanceCommittedIndexUnlocked(const OpId& committed_index) 
   // This can happen in the case that multiple UpdateConsensus() calls end
   // up in the RPC queue at the same time, and then might get interleaved out
   // of order.
-  if (OpIdCompare(last_committed_index_, committed_index) >= 0) {
+  if (last_committed_index_.index() >= committed_index.index()) {
     VLOG_WITH_PREFIX(1)
       << "Already marked ops through " << last_committed_index_ << " as committed. "
       << "Now trying to mark " << committed_index << " which would be a no-op.";

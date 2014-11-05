@@ -536,11 +536,52 @@ Status RaftConsensus::StartReplicaTransactionUnlocked(gscoped_ptr<ReplicateMsg> 
   return state_->AddPendingOperation(round_ptr);
 }
 
-Status RaftConsensus::SanityCheckAndDedupUpdateRequestUnlocked(
-    const ConsensusRequestPB* request,
-    ConsensusResponsePB* response,
-    vector<const ReplicateMsg*>* replicate_msgs) {
+void RaftConsensus::DeduplicateLeaderRequestUnlocked(const ConsensusRequestPB* rpc_req,
+                                                     LeaderRequest* deduplicated_req) {
+  const OpId& last_committed = state_->GetCommittedOpIdUnlocked();
 
+  // The leader's preceding id.
+  deduplicated_req->preceding_opid = &rpc_req->preceding_id();
+
+  int64_t dedup_up_to_index = state_->GetLastReceivedOpIdUnlocked().index();
+
+  // In this loop we discard duplicates and advance the leader's preceding id
+  // accordingly.
+  BOOST_FOREACH(const ReplicateMsg& leader_msg, rpc_req->ops()) {
+
+    if (leader_msg.id().index() <= last_committed.index()) {
+      VLOG_WITH_PREFIX(2) << "Skipping op id " << leader_msg.id().ShortDebugString()
+          << " (already committed)";
+      deduplicated_req->preceding_opid = &leader_msg.id();
+      continue;
+    }
+
+    if (leader_msg.id().index() <= dedup_up_to_index) {
+      // If the index is uncommitted and below our match index, then it must be in the
+      // pendings set.
+      ConsensusRound* round = DCHECK_NOTNULL(state_->GetPendingOpByIndexOrNullUnlocked(
+          leader_msg.id().index()));
+
+      // If the OpIds match, i.e. if they have the same term and id, then this is just
+      // duplicate, we skip...
+      if (OpIdEquals(round->replicate_msg()->id(), leader_msg.id())) {
+        VLOG_WITH_PREFIX(2) << "Skipping op id " << leader_msg.id().ShortDebugString()
+            << " (already replicated)";
+        deduplicated_req->preceding_opid = &leader_msg.id();
+        continue;
+      }
+
+      // ... otherwise we must adjust our match index, i.e. all messages from now on
+      // are "new"
+      dedup_up_to_index = leader_msg.id().index();
+    }
+
+    deduplicated_req->messages.push_back(&const_cast<ReplicateMsg&>(leader_msg));
+  }
+}
+
+Status RaftConsensus::HandleLeaderRequestTermUnlocked(const ConsensusRequestPB* request,
+                                                      ConsensusResponsePB* response) {
   // Do term checks first:
   if (PREDICT_FALSE(request->caller_term() != state_->GetCurrentTermUnlocked())) {
 
@@ -563,37 +604,71 @@ Status RaftConsensus::SanityCheckAndDedupUpdateRequestUnlocked(
       }
     }
   }
+  return Status::OK();
+}
 
-  TRACE("Updating replica for $0 ops", request->ops_size());
+Status RaftConsensus::EnforceLogMatchingPropertyMatchesUnlocked(const LeaderRequest& req,
+                                                                ConsensusResponsePB* response) {
 
-  // The id of the operation immediately before the first one we'll prepare/replicate.
-  OpId preceding_id(request->preceding_id());
-
-  // filter out any ops which have already been handled by a previous call
-  // to UpdateReplica()
-  BOOST_FOREACH(const ReplicateMsg& msg, request->ops()) {
-    if (OpIdCompare(msg.id(), state_->GetLastReceivedOpIdUnlocked()) <= 0) {
-      VLOG_WITH_PREFIX(2) << "Skipping op id " << msg.id().ShortDebugString()
-          << " (already replicated/committed)";
-      preceding_id.CopyFrom(msg.id());
-      continue;
-    }
-    replicate_msgs->push_back(&const_cast<ReplicateMsg&>(msg));
+  bool term_mismatch;
+  if (state_->IsOpCommittedOrPending(*req.preceding_opid, &term_mismatch)) {
+    return Status::OK();
   }
 
-  // Enforce the log matching property.
-  if (!OpIdEquals(state_->GetLastReceivedOpIdUnlocked(), preceding_id)) {
-    string error_msg = Substitute(
-        "Log matching property violated."
-        " Last received by replica: $0. Preceding OpId from leader: $1.",
-        state_->GetLastReceivedOpIdUnlocked().ShortDebugString(),
-        preceding_id.ShortDebugString());
-    FillConsensusResponseError(response,
-                               ConsensusErrorPB::PRECEDING_ENTRY_DIDNT_MATCH,
-                               Status::IllegalState(error_msg));
-    LOG_WITH_PREFIX(INFO) << "Refusing update from remote peer "
-                          << request->caller_uuid() << ": " << error_msg;
+  string error_msg = Substitute("Log matching property violated."
+      " Preceding OpId in replica: $0. Preceding OpId from leader: $1.",
+      state_->GetLastReceivedOpIdUnlocked().ShortDebugString(),
+      req.preceding_opid->ShortDebugString());
+
+  FillConsensusResponseError(response,
+                             ConsensusErrorPB::PRECEDING_ENTRY_DIDNT_MATCH,
+                             Status::IllegalState(error_msg));
+
+  LOG_WITH_PREFIX(INFO) << "Refusing update from remote peer "
+                        << req.leader_uuid << ": " << error_msg;
+
+  // If the terms mismatch we abort down to the index before the leader's preceding,
+  // since we know that is the last opid that has a chance of not being overwritten.
+  // Aborting preemptively here avoids us reporting a last received index that is
+  // possibly higher than the leader's causing an avoidable cache miss on the leader's
+  // queue.
+  if (term_mismatch) {
+    return state_->AbortOpsAfterUnlocked(req.preceding_opid->index() - 1);
+  }
+
+  return Status::OK();
+}
+
+Status RaftConsensus::CheckLeaderRequestUnlocked(const ConsensusRequestPB* request,
+                                                 ConsensusResponsePB* response,
+                                                 LeaderRequest* deduped_req) {
+
+  RETURN_NOT_OK(HandleLeaderRequestTermUnlocked(request, response));
+
+  if (response->status().has_error()) {
     return Status::OK();
+  }
+
+  DeduplicateLeaderRequestUnlocked(request, deduped_req);
+
+  RETURN_NOT_OK(EnforceLogMatchingPropertyMatchesUnlocked(*deduped_req, response));
+
+  if (response->status().has_error()) {
+    return Status::OK();
+  }
+
+  // If the first of the messages to apply is not in our log, either it follows the last
+  // received message or it replaces some in-flight.
+  if (!deduped_req->messages.empty()) {
+
+    bool term_mismatch;
+    CHECK(!state_->IsOpCommittedOrPending(deduped_req->messages[0]->id(), &term_mismatch));
+
+    // If the index is in our log but the terms are not the same abort down to the leader's
+    // preceding id.
+    if (term_mismatch) {
+      RETURN_NOT_OK(state_->AbortOpsAfterUnlocked(deduped_req->preceding_opid->index()));
+    }
   }
   return Status::OK();
 }
@@ -601,7 +676,6 @@ Status RaftConsensus::SanityCheckAndDedupUpdateRequestUnlocked(
 Status RaftConsensus::UpdateReplica(const ConsensusRequestPB* request,
                                     ConsensusResponsePB* response) {
   Synchronizer log_synchronizer;
-  vector<const ReplicateMsg*> replicate_msgs;
 
 
   // The ordering of the following operations is crucial, read on for details.
@@ -679,16 +753,19 @@ Status RaftConsensus::UpdateReplica(const ConsensusRequestPB* request,
   //        test. Moreover we need to add more fault injection spots (well that
   //        and actually use the) for each of these steps.
   //        This will be done in a follow up patch.
+  TRACE("Updating replica for $0 ops", request->ops_size());
+
   OpId last_enqueued_prepare;
   int successfully_triggered_prepares = 0;
   {
     ReplicaState::UniqueLock lock;
     RETURN_NOT_OK(state_->LockForUpdate(&lock));
 
-    // 0 - Split/Check/Dedup
-    RETURN_NOT_OK(SanityCheckAndDedupUpdateRequestUnlocked(request,
-                                                           response,
-                                                           &replicate_msgs));
+    // The deduplicated request.
+    LeaderRequest deduped_req;
+    deduped_req.leader_uuid = request->caller_uuid();
+
+    RETURN_NOT_OK(CheckLeaderRequestUnlocked(request, response, &deduped_req));
 
     if (response->status().has_error()) {
       return Status::OK();
@@ -701,14 +778,14 @@ Status RaftConsensus::UpdateReplica(const ConsensusRequestPB* request,
 
     // 1 - Enqueue the prepares
 
-    TRACE("Triggering prepare for $0 ops", replicate_msgs.size());
+    TRACE("Triggering prepare for $0 ops", deduped_req.messages.size());
     Status prepare_status;
-    for (int i = 0; i < replicate_msgs.size(); i++) {
-      gscoped_ptr<ReplicateMsg> msg_copy(new ReplicateMsg(*replicate_msgs[i]));
+    for (int i = 0; i < deduped_req.messages.size(); i++) {
+      gscoped_ptr<ReplicateMsg> msg_copy(new ReplicateMsg(*deduped_req.messages[i]));
       prepare_status = StartReplicaTransactionUnlocked(msg_copy.Pass());
       if (PREDICT_FALSE(!prepare_status.ok())) {
         LOG_WITH_PREFIX(WARNING) << "Failed to prepare operation: "
-            << replicate_msgs[i]->id().ShortDebugString() << " Status: "
+            << deduped_req.messages[i]->id().ShortDebugString() << " Status: "
             << prepare_status.ToString();
         break;
       }
@@ -726,7 +803,7 @@ Status RaftConsensus::UpdateReplica(const ConsensusRequestPB* request,
 
     last_enqueued_prepare.CopyFrom(state_->GetLastReceivedOpIdUnlocked());
     if (successfully_triggered_prepares > 0) {
-      last_enqueued_prepare = replicate_msgs[successfully_triggered_prepares - 1]->id();
+      last_enqueued_prepare = deduped_req.messages[successfully_triggered_prepares - 1]->id();
     }
 
     // 2 - Enqueue the writes.
@@ -738,7 +815,7 @@ Status RaftConsensus::UpdateReplica(const ConsensusRequestPB* request,
       //
       // Since we've prepared, we need to be able to append (or we risk trying to apply
       // later something that wasn't logged). We crash if we can't.
-      CHECK_OK(log_->AsyncAppendReplicates(&replicate_msgs[0],
+      CHECK_OK(log_->AsyncAppendReplicates(&deduped_req.messages[0],
                                            successfully_triggered_prepares,
                                            log_synchronizer.AsStatusCallback()));
     }
@@ -749,7 +826,8 @@ Status RaftConsensus::UpdateReplica(const ConsensusRequestPB* request,
     // no prepare enqueuing failed, or the minimum between 'committed_index' and the id of
     // the last successfully enqueued prepare, if some prepare failed to enqueue.
     OpId dont_apply_after = request->committed_index();
-    if (CopyIfOpIdLessThan(last_enqueued_prepare, &dont_apply_after)) {
+    if (last_enqueued_prepare.index() < dont_apply_after.index()) {
+      dont_apply_after = last_enqueued_prepare;
       VLOG_WITH_PREFIX(2) << "Received commit index "
           << request->committed_index().ShortDebugString() << " from the leader but only"
           << " marked up to " << last_enqueued_prepare.ShortDebugString() << " as committed.";

@@ -265,14 +265,6 @@ class ConsensusCommitContinuation {
   // if 'status' is OK(), or that it has permanently failed to replicate if 'status' is anything
   // else. If 'status' is OK() then the operation can be applied to the state machine, otherwise
   // the operation should be aborted.
-  //
-  // TODO The only place where this is called right now is when consensus is
-  // shutting down and a replica needs to cancel transactions that are in flight.
-  // In this case those will be left as pending transactions that will be reprised
-  // on startup. That is ok for now, but once we have true operation abort, i.e.
-  // when consensus needs to cancel a transaction that already landed on disk,
-  // we will need to distinguish between a the current case and 'true' abort, as
-  // the latter requires an abort commit message.
   virtual void ReplicationFinished(const Status& status) = 0;
 
   StatusCallback AsStatusCallback() {

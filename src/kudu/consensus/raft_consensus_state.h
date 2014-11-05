@@ -182,6 +182,13 @@ class ReplicaState {
   // quorum change currently in-flight but not yet committed.
   bool IsQuorumChangePendingUnlocked() const;
 
+  // Returns true if an operation is in this replica's log, namely:
+  // - If the op's index is lower than or equal to our committed index
+  // - If the op id matches an inflight op.
+  // If an operation with the same index is in our log but the terms
+  // are different 'term_mismatch' is set to true, it is false otherwise.
+  bool IsOpCommittedOrPending(const OpId& op_id, bool* term_mismatch);
+
   // Sets the given quorum as pending commit. Does not persist into the quorum
   // metadata. In order to be persisted, SetCommittedQuorumUnlocked() must be called.
   //
@@ -241,6 +248,15 @@ class ReplicaState {
 
   // Returns the operations that are not consensus committed.
   Status GetUncommittedPendingOperationsUnlocked(std::vector<ConsensusRound*>* ops);
+
+  // Aborts pending operations after, but not including 'index'. The OpId with 'index'
+  // will become our new last received id. If there are pending operations with indexes
+  // higher than 'index' those operations are aborted.
+  Status AbortOpsAfterUnlocked(int64_t index);
+
+  // Returns the the ConsensusRound with the provided index, if there is any, or NULL
+  // if there isn't.
+  ConsensusRound* GetPendingOpByIndexOrNullUnlocked(uint64_t index);
 
   // Add 'round' to the set of rounds waiting to be committed.
   Status AddPendingOperation(ConsensusRound* round);

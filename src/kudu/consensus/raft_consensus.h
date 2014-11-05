@@ -155,6 +155,14 @@ class RaftConsensus : public Consensus,
   friend class ReplicaState;
   friend class RaftConsensusQuorumTest;
 
+  // Helper struct that contains the messages from the leader that we need to
+  // append to our log, after they've been deduplicated.
+  struct LeaderRequest {
+    std::string leader_uuid;
+    const OpId* preceding_opid;
+    std::vector<const ReplicateMsg*> messages;
+  };
+
   // Verifies that 'quorum' is well formed and that no config change is in-flight.
   Status VerifyQuorumAndCheckThatNoChangeIsPendingUnlocked(const metadata::QuorumPB& quorum);
 
@@ -186,13 +194,37 @@ class RaftConsensus : public Consensus,
   Status UpdateReplica(const ConsensusRequestPB* request,
                        ConsensusResponsePB* response);
 
+  // Deduplicates an RPC request making sure that we get only messages that we
+  // haven't appended to our log yet.
+  // On return 'deduplicated_req' is instantiated with only the new messages
+  // and the correct preceding id.
+  void DeduplicateLeaderRequestUnlocked(const ConsensusRequestPB* rpc_req,
+                                        LeaderRequest* deduplicated_req);
+
+  // Handles a request from a leader, refusing the request if the term is lower than
+  // ours or stepping down if it's higher.
+  Status HandleLeaderRequestTermUnlocked(const ConsensusRequestPB* request,
+                                         ConsensusResponsePB* response);
+
+  // Checks that the preceding op in 'req' is locally committed or pending and sets an
+  // appropriate error message in 'response' if not.
+  // If there is term mismatch between the preceding op id in 'req' and the local log's
+  // pending operations, we proactively abort those pending operations after and including
+  // the preceding op in 'req' to avoid a pointless cache miss in the leader's log cache.
+  Status EnforceLogMatchingPropertyMatchesUnlocked(const LeaderRequest& req,
+                                                   ConsensusResponsePB* response);
+
   // Check a request received from a leader, making sure:
   // - The request is in the right term
   // - The log matching property holds
-  // - Requests are de-duplicated so that we only process previously unprocessed requests.
-  Status SanityCheckAndDedupUpdateRequestUnlocked(const ConsensusRequestPB* request,
-                                                  ConsensusResponsePB* response,
-                                                  std::vector<const ReplicateMsg*>* replicate_msgs);
+  // - Messages are de-duplicated so that we only process previously unprocessed requests.
+  // - We abort transactions if the leader sends transactions that have the same index as
+  //   transactions currently on the pendings set, but different terms.
+  // If this returns ok and the response has no errors, 'deduped_req' is set with only
+  // the messages to add to our state machine.
+  Status CheckLeaderRequestUnlocked(const ConsensusRequestPB* request,
+                                    ConsensusResponsePB* response,
+                                    LeaderRequest* deduped_req);
 
   // Pushes a new quorum configuration to a majority of peers. Contrary to write operations,
   // this actually waits for the commit round to reach a majority of peers, so that we know
