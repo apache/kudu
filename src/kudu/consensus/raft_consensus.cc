@@ -709,7 +709,7 @@ Status RaftConsensus::UpdateReplica(const ConsensusRequestPB* request,
   }
 
   if (PREDICT_FALSE(VLOG_IS_ON(1))) {
-    VLOG_WITH_PREFIX_LK(1) << "Replica updated. Replica: "
+    VLOG_WITH_PREFIX_LK(1) << "Replica updated."
         << state_->ToString() << " Request: " << request->ShortDebugString();
   }
 

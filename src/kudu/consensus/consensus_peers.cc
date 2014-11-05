@@ -328,7 +328,7 @@ void Peer::ProcessResponse(const Status& status) {
   }
   failed_attempts_ = 0;
 
-  DCHECK(response_.status().IsInitialized()) << "Response: " << response_.ShortDebugString();
+  DCHECK(response_.status().IsInitialized()) << "Error: " << response_.InitializationErrorString();
   VLOG(2) << "Response from "
           << peer_impl_->PeerTypeString() << " peer " << peer_pb().permanent_uuid() << ": "
           << response_.ShortDebugString();
