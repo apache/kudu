@@ -12,6 +12,7 @@
 #include "kudu/common/common.pb.h"
 #include "kudu/common/generic_iterators.h"
 #include "kudu/common/row.h"
+#include "kudu/consensus/consensus.pb.h"
 #include "kudu/consensus/opid_anchor_registry.h"
 #include "kudu/gutil/atomicops.h"
 #include "kudu/gutil/dynamic_annotations.h"
@@ -27,7 +28,6 @@ DEFINE_bool(mrs_use_codegen, true, "whether the memrowset should use code "
 namespace kudu { namespace tablet {
 
 using consensus::OpId;
-using consensus::OpIdLessThan;
 using log::OpIdAnchorRegistry;
 using std::pair;
 using strings::Substitute;
@@ -155,7 +155,7 @@ Status MemRowSet::Insert(Timestamp timestamp,
     << "Expected to be able to insert, since the prepared mutation "
     << "succeeded!";
 
-  anchorer_.AnchorIfMinimum(op_id);
+  anchorer_.AnchorIfMinimum(op_id.index());
 
   debug_insert_count_++;
   SlowMutators();
@@ -227,7 +227,7 @@ Status MemRowSet::MutateRow(Timestamp timestamp,
 
   stats->mrs_consulted++;
 
-  anchorer_.AnchorIfMinimum(op_id);
+  anchorer_.AnchorIfMinimum(op_id.index());
 
   // Throttle the writer if we're low on memory, but do this outside of the lock
   // so we don't slow down readers.

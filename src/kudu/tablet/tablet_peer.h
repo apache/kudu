@@ -170,9 +170,9 @@ class TabletPeer : public RefCountedThreadSafe<TabletPeer>,
   void GetInFlightTransactions(Transaction::TraceType trace_type,
                                std::vector<consensus::TransactionStatusPB>* out) const;
 
-  // Returns the minimum known OpId that is in-memory or in-flight.
+  // Returns the minimum known log index that is in-memory or in-flight.
   // Used for selection of log segments to delete during Log GC.
-  void GetEarliestNeededOpId(consensus::OpId* op_id) const;
+  void GetEarliestNeededLogIndex(int64_t* log_index) const;
 
   // Return a pointer to the Log.
   // The Log is owned by TabletPeer and will be destroyed with TabletPeer.

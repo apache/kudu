@@ -85,8 +85,8 @@ OpId MinimumOpId() {
 
 OpId MaximumOpId() {
   OpId op_id;
-  op_id.set_term(std::numeric_limits<uint64_t>::max());
-  op_id.set_index(std::numeric_limits<uint64_t>::max());
+  op_id.set_term(std::numeric_limits<int64_t>::max());
+  op_id.set_index(std::numeric_limits<int64_t>::max());
   return op_id;
 }
 

@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "kudu/common/wire_protocol.h"
+#include "kudu/consensus/opid_util.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/stl_util.h"

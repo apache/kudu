@@ -9,6 +9,7 @@
 #include "kudu/common/row.h"
 #include "kudu/common/scan_spec.h"
 #include "kudu/consensus/opid_anchor_registry.h"
+#include "kudu/consensus/opid_util.h"
 #include "kudu/server/logical_clock.h"
 #include "kudu/tablet/memrowset.h"
 #include "kudu/tablet/tablet-test-util.h"

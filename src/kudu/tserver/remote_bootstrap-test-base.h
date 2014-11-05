@@ -30,8 +30,8 @@ class RemoteBootstrapTest : public TabletServerTest {
     // to test that we are anchoring correctly. Since GenerateTestData() does a
     // Flush(), Log GC is allowed to eat the logs before we get around to
     // starting a remote bootstrap session.
-    tablet_peer_->tablet()->opid_anchor_registry()->Register(MinimumOpId(), CURRENT_TEST_NAME(),
-                                                             &anchor_);
+    tablet_peer_->tablet()->opid_anchor_registry()->Register(
+      MinimumOpId().index(), CURRENT_TEST_NAME(), &anchor_);
     ASSERT_NO_FATAL_FAILURE(GenerateTestData());
   }
 

@@ -8,6 +8,8 @@
 #include <tr1/unordered_set>
 
 #include "kudu/common/schema.h"
+#include "kudu/consensus/consensus.pb.h"
+#include "kudu/consensus/opid_util.h"
 #include "kudu/gutil/casts.h"
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/server/logical_clock.h"

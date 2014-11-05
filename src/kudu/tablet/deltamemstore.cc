@@ -3,6 +3,7 @@
 
 #include <utility>
 
+#include "kudu/consensus/consensus.pb.h"
 #include "kudu/tablet/deltafile.h"
 #include "kudu/tablet/deltamemstore.h"
 #include "kudu/tablet/delta_tracker.h"
@@ -15,7 +16,6 @@
 namespace kudu {
 namespace tablet {
 
-using consensus::OpIdLessThan;
 using log::OpIdAnchorRegistry;
 using std::tr1::shared_ptr;
 using strings::Substitute;
@@ -79,7 +79,7 @@ Status DeltaMemStore::Update(Timestamp timestamp,
     return Status::IOError("Unable to insert into tree");
   }
 
-  anchorer_.AnchorIfMinimum(op_id);
+  anchorer_.AnchorIfMinimum(op_id.index());
 
   return Status::OK();
 }

@@ -45,9 +45,9 @@ struct TestLogSequenceElem {
 
 class LogTest : public LogTestBase {
  public:
-  void CreateAndRegisterNewAnchor(const OpId& op_id, vector<OpIdAnchor*>* anchors) {
+  void CreateAndRegisterNewAnchor(int64_t log_index, vector<OpIdAnchor*>* anchors) {
     anchors->push_back(new OpIdAnchor());
-    opid_anchor_registry_->Register(op_id, CURRENT_TEST_NAME(), anchors->back());
+    opid_anchor_registry_->Register(log_index, CURRENT_TEST_NAME(), anchors->back());
   }
 
   // Create a series of NO_OP entries in the log.
@@ -57,12 +57,12 @@ class LogTest : public LogTestBase {
                                     OpId* op_id, vector<OpIdAnchor*>* anchors) {
     CHECK(op_id->IsInitialized());
     for (int i = 0; i < num_total_segments - 1; i++) {
-      CreateAndRegisterNewAnchor(*op_id, anchors);
+      CreateAndRegisterNewAnchor(op_id->index(), anchors);
       RETURN_NOT_OK(AppendNoOps(op_id, num_ops_per_segment));
       RETURN_NOT_OK(RollLog());
     }
 
-    CreateAndRegisterNewAnchor(*op_id, anchors);
+    CreateAndRegisterNewAnchor(op_id->index(), anchors);
     RETURN_NOT_OK(AppendNoOps(op_id, num_ops_per_segment));
     return Status::OK();
   }
@@ -343,7 +343,7 @@ TEST_F(LogTest, TestGCWithLogRunning) {
   const int kNumOpsPerSegment = 5;
   int num_gced_segments;
   OpId op_id(MinimumOpId());
-  OpId anchored_opid;
+  int64_t anchored_index = -1;
 
   ASSERT_STATUS_OK(AppendMultiSegmentSequence(kNumTotalSegments, kNumOpsPerSegment,
                                               &op_id, &anchors));
@@ -354,29 +354,29 @@ TEST_F(LogTest, TestGCWithLogRunning) {
   // Anchors should prevent GC.
   ASSERT_OK(log_->GetLogReader()->GetSegmentsSnapshot(&segments))
   ASSERT_EQ(4, segments.size()) << DumpSegmentsToString(segments);
-  ASSERT_STATUS_OK(opid_anchor_registry_->GetEarliestRegisteredOpId(&anchored_opid));
-  ASSERT_STATUS_OK(log_->GC(anchored_opid.index(), &num_gced_segments));
+  ASSERT_STATUS_OK(opid_anchor_registry_->GetEarliestRegisteredLogIndex(&anchored_index));
+  ASSERT_STATUS_OK(log_->GC(anchored_index, &num_gced_segments));
   ASSERT_OK(log_->GetLogReader()->GetSegmentsSnapshot(&segments))
   ASSERT_EQ(4, segments.size()) << DumpSegmentsToString(segments);
 
   // Freeing the first 2 anchors should allow GC of them.
   ASSERT_STATUS_OK(opid_anchor_registry_->Unregister(anchors[0]));
   ASSERT_STATUS_OK(opid_anchor_registry_->Unregister(anchors[1]));
-  ASSERT_STATUS_OK(opid_anchor_registry_->GetEarliestRegisteredOpId(&anchored_opid));
+  ASSERT_STATUS_OK(opid_anchor_registry_->GetEarliestRegisteredLogIndex(&anchored_index));
   // We should now be anchored on op 0.10, i.e. on the 3rd segment
-  ASSERT_TRUE(consensus::OpIdEquals(anchors[2]->op_id, anchored_opid));
+  ASSERT_EQ(anchors[2]->log_index, anchored_index);
 
   // However, first, we'll try bumping the min retention threshold and
   // verify that we don't GC any.
   {
     google::FlagSaver saver;
     FLAGS_log_min_segments_to_retain = 10;
-    ASSERT_STATUS_OK(log_->GC(anchored_opid.index(), &num_gced_segments));
+    ASSERT_STATUS_OK(log_->GC(anchored_index, &num_gced_segments));
     ASSERT_EQ(0, num_gced_segments);
   }
 
   // Try again without the modified flag.
-  ASSERT_STATUS_OK(log_->GC(anchored_opid.index(), &num_gced_segments));
+  ASSERT_STATUS_OK(log_->GC(anchored_index, &num_gced_segments));
   ASSERT_EQ(2, num_gced_segments) << DumpSegmentsToString(segments);
   ASSERT_OK(log_->GetLogReader()->GetSegmentsSnapshot(&segments))
   ASSERT_EQ(2, segments.size()) << DumpSegmentsToString(segments);
@@ -384,8 +384,8 @@ TEST_F(LogTest, TestGCWithLogRunning) {
   // Release the remaining "rolled segment" anchor. GC will not delete the
   // last rolled segment.
   ASSERT_STATUS_OK(opid_anchor_registry_->Unregister(anchors[2]));
-  ASSERT_STATUS_OK(opid_anchor_registry_->GetEarliestRegisteredOpId(&anchored_opid));
-  ASSERT_STATUS_OK(log_->GC(anchored_opid.index(), &num_gced_segments));
+  ASSERT_STATUS_OK(opid_anchor_registry_->GetEarliestRegisteredLogIndex(&anchored_index));
+  ASSERT_STATUS_OK(log_->GC(anchored_index, &num_gced_segments));
   ASSERT_EQ(0, num_gced_segments) << DumpSegmentsToString(segments);
   ASSERT_OK(log_->GetLogReader()->GetSegmentsSnapshot(&segments))
   ASSERT_EQ(2, segments.size()) << DumpSegmentsToString(segments);
@@ -446,15 +446,15 @@ TEST_F(LogTest, TestLogReopenAndGC) {
   const int kNumOpsPerSegment = 5;
   int num_gced_segments;
   OpId op_id(MinimumOpId());
-  OpId anchored_opid;
+  int64_t anchored_index = -1;
 
   ASSERT_STATUS_OK(AppendMultiSegmentSequence(kNumTotalSegments, kNumOpsPerSegment,
                                               &op_id, &anchors));
   // Anchors should prevent GC.
   ASSERT_OK(log_->GetLogReader()->GetSegmentsSnapshot(&segments))
   ASSERT_EQ(3, segments.size());
-  ASSERT_STATUS_OK(opid_anchor_registry_->GetEarliestRegisteredOpId(&anchored_opid));
-  ASSERT_STATUS_OK(log_->GC(anchored_opid.index(), &num_gced_segments));
+  ASSERT_STATUS_OK(opid_anchor_registry_->GetEarliestRegisteredLogIndex(&anchored_index));
+  ASSERT_STATUS_OK(log_->GC(anchored_index, &num_gced_segments));
   ASSERT_OK(log_->GetLogReader()->GetSegmentsSnapshot(&segments))
   ASSERT_EQ(3, segments.size());
 
@@ -470,15 +470,15 @@ TEST_F(LogTest, TestLogReopenAndGC) {
 
   // Write to a new log segment, as if we had taken new requests and the
   // mem stores are holding anchors, but don't roll it.
-  CreateAndRegisterNewAnchor(op_id, &anchors);
+  CreateAndRegisterNewAnchor(op_id.index(), &anchors);
   ASSERT_STATUS_OK(AppendNoOps(&op_id, kNumOpsPerSegment));
 
   // Now release the "old" anchors and GC them.
   for (int i = 0; i < 3; i++) {
     ASSERT_STATUS_OK(opid_anchor_registry_->Unregister(anchors[i]));
   }
-  ASSERT_STATUS_OK(opid_anchor_registry_->GetEarliestRegisteredOpId(&anchored_opid));
-  ASSERT_STATUS_OK(log_->GC(anchored_opid.index(), &num_gced_segments));
+  ASSERT_STATUS_OK(opid_anchor_registry_->GetEarliestRegisteredLogIndex(&anchored_index));
+  ASSERT_STATUS_OK(log_->GC(anchored_index, &num_gced_segments));
 
   // After GC there should be only one left, besides the one currently being
   // written to. That is because min_segments_to_retain defaults to 2.

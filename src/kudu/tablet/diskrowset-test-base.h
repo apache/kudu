@@ -16,6 +16,7 @@
 #include "kudu/common/scan_spec.h"
 #include "kudu/common/schema.h"
 #include "kudu/consensus/log_util.h"
+#include "kudu/consensus/opid_util.h"
 #include "kudu/gutil/stringprintf.h"
 #include "kudu/server/logical_clock.h"
 #include "kudu/tablet/diskrowset.h"

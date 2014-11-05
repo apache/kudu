@@ -11,7 +11,6 @@
 namespace kudu {
 namespace log {
 
-using consensus::OpId;
 using std::pair;
 using std::string;
 using strings::Substitute;
@@ -19,23 +18,23 @@ using strings::Substitute;
 OpIdAnchorRegistry::OpIdAnchorRegistry() {
 }
 OpIdAnchorRegistry::~OpIdAnchorRegistry() {
-  CHECK(op_ids_.empty());
+  CHECK(anchors_.empty());
 }
 
-void OpIdAnchorRegistry::Register(const OpId& op_id,
+void OpIdAnchorRegistry::Register(int64_t log_index,
                                   const string& owner,
                                   OpIdAnchor* anchor) {
   boost::lock_guard<simple_spinlock> l(lock_);
-  RegisterUnlocked(op_id, owner, anchor);
+  RegisterUnlocked(log_index, owner, anchor);
 }
 
-Status OpIdAnchorRegistry::UpdateRegistration(const consensus::OpId& op_id,
+Status OpIdAnchorRegistry::UpdateRegistration(int64_t log_index,
                                               const std::string& owner,
                                               OpIdAnchor* anchor) {
   boost::lock_guard<simple_spinlock> l(lock_);
   RETURN_NOT_OK_PREPEND(UnregisterUnlocked(anchor),
                         "Unable to swap registration, anchor not registered")
-  RegisterUnlocked(op_id, owner, anchor);
+  RegisterUnlocked(log_index, owner, anchor);
   return Status::OK();
 }
 
@@ -48,53 +47,53 @@ bool OpIdAnchorRegistry::IsRegistered(OpIdAnchor* anchor) const {
   return anchor->is_registered;
 }
 
-Status OpIdAnchorRegistry::GetEarliestRegisteredOpId(OpId* op_id) {
+Status OpIdAnchorRegistry::GetEarliestRegisteredLogIndex(int64_t* log_index) {
   boost::lock_guard<simple_spinlock> l(lock_);
-  OpIdMultiMap::iterator iter = op_ids_.begin();
-  if (iter == op_ids_.end()) {
-    return Status::NotFound("No OpIds in registry");
+  AnchorMultiMap::iterator iter = anchors_.begin();
+  if (iter == anchors_.end()) {
+    return Status::NotFound("No anchors in registry");
   }
 
   // Since this is a sorted map, the first element is the one we want.
-  *op_id = iter->first;
+  *log_index = iter->first;
   return Status::OK();
 }
 
 size_t OpIdAnchorRegistry::GetAnchorCountForTests() const {
   boost::lock_guard<simple_spinlock> l(lock_);
-  return op_ids_.size();
+  return anchors_.size();
 }
 
-void OpIdAnchorRegistry::RegisterUnlocked(const consensus::OpId& op_id,
+void OpIdAnchorRegistry::RegisterUnlocked(int64_t log_index,
                                           const std::string& owner,
                                           OpIdAnchor* anchor) {
   DCHECK(anchor != NULL);
   DCHECK(!anchor->is_registered);
 
-  anchor->op_id.CopyFrom(op_id);
+  anchor->log_index = log_index;
   anchor->owner.assign(owner);
   anchor->is_registered = true;
-  OpIdMultiMap::value_type value(op_id, anchor);
-  op_ids_.insert(value);
+  AnchorMultiMap::value_type value(log_index, anchor);
+  anchors_.insert(value);
 }
 
 Status OpIdAnchorRegistry::UnregisterUnlocked(OpIdAnchor* anchor) {
   DCHECK(anchor != NULL);
   DCHECK(anchor->is_registered);
 
-  OpIdMultiMap::iterator iter = op_ids_.find(anchor->op_id);
-  while (iter != op_ids_.end()) {
+  AnchorMultiMap::iterator iter = anchors_.find(anchor->log_index);
+  while (iter != anchors_.end()) {
     if (iter->second == anchor) {
       anchor->is_registered = false;
-      op_ids_.erase(iter);
+      anchors_.erase(iter);
       // No need for the iterator to remain valid since we return here.
       return Status::OK();
     } else {
       ++iter;
     }
   }
-  return Status::NotFound(Substitute("OpId with key {$0} and owner $1 not found",
-                                     anchor->op_id.ShortDebugString(), anchor->owner));
+  return Status::NotFound(Substitute("Anchor with index $0 and owner $1 not found",
+                                     anchor->log_index, anchor->owner));
 }
 
 OpIdAnchor::OpIdAnchor()
@@ -107,27 +106,28 @@ OpIdAnchor::~OpIdAnchor() {
 
 OpIdMinAnchorer::OpIdMinAnchorer(OpIdAnchorRegistry* registry, const string& owner)
   : registry_(DCHECK_NOTNULL(registry)),
-    owner_(owner) {
+    owner_(owner),
+    minimum_log_index_(-1) {
 }
 
 OpIdMinAnchorer::~OpIdMinAnchorer() {
   CHECK_OK(ReleaseAnchor());
 }
 
-void OpIdMinAnchorer::AnchorIfMinimum(const consensus::OpId& op_id) {
+void OpIdMinAnchorer::AnchorIfMinimum(int64_t log_index) {
   boost::lock_guard<simple_spinlock> l(lock_);
-  if (PREDICT_FALSE(!minimum_op_id_.IsInitialized())) {
-    minimum_op_id_.CopyFrom(op_id);
-    registry_->Register(minimum_op_id_, owner_, &anchor_);
-  } else if (OpIdLessThan(op_id, minimum_op_id_)) {
-    minimum_op_id_.CopyFrom(op_id);
-    CHECK_OK(registry_->UpdateRegistration(minimum_op_id_, owner_, &anchor_));
+  if (PREDICT_FALSE(minimum_log_index_ < 0)) {
+    minimum_log_index_ = log_index;
+    registry_->Register(minimum_log_index_, owner_, &anchor_);
+  } else if (log_index < minimum_log_index_) {
+    minimum_log_index_ = log_index;
+    CHECK_OK(registry_->UpdateRegistration(minimum_log_index_, owner_, &anchor_));
   }
 }
 
 Status OpIdMinAnchorer::ReleaseAnchor() {
   boost::lock_guard<simple_spinlock> l(lock_);
-  if (PREDICT_TRUE(minimum_op_id_.IsInitialized())) {
+  if (PREDICT_TRUE(minimum_log_index_ >= 0)) {
     return registry_->Unregister(&anchor_);
   }
   return Status::OK(); // If there were no inserts, return OK.

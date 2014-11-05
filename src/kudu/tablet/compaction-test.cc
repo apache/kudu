@@ -9,6 +9,7 @@
 #include <gtest/gtest.h>
 
 #include "kudu/consensus/opid_anchor_registry.h"
+#include "kudu/consensus/opid_util.h"
 #include "kudu/gutil/strings/util.h"
 #include "kudu/server/logical_clock.h"
 #include "kudu/tablet/compaction.h"

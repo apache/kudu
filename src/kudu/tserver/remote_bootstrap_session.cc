@@ -71,7 +71,7 @@ Status RemoteBootstrapSession::Init() {
   OpIdAnchorRegistry* registry = tablet_peer_->tablet()->opid_anchor_registry();
   string anchor_owner_token = Substitute("RemoteBootstrap-$0", session_id_);
 
-  registry->Register(MinimumOpId(), anchor_owner_token, &log_anchor_);
+  registry->Register(MinimumOpId().index(), anchor_owner_token, &log_anchor_);
 
   // Get the current segments from the log.
   RETURN_NOT_OK(tablet_peer_->log()->GetLogReader()->GetSegmentsSnapshot(&log_segments_));
@@ -92,10 +92,8 @@ Status RemoteBootstrapSession::Init() {
     CHECK(log_segments_[0]->HasFooter());
     int64_t min_repl_index = log_segments_[0]->footer().min_replicate_index();
     CHECK_GT(min_repl_index, 0);
-    // TODO: need to change log anchoring to use only indexes and not OpIds.
-    OpId earliest = consensus::MakeOpId(0, min_repl_index);
     // Anchor on the earliest id found in the segments
-    RETURN_NOT_OK(registry->UpdateRegistration(earliest, anchor_owner_token, &log_anchor_));
+    RETURN_NOT_OK(registry->UpdateRegistration(min_repl_index, anchor_owner_token, &log_anchor_));
   } else {
     // No log segments returned, so no log anchors needed.
     RETURN_NOT_OK(registry->Unregister(&log_anchor_));

@@ -3,6 +3,7 @@
 
 #include "kudu/tablet/tablet_peer.h"
 
+#include <algorithm>
 #include <string>
 #include <utility>
 #include <vector>
@@ -19,6 +20,7 @@
 #include "kudu/consensus/opid_anchor_registry.h"
 #include "kudu/consensus/quorum_util.h"
 #include "kudu/consensus/raft_consensus.h"
+#include "kudu/gutil/mathlimits.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/sysinfo.h"
 #include "kudu/tablet/transactions/transaction_driver.h"
@@ -319,10 +321,10 @@ Status TabletPeer::RunLogGC() {
   if (!CheckRunning().ok()) {
     return Status::OK();
   }
-  OpId min_op_id;
+  int64_t min_log_index;
   int32_t num_gced;
-  GetEarliestNeededOpId(&min_op_id);
-  Status s = log_->GC(min_op_id.index(), &num_gced);
+  GetEarliestNeededLogIndex(&min_log_index);
+  Status s = log_->GC(min_log_index, &num_gced);
   if (!s.ok()) {
     s = s.CloneAndPrepend("Unexpected error while running Log GC from TabletPeer");
     LOG(ERROR) << s.ToString();
@@ -361,34 +363,34 @@ void TabletPeer::GetInFlightTransactions(Transaction::TraceType trace_type,
   }
 }
 
-void TabletPeer::GetEarliestNeededOpId(consensus::OpId* min_op_id) const {
-  min_op_id->Clear();
-
+void TabletPeer::GetEarliestNeededLogIndex(int64_t* min_index) const {
   // First, we anchor on the last OpId in the Log to establish a lower bound
   // and avoid racing with the other checks. This limits the Log GC candidate
   // segments before we check the anchors.
-  Status s = log_->GetLastEntryOpId(min_op_id);
+  {
+    OpId last_log_op;
+    CHECK_OK(log_->GetLastEntryOpId(&last_log_op));
+    *min_index = last_log_op.index();
+  }
 
   // Next, we interrogate the anchor registry.
   // Returns OK if minimum known, NotFound if no anchors are registered.
-  OpId min_anchor_op_id;
-  s = tablet_->opid_anchor_registry()->GetEarliestRegisteredOpId(&min_anchor_op_id);
-  if (PREDICT_FALSE(!s.ok())) {
-    DCHECK(s.IsNotFound()) << "Unexpected error calling OpIdAnchorRegistry: " << s.ToString();
+  {
+    int64_t min_anchor_index;
+    Status s = tablet_->opid_anchor_registry()->GetEarliestRegisteredLogIndex(&min_anchor_index);
+    if (PREDICT_FALSE(!s.ok())) {
+      DCHECK(s.IsNotFound()) << "Unexpected error calling OpIdAnchorRegistry: " << s.ToString();
+    } else {
+      *min_index = std::min(*min_index, min_anchor_index);
+    }
   }
-  CopyIfOpIdLessThan(min_anchor_op_id, min_op_id);
 
   // Next, interrogate the TransactionTracker.
   vector<scoped_refptr<TransactionDriver> > pending_transactions;
   txn_tracker_.GetPendingTransactions(&pending_transactions);
   BOOST_FOREACH(const scoped_refptr<TransactionDriver>& driver, pending_transactions) {
     OpId tx_op_id = driver->GetOpId();
-    CopyIfOpIdLessThan(tx_op_id, min_op_id);
-  }
-
-  // Finally, if nothing is known or registered, just don't delete anything.
-  if (!min_op_id->IsInitialized()) {
-    min_op_id->CopyFrom(consensus::MinimumOpId());
+    *min_index = std::min(*min_index, tx_op_id.index());
   }
 }
 
