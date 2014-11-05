@@ -322,7 +322,7 @@ Status TabletPeer::RunLogGC() {
   OpId min_op_id;
   int32_t num_gced;
   GetEarliestNeededOpId(&min_op_id);
-  Status s = log_->GC(min_op_id, &num_gced);
+  Status s = log_->GC(min_op_id.index(), &num_gced);
   if (!s.ok()) {
     s = s.CloneAndPrepend("Unexpected error while running Log GC from TabletPeer");
     LOG(ERROR) << s.ToString();

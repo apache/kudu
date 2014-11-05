@@ -189,11 +189,11 @@ class Log {
   // only refer to in-mem state that has been flushed are candidates for
   // garbage collection.
   //
-  // min_op_id is the minimum OpId required to be retained.
+  // 'min_op_idx' is the minimum operation index required to be retained.
   // If successful, num_gced is set to the number of deleted log segments.
   //
   // This method is thread-safe.
-  Status GC(const consensus::OpId& min_op_id, int* num_gced);
+  Status GC(int64_t min_op_idx, int* num_gced);
 
   // Returns the file system location of the currently active WAL segment.
   const std::string& ActiveSegmentPathForTests() const {
@@ -446,14 +446,6 @@ class LogEntryBatch {
   // Returns the total size in bytes of the object.
   size_t total_size_bytes() const {
     return total_size_bytes_;
-  }
-
-  // The lowest OpId of a REPLICATE message in this batch.
-  // Requires that this be a REPLICATE batch.
-  consensus::OpId MinReplicateOpId() const {
-    DCHECK_EQ(REPLICATE, type_);
-    DCHECK(entry_batch_pb_->entry(0).replicate().IsInitialized());
-    return entry_batch_pb_->entry(0).replicate().id();
   }
 
   // The highest OpId of a REPLICATE message in this batch.

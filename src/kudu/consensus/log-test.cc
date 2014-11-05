@@ -355,7 +355,7 @@ TEST_F(LogTest, TestGCWithLogRunning) {
   ASSERT_OK(log_->GetLogReader()->GetSegmentsSnapshot(&segments))
   ASSERT_EQ(4, segments.size()) << DumpSegmentsToString(segments);
   ASSERT_STATUS_OK(opid_anchor_registry_->GetEarliestRegisteredOpId(&anchored_opid));
-  ASSERT_STATUS_OK(log_->GC(anchored_opid, &num_gced_segments));
+  ASSERT_STATUS_OK(log_->GC(anchored_opid.index(), &num_gced_segments));
   ASSERT_OK(log_->GetLogReader()->GetSegmentsSnapshot(&segments))
   ASSERT_EQ(4, segments.size()) << DumpSegmentsToString(segments);
 
@@ -371,12 +371,12 @@ TEST_F(LogTest, TestGCWithLogRunning) {
   {
     google::FlagSaver saver;
     FLAGS_log_min_segments_to_retain = 10;
-    ASSERT_STATUS_OK(log_->GC(anchored_opid, &num_gced_segments));
+    ASSERT_STATUS_OK(log_->GC(anchored_opid.index(), &num_gced_segments));
     ASSERT_EQ(0, num_gced_segments);
   }
 
   // Try again without the modified flag.
-  ASSERT_STATUS_OK(log_->GC(anchored_opid, &num_gced_segments));
+  ASSERT_STATUS_OK(log_->GC(anchored_opid.index(), &num_gced_segments));
   ASSERT_EQ(2, num_gced_segments) << DumpSegmentsToString(segments);
   ASSERT_OK(log_->GetLogReader()->GetSegmentsSnapshot(&segments))
   ASSERT_EQ(2, segments.size()) << DumpSegmentsToString(segments);
@@ -385,7 +385,7 @@ TEST_F(LogTest, TestGCWithLogRunning) {
   // last rolled segment.
   ASSERT_STATUS_OK(opid_anchor_registry_->Unregister(anchors[2]));
   ASSERT_STATUS_OK(opid_anchor_registry_->GetEarliestRegisteredOpId(&anchored_opid));
-  ASSERT_STATUS_OK(log_->GC(anchored_opid, &num_gced_segments));
+  ASSERT_STATUS_OK(log_->GC(anchored_opid.index(), &num_gced_segments));
   ASSERT_EQ(0, num_gced_segments) << DumpSegmentsToString(segments);
   ASSERT_OK(log_->GetLogReader()->GetSegmentsSnapshot(&segments))
   ASSERT_EQ(2, segments.size()) << DumpSegmentsToString(segments);
@@ -454,7 +454,7 @@ TEST_F(LogTest, TestLogReopenAndGC) {
   ASSERT_OK(log_->GetLogReader()->GetSegmentsSnapshot(&segments))
   ASSERT_EQ(3, segments.size());
   ASSERT_STATUS_OK(opid_anchor_registry_->GetEarliestRegisteredOpId(&anchored_opid));
-  ASSERT_STATUS_OK(log_->GC(anchored_opid, &num_gced_segments));
+  ASSERT_STATUS_OK(log_->GC(anchored_opid.index(), &num_gced_segments));
   ASSERT_OK(log_->GetLogReader()->GetSegmentsSnapshot(&segments))
   ASSERT_EQ(3, segments.size());
 
@@ -478,7 +478,7 @@ TEST_F(LogTest, TestLogReopenAndGC) {
     ASSERT_STATUS_OK(opid_anchor_registry_->Unregister(anchors[i]));
   }
   ASSERT_STATUS_OK(opid_anchor_registry_->GetEarliestRegisteredOpId(&anchored_opid));
-  ASSERT_STATUS_OK(log_->GC(anchored_opid, &num_gced_segments));
+  ASSERT_STATUS_OK(log_->GC(anchored_opid.index(), &num_gced_segments));
 
   // After GC there should be only one left, besides the one currently being
   // written to. That is because min_segments_to_retain defaults to 2.
@@ -807,7 +807,7 @@ TEST_F(LogTest, TestReadLogWithReplacedReplicates) {
     }
 
     int num_gced = 0;
-    ASSERT_OK(log_->GC(MakeOpId(0, gc_index), &num_gced));
+    ASSERT_OK(log_->GC(gc_index, &num_gced));
     gc_index += rng.Uniform(10);
   }
 }

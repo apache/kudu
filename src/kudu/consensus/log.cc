@@ -603,8 +603,8 @@ Status Log::GetLastEntryOpId(consensus::OpId* op_id) const {
   }
 }
 
-Status Log::GC(const consensus::OpId& min_op_id, int32_t* num_gced) {
-  CHECK(min_op_id.IsInitialized()) << "Invalid min_op_id: " << min_op_id.ShortDebugString();
+Status Log::GC(int64_t min_op_idx, int32_t* num_gced) {
+  CHECK_GE(min_op_idx, 0);
 
   VLOG(1) << "Running Log GC on " << log_dir_;
   VLOG_TIMING(1, "Log GC") {
@@ -615,8 +615,8 @@ Status Log::GC(const consensus::OpId& min_op_id, int32_t* num_gced) {
       CHECK_EQ(kLogWriting, log_state_);
 
       // Find the prefix of segments in the segment sequence that is guaranteed not to include
-      // 'min_op_id'.
-      RETURN_NOT_OK(reader_->GetSegmentPrefixNotIncluding(min_op_id.index(), &segments_to_delete));
+      // 'min_op_idx'.
+      RETURN_NOT_OK(reader_->GetSegmentPrefixNotIncluding(min_op_idx, &segments_to_delete));
 
       int max_to_delete = std::max(reader_->num_segments() - FLAGS_log_min_segments_to_retain, 0);
       if (segments_to_delete.size() > max_to_delete) {

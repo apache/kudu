@@ -290,7 +290,7 @@ TEST_F(TabletPeerTest, TestMRSAnchorPreventsLogGC) {
 
   // Ensure nothing gets deleted.
   tablet_peer_->GetEarliestNeededOpId(&min_op_id);
-  ASSERT_STATUS_OK(log->GC(min_op_id, &num_gced));
+  ASSERT_STATUS_OK(log->GC(min_op_id.index(), &num_gced));
   ASSERT_EQ(0, num_gced) << "earliest needed: " << min_op_id;
 
   // Flush MRS as needed to ensure that we don't have OpId anchors in the MRS.
@@ -301,7 +301,7 @@ TEST_F(TabletPeerTest, TestMRSAnchorPreventsLogGC) {
   // The last is anchored due to the commit in the last segment being the last
   // OpId in the log.
   tablet_peer_->GetEarliestNeededOpId(&min_op_id);
-  ASSERT_STATUS_OK(log->GC(min_op_id, &num_gced));
+  ASSERT_STATUS_OK(log->GC(min_op_id.index(), &num_gced));
   ASSERT_EQ(2, num_gced) << "earliest needed: " << min_op_id;
   ASSERT_STATUS_OK(log->GetLogReader()->GetSegmentsSnapshot(&segments));
   ASSERT_EQ(2, segments.size());
@@ -329,7 +329,7 @@ TEST_F(TabletPeerTest, TestDMSAnchorPreventsLogGC) {
   // Flush MRS & GC log so the next mutation goes into a DMS.
   ASSERT_STATUS_OK(tablet_peer_->tablet()->Flush());
   tablet_peer_->GetEarliestNeededOpId(&min_op_id);
-  ASSERT_STATUS_OK(log->GC(min_op_id, &num_gced));
+  ASSERT_STATUS_OK(log->GC(min_op_id.index(), &num_gced));
   // We will only GC 1, and have 1 left because the earliest needed OpId falls
   // back to the latest OpId written to the Log if no anchors are set.
   ASSERT_EQ(1, num_gced);
@@ -366,7 +366,7 @@ TEST_F(TabletPeerTest, TestDMSAnchorPreventsLogGC) {
   // Ensure the delta and last insert remain in the logs, anchored by the delta.
   // Note that this will allow GC of the 2nd insert done above.
   tablet_peer_->GetEarliestNeededOpId(&min_op_id);
-  ASSERT_STATUS_OK(log->GC(min_op_id, &num_gced));
+  ASSERT_STATUS_OK(log->GC(min_op_id.index(), &num_gced));
   ASSERT_EQ(1, num_gced);
   ASSERT_OK(log->GetLogReader()->GetSegmentsSnapshot(&segments));
   ASSERT_EQ(5, segments.size());
@@ -382,7 +382,7 @@ TEST_F(TabletPeerTest, TestDMSAnchorPreventsLogGC) {
   // that segment, not the previous, because it's not the first OpId in the
   // segment.
   tablet_peer_->GetEarliestNeededOpId(&min_op_id);
-  ASSERT_STATUS_OK(log->GC(min_op_id, &num_gced));
+  ASSERT_STATUS_OK(log->GC(min_op_id.index(), &num_gced));
   ASSERT_EQ(3, num_gced);
   ASSERT_OK(log->GetLogReader()->GetSegmentsSnapshot(&segments));
   ASSERT_EQ(2, segments.size());
@@ -454,7 +454,7 @@ TEST_F(TabletPeerTest, TestActiveTransactionPreventsLogGC) {
 
   // GC the first four segments created by the inserts.
   tablet_peer_->GetEarliestNeededOpId(&min_op_id);
-  ASSERT_STATUS_OK(log->GC(min_op_id, &num_gced));
+  ASSERT_STATUS_OK(log->GC(min_op_id.index(), &num_gced));
   ASSERT_EQ(4, num_gced);
   ASSERT_OK(log->GetLogReader()->GetSegmentsSnapshot(&segments));
   ASSERT_EQ(2, segments.size());
@@ -473,7 +473,7 @@ TEST_F(TabletPeerTest, TestActiveTransactionPreventsLogGC) {
 
   // Try to GC(), nothing should be deleted due to the in-flight transaction.
   tablet_peer_->GetEarliestNeededOpId(&min_op_id);
-  ASSERT_STATUS_OK(log->GC(min_op_id, &num_gced));
+  ASSERT_STATUS_OK(log->GC(min_op_id.index(), &num_gced));
   ASSERT_EQ(0, num_gced);
   ASSERT_OK(log->GetLogReader()->GetSegmentsSnapshot(&segments));
   ASSERT_EQ(5, segments.size());
@@ -490,7 +490,7 @@ TEST_F(TabletPeerTest, TestActiveTransactionPreventsLogGC) {
 
   // All should be deleted except the two last segments.
   tablet_peer_->GetEarliestNeededOpId(&min_op_id);
-  ASSERT_STATUS_OK(log->GC(min_op_id, &num_gced));
+  ASSERT_STATUS_OK(log->GC(min_op_id.index(), &num_gced));
   ASSERT_EQ(3, num_gced);
   ASSERT_OK(log->GetLogReader()->GetSegmentsSnapshot(&segments));
   ASSERT_EQ(2, segments.size());
