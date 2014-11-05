@@ -96,7 +96,7 @@ class ClientTest : public KuduTest {
 
     // Connect to the cluster.
     ASSERT_STATUS_OK(KuduClientBuilder()
-                     .default_select_master_timeout(MonoDelta::FromMilliseconds(100))
+                     .default_select_master_timeout(MonoDelta::FromSeconds(5))
                      .master_server_addr(cluster_->mini_master()->bound_rpc_addr().ToString())
                      .Build(&client_));
 
