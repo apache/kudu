@@ -311,6 +311,7 @@ class TabletServerTest : public KuduTest {
 
     // Start server.
     mini_server_.reset(new MiniTabletServer(GetTestPath("TabletServerTest-fsroot"), 0));
+    mini_server_->options()->master_hostport = HostPort("255.255.255.255", 1);
     // this should open the tablet created on StartTabletServer()
     RETURN_NOT_OK(mini_server_->Start());
     RETURN_NOT_OK(mini_server_->WaitStarted());
