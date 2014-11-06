@@ -194,21 +194,21 @@ Status LogReader::GetSegmentSuffixIncluding(int64_t index,
   return Status::OK();
 }
 
-Status LogReader::ReadAllReplicateEntries(const int64_t starting_after,
+Status LogReader::ReadAllReplicateEntries(const int64_t starting_at,
                                           const int64_t up_to,
                                           vector<ReplicateMsg*>* replicates) const {
-  DCHECK_GE(starting_after, 0);
-  DCHECK_GT(up_to, starting_after);
+  DCHECK_GT(starting_at, 0);
+  DCHECK_GE(up_to, starting_at);
 
-  int64_t num_entries = up_to - starting_after;
+  int64_t num_entries = up_to - starting_at + 1;
   // Pre-reserve space in our result array. We'll fill in the messages as we go,
   // letting later messages replace earlier (they may have been appended by later
   // leaders).
   replicates->assign(num_entries, static_cast<ReplicateMsg*>(NULL));
 
-  // Get all segments which might include 'starting_after' (and anything after it).
+  // Get all segments which might include 'starting_at' (and anything after it).
   log::SegmentSequence segments_copy;
-  RETURN_NOT_OK(GetSegmentSuffixIncluding(starting_after, &segments_copy));
+  RETURN_NOT_OK(GetSegmentSuffixIncluding(starting_at, &segments_copy));
 
   // Read the entries from the relevant segment(s).
   // TODO: we should do this lazily - right now we're reading way more than
@@ -234,7 +234,7 @@ Status LogReader::ReadAllReplicateEntries(const int64_t starting_after,
     if (!entry->has_replicate()) continue;
 
     int64_t repl_index = entry->replicate().id().index();
-    if (repl_index <= starting_after) {
+    if (repl_index < starting_at) {
       // We don't care about replicates before our range.
       continue;
     }
@@ -246,7 +246,7 @@ Status LogReader::ReadAllReplicateEntries(const int64_t starting_after,
     }
 
     // Compute the index in our output array.
-    int64_t relative_idx = repl_index - starting_after - 1;
+    int64_t relative_idx = repl_index - starting_at;
     DCHECK_LT(relative_idx, replicates->size());
     DCHECK_GE(relative_idx, 0);
 
@@ -264,7 +264,7 @@ Status LogReader::ReadAllReplicateEntries(const int64_t starting_after,
     return Status::NotFound(
       Substitute("Could not find operations starting at $0 in the log "
                  "(perhaps they were already GCed)",
-                 starting_after + 1));
+                 starting_at));
   }
   if (replicates->back() == NULL) {
     STLDeleteElements(replicates);
@@ -283,7 +283,7 @@ Status LogReader::ReadAllReplicateEntries(const int64_t starting_after,
       STLDeleteElements(replicates);
       return Status::Corruption(
         Substitute("Could not find operations $0 through $1 in the log (missing op $2)",
-                   starting_after + 1, up_to, starting_after + 1 + found_count));
+                   starting_at, up_to, starting_at + found_count));
     } else {
       found_count++;
     }

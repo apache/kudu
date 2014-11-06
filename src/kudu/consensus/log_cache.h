@@ -56,13 +56,10 @@ class LogCache {
   void Init(const OpId& preceding_op,
             gscoped_ptr<log::AsyncLogReader> log_reader);
 
-  // Read operations from the log, following 'after_op'.
+  // Read operations from the log, following 'after_op_index'.
   // The returned messages are owned by the log cache, and will be freed
   // upon AdvancePinnedOp() when the pin point is moved later than these messages.
-  // Note that 'after_op' _must_ be pinned before calling this method.
-  //
-  // TODO: should take an _index_, not an OpId! But currently the log code
-  // needs OpIds.
+  // Note that 'after_op_index' _must_ be pinned before calling this method.
   //
   // If such an op exists in the log, an OK result will always include at least one
   // operation.
@@ -77,7 +74,7 @@ class LogCache {
   // If the ops being requested are not available in the log, this will asynchronously
   // enqueue a read for these ops into the cache, and return Status::Incomplete().
   //
-  Status ReadOps(const OpId& after_op,
+  Status ReadOps(int64_t after_op_index,
                  int max_size_bytes,
                  std::vector<ReplicateMsg*>* messages,
                  OpId* preceding_op);
@@ -134,8 +131,7 @@ class LogCache {
   // Return a string with stats
   std::string StatsStringUnlocked() const;
 
-  void EntriesLoadedCallback(const OpId& new_preceding_first_op,
-                             const Status& status,
+  void EntriesLoadedCallback(const Status& status,
                              const std::vector<ReplicateMsg*>& replicates);
 
   mutable simple_spinlock lock_;

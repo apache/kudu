@@ -49,9 +49,9 @@ class LogReader {
   // 'segments' will be cleared first.
   Status GetSegmentsSnapshot(SegmentSequence* segments) const;
 
-  // Reads all ReplicateMsgs from 'starting_after' exclusive, to 'up_to' inclusive.
+  // Reads all ReplicateMsgs from 'starting_at' to 'up_to' both inclusive.
   Status ReadAllReplicateEntries(
-      const int64_t starting_after,
+      const int64_t starting_at,
       const int64_t up_to,
       std::vector<consensus::ReplicateMsg*>* replicates) const;
 

@@ -134,21 +134,21 @@ bool LogCache::HasOpIndex(int64_t index) const {
   return ContainsKey(cache_, index);
 }
 
-Status LogCache::ReadOps(const OpId& after_op,
+Status LogCache::ReadOps(int64_t after_op_index,
                          int max_size_bytes,
                          std::vector<ReplicateMsg*>* messages,
                          OpId* preceding_op) {
 
   lock_guard<simple_spinlock> l(&lock_);
-  CHECK_GE(after_op.index(), min_pinned_op_index)
+  CHECK_GE(after_op_index, min_pinned_op_index)
     << "Cannot currently support reading non-pinned operations";
 
   // If the messages the peer needs haven't been loaded into the queue yet,
   // load them.
-  if (after_op.index() < preceding_first_op_.index()) {
+  if (after_op_index < preceding_first_op_.index()) {
     Status status = async_reader_->EnqueueAsyncRead(
-      after_op.index(), preceding_first_op_.index(),
-      Bind(&LogCache::EntriesLoadedCallback, Unretained(this), after_op));
+      after_op_index, preceding_first_op_.index(),
+      Bind(&LogCache::EntriesLoadedCallback, Unretained(this)));
     if (status.IsAlreadyPresent()) {
       // The log reader is already loading another part of the log. We'll try again at some
       // point.
@@ -166,17 +166,17 @@ Status LogCache::ReadOps(const OpId& after_op,
 
   // We don't actually start sending on 'lower_bound' but we seek to
   // it to get the preceding_id.
-  MessageCache::const_iterator iter = cache_.lower_bound(after_op.index());
-  DCHECK(iter != cache_.end()) << after_op;
+  MessageCache::const_iterator iter = cache_.lower_bound(after_op_index);
+  DCHECK(iter != cache_.end()) << after_op_index;
 
   int found_index = iter->first;
-  if (found_index != after_op.index()) {
+  if (found_index != after_op_index) {
     // If we were looking for exactly the op that precedes the beginning of the
     // queue, use our cached OpId
-    if (after_op.index() == preceding_first_op_.index()) {
+    if (after_op_index == preceding_first_op_.index()) {
       preceding_op->CopyFrom(preceding_first_op_);
     } else {
-      LOG(FATAL) << "trying to read index " << after_op.index()
+      LOG(FATAL) << "trying to read index " << after_op_index
                  << " but seeked to " << found_index;
     }
   } else {
@@ -204,8 +204,7 @@ Status LogCache::ReadOps(const OpId& after_op,
   return Status::OK();
 }
 
-void LogCache::EntriesLoadedCallback(const OpId& new_preceding_first_op,
-                                     const Status& status,
+void LogCache::EntriesLoadedCallback(const Status& status,
                                      const vector<ReplicateMsg*>& replicates) {
   // TODO deal with errors when loading operations.
   CHECK_OK(status);
@@ -221,7 +220,15 @@ void LogCache::EntriesLoadedCallback(const OpId& new_preceding_first_op,
   // TODO enforce some sort of limit on how much can be loaded from disk
   {
     lock_guard<simple_spinlock> lock(&lock_);
-    BOOST_FOREACH(ReplicateMsg* replicate, replicates) {
+
+    // We were told to load ops after 'new_preceding_first_op_index' so we skip
+    // the first one, whose OpId will become our new 'preceding_first_op_'
+    vector<ReplicateMsg*>::const_iterator iter = replicates.begin();
+    gscoped_ptr<ReplicateMsg> preceding_replicate(*iter);
+    ++iter;
+
+    for (; iter != replicates.end(); ++iter) {
+      ReplicateMsg* replicate = *iter;
       InsertOrDie(&cache_, replicate->id().index(), replicate);
       size_t size = replicate->SpaceUsed();
       tracker_->Consume(size);
@@ -233,7 +240,7 @@ void LogCache::EntriesLoadedCallback(const OpId& new_preceding_first_op,
       << "Expected: " << preceding_first_op_.ShortDebugString()
       << " got: " << replicates.back()->id();
 
-    preceding_first_op_ = new_preceding_first_op;
+    preceding_first_op_ = preceding_replicate->id();
     LOG(INFO) << "Loaded operations into the cache from: "
         << replicates.front()->id().ShortDebugString()
         << " to: " << replicates.back()->id().ShortDebugString()

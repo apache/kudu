@@ -66,8 +66,8 @@ TEST_F(AsyncLogReaderTest, TestReadExistingRange) {
   ASSERT_FALSE(reader.IsReading());
 
 
-  // Enqueue a read that spans several segments, starting after (but not
-  // including) 'starting_after' and ending (and including) in 'last'.
+  // Enqueue a read that spans several segments, starting at and including 5
+  // and ending and including 50. This should return a total of 46 ops.
   // Trigger the read under the lock, this will make sure we can
   // make a couple of assertions before the read is done. This is
   // also similar to how the async reader is used from the consensus
@@ -75,7 +75,7 @@ TEST_F(AsyncLogReaderTest, TestReadExistingRange) {
   {
     boost::lock_guard<simple_spinlock> lock(lock_);
     expected_status_ = Status::OK();
-    expected_op_count_ = 45;
+    expected_op_count_ = 46;
     ASSERT_OK(reader.EnqueueAsyncRead(5, 50,
                                       Bind(&AsyncLogReaderTest::ReadPerformedCallback,
                                            Unretained(this))));

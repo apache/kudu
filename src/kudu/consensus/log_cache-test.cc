@@ -60,20 +60,20 @@ TEST_F(LogCacheTest, TestGetMessages) {
 
   vector<ReplicateMsg*> messages;
   OpId preceding;
-  ASSERT_OK(cache_->ReadOps(MakeOpId(0, 0), 8 * 1024 * 1024, &messages, &preceding));
+  ASSERT_OK(cache_->ReadOps(0, 8 * 1024 * 1024, &messages, &preceding));
   EXPECT_EQ(100, messages.size());
   EXPECT_EQ("0.0", OpIdToString(preceding));
 
   // Get starting in the middle of the cache.
   messages.clear();
-  ASSERT_OK(cache_->ReadOps(MakeOpId(0, 70), 8 * 1024 * 1024, &messages, &preceding));
+  ASSERT_OK(cache_->ReadOps(70, 8 * 1024 * 1024, &messages, &preceding));
   EXPECT_EQ(30, messages.size());
   EXPECT_EQ("10.70", OpIdToString(preceding));
   EXPECT_EQ("10.71", OpIdToString(messages[0]->id()));
 
   // Get at the end of the cache
   messages.clear();
-  ASSERT_OK(cache_->ReadOps(MakeOpId(0, 100), 8 * 1024 * 1024, &messages, &preceding));
+  ASSERT_OK(cache_->ReadOps(100, 8 * 1024 * 1024, &messages, &preceding));
   EXPECT_EQ(0, messages.size());
   EXPECT_EQ("14.100", OpIdToString(preceding));
 }
@@ -93,7 +93,7 @@ TEST_F(LogCacheTest, TestAlwaysYieldsAtLeastOneMessage) {
   // We should get one of them, even though we only ask for 100 bytes
   vector<ReplicateMsg*> messages;
   OpId preceding;
-  ASSERT_OK(cache_->ReadOps(MakeOpId(0, 0), 100, &messages, &preceding));
+  ASSERT_OK(cache_->ReadOps(0, 100, &messages, &preceding));
   ASSERT_EQ(1, messages.size());
 }
 

@@ -39,11 +39,11 @@ class AsyncLogReader {
     ThreadPoolBuilder("async_log_reader").set_max_threads(1).Build(&pool_);
   }
 
-  // Enqueues async reading of ReplicateMsgs from 'starting_after' to 'up_to',
-  // where 'starting_after' is exclusive and 'up_to' is inclusive.
+  // Enqueues async reading of ReplicateMsgs from 'starting_at' to 'up_to',
+  // both inclusive.
   // Returns Status::OK() if the enqueue was successful or Status::AlreadyPresent()
   // if the reader was already reading. Any other status means the read failed.
-  Status EnqueueAsyncRead(int64_t starting_after,
+  Status EnqueueAsyncRead(int64_t starting_at,
                           int64_t up_to,
                           const ReadDoneCallback& callback);
 
@@ -56,7 +56,7 @@ class AsyncLogReader {
  private:
 
   // Actually performs the read from disk. Calls the callback when done.
-  void ReadEntriesAsync(int64_t starting_after,
+  void ReadEntriesAsync(int64_t starting_at,
                         int64_t up_to,
                         const ReadDoneCallback& callback);
 

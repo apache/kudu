@@ -785,20 +785,20 @@ TEST_F(LogTest, TestReadLogWithReplacedReplicates) {
   // the end. This ensures that, when we GC, we don't ever remove the latest
   // version of a replicate message unintentionally.
   LogReader* reader = log_->GetLogReader();
-  for (int gc_index = 0; gc_index < max_repl_index;) {
+  for (int gc_index = 1; gc_index < max_repl_index;) {
     SCOPED_TRACE(Substitute("after GCing $0", gc_index));
 
     // Test reading random ranges of indexes and verifying that we get back the
     // REPLICATE messages with the correct terms
     for (int random_read = 0; random_read < kNumRandomReads; random_read++) {
       int start_index = RandInRange(&rng, gc_index, max_repl_index - 1);
-      int end_index = RandInRange(&rng, start_index + 1, max_repl_index);
+      int end_index = RandInRange(&rng, start_index, max_repl_index);
       SCOPED_TRACE(Substitute("Reading $0-$1", start_index, end_index));
       vector<ReplicateMsg*> repls;
       ElementDeleter d(&repls);
       ASSERT_OK(reader->ReadAllReplicateEntries(start_index, end_index, &repls));
-      ASSERT_EQ(end_index - start_index, repls.size());
-      int expected_index = start_index + 1;
+      ASSERT_EQ(end_index - start_index + 1, repls.size());
+      int expected_index = start_index;
       BOOST_FOREACH(const ReplicateMsg* repl, repls) {
         ASSERT_EQ(expected_index, repl->id().index());
         ASSERT_EQ(terms_by_index[expected_index], repl->id().term());

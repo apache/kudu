@@ -179,7 +179,7 @@ void PeerMessageQueue::RequestForPeer(const string& uuid,
     request->mutable_preceding_id()->CopyFrom(peer->peer_status.last_received());
     vector<ReplicateMsg*> messages;
     int max_batch_size = FLAGS_consensus_max_batch_size_bytes - request->ByteSize();
-    Status s = log_cache_.ReadOps(peer->peer_status.last_received(),
+    Status s = log_cache_.ReadOps(peer->peer_status.last_received().index(),
                                   max_batch_size,
                                   &messages,
                                   request->mutable_preceding_id());

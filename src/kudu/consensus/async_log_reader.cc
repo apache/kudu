@@ -16,10 +16,10 @@ using consensus::OpId;
 using consensus::ReplicateMsg;
 using std::vector;
 
-Status AsyncLogReader::EnqueueAsyncRead(int64_t starting_after,
+Status AsyncLogReader::EnqueueAsyncRead(int64_t starting_at,
                                         int64_t up_to,
                                         const ReadDoneCallback& callback) {
-  DCHECK_LT(starting_after, up_to);
+  DCHECK_LE(starting_at, up_to);
 
   boost::lock_guard<simple_spinlock> lock(lock_);
 
@@ -29,7 +29,7 @@ Status AsyncLogReader::EnqueueAsyncRead(int64_t starting_after,
 
   RETURN_NOT_OK(pool_->SubmitFunc(boost::bind(&AsyncLogReader::ReadEntriesAsync,
                                               this,
-                                              starting_after,
+                                              starting_at,
                                               up_to,
                                               callback)));
   is_reading_ = true;
@@ -38,7 +38,7 @@ Status AsyncLogReader::EnqueueAsyncRead(int64_t starting_after,
   return Status::OK();
 }
 
-void AsyncLogReader::ReadEntriesAsync(int64_t starting_after,
+void AsyncLogReader::ReadEntriesAsync(int64_t starting_at,
                                       int64_t up_to,
                                       const ReadDoneCallback& callback) {
 
@@ -48,7 +48,7 @@ void AsyncLogReader::ReadEntriesAsync(int64_t starting_after,
   }
 
   vector<ReplicateMsg*> replicates;
-  Status s = log_reader_->ReadAllReplicateEntries(starting_after,
+  Status s = log_reader_->ReadAllReplicateEntries(starting_at,
                                                   up_to,
                                                   &replicates);
   callback.Run(s, replicates);
