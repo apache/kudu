@@ -57,6 +57,11 @@ Status TimedFailureDetector::UnTrack(const string& name) {
   return Status::OK();
 }
 
+bool TimedFailureDetector::IsTracking(const std::string& name) {
+  lock_guard<simple_spinlock> lock(&lock_);
+  return ContainsKey(nodes_, name);
+}
+
 Status TimedFailureDetector::MessageFrom(const std::string& name, const MonoTime& now) {
   VLOG(3) << "Received message from " << name << " at " << now.ToString();
   lock_guard<simple_spinlock> lock(&lock_);

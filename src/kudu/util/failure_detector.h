@@ -53,6 +53,9 @@ class FailureDetector : public RefCountedThreadSafe<FailureDetector> {
   // Stops tracking node with 'name'.
   virtual Status UnTrack(const std::string& name) = 0;
 
+  // Return true iff the named entity is currently being tracked.
+  virtual bool IsTracking(const std::string& name) = 0;
+
   // Records that a message from machine with 'name' was received at 'now'.
   virtual Status MessageFrom(const std::string& name, const MonoTime& now) = 0;
 
@@ -81,6 +84,8 @@ class TimedFailureDetector : public FailureDetector {
                        const FailureDetectedCallback& callback) OVERRIDE;
 
   virtual Status UnTrack(const std::string& name) OVERRIDE;
+
+  virtual bool IsTracking(const std::string& name) OVERRIDE;
 
   virtual Status MessageFrom(const std::string& name, const MonoTime& now) OVERRIDE;
 

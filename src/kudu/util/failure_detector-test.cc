@@ -63,9 +63,11 @@ TEST_F(FailureDetectorTest, TestDetectsFailure) {
       MonoDelta::FromMilliseconds(kExpectedHeartbeatPeriodMillis * kMaxMissedHeartbeats)));
 
   monitor_->MonitorFailureDetector(kTestTabletName, detector);
+  ASSERT_FALSE(detector->IsTracking(kNodeName));
   ASSERT_OK(detector->Track(kNodeName,
                             MonoTime::Now(MonoTime::FINE),
                             Bind(&FailureDetectorTest::FailureFunction, Unretained(this))));
+  ASSERT_TRUE(detector->IsTracking(kNodeName));
 
   const int kNumPeriodsToWait = 4;  // Num heartbeat periods to wait for a failure.
   const int kUpdatesPerPeriod = 10; // Num updates we give per period to minimize test flakiness.
@@ -85,6 +87,9 @@ TEST_F(FailureDetectorTest, TestDetectsFailure) {
   // If we stop reporting he node is alive the failure callback is eventually
   // triggered and we exit.
   WaitForFailure();
+
+  ASSERT_OK(detector->UnTrack(kNodeName));
+  ASSERT_FALSE(detector->IsTracking(kNodeName));
 
   ASSERT_OK(monitor_->UnmonitorFailureDetector(kTestTabletName));
   monitor_->Shutdown();
