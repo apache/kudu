@@ -128,7 +128,7 @@ if [ ! -d $CRCUTIL_DIR ]; then
 
   pushd crcutil-${CRCUTIL_VERSION}
   patch -p0 < $TP_DIR/patches/crcutil-fix-libtoolize-on-osx.patch
-  touch crcutil-$CRCUTIL_PATCHLEVEL
+  touch patchlevel-$CRCUTIL_PATCHLEVEL
   popd
   echo
 fi
