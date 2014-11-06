@@ -13,6 +13,7 @@
 #include "kudu/consensus/log_anchor_registry.h"
 #include "kudu/consensus/log_util.h"
 #include "kudu/consensus/log_reader.h"
+#include "kudu/consensus/log-test-base.h"
 #include "kudu/fs/fs_manager.h"
 #include "kudu/util/mem_tracker.h"
 #include "kudu/util/metrics.h"
@@ -321,20 +322,20 @@ TEST_F(ConsensusQueueTest, TestQueueAdvancesCommittedIndex) {
 // and then start tracking a peer whose first required operation
 // is before the first operation in the queue.
 TEST_F(ConsensusQueueTest, TestQueueLoadsOperationsForPeer) {
+
+  OpId opid = MakeOpId(1, 1);
+
   for (int i = 1; i <= 100; i++) {
-    log::LogEntryPB log_entry;
-    log_entry.set_type(log::REPLICATE);
-    ReplicateMsg* repl = log_entry.mutable_replicate();
-    repl->mutable_id()->set_term(1);
-    repl->mutable_id()->set_index(i);
-    repl->set_op_type(NO_OP);
-    ASSERT_OK(log_->Append(&log_entry));
+    ASSERT_OK(log::AppendNoOpToLogSync(log_.get(), &opid));
     // Roll the log every 10 ops
     if (i % 10 == 0) {
       ASSERT_OK(log_->AllocateSegmentAndRollOver());
     }
   }
   ASSERT_OK(log_->WaitUntilAllFlushed());
+
+  OpId queues_last_op = opid;
+  queues_last_op.set_index(queues_last_op.index() - 1);
 
   // Now reset the queue so that we can pass a new committed index,
   // the last operation in the log.
@@ -372,8 +373,9 @@ TEST_F(ConsensusQueueTest, TestQueueLoadsOperationsForPeer) {
   // no additional ops.
   ASSERT_EQ(request.ops_size(), 0);
 
-  // The request's preceding_id should now match the peers last id.
-  ASSERT_OPID_EQ(request.preceding_id(), peers_last_op);
+  // And the request's preceding id should still be the queue's last op
+  // as in the initial status-only.
+  ASSERT_OPID_EQ(request.preceding_id(), queues_last_op);
 
   // When we now reply the same response as before (nothing changed
   // from the peer's perspective) we should get that 'more_pending' is
@@ -405,6 +407,101 @@ TEST_F(ConsensusQueueTest, TestQueueLoadsOperationsForPeer) {
   }
 
   ASSERT_EQ(request.ops_size(), expected_count);
+
+  // The messages still belong to the queue so we have to release them.
+  request.mutable_ops()->ExtractSubrange(0, request.ops().size(), NULL);
+}
+
+// This tests that the queue is able to handle operation overwriting, i.e. when a
+// newly tracked peer reports the last received operations as some operation that
+// doesn't exist in the leader's log. In particular it tests the case where a
+// new leader starts at term 2 with only a part of the operations of the previous
+// leader having been committed.
+TEST_F(ConsensusQueueTest, TestQueueHandlesOperationOverwriting) {
+
+  OpId opid = MakeOpId(1, 1);
+  // Append 10 messages in term 1 to the log.
+  for (int i = 1; i <= 10; i++) {
+    ASSERT_OK(log::AppendNoOpToLogSync(log_.get(), &opid));
+    // Roll the log every 3 ops
+    if (i % 3 == 0) {
+      ASSERT_OK(log_->AllocateSegmentAndRollOver());
+    }
+  }
+
+  opid = MakeOpId(2, 11);
+  // Now append 10 more messages in term 2.
+  for (int i = 11; i <= 20; i++) {
+    ASSERT_OK(log::AppendNoOpToLogSync(log_.get(), &opid));
+    // Roll the log every 3 ops
+    if (i % 3 == 0) {
+      ASSERT_OK(log_->AllocateSegmentAndRollOver());
+    }
+  }
+
+  // Now reset the queue so that we can pass a new committed index,
+  // the last operation in the log.
+  queue_.reset(new PeerMessageQueue(metric_context_, log_.get()));
+  OpId committed_index = MakeOpId(2, 20);
+  queue_->Init(consensus_.get(), committed_index, 2, 1);
+
+  // Now get a request for a simulated old leader, which contains more operations
+  // in term 1 than the new leader has.
+  // The queue should realize that the old leader's last received doesn't exist
+  // and send it operations starting at the old leader's committed index.
+  ConsensusRequestPB request;
+  ConsensusResponsePB response;
+  response.set_responder_uuid(kPeerUuid);
+  bool more_pending = false;
+
+  ASSERT_STATUS_OK(queue_->TrackPeer(kPeerUuid));
+
+  // Ask for a request. The queue assumes the peer is up-to-date so
+  // this should contain no operations.
+  queue_->RequestForPeer(kPeerUuid, &request);
+  ASSERT_EQ(request.ops_size(), 0);
+  ASSERT_OPID_EQ(request.preceding_id(), MakeOpId(2, 20));
+  ASSERT_OPID_EQ(request.committed_index(), MakeOpId(2, 20));
+
+  // The old leader was still in term 1 but it increased its term with our request.
+  response.set_responder_term(2);
+
+  // We emulate that the old leader had 15 total operations in Term 1 (5 more than we knew about)
+  // which were never committed, and that its last known committed index was 5.
+  ConsensusStatusPB* status = response.mutable_status();
+  status->mutable_last_received()->CopyFrom(MakeOpId(1, 15));
+  status->set_last_committed_idx(5);
+  ConsensusErrorPB* error = status->mutable_error();
+  error->set_code(ConsensusErrorPB::PRECEDING_ENTRY_DIDNT_MATCH);
+  StatusToPB(Status::IllegalState("LMP failed."), error->mutable_status());
+
+  queue_->ResponseFromPeer(response, &more_pending);
+  request.Clear();
+
+  // The queue should reply that there are more operations pending.
+  ASSERT_TRUE(more_pending);
+
+  // The queue doesn't necessarily know that the old leader's last received was
+  // overwritten. It will only know that when the operations get loaded from disk,
+  // so until that is done it should send status-only requests.
+  while (request.ops_size() == 0) {
+    queue_->RequestForPeer(kPeerUuid, &request);
+    if (request.ops_size() == 0) {
+      ASSERT_OPID_EQ(request.preceding_id(), MakeOpId(2, 20));
+      ASSERT_OPID_EQ(request.committed_index(), MakeOpId(2, 20));
+      // The peer will keep responding the same thing.
+      queue_->ResponseFromPeer(response, &more_pending);
+    } else {
+      break;
+    }
+    usleep(10);
+  }
+
+  // Once the operations are loaded from disk we should get a request that contains
+  // all operations that do indeed exist after the old leaders last known committed
+  // index.
+  ASSERT_OPID_EQ(MakeOpId(1, 5), request.preceding_id());
+  ASSERT_EQ(15, request.ops_size());
 
   // The messages still belong to the queue so we have to release them.
   request.mutable_ops()->ExtractSubrange(0, request.ops().size(), NULL);

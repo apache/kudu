@@ -218,6 +218,18 @@ class PeerMessageQueue {
                              const OpId& replicated_after,
                              int num_peers_required);
 
+  // Tries to get messages after 'op' from the log cache. If 'op' is not found or if
+  // a message with the same index is found but term is not the same as in 'op', it
+  // tries another lookup with 'fallback_index'.
+  // If either 'op' or 'fallback_index' are found, i.e. if it returns Status::OK(),
+  // 'messages' is filled up to 'max_batch_size' bytes and 'preceding_id' is set to
+  // the OpId immediately before the first message in 'messages'.
+  Status GetOpsFromCacheOrFallback(const OpId& op,
+                                   int64_t fallback_index,
+                                   int max_batch_size,
+                                   std::vector<ReplicateMsg*>* messages,
+                                   OpId* preceding_id);
+
   // The size of the majority for the queue.
   // TODO support changing majority sizes when quorums change.
   int majority_size_;

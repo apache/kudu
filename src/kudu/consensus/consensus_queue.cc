@@ -157,6 +157,36 @@ Status PeerMessageQueue::AppendOperation(gscoped_ptr<ReplicateMsg> msg) {
   return Status::OK();
 }
 
+Status PeerMessageQueue::GetOpsFromCacheOrFallback(const OpId& op,
+                                                   int64_t fallback_index,
+                                                   int max_batch_size,
+                                                   vector<ReplicateMsg*>* messages,
+                                                   OpId* preceding_id) {
+
+  OpId new_preceding;
+
+  Status s = log_cache_.ReadOps(op.index(),
+                                max_batch_size,
+                                messages,
+                                &new_preceding);
+  // If we could get the index we wanted, but the terms were different or if
+  // we couldn't get the index we wanter at all, try the fallback index.
+  if ((s.ok() && op.term() != new_preceding.term()) || s.IsNotFound()) {
+    messages->clear();
+    new_preceding.Clear();
+    s = log_cache_.ReadOps(fallback_index,
+                           max_batch_size,
+                           messages,
+                           &new_preceding);
+  }
+
+  if (s.ok()) {
+    DCHECK(new_preceding.IsInitialized());
+    preceding_id->CopyFrom(new_preceding);
+  }
+  return s;
+}
+
 void PeerMessageQueue::RequestForPeer(const string& uuid,
                                       ConsensusRequestPB* request) {
   // Clear the requests without deleting the entries, as they may be in use by other peers.
@@ -169,26 +199,30 @@ void PeerMessageQueue::RequestForPeer(const string& uuid,
                << ". Queue status: " << ToStringUnlocked();
   }
 
-  request->mutable_committed_index()->CopyFrom(queue_state_.committed_index);
-  request->set_caller_term(queue_state_.current_term);
+  // This is initialized to the queue's last appended op but gets set to the id of the
+  // log entry preceding the first one in 'messages' if messages are found for the peer.
+  OpId preceding_id = queue_state_.last_appended;
 
   // If we've never communicated with the peer, we don't know what messages to
   // send, so we'll send a status-only request. Otherwise, we grab requests
   // from the log starting at the last_received point.
   if (peer->peer_status.has_last_received()) {
-    request->mutable_preceding_id()->CopyFrom(peer->peer_status.last_received());
+
+    // The batch of messages to send to the peer.
     vector<ReplicateMsg*> messages;
     int max_batch_size = FLAGS_consensus_max_batch_size_bytes - request->ByteSize();
-    Status s = log_cache_.ReadOps(peer->peer_status.last_received().index(),
-                                  max_batch_size,
-                                  &messages,
-                                  request->mutable_preceding_id());
-    if (s.IsIncomplete()) {
-      // The cache will read the necessary ops in the background.
-    } else if (!s.ok()) {
-      // If we have an error, we'll just send an empty request.
-      LOG(WARNING) << Substitute("Unable to retrieve any messages to send to peer $0: $1",
-                                 uuid, s.ToString());
+
+    // We try to get the peer's last received op. If that fails because the op
+    // cannot be found in our log we fall back to the last committed index.
+    Status s = GetOpsFromCacheOrFallback(peer->peer_status.last_received(),
+                                         peer->peer_status.last_committed_idx(),
+                                         max_batch_size,
+                                         &messages,
+                                         &preceding_id);
+
+    if (PREDICT_FALSE(!s.ok() && !s.IsIncomplete())) {
+      CHECK(messages.empty());
+      LOG(DFATAL) << "Error while reading the log: " << s.ToString();
     }
 
     // We use AddAllocated rather than copy, because we pin the log cache at the
@@ -199,9 +233,12 @@ void PeerMessageQueue::RequestForPeer(const string& uuid,
       request->mutable_ops()->AddAllocated(msg);
     }
     DCHECK_LE(request->ByteSize(), FLAGS_consensus_max_batch_size_bytes);
-  } else {
-    request->mutable_preceding_id()->CopyFrom(queue_state_.last_appended);
   }
+
+  DCHECK(preceding_id.IsInitialized());
+  request->mutable_preceding_id()->CopyFrom(preceding_id);
+  request->mutable_committed_index()->CopyFrom(queue_state_.committed_index);
+  request->set_caller_term(queue_state_.current_term);
 
   if (PREDICT_FALSE(VLOG_IS_ON(2))) {
     if (request->ops_size() > 0) {
@@ -231,7 +268,7 @@ void PeerMessageQueue::AdvanceQueueWatermark(OpId* watermark,
   // Update 'watermark', e.g. the commit index.
   // We look at the last 'watermark', this response may only impact 'watermark'
   // if it is currently lower than 'replicated_after'.
-  if (OpIdLessThan(*watermark, replicated_after)) {
+  if (watermark->index() < replicated_after.index()) {
 
     // Go through the peer's watermarks, we want the highest watermark that
     // 'num_peers_required' of peers has replicated. To find this we do the
@@ -313,17 +350,18 @@ void PeerMessageQueue::ResponseFromPeer(const ConsensusResponsePB& response,
                 << status.last_received().ShortDebugString();
           }
           peer->peer_status.mutable_last_received()->CopyFrom(status.last_received());
-          if (OpIdLessThan(status.last_received(), queue_state_.all_replicated_index)) {
-            queue_state_.all_replicated_index.CopyFrom(status.last_received());
+          peer->peer_status.set_last_committed_idx(status.last_committed_idx());
+          if (status.last_received().index() < queue_state_.all_replicated_index.index()) {
+            queue_state_.all_replicated_index = status.last_received();
           }
           *more_pending = true;
           return;
         }
         case ConsensusErrorPB::INVALID_TERM: {
           CHECK(response.has_responder_term());
-          // We must drop the queue lock before calling back into Consensus.
-          scoped_lock.unlock();
-          consensus_->NotifyTermChange(response.responder_term());
+          // TODO maybe we should notify the leader here, but it will find out eventually
+          // anyway and right now it's simpler not to do it due to ownership/locking
+          // issues.
           *more_pending = false;
           return;
         }
@@ -357,6 +395,7 @@ void PeerMessageQueue::ResponseFromPeer(const ConsensusResponsePB& response,
     const OpId& new_last_received = response.status().last_received();
 
     peer->peer_status.mutable_last_received()->CopyFrom(new_last_received);
+    peer->peer_status.set_last_committed_idx(response.status().last_committed_idx());
 
     // Advance the commit index.
     AdvanceQueueWatermark(&queue_state_.majority_replicated_index,
