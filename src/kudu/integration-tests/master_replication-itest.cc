@@ -16,6 +16,7 @@
 #include "kudu/master/mini_master.h"
 #include "kudu/util/test_util.h"
 
+DECLARE_int32(heartbeat_interval_ms);
 
 namespace kudu {
 namespace master {
@@ -101,6 +102,14 @@ class MasterReplicationTest : public KuduTest {
     return client->NewTableCreator()->table_name(table_name)
         .schema(&client_schema)
         .Create();
+  }
+
+  void PromoteMasterRestartMasterOnly(int orig_master_idx, int new_master_idx) {
+    LOG(INFO) << "Previous configuration: leader at index " << orig_master_idx;
+    LOG(INFO) << "New configuration: leader at index " << new_master_idx;
+    cluster_->ShutdownMasters();
+    cluster_->set_leader_master_idx(new_master_idx);
+    ASSERT_STATUS_OK(cluster_->StartDistributedMasters());
   }
 
   void PromoteMaster(int orig_master_idx, int new_master_idx) {
@@ -307,6 +316,27 @@ TEST_F(MasterReplicationTest, TestCycleThroughAllMasters) {
   ASSERT_STATUS_OK(ThreadJoiner(start_thread.get()).Join());
 }
 
+// Initialize the client for configuration where the leader master
+// is at index 0, then switch over to leader at index 1.
+//
+// Verify that:
+//
+// 1) The client is able to perform lookup operations against the
+// master immediately after the leader change.
+//
+// 2) The client is able to perform a scan on a tablet server
+// immediately after the leader change without having to wait for the
+// tablet servers to heartbeat to the leader master.
+//
+// 3) We are able to create a table after a leader master change
+// without restarting the tablet servers, _after waiting for
+// kNumTabletServerReplicas * the default heartbeat interval_ (i.e.,
+// that CreateTable works after the minimum number of tablet servers
+// have sent heartbeats to the new leader).
+//
+// TODO: Heartbeat simultaneously to all of the masters, so that we do
+// not need to wait for the minimum number of tablet servers to
+// heartbeat to the new leader master.
 TEST_F(MasterReplicationTest, TestLookupWhenMasterNoLongerLeader) {
   shared_ptr<KuduClient> leader_client;
   scoped_refptr<KuduTable> table;
@@ -315,8 +345,9 @@ TEST_F(MasterReplicationTest, TestLookupWhenMasterNoLongerLeader) {
   ASSERT_STATUS_OK(CreateLeaderClient(&leader_client));
   ASSERT_STATUS_OK(CreateTable(leader_client, kTableId1));
 
-  // Promote master at index '1' to leader.
-  ASSERT_NO_FATAL_FAILURE(PromoteMaster(0, 1));
+  // Promote master at index '1' to leader without restarting the
+  // tablet servers.
+  ASSERT_NO_FATAL_FAILURE(PromoteMasterRestartMasterOnly(0, 1));
 
   // Make sure that 'GetTableSchema()' works when the leader master
   // changes, even if the client has been initialized before.
@@ -327,6 +358,14 @@ TEST_F(MasterReplicationTest, TestLookupWhenMasterNoLongerLeader) {
   KuduSchema empty_projection(vector<KuduColumnSchema>(), 0);
   ASSERT_STATUS_OK(scanner.SetProjection(&empty_projection));
   ASSERT_STATUS_OK(scanner.Open());
+
+  // Verify that all of the tablet server have been able to heartbeat
+  // to the leader master.
+  ASSERT_STATUS_OK(cluster_->WaitForTabletServerCount(kNumTabletServerReplicas));
+
+  // Verify that we are able to create a second table.
+  ASSERT_STATUS_OK(CreateTable(leader_client, kTableId2));
+  ASSERT_STATUS_OK(leader_client->OpenTable(kTableId2, &table));
 }
 
 } // namespace master

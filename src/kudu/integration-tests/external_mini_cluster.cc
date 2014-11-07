@@ -236,9 +236,13 @@ Status ExternalMiniCluster::AddTabletServer() {
   int idx = tablet_servers_.size();
 
   string exe = GetBinaryPath(kTabletServerBinaryName);
+  vector<HostPort> master_hostports;
+  for (int i = 0; i < num_masters(); i++) {
+    master_hostports.push_back(DCHECK_NOTNULL(master(i))->bound_rpc_hostport());
+  }
   scoped_refptr<ExternalTabletServer> ts =
     new ExternalTabletServer(exe, GetDataPath(Substitute("ts-$0", idx)),
-                             leader_master()->bound_rpc_hostport(),
+                             master_hostports,
                              SubstituteInFlags(opts_.extra_tserver_flags, idx));
   RETURN_NOT_OK(ts->Start());
   tablet_servers_.push_back(ts);
@@ -483,10 +487,10 @@ Status ExternalMaster::Start() {
 
 ExternalTabletServer::ExternalTabletServer(const string& exe,
                                            const string& data_dir,
-                                           const HostPort& master_addr,
+                                           const vector<HostPort>& master_addrs,
                                            const vector<string>& extra_flags)
   : ExternalDaemon(exe, data_dir, extra_flags),
-    master_addr_(master_addr.ToString()) {
+    master_addrs_(HostPort::ToCommaSeparatedString(master_addrs)) {
 }
 
 ExternalTabletServer::~ExternalTabletServer() {
@@ -497,7 +501,7 @@ Status ExternalTabletServer::Start() {
   flags.push_back("--tablet_server_base_dir=" + data_dir_);
   flags.push_back("--tablet_server_rpc_bind_addresses=127.0.0.1:0");
   flags.push_back("--tablet_server_web_port=0");
-  flags.push_back("--tablet_server_master_addr=" + master_addr_);
+  flags.push_back("--tablet_server_master_addrs=" + master_addrs_);
   RETURN_NOT_OK(StartProcess(flags));
   return Status::OK();
 }

@@ -14,6 +14,7 @@
 
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/map-util.h"
+#include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/numbers.h"
 #include "kudu/gutil/strings/split.h"
 #include "kudu/gutil/strings/strip.h"
@@ -114,6 +115,14 @@ Status HostPort::ParseStrings(const string& comma_sep_addrs,
 
 string HostPort::ToString() const {
   return Substitute("$0:$1", host_, port_);
+}
+
+string HostPort::ToCommaSeparatedString(const vector<HostPort>& hostports) {
+  vector<string> hostport_strs;
+  BOOST_FOREACH(const HostPort& hostport, hostports) {
+    hostport_strs.push_back(hostport.ToString());
+  }
+  return JoinStrings(hostport_strs, ",");
 }
 
 bool IsPrivilegedPort(uint16_t port) {

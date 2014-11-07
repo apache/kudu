@@ -82,6 +82,7 @@ void MasterServiceImpl::TSHeartbeat(const TSHeartbeatRequestPB* req,
                                     TSHeartbeatResponsePB* resp,
                                     rpc::RpcContext* rpc) {
   resp->mutable_master_instance()->CopyFrom(server_->instance_pb());
+  resp->set_leader_master(server_->IsLeader());
 
   shared_ptr<TSDescriptor> ts_desc;
   Status s;

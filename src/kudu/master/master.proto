@@ -223,6 +223,9 @@ message TSHeartbeatResponsePB {
 
   // Sent when the master receives a TabletReport
   optional TabletReportUpdatesPB tablet_report = 4;
+
+  // Specify whether or not the node is the leader master.
+  required bool leader_master = 5;
 }
 
 //////////////////////////////

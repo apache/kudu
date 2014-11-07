@@ -173,9 +173,12 @@ Status MiniCluster::AddTabletServer() {
   }
   gscoped_ptr<MiniTabletServer> tablet_server(
     new MiniTabletServer(GetTabletServerFsRoot(new_idx), ts_rpc_port));
-  // set the master port
-  tablet_server->options()->master_hostport =
-      HostPort(leader_mini_master()->bound_rpc_addr());
+
+  // set the master addresses
+  tablet_server->options()->master_addresses.clear();
+  BOOST_FOREACH(const shared_ptr<MiniMaster>& master, mini_masters_) {
+    tablet_server->options()->master_addresses.push_back(HostPort(master->bound_rpc_addr()));
+  }
   RETURN_NOT_OK(tablet_server->Start())
   mini_tablet_servers_.push_back(shared_ptr<MiniTabletServer>(tablet_server.release()));
   return Status::OK();
@@ -191,6 +194,13 @@ void MiniCluster::Shutdown() {
     master_server.reset();
   }
   running_ = false;
+}
+
+void MiniCluster::ShutdownMasters() {
+  BOOST_FOREACH(shared_ptr<MiniMaster>& master_server, mini_masters_) {
+    master_server->Shutdown();
+    master_server.reset();
+  }
 }
 
 MiniMaster* MiniCluster::mini_master(int idx) {

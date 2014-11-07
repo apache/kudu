@@ -53,11 +53,11 @@ string TabletServer::ToString() const {
 }
 
 Status TabletServer::ValidateMasterAddressResolution() const {
-  Status s = opts_.master_hostport.ResolveAddresses(NULL);
+  Status s = opts_.master_addresses[0].ResolveAddresses(NULL);
   if (!s.ok()) {
     return s.CloneAndPrepend(strings::Substitute(
                                "Couldn't resolve master service address '$0'",
-                               opts_.master_hostport.ToString()));
+                               opts_.master_addresses[0].ToString()));
   }
   return s;
 }

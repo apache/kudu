@@ -14,7 +14,9 @@ class TabletServer;
 struct TabletServerOptions;
 
 // Component of the Tablet Server which is responsible for heartbeating to the
-// master.
+// leader master.
+//
+// TODO: send heartbeats to non-leader masters.
 class Heartbeater {
  public:
   Heartbeater(const TabletServerOptions& options, TabletServer* server);

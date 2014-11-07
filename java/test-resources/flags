@@ -1,4 +1,4 @@
---tablet_server_master_addr=127.0.0.1:64000
+--tablet_server_master_addrs=127.0.0.1:64000
 --tablet_server_rpc_bind_addresses=0.0.0.0:64030
 --tablet_server_web_port=0
 --max_message_size=67108864

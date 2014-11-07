@@ -130,6 +130,10 @@ class ExternalMiniCluster {
     return tablet_servers_.size();
   }
 
+  int num_masters() const {
+    return masters_.size();
+  }
+
   // Return an RPC proxy to the running leader master. Requires that
   // the master is running.
   std::tr1::shared_ptr<master::MasterServiceProxy> leader_master_proxy();
@@ -240,13 +244,13 @@ class ExternalMaster : public ExternalDaemon {
 class ExternalTabletServer : public ExternalDaemon {
  public:
   ExternalTabletServer(const std::string& exe, const std::string& data_dir,
-                       const HostPort& master_addr,
+                       const std::vector<HostPort>& master_addrs,
                        const std::vector<std::string>& extra_flags);
 
   Status Start();
 
  private:
-  const std::string master_addr_;
+  const std::string master_addrs_;
 
   friend class RefCountedThreadSafe<ExternalTabletServer>;
   virtual ~ExternalTabletServer();

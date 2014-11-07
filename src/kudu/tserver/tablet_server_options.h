@@ -3,6 +3,8 @@
 #ifndef KUDU_TSERVER_TABLET_SERVER_OPTIONS_H
 #define KUDU_TSERVER_TABLET_SERVER_OPTIONS_H
 
+#include <vector>
+
 #include "kudu/server/server_base_options.h"
 #include "kudu/util/net/net_util.h"
 
@@ -18,7 +20,7 @@ namespace tserver {
 struct TabletServerOptions : public kudu::server::ServerBaseOptions {
   TabletServerOptions();
 
-  HostPort master_hostport;
+  std::vector<HostPort> master_addresses;
 };
 
 } // namespace tserver

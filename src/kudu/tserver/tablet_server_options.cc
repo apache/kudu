@@ -25,10 +25,11 @@ DEFINE_int32(tablet_server_num_acceptors_per_address, 1,
              "Number of RPC acceptor threads for each bound address");
 DEFINE_int32(tablet_server_num_service_threads, 10,
              "Number of RPC worker threads to run");
-DEFINE_string(tablet_server_master_addr, "127.0.0.1:7051",
-              "Address of the master which the tablet server should connect to. "
-              "The master does not read this flag -- configure the master "
-              "separately using 'master_server_rpc_bind_addresses'.");
+DEFINE_string(tablet_server_master_addrs, "127.0.0.1:7051",
+              "Comma separated addresses of the masters which the "
+              "tablet server should connect to. The masters do not "
+              "read this flag -- configure the masters separately "
+              "using 'master_server_rpc_bind_addresses'.");
 
 
 TabletServerOptions::TabletServerOptions() {
@@ -43,10 +44,11 @@ TabletServerOptions::TabletServerOptions() {
 
   base_dir = FLAGS_tablet_server_base_dir;
 
-  Status s = master_hostport.ParseString(FLAGS_tablet_server_master_addr,
-                                         master::Master::kDefaultPort);
+  Status s = HostPort::ParseStrings(FLAGS_tablet_server_master_addrs,
+                                    master::Master::kDefaultPort,
+                                    &master_addresses);
   if (!s.ok()) {
-    LOG(FATAL) << "Couldn't parse tablet_server_master_addr flag: " << s.ToString();
+    LOG(FATAL) << "Couldn't parse tablet_server_master_addrs flag: " << s.ToString();
   }
 
   env = Env::Default();

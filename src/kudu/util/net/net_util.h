@@ -45,6 +45,11 @@ class HostPort {
   static Status ParseStrings(
       const std::string& comma_sep_addrs, uint16_t default_port, std::vector<HostPort>* res);
 
+  // Takes a vector of HostPort objects and returns a comma separated
+  // string containing of "host:port" pairs. This method is the
+  // "inverse" of ParseStrings().
+  static std::string ToCommaSeparatedString(const std::vector<HostPort>& host_ports);
+
  private:
   std::string host_;
   uint16_t port_;

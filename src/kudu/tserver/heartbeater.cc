@@ -8,6 +8,7 @@
 #include <glog/logging.h>
 #include <vector>
 
+#include "kudu/common/wire_protocol.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/master/master.h"
@@ -36,13 +37,35 @@ enum {
 
 using google::protobuf::RepeatedPtrField;
 using kudu::HostPortPB;
+using kudu::master::ListMastersResponsePB;
 using kudu::master::Master;
 using kudu::master::MasterServiceProxy;
+using kudu::metadata::QuorumPeerPB;
 using kudu::rpc::RpcController;
+using std::tr1::shared_ptr;
 using strings::Substitute;
 
 namespace kudu {
 namespace tserver {
+
+namespace {
+
+// Creates a proxy to 'hostport'.
+Status MasterServiceProxyForHostPort(const HostPort& hostport,
+                                     const shared_ptr<rpc::Messenger>& messenger,
+                                     gscoped_ptr<MasterServiceProxy>* proxy) {
+  vector<Sockaddr> addrs;
+  RETURN_NOT_OK(hostport.ResolveAddresses(&addrs));
+  if (addrs.size() > 1) {
+    LOG(WARNING) << "Master address '" << hostport.ToString() << "' "
+                 << "resolves to " << addrs.size() << " different addresses. Using "
+                 << addrs[0].ToString();
+  }
+  proxy->reset(new MasterServiceProxy(messenger, addrs[0]));
+  return Status::OK();
+}
+
+} // anonymous namespace
 
 // Most of the actual logic of the heartbeater is inside this inner class,
 // to avoid having too many dependencies from the header itself.
@@ -57,6 +80,8 @@ class Heartbeater::Thread {
 
  private:
   void RunThread();
+  Status FindLeaderMaster(const MonoTime& deadline,
+                          HostPort* leader_hostport);
   Status ConnectToMaster();
   int GetMinimumHeartbeatMillis() const;
   int GetMillisUntilNextHeartbeat() const;
@@ -65,11 +90,16 @@ class Heartbeater::Thread {
   void SetupCommonField(master::TSToMasterCommonPB* common);
   bool IsCurrentThread() const;
 
-  // The host/port that we are heartbeating to.
-  // We keep the HostPort around rather than a Sockaddr because
-  // the master may change IP addresses, and we'd like to re-resolve
-  // on every new attempt at connecting.
-  HostPort master_hostport_;
+  // The hosts/ports of masters that we may heartbeat to.
+  //
+  // We keep the HostPort around rather than a Sockaddr because the
+  // masters may change IP addresses, and we'd like to re-resolve on
+  // every new attempt at connecting.
+  vector<HostPort> master_addrs_;
+
+  // Index of the master we last succesfully obtained the master
+  // quorum information from.
+  int last_locate_master_idx_;
 
   // The server for which we are heartbeating.
   TabletServer* const server_;
@@ -77,7 +107,10 @@ class Heartbeater::Thread {
   // The actual running thread (NULL before it is started)
   scoped_refptr<kudu::Thread> thread_;
 
-  // RPC proxy to the master.
+  // Host and port of the most recent leader master.
+  HostPort leader_master_hostport_;
+
+  // Current RPC proxy to the leader master.
   gscoped_ptr<master::MasterServiceProxy> proxy_;
 
   // The most recent response from a heartbeat.
@@ -115,23 +148,71 @@ Status Heartbeater::Stop() { return thread_->Stop(); }
 ////////////////////////////////////////////////////////////
 
 Heartbeater::Thread::Thread(const TabletServerOptions& opts, TabletServer* server)
-  : master_hostport_(opts.master_hostport),
+  : master_addrs_(opts.master_addresses),
+    last_locate_master_idx_(0),
     server_(server),
     has_heartbeated_(false),
     consecutive_failed_heartbeats_(0),
     run_latch_(0) {
+  CHECK(!master_addrs_.empty());
+}
+
+Status Heartbeater::Thread::FindLeaderMaster(const MonoTime& deadline,
+                                             HostPort* leader_hostport) {
+  Status s = Status::OK();
+  for (int num_attempts = 0; num_attempts < master_addrs_.size(); num_attempts++) {
+    // If node at last_locate_master_idx_ is no longer responding, try sending the
+    // request to the node at the next index, looping around to index
+    // 0, until we've exhausted the list of all masters.
+    if (++last_locate_master_idx_ == master_addrs_.size()) {
+      last_locate_master_idx_ = 0;
+    }
+    gscoped_ptr<MasterServiceProxy> proxy;
+    s = MasterServiceProxyForHostPort(master_addrs_[last_locate_master_idx_],
+                                      server_->messenger(),
+                                      &proxy);
+    if (!s.ok()) {
+      LOG(WARNING) << "Unable to create a proxy for master at "
+                   << master_addrs_[last_locate_master_idx_].ToString()
+                   << ": " << s.ToString();
+      continue;
+    }
+    master::ListMastersRequestPB req;
+    ListMastersResponsePB resp;
+    RpcController rpc;
+    rpc.set_deadline(deadline);
+    s = proxy->ListMasters(req, &resp, &rpc);
+    if (!s.ok()) {
+      LOG(WARNING) << "Unable to get a list of masters from"
+                   << master_addrs_[last_locate_master_idx_].ToString() << ": " << s.ToString();
+      continue;
+    }
+    if (resp.has_error()) {
+      s = StatusFromPB(resp.error());
+    }
+    s = FindLeaderHostPort(resp.masters(), leader_hostport);
+    if (!s.ok()) {
+      LOG(WARNING) << "Unable to parse master from response (" << resp.ShortDebugString()
+                   << "), from host " << master_addrs_[last_locate_master_idx_].ToString()
+                   << ": " << s.ToString();
+      continue;
+    }
+    return Status::OK();
+  }
+  return s;
 }
 
 Status Heartbeater::Thread::ConnectToMaster() {
   vector<Sockaddr> addrs;
-  RETURN_NOT_OK(master_hostport_.ResolveAddresses(&addrs));
-  if (addrs.size() > 1) {
-    LOG(WARNING) << "Master address '" << master_hostport_.ToString() << "' "
-                 << "resolves to " << addrs.size() << " different addresses. Using "
-                 << addrs[0].ToString();
-  }
-  gscoped_ptr<MasterServiceProxy> new_proxy(
-    new MasterServiceProxy(server_->messenger(), addrs[0]));
+  MonoTime deadline = MonoTime::Now(MonoTime::FINE);
+  deadline.AddDelta(MonoDelta::FromMilliseconds(FLAGS_heartbeat_rpc_timeout_ms));
+  // TODO send heartbeats without tablet reports to non-leader masters.
+  RETURN_NOT_OK(FindLeaderMaster(deadline, &leader_master_hostport_));
+  gscoped_ptr<MasterServiceProxy> new_proxy;
+  MasterServiceProxyForHostPort(leader_master_hostport_,
+                                server_->messenger(),
+                                &new_proxy);
+  RETURN_NOT_OK(leader_master_hostport_.ResolveAddresses(&addrs));
 
   // Ping the master to verify that it's alive.
   master::PingRequestPB req;
@@ -140,7 +221,7 @@ Status Heartbeater::Thread::ConnectToMaster() {
   rpc.set_timeout(MonoDelta::FromMilliseconds(FLAGS_heartbeat_rpc_timeout_ms));
   RETURN_NOT_OK_PREPEND(new_proxy->Ping(req, &resp, &rpc),
                         Substitute("Failed to ping master at $0", addrs[0].ToString()));
-
+  LOG(INFO) << "Connected to a leader master server at " << leader_master_hostport_.ToString();
   proxy_.reset(new_proxy.release());
   return Status::OK();
 }
@@ -247,7 +328,15 @@ Status Heartbeater::Thread::DoHeartbeat() {
   RETURN_NOT_OK_PREPEND(proxy_->TSHeartbeat(req, &resp, &rpc),
                         "Failed to send heartbeat");
   VLOG(2) << "Received heartbeat response:\n" << resp.DebugString();
+  if (!resp.leader_master()) {
+    // If the master is no longer a leader, reset proxy so that we can
+    // determine the master and attempt to heartbeat during in the
+    // next heartbeat interval.
+    proxy_.reset();
+    return Status::ServiceUnavailable("master is no longer the leader");
+  }
   last_hb_response_.Swap(&resp);
+
 
   // TODO: Handle TSHeartbeatResponsePB (e.g. deleted tablets and schema changes)
   server_->tablet_manager()->MarkTabletReportAcknowledged(req.tablet_report());
@@ -259,9 +348,10 @@ void Heartbeater::Thread::RunThread() {
   CHECK(IsCurrentThread());
   VLOG(1) << "Heartbeat thread starting";
 
-  // Set up a fake "last heartbeat response" which indicates that we need to
-  // register -- since we've never registered before, we know this to be true.
-  // This avoids an extra heartbeat at startup.
+  // Set up a fake "last heartbeat response" which indicates that we
+  // need to register -- since we've never registered before, we know
+  // this to be true.  This avoids an extra
+  // heartbeat/response/heartbeat cycle.
   last_hb_response_.set_needs_reregister(true);
   last_hb_response_.set_needs_full_tablet_report(true);
 
@@ -274,7 +364,14 @@ void Heartbeater::Thread::RunThread() {
 
     Status s = DoHeartbeat();
     if (!s.ok()) {
-      LOG(WARNING) << "Failed to heartbeat: " << s.ToString();
+      if (s.IsNetworkError() && master_addrs_.size() > 1) {
+        // If we encountered a network error (e.g., connection
+        // refused) and there's more than one master available, try
+        // determining the leader master again.
+        proxy_.reset();
+      }
+      LOG(WARNING) << "Failed to heartbeat to " << leader_master_hostport_.ToString()
+                   << ": " << s.ToString();
       consecutive_failed_heartbeats_++;
       continue;
     }
