@@ -165,9 +165,11 @@ Status ReplicaState::LockForReplicate(UniqueLock* lock, const ReplicateMsg& msg)
       lock->swap(&l);
       return Status::OK();
     default:
-      return Status::IllegalState(Substitute("Replica $0 is not leader of this quorum. Role: $1",
+      return Status::IllegalState(Substitute("Replica $0 is not leader of this quorum. Role: $1. "
+                                             "Quorum: $2",
                                              peer_uuid_,
-                                             QuorumPeerPB::Role_Name(active_quorum_state_->role)));
+                                             QuorumPeerPB::Role_Name(active_quorum_state_->role),
+                                             GetActiveQuorumUnlocked().ShortDebugString()));
   }
 }
 

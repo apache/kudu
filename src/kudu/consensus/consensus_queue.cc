@@ -277,7 +277,7 @@ void PeerMessageQueue::ResponseFromPeer(const ConsensusResponsePB& response,
 
   OpId updated_majority_replicated_index;
   {
-    boost::lock_guard<simple_spinlock> lock(queue_lock_);
+    unique_lock<simple_spinlock> scoped_lock(&queue_lock_);
 
     TrackedPeer* peer = FindPtrOrNull(watermarks_, response.responder_uuid());
     if (PREDICT_FALSE(queue_state_.state == kQueueClosed || peer == NULL)) {
@@ -321,8 +321,10 @@ void PeerMessageQueue::ResponseFromPeer(const ConsensusResponsePB& response,
         }
         case ConsensusErrorPB::INVALID_TERM: {
           CHECK(response.has_responder_term());
+          // We must drop the queue lock before calling back into Consensus.
+          scoped_lock.unlock();
           consensus_->NotifyTermChange(response.responder_term());
-          *more_pending = true;
+          *more_pending = false;
           return;
         }
         default: {

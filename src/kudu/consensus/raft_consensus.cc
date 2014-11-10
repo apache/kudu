@@ -527,7 +527,8 @@ Status RaftConsensus::SanityCheckAndDedupUpdateRequestUnlocked(
     FillConsensusResponseError(response,
                                ConsensusErrorPB::PRECEDING_ENTRY_DIDNT_MATCH,
                                Status::IllegalState(error_msg));
-    LOG_WITH_PREFIX(INFO) << "Refusing update from remote peer: " << error_msg;
+    LOG_WITH_PREFIX(INFO) << "Refusing update from remote peer "
+                          << request->caller_uuid() << ": " << error_msg;
     return Status::OK();
   }
   return Status::OK();

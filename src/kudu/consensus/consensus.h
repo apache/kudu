@@ -170,6 +170,12 @@ class Consensus : public RefCountedThreadSafe<Consensus> {
   // operation considered committed by consensus. The replica uses this
   // information to update the state of any pending (previously replicated/prepared)
   // transactions.
+  //
+  // Returns Status::OK if the response has been filled (regardless of accepting
+  // or rejecting the specific request). Returns non-OK Status if a specific
+  // error response could not be formed, which will result in the service
+  // returning an UNKNOWN_ERROR RPC error code to the caller and including the
+  // stringified Status message.
   virtual Status Update(const ConsensusRequestPB* request,
                         ConsensusResponsePB* response) = 0;
 
