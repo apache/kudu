@@ -5,6 +5,7 @@
 #include <gtest/gtest.h>
 #include <boost/foreach.hpp>
 #include <boost/assign/list_of.hpp>
+#include <tr1/unordered_set>
 
 #include "kudu/client/client.h"
 #include "kudu/client/client-test-util.h"
@@ -57,6 +58,8 @@ using metadata::QuorumPeerPB;
 using rpc::RpcController;
 using std::vector;
 using std::tr1::shared_ptr;
+using std::tr1::unordered_set;
+using strings::Substitute;
 using tablet::TabletPeer;
 using tserver::TabletServer;
 
@@ -244,6 +247,20 @@ class DistConsensusTest : public TabletServerTest {
     }
   }
 
+  // Removes a set of servers from the replicas_ list.
+  // Handy for controlling who to validate against after killing servers.
+  void PruneFromReplicas(const unordered_set<std::string>& uuids) {
+    vector<TServerDetails*> pruned_replicas;
+    BOOST_FOREACH(TServerDetails* replica, replicas_) {
+      if (ContainsKey(uuids, replica->ts_info.permanent_uuid())) {
+        delete replica;
+      } else {
+        pruned_replicas.push_back(replica);
+      }
+    }
+    replicas_ = pruned_replicas;
+  }
+
   void ScanReplica(TabletServerServiceProxy* replica_proxy,
                    vector<string>* results) {
 
@@ -281,7 +298,7 @@ class DistConsensusTest : public TabletServerTest {
                       const master::TSInfoPB& replica_info,
                       const vector<string>& replica_results) {
     string ret = strings::Substitute("Replica results did not match the leaders."
-                                     "\nReplica: $0\nLeader:$1. Results size "
+                                     "\nLeader: $0\nReplica: $1. Results size "
                                      "L: $2 R: $3",
                                      leader_info.ShortDebugString(),
                                      replica_info.ShortDebugString(),
@@ -312,7 +329,8 @@ class DistConsensusTest : public TabletServerTest {
 
       if (expected_result_count != -1 && leader_results.size() != expected_result_count) {
         if (counter >= kMaxRetries) {
-          FAIL() << "LEADER results did not match the expected count.";
+          FAIL() << "LEADER result size " << leader_results.size()
+              << " did not match the expected count " << expected_result_count;
         }
         counter++;
         continue;
@@ -354,18 +372,14 @@ class DistConsensusTest : public TabletServerTest {
     }
   }
 
-  void InsertTestRowsRemoteThread(int tid,
-                                  uint64_t first_row,
+  void InsertTestRowsRemoteThread(uint64_t first_row,
                                   uint64_t count,
                                   uint64_t num_batches,
                                   const vector<CountDownLatch*>& latches) {
-    shared_ptr<KuduClient> client;
-    CreateClient(&client);
-
     scoped_refptr<KuduTable> table;
-    CHECK_OK(client->OpenTable(kTableId, &table));
+    CHECK_OK(client_->OpenTable(kTableId, &table));
 
-    shared_ptr<KuduSession> session = client->NewSession();
+    shared_ptr<KuduSession> session = client_->NewSession();
     session->SetTimeoutMillis(10000);
     CHECK_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
 
@@ -465,6 +479,37 @@ class DistConsensusTest : public TabletServerTest {
     return max_replica_index;
   }
 
+  Status GetTabletLeaderUUID(const std::string& tablet_id, std::string* leader_uuid) {
+    GetTableLocationsRequestPB req;
+    GetTableLocationsResponsePB resp;
+    RpcController controller;
+    controller.set_timeout(MonoDelta::FromMilliseconds(100));
+    req.mutable_table()->set_table_name(kTableId);
+
+    RETURN_NOT_OK(cluster_->leader_master_proxy()->GetTableLocations(req, &resp, &controller));
+    BOOST_FOREACH(const TabletLocationsPB& loc, resp.tablet_locations()) {
+      if (loc.tablet_id() == tablet_id) {
+        BOOST_FOREACH(const TabletLocationsPB::ReplicaPB& replica, loc.replicas()) {
+          if (replica.role() == QuorumPeerPB::LEADER) {
+            *leader_uuid = replica.ts_info().permanent_uuid();
+            return Status::OK();
+          }
+        }
+      }
+    }
+    return Status::NotFound("Unable to find leader for tablet", tablet_id);
+  }
+
+  Status KillServerWithUUID(const std::string& uuid) {
+    for (int i = 0; i < cluster_->num_tablet_servers(); i++) {
+      ExternalTabletServer* ts = cluster_->tablet_server(i);
+      if (ts->instance_id().permanent_uuid() == uuid) {
+        ts->Shutdown();
+        return Status::OK();
+      }
+    }
+    return Status::NotFound("Unable to find server with UUID", uuid);
+  }
 
   // Kills the current leader of the cluster. Before killing the leader this pauses all followers
   // nodes in regular intervals so that we get an increased chance of stuff being pending all over.
@@ -475,6 +520,7 @@ class DistConsensusTest : public TabletServerTest {
     }
     // When all are paused kill the leader.
     leader_->external_ts->Shutdown();
+
     // Resume the replicas.
     BOOST_FOREACH(TServerDetails* ts, replicas_) {
       CHECK_OK(ts->external_ts->Resume());
@@ -543,7 +589,7 @@ TEST_F(DistConsensusTest, TestInsertAndMutateThroughConsensus) {
   int num_iters = AllowSlowTests() ? 10 : 1;
 
   for (int i = 0; i < num_iters; i++) {
-    InsertTestRowsRemoteThread(0, i * FLAGS_client_inserts_per_thread,
+    InsertTestRowsRemoteThread(i * FLAGS_client_inserts_per_thread,
                                FLAGS_client_inserts_per_thread,
                                FLAGS_client_num_batches_per_thread,
                                vector<CountDownLatch*>());
@@ -603,7 +649,7 @@ TEST_F(DistConsensusTest, MultiThreadedMutateAndInsertThroughConsensus) {
     scoped_refptr<kudu::Thread> new_thread;
     CHECK_OK(kudu::Thread::Create("test", strings::Substitute("ts-test$0", i),
                                   &DistConsensusTest::InsertTestRowsRemoteThread,
-                                  this, i, i * FLAGS_client_inserts_per_thread,
+                                  this, i * FLAGS_client_inserts_per_thread,
                                   FLAGS_client_inserts_per_thread,
                                   FLAGS_client_num_batches_per_thread,
                                   vector<CountDownLatch*>(),
@@ -658,7 +704,7 @@ TEST_F(DistConsensusTest, TestRunLeaderElection) {
 
   int num_iters = AllowSlowTests() ? 10 : 1;
 
-  InsertTestRowsRemoteThread(0, 0,
+  InsertTestRowsRemoteThread(0,
                              FLAGS_client_inserts_per_thread * num_iters,
                              FLAGS_client_num_batches_per_thread,
                              vector<CountDownLatch*>());
@@ -684,7 +730,7 @@ TEST_F(DistConsensusTest, TestRunLeaderElection) {
   leader_.reset(replica);
 
   // Insert a bunch more rows.
-  InsertTestRowsRemoteThread(0, FLAGS_client_inserts_per_thread * num_iters,
+  InsertTestRowsRemoteThread(FLAGS_client_inserts_per_thread * num_iters,
                              FLAGS_client_inserts_per_thread * num_iters,
                              FLAGS_client_num_batches_per_thread,
                              vector<CountDownLatch*>());
@@ -810,7 +856,7 @@ TEST_F(DistConsensusTest, MultiThreadedInsertWithFailovers) {
     scoped_refptr<kudu::Thread> new_thread;
     CHECK_OK(kudu::Thread::Create("test", strings::Substitute("ts-test$0", i),
                                   &DistConsensusTest::InsertTestRowsRemoteThread,
-                                  this, i, i * FLAGS_client_inserts_per_thread,
+                                  this, i * FLAGS_client_inserts_per_thread,
                                   FLAGS_client_inserts_per_thread,
                                   FLAGS_client_num_batches_per_thread,
                                   latches,
@@ -833,6 +879,61 @@ TEST_F(DistConsensusTest, MultiThreadedInsertWithFailovers) {
   }
 
   ASSERT_ALL_REPLICAS_AGREE(FLAGS_client_inserts_per_thread * FLAGS_num_client_threads);
+}
+
+// Test automatic leader election by killing leaders.
+TEST_F(DistConsensusTest, TestAutomaticLeaderElection) {
+  int kNumReplicas = 5;
+  BuildAndStart(kNumReplicas, vector<string>());
+
+  string leader_uuid;
+  ASSERT_OK(GetTabletLeaderUUID(tablet_id_, &leader_uuid));
+
+  unordered_set<string> killed_leader_uuids;
+
+  const int kNumLeadersToKill = kNumReplicas / 2;
+  const int kFinalNumReplicas = kNumReplicas / 2 + 1;
+
+  for (int leaders_killed = 0; leaders_killed < kFinalNumReplicas; leaders_killed++) {
+    LOG(INFO) << Substitute("Writing data to leader of $0-node quorum ($1 alive)...",
+                            kNumReplicas, kNumReplicas - leaders_killed);
+
+    InsertTestRowsRemoteThread(leaders_killed * FLAGS_client_inserts_per_thread,
+                               FLAGS_client_inserts_per_thread,
+                               FLAGS_client_num_batches_per_thread,
+                               vector<CountDownLatch*>());
+
+    // At this point, the writes are flushed but the commit index may not be
+    // propagated to all replicas. We kill the leader anyway.
+
+    if (leaders_killed < kNumLeadersToKill) {
+      LOG(INFO) << "Killing current leader " << leader_uuid << "...";
+      ASSERT_OK(KillServerWithUUID(leader_uuid));
+      InsertOrDie(&killed_leader_uuids, leader_uuid);
+
+      LOG(INFO) << "Waiting for newly elected leader to register with master...";
+      string old_leader_uuid = leader_uuid;
+      int num_retries = 0;
+      while (true) {
+        Status s = GetTabletLeaderUUID(tablet_id_, &leader_uuid);
+        ASSERT_TRUE(s.ok() || s.IsNotFound())
+            << "Unexpected error trying to get leader UUID: " << s.ToString();
+        if (leader_uuid != old_leader_uuid) {
+          break;
+        } else {
+          if (num_retries++ > kMaxRetries) {
+            FAIL() << "Unable to resolve new leader after " << kMaxRetries << " retries";
+          }
+          usleep(500*1000); // Sleep for 500ms before retry.
+        }
+      }
+    }
+  }
+
+  // Verify the data on the remaining replicas.
+  WaitForReplicasAndUpdateLocations(kFinalNumReplicas); // Update cached locations.
+  PruneFromReplicas(killed_leader_uuids);
+  ASSERT_ALL_REPLICAS_AGREE(FLAGS_client_inserts_per_thread * kFinalNumReplicas);
 }
 
 }  // namespace tserver

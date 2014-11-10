@@ -14,12 +14,14 @@
 #include "kudu/consensus/consensus_meta.h"
 #include "kudu/consensus/consensus_queue.h"
 #include "kudu/consensus/leader_election.h"
+#include "kudu/util/failure_detector.h"
 
 namespace kudu {
 
 typedef boost::lock_guard<simple_spinlock> Lock;
 typedef gscoped_ptr<Lock> ScopedLock;
 
+class FailureDetector;
 class FutureCallback;
 class HostPort;
 class ThreadPool;
@@ -89,6 +91,10 @@ class RaftConsensus : public Consensus,
   virtual Status EmulateElection() OVERRIDE;
 
   virtual Status StartElection() OVERRIDE;
+
+  // Call StartElection(), log a warning if the call fails (usually due to
+  // being shut down).
+  void ReportFailureDetected(const std::string& name, const Status& msg);
 
   virtual Status Replicate(ConsensusRound* context) OVERRIDE;
 
@@ -203,10 +209,6 @@ class RaftConsensus : public Consensus,
 
   Status StartReplicaTransactionUnlocked(gscoped_ptr<ReplicateMsg> msg);
 
-  // Step down as leader. Stop accepting write requests, etc.
-  // Must hold both 'update_lock_' and the ReplicaState lock.
-  Status StepDownIfLeaderUnlocked();
-
   // Return header string for RequestVote log messages. The ReplicaState lock must be held.
   std::string GetRequestVoteLogPrefixUnlocked() const;
 
@@ -255,6 +257,23 @@ class RaftConsensus : public Consensus,
   // Callback for leader election driver.
   void ElectionCallback(const ElectionResult& result);
 
+  // Start tracking the leader for failures. This typically occurs at startup
+  // and when the local peer steps down as leader.
+  // If the failure detector is already registered, has no effect.
+  Status EnsureFailureDetectorEnabledUnlocked();
+
+  // Untrack the current leader from failure detector.
+  // This typically happens when the local peer becomes leader.
+  // If the failure detector is already unregistered, has no effect.
+  Status EnsureFailureDetectorDisabledUnlocked();
+
+  // "Reset" the failure detector to indicate leader activity.
+  // The failure detector must currently be enabled.
+  Status SnoozeFailureDetectorUnlocked();
+
+  // Handle when the term has advanced beyond the current term.
+  Status HandleTermAdvanceUnlocked(ConsensusTerm new_term);
+
   log::Log* log_;
   scoped_refptr<server::Clock> clock_;
   gscoped_ptr<PeerProxyFactory> peer_proxy_factory_;
@@ -265,6 +284,11 @@ class RaftConsensus : public Consensus,
   gscoped_ptr<ThreadPool> callback_pool_;
 
   gscoped_ptr<ReplicaState> state_;
+
+  // TODO: Plumb this from ServerBase.
+  RandomizedFailureMonitor failure_monitor_;
+
+  scoped_refptr<FailureDetector> failure_detector_;
 
   // Proxies used during leader election. Initialized at startup.
   LeaderElection::ProxyMap election_proxies_;

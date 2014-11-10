@@ -29,6 +29,7 @@
 #include "kudu/util/test_util.h"
 
 DECLARE_int32(leader_heartbeat_interval_ms);
+DECLARE_bool(enable_leader_failure_detection);
 
 #define REPLICATE_SEQUENCE_OF_MESSAGES(a, b, c, d, e, f, g) \
   ASSERT_NO_FATAL_FAILURE(ReplicateSequenceOfMessages(a, b, c, d, e, f, g))
@@ -84,6 +85,7 @@ class RaftConsensusQuorumTest : public KuduTest {
       metric_context_(&metric_registry_, "raft-test"),
       schema_(GetSimpleTestSchema()) {
     options_.tablet_id = kTestTablet;
+    FLAGS_enable_leader_failure_detection = false;
   }
 
   // Builds an initial quorum of 'num' elements.

@@ -238,18 +238,6 @@ bool ReplicaState::IsQuorumChangePendingUnlocked() const {
 // TODO check that the role change is legal.
 Status ReplicaState::SetPendingQuorumUnlocked(const metadata::QuorumPB& new_quorum) {
   DCHECK(update_lock_.is_locked());
-  if (pending_quorum_) {
-    // Right now, we only allow pending -> pending when we go from CANDIDATE
-    // to LEADER. Enforce that here. In the future, we will have to do more
-    // state checks.
-    if (!(GetRoleInQuorum(peer_uuid_, *pending_quorum_) == QuorumPeerPB::CANDIDATE &&
-          GetRoleInQuorum(peer_uuid_, new_quorum) == QuorumPeerPB::LEADER)) {
-      return Status::IllegalState("Illegal state transition",
-          Substitute("Current pending quorum: {$0}; attempted new pending quorum: {$1}",
-                     pending_quorum_->ShortDebugString(),
-                     new_quorum.ShortDebugString()));
-    }
-  }
   pending_quorum_.reset(new metadata::QuorumPB(new_quorum));
   ResetActiveQuorumStateUnlocked(new_quorum);
   return Status::OK();
@@ -269,12 +257,6 @@ Status ReplicaState::SetCommittedQuorumUnlocked(const metadata::QuorumPB& new_qu
 
   // Check that if pending quorum is set, new_quorum is equivalent.
   if (IsQuorumChangePendingUnlocked()) {
-    // TODO: Prevent this from being possible once we have proper config change.
-    // See KUDU-513 for more details.
-    CHECK(pending_quorum_->SerializeAsString() == new_quorum.SerializeAsString())
-      << "Attempting to persist quorum change while a different one is pending: "
-      << "Pending quorum: " << pending_quorum_->ShortDebugString() << "; "
-      << "New quorum: " << new_quorum.ShortDebugString();
   } else {
     // Only update acting quorum members if this is a net-new transaction.
     ResetActiveQuorumStateUnlocked(new_quorum);

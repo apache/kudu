@@ -93,25 +93,5 @@ TEST_F(RaftConsensusStateTest, TestPersistentWrites) {
   ASSERT_EQ(2, state_->GetCommittedQuorumUnlocked().seqno());
 }
 
-// Death tests.
-typedef RaftConsensusStateTest RaftConsensusStateDeathTest;
-
-// Assert that we get a process crash when we set a pending quorum and then
-// attempt to set a different persistent quorum. See KUDU-513.
-TEST_F(RaftConsensusStateDeathTest, TestCrashIfPersistentDiffersFromPending) {
-  ReplicaState::UniqueLock lock;
-  ASSERT_OK(state_->LockForConfigChange(&lock));
-
-  quorum_.set_seqno(1);
-  ASSERT_OK(state_->SetPendingQuorumUnlocked(quorum_));
-  ASSERT_TRUE(state_->IsQuorumChangePendingUnlocked());
-
-  quorum_.set_seqno(2);
-
-  // Should trigger a CHECK failure.
-  ASSERT_DEATH(state_->SetCommittedQuorumUnlocked(quorum_),
-               "Attempting to persist quorum change while a different one is pending");
-}
-
 }  // namespace consensus
 }  // namespace kudu

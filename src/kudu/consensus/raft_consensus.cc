@@ -18,12 +18,33 @@
 #include "kudu/gutil/stl_util.h"
 #include "kudu/server/clock.h"
 #include "kudu/server/metadata.h"
+#include "kudu/util/failure_detector.h"
+#include "kudu/util/random_util.h"
 #include "kudu/util/threadpool.h"
 #include "kudu/util/trace.h"
 #include "kudu/util/url-coding.h"
 
 DEFINE_int32(leader_heartbeat_interval_ms, 500,
              "The LEADER's heartbeat interval to the replicas.");
+
+// Defaults to be the same value as the leader heartbeat interval.
+DEFINE_int32(leader_failure_monitor_check_mean_ms, 500,
+             "The mean failure-checking interval of the randomized failure monitor.");
+
+// Defaults to half of the mean (above).
+DEFINE_int32(leader_failure_monitor_check_stddev_ms, 250,
+             "The standard deviation of the failure-checking interval of the randomized "
+             "failure monitor.");
+
+DEFINE_double(leader_failure_max_missed_heartbeat_periods, 3.0,
+             "Maximum heartbeat periods that the leader can fail to heartbeat in before we "
+             "consider the leader to be failed. The total failure timeout in milliseconds is "
+             "leader_heartbeat_interval_ms times leader_failure_max_missed_heartbeat_periods. "
+             "The value passed to this flag may be fractional.");
+
+DEFINE_bool(enable_leader_failure_detection, true,
+            "Whether to enable failure detection of tablet leaders. If enabled, attempts will be "
+            "made to fail over to a follower when the leader is detected to have failed.");
 
 // Convenience macros to prefix log messages with the id of the tablet and peer.
 // Do not obtain the state lock and should be used when holding the state_ lock
@@ -45,6 +66,9 @@ using std::tr1::shared_ptr;
 using std::tr1::unordered_set;
 using strings::Substitute;
 
+// Special string that represents any known leader to the failure detector.
+static const char* const kTimerId = "election-timer";
+
 RaftConsensus::RaftConsensus(const ConsensusOptions& options,
                              gscoped_ptr<ConsensusMetadata> cmeta,
                              gscoped_ptr<PeerProxyFactory> proxy_factory,
@@ -59,7 +83,14 @@ RaftConsensus::RaftConsensus(const ConsensusOptions& options,
       clock_(clock),
       peer_proxy_factory_(proxy_factory.Pass()),
       queue_(queue.Pass()),
-      peer_manager_(peer_manager.Pass()) {
+      peer_manager_(peer_manager.Pass()),
+      failure_monitor_(GetRandomSeed32(),
+                       FLAGS_leader_failure_monitor_check_mean_ms,
+                       FLAGS_leader_failure_monitor_check_stddev_ms),
+      failure_detector_(new TimedFailureDetector(
+          MonoDelta::FromMilliseconds(
+              FLAGS_leader_heartbeat_interval_ms *
+              FLAGS_leader_failure_max_missed_heartbeat_periods))) {
   CHECK_OK(ThreadPoolBuilder("raft-op-cb").set_max_threads(1).Build(&callback_pool_));
   state_.reset(new ReplicaState(options,
                                 callback_pool_.get(),
@@ -86,6 +117,18 @@ Status RaftConsensus::VerifyQuorumAndCheckThatNoChangeIsPendingUnlocked(const Qu
 
 Status RaftConsensus::Start(const ConsensusBootstrapInfo& info) {
   RETURN_NOT_OK(ExecuteHook(PRE_START));
+
+  // This just starts the monitor thread -- no failure detector is registered yet.
+  if (FLAGS_enable_leader_failure_detection) {
+    RETURN_NOT_OK(failure_monitor_.Start());
+  }
+
+  // Register the failure detector instance with the monitor.
+  // We still have not enabled failure detection for the leader election timer.
+  // That happens separately via the helper functions
+  // EnsureFailureDetector(Enabled/Disabled)Unlocked();
+  RETURN_NOT_OK(failure_monitor_.MonitorFailureDetector(state_->GetOptions().tablet_id,
+                                                        failure_detector_));
 
   QuorumPB initial_quorum;
   {
@@ -173,9 +216,14 @@ Status RaftConsensus::StartElection() {
     new_quorum.set_seqno(state_->GetCommittedQuorumUnlocked().seqno() + 1);
     // Increment the term.
     RETURN_NOT_OK(state_->IncrementTermUnlocked());
-    RETURN_NOT_OK_PREPEND(VerifyQuorumAndCheckThatNoChangeIsPendingUnlocked(new_quorum),
-                          "Invalid state on RaftConsensus::StartElection()");
+    RETURN_NOT_OK(VerifyQuorum(new_quorum));
+
     RETURN_NOT_OK(state_->SetPendingQuorumUnlocked(new_quorum));
+
+    // Snooze to avoid the election timer firing again as much as possible.
+    // We do not disable the election timer while running an election.
+    RETURN_NOT_OK(EnsureFailureDetectorEnabledUnlocked());
+    RETURN_NOT_OK(SnoozeFailureDetectorUnlocked());
 
     LOG_WITH_PREFIX(INFO) << "Starting election with quorum: " << new_quorum.ShortDebugString();
 
@@ -207,6 +255,16 @@ Status RaftConsensus::StartElection() {
   return Status::OK();
 }
 
+void RaftConsensus::ReportFailureDetected(const std::string& name, const Status& msg) {
+  LOG_WITH_PREFIX_LK(INFO) << "Failure of peer " << name << " detected. Triggering leader election";
+
+  // Start an election.
+  Status s = StartElection();
+  if (PREDICT_FALSE(!s.ok())) {
+    LOG_WITH_PREFIX_LK(WARNING) << "Failed to trigger leader election: " << s.ToString();
+  }
+}
+
 Status RaftConsensus::ChangeConfig() {
   ReplicaState::UniqueLock lock;
   RETURN_NOT_OK(state_->LockForConfigChange(&lock));
@@ -232,7 +290,10 @@ Status RaftConsensus::ChangeConfigUnlocked() {
 }
 
 Status RaftConsensus::BecomeLeaderUnlocked() {
-  LOG_WITH_PREFIX(INFO) << "Becoming Leader";
+  LOG_WITH_PREFIX(INFO) << "Becoming Leader for term " << state_->GetCurrentTermUnlocked();
+
+  // Disable FD while we are leader.
+  RETURN_NOT_OK(EnsureFailureDetectorDisabledUnlocked());
 
   queue_->Init(this,
                state_->GetCommittedOpIdUnlocked(),
@@ -300,6 +361,9 @@ void RaftConsensus::BecomeLeaderResult(const Status& status) {
 Status RaftConsensus::BecomeReplicaUnlocked() {
   // TODO start the failure detector.
   LOG_WITH_PREFIX(INFO) << "Becoming Follower/Learner";
+
+  // FD should be running while we are a follower.
+  RETURN_NOT_OK(EnsureFailureDetectorEnabledUnlocked());
 
   // Clear the consensus replication queue, evicting all state. We can reuse the
   // queue should we become leader.
@@ -405,8 +469,7 @@ void RaftConsensus::NotifyTermChange(uint64_t term) {
     return;
   }
   if (state_->GetCurrentTermUnlocked() < term) {
-    CHECK_OK(state_->SetCurrentTermUnlocked(term));
-    CHECK_OK(StepDownIfLeaderUnlocked());
+    CHECK_OK(HandleTermAdvanceUnlocked(term));
   }
 }
 
@@ -492,8 +555,7 @@ Status RaftConsensus::SanityCheckAndDedupUpdateRequestUnlocked(
                                  Status::IllegalState(msg));
       return Status::OK();
     } else {
-      CHECK_OK(StepDownIfLeaderUnlocked());
-      Status s = state_->SetCurrentTermUnlocked(request->caller_term());
+      Status s = HandleTermAdvanceUnlocked(request->caller_term());
       if (PREDICT_FALSE(!s.ok())) {
         LOG_WITH_PREFIX(FATAL) << "Unable to set current term: " << s.ToString();
       }
@@ -629,6 +691,11 @@ Status RaftConsensus::UpdateReplica(const ConsensusRequestPB* request,
     if (response->status().has_error()) {
       return Status::OK();
     }
+
+    // Snooze the failure detector as soon as we decide to accept the message.
+    // We are guaranteed to be acting as a FOLLOWER at this point by the above
+    // sanity check.
+    RETURN_NOT_OK(SnoozeFailureDetectorUnlocked());
 
     // 1 - Enqueue the prepares
 
@@ -779,11 +846,7 @@ Status RaftConsensus::RequestVote(const VoteRequestPB* request, VoteResponsePB* 
 
   // The term advanced.
   if (request->candidate_term() > state_->GetCurrentTermUnlocked()) {
-    RETURN_NOT_OK_PREPEND(StepDownIfLeaderUnlocked(),
-        Substitute("Could not step down in RequestVote. Current term: $0, candidate term: $1",
-                   state_->GetCurrentTermUnlocked(), request->candidate_term()));
-    // Update our own term.
-    RETURN_NOT_OK(state_->SetCurrentTermUnlocked(request->candidate_term()));
+    RETURN_NOT_OK(HandleTermAdvanceUnlocked(request->candidate_term()));
   }
 
   // Candidate must have last-logged OpId at least as large as our own to get
@@ -863,14 +926,6 @@ OpId RaftConsensus::GetLastOpIdFromLog() {
     LOG_WITH_PREFIX(FATAL) << "Unexpected status from Log::GetLastEntryOpId(): " << s.ToString();
   }
   return id;
-}
-
-Status RaftConsensus::StepDownIfLeaderUnlocked() {
-  // TODO: Implement me.
-  if (state_->GetActiveQuorumStateUnlocked().role == QuorumPeerPB::LEADER) {
-    LOG_WITH_PREFIX(INFO) << "Stepping down as leader. TODO: implement.";
-  }
-  return Status::OK();
 }
 
 std::string RaftConsensus::GetRequestVoteLogPrefixUnlocked() const {
@@ -963,6 +1018,9 @@ Status RaftConsensus::RequestVoteRespondLastOpIdTooOld(const OpId& local_last_lo
 
 Status RaftConsensus::RequestVoteRespondVoteGranted(const VoteRequestPB* request,
                                                     VoteResponsePB* response) {
+  // Give peer time to become leader if we vote for them.
+  RETURN_NOT_OK(SnoozeFailureDetectorUnlocked());
+
   FillVoteResponseVoteGranted(response);
 
   // Persist our vote.
@@ -1022,9 +1080,6 @@ void RaftConsensus::ElectionCallback(const ElectionResult& result) {
     LOG_WITH_PREFIX(INFO) << "Leader election lost for term " << result.election_term
                           << ". Reason: "
                           << (!result.message.empty() ? result.message : "None given");
-
-    LOG_WITH_PREFIX_LK(FATAL)
-        << "This code path is not tested and should not occur in tests yet.";
     return;
   }
 
@@ -1037,12 +1092,16 @@ void RaftConsensus::ElectionCallback(const ElectionResult& result) {
     return;
   }
 
-  if (result.election_term != state_->GetCurrentTermUnlocked()) {
+  if (result.election_term != state_->GetCurrentTermUnlocked()
+      || state_->GetActiveQuorumStateUnlocked().role != QuorumPeerPB::CANDIDATE) {
     LOG_WITH_PREFIX(INFO) << "Leader election decision for defunct term "
                           << result.election_term << ": "
                           << (result.decision == VOTE_GRANTED ? "won" : "lost");
     return;
   }
+
+  // Snooze to avoid the election timer firing again as much as possible.
+  CHECK_OK(SnoozeFailureDetectorUnlocked());
 
   LOG_WITH_PREFIX(INFO) << "Leader election won for term " << result.election_term;
 
@@ -1061,7 +1120,6 @@ void RaftConsensus::ElectionCallback(const ElectionResult& result) {
   CHECK_OK(VerifyQuorum(new_quorum));
   CHECK_OK(state_->SetPendingQuorumUnlocked(new_quorum));
 
-  LOG(INFO) << "Calling BecomeLeaderUnlocked()...";
   CHECK_OK(BecomeLeaderUnlocked());
 }
 
@@ -1069,6 +1127,50 @@ Status RaftConsensus::GetLastReceivedOpId(OpId* id) {
   ReplicaState::UniqueLock lock;
   CHECK_OK(state_->LockForRead(&lock));
   DCHECK_NOTNULL(id)->CopyFrom(state_->GetLastReceivedOpIdUnlocked());
+  return Status::OK();
+}
+
+Status RaftConsensus::EnsureFailureDetectorEnabledUnlocked() {
+  if (failure_detector_->IsTracking(kTimerId)) {
+    return Status::OK();
+  }
+  return failure_detector_->Track(kTimerId,
+                                  MonoTime::Now(MonoTime::FINE),
+                                  // Unretained to avoid a circular ref.
+                                  Bind(&RaftConsensus::ReportFailureDetected, Unretained(this)));
+}
+
+Status RaftConsensus::EnsureFailureDetectorDisabledUnlocked() {
+  if (!failure_detector_->IsTracking(kTimerId)) {
+    return Status::OK();
+  }
+  return failure_detector_->UnTrack(kTimerId);
+}
+
+Status RaftConsensus::SnoozeFailureDetectorUnlocked() {
+  return failure_detector_->MessageFrom(kTimerId, MonoTime::Now(MonoTime::FINE));
+}
+
+Status RaftConsensus::HandleTermAdvanceUnlocked(ConsensusTerm new_term) {
+  DCHECK_GT(new_term, state_->GetCurrentTermUnlocked());
+  const QuorumState& state = state_->GetActiveQuorumStateUnlocked();
+  if (state.role == QuorumPeerPB::LEADER) {
+    LOG_WITH_PREFIX(INFO) << "Stepping down as leader of term " << state_->GetCurrentTermUnlocked();
+    RETURN_NOT_OK(BecomeReplicaUnlocked());
+  }
+
+  // Demote leader in quorum.
+  if (!state.leader_uuid.empty()) {
+    QuorumPB quorum;
+    RETURN_NOT_OK(GivePeerRoleInQuorum(state.leader_uuid,
+                                       QuorumPeerPB::FOLLOWER,
+                                       state_->GetCommittedQuorumUnlocked(),
+                                       &quorum));
+    state_->SetPendingQuorumUnlocked(quorum);
+  }
+
+  LOG_WITH_PREFIX(INFO) << "Advancing to term " << new_term;
+  RETURN_NOT_OK(state_->SetCurrentTermUnlocked(new_term));
   return Status::OK();
 }
 
