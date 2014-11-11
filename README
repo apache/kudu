@@ -252,6 +252,49 @@ Note that dynamic linking is incompatible with ASAN and static linking is incomp
 with TSAN.
 
 
+Developing Kudu in Eclipse
+------------------------------------------------------------
+
+Eclipse can be used as an IDE for Kudu. To generate Eclipse project files, run:
+
+$ rm -rf CMakeCache.txt CMakeFiles/
+$ cmake -G "Eclipse CDT4 - Unix Makefiles" .
+
+It's critical that CMakeCache.txt be removed prior to running the generator,
+otherwise the extra Eclipse generator logic (the CMakeFindEclipseCDT4.make module)
+won't run and standard system includes will be missing from the generated project.
+At the time of writing, the CMake version in the thirdparty tree (2.8.10.2) is too old
+to be used to generate Eclipse projects when the default compiler is clang. This was
+filed as a cmake bug (http://public.kitware.com/Bug/view.php?id=13823) and is fixed in
+version 2.8.11. That said, it's fine to generate the project files with gcc and go on
+to build Kudu with clang.
+
+By default, the Eclipse CDT indexer will index everything under the kudu/ source tree.
+It tends to choke on certain complicated source files within the thirdparty/llvm.
+In some versions of CDT, the indexer will generate an error and stop indexing. In
+others, it'll spin forever.
+
+Either way, thirdparty/llvm must be excluded from indexing. An easy way to do this is
+to exclude all the unnecessary source trees from within thirdparty/ (all we need are
+the installed headers). To do this, right click on the project in the Project Explorer
+and select Properties. In the dialog box, select "C/C++ Project Paths", select the
+Source tab, highlight "Exclusion filter: (None)", and click "Edit...". In the new
+dialog box, click "Add Multiple...". In the file chooser, select everything under
+thirdparty except for gmock and installed. Click OK all the way out and rebuild the
+project index by right clicking the project in the Project Explorer and selecting
+Index --> Rebuild.
+
+With these exclusions, the only false positives (i.e. red squigglies) that CDT
+presents appear to be in atomicops functions (e.g. NoBarrier_CompareAndSwap).
+
+Another Eclipse annoyance stems from the "[Targets]" linked resource that Eclipse
+generates for each unit test. These are probably used for building within Eclipse,
+but one side effect is that nearly every source file appears in the indexer twice:
+once via a target and once via the raw source file. To fix this, simply delete the
+[Targets] linked resource via the Project Explorer. Doing this should have no effect
+on writing code, though it may affect your ability to build from within Eclipse.
+
+
 Building on OSX
 ------------------------------------------------------------
 
