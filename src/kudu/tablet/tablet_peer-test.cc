@@ -44,7 +44,7 @@ using consensus::OpIdEquals;
 using consensus::WRITE_OP;
 using log::Log;
 using log::LogOptions;
-using log::OpIdAnchorRegistry;
+using log::LogAnchorRegistry;
 using metadata::QuorumPeerPB;
 using rpc::Messenger;
 using server::Clock;
@@ -203,7 +203,7 @@ class TabletPeerTest : public KuduTabletTest {
 
   void AssertNoLogAnchors() {
     // Make sure that there are no registered anchors in the registry
-    CHECK_EQ(0, tablet()->opid_anchor_registry()->GetAnchorCountForTests());
+    CHECK_EQ(0, tablet()->log_anchor_registry()->GetAnchorCountForTests());
     int64_t earliest_index = -1;
     // And that there are no in-flight transactions (which are implicit
     // anchors) by comparing the TabletPeer's earliest needed OpId and the last
@@ -285,7 +285,7 @@ TEST_F(TabletPeerTest, TestMRSAnchorPreventsLogGC) {
   ASSERT_EQ(4, segments.size());
 
   AssertLogAnchorEarlierThanLogLatest();
-  CHECK_GT(tablet()->opid_anchor_registry()->GetAnchorCountForTests(), 0);
+  CHECK_GT(tablet()->log_anchor_registry()->GetAnchorCountForTests(), 0);
 
   // Ensure nothing gets deleted.
   int64_t min_log_index = -1;
@@ -353,7 +353,7 @@ TEST_F(TabletPeerTest, TestDMSAnchorPreventsLogGC) {
   // Execute a mutation.
   ASSERT_STATUS_OK(ExecuteDeletesAndRollLogs(2));
   AssertLogAnchorEarlierThanLogLatest();
-  CHECK_GT(tablet()->opid_anchor_registry()->GetAnchorCountForTests(), 0);
+  CHECK_GT(tablet()->log_anchor_registry()->GetAnchorCountForTests(), 0);
   ASSERT_OK(log->GetLogReader()->GetSegmentsSnapshot(&segments));
   ASSERT_EQ(4, segments.size());
 
@@ -407,7 +407,7 @@ TEST_F(TabletPeerTest, TestActiveTransactionPreventsLogGC) {
   ASSERT_EQ(5, segments.size());
 
   // Flush MRS as needed to ensure that we don't have OpId anchors in the MRS.
-  ASSERT_EQ(1, tablet()->opid_anchor_registry()->GetAnchorCountForTests());
+  ASSERT_EQ(1, tablet()->log_anchor_registry()->GetAnchorCountForTests());
   tablet_peer_->tablet()->Flush();
 
   // Verify no anchors after Flush().
@@ -464,9 +464,9 @@ TEST_F(TabletPeerTest, TestActiveTransactionPreventsLogGC) {
   ASSERT_STATUS_OK(ExecuteDeletesAndRollLogs(3));
   ASSERT_OK(log->GetLogReader()->GetSegmentsSnapshot(&segments));
   ASSERT_EQ(5, segments.size());
-  ASSERT_EQ(1, tablet()->opid_anchor_registry()->GetAnchorCountForTests());
+  ASSERT_EQ(1, tablet()->log_anchor_registry()->GetAnchorCountForTests());
   tablet_peer_->tablet()->FlushBiggestDMS();
-  ASSERT_EQ(0, tablet()->opid_anchor_registry()->GetAnchorCountForTests());
+  ASSERT_EQ(0, tablet()->log_anchor_registry()->GetAnchorCountForTests());
   ASSERT_EQ(1, tablet_peer_->txn_tracker_.GetNumPendingForTests());
 
   AssertLogAnchorEarlierThanLogLatest();

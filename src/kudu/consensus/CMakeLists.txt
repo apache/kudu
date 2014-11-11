@@ -35,8 +35,8 @@ set(LOG_SRCS
   async_log_reader.cc
   log_util.cc
   log.cc
+  log_anchor_registry.cc
   log_reader.cc
-  opid_anchor_registry.cc
   log_metrics.cc
 )
 
@@ -89,7 +89,7 @@ ADD_KUDU_TEST(leader_election-test)
 ADD_KUDU_TEST(log-test)
 ADD_KUDU_TEST(log_cache-test)
 ADD_KUDU_TEST(mt-log-test)
-ADD_KUDU_TEST(opid_anchor_registry-test)
+ADD_KUDU_TEST(log_anchor_registry-test)
 ADD_KUDU_TEST(raft_consensus_quorum-test)
 ADD_KUDU_TEST(raft_consensus_state-test)
 ADD_KUDU_TEST(raft_consensus-test)

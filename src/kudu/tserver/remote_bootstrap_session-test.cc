@@ -34,7 +34,7 @@ using consensus::ConsensusMetadata;
 using fs::ReadableBlock;
 using log::Log;
 using log::LogOptions;
-using log::OpIdAnchorRegistry;
+using log::LogAnchorRegistry;
 using metadata::QuorumPB;
 using metadata::QuorumPeerPB;
 using rpc::Messenger;
@@ -100,7 +100,7 @@ class RemoteBootstrapTest : public KuduTabletTest {
     MessengerBuilder mbuilder(CURRENT_TEST_NAME());
     mbuilder.Build(&messenger);
 
-    opid_anchor_registry_.reset(new OpIdAnchorRegistry());
+    log_anchor_registry_.reset(new LogAnchorRegistry());
     CHECK_OK(tablet_peer_->Init(tablet(), clock(), messenger, log.Pass(), metric_ctx));
     consensus::ConsensusBootstrapInfo boot_info;
     CHECK_OK(tablet_peer_->Start(boot_info));
@@ -174,7 +174,7 @@ class RemoteBootstrapTest : public KuduTabletTest {
   }
 
   MetricRegistry metric_registry_;
-  scoped_refptr<OpIdAnchorRegistry> opid_anchor_registry_;
+  scoped_refptr<LogAnchorRegistry> log_anchor_registry_;
   gscoped_ptr<ThreadPool> leader_apply_pool_;
   gscoped_ptr<ThreadPool> replica_apply_pool_;
   scoped_refptr<TabletPeer> tablet_peer_;

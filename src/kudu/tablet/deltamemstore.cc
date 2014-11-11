@@ -16,7 +16,7 @@
 namespace kudu {
 namespace tablet {
 
-using log::OpIdAnchorRegistry;
+using log::LogAnchorRegistry;
 using std::tr1::shared_ptr;
 using strings::Substitute;
 
@@ -42,7 +42,7 @@ shared_ptr<MemTracker> CreateMemTrackerForDMS(int64_t id,
 
 DeltaMemStore::DeltaMemStore(int64_t id,
                              const Schema &schema,
-                             OpIdAnchorRegistry* opid_anchor_registry,
+                             LogAnchorRegistry* log_anchor_registry,
                              MemTracker* parent_tracker)
   : id_(id),
     schema_(schema),
@@ -52,7 +52,7 @@ DeltaMemStore::DeltaMemStore(int64_t id,
                                              allocator_)),
     tree_(arena_),
     delta_stats_(schema_.num_columns()),
-    anchorer_(opid_anchor_registry, Substitute("DeltaMemStore-$0", id_)) {
+    anchorer_(log_anchor_registry, Substitute("DeltaMemStore-$0", id_)) {
   CHECK(schema.has_column_ids());
 }
 

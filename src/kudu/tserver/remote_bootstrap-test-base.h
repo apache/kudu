@@ -7,8 +7,8 @@
 
 #include <string>
 
+#include "kudu/consensus/log_anchor_registry.h"
 #include "kudu/consensus/opid_util.h"
-#include "kudu/consensus/opid_anchor_registry.h"
 #include "kudu/fs/block_manager.h"
 #include "kudu/gutil/strings/fastmem.h"
 #include "kudu/tablet/metadata.pb.h"
@@ -30,13 +30,13 @@ class RemoteBootstrapTest : public TabletServerTest {
     // to test that we are anchoring correctly. Since GenerateTestData() does a
     // Flush(), Log GC is allowed to eat the logs before we get around to
     // starting a remote bootstrap session.
-    tablet_peer_->tablet()->opid_anchor_registry()->Register(
+    tablet_peer_->tablet()->log_anchor_registry()->Register(
       MinimumOpId().index(), CURRENT_TEST_NAME(), &anchor_);
     ASSERT_NO_FATAL_FAILURE(GenerateTestData());
   }
 
   virtual void TearDown() OVERRIDE {
-    ASSERT_OK(tablet_peer_->tablet()->opid_anchor_registry()->Unregister(&anchor_));
+    ASSERT_OK(tablet_peer_->tablet()->log_anchor_registry()->Unregister(&anchor_));
     TabletServerTest::TearDown();
   }
 
@@ -106,7 +106,7 @@ class RemoteBootstrapTest : public TabletServerTest {
     return Status::OK();
   }
 
-  log::OpIdAnchor anchor_;
+  log::LogAnchor anchor_;
 };
 
 } // namespace tserver

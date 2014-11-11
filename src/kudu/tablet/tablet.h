@@ -33,7 +33,7 @@ class RowChangeList;
 class UnionIterator;
 
 namespace log {
-class OpIdAnchorRegistry;
+class LogAnchorRegistry;
 }
 
 namespace server {
@@ -79,7 +79,7 @@ class Tablet {
   Tablet(const scoped_refptr<TabletMetadata>& metadata,
          const scoped_refptr<server::Clock>& clock,
          const MetricContext* parent_metric_context,
-         log::OpIdAnchorRegistry* opid_anchor_registry);
+         log::LogAnchorRegistry* log_anchor_registry);
 
   ~Tablet();
 
@@ -319,8 +319,8 @@ class Tablet {
   // Return true if 'fname' is a valid filename for a tablet.
   static bool IsTabletFileName(const std::string& fname);
 
-  log::OpIdAnchorRegistry* opid_anchor_registry() {
-    return opid_anchor_registry_;
+  log::LogAnchorRegistry* log_anchor_registry() {
+    return log_anchor_registry_;
   }
 
  private:
@@ -453,7 +453,7 @@ class Tablet {
 
 
 
-  log::OpIdAnchorRegistry* opid_anchor_registry_;
+  log::LogAnchorRegistry* log_anchor_registry_;
   std::tr1::shared_ptr<MemTracker> mem_tracker_;
   shared_ptr<MemRowSet> memrowset_;
   shared_ptr<RowSetTree> rowsets_;

@@ -8,8 +8,8 @@
 #include <tr1/unordered_map>
 #include <vector>
 
+#include "kudu/consensus/log_anchor_registry.h"
 #include "kudu/consensus/log_util.h"
-#include "kudu/consensus/opid_anchor_registry.h"
 #include "kudu/consensus/opid_util.h"
 #include "kudu/fs/block_id.h"
 #include "kudu/fs/block_manager.h"
@@ -159,7 +159,7 @@ class RemoteBootstrapSession : public RefCountedThreadSafe<RemoteBootstrapSessio
   // session.
   log::SegmentSequence log_segments_;
 
-  log::OpIdAnchor log_anchor_;
+  log::LogAnchor log_anchor_;
 
   DISALLOW_COPY_AND_ASSIGN(RemoteBootstrapSession);
 };

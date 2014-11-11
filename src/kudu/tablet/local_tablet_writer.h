@@ -4,7 +4,7 @@
 #define KUDU_TABLET_LOCAL_TABLET_WRITER_H
 
 #include "kudu/common/row_operations.h"
-#include "kudu/consensus/opid_anchor_registry.h"
+#include "kudu/consensus/log_anchor_registry.h"
 #include "kudu/consensus/opid_util.h"
 #include "kudu/tablet/row_op.h"
 #include "kudu/tablet/tablet.h"

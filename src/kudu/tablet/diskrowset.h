@@ -36,7 +36,7 @@ class CFileWriter;
 }
 
 namespace log {
-class OpIdAnchorRegistry;
+class LogAnchorRegistry;
 }
 
 namespace tablet {
@@ -227,7 +227,7 @@ class DiskRowSet : public RowSet {
   // Open a rowset from disk.
   // If successful, sets *rowset to the newly open rowset
   static Status Open(const shared_ptr<RowSetMetadata>& rowset_metadata,
-                     log::OpIdAnchorRegistry* opid_anchor_registry,
+                     log::LogAnchorRegistry* log_anchor_registry,
                      shared_ptr<DiskRowSet> *rowset,
                      const std::tr1::shared_ptr<MemTracker>& parent_tracker =
                      std::tr1::shared_ptr<MemTracker>());
@@ -324,7 +324,7 @@ class DiskRowSet : public RowSet {
   friend class Tablet;
 
   DiskRowSet(const shared_ptr<RowSetMetadata>& rowset_metadata,
-             log::OpIdAnchorRegistry* opid_anchor_registry,
+             log::LogAnchorRegistry* log_anchor_registry,
              const std::tr1::shared_ptr<MemTracker>& parent_tracker);
 
   Status Open();
@@ -337,7 +337,7 @@ class DiskRowSet : public RowSet {
 
   bool open_;
 
-  log::OpIdAnchorRegistry* opid_anchor_registry_;
+  log::LogAnchorRegistry* log_anchor_registry_;
 
   std::tr1::shared_ptr<MemTracker> parent_tracker_;
 

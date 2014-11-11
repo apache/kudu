@@ -1,7 +1,7 @@
 // Copyright (c) 2014, Cloudera, inc.
 // Confidential Cloudera Information: Covered by NDA.
-#ifndef KUDU_CONSENSUS_OPID_ANCHOR_REGISTRY_
-#define KUDU_CONSENSUS_OPID_ANCHOR_REGISTRY_
+#ifndef KUDU_CONSENSUS_LOG_ANCHOR_REGISTRY_
+#define KUDU_CONSENSUS_LOG_ANCHOR_REGISTRY_
 
 #include <map>
 #include <string>
@@ -15,26 +15,23 @@
 namespace kudu {
 namespace log {
 
-class OpIdAnchor;
+class LogAnchor;
 
 // This class allows callers to register their interest in (anchor) a particular
 // log index. The primary use case for this is to prevent the deletion of segments of
 // the WAL that reference as-yet unflushed in-memory operations.
 //
-// TODO: rename this to LogAnchorRegistry, since it is based on log indexes rather than
-// OpIds.
-//
 // This class is thread-safe.
-class OpIdAnchorRegistry : public RefCountedThreadSafe<OpIdAnchorRegistry> {
+class LogAnchorRegistry : public RefCountedThreadSafe<LogAnchorRegistry> {
  public:
-  OpIdAnchorRegistry();
+  LogAnchorRegistry();
 
   // Register interest for a particular log index.
   // log_index: The log index the caller wishes to anchor.
   // owner: String to describe who is registering the anchor. Used in assert
   //        messages for debugging purposes.
-  // anchor: Pointer to OpIdAnchor structure that will be populated on registration.
-  void Register(int64_t log_index, const std::string& owner, OpIdAnchor* anchor);
+  // anchor: Pointer to LogAnchor structure that will be populated on registration.
+  void Register(int64_t log_index, const std::string& owner, LogAnchor* anchor);
 
   // Atomically update the registration of an anchor to a new log index.
   // Before: anchor must be registered with some log index.
@@ -42,14 +39,14 @@ class OpIdAnchorRegistry : public RefCountedThreadSafe<OpIdAnchorRegistry> {
   // See Register().
   Status UpdateRegistration(int64_t log_index,
                             const std::string& owner,
-                            OpIdAnchor* anchor);
+                            LogAnchor* anchor);
 
   // Release the anchor on a log index.
   // Note: anchor must be the original pointer passed to Register().
-  Status Unregister(OpIdAnchor* anchor);
+  Status Unregister(LogAnchor* anchor);
 
   // Returns true if passed anchor is currently registered.
-  bool IsRegistered(OpIdAnchor* anchor) const;
+  bool IsRegistered(LogAnchor* anchor) const;
 
   // Query the registry to find the earliest anchored log index in the registry.
   // Returns Status::NotFound if no anchors are currently active.
@@ -60,50 +57,49 @@ class OpIdAnchorRegistry : public RefCountedThreadSafe<OpIdAnchorRegistry> {
   size_t GetAnchorCountForTests() const;
 
  private:
-  friend class RefCountedThreadSafe<OpIdAnchorRegistry>;
-  ~OpIdAnchorRegistry();
+  friend class RefCountedThreadSafe<LogAnchorRegistry>;
+  ~LogAnchorRegistry();
 
-  typedef std::multimap<int64_t, OpIdAnchor*> AnchorMultiMap;
+  typedef std::multimap<int64_t, LogAnchor*> AnchorMultiMap;
 
   // Register a new anchor after taking the lock. See Register().
-  void RegisterUnlocked(int64_t log_index, const std::string& owner, OpIdAnchor* anchor);
+  void RegisterUnlocked(int64_t log_index, const std::string& owner, LogAnchor* anchor);
 
   // Unregister an anchor after taking the lock. See Unregister().
-  Status UnregisterUnlocked(OpIdAnchor* anchor);
+  Status UnregisterUnlocked(LogAnchor* anchor);
 
   AnchorMultiMap anchors_;
   mutable simple_spinlock lock_;
 
-  DISALLOW_COPY_AND_ASSIGN(OpIdAnchorRegistry);
+  DISALLOW_COPY_AND_ASSIGN(LogAnchorRegistry);
 };
 
 // An opaque class that helps us keep track of anchors.
-// TODO: rename to LogAnchor
-class OpIdAnchor {
+class LogAnchor {
  public:
-  OpIdAnchor();
-  ~OpIdAnchor();
+  LogAnchor();
+  ~LogAnchor();
 
  private:
   FRIEND_TEST(LogTest, TestGCWithLogRunning);
-  friend class OpIdAnchorRegistry;
+  friend class LogAnchorRegistry;
 
   int64_t log_index;
   std::string owner;
   bool is_registered;
 
-  DISALLOW_COPY_AND_ASSIGN(OpIdAnchor);
+  DISALLOW_COPY_AND_ASSIGN(LogAnchor);
 };
 
 // Helper class that will anchor the minimum log index recorded.
-class OpIdMinAnchorer {
+class MinLogIndexAnchorer {
  public:
   // Construct anchorer for specified registry that will register anchors with
   // the specified owner name.
-  OpIdMinAnchorer(OpIdAnchorRegistry* registry, const std::string& owner);
+  MinLogIndexAnchorer(LogAnchorRegistry* registry, const std::string& owner);
 
   // The destructor will unregister the anchor if it is registered.
-  ~OpIdMinAnchorer();
+  ~MinLogIndexAnchorer();
 
   // If op_id is less than the minimum index registered so far, or if no indexes
   // are currently registered, anchor on 'log_index'.
@@ -114,18 +110,18 @@ class OpIdMinAnchorer {
   Status ReleaseAnchor();
 
  private:
-  scoped_refptr<OpIdAnchorRegistry> const registry_;
+  scoped_refptr<LogAnchorRegistry> const registry_;
   const std::string owner_;
-  OpIdAnchor anchor_;
+  LogAnchor anchor_;
 
   // The index currently anchored, or -1 if no anchor has yet been registered.
   int64_t minimum_log_index_;
   mutable simple_spinlock lock_;
 
-  DISALLOW_COPY_AND_ASSIGN(OpIdMinAnchorer);
+  DISALLOW_COPY_AND_ASSIGN(MinLogIndexAnchorer);
 };
 
 } // namespace log
 } // namespace kudu
 
-#endif // KUDU_CONSENSUS_OPID_ANCHOR_REGISTRY_
+#endif // KUDU_CONSENSUS_LOG_ANCHOR_REGISTRY_

@@ -17,7 +17,7 @@
 #include "kudu/consensus/log.h"
 #include "kudu/consensus/log_util.h"
 #include "kudu/consensus/opid_util.h"
-#include "kudu/consensus/opid_anchor_registry.h"
+#include "kudu/consensus/log_anchor_registry.h"
 #include "kudu/consensus/quorum_util.h"
 #include "kudu/consensus/raft_consensus.h"
 #include "kudu/gutil/mathlimits.h"
@@ -51,7 +51,7 @@ using consensus::CHANGE_CONFIG_OP;
 using consensus::WRITE_OP;
 using consensus::OP_ABORT;
 using log::Log;
-using log::OpIdAnchorRegistry;
+using log::LogAnchorRegistry;
 using metadata::QuorumPB;
 using metadata::QuorumPeerPB;
 using rpc::Messenger;
@@ -377,9 +377,9 @@ void TabletPeer::GetEarliestNeededLogIndex(int64_t* min_index) const {
   // Returns OK if minimum known, NotFound if no anchors are registered.
   {
     int64_t min_anchor_index;
-    Status s = tablet_->opid_anchor_registry()->GetEarliestRegisteredLogIndex(&min_anchor_index);
+    Status s = tablet_->log_anchor_registry()->GetEarliestRegisteredLogIndex(&min_anchor_index);
     if (PREDICT_FALSE(!s.ok())) {
-      DCHECK(s.IsNotFound()) << "Unexpected error calling OpIdAnchorRegistry: " << s.ToString();
+      DCHECK(s.IsNotFound()) << "Unexpected error calling LogAnchorRegistry: " << s.ToString();
     } else {
       *min_index = std::min(*min_index, min_anchor_index);
     }

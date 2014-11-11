@@ -1,7 +1,7 @@
 // Copyright (c) 2014, Cloudera, inc.
 // Confidential Cloudera Information: Covered by NDA.
 
-#include "kudu/consensus/opid_anchor_registry.h"
+#include "kudu/consensus/log_anchor_registry.h"
 
 #include <boost/thread/locks.hpp>
 #include <string>
@@ -15,22 +15,22 @@ using std::pair;
 using std::string;
 using strings::Substitute;
 
-OpIdAnchorRegistry::OpIdAnchorRegistry() {
+LogAnchorRegistry::LogAnchorRegistry() {
 }
-OpIdAnchorRegistry::~OpIdAnchorRegistry() {
+LogAnchorRegistry::~LogAnchorRegistry() {
   CHECK(anchors_.empty());
 }
 
-void OpIdAnchorRegistry::Register(int64_t log_index,
+void LogAnchorRegistry::Register(int64_t log_index,
                                   const string& owner,
-                                  OpIdAnchor* anchor) {
+                                  LogAnchor* anchor) {
   boost::lock_guard<simple_spinlock> l(lock_);
   RegisterUnlocked(log_index, owner, anchor);
 }
 
-Status OpIdAnchorRegistry::UpdateRegistration(int64_t log_index,
+Status LogAnchorRegistry::UpdateRegistration(int64_t log_index,
                                               const std::string& owner,
-                                              OpIdAnchor* anchor) {
+                                              LogAnchor* anchor) {
   boost::lock_guard<simple_spinlock> l(lock_);
   RETURN_NOT_OK_PREPEND(UnregisterUnlocked(anchor),
                         "Unable to swap registration, anchor not registered")
@@ -38,16 +38,16 @@ Status OpIdAnchorRegistry::UpdateRegistration(int64_t log_index,
   return Status::OK();
 }
 
-Status OpIdAnchorRegistry::Unregister(OpIdAnchor* anchor) {
+Status LogAnchorRegistry::Unregister(LogAnchor* anchor) {
   boost::lock_guard<simple_spinlock> l(lock_);
   return UnregisterUnlocked(anchor);
 }
 
-bool OpIdAnchorRegistry::IsRegistered(OpIdAnchor* anchor) const {
+bool LogAnchorRegistry::IsRegistered(LogAnchor* anchor) const {
   return anchor->is_registered;
 }
 
-Status OpIdAnchorRegistry::GetEarliestRegisteredLogIndex(int64_t* log_index) {
+Status LogAnchorRegistry::GetEarliestRegisteredLogIndex(int64_t* log_index) {
   boost::lock_guard<simple_spinlock> l(lock_);
   AnchorMultiMap::iterator iter = anchors_.begin();
   if (iter == anchors_.end()) {
@@ -59,14 +59,14 @@ Status OpIdAnchorRegistry::GetEarliestRegisteredLogIndex(int64_t* log_index) {
   return Status::OK();
 }
 
-size_t OpIdAnchorRegistry::GetAnchorCountForTests() const {
+size_t LogAnchorRegistry::GetAnchorCountForTests() const {
   boost::lock_guard<simple_spinlock> l(lock_);
   return anchors_.size();
 }
 
-void OpIdAnchorRegistry::RegisterUnlocked(int64_t log_index,
+void LogAnchorRegistry::RegisterUnlocked(int64_t log_index,
                                           const std::string& owner,
-                                          OpIdAnchor* anchor) {
+                                          LogAnchor* anchor) {
   DCHECK(anchor != NULL);
   DCHECK(!anchor->is_registered);
 
@@ -77,7 +77,7 @@ void OpIdAnchorRegistry::RegisterUnlocked(int64_t log_index,
   anchors_.insert(value);
 }
 
-Status OpIdAnchorRegistry::UnregisterUnlocked(OpIdAnchor* anchor) {
+Status LogAnchorRegistry::UnregisterUnlocked(LogAnchor* anchor) {
   DCHECK(anchor != NULL);
   DCHECK(anchor->is_registered);
 
@@ -96,25 +96,25 @@ Status OpIdAnchorRegistry::UnregisterUnlocked(OpIdAnchor* anchor) {
                                      anchor->log_index, anchor->owner));
 }
 
-OpIdAnchor::OpIdAnchor()
+LogAnchor::LogAnchor()
   : is_registered(false) {
 }
 
-OpIdAnchor::~OpIdAnchor() {
-  CHECK(!is_registered) << "Attempted to destruct a registered OpIdAnchor";
+LogAnchor::~LogAnchor() {
+  CHECK(!is_registered) << "Attempted to destruct a registered LogAnchor";
 }
 
-OpIdMinAnchorer::OpIdMinAnchorer(OpIdAnchorRegistry* registry, const string& owner)
+MinLogIndexAnchorer::MinLogIndexAnchorer(LogAnchorRegistry* registry, const string& owner)
   : registry_(DCHECK_NOTNULL(registry)),
     owner_(owner),
     minimum_log_index_(-1) {
 }
 
-OpIdMinAnchorer::~OpIdMinAnchorer() {
+MinLogIndexAnchorer::~MinLogIndexAnchorer() {
   CHECK_OK(ReleaseAnchor());
 }
 
-void OpIdMinAnchorer::AnchorIfMinimum(int64_t log_index) {
+void MinLogIndexAnchorer::AnchorIfMinimum(int64_t log_index) {
   boost::lock_guard<simple_spinlock> l(lock_);
   if (PREDICT_FALSE(minimum_log_index_ < 0)) {
     minimum_log_index_ = log_index;
@@ -125,7 +125,7 @@ void OpIdMinAnchorer::AnchorIfMinimum(int64_t log_index) {
   }
 }
 
-Status OpIdMinAnchorer::ReleaseAnchor() {
+Status MinLogIndexAnchorer::ReleaseAnchor() {
   boost::lock_guard<simple_spinlock> l(lock_);
   if (PREDICT_TRUE(minimum_log_index_ >= 0)) {
     return registry_->Unregister(&anchor_);

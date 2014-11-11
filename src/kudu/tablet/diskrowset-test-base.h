@@ -292,7 +292,7 @@ class TestRowSet : public KuduRowSetTest {
   }
 
   Status OpenTestRowSet(shared_ptr<DiskRowSet> *rowset) {
-    return DiskRowSet::Open(rowset_meta_, new log::OpIdAnchorRegistry(), rowset);
+    return DiskRowSet::Open(rowset_meta_, new log::LogAnchorRegistry(), rowset);
   }
 
   void FormatKey(int i, char *buf, size_t buf_len) {

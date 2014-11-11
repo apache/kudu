@@ -22,7 +22,7 @@ namespace tserver {
 using consensus::OpId;
 using consensus::MinimumOpId;
 using fs::ReadableBlock;
-using log::OpIdAnchorRegistry;
+using log::LogAnchorRegistry;
 using tablet::TabletMetadata;
 using tablet::TabletSuperBlockPB;
 using std::tr1::shared_ptr;
@@ -68,7 +68,7 @@ Status RemoteBootstrapSession::Init() {
   // first anchor all the logs, get a list of the logs available, and then
   // atomically re-anchor on the minimum OpId in that set.
   // TODO: Implement one-shot anchoring through the Log API. See KUDU-284.
-  OpIdAnchorRegistry* registry = tablet_peer_->tablet()->opid_anchor_registry();
+  LogAnchorRegistry* registry = tablet_peer_->tablet()->log_anchor_registry();
   string anchor_owner_token = Substitute("RemoteBootstrap-$0", session_id_);
 
   registry->Register(MinimumOpId().index(), anchor_owner_token, &log_anchor_);
@@ -347,7 +347,7 @@ Status RemoteBootstrapSession::FindLogSegment(uint64_t segment_seqno,
 }
 
 Status RemoteBootstrapSession::UnregisterAnchorIfNeededUnlocked() {
-  OpIdAnchorRegistry* registry = tablet_peer_->tablet()->opid_anchor_registry();
+  LogAnchorRegistry* registry = tablet_peer_->tablet()->log_anchor_registry();
   if (registry->IsRegistered(&log_anchor_)) {
     RETURN_NOT_OK(registry->Unregister(&log_anchor_));
   }

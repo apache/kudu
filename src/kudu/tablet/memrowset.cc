@@ -13,7 +13,7 @@
 #include "kudu/common/generic_iterators.h"
 #include "kudu/common/row.h"
 #include "kudu/consensus/consensus.pb.h"
-#include "kudu/consensus/opid_anchor_registry.h"
+#include "kudu/consensus/log_anchor_registry.h"
 #include "kudu/gutil/atomicops.h"
 #include "kudu/gutil/dynamic_annotations.h"
 #include "kudu/tablet/memrowset.h"
@@ -28,7 +28,7 @@ DEFINE_bool(mrs_use_codegen, true, "whether the memrowset should use code "
 namespace kudu { namespace tablet {
 
 using consensus::OpId;
-using log::OpIdAnchorRegistry;
+using log::LogAnchorRegistry;
 using std::pair;
 using strings::Substitute;
 
@@ -72,7 +72,7 @@ shared_ptr<MemTracker> CreateMemTrackerForMemRowSet(int64_t id,
 
 MemRowSet::MemRowSet(int64_t id,
                      const Schema &schema,
-                     OpIdAnchorRegistry* opid_anchor_registry,
+                     LogAnchorRegistry* log_anchor_registry,
                      const shared_ptr<MemTracker>& parent_tracker)
   : id_(id),
     schema_(schema),
@@ -85,7 +85,7 @@ MemRowSet::MemRowSet(int64_t id,
     debug_insert_count_(0),
     debug_update_count_(0),
     has_logged_throttling_(false),
-    anchorer_(opid_anchor_registry, Substitute("MemRowSet-$0", id_)) {
+    anchorer_(log_anchor_registry, Substitute("MemRowSet-$0", id_)) {
   CHECK(schema.has_column_ids());
   ANNOTATE_BENIGN_RACE(&debug_insert_count_, "insert count isnt accurate");
   ANNOTATE_BENIGN_RACE(&debug_update_count_, "update count isnt accurate");

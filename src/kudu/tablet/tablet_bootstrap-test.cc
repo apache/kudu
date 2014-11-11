@@ -35,7 +35,7 @@ using consensus::kMinimumTerm;
 using consensus::kUninitializedQuorumSeqNo;
 using log::Log;
 using log::LogTestBase;
-using log::OpIdAnchorRegistry;
+using log::LogAnchorRegistry;
 using log::ReadableLogSegment;
 using server::Clock;
 using server::LogicalClock;
@@ -81,7 +81,7 @@ class BootstrapTest : public LogTestBase {
                                   shared_ptr<Tablet>* tablet,
                                   ConsensusBootstrapInfo* boot_info) {
     gscoped_ptr<Log> new_log;
-    scoped_refptr<OpIdAnchorRegistry> new_anchor_registry;
+    scoped_refptr<LogAnchorRegistry> new_anchor_registry;
     gscoped_ptr<TabletStatusListener> listener(new TabletStatusListener(meta));
 
     // Now attempt to recover the log

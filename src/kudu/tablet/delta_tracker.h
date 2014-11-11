@@ -27,7 +27,7 @@ class OpId;
 }
 
 namespace log {
-class OpIdAnchorRegistry;
+class LogAnchorRegistry;
 }
 
 namespace metadata {
@@ -60,7 +60,7 @@ class DeltaTracker {
   DeltaTracker(const shared_ptr<RowSetMetadata>& rowset_metadata,
                const Schema &schema,
                rowid_t num_rows,
-               log::OpIdAnchorRegistry* opid_anchor_registry,
+               log::LogAnchorRegistry* log_anchor_registry,
                MemTracker* parent_tracker = NULL);
 
   ColumnwiseIterator *WrapIterator(const shared_ptr<CFileSet::Iterator> &base,
@@ -211,7 +211,7 @@ class DeltaTracker {
 
   bool open_;
 
-  log::OpIdAnchorRegistry* opid_anchor_registry_;
+  log::LogAnchorRegistry* log_anchor_registry_;
 
   MemTracker* parent_tracker_;
 

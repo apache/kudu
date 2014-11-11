@@ -20,7 +20,7 @@
 #include "kudu/common/scan_spec.h"
 #include "kudu/common/schema.h"
 #include "kudu/consensus/consensus.pb.h"
-#include "kudu/consensus/opid_anchor_registry.h"
+#include "kudu/consensus/log_anchor_registry.h"
 #include "kudu/consensus/opid_util.h"
 #include "kudu/gutil/atomicops.h"
 #include "kudu/gutil/map-util.h"
@@ -71,7 +71,7 @@ namespace tablet {
 using kudu::MaintenanceManager;
 using consensus::OpId;
 using consensus::MaximumOpId;
-using log::OpIdAnchorRegistry;
+using log::LogAnchorRegistry;
 using std::string;
 using std::set;
 using std::vector;
@@ -96,11 +96,11 @@ TabletComponents::TabletComponents(const shared_ptr<MemRowSet>& mrs,
 Tablet::Tablet(const scoped_refptr<TabletMetadata>& metadata,
                const scoped_refptr<server::Clock>& clock,
                const MetricContext* parent_metric_context,
-               OpIdAnchorRegistry* opid_anchor_registry)
+               LogAnchorRegistry* log_anchor_registry)
   : schema_(new Schema(metadata->schema())),
     key_schema_(schema_->CreateKeyProjection()),
     metadata_(metadata),
-    opid_anchor_registry_(opid_anchor_registry),
+    log_anchor_registry_(log_anchor_registry),
     mem_tracker_(MemTracker::CreateTracker(-1,
                                            Substitute("tablet-$0", tablet_id()),
                                            NULL)),
@@ -142,7 +142,7 @@ Status Tablet::Open() {
   // open the tablet row-sets
   BOOST_FOREACH(const shared_ptr<RowSetMetadata>& rowset_meta, metadata_->rowsets()) {
     shared_ptr<DiskRowSet> rowset;
-    Status s = DiskRowSet::Open(rowset_meta, opid_anchor_registry_, &rowset, mem_tracker_);
+    Status s = DiskRowSet::Open(rowset_meta, log_anchor_registry_, &rowset, mem_tracker_);
     if (!s.ok()) {
       LOG(ERROR) << "Failed to open rowset " << rowset_meta->ToString() << ": "
                  << s.ToString();
@@ -156,7 +156,7 @@ Status Tablet::Open() {
   CHECK_OK(new_rowset_tree->Reset(rowsets_opened));
   // now that the current state is loaded, create the new MemRowSet with the next id
   shared_ptr<MemRowSet> new_mrs(new MemRowSet(next_mrs_id_++, *schema_.get(),
-                                              opid_anchor_registry_,
+                                              log_anchor_registry_,
                                               mem_tracker_));
   components_ = new TabletComponents(new_mrs, new_rowset_tree);
 
@@ -541,7 +541,7 @@ Status Tablet::ReplaceMemRowSetUnlocked(const Schema& schema,
   // Add to compaction.
   compaction->AddRowSet(*old_ms, ms_lock);
 
-  shared_ptr<MemRowSet> new_mrs(new MemRowSet(next_mrs_id_++, schema, opid_anchor_registry_,
+  shared_ptr<MemRowSet> new_mrs(new MemRowSet(next_mrs_id_++, schema, log_anchor_registry_,
                                 mem_tracker_));
   shared_ptr<RowSetTree> new_rst(new RowSetTree());
   ModifyRowSetTree(*components_->rowsets,
@@ -1068,7 +1068,7 @@ Status Tablet::DoCompactionOrFlush(const Schema& schema,
   CHECK(!new_drs_metas.empty());
   BOOST_FOREACH(const shared_ptr<RowSetMetadata>& meta, new_drs_metas) {
     shared_ptr<DiskRowSet> new_rowset;
-    Status s = DiskRowSet::Open(meta, opid_anchor_registry_, &new_rowset, mem_tracker_);
+    Status s = DiskRowSet::Open(meta, log_anchor_registry_, &new_rowset, mem_tracker_);
     if (!s.ok()) {
       LOG(WARNING) << "Unable to open snapshot " << op_name << " results "
                    << meta->ToString() << ": " << s.ToString();

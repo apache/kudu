@@ -9,8 +9,8 @@
 #include "kudu/common/wire_protocol-test-util.h"
 #include "kudu/consensus/consensus_queue.h"
 #include "kudu/consensus/consensus-test-util.h"
-#include "kudu/consensus/opid_anchor_registry.h"
 #include "kudu/consensus/log.h"
+#include "kudu/consensus/log_anchor_registry.h"
 #include "kudu/consensus/log_util.h"
 #include "kudu/consensus/log_reader.h"
 #include "kudu/fs/fs_manager.h"
@@ -39,7 +39,7 @@ class ConsensusQueueTest : public KuduTest {
   ConsensusQueueTest()
       : schema_(GetSimpleTestSchema()),
         metric_context_(&metric_registry_, "queue-test"),
-        registry_(new log::OpIdAnchorRegistry) {
+        registry_(new log::LogAnchorRegistry) {
     FLAGS_enable_data_block_fsync = false; // Keep unit tests fast.
   }
 
@@ -107,7 +107,7 @@ class ConsensusQueueTest : public KuduTest {
   MetricContext metric_context_;
   gscoped_ptr<PeerMessageQueue> queue_;
   gscoped_ptr<log::Log> log_;
-  scoped_refptr<log::OpIdAnchorRegistry> registry_;
+  scoped_refptr<log::LogAnchorRegistry> registry_;
 };
 
 // Tests that the queue is able to track a peer when it starts tracking a peer

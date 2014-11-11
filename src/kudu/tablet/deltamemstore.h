@@ -11,10 +11,10 @@
 #include "kudu/common/columnblock.h"
 #include "kudu/common/rowblock.h"
 #include "kudu/common/schema.h"
+#include "kudu/consensus/log_anchor_registry.h"
 #include "kudu/gutil/atomicops.h"
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
-#include "kudu/consensus/opid_anchor_registry.h"
 #include "kudu/tablet/concurrent_btree.h"
 #include "kudu/tablet/delta_key.h"
 #include "kudu/tablet/delta_tracker.h"
@@ -44,7 +44,7 @@ struct DMSTreeTraits : public btree::BTreeTraits {
 class DeltaMemStore : public DeltaStore,
                       public std::tr1::enable_shared_from_this<DeltaMemStore> {
  public:
-  DeltaMemStore(int64_t id, const Schema &schema, log::OpIdAnchorRegistry* opid_anchor_registry,
+  DeltaMemStore(int64_t id, const Schema &schema, log::LogAnchorRegistry* log_anchor_registry,
                 MemTracker* parent_tracker = NULL);
 
   // Update the given row in the database.
@@ -122,7 +122,7 @@ class DeltaMemStore : public DeltaStore,
 
   DeltaStats delta_stats_;
 
-  log::OpIdMinAnchorer anchorer_;
+  log::MinLogIndexAnchorer anchorer_;
 
   DISALLOW_COPY_AND_ASSIGN(DeltaMemStore);
 };

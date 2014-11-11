@@ -8,9 +8,9 @@
 #include "kudu/consensus/consensus_peers.h"
 #include "kudu/consensus/consensus-test-util.h"
 #include "kudu/consensus/log.h"
+#include "kudu/consensus/log_anchor_registry.h"
 #include "kudu/consensus/log_util.h"
 #include "kudu/consensus/opid_util.h"
-#include "kudu/consensus/opid_anchor_registry.h"
 #include "kudu/fs/fs_manager.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/test_macros.h"
@@ -21,7 +21,7 @@ namespace consensus {
 
 using log::Log;
 using log::LogOptions;
-using log::OpIdAnchorRegistry;
+using log::LogAnchorRegistry;
 using metadata::QuorumPeerPB;
 
 const char* kTabletId = "test-peers-tablet";

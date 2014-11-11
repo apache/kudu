@@ -11,7 +11,7 @@
 #include "kudu/common/scan_spec.h"
 #include "kudu/common/rowblock.h"
 #include "kudu/common/schema.h"
-#include "kudu/consensus/opid_anchor_registry.h"
+#include "kudu/consensus/log_anchor_registry.h"
 #include "kudu/tablet/concurrent_btree.h"
 #include "kudu/tablet/mutation.h"
 #include "kudu/tablet/rowset.h"
@@ -162,7 +162,7 @@ class MemRowSet : public RowSet,
 
   MemRowSet(int64_t id,
             const Schema &schema,
-            log::OpIdAnchorRegistry* opid_anchor_registry,
+            log::LogAnchorRegistry* log_anchor_registry,
             const std::tr1::shared_ptr<MemTracker>& parent_tracker =
             std::tr1::shared_ptr<MemTracker>());
 
@@ -343,7 +343,7 @@ class MemRowSet : public RowSet,
 
   Atomic32 has_logged_throttling_;
 
-  log::OpIdMinAnchorer anchorer_;
+  log::MinLogIndexAnchorer anchorer_;
 
   DISALLOW_COPY_AND_ASSIGN(MemRowSet);
 };

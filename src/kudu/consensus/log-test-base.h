@@ -16,8 +16,8 @@
 
 #include "kudu/common/timestamp.h"
 #include "kudu/common/wire_protocol-test-util.h"
+#include "kudu/consensus/log_anchor_registry.h"
 #include "kudu/consensus/log_reader.h"
-#include "kudu/consensus/opid_anchor_registry.h"
 #include "kudu/fs/fs_manager.h"
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/stl_util.h"
@@ -57,7 +57,7 @@ class LogTestBase : public KuduTest {
 
   LogTestBase()
     : schema_(GetSimpleTestSchema()),
-      opid_anchor_registry_(new OpIdAnchorRegistry()) {
+      log_anchor_registry_(new LogAnchorRegistry()) {
   }
 
   virtual void SetUp() OVERRIDE {
@@ -263,7 +263,7 @@ class LogTestBase : public KuduTest {
   LogOptions options_;
   // Reusable entries vector that deletes the entries on destruction.
   vector<LogEntryPB* > entries_;
-  scoped_refptr<OpIdAnchorRegistry> opid_anchor_registry_;
+  scoped_refptr<LogAnchorRegistry> log_anchor_registry_;
 };
 
 // Corrupts the last segment of the provided log by truncating the last

@@ -20,7 +20,7 @@ class MetricContext;
 
 namespace log {
 class Log;
-class OpIdAnchorRegistry;
+class LogAnchorRegistry;
 }
 
 namespace consensus {
@@ -83,7 +83,7 @@ Status BootstrapTablet(const scoped_refptr<TabletMetadata>& meta,
                        TabletStatusListener* status_listener,
                        std::tr1::shared_ptr<Tablet>* rebuilt_tablet,
                        gscoped_ptr<log::Log>* rebuilt_log,
-                       scoped_refptr<log::OpIdAnchorRegistry>* opid_anchor_registry,
+                       scoped_refptr<log::LogAnchorRegistry>* log_anchor_registry,
                        consensus::ConsensusBootstrapInfo* consensus_info);
 
 }  // namespace tablet

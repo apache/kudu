@@ -1,7 +1,7 @@
 // Copyright (c) 2014, Cloudera, inc.
 // Confidential Cloudera Information: Covered by NDA.
 
-#include "kudu/consensus/opid_anchor_registry.h"
+#include "kudu/consensus/log_anchor_registry.h"
 
 #include <glog/logging.h>
 #include <gtest/gtest.h>
@@ -14,14 +14,14 @@ using strings::Substitute;
 namespace kudu {
 namespace log {
 
-class OpIdAnchorRegistryTest : public KuduTest {
+class LogAnchorRegistryTest : public KuduTest {
 };
 
-TEST_F(OpIdAnchorRegistryTest, TestUpdateRegistration) {
+TEST_F(LogAnchorRegistryTest, TestUpdateRegistration) {
   const string test_name = CURRENT_TEST_NAME();
-  scoped_refptr<OpIdAnchorRegistry> reg(new OpIdAnchorRegistry());
+  scoped_refptr<LogAnchorRegistry> reg(new LogAnchorRegistry());
 
-  OpIdAnchor anchor;
+  LogAnchor anchor;
   const int64_t kInitialIndex = 12345;
 
   reg->Register(kInitialIndex, test_name, &anchor);
@@ -29,13 +29,13 @@ TEST_F(OpIdAnchorRegistryTest, TestUpdateRegistration) {
   ASSERT_STATUS_OK(reg->Unregister(&anchor));
 }
 
-TEST_F(OpIdAnchorRegistryTest, TestDuplicateInserts) {
+TEST_F(LogAnchorRegistryTest, TestDuplicateInserts) {
   const string test_name = CURRENT_TEST_NAME();
-  scoped_refptr<OpIdAnchorRegistry> reg(new OpIdAnchorRegistry());
+  scoped_refptr<LogAnchorRegistry> reg(new LogAnchorRegistry());
 
   // Register a bunch of anchors at log index 1.
   const int num_anchors = 10;
-  OpIdAnchor anchors[num_anchors];
+  LogAnchor anchors[num_anchors];
   for (int i = 0; i < num_anchors; i++) {
     reg->Register(1, test_name, &anchors[i]);
   }
@@ -61,12 +61,12 @@ TEST_F(OpIdAnchorRegistryTest, TestDuplicateInserts) {
 
 // Ensure that the correct results are returned when anchors are added/removed
 // out of order.
-TEST_F(OpIdAnchorRegistryTest, TestOrderedEarliestOpId) {
-  scoped_refptr<OpIdAnchorRegistry> reg(new OpIdAnchorRegistry());
+TEST_F(LogAnchorRegistryTest, TestOrderedEarliestOpId) {
+  scoped_refptr<LogAnchorRegistry> reg(new LogAnchorRegistry());
   const int kNumAnchors = 4;
   const string test_name = CURRENT_TEST_NAME();
 
-  OpIdAnchor anchors[kNumAnchors];
+  LogAnchor anchors[kNumAnchors];
 
   reg->Register(2, test_name, &anchors[0]);
   reg->Register(3, test_name, &anchors[1]);

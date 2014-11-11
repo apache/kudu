@@ -14,9 +14,9 @@
 #include "kudu/common/wire_protocol.h"
 #include "kudu/consensus/consensus_meta.h"
 #include "kudu/consensus/log.h"
+#include "kudu/consensus/log_anchor_registry.h"
 #include "kudu/consensus/log_reader.h"
 #include "kudu/consensus/log_util.h"
-#include "kudu/consensus/opid_anchor_registry.h"
 #include "kudu/consensus/opid_util.h"
 #include "kudu/fs/fs_manager.h"
 #include "kudu/gutil/ref_counted.h"
@@ -61,7 +61,7 @@ using log::Log;
 using log::LogEntryPB;
 using log::LogOptions;
 using log::LogReader;
-using log::OpIdAnchorRegistry;
+using log::LogAnchorRegistry;
 using log::ReadableLogSegment;
 using metadata::QuorumPB;
 using server::Clock;
@@ -94,7 +94,7 @@ class TabletBootstrap {
   // A successful call will yield the rebuilt tablet and the rebuilt log.
   Status Bootstrap(std::tr1::shared_ptr<Tablet>* rebuilt_tablet,
                    gscoped_ptr<log::Log>* rebuilt_log,
-                   scoped_refptr<log::OpIdAnchorRegistry>* opid_anchor_registry,
+                   scoped_refptr<log::LogAnchorRegistry>* log_anchor_registry,
                    ConsensusBootstrapInfo* results);
 
  private:
@@ -191,7 +191,7 @@ class TabletBootstrap {
   MetricContext* metric_context_;
   TabletStatusListener* listener_;
   gscoped_ptr<tablet::Tablet> tablet_;
-  scoped_refptr<log::OpIdAnchorRegistry> opid_anchor_registry_;
+  scoped_refptr<log::LogAnchorRegistry> log_anchor_registry_;
   gscoped_ptr<log::Log> log_;
   gscoped_ptr<log::LogReader> log_reader_;
 
@@ -242,11 +242,11 @@ Status BootstrapTablet(const scoped_refptr<TabletMetadata>& meta,
                        TabletStatusListener* listener,
                        std::tr1::shared_ptr<tablet::Tablet>* rebuilt_tablet,
                        gscoped_ptr<log::Log>* rebuilt_log,
-                       scoped_refptr<log::OpIdAnchorRegistry>* opid_anchor_registry,
+                       scoped_refptr<log::LogAnchorRegistry>* log_anchor_registry,
                        ConsensusBootstrapInfo* consensus_info) {
   TabletBootstrap bootstrap(meta, clock, metric_context, listener);
   RETURN_NOT_OK(bootstrap.Bootstrap(rebuilt_tablet, rebuilt_log,
-                                    opid_anchor_registry,
+                                    log_anchor_registry,
                                     consensus_info));
   // This is necessary since OpenNewLog() initially disables sync.
   RETURN_NOT_OK((*rebuilt_log)->ReEnableSyncIfRequired());
@@ -284,7 +284,7 @@ TabletBootstrap::TabletBootstrap(const scoped_refptr<TabletMetadata>& meta,
 
 Status TabletBootstrap::Bootstrap(shared_ptr<Tablet>* rebuilt_tablet,
                                   gscoped_ptr<Log>* rebuilt_log,
-                                  scoped_refptr<OpIdAnchorRegistry>* opid_anchor_registry,
+                                  scoped_refptr<LogAnchorRegistry>* log_anchor_registry,
                                   ConsensusBootstrapInfo* consensus_info) {
   string tablet_id = meta_->oid();
 
@@ -314,8 +314,8 @@ Status TabletBootstrap::Bootstrap(shared_ptr<Tablet>* rebuilt_tablet,
     VLOG(1) << "Tablet Metadata: " << super_block.DebugString();
   }
 
-  // Create new OpIdAnchorRegistry for use by the log and tablet.
-  opid_anchor_registry_ = new OpIdAnchorRegistry();
+  // Create new LogAnchorRegistry for use by the log and tablet.
+  log_anchor_registry_ = new LogAnchorRegistry();
 
   // TODO these are done serially for now, but there is no reason why fetching
   // the tablet's blocks and log segments cannot be done in parallel, particularly
@@ -335,7 +335,7 @@ Status TabletBootstrap::Bootstrap(shared_ptr<Tablet>* rebuilt_tablet,
     listener_->StatusMessage("No bootstrap required, opened a new log");
     rebuilt_tablet->reset(tablet_.release());
     rebuilt_log->reset(log_.release());
-    *opid_anchor_registry = opid_anchor_registry_;
+    *log_anchor_registry = log_anchor_registry_;
     consensus_info->last_id = consensus::MinimumOpId();
     consensus_info->last_committed_id = consensus::MinimumOpId();
     return Status::OK();
@@ -363,7 +363,7 @@ Status TabletBootstrap::Bootstrap(shared_ptr<Tablet>* rebuilt_tablet,
   listener_->StatusMessage("Bootstrap complete.");
   rebuilt_tablet->reset(tablet_.release());
   rebuilt_log->reset(log_.release());
-  *opid_anchor_registry = opid_anchor_registry_;
+  *log_anchor_registry = log_anchor_registry_;
 
   return Status::OK();
 }
@@ -372,7 +372,7 @@ Status TabletBootstrap::FetchBlocksAndOpenTablet(bool* fetched) {
   gscoped_ptr<Tablet> tablet(new Tablet(meta_,
                                         clock_,
                                         metric_context_,
-                                        opid_anchor_registry_.get()));
+                                        log_anchor_registry_.get()));
   // doing nothing for now except opening a tablet locally.
   RETURN_NOT_OK(tablet->Open());
   // set 'fetched' to true if there were any local blocks present

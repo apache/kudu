@@ -7,7 +7,7 @@
 #include <vector>
 
 #include "kudu/common/schema.h"
-#include "kudu/consensus/opid_anchor_registry.h"
+#include "kudu/consensus/log_anchor_registry.h"
 #include "kudu/server/logical_clock.h"
 #include "kudu/server/metadata.h"
 #include "kudu/tablet/tablet.h"
@@ -80,7 +80,7 @@ class TabletHarness {
     tablet_.reset(new Tablet(metadata,
                              clock_,
                              metrics_.get(),
-                             new log::OpIdAnchorRegistry()));
+                             new log::LogAnchorRegistry()));
     RETURN_NOT_OK(tablet_->Open());
     return Status::OK();
   }

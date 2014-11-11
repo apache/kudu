@@ -14,7 +14,7 @@
 #include "kudu/consensus/consensus.h"
 #include "kudu/consensus/consensus_meta.h"
 #include "kudu/consensus/consensus_peers.h"
-#include "kudu/consensus/opid_anchor_registry.h"
+#include "kudu/consensus/log_anchor_registry.h"
 #include "kudu/consensus/opid_util.h"
 #include "kudu/fs/fs_manager.h"
 #include "kudu/gutil/strings/substitute.h"
@@ -31,7 +31,7 @@
 
 using kudu::consensus::ConsensusMetadata;
 using kudu::log::Log;
-using kudu::log::OpIdAnchorRegistry;
+using kudu::log::LogAnchorRegistry;
 using kudu::metadata::QuorumPB;
 using kudu::metadata::QuorumPeerPB;
 using kudu::tablet::LatchTransactionCompletionCallback;
@@ -234,7 +234,7 @@ void SysTable::SysTableStateChanged(TabletPeer* tablet_peer) {
 Status SysTable::SetupTablet(const scoped_refptr<tablet::TabletMetadata>& metadata) {
   shared_ptr<Tablet> tablet;
   gscoped_ptr<Log> log;
-  scoped_refptr<OpIdAnchorRegistry> opid_anchor_registry;
+  scoped_refptr<LogAnchorRegistry> log_anchor_registry;
 
   // TODO: handle crash mid-creation of tablet? do we ever end up with a
   // partially created tablet here?
@@ -250,7 +250,7 @@ Status SysTable::SetupTablet(const scoped_refptr<tablet::TabletMetadata>& metada
                                 tablet_peer_->status_listener(),
                                 &tablet,
                                 &log,
-                                &opid_anchor_registry,
+                                &log_anchor_registry,
                                 &consensus_info));
 
   // TODO: Do we have a setSplittable(false) or something from the outside is

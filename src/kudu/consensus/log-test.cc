@@ -45,16 +45,16 @@ struct TestLogSequenceElem {
 
 class LogTest : public LogTestBase {
  public:
-  void CreateAndRegisterNewAnchor(int64_t log_index, vector<OpIdAnchor*>* anchors) {
-    anchors->push_back(new OpIdAnchor());
-    opid_anchor_registry_->Register(log_index, CURRENT_TEST_NAME(), anchors->back());
+  void CreateAndRegisterNewAnchor(int64_t log_index, vector<LogAnchor*>* anchors) {
+    anchors->push_back(new LogAnchor());
+    log_anchor_registry_->Register(log_index, CURRENT_TEST_NAME(), anchors->back());
   }
 
   // Create a series of NO_OP entries in the log.
   // Anchor each segment on the first OpId of each log segment,
   // and update op_id to point to the next valid OpId.
   Status AppendMultiSegmentSequence(int num_total_segments, int num_ops_per_segment,
-                                    OpId* op_id, vector<OpIdAnchor*>* anchors) {
+                                    OpId* op_id, vector<LogAnchor*>* anchors) {
     CHECK(op_id->IsInitialized());
     for (int i = 0; i < num_total_segments - 1; i++) {
       CreateAndRegisterNewAnchor(op_id->index(), anchors);
@@ -334,7 +334,7 @@ TEST_F(LogTest, TestWriteAndReadToAndFromInProgressSegment) {
 TEST_F(LogTest, TestGCWithLogRunning) {
   BuildLog();
 
-  vector<OpIdAnchor*> anchors;
+  vector<LogAnchor*> anchors;
   ElementDeleter deleter(&anchors);
 
   SegmentSequence segments;
@@ -354,15 +354,15 @@ TEST_F(LogTest, TestGCWithLogRunning) {
   // Anchors should prevent GC.
   ASSERT_OK(log_->GetLogReader()->GetSegmentsSnapshot(&segments))
   ASSERT_EQ(4, segments.size()) << DumpSegmentsToString(segments);
-  ASSERT_STATUS_OK(opid_anchor_registry_->GetEarliestRegisteredLogIndex(&anchored_index));
+  ASSERT_STATUS_OK(log_anchor_registry_->GetEarliestRegisteredLogIndex(&anchored_index));
   ASSERT_STATUS_OK(log_->GC(anchored_index, &num_gced_segments));
   ASSERT_OK(log_->GetLogReader()->GetSegmentsSnapshot(&segments))
   ASSERT_EQ(4, segments.size()) << DumpSegmentsToString(segments);
 
   // Freeing the first 2 anchors should allow GC of them.
-  ASSERT_STATUS_OK(opid_anchor_registry_->Unregister(anchors[0]));
-  ASSERT_STATUS_OK(opid_anchor_registry_->Unregister(anchors[1]));
-  ASSERT_STATUS_OK(opid_anchor_registry_->GetEarliestRegisteredLogIndex(&anchored_index));
+  ASSERT_STATUS_OK(log_anchor_registry_->Unregister(anchors[0]));
+  ASSERT_STATUS_OK(log_anchor_registry_->Unregister(anchors[1]));
+  ASSERT_STATUS_OK(log_anchor_registry_->GetEarliestRegisteredLogIndex(&anchored_index));
   // We should now be anchored on op 0.10, i.e. on the 3rd segment
   ASSERT_EQ(anchors[2]->log_index, anchored_index);
 
@@ -383,8 +383,8 @@ TEST_F(LogTest, TestGCWithLogRunning) {
 
   // Release the remaining "rolled segment" anchor. GC will not delete the
   // last rolled segment.
-  ASSERT_STATUS_OK(opid_anchor_registry_->Unregister(anchors[2]));
-  ASSERT_STATUS_OK(opid_anchor_registry_->GetEarliestRegisteredLogIndex(&anchored_index));
+  ASSERT_STATUS_OK(log_anchor_registry_->Unregister(anchors[2]));
+  ASSERT_STATUS_OK(log_anchor_registry_->GetEarliestRegisteredLogIndex(&anchored_index));
   ASSERT_STATUS_OK(log_->GC(anchored_index, &num_gced_segments));
   ASSERT_EQ(0, num_gced_segments) << DumpSegmentsToString(segments);
   ASSERT_OK(log_->GetLogReader()->GetSegmentsSnapshot(&segments))
@@ -403,7 +403,7 @@ TEST_F(LogTest, TestGCWithLogRunning) {
 
   // We skip the first three, since we unregistered them above.
   for (int i = 3; i < kNumTotalSegments; i++) {
-    ASSERT_STATUS_OK(opid_anchor_registry_->Unregister(anchors[i]));
+    ASSERT_STATUS_OK(log_anchor_registry_->Unregister(anchors[i]));
   }
 }
 
@@ -439,7 +439,7 @@ TEST_F(LogTest, TestLogReopenAndGC) {
 
   SegmentSequence segments;
 
-  vector<OpIdAnchor*> anchors;
+  vector<LogAnchor*> anchors;
   ElementDeleter deleter(&anchors);
 
   const int kNumTotalSegments = 3;
@@ -453,7 +453,7 @@ TEST_F(LogTest, TestLogReopenAndGC) {
   // Anchors should prevent GC.
   ASSERT_OK(log_->GetLogReader()->GetSegmentsSnapshot(&segments))
   ASSERT_EQ(3, segments.size());
-  ASSERT_STATUS_OK(opid_anchor_registry_->GetEarliestRegisteredLogIndex(&anchored_index));
+  ASSERT_STATUS_OK(log_anchor_registry_->GetEarliestRegisteredLogIndex(&anchored_index));
   ASSERT_STATUS_OK(log_->GC(anchored_index, &num_gced_segments));
   ASSERT_OK(log_->GetLogReader()->GetSegmentsSnapshot(&segments))
   ASSERT_EQ(3, segments.size());
@@ -475,9 +475,9 @@ TEST_F(LogTest, TestLogReopenAndGC) {
 
   // Now release the "old" anchors and GC them.
   for (int i = 0; i < 3; i++) {
-    ASSERT_STATUS_OK(opid_anchor_registry_->Unregister(anchors[i]));
+    ASSERT_STATUS_OK(log_anchor_registry_->Unregister(anchors[i]));
   }
-  ASSERT_STATUS_OK(opid_anchor_registry_->GetEarliestRegisteredLogIndex(&anchored_index));
+  ASSERT_STATUS_OK(log_anchor_registry_->GetEarliestRegisteredLogIndex(&anchored_index));
   ASSERT_STATUS_OK(log_->GC(anchored_index, &num_gced_segments));
 
   // After GC there should be only one left, besides the one currently being
@@ -489,7 +489,7 @@ TEST_F(LogTest, TestLogReopenAndGC) {
   CheckRightNumberOfSegmentFiles(2);
 
   // Unregister the final anchor.
-  ASSERT_STATUS_OK(opid_anchor_registry_->Unregister(anchors[3]));
+  ASSERT_STATUS_OK(log_anchor_registry_->Unregister(anchors[3]));
 }
 
 // Helper to measure the performance of the log.

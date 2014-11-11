@@ -8,7 +8,7 @@
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
-#include "kudu/consensus/opid_anchor_registry.h"
+#include "kudu/consensus/log_anchor_registry.h"
 #include "kudu/consensus/opid_util.h"
 #include "kudu/gutil/strings/util.h"
 #include "kudu/server/logical_clock.h"
@@ -32,7 +32,7 @@ namespace kudu {
 namespace tablet {
 
 using consensus::OpId;
-using log::OpIdAnchorRegistry;
+using log::LogAnchorRegistry;
 
 static const char *kRowKeyFormat = "hello %08d";
 
@@ -44,7 +44,7 @@ class TestCompaction : public KuduRowSetTest {
       row_builder_(schema_),
       mvcc_(scoped_refptr<server::Clock>(
               server::LogicalClock::CreateStartingAt(Timestamp::kInitialTimestamp))),
-      opid_anchor_registry_(new log::OpIdAnchorRegistry()) {
+      log_anchor_registry_(new log::LogAnchorRegistry()) {
   }
 
   static Schema CreateSchema() {
@@ -210,7 +210,7 @@ class TestCompaction : public KuduRowSetTest {
                         shared_ptr<DiskRowSet> *rs) {
     shared_ptr<RowSetMetadata> rowset_meta;
     DoCompact(rowsets, projection, &rowset_meta);
-    ASSERT_STATUS_OK(DiskRowSet::Open(rowset_meta, opid_anchor_registry_.get(), rs));
+    ASSERT_STATUS_OK(DiskRowSet::Open(rowset_meta, log_anchor_registry_.get(), rs));
   }
 
   void FlushAndReopen(const MemRowSet& mrs, shared_ptr<DiskRowSet> *rs, const Schema& projection) {
@@ -219,7 +219,7 @@ class TestCompaction : public KuduRowSetTest {
     gscoped_ptr<CompactionInput> input(CompactionInput::Create(mrs, &projection, snap));
     DoFlush(input.get(), projection, snap, &rowset_meta);
     // Re-open it
-    ASSERT_STATUS_OK(DiskRowSet::Open(rowset_meta, opid_anchor_registry_.get(), rs));
+    ASSERT_STATUS_OK(DiskRowSet::Open(rowset_meta, log_anchor_registry_.get(), rs));
   }
 
   // Test compaction where each of the input rowsets has
@@ -232,7 +232,7 @@ class TestCompaction : public KuduRowSetTest {
     int delta = 0;
     BOOST_FOREACH(const Schema& schema, schemas) {
       // Create a memrowset with a bunch of rows and updates.
-      shared_ptr<MemRowSet> mrs(new MemRowSet(delta, schema, opid_anchor_registry_.get()));
+      shared_ptr<MemRowSet> mrs(new MemRowSet(delta, schema, log_anchor_registry_.get()));
       InsertRows(mrs.get(), 1000, delta);
       UpdateRows(mrs.get(), 1000, delta, 1);
 
@@ -254,7 +254,7 @@ class TestCompaction : public KuduRowSetTest {
     // Verify the resulting compaction output has the right number
     // of rows.
     shared_ptr<DiskRowSet> result_rs;
-    ASSERT_STATUS_OK(DiskRowSet::Open(meta, opid_anchor_registry_.get(), &result_rs));
+    ASSERT_STATUS_OK(DiskRowSet::Open(meta, log_anchor_registry_.get(), &result_rs));
 
     rowid_t count = 0;
     ASSERT_STATUS_OK(result_rs->CountRows(&count));
@@ -269,7 +269,7 @@ class TestCompaction : public KuduRowSetTest {
       // Create inputs.
       for (int i = 0; i < FLAGS_merge_benchmark_num_rowsets; i++) {
         // Create a memrowset with a bunch of rows and updates.
-        shared_ptr<MemRowSet> mrs(new MemRowSet(i, schema_, opid_anchor_registry_.get()));
+        shared_ptr<MemRowSet> mrs(new MemRowSet(i, schema_, log_anchor_registry_.get()));
 
         for (int n = 0; n < FLAGS_merge_benchmark_num_rows_per_rowset; n++) {
 
@@ -306,7 +306,7 @@ class TestCompaction : public KuduRowSetTest {
 
       BOOST_FOREACH(const shared_ptr<RowSetMetadata>& meta, input_meta->rowsets()) {
         shared_ptr<DiskRowSet> rs;
-        CHECK_OK(DiskRowSet::Open(meta, opid_anchor_registry_.get(), &rs));
+        CHECK_OK(DiskRowSet::Open(meta, log_anchor_registry_.get(), &rs));
         rowsets.push_back(rs);
       }
 
@@ -335,12 +335,12 @@ class TestCompaction : public KuduRowSetTest {
   char key_buf_[256];
   MvccManager mvcc_;
 
-  scoped_refptr<OpIdAnchorRegistry> opid_anchor_registry_;
+  scoped_refptr<LogAnchorRegistry> log_anchor_registry_;
 };
 
 TEST_F(TestCompaction, TestMemRowSetInput) {
   // Create a memrowset with 10 rows and several updates.
-  shared_ptr<MemRowSet> mrs(new MemRowSet(0, schema_, opid_anchor_registry_.get()));
+  shared_ptr<MemRowSet> mrs(new MemRowSet(0, schema_, log_anchor_registry_.get()));
   InsertRows(mrs.get(), 10, 0);
   UpdateRows(mrs.get(), 10, 0, 1);
   UpdateRows(mrs.get(), 10, 0, 2);
@@ -366,7 +366,7 @@ TEST_F(TestCompaction, TestRowSetInput) {
   // Create a memrowset with a bunch of rows, flush and reopen.
   shared_ptr<DiskRowSet> rs;
   {
-    shared_ptr<MemRowSet> mrs(new MemRowSet(0, schema_, opid_anchor_registry_.get()));
+    shared_ptr<MemRowSet> mrs(new MemRowSet(0, schema_, log_anchor_registry_.get()));
     InsertRows(mrs.get(), 10, 0);
     FlushAndReopen(*mrs, &rs, schema_);
     ASSERT_NO_FATAL_FAILURE();
@@ -408,7 +408,7 @@ TEST_F(TestCompaction, TestRowSetInput) {
 TEST_F(TestCompaction, TestDuplicatedGhostRowsDontSurviveCompaction) {
   shared_ptr<DiskRowSet> rs1;
   {
-    shared_ptr<MemRowSet> mrs(new MemRowSet(0, schema_, opid_anchor_registry_.get()));
+    shared_ptr<MemRowSet> mrs(new MemRowSet(0, schema_, log_anchor_registry_.get()));
     InsertRows(mrs.get(), 10, 0);
     FlushAndReopen(*mrs, &rs1, schema_);
     ASSERT_NO_FATAL_FAILURE();
@@ -419,7 +419,7 @@ TEST_F(TestCompaction, TestDuplicatedGhostRowsDontSurviveCompaction) {
 
   shared_ptr<DiskRowSet> rs2;
   {
-    shared_ptr<MemRowSet> mrs(new MemRowSet(1, schema_, opid_anchor_registry_.get()));
+    shared_ptr<MemRowSet> mrs(new MemRowSet(1, schema_, log_anchor_registry_.get()));
     InsertRows(mrs.get(), 10, 0);
     UpdateRows(mrs.get(), 10, 0, 1);
     FlushAndReopen(*mrs, &rs2, schema_);
@@ -429,7 +429,7 @@ TEST_F(TestCompaction, TestDuplicatedGhostRowsDontSurviveCompaction) {
 
   shared_ptr<DiskRowSet> rs3;
   {
-    shared_ptr<MemRowSet> mrs(new MemRowSet(1, schema_, opid_anchor_registry_.get()));
+    shared_ptr<MemRowSet> mrs(new MemRowSet(1, schema_, log_anchor_registry_.get()));
     InsertRows(mrs.get(), 10, 0);
     UpdateRows(mrs.get(), 10, 0, 2);
     FlushAndReopen(*mrs, &rs3, schema_);
@@ -469,7 +469,7 @@ TEST_F(TestCompaction, TestDuplicatedGhostRowsDontSurviveCompaction) {
 // output rowset (on disk).
 TEST_F(TestCompaction, TestOneToOne) {
   // Create a memrowset with a bunch of rows and updates.
-  shared_ptr<MemRowSet> mrs(new MemRowSet(0, schema_, opid_anchor_registry_.get()));
+  shared_ptr<MemRowSet> mrs(new MemRowSet(0, schema_, log_anchor_registry_.get()));
   InsertRows(mrs.get(), 1000, 0);
   UpdateRows(mrs.get(), 1000, 0, 1);
   MvccSnapshot snap(mvcc_);
@@ -519,13 +519,13 @@ TEST_F(TestCompaction, TestOneToOne) {
 // output of a compaction, and trying to merge two MRS.
 TEST_F(TestCompaction, TestKUDU102) {
   // Create 2 row sets, flush them
-  shared_ptr<MemRowSet> mrs(new MemRowSet(0, schema_, opid_anchor_registry_.get()));
+  shared_ptr<MemRowSet> mrs(new MemRowSet(0, schema_, log_anchor_registry_.get()));
   InsertRows(mrs.get(), 10, 0);
   shared_ptr<DiskRowSet> rs;
   FlushAndReopen(*mrs, &rs, schema_);
   ASSERT_NO_FATAL_FAILURE();
 
-  shared_ptr<MemRowSet> mrs_b(new MemRowSet(1, schema_, opid_anchor_registry_.get()));
+  shared_ptr<MemRowSet> mrs_b(new MemRowSet(1, schema_, log_anchor_registry_.get()));
   InsertRows(mrs_b.get(), 10, 100);
   MvccSnapshot snap(mvcc_);
   shared_ptr<DiskRowSet> rs_b;
@@ -588,10 +588,10 @@ TEST_F(TestCompaction, TestMergeMultipleSchemas) {
 // used (we never compact in-memory), but this is a regression test for a bug
 // encountered during development where the first row of each MRS got dropped.
 TEST_F(TestCompaction, TestMergeMRS) {
-  shared_ptr<MemRowSet> mrs_a(new MemRowSet(0, schema_, opid_anchor_registry_.get()));
+  shared_ptr<MemRowSet> mrs_a(new MemRowSet(0, schema_, log_anchor_registry_.get()));
   InsertRows(mrs_a.get(), 10, 0);
 
-  shared_ptr<MemRowSet> mrs_b(new MemRowSet(0, schema_, opid_anchor_registry_.get()));
+  shared_ptr<MemRowSet> mrs_b(new MemRowSet(0, schema_, log_anchor_registry_.get()));
   InsertRows(mrs_b.get(), 10, 1);
 
   MvccSnapshot snap(mvcc_);
