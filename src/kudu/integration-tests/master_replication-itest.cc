@@ -63,6 +63,7 @@ class MasterReplicationTest : public KuduTest {
   Status RestartCluster() {
     cluster_->Shutdown();
     RETURN_NOT_OK(cluster_->Start());
+    RETURN_NOT_OK(cluster_->WaitForTabletServerCount(kNumTabletServerReplicas));
     return Status::OK();
   }
 
@@ -72,6 +73,7 @@ class MasterReplicationTest : public KuduTest {
     usleep(micros);
     LOG(INFO) << "Attempting to start the cluster...";
     CHECK_OK(cluster_->Start());
+    CHECK_OK(cluster_->WaitForTabletServerCount(kNumTabletServerReplicas));
   }
 
   void ListMasterServerAddrs(vector<string>* out) {
