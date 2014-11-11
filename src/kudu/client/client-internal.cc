@@ -369,33 +369,13 @@ std::string GetLeaderMasterRpc::ToString() const {
 GetLeaderMasterRpc::~GetLeaderMasterRpc() {
 }
 
-Status GetLeaderMasterRpc::LeaderMasterHostPortFromResponse(HostPort* leader_host_port) {
+Status GetLeaderMasterRpc::LeaderMasterHostPortFromResponse(HostPort* leader_hostport) {
   if (resp_.has_error()) {
     return StatusFromPB(resp_.error());
   }
-  BOOST_FOREACH(const ListMastersResponsePB::Entry& entry, resp_.masters()) {
-    if (entry.has_error()) {
-      LOG(WARNING) << "Error encountered for master entry " << entry.ShortDebugString()
-                   << ": " << StatusFromPB(entry.error()).ToString();
-      continue;
-    }
-    if (!entry.has_role()) {
-      if (entry.local() && resp_.masters().size() == 1) {
-        // Non-distributed master configuration: there is only one
-        // entry in the list and it's a local entry.
-        return HostPortFromPB(entry.registration().rpc_addresses(0), leader_host_port);
-      } else {
-        return Status::IllegalState(
-            Substitute("Every master in a distributed configuration must have a role,"
-                       "but entry ($0) has no role. Rest of ListMastersResponse: $1",
-                       entry.ShortDebugString(), resp_.ShortDebugString()));
-      }
-    } else if (entry.role() == QuorumPeerPB::LEADER) {
-      return HostPortFromPB(entry.registration().rpc_addresses(0), leader_host_port);
-    }
-  }
-  return Status::NotFound("No leader found. ListMastersResponse: " +
-                          resp_.ShortDebugString());
+  RETURN_NOT_OK_PREPEND(FindLeaderHostPort(resp_.masters(), leader_hostport),
+                        "ListMastersResponse: " + resp_.ShortDebugString());
+  return Status::OK();
 }
 
 void GetLeaderMasterRpc::SendRpcCb(const Status& status) {

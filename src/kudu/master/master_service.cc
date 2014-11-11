@@ -349,12 +349,12 @@ void MasterServiceImpl::ListTabletServers(const ListTabletServersRequestPB* req,
 void MasterServiceImpl::ListMasters(const ListMastersRequestPB* req,
                                     ListMastersResponsePB* resp,
                                     rpc::RpcContext* rpc) {
-  vector<ListMastersResponsePB::Entry> masters;
+  vector<ServerEntryPB> masters;
   Status s = server_->ListMasters(&masters);
   if (!s.ok()) {
     StatusToPB(s, resp->mutable_error());
   } else {
-    BOOST_FOREACH(const ListMastersResponsePB::Entry& master, masters) {
+    BOOST_FOREACH(const ServerEntryPB& master, masters) {
       resp->add_masters()->CopyFrom(master);
     }
   }

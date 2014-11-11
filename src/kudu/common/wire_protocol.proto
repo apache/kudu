@@ -9,6 +9,7 @@
 package kudu;
 
 import "kudu/common/common.proto";
+import "kudu/server/metadata.proto";
 
 // Error status returned by any RPC method.
 // Every RPC method which could generate an application-level error
@@ -60,6 +61,29 @@ message NodeInstancePB {
   // On a freshly initialized server, the first sequence number
   // should be 0.
   required int64 instance_seqno = 2;
+}
+
+// RPC and HTTP addresses for each server.
+message ServerRegistrationPB {
+  repeated HostPortPB rpc_addresses = 1;
+  repeated HostPortPB http_addresses = 2;
+}
+
+message ServerEntryPB {
+  // If there is an error communicating with the server (or retrieving
+  // the server registration on the server itself), this field will be
+  // set to contain the error.
+  //
+  // All subsequent fields are optional, as they may not be set if
+  // an error is encountered communicating with the individual server.
+  optional AppStatusPB error = 1;
+
+  optional NodeInstancePB instance_id = 2;
+  optional ServerRegistrationPB registration = 3;
+
+  // If an error has occured earlier in the RPC call, the role
+  // may be not be set.
+  optional metadata.QuorumPeerPB.Role role = 4;
 }
 
 message ColumnBlockPB {

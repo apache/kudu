@@ -129,7 +129,7 @@ void Master::Shutdown() {
   state_ = kStopped;
 }
 
-Status Master::GetMasterRegistration(MasterRegistrationPB* reg) const {
+Status Master::GetMasterRegistration(ServerRegistrationPB* reg) const {
   vector<Sockaddr> rpc_addrs;
   rpc_server()->GetBoundAddresses(&rpc_addrs);
   BOOST_FOREACH(const Sockaddr& rpc_addr, rpc_addrs) {
@@ -152,7 +152,7 @@ namespace {
 // bootstrapping.
 Status GetMasterEntryForHost(const shared_ptr<rpc::Messenger>& messenger,
                              const HostPort& hostport,
-                             ListMastersResponsePB::Entry* e) {
+                             ServerEntryPB* e) {
   Sockaddr sockaddr;
   RETURN_NOT_OK(SockaddrFromHostPort(hostport, &sockaddr));
   MasterServiceProxy proxy(messenger, sockaddr);
@@ -166,49 +166,46 @@ Status GetMasterEntryForHost(const shared_ptr<rpc::Messenger>& messenger,
     return StatusFromPB(resp.error());
   }
   e->mutable_registration()->CopyFrom(resp.registration());
-  e->set_local(false);
   return Status::OK();
 }
 
 } // anonymous namespace
 
-Status Master::ListMasters(std::vector<ListMastersResponsePB::Entry>* masters) const {
-  ListMastersResponsePB::Entry local_entry;
-  local_entry.set_local(true);
+Status Master::ListMasters(std::vector<ServerEntryPB>* masters) const {
+  ServerEntryPB local_entry;
   local_entry.mutable_instance_id()->CopyFrom(catalog_manager_->NodeInstance());
   RETURN_NOT_OK(GetMasterRegistration(local_entry.mutable_registration()));
 
-  if (opts_.IsDistributed()) {
-    if (opts_.leader) {
-      local_entry.set_role(QuorumPeerPB::LEADER);
+  if (opts_.leader || !opts_.IsDistributed()) {
+    local_entry.set_role(QuorumPeerPB::LEADER);
+  } else {
+    local_entry.set_role(QuorumPeerPB::FOLLOWER);
+    ServerEntryPB leader_entry;
+    Status s = GetMasterEntryForHost(messenger_, opts_.leader_address, &leader_entry);
+    if (!s.ok()) {
+      s = s.CloneAndPrepend(Substitute("Unable to get registration information for leader ($0)",
+                                       opts_.leader_address.ToString()));
+      LOG(WARNING) << s.ToString();
+      StatusToPB(s, leader_entry.mutable_error());
     } else {
-      local_entry.set_role(QuorumPeerPB::FOLLOWER);
-      ListMastersResponsePB::Entry leader_entry;
-      Status s = GetMasterEntryForHost(messenger_, opts_.leader_address, &leader_entry);
-      if (!s.ok()) {
-        s = s.CloneAndPrepend(Substitute("Unable to get registration information for leader ($0)",
-                                         opts_.leader_address.ToString()));
-        LOG(WARNING) << s.ToString();
-        StatusToPB(s, leader_entry.mutable_error());
-      } else {
-        leader_entry.set_role(QuorumPeerPB::LEADER);
-      }
-      masters->push_back(leader_entry);
+      leader_entry.set_role(QuorumPeerPB::LEADER);
     }
-    BOOST_FOREACH(const HostPort& follower_addr, opts_.follower_addresses) {
-      ListMastersResponsePB::Entry follower_entry;
-      Status s = GetMasterEntryForHost(messenger_, follower_addr, &follower_entry);
-      if (!s.ok()) {
-        s = s.CloneAndPrepend(
-            Substitute("Unable to get registration information for follower ($0)",
-                       follower_addr.ToString()));
-        LOG(WARNING) << s.ToString();
-        StatusToPB(s, follower_entry.mutable_error());
-      } else {
-        follower_entry.set_role(QuorumPeerPB::FOLLOWER);
-      }
-      masters->push_back(follower_entry);
+    masters->push_back(leader_entry);
+  }
+
+  BOOST_FOREACH(const HostPort& follower_addr, opts_.follower_addresses) {
+    ServerEntryPB follower_entry;
+    Status s = GetMasterEntryForHost(messenger_, follower_addr, &follower_entry);
+    if (!s.ok()) {
+      s = s.CloneAndPrepend(
+          Substitute("Unable to get registration information for follower ($0)",
+                     follower_addr.ToString()));
+      LOG(WARNING) << s.ToString();
+      StatusToPB(s, follower_entry.mutable_error());
+    } else {
+      follower_entry.set_role(QuorumPeerPB::FOLLOWER);
     }
+    masters->push_back(follower_entry);
   }
 
   masters->push_back(local_entry);

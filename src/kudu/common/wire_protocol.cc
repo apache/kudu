@@ -365,6 +365,26 @@ Status ExtractRowsFromRowBlockPB(const Schema& schema,
   return Status::OK();
 }
 
+Status FindLeaderHostPort(const RepeatedPtrField<ServerEntryPB>& entries,
+                          HostPort* leader_hostport) {
+  BOOST_FOREACH(const ServerEntryPB& entry, entries) {
+    if (entry.has_error()) {
+      LOG(WARNING) << "Error encountered for server entry " << entry.ShortDebugString()
+                   << ": " << StatusFromPB(entry.error()).ToString();
+      continue;
+    }
+    if (!entry.has_role()) {
+      return Status::IllegalState(
+          strings::Substitute("Every server in must have a role, but entry ($0) has no role.",
+                              entry.ShortDebugString()));
+    }
+    if (entry.role() == metadata::QuorumPeerPB::LEADER) {
+      return HostPortFromPB(entry.registration().rpc_addresses(0), leader_hostport);
+    }
+  }
+  return Status::NotFound("No leader found.");
+}
+
 template<class RowType>
 void AppendRowToString(const RowType& row, string* buf);
 

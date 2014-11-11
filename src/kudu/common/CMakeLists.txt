@@ -18,6 +18,7 @@ PROTOBUF_GENERATE_CPP(WIRE_PROTOCOL_PROTO_SRCS WIRE_PROTOCOL_PROTO_HDRS
 add_library(wire_protocol_proto ${WIRE_PROTOCOL_PROTO_SRCS} ${WIRE_PROTOCOL_PROTO_HDRS})
 target_link_libraries(wire_protocol_proto
   kudu_common_proto
+  metadata_proto
   protobuf)
 
 add_library(kudu_common
@@ -40,6 +41,7 @@ add_library(kudu_common
 
 target_link_libraries(kudu_common
   kudu_common_proto
+  metadata_proto
   wire_protocol_proto
   kudu_util
   gutil)

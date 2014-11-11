@@ -120,5 +120,12 @@ Status ExtractRowsFromRowBlockPB(const Schema& schema,
                                  RowwiseRowBlockPB* rowblock_pb,
                                  std::vector<const uint8_t*>* rows);
 
+// Set 'leader_hostport' to the host/port of the leader server if one
+// can be found in 'entries'.
+//
+// Returns Status::NotFound if no leader is found.
+Status FindLeaderHostPort(const google::protobuf::RepeatedPtrField<ServerEntryPB>& entries,
+                          HostPort* leader_hostport);
+
 } // namespace kudu
 #endif

@@ -20,6 +20,8 @@ namespace kudu {
 
 class RpcServer;
 struct RpcServerOptions;
+class ServerEntryPB;
+class ServerRegistrationPB;
 class ThreadPool;
 
 namespace rpc {
@@ -58,7 +60,7 @@ class Master : public server::ServerBase {
   const MasterOptions& opts() { return opts_; }
 
   // Get the RPC and HTTP addresses for this master instance.
-  Status GetMasterRegistration(MasterRegistrationPB* registration) const;
+  Status GetMasterRegistration(ServerRegistrationPB* registration) const;
 
   // Get node instance, quorum role, RPC and HTTP addresses for all
   // masters.
@@ -67,7 +69,7 @@ class Master : public server::ServerBase {
   // client; cache this information with a TTL (possibly in another
   // SysTable), so that we don't have to perform an RPC call on every
   // request.
-  Status ListMasters(std::vector<ListMastersResponsePB::Entry>* masters) const;
+  Status ListMasters(std::vector<ServerEntryPB>* masters) const;
 
   // Returns true if this instance is the leader of a distributed
   // master quorum or if this instance is a single master in a

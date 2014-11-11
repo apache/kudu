@@ -444,12 +444,6 @@ message ListTabletServersResponsePB {
   repeated Entry servers = 2;
 }
 
-// RPC and HTTP addresses for each master server.
-message MasterRegistrationPB {
-  repeated HostPortPB rpc_addresses = 2;
-  repeated HostPortPB http_addresses = 3;
-}
-
 // GetMasterRegistrationRequest/Response: get the instance id and
 // HTTP/RPC addresses for this Master server.
 message GetMasterRegistrationRequestPB {
@@ -461,7 +455,7 @@ message GetMasterRegistrationResponsePB {
 
   // This field as optional, as it won't be set if there's an error
   // retrieving the host/port information.
-  optional MasterRegistrationPB registration = 2;
+  optional ServerRegistrationPB registration = 2;
   // Set if there an error retrieving the registration information.
   optional AppStatusPB error = 3;
 }
@@ -472,26 +466,8 @@ message ListMastersRequestPB {
 }
 
 message ListMastersResponsePB {
-  message Entry {
-    // If there is an error communicating with the server (or
-    // retrieving the master registration on the server itself), this
-    // field will be set to contain the error.
-    //
-    // All subsequent fields are optional, as they may not be set if
-    // an error is encountered communicating with the individual server.
-    optional AppStatusPB error = 1;
-
-    optional NodeInstancePB instance_id = 2;
-    optional MasterRegistrationPB registration = 3;
-    optional bool local = 4;
-
-    // If a node is local (or if there is an error), the role
-    // may be not be set.
-    optional metadata.QuorumPeerPB.Role role = 5;
-  }
-
   // An entry for each individual master server.
-  repeated Entry masters = 1;
+  repeated ServerEntryPB masters = 1;
 
   // Set only if there's an error in retrieving the list of servers or
   // in getting this server's own local registration information.

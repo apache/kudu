@@ -148,7 +148,7 @@ void MasterPathHandlers::HandleTablePage(const Webserver::WebRequest& req,
 
 void MasterPathHandlers::HandleMasters(const Webserver::WebRequest& req,
                                        std::stringstream* output) {
-  vector<ListMastersResponsePB::Entry> masters;
+  vector<ServerEntryPB> masters;
   Status s = master_->ListMasters(&masters);
   if (!s.ok()) {
     s = s.CloneAndPrepend("Unable to list Masters");
@@ -160,7 +160,7 @@ void MasterPathHandlers::HandleMasters(const Webserver::WebRequest& req,
   *output <<  "<table class='table table-striped'>\n";
   *output <<  "  <tr><th>Registration</th><th>Role</th></tr>\n";
 
-  BOOST_FOREACH(const ListMastersResponsePB::Entry& master, masters) {
+  BOOST_FOREACH(const ServerEntryPB& master, masters) {
     if (master.has_error()) {
       Status error = StatusFromPB(master.error());
       *output << Substitute("  <tr><td colspan=2><font color='red'><b>$0</b></font></td></tr>\n",
@@ -169,7 +169,7 @@ void MasterPathHandlers::HandleMasters(const Webserver::WebRequest& req,
     }
     string reg_text = RegistrationToHtml(master.registration(),
                                          master.instance_id().permanent_uuid());
-    if (master.local()) {
+    if (master.instance_id().permanent_uuid() == master_->instance_pb().permanent_uuid()) {
       reg_text = Substitute("<b>$0</b>", reg_text);
     }
     *output << Substitute("  <tr><td>$0</td><td>$1</td></tr>\n", reg_text,
