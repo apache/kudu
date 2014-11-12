@@ -100,6 +100,10 @@ class LogTest : public LogTestBase {
                             vector<TestLogSequenceElem>* ops,
                             vector<int64_t>* terms_by_index);
   void AppendTestSequence(const vector<TestLogSequenceElem>& seq);
+
+  void DoCorruptionTest(CorruptionType type, int offset,
+                        Status expected_status, int expected_entries);
+
 };
 
 // If we write more than one entry in a batch, we should be able to
@@ -188,27 +192,46 @@ TEST_F(LogTest, TestBlankLogFile) {
   ASSERT_EQ(entries.size(), 0);
 }
 
-// Tests that the log reader reads up until some corrupt entry is found.
-// TODO: Test partially written/corrupt headers.
-TEST_F(LogTest, TestCorruptLog) {
+void LogTest::DoCorruptionTest(CorruptionType type, int offset,
+                               Status expected_status, int expected_entries) {
   const int kNumEntries = 4;
   BuildLog();
   OpId op_id(MinimumOpId());
   ASSERT_OK(AppendNoOps(&op_id, kNumEntries));
   ASSERT_STATUS_OK(log_->Close());
 
-  ASSERT_STATUS_OK(CorruptLogFile(env_.get(), log_.get(), 30));
+  // Corrupt the log as specified.
+  ASSERT_STATUS_OK(CorruptLogFile(env_.get(), log_.get(), type, offset));
 
-  ASSERT_EQ(1, log_->GetLogReader()->num_segments());
+  // Open a new reader -- we don't reuse the existing LogReader from log_
+  // because it has a cached header.
+  gscoped_ptr<LogReader> reader;
+  ASSERT_OK(LogReader::Open(fs_manager_.get(), kTestTablet, &reader));
+  ASSERT_EQ(1, reader->num_segments());
 
   SegmentSequence segments;
-  ASSERT_STATUS_OK(log_->GetLogReader()->GetSegmentsSnapshot(&segments));
+  ASSERT_STATUS_OK(reader->GetSegmentsSnapshot(&segments));
+  Status s = segments[0]->ReadEntries(&entries_);
+  ASSERT_EQ(s.CodeAsString(), expected_status.CodeAsString())
+    << "Got unexpected status: " << s.ToString();
 
-  Status status = segments[0]->ReadEntries(&entries_);
-  ASSERT_TRUE(status.IsCorruption());
+  // Last entry is ignored, but we should still see the previous ones.
+  ASSERT_EQ(expected_entries, entries_.size());
+}
 
-  // Last entry is corrupted but we should still see the previous ones.
-  ASSERT_EQ(kNumEntries - 1, entries_.size());
+
+// Tests that the log reader reads up until some truncated entry is found.
+// It should still return OK, since on a crash, it's acceptable to have
+// a partial entry at EOF.
+TEST_F(LogTest, TestTruncateLog) {
+  DoCorruptionTest(TRUNCATE_FILE, 200, Status::OK(), 3);
+}
+
+// Similar to the above, except flips a byte. In this case, it should return
+// a Corruption instead of an OK, because we still have a valid footer in
+// the file (indicating that all of the entries should be valid as well).
+TEST_F(LogTest, TestCorruptLog) {
+  DoCorruptionTest(FLIP_BYTE, 200, Status::Corruption(""), 3);
 }
 
 // Tests that segments roll over when max segment size is reached
@@ -280,9 +303,8 @@ TEST_F(LogTest, TestWriteAndReadToAndFromInProgressSegment) {
   repl->mutable_id()->CopyFrom(op_id);
   repl->set_op_type(NO_OP);
 
-  // Entries are length-prefix encoded so add an additional 4
-  // bytes.
-  int single_entry_size = batch.ByteSize() + 4;
+  // Entries are prefixed with a header.
+  int single_entry_size = batch.ByteSize() + kEntryHeaderSize;
 
   int written_entries_size = header_size;
   ASSERT_OK(AppendNoOps(&op_id, kNumEntries, &written_entries_size));

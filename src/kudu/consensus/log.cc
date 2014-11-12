@@ -480,9 +480,7 @@ Status Log::DoAppend(LogEntryBatch* entry_batch, bool caller_owns_operation) {
     SCOPED_LATENCY_METRIC(metrics_, append_latency);
     SCOPED_WATCH_KERNEL_STACK();
 
-    RETURN_NOT_OK(active_segment_->Append(
-      Slice(reinterpret_cast<uint8_t *>(&entry_batch_bytes), 4)));
-    RETURN_NOT_OK(active_segment_->Append(entry_batch_data));
+    RETURN_NOT_OK(active_segment_->WriteEntryBatch(entry_batch_data));
 
     // Update the reader on how far it can read the active segment.
     reader_->UpdateLastSegmentOffset(active_segment_->written_offset());
@@ -507,7 +505,6 @@ Status Log::DoAppend(LogEntryBatch* entry_batch, bool caller_owns_operation) {
     }
   }
 
-  // TODO: Add a record checksum to each WAL record (see KUDU-109).
   return Status::OK();
 }
 

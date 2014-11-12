@@ -32,8 +32,9 @@ namespace log {
 // Suffix for temprorary files
 extern const char kTmpSuffix[];
 
-// Each log entry is prefixed by its length (4 bytes).
-extern const size_t kEntryLengthSize;
+// Each log entry is prefixed by its length (4 bytes), CRC (4 bytes),
+// and checksum of the other two fields (see EntryHeader struct below).
+extern const size_t kEntryHeaderSize;
 
 extern const int kLogMajorVersion;
 extern const int kLogMinorVersion;
@@ -102,10 +103,15 @@ class ReadableLogSegment : public RefCountedThreadSafe<ReadableLogSegment> {
 
   // Reads all entries of the provided segment & adds them the 'entries' vector.
   // The 'entries' vector owns the read entries.
+  //
   // If the log is corrupted (i.e. the returned 'Status' is 'Corruption') all
   // the log entries read up to the corrupted one are returned in the 'entries'
   // vector.
-  Status ReadEntries(std::vector<LogEntryPB*>* entries);
+  //
+  // If 'end_offset' is not NULL, then returns the file offset following the last
+  // successfully read entry.
+  Status ReadEntries(std::vector<LogEntryPB*>* entries,
+                     int64_t* end_offset = NULL);
 
   // Rebuilds this segment's footer by scanning its entries.
   // This is an expensive operation as it reads and parses the whole segment
@@ -167,6 +173,18 @@ class ReadableLogSegment : public RefCountedThreadSafe<ReadableLogSegment> {
   friend class RefCountedThreadSafe<ReadableLogSegment>;
   friend class LogReader;
   FRIEND_TEST(LogTest, TestWriteAndReadToAndFromInProgressSegment);
+
+  struct EntryHeader {
+    // The length of the batch data.
+    uint32_t msg_length;
+
+    // The CRC32C of the batch data.
+    uint32_t msg_crc;
+
+    // The CRC32C of this EntryHeader.
+    uint32_t header_crc;
+  };
+
   ~ReadableLogSegment() {}
 
   // Helper functions called by Init().
@@ -185,14 +203,37 @@ class ReadableLogSegment : public RefCountedThreadSafe<ReadableLogSegment> {
 
   Status ParseFooterMagicAndFooterLength(const Slice &data, uint32_t *parsed_len);
 
-  // Reads length from the segment and sets *len to this value.
+  // Starting at 'offset', read the rest of the log file, looking for any
+  // valid log entry headers. If any are found, sets *has_valid_entries to true.
+  //
+  // Returns a bad Status only in the case that some IO error occurred reading the
+  // file.
+  Status ScanForValidEntryHeaders(int64_t offset, bool* has_valid_entries);
+
+  // Format a nice error message to report on a corruption in a log file.
+  Status MakeCorruptionStatus(int batch_number, int64_t batch_offset,
+                              std::vector<int64_t>* recent_offsets,
+                              const Status& status) const;
+
+  Status ReadEntryHeaderAndBatch(uint64_t* offset, faststring* tmp_buf,
+                                 gscoped_ptr<LogEntryBatchPB>* batch);
+
+  // Reads a log entry header from the segment.
   // Also increments the passed offset* by the length of the entry.
-  Status ReadEntryLength(uint64_t *offset, uint32_t *len);
+  Status ReadEntryHeader(uint64_t *offset, EntryHeader* header);
+
+  // Decode a log entry header from the given slice, which must be kEntryHeaderSize
+  // bytes long. Returns true if successful, false if corrupt.
+  //
+  // NOTE: this is performance-critical since it is used by ScanForValidEntryHeaders
+  // and thus returns bool instead of Status.
+  bool DecodeEntryHeader(const Slice& data, EntryHeader* header);
+
 
   // Reads a log entry batch from the provided readable segment, which gets decoded
   // into 'entry_batch' and increments 'offset' by the batch's length.
   Status ReadEntryBatch(uint64_t *offset,
-                        uint32_t length,
+                        const EntryHeader& header,
                         faststring* tmp_buf,
                         gscoped_ptr<LogEntryBatchPB>* entry_batch);
 
@@ -217,11 +258,12 @@ class ReadableLogSegment : public RefCountedThreadSafe<ReadableLogSegment> {
 
   bool is_initialized_;
 
-  bool is_corrupted_;
-
   LogSegmentHeaderPB header_;
 
   LogSegmentFooterPB footer_;
+
+  // True if the footer was rebuilt, rather than actually found on disk.
+  bool footer_was_rebuilt_;
 
   // the offset of the first entry in the log
   uint64_t first_entry_offset_;
@@ -250,17 +292,10 @@ class WritableLogSegment {
     return writable_file_->Size();
   }
 
-  // Appends the provided slice to the underlying WritableFile.
+  // Appends the provided batch of data, including a header
+  // and checksum.
   // Makes sure that the log segment has not been closed.
-  Status Append(const Slice& data) {
-    DCHECK(is_header_written_);
-    DCHECK(!is_footer_written_);
-    Status s = writable_file_->Append(data);
-    if (PREDICT_TRUE(s.ok())) {
-      written_offset_ += data.size();
-    }
-    return s;
-  }
+  Status WriteEntryBatch(const Slice& entry_batch_data);
 
   // Makes sure the I/O buffers in the underlying writable file are flushed.
   Status Sync() {

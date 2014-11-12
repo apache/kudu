@@ -743,7 +743,8 @@ TEST_F(TabletServerTest, TestClientGetsErrorBackWhenRecoveryFailed) {
   ASSERT_STATUS_OK(tablet_peer_->tablet()->Flush());
   mini_server_->Shutdown();
 
-  ASSERT_STATUS_OK(log::CorruptLogFile(env_.get(), tablet_peer_->log(), 10));
+  ASSERT_STATUS_OK(log::CorruptLogFile(env_.get(), tablet_peer_->log(),
+                                       log::FLIP_BYTE, 300));
 
   ASSERT_FALSE(ShutdownAndRebuildTablet().ok());
 

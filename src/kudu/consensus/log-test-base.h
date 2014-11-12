@@ -215,7 +215,7 @@ class LogTestBase : public KuduTest {
       // that entries are length-prefix encoded (+ 4 bytes).
       LogEntryBatchPB batch;
       batch.add_entry()->CopyFrom(log_entry);
-      *size += batch.ByteSize() + 4;
+      *size += batch.ByteSize() + log::kEntryHeaderSize;
     }
     // Increment op_id.
     op_id->set_index(op_id->index() + 1);
@@ -266,35 +266,32 @@ class LogTestBase : public KuduTest {
   scoped_refptr<LogAnchorRegistry> log_anchor_registry_;
 };
 
-// Corrupts the last segment of the provided log by truncating the last
-// 'bytes_to_truncate' bytes of the file.
-Status CorruptLogFile(Env* env, Log* log, int bytes_to_truncate) {
-  // Rewrite the file but truncate the last entry partially.
-  shared_ptr<RandomAccessFile> source;
+// Corrupts the last segment of the provided log by either truncating it
+// or modifying a byte at the given offset.
+enum CorruptionType {
+  TRUNCATE_FILE,
+  FLIP_BYTE
+};
+
+Status CorruptLogFile(Env* env, Log* log, CorruptionType type, int corruption_offset) {
   const string log_path = log->ActiveSegmentPathForTests();
-  RETURN_NOT_OK(env_util::OpenFileForRandom(env, log_path, &source));
-  uint64_t file_size;
-  RETURN_NOT_OK(env->GetFileSize(log_path, &file_size));
+  faststring buf;
+  RETURN_NOT_OK_PREPEND(ReadFileToString(env, log_path, &buf),
+                        "Couldn't read log");
 
-  gscoped_array<uint8_t> scratch(new uint8_t[file_size]);
-  Slice log_slice;
-  RETURN_NOT_OK(env_util::ReadFully(source.get(),
-                                    0,
-                                    file_size - bytes_to_truncate,
-                                    &log_slice,
-                                    scratch.get()));
-
-  // We need to actually copy the slice or we run into trouble
-  // because we're reading and writing to the same file.
-  faststring copied;
-  copied.append(log_slice.data(), log_slice.size());
+  switch (type) {
+    case TRUNCATE_FILE:
+      buf.resize(corruption_offset);
+      break;
+    case FLIP_BYTE:
+      CHECK_LT(corruption_offset, buf.size());
+      buf[corruption_offset] ^= 0xff;
+      break;
+  }
 
   // Rewrite the file with the corrupt log.
-  shared_ptr<WritableFile> sink;
-  RETURN_NOT_OK(env_util::OpenFileForWrite(env, log_path, &sink));
-
-  RETURN_NOT_OK(sink->Append(Slice(copied)));
-  RETURN_NOT_OK(sink->Close());
+  RETURN_NOT_OK_PREPEND(WriteStringToFile(env, Slice(buf), log_path),
+                        "Couldn't rewrite corrupt log file");
 
   return Status::OK();
 }
