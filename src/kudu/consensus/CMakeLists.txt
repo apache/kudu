@@ -59,6 +59,7 @@ set(CONSENSUS_SRCS
   local_consensus.cc
   log_cache.cc
   opid_waiter_set.cc
+  peer_manager.cc
   quorum_util.cc
   raft_consensus.cc
   raft_consensus_state.cc

@@ -13,6 +13,7 @@
 #include "kudu/consensus/log.h"
 #include "kudu/consensus/log_util.h"
 #include "kudu/consensus/opid_util.h"
+#include "kudu/consensus/peer_manager.h"
 #include "kudu/consensus/raft_consensus.h"
 #include "kudu/consensus/raft_consensus_state.h"
 #include "kudu/gutil/stl_util.h"

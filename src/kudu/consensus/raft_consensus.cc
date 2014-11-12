@@ -12,6 +12,7 @@
 #include "kudu/consensus/log.h"
 #include "kudu/consensus/consensus_peers.h"
 #include "kudu/consensus/leader_election.h"
+#include "kudu/consensus/peer_manager.h"
 #include "kudu/consensus/quorum_util.h"
 #include "kudu/consensus/raft_consensus_state.h"
 #include "kudu/gutil/map-util.h"
@@ -68,6 +69,44 @@ using strings::Substitute;
 
 // Special string that represents any known leader to the failure detector.
 static const char* const kTimerId = "election-timer";
+
+scoped_refptr<RaftConsensus> RaftConsensus::Create(
+    const ConsensusOptions& options,
+    gscoped_ptr<ConsensusMetadata> cmeta,
+    const std::string& peer_uuid,
+    const MetricContext& metric_ctx,
+    const scoped_refptr<server::Clock>& clock,
+    ReplicaTransactionFactory* txn_factory,
+    const std::tr1::shared_ptr<rpc::Messenger>& messenger,
+    log::Log* log) {
+  gscoped_ptr<consensus::PeerProxyFactory> rpc_factory(
+    new RpcPeerProxyFactory(messenger));
+
+  // The message queue that keeps track of which operations need to be replicated
+  // where.
+  gscoped_ptr<PeerMessageQueue> queue(new PeerMessageQueue(metric_ctx));
+
+  // A manager for the set of peers that actually send the operations both remotely
+  // and to the local wal.
+  gscoped_ptr<PeerManager> peer_manager(
+    new PeerManager(options.tablet_id,
+                    peer_uuid,
+                    rpc_factory.get(),
+                    queue.get(),
+                    log));
+
+  return make_scoped_refptr(new RaftConsensus(
+                              options,
+                              cmeta.Pass(),
+                              rpc_factory.Pass(),
+                              queue.Pass(),
+                              peer_manager.Pass(),
+                              metric_ctx,
+                              peer_uuid,
+                              clock,
+                              txn_factory,
+                              log));
+}
 
 RaftConsensus::RaftConsensus(const ConsensusOptions& options,
                              gscoped_ptr<ConsensusMetadata> cmeta,

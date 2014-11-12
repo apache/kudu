@@ -8,6 +8,7 @@
 #include <string>
 #include <utility>
 #include <vector>
+#include <tr1/memory>
 
 #include "kudu/consensus/consensus.h"
 #include "kudu/consensus/consensus.pb.h"
@@ -69,6 +70,16 @@ class RaftConsensus : public Consensus,
                       public RaftConsensusQueueIface {
  public:
   class ConsensusFaultHooks;
+
+  static scoped_refptr<RaftConsensus> Create(
+    const ConsensusOptions& options,
+    gscoped_ptr<ConsensusMetadata> cmeta,
+    const std::string& peer_uuid,
+    const MetricContext& metric_ctx,
+    const scoped_refptr<server::Clock>& clock,
+    ReplicaTransactionFactory* txn_factory,
+    const std::tr1::shared_ptr<rpc::Messenger>& messenger,
+    log::Log* log);
 
   RaftConsensus(const ConsensusOptions& options,
                 gscoped_ptr<ConsensusMetadata> cmeta,

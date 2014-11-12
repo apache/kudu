@@ -1,0 +1,111 @@
+// Copyright (c) 2014, Cloudera, inc.
+// Confidential Cloudera Information: Covered by NDA.
+
+#include "kudu/consensus/peer_manager.h"
+
+#include "kudu/consensus/consensus_peers.h"
+#include "kudu/consensus/log.h"
+#include "kudu/gutil/map-util.h"
+#include "kudu/gutil/stl_util.h"
+#include "kudu/gutil/strings/substitute.h"
+
+namespace kudu {
+namespace consensus {
+
+using log::Log;
+using metadata::QuorumPeerPB;
+using strings::Substitute;
+
+PeerManager::PeerManager(const std::string tablet_id,
+                         const std::string local_uuid,
+                         PeerProxyFactory* peer_proxy_factory,
+                         PeerMessageQueue* queue,
+                         Log* log)
+    : tablet_id_(tablet_id),
+      local_uuid_(local_uuid),
+      peer_proxy_factory_(peer_proxy_factory),
+      queue_(queue),
+      log_(log) {}
+
+PeerManager::~PeerManager() {
+  Close();
+  STLDeleteValues(&peers_);
+}
+
+Status PeerManager::UpdateQuorum(const metadata::QuorumPB& quorum) {
+  unordered_set<string> new_peers;
+
+  VLOG(1) << "Updating peers from new quorum: " << quorum.ShortDebugString();
+
+  boost::lock_guard<simple_spinlock> lock(lock_);
+  // Create new peers
+  BOOST_FOREACH(const QuorumPeerPB& peer_pb, quorum.peers()) {
+    new_peers.insert(peer_pb.permanent_uuid());
+    Peer* peer = FindPtrOrNull(peers_, peer_pb.permanent_uuid());
+    if (peer != NULL) {
+      continue;
+    }
+    if (peer_pb.permanent_uuid() == local_uuid_) {
+      VLOG(1) << GetLogPrefix() << "Adding local peer. Peer: " << peer_pb.ShortDebugString();
+      gscoped_ptr<Peer> local_peer;
+      RETURN_NOT_OK(Peer::NewLocalPeer(peer_pb,
+                                       tablet_id_,
+                                       local_uuid_,
+                                       queue_,
+                                       log_,
+                                       &local_peer));
+      InsertOrDie(&peers_, peer_pb.permanent_uuid(), local_peer.release());
+    } else {
+      VLOG(1) << GetLogPrefix() << "Adding remote peer. Peer: " << peer_pb.ShortDebugString();
+      gscoped_ptr<PeerProxy> peer_proxy;
+      RETURN_NOT_OK_PREPEND(peer_proxy_factory_->NewProxy(peer_pb, &peer_proxy),
+                            "Could not obtain a remote proxy to the peer.");
+
+      gscoped_ptr<Peer> remote_peer;
+      RETURN_NOT_OK(Peer::NewRemotePeer(peer_pb,
+                                        tablet_id_,
+                                        local_uuid_,
+                                        queue_,
+                                        peer_proxy.Pass(),
+                                        &remote_peer));
+      InsertOrDie(&peers_, peer_pb.permanent_uuid(), remote_peer.release());
+    }
+  }
+  // Delete old peers
+  PeersMap::iterator iter = peers_.begin();
+  for (; iter != peers_.end(); iter++) {
+    if (new_peers.count((*iter).first) == 0) {
+      peers_.erase(iter);
+    }
+  }
+
+  return Status::OK();
+}
+
+void PeerManager::SignalRequest(bool force_if_queue_empty) {
+  boost::lock_guard<simple_spinlock> lock(lock_);
+  PeersMap::iterator iter = peers_.begin();
+    for (; iter != peers_.end(); iter++) {
+      Status s = (*iter).second->SignalRequest(force_if_queue_empty);
+      if (PREDICT_FALSE(!s.ok())) {
+        LOG(WARNING) << GetLogPrefix() << "Peer was closed, removing from peers. Peer: "
+            << (*iter).second->peer_pb().ShortDebugString();
+        peers_.erase(iter);
+      }
+    }
+}
+
+void PeerManager::Close() {
+  boost::lock_guard<simple_spinlock> lock(lock_);
+  // Close the peers per above.
+  BOOST_FOREACH(const PeersMap::value_type& entry, peers_) {
+    entry.second->Close();
+  }
+}
+
+std::string PeerManager::GetLogPrefix() const {
+  return Substitute("T $0 P $1: ", tablet_id_, local_uuid_);
+}
+
+} // namespace consensus
+} // namespace kudu

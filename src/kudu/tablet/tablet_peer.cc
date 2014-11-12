@@ -12,7 +12,6 @@
 
 #include "kudu/consensus/consensus.h"
 #include "kudu/consensus/consensus_meta.h"
-#include "kudu/consensus/consensus_peers.h"
 #include "kudu/consensus/local_consensus.h"
 #include "kudu/consensus/log.h"
 #include "kudu/consensus/log_util.h"
@@ -117,32 +116,14 @@ Status TabletPeer::Init(const shared_ptr<Tablet>& tablet,
                                           this,
                                           log_.get()));
     } else {
-      gscoped_ptr<consensus::PeerProxyFactory> rpc_factory(
-          new consensus::RpcPeerProxyFactory(messenger_));
-
-      // The message queue that keeps track of which operations need to be replicated
-      // where.
-      gscoped_ptr<consensus::PeerMessageQueue> queue(new consensus::PeerMessageQueue(metric_ctx));
-
-      // A manager for the set of peers that actually send the operations both remotely
-      // and to the local wal.
-      gscoped_ptr<consensus::PeerManager> queue_monitor_(
-          new consensus::PeerManager(options.tablet_id,
-                                         meta_->fs_manager()->uuid(),
-                                         rpc_factory.get(),
-                                         queue.get(),
-                                         log_.get()));
-
-      consensus_.reset(new RaftConsensus(options,
+      consensus_ = RaftConsensus::Create(options,
                                          cmeta.Pass(),
-                                         rpc_factory.Pass(),
-                                         queue.Pass(),
-                                         queue_monitor_.Pass(),
-                                         metric_ctx,
                                          meta_->fs_manager()->uuid(),
+                                         metric_ctx,
                                          clock_,
                                          this,
-                                         log_.get()));
+                                         messenger_,
+                                         log_.get());
     }
   }
 

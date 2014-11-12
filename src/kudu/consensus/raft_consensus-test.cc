@@ -9,6 +9,7 @@
 #include "kudu/consensus/consensus_peers.h"
 #include "kudu/consensus/consensus-test-util.h"
 #include "kudu/consensus/log.h"
+#include "kudu/consensus/peer_manager.h"
 #include "kudu/fs/fs_manager.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/server/logical_clock.h"
