@@ -250,13 +250,17 @@ class RaftConsensusQuorumTest : public KuduTest {
 
   void WaitForReplicateIfNotAlreadyPresent(const OpId& to_wait_for, int peer_idx) {
     RaftConsensus* peer = GetPeer(peer_idx);
-    shared_ptr<LatchCallback> clbk(new LatchCallback);
-    Status s = peer->RegisterOnReplicateCallback(to_wait_for, clbk);
-    if (s.IsAlreadyPresent()) {
-      return;
+    ReplicaState* state = peer->GetReplicaStateForTests();
+    while (true) {
+      {
+        ReplicaState::UniqueLock lock;
+        CHECK_OK(state->LockForRead(&lock));
+        if (OpIdCompare(state->GetLastReplicatedOpIdUnlocked(), to_wait_for) >= 0) {
+          return;
+        }
+      }
+      usleep(1000);
     }
-    ASSERT_STATUS_OK(s);
-    clbk->Wait();
   }
 
   // Waits for an operation to be (database) committed in the replica at index
@@ -264,45 +268,38 @@ class RaftConsensusQuorumTest : public KuduTest {
   void WaitForCommitIfNotAlreadyPresent(const OpId& to_wait_for,
                                         int peer_idx,
                                         int leader_idx) {
-    shared_ptr<LatchCallback> clbk(new LatchCallback);
     RaftConsensus* replica = GetPeer(peer_idx);
-    Status s = replica->RegisterOnCommitCallback(to_wait_for, clbk);
-    if (s.IsAlreadyPresent()) {
-      return;
-    }
-    ASSERT_STATUS_OK(s);
-    int num_attempts = 0;
+    ReplicaState* state = replica->GetReplicaStateForTests();
 
-    while (true) {
-      Status s = clbk->WaitFor(MonoDelta::FromMilliseconds(1000));
-      if (s.ok()) {
-        return;
-      }
-      CHECK(s.IsTimedOut());
-      LOG(INFO) << "Waiting for " << to_wait_for.ShortDebugString()
-          << " to be committed. Already timedout " << num_attempts << " times.";
-      num_attempts++;
-      if (num_attempts == 10) {
-        LOG(ERROR) << "Max timeout attempts reached while waiting for commit: "
-            << to_wait_for.ShortDebugString() << " on replica. Dumping state and quitting.";
-        vector<string> lines;
-        GetPeer(leader_idx)->queue_->DumpToStrings(&lines);
-        BOOST_FOREACH(const string& line, lines) {
-          LOG(ERROR) << line;
+    for (int i = 0; i < 1000; i++) {
+      {
+        ReplicaState::UniqueLock lock;
+        CHECK_OK(state->LockForRead(&lock));
+        if (OpIdCompare(state->GetCommittedOpIdUnlocked(), to_wait_for) >= 0) {
+          return;
         }
-
-        // Gather the replica and leader operations for printing
-        vector<LogEntryPB*> replica_ops;
-        ElementDeleter repl0_deleter(&replica_ops);
-        GatherLogEntries(peer_idx, replica->log(), &replica_ops);
-        vector<LogEntryPB*> leader_ops;
-        ElementDeleter leader_deleter(&leader_ops);
-        GatherLogEntries(leader_idx, logs_[leader_idx], &leader_ops);
-        SCOPED_TRACE(PrintOnError(leader_ops, "leader"));
-        SCOPED_TRACE(PrintOnError(replica_ops, replica->peer_uuid()));
-        FAIL() << "Replica did not commit.";
       }
+      usleep(1000);
     }
+
+    LOG(ERROR) << "Max timeout attempts reached while waiting for commit: "
+               << to_wait_for.ShortDebugString() << " on replica. Dumping state and quitting.";
+    vector<string> lines;
+    GetPeer(leader_idx)->queue_->DumpToStrings(&lines);
+    BOOST_FOREACH(const string& line, lines) {
+      LOG(ERROR) << line;
+    }
+
+    // Gather the replica and leader operations for printing
+    vector<LogEntryPB*> replica_ops;
+    ElementDeleter repl0_deleter(&replica_ops);
+    GatherLogEntries(peer_idx, replica->log(), &replica_ops);
+    vector<LogEntryPB*> leader_ops;
+    ElementDeleter leader_deleter(&leader_ops);
+    GatherLogEntries(leader_idx, logs_[leader_idx], &leader_ops);
+    SCOPED_TRACE(PrintOnError(leader_ops, "leader"));
+    SCOPED_TRACE(PrintOnError(replica_ops, replica->peer_uuid()));
+    FAIL() << "Replica did not commit.";
   }
 
   // Used in ReplicateSequenceOfMessages() to specify whether

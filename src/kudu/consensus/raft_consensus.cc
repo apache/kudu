@@ -21,7 +21,6 @@
 #include "kudu/server/metadata.h"
 #include "kudu/util/failure_detector.h"
 #include "kudu/util/random_util.h"
-#include "kudu/util/threadpool.h"
 #include "kudu/util/trace.h"
 #include "kudu/util/url-coding.h"
 
@@ -130,9 +129,7 @@ RaftConsensus::RaftConsensus(const ConsensusOptions& options,
           MonoDelta::FromMilliseconds(
               FLAGS_leader_heartbeat_interval_ms *
               FLAGS_leader_failure_max_missed_heartbeat_periods))) {
-  CHECK_OK(ThreadPoolBuilder("raft-op-cb").set_max_threads(1).Build(&callback_pool_));
   state_.reset(new ReplicaState(options,
-                                callback_pool_.get(),
                                 peer_uuid,
                                 cmeta.Pass(),
                                 DCHECK_NOTNULL(txn_factory)));
@@ -920,18 +917,6 @@ metadata::QuorumPeerPB::Role RaftConsensus::GetActiveRole() const {
   CHECK_OK(state_->LockForRead(&lock));
   const QuorumState& state = state_->GetActiveQuorumStateUnlocked();
   return state.role;
-}
-
-Status RaftConsensus::RegisterOnReplicateCallback(
-    const OpId& op_id,
-    const std::tr1::shared_ptr<FutureCallback>& repl_callback) {
-  return state_->RegisterOnReplicateCallback(op_id, repl_callback);
-}
-
-Status RaftConsensus::RegisterOnCommitCallback(
-    const OpId& op_id,
-    const std::tr1::shared_ptr<FutureCallback>& repl_callback) {
-  return state_->RegisterOnCommitCallback(op_id, repl_callback);
 }
 
 OpId RaftConsensus::GetLastOpIdFromLog() {

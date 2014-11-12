@@ -15,7 +15,6 @@
 #include "kudu/consensus/consensus.h"
 #include "kudu/consensus/consensus_peers.h"
 #include "kudu/consensus/consensus_queue.h"
-#include "kudu/consensus/opid_waiter_set.h"
 #include "kudu/consensus/raft_consensus.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/strings/substitute.h"
@@ -798,15 +797,13 @@ class TestRaftConsensusQueueIface : public RaftConsensusQueueIface {
  public:
 
   explicit TestRaftConsensusQueueIface(log::Log* log)
-    : log_(log) {
-    ThreadPoolBuilder("ci-waiters").set_max_threads(1).Build(&pool_);
-    committed_waiter_set_.reset(new OpIdWaiterSet(pool_.get()));
+    : majority_replicated_index_(-1),
+      log_(log) {
   }
 
-  void RegisterCallback(const OpId& op_id,
-                        const std::tr1::shared_ptr<FutureCallback>& callback) {
+  bool IsMajorityReplicated(int64_t index) {
     boost::lock_guard<simple_spinlock> lock(lock_);
-    committed_waiter_set_->RegisterCallback(op_id, callback);
+    return index <= majority_replicated_index_;
   }
 
   log::Log* log() const OVERRIDE { return log_; }
@@ -815,15 +812,13 @@ class TestRaftConsensusQueueIface : public RaftConsensusQueueIface {
   virtual void UpdateMajorityReplicated(const OpId& majority_replicated,
                                         OpId* committed_index) OVERRIDE {
     boost::lock_guard<simple_spinlock> lock(lock_);
-    committed_waiter_set_->MarkFinished(majority_replicated,
-                                        OpIdWaiterSet::MARK_ALL_OPS_BEFORE);
+    majority_replicated_index_ = majority_replicated.index();
     committed_index->CopyFrom(majority_replicated);
   }
   virtual void NotifyTermChange(uint64_t term) OVERRIDE {}
  private:
-  gscoped_ptr<ThreadPool> pool_;
-  gscoped_ptr<OpIdWaiterSet> committed_waiter_set_;
   mutable simple_spinlock lock_;
+  int64_t majority_replicated_index_;
   log::Log* log_;
 };
 

@@ -58,7 +58,6 @@ set(CONSENSUS_SRCS
   leader_election.cc
   local_consensus.cc
   log_cache.cc
-  opid_waiter_set.cc
   peer_manager.cc
   quorum_util.cc
   raft_consensus.cc

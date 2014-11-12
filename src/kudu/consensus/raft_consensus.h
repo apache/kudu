@@ -135,20 +135,6 @@ class RaftConsensus : public Consensus,
   // can cause consensus to deadlock.
   ReplicaState* GetReplicaStateForTests();
 
-  // Registers a callback that will be triggered when the operation with 'op_id'
-  // is replicated.
-  Status RegisterOnReplicateCallback(
-      const OpId& op_id,
-      const std::tr1::shared_ptr<FutureCallback>& repl_callback);
-
-  // Registers a callback that will be triggered when the operation with 'op_id'
-  // is considered committed.
-  // NOTE: 'op_id' is the id of the operation to commit, not the id of the commit
-  // itself.
-  Status RegisterOnCommitCallback(
-      const OpId& op_id,
-      const std::tr1::shared_ptr<FutureCallback>& commit_callback);
-
   // Updates the committed_index and triggers the Apply()s for whatever
   // transactions were pending.
   // This is idempotent.
@@ -288,7 +274,6 @@ class RaftConsensus : public Consensus,
   gscoped_ptr<PeerMessageQueue> queue_;
   // PeerManager that manages a set of consensus Peers.
   gscoped_ptr<PeerManager> peer_manager_;
-  gscoped_ptr<ThreadPool> callback_pool_;
 
   gscoped_ptr<ReplicaState> state_;
 

@@ -16,14 +16,12 @@
 #include "kudu/consensus/consensus_meta.h"
 #include "kudu/consensus/consensus_queue.h"
 #include "kudu/consensus/log_util.h"
-#include "kudu/consensus/opid_waiter_set.h"
 #include "kudu/gutil/port.h"
 #include "kudu/util/locks.h"
 #include "kudu/util/status.h"
 
 namespace kudu {
 
-class FutureCallback;
 class HostPort;
 class ReplicaState;
 class ThreadPool;
@@ -126,7 +124,6 @@ class ReplicaState {
   typedef IndexToRoundMap::value_type IndexToRoundEntry;
 
   ReplicaState(const ConsensusOptions& options,
-               ThreadPool* callback_exec_pool,
                const std::string& peer_uuid,
                gscoped_ptr<ConsensusMetadata> cmeta,
                ReplicaTransactionFactory* txn_factory);
@@ -263,8 +260,7 @@ class ReplicaState {
   const OpId& GetCommittedOpIdUnlocked() const;
 
   // Updates the last replicated operation.
-  // This must be called under a lock and triggers the replication callbacks
-  // registered for all ops whose id is less than or equal to 'op_id'.
+  // This must be called under a lock.
   void UpdateLastReplicatedOpIdUnlocked(const OpId& op_id);
 
   // Returns the last replicated op id. This must be called under the lock.
@@ -279,8 +275,7 @@ class ReplicaState {
 
   void UpdateCommittedOpIdUnlocked(const OpId& committed_op_id);
 
-  // Updates the last committed operation including removing it from the pending commits
-  // map and triggering any related callback registered for 'committed_op_id'.
+  // Updates the last committed operation including removing it from the pending commits.
   //
   // 'commit_op_id' refers to the OpId of the actual commit operation, whereas
   // 'committed_op_id' refers to the OpId of the original REPLICATE message which was
@@ -301,48 +296,6 @@ class ReplicaState {
   // that have completed prepare/replicate but are waiting on the LEADER's commit
   // to complete. This does not cancel transactions being applied.
   Status CancelPendingTransactions();
-
-  // Obtains the lock and registers a callback that will be triggered when
-  // an operation with id equal to or greater than 'op_id' is replicated.
-  // Once the callback is fired, it is removed from the registered callbacks.
-  // Returns Status::OK() if the callback was triggered, or Status::AlreadyPresent
-  // if the requested operation was already replicated.
-  Status RegisterOnReplicateCallback(
-      const OpId& replicate_op_id,
-      const std::tr1::shared_ptr<FutureCallback>& repl_callback);
-
-  // Similar to the RegisterOnReplicateCallback() but for commit messages,
-  // more specifically for the commit of the operation whose id was
-  // 'replicate_op_id'.
-  // Note that the callback is only triggered after the Apply(). Callbacks
-  // registered through this method will only be triggered after the
-  // *replica's* commit message is appended to the local log.
-  // With regard to how the registered id compares to previous/future operations
-  // one of several things might happen:
-  //
-  // - replicate_op_id is beyond any replicate message received for
-  //   this replica: The callback is registered and will fire when
-  //   the corresponding operation is committed.
-  //   TODO: fire callback.OnFailure() if the term changes and we
-  //   never see a replicate with the provided OpId or if such a message
-  //   arrives but is not a replicate.
-  //
-  // - replicate_op_id is in currently in the pending commits, i.e. we've
-  //   received a replicate message with 'replicate_op_id' from the leader
-  //   but have yet to receive the corresponding commit message, or we've
-  //   received the commit message but it hasn't finished applying yet:
-  //   the callback will be registered and fired when it happens.
-  //   TODO take care when a new leader is elected as he might choose not
-  //   to commit the operation. Fire an callback.OnFailure() in that instance.
-  //
-  // - replicate_op_id is before the most recent replicate message received
-  //   and is not on the pending_commits set: the operation was already committed
-  //   and this call returns Status::AlreadyPresent().
-  //
-  // TODO change this to take an index instead of an OpId.
-  Status RegisterOnCommitCallback(
-      const OpId& replicate_op_id,
-      const std::tr1::shared_ptr<FutureCallback>& commit_callback);
 
   void NewIdUnlocked(OpId* id);
 
@@ -375,8 +328,6 @@ class ReplicaState {
 
   // The UUID of the local peer.
   const std::string peer_uuid_;
-
-  ThreadPool* callback_pool_;
 
   // Cache of the current active quorum state. May refer to either the pending
   // or committed quorum. This can be tested by checking whether pending_quorum_
@@ -424,11 +375,6 @@ class ReplicaState {
 
   // Latch that allows to wait on the outstanding applies to have completed..
   CountDownLatch in_flight_applies_latch_;
-
-  // Multimap that stores the replicate callbacks in decreasing order.
-  OpIdWaiterSet replicate_watchers_;
-  // Multimap that stores the commit callbacks in increasing order.
-  OpIdWaiterSet commit_watchers_;
 
   // lock protecting state machine updates
   mutable simple_spinlock update_lock_;

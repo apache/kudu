@@ -93,12 +93,14 @@ class ConsensusPeersTest : public KuduTest {
   // Registers a callback triggered when the op with the provided term and index
   // is committed in the test consensus impl.
   // This must be called _before_ the operation is committed.
-  void RegisterCallbackForOp(int term, int index, shared_ptr<LatchCallback>* clbk) {
-    OpId op;
-    op.set_term(term);
-    op.set_index(index);
-    clbk->reset(new LatchCallback);
-    consensus_->RegisterCallback(op, *clbk);
+  void WaitForMajorityReplicatedIndex(int index) {
+    for (int i = 0; i < 100; i++) {
+      if (consensus_->IsMajorityReplicated(index)) {
+        return;
+      }
+      usleep(1000 * i);
+    }
+    FAIL() << "Never replicated index " << index << " on a majority";
   }
 
  protected:
@@ -132,14 +134,11 @@ TEST_F(ConsensusPeersTest, TestLocalPeer) {
   // update the peer's term to match.
   local_peer->SetTermForTest(2);
 
-  shared_ptr<LatchCallback> clbk;
-  RegisterCallbackForOp(2, 20, &clbk);
-
   // signal the peer there are requests pending.
   local_peer->SignalRequest();
   // Now wait on the last operation, this will complete once the peer has logged all
   // requests.
-  clbk->Wait();
+  WaitForMajorityReplicatedIndex(20);
 
   // verify that the requests are in fact logged.
   CheckLastLogEntry(2, 20);
@@ -168,9 +167,7 @@ TEST_F(ConsensusPeersTest, TestRemotePeer) {
   // now wait on the status of the last operation
   // this will complete once the peer has logged all
   // requests.
-  shared_ptr<LatchCallback> clbk;
-  RegisterCallbackForOp(2, 20, &clbk);
-  clbk->Wait();
+  WaitForMajorityReplicatedIndex(20);
   // verify that the replicated watermark corresponds to the last replicated
   // message.
   CheckLastRemoteEntry(proxy, 2, 20);
@@ -201,16 +198,14 @@ TEST_F(ConsensusPeersTest, TestLocalAndRemotePeers) {
   first.set_term(0);
   first.set_index(1);
 
-  shared_ptr<LatchCallback> clbk;
-  RegisterCallbackForOp(first.term(), first.index(), &clbk);
-
   local_peer->SignalRequest();
   remote_peer1->SignalRequest();
   remote_peer2->SignalRequest();
 
   // Now wait for the message to be replicated, this should succeed since
   // majority = 2 and only one peer was delayed.
-  clbk->Wait();
+  WaitForMajorityReplicatedIndex(first.index());
+
   CheckLastLogEntry(first.term(), first.index());
   CheckLastRemoteEntry(remote_peer1_proxy, first.term(), first.index());
 
@@ -225,19 +220,19 @@ TEST_F(ConsensusPeersTest, TestLocalAndRemotePeers) {
   // Now append another message to the queue
   AppendReplicateMessagesToQueue(message_queue_.get(), 2, 1);
 
-  RegisterCallbackForOp(0, 2, &clbk);
-
   // Signal a single peer
   remote_peer1->SignalRequest();
-  // The callback should timeout since only a single peer replicated the message
 
-  ASSERT_TRUE(clbk->WaitFor(MonoDelta::FromMilliseconds(10)).IsTimedOut());
+  // We should not see it replicated, even after 10ms,
+  // since only a single peer replicated the message.
+  usleep(10 * 1000);
+  ASSERT_FALSE(consensus_->IsMajorityReplicated(2));
 
   // Signal another peer
   remote_peer2->SignalRequest();
-  // We should now be able to wait on the status until the two peers (a majority)
+  // We should now be able to wait for it to replicate, since two peers (a majority)
   // have replicated the message.
-  clbk->Wait();
+  WaitForMajorityReplicatedIndex(2);
 }
 
 }  // namespace consensus

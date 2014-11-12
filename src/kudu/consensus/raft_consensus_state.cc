@@ -91,19 +91,15 @@ QuorumState::QuorumState(metadata::QuorumPeerPB::Role role,
 //////////////////////////////////////////////////
 
 ReplicaState::ReplicaState(const ConsensusOptions& options,
-                           ThreadPool* callback_pool,
                            const string& peer_uuid,
                            gscoped_ptr<ConsensusMetadata> cmeta,
                            ReplicaTransactionFactory* txn_factory)
   : options_(options),
     peer_uuid_(peer_uuid),
-    callback_pool_(callback_pool),
     cmeta_(cmeta.Pass()),
     next_index_(0),
     txn_factory_(txn_factory),
     in_flight_applies_latch_(0),
-    replicate_watchers_(callback_pool),
-    commit_watchers_(callback_pool),
     state_(kInitialized) {
   CHECK(cmeta_) << "ConsensusMeta passed as NULL";
   UniqueLock l(&update_lock_);
@@ -514,7 +510,6 @@ const OpId& ReplicaState::GetCommittedOpIdUnlocked() const {
 void ReplicaState::UpdateLastReplicatedOpIdUnlocked(const OpId& op_id) {
   DCHECK(update_lock_.is_locked());
   replicated_op_id_.CopyFrom(op_id);
-  replicate_watchers_.MarkFinished(op_id, OpIdWaiterSet::MARK_ALL_OPS_BEFORE);
 }
 
 const OpId& ReplicaState::GetLastReplicatedOpIdUnlocked() const {
@@ -544,38 +539,12 @@ void ReplicaState::UpdateCommittedOpIdUnlocked(const OpId& committed_op_id) {
     << "in the in-flight set";
   CHECK(EraseKeyReturnValuePtr(&pending_txns_, committed_op_id.index()))
     << "Couldn't remove " << committed_op_id.ShortDebugString() << " from the pending set";
-  commit_watchers_.MarkFinished(committed_op_id, OpIdWaiterSet::MARK_ONLY_THIS_OP);
 }
 
 void ReplicaState::CountDownOutstandingCommitsIfShuttingDown() {
   if (PREDICT_FALSE(state_ == kShuttingDown)) {
     in_flight_applies_latch_.CountDown();
   }
-}
-
-Status ReplicaState::RegisterOnReplicateCallback(
-    const OpId& replicate_op_id,
-    const shared_ptr<FutureCallback>& repl_callback) {
-  UniqueLock lock(&update_lock_);
-  if (PREDICT_TRUE(OpIdCompare(replicate_op_id, replicated_op_id_) > 0)) {
-    replicate_watchers_.RegisterCallback(replicate_op_id, repl_callback);
-    return Status::OK();
-  }
-  return Status::AlreadyPresent("The operation has already been replicated.");
-}
-
-Status ReplicaState::RegisterOnCommitCallback(const OpId& op_id,
-                                              const shared_ptr<FutureCallback>& commit_callback) {
-  UniqueLock lock(&update_lock_);
-  if (PREDICT_TRUE(OpIdCompare(op_id, replicated_op_id_) > 0)) {
-    commit_watchers_.RegisterCallback(op_id, commit_callback);
-    return Status::OK();
-  }
-  if (FindOrNull(pending_txns_, op_id.index()) != NULL) {
-    commit_watchers_.RegisterCallback(op_id, commit_callback);
-    return Status::OK();
-  }
-  return Status::AlreadyPresent("The operation has already been committed.");
 }
 
 void ReplicaState::NewIdUnlocked(OpId* id) {

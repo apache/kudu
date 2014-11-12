@@ -26,7 +26,6 @@ class RaftConsensusStateTest : public KuduTest {
   RaftConsensusStateTest()
     : fs_manager_(env_.get(), test_dir_),
       txn_factory_(new MockTransactionFactory()) {
-    CHECK_OK(ThreadPoolBuilder("state-pool").Build(&pool_));
   }
 
   virtual void SetUp() OVERRIDE {
@@ -41,7 +40,7 @@ class RaftConsensusStateTest : public KuduTest {
 
     gscoped_ptr<ConsensusMetadata> cmeta;
     ASSERT_OK(ConsensusMetadata::Create(&fs_manager_, kTabletId, quorum_, kInitialTerm, &cmeta));
-    state_.reset(new ReplicaState(ConsensusOptions(), pool_.get(), fs_manager_.uuid(), cmeta.Pass(),
+    state_.reset(new ReplicaState(ConsensusOptions(), fs_manager_.uuid(), cmeta.Pass(),
                                   txn_factory_.get()));
 
     // Start up the ReplicaState.
@@ -53,7 +52,6 @@ class RaftConsensusStateTest : public KuduTest {
  protected:
   FsManager fs_manager_;
   QuorumPB quorum_;
-  gscoped_ptr<ThreadPool> pool_;
   gscoped_ptr<MockTransactionFactory> txn_factory_;
   gscoped_ptr<ReplicaState> state_;
 };
