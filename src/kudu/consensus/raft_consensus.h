@@ -178,10 +178,6 @@ class RaftConsensus : public Consensus,
   // The ReplicaState must be locked for quorum change before calling.
   Status BecomeReplicaUnlocked();
 
-  // Called as a callback with the result of the config change transaction
-  // that establishes this peer as leader.
-  void BecomeLeaderResult(const Status& status);
-
   Status AppendNewRoundToQueueUnlocked(ConsensusRound* round);
 
   // Updates the state in a replica by storing the received operations in the log

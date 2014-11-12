@@ -337,27 +337,6 @@ Status RaftConsensus::BecomeLeaderUnlocked() {
   return Status::OK();
 }
 
-void RaftConsensus::BecomeLeaderResult(const Status& status) {
-  ReplicaState::UniqueLock lock;
-  CHECK_OK(state_->LockForRead(&lock));
-  CHECK(status.ok()) << state_->LogPrefixUnlocked()
-      << "Change config transaction failure unsupported. Status: " << status.ToString();
-  LOG_WITH_PREFIX(INFO)
-    << "Quorum has accepted the change config transaction. New Effective quorum: "
-    << state_->GetCommittedQuorumUnlocked().ShortDebugString();
-
-  // Right now we only tolerate changes when there isn't stuff
-  // in flight, so make sure those assumptions hold.
-  // The last thing we received should be a commit and it should also match
-  // the safe commit op id.
-  if (!OpIdEquals(state_->GetLastReceivedOpIdUnlocked(), state_->GetCommittedOpIdUnlocked())) {
-    LOG_WITH_PREFIX(FATAL) << Substitute("Replica was not ready to be leader. "
-        "Last received OpId: $0, committed OpId: $1",
-        state_->GetLastReceivedOpIdUnlocked().ShortDebugString(),
-        state_->GetCommittedOpIdUnlocked().DebugString());
-  }
-}
-
 Status RaftConsensus::BecomeReplicaUnlocked() {
   // TODO start the failure detector.
   LOG_WITH_PREFIX(INFO) << "Becoming Follower/Learner";
