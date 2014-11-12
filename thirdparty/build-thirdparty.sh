@@ -5,10 +5,12 @@ set -x
 set -e
 TP_DIR=$(cd "$(dirname "$BASH_SOURCE")"; pwd)
 
+EXTRA_CXXFLAGS=$CXXFLAGS
 if [[ "$OSTYPE" =~ ^linux ]]; then
   OS_LINUX=1
 elif [[ "$OSTYPE" == "darwin"* ]]; then
   OS_OSX=1
+  EXTRA_CXXFLAGS="$EXTRA_CXXFLAGS -stdlib=libstdc++"
 fi
 
 source $TP_DIR/vars.sh
@@ -78,7 +80,7 @@ fi
 # build gflags
 if [ -n "$F_ALL" -o -n "$F_GFLAGS" ]; then
   cd $GFLAGS_DIR
-  ./configure --with-pic --prefix=$PREFIX
+  CXXFLAGS=$EXTRA_CXXFLAGS ./configure --with-pic --prefix=$PREFIX
   make -j$PARALLEL install
 fi
 
@@ -97,8 +99,10 @@ fi
 # build glog
 if [ -n "$F_ALL" -o -n "$F_GLOG" ]; then
   cd $GLOG_DIR
+  # We need to set "-g -O2" because glog only provides those flags when CXXFLAGS is unset.
   # Help glog find libunwind.
-  CPPFLAGS=-I$PREFIX/include \
+  CXXFLAGS="$EXTRA_CXXFLAGS -g -O2" \
+    CPPFLAGS=-I$PREFIX/include \
     LDFLAGS=-L$PREFIX/lib \
     ./configure --with-pic --prefix=$PREFIX --with-gflags=$PREFIX
   make -j$PARALLEL install
@@ -107,7 +111,7 @@ fi
 # build gperftools
 if [ -n "$F_ALL" -o -n "$F_GPERFTOOLS" ]; then
   cd $GPERFTOOLS_DIR
-  ./configure --enable-frame-pointers --with-pic --prefix=$PREFIX
+  CXXFLAGS=$EXTRA_CXXFLAGS ./configure --enable-frame-pointers --with-pic --prefix=$PREFIX
   make -j$PARALLEL install
 fi
 
@@ -117,7 +121,8 @@ if [ -n "$F_ALL" -o -n "$F_GMOCK" ]; then
   # Run the static library build, then the shared library build.
   for SHARED in OFF ON; do
     rm -rf CMakeCache.txt CMakeFiles/
-    CXXFLAGS='-fPIC -g' $PREFIX/bin/cmake -DBUILD_SHARED_LIBS=$SHARED .
+    CXXFLAGS="-fPIC -g $EXTRA_CXXFLAGS" \
+      $PREFIX/bin/cmake -DBUILD_SHARED_LIBS=$SHARED .
     make -j$PARALLEL
   done
 fi
@@ -125,14 +130,15 @@ fi
 # build protobuf
 if [ -n "$F_ALL" -o -n "$F_PROTOBUF" ]; then
   cd $PROTOBUF_DIR
-  ./configure --with-pic --enable-shared --enable-static --prefix=$PREFIX
+  CXXFLAGS=$EXTRA_CXXFLAGS ./configure --with-pic --enable-shared --enable-static --prefix=$PREFIX
   make -j$PARALLEL install
 fi
 
 # build snappy
 if [ -n "$F_ALL" -o -n "$F_SNAPPY" ]; then
   cd $SNAPPY_DIR
-  ./configure --with-pic --prefix=$PREFIX
+  CXXFLAGS=$EXTRA_CXXFLAGS \
+    ./configure --with-pic --prefix=$PREFIX
   make -j$PARALLEL install
 fi
 
@@ -166,18 +172,14 @@ if [ -n "$F_ALL" -o -n "$F_RAPIDJSON" ]; then
 fi
 
 # Build squeasel
-# Disabled for OSX due to references to prctl and CLOCK_MONOTONIC, means you can't build Kudu
-# at the moment.
-if [ "$OS_LINUX" ]; then
-  if [ -n "$F_ALL" -o -n "$F_SQUEASEL" ]; then
-    # Mongoose's Makefile builds a standalone web server, whereas we just want
-    # a static lib
-    cd $SQUEASEL_DIR
-    ${CC:-gcc} -fno-omit-frame-pointer -std=c99 -O3 -DNDEBUG -DNO_SSL_DL -fPIC -c squeasel.c
-    ar rs libsqueasel.a squeasel.o
-    cp libsqueasel.a $PREFIX/lib/
-    cp squeasel.h $PREFIX/include/
-  fi
+if [ -n "$F_ALL" -o -n "$F_SQUEASEL" ]; then
+  # Mongoose's Makefile builds a standalone web server, whereas we just want
+  # a static lib
+  cd $SQUEASEL_DIR
+  ${CC:-gcc} -fno-omit-frame-pointer -std=c99 -O3 -DNDEBUG -DNO_SSL_DL -fPIC -c squeasel.c
+  ar rs libsqueasel.a squeasel.o
+  cp libsqueasel.a $PREFIX/lib/
+  cp squeasel.h $PREFIX/include/
 fi
 
 # Build curl
@@ -211,7 +213,8 @@ fi
 if [ -n "$F_ALL" -o -n "$F_CRCUTIL" ]; then
   cd $CRCUTIL_DIR
   ./autogen.sh
-  ./configure --prefix=$PREFIX
+  CXXFLAGS=$EXTRA_CXXFLAGS \
+    ./configure --prefix=$PREFIX
   make -j$PARALLEL install
 fi
 
@@ -259,6 +262,7 @@ if [ -n "$F_ALL" -o -n "$F_LLVM" ]; then
     -DCMAKE_BUILD_TYPE=Release \
     -DCMAKE_INSTALL_PREFIX=$PREFIX \
     -DLLVM_TARGETS_TO_BUILD=X86 \
+    -DCMAKE_CXX_FLAGS=$EXTRA_CXXFLAGS \
     $LLVM_DIR
   if [ -n $CLANG -a -n $CLANGXX ]; then
     unset CC

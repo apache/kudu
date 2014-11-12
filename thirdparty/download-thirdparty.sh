@@ -1,5 +1,28 @@
 #!/bin/bash
 # Copyright (c) 2013, Cloudera, inc.
+#
+# Note regarding the autoreconf calls:
+#
+# Mac OS 10.8 shipped a clang-based C++ toolchain that provides both GNU libstdc++ and LLVM's
+# libc++. The default library used is libstdc++, though one can override that with the
+# -stdlib=libc++ option to clang (while compiling and linking). In 10.9, the default policy has
+# switched: libc++ is now the default, and to use libstdc++ you need to pass -stdlib=libstdc++
+# as a command line option.
+#
+# This is relevant to Kudu because libc++ does not support tr1; to use tr1 features like tr1/memory
+# we must use them from the C++11 namespace (i.e. <memory> instead of <tr1/memory> and -std=c++11
+# to clang).
+#
+# Setting CXXFLAGS=-stdlib=libstdc++ suffices for an autotools-based project, and this is what we do
+# in build-thirdparty.sh. However, older versions of autotools will filter out -stdlib=libstdc++
+# from a shared library link invocation. This leads to link failures with every std symbol listed
+# as "undefined". To fix this, one must regenerate the autotools system for each library on a
+# machine with modern brews of autotools. Running "autoconf -fvi" inside the library's directory
+# is sufficient. See this link for more information:
+#
+# http://trac.macports.org/ticket/32982
+#
+# This is why all the cmake-based projects have their autotools regenerated with "autoreconf -fvi".
 
 set -e
 
@@ -51,6 +74,7 @@ if [ ! -d glog-${GLOG_VERSION} ]; then
   pushd glog-${GLOG_VERSION}
   patch -p0 < $TP_DIR/patches/glog-issue-198-fix-unused-warnings.patch
   touch patchlevel-$GLOG_PATCHLEVEL
+  autoreconf -fvi
   popd
   echo
 fi
@@ -61,27 +85,33 @@ fi
 
 if [ ! -d gflags-${GFLAGS_VERSION} ]; then
   fetch_and_expand gflags-${GFLAGS_VERSION}.zip
+  pushd gflags-${GFLAGS_VERSION}
+  autoreconf -fvi
+  popd
 fi
 
 # Check that the gperftools patch has been applied.
 # If you add or remove patches, bump the patchlevel below to ensure
 # that any new Jenkins builds pick up your patches.
-GPERFTOOLS_PATCHLEVEL=2
+GPERFTOOLS_PATCHLEVEL=1
 delete_if_wrong_patchlevel gperftools-${GPERFTOOLS_VERSION} $GPERFTOOLS_PATCHLEVEL
 
 if [ ! -d gperftools-${GPERFTOOLS_VERSION} ]; then
   fetch_and_expand gperftools-${GPERFTOOLS_VERSION}.tar.gz
 
   pushd gperftools-${GPERFTOOLS_VERSION}
-  patch -p1 < $TP_DIR/patches/gperftools-issue-560-Revert-issue-481.patch
   patch -p1 < $TP_DIR/patches/gperftools-Change-default-TCMALLOC_TRANSFER_NUM_OBJ-to-40.patch
   touch patchlevel-$GPERFTOOLS_PATCHLEVEL
+  autoreconf -fvi
   popd
   echo
 fi
 
 if [ ! -d protobuf-${PROTOBUF_VERSION} ]; then
   fetch_and_expand protobuf-${PROTOBUF_VERSION}.tar.gz
+  pushd protobuf-${PROTOBUF_VERSION}
+  autoreconf -fvi
+  popd
 fi
 
 if [ ! -d cmake-${CMAKE_VERSION} ]; then
@@ -90,6 +120,9 @@ fi
 
 if [ ! -d snappy-${SNAPPY_VERSION} ]; then
   fetch_and_expand snappy-${SNAPPY_VERSION}.tar.gz
+  pushd snappy-${SNAPPY_VERSION}
+  autoreconf -fvi
+  popd
 fi
 
 if [ ! -d zlib-${ZLIB_VERSION} ]; then

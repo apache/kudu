@@ -31,7 +31,12 @@ else ()
 endif ()
 
 if (CYRUS_SASL_FOUND)
-  set(CYRUS_SASL_LIB_DEPS dl crypt)
+  if (NOT APPLE)
+    set(CYRUS_SASL_LIB_DEPS dl crypt)
+  else ()
+    # the crypt function is in the system C library: no special linker options required.
+    set(CYRUS_SASL_LIB_DEPS dl)
+  endif ()
   if (NOT CyrusSASL_FIND_QUIETLY)
     message(STATUS "Found the CyrusSASL library: ${CYRUS_SASL_SHARED_LIB}")
   endif ()
