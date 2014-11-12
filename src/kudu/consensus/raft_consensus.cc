@@ -502,9 +502,6 @@ Status RaftConsensus::Commit(gscoped_ptr<CommitMsg> commit,
   RETURN_NOT_OK(state_->LockForCommit(&lock));
   state_->UpdateCommittedOpIdUnlocked(committed_op_id);
   RETURN_NOT_OK(ExecuteHook(POST_COMMIT));
-
-  // NOTE: RaftConsensus instance might be destroyed after this call.
-  state_->CountDownOutstandingCommitsIfShuttingDown();
   return Status::OK();
 }
 

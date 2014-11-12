@@ -284,11 +284,6 @@ class ReplicaState {
   // This must be called under a lock.
   void UpdateReplicaCommittedOpIdUnlocked(const OpId& committed_op_id);
 
-  // Called at the very end of a commit to count down the latch.
-  // After this method is called both the RaftConsensus instance and the ReplicaState
-  // might be destroyed so it is no longer safe to query their state.
-  void CountDownOutstandingCommitsIfShuttingDown();
-
   // Waits for already triggered Apply()s to commit.
   Status WaitForOustandingApplies();
 
@@ -373,8 +368,6 @@ class ReplicaState {
   // was received. Initialized to MinimumOpId().
   OpId last_committed_index_;
 
-  // Latch that allows to wait on the outstanding applies to have completed..
-  CountDownLatch in_flight_applies_latch_;
 
   // lock protecting state machine updates
   mutable simple_spinlock update_lock_;

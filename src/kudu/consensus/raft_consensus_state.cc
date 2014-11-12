@@ -99,7 +99,6 @@ ReplicaState::ReplicaState(const ConsensusOptions& options,
     cmeta_(cmeta.Pass()),
     next_index_(0),
     txn_factory_(txn_factory),
-    in_flight_applies_latch_(0),
     state_(kInitialized) {
   CHECK(cmeta_) << "ConsensusMeta passed as NULL";
   UniqueLock l(&update_lock_);
@@ -381,11 +380,17 @@ Status ReplicaState::WaitForOustandingApplies() {
     if (state_ != kShuttingDown) {
       return Status::IllegalState("Can only wait for pending commits on kShuttingDown state.");
     }
-    in_flight_applies_latch_.Reset(in_flight_commits_.size());
-    LOG_WITH_PREFIX(INFO) << "Waiting on " << in_flight_applies_latch_.count()
-        << " outstanding applies:";
+    LOG_WITH_PREFIX(INFO) << "Waiting on " << in_flight_commits_.size()
+                          << " commits in progress...";
   }
-  in_flight_applies_latch_.Wait();
+  for (int wait_attempt = 0; ; wait_attempt++) {
+    UniqueLock lock(&update_lock_);
+    if (in_flight_commits_.empty()) {
+      return Status::OK();
+    }
+    usleep(std::min(10000, wait_attempt * 1000));
+  }
+
   LOG_WITH_PREFIX_LK(INFO) << "All local commits completed.";
   return Status::OK();
 }
@@ -539,12 +544,6 @@ void ReplicaState::UpdateCommittedOpIdUnlocked(const OpId& committed_op_id) {
     << "in the in-flight set";
   CHECK(EraseKeyReturnValuePtr(&pending_txns_, committed_op_id.index()))
     << "Couldn't remove " << committed_op_id.ShortDebugString() << " from the pending set";
-}
-
-void ReplicaState::CountDownOutstandingCommitsIfShuttingDown() {
-  if (PREDICT_FALSE(state_ == kShuttingDown)) {
-    in_flight_applies_latch_.CountDown();
-  }
 }
 
 void ReplicaState::NewIdUnlocked(OpId* id) {
