@@ -60,6 +60,7 @@ DEFINE_int32(num_tablet_servers, 3, "Number of tablet servers to start");
 DEFINE_int32(num_replicas, 3, "Number of replicas per tablet server");
 DEFINE_bool(enable_mutation, false, "Enable periodic mutation of inserted rows");
 DEFINE_string(ts_flags, "", "Flags to pass through to tablet servers");
+DEFINE_string(master_flags, "", "Flags to pass through to masters");
 
 namespace kudu {
 
@@ -92,12 +93,8 @@ class LinkedListTest : public KuduTest {
     opts.data_root = GetTestPath("linked-list-cluster");
     opts.extra_tserver_flags.push_back("--skip_remove_old_recovery_dir");
     opts.extra_tserver_flags.push_back("--tablet_server_rpc_bind_addresses=127.0.0.1:705${index}");
-    if (!FLAGS_ts_flags.empty()) {
-      vector<string> flags = strings::Split(FLAGS_ts_flags, " ");
-      BOOST_FOREACH(const string& flag, flags) {
-        opts.extra_tserver_flags.push_back(flag);
-      }
-    }
+    AddExtraFlags(FLAGS_ts_flags, &opts.extra_tserver_flags);
+    AddExtraFlags(FLAGS_master_flags, &opts.extra_master_flags);
     cluster_.reset(new ExternalMiniCluster(opts));
     ASSERT_STATUS_OK(cluster_->Start());
     KuduClientBuilder builder;
@@ -110,6 +107,16 @@ class LinkedListTest : public KuduTest {
   }
 
  protected:
+  void AddExtraFlags(const string& flags_str, vector<string>* flags) {
+    if (flags_str.empty()) {
+      return;
+    }
+    vector<string> split_flags = strings::Split(flags_str, " ");
+    BOOST_FOREACH(const string& flag, split_flags) {
+      flags->push_back(flag);
+    }
+  }
+
   static const char* kTableName;
   gscoped_ptr<ExternalMiniCluster> cluster_;
   std::tr1::shared_ptr<KuduClient> client_;
