@@ -1148,6 +1148,9 @@ Status RaftConsensus::EnsureFailureDetectorDisabledUnlocked() {
 }
 
 Status RaftConsensus::SnoozeFailureDetectorUnlocked() {
+  if (PREDICT_FALSE(!FLAGS_enable_leader_failure_detection)) {
+    return Status::OK();
+  }
   return failure_detector_->MessageFrom(kTimerId, MonoTime::Now(MonoTime::FINE));
 }
 
