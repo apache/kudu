@@ -304,8 +304,7 @@ string RequestorString(RpcContext* rpc) {
 
 CatalogManager::CatalogManager(Master *master)
   : master_(master),
-    closing_(false),
-    initted_(false) {
+    state_(kConstructed) {
 }
 
 CatalogManager::~CatalogManager() {
@@ -313,6 +312,12 @@ CatalogManager::~CatalogManager() {
 }
 
 Status CatalogManager::Init(bool is_first_run) {
+  {
+    boost::lock_guard<simple_spinlock> l(state_lock_);
+    CHECK_EQ(kConstructed, state_);
+    state_ = kStarting;
+  }
+
   RETURN_NOT_OK_PREPEND(InitSysTablesAsync(is_first_run),
                         "Failed to initialize sys tables async");
 
@@ -342,7 +347,11 @@ Status CatalogManager::Init(bool is_first_run) {
   RETURN_NOT_OK_PREPEND(background_tasks_->Init(),
                         "Failed to initialize catalog manager background tasks");
 
-  initted_ = true;
+  {
+    boost::lock_guard<simple_spinlock> l(state_lock_);
+    CHECK_EQ(kStarting, state_);
+    state_ = kRunning;
+  }
 
   return Status::OK();
 }
@@ -365,14 +374,18 @@ Status CatalogManager::InitSysTablesAsync(bool is_first_run) {
 }
 
 bool CatalogManager::IsInitialized() const {
-  boost::shared_lock<LockType> l(lock_);
-  return initted_;
+  boost::lock_guard<simple_spinlock> l(state_lock_);
+  return state_ == kRunning;
 }
 
 void CatalogManager::Shutdown() {
-  if (Acquire_CompareAndSwap(&closing_, false, true) != false) {
-    VLOG(2) << "CatalogManager already shut down";
-    return;
+  {
+    boost::shared_lock<LockType> l(lock_);
+    if (state_ == kClosing) {
+      VLOG(2) << "CatalogManager already shut down";
+      return;
+    }
+    state_ = kClosing;
   }
 
   // Shutdown the Catalog Manager background thread
@@ -403,8 +416,8 @@ static void SetupError(MasterErrorPB* error,
 }
 
 Status CatalogManager::CheckOnline() const {
-  if (PREDICT_FALSE(Acquire_Load(&closing_))) {
-    return Status::ServiceUnavailable("CatalogManager is shutting down");
+  if (PREDICT_FALSE(!IsInitialized())) {
+    return Status::ServiceUnavailable("CatalogManager is not running");
   }
   return Status::OK();
 }

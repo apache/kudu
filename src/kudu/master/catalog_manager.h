@@ -529,7 +529,15 @@ class CatalogManager : public tserver::TabletPeerLookupIf {
   friend class CatalogManagerBgTasks;
   gscoped_ptr<CatalogManagerBgTasks> background_tasks_;
 
-  bool initted_;
+  enum State {
+    kConstructed,
+    kStarting,
+    kRunning,
+    kClosing
+  };
+  // Lock protecting state_
+  mutable simple_spinlock state_lock_;
+  State state_;
 
   // Async operations are accessing some private methods
   // (TODO: this stuff should be deferred and done in the background thread)
