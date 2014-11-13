@@ -33,6 +33,7 @@ class RpcController;
 
 namespace consensus {
 class PeerProxy;
+class PeerProxyFactory;
 
 // The vote a peer has given.
 enum ElectionVote {
@@ -139,13 +140,11 @@ class LeaderElection : public RefCountedThreadSafe<LeaderElection> {
   // Set up a new leader election driver.
   //
   // The 'vote_counter' must be initialized with the candidate's own yes vote.
-  //
-  // This class does not take ownership of the proxy pointers in 'proxies', and
-  // they must remain valid for the lifetime of the election.
-  LeaderElection(const ProxyMap& proxies,
+  LeaderElection(const metadata::QuorumPB& quorum,
+                 PeerProxyFactory* proxy_factory,
                  const VoteRequestPB& request,
                  gscoped_ptr<VoteCounter> vote_counter,
-                 const ElectionDecisionCallback& notify_election_decision);
+                 const ElectionDecisionCallback& decision_callback);
 
   // Run the election: send the vote request to followers.
   void Run();
@@ -158,10 +157,9 @@ class LeaderElection : public RefCountedThreadSafe<LeaderElection> {
   friend class RefCountedThreadSafe<LeaderElection>;
 
   struct VoterState {
-    // VoterState does not take ownership of the PeerProxy object.
-    explicit VoterState(PeerProxy* proxy);
+    explicit VoterState(gscoped_ptr<PeerProxy> proxy);
 
-    PeerProxy* const proxy;
+    gscoped_ptr<PeerProxy> proxy;
     rpc::RpcController rpc;
     VoteResponsePB response;
   };

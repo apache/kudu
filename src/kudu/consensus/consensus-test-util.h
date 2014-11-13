@@ -104,9 +104,7 @@ class TestPeerProxy : public PeerProxy {
     kRequestVote,
   };
 
-  TestPeerProxy() {
-    CHECK_OK(ThreadPoolBuilder("test-peer-pool").set_max_threads(1).Build(&pool_));
-  }
+  explicit TestPeerProxy(ThreadPool* pool) : pool_(pool) {}
 
  protected:
   // Register the RPC callback in order to call later.
@@ -130,7 +128,7 @@ class TestPeerProxy : public PeerProxy {
   }
 
   simple_spinlock lock_;
-  gscoped_ptr<ThreadPool> pool_;
+  ThreadPool* pool_;
   std::map<Method, rpc::ResponseCallback> callbacks_; // Protected by lock_.
 };
 
@@ -139,8 +137,9 @@ class DelayablePeerProxy : public TestPeerProxy {
  public:
   // Add delayability of RPC responses to the delegated impl.
   // This class takes ownership of 'proxy'.
-  explicit DelayablePeerProxy(ProxyType* proxy)
-    : proxy_(CHECK_NOTNULL(proxy)),
+  explicit DelayablePeerProxy(ThreadPool* pool, ProxyType* proxy)
+    : TestPeerProxy(pool),
+      proxy_(CHECK_NOTNULL(proxy)),
       delay_response_(false),
       latch_(1) {
   }
@@ -162,13 +161,12 @@ class DelayablePeerProxy : public TestPeerProxy {
         return;
       }
     }
-    CHECK_OK(TestPeerProxy::Respond(method));
+    WARN_NOT_OK(TestPeerProxy::Respond(method), "Error while responding.");
   }
 
   virtual Status Respond(Method method) {
     latch_.Wait();   // Wait until strictly after peer would have responded.
-    Status s = TestPeerProxy::Respond(method);
-    return s;
+    return TestPeerProxy::Respond(method);
   }
 
   virtual Status UpdateAsync(const ConsensusRequestPB* request,
@@ -196,7 +194,6 @@ class DelayablePeerProxy : public TestPeerProxy {
   }
 
  protected:
-  simple_spinlock lock_;
   gscoped_ptr<ProxyType> const proxy_;
   bool delay_response_; // Protected by lock_.
   CountDownLatch latch_;
@@ -206,8 +203,7 @@ class DelayablePeerProxy : public TestPeerProxy {
 // You set the response, it will respond with that.
 class MockedPeerProxy : public TestPeerProxy {
  public:
-  MockedPeerProxy() {
-  }
+  explicit MockedPeerProxy(ThreadPool* pool) : TestPeerProxy(pool) {}
 
   virtual void set_update_response(const ConsensusResponsePB& update_response) {
     update_response_ = update_response;
@@ -243,8 +239,8 @@ class MockedPeerProxy : public TestPeerProxy {
 class NoOpTestPeerProxy : public TestPeerProxy {
  public:
 
-  explicit NoOpTestPeerProxy(const metadata::QuorumPeerPB& peer_pb)
-    : peer_pb_(peer_pb) {
+  explicit NoOpTestPeerProxy(ThreadPool* pool, const metadata::QuorumPeerPB& peer_pb)
+    : TestPeerProxy(pool), peer_pb_(peer_pb) {
     last_received_.CopyFrom(MinimumOpId());
   }
 
@@ -297,12 +293,17 @@ class NoOpTestPeerProxy : public TestPeerProxy {
 
 class NoOpTestPeerProxyFactory : public PeerProxyFactory {
  public:
+  NoOpTestPeerProxyFactory() {
+    CHECK_OK(ThreadPoolBuilder("test-peer-pool").set_max_threads(3).Build(&pool_));
+  }
 
   virtual Status NewProxy(const metadata::QuorumPeerPB& peer_pb,
                           gscoped_ptr<PeerProxy>* proxy) OVERRIDE {
-    proxy->reset(new NoOpTestPeerProxy(peer_pb));
+    proxy->reset(new NoOpTestPeerProxy(pool_.get(), peer_pb));
     return Status::OK();
   }
+
+  gscoped_ptr<ThreadPool> pool_;
 };
 
 // Allows to test remote peers by emulating an RPC.
@@ -310,10 +311,9 @@ class NoOpTestPeerProxyFactory : public PeerProxyFactory {
 // asynchronously in a ThreadPool.
 class LocalTestPeerProxy : public TestPeerProxy {
  public:
-  explicit LocalTestPeerProxy(Consensus* consensus)
-    : consensus_(consensus),
+  explicit LocalTestPeerProxy(ThreadPool* pool, Consensus* consensus)
+    : TestPeerProxy(pool), consensus_(consensus),
       miss_comm_(false) {
-    CHECK_OK(ThreadPoolBuilder("noop-peer-pool").set_max_threads(1).Build(&pool_));
   }
 
   virtual Status UpdateAsync(const ConsensusRequestPB* request,
@@ -379,7 +379,7 @@ class LocalTestPeerProxy : public TestPeerProxy {
         response->CopyFrom(other_peer_resp);
         VLOG(2) << this << ": not injecting fault for req: " << request->ShortDebugString();
       }
-      CHECK_OK(Respond(kUpdate));
+      WARN_NOT_OK(Respond(kUpdate), "Could not send response.");
     }
   }
 
@@ -422,7 +422,7 @@ class LocalTestPeerProxy : public TestPeerProxy {
                    error->mutable_status());
         miss_comm_ = false;
       }
-      CHECK_OK(Respond(kRequestVote));
+      WARN_NOT_OK(Respond(kRequestVote) , "Could not send response.");
     }
   }
 
@@ -442,12 +442,7 @@ class LocalTestPeerProxy : public TestPeerProxy {
     return consensus_;
   }
 
-  ~LocalTestPeerProxy() {
-    pool_->Wait();
-  }
-
  private:
-  gscoped_ptr<ThreadPool> pool_;
   Consensus* consensus_;
   mutable simple_spinlock lock_;
   bool miss_comm_;
@@ -472,6 +467,9 @@ class UnsetConsensusOnDestroyHook : public Consensus::ConsensusFaultHooks {
 
 class LocalTestPeerProxyFactory : public PeerProxyFactory {
  public:
+  LocalTestPeerProxyFactory() {
+    CHECK_OK(ThreadPoolBuilder("test-peer-pool").set_max_threads(3).Build(&pool_));
+  }
   typedef pair<std::tr1::shared_ptr<UnsetConsensusOnDestroyHook>, Consensus*> Entry;
 
   // TODO allow to pass other fault hooks
@@ -484,7 +482,7 @@ class LocalTestPeerProxyFactory : public PeerProxyFactory {
   virtual Status NewProxy(const metadata::QuorumPeerPB& peer_pb,
                           gscoped_ptr<PeerProxy>* proxy) OVERRIDE {
     Entry entry = FindOrDie(peers_, peer_pb.permanent_uuid());
-    LocalTestPeerProxy* new_proxy = new LocalTestPeerProxy(entry.second);
+    LocalTestPeerProxy* new_proxy = new LocalTestPeerProxy(pool_.get(), entry.second);
     entry.first->AddPeerProxy(new_proxy);
     proxy->reset(new_proxy);
     proxies_.push_back(new_proxy);
@@ -496,6 +494,7 @@ class LocalTestPeerProxyFactory : public PeerProxyFactory {
   }
 
  private:
+  gscoped_ptr<ThreadPool> pool_;
   std::tr1::unordered_map<std::string, Entry> peers_;
   // NOTE: There is no need to delete this on the dctor because proxies are externally managed
   vector<LocalTestPeerProxy*> proxies_;

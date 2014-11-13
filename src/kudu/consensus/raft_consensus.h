@@ -282,9 +282,6 @@ class RaftConsensus : public Consensus,
 
   scoped_refptr<FailureDetector> failure_detector_;
 
-  // Proxies used during leader election. Initialized at startup.
-  LeaderElection::ProxyMap election_proxies_;
-
   // TODO hack to serialize updates due to repeated/out-of-order messages
   // should probably be refactored out.
   //

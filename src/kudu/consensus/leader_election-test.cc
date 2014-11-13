@@ -41,15 +41,31 @@ static vector<string> GenVoterUUIDs(int num_voters) {
 // LeaderElectionTest
 ////////////////////////////////////////
 
+typedef unordered_map<string, PeerProxy*> ProxyMap;
+
+// A proxy factory that serves proxies from a map.
+class FromMapPeerProxyFactory : public PeerProxyFactory {
+ public:
+  explicit FromMapPeerProxyFactory(const ProxyMap& proxy_map) : proxy_map_(proxy_map) {}
+
+  virtual Status NewProxy(const metadata::QuorumPeerPB& peer_pb,
+                          gscoped_ptr<PeerProxy>* proxy) {
+    PeerProxy* proxy_ptr = FindPtrOrNull(proxy_map_, peer_pb.permanent_uuid());
+    if (!proxy) return Status::NotFound("No proxy for peer.");
+    proxy->reset(proxy_ptr);
+    return Status::OK();
+  }
+ private:
+  const ProxyMap& proxy_map_;
+};
+
 class LeaderElectionTest : public KuduTest {
  public:
   LeaderElectionTest()
     : tablet_id_("test-tablet"),
+      proxy_factory_(new FromMapPeerProxyFactory(proxies_)),
       latch_(1) {
-  }
-
-  ~LeaderElectionTest() {
-    STLDeleteValues(&proxies_);
+    CHECK_OK(ThreadPoolBuilder("test-peer-pool").set_max_threads(3).Build(&pool_));
   }
 
   void ElectionCallback(const ElectionResult& result);
@@ -75,7 +91,11 @@ class LeaderElectionTest : public KuduTest {
   const string tablet_id_;
   string candidate_uuid_;
   vector<string> voter_uuids_;
-  unordered_map<string, PeerProxy*> proxies_;
+
+  QuorumPB quorum_;
+  ProxyMap proxies_;
+  gscoped_ptr<PeerProxyFactory> proxy_factory_;
+  gscoped_ptr<ThreadPool> pool_;
 
   CountDownLatch latch_;
   gscoped_ptr<ElectionResult> result_;
@@ -93,18 +113,23 @@ void LeaderElectionTest::InitUUIDs(int num_voters) {
 }
 
 void LeaderElectionTest::InitNoOpPeerProxies() {
+  quorum_.Clear();
   BOOST_FOREACH(const string& uuid, voter_uuids_) {
-    QuorumPeerPB peer_pb;
-    peer_pb.set_permanent_uuid(uuid);
-    PeerProxy* proxy = new NoOpTestPeerProxy(peer_pb);
+    QuorumPeerPB* peer_pb = quorum_.add_peers();
+    peer_pb->set_permanent_uuid(uuid);
+    PeerProxy* proxy = new NoOpTestPeerProxy(pool_.get(), *peer_pb);
     InsertOrDie(&proxies_, uuid, proxy);
   }
 }
 
 void LeaderElectionTest::InitDelayableMockedProxies(bool enable_delay) {
+  quorum_.Clear();
   BOOST_FOREACH(const string& uuid, voter_uuids_) {
+    QuorumPeerPB* peer_pb = quorum_.add_peers();
+       peer_pb->set_permanent_uuid(uuid);
     DelayablePeerProxy<MockedPeerProxy>* proxy =
-        new DelayablePeerProxy<MockedPeerProxy>(new MockedPeerProxy());
+        new DelayablePeerProxy<MockedPeerProxy>(pool_.get(),
+                                                new MockedPeerProxy(pool_.get()));
     if (enable_delay) {
       proxy->DelayResponse();
     }
@@ -152,7 +177,7 @@ scoped_refptr<LeaderElection> LeaderElectionTest::SetUpElectionWithHighTermVoter
   request.set_tablet_id(tablet_id_);
 
   scoped_refptr<LeaderElection> election(
-      new LeaderElection(proxies_, request, counter.Pass(),
+      new LeaderElection(quorum_, proxy_factory_.get(), request, counter.Pass(),
                          Bind(&LeaderElectionTest::ElectionCallback,
                               Unretained(this))));
   return election;
@@ -207,7 +232,7 @@ scoped_refptr<LeaderElection> LeaderElectionTest::SetUpElectionWithGrantDenyErro
   request.set_tablet_id(tablet_id_);
 
   scoped_refptr<LeaderElection> election(
-      new LeaderElection(proxies_, request, counter.Pass(),
+      new LeaderElection(quorum_, proxy_factory_.get(), request, counter.Pass(),
                          Bind(&LeaderElectionTest::ElectionCallback,
                               Unretained(this))));
   return election;
@@ -229,7 +254,7 @@ TEST_F(LeaderElectionTest, TestPerfectElection) {
   request.set_tablet_id(tablet_id_);
 
   scoped_refptr<LeaderElection> election(
-      new LeaderElection(proxies_, request, counter.Pass(),
+      new LeaderElection(quorum_, proxy_factory_.get(), request, counter.Pass(),
                          Bind(&LeaderElectionTest::ElectionCallback,
                               Unretained(this))));
   election->Run();
@@ -260,6 +285,8 @@ TEST_F(LeaderElectionTest, TestHigherTermBeforeDecision) {
   // This guy will vote "yes".
   ASSERT_OK(down_cast<DelayablePeerProxy<MockedPeerProxy>*>(proxies_[voter_uuids_[1]])
       ->Respond(TestPeerProxy::kRequestVote));
+
+  pool_->Wait(); // Wait for the election callbacks to finish before we destroy proxies.
 }
 
 // Test leader election when we encounter a peer with a higher term after we
@@ -283,6 +310,8 @@ TEST_F(LeaderElectionTest, TestHigherTermAfterDecision) {
   // This guy has a higher term.
   ASSERT_OK(down_cast<DelayablePeerProxy<MockedPeerProxy>*>(proxies_[voter_uuids_[0]])
       ->Respond(TestPeerProxy::kRequestVote));
+
+  pool_->Wait(); // Wait for the election callbacks to finish before we destroy proxies.
 }
 
 // Out-of-date OpId "vote denied" case.
@@ -302,6 +331,8 @@ TEST_F(LeaderElectionTest, TestWithDenyVotes) {
   ASSERT_FALSE(result_->has_higher_term);
   ASSERT_TRUE(result_->message.empty());
   LOG(INFO) << "Election denied.";
+
+  pool_->Wait(); // Wait for the election callbacks to finish before we destroy proxies.
 }
 
 // Count errors as denied votes.
@@ -320,6 +351,8 @@ TEST_F(LeaderElectionTest, TestWithErrorVotes) {
   ASSERT_FALSE(result_->has_higher_term);
   ASSERT_TRUE(result_->message.empty());
   LOG(INFO) << "Election denied.";
+
+  pool_->Wait(); // Wait for the election callbacks to finish before we destroy proxies.
 }
 
 ////////////////////////////////////////

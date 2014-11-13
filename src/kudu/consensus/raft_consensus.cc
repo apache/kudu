@@ -137,7 +137,6 @@ RaftConsensus::RaftConsensus(const ConsensusOptions& options,
 
 RaftConsensus::~RaftConsensus() {
   Shutdown();
-  STLDeleteValues(&election_proxies_);
 }
 
 Status RaftConsensus::VerifyQuorumAndCheckThatNoChangeIsPendingUnlocked(const QuorumPB& quorum) {
@@ -187,17 +186,6 @@ Status RaftConsensus::Start(const ConsensusBootstrapInfo& info) {
   }
 
   state_->AdvanceCommittedIndex(info.last_committed_id);
-
-  // TODO: Revisit the PeerProxy ownership model once we need to support
-  // quorum membership changes and after we refactor the Peer tests.
-  string local_uuid = peer_uuid();
-  STLDeleteValues(&election_proxies_);
-  BOOST_FOREACH(const QuorumPeerPB& peer, initial_quorum.peers()) {
-    if (peer.permanent_uuid() == local_uuid) continue;
-    gscoped_ptr<PeerProxy> proxy;
-    RETURN_NOT_OK(peer_proxy_factory_->NewProxy(peer, &proxy));
-    InsertOrDie(&election_proxies_, peer.permanent_uuid(), proxy.release());
-  }
 
   // If we're marked as candidate emulate a leader election.
   // Temporary while we don't have the real thing.
@@ -281,7 +269,9 @@ Status RaftConsensus::StartElection() {
     request.set_tablet_id(state_->GetOptions().tablet_id);
     request.mutable_candidate_status()->mutable_last_received()->CopyFrom(GetLastOpIdFromLog());
 
-    election.reset(new LeaderElection(election_proxies_, request, counter.Pass(),
+    election.reset(new LeaderElection(state_->GetActiveQuorumUnlocked(),
+                                      peer_proxy_factory_.get(),
+                                      request, counter.Pass(),
                                       Bind(&RaftConsensus::ElectionCallback, this)));
   }
 

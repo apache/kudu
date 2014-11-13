@@ -137,7 +137,8 @@ ElectionResult::ElectionResult(ConsensusTerm election_term, ElectionVote decisio
 // LeaderElection
 ///////////////////////////////////////////////////
 
-LeaderElection::LeaderElection(const ProxyMap& proxies,
+LeaderElection::LeaderElection(const metadata::QuorumPB& quorum,
+                               PeerProxyFactory* proxy_factory,
                                const VoteRequestPB& request,
                                gscoped_ptr<VoteCounter> vote_counter,
                                const ElectionDecisionCallback& decision_callback)
@@ -146,10 +147,13 @@ LeaderElection::LeaderElection(const ProxyMap& proxies,
     vote_counter_(vote_counter.Pass()),
     decision_callback_(decision_callback) {
 
-  BOOST_FOREACH(const ProxyMap::value_type& entry, proxies) {
-    follower_uuids_.push_back(entry.first);
-    gscoped_ptr<VoterState> state(new VoterState(entry.second));
-    InsertOrDie(&voter_state_, entry.first, state.release());
+  BOOST_FOREACH(const metadata::QuorumPeerPB& peer, quorum.peers()) {
+    if (request.candidate_uuid() == peer.permanent_uuid()) continue;
+    follower_uuids_.push_back(peer.permanent_uuid());
+    gscoped_ptr<PeerProxy> proxy;
+    CHECK_OK(proxy_factory->NewProxy(peer, &proxy));
+    gscoped_ptr<VoterState> state(new VoterState(proxy.Pass()));
+    InsertOrDie(&voter_state_, peer.permanent_uuid(), state.release());
   }
 
   // Ensure that the candidate has already voted for itself.
@@ -327,8 +331,8 @@ std::string LeaderElection::GetLogPrefix() const {
                     request_.candidate_term());
 }
 
-LeaderElection::VoterState::VoterState(PeerProxy* proxy)
-  : proxy(DCHECK_NOTNULL(proxy)) {
+LeaderElection::VoterState::VoterState(gscoped_ptr<PeerProxy> proxy)
+  : proxy(proxy.Pass()) {
 }
 
 } // namespace consensus

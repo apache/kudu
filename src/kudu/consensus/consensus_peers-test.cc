@@ -32,6 +32,7 @@ class ConsensusPeersTest : public KuduTest {
   ConsensusPeersTest()
     : metric_context_(&metric_registry_, "peer-test"),
       schema_(GetSimpleTestSchema()) {
+    CHECK_OK(ThreadPoolBuilder("test-peer-pool").set_max_threads(1).Build(&pool_));
   }
 
   virtual void SetUp() OVERRIDE {
@@ -64,8 +65,8 @@ class ConsensusPeersTest : public KuduTest {
     QuorumPeerPB peer_pb;
     peer_pb.set_permanent_uuid(peer_name);
     DelayablePeerProxy<NoOpTestPeerProxy>* proxy_ptr =
-        new DelayablePeerProxy<NoOpTestPeerProxy>(
-            new NoOpTestPeerProxy(peer_pb));
+        new DelayablePeerProxy<NoOpTestPeerProxy>(pool_.get(),
+            new NoOpTestPeerProxy(pool_.get(), peer_pb));
     gscoped_ptr<PeerProxy> proxy(proxy_ptr);
     CHECK_OK(Peer::NewRemotePeer(peer_pb,
                                  kTabletId,
@@ -107,11 +108,12 @@ class ConsensusPeersTest : public KuduTest {
   gscoped_ptr<TestRaftConsensusQueueIface> consensus_;
   MetricRegistry metric_registry_;
   MetricContext metric_context_;
+  gscoped_ptr<FsManager> fs_manager_;
+  gscoped_ptr<Log> log_;
   gscoped_ptr<PeerMessageQueue> message_queue_;
   const Schema schema_;
-  gscoped_ptr<FsManager> fs_manager_;
   LogOptions options_;
-  gscoped_ptr<Log> log_;
+  gscoped_ptr<ThreadPool> pool_;
 };
 
 // Tests that a local peer is correctly built and tracked
