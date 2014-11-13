@@ -496,5 +496,12 @@ TEST_F(TabletPeerTest, TestActiveTransactionPreventsLogGC) {
   ASSERT_EQ(2, segments.size());
 }
 
+TEST_F(TabletPeerTest, TestGCEmptyLog) {
+  ConsensusBootstrapInfo info;
+  tablet_peer_->Start(info);
+  // We don't wait on consensus on purpose.
+  ASSERT_OK(tablet_peer_->RunLogGC());
+}
+
 } // namespace tablet
 } // namespace kudu
