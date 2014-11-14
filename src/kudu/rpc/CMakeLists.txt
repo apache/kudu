@@ -32,6 +32,7 @@ add_library(krpc
     negotiation.cc
     proxy.cc
     reactor.cc
+    rpc.cc
     rpc_context.cc
     rpc_controller.cc
     sasl_common.cc

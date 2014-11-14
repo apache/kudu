@@ -1,7 +1,7 @@
 // Copyright (c) 2014, Cloudera, inc.
 // Confidential Cloudera Information: Covered by NDA.
 
-#include "kudu/client/rpc.h"
+#include "kudu/rpc/rpc.h"
 
 #include <boost/bind.hpp>
 #include <string>
@@ -16,12 +16,7 @@ using strings::Substitute;
 
 namespace kudu {
 
-using rpc::ErrorStatusPB;
-using rpc::Messenger;
-
-namespace client {
-
-namespace internal {
+namespace rpc {
 
 bool RpcRetrier::HandleResponse(Rpc* rpc, Status* out_status) {
   ignore_result(DCHECK_NOTNULL(rpc));
@@ -75,6 +70,5 @@ void RpcRetrier::DelayedRetryCb(Rpc* rpc, const Status& status) {
   }
 }
 
-} // namespace internal
-} // namespace client
+} // namespace rpc
 } // namespace kudu

@@ -9,7 +9,6 @@
 
 #include "kudu/client/client.h"
 #include "kudu/client/client-internal.h"
-#include "kudu/client/rpc.h"
 #include "kudu/common/schema.h"
 #include "kudu/common/wire_protocol.h"
 #include "kudu/gutil/map-util.h"
@@ -18,6 +17,7 @@
 #include "kudu/master/master.pb.h"
 #include "kudu/master/master.proxy.h"
 #include "kudu/rpc/messenger.h"
+#include "kudu/rpc/rpc.h"
 #include "kudu/tserver/tserver_service.proxy.h"
 #include "kudu/util/net/dns_resolver.h"
 #include "kudu/util/net/net_util.h"
@@ -37,6 +37,7 @@ using master::TabletLocationsPB_ReplicaPB;
 using master::TSInfoPB;
 using metadata::QuorumPeerPB;
 using rpc::Messenger;
+using rpc::Rpc;
 using tserver::TabletServerServiceProxy;
 
 namespace client {

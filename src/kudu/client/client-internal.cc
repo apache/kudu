@@ -8,7 +8,6 @@
 #include <vector>
 
 #include "kudu/client/meta_cache.h"
-#include "kudu/client/rpc.h"
 #include "kudu/common/schema.h"
 #include "kudu/common/wire_protocol.h"
 #include "kudu/gutil/map-util.h"
@@ -17,6 +16,7 @@
 #include "kudu/master/master.h"
 #include "kudu/master/master.pb.h"
 #include "kudu/master/master.proxy.h"
+#include "kudu/rpc/rpc.h"
 #include "kudu/rpc/rpc_controller.h"
 #include "kudu/util/net/dns_resolver.h"
 #include "kudu/util/net/net_util.h"
@@ -35,6 +35,7 @@ using master::MasterServiceProxy;
 using master::MasterErrorPB;
 using metadata::QuorumPeerPB;
 
+using rpc::Rpc;
 using rpc::RpcController;
 using strings::Substitute;
 
@@ -44,7 +45,6 @@ using internal::GetLeaderMasterRpc;
 using internal::GetTableSchemaRpc;
 using internal::RemoteTablet;
 using internal::RemoteTabletServer;
-using internal::Rpc;
 
 KuduClient::Data::Data() {
 }

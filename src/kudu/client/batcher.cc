@@ -16,7 +16,6 @@
 #include "kudu/client/client-internal.h"
 #include "kudu/client/error_collector.h"
 #include "kudu/client/meta_cache.h"
-#include "kudu/client/rpc.h"
 #include "kudu/client/session-internal.h"
 #include "kudu/client/write_op.h"
 #include "kudu/client/write_op-internal.h"
@@ -27,6 +26,7 @@
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/rpc/messenger.h"
+#include "kudu/rpc/rpc.h"
 #include "kudu/tserver/tserver_service.proxy.h"
 #include "kudu/util/debug-util.h"
 
@@ -39,6 +39,7 @@ namespace kudu {
 
 using rpc::ErrorStatusPB;
 using rpc::Messenger;
+using rpc::Rpc;
 using rpc::RpcController;
 using tserver::WriteRequestPB;
 using tserver::WriteResponsePB;

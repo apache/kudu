@@ -1,7 +1,7 @@
 // Copyright (c) 2014, Cloudera, inc.
 // Confidential Cloudera Information: Covered by NDA.
-#ifndef KUDU_CLIENT_RPC_H
-#define KUDU_CLIENT_RPC_H
+#ifndef KUDU_RPC_RPC_H
+#define KUDU_RPC_RPC_H
 
 #include <string>
 
@@ -12,20 +12,9 @@
 
 namespace kudu {
 
-namespace master {
-class MasterServiceProxy;
-} // namespace master
-
 namespace rpc {
+
 class Messenger;
-} // namespace rpc
-
-namespace client {
-
-namespace internal {
-
-class MetaCache;
-class RemoteTablet;
 class Rpc;
 
 // Provides utilities for retrying failed RPCs.
@@ -65,11 +54,11 @@ class RpcRetrier {
   // Callers should ensure that 'rpc' remains alive.
   void DelayedRetry(Rpc* rpc);
 
-  rpc::RpcController& controller() { return controller_; }
+  RpcController& controller() { return controller_; }
 
   const MonoTime& deadline() { return deadline_; }
 
-  const std::tr1::shared_ptr<rpc::Messenger>& messenger() const {
+  const std::tr1::shared_ptr<Messenger>& messenger() const {
     return messenger_;
   }
 
@@ -87,10 +76,10 @@ class RpcRetrier {
   MonoTime deadline_;
 
   // Messenger to use when sending the RPC.
-  std::tr1::shared_ptr<rpc::Messenger> messenger_;
+  std::tr1::shared_ptr<Messenger> messenger_;
 
   // RPC controller to use when sending the RPC.
-  rpc::RpcController controller_;
+  RpcController controller_;
 
   DISALLOW_COPY_AND_ASSIGN(RpcRetrier);
 };
@@ -129,8 +118,7 @@ class Rpc {
   DISALLOW_COPY_AND_ASSIGN(Rpc);
 };
 
-} // namespace internal
-} // namespace client
+} // namespace rpc
 } // namespace kudu
 
-#endif
+#endif // KUDU_RPC_RPC_H
