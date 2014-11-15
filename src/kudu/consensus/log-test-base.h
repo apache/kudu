@@ -50,6 +50,26 @@ const char* kTestTablet = "test-log-tablet";
 const bool APPEND_SYNC = true;
 const bool APPEND_ASYNC = false;
 
+static Status AppendNoOpToLogSync(Log* log, OpId* op_id, int* size = NULL) {
+  LogEntryPB log_entry;
+  log_entry.set_type(REPLICATE);
+  ReplicateMsg* repl = log_entry.mutable_replicate();
+  repl->mutable_id()->CopyFrom(*op_id);
+  repl->set_op_type(NO_OP);
+  RETURN_NOT_OK(log->Append(&log_entry));
+  if (size) {
+    // If we're tracking the sizes we need to account for the fact
+    // that the Log wraps the log entry in an LogEntryBatchPB and
+    // that entries are length-prefix encoded (+ 4 bytes).
+    LogEntryBatchPB batch;
+    batch.add_entry()->CopyFrom(log_entry);
+    *size += batch.ByteSize() + log::kEntryHeaderSize;
+  }
+  // Increment op_id.
+  op_id->set_index(op_id->index() + 1);
+  return Status::OK();
+}
+
 class LogTestBase : public KuduTest {
  public:
 
@@ -203,23 +223,7 @@ class LogTestBase : public KuduTest {
   // If non-NULL, and if the write is successful, 'size' is incremented
   // by the size of the written operation.
   Status AppendNoOp(OpId* op_id, int* size = NULL) {
-    LogEntryPB log_entry;
-    log_entry.set_type(REPLICATE);
-    ReplicateMsg* repl = log_entry.mutable_replicate();
-    repl->mutable_id()->CopyFrom(*op_id);
-    repl->set_op_type(NO_OP);
-    RETURN_NOT_OK(log_->Append(&log_entry));
-    if (size) {
-      // If we're tracking the sizes we need to account for the fact
-      // that the Log wraps the log entry in an LogEntryBatchPB and
-      // that entries are length-prefix encoded (+ 4 bytes).
-      LogEntryBatchPB batch;
-      batch.add_entry()->CopyFrom(log_entry);
-      *size += batch.ByteSize() + log::kEntryHeaderSize;
-    }
-    // Increment op_id.
-    op_id->set_index(op_id->index() + 1);
-    return Status::OK();
+    return AppendNoOpToLogSync(log_.get(), op_id, size);
   }
 
   // Append a number of no-op entries to the log.
