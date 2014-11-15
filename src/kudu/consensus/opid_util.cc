@@ -68,6 +68,10 @@ bool OpIdLessThanPtrFunctor::operator() (const OpId* left, const OpId* right) co
   return OpIdLessThan(*left, *right);
 }
 
+bool OpIdIndexLessThanPtrFunctor::operator() (const OpId* left, const OpId* right) const {
+  return left->index() < right->index();
+}
+
 bool OpIdCompareFunctor::operator() (const OpId& left, const OpId& right) const {
   return OpIdLessThan(left, right);
 }

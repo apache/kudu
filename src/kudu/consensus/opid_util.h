@@ -55,6 +55,12 @@ struct OpIdLessThanPtrFunctor {
   bool operator() (const OpId* left, const OpId* right) const;
 };
 
+// Sorts op id's by index only, disregarding the term.
+struct OpIdIndexLessThanPtrFunctor {
+  // Returns true iff left.index() < right.index().
+  bool operator() (const OpId* left, const OpId* right) const;
+};
+
 // OpId compare() functor. Suitable for use with std::sort and std::map.
 struct OpIdCompareFunctor {
   // Returns true iff left < right.
