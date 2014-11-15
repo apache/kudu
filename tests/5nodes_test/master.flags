@@ -1,2 +1,3 @@
 --master_web_port=61010
 --assignment_timeout_ms=30000
+--enable_leader_failure_detection=false
