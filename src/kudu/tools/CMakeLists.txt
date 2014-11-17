@@ -19,6 +19,10 @@ add_executable(create-demo-table create-demo-table.cc)
 target_link_libraries(create-demo-table
   ${LINK_LIBS})
 
+add_executable(insert-generated-rows insert-generated-rows.cc)
+target_link_libraries(insert-generated-rows
+  ${LINK_LIBS})
+
 add_executable(kudu-ts-cli ts-cli.cc)
 target_link_libraries(kudu-ts-cli
   ${LINK_LIBS})
