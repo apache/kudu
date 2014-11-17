@@ -61,7 +61,7 @@ void MasterPathHandlers::HandleTabletServers(const Webserver::WebRequest& req,
 
 void MasterPathHandlers::HandleCatalogManager(const Webserver::WebRequest& req,
                                               std::stringstream* output) {
-  *output << "<h1>Catalog Manager</h1>\n";
+  *output << "<h1>Tables</h1>\n";
 
   std::vector<scoped_refptr<TableInfo> > tables;
   master_->catalog_manager()->GetAllTables(&tables);
@@ -185,7 +185,7 @@ Status MasterPathHandlers::Register(Webserver* server) {
   server->RegisterPathHandler("/tablet-servers",
                               boost::bind(&MasterPathHandlers::HandleTabletServers, this, _1, _2),
                               is_styled, is_on_nav_bar);
-  server->RegisterPathHandler("/catalog-manager",
+  server->RegisterPathHandler("/tablez",
                               boost::bind(&MasterPathHandlers::HandleCatalogManager, this, _1, _2),
                               is_styled, is_on_nav_bar);
   server->RegisterPathHandler("/table",
