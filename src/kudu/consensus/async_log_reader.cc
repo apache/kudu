@@ -51,7 +51,7 @@ void AsyncLogReader::ReadEntriesAsync(int64_t starting_at,
   Status s = log_reader_->ReadAllReplicateEntries(starting_at,
                                                   up_to,
                                                   &replicates);
-  callback.Run(s, replicates);
+  callback.Run(starting_at, s, replicates);
 
   {
     boost::lock_guard<simple_spinlock> lock(lock_);

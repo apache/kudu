@@ -131,7 +131,8 @@ class LogCache {
   // Return a string with stats
   std::string StatsStringUnlocked() const;
 
-  void EntriesLoadedCallback(const Status& status,
+  void EntriesLoadedCallback(int64_t after_op_index,
+                             const Status& status,
                              const std::vector<ReplicateMsg*>& replicates);
 
   mutable simple_spinlock lock_;

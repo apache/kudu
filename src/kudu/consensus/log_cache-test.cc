@@ -121,6 +121,31 @@ TEST_F(LogCacheTest, TestCacheRefusesRequestWhenFilled) {
   ASSERT_TRUE(AppendReplicateMessagesToCache(8, 1, kPayloadSize));
 }
 
+// Tests that the cache returns an empty set of messages when queried for
+// the the last index and returns all possible messages when queried for
+// MinimumOpId().
+TEST_F(LogCacheTest, TestCacheEdgeCases) {
+  cache_.reset(new LogCache(metric_context_, "TestCacheEdgeCases"));
+
+  // Append 1 message to the cache
+  ASSERT_TRUE(AppendReplicateMessagesToCache(1, 1));
+
+  std::vector<ReplicateMsg*> messages;
+  OpId preceding;
+
+  // Test when the searched index is MinimumOpId().index().
+  ASSERT_OK(cache_->ReadOps(0, 100, &messages, &preceding));
+  ASSERT_EQ(1, messages.size());
+  ASSERT_OPID_EQ(MakeOpId(0, 0), preceding);
+
+  messages.clear();
+  preceding.Clear();
+  // Test when 'after_op_index' is the last index in the cache.
+  ASSERT_OK(cache_->ReadOps(1, 100, &messages, &preceding));
+  ASSERT_EQ(0, messages.size());
+  ASSERT_OPID_EQ(MakeOpId(0, 1), preceding);
+}
+
 
 TEST_F(LogCacheTest, TestHardAndSoftLimit) {
   FLAGS_log_cache_size_soft_limit_mb = 1;

@@ -34,7 +34,8 @@ class AsyncLogReaderTest : public LogTestBase {
     return Status::OK();
   }
 
-  void ReadPerformedCallback(const Status& status,
+  void ReadPerformedCallback(int64_t starting_at,
+                             const Status& status,
                              const vector<ReplicateMsg*>& replicates) {
     {
       boost::lock_guard<simple_spinlock> lock(lock_);

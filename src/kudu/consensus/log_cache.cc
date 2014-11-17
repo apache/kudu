@@ -204,7 +204,8 @@ Status LogCache::ReadOps(int64_t after_op_index,
   return Status::OK();
 }
 
-void LogCache::EntriesLoadedCallback(const Status& status,
+void LogCache::EntriesLoadedCallback(int64_t after_op_index,
+                                     const Status& status,
                                      const vector<ReplicateMsg*>& replicates) {
   // TODO deal with errors when loading operations.
   CHECK_OK(status);
@@ -224,8 +225,19 @@ void LogCache::EntriesLoadedCallback(const Status& status,
     // We were told to load ops after 'new_preceding_first_op_index' so we skip
     // the first one, whose OpId will become our new 'preceding_first_op_'
     vector<ReplicateMsg*>::const_iterator iter = replicates.begin();
-    gscoped_ptr<ReplicateMsg> preceding_replicate(*iter);
-    ++iter;
+
+
+    OpId preceding_id;
+    // Special case when the caller requested all operations after MinimumOpId()
+    // since that operation does not exist, we need to set it ourselves.
+    if (after_op_index == MinimumOpId().index()) {
+      preceding_id = MinimumOpId();
+    // otherwise just skip the first operation, which will become the preceding id.
+    } else {
+      preceding_id = (*iter)->id();
+      delete *iter;
+      ++iter;
+    }
 
     for (; iter != replicates.end(); ++iter) {
       ReplicateMsg* replicate = *iter;
@@ -240,10 +252,10 @@ void LogCache::EntriesLoadedCallback(const Status& status,
       << "Expected: " << preceding_first_op_.ShortDebugString()
       << " got: " << replicates.back()->id();
 
-    preceding_first_op_ = preceding_replicate->id();
-    LOG(INFO) << "Loaded operations into the cache from: "
-        << replicates.front()->id().ShortDebugString()
-        << " to: " << replicates.back()->id().ShortDebugString()
+    preceding_first_op_ = preceding_id;
+    LOG(INFO) << "Loaded operations into the cache after: "
+        << preceding_id.ShortDebugString() << " to: "
+        << replicates.back()->id().ShortDebugString()
         << " for a total of: " << replicates.size();
   }
 

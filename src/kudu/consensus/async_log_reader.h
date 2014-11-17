@@ -27,8 +27,11 @@ class AsyncLogReader {
 
   // The callback that is called once the messages have been read from disk.
   // AsyncLogReader assumes that the Callback will take ownership of the ReplicateMsgs.
+  // 'starting_at' refers to the index of the first requested operation, passed in
+  // EnqueueAsyncRead().
   typedef Callback<
-      void(const Status& resulting_status,
+      void(int64_t starting_at,
+           const Status& resulting_status,
            const std::vector<consensus::ReplicateMsg*>& read_replicates)>
       ReadDoneCallback;
 
