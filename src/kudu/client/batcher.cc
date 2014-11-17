@@ -268,7 +268,8 @@ void WriteRpc::SendRpc() {
   // Choose a destination TS according to the following algorithm:
   // 1. Select the leader, provided:
   //    a. One exists, and
-  //    b. It hasn't failed.
+  //    b. It hasn't failed, and
+  //    c. It isn't currently marked as a follower.
   // 2. If there's no good leader select another replica, provided:
   //    a. It hasn't failed, and
   //    b. It hasn't rejected our write due to being a follower.
@@ -281,7 +282,8 @@ void WriteRpc::SendRpc() {
   // 6. Repeat steps 1-5 until the write succeeds, fails for other reasons,
   //    or the write's deadline expires.
   current_ts_ = tablet_->LeaderTServer();
-  if (!current_ts_) {
+  if (!current_ts_ || ContainsKey(followers_, current_ts_)) {
+    current_ts_ = NULL;
     vector<RemoteTabletServer*> replicas;
     tablet_->GetRemoteTabletServers(&replicas);
     BOOST_FOREACH(RemoteTabletServer* ts, replicas) {
@@ -379,7 +381,7 @@ void WriteRpc::SendRpcCb(const Status& status) {
   //
   // TODO: IllegalState is obviously way too broad an error category for
   // this case.
-  if (new_status.IsIllegalState()) {
+  if (new_status.IsIllegalState() || new_status.IsAborted()) {
     followers_.insert(current_ts_);
     retrier().DelayedRetry(this);
     return;
