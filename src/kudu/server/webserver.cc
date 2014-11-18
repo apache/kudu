@@ -338,7 +338,7 @@ static const char* const PAGE_FOOTER = "</div></body></html>";
 static const char* const NAVIGATION_BAR_PREFIX =
 "<div class='navbar navbar-inverse navbar-fixed-top'>"
 "      <div class='navbar-inner'>"
-"        <div class='container'>"
+"        <div class='container-fluid'>"
 "          <a href='/'>"
 "            <img src=\"/logo.png\" width='55' height='52' alt=\"Kudu\" style=\"float:left\"/>"
 "          </a>"
@@ -351,7 +351,7 @@ static const char* const NAVIGATION_BAR_SUFFIX =
 "        </div>"
 "      </div>"
 "    </div>"
-"    <div class='container'>";
+"    <div class='container-fluid'>";
 
 void Webserver::BootstrapPageHeader(stringstream* output) {
   (*output) << PAGE_HEADER;
