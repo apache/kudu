@@ -116,6 +116,8 @@ class TransactionDriver : public RefCountedThreadSafe<TransactionDriver>,
 
   virtual std::string ToStringUnlocked() const;
 
+  std::string LogPrefix() const;
+
   // Returns the type of the transaction being executed by this driver.
   Transaction::TransactionType tx_type() const;
 

@@ -59,7 +59,10 @@ class TransactionTrackerTest : public KuduTest {
 
 TEST_F(TransactionTrackerTest, TestGetPending) {
   ASSERT_EQ(0, tracker_.GetNumPendingForTests());
-  scoped_refptr<TransactionDriver> driver(new TransactionDriver(&tracker_, NULL, NULL, NULL));
+  scoped_refptr<TransactionDriver> driver(new TransactionDriver(&tracker_,
+                                                                NULL,
+                                                                NULL,
+                                                                NULL));
   driver->Init(new NoOpTransaction(new NoOpTransactionState), consensus::LEADER);
 
   ASSERT_EQ(1, tracker_.GetNumPendingForTests());
@@ -81,7 +84,10 @@ void TransactionTrackerTest::RunTransactionsThread(CountDownLatch* finish_latch)
   // Start a bunch of transactions.
   vector<scoped_refptr<TransactionDriver> > drivers;
   for (int i = 0; i < kNumTransactions; i++) {
-    scoped_refptr<TransactionDriver> driver(new TransactionDriver(&tracker_, NULL, NULL, NULL));
+    scoped_refptr<TransactionDriver> driver(new TransactionDriver(&tracker_,
+                                                                  NULL,
+                                                                  NULL,
+                                                                  NULL));
     driver->Init(new NoOpTransaction(new NoOpTransactionState), consensus::LEADER);
 
     drivers.push_back(driver);

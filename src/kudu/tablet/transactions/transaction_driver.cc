@@ -4,6 +4,7 @@
 #include "kudu/tablet/transactions/transaction_driver.h"
 
 #include "kudu/consensus/consensus.h"
+#include "kudu/gutil/strings/strcat.h"
 #include "kudu/tablet/tablet_peer.h"
 #include "kudu/tablet/transactions/transaction_tracker.h"
 #include "kudu/util/debug-util.h"
@@ -21,6 +22,14 @@ using consensus::ReplicateMsg;
 using consensus::CommitMsg;
 using consensus::DriverType;
 using std::tr1::shared_ptr;
+
+// Convenience macros to prefix log messages with the id of the tablet and peer,
+// the transaction's timestamp and and abbreviation of the transaction driver's
+// replication and prepare states.
+#define LOG_WITH_PREFIX(severity) LOG(severity) << LogPrefix()
+#define VLOG_WITH_PREFIX(verboselevel) LOG_IF(INFO, VLOG_IS_ON(verboselevel)) \
+  << LogPrefix()
+
 
 ////////////////////////////////////////////////////////////
 // TransactionDriver
@@ -102,7 +111,7 @@ string TransactionDriver::ToStringUnlocked() const {
 
 
 Status TransactionDriver::ExecuteAsync() {
-  VLOG(2) << this << ": " << "ExecuteAsync()";
+  VLOG_WITH_PREFIX(2) << "ExecuteAsync()";
   ADOPT_TRACE(trace());
   RETURN_NOT_OK(prepare_pool_->SubmitClosure(
                   Bind(&TransactionDriver::PrepareAndStartTask, Unretained(this))));
@@ -110,9 +119,8 @@ Status TransactionDriver::ExecuteAsync() {
 }
 
 void TransactionDriver::PrepareAndStartTask() {
-  VLOG(2) << this << ": " << "PrepareAndStart()";
+  VLOG_WITH_PREFIX(2) << " PrepareAndStart()";
   Status prepare_status = PrepareAndStart();
-  VLOG(2) << this << ": prepare_status: " << prepare_status.ToString();
   if (PREDICT_FALSE(!prepare_status.ok())) {
     HandleFailure(prepare_status);
   }
@@ -140,7 +148,7 @@ Status TransactionDriver::PrepareAndStart() {
   switch (repl_state_copy) {
     case NOT_REPLICATING:
     {
-      VLOG(2) << this << ": " << "Triggering consensus repl";
+      VLOG_WITH_PREFIX(2) << " Triggering consensus repl";
       // Trigger the consensus replication.
       gscoped_ptr<ReplicateMsg> replicate_msg;
       transaction_->NewReplicateMsg(&replicate_msg);
@@ -157,6 +165,7 @@ Status TransactionDriver::PrepareAndStart() {
       ConsensusRound* round_ptr = round.get();
       mutable_state()->set_consensus_round(round.Pass());
       Status s = consensus_->Replicate(round_ptr);
+
       if (PREDICT_FALSE(!s.ok())) {
         boost::lock_guard<simple_spinlock> lock(lock_);
         CHECK_EQ(replication_state_, REPLICATING);
@@ -177,8 +186,8 @@ Status TransactionDriver::PrepareAndStart() {
       return ApplyAsync();
     }
     case REPLICATION_FAILED:
-      LOG(FATAL) << "We should not Prepare() a transaction which has failed replication: "
-                 << ToString();
+      LOG_WITH_PREFIX(FATAL) << "We should not Prepare() a transaction which has "
+          "failed replication: " << ToString();
   }
 
   return Status::OK();
@@ -201,8 +210,8 @@ void TransactionDriver::HandleFailure(const Status& s) {
     case NOT_REPLICATING:
     case REPLICATION_FAILED:
     {
-      VLOG(1) << "Transaction " << ToString() << " failed prior to replication success: "
-              << s.ToString();
+      VLOG_WITH_PREFIX(1) << "Transaction " << ToString() << " failed prior to "
+          "replication success: " << s.ToString();
       transaction_->Finish();
       mutable_state()->completion_callback()->set_error(transaction_status_);
       mutable_state()->completion_callback()->TransactionCompleted();
@@ -213,7 +222,7 @@ void TransactionDriver::HandleFailure(const Status& s) {
     case REPLICATING:
     case REPLICATED:
     {
-      LOG(FATAL) << "Cannot cancel transactions that have already replicated"
+      LOG_WITH_PREFIX(FATAL) << "Cannot cancel transactions that have already replicated"
           << ": " << transaction_status_.ToString()
           << " transaction:" << ToString();
 
@@ -302,10 +311,10 @@ Status TransactionDriver::ApplyAndTriggerCommit() {
   ADOPT_TRACE(trace());
 
   {
-     boost::lock_guard<simple_spinlock> lock(lock_);
-     DCHECK_EQ(replication_state_, REPLICATED);
-     DCHECK_EQ(prepare_state_, PREPARED);
-   }
+    boost::lock_guard<simple_spinlock> lock(lock_);
+    DCHECK_EQ(replication_state_, REPLICATED);
+    DCHECK_EQ(prepare_state_, PREPARED);
+  }
 
   // We need to ref-count ourself, since Commit() may run very quickly
   // and end up calling Finalize() while we're still in this code.
@@ -355,6 +364,56 @@ void TransactionDriver::Finalize() {
   transaction_->Finish();
   mutable_state()->completion_callback()->TransactionCompleted();
   txn_tracker_->Release(this);
+}
+
+std::string TransactionDriver::LogPrefix() const {
+
+  ReplicationState repl_state_copy;
+  PrepareState prep_state_copy;
+  string ts_string;
+
+  {
+    boost::lock_guard<simple_spinlock> lock(lock_);
+    repl_state_copy = replication_state_;
+    prep_state_copy = prepare_state_;
+    ts_string = state()->has_timestamp() ? state()->timestamp().ToString() : "No timestamp";
+  }
+
+  string state_str;
+  switch (repl_state_copy) {
+    case NOT_REPLICATING:
+      StrAppend(&state_str, "NR-"); // For Not Replicating
+      break;
+    case REPLICATING:
+      StrAppend(&state_str, "R-"); // For Replicating
+      break;
+    case REPLICATION_FAILED:
+      StrAppend(&state_str, "RF-"); // For Replication Failed
+      break;
+    case REPLICATED:
+      StrAppend(&state_str, "RD-"); // For Replication Done
+      break;
+    default:
+      LOG(DFATAL) << "Unexpected replication state: " << replication_state_;
+  }
+  switch (prep_state_copy) {
+    case PREPARED:
+      StrAppend(&state_str, "P");
+      break;
+    case NOT_PREPARED:
+      StrAppend(&state_str, "NP");
+      break;
+    default:
+      LOG(DFATAL) << "Unexpected prepare state: " << prepare_state_;
+  }
+
+  // We use the tablet and the peer (T, P) to identify ts and tablet and the timestamp (Ts) to
+  // (help) identify the transaction. The state string (S) describes the state of the transaction.
+  return strings::Substitute("T $0 P $1 S $2 Ts $3:",
+                             consensus_->tablet_id(),
+                             consensus_->peer_uuid(),
+                             state_str,
+                             ts_string);
 }
 
 }  // namespace tablet
