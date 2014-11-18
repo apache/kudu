@@ -53,7 +53,8 @@ class Webserver : public WebCallbackRegistry {
   // bound to. Requires that the server has been Start()ed.
   Status GetBoundAddresses(std::vector<Sockaddr>* addrs) const;
 
-  virtual void RegisterPathHandler(const std::string& path, const PathHandlerCallback& callback,
+  virtual void RegisterPathHandler(const std::string& path, const std::string& alias,
+                                   const PathHandlerCallback& callback,
                                    bool is_styled = true, bool is_on_nav_bar = true) OVERRIDE;
 
   // True if serving all traffic over SSL, false otherwise
@@ -62,8 +63,11 @@ class Webserver : public WebCallbackRegistry {
   // Container class for a list of path handler callbacks for a single URL.
   class PathHandler {
    public:
-    PathHandler(bool is_styled, bool is_on_nav_bar)
-        : is_styled_(is_styled), is_on_nav_bar_(is_on_nav_bar) {}
+    PathHandler(bool is_styled, bool is_on_nav_bar, const std::string& alias)
+        : is_styled_(is_styled),
+          is_on_nav_bar_(is_on_nav_bar),
+          alias_(alias) {
+    }
 
     void AddCallback(const PathHandlerCallback& callback) {
       callbacks_.push_back(callback);
@@ -71,6 +75,7 @@ class Webserver : public WebCallbackRegistry {
 
     bool is_styled() const { return is_styled_; }
     bool is_on_nav_bar() const { return is_on_nav_bar_; }
+    const std::string& alias() const { return alias_; }
     const std::vector<PathHandlerCallback>& callbacks() const { return callbacks_; }
 
    private:
@@ -79,6 +84,9 @@ class Webserver : public WebCallbackRegistry {
 
     // If true, the page appears in the navigation bar.
     bool is_on_nav_bar_;
+
+    // Alias used when displaying this link on the nav bar.
+    std::string alias_;
 
     // List of callbacks to render output for this page, called in order.
     std::vector<PathHandlerCallback> callbacks_;

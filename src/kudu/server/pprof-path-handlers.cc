@@ -142,11 +142,11 @@ static void PprofSymbolHandler(const Webserver::WebRequest& req, stringstream* o
 void AddPprofPathHandlers(Webserver* webserver) {
   // Path handlers for remote pprof profiling. For information see:
   // https://gperftools.googlecode.com/svn/trunk/doc/pprof_remote_servers.html
-  webserver->RegisterPathHandler("/pprof/cmdline", PprofCmdLineHandler, false, false);
-  webserver->RegisterPathHandler("/pprof/heap", PprofHeapHandler, false, false);
-  webserver->RegisterPathHandler("/pprof/growth", PprofGrowthHandler, false, false);
-  webserver->RegisterPathHandler("/pprof/profile", PprofCpuProfileHandler, false, false);
-  webserver->RegisterPathHandler("/pprof/symbol", PprofSymbolHandler, false, false);
+  webserver->RegisterPathHandler("/pprof/cmdline", "", PprofCmdLineHandler, false, false);
+  webserver->RegisterPathHandler("/pprof/heap", "", PprofHeapHandler, false, false);
+  webserver->RegisterPathHandler("/pprof/growth", "", PprofGrowthHandler, false, false);
+  webserver->RegisterPathHandler("/pprof/profile", "", PprofCpuProfileHandler, false, false);
+  webserver->RegisterPathHandler("/pprof/symbol", "", PprofSymbolHandler, false, false);
 }
 
 } // namespace kudu

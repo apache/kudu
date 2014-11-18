@@ -65,7 +65,7 @@ void Webserver::RootHandler(const Webserver::WebRequest& args, stringstream* out
   (*output) << "<h2>Status Pages</h2>";
   BOOST_FOREACH(const PathHandlerMap::value_type& handler, path_handlers_) {
     if (handler.second->is_on_nav_bar()) {
-      (*output) << "<a href=\"" << handler.first << "\">" << handler.first << "</a><br/>";
+      (*output) << "<a href=\"" << handler.first << "\">" << handler.second->alias() << "</a><br/>";
     }
   }
 }
@@ -182,7 +182,7 @@ Status Webserver::Start() {
   PathHandlerCallback default_callback =
     boost::bind<void>(boost::mem_fn(&Webserver::RootHandler), this, _1, _2);
 
-  RegisterPathHandler("/", default_callback);
+  RegisterPathHandler("/", "Home", default_callback);
 
   vector<Sockaddr> addrs;
   RETURN_NOT_OK(GetBoundAddresses(&addrs));
@@ -310,13 +310,13 @@ int Webserver::RunPathHandler(const PathHandler& handler,
   return 1;
 }
 
-void Webserver::RegisterPathHandler(const string& path,
+void Webserver::RegisterPathHandler(const string& path, const string& alias,
     const PathHandlerCallback& callback, bool is_styled, bool is_on_nav_bar) {
   boost::lock_guard<boost::shared_mutex> lock(path_handlers_lock_);
   PathHandlerMap::iterator it = path_handlers_.find(path);
   if (it == path_handlers_.end()) {
     it = path_handlers_.insert(
-        make_pair(path, new PathHandler(is_styled, is_on_nav_bar))).first;
+        make_pair(path, new PathHandler(is_styled, is_on_nav_bar, alias))).first;
   }
   it->second->AddCallback(callback);
 }
@@ -358,7 +358,7 @@ void Webserver::BootstrapPageHeader(stringstream* output) {
   (*output) << NAVIGATION_BAR_PREFIX;
   BOOST_FOREACH(const PathHandlerMap::value_type& handler, path_handlers_) {
     if (handler.second->is_on_nav_bar()) {
-      (*output) << "<li><a href=\"" << handler.first << "\">" << handler.first
+      (*output) << "<li><a href=\"" << handler.first << "\">" << handler.second->alias()
                 << "</a></li>";
     }
   }

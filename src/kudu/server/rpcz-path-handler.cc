@@ -40,7 +40,7 @@ void RpczPathHandler(const std::tr1::shared_ptr<Messenger>& messenger,
 } // anonymous namespace
 
 void AddRpczPathHandlers(const std::tr1::shared_ptr<Messenger>& messenger, Webserver* webserver) {
-  webserver->RegisterPathHandler("/rpcz",
+  webserver->RegisterPathHandler("/rpcz", "RPCs",
                                  boost::bind(RpczPathHandler, messenger, _1, _2),
                                  false, true);
 }

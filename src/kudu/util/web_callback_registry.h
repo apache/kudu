@@ -36,7 +36,8 @@ class WebCallbackRegistry {
   // footers.
   // The first registration's choice of is_styled overrides all
   // subsequent registrations for that URL.
-  virtual void RegisterPathHandler(const std::string& path, const PathHandlerCallback& callback,
+  virtual void RegisterPathHandler(const std::string& path, const std::string& alias,
+                                   const PathHandlerCallback& callback,
                                    bool is_styled = true, bool is_on_nav_bar = true) = 0;
 };
 

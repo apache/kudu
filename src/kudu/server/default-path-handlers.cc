@@ -156,10 +156,10 @@ static void MemTrackersHandler(const Webserver::WebRequest& req, std::stringstre
 }
 
 void AddDefaultPathHandlers(Webserver* webserver) {
-  webserver->RegisterPathHandler("/logs", LogsHandler);
-  webserver->RegisterPathHandler("/varz", FlagsHandler);
-  webserver->RegisterPathHandler("/memz", MemUsageHandler);
-  webserver->RegisterPathHandler("/memtrackerz", MemTrackersHandler);
+  webserver->RegisterPathHandler("/logs", "Logs", LogsHandler);
+  webserver->RegisterPathHandler("/varz", "Flags", FlagsHandler);
+  webserver->RegisterPathHandler("/memz", "Memory (total)", MemUsageHandler);
+  webserver->RegisterPathHandler("/memtrackerz", "Memory (detail)", MemTrackersHandler);
 
 #ifdef TCMALLOC_ENABLED
   // Remote (on-demand) profiling is disabled if the process is already being profiled.
@@ -197,7 +197,7 @@ void RegisterMetricsJsonHandler(Webserver* webserver, const MetricRegistry* cons
   Webserver::PathHandlerCallback callback = boost::bind(WriteMetricsAsJson, metrics, _1, _2);
   bool is_styled = false;
   bool is_on_nav_bar = true;
-  webserver->RegisterPathHandler("/jsonmetricz", callback, is_styled, is_on_nav_bar);
+  webserver->RegisterPathHandler("/jsonmetricz", "Metrics", callback, is_styled, is_on_nav_bar);
 }
 
 } // namespace kudu

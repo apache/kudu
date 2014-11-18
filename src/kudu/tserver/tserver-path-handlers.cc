@@ -47,35 +47,35 @@ TabletServerPathHandlers::~TabletServerPathHandlers() {
 
 Status TabletServerPathHandlers::Register(Webserver* server) {
   server->RegisterPathHandler(
-    "/scanz",
+    "/scanz", "Scans",
     boost::bind(&TabletServerPathHandlers::HandleScansPage, this, _1, _2),
     true /* styled */, false /* is_on_nav_bar */);
   server->RegisterPathHandler(
-    "/tablets",
+    "/tablets", "Tablets",
     boost::bind(&TabletServerPathHandlers::HandleTabletsPage, this, _1, _2),
     true /* styled */, true /* is_on_nav_bar */);
   server->RegisterPathHandler(
-    "/tablet",
+    "/tablet", "",
     boost::bind(&TabletServerPathHandlers::HandleTabletPage, this, _1, _2),
     true /* styled */, false /* is_on_nav_bar */);
   server->RegisterPathHandler(
-    "/transactionz",
+    "/transactionz", "",
     boost::bind(&TabletServerPathHandlers::HandleTransactionsPage, this, _1, _2),
     true /* styled */, false /* is_on_nav_bar */);
   server->RegisterPathHandler(
-    "/tablet-rowsetlayout-svg",
+    "/tablet-rowsetlayout-svg", "",
     boost::bind(&TabletServerPathHandlers::HandleTabletSVGPage, this, _1, _2),
     true /* styled */, false /* is_on_nav_bar */);
   server->RegisterPathHandler(
-    "/tablet-consensus-status",
+    "/tablet-consensus-status", "",
     boost::bind(&TabletServerPathHandlers::HandleConsensusStatusPage, this, _1, _2),
     true /* styled */, false /* is_on_nav_bar */);
   server->RegisterPathHandler(
-    "/dashboards",
+    "/dashboards", "Dashboards",
     boost::bind(&TabletServerPathHandlers::HandleDashboardsPage, this, _1, _2),
     true /* styled */, true /* is_on_nav_bar */);
   server->RegisterPathHandler(
-    "/maintenance-manager",
+    "/maintenance-manager", "",
     boost::bind(&TabletServerPathHandlers::HandleMaintenanceManagerPage, this, _1, _2),
     true /* styled */, false /* is_on_nav_bar */);
 

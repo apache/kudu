@@ -182,16 +182,16 @@ void MasterPathHandlers::HandleMasters(const Webserver::WebRequest& req,
 Status MasterPathHandlers::Register(Webserver* server) {
   bool is_styled = true;
   bool is_on_nav_bar = true;
-  server->RegisterPathHandler("/tablet-servers",
+  server->RegisterPathHandler("/tablet-servers", "Tablet Servers",
                               boost::bind(&MasterPathHandlers::HandleTabletServers, this, _1, _2),
                               is_styled, is_on_nav_bar);
-  server->RegisterPathHandler("/tablez",
+  server->RegisterPathHandler("/tablez", "Tables",
                               boost::bind(&MasterPathHandlers::HandleCatalogManager, this, _1, _2),
                               is_styled, is_on_nav_bar);
-  server->RegisterPathHandler("/table",
+  server->RegisterPathHandler("/table", "",
                               boost::bind(&MasterPathHandlers::HandleTablePage, this, _1, _2),
                               is_styled, false);
-  server->RegisterPathHandler("/masterz",
+  server->RegisterPathHandler("/masterz", "Masters",
                               boost::bind(&MasterPathHandlers::HandleMasters, this, _1, _2),
                               is_styled, is_on_nav_bar);
   return Status::OK();
