@@ -700,7 +700,9 @@ TEST_F(DistConsensusTest, TestRunLeaderElection) {
   // Reset consensus rpc timeout to the default value or the election might fail often.
   FLAGS_consensus_rpc_timeout_ms = 1000;
 
-  BuildAndStart(kNumReplicas, vector<string>());
+  vector<string> flags;
+  flags.push_back("--enable_leader_failure_detection=true");
+  BuildAndStart(kNumReplicas, flags);
 
   int num_iters = AllowSlowTests() ? 10 : 1;
 
@@ -884,7 +886,9 @@ TEST_F(DistConsensusTest, MultiThreadedInsertWithFailovers) {
 // Test automatic leader election by killing leaders.
 TEST_F(DistConsensusTest, TestAutomaticLeaderElection) {
   int kNumReplicas = 5;
-  BuildAndStart(kNumReplicas, vector<string>());
+  vector<string> flags;
+  flags.push_back("--enable_leader_failure_detection=true");
+  BuildAndStart(kNumReplicas, flags);
 
   string leader_uuid;
   ASSERT_OK(GetTabletLeaderUUID(tablet_id_, &leader_uuid));

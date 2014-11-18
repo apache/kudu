@@ -42,7 +42,8 @@ DEFINE_double(leader_failure_max_missed_heartbeat_periods, 3.0,
              "leader_heartbeat_interval_ms times leader_failure_max_missed_heartbeat_periods. "
              "The value passed to this flag may be fractional.");
 
-DEFINE_bool(enable_leader_failure_detection, true,
+// TODO enable this by default once consensus is ready.
+DEFINE_bool(enable_leader_failure_detection, false,
             "Whether to enable failure detection of tablet leaders. If enabled, attempts will be "
             "made to fail over to a follower when the leader is detected to have failed.");
 
