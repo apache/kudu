@@ -121,6 +121,8 @@ class RaftConsensus : public Consensus,
 
   virtual std::string peer_uuid() const OVERRIDE;
 
+  virtual std::string tablet_id() const OVERRIDE;
+
   virtual metadata::QuorumPB Quorum() const OVERRIDE;
 
   virtual void DumpStatusHtml(std::ostream& out) const OVERRIDE;

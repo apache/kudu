@@ -55,6 +55,10 @@ class LocalConsensus : public Consensus {
     return peer_uuid_;
   }
 
+  virtual std::string tablet_id() const OVERRIDE {
+    return options_.tablet_id;
+  }
+
   virtual metadata::QuorumPB Quorum() const OVERRIDE;
 
   virtual void Shutdown() OVERRIDE;

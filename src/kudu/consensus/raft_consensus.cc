@@ -1034,6 +1034,10 @@ string RaftConsensus::peer_uuid() const {
   return state_->GetPeerUuid();
 }
 
+string RaftConsensus::tablet_id() const {
+  return state_->GetOptions().tablet_id;
+}
+
 QuorumPB RaftConsensus::Quorum() const {
   ReplicaState::UniqueLock lock;
   CHECK_OK(state_->LockForRead(&lock));

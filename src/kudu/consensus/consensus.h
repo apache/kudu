@@ -191,6 +191,9 @@ class Consensus : public RefCountedThreadSafe<Consensus> {
   // Returns the uuid of this peer.
   virtual std::string peer_uuid() const = 0;
 
+  // Returns the id of the tablet whose updates this consensus instance helps coordinate.
+  virtual std::string tablet_id() const = 0;
+
   // Returns the current configuration of the quorum.
   // NOTE: Returns a copy, thus should not be used in a tight loop.
   virtual metadata::QuorumPB Quorum() const = 0;
