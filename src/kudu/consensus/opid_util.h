@@ -13,6 +13,7 @@
 namespace kudu {
 namespace consensus {
 
+class ConsensusRequestPB;
 class OpId;
 
 // Minimum possible term.
@@ -82,6 +83,8 @@ OpId MinimumOpId();
 OpId MaximumOpId();
 
 std::string OpIdToString(const OpId& id);
+
+std::string OpsRangeString(const ConsensusRequestPB& req);
 
 OpId MakeOpId(int term, int index);
 

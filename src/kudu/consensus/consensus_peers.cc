@@ -342,25 +342,6 @@ void Peer::ProcessResponse(const Status& status) {
   }
 }
 
-namespace {
-
-std::string OpsRangeString(const ConsensusRequestPB& req) {
-  std::string ret;
-  ret.reserve(100);
-  ret.push_back('[');
-  if (req.ops_size() > 0) {
-    const OpId& first_op = req.ops(0).id();
-    const OpId& last_op = req.ops(req.ops_size() - 1).id();
-    strings::SubstituteAndAppend(&ret, "$0.$1-$2.$3",
-                                 first_op.term(), first_op.index(),
-                                 last_op.term(), last_op.index());
-  }
-  ret.push_back(']');
-  return ret;
-}
-
-} // anonymous namespace
-
 void Peer::ProcessResponseError(const Status& status) {
   failed_attempts_++;
   LOG(WARNING) << "Couldn't send request to peer " << peer_pb_.permanent_uuid()

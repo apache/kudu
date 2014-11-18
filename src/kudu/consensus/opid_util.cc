@@ -121,6 +121,21 @@ std::string OpIdToString(const OpId& op_id) {
   return strings::Substitute("$0.$1", op_id.term(), op_id.index());
 }
 
+std::string OpsRangeString(const ConsensusRequestPB& req) {
+  std::string ret;
+  ret.reserve(100);
+  ret.push_back('[');
+  if (req.ops_size() > 0) {
+    const OpId& first_op = req.ops(0).id();
+    const OpId& last_op = req.ops(req.ops_size() - 1).id();
+    strings::SubstituteAndAppend(&ret, "$0.$1-$2.$3",
+                                 first_op.term(), first_op.index(),
+                                 last_op.term(), last_op.index());
+  }
+  ret.push_back(']');
+  return ret;
+}
+
 OpId MakeOpId(int term, int index) {
   OpId ret;
   ret.set_index(index);
