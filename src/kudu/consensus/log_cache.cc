@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "kudu/consensus/async_log_reader.h"
+#include "kudu/consensus/log.h"
 #include "kudu/gutil/bind.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/stl_util.h"
@@ -47,8 +48,10 @@ METRIC_DEFINE_gauge_int64(log_cache_size_bytes, MetricUnit::kBytes,
 const char kLogCacheTrackerId[] = "log_cache_parent";
 
 LogCache::LogCache(const MetricContext& metric_ctx,
+                   log::Log* log,
                    const std::string& parent_tracker_id)
-  : preceding_first_op_(MinimumOpId()),
+  : log_(log),
+    preceding_first_op_(MinimumOpId()),
     min_pinned_op_index(0),
     max_ops_size_bytes_hard_(FLAGS_log_cache_size_hard_limit_mb * 1024 * 1024),
     global_max_ops_size_bytes_hard_(
@@ -73,12 +76,11 @@ LogCache::~LogCache() {
   STLDeleteValues(&cache_);
 }
 
-void LogCache::Init(const OpId& preceding_op,
-                    gscoped_ptr<log::AsyncLogReader> log_reader) {
+void LogCache::Init(const OpId& preceding_op) {
   lock_guard<simple_spinlock> l(&lock_);
   CHECK(cache_.empty());
   preceding_first_op_ = preceding_op;
-  async_reader_ = log_reader.Pass();
+  async_reader_.reset(new log::AsyncLogReader(log_->GetLogReader()));
 }
 
 void LogCache::SetPinnedOp(int64_t index) {

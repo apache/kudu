@@ -56,7 +56,7 @@ class ConsensusQueueTest : public KuduTest {
                             &log_));
 
     consensus_.reset(new TestRaftConsensusQueueIface(log_.get()));
-    queue_.reset(new PeerMessageQueue(metric_context_));
+    queue_.reset(new PeerMessageQueue(metric_context_, log_.get()));
   }
 
 
@@ -338,7 +338,7 @@ TEST_F(ConsensusQueueTest, TestQueueLoadsOperationsForPeer) {
 
   // Now reset the queue so that we can pass a new committed index,
   // the last operation in the log.
-  queue_.reset(new PeerMessageQueue(metric_context_));
+  queue_.reset(new PeerMessageQueue(metric_context_, log_.get()));
   OpId committed_index;
   committed_index.set_term(1);
   committed_index.set_index(100);

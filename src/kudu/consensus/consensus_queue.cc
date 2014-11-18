@@ -75,9 +75,10 @@ PeerMessageQueue::Metrics::Metrics(const MetricContext& metric_ctx)
 #undef INSTANTIATE_METRIC
 
 PeerMessageQueue::PeerMessageQueue(const MetricContext& metric_ctx,
+                                   log::Log* log,
                                    const std::string& parent_tracker_id)
     : majority_size_(0),
-      log_cache_(metric_ctx, parent_tracker_id),
+      log_cache_(metric_ctx, log, parent_tracker_id),
       metrics_(metric_ctx) {
 
   queue_state_.current_term = MinimumOpId().term();
@@ -96,8 +97,7 @@ void PeerMessageQueue::Init(RaftConsensusQueueIface* consensus,
   DCHECK_GE(majority_size, 0);
   CHECK(committed_index.IsInitialized());
   consensus_ = consensus;
-  log_cache_.Init(committed_index,
-                  make_gscoped_ptr(new AsyncLogReader(consensus_->log()->GetLogReader())));
+  log_cache_.Init(committed_index);
   queue_state_.last_appended = committed_index;
   queue_state_.committed_index = committed_index;
   queue_state_.majority_replicated_index = committed_index;

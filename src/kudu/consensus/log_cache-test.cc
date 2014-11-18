@@ -4,8 +4,11 @@
 #include <string>
 #include <tr1/memory>
 
+#include "kudu/common/wire_protocol-test-util.h"
 #include "kudu/consensus/consensus-test-util.h"
+#include "kudu/consensus/log.h"
 #include "kudu/consensus/log_cache.h"
+#include "kudu/fs/fs_manager.h"
 #include "kudu/util/mem_tracker.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/test_util.h"
@@ -21,11 +24,28 @@ DECLARE_int32(global_log_cache_size_hard_limit_mb);
 namespace kudu {
 namespace consensus {
 
+static const char* kTestTablet = "test-tablet";
+
 class LogCacheTest : public KuduTest {
  public:
   LogCacheTest()
-    : metric_context_(&metric_registry_, "LogCacheTest"),
-      cache_(new LogCache(metric_context_, "TestMemTracker")) {
+    : schema_(GetSimpleTestSchema()),
+      metric_context_(&metric_registry_, "LogCacheTest") {
+  }
+
+  virtual void SetUp() OVERRIDE {
+    KuduTest::SetUp();
+    fs_manager_.reset(new FsManager(env_.get(), test_dir_));
+    ASSERT_OK(fs_manager_->CreateInitialFileSystemLayout());
+    ASSERT_OK(fs_manager_->Open());
+    CHECK_OK(log::Log::Open(log::LogOptions(),
+                            fs_manager_.get(),
+                            kTestTablet,
+                            schema_,
+                            NULL,
+                            &log_));
+
+    cache_.reset(new LogCache(metric_context_, log_.get(), "TestMemTracker"));
   }
 
  protected:
@@ -45,8 +65,11 @@ class LogCacheTest : public KuduTest {
     return true;
   }
 
+  const Schema schema_;
   MetricRegistry metric_registry_;
   MetricContext metric_context_;
+  gscoped_ptr<FsManager> fs_manager_;
+  gscoped_ptr<log::Log> log_;
   gscoped_ptr<LogCache> cache_;
 };
 
@@ -102,7 +125,7 @@ TEST_F(LogCacheTest, TestCacheRefusesRequestWhenFilled) {
   FLAGS_log_cache_size_soft_limit_mb = 0;
   FLAGS_log_cache_size_hard_limit_mb = 1;
 
-  cache_.reset(new LogCache(metric_context_, "TestCacheRefusesRequestWhenFilled"));
+  cache_.reset(new LogCache(metric_context_, log_.get(), "TestCacheRefusesRequestWhenFilled"));
 
   // generate a 128Kb dummy payload
   const int kPayloadSize = 128 * 1024;
@@ -125,7 +148,7 @@ TEST_F(LogCacheTest, TestCacheRefusesRequestWhenFilled) {
 // index that is higher than it's latest, returns an empty set of messages when queried for
 // the the last index and returns all messages when queried for MinimumOpId().
 TEST_F(LogCacheTest, TestCacheEdgeCases) {
-  cache_.reset(new LogCache(metric_context_, "TestCacheEdgeCases"));
+  cache_.reset(new LogCache(metric_context_, log_.get(), "TestCacheEdgeCases"));
 
   // Append 1 message to the cache
   ASSERT_TRUE(AppendReplicateMessagesToCache(1, 1));
@@ -160,7 +183,7 @@ TEST_F(LogCacheTest, TestHardAndSoftLimit) {
   FLAGS_log_cache_size_soft_limit_mb = 1;
   FLAGS_log_cache_size_hard_limit_mb = 2;
 
-  cache_.reset(new LogCache(metric_context_, "TestHardAndSoftLimit"));
+  cache_.reset(new LogCache(metric_context_, log_.get(), "TestHardAndSoftLimit"));
 
   const int kPayloadSize = 768 * 1024;
   // Soft limit should not be violated.
@@ -222,7 +245,7 @@ TEST_F(LogCacheTest, TestGlobalHardLimit) {
   // Exceed the global hard limit.
   parent_tracker->Consume(6 * 1024 * 1024);
 
-  cache_.reset(new LogCache(metric_context_, kParentTrackerId));
+  cache_.reset(new LogCache(metric_context_, log_.get(), kParentTrackerId));
 
   const int kPayloadSize = 768 * 1024;
 
@@ -255,7 +278,7 @@ TEST_F(LogCacheTest, TestEvictWhenGlobalSoftLimitExceeded) {
  parent_tracker->Consume(4 * 1024 * 1024);
  parent_tracker->Consume(1024);
 
- cache_.reset(new LogCache(metric_context_, kParentTrackerId));
+ cache_.reset(new LogCache(metric_context_, log_.get(), kParentTrackerId));
 
  const int kPayloadSize = 768 * 1024;
  ASSERT_TRUE(AppendReplicateMessagesToCache(1, 1, kPayloadSize));

@@ -22,6 +22,7 @@ class MemTracker;
 
 namespace log {
 class AsyncLogReader;
+class Log;
 } // namespace log
 
 namespace consensus {
@@ -40,6 +41,7 @@ extern const char kLogCacheTrackerId[];
 class LogCache {
  public:
   LogCache(const MetricContext& metric_ctx,
+           log::Log* log,
            const std::string& parent_tracker_id = kLogCacheTrackerId);
   ~LogCache();
 
@@ -48,13 +50,8 @@ class LogCache {
   // 'preceding_op' is the current latest op. The next AppendOperation() call
   // must follow this op.
   //
-  // 'log_reader' is used to fill requests which are not present in the cache.
-  // TODO: this is a temporary workaround to not being able to look up
-  // preceding op info from the log itself.
-  //
   // Requires that the cache is empty.
-  void Init(const OpId& preceding_op,
-            gscoped_ptr<log::AsyncLogReader> log_reader);
+  void Init(const OpId& preceding_op);
 
   // Read operations from the log, following 'after_op_index'.
   // The returned messages are owned by the log cache, and will be freed
@@ -134,6 +131,8 @@ class LogCache {
   void EntriesLoadedCallback(int64_t after_op_index,
                              const Status& status,
                              const std::vector<ReplicateMsg*>& replicates);
+
+  log::Log* const log_;
 
   mutable simple_spinlock lock_;
 

@@ -33,7 +33,8 @@ const char* kTestTablet = "TestTablet";
 
 class MockQueue : public PeerMessageQueue {
  public:
-  explicit MockQueue(const MetricContext& metric_ctx) : PeerMessageQueue(metric_ctx) {}
+  explicit MockQueue(const MetricContext& metric_ctx, log::Log* log)
+    : PeerMessageQueue(metric_ctx, log) {}
   MOCK_METHOD4(Init, void(RaftConsensusQueueIface* consensus,
                           const OpId& committed_index,
                           uint64_t current_term,
@@ -87,7 +88,7 @@ class RaftConsensusTest : public KuduTest {
                        NULL,
                        &log_));
 
-    queue_ = new MockQueue(metric_context_);
+    queue_ = new MockQueue(metric_context_, log_.get());
     peer_manager_ = new MockPeerManager;
     txn_factory_.reset(new MockTransactionFactory);
 

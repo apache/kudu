@@ -45,7 +45,7 @@ class ConsensusPeersTest : public KuduTest {
                        NULL,
                        &log_));
     consensus_.reset(new TestRaftConsensusQueueIface(log_.get()));
-    message_queue_.reset(new PeerMessageQueue(metric_context_));
+    message_queue_.reset(new PeerMessageQueue(metric_context_, log_.get()));
   }
 
   void NewLocalPeer(const string& peer_name, gscoped_ptr<Peer>* peer) {

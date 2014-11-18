@@ -51,8 +51,9 @@ extern const char kConsensusQueueParentTrackerId[];
 // modify it.
 class PeerMessageQueue {
  public:
-  explicit PeerMessageQueue(const MetricContext& metric_ctx,
-                            const std::string& parent_tracker_id = kConsensusQueueParentTrackerId);
+  PeerMessageQueue(const MetricContext& metric_ctx,
+                   log::Log* log,
+                   const std::string& parent_tracker_id = kConsensusQueueParentTrackerId);
 
   // Initialize the queue.
   // 'committed_index' corresponds to the id of the last committed operation,

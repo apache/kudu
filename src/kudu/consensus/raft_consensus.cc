@@ -84,7 +84,7 @@ scoped_refptr<RaftConsensus> RaftConsensus::Create(
 
   // The message queue that keeps track of which operations need to be replicated
   // where.
-  gscoped_ptr<PeerMessageQueue> queue(new PeerMessageQueue(metric_ctx));
+  gscoped_ptr<PeerMessageQueue> queue(new PeerMessageQueue(metric_ctx, log));
 
   // A manager for the set of peers that actually send the operations both remotely
   // and to the local wal.
