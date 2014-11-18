@@ -121,9 +121,9 @@ TEST_F(LogCacheTest, TestCacheRefusesRequestWhenFilled) {
   ASSERT_TRUE(AppendReplicateMessagesToCache(8, 1, kPayloadSize));
 }
 
-// Tests that the cache returns an empty set of messages when queried for
-// the the last index and returns all possible messages when queried for
-// MinimumOpId().
+// Tests that the cache returns Status::NotFound() if queried for messages after an
+// index that is higher than it's latest, returns an empty set of messages when queried for
+// the the last index and returns all messages when queried for MinimumOpId().
 TEST_F(LogCacheTest, TestCacheEdgeCases) {
   cache_.reset(new LogCache(metric_context_, "TestCacheEdgeCases"));
 
@@ -144,6 +144,15 @@ TEST_F(LogCacheTest, TestCacheEdgeCases) {
   ASSERT_OK(cache_->ReadOps(1, 100, &messages, &preceding));
   ASSERT_EQ(0, messages.size());
   ASSERT_OPID_EQ(MakeOpId(0, 1), preceding);
+
+  messages.clear();
+  preceding.Clear();
+  // Now test the case when 'after_op_index' is after the last index
+  // in the cache.
+  Status s = cache_->ReadOps(2, 100, &messages, &preceding);
+  ASSERT_TRUE(s.IsNotFound()) << "unexpected status: " << s.ToString();
+  ASSERT_EQ(0, messages.size());
+  ASSERT_FALSE(preceding.IsInitialized());
 }
 
 

@@ -167,7 +167,9 @@ Status LogCache::ReadOps(int64_t after_op_index,
   // We don't actually start sending on 'lower_bound' but we seek to
   // it to get the preceding_id.
   MessageCache::const_iterator iter = cache_.lower_bound(after_op_index);
-  DCHECK(iter != cache_.end()) << after_op_index;
+  if (iter == cache_.end()) {
+    return Status::NotFound("Op not in cache.");
+  }
 
   int found_index = iter->first;
   if (found_index != after_op_index) {
@@ -184,6 +186,7 @@ Status LogCache::ReadOps(int64_t after_op_index,
     // on the element after that.
     preceding_op->CopyFrom((*iter).second->id());
     iter++;
+
   }
 
   // Return as many operations as we can, up to the limit
