@@ -183,9 +183,9 @@ Status RaftConsensus::Start(const ConsensusBootstrapInfo& info) {
       RETURN_NOT_OK(StartReplicaTransactionUnlocked(
           make_gscoped_ptr(new ReplicateMsg(*replicate))));
     }
-  }
 
-  state_->AdvanceCommittedIndex(info.last_committed_id);
+    state_->AdvanceCommittedIndexUnlocked(info.last_committed_id);
+  }
 
   // If we're marked as candidate emulate a leader election.
   // Temporary while we don't have the real thing.
@@ -445,7 +445,7 @@ void RaftConsensus::UpdateMajorityReplicatedUnlocked(const OpId& majority_replic
   VLOG_WITH_PREFIX(1) << "Marking majority replicated up to "
       << majority_replicated.ShortDebugString();
   TRACE("Marking majority replicated up to $0", majority_replicated.ShortDebugString());
-  Status s = state_->UpdateMajorityReplicated(majority_replicated, committed_index);
+  Status s = state_->UpdateMajorityReplicatedUnlocked(majority_replicated, committed_index);
   if (PREDICT_FALSE(!s.ok())) {
     string msg = Substitute("Unable to mark committed up to $0: $1",
                             majority_replicated.ShortDebugString(),
@@ -757,7 +757,7 @@ Status RaftConsensus::UpdateReplica(const ConsensusRequestPB* request,
 
     VLOG_WITH_PREFIX(1) << "Marking committed up to " << dont_apply_after.ShortDebugString();
     TRACE(Substitute("Marking committed up to $0", dont_apply_after.ShortDebugString()));
-    CHECK_OK(state_->AdvanceCommittedIndex(dont_apply_after));
+    CHECK_OK(state_->AdvanceCommittedIndexUnlocked(dont_apply_after));
 
     // We can now update the last received watermark.
     //

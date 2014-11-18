@@ -418,8 +418,8 @@ Status ReplicaState::AddPendingOperation(ConsensusRound* round) {
   return Status::OK();
 }
 
-Status ReplicaState::UpdateMajorityReplicated(const OpId& majority_replicated,
-                                              OpId* committed_index) {
+Status ReplicaState::UpdateMajorityReplicatedUnlocked(const OpId& majority_replicated,
+                                                      OpId* committed_index) {
   DCHECK(update_lock_.is_locked());
   DCHECK(majority_replicated.IsInitialized());
   DCHECK(last_committed_index_.IsInitialized());
@@ -433,7 +433,7 @@ Status ReplicaState::UpdateMajorityReplicated(const OpId& majority_replicated,
   // If the last committed operation was in the current term (the normal case)
   // then 'committed_index' is simply equal to majority replicated.
   if (last_committed_index_.term() == GetCurrentTermUnlocked()) {
-    RETURN_NOT_OK(AdvanceCommittedIndex(majority_replicated));
+    RETURN_NOT_OK(AdvanceCommittedIndexUnlocked(majority_replicated));
     committed_index->CopyFrom(last_committed_index_);
     return Status::OK();
   }
@@ -443,7 +443,7 @@ Status ReplicaState::UpdateMajorityReplicated(const OpId& majority_replicated,
   // 'committed_index' too.
   if (majority_replicated.term() == GetCurrentTermUnlocked()) {
     OpId previous = last_committed_index_;
-    RETURN_NOT_OK(AdvanceCommittedIndex(majority_replicated));
+    RETURN_NOT_OK(AdvanceCommittedIndexUnlocked(majority_replicated));
     committed_index->CopyFrom(last_committed_index_);
     LOG_WITH_PREFIX(INFO) << "Advanced the committed_index across terms."
         << " Last committed operation was: " << previous.ShortDebugString()
@@ -460,7 +460,7 @@ Status ReplicaState::UpdateMajorityReplicated(const OpId& majority_replicated,
   return Status::OK();
 }
 
-Status ReplicaState::AdvanceCommittedIndex(const OpId& committed_index) {
+Status ReplicaState::AdvanceCommittedIndexUnlocked(const OpId& committed_index) {
   // If we already committed up to (or past) 'id' return.
   // This can happen in the case that multiple UpdateConsensus() calls end
   // up in the RPC queue at the same time, and then might get interleaved out
