@@ -22,23 +22,6 @@ class RandomUtilTest : public KuduTest {
   static const int kNumTrials = 100;
 };
 
-
-// Tests that after certain number of invocations Normal(), the
-// actual mean of all samples is within the specified standard
-// deviation of the target mean.
-TEST_F(RandomUtilTest, TestNormalDist) {
-  const double kMean = 5.0;
-  const double kStdDev = 0.01;
-  const int kNumIters = 100000;
-
-  double sum = 0.0;
-  for (int i = 0; i < kNumIters; ++i) {
-    sum += rng_.Normal(kMean, kStdDev);
-  }
-
-  ASSERT_LE(fabs((sum / static_cast<double>(kNumIters)) - kMean), kStdDev);
-}
-
 namespace {
 
 // Checks string defined at start is set to \0 everywhere but [from, to)

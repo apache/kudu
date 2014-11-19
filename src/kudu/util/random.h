@@ -37,7 +37,9 @@ class Random {
     }
   }
 
-  // Next pseudo-random 32-bit unsigned integer
+  // Next pseudo-random 32-bit unsigned integer.
+  // FIXME: This currently only generates 31 bits of randomness.
+  // The MSB will always be zero.
   uint32_t Next() {
     static const uint64_t A = 16807;  // bits 14, 8, 7, 5, 2, 1, 0
     // We are computing
@@ -62,10 +64,16 @@ class Random {
   // Alias for consistency with Next64
   uint32_t Next32() { return Next(); }
 
-  // Next pseudo-random 64-bit unsigned integer
+  // Next pseudo-random 64-bit unsigned integer.
+  // FIXME: This currently only generates 62 bits of randomness due to Next()
+  // only giving 31 bits of randomness. The 2 most significant bits will always
+  // be zero.
   uint64_t Next64() {
     uint64_t large = Next();
-    large <<= sizeof(uint32_t);
+    // Only shift by 31 bits so we end up with zeros in MSB and not scattered
+    // throughout the 64-bit word. This is due to the weakness in Next() noted
+    // above.
+    large <<= 31;
     large |= Next();
     return large;
   }
