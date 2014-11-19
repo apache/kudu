@@ -583,11 +583,11 @@ Status RaftConsensus::SanityCheckAndDedupUpdateRequestUnlocked(
   }
 
   // Enforce the log matching property.
-  if (!OpIdEquals(state_->GetLastReplicatedOpIdUnlocked(), preceding_id)) {
+  if (!OpIdEquals(state_->GetLastReceivedOpIdUnlocked(), preceding_id)) {
     string error_msg = Substitute(
         "Log matching property violated."
-        " Last replicated by replica: $0. Preceding OpId from leader: $1.",
-        state_->GetLastReplicatedOpIdUnlocked().ShortDebugString(),
+        " Last received by replica: $0. Preceding OpId from leader: $1.",
+        state_->GetLastReceivedOpIdUnlocked().ShortDebugString(),
         preceding_id.ShortDebugString());
     FillConsensusResponseError(response,
                                ConsensusErrorPB::PRECEDING_ENTRY_DIDNT_MATCH,
@@ -725,7 +725,7 @@ Status RaftConsensus::UpdateReplica(const ConsensusRequestPB* request,
                                << prepare_status.ToString();
     }
 
-    last_enqueued_prepare.CopyFrom(state_->GetLastReplicatedOpIdUnlocked());
+    last_enqueued_prepare.CopyFrom(state_->GetLastReceivedOpIdUnlocked());
     if (successfully_triggered_prepares > 0) {
       last_enqueued_prepare = replicate_msgs[successfully_triggered_prepares - 1]->id();
     }
@@ -789,8 +789,6 @@ Status RaftConsensus::UpdateReplica(const ConsensusRequestPB* request,
 
     ReplicaState::UniqueLock lock;
     RETURN_NOT_OK(state_->LockForUpdate(&lock));
-
-    state_->UpdateLastReplicatedOpIdUnlocked(last_enqueued_prepare);
   }
 
   if (PREDICT_FALSE(VLOG_IS_ON(1))) {

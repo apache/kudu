@@ -255,7 +255,7 @@ class RaftConsensusQuorumTest : public KuduTest {
       {
         ReplicaState::UniqueLock lock;
         CHECK_OK(state->LockForRead(&lock));
-        if (OpIdCompare(state->GetLastReplicatedOpIdUnlocked(), to_wait_for) >= 0) {
+        if (OpIdCompare(state->GetLastReceivedOpIdUnlocked(), to_wait_for) >= 0) {
           return;
         }
       }

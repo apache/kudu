@@ -259,13 +259,6 @@ class ReplicaState {
   // This must be called under a lock.
   const OpId& GetCommittedOpIdUnlocked() const;
 
-  // Updates the last replicated operation.
-  // This must be called under a lock.
-  void UpdateLastReplicatedOpIdUnlocked(const OpId& op_id);
-
-  // Returns the last replicated op id. This must be called under the lock.
-  const OpId& GetLastReplicatedOpIdUnlocked() const;
-
   // Updates the last received operation.
   // This must be called under a lock.
   void UpdateLastReceivedOpIdUnlocked(const OpId& op_id);
@@ -355,10 +348,6 @@ class ReplicaState {
   // When we receive a message from a remote peer telling us to start a transaction, we use
   // this factory to start it.
   ReplicaTransactionFactory* txn_factory_;
-
-  // The id if the last replicated operation. All replicate operations whose id is lower
-  // than or equal to this one were already replicated.
-  OpId replicated_op_id_;
 
   // The id of the last received operation. Operations whose id is lower than or equal
   // to this id do not need to be resent by the leader.

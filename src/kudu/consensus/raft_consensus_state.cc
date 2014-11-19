@@ -117,7 +117,6 @@ Status ReplicaState::StartUnlocked(const OpId& last_id_in_wal) {
       << cmeta_->mutable_pb()->current_term();
 
   next_index_ = last_id_in_wal.index() + 1;
-  replicated_op_id_.CopyFrom(last_id_in_wal);
   received_op_id_.CopyFrom(last_id_in_wal);
   last_committed_index_.CopyFrom(MinimumOpId());
 
@@ -512,16 +511,6 @@ const OpId& ReplicaState::GetCommittedOpIdUnlocked() const {
   return last_committed_index_;
 }
 
-void ReplicaState::UpdateLastReplicatedOpIdUnlocked(const OpId& op_id) {
-  DCHECK(update_lock_.is_locked());
-  replicated_op_id_.CopyFrom(op_id);
-}
-
-const OpId& ReplicaState::GetLastReplicatedOpIdUnlocked() const {
-  DCHECK(update_lock_.is_locked());
-  return replicated_op_id_;
-}
-
 void ReplicaState::UpdateLastReceivedOpIdUnlocked(const OpId& op_id) {
   DCHECK(update_lock_.is_locked());
   DCHECK_LE(OpIdCompare(received_op_id_, op_id), 0)
@@ -604,9 +593,8 @@ string ReplicaState::ToStringUnlocked() const {
                       peer_uuid_, state_,
                       QuorumPeerPB::Role_Name(role));
 
-  SubstituteAndAppend(&ret, "Watermarks: {Received: $0 Replicated: $1 Committed: $2}\n",
+  SubstituteAndAppend(&ret, "Watermarks: {Received: $0 Committed: $1}\n",
                       received_op_id_.ShortDebugString(),
-                      replicated_op_id_.ShortDebugString(),
                       last_committed_index_.ShortDebugString());
 
   SubstituteAndAppend(&ret, "Num. outstanding commits: $0 IsLocked: $1",
