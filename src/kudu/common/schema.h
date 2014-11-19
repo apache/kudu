@@ -68,9 +68,8 @@ class ColumnStorageAttributes {
 
 // The schema for a given column.
 //
-// Currently a simple wrapper around a data type, but in the future
-// will probably hold other information like nullability, column name,
-// annotations, etc.
+// Holds the data type as well as information about nullability & column name.
+// In the future, it may hold information about annotations, etc.
 class ColumnSchema {
  public:
   // name: column name

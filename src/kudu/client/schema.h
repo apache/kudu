@@ -92,6 +92,13 @@ class KUDU_EXPORT KuduColumnSchema {
 
   void CopyFrom(const KuduColumnSchema& other);
 
+  // Getters to expose column schema information.
+  const std::string& name() const;
+  DataType type() const;
+  bool is_nullable() const;
+
+  // TODO: Expose default column value and attributes?
+
  private:
   friend class KuduColumnRangePredicate;
   friend class KuduSchema;

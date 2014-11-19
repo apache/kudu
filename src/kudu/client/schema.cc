@@ -132,6 +132,18 @@ void KuduColumnSchema::CopyFrom(const KuduColumnSchema& other) {
   col_.reset(new ColumnSchema(*other.col_));
 }
 
+const std::string& KuduColumnSchema::name() const {
+  return col_->name();
+}
+
+KuduColumnSchema::DataType KuduColumnSchema::type() const {
+  return FromInternalDataType(col_->type_info()->type());
+}
+
+bool KuduColumnSchema::is_nullable() const {
+  return col_->is_nullable();
+}
+
 KuduSchema::KuduSchema() {}
 
 KuduSchema::KuduSchema(const vector<KuduColumnSchema>& columns, int key_columns) {
