@@ -317,7 +317,7 @@ Status RaftConsensus::ChangeConfigUnlocked() {
 }
 
 Status RaftConsensus::BecomeLeaderUnlocked() {
-  LOG_WITH_PREFIX(INFO) << "Becoming Leader for term " << state_->GetCurrentTermUnlocked();
+  LOG_WITH_PREFIX(INFO) << "Becoming Leader. State: " << state_->ToStringUnlocked();
 
   // Disable FD while we are leader.
   RETURN_NOT_OK(EnsureFailureDetectorDisabledUnlocked());
@@ -365,8 +365,7 @@ Status RaftConsensus::BecomeLeaderUnlocked() {
 }
 
 Status RaftConsensus::BecomeReplicaUnlocked() {
-  // TODO start the failure detector.
-  LOG_WITH_PREFIX(INFO) << "Becoming Follower/Learner";
+  LOG_WITH_PREFIX(INFO) << "Becoming Follower/Learner. State: " << state_->ToStringUnlocked();
 
   // FD should be running while we are a follower.
   RETURN_NOT_OK(EnsureFailureDetectorEnabledUnlocked());
