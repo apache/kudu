@@ -700,9 +700,7 @@ TEST_F(DistConsensusTest, TestRunLeaderElection) {
   // Reset consensus rpc timeout to the default value or the election might fail often.
   FLAGS_consensus_rpc_timeout_ms = 1000;
 
-  vector<string> flags;
-  flags.push_back("--enable_leader_failure_detection=true");
-  BuildAndStart(kNumReplicas, flags);
+  BuildAndStart(kNumReplicas, vector<string>());
 
   int num_iters = AllowSlowTests() ? 10 : 1;
 
