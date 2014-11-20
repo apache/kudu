@@ -17,11 +17,22 @@ using metadata::QuorumPB;
 using metadata::QuorumPeerPB;
 using strings::Substitute;
 
+bool IsVotingRole(const metadata::QuorumPeerPB::Role role) {
+  switch (role) {
+    case QuorumPeerPB::LEADER:
+    case QuorumPeerPB::CANDIDATE:
+    case QuorumPeerPB::FOLLOWER:
+      // Above 3 cases should all fall through.
+      return true;
+    default:
+      return false;
+  }
+}
+
 Status GivePeerRoleInQuorum(const string& peer_uuid,
                             metadata::QuorumPeerPB::Role new_role,
                             const QuorumPB& old_quorum,
                             QuorumPB* new_quorum) {
-  new_quorum->Clear();
   new_quorum->CopyFrom(old_quorum);
   new_quorum->clear_peers();
   bool found_peer = false;
@@ -52,6 +63,19 @@ Status GivePeerRoleInQuorum(const string& peer_uuid,
                                            peer_uuid, old_quorum.ShortDebugString()));
   }
   return Status::OK();
+}
+
+void SetAllQuorumVotersToFollower(const metadata::QuorumPB& old_quorum,
+                                  metadata::QuorumPB* new_quorum) {
+  new_quorum->CopyFrom(old_quorum);
+  new_quorum->clear_peers();
+  BOOST_FOREACH(const QuorumPeerPB& old_peer, old_quorum.peers()) {
+    QuorumPeerPB* new_peer = new_quorum->add_peers();
+    new_peer->CopyFrom(old_peer);
+    if (IsVotingRole(new_peer->role())) {
+      new_peer->set_role(QuorumPeerPB::FOLLOWER);
+    }
+  }
 }
 
 metadata::QuorumPeerPB::Role GetRoleInQuorum(const std::string& permanent_uuid,
