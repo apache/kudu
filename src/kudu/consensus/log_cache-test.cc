@@ -45,7 +45,20 @@ class LogCacheTest : public KuduTest {
                             NULL,
                             &log_));
 
-    cache_.reset(new LogCache(metric_context_, log_.get(), "TestMemTracker"));
+    CloseAndReopenCache(MinimumOpId(), "TestMemTracker");
+  }
+
+  virtual void TearDown() OVERRIDE {
+    cache_->Close();
+  }
+
+  void CloseAndReopenCache(const OpId& preceding_id,
+                           const string& mem_tracker_name) {
+    if (cache_) {
+      cache_->Close();
+    }
+    cache_.reset(new LogCache(metric_context_, log_.get(), mem_tracker_name));
+    cache_->Init(preceding_id);
   }
 
  protected:
@@ -125,7 +138,7 @@ TEST_F(LogCacheTest, TestCacheRefusesRequestWhenFilled) {
   FLAGS_log_cache_size_soft_limit_mb = 0;
   FLAGS_log_cache_size_hard_limit_mb = 1;
 
-  cache_.reset(new LogCache(metric_context_, log_.get(), "TestCacheRefusesRequestWhenFilled"));
+  CloseAndReopenCache(MinimumOpId(), "TestCacheRefusesRequestWhenFilled");
 
   // generate a 128Kb dummy payload
   const int kPayloadSize = 128 * 1024;
@@ -148,8 +161,6 @@ TEST_F(LogCacheTest, TestCacheRefusesRequestWhenFilled) {
 // index that is higher than it's latest, returns an empty set of messages when queried for
 // the the last index and returns all messages when queried for MinimumOpId().
 TEST_F(LogCacheTest, TestCacheEdgeCases) {
-  cache_.reset(new LogCache(metric_context_, log_.get(), "TestCacheEdgeCases"));
-
   // Append 1 message to the cache
   ASSERT_TRUE(AppendReplicateMessagesToCache(1, 1));
 
@@ -183,7 +194,7 @@ TEST_F(LogCacheTest, TestHardAndSoftLimit) {
   FLAGS_log_cache_size_soft_limit_mb = 1;
   FLAGS_log_cache_size_hard_limit_mb = 2;
 
-  cache_.reset(new LogCache(metric_context_, log_.get(), "TestHardAndSoftLimit"));
+  CloseAndReopenCache(MinimumOpId(), "TestHardAndSoftLimit");
 
   const int kPayloadSize = 768 * 1024;
   // Soft limit should not be violated.
@@ -245,7 +256,7 @@ TEST_F(LogCacheTest, TestGlobalHardLimit) {
   // Exceed the global hard limit.
   parent_tracker->Consume(6 * 1024 * 1024);
 
-  cache_.reset(new LogCache(metric_context_, log_.get(), kParentTrackerId));
+  CloseAndReopenCache(MinimumOpId(), kParentTrackerId);
 
   const int kPayloadSize = 768 * 1024;
 
@@ -278,7 +289,7 @@ TEST_F(LogCacheTest, TestEvictWhenGlobalSoftLimitExceeded) {
  parent_tracker->Consume(4 * 1024 * 1024);
  parent_tracker->Consume(1024);
 
- cache_.reset(new LogCache(metric_context_, log_.get(), kParentTrackerId));
+ CloseAndReopenCache(MinimumOpId(), kParentTrackerId);
 
  const int kPayloadSize = 768 * 1024;
  ASSERT_TRUE(AppendReplicateMessagesToCache(1, 1, kPayloadSize));
@@ -293,6 +304,22 @@ TEST_F(LogCacheTest, TestEvictWhenGlobalSoftLimitExceeded) {
 
  // Verify that there is only one message in the queue.
  ASSERT_EQ(size_with_one_msg, cache_->BytesUsed());
+}
+
+// Tests that on Close() if the cache has operations that are not persisted
+// and are not in flight, those operations are dumped to disk.
+TEST_F(LogCacheTest, TestCacheDrainsToDiskOnClose) {
+
+  // These messages are appended to the cache but are not in the Log.
+  ASSERT_TRUE(AppendReplicateMessagesToCache(1, 100));
+  OpId last;
+  ASSERT_TRUE(log_->GetLastEntryOpId(&last).IsNotFound());
+  ASSERT_TRUE(!last.IsInitialized());
+
+  cache_->Close();
+
+  ASSERT_OK(log_->GetLastEntryOpId(&last));
+  ASSERT_OPID_EQ(last, MakeOpId(14, 100));
 }
 
 } // namespace consensus

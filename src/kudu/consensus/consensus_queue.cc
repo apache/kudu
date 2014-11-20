@@ -499,6 +499,7 @@ void PeerMessageQueue::Close() {
   boost::lock_guard<simple_spinlock> lock(queue_lock_);
   queue_state_.state = kQueueClosed;
   ClearUnlocked();
+  log_cache_.Close();
 }
 
 int64_t PeerMessageQueue::GetQueuedOperationsSizeBytesForTests() const {

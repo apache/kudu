@@ -100,6 +100,12 @@ class LogCache {
   // Remove all entries from the cache.
   void Clear();
 
+  // Closes the cache, making sure that any outstanding reader terminates and that
+  // there are no outstanding operations in the cache that are not in the log.
+  // This latter case may happen in the off chance that we're faster writing to
+  // other nodes than to local disk.
+  void Close();
+
   // Return the number of bytes of memory currently in use by the cache.
   int64_t BytesUsed() const;
 
@@ -185,6 +191,13 @@ class LogCache {
     AtomicGauge<int64_t>* log_cache_size_bytes;
   };
   Metrics metrics_;
+
+  enum State {
+    kCacheOpen,
+    kCacheClosed,
+  };
+
+  State state_;
 
   DISALLOW_COPY_AND_ASSIGN(LogCache);
 };

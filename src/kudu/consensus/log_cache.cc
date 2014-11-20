@@ -56,7 +56,8 @@ LogCache::LogCache(const MetricContext& metric_ctx,
     max_ops_size_bytes_hard_(FLAGS_log_cache_size_hard_limit_mb * 1024 * 1024),
     global_max_ops_size_bytes_hard_(
       FLAGS_global_log_cache_size_hard_limit_mb * 1024 * 1024),
-    metrics_(metric_ctx) {
+    metrics_(metric_ctx),
+    state_(kCacheClosed) {
   uint64_t max_ops_size_bytes_soft = FLAGS_log_cache_size_soft_limit_mb * 1024 * 1024;
   uint64_t global_max_ops_size_bytes_soft =
       FLAGS_global_log_cache_size_soft_limit_mb * 1024 * 1024;
@@ -73,11 +74,13 @@ LogCache::LogCache(const MetricContext& metric_ctx,
 }
 
 LogCache::~LogCache() {
-  STLDeleteValues(&cache_);
+  CHECK_EQ(state_, kCacheClosed);
 }
 
 void LogCache::Init(const OpId& preceding_op) {
   lock_guard<simple_spinlock> l(&lock_);
+  DCHECK_EQ(state_, kCacheClosed);
+  state_ = kCacheOpen;
   CHECK(cache_.empty());
   preceding_first_op_ = preceding_op;
   async_reader_.reset(new log::AsyncLogReader(log_->GetLogReader()));
@@ -86,6 +89,7 @@ void LogCache::Init(const OpId& preceding_op) {
 void LogCache::SetPinnedOp(int64_t index) {
   {
     lock_guard<simple_spinlock> l(&lock_);
+    DCHECK_EQ(state_, kCacheOpen);
     min_pinned_op_index = index;
   }
 
@@ -102,6 +106,7 @@ void LogCache::Clear() {
 
 bool LogCache::AppendOperation(gscoped_ptr<ReplicateMsg>* message) {
   lock_guard<simple_spinlock> l(&lock_);
+  DCHECK_EQ(state_, kCacheOpen);
   ReplicateMsg* msg_ptr = DCHECK_NOTNULL(message->get());
 
   // In debug mode, check that the indexes in the queue are consecutive.
@@ -133,6 +138,7 @@ bool LogCache::AppendOperation(gscoped_ptr<ReplicateMsg>* message) {
 
 bool LogCache::HasOpIndex(int64_t index) const {
   lock_guard<simple_spinlock> l(&lock_);
+  DCHECK_EQ(state_, kCacheOpen);
   return ContainsKey(cache_, index);
 }
 
@@ -142,6 +148,7 @@ Status LogCache::ReadOps(int64_t after_op_index,
                          OpId* preceding_op) {
 
   lock_guard<simple_spinlock> l(&lock_);
+  DCHECK_EQ(state_, kCacheOpen);
   CHECK_GE(after_op_index, min_pinned_op_index)
     << "Cannot currently support reading non-pinned operations";
 
@@ -226,6 +233,7 @@ void LogCache::EntriesLoadedCallback(int64_t after_op_index,
   // TODO enforce some sort of limit on how much can be loaded from disk
   {
     lock_guard<simple_spinlock> lock(&lock_);
+    DCHECK_EQ(state_, kCacheOpen);
 
     // We were told to load ops after 'new_preceding_first_op_index' so we skip
     // the first one, whose OpId will become our new 'preceding_first_op_'
@@ -270,6 +278,7 @@ void LogCache::EntriesLoadedCallback(int64_t after_op_index,
 
 void LogCache::Evict() {
   lock_guard<simple_spinlock> lock(&lock_);
+  DCHECK_EQ(state_, kCacheOpen);
   MessageCache::iterator iter = cache_.begin();
 
   VLOG(1) << "Evicting log cache: before stats: " << StatsStringUnlocked();
@@ -324,6 +333,56 @@ string LogCache::StatsStringUnlocked() const {
   return Substitute("LogCache(num_ops=$0, bytes=$1)",
                     metrics_.log_cache_total_num_ops->value(),
                     metrics_.log_cache_size_bytes->value());
+}
+
+void LogCache::Close() {
+  if (async_reader_) {
+    async_reader_->Shutdown();
+  }
+
+  lock_guard<simple_spinlock> lock(&lock_);
+  if (state_ == kCacheClosed) {
+    return;
+  }
+
+  state_ = kCacheClosed;
+
+  // If the cache is not empty it must reflect what's on disk, since the peers
+  // got closed before the cache we know the outstanding ops won't land there.
+  // TODO remove this when we have a single path to write to the log.
+  if (!cache_.empty()) {
+    log_->WaitUntilAllFlushed();
+
+    OpId last_opid_in_log;
+    Status s = log_->GetLastEntryOpId(&last_opid_in_log);
+
+    if (s.IsNotFound()) {
+      last_opid_in_log = MinimumOpId();
+    } else if (!s.ok()) {
+      LOG(FATAL) << "Error reading the log while closing the cache: " << s.ToString();
+    }
+
+    OpId last_opid_in_cache = (*cache_.rbegin()).second->id();
+
+    if (!OpIdEquals(last_opid_in_log, last_opid_in_cache)) {
+      MessageCache::iterator iter = cache_.upper_bound(last_opid_in_log.index());
+
+      vector<ReplicateMsg*> messages;
+      while (iter != cache_.end()) {
+        messages.push_back((*iter).second);
+        ++iter;
+      }
+
+      Synchronizer log_synchronizer;
+      log_->AsyncAppendReplicates(&messages[0],
+                                  messages.size(),
+                                  log_synchronizer.AsStatusCallback());
+
+      CHECK_OK(log_synchronizer.Wait());
+    }
+  }
+
+  STLDeleteValues(&cache_);
 }
 
 void LogCache::DumpToLog() const {
