@@ -130,7 +130,7 @@ class RaftConsensusTest : public KuduTest {
     BuildQuorumPBForTests(&quorum_, num_peers);
     quorum_.mutable_peers(num_peers - 1)->set_role(initial_role);
 
-    gscoped_ptr<PeerProxyFactory> proxy_factory(new LocalTestPeerProxyFactory());
+    gscoped_ptr<PeerProxyFactory> proxy_factory(new LocalTestPeerProxyFactory(NULL));
 
     gscoped_ptr<ConsensusMetadata> cmeta;
     CHECK_OK(ConsensusMetadata::Create(fs_manager_.get(), kTestTablet, quorum_,

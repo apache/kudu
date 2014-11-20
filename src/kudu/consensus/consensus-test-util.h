@@ -115,13 +115,17 @@ class TestPeerProxy : public PeerProxy {
   // Register the RPC callback in order to call later.
   // We currently only support one request of each method being in flight at a time.
   virtual void RegisterCallback(Method method, const rpc::ResponseCallback& callback) {
-    lock_guard<simple_spinlock> l(&lock_);
+    boost::lock_guard<simple_spinlock> lock(lock_);
     InsertOrDie(&callbacks_, method, callback);
   }
 
   // Answer the peer.
   virtual Status Respond(Method method) {
-    lock_guard<simple_spinlock> l(&lock_);
+    boost::lock_guard<simple_spinlock> lock(lock_);
+    return RespondUnlocked(method);
+  }
+
+  virtual Status RespondUnlocked(Method method) {
     rpc::ResponseCallback callback = FindOrDie(callbacks_, method);
     CHECK_EQ(1, callbacks_.erase(method));
     return pool_->SubmitFunc(callback);
@@ -311,13 +315,65 @@ class NoOpTestPeerProxyFactory : public PeerProxyFactory {
   gscoped_ptr<ThreadPool> pool_;
 };
 
+typedef std::tr1::unordered_map<std::string, scoped_refptr<RaftConsensus> > TestPeerMap;
+
+// Thread-safe manager for list of peers being used in tests.
+class TestPeerMapManager {
+ public:
+  explicit TestPeerMapManager(const QuorumPB& quorum) : quorum_(quorum) {}
+
+  void AddPeer(const std::string& peer_uuid, const scoped_refptr<RaftConsensus>& peer) {
+    boost::lock_guard<simple_spinlock> lock(lock_);
+    InsertOrDie(&peers_, peer_uuid, peer);
+  }
+
+  Status GetPeerByIdx(int idx, scoped_refptr<RaftConsensus>* peer_out) const {
+    CHECK_LT(idx, quorum_.peers_size());
+    return GetPeerByUuid(quorum_.peers(idx).permanent_uuid(), peer_out);
+  }
+
+  Status GetPeerByUuid(const std::string& peer_uuid,
+                       scoped_refptr<RaftConsensus>* peer_out) const {
+    boost::lock_guard<simple_spinlock> lock(lock_);
+    if (!FindCopy(peers_, peer_uuid, peer_out)) {
+      return Status::NotFound("Other consensus instance was destroyed");
+    }
+    return Status::OK();
+  }
+
+  void RemovePeer(const std::string& peer_uuid) {
+    boost::lock_guard<simple_spinlock> lock(lock_);
+    peers_.erase(peer_uuid);
+  }
+
+  TestPeerMap GetPeerMapCopy() const {
+    boost::lock_guard<simple_spinlock> lock(lock_);
+    return peers_;
+  }
+
+  void Clear() {
+    boost::lock_guard<simple_spinlock> lock(lock_);
+    peers_.clear();
+  }
+
+ private:
+  const QuorumPB quorum_;
+  TestPeerMap peers_;
+  mutable simple_spinlock lock_;
+};
+
+
 // Allows to test remote peers by emulating an RPC.
 // Both the "remote" peer's RPC call and the caller peer's response are executed
 // asynchronously in a ThreadPool.
 class LocalTestPeerProxy : public TestPeerProxy {
  public:
-  explicit LocalTestPeerProxy(ThreadPool* pool, Consensus* consensus)
-    : TestPeerProxy(pool), consensus_(consensus),
+  LocalTestPeerProxy(const std::string& peer_uuid,
+                     ThreadPool* pool,
+                     TestPeerMapManager* peers)
+    : TestPeerProxy(pool),
+      peer_uuid_(peer_uuid),
+      peers_(peers),
       miss_comm_(false) {
   }
 
@@ -341,6 +397,35 @@ class LocalTestPeerProxy : public TestPeerProxy {
     return Status::OK();
   }
 
+  template<class Response>
+  void SetResponseError(const Status& status, Response* response) {
+    tserver::TabletServerErrorPB* error = response->mutable_error();
+    error->set_code(tserver::TabletServerErrorPB::UNKNOWN_ERROR);
+    StatusToPB(status, error->mutable_status());
+  }
+
+  template<class Request, class Response>
+  void RespondOrMissResponse(Request* request,
+                             const Response& response_temp,
+                             Response* final_response,
+                             Method method) {
+
+    bool miss_comm_copy;
+    {
+      boost::lock_guard<simple_spinlock> lock(lock_);
+      miss_comm_copy = miss_comm_;
+      miss_comm_ = false;
+    }
+    if (PREDICT_FALSE(miss_comm_copy)) {
+      VLOG(2) << this << ": injecting fault on " << request->ShortDebugString();
+      SetResponseError(Status::IOError("Artificial error caused by communication "
+          "failure injection."), final_response);
+    } else {
+      final_response->CopyFrom(response_temp);
+    }
+    WARN_NOT_OK(Respond(method), "Could not send response.");
+  }
+
   void SendUpdateRequest(const ConsensusRequestPB* request,
                          ConsensusResponsePB* response) {
     // Copy the request and the response for the other peer so that ownership
@@ -350,43 +435,28 @@ class LocalTestPeerProxy : public TestPeerProxy {
 
     // Give the other peer a clean response object to write to.
     ConsensusResponsePB other_peer_resp;
-    Status s;
-    {
-      boost::lock_guard<simple_spinlock> lock(lock_);
-      if (PREDICT_TRUE(consensus_)) {
-        s = consensus_->Update(&other_peer_req, &other_peer_resp);
-        if (s.ok() && !other_peer_resp.has_error()) {
-          CHECK(other_peer_resp.has_status());
-          CHECK(other_peer_resp.status().IsInitialized());
-        }
-      } else {
-        s = Status::NotFound("Other consensus instance was destroyed");
+    scoped_refptr<RaftConsensus> peer;
+    Status s = peers_->GetPeerByUuid(peer_uuid_, &peer);
+
+    if (s.ok()) {
+      s = peer->Update(&other_peer_req, &other_peer_resp);
+      if (s.ok() && !other_peer_resp.has_error()) {
+        CHECK(other_peer_resp.has_status());
+        CHECK(other_peer_resp.status().IsInitialized());
       }
     }
     if (!s.ok()) {
       LOG(WARNING) << "Could not Update replica with request: "
                    << other_peer_req.ShortDebugString()
                    << " Status: " << s.ToString();
-      tserver::TabletServerErrorPB* error = other_peer_resp.mutable_error();
-            error->set_code(tserver::TabletServerErrorPB::UNKNOWN_ERROR);
-            StatusToPB(s, error->mutable_status());
+      SetResponseError(s, &other_peer_resp);
     }
-    {
-      boost::lock_guard<simple_spinlock> lock(lock_);
-      if (PREDICT_FALSE(miss_comm_)) {
-        VLOG(2) << this << ": injecting fault on " << request->ShortDebugString();
-        tserver::TabletServerErrorPB* error = response->mutable_error();
-        error->set_code(tserver::TabletServerErrorPB::UNKNOWN_ERROR);
-        StatusToPB(Status::IOError("Artificial error caused by communication failure injection."),
-                   error->mutable_status());
-        miss_comm_ = false;
-      } else {
-        response->CopyFrom(other_peer_resp);
-        VLOG(2) << this << ": not injecting fault for req: " << request->ShortDebugString();
-      }
-      WARN_NOT_OK(Respond(kUpdate), "Could not send response.");
-    }
+
+    response->CopyFrom(other_peer_resp);
+    RespondOrMissResponse(request, other_peer_resp, response, kUpdate);
   }
+
+
 
   void SendVoteRequest(const VoteRequestPB* request,
                        VoteResponsePB* response) {
@@ -398,97 +468,51 @@ class LocalTestPeerProxy : public TestPeerProxy {
     VoteResponsePB other_peer_resp;
     other_peer_resp.CopyFrom(*response);
 
-    // FIXME: This is one big massive copy & paste.
-    Status s;
-    {
-      boost::lock_guard<simple_spinlock> lock(lock_);
-      if (PREDICT_TRUE(consensus_)) {
-        s = consensus_->RequestVote(&other_peer_req, &other_peer_resp);
-      } else {
-        s = Status::NotFound("Other consensus instance was destroyed");
-      }
+    scoped_refptr<RaftConsensus> peer;
+    Status s = peers_->GetPeerByUuid(peer_uuid_, &peer);
+
+    if (s.ok()) {
+      s = peer->RequestVote(&other_peer_req, &other_peer_resp);
     }
     if (!s.ok()) {
       LOG(WARNING) << "Could not RequestVote from replica with request: "
-          << other_peer_req.ShortDebugString()
-          << " Status: " << s.ToString();
-      tserver::TabletServerErrorPB* error = other_peer_resp.mutable_error();
-            error->set_code(tserver::TabletServerErrorPB::UNKNOWN_ERROR);
-            StatusToPB(s, error->mutable_status());
+                   << other_peer_req.ShortDebugString()
+                   << " Status: " << s.ToString();
+      SetResponseError(s, &other_peer_resp);
     }
+
     response->CopyFrom(other_peer_resp);
-
-    {
-      boost::lock_guard<simple_spinlock> lock(lock_);
-      if (PREDICT_FALSE(miss_comm_)) {
-        tserver::TabletServerErrorPB* error = response->mutable_error();
-        error->set_code(tserver::TabletServerErrorPB::UNKNOWN_ERROR);
-        StatusToPB(Status::IOError("Artificial error caused by communication failure injection."),
-                   error->mutable_status());
-        miss_comm_ = false;
-      }
-      WARN_NOT_OK(Respond(kRequestVote) , "Could not send response.");
-    }
-  }
-
-  void ConsensusShutdown() {
-    boost::lock_guard<simple_spinlock> lock(lock_);
-    consensus_ = NULL;
+    RespondOrMissResponse(request, other_peer_resp, response, kRequestVote);
   }
 
   void InjectCommFaultLeaderSide() {
-    boost::lock_guard<simple_spinlock> lock(lock_);
     VLOG(2) << this << ": injecting fault next time";
+    boost::lock_guard<simple_spinlock> lock(lock_);
     miss_comm_ = true;
   }
 
-  Consensus* GetTarget() {
-    boost::lock_guard<simple_spinlock> lock(lock_);
-    return consensus_;
+  const std::string& GetTarget() const {
+    return peer_uuid_;
   }
 
  private:
-  Consensus* consensus_;
-  mutable simple_spinlock lock_;
+  const std::string peer_uuid_;
+  TestPeerMapManager* const peers_;
   bool miss_comm_;
-};
-
-// For tests, we create local proxies that interact with other RaftConsensus
-// instances directly. We need a hook to make sure that, when an instance
-// is destroyed, proxies of other instances that point to it no longer
-// try to call methods on it, otherwise we get a SIGSEGV.
-class UnsetConsensusOnDestroyHook : public Consensus::ConsensusFaultHooks {
- public:
-   void AddPeerProxy(LocalTestPeerProxy* proxy) { proxies_.push_back(proxy); }
-   virtual Status PreShutdown() OVERRIDE {
-     BOOST_FOREACH(LocalTestPeerProxy* proxy, proxies_) {
-       proxy->ConsensusShutdown();
-     }
-     return Status::OK();
-   }
- private:
-  vector<LocalTestPeerProxy*> proxies_;
 };
 
 class LocalTestPeerProxyFactory : public PeerProxyFactory {
  public:
-  LocalTestPeerProxyFactory() {
+  explicit LocalTestPeerProxyFactory(TestPeerMapManager* peers)
+    : peers_(peers) {
     CHECK_OK(ThreadPoolBuilder("test-peer-pool").set_max_threads(3).Build(&pool_));
-  }
-  typedef pair<std::tr1::shared_ptr<UnsetConsensusOnDestroyHook>, Consensus*> Entry;
-
-  // TODO allow to pass other fault hooks
-  void AddPeer(const metadata::QuorumPeerPB& peer_pb, Consensus* consensus) {
-    std::tr1::shared_ptr<UnsetConsensusOnDestroyHook> hook(new UnsetConsensusOnDestroyHook);
-    consensus->SetFaultHooks(hook);
-    peers_.insert(pair<std::string, Entry>(peer_pb.permanent_uuid(), Entry(hook, consensus)));
   }
 
   virtual Status NewProxy(const metadata::QuorumPeerPB& peer_pb,
                           gscoped_ptr<PeerProxy>* proxy) OVERRIDE {
-    Entry entry = FindOrDie(peers_, peer_pb.permanent_uuid());
-    LocalTestPeerProxy* new_proxy = new LocalTestPeerProxy(pool_.get(), entry.second);
-    entry.first->AddPeerProxy(new_proxy);
+    LocalTestPeerProxy* new_proxy = new LocalTestPeerProxy(peer_pb.permanent_uuid(),
+                                                           pool_.get(),
+                                                           peers_);
     proxy->reset(new_proxy);
     proxies_.push_back(new_proxy);
     return Status::OK();
@@ -500,8 +524,8 @@ class LocalTestPeerProxyFactory : public PeerProxyFactory {
 
  private:
   gscoped_ptr<ThreadPool> pool_;
-  std::tr1::unordered_map<std::string, Entry> peers_;
-  // NOTE: There is no need to delete this on the dctor because proxies are externally managed
+  TestPeerMapManager* const peers_;
+    // NOTE: There is no need to delete this on the dctor because proxies are externally managed
   vector<LocalTestPeerProxy*> proxies_;
 };
 
