@@ -44,8 +44,9 @@ class ConsensusPeersTest : public KuduTest {
                        schema_,
                        NULL,
                        &log_));
-    consensus_.reset(new TestRaftConsensusQueueIface(log_.get()));
+    consensus_.reset(new TestRaftConsensusQueueIface());
     message_queue_.reset(new PeerMessageQueue(metric_context_, log_.get()));
+    message_queue_->RegisterObserver(consensus_.get());
   }
 
   void NewLocalPeer(const string& peer_name, gscoped_ptr<Peer>* peer) {
@@ -121,7 +122,7 @@ class ConsensusPeersTest : public KuduTest {
 // After the operations are considered done the log should
 // reflect the replicated messages.
 TEST_F(ConsensusPeersTest, TestLocalPeer) {
-  message_queue_->Init(consensus_.get(), MinimumOpId(), MinimumOpId().term(), 1);
+  message_queue_->Init(MinimumOpId(), MinimumOpId().term(), 1);
 
   gscoped_ptr<Peer> local_peer;
 
@@ -152,7 +153,7 @@ TEST_F(ConsensusPeersTest, TestLocalPeer) {
 // simulates the other endpoint) should reflect the replicated
 // messages.
 TEST_F(ConsensusPeersTest, TestRemotePeer) {
-  message_queue_->Init(consensus_.get(), MinimumOpId(), MinimumOpId().term(), 1);
+  message_queue_->Init(MinimumOpId(), MinimumOpId().term(), 1);
   gscoped_ptr<Peer> remote_peer;
   DelayablePeerProxy<NoOpTestPeerProxy>* proxy =
       NewRemotePeer("remote-peer", &remote_peer);
@@ -176,7 +177,7 @@ TEST_F(ConsensusPeersTest, TestRemotePeer) {
 }
 
 TEST_F(ConsensusPeersTest, TestLocalAndRemotePeers) {
-  message_queue_->Init(consensus_.get(), MinimumOpId(), MinimumOpId().term(), 2);
+  message_queue_->Init(MinimumOpId(), MinimumOpId().term(), 2);
   gscoped_ptr<Peer> local_peer;
 
   // Create a set of peers

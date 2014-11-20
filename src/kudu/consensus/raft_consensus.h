@@ -41,33 +41,8 @@ class PeerProxyFactory;
 class PeerManager;
 class ReplicaState;
 
-// The interface between RaftConsensus and the PeerMessageQueue.
-class RaftConsensusQueueIface {
- public:
-  // Called by the queue each time the response for a peer is handled with
-  // the resulting majority replicated index.
-  // The consensus implementation decides the commit index based on that
-  // and triggers the apply for pending transactions.
-  // 'committed_index' is set to the id of the last operation considered
-  // committed by consensus.
-  // The implementation is idempotent, i.e. independently of the ordering of
-  // calls to this method only non-triggered applys will be started.
-  virtual void UpdateMajorityReplicated(const OpId& majority_replicated,
-                                        OpId* committed_index) = 0;
-
-  // Notify the Consensus implementation that a follower replied with a term
-  // higher than that established in the queue.
-  virtual void NotifyTermChange(uint64_t term) = 0;
-
-  // Returns a pointer to the Log so that the queue can load messages, if
-  // needed.
-  virtual log::Log* log() const = 0;
-
-  virtual ~RaftConsensusQueueIface() {}
-};
-
 class RaftConsensus : public Consensus,
-                      public RaftConsensusQueueIface {
+                      public PeerMessageQueueObserver {
  public:
   class ConsensusFaultHooks;
 
@@ -114,8 +89,6 @@ class RaftConsensus : public Consensus,
 
   virtual Status RequestVote(const VoteRequestPB* request,
                              VoteResponsePB* response) OVERRIDE;
-
-  virtual log::Log* log() const OVERRIDE { return log_; }
 
   virtual metadata::QuorumPeerPB::Role role() const OVERRIDE;
 

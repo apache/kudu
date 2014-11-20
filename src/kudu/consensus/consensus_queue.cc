@@ -88,15 +88,13 @@ PeerMessageQueue::PeerMessageQueue(const MetricContext& metric_ctx,
   queue_state_.state = kQueueConstructed;
 }
 
-void PeerMessageQueue::Init(RaftConsensusQueueIface* consensus,
-                            const OpId& committed_index,
+void PeerMessageQueue::Init(const OpId& committed_index,
                             uint64_t current_term,
                             int majority_size) {
   boost::lock_guard<simple_spinlock> lock(queue_lock_);
   CHECK_EQ(queue_state_.state, kQueueConstructed);
   DCHECK_GE(majority_size, 0);
   CHECK(committed_index.IsInitialized());
-  consensus_ = consensus;
   log_cache_.Init(committed_index);
   queue_state_.last_appended = committed_index;
   queue_state_.committed_index = committed_index;
@@ -417,18 +415,7 @@ void PeerMessageQueue::ResponseFromPeer(const ConsensusResponsePB& response,
     UpdateMetrics();
   }
 
-  // It's OK that we do this without the lock as this is idempotent.
-  OpId new_committed_index;
-  consensus_->UpdateMajorityReplicated(updated_majority_replicated_index,
-                                       &new_committed_index);
-
-  {
-    boost::lock_guard<simple_spinlock> lock(queue_lock_);
-    if (new_committed_index.IsInitialized() &&
-        OpIdBiggerThan(new_committed_index, queue_state_.committed_index)) {
-      queue_state_.committed_index.CopyFrom(new_committed_index);
-    }
-  }
+  NotifyObserversOfMajorityReplOpChange(updated_majority_replicated_index);
 }
 
 OpId PeerMessageQueue::GetAllReplicatedIndexForTests() const {
@@ -518,6 +505,46 @@ string PeerMessageQueue::ToStringUnlocked() const {
                     "Only Majority Done Ops: $0, In Progress Ops: $1, Cache: $2",
                     metrics_.num_majority_done_ops->value(), metrics_.num_in_progress_ops->value(),
                     log_cache_.StatsString());
+}
+
+void PeerMessageQueue::RegisterObserver(PeerMessageQueueObserver* observer) {
+  boost::lock_guard<simple_spinlock> lock(queue_lock_);
+  observers_.push_back(observer);
+}
+
+Status PeerMessageQueue::UnRegisterObserver(PeerMessageQueueObserver* observer) {
+  boost::lock_guard<simple_spinlock> lock(queue_lock_);
+  std::vector<PeerMessageQueueObserver*>::iterator iter =
+      std::find(observers_.begin(), observers_.end(), observer);
+  if (iter == observers_.end()) {
+    return Status::NotFound("Can't find observer.");
+  }
+  observers_.erase(iter);
+  return Status::OK();
+}
+
+void PeerMessageQueue::NotifyObserversOfMajorityReplOpChange(
+    const OpId& new_majority_replicated_op) {
+  std::vector<PeerMessageQueueObserver*> copy;
+  {
+    boost::lock_guard<simple_spinlock> lock(queue_lock_);
+    copy = observers_;
+  }
+
+  // TODO move commit index advancement here so that the queue is not dependent on
+  // consensus at all, but that requires a bit more work.
+  OpId new_committed_index;
+  BOOST_FOREACH(PeerMessageQueueObserver* observer, copy) {
+    observer->UpdateMajorityReplicated(new_majority_replicated_op, &new_committed_index);
+  }
+
+  {
+    boost::lock_guard<simple_spinlock> lock(queue_lock_);
+    if (new_committed_index.IsInitialized() &&
+        new_committed_index.index() > queue_state_.committed_index.index()) {
+      queue_state_.committed_index.CopyFrom(new_committed_index);
+    }
+  }
 }
 
 PeerMessageQueue::~PeerMessageQueue() {

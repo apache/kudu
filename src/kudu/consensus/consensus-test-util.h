@@ -797,20 +797,12 @@ class CounterHooks : public Consensus::ConsensusFaultHooks {
   mutable simple_spinlock lock_;
 };
 
-class TestRaftConsensusQueueIface : public RaftConsensusQueueIface {
+class TestRaftConsensusQueueIface : public PeerMessageQueueObserver {
  public:
-
-  explicit TestRaftConsensusQueueIface(log::Log* log)
-    : majority_replicated_index_(-1),
-      log_(log) {
-  }
-
   bool IsMajorityReplicated(int64_t index) {
     boost::lock_guard<simple_spinlock> lock(lock_);
     return index <= majority_replicated_index_;
   }
-
-  log::Log* log() const OVERRIDE { return log_; }
 
  protected:
   virtual void UpdateMajorityReplicated(const OpId& majority_replicated,
@@ -823,7 +815,6 @@ class TestRaftConsensusQueueIface : public RaftConsensusQueueIface {
  private:
   mutable simple_spinlock lock_;
   int64_t majority_replicated_index_;
-  log::Log* log_;
 };
 
 }  // namespace consensus

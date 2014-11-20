@@ -293,7 +293,7 @@ class RaftConsensusQuorumTest : public KuduTest {
     // Gather the replica and leader operations for printing
     vector<LogEntryPB*> replica_ops;
     ElementDeleter repl0_deleter(&replica_ops);
-    GatherLogEntries(peer_idx, replica->log(), &replica_ops);
+    GatherLogEntries(peer_idx, logs_[peer_idx], &replica_ops);
     vector<LogEntryPB*> leader_ops;
     ElementDeleter leader_deleter(&leader_ops);
     GatherLogEntries(leader_idx, logs_[leader_idx], &leader_ops);

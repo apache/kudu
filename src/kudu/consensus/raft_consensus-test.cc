@@ -42,8 +42,7 @@ class MockQueue : public PeerMessageQueue {
  public:
   explicit MockQueue(const MetricContext& metric_ctx, log::Log* log)
     : PeerMessageQueue(metric_ctx, log) {}
-  MOCK_METHOD4(Init, void(RaftConsensusQueueIface* consensus,
-                          const OpId& committed_index,
+  MOCK_METHOD3(Init, void(const OpId& committed_index,
                           uint64_t current_term,
                           int majority_size));
   virtual Status AppendOperation(gscoped_ptr<ReplicateMsg> replicate) OVERRIDE {
@@ -261,7 +260,7 @@ TEST_F(RaftConsensusTest, TestCommittedIndexWhenInSameTerm) {
   EXPECT_CALL(*peer_manager_, UpdateQuorum(_))
       .Times(1)
       .WillOnce(Return(Status::OK()));
-  EXPECT_CALL(*queue_, Init(_, _, _, _))
+  EXPECT_CALL(*queue_, Init(_, _, _))
       .Times(1);
   EXPECT_CALL(*txn_factory_, StartReplicaTransactionMock(_))
       .Times(1);
@@ -299,7 +298,7 @@ TEST_F(RaftConsensusTest, TestCommittedIndexWhenTermsChange) {
   EXPECT_CALL(*peer_manager_, UpdateQuorum(_))
       .Times(2)
       .WillRepeatedly(Return(Status::OK()));
-  EXPECT_CALL(*queue_, Init(_, _, _, _))
+  EXPECT_CALL(*queue_, Init(_, _, _))
       .Times(2);
   EXPECT_CALL(*txn_factory_, StartReplicaTransactionMock(_))
       .Times(2);
@@ -385,7 +384,7 @@ TEST_F(RaftConsensusTest, TestPendingTransactions) {
   {
     InSequence dummy;
     // Queue gets initted when the peer becomes leader.
-    EXPECT_CALL(*queue_, Init(_, _, _, _))
+    EXPECT_CALL(*queue_, Init(_, _, _))
     .Times(1);
     // Peer manager gets updated with the new set of peers to send stuff to.
     EXPECT_CALL(*peer_manager_, UpdateQuorum(_))
@@ -455,7 +454,7 @@ TEST_F(RaftConsensusTest, TestAbortOperations) {
   EXPECT_CALL(*peer_manager_, UpdateQuorum(_))
       .Times(1)
       .WillRepeatedly(Return(Status::OK()));
-  EXPECT_CALL(*queue_, Init(_, _, _, _))
+  EXPECT_CALL(*queue_, Init(_, _, _))
       .Times(1);
 
   // The leader will initially try to push 11 ops.

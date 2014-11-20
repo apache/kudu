@@ -32,7 +32,7 @@ class AsyncLogReader;
 }
 
 namespace consensus {
-class RaftConsensusQueueIface;
+class PeerMessageQueueObserver;
 
 // The id for the server-wide consensus queue MemTracker.
 extern const char kConsensusQueueParentTrackerId[];
@@ -63,8 +63,7 @@ class PeerMessageQueue {
   // operation in the current term.
   // Majority size corresponds to the number of peers that must have replicated
   // a certain operation for it to be considered committed.
-  virtual void Init(RaftConsensusQueueIface* consensus,
-                    const OpId& committed_index,
+  virtual void Init(const OpId& committed_index,
                     uint64_t current_term,
                     int majority_size);
 
@@ -125,6 +124,10 @@ class PeerMessageQueue {
   virtual void DumpToStrings(std::vector<std::string>* lines) const;
 
   virtual void DumpToHtml(std::ostream& out) const;
+
+  virtual void RegisterObserver(PeerMessageQueueObserver* observer);
+
+  virtual Status UnRegisterObserver(PeerMessageQueueObserver* observer);
 
   struct Metrics {
     // Keeps track of the number of ops. that are completed by a majority but still need
@@ -198,6 +201,8 @@ class PeerMessageQueue {
     State state;
   };
 
+  void NotifyObserversOfMajorityReplOpChange(const OpId& new_majority_replicated_op);
+
   typedef std::tr1::unordered_map<std::string, TrackedPeer*> WatermarksMap;
 
   std::string ToStringUnlocked() const;
@@ -230,13 +235,13 @@ class PeerMessageQueue {
                                    std::vector<ReplicateMsg*>* messages,
                                    OpId* preceding_id);
 
+  std::vector<PeerMessageQueueObserver*> observers_;
+
   // The size of the majority for the queue.
   // TODO support changing majority sizes when quorums change.
   int majority_size_;
 
   QueueState queue_state_;
-
-  RaftConsensusQueueIface* consensus_;
 
   // The current watermark for each peer.
   // The queue owns the OpIds.
@@ -246,6 +251,27 @@ class PeerMessageQueue {
   LogCache log_cache_;
 
   Metrics metrics_;
+};
+
+// The interface between RaftConsensus and the PeerMessageQueue.
+class PeerMessageQueueObserver {
+ public:
+  // Called by the queue each time the response for a peer is handled with
+  // the resulting majority replicated index.
+  // The consensus implementation decides the commit index based on that
+  // and triggers the apply for pending transactions.
+  // 'committed_index' is set to the id of the last operation considered
+  // committed by consensus.
+  // The implementation is idempotent, i.e. independently of the ordering of
+  // calls to this method only non-triggered applys will be started.
+  virtual void UpdateMajorityReplicated(const OpId& majority_replicated,
+                                        OpId* committed_index) = 0;
+
+  // Notify the Consensus implementation that a follower replied with a term
+  // higher than that established in the queue.
+  virtual void NotifyTermChange(uint64_t term) = 0;
+
+  virtual ~PeerMessageQueueObserver() {}
 };
 
 }  // namespace consensus

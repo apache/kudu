@@ -56,8 +56,9 @@ class ConsensusQueueTest : public KuduTest {
                             NULL,
                             &log_));
 
-    consensus_.reset(new TestRaftConsensusQueueIface(log_.get()));
+    consensus_.reset(new TestRaftConsensusQueueIface());
     queue_.reset(new PeerMessageQueue(metric_context_, log_.get()));
+    queue_->RegisterObserver(consensus_.get());
   }
 
 
@@ -106,8 +107,8 @@ class ConsensusQueueTest : public KuduTest {
   gscoped_ptr<FsManager> fs_manager_;
   MetricRegistry metric_registry_;
   MetricContext metric_context_;
-  gscoped_ptr<PeerMessageQueue> queue_;
   gscoped_ptr<log::Log> log_;
+  gscoped_ptr<PeerMessageQueue> queue_;
   scoped_refptr<log::LogAnchorRegistry> registry_;
 };
 
@@ -116,7 +117,7 @@ class ConsensusQueueTest : public KuduTest {
 // with several messages and then starts to track a peer whose watermark
 // falls in the middle of the current messages in the queue.
 TEST_F(ConsensusQueueTest, TestStartTrackingAfterStart) {
-  queue_->Init(consensus_.get(), MinimumOpId(), MinimumOpId().term(), 1);
+  queue_->Init(MinimumOpId(), MinimumOpId().term(), 1);
   AppendReplicateMessagesToQueue(queue_.get(), 1, 100);
 
   ConsensusRequestPB request;
@@ -150,7 +151,7 @@ TEST_F(ConsensusQueueTest, TestStartTrackingAfterStart) {
 // Tests that the peers gets the messages pages, with the size of a page
 // being 'consensus_max_batch_size_bytes'
 TEST_F(ConsensusQueueTest, TestGetPagedMessages) {
-  queue_->Init(consensus_.get(), MinimumOpId(), MinimumOpId().term(), 1);
+  queue_->Init(MinimumOpId(), MinimumOpId().term(), 1);
 
   // helper to estimate request size so that we can set the max batch size appropriately
   ConsensusRequestPB page_size_estimator;
@@ -204,7 +205,7 @@ TEST_F(ConsensusQueueTest, TestGetPagedMessages) {
 }
 
 TEST_F(ConsensusQueueTest, TestPeersDontAckBeyondWatermarks) {
-  queue_->Init(consensus_.get(), MinimumOpId(), MinimumOpId().term(), 1);
+  queue_->Init(MinimumOpId(), MinimumOpId().term(), 1);
   AppendReplicateMessagesToQueue(queue_.get(), 1, 100);
 
   // Start to track the peer after the queue has some messages in it
@@ -247,7 +248,7 @@ TEST_F(ConsensusQueueTest, TestPeersDontAckBeyondWatermarks) {
 }
 
 TEST_F(ConsensusQueueTest, TestQueueAdvancesCommittedIndex) {
-  queue_->Init(consensus_.get(), MinimumOpId(), MinimumOpId().term(), 2);
+  queue_->Init(MinimumOpId(), MinimumOpId().term(), 2);
   // Track 3 different peers;
   queue_->TrackPeer("peer-1");
   queue_->TrackPeer("peer-2");
@@ -343,7 +344,7 @@ TEST_F(ConsensusQueueTest, TestQueueLoadsOperationsForPeer) {
   OpId committed_index;
   committed_index.set_term(1);
   committed_index.set_index(100);
-  queue_->Init(consensus_.get(), committed_index, 1, 1);
+  queue_->Init(committed_index, 1, 1);
 
   ConsensusRequestPB request;
   ConsensusResponsePB response;
@@ -439,11 +440,12 @@ TEST_F(ConsensusQueueTest, TestQueueHandlesOperationOverwriting) {
     }
   }
 
+
   // Now reset the queue so that we can pass a new committed index,
   // the last operation in the log.
   queue_.reset(new PeerMessageQueue(metric_context_, log_.get()));
   OpId committed_index = MakeOpId(2, 20);
-  queue_->Init(consensus_.get(), committed_index, 2, 1);
+  queue_->Init(committed_index, 2, 1);
 
   // Now get a request for a simulated old leader, which contains more operations
   // in term 1 than the new leader has.

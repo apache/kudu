@@ -322,12 +322,12 @@ Status RaftConsensus::BecomeLeaderUnlocked() {
   // Disable FD while we are leader.
   RETURN_NOT_OK(EnsureFailureDetectorDisabledUnlocked());
 
-  queue_->Init(this,
-               state_->GetCommittedOpIdUnlocked(),
+  CHECK(state_->IsQuorumChangePendingUnlocked());
+
+  queue_->Init(state_->GetCommittedOpIdUnlocked(),
                state_->GetCurrentTermUnlocked(),
                state_->GetActiveQuorumStateUnlocked().majority_size);
-
-  CHECK(state_->IsQuorumChangePendingUnlocked());
+  queue_->RegisterObserver(this);
 
   // Create the peers so that we're able to replicate messages remotely and locally
   RETURN_NOT_OK(peer_manager_->UpdateQuorum(state_->GetPendingQuorumUnlocked()));
@@ -373,6 +373,9 @@ Status RaftConsensus::BecomeReplicaUnlocked() {
   // Clear the consensus replication queue, evicting all state. We can reuse the
   // queue should we become leader.
   queue_->Clear();
+  // Deregister ourselves from the queue. We don't care what get's replicated, since
+  // we're stepping down.
+  queue_->UnRegisterObserver(this);
 
   // TODO: pretty certain there is a race here if the queue currently has an
   // outstanding async log reader request -- the callback would fire on the
