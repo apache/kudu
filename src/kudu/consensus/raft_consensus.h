@@ -102,6 +102,9 @@ class RaftConsensus : public Consensus,
 
   virtual void Shutdown() OVERRIDE;
 
+  // Makes this peer advance it's term (and step down if leader), for tests.
+  virtual Status AdvanceTermForTests(int64_t new_term);
+
   // Return the active (as opposed to committed) role.
   metadata::QuorumPeerPB::Role GetActiveRole() const;
 
@@ -277,10 +280,11 @@ class RaftConsensus : public Consensus,
   log::Log* log_;
   scoped_refptr<server::Clock> clock_;
   gscoped_ptr<PeerProxyFactory> peer_proxy_factory_;
+
+  gscoped_ptr<PeerManager> peer_manager_;
+
   // The queue of messages that must be sent to peers.
   gscoped_ptr<PeerMessageQueue> queue_;
-  // PeerManager that manages a set of consensus Peers.
-  gscoped_ptr<PeerManager> peer_manager_;
 
   gscoped_ptr<ReplicaState> state_;
 

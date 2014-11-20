@@ -166,6 +166,12 @@ class ReplicaState {
   // Obtains the lock for a state read, does not check state.
   Status LockForRead(UniqueLock* lock) const WARN_UNUSED_RESULT;
 
+  // Obtains the lock so that we can advance the majority replicated
+  // index and possibly the committed index.
+  // Requires that this peer is leader.
+  Status LockForMajorityReplicatedIndexUpdate(
+      UniqueLock* lock) const WARN_UNUSED_RESULT;
+
   // Completes the Shutdown() of this replica. No more operations, local
   // or otherwise can happen after this point.
   // Called after the quiescing phase (started with LockForShutdown())
@@ -324,6 +330,10 @@ class ReplicaState {
   // The update_lock_ must be held.
   ReplicaState::State state() const;
 
+  // TODO Move this back to private when we fix the hack where we need
+  // to expose this to close the PeerManager, in RaftConsensus::BecomeReplicaUnlocked().
+  // lock protecting state machine updates
+  mutable simple_spinlock update_lock_;
  private:
   // Helper method to update the active quorum state for peers, etc.
   void ResetActiveQuorumStateUnlocked(const metadata::QuorumPB& quorum);
@@ -373,9 +383,6 @@ class ReplicaState {
   // was received. Initialized to MinimumOpId().
   OpId last_committed_index_;
 
-
-  // lock protecting state machine updates
-  mutable simple_spinlock update_lock_;
 
   State state_;
 };

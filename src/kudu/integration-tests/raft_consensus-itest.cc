@@ -511,15 +511,20 @@ class DistConsensusTest : public TabletServerTest {
     return Status::NotFound("Unable to find server with UUID", uuid);
   }
 
-  // Kills the current leader of the cluster. Before killing the leader this pauses all followers
-  // nodes in regular intervals so that we get an increased chance of stuff being pending all over.
-  void KillLeaderAndElectNewOne() {
+  // Stops the current leader of the quorum, runs leader election and then brings it back.
+  // Before stopping the leader this pauses all follower nodes in regular intervals so that
+  // we get an increased chance of stuff being pending.
+  void StopLeaderAndElectNewOne() {
     BOOST_FOREACH(TServerDetails* ts, replicas_) {
       CHECK_OK(ts->external_ts->Pause());
       usleep(100 * 1000); // 100 ms
     }
-    // When all are paused kill the leader.
-    leader_->external_ts->Shutdown();
+
+    TServerDetails* old_leader = leader_.release();
+
+    // When all are paused also pause the leader. Since we've waited a bit the old leader is
+    // likely to have operations that must be aborted.
+    CHECK_OK(old_leader->external_ts->Pause());
 
     // Resume the replicas.
     BOOST_FOREACH(TServerDetails* ts, replicas_) {
@@ -530,8 +535,10 @@ class DistConsensusTest : public TabletServerTest {
     // TODO get rid of this we have automated elections.
     int new_leader_idx = GetFurthestAheadReplicaIdx();
 
+    // Add the old leader as a replica and the set the newly appointed leader as leader.
     leader_.reset(replicas_[new_leader_idx]);
     replicas_.erase(replicas_.begin() + new_leader_idx);
+    replicas_.push_back(old_leader);
 
     consensus::RunLeaderElectionRequestPB leader_req;
     consensus::RunLeaderElectionResponsePB leader_resp;
@@ -540,6 +547,10 @@ class DistConsensusTest : public TabletServerTest {
     leader_req.set_tablet_id(tablet_id_);
     controller.Reset();
     CHECK_OK(leader_->consensus_proxy->RunLeaderElection(leader_req, &leader_resp, &controller));
+
+    // Let the election run for a little while before we bring the old leader back.
+    usleep(1000 * 1000); // 1 sec
+    CHECK_OK(old_leader->external_ts->Resume());
   }
 
   virtual void TearDown() OVERRIDE {
@@ -823,12 +834,17 @@ TEST_F(DistConsensusTest, TestInsertWhenTheQueueIsFull) {
 }
 
 TEST_F(DistConsensusTest, MultiThreadedInsertWithFailovers) {
+  int kNumReplicas = 7;
+
   // Reset consensus rpc timeout to the default value or the election might fail often.
   FLAGS_consensus_rpc_timeout_ms = 1000;
 
   // Start a 7 node quorum cluster (since we can't bring leaders back we start with a
   // higher replica count so that we kill more leaders).
-  BuildAndStart(7, vector<string>());
+
+  vector<string> flags;
+  flags.push_back("--enable_leader_failure_detection=false");
+  BuildAndStart(kNumReplicas, flags);
 
   OverrideFlagForSlowTests(
       "client_inserts_per_thread",
@@ -841,16 +857,12 @@ TEST_F(DistConsensusTest, MultiThreadedInsertWithFailovers) {
 
   int64_t total_num_rows = num_threads * FLAGS_client_inserts_per_thread;
 
-  // We create three latches, that will be triggered when about 1/4, 1/2 and 3/4 of the
-  // rows are in. When each of these latches reaches a count of 0 we kill a leader.
-  CountDownLatch one_fourth(total_num_rows / 4);
-  CountDownLatch half(total_num_rows / 2);
-  CountDownLatch three_fourths(3 * (total_num_rows / 4));
-
+  // We create 2 * (kNumReplicas - 1) latches so that we kill the same node at least
+  // twice.
   vector<CountDownLatch*> latches;
-  latches.push_back(&one_fourth);
-  latches.push_back(&half);
-  latches.push_back(&three_fourths);
+  for (int i = 1; i < 2 * kNumReplicas; i++) {
+    latches.push_back(new CountDownLatch((i * total_num_rows)  / (2 * kNumReplicas)));
+  }
 
   for (int i = 0; i < num_threads; i++) {
     scoped_refptr<kudu::Thread> new_thread;
@@ -864,21 +876,17 @@ TEST_F(DistConsensusTest, MultiThreadedInsertWithFailovers) {
     threads_.push_back(new_thread);
   }
 
-  one_fourth.Wait();
-  KillLeaderAndElectNewOne();
-  LOG(INFO) << "Killed the first leader.";
-  half.Wait();
-  KillLeaderAndElectNewOne();
-  LOG(INFO) << "Killed the second leader.";
-  three_fourths.Wait();
-  KillLeaderAndElectNewOne();
-  LOG(INFO) << "Killed the third leader.";
+  BOOST_FOREACH(CountDownLatch* latch, latches) {
+    latch->Wait();
+    StopLeaderAndElectNewOne();
+  }
 
   BOOST_FOREACH(scoped_refptr<kudu::Thread> thr, threads_) {
    CHECK_OK(ThreadJoiner(thr.get()).Join());
   }
 
   ASSERT_ALL_REPLICAS_AGREE(FLAGS_client_inserts_per_thread * FLAGS_num_client_threads);
+  STLDeleteElements(&latches);
 }
 
 // Test automatic leader election by killing leaders.

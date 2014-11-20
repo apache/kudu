@@ -29,7 +29,6 @@ PeerManager::PeerManager(const std::string tablet_id,
 
 PeerManager::~PeerManager() {
   Close();
-  STLDeleteValues(&peers_);
 }
 
 Status PeerManager::UpdateQuorum(const metadata::QuorumPB& quorum) {
@@ -63,13 +62,6 @@ Status PeerManager::UpdateQuorum(const metadata::QuorumPB& quorum) {
                                       &remote_peer));
     InsertOrDie(&peers_, peer_pb.permanent_uuid(), remote_peer.release());
   }
-  // Delete old peers
-  PeersMap::iterator iter = peers_.begin();
-  for (; iter != peers_.end(); iter++) {
-    if (new_peers.count((*iter).first) == 0) {
-      peers_.erase(iter);
-    }
-  }
 
   return Status::OK();
 }
@@ -88,10 +80,21 @@ void PeerManager::SignalRequest(bool force_if_queue_empty) {
 }
 
 void PeerManager::Close() {
-  boost::lock_guard<simple_spinlock> lock(lock_);
+
+  PeersMap copy;
+  {
+    boost::lock_guard<simple_spinlock> lock(lock_);
+    copy = peers_;
+  }
+
   // Close the peers per above.
-  BOOST_FOREACH(const PeersMap::value_type& entry, peers_) {
+  BOOST_FOREACH(const PeersMap::value_type& entry, copy) {
     entry.second->Close();
+  }
+
+  {
+    boost::lock_guard<simple_spinlock> lock(lock_);
+    STLDeleteValues(&peers_);
   }
 }
 

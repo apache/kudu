@@ -447,7 +447,7 @@ TEST_F(RaftConsensusTest, TestAbortOperations) {
   EXPECT_CALL(*peer_manager_, SignalRequest(_))
       .Times(AnyNumber());
   EXPECT_CALL(*peer_manager_, Close())
-      .Times(1);
+      .Times(2);
   EXPECT_CALL(*queue_, Close())
       .Times(2);
   EXPECT_CALL(*peer_manager_, UpdateQuorum(_))

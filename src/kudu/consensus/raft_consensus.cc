@@ -121,8 +121,8 @@ RaftConsensus::RaftConsensus(const ConsensusOptions& options,
     : log_(DCHECK_NOTNULL(log)),
       clock_(clock),
       peer_proxy_factory_(proxy_factory.Pass()),
-      queue_(queue.Pass()),
       peer_manager_(peer_manager.Pass()),
+      queue_(queue.Pass()),
       failure_monitor_(GetRandomSeed32(),
                        FLAGS_leader_failure_monitor_check_mean_ms,
                        FLAGS_leader_failure_monitor_check_stddev_ms),
@@ -365,6 +365,15 @@ Status RaftConsensus::BecomeReplicaUnlocked() {
   // we're stepping down.
   queue_->UnRegisterObserver(this);
 
+  // TODO We need to release the lock to close the peer's since otherwise
+  // we risk deadlocking. This should go away with a refactor in the near
+  // future where we simply stop the peers instead of waiting for them to
+  // close.
+  state_->update_lock_.unlock();
+  // Close the peers and the queue.
+  peer_manager_->Close();
+
+  state_->update_lock_.lock();
 
   queue_->Close();
 
@@ -420,7 +429,7 @@ Status RaftConsensus::AppendNewRoundToQueueUnlocked(ConsensusRound* round) {
 void RaftConsensus::UpdateMajorityReplicated(const OpId& majority_replicated,
                                              OpId* committed_index) {
   ReplicaState::UniqueLock lock;
-  Status s = state_->LockForCommit(&lock);
+  Status s = state_->LockForMajorityReplicatedIndexUpdate(&lock);
   if (PREDICT_FALSE(!s.ok())) {
     LOG_WITH_PREFIX_LK(WARNING)
         << "Unable to take state lock to update committed index: "
@@ -455,17 +464,7 @@ void RaftConsensus::UpdateMajorityReplicatedUnlocked(const OpId& majority_replic
 }
 
 void RaftConsensus::NotifyTermChange(uint64_t term) {
-  ReplicaState::UniqueLock lock;
-  Status s = state_->LockForCommit(&lock);
-  if (PREDICT_FALSE(!s.ok())) {
-    // We either have not started running or we have already shut down.
-    LOG_WITH_PREFIX_LK(INFO) << "Unable to respond to notification of term change to term " << term
-                             << ": " << s.ToString();
-    return;
-  }
-  if (state_->GetCurrentTermUnlocked() < term) {
-    CHECK_OK(HandleTermAdvanceUnlocked(term));
-  }
+  DLOG(FATAL) << "Not implemented";
 }
 
 Status RaftConsensus::Commit(gscoped_ptr<CommitMsg> commit,
@@ -588,10 +587,7 @@ Status RaftConsensus::HandleLeaderRequestTermUnlocked(const ConsensusRequestPB* 
                                  Status::IllegalState(msg));
       return Status::OK();
     } else {
-      Status s = HandleTermAdvanceUnlocked(request->caller_term());
-      if (PREDICT_FALSE(!s.ok())) {
-        LOG_WITH_PREFIX(FATAL) << "Unable to set current term: " << s.ToString();
-      }
+      RETURN_NOT_OK(HandleTermAdvanceUnlocked(request->caller_term()));
     }
   }
   return Status::OK();
@@ -914,7 +910,9 @@ Status RaftConsensus::RequestVote(const VoteRequestPB* request, VoteResponsePB* 
 
   // The term advanced.
   if (request->candidate_term() > state_->GetCurrentTermUnlocked()) {
-    RETURN_NOT_OK(HandleTermAdvanceUnlocked(request->candidate_term()));
+    RETURN_NOT_OK_PREPEND(HandleTermAdvanceUnlocked(request->candidate_term()),
+        Substitute("Could not step down in RequestVote. Current term: $0, candidate term: $1",
+                   state_->GetCurrentTermUnlocked(), request->candidate_term()));
   }
 
   // Candidate must have last-logged OpId at least as large as our own to get
@@ -982,6 +980,12 @@ OpId RaftConsensus::GetLastOpIdFromLog() {
     LOG_WITH_PREFIX(FATAL) << "Unexpected status from Log::GetLastEntryOpId(): " << s.ToString();
   }
   return id;
+}
+
+Status RaftConsensus::AdvanceTermForTests(int64_t new_term) {
+  ReplicaState::UniqueLock lock;
+  CHECK_OK(state_->LockForConfigChange(&lock));
+  return HandleTermAdvanceUnlocked(new_term);
 }
 
 std::string RaftConsensus::GetRequestVoteLogPrefixUnlocked() const {

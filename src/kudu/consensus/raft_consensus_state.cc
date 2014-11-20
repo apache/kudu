@@ -176,6 +176,22 @@ Status ReplicaState::LockForCommit(UniqueLock* lock) const {
   return Status::OK();
 }
 
+Status ReplicaState::LockForMajorityReplicatedIndexUpdate(
+    UniqueLock* lock) const {
+  UniqueLock l(&update_lock_);
+
+  if (PREDICT_FALSE(state_ != kRunning)) {
+    return Status::IllegalState("Replica not in running state");
+  }
+
+  if (PREDICT_FALSE(active_quorum_state_->role != QuorumPeerPB::CANDIDATE &&
+                    active_quorum_state_->role != QuorumPeerPB::LEADER)) {
+    return Status::IllegalState("Replica not LEADER or CANDIDATE");
+  }
+  lock->swap(&l);
+  return Status::OK();
+}
+
 Status ReplicaState::LockForConfigChange(UniqueLock* lock) const {
   UniqueLock l(&update_lock_);
   // Can only change the config on running replicas.
