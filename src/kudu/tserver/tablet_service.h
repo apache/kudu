@@ -135,6 +135,10 @@ class ConsensusServiceImpl : public consensus::ConsensusServiceIf {
                            consensus::GetLastOpIdResponsePB *resp,
                            rpc::RpcContext *context) OVERRIDE;
 
+  virtual void GetCommittedQuorum(const consensus::GetCommittedQuorumRequestPB *req,
+                                  consensus::GetCommittedQuorumResponsePB *resp,
+                                  rpc::RpcContext *context) OVERRIDE;
+
  private:
   TabletPeerLookupIf* tablet_manager_;
 };

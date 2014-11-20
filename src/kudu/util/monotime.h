@@ -83,6 +83,9 @@ class MonoTime {
   // Return MonoTime equal to farthest possible time into the future.
   static MonoTime Max();
 
+  // Return MonoTime equal to farthest possible time into the past.
+  static MonoTime Min();
+
   // Return the earliest (minimum) of the two monotimes.
   static const MonoTime& Earliest(const MonoTime& a, const MonoTime& b);
 

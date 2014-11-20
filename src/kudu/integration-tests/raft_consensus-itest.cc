@@ -14,6 +14,7 @@
 #include "kudu/common/wire_protocol-test-util.h"
 #include "kudu/common/schema.h"
 #include "kudu/consensus/consensus_peers.h"
+#include "kudu/consensus/quorum_util.h"
 #include "kudu/gutil/strings/strcat.h"
 #include "kudu/integration-tests/external_mini_cluster.h"
 #include "kudu/master/master.proxy.h"
@@ -163,8 +164,7 @@ class DistConsensusTest : public TabletServerTest {
     return KuduSchema(client_cols, server_schema.num_key_columns());
   }
 
-  void CreateLeaderAndReplicaProxies(const TabletLocationsPB& locations) {
-    leader_.reset();
+  void CreateReplicaProxies(const TabletLocationsPB& locations) {
     STLDeleteElements(&replicas_);
 
     BOOST_FOREACH(const TabletLocationsPB::ReplicaPB& replica_pb, locations.replicas()) {
@@ -188,11 +188,7 @@ class DistConsensusTest : public TabletServerTest {
                                     &peer->tserver_admin_proxy,
                                     &peer->consensus_proxy));
 
-      if (replica_pb.role() == QuorumPeerPB::LEADER) {
-        leader_.reset(peer.release());
-      } else if (replica_pb.role() == QuorumPeerPB::FOLLOWER) {
-        replicas_.push_back(peer.release());
-      }
+      replicas_.push_back(peer.release());
     }
   }
 
@@ -234,9 +230,9 @@ class DistConsensusTest : public TabletServerTest {
       tablet_id_ = resp.tablet_locations(0).tablet_id();
       locations = resp.tablet_locations(0);
 
-      CreateLeaderAndReplicaProxies(locations);
+      CreateReplicaProxies(locations);
 
-      if (leader_.get() == NULL || replicas_.size() < num_replicas - 1) {
+      if (replicas_.size() < num_replicas) {
         LOG(WARNING)<< "Couldn't find the leader and/or replicas. Locations: "
         << locations.ShortDebugString();
         sleep(1);
@@ -259,6 +255,93 @@ class DistConsensusTest : public TabletServerTest {
       }
     }
     replicas_ = pruned_replicas;
+  }
+
+  TServerDetails* GetReplicaWithUuidOrNull(const string& uuid) {
+    BOOST_FOREACH(TServerDetails* replica, replicas_) {
+      if (replica->ts_info.permanent_uuid() == uuid) {
+        return replica;
+      }
+    }
+    return NULL;
+  }
+
+  // Returns:
+  // Status::OK() if the replica is alive and leader of the quorum.
+  // Status::NotFound() if the replica is not part of the quorum or is dead.
+  // Status::IllegalState() if the replica is live but not the leader.
+  Status GetReplicaStatusAndCheckIfLeader(TServerDetails* replica) {
+    consensus::GetCommittedQuorumRequestPB req;
+    consensus::GetCommittedQuorumResponsePB resp;
+    RpcController controller;
+    controller.set_timeout(MonoDelta::FromMilliseconds(100));
+    req.set_tablet_id(tablet_id_);
+    if (!replica->consensus_proxy->GetCommittedQuorum(req, &resp, &controller).ok() ||
+        resp.has_error()) {
+      VLOG(1) << "Error getting quorum from replica: " << replica->ts_info.permanent_uuid();
+      return Status::NotFound("Error connecting to replica");
+    }
+    if (consensus::GetRoleInQuorum(replica->ts_info.permanent_uuid(),
+                                   resp.quorum()) == QuorumPeerPB::LEADER) {
+      return Status::OK();
+    }
+    VLOG(1) << "Replica not leader of quorum: " << replica->ts_info.permanent_uuid();
+    return Status::IllegalState("Replica found but not leader");
+  }
+
+   Status GetLeaderReplicaWithRetries(TServerDetails** leader, int max_attempts = 100) {
+    int attempts = 0;
+    while (attempts < max_attempts) {
+      *leader = GetLeaderReplicaOrNull();
+      if (*leader) {
+        return Status::OK();
+      }
+      attempts++;
+      usleep(100 * attempts * 1000);
+    }
+    return Status::NotFound("Leader replica not found");
+  }
+
+  // Returns the last committed leader of the quorum. Tries to get it from master
+  // but then actually tries to the get the committed quorum to make sure.
+  TServerDetails* GetLeaderReplicaOrNull() {
+    string leader_uuid;
+    Status master_found_leader_result = GetTabletLeaderUUIDFromMaster(tablet_id_, &leader_uuid);
+
+    // See if the master is up to date. I.e. if it does report a leader and if the
+    // replica it reports as leader is still alive and (at least thinks) its still
+    // the leader.
+    TServerDetails* leader;
+    if (master_found_leader_result.ok()) {
+      leader = DCHECK_NOTNULL(GetReplicaWithUuidOrNull(leader_uuid));
+      if (GetReplicaStatusAndCheckIfLeader(leader).ok()) {
+        return leader;
+      }
+    }
+
+    // The replica we got from the master (if any) is either dead or not the leader.
+    // Find the actual leader.
+    vector<TServerDetails*> replicas_copy = replicas_;
+    std::random_shuffle(replicas_copy.begin(), replicas_copy.end());
+    BOOST_FOREACH(TServerDetails* replica, replicas_copy) {
+      if (GetReplicaStatusAndCheckIfLeader(replica).ok()) {
+        return replica;
+      }
+    }
+    return NULL;
+  }
+
+  void GetOnlyLiveFollowerReplicas(vector<TServerDetails*>* followers) {
+    followers->clear();
+    TServerDetails* leader = GetLeaderReplicaOrNull();
+    BOOST_FOREACH(TServerDetails* replica, replicas_) {
+      if (leader != NULL && replica->ts_info.permanent_uuid() == leader->ts_info.permanent_uuid()) {
+        continue;
+      }
+      if (GetReplicaStatusAndCheckIfLeader(replica).IsIllegalState()) {
+        followers->push_back(replica);
+      }
+    }
   }
 
   void ScanReplica(TabletServerServiceProxy* replica_proxy,
@@ -325,7 +408,12 @@ class DistConsensusTest : public TabletServerTest {
       usleep(10000 * counter);
       vector<string> leader_results;
       vector<string> replica_results;
-      ScanReplica(leader_->tserver_proxy.get(), &leader_results);
+
+      TServerDetails* leader = DCHECK_NOTNULL(GetLeaderReplicaOrNull());
+      vector<TServerDetails*> followers;
+      GetOnlyLiveFollowerReplicas(&followers);
+
+      ScanReplica(leader->tserver_proxy.get(), &leader_results);
 
       if (expected_result_count != -1 && leader_results.size() != expected_result_count) {
         if (counter >= kMaxRetries) {
@@ -338,10 +426,10 @@ class DistConsensusTest : public TabletServerTest {
 
       TServerDetails* last_replica;
       bool all_replicas_matched = true;
-      BOOST_FOREACH(TServerDetails* replica, replicas_) {
+      BOOST_FOREACH(TServerDetails* replica, followers) {
         ScanReplica(replica->tserver_proxy.get(), &replica_results);
         last_replica = replica;
-        SCOPED_TRACE(DumpToString(leader_->ts_info, leader_results,
+        SCOPED_TRACE(DumpToString(leader->ts_info, leader_results,
                                   replica->ts_info, replica_results));
 
         if (leader_results.size() != replica_results.size()) {
@@ -363,7 +451,7 @@ class DistConsensusTest : public TabletServerTest {
         break;
       } else {
         if (counter >= kMaxRetries) {
-          SCOPED_TRACE(DumpToString(leader_->ts_info, leader_results,
+          SCOPED_TRACE(DumpToString(leader->ts_info, leader_results,
                                     last_replica->ts_info, replica_results));
           FAIL() << "LEADER results did not match one of the replicas.";
         }
@@ -454,7 +542,7 @@ class DistConsensusTest : public TabletServerTest {
   }
 
   // Returns the index of the replica who is farthest ahead.
-  int GetFurthestAheadReplicaIdx() {
+  int GetFurthestAheadReplicaIdx(const vector<TServerDetails*>& replicas) {
     consensus::GetLastOpIdRequestPB opid_req;
     consensus::GetLastOpIdResponsePB opid_resp;
     opid_req.set_tablet_id(tablet_id_);
@@ -463,11 +551,11 @@ class DistConsensusTest : public TabletServerTest {
     uint64 max_index = 0;
     int max_replica_index = -1;
 
-    for (int i = 0; i < replicas_.size(); i++) {
+    for (int i = 0; i < replicas.size(); i++) {
       controller.Reset();
       opid_resp.Clear();
       opid_req.set_tablet_id(tablet_id_);
-      CHECK_OK(replicas_[i]->consensus_proxy->GetLastOpId(opid_req, &opid_resp, &controller));
+      CHECK_OK(replicas[i]->consensus_proxy->GetLastOpId(opid_req, &opid_resp, &controller));
       if (opid_resp.opid().index() > max_index) {
         max_index = opid_resp.opid().index();
         max_replica_index = i;
@@ -479,7 +567,7 @@ class DistConsensusTest : public TabletServerTest {
     return max_replica_index;
   }
 
-  Status GetTabletLeaderUUID(const std::string& tablet_id, std::string* leader_uuid) {
+  Status GetTabletLeaderUUIDFromMaster(const std::string& tablet_id, std::string* leader_uuid) {
     GetTableLocationsRequestPB req;
     GetTableLocationsResponsePB resp;
     RpcController controller;
@@ -514,43 +602,48 @@ class DistConsensusTest : public TabletServerTest {
   // Stops the current leader of the quorum, runs leader election and then brings it back.
   // Before stopping the leader this pauses all follower nodes in regular intervals so that
   // we get an increased chance of stuff being pending.
-  void StopLeaderAndElectNewOne() {
-    BOOST_FOREACH(TServerDetails* ts, replicas_) {
+  void StopOrKillLeaderAndElectNewOne() {
+    // TODO uncomment below to also kill, right now the server comes back with the wrong
+    // addresses.
+    bool kill = false;// rand() % 2 == 0;
+
+    TServerDetails* old_leader = DCHECK_NOTNULL(GetLeaderReplicaOrNull());
+    vector<TServerDetails*> followers;
+    GetOnlyLiveFollowerReplicas(&followers);
+
+    BOOST_FOREACH(TServerDetails* ts, followers) {
       CHECK_OK(ts->external_ts->Pause());
       usleep(100 * 1000); // 100 ms
     }
 
-    TServerDetails* old_leader = leader_.release();
-
-    // When all are paused also pause the leader. Since we've waited a bit the old leader is
-    // likely to have operations that must be aborted.
-    CHECK_OK(old_leader->external_ts->Pause());
+    // When all are paused also pause or kill the current leader. Since we've waited a bit
+    // the old leader is likely to have operations that must be aborted.
+    if (kill) {
+      old_leader->external_ts->Shutdown();
+    } else {
+      CHECK_OK(old_leader->external_ts->Pause());
+    }
 
     // Resume the replicas.
-    BOOST_FOREACH(TServerDetails* ts, replicas_) {
+    BOOST_FOREACH(TServerDetails* ts, followers) {
       CHECK_OK(ts->external_ts->Resume());
     }
 
-    // Choose the guy with the longest log and elect it leader.
-    // TODO get rid of this we have automated elections.
-    int new_leader_idx = GetFurthestAheadReplicaIdx();
+    // Get the new leader.
+    TServerDetails* new_leader;
+    CHECK_OK(GetLeaderReplicaWithRetries(&new_leader));
 
-    // Add the old leader as a replica and the set the newly appointed leader as leader.
-    leader_.reset(replicas_[new_leader_idx]);
-    replicas_.erase(replicas_.begin() + new_leader_idx);
-    replicas_.push_back(old_leader);
-
-    consensus::RunLeaderElectionRequestPB leader_req;
-    consensus::RunLeaderElectionResponsePB leader_resp;
-    RpcController controller;
-
-    leader_req.set_tablet_id(tablet_id_);
-    controller.Reset();
-    CHECK_OK(leader_->consensus_proxy->RunLeaderElection(leader_req, &leader_resp, &controller));
-
-    // Let the election run for a little while before we bring the old leader back.
-    usleep(1000 * 1000); // 1 sec
-    CHECK_OK(old_leader->external_ts->Resume());
+    // Bring the old leader back.
+    if (kill) {
+      CHECK_OK(old_leader->external_ts->Start());
+      // Wait until we have the same number of followers.
+      int initial_followers = followers.size();
+      do {
+        GetOnlyLiveFollowerReplicas(&followers);
+      } while (followers.size() < initial_followers);
+    } else {
+      CHECK_OK(old_leader->external_ts->Resume());
+    }
   }
 
   virtual void TearDown() OVERRIDE {
@@ -562,7 +655,6 @@ class DistConsensusTest : public TabletServerTest {
   gscoped_ptr<ExternalMiniCluster> cluster_;
   shared_ptr<KuduClient> client_;
   scoped_refptr<KuduTable> table_;
-  gscoped_ptr<TServerDetails> leader_;
   vector<TServerDetails*> replicas_;
 
   ThreadSafeRandom random_;
@@ -579,8 +671,9 @@ TEST_F(DistConsensusTest, TestGetPermanentUuid) {
   BuildAndStart(kNumReplicas, vector<string>());
 
   QuorumPeerPB peer;
-  peer.mutable_last_known_addr()->CopyFrom(leader_->ts_info.rpc_addresses(0));
-  const string expected_uuid = leader_->ts_info.permanent_uuid();
+  TServerDetails* leader = DCHECK_NOTNULL(GetLeaderReplicaOrNull());
+  peer.mutable_last_known_addr()->CopyFrom(leader->ts_info.rpc_addresses(0));
+  const string expected_uuid = leader->ts_info.permanent_uuid();
 
   rpc::MessengerBuilder builder("test builder");
   builder.set_num_reactors(1);
@@ -622,7 +715,9 @@ TEST_F(DistConsensusTest, TestFailedTransaction) {
   RpcController controller;
   controller.set_timeout(MonoDelta::FromSeconds(FLAGS_rpc_timeout));
 
-  ASSERT_STATUS_OK(DCHECK_NOTNULL(leader_->tserver_proxy.get())->Write(req, &resp, &controller));
+  TServerDetails* leader = DCHECK_NOTNULL(GetLeaderReplicaOrNull());
+
+  ASSERT_STATUS_OK(DCHECK_NOTNULL(leader->tserver_proxy.get())->Write(req, &resp, &controller));
   ASSERT_TRUE(resp.has_error());
 
   // Add a proper row so that we can verify that all of the replicas continue
@@ -635,7 +730,7 @@ TEST_F(DistConsensusTest, TestFailedTransaction) {
   controller.Reset();
   controller.set_timeout(MonoDelta::FromSeconds(FLAGS_rpc_timeout));
 
-  ASSERT_STATUS_OK(DCHECK_NOTNULL(leader_->tserver_proxy.get())->Write(req, &resp, &controller));
+  ASSERT_STATUS_OK(DCHECK_NOTNULL(leader->tserver_proxy.get())->Write(req, &resp, &controller));
   SCOPED_TRACE(resp.ShortDebugString());
   ASSERT_FALSE(resp.has_error());
 
@@ -722,12 +817,16 @@ TEST_F(DistConsensusTest, TestRunLeaderElection) {
 
   ASSERT_ALL_REPLICAS_AGREE(FLAGS_client_inserts_per_thread * num_iters);
 
-  // Now shutdown the current leader.
-  leader_->external_ts->Shutdown();
+  // Select the last follower to be new leader.
+  vector<TServerDetails*> followers;
+  GetOnlyLiveFollowerReplicas(&followers);
 
-  // Select the last replica to be leader.
-  TServerDetails* replica = replicas_.back();
-  replicas_.pop_back();
+  // Now shutdown the current leader.
+  TServerDetails* leader = DCHECK_NOTNULL(GetLeaderReplicaOrNull());
+  leader->external_ts->Shutdown();
+
+  TServerDetails* replica = followers.back();
+  CHECK_NE(leader->ts_info.permanent_uuid(), replica->ts_info.permanent_uuid());
 
   // Make the new replica leader.
   consensus::RunLeaderElectionRequestPB request;
@@ -738,7 +837,6 @@ TEST_F(DistConsensusTest, TestRunLeaderElection) {
 
   ASSERT_OK(replica->consensus_proxy->RunLeaderElection(request, &response, &controller));
   ASSERT_FALSE(response.has_error()) << "Got an error back: " << response.DebugString();
-  leader_.reset(replica);
 
   // Insert a bunch more rows.
   InsertTestRowsRemoteThread(FLAGS_client_inserts_per_thread * num_iters,
@@ -777,6 +875,7 @@ TEST_F(DistConsensusTest, TestInsertWhenTheQueueIsFull) {
   // Pause a replica
   ASSERT_OK(replica->external_ts->Pause());
   LOG(INFO)<< "Paused one of the replicas, starting to write.";
+  TServerDetails* leader = DCHECK_NOTNULL(GetLeaderReplicaOrNull());
 
   // .. and insert until insertions fail because the queue is full
   while (true) {
@@ -785,7 +884,7 @@ TEST_F(DistConsensusTest, TestInsertWhenTheQueueIsFull) {
     AddTestRowToPB(RowOperationsPB::INSERT, schema_, key, key,
                    test_payload, data);
     key++;
-    ASSERT_OK(leader_->tserver_proxy->Write(req, &resp, &rpc));
+    ASSERT_OK(leader->tserver_proxy->Write(req, &resp, &rpc));
 
     if (resp.has_error()) {
       s = StatusFromPB(resp.error().status());
@@ -812,7 +911,7 @@ TEST_F(DistConsensusTest, TestInsertWhenTheQueueIsFull) {
     AddTestRowToPB(RowOperationsPB::INSERT, schema_, key, key,
                    test_payload, data);
     key++;
-    ASSERT_OK(leader_->tserver_proxy->Write(req, &resp, &rpc));
+    ASSERT_OK(leader->tserver_proxy->Write(req, &resp, &rpc));
     if (resp.has_error()) {
       s = StatusFromPB(resp.error().status());
     } else {
@@ -843,7 +942,7 @@ TEST_F(DistConsensusTest, MultiThreadedInsertWithFailovers) {
   // higher replica count so that we kill more leaders).
 
   vector<string> flags;
-  flags.push_back("--enable_leader_failure_detection=false");
+  flags.push_back("--enable_leader_failure_detection=true");
   BuildAndStart(kNumReplicas, flags);
 
   OverrideFlagForSlowTests(
@@ -878,7 +977,7 @@ TEST_F(DistConsensusTest, MultiThreadedInsertWithFailovers) {
 
   BOOST_FOREACH(CountDownLatch* latch, latches) {
     latch->Wait();
-    StopLeaderAndElectNewOne();
+    StopOrKillLeaderAndElectNewOne();
   }
 
   BOOST_FOREACH(scoped_refptr<kudu::Thread> thr, threads_) {
@@ -896,8 +995,8 @@ TEST_F(DistConsensusTest, TestAutomaticLeaderElection) {
   flags.push_back("--enable_leader_failure_detection=true");
   BuildAndStart(kNumReplicas, flags);
 
-  string leader_uuid;
-  ASSERT_OK(GetTabletLeaderUUID(tablet_id_, &leader_uuid));
+  TServerDetails* leader;
+  ASSERT_OK(GetLeaderReplicaWithRetries(&leader));
 
   unordered_set<string> killed_leader_uuids;
 
@@ -915,28 +1014,13 @@ TEST_F(DistConsensusTest, TestAutomaticLeaderElection) {
 
     // At this point, the writes are flushed but the commit index may not be
     // propagated to all replicas. We kill the leader anyway.
-
     if (leaders_killed < kNumLeadersToKill) {
-      LOG(INFO) << "Killing current leader " << leader_uuid << "...";
-      ASSERT_OK(KillServerWithUUID(leader_uuid));
-      InsertOrDie(&killed_leader_uuids, leader_uuid);
+      LOG(INFO) << "Killing current leader " << leader->ts_info.permanent_uuid() << "...";
+      ASSERT_OK(KillServerWithUUID(leader->ts_info.permanent_uuid()));
+      InsertOrDie(&killed_leader_uuids, leader->ts_info.permanent_uuid());
 
-      LOG(INFO) << "Waiting for newly elected leader to register with master...";
-      string old_leader_uuid = leader_uuid;
-      int num_retries = 0;
-      while (true) {
-        Status s = GetTabletLeaderUUID(tablet_id_, &leader_uuid);
-        ASSERT_TRUE(s.ok() || s.IsNotFound())
-            << "Unexpected error trying to get leader UUID: " << s.ToString();
-        if (leader_uuid != old_leader_uuid) {
-          break;
-        } else {
-          if (num_retries++ > kMaxRetries) {
-            FAIL() << "Unable to resolve new leader after " << kMaxRetries << " retries";
-          }
-          usleep(500*1000); // Sleep for 500ms before retry.
-        }
-      }
+      LOG(INFO) << "Waiting for new guy to be elected leader.";
+      ASSERT_OK(GetLeaderReplicaWithRetries(&leader));
     }
   }
 

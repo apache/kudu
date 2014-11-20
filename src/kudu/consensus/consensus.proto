@@ -346,6 +346,17 @@ message GetLastOpIdResponsePB {
   optional tserver.TabletServerErrorPB error = 2;
 }
 
+message GetCommittedQuorumRequestPB {
+  // the id of the tablet
+  required bytes tablet_id = 1;
+}
+
+message GetCommittedQuorumResponsePB {
+  optional kudu.metadata.QuorumPB quorum = 1;
+    // A generic error message (such as tablet not found).
+  optional tserver.TabletServerErrorPB error = 2;
+}
+
 service ConsensusService {
   rpc ChangeConfig(ChangeConfigRequestPB) returns (ChangeConfigResponsePB);
 
@@ -358,4 +369,6 @@ service ConsensusService {
   rpc RunLeaderElection(RunLeaderElectionRequestPB) returns (RunLeaderElectionResponsePB);
 
   rpc GetLastOpId(GetLastOpIdRequestPB) returns (GetLastOpIdResponsePB);
+
+  rpc GetCommittedQuorum(GetCommittedQuorumRequestPB) returns (GetCommittedQuorumResponsePB);
 }

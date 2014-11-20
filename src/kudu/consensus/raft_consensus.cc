@@ -3,6 +3,7 @@
 
 #include "kudu/consensus/raft_consensus.h"
 
+#include <algorithm>
 #include <boost/assign/list_of.hpp>
 #include <gflags/gflags.h>
 #include <iostream>
@@ -42,6 +43,11 @@ DEFINE_double(leader_failure_max_missed_heartbeat_periods, 3.0,
              "consider the leader to be failed. The total failure timeout in milliseconds is "
              "leader_heartbeat_interval_ms times leader_failure_max_missed_heartbeat_periods. "
              "The value passed to this flag may be fractional.");
+
+DEFINE_int32(leader_failure_exp_backoff_max_delta_ms, 20 * 1000,
+             "Maximum time to sleep in between leader election retries, in addition to the "
+             "regular timeout. When leader election fails the interval in between retries "
+             "increases exponentially, up to this value.");
 
 // TODO enable this by default once consensus is ready.
 DEFINE_bool(enable_leader_failure_detection, false,
@@ -165,9 +171,19 @@ Status RaftConsensus::Start(const ConsensusBootstrapInfo& info) {
     ReplicaState::UniqueLock lock;
     RETURN_NOT_OK(state_->LockForStart(&lock));
 
-    initial_quorum.CopyFrom(state_->GetCommittedQuorumUnlocked());
-    RETURN_NOT_OK_PREPEND(VerifyQuorumAndCheckThatNoChangeIsPendingUnlocked(initial_quorum),
-                          "Invalid state on RaftConsensus::Start()");
+    if (PREDICT_TRUE(FLAGS_enable_leader_failure_detection)) {
+      // Clean up quorum state from previous runs, so everyone is a follower.
+      // We do this here so that the logging seems sane while reloading the
+      // set of pending transactions.
+      SetAllQuorumVotersToFollower(state_->GetCommittedQuorumUnlocked(), &initial_quorum);
+      state_->SetPendingQuorumUnlocked(initial_quorum);
+      RETURN_NOT_OK_PREPEND(VerifyQuorum(initial_quorum),
+                            "Invalid quorum state on RaftConsensus::Start()");
+    } else {
+      initial_quorum.CopyFrom(state_->GetCommittedQuorumUnlocked());
+      RETURN_NOT_OK_PREPEND(VerifyQuorumAndCheckThatNoChangeIsPendingUnlocked(initial_quorum),
+                            "Invalid quorum state on RaftConsensus::Start()");
+    }
 
     RETURN_NOT_OK_PREPEND(state_->StartUnlocked(info.last_id),
                           "Unable to start RAFT ReplicaState");
@@ -184,16 +200,41 @@ Status RaftConsensus::Start(const ConsensusBootstrapInfo& info) {
     queue_->Init(state_->GetLastReceivedOpIdUnlocked());
   }
 
-  // If we're marked as candidate emulate a leader election.
-  // Temporary while we don't have the real thing.
-  QuorumPeerPB::Role my_role = GetRoleInQuorum(state_->GetPeerUuid(), initial_quorum);
-  switch (my_role) {
-    case QuorumPeerPB::CANDIDATE:
-    case QuorumPeerPB::LEADER:
-      RETURN_NOT_OK(EmulateElection());
-      break;
-    default:
-      RETURN_NOT_OK(ChangeConfig());
+  if (PREDICT_TRUE(FLAGS_enable_leader_failure_detection)) {
+    // Leader election path.
+    ReplicaState::UniqueLock lock;
+    RETURN_NOT_OK(state_->LockForConfigChange(&lock));
+
+    LOG_WITH_PREFIX(INFO) << "Initializing failure detector for fast election at startup";
+    RETURN_NOT_OK(EnsureFailureDetectorEnabledUnlocked());
+
+    // If this is the first term expire the FD immediately so that we have a fast first
+    // election, otherwise we just let the timer expire normally.
+    if (state_->GetCurrentTermUnlocked() == 1) {
+      // Initialize the failure detector timeout to some time in the past so that
+      // the next time the failure detector monitor runs it triggers an election
+      // (unless someone else requested a vote from us first, which resets the
+      // election timer). We do it this way instead of immediately running an
+      // election to get a higher likelihood of enough servers being available
+      // when the first one attempts an election to avoid multiple election
+      // cycles on startup, while keeping that "waiting period" random.
+      RETURN_NOT_OK(ExpireFailureDetectorUnlocked());
+    }
+
+    // Now assume "follower" duties.
+    RETURN_NOT_OK(BecomeReplicaUnlocked());
+  } else {
+    // If we're marked as candidate emulate a leader election.
+    // Temporary while we don't have the real thing.
+    QuorumPeerPB::Role my_role = GetRoleInQuorum(state_->GetPeerUuid(), initial_quorum);
+    switch (my_role) {
+      case QuorumPeerPB::CANDIDATE:
+      case QuorumPeerPB::LEADER:
+        RETURN_NOT_OK(EmulateElection());
+        break;
+      default:
+        RETURN_NOT_OK(ChangeConfig());
+    }
   }
 
   RETURN_NOT_OK(ExecuteHook(POST_START));
@@ -244,7 +285,7 @@ Status RaftConsensus::StartElection() {
     // Snooze to avoid the election timer firing again as much as possible.
     // We do not disable the election timer while running an election.
     RETURN_NOT_OK(EnsureFailureDetectorEnabledUnlocked());
-    RETURN_NOT_OK(SnoozeFailureDetectorUnlocked());
+    RETURN_NOT_OK(SnoozeFailureDetectorUnlocked(LeaderElectionExpBackoffDeltaUnlocked()));
 
     LOG_WITH_PREFIX(INFO) << "Starting election with quorum: " << new_quorum.ShortDebugString();
 
@@ -1086,7 +1127,7 @@ Status RaftConsensus::RequestVoteRespondLastOpIdTooOld(const OpId& local_last_lo
 Status RaftConsensus::RequestVoteRespondVoteGranted(const VoteRequestPB* request,
                                                     VoteResponsePB* response) {
   // Give peer time to become leader if we vote for them.
-  RETURN_NOT_OK(SnoozeFailureDetectorUnlocked());
+  RETURN_NOT_OK(SnoozeFailureDetectorUnlocked(LeaderElectionExpBackoffDeltaUnlocked()));
 
   FillVoteResponseVoteGranted(response);
 
@@ -1155,6 +1196,21 @@ ReplicaState* RaftConsensus::GetReplicaStateForTests() {
 }
 
 void RaftConsensus::ElectionCallback(const ElectionResult& result) {
+
+  // Snooze to avoid the election timer firing again as much as possible.
+  {
+    ReplicaState::UniqueLock lock;
+    CHECK_OK(state_->LockForRead(&lock));
+    // We need to snooze when we win and when we lose:
+    // - When we win because we're about to disable the timer and become leader.
+    // - When we loose or otherwise we can fall into a cycle, where everyone keeps
+    //   triggering elections but no election ever completes because by the time they
+    //   finish another one is triggered already.
+    // We ignore the status as we don't want to fail if we the timer is
+    // disabled.
+    ignore_result(SnoozeFailureDetectorUnlocked(LeaderElectionExpBackoffDeltaUnlocked()));
+  }
+
   if (result.decision == VOTE_DENIED) {
     LOG_WITH_PREFIX(INFO) << "Leader election lost for term " << result.election_term
                           << ". Reason: "
@@ -1178,9 +1234,6 @@ void RaftConsensus::ElectionCallback(const ElectionResult& result) {
                           << (result.decision == VOTE_GRANTED ? "won" : "lost");
     return;
   }
-
-  // Snooze to avoid the election timer firing again as much as possible.
-  CHECK_OK(SnoozeFailureDetectorUnlocked());
 
   LOG_WITH_PREFIX(INFO) << "Leader election won for term " << result.election_term;
 
@@ -1226,11 +1279,38 @@ Status RaftConsensus::EnsureFailureDetectorDisabledUnlocked() {
   return failure_detector_->UnTrack(kTimerId);
 }
 
-Status RaftConsensus::SnoozeFailureDetectorUnlocked() {
+Status RaftConsensus::ExpireFailureDetectorUnlocked() {
   if (PREDICT_FALSE(!FLAGS_enable_leader_failure_detection)) {
     return Status::OK();
   }
-  return failure_detector_->MessageFrom(kTimerId, MonoTime::Now(MonoTime::FINE));
+
+  return failure_detector_->MessageFrom(kTimerId, MonoTime::Min());
+}
+
+Status RaftConsensus::SnoozeFailureDetectorUnlocked() {
+  return SnoozeFailureDetectorUnlocked(MonoDelta::FromMicroseconds(0));
+}
+
+Status RaftConsensus::SnoozeFailureDetectorUnlocked(const MonoDelta& additional_delta) {
+  if (PREDICT_FALSE(!FLAGS_enable_leader_failure_detection)) {
+    return Status::OK();
+  }
+  MonoTime time = MonoTime::Now(MonoTime::FINE);
+  time.AddDelta(additional_delta);
+  if (additional_delta.ToNanoseconds() > 0) {
+    LOG(INFO) << "Snoozing failure detection for an additional: " << additional_delta.ToString();
+  }
+  return failure_detector_->MessageFrom(kTimerId, time);
+}
+
+MonoDelta RaftConsensus::LeaderElectionExpBackoffDeltaUnlocked() {
+  int32_t failure_timeout = FLAGS_leader_failure_max_missed_heartbeat_periods *
+      FLAGS_leader_heartbeat_interval_ms;
+  int32_t exp_backoff_delta = pow(1.1, state_->GetCurrentTermUnlocked() -
+                                  state_->GetCommittedOpIdUnlocked().term());
+  exp_backoff_delta = std::min(failure_timeout * exp_backoff_delta,
+                               FLAGS_leader_failure_exp_backoff_max_delta_ms);
+  return MonoDelta::FromMilliseconds(exp_backoff_delta);
 }
 
 Status RaftConsensus::HandleTermAdvanceUnlocked(ConsensusTerm new_term) {

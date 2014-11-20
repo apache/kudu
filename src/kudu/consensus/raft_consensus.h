@@ -274,9 +274,28 @@ class RaftConsensus : public Consensus,
   // If the failure detector is already unregistered, has no effect.
   Status EnsureFailureDetectorDisabledUnlocked();
 
+  // Set the failure detector to an "expired" state, so that the next time
+  // the failure monitor runs it triggers an election.
+  // This is primarily intended to be used at startup time.
+  Status ExpireFailureDetectorUnlocked();
+
   // "Reset" the failure detector to indicate leader activity.
   // The failure detector must currently be enabled.
+  // When this is called a failure is guaranteed not to be detected
+  // before 'FLAGS_leader_failure_max_missed_heartbeat_periods' *
+  // 'FLAGS_leader_heartbeat_interval_ms' has elapsed.
   Status SnoozeFailureDetectorUnlocked();
+
+  // Like the above but adds 'additional_delta' to the default timeout
+  // period.
+  Status SnoozeFailureDetectorUnlocked(const MonoDelta& additional_delta);
+
+  // Calculates an additional snooze delta for leader election.
+  // The additional delta increases exponentially with the difference
+  // between the current term and the term of the last committed
+  // operation.
+  // The maximum delta is capped by 'FLAGS_leader_failure_exp_backoff_max_delta_ms'.
+  MonoDelta LeaderElectionExpBackoffDeltaUnlocked();
 
   // Handle when the term has advanced beyond the current term.
   Status HandleTermAdvanceUnlocked(ConsensusTerm new_term);

@@ -532,6 +532,20 @@ void ConsensusServiceImpl::GetLastOpId(const consensus::GetLastOpIdRequestPB *re
   context->RespondSuccess();
 }
 
+void ConsensusServiceImpl::GetCommittedQuorum(const consensus::GetCommittedQuorumRequestPB *req,
+                                              consensus::GetCommittedQuorumResponsePB *resp,
+                                              rpc::RpcContext *context) {
+  DVLOG(3) << "Received GetCommittedQuorum RPC: " << req->DebugString();
+  scoped_refptr<TabletPeer> tablet_peer;
+  if (!LookupTabletOrRespond(tablet_manager_, req->tablet_id(), resp, context, &tablet_peer)) {
+    return;
+  }
+
+  resp->mutable_quorum()->CopyFrom(tablet_peer->consensus()->Quorum());
+  context->RespondSuccess();
+}
+
+
 void TabletServiceImpl::Scan(const ScanRequestPB* req,
                              ScanResponsePB* resp,
                              rpc::RpcContext* context) {
