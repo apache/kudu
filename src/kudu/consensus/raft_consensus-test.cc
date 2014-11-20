@@ -370,7 +370,7 @@ TEST_F(RaftConsensusTest, TestPendingTransactions) {
     EXPECT_CALL(*txn_factory_, StartReplicaTransactionMock(_))
         .Times(10);
     // Queue gets cleared when the peer becomes follower.
-    EXPECT_CALL(*queue_, Clear())
+    EXPECT_CALL(*queue_, Close())
         .Times(1);
   }
 
@@ -447,10 +447,8 @@ TEST_F(RaftConsensusTest, TestAbortOperations) {
       .Times(AnyNumber());
   EXPECT_CALL(*peer_manager_, Close())
       .Times(1);
-  EXPECT_CALL(*queue_, Clear())
-      .Times(1);
   EXPECT_CALL(*queue_, Close())
-      .Times(1);
+      .Times(2);
   EXPECT_CALL(*peer_manager_, UpdateQuorum(_))
       .Times(1)
       .WillRepeatedly(Return(Status::OK()));

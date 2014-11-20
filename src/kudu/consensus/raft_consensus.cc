@@ -370,17 +370,13 @@ Status RaftConsensus::BecomeReplicaUnlocked() {
   // FD should be running while we are a follower.
   RETURN_NOT_OK(EnsureFailureDetectorEnabledUnlocked());
 
-  // Clear the consensus replication queue, evicting all state. We can reuse the
-  // queue should we become leader.
-  queue_->Clear();
   // Deregister ourselves from the queue. We don't care what get's replicated, since
   // we're stepping down.
   queue_->UnRegisterObserver(this);
 
-  // TODO: pretty certain there is a race here if the queue currently has an
-  // outstanding async log reader request -- the callback would fire on the
-  // emptied queue and crash. Perhaps instead we should create a new queue in
-  // this case instead of clearing the existing one.
+
+  queue_->Close();
+
   return Status::OK();
 }
 

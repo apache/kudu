@@ -91,19 +91,12 @@ class PeerMessageQueue {
   // replace the old entries with new ones without de-allocating the old
   // ones if they are still required.
   virtual void RequestForPeer(const std::string& uuid,
-                      ConsensusRequestPB* request);
+                              ConsensusRequestPB* request);
 
   // Updates the request queue with the latest response of a peer, returns
   // whether this peer has more requests pending.
   virtual void ResponseFromPeer(const ConsensusResponsePB& response,
                         bool* more_pending);
-
-  // Clears all messages and tracked peers but still leaves the queue in state
-  // where it can be used again.
-  // Note: Pending messages must be handled before calling this method, i.e.
-  // any in flight operations must be either aborted or otherwise referenced
-  // elsewhere prior to calling this.
-  virtual void Clear();
 
   // Closes the queue, peers are still allowed to call UntrackPeer() and
   // ResponseFromPeer() but no additional peers can be tracked or messages

@@ -130,7 +130,9 @@ void PeerMessageQueue::UntrackPeer(const string& uuid) {
 
 Status PeerMessageQueue::AppendOperation(gscoped_ptr<ReplicateMsg> msg) {
   boost::unique_lock<simple_spinlock> lock(queue_lock_);
-  DCHECK_EQ(queue_state_.state, kQueueOpen);
+  if (queue_state_.state != kQueueOpen) {
+    return Status::IllegalState("Queue closed");
+  }
 
   ReplicateMsg* msg_ptr = DCHECK_NOTNULL(msg.get());
 
@@ -472,19 +474,19 @@ void PeerMessageQueue::DumpToHtml(std::ostream& out) const {
   log_cache_.DumpToHtml(out);
 }
 
-void PeerMessageQueue::Clear() {
-  boost::lock_guard<simple_spinlock> lock(queue_lock_);
-  ClearUnlocked();
-}
-
 void PeerMessageQueue::ClearUnlocked() {
   log_cache_.Clear();
   STLDeleteValues(&watermarks_);
+  queue_state_.current_term = MinimumOpId().term();
+  queue_state_.committed_index = MinimumOpId();
+  queue_state_.all_replicated_index = MinimumOpId();
+  queue_state_.majority_replicated_index = MinimumOpId();
+  queue_state_.state = kQueueConstructed;
 }
 
 void PeerMessageQueue::Close() {
   boost::lock_guard<simple_spinlock> lock(queue_lock_);
-  queue_state_.state = kQueueClosed;
+  log_cache_.Close();
   ClearUnlocked();
   log_cache_.Close();
 }
