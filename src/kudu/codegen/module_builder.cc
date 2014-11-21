@@ -125,17 +125,19 @@ Status ModuleBuilder::Init() {
   CHECK_EQ(state_, kUninitialized) << "Cannot Init() twice";
   // Parse IR file
   SMDiagnostic err;
+  string ir_location = kKuduIRFile;
   module_.reset(llvm::ParseIRFile(kKuduIRFile, err, *context_));
   // We first try to find it next to the binaries. This is normally the case for dev environments.
   // If this fails, we look under KUDU_HOME.
   if (!module_) {
+    ir_location = GetDefaultIRFileLocation();
     module_.reset(llvm::ParseIRFile(GetDefaultIRFileLocation(), err, *context_));
     if (!module_) {
       return Status::ConfigurationError("Could not parse IR file",
                                         ToString(err));
     }
   }
-  VLOG(3) << "Successfully parsed IR file at " << kKuduIRFile << ":\n"
+  VLOG(3) << "Successfully parsed IR file at " << ir_location << ":\n"
           << ToString(*module_);
 
   // TODO: consider loading this module once and then just copying it
