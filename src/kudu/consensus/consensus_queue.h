@@ -211,7 +211,8 @@ class PeerMessageQueue {
   // 'preceding_first_op_in_queue_' if the queue is empty.
   const OpId& GetLastOp() const;
 
-  void AdvanceQueueWatermark(OpId* watermark,
+  void AdvanceQueueWatermark(const char* type,
+                             OpId* watermark,
                              const OpId& replicated_before,
                              const OpId& replicated_after,
                              int num_peers_required);

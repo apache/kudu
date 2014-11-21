@@ -253,16 +253,15 @@ void PeerMessageQueue::RequestForPeer(const string& uuid,
   }
 }
 
-void PeerMessageQueue::AdvanceQueueWatermark(OpId* watermark,
+void PeerMessageQueue::AdvanceQueueWatermark(const char* type,
+                                             OpId* watermark,
                                              const OpId& replicated_before,
                                              const OpId& replicated_after,
                                              int num_peers_required) {
 
   if (VLOG_IS_ON(1)) {
-    VLOG(1) << "Updating watermark: " << watermark->ShortDebugString()
-        << "\nPeer last: " << replicated_before.ShortDebugString()
-        << " Peer current: " << replicated_after.ShortDebugString()
-        << "\nNum Peers required: " << num_peers_required;
+    VLOG(1) << "Updating " << type << " watermark: "
+            << " peer changed from " << replicated_before << " to " << replicated_after;
   }
 
   // Update 'watermark', e.g. the commit index.
@@ -290,8 +289,8 @@ void PeerMessageQueue::AdvanceQueueWatermark(OpId* watermark,
     std::sort(watermarks.begin(), watermarks.end(), OpIdLessThanPtrFunctor());
     watermark->CopyFrom(*watermarks[watermarks.size() - num_peers_required]);
 
-    if (VLOG_IS_ON(1)) {
-      VLOG(1) << "Updated watermark. New value: " << watermark->ShortDebugString();
+    VLOG(1) << "Updated " << type << " watermark to " << watermark;
+    if (VLOG_IS_ON(3)) {
       VLOG(1) << "Peers: ";
       BOOST_FOREACH(const WatermarksMap::value_type& peer, watermarks_) {
         VLOG(1) << "Peer: " << peer.first  << " Watermark: "
@@ -398,13 +397,15 @@ void PeerMessageQueue::ResponseFromPeer(const ConsensusResponsePB& response,
     peer->peer_status.set_last_committed_idx(response.status().last_committed_idx());
 
     // Advance the commit index.
-    AdvanceQueueWatermark(&queue_state_.majority_replicated_index,
+    AdvanceQueueWatermark("majority_replicated",
+                          &queue_state_.majority_replicated_index,
                           old_last_received,
                           new_last_received,
                           majority_size_);
 
     // Advance the all replicated index.
-    AdvanceQueueWatermark(&queue_state_.all_replicated_index,
+    AdvanceQueueWatermark("all_replicated",
+                          &queue_state_.all_replicated_index,
                           old_last_received,
                           new_last_received,
                           watermarks_.size());
