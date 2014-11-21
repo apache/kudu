@@ -88,62 +88,6 @@ Status Log::AppendThread::Init() {
   return Status::OK();
 }
 
-void Log::PostponeEarlyCommits(vector<LogEntryBatch*>* batches) {
-  vector<LogEntryBatch*> ret_batches;
-  ret_batches.reserve(batches->size());
-
-  OpId max_repl_id = last_entry_op_id_;
-
-  // First pull out any COMMIT messages into the postponed list.
-  // It would be possible to implement this in-place and avoid some
-  // allocation, but the code's more complex. Consider doing that if
-  // this looks like a perf hot-spot in the future.
-  BOOST_FOREACH(LogEntryBatch* batch, *batches) {
-    switch (batch->type_) {
-      case COMMIT:
-      {
-        DCHECK_EQ(1, batch->count())
-          << "Currently don't support multiple COMMITs in a batch";
-
-        const OpId& committed = batch->entry_batch_pb_->entry(0).commit().commited_op_id();
-        if (max_repl_id.IsInitialized() && committed.index() <= max_repl_id.index()) {
-          // If the commit is for an operation that we've already replicated (or already
-          // seen in this loop), we can append it in its original position.
-          ret_batches.push_back(batch);
-        } else {
-          // Otherwise we have to postpone it.
-          VLOG(3) << "Postponing commit for " << committed << ": max_repl is "
-                  << max_repl_id;
-          postponed_commit_batches_.push_back(batch);
-        }
-        break;
-      }
-      case REPLICATE:
-        max_repl_id = batch->MaxReplicateOpId();
-        FALLTHROUGH_INTENDED;
-      default:
-        ret_batches.push_back(batch);
-        break;
-    }
-  }
-
-  // Now go through the postponed list and re-add any batches which
-  // are now able to be processed, removing them from the postponed list.
-  for (std::list<LogEntryBatch*>::iterator iter = postponed_commit_batches_.begin();
-       iter != postponed_commit_batches_.end();) {
-    LogEntryBatch* postponed = *iter;
-
-    const OpId& committed = postponed->entry_batch_pb_->entry(0).commit().commited_op_id();
-    if (max_repl_id.IsInitialized() && committed.index() <= max_repl_id.index()) {
-      ret_batches.push_back(postponed);
-      iter = postponed_commit_batches_.erase(iter);
-    } else {
-      ++iter;
-    }
-  }
-  batches->swap(ret_batches);
-}
-
 void Log::AppendThread::RunThread() {
   LogEntryBatchQueue* queue = log_->entry_queue();
   while (PREDICT_TRUE(!closing())) {
@@ -157,8 +101,6 @@ void Log::AppendThread::RunThread() {
     if (log_->metrics_) {
       log_->metrics_->entry_batches_per_group->Increment(entry_batches.size());
     }
-
-    log_->PostponeEarlyCommits(&entry_batches);
 
     SCOPED_LATENCY_METRIC(log_->metrics_, group_commit_latency);
 
@@ -683,9 +625,6 @@ Status Log::Close() {
     default:
       return Status::IllegalState(Substitute("Bad state for Close() $0", log_state_));
   }
-
-  CHECK(postponed_commit_batches_.empty())
-    << "TODO: handle COMMITs which never were committable at shutdown";
 
   if (log_hooks_) {
     RETURN_NOT_OK_PREPEND(log_hooks_->PostClose(),

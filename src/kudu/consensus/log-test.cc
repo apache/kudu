@@ -546,30 +546,6 @@ TEST_F(LogTest, TestWriteManyBatches) {
   }
 }
 
-// Test that, if we log a COMMIT before its REPLICATE, it will be buffered
-// and only written out once the REPLICATE has been written.
-TEST_F(LogTest, TestCommitsAreBufferedUntilReplicates) {
-  BuildLog();
-
-  AppendCommit(1, APPEND_ASYNC);
-  AppendReplicateBatch(1, APPEND_SYNC);
-  log_->WaitUntilAllFlushed();
-
-  vector<LogEntryPB*> entries;
-  ElementDeleter deleter(&entries);
-  SegmentSequence segments;
-  ASSERT_STATUS_OK(log_->GetLogReader()->GetSegmentsSnapshot(&segments));
-  ASSERT_STATUS_OK(segments[0]->ReadEntries(&entries));
-
-  // We enqueued the Commit before the Replicate, but it should have
-  // buffered it until the Replicate arrived.
-  ASSERT_EQ(entries.size(), 2);
-  EXPECT_EQ(REPLICATE, entries[0]->type()) << entries[0]->ShortDebugString();
-  EXPECT_EQ(COMMIT, entries[1]->type())  << entries[1]->ShortDebugString();
-
-  log_->Close();
-}
-
 // This tests that querying LogReader works.
 // This sets up a reader with some segments to query which amount to the
 // following:

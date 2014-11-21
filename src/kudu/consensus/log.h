@@ -5,8 +5,6 @@
 #define KUDU_CONSENSUS_LOG_H_
 
 #include <boost/thread/shared_mutex.hpp>
-#include <list>
-#include <map>
 #include <string>
 #include <vector>
 
@@ -113,17 +111,6 @@ class Log {
                                const StatusCallback& callback);
 
   // Append the given commit message, asynchronously.
-  //
-  // If this commit message corresponds to an operation which has not yet been
-  // logged, it will be postponed until its corresponding REPLICATE is appended.
-  // This ensures that we never see a COMMIT in the log before its REPLICATE.
-  //
-  // The reason this is necessary is that a Raft LEADER may proceed to apply
-  // and commit an operation locally as soon as it is replicated on a majority
-  // of quorum members. It is possible that the majority here only consists of
-  // remote nodes, if the local node's Log is lagging for some reason. In that
-  // case, we may see the AsyncAppendCommit() call _before_ its AsyncAppendReplicates()
-  // call.
   //
   // Returns a bad status if the log is already shut down.
   Status AsyncAppendCommit(gscoped_ptr<consensus::CommitMsg> commit_msg,
@@ -268,16 +255,6 @@ class Log {
   // Preallocates the space for a new segment.
   Status PreAllocateNewSegment();
 
-  // For any COMMIT messages in 'batches' which refer to REPLICATE messages
-  // in the future, moves them to the postponed_commit_batches_ list.
-  //
-  // COMMIT messages corresponding to REPLICATEs which are also in the same
-  // 'batches' list are not postponed.
-  //
-  // Any previously-postponed COMMITs which are now able to be appended
-  // are removed from the postponed list and re-added to 'batches'.
-  void PostponeEarlyCommits(std::vector<LogEntryBatch*>* batches);
-
   // Writes serialized contents of 'entry' to the log. Called inside
   // AppenderThread. If 'caller_owns_operation' is true, then the
   // 'operation' field of the entry will be released after the entry
@@ -356,12 +333,6 @@ class Log {
   // The queue used to communicate between the thread calling
   // Reserve() and the Log Appender thread
   LogEntryBatchQueue entry_batch_queue_;
-
-  // Any commit messages which have arrived before to their REPLICATE
-  // messages need to be postponed so that they end up in the log
-  // _after_ them. They are held here until the entry ID moves
-  // past their ID.
-  std::list<LogEntryBatch*> postponed_commit_batches_;
 
   // Thread writing to the log
   gscoped_ptr<AppendThread> append_thread_;
