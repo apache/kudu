@@ -36,6 +36,7 @@
 #include <llvm/Transforms/IPO/PassManagerBuilder.h>
 
 #include "kudu/gutil/macros.h"
+#include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/status.h"
 
 #ifndef CODEGEN_MODULE_BUILDER_DO_OPTIMIZATIONS
@@ -108,6 +109,11 @@ bool ModuleContains(const Module& m, const Function* fptr) {
 const char* const ModuleBuilder::kKuduIRFile =
   KUDU_CODEGEN_MODULE_BUILDER_PRECOMPILED_LL;
 
+static std::string GetDefaultIRFileLocation() {
+  char* kudu_home = getenv("KUDU_HOME");
+  return kudu_home ? strings::Substitute("$0/precompiled.ll", kudu_home) : "";
+}
+
 ModuleBuilder::ModuleBuilder()
   : state_(kUninitialized),
     context_(new LLVMContext()),
@@ -120,9 +126,14 @@ Status ModuleBuilder::Init() {
   // Parse IR file
   SMDiagnostic err;
   module_.reset(llvm::ParseIRFile(kKuduIRFile, err, *context_));
+  // We first try to find it next to the binaries. This is normally the case for dev environments.
+  // If this fails, we look under KUDU_HOME.
   if (!module_) {
-    return Status::ConfigurationError("Could not parse IR file",
-                                      ToString(err));
+    module_.reset(llvm::ParseIRFile(GetDefaultIRFileLocation(), err, *context_));
+    if (!module_) {
+      return Status::ConfigurationError("Could not parse IR file",
+                                        ToString(err));
+    }
   }
   VLOG(3) << "Successfully parsed IR file at " << kKuduIRFile << ":\n"
           << ToString(*module_);
