@@ -7,6 +7,7 @@
 #include "kudu/common/wire_protocol-test-util.h"
 #include "kudu/consensus/consensus-test-util.h"
 #include "kudu/consensus/log.h"
+#include "kudu/consensus/log-test-base.h"
 #include "kudu/consensus/log_cache.h"
 #include "kudu/fs/fs_manager.h"
 #include "kudu/util/mem_tracker.h"
@@ -76,6 +77,20 @@ class LogCacheTest : public KuduTest {
       }
     }
     return true;
+  }
+
+  Status RetryReadWhileIncomplete(int64_t after_op_index,
+                                  int max_size_bytes,
+                                  std::vector<ReplicateMsg*>* messages,
+                                  OpId* preceding_op) {
+    Status s;
+    int sleep_for = 0;
+    do {
+      usleep(sleep_for);
+      sleep_for += 1000;
+      s = cache_->ReadOps(after_op_index, max_size_bytes, messages, preceding_op);
+    } while (s.IsIncomplete());
+    return s;
   }
 
   const Schema schema_;
@@ -163,6 +178,12 @@ TEST_F(LogCacheTest, TestCacheRefusesRequestWhenFilled) {
 TEST_F(LogCacheTest, TestCacheEdgeCases) {
   // Append 1 message to the cache
   ASSERT_TRUE(AppendReplicateMessagesToCache(1, 1));
+  // Also append it to the log, since we're going to evict and re-read it
+  // down below.
+  {
+    OpId first_op = MakeOpId(0, 1);
+    ASSERT_OK(AppendNoOpToLogSync(log_.get(), &first_op));
+  }
 
   std::vector<ReplicateMsg*> messages;
   OpId preceding;
@@ -187,6 +208,17 @@ TEST_F(LogCacheTest, TestCacheEdgeCases) {
   ASSERT_TRUE(s.IsNotFound()) << "unexpected status: " << s.ToString();
   ASSERT_EQ(0, messages.size());
   ASSERT_FALSE(preceding.IsInitialized());
+
+  messages.clear();
+  preceding.Clear();
+
+  // Evict entries from the cache, and ensure that we can still read
+  // entries at the beginning of the log.
+  cache_->SetPinnedOp(50);
+  cache_->SetPinnedOp(0); // re-pin at 0 to allow the read
+  ASSERT_OK(RetryReadWhileIncomplete(0, 100, &messages, &preceding));
+  ASSERT_EQ(1, messages.size());
+  ASSERT_OPID_EQ(MakeOpId(0, 0), preceding);
 }
 
 

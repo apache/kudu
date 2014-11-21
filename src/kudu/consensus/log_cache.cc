@@ -2,6 +2,7 @@
 
 #include "kudu/consensus/log_cache.h"
 
+#include <algorithm>
 #include <boost/foreach.hpp>
 #include <gflags/gflags.h>
 #include <google/protobuf/wire_format_lite.h>
@@ -146,17 +147,22 @@ Status LogCache::ReadOps(int64_t after_op_index,
                          int max_size_bytes,
                          std::vector<ReplicateMsg*>* messages,
                          OpId* preceding_op) {
-
   lock_guard<simple_spinlock> l(&lock_);
   DCHECK_EQ(state_, kCacheOpen);
+  DCHECK_GE(after_op_index, 0);
   CHECK_GE(after_op_index, min_pinned_op_index)
     << "Cannot currently support reading non-pinned operations";
 
   // If the messages the peer needs haven't been loaded into the queue yet,
   // load them.
   if (after_op_index < preceding_first_op_.index()) {
+    // If after_op_index is 0, then we can't actually ask the log
+    // to read index 0. Instead, we'll ask for index 1, and then
+    // we special case this in the callback below.
+    int64_t req_op_index = std::max<int64_t>(1, after_op_index);
+
     Status status = async_reader_->EnqueueAsyncRead(
-      after_op_index, preceding_first_op_.index(),
+      req_op_index, preceding_first_op_.index(),
       Bind(&LogCache::EntriesLoadedCallback, Unretained(this)));
     if (status.IsAlreadyPresent()) {
       // The log reader is already loading another part of the log. We'll try again at some
@@ -243,7 +249,7 @@ void LogCache::EntriesLoadedCallback(int64_t after_op_index,
     OpId preceding_id;
     // Special case when the caller requested all operations after MinimumOpId()
     // since that operation does not exist, we need to set it ourselves.
-    if (after_op_index == MinimumOpId().index()) {
+    if (after_op_index == 1 && replicates[0]->id().index() == 1) {
       preceding_id = MinimumOpId();
     // otherwise just skip the first operation, which will become the preceding id.
     } else {
