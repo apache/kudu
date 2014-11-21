@@ -133,12 +133,15 @@ Status TabletPeer::Init(const shared_ptr<Tablet>& tablet,
   }
 
   TRACE("TabletPeer::Init() finished");
+  VLOG(2) << "T " << tablet_id() << " P " << consensus_->peer_uuid() << ": Peer Initted";
   return Status::OK();
 }
 
 Status TabletPeer::Start(const ConsensusBootstrapInfo& bootstrap_info) {
 
   TRACE("Starting consensus");
+
+  VLOG(2) << "T " << tablet_id() << " P " << consensus_->peer_uuid() << ": Peer starting";
 
   VLOG(2) << "Quorum before starting: " << consensus_->Quorum().DebugString();
 

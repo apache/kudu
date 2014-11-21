@@ -274,16 +274,20 @@ Status SysTable::SetupTablet(const scoped_refptr<tablet::TabletMetadata>& metada
 
 Status SysTable::WaitUntilRunning() {
   int seconds_waited = 0;
+  string prefix = Substitute("T $0 P $1 [$2]: ",
+                             tablet_peer_->tablet_id(),
+                             tablet_peer_->consensus()->peer_uuid(),
+                             table_name());
   while (true) {
     Status status = tablet_peer_->WaitUntilConsensusRunning(MonoDelta::FromSeconds(1));
     seconds_waited++;
     if (status.ok()) {
-      LOG(INFO) << "SysTable tablet configured and running, proceeding with master startup.";
+      LOG(INFO) << prefix << "configured and running, proceeding with master startup.";
       break;
     }
     if (status.IsTimedOut()) {
-      LOG(WARNING) << "SysTable tablet not online yet. Have been trying for "
-          << seconds_waited << " seconds.";
+      LOG(WARNING) << prefix << "not online yet (have been trying for "
+                   << seconds_waited << " seconds)";
       continue;
     }
     // if the status is not OK or TimedOut return it.
