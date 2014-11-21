@@ -6,7 +6,9 @@ System Requirements
 The following dependencies are necessary to build kudu:
 
 - autoconf
-- boost >= 1.41, including the following components:
+- automake
+- boost >= 1.41, on CentOS boost-devel and boost-static,
+  including the following components:
   - boost::thread
   - boost::system (thread depends on it)
 - cmake 2.8.7
@@ -43,8 +45,8 @@ the version of gcc shipped with RHEL6. On machines with the Cloudera
 toolchain, you can use LLVM 3.3 from the toolchain to bootstrap the thirdparty
 LLVM:
 
-$ export CC=/path/to/llvm-3.3/bin/clang
-$ export CXX=/path/to/llvm-3.3/bin/clang++
+$ export CC=/REPLACE/WITH/YOUR/PATH/llvm-3.3/bin/clang
+$ export CXX=/REPLACE/WITH/YOUR/PATH/llvm-3.3/bin/clang++
 $ thirdparty/build-if-necessary.sh
 
 If you don't have access to a newer compiler, you can build LLVM twice, once
