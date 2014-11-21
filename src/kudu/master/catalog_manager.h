@@ -377,6 +377,10 @@ class CatalogManager : public tserver::TabletPeerLookupIf {
 
   bool IsInitialized() const;
 
+  // Returns this CatalogManager's role in a quorum. CatalogManager
+  // must be initialized before calling this method.
+  metadata::QuorumPeerPB::Role Role() const;
+
  private:
   friend class TableLoader;
   friend class TabletLoader;

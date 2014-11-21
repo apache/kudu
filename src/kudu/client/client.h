@@ -32,7 +32,6 @@ class KuduWriteOperation;
 
 namespace internal {
 class Batcher;
-class GetLeaderMasterRpc;
 class GetTableSchemaRpc;
 class LookupRpc;
 class MetaCache;
@@ -171,7 +170,6 @@ class KUDU_EXPORT KuduClient : public std::tr1::enable_shared_from_this<KuduClie
   friend class KuduTableAlterer;
   friend class KuduTableCreator;
   friend class internal::Batcher;
-  friend class internal::GetLeaderMasterRpc;
   friend class internal::GetTableSchemaRpc;
   friend class internal::LookupRpc;
   friend class internal::MetaCache;

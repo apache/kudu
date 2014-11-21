@@ -370,6 +370,11 @@ bool CatalogManager::IsInitialized() const {
   return state_ == kRunning;
 }
 
+QuorumPeerPB::Role CatalogManager::Role() const {
+  CHECK(IsInitialized());
+  return sys_catalog_->tablet_peer_->consensus()->role();
+}
+
 void CatalogManager::Shutdown() {
   {
     boost::shared_lock<LockType> l(lock_);

@@ -34,6 +34,7 @@ add_library(kudu_client ${CLIENT_LINKAGE} ${CLIENT_SRCS})
 set(CLIENT_LIBS
   kudu_common
   master_proto
+  master_rpc
   tserver_proto
   tserver_service_proto
   kudu_util

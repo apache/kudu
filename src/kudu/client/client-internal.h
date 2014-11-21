@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "kudu/client/client.h"
+#include "kudu/util/rw_semaphore.h"
 #include "kudu/util/net/net_util.h"
 
 namespace kudu {
@@ -15,6 +16,7 @@ class DnsResolver;
 class HostPort;
 
 namespace master {
+class GetLeaderMasterRpc;
 class MasterServiceProxy;
 } // namespace master
 
@@ -65,9 +67,12 @@ class KuduClient::Data {
       const scoped_refptr<internal::RemoteTablet>& rt) const;
 
   // Sets 'master_proxy_' from the address specified by
-  // 'leader_host_port'.  Called by GetLeaderMasterRpc::SendRpcCb()
-  // upon successful completion.
-  Status LeaderMasterDetermined(const HostPort& leader_host_port);
+  // 'leader_master_hostport_'.  Called by
+  // GetLeaderMasterRpc::SendRpcCb() upon successful completion.
+  //
+  // See also: SetMasterServerProxyAsync.
+  void LeaderMasterDetermined(const StatusCallback& user_cb,
+                              const Status& status);
 
   // Asynchronously sets 'master_proxy_' to the leader master by
   // cycling through servers listed in 'master_server_addrs_' until
@@ -106,8 +111,24 @@ class KuduClient::Data {
   MonoDelta default_admin_operation_timeout_;
   MonoDelta default_select_master_timeout_;
 
+  // The host port of the leader master. This is set in
+  // LeaderMasterDetermined, which is invoked as a callback by
+  // SetMasterServerProxyAsync.
+  HostPort leader_master_hostport_;
+
   // Proxy to the leader master.
   std::tr1::shared_ptr<master::MasterServiceProxy> master_proxy_;
+
+  // Ref-counted RPC instance: since 'SetMasterServerProxyAsync' call
+  // is asynchronous, we need to hold a reference in this class
+  // itself, as to avoid a "use-after-free" scenario.
+  scoped_refptr<master::GetLeaderMasterRpc> leader_master_rpc_;
+
+  // Protects 'leader_master_rpc_'.
+  //
+  // See: KuduClient::Data::SetMasterServerProxyAsync for a more
+  // in-depth explanation of why this is needed and how it works.
+  rw_semaphore leader_master_sem_;
 
   DISALLOW_COPY_AND_ASSIGN(Data);
 };

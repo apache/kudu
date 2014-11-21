@@ -14,6 +14,7 @@
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/master/master.h"
+#include "kudu/master/master_rpc.h"
 #include "kudu/master/master.pb.h"
 #include "kudu/master/master.proxy.h"
 #include "kudu/rpc/rpc.h"
@@ -23,14 +24,13 @@
 
 namespace kudu {
 
+using master::GetLeaderMasterRpc;
 using master::GetTableSchemaRequestPB;
 using master::GetTableSchemaResponsePB;
 using master::IsAlterTableDoneRequestPB;
 using master::IsAlterTableDoneResponsePB;
 using master::IsCreateTableDoneRequestPB;
 using master::IsCreateTableDoneResponsePB;
-using master::ListMastersRequestPB;
-using master::ListMastersResponsePB;
 using master::MasterServiceProxy;
 using master::MasterErrorPB;
 using metadata::QuorumPeerPB;
@@ -41,7 +41,6 @@ using strings::Substitute;
 
 namespace client {
 
-using internal::GetLeaderMasterRpc;
 using internal::GetTableSchemaRpc;
 using internal::RemoteTablet;
 using internal::RemoteTabletServer;
@@ -303,116 +302,6 @@ void GetTableSchemaRpc::SendRpcCb(const Status& status) {
   user_cb_.Run(new_status);
 }
 
-
-class GetLeaderMasterRpc : public Rpc {
- public:
-  GetLeaderMasterRpc(KuduClient* client,
-                     const StatusCallback& cb,
-                     const vector<Sockaddr>& master_addrs,
-                     const MonoTime& deadline,
-                     const shared_ptr<rpc::Messenger>& messenger);
-
-  virtual void SendRpc() OVERRIDE;
-
-  virtual std::string ToString() const OVERRIDE;
-
-  virtual ~GetLeaderMasterRpc();
-
- private:
-  virtual void SendRpcCb(const Status& status) OVERRIDE;
-
-  // Sets 'leader_host_port' to the host/port of the leader master if
-  // there is enough information in 'resp_' to do so.  Returns
-  // 'Status::NotFound' if no leader master is found.
-  Status LeaderMasterHostPortFromResponse(HostPort* leader_host_port);
-
-  KuduClient* client_;
-  StatusCallback cb_;
-  int node_idx_;
-  vector<Sockaddr> master_addrs_;
-  ListMastersResponsePB resp_;
-};
-
-GetLeaderMasterRpc::GetLeaderMasterRpc(KuduClient* client,
-                                       const StatusCallback& cb,
-                                       const vector<Sockaddr>& master_addrs,
-                                       const MonoTime& deadline,
-                                       const shared_ptr<rpc::Messenger>& messenger)
-    : Rpc(deadline, messenger),
-      client_(client),
-      cb_(cb),
-      node_idx_(0),
-      master_addrs_(master_addrs) {
-}
-
-void GetLeaderMasterRpc::SendRpc() {
-  ListMastersRequestPB req;
-  MasterServiceProxy proxy_for_idx(retrier().messenger(), master_addrs_[node_idx_]);
-  proxy_for_idx.ListMastersAsync(
-      req, &resp_, &retrier().controller(),
-      boost::bind(&GetLeaderMasterRpc::SendRpcCb, this, Status::OK()));
-}
-
-std::string GetLeaderMasterRpc::ToString() const {
-  vector<string> master_addrs_str;
-  // TODO add a generic method to gutil/strings/join.h to be able to
-  // join string representation of elements of a container by
-  // iterating over the container while calling an arbitrary method
-  // on those elements.
-  BOOST_FOREACH(const Sockaddr& master_addr, master_addrs_) {
-    master_addrs_str.push_back(master_addr.ToString());
-  }
-  return Substitute("GetLeaderMasterRpc(idx=$0, master_addrs=$1)",
-                    node_idx_, JoinStrings(master_addrs_str, ","));
-}
-
-GetLeaderMasterRpc::~GetLeaderMasterRpc() {
-}
-
-Status GetLeaderMasterRpc::LeaderMasterHostPortFromResponse(HostPort* leader_hostport) {
-  if (resp_.has_error()) {
-    return StatusFromPB(resp_.error());
-  }
-  RETURN_NOT_OK_PREPEND(FindLeaderHostPort(resp_.masters(), leader_hostport),
-                        "ListMastersResponse: " + resp_.ShortDebugString());
-  return Status::OK();
-}
-
-void GetLeaderMasterRpc::SendRpcCb(const Status& status) {
-  gscoped_ptr<GetLeaderMasterRpc> delete_me(this);
-  Status new_status = status;
-  if (new_status.ok() && retrier().HandleResponse(this, &new_status)) {
-    ignore_result(delete_me.release());
-    return;
-  }
-
-  if (new_status.ok()) {
-    HostPort host_port;
-    new_status = LeaderMasterHostPortFromResponse(&host_port);
-    if (new_status.ok()) {
-      client_->data_->LeaderMasterDetermined(host_port);
-    }
-  }
-
-  // If there was a network error talking to the master at 'node_idx'
-  // or if 'resp_' doesn't contain the leader master, try again from
-  // the next node.  If we've exhausted 'proxy_by_idx_', then delay
-  // before cycling through 'proxy_by_idx_' again.
-  if (new_status.IsNetworkError() || new_status.IsNotFound()) {
-    if (++node_idx_ == master_addrs_.size()) {
-      node_idx_ = 0;
-      retrier().DelayedRetry(this);
-    } else {
-      // Don't delay if we haven't exhausted the masters.
-      retrier().controller().Reset();
-      SendRpc();
-    }
-    ignore_result(delete_me.release());
-    return;
-  }
-  cb_.Run(new_status);
-}
-
 } // namespace internal
 
 Status KuduClient::Data::GetTableSchema(KuduClient* client,
@@ -430,11 +319,23 @@ Status KuduClient::Data::GetTableSchema(KuduClient* client,
   return sync.Wait();
 }
 
-Status KuduClient::Data::LeaderMasterDetermined(const HostPort& leader_host_port) {
-  Sockaddr leader_sock_addr;
-  RETURN_NOT_OK(SockaddrFromHostPort(leader_host_port, &leader_sock_addr));
-  master_proxy_.reset(new MasterServiceProxy(messenger_, leader_sock_addr));
-  return Status::OK();
+void KuduClient::Data::LeaderMasterDetermined(const StatusCallback& user_cb,
+                                              const Status& status) {
+  Status new_status = status;
+  // Make a defensive copy of 'user_cb', as it may be deallocated
+  // after 'leader_master_rpc_' is reset.
+  StatusCallback cb_copy(user_cb);
+  if (new_status.ok()) {
+    Sockaddr leader_sock_addr;
+    new_status = SockaddrFromHostPort(leader_master_hostport_, &leader_sock_addr);
+    if (new_status.ok()) {
+      master_proxy_.reset(new MasterServiceProxy(messenger_, leader_sock_addr));
+    }
+  }
+  // See the comment in SetMasterServerProxyAsync below.
+  leader_master_rpc_.reset();
+  leader_master_sem_.unlock();
+  cb_copy.Run(new_status);
 }
 
 Status KuduClient::Data::SetMasterServerProxy(KuduClient* client) {
@@ -468,13 +369,29 @@ void KuduClient::Data::SetMasterServerProxyAsync(KuduClient* client, const Statu
     master_sockaddrs.push_back(addrs[0]);
   }
 
-  // See 'GetLeaderMasterRpc' above.
-  GetLeaderMasterRpc* rpc(new GetLeaderMasterRpc(client,
-                                                 cb,
-                                                 master_sockaddrs,
-                                                 deadline,
-                                                 messenger_));
-  rpc->SendRpc();
+  // This ensures that no more than one GetLeaderMasterRpc is in
+  // flight.  The reason for this is that we need to keep hold of a
+  // reference to an in-flight RPC ('leader_master_rpc_') in order not
+  // to free it before the RPC completes.
+  //
+  // The other approach would be to keep a container of references to
+  // GetLeaderMasterRpc and the HostPort, but this would have an issue
+  // with maintaining an index (or another form of a key) into that
+  // container in order to find the right GetLeaderMasterRpc reference
+  // and HostPort instance in order to destroy them.
+  //
+  // (We can't pass 'leader_master_rpc_' to the callback as a
+  // scoped_refptr can't be passed into a kudu::StatusCallback using a
+  // Bind).
+  leader_master_sem_.lock();
+  leader_master_rpc_.reset(new GetLeaderMasterRpc(
+      Bind(&KuduClient::Data::LeaderMasterDetermined,
+           Unretained(this), cb),
+      master_sockaddrs,
+      deadline,
+      messenger_,
+      &leader_master_hostport_));
+  leader_master_rpc_->SendRpc();
 }
 
 } // namespace client

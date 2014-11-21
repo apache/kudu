@@ -12,6 +12,7 @@
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/master/master.h"
+#include "kudu/master/master_rpc.h"
 #include "kudu/master/master.proxy.h"
 #include "kudu/server/webserver.h"
 #include "kudu/tserver/tablet_server.h"
@@ -37,6 +38,7 @@ enum {
 
 using google::protobuf::RepeatedPtrField;
 using kudu::HostPortPB;
+using kudu::master::GetLeaderMasterRpc;
 using kudu::master::ListMastersResponsePB;
 using kudu::master::Master;
 using kudu::master::MasterServiceProxy;
@@ -160,46 +162,38 @@ Heartbeater::Thread::Thread(const TabletServerOptions& opts, TabletServer* serve
 Status Heartbeater::Thread::FindLeaderMaster(const MonoTime& deadline,
                                              HostPort* leader_hostport) {
   Status s = Status::OK();
-  for (int num_attempts = 0; num_attempts < master_addrs_.size(); num_attempts++) {
-    // If node at last_locate_master_idx_ is no longer responding, try sending the
-    // request to the node at the next index, looping around to index
-    // 0, until we've exhausted the list of all masters.
-    if (++last_locate_master_idx_ == master_addrs_.size()) {
-      last_locate_master_idx_ = 0;
-    }
-    gscoped_ptr<MasterServiceProxy> proxy;
-    s = MasterServiceProxyForHostPort(master_addrs_[last_locate_master_idx_],
-                                      server_->messenger(),
-                                      &proxy);
-    if (!s.ok()) {
-      LOG(WARNING) << "Unable to create a proxy for master at "
-                   << master_addrs_[last_locate_master_idx_].ToString()
-                   << ": " << s.ToString();
-      continue;
-    }
-    master::ListMastersRequestPB req;
-    ListMastersResponsePB resp;
-    RpcController rpc;
-    rpc.set_deadline(deadline);
-    s = proxy->ListMasters(req, &resp, &rpc);
-    if (!s.ok()) {
-      LOG(WARNING) << "Unable to get a list of masters from"
-                   << master_addrs_[last_locate_master_idx_].ToString() << ": " << s.ToString();
-      continue;
-    }
-    if (resp.has_error()) {
-      s = StatusFromPB(resp.error());
-    }
-    s = FindLeaderHostPort(resp.masters(), leader_hostport);
-    if (!s.ok()) {
-      LOG(WARNING) << "Unable to parse master from response (" << resp.ShortDebugString()
-                   << "), from host " << master_addrs_[last_locate_master_idx_].ToString()
-                   << ": " << s.ToString();
-      continue;
-    }
+  if (master_addrs_.size() == 1) {
+    // "Shortcut" the process when a single master is specified.
+    *leader_hostport = master_addrs_[0];
     return Status::OK();
   }
-  return s;
+  vector<Sockaddr> master_sock_addrs;
+  BOOST_FOREACH(const HostPort& master_addr, master_addrs_) {
+    vector<Sockaddr> addrs;
+    Status s = master_addr.ResolveAddresses(&addrs);
+    if (!s.ok()) {
+      LOG(WARNING) << "Unable to resolve address '" << master_addr.ToString()
+                   << "': " << s.ToString();
+      continue;
+    }
+    if (addrs.size() > 1) {
+      LOG(WARNING) << "Master address '" << master_addr.ToString() << "' "
+                   << "resolves to " << addrs.size() << " different addresses. Using "
+                   << addrs[0].ToString();
+    }
+    master_sock_addrs.push_back(addrs[0]);
+  }
+  if (master_sock_addrs.empty()) {
+    return Status::NotFound("unable to resolve any of the master addresses!");
+  }
+  Synchronizer sync;
+  scoped_refptr<GetLeaderMasterRpc> rpc(new GetLeaderMasterRpc(sync.AsStatusCallback(),
+                                                               master_sock_addrs,
+                                                               deadline,
+                                                               server_->messenger(),
+                                                               leader_hostport));
+  rpc->SendRpc();
+  return sync.Wait();
 }
 
 Status Heartbeater::Thread::ConnectToMaster() {
@@ -327,6 +321,10 @@ Status Heartbeater::Thread::DoHeartbeat() {
   master::TSHeartbeatResponsePB resp;
   RETURN_NOT_OK_PREPEND(proxy_->TSHeartbeat(req, &resp, &rpc),
                         "Failed to send heartbeat");
+  if (resp.has_error()) {
+    return StatusFromPB(resp.error().status());
+  }
+
   VLOG(2) << "Received heartbeat response:\n" << resp.DebugString();
   if (!resp.leader_master()) {
     // If the master is no longer a leader, reset proxy so that we can

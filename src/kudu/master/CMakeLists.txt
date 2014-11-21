@@ -40,6 +40,19 @@ target_link_libraries(master
   master_proto
   rpc_header_proto)
 
+set(MASTER_RPC_SRCS
+  master_rpc.cc
+)
+
+add_library(master_rpc ${MASTER_RPC_SRCS})
+target_link_libraries(master_rpc
+  kudu_common
+  krpc
+  gutil
+  kudu_util
+  master_proto
+  rpc_header_proto)
+
 # Tests
 set(KUDU_TEST_LINK_LIBS master master_proto kudu_client ${KUDU_MIN_TEST_LIBS})
 ADD_KUDU_TEST(catalog_manager-test)

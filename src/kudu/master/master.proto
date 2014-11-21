@@ -217,20 +217,26 @@ message TSHeartbeatRequestPB {
 }
 
 message TSHeartbeatResponsePB {
-  required NodeInstancePB master_instance = 1;
+  optional MasterErrorPB error = 1;
+
+  // As with most other master RPC responses (e.g.,
+  // ListTablesResponsePB), all fields below are optional as they may
+  // not be set if there is an error.
+
+  optional NodeInstancePB master_instance = 2;
 
   // Indicates that the server which heartbeated needs to re-register
   // with the master -- i.e send a heartbeat with the 'registration'
   // filled in.
-  optional bool needs_reregister = 2 [ default = false ];
+  optional bool needs_reregister = 3 [ default = false ];
 
-  optional bool needs_full_tablet_report = 3 [ default = false ];
+  optional bool needs_full_tablet_report = 4 [ default = false ];
 
   // Sent when the master receives a TabletReport
-  optional TabletReportUpdatesPB tablet_report = 4;
+  optional TabletReportUpdatesPB tablet_report = 5;
 
   // Specify whether or not the node is the leader master.
-  required bool leader_master = 5;
+  optional bool leader_master = 6;
 }
 
 //////////////////////////////
@@ -457,15 +463,20 @@ message ListTabletServersResponsePB {
 message GetMasterRegistrationRequestPB {
 }
 
+// TODO: Just use ServerRegistration here.
 message GetMasterRegistrationResponsePB {
   // Node instance information is always set.
   required NodeInstancePB instance_id = 1;
 
-  // This field as optional, as it won't be set if there's an error
-  // retrieving the host/port information.
+  // These fields are optional, as they won't be set if there's an
+  // error retrieving the host/port information.
   optional ServerRegistrationPB registration = 2;
+
+  // This server's role in the quorum.
+  optional metadata.QuorumPeerPB.Role role = 3;
+
   // Set if there an error retrieving the registration information.
-  optional AppStatusPB error = 3;
+  optional AppStatusPB error = 4;
 }
 
 // ListMastersRequest/Response: get information about all of the known

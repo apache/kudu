@@ -48,6 +48,7 @@ DECLARE_bool(log_force_fsync_all);
 DECLARE_int32(max_clock_sync_error_usec);
 DECLARE_bool(enable_maintenance_manager);
 DECLARE_bool(enable_data_block_fsync);
+DECLARE_int32(heartbeat_rpc_timeout_ms);
 
 namespace kudu {
 namespace tserver {
@@ -70,6 +71,12 @@ class TabletServerTest : public KuduTest {
     // maintenance operations at predetermined times.
     FLAGS_enable_maintenance_manager = false;
 
+    // Decrease heartbeat timeout: we keep re-trying heartbeats when a
+    // single master server fails due to a network error. Decreasing
+    // the hearbeat timeout to 1 second speeds up unit tests which
+    // purposefully specify non-running Master servers.
+    FLAGS_heartbeat_rpc_timeout_ms = 1000;
+
     // Keep unit tests fast, but only if no one has set the flag explicitly.
     if (google::GetCommandLineFlagInfoOrDie("enable_data_block_fsync").is_default) {
       FLAGS_enable_data_block_fsync = false;
@@ -90,6 +97,7 @@ class TabletServerTest : public KuduTest {
     // Start server with an invalid master address, so it never successfully
     // heartbeats, even if there happens to be a master running on this machine.
     mini_server_.reset(new MiniTabletServer(GetTestPath("TabletServerTest-fsroot"), 0));
+    mini_server_->options()->master_addresses.clear();
     mini_server_->options()->master_addresses.push_back(HostPort("255.255.255.255", 1));
     ASSERT_STATUS_OK(mini_server_->Start());
 
@@ -278,6 +286,7 @@ class TabletServerTest : public KuduTest {
 
     // Start server.
     mini_server_.reset(new MiniTabletServer(GetTestPath("TabletServerTest-fsroot"), 0));
+    mini_server_->options()->master_addresses.clear();
     mini_server_->options()->master_addresses.push_back(HostPort("255.255.255.255", 1));
     // this should open the tablet created on StartTabletServer()
     RETURN_NOT_OK(mini_server_->Start());
