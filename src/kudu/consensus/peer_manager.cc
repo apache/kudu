@@ -46,30 +46,22 @@ Status PeerManager::UpdateQuorum(const metadata::QuorumPB& quorum) {
       continue;
     }
     if (peer_pb.permanent_uuid() == local_uuid_) {
-      VLOG(1) << GetLogPrefix() << "Adding local peer. Peer: " << peer_pb.ShortDebugString();
-      gscoped_ptr<Peer> local_peer;
-      RETURN_NOT_OK(Peer::NewLocalPeer(peer_pb,
-                                       tablet_id_,
-                                       local_uuid_,
-                                       queue_,
-                                       log_,
-                                       &local_peer));
-      InsertOrDie(&peers_, peer_pb.permanent_uuid(), local_peer.release());
-    } else {
-      VLOG(1) << GetLogPrefix() << "Adding remote peer. Peer: " << peer_pb.ShortDebugString();
-      gscoped_ptr<PeerProxy> peer_proxy;
-      RETURN_NOT_OK_PREPEND(peer_proxy_factory_->NewProxy(peer_pb, &peer_proxy),
-                            "Could not obtain a remote proxy to the peer.");
-
-      gscoped_ptr<Peer> remote_peer;
-      RETURN_NOT_OK(Peer::NewRemotePeer(peer_pb,
-                                        tablet_id_,
-                                        local_uuid_,
-                                        queue_,
-                                        peer_proxy.Pass(),
-                                        &remote_peer));
-      InsertOrDie(&peers_, peer_pb.permanent_uuid(), remote_peer.release());
+      continue;
     }
+
+    VLOG(1) << GetLogPrefix() << "Adding remote peer. Peer: " << peer_pb.ShortDebugString();
+    gscoped_ptr<PeerProxy> peer_proxy;
+    RETURN_NOT_OK_PREPEND(peer_proxy_factory_->NewProxy(peer_pb, &peer_proxy),
+                          "Could not obtain a remote proxy to the peer.");
+
+    gscoped_ptr<Peer> remote_peer;
+    RETURN_NOT_OK(Peer::NewRemotePeer(peer_pb,
+                                      tablet_id_,
+                                      local_uuid_,
+                                      queue_,
+                                      peer_proxy.Pass(),
+                                      &remote_peer));
+    InsertOrDie(&peers_, peer_pb.permanent_uuid(), remote_peer.release());
   }
   // Delete old peers
   PeersMap::iterator iter = peers_.begin();

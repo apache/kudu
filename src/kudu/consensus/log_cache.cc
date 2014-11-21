@@ -76,6 +76,11 @@ LogCache::LogCache(const MetricContext& metric_ctx,
 
 LogCache::~LogCache() {
   CHECK_EQ(state_, kCacheClosed);
+  // If we have pending writes to the log, we can't delete them
+  // from our cache until they've been fully flushed.
+  CHECK(inflight_to_log_.empty()) << "Flush log before closing cache";
+
+  STLDeleteValues(&cache_);
 }
 
 void LogCache::Init(const OpId& preceding_op) {
@@ -97,18 +102,24 @@ void LogCache::SetPinnedOp(int64_t index) {
   Evict();
 }
 
-void LogCache::Clear() {
-  lock_guard<simple_spinlock> l(&lock_);
-  STLDeleteValues(&cache_);
-  min_pinned_op_index = 0;
-  preceding_first_op_ = MinimumOpId();
+void LogCache::LogAppendCallback(ReplicateMsg* msg,
+                                 const StatusCallback& user_callback,
+                                 const Status& status) {
+  {
+    lock_guard<simple_spinlock> l(&lock_);
+    CHECK_EQ(1, inflight_to_log_.erase(msg));
+  }
+  Evict();
+  user_callback.Run(status);
 }
 
 
-bool LogCache::AppendOperation(gscoped_ptr<ReplicateMsg>* message) {
-  lock_guard<simple_spinlock> l(&lock_);
+bool LogCache::AppendOperation(gscoped_ptr<ReplicateMsg>* message,
+                               const StatusCallback& callback) {
+  unique_lock<simple_spinlock> l(&lock_);
   DCHECK_EQ(state_, kCacheOpen);
   ReplicateMsg* msg_ptr = DCHECK_NOTNULL(message->get());
+  CHECK_GE(msg_ptr->id().index(), min_pinned_op_index);
 
   // In debug mode, check that the indexes in the queue are consecutive.
   if (!cache_.empty()) {
@@ -130,6 +141,25 @@ bool LogCache::AppendOperation(gscoped_ptr<ReplicateMsg>* message) {
     // If we're under the hard limit, we can continue anyway.
     tracker_->Consume(mem_required);
   }
+
+  InsertOrDie(&inflight_to_log_, msg_ptr);
+
+  // We drop the lock during the AsyncAppendReplicates call, since it may block
+  // if the queue is full, and the queue might not drain if it's trying to call
+  // our callback and blocked on this lock.
+  l.unlock();
+  Status log_status = log_->AsyncAppendReplicates(&msg_ptr, 1, Bind(&LogCache::LogAppendCallback,
+                                                                    Unretained(this),
+                                                                    Unretained(msg_ptr),
+                                                                    callback));
+  l.lock();
+  if (!log_status.ok()) {
+    CHECK_EQ(1, inflight_to_log_.erase(msg_ptr));
+    LOG(WARNING) << "Couldn't append to log: " << log_status.ToString();
+    tracker_->Release(mem_required);
+    return false;
+  }
+
   metrics_.log_cache_size_bytes->IncrementBy(mem_required);
   metrics_.log_cache_total_num_ops->Increment();
 
@@ -291,6 +321,10 @@ void LogCache::Evict() {
   while (iter != cache_.end() &&
          iter->first < min_pinned_op_index) {
     ReplicateMsg* msg = (*iter).second;
+    if (ContainsKey(inflight_to_log_, msg)) {
+      break;
+    }
+
     preceding_first_op_ = msg->id();;
     tracker_->Release(msg->SpaceUsed());
     VLOG(1) << "Evicting cache. Deleting: " << msg->id().ShortDebugString();
@@ -346,46 +380,23 @@ void LogCache::Close() {
     async_reader_->Shutdown();
   }
 
-  lock_guard<simple_spinlock> lock(&lock_);
-  if (state_ == kCacheClosed) {
-    return;
+  bool needs_flush;
+  {
+    lock_guard<simple_spinlock> lock(&lock_);
+    needs_flush = !inflight_to_log_.empty();
   }
 
-  state_ = kCacheClosed;
-
-  // If the cache is not empty it must reflect what's on disk, since the peers
-  // got closed before the cache we know the outstanding ops won't land there.
-  // TODO remove this when we have a single path to write to the log.
-  if (!cache_.empty()) {
+  if (needs_flush) {
     log_->WaitUntilAllFlushed();
+  }
 
-    OpId last_opid_in_log;
-    Status s = log_->GetLastEntryOpId(&last_opid_in_log);
-
-    if (s.IsNotFound()) {
-      last_opid_in_log = MinimumOpId();
-    } else if (!s.ok()) {
-      LOG(FATAL) << "Error reading the log while closing the cache: " << s.ToString();
+  {
+    lock_guard<simple_spinlock> lock(&lock_);
+    if (state_ == kCacheClosed) {
+      return;
     }
 
-    OpId last_opid_in_cache = (*cache_.rbegin()).second->id();
-
-    if (!OpIdEquals(last_opid_in_log, last_opid_in_cache)) {
-      MessageCache::iterator iter = cache_.upper_bound(last_opid_in_log.index());
-
-      vector<ReplicateMsg*> messages;
-      while (iter != cache_.end()) {
-        messages.push_back((*iter).second);
-        ++iter;
-      }
-
-      Synchronizer log_synchronizer;
-      log_->AsyncAppendReplicates(&messages[0],
-                                  messages.size(),
-                                  log_synchronizer.AsStatusCallback());
-
-      CHECK_OK(log_synchronizer.Wait());
-    }
+    state_ = kCacheClosed;
   }
 
   STLDeleteValues(&cache_);

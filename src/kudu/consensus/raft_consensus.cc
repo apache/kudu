@@ -84,7 +84,7 @@ scoped_refptr<RaftConsensus> RaftConsensus::Create(
 
   // The message queue that keeps track of which operations need to be replicated
   // where.
-  gscoped_ptr<PeerMessageQueue> queue(new PeerMessageQueue(metric_ctx, log));
+  gscoped_ptr<PeerMessageQueue> queue(new PeerMessageQueue(metric_ctx, log, peer_uuid));
 
   // A manager for the set of peers that actually send the operations both remotely
   // and to the local wal.
@@ -325,22 +325,13 @@ Status RaftConsensus::BecomeLeaderUnlocked() {
   CHECK(state_->IsQuorumChangePendingUnlocked());
 
   queue_->Init(state_->GetCommittedOpIdUnlocked(),
+               state_->GetLastReceivedOpIdUnlocked(),
                state_->GetCurrentTermUnlocked(),
                state_->GetActiveQuorumStateUnlocked().majority_size);
   queue_->RegisterObserver(this);
 
   // Create the peers so that we're able to replicate messages remotely and locally
   RETURN_NOT_OK(peer_manager_->UpdateQuorum(state_->GetPendingQuorumUnlocked()));
-
-  // If we're becoming leader we need to add the pending operations that are not
-  // yet committed to the queue, so that the peers can replicate them, or acknowledge
-  // them as replicated.
-  vector<ConsensusRound*> rounds;
-  CHECK_OK(state_->GetUncommittedPendingOperationsUnlocked(&rounds));
-  BOOST_FOREACH(ConsensusRound* round, rounds) {
-    CHECK_OK(queue_->AppendOperation(gscoped_ptr<ReplicateMsg>(
-        new ReplicateMsg(*DCHECK_NOTNULL(round->replicate_msg())))));
-  }
 
   // Initiate a config change transaction. This is mostly acting as the NO_OP
   // transaction that is sent at the beginning of every term change in raft.

@@ -113,14 +113,6 @@ class Peer {
 
   ~Peer();
 
-  // Creates a new local peer and makes the queue track it.
-  static Status NewLocalPeer(const metadata::QuorumPeerPB& peer_pb,
-                             const std::string& tablet_id,
-                             const std::string& leader_uuid,
-                             PeerMessageQueue* queue,
-                             log::Log* log,
-                             gscoped_ptr<Peer>* peer);
-
   // Creates a new remote peer and makes the queue track it.
   static Status NewRemotePeer(const metadata::QuorumPeerPB& peer_pb,
                               const std::string& tablet_id,

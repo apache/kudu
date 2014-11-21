@@ -5,12 +5,14 @@
 #include <map>
 #include <string>
 #include <tr1/memory>
+#include <tr1/unordered_set>
 #include <vector>
 
 #include "kudu/consensus/consensus.pb.h"
 #include "kudu/consensus/opid_util.h"
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
+#include "kudu/util/async_util.h"
 #include "kudu/util/locks.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/status.h"
@@ -32,7 +34,7 @@ class ReplicateMsg;
 // The id for the server-wide log cache MemTracker.
 extern const char kLogCacheTrackerId[];
 
-// Read-through cache for the log.
+// Write-through cache for the log.
 //
 // This stores a set of log messages by their index. New operations
 // can be appended to the end as they are written to the log. Readers
@@ -76,13 +78,13 @@ class LogCache {
                  std::vector<ReplicateMsg*>* messages,
                  OpId* preceding_op);
 
-  // Append the operation directly into the cache.
-  // NOTE: this will crash if an operation with the same index has already been
-  // appended! TODO: change this when we support replacing log indexes.
+  // Append the operation into the log and the cache.
+  // When the message has completed writing into the on-disk log, fires 'callback'.
   //
-  // Returns false if the hard limit has been reached.
+  // Returns false if the hard limit has been reached or the local log's buffers are full.
   // Takes ownership when it returns true.
-  bool AppendOperation(gscoped_ptr<ReplicateMsg>* message);
+  bool AppendOperation(gscoped_ptr<ReplicateMsg>* message,
+                       const StatusCallback& callback);
 
   // Return true if the cache currently contains data for the given operation.
   bool HasOpIndex(int64_t log_index) const;
@@ -96,9 +98,6 @@ class LogCache {
   // doesn't imply that those ops will be eagerly loaded. Rather, it just enforces
   // that once they are loaded, they are not evicted.
   void SetPinnedOp(int64_t index);
-
-  // Remove all entries from the cache.
-  void Clear();
 
   // Closes the cache, making sure that any outstanding reader terminates and that
   // there are no outstanding operations in the cache that are not in the log.
@@ -120,7 +119,8 @@ class LogCache {
   std::string StatsString() const;
 
  private:
-  FRIEND_TEST(LogCacheTest, TestGetMessages);
+  FRIEND_TEST(LogCacheTest, TestAppendAndGetMessages);
+  friend class LogCacheTest;
 
   // Evicts all operations from the cache which are not later than
   // min_pinned_op_index_.
@@ -138,6 +138,11 @@ class LogCache {
                              const Status& status,
                              const std::vector<ReplicateMsg*>& replicates);
 
+  // Callback when a message has been appended to the local log.
+  void LogAppendCallback(ReplicateMsg* msg,
+                         const StatusCallback& user_callback,
+                         const Status& status);
+
   log::Log* const log_;
 
   mutable simple_spinlock lock_;
@@ -146,6 +151,10 @@ class LogCache {
   // Maps from log index -> ReplicateMsg
   typedef std::map<uint64_t, ReplicateMsg*> MessageCache;
   MessageCache cache_;
+
+  // The set of ReplicateMsgs which are currently in-flight into the log.
+  // These cannot be evicted.
+  std::tr1::unordered_set<ReplicateMsg*> inflight_to_log_;
 
   // The OpId which comes before the first op in the cache.
   OpId preceding_first_op_;

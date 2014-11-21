@@ -53,6 +53,7 @@ class PeerMessageQueue {
  public:
   PeerMessageQueue(const MetricContext& metric_ctx,
                    log::Log* log,
+                   const std::string& local_uuid,
                    const std::string& parent_tracker_id = kConsensusQueueParentTrackerId);
 
   // Initialize the queue.
@@ -64,6 +65,7 @@ class PeerMessageQueue {
   // Majority size corresponds to the number of peers that must have replicated
   // a certain operation for it to be considered committed.
   virtual void Init(const OpId& committed_index,
+                    const OpId& last_locally_replicated,
                     uint64_t current_term,
                     int majority_size);
 
@@ -73,7 +75,7 @@ class PeerMessageQueue {
   virtual Status AppendOperation(gscoped_ptr<ReplicateMsg> replicate);
 
   // Makes the queue track this peer.
-  virtual Status TrackPeer(const std::string& uuid);
+  virtual void TrackPeer(const std::string& uuid);
 
   // Makes the queue untrack the peer.
   // Requires that the peer was being tracked.
@@ -211,6 +213,13 @@ class PeerMessageQueue {
   // 'preceding_first_op_in_queue_' if the queue is empty.
   const OpId& GetLastOp() const;
 
+  void TrackPeerUnlocked(const std::string& uuid);
+
+  // Callback when a REPLICATE message has finished appending to the local
+  // log.
+  void LocalPeerAppendFinished(const OpId& id,
+                               const Status& status);
+
   void AdvanceQueueWatermark(const char* type,
                              OpId* watermark,
                              const OpId& replicated_before,
@@ -234,6 +243,9 @@ class PeerMessageQueue {
   // The size of the majority for the queue.
   // TODO support changing majority sizes when quorums change.
   int majority_size_;
+
+  // The UUID of the local peer.
+  const std::string local_uuid_;
 
   QueueState queue_state_;
 

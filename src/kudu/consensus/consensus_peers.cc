@@ -62,98 +62,6 @@ class PeerImpl {
   virtual ~PeerImpl() {}
 };
 
-// The local peer
-class LocalPeer : public PeerImpl {
- public:
-  LocalPeer(log::Log* log,
-            const string& local_uuid)
-    : log_(log),
-      local_uuid_(local_uuid) {
-  }
-
-  Status Init() OVERRIDE {
-    Status status = log_->GetLastEntryOpId(&last_replicated_);
-    if (status.IsNotFound()) {
-      last_replicated_.CopyFrom(MinimumOpId());
-      return Status::OK();
-    }
-    return status;
-  }
-
-  virtual void SendRequest(const ConsensusRequestPB* request,
-                           ConsensusResponsePB* response,
-                           const StatusCallback& callback) OVERRIDE {
-    if (PREDICT_FALSE(request->ops_size() == 0)) {
-      SetupResponse(response, request->caller_term());
-      callback.Run(Status::OK());
-      return;
-    }
-
-    vector<const ReplicateMsg*> ops;
-    ops.reserve(request->ops_size());
-
-    BOOST_FOREACH(const ReplicateMsg& op, request->ops()) {
-      ops.push_back(&op);
-    }
-
-    if (PREDICT_FALSE(VLOG_IS_ON(2))) {
-      VLOG(2) << "Local peer appending to log: " << request->ShortDebugString();
-    }
-
-    CHECK_OK(log_->AsyncAppendReplicates(
-               &ops[0], ops.size(),
-               Bind(&LocalPeer::LogAppendCallback,
-                    Unretained(this),
-                    Unretained(request),
-                    Unretained(response),
-                    callback)));
-  }
-
-  virtual std::string PeerTypeString() const OVERRIDE {
-    return "local";
-  }
-
- private:
-  void SetupResponse(ConsensusResponsePB* response, uint64_t term) {
-    response->Clear();
-    response->set_responder_term(term);
-    response->set_responder_uuid(local_uuid_);
-    ConsensusStatusPB* status = response->mutable_status();
-    status->mutable_last_received()->CopyFrom(last_replicated_);
-  }
-
-  // Callback from Log::Append().
-  // This sets up a fake ConsensusResponsePB to look the same as
-  // a remote peer.
-  void LogAppendCallback(const ConsensusRequestPB* request,
-                         ConsensusResponsePB* response,
-                         const StatusCallback& peer_callback,
-                         const Status& log_status) {
-    if (!log_status.ok()) {
-      LOG(FATAL) << "Error while storing in the local log. Status: "
-          << log_status.ToString();
-    }
-    VLOG(2) << "Local peer logged: " << request->ShortDebugString();
-
-    // Update the replicated op ID
-    const ReplicateMsg& last_msg = request->ops(request->ops_size() - 1);
-    CHECK(last_msg.has_id());
-    last_replicated_ = last_msg.id();
-
-    SetupResponse(response, request->caller_term());
-
-    peer_callback.Run(log_status);
-  }
-
-  log::Log* log_;
-
-  // The UUID of the local server.
-  const std::string local_uuid_;
-
-  // The last opid which has been durably written to the local
-  // peer.
-  OpId last_replicated_;
-};
 
 // A remote peer.
 class RemotePeer : public PeerImpl {
@@ -190,23 +98,6 @@ class RemotePeer : public PeerImpl {
   gscoped_ptr<PeerProxy> proxy_;
   rpc::RpcController controller_;
 };
-
-Status Peer::NewLocalPeer(const QuorumPeerPB& peer_pb,
-                          const string& tablet_id,
-                          const string& leader_uuid,
-                          PeerMessageQueue* queue,
-                          Log* log,
-                          gscoped_ptr<Peer>* peer) {
-  gscoped_ptr<PeerImpl> impl(new LocalPeer(log, leader_uuid));
-  gscoped_ptr<Peer> new_peer(new Peer(peer_pb,
-                                      tablet_id,
-                                      leader_uuid,
-                                      queue,
-                                      impl.Pass()));
-  CHECK_OK(new_peer->Init());
-  peer->reset(new_peer.release());
-  return Status::OK();
-}
 
 Status Peer::NewRemotePeer(const metadata::QuorumPeerPB& peer_pb,
                            const string& tablet_id,
@@ -252,7 +143,7 @@ void Peer::SetTermForTest(int term) {
 Status Peer::Init() {
   boost::lock_guard<Semaphore> lock(sem_);
   RETURN_NOT_OK(peer_impl_->Init());
-  RETURN_NOT_OK(queue_->TrackPeer(peer_pb_.permanent_uuid()));
+  queue_->TrackPeer(peer_pb_.permanent_uuid());
   RETURN_NOT_OK(heartbeater_.Start());
   state_ = kPeerStarted;
   return Status::OK();

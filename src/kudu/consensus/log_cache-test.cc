@@ -7,9 +7,9 @@
 #include "kudu/common/wire_protocol-test-util.h"
 #include "kudu/consensus/consensus-test-util.h"
 #include "kudu/consensus/log.h"
-#include "kudu/consensus/log-test-base.h"
 #include "kudu/consensus/log_cache.h"
 #include "kudu/fs/fs_manager.h"
+#include "kudu/gutil/bind_helpers.h"
 #include "kudu/util/mem_tracker.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/test_util.h"
@@ -63,6 +63,10 @@ class LogCacheTest : public KuduTest {
   }
 
  protected:
+  static void FatalOnError(const Status& s) {
+    CHECK_OK(s);
+  }
+
   bool AppendReplicateMessagesToCache(
     int first,
     int count,
@@ -72,7 +76,7 @@ class LogCacheTest : public KuduTest {
       int term = i / 7;
       int index = i;
       gscoped_ptr<ReplicateMsg> msg = CreateDummyReplicate(term, index, payload_size);
-      if (!cache_->AppendOperation(&msg)) {
+      if (!cache_->AppendOperation(&msg, Bind(&FatalOnError))) {
         return false;
       }
     }
@@ -93,6 +97,18 @@ class LogCacheTest : public KuduTest {
     return s;
   }
 
+  void WaitForCachedOpCount(int expected) {
+    int count = -1;
+    for (int i = 0; i < 1000; i++) {
+      count = cache_->metrics_.log_cache_total_num_ops->value();
+      if (count == expected) {
+        break;
+      }
+      usleep(10000);
+    }
+    ASSERT_EQ(expected, count);
+  }
+
   const Schema schema_;
   MetricRegistry metric_registry_;
   MetricContext metric_context_;
@@ -102,7 +118,7 @@ class LogCacheTest : public KuduTest {
 };
 
 
-TEST_F(LogCacheTest, TestGetMessages) {
+TEST_F(LogCacheTest, TestAppendAndGetMessages) {
   ASSERT_EQ(0, cache_->metrics_.log_cache_total_num_ops->value());
   ASSERT_EQ(0, cache_->metrics_.log_cache_size_bytes->value());
   ASSERT_TRUE(AppendReplicateMessagesToCache(1, 100));
@@ -127,6 +143,19 @@ TEST_F(LogCacheTest, TestGetMessages) {
   ASSERT_OK(cache_->ReadOps(100, 8 * 1024 * 1024, &messages, &preceding));
   EXPECT_EQ(0, messages.size());
   EXPECT_EQ("14.100", OpIdToString(preceding));
+
+  // Evict some and wait for the eviction to take effect.
+  // (it may not be instant, since we didn't flush the log)
+  cache_->SetPinnedOp(50);
+  ASSERT_NO_FATAL_FAILURE(WaitForCachedOpCount(51));
+
+  // Can still read data that was evicted, since it got written through.
+  messages.clear();
+  cache_->SetPinnedOp(20);
+  RetryReadWhileIncomplete(20, 8 * 1024 * 1024, &messages, &preceding);
+  EXPECT_EQ(80, messages.size());
+  EXPECT_EQ("2.20", OpIdToString(preceding));
+  EXPECT_EQ("3.21", OpIdToString(messages[0]->id()));
 }
 
 
@@ -167,6 +196,7 @@ TEST_F(LogCacheTest, TestCacheRefusesRequestWhenFilled) {
 
   // Move the pin past the first two ops
   cache_->SetPinnedOp(2);
+  log_->WaitUntilAllFlushed();
 
   // And try again -- should now succeed
   ASSERT_TRUE(AppendReplicateMessagesToCache(8, 1, kPayloadSize));
@@ -178,12 +208,6 @@ TEST_F(LogCacheTest, TestCacheRefusesRequestWhenFilled) {
 TEST_F(LogCacheTest, TestCacheEdgeCases) {
   // Append 1 message to the cache
   ASSERT_TRUE(AppendReplicateMessagesToCache(1, 1));
-  // Also append it to the log, since we're going to evict and re-read it
-  // down below.
-  {
-    OpId first_op = MakeOpId(0, 1);
-    ASSERT_OK(AppendNoOpToLogSync(log_.get(), &first_op));
-  }
 
   std::vector<ReplicateMsg*> messages;
   OpId preceding;
@@ -246,9 +270,13 @@ TEST_F(LogCacheTest, TestHardAndSoftLimit) {
 
   cache_->SetPinnedOp(2);
 
+  log_->WaitUntilAllFlushed();
+
   // Verify that we have trimmed by appending a message that would
   // otherwise be rejected, since the cache max size limit is 2MB.
   ASSERT_TRUE(AppendReplicateMessagesToCache(3, 1, kPayloadSize));
+
+  log_->WaitUntilAllFlushed();
 
   // The cache should be trimmed down to two messages.
   ASSERT_EQ(size_with_two_msgs, cache_->BytesUsed());
@@ -330,28 +358,14 @@ TEST_F(LogCacheTest, TestEvictWhenGlobalSoftLimitExceeded) {
 
  cache_->SetPinnedOp(2);
 
+ log_->WaitUntilAllFlushed();
+
  // If this goes through, that means the queue has been trimmed, otherwise
  // the hard limit would be violated and false would be returnedl.
  ASSERT_TRUE(AppendReplicateMessagesToCache(2, 1, kPayloadSize));
 
  // Verify that there is only one message in the queue.
  ASSERT_EQ(size_with_one_msg, cache_->BytesUsed());
-}
-
-// Tests that on Close() if the cache has operations that are not persisted
-// and are not in flight, those operations are dumped to disk.
-TEST_F(LogCacheTest, TestCacheDrainsToDiskOnClose) {
-
-  // These messages are appended to the cache but are not in the Log.
-  ASSERT_TRUE(AppendReplicateMessagesToCache(1, 100));
-  OpId last;
-  ASSERT_TRUE(log_->GetLastEntryOpId(&last).IsNotFound());
-  ASSERT_TRUE(!last.IsInitialized());
-
-  cache_->Close();
-
-  ASSERT_OK(log_->GetLastEntryOpId(&last));
-  ASSERT_OPID_EQ(last, MakeOpId(14, 100));
 }
 
 } // namespace consensus

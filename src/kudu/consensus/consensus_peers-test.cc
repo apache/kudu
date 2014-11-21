@@ -45,19 +45,12 @@ class ConsensusPeersTest : public KuduTest {
                        NULL,
                        &log_));
     consensus_.reset(new TestRaftConsensusQueueIface());
-    message_queue_.reset(new PeerMessageQueue(metric_context_, log_.get()));
+    message_queue_.reset(new PeerMessageQueue(metric_context_, log_.get(), kLeaderUuid));
     message_queue_->RegisterObserver(consensus_.get());
   }
 
-  void NewLocalPeer(const string& peer_name, gscoped_ptr<Peer>* peer) {
-    QuorumPeerPB peer_pb;
-    peer_pb.set_permanent_uuid(peer_name);
-    ASSERT_STATUS_OK(Peer::NewLocalPeer(peer_pb,
-                                        kTabletId,
-                                        peer_name,
-                                        message_queue_.get(),
-                                        log_.get(),
-                                        peer));
+  virtual void TearDown() OVERRIDE {
+    CHECK_OK(log_->WaitUntilAllFlushed());
   }
 
   DelayablePeerProxy<NoOpTestPeerProxy>* NewRemotePeer(
@@ -117,35 +110,6 @@ class ConsensusPeersTest : public KuduTest {
   gscoped_ptr<ThreadPool> pool_;
 };
 
-// Tests that a local peer is correctly built and tracked
-// by the message queue.
-// After the operations are considered done the log should
-// reflect the replicated messages.
-TEST_F(ConsensusPeersTest, TestLocalPeer) {
-  message_queue_->Init(MinimumOpId(), MinimumOpId().term(), 1);
-
-  gscoped_ptr<Peer> local_peer;
-
-  NewLocalPeer("local-peer", &local_peer);
-  // Test that the local peer handles status-only requests.
-  local_peer->SignalRequest(true);
-
-  // Append a bunch of messages to the queue
-  AppendReplicateMessagesToQueue(message_queue_.get(), 1, 20);
-
-  // The above append ends up appending messages in term 2, so we
-  // update the peer's term to match.
-  local_peer->SetTermForTest(2);
-
-  // signal the peer there are requests pending.
-  local_peer->SignalRequest();
-  // Now wait on the last operation, this will complete once the peer has logged all
-  // requests.
-  WaitForMajorityReplicatedIndex(20);
-
-  // verify that the requests are in fact logged.
-  CheckLastLogEntry(2, 20);
-}
 
 // Tests that a remote peer is correctly built and tracked
 // by the message queue.
@@ -153,7 +117,13 @@ TEST_F(ConsensusPeersTest, TestLocalPeer) {
 // simulates the other endpoint) should reflect the replicated
 // messages.
 TEST_F(ConsensusPeersTest, TestRemotePeer) {
-  message_queue_->Init(MinimumOpId(), MinimumOpId().term(), 1);
+  // We use a majority size of 2 since we make one fake remote peer
+  // in addition to our real local log.
+  const int kMajoritySize = 2;
+  message_queue_->Init(MinimumOpId(),
+                       MinimumOpId(),
+                       MinimumOpId().term(),
+                       kMajoritySize);
   gscoped_ptr<Peer> remote_peer;
   DelayablePeerProxy<NoOpTestPeerProxy>* proxy =
       NewRemotePeer("remote-peer", &remote_peer);
@@ -176,13 +146,12 @@ TEST_F(ConsensusPeersTest, TestRemotePeer) {
   CheckLastRemoteEntry(proxy, 2, 20);
 }
 
-TEST_F(ConsensusPeersTest, TestLocalAndRemotePeers) {
-  message_queue_->Init(MinimumOpId(), MinimumOpId().term(), 2);
-  gscoped_ptr<Peer> local_peer;
-
-  // Create a set of peers
-  NewLocalPeer("local-peer", &local_peer);
-
+TEST_F(ConsensusPeersTest, TestRemotePeers) {
+  message_queue_->Init(MinimumOpId(),
+                       MinimumOpId(),
+                       MinimumOpId().term(),
+                       2);
+  // Create a set of remote peers
   gscoped_ptr<Peer> remote_peer1;
   DelayablePeerProxy<NoOpTestPeerProxy>* remote_peer1_proxy =
       NewRemotePeer("remote-peer1", &remote_peer1);
@@ -197,16 +166,14 @@ TEST_F(ConsensusPeersTest, TestLocalAndRemotePeers) {
   // Append one message to the queue.
   AppendReplicateMessagesToQueue(message_queue_.get(), 1, 1);
 
-  OpId first;
-  first.set_term(0);
-  first.set_index(1);
+  OpId first = MakeOpId(0, 1);
 
-  local_peer->SignalRequest();
   remote_peer1->SignalRequest();
   remote_peer2->SignalRequest();
 
   // Now wait for the message to be replicated, this should succeed since
-  // majority = 2 and only one peer was delayed.
+  // majority = 2 and only one peer was delayed. The majority is made up
+  // of remote-peer1 and the local log.
   WaitForMajorityReplicatedIndex(first.index());
 
   CheckLastLogEntry(first.term(), first.index());
@@ -223,16 +190,13 @@ TEST_F(ConsensusPeersTest, TestLocalAndRemotePeers) {
   // Now append another message to the queue
   AppendReplicateMessagesToQueue(message_queue_.get(), 2, 1);
 
-  // Signal a single peer
-  remote_peer1->SignalRequest();
-
   // We should not see it replicated, even after 10ms,
-  // since only a single peer replicated the message.
+  // since only the local peer replicates the message.
   usleep(10 * 1000);
   ASSERT_FALSE(consensus_->IsMajorityReplicated(2));
 
-  // Signal another peer
-  remote_peer2->SignalRequest();
+  // Signal one of the two remote peers.
+  remote_peer1->SignalRequest();
   // We should now be able to wait for it to replicate, since two peers (a majority)
   // have replicated the message.
   WaitForMajorityReplicatedIndex(2);

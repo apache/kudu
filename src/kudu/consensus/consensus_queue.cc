@@ -76,11 +76,12 @@ PeerMessageQueue::Metrics::Metrics(const MetricContext& metric_ctx)
 
 PeerMessageQueue::PeerMessageQueue(const MetricContext& metric_ctx,
                                    log::Log* log,
+                                   const std::string& local_uuid,
                                    const std::string& parent_tracker_id)
     : majority_size_(0),
+      local_uuid_(local_uuid),
       log_cache_(metric_ctx, log, parent_tracker_id),
       metrics_(metric_ctx) {
-
   queue_state_.current_term = MinimumOpId().term();
   queue_state_.committed_index = MinimumOpId();
   queue_state_.all_replicated_index = MinimumOpId();
@@ -89,35 +90,38 @@ PeerMessageQueue::PeerMessageQueue(const MetricContext& metric_ctx,
 }
 
 void PeerMessageQueue::Init(const OpId& committed_index,
+                            const OpId& last_locally_replicated,
                             uint64_t current_term,
                             int majority_size) {
   boost::lock_guard<simple_spinlock> lock(queue_lock_);
   CHECK_EQ(queue_state_.state, kQueueConstructed);
   DCHECK_GE(majority_size, 0);
   CHECK(committed_index.IsInitialized());
-  log_cache_.Init(committed_index);
-  queue_state_.last_appended = committed_index;
+  log_cache_.Init(last_locally_replicated);
   queue_state_.committed_index = committed_index;
   queue_state_.majority_replicated_index = committed_index;
+  queue_state_.last_appended = last_locally_replicated;
   queue_state_.current_term = current_term;
   queue_state_.state = kQueueOpen;
   majority_size_ = majority_size;
+  TrackPeerUnlocked(local_uuid_);
 }
 
-Status PeerMessageQueue::TrackPeer(const string& uuid) {
-  CHECK(!uuid.empty()) << "Got request to track peer with empty UUID";
+void PeerMessageQueue::TrackPeer(const string& uuid) {
   boost::lock_guard<simple_spinlock> lock(queue_lock_);
+  TrackPeerUnlocked(uuid);
+}
+
+
+void PeerMessageQueue::TrackPeerUnlocked(const string& uuid) {
+  CHECK(!uuid.empty()) << "Got request to track peer with empty UUID";
   DCHECK_EQ(queue_state_.state, kQueueOpen);
-  // TODO allow the queue to go and fetch requests from the log
-  // up to a point.
 
   // We leave the peer's last_received watermark unitialized, we'll
   // initialize it when we get the first response back from the peer.
   TrackedPeer* tracked_peer = new TrackedPeer(uuid);
   tracked_peer->uuid = uuid;
   InsertOrDie(&watermarks_, uuid, tracked_peer);
-  queue_state_.all_replicated_index = MinimumOpId();
-  return Status::OK();
 }
 
 void PeerMessageQueue::UntrackPeer(const string& uuid) {
@@ -126,6 +130,21 @@ void PeerMessageQueue::UntrackPeer(const string& uuid) {
   if (peer != NULL) {
     delete peer;
   }
+}
+
+void PeerMessageQueue::LocalPeerAppendFinished(const OpId& id,
+                                               const Status& status) {
+  CHECK_OK(status);
+
+  // Fake an RPC response from the local peer.
+  // TODO: we should probably refactor the ResponseFromPeer function
+  // so that we don't need to construct this fake response, but this
+  // seems to work for now.
+  ConsensusResponsePB fake_response;
+  fake_response.set_responder_uuid(local_uuid_);
+  fake_response.mutable_status()->mutable_last_received()->CopyFrom(id);
+  bool junk;
+  ResponseFromPeer(fake_response, &junk);
 }
 
 Status PeerMessageQueue::AppendOperation(gscoped_ptr<ReplicateMsg> msg) {
@@ -140,8 +159,9 @@ Status PeerMessageQueue::AppendOperation(gscoped_ptr<ReplicateMsg> msg) {
     queue_state_.current_term = msg_ptr->id().term();
   }
 
-
-  if (!log_cache_.AppendOperation(&msg)) {
+  if (!log_cache_.AppendOperation(&msg, Bind(&PeerMessageQueue::LocalPeerAppendFinished,
+                                             Unretained(this),
+                                             msg_ptr->id()))) {
     lock.unlock();
     if (PREDICT_FALSE((VLOG_IS_ON(2) || FLAGS_consensus_dump_queue_on_full))) {
       LOG(INFO) << "Queue Full. Can't Append: " << msg_ptr->id().ShortDebugString()
@@ -347,6 +367,7 @@ void PeerMessageQueue::ResponseFromPeer(const ConsensusResponsePB& response,
                 << ". Peer's actual last received watermark: "
                 << status.last_received().ShortDebugString();
           } else {
+            DCHECK(status.has_last_received());
             // That's currently how we can detect that we able to connect to a peer.
             LOG(INFO) << "Connected to peer: " << response.responder_uuid()
                 << " whose last received watermark is: "
@@ -374,13 +395,16 @@ void PeerMessageQueue::ResponseFromPeer(const ConsensusResponsePB& response,
       }
     }
 
-    // The peer must have responded with a term that is greater than or equal to
-    // the last known term for that peer.
-    peer->CheckMonotonicTerms(response.responder_term());
 
-    // If the responder didn't send an error back that must mean that it has
-    // the same term as ourselves.
-    CHECK_EQ(response.responder_term(), queue_state_.current_term);
+    if (response.has_responder_term()) {
+      // The peer must have responded with a term that is greater than or equal to
+      // the last known term for that peer.
+      peer->CheckMonotonicTerms(response.responder_term());
+
+      // If the responder didn't send an error back that must mean that it has
+      // the same term as ourselves.
+      CHECK_EQ(response.responder_term(), queue_state_.current_term);
+    }
 
     if (PREDICT_FALSE(VLOG_IS_ON(2))) {
       VLOG(2) << "Received Response from Peer: " << response.responder_uuid()
@@ -480,7 +504,6 @@ void PeerMessageQueue::DumpToHtml(std::ostream& out) const {
 }
 
 void PeerMessageQueue::ClearUnlocked() {
-  log_cache_.Clear();
   STLDeleteValues(&watermarks_);
   queue_state_.current_term = MinimumOpId().term();
   queue_state_.committed_index = MinimumOpId();
