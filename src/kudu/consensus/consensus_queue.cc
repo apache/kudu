@@ -259,8 +259,8 @@ void PeerMessageQueue::AdvanceQueueWatermark(const char* type,
                                              const OpId& replicated_after,
                                              int num_peers_required) {
 
-  if (VLOG_IS_ON(1)) {
-    VLOG(1) << "Updating " << type << " watermark: "
+  if (VLOG_IS_ON(2)) {
+    VLOG(2) << "Updating " << type << " watermark: "
             << " peer changed from " << replicated_before << " to " << replicated_after;
   }
 
@@ -287,9 +287,13 @@ void PeerMessageQueue::AdvanceQueueWatermark(const char* type,
       }
     }
     std::sort(watermarks.begin(), watermarks.end(), OpIdLessThanPtrFunctor());
-    watermark->CopyFrom(*watermarks[watermarks.size() - num_peers_required]);
 
-    VLOG(1) << "Updated " << type << " watermark to " << watermark;
+    OpId new_watermark = *watermarks[watermarks.size() - num_peers_required];
+    OpId old_watermark = *watermark;
+    watermark->CopyFrom(new_watermark);
+
+    VLOG(1) << "Updated " << type << " watermark "
+            << "from " << old_watermark << " to " << new_watermark;
     if (VLOG_IS_ON(3)) {
       VLOG(1) << "Peers: ";
       BOOST_FOREACH(const WatermarksMap::value_type& peer, watermarks_) {
