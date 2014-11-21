@@ -5,7 +5,7 @@ set -x
 set -e
 TP_DIR=$(cd "$(dirname "$BASH_SOURCE")"; pwd)
 
-EXTRA_CXXFLAGS=$CXXFLAGS
+EXTRA_CXXFLAGS="-O3 -g $CXXFLAGS"
 if [[ "$OSTYPE" =~ ^linux ]]; then
   OS_LINUX=1
 elif [[ "$OSTYPE" == "darwin"* ]]; then
@@ -101,7 +101,7 @@ if [ -n "$F_ALL" -o -n "$F_GLOG" ]; then
   cd $GLOG_DIR
   # We need to set "-g -O2" because glog only provides those flags when CXXFLAGS is unset.
   # Help glog find libunwind.
-  CXXFLAGS="$EXTRA_CXXFLAGS -g -O2" \
+  CXXFLAGS="$EXTRA_CXXFLAGS" \
     CPPFLAGS=-I$PREFIX/include \
     LDFLAGS=-L$PREFIX/lib \
     ./configure --with-pic --prefix=$PREFIX --with-gflags=$PREFIX
@@ -145,7 +145,7 @@ fi
 # build zlib
 if [ -n "$F_ALL" -o -n "$F_ZLIB" ]; then
   cd $ZLIB_DIR
-  CFLAGS=-fPIC ./configure --prefix=$PREFIX
+  CFLAGS="$EXTRA_CXXFLAGS -fPIC" ./configure --prefix=$PREFIX
   make -j$PARALLEL install
 fi
 
