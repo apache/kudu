@@ -4,7 +4,7 @@
 
 #include <boost/bind.hpp>
 #include <glog/logging.h>
-#include <google/malloc_extension.h>
+#include <gperftools/malloc_extension.h>
 
 #include "kudu/util/metrics.h"
 

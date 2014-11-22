@@ -4,7 +4,7 @@
 #include "kudu/util/mem_tracker.h"
 
 #include <algorithm>
-#include <google/malloc_extension.h>
+#include <gperftools/malloc_extension.h>
 #include <limits>
 
 #include "kudu/gutil/strings/join.h"

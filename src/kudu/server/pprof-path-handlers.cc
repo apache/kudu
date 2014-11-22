@@ -16,12 +16,12 @@
 #include "kudu/server/pprof-path-handlers.h"
 
 #include <fstream>
-#include <sys/stat.h>
-#include <google/profiler.h>
-#include <google/heap-profiler.h>
-#include <google/malloc_extension.h>
 #include <glog/logging.h>
+#include <gperftools/heap-profiler.h>
+#include <gperftools/malloc_extension.h>
+#include <gperftools/profiler.h>
 #include <string>
+#include <sys/stat.h>
 
 #include "kudu/server/webserver.h"
 #include "kudu/util/logging.h"

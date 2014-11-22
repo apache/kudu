@@ -22,7 +22,7 @@
 #include <boost/algorithm/string.hpp>
 #include <boost/bind.hpp>
 #include <boost/foreach.hpp>
-#include <google/malloc_extension.h>
+#include <gperftools/malloc_extension.h>
 #include <tr1/memory>
 #include <vector>
 
