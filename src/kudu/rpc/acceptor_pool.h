@@ -35,8 +35,14 @@ class AcceptorPool {
   Status Init(int num_threads);
   void Shutdown();
 
-  // Return the address that the pool is bound to.
+  // Return the address that the pool is bound to. If the port is specified as
+  // 0, then this will always return port 0.
   Sockaddr bind_address() const;
+
+  // Return the address that the pool is bound to. This only works while the
+  // socket is open, and if the specified port is 0 then this will return the
+  // actual port that was bound.
+  Status GetBoundAddress(Sockaddr* addr) const;
 
  private:
   void RunThread();

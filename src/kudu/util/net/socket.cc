@@ -219,7 +219,7 @@ Status Socket::BindAndListen(const Sockaddr &sockaddr,
   return Status::OK();
 }
 
-Status Socket::GetSocketAddress(Sockaddr *cur_addr) {
+Status Socket::GetSocketAddress(Sockaddr *cur_addr) const {
   struct sockaddr_in sin;
   socklen_t len = sizeof(sin);
   DCHECK_GE(fd_, 0);
@@ -232,7 +232,7 @@ Status Socket::GetSocketAddress(Sockaddr *cur_addr) {
   return Status::OK();
 }
 
-Status Socket::GetPeerAddress(Sockaddr *cur_addr) {
+Status Socket::GetPeerAddress(Sockaddr *cur_addr) const {
   struct sockaddr_in sin;
   socklen_t len = sizeof(sin);
   DCHECK_GE(fd_, 0);
@@ -278,7 +278,7 @@ Status Socket::Connect(const Sockaddr &remote) {
   return Status::OK();
 }
 
-Status Socket::GetSockError() {
+Status Socket::GetSockError() const {
   int val = 0, ret;
   socklen_t val_len = sizeof(val);
   DCHECK_GE(fd_, 0);

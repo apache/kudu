@@ -67,10 +67,10 @@ class Socket {
   Status BindAndListen(const Sockaddr &sockaddr, int listen_queue_size);
 
   // Call getsockname to get the address of this socket.
-  Status GetSocketAddress(Sockaddr *cur_addr);
+  Status GetSocketAddress(Sockaddr *cur_addr) const;
 
   // Call getpeername to get the address of the connected peer.
-  Status GetPeerAddress(Sockaddr *cur_addr);
+  Status GetPeerAddress(Sockaddr *cur_addr) const;
 
   // Call accept(2) to get a new connection.
   Status Accept(Socket *new_conn, Sockaddr *remote, int flags);
@@ -79,7 +79,7 @@ class Socket {
   Status Connect(const Sockaddr &remote);
 
   // get the error status using getsockopt(2)
-  Status GetSockError();
+  Status GetSockError() const;
 
   Status Write(const uint8_t *buf, int32_t amt, int32_t *nwritten);
 

@@ -83,6 +83,10 @@ Sockaddr AcceptorPool::bind_address() const {
   return bind_address_;
 }
 
+Status AcceptorPool::GetBoundAddress(Sockaddr* addr) const {
+  return socket_.GetSocketAddress(addr);
+}
+
 void AcceptorPool::RunThread() {
   while (true) {
     Socket new_sock;
