@@ -98,8 +98,17 @@ Status RpcServer::Start() {
     new_acceptor_pools.push_back(pool);
   }
   acceptor_pools_.swap(new_acceptor_pools);
-
   server_state_ = STARTED;
+
+  vector<Sockaddr> bound_addrs;
+  RETURN_NOT_OK(GetBoundAddresses(&bound_addrs));
+  string bound_addrs_str;
+  BOOST_FOREACH(const Sockaddr& bind_addr, bound_addrs) {
+    if (!bound_addrs_str.empty()) bound_addrs_str += ", ";
+    bound_addrs_str += bind_addr.ToString();
+  }
+  LOG(INFO) << "RPC server started. Bound to: " << bound_addrs_str;
+
   return Status::OK();
 }
 
@@ -114,11 +123,15 @@ void RpcServer::Shutdown() {
   }
 }
 
-void RpcServer::GetBoundAddresses(vector<Sockaddr>* addresses) const {
+Status RpcServer::GetBoundAddresses(vector<Sockaddr>* addresses) const {
   CHECK_EQ(server_state_, STARTED);
   BOOST_FOREACH(const shared_ptr<AcceptorPool>& pool, acceptor_pools_) {
-    addresses->push_back(pool->bind_address());
+    Sockaddr bound_addr;
+    RETURN_NOT_OK_PREPEND(pool->GetBoundAddress(&bound_addr),
+        "Unable to get bound address from AcceptorPool");
+    addresses->push_back(bound_addr);
   }
+  return Status::OK();
 }
 
 const rpc::ServicePool* RpcServer::service_pool(const string& service_name) const {

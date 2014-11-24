@@ -394,7 +394,8 @@ Status ExternalDaemon::StartProcess(const vector<string>& user_flags) {
   status_.reset(new ServerStatusPB());
   RETURN_NOT_OK_PREPEND(pb_util::ReadPBFromPath(Env::Default(), info_path, status_.get()),
                         "Failed to read info file from " + info_path);
-  VLOG(1) << "Started " << exe_ << ":\n" << status_->DebugString();
+  LOG(INFO) << "Started " << exe_ << " as pid " << p->pid();
+  VLOG(1) << exe_ << " instance information:\n" << status_->DebugString();
 
   process_.swap(p);
   return Status::OK();

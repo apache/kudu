@@ -27,7 +27,7 @@ static int MasterMain(int argc, char** argv) {
   LOG(INFO) << "Initializing master server...";
   CHECK_OK(server.Init());
 
-  LOG(INFO) << "Starting master server...";
+  LOG(INFO) << "Starting Master server...";
   CHECK_OK(server.Start());
 
   LOG(INFO) << "Master server successfully started.";
