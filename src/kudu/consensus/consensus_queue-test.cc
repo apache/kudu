@@ -382,6 +382,12 @@ TEST_F(ConsensusQueueTest, TestQueueLoadsOperationsForPeer) {
   // The queue should reply that there are more messages for the peer.
   ASSERT_TRUE(more_pending);
 
+  // If we respond again with the same response the queue should set 'more_pending'
+  // to false. This will avoid spinning when the queue is doing an async load.
+  RefuseWithLogPropertyMismatch(&response, peers_last_op);
+  queue_->ResponseFromPeer(response, &more_pending);
+  ASSERT_FALSE(more_pending);
+
   // When we get another request for the peer the queue should enqueue
   // async loading of the missing operations.
   queue_->RequestForPeer(kPeerUuid, &request);

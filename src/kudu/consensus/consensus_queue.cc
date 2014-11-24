@@ -376,11 +376,12 @@ void PeerMessageQueue::ResponseFromPeer(const ConsensusResponsePB& response,
           if (previous.is_new) {
             // That's currently how we can detect that we able to connect to a peer.
             LOG(INFO) << "Connected to new peer: " << peer->ToString();
+            *more_pending = true;
           } else {
             LOG(INFO) << "Got LMP mismatch error from peer: " << peer->ToString();
+            *more_pending = false;
           }
 
-          *more_pending = true;
           return;
         }
         case ConsensusErrorPB::INVALID_TERM: {
