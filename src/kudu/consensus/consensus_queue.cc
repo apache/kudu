@@ -61,9 +61,9 @@ METRIC_DEFINE_gauge_int64(queue_size_bytes, MetricUnit::kBytes,
 const char kConsensusQueueParentTrackerId[] = "consensus_queue_parent";
 
 std::string PeerMessageQueue::TrackedPeer::ToString() const {
-  return Substitute("Peer: $0, Status: $1",
-                    uuid,
-                    peer_status.ShortDebugString());
+  return Substitute("Peer: $0, New: $1, Last received: $2, Last known committed idx: $3"
+      " Last exchange result: $4", uuid, is_new,  OpIdToString(last_received),
+      last_known_committed_idx, is_last_exchange_successful ? "SUCCESS" : "ERROR");
 }
 
 #define INSTANTIATE_METRIC(x) \
@@ -84,8 +84,8 @@ PeerMessageQueue::PeerMessageQueue(const MetricContext& metric_ctx,
       metrics_(metric_ctx) {
   queue_state_.current_term = MinimumOpId().term();
   queue_state_.committed_index = MinimumOpId();
-  queue_state_.all_replicated_index = MinimumOpId();
-  queue_state_.majority_replicated_index = MinimumOpId();
+  queue_state_.all_replicated_opid = MinimumOpId();
+  queue_state_.majority_replicated_opid = MinimumOpId();
   queue_state_.state = kQueueConstructed;
 }
 
@@ -99,7 +99,7 @@ void PeerMessageQueue::Init(const OpId& committed_index,
   CHECK(committed_index.IsInitialized());
   log_cache_.Init(last_locally_replicated);
   queue_state_.committed_index = committed_index;
-  queue_state_.majority_replicated_index = committed_index;
+  queue_state_.majority_replicated_opid = committed_index;
   queue_state_.last_appended = last_locally_replicated;
   queue_state_.current_term = current_term;
   queue_state_.state = kQueueOpen;
@@ -121,12 +121,12 @@ void PeerMessageQueue::TrackPeerUnlocked(const string& uuid) {
   // initialize it when we get the first response back from the peer.
   TrackedPeer* tracked_peer = new TrackedPeer(uuid);
   tracked_peer->uuid = uuid;
-  InsertOrDie(&watermarks_, uuid, tracked_peer);
+  InsertOrDie(&peers_map_, uuid, tracked_peer);
 }
 
 void PeerMessageQueue::UntrackPeer(const string& uuid) {
   boost::lock_guard<simple_spinlock> lock(queue_lock_);
-  TrackedPeer* peer = EraseKeyReturnValuePtr(&watermarks_, uuid);
+  TrackedPeer* peer = EraseKeyReturnValuePtr(&peers_map_, uuid);
   if (peer != NULL) {
     delete peer;
   }
@@ -214,7 +214,7 @@ void PeerMessageQueue::RequestForPeer(const string& uuid,
   boost::lock_guard<simple_spinlock> lock(queue_lock_);
   DCHECK_EQ(queue_state_.state, kQueueOpen);
   const TrackedPeer* peer;
-  if (PREDICT_FALSE(!FindCopy(watermarks_, uuid, &peer))) {
+  if (PREDICT_FALSE(!FindCopy(peers_map_, uuid, &peer))) {
     LOG(FATAL) << "Unable to find peer with UUID " << uuid
                << ". Queue status: " << ToStringUnlocked();
   }
@@ -226,7 +226,7 @@ void PeerMessageQueue::RequestForPeer(const string& uuid,
   // If we've never communicated with the peer, we don't know what messages to
   // send, so we'll send a status-only request. Otherwise, we grab requests
   // from the log starting at the last_received point.
-  if (peer->peer_status.has_last_received()) {
+  if (!peer->is_new) {
 
     // The batch of messages to send to the peer.
     vector<ReplicateMsg*> messages;
@@ -234,8 +234,8 @@ void PeerMessageQueue::RequestForPeer(const string& uuid,
 
     // We try to get the peer's last received op. If that fails because the op
     // cannot be found in our log we fall back to the last committed index.
-    Status s = GetOpsFromCacheOrFallback(peer->peer_status.last_received(),
-                                         peer->peer_status.last_committed_idx(),
+    Status s = GetOpsFromCacheOrFallback(peer->last_received,
+                                         peer->last_known_committed_idx,
                                          max_batch_size,
                                          &messages,
                                          &preceding_id);
@@ -298,15 +298,18 @@ void PeerMessageQueue::AdvanceQueueWatermark(const char* type,
     //   will be the new 'watermark'.
     OpId min = MinimumOpId();
     vector<const OpId*> watermarks;
-    BOOST_FOREACH(const WatermarksMap::value_type& peer, watermarks_) {
-      ConsensusStatusPB* status = &peer.second->peer_status;
-      if (status->has_last_received()) {
-        watermarks.push_back(&status->last_received());
-      } else {
-        watermarks.push_back(&min);
+    BOOST_FOREACH(const PeersMap::value_type& peer, peers_map_) {
+      if (peer.second->is_last_exchange_successful) {
+        watermarks.push_back(&peer.second->last_received);
       }
     }
-    std::sort(watermarks.begin(), watermarks.end(), OpIdLessThanPtrFunctor());
+
+    // If we haven't enough peers to calculate the watermark return.
+    if (watermarks.size() < num_peers_required) {
+      return;
+    }
+
+    std::sort(watermarks.begin(), watermarks.end(), OpIdIndexLessThanPtrFunctor());
 
     OpId new_watermark = *watermarks[watermarks.size() - num_peers_required];
     OpId old_watermark = *watermark;
@@ -316,9 +319,8 @@ void PeerMessageQueue::AdvanceQueueWatermark(const char* type,
             << "from " << old_watermark << " to " << new_watermark;
     if (VLOG_IS_ON(3)) {
       VLOG(1) << "Peers: ";
-      BOOST_FOREACH(const WatermarksMap::value_type& peer, watermarks_) {
-        VLOG(1) << "Peer: " << peer.first  << " Watermark: "
-            << peer.second->peer_status.ShortDebugString();
+      BOOST_FOREACH(const PeersMap::value_type& peer, peers_map_) {
+        VLOG(1) << "Peer: " << peer.second->ToString();
       }
       VLOG(1) << "Sorted watermarks:";
       BOOST_FOREACH(const OpId* watermark, watermarks) {
@@ -335,11 +337,11 @@ void PeerMessageQueue::ResponseFromPeer(const ConsensusResponsePB& response,
       << "Got response from peer with empty UUID";
   DCHECK(response.IsInitialized()) << "Response: " << response.ShortDebugString();
 
-  OpId updated_majority_replicated_index;
+  OpId updated_majority_replicated_opid;
   {
     unique_lock<simple_spinlock> scoped_lock(&queue_lock_);
 
-    TrackedPeer* peer = FindPtrOrNull(watermarks_, response.responder_uuid());
+    TrackedPeer* peer = FindPtrOrNull(peers_map_, response.responder_uuid());
     if (PREDICT_FALSE(queue_state_.state == kQueueClosed || peer == NULL)) {
       LOG(WARNING) << "Queue is closed or peer was untracked, disregarding peer response."
           << " Response: " << response.ShortDebugString();
@@ -357,35 +359,39 @@ void PeerMessageQueue::ResponseFromPeer(const ConsensusResponsePB& response,
 
     const ConsensusStatusPB& status = response.status();
 
+    // Take a snapshot of the current peer status.
+    TrackedPeer previous = *peer;
+
+    // Update the peer status based on the response.
+    peer->last_received.CopyFrom(status.last_received());
+    peer->last_known_committed_idx = status.last_committed_idx();
+    peer->is_new = false;
+    peer->is_last_exchange_successful = !status.has_error();
+
     if (PREDICT_FALSE(status.has_error())) {
       switch (status.error().code()) {
         case ConsensusErrorPB::PRECEDING_ENTRY_DIDNT_MATCH: {
-          if (peer->peer_status.has_last_received()) {
-            LOG(INFO) << "Peer: " << response.responder_uuid() << " replied that the "
-                "Log Matching Property check failed. Queue's last received watermark for peer: "
-                << peer->peer_status.last_received().ShortDebugString()
-                << ". Peer's actual last received watermark: "
-                << status.last_received().ShortDebugString();
-          } else {
-            DCHECK(status.has_last_received());
+          DCHECK(status.has_last_received());
+
+          if (previous.is_new) {
             // That's currently how we can detect that we able to connect to a peer.
-            LOG(INFO) << "Connected to peer: " << response.responder_uuid()
-                << " whose last received watermark is: "
-                << status.last_received().ShortDebugString();
+            LOG(INFO) << "Connected to new peer: " << peer->ToString();
+          } else {
+            LOG(INFO) << "Got LMP mismatch error from peer: " << peer->ToString();
           }
-          peer->peer_status.mutable_last_received()->CopyFrom(status.last_received());
-          peer->peer_status.set_last_committed_idx(status.last_committed_idx());
-          if (status.last_received().index() < queue_state_.all_replicated_index.index()) {
-            queue_state_.all_replicated_index = status.last_received();
-          }
+
           *more_pending = true;
           return;
         }
         case ConsensusErrorPB::INVALID_TERM: {
           CHECK(response.has_responder_term());
-          // TODO maybe we should notify the leader here, but it will find out eventually
+
+          // TODO maybe we should notify the leader here, but it will find out soon
           // anyway and right now it's simpler not to do it due to ownership/locking
-          // issues.
+          // issues. We revert the changes for this TrackedPeer so that we don't try
+          // and get stuff from cache that we don't have.
+          *peer = previous;
+
           *more_pending = false;
           return;
         }
@@ -394,7 +400,6 @@ void PeerMessageQueue::ResponseFromPeer(const ConsensusResponsePB& response,
         }
       }
     }
-
 
     if (response.has_responder_term()) {
       // The peer must have responded with a term that is greater than or equal to
@@ -407,56 +412,54 @@ void PeerMessageQueue::ResponseFromPeer(const ConsensusResponsePB& response,
     }
 
     if (PREDICT_FALSE(VLOG_IS_ON(2))) {
-      VLOG(2) << "Received Response from Peer: " << response.responder_uuid()
-          << ". Current Status: " << peer->peer_status.ShortDebugString()
+      VLOG(2) << "Received Response from Peer: " << peer->ToString()
           << ". Response: " << response.ShortDebugString();
     }
 
-    OpId old_last_received;
-    if (!peer->peer_status.has_last_received()) {
-      old_last_received = MinimumOpId();
-    } else {
-      old_last_received = peer->peer_status.last_received();
-    }
-
-    const OpId& new_last_received = response.status().last_received();
-
-    peer->peer_status.mutable_last_received()->CopyFrom(new_last_received);
-    peer->peer_status.set_last_committed_idx(response.status().last_committed_idx());
-
     // Advance the commit index.
     AdvanceQueueWatermark("majority_replicated",
-                          &queue_state_.majority_replicated_index,
-                          old_last_received,
-                          new_last_received,
+                          &queue_state_.majority_replicated_opid,
+                          previous.last_received,
+                          peer->last_received,
                           majority_size_);
 
     // Advance the all replicated index.
     AdvanceQueueWatermark("all_replicated",
-                          &queue_state_.all_replicated_index,
-                          old_last_received,
-                          new_last_received,
-                          watermarks_.size());
+                          &queue_state_.all_replicated_opid,
+                          previous.last_received,
+                          peer->last_received,
+                          std::max<int64_t>(majority_size_, peers_map_.size()));
 
-    updated_majority_replicated_index.CopyFrom(queue_state_.majority_replicated_index);
+    updated_majority_replicated_opid.CopyFrom(queue_state_.majority_replicated_opid);
 
-    *more_pending = log_cache_.HasOpIndex(new_last_received.index() + 1);
+    *more_pending = log_cache_.HasOpIndex(peer->last_received.index() + 1);
 
-    log_cache_.SetPinnedOp(queue_state_.all_replicated_index.index());
+    log_cache_.SetPinnedOp(queue_state_.all_replicated_opid.index());
     UpdateMetrics();
   }
 
-  NotifyObserversOfMajorityReplOpChange(updated_majority_replicated_index);
+  NotifyObserversOfMajorityReplOpChange(updated_majority_replicated_opid);
+}
+
+PeerMessageQueue::TrackedPeer PeerMessageQueue::GetTrackedPeerForTests(string uuid) {
+  unique_lock<simple_spinlock> scoped_lock(&queue_lock_);
+  TrackedPeer* tracked = FindOrDie(peers_map_, uuid);
+  return *tracked;
 }
 
 OpId PeerMessageQueue::GetAllReplicatedIndexForTests() const {
   boost::lock_guard<simple_spinlock> lock(queue_lock_);
-  return queue_state_.all_replicated_index;
+  return queue_state_.all_replicated_opid;
 }
 
 OpId PeerMessageQueue::GetCommittedIndexForTests() const {
   boost::lock_guard<simple_spinlock> lock(queue_lock_);
   return queue_state_.committed_index;
+}
+
+OpId PeerMessageQueue::GetMajorityReplicatedOpIdForTests() const {
+  boost::lock_guard<simple_spinlock> lock(queue_lock_);
+  return queue_state_.majority_replicated_opid;
 }
 
 
@@ -465,7 +468,7 @@ void PeerMessageQueue::UpdateMetrics() {
   // on simple index math.
   metrics_.num_majority_done_ops->set_value(
       queue_state_.committed_index.index() -
-      queue_state_.all_replicated_index.index());
+      queue_state_.all_replicated_opid.index());
   metrics_.num_in_progress_ops->set_value(
     queue_state_.last_appended.index() -
     queue_state_.committed_index.index());
@@ -478,7 +481,7 @@ void PeerMessageQueue::DumpToStrings(vector<string>* lines) const {
 
 void PeerMessageQueue::DumpToStringsUnlocked(vector<string>* lines) const {
   lines->push_back("Watermarks:");
-  BOOST_FOREACH(const WatermarksMap::value_type& entry, watermarks_) {
+  BOOST_FOREACH(const PeersMap::value_type& entry, peers_map_) {
     lines->push_back(
         Substitute("Peer: $0 Watermark: $1", entry.first, entry.second->ToString()));
   }
@@ -493,7 +496,7 @@ void PeerMessageQueue::DumpToHtml(std::ostream& out) const {
   out << "<h3>Watermarks</h3>" << endl;
   out << "<table>" << endl;;
   out << "  <tr><th>Peer</th><th>Watermark</th></tr>" << endl;
-  BOOST_FOREACH(const WatermarksMap::value_type& entry, watermarks_) {
+  BOOST_FOREACH(const PeersMap::value_type& entry, peers_map_) {
     out << Substitute("  <tr><td>$0</td><td>$1</td></tr>",
                       EscapeForHtmlToString(entry.first),
                       EscapeForHtmlToString(entry.second->ToString())) << endl;
@@ -504,11 +507,11 @@ void PeerMessageQueue::DumpToHtml(std::ostream& out) const {
 }
 
 void PeerMessageQueue::ClearUnlocked() {
-  STLDeleteValues(&watermarks_);
+  STLDeleteValues(&peers_map_);
   queue_state_.current_term = MinimumOpId().term();
   queue_state_.committed_index = MinimumOpId();
-  queue_state_.all_replicated_index = MinimumOpId();
-  queue_state_.majority_replicated_index = MinimumOpId();
+  queue_state_.all_replicated_opid = MinimumOpId();
+  queue_state_.majority_replicated_opid = MinimumOpId();
   queue_state_.state = kQueueConstructed;
 }
 

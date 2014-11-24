@@ -51,6 +51,45 @@ extern const char kConsensusQueueParentTrackerId[];
 // modify it.
 class PeerMessageQueue {
  public:
+  struct TrackedPeer {
+    explicit TrackedPeer(const std::string& uuid)
+      : uuid(uuid),
+        is_new(true),
+        last_received(MinimumOpId()),
+        last_known_committed_idx(MinimumOpId().index()),
+        is_last_exchange_successful(false),
+        last_seen_term_(0) {
+    }
+
+    // Check that the terms seen from a given peer only increase
+    // monotonically.
+    void CheckMonotonicTerms(uint64_t term) {
+      DCHECK_GE(term, last_seen_term_);
+      last_seen_term_ = term;
+    }
+
+    std::string ToString() const;
+
+    std::string uuid;
+
+    // Whether this is a newly tracked peer.
+    bool is_new;
+
+    // The last received operation reported by this peer.
+    OpId last_received;
+
+    // The last committed index this peer knows about.
+    int64_t last_known_committed_idx;
+
+    // Whether the last exchange with this peer was successful.
+    bool is_last_exchange_successful;
+   private:
+    // The last term we saw from a given peer.
+    // This is only used for sanity checking that a peer doesn't
+    // go backwards in time.
+    uint64_t last_seen_term_;
+  };
+
   PeerMessageQueue(const MetricContext& metric_ctx,
                    log::Log* log,
                    const std::string& local_uuid,
@@ -110,8 +149,15 @@ class PeerMessageQueue {
   // Returns the last message replicated by all peers, for tests.
   virtual OpId GetAllReplicatedIndexForTests() const;
 
-  // Returns the current consensus committed index, for tests.
+
   virtual OpId GetCommittedIndexForTests() const;
+
+  // Returns the current majority replicated OpId, for tests.
+  virtual OpId GetMajorityReplicatedOpIdForTests() const;
+
+  // Returns a copy of the TrackedPeer with 'uuid' or crashes if the peer is
+  // not being tracked.
+  virtual TrackedPeer GetTrackedPeerForTests(std::string uuid);
 
   virtual std::string ToString() const;
 
@@ -138,30 +184,6 @@ class PeerMessageQueue {
 
  private:
 
-  struct TrackedPeer {
-    explicit TrackedPeer(const std::string& uuid)
-      : uuid(uuid),
-        last_seen_term_(0) {
-    }
-    std::string uuid;
-    ConsensusStatusPB peer_status;
-
-    // Check that the terms seen from a given peer only increase
-    // monotonically.
-    void CheckMonotonicTerms(uint64_t term) {
-      DCHECK_GE(term, last_seen_term_);
-      last_seen_term_ = term;
-    }
-
-    std::string ToString() const;
-
-   private:
-    // The last term we saw from a given peer.
-    // This is only used for sanity checking that a peer doesn't
-    // go backwards in time.
-    uint64_t last_seen_term_;
-  };
-
   enum State {
     kQueueConstructed,
     kQueueOpen,
@@ -172,12 +194,12 @@ class PeerMessageQueue {
 
     // The first operation that has been replicated to all currently
     // tracked peers.
-    OpId all_replicated_index;
+    OpId all_replicated_opid;
 
     // The index of the last operation replicated to a majority.
     // This is usually the same as 'committed_index' but might not
     // be if the terms changed.
-    OpId majority_replicated_index;
+    OpId majority_replicated_opid;
 
     // The index of the last operation to be considered committed.
     OpId committed_index;
@@ -198,7 +220,7 @@ class PeerMessageQueue {
 
   void NotifyObserversOfMajorityReplOpChange(const OpId& new_majority_replicated_op);
 
-  typedef std::tr1::unordered_map<std::string, TrackedPeer*> WatermarksMap;
+  typedef std::tr1::unordered_map<std::string, TrackedPeer*> PeersMap;
 
   std::string ToStringUnlocked() const;
 
@@ -220,6 +242,7 @@ class PeerMessageQueue {
   void LocalPeerAppendFinished(const OpId& id,
                                const Status& status);
 
+  // Advances 'watermark' to the smallest op that 'num_peers_required' have.
   void AdvanceQueueWatermark(const char* type,
                              OpId* watermark,
                              const OpId& replicated_before,
@@ -249,9 +272,8 @@ class PeerMessageQueue {
 
   QueueState queue_state_;
 
-  // The current watermark for each peer.
-  // The queue owns the OpIds.
-  WatermarksMap watermarks_;
+  // The currently tracked peers.
+  PeersMap peers_map_;
   mutable simple_spinlock queue_lock_; // TODO: rename
 
   LogCache log_cache_;

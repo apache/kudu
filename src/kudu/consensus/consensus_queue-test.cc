@@ -104,6 +104,16 @@ class ConsensusQueueTest : public KuduTest {
     StatusToPB(Status::IllegalState("LMP failed."), error->mutable_status());
   }
 
+  void WaitForLocalPeerToAckIndex(int index) {
+    while (true) {
+      PeerMessageQueue::TrackedPeer leader = queue_->GetTrackedPeerForTests("leader");
+      if (leader.last_received.index() >= index) {
+        break;
+      }
+      usleep(10 * 1000);
+    }
+  }
+
  protected:
   gscoped_ptr<TestRaftConsensusQueueIface> consensus_;
   const Schema schema_;
@@ -211,14 +221,20 @@ TEST_F(ConsensusQueueTest, TestGetPagedMessages) {
 }
 
 TEST_F(ConsensusQueueTest, TestPeersDontAckBeyondWatermarks) {
-  queue_->Init(MinimumOpId(), MinimumOpId(), MinimumOpId().term(), 1);
+  queue_->Init(MinimumOpId(), MinimumOpId(), MinimumOpId().term(), 2);
   AppendReplicateMessagesToQueue(queue_.get(), 1, 100);
+
+  // Wait for the local peer to append all messages
+  WaitForLocalPeerToAckIndex(100);
+
+  // Since we require a majority of two but are only tracking a single peer
+  // this should not have advanced any queue watermarks.
+  ASSERT_OPID_EQ(queue_->GetCommittedIndexForTests(), MinimumOpId());
+  ASSERT_OPID_EQ(queue_->GetAllReplicatedIndexForTests(), MinimumOpId());
 
   // Start to track the peer after the queue has some messages in it
   // at a point that is halfway through the current messages in the queue.
-  OpId first_msg;
-  first_msg.set_term(7);
-  first_msg.set_index(50);
+  OpId first_msg = MakeOpId(7, 50);
 
   ConsensusRequestPB request;
   ConsensusResponsePB response;
@@ -232,18 +248,18 @@ TEST_F(ConsensusQueueTest, TestPeersDontAckBeyondWatermarks) {
   queue_->RequestForPeer(kPeerUuid, &request);
   ASSERT_EQ(50, request.ops_size());
 
-  response.mutable_status()->mutable_last_received()->CopyFrom(request.ops(49).id());
-
   AppendReplicateMessagesToQueue(queue_.get(), 101, 100);
+
+  response.mutable_status()->mutable_last_received()->CopyFrom(request.ops(49).id());
   response.set_responder_term(28);
 
   queue_->ResponseFromPeer(response, &more_pending);
   ASSERT_TRUE(more_pending) << "Queue didn't have anymore requests pending";
 
-  OpId expected;
-  expected.set_term(14);
-  expected.set_index(100);
+  OpId expected = MakeOpId(14, 100);
+
   ASSERT_OPID_EQ(queue_->GetCommittedIndexForTests(), expected);
+  ASSERT_OPID_EQ(queue_->GetAllReplicatedIndexForTests(), expected);
 
   // if we ask for a new request, it should come back with the rest of the messages
   queue_->RequestForPeer(kPeerUuid, &request);
@@ -441,10 +457,10 @@ TEST_F(ConsensusQueueTest, TestQueueHandlesOperationOverwriting) {
 
 
   // Now reset the queue so that we can pass a new committed index,
-  // the last operation in the log.
+  // op, 2.15.
   queue_.reset(new PeerMessageQueue(metric_context_, log_.get(), "leader"));
-  OpId committed_index = MakeOpId(2, 20);
-  queue_->Init(committed_index, committed_index, 2, 1);
+  OpId committed_index = MakeOpId(2, 15);
+  queue_->Init(committed_index, MakeOpId(2, 20), 2, 2);
 
   // Now get a request for a simulated old leader, which contains more operations
   // in term 1 than the new leader has.
@@ -462,15 +478,15 @@ TEST_F(ConsensusQueueTest, TestQueueHandlesOperationOverwriting) {
   queue_->RequestForPeer(kPeerUuid, &request);
   ASSERT_EQ(request.ops_size(), 0);
   ASSERT_OPID_EQ(request.preceding_id(), MakeOpId(2, 20));
-  ASSERT_OPID_EQ(request.committed_index(), MakeOpId(2, 20));
+  ASSERT_OPID_EQ(request.committed_index(), committed_index);
 
   // The old leader was still in term 1 but it increased its term with our request.
   response.set_responder_term(2);
 
-  // We emulate that the old leader had 15 total operations in Term 1 (5 more than we knew about)
+  // We emulate that the old leader had 25 total operations in Term 1 (15 more than we knew about)
   // which were never committed, and that its last known committed index was 5.
   ConsensusStatusPB* status = response.mutable_status();
-  status->mutable_last_received()->CopyFrom(MakeOpId(1, 15));
+  status->mutable_last_received()->CopyFrom(MakeOpId(1, 25));
   status->set_last_committed_idx(5);
   ConsensusErrorPB* error = status->mutable_error();
   error->set_code(ConsensusErrorPB::PRECEDING_ENTRY_DIDNT_MATCH);
@@ -482,14 +498,25 @@ TEST_F(ConsensusQueueTest, TestQueueHandlesOperationOverwriting) {
   // The queue should reply that there are more operations pending.
   ASSERT_TRUE(more_pending);
 
+  // We're waiting for a two nodes. The all committed watermark should be
+  // 0.0 since we haven't had a successful exchange with the 'remote' peer.
+  ASSERT_OPID_EQ(queue_->GetAllReplicatedIndexForTests(), MinimumOpId());
+
+  // Test even when a correct peer responds (meaning we actually get to execute
+  // watermark advancement) we sill have the same queue watermarks.
+  ASSERT_OK(queue_->AppendOperation(CreateDummyReplicate(2, 21, 0)));
+  WaitForLocalPeerToAckIndex(21);
+
+  ASSERT_OPID_EQ(queue_->GetAllReplicatedIndexForTests(), MinimumOpId());
+
   // The queue doesn't necessarily know that the old leader's last received was
   // overwritten. It will only know that when the operations get loaded from disk,
   // so until that is done it should send status-only requests.
   while (request.ops_size() == 0) {
     queue_->RequestForPeer(kPeerUuid, &request);
     if (request.ops_size() == 0) {
-      ASSERT_OPID_EQ(request.preceding_id(), MakeOpId(2, 20));
-      ASSERT_OPID_EQ(request.committed_index(), MakeOpId(2, 20));
+      ASSERT_OPID_EQ(request.preceding_id(), MakeOpId(2, 21));
+      ASSERT_OPID_EQ(request.committed_index(), MakeOpId(2, 15));
       // The peer will keep responding the same thing.
       queue_->ResponseFromPeer(response, &more_pending);
     } else {
@@ -502,7 +529,17 @@ TEST_F(ConsensusQueueTest, TestQueueHandlesOperationOverwriting) {
   // all operations that do indeed exist after the old leaders last known committed
   // index.
   ASSERT_OPID_EQ(MakeOpId(1, 5), request.preceding_id());
-  ASSERT_EQ(15, request.ops_size());
+  ASSERT_EQ(16, request.ops_size());
+
+  // Now when we respond the watermarks should advance.
+  response.mutable_status()->clear_error();
+  response.mutable_status()->mutable_last_received()->CopyFrom(MakeOpId(2, 21));
+  response.mutable_status()->set_last_committed_idx(5);
+
+  queue_->ResponseFromPeer(response, &more_pending);
+
+  // Now the watermark should have advanced.
+  ASSERT_OPID_EQ(queue_->GetAllReplicatedIndexForTests(), MakeOpId(2, 21));
 
   // The messages still belong to the queue so we have to release them.
   request.mutable_ops()->ExtractSubrange(0, request.ops().size(), NULL);
