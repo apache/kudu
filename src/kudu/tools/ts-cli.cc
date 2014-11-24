@@ -36,9 +36,12 @@ using kudu::rpc::RpcController;
 using kudu::HostPort;
 using kudu::Sockaddr;
 
+const char* const kListTabletsOp = "list_tablets";
+const char* const kAreTabletsRunningOp = "are_tablets_running";
+
 DEFINE_string(tserver_address, "localhost",
                 "Address of tablet server to run against");
-DEFINE_string(op, "list_tablets", "Operation to execute");
+DEFINE_string(op, kListTabletsOp, "Operation to execute");
 DEFINE_int64(timeout_ms, 1000 * 60, "RPC timeout in milliseconds");
 
 namespace {
@@ -46,11 +49,11 @@ namespace {
 // TODO once more operations are supported, print a more useful error
 // message
 bool ValidateOp(const char* flagname, const string& op) {
-  if (op == "list_tablets") {
+  if (op == kListTabletsOp || op == kAreTabletsRunningOp) {
     return true;
   }
   std::cerr << "Invalid operation " << op << ", valid operations are: "
-            << "list_tablets" << std::endl;
+            << kListTabletsOp << ", " << kAreTabletsRunningOp << std::endl;
   return false;
 }
 
@@ -142,7 +145,7 @@ static int TsCliMain(int argc, char** argv) {
   CHECK_OK_PREPEND(client.Init(), "Unable to establish connection to " + addr);
 
   // TODO add other operations here...
-  if (FLAGS_op == "list_tablets") {
+  if (FLAGS_op == kListTabletsOp) {
     vector<StatusAndSchemaPB> tablets;
     CHECK_OK_PREPEND(client.ListTablets(&tablets), "Unable to list tablets on " + addr);
     BOOST_FOREACH(const StatusAndSchemaPB& status_and_schema, tablets) {
@@ -160,6 +163,25 @@ static int TsCliMain(int argc, char** argv) {
             HumanReadableNumBytes::ToString(ts.estimated_on_disk_size());
       }
       std::cout << "Schema: " << schema.ToString() << std::endl;
+    }
+  } else if (FLAGS_op == kAreTabletsRunningOp) {
+    vector<StatusAndSchemaPB> tablets;
+    CHECK_OK_PREPEND(client.ListTablets(&tablets), "Unable to list tablets on " + addr);
+    bool all_running = true;
+    BOOST_FOREACH(const StatusAndSchemaPB& status_and_schema, tablets) {
+      TabletStatusPB ts = status_and_schema.tablet_status();
+      if (ts.state() != tablet::RUNNING) {
+        std::cout << "Tablet id: " << ts.tablet_id() << " is "
+                  << tablet::TabletStatePB_Name(ts.state()) << std::endl;
+        all_running = false;
+      }
+    }
+
+    if (all_running) {
+      std::cout << "All tablets are running" << std::endl;
+    } else {
+      std::cout << "Not all tablets are running" << std::endl;
+      return 1;
     }
   } else {
     LOG(FATAL) << "Invalid op specified: " << FLAGS_op;
