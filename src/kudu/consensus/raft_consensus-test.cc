@@ -43,22 +43,24 @@ class MockQueue : public PeerMessageQueue {
  public:
   explicit MockQueue(const MetricContext& metric_ctx, log::Log* log)
     : PeerMessageQueue(metric_ctx, log, kLocalPeerUuid, kTestTablet) {}
-  MOCK_METHOD4(Init, void(const OpId& committed_index,
-                          const OpId& locally_replicated_index,
-                          uint64_t current_term,
-                          int majority_size));
-  virtual Status AppendOperation(gscoped_ptr<ReplicateMsg> replicate) OVERRIDE {
-    VLOG(1) << "Appending to mock queue: " << replicate->ShortDebugString();
-    return AppendOperationMock(replicate.release());
+  MOCK_METHOD1(Init, void(const OpId& locally_replicated_index));
+  MOCK_METHOD3(SetLeaderMode, void(const OpId& committed_opid,
+                                   uint64_t current_term,
+                                   int majority_size));
+  MOCK_METHOD0(SetNonLeaderMode, void());
+  virtual Status AppendOperations(const vector<const ReplicateMsg*>& msgs,
+                                  const StatusCallback& callback) OVERRIDE {
+    STLDeleteElements(const_cast<vector<const ReplicateMsg*>* >(&msgs));
+    return AppendOperationsMock(msgs, callback);
   }
-  MOCK_METHOD1(AppendOperationMock, Status(ReplicateMsg* replicate));
-  MOCK_METHOD1(TrackPeer, void(const std::string& uuid));
-  MOCK_METHOD1(UntrackPeer, void(const std::string& uuid));
-  MOCK_METHOD2(RequestForPeer, void(const std::string& uuid,
-                                    ConsensusRequestPB* request));
+  MOCK_METHOD2(AppendOperationsMock, Status(const vector<const ReplicateMsg*>&,
+                                            const StatusCallback& callback));
+  MOCK_METHOD1(TrackPeer, void(const string&));
+  MOCK_METHOD1(UntrackPeer, void(const string&));
+  MOCK_METHOD2(RequestForPeer, Status(const std::string& uuid,
+                                      ConsensusRequestPB* request));
   MOCK_METHOD2(ResponseFromPeer, void(const ConsensusResponsePB& response,
                                       bool* more_pending));
-  MOCK_METHOD0(Clear, void());
   MOCK_METHOD0(Close, void());
 };
 
@@ -118,8 +120,6 @@ class RaftConsensusTest : public KuduTest {
 
     ON_CALL(*txn_factory_, StartReplicaTransactionMock(_))
         .WillByDefault(Invoke(this, &RaftConsensusTest::StartReplicaTransaction));
-    ON_CALL(*queue_, AppendOperationMock(_))
-        .WillByDefault(Invoke(this, &RaftConsensusTest::AppendToLog));
 
     use_continuations_ = false;
   }
@@ -146,16 +146,6 @@ class RaftConsensusTest : public KuduTest {
                                        clock_,
                                        txn_factory_.get(),
                                        log_.get()));
-  }
-
-  Status AppendToLog(ReplicateMsg* replicate) {
-    return log_->AsyncAppendReplicates(&replicate,
-                                       1,
-                                       Bind(LogAppendCallback, Owned(replicate)));
-  }
-
-  static void LogAppendCallback(ReplicateMsg* repl, const Status& s) {
-    CHECK_OK(s);
   }
 
   void SetContinuationIfEnabled(ConsensusRound* round) {
@@ -262,12 +252,14 @@ TEST_F(RaftConsensusTest, TestCommittedIndexWhenInSameTerm) {
   EXPECT_CALL(*peer_manager_, UpdateQuorum(_))
       .Times(1)
       .WillOnce(Return(Status::OK()));
-  EXPECT_CALL(*queue_, Init(_, _, _, _))
+  EXPECT_CALL(*queue_, Init(_))
+      .Times(1);
+  EXPECT_CALL(*queue_, SetLeaderMode(_, _, _))
       .Times(1);
   EXPECT_CALL(*txn_factory_, StartReplicaTransactionMock(_))
       .Times(1);
-  EXPECT_CALL(*queue_, AppendOperationMock(_))
-      .Times(11);
+  EXPECT_CALL(*queue_, AppendOperationsMock(_, _))
+      .Times(11).WillRepeatedly(Return(Status::OK()));
 
 
   ConsensusBootstrapInfo info;
@@ -300,12 +292,12 @@ TEST_F(RaftConsensusTest, TestCommittedIndexWhenTermsChange) {
   EXPECT_CALL(*peer_manager_, UpdateQuorum(_))
       .Times(2)
       .WillRepeatedly(Return(Status::OK()));
-  EXPECT_CALL(*queue_, Init(_, _, _, _))
-      .Times(2);
+  EXPECT_CALL(*queue_, Init(_))
+      .Times(1);
   EXPECT_CALL(*txn_factory_, StartReplicaTransactionMock(_))
       .Times(2);
-  EXPECT_CALL(*queue_, AppendOperationMock(_))
-      .Times(3);
+  EXPECT_CALL(*queue_, AppendOperationsMock(_, _))
+      .Times(3).WillRepeatedly(Return(Status::OK()));;
 
   ConsensusBootstrapInfo info;
   ASSERT_OK(consensus_->Start(info));
@@ -371,9 +363,9 @@ TEST_F(RaftConsensusTest, TestPendingTransactions) {
     // their commit continuation called immediately.
     EXPECT_CALL(*txn_factory_, StartReplicaTransactionMock(_))
         .Times(10);
-    // Queue gets cleared when the peer becomes follower.
-    EXPECT_CALL(*queue_, Close())
-        .Times(1);
+    // Queue gets initted when the peer starts.
+    EXPECT_CALL(*queue_, Init(_))
+      .Times(1);
   }
 
   ASSERT_OK(consensus_->Start(info));
@@ -385,15 +377,12 @@ TEST_F(RaftConsensusTest, TestPendingTransactions) {
   // Now we test what this peer does with the pending operations once it's elected leader.
   {
     InSequence dummy;
-    // Queue gets initted when the peer becomes leader.
-    EXPECT_CALL(*queue_, Init(_, _, _, _))
-      .Times(1);
     // Peer manager gets updated with the new set of peers to send stuff to.
     EXPECT_CALL(*peer_manager_, UpdateQuorum(_))
     .Times(1).WillOnce(Return(Status::OK()));
     // The change config operation should be appended to the queue.
-    EXPECT_CALL(*queue_, AppendOperationMock(_))
-    .Times(1);
+    EXPECT_CALL(*queue_, AppendOperationsMock(_, _))
+    .Times(1).WillRepeatedly(Return(Status::OK()));;
     // One more transaction is started in the factory, for the config change.
     EXPECT_CALL(*txn_factory_, StartReplicaTransactionMock(_))
     .Times(1);
@@ -449,16 +438,16 @@ TEST_F(RaftConsensusTest, TestAbortOperations) {
   EXPECT_CALL(*peer_manager_, Close())
       .Times(2);
   EXPECT_CALL(*queue_, Close())
-      .Times(2);
+      .Times(1);
+  EXPECT_CALL(*queue_, Init(_))
+      .Times(1);
   EXPECT_CALL(*peer_manager_, UpdateQuorum(_))
       .Times(1)
       .WillRepeatedly(Return(Status::OK()));
-  EXPECT_CALL(*queue_, Init(_, _, _, _))
-      .Times(1);
 
   // The leader will initially try to push 11 ops.
-  EXPECT_CALL(*queue_, AppendOperationMock(_))
-      .Times(11);
+  EXPECT_CALL(*queue_, AppendOperationsMock(_, _))
+      .Times(12).WillRepeatedly(Return(Status::OK()));;
 
   // .. but those will be overwritten later by another
   // leader, which will push and commit 5 ops.

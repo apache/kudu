@@ -69,7 +69,10 @@ static inline void AppendReplicateMessagesToQueue(
   for (int i = first; i < first + count; i++) {
     int term = i / 7;
     int index = i;
-    CHECK_OK(queue->AppendOperation(CreateDummyReplicate(term, index, payload_size)));
+    const ReplicateMsg* replicate = CreateDummyReplicate(term,
+                                                         index,
+                                                         payload_size).release();
+    CHECK_OK(queue->AppendOperation(replicate));
   }
 }
 

@@ -25,6 +25,7 @@ template<class T>
 class AtomicGauge;
 class MemTracker;
 class MetricContext;
+class ThreadPool;
 
 namespace log {
 class Log;
@@ -97,6 +98,10 @@ class PeerMessageQueue {
                    const std::string& parent_tracker_id = kConsensusQueueParentTrackerId);
 
   // Initialize the queue.
+  virtual void Init(const OpId& last_locally_replicated);
+
+  // Changes the queue to leader mode, meaning it tracks majority replicated
+  // operations and notifies observers when those change.
   // 'committed_index' corresponds to the id of the last committed operation,
   // i.e. operations with ids <= 'committed_index' should be considered committed.
   // 'current_term' corresponds to the leader's current term, this is different
@@ -104,25 +109,40 @@ class PeerMessageQueue {
   // operation in the current term.
   // Majority size corresponds to the number of peers that must have replicated
   // a certain operation for it to be considered committed.
-  virtual void Init(const OpId& committed_index,
-                    const OpId& last_locally_replicated,
-                    uint64_t current_term,
-                    int majority_size);
+  virtual void SetLeaderMode(const OpId& committed_index,
+                             uint64_t current_term,
+                             int majority_size);
 
-  // Appends a message to be replicated to the quorum.
-  // Returns OK unless the message could not be added to the queue for some
-  // reason (e.g. the queue reached max size).
-  virtual Status AppendOperation(gscoped_ptr<ReplicateMsg> replicate);
+  // Changes the queue to non-leader mode. Currently tracked peers will still
+  // be tracked so that the cache is only evicted when the peers no longer need
+  // the operations but the queue will no longer advance the majority replicated
+  // index or notify observers of its advancement.
+  virtual void SetNonLeaderMode();
 
   // Makes the queue track this peer.
-  virtual void TrackPeer(const std::string& uuid);
+  virtual void TrackPeer(const std::string& peer_uuid);
 
-  // Makes the queue untrack the peer.
-  // Requires that the peer was being tracked.
-  virtual void UntrackPeer(const std::string& uuid);
+  // Makes the queue untrack this peer.
+  virtual void UntrackPeer(const std::string& peer_uuid);
+
+  // Appends a single message to be replicated to the quorum.
+  // Returns OK unless the message could not be added to the queue for some
+  // reason (e.g. the queue reached max size).
+  // If it returns OK the queue takes ownership of 'msg'.
+  virtual Status AppendOperation(const ReplicateMsg* msg);
+
+  // Appends a vector of messages to be replicated to the quorum.
+  // Returns OK unless the message could not be added to the queue for some
+  // reason (e.g. the queue reached max size), calls 'log_append_callback' when
+  // the messages are durable in the local Log.
+  // If it returns OK the queue takes ownership of 'msgs'.
+  virtual Status AppendOperations(const std::vector<const ReplicateMsg*>& msgs,
+                                  const StatusCallback& log_append_callback);
 
   // Assembles a request for a quorum peer, adding entries past 'op_id' up to
   // 'consensus_max_batch_size_bytes'.
+  // Returns OK if the request was assembled or Status::NotFound() if the
+  // peer with 'uuid' was not tracked, of if the queue is not in leader mode.
   //
   // WARNING: In order to avoid copying the same messages to every peer,
   // entries are added to 'request' via AddAllocated() methods.
@@ -132,8 +152,8 @@ class PeerMessageQueue {
   // instance of ConsensusRequestPB to RequestForPeer(): the buffer will
   // replace the old entries with new ones without de-allocating the old
   // ones if they are still required.
-  virtual void RequestForPeer(const std::string& uuid,
-                              ConsensusRequestPB* request);
+  virtual Status RequestForPeer(const std::string& uuid,
+                                ConsensusRequestPB* request) WARN_UNUSED_RESULT;
 
   // Updates the request queue with the latest response of a peer, returns
   // whether this peer has more requests pending.
@@ -184,6 +204,17 @@ class PeerMessageQueue {
   virtual ~PeerMessageQueue();
 
  private:
+  FRIEND_TEST(ConsensusQueueTest, TestQueueAdvancesCommittedIndex);
+
+  // Mode specifies how the queue currently behaves:
+  // LEADER - Means the queue tracks remote peers and replicates whatever messages
+  //          are appended. Observers are notified of changes.
+  // NON_LEADER - Means the queue only tracks the local peer (remote peers are ignored).
+  //              Observers are not notified of changes.
+  enum Mode {
+    LEADER,
+    NON_LEADER
+  };
 
   enum State {
     kQueueConstructed,
@@ -216,12 +247,25 @@ class PeerMessageQueue {
     // rather than by snooping on what operations are appended to the queue.
     uint64_t current_term;
 
+    // The size of the majority for the queue.
+    // TODO support changing majority sizes when quorums change.
+    int majority_size_;
+
     State state;
+
+    // The current mode of the queue.
+    Mode mode;
 
     std::string ToString() const;
   };
 
-  void NotifyObserversOfMajorityReplOpChange(const OpId& new_majority_replicated_op);
+  void NotifyObserversOfMajorityReplOpChange(const OpId new_majority_replicated_op);
+
+  void NotifyObserversOfMajorityReplOpChangeTask(const OpId new_majority_replicated_op);
+
+  void NotifyObserversOfTermChange(uint64_t term);
+
+  void NotifyObserversOfTermChangeTask(uint64_t term);
 
   typedef std::tr1::unordered_map<std::string, TrackedPeer*> PeersMap;
 
@@ -242,9 +286,9 @@ class PeerMessageQueue {
 
   void TrackPeerUnlocked(const std::string& uuid);
 
-  // Callback when a REPLICATE message has finished appending to the local
-  // log.
+  // Callback when a REPLICATE message has finished appending to the local log.
   void LocalPeerAppendFinished(const OpId& id,
+                               const StatusCallback& callback,
                                const Status& status);
 
   // Advances 'watermark' to the smallest op that 'num_peers_required' have.
@@ -263,14 +307,14 @@ class PeerMessageQueue {
   Status GetOpsFromCacheOrFallback(const OpId& op,
                                    int64_t fallback_index,
                                    int max_batch_size,
-                                   std::vector<ReplicateMsg*>* messages,
+                                   std::vector<const ReplicateMsg*>* messages,
                                    OpId* preceding_id);
 
   std::vector<PeerMessageQueueObserver*> observers_;
 
-  // The size of the majority for the queue.
-  // TODO support changing majority sizes when quorums change.
-  int majority_size_;
+  // The pool which executes observer notifications.
+  // TODO consider reusing a another pool.
+  gscoped_ptr<ThreadPool> observers_pool_;
 
   // The UUID of the local peer.
   const std::string local_uuid_;

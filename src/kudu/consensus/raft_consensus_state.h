@@ -330,13 +330,11 @@ class ReplicaState {
   // The update_lock_ must be held.
   ReplicaState::State state() const;
 
-  // TODO Move this back to private when we fix the hack where we need
-  // to expose this to close the PeerManager, in RaftConsensus::BecomeReplicaUnlocked().
-  // lock protecting state machine updates
-  mutable simple_spinlock update_lock_;
  private:
   // Helper method to update the active quorum state for peers, etc.
   void ResetActiveQuorumStateUnlocked(const metadata::QuorumPB& quorum);
+
+  mutable simple_spinlock update_lock_;
 
   const ConsensusOptions options_;
 

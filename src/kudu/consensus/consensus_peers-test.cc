@@ -120,10 +120,11 @@ TEST_F(ConsensusPeersTest, TestRemotePeer) {
   // We use a majority size of 2 since we make one fake remote peer
   // in addition to our real local log.
   const int kMajoritySize = 2;
-  message_queue_->Init(MinimumOpId(),
-                       MinimumOpId(),
-                       MinimumOpId().term(),
-                       kMajoritySize);
+  message_queue_->Init(MinimumOpId());
+  message_queue_->SetLeaderMode(MinimumOpId(),
+                                MinimumOpId().term(),
+                                kMajoritySize);
+
   gscoped_ptr<Peer> remote_peer;
   DelayablePeerProxy<NoOpTestPeerProxy>* proxy =
       NewRemotePeer("remote-peer", &remote_peer);
@@ -147,10 +148,12 @@ TEST_F(ConsensusPeersTest, TestRemotePeer) {
 }
 
 TEST_F(ConsensusPeersTest, TestRemotePeers) {
-  message_queue_->Init(MinimumOpId(),
-                       MinimumOpId(),
-                       MinimumOpId().term(),
-                       2);
+  const int kMajoritySize = 2;
+  message_queue_->Init(MinimumOpId());
+  message_queue_->SetLeaderMode(MinimumOpId(),
+                                MinimumOpId().term(),
+                                kMajoritySize);
+
   // Create a set of remote peers
   gscoped_ptr<Peer> remote_peer1;
   DelayablePeerProxy<NoOpTestPeerProxy>* remote_peer1_proxy =

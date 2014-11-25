@@ -80,20 +80,11 @@ void PeerManager::SignalRequest(bool force_if_queue_empty) {
 }
 
 void PeerManager::Close() {
-
-  PeersMap copy;
   {
     boost::lock_guard<simple_spinlock> lock(lock_);
-    copy = peers_;
-  }
-
-  // Close the peers per above.
-  BOOST_FOREACH(const PeersMap::value_type& entry, copy) {
-    entry.second->Close();
-  }
-
-  {
-    boost::lock_guard<simple_spinlock> lock(lock_);
+    BOOST_FOREACH(const PeersMap::value_type& entry, peers_) {
+      entry.second->Close();
+    }
     STLDeleteValues(&peers_);
   }
 }

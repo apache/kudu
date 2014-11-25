@@ -380,7 +380,7 @@ class DistConsensusTest : public TabletServerTest {
     CHECK_OK(client_->OpenTable(kTableId, &table));
 
     shared_ptr<KuduSession> session = client_->NewSession();
-    session->SetTimeoutMillis(10000);
+    session->SetTimeoutMillis(20000);
     CHECK_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
 
     for (int i = 0; i < num_batches; i++) {

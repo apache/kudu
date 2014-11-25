@@ -175,7 +175,13 @@ Status Peer::SignalRequest(bool even_if_queue_empty) {
 
 void Peer::SendNextRequest(bool even_if_queue_empty) {
   // the peer has no pending request nor is sending: send the request
-  queue_->RequestForPeer(peer_pb_.permanent_uuid(), &request_);
+  Status s = queue_->RequestForPeer(peer_pb_.permanent_uuid(), &request_);
+  if (PREDICT_FALSE(!s.ok())) {
+    VLOG(1) << "Could not obtain request from queue for peer: " << peer_pb_.permanent_uuid()
+        << ". Status: " << s.ToString();
+    sem_.Release();
+    return;
+  }
   request_.set_tablet_id(tablet_id_);
   request_.set_caller_uuid(leader_uuid_);
 
@@ -225,10 +231,10 @@ void Peer::ProcessResponse(const Status& status) {
 
   bool more_pending;
   queue_->ResponseFromPeer(response_, &more_pending);
+  state_ = kPeerIdle;
   if (more_pending && state_ != kPeerClosed) {
     SendNextRequest(true);
   } else {
-    state_ = kPeerIdle;
     sem_.Release();
   }
 }
@@ -237,7 +243,6 @@ void Peer::ProcessResponseError(const Status& status) {
   failed_attempts_++;
   LOG(WARNING) << "Couldn't send request to peer " << peer_pb_.permanent_uuid()
       << " for tablet " << tablet_id_
-      << " ops " << OpsRangeString(request_)
       << " Status: " << status.ToString() << ". Retrying in the next heartbeat period."
       << " Already tried " << failed_attempts_ << " times.";
   state_ = kPeerIdle;

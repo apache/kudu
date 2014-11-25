@@ -2,6 +2,7 @@
 // Confidential Cloudera Information: Covered by NDA.
 
 #include <algorithm>
+#include <boost/assign/list_of.hpp>
 #include <boost/foreach.hpp>
 #include <boost/thread/locks.hpp>
 #include <gflags/gflags.h>
@@ -80,8 +81,7 @@ PeerMessageQueue::PeerMessageQueue(const MetricContext& metric_ctx,
                                    const std::string& local_uuid,
                                    const std::string& tablet_id,
                                    const std::string& parent_tracker_id)
-    : majority_size_(0),
-      local_uuid_(local_uuid),
+    : local_uuid_(local_uuid),
       tablet_id_(tablet_id),
       log_cache_(metric_ctx, log, local_uuid, tablet_id, parent_tracker_id),
       metrics_(metric_ctx) {
@@ -90,24 +90,41 @@ PeerMessageQueue::PeerMessageQueue(const MetricContext& metric_ctx,
   queue_state_.all_replicated_opid = MinimumOpId();
   queue_state_.majority_replicated_opid = MinimumOpId();
   queue_state_.state = kQueueConstructed;
+  queue_state_.mode = NON_LEADER;
+  queue_state_.majority_size_ = 1;
+  CHECK_OK(ThreadPoolBuilder("queue-observers-pool").set_max_threads(1).Build(&observers_pool_));
 }
 
-void PeerMessageQueue::Init(const OpId& committed_index,
-                            const OpId& last_locally_replicated,
-                            uint64_t current_term,
-                            int majority_size) {
+void PeerMessageQueue::Init(const OpId& last_locally_replicated) {
   boost::lock_guard<simple_spinlock> lock(queue_lock_);
   CHECK_EQ(queue_state_.state, kQueueConstructed);
-  DCHECK_GE(majority_size, 0);
-  CHECK(committed_index.IsInitialized());
   log_cache_.Init(last_locally_replicated);
+  queue_state_.last_appended = last_locally_replicated;
+  queue_state_.state = kQueueOpen;
+  TrackPeerUnlocked(local_uuid_);
+}
+
+void PeerMessageQueue::SetLeaderMode(const OpId& committed_index,
+                                     uint64_t current_term,
+                                     int majority_size) {
+  boost::lock_guard<simple_spinlock> lock(queue_lock_);
+  CHECK(committed_index.IsInitialized());
+  queue_state_.current_term = current_term;
   queue_state_.committed_index = committed_index;
   queue_state_.majority_replicated_opid = committed_index;
-  queue_state_.last_appended = last_locally_replicated;
-  queue_state_.current_term = current_term;
-  queue_state_.state = kQueueOpen;
-  majority_size_ = majority_size;
-  TrackPeerUnlocked(local_uuid_);
+  queue_state_.majority_size_ = majority_size;
+  queue_state_.mode = LEADER;
+
+  LOG_WITH_PREFIX(INFO) << " queue going to LEADER mode. State: "
+      << queue_state_.ToString();
+}
+
+void PeerMessageQueue::SetNonLeaderMode() {
+  boost::lock_guard<simple_spinlock> lock(queue_lock_);
+  queue_state_.mode = NON_LEADER;
+  queue_state_.majority_size_ = 1;
+  LOG_WITH_PREFIX(INFO) << " queue going to NON_LEADER mode. State: "
+      << queue_state_.ToString();
 }
 
 void PeerMessageQueue::TrackPeer(const string& uuid) {
@@ -125,6 +142,12 @@ void PeerMessageQueue::TrackPeerUnlocked(const string& uuid) {
   TrackedPeer* tracked_peer = new TrackedPeer(uuid);
   tracked_peer->uuid = uuid;
   InsertOrDie(&peers_map_, uuid, tracked_peer);
+
+  // We don't know how far back this peer is so set the all replicated
+  // watermark and the pinned op to MinimumOpId(). We'll advance it when
+  // we know how far along the peer is.
+  queue_state_.all_replicated_opid = MinimumOpId();
+  log_cache_.SetPinnedOp(MinimumOpId().index());
 }
 
 void PeerMessageQueue::UntrackPeer(const string& uuid) {
@@ -136,6 +159,7 @@ void PeerMessageQueue::UntrackPeer(const string& uuid) {
 }
 
 void PeerMessageQueue::LocalPeerAppendFinished(const OpId& id,
+                                               const StatusCallback& callback,
                                                const Status& status) {
   CHECK_OK(status);
 
@@ -146,35 +170,43 @@ void PeerMessageQueue::LocalPeerAppendFinished(const OpId& id,
   ConsensusResponsePB fake_response;
   fake_response.set_responder_uuid(local_uuid_);
   fake_response.mutable_status()->mutable_last_received()->CopyFrom(id);
+  {
+    boost::unique_lock<simple_spinlock> lock(queue_lock_);
+    fake_response.mutable_status()->set_last_committed_idx(queue_state_.committed_index.index());
+  }
   bool junk;
   ResponseFromPeer(fake_response, &junk);
+
+  callback.Run(status);
 }
 
-Status PeerMessageQueue::AppendOperation(gscoped_ptr<ReplicateMsg> msg) {
+Status PeerMessageQueue::AppendOperation(const ReplicateMsg* msg) {
+  return AppendOperations(boost::assign::list_of(msg), Bind(DoNothingStatusCB));
+}
+
+Status PeerMessageQueue::AppendOperations(const vector<const ReplicateMsg*>& msgs,
+                                          const StatusCallback& log_append_callback) {
+
   boost::unique_lock<simple_spinlock> lock(queue_lock_);
-  if (queue_state_.state != kQueueOpen) {
-    return Status::IllegalState("Queue closed");
+
+  if (msgs.back()->id().term() > queue_state_.current_term) {
+    queue_state_.current_term = msgs.back()->id().term();
   }
 
-  ReplicateMsg* msg_ptr = DCHECK_NOTNULL(msg.get());
-
-  if (msg_ptr->id().term() > queue_state_.current_term) {
-    queue_state_.current_term = msg_ptr->id().term();
-  }
-
-  if (!log_cache_.AppendOperation(&msg, Bind(&PeerMessageQueue::LocalPeerAppendFinished,
-                                             Unretained(this),
-                                             msg_ptr->id()))) {
+  if (!log_cache_.AppendOperations(msgs,
+                                   Bind(&PeerMessageQueue::LocalPeerAppendFinished,
+                                        Unretained(this),
+                                        msgs.back()->id(),
+                                        log_append_callback))) {
     lock.unlock();
     if (PREDICT_FALSE((VLOG_IS_ON(2) || FLAGS_consensus_dump_queue_on_full))) {
-      LOG_WITH_PREFIX(INFO) << "Queue Full. Can't Append: " << msg_ptr->id().ShortDebugString()
-          << ". Dumping State:";
+      LOG_WITH_PREFIX(INFO) << "Queue Full. Can't Append: " << msgs.size()  << ". Dumping State:";
       log_cache_.DumpToLog();
     }
     return Status::ServiceUnavailable("Cannot append replicate message. Queue is full.");
   }
 
-  queue_state_.last_appended = msg_ptr->id();
+  queue_state_.last_appended = msgs.back()->id();
   UpdateMetrics();
 
   return Status::OK();
@@ -183,7 +215,7 @@ Status PeerMessageQueue::AppendOperation(gscoped_ptr<ReplicateMsg> msg) {
 Status PeerMessageQueue::GetOpsFromCacheOrFallback(const OpId& op,
                                                    int64_t fallback_index,
                                                    int max_batch_size,
-                                                   vector<ReplicateMsg*>* messages,
+                                                   vector<const ReplicateMsg*>* messages,
                                                    OpId* preceding_id) {
 
   OpId new_preceding;
@@ -210,16 +242,17 @@ Status PeerMessageQueue::GetOpsFromCacheOrFallback(const OpId& op,
   return s;
 }
 
-void PeerMessageQueue::RequestForPeer(const string& uuid,
-                                      ConsensusRequestPB* request) {
+Status PeerMessageQueue::RequestForPeer(const string& uuid,
+                                        ConsensusRequestPB* request) {
   // Clear the requests without deleting the entries, as they may be in use by other peers.
   request->mutable_ops()->ExtractSubrange(0, request->ops_size(), NULL);
   boost::lock_guard<simple_spinlock> lock(queue_lock_);
   DCHECK_EQ(queue_state_.state, kQueueOpen);
-  const TrackedPeer* peer;
-  if (PREDICT_FALSE(!FindCopy(peers_map_, uuid, &peer))) {
-    LOG(FATAL) << "Unable to find peer with UUID " << uuid
-               << ". Queue status: " << ToStringUnlocked();
+  DCHECK_NE(uuid, local_uuid_);
+
+  TrackedPeer* peer = FindPtrOrNull(peers_map_, uuid);
+  if (PREDICT_FALSE(peer == NULL || queue_state_.mode == NON_LEADER)) {
+    return Status::NotFound("Peer not tracked or queue not in leader mode.");
   }
 
   // This is initialized to the queue's last appended op but gets set to the id of the
@@ -232,7 +265,7 @@ void PeerMessageQueue::RequestForPeer(const string& uuid,
   if (!peer->is_new) {
 
     // The batch of messages to send to the peer.
-    vector<ReplicateMsg*> messages;
+    vector<const ReplicateMsg*> messages;
     int max_batch_size = FLAGS_consensus_max_batch_size_bytes - request->ByteSize();
 
     // We try to get the peer's last received op. If that fails because the op
@@ -245,15 +278,15 @@ void PeerMessageQueue::RequestForPeer(const string& uuid,
 
     if (PREDICT_FALSE(!s.ok() && !s.IsIncomplete())) {
       CHECK(messages.empty());
-      LOG(DFATAL) << "Error while reading the log: " << s.ToString();
+      LOG_WITH_PREFIX(DFATAL) << "Error while reading the log: " << s.ToString();
     }
 
     // We use AddAllocated rather than copy, because we pin the log cache at the
     // "all replicated" point. At some point we may want to allow partially loading
     // (and not pinning) earlier messages. At that point we'll need to do something
     // smarter here, like copy or ref-count.
-    BOOST_FOREACH(ReplicateMsg* msg, messages) {
-      request->mutable_ops()->AddAllocated(msg);
+    BOOST_FOREACH(const ReplicateMsg* msg, messages) {
+      request->mutable_ops()->AddAllocated(const_cast<ReplicateMsg*>(msg));
     }
     DCHECK_LE(request->ByteSize(), FLAGS_consensus_max_batch_size_bytes);
   }
@@ -274,6 +307,8 @@ void PeerMessageQueue::RequestForPeer(const string& uuid,
           << ": " << request->DebugString();
     }
   }
+
+  return Status::OK();
 }
 
 void PeerMessageQueue::AdvanceQueueWatermark(const char* type,
@@ -299,7 +334,6 @@ void PeerMessageQueue::AdvanceQueueWatermark(const char* type,
     // - Sort the vector
     // - Find the vector.size() - 'num_peers_required' position, this
     //   will be the new 'watermark'.
-    OpId min = MinimumOpId();
     vector<const OpId*> watermarks;
     BOOST_FOREACH(const PeersMap::value_type& peer, peers_map_) {
       if (peer.second->is_last_exchange_successful) {
@@ -341,11 +375,13 @@ void PeerMessageQueue::ResponseFromPeer(const ConsensusResponsePB& response,
   DCHECK(response.IsInitialized()) << "Response: " << response.ShortDebugString();
 
   OpId updated_majority_replicated_opid;
+  Mode mode_copy;
   {
     unique_lock<simple_spinlock> scoped_lock(&queue_lock_);
+    DCHECK_EQ(queue_state_.state, kQueueOpen);
 
     TrackedPeer* peer = FindPtrOrNull(peers_map_, response.responder_uuid());
-    if (PREDICT_FALSE(queue_state_.state == kQueueClosed || peer == NULL)) {
+    if (PREDICT_FALSE(peer == NULL)) {
       LOG_WITH_PREFIX(WARNING) << "Queue is closed or peer was untracked, disregarding peer "
           "response. Response: " << response.ShortDebugString();
       *more_pending = false;
@@ -389,11 +425,8 @@ void PeerMessageQueue::ResponseFromPeer(const ConsensusResponsePB& response,
         }
         case ConsensusErrorPB::INVALID_TERM: {
           CHECK(response.has_responder_term());
-
-          // TODO maybe we should notify the leader here, but it will find out soon
-          // anyway and right now it's simpler not to do it due to ownership/locking
-          // issues. We revert the changes for this TrackedPeer so that we don't try
-          // and get stuff from cache that we don't have.
+          LOG_WITH_PREFIX(INFO) << "Peer responded invalid term: " << peer->ToString();
+          NotifyObserversOfTermChange(response.responder_term());
           *peer = previous;
 
           *more_pending = false;
@@ -412,8 +445,8 @@ void PeerMessageQueue::ResponseFromPeer(const ConsensusResponsePB& response,
       peer->CheckMonotonicTerms(response.responder_term());
 
       // If the responder didn't send an error back that must mean that it has
-      // the same term as ourselves.
-      CHECK_EQ(response.responder_term(), queue_state_.current_term);
+      // a term that is the same or lower than ours.
+      CHECK_LE(response.responder_term(), queue_state_.current_term);
     }
 
     if (PREDICT_FALSE(VLOG_IS_ON(2))) {
@@ -421,29 +454,35 @@ void PeerMessageQueue::ResponseFromPeer(const ConsensusResponsePB& response,
           << ". Response: " << response.ShortDebugString();
     }
 
-    // Advance the commit index.
-    AdvanceQueueWatermark("majority_replicated",
-                          &queue_state_.majority_replicated_opid,
-                          previous.last_received,
-                          peer->last_received,
-                          majority_size_);
+    mode_copy = queue_state_.mode;
+    if (mode_copy == LEADER) {
+      // Advance the majority replicated index.
+      AdvanceQueueWatermark("majority_replicated",
+                            &queue_state_.majority_replicated_opid,
+                            previous.last_received,
+                            peer->last_received,
+                            queue_state_.majority_size_);
+
+      updated_majority_replicated_opid.CopyFrom(queue_state_.majority_replicated_opid);
+    }
 
     // Advance the all replicated index.
     AdvanceQueueWatermark("all_replicated",
                           &queue_state_.all_replicated_opid,
                           previous.last_received,
                           peer->last_received,
-                          std::max<int64_t>(majority_size_, peers_map_.size()));
+                          peers_map_.size());
 
-    updated_majority_replicated_opid.CopyFrom(queue_state_.majority_replicated_opid);
+    log_cache_.SetPinnedOp(queue_state_.all_replicated_opid.index());
 
     *more_pending = log_cache_.HasOpIndex(peer->last_received.index() + 1);
 
-    log_cache_.SetPinnedOp(queue_state_.all_replicated_opid.index());
     UpdateMetrics();
   }
 
-  NotifyObserversOfMajorityReplOpChange(updated_majority_replicated_opid);
+  if (mode_copy == LEADER) {
+    NotifyObserversOfMajorityReplOpChange(updated_majority_replicated_opid);
+  }
 }
 
 PeerMessageQueue::TrackedPeer PeerMessageQueue::GetTrackedPeerForTests(string uuid) {
@@ -513,18 +552,14 @@ void PeerMessageQueue::DumpToHtml(std::ostream& out) const {
 
 void PeerMessageQueue::ClearUnlocked() {
   STLDeleteValues(&peers_map_);
-  queue_state_.current_term = MinimumOpId().term();
-  queue_state_.committed_index = MinimumOpId();
-  queue_state_.all_replicated_opid = MinimumOpId();
-  queue_state_.majority_replicated_opid = MinimumOpId();
-  queue_state_.state = kQueueConstructed;
+  queue_state_.state = kQueueClosed;
+  log_cache_.Flush();
 }
 
 void PeerMessageQueue::Close() {
+  observers_pool_->Shutdown();
   boost::lock_guard<simple_spinlock> lock(queue_lock_);
-  log_cache_.Close();
   ClearUnlocked();
-  log_cache_.Close();
 }
 
 int64_t PeerMessageQueue::GetQueuedOperationsSizeBytesForTests() const {
@@ -547,7 +582,11 @@ string PeerMessageQueue::ToStringUnlocked() const {
 
 void PeerMessageQueue::RegisterObserver(PeerMessageQueueObserver* observer) {
   boost::lock_guard<simple_spinlock> lock(queue_lock_);
-  observers_.push_back(observer);
+  std::vector<PeerMessageQueueObserver*>::iterator iter =
+        std::find(observers_.begin(), observers_.end(), observer);
+  if (iter == observers_.end()) {
+    observers_.push_back(observer);
+  }
 }
 
 Status PeerMessageQueue::UnRegisterObserver(PeerMessageQueueObserver* observer) {
@@ -562,7 +601,22 @@ Status PeerMessageQueue::UnRegisterObserver(PeerMessageQueueObserver* observer) 
 }
 
 void PeerMessageQueue::NotifyObserversOfMajorityReplOpChange(
-    const OpId& new_majority_replicated_op) {
+    const OpId new_majority_replicated_op) {
+  WARN_NOT_OK(observers_pool_->SubmitClosure(
+      Bind(&PeerMessageQueue::NotifyObserversOfMajorityReplOpChangeTask,
+           Unretained(this), new_majority_replicated_op)),
+              LogPrefixUnlocked() + " Unable to notify peers of majority replicated op change.");
+}
+
+void PeerMessageQueue::NotifyObserversOfTermChange(uint64_t term) {
+  WARN_NOT_OK(observers_pool_->SubmitClosure(
+      Bind(&PeerMessageQueue::NotifyObserversOfTermChangeTask,
+           Unretained(this), term)),
+              LogPrefixUnlocked() + " Unable to notify peers of term change.");
+}
+
+void PeerMessageQueue::NotifyObserversOfMajorityReplOpChangeTask(
+    const OpId new_majority_replicated_op) {
   std::vector<PeerMessageQueueObserver*> copy;
   {
     boost::lock_guard<simple_spinlock> lock(queue_lock_);
@@ -585,23 +639,36 @@ void PeerMessageQueue::NotifyObserversOfMajorityReplOpChange(
   }
 }
 
+void PeerMessageQueue::NotifyObserversOfTermChangeTask(uint64_t term) {
+  std::vector<PeerMessageQueueObserver*> copy;
+  {
+    boost::lock_guard<simple_spinlock> lock(queue_lock_);
+    copy = observers_;
+  }
+  OpId new_committed_index;
+  BOOST_FOREACH(PeerMessageQueueObserver* observer, copy) {
+    observer->NotifyTermChange(term);
+  }
+}
+
 PeerMessageQueue::~PeerMessageQueue() {
   Close();
 }
 
 string PeerMessageQueue::LogPrefixUnlocked() const {
-  return Substitute("T $0 P $1: ",
+  return Substitute("T $0 P $1 [$2]: ",
                     tablet_id_,
-                    local_uuid_);
+                    local_uuid_,
+                    queue_state_.mode == LEADER ? "LEADER" : "NON_LEADER");
 }
 
 string PeerMessageQueue::QueueState::ToString() const {
   return Substitute("All replicated op: $0, Majority replicated op: $1, "
-      "Committed index: $2, Last appended: $3, Current term: $4, "
-      "State: $5",
+      "Committed index: $2, Last appended: $3, Current term: $4, Majority size: $5, "
+      "State: $6, Mode: $7",
       OpIdToString(all_replicated_opid), OpIdToString(majority_replicated_opid),
       OpIdToString(committed_index), OpIdToString(last_appended), current_term,
-      state);
+      majority_size_, state, (mode == LEADER ? "LEADER" : "NON_LEADER"));
 }
 
 }  // namespace consensus

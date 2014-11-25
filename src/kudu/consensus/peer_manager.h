@@ -3,6 +3,7 @@
 #ifndef KUDU_CONSENSUS_PEER_MANAGER_H
 #define KUDU_CONSENSUS_PEER_MANAGER_H
 
+#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/util/locks.h"
 #include "kudu/util/status.h"

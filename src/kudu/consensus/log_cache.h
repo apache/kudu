@@ -77,16 +77,16 @@ class LogCache {
   //
   Status ReadOps(int64_t after_op_index,
                  int max_size_bytes,
-                 std::vector<ReplicateMsg*>* messages,
+                 std::vector<const ReplicateMsg*>* messages,
                  OpId* preceding_op);
 
-  // Append the operation into the log and the cache.
-  // When the message has completed writing into the on-disk log, fires 'callback'.
+  // Append the operations into the log and the cache.
+  // When the messages have completed writing into the on-disk log, fires 'callback'.
   //
   // Returns false if the hard limit has been reached or the local log's buffers are full.
   // Takes ownership when it returns true.
-  bool AppendOperation(gscoped_ptr<ReplicateMsg>* message,
-                       const StatusCallback& callback);
+  bool AppendOperations(const std::vector<const ReplicateMsg*>& msgs,
+                        const StatusCallback& callback);
 
   // Return true if the cache currently contains data for the given operation.
   bool HasOpIndex(int64_t log_index) const;
@@ -101,11 +101,9 @@ class LogCache {
   // that once they are loaded, they are not evicted.
   void SetPinnedOp(int64_t index);
 
-  // Closes the cache, making sure that any outstanding reader terminates and that
-  // there are no outstanding operations in the cache that are not in the log.
-  // This latter case may happen in the off chance that we're faster writing to
-  // other nodes than to local disk.
-  void Close();
+  // Flushes the cache, making sure all in-flight appends to the local log
+  // are completed.
+  void Flush();
 
   // Return the number of bytes of memory currently in use by the cache.
   int64_t BytesUsed() const;
@@ -146,7 +144,8 @@ class LogCache {
                              const std::vector<ReplicateMsg*>& replicates);
 
   // Callback when a message has been appended to the local log.
-  void LogAppendCallback(ReplicateMsg* msg,
+  void LogAppendCallback(int64_t first_index,
+                         int64_t last_index,
                          const StatusCallback& user_callback,
                          const Status& status);
 
@@ -162,12 +161,12 @@ class LogCache {
 
   // An ordered map that serves as the buffer for the cached messages.
   // Maps from log index -> ReplicateMsg
-  typedef std::map<uint64_t, ReplicateMsg*> MessageCache;
+  typedef std::map<uint64_t, const ReplicateMsg*> MessageCache;
   MessageCache cache_;
 
   // The set of ReplicateMsgs which are currently in-flight into the log.
   // These cannot be evicted.
-  std::tr1::unordered_set<ReplicateMsg*> inflight_to_log_;
+  std::tr1::unordered_map<int64_t, const ReplicateMsg*> inflight_to_log_;
 
   // The OpId which comes before the first op in the cache.
   OpId preceding_first_op_;
@@ -175,7 +174,7 @@ class LogCache {
   // Any operation with an index >= min_pinned_op_ may not be
   // evicted from the cache.
   // Protected by lock_.
-  int64_t min_pinned_op_index;
+  int64_t min_pinned_op_index_;
 
   // The total size of consensus entries to keep in memory.
   // This is a hard limit, i.e. messages in the queue are always discarded
@@ -213,13 +212,6 @@ class LogCache {
     AtomicGauge<int64_t>* log_cache_size_bytes;
   };
   Metrics metrics_;
-
-  enum State {
-    kCacheOpen,
-    kCacheClosed,
-  };
-
-  State state_;
 
   DISALLOW_COPY_AND_ASSIGN(LogCache);
 };
