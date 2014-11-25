@@ -12,10 +12,16 @@
 namespace kudu {
 
 #define EXPECT_ROWKEY_EQ(schema, expected, enc_key)  \
-  EXPECT_NO_FATAL_FAILURE(ExpectRowKeyEq((schema), (expected), (enc_key)))
+  do { \
+    SCOPED_TRACE(""); \
+    EXPECT_NO_FATAL_FAILURE(ExpectRowKeyEq((schema), (expected), (enc_key))); \
+  } while (0)
 
-#define EXPECT_DECODED_KEY_EQ(type, expected, val) \
-  EXPECT_NO_FATAL_FAILURE(ExpectDecodedKeyEq<(type)>((expected), (val)))
+#define EXPECT_DECODED_KEY_EQ(type, expected, encoded_form, val) \
+  do { \
+    SCOPED_TRACE(""); \
+    EXPECT_NO_FATAL_FAILURE(ExpectDecodedKeyEq<(type)>((expected), (encoded_form), (val))); \
+  } while (0)
 
 class EncodedKeyTest : public ::testing::Test {
  public:
@@ -53,6 +59,7 @@ class EncodedKeyTest : public ::testing::Test {
 
   template<DataType Type>
   void ExpectDecodedKeyEq(const string& expected,
+                          const Slice& encoded_form,
                           void* val) {
     Schema schema(boost::assign::list_of
                   (ColumnSchema("key", Type)), 1);
@@ -60,6 +67,7 @@ class EncodedKeyTest : public ::testing::Test {
     builder.AddColumnKey(val);
     gscoped_ptr<EncodedKey> key(builder.BuildEncodedKey());
     EXPECT_ROWKEY_EQ(schema, expected, *key);
+    EXPECT_EQ(encoded_form, key->encoded_key());
   }
 
  private:
@@ -91,47 +99,55 @@ TEST_F(EncodedKeyTest, TestKeyInRange) {
 TEST_F(EncodedKeyTest, TestDecodeSimpleKeys) {
   {
     uint8_t val = 123;
-    EXPECT_DECODED_KEY_EQ(UINT8, "(uint8 key=123)", &val);
+    EXPECT_DECODED_KEY_EQ(UINT8, "(uint8 key=123)", "\x7b", &val);
   }
 
   {
     int8_t val = -123;
-    EXPECT_DECODED_KEY_EQ(INT8, "(int8 key=-123)", &val);
+    EXPECT_DECODED_KEY_EQ(INT8, "(int8 key=-123)", "\x05", &val);
   }
 
   {
     uint16_t val = 12345;
-    EXPECT_DECODED_KEY_EQ(UINT16, "(uint16 key=12345)", &val);
+    EXPECT_DECODED_KEY_EQ(UINT16, "(uint16 key=12345)", "\x30\x39", &val);
+  }
+
+  {
+    int16_t val = 12345;
+    EXPECT_DECODED_KEY_EQ(INT16, "(int16 key=12345)", "\xb0\x39", &val);
   }
 
   {
     int16_t val = -12345;
-    EXPECT_DECODED_KEY_EQ(INT16, "(int16 key=-12345)", &val);
+    EXPECT_DECODED_KEY_EQ(INT16, "(int16 key=-12345)", "\x4f\xc7", &val);
   }
 
   {
     uint32_t val = 123456;
-    EXPECT_DECODED_KEY_EQ(UINT32, "(uint32 key=123456)", &val);
+    EXPECT_DECODED_KEY_EQ(UINT32, "(uint32 key=123456)",
+                          Slice("\x00\x01\xe2\x40", 4), &val);
   }
 
   {
     int32_t val = -123456;
-    EXPECT_DECODED_KEY_EQ(INT32, "(int32 key=-123456)", &val);
+    EXPECT_DECODED_KEY_EQ(INT32, "(int32 key=-123456)", "\x7f\xfe\x1d\xc0", &val);
   }
 
   {
     uint64_t val = 1234567891011121314;
-    EXPECT_DECODED_KEY_EQ(UINT64, "(uint64 key=1234567891011121314)", &val);
+    EXPECT_DECODED_KEY_EQ(UINT64, "(uint64 key=1234567891011121314)",
+                          "\x11\x22\x10\xf4\xb2\xd2\x30\xa2", &val);
   }
 
   {
     int64_t val = -1234567891011121314;
-    EXPECT_DECODED_KEY_EQ(INT64, "(int64 key=-1234567891011121314)", &val);
+    EXPECT_DECODED_KEY_EQ(INT64, "(int64 key=-1234567891011121314)",
+                          "\x6e\xdd\xef\x0b\x4d\x2d\xcf\x5e", &val);
   }
 
   {
     Slice val("aKey");
-    EXPECT_DECODED_KEY_EQ(STRING, "(string key=aKey)", &val);
+    EXPECT_DECODED_KEY_EQ(STRING, "(string key=aKey)", "aKey", &val);
   }
 }
 

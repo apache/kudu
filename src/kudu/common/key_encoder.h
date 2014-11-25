@@ -6,14 +6,15 @@
 
 
 #include <arpa/inet.h>
-#include <emmintrin.h>
-#include <smmintrin.h>
 #include <string.h>
 #include <climits>
 #include <bits/endian.h>
 
 #include "kudu/common/types.h"
+#include "kudu/gutil/endian.h"
 #include "kudu/gutil/macros.h"
+#include "kudu/gutil/mathlimits.h"
+#include "kudu/gutil/type_traits.h"
 #include "kudu/util/faststring.h"
 #include "kudu/util/memory/arena.h"
 
@@ -22,195 +23,53 @@
 
 namespace kudu {
 
-
-template<DataType Type>
+template<DataType Type, class Enable = void>
 struct KeyEncoderTraits {
 };
 
-template<>
-struct KeyEncoderTraits<UINT8> {
 
-  static const DataType key_type = UINT8;
+// This complicated-looking template magic defines a specialization of the
+// KeyEncoderTraits struct for any integral type. This avoids a bunch of
+// code duplication for all of our different size/signed-ness variants.
+template<DataType Type>
+struct KeyEncoderTraits<Type, typename base::enable_if<
+                                base::is_integral<
+                                  typename DataTypeTraits<Type>::cpp_type
+                                  >::value
+                                  >::type
+                        > {
+  static const DataType key_type = Type;
 
-  static void Encode(const void* key, faststring* dst) {
-    Encode(*reinterpret_cast<const uint8_t *>(key), dst);
+ private:
+  typedef typename DataTypeTraits<Type>::cpp_type cpp_type;
+  typedef typename MathLimits<cpp_type>::UnsignedType unsigned_cpp_type;
+
+  static unsigned_cpp_type SwapEndian(unsigned_cpp_type x) {
+    switch (sizeof(x)) {
+      case 1: return x;
+      case 2: return BigEndian::FromHost16(x);
+      case 4: return BigEndian::FromHost32(x);
+      case 8: return BigEndian::FromHost64(x);
+      default: LOG(FATAL) << "bad type: " << x;
+    }
+    return 0;
   }
 
-  inline static void Encode(uint8_t key, faststring* dst) {
-    dst->append(&key, sizeof(key));
+ public:
+  static void Encode(cpp_type key, faststring* dst) {
+    Encode(&key, dst);
   }
 
-  static void EncodeWithSeparators(const void* key, bool is_last, faststring* dst) {
-    Encode(*reinterpret_cast<const uint8_t *>(key), dst);
-  }
+  static void Encode(const void* key_ptr, faststring* dst) {
+    unsigned_cpp_type key_unsigned;
+    memcpy(&key_unsigned, key_ptr, sizeof(key_unsigned));
 
-  static void Decode(const Slice& encoded_key,
-                     Arena* arena,
-                     uint8_t* cell_ptr) {
-    *cell_ptr = encoded_key.data()[0];
-  }
-
-  static void DecodeKeyPortion(const Slice& encoded_key_portion,
-                               bool is_last,
-                               Arena* arena,
-                               uint8_t* cell_ptr,
-                               size_t* offset) {
-    Decode(encoded_key_portion, arena, cell_ptr);
-  }
-};
-
-template<>
-struct KeyEncoderTraits<INT8> {
-
-  static const DataType key_type = INT8;
-
-  static void Encode(const void* key, faststring* dst) {
-    static const uint8_t one = 1;
-    uint8_t res = *reinterpret_cast<const int8_t *>(key)
-        ^ one << (sizeof(res) * CHAR_BIT - 1);
-    KeyEncoderTraits<UINT8>::Encode(res, dst);
-  }
-
-  static void EncodeWithSeparators(const void* key, bool is_last, faststring* dst) {
-    Encode(key, dst);
-  }
-
-  static void Decode(const Slice& encoded_key,
-                     Arena* arena,
-                     uint8_t* cell_ptr) {
-    static const uint8_t one = 1;
-    KeyEncoderTraits<UINT8>::Decode(encoded_key,
-                                    arena,
-                                    cell_ptr);
-    *cell_ptr ^= one << (sizeof(*cell_ptr) * CHAR_BIT - 1);
-  }
-
-  static void DecodeKeyPortion(const Slice& encoded_key_portion,
-                               bool is_last,
-                               Arena* arena,
-                               uint8_t* cell_ptr,
-                               size_t* offset) {
-    Decode(encoded_key_portion, arena, cell_ptr);
-  }
-};
-
-template<>
-struct KeyEncoderTraits<UINT16> {
-
-  static const DataType key_type = UINT16;
-
-  static void Encode(const void* key, faststring* dst) {
-    Encode(*reinterpret_cast<const uint16_t *>(key), dst);
-  }
-
-  inline static void Encode(uint16_t key, faststring* dst) {
-    key = htobe16(key);
-    dst->append(&key, sizeof(key));
-  }
-
-  static void EncodeWithSeparators(const void* key, bool is_last, faststring* dst) {
-    Encode(*reinterpret_cast<const uint16_t *>(key), dst);
-  }
-
-  static void Decode(const Slice& encoded_key,
-                     Arena* arena,
-                     uint8_t* cell_ptr) {
-    uint16_t* key_ptr = reinterpret_cast<uint16_t*>(cell_ptr);
-    const uint16_t* enc_key_ptr = reinterpret_cast<const uint16_t*>(encoded_key.data());
-    *key_ptr = be16toh(*enc_key_ptr);
-  }
-
-  static void DecodeKeyPortion(const Slice& encoded_key_portion,
-                               bool is_last,
-                               Arena* arena,
-                               uint8_t* cell_ptr,
-                               size_t* offset) {
-    Decode(encoded_key_portion, arena, cell_ptr);
-  }
-};
-
-template<>
-struct KeyEncoderTraits<INT16> {
-
-  static const DataType key_type = INT16;
-
-  static void Encode(const void* key, faststring* dst) {
-    static const int16_t one = 1;
-    int16_t res = *reinterpret_cast<const int16_t *>(key);
-    res ^= one << (sizeof(res) * CHAR_BIT - 1);
-    KeyEncoderTraits<UINT16>::Encode(res, dst);
-  }
-
-  static void EncodeWithSeparators(const void* key, bool is_last, faststring* dst) {
-    Encode(key, dst);
-  }
-
-  static void Decode(const Slice& encoded_key,
-                        Arena* arena,
-                        uint8_t* cell_ptr) {
-    static const uint16_t one = 1;
-    KeyEncoderTraits<UINT16>::Decode(encoded_key,
-                                     arena,
-                                     cell_ptr);
-    int16_t enc = *reinterpret_cast<const int16_t *>(cell_ptr);
-    enc ^= one << (sizeof(enc) * CHAR_BIT - 1);
-    *reinterpret_cast<int16_t *>(cell_ptr) = enc;
-  }
-
-  static void DecodeKeyPortion(const Slice& encoded_key_portion,
-                               bool is_last,
-                               Arena* arena,
-                               uint8_t* cell_ptr,
-                               size_t* offset) {
-    Decode(encoded_key_portion, arena, cell_ptr);
-  }
-};
-
-template<>
-struct KeyEncoderTraits<UINT32> {
-
-  static const DataType key_type = UINT32;
-
-  static void Encode(const void* key, faststring* dst) {
-    Encode(*reinterpret_cast<const uint32_t *>(key), dst);
-  }
-
-  inline static void Encode(uint32_t key, faststring* dst) {
-    key = htobe32(key);
-    dst->append(&key, sizeof(key));
-  }
-
-  static void EncodeWithSeparators(const void* key, bool is_last, faststring* dst) {
-    Encode(*reinterpret_cast<const uint32_t *>(key), dst);
-  }
-
-  static void Decode(const Slice& encoded_key,
-                     Arena* arena,
-                     uint8_t* cell_ptr) {
-    uint32_t* key_ptr = reinterpret_cast<uint32_t*>(cell_ptr);
-    const uint32_t* enc_key_ptr = reinterpret_cast<const uint32_t*>(encoded_key.data());
-    *key_ptr = be32toh(*enc_key_ptr);
-  }
-
-  static void DecodeKeyPortion(const Slice& encoded_key_portion,
-                               bool is_last,
-                               Arena* arena,
-                               uint8_t* cell_ptr,
-                               size_t* offset) {
-    Decode(encoded_key_portion, arena, cell_ptr);
-  }
-};
-
-template<>
-struct KeyEncoderTraits<INT32> {
-
-  static const DataType key_type = INT32;
-
-  static void Encode(const void* key, faststring* dst) {
-    static const int32_t one = 1;
-    int32_t res = *reinterpret_cast<const int32_t *>(key);
-    res ^= one << (sizeof(res) * CHAR_BIT - 1);
-    KeyEncoderTraits<UINT32>::Encode(res, dst);
+    // To encode signed integers, swap the MSB.
+    if (MathLimits<cpp_type>::kIsSigned) {
+      key_unsigned ^= 1UL << (sizeof(key_unsigned) * CHAR_BIT - 1);
+    }
+    key_unsigned = SwapEndian(key_unsigned);
+    dst->append(&key_unsigned, sizeof(key_unsigned));
   }
 
   static void EncodeWithSeparators(const void* key, bool is_last, faststring* dst) {
@@ -220,85 +79,13 @@ struct KeyEncoderTraits<INT32> {
   static void Decode(const Slice& encoded_key,
                      Arena* arena,
                      uint8_t* cell_ptr) {
-    static const uint32_t one = 1;
-    KeyEncoderTraits<UINT32>::Decode(encoded_key,
-                                     arena,
-                                     cell_ptr);
-    int32_t enc = *reinterpret_cast<const int32_t *>(cell_ptr);
-    enc ^= one << (sizeof(enc) * CHAR_BIT - 1);
-    *reinterpret_cast<int32_t *>(cell_ptr) = enc;
-  }
-
-  static void DecodeKeyPortion(const Slice& encoded_key_portion,
-                               bool is_last,
-                               Arena* arena,
-                               uint8_t* cell_ptr,
-                               size_t* offset) {
-    Decode(encoded_key_portion, arena, cell_ptr);
-  }
-};
-
-template<>
-struct KeyEncoderTraits<UINT64> {
-
-  static const DataType key_type = INT64;
-
-  static void Encode(const void* key, faststring* dst) {
-    Encode(*reinterpret_cast<const uint64_t *>(key), dst);
-  }
-
-  inline static void Encode(uint64_t key, faststring* dst) {
-    key = htobe64(key);
-    dst->append(&key, sizeof(key));
-  }
-
-  static void EncodeWithSeparators(const void* key, bool is_last, faststring* dst) {
-    Encode(*reinterpret_cast<const uint64_t *>(key), dst);
-  }
-
-  static void Decode(const Slice& encoded_key,
-                     Arena* arena,
-                     uint8_t* cell_ptr) {
-    uint64_t* key_ptr = reinterpret_cast<uint64_t*>(cell_ptr);
-    const uint64_t* enc_key_ptr = reinterpret_cast<const uint64_t*>(encoded_key.data());
-    *key_ptr = be64toh(*enc_key_ptr);
-  }
-
-  static void DecodeKeyPortion(const Slice& encoded_key_portion,
-                               bool is_last,
-                               Arena* arena,
-                               uint8_t* cell_ptr,
-                               size_t* offset) {
-    Decode(encoded_key_portion, arena, cell_ptr);
-  }
-};
-
-template<>
-struct KeyEncoderTraits<INT64> {
-
-  static const DataType key_type = INT64;
-
-  static void Encode(const void* key, faststring* dst) {
-    static const int64_t one = 1;
-    int64_t res = *reinterpret_cast<const int64_t *>(key);
-    res ^= one << (sizeof(res) * CHAR_BIT - 1);
-    KeyEncoderTraits<UINT64>::Encode(res, dst);
-  }
-
-  static void EncodeWithSeparators(const void* key, bool is_last, faststring* dst) {
-    Encode(key, dst);
-  }
-
-  static void Decode(const Slice& encoded_key,
-                     Arena* arena,
-                     uint8_t* cell_ptr) {
-    static const int64_t one = 1;
-    KeyEncoderTraits<UINT64>::Decode(encoded_key,
-                                     arena,
-                                     cell_ptr);
-    int64_t enc = *reinterpret_cast<const int64_t *>(cell_ptr);
-    enc ^= one << (sizeof(enc) * CHAR_BIT - 1);
-    *reinterpret_cast<int64_t *>(cell_ptr) = enc;
+    unsigned_cpp_type val;
+    memcpy(&val,  &encoded_key[0], sizeof(cpp_type));
+    val = SwapEndian(val);
+    if (MathLimits<cpp_type>::kIsSigned) {
+      val ^= 1UL << (sizeof(val) * CHAR_BIT - 1);
+    }
+    memcpy(cell_ptr, &val, sizeof(val));
   }
 
   static void DecodeKeyPortion(const Slice& encoded_key_portion,
@@ -459,7 +246,7 @@ class KeyEncoder {
   // Similar to Decode above, but meant to be used for variable
   // length datatypes (currently only STRING) inside composite
   // keys. 'encoded_key_portion' refers to the slice of a composite
-  // key starting at the beggining of the composite key column and
+  // key starting at the beginning of the composite key column and
   // 'offset' refers to the offset relative to the start of
   // 'encoded_key_portion'.
   //
