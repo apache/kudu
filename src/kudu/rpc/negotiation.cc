@@ -189,10 +189,9 @@ void Negotiation::RunNegotiation(const scoped_refptr<Connection>& conn,
 
   if (PREDICT_FALSE(!s.ok())) {
     string msg = Substitute("$0 connection negotiation failed: $1",
-                            conn->direction() == Connection::SERVER ? "server":"client",
+                            conn->direction() == Connection::SERVER ? "Server" : "Client",
                             conn->ToString());
     s = s.CloneAndPrepend(msg);
-    LOG(WARNING) << s.ToString();
   }
   conn->CompleteNegotiation(s);
 }
