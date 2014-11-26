@@ -9,6 +9,7 @@
 
 #include "kudu/consensus/consensus.pb.h"
 #include "kudu/rpc/response_callback.h"
+#include "kudu/rpc/rpc_controller.h"
 #include "kudu/server/metadata.pb.h"
 #include "kudu/util/countdown_latch.h"
 #include "kudu/util/locks.h"
@@ -33,7 +34,6 @@ class ConsensusServiceProxy;
 class OpId;
 class PeerProxy;
 class PeerProxyFactory;
-class PeerImpl;
 class PeerMessageQueue;
 class VoteRequestPB;
 class VoteResponsePB;
@@ -125,13 +125,13 @@ class Peer {
   Peer(const metadata::QuorumPeerPB& peer,
        const std::string& tablet_id,
        const std::string& leader_uuid,
-       PeerMessageQueue* queue,
-       gscoped_ptr<PeerImpl> impl);
+       gscoped_ptr<PeerProxy> proxy,
+       PeerMessageQueue* queue);
 
   void SendNextRequest(bool even_if_queue_empty);
 
   // Signals that a response was received from the peer.
-  void ProcessResponse(const Status& status);
+  void ProcessResponse();
 
   // Signals there was an error sending the request to the peer.
   void ProcessResponseError(const Status& status);
@@ -142,7 +142,9 @@ class Peer {
   const std::string leader_uuid_;
 
   metadata::QuorumPeerPB peer_pb_;
-  gscoped_ptr<PeerImpl> peer_impl_;
+
+  gscoped_ptr<PeerProxy> proxy_;
+
   PeerMessageQueue* queue_;
   uint64_t failed_attempts_;
 
@@ -150,6 +152,8 @@ class Peer {
   ConsensusRequestPB request_;
   // The last response received.
   ConsensusResponsePB response_;
+
+  rpc::RpcController controller_;
 
   // Held if there is an outstanding request.
   // This is used in order to ensure that we only have a single request

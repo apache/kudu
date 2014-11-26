@@ -40,65 +40,6 @@ using rpc::Messenger;
 using rpc::RpcController;
 using strings::Substitute;
 
-class PeerImpl {
- public:
-  // Initializes the Peer implementation.
-  virtual Status Init() = 0;
-
-
-  // Return a string identifying what type of peer this is (eg "remote" or "local").
-  virtual string PeerTypeString() const = 0;
-
-  // Sends the next request, asynchronously. When the request is complete (eg the
-  // remote peer responds, or the local logging finishes), 'callback' is called.
-  // If 'callback' gets an OK status, then 'response' will contain the peer's
-  // response.
-  //
-  // The request pointer must remain valid and unmodified until the callback is called.
-  virtual void SendRequest(const ConsensusRequestPB* request,
-                           ConsensusResponsePB* response,
-                           const StatusCallback& callback) = 0;
-
-  virtual ~PeerImpl() {}
-};
-
-
-// A remote peer.
-class RemotePeer : public PeerImpl {
- public:
-  explicit RemotePeer(gscoped_ptr<PeerProxy> proxy)
-    : proxy_(proxy.Pass()) {
-  }
-
-  Status Init() OVERRIDE {
-    return Status::OK();
-  }
-
-  virtual void SendRequest(const ConsensusRequestPB* request,
-                           ConsensusResponsePB* response,
-                           const StatusCallback& callback) OVERRIDE {
-    controller_.Reset();
-
-    // TODO handle errors
-    CHECK_OK(proxy_->UpdateAsync(
-        request, response, &controller_,
-        boost::bind(&RemotePeer::RequestCallback, this, callback)));
-  }
-
-  virtual std::string PeerTypeString() const OVERRIDE {
-    return "remote";
-  }
-
- private:
-  void RequestCallback(const StatusCallback& peer_callback) {
-    peer_callback.Run(controller_.status());
-  }
-
-
-  gscoped_ptr<PeerProxy> proxy_;
-  rpc::RpcController controller_;
-};
-
 Status Peer::NewRemotePeer(const metadata::QuorumPeerPB& peer_pb,
                            const string& tablet_id,
                            const string& leader_uuid,
@@ -106,12 +47,11 @@ Status Peer::NewRemotePeer(const metadata::QuorumPeerPB& peer_pb,
                            gscoped_ptr<PeerProxy> proxy,
                            gscoped_ptr<Peer>* peer) {
 
-  gscoped_ptr<PeerImpl> impl(new RemotePeer(proxy.Pass()));
   gscoped_ptr<Peer> new_peer(new Peer(peer_pb,
                                       tablet_id,
                                       leader_uuid,
-                                      queue,
-                                      impl.Pass()));
+                                      proxy.Pass(),
+                                      queue));
   RETURN_NOT_OK(new_peer->Init());
   peer->reset(new_peer.release());
   return Status::OK();
@@ -120,12 +60,12 @@ Status Peer::NewRemotePeer(const metadata::QuorumPeerPB& peer_pb,
 Peer::Peer(const metadata::QuorumPeerPB& peer_pb,
            const string& tablet_id,
            const string& leader_uuid,
-           PeerMessageQueue* queue,
-           gscoped_ptr<PeerImpl> impl)
+           gscoped_ptr<PeerProxy> proxy,
+           PeerMessageQueue* queue)
     : tablet_id_(tablet_id),
       leader_uuid_(leader_uuid),
       peer_pb_(peer_pb),
-      peer_impl_(impl.Pass()),
+      proxy_(proxy.Pass()),
       queue_(queue),
       failed_attempts_(0),
       sem_(1),
@@ -142,7 +82,6 @@ void Peer::SetTermForTest(int term) {
 
 Status Peer::Init() {
   boost::lock_guard<Semaphore> lock(sem_);
-  RETURN_NOT_OK(peer_impl_->Init());
   queue_->TrackPeer(peer_pb_.permanent_uuid());
   RETURN_NOT_OK(heartbeater_.Start());
   state_ = kPeerStarted;
@@ -203,17 +142,21 @@ void Peer::SendNextRequest(bool even_if_queue_empty) {
 
   VLOG(2) << "Sending to peer " << peer_pb().permanent_uuid() << ": "
           << request_.ShortDebugString();
-  peer_impl_->SendRequest(&request_, &response_,
-                          Bind(&Peer::ProcessResponse, Unretained(this)));
+  controller_.Reset();
+
+  // TODO handle errors
+  CHECK_OK(proxy_->UpdateAsync(
+      &request_, &response_, &controller_,
+      boost::bind(&Peer::ProcessResponse, this)));
 }
 
-void Peer::ProcessResponse(const Status& status) {
+void Peer::ProcessResponse() {
   DCHECK_EQ(0, sem_.GetValue())
     << "Got a response when nothing was pending";
   DCHECK_EQ(state_, kPeerWaitingForResponse);
 
-  if (!status.ok()) {
-    ProcessResponseError(status);
+  if (!controller_.status().ok()) {
+    ProcessResponseError(controller_.status());
     return;
   }
 
@@ -224,8 +167,7 @@ void Peer::ProcessResponse(const Status& status) {
   failed_attempts_ = 0;
 
   DCHECK(response_.status().IsInitialized()) << "Error: " << response_.InitializationErrorString();
-  VLOG(2) << "Response from "
-          << peer_impl_->PeerTypeString() << " peer " << peer_pb().permanent_uuid() << ": "
+  VLOG(2) << "Response from peer " << peer_pb().permanent_uuid() << ": "
           << response_.ShortDebugString();
 
 

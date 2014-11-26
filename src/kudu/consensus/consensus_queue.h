@@ -158,7 +158,7 @@ class PeerMessageQueue {
   // Updates the request queue with the latest response of a peer, returns
   // whether this peer has more requests pending.
   virtual void ResponseFromPeer(const ConsensusResponsePB& response,
-                        bool* more_pending);
+                                bool* more_pending);
 
   // Closes the queue, peers are still allowed to call UntrackPeer() and
   // ResponseFromPeer() but no additional peers can be tracked or messages
