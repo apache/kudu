@@ -13,6 +13,10 @@ class Status;
 // produce asynchronous results and may fail.
 typedef Callback<void(const Status& status)> StatusCallback;
 
+// To be used when a function signature requires a StatusCallback but none
+// is needed.
+extern void DoNothingStatusCB(const Status& status);
+
 } // namespace kudu
 
 #endif

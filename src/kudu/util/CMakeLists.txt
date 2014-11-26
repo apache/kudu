@@ -63,6 +63,7 @@ add_library(kudu_util
   slice.cc
   spinlock_profiling.cc
   status.cc
+  status_callback.cc
   string_case.cc
   subprocess.cc
   sync_point.cc
