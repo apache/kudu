@@ -1,7 +1,7 @@
 // Copyright (c) 2013, Cloudera, inc.
 // Confidential Cloudera Information: Covered by NDA.
 
-#include "kudu/master/sys_tables.h"
+#include "kudu/master/sys_catalog.h"
 
 #include <boost/assign/list_of.hpp>
 #include <gflags/gflags.h>
@@ -45,22 +45,24 @@ using strings::Substitute;
 namespace kudu {
 namespace master {
 
-// ===========================================================================
-//  Abstract SysTable
-// ===========================================================================
-SysTable::SysTable(Master* master,
-                   MetricRegistry* metrics,
-                   const string& name)
-  : metric_ctx_(metrics, name),
-    master_(master) {
+static const char* const kSysCatalogTabletId = "00000000000000000000000000000000";
+
+static const char* const kSysCatalogTableColType = "entry_type";
+static const char* const kSysCatalogTableColId = "entry_id";
+static const char* const kSysCatalogTableColMetadata = "metadata";
+
+SysCatalogTable::SysCatalogTable(Master* master,
+                   MetricRegistry* metrics)
+    : metric_ctx_(metrics, table_name()),
+      master_(master) {
   CHECK_OK(ThreadPoolBuilder("ldr-apply").Build(&leader_apply_pool_));
   CHECK_OK(ThreadPoolBuilder("repl-apply").Build(&replica_apply_pool_));
 }
 
-SysTable::~SysTable() {
+SysCatalogTable::~SysCatalogTable() {
 }
 
-void SysTable::Shutdown() {
+void SysCatalogTable::Shutdown() {
   if (tablet_peer_) {
     tablet_peer_->Shutdown();
   }
@@ -68,7 +70,7 @@ void SysTable::Shutdown() {
   replica_apply_pool_->Shutdown();
 }
 
-Status SysTable::Load(FsManager *fs_manager) {
+Status SysCatalogTable::Load(FsManager *fs_manager) {
   tablet::TabletMasterBlockPB master_block;
   SetupTabletMasterBlock(&master_block);
 
@@ -108,7 +110,7 @@ Status SysTable::Load(FsManager *fs_manager) {
   return Status::OK();
 }
 
-Status SysTable::CreateNew(FsManager *fs_manager) {
+Status SysCatalogTable::CreateNew(FsManager *fs_manager) {
   TabletMasterBlockPB master_block;
   SetupTabletMasterBlock(&master_block);
 
@@ -144,7 +146,7 @@ Status SysTable::CreateNew(FsManager *fs_manager) {
   return SetupTablet(metadata);
 }
 
-Status SysTable::SetupDistributedQuorum(const MasterOptions& options, int64_t seqno,
+Status SysCatalogTable::SetupDistributedQuorum(const MasterOptions& options, int64_t seqno,
                                         QuorumPB* quorum) {
   DCHECK(options.IsDistributed());
 
@@ -181,7 +183,7 @@ Status SysTable::SetupDistributedQuorum(const MasterOptions& options, int64_t se
   }
 
   // Now resolve UUIDs.
-  // By the time a SysTable is created and initted, the masters should be
+  // By the time a SysCatalogTable is created and initted, the masters should be
   // starting up, so this should be fine to do.
   DCHECK(master_->messenger());
   QuorumPB resolved_quorum = new_quorum;
@@ -211,10 +213,10 @@ Status SysTable::SetupDistributedQuorum(const MasterOptions& options, int64_t se
   return Status::OK();
 }
 
-void SysTable::SysTableStateChanged(TabletPeer* tablet_peer) {
+void SysCatalogTable::SysCatalogStateChanged(TabletPeer* tablet_peer) {
   string uuid = tablet_peer->consensus()->peer_uuid();
   QuorumPB quorum = tablet_peer->consensus()->Quorum();
-  LOG(INFO) << "SysTable state changed. New quorum config: " << quorum.ShortDebugString();
+  LOG(INFO) << "SysCatalogTable state changed. New quorum config: " << quorum.ShortDebugString();
   if (master_->opts().IsDistributed()) {
     // TODO: Once leader election goes in this will need to be relaxed.
     if (master_->opts().leader) {
@@ -231,17 +233,18 @@ void SysTable::SysTableStateChanged(TabletPeer* tablet_peer) {
           << QuorumPeerPB::Role_Name(tablet_peer->consensus()->role());
 }
 
-Status SysTable::SetupTablet(const scoped_refptr<tablet::TabletMetadata>& metadata) {
+Status SysCatalogTable::SetupTablet(const scoped_refptr<tablet::TabletMetadata>& metadata) {
   shared_ptr<Tablet> tablet;
   gscoped_ptr<Log> log;
   scoped_refptr<LogAnchorRegistry> log_anchor_registry;
 
   // TODO: handle crash mid-creation of tablet? do we ever end up with a
   // partially created tablet here?
-  tablet_peer_.reset(new TabletPeer(metadata,
-                                    leader_apply_pool_.get(),
-                                    replica_apply_pool_.get(),
-                                    boost::bind(&SysTable::SysTableStateChanged, this, _1)));
+  tablet_peer_.reset(new TabletPeer(
+      metadata,
+      leader_apply_pool_.get(),
+      replica_apply_pool_.get(),
+      boost::bind(&SysCatalogTable::SysCatalogStateChanged, this, _1)));
 
   consensus::ConsensusBootstrapInfo consensus_info;
   RETURN_NOT_OK(BootstrapTablet(metadata,
@@ -272,7 +275,7 @@ Status SysTable::SetupTablet(const scoped_refptr<tablet::TabletMetadata>& metada
   return Status::OK();
 }
 
-Status SysTable::WaitUntilRunning() {
+Status SysCatalogTable::WaitUntilRunning() {
   int seconds_waited = 0;
   string prefix = Substitute("T $0 P $1 [$2]: ",
                              tablet_peer_->tablet_id(),
@@ -296,7 +299,7 @@ Status SysTable::WaitUntilRunning() {
   return Status::OK();
 }
 
-Status SysTable::SyncWrite(const WriteRequestPB *req, WriteResponsePB *resp) {
+Status SysCatalogTable::SyncWrite(const WriteRequestPB *req, WriteResponsePB *resp) {
   CountDownLatch latch(1);
   gscoped_ptr<tablet::TransactionCompletionCallback> txn_callback(
     new LatchTransactionCompletionCallback<WriteResponsePB>(&latch, resp));
@@ -319,34 +322,114 @@ Status SysTable::SyncWrite(const WriteRequestPB *req, WriteResponsePB *resp) {
   return Status::OK();
 }
 
-// ===========================================================================
-//  Sys-Bootstrap Locations Table
-// ===========================================================================
-static const char *kSysTabletsTabletId = "00000000000000000000000000000000";
-
-static const char *kSysTabletsColTableId  = "table_id";
-static const char *kSysTabletsColTabletId = "tablet_id";
-static const char *kSysTabletsColMetadata = "metadata";
-
-Schema SysTabletsTable::BuildTableSchema() {
+// Schema for the unified SysCatalogTable:
+//
+// (entry_type, entry_id) -> metadata
+//
+// entry_type is a enum defined in sys_tables. It indicates
+// whether an entry is a table or a tablet.
+//
+// entry_type is the first part of a compound key as to allow
+// efficient scans of entries of only a single type (e.g., only
+// scan all of the tables, or only scan all of the tablets).
+//
+// entry_id is either a table id or a tablet id. For tablet entries,
+// the table id that the tablet is associated with is stored in the
+// protobuf itself.
+Schema SysCatalogTable::BuildTableSchema() {
   SchemaBuilder builder;
-  CHECK_OK(builder.AddKeyColumn(kSysTabletsColTableId, STRING));
-  CHECK_OK(builder.AddKeyColumn(kSysTabletsColTabletId, STRING));
-  CHECK_OK(builder.AddColumn(kSysTabletsColMetadata, STRING));
+  CHECK_OK(builder.AddKeyColumn(kSysCatalogTableColType, UINT8));
+  CHECK_OK(builder.AddKeyColumn(kSysCatalogTableColId, STRING));
+  CHECK_OK(builder.AddColumn(kSysCatalogTableColMetadata, STRING));
   return builder.Build();
 }
 
-void SysTabletsTable::SetupTabletMasterBlock(TabletMasterBlockPB *master_block) {
-  master_block->set_tablet_id(kSysTabletsTabletId);
+void SysCatalogTable::SetupTabletMasterBlock(tablet::TabletMasterBlockPB* master_block) {
+  master_block->set_tablet_id(kSysCatalogTabletId);
   master_block->set_block_a("00000000000000000000000000000000");
   master_block->set_block_b("11111111111111111111111111111111");
 }
 
-// TODO: move out as a generic FullTableScan()?
-Status SysTabletsTable::VisitTablets(Visitor *visitor) {
+// ==================================================================
+// Table related methods
+// ==================================================================
+
+Status SysCatalogTable::AddTable(const TableInfo *table) {
+  faststring metadata_buf;
+  if (!pb_util::SerializeToString(table->metadata().dirty().pb, &metadata_buf)) {
+    return Status::Corruption("Unable to serialize SysCatalogTablesEntryPB for tablet",
+                              table->metadata().dirty().name());
+  }
+
+  WriteRequestPB req;
+  WriteResponsePB resp;
+  req.set_tablet_id(kSysCatalogTabletId);
+  RETURN_NOT_OK(SchemaToPB(schema_, req.mutable_schema()));
+
+  KuduPartialRow row(&schema_);
+  CHECK_OK(row.SetUInt8(kSysCatalogTableColType, TABLES_ENTRY));
+  CHECK_OK(row.SetString(kSysCatalogTableColId, table->id()));
+  CHECK_OK(row.SetString(kSysCatalogTableColMetadata, metadata_buf));
+  RowOperationsPBEncoder enc(req.mutable_row_operations());
+  enc.Add(RowOperationsPB::INSERT, row);
+
+  RETURN_NOT_OK(SyncWrite(&req, &resp));
+  return Status::OK();
+}
+
+Status SysCatalogTable::UpdateTable(const TableInfo *table) {
+  faststring metadata_buf;
+  if (!pb_util::SerializeToString(table->metadata().dirty().pb, &metadata_buf)) {
+    return Status::Corruption("Unable to serialize SysCatalogTablesEntryPB for tablet",
+                              table->id());
+  }
+
+  WriteRequestPB req;
+  WriteResponsePB resp;
+  req.set_tablet_id(kSysCatalogTabletId);
+  RETURN_NOT_OK(SchemaToPB(schema_, req.mutable_schema()));
+
+  KuduPartialRow row(&schema_);
+  CHECK_OK(row.SetUInt8(kSysCatalogTableColType, TABLES_ENTRY));
+  CHECK_OK(row.SetString(kSysCatalogTableColId, table->id()));
+  CHECK_OK(row.SetString(kSysCatalogTableColMetadata, metadata_buf));
+  RowOperationsPBEncoder enc(req.mutable_row_operations());
+  enc.Add(RowOperationsPB::UPDATE, row);
+
+  RETURN_NOT_OK(SyncWrite(&req, &resp));
+  return Status::OK();
+}
+
+Status SysCatalogTable::DeleteTable(const TableInfo *table) {
+  WriteRequestPB req;
+  WriteResponsePB resp;
+  req.set_tablet_id(kSysCatalogTableColMetadata);
+  RETURN_NOT_OK(SchemaToPB(schema_, req.mutable_schema()));
+
+  KuduPartialRow row(&schema_);
+  CHECK_OK(row.SetUInt8(kSysCatalogTableColType, TABLES_ENTRY));
+  CHECK_OK(row.SetString(kSysCatalogTableColId, table->id()));
+
+  RowOperationsPBEncoder enc(req.mutable_row_operations());
+  enc.Add(RowOperationsPB::DELETE, row);
+
+  RETURN_NOT_OK(SyncWrite(&req, &resp));
+  return Status::OK();
+}
+
+Status SysCatalogTable::VisitTables(TableVisitor* visitor) {
+  const uint8_t tables_entry = TABLES_ENTRY;
+  const int type_col_idx = schema_.find_column(kSysCatalogTableColType);
+  CHECK(type_col_idx != Schema::kColumnNotFound);
+
+  ColumnRangePredicate pred_tables(schema_.column(type_col_idx),
+                                   &tables_entry, &tables_entry);
+  ScanSpec spec;
+  spec.AddPredicate(pred_tables);
+
   gscoped_ptr<RowwiseIterator> iter;
   RETURN_NOT_OK(tablet_peer_->tablet()->NewRowIterator(schema_, &iter));
-  RETURN_NOT_OK(iter->Init(NULL));
+  RETURN_NOT_OK(iter->Init(&spec));
 
   Arena arena(32 * 1024, 256 * 1024);
   RowBlock block(iter->schema(), 512, &arena);
@@ -355,39 +438,32 @@ Status SysTabletsTable::VisitTablets(Visitor *visitor) {
     for (size_t i = 0; i < block.nrows(); i++) {
       if (!block.selection_vector()->IsRowSelected(i)) continue;
 
-      RETURN_NOT_OK(VisitTabletFromRow(block.row(i), visitor));
+      RETURN_NOT_OK(VisitTableFromRow(block.row(i), visitor));
     }
   }
   return Status::OK();
 }
 
-Status SysTabletsTable::VisitTabletFromRow(const RowBlockRow& row, Visitor *visitor) {
-  const Slice *table_id =
-    schema_.ExtractColumnFromRow<STRING>(row, schema_.find_column(kSysTabletsColTableId));
-  const Slice *tablet_id =
-    schema_.ExtractColumnFromRow<STRING>(row, schema_.find_column(kSysTabletsColTabletId));
-  const Slice *data =
-    schema_.ExtractColumnFromRow<STRING>(row, schema_.find_column(kSysTabletsColMetadata));
+Status SysCatalogTable::VisitTableFromRow(const RowBlockRow& row,
+                                          TableVisitor* visitor) {
+  const Slice* table_id =
+      schema_.ExtractColumnFromRow<STRING>(row, schema_.find_column(kSysCatalogTableColId));
+  const Slice* data =
+      schema_.ExtractColumnFromRow<STRING>(row, schema_.find_column(kSysCatalogTableColMetadata));
 
-  SysTabletsEntryPB metadata;
+  SysTablesEntryPB metadata;
   RETURN_NOT_OK_PREPEND(pb_util::ParseFromArray(&metadata, data->data(), data->size()),
-                        "Unable to parse metadata field for tablet " + tablet_id->ToString());
+                        "Unable to parse metadata field for table " + table_id->ToString());
 
-  RETURN_NOT_OK(visitor->VisitTablet(table_id->ToString(), tablet_id->ToString(), metadata));
+  RETURN_NOT_OK(visitor->VisitTable(table_id->ToString(), metadata));
   return Status::OK();
 }
 
-Status SysTabletsTable::AddTablets(const vector<TabletInfo*>& tablets) {
-  vector<TabletInfo*> empty_tablets;
-  return AddAndUpdateTablets(tablets, empty_tablets);
-}
+// ==================================================================
+// Tablet related methods
+// ==================================================================
 
-Status SysTabletsTable::UpdateTablets(const vector<TabletInfo*>& tablets) {
-  vector<TabletInfo*> empty_tablets;
-  return AddAndUpdateTablets(empty_tablets, tablets);
-}
-
-Status SysTabletsTable::AddTabletsToPB(const vector<TabletInfo*>& tablets,
+Status SysCatalogTable::AddTabletsToPB(const vector<TabletInfo*>& tablets,
                                        RowOperationsPB::Type op_type,
                                        RowOperationsPB* ops) const {
   faststring metadata_buf;
@@ -395,23 +471,23 @@ Status SysTabletsTable::AddTabletsToPB(const vector<TabletInfo*>& tablets,
   RowOperationsPBEncoder enc(ops);
   BOOST_FOREACH(const TabletInfo *tablet, tablets) {
     if (!pb_util::SerializeToString(tablet->metadata().dirty().pb, &metadata_buf)) {
-      return Status::Corruption("Unable to serialize SysTabletsEntryPB for tablet",
+      return Status::Corruption("Unable to serialize SysCatalogTabletsEntryPB for tablet",
                                 tablet->tablet_id());
     }
 
-    CHECK_OK(row.SetString(kSysTabletsColTableId, tablet->table()->id()));
-    CHECK_OK(row.SetString(kSysTabletsColTabletId, tablet->tablet_id()));
-    CHECK_OK(row.SetString(kSysTabletsColMetadata, metadata_buf));
+    CHECK_OK(row.SetUInt8(kSysCatalogTableColType, TABLETS_ENTRY));
+    CHECK_OK(row.SetString(kSysCatalogTableColId, tablet->tablet_id()));
+    CHECK_OK(row.SetString(kSysCatalogTableColMetadata, metadata_buf));
     enc.Add(op_type, row);
   }
   return Status::OK();
 }
 
-Status SysTabletsTable::AddAndUpdateTablets(const vector<TabletInfo*>& tablets_to_add,
+Status SysCatalogTable::AddAndUpdateTablets(const vector<TabletInfo*>& tablets_to_add,
                                             const vector<TabletInfo*>& tablets_to_update) {
   WriteRequestPB req;
   WriteResponsePB resp;
-  req.set_tablet_id(kSysTabletsTabletId);
+  req.set_tablet_id(kSysCatalogTabletId);
   RETURN_NOT_OK(SchemaToPB(schema_, req.mutable_schema()));
 
   // Insert new Tablets
@@ -430,17 +506,27 @@ Status SysTabletsTable::AddAndUpdateTablets(const vector<TabletInfo*>& tablets_t
   return Status::OK();
 }
 
-Status SysTabletsTable::DeleteTablets(const vector<TabletInfo*>& tablets) {
+Status SysCatalogTable::AddTablets(const vector<TabletInfo*>& tablets) {
+  vector<TabletInfo*> empty_tablets;
+  return AddAndUpdateTablets(tablets, empty_tablets);
+}
+
+Status SysCatalogTable::UpdateTablets(const vector<TabletInfo*>& tablets) {
+  vector<TabletInfo*> empty_tablets;
+  return AddAndUpdateTablets(empty_tablets, tablets);
+}
+
+Status SysCatalogTable::DeleteTablets(const vector<TabletInfo*>& tablets) {
   WriteRequestPB req;
   WriteResponsePB resp;
-  req.set_tablet_id(kSysTabletsTabletId);
+  req.set_tablet_id(kSysCatalogTabletId);
   RETURN_NOT_OK(SchemaToPB(schema_, req.mutable_schema()));
 
   RowOperationsPBEncoder enc(req.mutable_row_operations());
   KuduPartialRow row(&schema_);
   BOOST_FOREACH(const TabletInfo* tablet, tablets) {
-    CHECK_OK(row.SetString(kSysTabletsColTableId, tablet->table()->id()));
-    CHECK_OK(row.SetString(kSysTabletsColTabletId, tablet->tablet_id()));
+    CHECK_OK(row.SetUInt8(kSysCatalogTableColType, TABLETS_ENTRY));
+    CHECK_OK(row.SetString(kSysCatalogTableColId, tablet->tablet_id()));
     enc.Add(RowOperationsPB::DELETE, row);
   }
 
@@ -448,32 +534,33 @@ Status SysTabletsTable::DeleteTablets(const vector<TabletInfo*>& tablets) {
   return Status::OK();
 }
 
-// ===========================================================================
-//  Sys-Bootstrap Descriptors Table
-// ===========================================================================
-static const char *kSysTablesTabletId = "11111111111111111111111111111111";
+Status SysCatalogTable::VisitTabletFromRow(const RowBlockRow& row, TabletVisitor *visitor) {
+  const Slice *tablet_id =
+    schema_.ExtractColumnFromRow<STRING>(row, schema_.find_column(kSysCatalogTableColId));
+  const Slice *data =
+    schema_.ExtractColumnFromRow<STRING>(row, schema_.find_column(kSysCatalogTableColMetadata));
 
-static const char *kSysTablesColTableId    = "table_id";
-static const char *kSysTablesColMetadata   = "metadata";
+  SysTabletsEntryPB metadata;
+  RETURN_NOT_OK_PREPEND(pb_util::ParseFromArray(&metadata, data->data(), data->size()),
+                        "Unable to parse metadata field for tablet " + tablet_id->ToString());
 
-Schema SysTablesTable::BuildTableSchema() {
-  SchemaBuilder builder;
-  CHECK_OK(builder.AddKeyColumn(kSysTablesColTableId, STRING));
-  CHECK_OK(builder.AddColumn(kSysTablesColMetadata, STRING));
-  return builder.Build();
+  RETURN_NOT_OK(visitor->VisitTablet(metadata.table_id(), tablet_id->ToString(), metadata));
+  return Status::OK();
 }
 
-void SysTablesTable::SetupTabletMasterBlock(TabletMasterBlockPB *master_block) {
-  master_block->set_tablet_id(kSysTablesTabletId);
-  master_block->set_block_a("22222222222222222222222222222222");
-  master_block->set_block_b("33333333333333333333333333333333");
-}
+Status SysCatalogTable::VisitTablets(TabletVisitor* visitor) {
+  const uint8_t tablets_entry = TABLETS_ENTRY;
+  const int type_col_idx = schema_.find_column(kSysCatalogTableColType);
+  CHECK(type_col_idx != Schema::kColumnNotFound);
 
-// TODO: move out as a generic FullTableScan()?
-Status SysTablesTable::VisitTables(Visitor *visitor) {
+  ColumnRangePredicate pred_tablets(schema_.column(type_col_idx),
+                                   &tablets_entry, &tablets_entry);
+  ScanSpec spec;
+  spec.AddPredicate(pred_tablets);
+
   gscoped_ptr<RowwiseIterator> iter;
   RETURN_NOT_OK(tablet_peer_->tablet()->NewRowIterator(schema_, &iter));
-  RETURN_NOT_OK(iter->Init(NULL));
+  RETURN_NOT_OK(iter->Init(&spec));
 
   Arena arena(32 * 1024, 256 * 1024);
   RowBlock block(iter->schema(), 512, &arena);
@@ -482,85 +569,12 @@ Status SysTablesTable::VisitTables(Visitor *visitor) {
     for (size_t i = 0; i < block.nrows(); i++) {
       if (!block.selection_vector()->IsRowSelected(i)) continue;
 
-      RETURN_NOT_OK(VisitTableFromRow(block.row(i), visitor));
+      RETURN_NOT_OK(VisitTabletFromRow(block.row(i), visitor));
     }
   }
   return Status::OK();
 }
 
-Status SysTablesTable::VisitTableFromRow(const RowBlockRow& row, Visitor *visitor) {
-  const Slice *table_id =
-    schema_.ExtractColumnFromRow<STRING>(row, schema_.find_column(kSysTablesColTableId));
-  const Slice *data =
-    schema_.ExtractColumnFromRow<STRING>(row, schema_.find_column(kSysTablesColMetadata));
-
-  SysTablesEntryPB metadata;
-  RETURN_NOT_OK_PREPEND(pb_util::ParseFromArray(&metadata, data->data(), data->size()),
-                        "Unable to parse metadata field for table " + table_id->ToString());
-
-  RETURN_NOT_OK(visitor->VisitTable(table_id->ToString(), metadata));
-  return Status::OK();
-}
-
-Status SysTablesTable::AddTable(const TableInfo *table) {
-  faststring metadata_buf;
-  if (!pb_util::SerializeToString(table->metadata().dirty().pb, &metadata_buf)) {
-    return Status::Corruption("Unable to serialize SysTablesEntryPB for tablet",
-                              table->metadata().dirty().name());
-  }
-
-  WriteRequestPB req;
-  WriteResponsePB resp;
-  req.set_tablet_id(kSysTablesTabletId);
-  RETURN_NOT_OK(SchemaToPB(schema_, req.mutable_schema()));
-
-  KuduPartialRow row(&schema_);
-  CHECK_OK(row.SetString(kSysTablesColTableId, table->id()));
-  CHECK_OK(row.SetString(kSysTablesColMetadata, metadata_buf));
-  RowOperationsPBEncoder enc(req.mutable_row_operations());
-  enc.Add(RowOperationsPB::INSERT, row);
-
-  RETURN_NOT_OK(SyncWrite(&req, &resp));
-  return Status::OK();
-}
-
-Status SysTablesTable::UpdateTable(const TableInfo *table) {
-  faststring metadata_buf;
-  if (!pb_util::SerializeToString(table->metadata().dirty().pb, &metadata_buf)) {
-    return Status::Corruption("Unable to serialize SysTablesEntryPB for tablet",
-                              table->id());
-  }
-
-  WriteRequestPB req;
-  WriteResponsePB resp;
-  req.set_tablet_id(kSysTablesTabletId);
-  RETURN_NOT_OK(SchemaToPB(schema_, req.mutable_schema()));
-
-  KuduPartialRow row(&schema_);
-  CHECK_OK(row.SetString(kSysTablesColTableId, table->id()));
-  CHECK_OK(row.SetString(kSysTablesColMetadata, metadata_buf));
-  RowOperationsPBEncoder enc(req.mutable_row_operations());
-  enc.Add(RowOperationsPB::UPDATE, row);
-
-  RETURN_NOT_OK(SyncWrite(&req, &resp));
-  return Status::OK();
-}
-
-Status SysTablesTable::DeleteTable(const TableInfo *table) {
-  WriteRequestPB req;
-  WriteResponsePB resp;
-  req.set_tablet_id(kSysTablesTabletId);
-  RETURN_NOT_OK(SchemaToPB(schema_, req.mutable_schema()));
-
-  KuduPartialRow row(&schema_);
-  CHECK_OK(row.SetString(kSysTablesColTableId, table->id()));
-
-  RowOperationsPBEncoder enc(req.mutable_row_operations());
-  enc.Add(RowOperationsPB::DELETE, row);
-
-  RETURN_NOT_OK(SyncWrite(&req, &resp));
-  return Status::OK();
-}
 
 } // namespace master
 } // namespace kudu

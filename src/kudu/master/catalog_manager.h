@@ -34,8 +34,7 @@ namespace master {
 
 class CatalogManagerBgTasks;
 class Master;
-class SysTablesTable;
-class SysTabletsTable;
+class SysCatalogTable;
 class TableInfo;
 class TSDescriptor;
 
@@ -344,8 +343,7 @@ class CatalogManager : public tserver::TabletPeerLookupIf {
                              TabletReportUpdatesPB *report_update,
                              rpc::RpcContext* rpc);
 
-  SysTablesTable *sys_tables() { return sys_tables_.get(); }
-  SysTabletsTable *sys_tablets() { return sys_tablets_.get(); }
+  SysCatalogTable* sys_catalog() { return sys_catalog_.get(); }
 
   // Dump all of the current state about tables and tablets to the
   // given output stream. This is verbose, meant for debugging.
@@ -383,13 +381,13 @@ class CatalogManager : public tserver::TabletPeerLookupIf {
   friend class TableLoader;
   friend class TabletLoader;
 
-  // Helper for initializing 'sys_tables_' and 'sys_tablets_'. After
-  // calling this method, the caller should call WaitUntilRunning() on
-  // sys_tables_ and sys_tablets_ WITHOUT holding 'lock_' to wait for
-  // consensus to start for the respective tables.
+  // Helper for initializing 'sys_catalog_'. After calling this
+  // method, the caller should call WaitUntilRunning() on sys_catalog_
+  // WITHOUT holding 'lock_' to wait for consensus to start for
+  // sys_catalog_.
   //
   // This method is thread-safe.
-  Status InitSysTablesAsync(bool is_first_run);
+  Status InitSysCatalogAsync(bool is_first_run);
 
   // Helper for creating the inital Tablets of the table
   // based on the split-keys field in the request.
@@ -521,8 +519,8 @@ class CatalogManager : public tserver::TabletPeerLookupIf {
   Master *master_;
   Atomic32 closing_;
   ObjectIdGenerator oid_generator_;
-  gscoped_ptr<SysTablesTable> sys_tables_;
-  gscoped_ptr<SysTabletsTable> sys_tablets_;
+
+  gscoped_ptr<SysCatalogTable> sys_catalog_;
 
   // Background thread, used to execute the catalog manager tasks
   // like the assignment and cleaner

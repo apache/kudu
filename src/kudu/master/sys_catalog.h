@@ -1,0 +1,170 @@
+// Copyright (c) 2013, Cloudera, inc.
+// Confidential Cloudera Information: Covered by NDA.
+#ifndef KUDU_MASTER_SYS_CATALOG_H_
+#define KUDU_MASTER_SYS_CATALOG_H_
+
+#include <string>
+#include <vector>
+
+#include "kudu/master/master.pb.h"
+#include "kudu/server/metadata.h"
+#include "kudu/tablet/tablet_peer.h"
+#include "kudu/util/status.h"
+
+namespace kudu {
+
+class Schema;
+class FsManager;
+
+namespace tserver {
+class WriteRequestPB;
+class WriteResponsePB;
+}
+
+namespace master {
+class Master;
+struct MasterOptions;
+class TableInfo;
+class TabletInfo;
+
+// The SysCatalogTable has two separate visitors because the tables
+// data must be loaded into memory before the tablets data.
+class TableVisitor {
+ public:
+  virtual Status VisitTable(const std::string& table_id,
+                            const SysTablesEntryPB& metadata) = 0;
+};
+
+class TabletVisitor {
+ public:
+  virtual Status VisitTablet(const std::string& table_id,
+                             const std::string& tablet_id,
+                             const SysTabletsEntryPB& metadata) = 0;
+};
+
+// SysCatalogTable is a Kudu table that keeps track of table and
+// tablet metadata.
+// - SysCatalogTable has only one tablet.
+// - SysCatalogTable is managed by the master and not exposed to the user
+//   as a "normal table", instead we have Master APIs to query the table.
+class SysCatalogTable {
+ public:
+  enum CatalogEntryType {
+    TABLES_ENTRY = 1,
+    TABLETS_ENTRY = 2
+  };
+
+  SysCatalogTable(Master* master,
+                  MetricRegistry* metrics);
+
+  ~SysCatalogTable();
+
+  // Allow for orderly shutdown of tablet peer, etc.
+  void Shutdown();
+
+  // Load the Metadata from disk, and initialize the TabletPeer for the sys-table
+  Status Load(FsManager *fs_manager);
+
+  // Create the new Metadata and initialize the TabletPeer for the sys-table.
+  Status CreateNew(FsManager *fs_manager);
+
+  // ==================================================================
+  // Tables related methods
+  // ==================================================================
+  Status AddTable(const TableInfo* table);
+  Status UpdateTable(const TableInfo* table);
+  Status DeleteTable(const TableInfo* table);
+
+  // Scan of the table-related entries.
+  Status VisitTables(TableVisitor* visitor);
+
+  // ==================================================================
+  // Tablets related methods
+  // ==================================================================
+  Status AddTablets(const vector<TabletInfo*>& tablets);
+  Status UpdateTablets(const vector<TabletInfo*>& tablets);
+  Status AddAndUpdateTablets(const vector<TabletInfo*>& tablets_to_add,
+                             const vector<TabletInfo*>& tablets_to_update);
+  Status DeleteTablets(const vector<TabletInfo*>& tablets);
+
+  // Scan of the tablet-related entries.
+  Status VisitTablets(TabletVisitor* visitor);
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(SysCatalogTable);
+
+  friend class CatalogManager;
+
+  const char *table_name() const { return "sys.catalog"; }
+
+  // Return the schema of the table.
+  // NOTE: This is the "server-side" schema, so it must have the column IDs.
+  Schema BuildTableSchema();
+
+  // Setup the 'master_block' with the IDs of the super-blocks for
+  // the tablet of SysCatalog.
+  void SetupTabletMasterBlock(tablet::TabletMasterBlockPB *master_block);
+
+  // Returns 'Status::OK()' if the WriteTranasction completed
+  Status SyncWrite(const tserver::WriteRequestPB *req, tserver::WriteResponsePB *resp);
+
+  void SysCatalogStateChanged(tablet::TabletPeer* tablet_peer);
+
+  Status SetupTablet(const scoped_refptr<tablet::TabletMetadata>& metadata);
+
+  // Use the master options to generate a new quorum.
+  // In addition, resolve all UUIDs of this quorum.
+  //
+  // Note: The current node adds itself to the quorum whether leader or
+  // follower, depending on whether the Master options leader flag is
+  // set. Even if the local node should be a follower, it should not be listed
+  // in the Master options followers list, as it will add itself automatically.
+  //
+  // TODO: Revisit this whole thing when integrating leader election.
+  Status SetupDistributedQuorum(const MasterOptions& options, int64_t seqno,
+                                metadata::QuorumPB* quorum);
+
+  const scoped_refptr<tablet::TabletPeer>& tablet_peer() const {
+    return tablet_peer_;
+  }
+
+  std::string tablet_id() const {
+    return tablet_peer_->tablet_id();
+  }
+
+  // Waits for the tablet to reach 'RUNNING' state.
+  //
+  // Contrary to tablet servers, in master we actually wait for the master tablet
+  // to become online synchronously, this allows us to fail fast if something fails
+  // and shouldn't induce the all-workers-blocked-waiting-for-tablets problem
+  // that we've seen in tablet servers since the master only has to boot a few
+  // tablets.
+  Status WaitUntilRunning();
+
+  // Table related private methods.
+  Status VisitTableFromRow(const RowBlockRow& row, TableVisitor* visitor);
+
+  // Tablet related private methods.
+  Status AddTabletsToPB(const std::vector<TabletInfo*>& tablets,
+                        RowOperationsPB::Type op_type,
+                        RowOperationsPB* ops) const;
+  Status VisitTabletFromRow(const RowBlockRow& row, TabletVisitor* visitor);
+
+  // Table schema, without IDs, used to send messages to the TabletPeer
+  Schema schema_;
+  Schema key_schema_;
+
+  MetricContext metric_ctx_;
+
+  gscoped_ptr<ThreadPool> leader_apply_pool_;
+  gscoped_ptr<ThreadPool> replica_apply_pool_;
+
+  scoped_refptr<tablet::TabletPeer> tablet_peer_;
+
+  Master* master_;
+};
+
+} // namespace master
+} // namespace kudu
+
+#endif

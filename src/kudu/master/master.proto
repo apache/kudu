@@ -70,7 +70,8 @@ message TableIdentifierPB {
 // Sys Tables Metadata
 ////////////////////////////////////////////////////////////
 
-// the on-disk entry in the sys.tablets table ("metadata" column)
+// the on-disk entry in the sys.catalog table ("metadata" column) for
+// tablets entries
 message SysTabletsEntryPB {
   enum State {
     kTabletStatePreparing = 0;
@@ -90,9 +91,13 @@ message SysTabletsEntryPB {
   // Debug state for the tablet
   required State state = 4;
   optional bytes state_msg = 5;
+
+  // The table id for the tablet
+  required bytes table_id = 6;
 }
 
-// the on-disk entry in the sys.tables table ("metadata" column)
+// the on-disk entry in the sys.catalog table ("metadata" column) for
+// tables entries
 message SysTablesEntryPB {
   enum State {
     kTableStatePreparing = 1;

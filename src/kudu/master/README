@@ -9,22 +9,25 @@ The Catalog Manager keeps track of the Kudu tables and tablets defined by the
 user in the cluster.
 
 All the table and tablet information is stored in-memory in copy-on-write
-TableInfo / TabletInfo objects, as well as on-disk, in the "sys.tables" and
-"sys.tablets" Kudu system tables hosted only on the Master.
-These two system tables are loaded into memory on Master startup.
-At the time of this writing, each of these tables consists of only one tablet.
+TableInfo / TabletInfo objects, as well as on-disk, in the "sys.catalog"
+Kudu system table hosted only on the Masters.  This system table is loaded
+into memory on Master startup.  At the time of this writing, the "sys.catalog"
+table consists of only a single tablet in order to provide strong consistency
+for the metadata under RAFT replication (as currently, each tablet has its own
+log).
 
 To add or modify a table or tablet, the Master writes, but does not yet commit
-the changes to memory, then writes and flushes the system tables to disk, and
-then makes the changes visible in-memory (commits them) if the disk write is
-successful. This allows readers to access the in-memory state in a consistent
+the changes to memory, then writes and flushes the system table to disk, and
+then makes the changes visible in-memory (commits them) if the disk write (and,
+in a distributed master setup, quorum-based replication) is successful. This
+allows readers to access the in-memory state in a consistent
 way, even while a write is in-progress.
 
 This design prevents having to go through the whole scan path to service tablet
 location calls, which would be more expensive, and allows for easily keeping
 "soft" state in the Master for every Table and Tablet.
 
-The catalog manager maintains 3 hash-maps for looking up info in the sys tables:
+The catalog manager maintains 3 hash-maps for looking up info in the sys table:
 - [Table Id] -> TableInfo
 - [Table Name] -> TableInfo
 - [Tablet Id] -> TabletInfo
@@ -46,12 +49,12 @@ The below corresponds to the code in CatalogManager::CreateTable().
    c. Add (in-memory) the new TableInfo (in "preparing" state).
    d. Add (in-memory) the TabletInfo based on the user-provided pre-split-keys
       field (in "preparing" state).
-   e. Write the tablets info to "sys.tablets"
+   e. Write the tablets info to "sys.catalog"
       (The Master process is killed if the write fails).
       - Master begins writing to disk.
       - Note: If the Master crashes or restarts here or at any time previous to
         this point, the table will not exist when the Master comes back online.
-   f. Write the table info to "sys.tables" with the "running" state
+   f. Write the table info to "sys.catalog" with the "running" state
       (The Master process is killed if the write fails).
       - Master completes writing to disk.
       - After this point, the table will exist and be re-created as necessary
@@ -70,7 +73,7 @@ Table Deletion
 
 When the user sends a DeleteTable request for table T, table T is marked as
 deleted by writing a "deleted" flag in the state field in T's record in the
-"sys.tables" table, table T is removed from the in-memory "table names"
+"sys.catalog" table, table T is removed from the in-memory "table names"
 map on the Master, and the table is marked as being "deleted" in the
 in-memory TableInfo / TabletInfo "state" field on the Master.
 TODO: Could this race with table deletion / creation??
@@ -130,7 +133,7 @@ This is the current control flow:
        - Select a set of tablet servers to host the tablet quorum.
        - Select a tablet server to be the initial quorum leader.
        [BEGIN-WRITE-TO-DISK]
-       - Flush the "to create" to sys.tablets with state "creating"
+       - Flush the "to create" to sys.catalog with state "creating"
        [If something fails here, the "Process Pending Assignments" will
         reprocess these tablets. As nothing was done, running tables will be replaced]
        [END-WRITE-TO-DISK]
@@ -141,8 +144,7 @@ This is the current control flow:
        At this point the tablets marked as "running" are visible to the user.
 
   2. Cleanup deleted tables & tablets (FIXME: is this implemented?):
-     - Remove the tablets with "deleted" state from the "sys.tablets"
-     - Remove the tables with "deleted" state from "sys.tables"
+     - Remove the tables/tablets with "deleted" state from "sys.catalog"
      - Remove the tablets with "deleted" state from the in-memory map
      - Remove the tables with "deleted" state from the in-memory map
 

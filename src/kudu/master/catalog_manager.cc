@@ -45,7 +45,7 @@
 #include "kudu/gutil/walltime.h"
 #include "kudu/master/master.h"
 #include "kudu/master/master.pb.h"
-#include "kudu/master/sys_tables.h"
+#include "kudu/master/sys_catalog.h"
 #include "kudu/master/ts_descriptor.h"
 #include "kudu/master/ts_manager.h"
 #include "kudu/tserver/tserver_admin.proxy.h"
@@ -94,7 +94,7 @@ using tserver::TabletServerErrorPB;
 // Table Loader
 ////////////////////////////////////////////////////////////
 
-class TableLoader : public SysTablesTable::Visitor {
+class TableLoader : public TableVisitor {
  public:
   explicit TableLoader(CatalogManager *catalog_manager)
     : catalog_manager_(catalog_manager) {
@@ -132,7 +132,7 @@ class TableLoader : public SysTablesTable::Visitor {
 // Tablet Loader
 ////////////////////////////////////////////////////////////
 
-class TabletLoader : public SysTabletsTable::Visitor {
+class TabletLoader : public TabletVisitor {
  public:
   explicit TabletLoader(CatalogManager *catalog_manager)
     : catalog_manager_(catalog_manager) {
@@ -318,7 +318,7 @@ Status CatalogManager::Init(bool is_first_run) {
     state_ = kStarting;
   }
 
-  RETURN_NOT_OK_PREPEND(InitSysTablesAsync(is_first_run),
+  RETURN_NOT_OK_PREPEND(InitSysCatalogAsync(is_first_run),
                         "Failed to initialize sys tables async");
 
   // WaitUntilRunning() must run outside of the lock as to prevent
@@ -326,21 +326,19 @@ Status CatalogManager::Init(bool is_first_run) {
   // thread to finish its work and doesn't itself depend on any state
   // within CatalogManager.
 
-  RETURN_NOT_OK_PREPEND(sys_tables_->WaitUntilRunning(),
-                        "Failed waiting for sys tables to run");
-  RETURN_NOT_OK_PREPEND(sys_tablets_->WaitUntilRunning(),
-                        "Failed waiting for sys tablets to run");
+  RETURN_NOT_OK_PREPEND(sys_catalog_->WaitUntilRunning(),
+                        "Failed waiting for the catalog tablet to run");
 
   boost::lock_guard<LockType> l(lock_);
 
   if (!is_first_run) {
     TableLoader table_loader(this);
-    RETURN_NOT_OK_PREPEND(sys_tables_->VisitTables(&table_loader),
-                          "Failed while visiting sys tables");
+    RETURN_NOT_OK_PREPEND(sys_catalog_->VisitTables(&table_loader),
+                          "Failed while visiting tables in sys catalog");
 
     TabletLoader tablet_loader(this);
-    RETURN_NOT_OK_PREPEND(sys_tablets_->VisitTablets(&tablet_loader),
-                          "Failed while visiting sys tablets");
+    RETURN_NOT_OK_PREPEND(sys_catalog_->VisitTablets(&tablet_loader),
+                          "Failed while visiting tablets in sys catalog");
   }
 
   background_tasks_.reset(new CatalogManagerBgTasks(this));
@@ -356,20 +354,14 @@ Status CatalogManager::Init(bool is_first_run) {
   return Status::OK();
 }
 
-Status CatalogManager::InitSysTablesAsync(bool is_first_run) {
+Status CatalogManager::InitSysCatalogAsync(bool is_first_run) {
   boost::lock_guard<LockType> l(lock_);
-
-  sys_tables_.reset(new SysTablesTable(master_, master_->metric_registry()));
-  sys_tablets_.reset(new SysTabletsTable(master_, master_->metric_registry()));
-
+  sys_catalog_.reset(new SysCatalogTable(master_, master_->metric_registry()));
   if (is_first_run) {
-    RETURN_NOT_OK(sys_tables_->CreateNew(master_->fs_manager()));
-    RETURN_NOT_OK(sys_tablets_->CreateNew(master_->fs_manager()));
+    RETURN_NOT_OK(sys_catalog_->CreateNew(master_->fs_manager()));
   } else {
-    RETURN_NOT_OK(sys_tables_->Load(master_->fs_manager()));
-    RETURN_NOT_OK(sys_tablets_->Load(master_->fs_manager()));
+    RETURN_NOT_OK(sys_catalog_->Load(master_->fs_manager()));
   }
-
   return Status::OK();
 }
 
@@ -400,11 +392,8 @@ void CatalogManager::Shutdown() {
   }
 
   // Shut down the underlying storage for tables and tablets.
-  if (sys_tables_) {
-    sys_tables_->Shutdown();
-  }
-  if (sys_tablets_) {
-    sys_tablets_->Shutdown();
+  if (sys_catalog_) {
+    sys_catalog_->Shutdown();
   }
 }
 
@@ -492,7 +481,7 @@ Status CatalogManager::CreateTable(const CreateTableRequestPB* req,
   }
 
   // e. Write Tablets to sys-tablets (in "preparing" state)
-  Status s = sys_tablets_->AddTablets(tablets);
+  Status s = sys_catalog_->AddTablets(tablets);
   if (!s.ok()) {
     // TODO: we could potentially handle this error case by returning an error,
     // since even if we mistakenly believe this failed, when it actually made it
@@ -504,7 +493,7 @@ Status CatalogManager::CreateTable(const CreateTableRequestPB* req,
 
   // f. Update the on-disk table state to "running" (point of no return).
   table->mutable_metadata()->mutable_dirty()->pb.set_state(SysTablesEntryPB::kTableStateRunning);
-  s = sys_tables_->AddTable(table.get());
+  s = sys_catalog_->AddTable(table.get());
   if (!s.ok()) {
     PANIC_RPC(rpc, Substitute("An error occurred while inserting to sys-tablets: $0",
                               s.ToString()));
@@ -608,6 +597,7 @@ TabletInfo *CatalogManager::CreateTabletInfo(TableInfo *table,
   metadata->set_state(SysTabletsEntryPB::kTabletStatePreparing);
   metadata->set_start_key(start_key);
   metadata->set_end_key(end_key);
+  metadata->set_table_id(table->id());
   return tablet;
 }
 
@@ -663,8 +653,8 @@ Status CatalogManager::DeleteTable(const DeleteTableRequestPB* req,
   l.mutable_data()->set_state(SysTablesEntryPB::kTableStateRemoved,
                               Substitute("Deleted at ts=$0", GetCurrentTimeMicros()));
 
-  // 3. Update sys.tables with the removed table state (point of no return).
-  Status s = sys_tables_->UpdateTable(table.get());
+  // 3. Update sys-catalog with the removed table state (point of no return).
+  Status s = sys_catalog_->UpdateTable(table.get());
   if (!s.ok()) {
     PANIC_RPC(rpc, Substitute("An error occurred while updating sys tables: $0",
                               s.ToString()));
@@ -849,9 +839,9 @@ Status CatalogManager::AlterTable(const AlterTableRequestPB* req,
                               l.mutable_data()->pb.version(),
                               GetCurrentTimeMicros()));
 
-  // 5. Update sys-tables with the new table schema (point of no return!)
+  // 5. Update sys-catalog with the new table schema (point of no return!)
   TRACE("Updating metadata on disk");
-  Status s = sys_tables_->UpdateTable(table.get());
+  Status s = sys_catalog_->UpdateTable(table.get());
   if (!s.ok()) {
     PANIC_RPC(rpc, Substitute("An error occurred while updating sys tables: $0",
                               s.ToString()));
@@ -1149,7 +1139,7 @@ Status CatalogManager::HandleReportedTablet(TSDescriptor* ts_desc,
 
   // We update the tablets each time the someone reports it.
   // This shouldn't be very frequent and should only happen when something in fact changed.
-  Status s = sys_tablets_->UpdateTablets(boost::assign::list_of(tablet.get()));
+  Status s = sys_catalog_->UpdateTablets(boost::assign::list_of(tablet.get()));
   if (!s.ok()) {
     // panic-mode: abort the master
     LOG(FATAL) << "An error occurred while updating sys-tablets: " << s.ToString();
@@ -1206,16 +1196,12 @@ void CatalogManager::AddReplicaToTabletIfNotFound(TSDescriptor* ts_desc,
 
 Status CatalogManager::GetTabletPeer(const string& tablet_id,
                                      scoped_refptr<TabletPeer>* tablet_peer) const {
-  // Note: CatalogManager has only two tables, 'sys_tables' and
-  // 'sys_tablets'; both have only one tablet. As a result, this
-  // method is implemented as a simple if/else.
+  // Note: CatalogManager has only one table, 'sys_catalog', with only
+  // one tablet.
   boost::shared_lock<LockType> l(lock_);
-  CHECK(sys_tables_.get() != NULL) << "sys_tables_ must be initialized!";
-  CHECK(sys_tablets_.get() != NULL) << "sys_tablets_ must be initialized!";
-  if (sys_tables_->tablet_id() == tablet_id) {
-    *tablet_peer = sys_tables_->tablet_peer();
-  } else if (sys_tablets_->tablet_id() == tablet_id) {
-    *tablet_peer = sys_tablets_->tablet_peer();
+  CHECK(sys_catalog_.get() != NULL) << "sys_catalog_ must be initialized!";
+  if (sys_catalog_->tablet_id() == tablet_id) {
+    *tablet_peer = sys_catalog_->tablet_peer();
   } else {
     return Status::NotFound(Substitute("no SysTable exists with tablet_id $0 in CatalogManager",
                                        tablet_id));
@@ -1789,7 +1775,7 @@ void CatalogManager::HandleTabletSchemaVersionReport(TabletInfo *tablet, uint32_
   l.mutable_data()->set_state(SysTablesEntryPB::kTableStateRunning,
                               Substitute("Current schema version=$0", current_version));
 
-  Status s = sys_tables_->UpdateTable(table);
+  Status s = sys_catalog_->UpdateTable(table);
   if (!s.ok()) {
     // panic-mode: abort the master
     LOG(FATAL) << "An error occurred while updating sys-tables: " << s.ToString();
@@ -1876,8 +1862,8 @@ void CatalogManager::ProcessPendingAssignments(
     SelectReplicasForTablet(ts_descs, tablet);
   }
 
-  // Update the sys-tablets with the new set of tablets/metadata.
-  Status s = sys_tablets_->AddAndUpdateTablets(
+  // Update the sys catalog with the new set of tablets/metadata.
+  Status s = sys_catalog_->AddAndUpdateTablets(
     deferred.tablets_to_add, deferred.tablets_to_update);
   if (!s.ok()) {
     // panic-mode: abort the master

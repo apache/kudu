@@ -21,7 +21,7 @@ set(MASTER_SRCS
   master_service.cc
   master-path-handlers.cc
   mini_master.cc
-  sys_tables.cc
+  sys_catalog.cc
   ts_descriptor.cc
   ts_manager.cc
 )
@@ -44,7 +44,7 @@ target_link_libraries(master
 set(KUDU_TEST_LINK_LIBS master master_proto kudu_client ${KUDU_MIN_TEST_LIBS})
 ADD_KUDU_TEST(catalog_manager-test)
 ADD_KUDU_TEST(master-test RESOURCE_LOCK "master-web-port")
-ADD_KUDU_TEST(sys_tables-test RESOURCE_LOCK "master-web-port")
+ADD_KUDU_TEST(sys_catalog-test RESOURCE_LOCK "master-web-port")
 
 # Actual master executable
 add_executable(kudu-master master_main.cc)

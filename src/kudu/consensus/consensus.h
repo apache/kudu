@@ -25,7 +25,7 @@ class Log;
 }
 
 namespace master {
-class SysTable;
+class SysCatalogTable;
 }
 
 namespace metadata {
@@ -216,7 +216,7 @@ class Consensus : public RefCountedThreadSafe<Consensus> {
   friend class RefCountedThreadSafe<Consensus>;
   friend class tablet::ChangeConfigTransaction;
   friend class tablet::TabletPeer;
-  friend class master::SysTable;
+  friend class master::SysCatalogTable;
 
   // This class is refcounted.
   virtual ~Consensus() {}

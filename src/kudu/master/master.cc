@@ -7,8 +7,10 @@
 #include <boost/foreach.hpp>
 #include <list>
 #include <vector>
+#include <tr1/memory>
 
 #include "kudu/cfile/block_cache.h"
+#include "kudu/common/wire_protocol.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/rpc/messenger.h"
 #include "kudu/rpc/service_if.h"
@@ -18,7 +20,6 @@
 #include "kudu/master/master_service.h"
 #include "kudu/master/master.proxy.h"
 #include "kudu/master/master-path-handlers.h"
-#include "kudu/master/sys_tables.h"
 #include "kudu/master/ts_manager.h"
 #include "kudu/tserver/tablet_service.h"
 #include "kudu/util/net/net_util.h"
@@ -29,6 +30,7 @@
 DEFINE_int32(master_registration_rpc_timeout_ms, 1500,
              "Timeout for retrieving master registration over RPC.");
 
+using std::tr1::shared_ptr;
 using std::vector;
 
 using kudu::metadata::QuorumPeerPB;

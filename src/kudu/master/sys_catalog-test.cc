@@ -15,7 +15,7 @@
 #include "kudu/master/master.h"
 #include "kudu/master/master.proxy.h"
 #include "kudu/master/mini_master.h"
-#include "kudu/master/sys_tables.h"
+#include "kudu/master/sys_catalog.h"
 #include "kudu/server/rpc_server.h"
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/status.h"
@@ -31,7 +31,7 @@ using kudu::rpc::RpcController;
 namespace kudu {
 namespace master {
 
-class SysTablesTest : public KuduTest {
+class SysCatalogTest : public KuduTest {
  protected:
   virtual void SetUp() OVERRIDE {
     KuduTest::SetUp();
@@ -58,7 +58,7 @@ class SysTablesTest : public KuduTest {
   gscoped_ptr<MasterServiceProxy> proxy_;
 };
 
-class TableLoader : public SysTablesTable::Visitor {
+class TableLoader : public TableVisitor {
  public:
   TableLoader() {}
   ~TableLoader() { Reset(); }
@@ -96,10 +96,11 @@ static bool MetadatasEqual(C* ti_a, C* ti_b) {
   return PbEquals(l_a.data().pb, l_b.data().pb);
 }
 
-// Test the sys-tables basic operations (add, update, delete, visit)
-TEST_F(SysTablesTest, TestSysTablesOperations) {
+// Test the sys-catalog tables basic operations (add, update, delete,
+// visit)
+TEST_F(SysCatalogTest, TestSysCatalogTablesOperations) {
   TableLoader loader;
-  ASSERT_STATUS_OK(master_->catalog_manager()->sys_tables()->VisitTables(&loader));
+  ASSERT_STATUS_OK(master_->catalog_manager()->sys_catalog()->VisitTables(&loader));
   ASSERT_EQ(0, loader.tables.size());
 
   // Create new table.
@@ -112,13 +113,13 @@ TEST_F(SysTablesTest, TestSysTablesOperations) {
     l.mutable_data()->pb.set_state(SysTablesEntryPB::kTableStatePreparing);
     ASSERT_STATUS_OK(SchemaToPB(Schema(), l.mutable_data()->pb.mutable_schema()));
     // Add the table
-    ASSERT_STATUS_OK(master_->catalog_manager()->sys_tables()->AddTable(table.get()));
+    ASSERT_STATUS_OK(master_->catalog_manager()->sys_catalog()->AddTable(table.get()));
     l.Commit();
   }
 
   // Verify it showed up.
   loader.Reset();
-  ASSERT_STATUS_OK(master_->catalog_manager()->sys_tables()->VisitTables(&loader));
+  ASSERT_STATUS_OK(master_->catalog_manager()->sys_catalog()->VisitTables(&loader));
   ASSERT_EQ(1, loader.tables.size());
   ASSERT_TRUE(MetadatasEqual(table.get(), loader.tables[0]));
 
@@ -127,24 +128,24 @@ TEST_F(SysTablesTest, TestSysTablesOperations) {
     TableMetadataLock l(table.get(), TableMetadataLock::WRITE);
     l.mutable_data()->pb.set_version(1);
     l.mutable_data()->pb.set_state(SysTablesEntryPB::kTableStateRemoved);
-    ASSERT_STATUS_OK(master_->catalog_manager()->sys_tables()->UpdateTable(table.get()));
+    ASSERT_STATUS_OK(master_->catalog_manager()->sys_catalog()->UpdateTable(table.get()));
     l.Commit();
   }
 
   loader.Reset();
-  ASSERT_STATUS_OK(master_->catalog_manager()->sys_tables()->VisitTables(&loader));
+  ASSERT_STATUS_OK(master_->catalog_manager()->sys_catalog()->VisitTables(&loader));
   ASSERT_EQ(1, loader.tables.size());
   ASSERT_TRUE(MetadatasEqual(table.get(), loader.tables[0]));
 
   // Delete the table
   loader.Reset();
-  ASSERT_STATUS_OK(master_->catalog_manager()->sys_tables()->DeleteTable(table.get()));
-  ASSERT_STATUS_OK(master_->catalog_manager()->sys_tables()->VisitTables(&loader));
+  ASSERT_STATUS_OK(master_->catalog_manager()->sys_catalog()->DeleteTable(table.get()));
+  ASSERT_STATUS_OK(master_->catalog_manager()->sys_catalog()->VisitTables(&loader));
   ASSERT_EQ(0, loader.tables.size());
 }
 
 // Verify that data mutations are not available from metadata() until commit.
-TEST_F(SysTablesTest, TestTableInfoCommit) {
+TEST_F(SysCatalogTest, TestTableInfoCommit) {
   scoped_refptr<TableInfo> table(new TableInfo("123"));
 
   // Mutate the table, under the write lock.
@@ -180,7 +181,7 @@ TEST_F(SysTablesTest, TestTableInfoCommit) {
   }
 }
 
-class TabletLoader : public SysTabletsTable::Visitor {
+class TabletLoader : public TabletVisitor {
  public:
   TabletLoader() {}
   ~TabletLoader() { Reset(); }
@@ -219,21 +220,23 @@ static TabletInfo *CreateTablet(TableInfo *table,
   l.mutable_data()->pb.set_state(SysTabletsEntryPB::kTabletStatePreparing);
   l.mutable_data()->pb.set_start_key(start_key);
   l.mutable_data()->pb.set_end_key(end_key);
+  l.mutable_data()->pb.set_table_id(table->id());
   l.Commit();
   return tablet;
 }
 
-// Test the sys-tablets basic operations (add, update, delete, visit)
-TEST_F(SysTablesTest, TestSysTabletsOperations) {
+// Test the sys-catalog tablets basic operations (add, update, delete,
+// visit)
+TEST_F(SysCatalogTest, TestSysCatalogTabletsOperations) {
   scoped_refptr<TableInfo> table(new TableInfo("abc"));
   scoped_refptr<TabletInfo> tablet1(CreateTablet(table.get(), "123", "a", "b"));
   scoped_refptr<TabletInfo> tablet2(CreateTablet(table.get(), "456", "b", "c"));
   scoped_refptr<TabletInfo> tablet3(CreateTablet(table.get(), "789", "c", "d"));
 
-  SysTabletsTable *sys_tablets = master_->catalog_manager()->sys_tablets();
+  SysCatalogTable* sys_catalog = master_->catalog_manager()->sys_catalog();
 
   TabletLoader loader;
-  ASSERT_STATUS_OK(master_->catalog_manager()->sys_tablets()->VisitTablets(&loader));
+  ASSERT_STATUS_OK(master_->catalog_manager()->sys_catalog()->VisitTablets(&loader));
   ASSERT_EQ(0, loader.tablets.size());
 
   // Add tablet1 and tablet2
@@ -245,11 +248,11 @@ TEST_F(SysTablesTest, TestSysTabletsOperations) {
     loader.Reset();
     TabletMetadataLock l1(tablet1.get(), TabletMetadataLock::WRITE);
     TabletMetadataLock l2(tablet2.get(), TabletMetadataLock::WRITE);
-    ASSERT_STATUS_OK(sys_tablets->AddTablets(tablets));
+    ASSERT_STATUS_OK(sys_catalog->AddTablets(tablets));
     l1.Commit();
     l2.Commit();
 
-    ASSERT_STATUS_OK(sys_tablets->VisitTablets(&loader));
+    ASSERT_STATUS_OK(sys_catalog->VisitTablets(&loader));
     ASSERT_EQ(2, loader.tablets.size());
     ASSERT_TRUE(MetadatasEqual(tablet1.get(), loader.tablets[0]));
     ASSERT_TRUE(MetadatasEqual(tablet2.get(), loader.tablets[1]));
@@ -262,11 +265,11 @@ TEST_F(SysTablesTest, TestSysTabletsOperations) {
 
     TabletMetadataLock l1(tablet1.get(), TabletMetadataLock::WRITE);
     l1.mutable_data()->pb.set_state(SysTabletsEntryPB::kTabletStateRunning);
-    ASSERT_STATUS_OK(sys_tablets->UpdateTablets(tablets));
+    ASSERT_STATUS_OK(sys_catalog->UpdateTablets(tablets));
     l1.Commit();
 
     loader.Reset();
-    ASSERT_STATUS_OK(sys_tablets->VisitTablets(&loader));
+    ASSERT_STATUS_OK(sys_catalog->VisitTablets(&loader));
     ASSERT_EQ(2, loader.tablets.size());
     ASSERT_TRUE(MetadatasEqual(tablet1.get(), loader.tablets[0]));
     ASSERT_TRUE(MetadatasEqual(tablet2.get(), loader.tablets[1]));
@@ -288,13 +291,13 @@ TEST_F(SysTablesTest, TestSysTabletsOperations) {
     l2.mutable_data()->pb.set_state(SysTabletsEntryPB::kTabletStateRunning);
 
     loader.Reset();
-    ASSERT_STATUS_OK(sys_tablets->AddAndUpdateTablets(to_add, to_update));
+    ASSERT_STATUS_OK(sys_catalog->AddAndUpdateTablets(to_add, to_update));
 
     l1.Commit();
     l2.Commit();
     l3.Commit();
 
-    ASSERT_STATUS_OK(sys_tablets->VisitTablets(&loader));
+    ASSERT_STATUS_OK(sys_catalog->VisitTablets(&loader));
     ASSERT_EQ(3, loader.tablets.size());
     ASSERT_TRUE(MetadatasEqual(tablet1.get(), loader.tablets[0]));
     ASSERT_TRUE(MetadatasEqual(tablet2.get(), loader.tablets[1]));
@@ -308,15 +311,15 @@ TEST_F(SysTablesTest, TestSysTabletsOperations) {
     tablets.push_back(tablet3.get());
 
     loader.Reset();
-    ASSERT_STATUS_OK(master_->catalog_manager()->sys_tablets()->DeleteTablets(tablets));
-    ASSERT_STATUS_OK(master_->catalog_manager()->sys_tablets()->VisitTablets(&loader));
+    ASSERT_STATUS_OK(master_->catalog_manager()->sys_catalog()->DeleteTablets(tablets));
+    ASSERT_STATUS_OK(master_->catalog_manager()->sys_catalog()->VisitTablets(&loader));
     ASSERT_EQ(1, loader.tablets.size());
     ASSERT_TRUE(MetadatasEqual(tablet2.get(), loader.tablets[0]));
   }
 }
 
 // Verify that data mutations are not available from metadata() until commit.
-TEST_F(SysTablesTest, TestTabletInfoCommit) {
+TEST_F(SysCatalogTest, TestTabletInfoCommit) {
   scoped_refptr<TabletInfo> tablet(new TabletInfo(NULL, "123"));
 
   // Mutate the tablet, the changes should not be visible
