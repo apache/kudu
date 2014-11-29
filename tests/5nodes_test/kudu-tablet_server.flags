@@ -4,4 +4,4 @@
 --log_force_fsync_all=false
 --v=0
 --memrowset_throttle_mb=768
---enable_leader_failure_detection=false
+--enable_leader_failure_detection=true
