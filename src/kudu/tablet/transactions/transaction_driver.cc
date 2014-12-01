@@ -8,6 +8,7 @@
 #include "kudu/tablet/tablet_peer.h"
 #include "kudu/tablet/transactions/transaction_tracker.h"
 #include "kudu/util/debug-util.h"
+#include "kudu/util/logging.h"
 #include "kudu/util/task_executor.h"
 #include "kudu/util/threadpool.h"
 #include "kudu/util/trace.h"
@@ -22,13 +23,6 @@ using consensus::ReplicateMsg;
 using consensus::CommitMsg;
 using consensus::DriverType;
 using std::tr1::shared_ptr;
-
-// Convenience macros to prefix log messages with the id of the tablet and peer,
-// the transaction's timestamp and and abbreviation of the transaction driver's
-// replication and prepare states.
-#define LOG_WITH_PREFIX(severity) LOG(severity) << LogPrefix()
-#define VLOG_WITH_PREFIX(verboselevel) LOG_IF(INFO, VLOG_IS_ON(verboselevel)) \
-  << LogPrefix()
 
 
 ////////////////////////////////////////////////////////////
@@ -111,7 +105,7 @@ string TransactionDriver::ToStringUnlocked() const {
 
 
 Status TransactionDriver::ExecuteAsync() {
-  VLOG_WITH_PREFIX(2) << "ExecuteAsync()";
+  VLOG_WITH_PREFIX_LK(2) << "ExecuteAsync()";
   ADOPT_TRACE(trace());
   RETURN_NOT_OK(prepare_pool_->SubmitClosure(
                   Bind(&TransactionDriver::PrepareAndStartTask, Unretained(this))));
@@ -119,7 +113,7 @@ Status TransactionDriver::ExecuteAsync() {
 }
 
 void TransactionDriver::PrepareAndStartTask() {
-  VLOG_WITH_PREFIX(2) << " PrepareAndStart()";
+  VLOG_WITH_PREFIX_LK(2) << " PrepareAndStart()";
   Status prepare_status = PrepareAndStart();
   if (PREDICT_FALSE(!prepare_status.ok())) {
     HandleFailure(prepare_status);
@@ -148,7 +142,7 @@ Status TransactionDriver::PrepareAndStart() {
   switch (repl_state_copy) {
     case NOT_REPLICATING:
     {
-      VLOG_WITH_PREFIX(2) << " Triggering consensus repl";
+      VLOG_WITH_PREFIX_LK(2) << " Triggering consensus repl";
       // Trigger the consensus replication.
       gscoped_ptr<ReplicateMsg> replicate_msg;
       transaction_->NewReplicateMsg(&replicate_msg);
@@ -185,9 +179,10 @@ Status TransactionDriver::PrepareAndStart() {
       // We can move on to apply.
       return ApplyAsync();
     }
-    case REPLICATION_FAILED:
-      LOG_WITH_PREFIX(FATAL) << "We should not Prepare() a transaction which has "
-          "failed replication: " << ToString();
+    case REPLICATION_FAILED: {
+      DCHECK(!transaction_status_.ok());
+      HandleFailure(transaction_status_);
+    }
   }
 
   return Status::OK();
@@ -210,7 +205,7 @@ void TransactionDriver::HandleFailure(const Status& s) {
     case NOT_REPLICATING:
     case REPLICATION_FAILED:
     {
-      VLOG_WITH_PREFIX(1) << "Transaction " << ToString() << " failed prior to "
+      VLOG_WITH_PREFIX_LK(1) << "Transaction " << ToString() << " failed prior to "
           "replication success: " << s.ToString();
       transaction_->Finish();
       mutable_state()->completion_callback()->set_error(transaction_status_);
@@ -222,10 +217,9 @@ void TransactionDriver::HandleFailure(const Status& s) {
     case REPLICATING:
     case REPLICATED:
     {
-      LOG_WITH_PREFIX(FATAL) << "Cannot cancel transactions that have already replicated"
+      LOG_WITH_PREFIX_LK(FATAL) << "Cannot cancel transactions that have already replicated"
           << ": " << transaction_status_.ToString()
           << " transaction:" << ToString();
-
     }
   }
 }
@@ -249,17 +243,17 @@ void TransactionDriver::ReplicationFinished(const Status& status) {
       replication_state_ = REPLICATED;
     } else {
       replication_state_ = REPLICATION_FAILED;
+      transaction_status_ = status;
     }
     prepare_state_copy = prepare_state_;
   }
 
-  if (!status.ok()) {
-    HandleFailure(status);
-    return;
-  }
-
   // If we have prepared and replicated, we're ready
   // to move ahead and apply this operation.
+  // Note that if we set the state to REPLICATION_FAILED above,
+  // ApplyAsync() will actually abort the transaction, i.e.
+  // ApplyTask() will never be called and the transaction will never
+  // be applied to the tablet.
   if (prepare_state_copy == PREPARED) {
     // We likely need to do cleanup if this fails so for now just
     // CHECK_OK
@@ -292,8 +286,12 @@ Status TransactionDriver::ApplyAsync() {
   Status txn_status_copy;
   {
     boost::lock_guard<simple_spinlock> lock(lock_);
-    DCHECK_EQ(replication_state_, REPLICATED);
     DCHECK_EQ(prepare_state_, PREPARED);
+    if (transaction_status_.ok()) {
+      DCHECK_EQ(replication_state_, REPLICATED);
+    } else {
+      DCHECK_EQ(replication_state_, REPLICATION_FAILED);
+    }
     txn_status_copy = transaction_status_;
   }
 
