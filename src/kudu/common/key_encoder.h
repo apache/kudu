@@ -14,6 +14,7 @@
 #include "kudu/gutil/endian.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/mathlimits.h"
+#include "kudu/gutil/strings/memutil.h"
 #include "kudu/gutil/type_traits.h"
 #include "kudu/util/faststring.h"
 #include "kudu/util/memory/arena.h"
@@ -76,24 +77,18 @@ struct KeyEncoderTraits<Type, typename base::enable_if<
     Encode(key, dst);
   }
 
-  static void Decode(const Slice& encoded_key,
-                     Arena* arena,
-                     uint8_t* cell_ptr) {
+  static void DecodeKeyPortion(Slice* encoded_key,
+                               bool is_last,
+                               Arena* arena,
+                               uint8_t* cell_ptr) {
     unsigned_cpp_type val;
-    memcpy(&val,  &encoded_key[0], sizeof(cpp_type));
+    memcpy(&val,  encoded_key->data(), sizeof(cpp_type));
     val = SwapEndian(val);
     if (MathLimits<cpp_type>::kIsSigned) {
       val ^= 1UL << (sizeof(val) * CHAR_BIT - 1);
     }
     memcpy(cell_ptr, &val, sizeof(val));
-  }
-
-  static void DecodeKeyPortion(const Slice& encoded_key_portion,
-                               bool is_last,
-                               Arena* arena,
-                               uint8_t* cell_ptr,
-                               size_t* offset) {
-    Decode(encoded_key_portion, arena, cell_ptr);
+    encoded_key->remove_prefix(sizeof(cpp_type));
   }
 };
 
@@ -141,46 +136,41 @@ struct KeyEncoderTraits<STRING> {
     }
   }
 
-  static void Decode(const Slice& encoded_key,
-                     Arena* arena,
-                     uint8_t* cell_ptr) {
-    Slice* dst_slice = reinterpret_cast<Slice *>(cell_ptr);
-    CHECK(arena->RelocateSlice(encoded_key, dst_slice))
-        << "could not allocate space in the arena";
-  }
-
-  static void DecodeKeyPortion(const Slice& encoded_key_portion,
+  static void DecodeKeyPortion(Slice* encoded_key,
                                bool is_last,
                                Arena* arena,
-                               uint8_t* cell_ptr,
-                               size_t* offset) {
+                               uint8_t* cell_ptr) {
     if (is_last) {
-      Decode(encoded_key_portion, arena, cell_ptr);
-    } else {
-      const uint8_t *start = encoded_key_portion.data();
-      const uint8_t* curr = start;
-      const uint8_t *prev = NULL;
-      const uint8_t *end = start + encoded_key_portion.size();
-      size_t real_size = 0;
-      while (curr < end) {
-        if (PREDICT_FALSE(*curr == 0x00)) {
-          if (PREDICT_TRUE(prev != NULL) && *prev == 0x00) {
-            // If we found the separator (\x00\x00), terminate the
-            // loop.
-            real_size = curr - start - 1;
-            break;
-          }
-        }
-        prev = curr++;
-      }
-      if (curr == end) {
-        LOG(FATAL) << "unable to decode malformed key (" << encoded_key_portion << "), it is in the"
-            " middle of a composite key, but is not followed by a separator";
-      }
-      Slice slice(start, real_size);
-      Decode(slice, arena, cell_ptr);
-      *offset = real_size + 2; // 2 refers to the length of the separator.
+      Slice* dst_slice = reinterpret_cast<Slice *>(cell_ptr);
+      CHECK(arena->RelocateSlice(*encoded_key, dst_slice))
+        << "could not allocate space in the arena";
+      encoded_key->remove_prefix(encoded_key->size());
+      return;
     }
+
+    uint8_t* separator = static_cast<uint8_t*>(memmem(encoded_key->data(), encoded_key->size(),
+                                                      "\0\0", 2));
+    if (separator == NULL) {
+      // TODO: return status
+      LOG(FATAL) << "No separator found in " << encoded_key->ToDebugString();
+    }
+
+    uint8_t* src = encoded_key->mutable_data();
+    int max_len = separator - src;
+    uint8_t* dst_start = static_cast<uint8_t*>(arena->AllocateBytes(max_len));
+    uint8_t* dst = dst_start;
+
+    for (int i = 0; i < max_len; i++) {
+      if (i >= 1 && src[i - 1] == '\0' && src[i] == '\1') {
+        continue;
+      }
+      *dst++ = src[i];
+    }
+
+    int real_len = dst - dst_start;
+    Slice slice(dst_start, real_len);
+    memcpy(cell_ptr, &slice, sizeof(Slice));
+    encoded_key->remove_prefix(max_len + 2);
   }
 };
 
@@ -198,18 +188,11 @@ struct KeyEncoderTraits<BOOL> {
     Encode(key, dst);
   }
 
-  static void Decode(const Slice& encoded_key,
-                     Arena* arena,
-                     uint8_t* cell_ptr) {
-    LOG(FATAL) << "BOOL keys are presently unsupported";
-  }
-
-  static void DecodeKeyPortion(const Slice& encoded_key_portion,
+  static void DecodeKeyPortion(Slice* encoded_key,
                                bool is_last,
                                Arena* arena,
-                               uint8_t* cell_ptr,
-                               size_t* offset) {
-    Decode(encoded_key_portion, arena, cell_ptr);
+                               uint8_t* cell_ptr) {
+    LOG(FATAL) << "BOOL keys are presently unsupported";
   }
 };
 
@@ -232,40 +215,19 @@ class KeyEncoder {
     Encode(key, dst);
   }
 
-  // Decodes the specified encoded key into memory pointed by
-  // 'cell_ptr' (which is usually returned by
-  // ContiguousRow::mutable_cell_ptr()).  For string data types,
-  // 'arena' must be initialized, as it's used for allocating indirect
-  // strings.
-  void Decode(const Slice& encoded_key,
-              Arena* arena,
-              uint8_t* cell_ptr) const {
-    decode_func_(encoded_key, arena, cell_ptr);
-  }
 
-  // Similar to Decode above, but meant to be used for variable
-  // length datatypes (currently only STRING) inside composite
-  // keys. 'encoded_key_portion' refers to the slice of a composite
-  // key starting at the beginning of the composite key column and
-  // 'offset' refers to the offset relative to the start of
-  // 'encoded_key_portion'.
-  //
-  // For example: if the encoded composite key is (123, "abcdef",
-  // "ghi", "jkl") and we want to decode the "ghi" column,
-  // 'encoded_key_portion' would start at "g"; the returned value
-  // would be a Slice containing "jkl" and 'offset' would be the
-  // byte offset of "j" within 'encoded_key_portion'.
-  //
-  // See: Schema::DecodeRowKey() for example usage.
-  //
-  // NOTE: currently this method may only be used with the STRING
-  // datatype.
-  void Decode(const Slice& encoded_key_portion,
+  // Decode the next component out of the composite key pointed to by '*encoded_key'
+  // into *cell_ptr.
+  // After decoding encoded_key is advanced forward such that it contains the remainder
+  // of the composite key.
+  // 'is_last' should be true when we expect that this component is the last (or only) component
+  // of the composite key.
+  // Any indirect data (eg strings) are allocated out of 'arena'.
+  void Decode(Slice* encoded_key,
               bool is_last,
               Arena* arena,
-              uint8_t* cell_ptr,
-              size_t* offset) const {
-    decode_key_portion_func_(encoded_key_portion, is_last, arena, cell_ptr, offset);
+              uint8_t* cell_ptr) const {
+    decode_key_portion_func_(encoded_key, is_last, arena, cell_ptr);
   }
 
  private:
@@ -274,7 +236,6 @@ class KeyEncoder {
   explicit KeyEncoder(EncoderTraitsClass t)
     : encode_func_(EncoderTraitsClass::Encode),
       encode_with_separators_func_(EncoderTraitsClass::EncodeWithSeparators),
-      decode_func_(EncoderTraitsClass::Decode),
       decode_key_portion_func_(EncoderTraitsClass::DecodeKeyPortion),
       key_type_(EncoderTraitsClass::key_type) {
   }
@@ -285,11 +246,8 @@ class KeyEncoder {
                                            faststring* dst);
   const EncodeWithSeparatorsFunc encode_with_separators_func_;
 
-  typedef void (*DecodeFunc)(const Slice& enc_key, Arena* arena, uint8_t* cell_ptr);
-  const DecodeFunc decode_func_;
-
-  typedef void (*DecodeKeyPortionFunc)(const Slice& enc_key, bool is_last,
-                                       Arena* arena, uint8_t* cell_ptr, size_t* offset);
+  typedef void (*DecodeKeyPortionFunc)(Slice* enc_key, bool is_last,
+                                       Arena* arena, uint8_t* cell_ptr);
   const DecodeKeyPortionFunc decode_key_portion_func_;
 
   const DataType key_type_;

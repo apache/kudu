@@ -294,6 +294,21 @@ TEST(TestKeyEncoder, TestKeyEncoder) {
   }
 }
 
+TEST(TestSchema, TestDecodeKeys_CompoundStringKey) {
+  Schema schema(boost::assign::list_of
+                (ColumnSchema("col1", STRING))
+                (ColumnSchema("col2", STRING))
+                (ColumnSchema("col3", STRING)),
+                2);
+
+  EXPECT_EQ("(string col1=foo, string col2=bar)",
+            schema.DebugEncodedRowKey(Slice("foo\0\0bar", 8)));
+  EXPECT_EQ("(string col1=fo\\000o, string col2=bar)",
+            schema.DebugEncodedRowKey(Slice("fo\x00\x01o\0\0""bar", 10)));
+  EXPECT_EQ("(string col1=fo\\000o, string col2=bar\\000xy)",
+            schema.DebugEncodedRowKey(Slice("fo\x00\x01o\0\0""bar\0xy", 13)));
+}
+
 TEST(TestSchema, TestCreatePartialSchema) {
   Schema schema(boost::assign::list_of
                 (ColumnSchema("col1", STRING))
