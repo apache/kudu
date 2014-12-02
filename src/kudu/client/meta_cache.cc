@@ -366,7 +366,9 @@ void LookupRpc::SendRpc() {
 }
 
 string LookupRpc::ToString() const {
-  return Substitute("GetTableLocations($0, $1)", table_->name(), key_.ToString());
+  const int kMaxDebugStringLen = 128;
+  return Substitute("GetTableLocations($0, $1)",
+                    table_->name(), key_.ToDebugString(kMaxDebugStringLen));
 }
 
 void LookupRpc::ResetMasterLeaderAndRetry() {
