@@ -93,6 +93,7 @@ class PeerMessageQueue {
   PeerMessageQueue(const MetricContext& metric_ctx,
                    log::Log* log,
                    const std::string& local_uuid,
+                   const std::string& tablet_id,
                    const std::string& parent_tracker_id = kConsensusQueueParentTrackerId);
 
   // Initialize the queue.
@@ -216,6 +217,8 @@ class PeerMessageQueue {
     uint64_t current_term;
 
     State state;
+
+    std::string ToString() const;
   };
 
   void NotifyObserversOfMajorityReplOpChange(const OpId& new_majority_replicated_op);
@@ -223,6 +226,8 @@ class PeerMessageQueue {
   typedef std::tr1::unordered_map<std::string, TrackedPeer*> PeersMap;
 
   std::string ToStringUnlocked() const;
+
+  std::string LogPrefixUnlocked() const;
 
   void DumpToStringsUnlocked(std::vector<std::string>* lines) const;
 
@@ -269,6 +274,9 @@ class PeerMessageQueue {
 
   // The UUID of the local peer.
   const std::string local_uuid_;
+
+  // The id of the tablet.
+  const std::string tablet_id_;
 
   QueueState queue_state_;
 

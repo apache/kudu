@@ -139,6 +139,10 @@ class RaftConsensus : public Consensus,
     std::vector<const ReplicateMsg*> messages;
   };
 
+  std::string LogPrefixUnlocked();
+
+  std::string LogPrefix();
+
   // Verifies that 'quorum' is well formed and that no config change is in-flight.
   Status VerifyQuorumAndCheckThatNoChangeIsPendingUnlocked(const metadata::QuorumPB& quorum);
 

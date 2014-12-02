@@ -135,7 +135,10 @@ class RaftConsensusQuorumTest : public KuduTest {
       string peer_uuid = Substitute("peer-$0", i);
       MetricContext metrics(metric_context_, peer_uuid);
 
-      gscoped_ptr<PeerMessageQueue> queue(new PeerMessageQueue(metrics, logs_[i], peer_uuid));
+      gscoped_ptr<PeerMessageQueue> queue(new PeerMessageQueue(metrics,
+                                                               logs_[i],
+                                                               peer_uuid,
+                                                               kTestTablet));
 
       gscoped_ptr<PeerManager> peer_manager(
           new PeerManager(options_.tablet_id,

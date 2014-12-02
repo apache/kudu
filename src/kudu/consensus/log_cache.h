@@ -44,6 +44,8 @@ class LogCache {
  public:
   LogCache(const MetricContext& metric_ctx,
            log::Log* log,
+           const std::string& local_uuid,
+           const std::string& tablet_id,
            const std::string& parent_tracker_id = kLogCacheTrackerId);
   ~LogCache();
 
@@ -118,6 +120,7 @@ class LogCache {
 
   std::string StatsString() const;
 
+  std::string ToString() const;
  private:
   FRIEND_TEST(LogCacheTest, TestAppendAndGetMessages);
   friend class LogCacheTest;
@@ -134,6 +137,10 @@ class LogCache {
   // Return a string with stats
   std::string StatsStringUnlocked() const;
 
+  std::string ToStringUnlocked() const;
+
+  std::string LogPrefixUnlocked() const;
+
   void EntriesLoadedCallback(int64_t after_op_index,
                              const Status& status,
                              const std::vector<ReplicateMsg*>& replicates);
@@ -144,6 +151,12 @@ class LogCache {
                          const Status& status);
 
   log::Log* const log_;
+
+  // The UUID of the local peer.
+  const std::string local_uuid_;
+
+  // The id of the tablet.
+  const std::string tablet_id_;
 
   mutable simple_spinlock lock_;
 

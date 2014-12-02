@@ -26,6 +26,7 @@
 #include "kudu/gutil/strings/strcat.h"
 #include "kudu/gutil/strings/human_readable.h"
 #include "kudu/util/auto_release_pool.h"
+#include "kudu/util/logging.h"
 #include "kudu/util/mem_tracker.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/url-coding.h"
@@ -77,10 +78,12 @@ PeerMessageQueue::Metrics::Metrics(const MetricContext& metric_ctx)
 PeerMessageQueue::PeerMessageQueue(const MetricContext& metric_ctx,
                                    log::Log* log,
                                    const std::string& local_uuid,
+                                   const std::string& tablet_id,
                                    const std::string& parent_tracker_id)
     : majority_size_(0),
       local_uuid_(local_uuid),
-      log_cache_(metric_ctx, log, parent_tracker_id),
+      tablet_id_(tablet_id),
+      log_cache_(metric_ctx, log, local_uuid, tablet_id, parent_tracker_id),
       metrics_(metric_ctx) {
   queue_state_.current_term = MinimumOpId().term();
   queue_state_.committed_index = MinimumOpId();
@@ -164,8 +167,8 @@ Status PeerMessageQueue::AppendOperation(gscoped_ptr<ReplicateMsg> msg) {
                                              msg_ptr->id()))) {
     lock.unlock();
     if (PREDICT_FALSE((VLOG_IS_ON(2) || FLAGS_consensus_dump_queue_on_full))) {
-      LOG(INFO) << "Queue Full. Can't Append: " << msg_ptr->id().ShortDebugString()
-                << ". Dumping State:";
+      LOG_WITH_PREFIX(INFO) << "Queue Full. Can't Append: " << msg_ptr->id().ShortDebugString()
+          << ". Dumping State:";
       log_cache_.DumpToLog();
     }
     return Status::ServiceUnavailable("Cannot append replicate message. Queue is full.");
@@ -262,13 +265,13 @@ void PeerMessageQueue::RequestForPeer(const string& uuid,
 
   if (PREDICT_FALSE(VLOG_IS_ON(2))) {
     if (request->ops_size() > 0) {
-      VLOG(2) << "Sending request with operations to Peer: " << uuid
-              << ". Size: " << request->ops_size()
-              << ". From: " << request->ops(0).id().ShortDebugString() << ". To: "
-              << request->ops(request->ops_size() - 1).id().ShortDebugString();
+      VLOG_WITH_PREFIX(2) << "Sending request with operations to Peer: " << uuid
+          << ". Size: " << request->ops_size()
+          << ". From: " << request->ops(0).id().ShortDebugString() << ". To: "
+          << request->ops(request->ops_size() - 1).id().ShortDebugString();
     } else {
-      VLOG(2) << "Sending status only request to Peer: " << uuid
-              << ": " << request->DebugString();
+      VLOG_WITH_PREFIX(2) << "Sending status only request to Peer: " << uuid
+          << ": " << request->DebugString();
     }
   }
 }
@@ -280,8 +283,8 @@ void PeerMessageQueue::AdvanceQueueWatermark(const char* type,
                                              int num_peers_required) {
 
   if (VLOG_IS_ON(2)) {
-    VLOG(2) << "Updating " << type << " watermark: "
-            << " peer changed from " << replicated_before << " to " << replicated_after;
+    VLOG_WITH_PREFIX(2) << "Updating " << type << " watermark: "
+        << " peer changed from " << replicated_before << " to " << replicated_after;
   }
 
   // Update 'watermark', e.g. the commit index.
@@ -315,16 +318,16 @@ void PeerMessageQueue::AdvanceQueueWatermark(const char* type,
     OpId old_watermark = *watermark;
     watermark->CopyFrom(new_watermark);
 
-    VLOG(1) << "Updated " << type << " watermark "
-            << "from " << old_watermark << " to " << new_watermark;
+    VLOG_WITH_PREFIX(1) << "Updated " << type << " watermark "
+        << "from " << old_watermark << " to " << new_watermark;
     if (VLOG_IS_ON(3)) {
-      VLOG(1) << "Peers: ";
+      VLOG_WITH_PREFIX(3) << "Peers: ";
       BOOST_FOREACH(const PeersMap::value_type& peer, peers_map_) {
-        VLOG(1) << "Peer: " << peer.second->ToString();
+        VLOG_WITH_PREFIX(3) << "Peer: " << peer.second->ToString();
       }
-      VLOG(1) << "Sorted watermarks:";
+      VLOG_WITH_PREFIX(3) << "Sorted watermarks:";
       BOOST_FOREACH(const OpId* watermark, watermarks) {
-        VLOG(1) << "Watermark: " << watermark->ShortDebugString();
+        VLOG_WITH_PREFIX(3) << "Watermark: " << watermark->ShortDebugString();
       }
     }
   }
@@ -343,8 +346,8 @@ void PeerMessageQueue::ResponseFromPeer(const ConsensusResponsePB& response,
 
     TrackedPeer* peer = FindPtrOrNull(peers_map_, response.responder_uuid());
     if (PREDICT_FALSE(queue_state_.state == kQueueClosed || peer == NULL)) {
-      LOG(WARNING) << "Queue is closed or peer was untracked, disregarding peer response."
-          << " Response: " << response.ShortDebugString();
+      LOG_WITH_PREFIX(WARNING) << "Queue is closed or peer was untracked, disregarding peer "
+          "response. Response: " << response.ShortDebugString();
       *more_pending = false;
       return;
     }
@@ -375,10 +378,10 @@ void PeerMessageQueue::ResponseFromPeer(const ConsensusResponsePB& response,
 
           if (previous.is_new) {
             // That's currently how we can detect that we able to connect to a peer.
-            LOG(INFO) << "Connected to new peer: " << peer->ToString();
+            LOG_WITH_PREFIX(INFO) << "Connected to new peer: " << peer->ToString();
             *more_pending = true;
           } else {
-            LOG(INFO) << "Got LMP mismatch error from peer: " << peer->ToString();
+            LOG_WITH_PREFIX(INFO) << "Got LMP mismatch error from peer: " << peer->ToString();
             *more_pending = false;
           }
 
@@ -397,7 +400,8 @@ void PeerMessageQueue::ResponseFromPeer(const ConsensusResponsePB& response,
           return;
         }
         default: {
-          LOG(FATAL) << "Unexpected consensus error. Response: " << response.ShortDebugString();
+          LOG_WITH_PREFIX(FATAL) << "Unexpected consensus error. Response: "
+              << response.ShortDebugString();
         }
       }
     }
@@ -413,7 +417,7 @@ void PeerMessageQueue::ResponseFromPeer(const ConsensusResponsePB& response,
     }
 
     if (PREDICT_FALSE(VLOG_IS_ON(2))) {
-      VLOG(2) << "Received Response from Peer: " << peer->ToString()
+      VLOG_WITH_PREFIX(2) << "Received Response from Peer: " << peer->ToString()
           << ". Response: " << response.ShortDebugString();
     }
 
@@ -583,6 +587,21 @@ void PeerMessageQueue::NotifyObserversOfMajorityReplOpChange(
 
 PeerMessageQueue::~PeerMessageQueue() {
   Close();
+}
+
+string PeerMessageQueue::LogPrefixUnlocked() const {
+  return Substitute("T $0 P $1: ",
+                    tablet_id_,
+                    local_uuid_);
+}
+
+string PeerMessageQueue::QueueState::ToString() const {
+  return Substitute("All replicated op: $0, Majority replicated op: $1, "
+      "Committed index: $2, Last appended: $3, Current term: $4, "
+      "State: $5",
+      OpIdToString(all_replicated_opid), OpIdToString(majority_replicated_opid),
+      OpIdToString(committed_index), OpIdToString(last_appended), current_term,
+      state);
 }
 
 }  // namespace consensus

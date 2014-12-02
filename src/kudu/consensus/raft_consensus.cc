@@ -20,6 +20,7 @@
 #include "kudu/server/clock.h"
 #include "kudu/server/metadata.h"
 #include "kudu/util/failure_detector.h"
+#include "kudu/util/logging.h"
 #include "kudu/util/random_util.h"
 #include "kudu/util/trace.h"
 #include "kudu/util/url-coding.h"
@@ -46,16 +47,6 @@ DEFINE_double(leader_failure_max_missed_heartbeat_periods, 3.0,
 DEFINE_bool(enable_leader_failure_detection, false,
             "Whether to enable failure detection of tablet leaders. If enabled, attempts will be "
             "made to fail over to a follower when the leader is detected to have failed.");
-
-// Convenience macros to prefix log messages with the id of the tablet and peer.
-// Do not obtain the state lock and should be used when holding the state_ lock
-#define LOG_WITH_PREFIX(severity) LOG(severity) << state_->LogPrefixUnlocked()
-#define VLOG_WITH_PREFIX(verboselevel) LOG_IF(INFO, VLOG_IS_ON(verboselevel)) \
-  << state_->LogPrefixUnlocked()
-// Same as the above, but obtain the lock
-#define LOG_WITH_PREFIX_LK(severity) LOG(severity) << state_->LogPrefix()
-#define VLOG_WITH_PREFIX_LK(verboselevel) LOG_IF(INFO, VLOG_IS_ON(verboselevel)) \
-  << state_->LogPrefix()
 
 namespace kudu {
 namespace consensus {
@@ -84,7 +75,10 @@ scoped_refptr<RaftConsensus> RaftConsensus::Create(
 
   // The message queue that keeps track of which operations need to be replicated
   // where.
-  gscoped_ptr<PeerMessageQueue> queue(new PeerMessageQueue(metric_ctx, log, peer_uuid));
+  gscoped_ptr<PeerMessageQueue> queue(new PeerMessageQueue(metric_ctx,
+                                                           log,
+                                                           peer_uuid,
+                                                           options.tablet_id));
 
   // A manager for the set of peers that actually send the operations both remotely
   // and to the local wal.
@@ -1097,6 +1091,14 @@ QuorumPeerPB::Role RaftConsensus::role() const {
   ReplicaState::UniqueLock lock;
   CHECK_OK(state_->LockForRead(&lock));
   return GetRoleInQuorum(state_->GetPeerUuid(), state_->GetCommittedQuorumUnlocked());
+}
+
+std::string RaftConsensus::LogPrefixUnlocked() {
+  return state_->LogPrefixUnlocked();
+}
+
+std::string RaftConsensus::LogPrefix() {
+  return state_->LogPrefix();
 }
 
 string RaftConsensus::peer_uuid() const {

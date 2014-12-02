@@ -33,6 +33,7 @@ namespace kudu {
 namespace consensus {
 
 static const char* kPeerUuid = "a";
+static const char* kLeaderUuid = "leader";
 static const char* kTestTablet = "test-tablet";
 
 class ConsensusQueueTest : public KuduTest {
@@ -57,7 +58,7 @@ class ConsensusQueueTest : public KuduTest {
                             &log_));
 
     consensus_.reset(new TestRaftConsensusQueueIface());
-    queue_.reset(new PeerMessageQueue(metric_context_, log_.get(), "leader"));
+    queue_.reset(new PeerMessageQueue(metric_context_, log_.get(), kLeaderUuid, kTestTablet));
     queue_->RegisterObserver(consensus_.get());
   }
 
@@ -355,7 +356,7 @@ TEST_F(ConsensusQueueTest, TestQueueLoadsOperationsForPeer) {
 
   // Now reset the queue so that we can pass a new committed index,
   // the last operation in the log.
-  queue_.reset(new PeerMessageQueue(metric_context_, log_.get(), "leader"));
+  queue_.reset(new PeerMessageQueue(metric_context_, log_.get(), kLeaderUuid, kTestTablet));
   OpId committed_index;
   committed_index.set_term(1);
   committed_index.set_index(100);
@@ -464,7 +465,7 @@ TEST_F(ConsensusQueueTest, TestQueueHandlesOperationOverwriting) {
 
   // Now reset the queue so that we can pass a new committed index,
   // op, 2.15.
-  queue_.reset(new PeerMessageQueue(metric_context_, log_.get(), "leader"));
+  queue_.reset(new PeerMessageQueue(metric_context_, log_.get(), kLeaderUuid, kTestTablet));
   OpId committed_index = MakeOpId(2, 15);
   queue_->Init(committed_index, MakeOpId(2, 20), 2, 2);
 

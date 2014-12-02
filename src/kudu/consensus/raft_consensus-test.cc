@@ -42,7 +42,7 @@ typedef std::map<OpId, Status, OpIdCompareFunctor> StatusesMap;
 class MockQueue : public PeerMessageQueue {
  public:
   explicit MockQueue(const MetricContext& metric_ctx, log::Log* log)
-    : PeerMessageQueue(metric_ctx, log, kLocalPeerUuid) {}
+    : PeerMessageQueue(metric_ctx, log, kLocalPeerUuid, kTestTablet) {}
   MOCK_METHOD4(Init, void(const OpId& committed_index,
                           const OpId& locally_replicated_index,
                           uint64_t current_term,

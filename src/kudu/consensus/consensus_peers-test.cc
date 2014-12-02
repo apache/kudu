@@ -45,7 +45,7 @@ class ConsensusPeersTest : public KuduTest {
                        NULL,
                        &log_));
     consensus_.reset(new TestRaftConsensusQueueIface());
-    message_queue_.reset(new PeerMessageQueue(metric_context_, log_.get(), kLeaderUuid));
+    message_queue_.reset(new PeerMessageQueue(metric_context_, log_.get(), kLeaderUuid, kTabletId));
     message_queue_->RegisterObserver(consensus_.get());
   }
 

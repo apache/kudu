@@ -20,6 +20,7 @@
 #include "kudu/util/mem_tracker.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/locks.h"
+#include "kudu/util/logging.h"
 
 DEFINE_int32(log_cache_size_soft_limit_mb, 128,
              "The total per-tablet size of consensus entries to keep in memory."
@@ -50,8 +51,12 @@ const char kLogCacheTrackerId[] = "log_cache_parent";
 
 LogCache::LogCache(const MetricContext& metric_ctx,
                    log::Log* log,
+                   const std::string& local_uuid,
+                   const std::string& tablet_id,
                    const std::string& parent_tracker_id)
   : log_(log),
+    local_uuid_(local_uuid),
+    tablet_id_(tablet_id),
     preceding_first_op_(MinimumOpId()),
     min_pinned_op_index(0),
     max_ops_size_bytes_hard_(FLAGS_log_cache_size_hard_limit_mb * 1024 * 1024),
@@ -223,8 +228,8 @@ Status LogCache::ReadOps(int64_t after_op_index,
     if (after_op_index == preceding_first_op_.index()) {
       preceding_op->CopyFrom(preceding_first_op_);
     } else {
-      LOG(FATAL) << "trying to read index " << after_op_index
-                 << " but seeked to " << found_index;
+      LOG_WITH_PREFIX(FATAL) << "trying to read index " << after_op_index
+          << " but seeked to " << found_index;
     }
   } else {
     // ... otherwise 'preceding_id' is the first element in the iterator and we start sending
@@ -302,7 +307,7 @@ void LogCache::EntriesLoadedCallback(int64_t after_op_index,
       << " got: " << replicates.back()->id();
 
     preceding_first_op_ = preceding_id;
-    LOG(INFO) << "Loaded operations into the cache after: "
+    LOG_WITH_PREFIX(INFO) << "Loaded operations into the cache after: "
         << preceding_id.ShortDebugString() << " to: "
         << replicates.back()->id().ShortDebugString()
         << " for a total of: " << replicates.size();
@@ -317,7 +322,7 @@ void LogCache::Evict() {
   DCHECK_EQ(state_, kCacheOpen);
   MessageCache::iterator iter = cache_.begin();
 
-  VLOG(1) << "Evicting log cache: before stats: " << StatsStringUnlocked();
+  VLOG_WITH_PREFIX(1) << "Evicting log cache: before stats: " << StatsStringUnlocked();
   while (iter != cache_.end() &&
          iter->first < min_pinned_op_index) {
     ReplicateMsg* msg = (*iter).second;
@@ -327,13 +332,13 @@ void LogCache::Evict() {
 
     preceding_first_op_ = msg->id();;
     tracker_->Release(msg->SpaceUsed());
-    VLOG(1) << "Evicting cache. Deleting: " << msg->id().ShortDebugString();
+    VLOG_WITH_PREFIX(1) << "Evicting cache. Deleting: " << msg->id().ShortDebugString();
     metrics_.log_cache_size_bytes->IncrementBy(-1 * msg->SpaceUsed());
     metrics_.log_cache_total_num_ops->Decrement();
     delete msg;
     cache_.erase(iter++);
   }
-  VLOG(1) << "Evicting log cache: after stats: " << StatsStringUnlocked();
+  VLOG_WITH_PREFIX(1) << "Evicting log cache: after stats: " << StatsStringUnlocked();
 }
 
 bool LogCache::WouldHardLimitBeViolated(size_t bytes) const {
@@ -370,7 +375,7 @@ string LogCache::StatsString() const {
 }
 
 string LogCache::StatsStringUnlocked() const {
-  return Substitute("LogCache(num_ops=$0, bytes=$1)",
+  return Substitute("LogCacheStats(num_ops=$0, bytes=$1)",
                     metrics_.log_cache_total_num_ops->value(),
                     metrics_.log_cache_size_bytes->value());
 }
@@ -402,17 +407,36 @@ void LogCache::Close() {
   STLDeleteValues(&cache_);
 }
 
+std::string LogCache::ToString() const {
+  lock_guard<simple_spinlock> lock(&lock_);
+  return ToStringUnlocked();
+}
+
+std::string LogCache::ToStringUnlocked() const {
+  return Substitute("Preceding Op: $0, Pinned index: $1, $2",
+                    OpIdToString(preceding_first_op_), min_pinned_op_index,
+                    StatsStringUnlocked());
+}
+
+std::string LogCache::LogPrefixUnlocked() const {
+  return Substitute("T $0 P $1: ",
+                    tablet_id_,
+                    local_uuid_);
+}
+
 void LogCache::DumpToLog() const {
   vector<string> strings;
   DumpToStrings(&strings);
   BOOST_FOREACH(const string& s, strings) {
-    LOG(INFO) << s;
+    LOG_WITH_PREFIX(INFO) << s;
   }
 }
 
 void LogCache::DumpToStrings(vector<string>* lines) const {
   lock_guard<simple_spinlock> lock(&lock_);
   int counter = 0;
+  lines->push_back(ToStringUnlocked());
+  lines->push_back(Substitute("Preceding Id: $0", preceding_first_op_.ShortDebugString()));
   lines->push_back("Messages:");
   BOOST_FOREACH(const MessageCache::value_type entry, cache_) {
     ReplicateMsg* msg = entry.second;

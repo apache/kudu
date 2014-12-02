@@ -25,6 +25,7 @@ DECLARE_int32(global_log_cache_size_hard_limit_mb);
 namespace kudu {
 namespace consensus {
 
+static const char* kPeerUuid = "leader";
 static const char* kTestTablet = "test-tablet";
 
 class LogCacheTest : public KuduTest {
@@ -58,7 +59,11 @@ class LogCacheTest : public KuduTest {
     if (cache_) {
       cache_->Close();
     }
-    cache_.reset(new LogCache(metric_context_, log_.get(), mem_tracker_name));
+    cache_.reset(new LogCache(metric_context_,
+                              log_.get(),
+                              kPeerUuid,
+                              kTestTablet,
+                              mem_tracker_name));
     cache_->Init(preceding_id);
   }
 
@@ -361,7 +366,7 @@ TEST_F(LogCacheTest, TestEvictWhenGlobalSoftLimitExceeded) {
  log_->WaitUntilAllFlushed();
 
  // If this goes through, that means the queue has been trimmed, otherwise
- // the hard limit would be violated and false would be returnedl.
+ // the hard limit would be violated and false would be returned.
  ASSERT_TRUE(AppendReplicateMessagesToCache(2, 1, kPayloadSize));
 
  // Verify that there is only one message in the queue.

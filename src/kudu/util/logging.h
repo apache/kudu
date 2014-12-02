@@ -125,6 +125,19 @@ void ShutdownLogging();
 
 // Writes all command-line flags to the log at level INFO.
 void LogCommandLineFlags();
+
+// Convenience macros to prefix log messages with some prefix, these are the unlocked
+// versions and should not obtain a lock (if one is required to obtain the prefix).
+// There must be a LogPrefixUnlocked()/LogPrefixLocked() method available in the current
+// scope in order to use these macros.
+#define LOG_WITH_PREFIX(severity) LOG(severity) << LogPrefixUnlocked()
+#define VLOG_WITH_PREFIX(verboselevel) LOG_IF(INFO, VLOG_IS_ON(verboselevel)) \
+  << LogPrefixUnlocked()
+
+// Same as the above, but obtain the lock.
+#define LOG_WITH_PREFIX_LK(severity) LOG(severity) << LogPrefix()
+#define VLOG_WITH_PREFIX_LK(verboselevel) LOG_IF(INFO, VLOG_IS_ON(verboselevel)) \
+  << LogPrefix()
 } // namespace kudu
 
 #endif // KUDU_UTIL_LOGGING_H

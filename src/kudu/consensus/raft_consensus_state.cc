@@ -11,18 +11,9 @@
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/strcat.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/util/logging.h"
 #include "kudu/util/status.h"
 #include "kudu/util/trace.h"
-
-// Convenience macros to prefix log messages with the id of the tablet and peer.
-// Do not obtain the state lock and should be used when holding the state_ lock
-#define LOG_WITH_PREFIX(severity) LOG(severity) << LogPrefixUnlocked()
-#define VLOG_WITH_PREFIX(verboselevel) LOG_IF(INFO, VLOG_IS_ON(verboselevel)) \
-  << LogPrefixUnlocked()
-// Same as the above, but obtain the lock
-#define LOG_WITH_PREFIX_LK(severity) LOG(severity) << LogPrefix()
-#define VLOG_WITH_PREFIX_LK(verboselevel) LOG_IF(INFO, VLOG_IS_ON(verboselevel)) \
-  << LogPrefix()
 
 namespace kudu {
 namespace consensus {
