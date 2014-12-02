@@ -5,7 +5,10 @@ set -x
 set -e
 TP_DIR=$(cd "$(dirname "$BASH_SOURCE")"; pwd)
 
-EXTRA_CXXFLAGS="-O3 -g $CXXFLAGS"
+# We use -O2 instead of -O3 for thirdparty since benchmarks indicate
+# that the benefits of a smaller code size outweight the benefits of
+# more inlining.
+EXTRA_CXXFLAGS="-O2 -g $CXXFLAGS"
 if [[ "$OSTYPE" =~ ^linux ]]; then
   OS_LINUX=1
 elif [[ "$OSTYPE" == "darwin"* ]]; then
