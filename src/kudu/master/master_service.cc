@@ -45,7 +45,7 @@ template<class RespClass>
 bool CheckIsLeaderOrRespond(Master* master,
                             RespClass* resp,
                             rpc::RpcContext* rpc) {
-  if (PREDICT_FALSE(!master->IsLeader())) {
+  if (PREDICT_FALSE(!master->catalog_manager()->IsLeaderAndReady())) {
     SetupErrorAndRespond(resp->mutable_error(),
                          Status::ServiceUnavailable("operation requested can only be executed "
                                                     "on a leader master or a single node master"),
@@ -99,7 +99,7 @@ void MasterServiceImpl::TSHeartbeat(const TSHeartbeatRequestPB* req,
   }
 
   resp->mutable_master_instance()->CopyFrom(server_->instance_pb());
-  if (!server_->IsLeader()) {
+  if (!server_->catalog_manager()->IsLeaderAndReady()) {
     // For the time being, ignore heartbeats sent to non-leader distributed
     // masters.
     //
@@ -342,25 +342,16 @@ void MasterServiceImpl::ListMasters(const ListMastersRequestPB* req,
 void MasterServiceImpl::GetMasterRegistration(const GetMasterRegistrationRequestPB* req,
                                               GetMasterRegistrationResponsePB* resp,
                                               rpc::RpcContext* rpc) {
+  // instance_id must always be set in order for status pages to be useful.
   resp->mutable_instance_id()->CopyFrom(server_->instance_pb());
+  if (!CheckCatalogManagerInitializedOrRespond(server_, resp, rpc)) {
+    return;
+  }
   Status s = server_->GetMasterRegistration(resp->mutable_registration());
   if (!s.ok()) {
-    StatusToPB(s, resp->mutable_error());
+    StatusToPB(s, resp->mutable_error()->mutable_status());
   }
-  CatalogManager* catalog_manager = server_->catalog_manager();
-  if (!catalog_manager->IsInitialized()) {
-    // TODO: Currently (i.e., without unattended failover) a server
-    // that is configured to be a leader will remain the leader until
-    // it is shut down (as enforce by a CHECK in the consensus
-    // callback).  This will change once unattended failover is
-    // implemented, which means the line below should be removed (we
-    // should instead leave the role unset or return the role as
-    // FOLLOWER in those cases).
-    resp->set_role(server_->IsLeader() ? QuorumPeerPB::LEADER :
-                   QuorumPeerPB::FOLLOWER);
-  } else {
-    resp->set_role(catalog_manager->Role());
-  }
+  resp->set_role(server_->catalog_manager()->Role());
   rpc->RespondSuccess();
 }
 

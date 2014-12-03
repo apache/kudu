@@ -362,15 +362,18 @@ void Heartbeater::Thread::RunThread() {
 
     Status s = DoHeartbeat();
     if (!s.ok()) {
-      if (s.IsNetworkError() && master_addrs_.size() > 1) {
-        // If we encountered a network error (e.g., connection
-        // refused) and there's more than one master available, try
-        // determining the leader master again.
-        proxy_.reset();
-      }
       LOG(WARNING) << "Failed to heartbeat to " << leader_master_hostport_.ToString()
                    << ": " << s.ToString();
       consecutive_failed_heartbeats_++;
+      if (master_addrs_.size() > 1) {
+        // If we encountered a network error (e.g., connection
+        // refused) and there's more than one master available, try
+        // determining the leader master again.
+        if (s.IsNetworkError() ||
+            consecutive_failed_heartbeats_ == kMaxConsecutiveFastHeartbeats) {
+          proxy_.reset();
+        }
+      }
       continue;
     }
     consecutive_failed_heartbeats_ = 0;

@@ -49,7 +49,7 @@ class RemoteKsckTest : public KuduTest {
 
     // Connect to the cluster.
     ASSERT_OK(client::KuduClientBuilder()
-                     .master_server_addr(master_rpc_addr_)
+                     .add_master_server_addr(master_rpc_addr_)
                      .Build(&client_));
 
     // Create one table.

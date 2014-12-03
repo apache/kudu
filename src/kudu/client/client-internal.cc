@@ -103,6 +103,7 @@ Status KuduClient::Data::IsCreateTableInProgress(const string& table_name,
   *create_in_progress = !resp.done();
   return Status::OK();
 }
+
 Status KuduClient::Data::IsAlterTableInProgress(const string& table_name,
                                                 const MonoTime& deadline,
                                                 bool *alter_in_progress) {
@@ -215,6 +216,7 @@ class GetTableSchemaRpc : public Rpc {
   StatusCallback user_cb_;
   const string table_name_;
   KuduSchema* out_schema_;
+  const MonoTime create_time_;
   GetTableSchemaResponsePB resp_;
 };
 
@@ -228,7 +230,8 @@ GetTableSchemaRpc::GetTableSchemaRpc(KuduClient* client,
       client_(client),
       user_cb_(user_cb),
       table_name_(table_name),
-      out_schema_(out_schema) {
+      out_schema_(out_schema),
+      create_time_(MonoTime::Now(MonoTime::FINE)) {
   DCHECK(client);
   DCHECK(out_schema);
 }
@@ -273,17 +276,30 @@ void GetTableSchemaRpc::SendRpcCb(const Status& status) {
   }
 
   if (new_status.ok() && resp_.has_error()) {
-    if (resp_.error().code() == MasterErrorPB::NOT_THE_LEADER) {
-      LOG(WARNING) << "Leader Master has changed, re-trying...";
+    if (resp_.error().code() == MasterErrorPB::NOT_THE_LEADER ||
+        resp_.error().code() == MasterErrorPB::CATALOG_MANAGER_NOT_INITIALIZED) {
+      LOG(WARNING) << "Leader Master has changed ("
+                   << client_->data_->leader_master_hostport().ToString()
+                   << " is no longer the leader), re-trying...";
       ResetLeaderMasterAndRetry();
       return;
     }
     new_status = StatusFromPB(resp_.error().status());
   }
 
+  if (new_status.IsTimedOut()) {
+    if (MonoTime::Now(MonoTime::FINE).GetDeltaSince(create_time_).LessThan(
+            client_->data_->default_select_master_timeout_)) {
+      LOG(WARNING) << "Leader Master (" << client_->data_->leader_master_hostport().ToString()
+                   << ") timed out, re-trying...";
+      ResetLeaderMasterAndRetry();
+      return;
+    }
+  }
   if (new_status.IsNetworkError()) {
-    LOG(WARNING) << "Encountered a network error from the Master: " << new_status.ToString()
-                 << ", retrying...";
+    LOG(WARNING) << "Encountered a network error from the Master("
+                 << client_->data_->leader_master_hostport().ToString() << "): "
+                 << new_status.ToString() << ", retrying...";
     ResetLeaderMasterAndRetry();
     return;
   }
@@ -392,6 +408,11 @@ void KuduClient::Data::SetMasterServerProxyAsync(KuduClient* client, const Statu
       messenger_,
       &leader_master_hostport_));
   leader_master_rpc_->SendRpc();
+}
+
+HostPort KuduClient::Data::leader_master_hostport() const {
+  shared_lock<rw_semaphore> l(&leader_master_sem_);
+  return leader_master_hostport_;
 }
 
 } // namespace client

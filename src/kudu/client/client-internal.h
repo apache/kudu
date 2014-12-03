@@ -98,6 +98,8 @@ class KuduClient::Data {
     return master_proxy_.get();
   }
 
+  HostPort leader_master_hostport() const;
+
   std::tr1::shared_ptr<rpc::Messenger> messenger_;
   gscoped_ptr<DnsResolver> dns_resolver_;
   scoped_refptr<internal::MetaCache> meta_cache_;
@@ -124,11 +126,11 @@ class KuduClient::Data {
   // itself, as to avoid a "use-after-free" scenario.
   scoped_refptr<master::GetLeaderMasterRpc> leader_master_rpc_;
 
-  // Protects 'leader_master_rpc_'.
+  // Protects 'leader_master_rpc_', 'leader_master_hostport_'.
   //
   // See: KuduClient::Data::SetMasterServerProxyAsync for a more
   // in-depth explanation of why this is needed and how it works.
-  rw_semaphore leader_master_sem_;
+  mutable rw_semaphore leader_master_sem_;
 
   DISALLOW_COPY_AND_ASSIGN(Data);
 };

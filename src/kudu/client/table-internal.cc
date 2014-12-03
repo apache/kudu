@@ -37,16 +37,57 @@ Status KuduTable::Data::Open() {
   GetTableLocationsResponsePB resp;
 
   req.mutable_table()->set_table_name(name_);
+  Status s;
+  // TODO: replace this with Async RPC-retrier based RPC in the next revision,
+  // adding exponential backoff and allowing this to be used safely in a
+  // a reactor thread.
   do {
     rpc::RpcController rpc;
     rpc.set_timeout(client_->default_admin_operation_timeout());
-    RETURN_NOT_OK(client_->data_->master_proxy_->GetTableLocations(req, &resp, &rpc));
-    if (resp.has_error()) {
-      return StatusFromPB(resp.error().status());
+    s = client_->data_->master_proxy_->GetTableLocations(req, &resp, &rpc);
+    if (!s.ok()) {
+      if (s.IsNetworkError()) {
+        LOG(WARNING) << "Network error talking to the leader master ("
+                     << client_->data_->leader_master_hostport().ToString() << "): "
+                     << s.ToString() << ". Determining the leader master again and retrying.";
+        s = client_->data_->SetMasterServerProxy(client_.get());
+        if (s.ok()) {
+          continue;
+        }
+      }
+      // TODO: See KUDU-572 for more discussion on timeout handling.
+      if (s.IsTimedOut()) {
+        LOG(WARNING) << "Timed out talking to the leader master ("
+                     << client_->data_->leader_master_hostport().ToString() << "): "
+                     << s.ToString() << ". Determining the leader master again and retrying.";
+        s = client_->data_->SetMasterServerProxy(client_.get());
+        if (s.ok()) {
+          continue;
+        }
+      }
     }
-
-    if (resp.tablet_locations_size() > 0)
+    if (s.ok() && resp.has_error()) {
+      if (resp.error().code()  == master::MasterErrorPB::NOT_THE_LEADER ||
+          resp.error().code() == master::MasterErrorPB::CATALOG_MANAGER_NOT_INITIALIZED) {
+        LOG(WARNING) << "Master " << client_->data_->leader_master_hostport().ToString()
+                     << " is no longer the leader master. Determining the leader master again"
+            " and retrying.";
+        s = client_->data_->SetMasterServerProxy(client_.get());
+        if (s.ok()) {
+          continue;
+        }
+      }
+      if (s.ok()) {
+        s = StatusFromPB(resp.error().status());
+      }
+    }
+    if (!s.ok()) {
+      LOG(WARNING) << "Error getting table locations: " << s.ToString() << ", retrying.";
+      continue;
+    }
+    if (resp.tablet_locations_size() > 0) {
       break;
+    }
 
     /* TODO: Add a timeout or number of retries */
     usleep(100000);

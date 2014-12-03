@@ -36,7 +36,7 @@ using std::tr1::shared_ptr;
 static Status CreateClient(const string& addr,
                            shared_ptr<KuduClient>* client) {
   return KuduClientBuilder()
-      .master_server_addr(addr)
+      .add_master_server_addr(addr)
       .Build(client);
 }
 

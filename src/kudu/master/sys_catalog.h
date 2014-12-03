@@ -49,13 +49,25 @@ class TabletVisitor {
 //   as a "normal table", instead we have Master APIs to query the table.
 class SysCatalogTable {
  public:
+  typedef Callback<Status()> ElectedLeaderCallback;
+
   enum CatalogEntryType {
     TABLES_ENTRY = 1,
     TABLETS_ENTRY = 2
   };
 
+  // 'leader_cb_' is invoked whenever this node is elected as a leader
+  // of the quorum for this tablet, including for local standalone
+  // master quorums. It used to initialize leader state, submit any
+  // leader-specific tasks and so forth.
+  //
+  /// NOTE: Since 'leader_cb_' is invoked synchronously and can block
+  // the quorum's progress, any long running tasks (e.g., scanning
+  // tablets) should be performed asynchronously (by, e.g., submitting
+  // them to a to a separate threadpool).
   SysCatalogTable(Master* master,
-                  MetricRegistry* metrics);
+                  MetricRegistry* metrics,
+                  const ElectedLeaderCallback& leader_cb);
 
   ~SysCatalogTable();
 
@@ -132,6 +144,9 @@ class SysCatalogTable {
     return tablet_peer_->tablet_id();
   }
 
+  // Conventional "T xxx P xxxx..." prefix for logging.
+  std::string LogPrefix() const;
+
   // Waits for the tablet to reach 'RUNNING' state.
   //
   // Contrary to tablet servers, in master we actually wait for the master tablet
@@ -162,6 +177,9 @@ class SysCatalogTable {
   scoped_refptr<tablet::TabletPeer> tablet_peer_;
 
   Master* master_;
+
+  ElectedLeaderCallback leader_cb_;
+  metadata::QuorumPeerPB::Role old_role_;
 };
 
 } // namespace master

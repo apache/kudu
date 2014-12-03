@@ -35,9 +35,7 @@ class MiniMaster {
   // bound to, call MiniMaster::bound_addr()
   Status Start();
 
-  Status StartLeader(const std::vector<uint16_t>& follower_ports);
-
-  Status StartFollower(uint16_t leader_port, const std::vector<uint16_t>& peer_ports);
+  Status StartDistributedMaster(const std::vector<uint16_t>& quorum_ports);
 
   Status WaitForCatalogManagerInit();
 
@@ -57,12 +55,8 @@ class MiniMaster {
   std::string permanent_uuid() const;
 
  private:
-  Status StartLeaderOnPorts(uint16_t rpc_port, uint16_t web_port,
-                            const std::vector<uint16_t>& follower_ports);
-
-  Status StartFollowerOnPorts(uint16_t rpc_port, uint16_t web_port,
-                              uint16_t leader_port,
-                              const std::vector<uint16_t>& peer_ports);
+  Status StartDistributedMasterOnPorts(uint16_t rpc_port, uint16_t web_port,
+                                       const std::vector<uint16_t>& quorum_ports);
 
   Status StartOnPorts(uint16_t rpc_port, uint16_t web_port);
 

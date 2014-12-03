@@ -83,7 +83,7 @@ void RpcLineItemDAO::Init() {
   const KuduSchema schema = tpch::CreateLineItemSchema();
 
   CHECK_OK(KuduClientBuilder()
-           .master_server_addr(master_address_)
+           .add_master_server_addr(master_address_)
            .Build(&client_));
   Status s = client_->OpenTable(table_name_, &client_table_);
   if (s.IsNotFound()) {

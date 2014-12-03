@@ -36,14 +36,10 @@ Status MiniMaster::Start() {
   return master_->WaitForCatalogManagerInit();
 }
 
-Status MiniMaster::StartLeader(const vector<uint16_t>& follower_ports) {
-  CHECK(!running_);
-  return StartLeaderOnPorts(rpc_port_, 0, follower_ports);
-}
 
-Status MiniMaster::StartFollower(uint16_t leader_port, const vector<uint16_t>& peer_ports) {
+Status MiniMaster::StartDistributedMaster(const vector<uint16_t>& peer_ports) {
   CHECK(!running_);
-  return StartFollowerOnPorts(rpc_port_, 0, leader_port, peer_ports);
+  return StartDistributedMasterOnPorts(rpc_port_, 0, peer_ports);
 }
 
 void MiniMaster::Shutdown() {
@@ -78,41 +74,19 @@ Status MiniMaster::StartOnPorts(uint16_t rpc_port, uint16_t web_port,
   return Status::OK();
 }
 
-Status MiniMaster::StartLeaderOnPorts(uint16_t rpc_port, uint16_t web_port,
-                                      const vector<uint16_t>& follower_ports) {
+Status MiniMaster::StartDistributedMasterOnPorts(uint16_t rpc_port, uint16_t web_port,
+                                                 const vector<uint16_t>& peer_ports) {
   CHECK(!running_);
   CHECK(!master_);
 
   MasterOptions opts;
-  opts.leader = true;
-
-  vector<HostPort> follower_addresses;
-  BOOST_FOREACH(uint16_t follower_port, follower_ports) {
-    HostPort follower_address("127.0.0.1", follower_port);
-    follower_addresses.push_back(follower_address);
-  }
-  opts.follower_addresses = follower_addresses;
-
-  return StartOnPorts(rpc_port, web_port, &opts);
-}
-
-
-Status MiniMaster::StartFollowerOnPorts(uint16_t rpc_port, uint16_t web_port,
-                                        uint16_t leader_port,
-                                        const vector<uint16_t>& peer_ports) {
-  CHECK(!running_);
-  CHECK(!master_);
-
-  MasterOptions opts;
-  opts.leader = false;
-  opts.leader_address = HostPort("127.0.0.1", leader_port);
 
   vector<HostPort> peer_addresses;
   BOOST_FOREACH(uint16_t peer_port, peer_ports) {
     HostPort peer_address("127.0.0.1", peer_port);
     peer_addresses.push_back(peer_address);
   }
-  opts.follower_addresses = peer_addresses;
+  opts.master_quorum = peer_addresses;
 
   return StartOnPorts(rpc_port, web_port, &opts);
 }

@@ -44,7 +44,6 @@ MiniCluster::MiniCluster(Env* env, const MiniClusterOptions& options)
                 JoinPathSegments(GetTestDataDirectory(), "minicluster-data")),
     num_masters_initial_(options.num_masters),
     num_ts_initial_(options.num_tablet_servers),
-    leader_master_idx_(0),
     master_rpc_ports_(options.master_rpc_ports),
     tserver_rpc_ports_(options.tserver_rpc_ports) {
   mini_masters_.resize(num_masters_initial_);
@@ -89,44 +88,18 @@ Status MiniCluster::Start() {
 Status MiniCluster::StartDistributedMasters() {
   CHECK_GE(master_rpc_ports_.size(), num_masters_initial_);
   CHECK_GT(master_rpc_ports_.size(), 1);
-  uint16_t leader_port = master_rpc_ports_[leader_master_idx_];
-  vector<uint16_t> follower_ports;
-  for (int i = 0; i < num_masters_initial_; i++) {
-    if (i != leader_master_idx_) {
-      follower_ports.push_back(master_rpc_ports_[i]);
-    }
-  }
 
-  LOG(INFO) << "Creating distributed mini masters. Leader port: " << leader_port
-            << ", follower ports: " << JoinInts(follower_ports, ", ");
-
-  gscoped_ptr<MiniMaster> leader_mini_master(
-      new MiniMaster(env_, GetMasterFsRoot(leader_master_idx_), leader_port));
-  RETURN_NOT_OK_PREPEND(leader_mini_master->StartLeader(follower_ports),
-                        "Couldn't start leader master");
-  VLOG(1) << "Started MiniMaster (leader) with UUID " << leader_mini_master->permanent_uuid()
-          << " at index " << leader_master_idx_;
-  mini_masters_[leader_master_idx_] = shared_ptr<MiniMaster>(leader_mini_master.release());
+  LOG(INFO) << "Creating distributed mini masters. Ports: "
+            << JoinInts(master_rpc_ports_, ", ");
 
   for (int i = 0; i < num_masters_initial_; i++) {
-    if (i == leader_master_idx_) {
-      continue;
-    }
-
-    vector<uint16_t> peer_ports;
-    for (int j = 0; j < num_masters_initial_; j++) {
-      if (j != i && j != leader_master_idx_) {
-        peer_ports.push_back(master_rpc_ports_[j]);
-      }
-    }
-    gscoped_ptr<MiniMaster> follower_mini_master(
+    gscoped_ptr<MiniMaster> mini_master(
         new MiniMaster(env_, GetMasterFsRoot(i), master_rpc_ports_[i]));
-
-    RETURN_NOT_OK_PREPEND(follower_mini_master->StartFollower(leader_port, peer_ports),
+    RETURN_NOT_OK_PREPEND(mini_master->StartDistributedMaster(master_rpc_ports_),
                           Substitute("Couldn't start follower $0", i));
-    VLOG(1) << "Started MiniMaster (follower) with UUID " << follower_mini_master->permanent_uuid()
+    VLOG(1) << "Started MiniMaster with UUID " << mini_master->permanent_uuid()
             << " at index " << i;
-    mini_masters_[i] = shared_ptr<MiniMaster>(follower_mini_master.release());
+    mini_masters_[i] = shared_ptr<MiniMaster>(mini_master.release());
   }
   int i = 0;
   BOOST_FOREACH(const shared_ptr<MiniMaster>& master, mini_masters_) {
@@ -187,6 +160,27 @@ Status MiniCluster::AddTabletServer() {
   RETURN_NOT_OK(tablet_server->Start())
   mini_tablet_servers_.push_back(shared_ptr<MiniTabletServer>(tablet_server.release()));
   return Status::OK();
+}
+
+MiniMaster* MiniCluster::leader_mini_master() {
+  Stopwatch sw;
+  sw.start();
+  while (sw.elapsed().wall_seconds() < kMasterLeaderElectionWaitTimeSeconds) {
+    for (int i = 0; i < mini_masters_.size(); i++) {
+      MiniMaster* master = mini_master(i);
+      if (master->master()->IsShutdown()) {
+        continue;
+      }
+      if (master->master()->catalog_manager()->IsInitialized() &&
+          master->master()->catalog_manager()->IsLeaderAndReady()) {
+        return master;
+      }
+    }
+    usleep(1 * 1000); // 1 ms
+  }
+  LOG(ERROR) << "No leader master elected after " << kMasterLeaderElectionWaitTimeSeconds
+             << " seconds.";
+  return NULL;
 }
 
 void MiniCluster::Shutdown() {

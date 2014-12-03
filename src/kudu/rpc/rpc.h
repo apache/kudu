@@ -62,10 +62,10 @@ class RpcRetrier {
     return messenger_;
   }
 
- private:
   // Called when an RPC comes up for retrying. Actually sends the RPC.
   void DelayedRetryCb(Rpc* rpc, const Status& status);
 
+ private:
   // The next sent rpc will be the nth attempt (indexed from 1).
   int attempt_num_;
 

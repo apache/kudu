@@ -26,6 +26,7 @@
 #include "kudu/tablet/transactions/write_transaction.h"
 #include "kudu/tablet/tablet.h"
 #include "kudu/tserver/tserver.pb.h"
+#include "kudu/util/logging.h"
 #include "kudu/util/pb_util.h"
 #include "kudu/util/threadpool.h"
 
@@ -52,9 +53,12 @@ static const char* const kSysCatalogTableColId = "entry_id";
 static const char* const kSysCatalogTableColMetadata = "metadata";
 
 SysCatalogTable::SysCatalogTable(Master* master,
-                   MetricRegistry* metrics)
+                                 MetricRegistry* metrics,
+                                 const ElectedLeaderCallback& leader_cb)
     : metric_ctx_(metrics, table_name()),
-      master_(master) {
+      master_(master),
+      leader_cb_(leader_cb),
+      old_role_(QuorumPeerPB::FOLLOWER) {
   CHECK_OK(ThreadPoolBuilder("ldr-apply").Build(&leader_apply_pool_));
   CHECK_OK(ThreadPoolBuilder("repl-apply").Build(&replica_apply_pool_));
 }
@@ -153,31 +157,13 @@ Status SysCatalogTable::SetupDistributedQuorum(const MasterOptions& options,
   new_quorum.set_opid_index(consensus::kInvalidOpIdIndex);
 
   // Build the set of followers from our server options.
-  BOOST_FOREACH(const HostPort& host_port, options.follower_addresses) {
+  BOOST_FOREACH(const HostPort& host_port, options.master_quorum) {
     QuorumPeerPB peer;
     HostPortPB peer_host_port_pb;
     RETURN_NOT_OK(HostPortToPB(host_port, &peer_host_port_pb));
     peer.mutable_last_known_addr()->CopyFrom(peer_host_port_pb);
     peer.set_role(QuorumPeerPB::FOLLOWER);
     new_quorum.add_peers()->CopyFrom(peer);
-  }
-
-  // Add the local peer.
-  QuorumPeerPB* local_peer = new_quorum.add_peers();
-  // Look up my own address and put it in.
-  HostPortPB self_host_port;
-  self_host_port.set_port(master_->first_rpc_address().port());
-  self_host_port.set_host(master_->first_rpc_address().host());
-  local_peer->mutable_last_known_addr()->CopyFrom(self_host_port);
-  local_peer->set_role(options.leader ? QuorumPeerPB::LEADER : QuorumPeerPB::FOLLOWER);
-
-  // If we are not the leader, add the leader in as well.
-  if (!options.leader) {
-    QuorumPeerPB* leader = new_quorum.add_peers();
-    leader->set_role(QuorumPeerPB::CANDIDATE);
-    HostPortPB leader_host_port_pb;
-    RETURN_NOT_OK(HostPortToPB(master_->opts().leader_address, &leader_host_port_pb));
-    leader->mutable_last_known_addr()->CopyFrom(leader_host_port_pb);
   }
 
   // Now resolve UUIDs.
@@ -212,23 +198,16 @@ Status SysCatalogTable::SetupDistributedQuorum(const MasterOptions& options,
 }
 
 void SysCatalogTable::SysCatalogStateChanged(TabletPeer* tablet_peer) {
-  string uuid = tablet_peer->consensus()->peer_uuid();
   QuorumPB quorum = tablet_peer->consensus()->Quorum();
-  LOG(INFO) << "SysCatalogTable state changed. New quorum config: " << quorum.ShortDebugString();
-  if (master_->opts().IsDistributed()) {
-    // TODO: Once leader election goes in this will need to be relaxed.
-    if (master_->opts().leader) {
-      CHECK_EQ(tablet_peer_->consensus()->role(), QuorumPeerPB::LEADER)
-          << "Aborting master startup: the current peer (with uuid " << uuid << ") could not be "
-          << "set as LEADER. Committed quorum: " << quorum.ShortDebugString();
-    } else {
-      CHECK_EQ(tablet_peer_->consensus()->role(), QuorumPeerPB::FOLLOWER)
-          << "Aborting master startup: the current peer (with uuid " << uuid << ") could not be "
-          << "set as FOLLOWER. Committed quorum: " << quorum.ShortDebugString();
-    }
+  LOG_WITH_PREFIX_LK(INFO) << " SysCatalogTable state changed. New quorum config:"
+                           << quorum.ShortDebugString();
+  QuorumPeerPB::Role new_role = tablet_peer->consensus()->role();
+  LOG_WITH_PREFIX_LK(INFO) << " This master's current role is: "
+                           << QuorumPeerPB::Role_Name(new_role)
+                           << ", previous role was: " << QuorumPeerPB::Role_Name(old_role_);
+  if (new_role == QuorumPeerPB::LEADER) {
+    CHECK_OK(leader_cb_.Run());
   }
-  VLOG(1) << "This master's current role is: "
-          << QuorumPeerPB::Role_Name(tablet_peer->consensus()->role());
 }
 
 Status SysCatalogTable::SetupTablet(const scoped_refptr<tablet::TabletMetadata>& metadata) {
@@ -273,22 +252,25 @@ Status SysCatalogTable::SetupTablet(const scoped_refptr<tablet::TabletMetadata>&
   return Status::OK();
 }
 
+std::string SysCatalogTable::LogPrefix() const {
+  return Substitute("T $0 P $1 [$2]: ",
+                    tablet_peer_->tablet_id(),
+                    tablet_peer_->consensus()->peer_uuid(),
+                    table_name());
+}
+
 Status SysCatalogTable::WaitUntilRunning() {
   int seconds_waited = 0;
-  string prefix = Substitute("T $0 P $1 [$2]: ",
-                             tablet_peer_->tablet_id(),
-                             tablet_peer_->consensus()->peer_uuid(),
-                             table_name());
   while (true) {
     Status status = tablet_peer_->WaitUntilConsensusRunning(MonoDelta::FromSeconds(1));
     seconds_waited++;
     if (status.ok()) {
-      LOG(INFO) << prefix << "configured and running, proceeding with master startup.";
+      LOG_WITH_PREFIX_LK(INFO) << "configured and running, proceeding with master startup.";
       break;
     }
     if (status.IsTimedOut()) {
-      LOG(WARNING) << prefix << "not online yet (have been trying for "
-                   << seconds_waited << " seconds)";
+      LOG_WITH_PREFIX_LK(INFO) <<  "not online yet (have been trying for "
+                               << seconds_waited << " seconds)";
       continue;
     }
     // if the status is not OK or TimedOut return it.

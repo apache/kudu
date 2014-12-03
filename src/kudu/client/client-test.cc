@@ -99,7 +99,7 @@ class ClientTest : public KuduTest {
     // Connect to the cluster.
     ASSERT_STATUS_OK(KuduClientBuilder()
                      .default_select_master_timeout(MonoDelta::FromSeconds(5))
-                     .master_server_addr(cluster_->mini_master()->bound_rpc_addr().ToString())
+                     .add_master_server_addr(cluster_->mini_master()->bound_rpc_addr().ToString())
                      .Build(&client_));
 
     ASSERT_NO_FATAL_FAILURE(CreateTable(kTableName, 1, GenerateSplitKeys(), &client_table_));
@@ -1963,7 +1963,7 @@ TEST_F(ClientTest, DISABLED_TestDeadlockSimulation) {
   // in reverse order. Separate client used so rpc calls come in at same time.
   shared_ptr<KuduClient> rev_client;
   ASSERT_STATUS_OK(KuduClientBuilder()
-                   .master_server_addr(cluster_->mini_master()->bound_rpc_addr().ToString())
+                   .add_master_server_addr(cluster_->mini_master()->bound_rpc_addr().ToString())
                    .Build(&rev_client));
   scoped_refptr<KuduTable> rev_table;
   ASSERT_STATUS_OK(client_->OpenTable(kTableName, &rev_table));

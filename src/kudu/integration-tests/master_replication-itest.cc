@@ -16,6 +16,8 @@
 #include "kudu/master/mini_master.h"
 #include "kudu/util/test_util.h"
 
+DECLARE_bool(enable_leader_failure_detection);
+DECLARE_int32(leader_heartbeat_interval_ms);
 DECLARE_int32(heartbeat_interval_ms);
 
 namespace kudu {
@@ -44,6 +46,8 @@ class MasterReplicationTest : public KuduTest {
 
     opts_.num_masters = num_masters_ = opts_.master_rpc_ports.size();
     opts_.num_tablet_servers = kNumTabletServerReplicas;
+
+    FLAGS_enable_leader_failure_detection = true;
   }
 
   virtual void SetUp() OVERRIDE {
@@ -83,10 +87,12 @@ class MasterReplicationTest : public KuduTest {
     }
   }
 
-  Status CreateLeaderClient(shared_ptr<KuduClient>* out) {
+  Status CreateClient(shared_ptr<KuduClient>* out) {
     KuduClientBuilder builder;
     for (int i = 0; i < num_masters_; i++) {
-      builder.master_server_addr(cluster_->mini_master(i)->bound_rpc_addr().ToString());
+      if (!cluster_->mini_master(i)->master()->IsShutdown()) {
+        builder.add_master_server_addr(cluster_->mini_master(i)->bound_rpc_addr().ToString());
+      }
     }
     return builder.Build(out);
   }
@@ -104,58 +110,10 @@ class MasterReplicationTest : public KuduTest {
         .Create();
   }
 
-  void PromoteMasterRestartMasterOnly(int orig_master_idx, int new_master_idx) {
-    LOG(FATAL) << "Master promotion disabled";
-    LOG(INFO) << "Previous configuration: leader at index " << orig_master_idx;
-    LOG(INFO) << "New configuration: leader at index " << new_master_idx;
-    cluster_->ShutdownMasters();
-    cluster_->set_leader_master_idx(new_master_idx);
-    ASSERT_STATUS_OK(cluster_->StartDistributedMasters());
-  }
-
-  void PromoteMaster(int orig_master_idx, int new_master_idx) {
-    LOG(FATAL) << "Master promotion disabled";
-    master::MiniMaster* orig_master = cluster_->mini_master(orig_master_idx);
-    master::MiniMaster* new_master = cluster_->mini_master(new_master_idx);
-    LOG(INFO) << "Manually promoting MiniMaster server: "
-              << "Previous MiniMaster: " << orig_master->permanent_uuid()
-              << " at index " << orig_master_idx << "; "
-              << "New MiniMaster: " << new_master->permanent_uuid()
-              << " at index " << new_master_idx;
-    cluster_->Shutdown();
-    cluster_->set_leader_master_idx(new_master_idx);
-    ASSERT_STATUS_OK(cluster_->Start());
-    ASSERT_STATUS_OK(cluster_->WaitForTabletServerCount(kNumTabletServerReplicas));
-  }
-
-  // Test promoting a follower at 'new_master_idx' to the role of
-  // a leader, previously occupied by the node at 'orig_master_idx':
-  //
-  // 1) Verify that 'existing_table' exists on all master nodes.
-  // 2) Verify that 'new_table' can be created and seen by all masters
-  // and table servers.
-  void TestPromoteMaster(int orig_master_idx, int new_master_idx,
-                         const std::string& existing_table,
-                         const std::string& new_table) {
-    ASSERT_NO_FATAL_FAILURE(PromoteMaster(orig_master_idx, new_master_idx));
-    ASSERT_NO_FATAL_FAILURE(VerifyTableExists(existing_table));
-    shared_ptr<KuduClient> leader_client;
-    ASSERT_STATUS_OK(CreateLeaderClient(&leader_client));
-    ASSERT_STATUS_OK(CreateTable(leader_client, new_table));
-
-    ASSERT_TRUE(cluster_->leader_mini_master()->master()
-                ->catalog_manager()->TableNameExists(new_table));
-
-    ASSERT_STATUS_OK(RestartCluster());
-    ASSERT_NO_FATAL_FAILURE(VerifyTableExists(new_table));
-  }
-
   void VerifyTableExists(const std::string& table_id) {
-    for (int i = 0; i < num_masters_; i++) {
-      LOG(INFO) << "Verifying that " << table_id << " exists on Master " << i;
-      ASSERT_TRUE(cluster_->mini_master(i)->master()
-                  ->catalog_manager()->TableNameExists(table_id));
-    }
+    LOG(INFO) << "Verifying that " << table_id << " exists on leader..";
+    ASSERT_TRUE(cluster_->leader_mini_master()->master()
+                ->catalog_manager()->TableNameExists(table_id));
   }
 
  protected:
@@ -172,117 +130,23 @@ class MasterReplicationTest : public KuduTest {
 //
 // 2) We can create a table (using the standard client APIs) on the
 // the leader and ensure that the appropriate table/tablet info is
-// replicated to all of the
-//
-// 3) We can create another table and that the table info is visible
-// on all of the masters after Bootstrap.
-//
+// replicated to the newly elected leader.
 TEST_F(MasterReplicationTest, TestSysTablesReplication) {
-  shared_ptr<KuduClient> leader_client;
+  shared_ptr<KuduClient> client;
 
   // Create the first table.
-  ASSERT_STATUS_OK(CreateLeaderClient(&leader_client));
-  ASSERT_STATUS_OK(CreateTable(leader_client, kTableId1));
+  ASSERT_STATUS_OK(CreateClient(&client));
+  ASSERT_STATUS_OK(CreateTable(client, kTableId1));
 
-  // Verify that it's created on the leader.
-  ASSERT_TRUE(cluster_->leader_mini_master()->master()
-              ->catalog_manager()->TableNameExists(kTableId1));
+  // TODO: once fault tolerant DDL is in, remove the line below.
+  ASSERT_STATUS_OK(CreateClient(&client));
 
-  // CatalogManager currently reads from copy on write objects that
-  // are only updated on the leader master. As a result, we must
-  // restart the follower masters (forcing bootstrap and a rebuild of
-  // the in-memory objects) in order to see the changes that we've
-  // made. See KUDU-500 for a TODO item to fix this and several
-  // approaches that can be taken.
-  ASSERT_STATUS_OK(RestartCluster());
-
-  // Verify that after restarting the cluster and running bootstrap,
-  // the first table is visible on all of the master nodes.
-  ASSERT_NO_FATAL_FAILURE(VerifyTableExists(kTableId1));
+  ASSERT_STATUS_OK(cluster_->WaitForTabletServerCount(kNumTabletServerReplicas));
 
   // Repeat the same for the second table.
-  ASSERT_STATUS_OK(CreateTable(leader_client, kTableId2));
-  ASSERT_STATUS_OK(RestartCluster());
+  ASSERT_STATUS_OK(CreateTable(client, kTableId2));
   ASSERT_NO_FATAL_FAILURE(VerifyTableExists(kTableId2));
 }
-
-// Verify that we can:
-//
-// 1) Start a cluster, create a table, and replicate the table/tablet
-// info to all of the followers.
-//
-// 2) Shut down the cluster, set a new node as the master leader, and
-// pointing the TabletServers to the new master leader.
-//
-// 3) Verify that we can query existing tables/tablets, create new
-// tables/tablets on the new leader, and that new changes to the
-// SysTables are replicated to the newly configured master cluster.
-//
-// NOTE: This test is disabled because we now serialize quorum changes via
-// log indexes, and the approach we use to force the quorum to be in a
-// particular configuration will no longer work.
-//
-// TODO: Remove manual promotion.
-TEST_F(MasterReplicationTest, DISABLED_TestManualPromotion) {
-  shared_ptr<KuduClient> leader_client;
-
-  // Create the first table.
-  ASSERT_STATUS_OK(CreateLeaderClient(&leader_client));
-  ASSERT_STATUS_OK(CreateTable(leader_client, kTableId1));
-
-  // Verify that it's created on the leader.
-  ASSERT_TRUE(cluster_->leader_mini_master()->master()
-              ->catalog_manager()->TableNameExists(kTableId1));
-
-  // Now for every possible master, verify that it can be promoted to
-  // the role of a leader.
-  int prev_leader_idx = cluster_->leader_master_idx();
-  string prev_table_name = kTableId1;
-  for (int i = 0; i < num_masters_; i++) {
-    if (i == prev_leader_idx) {
-      continue;
-    }
-    string new_table_name = strings::Substitute("$0-$1", kTableId1, i);
-    ASSERT_NO_FATAL_FAILURE(TestPromoteMaster(prev_leader_idx, i,
-                                              prev_table_name,
-                                              new_table_name));
-    prev_leader_idx = i;
-    prev_table_name = new_table_name;
-    // We need to sleep to make sure there are no pending transactions
-    // when we restart the cluster in TestPromoteMaster.
-    // This be remove once we're done with KUDU-255.
-    sleep(2);
-  }
-}
-
-// Test that we can still establish a client connection if the first
-// master server is down, but a leader server is still up.
-//
-// TODO: Test disabled because master promotion no longer works.
-TEST_F(MasterReplicationTest, DISABLED_TestClientConnectionFirstNodeDown) {
-  // Save the RPC addresses of all the master servers while they are
-  // still running, since MiniMaster::bound_rpc_addr() only works if
-  // the server is running.
-  vector<string> master_addrs;
-  ListMasterServerAddrs(&master_addrs);
-
-  // Promote master at index '1' to leader and shut down the master at
-  // index '0'.
-  ASSERT_NO_FATAL_FAILURE(PromoteMaster(0, 1));
-  cluster_->mini_master(0)->master()->Shutdown();
-
-  // Create the client.
-  shared_ptr<KuduClient> client;
-  KuduClientBuilder builder;
-  builder.master_server_addrs(master_addrs);
-  ASSERT_STATUS_OK(builder.Build(&client));
-
-  // Make sure we are able to connect and create a table.
-  ASSERT_STATUS_OK(CreateTable(client, kTableId1));
-  ASSERT_TRUE(cluster_->leader_mini_master()->master()
-              ->catalog_manager()->TableNameExists(kTableId1));
-}
-
 
 // When all masters are down, test that we can timeout the connection
 // attempts after a specified deadline.
@@ -329,58 +193,6 @@ TEST_F(MasterReplicationTest, TestCycleThroughAllMasters) {
   EXPECT_OK(builder.Build(&client));
 
   ASSERT_STATUS_OK(ThreadJoiner(start_thread.get()).Join());
-}
-
-// Initialize the client for configuration where the leader master
-// is at index 0, then switch over to leader at index 1.
-//
-// Verify that:
-//
-// 1) The client is able to perform lookup operations against the
-// master immediately after the leader change.
-//
-// 2) The client is able to perform a scan on a tablet server
-// immediately after the leader change without having to wait for the
-// tablet servers to heartbeat to the leader master.
-//
-// 3) We are able to create a table after a leader master change
-// without restarting the tablet servers, _after waiting for
-// kNumTabletServerReplicas * the default heartbeat interval_ (i.e.,
-// that CreateTable works after the minimum number of tablet servers
-// have sent heartbeats to the new leader).
-//
-// TODO: Heartbeat simultaneously to all of the masters, so that we do
-// not need to wait for the minimum number of tablet servers to
-// heartbeat to the new leader master.
-TEST_F(MasterReplicationTest, DISABLED_TestLookupWhenMasterNoLongerLeader) {
-  shared_ptr<KuduClient> leader_client;
-  scoped_refptr<KuduTable> table;
-
-  // Create the first table.
-  ASSERT_STATUS_OK(CreateLeaderClient(&leader_client));
-  ASSERT_STATUS_OK(CreateTable(leader_client, kTableId1));
-
-  // Promote master at index '1' to leader without restarting the
-  // tablet servers.
-  ASSERT_NO_FATAL_FAILURE(PromoteMasterRestartMasterOnly(0, 1));
-
-  // Make sure that 'GetTableSchema()' works when the leader master
-  // changes, even if the client has been initialized before.
-  ASSERT_STATUS_OK(leader_client->OpenTable(kTableId1, &table));
-
-  // Verify that we are able to get a (key, table) -> tablet mapping.
-  KuduScanner scanner(table.get());
-  KuduSchema empty_projection(vector<KuduColumnSchema>(), 0);
-  ASSERT_STATUS_OK(scanner.SetProjection(&empty_projection));
-  ASSERT_STATUS_OK(scanner.Open());
-
-  // Verify that all of the tablet server have been able to heartbeat
-  // to the leader master.
-  ASSERT_STATUS_OK(cluster_->WaitForTabletServerCount(kNumTabletServerReplicas));
-
-  // Verify that we are able to create a second table.
-  ASSERT_STATUS_OK(CreateTable(leader_client, kTableId2));
-  ASSERT_STATUS_OK(leader_client->OpenTable(kTableId2, &table));
 }
 
 } // namespace master

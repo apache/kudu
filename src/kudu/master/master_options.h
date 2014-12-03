@@ -17,9 +17,7 @@ namespace master {
 struct MasterOptions : public server::ServerBaseOptions {
   MasterOptions();
 
-  bool leader;
-  HostPort leader_address;
-  std::vector<HostPort> follower_addresses;
+  std::vector<HostPort> master_quorum;
 
   bool IsDistributed() const;
 };

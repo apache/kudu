@@ -56,3 +56,8 @@ race:kudu::master::CatalogManagerBgTasks::Shutdown
 
 # KUDU-189: unsynchronized access to 'state_' in DeferredCallback
 race:kudu::master::AsyncTabletRequestTask::DeferredCallback
+
+# KUDU-569: unsynchronized access to 'state_', 'acceptor_pools_', in
+# GetBoundAddresses()
+race:kudu::Webserver::GetBoundAddresses
+race:kudu::RpcServer::GetBoundAddresses

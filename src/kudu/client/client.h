@@ -49,11 +49,13 @@ class KUDU_EXPORT KuduClientBuilder {
   KuduClientBuilder();
   ~KuduClientBuilder();
 
+  KuduClientBuilder& clear_master_server_addrs();
+
   // Add RPC addresses of multiple masters.
   KuduClientBuilder& master_server_addrs(const std::vector<std::string>& addrs);
 
   // Add an RPC address of a master. At least one master is required.
-  KuduClientBuilder& master_server_addr(const std::string& addr);
+  KuduClientBuilder& add_master_server_addr(const std::string& addr);
 
   // The default timeout used for administrative operations (e.g. CreateTable,
   // AlterTable, ...). Optional.

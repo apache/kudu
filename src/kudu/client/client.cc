@@ -116,6 +116,11 @@ KuduClientBuilder::KuduClientBuilder() {
 KuduClientBuilder::~KuduClientBuilder() {
 }
 
+KuduClientBuilder& KuduClientBuilder::clear_master_server_addrs() {
+  data_->master_server_addrs_.clear();
+  return *this;
+}
+
 KuduClientBuilder& KuduClientBuilder::master_server_addrs(const vector<string>& addrs) {
   BOOST_FOREACH(const string& addr, addrs) {
     data_->master_server_addrs_.push_back(addr);
@@ -123,7 +128,7 @@ KuduClientBuilder& KuduClientBuilder::master_server_addrs(const vector<string>& 
   return *this;
 }
 
-KuduClientBuilder& KuduClientBuilder::master_server_addr(const string& addr) {
+KuduClientBuilder& KuduClientBuilder::add_master_server_addr(const string& addr) {
   data_->master_server_addrs_.push_back(addr);
   return *this;
 }

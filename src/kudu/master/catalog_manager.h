@@ -21,10 +21,12 @@
 #include "kudu/util/monotime.h"
 #include "kudu/util/oid_generator.h"
 #include "kudu/util/status.h"
+#include "kudu/util/promise.h"
 
 namespace kudu {
 
 class Schema;
+class ThreadPool;
 
 namespace rpc {
 class RpcContext;
@@ -244,6 +246,8 @@ class TableInfo : public RefCountedThreadSafe<TableInfo> {
   // List of pending tasks (e.g. create/alter tablet requests)
   std::tr1::unordered_set<MonitoredTask*> pending_tasks_;
 
+  Promise<Status> leader_election_status_;
+
   DISALLOW_COPY_AND_ASSIGN(TableInfo);
 };
 
@@ -377,6 +381,12 @@ class CatalogManager : public tserver::TabletPeerLookupIf {
 
   bool IsInitialized() const;
 
+  // Return true if this CatalogManager is a leader in a quorum and if
+  // the required leader state (metadata for tables and tablets) has
+  // been successfully loaded into memory. CatalogManager must be
+  // initialized before calling this method.
+  bool IsLeaderAndReady() const;
+
   // Returns this CatalogManager's role in a quorum. CatalogManager
   // must be initialized before calling this method.
   metadata::QuorumPeerPB::Role Role() const;
@@ -384,6 +394,30 @@ class CatalogManager : public tserver::TabletPeerLookupIf {
  private:
   friend class TableLoader;
   friend class TabletLoader;
+
+  // Called by SysCatalog::SysCatalogStateChanged when this node
+  // becomes the leader of a quorum. Executes VisitTablesAndTabletsTask
+  // below.
+  Status ElectedAsLeaderCb();
+
+  // This method is submitted to 'leader_initialization_pool_' by
+  // ElectedAsLeaderCb above. It:
+  // 1) Acquired 'lock_'
+  // 2) Resets 'tables_tablets_visited_status_'
+  // 3) Runs VisitTablesAndTabletsUnlocked below
+  // 4) Sets 'tables_tablets_visited_status_' to return value of
+  // the call to VisitTablesAndTabletsUnlocked.
+  // 5) Releases 'lock_' and if successful, sets 'leader_ready_'
+  // to true (under state_lock_).
+  void VisitTablesAndTabletsTask();
+
+  // Clears out the existing metadata ('table_names_map_', 'table_ids_map_',
+  // and 'tablet_map_'), loads tables metadata into memory and if successful
+  // loads the tablets metadata.
+  //
+  // NOTE: Must be called under external synchronization, see
+  // VisitTablesAndTabletsTask() above.
+  Status VisitTablesAndTabletsUnlocked();
 
   // Helper for initializing 'sys_catalog_'. After calling this
   // method, the caller should call WaitUntilRunning() on sys_catalog_
@@ -452,7 +486,7 @@ class CatalogManager : public tserver::TabletPeerLookupIf {
 
   // Task that takes care of the tablet assignments/creations.
   // Loops through the "not created" tablets and sends a CreateTablet() request.
-  void ProcessPendingAssignments(const std::vector<scoped_refptr<TabletInfo> >& tablets);
+  Status ProcessPendingAssignments(const std::vector<scoped_refptr<TabletInfo> >& tablets);
 
   void SelectReplicasForTablet(const TSDescriptorVector& ts_descs, TabletInfo* tablet);
 
@@ -474,8 +508,8 @@ class CatalogManager : public tserver::TabletPeerLookupIf {
                                   DeferredAssignmentActions* deferred,
                                   std::vector<scoped_refptr<TabletInfo> >* new_tablets);
 
-  void HandleTabletSchemaVersionReport(TabletInfo *tablet,
-                                       uint32_t version);
+  Status HandleTabletSchemaVersionReport(TabletInfo *tablet,
+                                         uint32_t version);
 
   // Send the create tablet requests to the selected peers of the quorums.
   // The creation is async, and at the moment there is no error checking on the
@@ -521,7 +555,8 @@ class CatalogManager : public tserver::TabletPeerLookupIf {
   typedef std::tr1::unordered_map<std::string, scoped_refptr<TabletInfo> > TabletInfoMap;
   TabletInfoMap tablet_map_;
 
-  // Lock protecting the various maps above.
+  // Lock protecting the various maps above and
+  // 'tables_tablets_visited_status_' below.
   typedef rw_spinlock LockType;
   mutable LockType lock_;
 
@@ -542,9 +577,30 @@ class CatalogManager : public tserver::TabletPeerLookupIf {
     kRunning,
     kClosing
   };
-  // Lock protecting state_
+  // Lock protecting state_, leader_ready_
   mutable simple_spinlock state_lock_;
   State state_;
+
+  // Used by ElectedAsLeaderCb above to load in-memory state whenever
+  // this node is elected as a leader.
+  //
+  // NOTE: Presently, this thread pool must contain only a single
+  // thread (to correctly serialize invocations of ElectedAsLeaderCb
+  // upon closely timed consecutive elections).
+  gscoped_ptr<ThreadPool> leader_initialization_pool_;
+
+  // Set when the tables and tablets are loaded successfully. This is
+  // especially relevant in the case of a standalone local master
+  // quorum, where we want to exit right away if the tables/tablets
+  // can't be loaded into memory.
+  Promise<Status> tables_tablets_visited_status_;
+
+  // If we are the leader of a master quorum, Indicates whether all of
+  // the required in-memory state (tables and tablets metadata) has
+  // been successfully loaded into memory. This is used to "fence"
+  // clients and tablets server requests that depend on the in-memory
+  // state until this master can respond correctly.
+  bool leader_ready_;
 
   // Async operations are accessing some private methods
   // (TODO: this stuff should be deferred and done in the background thread)

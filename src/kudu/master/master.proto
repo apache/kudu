@@ -476,7 +476,7 @@ message GetMasterRegistrationResponsePB {
   optional metadata.QuorumPeerPB.Role role = 3;
 
   // Set if there an error retrieving the registration information.
-  optional AppStatusPB error = 4;
+  optional MasterErrorPB error = 4;
 }
 
 // ListMastersRequest/Response: get information about all of the known

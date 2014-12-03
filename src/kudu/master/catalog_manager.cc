@@ -270,7 +270,16 @@ void CatalogManagerBgTasks::Run() {
     if (!to_process.empty()) {
       // Transition tablet assignment state from preparing to creating, send
       // and schedule creation / deletion RPC messages, etc.
-      catalog_manager_->ProcessPendingAssignments(to_process);
+      Status s = catalog_manager_->ProcessPendingAssignments(to_process);
+      if (!s.ok()) {
+        // If there is an error (e.g., we are not the leader) abort this task
+        // and wait until we're woken up again.
+        //
+        // TODO Add tests for this in the revision that makes
+        // create/alter fault tolerant.
+        LOG(ERROR) << "Error processing pending assignments, aborting the current task:"
+                   << s.ToString();
+      }
     }
 
     //if (!to_delete.empty()) {
@@ -304,7 +313,11 @@ string RequestorString(RpcContext* rpc) {
 
 CatalogManager::CatalogManager(Master *master)
   : master_(master),
-    state_(kConstructed) {
+    state_(kConstructed),
+    leader_ready_(false) {
+  CHECK_OK(ThreadPoolBuilder("leader-initialization")
+           .set_max_threads(1)
+           .Build(&leader_initialization_pool_));
 }
 
 CatalogManager::~CatalogManager() {
@@ -329,18 +342,10 @@ Status CatalogManager::Init(bool is_first_run) {
   RETURN_NOT_OK_PREPEND(sys_catalog_->WaitUntilRunning(),
                         "Failed waiting for the catalog tablet to run");
 
-  boost::lock_guard<LockType> l(lock_);
-
-  if (!is_first_run) {
-    TableLoader table_loader(this);
-    RETURN_NOT_OK_PREPEND(sys_catalog_->VisitTables(&table_loader),
-                          "Failed while visiting tables in sys catalog");
-
-    TabletLoader tablet_loader(this);
-    RETURN_NOT_OK_PREPEND(sys_catalog_->VisitTablets(&tablet_loader),
-                          "Failed while visiting tablets in sys catalog");
+  if (sys_catalog_->tablet_peer_->consensus()->role() == QuorumPeerPB::LEADER) {
+    RETURN_NOT_OK(tables_tablets_visited_status_.Get());
   }
-
+  boost::lock_guard<LockType> l(lock_);
   background_tasks_.reset(new CatalogManagerBgTasks(this));
   RETURN_NOT_OK_PREPEND(background_tasks_->Init(),
                         "Failed to initialize catalog manager background tasks");
@@ -354,9 +359,52 @@ Status CatalogManager::Init(bool is_first_run) {
   return Status::OK();
 }
 
+Status CatalogManager::ElectedAsLeaderCb() {
+  boost::lock_guard<simple_spinlock> l(state_lock_);
+  leader_ready_ = false;
+  return leader_initialization_pool_->SubmitClosure(
+      Bind(&CatalogManager::VisitTablesAndTabletsTask, Unretained(this)));
+}
+
+void CatalogManager::VisitTablesAndTabletsTask() {
+  LOG(INFO) << "Loading tables and tablets metadata into memory...";
+  {
+    boost::lock_guard<LockType> lock(lock_);
+    tables_tablets_visited_status_.Reset();
+    Status s = VisitTablesAndTabletsUnlocked();
+    tables_tablets_visited_status_.Set(s);
+    if (!s.ok()) {
+      LOG(FATAL) << "Visiting tables and tablets failed: " << s.ToString();
+    }
+  }
+  boost::lock_guard<simple_spinlock> l(state_lock_);
+  leader_ready_ = true;
+}
+
+Status CatalogManager::VisitTablesAndTabletsUnlocked() {
+  DCHECK(lock_.is_locked());
+
+  // Clear the existing state.
+  table_names_map_.clear();
+  table_ids_map_.clear();
+  tablet_map_.clear();
+
+  // Visit tables and tablets, load them into memory.
+  TableLoader table_loader(this);
+  RETURN_NOT_OK_PREPEND(sys_catalog_->VisitTables(&table_loader),
+                        "Failed while visiting tables in sys catalog");
+  TabletLoader tablet_loader(this);
+  RETURN_NOT_OK_PREPEND(sys_catalog_->VisitTablets(&tablet_loader),
+                        "Failed while visiting tablets in sys catalog");
+  return Status::OK();
+}
+
 Status CatalogManager::InitSysCatalogAsync(bool is_first_run) {
   boost::lock_guard<LockType> l(lock_);
-  sys_catalog_.reset(new SysCatalogTable(master_, master_->metric_registry()));
+  sys_catalog_.reset(new SysCatalogTable(master_,
+                                         master_->metric_registry(),
+                                         Bind(&CatalogManager::ElectedAsLeaderCb,
+                                              Unretained(this))));
   if (is_first_run) {
     RETURN_NOT_OK(sys_catalog_->CreateNew(master_->fs_manager()));
   } else {
@@ -368,6 +416,13 @@ Status CatalogManager::InitSysCatalogAsync(bool is_first_run) {
 bool CatalogManager::IsInitialized() const {
   boost::lock_guard<simple_spinlock> l(state_lock_);
   return state_ == kRunning;
+}
+
+bool CatalogManager::IsLeaderAndReady() const {
+  boost::lock_guard<simple_spinlock> l(state_lock_);
+  CHECK(state_ == kRunning);
+  return sys_catalog_->tablet_peer_->consensus()->role() == QuorumPeerPB::LEADER &&
+      leader_ready_;
 }
 
 QuorumPeerPB::Role CatalogManager::Role() const {
@@ -1150,12 +1205,13 @@ Status CatalogManager::HandleReportedTablet(TSDescriptor* ts_desc,
              << opid_index << ":\n" << report.DebugString();
   }
 
-  // We update the tablets each time the someone reports it.
+  // We update the tablets each time that someone reports it.
   // This shouldn't be very frequent and should only happen when something in fact changed.
   Status s = sys_catalog_->UpdateTablets(boost::assign::list_of(tablet.get()));
   if (!s.ok()) {
-    // panic-mode: abort the master
-    LOG(FATAL) << "An error occurred while updating sys-tablets: " << s.ToString();
+    LOG(WARNING) << "Error updating tablets: " << s.ToString() << ". Tablet report was: "
+                 << report.ShortDebugString();
+    return s;
   }
   tablet_lock.Commit();
   return Status::OK();
@@ -1769,7 +1825,7 @@ void CatalogManager::HandleAssignCreatingTablet(TabletInfo* tablet,
 
 // TODO: we could batch the IO onto a background thread.
 //       but this is following the current HandleReportedTablet()
-void CatalogManager::HandleTabletSchemaVersionReport(TabletInfo *tablet, uint32_t version) {
+Status CatalogManager::HandleTabletSchemaVersionReport(TabletInfo *tablet, uint32_t version) {
   // Update the schema version if it's the latest
   tablet->set_reported_schema_version(version);
 
@@ -1777,12 +1833,12 @@ void CatalogManager::HandleTabletSchemaVersionReport(TabletInfo *tablet, uint32_
   TableInfo *table = tablet->table();
   TableMetadataLock l(table, TableMetadataLock::WRITE);
   if (l.data().is_deleted() || l.data().pb.state() != SysTablesEntryPB::kTableStateAltering) {
-    return;
+    return Status::OK();
   }
 
   uint32_t current_version = l.data().pb.version();
   if (table->IsAlterInProgress(current_version)) {
-    return;
+    return Status::OK();
   }
 
   // Update the state from altering to running and remove the last fully
@@ -1793,12 +1849,13 @@ void CatalogManager::HandleTabletSchemaVersionReport(TabletInfo *tablet, uint32_
 
   Status s = sys_catalog_->UpdateTable(table);
   if (!s.ok()) {
-    // panic-mode: abort the master
-    LOG(FATAL) << "An error occurred while updating sys-tables: " << s.ToString();
+    LOG(WARNING) << "An error occurred while updating sys-tables: " << s.ToString();
+    return s;
   }
 
   l.Commit();
   LOG(INFO) << table->ToString() << " - Alter table completed version=" << current_version;
+  return Status::OK();
 }
 
 // Helper class to commit TabletInfo mutations at the end of a scope.
@@ -1807,22 +1864,36 @@ namespace {
 class ScopedTabletInfoCommitter {
  public:
   explicit ScopedTabletInfoCommitter(const std::vector<scoped_refptr<TabletInfo> >* tablets)
-    : tablets_(DCHECK_NOTNULL(tablets)) {
+    : tablets_(DCHECK_NOTNULL(tablets)),
+      aborted_(false) {
+  }
+
+  // This method is not thread safe. Must be called by the same thread
+  // that would destroy this instance.
+  void Abort() {
+    aborted_ = true;
   }
 
   // Commit the transactions.
   ~ScopedTabletInfoCommitter() {
-    BOOST_FOREACH(const scoped_refptr<TabletInfo>& tablet, *tablets_) {
-      tablet->mutable_metadata()->CommitMutation();
+    if (PREDICT_FALSE(aborted_)) {
+      BOOST_FOREACH(const scoped_refptr<TabletInfo>& tablet, *tablets_) {
+        tablet->mutable_metadata()->AbortMutation();
+      }
+    } else {
+      BOOST_FOREACH(const scoped_refptr<TabletInfo>& tablet, *tablets_) {
+        tablet->mutable_metadata()->CommitMutation();
+      }
     }
   }
 
  private:
   const std::vector<scoped_refptr<TabletInfo> >* tablets_;
+  bool aborted_;
 };
 } // anonymous namespace
 
-void CatalogManager::ProcessPendingAssignments(
+Status CatalogManager::ProcessPendingAssignments(
     const std::vector<scoped_refptr<TabletInfo> >& tablets) {
   VLOG(1) << "Processing pending assignments";
 
@@ -1867,7 +1938,7 @@ void CatalogManager::ProcessPendingAssignments(
   if (deferred.tablets_to_add.empty() &&
       deferred.tablets_to_update.empty() &&
       deferred.needs_create_rpc.empty()) {
-    return;
+    return Status::OK();
   }
 
   // For those tablets which need to be created in this round, assign replicas.
@@ -1882,12 +1953,15 @@ void CatalogManager::ProcessPendingAssignments(
   Status s = sys_catalog_->AddAndUpdateTablets(
     deferred.tablets_to_add, deferred.tablets_to_update);
   if (!s.ok()) {
-    // panic-mode: abort the master
-    LOG(FATAL) << "An error occurred while updating sys-tablets: " << s.ToString();
+    LOG(WARNING) << "An error occurred while updating tablets: " << s.ToString();
+    // TODO: Add test coverage for this abort path.
+    unlocker_out.Abort();
+    return s;
   }
 
   // Send the CreateTablet() requests to the servers. This is asynchronous / non-blocking.
   SendCreateTabletRequests(deferred.needs_create_rpc);
+  return Status::OK();
 }
 
 void CatalogManager::SelectReplicasForTablet(const TSDescriptorVector& ts_descs,

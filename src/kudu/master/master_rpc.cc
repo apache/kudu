@@ -69,15 +69,22 @@ void GetMasterRegistrationRpc::SendRpcCb(const Status& status) {
     ignore_result(deleter.release());
     return;
   }
+  if (new_status.ok() && resp_.has_error()) {
+    if (resp_.error().code() == MasterErrorPB::CATALOG_MANAGER_NOT_INITIALIZED) {
+      // If CatalogManager is not initialized, treat the node as a
+      // FOLLOWER for the time being, as currently this RPC is only
+      // used for the purposes of finding the leader master.
+      resp_.set_role(QuorumPeerPB::FOLLOWER);
+      new_status = Status::OK();
+    } else {
+      out_->mutable_error()->CopyFrom(resp_.error().status());
+      new_status = StatusFromPB(resp_.error().status());
+    }
+  }
   if (new_status.ok()) {
     out_->mutable_instance_id()->CopyFrom(resp_.instance_id());
-    if (resp_.has_error()) {
-      out_->mutable_error()->CopyFrom(resp_.error());
-      new_status = StatusFromPB(resp_.error());
-    } else {
-      out_->mutable_registration()->CopyFrom(resp_.registration());
-      out_->set_role(resp_.role());
-    }
+    out_->mutable_registration()->CopyFrom(resp_.registration());
+    out_->set_role(resp_.role());
   }
   user_cb_.Run(new_status);
 }
@@ -122,7 +129,7 @@ void GetLeaderMasterRpc::SendRpc() {
     }
     GetMasterRegistrationRpc* rpc = new GetMasterRegistrationRpc(
         Bind(&GetLeaderMasterRpc::GetMasterRegistrationRpcCbForNode,
-             this, responses_[i]),
+             this, ConstRef(responses_[i])),
         addrs_[i],
         retrier().deadline(),
         retrier().messenger(),
@@ -137,7 +144,9 @@ void GetLeaderMasterRpc::SendRpcCb(const Status& status) {
   // the leader, or if there were network errors talking to all of the
   // nodes the error is retriable and we can perform a delayed retry.
   if (status.IsNetworkError() || status.IsNotFound()) {
-    retrier().DelayedRetry(this);
+    // TODO (KUDU-573): Allow cancelling delayed tasks on reactor so
+    // that we can safely use DelayedRetry here.
+    retrier().DelayedRetryCb(this, Status::OK());
     return;
   }
   {

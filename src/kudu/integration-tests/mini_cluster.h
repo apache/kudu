@@ -89,8 +89,9 @@ class MiniCluster {
     return mini_master(0);
   }
 
-  // Returns the leader Master for this MiniCluster.
-  master::MiniMaster* leader_mini_master() { return mini_master(leader_master_idx_); }
+  // Returns the leader Master for this MiniCluster or NULL if none can be
+  // found. May block until a leader Master is ready.
+  master::MiniMaster* leader_mini_master();
 
   // Returns the Master at index 'idx' for this MiniCluster.
   master::MiniMaster* mini_master(int idx);
@@ -131,17 +132,11 @@ class MiniCluster {
   Status WaitForTabletServerCount(int count,
                                   std::vector<std::tr1::shared_ptr<master::TSDescriptor> >* descs);
 
-  void set_leader_master_idx(int idx) {
-    CHECK_LT(leader_master_idx_, mini_masters_.size());
-    leader_master_idx_ = idx;
-  }
-
-  int leader_master_idx() const { return leader_master_idx_; }
-
  private:
   enum {
     kTabletReportWaitTimeSeconds = 5,
-    kRegistrationWaitTimeSeconds = 5
+    kRegistrationWaitTimeSeconds = 5,
+    kMasterLeaderElectionWaitTimeSeconds = 10
   };
 
   bool running_;
@@ -150,7 +145,6 @@ class MiniCluster {
   const std::string fs_root_;
   const int num_masters_initial_;
   const int num_ts_initial_;
-  int leader_master_idx_;
 
   const std::vector<uint16_t> master_rpc_ports_;
   const std::vector<uint16_t> tserver_rpc_ports_;

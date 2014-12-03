@@ -169,57 +169,39 @@ Status GetMasterEntryForHost(const shared_ptr<rpc::Messenger>& messenger,
   RETURN_NOT_OK(proxy.GetMasterRegistration(req, &resp, &controller));
   e->mutable_instance_id()->CopyFrom(resp.instance_id());
   if (resp.has_error()) {
-    return StatusFromPB(resp.error());
+    return StatusFromPB(resp.error().status());
   }
   e->mutable_registration()->CopyFrom(resp.registration());
+  e->set_role(resp.role());
   return Status::OK();
 }
 
 } // anonymous namespace
 
 Status Master::ListMasters(std::vector<ServerEntryPB>* masters) const {
-  ServerEntryPB local_entry;
-  local_entry.mutable_instance_id()->CopyFrom(catalog_manager_->NodeInstance());
-  RETURN_NOT_OK(GetMasterRegistration(local_entry.mutable_registration()));
-
-  if (opts_.leader || !opts_.IsDistributed()) {
+  if (!opts_.IsDistributed()) {
+    ServerEntryPB local_entry;
+    local_entry.mutable_instance_id()->CopyFrom(catalog_manager_->NodeInstance());
+    RETURN_NOT_OK(GetMasterRegistration(local_entry.mutable_registration()));
     local_entry.set_role(QuorumPeerPB::LEADER);
-  } else {
-    local_entry.set_role(QuorumPeerPB::FOLLOWER);
-    ServerEntryPB leader_entry;
-    Status s = GetMasterEntryForHost(messenger_, opts_.leader_address, &leader_entry);
-    if (!s.ok()) {
-      s = s.CloneAndPrepend(Substitute("Unable to get registration information for leader ($0)",
-                                       opts_.leader_address.ToString()));
-      LOG(WARNING) << s.ToString();
-      StatusToPB(s, leader_entry.mutable_error());
-    } else {
-      leader_entry.set_role(QuorumPeerPB::LEADER);
-    }
-    masters->push_back(leader_entry);
+    masters->push_back(local_entry);
+    return Status::OK();
   }
 
-  BOOST_FOREACH(const HostPort& follower_addr, opts_.follower_addresses) {
-    ServerEntryPB follower_entry;
-    Status s = GetMasterEntryForHost(messenger_, follower_addr, &follower_entry);
+  BOOST_FOREACH(const HostPort& peer_addr, opts_.master_quorum) {
+    ServerEntryPB peer_entry;
+    Status s = GetMasterEntryForHost(messenger_, peer_addr, &peer_entry);
     if (!s.ok()) {
       s = s.CloneAndPrepend(
-          Substitute("Unable to get registration information for follower ($0)",
-                     follower_addr.ToString()));
+          Substitute("Unable to get registration information for peer ($0)",
+                     peer_addr.ToString()));
       LOG(WARNING) << s.ToString();
-      StatusToPB(s, follower_entry.mutable_error());
-    } else {
-      follower_entry.set_role(QuorumPeerPB::FOLLOWER);
+      StatusToPB(s, peer_entry.mutable_error());
     }
-    masters->push_back(follower_entry);
+    masters->push_back(peer_entry);
   }
 
-  masters->push_back(local_entry);
   return Status::OK();
-}
-
-bool Master::IsLeader() const {
-  return !opts_.IsDistributed() || opts_.leader;
 }
 
 } // namespace master

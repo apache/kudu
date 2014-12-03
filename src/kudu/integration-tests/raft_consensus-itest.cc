@@ -126,7 +126,7 @@ class RaftConsensusITest : public TabletServerTest {
   void CreateClient(shared_ptr<KuduClient>* client) {
     // Connect to the cluster.
     ASSERT_STATUS_OK(KuduClientBuilder()
-                     .master_server_addr(cluster_->leader_master()->bound_rpc_addr().ToString())
+                     .add_master_server_addr(cluster_->master()->bound_rpc_addr().ToString())
                      .Build(client));
   }
 
@@ -226,7 +226,7 @@ class RaftConsensusITest : public TabletServerTest {
       req.mutable_table()->set_table_name(kTableId);
       TabletLocationsPB locations;
 
-      CHECK_OK(cluster_->leader_master_proxy()->GetTableLocations(req, &resp, &controller));
+      CHECK_OK(cluster_->master_proxy()->GetTableLocations(req, &resp, &controller));
       CHECK(resp.tablet_locations_size() > 0);
       tablet_id_ = resp.tablet_locations(0).tablet_id();
       locations = resp.tablet_locations(0);
@@ -577,7 +577,7 @@ class RaftConsensusITest : public TabletServerTest {
     controller.set_timeout(MonoDelta::FromMilliseconds(100));
     req.mutable_table()->set_table_name(kTableId);
 
-    RETURN_NOT_OK(cluster_->leader_master_proxy()->GetTableLocations(req, &resp, &controller));
+    RETURN_NOT_OK(cluster_->master_proxy()->GetTableLocations(req, &resp, &controller));
     BOOST_FOREACH(const TabletLocationsPB& loc, resp.tablet_locations()) {
       if (loc.tablet_id() == tablet_id) {
         BOOST_FOREACH(const TabletLocationsPB::ReplicaPB& replica, loc.replicas()) {

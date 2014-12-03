@@ -100,9 +100,10 @@ class ExternalMiniCluster {
 
   // Return a pointer to the running leader master. This may be NULL
   // if the cluster is not started.
-  // NOTE: currently this method always return master at index 0, but
-  // once leader elections are implemented, this will return the
-  // correct leader.
+  //
+  // TODO: Use the appropriate RPC here to return the leader master,
+  // to allow some of the existing tests (e.g., raft_consensus-itest)
+  // to use multiple masters.
   ExternalMaster* leader_master() { return master(0); }
 
   // If this cluster is configured for a single non-distributed
@@ -135,10 +136,6 @@ class ExternalMiniCluster {
     return masters_.size();
   }
 
-  // Return an RPC proxy to the running leader master. Requires that
-  // the master is running.
-  std::tr1::shared_ptr<master::MasterServiceProxy> leader_master_proxy();
-
   // If the cluster is configured for a single non-distributed master,
   // return a proxy to that master. Requires that the single master is
   // running.
@@ -148,9 +145,10 @@ class ExternalMiniCluster {
   // master at 'idx' is running.
   std::tr1::shared_ptr<master::MasterServiceProxy> master_proxy(int idx);
 
-  // Wait until the number of registered tablet servers reaches the given count.
-  // Returns Status::TimedOut if the desired count is not achieved with the given
-  // timeout.
+  // Wait until the number of registered tablet servers reaches the
+  // given count on at least one of the running masters.  Returns
+  // Status::TimedOut if the desired count is not achieved with the
+  // given timeout.
   Status WaitForTabletServerCount(int count, const MonoDelta& timeout);
 
   // Create a client configured to talk to this cluster.
@@ -162,6 +160,8 @@ class ExternalMiniCluster {
                       std::tr1::shared_ptr<client::KuduClient>* client);
 
  private:
+  FRIEND_TEST(MasterFailoverTest, TestKillAnyMaster);
+
   Status StartSingleMaster();
 
   Status StartDistributedMasters();

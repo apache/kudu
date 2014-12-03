@@ -27,6 +27,7 @@ ADD_KUDU_TEST(registration-test RESOURCE_LOCK "master-web-port")
 if (NOT KUDU_EXPORTED_CLIENT)
   ADD_KUDU_TEST(raft_consensus-itest)
   ADD_KUDU_TEST(master_replication-itest RESOURCE_LOCK "master-rpc-ports")
+  ADD_KUDU_TEST(master_failover-itest RESOURCE_LOCK "master-rpc-ports")
 endif()
 
 ADD_KUDU_TEST(create-table-stress-test)

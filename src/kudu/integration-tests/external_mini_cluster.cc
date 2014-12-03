@@ -179,50 +179,27 @@ Status ExternalMiniCluster::StartDistributedMasters() {
         opts_.master_rpc_ports.size() << " ports specified in 'master_rpc_ports'";
   }
 
-  // Master at index '0' will be leader Master.
-  string leader_addr = Substitute("127.0.0.1:$0", opts_.master_rpc_ports[0]);
-  vector<string> follower_addrs;
-  for (int i = 1; i < num_masters; i++) {
-    follower_addrs.push_back(Substitute("127.0.0.1:$0", opts_.master_rpc_ports[i]));
+  vector<string> peer_addrs;
+  for (int i = 0; i < num_masters; i++) {
+    string addr = Substitute("127.0.0.1:$0", opts_.master_rpc_ports[i]);
+    peer_addrs.push_back(addr);
   }
-  string follower_addrs_str = JoinStrings(follower_addrs, ",");
-
+  string peer_addrs_str = JoinStrings(peer_addrs, ",");
+  vector<string> flags = opts_.extra_master_flags;
+  flags.push_back("--master_quorum=" + peer_addrs_str);
+  flags.push_back("--enable_leader_failure_detection=true");
   string exe = GetBinaryPath(kMasterBinaryName);
 
-  vector<string> leader_flags = opts_.extra_master_flags;
-  leader_flags.push_back("--leader");
-  leader_flags.push_back("--follower_addresses=" + follower_addrs_str);
-
-  scoped_refptr<ExternalMaster> leader = new ExternalMaster(exe, GetDataPath("master-0"),
-                                                            leader_addr,
-                                                            SubstituteInFlags(leader_flags, 0));
-  RETURN_NOT_OK_PREPEND(leader->Start(), "Couldn't start the leader Master");
-  masters_[0] = leader;
-
-  // Start the follower masters.
-  for (int i = 1; i < num_masters; i++) {
-    string curr_peer_addr;
-    vector<string> other_peer_addrs;
-    for (int j = 1; j < num_masters; j++) {
-      string addr = Substitute("127.0.0.1:$0", opts_.master_rpc_ports[j]);
-      if (j == i) {
-        curr_peer_addr = addr;
-      } else {
-        other_peer_addrs.push_back(addr);
-      }
-    }
-    string peer_addrs_str = JoinStrings(other_peer_addrs, ",");
-    vector<string> follower_flags = opts_.extra_master_flags;
-    follower_flags.push_back("--leader_address=" + leader_addr);
-    follower_flags.push_back("--follower_addresses=" + peer_addrs_str);
-    scoped_refptr<ExternalMaster> follower =
+  // Start the masters.
+  for (int i = 0; i < num_masters; i++) {
+    scoped_refptr<ExternalMaster> peer =
         new ExternalMaster(exe,
                            GetDataPath(Substitute("master-$0", i)),
-                           curr_peer_addr,
-                           SubstituteInFlags(follower_flags, i));
-    RETURN_NOT_OK_PREPEND(follower->Start(),
-                          Substitute("Unable to start follower Master at index $0", i));
-    masters_[i] = follower;
+                           peer_addrs[i],
+                           SubstituteInFlags(flags, i));
+    RETURN_NOT_OK_PREPEND(peer->Start(),
+                          Substitute("Unable to start Master at index $0", i));
+    masters_[i] = peer;
   }
 
   return Status::OK();
@@ -258,37 +235,33 @@ Status ExternalMiniCluster::WaitForTabletServerCount(int count, const MonoDelta&
       return Status::TimedOut(Substitute("$0 TS(s) never registered with master", count));
     }
 
-    master::ListTabletServersRequestPB req;
-    master::ListTabletServersResponsePB resp;
-    rpc::RpcController rpc;
-    rpc.set_timeout(remaining);
-    RETURN_NOT_OK_PREPEND(leader_master_proxy()->ListTabletServers(req, &resp, &rpc),
-                          "ListTabletServers RPC failed");
-
-    // ListTabletServers() may return servers that are no longer online.
-    // Do a second step of verification to verify that the descs that we got
-    // are aligned (same uuid/seqno) with the TSs that we have in the cluster.
-    int match_count = 0;
-    BOOST_FOREACH(const master::ListTabletServersResponsePB_Entry& e, resp.servers()) {
-      BOOST_FOREACH(const scoped_refptr<ExternalTabletServer>& ets, tablet_servers_) {
-        if (ets->instance_id().permanent_uuid() == e.instance_id().permanent_uuid() &&
-            ets->instance_id().instance_seqno() == e.instance_id().instance_seqno()) {
-          match_count++;
-          break;
+    for (int i = 0; i < masters_.size(); i++) {
+      master::ListTabletServersRequestPB req;
+      master::ListTabletServersResponsePB resp;
+      rpc::RpcController rpc;
+      rpc.set_timeout(remaining);
+      RETURN_NOT_OK_PREPEND(master_proxy(i)->ListTabletServers(req, &resp, &rpc),
+                            "ListTabletServers RPC failed");
+      // ListTabletServers() may return servers that are no longer online.
+      // Do a second step of verification to verify that the descs that we got
+      // are aligned (same uuid/seqno) with the TSs that we have in the cluster.
+      int match_count = 0;
+      BOOST_FOREACH(const master::ListTabletServersResponsePB_Entry& e, resp.servers()) {
+        BOOST_FOREACH(const scoped_refptr<ExternalTabletServer>& ets, tablet_servers_) {
+          if (ets->instance_id().permanent_uuid() == e.instance_id().permanent_uuid() &&
+              ets->instance_id().instance_seqno() == e.instance_id().instance_seqno()) {
+            match_count++;
+            break;
+          }
         }
       }
-    }
-
-    if (match_count == count) {
-      LOG(INFO) << count << " TS(s) registered with Master";
-      return Status::OK();
+      if (match_count == count) {
+        LOG(INFO) << count << " TS(s) registered with Master";
+        return Status::OK();
+      }
     }
     usleep(1 * 1000); // 1ms
   }
-}
-
-shared_ptr<MasterServiceProxy> ExternalMiniCluster::leader_master_proxy() {
-  return master_proxy(0);
 }
 
 shared_ptr<MasterServiceProxy> ExternalMiniCluster::master_proxy() {
@@ -305,9 +278,11 @@ shared_ptr<MasterServiceProxy> ExternalMiniCluster::master_proxy(int idx) {
 Status ExternalMiniCluster::CreateClient(client::KuduClientBuilder& builder,
                                          shared_ptr<client::KuduClient>* client) {
   CHECK(started_);
-
-  return builder.master_server_addr(leader_master()->bound_rpc_hostport().ToString())
-      .Build(client);
+  builder.clear_master_server_addrs();
+  BOOST_FOREACH(const scoped_refptr<ExternalMaster>& master, masters_) {
+    builder.add_master_server_addr(master->bound_rpc_hostport().ToString());
+  }
+  return builder.Build(client);
 }
 
 //------------------------------------------------------------

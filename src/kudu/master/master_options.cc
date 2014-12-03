@@ -18,14 +18,9 @@ DEFINE_string(master_rpc_bind_addresses, "0.0.0.0:7051",
              "Comma-separated list of addresses for the Tablet Server"
               " to bind to for RPC connections");
 
-// TODO Get rid of these flags (only have "--master_peers", and possibly
-// "--initial_leader") once leader elections are implemented.
-DEFINE_bool(leader, false,
-            "If true, this server is the leader of a master quorum.");
-DEFINE_string(leader_address, "",
-              "Address of the leader of the master quorum (iff the node is a follower).");
-DEFINE_string(follower_addresses, "",
-              "Comma separated list of followers in the master quorum (not including this node).");
+DEFINE_string(master_quorum, "",
+              "Comma-separated list of all the RPC addresses for Master quorum."
+              " NOTE: if not specified, assumes a standalone Master.");
 
 DEFINE_int32(master_web_port, Master::kDefaultWebPort,
              "Port to bind to for the Master web server");
@@ -49,37 +44,28 @@ MasterOptions::MasterOptions() {
 
   env = Env::Default();
 
-  leader = FLAGS_leader;
-
-  if (FLAGS_leader_address != "") {
-    Status s = leader_address.ParseString(FLAGS_leader_address, Master::kDefaultPort);
+  if (!FLAGS_master_quorum.empty()) {
+    Status s = HostPort::ParseStrings(FLAGS_master_quorum, Master::kDefaultPort,
+                                      &master_quorum);
     if (!s.ok()) {
-      LOG(FATAL) << "Couldn't parse the leader_address flag: " << s.ToString();
+      LOG(FATAL) << "Couldn't parse the master_quorum flag('" << FLAGS_master_quorum << "'): "
+                 << s.ToString();
     }
-  } else if (!leader && FLAGS_follower_addresses != "") {
-    LOG(FATAL) << "Invalid configuration: leader flag is not set, leader_address is flag is not "
-               << "specified, but distributed mode is requested (follower_addresses flag is set).";
-  }
-
-  // TODO: Currently we require at least three masters for a
-  // distributed configuration. We should decide whether to support
-  // even numbers of masters (including two) -- with the caveat being
-  // that all these masters must remain available, or require that
-  // number of masters must always be odd.
-  if (FLAGS_follower_addresses != "") {
-    Status s = HostPort::ParseStrings(FLAGS_follower_addresses, Master::kDefaultPort,
-                                      &follower_addresses);
-    if (!s.ok()) {
-      LOG(FATAL) << "Couldn't parse the follower_addresses flag: " << s.ToString();
+    if (master_quorum.size() < 2) {
+      LOG(FATAL) << "At least 2 masters are required for a distributed quorum, but "
+          "master_quorum flag ('" << FLAGS_master_quorum << "') only specifies "
+                 << master_quorum.size() << " masters.";
     }
-  } else if (leader || FLAGS_leader_address != "") {
-    LOG(FATAL) << "Master is started in distributed mode, but follower_addresses flag is not "
-        "specified.";
+    if (master_quorum.size() == 2) {
+      LOG(WARNING) << "Only 2 masters are specified by master_quorum_flag ('" <<
+          FLAGS_master_quorum << "'), but minimum of 3 are required to tolerate failures"
+          " of any one master. It is recommended to use at least 3 masters.";
+    }
   }
 }
 
 bool MasterOptions::IsDistributed() const {
-  return leader || leader_address.host() != "";
+  return !master_quorum.empty();
 }
 
 } // namespace master
