@@ -1128,18 +1128,25 @@ Status CatalogManager::HandleReportedTablet(TSDescriptor* ts_desc,
                                             "Tablet reported by leader");
     }
 
-    // If a replica is reporting a new quorum, reset the tablet's replicas. Note that
-    // we leave out replicas who live in tablet servers who have not heartbeated to
-    // master yet.
     if (report.quorum().seqno() > current_seqno) {
+      // If a replica is reporting a new quorum, reset the tablet's replicas. Note that
+      // we leave out replicas who live in tablet servers who have not heartbeated to
+      // master yet.
       LOG(INFO) << "Tablet: " << tablet->tablet_id() << " reported quorum change."
           " New quorum: " << report.quorum().ShortDebugString();
       ResetTabletReplicasFromReportedQuorum(ts_desc, report, tablet, &tablet_lock);
-    // If some replica is reporting the same quorum we already know about and hasn't
-    // been added as replica, add it.
-    } else if (report.quorum().seqno() == current_seqno) {
+    } else {
+      // Report seqno is equal to current_seqno. If some replica is reporting
+      // the same quorum we already know about and hasn't been added as
+      // replica, add it.
+      DVLOG(2) << "Quorum seqno " << report.quorum().seqno() << " provided for tablet "
+               << report.tablet_id() << " reported by peer " << ts_desc->permanent_uuid()
+               << " is equal to current seqno; Ensuring replica is being tracked.";
       AddReplicaToTabletIfNotFound(ts_desc, report, tablet);
     }
+  } else {
+    DVLOG(2) << "Report either has no quorum or seqno < current_seqno " << current_seqno
+             << ":\n" << report.DebugString();
   }
 
   // We update the tablets each time the someone reports it.
@@ -1157,6 +1164,9 @@ void CatalogManager::ResetTabletReplicasFromReportedQuorum(TSDescriptor* ts_desc
                                                            const ReportedTabletPB& report,
                                                            const scoped_refptr<TabletInfo>& tablet,
                                                            TabletMetadataLock* tablet_lock) {
+  VLOG(2) << "Resetting replicas for tablet " << report.tablet_id()
+          << " from quorum reported by " << ts_desc->permanent_uuid()
+          << " to that of seqno " << report.quorum().seqno();
   tablet_lock->mutable_data()->pb.mutable_quorum()->CopyFrom(report.quorum());
   vector<TabletReplica> replicas;
   BOOST_FOREACH(const metadata::QuorumPeerPB& peer, report.quorum().peers()) {
