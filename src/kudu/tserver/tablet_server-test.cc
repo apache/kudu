@@ -47,9 +47,7 @@ TEST_F(TabletServerTest, TestPingServer) {
   ASSERT_STATUS_OK(proxy_->Ping(req, &resp, &controller));
 }
 
-// DISABLED because KeyEncoder::Decode doesn't properly handle the start/stop
-// keys of a tablet.
-TEST_F(TabletServerTest, DISABLED_TestWebPages) {
+TEST_F(TabletServerTest, TestWebPages) {
   EasyCurl c;
   faststring buf;
   string addr = mini_server_->bound_http_addr().ToString();
@@ -58,6 +56,8 @@ TEST_F(TabletServerTest, DISABLED_TestWebPages) {
   ASSERT_STATUS_OK(c.FetchURL(strings::Substitute("http://$0/tablets", addr),
                               &buf));
   ASSERT_STR_CONTAINS(buf.ToString(), kTabletId);
+  ASSERT_STR_CONTAINS(buf.ToString(), "<td>&lt;start of table&gt;</td>");
+  ASSERT_STR_CONTAINS(buf.ToString(), "<td>&lt;end of table&gt;</td>");
 
   // Tablet page should include the schema.
   ASSERT_STATUS_OK(c.FetchURL(strings::Substitute("http://$0/tablet?id=$1", addr, kTabletId),

@@ -245,8 +245,11 @@ Status FsTool::PrintTabletMetaInternal(const string& master_block_path,
 
   const Schema& schema = meta->schema();
 
-  std::cout << Indent(indent) << "Start key: " << schema.DebugEncodedRowKey(meta->start_key())
-            <<" End key: " << schema.DebugEncodedRowKey(meta->end_key()) << std::endl;
+  std::cout << Indent(indent) << "Start key: "
+            << schema.DebugEncodedRowKey(meta->start_key(), Schema::START_KEY)
+            <<" End key: "
+            << schema.DebugEncodedRowKey(meta->end_key(), Schema::END_KEY)
+            << std::endl;
   std::cout << Indent(indent) << "Table name: " << meta->table_name()
             << " Table id: " << meta->table_id() << std::endl;
   std::cout << Indent(indent) << "Schema (version=" << meta->schema_version() << "): "

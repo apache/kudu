@@ -182,16 +182,20 @@ void TabletServerPathHandlers::HandleTabletsPage(const Webserver::WebRequest& re
     if (status.state() == tablet::FAILED) {
       StrAppend(&state, ": ", EscapeForHtmlToString(peer->error().ToString()));
     }
+
+    string start_key = schema.DebugEncodedRowKey(status.start_key(), Schema::START_KEY);
+    string end_key = schema.DebugEncodedRowKey(status.end_key(), Schema::END_KEY);
+
     // TODO: would be nice to include some other stuff like memory usage
     (*output) << Substitute(
         // Table name, tablet id, start key, end key
-        "<tr><th>$0</th><th>$1</th><th>$2</th><th>$3</th>"
+        "<tr><td>$0</td><td>$1</td><td>$2</td><td>$3</td>"
         // State, on-disk size, quorum, last status
-        "<th>$4</th><th>$5</th><th>$6</th><th>$7</tr>\n",
+        "<td>$4</td><td>$5</td><td>$6</td><td>$7</td></tr>\n",
         EscapeForHtmlToString(table_name), // $0
         tablet_id_or_link, // $1
-        EscapeForHtmlToString(schema.DebugEncodedRowKey(status.start_key())), // $2
-        EscapeForHtmlToString(schema.DebugEncodedRowKey(status.end_key())), // $3
+        EscapeForHtmlToString(start_key), // $2
+        EscapeForHtmlToString(end_key), // $3
         state, n_bytes, // $4, $5
         QuorumPBToHtml(peer->Quorum()), // $6
         EscapeForHtmlToString(status.last_status())); // $7

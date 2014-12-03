@@ -330,7 +330,7 @@ void LookupRpc::SendRpc() {
   if (PREDICT_TRUE(meta_cache_->LookupTabletByKeyFastPath(table_, key_, &result)) &&
       result->HasLeader()) {
     VLOG(3) << "Fast lookup: found tablet " << result->tablet_id()
-            << " for " << schema->DebugEncodedRowKey(key_.ToString())
+            << " for " << schema->DebugEncodedRowKey(key_, Schema::START_KEY)
             << " of " << table_->name();
     if (remote_tablet_) {
       *remote_tablet_ = result;
@@ -342,7 +342,7 @@ void LookupRpc::SendRpc() {
 
   // Slow path: must lookup the tablet in the master.
   VLOG(3) << "Fast lookup: no tablet"
-          << " for " << schema->DebugEncodedRowKey(key_.ToString())
+          << " for " << schema->DebugEncodedRowKey(key_, Schema::START_KEY)
           << " of " << table_->name();
 
   if (!has_permit_) {

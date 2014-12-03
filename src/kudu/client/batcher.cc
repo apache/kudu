@@ -239,9 +239,12 @@ WriteRpc::WriteRpc(const scoped_refptr<Batcher>& batcher,
   RowOperationsPBEncoder enc(requested);
   BOOST_FOREACH(InFlightOp* op, ops_) {
     DCHECK(op->key->InRange(op->tablet->start_key(), op->tablet->end_key()))
-                << "Row " << schema->DebugEncodedRowKey(op->key->encoded_key().ToString())
-                << " not in range (" << schema->DebugEncodedRowKey(tablet->start_key().ToString())
-                << ", " << schema->DebugEncodedRowKey(tablet->end_key().ToString())
+                << "Row "
+                << schema->DebugEncodedRowKey(op->key->encoded_key(), Schema::START_KEY)
+                << " not in range ("
+                << schema->DebugEncodedRowKey(tablet->start_key(), Schema::START_KEY)
+                << ", "
+                << schema->DebugEncodedRowKey(tablet->end_key(), Schema::END_KEY)
                 << ")";
 
     enc.Add(ToInternalWriteType(op->write_op->type()), op->write_op->row());

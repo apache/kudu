@@ -243,9 +243,10 @@ Status Tablet::CheckRowInTablet(const tablet::RowSetKeyProbe& probe) const {
     return Status::NotFound(
         Substitute("Row not within tablet range. Tablet start key: '$0', end key: '$1'."
                    "Probe key: '$2'",
-                   schema_->DebugEncodedRowKey(metadata_->start_key()),
-                   schema_->DebugEncodedRowKey(metadata_->end_key()),
-                   schema_->DebugEncodedRowKey(probe.encoded_key().encoded_key().ToString())));
+                   schema_->DebugEncodedRowKey(metadata_->start_key(), Schema::START_KEY),
+                   schema_->DebugEncodedRowKey(metadata_->end_key(), Schema::END_KEY),
+                   schema_->DebugEncodedRowKey(probe.encoded_key().encoded_key(),
+                                               Schema::START_KEY)));
   }
   return Status::OK();
 }

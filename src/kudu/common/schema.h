@@ -455,8 +455,15 @@ class Schema {
   // order to, e.g., provide print human-readable information about a
   // tablet's start and end keys.
   //
+  // If the encoded key is empty then '<start of table>' or '<end of table>'
+  // will be returned based on the value of 'start_or_end'.
+  //
   // See also: DebugRowKey, DecodeRowKey.
-  string DebugEncodedRowKey(Slice encoded_key) const;
+  enum StartOrEnd {
+    START_KEY,
+    END_KEY
+  };
+  string DebugEncodedRowKey(Slice encoded_key, StartOrEnd start_or_end) const;
 
   // Compare two rows of this schema.
   template<class RowTypeA, class RowTypeB>

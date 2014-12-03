@@ -302,11 +302,16 @@ TEST(TestSchema, TestDecodeKeys_CompoundStringKey) {
                 2);
 
   EXPECT_EQ("(string col1=foo, string col2=bar)",
-            schema.DebugEncodedRowKey(Slice("foo\0\0bar", 8)));
+            schema.DebugEncodedRowKey(Slice("foo\0\0bar", 8), Schema::START_KEY));
   EXPECT_EQ("(string col1=fo\\000o, string col2=bar)",
-            schema.DebugEncodedRowKey(Slice("fo\x00\x01o\0\0""bar", 10)));
+            schema.DebugEncodedRowKey(Slice("fo\x00\x01o\0\0""bar", 10), Schema::START_KEY));
   EXPECT_EQ("(string col1=fo\\000o, string col2=bar\\000xy)",
-            schema.DebugEncodedRowKey(Slice("fo\x00\x01o\0\0""bar\0xy", 13)));
+            schema.DebugEncodedRowKey(Slice("fo\x00\x01o\0\0""bar\0xy", 13), Schema::START_KEY));
+
+  EXPECT_EQ("<start of table>",
+            schema.DebugEncodedRowKey("", Schema::START_KEY));
+  EXPECT_EQ("<end of table>",
+            schema.DebugEncodedRowKey("", Schema::END_KEY));
 }
 
 TEST(TestSchema, TestCreatePartialSchema) {

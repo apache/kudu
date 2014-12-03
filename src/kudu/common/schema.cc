@@ -284,7 +284,14 @@ void Schema::DecodeRowKey(Slice encoded_key,
 
 }
 
-string Schema::DebugEncodedRowKey(Slice encoded_key) const {
+string Schema::DebugEncodedRowKey(Slice encoded_key, StartOrEnd start_or_end) const {
+  if (encoded_key.empty()) {
+    switch (start_or_end) {
+      case START_KEY: return "<start of table>";
+      case END_KEY:   return "<end of table>";
+    }
+  }
+
   Arena arena(1024, 128 * 1024);
   uint8_t* buf = reinterpret_cast<uint8_t*>(arena.AllocateBytes(key_byte_size()));
   DecodeRowKey(encoded_key, buf, &arena);

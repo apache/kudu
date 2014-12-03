@@ -126,11 +126,13 @@ void MasterPathHandlers::HandleTablePage(const Webserver::WebRequest& req,
     vector<TabletReplica> locations;
     tablet->GetLocations(&locations);
     TabletMetadataLock l(tablet.get(), TabletMetadataLock::READ);
+    string start_key = schema.DebugEncodedRowKey(l.data().pb.start_key(), Schema::START_KEY);
+    string end_key = schema.DebugEncodedRowKey(l.data().pb.end_key(), Schema::END_KEY);
     *output << Substitute(
         "<tr><th>$0</th><td>$1</td><td>$2</td><td>$3 $4</td><td>$5</td></tr>\n",
         tablet->tablet_id(),
-        EscapeForHtmlToString(schema.DebugEncodedRowKey(l.data().pb.start_key())),
-        EscapeForHtmlToString(schema.DebugEncodedRowKey(l.data().pb.end_key())),
+        EscapeForHtmlToString(start_key),
+        EscapeForHtmlToString(end_key),
         SysTabletsEntryPB_State_Name(l.data().pb.state()).substr(kSysTabletsEntryStatePrefixLen),
         EscapeForHtmlToString(l.data().pb.state_msg()),
         QuorumToHtml(locations));

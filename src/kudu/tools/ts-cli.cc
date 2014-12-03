@@ -156,8 +156,9 @@ static int TsCliMain(int argc, char** argv) {
       std::cout << "Tablet id: " << ts.tablet_id() << std::endl;
       std::cout << "State: " << state;
       std::cout << "Table name: " << ts.table_name() << std::endl;
-      std::cout << "Start key: " << schema.DebugEncodedRowKey(ts.start_key())
-                <<" End key: " << schema.DebugEncodedRowKey(ts.end_key()) << std::endl;
+      std::cout << "Start key: " << schema.DebugEncodedRowKey(ts.start_key(), Schema::START_KEY)
+                <<" End key: " << schema.DebugEncodedRowKey(ts.end_key(), Schema::END_KEY)
+                << std::endl;
       if (ts.has_estimated_on_disk_size()) {
         std::cout << "Estimated on disk size: " <<
             HumanReadableNumBytes::ToString(ts.estimated_on_disk_size());
