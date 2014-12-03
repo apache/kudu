@@ -251,11 +251,11 @@ WriteRpc::WriteRpc(const scoped_refptr<Batcher>& batcher,
     // until after we sent it, the RPC callback could fire before we got a chance
     // to change its state to 'sent'.
     op->state = InFlightOp::kRequestSent;
-    VLOG(3) << ++ctr << ". Encoded row " << op->write_op->ToString();
+    VLOG(4) << ++ctr << ". Encoded row " << op->write_op->ToString();
   }
 
-  if (VLOG_IS_ON(2)) {
-    VLOG(2) << "Created batch for " << tablet->tablet_id() << ":\n"
+  if (VLOG_IS_ON(3)) {
+    VLOG(3) << "Created batch for " << tablet->tablet_id() << ":\n"
         << req_.ShortDebugString();
   }
 }
@@ -343,6 +343,7 @@ void WriteRpc::RefreshTSProxyCb(const Status& status) {
     return;
   }
 
+  VLOG(2) << "Writing batch to TS " << current_ts_->ToString();
   current_ts_->proxy()->WriteAsync(req_, &resp_, &retrier().controller(),
                                    boost::bind(&WriteRpc::SendRpcCb, this, Status::OK()));
 }
@@ -632,11 +633,11 @@ void Batcher::FlushBuffersIfReady() {
   {
     lock_guard<simple_spinlock> l(&lock_);
     if (state_ != kFlushing) {
-      VLOG(2) << "FlushBuffersIfReady: batcher not yet in flushing state";
+      VLOG(3) << "FlushBuffersIfReady: batcher not yet in flushing state";
       return;
     }
     if (!base::RefCountIsZero(&outstanding_lookups_)) {
-      VLOG(2) << "FlushBuffersIfReady: "
+      VLOG(3) << "FlushBuffersIfReady: "
               << base::subtle::NoBarrier_Load(&outstanding_lookups_)
               << " ops still in lookup";
       return;
@@ -650,7 +651,7 @@ void Batcher::FlushBuffersIfReady() {
     RemoteTablet* tablet = e.first;
     const vector<InFlightOp*>& ops = e.second;
 
-    VLOG(2) << "FlushBuffersIfReady: already in flushing state, immediately flushing to "
+    VLOG(3) << "FlushBuffersIfReady: already in flushing state, immediately flushing to "
             << tablet->tablet_id();
     FlushBuffer(tablet, ops);
   }
