@@ -156,13 +156,23 @@ class RemoteTablet : public RefCountedThreadSafe<RemoteTablet> {
   const Slice& start_key() const { return start_key_; }
   const Slice& end_key() const { return end_key_; }
 
+  // Mark the specified tablet server as the leader of the quorum in the cache.
+  void MarkTServerAsLeader(const RemoteTabletServer* server);
+
+  // Mark the specified tablet server as a follower in the cache.
+  void MarkTServerAsFollower(const RemoteTabletServer* server);
+
  private:
+  // Return stringified representation of the list of replicas for this tablet.
+  // Caller must hold lock_.
+  std::string ReplicasAsStringUnlocked() const;
+
   const std::string tablet_id_;
   const Slice start_key_;
   const Slice end_key_;
-  mutable simple_spinlock lock_;
 
   // All non-const members are protected by 'lock_'.
+  mutable simple_spinlock lock_;
   std::vector<RemoteReplica> replicas_;
 
   DISALLOW_COPY_AND_ASSIGN(RemoteTablet);

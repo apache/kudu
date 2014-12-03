@@ -24,6 +24,7 @@
 #include "kudu/common/wire_protocol.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/stl_util.h"
+#include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/rpc/messenger.h"
 #include "kudu/rpc/rpc.h"
@@ -276,17 +277,32 @@ void WriteRpc::SendRpc() {
   // 2. If there's no good leader select another replica, provided:
   //    a. It hasn't failed, and
   //    b. It hasn't rejected our write due to being a follower.
-  // 3. If we're out of appropriate replicas, force a lookup to the master
+  // 3. Preemptively mark the replica we selected in step 2 as "leader" in the
+  //    meta cache, so that our selection remains sticky until the next Master
+  //    metadata refresh.
+  // 4. If we're out of appropriate replicas, force a lookup to the master
   //    to fetch new quorum information.
-  // 4. When the lookup finishes, forget which replicas were followers and
+  // 5. When the lookup finishes, forget which replicas were followers and
   //    retry the write (i.e. goto 1).
-  // 5. If we issue the write and it fails because the destination was a
+  // 6. If we issue the write and it fails because the destination was a
   //    follower, remember that fact and retry the write (i.e. goto 1).
-  // 6. Repeat steps 1-5 until the write succeeds, fails for other reasons,
+  // 7. Repeat steps 1-6 until the write succeeds, fails for other reasons,
   //    or the write's deadline expires.
   current_ts_ = tablet_->LeaderTServer();
-  if (!current_ts_ || ContainsKey(followers_, current_ts_)) {
+  if (current_ts_ && ContainsKey(followers_, current_ts_)) {
+    VLOG(2) << "Tablet " << tablet_->tablet_id() << ": We have a follower for a leader: "
+            << current_ts_->ToString();
+
+    // Mark the node as a follower in the cache so that on the next go-round,
+    // LeaderTServer() will not return it as a leader unless a full metadata
+    // refresh has occurred. This also avoids LookupTabletByKey() going into
+    // "fast path" mode and not actually performing a metadata refresh from the
+    // Master when it needs to.
+    tablet_->MarkTServerAsFollower(current_ts_);
     current_ts_ = NULL;
+  }
+  if (!current_ts_) {
+    // Try to "guess" the next leader.
     vector<RemoteTabletServer*> replicas;
     tablet_->GetRemoteTabletServers(&replicas);
     BOOST_FOREACH(RemoteTabletServer* ts, replicas) {
@@ -295,14 +311,22 @@ void WriteRpc::SendRpc() {
         break;
       }
     }
+    if (current_ts_) {
+      // Mark this next replica "preemptively" as the leader in the meta cache,
+      // so we go to it first on the next write if writing was successful.
+      VLOG(1) << "Tablet " << tablet_->tablet_id() << ": Previous leader failed. "
+              << "Preemptively marking tserver " << current_ts_->ToString()
+              << " as leader in the meta cache.";
+      tablet_->MarkTServerAsLeader(current_ts_);
+    }
   }
 
   // If we've tried all replicas, force a lookup to the master to find the
   // new leader. This relies on some properties of LookupTabletByKey():
   // 1. The fast path only works when there's a non-failed leader (which we
-  //    known is untrue here).
+  //    know is untrue here).
   // 2. The slow path always fetches quorum information and updates the
-  //    looked up tablet.
+  //    looked-up tablet.
   // Put another way, we don't care about the lookup results at all; we're
   // just using it to fetch the latest quorum information.
   //
@@ -346,7 +370,8 @@ void WriteRpc::RefreshTSProxyCb(const Status& status) {
     return;
   }
 
-  VLOG(2) << "Writing batch to TS " << current_ts_->ToString();
+  VLOG(2) << "Tablet " << tablet_->tablet_id() << ": Writing batch to replica "
+          << current_ts_->ToString();
   current_ts_->proxy()->WriteAsync(req_, &resp_, &retrier().controller(),
                                    boost::bind(&WriteRpc::SendRpcCb, this, Status::OK()));
 }
@@ -531,9 +556,7 @@ Status Batcher::Add(gscoped_ptr<KuduWriteOperation> write_op) {
   op->key = op->write_op->CreateKey();
 
   AddInFlightOp(op);
-  if (VLOG_IS_ON(2)) {
-    VLOG(2) << "Looking up tablet for " << op->write_op->ToString();
-  }
+  VLOG(3) << "Looking up tablet for " << op->write_op->ToString();
 
   // Increment our reference count for the outstanding callback.
   //
@@ -597,11 +620,11 @@ void Batcher::TabletLookupFinished(InFlightOp* op, const Status& s) {
     return;
   }
 
-  if (VLOG_IS_ON(2)) {
-    VLOG(2) << "TabletLookupFinished for " << op->write_op->ToString()
+  if (VLOG_IS_ON(3)) {
+    VLOG(3) << "TabletLookupFinished for " << op->write_op->ToString()
             << ": " << s.ToString();
     if (s.ok()) {
-      VLOG(2) << "Result: tablet_id = " << op->tablet->tablet_id();
+      VLOG(3) << "Result: tablet_id = " << op->tablet->tablet_id();
     }
   }
 

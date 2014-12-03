@@ -43,6 +43,7 @@ DECLARE_bool(enable_data_block_fsync);
 DECLARE_int32(heartbeat_interval_ms);
 DECLARE_bool(use_hybrid_clock);
 DECLARE_int32(max_clock_sync_error_usec);
+DECLARE_bool(enable_leader_failure_detection);
 
 DEFINE_int32(test_scan_num_rows, 1000, "Number of rows to insert and scan");
 
@@ -76,6 +77,7 @@ class ClientTest : public KuduTest {
                                 &kNonNullDefault)),
               1) {
     FLAGS_enable_data_block_fsync = false; // Keep unit tests fast.
+    FLAGS_enable_leader_failure_detection = true; // Allow failover.
   }
 
   virtual void SetUp() OVERRIDE {
@@ -333,9 +335,11 @@ class ClientTest : public KuduTest {
       s = scanner.Open();
       if (s.IsServiceUnavailable()) {
         attempts++;
-        usleep(100 * 1000); // 100 ms
+        int64_t sleep_usec = 10000 * attempts;
+        LOG(INFO) << "Waiting " << (sleep_usec/1000) << "ms for service availability...";
+        usleep(sleep_usec);
       }
-    } while (s.IsServiceUnavailable() && attempts < 20);
+    } while (s.IsServiceUnavailable() && attempts < 100);
     CHECK_OK(s);
 
     attempts = 0;
@@ -1537,7 +1541,7 @@ TEST_F(ClientTest, TestReplicatedMultiTabletTableFailover) {
   const string kReplicatedTable = "replicated_failover_on_reads";
   const int kNumRowsToWrite = 100;
   const int kNumReplicas = 3;
-  const int kNumTries = 10;
+  const int kNumTries = 100;
 
   scoped_refptr<KuduTable> table;
   ASSERT_NO_FATAL_FAILURE(CreateTable(kReplicatedTable,
@@ -1548,48 +1552,37 @@ TEST_F(ClientTest, TestReplicatedMultiTabletTableFailover) {
   // Insert some data.
   ASSERT_NO_FATAL_FAILURE(InsertTestRows(table.get(), kNumRowsToWrite));
 
-  // TODO: we have to sleep here to make sure that the leader has time to
-  // propagate the writes to the followers. We can remove this once the
-  // followers run a leader election on their own and handle advancing
-  // the commit index.
-  usleep(1500 * 1000);
-
-  // Find the first replica that will be scanned.
+  // Find the leader of the first tablet.
   Synchronizer sync;
   scoped_refptr<internal::RemoteTablet> rt;
   client_->data_->meta_cache_->LookupTabletByKey(table.get(), Slice(),
                                                  MonoTime::Max(),
                                                  &rt, sync.AsStatusCallback());
   ASSERT_STATUS_OK(sync.Wait());
-  internal::RemoteTabletServer *rts;
-  ASSERT_STATUS_OK(client_->data_->GetTabletServer(client_.get(),
-                                                   rt->tablet_id(),
-                                                   KuduClient::FIRST_REPLICA, &rts));
+  internal::RemoteTabletServer *rts = rt->LeaderTServer();
 
-  // Kill that replica's tablet server.
+  // Kill the leader of the first tablet.
   bool ts_killed = false;
   for (int i = 0; i < kNumReplicas; i++) {
     MiniTabletServer* ts = cluster_->mini_tablet_server(i);
-    if (ts->server()->instance_pb().permanent_uuid() == rts->ToString()) {
+    if (ts->server()->instance_pb().permanent_uuid() == rts->permanent_uuid()) {
       LOG(INFO) << "Killing TS running on " << ts->bound_rpc_addr().ToString();
       ts->Shutdown();
       ts_killed = true;
       break;
     }
   }
-  CHECK(ts_killed);
+  ASSERT_TRUE(ts_killed);
 
-  // The first tablet to be scanned will fail, but we should fail over to
-  // another. Of course, there's no guarantee that the non-leader replica
-  // is up-to-date, so let's loop until we get an answer we like.
-  ASSERT_EQ(0, rt->GetNumFailedReplicas());
+  // We wait until we fail over to the new leader(s).
   int tries = 0;
   for (;;) {
     tries++;
     int num_rows = CountRowsFromClient(table.get(),
-                                       KuduClient::FIRST_REPLICA,
+                                       KuduClient::LEADER_ONLY,
                                        kNoBound, kNoBound);
     if (num_rows == kNumRowsToWrite) {
+      LOG(INFO) << "Found expected number of rows: " << num_rows;
       break;
     } else {
       LOG(INFO) << "Only found " << num_rows << " rows on try "
@@ -1598,7 +1591,6 @@ TEST_F(ClientTest, TestReplicatedMultiTabletTableFailover) {
       usleep(10000 * tries); // sleep a bit more with each attempt.
     }
   }
-  ASSERT_EQ(1, rt->GetNumFailedReplicas());
 }
 
 // This test that we can keep writing to a tablet when the leader

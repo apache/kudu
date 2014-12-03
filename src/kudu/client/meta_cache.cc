@@ -157,15 +157,20 @@ void RemoteTablet::Refresh(const TabletServerMap& tservers,
 
 void RemoteTablet::MarkReplicaFailed(RemoteTabletServer *ts,
                                      const Status& status) {
-  LOG(WARNING) << "Replica " << tablet_id_ << " on ts " << ts->ToString() << " has failed: "
-               << status.ToString();
-
+  bool found = false;
   lock_guard<simple_spinlock> l(&lock_);
+  VLOG(2) << "Tablet " << tablet_id_ << ": Current remote replicas in meta cache: "
+          << ReplicasAsStringUnlocked();
+  LOG(WARNING) << "Tablet " << tablet_id_ << ": Replica " << ts->ToString()
+               << " has failed: " << status.ToString();
   BOOST_FOREACH(RemoteReplica& rep, replicas_) {
     if (rep.ts == ts) {
       rep.failed = true;
+      found = true;
     }
   }
+  DCHECK(found) << "Tablet " << tablet_id_ << ": Unable to mark replica " << ts->ToString()
+                << " as failed. Replicas: " << ReplicasAsStringUnlocked();
 }
 
 int RemoteTablet::GetNumFailedReplicas() const {
@@ -211,6 +216,49 @@ void RemoteTablet::GetRemoteTabletServers(vector<RemoteTabletServer*>* servers) 
     }
     servers->push_back(replica.ts);
   }
+}
+
+void RemoteTablet::MarkTServerAsLeader(const RemoteTabletServer* server) {
+  bool found = false;
+  lock_guard<simple_spinlock> l(&lock_);
+  BOOST_FOREACH(RemoteReplica& replica, replicas_) {
+    if (replica.ts == server) {
+      replica.role = QuorumPeerPB::LEADER;
+      found = true;
+    } else if (replica.role == QuorumPeerPB::LEADER) {
+      replica.role = QuorumPeerPB::FOLLOWER;
+    }
+  }
+  VLOG(3) << "Latest replicas: " << ReplicasAsStringUnlocked();
+  DCHECK(found) << "Tablet " << tablet_id_ << ": Specified server not found: "
+                << server->ToString() << ". Replicas: " << ReplicasAsStringUnlocked();
+}
+
+void RemoteTablet::MarkTServerAsFollower(const RemoteTabletServer* server) {
+  bool found = false;
+  lock_guard<simple_spinlock> l(&lock_);
+  BOOST_FOREACH(RemoteReplica& replica, replicas_) {
+    if (replica.ts == server) {
+      replica.role = QuorumPeerPB::FOLLOWER;
+      found = true;
+    }
+  }
+  VLOG(3) << "Latest replicas: " << ReplicasAsStringUnlocked();
+  DCHECK(found) << "Tablet " << tablet_id_ << ": Specified server not found: "
+                << server->ToString() << ". Replicas: " << ReplicasAsStringUnlocked();
+}
+
+std::string RemoteTablet::ReplicasAsStringUnlocked() const {
+  DCHECK(lock_.is_locked());
+  string replicas_str;
+  BOOST_FOREACH(const RemoteReplica& rep, replicas_) {
+    if (!replicas_str.empty()) replicas_str += ", ";
+    strings::SubstituteAndAppend(&replicas_str, "$0 ($1, $2)",
+                                rep.ts->permanent_uuid(),
+                                QuorumPeerPB::Role_Name(rep.role),
+                                rep.failed ? "FAILED" : "OK");
+  }
+  return replicas_str;
 }
 
 ////////////////////////////////////////////////////////////
@@ -341,9 +389,10 @@ void LookupRpc::SendRpc() {
   }
 
   // Slow path: must lookup the tablet in the master.
-  VLOG(3) << "Fast lookup: no tablet"
+  VLOG(3) << "Fast lookup: no known tablet"
           << " for " << schema->DebugEncodedRowKey(key_, Schema::START_KEY)
-          << " of " << table_->name();
+          << " of " << table_->name()
+          << ": refreshing our metadata from the Master";
 
   if (!has_permit_) {
     has_permit_ = meta_cache_->AcquireMasterLookupPermit();
@@ -435,6 +484,9 @@ void LookupRpc::SendRpcCb(const Status& status) {
 }
 
 const scoped_refptr<RemoteTablet>& MetaCache::ProcessLookupResponse(const LookupRpc& rpc) {
+  VLOG(2) << "Processing master response for " << rpc.ToString()
+          << ". Response: " << rpc.resp().ShortDebugString();
+
   lock_guard<rw_spinlock> l(&lock_);
   SliceTabletMap& tablets_by_key = LookupOrInsert(&tablets_by_table_and_key_,
                                                   rpc.table_name(), SliceTabletMap());
