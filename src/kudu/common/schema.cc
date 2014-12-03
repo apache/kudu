@@ -267,21 +267,23 @@ string Schema::ToString() const {
                 "]");
 }
 
-void Schema::DecodeRowKey(Slice encoded_key,
-                          uint8_t* buffer,
-                          Arena* arena) const {
+Status Schema::DecodeRowKey(Slice encoded_key,
+                            uint8_t* buffer,
+                            Arena* arena) const {
   ContiguousRow row(this, buffer);
 
   for (size_t col_idx = 0; col_idx < num_key_columns(); ++col_idx) {
     const ColumnSchema& col = column(col_idx);
     const KeyEncoder& key_encoder = GetKeyEncoder(col.type_info()->type());
     bool is_last = col_idx == (num_key_columns() - 1);
-    key_encoder.Decode(&encoded_key,
-                       is_last,
-                       arena,
-                       row.mutable_cell_ptr(col_idx));
+    RETURN_NOT_OK_PREPEND(key_encoder.Decode(&encoded_key,
+                                             is_last,
+                                             arena,
+                                             row.mutable_cell_ptr(col_idx)),
+                          strings::Substitute("Error decoding composite key component '$0'",
+                                              col.name()));
   }
-
+  return Status::OK();
 }
 
 string Schema::DebugEncodedRowKey(Slice encoded_key, StartOrEnd start_or_end) const {
@@ -294,7 +296,10 @@ string Schema::DebugEncodedRowKey(Slice encoded_key, StartOrEnd start_or_end) co
 
   Arena arena(1024, 128 * 1024);
   uint8_t* buf = reinterpret_cast<uint8_t*>(arena.AllocateBytes(key_byte_size()));
-  DecodeRowKey(encoded_key, buf, &arena);
+  Status s = DecodeRowKey(encoded_key, buf, &arena);
+  if (!s.ok()) {
+    return "<invalid key: " + s.ToString() + ">";
+  }
   ConstContiguousRow row(this, buf);
   return DebugRowKey(row);
 }

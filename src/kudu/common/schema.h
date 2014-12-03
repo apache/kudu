@@ -448,8 +448,8 @@ class Schema {
   //
   // 'arena' is used for allocating indirect strings, but is unused
   // for other datatypes.
-  void DecodeRowKey(Slice encoded_key, uint8_t* buffer,
-                    Arena* arena) const;
+  Status DecodeRowKey(Slice encoded_key, uint8_t* buffer,
+                      Arena* arena) const WARN_UNUSED_RESULT;
 
   // Decode and stringify the given contiguous encoded row key in
   // order to, e.g., provide print human-readable information about a

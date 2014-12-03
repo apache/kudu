@@ -18,6 +18,7 @@
 #include "kudu/gutil/type_traits.h"
 #include "kudu/util/faststring.h"
 #include "kudu/util/memory/arena.h"
+#include "kudu/util/status.h"
 
 // The SSE-based encoding is not yet working. Don't define this!
 #undef KEY_ENCODER_USE_SSE
@@ -77,10 +78,14 @@ struct KeyEncoderTraits<Type, typename base::enable_if<
     Encode(key, dst);
   }
 
-  static void DecodeKeyPortion(Slice* encoded_key,
-                               bool is_last,
-                               Arena* arena,
-                               uint8_t* cell_ptr) {
+  static Status DecodeKeyPortion(Slice* encoded_key,
+                                 bool is_last,
+                                 Arena* arena,
+                                 uint8_t* cell_ptr) {
+    if (PREDICT_FALSE(encoded_key->size() < sizeof(cpp_type))) {
+      return Status::InvalidArgument("key too short", encoded_key->ToDebugString());
+    }
+
     unsigned_cpp_type val;
     memcpy(&val,  encoded_key->data(), sizeof(cpp_type));
     val = SwapEndian(val);
@@ -89,6 +94,7 @@ struct KeyEncoderTraits<Type, typename base::enable_if<
     }
     memcpy(cell_ptr, &val, sizeof(val));
     encoded_key->remove_prefix(sizeof(cpp_type));
+    return Status::OK();
   }
 };
 
@@ -136,23 +142,24 @@ struct KeyEncoderTraits<STRING> {
     }
   }
 
-  static void DecodeKeyPortion(Slice* encoded_key,
+  static Status DecodeKeyPortion(Slice* encoded_key,
                                bool is_last,
                                Arena* arena,
                                uint8_t* cell_ptr) {
     if (is_last) {
       Slice* dst_slice = reinterpret_cast<Slice *>(cell_ptr);
-      CHECK(arena->RelocateSlice(*encoded_key, dst_slice))
-        << "could not allocate space in the arena";
+      if (PREDICT_FALSE(!arena->RelocateSlice(*encoded_key, dst_slice))) {
+        return Status::RuntimeError("OOM");
+      }
       encoded_key->remove_prefix(encoded_key->size());
-      return;
+      return Status::OK();
     }
 
     uint8_t* separator = static_cast<uint8_t*>(memmem(encoded_key->data(), encoded_key->size(),
                                                       "\0\0", 2));
-    if (separator == NULL) {
-      // TODO: return status
-      LOG(FATAL) << "No separator found in " << encoded_key->ToDebugString();
+    if (PREDICT_FALSE(separator == NULL)) {
+      return Status::InvalidArgument("Missing separator after composite key string component",
+                                     encoded_key->ToDebugString());
     }
 
     uint8_t* src = encoded_key->mutable_data();
@@ -171,6 +178,7 @@ struct KeyEncoderTraits<STRING> {
     Slice slice(dst_start, real_len);
     memcpy(cell_ptr, &slice, sizeof(Slice));
     encoded_key->remove_prefix(max_len + 2);
+    return Status::OK();
   }
 };
 
@@ -188,7 +196,7 @@ struct KeyEncoderTraits<BOOL> {
     Encode(key, dst);
   }
 
-  static void DecodeKeyPortion(Slice* encoded_key,
+  static Status DecodeKeyPortion(Slice* encoded_key,
                                bool is_last,
                                Arena* arena,
                                uint8_t* cell_ptr) {
@@ -223,11 +231,11 @@ class KeyEncoder {
   // 'is_last' should be true when we expect that this component is the last (or only) component
   // of the composite key.
   // Any indirect data (eg strings) are allocated out of 'arena'.
-  void Decode(Slice* encoded_key,
-              bool is_last,
-              Arena* arena,
-              uint8_t* cell_ptr) const {
-    decode_key_portion_func_(encoded_key, is_last, arena, cell_ptr);
+  Status Decode(Slice* encoded_key,
+                bool is_last,
+                Arena* arena,
+                uint8_t* cell_ptr) const {
+    return decode_key_portion_func_(encoded_key, is_last, arena, cell_ptr);
   }
 
  private:
@@ -246,7 +254,7 @@ class KeyEncoder {
                                            faststring* dst);
   const EncodeWithSeparatorsFunc encode_with_separators_func_;
 
-  typedef void (*DecodeKeyPortionFunc)(Slice* enc_key, bool is_last,
+  typedef Status (*DecodeKeyPortionFunc)(Slice* enc_key, bool is_last,
                                        Arena* arena, uint8_t* cell_ptr);
   const DecodeKeyPortionFunc decode_key_portion_func_;
 
