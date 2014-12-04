@@ -376,5 +376,26 @@ TEST_F(LogCacheTest, TestEvictWhenGlobalSoftLimitExceeded) {
  ASSERT_EQ(size_with_one_msg, cache_->BytesUsed());
 }
 
+// Test that the log cache properly replaces messages when an index
+// is reused. This is a regression test for a bug where the memtracker's
+// consumption wasn't properly managed when messages were replaced.
+TEST_F(LogCacheTest, TestReplaceMessages) {
+  const int kPayloadSize = 128 * 1024;
+  shared_ptr<MemTracker> tracker = cache_->tracker_;;
+  ASSERT_EQ(0, tracker->consumption());
+
+  ASSERT_TRUE(AppendReplicateMessagesToCache(1, 1, kPayloadSize));
+  int size_with_one_msg = tracker->consumption();
+
+  for (int i = 0; i < 10; i++) {
+    ASSERT_TRUE(AppendReplicateMessagesToCache(1, 1, kPayloadSize));
+  }
+
+  EXPECT_EQ(size_with_one_msg, tracker->consumption());
+  EXPECT_EQ(Substitute("Preceding Op: 0.0, Pinned index: 0, LogCacheStats(num_ops=1, bytes=$0)",
+                       size_with_one_msg),
+            cache_->ToString());
+}
+
 } // namespace consensus
 } // namespace kudu

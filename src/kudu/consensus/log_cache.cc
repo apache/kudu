@@ -155,10 +155,9 @@ bool LogCache::AppendOperations(const vector<const ReplicateMsg*>& msgs,
     // have been evicted, when we released the lock above, so we
     // only delete when there is actually something still there.
     for (int64_t i = first->id().index(); i <= last_index; ++i) {
-      metrics_.log_cache_total_num_ops->Decrement();
       const ReplicateMsg* msg = EraseKeyReturnValuePtr(&cache_, i);
       if (msg != NULL) {
-        metrics_.log_cache_size_bytes->DecrementBy(msg->SpaceUsed());
+        AccountForMessageRemovalUnlocked(msg);
         delete msg;
       }
     }
@@ -400,10 +399,8 @@ void LogCache::Evict() {
     }
 
     preceding_first_op_ = msg->id();;
-    tracker_->Release(msg->SpaceUsed());
     VLOG_WITH_PREFIX(1) << "Evicting cache. Deleting: " << msg->id().ShortDebugString();
-    metrics_.log_cache_size_bytes->IncrementBy(-1 * msg->SpaceUsed());
-    metrics_.log_cache_total_num_ops->Decrement();
+    AccountForMessageRemovalUnlocked(msg);
     delete msg;
     cache_.erase(iter++);
   }
@@ -432,6 +429,12 @@ bool LogCache::WouldHardLimitBeViolated(size_t bytes) const {
   }
 #endif
   return local_limit_violated || global_limit_violated;
+}
+
+void LogCache::AccountForMessageRemovalUnlocked(const ReplicateMsg* msg) {
+  tracker_->Release(msg->SpaceUsed());
+  metrics_.log_cache_size_bytes->DecrementBy(msg->SpaceUsed());
+  metrics_.log_cache_total_num_ops->Decrement();
 }
 
 void LogCache::Flush() {

@@ -121,6 +121,7 @@ class LogCache {
   std::string ToString() const;
  private:
   FRIEND_TEST(LogCacheTest, TestAppendAndGetMessages);
+  FRIEND_TEST(LogCacheTest, TestReplaceMessages);
   friend class LogCacheTest;
 
   // Evicts all operations from the cache which are not later than
@@ -131,6 +132,10 @@ class LogCache {
   // either the local (per-tablet) hard limit or the global
   // (server-wide) hard limit.
   bool WouldHardLimitBeViolated(size_t bytes) const;
+
+  // Update metrics and MemTracker to account for the removal of the
+  // given message.
+  void AccountForMessageRemovalUnlocked(const ReplicateMsg* msg);
 
   // Return a string with stats
   std::string StatsStringUnlocked() const;
