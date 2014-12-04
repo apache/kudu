@@ -314,8 +314,8 @@ class RaftConsensusITest : public TabletServerTest {
     // the leader.
     TServerDetails* leader;
     if (master_found_leader_result.ok()) {
-      leader = DCHECK_NOTNULL(GetReplicaWithUuidOrNull(leader_uuid));
-      if (GetReplicaStatusAndCheckIfLeader(leader).ok()) {
+      leader = GetReplicaWithUuidOrNull(leader_uuid);
+      if (leader && GetReplicaStatusAndCheckIfLeader(leader).ok()) {
         return leader;
       }
     }
@@ -410,7 +410,8 @@ class RaftConsensusITest : public TabletServerTest {
       vector<string> leader_results;
       vector<string> replica_results;
 
-      TServerDetails* leader = DCHECK_NOTNULL(GetLeaderReplicaOrNull());
+      TServerDetails* leader = GetLeaderReplicaOrNull();
+      CHECK(leader != NULL);
       vector<TServerDetails*> followers;
       GetOnlyLiveFollowerReplicas(&followers);
 
@@ -1026,7 +1027,6 @@ TEST_F(RaftConsensusITest, TestAutomaticLeaderElection) {
   }
 
   // Verify the data on the remaining replicas.
-  WaitForReplicasAndUpdateLocations(kFinalNumReplicas); // Update cached locations.
   PruneFromReplicas(killed_leader_uuids);
   ASSERT_ALL_REPLICAS_AGREE(FLAGS_client_inserts_per_thread * kFinalNumReplicas);
 }
