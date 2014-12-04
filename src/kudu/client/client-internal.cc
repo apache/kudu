@@ -229,8 +229,8 @@ GetTableSchemaRpc::GetTableSchemaRpc(KuduClient* client,
       user_cb_(user_cb),
       table_name_(table_name),
       out_schema_(out_schema) {
-  DCHECK_NOTNULL(client);
-  DCHECK_NOTNULL(out_schema);
+  DCHECK(client);
+  DCHECK(out_schema);
 }
 
 GetTableSchemaRpc::~GetTableSchemaRpc() {
