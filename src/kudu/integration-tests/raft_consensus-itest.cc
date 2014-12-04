@@ -68,10 +68,11 @@ static const int kMaxRetries = 20;
 static const int kNumReplicas = 3;
 static const int kConsensusRpcTimeoutForTests = 50;
 
-// Integration test for distributed consensus.
-class DistConsensusTest : public TabletServerTest {
+// Integration test for the raft consensus implementation.
+// Uses the whole tablet server stack with ExternalMiniCluster.
+class RaftConsensusITest : public TabletServerTest {
  public:
-  DistConsensusTest()
+  RaftConsensusITest()
       : random_(SeedRandom()),
         inserters_(FLAGS_num_client_threads) {
   }
@@ -667,7 +668,7 @@ class DistConsensusTest : public TabletServerTest {
 
 // Test that we can retrieve the permanent uuid of a server running
 // consensus service via RPC.
-TEST_F(DistConsensusTest, TestGetPermanentUuid) {
+TEST_F(RaftConsensusITest, TestGetPermanentUuid) {
   BuildAndStart(kNumReplicas, vector<string>());
 
   QuorumPeerPB peer;
@@ -687,7 +688,7 @@ TEST_F(DistConsensusTest, TestGetPermanentUuid) {
 // TODO allow the scan to define an operation id, fetch the last id
 // from the leader and then use that id to make the replica wait
 // until it is done. This will avoid the sleeps below.
-TEST_F(DistConsensusTest, TestInsertAndMutateThroughConsensus) {
+TEST_F(RaftConsensusITest, TestInsertAndMutateThroughConsensus) {
   BuildAndStart(kNumReplicas, vector<string>());
 
   int num_iters = AllowSlowTests() ? 10 : 1;
@@ -701,7 +702,7 @@ TEST_F(DistConsensusTest, TestInsertAndMutateThroughConsensus) {
   ASSERT_ALL_REPLICAS_AGREE(FLAGS_client_inserts_per_thread * num_iters);
 }
 
-TEST_F(DistConsensusTest, TestFailedTransaction) {
+TEST_F(RaftConsensusITest, TestFailedTransaction) {
   BuildAndStart(kNumReplicas, vector<string>());
 
   WriteRequestPB req;
@@ -740,7 +741,7 @@ TEST_F(DistConsensusTest, TestFailedTransaction) {
 // Inserts rows through consensus and also starts one delay injecting thread
 // that steals consensus peer locks for a while. This is meant to test that
 // even with timeouts and repeated requests consensus still works.
-TEST_F(DistConsensusTest, MultiThreadedMutateAndInsertThroughConsensus) {
+TEST_F(RaftConsensusITest, MultiThreadedMutateAndInsertThroughConsensus) {
   BuildAndStart(kNumReplicas, vector<string>());
 
   if (500 == FLAGS_client_inserts_per_thread) {
@@ -754,7 +755,7 @@ TEST_F(DistConsensusTest, MultiThreadedMutateAndInsertThroughConsensus) {
   for (int i = 0; i < num_threads; i++) {
     scoped_refptr<kudu::Thread> new_thread;
     CHECK_OK(kudu::Thread::Create("test", strings::Substitute("ts-test$0", i),
-                                  &DistConsensusTest::InsertTestRowsRemoteThread,
+                                  &RaftConsensusITest::InsertTestRowsRemoteThread,
                                   this, i * FLAGS_client_inserts_per_thread,
                                   FLAGS_client_inserts_per_thread,
                                   FLAGS_client_num_batches_per_thread,
@@ -765,7 +766,7 @@ TEST_F(DistConsensusTest, MultiThreadedMutateAndInsertThroughConsensus) {
   for (int i = 0; i < kNumReplicas; i++) {
     scoped_refptr<kudu::Thread> new_thread;
     CHECK_OK(kudu::Thread::Create("test", strings::Substitute("chaos-test$0", i),
-                                  &DistConsensusTest::DelayInjectorThread,
+                                  &RaftConsensusITest::DelayInjectorThread,
                                   this, cluster_->tablet_server(i),
                                   kConsensusRpcTimeoutForTests,
                                   &new_thread));
@@ -778,7 +779,7 @@ TEST_F(DistConsensusTest, MultiThreadedMutateAndInsertThroughConsensus) {
   ASSERT_ALL_REPLICAS_AGREE(FLAGS_client_inserts_per_thread * FLAGS_num_client_threads);
 }
 
-TEST_F(DistConsensusTest, TestInsertOnNonLeader) {
+TEST_F(RaftConsensusITest, TestInsertOnNonLeader) {
   BuildAndStart(kNumReplicas, vector<string>());
 
   // Manually construct a write RPC to a replica and make sure it responds
@@ -802,7 +803,7 @@ TEST_F(DistConsensusTest, TestInsertOnNonLeader) {
   ASSERT_ALL_REPLICAS_AGREE(0);
 }
 
-TEST_F(DistConsensusTest, TestRunLeaderElection) {
+TEST_F(RaftConsensusITest, TestRunLeaderElection) {
   // Reset consensus rpc timeout to the default value or the election might fail often.
   FLAGS_consensus_rpc_timeout_ms = 1000;
 
@@ -848,7 +849,7 @@ TEST_F(DistConsensusTest, TestRunLeaderElection) {
   ASSERT_ALL_REPLICAS_AGREE(FLAGS_client_inserts_per_thread * num_iters * 2);
 }
 
-TEST_F(DistConsensusTest, TestInsertWhenTheQueueIsFull) {
+TEST_F(RaftConsensusITest, TestInsertWhenTheQueueIsFull) {
   vector<string> extra_flags;
   extra_flags.push_back("--log_cache_size_soft_limit_mb=0");
   extra_flags.push_back("--log_cache_size_hard_limit_mb=1");
@@ -932,7 +933,7 @@ TEST_F(DistConsensusTest, TestInsertWhenTheQueueIsFull) {
   ASSERT_ALL_REPLICAS_AGREE(successful_writes_counter);
 }
 
-TEST_F(DistConsensusTest, MultiThreadedInsertWithFailovers) {
+TEST_F(RaftConsensusITest, MultiThreadedInsertWithFailovers) {
   int kNumReplicas = 7;
 
   // Reset consensus rpc timeout to the default value or the election might fail often.
@@ -966,7 +967,7 @@ TEST_F(DistConsensusTest, MultiThreadedInsertWithFailovers) {
   for (int i = 0; i < num_threads; i++) {
     scoped_refptr<kudu::Thread> new_thread;
     CHECK_OK(kudu::Thread::Create("test", strings::Substitute("ts-test$0", i),
-                                  &DistConsensusTest::InsertTestRowsRemoteThread,
+                                  &RaftConsensusITest::InsertTestRowsRemoteThread,
                                   this, i * FLAGS_client_inserts_per_thread,
                                   FLAGS_client_inserts_per_thread,
                                   FLAGS_client_num_batches_per_thread,
@@ -989,7 +990,7 @@ TEST_F(DistConsensusTest, MultiThreadedInsertWithFailovers) {
 }
 
 // Test automatic leader election by killing leaders.
-TEST_F(DistConsensusTest, TestAutomaticLeaderElection) {
+TEST_F(RaftConsensusITest, TestAutomaticLeaderElection) {
   int kNumReplicas = 5;
   vector<string> flags;
   flags.push_back("--enable_leader_failure_detection=true");
