@@ -355,8 +355,16 @@ class TestPeerMapManager {
   }
 
   void Clear() {
-    boost::lock_guard<simple_spinlock> lock(lock_);
-    peers_.clear();
+    // We create a copy of the peers before we clear 'peers_' so that there's
+    // still a reference to each peer. If we reduce the reference count to 0 under
+    // the lock we might get a deadlock as on shutdown consensus indirectly
+    // destroys the test proxies which in turn reach into this class.
+    TestPeerMap copy = peers_;
+    {
+      boost::lock_guard<simple_spinlock> lock(lock_);
+      peers_.clear();
+    }
+
   }
 
  private:
