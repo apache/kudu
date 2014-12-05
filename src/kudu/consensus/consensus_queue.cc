@@ -180,23 +180,25 @@ void PeerMessageQueue::LocalPeerAppendFinished(const OpId& id,
   callback.Run(status);
 }
 
-Status PeerMessageQueue::AppendOperation(const ReplicateMsg* msg) {
+Status PeerMessageQueue::AppendOperation(const ReplicateRefPtr& msg) {
   return AppendOperations(boost::assign::list_of(msg), Bind(DoNothingStatusCB));
 }
 
-Status PeerMessageQueue::AppendOperations(const vector<const ReplicateMsg*>& msgs,
+Status PeerMessageQueue::AppendOperations(const vector<ReplicateRefPtr>& msgs,
                                           const StatusCallback& log_append_callback) {
 
   boost::unique_lock<simple_spinlock> lock(queue_lock_);
 
-  if (msgs.back()->id().term() > queue_state_.current_term) {
-    queue_state_.current_term = msgs.back()->id().term();
+  OpId last_id = msgs.back()->get()->id();
+
+  if (last_id.term() > queue_state_.current_term) {
+    queue_state_.current_term = last_id.term();
   }
 
   if (!log_cache_.AppendOperations(msgs,
                                    Bind(&PeerMessageQueue::LocalPeerAppendFinished,
                                         Unretained(this),
-                                        msgs.back()->id(),
+                                        last_id,
                                         log_append_callback))) {
     lock.unlock();
     if (PREDICT_FALSE((VLOG_IS_ON(2) || FLAGS_consensus_dump_queue_on_full))) {
@@ -206,7 +208,7 @@ Status PeerMessageQueue::AppendOperations(const vector<const ReplicateMsg*>& msg
     return Status::ServiceUnavailable("Cannot append replicate message. Queue is full.");
   }
 
-  queue_state_.last_appended = msgs.back()->id();
+  queue_state_.last_appended = last_id;
   UpdateMetrics();
 
   return Status::OK();
@@ -215,7 +217,7 @@ Status PeerMessageQueue::AppendOperations(const vector<const ReplicateMsg*>& msg
 Status PeerMessageQueue::GetOpsFromCacheOrFallback(const OpId& op,
                                                    int64_t fallback_index,
                                                    int max_batch_size,
-                                                   vector<const ReplicateMsg*>* messages,
+                                                   vector<ReplicateRefPtr>* messages,
                                                    OpId* preceding_id) {
 
   OpId new_preceding;
@@ -265,7 +267,7 @@ Status PeerMessageQueue::RequestForPeer(const string& uuid,
   if (!peer->is_new) {
 
     // The batch of messages to send to the peer.
-    vector<const ReplicateMsg*> messages;
+    vector<ReplicateRefPtr> messages;
     int max_batch_size = FLAGS_consensus_max_batch_size_bytes - request->ByteSize();
 
     // We try to get the peer's last received op. If that fails because the op
@@ -285,8 +287,8 @@ Status PeerMessageQueue::RequestForPeer(const string& uuid,
     // "all replicated" point. At some point we may want to allow partially loading
     // (and not pinning) earlier messages. At that point we'll need to do something
     // smarter here, like copy or ref-count.
-    BOOST_FOREACH(const ReplicateMsg* msg, messages) {
-      request->mutable_ops()->AddAllocated(const_cast<ReplicateMsg*>(msg));
+    BOOST_FOREACH(const ReplicateRefPtr& msg, messages) {
+      request->mutable_ops()->AddAllocated(msg->get());
     }
     DCHECK_LE(request->ByteSize(), FLAGS_consensus_max_batch_size_bytes);
   }
@@ -322,50 +324,43 @@ void PeerMessageQueue::AdvanceQueueWatermark(const char* type,
         << " peer changed from " << replicated_before << " to " << replicated_after;
   }
 
-  // Update 'watermark', e.g. the commit index.
-  // We look at the last 'watermark', this response may only impact 'watermark'
-  // if it is currently lower than 'replicated_after'.
-  if (watermark->index() < replicated_after.index()) {
-
-    // Go through the peer's watermarks, we want the highest watermark that
-    // 'num_peers_required' of peers has replicated. To find this we do the
-    // following:
-    // - Store all the peer's 'last_received' in a vector
-    // - Sort the vector
-    // - Find the vector.size() - 'num_peers_required' position, this
-    //   will be the new 'watermark'.
-    vector<const OpId*> watermarks;
-    BOOST_FOREACH(const PeersMap::value_type& peer, peers_map_) {
-      if (peer.second->is_last_exchange_successful) {
-        watermarks.push_back(&peer.second->last_received);
-      }
-    }
-
-    // If we haven't enough peers to calculate the watermark return.
-    if (watermarks.size() < num_peers_required) {
-      return;
-    }
-
-    std::sort(watermarks.begin(), watermarks.end(), OpIdIndexLessThanPtrFunctor());
-
-    OpId new_watermark = *watermarks[watermarks.size() - num_peers_required];
-    OpId old_watermark = *watermark;
-    watermark->CopyFrom(new_watermark);
-
-    VLOG_WITH_PREFIX(1) << "Updated " << type << " watermark "
-        << "from " << old_watermark << " to " << new_watermark;
-    if (VLOG_IS_ON(3)) {
-      VLOG_WITH_PREFIX(3) << "Peers: ";
-      BOOST_FOREACH(const PeersMap::value_type& peer, peers_map_) {
-        VLOG_WITH_PREFIX(3) << "Peer: " << peer.second->ToString();
-      }
-      VLOG_WITH_PREFIX(3) << "Sorted watermarks:";
-      BOOST_FOREACH(const OpId* watermark, watermarks) {
-        VLOG_WITH_PREFIX(3) << "Watermark: " << watermark->ShortDebugString();
-      }
+  // Go through the peer's watermarks, we want the highest watermark that
+  // 'num_peers_required' of peers has replicated. To find this we do the
+  // following:
+  // - Store all the peer's 'last_received' in a vector
+  // - Sort the vector
+  // - Find the vector.size() - 'num_peers_required' position, this
+  //   will be the new 'watermark'.
+  vector<const OpId*> watermarks;
+  BOOST_FOREACH(const PeersMap::value_type& peer, peers_map_) {
+    if (peer.second->is_last_exchange_successful) {
+      watermarks.push_back(&peer.second->last_received);
     }
   }
 
+  // If we haven't enough peers to calculate the watermark return.
+  if (watermarks.size() < num_peers_required) {
+    return;
+  }
+
+  std::sort(watermarks.begin(), watermarks.end(), OpIdIndexLessThanPtrFunctor());
+
+  OpId new_watermark = *watermarks[watermarks.size() - num_peers_required];
+  OpId old_watermark = *watermark;
+  watermark->CopyFrom(new_watermark);
+
+  VLOG_WITH_PREFIX(1) << "Updated " << type << " watermark "
+      << "from " << old_watermark << " to " << new_watermark;
+  if (VLOG_IS_ON(3)) {
+    VLOG_WITH_PREFIX(3) << "Peers: ";
+    BOOST_FOREACH(const PeersMap::value_type& peer, peers_map_) {
+      VLOG_WITH_PREFIX(3) << "Peer: " << peer.second->ToString();
+    }
+    VLOG_WITH_PREFIX(3) << "Sorted watermarks:";
+    BOOST_FOREACH(const OpId* watermark, watermarks) {
+      VLOG_WITH_PREFIX(3) << "Watermark: " << watermark->ShortDebugString();
+    }
+  }
 }
 
 void PeerMessageQueue::ResponseFromPeer(const ConsensusResponsePB& response,
@@ -553,7 +548,6 @@ void PeerMessageQueue::DumpToHtml(std::ostream& out) const {
 void PeerMessageQueue::ClearUnlocked() {
   STLDeleteValues(&peers_map_);
   queue_state_.state = kQueueClosed;
-  log_cache_.Flush();
 }
 
 void PeerMessageQueue::Close() {

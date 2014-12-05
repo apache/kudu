@@ -129,14 +129,14 @@ class PeerMessageQueue {
   // Returns OK unless the message could not be added to the queue for some
   // reason (e.g. the queue reached max size).
   // If it returns OK the queue takes ownership of 'msg'.
-  virtual Status AppendOperation(const ReplicateMsg* msg);
+  virtual Status AppendOperation(const ReplicateRefPtr& msg);
 
   // Appends a vector of messages to be replicated to the quorum.
   // Returns OK unless the message could not be added to the queue for some
   // reason (e.g. the queue reached max size), calls 'log_append_callback' when
   // the messages are durable in the local Log.
   // If it returns OK the queue takes ownership of 'msgs'.
-  virtual Status AppendOperations(const std::vector<const ReplicateMsg*>& msgs,
+  virtual Status AppendOperations(const std::vector<ReplicateRefPtr>& msgs,
                                   const StatusCallback& log_append_callback);
 
   // Assembles a request for a quorum peer, adding entries past 'op_id' up to
@@ -307,7 +307,7 @@ class PeerMessageQueue {
   Status GetOpsFromCacheOrFallback(const OpId& op,
                                    int64_t fallback_index,
                                    int max_batch_size,
-                                   std::vector<const ReplicateMsg*>* messages,
+                                   std::vector<ReplicateRefPtr>* messages,
                                    OpId* preceding_id);
 
   std::vector<PeerMessageQueueObserver*> observers_;

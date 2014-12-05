@@ -13,6 +13,7 @@
 #include <glog/logging.h>
 
 #include "kudu/consensus/opid_util.h"
+#include "kudu/consensus/ref_counted_replicate.h"
 #include "kudu/fs/fs_manager.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/stl_util.h"
@@ -698,15 +699,12 @@ Status WritableLogSegment::WriteEntryBatch(const Slice& data) {
 }
 
 
-void CreateBatchFromAllocatedOperations(const consensus::ReplicateMsg* const* msgs,
-                                        int num_msgs,
+void CreateBatchFromAllocatedOperations(const vector<consensus::ReplicateRefPtr>& msgs,
                                         gscoped_ptr<LogEntryBatchPB>* batch) {
   gscoped_ptr<LogEntryBatchPB> entry_batch(new LogEntryBatchPB);
-  entry_batch->mutable_entry()->Reserve(num_msgs);
-  for (size_t i = 0; i < num_msgs; i++) {
-    // We want to re-use the existing objects here, so const-casting allows
-    // us to put a reference in the new PB.
-    consensus::ReplicateMsg* msg = const_cast<consensus::ReplicateMsg*>(msgs[i]);
+  entry_batch->mutable_entry()->Reserve(msgs.size());
+  for (size_t i = 0; i < msgs.size(); i++) {
+    consensus::ReplicateMsg* msg = msgs[i]->get();
     LogEntryPB* entry_pb = entry_batch->add_entry();
     entry_pb->set_type(log::REPLICATE);
     entry_pb->set_allocated_replicate(msg);

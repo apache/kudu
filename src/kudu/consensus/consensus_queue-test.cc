@@ -68,10 +68,8 @@ class ConsensusQueueTest : public KuduTest {
   }
 
   Status AppendReplicateMsg(int term, int index, int payload_size) {
-    const ReplicateMsg* replicate = CreateDummyReplicate(term,
-                                                         index,
-                                                         payload_size).release();
-    return queue_->AppendOperation(replicate);
+    return queue_->AppendOperation(
+        make_scoped_refptr_replicate(CreateDummyReplicate(term, index, payload_size).release()));
   }
 
   // Updates the peer's watermark in the queue so that it matches
@@ -540,8 +538,8 @@ TEST_F(ConsensusQueueTest, TestQueueHandlesOperationOverwriting) {
 
   // Test even when a correct peer responds (meaning we actually get to execute
   // watermark advancement) we sill have the same queue watermarks.
-  const ReplicateMsg* replicate = CreateDummyReplicate(2, 21, 0).release();
-  ASSERT_OK(queue_->AppendOperation(replicate));
+  ReplicateMsg* replicate = CreateDummyReplicate(2, 21, 0).release();
+  ASSERT_OK(queue_->AppendOperation(make_scoped_refptr(new RefCountedReplicate(replicate))));
   WaitForLocalPeerToAckIndex(21);
 
   ASSERT_OPID_EQ(queue_->GetAllReplicatedIndexForTests(), MinimumOpId());
@@ -580,6 +578,41 @@ TEST_F(ConsensusQueueTest, TestQueueHandlesOperationOverwriting) {
 
   // The messages still belong to the queue so we have to release them.
   request.mutable_ops()->ExtractSubrange(0, request.ops().size(), NULL);
+}
+
+// Test for a bug where we wouldn't move any watermark back, when overwriting
+// operations, which would cause a check failure on the write immediately
+// following the overwriting write.
+TEST_F(ConsensusQueueTest, TestQueueMovesWatermarksBackward) {
+  queue_->Init(MinimumOpId());
+  queue_->SetNonLeaderMode();
+  // Append a bunch of messages.
+  AppendReplicateMessagesToQueue(queue_.get(), 1, 10);
+  log_->WaitUntilAllFlushed();
+  ASSERT_OPID_EQ(queue_->GetAllReplicatedIndexForTests(), MakeOpId(1, 10));
+  // Now rewrite some of the operations and wait for the log to append.
+  Synchronizer synch;
+  CHECK_OK(queue_->AppendOperations(
+      boost::assign::list_of(make_scoped_refptr(new RefCountedReplicate(
+          CreateDummyReplicate(2, 5, 0).release()))),
+      synch.AsStatusCallback()));
+
+  // Wait for the operation to be in the log.
+  ASSERT_OK(synch.Wait());
+
+  // Without the fix the following append would trigger a check failure
+  // in log cache.
+  synch.Reset();
+  CHECK_OK(queue_->AppendOperations(
+      boost::assign::list_of(make_scoped_refptr(new RefCountedReplicate(
+          CreateDummyReplicate(2, 6, 0).release()))),
+      synch.AsStatusCallback()));
+
+  // Wait for the operation to be in the log.
+  ASSERT_OK(synch.Wait());
+
+  // Now the all replicated watermark should have moved backward.
+  ASSERT_OPID_EQ(queue_->GetAllReplicatedIndexForTests(), MakeOpId(2, 6));
 }
 
 }  // namespace consensus

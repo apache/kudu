@@ -48,12 +48,11 @@ class MockQueue : public PeerMessageQueue {
                                    uint64_t current_term,
                                    int majority_size));
   MOCK_METHOD0(SetNonLeaderMode, void());
-  virtual Status AppendOperations(const vector<const ReplicateMsg*>& msgs,
+  virtual Status AppendOperations(const vector<ReplicateRefPtr>& msgs,
                                   const StatusCallback& callback) OVERRIDE {
-    STLDeleteElements(const_cast<vector<const ReplicateMsg*>* >(&msgs));
     return AppendOperationsMock(msgs, callback);
   }
-  MOCK_METHOD2(AppendOperationsMock, Status(const vector<const ReplicateMsg*>&,
+  MOCK_METHOD2(AppendOperationsMock, Status(const vector<ReplicateRefPtr>& msgs,
                                             const StatusCallback& callback));
   MOCK_METHOD1(TrackPeer, void(const string&));
   MOCK_METHOD1(UntrackPeer, void(const string&));
@@ -120,6 +119,8 @@ class RaftConsensusTest : public KuduTest {
 
     ON_CALL(*txn_factory_, StartReplicaTransactionMock(_))
         .WillByDefault(Invoke(this, &RaftConsensusTest::StartReplicaTransaction));
+    ON_CALL(*queue_, AppendOperationsMock(_, _))
+        .WillByDefault(Invoke(this, &RaftConsensusTest::AppendToLog));
 
     use_continuations_ = false;
   }
@@ -146,6 +147,18 @@ class RaftConsensusTest : public KuduTest {
                                        clock_,
                                        txn_factory_.get(),
                                        log_.get()));
+  }
+
+  Status AppendToLog(const vector<ReplicateRefPtr>& msgs,
+                     const StatusCallback& callback) {
+    return log_->AsyncAppendReplicates(msgs,
+                                       Bind(LogAppendCallback, callback));
+  }
+
+  static void LogAppendCallback(const StatusCallback& callback,
+                                const Status& s) {
+    CHECK_OK(s);
+    callback.Run(s);
   }
 
   void SetContinuationIfEnabled(ConsensusRound* round) {
@@ -445,9 +458,10 @@ TEST_F(RaftConsensusTest, TestAbortOperations) {
       .Times(1)
       .WillRepeatedly(Return(Status::OK()));
 
-  // The leader will initially try to push 11 ops.
+  // We'll append to the queue 12 times, the initial cc txn + 10 initial ops while leader
+  // and the new leader's update, when we're overwriting operations.
   EXPECT_CALL(*queue_, AppendOperationsMock(_, _))
-      .Times(12).WillRepeatedly(Return(Status::OK()));;
+      .Times(12);
 
   // .. but those will be overwritten later by another
   // leader, which will push and commit 5 ops.

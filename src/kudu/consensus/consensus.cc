@@ -32,21 +32,21 @@ ConsensusRound::ConsensusRound(Consensus* consensus,
                                ConsensusCommitContinuation* commit_continuation,
                                const std::tr1::shared_ptr<FutureCallback>& commit_callback)
     : consensus_(consensus),
-      replicate_msg_(replicate_msg.Pass()),
+      replicate_msg_(new RefCountedReplicate(replicate_msg.release())),
       continuation_(commit_continuation),
       commit_callback_(commit_callback) {
 }
 
 ConsensusRound::ConsensusRound(Consensus* consensus,
-                               gscoped_ptr<ReplicateMsg> replicate_msg)
+                               const ReplicateRefPtr& replicate_msg)
     : consensus_(consensus),
-      replicate_msg_(replicate_msg.Pass()),
+      replicate_msg_(replicate_msg),
       continuation_(NULL) {
   DCHECK_NOTNULL(replicate_msg_.get());
 }
 
 Status ConsensusRound::Commit(gscoped_ptr<CommitMsg> commit) {
-  commit->mutable_commited_op_id()->CopyFrom(replicate_msg_->id());
+  commit->mutable_commited_op_id()->CopyFrom(replicate_msg_->get()->id());
   return consensus_->Commit(commit.Pass(), commit_callback_->AsStatusCallback());
 }
 

@@ -62,7 +62,7 @@ Status LocalConsensus::Start(const ConsensusBootstrapInfo& info) {
     new_quorum->mutable_peers(0)->set_role(QuorumPeerPB::LEADER);
     new_quorum->set_seqno(initial_quorum.seqno() + 1);
 
-    gscoped_ptr<ReplicateMsg> replicate(new ReplicateMsg);
+    ReplicateMsg* replicate = new ReplicateMsg;
     replicate->set_op_type(CHANGE_CONFIG_OP);
     ChangeConfigRequestPB* cc_req = replicate->mutable_change_config_request();
     cc_req->set_tablet_id(options_.tablet_id);
@@ -72,7 +72,7 @@ Status LocalConsensus::Start(const ConsensusBootstrapInfo& info) {
     replicate->mutable_id()->set_term(0);
     replicate->mutable_id()->set_index(next_op_id_index_);
 
-    round.reset(new ConsensusRound(this, replicate.Pass()));
+    round.reset(new ConsensusRound(this, make_scoped_refptr_replicate(replicate)));
     state_ = kRunning;
   }
 
@@ -110,7 +110,8 @@ Status LocalConsensus::Replicate(ConsensusRound* round) {
     // It's important that we do this under the same lock as we generate
     // the op id, so that we log things in-order.
     gscoped_ptr<log::LogEntryBatchPB> entry_batch;
-    log::CreateBatchFromAllocatedOperations(&msg, 1, &entry_batch);
+    log::CreateBatchFromAllocatedOperations(
+        boost::assign::list_of(round->replicate_scoped_refptr()), &entry_batch);
 
     RETURN_NOT_OK(log_->Reserve(log::REPLICATE, entry_batch.Pass(),
                                 &reserved_entry_batch));

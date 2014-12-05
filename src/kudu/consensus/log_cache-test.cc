@@ -52,14 +52,11 @@ class LogCacheTest : public KuduTest {
   }
 
   virtual void TearDown() OVERRIDE {
-    cache_->Flush();
+    log_->WaitUntilAllFlushed();
   }
 
   void CloseAndReopenCache(const OpId& preceding_id,
                            const string& mem_tracker_name) {
-    if (cache_) {
-      cache_->Flush();
-    }
     cache_.reset(new LogCache(metric_context_,
                               log_.get(),
                               kPeerUuid,
@@ -81,10 +78,10 @@ class LogCacheTest : public KuduTest {
     for (int i = first; i < first + count; i++) {
       int term = i / 7;
       int index = i;
-      vector<const ReplicateMsg*> msgs;
-      msgs.push_back(CreateDummyReplicate(term, index, payload_size).release());
+      vector<ReplicateRefPtr> msgs;
+      msgs.push_back(make_scoped_refptr_replicate(
+              CreateDummyReplicate(term, index, payload_size).release()));
       if (!cache_->AppendOperations(msgs, Bind(&FatalOnError))) {
-        STLDeleteElements(&msgs);
         return false;
       }
     }
@@ -93,7 +90,7 @@ class LogCacheTest : public KuduTest {
 
   Status RetryReadWhileIncomplete(int64_t after_op_index,
                                   int max_size_bytes,
-                                  std::vector<const ReplicateMsg*>* messages,
+                                  std::vector<ReplicateRefPtr>* messages,
                                   OpId* preceding_op) {
     Status s;
     int sleep_for = 0;
@@ -121,8 +118,8 @@ class LogCacheTest : public KuduTest {
   MetricRegistry metric_registry_;
   MetricContext metric_context_;
   gscoped_ptr<FsManager> fs_manager_;
-  gscoped_ptr<log::Log> log_;
   gscoped_ptr<LogCache> cache_;
+  gscoped_ptr<log::Log> log_;
 };
 
 
@@ -132,8 +129,9 @@ TEST_F(LogCacheTest, TestAppendAndGetMessages) {
   ASSERT_TRUE(AppendReplicateMessagesToCache(1, 100));
   ASSERT_EQ(100, cache_->metrics_.log_cache_total_num_ops->value());
   ASSERT_GE(cache_->metrics_.log_cache_size_bytes->value(), 500);
+  log_->WaitUntilAllFlushed();
 
-  vector<const ReplicateMsg*> messages;
+  vector<ReplicateRefPtr> messages;
   OpId preceding;
   ASSERT_OK(cache_->ReadOps(0, 8 * 1024 * 1024, &messages, &preceding));
   EXPECT_EQ(100, messages.size());
@@ -144,7 +142,7 @@ TEST_F(LogCacheTest, TestAppendAndGetMessages) {
   ASSERT_OK(cache_->ReadOps(70, 8 * 1024 * 1024, &messages, &preceding));
   EXPECT_EQ(30, messages.size());
   EXPECT_EQ("10.70", OpIdToString(preceding));
-  EXPECT_EQ("10.71", OpIdToString(messages[0]->id()));
+  EXPECT_EQ("10.71", OpIdToString(messages[0]->get()->id()));
 
   // Get at the end of the cache
   messages.clear();
@@ -163,7 +161,7 @@ TEST_F(LogCacheTest, TestAppendAndGetMessages) {
   RetryReadWhileIncomplete(20, 8 * 1024 * 1024, &messages, &preceding);
   EXPECT_EQ(80, messages.size());
   EXPECT_EQ("2.20", OpIdToString(preceding));
-  EXPECT_EQ("3.21", OpIdToString(messages[0]->id()));
+  EXPECT_EQ("3.21", OpIdToString(messages[0]->get()->id()));
 }
 
 
@@ -177,9 +175,10 @@ TEST_F(LogCacheTest, TestAlwaysYieldsAtLeastOneMessage) {
 
   // Append several large ops to the cache
   ASSERT_TRUE(AppendReplicateMessagesToCache(1, 4, kPayloadSize));
+  log_->WaitUntilAllFlushed();
 
   // We should get one of them, even though we only ask for 100 bytes
-  vector<const ReplicateMsg*> messages;
+  vector<ReplicateRefPtr> messages;
   OpId preceding;
   ASSERT_OK(cache_->ReadOps(0, 100, &messages, &preceding));
   ASSERT_EQ(1, messages.size());
@@ -216,8 +215,9 @@ TEST_F(LogCacheTest, TestCacheRefusesRequestWhenFilled) {
 TEST_F(LogCacheTest, TestCacheEdgeCases) {
   // Append 1 message to the cache
   ASSERT_TRUE(AppendReplicateMessagesToCache(1, 1));
+  log_->WaitUntilAllFlushed();
 
-  std::vector<const ReplicateMsg*> messages;
+  std::vector<ReplicateRefPtr> messages;
   OpId preceding;
 
   // Test when the searched index is MinimumOpId().index().

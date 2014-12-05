@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "kudu/consensus/consensus.pb.h"
+#include "kudu/consensus/ref_counted_replicate.h"
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/util/status.h"
@@ -314,16 +315,20 @@ class ConsensusRound {
   // replicate callback and the commit callback is set later, after the transaction
   // is actually started.
   ConsensusRound(Consensus* consensus,
-                 gscoped_ptr<ReplicateMsg> replicate_msg);
+                 const ReplicateRefPtr& replicate_msg);
 
   ReplicateMsg* replicate_msg() {
-    return replicate_msg_.get();
+    return replicate_msg_->get();
+  }
+
+  const ReplicateRefPtr& replicate_scoped_refptr() {
+    return replicate_msg_;
   }
 
   // Returns the id of the (replicate) operation this context
   // refers to. This is only set _after_ Consensus::Replicate(context).
   OpId id() const {
-    return DCHECK_NOTNULL(replicate_msg_.get())->id();
+    return replicate_msg_->get()->id();
   }
 
   Status Commit(gscoped_ptr<CommitMsg> commit);
@@ -352,7 +357,7 @@ class ConsensusRound {
   friend class RaftConsensusQuorumTest;
   Consensus* consensus_;
   // This round's replicate message.
-  gscoped_ptr<ReplicateMsg> replicate_msg_;
+  ReplicateRefPtr replicate_msg_;
 
   // The continuation that will be called once the transaction is
   // deemed committed/aborted by consensus.

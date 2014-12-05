@@ -41,6 +41,7 @@ namespace log {
 
 using consensus::CommitMsg;
 using consensus::OpId;
+using consensus::ReplicateRefPtr;
 using env_util::OpenFileForRandom;
 using strings::Substitute;
 using std::tr1::shared_ptr;
@@ -348,14 +349,17 @@ Status Log::AsyncAppend(LogEntryBatch* entry_batch, const StatusCallback& callba
   return Status::OK();
 }
 
-Status Log::AsyncAppendReplicates(const consensus::ReplicateMsg* const* msgs,
-                                  int num_msgs,
+Status Log::AsyncAppendReplicates(const vector<ReplicateRefPtr>& msgs,
                                   const StatusCallback& callback) {
   gscoped_ptr<LogEntryBatchPB> batch;
-  CreateBatchFromAllocatedOperations(msgs, num_msgs, &batch);
+  CreateBatchFromAllocatedOperations(msgs, &batch);
 
   LogEntryBatch* reserved_entry_batch;
   RETURN_NOT_OK(Reserve(REPLICATE, batch.Pass(), &reserved_entry_batch));
+  // If we're able to reserve set the vector of replicate scoped ptrs in
+  // the LogEntryBatch. This will make sure there's a reference for each
+  // replicate while we're appending.
+  reserved_entry_batch->SetReplicates(msgs);
 
   RETURN_NOT_OK(AsyncAppend(reserved_entry_batch, callback));
   return Status::OK();

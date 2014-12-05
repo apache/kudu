@@ -122,20 +122,20 @@ class LogTestBase : public KuduTest {
     }
   }
 
-  static void CheckReplicateResult(gscoped_ptr<ReplicateMsg> msg, const Status& s) {
+  static void CheckReplicateResult(const consensus::ReplicateRefPtr& msg, const Status& s) {
     CHECK_OK(s);
   }
 
   // Appends a batch with size 2 (1 insert, 1 mutate) to the log.
   void AppendReplicateBatch(int index, bool sync = APPEND_SYNC) {
-    gscoped_ptr<ReplicateMsg> replicate(new ReplicateMsg);
-    replicate->set_op_type(WRITE_OP);
+    consensus::ReplicateRefPtr replicate = make_scoped_refptr_replicate(new ReplicateMsg());
+    replicate->get()->set_op_type(WRITE_OP);
 
-    OpId* op_id = replicate->mutable_id();
+    OpId* op_id = replicate->get()->mutable_id();
     op_id->set_term(0);
     op_id->set_index(index);
 
-    WriteRequestPB* batch_request = replicate->mutable_write_request();
+    WriteRequestPB* batch_request = replicate->get()->mutable_write_request();
     ASSERT_STATUS_OK(SchemaToPB(schema_, batch_request->mutable_schema()));
     AddTestRowToPB(RowOperationsPB::INSERT, schema_,
                    index,
@@ -149,17 +149,17 @@ class LogTestBase : public KuduTest {
                    batch_request->mutable_row_operations());
     batch_request->set_tablet_id(kTestTablet);
 
-    ReplicateMsg* replicate_ptr = replicate.get();
     if (sync) {
       Synchronizer s;
-      ASSERT_STATUS_OK(log_->AsyncAppendReplicates(&replicate_ptr, 1, s.AsStatusCallback()));
+      ASSERT_STATUS_OK(log_->AsyncAppendReplicates(boost::assign::list_of(replicate),
+                                                   s.AsStatusCallback()));
       ASSERT_STATUS_OK(s.Wait());
     } else {
       // AsyncAppendReplicates does not free the ReplicateMsg on completion, so we
       // need to pass it through to our callback.
-      ASSERT_STATUS_OK(log_->AsyncAppendReplicates(&replicate_ptr, 1,
+      ASSERT_STATUS_OK(log_->AsyncAppendReplicates(boost::assign::list_of(replicate),
                                                    Bind(&LogTestBase::CheckReplicateResult,
-                                                        Passed(&replicate))));
+                                                        replicate)));
     }
   }
 

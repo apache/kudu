@@ -136,7 +136,7 @@ class RaftConsensus : public Consensus,
   struct LeaderRequest {
     std::string leader_uuid;
     const OpId* preceding_opid;
-    std::vector<const ReplicateMsg*> messages;
+    std::vector<ReplicateRefPtr> messages;
   };
 
   std::string LogPrefixUnlocked();
@@ -214,7 +214,7 @@ class RaftConsensus : public Consensus,
 
   OpId GetLastOpIdFromLog();
 
-  Status StartReplicaTransactionUnlocked(gscoped_ptr<ReplicateMsg> msg);
+  Status StartReplicaTransactionUnlocked(const ReplicateRefPtr& msg);
 
   // Return header string for RequestVote log messages. The ReplicaState lock must be held.
   std::string GetRequestVoteLogPrefixUnlocked() const;

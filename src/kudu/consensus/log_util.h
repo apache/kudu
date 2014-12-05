@@ -13,6 +13,7 @@
 #include <vector>
 
 #include "kudu/consensus/log.pb.h"
+#include "kudu/consensus/ref_counted_replicate.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/util/atomic.h"
@@ -367,8 +368,7 @@ class WritableLogSegment {
 // ReplicateMsgs in 'msgs'.
 // We use C-style passing here to avoid having to allocate a vector
 // in some hot paths.
-void CreateBatchFromAllocatedOperations(const consensus::ReplicateMsg* const* msgs,
-                                        int num_msgs,
+void CreateBatchFromAllocatedOperations(const std::vector<consensus::ReplicateRefPtr>& msgs,
                                         gscoped_ptr<LogEntryBatchPB>* batch);
 
 // Checks if 'fname' is a correctly formatted name of log segment

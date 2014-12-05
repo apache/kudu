@@ -28,6 +28,8 @@ namespace log {
 
 using std::tr1::shared_ptr;
 using std::vector;
+using consensus::ReplicateRefPtr;
+using consensus::make_scoped_refptr_replicate;
 
 namespace {
 
@@ -69,14 +71,11 @@ class MultiThreadedLogTest : public LogTestBase {
   }
 
   void LogWriterThread(int thread_id) {
-    vector<const ReplicateMsg*> replicates;
-    ElementDeleter deleter(&replicates);
-
     CountDownLatch latch(FLAGS_num_batches_per_thread);
     vector<Status> errors;
     for (int i = 0; i < FLAGS_num_batches_per_thread; i++) {
       LogEntryBatch* entry_batch;
-      vector<const ReplicateMsg*> batch_replicates;
+      vector<consensus::ReplicateRefPtr> batch_replicates;
       int num_ops = static_cast<int>(random_.Normal(
           static_cast<double>(FLAGS_num_ops_per_batch_avg), 1.0));
       DVLOG(1) << num_ops << " ops in this batch";
@@ -84,35 +83,31 @@ class MultiThreadedLogTest : public LogTestBase {
       {
         boost::lock_guard<simple_spinlock> lock_guard(lock_);
         for (int j = 0; j < num_ops; j++) {
-          gscoped_ptr<ReplicateMsg> replicate(new ReplicateMsg);
+          ReplicateRefPtr replicate = make_scoped_refptr_replicate(new ReplicateMsg);
           uint32_t index = current_id_++;
-          OpId* op_id = replicate->mutable_id();
+          OpId* op_id = replicate->get()->mutable_id();
           op_id->set_term(0);
           op_id->set_index(index);
 
-          replicate->set_op_type(WRITE_OP);
+          replicate->get()->set_op_type(WRITE_OP);
 
-          tserver::WriteRequestPB* request = replicate->mutable_write_request();
-          AddTestRowToPB(RowOperationsPB::INSERT, schema_,
-                         index,
-                         0,
+          tserver::WriteRequestPB* request = replicate->get()->mutable_write_request();
+          AddTestRowToPB(RowOperationsPB::INSERT, schema_, index, 0,
                          "this is a test insert",
                          request->mutable_row_operations());
           request->set_tablet_id(kTestTablet);
-          batch_replicates.push_back(replicate.release());
+          batch_replicates.push_back(replicate);
         }
 
         gscoped_ptr<log::LogEntryBatchPB> entry_batch_pb;
-        log::CreateBatchFromAllocatedOperations(&batch_replicates[0],
-                                                batch_replicates.size(),
-                                                &entry_batch_pb);
+        CreateBatchFromAllocatedOperations(batch_replicates,
+                                           &entry_batch_pb);
 
         ASSERT_STATUS_OK(log_->Reserve(REPLICATE, entry_batch_pb.Pass(), &entry_batch));
       } // lock_guard scope
       CustomLatchCallback* cb = new CustomLatchCallback(&latch, &errors);
+      entry_batch->SetReplicates(batch_replicates);
       ASSERT_STATUS_OK(log_->AsyncAppend(entry_batch, cb->AsStatusCallback()));
-      // Copy 'batch_replicates' to 'replicates', so that they can be free upon thread termination.
-      std::copy(batch_replicates.begin(), batch_replicates.end(), std::back_inserter(replicates));
     }
     LOG_TIMING(INFO, strings::Substitute("thread $0 waiting to append and sync $1 batches",
                                         thread_id, FLAGS_num_batches_per_thread)) {

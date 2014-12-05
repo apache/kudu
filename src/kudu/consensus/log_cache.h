@@ -10,6 +10,7 @@
 
 #include "kudu/consensus/consensus.pb.h"
 #include "kudu/consensus/opid_util.h"
+#include "kudu/consensus/ref_counted_replicate.h"
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/util/async_util.h"
@@ -77,7 +78,7 @@ class LogCache {
   //
   Status ReadOps(int64_t after_op_index,
                  int max_size_bytes,
-                 std::vector<const ReplicateMsg*>* messages,
+                 std::vector<ReplicateRefPtr>* messages,
                  OpId* preceding_op);
 
   // Append the operations into the log and the cache.
@@ -85,7 +86,7 @@ class LogCache {
   //
   // Returns false if the hard limit has been reached or the local log's buffers are full.
   // Takes ownership when it returns true.
-  bool AppendOperations(const std::vector<const ReplicateMsg*>& msgs,
+  bool AppendOperations(const std::vector<ReplicateRefPtr>& msgs,
                         const StatusCallback& callback);
 
   // Return true if the cache currently contains data for the given operation.
@@ -100,10 +101,6 @@ class LogCache {
   // doesn't imply that those ops will be eagerly loaded. Rather, it just enforces
   // that once they are loaded, they are not evicted.
   void SetPinnedOp(int64_t index);
-
-  // Flushes the cache, making sure all in-flight appends to the local log
-  // are completed.
-  void Flush();
 
   // Return the number of bytes of memory currently in use by the cache.
   int64_t BytesUsed() const;
@@ -135,7 +132,7 @@ class LogCache {
 
   // Update metrics and MemTracker to account for the removal of the
   // given message.
-  void AccountForMessageRemovalUnlocked(const ReplicateMsg* msg);
+  void AccountForMessageRemovalUnlocked(const ReplicateRefPtr& msg);
 
   // Return a string with stats
   std::string StatsStringUnlocked() const;
@@ -147,12 +144,6 @@ class LogCache {
   void EntriesLoadedCallback(int64_t after_op_index,
                              const Status& status,
                              const std::vector<ReplicateMsg*>& replicates);
-
-  // Callback when a message has been appended to the local log.
-  void LogAppendCallback(int64_t first_index,
-                         int64_t last_index,
-                         const StatusCallback& user_callback,
-                         const Status& status);
 
   log::Log* const log_;
 
@@ -166,12 +157,8 @@ class LogCache {
 
   // An ordered map that serves as the buffer for the cached messages.
   // Maps from log index -> ReplicateMsg
-  typedef std::map<uint64_t, const ReplicateMsg*> MessageCache;
+  typedef std::map<uint64_t, ReplicateRefPtr> MessageCache;
   MessageCache cache_;
-
-  // The set of ReplicateMsgs which are currently in-flight into the log.
-  // These cannot be evicted.
-  std::tr1::unordered_map<int64_t, const ReplicateMsg*> inflight_to_log_;
 
   // The OpId which comes before the first op in the cache.
   OpId preceding_first_op_;

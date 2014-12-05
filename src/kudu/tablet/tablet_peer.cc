@@ -389,7 +389,7 @@ Status TabletPeer::StartReplicaTransaction(gscoped_ptr<ConsensusRound> round) {
       DCHECK(replicate_msg->has_write_request()) << "WRITE_OP replica"
           " transaction must receive a WriteRequestPB";
       transaction = new WriteTransaction(
-          new WriteTransactionState(this, replicate_msg->mutable_write_request()),
+          new WriteTransactionState(this, &replicate_msg->write_request()),
           consensus::REPLICA);
       break;
     }
@@ -400,7 +400,7 @@ Status TabletPeer::StartReplicaTransaction(gscoped_ptr<ConsensusRound> round) {
       DCHECK(replicate_msg->change_config_request().old_config().IsInitialized());
       ChangeConfigTransactionState* state = new ChangeConfigTransactionState(
           this,
-          replicate_msg->mutable_change_config_request());
+          &replicate_msg->change_config_request());
       state->set_old_quorum(replicate_msg->change_config_request().old_config());
       transaction = new ChangeConfigTransaction(state, consensus::REPLICA, &config_sem_);
        break;

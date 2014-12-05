@@ -192,7 +192,7 @@ Status RaftConsensus::Start(const ConsensusBootstrapInfo& info) {
         << " pending transactions.";
     BOOST_FOREACH(ReplicateMsg* replicate, info.orphaned_replicates) {
       RETURN_NOT_OK(StartReplicaTransactionUnlocked(
-          make_gscoped_ptr(new ReplicateMsg(*replicate))));
+          make_scoped_refptr_replicate(new ReplicateMsg(*replicate))));
     }
 
     state_->AdvanceCommittedIndexUnlocked(info.last_committed_id);
@@ -372,14 +372,16 @@ Status RaftConsensus::BecomeLeaderUnlocked() {
   // Initiate a config change transaction. This is mostly acting as the NO_OP
   // transaction that is sent at the beginning of every term change in raft.
   // TODO implement NO_OP, consensus only, rounds and use those instead.
-  gscoped_ptr<ReplicateMsg> replicate(new ReplicateMsg);
+  ReplicateMsg* replicate = new ReplicateMsg;
   replicate->set_op_type(CHANGE_CONFIG_OP);
   ChangeConfigRequestPB* cc_req = replicate->mutable_change_config_request();
   cc_req->set_tablet_id(state_->GetOptions().tablet_id);
   cc_req->mutable_old_config()->CopyFrom(state_->GetCommittedQuorumUnlocked());
   cc_req->mutable_new_config()->CopyFrom(state_->GetPendingQuorumUnlocked());
 
-  gscoped_ptr<ConsensusRound> round(new ConsensusRound(this, replicate.Pass()));
+  gscoped_ptr<ConsensusRound> round(
+      new ConsensusRound(this,
+                         make_scoped_refptr(new RefCountedReplicate(replicate))));
   RETURN_NOT_OK(AppendNewRoundToQueueUnlocked(round.get()));
   RETURN_NOT_OK(state_->GetReplicaTransactionFactoryUnlocked()->StartReplicaTransaction(
       round.Pass()));
@@ -423,12 +425,7 @@ Status RaftConsensus::AppendNewRoundToQueueUnlocked(ConsensusRound* round) {
   state_->NewIdUnlocked(round->replicate_msg()->mutable_id());
   RETURN_NOT_OK(state_->AddPendingOperation(round));
 
-  // the original instance of the replicate msg is owned by the consensus context
-  // so we create a copy for the queue.
-  const ReplicateMsg* replicate = new ReplicateMsg(*round->replicate_msg());
-  Status s = queue_->AppendOperation(replicate);
-
-  if (PREDICT_FALSE(!s.ok())) delete replicate;
+  Status s = queue_->AppendOperation(round->replicate_scoped_refptr());
 
   // Handle Status::ServiceUnavailable(), which means the queue is full.
   if (PREDICT_FALSE(s.IsServiceUnavailable())) {
@@ -533,9 +530,9 @@ Status RaftConsensus::Update(const ConsensusRequestPB* request,
 }
 
 
-Status RaftConsensus::StartReplicaTransactionUnlocked(gscoped_ptr<ReplicateMsg> msg) {
-  VLOG_WITH_PREFIX(1) << "Starting transaction: " << msg->id().ShortDebugString();
-  gscoped_ptr<ConsensusRound> round(new ConsensusRound(this, msg.Pass()));
+Status RaftConsensus::StartReplicaTransactionUnlocked(const ReplicateRefPtr& msg) {
+  VLOG_WITH_PREFIX(1) << "Starting transaction: " << msg->get()->id().ShortDebugString();
+  gscoped_ptr<ConsensusRound> round(new ConsensusRound(this, msg));
   ConsensusRound* round_ptr = round.get();
   RETURN_NOT_OK(state_->GetReplicaTransactionFactoryUnlocked()->
       StartReplicaTransaction(round.Pass()));
@@ -591,7 +588,7 @@ void RaftConsensus::DeduplicateLeaderRequestUnlocked(const ConsensusRequestPB* r
     if (first_idx_kept == - 1) {
       first_idx_kept = i;
     }
-    deduplicated_req->messages.push_back(leader_msg);
+    deduplicated_req->messages.push_back(make_scoped_refptr_replicate(leader_msg));
     last_idx_kept = i;
   }
 
@@ -683,7 +680,7 @@ Status RaftConsensus::CheckLeaderRequestUnlocked(const ConsensusRequestPB* reque
   if (!deduped_req->messages.empty()) {
 
     bool term_mismatch;
-    CHECK(!state_->IsOpCommittedOrPending(deduped_req->messages[0]->id(), &term_mismatch));
+    CHECK(!state_->IsOpCommittedOrPending(deduped_req->messages[0]->get()->id(), &term_mismatch));
 
     // If the index is in our log but the terms are not the same abort down to the leader's
     // preceding id.
@@ -805,11 +802,10 @@ Status RaftConsensus::UpdateReplica(const ConsensusRequestPB* request,
     TRACE("Triggering prepare for $0 ops", deduped_req.messages.size());
 
     Status prepare_status;
-    std::vector<const ReplicateMsg*>::iterator iter = deduped_req.messages.begin();
+    std::vector<ReplicateRefPtr>::iterator iter = deduped_req.messages.begin();
 
     while (iter != deduped_req.messages.end()) {
-      gscoped_ptr<ReplicateMsg> msg_copy(new ReplicateMsg(**iter));
-      prepare_status = StartReplicaTransactionUnlocked(msg_copy.Pass());
+      prepare_status = StartReplicaTransactionUnlocked(*iter);
       if (PREDICT_FALSE(!prepare_status.ok())) {
         break;
       }
@@ -822,11 +818,10 @@ Status RaftConsensus::UpdateReplica(const ConsensusRequestPB* request,
     // when we first deduped.
     if (iter != deduped_req.messages.end()) {
       while (iter != deduped_req.messages.end()) {
-        const ReplicateMsg* msg = (*iter);
+        ReplicateRefPtr msg = (*iter);
         iter = deduped_req.messages.erase(iter);
-        LOG_WITH_PREFIX(WARNING) << "Could not prepare transaction for op: " << msg->id()
+        LOG_WITH_PREFIX(WARNING) << "Could not prepare transaction for op: " << msg->get()->id()
             << ". Status: " << prepare_status.ToString();
-        delete msg;
       }
     }
 
@@ -836,15 +831,14 @@ Status RaftConsensus::UpdateReplica(const ConsensusRequestPB* request,
     // Now that we've triggered the prepares enqueue the operations to be written
     // to the WAL.
     if (PREDICT_TRUE(deduped_req.messages.size() > 0)) {
-      last_enqueued_prepare = deduped_req.messages.back()->id();
+      last_enqueued_prepare = deduped_req.messages.back()->get()->id();
 
       // Trigger the log append asap, if fsync() is on this might take a while
       // and we can't reply until this is done.
       //
       // Since we've prepared, we need to be able to append (or we risk trying to apply
       // later something that wasn't logged). We crash if we can't.
-      CHECK_OK(queue_->AppendOperations(deduped_req.messages,
-                                        sync_status_cb));
+      CHECK_OK(queue_->AppendOperations(deduped_req.messages, sync_status_cb));
     }
 
     // 3 - Mark transactions as committed

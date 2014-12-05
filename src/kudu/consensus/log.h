@@ -11,6 +11,7 @@
 #include "kudu/common/schema.h"
 #include "kudu/consensus/log_util.h"
 #include "kudu/consensus/opid_util.h"
+#include "kudu/consensus/ref_counted_replicate.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/spinlock.h"
 #include "kudu/util/async_util.h"
@@ -103,11 +104,7 @@ class Log {
 
   // Append the given set of replicate messages, asynchronously.
   // This requires that the replicates have already been assigned OpIds.
-  //
-  // Does not take ownership of the pointers (they must remain valid until
-  // the callback is called, and will not be freed by the log).
-  Status AsyncAppendReplicates(const consensus::ReplicateMsg* const* msgs,
-                               int num_msgs,
+  Status AsyncAppendReplicates(const vector<consensus::ReplicateRefPtr>& replicates,
                                const StatusCallback& callback);
 
   // Append the given commit message, asynchronously.
@@ -369,6 +366,7 @@ class LogEntryBatch {
  private:
   friend class Log;
   friend struct LogEntryBatchLogicalSize;
+  friend class MultiThreadedLogTest;
 
   LogEntryBatch(LogEntryTypePB type,
                 gscoped_ptr<LogEntryBatchPB> entry_batch_pb, size_t count);
@@ -428,6 +426,10 @@ class LogEntryBatch {
     return entry_batch_pb_->entry(idx).replicate().id();
   }
 
+  void SetReplicates(const vector<consensus::ReplicateRefPtr>& replicates) {
+    replicates_ = replicates;
+  }
+
   // The type of entries in this batch.
   const LogEntryTypePB type_;
 
@@ -439,6 +441,12 @@ class LogEntryBatch {
 
   // Number of entries in 'entry_batch_pb_'
   const size_t count_;
+
+  // The vector of refcounted replicates.
+  // Used only when type is REPLICATE, this makes sure there's at
+  // least a reference to each replicate message until we're finished
+  // appending.
+  vector<consensus::ReplicateRefPtr> replicates_;
 
   // Callback to be invoked upon the entries being written and
   // synced to disk.
