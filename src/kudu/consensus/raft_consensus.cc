@@ -991,11 +991,7 @@ void RaftConsensus::Shutdown() {
   peer_manager_->Close();
 
   // We must close the queue after we close the peers.
-  {
-    ReplicaState::UniqueLock lock;
-    CHECK_OK(state_->LockForShutdown(&lock));
-    queue_->Close();
-  }
+  queue_->Close();
 
   CHECK_OK(state_->CancelPendingTransactions());
   CHECK_OK(state_->WaitForOustandingApplies());
