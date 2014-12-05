@@ -27,7 +27,8 @@ using strings::Substitute;
 using tserver::TabletServerErrorPB;
 
 string ChangeConfigTransactionState::ToString() const {
-  return Substitute("ChangeConfigTransactionState [timestamp=$0, request=$1]",
+  return Substitute("ChangeConfigTransactionState [opid=$0, timestamp=$1, request=$2]",
+                    consensus_round_->id().ShortDebugString(),
                     has_timestamp() ? timestamp().ToString() : "NULL",
                     request_ == NULL ? "(none)" : request_->ShortDebugString());
 }
@@ -100,6 +101,12 @@ void ChangeConfigTransaction::Finish() {
   TRACE("APPLY CHANGE CONFIG: apply finished");
 
   // Notify the peer that the consensus state has changed.
+  if (VLOG_IS_ON(2)) {
+    string tablet_id = state_->tablet_peer()->consensus()->tablet_id();
+    string peer_uuid = state_->tablet_peer()->consensus()->peer_uuid();
+    VLOG(2) << Substitute("T $0 P $1: Committing ChangeConfigTransaction: $2",
+                          tablet_id, peer_uuid, ToString());
+  }
   state_->tablet_peer()->ConsensusStateChanged(state_->old_quorum(),
                                                state_->request()->new_config());
   state()->commit();
