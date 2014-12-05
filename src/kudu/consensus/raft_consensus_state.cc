@@ -346,14 +346,6 @@ ReplicaTransactionFactory* ReplicaState::GetReplicaTransactionFactoryUnlocked() 
   return txn_factory_;
 }
 
-Status ReplicaState::IncrementConfigSeqNoUnlocked() {
-  DCHECK(update_lock_.is_locked());
-  cmeta_->mutable_pb()->mutable_committed_quorum()->set_seqno(
-      cmeta_->pb().committed_quorum().seqno() + 1);
-  RETURN_NOT_OK(cmeta_->Flush());
-  return Status::OK();
-}
-
 const string& ReplicaState::GetPeerUuid() const {
   return peer_uuid_;
 }

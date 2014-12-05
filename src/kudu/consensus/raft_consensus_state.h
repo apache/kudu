@@ -242,8 +242,6 @@ class ReplicaState {
 
   ReplicaTransactionFactory* GetReplicaTransactionFactoryUnlocked() const;
 
-  Status IncrementConfigSeqNoUnlocked();
-
   // Returns the uuid of the peer to which this replica state belongs.
   const std::string& GetPeerUuid() const;
 
