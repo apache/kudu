@@ -522,15 +522,6 @@ Status RaftConsensus::Update(const ConsensusRequestPB* request,
   boost::lock_guard<simple_spinlock> lock(update_lock_);
   RETURN_NOT_OK(UpdateReplica(request, response));
 
-  {
-    ReplicaState::UniqueLock lock;
-    RETURN_NOT_OK(state_->LockForRead(&lock));
-    TRACE("Updating watermarks");
-    response->set_responder_term(state_->GetCurrentTermUnlocked());
-    status->mutable_last_received()->CopyFrom(state_->GetLastReceivedOpIdUnlocked());
-    status->set_last_committed_idx(state_->GetCommittedOpIdUnlocked().index());
-  }
-
   if (PREDICT_FALSE(VLOG_IS_ON(1))) {
     if (request->ops_size() == 0) {
       VLOG(1) << state_->LogPrefix() << "Replica replied to status only request. Replica: "
@@ -799,6 +790,8 @@ Status RaftConsensus::UpdateReplica(const ConsensusRequestPB* request,
     RETURN_NOT_OK(CheckLeaderRequestUnlocked(request, response, &deduped_req));
 
     if (response->status().has_error()) {
+      // We had an error, like an invalid term, we still fill the response.
+      FillConsensusResponseOKUnlocked(response);
       return Status::OK();
     }
 
@@ -883,6 +876,10 @@ Status RaftConsensus::UpdateReplica(const ConsensusRequestPB* request,
     // that).
     TRACE(Substitute("Updating last received op as $0", last_enqueued_prepare.ShortDebugString()));
     state_->UpdateLastReceivedOpIdUnlocked(last_enqueued_prepare);
+
+    // Fill the response with the current state. We will not mutate anymore state until
+    // we actually reply to the leader, we'll just wait for the messages to be durable.
+    FillConsensusResponseOKUnlocked(response);
   }
   // Release the lock while we wait for the log append to finish so that commits can go through.
   // We'll re-acquire it before we update the state again.
@@ -897,9 +894,6 @@ Status RaftConsensus::UpdateReplica(const ConsensusRequestPB* request,
     TRACE("Waiting on the replicates to finish logging");
     RETURN_NOT_OK(log_synchronizer.Wait());
     TRACE("finished");
-
-    ReplicaState::UniqueLock lock;
-    RETURN_NOT_OK(state_->LockForUpdate(&lock));
   }
 
   if (PREDICT_FALSE(VLOG_IS_ON(2))) {
@@ -909,6 +903,15 @@ Status RaftConsensus::UpdateReplica(const ConsensusRequestPB* request,
 
   TRACE("UpdateReplicas() finished");
   return Status::OK();
+}
+
+void RaftConsensus::FillConsensusResponseOKUnlocked(ConsensusResponsePB* response) {
+  TRACE("Filling leader response.");
+  response->set_responder_term(state_->GetCurrentTermUnlocked());
+  response->mutable_status()->mutable_last_received()->CopyFrom(
+      state_->GetLastReceivedOpIdUnlocked());
+  response->mutable_status()->set_last_committed_idx(
+      state_->GetCommittedOpIdUnlocked().index());
 }
 
 void RaftConsensus::FillConsensusResponseError(ConsensusResponsePB* response,

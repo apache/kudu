@@ -219,6 +219,9 @@ class RaftConsensus : public Consensus,
   // Return header string for RequestVote log messages. The ReplicaState lock must be held.
   std::string GetRequestVoteLogPrefixUnlocked() const;
 
+  // Fills the response with the current status, if an update was successful.
+  void FillConsensusResponseOKUnlocked(ConsensusResponsePB* response);
+
   // Fills the response with an error code and error message.
   void FillConsensusResponseError(ConsensusResponsePB* response,
                                   ConsensusErrorPB::Code error_code,
