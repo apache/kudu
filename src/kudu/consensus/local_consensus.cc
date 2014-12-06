@@ -8,6 +8,7 @@
 #include <iostream>
 
 #include "kudu/consensus/log.h"
+#include "kudu/consensus/quorum_util.h"
 #include "kudu/server/metadata.h"
 #include "kudu/server/clock.h"
 #include "kudu/util/trace.h"

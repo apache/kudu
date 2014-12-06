@@ -11,11 +11,11 @@
 #include "kudu/common/partial_row.h"
 #include "kudu/common/row_operations.h"
 #include "kudu/common/wire_protocol.h"
-#include "kudu/consensus/consensus.h"
 #include "kudu/consensus/consensus_meta.h"
 #include "kudu/consensus/consensus_peers.h"
 #include "kudu/consensus/log_anchor_registry.h"
 #include "kudu/consensus/opid_util.h"
+#include "kudu/consensus/quorum_util.h"
 #include "kudu/fs/fs_manager.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/master/catalog_manager.h"
@@ -206,7 +206,7 @@ Status SysCatalogTable::SetupDistributedQuorum(const MasterOptions& options, int
     }
   }
 
-  RETURN_NOT_OK(consensus::Consensus::VerifyQuorum(resolved_quorum));
+  RETURN_NOT_OK(consensus::VerifyQuorum(resolved_quorum));
   VLOG(1) << "Distributed quorum configuration: " << resolved_quorum.ShortDebugString();
 
   *quorum = resolved_quorum;

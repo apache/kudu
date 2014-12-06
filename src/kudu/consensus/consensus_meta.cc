@@ -2,9 +2,9 @@
 // Confidential Cloudera Information: Covered by NDA.
 #include "kudu/consensus/consensus_meta.h"
 
-#include "kudu/consensus/consensus.h"
 #include "kudu/consensus/consensus.pb.h"
 #include "kudu/consensus/log_util.h"
+#include "kudu/consensus/quorum_util.h"
 #include "kudu/fs/fs_manager.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/server/metadata.pb.h"
@@ -48,7 +48,7 @@ Status ConsensusMetadata::Load(FsManager* fs_manager,
 
 Status ConsensusMetadata::Flush() {
   // Sanity test to ensure we never write out a bad quorum.
-  RETURN_NOT_OK_PREPEND(Consensus::VerifyQuorum(pb_.committed_quorum()),
+  RETURN_NOT_OK_PREPEND(VerifyQuorum(pb_.committed_quorum()),
                         "Invalid quorum in ConsensusMetadata, cannot flush to disk");
 
   // Create directories if needed.

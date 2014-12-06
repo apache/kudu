@@ -36,6 +36,9 @@ void SetAllQuorumVotersToFollower(const metadata::QuorumPB& old_quorum,
 metadata::QuorumPeerPB::Role GetRoleInQuorum(const std::string& permanent_uuid,
                                              const metadata::QuorumPB& quorum);
 
+// Verifies that the provided quorum is well formed.
+Status VerifyQuorum(const metadata::QuorumPB& quorum);
+
 }  // namespace consensus
 }  // namespace kudu
 

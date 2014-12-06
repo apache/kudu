@@ -87,9 +87,6 @@ class Consensus : public RefCountedThreadSafe<Consensus> {
  public:
   class ConsensusFaultHooks;
 
-  // Verifies that the provided quorum is well formed.
-  static Status VerifyQuorum(const metadata::QuorumPB& quorum);
-
   Consensus() {}
 
   // Starts running the consensus algorithm.

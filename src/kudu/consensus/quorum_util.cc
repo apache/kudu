@@ -4,6 +4,8 @@
 #include "kudu/consensus/quorum_util.h"
 
 #include <boost/foreach.hpp>
+#include <set>
+#include <string>
 
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/server/metadata.pb.h"
@@ -86,6 +88,86 @@ metadata::QuorumPeerPB::Role GetRoleInQuorum(const std::string& permanent_uuid,
     }
   }
   return metadata::QuorumPeerPB::NON_PARTICIPANT;
+}
+
+Status VerifyQuorum(const metadata::QuorumPB& quorum) {
+  std::set<string> uuids;
+  bool found_leader = false;
+  if (quorum.peers_size() == 0) {
+    return Status::IllegalState(
+        Substitute("Quorum must have at least one peer. Quorum: $0",
+                   quorum.ShortDebugString()));
+  }
+
+  if (!quorum.has_local()) {
+    return Status::IllegalState(
+        Substitute("Quorum must specify whether it is local. Quorum: ",
+                   quorum.ShortDebugString()));
+  }
+
+  if (!quorum.has_seqno()) {
+    return Status::IllegalState(
+        Substitute("Quorum must have a sequence number. Quorum: ",
+                   quorum.ShortDebugString()));
+  }
+
+  // Local quorums must have only one peer and it may or may not
+  // have an address.
+  if (quorum.local()) {
+    if (quorum.peers_size() != 1) {
+      return Status::IllegalState(
+          Substitute("Local quorums must have 1 and only one peer. Quorum: ",
+                     quorum.ShortDebugString()));
+    }
+    if (!quorum.peers(0).has_permanent_uuid() ||
+        quorum.peers(0).permanent_uuid() == "") {
+      return Status::IllegalState(
+          Substitute("Local peer must have an UUID. Quorum: ",
+                     quorum.ShortDebugString()));
+    }
+    return Status::OK();
+  }
+
+  BOOST_FOREACH(const metadata::QuorumPeerPB& peer, quorum.peers()) {
+    if (!peer.has_permanent_uuid() || peer.permanent_uuid() == "") {
+      return Status::IllegalState(Substitute("One peer didn't have an uuid or had the empty"
+          " string. Quorum: $0", quorum.ShortDebugString()));
+    }
+    if (uuids.count(peer.permanent_uuid()) == 1) {
+      return Status::IllegalState(
+          Substitute("Found two peers with uuid: $0. Quorum: $1",
+                     peer.permanent_uuid(), quorum.ShortDebugString()));
+    }
+    uuids.insert(peer.permanent_uuid());
+
+    if (!peer.has_last_known_addr()) {
+      return Status::IllegalState(
+          Substitute("Peer: $0 has no address. Quorum: $1",
+                     peer.permanent_uuid(), quorum.ShortDebugString()));
+    }
+    if (!peer.has_role()) {
+      return Status::IllegalState(
+          Substitute("Peer: $0 has no role. Quorum: $1", peer.permanent_uuid(),
+                     quorum.ShortDebugString()));
+    }
+    if (peer.role() == metadata::QuorumPeerPB::LEADER
+        || peer.role() == metadata::QuorumPeerPB::CANDIDATE) {
+      if (!found_leader) {
+        found_leader = true;
+        continue;
+      }
+      return Status::IllegalState(
+          Substitute("Found two peers with LEADER/CANDIDATE role. Quorum: $0",
+                     quorum.ShortDebugString()));
+    }
+    if (peer.role() == metadata::QuorumPeerPB::LEARNER) {
+      return Status::IllegalState(
+          Substitute(
+              "Peer: $0 has LEARNER role but this isn't supported yet. Quorum: $1",
+              peer.permanent_uuid(), quorum.ShortDebugString()));
+    }
+  }
+  return Status::OK();
 }
 
 } // namespace consensus
