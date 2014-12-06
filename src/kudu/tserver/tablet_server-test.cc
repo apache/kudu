@@ -1132,6 +1132,57 @@ TEST_F(TabletServerTest, TestScanWithPredicates) {
   ASSERT_EQ(50, results.size());
 }
 
+TEST_F(TabletServerTest, TestScanWithEncodedPredicates) {
+  InsertTestRowsDirect(0, 100);
+
+  ScanRequestPB req;
+  ScanResponsePB resp;
+  RpcController rpc;
+
+  NewScanRequestPB* scan = req.mutable_new_scan_request();
+  scan->set_tablet_id(kTabletId);
+  req.set_batch_size_bytes(0); // so it won't return data right away
+  ASSERT_STATUS_OK(SchemaToColumnPBs(schema_, scan->mutable_projected_columns()));
+
+  // Set up a range predicate: 51 <= key <= 60
+  // using encoded keys
+  uint32_t start_key_int = 51;
+  uint32_t stop_key_int = 60;
+  EncodedKeyBuilder ekb(&schema_);
+  ekb.AddColumnKey(&start_key_int);
+  gscoped_ptr<EncodedKey> start_encoded(ekb.BuildEncodedKey());
+
+  ekb.Reset();
+  ekb.AddColumnKey(&stop_key_int);
+  gscoped_ptr<EncodedKey> stop_encoded(ekb.BuildEncodedKey());
+
+  scan->mutable_encoded_start_key()->assign(
+    reinterpret_cast<const char*>(start_encoded->encoded_key().data()),
+    start_encoded->encoded_key().size());
+  scan->mutable_encoded_stop_key()->assign(
+    reinterpret_cast<const char*>(stop_encoded->encoded_key().data()),
+    stop_encoded->encoded_key().size());
+
+  // Send the call
+  {
+    SCOPED_TRACE(req.DebugString());
+    ASSERT_STATUS_OK(proxy_->Scan(req, &resp, &rpc));
+    SCOPED_TRACE(resp.DebugString());
+    ASSERT_FALSE(resp.has_error());
+  }
+
+  // Drain all the rows from the scanner.
+  vector<string> results;
+  ASSERT_NO_FATAL_FAILURE(
+    DrainScannerToStrings(resp.scanner_id(), schema_, &results));
+  ASSERT_EQ(10, results.size());
+  EXPECT_EQ("(uint32 key=51, uint32 int_val=102, string string_val=hello 51)",
+            results.front());
+  EXPECT_EQ("(uint32 key=60, uint32 int_val=120, string string_val=hello 60)",
+            results.back());
+}
+
+
 // Test requesting more rows from a scanner which doesn't exist
 TEST_F(TabletServerTest, TestBadScannerID) {
   ScanRequestPB req;
@@ -1253,10 +1304,8 @@ TEST_F(TabletServerTest, TestScan_NoResults) {
     SCOPED_TRACE(resp.DebugString());
     ASSERT_FALSE(resp.has_error());
 
-    // Because there are no entries, we should immediately return "no results"
-    // and not bother handing back a scanner ID.
+    // Because there are no entries, we should immediately return "no results".
     ASSERT_FALSE(resp.has_more_results());
-    ASSERT_FALSE(resp.has_scanner_id());
   }
 }
 

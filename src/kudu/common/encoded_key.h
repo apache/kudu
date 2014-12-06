@@ -24,6 +24,15 @@ class EncodedKey {
              vector<const void *> *raw_keys,
              size_t num_key_cols);
 
+  // Decode the encoded key specified in 'encoded', which must correspond to the
+  // provided schema.
+  // The returned row data is allocated from 'arena' and returned in '*result'.
+  // If allocation fails or the encoding is invalid, returns a bad Status.
+  static Status DecodeEncodedString(const Schema& schema,
+                                    Arena* arena,
+                                    const Slice& encoded,
+                                    gscoped_ptr<EncodedKey> *result);
+
   const Slice &encoded_key() const { return encoded_key_; }
 
   const vector<const void *> &raw_keys() const { return raw_keys_; }

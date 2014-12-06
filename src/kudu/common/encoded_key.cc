@@ -25,6 +25,29 @@ EncodedKey::EncodedKey(faststring* data,
   raw_keys_.swap(*raw_keys);
 }
 
+Status EncodedKey::DecodeEncodedString(const Schema& schema,
+                                       Arena* arena,
+                                       const Slice& encoded,
+                                       gscoped_ptr<EncodedKey>* result) {
+  uint8_t* raw_key_buf = static_cast<uint8_t*>(arena->AllocateBytes(schema.key_byte_size()));
+  if (PREDICT_FALSE(!raw_key_buf)) {
+    return Status::RuntimeError("OOM");
+  }
+
+  RETURN_NOT_OK(schema.DecodeRowKey(encoded, raw_key_buf, arena));
+
+  vector<const void*> raw_keys(schema.num_key_columns());
+  for (int i = 0; i < schema.num_key_columns(); i++) {
+    raw_keys[i] = raw_key_buf + schema.column_offset(i);
+  }
+
+  faststring data_copy;
+  data_copy.assign_copy(encoded.data(), encoded.size());
+
+  result->reset(new EncodedKey(&data_copy, &raw_keys, schema.num_key_columns()));
+  return Status::OK();
+}
+
 string EncodedKey::Stringify(const Schema &schema) const {
   if (num_key_cols_ == 1) {
     return schema.column(0).Stringify(raw_keys_.front());

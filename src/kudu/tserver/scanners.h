@@ -16,6 +16,7 @@
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/util/auto_release_pool.h"
+#include "kudu/util/memory/arena.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/oid_generator.h"
 
@@ -113,6 +114,33 @@ class ScannerManager {
   DISALLOW_COPY_AND_ASSIGN(ScannerManager);
 };
 
+// RAII wrapper to unregister a scanner upon scope exit.
+class ScopedUnregisterScanner {
+ public:
+  ScopedUnregisterScanner(ScannerManager* mgr,
+                          const std::string& id)
+    : mgr_(mgr),
+      id_(id),
+      cancelled_(false) {
+  }
+
+  ~ScopedUnregisterScanner() {
+    if (!cancelled_) {
+      mgr_->UnregisterScanner(id_);
+    }
+  }
+
+  // Do not unregister the scanner when the scope is exited.
+  void Cancel() {
+    cancelled_ = true;
+  }
+
+ private:
+  ScannerManager* const mgr_;
+  const std::string id_;
+  bool cancelled_;
+};
+
 // An open scanner on the server side.
 class Scanner {
  public:
@@ -141,6 +169,10 @@ class Scanner {
   // associated data (eg storage for its predicates).
   AutoReleasePool* autorelease_pool() {
     return &autorelease_pool_;
+  }
+
+  Arena* arena() {
+    return &arena_;
   }
 
   const std::string& id() const { return id_; }
@@ -217,6 +249,11 @@ class Scanner {
   gscoped_ptr<RowwiseIterator> iter_;
 
   AutoReleasePool autorelease_pool_;
+
+  // Arena used for allocations which must last as long as the scanner
+  // itself. This is _not_ used for row data, which is scoped to a single RPC
+  // response.
+  Arena arena_;
 
   DISALLOW_COPY_AND_ASSIGN(Scanner);
 };

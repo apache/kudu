@@ -616,22 +616,21 @@ void TabletServiceImpl::Shutdown() {
 // Extract a void* pointer suitable for use in a ColumnRangePredicate from the
 // user-specified protobuf field.
 // This validates that the pb_value has the correct length, copies the data into
-// 'pool', and sets *result to point to it.
+// 'arena', and sets *result to point to it.
 // Returns bad status if the user-specified value is the wrong length.
 static Status ExtractPredicateValue(const ColumnSchema& schema,
                                     const string& pb_value,
-                                    AutoReleasePool* pool,
+                                    Arena* arena,
                                     const void** result) {
-  // Copy the data from the protobuf into the pool.
-  uint8_t* data_copy = pool->AddArray(new uint8_t[pb_value.size()]);
+  // Copy the data from the protobuf into the Arena.
+  uint8_t* data_copy = static_cast<uint8_t*>(arena->AllocateBytes(pb_value.size()));
   memcpy(data_copy, &pb_value[0], pb_value.size());
 
   // If the type is a STRING, then we need to return a pointer to a Slice
   // element pointing to the string. Otherwise, just verify that the provided
   // value was the right size.
   if (schema.type_info()->type() == STRING) {
-    Slice* s = pool->Add(new Slice(data_copy, pb_value.size()));
-    *result = s;
+    *result = arena->NewObject<Slice>(data_copy, pb_value.size());
   } else {
     // TODO: add test case for this invalid request
     size_t expected_size = schema.type_info()->size();
@@ -646,12 +645,46 @@ static Status ExtractPredicateValue(const ColumnSchema& schema,
   return Status::OK();
 }
 
+static Status DecodeEncodedKeyRange(const NewScanRequestPB& scan_pb,
+                                    const Schema& tablet_schema,
+                                    const SharedScanner& scanner,
+                                    ScanSpec* spec) {
+  gscoped_ptr<EncodedKey> start, stop;
+  if (scan_pb.has_encoded_start_key()) {
+    RETURN_NOT_OK_PREPEND(EncodedKey::DecodeEncodedString(
+                            tablet_schema, scanner->arena(),
+                            scan_pb.encoded_start_key(), &start),
+                          "Invalid scan start key");
+  }
+
+  if (scan_pb.has_encoded_stop_key()) {
+    RETURN_NOT_OK_PREPEND(EncodedKey::DecodeEncodedString(
+                            tablet_schema, scanner->arena(),
+                            scan_pb.encoded_stop_key(), &stop),
+                          "Invalid scan stop key");
+  }
+
+  if (start) {
+    spec->SetLowerBoundKey(start.get());
+    scanner->autorelease_pool()->Add(start.release());
+  }
+  if (stop) {
+    spec->SetUpperBoundKey(stop.get());
+    scanner->autorelease_pool()->Add(stop.release());
+  }
+
+  return Status::OK();
+}
+
 static Status SetupScanSpec(const NewScanRequestPB& scan_pb,
+                            const Schema& tablet_schema,
                             const Schema& projection,
                             vector<ColumnSchema>* missing_cols,
                             gscoped_ptr<ScanSpec>* spec,
-                            AutoReleasePool* pool) {
+                            const SharedScanner& scanner) {
   gscoped_ptr<ScanSpec> ret(new ScanSpec);
+
+  // First the column range predicates.
   BOOST_FOREACH(const ColumnRangePredicatePB& pred_pb, scan_pb.range_predicates()) {
     if (!pred_pb.has_lower_bound() && !pred_pb.has_upper_bound()) {
       return Status::InvalidArgument(
@@ -663,11 +696,12 @@ static Status SetupScanSpec(const NewScanRequestPB& scan_pb,
       missing_cols->push_back(col);
     }
 
-    const void* lower_bound;
-    const void* upper_bound;
+    const void* lower_bound = NULL;
+    const void* upper_bound = NULL;
     if (pred_pb.has_lower_bound()) {
       const void* val;
-      RETURN_NOT_OK(ExtractPredicateValue(col, pred_pb.lower_bound(), pool,
+      RETURN_NOT_OK(ExtractPredicateValue(col, pred_pb.lower_bound(),
+                                          scanner->arena(),
                                           &val));
       lower_bound = val;
     } else {
@@ -675,7 +709,8 @@ static Status SetupScanSpec(const NewScanRequestPB& scan_pb,
     }
     if (pred_pb.has_upper_bound()) {
       const void* val;
-      RETURN_NOT_OK(ExtractPredicateValue(col, pred_pb.upper_bound(), pool,
+      RETURN_NOT_OK(ExtractPredicateValue(col, pred_pb.upper_bound(),
+                                          scanner->arena(),
                                           &val));
       upper_bound = val;
     } else {
@@ -688,6 +723,10 @@ static Status SetupScanSpec(const NewScanRequestPB& scan_pb,
     }
     ret->AddPredicate(pred);
   }
+
+  // Then any encoded key range predicates.
+  RETURN_NOT_OK(DecodeEncodedKeyRange(scan_pb, tablet_schema, scanner, ret.get()));
+
   spec->swap(ret);
   return Status::OK();
 }
@@ -716,6 +755,17 @@ void TabletServiceImpl::HandleNewScanRequest(const ScanRequestPB* req,
     return;
   }
 
+  const shared_ptr<Schema> tablet_schema(tablet_peer->tablet()->schema());
+
+  SharedScanner scanner;
+  server_->scanner_manager()->NewScanner(tablet_peer->tablet_id(),
+                                         context->requestor_string(),
+                                         &scanner);
+
+  // If we early-exit out of this function, automatically unregister
+  // the scanner.
+  ScopedUnregisterScanner unreg_scanner(server_->scanner_manager(), scanner->id());
+
   // Create the user's requested projection.
   // TODO: add test cases for bad projections including 0 columns
   Schema projection;
@@ -735,10 +785,9 @@ void TabletServiceImpl::HandleNewScanRequest(const ScanRequestPB* req,
     return;
   }
 
-  AutoReleasePool pool;
   gscoped_ptr<ScanSpec> spec(new ScanSpec);
   vector<ColumnSchema> missing_cols;
-  s = SetupScanSpec(scan_pb, projection, &missing_cols, &spec, &pool);
+  s = SetupScanSpec(scan_pb, *tablet_schema, projection, &missing_cols, &spec, scanner);
   if (PREDICT_FALSE(!s.ok())) {
     SetupErrorAndRespond(resp->mutable_error(), s,
                          TabletServerErrorPB::INVALID_SCAN_SPEC,
@@ -750,15 +799,14 @@ void TabletServiceImpl::HandleNewScanRequest(const ScanRequestPB* req,
   // add to them projection before passing the projection to the iterator and
   // save the original projection (in order to trim the missing predicate columns
   // from the reply to the client).
-  gscoped_ptr<Schema> orig_projection;
   if (missing_cols.size() > 0) {
-    const shared_ptr<Schema> schema(tablet_peer->tablet()->schema());
-    orig_projection.reset(new Schema(projection));
+    gscoped_ptr<Schema> orig_projection(new Schema(projection));
     SchemaBuilder projection_builder(projection);
     BOOST_FOREACH(const ColumnSchema& col, missing_cols) {
-      projection_builder.AddColumn(col, schema->is_key_column(col.name()));
+      projection_builder.AddColumn(col, tablet_schema->is_key_column(col.name()));
     }
     projection = projection_builder.BuildWithoutIds();
+    scanner->set_client_projection_schema(orig_projection.Pass());
   }
 
   TRACE("Creating iterator");
@@ -807,36 +855,18 @@ void TabletServiceImpl::HandleNewScanRequest(const ScanRequestPB* req,
   TRACE("has_more: $0", has_more);
   resp->set_has_more_results(has_more);
   if (!has_more) {
-    // If there are no more rows, there is no need to assign a scanner ID.
-    // Just respond immediately instead.
+    // If there are no more rows, we can short circuit some work and respond immediately.
     context->RespondSuccess();
     return;
   }
 
-  SharedScanner scanner;
-  server_->scanner_manager()->NewScanner(tablet_peer->tablet_id(),
-                                         context->requestor_string(),
-                                         &scanner);
-
-  // The ScanSpec has to remain valid as long as the scanner, so move
-  // its pool into the scanner itself, and let the scaner take
-  // ownership of 'iter' and 'spec'.
   scanner->Init(iter.Pass(), spec.Pass());
-  pool.DonateAllTo(scanner->autorelease_pool());
-
-  if (orig_projection) {
-    scanner->set_client_projection_schema(orig_projection.Pass());
-  }
-
-  // TODO: could start the scan here unless batch_size_bytes is 0
+  unreg_scanner.Cancel();
   resp->set_scanner_id(scanner->id());
 
-  if (VLOG_IS_ON(1)) {
-    VLOG(1) << "Started scanner " << scanner->id() << ": " << scanner->iter()->ToString();
-  }
+  VLOG(1) << "Started scanner " << scanner->id() << ": " << scanner->iter()->ToString();
 
   size_t batch_size_bytes = GetBatchSizeBytes(req);
-
   if (batch_size_bytes > 0) {
     TRACE("Continuing scan request");
     // TODO: instead of copying the pb, instead split HandleContinueScanRequest

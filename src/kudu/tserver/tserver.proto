@@ -169,6 +169,11 @@ message NewScanRequestPB {
   // Any column range predicates to enforce.
   repeated ColumnRangePredicatePB range_predicates = 3;
 
+  // Encoded-key to start scanning at (inclusive).
+  optional bytes encoded_start_key = 8;
+  // Encoded-key to stop scanning at (inclusive).
+  optional bytes encoded_stop_key = 9;
+
   // Which columns to select.
   // if this is an empty list, no data will be returned, but the num_rows
   // field of the returned RowBlock will indicate how many rows passed

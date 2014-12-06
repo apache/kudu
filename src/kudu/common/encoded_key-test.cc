@@ -208,4 +208,26 @@ TEST_F(EncodedKeyTest, TestDecodeCompoundKeys) {
   }
 }
 
+TEST_F(EncodedKeyTest, TestConstructFromEncodedString) {
+  gscoped_ptr<EncodedKey> key;
+  Arena arena(1024, 1024*1024);
+
+  {
+    // Integer type compound key.
+    Schema schema(boost::assign::list_of
+                  (ColumnSchema("key0", UINT16))
+                  (ColumnSchema("key1", UINT32))
+                  (ColumnSchema("key2", UINT64)), 3);
+
+    // Prefix with only one full column specified
+    ASSERT_OK(EncodedKey::DecodeEncodedString(
+                schema, &arena,
+                Slice("\x00\x01"
+                      "\x00\x00\x00\x02"
+                      "\x00\x00\x00\x00\x00\x00\x00\x03", 14),
+                &key));
+    EXPECT_ROWKEY_EQ(schema, "(uint16 key0=1, uint32 key1=2, uint64 key2=3)", *key);
+  }
+}
+
 } // namespace kudu

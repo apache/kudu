@@ -142,7 +142,8 @@ Scanner::Scanner(const string& id,
       tablet_id_(tablet_id),
       requestor_string_(requestor_string),
       start_time_(MonoTime::Now(MonoTime::COARSE)),
-      metrics_(metrics) {
+      metrics_(metrics),
+      arena_(1024, 1024 * 1024) {
   UpdateAccessTime();
 }
 
