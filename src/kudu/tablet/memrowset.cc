@@ -407,44 +407,22 @@ Status MemRowSet::Iterator::Init(ScanSpec *spec) {
   RETURN_NOT_OK(projector_->Init());
   RETURN_NOT_OK(delta_projector_.Init());
 
-  if (spec != NULL && spec->has_encoded_ranges()) {
-    boost::optional<const Slice &> max_lower_bound;
-    BOOST_FOREACH(const EncodedKeyRange *range, spec->encoded_ranges()) {
-      if (range->has_lower_bound()) {
-        bool exact;
-        const Slice &lower_bound = range->lower_bound().encoded_key();
-        if (!max_lower_bound.is_initialized() ||
-              lower_bound.compare(*max_lower_bound) > 0) {
-          if (!iter_->SeekAtOrAfter(lower_bound, &exact)) {
-            // Lower bound is after the end of the key range, no rows will
-            // pass the predicate so we can stop the scan right away.
-            state_ = kFinished;
-            return Status::OK();
-          }
-          max_lower_bound.reset(lower_bound);
-        }
-      }
-      if (range->has_upper_bound()) {
-        const Slice &upper_bound = range->upper_bound().encoded_key();
-        if (!has_upper_bound() || upper_bound.compare(*upper_bound_) < 0) {
-          upper_bound_.reset(upper_bound);
-        }
-      }
-      if (VLOG_IS_ON(1)) {
-        Schema key_schema = memrowset_->schema().CreateKeyProjection();
-        VLOG_IF(1, max_lower_bound.is_initialized())
-            << "Pushed MemRowSet lower bound value "
-            << range->lower_bound().Stringify(key_schema);
-        VLOG_IF(1, has_upper_bound())
-            << "Pushed MemRowSet upper bound value "
-            << range->upper_bound().Stringify(key_schema);
-      }
-    }
-    if (max_lower_bound.is_initialized()) {
-      bool exact;
-      iter_->SeekAtOrAfter(*max_lower_bound, &exact);
+  if (spec && spec->lower_bound_key()) {
+    bool exact;
+    const Slice &lower_bound = spec->lower_bound_key()->encoded_key();
+    if (!iter_->SeekAtOrAfter(lower_bound, &exact)) {
+      // Lower bound is after the end of the key range, no rows will
+      // pass the predicate so we can stop the scan right away.
+      state_ = kFinished;
+      return Status::OK();
     }
   }
+
+  if (spec && spec->upper_bound_key()) {
+    const Slice &upper_bound = spec->upper_bound_key()->encoded_key();
+    upper_bound_.reset(upper_bound);
+  }
+
   state_ = kScanning;
   return Status::OK();
 }

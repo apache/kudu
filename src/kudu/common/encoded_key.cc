@@ -12,7 +12,7 @@ namespace kudu {
 using std::string;
 
 
-EncodedKey::EncodedKey(faststring *data,
+EncodedKey::EncodedKey(faststring* data,
                        vector<const void *> *raw_keys,
                        size_t num_key_cols)
   : num_key_cols_(num_key_cols) {
@@ -98,46 +98,21 @@ void EncodedKeyBuilder::AssignCopy(const EncodedKeyBuilder &other) {
   raw_keys_.assign(other.raw_keys_.begin(), other.raw_keys_.end());
 }
 
-////////////////////////////////////////////////////////////
-
-EncodedKeyRange::EncodedKeyRange(EncodedKey *lower_bound,
-                                 EncodedKey *upper_bound) :
-    lower_bound_(lower_bound),
-    upper_bound_(upper_bound) {
-}
-
-EncodedKeyRange::~EncodedKeyRange() {
-  if (upper_bound_ != lower_bound_) {
-    delete upper_bound_;
-  }
-  delete lower_bound_;
-}
-
-bool EncodedKeyRange::ContainsKey(const Slice &key) const {
-  if (has_lower_bound() && key.compare(lower_bound_->encoded_key()) < 0) {
-    return false;
-  }
-  if (has_upper_bound() && key.compare(upper_bound_->encoded_key()) > 0) {
-    return false;
-  }
-  return true;
-}
-
-string EncodedKeyRange::ToString() const {
+string EncodedKey::RangeToString(const EncodedKey* lower, const EncodedKey* upper) {
   string ret;
-  if (has_lower_bound() && has_upper_bound()) {
+  if (lower && upper) {
     ret.append("encoded key BETWEEN ");
-    ret.append(lower_bound_->encoded_key().ToDebugString());
+    ret.append(lower->encoded_key().ToDebugString());
     ret.append(" AND ");
-    ret.append(upper_bound_->encoded_key().ToDebugString());
+    ret.append(upper->encoded_key().ToDebugString());
     return ret;
-  } else if (has_lower_bound()) {
+  } else if (lower) {
     ret.append("encoded key >= ");
-    ret.append(lower_bound_->encoded_key().ToDebugString());
+    ret.append(lower->encoded_key().ToDebugString());
     return ret;
-  } else if (has_upper_bound()) {
+  } else if (upper) {
     ret.append("encoded key <= ");
-    ret.append(upper_bound_->encoded_key().ToDebugString());
+    ret.append(upper->encoded_key().ToDebugString());
   } else {
     LOG(DFATAL) << "Invalid key!";
     ret = "invalid key range";

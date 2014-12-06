@@ -15,10 +15,10 @@ namespace kudu {
 
 using std::vector;
 
-// Encodes a list of column predicates into EncodedKeyRange objects.
-// Uses an AutoReleasePool to allocate new EncodedKeyRange instances,
+// Encodes a list of column predicates into key-range predicates.
+// Uses an AutoReleasePool to allocate EncodedKey instances,
 // which means the lifetime of RangePredicateEncoder must be >= the
-// lifetime of any classes that access the EncodedKeyRange instances.
+// lifetime of any classes that access the ScanSpec.
 class RangePredicateEncoder {
  public:
   // 'key_schema' is not copied and must remain valid for the lifetime

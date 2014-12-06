@@ -93,13 +93,6 @@ class KuduScanner::Data {
   ScanSpec spec_;
   RangePredicateEncoder spec_encoder_;
 
-  // Key range we're scanning (optional). Extracted from column range
-  // predicates during Open.
-  //
-  // Memory is owned by 'spec_encoder_'.
-  const EncodedKey* start_key_;
-  const EncodedKey* end_key_;
-
   // The tablet we're scanning.
   scoped_refptr<internal::RemoteTablet> remote_;
 

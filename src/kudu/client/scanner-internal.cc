@@ -39,8 +39,6 @@ KuduScanner::Data::Data(KuduTable* table)
     projection_(table->schema().schema_.get()),
     projected_row_size_(CalculateProjectedRowSize(*projection_)),
     spec_encoder_(table->schema().schema_.get()),
-    start_key_(NULL),
-    end_key_(NULL),
     timeout_(MonoDelta::FromMilliseconds(kRpcTimeoutMillis)) {
 }
 
@@ -200,7 +198,8 @@ Status KuduScanner::Data::ExtractRows(vector<KuduRowResult>* rows) {
 bool KuduScanner::Data::MoreTablets() const {
   CHECK(open_);
   return !remote_->end_key().empty() &&
-      (end_key_ == NULL || end_key_->encoded_key().compare(remote_->end_key()) > 0);
+    (spec_.upper_bound_key() == NULL ||
+     spec_.upper_bound_key()->encoded_key().compare(remote_->end_key()) > 0);
 }
 
 void KuduScanner::Data::PrepareRequest(RequestType state) {

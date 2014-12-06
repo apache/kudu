@@ -12,9 +12,6 @@
 
 namespace kudu {
 
-using std::string;
-
-
 class EncodedKey {
  public:
   // Constructs a new EncodedKey.
@@ -33,7 +30,7 @@ class EncodedKey {
 
   size_t num_key_columns() const { return num_key_cols_; }
 
-  string Stringify(const Schema &schema) const;
+  std::string Stringify(const Schema &schema) const;
 
   // Tests whether this EncodedKey is within the bounds given by 'start'
   // and 'end'.
@@ -44,6 +41,9 @@ class EncodedKey {
     return (start.compare(encoded_key_) <= 0 &&
             (end.empty() || encoded_key_.compare(end) < 0));
   }
+
+  static std::string RangeToString(const EncodedKey* lower,
+                                   const EncodedKey* upper);
 
  private:
   const int num_key_cols_;
@@ -84,48 +84,6 @@ class EncodedKeyBuilder {
   const size_t num_key_cols_;
   size_t idx_;
   vector<const void *> raw_keys_;
-};
-
-// Specifies upper and lower bound using encoded keys
-class EncodedKeyRange {
- public:
-
-  // Constructs a new EncodedKeyRange.
-  // This class takes ownership of the lower_bound and upper_bound
-  // pointers.
-  EncodedKeyRange(EncodedKey *lower_bound,
-                  EncodedKey *upper_bound);
-
-  ~EncodedKeyRange();
-
-  const EncodedKey &lower_bound() const {
-    return *lower_bound_;
-  }
-
-  const EncodedKey &upper_bound() const {
-    return *upper_bound_;
-  }
-
-  bool has_lower_bound() const {
-    return lower_bound_ != NULL;
-  }
-
-  bool has_upper_bound() const {
-    return upper_bound_ != NULL;
-  }
-
-  bool ContainsKey(const Slice &key) const;
-
-  // Return a string for debugging. This outputs the encoded key format,
-  // rather than a user-interpretable string, so shouldn't be used in
-  // user-facing contexts.
-  std::string ToString() const;
-
- private:
-  DISALLOW_COPY_AND_ASSIGN(EncodedKeyRange);
-
-  EncodedKey *lower_bound_;
-  EncodedKey *upper_bound_;
 };
 
 } // namespace kudu

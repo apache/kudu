@@ -13,8 +13,6 @@ RangePredicateEncoder::RangePredicateEncoder(const Schema* key_schema)
 }
 
 void RangePredicateEncoder::EncodeRangePredicates(ScanSpec *spec, bool erase_pushed) {
-  DCHECK_EQ(spec->encoded_ranges().size(), 0);
-
   int num_key_cols = key_schema_->num_key_columns();
   const ColumnRangePredicate *key_preds[num_key_cols];
   ExtractPredicatesOnKeys(*spec, key_preds);
@@ -106,9 +104,14 @@ void RangePredicateEncoder::EncodeRangePredicates(ScanSpec *spec, bool erase_pus
     ErasePushedPredicates(spec, key_preds);
   }
 
-  EncodedKeyRange *r = new EncodedKeyRange(lower, upper);
-  pool_.Add(r);
-  spec->AddEncodedRange(r);
+  if (lower) {
+    pool_.Add(lower);
+  }
+  if (upper && upper != lower) {
+    pool_.Add(upper);
+  }
+  spec->SetLowerBoundKey(lower);
+  spec->SetUpperBoundKey(upper);
 }
 
 void RangePredicateEncoder::ExtractPredicatesOnKeys(

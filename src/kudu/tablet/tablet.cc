@@ -1303,21 +1303,18 @@ Status Tablet::CaptureConsistentIterators(
   // TODO : should we even support multiple predicates on the key, given they're
   // currently ANDed together? This should be the job for a separate query
   // optimizer.
-  if (spec != NULL && spec->encoded_ranges().size() == 1) {
-    const EncodedKeyRange &range = *(spec->encoded_ranges()[0]);
+  if (spec != NULL && spec->lower_bound_key() && spec->upper_bound_key()) {
     // TODO : support open-ended intervals
-    if (range.has_lower_bound() && range.has_upper_bound()) {
-      vector<RowSet *> interval_sets;
-      components_->rowsets->FindRowSetsIntersectingInterval(range.lower_bound().encoded_key(),
-                                                range.upper_bound().encoded_key(),
-                                                &interval_sets);
-      BOOST_FOREACH(const RowSet *rs, interval_sets) {
-        shared_ptr<RowwiseIterator> row_it(rs->NewRowIterator(projection, snap));
-        ret.push_back(row_it);
-      }
-      ret.swap(*iters);
-      return Status::OK();
+    vector<RowSet *> interval_sets;
+    components_->rowsets->FindRowSetsIntersectingInterval(spec->lower_bound_key()->encoded_key(),
+                                                          spec->upper_bound_key()->encoded_key(),
+                                                          &interval_sets);
+    BOOST_FOREACH(const RowSet *rs, interval_sets) {
+      shared_ptr<RowwiseIterator> row_it(rs->NewRowIterator(projection, snap));
+      ret.push_back(row_it);
     }
+    ret.swap(*iters);
+    return Status::OK();
   }
 
   // If there are no encoded predicates or they represent an open-ended range, then

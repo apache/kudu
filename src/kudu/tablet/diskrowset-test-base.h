@@ -224,9 +224,9 @@ class TestRowSet : public KuduRowSetTest {
     ScanSpec spec;
     EncodedKeyBuilder key_builder(&schema_);
     key_builder.AddColumnKey(&row_key);
-    EncodedKey* encoded_key = key_builder.BuildEncodedKey();
-    EncodedKeyRange range(encoded_key, encoded_key);
-    spec.AddEncodedRange(&range);
+    gscoped_ptr<EncodedKey> encoded_key(key_builder.BuildEncodedKey());
+    spec.SetLowerBoundKey(encoded_key.get());
+    spec.SetUpperBoundKey(encoded_key.get());
 
     MvccSnapshot snap = MvccSnapshot::CreateSnapshotIncludingAllTransactions();
     gscoped_ptr<RowwiseIterator> row_iter(rs.NewRowIterator(&schema_, snap));

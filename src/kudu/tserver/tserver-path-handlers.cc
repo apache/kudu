@@ -376,28 +376,19 @@ string TabletServerPathHandlers::ScannerToHtml(const Scanner& scanner) const {
     html << Substitute("<td><b>Tablet $0 is no longer valid.</b></td></tr>\n",
                        scanner.tablet_id());
   } else {
-    vector<string> pushed_preds;
+    string range_pred_str;
     vector<string> other_preds;
-    const Schema& schema = *tablet_peer->tablet()->schema();
-    BOOST_FOREACH(const EncodedKeyRange* key_range, scanner.spec().encoded_ranges()) {
-      string lower_bound_str = "''";
-      string upper_bound_str = "''";
-      if (key_range->has_lower_bound()) {
-        lower_bound_str = key_range->lower_bound().Stringify(schema);
-      }
-      if (key_range->has_upper_bound()) {
-        upper_bound_str = key_range->upper_bound().Stringify(schema);
-      }
-      pushed_preds.push_back(Substitute("lower bound: '$0', upper bound: '$1'",
-                                        lower_bound_str, upper_bound_str));
+    const ScanSpec& spec = scanner.spec();
+    if (spec.lower_bound_key() || spec.upper_bound_key()) {
+      range_pred_str = EncodedKey::RangeToString(spec.lower_bound_key(),
+                                                 spec.upper_bound_key());
     }
     BOOST_FOREACH(const ColumnRangePredicate& pred, scanner.spec().predicates()) {
       other_preds.push_back(pred.ToString());
     }
-    string pushed_pred_str = JoinStrings(pushed_preds, "\n");
     string other_pred_str = JoinStrings(other_preds, "\n");
     html << Substitute("<td>$0</td><td>$1</td></tr>\n",
-                       EscapeForHtmlToString(pushed_pred_str),
+                       EscapeForHtmlToString(range_pred_str),
                        EscapeForHtmlToString(other_pred_str));
   }
   return html.str();

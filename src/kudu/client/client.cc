@@ -741,9 +741,11 @@ struct CloseCallback {
 } // anonymous namespace
 
 string KuduScanner::ToString() const {
-  Slice start_key = data_->start_key_ ? data_->start_key_->encoded_key() : Slice("INF");
-  Slice end_key = data_->end_key_ ? data_->end_key_->encoded_key() : Slice("INF");
-  return strings::Substitute("$0: [$1,$2)", data_->table_->name(),
+  Slice start_key = data_->spec_.lower_bound_key() ?
+    data_->spec_.lower_bound_key()->encoded_key() : Slice("INF");
+  Slice end_key = data_->spec_.upper_bound_key() ?
+    data_->spec_.upper_bound_key()->encoded_key() : Slice("INF");
+  return strings::Substitute("$0: [$1,$2]", data_->table_->name(),
                              start_key.ToDebugString(), end_key.ToDebugString());
 }
 
@@ -753,22 +755,11 @@ Status KuduScanner::Open() {
 
   // Find the first tablet.
   data_->spec_encoder_.EncodeRangePredicates(&data_->spec_, false);
-  CHECK(!data_->spec_.has_encoded_ranges() ||
-        data_->spec_.encoded_ranges().size() == 1);
-  if (data_->spec_.has_encoded_ranges()) {
-    const EncodedKeyRange* key_range = data_->spec_.encoded_ranges()[0];
-    if (key_range->has_lower_bound()) {
-      data_->start_key_ = &key_range->lower_bound();
-    }
-    if (key_range->has_upper_bound()) {
-      data_->end_key_ = &key_range->upper_bound();
-    }
-  }
 
   VLOG(1) << "Beginning scan " << ToString();
 
-  RETURN_NOT_OK(data_->OpenTablet(data_->start_key_ != NULL
-                                  ? data_->start_key_->encoded_key() : Slice()));
+  RETURN_NOT_OK(data_->OpenTablet(data_->spec_.lower_bound_key() != NULL
+                                  ? data_->spec_.lower_bound_key()->encoded_key() : Slice()));
 
   data_->open_ = true;
   return Status::OK();

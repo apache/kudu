@@ -16,13 +16,25 @@ using std::vector;
 
 class ScanSpec {
  public:
+  ScanSpec()
+    : lower_bound_key_(NULL),
+      upper_bound_key_(NULL) {
+  }
+
   typedef vector<ColumnRangePredicate> PredicateList;
 
   void AddPredicate(const ColumnRangePredicate &pred);
 
-  // The ScanSpec does not take ownership of the range. The range
-  // object must remain valid as long as this ScanSpec.
-  void AddEncodedRange(const EncodedKeyRange *range);
+
+  // Set the lower bound (inclusive) for the scan.
+  // Does not take ownership of 'key', which must remain valid.
+  // If called multiple times, the most restrictive key will be used.
+  void SetLowerBoundKey(const EncodedKey* key);
+
+  // Set the upper bound (inclusive) for the scan.
+  // Does not take ownership of 'key', which must remain valid.
+  // If called multiple times, the most restrictive key will be used.
+  void SetUpperBoundKey(const EncodedKey* key);
 
   const vector<ColumnRangePredicate> &predicates() const {
     return predicates_;
@@ -37,19 +49,20 @@ class ScanSpec {
     return &predicates_;
   }
 
-  bool has_encoded_ranges() const {
-    return !encoded_ranges_.empty();
+  const EncodedKey* lower_bound_key() const {
+    return lower_bound_key_;
   }
-
-  const vector<const EncodedKeyRange *> &encoded_ranges() const {
-    return encoded_ranges_;
+  const EncodedKey* upper_bound_key() const {
+    return upper_bound_key_;
   }
 
   std::string ToString() const;
 
  private:
   vector<ColumnRangePredicate> predicates_;
-  vector<const EncodedKeyRange *> encoded_ranges_;
+
+  const EncodedKey* lower_bound_key_;
+  const EncodedKey* upper_bound_key_;
 };
 
 

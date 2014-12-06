@@ -334,55 +334,48 @@ Status CFileSet::Iterator::PushdownRangeScanPredicate(ScanSpec *spec) {
     return Status::OK();
   }
 
-  if (!spec->has_encoded_ranges()) {
-    VLOG(1) << "No predicates that can be pushed down!";
-    return Status::OK();
-  }
-
   Schema key_schema = base_data_->schema().CreateKeyProjection();
-  BOOST_FOREACH(const EncodedKeyRange *range, spec->encoded_ranges()) {
-    if (range->has_lower_bound()) {
-      bool exact;
-      Status s = key_iter_->SeekAtOrAfter(range->lower_bound(), &exact);
-      if (s.IsNotFound()) {
-        // The lower bound is after the end of the key range.
-        // Thus, no rows will pass the predicate, so we set the lower bound
-        // to the end of the file.
-        lower_bound_idx_ = row_count_;
-        return Status::OK();
-      }
+  if (spec->lower_bound_key()) {
+    bool exact;
+    Status s = key_iter_->SeekAtOrAfter(*spec->lower_bound_key(), &exact);
+    if (s.IsNotFound()) {
+      // The lower bound is after the end of the key range.
+      // Thus, no rows will pass the predicate, so we set the lower bound
+      // to the end of the file.
+      lower_bound_idx_ = row_count_;
+      return Status::OK();
+    }
+    RETURN_NOT_OK(s);
+
+    lower_bound_idx_ = std::max(lower_bound_idx_, key_iter_->GetCurrentOrdinal());
+    VLOG(1) << "Pushed lower bound value "
+            << spec->lower_bound_key()->Stringify(key_schema)
+            << " as row_idx >= " << lower_bound_idx_;
+  }
+  if (spec->upper_bound_key()) {
+    bool exact;
+    Status s = key_iter_->SeekAtOrAfter(*spec->upper_bound_key(), &exact);
+    if (s.IsNotFound()) {
+      // The upper bound is after the end of the key range - the existing upper bound
+      // at EOF is correct.
+      VLOG(1) << "Pushed upper bound value "
+              << spec->upper_bound_key()->Stringify(key_schema)
+              << " as EOF (row_idx < " << upper_bound_idx_ << ")";
+    } else {
       RETURN_NOT_OK(s);
 
-      lower_bound_idx_ = std::max(lower_bound_idx_, key_iter_->GetCurrentOrdinal());
-      VLOG(1) << "Pushed lower bound value "
-              << range->lower_bound().Stringify(key_schema)
-              << " as row_idx >= " << lower_bound_idx_;
-    }
-    if (range->has_upper_bound()) {
-      bool exact;
-      Status s = key_iter_->SeekAtOrAfter(range->upper_bound(), &exact);
-      if (s.IsNotFound()) {
-        // The upper bound is after the end of the key range - the existing upper bound
-        // at EOF is correct.
-        VLOG(1) << "Pushed upper bound value "
-                << range->upper_bound().Stringify(key_schema)
-                << " as EOF (row_idx < " << upper_bound_idx_ << ")";
+      rowid_t cur = key_iter_->GetCurrentOrdinal();
+      if (exact) {
+        // Upper bound is exclusive, so add one to ensure we include
+        // the row we seeked to.
+        upper_bound_idx_ = std::min(upper_bound_idx_, cur + 1);
       } else {
-        RETURN_NOT_OK(s);
+        upper_bound_idx_ = std::min(upper_bound_idx_, cur);
+      }
 
-        rowid_t cur = key_iter_->GetCurrentOrdinal();
-        if (exact) {
-          // Upper bound is exclusive, so add one to ensure we include
-          // the row we seeked to.
-          upper_bound_idx_ = std::min(upper_bound_idx_, cur + 1);
-        } else {
-          upper_bound_idx_ = std::min(upper_bound_idx_, cur);
-        }
-
-        VLOG(1) << "Pushed upper bound value "
-                << range->upper_bound().Stringify(key_schema)
-                << " as row_idx < " << upper_bound_idx_;
-        }
+      VLOG(1) << "Pushed upper bound value "
+              << spec->upper_bound_key()->Stringify(key_schema)
+              << " as row_idx < " << upper_bound_idx_;
     }
   }
   return Status::OK();

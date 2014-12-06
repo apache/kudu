@@ -32,13 +32,11 @@ TEST(TestRangePredicateEncoder, TestEncodeRangePredicates) {
     spec.AddPredicate(pred_a);
     spec.AddPredicate(pred_b);
     ASSERT_NO_FATAL_FAILURE(enc.EncodeRangePredicates(&spec, true));
-    LOG(INFO) << spec.predicates().size();
+    SCOPED_TRACE(spec.ToString());
     ASSERT_TRUE(spec.predicates().empty()) << "Should have pushed down all predicates";
-    ASSERT_EQ(spec.encoded_ranges().size(), 1);
-
     // Expect: key >= (255, 3)
-    const EncodedKeyRange *range = spec.encoded_ranges().front();
-    ASSERT_EQ("encoded key >= \\xff\\x03", range->ToString());
+    ASSERT_EQ("encoded key >= \\xff\\x03", EncodedKey::RangeToString(spec.lower_bound_key(),
+                                                                     spec.upper_bound_key()));
   }
 
   u = 254;
@@ -47,7 +45,8 @@ TEST(TestRangePredicateEncoder, TestEncodeRangePredicates) {
     ColumnRangePredicate pred_a(schema.column(0), NULL, &u);
     spec.AddPredicate(pred_a);
     ASSERT_NO_FATAL_FAILURE(enc.EncodeRangePredicates(&spec, true));
-    ASSERT_FALSE(spec.encoded_ranges()[0]->has_lower_bound());
+    ASSERT_EQ("encoded key <= \\xff", EncodedKey::RangeToString(spec.lower_bound_key(),
+                                                                     spec.upper_bound_key()));
   }
 
   // Test that, if so desired, pushed predicates are not erased.
@@ -56,9 +55,8 @@ TEST(TestRangePredicateEncoder, TestEncodeRangePredicates) {
     ColumnRangePredicate pred_a(schema.column(0), &u, &u);
     spec.AddPredicate(pred_a);
     ASSERT_NO_FATAL_FAILURE(enc.EncodeRangePredicates(&spec, false));
-    ASSERT_EQ(1, spec.predicates().size());
-    ASSERT_TRUE(spec.encoded_ranges()[0]->has_lower_bound());
-    ASSERT_TRUE(spec.encoded_ranges()[0]->has_upper_bound());
+    ASSERT_TRUE(spec.lower_bound_key());
+    ASSERT_TRUE(spec.upper_bound_key());
   }
 
   // Test that, if pushed predicates are erased, that we don't
@@ -80,8 +78,8 @@ TEST(TestRangePredicateEncoder, TestEncodeRangePredicates) {
     ASSERT_EQ(1, spec.predicates().size());
 
     // The predicate on column A should be pushed
-    ASSERT_TRUE(spec.encoded_ranges()[0]->has_lower_bound());
-    ASSERT_TRUE(spec.encoded_ranges()[0]->has_upper_bound());
+    ASSERT_TRUE(spec.lower_bound_key());
+    ASSERT_TRUE(spec.upper_bound_key());
   }
 
   // Test that predicates added out of key order are OK.
@@ -92,8 +90,8 @@ TEST(TestRangePredicateEncoder, TestEncodeRangePredicates) {
     ColumnRangePredicate pred_a(schema.column(0), &u, &u);
     spec.AddPredicate(pred_a);
     ASSERT_NO_FATAL_FAILURE(enc.EncodeRangePredicates(&spec, true));
-    ASSERT_TRUE(spec.encoded_ranges()[0]->has_lower_bound());
-    ASSERT_TRUE(spec.encoded_ranges()[0]->has_upper_bound());
+    ASSERT_TRUE(spec.lower_bound_key());
+    ASSERT_TRUE(spec.upper_bound_key());
   }
 }
 
