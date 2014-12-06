@@ -687,9 +687,15 @@ class KUDU_EXPORT KuduScanner {
   // Add a predicate to this scanner.
   // The predicates act as conjunctions -- i.e, they all must pass for
   // a row to be returned.
-  // TODO: currently, the predicates must refer to columns which are also
-  // part of the projection.
   Status AddConjunctPredicate(const KuduColumnRangePredicate& pred) WARN_UNUSED_RESULT;
+
+  // Add a lower bound (inclusive) for the scan.
+  // If any bound is already added, this bound is intersected with that one.
+  Status AddLowerBound(const Slice& key);
+
+  // Add an upper bound (exclusive) for the scan.
+  // If any bound is already added, this bound is intersected with that one.
+  Status AddUpperBound(const Slice& key);
 
   // Begin scanning.
   Status Open();

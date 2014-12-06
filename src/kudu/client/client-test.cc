@@ -360,14 +360,18 @@ class ClientTest : public KuduTest {
     return count;
   }
 
-  void ScanRowsToStrings(KuduTable* table, vector<string>* row_strings) {
+  void ScanTableToStrings(KuduTable* table, vector<string>* row_strings) {
     row_strings->clear();
     KuduScanner scanner(table);
     ASSERT_STATUS_OK(scanner.SetSelection(KuduClient::LEADER_ONLY));
-    ASSERT_STATUS_OK(scanner.Open());
+    ScanToStrings(&scanner, row_strings);
+  }
+
+  void ScanToStrings(KuduScanner* scanner, vector<string>* row_strings) {
+    ASSERT_STATUS_OK(scanner->Open());
     vector<KuduRowResult> rows;
-    while (scanner.HasMoreRows()) {
-      ASSERT_STATUS_OK(scanner.NextBatch(&rows));
+    while (scanner->HasMoreRows()) {
+      ASSERT_STATUS_OK(scanner->NextBatch(&rows));
       BOOST_FOREACH(const KuduRowResult& row, rows) {
         row_strings->push_back(row.ToString());
       }
@@ -750,6 +754,90 @@ TEST_F(ClientTest, TestScanPredicateNonKeyColNotProjected) {
   ASSERT_EQ(nrows, 6);
 }
 
+TEST_F(ClientTest, TestScanWithEncodedRangePredicate) {
+  scoped_refptr<KuduTable> table;
+  ASSERT_NO_FATAL_FAILURE(CreateTable("split-table",
+                                      1, /* replicas */
+                                      GenerateSplitKeys(),
+                                      &table));
+
+  ASSERT_NO_FATAL_FAILURE(InsertTestRows(table.get(), 100));
+
+  vector<string> all_rows;
+  ASSERT_NO_FATAL_FAILURE(ScanTableToStrings(table.get(), &all_rows));
+  ASSERT_EQ(100, all_rows.size());
+
+  // Test a double-sided range within first tablet
+  {
+    KuduScanner scanner(table.get());
+    ASSERT_OK(scanner.AddLowerBound(Slice("\x00\x00\x00\x05", 4)));
+    ASSERT_OK(scanner.AddUpperBound(Slice("\x00\x00\x00\x08", 4)));
+    vector<string> rows;
+    ASSERT_NO_FATAL_FAILURE(ScanToStrings(&scanner, &rows));
+    ASSERT_EQ(0x08 - 0x05 + 1, rows.size());
+    EXPECT_EQ(all_rows[5], rows.front());
+    EXPECT_EQ(all_rows[8], rows.back());
+  }
+
+  // Test a double-sided range spanning tablets
+  {
+    KuduScanner scanner(table.get());
+    ASSERT_OK(scanner.AddLowerBound(Slice("\x00\x00\x00\x05", 4)));
+    ASSERT_OK(scanner.AddUpperBound(Slice("\x00\x00\x00\x15", 4)));
+    vector<string> rows;
+    ASSERT_NO_FATAL_FAILURE(ScanToStrings(&scanner, &rows));
+    ASSERT_EQ(0x15 - 0x05 + 1, rows.size());
+    EXPECT_EQ(all_rows[5], rows.front());
+    EXPECT_EQ(all_rows[0x15], rows.back());
+  }
+
+  // Test a double-sided range within second tablet
+  {
+    KuduScanner scanner(table.get());
+    ASSERT_OK(scanner.AddLowerBound(Slice("\x00\x00\x00\x15", 4)));
+    ASSERT_OK(scanner.AddUpperBound(Slice("\x00\x00\x00\x20", 4)));
+    vector<string> rows;
+    ASSERT_NO_FATAL_FAILURE(ScanToStrings(&scanner, &rows));
+    ASSERT_EQ(0x20 - 0x15 + 1, rows.size());
+    EXPECT_EQ(all_rows[0x15], rows.front());
+    EXPECT_EQ(all_rows[0x20], rows.back());
+  }
+
+  // Test a lower-bound only range.
+  {
+    KuduScanner scanner(table.get());
+    ASSERT_OK(scanner.AddLowerBound(Slice("\x00\x00\x00\x05", 4)));
+    vector<string> rows;
+    ASSERT_NO_FATAL_FAILURE(ScanToStrings(&scanner, &rows));
+    ASSERT_EQ(95, rows.size());
+    EXPECT_EQ(all_rows[5], rows.front());
+    EXPECT_EQ(all_rows[99], rows.back());
+  }
+
+  // Test an upper-bound only range in first tablet.
+  {
+    KuduScanner scanner(table.get());
+    ASSERT_OK(scanner.AddUpperBound(Slice("\x00\x00\x00\x05", 4)));
+    vector<string> rows;
+    ASSERT_NO_FATAL_FAILURE(ScanToStrings(&scanner, &rows));
+    ASSERT_EQ(6, rows.size());
+    EXPECT_EQ(all_rows[0], rows.front());
+    EXPECT_EQ(all_rows[5], rows.back());
+  }
+
+  // Test an upper-bound only range in second tablet.
+  {
+    KuduScanner scanner(table.get());
+    ASSERT_OK(scanner.AddUpperBound(Slice("\x00\x00\x00\x15", 4)));
+    vector<string> rows;
+    ASSERT_NO_FATAL_FAILURE(ScanToStrings(&scanner, &rows));
+    ASSERT_EQ(0x15 + 1, rows.size());
+    EXPECT_EQ(all_rows[0], rows.front());
+    EXPECT_EQ(all_rows[0x15], rows.back());
+  }
+
+}
+
 static void AssertScannersDisappear(const tserver::ScannerManager* manager) {
   // The Close call is async, so we may have to loop a bit until we see it disappear.
   // This loops for ~10sec. Typically it succeeds in only a few milliseconds.
@@ -933,7 +1021,7 @@ TEST_F(ClientTest, TestMultipleMultiRowManualBatches) {
 
   // Verify the data looks right.
   vector<string> rows;
-  ScanRowsToStrings(client_table_.get(), &rows);
+  ScanTableToStrings(client_table_.get(), &rows);
   std::sort(rows.begin(), rows.end());
   ASSERT_EQ(kNumRowsPerTablet, rows.size());
   ASSERT_EQ("(uint32 key=0, uint32 int_val=0, string string_val=hello world, "
@@ -973,7 +1061,7 @@ TEST_F(ClientTest, TestBatchWithPartialError) {
 
   // Verify that the other row was successfully inserted
   vector<string> rows;
-  ScanRowsToStrings(client_table_.get(), &rows);
+  ScanTableToStrings(client_table_.get(), &rows);
   ASSERT_EQ(2, rows.size());
   std::sort(rows.begin(), rows.end());
   ASSERT_EQ("(uint32 key=1, uint32 int_val=1, string string_val=original row, "
@@ -1043,7 +1131,7 @@ void ClientTest::DoApplyWithoutFlushTest(int sleep_micros) {
 
   // Should have no rows.
   vector<string> rows;
-  ScanRowsToStrings(client_table_.get(), &rows);
+  ScanTableToStrings(client_table_.get(), &rows);
   ASSERT_EQ(0, rows.size());
 }
 
@@ -1075,7 +1163,7 @@ TEST_F(ClientTest, TestMutationsWork) {
   ASSERT_STATUS_OK(ApplyUpdateToSession(session.get(), client_table_, 1, 2));
   FlushSessionOrDie(session);
   vector<string> rows;
-  ScanRowsToStrings(client_table_.get(), &rows);
+  ScanTableToStrings(client_table_.get(), &rows);
   ASSERT_EQ(1, rows.size());
   ASSERT_EQ("(uint32 key=1, uint32 int_val=2, string string_val=original row, "
             "uint32 non_null_with_default=12345)", rows[0]);
@@ -1083,7 +1171,7 @@ TEST_F(ClientTest, TestMutationsWork) {
 
   ASSERT_STATUS_OK(ApplyDeleteToSession(session.get(), client_table_, 1));
   FlushSessionOrDie(session);
-  ScanRowsToStrings(client_table_.get(), &rows);
+  ScanTableToStrings(client_table_.get(), &rows);
   ASSERT_EQ(0, rows.size());
 }
 
@@ -1095,7 +1183,7 @@ TEST_F(ClientTest, TestMutateDeletedRow) {
   FlushSessionOrDie(session);
   ASSERT_STATUS_OK(ApplyDeleteToSession(session.get(), client_table_, 1));
   FlushSessionOrDie(session);
-  ScanRowsToStrings(client_table_.get(), &rows);
+  ScanTableToStrings(client_table_.get(), &rows);
   ASSERT_EQ(0, rows.size());
 
   // Attempt update deleted row
@@ -1113,7 +1201,7 @@ TEST_F(ClientTest, TestMutateDeletedRow) {
   ASSERT_EQ(1, errors.size());
   ASSERT_EQ(errors[0]->failed_op().ToString(),
             "UPDATE uint32 key=1, uint32 int_val=2");
-  ScanRowsToStrings(client_table_.get(), &rows);
+  ScanTableToStrings(client_table_.get(), &rows);
   ASSERT_EQ(0, rows.size());
 
   // Attempt delete deleted row
@@ -1130,7 +1218,7 @@ TEST_F(ClientTest, TestMutateDeletedRow) {
   ASSERT_EQ(1, errors2.size());
   ASSERT_EQ(errors2[0]->failed_op().ToString(),
             "DELETE uint32 key=1");
-  ScanRowsToStrings(client_table_.get(), &rows);
+  ScanTableToStrings(client_table_.get(), &rows);
   ASSERT_EQ(0, rows.size());
 }
 
@@ -1154,7 +1242,7 @@ TEST_F(ClientTest, TestMutateNonexistentRow) {
   ASSERT_EQ(1, errors.size());
   ASSERT_EQ(errors[0]->failed_op().ToString(),
             "UPDATE uint32 key=1, uint32 int_val=2");
-  ScanRowsToStrings(client_table_.get(), &rows);
+  ScanTableToStrings(client_table_.get(), &rows);
   ASSERT_EQ(0, rows.size());
 
   // Attempt delete nonexistent row
@@ -1171,7 +1259,7 @@ TEST_F(ClientTest, TestMutateNonexistentRow) {
   ASSERT_EQ(1, errors2.size());
   ASSERT_EQ(errors2[0]->failed_op().ToString(),
             "DELETE uint32 key=1");
-  ScanRowsToStrings(client_table_.get(), &rows);
+  ScanTableToStrings(client_table_.get(), &rows);
   ASSERT_EQ(0, rows.size());
 }
 
@@ -1732,7 +1820,7 @@ TEST_F(ClientTest, DISABLED_TestSeveralRowMutatesPerBatch) {
   ASSERT_STATUS_OK(ApplyUpdateToSession(session.get(), client_table_, 1, 2));
   FlushSessionOrDie(session);
   vector<string> rows;
-  ScanRowsToStrings(client_table_.get(), &rows);
+  ScanTableToStrings(client_table_.get(), &rows);
   ASSERT_EQ(1, rows.size());
   ASSERT_EQ("(uint32 key=1, uint32 int_val=2, string string_val=, "
             "uint32 non_null_with_default=12345)", rows[0]);
@@ -1743,7 +1831,7 @@ TEST_F(ClientTest, DISABLED_TestSeveralRowMutatesPerBatch) {
   // Test insert/delete
   ASSERT_STATUS_OK(ApplyInsertToSession(session.get(), client_table_, 2, 1, ""));
   FlushSessionOrDie(session);
-  ScanRowsToStrings(client_table_.get(), &rows);
+  ScanTableToStrings(client_table_.get(), &rows);
   ASSERT_EQ(1, rows.size());
   ASSERT_EQ("(uint32 key=1, uint32 int_val=2, string string_val=, "
             "uint32 non_null_with_default=12345)", rows[0]);
@@ -1754,14 +1842,14 @@ TEST_F(ClientTest, DISABLED_TestSeveralRowMutatesPerBatch) {
   ASSERT_STATUS_OK(ApplyUpdateToSession(session.get(), client_table_, 1, 1));
   ASSERT_STATUS_OK(ApplyDeleteToSession(session.get(), client_table_, 1));
   FlushSessionOrDie(session);
-  ScanRowsToStrings(client_table_.get(), &rows);
+  ScanTableToStrings(client_table_.get(), &rows);
   ASSERT_EQ(0, rows.size());
 
   // Test delete/insert (insert a row first)
   LOG(INFO) << "Inserting row for delete/insert test, key " << 1 << ".";
   ASSERT_STATUS_OK(ApplyInsertToSession(session.get(), client_table_, 1, 1, ""));
   FlushSessionOrDie(session);
-  ScanRowsToStrings(client_table_.get(), &rows);
+  ScanTableToStrings(client_table_.get(), &rows);
   ASSERT_EQ(1, rows.size());
   ASSERT_EQ("(uint32 key=1, uint32 int_val=1, string string_val=, "
             "uint32 non_null_with_default=12345)", rows[0]);
@@ -1770,7 +1858,7 @@ TEST_F(ClientTest, DISABLED_TestSeveralRowMutatesPerBatch) {
   ASSERT_STATUS_OK(ApplyDeleteToSession(session.get(), client_table_, 1));
   ASSERT_STATUS_OK(ApplyInsertToSession(session.get(), client_table_, 1, 2, ""));
   FlushSessionOrDie(session);
-  ScanRowsToStrings(client_table_.get(), &rows);
+  ScanTableToStrings(client_table_.get(), &rows);
   ASSERT_EQ(1, rows.size());
   ASSERT_EQ("(uint32 key=1, uint32 int_val=2, string string_val=, "
             "uint32 non_null_with_default=12345)", rows[0]);

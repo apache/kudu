@@ -721,6 +721,23 @@ Status KuduScanner::AddConjunctPredicate(const KuduColumnRangePredicate& pred) {
   return Status::OK();
 }
 
+Status KuduScanner::AddLowerBound(const Slice& key) {
+  gscoped_ptr<EncodedKey> enc_key;
+  RETURN_NOT_OK(EncodedKey::DecodeEncodedString(
+                  *data_->table_->schema().schema_, &data_->arena_, key, &enc_key));
+  data_->spec_.SetLowerBoundKey(enc_key.get());
+  data_->pool_.Add(enc_key.release());
+  return Status::OK();
+}
+Status KuduScanner::AddUpperBound(const Slice& key) {
+  gscoped_ptr<EncodedKey> enc_key;
+  RETURN_NOT_OK(EncodedKey::DecodeEncodedString(
+                  *data_->table_->schema().schema_, &data_->arena_, key, &enc_key));
+  data_->spec_.SetUpperBoundKey(enc_key.get());
+  data_->pool_.Add(enc_key.release());
+  return Status::OK();
+}
+
 namespace {
 // Callback for the RPC sent by Close().
 // We can't use the KuduScanner response and RPC controller members for this

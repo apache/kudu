@@ -38,6 +38,7 @@ KuduScanner::Data::Data(KuduTable* table)
     table_(DCHECK_NOTNULL(table)),
     projection_(table->schema().schema_.get()),
     projected_row_size_(CalculateProjectedRowSize(*projection_)),
+    arena_(1024, 1024*1024),
     spec_encoder_(table->schema().schema_.get()),
     timeout_(MonoDelta::FromMilliseconds(kRpcTimeoutMillis)) {
 }
@@ -120,6 +121,22 @@ Status KuduScanner::Data::OpenTablet(const Slice& key) {
     }
     ColumnSchemaToPB(col, pb->mutable_column());
   }
+
+  if (spec_.lower_bound_key()) {
+    scan->mutable_encoded_start_key()->assign(
+      reinterpret_cast<const char*>(spec_.lower_bound_key()->encoded_key().data()),
+      spec_.lower_bound_key()->encoded_key().size());
+  } else {
+    scan->clear_encoded_start_key();
+  }
+  if (spec_.upper_bound_key()) {
+    scan->mutable_encoded_stop_key()->assign(
+      reinterpret_cast<const char*>(spec_.upper_bound_key()->encoded_key().data()),
+      spec_.upper_bound_key()->encoded_key().size());
+  } else {
+    scan->clear_encoded_stop_key();
+  }
+
 
   scan->set_tablet_id(remote_->tablet_id());
   RETURN_NOT_OK(SchemaToColumnPBs(*projection_, scan->mutable_projected_columns()));

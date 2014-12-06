@@ -88,6 +88,9 @@ class KuduScanner::Data {
   const Schema* projection_;
   size_t projected_row_size_;
 
+  Arena arena_;
+  AutoReleasePool pool_;
+
   // Machinery to store and encode raw column range predicates into
   // encoded keys.
   ScanSpec spec_;
