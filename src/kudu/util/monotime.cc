@@ -13,6 +13,7 @@
 #include "kudu/gutil/stringprintf.h"
 #include "kudu/gutil/sysinfo.h"
 #include "kudu/util/monotime.h"
+#include "kudu/util/thread_restrictions.h"
 
 namespace kudu {
 
@@ -224,6 +225,7 @@ double MonoTime::ToSeconds() const {
 }
 
 void SleepFor(const MonoDelta& delta) {
+  ThreadRestrictions::AssertWaitAllowed();
   base::SleepForNanoseconds(delta.ToNanoseconds());
 }
 

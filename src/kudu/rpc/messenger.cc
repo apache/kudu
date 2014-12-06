@@ -109,6 +109,9 @@ void Messenger::AllExternalReferencesDropped() {
 }
 
 void Messenger::Shutdown() {
+  // Since we're shutting down, it's OK to block.
+  ThreadRestrictions::ScopedAllowWait allow_wait;
+
   lock_guard<percpu_rwlock> guard(&lock_);
   if (closing_) {
     return;

@@ -7,7 +7,9 @@
 #include <string>
 
 #include "kudu/gutil/ref_counted.h"
+#include "kudu/util/env.h"
 #include "kudu/util/test_util.h"
+#include "kudu/util/thread_restrictions.h"
 
 using std::string;
 
@@ -88,5 +90,49 @@ TEST_F(ThreadTest, TestCallOnExit) {
   holder->Join();
   ASSERT_EQ("hello 1, hello 2", s);
 }
+
+// The following tests only run in debug mode, since thread restrictions are no-ops
+// in release builds.
+#ifndef NDEBUG
+TEST_F(ThreadTest, TestThreadRestrictions_IO) {
+  // Default should be to allow IO
+  ThreadRestrictions::AssertIOAllowed();
+
+  ThreadRestrictions::SetIOAllowed(false);
+  {
+    ThreadRestrictions::ScopedAllowIO allow_io;
+    ASSERT_TRUE(Env::Default()->FileExists("/"));
+  }
+  ThreadRestrictions::SetIOAllowed(true);
+
+  // Disallow IO - doing IO should crash the process.
+  ASSERT_DEATH({
+      ThreadRestrictions::SetIOAllowed(false);
+      ignore_result(Env::Default()->FileExists("/"));
+    },
+    "Function marked as IO-only was called from a thread that disallows IO");
+}
+
+TEST_F(ThreadTest, TestThreadRestrictions_Waiting) {
+  // Default should be to allow IO
+  ThreadRestrictions::AssertWaitAllowed();
+
+  ThreadRestrictions::SetWaitAllowed(false);
+  {
+    ThreadRestrictions::ScopedAllowWait allow_wait;
+    CountDownLatch l(0);
+    l.Wait();
+  }
+  ThreadRestrictions::SetWaitAllowed(true);
+
+  // Disallow waiting - blocking on a latch should crash the process.
+  ASSERT_DEATH({
+      ThreadRestrictions::SetWaitAllowed(false);
+      CountDownLatch l(0);
+      l.Wait();
+    },
+    "Waiting is not allowed to be used on this thread");
+}
+#endif // NDEBUG
 
 } // namespace kudu

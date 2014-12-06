@@ -18,7 +18,6 @@
 #include "kudu/consensus/opid_util.h"
 #include "kudu/consensus/ref_counted_replicate.h"
 #include "kudu/gutil/ref_counted.h"
-#include "kudu/gutil/threading/thread_restrictions.h"
 #include "kudu/util/locks.h"
 #include "kudu/util/status.h"
 

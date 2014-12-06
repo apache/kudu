@@ -87,6 +87,7 @@ add_library(kudu_util
   thread.cc
   threadlocal.cc
   threadpool.cc
+  thread_restrictions.cc
   trace.cc
   user.cc
   url-coding.cc

@@ -185,6 +185,8 @@ void Peer::ProcessResponse() {
   queue_->ResponseFromPeer(*last_sent, response_, &more_pending);
   state_ = kPeerIdle;
   if (more_pending && state_ != kPeerClosed) {
+    // TODO(KUDU-688): this runs on the reactor thread. We should not do IO here!
+    ThreadRestrictions::ScopedAllowIO allow_io;
     SendNextRequest(true);
   } else {
     sem_.Release();

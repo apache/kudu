@@ -55,6 +55,7 @@
 #include "kudu/rpc/rpc_context.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/thread.h"
+#include "kudu/util/thread_restrictions.h"
 #include "kudu/util/threadpool.h"
 #include "kudu/util/trace.h"
 #include "kudu/cfile/type_encodings.h"
@@ -1464,6 +1465,8 @@ class AsyncTabletRequestTask : public MonitoredTask {
       LOG(WARNING) << "TS " << permanent_uuid_ << ": " << type_name() << " RPC failed for tablet "
                    << tablet_id() << ": " << rpc_.status().ToString();
     } else if (state() != kStateAborted) {
+      // TODO(KUDU-679): we should defer this work to a thread-pool, since it can do IO.
+      ThreadRestrictions::ScopedAllowWait allow_wait;
       HandleResponse(attempt_); // Modifies state_.
     }
 

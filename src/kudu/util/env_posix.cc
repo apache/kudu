@@ -39,6 +39,7 @@
 #include "kudu/util/path_util.h"
 #include "kudu/util/slice.h"
 #include "kudu/util/stopwatch.h"
+#include "kudu/util/thread_restrictions.h"
 
 // Copied from falloc.h. Useful for older kernels that lack support for
 // hole punching; fallocate(2) will return EOPNOTSUPP.
@@ -76,6 +77,7 @@ class ScopedFdCloser {
   }
 
   ~ScopedFdCloser() {
+    ThreadRestrictions::AssertIOAllowed();
     int err = ::close(fd_);
     if (PREDICT_FALSE(err != 0)) {
       PLOG(WARNING) << "Failed to close fd " << fd_;
@@ -99,6 +101,7 @@ static Status IOError(const std::string& context, int err_number) {
 }
 
 static Status DoSync(int fd, const string& filename) {
+  ThreadRestrictions::AssertIOAllowed();
   if (FLAGS_writable_file_use_fsync) {
     if (fsync(fd) < 0) {
       return IOError(filename, errno);
@@ -112,6 +115,7 @@ static Status DoSync(int fd, const string& filename) {
 }
 
 static Status DoOpen(const string& filename, Env::CreateMode mode, int* fd) {
+  ThreadRestrictions::AssertIOAllowed();
   int flags = O_RDWR;
   switch (mode) {
     case Env::CREATE_IF_NON_EXISTING_TRUNCATE:
@@ -144,6 +148,7 @@ class PosixSequentialFile: public SequentialFile {
   virtual ~PosixSequentialFile() { fclose(file_); }
 
   virtual Status Read(size_t n, Slice* result, uint8_t* scratch) OVERRIDE {
+    ThreadRestrictions::AssertIOAllowed();
     Status s;
     size_t r = fread_unlocked(scratch, 1, n, file_);
     *result = Slice(scratch, r);
@@ -159,6 +164,7 @@ class PosixSequentialFile: public SequentialFile {
   }
 
   virtual Status Skip(uint64_t n) OVERRIDE {
+    ThreadRestrictions::AssertIOAllowed();
     if (fseek(file_, n, SEEK_CUR)) {
       return IOError(filename_, errno);
     }
@@ -181,6 +187,7 @@ class PosixRandomAccessFile: public RandomAccessFile {
 
   virtual Status Read(uint64_t offset, size_t n, Slice* result,
                       uint8_t *scratch) const OVERRIDE {
+    ThreadRestrictions::AssertIOAllowed();
     Status s;
     ssize_t r = pread(fd_, scratch, n, static_cast<off_t>(offset));
     *result = Slice(scratch, (r < 0) ? 0 : r);
@@ -192,6 +199,7 @@ class PosixRandomAccessFile: public RandomAccessFile {
   }
 
   virtual Status Size(uint64_t *size) const OVERRIDE {
+    ThreadRestrictions::AssertIOAllowed();
     struct stat st;
     if (fstat(fd_, &st) == -1) {
       return IOError(filename_, errno);
@@ -218,6 +226,7 @@ class PosixMmapReadableFile: public RandomAccessFile {
 
   virtual Status Read(uint64_t offset, size_t n, Slice* result,
                       uint8_t *scratch) const OVERRIDE {
+    ThreadRestrictions::AssertIOAllowed();
     Status s;
     if (offset + n > length_) {
       *result = Slice();
@@ -366,6 +375,7 @@ class PosixMmapFile : public WritableFile {
   }
 
   virtual Status PreAllocate(uint64_t size) OVERRIDE {
+    ThreadRestrictions::AssertIOAllowed();
     uint64_t offset = std::max(filesize_, pre_allocated_size_);
     if (fallocate(fd_, 0, offset, size) < 0) {
       return IOError(filename_, errno);
@@ -377,6 +387,7 @@ class PosixMmapFile : public WritableFile {
   }
 
   virtual Status Append(const Slice& data) OVERRIDE {
+    ThreadRestrictions::AssertIOAllowed();
     const uint8_t *src = data.data();
     size_t left = data.size();
     while (left > 0) {
@@ -407,6 +418,7 @@ class PosixMmapFile : public WritableFile {
   }
 
   virtual Status Close() OVERRIDE {
+    ThreadRestrictions::AssertIOAllowed();
     Status s;
     size_t unused = limit_ - dst_;
     if (!UnmapCurrentRegion()) {
@@ -442,6 +454,7 @@ class PosixMmapFile : public WritableFile {
   }
 
   virtual Status Flush(FlushMode mode) OVERRIDE {
+    ThreadRestrictions::AssertIOAllowed();
     int flags = SYNC_FILE_RANGE_WRITE;
     if (mode == FLUSH_SYNC) {
       flags |= SYNC_FILE_RANGE_WAIT_AFTER;
@@ -453,6 +466,7 @@ class PosixMmapFile : public WritableFile {
   }
 
   virtual Status Sync() OVERRIDE {
+    ThreadRestrictions::AssertIOAllowed();
     if (pending_sync_) {
       // Some unmapped data was not synced, sync the entire file.
       pending_sync_ = false;
@@ -518,6 +532,7 @@ class PosixWritableFile : public WritableFile {
   }
 
   virtual Status AppendVector(const vector<Slice>& data_vector) OVERRIDE {
+    ThreadRestrictions::AssertIOAllowed();
     static const size_t kIovMaxElements = IOV_MAX;
 
     Status s;
@@ -531,6 +546,7 @@ class PosixWritableFile : public WritableFile {
   }
 
   virtual Status PreAllocate(uint64_t size) OVERRIDE {
+    ThreadRestrictions::AssertIOAllowed();
     uint64_t offset = std::max(filesize_, pre_allocated_size_);
     if (fallocate(fd_, 0, offset, size) < 0) {
       if (errno == EOPNOTSUPP) {
@@ -547,6 +563,7 @@ class PosixWritableFile : public WritableFile {
   }
 
   virtual Status Close() OVERRIDE {
+    ThreadRestrictions::AssertIOAllowed();
     Status s;
 
     // If we've allocated more space than we used, truncate to the
@@ -579,6 +596,7 @@ class PosixWritableFile : public WritableFile {
   }
 
   virtual Status Flush(FlushMode mode) OVERRIDE {
+    ThreadRestrictions::AssertIOAllowed();
     int flags = SYNC_FILE_RANGE_WRITE;
     if (mode == FLUSH_SYNC) {
       flags |= SYNC_FILE_RANGE_WAIT_AFTER;
@@ -590,6 +608,7 @@ class PosixWritableFile : public WritableFile {
   }
 
   virtual Status Sync() OVERRIDE {
+    ThreadRestrictions::AssertIOAllowed();
     LOG_SLOW_EXECUTION(WARNING, 1000, Substitute("sync call for $0", filename_)) {
       if (pending_sync_) {
         pending_sync_ = false;
@@ -609,6 +628,7 @@ class PosixWritableFile : public WritableFile {
 
   Status DoWritev(const vector<Slice>& data_vector,
                   size_t offset, size_t n) {
+    ThreadRestrictions::AssertIOAllowed();
     DCHECK_LE(n, IOV_MAX);
 
     struct iovec iov[n];
@@ -670,6 +690,7 @@ class PosixRWFile : public RWFile {
 
   virtual Status Read(uint64_t offset, size_t length,
                       Slice* result, uint8_t* scratch) const OVERRIDE {
+    ThreadRestrictions::AssertIOAllowed();
     int rem = length;
     uint8_t* dst = scratch;
     while (rem > 0) {
@@ -695,6 +716,7 @@ class PosixRWFile : public RWFile {
   }
 
   virtual Status Write(uint64_t offset, const Slice& data) OVERRIDE {
+    ThreadRestrictions::AssertIOAllowed();
     ssize_t written = pwrite(fd_, data.data(), data.size(), offset);
 
     if (PREDICT_FALSE(written == -1)) {
@@ -713,6 +735,7 @@ class PosixRWFile : public RWFile {
   }
 
   virtual Status PreAllocate(uint64_t offset, size_t length) OVERRIDE {
+    ThreadRestrictions::AssertIOAllowed();
     if (fallocate(fd_, 0, offset, length) < 0) {
       if (errno == EOPNOTSUPP) {
         KLOG_FIRST_N(WARNING, 1) << "The filesystem does not support fallocate().";
@@ -726,6 +749,7 @@ class PosixRWFile : public RWFile {
   }
 
   virtual Status PunchHole(uint64_t offset, size_t length) OVERRIDE {
+    ThreadRestrictions::AssertIOAllowed();
     if (fallocate(fd_, FALLOC_FL_PUNCH_HOLE | FALLOC_FL_KEEP_SIZE, offset, length) < 0) {
       return IOError(filename_, errno);
     }
@@ -733,6 +757,7 @@ class PosixRWFile : public RWFile {
   }
 
   virtual Status Flush(FlushMode mode, uint64_t offset, size_t length) OVERRIDE {
+    ThreadRestrictions::AssertIOAllowed();
     int flags = SYNC_FILE_RANGE_WRITE;
     if (mode == FLUSH_SYNC) {
       flags |= SYNC_FILE_RANGE_WAIT_AFTER;
@@ -744,6 +769,7 @@ class PosixRWFile : public RWFile {
   }
 
   virtual Status Sync() OVERRIDE {
+    ThreadRestrictions::AssertIOAllowed();
     LOG_SLOW_EXECUTION(WARNING, 1000, Substitute("sync call for $0", filename())) {
       if (pending_sync_) {
         pending_sync_ = false;
@@ -754,6 +780,7 @@ class PosixRWFile : public RWFile {
   }
 
   virtual Status Close() OVERRIDE {
+    ThreadRestrictions::AssertIOAllowed();
     Status s;
 
     if (sync_on_close_) {
@@ -774,6 +801,7 @@ class PosixRWFile : public RWFile {
   }
 
   virtual Status Size(uint64_t* size) const OVERRIDE {
+    ThreadRestrictions::AssertIOAllowed();
     struct stat st;
     if (fstat(fd_, &st) == -1) {
       return IOError(filename_, errno);
@@ -794,6 +822,7 @@ class PosixRWFile : public RWFile {
 };
 
 static int LockOrUnlock(int fd, bool lock) {
+  ThreadRestrictions::AssertIOAllowed();
   errno = 0;
   struct flock f;
   memset(&f, 0, sizeof(f));
@@ -819,6 +848,7 @@ class PosixEnv : public Env {
 
   virtual Status NewSequentialFile(const std::string& fname,
                                    gscoped_ptr<SequentialFile>* result) OVERRIDE {
+    ThreadRestrictions::AssertIOAllowed();
     FILE* f = fopen(fname.c_str(), "r");
     if (f == NULL) {
       return IOError(fname, errno);
@@ -836,6 +866,7 @@ class PosixEnv : public Env {
   virtual Status NewRandomAccessFile(const RandomAccessFileOptions& opts,
                                      const std::string& fname,
                                      gscoped_ptr<RandomAccessFile>* result) OVERRIDE {
+    ThreadRestrictions::AssertIOAllowed();
     int fd = open(fname.c_str(), O_RDONLY);
     if (fd < 0) {
       return IOError(fname, errno);
@@ -881,6 +912,7 @@ class PosixEnv : public Env {
                                      const std::string& name_template,
                                      std::string* created_filename,
                                      gscoped_ptr<WritableFile>* result) OVERRIDE {
+    ThreadRestrictions::AssertIOAllowed();
     gscoped_ptr<char[]> fname(new char[name_template.size() + 1]);
     ::snprintf(fname.get(), name_template.size() + 1, "%s", name_template.c_str());
     const int fd = ::mkstemp(fname.get());
@@ -907,11 +939,13 @@ class PosixEnv : public Env {
   }
 
   virtual bool FileExists(const std::string& fname) OVERRIDE {
+    ThreadRestrictions::AssertIOAllowed();
     return access(fname.c_str(), F_OK) == 0;
   }
 
   virtual Status GetChildren(const std::string& dir,
                              std::vector<std::string>* result) OVERRIDE {
+    ThreadRestrictions::AssertIOAllowed();
     result->clear();
     DIR* d = opendir(dir.c_str());
     if (d == NULL) {
@@ -927,6 +961,7 @@ class PosixEnv : public Env {
   }
 
   virtual Status DeleteFile(const std::string& fname) OVERRIDE {
+    ThreadRestrictions::AssertIOAllowed();
     Status result;
     if (unlink(fname.c_str()) != 0) {
       result = IOError(fname, errno);
@@ -935,6 +970,7 @@ class PosixEnv : public Env {
   };
 
   virtual Status CreateDir(const std::string& name) OVERRIDE {
+    ThreadRestrictions::AssertIOAllowed();
     Status result;
     if (mkdir(name.c_str(), 0755) != 0) {
       result = IOError(name, errno);
@@ -943,6 +979,7 @@ class PosixEnv : public Env {
   };
 
   virtual Status DeleteDir(const std::string& name) OVERRIDE {
+    ThreadRestrictions::AssertIOAllowed();
     Status result;
     if (rmdir(name.c_str()) != 0) {
       result = IOError(name, errno);
@@ -951,6 +988,7 @@ class PosixEnv : public Env {
   };
 
   virtual Status SyncDir(const std::string& dirname) OVERRIDE {
+    ThreadRestrictions::AssertIOAllowed();
     int dir_fd;
     if ((dir_fd = open(dirname.c_str(), O_DIRECTORY|O_RDONLY)) == -1) {
       return IOError(dirname, errno);
@@ -968,6 +1006,7 @@ class PosixEnv : public Env {
   }
 
   virtual Status GetFileSize(const std::string& fname, uint64_t* size) OVERRIDE {
+    ThreadRestrictions::AssertIOAllowed();
     Status s;
     struct stat sbuf;
     if (stat(fname.c_str(), &sbuf) != 0) {
@@ -979,6 +1018,7 @@ class PosixEnv : public Env {
   }
 
   virtual Status GetFileSizeOnDisk(const std::string& fname, uint64_t* size) OVERRIDE {
+    ThreadRestrictions::AssertIOAllowed();
     Status s;
     struct stat sbuf;
     if (stat(fname.c_str(), &sbuf) != 0) {
@@ -995,6 +1035,7 @@ class PosixEnv : public Env {
   }
 
   virtual Status GetBlockSize(const string& fname, uint64_t* block_size) OVERRIDE {
+    ThreadRestrictions::AssertIOAllowed();
     Status s;
     struct stat sbuf;
     if (stat(fname.c_str(), &sbuf) != 0) {
@@ -1006,6 +1047,7 @@ class PosixEnv : public Env {
   }
 
   virtual Status RenameFile(const std::string& src, const std::string& target) OVERRIDE {
+    ThreadRestrictions::AssertIOAllowed();
     Status result;
     if (rename(src.c_str(), target.c_str()) != 0) {
       result = IOError(src, errno);
@@ -1014,6 +1056,7 @@ class PosixEnv : public Env {
   }
 
   virtual Status LockFile(const std::string& fname, FileLock** lock) OVERRIDE {
+    ThreadRestrictions::AssertIOAllowed();
     *lock = NULL;
     Status result;
     int fd = open(fname.c_str(), O_RDWR | O_CREAT, 0644);
@@ -1031,6 +1074,7 @@ class PosixEnv : public Env {
   }
 
   virtual Status UnlockFile(FileLock* lock) OVERRIDE {
+    ThreadRestrictions::AssertIOAllowed();
     PosixFileLock* my_lock = reinterpret_cast<PosixFileLock*>(lock);
     Status result;
     if (LockOrUnlock(my_lock->fd_, false) == -1) {
@@ -1072,6 +1116,7 @@ class PosixEnv : public Env {
   }
 
   virtual void SleepForMicroseconds(int micros) OVERRIDE {
+    ThreadRestrictions::AssertWaitAllowed();
     SleepFor(MonoDelta::FromMicroseconds(micros));
   }
 
@@ -1095,6 +1140,7 @@ class PosixEnv : public Env {
   }
 
   virtual Status IsDirectory(const string& path, bool* is_dir) OVERRIDE {
+    ThreadRestrictions::AssertIOAllowed();
     Status s;
     struct stat sbuf;
     if (stat(path.c_str(), &sbuf) != 0) {
@@ -1106,6 +1152,7 @@ class PosixEnv : public Env {
   }
 
   virtual Status Walk(const string& root, DirectoryOrder order, const WalkCallback& cb) OVERRIDE {
+    ThreadRestrictions::AssertIOAllowed();
     // Some sanity checks
     CHECK_NE(root, "/");
     CHECK_NE(root, "./");
@@ -1173,6 +1220,7 @@ class PosixEnv : public Env {
   }
 
   virtual Status Canonicalize(const string& path, string* result) OVERRIDE {
+    ThreadRestrictions::AssertIOAllowed();
     gscoped_ptr<char[], FreeDeleter> r(realpath(path.c_str(), NULL));
     if (!r) {
       return IOError(path, errno);

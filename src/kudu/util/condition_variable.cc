@@ -10,8 +10,8 @@
 #include <errno.h>
 #include <sys/time.h>
 
-#include "kudu/gutil/threading/thread_restrictions.h"
 #include "kudu/util/monotime.h"
+#include "kudu/util/thread_restrictions.h"
 
 namespace kudu {
 
@@ -48,7 +48,7 @@ ConditionVariable::~ConditionVariable() {
 }
 
 void ConditionVariable::Wait() const {
-  base::ThreadRestrictions::AssertWaitAllowed();
+  ThreadRestrictions::AssertWaitAllowed();
 #if !defined(NDEBUG)
   user_lock_->CheckHeldAndUnmark();
 #endif
@@ -60,7 +60,7 @@ void ConditionVariable::Wait() const {
 }
 
 bool ConditionVariable::TimedWait(const MonoDelta& max_time) const {
-  base::ThreadRestrictions::AssertWaitAllowed();
+  ThreadRestrictions::AssertWaitAllowed();
 
   // Negative delta means we've already timed out.
   int64 nsecs = max_time.ToNanoseconds();

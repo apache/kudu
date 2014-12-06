@@ -32,6 +32,7 @@
 #include "kudu/util/monotime.h"
 #include "kudu/util/thread.h"
 #include "kudu/util/threadpool.h"
+#include "kudu/util/thread_restrictions.h"
 #include "kudu/util/status.h"
 #include "kudu/util/net/socket.h"
 
@@ -290,6 +291,8 @@ bool ReactorThread::IsCurrentThread() const {
 }
 
 void ReactorThread::RunThread() {
+  ThreadRestrictions::SetWaitAllowed(false);
+  ThreadRestrictions::SetIOAllowed(false);
   DVLOG(6) << "Calling ReactorThread::RunThread()...";
   loop_.run(0);
   VLOG(1) << name() << " thread exiting.";

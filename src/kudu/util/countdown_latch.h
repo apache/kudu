@@ -8,6 +8,7 @@
 #include "kudu/util/condition_variable.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/mutex.h"
+#include "kudu/util/thread_restrictions.h"
 
 namespace kudu {
 
@@ -54,6 +55,7 @@ class CountDownLatch {
   // Wait until the count on the latch reaches zero.
   // If the count is already zero, this returns immediately.
   void Wait() const {
+    ThreadRestrictions::AssertWaitAllowed();
     MutexLock lock(lock_);
     while (count_ > 0) {
       cond_.Wait();
@@ -63,6 +65,7 @@ class CountDownLatch {
   // Waits for the count on the latch to reach zero, or until 'until' time is reached.
   // Returns true if the count became zero, false otherwise.
   bool WaitUntil(const MonoTime& when) const {
+    ThreadRestrictions::AssertWaitAllowed();
     MonoDelta relative = when.GetDeltaSince(MonoTime::Now(MonoTime::FINE));
     return WaitFor(relative);
   }
@@ -70,6 +73,7 @@ class CountDownLatch {
   // Waits for the count on the latch to reach zero, or until 'delta' time elapses.
   // Returns true if the count became zero, false otherwise.
   bool WaitFor(const MonoDelta& delta) const {
+    ThreadRestrictions::AssertWaitAllowed();
     MutexLock lock(lock_);
     while (count_ > 0) {
       if (!cond_.TimedWait(delta)) {
