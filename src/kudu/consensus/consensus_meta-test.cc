@@ -4,14 +4,15 @@
 
 #include <gtest/gtest.h>
 
+#include "kudu/consensus/opid_util.h"
 #include "kudu/fs/fs_manager.h"
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/server/metadata.pb.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
-#define ASSERT_VALUES_EQUAL(cmeta, seqno, uuid, term) \
-  ASSERT_NO_FATAL_FAILURE(AssertValuesEqual(cmeta, seqno, uuid, term))
+#define ASSERT_VALUES_EQUAL(cmeta, opid_index, uuid, term) \
+  ASSERT_NO_FATAL_FAILURE(AssertValuesEqual(cmeta, opid_index, uuid, term))
 
 namespace kudu {
 namespace consensus {
@@ -20,7 +21,6 @@ using metadata::QuorumPB;
 using std::string;
 
 const char* kTabletId = "test-consensus-metadata";
-const int64_t kInitialSeqno = 10;
 const uint64_t kInitialTerm = 3;
 
 class ConsensusMetadataTest : public KuduTest {
@@ -36,21 +36,21 @@ class ConsensusMetadataTest : public KuduTest {
 
     // Initialize test quorum.
     quorum_.set_local(true);
-    quorum_.set_seqno(kInitialSeqno);
     quorum_.add_peers()->set_permanent_uuid(fs_manager_.uuid());
+    quorum_.set_opid_index(kInvalidOpIdIndex);
   }
 
  protected:
   // Assert that the given cmeta has a single quorum with the given metadata values.
   void AssertValuesEqual(const ConsensusMetadata& cmeta,
-                         int64_t seqno, const string& permanant_uuid, uint64_t term);
+                         int64_t opid_index, const string& permanant_uuid, uint64_t term);
 
   FsManager fs_manager_;
   QuorumPB quorum_;
 };
 
 void ConsensusMetadataTest::AssertValuesEqual(const ConsensusMetadata& cmeta,
-                                              int64_t seqno,
+                                              int64_t opid_index,
                                               const string& permanant_uuid,
                                               uint64_t term) {
   // Sanity checks.
@@ -58,7 +58,7 @@ void ConsensusMetadataTest::AssertValuesEqual(const ConsensusMetadata& cmeta,
   ASSERT_EQ(1, cmeta.pb().committed_quorum().peers_size());
 
   // Value checks.
-  ASSERT_EQ(seqno, cmeta.pb().committed_quorum().seqno());
+  ASSERT_EQ(opid_index, cmeta.pb().committed_quorum().opid_index());
   ASSERT_EQ(permanant_uuid, cmeta.pb().committed_quorum().peers().begin()->permanent_uuid());
   ASSERT_EQ(term, cmeta.pb().current_term());
 }
@@ -74,7 +74,7 @@ TEST_F(ConsensusMetadataTest, TestCreateLoad) {
   // Load the file.
   gscoped_ptr<ConsensusMetadata> cmeta;
   ASSERT_OK(ConsensusMetadata::Load(&fs_manager_, kTabletId, &cmeta));
-  ASSERT_VALUES_EQUAL(*cmeta, kInitialSeqno, fs_manager_.uuid(), kInitialTerm);
+  ASSERT_VALUES_EQUAL(*cmeta, kInvalidOpIdIndex, fs_manager_.uuid(), kInitialTerm);
 }
 
 // Ensure that we get an error when loading a file that doesn't exist.
@@ -98,7 +98,7 @@ TEST_F(ConsensusMetadataTest, TestFlush) {
   {
     gscoped_ptr<ConsensusMetadata> cmeta_read;
     ASSERT_OK(ConsensusMetadata::Load(&fs_manager_, kTabletId, &cmeta_read));
-    ASSERT_VALUES_EQUAL(*cmeta_read, kInitialSeqno, fs_manager_.uuid(), kInitialTerm);
+    ASSERT_VALUES_EQUAL(*cmeta_read, kInvalidOpIdIndex, fs_manager_.uuid(), kInitialTerm);
   }
 
   ASSERT_OK(cmeta->Flush());
@@ -106,7 +106,7 @@ TEST_F(ConsensusMetadataTest, TestFlush) {
   {
     gscoped_ptr<ConsensusMetadata> cmeta_read;
     ASSERT_OK(ConsensusMetadata::Load(&fs_manager_, kTabletId, &cmeta_read));
-    ASSERT_VALUES_EQUAL(*cmeta_read, kInitialSeqno, fs_manager_.uuid(), kNewTerm);
+    ASSERT_VALUES_EQUAL(*cmeta_read, kInvalidOpIdIndex, fs_manager_.uuid(), kNewTerm);
   }
 }
 

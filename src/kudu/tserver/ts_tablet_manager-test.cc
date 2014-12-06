@@ -21,6 +21,9 @@
 #define ASSERT_REPORT_HAS_UPDATED_TABLET(report, tablet_id) \
   ASSERT_NO_FATAL_FAILURE(AssertReportHasUpdatedTablet(report, tablet_id))
 
+#define ASSERT_MONOTONIC_REPORT_SEQNO(report_seqno, tablet_report) \
+  ASSERT_NO_FATAL_FAILURE(AssertMonotonicReportSeqno(report_seqno, tablet_report))
+
 namespace kudu {
 namespace tserver {
 
@@ -136,10 +139,10 @@ TEST_F(TsTabletManagerTest, TestCreateTablet) {
   ASSERT_EQ(kTabletId, peer->tablet()->tablet_id());
 }
 
-static void CheckSequenceNumber(int64_t *seqno,
-                                const TabletReportPB &report) {
-  ASSERT_LT(*seqno, report.sequence_number());
-  *seqno = report.sequence_number();
+static void AssertMonotonicReportSeqno(int64_t* report_seqno,
+                                       const TabletReportPB &report) {
+  ASSERT_LT(*report_seqno, report.sequence_number());
+  *report_seqno = report.sequence_number();
 }
 
 static void AssertReportHasUpdatedTablet(const TabletReportPB& report,
@@ -150,8 +153,8 @@ static void AssertReportHasUpdatedTablet(const TabletReportPB& report,
     if (reported_tablet.tablet_id() == tablet_id) {
       found_tablet = true;
       ASSERT_TRUE(reported_tablet.has_quorum());
-      ASSERT_EQ(reported_tablet.quorum().seqno(), 0);
-      ASSERT_EQ(reported_tablet.quorum().peers_size(), 1);
+      ASSERT_EQ(1, reported_tablet.quorum().opid_index());
+      ASSERT_EQ(1, reported_tablet.quorum().peers_size());
       ASSERT_EQ(reported_tablet.quorum().peers(0).role(),
                 metadata::QuorumPeerPB::LEADER);
     }
@@ -167,14 +170,14 @@ TEST_F(TsTabletManagerTest, TestTabletReports) {
   tablet_manager_->GenerateFullTabletReport(&report);
   ASSERT_FALSE(report.is_incremental());
   ASSERT_EQ(0, report.updated_tablets().size());
-  CheckSequenceNumber(&seqno, report);
+  ASSERT_MONOTONIC_REPORT_SEQNO(&seqno, report);
   tablet_manager_->MarkTabletReportAcknowledged(report);
 
   // Another report should now be incremental, but with no changes.
   tablet_manager_->GenerateIncrementalTabletReport(&report);
   ASSERT_TRUE(report.is_incremental());
   ASSERT_EQ(0, report.updated_tablets().size());
-  CheckSequenceNumber(&seqno, report);
+  ASSERT_MONOTONIC_REPORT_SEQNO(&seqno, report);
   tablet_manager_->MarkTabletReportAcknowledged(report);
 
   // Create a tablet and do another incremental report - should include the tablet.
@@ -184,7 +187,7 @@ TEST_F(TsTabletManagerTest, TestTabletReports) {
     tablet_manager_->GenerateIncrementalTabletReport(&report);
     updated_tablets = report.updated_tablets().size();
     ASSERT_TRUE(report.is_incremental());
-    CheckSequenceNumber(&seqno, report);
+    ASSERT_MONOTONIC_REPORT_SEQNO(&seqno, report);
   }
 
   ASSERT_REPORT_HAS_UPDATED_TABLET(report, "tablet-1");
@@ -195,14 +198,14 @@ TEST_F(TsTabletManagerTest, TestTabletReports) {
   ASSERT_TRUE(report.is_incremental());
   ASSERT_EQ(1, report.updated_tablets().size());
   ASSERT_REPORT_HAS_UPDATED_TABLET(report, "tablet-1");
-  CheckSequenceNumber(&seqno, report);
+  ASSERT_MONOTONIC_REPORT_SEQNO(&seqno, report);
 
   // Now acknowledge the last report, and further incrementals should be empty.
   tablet_manager_->MarkTabletReportAcknowledged(report);
   tablet_manager_->GenerateIncrementalTabletReport(&report);
   ASSERT_TRUE(report.is_incremental());
   ASSERT_EQ(0, report.updated_tablets().size());
-  CheckSequenceNumber(&seqno, report);
+  ASSERT_MONOTONIC_REPORT_SEQNO(&seqno, report);
   tablet_manager_->MarkTabletReportAcknowledged(report);
 
   // Create a second tablet, and ensure the incremental report shows it.
@@ -218,7 +221,7 @@ TEST_F(TsTabletManagerTest, TestTabletReports) {
     tablet_manager_->GenerateIncrementalTabletReport(&report);
     updated_tablets = report.updated_tablets().size();
     ASSERT_TRUE(report.is_incremental());
-    CheckSequenceNumber(&seqno, report);
+    ASSERT_MONOTONIC_REPORT_SEQNO(&seqno, report);
   }
 
   bool found_tablet_2 = false;
@@ -238,7 +241,7 @@ TEST_F(TsTabletManagerTest, TestTabletReports) {
   ASSERT_EQ(2, report.updated_tablets().size());
   ASSERT_REPORT_HAS_UPDATED_TABLET(report, "tablet-1");
   ASSERT_REPORT_HAS_UPDATED_TABLET(report, "tablet-2");
-  CheckSequenceNumber(&seqno, report);
+  ASSERT_MONOTONIC_REPORT_SEQNO(&seqno, report);
 }
 
 } // namespace tserver

@@ -89,8 +89,8 @@ class TabletPeerTest : public KuduTabletTest {
     quorum_peer.set_role(QuorumPeerPB::CANDIDATE);
     QuorumPB quorum;
     quorum.set_local(true);
-    quorum.set_seqno(consensus::kUninitializedQuorumSeqNo);
     quorum.add_peers()->CopyFrom(quorum_peer);
+    quorum.set_opid_index(consensus::kInvalidOpIdIndex);
 
     gscoped_ptr<ConsensusMetadata> cmeta;
     ASSERT_OK(ConsensusMetadata::Create(tablet()->metadata()->fs_manager(),

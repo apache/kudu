@@ -32,7 +32,6 @@ using std::string;
 using consensus::ConsensusBootstrapInfo;
 using consensus::ConsensusMetadata;
 using consensus::kMinimumTerm;
-using consensus::kUninitializedQuorumSeqNo;
 using log::Log;
 using log::LogTestBase;
 using log::LogAnchorRegistry;
@@ -109,8 +108,9 @@ class BootstrapTest : public LogTestBase {
 
     metadata::QuorumPB quorum;
     quorum.set_local(true);
-    quorum.set_seqno(kUninitializedQuorumSeqNo);
     quorum.add_peers()->set_permanent_uuid(meta->fs_manager()->uuid());
+    quorum.set_opid_index(consensus::kInvalidOpIdIndex);
+
     gscoped_ptr<ConsensusMetadata> cmeta;
     RETURN_NOT_OK_PREPEND(ConsensusMetadata::Create(meta->fs_manager(), meta->oid(), quorum,
                                                     kMinimumTerm, &cmeta),

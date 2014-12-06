@@ -4,6 +4,7 @@
 #include "kudu/tablet/transactions/change_config_transaction.h"
 
 #include "kudu/common/wire_protocol.h"
+#include "kudu/consensus/quorum_util.h"
 #include "kudu/rpc/rpc_context.h"
 #include "kudu/server/hybrid_clock.h"
 #include "kudu/tablet/tablet.h"
@@ -23,8 +24,15 @@ using consensus::OP_ABORT;
 using consensus::CHANGE_CONFIG_OP;
 using consensus::DriverType;
 using metadata::QuorumPB;
+using metadata::QuorumPeerPB;
 using strings::Substitute;
 using tserver::TabletServerErrorPB;
+
+Status ChangeConfigTransactionState::set_old_quorum(metadata::QuorumPB quorum) {
+  RETURN_NOT_OK(consensus::VerifyQuorum(quorum, consensus::COMMITTED_QUORUM));
+  old_quorum_.CopyFrom(quorum);
+  return Status::OK();
+}
 
 string ChangeConfigTransactionState::ToString() const {
   return Substitute("ChangeConfigTransactionState [opid=$0, timestamp=$1, request=$2]",
@@ -54,15 +62,8 @@ Status ChangeConfigTransaction::Prepare() {
 
   DCHECK(state_->old_quorum().IsInitialized());
   DCHECK(state_->request()->has_new_config());
-  const QuorumPB& old_quorum = state_->old_quorum();
-  const QuorumPB& new_quorum = state_->request()->new_config();
-
-  Status s;
-  if (old_quorum.seqno() >= new_quorum.seqno()) {
-    s = Status::IllegalState(Substitute("New Quorum configuration has a "
-        "lower sequence number than the old configuration. Old: $0. New: $1",
-        old_quorum.DebugString(), new_quorum.DebugString()));
-  }
+  Status s = consensus::VerifyQuorum(state_->request()->new_config(),
+                                     consensus::UNCOMMITTED_QUORUM);
 
   TRACE("PREPARE CHANGE CONFIG: finished (Status: $0)", s.ToString());
 
@@ -107,8 +108,20 @@ void ChangeConfigTransaction::Finish() {
     VLOG(2) << Substitute("T $0 P $1: Committing ChangeConfigTransaction: $2",
                           tablet_id, peer_uuid, ToString());
   }
-  state_->tablet_peer()->ConsensusStateChanged(state_->old_quorum(),
-                                               state_->request()->new_config());
+
+  // We set the opid_index in the quorum here just for the benefit of logging.
+  // The Consensus implementation has identical logic that is actually used to
+  // persist this config change to the ConsensusMetadata file.
+  QuorumPB new_quorum = state_->request()->new_config();
+  new_quorum.set_opid_index(state_->consensus_round()->id().index());
+  string tablet_id = state_->tablet_peer()->tablet_id();
+  string uuid = state_->tablet_peer()->permanent_uuid();
+  LOG(INFO) << Substitute("T $0 P $1: Configuration changed", tablet_id, uuid) << std::endl
+            << "Changed from: " << state_->old_quorum().ShortDebugString() << std::endl
+            << "Changed to: " << new_quorum.ShortDebugString();
+
+  QuorumPeerPB::Role new_role = consensus::GetRoleInQuorum(uuid, new_quorum);
+  state_->tablet_peer()->ConsensusStateChanged(new_role);
   state()->commit();
 }
 

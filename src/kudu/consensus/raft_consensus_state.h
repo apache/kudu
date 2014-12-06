@@ -60,17 +60,13 @@ struct QuorumState {
   // Cache of the total size of the active quorum.
   const int quorum_size;
 
-  // Sequence number of the active quorum.
-  const int64_t config_seqno;
-
  private:
   // Private constructor called by static Build method.
   QuorumState(metadata::QuorumPeerPB::Role role,
               const std::string& leader_uuid,
               const std::tr1::unordered_set<std::string>& voting_peers,
               int majority_size,
-              int quorum_size,
-              int64_t config_seqno);
+              int quorum_size);
 };
 
 // Class that coordinates access to the replica state (independently of Role).

@@ -121,8 +121,8 @@ class SysCatalogTable {
   // in the Master options followers list, as it will add itself automatically.
   //
   // TODO: Revisit this whole thing when integrating leader election.
-  Status SetupDistributedQuorum(const MasterOptions& options, int64_t seqno,
-                                metadata::QuorumPB* quorum);
+  Status SetupDistributedQuorum(const MasterOptions& options,
+                                metadata::QuorumPB* committed_quorum);
 
   const scoped_refptr<tablet::TabletPeer>& tablet_peer() const {
     return tablet_peer_;

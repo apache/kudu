@@ -56,10 +56,9 @@ gscoped_ptr<QuorumState> QuorumState::Build(const QuorumPB& quorum, const string
   // QuorumPB defining what constitutes the majority.
   int majority_size = (voting_peers.size() / 2) + 1;
   int quorum_size = quorum.peers_size();
-  int64_t config_seqno = quorum.seqno();
 
   gscoped_ptr<QuorumState> state(new QuorumState(role, leader_uuid, voting_peers,
-                                                 majority_size, quorum_size, config_seqno));
+                                                 majority_size, quorum_size));
   return state.Pass();
 }
 
@@ -67,14 +66,12 @@ QuorumState::QuorumState(metadata::QuorumPeerPB::Role role,
                          const std::string& leader_uuid,
                          const std::tr1::unordered_set<std::string>& voting_peers,
                          int majority_size,
-                         int quorum_size,
-                         int64_t config_seqno)
+                         int quorum_size)
   : role(role),
     leader_uuid(leader_uuid),
     voting_peers(voting_peers),
     majority_size(majority_size),
-    quorum_size(quorum_size),
-    config_seqno(config_seqno) {
+    quorum_size(quorum_size) {
 }
 
 //////////////////////////////////////////////////
@@ -549,8 +546,10 @@ Status ReplicaState::AdvanceCommittedIndexUnlocked(const OpId& committed_index) 
     // If we're committing a change config op, persist the new quorum first
     if (PREDICT_FALSE(round->replicate_msg()->op_type() == CHANGE_CONFIG_OP)) {
       DCHECK(round->replicate_msg()->change_config_request().has_new_config());
-      CHECK_OK(SetCommittedQuorumUnlocked(
-          round->replicate_msg()->change_config_request().new_config()));
+      QuorumPB new_quorum = round->replicate_msg()->change_config_request().new_config();
+      DCHECK(!new_quorum.has_opid_index());
+      new_quorum.set_opid_index(round->replicate_msg()->id().index());
+      CHECK_OK(SetCommittedQuorumUnlocked(new_quorum));
     }
 
     round->NotifyReplicationFinished(Status::OK());

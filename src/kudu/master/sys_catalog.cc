@@ -99,8 +99,7 @@ Status SysCatalogTable::Load(FsManager *fs_manager) {
     RETURN_NOT_OK_PREPEND(ConsensusMetadata::Load(fs_manager, tablet_id, &cmeta),
                           "Unable to load consensus metadata for tablet " + tablet_id);
 
-    int64_t old_seqno = cmeta->pb().committed_quorum().seqno();
-    RETURN_NOT_OK(SetupDistributedQuorum(master_->opts(), old_seqno + 1,
+    RETURN_NOT_OK(SetupDistributedQuorum(master_->opts(),
                                          cmeta->mutable_pb()->mutable_committed_quorum()));
     RETURN_NOT_OK_PREPEND(cmeta->Flush(),
                           "Unable to persist consensus metadata for tablet " + tablet_id);
@@ -124,14 +123,13 @@ Status SysCatalogTable::CreateNew(FsManager *fs_manager) {
                                                     tablet::REMOTE_BOOTSTRAP_DONE,
                                                     &metadata));
 
-  const int64_t kInitialSeqno = 0;
   QuorumPB quorum;
   if (master_->opts().IsDistributed()) {
-    RETURN_NOT_OK_PREPEND(SetupDistributedQuorum(master_->opts(), kInitialSeqno, &quorum),
+    RETURN_NOT_OK_PREPEND(SetupDistributedQuorum(master_->opts(), &quorum),
                           "Failed to initialize distributed quorum");
   } else {
-    quorum.set_seqno(kInitialSeqno);
     quorum.set_local(true);
+    quorum.set_opid_index(consensus::kInvalidOpIdIndex);
     QuorumPeerPB* peer = quorum.add_peers();
     peer->set_permanent_uuid(fs_manager->uuid());
     peer->set_role(QuorumPeerPB::LEADER);
@@ -146,13 +144,13 @@ Status SysCatalogTable::CreateNew(FsManager *fs_manager) {
   return SetupTablet(metadata);
 }
 
-Status SysCatalogTable::SetupDistributedQuorum(const MasterOptions& options, int64_t seqno,
-                                        QuorumPB* quorum) {
+Status SysCatalogTable::SetupDistributedQuorum(const MasterOptions& options,
+                                               QuorumPB* committed_quorum) {
   DCHECK(options.IsDistributed());
 
   QuorumPB new_quorum;
-  new_quorum.set_seqno(seqno);
   new_quorum.set_local(false);
+  new_quorum.set_opid_index(consensus::kInvalidOpIdIndex);
 
   // Build the set of followers from our server options.
   BOOST_FOREACH(const HostPort& host_port, options.follower_addresses) {
@@ -206,10 +204,10 @@ Status SysCatalogTable::SetupDistributedQuorum(const MasterOptions& options, int
     }
   }
 
-  RETURN_NOT_OK(consensus::VerifyQuorum(resolved_quorum));
+  RETURN_NOT_OK(consensus::VerifyQuorum(resolved_quorum, consensus::COMMITTED_QUORUM));
   VLOG(1) << "Distributed quorum configuration: " << resolved_quorum.ShortDebugString();
 
-  *quorum = resolved_quorum;
+  *committed_quorum = resolved_quorum;
   return Status::OK();
 }
 

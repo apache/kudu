@@ -166,14 +166,7 @@ const metadata::QuorumPB TabletPeer::Quorum() const {
   return consensus_->Quorum();
 }
 
-void TabletPeer::ConsensusStateChanged(const QuorumPB& old_quorum, const QuorumPB& new_quorum) {
-  QuorumPeerPB::Role new_role = consensus::GetRoleInQuorum(meta_->fs_manager()->uuid(),
-                                                           new_quorum);
-
-  LOG(INFO) << "Configuration changed for tablet: " << tablet_id_ << " in peer: "
-      << meta_->fs_manager()->uuid() << "\nChanged from: " << old_quorum.ShortDebugString()
-      << "\nChanged to: " << new_quorum.ShortDebugString();
-
+void TabletPeer::ConsensusStateChanged(metadata::QuorumPeerPB::Role new_role) {
   // We count down the running latch on the role change cuz this signals
   // when consensus is ready and other places are relying on that.
   // TODO remove this latch and make people simply retry.
@@ -275,7 +268,7 @@ Status TabletPeer::SubmitChangeConfig(ChangeConfigTransactionState *state) {
   RETURN_NOT_OK(CheckRunning());
 
   if (!state->old_quorum().IsInitialized()) {
-    state->set_old_quorum(consensus_->Quorum());
+    RETURN_NOT_OK(state->set_old_quorum(consensus_->Quorum()));
     DCHECK(state->old_quorum().IsInitialized());
   }
   ChangeConfigTransaction* transaction = new ChangeConfigTransaction(state,
@@ -401,9 +394,9 @@ Status TabletPeer::StartReplicaTransaction(gscoped_ptr<ConsensusRound> round) {
       ChangeConfigTransactionState* state = new ChangeConfigTransactionState(
           this,
           &replicate_msg->change_config_request());
-      state->set_old_quorum(replicate_msg->change_config_request().old_config());
+      RETURN_NOT_OK(state->set_old_quorum(replicate_msg->change_config_request().old_config()));
       transaction = new ChangeConfigTransaction(state, consensus::REPLICA, &config_sem_);
-       break;
+      break;
     }
     default:
       LOG(FATAL) << "Unsupported Operation Type";

@@ -130,6 +130,7 @@ class RaftConsensusTest : public KuduTest {
                       int num_peers = 1) {
     BuildQuorumPBForTests(&quorum_, num_peers);
     quorum_.mutable_peers(num_peers - 1)->set_role(initial_role);
+    quorum_.set_opid_index(kInvalidOpIdIndex);
 
     gscoped_ptr<PeerProxyFactory> proxy_factory(new LocalTestPeerProxyFactory(NULL));
 
@@ -502,7 +503,6 @@ TEST_F(RaftConsensusTest, TestAbortOperations) {
 
   // Build a change config request with the roles reversed.
   BuildQuorumPBForTests(cc_req->mutable_new_config(), 2, 1);
-  cc_req->mutable_new_config()->set_seqno(1);
 
   // Overwrite another 4 of the original rounds for a total of 5 overwrites.
   for (int i = 7; i < 10; i++) {

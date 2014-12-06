@@ -1475,7 +1475,7 @@ TEST_F(TabletServerTest, TestChangeConfiguration) {
 
   QuorumPB* new_quorum = req.mutable_new_config();
   new_quorum->set_local(true);
-  new_quorum->set_seqno(2);
+  new_quorum->clear_opid_index();
   QuorumPeerPB* peer = new_quorum->add_peers();
   peer->set_permanent_uuid(mini_server_->server()->instance_pb().permanent_uuid());
 
@@ -1499,21 +1499,6 @@ TEST_F(TabletServerTest, TestChangeConfiguration) {
                                             (KeyValue(5, 5))
                                             (KeyValue(6, 6))
                                             (KeyValue(7, 7)));
-
-  // On reboot the initial round of consensus should have pushed the
-  // configuration and incremented the sequence number so pushing
-  // a configuration with seqno = 3 (the sequence number right
-  // after the previous one) should fail
-  new_quorum->set_seqno(3);
-
-  {
-    SCOPED_TRACE(req.DebugString());
-    ASSERT_STATUS_OK(consensus_proxy_->ChangeConfig(req, &resp, &rpc));
-    SCOPED_TRACE(resp.DebugString());
-    ASSERT_TRUE(resp.has_error());
-    ASSERT_EQ(TabletServerErrorPB::INVALID_CONFIG, resp.error().code());
-    rpc.Reset();
-  }
 }
 
 namespace {
@@ -1539,7 +1524,7 @@ TEST_F(TabletServerTest, TestChangeConfiguration_TsTabletManagerReportsNewRoles)
 
   QuorumPB* new_quorum = req.mutable_new_config();
   new_quorum->set_local(true);
-  new_quorum->set_seqno(2);
+  new_quorum->clear_opid_index();
   QuorumPeerPB* peer = new_quorum->add_peers();
   peer->set_permanent_uuid(mini_server_->server()->instance_pb().permanent_uuid());
   SeedRandom();
@@ -1563,58 +1548,6 @@ TEST_F(TabletServerTest, TestChangeConfiguration_TsTabletManagerReportsNewRoles)
     ASSERT_EQ(tablet_report.role(), random_role)
       << "Tablet report: " << report.ShortDebugString() << "; "
       << "Random role: " << QuorumPeerPB::Role_Name(random_role);
-
-    new_quorum->set_seqno(new_quorum->seqno() + 1);
-  }
-}
-
-TEST_F(TabletServerTest, TestChangeConfiguration_TestEqualSeqNoIsRejected) {
-  ChangeConfigRequestPB req;
-  ChangeConfigResponsePB resp;
-  RpcController rpc;
-
-  req.set_tablet_id(kTabletId);
-
-  QuorumPB* new_quorum = req.mutable_new_config();
-  new_quorum->set_local(true);
-  QuorumPeerPB* peer = new_quorum->add_peers();
-  peer->set_permanent_uuid(mini_server_->server()->instance_pb().permanent_uuid());
-
-  new_quorum->set_seqno(1);
-
-  // Send the call
-  {
-    SCOPED_TRACE(req.DebugString());
-    ASSERT_STATUS_OK(consensus_proxy_->ChangeConfig(req, &resp, &rpc));
-    SCOPED_TRACE(resp.DebugString());
-    ASSERT_FALSE(resp.has_error());
-    rpc.Reset();
-  }
-
-  // Now pass the same new quorum with the same seq no, but add a peer.
-  // This should fail
-  new_quorum->set_seqno(1);
-  peer = new_quorum->add_peers();
-  peer->set_permanent_uuid("fake_peer");
-
-  {
-    SCOPED_TRACE(req.DebugString());
-    ASSERT_STATUS_OK(consensus_proxy_->ChangeConfig(req, &resp, &rpc));
-    SCOPED_TRACE(resp.DebugString());
-    ASSERT_TRUE(resp.has_error());
-    ASSERT_EQ(TabletServerErrorPB::INVALID_CONFIG, resp.error().code());
-    rpc.Reset();
-  }
-
-  // Now pass a new quorum with a lower seq no
-  new_quorum->set_seqno(0);
-
-  {
-    SCOPED_TRACE(req.DebugString());
-    ASSERT_STATUS_OK(consensus_proxy_->ChangeConfig(req, &resp, &rpc));
-    SCOPED_TRACE(resp.DebugString());
-    ASSERT_TRUE(resp.has_error());
-    ASSERT_EQ(TabletServerErrorPB::INVALID_CONFIG, resp.error().code());
   }
 }
 

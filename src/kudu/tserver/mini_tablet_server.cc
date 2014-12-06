@@ -76,7 +76,6 @@ void MiniTabletServer::Shutdown() {
 QuorumPB MiniTabletServer::CreateLocalQuorum() const {
   CHECK(started_) << "Must Start()";
   QuorumPB quorum;
-  quorum.set_seqno(0);
   quorum.set_local(true);
   QuorumPeerPB* peer = quorum.add_peers();
   peer->set_permanent_uuid(server_->instance_pb().permanent_uuid());

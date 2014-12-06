@@ -1114,9 +1114,9 @@ Status CatalogManager::HandleReportedTablet(TSDescriptor* ts_desc,
     HandleTabletSchemaVersionReport(tablet.get(), report.schema_version());
   }
 
-  int64 current_seqno = tablet_lock.data().pb.quorum().seqno();
+  int64 opid_index = tablet_lock.data().pb.quorum().opid_index();
 
-  if (report.has_quorum() && report.quorum().seqno() >= current_seqno) {
+  if (report.has_quorum() && report.quorum().opid_index() >= opid_index) {
     // If the tablet was not RUNNING mark it as such
     if (!tablet_lock.data().is_running() && report.state() == tablet::RUNNING) {
       DCHECK(tablet_lock.data().pb.state() == SysTabletsEntryPB::kTabletStateCreating);
@@ -1128,7 +1128,7 @@ Status CatalogManager::HandleReportedTablet(TSDescriptor* ts_desc,
                                             "Tablet reported by leader");
     }
 
-    if (report.quorum().seqno() > current_seqno) {
+    if (report.quorum().opid_index() > opid_index) {
       // If a replica is reporting a new quorum, reset the tablet's replicas. Note that
       // we leave out replicas who live in tablet servers who have not heartbeated to
       // master yet.
@@ -1136,17 +1136,18 @@ Status CatalogManager::HandleReportedTablet(TSDescriptor* ts_desc,
           " New quorum: " << report.quorum().ShortDebugString();
       ResetTabletReplicasFromReportedQuorum(ts_desc, report, tablet, &tablet_lock);
     } else {
-      // Report seqno is equal to current_seqno. If some replica is reporting
-      // the same quorum we already know about and hasn't been added as
-      // replica, add it.
-      DVLOG(2) << "Quorum seqno " << report.quorum().seqno() << " provided for tablet "
-               << report.tablet_id() << " reported by peer " << ts_desc->permanent_uuid()
-               << " is equal to current seqno; Ensuring replica is being tracked.";
+      // Report opid_index is equal to the latest opid_index. If some
+      // replica is reporting the same quorum we already know about and hasn't
+      // been added as replica, add it.
+      DVLOG(2) << "Quorum opid_index " << report.quorum().opid_index()
+               << " provided for tablet " << report.tablet_id()
+               << " reported by peer " << ts_desc->permanent_uuid()
+               << " is equal to current opid_index; Ensuring replica is being tracked.";
       AddReplicaToTabletIfNotFound(ts_desc, report, tablet);
-    }
+     }
   } else {
-    DVLOG(2) << "Report either has no quorum or seqno < current_seqno " << current_seqno
-             << ":\n" << report.DebugString();
+    DVLOG(2) << "Report either has no quorum or opid_index < latest opid_index "
+             << opid_index << ":\n" << report.DebugString();
   }
 
   // We update the tablets each time the someone reports it.
@@ -1166,7 +1167,7 @@ void CatalogManager::ResetTabletReplicasFromReportedQuorum(TSDescriptor* ts_desc
                                                            TabletMetadataLock* tablet_lock) {
   VLOG(2) << "Resetting replicas for tablet " << report.tablet_id()
           << " from quorum reported by " << ts_desc->permanent_uuid()
-          << " to that of seqno " << report.quorum().seqno();
+          << " to that committed in log index " << report.quorum().opid_index();
   tablet_lock->mutable_data()->pb.mutable_quorum()->CopyFrom(report.quorum());
   vector<TabletReplica> replicas;
   BOOST_FOREACH(const metadata::QuorumPeerPB& peer, report.quorum().peers()) {
@@ -1904,10 +1905,10 @@ void CatalogManager::SelectReplicasForTablet(const TSDescriptorVector& ts_descs,
 
   // Select the set of replicas
   metadata::QuorumPB *quorum = tablet->mutable_metadata()->mutable_dirty()->pb.mutable_quorum();
-  quorum->set_seqno(-1);
   // TODO allow the user to choose num replicas per table and
   // and allow to choose local/dist quorum. See: KUDU-96
   quorum->set_local(nreplicas == 1);
+  quorum->set_opid_index(consensus::kInvalidOpIdIndex);
   SelectReplicas(ts_descs, nreplicas, quorum);
 }
 

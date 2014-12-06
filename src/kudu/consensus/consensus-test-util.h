@@ -79,6 +79,8 @@ static inline void AppendReplicateMessagesToQueue(
 // has a CANDIDATE role. However, if 'leader_idx' is different from -1 then that peer
 // is assigned a LEADER role and the remaining ones the follower role.
 void BuildQuorumPBForTests(QuorumPB* quorum, int num, int leader_idx = -1) {
+  quorum->Clear();
+  quorum->set_local(false);
   for (int i = 0; i < num; i++) {
     QuorumPeerPB* peer_pb = quorum->add_peers();
     peer_pb->set_permanent_uuid(Substitute("peer-$0", i));
@@ -95,8 +97,6 @@ void BuildQuorumPBForTests(QuorumPB* quorum, int num, int leader_idx = -1) {
     }
     peer_pb->set_role(QuorumPeerPB::FOLLOWER);
   }
-  quorum->set_local(false);
-  quorum->set_seqno(0);
 }
 
 // Abstract base class to build PeerProxy implementations on top of for testing.

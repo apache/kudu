@@ -203,9 +203,8 @@ Status TSTabletManager::CreateNewTablet(const string& table_id,
     CHECK_EQ(QuorumPeerPB::CANDIDATE, quorum.peers(0).role());
   }
 
-  // Set the initial sequence number to -1, disregarding the passed sequence
-  // number, if any.
-  quorum.set_seqno(-1);
+  // Set the initial opid_index for a QuorumPB to -1.
+  quorum.set_opid_index(consensus::kInvalidOpIdIndex);
 
   {
     // acquire the lock in exclusive mode as we'll add a entry to the

@@ -46,11 +46,16 @@ message QuorumPeerPB {
 
 // A set of quorum peers, serving a single tablet.
 message QuorumPB {
-  // the sequence number of the quorum configuration.
-  required int64 seqno = 1;
-  // whether this is a local or distributed quorum (i.e. whether to use a local or dist
+  // The index of the operation which serialized this QuorumPB through
+  // consensus. It is set when the operation is consensus-committed (replicated
+  // to a majority of the quorum) and before the consensus metadata is updated.
+  // It is left undefined if the operation isn't committed.
+  optional int64 opid_index = 1;
+
+  // Whether this is a local or distributed quorum (i.e. whether to use a local or dist
   // implementation of consensus).
   optional bool local = 2 [default = true];
-  // the set of peers in the quorum.
+
+  // The set of peers in the quorum.
   repeated QuorumPeerPB peers = 3;
 }

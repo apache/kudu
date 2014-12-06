@@ -860,22 +860,22 @@ Status TabletBootstrap::PlayAlterSchemaRequest(ReplicateMsg* replicate_msg,
 Status TabletBootstrap::PlayChangeConfigRequest(ReplicateMsg* replicate_msg,
                                                 const CommitMsg& commit_msg) {
   ChangeConfigRequestPB* change_config = replicate_msg->mutable_change_config_request();
-
   QuorumPB quorum = change_config->new_config();
 
-  // If the sequence number is higher than the committed one then change the
-  // configuration. Otherwise, skip it.
-  int64_t committed_seqno =  cmeta_->pb().committed_quorum().seqno();
-  if (quorum.seqno() > committed_seqno) {
-    VLOG(1) << "WAL replay found quorum configuration sequence number " << quorum.seqno()
-            << " that is greater than the committed seqno " << committed_seqno << ". "
-            << "Applying this configuration change.";
+  int64_t cmeta_opid_index =  cmeta_->pb().committed_quorum().opid_index();
+  if (replicate_msg->id().index() > cmeta_opid_index) {
+    DCHECK(!quorum.has_opid_index());
+    quorum.set_opid_index(replicate_msg->id().index());
+    VLOG(1) << "WAL replay found quorum configuration with log index " << quorum.opid_index()
+            << " that is greater than the committed quorum's index " << cmeta_opid_index
+            << ". Applying this configuration change.";
     cmeta_->mutable_pb()->mutable_committed_quorum()->CopyFrom(quorum);
     // We flush once at the end of bootstrap.
   } else {
-    VLOG(1) << "WAL replay found quorum configuration sequence number " << quorum.seqno()
-            << ", which is less than or equal to the committed sequence number " << committed_seqno
-            << ". Skipping application of this config change.";
+    VLOG(1) << "WAL replay found quorum configuration with log index "
+            << replicate_msg->id().index() << ", which is less than or equal to the committed "
+            << "quorum's index " << cmeta_opid_index << ". "
+            << "Skipping application of this config change.";
   }
 
   LogEntryPB commit_entry;

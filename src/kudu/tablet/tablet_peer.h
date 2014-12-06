@@ -143,8 +143,7 @@ class TabletPeer : public RefCountedThreadSafe<TabletPeer>,
   // Currently this is called to activate the TsTabletManager callback that allows to
   // mark the tablet report as dirty, so that the master will eventually become
   // aware that the consensus role has changed for this peer.
-  void ConsensusStateChanged(const metadata::QuorumPB& old_quorum,
-                             const metadata::QuorumPB& new_quorum);
+  void ConsensusStateChanged(metadata::QuorumPeerPB::Role new_role);
 
   TabletStatusListener* status_listener() const {
     return status_listener_.get();
@@ -188,6 +187,9 @@ class TabletPeer : public RefCountedThreadSafe<TabletPeer>,
   // Returns the correct tablet_id even if the underlying tablet is not available
   // yet.
   std::string tablet_id() const { return tablet_id_; }
+
+  // Convenience method to return the permanent_uuid of this peer.
+  std::string permanent_uuid() const { return tablet_->metadata()->fs_manager()->uuid(); }
 
   void NewLeaderTransactionDriver(Transaction* transaction,
                                   scoped_refptr<TransactionDriver>* driver);

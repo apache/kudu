@@ -41,9 +41,7 @@ class ChangeConfigTransactionState : public TransactionState {
   const consensus::ChangeConfigRequestPB* request() const { return request_; }
   consensus::ChangeConfigResponsePB* response() { return response_; }
 
-  void set_old_quorum(metadata::QuorumPB quorum) {
-    old_quorum_.CopyFrom(quorum);
-  }
+  Status set_old_quorum(metadata::QuorumPB quorum) WARN_UNUSED_RESULT;
 
   // Returns the quorum that was configured before this transaction
   // took place. Only available after the prepare phase.

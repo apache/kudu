@@ -105,6 +105,7 @@ class MasterReplicationTest : public KuduTest {
   }
 
   void PromoteMasterRestartMasterOnly(int orig_master_idx, int new_master_idx) {
+    LOG(FATAL) << "Master promotion disabled";
     LOG(INFO) << "Previous configuration: leader at index " << orig_master_idx;
     LOG(INFO) << "New configuration: leader at index " << new_master_idx;
     cluster_->ShutdownMasters();
@@ -113,8 +114,14 @@ class MasterReplicationTest : public KuduTest {
   }
 
   void PromoteMaster(int orig_master_idx, int new_master_idx) {
-    LOG(INFO) << "Previous configuration: leader at index " << orig_master_idx;
-    LOG(INFO) << "New configuration: leader at index " << new_master_idx;
+    LOG(FATAL) << "Master promotion disabled";
+    master::MiniMaster* orig_master = cluster_->mini_master(orig_master_idx);
+    master::MiniMaster* new_master = cluster_->mini_master(new_master_idx);
+    LOG(INFO) << "Manually promoting MiniMaster server: "
+              << "Previous MiniMaster: " << orig_master->permanent_uuid()
+              << " at index " << orig_master_idx << "; "
+              << "New MiniMaster: " << new_master->permanent_uuid()
+              << " at index " << new_master_idx;
     cluster_->Shutdown();
     cluster_->set_leader_master_idx(new_master_idx);
     ASSERT_STATUS_OK(cluster_->Start());
@@ -206,11 +213,17 @@ TEST_F(MasterReplicationTest, TestSysTablesReplication) {
 //
 // 2) Shut down the cluster, set a new node as the master leader, and
 // pointing the TabletServers to the new master leader.
-
+//
 // 3) Verify that we can query existing tables/tablets, create new
 // tables/tablets on the new leader, and that new changes to the
 // SysTables are replicated to the newly configured master cluster.
-TEST_F(MasterReplicationTest, TestManualPromotion) {
+//
+// NOTE: This test is disabled because we now serialize quorum changes via
+// log indexes, and the approach we use to force the quorum to be in a
+// particular configuration will no longer work.
+//
+// TODO: Remove manual promotion.
+TEST_F(MasterReplicationTest, DISABLED_TestManualPromotion) {
   shared_ptr<KuduClient> leader_client;
 
   // Create the first table.
@@ -244,7 +257,9 @@ TEST_F(MasterReplicationTest, TestManualPromotion) {
 
 // Test that we can still establish a client connection if the first
 // master server is down, but a leader server is still up.
-TEST_F(MasterReplicationTest, TestClientConnectionFirstNodeDown) {
+//
+// TODO: Test disabled because master promotion no longer works.
+TEST_F(MasterReplicationTest, DISABLED_TestClientConnectionFirstNodeDown) {
   // Save the RPC addresses of all the master servers while they are
   // still running, since MiniMaster::bound_rpc_addr() only works if
   // the server is running.
@@ -337,7 +352,7 @@ TEST_F(MasterReplicationTest, TestCycleThroughAllMasters) {
 // TODO: Heartbeat simultaneously to all of the masters, so that we do
 // not need to wait for the minimum number of tablet servers to
 // heartbeat to the new leader master.
-TEST_F(MasterReplicationTest, TestLookupWhenMasterNoLongerLeader) {
+TEST_F(MasterReplicationTest, DISABLED_TestLookupWhenMasterNoLongerLeader) {
   shared_ptr<KuduClient> leader_client;
   scoped_refptr<KuduTable> table;
 

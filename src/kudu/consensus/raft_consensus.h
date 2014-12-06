@@ -15,6 +15,7 @@
 #include "kudu/consensus/consensus_meta.h"
 #include "kudu/consensus/consensus_queue.h"
 #include "kudu/consensus/leader_election.h"
+#include "kudu/consensus/quorum_util.h"
 #include "kudu/util/failure_detector.h"
 
 namespace kudu {
@@ -144,7 +145,8 @@ class RaftConsensus : public Consensus,
   std::string LogPrefix();
 
   // Verifies that 'quorum' is well formed and that no config change is in-flight.
-  Status VerifyQuorumAndCheckThatNoChangeIsPendingUnlocked(const metadata::QuorumPB& quorum);
+  Status VerifyQuorumAndCheckThatNoChangeIsPendingUnlocked(const metadata::QuorumPB& quorum,
+                                                           QuorumPBType type);
 
   // Same as below but acquires the lock through LockForChangeConfig first.
   Status ChangeConfig();

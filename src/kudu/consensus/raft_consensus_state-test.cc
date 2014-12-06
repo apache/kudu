@@ -18,8 +18,6 @@ using metadata::QuorumPB;
 
 // TODO: Share a test harness with ConsensusMetadataTest?
 const char* kTabletId = "TestTablet";
-const int64_t kInitialSeqno = 0;
-const uint64_t kInitialTerm = 0;
 
 class RaftConsensusStateTest : public KuduTest {
  public:
@@ -35,11 +33,11 @@ class RaftConsensusStateTest : public KuduTest {
 
     // Initialize test quorum.
     quorum_.set_local(true);
-    quorum_.set_seqno(kInitialSeqno);
     quorum_.add_peers()->set_permanent_uuid(fs_manager_.uuid());
+    quorum_.set_opid_index(kInvalidOpIdIndex);
 
     gscoped_ptr<ConsensusMetadata> cmeta;
-    ASSERT_OK(ConsensusMetadata::Create(&fs_manager_, kTabletId, quorum_, kInitialTerm, &cmeta));
+    ASSERT_OK(ConsensusMetadata::Create(&fs_manager_, kTabletId, quorum_, kMinimumTerm, &cmeta));
     state_.reset(new ReplicaState(ConsensusOptions(), fs_manager_.uuid(), cmeta.Pass(),
                                   txn_factory_.get()));
 
@@ -62,16 +60,18 @@ TEST_F(RaftConsensusStateTest, TestPendingPersistent) {
   ReplicaState::UniqueLock lock;
   ASSERT_OK(state_->LockForConfigChange(&lock));
 
-  quorum_.set_seqno(1);
-
+  quorum_.clear_opid_index();
   ASSERT_OK(state_->SetPendingQuorumUnlocked(quorum_));
   ASSERT_TRUE(state_->IsQuorumChangePendingUnlocked());
-  ASSERT_EQ(1, state_->GetPendingQuorumUnlocked().seqno());
-  ASSERT_EQ(0, state_->GetCommittedQuorumUnlocked().seqno());
+  ASSERT_FALSE(state_->GetPendingQuorumUnlocked().has_opid_index());
+  ASSERT_TRUE(state_->GetCommittedQuorumUnlocked().has_opid_index());
 
-  ASSERT_OK(state_->SetCommittedQuorumUnlocked(quorum_));
+  ASSERT_FALSE(state_->SetCommittedQuorumUnlocked(quorum_).ok());
+  quorum_.set_opid_index(1);
+  ASSERT_TRUE(state_->SetCommittedQuorumUnlocked(quorum_).ok());
+
   ASSERT_FALSE(state_->IsQuorumChangePendingUnlocked());
-  ASSERT_EQ(1, state_->GetCommittedQuorumUnlocked().seqno());
+  ASSERT_EQ(1, state_->GetCommittedQuorumUnlocked().opid_index());
 }
 
 // Ensure that we can set persistent quorums directly.
@@ -80,15 +80,15 @@ TEST_F(RaftConsensusStateTest, TestPersistentWrites) {
   ASSERT_OK(state_->LockForConfigChange(&lock));
 
   ASSERT_FALSE(state_->IsQuorumChangePendingUnlocked());
-  ASSERT_EQ(0, state_->GetCommittedQuorumUnlocked().seqno());
+  ASSERT_EQ(kInvalidOpIdIndex, state_->GetCommittedQuorumUnlocked().opid_index());
 
-  quorum_.set_seqno(1);
+  quorum_.set_opid_index(1);
   ASSERT_OK(state_->SetCommittedQuorumUnlocked(quorum_));
-  ASSERT_EQ(1, state_->GetCommittedQuorumUnlocked().seqno());
+  ASSERT_EQ(1, state_->GetCommittedQuorumUnlocked().opid_index());
 
-  quorum_.set_seqno(2);
+  quorum_.set_opid_index(2);
   ASSERT_OK(state_->SetCommittedQuorumUnlocked(quorum_));
-  ASSERT_EQ(2, state_->GetCommittedQuorumUnlocked().seqno());
+  ASSERT_EQ(2, state_->GetCommittedQuorumUnlocked().opid_index());
 }
 
 }  // namespace consensus

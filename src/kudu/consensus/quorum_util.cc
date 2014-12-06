@@ -90,7 +90,7 @@ metadata::QuorumPeerPB::Role GetRoleInQuorum(const std::string& permanent_uuid,
   return metadata::QuorumPeerPB::NON_PARTICIPANT;
 }
 
-Status VerifyQuorum(const metadata::QuorumPB& quorum) {
+Status VerifyQuorum(const metadata::QuorumPB& quorum, QuorumPBType type) {
   std::set<string> uuids;
   bool found_leader = false;
   if (quorum.peers_size() == 0) {
@@ -105,10 +105,20 @@ Status VerifyQuorum(const metadata::QuorumPB& quorum) {
                    quorum.ShortDebugString()));
   }
 
-  if (!quorum.has_seqno()) {
-    return Status::IllegalState(
-        Substitute("Quorum must have a sequence number. Quorum: ",
-                   quorum.ShortDebugString()));
+  if (type == COMMITTED_QUORUM) {
+    // Committed quorums must have 'opid_index' populated.
+    if (!quorum.has_opid_index()) {
+      return Status::IllegalState(
+          Substitute("Committed quorums must have opid_index set. Quorum: $0",
+                     quorum.ShortDebugString()));
+    }
+  } else if (type == UNCOMMITTED_QUORUM) {
+    // Uncommitted quorums must *not* have 'opid_index' populated.
+    if (quorum.has_opid_index()) {
+      return Status::IllegalState(
+          Substitute("Uncommitted quorums must not have opid_index set. Quorum: $0",
+                     quorum.ShortDebugString()));
+    }
   }
 
   // Local quorums must have only one peer and it may or may not

@@ -17,8 +17,6 @@ using metadata::QuorumPB;
 using std::string;
 using strings::Substitute;
 
-const int64_t kUninitializedQuorumSeqNo = -1;
-
 static const char* kConsensusMetadataMagicNumber = "kconmeta";
 
 Status ConsensusMetadata::Create(FsManager* fs_manager,
@@ -48,7 +46,7 @@ Status ConsensusMetadata::Load(FsManager* fs_manager,
 
 Status ConsensusMetadata::Flush() {
   // Sanity test to ensure we never write out a bad quorum.
-  RETURN_NOT_OK_PREPEND(VerifyQuorum(pb_.committed_quorum()),
+  RETURN_NOT_OK_PREPEND(VerifyQuorum(pb_.committed_quorum(), COMMITTED_QUORUM),
                         "Invalid quorum in ConsensusMetadata, cannot flush to disk");
 
   // Create directories if needed.

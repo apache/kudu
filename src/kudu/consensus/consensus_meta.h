@@ -18,9 +18,6 @@ class FsManager;
 
 namespace consensus {
 
-// Special sequence number indicating an uninitialized quorum.
-extern const int64_t kUninitializedQuorumSeqNo;
-
 // Provides methods to read and persist consensus-related metadata.
 //
 // This corresponds to Raft Figure 2's "Persistent state on all servers".

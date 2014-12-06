@@ -434,6 +434,11 @@ class CatalogManager : public tserver::TabletPeerLookupIf {
                                              const scoped_refptr<TabletInfo>& tablet,
                                              TabletMetadataLock* tablet_lock);
 
+  // Register a tablet server whenever it heartbeats with a quorum. This is
+  // needed because we have logic in the Master that states that if a tablet
+  // server that is part of a quorum has not heartbeated to the Master yet, we
+  // leave it out of the quorum reported to clients.
+  // TODO: See if we can remove this logic, as it seems confusing.
   void AddReplicaToTabletIfNotFound(TSDescriptor* ts_desc,
                                     const ReportedTabletPB& report,
                                     const scoped_refptr<TabletInfo>& tablet);

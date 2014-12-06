@@ -94,6 +94,7 @@ class RaftConsensusQuorumTest : public KuduTest {
   // The last peer (index 'num - 1') always starts out as CANDIDATE.
   void BuildInitialQuorumPB(int num) {
     BuildQuorumPBForTests(&quorum_, num);
+    quorum_.set_opid_index(kInvalidOpIdIndex);
     peers_.reset(new TestPeerMapManager(quorum_));
   }
 

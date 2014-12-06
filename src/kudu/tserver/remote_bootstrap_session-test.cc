@@ -86,10 +86,10 @@ class RemoteBootstrapTest : public KuduTabletTest {
     // TODO similar to code in tablet_peer-test, consider refactor.
     QuorumPB quorum;
     quorum.set_local(true);
-    quorum.set_seqno(consensus::kUninitializedQuorumSeqNo);
     QuorumPeerPB quorum_peer;
     quorum_peer.set_permanent_uuid(fs_manager()->uuid());
     quorum.add_peers()->CopyFrom(quorum_peer);
+    quorum.set_opid_index(consensus::kInvalidOpIdIndex);
 
     gscoped_ptr<ConsensusMetadata> cmeta;
     CHECK_OK(ConsensusMetadata::Create(tablet()->metadata()->fs_manager(),

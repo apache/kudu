@@ -17,7 +17,6 @@ namespace kudu {
 namespace consensus {
 
 using base::subtle::Barrier_AtomicIncrement;
-using consensus::CHANGE_CONFIG_OP;
 using log::Log;
 using log::LogEntryBatch;
 using metadata::QuorumPB;
@@ -52,15 +51,15 @@ Status LocalConsensus::Start(const ConsensusBootstrapInfo& info) {
 
     const QuorumPB& initial_quorum = cmeta_->pb().committed_quorum();
     CHECK(initial_quorum.local()) << "Local consensus must be passed a local quorum";
-    RETURN_NOT_OK_PREPEND(VerifyQuorum(initial_quorum),
+    RETURN_NOT_OK_PREPEND(VerifyQuorum(initial_quorum, COMMITTED_QUORUM),
                           "Invalid quorum found in LocalConsensus::Start()");
 
     next_op_id_index_ = info.last_id.index() + 1;
 
     gscoped_ptr<QuorumPB> new_quorum(new QuorumPB);
     new_quorum->CopyFrom(initial_quorum);
+    new_quorum->clear_opid_index();
     new_quorum->mutable_peers(0)->set_role(QuorumPeerPB::LEADER);
-    new_quorum->set_seqno(initial_quorum.seqno() + 1);
 
     ReplicateMsg* replicate = new ReplicateMsg;
     replicate->set_op_type(CHANGE_CONFIG_OP);
@@ -119,9 +118,11 @@ Status LocalConsensus::Replicate(ConsensusRound* round) {
     // Local consensus transactions are always committed so we
     // can just persist the quorum, if this is a change config.
     if (round->replicate_msg()->op_type() == CHANGE_CONFIG_OP) {
-      cmeta_->mutable_pb()->mutable_committed_quorum()->CopyFrom(
-          round->replicate_msg()->change_config_request().new_config());
-      RETURN_NOT_OK(cmeta_->Flush());
+      QuorumPB new_quorum = round->replicate_msg()->change_config_request().new_config();
+      DCHECK(!new_quorum.has_opid_index());
+      new_quorum.set_opid_index(round->replicate_msg()->id().index());
+      cmeta_->mutable_pb()->mutable_committed_quorum()->CopyFrom(new_quorum);
+      CHECK_OK(cmeta_->Flush());
     }
   }
   // Serialize and mark the message as ready to be appended.

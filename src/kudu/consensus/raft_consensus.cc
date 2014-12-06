@@ -140,7 +140,8 @@ RaftConsensus::~RaftConsensus() {
   Shutdown();
 }
 
-Status RaftConsensus::VerifyQuorumAndCheckThatNoChangeIsPendingUnlocked(const QuorumPB& quorum) {
+Status RaftConsensus::VerifyQuorumAndCheckThatNoChangeIsPendingUnlocked(const QuorumPB& quorum,
+                                                                        QuorumPBType type) {
   // Sanity checks.
   if (state_->IsQuorumChangePendingUnlocked()) {
     return Status::IllegalState(Substitute("Attempting to become leader "
@@ -148,7 +149,7 @@ Status RaftConsensus::VerifyQuorumAndCheckThatNoChangeIsPendingUnlocked(const Qu
         "$1", state_->GetPendingQuorumUnlocked().ShortDebugString(),
         quorum.ShortDebugString()));
   }
-  return VerifyQuorum(quorum);
+  return VerifyQuorum(quorum, type);
 }
 
 Status RaftConsensus::Start(const ConsensusBootstrapInfo& info) {
@@ -176,12 +177,14 @@ Status RaftConsensus::Start(const ConsensusBootstrapInfo& info) {
       // We do this here so that the logging seems sane while reloading the
       // set of pending transactions.
       SetAllQuorumVotersToFollower(state_->GetCommittedQuorumUnlocked(), &initial_quorum);
+      initial_quorum.clear_opid_index();
       state_->SetPendingQuorumUnlocked(initial_quorum);
-      RETURN_NOT_OK_PREPEND(VerifyQuorum(initial_quorum),
+      RETURN_NOT_OK_PREPEND(VerifyQuorum(initial_quorum, UNCOMMITTED_QUORUM),
                             "Invalid quorum state on RaftConsensus::Start()");
     } else {
       initial_quorum.CopyFrom(state_->GetCommittedQuorumUnlocked());
-      RETURN_NOT_OK_PREPEND(VerifyQuorumAndCheckThatNoChangeIsPendingUnlocked(initial_quorum),
+      RETURN_NOT_OK_PREPEND(VerifyQuorumAndCheckThatNoChangeIsPendingUnlocked(initial_quorum,
+                                                                              COMMITTED_QUORUM),
                             "Invalid quorum state on RaftConsensus::Start()");
     }
 
@@ -253,10 +256,11 @@ Status RaftConsensus::EmulateElection() {
                                        QuorumPeerPB::LEADER,
                                        state_->GetCommittedQuorumUnlocked(),
                                        &new_quorum));
-    new_quorum.set_seqno(state_->GetCommittedQuorumUnlocked().seqno() + 1);
+    new_quorum.clear_opid_index();
     // Increment the term.
     RETURN_NOT_OK(state_->IncrementTermUnlocked());
-    RETURN_NOT_OK_PREPEND(VerifyQuorumAndCheckThatNoChangeIsPendingUnlocked(new_quorum),
+    RETURN_NOT_OK_PREPEND(VerifyQuorumAndCheckThatNoChangeIsPendingUnlocked(new_quorum,
+                                                                            UNCOMMITTED_QUORUM),
                           "Invalid state on RaftConsensus::EmulateElection()");
     RETURN_NOT_OK(state_->SetPendingQuorumUnlocked(new_quorum));
     return ChangeConfigUnlocked();
@@ -275,10 +279,10 @@ Status RaftConsensus::StartElection() {
                                        QuorumPeerPB::CANDIDATE,
                                        state_->GetCommittedQuorumUnlocked(),
                                        &new_quorum));
-    new_quorum.set_seqno(state_->GetCommittedQuorumUnlocked().seqno() + 1);
+    new_quorum.clear_opid_index();
     // Increment the term.
     RETURN_NOT_OK(state_->IncrementTermUnlocked());
-    RETURN_NOT_OK(VerifyQuorum(new_quorum));
+    RETURN_NOT_OK(VerifyQuorum(new_quorum, UNCOMMITTED_QUORUM));
 
     RETURN_NOT_OK(state_->SetPendingQuorumUnlocked(new_quorum));
 
@@ -378,6 +382,8 @@ Status RaftConsensus::BecomeLeaderUnlocked() {
   cc_req->set_tablet_id(state_->GetOptions().tablet_id);
   cc_req->mutable_old_config()->CopyFrom(state_->GetCommittedQuorumUnlocked());
   cc_req->mutable_new_config()->CopyFrom(state_->GetPendingQuorumUnlocked());
+  DCHECK(!cc_req->new_config().has_opid_index())
+    << "Pending quorum: " << cc_req->new_config().ShortDebugString();
 
   gscoped_ptr<ConsensusRound> round(
       new ConsensusRound(this,
@@ -1241,8 +1247,7 @@ void RaftConsensus::ElectionCallback(const ElectionResult& result) {
                                 QuorumPeerPB::LEADER,
                                 state_->GetPendingQuorumUnlocked(),
                                 &new_quorum));
-  new_quorum.set_seqno(state_->GetCommittedQuorumUnlocked().seqno() + 1);
-  CHECK_OK(VerifyQuorum(new_quorum));
+  CHECK_OK(VerifyQuorum(new_quorum, UNCOMMITTED_QUORUM));
   CHECK_OK(state_->SetPendingQuorumUnlocked(new_quorum));
 
   CHECK_OK(BecomeLeaderUnlocked());

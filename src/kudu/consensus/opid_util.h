@@ -17,7 +17,10 @@ class ConsensusRequestPB;
 class OpId;
 
 // Minimum possible term.
-extern const uint64_t kMinimumTerm;
+extern const int64_t kMinimumTerm;
+
+// Index indicating a log index that will never occur naturally.
+extern const int64_t kInvalidOpIdIndex;
 
 // Returns true iff left == right.
 bool OpIdEquals(const OpId& left, const OpId& right);

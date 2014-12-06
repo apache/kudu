@@ -13,6 +13,11 @@ class Status;
 
 namespace consensus {
 
+enum QuorumPBType {
+  UNCOMMITTED_QUORUM,
+  COMMITTED_QUORUM,
+};
+
 // Returns true if the passed role is LEADER, CANDIDATE, or FOLLOWER.
 bool IsVotingRole(const metadata::QuorumPeerPB::Role role);
 
@@ -37,7 +42,9 @@ metadata::QuorumPeerPB::Role GetRoleInQuorum(const std::string& permanent_uuid,
                                              const metadata::QuorumPB& quorum);
 
 // Verifies that the provided quorum is well formed.
-Status VerifyQuorum(const metadata::QuorumPB& quorum);
+// If type == COMMITTED_QUORUM, we enforce that opid_index is set.
+// If type == UNCOMMITTED_QUORUM, we enforce that opid_index is NOT set.
+Status VerifyQuorum(const metadata::QuorumPB& quorum, QuorumPBType type);
 
 }  // namespace consensus
 }  // namespace kudu
