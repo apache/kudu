@@ -18,8 +18,13 @@ namespace kudu {
 // the results to stdout.  It does this after a certain timeout has occured.
 class PstackWatcher {
  public:
-  // Static method to collect and write stack dump output to stdout.
+
+  // Static method to collect and write stack dump output to stdout of the current
+  // process.
   static Status DumpStacks();
+
+  // Like the above but for any process, not just the current one.
+  static Status DumpStacks(pid_t pid);
 
   // Instantiate a watcher that writes a pstack to stdout after the given
   // timeout expires.

@@ -91,7 +91,10 @@ Status PstackWatcher::HasProgram(const char* progname) {
 }
 
 Status PstackWatcher::DumpStacks() {
-  pid_t pid = getpid();
+  return DumpStacks(getpid());
+}
+
+Status PstackWatcher::DumpStacks(pid_t pid) {
 
   // Prefer GDB if available; it gives us line numbers and thread names.
   if (HasProgram("gdb").ok()) {
