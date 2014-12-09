@@ -25,7 +25,7 @@ TEST(TestBlockCache, TestBasics) {
   // Lookup something missing from cache
   {
     BlockCacheHandle handle;
-    ASSERT_FALSE(cache.Lookup(id, 1, &handle));
+    ASSERT_FALSE(cache.Lookup(id, 1, Cache::EXPECT_IN_CACHE, &handle));
     ASSERT_FALSE(handle.valid());
   }
 
@@ -35,13 +35,13 @@ TEST(TestBlockCache, TestBasics) {
   ASSERT_TRUE(inserted_handle.valid());
 
   BlockCacheHandle retrieved_handle;
-  ASSERT_TRUE(cache.Lookup(id, 1, &retrieved_handle));
+  ASSERT_TRUE(cache.Lookup(id, 1, Cache::EXPECT_IN_CACHE, &retrieved_handle));
   ASSERT_TRUE(retrieved_handle.valid());
   ASSERT_EQ(retrieved_handle.data().data(), DATUM_1);
 
   // Ensure that a lookup for a different offset doesn't
   // return this data.
-  ASSERT_FALSE(cache.Lookup(id, 3, &retrieved_handle));
+  ASSERT_FALSE(cache.Lookup(id, 3, Cache::EXPECT_IN_CACHE, &retrieved_handle));
 
 }
 

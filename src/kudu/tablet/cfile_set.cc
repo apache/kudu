@@ -139,14 +139,15 @@ CFileReader *CFileSet::key_index_reader() {
   return ad_hoc_idx_reader_ ? ad_hoc_idx_reader_.get() : readers_[0].get();
 }
 
-Status CFileSet::NewColumnIterator(size_t col_idx, CFileIterator **iter) const {
+Status CFileSet::NewColumnIterator(size_t col_idx, CFileReader::CacheControl cache_blocks,
+                                   CFileIterator **iter) const {
   CHECK_LT(col_idx, readers_.size());
 
-  return CHECK_NOTNULL(readers_[col_idx].get())->NewIterator(iter);
+  return CHECK_NOTNULL(readers_[col_idx].get())->NewIterator(iter, cache_blocks);
 }
 
 Status CFileSet::NewAdHocIndexIterator(CFileIterator **iter) const {
-  return CHECK_NOTNULL(ad_hoc_idx_reader_.get())->NewIterator(iter);
+  return CHECK_NOTNULL(ad_hoc_idx_reader_.get())->NewIterator(iter, CFileReader::CACHE_BLOCK);
 }
 
 
@@ -225,7 +226,7 @@ Status CFileSet::NewKeyIterator(CFileIterator **key_iter) const {
   if (schema().num_key_columns() > 1) {
     RETURN_NOT_OK(NewAdHocIndexIterator(*&key_iter));
   } else {
-    RETURN_NOT_OK(NewColumnIterator(0, *&key_iter));
+    RETURN_NOT_OK(NewColumnIterator(0, CFileReader::CACHE_BLOCK, *&key_iter));
   }
   return Status::OK();
 }
@@ -240,16 +241,21 @@ class CFileSetIteratorProjector {
  public:
   // Used by CFileSet::Iterator::Init() to create the ColumnIterators
   static Status Project(const CFileSet *base_data, const Schema* projection,
-                        vector<ColumnIterator*>* col_iters) {
-    CFileSetIteratorProjector projector(base_data, projection, col_iters);
+                        vector<ColumnIterator*>* col_iters,
+                        CFileReader::CacheControl cache_blocks) {
+    CFileSetIteratorProjector projector(base_data, projection, col_iters, cache_blocks);
     return projector.Run();
   }
 
  private:
   CFileSetIteratorProjector(const CFileSet *base_data,
                             const Schema* projection,
-                            vector<ColumnIterator*>* col_iters)
-    : projection_(projection), base_data_(base_data), col_iters_(col_iters) {
+                            vector<ColumnIterator*>* col_iters,
+                            CFileReader::CacheControl cache_blocks)
+    : projection_(projection),
+      base_data_(base_data),
+      col_iters_(col_iters),
+      cache_blocks_(cache_blocks) {
   }
 
   Status Run() {
@@ -266,7 +272,7 @@ class CFileSetIteratorProjector {
 
   Status ProjectBaseColumn(size_t proj_col_idx, size_t base_col_idx) {
     CFileIterator *base_iter;
-    RETURN_NOT_OK(base_data_->NewColumnIterator(base_col_idx, &base_iter));
+    RETURN_NOT_OK(base_data_->NewColumnIterator(base_col_idx, cache_blocks_, &base_iter));
     col_iters_->push_back(base_iter);
     return Status::OK();
   }
@@ -292,6 +298,7 @@ class CFileSetIteratorProjector {
   const Schema* projection_;
   const CFileSet *base_data_;
   vector<ColumnIterator*>* col_iters_;
+  CFileReader::CacheControl cache_blocks_;
 };
 
 
@@ -307,8 +314,16 @@ Status CFileSet::Iterator::Init(ScanSpec *spec) {
   RETURN_NOT_OK(base_data_->NewKeyIterator(&tmp));
   key_iter_.reset(tmp);
 
+  CFileReader::CacheControl cache_blocks = CFileReader::CACHE_BLOCK;
+  if (spec && !spec->cache_blocks()) {
+    cache_blocks = CFileReader::DONT_CACHE_BLOCK;
+  }
+
   // Setup column iterators.
-  RETURN_NOT_OK(CFileSetIteratorProjector::Project(base_data_.get(), projection_, &col_iters_));
+  RETURN_NOT_OK(CFileSetIteratorProjector::Project(base_data_.get(),
+                                                   projection_,
+                                                   &col_iters_,
+                                                   cache_blocks));
 
   // If there is a range predicate on the key column, push that down into an
   // ordinal range.

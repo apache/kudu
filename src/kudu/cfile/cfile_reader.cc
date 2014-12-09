@@ -9,6 +9,7 @@
 #include <algorithm>
 
 #include "kudu/cfile/block_cache.h"
+#include "kudu/cfile/block_handle.h"
 #include "kudu/cfile/block_pointer.h"
 #include "kudu/cfile/cfile.pb.h"
 #include "kudu/cfile/cfile_writer.h" // for kMagicString
@@ -169,15 +170,18 @@ Status CFileReader::ReadAndParseFooter() {
   return Status::OK();
 }
 
-Status CFileReader::ReadBlock(const BlockPointer &ptr,
-                              BlockCacheHandle *ret) const {
+Status CFileReader::ReadBlock(const BlockPointer &ptr, CacheControl cache_control,
+                              BlockHandle *ret) const {
   CHECK(state_ == kInitialized) << "bad state: " << state_;
   CHECK(ptr.offset() > 0 &&
         ptr.offset() + ptr.size() < file_size_) <<
     "bad offset " << ptr.ToString() << " in file of size "
                   << file_size_;
-
-  if (cache_->Lookup(cache_id_, ptr.offset(), ret)) {
+  BlockCacheHandle bc_handle;
+  Cache::CacheBehavior cache_behavior = cache_control == CACHE_BLOCK ?
+      Cache::EXPECT_IN_CACHE : Cache::NO_EXPECT_IN_CACHE;
+  if (cache_->Lookup(cache_id_, ptr.offset(), cache_behavior, &bc_handle)) {
+    *ret = BlockHandle::WithDataFromCache(&bc_handle);
     // Cache hit
     return Status::OK();
   }
@@ -212,7 +216,12 @@ Status CFileReader::ReadBlock(const BlockPointer &ptr,
     block.relocate(scratch.get());
   }
 
-  cache_->Insert(cache_id_, ptr.offset(), block, ret);
+  if (cache_control == CACHE_BLOCK) {
+    cache_->Insert(cache_id_, ptr.offset(), block, &bc_handle);
+    *ret = BlockHandle::WithDataFromCache(&bc_handle);
+  } else {
+    *ret = BlockHandle::WithOwnedData(block);
+  }
 
   // The cache now has ownership over the memory, so release
   // the scoped pointer.
@@ -244,7 +253,7 @@ bool CFileReader::GetMetadataEntry(const string &key, string *val) {
   return false;
 }
 
-Status CFileReader::NewIterator(CFileIterator **iter) const {
+Status CFileReader::NewIterator(CFileIterator **iter, CacheControl cache_control) const {
   gscoped_ptr<BlockPointer> posidx_root;
   if (footer_->has_posidx_info()) {
     posidx_root.reset(new BlockPointer(footer_->posidx_info().root_block()));
@@ -256,7 +265,7 @@ Status CFileReader::NewIterator(CFileIterator **iter) const {
     validx_root.reset(new BlockPointer(footer_->validx_info().root_block()));
   }
 
-  *iter = new CFileIterator(this, posidx_root.get(), validx_root.get());
+  *iter = new CFileIterator(this, posidx_root.get(), validx_root.get(), cache_control);
   return Status::OK();
 }
 
@@ -308,10 +317,12 @@ Status DefaultColumnValueIterator::FinishBatch() {
 ////////////////////////////////////////////////////////////
 CFileIterator::CFileIterator(const CFileReader *reader,
                              const BlockPointer *posidx_root,
-                             const BlockPointer *validx_root)
+                             const BlockPointer *validx_root,
+                             CFileReader::CacheControl cache_control)
   : reader_(reader),
     seeked_(NULL),
     prepared_(false),
+    cache_control_(cache_control),
     last_prepare_idx_(-1),
     last_prepare_count_(-1) {
   if (posidx_root != NULL) {
@@ -499,7 +510,7 @@ Status DecodeNullInfo(Slice *data_block, uint32_t *num_rows_in_block, Slice *nul
 Status CFileIterator::ReadCurrentDataBlock(const IndexTreeIterator &idx_iter,
                                            PreparedBlock *prep_block) {
   prep_block->dblk_ptr_ = idx_iter.GetCurrentBlockPointer();
-  RETURN_NOT_OK(reader_->ReadBlock(prep_block->dblk_ptr_, &prep_block->dblk_data_));
+  RETURN_NOT_OK(reader_->ReadBlock(prep_block->dblk_ptr_, cache_control_, &prep_block->dblk_data_));
 
   io_stats_.data_blocks_read_from_disk++;
 

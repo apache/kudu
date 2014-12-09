@@ -49,9 +49,10 @@ BlockCache::FileId BlockCache::GenerateFileId() {
   return cache_->NewId();
 }
 
-bool BlockCache::Lookup(FileId file_id, uint64_t offset, BlockCacheHandle *handle) {
+bool BlockCache::Lookup(FileId file_id, uint64_t offset, Cache::CacheBehavior behavior,
+                        BlockCacheHandle *handle) {
   CacheKey key(file_id, offset);
-  Cache::Handle *h = cache_->Lookup(key.slice());
+  Cache::Handle *h = cache_->Lookup(key.slice(), behavior);
   if (h != NULL) {
     handle->SetHandle(cache_.get(), h);
   }

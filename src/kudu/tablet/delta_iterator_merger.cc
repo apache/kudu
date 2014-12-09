@@ -21,9 +21,9 @@ DeltaIteratorMerger::DeltaIteratorMerger(const vector<shared_ptr<DeltaIterator> 
   : iters_(iters) {
 }
 
-Status DeltaIteratorMerger::Init() {
+Status DeltaIteratorMerger::Init(ScanSpec *spec) {
   BOOST_FOREACH(const shared_ptr<DeltaIterator> &iter, iters_) {
-    RETURN_NOT_OK(iter->Init());
+    RETURN_NOT_OK(iter->Init(spec));
   }
   return Status::OK();
 }

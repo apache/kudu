@@ -313,7 +313,7 @@ static void TimeReadFile(FsManager* fs_manager, const BlockId& block_id, size_t 
   ASSERT_STATUS_OK(CFileReader::Open(source.Pass(), ReaderOptions(), &reader));
 
   gscoped_ptr<CFileIterator> iter;
-  ASSERT_STATUS_OK(reader->NewIterator(&iter));
+  ASSERT_STATUS_OK(reader->NewIterator(&iter, CFileReader::CACHE_BLOCK));
   ASSERT_STATUS_OK(iter->SeekToOrdinal(0));
 
   Arena arena(8192, 8*1024*1024);

@@ -42,7 +42,7 @@ class TestCFile : public CFileTestBase {
     BlockPointer ptr;
 
     gscoped_ptr<CFileIterator> iter;
-    ASSERT_STATUS_OK(reader->NewIterator(&iter));
+    ASSERT_STATUS_OK(reader->NewIterator(&iter, CFileReader::CACHE_BLOCK));
 
     ASSERT_STATUS_OK(iter->SeekToOrdinal(5000));
     ASSERT_EQ(5000u, iter->GetCurrentOrdinal());
@@ -122,7 +122,7 @@ class TestCFile : public CFileTestBase {
     ASSERT_EQ(DataGeneratorType::kDataType, reader->data_type());
 
     gscoped_ptr<CFileIterator> iter;
-    ASSERT_STATUS_OK(reader->NewIterator(&iter) );
+    ASSERT_STATUS_OK(reader->NewIterator(&iter, CFileReader::CACHE_BLOCK));
 
     Arena arena(8192, 8*1024*1024);
     ScopedColumnBlock<DataGeneratorType::kDataType> cb(10);
@@ -213,9 +213,9 @@ class TestCFile : public CFileTestBase {
 
     uint32_t count = 0;
     do {
-      BlockCacheHandle dblk_data;
+      BlockHandle dblk_data;
       BlockPointer blk_ptr = iter->GetCurrentBlockPointer();
-      ASSERT_STATUS_OK(reader->ReadBlock(blk_ptr, &dblk_data));
+      ASSERT_STATUS_OK(reader->ReadBlock(blk_ptr, CFileReader::CACHE_BLOCK, &dblk_data));
 
       memcpy(data + 12, &count, 4);
       ASSERT_EQ(expected_data, dblk_data.data());
@@ -335,7 +335,7 @@ TEST_F(TestCFile, TestReadWriteStrings) {
   BlockPointer ptr;
 
   gscoped_ptr<CFileIterator> iter;
-  ASSERT_STATUS_OK(reader->NewIterator(&iter));
+  ASSERT_STATUS_OK(reader->NewIterator(&iter, CFileReader::CACHE_BLOCK));
 
   Arena arena(1024, 1024*1024);
 

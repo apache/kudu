@@ -84,7 +84,8 @@ class CFileSet : public std::tr1::enable_shared_from_this<CFileSet> {
   Status OpenAdHocIndexReader();
   Status LoadMinMaxKeys();
 
-  Status NewColumnIterator(size_t col_idx, CFileIterator **iter) const;
+  Status NewColumnIterator(size_t col_idx, CFileReader::CacheControl cache_blocks,
+                           CFileIterator **iter) const;
   Status NewAdHocIndexIterator(CFileIterator **iter) const;
 
   Status NewKeyIterator(CFileIterator **iter) const;

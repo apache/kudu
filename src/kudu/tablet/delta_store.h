@@ -19,6 +19,7 @@
 
 namespace kudu {
 
+class ScanSpec;
 class SelectionVector;
 
 namespace tablet {
@@ -90,7 +91,7 @@ class DeltaIterator {
  public:
   // Initialize the iterator. This must be called once before any other
   // call.
-  virtual Status Init() = 0;
+  virtual Status Init(ScanSpec *spec) = 0;
 
   // Seek to a particular ordinal position in the delta data. This cancels any prepared
   // block, and must be called at least once prior to PrepareBatch().

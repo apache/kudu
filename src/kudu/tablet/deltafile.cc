@@ -7,8 +7,8 @@
 #include <string>
 
 #include "kudu/common/wire_protocol.h"
-#include "kudu/cfile/block_cache.h"
 #include "kudu/cfile/block_encodings.h"
+#include "kudu/cfile/block_handle.h"
 #include "kudu/cfile/cfile_reader.h"
 #include "kudu/cfile/cfile_writer.h"
 #include "kudu/cfile/string_plain_block.h"
@@ -26,7 +26,7 @@ DEFINE_int32(deltafile_block_size, 32*1024,
 
 namespace kudu {
 
-using cfile::BlockCacheHandle;
+using cfile::BlockHandle;
 using cfile::BlockPointer;
 using cfile::IndexTreeIterator;
 using cfile::StringPlainBlockDecoder;
@@ -300,7 +300,8 @@ Status DeltaFileReader::CheckRowDeleted(rowid_t row_idx, bool *deleted) const {
 
   gscoped_ptr<DeltaIterator> iter(raw_iter);
 
-  RETURN_NOT_OK(iter->Init());
+  ScanSpec spec;
+  RETURN_NOT_OK(iter->Init(&spec));
   RETURN_NOT_OK(iter->SeekToOrdinal(row_idx));
   RETURN_NOT_OK(iter->PrepareBatch(1));
 
@@ -330,11 +331,17 @@ DeltaFileIterator::DeltaFileIterator(const shared_ptr<const DeltaFileReader>& df
   prepared_count_(0),
   prepared_(false),
   exhausted_(false),
-  delta_type_(delta_type)
+  delta_type_(delta_type),
+  cache_blocks_(CFileReader::CACHE_BLOCK)
 {}
 
-Status DeltaFileIterator::Init() {
+Status DeltaFileIterator::Init(ScanSpec *spec) {
   CHECK(index_iter_.get() == NULL) << "Already initted";
+
+  if (spec) {
+    cache_blocks_ = spec->cache_blocks() ? CFileReader::CACHE_BLOCK :
+                                           CFileReader::DONT_CACHE_BLOCK;
+  }
 
   RETURN_NOT_OK(projector_.Init());
 
@@ -373,17 +380,14 @@ Status DeltaFileIterator::SeekToOrdinal(rowid_t idx) {
 
 Status DeltaFileIterator::ReadCurrentBlockOntoQueue() {
   DCHECK(index_iter_ != NULL);
-  PreparedDeltaBlock prep_block;
 
-  BlockCacheHandle dblk_handle;
-  BlockPointer dblk_ptr = index_iter_->GetCurrentBlockPointer();
-  RETURN_NOT_OK(cfile_reader_->ReadBlock(dblk_ptr, &dblk_handle));
-
-  // The data has been successfully read. Create the decoder.
   gscoped_ptr<PreparedDeltaBlock> pdb(new PreparedDeltaBlock());
+  BlockPointer dblk_ptr = index_iter_->GetCurrentBlockPointer();
+  RETURN_NOT_OK(cfile_reader_->ReadBlock(dblk_ptr, cache_blocks_, &pdb->block_));
+
+  // The data has been successfully read. Finish creating the decoder.
   pdb->prepared_block_start_idx_ = 0;
   pdb->block_ptr_ = dblk_ptr;
-  pdb->block_.swap(&dblk_handle);
 
   // Decode the block.
   pdb->decoder_.reset(new StringPlainBlockDecoder(pdb->block_.data()));

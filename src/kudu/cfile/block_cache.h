@@ -38,7 +38,8 @@ class BlockCache {
   // Alternatively,  handle->Release() may be used to explicitly release it.
   //
   // Returns true to indicate that the entry was found, false otherwise.
-  bool Lookup(FileId file_id, uint64_t offset, BlockCacheHandle *handle);
+  bool Lookup(FileId file_id, uint64_t offset,
+              Cache::CacheBehavior behavior, BlockCacheHandle *handle);
 
   // Insert the given block into the cache.
   //

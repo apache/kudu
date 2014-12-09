@@ -254,7 +254,7 @@ Status IndexTreeIterator::LoadBlock(const BlockPointer &block, int depth) {
     seeked = &seeked_indexes_.back();
   }
 
-  RETURN_NOT_OK(reader_->ReadBlock(block, &seeked->data));
+  RETURN_NOT_OK(reader_->ReadBlock(block, CFileReader::CACHE_BLOCK, &seeked->data));
   seeked->block_ptr = block;
 
   // Parse the new block.

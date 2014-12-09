@@ -13,8 +13,16 @@ METRIC_DEFINE_counter(evictions, kudu::MetricUnit::kBlocks,
                       "Number of block evicted from the cache");
 METRIC_DEFINE_counter(cache_misses, kudu::MetricUnit::kBlocks,
                       "Number of lookups that didn't yield a block");
+METRIC_DEFINE_counter(cache_misses_caching, kudu::MetricUnit::kBlocks,
+                      "Number of lookups that were expecting a block that didn't yield one."
+                      "Use this number instead of cache_misses when trying to determine how "
+                      "efficient the cache is");
 METRIC_DEFINE_counter(cache_hits, kudu::MetricUnit::kBlocks,
                       "Number of lookups that found a block");
+METRIC_DEFINE_counter(cache_hits_caching, kudu::MetricUnit::kBlocks,
+                      "Number of lookups that were expecting a block that found one."
+                      "Use this number instead of cache_hits when trying to determine how "
+                      "efficient the cache is");
 
 METRIC_DEFINE_gauge_uint64(cache_usage, kudu::MetricUnit::kBytes,
                            "Number of bytes of memory consumed by the cache");
@@ -28,7 +36,9 @@ CacheMetrics::CacheMetrics(const MetricContext& metric_ctx)
     MINIT(lookups),
     MINIT(evictions),
     MINIT(cache_hits),
+    MINIT(cache_hits_caching),
     MINIT(cache_misses),
+    MINIT(cache_misses_caching),
     GINIT(cache_usage) {
 }
 #undef MINIT

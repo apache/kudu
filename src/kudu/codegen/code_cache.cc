@@ -42,7 +42,7 @@ void CodeCache::AddEntry(const Slice& key,
 
 scoped_refptr<JITCodeOwner> CodeCache::Lookup(const Slice& key) {
   // Look up in Cache after generating key, returning NULL if not found.
-  Cache::Handle* found = cache_->Lookup(key);
+  Cache::Handle* found = cache_->Lookup(key, Cache::EXPECT_IN_CACHE);
   if (!found) return scoped_refptr<JITCodeOwner>();
 
   // Retrieve the value

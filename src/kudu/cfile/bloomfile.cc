@@ -211,8 +211,8 @@ Status BloomFileReader::CheckKeyPresent(const BloomKeyProbe &probe,
     bblk_ptr = index_iter->GetCurrentBlockPointer();
   }
 
-  BlockCacheHandle dblk_data;
-  RETURN_NOT_OK(reader_->ReadBlock(bblk_ptr, &dblk_data));
+  BlockHandle dblk_data;
+  RETURN_NOT_OK(reader_->ReadBlock(bblk_ptr, CFileReader::CACHE_BLOCK, &dblk_data));
 
   // Parse the header in the block.
   BloomBlockHeaderPB hdr;

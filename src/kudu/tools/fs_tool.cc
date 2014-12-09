@@ -479,7 +479,7 @@ Status FsTool::DumpCFileBlockInternal(const BlockId& block_id,
             << " values:" << std::endl;
 
   gscoped_ptr<CFileIterator> it;
-  RETURN_NOT_OK(reader->NewIterator(&it));
+  RETURN_NOT_OK(reader->NewIterator(&it, CFileReader::DONT_CACHE_BLOCK));
   RETURN_NOT_OK(it->SeekToFirst());
   DumpIteratorOptions iter_opts;
   iter_opts.nrows = opts.nrows;
@@ -525,7 +525,7 @@ Status FsTool::DumpDeltaCFileBlockInternal(const Schema& schema,
   // NewDeltaIterator returns Status::OK() iff a new DeltaIterator is created. Thus,
   // it's safe to have a gscoped_ptr take possesion of 'raw_iter' here.
   gscoped_ptr<DeltaIterator> delta_iter(raw_iter);
-  RETURN_NOT_OK(delta_iter->Init());
+  RETURN_NOT_OK(delta_iter->Init(NULL));
   RETURN_NOT_OK(delta_iter->SeekToOrdinal(0));
 
   // TODO: it's awkward that whenever we want to iterate over deltas we also

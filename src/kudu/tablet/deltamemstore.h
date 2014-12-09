@@ -138,7 +138,7 @@ class DeltaMemStore : public DeltaStore,
 // functions.
 class DMSIterator : public DeltaIterator {
  public:
-  Status Init() OVERRIDE;
+  Status Init(ScanSpec *spec) OVERRIDE;
 
   Status SeekToOrdinal(rowid_t row_idx) OVERRIDE;
 

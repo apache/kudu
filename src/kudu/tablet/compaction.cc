@@ -127,10 +127,12 @@ class DiskRowSetCompactionInput : public CompactionInput {
   {}
 
   virtual Status Init() OVERRIDE {
-    RETURN_NOT_OK(base_iter_->Init(NULL));
-    RETURN_NOT_OK(redo_delta_iter_->Init());
+    ScanSpec spec;
+    spec.set_cache_blocks(false);
+    RETURN_NOT_OK(base_iter_->Init(&spec));
+    RETURN_NOT_OK(redo_delta_iter_->Init(&spec));
     RETURN_NOT_OK(redo_delta_iter_->SeekToOrdinal(0));
-    RETURN_NOT_OK(undo_delta_iter_->Init());
+    RETURN_NOT_OK(undo_delta_iter_->Init(&spec));
     RETURN_NOT_OK(undo_delta_iter_->SeekToOrdinal(0));
     return Status::OK();
   }

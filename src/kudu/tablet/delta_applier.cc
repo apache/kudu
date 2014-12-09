@@ -27,7 +27,7 @@ DeltaApplier::~DeltaApplier() {
 
 Status DeltaApplier::Init(ScanSpec *spec) {
   RETURN_NOT_OK(base_iter_->Init(spec));
-  RETURN_NOT_OK(delta_iter_->Init());
+  RETURN_NOT_OK(delta_iter_->Init(spec));
   RETURN_NOT_OK(delta_iter_->SeekToOrdinal(base_iter_->cur_ordinal_idx()));
   return Status::OK();
 }

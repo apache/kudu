@@ -177,7 +177,7 @@ DMSIterator::DMSIterator(const shared_ptr<const DeltaMemStore> &dms,
     projector_(&dms->schema(), projection) {
 }
 
-Status DMSIterator::Init() {
+Status DMSIterator::Init(ScanSpec *spec) {
   RETURN_NOT_OK(projector_.Init());
   initted_ = true;
   return Status::OK();

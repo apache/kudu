@@ -31,7 +31,9 @@ Status DebugDumpDeltaIterator(DeltaType type,
                               const Schema& schema,
                               size_t nrows,
                               vector<std::string>* out) {
-  RETURN_NOT_OK(iter->Init());
+  ScanSpec spec;
+  spec.set_cache_blocks(false);
+  RETURN_NOT_OK(iter->Init(&spec));
   RETURN_NOT_OK(iter->SeekToOrdinal(0));
 
   const size_t kRowsPerBlock = 100;
@@ -69,7 +71,9 @@ Status WriteDeltaIteratorToFile(DeltaIterator* iter,
                                 const Schema& schema,
                                 size_t nrows,
                                 DeltaFileWriter* out) {
-  RETURN_NOT_OK(iter->Init());
+  ScanSpec spec;
+  spec.set_cache_blocks(false);
+  RETURN_NOT_OK(iter->Init(&spec));
   RETURN_NOT_OK(iter->SeekToOrdinal(0));
 
   const size_t kRowsPerBlock = 100;

@@ -11,6 +11,7 @@
 #include "kudu/common/types.h"
 #include "kudu/cfile/block_cache.h"
 #include "kudu/cfile/block_encodings.h"
+#include "kudu/cfile/block_handle.h"
 #include "kudu/cfile/block_compression.h"
 #include "kudu/cfile/cfile_util.h"
 #include "kudu/cfile/index_btree.h"
@@ -31,7 +32,6 @@ namespace kudu {
 namespace cfile {
 
 class BlockCache;
-class BlockCacheHandle;
 class BlockDecoder;
 class BlockPointer;
 class CFileHeaderPB;
@@ -47,18 +47,24 @@ class CFileReader {
 
   Status Init();
 
-  Status NewIterator(CFileIterator **iter) const;
-  Status NewIterator(gscoped_ptr<CFileIterator> *iter) const {
+  enum CacheControl {
+    CACHE_BLOCK,
+    DONT_CACHE_BLOCK
+  };
+
+  Status NewIterator(CFileIterator **iter, CacheControl cache_control) const;
+  Status NewIterator(gscoped_ptr<CFileIterator> *iter,
+                     CacheControl cache_control) const {
     CFileIterator *iter_ptr;
-    RETURN_NOT_OK(NewIterator(&iter_ptr));
+    RETURN_NOT_OK(NewIterator(&iter_ptr, cache_control));
     (*iter).reset(iter_ptr);
     return Status::OK();
   }
 
   // TODO: make this private? should only be used
   // by the iterator and index tree readers, I think.
-  Status ReadBlock(const BlockPointer &ptr,
-                   BlockCacheHandle *ret) const;
+  Status ReadBlock(const BlockPointer &ptr, CacheControl cache_control,
+                   BlockHandle *ret) const;
 
   // Return the number of rows in this cfile.
   // This is assumed to be reasonably fast (i.e does not scan
@@ -259,7 +265,8 @@ class CFileIterator : public ColumnIterator {
  public:
   CFileIterator(const CFileReader *reader,
                 const BlockPointer *posidx_root,
-                const BlockPointer *validx_root);
+                const BlockPointer *validx_root,
+                CFileReader::CacheControl cache_control);
 
   // Seek to the first entry in the file. This works for both
   // ordinal-indexed and value-indexed files.
@@ -335,7 +342,7 @@ class CFileIterator : public ColumnIterator {
 
   struct PreparedBlock {
     BlockPointer dblk_ptr_;
-    BlockCacheHandle dblk_data_;
+    BlockHandle dblk_data_;
     gscoped_ptr<BlockDecoder> dblk_;
 
     // The rowid of the first row in this block.
@@ -409,6 +416,9 @@ class CFileIterator : public ColumnIterator {
 
   // True if PrepareBatch() has been called more recently than FinishBatch().
   bool prepared_;
+
+  // Whether this iterator will ask the cfile to cache the blocks it requests or not.
+  const CFileReader::CacheControl cache_control_;
 
   // RowID of the current prepared batch, if prepared_ is true.
   // Otherwise, the RowID of the next batch that will be prepared.

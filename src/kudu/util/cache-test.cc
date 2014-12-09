@@ -58,7 +58,7 @@ class CacheTest : public ::testing::Test {
   }
 
   int Lookup(int key) {
-    Cache::Handle* handle = cache_->Lookup(EncodeKey(key));
+    Cache::Handle* handle = cache_->Lookup(EncodeKey(key), Cache::EXPECT_IN_CACHE);
     const int r = (handle == NULL) ? -1 : DecodeValue(cache_->Value(handle));
     if (handle != NULL) {
       cache_->Release(handle);
@@ -130,11 +130,11 @@ TEST_F(CacheTest, Erase) {
 
 TEST_F(CacheTest, EntriesArePinned) {
   Insert(100, 101);
-  Cache::Handle* h1 = cache_->Lookup(EncodeKey(100));
+  Cache::Handle* h1 = cache_->Lookup(EncodeKey(100), Cache::EXPECT_IN_CACHE);
   ASSERT_EQ(101, DecodeValue(cache_->Value(h1)));
 
   Insert(100, 102);
-  Cache::Handle* h2 = cache_->Lookup(EncodeKey(100));
+  Cache::Handle* h2 = cache_->Lookup(EncodeKey(100), Cache::EXPECT_IN_CACHE);
   ASSERT_EQ(102, DecodeValue(cache_->Value(h2)));
   ASSERT_EQ(0, deleted_keys_.size());
 

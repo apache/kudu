@@ -38,7 +38,7 @@ void DumpFile(const string& root_path, const string& block_id_str) {
 
   if (FLAGS_iterate_rows) {
     gscoped_ptr<CFileIterator> it;
-    CHECK_OK(reader->NewIterator(&it));
+    CHECK_OK(reader->NewIterator(&it, CFileReader::DONT_CACHE_BLOCK));
 
     DumpIteratorOptions opts;
     opts.print_rows = FLAGS_print_rows;

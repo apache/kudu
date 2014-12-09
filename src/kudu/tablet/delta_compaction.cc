@@ -74,11 +74,13 @@ Status MajorDeltaCompaction::FlushRowSetAndDeltas() {
 
   shared_ptr<CFileSet::Iterator> cfileset_iter(base_data_->NewIterator(&partial_schema_));
 
+  ScanSpec spec;
+  spec.set_cache_blocks(false);
   RETURN_NOT_OK_PREPEND(
-      cfileset_iter->Init(NULL),
+      cfileset_iter->Init(&spec),
       "Unable to open iterator for specified columns (" + partial_schema_.ToString() + ")");
 
-  RETURN_NOT_OK(delta_iter_->Init());
+  RETURN_NOT_OK(delta_iter_->Init(&spec));
   RETURN_NOT_OK(delta_iter_->SeekToOrdinal(0));
 
   Arena arena(32 * 1024, 128 * 1024);

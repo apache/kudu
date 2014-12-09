@@ -7,7 +7,7 @@
 #include <boost/ptr_container/ptr_vector.hpp>
 #include <memory>
 
-#include "kudu/cfile/block_cache.h"
+#include "kudu/cfile/block_handle.h"
 #include "kudu/cfile/cfile.pb.h"
 #include "kudu/cfile/index_block.h"
 #include "kudu/gutil/macros.h"
@@ -94,7 +94,7 @@ class IndexTreeIterator {
     // otherwise go out of scope. The reader and iter
     // do not themselves retain the data.
     BlockPointer block_ptr;
-    BlockCacheHandle data;
+    BlockHandle data;
     IndexBlockReader reader;
     IndexBlockIterator iter;
   };

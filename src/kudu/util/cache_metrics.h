@@ -21,7 +21,9 @@ struct CacheMetrics {
   Counter* lookups;
   Counter* evictions;
   Counter* cache_hits;
+  Counter* cache_hits_caching;
   Counter* cache_misses;
+  Counter* cache_misses_caching;
 
   AtomicGauge<uint64_t>* cache_usage;
 };

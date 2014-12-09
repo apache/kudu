@@ -128,7 +128,7 @@ class TestDeltaFile : public ::testing::Test {
       FAIL() << "Iterator fell outside of the range of an include-all snapshot";
     }
     ASSERT_STATUS_OK(s);
-    ASSERT_STATUS_OK(it->Init());
+    ASSERT_STATUS_OK(it->Init(NULL));
 
     RowBlock block(schema_, 100, &arena_);
 
@@ -259,7 +259,7 @@ TEST_F(TestDeltaFile, TestCollectMutations) {
     }
     ASSERT_STATUS_OK(s);
 
-    ASSERT_STATUS_OK(it->Init());
+    ASSERT_STATUS_OK(it->Init(NULL));
     ASSERT_STATUS_OK(it->SeekToOrdinal(0));
 
     vector<Mutation *> mutations;

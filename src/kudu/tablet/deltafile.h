@@ -8,7 +8,7 @@
 #include <string>
 #include <vector>
 
-#include "kudu/cfile/block_cache.h"
+#include "kudu/cfile/block_handle.h"
 #include "kudu/cfile/cfile_reader.h"
 #include "kudu/cfile/cfile_writer.h"
 #include "kudu/cfile/index_btree.h"
@@ -23,6 +23,9 @@
 #include "kudu/tablet/tablet.pb.h"
 
 namespace kudu {
+
+class ScanSpec;
+
 namespace tablet {
 
 using std::tr1::shared_ptr;
@@ -149,7 +152,7 @@ class DeltaFileReader : public DeltaStore,
 // See DeltaIterator for details.
 class DeltaFileIterator : public DeltaIterator {
  public:
-  Status Init() OVERRIDE;
+  Status Init(ScanSpec *spec) OVERRIDE;
 
   Status SeekToOrdinal(rowid_t idx) OVERRIDE;
   Status PrepareBatch(size_t nrows) OVERRIDE;
@@ -182,11 +185,10 @@ class DeltaFileIterator : public DeltaIterator {
     // logging, etc.
     cfile::BlockPointer block_ptr_;
 
-    // Handle to the block in the block cache, so it doesn't get freed
-    // from underneath us.
-    cfile::BlockCacheHandle block_;
+    // Handle to the block, so it doesn't get freed from underneath us.
+    cfile::BlockHandle block_;
 
-    // The cached block decoder, to avoid having to re-parse the block header
+    // The block decoder, to avoid having to re-parse the block header
     // on every ApplyUpdates() call
     gscoped_ptr<cfile::StringPlainBlockDecoder> decoder_;
 
@@ -268,6 +270,8 @@ class DeltaFileIterator : public DeltaIterator {
 
   // The type of this delta iterator, i.e. UNDO or REDO.
   const DeltaType delta_type_;
+
+  CFileReader::CacheControl cache_blocks_;
 };
 
 

@@ -10,7 +10,11 @@
 
 #include "kudu/tablet/delta_store.h"
 
-namespace kudu { namespace tablet {
+namespace kudu {
+
+class ScanSpec;
+
+namespace tablet {
 
 // DeltaIterator that simply combines together other DeltaIterators,
 // applying deltas from each in order.
@@ -29,7 +33,7 @@ class DeltaIteratorMerger : public DeltaIterator {
   ////////////////////////////////////////////////////////////
   // Implementations of DeltaIterator
   ////////////////////////////////////////////////////////////
-  virtual Status Init() OVERRIDE;
+  virtual Status Init(ScanSpec *spec) OVERRIDE;
   virtual Status SeekToOrdinal(rowid_t idx) OVERRIDE;
   virtual Status PrepareBatch(size_t nrows) OVERRIDE;
   virtual Status ApplyUpdates(size_t col_to_apply, ColumnBlock *dst) OVERRIDE;

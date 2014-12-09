@@ -63,12 +63,22 @@ class Cache {
   virtual Handle* Insert(const Slice& key, void* value, size_t charge,
                          void (*deleter)(const Slice& key, void* value)) = 0;
 
+  // Passing EXPECT_IN_CACHE will increment the hit/miss metrics that track the number of times
+  // blocks were requested that the users were hoping to get the block from the cache, along with
+  // with the basic metrics.
+  // Passing NO_EXPECT_IN_CACHE will only increment the basic metrics.
+  // This helps in determining if we are effectively caching the blocks that matter the most.
+  enum CacheBehavior {
+    EXPECT_IN_CACHE,
+    NO_EXPECT_IN_CACHE
+  };
+
   // If the cache has no mapping for "key", returns NULL.
   //
   // Else return a handle that corresponds to the mapping.  The caller
   // must call this->Release(handle) when the returned mapping is no
   // longer needed.
-  virtual Handle* Lookup(const Slice& key) = 0;
+  virtual Handle* Lookup(const Slice& key, CacheBehavior caching) = 0;
 
   // Release a mapping returned by a previous Lookup().
   // REQUIRES: handle must not have been released yet.

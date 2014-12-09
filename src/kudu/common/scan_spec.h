@@ -18,7 +18,8 @@ class ScanSpec {
  public:
   ScanSpec()
     : lower_bound_key_(NULL),
-      upper_bound_key_(NULL) {
+      upper_bound_key_(NULL),
+      cache_blocks_(true) {
   }
 
   typedef vector<ColumnRangePredicate> PredicateList;
@@ -56,13 +57,21 @@ class ScanSpec {
     return upper_bound_key_;
   }
 
+  bool cache_blocks() const {
+    return cache_blocks_;
+  }
+
+  void set_cache_blocks(bool cache_blocks) {
+    cache_blocks_ = cache_blocks;
+  }
+
   std::string ToString() const;
 
  private:
   vector<ColumnRangePredicate> predicates_;
-
   const EncodedKey* lower_bound_key_;
   const EncodedKey* upper_bound_key_;
+  bool cache_blocks_;
 };
 
 

@@ -166,7 +166,7 @@ class LRUCache {
   Cache::Handle* Insert(const Slice& key, uint32_t hash,
                         void* value, size_t charge,
                         void (*deleter)(const Slice& key, void* value));
-  Cache::Handle* Lookup(const Slice& key, uint32_t hash);
+  Cache::Handle* Lookup(const Slice& key, uint32_t hash, bool caching);
   void Release(Cache::Handle* handle);
   void Erase(const Slice& key, uint32_t hash);
 
@@ -247,7 +247,7 @@ void LRUCache::LRU_Append(LRUHandle* e) {
   usage_ += e->charge;
 }
 
-Cache::Handle* LRUCache::Lookup(const Slice& key, uint32_t hash) {
+Cache::Handle* LRUCache::Lookup(const Slice& key, uint32_t hash, bool caching) {
 
   DO_IF_METRICS(metrics_->lookups->Increment());
   lock_guard<MutexType> l(&mutex_);
@@ -256,8 +256,14 @@ Cache::Handle* LRUCache::Lookup(const Slice& key, uint32_t hash) {
     e->refs++;
     LRU_Remove(e);
     LRU_Append(e);
+    if (caching) {
+      DO_IF_METRICS(metrics_->cache_hits_caching->Increment());
+    }
     DO_IF_METRICS(metrics_->cache_hits->Increment());
   } else {
+    if (caching) {
+      DO_IF_METRICS(metrics_->cache_misses_caching->Increment());
+    }
     DO_IF_METRICS(metrics_->cache_misses->Increment());
   }
   return reinterpret_cast<Cache::Handle*>(e);
@@ -389,9 +395,9 @@ class ShardedLRUCache : public Cache {
     const uint32_t hash = HashSlice(key);
     return shards_[Shard(hash)]->Insert(key, hash, value, charge, deleter);
   }
-  virtual Handle* Lookup(const Slice& key) OVERRIDE {
+  virtual Handle* Lookup(const Slice& key, CacheBehavior caching) OVERRIDE {
     const uint32_t hash = HashSlice(key);
-    return shards_[Shard(hash)]->Lookup(key, hash);
+    return shards_[Shard(hash)]->Lookup(key, hash, caching == EXPECT_IN_CACHE);
   }
   virtual void Release(Handle* handle) OVERRIDE {
     LRUHandle* h = reinterpret_cast<LRUHandle*>(handle);
