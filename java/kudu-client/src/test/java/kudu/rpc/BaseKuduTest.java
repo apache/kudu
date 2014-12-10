@@ -13,11 +13,13 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.BufferedReader;
-import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.util.ArrayList;
+import java.util.Iterator;
 import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -34,17 +36,22 @@ public class BaseKuduTest {
   private static final String FLAGS_PATH = "flagsPath";
   private static final String BASE_DIR_PATH = "baseDirPath";
   private static final String START_CLUSTER = "startCluster";
-  private static boolean startCluster;
+
+  // TS ports will be assigned starting with this one.
+  private static final int TS_PORT_START = 64030;
   private static String masterAddress;
   private static int masterPort;
   private static String masterAddressAndPort;
 
   protected static final int DEFAULT_SLEEP = 50000;
+  protected static final int NUM_TABLET_SERVERS = 3;
   static final List<Thread> PROCESS_INPUT_PRINTERS = new ArrayList<Thread>();
   static Process master;
-  static Process tabletServer;
+  // Map of ports to tablet servers.
+  static Map<Integer, Process> tabletServers;
   protected static KuduClient client;
   protected static Schema basicSchema = getBasicSchema();
+  protected static boolean startCluster;
 
   private static List<String> tableNames = new ArrayList<String>();
 
@@ -59,19 +66,29 @@ public class BaseKuduTest {
     startCluster = Boolean.parseBoolean(System.getProperty(START_CLUSTER));
 
     if (startCluster) {
+      tabletServers = new ConcurrentHashMap<Integer, Process>(NUM_TABLET_SERVERS);
       String flagFileOpt = "--flagfile=" + flagsPath;
       long now = System.currentTimeMillis();
+
       String[] masterCmdLine = {"kudu-master", flagFileOpt, "--master_base_dir=" + baseDirPath
         + "/master-" + now, "--use_hybrid_clock=true", "--max_clock_sync_error_usec=10000000"};
-      String[] tsCmdLine = {"kudu-tablet_server", flagFileOpt, "--tablet_server_base_dir="
-        + baseDirPath + "/ts-" + now, "--use_hybrid_clock=true", "--max_clock_sync_error_usec=10000000"};
-
       master = configureAndStartProcess(masterCmdLine);
-      tabletServer = configureAndStartProcess(tsCmdLine);
+
+      int port = TS_PORT_START;
+      for (int i = 0; i < NUM_TABLET_SERVERS; i++) {
+        port = TestUtils.findFreePort(port);
+        String[] tsCmdLine = {"kudu-tablet_server", flagFileOpt,
+            "--tablet_server_base_dir=" + baseDirPath + "/ts-" + i + "-" + now,
+            "--tablet_server_rpc_bind_addresses=0.0.0.0:" + port,
+            "--use_hybrid_clock=true",
+            "--max_clock_sync_error_usec=10000000"};
+        tabletServers.put(port, configureAndStartProcess(tsCmdLine));
+        port++;
+      }
     }
 
     client = new KuduClient(masterAddress, masterPort);
-    if (!waitForTabletServers(1)) {
+    if (!waitForTabletServers(3)) {
       fail("Couldn't even get a TS running, aborting");
     }
   }
@@ -157,8 +174,9 @@ public class BaseKuduTest {
           if (master != null) {
             master.destroy();
           }
-          if (tabletServer != null) {
-            tabletServer.destroy();
+          for (Iterator<Process> tsIter = tabletServers.values().iterator(); tsIter.hasNext(); ) {
+            tsIter.next().destroy();
+            tsIter.remove();
           }
           for (Thread thread : PROCESS_INPUT_PRINTERS) {
             thread.interrupt();
@@ -282,6 +300,52 @@ public class BaseKuduTest {
   protected static KuduTable openTable(String name) throws Exception {
     Deferred<KuduTable> d = client.openTable(name);
     return d.join(DEFAULT_SLEEP);
+  }
+
+  /**
+   * Helper method to easily kill a tablet server that serves the given table's only tablet's
+   * leader. The currently running test case will be failed if there's more than one tablet,
+   * if the tablet has no leader, or if the tablet server was already killed.
+   *
+   * This method is thread-safe.
+   * @param table A KuduTable which will get its single tablet's leader killed.
+   * @throws Exception
+   */
+  protected static void killTabletLeader(KuduTable table) throws Exception {
+    List<LocatedTablet> tablets = table.getTabletsLocations(DEFAULT_SLEEP);
+    if (tablets.isEmpty() || tablets.size() > 1) {
+      fail("Currently only support killing leaders for tables containing 1 tablet, table " +
+          table.getName() + " has " + tablets.size());
+    }
+    LocatedTablet tablet = tablets.get(0);
+    if (tablet.getReplicas().size() == 1) {
+      fail("Table " + table.getName() + " only has 1 tablet, please enable replication");
+    }
+    LocatedTablet.Replica leader = tablet.getLeaderReplica();
+
+    if (leader == null) {
+      // Sometimes the master can have stale information about the quorum, we'll cheat and try
+      // to kill the current candidate if there's one.
+      // TODO we should be able to remove this at some point.
+      leader = tablet.getCandidateReplica();
+      if (leader == null) {
+        fail("The table's only tablet doesn't have a leader, tablet=" + tablet.toString()+ ", " +
+            "replicas=" + tablet.getReplicas());
+      } else {
+        LOG.warn("Picking a CANDIDATE instead of a LEADER to kill");
+      }
+    }
+
+    Integer port = leader.getRpcHostPort().getPort();
+    Process ts = tabletServers.get(port);
+    if (ts == null) {
+      // The TS is already dead, good.
+      return;
+    }
+    LOG.info("Killing server at port " + port);
+    ts.destroy();
+    ts.waitFor();
+    tabletServers.remove(port);
   }
 
   protected static int getMasterPort() {

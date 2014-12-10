@@ -34,12 +34,10 @@ public class TestHybridTime extends BaseKuduTest {
   @BeforeClass
   public static void setUpBeforeClass() throws Exception {
     BaseKuduTest.setUpBeforeClass();
-    // create a 4-tablets table for scanning
+
+    // Using multiple tablets doesn't work with the current way this test works since we could
+    // jump from one TS to another which changes the logical clock.
     CreateTableBuilder builder = new CreateTableBuilder();
-    KeyBuilder keyBuilder = new KeyBuilder(schema);
-    builder.addSplitKey(keyBuilder.addString("1"));
-    builder.addSplitKey(keyBuilder.addString("2"));
-    builder.addSplitKey(keyBuilder.addString("3"));
     createTable(TABLE_NAME, schema, builder);
 
     table = openTable(TABLE_NAME);
@@ -52,7 +50,7 @@ public class TestHybridTime extends BaseKuduTest {
   }
 
   /**
-   * We write to all tablets. We increment the timestamp we get back from the first write
+   * We write three rows. We increment the timestamp we get back from the first write
    * by some amount. The remaining writes should force an update to the server's clock and
    * only increment the logical values.
    *

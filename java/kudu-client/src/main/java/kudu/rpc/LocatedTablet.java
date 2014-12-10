@@ -57,8 +57,22 @@ public class LocatedTablet {
    * Return the current leader, or null if there is none.
    */
   public Replica getLeaderReplica() {
+    return getOneOfRoleOrNull(Role.LEADER);
+  }
+
+  /**
+   * Return the current candidate, or null if there is none.
+   */
+  public Replica getCandidateReplica() {
+    return getOneOfRoleOrNull(Role.CANDIDATE);
+  }
+
+  /**
+   * Return the first occurrence for the given role, or null if there is none.
+   */
+  private Replica getOneOfRoleOrNull(Role role) {
     for (Replica r : replicas) {
-      if (r.getRole() == Role.LEADER) return r;
+      if (r.getRole() == role) return r;
     }
     return null;
   }
@@ -89,6 +103,10 @@ public class LocatedTablet {
 
     public Role getRole() {
       return pb.getRole();
+    }
+
+    public String toString() {
+      return pb.toString();
     }
   }
 
