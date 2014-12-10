@@ -19,12 +19,6 @@
 #include "kudu/util/pthread_spinlock.h"
 #include "kudu/gutil/atomic_refcount.h"
 
-#define DO_IF_METRICS(to_call) do { \
-    if (PREDICT_TRUE(metrics_)) { \
-      (to_call); \
-    } \
-  } while (0);
-
 namespace kudu {
 
 class MetricContext;
@@ -227,8 +221,10 @@ void LRUCache::FreeEntry(LRUHandle* e) {
   DCHECK_EQ(ANNOTATE_UNPROTECTED_READ(e->refs), 0);
   (*e->deleter)(e->key(), e->value);
   mem_tracker_->Release(e->charge);
-  DO_IF_METRICS(metrics_->cache_usage->DecrementBy(e->charge));
-  DO_IF_METRICS(metrics_->evictions->Increment());
+  if (PREDICT_TRUE(metrics_)) {
+    metrics_->cache_usage->DecrementBy(e->charge);
+    metrics_->evictions->Increment();
+  }
   free(e);
 }
 
@@ -248,24 +244,36 @@ void LRUCache::LRU_Append(LRUHandle* e) {
 }
 
 Cache::Handle* LRUCache::Lookup(const Slice& key, uint32_t hash, bool caching) {
-
-  DO_IF_METRICS(metrics_->lookups->Increment());
-  lock_guard<MutexType> l(&mutex_);
-  LRUHandle* e = table_.Lookup(key, hash);
-  if (e != NULL) {
-    base::RefCountInc(&e->refs);
-    LRU_Remove(e);
-    LRU_Append(e);
-    if (caching) {
-      DO_IF_METRICS(metrics_->cache_hits_caching->Increment());
+  LRUHandle* e;
+  {
+    lock_guard<MutexType> l(&mutex_);
+    e = table_.Lookup(key, hash);
+    if (e != NULL) {
+      base::RefCountInc(&e->refs);
+      LRU_Remove(e);
+      LRU_Append(e);
     }
-    DO_IF_METRICS(metrics_->cache_hits->Increment());
-  } else {
-    if (caching) {
-      DO_IF_METRICS(metrics_->cache_misses_caching->Increment());
-    }
-    DO_IF_METRICS(metrics_->cache_misses->Increment());
   }
+
+  // Do the metrics outside of the lock.
+  if (metrics_) {
+    metrics_->lookups->Increment();
+    bool was_hit = (e != NULL);
+    if (was_hit) {
+      if (caching) {
+        metrics_->cache_hits_caching->Increment();
+      } else {
+        metrics_->cache_hits->Increment();
+      }
+    } else {
+      if (caching) {
+        metrics_->cache_misses_caching->Increment();
+      } else {
+        metrics_->cache_misses->Increment();
+      }
+    }
+  }
+
   return reinterpret_cast<Cache::Handle*>(e);
 }
 
@@ -293,8 +301,10 @@ Cache::Handle* LRUCache::Insert(
   e->refs = 2;  // One from LRUCache, one for the returned handle
   memcpy(e->key_data, key.data(), key.size());
   mem_tracker_->Consume(charge);
-  DO_IF_METRICS(metrics_->cache_usage->IncrementBy(charge));
-  DO_IF_METRICS(metrics_->inserts->Increment());
+  if (PREDICT_TRUE(metrics_)) {
+    metrics_->cache_usage->IncrementBy(charge);
+    metrics_->inserts->Increment();
+  }
 
   {
     lock_guard<MutexType> l(&mutex_);
