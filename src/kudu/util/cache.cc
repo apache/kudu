@@ -17,6 +17,7 @@
 #include "kudu/util/cache_metrics.h"
 #include "kudu/util/mem_tracker.h"
 #include "kudu/util/pthread_spinlock.h"
+#include "kudu/gutil/atomic_refcount.h"
 
 #define DO_IF_METRICS(to_call) do { \
     if (PREDICT_TRUE(metrics_)) { \
@@ -50,7 +51,7 @@ struct LRUHandle {
   LRUHandle* prev;
   size_t charge;      // TODO(opt): Only allow uint32_t?
   size_t key_length;
-  uint32_t refs;
+  Atomic32 refs;
   uint32_t hash;      // Hash of key(); used for fast sharding and comparisons
   uint8_t key_data[1];   // Beginning of key
 
@@ -218,13 +219,12 @@ LRUCache::~LRUCache() {
 }
 
 bool LRUCache::Unref(LRUHandle* e) {
-  DCHECK_GT(e->refs, 0);
-  e->refs--;
-  return e->refs == 0;
+  DCHECK_GT(ANNOTATE_UNPROTECTED_READ(e->refs), 0);
+  return !base::RefCountDec(&e->refs);
 }
 
 void LRUCache::FreeEntry(LRUHandle* e) {
-  DCHECK_EQ(e->refs, 0);
+  DCHECK_EQ(ANNOTATE_UNPROTECTED_READ(e->refs), 0);
   (*e->deleter)(e->key(), e->value);
   mem_tracker_->Release(e->charge);
   DO_IF_METRICS(metrics_->cache_usage->DecrementBy(e->charge));
@@ -253,7 +253,7 @@ Cache::Handle* LRUCache::Lookup(const Slice& key, uint32_t hash, bool caching) {
   lock_guard<MutexType> l(&mutex_);
   LRUHandle* e = table_.Lookup(key, hash);
   if (e != NULL) {
-    e->refs++;
+    base::RefCountInc(&e->refs);
     LRU_Remove(e);
     LRU_Append(e);
     if (caching) {
@@ -271,11 +271,7 @@ Cache::Handle* LRUCache::Lookup(const Slice& key, uint32_t hash, bool caching) {
 
 void LRUCache::Release(Cache::Handle* handle) {
   LRUHandle* e = reinterpret_cast<LRUHandle*>(handle);
-  bool last_reference = false;
-  {
-    lock_guard<MutexType> l(&mutex_);
-    last_reference = Unref(e);
-  }
+  bool last_reference = Unref(e);
   if (last_reference) {
     FreeEntry(e);
   }
