@@ -81,7 +81,7 @@ void Schema::CopyFrom(const Schema& other) {
   has_nullables_ = other.has_nullables_;
 }
 
-void Schema::swap(Schema& other) { // NOLINT(build/include_what_you_use)
+void Schema::swap(Schema& other) {
   std::swap(num_key_columns_, other.num_key_columns_);
   cols_.swap(other.cols_);
   col_ids_.swap(other.col_ids_);

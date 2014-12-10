@@ -87,7 +87,7 @@ class BlockCacheHandle {
   // Swap this handle with another handle.
   // This can be useful to transfer ownership of a handle by swapping
   // with an empty BlockCacheHandle.
-  void swap(BlockCacheHandle *dst) { // NOLINT(*) false positive
+  void swap(BlockCacheHandle *dst) {
     std::swap(this->cache_, dst->cache_);
     std::swap(this->handle_, dst->handle_);
   }
