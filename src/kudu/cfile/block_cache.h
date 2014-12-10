@@ -3,6 +3,7 @@
 #ifndef KUDU_CFILE_BLOCK_CACHE_H
 #define KUDU_CFILE_BLOCK_CACHE_H
 
+#include <algorithm>
 #include <glog/logging.h>
 
 #include "kudu/gutil/gscoped_ptr.h"
@@ -87,10 +88,8 @@ class BlockCacheHandle {
   // This can be useful to transfer ownership of a handle by swapping
   // with an empty BlockCacheHandle.
   void swap(BlockCacheHandle *dst) { // NOLINT(*) false positive
-    uint8_t buf[sizeof(*this)];
-    memcpy(buf, dst, sizeof(*this));
-    memcpy(dst, this, sizeof(*this));
-    memcpy(this, buf, sizeof(*this));
+    std::swap(this->cache_, dst->cache_);
+    std::swap(this->handle_, dst->handle_);
   }
 
   // Return the data in the cached block.
