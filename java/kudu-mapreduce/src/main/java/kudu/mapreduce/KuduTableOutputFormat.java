@@ -221,6 +221,11 @@ public class KuduTableOutputFormat extends OutputFormat<NullWritable,Operation>
             return null;
           }
           if (rwe != null) {
+
+            // Assuming we had a leader election, see KUDU-568.
+            if (rwe.areAllErrorsOfAlreadyPresentType(false)) {
+              return null;
+            }
             int rowErrorsCount = rwe.getErrors().size();
             rowsWithErrors.addAndGet(rowErrorsCount - 1); // Here we know the real count.
             LOG.warn("Got per errors for " + rowErrorsCount + " rows, " +

@@ -5,6 +5,8 @@ package kudu.rpc;
 import com.stumbleupon.async.DeferredGroupException;
 import kudu.WireProtocol;
 import kudu.tserver.Tserver;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -13,6 +15,8 @@ import java.util.List;
  * This exception contains a list of Operations that failed and why.
  */
 public class RowsWithErrorException extends NonRecoverableException {
+
+  public static final Logger LOG = LoggerFactory.getLogger(RowsWithErrorException.class);
 
   private final List<RowError> errors;
 
@@ -65,6 +69,29 @@ public class RowsWithErrorException extends NonRecoverableException {
       }
     }
     return errors.size() == 0 ? null : new RowsWithErrorException(errors);
+  }
+
+  /**
+   * This method will inspect the passed exception to check if all the errors are of the
+   * AlreadyPresent type, which due to KUDU-568 is rather frequent when a leader re-election
+   * takes place.
+   * @param logOtherErrors Boolean to indicate if the errors that aren't of type AlreadyPresent
+   *                       should be logged in ERROR, otherwise nothing will be logged.
+   * @return True if all the errors are AlreadyPresent, otherwise false.
+   */
+  public boolean areAllErrorsOfAlreadyPresentType(boolean logOtherErrors) {
+    boolean allAlreadyPresent = true;
+    for (RowsWithErrorException.RowError error : errors) {
+
+      if (WireProtocol.AppStatusPB.ErrorCode.valueOf(error.getStatus()) !=
+          WireProtocol.AppStatusPB.ErrorCode.ALREADY_PRESENT) {
+        allAlreadyPresent = false;
+        if (logOtherErrors) {
+          LOG.error("Row error status: " + error.getStatus() + ", message: " + error.getMessage());
+        }
+      }
+    }
+    return allAlreadyPresent;
   }
 
   /**

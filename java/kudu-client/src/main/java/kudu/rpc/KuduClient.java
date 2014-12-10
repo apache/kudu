@@ -816,7 +816,7 @@ public class KuduClient {
    * already.
    */
   static boolean cannotRetryRequest(final KuduRpc<?> rpc) {
-    return rpc.deadlineTracker.timedOut() || rpc.attempt > 10;  // TODO Don't hardcode.
+    return rpc.deadlineTracker.timedOut() || rpc.attempt > 100;  // TODO Don't hardcode.
   }
 
   /**
@@ -963,8 +963,17 @@ public class KuduClient {
    * We're handling a tablet server that's telling us it doesn't have the tablet we're asking for.
    * We're in the context of decode() meaning we need to either callback or retry later.
    */
-  <R> void handleNSTE(final KuduRpc<R> rpc, KuduException ex, TabletClient server) {
+  <R> void handleTabletNotFound(final KuduRpc<R> rpc, KuduException ex, TabletClient server) {
     invalidateTabletCache(rpc.getTablet(), server);
+    handleRetryableError(rpc, ex);
+  }
+
+  /**
+   * A tablet server is letting us know that it isn't the specified tablet's leader in response
+   * a RPC, so we need to demote it and retry.
+   */
+  <R> void handleNotLeader(final KuduRpc<R> rpc, KuduException ex, TabletClient server) {
+    rpc.getTablet().demoteLeader(server);
     handleRetryableError(rpc, ex);
   }
 
@@ -1553,7 +1562,31 @@ public class KuduClient {
   }
 
   /**
-   * This class encapsulates the information regarding a tablet and its locations
+   * This class encapsulates the information regarding a tablet and its locations.
+   *
+   * Leader failover mecanism:
+   * When we get a complete quorum list from the master, we place the leader in the first
+   * position of the tabletServers array. When we detect that it isn't the leader anymore (in
+   * TabletClient), we demote it and set the next TS in the array as the leader. When the RPC
+   * gets retried, it will use that TS since we always pick the leader.
+   *
+   * If that TS turns out to not be the leader, we will demote it and promote the next one, retry.
+   * When we hit the end of the list, we set the leaderIndex to NO_LEADER_INDEX which forces us
+   * to fetch the tablet locations from the master. We'll repeat this whole process until a RPC
+   * succeeds.
+   *
+   * Subtleties:
+   * We don't keep track of a TS after it disconnects (via removeTabletServer), so if we
+   * haven't contacted one for 10 seconds (socket timeout), it will be removed from the list of
+   * tabletServers. This means that if the leader fails, we only have one other TS to "promote"
+   * or maybe none at all. This is partly why we then set leaderIndex to NO_LEADER_INDEX.
+   *
+   * The effect of treating a TS as the new leader means that the Scanner will also try to hit it
+   * with requests. It's currently unclear if that's a good or a bad thing.
+   *
+   * Unlike the C++ client, we don't short-circuit the call to the master if it isn't available.
+   * This means that after trying all the peers to find the leader, we might get stuck waiting on
+   * a reachable master.
    */
   public class RemoteTablet implements Comparable<RemoteTablet> {
 
@@ -1569,7 +1602,7 @@ public class KuduClient {
       this.tabletId = tabletId;
       this.table = table;
       this.startKey = startKey;
-      // makes comparisons easier in getTablet, no need to
+      // makes comparisons easier in getTablet, we just do == instead of equals.
       this.endKey = endKey.length == 0 ? EMPTY_ARRAY : endKey;
     }
 
@@ -1589,13 +1622,10 @@ public class KuduClient {
           // from meta_cache.cc
           // TODO: if the TS advertises multiple host/ports, pick the right one
           // based on some kind of policy. For now just use the first always.
-          int index = addTabletClient(addresses.get(0).getHost(), addresses.get(0).getPort(),
-              isMasterTable(table));
-          if (replica.getRole().equals(Metadata.QuorumPeerPB.Role.LEADER) &&
-              index != NO_LEADER_INDEX) {
-            leaderIndex = index;
-          }
+          addTabletClient(addresses.get(0).getHost(), addresses.get(0).getPort(),
+              isMasterTable(table), replica.getRole().equals(Metadata.QuorumPeerPB.Role.LEADER));
         }
+        leaderIndex = 0;
         if (leaderIndex == NO_LEADER_INDEX) {
           LOG.warn("No leader provided for tablet " + getTabletIdAsString());
         }
@@ -1603,10 +1633,10 @@ public class KuduClient {
     }
 
     // Must be called with tabletServers synchronized
-    int addTabletClient(String host, int port, boolean isMasterTable) {
+    void addTabletClient(String host, int port, boolean isMasterTable, boolean isLeader) {
       String ip = getIP(host);
       if (ip == null) {
-        return NO_LEADER_INDEX;
+        return;
       }
       TabletClient client = newClient(ip, port, isMasterTable);
 
@@ -1615,17 +1645,25 @@ public class KuduClient {
       if (tablets == null) {
         // We raced with removeClientFromCache and lost. The client we got was just disconnected.
         // Reconnect.
-        return addTabletClient(host, port, isMasterTable);
+        addTabletClient(host, port, isMasterTable, isLeader);
       } else {
         synchronized (tablets) {
-          tabletServers.add(client);
+          if (isLeader) {
+            tabletServers.add(0, client);
+          } else {
+            tabletServers.add(client);
+          }
           tablets.add(this);
         }
       }
-      // guaranteed to return at least 0
-      return tabletServers.size() - 1;
     }
 
+    /**
+     * Removes the passed TabletClient from this tablet's list of tablet servers. If it was the
+     * leader, then we "promote" the next one unless it was the last one in the list.
+     * @param ts A TabletClient that was disconnected.
+     * @return True if this method removed ts from the list, else false.
+     */
     boolean removeTabletServer(TabletClient ts) {
       synchronized (tabletServers) {
         // TODO unit test for this once we have the infra
@@ -1633,14 +1671,41 @@ public class KuduClient {
         if (index == -1) {
           return false; // we removed it already
         }
-        if (leaderIndex == index) {
-          leaderIndex = NO_LEADER_INDEX; // we lost the leader
+
+        tabletServers.remove(index);
+        if (leaderIndex == index && leaderIndex == tabletServers.size()) {
+          leaderIndex = NO_LEADER_INDEX;
         } else if (leaderIndex > index) {
           leaderIndex--; // leader moved down the list
         }
-        tabletServers.remove(index);
+
         return true;
         // TODO if we reach 0 TS, maybe we should remove ourselves?
+      }
+    }
+
+    /**
+     * If the passed TabletClient is the current leader, then the next one in the list will be
+     * "promoted" unless we're at the end of the list, in which case we set the leaderIndex to
+     * NO_LEADER_INDEX which will force a call to the master.
+     * @param ts A TabletClient that gave a sign that it isn't this tablet's leader.
+     */
+    void demoteLeader(TabletClient ts) {
+      synchronized (tabletServers) {
+        int index = tabletServers.indexOf(ts);
+        // If this TS was removed or we're already forcing a call to the master (meaning someone
+        // else beat us to it), then we just noop.
+        if (index == -1 || leaderIndex == NO_LEADER_INDEX) {
+          return;
+        }
+
+        if (leaderIndex == index) {
+          if (leaderIndex + 1 == tabletServers.size()) {
+            leaderIndex = NO_LEADER_INDEX;
+          } else {
+            leaderIndex++;
+          }
+        }
       }
     }
 

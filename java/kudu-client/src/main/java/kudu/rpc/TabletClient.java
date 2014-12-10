@@ -28,8 +28,6 @@
 
 package kudu.rpc;
 
-import com.google.protobuf.Message;
-import com.google.protobuf.ZeroCopyLiteralByteString;
 import kudu.WireProtocol;
 import kudu.master.Master;
 import com.stumbleupon.async.Deferred;
@@ -379,19 +377,17 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
     if (decoded != null) {
       if (decoded.getSecond() instanceof Tserver.TabletServerErrorPB) {
         Tserver.TabletServerErrorPB error = (Tserver.TabletServerErrorPB) decoded.getSecond();
-        WireProtocol.AppStatusPB.ErrorCode code = error.getStatus().getCode();
-        if (code != WireProtocol.AppStatusPB.ErrorCode.OK) {
-          if (error.getCode() == Tserver.TabletServerErrorPB.Code.TABLET_NOT_FOUND) {
-            kuduClient.handleNSTE(rpc, new TabletServerErrorException(error.getStatus()), this);
-            // we're not calling rpc.callback() so we rely on the client to retry that RPC
+        if (error.getStatus().getCode() != WireProtocol.AppStatusPB.ErrorCode.OK) {
+          exception = dispatchTSErrorOrReturnException(rpc, error);
+          if (exception == null) {
+            // It was taken care of.
             return null;
-          } else if(code == WireProtocol.AppStatusPB.ErrorCode.SERVICE_UNAVAILABLE) {
-            kuduClient.handleRetryableError(rpc, new TabletServerErrorException(error.getStatus()));
-            return null;
+          } else {
+            // We're going to errback.
+            decoded = null;
           }
-          exception = new TabletServerErrorException(error.getStatus());
-          decoded = null;
         }
+
       } else if (decoded.getSecond() instanceof Master.MasterErrorPB) {
         Master.MasterErrorPB error = (Master.MasterErrorPB) decoded.getSecond();
         if (error.getStatus().getCode() != WireProtocol.AppStatusPB.ErrorCode.OK) {
@@ -417,6 +413,32 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
           + " time elapsed: " + ((System.nanoTime() - start) / 1000) + "us");
     }
     return null;  // Stop processing here.  The Deferred does everything else.
+  }
+
+  /**
+   * Takes care of a few kinds of TS errors that we handle differently, like tablets or leaders
+   * moving. Builds and returns an exception if we don't know what to do with it.
+   * @param rpc The original RPC call that triggered the error.
+   * @param error The error the TS sent.
+   * @return An exception if we couldn't dispatch the error, or null.
+   */
+  private Exception dispatchTSErrorOrReturnException(KuduRpc rpc,
+                                                     Tserver.TabletServerErrorPB error) {
+    WireProtocol.AppStatusPB.ErrorCode code = error.getStatus().getCode();
+    TabletServerErrorException ex = new TabletServerErrorException(error.getStatus());
+    if (error.getCode() == Tserver.TabletServerErrorPB.Code.TABLET_NOT_FOUND) {
+      kuduClient.handleTabletNotFound(rpc, ex, this);
+      // we're not calling rpc.callback() so we rely on the client to retry that RPC
+    } else if (code == WireProtocol.AppStatusPB.ErrorCode.SERVICE_UNAVAILABLE) {
+      kuduClient.handleRetryableError(rpc, ex);
+      // The following two error codes are an indication that the tablet isn't a leader.
+    } else if (code == WireProtocol.AppStatusPB.ErrorCode.ILLEGAL_STATE ||
+        code == WireProtocol.AppStatusPB.ErrorCode.ABORTED) {
+      kuduClient.handleNotLeader(rpc, ex, this);
+    } else {
+      return ex;
+    }
+    return null;
   }
 
   /**
@@ -569,8 +591,8 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
           ) {
         rpc.errback(exception);
       } else {
-        kuduClient.handleNSTE(rpc, new ConnectionResetException(exception.getMessage(), exception),
-            this);
+        kuduClient.handleTabletNotFound(rpc, new ConnectionResetException(exception.getMessage(),
+                exception), this);
       }
     }
   }

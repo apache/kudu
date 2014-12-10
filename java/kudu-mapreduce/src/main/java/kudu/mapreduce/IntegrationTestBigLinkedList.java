@@ -18,6 +18,7 @@ package kudu.mapreduce;
 
 import com.stumbleupon.async.Callback;
 import com.stumbleupon.async.Deferred;
+import com.stumbleupon.async.DeferredGroupException;
 import kudu.ColumnSchema;
 import kudu.Schema;
 import kudu.Type;
@@ -30,6 +31,7 @@ import kudu.rpc.KuduScanner;
 import kudu.rpc.KuduTable;
 import kudu.rpc.Operation;
 import kudu.rpc.RowResult;
+import kudu.rpc.RowsWithErrorException;
 import kudu.rpc.SessionConfiguration;
 import kudu.rpc.SynchronousKuduSession;
 import kudu.rpc.Update;
@@ -557,6 +559,12 @@ public class IntegrationTestBigLinkedList extends Configured implements Tool {
           }
 
           session.flush();
+        } catch (DeferredGroupException dge) {
+          RowsWithErrorException errors = RowsWithErrorException.fromDeferredGroupException(dge);
+          // If all the rows are already present, assume KUDU-568.
+          if (errors == null || !errors.areAllErrorsOfAlreadyPresentType(true)) {
+            throw new IOException(dge);
+          }
         } catch (Exception ex) {
           throw new IOException(ex);
         }
