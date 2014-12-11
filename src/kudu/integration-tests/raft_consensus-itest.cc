@@ -410,8 +410,9 @@ class RaftConsensusITest : public TabletServerTest {
       vector<string> leader_results;
       vector<string> replica_results;
 
-      TServerDetails* leader = GetLeaderReplicaOrNull();
-      CHECK(leader != NULL);
+      TServerDetails* leader;
+      CHECK_OK(GetLeaderReplicaWithRetries(&leader));
+
       vector<TServerDetails*> followers;
       GetOnlyLiveFollowerReplicas(&followers);
 
@@ -609,7 +610,9 @@ class RaftConsensusITest : public TabletServerTest {
     // addresses.
     bool kill = false;// rand() % 2 == 0;
 
-    TServerDetails* old_leader = DCHECK_NOTNULL(GetLeaderReplicaOrNull());
+    TServerDetails* old_leader;
+    CHECK_OK(GetLeaderReplicaWithRetries(&old_leader));
+
     vector<TServerDetails*> followers;
     GetOnlyLiveFollowerReplicas(&followers);
 
@@ -673,7 +676,8 @@ TEST_F(RaftConsensusITest, TestGetPermanentUuid) {
   BuildAndStart(kNumReplicas, vector<string>());
 
   QuorumPeerPB peer;
-  TServerDetails* leader = DCHECK_NOTNULL(GetLeaderReplicaOrNull());
+  TServerDetails* leader = NULL;
+  ASSERT_OK(GetLeaderReplicaWithRetries(&leader));
   peer.mutable_last_known_addr()->CopyFrom(leader->ts_info.rpc_addresses(0));
   const string expected_uuid = leader->ts_info.permanent_uuid();
 
@@ -717,7 +721,8 @@ TEST_F(RaftConsensusITest, TestFailedTransaction) {
   RpcController controller;
   controller.set_timeout(MonoDelta::FromSeconds(FLAGS_rpc_timeout));
 
-  TServerDetails* leader = DCHECK_NOTNULL(GetLeaderReplicaOrNull());
+  TServerDetails* leader = NULL;
+  ASSERT_OK(GetLeaderReplicaWithRetries(&leader));
 
   ASSERT_STATUS_OK(DCHECK_NOTNULL(leader->tserver_proxy.get())->Write(req, &resp, &controller));
   ASSERT_TRUE(resp.has_error());
@@ -877,7 +882,9 @@ TEST_F(RaftConsensusITest, TestInsertWhenTheQueueIsFull) {
   // Pause a replica
   ASSERT_OK(replica->external_ts->Pause());
   LOG(INFO)<< "Paused one of the replicas, starting to write.";
-  TServerDetails* leader = DCHECK_NOTNULL(GetLeaderReplicaOrNull());
+
+  TServerDetails* leader = NULL;
+  ASSERT_OK(GetLeaderReplicaWithRetries(&leader));
 
   // .. and insert until insertions fail because the queue is full
   while (true) {
