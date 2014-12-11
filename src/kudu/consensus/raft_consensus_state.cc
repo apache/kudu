@@ -621,6 +621,7 @@ string ReplicaState::LogPrefix() {
 }
 
 string ReplicaState::LogPrefixUnlocked() const {
+  DCHECK(update_lock_.is_locked());
   return Substitute("T $0 P $1 [$2]: ",
                     options_.tablet_id,
                     GetPeerUuid(),

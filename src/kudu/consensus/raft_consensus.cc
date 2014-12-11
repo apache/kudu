@@ -1211,9 +1211,9 @@ void RaftConsensus::ElectionCallback(const ElectionResult& result) {
   }
 
   if (result.decision == VOTE_DENIED) {
-    LOG_WITH_PREFIX(INFO) << "Leader election lost for term " << result.election_term
-                          << ". Reason: "
-                          << (!result.message.empty() ? result.message : "None given");
+    LOG_WITH_PREFIX_LK(INFO) << "Leader election lost for term " << result.election_term
+                             << ". Reason: "
+                             << (!result.message.empty() ? result.message : "None given");
     return;
   }
 
