@@ -53,6 +53,9 @@ class MiniMaster {
   const Master* master() const { return master_.get(); }
   Master* master() { return master_.get(); }
 
+  // Return UUID of this mini master.
+  std::string permanent_uuid() const;
+
  private:
   Status StartLeaderOnPorts(uint16_t rpc_port, uint16_t web_port,
                             const std::vector<uint16_t>& follower_ports);

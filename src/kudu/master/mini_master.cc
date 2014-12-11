@@ -6,6 +6,7 @@
 #include <glog/logging.h>
 #include <string>
 
+#include "kudu/fs/fs_manager.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/server/rpc_server.h"
 #include "kudu/server/webserver.h"
@@ -140,6 +141,11 @@ const Sockaddr MiniMaster::bound_rpc_addr() const {
 const Sockaddr MiniMaster::bound_http_addr() const {
   CHECK(running_);
   return master_->first_http_address();
+}
+
+std::string MiniMaster::permanent_uuid() const {
+  CHECK(master_);
+  return DCHECK_NOTNULL(master_->fs_manager())->uuid();
 }
 
 } // namespace master

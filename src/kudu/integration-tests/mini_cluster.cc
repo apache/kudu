@@ -104,6 +104,8 @@ Status MiniCluster::StartDistributedMasters() {
       new MiniMaster(env_, GetMasterFsRoot(leader_master_idx_), leader_port));
   RETURN_NOT_OK_PREPEND(leader_mini_master->StartLeader(follower_ports),
                         "Couldn't start leader master");
+  VLOG(1) << "Started MiniMaster (leader) with UUID " << leader_mini_master->permanent_uuid()
+          << " at index " << leader_master_idx_;
   mini_masters_[leader_master_idx_] = shared_ptr<MiniMaster>(leader_mini_master.release());
 
   for (int i = 0; i < num_masters_initial_; i++) {
@@ -119,8 +121,11 @@ Status MiniCluster::StartDistributedMasters() {
     }
     gscoped_ptr<MiniMaster> follower_mini_master(
         new MiniMaster(env_, GetMasterFsRoot(i), master_rpc_ports_[i]));
+
     RETURN_NOT_OK_PREPEND(follower_mini_master->StartFollower(leader_port, peer_ports),
                           Substitute("Couldn't start follower $0", i));
+    VLOG(1) << "Started MiniMaster (follower) with UUID " << follower_mini_master->permanent_uuid()
+            << " at index " << i;
     mini_masters_[i] = shared_ptr<MiniMaster>(follower_mini_master.release());
   }
   int i = 0;
