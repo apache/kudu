@@ -50,8 +50,6 @@ set -o pipefail
 # gather core dumps
 ulimit -c unlimited
 
-EXIT_STATUS=0
-
 BUILD_TYPE=${BUILD_TYPE:-DEBUG}
 BUILD_TYPE=$(echo "$BUILD_TYPE" | tr a-z A-Z) # capitalize
 
@@ -198,6 +196,9 @@ fi
 NUM_PROCS=$(cat /proc/cpuinfo | grep processor | wc -l)
 make -j$NUM_PROCS 2>&1 | tee build.log
 
+# If compilation succeeds, try to run all remaining steps despite any failures.
+set +e
+
 # Run tests
 export GTEST_OUTPUT="xml:$TEST_LOGDIR/" # Enable JUnit-compatible XML output.
 if [ "$RUN_FLAKY_ONLY" == "1" ] ; then
@@ -218,13 +219,30 @@ if [ "$RUN_FLAKY_ONLY" == "1" ] ; then
   BUILD_JAVA=0
 fi
 
-ctest -j$NUM_PROCS $EXTRA_TEST_FLAGS
+EXIT_STATUS=0
+
+# Run the C++ unit tests.
+ctest -j$NUM_PROCS $EXTRA_TEST_FLAGS || EXIT_STATUS=$?
+
+if [ $EXIT_STATUS != 0 ]; then
+  # Tests that crash do not generate JUnit report XML files.
+  # We go through and generate a kind of poor-man's version of them in those cases.
+  for GTEST_OUTFILE in $TEST_LOGDIR/*.txt.gz; do
+    TEST_EXE=$(basename $GTEST_OUTFILE .txt.gz)
+    GTEST_XMLFILE="$TEST_LOGDIR/$TEST_EXE.xml"
+    if [ ! -f "$GTEST_XMLFILE" ]; then
+      echo "JUnit report missing:" \
+           "generating fake JUnit report file from $GTEST_OUTFILE and saving it to $GTEST_XMLFILE"
+      zcat $GTEST_OUTFILE | $ROOT/build-support/parse_test_failure.py -x > $GTEST_XMLFILE
+    fi
+  done
+fi
 
 # If all tests passed, ensure that they cleaned up their test output.
-if [ $? = 0 ]; then
+if [ $EXIT_STATUS == 0 ]; then
   TEST_TMPDIR_CONTENTS=$(ls $TEST_TMPDIR)
   if [ -n "$TEST_TMPDIR_CONTENTS" ]; then
-    echo "All tests passed yet some left behind their test output"
+    echo "All tests passed, yet some left behind their test output:"
     for SUBDIR in $TEST_TMPDIR_CONTENTS; do
       echo $SUBDIR
     done
@@ -234,7 +252,8 @@ fi
 
 if [ "$DO_COVERAGE" == "1" ]; then
   echo Generating coverage report...
-  ./thirdparty/gcovr-3.0/scripts/gcovr -r src/  -e '.*\.pb\..*' --xml > build/coverage.xml
+  ./thirdparty/gcovr-3.0/scripts/gcovr -r src/  -e '.*\.pb\..*' --xml \
+      > build/coverage.xml || EXIT_STATUS=$?
 fi
 
 if [ "$BUILD_JAVA" == "1" ]; then
@@ -243,14 +262,11 @@ if [ "$BUILD_JAVA" == "1" ]; then
   pushd java
   export TSAN_OPTIONS="$TSAN_OPTIONS suppressions=$ROOT/build-support/tsan-suppressions.txt history_size=7"
   set -x
-  mvn clean test
+  mvn clean test || EXIT_STATUS=$?
   set +x
   popd
 fi
 
-# Check that the heap checker actually worked. Need to temporarily remove
-# -e to allow for failed commands.
-set +e
 if [ "$HEAPCHECK" = normal ]; then
   FAILED_TESTS=$(zgrep -L -- "WARNING: Perftools heap leak checker is active -- Performance may suffer" build/test-logs/*-test.txt*)
   if [ -n "$FAILED_TESTS" ]; then
