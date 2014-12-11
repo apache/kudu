@@ -136,6 +136,8 @@ class Peer {
   // Signals there was an error sending the request to the peer.
   void ProcessResponseError(const Status& status);
 
+  std::string LogPrefixUnlocked() const;
+
   const std::string& tablet_id() const { return tablet_id_; }
 
   const std::string tablet_id_;

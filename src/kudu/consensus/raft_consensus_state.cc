@@ -440,7 +440,7 @@ Status ReplicaState::AbortOpsAfterUnlocked(int64_t new_preceding_idx) {
 
   for (; iter != pending_txns_.end();) {
     ConsensusRound* round = (*iter).second;
-    LOG(INFO) << "Aborting uncommitted operation due to leader change: "
+    LOG_WITH_PREFIX(INFO) << "Aborting uncommitted operation due to leader change: "
         << round->replicate_msg()->id();
     round->NotifyReplicationFinished(Status::Aborted("Transaction aborted by new leader"));
     // erase the entry from pendings

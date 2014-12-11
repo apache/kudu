@@ -423,6 +423,7 @@ void PeerMessageQueue::ResponseFromPeer(const ConsensusResponsePB& response,
           LOG_WITH_PREFIX(INFO) << "Peer responded invalid term: " << peer->ToString();
           NotifyObserversOfTermChange(response.responder_term());
           *peer = previous;
+          peer->is_last_exchange_successful = false;
 
           *more_pending = false;
           return;

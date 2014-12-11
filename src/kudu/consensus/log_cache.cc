@@ -215,6 +215,8 @@ Status LogCache::ReadOps(int64_t after_op_index,
       // point.
       return Status::Incomplete("Cache already busy loading");
     } else if (status.ok()) {
+      VLOG_WITH_PREFIX(1) << "Enqueued async queue load starting at " << after_op_index
+          << ". Current state: " << ToStringUnlocked();
       // Successfully enqueued.
       return Status::Incomplete("Asynchronously reading ops");
     }
@@ -323,14 +325,12 @@ void LogCache::EntriesLoadedCallback(int64_t after_op_index,
     }
 
     CHECK(OpIdEquals(replicates.back()->id(), preceding_first_op_))
-      << "Expected: " << preceding_first_op_.ShortDebugString()
-      << " got: " << replicates.back()->id();
+      << "Expected: " << preceding_first_op_ << " got: " << replicates.back()->id();
 
     preceding_first_op_ = preceding_id;
     LOG_WITH_PREFIX(INFO) << "Loaded operations into the cache after: "
-        << preceding_id.ShortDebugString() << " to: "
-        << replicates.back()->id().ShortDebugString()
-        << " for a total of: " << replicates.size();
+        << preceding_id << " to: " << replicates.back()->id() << " for a total of: "
+        << replicates.size() << ". Current state: " << ToStringUnlocked();
   }
 
   metrics_.log_cache_total_num_ops->IncrementBy(replicates.size());

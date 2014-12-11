@@ -116,8 +116,8 @@ void Peer::SendNextRequest(bool even_if_queue_empty) {
   // the peer has no pending request nor is sending: send the request
   Status s = queue_->RequestForPeer(peer_pb_.permanent_uuid(), &request_);
   if (PREDICT_FALSE(!s.ok())) {
-    VLOG(1) << "Could not obtain request from queue for peer: " << peer_pb_.permanent_uuid()
-        << ". Status: " << s.ToString();
+    LOG_WITH_PREFIX(INFO) << "Could not obtain request from queue for peer: "
+        << peer_pb_.permanent_uuid() << ". Status: " << s.ToString();
     sem_.Release();
     return;
   }
@@ -140,8 +140,8 @@ void Peer::SendNextRequest(bool even_if_queue_empty) {
 
   state_ = kPeerWaitingForResponse;
 
-  VLOG(2) << "Sending to peer " << peer_pb().permanent_uuid() << ": "
-          << request_.ShortDebugString();
+  VLOG_WITH_PREFIX(2) << "Sending to peer " << peer_pb().permanent_uuid() << ": "
+      << request_.ShortDebugString();
   controller_.Reset();
 
   // TODO handle errors
@@ -167,8 +167,8 @@ void Peer::ProcessResponse() {
   failed_attempts_ = 0;
 
   DCHECK(response_.status().IsInitialized()) << "Error: " << response_.InitializationErrorString();
-  VLOG(2) << "Response from peer " << peer_pb().permanent_uuid() << ": "
-          << response_.ShortDebugString();
+  VLOG_WITH_PREFIX(2) << "Response from peer " << peer_pb().permanent_uuid() << ": "
+      << response_.ShortDebugString();
 
 
   bool more_pending;
@@ -183,12 +183,16 @@ void Peer::ProcessResponse() {
 
 void Peer::ProcessResponseError(const Status& status) {
   failed_attempts_++;
-  LOG(WARNING) << "Couldn't send request to peer " << peer_pb_.permanent_uuid()
+  LOG_WITH_PREFIX(WARNING) << "Couldn't send request to peer " << peer_pb_.permanent_uuid()
       << " for tablet " << tablet_id_
       << " Status: " << status.ToString() << ". Retrying in the next heartbeat period."
       << " Already tried " << failed_attempts_ << " times.";
   state_ = kPeerIdle;
   sem_.Release();
+}
+
+string Peer::LogPrefixUnlocked() const {
+  return Substitute("T $0 P $1: ", tablet_id_, leader_uuid_);
 }
 
 void Peer::Close() {
@@ -201,7 +205,7 @@ void Peer::Close() {
   DCHECK(state_ == kPeerIdle || state_ == kPeerStarted) << "Unexpected state: " << state_;
   state_ = kPeerClosed;
 
-  LOG(INFO) << "Closing peer: " << peer_pb_.permanent_uuid();
+  LOG_WITH_PREFIX(INFO) << "Closing peer: " << peer_pb_.permanent_uuid();
   queue_->UntrackPeer(peer_pb_.permanent_uuid());
   // We don't own the ops (the queue does).
   request_.mutable_ops()->ExtractSubrange(0, request_.ops_size(), NULL);

@@ -1296,7 +1296,8 @@ Status RaftConsensus::SnoozeFailureDetectorUnlocked(const MonoDelta& additional_
   MonoTime time = MonoTime::Now(MonoTime::FINE);
   time.AddDelta(additional_delta);
   if (additional_delta.ToNanoseconds() > 0) {
-    LOG(INFO) << "Snoozing failure detection for an additional: " << additional_delta.ToString();
+    LOG_WITH_PREFIX(INFO) << "Snoozing failure detection for an additional: "
+        << additional_delta.ToString();
   }
   return failure_detector_->MessageFrom(kTimerId, time);
 }
