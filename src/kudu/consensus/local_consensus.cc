@@ -78,8 +78,11 @@ Status LocalConsensus::Start(const ConsensusBootstrapInfo& info) {
 
   ConsensusRound* round_ptr = round.get();
   RETURN_NOT_OK(txn_factory_->StartReplicaTransaction(round.Pass()));
-  Replicate(round_ptr);
-
+  Status s = Replicate(round_ptr);
+  if (!s.ok()) {
+    LOG(WARNING) << "Unable to replicate initial change config transaction: " << s.ToString();
+    return s;
+  }
 
   TRACE("Consensus started");
   return Status::OK();
