@@ -105,7 +105,7 @@ string TransactionDriver::ToStringUnlocked() const {
 
 
 Status TransactionDriver::ExecuteAsync() {
-  VLOG_WITH_PREFIX_LK(2) << "ExecuteAsync()";
+  VLOG_WITH_PREFIX_LK(4) << "ExecuteAsync()";
   ADOPT_TRACE(trace());
   RETURN_NOT_OK(prepare_pool_->SubmitClosure(
                   Bind(&TransactionDriver::PrepareAndStartTask, Unretained(this))));
@@ -113,7 +113,6 @@ Status TransactionDriver::ExecuteAsync() {
 }
 
 void TransactionDriver::PrepareAndStartTask() {
-  VLOG_WITH_PREFIX_LK(2) << " PrepareAndStart()";
   Status prepare_status = PrepareAndStart();
   if (PREDICT_FALSE(!prepare_status.ok())) {
     HandleFailure(prepare_status);
@@ -121,6 +120,7 @@ void TransactionDriver::PrepareAndStartTask() {
 }
 
 Status TransactionDriver::PrepareAndStart() {
+  VLOG_WITH_PREFIX_LK(4) << "PrepareAndStart()";
   // Actually prepare and start the transaction.
   RETURN_NOT_OK(transaction_->Prepare());
 
@@ -142,7 +142,7 @@ Status TransactionDriver::PrepareAndStart() {
   switch (repl_state_copy) {
     case NOT_REPLICATING:
     {
-      VLOG_WITH_PREFIX_LK(2) << " Triggering consensus repl";
+      VLOG_WITH_PREFIX_LK(4) << "Triggering consensus repl";
       // Trigger the consensus replication.
       gscoped_ptr<ReplicateMsg> replicate_msg;
       transaction_->NewReplicateMsg(&replicate_msg);
@@ -189,6 +189,7 @@ Status TransactionDriver::PrepareAndStart() {
 }
 
 void TransactionDriver::HandleFailure(const Status& s) {
+  VLOG_WITH_PREFIX_LK(2) << "Failed transaction: " << s.ToString();
   CHECK(!s.ok());
   TRACE("HandleFailure($0)", s.ToString());
 
@@ -407,7 +408,7 @@ std::string TransactionDriver::LogPrefix() const {
 
   // We use the tablet and the peer (T, P) to identify ts and tablet and the timestamp (Ts) to
   // (help) identify the transaction. The state string (S) describes the state of the transaction.
-  return strings::Substitute("T $0 P $1 S $2 Ts $3:",
+  return strings::Substitute("T $0 P $1 S $2 Ts $3: ",
                              consensus_->tablet_id(),
                              consensus_->peer_uuid(),
                              state_str,
