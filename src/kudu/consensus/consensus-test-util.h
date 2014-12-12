@@ -273,6 +273,10 @@ class NoOpTestPeerProxy : public TestPeerProxy {
       response->set_responder_uuid(peer_pb_.permanent_uuid());
       response->set_responder_term(request->caller_term());
       response->mutable_status()->mutable_last_received()->CopyFrom(last_received_);
+      // We set the last committed index to be the same index as the last received. While
+      // this is unlikely to happen in a real situation, its not technically incorrect and
+      // avoids having to come up with some other index that it still correct.
+      response->mutable_status()->set_last_committed_idx(last_received_.index());
     }
     return RegisterCallbackAndRespond(kUpdate, callback);
   }

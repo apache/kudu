@@ -63,9 +63,10 @@ METRIC_DEFINE_gauge_int64(queue_size_bytes, MetricUnit::kBytes,
 const char kConsensusQueueParentTrackerId[] = "consensus_queue_parent";
 
 std::string PeerMessageQueue::TrackedPeer::ToString() const {
-  return Substitute("Peer: $0, New: $1, Last received: $2, Last known committed idx: $3"
-      " Last exchange result: $4", uuid, is_new,  OpIdToString(last_received),
-      last_known_committed_idx, is_last_exchange_successful ? "SUCCESS" : "ERROR");
+  return Substitute("Peer: $0, New: $1, Last received: $2, Last sent $3, "
+      "Last known committed idx: $4 Last exchange result: $5", uuid, is_new,
+      OpIdToString(log_tail), OpIdToString(last_received), last_known_committed_idx,
+      is_last_exchange_successful ? "SUCCESS" : "ERROR");
 }
 
 #define INSTANTIATE_METRIC(x) \
@@ -137,10 +138,13 @@ void PeerMessageQueue::TrackPeerUnlocked(const string& uuid) {
   CHECK(!uuid.empty()) << "Got request to track peer with empty UUID";
   DCHECK_EQ(queue_state_.state, kQueueOpen);
 
-  // We leave the peer's last_received watermark unitialized, we'll
-  // initialize it when we get the first response back from the peer.
   TrackedPeer* tracked_peer = new TrackedPeer(uuid);
   tracked_peer->uuid = uuid;
+  // We don't know the last operation received by the peer so, following
+  // the raft protocol, we set it to the queue's last appended operation.
+  // If this is not the last operation the peer has received it will reset
+  // it accordingly.
+  tracked_peer->log_tail = queue_state_.last_appended;
   InsertOrDie(&peers_map_, uuid, tracked_peer);
 
   // We don't know how far back this peer is so set the all replicated
@@ -175,7 +179,7 @@ void PeerMessageQueue::LocalPeerAppendFinished(const OpId& id,
     fake_response.mutable_status()->set_last_committed_idx(queue_state_.committed_index.index());
   }
   bool junk;
-  ResponseFromPeer(fake_response, &junk);
+  ResponseFromPeer(id, fake_response, &junk);
 
   callback.Run(status);
 }
@@ -246,8 +250,6 @@ Status PeerMessageQueue::GetOpsFromCacheOrFallback(const OpId& op,
 
 Status PeerMessageQueue::RequestForPeer(const string& uuid,
                                         ConsensusRequestPB* request) {
-  // Clear the requests without deleting the entries, as they may be in use by other peers.
-  request->mutable_ops()->ExtractSubrange(0, request->ops_size(), NULL);
   boost::lock_guard<simple_spinlock> lock(queue_lock_);
   DCHECK_EQ(queue_state_.state, kQueueOpen);
   DCHECK_NE(uuid, local_uuid_);
@@ -256,6 +258,9 @@ Status PeerMessageQueue::RequestForPeer(const string& uuid,
   if (PREDICT_FALSE(peer == NULL || queue_state_.mode == NON_LEADER)) {
     return Status::NotFound("Peer not tracked or queue not in leader mode.");
   }
+
+  // Clear the requests without deleting the entries, as they may be in use by other peers.
+  request->mutable_ops()->ExtractSubrange(0, request->ops_size(), NULL);
 
   // This is initialized to the queue's last appended op but gets set to the id of the
   // log entry preceding the first one in 'messages' if messages are found for the peer.
@@ -266,13 +271,20 @@ Status PeerMessageQueue::RequestForPeer(const string& uuid,
   // from the log starting at the last_received point.
   if (!peer->is_new) {
 
+    OpId send_after;
+    if (peer->last_received.IsInitialized()) {
+      send_after = peer->last_received;
+    } else {
+      send_after = peer->log_tail;
+    }
+
     // The batch of messages to send to the peer.
     vector<ReplicateRefPtr> messages;
     int max_batch_size = FLAGS_consensus_max_batch_size_bytes - request->ByteSize();
 
-    // We try to get the peer's last received op. If that fails because the op
+    // We try to get the op after the one we last sent. If that fails because the op
     // cannot be found in our log we fall back to the last committed index.
-    Status s = GetOpsFromCacheOrFallback(peer->last_received,
+    Status s = GetOpsFromCacheOrFallback(send_after,
                                          peer->last_known_committed_idx,
                                          max_batch_size,
                                          &messages,
@@ -320,8 +332,9 @@ void PeerMessageQueue::AdvanceQueueWatermark(const char* type,
                                              int num_peers_required) {
 
   if (VLOG_IS_ON(2)) {
-    VLOG_WITH_PREFIX(2) << "Updating " << type << " watermark: "
-        << " peer changed from " << replicated_before << " to " << replicated_after;
+    VLOG_WITH_PREFIX(2) << "Updating " << type << " watermark: " << " peer changed from "
+        << replicated_before << " to " << replicated_after << ". Current value: "
+        << watermark->ShortDebugString();
   }
 
   // Go through the peer's watermarks, we want the highest watermark that
@@ -363,7 +376,8 @@ void PeerMessageQueue::AdvanceQueueWatermark(const char* type,
   }
 }
 
-void PeerMessageQueue::ResponseFromPeer(const ConsensusResponsePB& response,
+void PeerMessageQueue::ResponseFromPeer(const OpId& last_sent,
+                                        const ConsensusResponsePB& response,
                                         bool* more_pending) {
   CHECK(response.has_responder_uuid() && !response.responder_uuid().empty())
       << "Got response from peer with empty UUID";
@@ -390,6 +404,9 @@ void PeerMessageQueue::ResponseFromPeer(const ConsensusResponsePB& response,
     DCHECK(!response.has_error());
     // Responses should always have a status.
     DCHECK(response.has_status());
+    // The status must always have a last received op id and a last committed index.
+    DCHECK(response.status().has_last_received());
+    DCHECK(response.status().has_last_committed_idx());
 
     const ConsensusStatusPB& status = response.status();
 
@@ -397,16 +414,15 @@ void PeerMessageQueue::ResponseFromPeer(const ConsensusResponsePB& response,
     TrackedPeer previous = *peer;
 
     // Update the peer status based on the response.
-    peer->last_received.CopyFrom(status.last_received());
+    peer->log_tail.CopyFrom(status.last_received());
     peer->last_known_committed_idx = status.last_committed_idx();
     peer->is_new = false;
-    peer->is_last_exchange_successful = !status.has_error();
 
     if (PREDICT_FALSE(status.has_error())) {
+      peer->is_last_exchange_successful = false;
       switch (status.error().code()) {
         case ConsensusErrorPB::PRECEDING_ENTRY_DIDNT_MATCH: {
           DCHECK(status.has_last_received());
-
           if (previous.is_new) {
             // That's currently how we can detect that we able to connect to a peer.
             LOG_WITH_PREFIX(INFO) << "Connected to new peer: " << peer->ToString();
@@ -423,7 +439,6 @@ void PeerMessageQueue::ResponseFromPeer(const ConsensusResponsePB& response,
           LOG_WITH_PREFIX(INFO) << "Peer responded invalid term: " << peer->ToString();
           NotifyObserversOfTermChange(response.responder_term());
           *peer = previous;
-          peer->is_last_exchange_successful = false;
 
           *more_pending = false;
           return;
@@ -434,6 +449,10 @@ void PeerMessageQueue::ResponseFromPeer(const ConsensusResponsePB& response,
         }
       }
     }
+
+    // On a successful response we update the last sent.
+    peer->last_received = last_sent;
+    peer->is_last_exchange_successful = true;
 
     if (response.has_responder_term()) {
       // The peer must have responded with a term that is greater than or equal to
@@ -449,6 +468,8 @@ void PeerMessageQueue::ResponseFromPeer(const ConsensusResponsePB& response,
       VLOG_WITH_PREFIX(2) << "Received Response from Peer: " << peer->ToString()
           << ". Response: " << response.ShortDebugString();
     }
+
+    *more_pending = log_cache_.HasOpIndex(peer->log_tail.index() + 1);
 
     mode_copy = queue_state_.mode;
     if (mode_copy == LEADER) {
@@ -470,8 +491,6 @@ void PeerMessageQueue::ResponseFromPeer(const ConsensusResponsePB& response,
                           peers_map_.size());
 
     log_cache_.SetPinnedOp(queue_state_.all_replicated_opid.index());
-
-    *more_pending = log_cache_.HasOpIndex(peer->last_received.index() + 1);
 
     UpdateMetrics();
   }

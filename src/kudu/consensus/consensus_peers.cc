@@ -170,9 +170,11 @@ void Peer::ProcessResponse() {
   VLOG_WITH_PREFIX(2) << "Response from peer " << peer_pb().permanent_uuid() << ": "
       << response_.ShortDebugString();
 
+  const OpId* last_sent = request_.ops_size() > 0 ? &request_.ops(request_.ops_size() - 1).id() :
+                                                    &request_.preceding_id();
 
   bool more_pending;
-  queue_->ResponseFromPeer(response_, &more_pending);
+  queue_->ResponseFromPeer(*last_sent, response_, &more_pending);
   state_ = kPeerIdle;
   if (more_pending && state_ != kPeerClosed) {
     SendNextRequest(true);

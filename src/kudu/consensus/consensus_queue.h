@@ -56,7 +56,7 @@ class PeerMessageQueue {
     explicit TrackedPeer(const std::string& uuid)
       : uuid(uuid),
         is_new(true),
-        last_received(MinimumOpId()),
+        log_tail(MinimumOpId()),
         last_known_committed_idx(MinimumOpId().index()),
         is_last_exchange_successful(false),
         last_seen_term_(0) {
@@ -76,7 +76,11 @@ class PeerMessageQueue {
     // Whether this is a newly tracked peer.
     bool is_new;
 
-    // The last received operation reported by this peer.
+    // The last operation in the peer's log.
+    OpId log_tail;
+
+    // The last operation that we've sent to this peer and that
+    // it acked.
     OpId last_received;
 
     // The last committed index this peer knows about.
@@ -157,7 +161,10 @@ class PeerMessageQueue {
 
   // Updates the request queue with the latest response of a peer, returns
   // whether this peer has more requests pending.
-  virtual void ResponseFromPeer(const ConsensusResponsePB& response,
+  // 'last_sent' corresponds to the last_message that we've sent to this peer
+  // and, on a successful response, we'll advance watermarks based on this OpId.
+  virtual void ResponseFromPeer(const OpId& last_sent,
+                                const ConsensusResponsePB& response,
                                 bool* more_pending);
 
   // Closes the queue, peers are still allowed to call UntrackPeer() and
