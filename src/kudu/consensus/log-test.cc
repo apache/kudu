@@ -627,8 +627,10 @@ TEST_F(LogTest, TestLogReader) {
 // returns the current segment.
 TEST_F(LogTest, TestLogReaderReturnsLatestSegmentIfIndexEmpty) {
   BuildLog();
-  AppendCommit(1, APPEND_ASYNC);
-  AppendReplicateBatch(1, APPEND_SYNC);
+
+  OpId opid = MakeOpId(1, 1);
+  AppendCommit(opid, APPEND_ASYNC);
+  AppendReplicateBatch(opid, APPEND_SYNC);
 
   // The reader has nothing in the index, since we've only appended
   // a small batch and have not rolled over.

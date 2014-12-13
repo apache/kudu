@@ -9,6 +9,7 @@
 #include "kudu/consensus/consensus_meta.h"
 #include "kudu/consensus/log_util.h"
 #include "kudu/consensus/opid_util.h"
+#include "kudu/consensus/consensus-test-util.h"
 #include "kudu/server/logical_clock.h"
 #include "kudu/server/metadata.h"
 #include "kudu/tablet/tablet_bootstrap.h"
@@ -32,6 +33,8 @@ using std::string;
 using consensus::ConsensusBootstrapInfo;
 using consensus::ConsensusMetadata;
 using consensus::kMinimumTerm;
+using consensus::MakeOpId;
+using consensus::OpId;
 using log::Log;
 using log::LogTestBase;
 using log::LogAnchorRegistry;
@@ -144,10 +147,10 @@ class BootstrapTest : public LogTestBase {
 TEST_F(BootstrapTest, TestBootstrap) {
   BuildLog();
 
-  AppendReplicateBatch(current_id_);
+  AppendReplicateBatch(MakeOpId(1, current_index_));
   ASSERT_STATUS_OK(RollLog());
 
-  AppendCommit(current_id_);
+  AppendCommit(MakeOpId(1, current_index_));
 
   shared_ptr<Tablet> tablet;
   ConsensusBootstrapInfo boot_info;
@@ -186,12 +189,14 @@ TEST_F(BootstrapTest, TestIncompleteRemoteBootstrap) {
 TEST_F(BootstrapTest, TestOrphanCommit) {
   BuildLog();
 
+  OpId opid = MakeOpId(1, current_index_);
+
   // Step 1) Write a REPLICATE to the log, and roll it.
-  AppendReplicateBatch(current_id_);
+  AppendReplicateBatch(opid);
   ASSERT_STATUS_OK(RollLog());
 
   // Step 2) Write the corresponding COMMIT in the second segment.
-  AppendCommit(current_id_);
+  AppendCommit(opid);
 
   shared_ptr<Tablet> tablet;
   ConsensusBootstrapInfo boot_info;
@@ -207,7 +212,7 @@ TEST_F(BootstrapTest, TestOrphanCommit) {
   // Step 4) Create an orphanned commit by first adding a commit to
   // the newly rolled logfile, and then by removing the previous
   // commits.
-  AppendCommit(current_id_);
+  AppendCommit(opid);
   log::SegmentSequence segments;
   ASSERT_OK(log_->GetLogReader()->GetSegmentsSnapshot(&segments));
   fs_manager_->env()->DeleteFile(segments[0]->path());
@@ -235,19 +240,23 @@ TEST_F(BootstrapTest, TestOrphanCommit) {
 TEST_F(BootstrapTest, TestNonOrphansAfterOrphanCommit) {
   BuildLog();
 
-  AppendReplicateBatch(current_id_);
+  OpId opid = MakeOpId(1, current_index_);
+
+  AppendReplicateBatch(opid);
   ASSERT_STATUS_OK(RollLog());
 
-  AppendCommit(current_id_);
+  AppendCommit(opid);
 
   log::SegmentSequence segments;
   ASSERT_OK(log_->GetLogReader()->GetSegmentsSnapshot(&segments));
   fs_manager_->env()->DeleteFile(segments[0]->path());
 
-  current_id_ += 2;
+  current_index_ += 2;
 
-  AppendReplicateBatch(current_id_);
-  AppendCommit(current_id_, 2, 1, 0);
+  opid = MakeOpId(1, current_index_);
+
+  AppendReplicateBatch(opid);
+  AppendCommit(opid, 2, 1, 0);
 
   shared_ptr<Tablet> tablet;
   ConsensusBootstrapInfo boot_info;
@@ -271,8 +280,11 @@ TEST_F(BootstrapTest, TestOrphanedReplicate) {
   BuildLog();
 
   // Append a REPLICATE with no commit
-  int replicate_index = current_id_++;
-  AppendReplicateBatch(replicate_index);
+  int replicate_index = current_index_++;
+
+  OpId opid = MakeOpId(1, replicate_index);
+
+  AppendReplicateBatch(opid);
 
   // Bootstrap the tablet. It shouldn't replay anything.
   ConsensusBootstrapInfo boot_info;
@@ -290,7 +302,7 @@ TEST_F(BootstrapTest, TestOrphanedReplicate) {
                       "this is a test mutate");
 
   // And it should also include the latest opids.
-  EXPECT_EQ("term: 0 index: 1", boot_info.last_id.ShortDebugString());
+  EXPECT_EQ("term: 1 index: 1", boot_info.last_id.ShortDebugString());
 }
 
 // Bootstrap should fail if no ConsensusMetadata file exists.
@@ -306,6 +318,42 @@ TEST_F(BootstrapTest, TestMissingConsensusMetadata) {
 
   ASSERT_TRUE(s.IsNotFound());
   ASSERT_STR_CONTAINS(s.ToString(), "Unable to load Consensus metadata");
+}
+
+TEST_F(BootstrapTest, TestOperationOverwriting) {
+  BuildLog();
+
+  OpId opid = MakeOpId(1, 1);
+
+  // Append a replicate in term 1
+  AppendReplicateBatch(opid);
+
+  // Append a commit for op 1.1
+  AppendCommit(opid);
+
+  // Now append replicates for 4.2 and 4.3
+  AppendReplicateBatch(MakeOpId(4, 2));
+  AppendReplicateBatch(MakeOpId(4, 3));
+
+  ASSERT_STATUS_OK(RollLog());
+  // And overwrite with 3.2
+  AppendReplicateBatch(MakeOpId(3, 2), true);
+
+  // When bootstrapping we should apply ops 1.1 and get 3.2 as pending.
+  ConsensusBootstrapInfo boot_info;
+  shared_ptr<Tablet> tablet;
+  ASSERT_STATUS_OK(BootstrapTestTablet(-1, -1, &tablet, &boot_info));
+
+  ASSERT_EQ(boot_info.orphaned_replicates.size(), 1);
+  ASSERT_OPID_EQ(boot_info.orphaned_replicates[0]->id(), MakeOpId(3, 2));
+
+  // Confirm that the legitimate data is there.
+  vector<string> results;
+  IterateTabletRows(tablet.get(), &results);
+  ASSERT_EQ(1, results.size());
+
+  ASSERT_EQ("(uint32 key=1, uint32 int_val=0, string string_val=this is a test insert)",
+            results[0]);
 }
 
 } // namespace tablet

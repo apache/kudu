@@ -84,7 +84,7 @@ class MultiThreadedLogTest : public LogTestBase {
         boost::lock_guard<simple_spinlock> lock_guard(lock_);
         for (int j = 0; j < num_ops; j++) {
           ReplicateRefPtr replicate = make_scoped_refptr_replicate(new ReplicateMsg);
-          uint32_t index = current_id_++;
+          uint32_t index = current_index_++;
           OpId* op_id = replicate->get()->mutable_id();
           op_id->set_term(0);
           op_id->set_index(index);
@@ -138,7 +138,7 @@ class MultiThreadedLogTest : public LogTestBase {
 
 TEST_F(MultiThreadedLogTest, TestAppends) {
   BuildLog();
-  int start_current_id = current_id_;
+  int start_current_id = current_index_;
   LOG_TIMING(INFO, strings::Substitute("inserting $0 batches($1 threads, $2 per-thread)",
                                       FLAGS_num_writer_threads * FLAGS_num_batches_per_thread,
                                       FLAGS_num_batches_per_thread, FLAGS_num_writer_threads)) {
@@ -154,8 +154,8 @@ TEST_F(MultiThreadedLogTest, TestAppends) {
   }
   vector<uint32_t> ids;
   EntriesToIdList(&ids);
-  DVLOG(1) << "Wrote total of " << current_id_ - start_current_id << " ops";
-  ASSERT_EQ(current_id_ - start_current_id, ids.size());
+  DVLOG(1) << "Wrote total of " << current_index_ - start_current_id << " ops";
+  ASSERT_EQ(current_index_ - start_current_id, ids.size());
   ASSERT_TRUE(util::gtl::is_sorted(ids.begin(), ids.end()));
 }
 

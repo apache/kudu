@@ -5,6 +5,7 @@
 
 #include <boost/foreach.hpp>
 #include <gflags/gflags.h>
+#include <map>
 #include <string>
 #include <utility>
 #include <vector>
@@ -505,7 +506,7 @@ Status TabletBootstrap::OpenNewLog() {
   return Status::OK();
 }
 
-typedef unordered_map<OpId, LogEntryPB*, OpIdHashFunctor, OpIdEqualsFunctor> OpToEntryMap;
+typedef std::map<int64_t, LogEntryPB*> OpIndexToEntryMap;
 
 // State kept during replay.
 struct ReplayState {
@@ -533,10 +534,6 @@ struct ReplayState {
       return false;
     }
 
-    // If the the terms don't match, then the new term should be higher
-    if (b.term() < a.term()) {
-      return false;
-    }
     return true;
   }
 
@@ -572,8 +569,8 @@ struct ReplayState {
   OpId committed_op_id;
 
   // REPLICATE log entries whose corresponding COMMIT/ABORT record has
-  // not yet been seen. Keyed by opid.
-  OpToEntryMap pending_replicates;
+  // not yet been seen. Keyed by index.
+  OpIndexToEntryMap pending_replicates;
 };
 
 // Handle the given log entry. If OK is returned, then takes ownership of 'entry'.
@@ -603,13 +600,31 @@ Status TabletBootstrap::HandleReplicateMessage(ReplayState* state, LogEntryPB* e
   // Append the replicate message to the log as is
   RETURN_NOT_OK(log_->Append(entry));
 
+  int64_t index = entry->replicate().id().index();
+
   LogEntryPB** existing_entry_ptr = InsertOrReturnExisting(
-    &state->pending_replicates, entry->replicate().id(), entry);
+    &state->pending_replicates, index, entry);
+
+  // If there was a entry with the same index we're overwriting then we need to delete
+  // that entry and all entries with higher indexes.
   if (existing_entry_ptr) {
     LogEntryPB* existing_entry = *existing_entry_ptr;
-    // We already had an entry with the same ID.
-    return Status::Corruption("Found previous entry with the same id",
-                              existing_entry->ShortDebugString());
+
+    OpIndexToEntryMap::iterator iter = state->pending_replicates.lower_bound(index);
+    DCHECK(OpIdEquals((*iter).second->replicate().id(), existing_entry->replicate().id()));
+
+    LogEntryPB* last_entry = (*state->pending_replicates.rbegin()).second;
+
+    LOG(INFO) << "Overwriting operations starting at: " << existing_entry->replicate().id()
+        << " up to: " << last_entry->replicate().id() << " with operation: "
+        << entry->replicate().id();
+
+    while (iter != state->pending_replicates.end()) {
+      delete (*iter).second;
+      state->pending_replicates.erase(iter++);
+    }
+
+    InsertOrDie(&state->pending_replicates, index, entry);
   }
   return Status::OK();
 }
@@ -618,21 +633,28 @@ Status TabletBootstrap::HandleReplicateMessage(ReplayState* state, LogEntryPB* e
 Status TabletBootstrap::HandleCommitMessage(ReplayState* state, LogEntryPB* entry) {
   DCHECK(entry->has_commit()) << "Not a commit message: " << entry->DebugString();
 
-  // TODO: on a term switch, the first commit in any term should discard any
-  // pending REPLICATEs from the previous term.
-
   // Match up the COMMIT/ABORT record with the original entry that it's applied to.
   const OpId& committed_op_id = entry->commit().commited_op_id();
   state->UpdateCommittedOpId(committed_op_id);
 
   gscoped_ptr<LogEntryPB> existing_entry;
 
-  // They should also have an associated replicate OpId (it may have been in a
+  // They should also have an associated replicate index (it may have been in a
   // deleted log segment though).
-  existing_entry.reset(EraseKeyReturnValuePtr(&state->pending_replicates, committed_op_id));
+  existing_entry.reset(EraseKeyReturnValuePtr(&state->pending_replicates,
+                                              committed_op_id.index()));
 
   if (existing_entry != NULL) {
-    // We found a match.
+    // We found a replicate with the same index, make sure it also has the same
+    // term.
+    if (!OpIdEquals(committed_op_id, existing_entry->replicate().id())) {
+      string error_msg = Substitute("Committed operation's OpId: $0 didn't match the"
+          "commit message's committed OpId: $1. Pending operation: $2, Commit message: $3",
+          existing_entry->replicate().id().ShortDebugString(), committed_op_id.ShortDebugString(),
+          existing_entry->replicate().ShortDebugString(), entry->commit().ShortDebugString());
+      LOG(DFATAL) << error_msg;
+      return Status::Corruption(error_msg);
+    }
     RETURN_NOT_OK(HandleEntryPair(existing_entry.get(), entry));
   } else {
     const CommitMsg& commit = entry->commit();
@@ -774,7 +796,7 @@ Status TabletBootstrap::PlaySegments(ConsensusBootstrapInfo* consensus_info) {
   }
 
   // Set up the ConsensusBootstrapInfo structure for the caller.
-  BOOST_FOREACH(OpToEntryMap::value_type& e, state.pending_replicates) {
+  BOOST_FOREACH(OpIndexToEntryMap::value_type& e, state.pending_replicates) {
     consensus_info->orphaned_replicates.push_back(e.second->release_replicate());
   }
   consensus_info->last_id = state.prev_op_id;

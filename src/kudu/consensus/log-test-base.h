@@ -83,7 +83,7 @@ class LogTestBase : public KuduTest {
 
   virtual void SetUp() OVERRIDE {
     KuduTest::SetUp();
-    current_id_ = 1;
+    current_index_ = 1;
     fs_manager_.reset(new FsManager(env_.get(), test_dir_));
     ASSERT_OK(fs_manager_->CreateInitialFileSystemLayout());
     ASSERT_OK(fs_manager_->Open());
@@ -128,23 +128,20 @@ class LogTestBase : public KuduTest {
   }
 
   // Appends a batch with size 2 (1 insert, 1 mutate) to the log.
-  void AppendReplicateBatch(int index, bool sync = APPEND_SYNC) {
+  void AppendReplicateBatch(const OpId& opid, bool sync = APPEND_SYNC) {
     consensus::ReplicateRefPtr replicate = make_scoped_refptr_replicate(new ReplicateMsg());
     replicate->get()->set_op_type(WRITE_OP);
-
-    OpId* op_id = replicate->get()->mutable_id();
-    op_id->set_term(0);
-    op_id->set_index(index);
+    replicate->get()->mutable_id()->CopyFrom(opid);
 
     WriteRequestPB* batch_request = replicate->get()->mutable_write_request();
     ASSERT_STATUS_OK(SchemaToPB(schema_, batch_request->mutable_schema()));
     AddTestRowToPB(RowOperationsPB::INSERT, schema_,
-                   index,
+                   opid.index(),
                    0,
                    "this is a test insert",
                    batch_request->mutable_row_operations());
     AddTestRowToPB(RowOperationsPB::UPDATE, schema_,
-                   index + 1,
+                   opid.index() + 1,
                    0,
                    "this is a test mutate",
                    batch_request->mutable_row_operations());
@@ -170,7 +167,8 @@ class LogTestBase : public KuduTest {
 
   // Append a commit log entry containing one entry for the insert and one
   // for the mutate.
-  void AppendCommit(int original_op_index, bool sync = APPEND_SYNC) {
+  void AppendCommit(const OpId& original_opid,
+                    bool sync = APPEND_SYNC) {
     // The mrs id for the insert.
     const int kTargetMrsId = 1;
 
@@ -178,18 +176,17 @@ class LogTestBase : public KuduTest {
     const int kTargetRsId = 0;
     const int kTargetDeltaId = 0;
 
-    AppendCommit(original_op_index, kTargetMrsId, kTargetRsId, kTargetDeltaId, sync);
+    AppendCommit(original_opid, kTargetMrsId, kTargetRsId, kTargetDeltaId, sync);
   }
 
-  void AppendCommit(int original_op_index, int mrs_id, int rs_id, int dms_id,
+  void AppendCommit(const OpId& original_opid,
+                    int mrs_id, int rs_id, int dms_id,
                     bool sync = APPEND_SYNC) {
     gscoped_ptr<CommitMsg> commit(new CommitMsg);
     commit->set_op_type(WRITE_OP);
-    commit->set_timestamp(Timestamp(original_op_index).ToUint64());
+    commit->set_timestamp(Timestamp(original_opid.index()).ToUint64());
 
-    OpId* original_op_id = commit->mutable_commited_op_id();
-    original_op_id->set_term(0);
-    original_op_id->set_index(original_op_index);
+    commit->mutable_commited_op_id()->CopyFrom(original_opid);
 
     TxResultPB* result = commit->mutable_result();
 
@@ -214,9 +211,10 @@ class LogTestBase : public KuduTest {
     // Appends 'count' ReplicateMsgs and the corresponding CommitMsgs to the log
   void AppendReplicateBatchAndCommitEntryPairsToLog(int count, bool sync = true) {
     for (int i = 0; i < count; i++) {
-      AppendReplicateBatch(current_id_, sync);
-      AppendCommit(current_id_, sync);
-      current_id_ += 1;
+      OpId opid = consensus::MakeOpId(1, current_index_);
+      AppendReplicateBatch(opid);
+      AppendCommit(opid, sync);
+      current_index_ += 1;
     }
   }
 
@@ -264,7 +262,7 @@ class LogTestBase : public KuduTest {
   const Schema schema_;
   gscoped_ptr<FsManager> fs_manager_;
   gscoped_ptr<Log> log_;
-  uint32_t current_id_;
+  uint32_t current_index_;
   LogOptions options_;
   // Reusable entries vector that deletes the entries on destruction.
   vector<LogEntryPB* > entries_;
