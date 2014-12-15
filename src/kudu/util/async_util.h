@@ -39,6 +39,12 @@ class Synchronizer {
     l.Wait();
     return s;
   }
+  Status WaitFor(const MonoDelta& delta) {
+    if (PREDICT_FALSE(!l.WaitFor(delta))) {
+      return Status::TimedOut("Timed out while waiting for the callback to be called.");
+    }
+    return s;
+  }
   void Reset() {
     l.Reset(1);
   }
