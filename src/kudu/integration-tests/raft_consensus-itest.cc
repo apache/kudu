@@ -606,9 +606,7 @@ class RaftConsensusITest : public TabletServerTest {
   // Before stopping the leader this pauses all follower nodes in regular intervals so that
   // we get an increased chance of stuff being pending.
   void StopOrKillLeaderAndElectNewOne() {
-    // TODO uncomment below to also kill, right now the server comes back with the wrong
-    // addresses.
-    bool kill = false;// rand() % 2 == 0;
+    bool kill = rand() % 2 == 0;
 
     TServerDetails* old_leader;
     CHECK_OK(GetLeaderReplicaWithRetries(&old_leader));
@@ -640,7 +638,7 @@ class RaftConsensusITest : public TabletServerTest {
 
     // Bring the old leader back.
     if (kill) {
-      CHECK_OK(old_leader->external_ts->Start());
+      CHECK_OK(old_leader->external_ts->Restart());
       // Wait until we have the same number of followers.
       int initial_followers = followers.size();
       do {
