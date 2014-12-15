@@ -25,6 +25,7 @@ import kudu.Common;
 import kudu.Schema;
 import kudu.metadata.Metadata;
 import kudu.rpc.Bytes;
+import kudu.rpc.DeadlineTracker;
 import kudu.rpc.KuduClient;
 import kudu.rpc.KuduScanner;
 import kudu.rpc.KuduTable;
@@ -73,6 +74,8 @@ public class KuduTableInputFormat extends InputFormat<NullWritable, RowResult>
 
   private static final Log LOG = LogFactory.getLog(KuduTableInputFormat.class);
 
+  private static final long SLEEP_TIME_FOR_RETRIES_MS = 1000;
+
   /** Job parameter that specifies the input table. */
   static final String INPUT_TABLE_KEY = "kudu.mapreduce.input.table";
 
@@ -108,45 +111,63 @@ public class KuduTableInputFormat extends InputFormat<NullWritable, RowResult>
   @Override
   public List<InputSplit> getSplits(JobContext jobContext)
       throws IOException, InterruptedException {
-    if (table == null) {
-      throw new IOException("No table was provided");
-    }
-
-    List<LocatedTablet> locations;
     try {
-      locations = table.getTabletsLocations(operationTimeoutMs);
-    } catch (Exception e) {
-      throw new IOException("Could not get the tablets locations", e);
-    }
-
-    if (locations.isEmpty()) {
-      throw new IOException("The requested table has 0 tablets, cannot continue");
-    }
-
-    // For the moment we only pass the leader since that's who we read from
-    List<InputSplit> splits = new ArrayList<InputSplit>(locations.size());
-    for (LocatedTablet locatedTablet : locations) {
-      List<String> addresses = Lists.newArrayList();
-
-      for (LocatedTablet.Replica replica : locatedTablet.getReplicas()) {
-        if (replica.getRole() == Metadata.QuorumPeerPB.Role.LEADER) {
-          addresses.add(reverseDNS(replica.getRpcHostPort()));
+      if (table == null) {
+        throw new IOException("No table was provided");
+      }
+      List<InputSplit> splits;
+      DeadlineTracker deadline = new DeadlineTracker();
+      deadline.setDeadline(operationTimeoutMs);
+      // If the job is started while a leader election is running, we might not be able to find a
+      // leader right away. We'll wait as long as the user is willing to wait with the operation
+      // timeout, and once we've waited long enough we just start picking the first replica we see
+      // for those tablets that don't have a leader. The client will later try to find the leader
+      // and it might fail, in which case the task will get retried.
+      retryloop:
+      while (true) {
+        List<LocatedTablet> locations;
+        try {
+          locations = table.getTabletsLocations(operationTimeoutMs);
+        } catch (Exception e) {
+          throw new IOException("Could not get the tablets locations", e);
         }
-      }
-      if (addresses.isEmpty()) {
-        throw new IOException("This tablet has no leader, this is currently required for " +
-            "reading: " + locatedTablet.toString());
-      }
-      String[] addressesArray = addresses.toArray(new String[addresses.size()]);
-      TableSplit split = new TableSplit(locatedTablet.getStartKey(),
-                                        locatedTablet.getEndKey(),
-                                        addressesArray);
 
-      splits.add(split);
-      LOG.debug("Split: " + split);
+        if (locations.isEmpty()) {
+          throw new IOException("The requested table has 0 tablets, cannot continue");
+        }
+
+        // For the moment we only pass the leader since that's who we read from.
+        // If we've been trying to get a leader for each tablet for too long, we stop looping
+        // and just finish with what we have.
+        splits = new ArrayList<InputSplit>(locations.size());
+        for (LocatedTablet locatedTablet : locations) {
+          List<String> addresses = Lists.newArrayList();
+          LocatedTablet.Replica replica = locatedTablet.getLeaderReplica();
+          if (replica == null) {
+            if (deadline.wouldSleepingTimeout(SLEEP_TIME_FOR_RETRIES_MS)) {
+              LOG.debug("We ran out of retries, picking a non-leader replica for this tablet: " +
+                  locatedTablet.toString());
+              // We already checked it's not empty.
+              replica = locatedTablet.getReplicas().get(0);
+            } else {
+              LOG.debug("Retrying creating the splits because this tablet is missing a leader: " +
+                  locatedTablet.toString());
+              Thread.sleep(SLEEP_TIME_FOR_RETRIES_MS);
+              continue retryloop;
+            }
+          }
+          addresses.add(reverseDNS(replica.getRpcHostPort()));
+          String[] addressesArray = addresses.toArray(new String[addresses.size()]);
+          TableSplit split = new TableSplit(locatedTablet.getStartKey(),
+              locatedTablet.getEndKey(),
+              addressesArray);
+          splits.add(split);
+        }
+        return splits;
+      }
+    } finally {
+      shutdownClient();
     }
-    shutdownClient();
-    return splits;
   }
 
   private void shutdownClient() throws IOException {
