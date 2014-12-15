@@ -12,7 +12,10 @@ The following dependencies are necessary to build kudu:
   - boost::thread
   - boost::system (thread depends on it)
 - cmake 2.8.7
-- gcc 4.4 or higher
+- curl
+- gcc and g++ 4.4 or higher
+- libcurl
+- liboauth-dev
 - libssl-dev (Ubuntu) or openssl-devel (CentOS)
 - libsasl2-dev (Ubuntu) or cyrus-sasl-devel (CentOS)
 - libtool
