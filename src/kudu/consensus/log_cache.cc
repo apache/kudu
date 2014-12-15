@@ -294,10 +294,14 @@ void LogCache::EntriesLoadedCallback(int64_t after_op_index,
 
     // If the pin has moved past the first message's id we no longer need them
     // and we skip adding them to the cache.
-    if (replicates.front()->id().index() < min_pinned_op_index_) {
+    // Similarly, if the queue's preceding id is not the one we're expecting, that
+    // means we likely got demoted and re-promoted, in which case the operations
+    // we're about to load might not be relevant anymore.
+    if (replicates.front()->id().index() < min_pinned_op_index_ ||
+        !OpIdEquals(replicates.back()->id(), preceding_first_op_)) {
       LOG_WITH_PREFIX(INFO) << "Can't load operations into the queue, pin advanced"
-          "past the first operation. Pin: " << min_pinned_op_index_ << " First requested"
-          " op: " << replicates.front()->id();
+          "past the first operation or preceding op changed. First requested"
+          " op: " << replicates.front()->id() << " " << ToStringUnlocked();
       for (; iter != replicates.end(); ++iter) {
         delete (*iter);
       }
@@ -323,9 +327,6 @@ void LogCache::EntriesLoadedCallback(int64_t after_op_index,
       tracker_->Consume(size);
       total_size += size;
     }
-
-    CHECK(OpIdEquals(replicates.back()->id(), preceding_first_op_))
-      << "Expected: " << preceding_first_op_ << " got: " << replicates.back()->id();
 
     preceding_first_op_ = preceding_id;
     LOG_WITH_PREFIX(INFO) << "Loaded operations into the cache after: "
