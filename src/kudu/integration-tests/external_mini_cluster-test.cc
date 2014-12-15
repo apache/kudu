@@ -57,6 +57,28 @@ TEST_F(EMCTest, TestBasicOperation) {
     EXPECT_TRUE(HasPrefixString(ts_http.ToString(), "127.0.0.1:")) << ts_http.ToString();
   }
 
+  // Restart a master and a tablet server. Make sure they come back up with the same ports.
+  ExternalMaster* master = cluster.master(0);
+  HostPort master_rpc = master->bound_rpc_hostport();
+  HostPort master_http = master->bound_http_hostport();
+
+  master->Shutdown();
+  ASSERT_OK(master->Restart());
+
+  ASSERT_EQ(master_rpc.ToString(), master->bound_rpc_hostport().ToString());
+  ASSERT_EQ(master_http.ToString(), master->bound_http_hostport().ToString());
+
+  ExternalTabletServer* ts = cluster.tablet_server(0);
+
+  HostPort ts_rpc = ts->bound_rpc_hostport();
+  HostPort ts_http = ts->bound_http_hostport();
+
+  ts->Shutdown();
+  ASSERT_OK(ts->Restart());
+
+  ASSERT_EQ(ts_rpc.ToString(), ts->bound_rpc_hostport().ToString());
+  ASSERT_EQ(ts_http.ToString(), ts->bound_http_hostport().ToString());
+
   cluster.Shutdown();
 }
 

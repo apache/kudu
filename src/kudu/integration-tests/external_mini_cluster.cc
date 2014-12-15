@@ -17,7 +17,6 @@
 #include "kudu/server/server_base.pb.h"
 #include "kudu/rpc/messenger.h"
 #include "kudu/util/env.h"
-#include "kudu/util/net/net_util.h"
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/path_util.h"
 #include "kudu/util/pb_util.h"
@@ -415,6 +414,11 @@ Status ExternalDaemon::Resume() {
 
 void ExternalDaemon::Shutdown() {
   if (!process_) return;
+  // Before we kill the process, store the addresses. If we're told to
+  // start again we'll reuse these.
+  bound_rpc_ = bound_rpc_hostport();
+  bound_http_ = bound_http_hostport();
+
   LOG(INFO) << "Killing " << exe_ << " with pid " << process_->pid();
   ignore_result(process_->Kill(SIGKILL));
   int ret;
@@ -482,6 +486,20 @@ Status ExternalMaster::Start() {
   return Status::OK();
 }
 
+Status ExternalMaster::Restart() {
+  // We store the addresses on shutdown so make sure we did that first.
+  if (bound_rpc_.port() == 0) {
+    return Status::IllegalState("Master cannot be restarted. Must call Shutdown() first.");
+  }
+  vector<string> flags;
+  flags.push_back("--master_base_dir=" + data_dir_);
+  flags.push_back("--master_rpc_bind_addresses=" + rpc_bind_address_);
+  flags.push_back(Substitute("--master_web_port=$0", bound_http_.port()));
+  RETURN_NOT_OK(StartProcess(flags));
+  return Status::OK();
+}
+
+
 //------------------------------------------------------------
 // ExternalTabletServer
 //------------------------------------------------------------
@@ -506,5 +524,20 @@ Status ExternalTabletServer::Start() {
   RETURN_NOT_OK(StartProcess(flags));
   return Status::OK();
 }
+
+Status ExternalTabletServer::Restart() {
+  // We store the addresses on shutdown so make sure we did that first.
+  if (bound_rpc_.port() == 0) {
+    return Status::IllegalState("Tablet server cannot be restarted. Must call Shutdown() first.");
+  }
+  vector<string> flags;
+  flags.push_back("--tablet_server_base_dir=" + data_dir_);
+  flags.push_back("--tablet_server_rpc_bind_addresses=" + bound_rpc_.ToString());
+  flags.push_back(Substitute("--tablet_server_web_port=$0", bound_http_.port()));
+  flags.push_back("--tablet_server_master_addrs=" + master_addrs_);
+  RETURN_NOT_OK(StartProcess(flags));
+  return Status::OK();
+}
+
 
 } // namespace kudu

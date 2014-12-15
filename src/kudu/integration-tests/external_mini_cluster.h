@@ -12,6 +12,7 @@
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/util/monotime.h"
+#include "kudu/util/net/net_util.h"
 #include "kudu/util/status.h"
 
 namespace kudu {
@@ -219,6 +220,11 @@ class ExternalDaemon : public RefCountedThreadSafe<ExternalDaemon> {
 
   gscoped_ptr<server::ServerStatusPB> status_;
 
+  // These capture the daemons parameters and running ports and
+  // are used to Restart() the daemon with the same parameters.
+  HostPort bound_rpc_;
+  HostPort bound_http_;
+
   DISALLOW_COPY_AND_ASSIGN(ExternalDaemon);
 };
 
@@ -234,6 +240,11 @@ class ExternalMaster : public ExternalDaemon {
 
   Status Start();
 
+  // Restarts the daemon.
+  // Requires that it has previously been shutdown.
+  Status Restart() WARN_UNUSED_RESULT;
+
+
  private:
   friend class RefCountedThreadSafe<ExternalMaster>;
   virtual ~ExternalMaster();
@@ -248,6 +259,11 @@ class ExternalTabletServer : public ExternalDaemon {
                        const std::vector<std::string>& extra_flags);
 
   Status Start();
+
+  // Restarts the daemon.
+  // Requires that it has previously been shutdown.
+  Status Restart() WARN_UNUSED_RESULT;
+
 
  private:
   const std::string master_addrs_;
