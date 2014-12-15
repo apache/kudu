@@ -892,7 +892,17 @@ Status RaftConsensus::UpdateReplica(const ConsensusRequestPB* request,
     // Note that this is safe because dist consensus now only supports a single outstanding
     // request at a time and this way we can allow commits to proceed while we wait.
     TRACE("Waiting on the replicates to finish logging");
-    RETURN_NOT_OK(log_synchronizer.Wait());
+    Status s;
+    do {
+      s = log_synchronizer.WaitFor(
+      MonoDelta::FromMilliseconds(FLAGS_leader_heartbeat_interval_ms));
+      // If just waiting for our log append to finish lets snooze the timer.
+      // We don't want to fire leader election because we're waiting on our own log.
+      if (s.IsTimedOut()) {
+        SnoozeFailureDetectorUnlocked();
+      }
+    } while (s.IsTimedOut());
+    RETURN_NOT_OK(s);
     TRACE("finished");
   }
 
