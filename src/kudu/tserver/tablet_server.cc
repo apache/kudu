@@ -33,7 +33,7 @@ namespace kudu {
 namespace tserver {
 
 TabletServer::TabletServer(const TabletServerOptions& opts)
-  : ServerBase(opts, "kudu.tabletserver"),
+  : ServerBase("TabletServer", opts, "kudu.tabletserver"),
     initted_(false),
     fail_heartbeats_for_tests_(false),
     opts_(opts),

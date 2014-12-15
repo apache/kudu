@@ -42,7 +42,7 @@ namespace kudu {
 namespace master {
 
 Master::Master(const MasterOptions& opts)
-  : ServerBase(opts, "kudu.master"),
+  : ServerBase("Master", opts, "kudu.master"),
     state_(kStopped),
     ts_manager_(new TSManager()),
     catalog_manager_(new CatalogManager(this)),

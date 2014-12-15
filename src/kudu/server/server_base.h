@@ -67,7 +67,8 @@ class ServerBase {
   Clock* clock() { return clock_.get(); }
 
  protected:
-  ServerBase(const ServerBaseOptions& options,
+  ServerBase(const std::string& name,
+             const ServerBaseOptions& options,
              const std::string& metrics_namespace);
   virtual ~ServerBase();
 
@@ -75,6 +76,8 @@ class ServerBase {
   Status RegisterService(gscoped_ptr<rpc::ServiceIf> rpc_impl);
   Status Start();
   void Shutdown();
+
+  const std::string name_;
 
   gscoped_ptr<MetricRegistry> metric_registry_;
   gscoped_ptr<MetricContext> metric_ctx_;

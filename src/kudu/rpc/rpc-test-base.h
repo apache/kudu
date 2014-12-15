@@ -366,7 +366,7 @@ class RpcTestBase : public KuduTest {
 
   template<class ServiceClass>
   void DoStartTestServer(Sockaddr *server_addr) {
-    server_messenger_ = CreateMessenger("Server", n_server_reactor_threads_);
+    server_messenger_ = CreateMessenger("TestServer", n_server_reactor_threads_);
     shared_ptr<AcceptorPool> pool;
     ASSERT_STATUS_OK(server_messenger_->AddAcceptorPool(Sockaddr(), 2, &pool));
     *server_addr = pool->bind_address();

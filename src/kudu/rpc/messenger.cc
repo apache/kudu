@@ -17,6 +17,7 @@
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/stl_util.h"
+#include "kudu/gutil/strings/substitute.h"
 #include "kudu/rpc/acceptor_pool.h"
 #include "kudu/rpc/connection.h"
 #include "kudu/rpc/constants.h"
@@ -35,6 +36,7 @@
 
 using std::string;
 using std::tr1::shared_ptr;
+using strings::Substitute;
 
 DEFINE_int32(accept_backlog, 128, "backlog parameter to use for accept");
 
@@ -172,7 +174,8 @@ Status Messenger::UnregisterService(const string& service_name) {
   if (rpc_services_.erase(service_name)) {
     return Status::OK();
   } else {
-    return Status::ServiceUnavailable("Service is not registered");
+    return Status::ServiceUnavailable(Substitute("service $0 not registered on $1",
+                 service_name, name_));
   }
 }
 
@@ -185,8 +188,8 @@ void Messenger::QueueInboundCall(gscoped_ptr<InboundCall> call) {
   shared_lock<rw_spinlock> guard(&lock_.get_lock());
   scoped_refptr<RpcService>* service = FindOrNull(rpc_services_, call->service_name());
   if (!service) {
-    Status s = Status::ServiceUnavailable("RPC Service is not registered",
-                                          call->ToString());
+    Status s =  Status::ServiceUnavailable(Substitute("service $0 not registered on $1",
+                                                      call->service_name(), name_));
     LOG(INFO) << s.ToString();
     call.release()->RespondFailure(ErrorStatusPB::ERROR_NO_SUCH_SERVICE, s);
     return;

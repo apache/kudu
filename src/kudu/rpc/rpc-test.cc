@@ -118,6 +118,24 @@ TEST_F(TestRpc, TestInvalidMethodCall) {
   ASSERT_STR_CONTAINS(s.ToString(), "bad method");
 }
 
+// Test that the error message returned when connecting to the wrong service
+// is reasonable.
+TEST_F(TestRpc, TestWrongService) {
+  // Set up server.
+  Sockaddr server_addr;
+  StartTestServer(&server_addr);
+
+  // Set up client with the wrong service name.
+  shared_ptr<Messenger> client_messenger(CreateMessenger("Client"));
+  Proxy p(client_messenger, server_addr, "WrongServiceName");
+
+  // Call the method which fails.
+  Status s = DoTestSyncCall(p, "ThisMethodDoesNotExist");
+  ASSERT_TRUE(s.IsRemoteError()) << "unexpected status: " << s.ToString();
+  ASSERT_STR_CONTAINS(s.ToString(),
+                      "Service unavailable: service WrongServiceName "
+                      "not registered on TestServer");
+}
 
 // Test that connections are kept alive between calls.
 TEST_F(TestRpc, TestConnectionKeepalive) {

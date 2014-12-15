@@ -38,9 +38,11 @@ using std::vector;
 namespace kudu {
 namespace server {
 
-ServerBase::ServerBase(const ServerBaseOptions& options,
+ServerBase::ServerBase(const string& name,
+                       const ServerBaseOptions& options,
                        const string& metric_namespace)
-  : metric_registry_(new MetricRegistry()),
+  : name_(name),
+    metric_registry_(new MetricRegistry()),
     metric_ctx_(new MetricContext(metric_registry_.get(), metric_namespace)),
     fs_manager_(new FsManager(options.env, options.base_dir)),
     rpc_server_(new RpcServer(options.rpc_opts)),
@@ -112,7 +114,7 @@ Status ServerBase::Init() {
   RETURN_NOT_OK_PREPEND(s, "Failed to load FS layout");
 
   // Create the Messenger.
-  rpc::MessengerBuilder builder("TODO: add a ToString for ServerBase");
+  rpc::MessengerBuilder builder(name_);
 
   builder.set_num_reactors(FLAGS_num_reactor_threads);
   builder.set_metric_context(metric_context());
