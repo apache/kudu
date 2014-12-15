@@ -224,8 +224,8 @@ Status TabletPeer::CheckRunning() const {
   {
     boost::lock_guard<simple_spinlock> lock(lock_);
     if (state_ != RUNNING) {
-      return Status::ServiceUnavailable(Substitute("The tablet is not in a running state: $0",
-                                                   TabletStatePB_Name(state_)));
+      return Status::IllegalState(Substitute("The tablet is not in a running state: $0",
+                                             TabletStatePB_Name(state_)));
     }
   }
   return Status::OK();

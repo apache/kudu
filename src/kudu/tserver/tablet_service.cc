@@ -87,8 +87,8 @@ bool LookupTabletOrRespond(TabletPeerLookupIf* tablet_manager,
   // Check RUNNING state.
   tablet::TabletStatePB state = (*peer)->state();
   if (PREDICT_FALSE(state != tablet::RUNNING)) {
-    Status s = Status::ServiceUnavailable("Tablet not RUNNING",
-                                          tablet::TabletStatePB_Name(state));
+    Status s = Status::IllegalState("Tablet not RUNNING",
+                                    tablet::TabletStatePB_Name(state));
     if (state == tablet::FAILED) {
       s = s.CloneAndAppend((*peer)->error().ToString());
     }
