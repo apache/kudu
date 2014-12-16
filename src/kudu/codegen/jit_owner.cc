@@ -3,7 +3,6 @@
 
 #include "kudu/codegen/jit_owner.h"
 
-#include "kudu/codegen/llvm_include.h"
 #include <llvm/ExecutionEngine/ExecutionEngine.h>
 #include "kudu/gutil/gscoped_ptr.h"
 

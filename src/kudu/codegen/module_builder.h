@@ -7,7 +7,6 @@
 #include <string>
 #include <vector>
 
-#include "kudu/codegen/llvm_include.h"
 #include <llvm/IR/IRBuilder.h>
 #include <llvm/IR/Module.h>
 

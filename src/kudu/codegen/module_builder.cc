@@ -16,7 +16,6 @@
 
 #include <boost/foreach.hpp>
 #include <glog/logging.h>
-#include "kudu/codegen/llvm_include.h"
 #include <llvm/LinkAllPasses.h>
 #include <llvm/ADT/StringRef.h>
 #include <llvm/Analysis/Passes.h>

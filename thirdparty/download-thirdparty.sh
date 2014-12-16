@@ -67,11 +67,11 @@ fetch_and_expand() {
 }
 
 GLOG_PATCHLEVEL=1
-delete_if_wrong_patchlevel glog-${GLOG_VERSION} $GLOG_PATCHLEVEL
-if [ ! -d glog-${GLOG_VERSION} ]; then
+delete_if_wrong_patchlevel $GLOG_DIR $GLOG_PATCHLEVEL
+if [ ! -d $GLOG_DIR ]; then
   fetch_and_expand glog-${GLOG_VERSION}.tar.gz
 
-  pushd glog-${GLOG_VERSION}
+  pushd $GLOG_DIR
   patch -p0 < $TP_DIR/patches/glog-issue-198-fix-unused-warnings.patch
   touch patchlevel-$GLOG_PATCHLEVEL
   autoreconf -fvi
@@ -79,13 +79,13 @@ if [ ! -d glog-${GLOG_VERSION} ]; then
   echo
 fi
 
-if [ ! -d gmock-${GMOCK_VERSION} ]; then
+if [ ! -d $GMOCK_DIR ]; then
   fetch_and_expand gmock-${GMOCK_VERSION}.zip
 fi
 
-if [ ! -d gflags-${GFLAGS_VERSION} ]; then
+if [ ! -d $GFLAGS_DIR ]; then
   fetch_and_expand gflags-${GFLAGS_VERSION}.zip
-  pushd gflags-${GFLAGS_VERSION}
+  pushd $GFLAGS_DIR
   autoreconf -fvi
   popd
 fi
@@ -94,12 +94,11 @@ fi
 # If you add or remove patches, bump the patchlevel below to ensure
 # that any new Jenkins builds pick up your patches.
 GPERFTOOLS_PATCHLEVEL=1
-delete_if_wrong_patchlevel gperftools-${GPERFTOOLS_VERSION} $GPERFTOOLS_PATCHLEVEL
-
-if [ ! -d gperftools-${GPERFTOOLS_VERSION} ]; then
+delete_if_wrong_patchlevel $GPERFTOOLS_DIR $GPERFTOOLS_PATCHLEVEL
+if [ ! -d $GPERFTOOLS_DIR ]; then
   fetch_and_expand gperftools-${GPERFTOOLS_VERSION}.tar.gz
 
-  pushd gperftools-${GPERFTOOLS_VERSION}
+  pushd $GPERFTOOLS_DIR
   patch -p1 < $TP_DIR/patches/gperftools-Change-default-TCMALLOC_TRANSFER_NUM_OBJ-to-40.patch
   touch patchlevel-$GPERFTOOLS_PATCHLEVEL
   autoreconf -fvi
@@ -107,29 +106,29 @@ if [ ! -d gperftools-${GPERFTOOLS_VERSION} ]; then
   echo
 fi
 
-if [ ! -d protobuf-${PROTOBUF_VERSION} ]; then
+if [ ! -d $PROTOBUF_DIR ]; then
   fetch_and_expand protobuf-${PROTOBUF_VERSION}.tar.gz
-  pushd protobuf-${PROTOBUF_VERSION}
+  pushd $PROTOBUF_DIR
   autoreconf -fvi
   popd
 fi
 
-if [ ! -d cmake-${CMAKE_VERSION} ]; then
+if [ ! -d $CMAKE_DIR ]; then
   fetch_and_expand cmake-${CMAKE_VERSION}.tar.gz
 fi
 
-if [ ! -d snappy-${SNAPPY_VERSION} ]; then
+if [ ! -d $SNAPPY_DIR ]; then
   fetch_and_expand snappy-${SNAPPY_VERSION}.tar.gz
-  pushd snappy-${SNAPPY_VERSION}
+  pushd $SNAPPY_DIR
   autoreconf -fvi
   popd
 fi
 
-if [ ! -d zlib-${ZLIB_VERSION} ]; then
+if [ ! -d $ZLIB_DIR ]; then
   fetch_and_expand zlib-${ZLIB_VERSION}.tar.gz
 fi
 
-if [ ! -d libev-${LIBEV_VERSION} ]; then
+if [ ! -d $LIBEV_DIR ]; then
   fetch_and_expand libev-${LIBEV_VERSION}.tar.gz
 fi
 
@@ -155,11 +154,11 @@ if [ ! -d $CURL_DIR ]; then
 fi
 
 CRCUTIL_PATCHLEVEL=1
-delete_if_wrong_patchlevel crcutil-${CRCUTIL_VERSION} $CRCUTIL_PATCHLEVEL
+delete_if_wrong_patchlevel $CRCUTIL_DIR $CRCUTIL_PATCHLEVEL
 if [ ! -d $CRCUTIL_DIR ]; then
   fetch_and_expand crcutil-${CRCUTIL_VERSION}.tar.gz
 
-  pushd crcutil-${CRCUTIL_VERSION}
+  pushd $CRCUTIL_DIR
   patch -p0 < $TP_DIR/patches/crcutil-fix-libtoolize-on-osx.patch
   touch patchlevel-$CRCUTIL_PATCHLEVEL
   popd
@@ -170,8 +169,16 @@ if [ ! -d $LIBUNWIND_DIR ]; then
   fetch_and_expand libunwind-${LIBUNWIND_VERSION}.tar.gz
 fi
 
+LLVM_PATCHLEVEL=1
+delete_if_wrong_patchlevel $LLVM_DIR $LLVM_PATCHLEVEL
 if [ ! -d $LLVM_DIR ]; then
   fetch_and_expand llvm-${LLVM_VERSION}.src.tar.gz
+
+  pushd $LLVM_DIR
+  patch -p1 < $TP_DIR/patches/llvm-stop-including-msan_interface.patch
+  touch patchlevel-$LLVM_PATCHLEVEL
+  popd
+  echo
 fi
 
 echo "---------------"

@@ -9,7 +9,6 @@
 #include <string>
 
 #include <glog/logging.h>
-#include "kudu/codegen/llvm_include.h"
 #include <llvm/ADT/StringRef.h>
 #include <llvm/ExecutionEngine/ExecutionEngine.h>
 #include <llvm/IR/Instructions.h>

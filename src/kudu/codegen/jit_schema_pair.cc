@@ -4,7 +4,6 @@
 #include "kudu/codegen/jit_schema_pair.h"
 
 #include <boost/foreach.hpp>
-#include "kudu/codegen/llvm_include.h"
 #include <llvm/ExecutionEngine/ExecutionEngine.h>
 
 #include "kudu/codegen/row_projector.h"

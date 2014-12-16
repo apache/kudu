@@ -11,7 +11,6 @@
 
 #include <boost/assign/list_of.hpp>
 #include <boost/foreach.hpp>
-#include "kudu/codegen/llvm_include.h"
 #include <llvm/ExecutionEngine/ExecutionEngine.h>
 #include <llvm/IR/Argument.h>
 #include <llvm/IR/BasicBlock.h>
