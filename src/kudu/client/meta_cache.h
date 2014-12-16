@@ -121,7 +121,8 @@ class RemoteTablet : public RefCountedThreadSafe<RemoteTablet> {
   // not be returned in future cache lookups.
   //
   // The provided status is used for logging.
-  void MarkReplicaFailed(RemoteTabletServer *ts,
+  // Returns true if 'ts' was found among this tablet's replicas, false if not.
+  bool MarkReplicaFailed(RemoteTabletServer *ts,
                          const Status& status);
 
   // Return the number of replicas for this tablet that have failed.
@@ -162,9 +163,11 @@ class RemoteTablet : public RefCountedThreadSafe<RemoteTablet> {
   // Mark the specified tablet server as a follower in the cache.
   void MarkTServerAsFollower(const RemoteTabletServer* server);
 
- private:
   // Return stringified representation of the list of replicas for this tablet.
-  // Caller must hold lock_.
+  std::string ReplicasAsString() const;
+
+ private:
+  // Same as ReplicasAsString(), except that the caller must hold lock_.
   std::string ReplicasAsStringUnlocked() const;
 
   const std::string tablet_id_;

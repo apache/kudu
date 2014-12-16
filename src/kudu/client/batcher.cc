@@ -379,7 +379,11 @@ void WriteRpc::RefreshTSProxyCb(const Status& status) {
 void WriteRpc::FailToNewReplica(const Status& reason) {
   VLOG(1) << "Failing " << ToString() << " to a new replica: "
           << reason.ToString();
-  tablet_->MarkReplicaFailed(current_ts_, reason);
+  bool found = tablet_->MarkReplicaFailed(current_ts_, reason);
+  DCHECK(found)
+      << "Tablet " << tablet_->tablet_id() << ": Unable to mark replica " << current_ts_->ToString()
+      << " as failed. Replicas: " << tablet_->ReplicasAsString();
+
   retrier().DelayedRetry(this);
 }
 

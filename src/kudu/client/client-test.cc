@@ -1636,8 +1636,9 @@ TEST_F(ClientTest, TestReplicatedTabletWritesWithLeaderElection) {
   // Kill the tserver that is serving the leader tablet.
   for (int i = 0; i < cluster_->num_tablet_servers(); i++) {
     MiniTabletServer* server = cluster_->mini_tablet_server(i);
-    if (server->server()->instance_pb().permanent_uuid() ==
-        rts->permanent_uuid()) {
+    if (server->server()->instance_pb().permanent_uuid() == rts->permanent_uuid()) {
+      LOG(INFO) << "Killing server at index " << i << " listening at "
+                << server->bound_rpc_addr().ToString() << " ...";
       server->Shutdown();
       killed_server = i;
     }
@@ -1652,26 +1653,31 @@ TEST_F(ClientTest, TestReplicatedTabletWritesWithLeaderElection) {
   ASSERT_OK(bld.Build(&client_messenger));
   gscoped_ptr<consensus::ConsensusServiceProxy> new_leader_proxy;
 
+  int new_leader_idx = -1;
   for (int i = 0; i < cluster_->num_tablet_servers(); i++) {
-    MiniTabletServer* server = cluster_->mini_tablet_server(i);
     if (i != killed_server) {
-      new_leader_proxy.reset(
-          new consensus::ConsensusServiceProxy(client_messenger,
-                                               server->bound_rpc_addr()));
+      new_leader_idx = i;
       break;
     }
   }
 
-  ASSERT_TRUE(new_leader_proxy.get() != NULL);
+  MiniTabletServer* new_leader = cluster_->mini_tablet_server(new_leader_idx);
+  ASSERT_TRUE(new_leader != NULL);
+  new_leader_proxy.reset(
+      new consensus::ConsensusServiceProxy(client_messenger,
+                                           new_leader->bound_rpc_addr()));
 
   consensus::RunLeaderElectionRequestPB req;
   consensus::RunLeaderElectionResponsePB resp;
   rpc::RpcController controller;
 
+  LOG(INFO) << "Promoting server at index " << new_leader_idx << " listening at "
+            << new_leader->bound_rpc_addr().ToString() << " ...";
   req.set_tablet_id(rt->tablet_id());
   ASSERT_OK(new_leader_proxy->RunLeaderElection(req, &resp, &controller));
   ASSERT_FALSE(resp.has_error()) << "Got error. Response: " << resp.ShortDebugString();
 
+  LOG(INFO) << "Inserting additional rows...";
   ASSERT_NO_FATAL_FAILURE(InsertTestRows(client_.get(),
                                          table.get(),
                                          kNumRowsToWrite,
@@ -1683,6 +1689,7 @@ TEST_F(ClientTest, TestReplicatedTabletWritesWithLeaderElection) {
   // the commit index.
   usleep(1500 * 1000);
 
+  LOG(INFO) << "Counting rows...";
   ASSERT_EQ(2 * kNumRowsToWrite, CountRowsFromClient(table.get(),
                                                      KuduClient::FIRST_REPLICA,
                                                      kNoBound, kNoBound));

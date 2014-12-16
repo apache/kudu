@@ -155,7 +155,7 @@ void RemoteTablet::Refresh(const TabletServerMap& tservers,
   }
 }
 
-void RemoteTablet::MarkReplicaFailed(RemoteTabletServer *ts,
+bool RemoteTablet::MarkReplicaFailed(RemoteTabletServer *ts,
                                      const Status& status) {
   bool found = false;
   lock_guard<simple_spinlock> l(&lock_);
@@ -169,8 +169,7 @@ void RemoteTablet::MarkReplicaFailed(RemoteTabletServer *ts,
       found = true;
     }
   }
-  DCHECK(found) << "Tablet " << tablet_id_ << ": Unable to mark replica " << ts->ToString()
-                << " as failed. Replicas: " << ReplicasAsStringUnlocked();
+  return found;
 }
 
 int RemoteTablet::GetNumFailedReplicas() const {
@@ -246,6 +245,11 @@ void RemoteTablet::MarkTServerAsFollower(const RemoteTabletServer* server) {
   VLOG(3) << "Latest replicas: " << ReplicasAsStringUnlocked();
   DCHECK(found) << "Tablet " << tablet_id_ << ": Specified server not found: "
                 << server->ToString() << ". Replicas: " << ReplicasAsStringUnlocked();
+}
+
+std::string RemoteTablet::ReplicasAsString() const {
+  lock_guard<simple_spinlock> l(&lock_);
+  return ReplicasAsStringUnlocked();
 }
 
 std::string RemoteTablet::ReplicasAsStringUnlocked() const {
@@ -584,6 +588,8 @@ void MetaCache::MarkTSFailed(RemoteTabletServer* ts,
 
   // TODO: replace with a ts->tablet multimap for faster lookup?
   BOOST_FOREACH(const TabletMap::value_type& tablet, tablets_by_id_) {
+    // We just loop on all tablets; if a tablet does not have a replica on this
+    // TS, MarkReplicaFailed() returns false and we ignore the return value.
     tablet.second->MarkReplicaFailed(ts, ts_status);
   }
 }
