@@ -45,7 +45,7 @@ set(CLIENT_LIBS
 if (KUDU_EXPORTED_CLIENT)
   # Hide symbols using a linker version script.
   set_target_properties(kudu_client
-    PROPERTIES LINK_FLAGS -Wl,--version-script=symbols.map)
+    PROPERTIES LINK_FLAGS -Wl,--version-script=${CMAKE_CURRENT_SOURCE_DIR}/symbols.map)
 endif()
 target_link_libraries(kudu_client ${CLIENT_LIBS_VISIBILITY} ${CLIENT_LIBS})
 

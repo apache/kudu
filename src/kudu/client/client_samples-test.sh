@@ -5,19 +5,25 @@
 # Tests that the Kudu client sample code can be built out-of-tree and runs
 # properly.
 
+ROOT=$(readlink -f $(dirname "$BASH_SOURCE")/../../..)
 NUM_PROCS=$(cat /proc/cpuinfo | grep processor | wc -l)
 
 # Install the client library to a temporary directory.
+# Try to detect whether we're building using Ninja or Make.
 LIBRARY_DIR=$(mktemp -d)
 PREFIX_DIR=$LIBRARY_DIR/usr/local
 SAMPLES_DIR=$PREFIX_DIR/share/doc/kuduClient/samples
-
-ROOT=$(readlink -f $(dirname "$BASH_SOURCE"))/../../..
 pushd $ROOT
-make -j$NUM_PROCS DESTDIR=$LIBRARY_DIR install
+NINJA=$(which ninja 2>/dev/null) || NINJA=""
+if [ -r build.ninja -a -n "$NINJA" ]; then
+  DESTDIR=$LIBRARY_DIR ninja -j$NUM_PROCS install
+else
+  make -j$NUM_PROCS DESTDIR=$LIBRARY_DIR install
+fi
 popd
 
 # Build the client samples using the client library.
+# We can just always use Make here, since we're calling cmake ourselves.
 pushd $SAMPLES_DIR
 CMAKE_PREFIX_PATH=$PREFIX_DIR cmake .
 make -j$NUM_PROCS
