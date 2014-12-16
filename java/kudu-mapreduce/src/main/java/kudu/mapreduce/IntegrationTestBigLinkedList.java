@@ -506,6 +506,13 @@ public class IntegrationTestBigLinkedList extends Configured implements Tool {
             try {
               session.apply(insert);
               session.flush();
+            } catch (DeferredGroupException dge) {
+              RowsWithErrorException errors =
+                  RowsWithErrorException.fromDeferredGroupException(dge);
+              // If all the rows are already present, assume KUDU-568.
+              if (errors == null || !errors.areAllErrorsOfAlreadyPresentType(true)) {
+                throw new IOException(dge);
+              }
             } catch (Exception e) {
               throw new IOException("Couldn't flush the head row", e);
             }
