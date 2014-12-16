@@ -28,7 +28,7 @@ mkdir -p $TEST_DEBUGDIR
 
 TEST_EXECUTABLE=$(readlink -f $1)
 shift
-TEST_NAME=$(basename $TEST_EXECUTABLE)
+TEST_NAME=$(basename $TEST_EXECUTABLE | perl -pe 's/\..+?$//') # Remove path and extension (if any).
 
 # Determine whether the test is a known flaky by comparing against the user-specified
 # list.
