@@ -722,6 +722,8 @@ static Status SetupScanSpec(const NewScanRequestPB& scan_pb,
       VLOG(3) << "Parsed predicate " << pred.ToString() << " from " << scan_pb.ShortDebugString();
     }
     ret->AddPredicate(pred);
+
+    ret->set_cache_blocks(scan_pb.cache_blocks());
   }
 
   // Then any encoded key range predicates.

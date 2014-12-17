@@ -161,6 +161,8 @@ public final class KuduScanner {
 
   private boolean prefetching = false;
 
+  private boolean cacheBlocks = true;
+
   private boolean inFirstTablet = true;
 
   private final DeadlineTracker deadlineTracker;
@@ -498,6 +500,25 @@ public final class KuduScanner {
     this.deadlineTracker.setDeadline(deadline);
   }
 
+  /**
+   * Set the block caching policy for this scanner. If true, scanned data blocks will be cached
+   * in memory and made available for future scans. Default is true.
+   * @param cacheBlocks A boolean that indicates if data blocks should be cached or not.
+   * @throws java.lang.IllegalStateException if the scanner already started scanning
+   */
+  public void setCacheBlocks(boolean cacheBlocks) {
+    checkScanningNotStarted();
+    this.cacheBlocks = cacheBlocks;
+  }
+
+  /**
+   * Returns if this scanner was configured to cache data blocks or not.
+   * @return True if this scanner will cache blocks, else else.
+   */
+  public boolean getCacheBlocks() {
+    return this.cacheBlocks;
+  }
+
   // ---------------------- //
   // Package private stuff. //
   // ---------------------- //
@@ -657,6 +678,7 @@ public final class KuduScanner {
           newBuilder.addAllProjectedColumns(ProtobufHelper.schemaToListPb(schema));
           newBuilder.setTabletId(ZeroCopyLiteralByteString.wrap(tablet.getTabletIdAsBytes()));
           newBuilder.setReadMode(KuduScanner.this.getReadMode().pbVersion());
+          newBuilder.setCacheBlocks(cacheBlocks);
           // if the last propagated timestamp is set send it with the scan
           if (table.getClient().getLastPropagatedTimestamp() != NO_TIMESTAMP) {
             newBuilder.setPropagatedTimestamp(table.getClient().getLastPropagatedTimestamp());

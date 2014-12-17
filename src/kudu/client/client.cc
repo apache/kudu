@@ -738,6 +738,14 @@ Status KuduScanner::AddUpperBound(const Slice& key) {
   return Status::OK();
 }
 
+Status KuduScanner::SetCacheBlocks(bool cache_blocks) {
+  if (data_->open_) {
+    return Status::IllegalState("Block caching must be set before Open()");
+  }
+  data_->spec_.set_cache_blocks(cache_blocks);
+  return Status::OK();
+}
+
 namespace {
 // Callback for the RPC sent by Close().
 // We can't use the KuduScanner response and RPC controller members for this

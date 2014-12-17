@@ -95,6 +95,7 @@ Status KuduScanner::Data::OpenTablet(const Slice& key) {
     case READ_AT_SNAPSHOT: scan->set_read_mode(kudu::READ_AT_SNAPSHOT); break;
     default: LOG(FATAL) << "Unexpected read mode.";
   }
+  scan->set_cache_blocks(spec_.cache_blocks());
 
   if (snapshot_timestamp_ != kNoTimestamp) {
     if (PREDICT_FALSE(read_mode_ != READ_AT_SNAPSHOT)) {

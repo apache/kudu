@@ -697,6 +697,10 @@ class KUDU_EXPORT KuduScanner {
   // If any bound is already added, this bound is intersected with that one.
   Status AddUpperBound(const Slice& key);
 
+  // Set the block caching policy for this scanner. If true, scanned data blocks will be cached
+  // in memory and made available for future scans. Default is true.
+  Status SetCacheBlocks(bool cache_blocks);
+
   // Begin scanning.
   Status Open();
 
@@ -744,6 +748,8 @@ class KUDU_EXPORT KuduScanner {
 
  private:
   class KUDU_NO_EXPORT Data;
+
+  FRIEND_TEST(ClientTest, TestScanNoBlockCaching);
 
   gscoped_ptr<Data> data_;
 

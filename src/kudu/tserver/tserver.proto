@@ -194,6 +194,10 @@ message NewScanRequestPB {
   // a timestamp lower than or equal to 'previous_known_timestamp'
   optional fixed64 propagated_timestamp = 7;
 
+  // Whether data blocks will be cached when read from the files or discarded after use.
+  // Disable this to lower cache churn when doing large scans.
+  optional bool cache_blocks = 10 [default = true];
+
   // TODO: add some field which requests ordered results (which has
   // the side effect of being able to be fault-tolerant)
 }
