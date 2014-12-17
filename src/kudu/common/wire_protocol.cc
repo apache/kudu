@@ -403,50 +403,6 @@ void AppendRowToString<RowBlockRow>(const RowBlockRow& row, string* buf) {
   CHECK_OK(CopyRow(row, &copied_row, reinterpret_cast<Arena*>(NULL)));
 }
 
-
-template<class RowType>
-void DoAddRowToRowBlockPB(const RowType& row, RowwiseRowBlockPB* pb) {
-  const Schema* schema = row.schema();
-  // Append the row directly to the data.
-  // This will append a host-local pointer for any slice data, so we need
-  // to then relocate those pointers into the 'indirect_data' part of the protobuf.
-  string* data_buf = pb->mutable_rows();
-  size_t appended_offset = data_buf->size();
-  AppendRowToString(row, data_buf);
-
-  uint8_t* copied_rowdata = reinterpret_cast<uint8_t*>(&(*data_buf)[appended_offset]);
-  ContiguousRow copied_row(schema, copied_rowdata);
-  for (int i = 0; i < schema->num_columns(); i++) {
-    const ColumnSchema& col = schema->column(i);
-    uint8_t* dst_cell = copied_row.mutable_cell_ptr(i);
-    if (col.is_nullable() && row.is_null(i)) {
-      // Zero the data so we don't leak any uninitialized memory to another
-      // host/security domain.
-      memset(dst_cell, 0, col.type_info()->size());
-      continue;
-    }
-
-    if (col.type_info()->type() == STRING) {
-      // Copy the slice data into the 'indirect_data' field, and replace
-      // the pointer with an offset into that field.
-      Slice *slice = reinterpret_cast<Slice *>(dst_cell);
-      size_t offset_in_indirect = pb->mutable_indirect_data()->size();
-      pb->mutable_indirect_data()->append(reinterpret_cast<const char*>(slice->data()),
-                                          slice->size());
-      *slice = Slice(reinterpret_cast<const uint8_t*>(offset_in_indirect),
-                     slice->size());
-    }
-  }
-  pb->set_num_rows(pb->num_rows() + 1);
-}
-
-void AddRowToRowBlockPB(const ConstContiguousRow& row, RowwiseRowBlockPB* pb) {
-  DoAddRowToRowBlockPB(row, pb);
-}
-void AddRowToRowBlockPB(const RowBlockRow& row, RowwiseRowBlockPB* pb) {
-  DoAddRowToRowBlockPB(row, pb);
-}
-
 // Copy a column worth of data from the given RowBlock into the output
 // protobuf.
 //

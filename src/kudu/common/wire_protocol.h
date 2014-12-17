@@ -76,16 +76,10 @@ Status SchemaToColumnPBsWithoutIds(
 
 // Encode the given row into the provided protobuf.
 //
-// All data (both direct and indirect) is copied into the protobuf by this method,
-// so the original row may be destroyed safely after this returns.
-void AddRowToRowBlockPB(const ConstContiguousRow& row, RowwiseRowBlockPB* pb);
-
-// Same as above, but for RowBlockRow. Typically, one should use ConvertRowBlockToPB
-// below, rather than looping through this function.
-// TODO: remove it entirely?
-void AddRowToRowBlockPB(const RowBlockRow& row, RowwiseRowBlockPB* pb);
-
-// Similar to the above, but converts a whole RowBlock at a time.
+// All data (both direct and indirect) for each selected row in the RowBlock is
+// copied into the protobuf. The original data may be destroyed safely
+// after this returns.
+//
 // This only converts those rows whose selection vector entry is true.
 // If 'client_projection_schema' is not NULL, then only columns specified in
 // 'client_projection_schema' will be projected to 'pb'.

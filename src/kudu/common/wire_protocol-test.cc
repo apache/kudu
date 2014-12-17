@@ -31,7 +31,7 @@ class WireProtocolTest : public KuduTest {
       RowBlockRow row = block->row(i);
       *reinterpret_cast<Slice*>(row.mutable_cell_ptr(0)) = Slice("hello world col1");
       *reinterpret_cast<Slice*>(row.mutable_cell_ptr(1)) = Slice("hello world col2");
-      *reinterpret_cast<uint32_t*>(row.mutable_cell_ptr(2)) = 12345;
+      *reinterpret_cast<uint32_t*>(row.mutable_cell_ptr(2)) = i;
       row.cell(2).set_null(false);
     }
   }
@@ -168,52 +168,11 @@ TEST_F(WireProtocolTest, TestBadSchema_DuplicateColumnName) {
   ASSERT_STR_CONTAINS(s.ToString(), "Duplicate name present");
 }
 
-// Create a block of rows in protobuf form, then ensure that they
-// can be read back out.
-TEST_F(WireProtocolTest, TestRowBlockRoundTrip) {
-  const int kNumRows = 10;
-
-  RowwiseRowBlockPB pb;
-
-  // Build a set of rows into the protobuf.
-  RowBuilder rb(schema_);
-  for (int i = 0; i < kNumRows; i++) {
-    rb.Reset();
-    rb.AddString(StringPrintf("col1 %d", i));
-    rb.AddString(StringPrintf("col2 %d", i));
-    if (i % 2 == 1) {
-      rb.AddNull();
-    } else {
-      rb.AddUint32(i);
-    }
-    AddRowToRowBlockPB(rb.row(), &pb);
-  }
-
-  // Extract the rows back out, verify that the results are the same
-  // as the input.
-  vector<const uint8_t*> row_ptrs;
-  ASSERT_STATUS_OK(ExtractRowsFromRowBlockPB(schema_, &pb, &row_ptrs));
-  ASSERT_EQ(kNumRows, row_ptrs.size());
-  for (int i = 0; i < kNumRows; i++) {
-    ConstContiguousRow row(&schema_, row_ptrs[i]);
-    ASSERT_EQ(StringPrintf("col1 %d", i),
-              schema_.ExtractColumnFromRow<STRING>(row, 0)->ToString());
-    ASSERT_EQ(StringPrintf("col2 %d", i),
-              schema_.ExtractColumnFromRow<STRING>(row, 1)->ToString());
-    if (i % 2 == 1) {
-      ASSERT_TRUE(row.is_null(2));
-    } else {
-      ASSERT_EQ(i, *schema_.ExtractColumnFromRow<UINT32>(row, 2));
-    }
-  }
-}
-
 // Create a block of rows in columnar layout and ensure that it can be
 // converted to and from protobuf.
 TEST_F(WireProtocolTest, TestColumnarRowBlockToPB) {
-  // Set up a row block with a single row in it.
   Arena arena(1024, 1024 * 1024);
-  RowBlock block(schema_, 1, &arena);
+  RowBlock block(schema_, 10, &arena);
   FillRowBlockWithTestRows(&block);
 
   // Convert to PB.
@@ -225,9 +184,12 @@ TEST_F(WireProtocolTest, TestColumnarRowBlockToPB) {
   // as the one we put in.
   vector<const uint8_t*> row_ptrs;
   ASSERT_STATUS_OK(ExtractRowsFromRowBlockPB(schema_, &pb, &row_ptrs));
-  ASSERT_EQ(1, row_ptrs.size());
-  ConstContiguousRow row_roundtripped(&schema_, row_ptrs[0]);
-  ASSERT_EQ(schema_.DebugRow(block.row(0)), schema_.DebugRow(row_roundtripped));
+  ASSERT_EQ(block.nrows(), row_ptrs.size());
+  for (int i = 0; i < block.nrows(); ++i) {
+    ConstContiguousRow row_roundtripped(&schema_, row_ptrs[i]);
+    EXPECT_EQ(schema_.DebugRow(block.row(i)),
+              schema_.DebugRow(row_roundtripped));
+  }
 }
 
 #ifdef NDEBUG
