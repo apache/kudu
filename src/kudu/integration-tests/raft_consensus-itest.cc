@@ -26,9 +26,9 @@
 
 DEFINE_int32(num_client_threads, 8,
              "Number of client threads to launch");
-DEFINE_int64(client_inserts_per_thread, 500,
+DEFINE_int64(client_inserts_per_thread, 50,
              "Number of rows inserted by each client thread");
-DEFINE_int64(client_num_batches_per_thread, 50,
+DEFINE_int64(client_num_batches_per_thread, 5,
              "In how many batches to group the rows, for each client");
 DECLARE_int32(consensus_rpc_timeout_ms);
 
@@ -942,7 +942,13 @@ TEST_F(RaftConsensusITest, TestInsertWhenTheQueueIsFull) {
 }
 
 TEST_F(RaftConsensusITest, MultiThreadedInsertWithFailovers) {
-  int kNumReplicas = 7;
+  int kNumReplicas = 3;
+  int kNumElections = kNumReplicas;
+
+  if (AllowSlowTests()) {
+    kNumReplicas = 7;
+    kNumElections = 3 * kNumReplicas;
+  }
 
   // Reset consensus rpc timeout to the default value or the election might fail often.
   FLAGS_consensus_rpc_timeout_ms = 1000;
@@ -956,20 +962,19 @@ TEST_F(RaftConsensusITest, MultiThreadedInsertWithFailovers) {
 
   OverrideFlagForSlowTests(
       "client_inserts_per_thread",
-      strings::Substitute("$0", (FLAGS_client_inserts_per_thread * 10)));
+      strings::Substitute("$0", (FLAGS_client_inserts_per_thread * 100)));
   OverrideFlagForSlowTests(
       "client_num_batches_per_thread",
-      strings::Substitute("$0", (FLAGS_client_num_batches_per_thread * 10)));
+      strings::Substitute("$0", (FLAGS_client_num_batches_per_thread * 100)));
 
   int num_threads = FLAGS_num_client_threads;
-
   int64_t total_num_rows = num_threads * FLAGS_client_inserts_per_thread;
 
   // We create 2 * (kNumReplicas - 1) latches so that we kill the same node at least
   // twice.
   vector<CountDownLatch*> latches;
-  for (int i = 1; i < 2 * kNumReplicas; i++) {
-    latches.push_back(new CountDownLatch((i * total_num_rows)  / (2 * kNumReplicas)));
+  for (int i = 1; i < kNumElections; i++) {
+    latches.push_back(new CountDownLatch((i * total_num_rows)  / kNumElections));
   }
 
   for (int i = 0; i < num_threads; i++) {
@@ -999,7 +1004,10 @@ TEST_F(RaftConsensusITest, MultiThreadedInsertWithFailovers) {
 
 // Test automatic leader election by killing leaders.
 TEST_F(RaftConsensusITest, TestAutomaticLeaderElection) {
-  int kNumReplicas = 5;
+  int kNumReplicas = 3;
+  if (AllowSlowTests()) {
+    kNumReplicas = 5;
+  }
   vector<string> flags;
   flags.push_back("--enable_leader_failure_detection=true");
   BuildAndStart(kNumReplicas, flags);
