@@ -6,8 +6,10 @@
 
 #include <string>
 #include <tr1/memory>
+#include <vector>
 
 #include "kudu/consensus/consensus.pb.h"
+#include "kudu/consensus/ref_counted_replicate.h"
 #include "kudu/rpc/response_callback.h"
 #include "kudu/rpc/rpc_controller.h"
 #include "kudu/server/metadata.pb.h"
@@ -19,6 +21,7 @@
 
 namespace kudu {
 class HostPort;
+class ThreadPool;
 
 namespace log {
 class Log;
@@ -113,11 +116,15 @@ class Peer {
 
   ~Peer();
 
-  // Creates a new remote peer and makes the queue track it.
+  // Creates a new remote peer and makes the queue track it.'
+  //
+  // Requests to this peer (which may end up doing IO to read non-cached
+  // log entries) are assembled on 'thread_pool'.
   static Status NewRemotePeer(const metadata::QuorumPeerPB& peer_pb,
                               const std::string& tablet_id,
                               const std::string& leader_uuid,
                               PeerMessageQueue* queue,
+                              ThreadPool* thread_pool,
                               gscoped_ptr<PeerProxy> proxy,
                               gscoped_ptr<Peer>* peer);
 
@@ -126,7 +133,8 @@ class Peer {
        const std::string& tablet_id,
        const std::string& leader_uuid,
        gscoped_ptr<PeerProxy> proxy,
-       PeerMessageQueue* queue);
+       PeerMessageQueue* queue,
+       ThreadPool* thread_pool);
 
   void SendNextRequest(bool even_if_queue_empty);
 
@@ -155,6 +163,12 @@ class Peer {
   // The last response received.
   ConsensusResponsePB response_;
 
+  // Reference-counted pointers to any ReplicateMsgs which are in-flight to the peer. We
+  // may have loaded these messages from the LogCache, in which case we are potentially
+  // sharing the same object as other peers. Since the PB request_ itself can't hold
+  // reference counts, this holds them.
+  std::vector<ReplicateRefPtr> replicate_msg_refs_;
+
   rpc::RpcController controller_;
 
   // Held if there is an outstanding request.
@@ -171,6 +185,9 @@ class Peer {
   // whenever we go more than 'FLAGS_leader_heartbeat_interval_ms'
   // without sending actual data.
   ResettableHeartbeater heartbeater_;
+
+  // Thread pool used to construct requests to this peer.
+  ThreadPool* thread_pool_;
 
   enum State {
     kPeerCreated,

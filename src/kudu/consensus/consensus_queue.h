@@ -16,6 +16,7 @@
 #include "kudu/consensus/log_cache.h"
 #include "kudu/consensus/log_util.h"
 #include "kudu/consensus/opid_util.h"
+#include "kudu/consensus/ref_counted_replicate.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/threading/thread_restrictions.h"
 #include "kudu/util/locks.h"
@@ -164,7 +165,8 @@ class PeerMessageQueue {
   // replace the old entries with new ones without de-allocating the old
   // ones if they are still required.
   virtual Status RequestForPeer(const std::string& uuid,
-                                ConsensusRequestPB* request) WARN_UNUSED_RESULT;
+                                ConsensusRequestPB* request,
+                                std::vector<ReplicateRefPtr>* msg_refs) WARN_UNUSED_RESULT;
 
   // Updates the request queue with the latest response of a peer, returns
   // whether this peer has more requests pending.

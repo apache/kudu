@@ -604,10 +604,13 @@ TEST_F(RaftConsensusITest, TestRunLeaderElection) {
   ASSERT_ALL_REPLICAS_AGREE(FLAGS_client_inserts_per_thread * num_iters * 2);
 }
 
-TEST_F(RaftConsensusITest, TestInsertWhenTheQueueIsFull) {
+// Test that when a follower is stopped for a long time, the log cache
+// properly evicts operations, but still allows the follower to catch
+// up when it comes back.
+TEST_F(RaftConsensusITest, TestCatchupAfterOpsEvicted) {
   vector<string> extra_flags;
-  extra_flags.push_back("--log_cache_size_soft_limit_mb=0");
-  extra_flags.push_back("--log_cache_size_hard_limit_mb=1");
+  extra_flags.push_back("--log_cache_size_limit_mb=1");
+  extra_flags.push_back("--consensus_max_batch_size_bytes=500000");
   BuildAndStart(extra_flags);
   TServerDetails* replica = (*tablet_replicas_.begin()).second;
   ASSERT_TRUE(replica != NULL);
@@ -622,11 +625,10 @@ TEST_F(RaftConsensusITest, TestInsertWhenTheQueueIsFull) {
 
   WriteResponsePB resp;
   RpcController rpc;
-  rpc.set_timeout(MonoDelta::FromMilliseconds(1000));
+  rpc.set_timeout(MonoDelta::FromMilliseconds(10000));
   Status s;
 
   int key = 0;
-  int successful_writes_counter = 0;
 
   // Pause a replica
   ASSERT_OK(replica->external_ts->Pause());
@@ -635,8 +637,9 @@ TEST_F(RaftConsensusITest, TestInsertWhenTheQueueIsFull) {
   TServerDetails* leader = NULL;
   ASSERT_OK(GetLeaderReplicaWithRetries(tablet_id_, &leader));
 
-  // .. and insert until insertions fail because the queue is full
-  while (true) {
+  // Insert 3MB worth of data.
+  const int kNumWrites = 25;
+  for (int i = 0; i < kNumWrites; i++) {
     rpc.Reset();
     data->Clear();
     AddTestRowToPB(RowOperationsPB::INSERT, schema_, key, key,
@@ -644,50 +647,14 @@ TEST_F(RaftConsensusITest, TestInsertWhenTheQueueIsFull) {
     key++;
     ASSERT_OK(leader->tserver_proxy->Write(req, &resp, &rpc));
 
-    if (resp.has_error()) {
-      s = StatusFromPB(resp.error().status());
-    }
-    if (s.ok()) {
-      successful_writes_counter++;
-      continue;
-    }
-    break;
+    ASSERT_FALSE(resp.has_error()) << resp.DebugString();
   }
-  // Make sure the we get Status::ServiceUnavailable()
-  ASSERT_TRUE(s.IsServiceUnavailable());
 
-  // .. now unpause the replica, the lagging replica should eventually ACK the
-  // pending request and allow to discard messages from the queue, thus
-  // accepting new requests.
-  // .. and insert until insertions succeed because the queue is is no longer full.
+  // Now unpause the replica, the lagging replica should eventually catch back up.
 
   ASSERT_OK(replica->external_ts->Resume());
-  int failure_counter = 0;
-  while (true) {
-    rpc.Reset();
-    data->Clear();
-    AddTestRowToPB(RowOperationsPB::INSERT, schema_, key, key,
-                   test_payload, data);
-    key++;
-    ASSERT_OK(leader->tserver_proxy->Write(req, &resp, &rpc));
-    if (resp.has_error()) {
-      s = StatusFromPB(resp.error().status());
-    } else {
-      successful_writes_counter++;
-      s = Status::OK();
-    }
-    if (s.IsServiceUnavailable()) {
-      if (failure_counter++ == 1000) {
-        FAIL() << "Wasn't able to write to the tablet.";
-      }
-      SleepFor(MonoDelta::FromMilliseconds(100));
-      continue;
-    }
-    ASSERT_OK(s);
-    break;
-  }
 
-  ASSERT_ALL_REPLICAS_AGREE(successful_writes_counter);
+  ASSERT_ALL_REPLICAS_AGREE(kNumWrites);
 }
 
 TEST_F(RaftConsensusITest, MultiThreadedInsertWithFailovers) {

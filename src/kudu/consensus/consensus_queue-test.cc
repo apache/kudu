@@ -25,10 +25,6 @@ DECLARE_int32(max_clock_sync_error_usec);
 
 DECLARE_bool(enable_data_block_fsync);
 DECLARE_int32(consensus_max_batch_size_bytes);
-DECLARE_int32(consensus_entry_cache_size_soft_limit_mb);
-DECLARE_int32(consensus_entry_cache_size_hard_limit_mb);
-DECLARE_int32(global_consensus_entry_cache_size_soft_limit_mb);
-DECLARE_int32(global_consensus_entry_cache_size_hard_limit_mb);
 
 using std::tr1::shared_ptr;
 
@@ -97,7 +93,8 @@ class ConsensusQueueTest : public KuduTest {
 
     // Ask for a request. The queue assumes the peer is up-to-date so
     // this should contain no operations.
-    ASSERT_OK(queue_->RequestForPeer(kPeerUuid, request));
+    vector<ReplicateRefPtr> refs;
+    ASSERT_OK(queue_->RequestForPeer(kPeerUuid, request, &refs));
     ASSERT_EQ(request->ops_size(), 0);
 
     // Refuse saying that the log matching property check failed and
@@ -185,12 +182,8 @@ TEST_F(ConsensusQueueTest, TestStartTrackingAfterStart) {
   ASSERT_TRUE(more_pending);
 
   // Getting a new request should get all operations after 7.50
-  // We loop as before we were tracking the new peer queue operations got
-  // likely evicted and so will have to be loaded from disk.
-  while (request.ops_size() == 0) {
-    ASSERT_OK(queue_->RequestForPeer(kPeerUuid, &request));
-    SleepFor(MonoDelta::FromMilliseconds(10));
-  }
+  vector<ReplicateRefPtr> refs;
+  ASSERT_OK(queue_->RequestForPeer(kPeerUuid, &request, &refs));
   ASSERT_EQ(50, request.ops_size());
 
   SetLastReceivedAndLastCommitted(&response, request.ops(49).id());
@@ -198,7 +191,7 @@ TEST_F(ConsensusQueueTest, TestStartTrackingAfterStart) {
   ASSERT_FALSE(more_pending) << "Queue still had requests pending";
 
   // if we ask for a new request, it should come back empty
-  ASSERT_OK(queue_->RequestForPeer(kPeerUuid, &request));
+  ASSERT_OK(queue_->RequestForPeer(kPeerUuid, &request, &refs));
   ASSERT_EQ(0, request.ops_size());
 
   // extract the ops from the request to avoid double free
@@ -247,14 +240,17 @@ TEST_F(ConsensusQueueTest, TestGetPagedMessages) {
   OpId last;
   for (int i = 0; i < 11; i++) {
     VLOG(1) << "Making request " << i;
-    ASSERT_OK(queue_->RequestForPeer(kPeerUuid, &request));
+    vector<ReplicateRefPtr> refs;
+    ASSERT_OK(queue_->RequestForPeer(kPeerUuid, &request, &refs));
     ASSERT_EQ(kOpsPerRequest, request.ops_size());
     last = request.ops(request.ops_size() -1).id();
     SetLastReceivedAndLastCommitted(&response, last);
+    VLOG(1) << "Faking received up through " << last;
     queue_->ResponseFromPeer(last, response, &more_pending);
     ASSERT_TRUE(more_pending);
   }
-  ASSERT_OK(queue_->RequestForPeer(kPeerUuid, &request));
+  vector<ReplicateRefPtr> refs;
+  ASSERT_OK(queue_->RequestForPeer(kPeerUuid, &request, &refs));
   ASSERT_EQ(1, request.ops_size());
   last = request.ops(request.ops_size() -1).id();
   SetLastReceivedAndLastCommitted(&response, last);
@@ -296,12 +292,8 @@ TEST_F(ConsensusQueueTest, TestPeersDontAckBeyondWatermarks) {
   ASSERT_OPID_EQ(queue_->GetAllReplicatedIndexForTests(), MinimumOpId());
   ASSERT_OPID_EQ(queue_->GetMajorityReplicatedOpIdForTests(), MinimumOpId());
 
-  // Since we've moved the all replicated watermark back the cache will have to
-  // load operations for the new peer. We spin until it does.
-  while (request.ops_size() == 0) {
-    ASSERT_OK(queue_->RequestForPeer(kPeerUuid, &request));
-    SleepFor(MonoDelta::FromMilliseconds(10));
-  }
+  vector<ReplicateRefPtr> refs;
+  ASSERT_OK(queue_->RequestForPeer(kPeerUuid, &request, &refs));
   ASSERT_EQ(50, request.ops_size());
 
   AppendReplicateMessagesToQueue(queue_.get(), clock_, 101, 100);
@@ -316,7 +308,7 @@ TEST_F(ConsensusQueueTest, TestPeersDontAckBeyondWatermarks) {
   ASSERT_OPID_EQ(queue_->GetAllReplicatedIndexForTests(), MakeOpId(14, 100));
 
   // if we ask for a new request, it should come back with the rest of the messages
-  ASSERT_OK(queue_->RequestForPeer(kPeerUuid, &request));
+  ASSERT_OK(queue_->RequestForPeer(kPeerUuid, &request, &refs));
   ASSERT_EQ(100, request.ops_size());
 
   OpId expected = request.ops(99).id();
@@ -453,54 +445,11 @@ TEST_F(ConsensusQueueTest, TestQueueLoadsOperationsForPeer) {
   // The queue should reply that there are more messages for the peer.
   ASSERT_TRUE(more_pending);
 
-  // If we respond again with the same response the queue should set 'more_pending'
-  // to false. This will avoid spinning when the queue is doing an async load.
-  RefuseWithLogPropertyMismatch(&response, peers_last_op);
-  response.mutable_status()->set_last_committed_idx(peers_last_op.index());
-  queue_->ResponseFromPeer(peers_last_op, response, &more_pending);
-  ASSERT_FALSE(more_pending);
-
-  // When we get another request for the peer the queue should enqueue
-  // async loading of the missing operations.
-  ASSERT_OK(queue_->RequestForPeer(kPeerUuid, &request));
-  // Since this just enqueued the op loading, the request should have
-  // no additional ops.
-  ASSERT_EQ(request.ops_size(), 0);
-
-  // And the request's preceding id should still be the queue's last op
-  // as in the initial status-only.
-  ASSERT_OPID_EQ(request.preceding_id(), queues_last_op);
-
-  // When we now reply the same response as before (nothing changed
-  // from the peer's perspective) we should get that 'more_pending' is
-  // false. This is important or we would have a constant back and
-  // forth between the queue and the peer until the operations we
-  // want are loaded.
-  SetLastReceivedAndLastCommitted(&response, peers_last_op);
-  queue_->ResponseFromPeer(peers_last_op, response, &more_pending);
-  ASSERT_FALSE(more_pending);
-
-  // Spin a few times to give the queue loader a change to load the requests
-  // while at the same time adding more messages to the queue.
-  int expected_count = 50;
-  int current_index = 101;
-  while (request.ops_size() == 0) {
-    AppendReplicateMsg(1, current_index, 0);
-    current_index++;
-    expected_count++;
-    ASSERT_OK(queue_->RequestForPeer(kPeerUuid, &request));
-    if (request.ops_size() == 0) {
-      SetLastReceivedAndLastCommitted(&response, peers_last_op);
-      queue_->ResponseFromPeer(peers_last_op, response, &more_pending);
-    } else {
-      SetLastReceivedAndLastCommitted(&response, request.ops(request.ops_size() - 1).id());
-      queue_->ResponseFromPeer(request.ops(request.ops_size() - 1).id() ,
-                               response, &more_pending);
-    }
-    SleepFor(MonoDelta::FromMicroseconds(10));
-  }
-
-  ASSERT_EQ(request.ops_size(), expected_count);
+  // When we get another request for the peer the queue should load
+  // the missing operations.
+  vector<ReplicateRefPtr> refs;
+  ASSERT_OK(queue_->RequestForPeer(kPeerUuid, &request, &refs));
+  ASSERT_EQ(request.ops_size(), 50);
 
   // The messages still belong to the queue so we have to release them.
   request.mutable_ops()->ExtractSubrange(0, request.ops().size(), NULL);
@@ -547,6 +496,7 @@ TEST_F(ConsensusQueueTest, TestQueueHandlesOperationOverwriting) {
   // and send it operations starting at the old leader's committed index.
   ConsensusRequestPB request;
   ConsensusResponsePB response;
+  vector<ReplicateRefPtr> refs;
   response.set_responder_uuid(kPeerUuid);
   bool more_pending = false;
 
@@ -554,7 +504,7 @@ TEST_F(ConsensusQueueTest, TestQueueHandlesOperationOverwriting) {
 
   // Ask for a request. The queue assumes the peer is up-to-date so
   // this should contain no operations.
-  ASSERT_OK(queue_->RequestForPeer(kPeerUuid, &request));
+  ASSERT_OK(queue_->RequestForPeer(kPeerUuid, &request, &refs));
   ASSERT_EQ(request.ops_size(), 0);
   ASSERT_OPID_EQ(request.preceding_id(), MakeOpId(2, 20));
   ASSERT_OPID_EQ(request.committed_index(), committed_index);
@@ -582,32 +532,16 @@ TEST_F(ConsensusQueueTest, TestQueueHandlesOperationOverwriting) {
   ASSERT_OPID_EQ(queue_->GetAllReplicatedIndexForTests(), MinimumOpId());
 
   // Test even when a correct peer responds (meaning we actually get to execute
-  // watermark advancement) we sill have the same queue watermarks.
+  // watermark advancement) we sill have the same all-replicated watermark.
   ReplicateMsg* replicate = CreateDummyReplicate(2, 21, clock_->Now(), 0).release();
   ASSERT_OK(queue_->AppendOperation(make_scoped_refptr(new RefCountedReplicate(replicate))));
   WaitForLocalPeerToAckIndex(21);
 
   ASSERT_OPID_EQ(queue_->GetAllReplicatedIndexForTests(), MinimumOpId());
 
-  // The queue doesn't necessarily know that the old leader's last received was
-  // overwritten. It will only know that when the operations get loaded from disk,
-  // so until that is done it should send status-only requests.
-  while (request.ops_size() == 0) {
-    ASSERT_OK(queue_->RequestForPeer(kPeerUuid, &request));
-    if (request.ops_size() == 0) {
-      ASSERT_OPID_EQ(request.preceding_id(), MakeOpId(2, 21));
-      ASSERT_OPID_EQ(request.committed_index(), MakeOpId(2, 15));
-      // The peer will keep responding the same thing.
-      queue_->ResponseFromPeer(MakeOpId(1, 25), response, &more_pending);
-    } else {
-      break;
-    }
-    SleepFor(MonoDelta::FromMicroseconds(10));
-  }
-
-  // Once the operations are loaded from disk we should get a request that contains
-  // all operations that do indeed exist after the old leaders last known committed
-  // index.
+  // Generate another request for the remote peer, which should include
+  // all of the ops since the peer's last-known committed index.
+  ASSERT_OK(queue_->RequestForPeer(kPeerUuid, &request, &refs));
   ASSERT_OPID_EQ(MakeOpId(1, 5), request.preceding_id());
   ASSERT_EQ(16, request.ops_size());
 
@@ -691,6 +625,8 @@ TEST_F(ConsensusQueueTest, TestOnlyAdvancesWatermarkWhenPeerHasAPrefixOfOurLog) 
 
   ConsensusRequestPB request;
   ConsensusResponsePB response;
+  vector<ReplicateRefPtr> refs;
+
   bool more_pending;
   // We expect the majority replicated watermark to star at the committed index.
   OpId expected_majority_replicated = MakeOpId(72, 31);
@@ -719,7 +655,7 @@ TEST_F(ConsensusQueueTest, TestOnlyAdvancesWatermarkWhenPeerHasAPrefixOfOurLog) 
 
   // When we get operations for this peer we should get them starting immediately after
   // the committed index, for a total of 9 operations.
-  ASSERT_OK(queue_->RequestForPeer(kPeerUuid, &request));
+  ASSERT_OK(queue_->RequestForPeer(kPeerUuid, &request, &refs));
   ASSERT_EQ(request.ops_size(), 9);
   ASSERT_OPID_EQ(request.ops(0).id(), MakeOpId(72, 32));
 
@@ -739,7 +675,7 @@ TEST_F(ConsensusQueueTest, TestOnlyAdvancesWatermarkWhenPeerHasAPrefixOfOurLog) 
   // Another request for this peer should get another page of messages. Still not
   // on the queue's term (and thus without advancing watermarks).
   request.mutable_ops()->ExtractSubrange(0, request.ops().size(), NULL);
-  ASSERT_OK(queue_->RequestForPeer(kPeerUuid, &request));
+  ASSERT_OK(queue_->RequestForPeer(kPeerUuid, &request, &refs));
   ASSERT_EQ(request.ops_size(), 9);
   ASSERT_OPID_EQ(request.ops(0).id(), MakeOpId(72, 41));
 
@@ -756,7 +692,7 @@ TEST_F(ConsensusQueueTest, TestOnlyAdvancesWatermarkWhenPeerHasAPrefixOfOurLog) 
   // The last page of request should overwrite the peer's operations and the
   // response should finally advance the watermarks.
   request.mutable_ops()->ExtractSubrange(0, request.ops().size(), NULL);
-  ASSERT_OK(queue_->RequestForPeer(kPeerUuid, &request));
+  ASSERT_OK(queue_->RequestForPeer(kPeerUuid, &request, &refs));
   ASSERT_EQ(request.ops_size(), 4);
   ASSERT_OPID_EQ(request.ops(0).id(), MakeOpId(73, 50));
 

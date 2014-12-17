@@ -74,6 +74,7 @@ class ConsensusPeersTest : public KuduTest {
                                  kTabletId,
                                  kLeaderUuid,
                                  message_queue_.get(),
+                                 pool_.get(),
                                  proxy.Pass(),
                                  peer));
     return proxy_ptr;

@@ -8,6 +8,7 @@
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/util/threadpool.h"
 
 namespace kudu {
 namespace consensus {
@@ -25,7 +26,11 @@ PeerManager::PeerManager(const std::string tablet_id,
       local_uuid_(local_uuid),
       peer_proxy_factory_(peer_proxy_factory),
       queue_(queue),
-      log_(log) {}
+      log_(log) {
+
+  CHECK_OK(ThreadPoolBuilder(Substitute("$0-peers", tablet_id.substr(0, 6)))
+           .Build(&thread_pool_));
+}
 
 PeerManager::~PeerManager() {
   Close();
@@ -58,6 +63,7 @@ Status PeerManager::UpdateQuorum(const metadata::QuorumPB& quorum) {
                                       tablet_id_,
                                       local_uuid_,
                                       queue_,
+                                      thread_pool_.get(),
                                       peer_proxy.Pass(),
                                       &remote_peer));
     InsertOrDie(&peers_, peer_pb.permanent_uuid(), remote_peer.release());

@@ -21,10 +21,8 @@ DECLARE_int32(max_clock_sync_error_usec);
 using std::tr1::shared_ptr;
 
 DECLARE_int32(consensus_max_batch_size_bytes);
-DECLARE_int32(log_cache_size_soft_limit_mb);
-DECLARE_int32(log_cache_size_hard_limit_mb);
-DECLARE_int32(global_log_cache_size_soft_limit_mb);
-DECLARE_int32(global_log_cache_size_hard_limit_mb);
+DECLARE_int32(log_cache_size_limit_mb);
+DECLARE_int32(global_log_cache_size_limit_mb);
 
 namespace kudu {
 namespace consensus {
@@ -77,7 +75,7 @@ class LogCacheTest : public KuduTest {
     CHECK_OK(s);
   }
 
-  bool AppendReplicateMessagesToCache(
+  Status AppendReplicateMessagesToCache(
     int first,
     int count,
     int payload_size = 0) {
@@ -87,37 +85,10 @@ class LogCacheTest : public KuduTest {
       int index = i;
       vector<ReplicateRefPtr> msgs;
       msgs.push_back(make_scoped_refptr_replicate(
-              CreateDummyReplicate(term, index, clock_->Now(), payload_size).release()));
-      if (!cache_->AppendOperations(msgs, Bind(&FatalOnError))) {
-        return false;
-      }
+                       CreateDummyReplicate(term, index, clock_->Now(), payload_size).release()));
+      RETURN_NOT_OK(cache_->AppendOperations(msgs, Bind(&FatalOnError)));
     }
-    return true;
-  }
-
-  Status RetryReadWhileIncomplete(int64_t after_op_index,
-                                  int max_size_bytes,
-                                  std::vector<ReplicateRefPtr>* messages,
-                                  OpId* preceding_op) {
-    Status s;
-    int sleep_for_ms = 0;
-    do {
-      SleepFor(MonoDelta::FromMilliseconds(sleep_for_ms++));
-      s = cache_->ReadOps(after_op_index, max_size_bytes, messages, preceding_op);
-    } while (s.IsIncomplete());
-    return s;
-  }
-
-  void WaitForCachedOpCount(int expected) {
-    int count = -1;
-    for (int i = 0; i < 1000; i++) {
-      count = cache_->metrics_.log_cache_total_num_ops->value();
-      if (count == expected) {
-        break;
-      }
-      SleepFor(MonoDelta::FromMilliseconds(10));
-    }
-    ASSERT_EQ(expected, count);
+    return Status::OK();
   }
 
   const Schema schema_;
@@ -133,7 +104,7 @@ class LogCacheTest : public KuduTest {
 TEST_F(LogCacheTest, TestAppendAndGetMessages) {
   ASSERT_EQ(0, cache_->metrics_.log_cache_total_num_ops->value());
   ASSERT_EQ(0, cache_->metrics_.log_cache_size_bytes->value());
-  ASSERT_TRUE(AppendReplicateMessagesToCache(1, 100));
+  ASSERT_OK(AppendReplicateMessagesToCache(1, 100));
   ASSERT_EQ(100, cache_->metrics_.log_cache_total_num_ops->value());
   ASSERT_GE(cache_->metrics_.log_cache_size_bytes->value(), 500);
   log_->WaitUntilAllFlushed();
@@ -157,15 +128,13 @@ TEST_F(LogCacheTest, TestAppendAndGetMessages) {
   EXPECT_EQ(0, messages.size());
   EXPECT_EQ("14.100", OpIdToString(preceding));
 
-  // Evict some and wait for the eviction to take effect.
-  // (it may not be instant, since we didn't flush the log)
-  cache_->SetPinnedOp(50);
-  ASSERT_NO_FATAL_FAILURE(WaitForCachedOpCount(51));
+  // Evict some and verify that the eviction took effect.
+  cache_->EvictThroughOp(50);
+  ASSERT_EQ(50, cache_->metrics_.log_cache_total_num_ops->value());
 
   // Can still read data that was evicted, since it got written through.
   messages.clear();
-  cache_->SetPinnedOp(20);
-  RetryReadWhileIncomplete(20, 8 * 1024 * 1024, &messages, &preceding);
+  ASSERT_OK(cache_->ReadOps(20, 8 * 1024 * 1024, &messages, &preceding));
   EXPECT_EQ(80, messages.size());
   EXPECT_EQ("2.20", OpIdToString(preceding));
   EXPECT_EQ("3.21", OpIdToString(messages[0]->get()->id()));
@@ -181,7 +150,7 @@ TEST_F(LogCacheTest, TestAlwaysYieldsAtLeastOneMessage) {
   const int kPayloadSize = 2 * 1024 * 1024;
 
   // Append several large ops to the cache
-  ASSERT_TRUE(AppendReplicateMessagesToCache(1, 4, kPayloadSize));
+  ASSERT_OK(AppendReplicateMessagesToCache(1, 4, kPayloadSize));
   log_->WaitUntilAllFlushed();
 
   // We should get one of them, even though we only ask for 100 bytes
@@ -191,37 +160,12 @@ TEST_F(LogCacheTest, TestAlwaysYieldsAtLeastOneMessage) {
   ASSERT_EQ(1, messages.size());
 }
 
-// Test that, if the hard limit has been reached, requests are refused.
-TEST_F(LogCacheTest, TestCacheRefusesRequestWhenFilled) {
-  FLAGS_log_cache_size_soft_limit_mb = 0;
-  FLAGS_log_cache_size_hard_limit_mb = 1;
-
-  CloseAndReopenCache(MinimumOpId(), "TestCacheRefusesRequestWhenFilled");
-
-  // generate a 128Kb dummy payload
-  const int kPayloadSize = 128 * 1024;
-
-  // append 8 messages to the cache, these should be allowed
-  ASSERT_TRUE(AppendReplicateMessagesToCache(1, 7, kPayloadSize));
-
-  // should fail because the cache is full
-  ASSERT_FALSE(AppendReplicateMessagesToCache(8, 1, kPayloadSize));
-
-
-  // Move the pin past the first two ops
-  cache_->SetPinnedOp(2);
-  log_->WaitUntilAllFlushed();
-
-  // And try again -- should now succeed
-  ASSERT_TRUE(AppendReplicateMessagesToCache(8, 1, kPayloadSize));
-}
-
 // Tests that the cache returns Status::NotFound() if queried for messages after an
 // index that is higher than it's latest, returns an empty set of messages when queried for
 // the the last index and returns all messages when queried for MinimumOpId().
 TEST_F(LogCacheTest, TestCacheEdgeCases) {
   // Append 1 message to the cache
-  ASSERT_TRUE(AppendReplicateMessagesToCache(1, 1));
+  ASSERT_OK(AppendReplicateMessagesToCache(1, 1));
   log_->WaitUntilAllFlushed();
 
   std::vector<ReplicateRefPtr> messages;
@@ -253,134 +197,84 @@ TEST_F(LogCacheTest, TestCacheEdgeCases) {
 
   // Evict entries from the cache, and ensure that we can still read
   // entries at the beginning of the log.
-  cache_->SetPinnedOp(50);
-  cache_->SetPinnedOp(0); // re-pin at 0 to allow the read
-  ASSERT_OK(RetryReadWhileIncomplete(0, 100, &messages, &preceding));
+  cache_->EvictThroughOp(50);
+  ASSERT_OK(cache_->ReadOps(0, 100, &messages, &preceding));
   ASSERT_EQ(1, messages.size());
   ASSERT_OPID_EQ(MakeOpId(0, 0), preceding);
 }
 
 
-TEST_F(LogCacheTest, TestHardAndSoftLimit) {
-  FLAGS_log_cache_size_soft_limit_mb = 1;
-  FLAGS_log_cache_size_hard_limit_mb = 2;
+TEST_F(LogCacheTest, TestMemoryLimit) {
+  FLAGS_log_cache_size_limit_mb = 1;
 
-  CloseAndReopenCache(MinimumOpId(), "TestHardAndSoftLimit");
+  CloseAndReopenCache(MinimumOpId(), "TestMemoryLimit");
 
-  const int kPayloadSize = 768 * 1024;
-  // Soft limit should not be violated.
-  ASSERT_TRUE(AppendReplicateMessagesToCache(1, 1, kPayloadSize));
-
-  int size_with_one_msg = cache_->BytesUsed();
-  ASSERT_LT(size_with_one_msg, 1 * 1024 * 1024);
-
-  // Violating a soft limit, but not a hard limit should still allow
-  // the operation to be added.
-  ASSERT_TRUE(AppendReplicateMessagesToCache(2, 1, kPayloadSize));
-
-  // Since the first operation is not yet done, we can't trim.
-  int size_with_two_msgs = cache_->BytesUsed();
-  ASSERT_GE(size_with_two_msgs, 2 * 768 * 1024);
-  ASSERT_LT(size_with_two_msgs, 2 * 1024 * 1024);
-
-  cache_->SetPinnedOp(2);
-
+  const int kPayloadSize = 400 * 1024;
+  // Limit should not be violated.
+  ASSERT_OK(AppendReplicateMessagesToCache(1, 1, kPayloadSize));
   log_->WaitUntilAllFlushed();
+  ASSERT_EQ(1, cache_->num_cached_ops());
 
+  // Verify the size is right. It's not exactly kPayloadSize because of in-memory
+  // overhead, etc.
+  int size_with_one_msg = cache_->BytesUsed();
+  ASSERT_GT(size_with_one_msg, 300 * 1024);
+  ASSERT_LT(size_with_one_msg, 500 * 1024);
+
+  // Add another operation which fits under the 1MB limit.
+  ASSERT_OK(AppendReplicateMessagesToCache(2, 1, kPayloadSize));
+  log_->WaitUntilAllFlushed();
+  ASSERT_EQ(2, cache_->num_cached_ops());
+
+  int size_with_two_msgs = cache_->BytesUsed();
+  ASSERT_GT(size_with_two_msgs, 2 * 300 * 1024);
+  ASSERT_LT(size_with_two_msgs, 2 * 500 * 1024);
+
+  // Append a third operation, which will push the cache size above the 1MB limit
+  // and cause eviction of the first operation.
+  LOG(INFO) << "appending op 3";
   // Verify that we have trimmed by appending a message that would
   // otherwise be rejected, since the cache max size limit is 2MB.
-  ASSERT_TRUE(AppendReplicateMessagesToCache(3, 1, kPayloadSize));
-
+  ASSERT_OK(AppendReplicateMessagesToCache(3, 1, kPayloadSize));
   log_->WaitUntilAllFlushed();
-
-  // The cache should be trimmed down to two messages.
+  ASSERT_EQ(2, cache_->num_cached_ops());
   ASSERT_EQ(size_with_two_msgs, cache_->BytesUsed());
 
-  // Ack indexes 2 and 3
-  cache_->SetPinnedOp(4);
-  ASSERT_TRUE(AppendReplicateMessagesToCache(4, 1, kPayloadSize));
-
-  // Verify that the cache is trimmed down to just one message.
+  // Test explicitly evicting one of the ops.
+  cache_->EvictThroughOp(2);
+  ASSERT_EQ(1, cache_->num_cached_ops());
   ASSERT_EQ(size_with_one_msg, cache_->BytesUsed());
 
-  cache_->SetPinnedOp(5);
-
-  // Add a small message such that soft limit is not violated.
-  const int kSmallPayloadSize = 128 * 1024;
-  ASSERT_TRUE(AppendReplicateMessagesToCache(5, 1, kSmallPayloadSize));
-
-  // Verify that the cache is not trimmed.
-  ASSERT_GT(cache_->BytesUsed(), 0);
+  // Explicitly evict the last op.
+  cache_->EvictThroughOp(3);
+  ASSERT_EQ(0, cache_->num_cached_ops());
+  ASSERT_EQ(cache_->BytesUsed(), 0);
 }
 
-TEST_F(LogCacheTest, TestGlobalHardLimit) {
-  FLAGS_log_cache_size_soft_limit_mb = 1;
-  FLAGS_global_log_cache_size_soft_limit_mb = 4;
+TEST_F(LogCacheTest, TestGlobalMemoryLimit) {
+  FLAGS_log_cache_size_limit_mb = 4;
 
-  FLAGS_log_cache_size_hard_limit_mb = 2;
-  FLAGS_global_log_cache_size_hard_limit_mb = 5;
-
-  const string kParentTrackerId = "TestGlobalHardLimit";
+  const string kParentTrackerId = "TestGlobalMemoryLimit";
   shared_ptr<MemTracker> parent_tracker = MemTracker::CreateTracker(
-    FLAGS_log_cache_size_soft_limit_mb * 1024 * 1024,
+    FLAGS_log_cache_size_limit_mb * 1024 * 1024,
     kParentTrackerId,
     NULL);
 
   ASSERT_TRUE(parent_tracker.get() != NULL);
 
   // Exceed the global hard limit.
-  parent_tracker->Consume(6 * 1024 * 1024);
+  parent_tracker->Consume(3 * 1024 * 1024);
 
   CloseAndReopenCache(MinimumOpId(), kParentTrackerId);
 
   const int kPayloadSize = 768 * 1024;
 
-  // Should fail because the cache has exceeded hard limit.
-  ASSERT_FALSE(AppendReplicateMessagesToCache(1, 1, kPayloadSize));
+  // Should succeed, but only end up caching one of the two ops because of the global limit.
+  ASSERT_OK(AppendReplicateMessagesToCache(1, 2, kPayloadSize));
+  log_->WaitUntilAllFlushed();
 
-  // Now release the memory.
-  parent_tracker->Release(2 * 1024 * 1024);
-
-  ASSERT_TRUE(AppendReplicateMessagesToCache(1, 1, kPayloadSize));
-}
-
-TEST_F(LogCacheTest, TestEvictWhenGlobalSoftLimitExceeded) {
-  FLAGS_log_cache_size_soft_limit_mb = 1;
-  FLAGS_global_log_cache_size_soft_limit_mb = 4;
-
-  FLAGS_log_cache_size_hard_limit_mb = 2;
-  FLAGS_global_log_cache_size_hard_limit_mb = 5;
-
-  const string kParentTrackerId = "TestGlobalSoftLimit";
-
-  shared_ptr<MemTracker> parent_tracker = MemTracker::CreateTracker(
-     FLAGS_log_cache_size_soft_limit_mb * 1024 * 1024,
-     kParentTrackerId,
-     NULL);
-
- ASSERT_TRUE(parent_tracker.get() != NULL);
-
- // Exceed the global soft limit.
- parent_tracker->Consume(4 * 1024 * 1024);
- parent_tracker->Consume(1024);
-
- CloseAndReopenCache(MinimumOpId(), kParentTrackerId);
-
- const int kPayloadSize = 768 * 1024;
- ASSERT_TRUE(AppendReplicateMessagesToCache(1, 1, kPayloadSize));
-
- int size_with_one_msg = cache_->BytesUsed();
-
- cache_->SetPinnedOp(2);
-
- log_->WaitUntilAllFlushed();
-
- // If this goes through, that means the queue has been trimmed, otherwise
- // the hard limit would be violated and false would be returned.
- ASSERT_TRUE(AppendReplicateMessagesToCache(2, 1, kPayloadSize));
-
- // Verify that there is only one message in the queue.
- ASSERT_EQ(size_with_one_msg, cache_->BytesUsed());
+  ASSERT_EQ(1, cache_->num_cached_ops());
+  ASSERT_LE(cache_->BytesUsed(), 1024 * 1024);
 }
 
 // Test that the log cache properly replaces messages when an index
@@ -391,15 +285,17 @@ TEST_F(LogCacheTest, TestReplaceMessages) {
   shared_ptr<MemTracker> tracker = cache_->tracker_;;
   ASSERT_EQ(0, tracker->consumption());
 
-  ASSERT_TRUE(AppendReplicateMessagesToCache(1, 1, kPayloadSize));
+  ASSERT_OK(AppendReplicateMessagesToCache(1, 1, kPayloadSize));
   int size_with_one_msg = tracker->consumption();
 
   for (int i = 0; i < 10; i++) {
-    ASSERT_TRUE(AppendReplicateMessagesToCache(1, 1, kPayloadSize));
+    ASSERT_OK(AppendReplicateMessagesToCache(1, 1, kPayloadSize));
   }
 
+  log_->WaitUntilAllFlushed();
+
   EXPECT_EQ(size_with_one_msg, tracker->consumption());
-  EXPECT_EQ(Substitute("Preceding Op: 0.0, Pinned index: 0, LogCacheStats(num_ops=1, bytes=$0)",
+  EXPECT_EQ(Substitute("Pinned index: 2, LogCacheStats(num_ops=1, bytes=$0)",
                        size_with_one_msg),
             cache_->ToString());
 }

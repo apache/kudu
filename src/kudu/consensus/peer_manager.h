@@ -13,6 +13,8 @@
 
 namespace kudu {
 
+class ThreadPool;
+
 namespace metadata {
 class QuorumPB;
 } // namespace metadata
@@ -58,6 +60,7 @@ class PeerManager {
   const std::string local_uuid_;
   PeerProxyFactory* peer_proxy_factory_;
   PeerMessageQueue* queue_;
+  gscoped_ptr<ThreadPool> thread_pool_;
   log::Log* log_;
   PeersMap peers_;
   mutable simple_spinlock lock_;

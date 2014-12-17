@@ -139,7 +139,12 @@ void Log::AppendThread::RunThread() {
                          && !entry_batch->callback().is_null())) {
           entry_batch->callback().Run(Status::OK());
         }
+        // It's important to delete each batch as we see it, because
+        // deleting it may free up memory from memory trackers, and the
+        // callback of a later batch may want to use that memory.
+        delete entry_batch;
       }
+      entry_batches.clear();
     }
   }
   VLOG(1) << "Exiting AppendThread for tablet " << log_->tablet_id();

@@ -10,32 +10,29 @@
 #include <map>
 #include <vector>
 
-#include "kudu/consensus/async_log_reader.h"
 #include "kudu/consensus/log.h"
+#include "kudu/consensus/log_reader.h"
+#include "kudu/consensus/ref_counted_replicate.h"
 #include "kudu/gutil/bind.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/human_readable.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/util/debug-util.h"
 #include "kudu/util/mem_tracker.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/locks.h"
 #include "kudu/util/logging.h"
 
-DEFINE_int32(log_cache_size_soft_limit_mb, 128,
-             "The total per-tablet size of consensus entries to keep in memory."
-             " This is a soft limit, i.e. messages in the queue are discarded"
-             " down to this limit only if no peer needs to replicate them.");
-DEFINE_int32(log_cache_size_hard_limit_mb, 256,
-             "The total per-tablet size of consensus entries to keep in memory."
-             " This is a hard limit, i.e. messages in the queue are always discarded"
-             " down to this limit. If a peer has not yet replicated the messages"
-             " selected to be discarded the peer will be evicted from the quorum.");
+DEFINE_int32(log_cache_size_limit_mb, 128,
+             "The total per-tablet size of consensus entries which may be kept in memory. "
+             "The log cache attempts to keep all entries which have not yet been replicated "
+             "to all followers in memory, but if the total size of thsoe entries exceeeds "
+             "this limit within an individual tablet, the oldest will be evicted.");
 
-DEFINE_int32(global_log_cache_size_soft_limit_mb, 1024,
-             "Server-wide version of 'log_cache_size_soft_limit_mb'");
-DEFINE_int32(global_log_cache_size_hard_limit_mb, 1024,
-             "Server-wide version of 'log_cache_size_hard_limit_mb'");
+DEFINE_int32(global_log_cache_size_limit_mb, 1024,
+             "Server-wide version of 'log_cache_size_limit_mb'. The total memory used for "
+             "caching log entries across all tablets is kept under this threshold.");
 
 using strings::Substitute;
 
@@ -59,323 +56,304 @@ LogCache::LogCache(const MetricContext& metric_ctx,
   : log_(log),
     local_uuid_(local_uuid),
     tablet_id_(tablet_id),
-    preceding_first_op_(MinimumOpId()),
+    next_sequential_op_index_(0),
     min_pinned_op_index_(0),
-    max_ops_size_bytes_hard_(FLAGS_log_cache_size_hard_limit_mb * 1024 * 1024),
-    global_max_ops_size_bytes_hard_(
-      FLAGS_global_log_cache_size_hard_limit_mb * 1024 * 1024),
     metrics_(metric_ctx) {
-  uint64_t max_ops_size_bytes_soft = FLAGS_log_cache_size_soft_limit_mb * 1024 * 1024;
-  uint64_t global_max_ops_size_bytes_soft =
-      FLAGS_global_log_cache_size_soft_limit_mb * 1024 * 1024;
+
+
+  const uint64_t max_ops_size_bytes = FLAGS_log_cache_size_limit_mb * 1024 * 1024;
+  const uint64_t global_max_ops_size_bytes = FLAGS_global_log_cache_size_limit_mb * 1024 * 1024;
 
   // If no tracker is registered for kConsensusQueueMemTrackerId,
-  // create one using the global soft limit.
-  parent_tracker_ = MemTracker::FindOrCreateTracker(global_max_ops_size_bytes_soft,
+  // create one using the global limit.
+  parent_tracker_ = MemTracker::FindOrCreateTracker(global_max_ops_size_bytes,
                                                     parent_tracker_id,
                                                     NULL);
 
-  tracker_ = MemTracker::CreateTracker(max_ops_size_bytes_soft,
+  // And create a child tracker with the per-tablet limit.
+  tracker_ = MemTracker::CreateTracker(max_ops_size_bytes,
                                        Substitute("$0-$1", parent_tracker_id, metric_ctx.prefix()),
                                        parent_tracker_.get());
-  async_reader_.reset(new log::AsyncLogReader(log_->GetLogReader()));
+
+  // Put a fake message at index 0, since this simplifies a lot of our
+  // code paths elsewhere.
+  ReplicateMsg* zero_op = new ReplicateMsg();
+  *zero_op->mutable_id() = MinimumOpId();
+  InsertOrDie(&cache_, 0, make_scoped_refptr_replicate(zero_op));
 }
 
 LogCache::~LogCache() {
-  async_reader_->Shutdown();
-
   cache_.clear();
 }
 
 void LogCache::Init(const OpId& preceding_op) {
   lock_guard<simple_spinlock> l(&lock_);
-  CHECK(cache_.empty());
-  preceding_first_op_ = preceding_op;
+  CHECK_EQ(cache_.size(), 1)
+    << "Cache should have only our special '0' op";
+  next_sequential_op_index_ = preceding_op.index() + 1;
+  min_pinned_op_index_ = next_sequential_op_index_;
 }
 
-void LogCache::SetPinnedOp(int64_t index) {
-  {
-    lock_guard<simple_spinlock> l(&lock_);
-    min_pinned_op_index_ = index;
-  }
-
-  Evict();
-}
-
-bool LogCache::AppendOperations(const vector<ReplicateRefPtr>& msgs,
-                                const StatusCallback& callback) {
+Status LogCache::AppendOperations(const vector<ReplicateRefPtr>& msgs,
+                                  const StatusCallback& callback) {
   unique_lock<simple_spinlock> l(&lock_);
 
-  uint32_t first_idx_to_cache = 0;
-  uint32_t size = msgs.size();
-
-  int last_index = cache_.empty() ? preceding_first_op_.index() : (*cache_.rbegin()).first;
+  int size = msgs.size();
+  CHECK_GT(size, 0);
 
   // If we're not appending a consecutive op we're likely overwriting and
   // need to replace operations in the cache.
-  if (last_index + 1 != msgs[0]->get()->id().index()) {
+  int64_t first_idx_in_batch = msgs.front()->get()->id().index();
+  int64_t last_idx_in_batch = msgs.back()->get()->id().index();
+
+  if (first_idx_in_batch != next_sequential_op_index_) {
     // If the index is not consecutive then it must be lower than or equal
     // to the last index, i.e. we're overwriting.
-    CHECK_LE(msgs[0]->get()->id().index(), last_index);
+    CHECK_LE(first_idx_in_batch, next_sequential_op_index_);
 
     // Now remove the overwritten operations.
-    for (int64_t i = msgs[0]->get()->id().index(); i <= last_index; ++i) {
+    for (int64_t i = first_idx_in_batch; i < next_sequential_op_index_; ++i) {
       ReplicateRefPtr msg = EraseKeyReturnValuePtr(&cache_, i);
       if (msg != NULL) {
         AccountForMessageRemovalUnlocked(msg);
       }
     }
-
-    // Make sure we set the pin to the first op, if it was higher.
-    if (min_pinned_op_index_ > msgs[0]->get()->id().index()) {
-      min_pinned_op_index_ = msgs[0]->get()->id().index();
-    }
-
-    // Finally we make sure that the preceding id is still correct.
-    // If we're writing messages that come before the current preceding
-    // id, we make the first message's id the new preceding id (otherwise
-    // we'd have to read from disk).
-    if (preceding_first_op_.index() >= msgs[0]->get()->id().index()) {
-      preceding_first_op_ = msgs[0]->get()->id();
-      first_idx_to_cache++;
-      size--;
-    }
   }
 
-  CHECK_GE(msgs[0]->get()->id().index(), min_pinned_op_index_) << LogPrefixUnlocked()
-      << " Appending operation after pin. State: " << ToStringUnlocked();
 
   int64_t mem_required = 0;
-
-  for (int i = first_idx_to_cache; i < msgs.size(); i++) {
+  for (int i = 0; i < msgs.size(); i++) {
     mem_required += msgs[i]->get()->SpaceUsed();
   }
 
-  // Once either the local or global soft limit is exceeded...
+  // Try to consume the memory. If it can't be consumed, we may need to evict.
+  bool borrowed_memory = false;
   if (!tracker_->TryConsume(mem_required)) {
+    int spare = tracker_->SpareCapacity();
+    int need_to_free = mem_required - spare;
+    VLOG_WITH_PREFIX(1) << "Memory limit would be exceeded trying to append "
+                        << HumanReadableNumBytes::ToString(mem_required)
+                        << " to log cache (available="
+                        << HumanReadableNumBytes::ToString(spare)
+                        << "): attempting to evict some operations...";
 
-    // Check if we'd hit the hard limit
-    if (WouldHardLimitBeViolated(mem_required)) {
-      return false;
-    }
+    // TODO: we should also try to evict from other tablets - probably better to
+    // evict really old ops from another tablet than evict recent ops from this one.
+    EvictSomeUnlocked(min_pinned_op_index_, need_to_free);
 
-    // If we're under the hard limit, we can continue anyway.
+    // Force consuming, so that we don't refuse appending data. We might
+    // blow past our limit a little bit (as much as the number of tablets times
+    // the amount of in-flight data in the log), but until implementing the above TODO,
+    // it's difficult to solve this issue.
     tracker_->Consume(mem_required);
+
+    borrowed_memory = parent_tracker_->LimitExceeded();
+  }
+
+  for (int i = 0; i < msgs.size(); i++) {
+    InsertOrDie(&cache_,  msgs[i]->get()->id().index(), msgs[i]);
   }
 
   // We drop the lock during the AsyncAppendReplicates call, since it may block
   // if the queue is full, and the queue might not drain if it's trying to call
   // our callback and blocked on this lock.
   l.unlock();
-  Status log_status = log_->AsyncAppendReplicates(msgs, callback);
+
+  Status log_status = log_->AsyncAppendReplicates(
+    msgs, Bind(&LogCache::LogCallback,
+               Unretained(this),
+               last_idx_in_batch,
+               borrowed_memory,
+               callback));
   l.lock();
   if (!log_status.ok()) {
     LOG_WITH_PREFIX(WARNING) << "Couldn't append to log: " << log_status.ToString();
     tracker_->Release(mem_required);
-    return false;
+    return log_status;
   }
 
   metrics_.log_cache_size_bytes->IncrementBy(mem_required);
-  metrics_.log_cache_total_num_ops->IncrementBy(msgs.size() - first_idx_to_cache);
+  metrics_.log_cache_total_num_ops->IncrementBy(msgs.size());
 
-  for (int i = first_idx_to_cache; i < msgs.size(); i++) {
-    InsertOrDie(&cache_,  msgs[i]->get()->id().index(), msgs[i]);
+  next_sequential_op_index_ = msgs.back()->get()->id().index() + 1;
+
+  return Status::OK();
+}
+
+void LogCache::LogCallback(int64_t last_idx_in_batch,
+                           bool borrowed_memory,
+                           const StatusCallback& user_callback,
+                           const Status& log_status) {
+  if (log_status.ok()) {
+    lock_guard<simple_spinlock> l(&lock_);
+    if (min_pinned_op_index_ <= last_idx_in_batch) {
+      VLOG_WITH_PREFIX(1) << "Updating pinned index to " << (last_idx_in_batch + 1);
+      min_pinned_op_index_ = last_idx_in_batch + 1;
+    }
+
+    // If we went over the global limit in order to log this batch, evict some to
+    // get back down under the limit.
+    if (borrowed_memory) {
+      int64_t spare_capacity = parent_tracker_->SpareCapacity();
+      if (spare_capacity < 0) {
+        EvictSomeUnlocked(min_pinned_op_index_, -spare_capacity);
+      }
+    }
+  }
+  user_callback.Run(log_status);
+}
+
+bool LogCache::HasOpBeenWritten(int64_t index) const {
+  lock_guard<simple_spinlock> l(&lock_);
+  return index < next_sequential_op_index_;
+}
+
+Status LogCache::LookupOpId(int64_t op_index, OpId* op_id) const {
+  // First check the log cache itself.
+  {
+    unique_lock<simple_spinlock> l(&lock_);
+    MessageCache::const_iterator iter = cache_.find(op_index);
+    if (iter != cache_.end()) {
+      *op_id = iter->second->get()->id();
+      return Status::OK();
+    }
   }
 
-  return true;
+  // If it misses, read from the log.
+  return log_->GetLogReader()->LookupOpId(op_index, op_id);
 }
 
-bool LogCache::HasOpIndex(int64_t index) const {
-  lock_guard<simple_spinlock> l(&lock_);
-  return ContainsKey(cache_, index);
+namespace {
+// Calculate the total byte size that will be used on the wire to replicate
+// this message as part of a consensus update request. This accounts for the
+// length delimiting and tagging of the message.
+int64_t TotalByteSizeForMessage(const ReplicateMsg& msg) {
+  int msg_size = google::protobuf::internal::WireFormatLite::LengthDelimitedSize(
+    msg.ByteSize());
+  msg_size += 1; // for the type tag
+  return msg_size;
 }
+} // anonymous namespace
 
 Status LogCache::ReadOps(int64_t after_op_index,
                          int max_size_bytes,
                          std::vector<ReplicateRefPtr>* messages,
                          OpId* preceding_op) {
-  lock_guard<simple_spinlock> l(&lock_);
   DCHECK_GE(after_op_index, 0);
-  CHECK_GE(after_op_index, min_pinned_op_index_)
-    << "Cannot currently support reading non-pinned operations";
+  RETURN_NOT_OK(LookupOpId(after_op_index, preceding_op));
 
-  // If the messages the peer needs haven't been loaded into the queue yet,
-  // load them.
-  if (after_op_index < preceding_first_op_.index()) {
-    // If after_op_index is 0, then we can't actually ask the log
-    // to read index 0. Instead, we'll ask for index 1, and then
-    // we special case this in the callback below.
-    int64_t req_op_index = std::max<int64_t>(1, after_op_index);
-
-    Status status = async_reader_->EnqueueAsyncRead(
-      req_op_index, preceding_first_op_.index(),
-      Bind(&LogCache::EntriesLoadedCallback, Unretained(this)));
-    if (status.IsAlreadyPresent()) {
-      // The log reader is already loading another part of the log. We'll try again at some
-      // point.
-      return Status::Incomplete("Cache already busy loading");
-    } else if (status.ok()) {
-      VLOG_WITH_PREFIX(1) << "Enqueued async queue load starting at " << after_op_index
-          << ". Current state: " << ToStringUnlocked();
-      // Successfully enqueued.
-      return Status::Incomplete("Asynchronously reading ops");
-    }
-    RETURN_NOT_OK_PREPEND(status, "Unable to enqueue async log read");
-  }
-
-  if (cache_.empty()) {
-    return Status::NotFound("No ops in cache");
-  }
-
-  // We don't actually start sending on 'lower_bound' but we seek to
-  // it to get the preceding_id.
-  MessageCache::const_iterator iter = cache_.lower_bound(after_op_index);
-  if (iter == cache_.end()) {
-    return Status::NotFound("Op not in cache.");
-  }
-
-  int found_index = iter->first;
-  if (found_index != after_op_index) {
-    // If we were looking for exactly the op that precedes the beginning of the
-    // queue, use our cached OpId
-    if (after_op_index == preceding_first_op_.index()) {
-      preceding_op->CopyFrom(preceding_first_op_);
-    } else {
-      LOG_WITH_PREFIX(FATAL) << "trying to read index " << after_op_index
-          << " but seeked to " << found_index;
-    }
-  } else {
-    // ... otherwise 'preceding_id' is the first element in the iterator and we start sending
-    // on the element after that.
-    preceding_op->CopyFrom((*iter).second->get()->id());
-    iter++;
-
-  }
+  unique_lock<simple_spinlock> l(&lock_);
+  int64_t next_index = after_op_index + 1;
 
   // Return as many operations as we can, up to the limit
-  int total_size = 0;
-  for (; iter != cache_.end(); iter++) {
-    const ReplicateRefPtr& msg = iter->second;
-    int msg_size = google::protobuf::internal::WireFormatLite::LengthDelimitedSize(
-      msg->get()->ByteSize());
-    msg_size += 1; // for the type tag
-    if (total_size + msg_size > max_size_bytes && !messages->empty()) {
-      break;
+  int64_t remaining_space = max_size_bytes;
+  while (remaining_space > 0 && next_index < next_sequential_op_index_) {
+
+    // If the messages the peer needs haven't been loaded into the queue yet,
+    // load them.
+    MessageCache::const_iterator iter = cache_.lower_bound(next_index);
+    if (iter == cache_.end() || iter->first != next_index) {
+      int64_t up_to;
+      if (iter == cache_.end()) {
+        // Read all the way to the current op
+        up_to = next_sequential_op_index_ - 1;
+      } else {
+        // Read up to the next entry that's in the cache
+        up_to = iter->first - 1;
+      }
+
+      l.unlock();
+
+      vector<ReplicateMsg*> raw_replicate_ptrs;
+      RETURN_NOT_OK_PREPEND(
+        log_->GetLogReader()->ReadReplicatesInRange(
+          next_index, up_to, remaining_space, &raw_replicate_ptrs),
+        Substitute("Failed to read ops $0..$1", next_index, up_to));
+      l.lock();
+      LOG_WITH_PREFIX(INFO) << "Successfully read " << raw_replicate_ptrs.size() << " ops "
+                            << "from disk.";
+
+      BOOST_FOREACH(ReplicateMsg* msg, raw_replicate_ptrs) {
+        CHECK_EQ(next_index, msg->id().index());
+
+        remaining_space -= TotalByteSizeForMessage(*msg);
+        if (remaining_space > 0) {
+          messages->push_back(make_scoped_refptr_replicate(msg));
+          next_index++;
+        } else {
+          delete msg;
+        }
+      }
+
+    } else {
+      // Pull contiguous messages from the cache until the size limit is achieved.
+      for (; iter != cache_.end(); ++iter) {
+        const ReplicateRefPtr& msg = iter->second;
+        int64_t index = msg->get()->id().index();
+        if (index != next_index) {
+          continue;
+        }
+
+        remaining_space -= TotalByteSizeForMessage(*msg->get());
+        if (remaining_space < 0 && !messages->empty()) {
+          break;
+        }
+
+        messages->push_back(msg);
+        next_index++;
+      }
     }
-
-    messages->push_back(msg);
-    total_size += msg_size;
   }
-
   return Status::OK();
 }
 
-void LogCache::EntriesLoadedCallback(int64_t after_op_index,
-                                     const Status& status,
-                                     const vector<ReplicateMsg*>& replicates) {
-  // TODO deal with errors when loading operations.
-  CHECK_OK(status);
 
-  // OK, we're all done, we can now bulk load the operations into the queue.
+void LogCache::EvictThroughOp(int64_t index) {
+  lock_guard<simple_spinlock> lock(&lock_);
 
-  // Note that we don't check queue limits. Were we to stop adding operations
-  // in the middle of the sequence the queue would have holes so it is possible
-  // that we're breaking queue limits right here.
-
-  size_t total_size = 0;
-
-  // TODO enforce some sort of limit on how much can be loaded from disk
-  {
-    lock_guard<simple_spinlock> lock(&lock_);
-
-    // We were told to load ops after 'new_preceding_first_op_index' so we skip
-    // the first one, whose OpId will become our new 'preceding_first_op_'
-    vector<ReplicateMsg*>::const_iterator iter = replicates.begin();
-
-    // If the pin has moved past the first message's id we no longer need them
-    // and we skip adding them to the cache.
-    // Similarly, if the queue's preceding id is not the one we're expecting, that
-    // means we likely got demoted and re-promoted, in which case the operations
-    // we're about to load might not be relevant anymore.
-    if (replicates.front()->id().index() < min_pinned_op_index_ ||
-        !OpIdEquals(replicates.back()->id(), preceding_first_op_)) {
-      LOG_WITH_PREFIX(INFO) << "Can't load operations into the queue, pin advanced"
-          "past the first operation or preceding op changed. First requested"
-          " op: " << replicates.front()->id() << " " << ToStringUnlocked();
-      for (; iter != replicates.end(); ++iter) {
-        delete (*iter);
-      }
-      return;
-    }
-
-    OpId preceding_id;
-    // Special case when the caller requested all operations after MinimumOpId()
-    // since that operation does not exist, we need to set it ourselves.
-    if (after_op_index == 1 && replicates[0]->id().index() == 1) {
-      preceding_id = MinimumOpId();
-    // otherwise just skip the first operation, which will become the preceding id.
-    } else {
-      preceding_id = (*iter)->id();
-      delete *iter;
-      ++iter;
-    }
-
-    for (; iter != replicates.end(); ++iter) {
-      ReplicateMsg* replicate = *iter;
-      InsertOrDie(&cache_, replicate->id().index(), make_scoped_refptr_replicate(replicate));
-      size_t size = replicate->SpaceUsed();
-      tracker_->Consume(size);
-      total_size += size;
-    }
-
-    preceding_first_op_ = preceding_id;
-    LOG_WITH_PREFIX(INFO) << "Loaded operations into the cache after: "
-        << preceding_id << " to: " << replicates.back()->id() << " for a total of: "
-        << replicates.size() << ". Current state: " << ToStringUnlocked();
-  }
-
-  metrics_.log_cache_total_num_ops->IncrementBy(replicates.size());
-  metrics_.log_cache_size_bytes->IncrementBy(total_size);
+  EvictSomeUnlocked(index, MathLimits<int64_t>::kMax);
 }
 
-void LogCache::Evict() {
-  lock_guard<simple_spinlock> lock(&lock_);
-  MessageCache::iterator iter = cache_.begin();
+void LogCache::EvictSomeUnlocked(int64_t stop_after_index, int64_t bytes_to_evict) {
+  DCHECK(lock_.is_locked());
+  VLOG_WITH_PREFIX(2) << "Evicting log cache index <= "
+                      << stop_after_index
+                      << " or " << HumanReadableNumBytes::ToString(bytes_to_evict)
+                      << ": before state: " << ToStringUnlocked();
 
-  VLOG_WITH_PREFIX(1) << "Evicting log cache: before state: " << ToStringUnlocked();
-  while (iter != cache_.end() &&
-         iter->first < min_pinned_op_index_) {
+  int64_t bytes_evicted = 0;
+  for (MessageCache::iterator iter = cache_.begin();
+       iter != cache_.end();) {
     const ReplicateRefPtr& msg = (*iter).second;
-    preceding_first_op_ = msg->get()->id();;
-    VLOG_WITH_PREFIX(1) << "Evicting cache. Removing: " << msg->get()->id().ShortDebugString();
+    VLOG_WITH_PREFIX(1) << "considering for eviction: " << msg->get()->id();
+    int64_t msg_index = msg->get()->id().index();
+    if (msg_index == 0) {
+      // Always keep our special '0' op.
+      ++iter;
+      continue;
+    }
+
+    if (msg_index > stop_after_index || msg_index >= min_pinned_op_index_) {
+      break;
+    }
+
+    if (!msg->HasOneRef()) {
+      VLOG_WITH_PREFIX(2) << "Evicting cache: cannot remove " << msg->get()->id()
+                          << " because it is in-use by a peer.";
+      ++iter;
+      continue;
+    }
+
+    VLOG_WITH_PREFIX(1) << "Evicting cache. Removing: " << msg->get()->id();
     AccountForMessageRemovalUnlocked(msg);
+    bytes_evicted += msg->get()->SpaceUsed();
     cache_.erase(iter++);
+
+    if (bytes_evicted >= bytes_to_evict) {
+      break;
+    }
   }
   VLOG_WITH_PREFIX(1) << "Evicting log cache: after state: " << ToStringUnlocked();
-}
-
-bool LogCache::WouldHardLimitBeViolated(size_t bytes) const {
-  bool local_limit_violated = (bytes + tracker_->consumption()) > max_ops_size_bytes_hard_;
-  bool global_limit_violated = (bytes + parent_tracker_->consumption())
-      > global_max_ops_size_bytes_hard_;
-#ifndef NDEBUG
-  if (VLOG_IS_ON(1)) {
-    DVLOG(1) << "global consumption: "
-             << HumanReadableNumBytes::ToString(parent_tracker_->consumption());
-    string human_readable_bytes = HumanReadableNumBytes::ToString(bytes);
-    if (local_limit_violated) {
-      DVLOG(1) << "adding " << human_readable_bytes
-               << " would violate local hard limit ("
-               << HumanReadableNumBytes::ToString(max_ops_size_bytes_hard_) << ").";
-    }
-    if (global_limit_violated) {
-      DVLOG(1) << "adding " << human_readable_bytes
-               << " would violate global hard limit ("
-               << HumanReadableNumBytes::ToString(global_max_ops_size_bytes_hard_) << ").";
-    }
-  }
-#endif
-  return local_limit_violated || global_limit_violated;
 }
 
 void LogCache::AccountForMessageRemovalUnlocked(const ReplicateRefPtr& msg) {
@@ -405,8 +383,8 @@ std::string LogCache::ToString() const {
 }
 
 std::string LogCache::ToStringUnlocked() const {
-  return Substitute("Preceding Op: $0, Pinned index: $1, $2",
-                    OpIdToString(preceding_first_op_), min_pinned_op_index_,
+  return Substitute("Pinned index: $0, $1",
+                    min_pinned_op_index_,
                     StatsStringUnlocked());
 }
 
@@ -428,7 +406,6 @@ void LogCache::DumpToStrings(vector<string>* lines) const {
   lock_guard<simple_spinlock> lock(&lock_);
   int counter = 0;
   lines->push_back(ToStringUnlocked());
-  lines->push_back(Substitute("Preceding Id: $0", preceding_first_op_.ShortDebugString()));
   lines->push_back("Messages:");
   BOOST_FOREACH(const MessageCache::value_type& entry, cache_) {
     const ReplicateMsg* msg = entry.second->get();

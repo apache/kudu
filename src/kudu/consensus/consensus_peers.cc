@@ -21,6 +21,7 @@
 #include "kudu/util/logging.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/net_util.h"
+#include "kudu/util/threadpool.h"
 
 DEFINE_int32(consensus_rpc_timeout_ms, 1000,
              "Timeout used for all consensus internal RPC comms.");
@@ -45,6 +46,7 @@ Status Peer::NewRemotePeer(const metadata::QuorumPeerPB& peer_pb,
                            const string& tablet_id,
                            const string& leader_uuid,
                            PeerMessageQueue* queue,
+                           ThreadPool* thread_pool,
                            gscoped_ptr<PeerProxy> proxy,
                            gscoped_ptr<Peer>* peer) {
 
@@ -52,7 +54,8 @@ Status Peer::NewRemotePeer(const metadata::QuorumPeerPB& peer_pb,
                                       tablet_id,
                                       leader_uuid,
                                       proxy.Pass(),
-                                      queue));
+                                      queue,
+                                      thread_pool));
   RETURN_NOT_OK(new_peer->Init());
   peer->reset(new_peer.release());
   return Status::OK();
@@ -62,7 +65,8 @@ Peer::Peer(const metadata::QuorumPeerPB& peer_pb,
            const string& tablet_id,
            const string& leader_uuid,
            gscoped_ptr<PeerProxy> proxy,
-           PeerMessageQueue* queue)
+           PeerMessageQueue* queue,
+           ThreadPool* thread_pool)
     : tablet_id_(tablet_id),
       leader_uuid_(leader_uuid),
       peer_pb_(peer_pb),
@@ -73,8 +77,8 @@ Peer::Peer(const metadata::QuorumPeerPB& peer_pb,
       heartbeater_(peer_pb.permanent_uuid(),
                    MonoDelta::FromMilliseconds(FLAGS_leader_heartbeat_interval_ms),
                    boost::bind(&Peer::SignalRequest, this, true)),
+      thread_pool_(thread_pool),
       state_(kPeerCreated) {
-
 }
 
 void Peer::SetTermForTest(int term) {
@@ -109,13 +113,16 @@ Status Peer::SignalRequest(bool even_if_queue_empty) {
   }
 
   DCHECK_EQ(state_, kPeerIdle);
-  SendNextRequest(even_if_queue_empty);
+
+  RETURN_NOT_OK(thread_pool_->SubmitClosure(
+                  Bind(&Peer::SendNextRequest, Unretained(this), even_if_queue_empty)));
   return Status::OK();
 }
 
 void Peer::SendNextRequest(bool even_if_queue_empty) {
   // the peer has no pending request nor is sending: send the request
-  Status s = queue_->RequestForPeer(peer_pb_.permanent_uuid(), &request_);
+  Status s = queue_->RequestForPeer(peer_pb_.permanent_uuid(), &request_,
+                                    &replicate_msg_refs_);
   if (PREDICT_FALSE(!s.ok())) {
     LOG_WITH_PREFIX(INFO) << "Could not obtain request from queue for peer: "
         << peer_pb_.permanent_uuid() << ". Status: " << s.ToString();

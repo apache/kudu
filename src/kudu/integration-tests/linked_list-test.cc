@@ -261,10 +261,8 @@ TEST_F(LinkedListTest, TestLoadWhileOneServerDownAndVerify) {
     FLAGS_ts_flags += " ";
   }
 
-  // TODO: once the log cache has been refactored to support these
-  // new configs, uncomment the following:
-  //  FLAGS_ts_flags += "--log_cache_size_limit_mb=2";
-  //  FLAGS_ts_flags += " --global_log_cache_size_limit_mb=4";
+  FLAGS_ts_flags += "--log_cache_size_limit_mb=2";
+  FLAGS_ts_flags += " --global_log_cache_size_limit_mb=4";
 
   FLAGS_num_tablet_servers = 3;
   FLAGS_num_tablets = 1;
@@ -282,11 +280,12 @@ TEST_F(LinkedListTest, TestLoadWhileOneServerDownAndVerify) {
   // able to stream the data back from the other server which is still up.
   ASSERT_OK(cluster_->tablet_server(0)->Restart());
 
-  // We assume that the servers should converge in about the same speed as we inserted
-  // the data. We'll also add an extra 5 seconds to account for startup/bootstrap time.
-  int timeout_secs = FLAGS_seconds_to_run + 5;
+  // We'll give the tablets 5 seconds to start up regardless of how long we
+  // inserted for. This prevents flakiness in TSAN builds in particular.
+  const int kBaseTimeToWaitSecs = 5;
+  const int kWaitTime = FLAGS_seconds_to_run + kBaseTimeToWaitSecs;
   ASSERT_NO_FATAL_FAILURE(WaitForServersToAgree(
-                            MonoDelta::FromSeconds(timeout_secs),
+                            MonoDelta::FromSeconds(kWaitTime),
                             written / FLAGS_num_chains));
 
   cluster_->tablet_server(1)->Shutdown();

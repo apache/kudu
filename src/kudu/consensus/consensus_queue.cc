@@ -14,7 +14,6 @@
 #include "kudu/consensus/consensus_queue.h"
 
 #include "kudu/consensus/raft_consensus.h"
-#include "kudu/consensus/async_log_reader.h"
 #include "kudu/consensus/log.h"
 #include "kudu/consensus/log_reader.h"
 #include "kudu/consensus/log_util.h"
@@ -26,17 +25,15 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/strings/strcat.h"
 #include "kudu/gutil/strings/human_readable.h"
-#include "kudu/util/auto_release_pool.h"
+#include "kudu/util/locks.h"
 #include "kudu/util/logging.h"
 #include "kudu/util/mem_tracker.h"
 #include "kudu/util/metrics.h"
+#include "kudu/util/threadpool.h"
 #include "kudu/util/url-coding.h"
 
 DEFINE_int32(consensus_max_batch_size_bytes, 1024 * 1024,
              "The maximum per-tablet RPC batch size when updating peers.");
-DEFINE_bool(consensus_dump_queue_on_full, false,
-            "Whether to dump the full contents of the consensus queue to the log"
-            " when it gets full. Mostly useful for debugging.");
 
 namespace kudu {
 namespace consensus {
@@ -147,11 +144,9 @@ void PeerMessageQueue::TrackPeerUnlocked(const string& uuid) {
   tracked_peer->log_tail = queue_state_.last_appended;
   InsertOrDie(&peers_map_, uuid, tracked_peer);
 
-  // We don't know how far back this peer is so set the all replicated
-  // watermark and the pinned op to MinimumOpId(). We'll advance it when
-  // we know how far along the peer is.
+  // We don't know how far back this peer is, so set the all replicated watermark to
+  // MinimumOpId. We'll advance it when we know how far along the peer is.
   queue_state_.all_replicated_opid = MinimumOpId();
-  log_cache_.SetPinnedOp(MinimumOpId().index());
 }
 
 void PeerMessageQueue::UntrackPeer(const string& uuid) {
@@ -205,18 +200,11 @@ Status PeerMessageQueue::AppendOperations(const vector<ReplicateRefPtr>& msgs,
   // for the log buffer to empty, it may need to call LocalPeerAppendFinished()
   // which also needs queue_lock_.
   lock.unlock();
-  if (!log_cache_.AppendOperations(msgs,
-                                   Bind(&PeerMessageQueue::LocalPeerAppendFinished,
-                                        Unretained(this),
-                                        last_id,
-                                        log_append_callback))) {
-    if (PREDICT_FALSE((VLOG_IS_ON(2) || FLAGS_consensus_dump_queue_on_full))) {
-      LOG_WITH_PREFIX(INFO) << "Queue Full. Can't Append: " << msgs.size()  << ". Dumping State:";
-      log_cache_.DumpToLog();
-    }
-    return Status::ServiceUnavailable("Cannot append replicate message. Queue is full.");
-  }
-
+  RETURN_NOT_OK(log_cache_.AppendOperations(msgs,
+                                            Bind(&PeerMessageQueue::LocalPeerAppendFinished,
+                                                 Unretained(this),
+                                                 last_id,
+                                                 log_append_callback)));
   lock.lock();
   queue_state_.last_appended = last_id;
   UpdateMetrics();
@@ -255,8 +243,9 @@ Status PeerMessageQueue::GetOpsFromCacheOrFallback(const OpId& op,
 }
 
 Status PeerMessageQueue::RequestForPeer(const string& uuid,
-                                        ConsensusRequestPB* request) {
-  boost::lock_guard<simple_spinlock> lock(queue_lock_);
+                                        ConsensusRequestPB* request,
+                                        vector<ReplicateRefPtr>* msg_refs) {
+  kudu::unique_lock<simple_spinlock> lock(&queue_lock_);
   DCHECK_EQ(queue_state_.state, kQueueOpen);
   DCHECK_NE(uuid, local_uuid_);
 
@@ -271,6 +260,9 @@ Status PeerMessageQueue::RequestForPeer(const string& uuid,
   // This is initialized to the queue's last appended op but gets set to the id of the
   // log entry preceding the first one in 'messages' if messages are found for the peer.
   OpId preceding_id = queue_state_.last_appended;
+  request->mutable_committed_index()->CopyFrom(queue_state_.committed_index);
+  request->set_caller_term(queue_state_.current_term);
+  lock.unlock();
 
   // If we've never communicated with the peer, we don't know what messages to
   // send, so we'll send a status-only request. Otherwise, we grab requests
@@ -296,7 +288,7 @@ Status PeerMessageQueue::RequestForPeer(const string& uuid,
                                          &messages,
                                          &preceding_id);
 
-    if (PREDICT_FALSE(!s.ok() && !s.IsIncomplete())) {
+    if (PREDICT_FALSE(!s.ok())) {
       CHECK(messages.empty());
       LOG_WITH_PREFIX(DFATAL) << "Error while reading the log: " << s.ToString();
     }
@@ -308,13 +300,12 @@ Status PeerMessageQueue::RequestForPeer(const string& uuid,
     BOOST_FOREACH(const ReplicateRefPtr& msg, messages) {
       request->mutable_ops()->AddAllocated(msg->get());
     }
+    msg_refs->swap(messages);
     DCHECK_LE(request->ByteSize(), FLAGS_consensus_max_batch_size_bytes);
   }
 
   DCHECK(preceding_id.IsInitialized());
   request->mutable_preceding_id()->CopyFrom(preceding_id);
-  request->mutable_committed_index()->CopyFrom(queue_state_.committed_index);
-  request->set_caller_term(queue_state_.current_term);
 
   if (PREDICT_FALSE(VLOG_IS_ON(2))) {
     if (request->ops_size() > 0) {
@@ -432,12 +423,10 @@ void PeerMessageQueue::ResponseFromPeer(const OpId& last_sent,
           if (previous.is_new) {
             // That's currently how we can detect that we able to connect to a peer.
             LOG_WITH_PREFIX(INFO) << "Connected to new peer: " << peer->ToString();
-            *more_pending = true;
           } else {
             LOG_WITH_PREFIX(INFO) << "Got LMP mismatch error from peer: " << peer->ToString();
-            *more_pending = false;
           }
-
+          *more_pending = true;
           return;
         }
         case ConsensusErrorPB::INVALID_TERM: {
@@ -475,7 +464,7 @@ void PeerMessageQueue::ResponseFromPeer(const OpId& last_sent,
           << ". Response: " << response.ShortDebugString();
     }
 
-    *more_pending = log_cache_.HasOpIndex(peer->log_tail.index() + 1);
+    *more_pending = log_cache_.HasOpBeenWritten(peer->log_tail.index() + 1);
 
     mode_copy = queue_state_.mode;
     if (mode_copy == LEADER) {
@@ -496,7 +485,7 @@ void PeerMessageQueue::ResponseFromPeer(const OpId& last_sent,
                           peer->last_received,
                           peers_map_.size());
 
-    log_cache_.SetPinnedOp(queue_state_.all_replicated_opid.index());
+    log_cache_.EvictThroughOp(queue_state_.all_replicated_opid.index());
 
     UpdateMetrics();
   }
