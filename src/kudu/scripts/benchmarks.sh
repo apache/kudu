@@ -361,7 +361,7 @@ parse_and_record_all_results() {
   for i in $(seq 1 $NUM_SAMPLES); do
     local log=$LOGDIR/${FS_SCANINSERT_DISK}$i.log
     insert=`grep "Time spent concurrent inserts" $log | ./parse_real_out.sh`
-    scan=`grep "Time spent full schema scan" $log | ./parse_real_out.sh`
+    scan_full=`grep "Time spent full schema scan" $log | ./parse_real_out.sh`
     scan_str=`grep "Time spent String projection" $log | ./parse_real_out.sh`
     scan_int32=`grep "Time spent Int32 projection" $log | ./parse_real_out.sh`
     scan_int64=`grep "Time spent Int64 projection" $log | ./parse_real_out.sh`
