@@ -109,9 +109,17 @@ for ATTEMPT_NUMBER in $(seq 1 $TEST_EXECUTION_ATTEMPTS) ; do
 
   # TSAN doesn't always exit with a non-zero exit code due to a bug:
   # mutex errors don't get reported through the normal error reporting infrastructure.
-  if zgrep --silent "ThreadSanitizer" $LOGFILE ; then
-    echo ThreadSanitizer failures in $LOGFILE
+  # So we make sure to detect this and exit 1.
+  #
+  # Additionally, certain types of failures won't show up in the standard JUnit
+  # XML output from gtest. We assume that gtest knows better than us and our
+  # regexes in most cases, but for certain errors we delete the resulting xml
+  # file and let our own post-processing step regenerate it.
+  export GREP=$(which egrep)
+  if zgrep --silent "ThreadSanitizer|Leak check.*detected leaks" $LOGFILE ; then
+    echo ThreadSanitizer or leak check failures in $LOGFILE
     STATUS=1
+    rm -f $XMLFILE
   fi
 
   if [ $ATTEMPT_NUMBER -lt $TEST_EXECUTION_ATTEMPTS ]; then
