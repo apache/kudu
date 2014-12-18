@@ -57,11 +57,12 @@ rm -f *
 set -o pipefail
 
 LOGFILE=$TEST_LOGDIR/$TEST_NAME.txt
+XMLFILE=$TEST_LOGDIR/$TEST_NAME.xml
 
 # Remove both the compressed and uncompressed output, so the developer
 # doesn't accidentally get confused and read output from a prior test
 # run.
-rm -f $LOGFILE $OUT.gz
+rm -f $LOGFILE $LOGFILE.gz
 
 if [ -n "$KUDU_COMPRESS_TEST_OUTPUT" ] && [ "$KUDU_COMPRESS_TEST_OUTPUT" -ne 0 ] ; then
   pipe_cmd=gzip
@@ -92,6 +93,10 @@ for ATTEMPT_NUMBER in $(seq 1 $TEST_EXECUTION_ATTEMPTS) ; do
     # The comm program requires that its two inputs be sorted.
     TEST_TMPDIR_BEFORE=$(find $TEST_TMPDIR -maxdepth 1 -type d | sort)
   fi
+
+  # gtest won't overwrite old junit test files, resulting in a build failure
+  # even when retries are successful.
+  rm -f $XMLFILE
 
   echo "Running $TEST_NAME, redirecting output into $LOGFILE" \
     "(attempt ${ATTEMPT_NUMBER}/$TEST_EXECUTION_ATTEMPTS)"
