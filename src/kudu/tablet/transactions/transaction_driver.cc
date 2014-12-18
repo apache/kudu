@@ -65,13 +65,6 @@ void TransactionDriver::Init(Transaction* transaction,
   txn_tracker_->Add(this);
 }
 
-void TransactionDriver::ApplyTask() {
-  Status s = ApplyAndTriggerCommit();
-  if (!s.ok()) {
-    HandleFailure(s);
-  }
-}
-
 consensus::OpId TransactionDriver::GetOpId() {
   boost::lock_guard<simple_spinlock> lock(opid_lock_);
   return op_id_copy_;
@@ -292,7 +285,27 @@ Status TransactionDriver::ApplyAsync() {
       DCHECK_EQ(replication_state_, REPLICATED);
     } else {
       DCHECK_EQ(replication_state_, REPLICATION_FAILED);
+      DCHECK(!transaction_status_.ok());
     }
+  }
+
+  return apply_pool_->SubmitClosure(Bind(&TransactionDriver::ApplyTask, Unretained(this)));
+}
+
+void TransactionDriver::ApplyTask() {
+  Status s = ApplyAndTriggerCommit();
+  if (!s.ok()) {
+    HandleFailure(s);
+  }
+}
+
+Status TransactionDriver::ApplyAndTriggerCommit() {
+  ADOPT_TRACE(trace());
+
+  Status txn_status_copy;
+
+  {
+    boost::lock_guard<simple_spinlock> lock(lock_);
     txn_status_copy = transaction_status_;
   }
 
@@ -302,12 +315,6 @@ Status TransactionDriver::ApplyAsync() {
     // the Apply(), likely someone called Abort();
     return Status::OK();
   }
-
-  return apply_pool_->SubmitClosure(Bind(&TransactionDriver::ApplyTask, Unretained(this)));
-}
-
-Status TransactionDriver::ApplyAndTriggerCommit() {
-  ADOPT_TRACE(trace());
 
   {
     boost::lock_guard<simple_spinlock> lock(lock_);
