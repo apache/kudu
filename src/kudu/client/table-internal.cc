@@ -7,9 +7,11 @@
 
 #include "kudu/client/client-internal.h"
 #include "kudu/common/wire_protocol.h"
+#include "kudu/gutil/strings/substitute.h"
 #include "kudu/master/master.pb.h"
 #include "kudu/master/master.proxy.h"
 #include "kudu/rpc/rpc_controller.h"
+#include "kudu/util/monotime.h"
 
 namespace kudu {
 
@@ -36,12 +38,25 @@ Status KuduTable::Data::Open() {
   GetTableLocationsRequestPB req;
   GetTableLocationsResponsePB resp;
 
+  MonoTime deadline = MonoTime::Now(MonoTime::FINE);
+  deadline.AddDelta(client_->data_->default_select_master_timeout_);
   req.mutable_table()->set_table_name(name_);
   Status s;
   // TODO: replace this with Async RPC-retrier based RPC in the next revision,
   // adding exponential backoff and allowing this to be used safely in a
   // a reactor thread.
-  do {
+  while (true) {
+    if (deadline.ComesBefore(MonoTime::Now(MonoTime::FINE))) {
+      // TODO: See KUDU-572, regarding better design and/or documentation for
+      // timeouts and failure detection.
+      int64_t timeout_millis =
+          client_->data_->default_select_master_timeout_.ToMilliseconds();
+      LOG(ERROR) << "Timed out waiting for non-empty GetTableLocations reply from a leader Master "
+          "after " << timeout_millis << " ms.";
+      return Status::TimedOut(strings::Substitute("Timed out waiting for non-empty "
+                                                  "GetTableLocations reply from a leader master "
+                                                  "after $0 ms.", timeout_millis));
+    }
     rpc::RpcController rpc;
     rpc.set_timeout(client_->default_admin_operation_timeout());
     s = client_->data_->master_proxy_->GetTableLocations(req, &resp, &rpc);
@@ -89,9 +104,9 @@ Status KuduTable::Data::Open() {
       break;
     }
 
-    /* TODO: Add a timeout or number of retries */
+    /* TODO: Use exponential backoff instead */
     usleep(100000);
-  } while (1);
+  }
 
   VLOG(1) << "Open Table " << name_ << ", found " << resp.tablet_locations_size() << " tablets";
   return Status::OK();

@@ -431,6 +431,18 @@ const NodeInstancePB& ExternalDaemon::instance_id() const {
 }
 
 //------------------------------------------------------------
+// ScopedResumeExternalDaemon
+//------------------------------------------------------------
+
+ScopedResumeExternalDaemon::ScopedResumeExternalDaemon(ExternalDaemon* daemon)
+    : daemon_(CHECK_NOTNULL(daemon)) {
+}
+
+ScopedResumeExternalDaemon::~ScopedResumeExternalDaemon() {
+  daemon_->Resume();
+}
+
+//------------------------------------------------------------
 // ExternalMaster
 //------------------------------------------------------------
 

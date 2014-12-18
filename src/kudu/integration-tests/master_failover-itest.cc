@@ -71,6 +71,20 @@ class MasterFailoverTest : public KuduTest {
         .schema(&client_schema)
         .Create();
   }
+
+  Status OpenTableAndScanner(const std::string& table_name) {
+    scoped_refptr<KuduTable> table;
+    RETURN_NOT_OK_PREPEND(client_->OpenTable(table_name, &table),
+                          "Unable to open table " + table_name);
+    KuduScanner scanner(table.get());
+    KuduSchema empty_projection(vector<KuduColumnSchema>(), 0);
+    RETURN_NOT_OK_PREPEND(scanner.SetProjection(&empty_projection),
+                          "Unable to open an empty projection on " + table_name);
+    RETURN_NOT_OK_PREPEND(scanner.Open(),
+                          "Unable to open scanner on " + table_name);
+    return Status::OK();
+  }
+
  protected:
   int num_masters_;
   ExternalMiniClusterOptions opts_;
@@ -78,22 +92,17 @@ class MasterFailoverTest : public KuduTest {
   shared_ptr<KuduClient> client_;
 };
 
+
 // Test that any master can be paused without halting lookups during
 // the pause.
 TEST_F(MasterFailoverTest, TestPauseAnyMaster) {
   ASSERT_STATUS_OK(CreateTable(kTableId1));
   for (int i = 0; i < num_masters_; i++) {
     LOG(INFO) << "Pausing master: " << i;
-    scoped_refptr<KuduTable> table;
     cluster_->master(i)->Pause();
+    ScopedResumeExternalDaemon(cluster_->master(i));
 
-    ASSERT_STATUS_OK(client_->OpenTable(kTableId1, &table));
-    KuduScanner scanner(table.get());
-    KuduSchema empty_projection(vector<KuduColumnSchema>(), 0);
-    ASSERT_STATUS_OK(scanner.SetProjection(&empty_projection));
-    ASSERT_STATUS_OK(scanner.Open());
-
-    cluster_->master(i)->Resume();
+    EXPECT_OK(OpenTableAndScanner(kTableId1));
   }
 }
 

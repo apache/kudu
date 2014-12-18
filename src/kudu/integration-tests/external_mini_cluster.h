@@ -228,6 +228,23 @@ class ExternalDaemon : public RefCountedThreadSafe<ExternalDaemon> {
   DISALLOW_COPY_AND_ASSIGN(ExternalDaemon);
 };
 
+// Resumes a daemon that was stopped with ExteranlDaemon::Pause() upon
+// exiting a scope.
+class ScopedResumeExternalDaemon {
+ public:
+  // 'daemon' must remain valid for the lifetime of a
+  // ScopedResumeExternalDaemon object.
+  explicit ScopedResumeExternalDaemon(ExternalDaemon* daemon);
+
+  // Resume 'daemon_'.
+  ~ScopedResumeExternalDaemon();
+
+ private:
+  ExternalDaemon* daemon_;
+
+  DISALLOW_COPY_AND_ASSIGN(ScopedResumeExternalDaemon);
+};
+
 
 class ExternalMaster : public ExternalDaemon {
  public:
