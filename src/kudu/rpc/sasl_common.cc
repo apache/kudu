@@ -72,7 +72,8 @@ static int SaslLogCallback(void* context, int level, const char* message) {
 // context: not used
 // plugin_name: name of plugin for which an option is being requested.
 // option: option requested
-// result: value for option
+// result: set to result which persists until next getopt in same thread,
+//         unchanged if option not found
 // len: length of the result
 // Return SASL_FAIL if the option is not handled, this does not fail the handshake.
 static int SaslGetOption(void* context, const char* plugin_name, const char* option,
@@ -87,7 +88,10 @@ static int SaslGetOption(void* context, const char* plugin_name, const char* opt
       } else if (VLOG_IS_ON(3)) {
         level = SASL_LOG_TRACE;
       }
-      static char buf[4];
+      // The library's contract for this method is that the caller gets to keep
+      // the returned buffer until the next call by the same thread, so we use a
+      // threadlocal for the buffer.
+      static __thread char buf[4];
       snprintf(buf, arraysize(buf), "%d", level);
       *result = buf;
       if (len != NULL) *len = strlen(buf);
