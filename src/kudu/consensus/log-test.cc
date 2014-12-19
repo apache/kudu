@@ -8,8 +8,9 @@
 #include <glog/stl_logging.h>
 #include <vector>
 
-#include "kudu/consensus/log-test-base.h"
 #include "kudu/consensus/consensus-test-util.h"
+#include "kudu/consensus/log-test-base.h"
+#include "kudu/consensus/log_index.h"
 #include "kudu/consensus/opid_util.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/substitute.h"
@@ -111,10 +112,10 @@ TEST_F(LogTest, TestMultipleEntriesInABatch) {
   BuildLog();
 
   OpId opid;
-  opid.set_term(0);
+  opid.set_term(1);
   opid.set_index(1);
 
-  AppendNoOps(&opid, 2);
+  AppendNoOpsToLogSync(log_.get(), &opid, 2);
 
   // RollOver() the batch so that we have a properly formed footer.
   ASSERT_STATUS_OK(log_->AllocateSegmentAndRollOver());
@@ -127,6 +128,24 @@ TEST_F(LogTest, TestMultipleEntriesInABatch) {
   ASSERT_STATUS_OK(segments[0]->ReadEntries(&entries));
 
   ASSERT_EQ(2, entries.size());
+
+  // Verify the index.
+  {
+    LogIndexEntry entry;
+    ASSERT_OK(log_->log_index_->GetEntry(1, &entry));
+    ASSERT_EQ(1, entry.op_id.term());
+    ASSERT_EQ(1, entry.segment_sequence_number);
+    int64_t offset = entry.offset_in_segment;
+
+    ASSERT_OK(log_->log_index_->GetEntry(2, &entry));
+    ASSERT_EQ(1, entry.op_id.term());
+    ASSERT_EQ(1, entry.segment_sequence_number);
+    int64_t second_offset = entry.offset_in_segment;
+
+    // The second entry should be at the same offset as the first entry
+    // since they were written in the same batch.
+    ASSERT_EQ(second_offset, offset);
+  }
 
   ASSERT_STATUS_OK(log_->Close());
 }

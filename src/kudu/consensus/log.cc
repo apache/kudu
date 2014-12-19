@@ -6,6 +6,7 @@
 #include <algorithm>
 
 #include "kudu/common/wire_protocol.h"
+#include "kudu/consensus/log_index.h"
 #include "kudu/consensus/log_metrics.h"
 #include "kudu/consensus/log_reader.h"
 #include "kudu/consensus/log_util.h"
@@ -228,6 +229,9 @@ Status Log::Init() {
   boost::lock_guard<percpu_rwlock> write_lock(state_lock_);
   CHECK_EQ(kLogInitialized, log_state_);
 
+  // Init the index
+  log_index_.reset(new LogIndex(log_dir_));
+
   // Reader for previous segments.
   RETURN_NOT_OK(LogReader::Open(fs_manager_,
                                 tablet_id_,
@@ -422,6 +426,8 @@ Status Log::DoAppend(LogEntryBatch* entry_batch, bool caller_owns_operation) {
     VLOG(1) << "Segment allocation already in progress...";
   }
 
+  int64_t start_offset = active_segment_->written_offset();
+
   LOG_SLOW_EXECUTION(WARNING, 50, "Append to log took a long time") {
     SCOPED_LATENCY_METRIC(metrics_, append_latency);
     SCOPED_WATCH_KERNEL_STACK();
@@ -440,6 +446,7 @@ Status Log::DoAppend(LogEntryBatch* entry_batch, bool caller_owns_operation) {
     metrics_->bytes_logged->IncrementBy(entry_batch_bytes);
   }
 
+  CHECK_OK(UpdateIndexForBatch(*entry_batch, start_offset));
   UpdateFooterForBatch(entry_batch);
 
   // For REPLICATE batches, we expect the caller to free the actual entries if
@@ -451,6 +458,23 @@ Status Log::DoAppend(LogEntryBatch* entry_batch, bool caller_owns_operation) {
     }
   }
 
+  return Status::OK();
+}
+
+Status Log::UpdateIndexForBatch(const LogEntryBatch& batch,
+                                int64_t start_offset) {
+  if (batch.type_ != REPLICATE) {
+    return Status::OK();
+  }
+
+  BOOST_FOREACH(const LogEntryPB& entry_pb, batch.entry_batch_pb_->entry()) {
+    LogIndexEntry index_entry;
+
+    index_entry.op_id = entry_pb.replicate().id();
+    index_entry.segment_sequence_number = active_segment_sequence_number_;
+    index_entry.offset_in_segment = start_offset;
+    RETURN_NOT_OK(log_index_->AddEntry(index_entry));
+  }
   return Status::OK();
 }
 
@@ -589,6 +613,8 @@ Status Log::GC(int64_t min_op_idx, int32_t* num_gced) {
       RETURN_NOT_OK(fs_manager_->env()->DeleteFile(segment->path()));
       (*num_gced)++;
     }
+
+    log_index_->GC(min_op_idx);
   }
   return Status::OK();
 }

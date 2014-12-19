@@ -51,24 +51,44 @@ const char* kTestTablet = "test-log-tablet";
 const bool APPEND_SYNC = true;
 const bool APPEND_ASYNC = false;
 
-static Status AppendNoOpToLogSync(Log* log, OpId* op_id, int* size = NULL) {
-  LogEntryPB log_entry;
-  log_entry.set_type(REPLICATE);
-  ReplicateMsg* repl = log_entry.mutable_replicate();
-  repl->mutable_id()->CopyFrom(*op_id);
-  repl->set_op_type(NO_OP);
-  RETURN_NOT_OK(log->Append(&log_entry));
-  if (size) {
-    // If we're tracking the sizes we need to account for the fact
-    // that the Log wraps the log entry in an LogEntryBatchPB and
-    // that entries are length-prefix encoded (+ 4 bytes).
-    LogEntryBatchPB batch;
-    batch.add_entry()->CopyFrom(log_entry);
-    *size += batch.ByteSize() + log::kEntryHeaderSize;
+// Append a single batch of 'count' NoOps to the log.
+// If 'size' is not NULL, increments it by the expected increase in log size.
+// Increments 'op_id''s index once for each operation logged.
+static Status AppendNoOpsToLogSync(Log* log, OpId* op_id, int count, int* size = NULL) {
+
+  vector<consensus::ReplicateRefPtr> replicates;
+  for (int i = 0; i < count; i++) {
+    consensus::ReplicateRefPtr replicate = make_scoped_refptr_replicate(new ReplicateMsg());
+    ReplicateMsg* repl = replicate->get();
+
+    repl->mutable_id()->CopyFrom(*op_id);
+    repl->set_op_type(NO_OP);
+
+    // Increment op_id.
+    op_id->set_index(op_id->index() + 1);
+
+    if (size) {
+      // If we're tracking the sizes we need to account for the fact that the Log wraps the
+      // log entry in an LogEntryBatchPB, and each actual entry will have a one-byte tag.
+      *size += repl->ByteSize() + 1;
+    }
+    replicates.push_back(replicate);
   }
-  // Increment op_id.
-  op_id->set_index(op_id->index() + 1);
+
+  // Account for the entry batch header and wrapper PB.
+  if (size) {
+    *size += log::kEntryHeaderSize + 5;
+  }
+
+  Synchronizer s;
+  RETURN_NOT_OK(log->AsyncAppendReplicates(replicates,
+                                           s.AsStatusCallback()));
+  s.Wait();
   return Status::OK();
+}
+
+static Status AppendNoOpToLogSync(Log* log, OpId* op_id, int* size = NULL) {
+  return AppendNoOpsToLogSync(log, op_id, 1, size);
 }
 
 class LogTestBase : public KuduTest {
@@ -106,12 +126,18 @@ class LogTestBase : public KuduTest {
   void CheckRightNumberOfSegmentFiles(int expected) {
     // Test that we actually have the expected number of files in the fs.
     // We should have n segments plus '.' and '..'
-    vector<string> segments;
+    vector<string> files;
     ASSERT_STATUS_OK(env_->GetChildren(
                        JoinPathSegments(fs_manager_->GetWalsRootDir(),
                                         kTestTablet),
-                       &segments));
-    ASSERT_EQ(expected + 2, segments.size());
+                       &files));
+    int count = 0;
+    BOOST_FOREACH(const string& s, files) {
+      if (HasPrefixString(s, FsManager::kWalFileNamePrefix)) {
+        count++;
+      }
+    }
+    ASSERT_EQ(expected, count);
   }
 
   void EntriesToIdList(vector<uint32_t>* ids) {

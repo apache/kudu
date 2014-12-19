@@ -28,6 +28,7 @@ class ThreadPool;
 
 namespace log {
 
+class LogIndex;
 class LogReader;
 class LogEntryBatch;
 struct LogMetrics;
@@ -263,6 +264,12 @@ class Log {
   // Update footer_builder_ to reflect the log indexes seen in 'batch'.
   void UpdateFooterForBatch(LogEntryBatch* batch);
 
+  // Update the LogIndex to include entries for the replicate messages found in
+  // 'batch'. The index entry points to the offset 'start_offset' in the current
+  // log segment.
+  Status UpdateIndexForBatch(const LogEntryBatch& batch,
+                             int64_t start_offset);
+
   // Replaces the last "empty" segment in 'log_reader_', i.e. the one currently
   // being written to, by the same segment once properly closed.
   Status ReplaceSegmentInReaderUnlocked();
@@ -311,6 +318,10 @@ class Log {
 
   // A reader for the previous segments that were not yet GC'd.
   gscoped_ptr<LogReader> reader_;
+
+  // Index which translates between operation indexes and the position
+  // of the operation in the log.
+  scoped_refptr<LogIndex> log_index_;
 
   // Lock to protect last_entry_op_id_, which is constantly written but
   // read occasionally by things like consensus and log GC.
