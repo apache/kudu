@@ -122,7 +122,7 @@ class Transaction {
   // A private version of this transaction's transaction state so that
   // we can use base TransactionState methods on destructors.
   TransactionState* state_;
-  consensus::DriverType type_;
+  const consensus::DriverType type_;
   const TransactionType tx_type_;
 };
 
@@ -187,16 +187,19 @@ class TransactionState {
   // Sets the timestamp for the transaction
   virtual void set_timestamp(const Timestamp& timestamp) {
     // make sure we set the timestamp only once
+    lock_guard<simple_spinlock> l(&txn_state_lock_);
     DCHECK_EQ(timestamp_, Timestamp::kInvalidTimestamp);
     timestamp_ = timestamp;
   }
 
   Timestamp timestamp() const {
-    DCHECK(has_timestamp());
+    lock_guard<simple_spinlock> l(&txn_state_lock_);
+    DCHECK(timestamp_ != Timestamp::kInvalidTimestamp);
     return timestamp_;
   }
 
   bool has_timestamp() const {
+    lock_guard<simple_spinlock> l(&txn_state_lock_);
     return timestamp_ != Timestamp::kInvalidTimestamp;
   }
 
@@ -227,14 +230,14 @@ class TransactionState {
   TransactionMetrics tx_metrics_;
 
   // The tablet peer that is coordinating this transaction.
-  TabletPeer* tablet_peer_;
+  TabletPeer* const tablet_peer_;
 
   // Optional callback to be called once the transaction completes.
   gscoped_ptr<TransactionCompletionCallback> completion_clbk_;
 
   AutoReleasePool pool_;
 
-  // This transaction's timestamp
+  // This transaction's timestamp. Protected by txn_state_lock_.
   Timestamp timestamp_;
 
   // The clock error when timestamp_ was read.

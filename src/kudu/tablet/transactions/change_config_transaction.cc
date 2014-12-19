@@ -38,7 +38,7 @@ string ChangeConfigTransactionState::ToString() const {
   boost::lock_guard<simple_spinlock> l(txn_state_lock_);
   return Substitute("ChangeConfigTransactionState [opid=$0, timestamp=$1, request=$2]",
                     consensus_round_->id().ShortDebugString(),
-                    has_timestamp() ? timestamp().ToString() : "NULL",
+                    timestamp_ != Timestamp::kInvalidTimestamp ? timestamp_.ToString() : "NULL",
                     request_ == NULL ? "(none)" : request_->ShortDebugString());
 }
 
