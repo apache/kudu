@@ -59,13 +59,7 @@ class ChangeConfigTransactionState : public TransactionState {
   }
 
   // Note: request_ and response_ are set to NULL after this method returns.
-  void commit() {
-    release_config_sem();
-    // Make the request NULL since after this transaction commits
-    // the request may be deleted at any moment.
-    request_ = NULL;
-    response_ = NULL;
-  }
+  void commit();
 
   virtual std::string ToString() const OVERRIDE;
 

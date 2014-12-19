@@ -35,10 +35,20 @@ Status ChangeConfigTransactionState::set_old_quorum(metadata::QuorumPB quorum) {
 }
 
 string ChangeConfigTransactionState::ToString() const {
+  boost::lock_guard<simple_spinlock> l(txn_state_lock_);
   return Substitute("ChangeConfigTransactionState [opid=$0, timestamp=$1, request=$2]",
                     consensus_round_->id().ShortDebugString(),
                     has_timestamp() ? timestamp().ToString() : "NULL",
                     request_ == NULL ? "(none)" : request_->ShortDebugString());
+}
+
+void ChangeConfigTransactionState::commit() {
+  release_config_sem();
+  // Make the request NULL since after this transaction commits
+  // the request may be deleted at any moment.
+  boost::lock_guard<simple_spinlock> l(txn_state_lock_);
+  request_ = NULL;
+  response_ = NULL;
 }
 
 ChangeConfigTransaction::ChangeConfigTransaction(ChangeConfigTransactionState* tx_state,

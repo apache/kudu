@@ -10,6 +10,7 @@
 #include "kudu/common/wire_protocol.h"
 #include "kudu/consensus/consensus.h"
 #include "kudu/util/auto_release_pool.h"
+#include "kudu/util/locks.h"
 #include "kudu/util/status.h"
 #include "kudu/util/memory/arena.h"
 
@@ -252,6 +253,9 @@ class TransactionState {
   // The timestamp that was propagated by the client in the request
   // Only set if ExternalConsistencyMode = CLIENT_PROPAGATED
   Timestamp client_propagated_timestamp_;
+
+  // Lock that protects access to transaction state.
+  mutable simple_spinlock txn_state_lock_;
 };
 
 // A parent class for the callback that gets called when transactions
