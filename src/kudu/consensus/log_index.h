@@ -37,6 +37,10 @@ struct LogIndexEntry {
 // never sync it to disk. Its only purpose is to allow random-reading earlier entries from
 // the log to serve to Raft followers.
 //
+// This class is thread-safe, but doesn't provide a memory barrier between writers and
+// readers. In other words, if a reader is expected to see an index entry written by a
+// writer, there should be some other synchronization between them to ensure visibility.
+//
 // See .cc file for implementation notes.
 class LogIndex : public RefCountedThreadSafe<LogIndex> {
  public:

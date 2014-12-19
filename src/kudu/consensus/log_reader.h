@@ -17,15 +17,22 @@
 namespace kudu {
 namespace log {
 class Log;
+class LogIndex;
 
 // Reads a set of segments from a given path. Segment headers and footers
 // are read and parsed, but entries are not.
 // This class is thread safe.
 class LogReader {
  public:
+  ~LogReader();
+
   // Opens a LogReader on the default tablet log directory, and sets
   // 'reader' to the newly created LogReader.
+  //
+  // 'index' may be NULL, but if it is, ReadAllReplicateEntries() may not
+  // be used.
   static Status Open(FsManager *fs_manager,
+                     const scoped_refptr<LogIndex>& index,
                      const std::string& tablet_oid,
                      gscoped_ptr<LogReader> *reader);
 
@@ -40,16 +47,18 @@ class LogReader {
   Status GetSegmentPrefixNotIncluding(int64_t index,
                                       SegmentSequence* segments) const;
 
-  // Returns the smallest suffix of segments, from the current sequence, which might
-  // contain REPLICATE messages with the given index.
-  Status GetSegmentSuffixIncluding(int64_t index,
-                                   SegmentSequence* segments) const;
+  // Return a readable segment with the given sequence number, or NULL if it
+  // cannot be found (e.g. if it has already been GCed).
+  scoped_refptr<ReadableLogSegment> GetSegmentBySequenceNumber(int64_t seq) const;
 
   // Copies a snapshot of the current sequence of segments into 'segments'.
   // 'segments' will be cleared first.
   Status GetSegmentsSnapshot(SegmentSequence* segments) const;
 
   // Reads all ReplicateMsgs from 'starting_at' to 'up_to' both inclusive.
+  // The caller takes ownership of the returned ReplicateMsg objects.
+  //
+  // Requires that a LogIndex was passed into LogReader::Open().
   Status ReadAllReplicateEntries(
       const int64_t starting_at,
       const int64_t up_to,
@@ -106,6 +115,7 @@ class LogReader {
   void UpdateLastSegmentOffset(uint64_t readable_to_offset);
 
   LogReader(FsManager *fs_manager,
+            const scoped_refptr<LogIndex>& index,
             const std::string& tablet_name);
 
   // Reads the headers of all segments in 'path_'.
@@ -115,6 +125,7 @@ class LogReader {
   Status InitEmptyReaderForTests();
 
   FsManager *fs_manager_;
+  const scoped_refptr<LogIndex> log_index_;
   const std::string tablet_oid_;
 
   // The sequence of all current log segments in increasing sequence number

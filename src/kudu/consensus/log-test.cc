@@ -224,7 +224,9 @@ void LogTest::DoCorruptionTest(CorruptionType type, int offset,
   // Open a new reader -- we don't reuse the existing LogReader from log_
   // because it has a cached header.
   gscoped_ptr<LogReader> reader;
-  ASSERT_OK(LogReader::Open(fs_manager_.get(), kTestTablet, &reader));
+  ASSERT_OK(LogReader::Open(fs_manager_.get(),
+                            make_scoped_refptr(new LogIndex(log_->log_dir_)),
+                            kTestTablet, &reader));
   ASSERT_EQ(1, reader->num_segments());
 
   SegmentSequence segments;
@@ -571,7 +573,9 @@ TEST_F(LogTest, TestWriteManyBatches) {
 // seg003: 0.20 through 0.29
 // seg004: 0.30 through 0.39
 TEST_F(LogTest, TestLogReader) {
-  LogReader reader(fs_manager_.get(), kTestTablet);
+  LogReader reader(fs_manager_.get(),
+                   scoped_refptr<LogIndex>(),
+                   kTestTablet);
   reader.InitEmptyReaderForTests();
   ASSERT_STATUS_OK(AppendNewEmptySegmentToReader(2, 10, &reader));
   ASSERT_STATUS_OK(AppendNewEmptySegmentToReader(3, 20, &reader));
@@ -610,35 +614,17 @@ TEST_F(LogTest, TestLogReader) {
   ASSERT_EQ(segments[0]->header().sequence_number(), 2);
   ASSERT_EQ(segments[1]->header().sequence_number(), 3);
 
-  // Queries for segment suffixes (useful to seek to segments, e.g. when
-  // when serving ops from the log)
+  // Queries for specific segment sequence numbers.
+  scoped_refptr<ReadableLogSegment> segment = reader.GetSegmentBySequenceNumber(2);
+  ASSERT_EQ(2, segment->header().sequence_number());
+  segment = reader.GetSegmentBySequenceNumber(3);
+  ASSERT_EQ(3, segment->header().sequence_number());
 
-  // Asking the reader for the suffix of segments sure to include 1 should
-  // include all the segments.
-  ASSERT_OK(reader.GetSegmentSuffixIncluding(1, &segments));
-  ASSERT_EQ(segments.size(), 3);
+  segment = reader.GetSegmentBySequenceNumber(4);
+  ASSERT_EQ(4, segment->header().sequence_number());
 
-  // ... asking for 10 should return all three segments as well.
-  ASSERT_OK(reader.GetSegmentSuffixIncluding(10, &segments));
-  ASSERT_EQ(segments.size(), 3);
-
-  // ... asking for 15 should return all three segments
-  ASSERT_OK(reader.GetSegmentSuffixIncluding(15, &segments));
-  ASSERT_EQ(segments.size(), 3);
-
-  // ... asking for 20 should return segments 3, 4
-  ASSERT_OK(reader.GetSegmentSuffixIncluding(20, &segments));
-  ASSERT_EQ(segments.size(), 2);
-  ASSERT_EQ(segments[0]->header().sequence_number(), 3);
-  ASSERT_EQ(segments[1]->header().sequence_number(), 4);
-
-  // ... asking for 40 should return no segments
-  ASSERT_OK(reader.GetSegmentSuffixIncluding(40, &segments));
-  ASSERT_EQ(segments.size(), 0);
-
-  // ... asking for anything higher should return no segments
-  ASSERT_OK(reader.GetSegmentSuffixIncluding(1000, &segments));
-  ASSERT_EQ(segments.size(), 0);
+  segment = reader.GetSegmentBySequenceNumber(5);
+  ASSERT_TRUE(segment.get() == NULL);
 }
 
 // Test that, even if the LogReader's index is empty because no segments
@@ -651,10 +637,8 @@ TEST_F(LogTest, TestLogReaderReturnsLatestSegmentIfIndexEmpty) {
   AppendCommit(opid, APPEND_ASYNC);
   AppendReplicateBatch(opid, APPEND_SYNC);
 
-  // The reader has nothing in the index, since we've only appended
-  // a small batch and have not rolled over.
   SegmentSequence segments;
-  ASSERT_STATUS_OK(log_->GetLogReader()->GetSegmentSuffixIncluding(1, &segments));
+  ASSERT_STATUS_OK(log_->GetLogReader()->GetSegmentsSnapshot(&segments));
   ASSERT_EQ(segments.size(), 1);
 
   vector<LogEntryPB*> entries;

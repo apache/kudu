@@ -234,6 +234,7 @@ Status Log::Init() {
 
   // Reader for previous segments.
   RETURN_NOT_OK(LogReader::Open(fs_manager_,
+                                log_index_,
                                 tablet_id_,
                                 &reader_));
 

@@ -11,6 +11,7 @@
 #include "kudu/consensus/consensus.proxy.h"
 #include "kudu/consensus/consensus-test-util.h"
 #include "kudu/consensus/log.h"
+#include "kudu/consensus/log_index.h"
 #include "kudu/consensus/log_util.h"
 #include "kudu/consensus/opid_util.h"
 #include "kudu/consensus/peer_manager.h"
@@ -358,6 +359,7 @@ class RaftConsensusQuorumTest : public KuduTest {
     log->Close();
     gscoped_ptr<LogReader> log_reader;
     ASSERT_STATUS_OK(log::LogReader::Open(fs_managers_[idx],
+                                          scoped_refptr<log::LogIndex>(),
                                           kTestTablet,
                                           &log_reader));
     vector<LogEntryPB*> ret;

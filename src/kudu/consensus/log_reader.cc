@@ -7,6 +7,7 @@
 #include <boost/thread/locks.hpp>
 #include <algorithm>
 
+#include "kudu/consensus/log_index.h"
 #include "kudu/consensus/opid_util.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/stl_util.h"
@@ -36,9 +37,10 @@ using env_util::ReadFully;
 using strings::Substitute;
 
 Status LogReader::Open(FsManager *fs_manager,
+                       const scoped_refptr<LogIndex>& index,
                        const string& tablet_oid,
                        gscoped_ptr<LogReader> *reader) {
-  gscoped_ptr<LogReader> log_reader(new LogReader(fs_manager, tablet_oid));
+  gscoped_ptr<LogReader> log_reader(new LogReader(fs_manager, index, tablet_oid));
 
   string tablet_wal_path = fs_manager->GetTabletWalDir(tablet_oid);
 
@@ -51,7 +53,11 @@ Status LogReader::OpenFromRecoveryDir(FsManager *fs_manager,
                                       const string& tablet_oid,
                                       gscoped_ptr<LogReader>* reader) {
   string recovery_path = fs_manager->GetTabletWalRecoveryDir(tablet_oid);
-  gscoped_ptr<LogReader> log_reader(new LogReader(fs_manager, tablet_oid));
+
+  // When recovering, we don't want to have any log index -- since it isn't fsynced()
+  // during writing, its contents are useless to us.
+  scoped_refptr<LogIndex> index(NULL);
+  gscoped_ptr<LogReader> log_reader(new LogReader(fs_manager, index, tablet_oid));
   RETURN_NOT_OK_PREPEND(log_reader->Init(recovery_path),
                         "Unable to initialize log reader");
   reader->reset(log_reader.release());
@@ -59,10 +65,15 @@ Status LogReader::OpenFromRecoveryDir(FsManager *fs_manager,
 }
 
 LogReader::LogReader(FsManager *fs_manager,
+                     const scoped_refptr<LogIndex>& index,
                      const string& tablet_oid)
   : fs_manager_(fs_manager),
+    log_index_(index),
     tablet_oid_(tablet_oid),
     state_(kLogReaderInitialized) {
+}
+
+LogReader::~LogReader() {
 }
 
 Status LogReader::Init(const string& tablet_wal_path) {
@@ -167,31 +178,22 @@ Status LogReader::GetSegmentPrefixNotIncluding(int64_t index,
   return Status::OK();
 }
 
-Status LogReader::GetSegmentSuffixIncluding(int64_t index,
-                                            SegmentSequence* segments) const {
-  DCHECK_GE(index, 0);
+scoped_refptr<ReadableLogSegment> LogReader::GetSegmentBySequenceNumber(int64_t seq) const {
   boost::lock_guard<simple_spinlock> lock(lock_);
-  DCHECK(segments);
-  segments->clear();
-
-  CHECK_EQ(state_, kLogReaderReading);
-
-  bool including = false;
-  BOOST_FOREACH(const scoped_refptr<ReadableLogSegment>& segment, segments_) {
-    // Start including segments with the first one that contains a higher
-    // replicate ID (and include all later segments as well).
-    if (segment->HasFooter() && segment->footer().max_replicate_index() >= index) {
-      including = true;
-    }
-
-    // The last segment doesn't have a footer. Always include that one,
-    // even if no other segments matched.
-    if (!segment->HasFooter() || including) {
-      segments->push_back(segment);
-    }
+  if (segments_.empty()) {
+    return NULL;
   }
 
-  return Status::OK();
+  // We always have a contiguous set of log segments, so we can find the requested
+  // segment in our vector by calculating its offset vs the first element.
+  int64_t first_seqno = segments_[0]->header().sequence_number();
+  int64_t relative = seq - first_seqno;
+  if (relative < 0 || relative >= segments_.size()) {
+    return NULL;
+  }
+
+  DCHECK_EQ(segments_[relative]->header().sequence_number(), seq);
+  return segments_[relative];
 }
 
 Status LogReader::ReadAllReplicateEntries(const int64_t starting_at,
@@ -199,88 +201,88 @@ Status LogReader::ReadAllReplicateEntries(const int64_t starting_at,
                                           vector<ReplicateMsg*>* replicates) const {
   DCHECK_GT(starting_at, 0);
   DCHECK_GE(up_to, starting_at);
+  DCHECK(log_index_) << "Require an index to random-read logs";
 
   int64_t num_entries = up_to - starting_at + 1;
   // Pre-reserve space in our result array. We'll fill in the messages as we go,
   // letting later messages replace earlier (they may have been appended by later
   // leaders).
-  replicates->assign(num_entries, static_cast<ReplicateMsg*>(NULL));
+  vector<ReplicateMsg*> replicates_tmp(num_entries);
+  ElementDeleter d(&replicates_tmp);
+  LogIndexEntry prev_index_entry;
 
-  // Get all segments which might include 'starting_at' (and anything after it).
-  log::SegmentSequence segments_copy;
-  RETURN_NOT_OK(GetSegmentSuffixIncluding(starting_at, &segments_copy));
+  faststring tmp_buf;
+  for (int index = starting_at; index <= up_to; index++) {
+    LogIndexEntry index_entry;
+    RETURN_NOT_OK_PREPEND(log_index_->GetEntry(index, &index_entry),
+                          Substitute("Failed to read log index for op $0", index));
 
-  // Read the entries from the relevant segment(s).
-  // TODO: we should do this lazily - right now we're reading way more than
-  // necessary!
-  vector<log::LogEntryPB*> entries;
-  ElementDeleter deleter(&entries);
-  BOOST_FOREACH(const scoped_refptr<log::ReadableLogSegment>& segment, segments_copy) {
-    RETURN_NOT_OK(segment->ReadEntries(&entries));
-  }
-
-  // Now filter the entries to make sure we only get replicates and in the range
-  // we want.
-  BOOST_FOREACH(log::LogEntryPB* entry, entries) {
-    if (entry->has_commit() &&
-        entry->commit().commited_op_id().index() >= up_to) {
-      // We know that once we see a commit for 'up_to' or higher, that it
-      // cannot be replaced in the log by a later REPLICATE.
-      // If we never see such a COMMIT, we'll read to the very end of the log.
-      break;
-    }
-
-    // Other than that, we only need to worry about REPLICATE messages.
-    if (!entry->has_replicate()) continue;
-
-    int64_t repl_index = entry->replicate().id().index();
-    if (repl_index < starting_at) {
-      // We don't care about replicates before our range.
-      continue;
-    }
-    if (repl_index > up_to) {
-      // Ignore anything coming after our target range. We can't
-      // break here, because we may have a replaced operation with
-      // an earlier index which comes later in the log.
+    // Since a given LogEntryBatch may contain multiple REPLICATE messages,
+    // it's likely that this index entry points to the same batch as the previous
+    // one. If that's the case, we've already read this REPLICATE and we can
+    // skip reading the batch again.
+    if (index != starting_at &&
+        (index_entry.segment_sequence_number == prev_index_entry.segment_sequence_number &&
+         index_entry.offset_in_segment == prev_index_entry.offset_in_segment)) {
+      // Sanity check that we already read it.
+      DCHECK(replicates_tmp[index - starting_at] != NULL);
       continue;
     }
 
-    // Compute the index in our output array.
-    int64_t relative_idx = repl_index - starting_at;
-    DCHECK_LT(relative_idx, replicates->size());
-    DCHECK_GE(relative_idx, 0);
+    scoped_refptr<ReadableLogSegment> segment = GetSegmentBySequenceNumber(
+      index_entry.segment_sequence_number);
+    if (PREDICT_FALSE(!segment)) {
+      return Status::NotFound(Substitute("Segment $0 which contained index $1 has been GCed",
+                                         index_entry.segment_sequence_number,
+                                         index));
+    }
 
-    // We may be replacing an earlier replicate with the same ID, in which case
-    // we need to delete it.
-    delete (*replicates)[relative_idx];
-    (*replicates)[relative_idx] = entry->release_replicate();
+    gscoped_ptr<LogEntryBatchPB> batch;
+    CHECK_GT(index_entry.offset_in_segment, 0);
+    uint64_t offset = index_entry.offset_in_segment;
+    RETURN_NOT_OK_PREPEND(segment->ReadEntryHeaderAndBatch(&offset, &tmp_buf, &batch),
+                          Substitute("Failed to read LogEntry for index $0 from log segment "
+                                     "$1 offset $2",
+                                     index,
+                                     index_entry.segment_sequence_number,
+                                     index_entry.offset_in_segment));
+
+    for (size_t i = 0; i < batch->entry_size(); ++i) {
+      LogEntryPB* entry = batch->mutable_entry(i);
+      if (!entry->has_replicate()) {
+        continue;
+      }
+
+      int64_t repl_index = entry->replicate().id().index();
+      if (repl_index < starting_at) {
+        // We don't care about replicates before our range.
+        continue;
+      }
+      if (repl_index > up_to) {
+        // Ignore anything coming after our target range. We can't
+        // break here, because we may have a replaced operation with
+        // an earlier index which comes later in the log.
+        continue;
+      }
+
+      // Compute the index in our output array.
+      int64_t relative_idx = repl_index - starting_at;
+      DCHECK_LT(relative_idx, replicates_tmp.size());
+      DCHECK_GE(relative_idx, 0);
+
+      // We may be replacing an earlier replicate with the same ID, in which case
+      // we need to delete it.
+      delete replicates_tmp[relative_idx];
+      replicates_tmp[relative_idx] = entry->release_replicate();
+    }
+
+    prev_index_entry = index_entry;
   }
 
-  // Sanity-checks that we found what we were looking for.
-  // First, verify the common cases where our lower or upper bounds
-  // came before or after the beginning or end of the log, respectively.
-  if (replicates->front() == NULL) {
-    STLDeleteElements(replicates);
-    return Status::NotFound(
-      Substitute("Could not find operations starting at $0 in the log "
-                 "(perhaps they were already GCed)",
-                 starting_at));
-  }
-  if (replicates->back() == NULL) {
-    STLDeleteElements(replicates);
-    return Status::NotFound(
-      Substitute("Could not find operations through $0 in the log "
-                 "(perhaps they were not yet written locally)",
-                 up_to));
-  }
-
-  // Even though the first and last op might be present, a corrupt log
-  // might be missing one in the middle. In this case, we'll return a
-  // Corruption instead of NotFound.
+  // Sanity check that all of the ops we asked for are present.
   int found_count = 0;
-  BOOST_FOREACH(ReplicateMsg* msg, *replicates) {
-    if (msg == NULL) {
-      STLDeleteElements(replicates);
+  BOOST_FOREACH(ReplicateMsg* msg, replicates_tmp) {
+    if (PREDICT_FALSE(msg == NULL)) {
       return Status::Corruption(
         Substitute("Could not find operations $0 through $1 in the log (missing op $2)",
                    starting_at, up_to, starting_at + found_count));
@@ -289,6 +291,7 @@ Status LogReader::ReadAllReplicateEntries(const int64_t starting_at,
     }
   }
 
+  replicates->swap(replicates_tmp);
   return Status::OK();
 }
 
