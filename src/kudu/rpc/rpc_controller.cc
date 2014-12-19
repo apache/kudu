@@ -46,6 +46,10 @@ const ErrorStatusPB* RpcController::error_response() const {
   return NULL;
 }
 
+Status RpcController::GetSidecar(int idx, Slice* sidecar) const {
+  return call_->call_response_->GetSidecar(idx, sidecar);
+}
+
 void RpcController::set_timeout(const MonoDelta& timeout) {
   lock_guard<simple_spinlock> l(&lock_);
   DCHECK(!call_ || call_->state() == OutboundCall::READY);

@@ -17,8 +17,10 @@
 #include "kudu/rpc/rtest.proxy.h"
 #include "kudu/rpc/rtest.service.h"
 #include "kudu/rpc/rpc_context.h"
+#include "kudu/rpc/rpc_sidecar.h"
 #include "kudu/rpc/service_if.h"
 #include "kudu/rpc/service_pool.h"
+#include "kudu/util/faststring.h"
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/stopwatch.h"
 #include "kudu/util/test_util.h"
@@ -36,6 +38,8 @@ using kudu::rpc_test::CalculatorServiceIf;
 using kudu::rpc_test::CalculatorServiceProxy;
 using kudu::rpc_test::PanicRequestPB;
 using kudu::rpc_test::PanicResponsePB;
+using kudu::rpc_test::SendTwoStringsRequestPB;
+using kudu::rpc_test::SendTwoStringsResponsePB;
 using kudu::rpc_test::SleepRequestPB;
 using kudu::rpc_test::SleepResponsePB;
 using kudu::rpc_test::WhoAmIRequestPB;
@@ -52,6 +56,10 @@ class GenericCalculatorService : public ServiceIf {
   static const char *kFullServiceName;
   static const char *kAddMethodName;
   static const char *kSleepMethodName;
+  static const char *kSendTwoStringsMethodName;
+
+  static const char* kFirstString;
+  static const char* kSecondString;
 
   GenericCalculatorService() {
   }
@@ -66,6 +74,8 @@ class GenericCalculatorService : public ServiceIf {
       DoAdd(incoming);
     } else if (incoming->method_name() == kSleepMethodName) {
       DoSleep(incoming);
+    } else if (incoming->method_name() == kSendTwoStringsMethodName) {
+      DoSendTwoStrings(incoming);
     } else {
       incoming->RespondFailure(ErrorStatusPB::ERROR_NO_SUCH_METHOD,
                                Status::InvalidArgument("bad method"));
@@ -86,6 +96,23 @@ class GenericCalculatorService : public ServiceIf {
 
     AddResponsePB resp;
     resp.set_result(req.x() + req.y());
+    incoming->RespondSuccess(resp);
+  }
+
+  void DoSendTwoStrings(InboundCall* incoming) {
+    gscoped_ptr<faststring> first(new faststring);
+    gscoped_ptr<faststring> second(new faststring);
+    first->append(kFirstString);
+    second->append(kSecondString);
+
+    SendTwoStringsResponsePB resp;
+    resp.set_expected_size1(first->size());
+    resp.set_sidecar1(incoming->AddRpcSidecar(
+        make_gscoped_ptr(new RpcSidecar(first.Pass()))));
+    resp.set_expected_size2(second->size());
+    resp.set_sidecar2(incoming->AddRpcSidecar(
+        make_gscoped_ptr(new RpcSidecar(second.Pass()))));
+
     incoming->RespondSuccess(resp);
   }
 
@@ -182,6 +209,12 @@ class CalculatorService : public CalculatorServiceIf {
 const char *GenericCalculatorService::kFullServiceName = "kudu.rpc.GenericCalculatorService";
 const char *GenericCalculatorService::kAddMethodName = "Add";
 const char *GenericCalculatorService::kSleepMethodName = "Sleep";
+const char *GenericCalculatorService::kSendTwoStringsMethodName = "SendTwoStrings";
+
+const char *GenericCalculatorService::kFirstString =
+    "1111111111111111111111111111111111111111111111111111111111";
+const char *GenericCalculatorService::kSecondString =
+    "2222222222222222222222222222222222222222222222222222222222222222222222";
 
 class RpcTestBase : public KuduTest {
  public:
@@ -238,6 +271,21 @@ class RpcTestBase : public KuduTest {
     return Status::OK();
   }
 
+  void DoTestSidecar(const Proxy &p) {
+    SendTwoStringsRequestPB req;
+    SendTwoStringsResponsePB resp;
+    RpcController controller;
+    controller.set_timeout(MonoDelta::FromMilliseconds(10000));
+    CHECK_OK(p.SyncRequest(GenericCalculatorService::kSendTwoStringsMethodName,
+                           req, &resp, &controller));
+
+    Slice first = GetSidecarPointer(controller, resp.sidecar1(), resp.expected_size1());
+    Slice second = GetSidecarPointer(controller, resp.sidecar2(), resp.expected_size2());
+    CHECK_EQ(0, first.compare(GenericCalculatorService::kFirstString));
+    CHECK_EQ(0, second.compare(GenericCalculatorService::kSecondString));
+  }
+
+
   void DoTestExpectTimeout(const Proxy &p, const MonoDelta &timeout) {
     SleepRequestPB req;
     SleepResponsePB resp;
@@ -283,6 +331,14 @@ class RpcTestBase : public KuduTest {
   }
 
  private:
+
+  static Slice GetSidecarPointer(const RpcController& controller, int idx,
+                                 int expected_size) {
+    Slice sidecar;
+    CHECK_OK(controller.GetSidecar(idx, &sidecar));
+    CHECK_EQ(expected_size, sidecar.size());
+    return Slice(sidecar.data(), expected_size);
+  }
 
   template<class ServiceClass>
   void DoStartTestServer(Sockaddr *server_addr) {

@@ -11,6 +11,7 @@
 #include <vector>
 
 #include "kudu/gutil/gscoped_ptr.h"
+#include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/rpc/rpc_header.pb.h"
@@ -36,6 +37,7 @@ namespace rpc {
 class Connection;
 class DumpRunningRpcsRequestPB;
 class RpcCallInProgressPB;
+class RpcSidecar;
 class UserCredentials;
 
 struct InboundCallTiming {
@@ -98,6 +100,9 @@ class InboundCall {
   // Serialize the response packet for the finished call.
   // The resulting slices refer to memory in this object.
   void SerializeResponseTo(std::vector<Slice>* slices) const;
+
+  // See RpcContext::AddRpcSidecar()
+  int AddRpcSidecar(gscoped_ptr<RpcSidecar> car);
 
   std::string ToString() const;
 
@@ -168,6 +173,11 @@ class InboundCall {
   // The buffers for serialized response. Set by SerializeResponseBuffer().
   faststring response_hdr_buf_;
   faststring response_msg_buf_;
+
+  // Vector of additional sidecars that are tacked on to the call's response
+  // after serialization of the protobuf. See rpc/rpc_sidecar.h for more info.
+  std::vector<RpcSidecar*> sidecars_;
+  ElementDeleter sidecars_deleter_;
 
   // The trace buffer.
   scoped_refptr<Trace> trace_;

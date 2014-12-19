@@ -186,6 +186,19 @@ TEST_F(TestRpc, TestCallLongerThanKeepalive) {
                                  req, &resp, &controller));
 }
 
+// Test that the RpcSidecar transfers the expected messages.
+TEST_F(TestRpc, TestRpcSidecar) {
+  // Set up server.
+  Sockaddr server_addr;
+  StartTestServer(&server_addr);
+
+  // Set up client.
+  shared_ptr<Messenger> client_messenger(CreateMessenger("Client"));
+  Proxy p(client_messenger, server_addr, GenericCalculatorService::static_service_name());
+
+  DoTestSidecar(p);
+}
+
 // Test that timeouts are properly handled.
 TEST_F(TestRpc, TestCallTimeout) {
   Sockaddr server_addr;
@@ -389,4 +402,3 @@ TEST_F(TestRpc, TestRpcCallbackDestroysMessenger) {
 
 } // namespace rpc
 } // namespace kudu
-

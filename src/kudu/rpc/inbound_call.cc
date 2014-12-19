@@ -4,11 +4,13 @@
 
 #include "kudu/rpc/inbound_call.h"
 
+#include <boost/foreach.hpp>
 #include <tr1/memory>
 #include <vector>
 
 #include "kudu/rpc/connection.h"
 #include "kudu/rpc/rpc_introspection.pb.h"
+#include "kudu/rpc/rpc_sidecar.h"
 #include "kudu/rpc/serialization.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/trace.h"
@@ -28,6 +30,7 @@ namespace rpc {
 
 InboundCall::InboundCall(Connection* conn)
   : conn_(conn),
+    sidecars_deleter_(&sidecars_),
     trace_(new Trace),
     service_name_(conn_->service_name()) {
   RecordCallReceived();
@@ -88,15 +91,23 @@ void InboundCall::Respond(const MessageLite& response,
 
 Status InboundCall::SerializeResponseBuffer(const MessageLite& response,
                                             bool is_success) {
-
-  RETURN_NOT_OK(serialization::SerializeMessage(response, &response_msg_buf_));
+  uint32_t protobuf_msg_size = response.ByteSize();
 
   ResponseHeader resp_hdr;
   resp_hdr.set_call_id(header_.call_id());
   resp_hdr.set_is_error(!is_success);
+  uint32_t absolute_sidecar_offset = protobuf_msg_size;
+  BOOST_FOREACH(RpcSidecar* car, sidecars_) {
+    resp_hdr.add_sidecar_offsets(absolute_sidecar_offset);
+    absolute_sidecar_offset += car->AsSlice().size();
+  }
 
-  RETURN_NOT_OK(serialization::SerializeHeader(resp_hdr, response_msg_buf_.size(),
-      &response_hdr_buf_));
+  int additional_size = absolute_sidecar_offset - protobuf_msg_size;
+  RETURN_NOT_OK(serialization::SerializeMessage(response, &response_msg_buf_,
+                                                additional_size, true));
+  int main_msg_size = additional_size + response_msg_buf_.size();
+  RETURN_NOT_OK(serialization::SerializeHeader(resp_hdr, main_msg_size,
+                                               &response_hdr_buf_));
 
   return Status::OK();
 }
@@ -104,8 +115,19 @@ Status InboundCall::SerializeResponseBuffer(const MessageLite& response,
 void InboundCall::SerializeResponseTo(vector<Slice>* slices) const {
   CHECK_GT(response_hdr_buf_.size(), 0);
   CHECK_GT(response_msg_buf_.size(), 0);
+  slices->reserve(slices->size() + 2 + sidecars_.size());
   slices->push_back(Slice(response_hdr_buf_));
   slices->push_back(Slice(response_msg_buf_));
+  BOOST_FOREACH(RpcSidecar* car, sidecars_) {
+    slices->push_back(car->AsSlice());
+  }
+}
+
+int InboundCall::AddRpcSidecar(gscoped_ptr<RpcSidecar> car) {
+  // TODO(vlad17): need to make sure these sizes stay below the limit,
+  // perhaps returning an error code if the slice goes over.
+  sidecars_.push_back(car.release());
+  return sidecars_.size() - 1;
 }
 
 string InboundCall::ToString() const {

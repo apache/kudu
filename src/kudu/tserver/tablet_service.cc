@@ -15,6 +15,7 @@
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/escaping.h"
 #include "kudu/rpc/rpc_context.h"
+#include "kudu/rpc/rpc_sidecar.h"
 #include "kudu/server/hybrid_clock.h"
 #include "kudu/tablet/tablet_bootstrap.h"
 #include "kudu/tserver/remote_bootstrap_service.h"
@@ -943,6 +944,7 @@ void TabletServiceImpl::HandleContinueScanRequest(const ScanRequestPB* req,
 
     if (PREDICT_TRUE(block.nrows() > 0)) {
       ConvertRowBlockToPB(block, resp->mutable_data(),
+                          /* TODO(vlad17) pass sidecar for data */
                           scanner->client_projection_schema());
     }
 

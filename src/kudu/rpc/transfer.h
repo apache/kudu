@@ -78,7 +78,7 @@ class InboundTransfer {
 // Upon completion of the transfer, a callback is triggered.
 class OutboundTransfer : public boost::intrusive::list_base_hook<> {
  public:
-  static const int kMaxPayloadSlices = 3;
+  enum { kMaxPayloadSlices = 10 };
 
   // Create a new transfer. The 'payload' slices will be concatenated and
   // written to the socket. When the transfer completes or errors, the

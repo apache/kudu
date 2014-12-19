@@ -183,7 +183,10 @@ Status KuduScanner::Data::OpenTablet(const Slice& key) {
 Status KuduScanner::Data::ExtractRows(vector<KuduRowResult>* rows) {
   // First, rewrite the relative addresses into absolute ones.
   RowwiseRowBlockPB* rowblock_pb = last_response_.mutable_data();
-  RETURN_NOT_OK(RewriteRowBlockPB(*projection_, last_response_.mutable_data()));
+  RETURN_NOT_OK(RewriteRowBlockPB(*projection_, last_response_.mutable_data()
+                                  // TODO(vlad17) pass controller's sidecar
+                                  // slices for indirect data access */
+                                  ));
 
   int n_rows = rowblock_pb->num_rows();
   if (PREDICT_FALSE(n_rows == 0)) {

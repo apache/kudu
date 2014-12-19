@@ -5,6 +5,7 @@
 
 #include "kudu/rpc/outbound_call.h"
 #include "kudu/rpc/inbound_call.h"
+#include "kudu/rpc/rpc_sidecar.h"
 #include "kudu/rpc/service_if.h"
 #include "kudu/util/hdr_histogram.h"
 #include "kudu/util/metrics.h"
@@ -46,6 +47,10 @@ void RpcContext::RespondApplicationError(int error_ext_id, const std::string& me
   call_->RecordHandlingCompleted(metrics_.handler_latency);
   call_->RespondApplicationError(error_ext_id, message, app_error_pb);
   delete this;
+}
+
+int RpcContext::AddRpcSidecar(gscoped_ptr<RpcSidecar> car) {
+  return call_->AddRpcSidecar(car.Pass());
 }
 
 const UserCredentials& RpcContext::user_credentials() const {

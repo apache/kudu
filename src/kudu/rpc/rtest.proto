@@ -36,6 +36,16 @@ message SleepRequestPB {
 message SleepResponsePB {
 }
 
+message SendTwoStringsRequestPB {
+}
+
+message SendTwoStringsResponsePB {
+  required uint64 expected_size1 = 2;
+  required uint32 sidecar1 = 3;
+  required uint64 expected_size2 = 5;
+  required uint32 sidecar2 = 6;
+}
+
 message EchoRequestPB {
   required string data = 1;
 }

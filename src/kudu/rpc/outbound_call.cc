@@ -2,6 +2,7 @@
 // Confidential Cloudera Information: Covered by NDA.
 // All rights reserved.
 
+#include <algorithm>
 #include <string>
 #include <vector>
 #include <boost/functional/hash.hpp>
@@ -145,9 +146,10 @@ void OutboundCall::CallCallback() {
 }
 
 void OutboundCall::SetResponse(gscoped_ptr<CallResponse> resp) {
-  Slice r(resp->serialized_response());
+  call_response_ = resp.Pass();
+  Slice r(call_response_->serialized_response());
 
-  if (resp->is_success()) {
+  if (call_response_->is_success()) {
 
     // TODO: here we're deserializing the call response within the reactor thread,
     // which isn't great, since it would block processing of other RPCs in parallel.
@@ -390,9 +392,58 @@ CallResponse::CallResponse()
  : parsed_(false) {
 }
 
+Status CallResponse::GetSidecar(int idx, Slice* sidecar) const {
+  DCHECK(parsed_);
+  if (idx < 0 || idx >= header_.sidecar_offsets_size()) {
+    return Status::InvalidArgument(strings::Substitute(
+        "Index $0 does not reference a valid sidecar", idx));
+  }
+  *sidecar = sidecar_slices_[idx];
+  return Status::OK();
+}
+
 Status CallResponse::ParseFrom(gscoped_ptr<InboundTransfer> transfer) {
   CHECK(!parsed_);
-  RETURN_NOT_OK(serialization::ParseMessage(transfer->data(), &header_, &serialized_response_));
+  Slice entire_message;
+  RETURN_NOT_OK(serialization::ParseMessage(transfer->data(), &header_,
+                                            &entire_message));
+
+  // Use information from header to extract the payload slices.
+  int last = header_.sidecar_offsets_size() - 1;
+
+  if (last >= OutboundTransfer::kMaxPayloadSlices) {
+    return Status::Corruption(strings::Substitute(
+        "Received $0 additional payload slices, expected at most %d",
+        last, OutboundTransfer::kMaxPayloadSlices));
+  }
+
+  if (last >= 0) {
+    serialized_response_ = Slice(entire_message.data(),
+                                 header_.sidecar_offsets(0));
+    for (int i = 0; i < last; ++i) {
+      uint32_t next_offset = header_.sidecar_offsets(i);
+      int32_t len = header_.sidecar_offsets(i + 1) - next_offset;
+      if (next_offset + len > entire_message.size() || len < 0) {
+        return Status::Corruption(strings::Substitute(
+            "Invalid sidecar offsets; sidecar $0 apparently starts at $1,"
+            " has length $2, but the entire message has length $3",
+            i, next_offset, len, entire_message.size()));
+      }
+      sidecar_slices_[i] = Slice(entire_message.data() + next_offset, len);
+    }
+    uint32_t next_offset = header_.sidecar_offsets(last);
+    if (next_offset > entire_message.size()) {
+        return Status::Corruption(strings::Substitute(
+            "Invalid sidecar offsets; the last sidecar ($0) apparently starts "
+            "at $1, but the entire message has length $3",
+            last, next_offset, entire_message.size()));
+    }
+    sidecar_slices_[last] = Slice(entire_message.data() + next_offset,
+                                  entire_message.size() - next_offset);
+  } else {
+    serialized_response_ = entire_message;
+  }
+
   transfer_.swap(transfer);
   parsed_ = true;
   return Status::OK();

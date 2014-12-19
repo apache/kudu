@@ -24,10 +24,23 @@ namespace rpc {
 namespace serialization {
 
 // Serialize the request param into a buffer which is allocated by this function.
-// In: Protobuf Message to serialize
-// Out: faststring to be populated with the serialized bytes.
+// Uses the message's cached size by calling MessageLite::GetCachedSize().
+// In : 'message' Protobuf Message to serialize
+//      'additional_size' Optional argument which increases the recorded size
+//        within param_buf. This argument is necessary if there will be
+//        additional sidecars appended onto the message (that aren't part of
+//        the protobuf itself).
+//      'use_cached_size' Additional optional argument whether to use the cached
+//        or explicit byte size by calling MessageLite::GetCachedSize() or
+//        MessageLite::ByteSize(), respectively.
+// Out: The faststring 'param_buf' to be populated with the serialized bytes.
+//        The faststring's length is only determined by the amount that
+//        needs to be serialized for the protobuf (i.e., no additional space
+//        is reserved for 'additional_size', which only affects the
+//        size indicator prefix in 'param_buf').
 Status SerializeMessage(const google::protobuf::MessageLite& message,
-                        faststring* param_buf);
+                        faststring* param_buf, int additional_size = 0,
+                        bool use_cached_size = false);
 
 // Serialize the request or response header into a buffer which is allocated
 // by this function.

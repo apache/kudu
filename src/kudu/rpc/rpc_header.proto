@@ -190,6 +190,11 @@ message ResponseHeader {
   // the expected response type.
   optional bool is_error = 2 [ default = false ];
 
+  // Byte offsets for side cars in the main body of the response message.
+  // These offsets are counted AFTER the message header, i.e., offset 0
+  // is the first byte after the bytes for this protobuf.
+  repeated uint32 sidecar_offsets = 3;
+
   //optional uint32 server_ipc_version_num = 3; // Sent if success or fail
   //optional bytes client_id = 7; // Globally unique client ID
   //optional sint32 retry_count = 8 [default = -1];

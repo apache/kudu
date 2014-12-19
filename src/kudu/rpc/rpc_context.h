@@ -23,8 +23,10 @@ class Trace;
 
 namespace rpc {
 
-class UserCredentials;
 class InboundCall;
+class RpcSidecar;
+class UserCredentials;
+
 
 #define PANIC_RPC(rpc_context, message) \
   do { \
@@ -111,6 +113,18 @@ class RpcContext {
   // and response protobufs are also destroyed.
   void RespondApplicationError(int error_ext_id, const std::string& message,
                                const google::protobuf::MessageLite& app_error_pb);
+
+
+  // Adds an RpcSidecar to the response. This is the preferred method for
+  // transferring large amounts of binary data, because this avoids additional
+  // copies made by serializing the protobuf.
+  //
+  // Assumes no changes to the sidecar's data are made after insertion.
+  //
+  // Returns the index of the sidecar (necessary to be retreived later).
+  // TODO(vlad17): return -1 or use status to indicate if we're at maximum
+  // slices used (see transfer.h)
+  int AddRpcSidecar(gscoped_ptr<RpcSidecar> car);
 
   // Return the credentials of the remote user who made this call.
   const UserCredentials& user_credentials() const;

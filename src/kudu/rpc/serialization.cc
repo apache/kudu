@@ -31,23 +31,27 @@ enum {
   kHeaderPosAuthProto = 2
 };
 
-Status SerializeMessage(const MessageLite& message,
-                        faststring* param_buf) {
+Status SerializeMessage(const MessageLite& message, faststring* param_buf,
+                        int additional_size, bool use_cached_size) {
 
   if (PREDICT_FALSE(!message.IsInitialized())) {
     return Status::InvalidArgument("RPC argument missing required fields",
         message.InitializationErrorString());
   }
-  int size = message.ByteSize();
-  int size_with_delim = size + CodedOutputStream::VarintSize32(size);
+  int pb_size = use_cached_size ? message.GetCachedSize() : message.ByteSize();
+  DCHECK_EQ(message.ByteSize(), pb_size);
+  int recorded_size = pb_size + additional_size;
+  int size_with_delim = pb_size + CodedOutputStream::VarintSize32(recorded_size);
+  int total_size = size_with_delim + additional_size;
 
-  if (size_with_delim > FLAGS_rpc_max_message_size) {
-    LOG(DFATAL) << "Sending too long of an RPC message (" << size_with_delim << " bytes)";
+  if (total_size > FLAGS_rpc_max_message_size) {
+    LOG(DFATAL) << "Sending too long of an RPC message (" << total_size
+                << " bytes)";
   }
 
   param_buf->resize(size_with_delim);
   uint8_t* dst = param_buf->data();
-  dst = CodedOutputStream::WriteVarint32ToArray(size, dst);
+  dst = CodedOutputStream::WriteVarint32ToArray(recorded_size, dst);
   dst = message.SerializeWithCachedSizesToArray(dst);
   CHECK_EQ(dst, param_buf->data() + size_with_delim);
 
@@ -128,8 +132,8 @@ Status ParseMessage(const Slice& buf,
 
   if (PREDICT_FALSE(!in.Skip(main_msg_len))) {
     return Status::Corruption(
-      StringPrintf("Invalid packet: data too short, expected %d byte main_msg", main_msg_len),
-      buf.ToDebugString());
+        StringPrintf("Invalid packet: data too short, expected %d byte main_msg", main_msg_len),
+        buf.ToDebugString());
   }
 
   if (PREDICT_FALSE(in.BytesUntilLimit() > 0)) {

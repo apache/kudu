@@ -15,6 +15,7 @@
 #include "kudu/rpc/constants.h"
 #include "kudu/rpc/rpc_header.pb.h"
 #include "kudu/rpc/response_callback.h"
+#include "kudu/rpc/transfer.h"
 #include "kudu/util/locks.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/sockaddr.h"
@@ -297,6 +298,9 @@ class OutboundCall {
 // into the OutboundCall instance via OutboundCall::SetResponse.
 //
 // This may either be a success or error response.
+//
+// This class takes care of separating out the distinct payload slices sent
+// over.
 class CallResponse {
  public:
   CallResponse();
@@ -324,6 +328,9 @@ class CallResponse {
     return serialized_response_;
   }
 
+  // See RpcController::GetSidecar()
+  Status GetSidecar(int idx, Slice* sidecar) const;
+
  private:
   // True once ParseFrom() is called.
   bool parsed_;
@@ -335,8 +342,11 @@ class CallResponse {
   // This slice refers to memory allocated by transfer_
   Slice serialized_response_;
 
+  // Slices of data for rpc sidecars. They point into memory owned by transfer_.
+  Slice sidecar_slices_[OutboundTransfer::kMaxPayloadSlices];
+
   // The incoming transfer data - retained because serialized_response_
-  // refers into its data.
+  // and sidecar_slices_ refer into its data.
   gscoped_ptr<InboundTransfer> transfer_;
 
   DISALLOW_COPY_AND_ASSIGN(CallResponse);
