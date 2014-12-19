@@ -36,6 +36,7 @@ set(LOG_SRCS
   log_util.cc
   log.cc
   log_anchor_registry.cc
+  log_index.cc
   log_reader.cc
   log_metrics.cc
 )
@@ -88,6 +89,7 @@ ADD_KUDU_TEST(consensus_queue-test)
 ADD_KUDU_TEST(leader_election-test)
 ADD_KUDU_TEST(log-test)
 ADD_KUDU_TEST(log_cache-test)
+ADD_KUDU_TEST(log_index-test)
 ADD_KUDU_TEST(mt-log-test)
 ADD_KUDU_TEST(log_anchor_registry-test)
 ADD_KUDU_TEST(quorum_util-test)
