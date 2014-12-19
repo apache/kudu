@@ -12,7 +12,7 @@ import org.junit.Test;
 public class TestKuduClient extends BaseKuduTest {
 
   private static final String TABLE_NAME =
-      TestKuduSession.class.getName()+"-"+System.currentTimeMillis();
+      TestKuduClient.class.getName() + "-" + System.currentTimeMillis();
   private static KuduTable table;
 
   @BeforeClass
