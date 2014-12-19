@@ -27,7 +27,6 @@ namespace log {
 using std::tr1::shared_ptr;
 using std::tr1::unordered_map;
 using consensus::MakeOpId;
-using consensus::MinimumOpId;
 using strings::Substitute;
 
 extern const char* kTestTable;
@@ -196,7 +195,7 @@ void LogTest::DoCorruptionTest(CorruptionType type, int offset,
                                Status expected_status, int expected_entries) {
   const int kNumEntries = 4;
   BuildLog();
-  OpId op_id(MinimumOpId());
+  OpId op_id = MakeOpId(1, 1);
   ASSERT_OK(AppendNoOps(&op_id, kNumEntries));
   ASSERT_STATUS_OK(log_->Close());
 
@@ -242,7 +241,7 @@ TEST_F(LogTest, TestSegmentRollover) {
   log_->SetMaxSegmentSizeForTests(990);
   const int kNumEntriesPerBatch = 100;
 
-  OpId op_id(MinimumOpId());
+  OpId op_id = MakeOpId(1, 1);
   int num_entries = 0;
 
   SegmentSequence segments;
@@ -296,7 +295,7 @@ TEST_F(LogTest, TestWriteAndReadToAndFromInProgressSegment) {
   // Dummy add_entry to help us estimate the size of what
   // gets written to disk.
   LogEntryBatchPB batch;
-  OpId op_id(MinimumOpId());
+  OpId op_id = MakeOpId(1, 1);
   LogEntryPB* log_entry = batch.add_entry();
   log_entry->set_type(REPLICATE);
   ReplicateMsg* repl = log_entry->mutable_replicate();
@@ -364,7 +363,7 @@ TEST_F(LogTest, TestGCWithLogRunning) {
   const int kNumTotalSegments = 4;
   const int kNumOpsPerSegment = 5;
   int num_gced_segments;
-  OpId op_id(MinimumOpId());
+  OpId op_id = MakeOpId(1, 1);
   int64_t anchored_index = -1;
 
   ASSERT_STATUS_OK(AppendMultiSegmentSequence(kNumTotalSegments, kNumOpsPerSegment,
@@ -385,7 +384,7 @@ TEST_F(LogTest, TestGCWithLogRunning) {
   ASSERT_STATUS_OK(log_anchor_registry_->Unregister(anchors[0]));
   ASSERT_STATUS_OK(log_anchor_registry_->Unregister(anchors[1]));
   ASSERT_STATUS_OK(log_anchor_registry_->GetEarliestRegisteredLogIndex(&anchored_index));
-  // We should now be anchored on op 0.10, i.e. on the 3rd segment
+  // We should now be anchored on op 0.11, i.e. on the 3rd segment
   ASSERT_EQ(anchors[2]->log_index, anchored_index);
 
   // However, first, we'll try bumping the min retention threshold and
@@ -467,7 +466,7 @@ TEST_F(LogTest, TestLogReopenAndGC) {
   const int kNumTotalSegments = 3;
   const int kNumOpsPerSegment = 5;
   int num_gced_segments;
-  OpId op_id(MinimumOpId());
+  OpId op_id = MakeOpId(1, 1);
   int64_t anchored_index = -1;
 
   ASSERT_STATUS_OK(AppendMultiSegmentSequence(kNumTotalSegments, kNumOpsPerSegment,

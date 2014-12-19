@@ -39,10 +39,10 @@ class AsyncLogReaderTest : public LogTestBase {
                              const vector<ReplicateMsg*>& replicates) {
     {
       boost::lock_guard<simple_spinlock> lock(lock_);
-      CHECK_EQ(expected_status_.CodeAsString(), status.CodeAsString())
+      EXPECT_EQ(expected_status_.CodeAsString(), status.CodeAsString())
         << "Expected status: " << expected_status_.ToString()
         << ". But got status: " << status.ToString();
-      CHECK_EQ(expected_op_count_, replicates.size());
+      EXPECT_EQ(expected_op_count_, replicates.size());
     }
 
     BOOST_FOREACH(ReplicateMsg* msg, replicates) {

@@ -220,7 +220,7 @@ TEST_F(BootstrapTest, TestOrphanCommit) {
   vector<string> results;
   IterateTabletRows(tablet.get(), &results);
   ASSERT_EQ(1, results.size());
-  ASSERT_EQ("(uint32 key=0, uint32 int_val=0, string string_val=this is a test insert)",
+  ASSERT_EQ("(uint32 key=1, uint32 int_val=0, string string_val=this is a test insert)",
             results[0]);
   ASSERT_EQ(2, tablet->metadata()->last_durable_mrs_id());
 }
@@ -258,9 +258,9 @@ TEST_F(BootstrapTest, TestNonOrphansAfterOrphanCommit) {
   IterateTabletRows(tablet.get(), &results);
   ASSERT_EQ(1, results.size());
 
-  // 'key=2' means the REPLICATE message was inserted when current_id_ was 2, meaning
+  // 'key=3' means the REPLICATE message was inserted when current_id_ was 3, meaning
   // that only the non-orphan commit went in.
-  ASSERT_EQ("(uint32 key=2, uint32 int_val=0, string string_val=this is a test insert)",
+  ASSERT_EQ("(uint32 key=3, uint32 int_val=0, string string_val=this is a test insert)",
             results[0]);
 }
 
@@ -290,7 +290,7 @@ TEST_F(BootstrapTest, TestOrphanedReplicate) {
                       "this is a test mutate");
 
   // And it should also include the latest opids.
-  EXPECT_EQ("term: 0 index: 0", boot_info.last_id.ShortDebugString());
+  EXPECT_EQ("term: 0 index: 1", boot_info.last_id.ShortDebugString());
 }
 
 // Bootstrap should fail if no ConsensusMetadata file exists.

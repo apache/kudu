@@ -23,6 +23,7 @@
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/stringprintf.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/gutil/strings/util.h"
 #include "kudu/tserver/tserver.pb.h"
 #include "kudu/util/env_util.h"
 #include "kudu/util/path_util.h"
@@ -82,7 +83,7 @@ class LogTestBase : public KuduTest {
 
   virtual void SetUp() OVERRIDE {
     KuduTest::SetUp();
-    current_id_ = 0;
+    current_id_ = 1;
     fs_manager_.reset(new FsManager(env_.get(), test_dir_));
     ASSERT_OK(fs_manager_->CreateInitialFileSystemLayout());
     ASSERT_OK(fs_manager_->Open());
