@@ -161,18 +161,15 @@ public class SecureRpcHelper {
   }
 
   private RpcHeader.SaslMessagePB parseSaslMsgResponse(ChannelBuffer buf) {
-    int totalSize = buf.readInt(); // unused
-    TabletClient.ensureReadable(buf, totalSize);
-    RpcHeader.ResponseHeader.Builder builder = RpcHeader.ResponseHeader.newBuilder();
-    KuduRpc.readProtobuf(buf, builder);
-    RpcHeader.ResponseHeader responseHeader = builder.build();
+    CallResponse response = new CallResponse(buf);
+    RpcHeader.ResponseHeader responseHeader = response.getHeader();
     int id = responseHeader.getCallId();
     if (id != SASL_CALL_ID) {
       throw new IllegalStateException("Received a call that wasn't for SASL");
     }
 
     RpcHeader.SaslMessagePB.Builder saslBuilder =  RpcHeader.SaslMessagePB.newBuilder();
-    KuduRpc.readProtobuf(buf, saslBuilder);
+    KuduRpc.readProtobuf(response.getPBMessage(), saslBuilder);
     return saslBuilder.build();
   }
 

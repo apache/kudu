@@ -36,10 +36,11 @@ class ListTablesRequest extends KuduRpc<ListTablesResponse> {
   }
 
   @Override
-  Pair<ListTablesResponse, Object> deserialize(ChannelBuffer buf, String tsUUID) throws Exception {
+  Pair<ListTablesResponse, Object> deserialize(CallResponse callResponse,
+                                               String tsUUID) throws Exception {
     final Master.ListTablesResponsePB.Builder respBuilder =
         Master.ListTablesResponsePB.newBuilder();
-    readProtobuf(buf, respBuilder);
+    readProtobuf(callResponse.getPBMessage(), respBuilder);
     int serversCount = respBuilder.getTablesCount();
     List<String> tables = new ArrayList<String>(serversCount);
     for (Master.ListTablesResponsePB.TableInfo info : respBuilder.getTablesList()) {

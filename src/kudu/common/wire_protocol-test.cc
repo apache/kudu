@@ -177,13 +177,18 @@ TEST_F(WireProtocolTest, TestColumnarRowBlockToPB) {
 
   // Convert to PB.
   RowwiseRowBlockPB pb;
-  ConvertRowBlockToPB(block, &pb, NULL);
+  faststring direct, indirect;
+  SerializeRowBlock(block, &pb, NULL, &direct, &indirect);
   SCOPED_TRACE(pb.DebugString());
+  SCOPED_TRACE("Row data: " + direct.ToString());
+  SCOPED_TRACE("Indirect data: " + indirect.ToString());
 
   // Convert back to a row, ensure that the resulting row is the same
   // as the one we put in.
   vector<const uint8_t*> row_ptrs;
-  ASSERT_STATUS_OK(ExtractRowsFromRowBlockPB(schema_, &pb, &row_ptrs));
+  Slice direct_sidecar = direct;
+  ASSERT_STATUS_OK(ExtractRowsFromRowBlockPB(schema_, pb, &row_ptrs,
+                                             &direct_sidecar, indirect));
   ASSERT_EQ(block.nrows(), row_ptrs.size());
   for (int i = 0; i < block.nrows(); ++i) {
     ConstContiguousRow row_roundtripped(&schema_, row_ptrs[i]);
@@ -204,7 +209,8 @@ TEST_F(WireProtocolTest, TestColumnarRowBlockToPBBenchmark) {
   LOG_TIMING(INFO, "Converting to PB") {
     for (int i = 0; i < kNumTrials; i++) {
       pb.Clear();
-      ConvertRowBlockToPB(block, &pb, NULL);
+      faststring direct, indirect;
+      SerializeRowBlock(block, &pb, NULL, &direct, &indirect);
     }
   }
 }
@@ -219,15 +225,17 @@ TEST_F(WireProtocolTest, TestInvalidRowBlock) {
   vector<const uint8_t*> row_ptrs;
 
   // Too short to be valid data.
-  pb.mutable_rows()->assign("x");
+  const char* shortstr = "x";
   pb.set_num_rows(1);
-  Status s = ExtractRowsFromRowBlockPB(schema, &pb, &row_ptrs);
+  Slice direct = shortstr;
+  Status s = ExtractRowsFromRowBlockPB(schema, pb, &row_ptrs, &direct, Slice());
   ASSERT_STR_CONTAINS(s.ToString(), "Corruption: Row block has 1 bytes of data");
 
   // Bad pointer into indirect data.
-  pb.mutable_rows()->assign("xxxxxxxxxxxxxxxx");
+  shortstr = "xxxxxxxxxxxxxxxx";
   pb.set_num_rows(1);
-  s = ExtractRowsFromRowBlockPB(schema, &pb, &row_ptrs);
+  direct = Slice(shortstr);
+  s = ExtractRowsFromRowBlockPB(schema, pb, &row_ptrs, &direct, Slice());
   ASSERT_STR_CONTAINS(s.ToString(),
                       "Corruption: Row #0 contained bad indirect slice");
 }
@@ -248,7 +256,8 @@ TEST_F(WireProtocolTest, TestBlockWithNoColumns) {
 
   // Convert it to protobuf, ensure that the results look right.
   RowwiseRowBlockPB pb;
-  ConvertRowBlockToPB(block, &pb, NULL);
+  faststring direct, indirect;
+  SerializeRowBlock(block, &pb, NULL, &direct, &indirect);
   ASSERT_EQ(900, pb.num_rows());
 }
 

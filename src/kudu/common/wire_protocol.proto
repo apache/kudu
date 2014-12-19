@@ -127,8 +127,10 @@ message RowwiseRowBlockPB {
   optional int32 num_rows = 3 [ default = 0 ];
 
 
-  // Each row is stored in the same in-memory format
-  // as kudu::ContigiousRow (i.e the raw unencoded data followed by
+  // Sidecar index for the row data.
+  //
+  // In the sidecar, each row is stored in the same in-memory format
+  // as kudu::ContiguousRow (i.e the raw unencoded data followed by
   // a null bitmap).
   //
   // The data for NULL cells will be present with undefined contents --
@@ -136,18 +138,17 @@ message RowwiseRowBlockPB {
   // and clients may choose to initialize NULL cells with whatever they
   // like. Setting to some constant improves RPC compression, though.
   //
-  // Any pointers are made relative to the beginning of 'indirect_data'.
-    optional bytes rows = 4;
+  // Any pointers are made relative to the beginning of the indirect
+  // data sidecar.
+  //
+  // See rpc/rpc_sidecar.h for more information on where the data is
+  // actually stored.
+  optional int32 rows_sidecar = 4;
 
   // See ColumnBlockPB.indirect_data.
-    optional bytes indirect_data = 5;
+  optional int32 indirect_data_sidecar = 5;
 
-  // TODO(vlad17): uncomment below lines to actually have the sidecar indices,
-  // clean up docs.
-  // TODO(vlad17): Make things other than RowwiseRowBlockPB rely on sidecars
-  // Sidecar index (see rpc/rpc_sidecar.h) for the rows of data.
-  //  optional int32 rows_sidecar = 4;
-  //  optional int32 indirect_data_sidecar = 5;
+  // TODO: Make things other than RowwiseRowBlockPB rely on sidecars
 }
 
 // A set of operations (INSERT, UPDATE, or DELETE) to apply to a table.

@@ -269,8 +269,16 @@ class TabletServerTest : public KuduTest {
       SCOPED_TRACE(resp.DebugString());
       ASSERT_FALSE(resp.has_error());
 
+      RowwiseRowBlockPB* rrpb = resp.mutable_data();
+      Slice direct, indirect; // sidecar data buffers
+      ASSERT_OK(rpc.GetSidecar(rrpb->rows_sidecar(), &direct));
+      if (rrpb->has_indirect_data_sidecar()) {
+        ASSERT_OK(rpc.GetSidecar(rrpb->indirect_data_sidecar(),
+                                 &indirect));
+      }
       vector<const uint8_t*> rows;
-      ASSERT_STATUS_OK(ExtractRowsFromRowBlockPB(projection,resp.mutable_data(), &rows));
+      ASSERT_STATUS_OK(ExtractRowsFromRowBlockPB(projection, *rrpb,
+                                                 &rows, &direct, indirect));
       VLOG(1) << "Round trip got " << rows.size() << " rows";
       BOOST_FOREACH(const uint8_t* row_ptr, rows) {
         ConstContiguousRow row(&projection, row_ptr);

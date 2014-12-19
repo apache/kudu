@@ -38,10 +38,10 @@ class IsAlterTableDoneRequest extends KuduRpc<IsAlterTableDoneResponsePB> {
   }
 
   @Override
-  Pair<IsAlterTableDoneResponsePB, Object> deserialize(ChannelBuffer buf,
+  Pair<IsAlterTableDoneResponsePB, Object> deserialize(final CallResponse callResponse,
                                                        String tsUUID) throws Exception {
     final IsAlterTableDoneResponsePB.Builder respBuilder = IsAlterTableDoneResponsePB.newBuilder();
-    readProtobuf(buf, respBuilder);
+    readProtobuf(callResponse.getPBMessage(), respBuilder);
     IsAlterTableDoneResponsePB resp = respBuilder.build();
     return new Pair<IsAlterTableDoneResponsePB, Object>(resp, resp.getError());
   }

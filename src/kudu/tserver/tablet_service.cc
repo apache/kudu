@@ -28,6 +28,7 @@
 #include "kudu/tserver/tablet_server.h"
 #include "kudu/tserver/ts_tablet_manager.h"
 #include "kudu/tserver/tserver.pb.h"
+#include "kudu/util/faststring.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/status.h"
 #include "kudu/util/trace.h"
@@ -926,7 +927,8 @@ void TabletServiceImpl::HandleContinueScanRequest(const ScanRequestPB* req,
   RowBlock block(scanner->iter()->schema(),
                  FLAGS_tablet_server_scan_batch_size_rows, &arena);
 
-  resp->mutable_data()->mutable_rows()->reserve(batch_size_bytes * 11 / 10);
+  gscoped_ptr<faststring> rows_data(new faststring(batch_size_bytes * 11 / 10));
+  gscoped_ptr<faststring> indirect_data(new faststring());
 
   // TODO: in the future, use the client timeout to set a budget. For now,
   // just use a half second, which should be plenty to amortize call overhead.
@@ -943,13 +945,12 @@ void TabletServiceImpl::HandleContinueScanRequest(const ScanRequestPB* req,
     }
 
     if (PREDICT_TRUE(block.nrows() > 0)) {
-      ConvertRowBlockToPB(block, resp->mutable_data(),
-                          /* TODO(vlad17) pass sidecar for data */
-                          scanner->client_projection_schema());
+      SerializeRowBlock(block, resp->mutable_data(),
+                        scanner->client_projection_schema(),
+                        rows_data.get(), indirect_data.get());
     }
 
-    size_t response_size = resp->data().rows().size() +
-      resp->data().indirect_data().size();
+    size_t response_size = rows_data->size() + indirect_data->size();
 
     if (VLOG_IS_ON(2)) {
       // This may be fairly expensive if row block size is small
@@ -966,6 +967,17 @@ void TabletServiceImpl::HandleContinueScanRequest(const ScanRequestPB* req,
     if (response_size >= batch_size_bytes) {
       break;
     }
+  }
+
+  // Add sidecar data to context and record the returned indices.
+  // TODO(vlad17): verify indices returned are not -1
+  int rows_idx = context->AddRpcSidecar(make_gscoped_ptr(
+      new rpc::RpcSidecar(rows_data.Pass())));
+  resp->mutable_data()->set_rows_sidecar(rows_idx);
+  if (indirect_data->size() > 0) {
+    int indirect_idx = context->AddRpcSidecar(make_gscoped_ptr(
+        new rpc::RpcSidecar(indirect_data.Pass())));
+    resp->mutable_data()->set_indirect_data_sidecar(indirect_idx);
   }
 
   scanner->UpdateAccessTime();

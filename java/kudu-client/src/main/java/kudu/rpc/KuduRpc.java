@@ -32,10 +32,15 @@ import com.google.protobuf.InvalidProtocolBufferException;
 import com.google.protobuf.Message;
 import com.stumbleupon.async.Deferred;
 import kudu.util.Pair;
+import kudu.util.Slice;
 import org.jboss.netty.buffer.ChannelBuffer;
 import org.jboss.netty.buffer.ChannelBuffers;
 
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Iterator;
+import java.util.List;
 
 import static kudu.rpc.ExternalConsistencyMode.NO_CONSISTENCY;
 
@@ -118,16 +123,14 @@ public abstract class KuduRpc<R> {
    * Notice that this method is package-private, so only classes within this
    * package can use this as a base class.
    *
-   * @param buf The buffer from which to de-serialize the response.
-   * protobuf of the RPC response.  If 0, then there is just the protobuf.
-   * The value is guaranteed to be both positive and of a "reasonable" size.
+   * @param response The call response from which to deserialize.
    * @param tsUUID A string that contains the UUID of the server that answered the RPC.
    * @return An Object of type R that will be sent to callback and an Object that will be an Error
    * of type TabletServerErrorPB or MasterErrorPB that will be converted into an exception and
    * sent to errback.
    * @throws Exception An exception that will be sent to errback.
    */
-  abstract Pair<R, Object> deserialize(ChannelBuffer buf, String tsUUID) throws Exception;
+  abstract Pair<R, Object> deserialize(CallResponse callResponse, String tsUUID) throws Exception;
 
   /**
    * Sets the external consistency mode for this RPC.
@@ -222,20 +225,11 @@ public abstract class KuduRpc<R> {
     return buf.toString();
   }
 
-  static void readProtobuf(final ChannelBuffer buf, final com.google.protobuf.GeneratedMessage
-      .Builder<?> builder) {
-    final int length = Bytes.readVarInt32(buf);
-    checkArrayLength(buf, length);
-    final byte[] payload;
-    final int offset;
-    if (buf.hasArray()) {  // Zero copy.
-      payload = buf.array();
-      offset = buf.arrayOffset() + buf.readerIndex();
-    } else {  // We have to copy the entire payload out of the buffer :(
-      payload = new byte[length];
-      buf.readBytes(payload);
-      offset = 0;
-    }
+  static void readProtobuf(final Slice slice,
+      final com.google.protobuf.GeneratedMessage.Builder<?> builder) {
+    final int length = slice.length();
+    final byte[] payload = slice.getRawArray();
+    final int offset = slice.getRawOffset();
     try {
       builder.mergeFrom(payload, offset, length);
       if (!builder.isInitialized()) {

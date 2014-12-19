@@ -30,9 +30,12 @@ package kudu.rpc;
 
 import kudu.WireProtocol;
 import kudu.master.Master;
+
 import com.stumbleupon.async.Deferred;
+
 import kudu.tserver.Tserver;
 import kudu.util.Pair;
+
 import org.jboss.netty.buffer.ChannelBuffer;
 import org.jboss.netty.buffer.ChannelBuffers;
 import org.jboss.netty.channel.Channel;
@@ -49,6 +52,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import javax.security.sasl.SaslException;
+
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Iterator;
@@ -310,13 +314,12 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
     if (buf == null) {
       return null;
     }
-    final int size = buf.readInt();
-    ensureReadable(buf, size);
-    KuduRpc.checkArrayLength(buf, size);
-    RpcHeader.ResponseHeader.Builder builder = RpcHeader.ResponseHeader.newBuilder();
-    KuduRpc.readProtobuf(buf, builder);
-    RpcHeader.ResponseHeader header = builder.build();
+
+    CallResponse response = new CallResponse(buf);
+
+    RpcHeader.ResponseHeader header = response.getHeader();
     if (!header.hasCallId()) {
+      final int size = response.getTotalResponseSize();
       final String msg = "RPC response (size: " + size + ") doesn't"
           + " have a call ID: " + header + ", buf=" + Bytes.pretty(buf);
       LOG.error(msg);
@@ -345,7 +348,7 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
     Exception exception = null;
     if (header.hasIsError() && header.getIsError()) {
       RpcHeader.ErrorStatusPB.Builder errorBuilder = RpcHeader.ErrorStatusPB.newBuilder();
-      KuduRpc.readProtobuf(buf, errorBuilder);
+      KuduRpc.readProtobuf(response.getPBMessage(), errorBuilder);
       RpcHeader.ErrorStatusPB error = errorBuilder.build();
       if (error.getCode().equals(RpcHeader.ErrorStatusPB.RpcErrorCodePB.ERROR_SERVER_TOO_BUSY)) {
         // we're not calling rpc.callback() so we rely on the client to retry that RPC
@@ -357,7 +360,7 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
       LOG.error(message); // can be useful
     } else {
       try {
-        decoded = rpc.deserialize(buf, this.uuid);
+        decoded = rpc.deserialize(response, this.uuid);
       } catch (Exception ex) {
         exception = ex;
       }

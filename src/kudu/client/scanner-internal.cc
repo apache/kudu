@@ -13,6 +13,7 @@
 #include "kudu/client/table-internal.h"
 #include "kudu/common/wire_protocol.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/rpc/rpc_controller.h"
 
 namespace kudu {
 
@@ -183,10 +184,28 @@ Status KuduScanner::Data::OpenTablet(const Slice& key) {
 Status KuduScanner::Data::ExtractRows(vector<KuduRowResult>* rows) {
   // First, rewrite the relative addresses into absolute ones.
   RowwiseRowBlockPB* rowblock_pb = last_response_.mutable_data();
-  RETURN_NOT_OK(RewriteRowBlockPB(*projection_, last_response_.mutable_data()
-                                  // TODO(vlad17) pass controller's sidecar
-                                  // slices for indirect data access */
-                                  ));
+  Slice direct, indirect;
+
+  if (PREDICT_FALSE(!rowblock_pb->has_rows_sidecar())) {
+    return Status::Corruption("Server sent invalid response: no row data");
+  } else {
+    Status s = controller_.GetSidecar(rowblock_pb->rows_sidecar(), &direct);
+    if (!s.ok()) {
+      return Status::Corruption("Server sent invalid response: row data "
+                                "sidecar index corrupt", s.ToString());
+    }
+  }
+
+  if (rowblock_pb->has_indirect_data_sidecar()) {
+    Status s = controller_.GetSidecar(rowblock_pb->indirect_data_sidecar(),
+                                      &indirect);
+    if (!s.ok()) {
+      return Status::Corruption("Server sent invalid response: indirect data "
+                                "sidecar index corrupt", s.ToString());
+    }
+  }
+
+  RETURN_NOT_OK(RewriteRowBlockPB(*projection_, *rowblock_pb, &direct, indirect));
 
   int n_rows = rowblock_pb->num_rows();
   if (PREDICT_FALSE(n_rows == 0)) {
@@ -203,8 +222,7 @@ Status KuduScanner::Data::ExtractRows(vector<KuduRowResult>* rows) {
   //
   // Doing this resize and array indexing turns out to be noticeably faster
   // than using reserve and push_back.
-  string* row_data = rowblock_pb->mutable_rows();
-  const uint8_t* src = reinterpret_cast<const uint8_t*>(&(*row_data)[0]);
+  const uint8_t* src = direct.data();
   KuduRowResult* dst = &(*rows)[before];
   while (n_rows > 0) {
     dst->Init(projection_, src);

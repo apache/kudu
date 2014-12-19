@@ -14,11 +14,13 @@ namespace kudu {
 
 class ConstContiguousRow;
 class ColumnSchema;
+class faststring;
 class HostPort;
 class RowBlock;
 class RowBlockRow;
 class RowChangeList;
 class Schema;
+class Slice;
 class Sockaddr;
 
 // Convert the given C++ Status object into the equivalent Protobuf.
@@ -74,7 +76,7 @@ Status SchemaToColumnPBsWithoutIds(
   const Schema& schema,
   google::protobuf::RepeatedPtrField<ColumnSchemaPB>* cols);
 
-// Encode the given row into the provided protobuf.
+// Encode the given row block into the provided protobuf and data buffers.
 //
 // All data (both direct and indirect) for each selected row in the RowBlock is
 // copied into the protobuf. The original data may be destroyed safely
@@ -82,17 +84,20 @@ Status SchemaToColumnPBsWithoutIds(
 //
 // This only converts those rows whose selection vector entry is true.
 // If 'client_projection_schema' is not NULL, then only columns specified in
-// 'client_projection_schema' will be projected to 'pb'.
+// 'client_projection_schema' will be projected to 'data_buf'.
+//
 // Requires that block.nrows() > 0
-void ConvertRowBlockToPB(const RowBlock& block, RowwiseRowBlockPB* pb,
-                         const Schema* client_projection_schema);
+void SerializeRowBlock(const RowBlock& block, RowwiseRowBlockPB* rowblock_pb,
+                       const Schema* client_projection_schema,
+                       faststring* data_buf, faststring* indirect_data);
 
-// Rewrites 'rowblock_pb' by replacing relative indirect data pointers with
-// absolute ones.
+// Rewrites the data pointed-to by row data slice 'row_data_slice' by replacing
+// relative indirect data pointers with absolute ones in 'indirect_data_slice'.
+// Updates 'rowblock_pb' with the appropriate number of rows accordingly.
 //
 // Returns a bad Status if the provided data is invalid or corrupt.
-Status RewriteRowBlockPB(const Schema& schema,
-                         RowwiseRowBlockPB* rowblock_pb);
+Status RewriteRowBlockPB(const Schema& schema, const RowwiseRowBlockPB& rowblock_pb,
+                         Slice* row_data_slice, const Slice& indirect_data_slice);
 
 // Extract the rows stored in this protobuf, which must have exactly the
 // given Schema. This Schema may be obtained using ColumnPBsToSchema.
@@ -102,17 +107,17 @@ Status RewriteRowBlockPB(const Schema& schema,
 // TODO: would be nice to just return a vector<ConstContiguousRow>, but
 // they're not currently copyable, so this can't be done.
 //
-// Note that the returned rows refer directly to memory managed by 'rowblock_pb';
-// thus, the protobuf may not be safely destroyed until the rows are no longer
-// needed. This is also the reason that 'rowblock_pb' is a non-const pointer
+// Note that the returned rows refer to memory managed by 'rows_data' and
+// 'indirect_data'. This is also the reason that 'rows_data' is a non-const pointer
 // argument: the internal data is mutated in-place to restore the validity of
 // indirect data pointers, which are relative on the wire but must be absolute
 // while in-memory.
 //
 // Returns a bad Status if the provided data is invalid or corrupt.
 Status ExtractRowsFromRowBlockPB(const Schema& schema,
-                                 RowwiseRowBlockPB* rowblock_pb,
-                                 std::vector<const uint8_t*>* rows);
+                                 const RowwiseRowBlockPB& rowblock_pb,
+                                 std::vector<const uint8_t*>* rows,
+                                 Slice* rows_data, const Slice& indirect_data);
 
 // Set 'leader_hostport' to the host/port of the leader server if one
 // can be found in 'entries'.

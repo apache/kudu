@@ -38,9 +38,10 @@ class AlterTableRequest extends KuduRpc<AlterTableResponse> {
   }
 
   @Override
-  Pair<AlterTableResponse, Object> deserialize(ChannelBuffer buf, String tsUUID) throws Exception {
+   Pair<AlterTableResponse, Object> deserialize(final CallResponse callResponse,
+                                                String tsUUID) throws Exception {
     final AlterTableResponsePB.Builder respBuilder = AlterTableResponsePB.newBuilder();
-    readProtobuf(buf, respBuilder);
+    readProtobuf(callResponse.getPBMessage(), respBuilder);
     AlterTableResponse response = new AlterTableResponse(deadlineTracker.getElapsedMillis(),
         tsUUID);
     return new Pair<AlterTableResponse, Object>(response, respBuilder.getError());

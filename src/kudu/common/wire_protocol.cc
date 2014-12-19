@@ -8,12 +8,15 @@
 
 #include "kudu/common/row.h"
 #include "kudu/common/rowblock.h"
+#include "kudu/gutil/port.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/fastmem.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/util/faststring.h"
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/safe_math.h"
+#include "kudu/util/slice.h"
 
 using google::protobuf::RepeatedPtrField;
 using std::vector;
@@ -282,21 +285,27 @@ Status SchemaToColumnPBs(const Schema& schema,
   return Status::OK();
 }
 
-Status RewriteRowBlockPB(const Schema& schema,
-                         RowwiseRowBlockPB *rowblock_pb) {
+// Because we use a faststring here, ASAN tests become unbearably slow
+// with the extra verifications.
+ATTRIBUTE_NO_ADDRESS_SAFETY_ANALYSIS
+Status RewriteRowBlockPB(const Schema& schema, const RowwiseRowBlockPB& rowblock_pb,
+                         Slice* row_data_slice, const Slice& indirect_data_slice) {
   // TODO: cheating here so we can rewrite the request as it arrived and
   // change any indirect data pointers back to "real" pointers instead of
   // on-the-wire pointers. Maybe the RPC layer should give us a non-const
   // request? Maybe we should suck it up and copy the data when we mutate?
-  string* row_data = rowblock_pb->mutable_rows();
-  const string& indir_data = rowblock_pb->indirect_data();
-  size_t row_size = ContiguousRowHelper::row_size(schema);
-  size_t expected_data_size = rowblock_pb->num_rows() * row_size;
 
-  if (PREDICT_FALSE(row_data->size() != expected_data_size)) {
+  // We don't need a const-cast because we can just use Slice's lack of
+  // const-safety.
+  uint8_t* row_data = row_data_slice->mutable_data();
+  const uint8_t* indir_data = indirect_data_slice.data();
+  size_t row_size = ContiguousRowHelper::row_size(schema);
+  size_t expected_data_size = rowblock_pb.num_rows() * row_size;
+
+  if (PREDICT_FALSE(row_data_slice->size() != expected_data_size)) {
     return Status::Corruption(
       StringPrintf("Row block has %zd bytes of data but expected %zd for %"PRIu32" rows",
-                   row_data->size(), expected_data_size, rowblock_pb->num_rows()));
+                   row_data_slice->size(), expected_data_size, rowblock_pb.num_rows()));
   }
 
   for (int i = 0; i < schema.num_columns(); i++) {
@@ -307,8 +316,8 @@ Status RewriteRowBlockPB(const Schema& schema,
 
     int row_idx = 0;
     size_t offset = 0;
-    while (offset < row_data->size()) {
-      ContiguousRow row(&schema, reinterpret_cast<uint8_t*>(&(*row_data)[offset]));
+    while (offset < row_data_slice->size()) {
+      ContiguousRow row(&schema, &row_data[offset]);
       uint8_t* dst_cell = row.mutable_cell_ptr(i);
 
       if (!col.is_nullable() || !row.is_null(i)) {
@@ -318,7 +327,7 @@ Status RewriteRowBlockPB(const Schema& schema,
         size_t offset_in_indirect = reinterpret_cast<uintptr_t>(slice->data());
         bool overflowed = false;
         size_t max_offset = AddWithOverflowCheck(offset_in_indirect, slice->size(), &overflowed);
-        if (PREDICT_FALSE(overflowed || max_offset > indir_data.size())) {
+        if (PREDICT_FALSE(overflowed || max_offset > indirect_data_slice.size())) {
           return Status::Corruption(
             StringPrintf("Row #%d contained bad indirect slice for column %s: (%zd, %zd)",
                          row_idx, col.ToString().c_str(),
@@ -338,11 +347,12 @@ Status RewriteRowBlockPB(const Schema& schema,
 }
 
 Status ExtractRowsFromRowBlockPB(const Schema& schema,
-                                 RowwiseRowBlockPB *rowblock_pb,
-                                 vector<const uint8_t*>* rows) {
-  RETURN_NOT_OK(RewriteRowBlockPB(schema, rowblock_pb));
+                                 const RowwiseRowBlockPB& rowblock_pb,
+                                 vector<const uint8_t*>* rows,
+                                 Slice* rows_data, const Slice& indirect_data) {
+  RETURN_NOT_OK(RewriteRowBlockPB(schema, rowblock_pb, rows_data, indirect_data));
 
-  int n_rows = rowblock_pb->num_rows();
+  int n_rows = rowblock_pb.num_rows();
   if (PREDICT_FALSE(n_rows == 0)) {
     // Early-out here to avoid a UBSAN failure.
     return Status::OK();
@@ -350,9 +360,8 @@ Status ExtractRowsFromRowBlockPB(const Schema& schema,
 
   // Doing this resize and array indexing turns out to be noticeably faster
   // than using reserve and push_back.
-  string* row_data = rowblock_pb->mutable_rows();
   size_t row_size = ContiguousRowHelper::row_size(schema);
-  const uint8_t* src = reinterpret_cast<const uint8_t*>(&(*row_data)[0]);
+  const uint8_t* src = rows_data->data();
   int dst_index = rows->size();
   rows->resize(rows->size() + n_rows);
   const uint8_t** dst = &(*rows)[dst_index];
@@ -419,7 +428,7 @@ void AppendRowToString<RowBlockRow>(const RowBlockRow& row, string* buf) {
 template<bool IS_NULLABLE, bool IS_STRING>
 static void CopyColumn(const RowBlock& block, int col_idx,
                        int dst_col_idx, uint8_t* dst_base,
-                       string* indirect_data, const Schema* dst_schema) {
+                       faststring* indirect_data, const Schema* dst_schema) {
   const Schema& schema = block.schema();
   if (dst_schema == NULL) {
     dst_schema = &schema;
@@ -460,8 +469,16 @@ static void CopyColumn(const RowBlock& block, int col_idx,
         Slice *dst_slice = reinterpret_cast<Slice *>(dst);
         *dst_slice = Slice(reinterpret_cast<const uint8_t*>(offset_in_indirect),
                            slice->size());
+        // TODO(vlad17): may be worth nulling out the bitmap initially to save
+        // on these flops.
+        if (IS_NULLABLE) {
+          BitmapChange(dst + offset_to_null_bitmap, dst_col_idx, false);
+        }
       } else { // non-string, non-null
         strings::memcpy_inlined(dst, src, cell_size);
+        if (IS_NULLABLE) {
+          BitmapChange(dst + offset_to_null_bitmap, dst_col_idx, false);
+        }
       }
       dst += row_stride;
       src += cell_size;
@@ -470,11 +487,14 @@ static void CopyColumn(const RowBlock& block, int col_idx,
   }
 }
 
-void ConvertRowBlockToPB(const RowBlock& block, RowwiseRowBlockPB* pb,
-                         const Schema* project_schema) {
+// Because we use a faststring here, ASAN tests become unbearably slow
+// with the extra verifications.
+ATTRIBUTE_NO_ADDRESS_SAFETY_ANALYSIS
+void SerializeRowBlock(const RowBlock& block, RowwiseRowBlockPB* rowblock_pb,
+                       const Schema* project_schema,
+                       faststring* data_buf, faststring* indirect_data) {
   DCHECK_GT(block.nrows(), 0);
   const Schema& schema = block.schema();
-  string* data_buf = pb->mutable_rows();
   size_t old_size = data_buf->size();
   size_t row_stride =
       ContiguousRowHelper::row_size(project_schema != NULL ? *project_schema : schema);
@@ -498,16 +518,16 @@ void ConvertRowBlockToPB(const RowBlock& block, RowwiseRowBlockPB* pb,
     // even bigger gains, since we could inline the constant cell sizes and column
     // offsets.
     if (col.is_nullable() && col.type_info()->type() == STRING) {
-      CopyColumn<true, true>(block, i, dst_idx, base, pb->mutable_indirect_data(),
+      CopyColumn<true, true>(block, i, dst_idx, base, indirect_data,
                              project_schema);
     } else if (col.is_nullable() && col.type_info()->type() != STRING) {
-      CopyColumn<true, false>(block, i, dst_idx, base, pb->mutable_indirect_data(),
+      CopyColumn<true, false>(block, i, dst_idx, base, indirect_data,
                               project_schema);
     } else if (!col.is_nullable() && col.type_info()->type() == STRING) {
-      CopyColumn<false, true>(block, i, dst_idx, base, pb->mutable_indirect_data(),
+      CopyColumn<false, true>(block, i, dst_idx, base, indirect_data,
                               project_schema);
     } else if (!col.is_nullable() && col.type_info()->type() != STRING) {
-      CopyColumn<false, false>(block, i, dst_idx, base, pb->mutable_indirect_data(),
+      CopyColumn<false, false>(block, i, dst_idx, base, indirect_data,
                                project_schema);
     } else {
       LOG(FATAL) << "cannot reach here";
@@ -515,7 +535,7 @@ void ConvertRowBlockToPB(const RowBlock& block, RowwiseRowBlockPB* pb,
 
     ++dst_idx;
   }
-  pb->set_num_rows(pb->num_rows() + num_rows);
+  rowblock_pb->set_num_rows(rowblock_pb->num_rows() + num_rows);
 }
 
 } // namespace kudu

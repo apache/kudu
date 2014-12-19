@@ -38,6 +38,7 @@ import com.stumbleupon.async.Callback;
 import com.stumbleupon.async.Deferred;
 import kudu.util.HybridTimeUtil;
 import kudu.util.Pair;
+import kudu.util.Slice;
 import org.jboss.netty.buffer.ChannelBuffer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -717,9 +718,9 @@ public final class KuduScanner {
     }
 
     @Override
-    Pair<Response, Object> deserialize(final ChannelBuffer buf, String tsUUID) throws Exception {
+    Pair<Response, Object> deserialize(final CallResponse callResponse, String tsUUID) throws Exception {
       ScanResponsePB.Builder builder = ScanResponsePB.newBuilder();
-      readProtobuf(buf, builder);
+      readProtobuf(callResponse.getPBMessage(), builder);
       ScanResponsePB resp = builder.build();
       final byte[] id = resp.getScannerId().toByteArray();
       TabletServerErrorPB error = resp.getError();
@@ -732,8 +733,9 @@ public final class KuduScanner {
               "the tablet has moved and this isn't a fault tolerant scan");
         }
       }
-      RowResultIterator iterator = new RowResultIterator(deadlineTracker.getElapsedMillis(), tsUUID,
-          schema, resp.getData());
+      RowResultIterator iterator = new RowResultIterator(
+          deadlineTracker.getElapsedMillis(), tsUUID, schema, resp.getData(),
+          callResponse);
 
       boolean hasMore = resp.getHasMoreResults();
       if (id.length  != 0 && scannerId != null && !Bytes.equals(scannerId, id)) {
@@ -769,8 +771,8 @@ public final class KuduScanner {
       Iterable<RowResult> {
 
     private final Schema schema;
-    private final byte[] bs;
-    private final byte[] indirectBs;
+    private final Slice bs;
+    private final Slice indirectBs;
     private final int numRows;
     private final RowResult rowResult;
     private int currentRow = 0;
@@ -780,10 +782,12 @@ public final class KuduScanner {
      * @param ellapsedMillis Time in milliseconds since RPC creation to now.
      * @param schema Schema used to parse the rows
      * @param data PB containing the data
+     * @param callResponse the call response received from the server for this
+     * RPC.
      */
-    private RowResultIterator(long ellapsedMillis, String tsUUID, Schema schema, WireProtocol
-        .RowwiseRowBlockPB
-        data) {
+    private RowResultIterator(long ellapsedMillis, String tsUUID, Schema schema,
+                              WireProtocol.RowwiseRowBlockPB data,
+                              final CallResponse callResponse) {
       super(ellapsedMillis, tsUUID);
       this.schema = schema;
       if (data == null || data.getNumRows() == 0) {
@@ -792,16 +796,15 @@ public final class KuduScanner {
         this.numRows = 0;
         return;
       }
-      // Hack, asynchbase and hbase do the same
-      this.bs = ZeroCopyLiteralByteString.zeroCopyGetBytes(data.getRows());
-      this.indirectBs =  ZeroCopyLiteralByteString.zeroCopyGetBytes(data.getIndirectData());
+      this.bs = callResponse.getSidecar(data.getRowsSidecar());
+      this.indirectBs = callResponse.getSidecar(data.getIndirectDataSidecar());
       this.numRows = data.getNumRows();
 
       // Integrity check
       int rowSize = schema.getRowSize();
       int expectedSize = numRows * rowSize;
-      if (expectedSize != bs.length) {
-        throw new NonRecoverableException("RowResult block has " + bs.length + " bytes of data " +
+      if (expectedSize != bs.length()) {
+        throw new NonRecoverableException("RowResult block has " + bs.length() + " bytes of data " +
             "but expected " + expectedSize + " for " + numRows + " rows");
       }
       this.rowResult = new RowResult(this.schema, this.bs, this.indirectBs);

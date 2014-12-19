@@ -150,7 +150,6 @@ void OutboundCall::SetResponse(gscoped_ptr<CallResponse> resp) {
   Slice r(call_response_->serialized_response());
 
   if (call_response_->is_success()) {
-
     // TODO: here we're deserializing the call response within the reactor thread,
     // which isn't great, since it would block processing of other RPCs in parallel.
     // Should look into a way to avoid this.

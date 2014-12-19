@@ -5,6 +5,7 @@ package kudu.rpc;
 import kudu.ColumnSchema;
 import kudu.Schema;
 import kudu.Type;
+import kudu.util.Slice;
 
 import java.math.BigInteger;
 import java.util.BitSet;
@@ -21,17 +22,17 @@ public class RowResult {
   private final int rowSize;
   private final int[] columnOffsets;
   private final Schema schema;
-  private final byte[] rowData;
-  private final byte[] indirectData;
+  private final Slice rowData;
+  private final Slice indirectData;
 
   /**
    * Prepares the row representation using the provided data. Doesn't copy data
    * out of the byte arrays. Package private.
    * @param schema Schema used to build the rowData
-   * @param rowData The full data returned by the tabletSlice server
+   * @param rowData The Slice of data returned by the tablet server
    * @param indirectData The full indirect data that contains the strings
    */
-  RowResult(Schema schema, byte[] rowData, byte[] indirectData) {
+  RowResult(Schema schema, Slice rowData, Slice indirectData) {
     this.schema = schema;
     this.rowData = rowData;
     this.indirectData = indirectData;
@@ -71,13 +72,12 @@ public class RowResult {
     this.index = rowIndex;
     this.offset = this.rowSize * this.index;
     if (schema.hasNullableColumns() && this.index != INDEX_RESET_LOCATION) {
-      this.nullsBitSet = Bytes.toBitSet(rowData,
-          getCurrentRowDataOffsetForColumn(schema.getColumnCount()), schema.getColumnCount());
+      this.nullsBitSet = Bytes.toBitSet(
+          this.rowData.getRawArray(),
+          this.rowData.getRawOffset()
+          + getCurrentRowDataOffsetForColumn(schema.getColumnCount()),
+          schema.getColumnCount());
     }
-  }
-
-  byte[] getRowData() {
-    return this.rowData;
   }
 
   int getCurrentRowDataOffsetForColumn(int columnIndex) {
@@ -94,7 +94,9 @@ public class RowResult {
   public long getUnsignedInt(int columnIndex) {
     checkValidColumn(columnIndex);
     checkNull(columnIndex);
-    return Bytes.getUnsignedInt(this.rowData, getCurrentRowDataOffsetForColumn(columnIndex));
+    return Bytes.getUnsignedInt(this.rowData.getRawArray(),
+                                this.rowData.getRawOffset()
+                                + getCurrentRowDataOffsetForColumn(columnIndex));
   }
 
   /**
@@ -107,7 +109,9 @@ public class RowResult {
   public int getInt(int columnIndex) {
     checkValidColumn(columnIndex);
     checkNull(columnIndex);
-    return Bytes.getInt(this.rowData, getCurrentRowDataOffsetForColumn(columnIndex));
+    return Bytes.getInt(this.rowData.getRawArray(),
+                        this.rowData.getRawOffset()
+                        + getCurrentRowDataOffsetForColumn(columnIndex));
   }
 
   /**
@@ -120,7 +124,9 @@ public class RowResult {
   public int getUnsignedShort(int columnIndex) {
     checkValidColumn(columnIndex);
     checkNull(columnIndex);
-    return Bytes.getUnsignedShort(this.rowData, getCurrentRowDataOffsetForColumn(columnIndex));
+    return Bytes.getUnsignedShort(this.rowData.getRawArray(),
+                                  this.rowData.getRawOffset()
+                                  + getCurrentRowDataOffsetForColumn(columnIndex));
   }
 
   /**
@@ -133,7 +139,9 @@ public class RowResult {
   public short getShort(int columnIndex) {
     checkValidColumn(columnIndex);
     checkNull(columnIndex);
-    return Bytes.getShort(this.rowData, getCurrentRowDataOffsetForColumn(columnIndex));
+    return Bytes.getShort(this.rowData.getRawArray(),
+                          this.rowData.getRawOffset()
+                          + getCurrentRowDataOffsetForColumn(columnIndex));
   }
 
   /**
@@ -146,7 +154,9 @@ public class RowResult {
   public short getUnsignedByte(int columnIndex) {
     checkValidColumn(columnIndex);
     checkNull(columnIndex);
-    return Bytes.getUnsignedByte(this.rowData, getCurrentRowDataOffsetForColumn(columnIndex));
+    return Bytes.getUnsignedByte(this.rowData.getRawArray(),
+                                 this.rowData.getRawOffset()
+                                 + getCurrentRowDataOffsetForColumn(columnIndex));
   }
 
   /**
@@ -159,7 +169,9 @@ public class RowResult {
   public byte getByte(int columnIndex) {
     checkValidColumn(columnIndex);
     checkNull(columnIndex);
-    return Bytes.getByte(this.rowData, getCurrentRowDataOffsetForColumn(columnIndex));
+    return Bytes.getByte(this.rowData.getRawArray(),
+                         this.rowData.getRawOffset()
+                         + getCurrentRowDataOffsetForColumn(columnIndex));
   }
 
   /**
@@ -172,7 +184,9 @@ public class RowResult {
   public long getLong(int columnIndex) {
     checkValidColumn(columnIndex);
     checkNull(columnIndex);
-    return Bytes.getLong(this.rowData, getCurrentRowDataOffsetForColumn(columnIndex));
+    return Bytes.getLong(this.rowData.getRawArray(),
+                         this.rowData.getRawOffset()
+                         + getCurrentRowDataOffsetForColumn(columnIndex));
   }
 
   /**
@@ -183,7 +197,9 @@ public class RowResult {
   public BigInteger getUnsignedLong(int columnIndex) {
     checkValidColumn(columnIndex);
     checkNull(columnIndex);
-    return Bytes.getUnsignedLong(this.rowData, getCurrentRowDataOffsetForColumn(columnIndex));
+    return Bytes.getUnsignedLong(this.rowData.getRawArray(),
+                                 this.rowData.getRawOffset()
+                                 + getCurrentRowDataOffsetForColumn(columnIndex));
   }
 
   /**
@@ -206,16 +222,19 @@ public class RowResult {
     checkNull(columnIndex);
     // C++ puts a Slice in rowData which is 16 bytes long for simplity, but we only support ints
     long offset = getLong(columnIndex);
-    long length = Bytes.getLong(rowData, getCurrentRowDataOffsetForColumn(columnIndex) + 8);
+    long length = rowData.getLong(getCurrentRowDataOffsetForColumn(columnIndex) + 8);
     assert offset < Integer.MAX_VALUE;
     assert length < Integer.MAX_VALUE;
-    return Bytes.getString(indirectData, (int)offset, (int)length);
+    return Bytes.getString(indirectData.getRawArray(),
+                           indirectData.getRawOffset() + (int)offset,
+                           (int)length);
   }
 
   /**
    * Get if the specified column is NULL
    * @param columnIndex Column index in the schema
-   * @return true if the column is null, false otherwise
+   * @return true if the column cell is null and the column is nullable,
+   * false otherwise
    * @throws IndexOutOfBoundsException if the column doesn't exist
    */
   public boolean isNull(int columnIndex) {
@@ -223,7 +242,8 @@ public class RowResult {
     if (nullsBitSet == null) {
       return false;
     }
-    return nullsBitSet.get(columnIndex);
+    return schema.getColumn(columnIndex).isNullable()
+        && nullsBitSet.get(columnIndex);
   }
 
   /**
