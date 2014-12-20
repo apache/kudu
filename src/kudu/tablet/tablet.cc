@@ -499,10 +499,51 @@ Status Tablet::DoMajorDeltaCompaction(const ColumnIndexes& column_indexes,
 }
 
 Status Tablet::DeleteCompactionInputs(const RowSetsInCompaction &input) {
-  //BOOST_FOREACH(const shared_ptr<RowSet> &l_input, input.rowsets()) {
-  //  LOG(INFO) << "Removing compaction input rowset " << l_input->ToString();
-  //}
-  return Status::OK();
+  Status ret;
+  BOOST_FOREACH(const shared_ptr<RowSet> &rs, input.rowsets()) {
+    // Skip MemRowSet & DuplicatingRowSets which don't have metadata.
+    RowSetMetadata* rsm = rs->metadata().get();
+    if (rsm == NULL) {
+      continue;
+    }
+
+    // Collect all blocks to delete.
+    //
+    // By this point the rowset is orphaned, so it's safe to iterate like
+    // this without acquiring any locks.
+    vector<BlockId> to_delete;
+    if (!rsm->adhoc_index_block().IsNull()) {
+      to_delete.push_back(rsm->adhoc_index_block());
+    }
+    if (!rsm->bloom_block().IsNull()) {
+      to_delete.push_back(rsm->bloom_block());
+    }
+    BOOST_FOREACH(const BlockId& b, rsm->redo_delta_blocks()) {
+      to_delete.push_back(b);
+    }
+    BOOST_FOREACH(const BlockId& b, rsm->undo_delta_blocks()) {
+      to_delete.push_back(b);
+    }
+    for (int i = 0; i < rsm->schema().num_columns(); i++) {
+      to_delete.push_back(rsm->column_data_block(i));
+    }
+
+    // Delete them. Return the first failure.
+    Status s = metadata_->fs_manager()->DeleteBlocks(to_delete);
+    if (PREDICT_TRUE(s.ok())) {
+      VLOG(1) << "Deleted " << to_delete.size() << " orphaned blocks "
+              << "after compacting " << rs->ToString();
+    } else {
+      LOG(WARNING) << "Failed to delete orphaned blocks after compacting "
+                   << rs->ToString() << ": " << s.ToString();
+      if (ret.ok()) {
+        ret = s;
+      }
+    }
+  }
+
+  // Return the first failure.
+  return ret;
 }
 
 Status Tablet::Flush() {
@@ -999,8 +1040,10 @@ Status Tablet::FlushMetadata(const RowSetVector& to_remove,
                              int64_t mrs_being_flushed) {
   RowSetMetadataIds to_remove_meta;
   BOOST_FOREACH(const shared_ptr<RowSet>& rowset, to_remove) {
-    // Skip MemRowSet & DuplicatingRowSets which don't have metadata
-    if (rowset->metadata().get() == NULL) continue;
+    // Skip MemRowSet & DuplicatingRowSets which don't have metadata.
+    if (rowset->metadata().get() == NULL) {
+      continue;
+    }
     to_remove_meta.insert(rowset->metadata()->id());
   }
 
@@ -1050,13 +1093,18 @@ Status Tablet::DoCompactionOrFlush(const Schema& schema,
               << "were GCed!)  Removing all input rowsets.";
     AtomicSwapRowSets(input.rowsets(), RowSetVector());
 
+    // Write out the new Tablet Metadata
+    RETURN_NOT_OK_PREPEND(FlushMetadata(input.rowsets(),
+                                        RowSetMetadataVector(),
+                                        mrs_being_flushed),
+                          "Failed to flush new tablet metadata");
+
     // Remove old rowsets.
     // TODO: Consensus catch-up may want to reserve the compaction inputs.
     WARN_NOT_OK(DeleteCompactionInputs(input),
         Substitute("Unable to remove $0 inputs. Will GC later.", op_name));
 
-    // Write out the new Tablet Metadata
-    return FlushMetadata(input.rowsets(), RowSetMetadataVector(), mrs_being_flushed);
+    return Status::OK();
   }
 
   // The RollingDiskRowSet writer wrote out one or more RowSets as the

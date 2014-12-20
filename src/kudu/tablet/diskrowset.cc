@@ -449,14 +449,14 @@ Status DiskRowSet::MajorCompactDeltaStores(const ColumnIndexes& col_indexes) {
   gscoped_ptr<MajorDeltaCompaction> compaction(
     NewMajorDeltaCompaction(col_indexes));
 
-  BlockId delta_block;
   RETURN_NOT_OK(compaction->Compact());
 
   // Update metadata.
   // TODO: think carefully about whether to update metadata or stores first!
   RowSetMetadataUpdate update;
   RETURN_NOT_OK(compaction->CreateMetadataUpdate(&update));
-  RETURN_NOT_OK(rowset_metadata_->CommitUpdate(update));
+  vector<BlockId> removed_blocks;
+  RETURN_NOT_OK(rowset_metadata_->CommitUpdate(update, &removed_blocks));
 
   // Open the new data.
   gscoped_ptr<CFileSet> new_base(new CFileSet(rowset_metadata_));
@@ -469,6 +469,16 @@ Status DiskRowSet::MajorCompactDeltaStores(const ColumnIndexes& col_indexes) {
 
   // Flush metadata.
   RETURN_NOT_OK(rowset_metadata_->Flush());
+
+  // Delete the now orphaned blocks.
+  Status s = rowset_metadata_->fs_manager()->DeleteBlocks(removed_blocks);
+  if (PREDICT_TRUE(s.ok())) {
+    VLOG(1) << "Deleted " << removed_blocks.size() << " orphaned blocks "
+            << "after major delta compaction";
+  } else {
+    LOG(WARNING) << "Failed to delete orphaned blocks after major delta "
+                 << "compaction: " << s.ToString();
+  }
   return Status::OK();
 }
 

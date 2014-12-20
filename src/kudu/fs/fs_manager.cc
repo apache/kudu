@@ -231,6 +231,27 @@ Status FsManager::DeleteBlock(const BlockId& block_id) {
   return block_manager_->DeleteBlock(block_id);
 }
 
+Status FsManager::DeleteBlocks(const vector<BlockId>& block_ids) {
+  int num_errors = 0;
+  Status ret;
+  BOOST_FOREACH(const BlockId& b, block_ids) {
+    Status s = DeleteBlock(b);
+    WARN_NOT_OK(s, Substitute("Could not delete block $0", b.ToString()));
+    if (!s.ok()) {
+      num_errors++;
+      if (ret.ok()) {
+        ret = s;
+      }
+    }
+  }
+
+  if (!ret.ok()) {
+    ret = ret.CloneAndPrepend(Substitute(
+        "Could not delete $0 blocks. First error", num_errors));
+  }
+  return ret;
+}
+
 bool FsManager::BlockExists(const BlockId& block_id) const {
   gscoped_ptr<ReadableBlock> block;
   return block_manager_->OpenBlock(block_id, &block).ok();

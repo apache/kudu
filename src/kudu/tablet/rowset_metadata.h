@@ -131,7 +131,10 @@ class RowSetMetadata {
   FsManager *fs_manager() const { return tablet_metadata_->fs_manager(); }
 
   // Atomically commit a set of changes to this object.
-  Status CommitUpdate(const RowSetMetadataUpdate& update);
+  //
+  // Writes the IDs of all blocks that were removed to 'removed_blocks'.
+  Status CommitUpdate(const RowSetMetadataUpdate& update,
+                      std::vector<BlockId>* removed_blocks);
 
  private:
   explicit RowSetMetadata(TabletMetadata *tablet_metadata)
