@@ -79,11 +79,20 @@ struct ExternalMiniClusterOptions {
 // of the daemons.
 class ExternalMiniCluster {
  public:
+  // Mode to which node types a certain action (like Shutdown()) should apply.
+  enum NodeSelectionMode {
+    TS_ONLY,
+    ALL
+  };
+
   explicit ExternalMiniCluster(const ExternalMiniClusterOptions& opts);
   ~ExternalMiniCluster();
 
   // Start the cluster.
   Status Start();
+
+  // Restarts the cluster. Requires that it has been Shutdown() first.
+  Status Restart();
 
   // Like the previous method but performs initialization synchronously, i.e.
   // this will wait for all TS's to be started and initialized. Tests should
@@ -94,9 +103,10 @@ class ExternalMiniCluster {
   // Requires that the master is already running.
   Status AddTabletServer();
 
-  // Shuts down the cluster.
+  // Shuts down the whole cluster or part of it, depending on the selected
+  // 'mode'.
   // Currently, this uses SIGKILL on each daemon for a non-graceful shutdown.
-  void Shutdown();
+  void Shutdown(NodeSelectionMode mode = ALL);
 
   // Return a pointer to the running leader master. This may be NULL
   // if the cluster is not started.
@@ -179,8 +189,6 @@ class ExternalMiniCluster {
 
   std::string data_root_;
 
-  bool started_;
-
   std::vector<scoped_refptr<ExternalMaster> > masters_;
   std::vector<scoped_refptr<ExternalTabletServer> > tablet_servers_;
 
@@ -204,6 +212,8 @@ class ExternalDaemon : public RefCountedThreadSafe<ExternalDaemon> {
 
   // Sends a SIGCONT signal to the daemon.
   Status Resume();
+
+  bool IsShutdown() const;
 
   virtual void Shutdown();
 

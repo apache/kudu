@@ -47,15 +47,11 @@ ExternalMiniClusterOptions::~ExternalMiniClusterOptions() {
 
 
 ExternalMiniCluster::ExternalMiniCluster(const ExternalMiniClusterOptions& opts)
-  : opts_(opts),
-    started_(false) {
-  masters_.resize(opts_.num_masters, NULL);
+  : opts_(opts) {
 }
 
 ExternalMiniCluster::~ExternalMiniCluster() {
-  if (started_) {
-    Shutdown();
-  }
+  Shutdown();
 }
 
 Status ExternalMiniCluster::DeduceBinRoot(std::string* ret) {
@@ -81,7 +77,10 @@ Status ExternalMiniCluster::HandleOptions() {
 }
 
 Status ExternalMiniCluster::Start() {
-  CHECK(!started_);
+  CHECK(masters_.empty()) << "Masters are not empty (size: " << masters_.size()
+      << "). Maybe you meant Restart()?";
+  CHECK(tablet_servers_.empty()) << "Tablet servers are not empty (size: "
+      << tablet_servers_.size() << "). Maybe you meant Restart()?";
   RETURN_NOT_OK(HandleOptions());
 
   RETURN_NOT_OK_PREPEND(rpc::MessengerBuilder("minicluster-messenger")
@@ -111,31 +110,39 @@ Status ExternalMiniCluster::Start() {
                   opts_.num_tablet_servers,
                   MonoDelta::FromSeconds(kTabletServerRegistrationTimeoutSeconds)));
 
-  started_ = true;
   return Status::OK();
 }
 
-void ExternalMiniCluster::Shutdown() {
-  BOOST_FOREACH(const scoped_refptr<ExternalDaemon>& master, masters_) {
-    if (master) {
-      master->Shutdown();
+void ExternalMiniCluster::Shutdown(NodeSelectionMode mode) {
+  if (mode == ALL) {
+    BOOST_FOREACH(const scoped_refptr<ExternalMaster>& master, masters_) {
+      if (master) {
+        master->Shutdown();
+      }
     }
   }
 
-  masters_.clear();
-
-  BOOST_FOREACH(const scoped_refptr<ExternalDaemon>& ts, tablet_servers_) {
+  BOOST_FOREACH(const scoped_refptr<ExternalTabletServer>& ts, tablet_servers_) {
     ts->Shutdown();
   }
+}
 
-  tablet_servers_.clear();
-
-  if (messenger_) {
-    messenger_->Shutdown();
-    messenger_.reset();
+Status ExternalMiniCluster::Restart() {
+  BOOST_FOREACH(const scoped_refptr<ExternalMaster>& master, masters_) {
+    if (master && master->IsShutdown()) {
+      RETURN_NOT_OK_PREPEND(master->Restart(), "Cannot restart master bound at: " +
+                                               master->bound_rpc_hostport().ToString());
+    }
   }
 
-  started_ = false;
+  BOOST_FOREACH(const scoped_refptr<ExternalTabletServer>& ts, tablet_servers_) {
+    if (ts->IsShutdown()) {
+      RETURN_NOT_OK_PREPEND(ts->Restart(), "Cannot restart tablet server bound at: " +
+                                           ts->bound_rpc_hostport().ToString());
+    }
+  }
+
+  return Status::OK();
 }
 
 string ExternalMiniCluster::GetBinaryPath(const string& binary) const {
@@ -167,7 +174,7 @@ Status ExternalMiniCluster::StartSingleMaster() {
       new ExternalMaster(exe, GetDataPath("master"),
                          SubstituteInFlags(opts_.extra_master_flags, 0));
   RETURN_NOT_OK(master->Start());
-  masters_[0] = master;
+  masters_.push_back(master);
   return Status::OK();
 }
 
@@ -199,7 +206,7 @@ Status ExternalMiniCluster::StartDistributedMasters() {
                            SubstituteInFlags(flags, i));
     RETURN_NOT_OK_PREPEND(peer->Start(),
                           Substitute("Unable to start Master at index $0", i));
-    masters_[i] = peer;
+    masters_.push_back(peer);
   }
 
   return Status::OK();
@@ -277,7 +284,7 @@ shared_ptr<MasterServiceProxy> ExternalMiniCluster::master_proxy(int idx) {
 
 Status ExternalMiniCluster::CreateClient(client::KuduClientBuilder& builder,
                                          shared_ptr<client::KuduClient>* client) {
-  CHECK(started_);
+  CHECK(!masters_.empty());
   builder.clear_master_server_addrs();
   BOOST_FOREACH(const scoped_refptr<ExternalMaster>& master, masters_) {
     builder.add_master_server_addr(master->bound_rpc_hostport().ToString());
@@ -385,6 +392,10 @@ Status ExternalDaemon::Resume() {
   if (!process_) return Status::OK();
   VLOG(1) << "Resuming " << exe_ << " with pid " << process_->pid();
   return process_->Kill(SIGCONT);
+}
+
+bool ExternalDaemon::IsShutdown() const {
+  return process_.get() == NULL;
 }
 
 void ExternalDaemon::Shutdown() {
