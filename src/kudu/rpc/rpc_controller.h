@@ -86,7 +86,7 @@ class RpcController {
   void set_deadline(const MonoTime& deadline);
 
   // Return the configured timeout.
-  const MonoDelta &timeout() const;
+  MonoDelta timeout() const;
 
  private:
   friend class OutboundCall;

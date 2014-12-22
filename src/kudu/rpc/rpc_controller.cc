@@ -56,7 +56,7 @@ void RpcController::set_deadline(const MonoTime& deadline) {
   set_timeout(deadline.GetDeltaSince(MonoTime::Now(MonoTime::FINE)));
 }
 
-const MonoDelta &RpcController::timeout() const {
+MonoDelta RpcController::timeout() const {
   lock_guard<simple_spinlock> l(&lock_);
   return timeout_;
 }
