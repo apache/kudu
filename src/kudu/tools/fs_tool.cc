@@ -465,6 +465,11 @@ Status FsTool::DumpCFileBlock(const std::string& block_id_str,
   return DumpCFileBlockInternal(block_id, opts, indent);
 }
 
+Status FsTool::PrintUUID(int indent) {
+  std::cout << Indent(indent) << fs_manager_->uuid() << std::endl;
+  return Status::OK();
+}
+
 Status FsTool::DumpCFileBlockInternal(const BlockId& block_id,
                                       const DumpOptions& opts,
                                       int indent) {

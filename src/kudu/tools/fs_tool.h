@@ -94,6 +94,8 @@ class FsTool {
                         const DumpOptions& opts,
                         int indent);
 
+  // Prints the server's UUID to whom the data belongs and nothing else.
+  Status PrintUUID(int indent);
  private:
   Status ListSegmentsInDir(const std::string& segments_dir);
 

@@ -44,6 +44,7 @@ enum CommandType {
   DUMP_ROWSET,
   DUMP_CFILE_BLOCK,
   PRINT_TABLET_META,
+  PRINT_UUID,
 };
 
 struct CommandHandler {
@@ -65,7 +66,9 @@ const vector<CommandHandler> kCommandHandlers = boost::assign::list_of
     (CommandHandler(DUMP_CFILE_BLOCK, "dump_block",
                     "Dump a cfile block (requires a block id"))
     (CommandHandler(PRINT_TABLET_META, "print_meta",
-                    "Print a tablet metadata (requires a tablet id)"));
+                    "Print a tablet metadata (requires a tablet id)"))
+    (CommandHandler(PRINT_UUID, "print_uuid",
+                    "Print the UUID (master or TS) to whom the data belongs"));
 
 void PrintUsageToStream(const std::string& prog_name, std::ostream* out) {
   *out << "Usage: " << prog_name
@@ -168,6 +171,14 @@ static int FsDumpToolMain(int argc, char** argv) {
         return 2;
       }
       CHECK_OK(fs_tool.PrintTabletMeta(argv[2], 0));
+      break;
+    }
+    case PRINT_UUID: {
+      if (argc < 2) {
+        Usage(argv[0], Substitute("$0 -base_dir /kudu print_uuid", argv[0]));
+        return 2;
+      }
+      CHECK_OK(fs_tool.PrintUUID(0));
       break;
     }
   }
