@@ -15,12 +15,8 @@
 #include "kudu/common/schema.h"
 #include "kudu/consensus/consensus_peers.h"
 #include "kudu/consensus/quorum_util.h"
-#include "kudu/gutil/strings/strcat.h"
-#include "kudu/integration-tests/external_mini_cluster.h"
-#include "kudu/master/master.proxy.h"
+#include "kudu/integration-tests/ts_itest-base.h"
 #include "kudu/server/metadata.pb.h"
-#include "kudu/tserver/tablet_server-test-base.h"
-#include "kudu/util/random.h"
 #include "kudu/util/stopwatch.h"
 #include "kudu/util/test_util.h"
 
@@ -49,8 +45,6 @@ using client::KuduInsert;
 using client::KuduSchema;
 using client::KuduSession;
 using client::KuduTable;
-using master::GetTableLocationsRequestPB;
-using master::GetTableLocationsResponsePB;
 using master::TableIdentifierPB;
 using master::TabletLocationsPB;
 using master::TSInfoPB;
@@ -64,26 +58,15 @@ using strings::Substitute;
 using tablet::TabletPeer;
 using tserver::TabletServer;
 
-static const int kMaxRetries = 20;
-static const int kNumReplicas = 3;
 static const int kConsensusRpcTimeoutForTests = 50;
 
 // Integration test for the raft consensus implementation.
 // Uses the whole tablet server stack with ExternalMiniCluster.
-class RaftConsensusITest : public TabletServerTest {
+class RaftConsensusITest : public TabletServerIntegrationTestBase {
  public:
   RaftConsensusITest()
-      : random_(SeedRandom()),
-        inserters_(FLAGS_num_client_threads) {
+      : inserters_(FLAGS_num_client_threads) {
   }
-
-  struct TServerDetails {
-    master::TSInfoPB ts_info;
-    gscoped_ptr<TabletServerServiceProxy> tserver_proxy;
-    gscoped_ptr<TabletServerAdminServiceProxy> tserver_admin_proxy;
-    gscoped_ptr<consensus::ConsensusServiceProxy> consensus_proxy;
-    ExternalTabletServer* external_ts;
-  };
 
   virtual void SetUp() OVERRIDE {
     KuduTest::SetUp();
@@ -93,34 +76,13 @@ class RaftConsensusITest : public TabletServerTest {
   // Starts an external cluster with 'num_replicas'. The caller can pass
   // 'non_default_flags' to specify non-default values the flags used
   // to configure the external daemons.
-  void BuildAndStart(int num_replicas,
-                     const vector<std::string>& non_default_flags) {
-    CreateCluster(num_replicas, non_default_flags);
+  void BuildAndStart(const vector<std::string>& non_default_flags) {
+    CreateCluster("raft_consensus-itest-cluster", non_default_flags);
     CreateClient(&client_);
-    CreateTable(num_replicas);
-    WaitForTSAndQuorum(num_replicas);
-  }
-
-  void CreateCluster(int num_replicas, const vector<std::string>& non_default_flags) {
-    ExternalMiniClusterOptions opts;
-    opts.num_tablet_servers = num_replicas;
-    opts.data_root = GetTestPath("raft_consensus-itest-cluster");
-
-    // If the caller passed no flags use the default ones.
-    if (non_default_flags.empty()) {
-      opts.extra_tserver_flags.push_back("--log_cache_size_soft_limit_mb=5");
-      opts.extra_tserver_flags.push_back("--log_cache_size_hard_limit_mb=10");
-      opts.extra_tserver_flags.push_back(strings::Substitute("--consensus_rpc_timeout_ms=$0",
-                                                             FLAGS_consensus_rpc_timeout_ms));
-    } else {
-      BOOST_FOREACH(const std::string& flag, non_default_flags) {
-        opts.extra_tserver_flags.push_back(flag);
-      }
-    }
-
-    cluster_.reset(new ExternalMiniCluster(opts));
-    ASSERT_STATUS_OK(cluster_->Start());
-    ASSERT_STATUS_OK(cluster_->WaitForTabletServerCount(num_replicas, MonoDelta::FromSeconds(5)));
+    CreateTable();
+    WaitForTSAndQuorum();
+    CHECK_GT(tablet_replicas_.size(), 0);
+    tablet_id_ = (*tablet_replicas_.begin()).first;
   }
 
   void CreateClient(shared_ptr<KuduClient>* client) {
@@ -131,14 +93,14 @@ class RaftConsensusITest : public TabletServerTest {
   }
 
   // Create a table with a single tablet, with 'num_replicas'.
-  void CreateTable(int num_replicas) {
+  void CreateTable() {
     // The tests here make extensive use of server schemas, but we need
     // a client schema to create the table.
     KuduSchema client_schema(GetClientSchema(schema_));
     ASSERT_OK(client_->NewTableCreator()
              ->table_name(kTableId)
              .schema(&client_schema)
-             .num_replicas(num_replicas)
+             .num_replicas(FLAGS_num_replicas)
              // NOTE: this is quite high as a timeout, but the default (5 sec) does not
              // seem to be high enough in some cases (see KUDU-550). We should remove
              // this once that ticket is addressed.
@@ -163,186 +125,6 @@ class RaftConsensusITest : public TabletServerTest {
       client_cols.push_back(client_col);
     }
     return KuduSchema(client_cols, server_schema.num_key_columns());
-  }
-
-  void CreateReplicaProxies(const TabletLocationsPB& locations) {
-    STLDeleteElements(&replicas_);
-
-    BOOST_FOREACH(const TabletLocationsPB::ReplicaPB& replica_pb, locations.replicas()) {
-      HostPort host_port;
-      ASSERT_STATUS_OK(HostPortFromPB(replica_pb.ts_info().rpc_addresses(0), &host_port));
-      vector<Sockaddr> addresses;
-      host_port.ResolveAddresses(&addresses);
-
-      gscoped_ptr<TServerDetails> peer(new TServerDetails());
-      peer->ts_info.CopyFrom(replica_pb.ts_info());
-
-      for (int i = 0; i < cluster_->num_tablet_servers(); i++) {
-        if (cluster_->tablet_server(i)->instance_id().permanent_uuid() ==
-            replica_pb.ts_info().permanent_uuid()) {
-          peer->external_ts = cluster_->tablet_server(i);
-        }
-      }
-
-      ASSERT_OK(CreateClientProxies(addresses[0],
-                                    &peer->tserver_proxy,
-                                    &peer->tserver_admin_proxy,
-                                    &peer->consensus_proxy));
-
-      replicas_.push_back(peer.release());
-    }
-  }
-
-  // Gets the the locations of the quorum and waits until 1 LEADER and kNumReplicas - 1
-  // FOLLOWERS are reported.
-  void WaitForTSAndQuorum(int num_replicas) {
-    int num_retries = 0;
-    // make sure the replicas are up and find the leader
-    while (true) {
-      if (num_retries >= kMaxRetries) {
-        FAIL() << " Reached max. retries while looking up the quorum.";
-      }
-
-      Status status = cluster_->WaitForTabletServerCount(num_replicas, MonoDelta::FromSeconds(5));
-      if (status.IsTimedOut()) {
-        LOG(WARNING)<< "Timeout waiting for all replicas to be online, retrying...";
-        num_retries++;
-        continue;
-      }
-      break;
-    }
-    WaitForReplicasAndUpdateLocations(num_replicas);
-  }
-
-  void WaitForReplicasAndUpdateLocations(int num_replicas) {
-    int num_retries = 0;
-    while (true) {
-      if (num_retries >= kMaxRetries) {
-        FAIL() << " Reached max. retries while looking up the quorum.";
-      }
-      GetTableLocationsRequestPB req;
-      GetTableLocationsResponsePB resp;
-      RpcController controller;
-      req.mutable_table()->set_table_name(kTableId);
-      TabletLocationsPB locations;
-
-      CHECK_OK(cluster_->master_proxy()->GetTableLocations(req, &resp, &controller));
-      CHECK(resp.tablet_locations_size() > 0);
-      tablet_id_ = resp.tablet_locations(0).tablet_id();
-      locations = resp.tablet_locations(0);
-
-      CreateReplicaProxies(locations);
-
-      if (replicas_.size() < num_replicas) {
-        LOG(WARNING)<< "Couldn't find the leader and/or replicas. Locations: "
-        << locations.ShortDebugString();
-        sleep(1);
-        num_retries++;
-        continue;
-      }
-      break;
-    }
-  }
-
-  // Removes a set of servers from the replicas_ list.
-  // Handy for controlling who to validate against after killing servers.
-  void PruneFromReplicas(const unordered_set<std::string>& uuids) {
-    vector<TServerDetails*> pruned_replicas;
-    BOOST_FOREACH(TServerDetails* replica, replicas_) {
-      if (ContainsKey(uuids, replica->ts_info.permanent_uuid())) {
-        delete replica;
-      } else {
-        pruned_replicas.push_back(replica);
-      }
-    }
-    replicas_ = pruned_replicas;
-  }
-
-  TServerDetails* GetReplicaWithUuidOrNull(const string& uuid) {
-    BOOST_FOREACH(TServerDetails* replica, replicas_) {
-      if (replica->ts_info.permanent_uuid() == uuid) {
-        return replica;
-      }
-    }
-    return NULL;
-  }
-
-  // Returns:
-  // Status::OK() if the replica is alive and leader of the quorum.
-  // Status::NotFound() if the replica is not part of the quorum or is dead.
-  // Status::IllegalState() if the replica is live but not the leader.
-  Status GetReplicaStatusAndCheckIfLeader(TServerDetails* replica) {
-    consensus::GetCommittedQuorumRequestPB req;
-    consensus::GetCommittedQuorumResponsePB resp;
-    RpcController controller;
-    controller.set_timeout(MonoDelta::FromMilliseconds(100));
-    req.set_tablet_id(tablet_id_);
-    if (!replica->consensus_proxy->GetCommittedQuorum(req, &resp, &controller).ok() ||
-        resp.has_error()) {
-      VLOG(1) << "Error getting quorum from replica: " << replica->ts_info.permanent_uuid();
-      return Status::NotFound("Error connecting to replica");
-    }
-    if (consensus::GetRoleInQuorum(replica->ts_info.permanent_uuid(),
-                                   resp.quorum()) == QuorumPeerPB::LEADER) {
-      return Status::OK();
-    }
-    VLOG(1) << "Replica not leader of quorum: " << replica->ts_info.permanent_uuid();
-    return Status::IllegalState("Replica found but not leader");
-  }
-
-   Status GetLeaderReplicaWithRetries(TServerDetails** leader, int max_attempts = 100) {
-    int attempts = 0;
-    while (attempts < max_attempts) {
-      *leader = GetLeaderReplicaOrNull();
-      if (*leader) {
-        return Status::OK();
-      }
-      attempts++;
-      usleep(100 * attempts * 1000);
-    }
-    return Status::NotFound("Leader replica not found");
-  }
-
-  // Returns the last committed leader of the quorum. Tries to get it from master
-  // but then actually tries to the get the committed quorum to make sure.
-  TServerDetails* GetLeaderReplicaOrNull() {
-    string leader_uuid;
-    Status master_found_leader_result = GetTabletLeaderUUIDFromMaster(tablet_id_, &leader_uuid);
-
-    // See if the master is up to date. I.e. if it does report a leader and if the
-    // replica it reports as leader is still alive and (at least thinks) its still
-    // the leader.
-    TServerDetails* leader;
-    if (master_found_leader_result.ok()) {
-      leader = GetReplicaWithUuidOrNull(leader_uuid);
-      if (leader && GetReplicaStatusAndCheckIfLeader(leader).ok()) {
-        return leader;
-      }
-    }
-
-    // The replica we got from the master (if any) is either dead or not the leader.
-    // Find the actual leader.
-    vector<TServerDetails*> replicas_copy = replicas_;
-    std::random_shuffle(replicas_copy.begin(), replicas_copy.end());
-    BOOST_FOREACH(TServerDetails* replica, replicas_copy) {
-      if (GetReplicaStatusAndCheckIfLeader(replica).ok()) {
-        return replica;
-      }
-    }
-    return NULL;
-  }
-
-  void GetOnlyLiveFollowerReplicas(vector<TServerDetails*>* followers) {
-    followers->clear();
-    TServerDetails* leader = GetLeaderReplicaOrNull();
-    BOOST_FOREACH(TServerDetails* replica, replicas_) {
-      if (leader != NULL && replica->ts_info.permanent_uuid() == leader->ts_info.permanent_uuid()) {
-        continue;
-      }
-      if (GetReplicaStatusAndCheckIfLeader(replica).IsIllegalState()) {
-        followers->push_back(replica);
-      }
-    }
   }
 
   void ScanReplica(TabletServerServiceProxy* replica_proxy,
@@ -377,15 +159,15 @@ class RaftConsensusITest : public TabletServerTest {
     std::sort(results->begin(), results->end());
   }
 
-  string DumpToString(const master::TSInfoPB& leader_info,
+  string DumpToString(TServerDetails* leader,
                       const vector<string>& leader_results,
-                      const master::TSInfoPB& replica_info,
+                      TServerDetails* replica,
                       const vector<string>& replica_results) {
     string ret = strings::Substitute("Replica results did not match the leaders."
                                      "\nLeader: $0\nReplica: $1. Results size "
                                      "L: $2 R: $3",
-                                     leader_info.ShortDebugString(),
-                                     replica_info.ShortDebugString(),
+                                     leader->ToString(),
+                                     replica->ToString(),
                                      leader_results.size(),
                                      replica_results.size());
 
@@ -411,10 +193,10 @@ class RaftConsensusITest : public TabletServerTest {
       vector<string> replica_results;
 
       TServerDetails* leader;
-      CHECK_OK(GetLeaderReplicaWithRetries(&leader));
+      CHECK_OK(GetLeaderReplicaWithRetries(tablet_id_, &leader));
 
       vector<TServerDetails*> followers;
-      GetOnlyLiveFollowerReplicas(&followers);
+      GetOnlyLiveFollowerReplicas(tablet_id_, &followers);
 
       ScanReplica(leader->tserver_proxy.get(), &leader_results);
 
@@ -432,8 +214,8 @@ class RaftConsensusITest : public TabletServerTest {
       BOOST_FOREACH(TServerDetails* replica, followers) {
         ScanReplica(replica->tserver_proxy.get(), &replica_results);
         last_replica = replica;
-        SCOPED_TRACE(DumpToString(leader->ts_info, leader_results,
-                                  replica->ts_info, replica_results));
+        SCOPED_TRACE(DumpToString(leader, leader_results,
+                                  replica, replica_results));
 
         if (leader_results.size() != replica_results.size()) {
           all_replicas_matched = false;
@@ -454,8 +236,8 @@ class RaftConsensusITest : public TabletServerTest {
         break;
       } else {
         if (counter >= kMaxRetries) {
-          SCOPED_TRACE(DumpToString(leader->ts_info, leader_results,
-                                    last_replica->ts_info, replica_results));
+          SCOPED_TRACE(DumpToString(leader, leader_results,
+                                    last_replica, replica_results));
           FAIL() << "LEADER results did not match one of the replicas.";
         }
         counter++;
@@ -544,64 +326,6 @@ class RaftConsensusITest : public TabletServerTest {
     }
   }
 
-  // Returns the index of the replica who is farthest ahead.
-  int GetFurthestAheadReplicaIdx(const vector<TServerDetails*>& replicas) {
-    consensus::GetLastOpIdRequestPB opid_req;
-    consensus::GetLastOpIdResponsePB opid_resp;
-    opid_req.set_tablet_id(tablet_id_);
-    RpcController controller;
-
-    uint64 max_index = 0;
-    int max_replica_index = -1;
-
-    for (int i = 0; i < replicas.size(); i++) {
-      controller.Reset();
-      opid_resp.Clear();
-      opid_req.set_tablet_id(tablet_id_);
-      CHECK_OK(replicas[i]->consensus_proxy->GetLastOpId(opid_req, &opid_resp, &controller));
-      if (opid_resp.opid().index() > max_index) {
-        max_index = opid_resp.opid().index();
-        max_replica_index = i;
-      }
-    }
-
-    CHECK_NE(max_replica_index, -1);
-
-    return max_replica_index;
-  }
-
-  Status GetTabletLeaderUUIDFromMaster(const std::string& tablet_id, std::string* leader_uuid) {
-    GetTableLocationsRequestPB req;
-    GetTableLocationsResponsePB resp;
-    RpcController controller;
-    controller.set_timeout(MonoDelta::FromMilliseconds(100));
-    req.mutable_table()->set_table_name(kTableId);
-
-    RETURN_NOT_OK(cluster_->master_proxy()->GetTableLocations(req, &resp, &controller));
-    BOOST_FOREACH(const TabletLocationsPB& loc, resp.tablet_locations()) {
-      if (loc.tablet_id() == tablet_id) {
-        BOOST_FOREACH(const TabletLocationsPB::ReplicaPB& replica, loc.replicas()) {
-          if (replica.role() == QuorumPeerPB::LEADER) {
-            *leader_uuid = replica.ts_info().permanent_uuid();
-            return Status::OK();
-          }
-        }
-      }
-    }
-    return Status::NotFound("Unable to find leader for tablet", tablet_id);
-  }
-
-  Status KillServerWithUUID(const std::string& uuid) {
-    for (int i = 0; i < cluster_->num_tablet_servers(); i++) {
-      ExternalTabletServer* ts = cluster_->tablet_server(i);
-      if (ts->instance_id().permanent_uuid() == uuid) {
-        ts->Shutdown();
-        return Status::OK();
-      }
-    }
-    return Status::NotFound("Unable to find server with UUID", uuid);
-  }
-
   // Stops the current leader of the quorum, runs leader election and then brings it back.
   // Before stopping the leader this pauses all follower nodes in regular intervals so that
   // we get an increased chance of stuff being pending.
@@ -609,10 +333,10 @@ class RaftConsensusITest : public TabletServerTest {
     bool kill = rand() % 2 == 0;
 
     TServerDetails* old_leader;
-    CHECK_OK(GetLeaderReplicaWithRetries(&old_leader));
+    CHECK_OK(GetLeaderReplicaWithRetries(tablet_id_, &old_leader));
 
     vector<TServerDetails*> followers;
-    GetOnlyLiveFollowerReplicas(&followers);
+    GetOnlyLiveFollowerReplicas(tablet_id_, &followers);
 
     BOOST_FOREACH(TServerDetails* ts, followers) {
       CHECK_OK(ts->external_ts->Pause());
@@ -634,7 +358,7 @@ class RaftConsensusITest : public TabletServerTest {
 
     // Get the new leader.
     TServerDetails* new_leader;
-    CHECK_OK(GetLeaderReplicaWithRetries(&new_leader));
+    CHECK_OK(GetLeaderReplicaWithRetries(tablet_id_, &new_leader));
 
     // Bring the old leader back.
     if (kill) {
@@ -642,42 +366,31 @@ class RaftConsensusITest : public TabletServerTest {
       // Wait until we have the same number of followers.
       int initial_followers = followers.size();
       do {
-        GetOnlyLiveFollowerReplicas(&followers);
+        GetOnlyLiveFollowerReplicas(tablet_id_, &followers);
       } while (followers.size() < initial_followers);
     } else {
       CHECK_OK(old_leader->external_ts->Resume());
     }
   }
 
-  virtual void TearDown() OVERRIDE {
-    cluster_->Shutdown();
-    STLDeleteElements(&replicas_);
-  }
-
  protected:
-  gscoped_ptr<ExternalMiniCluster> cluster_;
   shared_ptr<KuduClient> client_;
   scoped_refptr<KuduTable> table_;
-  vector<TServerDetails*> replicas_;
-
-  ThreadSafeRandom random_;
-  QuorumPB quorum_;
-  string tablet_id_;
-
   std::vector<scoped_refptr<kudu::Thread> > threads_;
   CountDownLatch inserters_;
+  string tablet_id_;
 };
 
 // Test that we can retrieve the permanent uuid of a server running
 // consensus service via RPC.
 TEST_F(RaftConsensusITest, TestGetPermanentUuid) {
-  BuildAndStart(kNumReplicas, vector<string>());
+  BuildAndStart(vector<string>());
 
   QuorumPeerPB peer;
   TServerDetails* leader = NULL;
-  ASSERT_OK(GetLeaderReplicaWithRetries(&leader));
-  peer.mutable_last_known_addr()->CopyFrom(leader->ts_info.rpc_addresses(0));
-  const string expected_uuid = leader->ts_info.permanent_uuid();
+  ASSERT_OK(GetLeaderReplicaWithRetries(tablet_id_, &leader));
+  peer.mutable_last_known_addr()->CopyFrom(leader->registration.rpc_addresses(0));
+  const string expected_uuid = leader->instance_id.permanent_uuid();
 
   rpc::MessengerBuilder builder("test builder");
   builder.set_num_reactors(1);
@@ -692,7 +405,7 @@ TEST_F(RaftConsensusITest, TestGetPermanentUuid) {
 // from the leader and then use that id to make the replica wait
 // until it is done. This will avoid the sleeps below.
 TEST_F(RaftConsensusITest, TestInsertAndMutateThroughConsensus) {
-  BuildAndStart(kNumReplicas, vector<string>());
+  BuildAndStart(vector<string>());
 
   int num_iters = AllowSlowTests() ? 10 : 1;
 
@@ -706,7 +419,7 @@ TEST_F(RaftConsensusITest, TestInsertAndMutateThroughConsensus) {
 }
 
 TEST_F(RaftConsensusITest, TestFailedTransaction) {
-  BuildAndStart(kNumReplicas, vector<string>());
+  BuildAndStart(vector<string>());
 
   WriteRequestPB req;
   req.set_tablet_id(tablet_id_);
@@ -720,7 +433,7 @@ TEST_F(RaftConsensusITest, TestFailedTransaction) {
   controller.set_timeout(MonoDelta::FromSeconds(FLAGS_rpc_timeout));
 
   TServerDetails* leader = NULL;
-  ASSERT_OK(GetLeaderReplicaWithRetries(&leader));
+  ASSERT_OK(GetLeaderReplicaWithRetries(tablet_id_, &leader));
 
   ASSERT_STATUS_OK(DCHECK_NOTNULL(leader->tserver_proxy.get())->Write(req, &resp, &controller));
   ASSERT_TRUE(resp.has_error());
@@ -746,7 +459,7 @@ TEST_F(RaftConsensusITest, TestFailedTransaction) {
 // that steals consensus peer locks for a while. This is meant to test that
 // even with timeouts and repeated requests consensus still works.
 TEST_F(RaftConsensusITest, MultiThreadedMutateAndInsertThroughConsensus) {
-  BuildAndStart(kNumReplicas, vector<string>());
+  BuildAndStart(vector<string>());
 
   if (500 == FLAGS_client_inserts_per_thread) {
     if (AllowSlowTests()) {
@@ -767,7 +480,7 @@ TEST_F(RaftConsensusITest, MultiThreadedMutateAndInsertThroughConsensus) {
                                   &new_thread));
     threads_.push_back(new_thread);
   }
-  for (int i = 0; i < kNumReplicas; i++) {
+  for (int i = 0; i < FLAGS_num_replicas; i++) {
     scoped_refptr<kudu::Thread> new_thread;
     CHECK_OK(kudu::Thread::Create("test", strings::Substitute("chaos-test$0", i),
                                   &RaftConsensusITest::DelayInjectorThread,
@@ -784,7 +497,7 @@ TEST_F(RaftConsensusITest, MultiThreadedMutateAndInsertThroughConsensus) {
 }
 
 TEST_F(RaftConsensusITest, TestInsertOnNonLeader) {
-  BuildAndStart(kNumReplicas, vector<string>());
+  BuildAndStart(vector<string>());
 
   // Manually construct a write RPC to a replica and make sure it responds
   // with the correct error code.
@@ -795,7 +508,12 @@ TEST_F(RaftConsensusITest, TestInsertOnNonLeader) {
   ASSERT_STATUS_OK(SchemaToPB(schema_, req.mutable_schema()));
   AddTestRowToPB(RowOperationsPB::INSERT, schema_, 1234, 5678,
                  "hello world via RPC", req.mutable_row_operations());
-  ASSERT_STATUS_OK(replicas_[0]->tserver_proxy->Write(req, &resp, &rpc));
+
+  // Get the leader.
+  vector<TServerDetails*> followers;
+  GetOnlyLiveFollowerReplicas(tablet_id_, &followers);
+
+  ASSERT_STATUS_OK(followers[0]->tserver_proxy->Write(req, &resp, &rpc));
   SCOPED_TRACE(resp.DebugString());
   ASSERT_TRUE(resp.has_error());
   Status s = StatusFromPB(resp.error().status());
@@ -811,7 +529,7 @@ TEST_F(RaftConsensusITest, TestRunLeaderElection) {
   // Reset consensus rpc timeout to the default value or the election might fail often.
   FLAGS_consensus_rpc_timeout_ms = 1000;
 
-  BuildAndStart(kNumReplicas, vector<string>());
+  BuildAndStart(vector<string>());
 
   int num_iters = AllowSlowTests() ? 10 : 1;
 
@@ -824,14 +542,14 @@ TEST_F(RaftConsensusITest, TestRunLeaderElection) {
 
   // Select the last follower to be new leader.
   vector<TServerDetails*> followers;
-  GetOnlyLiveFollowerReplicas(&followers);
+  GetOnlyLiveFollowerReplicas(tablet_id_, &followers);
 
   // Now shutdown the current leader.
-  TServerDetails* leader = DCHECK_NOTNULL(GetLeaderReplicaOrNull());
+  TServerDetails* leader = DCHECK_NOTNULL(GetLeaderReplicaOrNull(tablet_id_));
   leader->external_ts->Shutdown();
 
   TServerDetails* replica = followers.back();
-  CHECK_NE(leader->ts_info.permanent_uuid(), replica->ts_info.permanent_uuid());
+  CHECK_NE(leader->instance_id.permanent_uuid(), replica->instance_id.permanent_uuid());
 
   // Make the new replica leader.
   consensus::RunLeaderElectionRequestPB request;
@@ -857,8 +575,8 @@ TEST_F(RaftConsensusITest, TestInsertWhenTheQueueIsFull) {
   vector<string> extra_flags;
   extra_flags.push_back("--log_cache_size_soft_limit_mb=0");
   extra_flags.push_back("--log_cache_size_hard_limit_mb=1");
-  BuildAndStart(kNumReplicas, extra_flags);
-  TServerDetails* replica = replicas_[0];
+  BuildAndStart(extra_flags);
+  TServerDetails* replica = (*tablet_replicas_.begin()).second;
   ASSERT_TRUE(replica != NULL);
 
   // generate a 128Kb dummy payload
@@ -882,7 +600,7 @@ TEST_F(RaftConsensusITest, TestInsertWhenTheQueueIsFull) {
   LOG(INFO)<< "Paused one of the replicas, starting to write.";
 
   TServerDetails* leader = NULL;
-  ASSERT_OK(GetLeaderReplicaWithRetries(&leader));
+  ASSERT_OK(GetLeaderReplicaWithRetries(tablet_id_, &leader));
 
   // .. and insert until insertions fail because the queue is full
   while (true) {
@@ -940,12 +658,12 @@ TEST_F(RaftConsensusITest, TestInsertWhenTheQueueIsFull) {
 }
 
 TEST_F(RaftConsensusITest, MultiThreadedInsertWithFailovers) {
-  int kNumReplicas = 3;
-  int kNumElections = kNumReplicas;
+  int kNumElections = FLAGS_num_replicas;
 
   if (AllowSlowTests()) {
-    kNumReplicas = 7;
-    kNumElections = 3 * kNumReplicas;
+    FLAGS_num_tablet_servers = 7;
+    FLAGS_num_replicas = 7;
+    kNumElections = 3 * FLAGS_num_replicas;
   }
 
   // Reset consensus rpc timeout to the default value or the election might fail often.
@@ -956,7 +674,7 @@ TEST_F(RaftConsensusITest, MultiThreadedInsertWithFailovers) {
 
   vector<string> flags;
   flags.push_back("--enable_leader_failure_detection=true");
-  BuildAndStart(kNumReplicas, flags);
+  BuildAndStart(flags);
 
   OverrideFlagForSlowTests(
       "client_inserts_per_thread",
@@ -1002,25 +720,25 @@ TEST_F(RaftConsensusITest, MultiThreadedInsertWithFailovers) {
 
 // Test automatic leader election by killing leaders.
 TEST_F(RaftConsensusITest, TestAutomaticLeaderElection) {
-  int kNumReplicas = 3;
   if (AllowSlowTests()) {
-    kNumReplicas = 5;
+    FLAGS_num_tablet_servers = 5;
+    FLAGS_num_replicas = 5;
   }
   vector<string> flags;
   flags.push_back("--enable_leader_failure_detection=true");
-  BuildAndStart(kNumReplicas, flags);
+  BuildAndStart(flags);
 
   TServerDetails* leader;
-  ASSERT_OK(GetLeaderReplicaWithRetries(&leader));
+  ASSERT_OK(GetLeaderReplicaWithRetries(tablet_id_, &leader));
 
   unordered_set<string> killed_leader_uuids;
 
-  const int kNumLeadersToKill = kNumReplicas / 2;
-  const int kFinalNumReplicas = kNumReplicas / 2 + 1;
+  const int kNumLeadersToKill = FLAGS_num_replicas / 2;
+  const int kFinalNumReplicas = FLAGS_num_replicas / 2 + 1;
 
   for (int leaders_killed = 0; leaders_killed < kFinalNumReplicas; leaders_killed++) {
     LOG(INFO) << Substitute("Writing data to leader of $0-node quorum ($1 alive)...",
-                            kNumReplicas, kNumReplicas - leaders_killed);
+                            FLAGS_num_replicas, FLAGS_num_replicas - leaders_killed);
 
     InsertTestRowsRemoteThread(leaders_killed * FLAGS_client_inserts_per_thread,
                                FLAGS_client_inserts_per_thread,
@@ -1030,12 +748,12 @@ TEST_F(RaftConsensusITest, TestAutomaticLeaderElection) {
     // At this point, the writes are flushed but the commit index may not be
     // propagated to all replicas. We kill the leader anyway.
     if (leaders_killed < kNumLeadersToKill) {
-      LOG(INFO) << "Killing current leader " << leader->ts_info.permanent_uuid() << "...";
-      ASSERT_OK(KillServerWithUUID(leader->ts_info.permanent_uuid()));
-      InsertOrDie(&killed_leader_uuids, leader->ts_info.permanent_uuid());
+      LOG(INFO) << "Killing current leader " << leader->instance_id.permanent_uuid() << "...";
+      ASSERT_OK(KillServerWithUUID(leader->instance_id.permanent_uuid()));
+      InsertOrDie(&killed_leader_uuids, leader->instance_id.permanent_uuid());
 
       LOG(INFO) << "Waiting for new guy to be elected leader.";
-      ASSERT_OK(GetLeaderReplicaWithRetries(&leader));
+      ASSERT_OK(GetLeaderReplicaWithRetries(tablet_id_, &leader));
     }
   }
 
