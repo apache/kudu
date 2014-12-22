@@ -30,7 +30,8 @@ public class ListTabletServersRequest extends KuduRpc<ListTabletServersResponse>
   }
 
   @Override
-  Pair<ListTabletServersResponse, Object> deserialize(ChannelBuffer buf) throws Exception {
+  Pair<ListTabletServersResponse, Object> deserialize(ChannelBuffer buf,
+                                                      String tsUUID) throws Exception {
     final ListTabletServersResponsePB.Builder respBuilder =
         ListTabletServersResponsePB.newBuilder();
     readProtobuf(buf, respBuilder);
@@ -40,7 +41,7 @@ public class ListTabletServersRequest extends KuduRpc<ListTabletServersResponse>
       servers.add(entry.getRegistration().getRpcAddresses(0).getHost());
     }
     ListTabletServersResponse response = new ListTabletServersResponse(deadlineTracker
-        .getElapsedMillis(), serversCount, servers);
+        .getElapsedMillis(), tsUUID, serversCount, servers);
     return new Pair<ListTabletServersResponse, Object>(response, null);
   }
 }

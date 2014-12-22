@@ -33,6 +33,7 @@ import com.google.common.base.Objects;
 import com.google.common.collect.ComparisonChain;
 import com.google.common.collect.Lists;
 import com.google.protobuf.ByteString;
+import com.google.protobuf.ZeroCopyLiteralByteString;
 import kudu.ColumnSchema;
 import kudu.Common;
 import kudu.Schema;
@@ -1149,7 +1150,8 @@ public class KuduClient {
     return tabletPair.getValue();
   }
 
-  private TabletClient newClient(final String host, final int port, boolean isMasterTable) {
+  private TabletClient newClient(String uuid, final String host, final int port, boolean
+      isMasterTable) {
     final String hostport = host + ':' + port;
     TabletClient client;
     SocketChannel chan;
@@ -1159,7 +1161,7 @@ public class KuduClient {
         return client;
       }
       final TabletClientPipeline pipeline = new TabletClientPipeline();
-      client = pipeline.init(isMasterTable);
+      client = pipeline.init(uuid, isMasterTable);
       chan = channelFactory.newChannel(pipeline);
       ip2client.put(hostport, client);  // This is guaranteed to return null.
     }
@@ -1431,8 +1433,8 @@ public class KuduClient {
      */
     private boolean disconnected = false;
 
-    TabletClient init(boolean isMasterTable) {
-      final TabletClient client = new TabletClient(KuduClient.this, isMasterTable);
+    TabletClient init(String uuid, boolean isMasterTable) {
+      final TabletClient client = new TabletClient(KuduClient.this, uuid, isMasterTable);
       super.addLast("handler", client);
       return client;
     }
@@ -1619,10 +1621,12 @@ public class KuduClient {
                 "address");
             continue;
           }
+          byte[] buf = Bytes.get(replica.getTsInfo().getPermanentUuid());
+          String uuid = Bytes.getString(buf);
           // from meta_cache.cc
           // TODO: if the TS advertises multiple host/ports, pick the right one
           // based on some kind of policy. For now just use the first always.
-          addTabletClient(addresses.get(0).getHost(), addresses.get(0).getPort(),
+          addTabletClient(uuid, addresses.get(0).getHost(), addresses.get(0).getPort(),
               isMasterTable(table), replica.getRole().equals(Metadata.QuorumPeerPB.Role.LEADER));
         }
         leaderIndex = 0;
@@ -1633,19 +1637,20 @@ public class KuduClient {
     }
 
     // Must be called with tabletServers synchronized
-    void addTabletClient(String host, int port, boolean isMasterTable, boolean isLeader) {
+    void addTabletClient(String uuid, String host, int port, boolean isMasterTable, boolean
+        isLeader) {
       String ip = getIP(host);
       if (ip == null) {
         return;
       }
-      TabletClient client = newClient(ip, port, isMasterTable);
+      TabletClient client = newClient(uuid, ip, port, isMasterTable);
 
       final ArrayList<RemoteTablet> tablets = client2tablets.get(client);
 
       if (tablets == null) {
         // We raced with removeClientFromCache and lost. The client we got was just disconnected.
         // Reconnect.
-        addTabletClient(host, port, isMasterTable, isLeader);
+        addTabletClient(uuid, host, port, isMasterTable, isLeader);
       } else {
         synchronized (tablets) {
           if (isLeader) {

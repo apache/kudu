@@ -14,8 +14,8 @@ public class OperationResponse extends KuduRpcResponse {
    * @param ellapsedMillis Time in milliseconds since RPC creation to now.
    * @param writeTimestamp HT's write timestamp.
    */
-  OperationResponse(long ellapsedMillis, long writeTimestamp) {
-    super(ellapsedMillis);
+  OperationResponse(long ellapsedMillis, String tsUUID, long writeTimestamp) {
+    super(ellapsedMillis, tsUUID);
     this.writeTimestamp = writeTimestamp;
   }
 

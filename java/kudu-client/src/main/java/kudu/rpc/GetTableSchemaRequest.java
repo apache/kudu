@@ -37,11 +37,13 @@ public class GetTableSchemaRequest extends KuduRpc<GetTableSchemaResponse> {
   }
 
   @Override
-  Pair<GetTableSchemaResponse, Object> deserialize(ChannelBuffer buf) throws Exception {
+  Pair<GetTableSchemaResponse, Object> deserialize(ChannelBuffer buf, String tsUUID) throws Exception {
     final GetTableSchemaResponsePB.Builder respBuilder = GetTableSchemaResponsePB.newBuilder();
     readProtobuf(buf, respBuilder);
     GetTableSchemaResponse response = new GetTableSchemaResponse(
-        deadlineTracker.getElapsedMillis(), ProtobufHelper.pbToSchema(respBuilder.getSchema()));
+        deadlineTracker.getElapsedMillis(),
+        tsUUID,
+        ProtobufHelper.pbToSchema(respBuilder.getSchema()));
     return new Pair<GetTableSchemaResponse, Object>(response, respBuilder.getError());
   }
 }

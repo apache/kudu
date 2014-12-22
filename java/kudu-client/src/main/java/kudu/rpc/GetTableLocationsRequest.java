@@ -34,9 +34,9 @@ class GetTableLocationsRequest extends KuduRpc<Master.GetTableLocationsResponseP
   }
 
   @Override
-  Pair<Master.GetTableLocationsResponsePB, Object> deserialize(final ChannelBuffer buf)
-      throws
-      Exception {
+  Pair<Master.GetTableLocationsResponsePB, Object> deserialize(final ChannelBuffer buf,
+                                                               String tsUUID)
+      throws Exception {
     Master.GetTableLocationsResponsePB.Builder builder = Master.GetTableLocationsResponsePB
         .newBuilder();
     readProtobuf(buf, builder);

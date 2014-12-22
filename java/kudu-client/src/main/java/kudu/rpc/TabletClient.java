@@ -132,10 +132,13 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
 
   private final String serviceName;
 
+  private final String uuid;
+
   private SecureRpcHelper secureRpcHelper;
 
-  public TabletClient(KuduClient client, boolean isMaster) {
+  public TabletClient(KuduClient client, String uuid, boolean isMaster) {
     this.kuduClient = client;
+    this.uuid = uuid;
     this.serviceName = isMaster ? MASTER_SERVICE_NAME : TABLET_SERVER_SERVICE_NAME;
   }
 
@@ -322,7 +325,7 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
     final int rpcid = header.getCallId();
 
     @SuppressWarnings("rawtypes")
-	final KuduRpc rpc = rpcs_inflight.get(rpcid);
+    final KuduRpc rpc = rpcs_inflight.get(rpcid);
 
     if (rpc == null) {
       final String msg = "Invalid rpcid: " + rpcid + " found in "
@@ -354,7 +357,7 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
       LOG.error(message); // can be useful
     } else {
       try {
-        decoded = rpc.deserialize(buf);
+        decoded = rpc.deserialize(buf, this.uuid);
       } catch (Exception ex) {
         exception = ex;
       }

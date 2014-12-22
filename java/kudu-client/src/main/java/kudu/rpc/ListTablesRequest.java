@@ -36,7 +36,7 @@ class ListTablesRequest extends KuduRpc<ListTablesResponse> {
   }
 
   @Override
-  Pair<ListTablesResponse, Object> deserialize(ChannelBuffer buf) throws Exception {
+  Pair<ListTablesResponse, Object> deserialize(ChannelBuffer buf, String tsUUID) throws Exception {
     final Master.ListTablesResponsePB.Builder respBuilder =
         Master.ListTablesResponsePB.newBuilder();
     readProtobuf(buf, respBuilder);
@@ -46,7 +46,7 @@ class ListTablesRequest extends KuduRpc<ListTablesResponse> {
       tables.add(info.getName());
     }
     ListTablesResponse response = new ListTablesResponse(deadlineTracker.getElapsedMillis(),
-        tables);
+                                                         tsUUID, tables);
     return new Pair<ListTablesResponse, Object>(response, respBuilder.getError());
   }
 }

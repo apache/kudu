@@ -41,12 +41,13 @@ public class RowsWithErrorException extends NonRecoverableException {
    * @return
    */
   static RowsWithErrorException fromPerRowErrorPB(List<Tserver.WriteResponsePB.PerRowErrorPB>
-                                                      errorsPB, List<Operation> operations) {
+                                                      errorsPB, List<Operation> operations,
+                                                  String tsUUID) {
     List<RowError> errors = new ArrayList<RowError>(errorsPB.size());
     for (Tserver.WriteResponsePB.PerRowErrorPB errorPB : errorsPB) {
       WireProtocol.AppStatusPB statusPB = errorPB.getError();
       RowError error = new RowError(statusPB.getCode().toString(), statusPB.getMessage(),
-          operations.get(errorPB.getRowIndex()));
+          operations.get(errorPB.getRowIndex()), tsUUID);
       errors.add(error);
     }
     return new RowsWithErrorException(errors);
@@ -101,11 +102,13 @@ public class RowsWithErrorException extends NonRecoverableException {
     private final String status;
     private final String message;
     private final Operation operation;
+    private final String tsUUID;
 
-    RowError(String errorStatus, String errorMessage, Operation operation) {
+    RowError(String errorStatus, String errorMessage, Operation operation, String tsUUID) {
       this.status = errorStatus;
       this.message = errorMessage;
       this.operation = operation;
+      this.tsUUID = tsUUID;
     }
 
     /**
@@ -130,6 +133,14 @@ public class RowsWithErrorException extends NonRecoverableException {
      */
     public Operation getOperation() {
       return operation;
+    }
+
+    /**
+     * Get the identifier of the tablet server that sent the error.
+     * @return A string containing a UUID.
+     */
+    public String getTsUUID() {
+      return tsUUID;
     }
   }
 }

@@ -14,9 +14,9 @@ public class ListTabletServersResponse extends KuduRpcResponse {
    * @param tabletServersCount How many tablet servers the master is reporting.
    * @param tabletServersList List of tablet servers.
    */
-  ListTabletServersResponse(long ellapsedMillis, int tabletServersCount,
-                            List<String> tabletServersList) {
-    super(ellapsedMillis);
+  ListTabletServersResponse(long ellapsedMillis, String tsUUID,
+                            int tabletServersCount, List<String> tabletServersList) {
+    super(ellapsedMillis, tsUUID);
     this.tabletServersCount = tabletServersCount;
     this.tabletServersList = tabletServersList;
   }

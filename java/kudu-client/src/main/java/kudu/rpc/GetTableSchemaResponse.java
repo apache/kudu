@@ -12,8 +12,8 @@ public class GetTableSchemaResponse extends KuduRpcResponse {
    * @param ellapsedMillis Time in milliseconds since RPC creation to now.
    * @param schema Table's schema.
    */
-  GetTableSchemaResponse(long ellapsedMillis, Schema schema) {
-    super(ellapsedMillis);
+  GetTableSchemaResponse(long ellapsedMillis, String tsUUID, Schema schema) {
+    super(ellapsedMillis, tsUUID);
     this.schema = schema;
   }
 

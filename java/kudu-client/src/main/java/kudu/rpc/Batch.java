@@ -42,13 +42,13 @@ class Batch extends KuduRpc<OperationResponse> implements KuduRpc.HasKey {
   }
 
   @Override
-  Pair<OperationResponse, Object> deserialize(ChannelBuffer buf) throws Exception {
+  Pair<OperationResponse, Object> deserialize(ChannelBuffer buf, String tsUUID) throws Exception {
     Tserver.WriteResponsePB.Builder builder = Tserver.WriteResponsePB.newBuilder();
     readProtobuf(buf, builder);
     if (builder.getPerRowErrorsCount() != 0) {
-      throw RowsWithErrorException.fromPerRowErrorPB(builder.getPerRowErrorsList(), ops);
+      throw RowsWithErrorException.fromPerRowErrorPB(builder.getPerRowErrorsList(), ops, tsUUID);
     }
-    OperationResponse response = new OperationResponse(deadlineTracker.getElapsedMillis(),
+    OperationResponse response = new OperationResponse(deadlineTracker.getElapsedMillis(), tsUUID,
         builder.getWriteTimestamp());
     return new Pair<OperationResponse, Object>(response, builder.getError());
   }

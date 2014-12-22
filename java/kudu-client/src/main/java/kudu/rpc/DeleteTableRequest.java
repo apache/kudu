@@ -37,10 +37,11 @@ class DeleteTableRequest extends KuduRpc<DeleteTableResponse> {
   }
 
   @Override
-  Pair<DeleteTableResponse, Object> deserialize(ChannelBuffer buf) throws Exception {
+  Pair<DeleteTableResponse, Object> deserialize(ChannelBuffer buf, String tsUUID) throws Exception {
     final Master.DeleteTableResponsePB.Builder builder = Master.DeleteTableResponsePB.newBuilder();
     readProtobuf(buf, builder);
-    DeleteTableResponse response = new DeleteTableResponse(deadlineTracker.getElapsedMillis());
+    DeleteTableResponse response =
+        new DeleteTableResponse(deadlineTracker.getElapsedMillis(), tsUUID);
     return new Pair<DeleteTableResponse, Object>(response, builder.getError());
   }
 }

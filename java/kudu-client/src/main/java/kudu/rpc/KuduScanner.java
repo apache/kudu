@@ -717,7 +717,7 @@ public final class KuduScanner {
     }
 
     @Override
-    Pair<Response, Object> deserialize(final ChannelBuffer buf) throws Exception {
+    Pair<Response, Object> deserialize(final ChannelBuffer buf, String tsUUID) throws Exception {
       ScanResponsePB.Builder builder = ScanResponsePB.newBuilder();
       readProtobuf(buf, builder);
       ScanResponsePB resp = builder.build();
@@ -732,7 +732,7 @@ public final class KuduScanner {
               "the tablet has moved and this isn't a fault tolerant scan");
         }
       }
-      RowResultIterator iterator = new RowResultIterator(deadlineTracker.getElapsedMillis(),
+      RowResultIterator iterator = new RowResultIterator(deadlineTracker.getElapsedMillis(), tsUUID,
           schema, resp.getData());
 
       boolean hasMore = resp.getHasMoreResults();
@@ -781,9 +781,10 @@ public final class KuduScanner {
      * @param schema Schema used to parse the rows
      * @param data PB containing the data
      */
-    private RowResultIterator(long ellapsedMillis, Schema schema, WireProtocol.RowwiseRowBlockPB
+    private RowResultIterator(long ellapsedMillis, String tsUUID, Schema schema, WireProtocol
+        .RowwiseRowBlockPB
         data) {
-      super(ellapsedMillis);
+      super(ellapsedMillis, tsUUID);
       this.schema = schema;
       if (data == null || data.getNumRows() == 0) {
         this.bs = this.indirectBs = null;

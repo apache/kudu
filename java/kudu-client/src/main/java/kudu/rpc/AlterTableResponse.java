@@ -7,7 +7,7 @@ public class AlterTableResponse extends KuduRpcResponse {
   /**
    * @param ellapsedMillis Time in milliseconds since RPC creation to now.
    */
-  AlterTableResponse(long ellapsedMillis) {
-    super(ellapsedMillis);
+  AlterTableResponse(long ellapsedMillis, String tsUUID) {
+    super(ellapsedMillis, tsUUID);
   }
 }

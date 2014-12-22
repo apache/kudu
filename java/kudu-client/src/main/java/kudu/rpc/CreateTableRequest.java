@@ -41,10 +41,11 @@ class CreateTableRequest extends KuduRpc<CreateTableResponse> {
   }
 
   @Override
-  Pair<CreateTableResponse, Object> deserialize(ChannelBuffer buf) throws Exception {
+  Pair<CreateTableResponse, Object> deserialize(ChannelBuffer buf, String tsUUID) throws Exception {
     final Master.CreateTableResponsePB.Builder builder = Master.CreateTableResponsePB.newBuilder();
     readProtobuf(buf, builder);
-    CreateTableResponse response = new CreateTableResponse(deadlineTracker.getElapsedMillis());
+    CreateTableResponse response =
+        new CreateTableResponse(deadlineTracker.getElapsedMillis(), tsUUID);
     return new Pair<CreateTableResponse, Object>(response, builder.getError());
   }
 }

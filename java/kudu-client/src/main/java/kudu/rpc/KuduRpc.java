@@ -121,12 +121,13 @@ public abstract class KuduRpc<R> {
    * @param buf The buffer from which to de-serialize the response.
    * protobuf of the RPC response.  If 0, then there is just the protobuf.
    * The value is guaranteed to be both positive and of a "reasonable" size.
+   * @param tsUUID A string that contains the UUID of the server that answered the RPC.
    * @return An Object of type R that will be sent to callback and an Object that will be an Error
    * of type TabletServerErrorPB or MasterErrorPB that will be converted into an exception and
    * sent to errback.
    * @throws Exception An exception that will be sent to errback.
    */
-  abstract Pair<R, Object> deserialize(ChannelBuffer buf) throws Exception;
+  abstract Pair<R, Object> deserialize(ChannelBuffer buf, String tsUUID) throws Exception;
 
   /**
    * Sets the external consistency mode for this RPC.

@@ -25,7 +25,9 @@ class IsCreateTableDoneRequest extends KuduRpc<Master.IsCreateTableDoneResponseP
   }
 
   @Override
-  kudu.util.Pair<Master.IsCreateTableDoneResponsePB, Object> deserialize(final ChannelBuffer buf) throws Exception {
+  kudu.util.Pair<Master.IsCreateTableDoneResponsePB, Object> deserialize(final ChannelBuffer buf,
+                                                                         String tsUUID)
+      throws Exception {
     Master.IsCreateTableDoneResponsePB.Builder builder = Master.IsCreateTableDoneResponsePB
         .newBuilder();
     readProtobuf(buf, builder);

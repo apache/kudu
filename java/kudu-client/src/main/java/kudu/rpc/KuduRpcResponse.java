@@ -7,13 +7,16 @@ package kudu.rpc;
  */
 abstract class KuduRpcResponse {
   private final long elapsedMillis;
+  private final String tsUUID;
 
   /**
    * Constructor with information common to all RPCs.
    * @param ellapsedMillis Time in milliseconds since RPC creation to now.
+   * @param tsUUID A string that contains the UUID of the server that answered the RPC.
    */
-  KuduRpcResponse(long ellapsedMillis) {
+  KuduRpcResponse(long ellapsedMillis, String tsUUID) {
     this.elapsedMillis = ellapsedMillis;
+    this.tsUUID = tsUUID;
   }
 
   /**
@@ -23,5 +26,13 @@ abstract class KuduRpcResponse {
    */
   public long getElapsedMillis() {
     return elapsedMillis;
+  }
+
+  /**
+   * Get the identifier of the tablet server that sent the response.
+   * @return A string containing a UUID.
+   */
+  public String getTsUUID() {
+    return tsUUID;
   }
 }

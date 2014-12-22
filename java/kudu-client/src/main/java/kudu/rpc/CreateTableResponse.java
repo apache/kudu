@@ -7,7 +7,7 @@ public class CreateTableResponse extends KuduRpcResponse {
   /**
    * @param ellapsedMillis Time in milliseconds since RPC creation to now.
    */
-  CreateTableResponse(long ellapsedMillis) {
-    super(ellapsedMillis);
+  CreateTableResponse(long ellapsedMillis, String tsUUID) {
+    super(ellapsedMillis, tsUUID);
   }
 }

@@ -308,15 +308,15 @@ public abstract class Operation extends KuduRpc<OperationResponse> implements Ku
   }
 
   @Override
-  Pair<OperationResponse, Object> deserialize(ChannelBuffer buf) throws Exception {
+  Pair<OperationResponse, Object> deserialize(ChannelBuffer buf, String tsUUID) throws Exception {
     Tserver.WriteResponsePB.Builder builder = Tserver.WriteResponsePB.newBuilder();
     readProtobuf(buf, builder);
     if (builder.getPerRowErrorsCount() != 0) {
       List<Operation> ops = new ArrayList<Operation>(1);
       ops.add(this);
-      throw RowsWithErrorException.fromPerRowErrorPB(builder.getPerRowErrorsList(), ops);
+      throw RowsWithErrorException.fromPerRowErrorPB(builder.getPerRowErrorsList(), ops, tsUUID);
     }
-    OperationResponse response = new OperationResponse(deadlineTracker.getElapsedMillis(),
+    OperationResponse response = new OperationResponse(deadlineTracker.getElapsedMillis(), tsUUID,
         builder.getWriteTimestamp());
     return new Pair<OperationResponse, Object>(response, builder.getError());
   }
