@@ -562,10 +562,10 @@ Status LinkedListTester::WaitAndVerify(int seconds_to_run, int64_t expected) {
     // in the chain.
 
     if (!s.ok()) {
-      // We'll give the tablets 3 seconds to start up regardless of how long we
+      // We'll give the tablets 5 seconds to start up regardless of how long we
       // inserted for. There's some fixed cost startup time, especially when
       // replication is enabled.
-      const int kBaseTimeToWaitSecs = 3;
+      const int kBaseTimeToWaitSecs = 5;
 
       LOG(INFO) << "Table not yet ready: " << seen << "/" << expected << " rows"
                 << " (status: " << s.ToString() << ")";

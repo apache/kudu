@@ -82,6 +82,15 @@ class LinkedListTest : public tserver::TabletServerIntegrationTestBase {
     flags.push_back("--skip_remove_old_recovery_dir");
     flags.push_back("--tablet_server_rpc_bind_addresses=127.0.0.1:705${index}");
     flags.push_back("--enable_leader_failure_detection=true");
+
+    if (AllowSlowTests()) {
+      // Set the flush threshold low so that we have a mix of flushed and unflushed
+      // operations in the WAL, when we bootstrap.
+      flags.push_back("--flush_threshold_mb=1");
+      // Set the size of the WAL segments low so that some can be GC'd.
+      flags.push_back("--log_segment_size_mb=1");
+    }
+
     CreateCluster("linked-list-cluster", flags);
     ResetClientAndTester();
     ASSERT_STATUS_OK(tester_->CreateLinkedListTable());
