@@ -123,6 +123,11 @@ def extract_failures(log_text):
       error_signature += "\n".join(consume_rest(line_iter))
       record_error(errors_by_test, heapcheck_test_case, error_signature)
 
+  # Sometimes we see crashes that the script doesn't know how to parse.
+  # When that happens, we leave a generic message to be picked up by Jenkins.
+  if cur_test_case and cur_test_case not in errors_by_test:
+    record_error(errors_by_test, cur_test_case, "Unrecognized error type. Please see the error log for more information.")
+
   return (tests_seen_in_order, errors_by_test)
 
 # Return failure summary formatted as text.
@@ -169,6 +174,7 @@ def print_failure_summary(tests, errors_by_test, is_xml):
     cur_test_suite = None
     print '<testsuites>'
 
+    found_test_suites = False
     for test_name in tests:
       if test_name not in errors_by_test:
         continue
@@ -181,6 +187,7 @@ def print_failure_summary(tests, errors_by_test, is_xml):
           print '  </testsuite>'
         cur_test_suite = test_suite
         print '  <testsuite name="%s">' % cur_test_suite
+        found_test_suites = True
 
       # Print each test case.
       print '    <testcase name="%s" classname="%s">' % (test_case, cur_test_suite)
@@ -193,7 +200,8 @@ def print_failure_summary(tests, errors_by_test, is_xml):
       print '      </error>'
       print '    </testcase>'
 
-    print '  </testsuite>'
+    if found_test_suites:
+      print '  </testsuite>'
     print '</testsuites>'
 
 def main():
