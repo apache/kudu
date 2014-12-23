@@ -29,6 +29,12 @@ target_link_libraries(rle
   kudu_util
   ${KUDU_TEST_LINK_LIBS})
 
+# wal_hiccup
+add_executable(wal_hiccup wal_hiccup.cc)
+target_link_libraries(wal_hiccup
+  kudu_util
+  ${KUDU_TEST_LINK_LIBS})
+
 # Tests
 set(KUDU_TEST_LINK_LIBS tpch ${KUDU_TEST_LINK_LIBS})
 ADD_KUDU_TEST(tpch/rpc_line_item_dao-test)
