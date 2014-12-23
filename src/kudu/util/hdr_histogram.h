@@ -67,6 +67,13 @@ class HdrHistogram {
   void Increment(int64_t value);
   void IncrementBy(int64_t value, int64_t count);
 
+  // Record new data, correcting for "coordinated omission".
+  //
+  // See https://groups.google.com/d/msg/mechanical-sympathy/icNZJejUHfE/BfDekfBEs_sJ
+  // for more details.
+  void IncrementWithExpectedInterval(int64_t value,
+                                     int64_t expected_interval_between_samples);
+
   // Fetch configuration params.
   uint64_t highest_trackable_value() const { return highest_trackable_value_; }
   int num_significant_digits() const { return num_significant_digits_; }

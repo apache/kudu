@@ -32,6 +32,25 @@ TEST_F(HdrHistogramTest, SimpleTest) {
   ASSERT_EQ(2, hist.CountInBucketForValue(1000));
 }
 
+TEST_F(HdrHistogramTest, TestCoordinatedOmission) {
+  uint64_t interval = 1000;
+  int loop_iters = 100;
+  int64_t normal_value = 10;
+  HdrHistogram hist(1000000LU, kSigDigits);
+  for (int i = 1; i <= loop_iters; i++) {
+    // Simulate a periodic "large value" that would exhibit coordinated
+    // omission were this loop to sleep on 'interval'.
+    int64_t value = (i % normal_value == 0) ? interval * 10 : normal_value;
+
+    hist.IncrementWithExpectedInterval(value, interval);
+  }
+  ASSERT_EQ(loop_iters - (loop_iters / normal_value),
+            hist.CountInBucketForValue(normal_value));
+  for (int i = interval; i <= interval * 10; i += interval) {
+    ASSERT_EQ(loop_iters / normal_value, hist.CountInBucketForValue(i));
+  }
+}
+
 static void load_percentiles(HdrHistogram* hist, uint64_t real_max) {
   hist->IncrementBy(10, 80);
   hist->IncrementBy(100, 10);

@@ -158,6 +158,19 @@ void HdrHistogram::IncrementBy(int64_t value, int64_t count) {
   }
 }
 
+void HdrHistogram::IncrementWithExpectedInterval(int64_t value,
+                                                 int64_t expected_interval_between_samples) {
+  Increment(value);
+  if (expected_interval_between_samples <= 0) {
+    return;
+  }
+  for (int64_t missing_value = value - expected_interval_between_samples;
+      missing_value >= expected_interval_between_samples;
+      missing_value -= expected_interval_between_samples) {
+    Increment(missing_value);
+  }
+}
+
 ////////////////////////////////////
 
 int HdrHistogram::BucketIndex(uint64_t value) const {
