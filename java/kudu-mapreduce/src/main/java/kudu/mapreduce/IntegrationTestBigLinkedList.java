@@ -261,8 +261,6 @@ public class IntegrationTestBigLinkedList extends Configured implements Tool {
   private static final String GENERATOR_WRAP_KEY
       = "IntegrationTestBigLinkedList.generator.wrap";
 
-  private static final int MISSING_ROWS_TO_LOG = 50;
-
   private static final int WIDTH_DEFAULT = 1000000;
   private static final int WRAP_DEFAULT = 25;
   private static final int ROWKEY_LENGTH = 16;
@@ -801,16 +799,10 @@ public class IntegrationTestBigLinkedList extends Configured implements Tool {
           // lost, emit some info about this node for debugging purposes.
           context.write(new Text(keyString), new Text(refsSb.toString()));
           context.getCounter(Counts.UNDEFINED).increment(1);
-          if (rows.addAndGet(1) < MISSING_ROWS_TO_LOG) {
-            context.getCounter("undef", keyString).increment(1);
-          }
         } else if (defCount > 0 && refs.size() == 0) {
           // node is defined but not referenced
           context.write(new Text(keyString), new Text("none"));
           context.getCounter(Counts.UNREFERENCED).increment(1);
-          if (rows.addAndGet(1) < MISSING_ROWS_TO_LOG) {
-            context.getCounter("unref", keyString).increment(1);
-          }
         } else {
           if (refs.size() > 1) {
             if (refsSb != null) {
