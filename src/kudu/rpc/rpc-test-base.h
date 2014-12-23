@@ -118,10 +118,13 @@ class GenericCalculatorService : public ServiceIf {
     RandomString(second->data(), req.size2(), &r);
 
     SendTwoStringsResponsePB resp;
-    resp.set_sidecar1(incoming->AddRpcSidecar(
-        make_gscoped_ptr(new RpcSidecar(first.Pass()))));
-    resp.set_sidecar2(incoming->AddRpcSidecar(
-        make_gscoped_ptr(new RpcSidecar(second.Pass()))));
+    int idx1, idx2;
+    CHECK_OK(incoming->AddRpcSidecar(
+        make_gscoped_ptr(new RpcSidecar(first.Pass())), &idx1));
+    CHECK_OK(incoming->AddRpcSidecar(
+        make_gscoped_ptr(new RpcSidecar(second.Pass())), &idx2));
+    resp.set_sidecar1(idx1);
+    resp.set_sidecar2(idx2);
 
     incoming->RespondSuccess(resp);
   }

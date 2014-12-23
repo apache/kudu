@@ -49,8 +49,8 @@ void RpcContext::RespondApplicationError(int error_ext_id, const std::string& me
   delete this;
 }
 
-int RpcContext::AddRpcSidecar(gscoped_ptr<RpcSidecar> car) {
-  return call_->AddRpcSidecar(car.Pass());
+Status RpcContext::AddRpcSidecar(gscoped_ptr<RpcSidecar> car, int* idx) {
+  return call_->AddRpcSidecar(car.Pass(), idx);
 }
 
 const UserCredentials& RpcContext::user_credentials() const {

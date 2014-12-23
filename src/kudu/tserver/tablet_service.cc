@@ -970,13 +970,26 @@ void TabletServiceImpl::HandleContinueScanRequest(const ScanRequestPB* req,
   }
 
   // Add sidecar data to context and record the returned indices.
-  // TODO(vlad17): verify indices returned are not -1
-  int rows_idx = context->AddRpcSidecar(make_gscoped_ptr(
-      new rpc::RpcSidecar(rows_data.Pass())));
-  resp->mutable_data()->set_rows_sidecar(rows_idx);
+  {
+    int rows_idx;
+    Status s = context->AddRpcSidecar(make_gscoped_ptr(
+        new rpc::RpcSidecar(rows_data.Pass())), &rows_idx);
+    if (!s.ok()) {
+      RespondGenericError("Scan request main row data issue",
+                          resp->mutable_error(), s, context);
+      return;
+    }
+    resp->mutable_data()->set_rows_sidecar(rows_idx);
+  }
   if (indirect_data->size() > 0) {
-    int indirect_idx = context->AddRpcSidecar(make_gscoped_ptr(
-        new rpc::RpcSidecar(indirect_data.Pass())));
+    int indirect_idx;
+    Status s = context->AddRpcSidecar(make_gscoped_ptr(
+        new rpc::RpcSidecar(indirect_data.Pass())), &indirect_idx);
+    if (!s.ok()) {
+      RespondGenericError("Scan request indirect data issue",
+                          resp->mutable_error(), s, context);
+      return;
+    }
     resp->mutable_data()->set_indirect_data_sidecar(indirect_idx);
   }
 

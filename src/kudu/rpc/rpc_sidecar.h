@@ -35,16 +35,13 @@ namespace rpc {
 // RpcController's interface) is able to offer retrieval of the sidecar data
 // through the same indices that were returned by InboundCall (or indirectly
 // through the RpcContext wrapper) on the client side.
-//
-// TODO(vlad17) make pretty interface, document, pull out to .cc.
-// TODO(vlad17) eventually RpcSidecar should be an interface which
-// provides an AsSlice() method, with different implementations for varying
-// underlying data representations.
 class RpcSidecar {
  public:
+  // Generates a sidecar with the parameter faststring as its data.
   explicit RpcSidecar(gscoped_ptr<faststring> data) : data_(data.Pass()) {}
 
-  Slice AsSlice() { return *data_; }
+  // Returns a Slice representation of the sidecar's data.
+  Slice AsSlice() const { return *data_; }
 
  private:
   const gscoped_ptr<faststring> data_;

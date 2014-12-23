@@ -147,8 +147,6 @@ message RowwiseRowBlockPB {
 
   // See ColumnBlockPB.indirect_data.
   optional int32 indirect_data_sidecar = 5;
-
-  // TODO: Make things other than RowwiseRowBlockPB rely on sidecars
 }
 
 // A set of operations (INSERT, UPDATE, or DELETE) to apply to a table.

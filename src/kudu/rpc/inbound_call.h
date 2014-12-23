@@ -102,7 +102,7 @@ class InboundCall {
   void SerializeResponseTo(std::vector<Slice>* slices) const;
 
   // See RpcContext::AddRpcSidecar()
-  int AddRpcSidecar(gscoped_ptr<RpcSidecar> car);
+  Status AddRpcSidecar(gscoped_ptr<RpcSidecar> car, int* idx);
 
   std::string ToString() const;
 

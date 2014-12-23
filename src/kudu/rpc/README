@@ -155,6 +155,81 @@ There is a ServicePool which you can use to coordinate several worker threads
 handling callbacks.
 
 -------------------------------------------------------------------------------
+RPC Sidecars
+-------------------------------------------------------------------------------
+RPC sidecars are used to avoid excess copies for large volumes of data.
+Prior to RPC sidecars, the sequence of steps for creating an RPC response
+on the server side would be as follows:
+
+1. Write the prepared response to a Google protobuf message.
+2. Pass the message off to the InboundCall class, which serializes the
+   protobuf into a process-local buffer.
+3. Copy the process-local buffer to the kernel buffer (send() to a socket).
+
+The client follows these steps in reverse order. On top of the extra copy,
+this procedure also forces us to use std::string, which is difficult for
+compilers to inline code for and requires that reserved bytes are nulled out,
+which is an unnecessary call to memset.
+
+Instead, sidecars provide a mechanism to indicate the need to pass a large
+store of data to the InboundCall class, which manages the response to a single
+RPC on the server side. When send()-ing the rest of the message (i.e., the
+protobuf), the sidecar's data is directly written to the socket.
+
+The data is appended directly after the main message protobuf. Here's what
+a typical message looks like without sidecars:
+
++------------------------------------------------+
+| Total message length (4 bytes)                 |
++------------------------------------------------+
+| RPC Header protobuf length (variable encoding) |
++------------------------------------------------+
+| RPC Header protobuf                            |
++------------------------------------------------+
+| Main message length (variable encoding)        |
++------------------------------------------------+
+| Main message protobuf                          |
++------------------------------------------------+
+
+In this case, the main message length is equal to the protobuf's byte size.
+Since there are no sidecars, the header protobuf's sidecar_offsets list
+will will be empty.
+
+Here's what it looks like with the sidecars:
+
++------------------------------------------------+
+| Total message length (4 bytes)                 |
++------------------------------------------------+
+| RPC Header protobuf length (variable encoding) |
++------------------------------------------------+
+| RPC Header protobuf                            |
++------------------------------------------------+
+| Main message length (variable encoding)        |
++------------------------------------------------+ --- 0
+| Main message protobuf                          |
++------------------------------------------------+ --- sidecar_offsets(0)
+| Sidecar 0                                      |
++------------------------------------------------+ --- sidecar_offsets(1)
+| Sidecar 1                                      |
++------------------------------------------------+ --- sidecar_offsets(2)
+| Sidecar 2                                      |
++------------------------------------------------+ --- ...
+| ...                                            |
++------------------------------------------------+
+
+When there are sidecars, the sidecar_offsets member in the header will be a
+nonempty list, whose values indicate the offset, measured from the beginning
+of the main message protobuf, of the start of each sidecar. The number
+of offsets will indicate the number of sidecars.
+
+Then, on the client side, the sidecars locations are decoded and made available
+by RpcController::GetSidecars() (which returns the pointer to the array of all
+the sidecars). The caller must be sure to check that the sidecar index in the
+sidecar array is correct and in-bounds.
+
+More information is available in rpc/rpc_sidecar.h.
+
+-------------------------------------------------------------------------------
 Wire Protocol
 -------------------------------------------------------------------------------
 

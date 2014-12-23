@@ -123,11 +123,16 @@ void InboundCall::SerializeResponseTo(vector<Slice>* slices) const {
   }
 }
 
-int InboundCall::AddRpcSidecar(gscoped_ptr<RpcSidecar> car) {
-  // TODO(vlad17): need to make sure these sizes stay below the limit,
-  // perhaps returning an error code if the slice goes over.
+Status InboundCall::AddRpcSidecar(gscoped_ptr<RpcSidecar> car, int* idx) {
+  // Check that the number of sidecars does not exceed the number of payload
+  // slices that are free (two are used up by the header and main message
+  // protobufs).
+  if (sidecars_.size() + 2 > OutboundTransfer::kMaxPayloadSlices) {
+    return Status::ServiceUnavailable("All available sidecars already used");
+  }
   sidecars_.push_back(car.release());
-  return sidecars_.size() - 1;
+  *idx = sidecars_.size() - 1;
+  return Status::OK();
 }
 
 string InboundCall::ToString() const {

@@ -469,8 +469,6 @@ static void CopyColumn(const RowBlock& block, int col_idx,
         Slice *dst_slice = reinterpret_cast<Slice *>(dst);
         *dst_slice = Slice(reinterpret_cast<const uint8_t*>(offset_in_indirect),
                            slice->size());
-        // TODO(vlad17): may be worth nulling out the bitmap initially to save
-        // on these flops.
         if (IS_NULLABLE) {
           BitmapChange(dst + offset_to_null_bitmap, dst_col_idx, false);
         }
