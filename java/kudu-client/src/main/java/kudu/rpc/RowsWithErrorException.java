@@ -21,7 +21,8 @@ public class RowsWithErrorException extends NonRecoverableException {
   private final List<RowError> errors;
 
   private RowsWithErrorException(List<RowError> errors) {
-    super("Some or all rows returned with errors");
+    super("Some operations failed" + (errors.size() > 0 ? ", first being: " + errors.get(0) : ""));
+    // Ideally we'd run this assert before the above but we can't.
     assert !errors.isEmpty();
     this.errors = errors;
   }
@@ -88,7 +89,7 @@ public class RowsWithErrorException extends NonRecoverableException {
           WireProtocol.AppStatusPB.ErrorCode.ALREADY_PRESENT) {
         allAlreadyPresent = false;
         if (logOtherErrors) {
-          LOG.error("Row error status: " + error.getStatus() + ", message: " + error.getMessage());
+          LOG.error(error.toString());
         }
       }
     }
@@ -141,6 +142,15 @@ public class RowsWithErrorException extends NonRecoverableException {
      */
     public String getTsUUID() {
       return tsUUID;
+    }
+
+    @Override
+    public String toString() {
+      return "Row error for key=" + Bytes.pretty(operation.key()) +
+          ", tablet=" + operation.getTablet().getTabletIdAsString() +
+          ", server=" + tsUUID +
+          ", status=" + status +
+          ", message=" + message;
     }
   }
 }
