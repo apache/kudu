@@ -356,5 +356,121 @@ TEST_F(BootstrapTest, TestOperationOverwriting) {
             results[0]);
 }
 
+// Tests that when we have out-of-order commits that touch the same rows, operations are
+// still applied and in the correct order.
+TEST_F(BootstrapTest, TestOutOfOrderCommits) {
+  BuildLog();
+
+  consensus::ReplicateRefPtr replicate = consensus::make_scoped_refptr_replicate(
+      new consensus::ReplicateMsg());
+  replicate->get()->set_op_type(consensus::WRITE_OP);
+  tserver::WriteRequestPB* batch_request = replicate->get()->mutable_write_request();
+  ASSERT_STATUS_OK(SchemaToPB(schema_, batch_request->mutable_schema()));
+  batch_request->set_tablet_id(log::kTestTablet);
+
+  // This appends Insert(1) with op 10.10
+  OpId insert_opid = MakeOpId(10, 10);
+  replicate->get()->mutable_id()->CopyFrom(insert_opid);
+  AddTestRowToPB(RowOperationsPB::INSERT, schema_, 10, 1,
+                 "this is a test insert", batch_request->mutable_row_operations());
+  AppendReplicateBatch(replicate, true);
+
+  // This appends Mutate(1) with op 10.11
+  OpId mutate_opid = MakeOpId(10, 11);
+  batch_request->mutable_row_operations()->Clear();
+  replicate->get()->mutable_id()->CopyFrom(mutate_opid);
+  AddTestRowToPB(RowOperationsPB::UPDATE, schema_,
+                 10, 2, "this is a test mutate",
+                 batch_request->mutable_row_operations());
+  AppendReplicateBatch(replicate, true);
+
+  // Now commit the mutate before the insert (in the log).
+  gscoped_ptr<consensus::CommitMsg> mutate_commit(new consensus::CommitMsg);
+  mutate_commit->set_op_type(consensus::WRITE_OP);
+  mutate_commit->set_timestamp(Timestamp(mutate_opid.index()).ToUint64());
+  mutate_commit->mutable_commited_op_id()->CopyFrom(mutate_opid);
+  TxResultPB* result = mutate_commit->mutable_result();
+  OperationResultPB* mutate = result->add_ops();
+  MemStoreTargetPB* target = mutate->add_mutated_stores();
+  target->set_mrs_id(1);
+
+  AppendCommit(mutate_commit.Pass());
+
+  gscoped_ptr<consensus::CommitMsg> insert_commit(new consensus::CommitMsg);
+  insert_commit->set_op_type(consensus::WRITE_OP);
+  insert_commit->set_timestamp(Timestamp(insert_opid.index()).ToUint64());
+  insert_commit->mutable_commited_op_id()->CopyFrom(insert_opid);
+  result = insert_commit->mutable_result();
+  OperationResultPB* insert = result->add_ops();
+  target = insert->add_mutated_stores();
+  target->set_mrs_id(1);
+
+  AppendCommit(insert_commit.Pass());
+
+  ConsensusBootstrapInfo boot_info;
+  shared_ptr<Tablet> tablet;
+  ASSERT_STATUS_OK(BootstrapTestTablet(-1, -1, &tablet, &boot_info));
+
+  // Confirm that both operations were applied.
+  vector<string> results;
+  IterateTabletRows(tablet.get(), &results);
+  ASSERT_EQ(1, results.size());
+
+  ASSERT_EQ("(uint32 key=10, uint32 int_val=2, string string_val=this is a test mutate)",
+            results[0]);
+}
+
+// Tests that when we have two consecutive replicates but the commit message for the
+// first one is missing, both appear as pending in ConsensusInfo.
+TEST_F(BootstrapTest, TestMissingCommitMessage) {
+  BuildLog();
+
+  consensus::ReplicateRefPtr replicate = consensus::make_scoped_refptr_replicate(
+      new consensus::ReplicateMsg());
+  replicate->get()->set_op_type(consensus::WRITE_OP);
+  tserver::WriteRequestPB* batch_request = replicate->get()->mutable_write_request();
+  ASSERT_STATUS_OK(SchemaToPB(schema_, batch_request->mutable_schema()));
+  batch_request->set_tablet_id(log::kTestTablet);
+
+  // This appends Insert(1) with op 10.10
+  OpId insert_opid = MakeOpId(10, 10);
+  replicate->get()->mutable_id()->CopyFrom(insert_opid);
+  AddTestRowToPB(RowOperationsPB::INSERT, schema_, 10, 1,
+                 "this is a test insert", batch_request->mutable_row_operations());
+  AppendReplicateBatch(replicate, true);
+
+  // This appends Mutate(1) with op 10.11
+  OpId mutate_opid = MakeOpId(10, 11);
+  batch_request->mutable_row_operations()->Clear();
+  replicate->get()->mutable_id()->CopyFrom(mutate_opid);
+  AddTestRowToPB(RowOperationsPB::UPDATE, schema_,
+                 10, 2, "this is a test mutate",
+                 batch_request->mutable_row_operations());
+  AppendReplicateBatch(replicate, true);
+
+  // Now commit the mutate before the insert (in the log).
+  gscoped_ptr<consensus::CommitMsg> mutate_commit(new consensus::CommitMsg);
+  mutate_commit->set_op_type(consensus::WRITE_OP);
+  mutate_commit->set_timestamp(Timestamp(mutate_opid.index()).ToUint64());
+  mutate_commit->mutable_commited_op_id()->CopyFrom(mutate_opid);
+  TxResultPB* result = mutate_commit->mutable_result();
+  OperationResultPB* mutate = result->add_ops();
+  MemStoreTargetPB* target = mutate->add_mutated_stores();
+  target->set_mrs_id(1);
+
+  AppendCommit(mutate_commit.Pass());
+
+  ConsensusBootstrapInfo boot_info;
+  shared_ptr<Tablet> tablet;
+  ASSERT_STATUS_OK(BootstrapTestTablet(-1, -1, &tablet, &boot_info));
+  ASSERT_EQ(boot_info.orphaned_replicates.size(), 2);
+  ASSERT_OPID_EQ(boot_info.last_committed_id, mutate_opid);
+
+  // Confirm that no operation was applied.
+  vector<string> results;
+  IterateTabletRows(tablet.get(), &results);
+  ASSERT_EQ(0, results.size());
+}
+
 } // namespace tablet
 } // namespace kudu

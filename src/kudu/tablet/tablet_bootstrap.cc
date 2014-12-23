@@ -23,6 +23,7 @@
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/gutil/strings/strcat.h"
 #include "kudu/gutil/strings/util.h"
 #include "kudu/gutil/walltime.h"
 #include "kudu/server/clock.h"
@@ -53,6 +54,7 @@ using consensus::OpId;
 using consensus::OpIdEquals;
 using consensus::OpIdEqualsFunctor;
 using consensus::OpIdHashFunctor;
+using consensus::OpIdToString;
 using consensus::ReplicateMsg;
 using consensus::ALTER_SCHEMA_OP;
 using consensus::CHANGE_CONFIG_OP;
@@ -170,15 +172,28 @@ class TabletBootstrap {
                       RowOp* op,
                       const OperationResultPB& op_result);
 
+  // Returns whether all the stores that are referred to in the commit
+  // message are already flushed.
+  bool AreAllStoresAlreadyFlushed(const CommitMsg& commit);
+
+  // Returns whether there is any store that is referred to in the commit
+  // message that is already flushed.
+  bool AreAnyStoresAlreadyFlushed(const CommitMsg& commit);
+
   bool WasStoreAlreadyFlushed(const MemStoreTargetPB& target);
+
+  void DumpReplayStateToLog(const ReplayState& state);
 
   // Handlers for each type of message seen in the log during replay.
   Status HandleEntry(ReplayState* state, LogEntryPB* entry);
-  Status HandleReplicateMessage(ReplayState* state, LogEntryPB* entry);
-  Status HandleCommitMessage(ReplayState* state, LogEntryPB* entry);
+  Status HandleReplicateMessage(ReplayState* state, LogEntryPB* replicate_entry);
+  Status HandleCommitMessage(ReplayState* state, LogEntryPB* commit_entry);
+  Status ApplyCommitMessage(ReplayState* state, LogEntryPB* commit_entry);
   Status HandleEntryPair(LogEntryPB* replicate_entry, LogEntryPB* commit_entry);
 
-  void DumpOrphanedReplicates(const vector<ReplicateMsg*>& replicate_msgs);
+  // Checks that an orphaned commit message is actually irrelevant, i.e that the
+  // data stores it refers to are already flushed.
+  Status CheckOrphanedCommitAlreadyFlushed(const CommitMsg& commit);
 
   // Decodes a Timestamp from the provided string and updates the clock
   // with it.
@@ -518,6 +533,7 @@ struct ReplayState {
 
   ~ReplayState() {
     STLDeleteValues(&pending_replicates);
+    STLDeleteValues(&pending_commits);
   }
 
   // Return true if 'b' is allowed to immediately follow 'a' in the log.
@@ -556,8 +572,30 @@ struct ReplayState {
   }
 
   void UpdateCommittedOpId(const OpId& id) {
-    if (OpIdCompare(id, committed_op_id) > 0) {
+    if (id.index() > committed_op_id.index()) {
       committed_op_id = id;
+    }
+  }
+
+
+  void AddEntriesToStrings(const OpIndexToEntryMap& entries, vector<string>* strings) const {
+    BOOST_FOREACH(const OpIndexToEntryMap::value_type& map_entry, entries) {
+      LogEntryPB* entry = DCHECK_NOTNULL(map_entry.second);
+      strings->push_back(Substitute("   $0", entry->ShortDebugString()));
+    }
+  }
+
+  void DumpReplayStateToStrings(vector<string>* strings)  const {
+    strings->push_back(Substitute("ReplayState: Previous OpId: $0, Committed OpId: $1, "
+        "Pending Replicates: $2, Pending Commits: $3", OpIdToString(prev_op_id),
+        OpIdToString(committed_op_id), pending_replicates.size(), pending_commits.size()));
+    if (!pending_replicates.empty()) {
+      strings->push_back("Dumping REPLICATES: ");
+      AddEntriesToStrings(pending_replicates, strings);
+    }
+    if (!pending_commits.empty()) {
+      strings->push_back("Dumping COMMITS: ");
+      AddEntriesToStrings(pending_commits, strings);
     }
   }
 
@@ -571,6 +609,9 @@ struct ReplayState {
   // REPLICATE log entries whose corresponding COMMIT/ABORT record has
   // not yet been seen. Keyed by index.
   OpIndexToEntryMap pending_replicates;
+
+  // COMMIT log entries which couldn't be applied immediately.
+  OpIndexToEntryMap pending_commits;
 };
 
 // Handle the given log entry. If OK is returned, then takes ownership of 'entry'.
@@ -594,16 +635,17 @@ Status TabletBootstrap::HandleEntry(ReplayState* state, LogEntryPB* entry) {
   return Status::OK();
 }
 
-Status TabletBootstrap::HandleReplicateMessage(ReplayState* state, LogEntryPB* entry) {
-  RETURN_NOT_OK(state->CheckSequentialReplicateId(entry->replicate()));
+// Takes ownership of 'replicate_entry' on OK status.
+Status TabletBootstrap::HandleReplicateMessage(ReplayState* state, LogEntryPB* replicate_entry) {
+  RETURN_NOT_OK(state->CheckSequentialReplicateId(replicate_entry->replicate()));
 
   // Append the replicate message to the log as is
-  RETURN_NOT_OK(log_->Append(entry));
+  RETURN_NOT_OK(log_->Append(replicate_entry));
 
-  int64_t index = entry->replicate().id().index();
+  int64_t index = replicate_entry->replicate().id().index();
 
   LogEntryPB** existing_entry_ptr = InsertOrReturnExisting(
-    &state->pending_replicates, index, entry);
+    &state->pending_replicates, index, replicate_entry);
 
   // If there was a entry with the same index we're overwriting then we need to delete
   // that entry and all entries with higher indexes.
@@ -617,80 +659,131 @@ Status TabletBootstrap::HandleReplicateMessage(ReplayState* state, LogEntryPB* e
 
     LOG(INFO) << "Overwriting operations starting at: " << existing_entry->replicate().id()
         << " up to: " << last_entry->replicate().id() << " with operation: "
-        << entry->replicate().id();
+        << replicate_entry->replicate().id();
 
     while (iter != state->pending_replicates.end()) {
       delete (*iter).second;
       state->pending_replicates.erase(iter++);
     }
 
-    InsertOrDie(&state->pending_replicates, index, entry);
+    InsertOrDie(&state->pending_replicates, index, replicate_entry);
   }
   return Status::OK();
 }
 
-// Deletes 'entry' only on OK status.
-Status TabletBootstrap::HandleCommitMessage(ReplayState* state, LogEntryPB* entry) {
-  DCHECK(entry->has_commit()) << "Not a commit message: " << entry->DebugString();
+// Takes ownership of 'commit_entry' on OK status.
+Status TabletBootstrap::HandleCommitMessage(ReplayState* state, LogEntryPB* commit_entry) {
+  DCHECK(commit_entry->has_commit()) << "Not a commit message: " << commit_entry->DebugString();
 
   // Match up the COMMIT/ABORT record with the original entry that it's applied to.
-  const OpId& committed_op_id = entry->commit().commited_op_id();
+  const OpId& committed_op_id = commit_entry->commit().commited_op_id();
   state->UpdateCommittedOpId(committed_op_id);
 
-  gscoped_ptr<LogEntryPB> existing_entry;
+  // If there are no pending replicates, or if this commit's index is lower than the
+  // the first pending replicate on record this is likely an orphaned commit.
+  if (state->pending_replicates.empty() ||
+      (*state->pending_replicates.begin()).first > committed_op_id.index()) {
+    RETURN_NOT_OK(CheckOrphanedCommitAlreadyFlushed(commit_entry->commit()));
+    delete commit_entry;
+    return Status::OK();
+  }
+
+  // If this commit does not correspond to the first replicate message in the pending
+  // replicates set we keep it to apply later...
+  if ((*state->pending_replicates.begin()).first != committed_op_id.index()) {
+    if (!ContainsKey(state->pending_replicates, committed_op_id.index())) {
+      return Status::Corruption(Substitute("Could not find replicate for commit: $0",
+                                           commit_entry->ShortDebugString()));
+    }
+    InsertOrDie(&state->pending_commits, committed_op_id.index(), commit_entry);
+    return Status::OK();
+  }
+
+  // ... if it does we apply it and all the commits that immediately follow in the sequence.
+  OpId last_applied = commit_entry->commit().commited_op_id();
+  RETURN_NOT_OK(ApplyCommitMessage(state, commit_entry));
+  delete commit_entry;
+
+  OpIndexToEntryMap::iterator iter = state->pending_commits.begin();
+  while (iter != state->pending_commits.end()) {
+    if ((*iter).first == last_applied.index() + 1) {
+      gscoped_ptr<LogEntryPB> buffered_commit_entry((*iter).second);
+      state->pending_commits.erase(iter++);
+      last_applied = buffered_commit_entry->commit().commited_op_id();
+      RETURN_NOT_OK(ApplyCommitMessage(state, buffered_commit_entry.get()));
+      continue;
+    }
+    break;
+  }
+
+  return Status::OK();
+}
+
+bool TabletBootstrap::AreAllStoresAlreadyFlushed(const CommitMsg& commit) {
+  BOOST_FOREACH(const OperationResultPB& op_result, commit.result().ops()) {
+    BOOST_FOREACH(const MemStoreTargetPB& mutated_store, op_result.mutated_stores()) {
+      if (!WasStoreAlreadyFlushed(mutated_store)) {
+        return false;
+      }
+    }
+  }
+  return true;
+}
+
+bool TabletBootstrap::AreAnyStoresAlreadyFlushed(const CommitMsg& commit) {
+  BOOST_FOREACH(const OperationResultPB& op_result, commit.result().ops()) {
+    BOOST_FOREACH(const MemStoreTargetPB& mutated_store, op_result.mutated_stores()) {
+      if (WasStoreAlreadyFlushed(mutated_store)) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+Status TabletBootstrap::CheckOrphanedCommitAlreadyFlushed(const CommitMsg& commit) {
+  if (!AreAllStoresAlreadyFlushed(commit)) {
+    TabletSuperBlockPB super;
+    WARN_NOT_OK(meta_->ToSuperBlock(&super), "Couldn't build TabletSuperBlockPB.");
+    return Status::Corruption(Substitute("CommitMsg was orphaned but it referred to "
+        "unflushed stores. Commit: $0. TabletMetadata: $1", commit.ShortDebugString(),
+        super.ShortDebugString()));
+  }
+  return Status::OK();
+}
+
+Status TabletBootstrap::ApplyCommitMessage(ReplayState* state, LogEntryPB* commit_entry) {
+
+  const OpId& committed_op_id = commit_entry->commit().commited_op_id();
+  gscoped_ptr<LogEntryPB> pending_replicate_entry;
 
   // They should also have an associated replicate index (it may have been in a
   // deleted log segment though).
-  existing_entry.reset(EraseKeyReturnValuePtr(&state->pending_replicates,
-                                              committed_op_id.index()));
+  pending_replicate_entry.reset(EraseKeyReturnValuePtr(&state->pending_replicates,
+                                                       committed_op_id.index()));
 
-  if (existing_entry != NULL) {
+  if (pending_replicate_entry != NULL) {
     // We found a replicate with the same index, make sure it also has the same
     // term.
-    if (!OpIdEquals(committed_op_id, existing_entry->replicate().id())) {
+    if (!OpIdEquals(committed_op_id, pending_replicate_entry->replicate().id())) {
       string error_msg = Substitute("Committed operation's OpId: $0 didn't match the"
           "commit message's committed OpId: $1. Pending operation: $2, Commit message: $3",
-          existing_entry->replicate().id().ShortDebugString(), committed_op_id.ShortDebugString(),
-          existing_entry->replicate().ShortDebugString(), entry->commit().ShortDebugString());
+          pending_replicate_entry->replicate().id().ShortDebugString(),
+          committed_op_id.ShortDebugString(),
+          pending_replicate_entry->replicate().ShortDebugString(),
+          commit_entry->commit().ShortDebugString());
       LOG(DFATAL) << error_msg;
       return Status::Corruption(error_msg);
     }
-    RETURN_NOT_OK(HandleEntryPair(existing_entry.get(), entry));
+    RETURN_NOT_OK(HandleEntryPair(pending_replicate_entry.get(), commit_entry));
   } else {
-    const CommitMsg& commit = entry->commit();
-    // TODO: move this to DEBUG once we have enough test cycles
-    BOOST_FOREACH(const OperationResultPB& op_result, commit.result().ops()) {
-      BOOST_FOREACH(const MemStoreTargetPB& mutated_store, op_result.mutated_stores()) {
-        if (!WasStoreAlreadyFlushed(mutated_store)) {
-          string error_msg = Substitute(
-              "Orphan commit $0 has a mutated store $1 that was NOT already flushed",
-              commit.ShortDebugString(), mutated_store.ShortDebugString());
-          LOG(ERROR) << error_msg;
-          LOG(INFO) << "Printing Entries: ";
-          log::SegmentSequence seq;
-          CHECK_OK(log_reader_->GetSegmentsSnapshot(&seq));
-          BOOST_FOREACH(const scoped_refptr<ReadableLogSegment>& seg, seq) {
-            vector<LogEntryPB*> entries;
-            ElementDeleter deleter(&entries);
-            CHECK_OK(seg->ReadEntries(&entries));
-            BOOST_FOREACH(const LogEntryPB* entry, entries) {
-              LOG(INFO) << entry->ShortDebugString();
-            }
-          }
-          return Status::Corruption(error_msg);
-        }
-      }
-    }
-    VLOG(1) << "Ignoring orphan commit: " << commit.DebugString();
+    RETURN_NOT_OK(CheckOrphanedCommitAlreadyFlushed(commit_entry->commit()));
   }
-
-  delete entry;
 
   return Status::OK();
 }
 
-// Never deletes 'replicate_entry'.
-// Deletes 'commit_entry' only on OK status.
+// Never deletes 'replicate_entry' or 'commit_entry'.
 Status TabletBootstrap::HandleEntryPair(LogEntryPB* replicate_entry, LogEntryPB* commit_entry) {
 
   ReplicateMsg* replicate = replicate_entry->mutable_replicate();
@@ -745,6 +838,16 @@ Status TabletBootstrap::HandleEntryPair(LogEntryPB* replicate_entry, LogEntryPB*
   return Status::OK();
 }
 
+void TabletBootstrap::DumpReplayStateToLog(const ReplayState& state) {
+  // Dump the replay state, this will log the pending replicates as well as the pending commits,
+  // which might be useful for debugging.
+  vector<string> state_dump;
+  state.DumpReplayStateToStrings(&state_dump);
+  BOOST_FOREACH(const string& string, state_dump) {
+    LOG(INFO) << string;
+  }
+}
+
 Status TabletBootstrap::PlaySegments(ConsensusBootstrapInfo* consensus_info) {
   RETURN_NOT_OK_PREPEND(OpenNewLog(), "Failed to open new log");
 
@@ -761,10 +864,15 @@ Status TabletBootstrap::PlaySegments(ConsensusBootstrapInfo* consensus_info) {
     Status read_status = segment->ReadEntries(&entries);
     for (int entry_idx = 0; entry_idx < entries.size(); ++entry_idx) {
       LogEntryPB* entry = entries[entry_idx];
-      RETURN_NOT_OK_PREPEND(HandleEntry(&state, entry),
-                            DebugInfo(tablet_->tablet_id(), segment->header().sequence_number(),
-                                      entry_idx, segment->path(),
-                                      *entry));
+      Status s = HandleEntry(&state, entry);
+      if (!s.ok()) {
+        DumpReplayStateToLog(state);
+        RETURN_NOT_OK_PREPEND(s, DebugInfo(tablet_->tablet_id(),
+                                           segment->header().sequence_number(),
+                                           entry_idx, segment->path(),
+                                           *entry));
+      }
+
 
       // If HandleEntry returns OK, then it has taken ownership of the entry.
       // So, we have to remove it from the entries vector to avoid it getting
@@ -795,6 +903,66 @@ Status TabletBootstrap::PlaySegments(ConsensusBootstrapInfo* consensus_info) {
     segment_count++;
   }
 
+  // If we have non-applied commits they all must belong to pending operations and
+  // they should only pertain to unflushed stores.
+  if (!state.pending_commits.empty()) {
+    BOOST_FOREACH(const OpIndexToEntryMap::value_type& entry, state.pending_commits) {
+      if (!ContainsKey(state.pending_replicates, entry.first)) {
+        DumpReplayStateToLog(state);
+        return Status::Corruption("Had orphaned commits at the end of replay.");
+      }
+      if (AreAnyStoresAlreadyFlushed(entry.second->commit())) {
+        DumpReplayStateToLog(state);
+        TabletSuperBlockPB super;
+        WARN_NOT_OK(meta_->ToSuperBlock(&super), "Couldn't build TabletSuperBlockPB.");
+        return Status::Corruption(Substitute("CommitMsg was pending but it referred to "
+            "flushed stores. Commit: $0. TabletMetadata: $1",
+            entry.second->commit().ShortDebugString(), super.ShortDebugString()));
+      }
+    }
+  }
+
+  // Note that we don't pass the information contained in the pending commits along with
+  // ConsensusBootstrapInfo. We know that this is safe as they must refer to unflushed
+  // stores (we make doubly sure above).
+  //
+  // Example/Explanation:
+  // Say we have two different operations that touch the same row, one insert and one
+  // mutate. Since we use Early Lock Release the commit for the second (mutate) operation
+  // might end up in the log before the insert's commit. This wouldn't matter since
+  // we replay in order, but a corner case here is that we might crash before we
+  // write the commit for the insert, meaning it might not be present at all.
+  //
+  // One possible log for this situation would be:
+  // - Replicate 10.10 (insert)
+  // - Replicate 10.11 (mutate)
+  // - Commit    10.11 (mutate)
+  // ~CRASH while Commit 10.10 is in-flight~
+  //
+  // We can't replay 10.10 during bootstrap because we haven't seen its commit, but
+  // since we can't replay out-of-order we won't replay 10.11 either, in fact we'll
+  // pass them both as "pending" to consensus to be applied again.
+  //
+  // The reason why it is safe to simply disregard 10.11's commit is that we know that
+  // it must refer only to unflushed stores. We know this because one important flush/compact
+  // pre-condition is:
+  // - No flush will become visible on reboot (meaning we won't durably update the tablet
+  //   metadata), unless the snapshot under which the flush/compact was performed has no
+  //   in-flight transactions and all the messages that are in-flight to the log are durable.
+  //
+  // In our example this means that if we had flushed/compacted after 10.10 was applied
+  // (meaning losing the commit message would lead to corruption as we might re-apply it)
+  // then the commit for 10.10 would be durable. Since it isn't then no flush/compaction
+  // occurred after 10.10 was applied and thus we can disregard the commit message for
+  // 10.11 and simply apply both 10.10 and 10.11 as if we hadn't applied them before.
+  //
+  // This generalizes to:
+  // - If a committed replicate message with index Y is missing a commit message,
+  //   no later committed replicate message (with index > Y) is visible across reboots
+  //   in the tablet data.
+
+  DumpReplayStateToLog(state);
+
   // Set up the ConsensusBootstrapInfo structure for the caller.
   BOOST_FOREACH(OpIndexToEntryMap::value_type& e, state.pending_replicates) {
     consensus_info->orphaned_replicates.push_back(e.second->release_replicate());
@@ -802,22 +970,7 @@ Status TabletBootstrap::PlaySegments(ConsensusBootstrapInfo* consensus_info) {
   consensus_info->last_id = state.prev_op_id;
   consensus_info->last_committed_id = state.committed_op_id;
 
-  // Log any pending REPLICATEs, maybe useful for diagnosis.
-  if (!consensus_info->orphaned_replicates.empty()) {
-    DumpOrphanedReplicates(consensus_info->orphaned_replicates);
-  }
-
   return Status::OK();
-}
-
-void TabletBootstrap::DumpOrphanedReplicates(const vector<ReplicateMsg*>& replicate_msgs) {
-  LOG(INFO) << "WAL for " << tablet_->tablet_id() << " included " << replicate_msgs.size()
-            << " REPLICATE messages with no corresponding commit/abort messages."
-            << " These transactions were probably in-flight when the server crashed.";
-  BOOST_FOREACH(const ReplicateMsg* msg, replicate_msgs) {
-    LOG(INFO) << "  " << msg->ShortDebugString();
-  }
-
 }
 
 Status TabletBootstrap::PlayWriteRequest(ReplicateMsg* replicate_msg,

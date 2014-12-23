@@ -132,7 +132,6 @@ class LogTestBase : public KuduTest {
     consensus::ReplicateRefPtr replicate = make_scoped_refptr_replicate(new ReplicateMsg());
     replicate->get()->set_op_type(WRITE_OP);
     replicate->get()->mutable_id()->CopyFrom(opid);
-
     WriteRequestPB* batch_request = replicate->get()->mutable_write_request();
     ASSERT_STATUS_OK(SchemaToPB(schema_, batch_request->mutable_schema()));
     AddTestRowToPB(RowOperationsPB::INSERT, schema_,
@@ -146,7 +145,12 @@ class LogTestBase : public KuduTest {
                    "this is a test mutate",
                    batch_request->mutable_row_operations());
     batch_request->set_tablet_id(kTestTablet);
+    AppendReplicateBatch(replicate, sync);
+  }
 
+  // Appends the provided batch to the log.
+  void AppendReplicateBatch(const consensus::ReplicateRefPtr& replicate,
+                            bool sync = APPEND_SYNC) {
     if (sync) {
       Synchronizer s;
       ASSERT_STATUS_OK(log_->AsyncAppendReplicates(boost::assign::list_of(replicate),
@@ -197,7 +201,10 @@ class LogTestBase : public KuduTest {
     MemStoreTargetPB* target = mutate->add_mutated_stores();
     target->set_dms_id(dms_id);
     target->set_rs_id(rs_id);
+    AppendCommit(commit.Pass(), sync);
+  }
 
+  void AppendCommit(gscoped_ptr<CommitMsg> commit, bool sync = APPEND_SYNC) {
     if (sync) {
       Synchronizer s;
       ASSERT_STATUS_OK(log_->AsyncAppendCommit(commit.Pass(), s.AsStatusCallback()));
