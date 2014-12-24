@@ -396,6 +396,32 @@ class TabletServerIntegrationTestBase : public TabletServerTestBase {
     return Status::NotFound("Unable to find server with UUID", uuid);
   }
 
+  // Since we're fault-tolerant we might mask when a tablet server is
+  // dead. This returns Status::IllegalState() if fewer than 'num_tablet_servers'
+  // are alive.
+  Status CheckTabletServersAreAlive(int num_tablet_servers) {
+    int live_count = 0;
+    string error = Substitute("Fewer than $0 TabletServers were alive. Dead TSs: ",
+                              num_tablet_servers);
+    RpcController controller;
+    BOOST_FOREACH(const TabletServerMap::value_type& entry, tablet_servers_) {
+      controller.Reset();
+      controller.set_timeout(MonoDelta::FromSeconds(1));
+      PingRequestPB req;
+      PingResponsePB resp;
+      Status s = entry.second->tserver_proxy->Ping(req, &resp, &controller);
+      if (!s.ok()) {
+        error += "\n" + entry.second->ToString() +  " (" + s.ToString() + ")";
+        continue;
+      }
+      live_count++;
+    }
+    if (live_count < num_tablet_servers) {
+      return Status::IllegalState(error);
+    }
+    return Status::OK();
+  }
+
   virtual void TearDown() OVERRIDE {
     cluster_->Shutdown();
     STLDeleteValues(&tablet_servers_);

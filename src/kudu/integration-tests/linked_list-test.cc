@@ -146,6 +146,7 @@ TEST_F(LinkedListTest, TestLoadAndVerify) {
   // scan after writing we may not see all of our writes (we may scan a replica). So,
   // we use WaitAndVerify here instead of a plain Verify.
   ASSERT_OK(tester_->WaitAndVerify(FLAGS_seconds_to_run, written));
+  ASSERT_OK(CheckTabletServersAreAlive(tablet_servers_.size()));
 
   LOG(INFO) << "Successfully verified " << written << " rows before killing any servers.";
 
@@ -158,6 +159,7 @@ TEST_F(LinkedListTest, TestLoadAndVerify) {
         << tablet << " and verifying that we can still read all results";
     leader->external_ts->Shutdown();
     ASSERT_OK(tester_->WaitAndVerify(FLAGS_seconds_to_run, written));
+    ASSERT_OK(CheckTabletServersAreAlive(tablet_servers_.size() - 1));
   }
 
   // Kill and restart the cluster, verify data remains.
@@ -169,6 +171,7 @@ TEST_F(LinkedListTest, TestLoadAndVerify) {
   // initially after a restart. TODO: Scanner should support its own retries in this circumstance.
   // Remove this loop once client is more fleshed out.
   ASSERT_OK(tester_->WaitAndVerify(FLAGS_seconds_to_run, written));
+  ASSERT_OK(CheckTabletServersAreAlive(tablet_servers_.size()));
 
   // Check post-replication state with a downed TS.
   if (can_kill_ts) {
@@ -179,6 +182,7 @@ TEST_F(LinkedListTest, TestLoadAndVerify) {
         << tablet << " and verifying that we can still read all results";
     leader->external_ts->Shutdown();
     ASSERT_OK(tester_->WaitAndVerify(FLAGS_seconds_to_run, written));
+    ASSERT_OK(CheckTabletServersAreAlive(tablet_servers_.size() - 1));
   }
 
   ASSERT_NO_FATAL_FAILURE(RestartCluster());
@@ -189,6 +193,7 @@ TEST_F(LinkedListTest, TestLoadAndVerify) {
   ASSERT_NO_FATAL_FAILURE(RestartCluster());
 
   ASSERT_OK(tester_->WaitAndVerify(FLAGS_seconds_to_run, written));
+  ASSERT_OK(CheckTabletServersAreAlive(tablet_servers_.size()));
 
   // Dump the performance info at the very end, so it's easy to read. On a failed
   // test, we don't care about this stuff anyway.
