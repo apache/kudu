@@ -3,7 +3,9 @@
 
 #include "kudu/client/client-internal.h"
 
+#include <algorithm>
 #include <boost/foreach.hpp>
+#include <limits>
 #include <string>
 #include <vector>
 
@@ -24,6 +26,8 @@
 
 namespace kudu {
 
+using master::CreateTableRequestPB;
+using master::CreateTableResponsePB;
 using master::GetLeaderMasterRpc;
 using master::GetTableSchemaRequestPB;
 using master::GetTableSchemaResponsePB;
@@ -44,6 +48,121 @@ namespace client {
 using internal::GetTableSchemaRpc;
 using internal::RemoteTablet;
 using internal::RemoteTabletServer;
+
+// Retry helper, takes a function like: Status funcName(const MonoTime& deadline, bool *retry, ...)
+// The function should set the retry flag (default true) if the function should
+// be retried again. On retry == false the return status of the function will be
+// returned to the caller, otherwise a Status::Timeout() will be returned.
+// If the deadline is already expired, no attempt will be made.
+static Status RetryFunc(const MonoTime& deadline,
+                        const string& retry_msg,
+                        const string& timeout_msg,
+                        const boost::function<Status(const MonoTime&, bool*)>& func) {
+  MonoTime now = MonoTime::Now(MonoTime::FINE);
+  if (deadline.Initialized() && !now.ComesBefore(deadline)) {
+    return Status::TimedOut(timeout_msg);
+  }
+
+  int64_t wait_time = 1000;
+  while (1) {
+    MonoTime stime = now;
+    bool retry = true;
+    Status s = func(deadline, &retry);
+    if (!retry) {
+      return s;
+    }
+
+    if (deadline.Initialized()) {
+      now = MonoTime::Now(MonoTime::FINE);
+      if (!now.ComesBefore(deadline)) {
+        break;
+      }
+    }
+
+    VLOG(1) << retry_msg << " status=" << s.ToString();
+    int64_t timeout_usec = std::numeric_limits<uint64_t>::max();
+    if (deadline.Initialized()) {
+      timeout_usec = deadline.GetDeltaSince(now).ToNanoseconds() -
+                     now.GetDeltaSince(stime).ToNanoseconds();
+    }
+    if (timeout_usec > 0) {
+      wait_time = std::min(wait_time * 5 / 4, timeout_usec);
+      usleep(wait_time);
+      now = MonoTime::Now(MonoTime::FINE);
+    }
+  }
+
+  return Status::TimedOut(timeout_msg);
+}
+
+template<class ReqClass, class RespClass>
+Status KuduClient::Data::SyncLeaderMasterRpc(
+    const MonoDelta& rpc_timeout,
+    const MonoTime& deadline,
+    KuduClient* client,
+    const ReqClass& req,
+    RespClass* resp,
+    int* num_attempts,
+    const boost::function<Status(MasterServiceProxy*,
+                                 const ReqClass&,
+                                 RespClass*,
+                                 RpcController*)>& func) {
+  while (true) {
+    RpcController rpc;
+
+    // Set the per-rpc deadline
+    MonoTime rpc_deadline = MonoTime::Now(MonoTime::FINE);
+    rpc_deadline.AddDelta(rpc_timeout);
+
+    // If a global (per entire operation) deadline is set:
+    // 1) Check whether or not we've exceed the deadline.
+    // 2) Set per-RPC deadline to min(now + rpc_timeout, deadline).
+    if (deadline.Initialized()) {
+      MonoTime now = MonoTime::Now(MonoTime::FINE);
+      if (deadline.ComesBefore(now)) {
+        return Status::TimedOut("timed out waiting for a reply from a leader master");
+      }
+      rpc_deadline = MonoTime::Earliest(rpc_deadline, deadline);
+    }
+
+    rpc.set_deadline(rpc_deadline);
+
+    if (num_attempts != NULL) {
+      ++*num_attempts;
+    }
+
+    Status s = func(master_proxy_.get(), req, resp, &rpc);
+    if (!s.ok()) {
+      if (s.IsNetworkError() || s.IsTimedOut()) {
+        LOG(WARNING) << "Unable to send the request (" << req.ShortDebugString()
+                     << ") to leader Master (" << leader_master_hostport().ToString()
+                     << "): " << s.ToString();
+        if (master_server_addrs_.size() > 1) {
+          LOG(INFO) << "Determining the new leader Master and retrying...";
+          s = SetMasterServerProxy(client);
+          if (s.ok()) {
+            continue;
+          }
+          LOG(WARNING) << "Unable to determine the new leader Master: " << s.ToString();
+        }
+      }
+    }
+    if (s.ok() && resp->has_error()) {
+      if (resp->error().code() == MasterErrorPB::NOT_THE_LEADER ||
+          resp->error().code() == MasterErrorPB::CATALOG_MANAGER_NOT_INITIALIZED) {
+        if (master_server_addrs_.size() > 1) {
+          LOG(INFO) << "Determining the new leader Master and retrying...";
+          s = SetMasterServerProxy(client);
+          if (s.ok()) {
+            continue;
+          }
+          LOG(WARNING) << "Unable to determine the new leader Master: " << s.ToString();
+        }
+      }
+    }
+    return s;
+  }
+}
 
 KuduClient::Data::Data() {
 }
@@ -86,16 +205,81 @@ Status KuduClient::Data::GetTabletServer(KuduClient* client,
   return Status::OK();
 }
 
-Status KuduClient::Data::IsCreateTableInProgress(const string& table_name,
+Status KuduClient::Data::CreateTable(KuduClient* client,
+                                     const CreateTableRequestPB& req,
+                                     const KuduSchema& schema,
+                                     const MonoTime& deadline) {
+  CreateTableResponsePB resp;
+
+  int attempts = 0;
+  while (true) {
+    Status s =
+        SyncLeaderMasterRpc<CreateTableRequestPB,
+                            CreateTableResponsePB>(
+                                default_admin_operation_timeout_,
+                                deadline,
+                                client,
+                                req,
+                                &resp,
+                                &attempts,
+                                &MasterServiceProxy::CreateTable);
+    if (s.ok() && resp.has_error()) {
+      if (resp.error().code() == MasterErrorPB::TABLE_ALREADY_PRESENT && attempts > 0) {
+        // If the table already exists and the number of attempts is >
+        // 0, then it means we may have succeeded in creating the
+        // table quorum, but client didn't receive the succesful
+        // response (e.g., due to failure before the succesful
+        // response could be sent back, or due to a I/O pause or a
+        // network blip leading to a timeout, etc...)
+        KuduSchema actual_schema;
+        RETURN_NOT_OK_PREPEND(
+            GetTableSchema(client, req.name(), deadline, &actual_schema),
+            Substitute("Unable to check the schema of table $0", req.name()));
+        if (schema.Equals(actual_schema)) {
+          break;
+        } else {
+          LOG(ERROR) << "Table " << req.name() << " already exists with a different "
+              "schema. Requested schema was: " << schema.schema_->ToString()
+                     << ", actual schema is: " << actual_schema.schema_->ToString();
+          return s;
+        }
+      }
+      s = StatusFromPB(resp.error().status());
+    }
+    if (!s.ok()) {
+      // If the error is not a leadership issue or a timeout, warn and
+      // re-try.  SyncLeaderMasterRpc will check if whether or not
+      // 'deadline' has passed.
+      LOG(WARNING) << "Unexpected error creating table " << req.name() << ": "
+                   << s.ToString();
+      continue;
+    }
+    break;
+  }
+  return Status::OK();
+}
+
+Status KuduClient::Data::IsCreateTableInProgress(KuduClient* client,
+                                                 const string& table_name,
                                                  const MonoTime& deadline,
                                                  bool *create_in_progress) {
   IsCreateTableDoneRequestPB req;
   IsCreateTableDoneResponsePB resp;
-  RpcController rpc;
-
   req.mutable_table()->set_table_name(table_name);
-  rpc.set_deadline(deadline);
-  RETURN_NOT_OK(master_proxy_->IsCreateTableDone(req, &resp, &rpc));
+
+  Status s =
+      SyncLeaderMasterRpc<IsCreateTableDoneRequestPB, IsCreateTableDoneResponsePB>(
+          default_admin_operation_timeout_,
+          deadline,
+          client,
+          req,
+          &resp,
+          NULL,
+          &MasterServiceProxy::IsCreateTableDone);
+  // RETURN_NOT_OK macro can't take templated function call as param,
+  // and SyncLeaderMasterRpc must be explicitly instantiated, else the
+  // compiler complains.
+  RETURN_NOT_OK(s);
   if (resp.has_error()) {
     return StatusFromPB(resp.error().status());
   }
@@ -103,6 +287,17 @@ Status KuduClient::Data::IsCreateTableInProgress(const string& table_name,
   *create_in_progress = !resp.done();
   return Status::OK();
 }
+
+Status KuduClient::Data::WaitForCreateTableToFinish(KuduClient* client,
+                                                    const string& table_name,
+                                                    const MonoTime& deadline) {
+  return RetryFunc(deadline,
+                   "Waiting on Create Table to be completed",
+                   "Timeout out waiting for Table Creation",
+                   boost::bind(&KuduClient::Data::IsCreateTableInProgress,
+                               this, client, table_name, _1, _2));
+}
+
 
 Status KuduClient::Data::IsAlterTableInProgress(const string& table_name,
                                                 const MonoTime& deadline,
@@ -120,6 +315,16 @@ Status KuduClient::Data::IsAlterTableInProgress(const string& table_name,
 
   *alter_in_progress = !resp.done();
   return Status::OK();
+}
+
+Status KuduClient::Data::WaitForAlterTableToFinish(const string& alter_name,
+                                                   const MonoTime& deadline) {
+  return RetryFunc(deadline,
+                   "Waiting on Alter Table to be completed",
+                   "Timeout out waiting for AlterTable",
+                   boost::bind(&KuduClient::Data::IsAlterTableInProgress,
+                               this,
+                               alter_name, _1, _2));
 }
 
 Status KuduClient::Data::InitLocalHostNames() {

@@ -17,7 +17,7 @@ class KuduTableCreator::Data {
   explicit Data(KuduClient* client);
   ~Data();
 
-  const KuduClient* client_;
+  KuduClient* client_;
 
   std::string table_name_;
 

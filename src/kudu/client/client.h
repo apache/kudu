@@ -163,6 +163,12 @@ class KUDU_EXPORT KuduClient : public std::tr1::enable_shared_from_this<KuduClie
 
   const MonoDelta& default_admin_operation_timeout() const;
 
+  // TODO Introduce a separate client rpc timeout and use
+  // default_admin_operation_timeout and operation specific timeouts
+  // (e.g., an init timeout that covers initial name resolution and
+  // master selection).
+  const MonoDelta& default_select_master_timeout() const;
+
  private:
   class KUDU_NO_EXPORT Data;
 
@@ -182,6 +188,7 @@ class KUDU_EXPORT KuduClient : public std::tr1::enable_shared_from_this<KuduClie
   FRIEND_TEST(ClientTest, TestReplicatedMultiTabletTableFailover);
   FRIEND_TEST(ClientTest, TestReplicatedTabletWritesWithLeaderElection);
   FRIEND_TEST(ClientTest, TestMasterLookupPermits);
+  FRIEND_TEST(MasterFailoverTest, DISABLED_TestPauseAfterCreateTableIssued);
 
   KuduClient();
 

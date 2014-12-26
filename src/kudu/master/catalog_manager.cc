@@ -41,6 +41,7 @@
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/escaping.h"
+#include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/walltime.h"
 #include "kudu/master/master.h"
@@ -264,22 +265,28 @@ void CatalogManagerBgTasks::Run() {
     std::vector<scoped_refptr<TabletInfo> > to_delete;
     std::vector<scoped_refptr<TabletInfo> > to_process;
 
-    // Get list of tablets not yet running or already replaced.
-    catalog_manager_->ExtractTabletsToProcess(&to_delete, &to_process);
+    if (!catalog_manager_->IsInitialized()) {
+      LOG(WARNING) << "Catalog manager is not initialized!";
+    } else if (catalog_manager_->IsLeaderAndReady()) {
+      // Get list of tablets not yet running or already replaced.
+      catalog_manager_->ExtractTabletsToProcess(&to_delete, &to_process);
 
-    if (!to_process.empty()) {
-      // Transition tablet assignment state from preparing to creating, send
-      // and schedule creation / deletion RPC messages, etc.
-      Status s = catalog_manager_->ProcessPendingAssignments(to_process);
-      if (!s.ok()) {
-        // If there is an error (e.g., we are not the leader) abort this task
-        // and wait until we're woken up again.
-        //
-        // TODO Add tests for this in the revision that makes
-        // create/alter fault tolerant.
-        LOG(ERROR) << "Error processing pending assignments, aborting the current task:"
-                   << s.ToString();
+      if (!to_process.empty()) {
+        // Transition tablet assignment state from preparing to creating, send
+        // and schedule creation / deletion RPC messages, etc.
+        Status s = catalog_manager_->ProcessPendingAssignments(to_process);
+        if (!s.ok()) {
+          // If there is an error (e.g., we are not the leader) abort this task
+          // and wait until we're woken up again.
+          //
+          // TODO Add tests for this in the revision that makes
+          // create/alter fault tolerant.
+          LOG(ERROR) << "Error processing pending assignments, aborting the current task:"
+                     << s.ToString();
+        }
       }
+    } else {
+      VLOG(1) << "We are no longer the leader, aborting the current task...";
     }
 
     //if (!to_delete.empty()) {
@@ -471,6 +478,42 @@ Status CatalogManager::CheckOnline() const {
   return Status::OK();
 }
 
+void CatalogManager::AbortTableCreation(TableInfo* table,
+                                        const vector<TabletInfo*>& tablets) {
+  string table_id = table->id();
+  string table_name = table->mutable_metadata()->mutable_dirty()->pb.name();
+  vector<string> tablet_ids_to_erase;
+  BOOST_FOREACH(TabletInfo* tablet, tablets) {
+    tablet_ids_to_erase.push_back(tablet->tablet_id());
+  }
+
+  LOG(INFO) << "Aborting creation of table '" << table_name << "', erasing table and tablets (" <<
+      JoinStrings(tablet_ids_to_erase, ",") << ") from in-memory state.";
+
+  // Since this is a failed creation attempt, it's safe to just abort
+  // all tasks, as (by definition) no tasks may be pending against a
+  // table that has failed to succesfully create.
+  table->AbortTasks();
+  table->WaitTasksCompletion();
+
+  boost::lock_guard<LockType> l(lock_);
+
+  // Call AbortMutation() manually, as otherwise the lock won't be
+  // released.
+  BOOST_FOREACH(TabletInfo* tablet, tablets) {
+    tablet->mutable_metadata()->AbortMutation();
+  }
+  table->mutable_metadata()->AbortMutation();
+  BOOST_FOREACH(const string& tablet_id_to_erase, tablet_ids_to_erase) {
+    CHECK_EQ(tablet_map_.erase(tablet_id_to_erase), 1)
+        << "Unable to erase tablet " << tablet_id_to_erase << " from tablet map.";
+  }
+  CHECK_EQ(table_names_map_.erase(table_name), 1)
+      << "Unable to erase table named " << table_name << " from table names map.";
+  CHECK_EQ(table_ids_map_.erase(table_id), 1)
+      << "Unable to erase tablet with id " << table_id << " from tablet ids map.";
+}
+
 // Create a new table.
 // See README file in this directory for a description of the design.
 Status CatalogManager::CreateTable(const CreateTableRequestPB* req,
@@ -543,11 +586,11 @@ Status CatalogManager::CreateTable(const CreateTableRequestPB* req,
   // e. Write Tablets to sys-tablets (in "preparing" state)
   Status s = sys_catalog_->AddTablets(tablets);
   if (!s.ok()) {
-    // TODO: we could potentially handle this error case by returning an error,
-    // since even if we mistakenly believe this failed, when it actually made it
-    // to disk, we'll end up removing the orphaned tablets later.
-    PANIC_RPC(rpc, Substitute("An error occurred while inserting to sys-tablets: $0",
-                              s.ToString()));
+    s = s.CloneAndPrepend(Substitute("An error occurred while inserting to sys-tablets: $0",
+                                     s.ToString()));
+    LOG(WARNING) << s.ToString();
+    AbortTableCreation(table.get(), tablets);
+    return s;
   }
   TRACE("Wrote tablets to system table");
 
@@ -555,8 +598,11 @@ Status CatalogManager::CreateTable(const CreateTableRequestPB* req,
   table->mutable_metadata()->mutable_dirty()->pb.set_state(SysTablesEntryPB::kTableStateRunning);
   s = sys_catalog_->AddTable(table.get());
   if (!s.ok()) {
-    PANIC_RPC(rpc, Substitute("An error occurred while inserting to sys-tablets: $0",
-                              s.ToString()));
+    s = s.CloneAndPrepend(Substitute("An error occurred while inserting to sys-tablets: $0",
+                                     s.ToString()));
+    LOG(WARNING) << s.ToString();
+    AbortTableCreation(table.get(), tablets);
+    return s;
   }
   TRACE("Wrote table to system table");
 
@@ -1099,11 +1145,22 @@ Status CatalogManager::HandleReportedTablet(TSDescriptor* ts_desc,
     boost::shared_lock<LockType> l(lock_);
     ignore_result(FindCopy(tablet_map_, report.tablet_id(), &tablet));
   }
+  if (!IsLeaderAndReady()) {
+    return Status::IllegalState(
+        Substitute("this master is no longer the leader, unable to handle report for tablet ",
+                   report.tablet_id()));
+  }
   if (!tablet) {
     LOG(INFO) << "Got report from unknown tablet " << report.tablet_id()
               << ": Sending delete request for this orphan tablet";
     SendDeleteTabletRequest(report.tablet_id(), NULL, ts_desc,
                             "Report from unknown tablet");
+    return Status::OK();
+  }
+  if (!tablet->table()) {
+    LOG(INFO) << "Got report from an orphaned tablet " << report.tablet_id();
+    SendDeleteTabletRequest(report.tablet_id(), NULL, ts_desc,
+                            "Report from an orphaned tablet");
     return Status::OK();
   }
 
@@ -1734,6 +1791,12 @@ void CatalogManager::ExtractTabletsToProcess(
   BOOST_FOREACH(const TabletInfoMap::value_type& entry, tablet_map_) {
     scoped_refptr<TabletInfo> tablet = entry.second;
     TabletMetadataLock tablet_lock(tablet.get(), TabletMetadataLock::READ);
+
+    if (tablet->table() == NULL) {
+      // Tablet is orphaned or in preparing state, continue.
+      continue;
+    }
+
     TableMetadataLock table_lock(tablet->table(), TableMetadataLock::READ);
 
     // If the table is deleted or the tablet was replaced.
@@ -1871,16 +1934,15 @@ class ScopedTabletInfoCommitter {
   // This method is not thread safe. Must be called by the same thread
   // that would destroy this instance.
   void Abort() {
+    BOOST_FOREACH(const scoped_refptr<TabletInfo>& tablet, *tablets_) {
+      tablet->mutable_metadata()->AbortMutation();
+    }
     aborted_ = true;
   }
 
   // Commit the transactions.
   ~ScopedTabletInfoCommitter() {
-    if (PREDICT_FALSE(aborted_)) {
-      BOOST_FOREACH(const scoped_refptr<TabletInfo>& tablet, *tablets_) {
-        tablet->mutable_metadata()->AbortMutation();
-      }
-    } else {
+    if (PREDICT_TRUE(!aborted_)) {
       BOOST_FOREACH(const scoped_refptr<TabletInfo>& tablet, *tablets_) {
         tablet->mutable_metadata()->CommitMutation();
       }
@@ -1945,17 +2007,52 @@ Status CatalogManager::ProcessPendingAssignments(
   TSDescriptorVector ts_descs;
   master_->ts_manager()->GetAllDescriptors(&ts_descs);
 
+  Status s;
   BOOST_FOREACH(TabletInfo *tablet, deferred.needs_create_rpc) {
-    SelectReplicasForTablet(ts_descs, tablet);
+    // NOTE: if we fail to select replicas on the first pass (due to
+    // insufficient Tablet Servers being online), we will still try
+    // again unless the tablet/table creation is cancelled.
+    s = SelectReplicasForTablet(ts_descs, tablet);
+    if (!s.ok()) {
+      s = s.CloneAndPrepend(Substitute(
+          "An error occured while selecting replicas for tablet $0: $1",
+          tablet->tablet_id(), s.ToString()));
+      break;
+    }
   }
 
   // Update the sys catalog with the new set of tablets/metadata.
-  Status s = sys_catalog_->AddAndUpdateTablets(
-    deferred.tablets_to_add, deferred.tablets_to_update);
+  if (s.ok()) {
+    s = sys_catalog_->AddAndUpdateTablets(
+        deferred.tablets_to_add, deferred.tablets_to_update);
+    if (!s.ok()) {
+      s = s.CloneAndPrepend(Substitute("An error occurred while updating tablets: $0",
+                                       s.ToString()));
+    }
+  }
+
   if (!s.ok()) {
-    LOG(WARNING) << "An error occurred while updating tablets: " << s.ToString();
-    // TODO: Add test coverage for this abort path.
+    LOG(WARNING) << s.ToString() << ", aborting the current task.";
+    // If there was an error, abort any mutations started by the
+    // current task.
+    vector<string> tablet_ids_to_remove;
+    BOOST_FOREACH(scoped_refptr<TabletInfo>& new_tablet, new_tablets) {
+      TableInfo* table = new_tablet->table();
+      TableMetadataLock l_table(table, TableMetadataLock::WRITE);
+      if (table->RemoveTablet(new_tablet->tablet_id())) {
+        VLOG(1) << "Removed tablet " << new_tablet->tablet_id() << " from "
+            "table " << l_table.data().name();
+      }
+      tablet_ids_to_remove.push_back(new_tablet->tablet_id());
+    }
+    LOG(WARNING) << s.ToString();
+    boost::lock_guard<LockType> l(lock_);
     unlocker_out.Abort();
+    unlocker_in.Abort();
+    BOOST_FOREACH(const string& tablet_id_to_remove, tablet_ids_to_remove) {
+      CHECK_EQ(tablet_map_.erase(tablet_id_to_remove), 1)
+          << "Unable to erase " << tablet_id_to_remove << " from tablet map.";
+    }
     return s;
   }
 
@@ -1964,17 +2061,23 @@ Status CatalogManager::ProcessPendingAssignments(
   return Status::OK();
 }
 
-void CatalogManager::SelectReplicasForTablet(const TSDescriptorVector& ts_descs,
-                                             TabletInfo* tablet) {
+Status CatalogManager::SelectReplicasForTablet(const TSDescriptorVector& ts_descs,
+                                               TabletInfo* tablet) {
   TableMetadataLock table_guard(tablet->table(), TableMetadataLock::READ);
+
+  if (!table_guard.data().pb.IsInitialized()) {
+    return Status::InvalidArgument(
+        Substitute("TableInfo for tablet $0 is not initialized (aborted CreateTable attempt?)",
+                   tablet->tablet_id()));
+  }
 
   int nreplicas = table_guard.data().pb.num_replicas();
 
   if (ts_descs.size() < nreplicas) {
-    LOG(WARNING) << "Not enough Tablet Servers are online for table '" << table_guard.data().name()
-                  << "'. Need at least " << nreplicas
-                  << " servers, but only " << ts_descs.size() << " are available";
-    return;
+    return Status::InvalidArgument(
+        Substitute("Not enough Tablet Servers are online for table '$0'. Need at least $1 "
+                   "servers, but only $2 are available.",
+                   table_guard.data().name(), nreplicas, ts_descs.size()));
   }
 
   // Select the set of replicas
@@ -1984,6 +2087,7 @@ void CatalogManager::SelectReplicasForTablet(const TSDescriptorVector& ts_descs,
   quorum->set_local(nreplicas == 1);
   quorum->set_opid_index(consensus::kInvalidOpIdIndex);
   SelectReplicas(ts_descs, nreplicas, quorum);
+  return Status::OK();
 }
 
 void CatalogManager::SendCreateTabletRequests(const vector<TabletInfo*>& tablets) {
@@ -2288,6 +2392,16 @@ std::string TableInfo::ToString() const {
   return Substitute("$0 [id=$1]", l.data().pb.name(), table_id_);
 }
 
+bool TableInfo::RemoveTablet(const string& tablet_id) {
+  boost::lock_guard<simple_spinlock> l(lock_);
+  if (tablet_map_.find(tablet_id) != tablet_map_.end()) {
+    CHECK_EQ(tablet_map_.erase(tablet_id), 1)
+        << "Unable to erase tablet " << tablet_id << " from TableInfo.";
+    return true;
+  }
+  return false;
+}
+
 void TableInfo::AddTablet(TabletInfo *tablet) {
   boost::lock_guard<simple_spinlock> l(lock_);
   AddTabletUnlocked(tablet);
@@ -2353,7 +2467,7 @@ bool TableInfo::IsCreateInProgress() const {
   boost::lock_guard<simple_spinlock> l(lock_);
   BOOST_FOREACH(const TableInfo::TabletInfoMap::value_type& e, tablet_map_) {
     TabletMetadataLock tablet_lock(e.second, TabletMetadataLock::READ);
-    if (!e.second->metadata().state().is_running()) {
+    if (!tablet_lock.data().is_running()) {
       return true;
     }
   }

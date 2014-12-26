@@ -200,6 +200,10 @@ class TableInfo : public RefCountedThreadSafe<TableInfo> {
   // Add multiple tablets to this table.
   void AddTablets(const std::vector<TabletInfo*>& tablets);
 
+  // Return true if tablet with 'tablet_id' has been removed from
+  // 'tablet_map_' below.
+  bool RemoveTablet(const std::string& tablet_id);
+
   // This only returns tablets which are in RUNNING state.
   void GetTabletsInRange(const GetTableLocationsRequestPB* req,
                          std::vector<scoped_refptr<TabletInfo> > *ret) const;
@@ -257,10 +261,10 @@ class MetadataLock : public CowLock<typename MetadataClass::cow_state> {
  public:
   typedef CowLock<typename MetadataClass::cow_state> super;
   MetadataLock(MetadataClass* info, typename super::LockMode mode)
-    : super(info->mutable_metadata(), mode) {
+    : super(DCHECK_NOTNULL(info)->mutable_metadata(), mode) {
   }
   MetadataLock(const MetadataClass* info, typename super::LockMode mode)
-    : super(&info->metadata(), mode) {
+    : super(&(DCHECK_NOTNULL(info))->metadata(), mode) {
   }
 };
 
@@ -488,12 +492,18 @@ class CatalogManager : public tserver::TabletPeerLookupIf {
   // Loops through the "not created" tablets and sends a CreateTablet() request.
   Status ProcessPendingAssignments(const std::vector<scoped_refptr<TabletInfo> >& tablets);
 
-  void SelectReplicasForTablet(const TSDescriptorVector& ts_descs, TabletInfo* tablet);
+  // Select N Replicas from online tablet servers (as specified by
+  // 'ts_descs') for the specified tablet and populate the quorum
+  // object. If 'ts_descs' does not specify enough online tablet
+  // servers to select the N replicas, return Status::InvalidArgument.
+  //
+  // This method is called by "ProcessPendingAssignments()".
+  Status SelectReplicasForTablet(const TSDescriptorVector& ts_descs, TabletInfo* tablet);
 
   // Select N Replicas from the online tablet servers
   // and populate the quorum object.
   //
-  // This method is part of the "ProcessPendingAssignments()"
+  // This method is called by "SelectReplicasForTablet".
   void SelectReplicas(const TSDescriptorVector& ts_descs,
                       int nreplicas,
                       metadata::QuorumPB *quorum);
@@ -541,6 +551,12 @@ class CatalogManager : public tserver::TabletPeerLookupIf {
                                const std::string& reason);
   std::string GenerateId() { return oid_generator_.Next(); }
 
+  // Abort creation of 'table': abort all mutation for TabletInfo and
+  // TableInfo objects (releasing all COW locks), abort all pending
+  // tasks associated with the table, and erase any state related to
+  // the table we failed to create from the in-memory maps
+  // ('table_names_map_', 'table_ids_map_', 'tablet_map_' below).
+  void AbortTableCreation(TableInfo* table, const std::vector<TabletInfo*>& tablets);
 
   // TODO: the maps are a little wasteful of RAM, since the TableInfo/TabletInfo
   // objects have a copy of the string key. But STL doesn't make it

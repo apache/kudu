@@ -64,6 +64,16 @@ bool CheckLeaderAndCatalogManagerInitializedOrRespond(Master* master,
                       CheckIsLeaderOrRespond(master, resp, rpc));
 }
 
+template<class RespClass>
+void RespondNoLongerLeader(RespClass* resp, rpc::RpcContext* rpc) {
+  SetupErrorAndRespond(
+      resp->mutable_error(),
+      Status::ServiceUnavailable("operation requested can only be executed on a leader"
+                                 "master, but this master is no longer a leader"),
+      MasterErrorPB::NOT_THE_LEADER,
+      rpc);
+}
+
 } // anonymous namespace
 
 static void SetupErrorAndRespond(MasterErrorPB* error,
@@ -203,7 +213,18 @@ void MasterServiceImpl::CreateTable(const CreateTableRequestPB* req,
 
   Status s = server_->catalog_manager()->CreateTable(req, resp, rpc);
   if (!s.ok() && !resp->has_error()) {
-    StatusToPB(s, resp->mutable_error()->mutable_status());
+    if (s.IsIllegalState()) {
+      // TODO: This is a bit of a hack, as right now there's no way to
+      // propagate why a write to a quorum has failed. However, since
+      // we use Status::IllegalState() to indicate the situation where
+      // a write was issued on a node that is no longer the leader,
+      // this suffices until we distinguish this cause of write
+      // failure more explicitly.
+      RespondNoLongerLeader(resp, rpc);
+      return;
+    } else {
+      StatusToPB(s, resp->mutable_error()->mutable_status());
+    }
   }
   rpc->RespondSuccess();
 }

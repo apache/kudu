@@ -3,6 +3,7 @@
 #ifndef KUDU_CLIENT_CLIENT_INTERNAL_H
 #define KUDU_CLIENT_CLIENT_INTERNAL_H
 
+#include <boost/function.hpp>
 #include <string>
 #include <vector>
 
@@ -16,12 +17,14 @@ class DnsResolver;
 class HostPort;
 
 namespace master {
+class CreateTableRequestPB;
 class GetLeaderMasterRpc;
 class MasterServiceProxy;
 } // namespace master
 
 namespace rpc {
 class Messenger;
+class RpcController;
 } // namespace rpc
 
 namespace client {
@@ -41,12 +44,27 @@ class KuduClient::Data {
                          ReplicaSelection selection,
                          internal::RemoteTabletServer** ts);
 
-  Status IsCreateTableInProgress(const std::string& table_name,
+  Status CreateTable(KuduClient* client,
+                     const master::CreateTableRequestPB& req,
+                     const KuduSchema& schema,
+                     const MonoTime& deadline);
+
+  Status IsCreateTableInProgress(KuduClient* client,
+                                 const std::string& table_name,
                                  const MonoTime& deadline,
                                  bool *create_in_progress);
+
+  Status WaitForCreateTableToFinish(KuduClient* client,
+                                    const std::string& table_name,
+                                    const MonoTime& deadline);
+
   Status IsAlterTableInProgress(const std::string& table_name,
                                 const MonoTime& deadline,
                                 bool *alter_in_progress);
+
+  Status WaitForAlterTableToFinish(const std::string& alter_name,
+                                   const MonoTime& deadline);
+
   Status GetTableSchema(KuduClient* client,
                         const std::string& table_name,
                         const MonoTime& deadline,
@@ -99,6 +117,31 @@ class KuduClient::Data {
   }
 
   HostPort leader_master_hostport() const;
+
+  // Retry 'func' until either:
+  //
+  // 1) Methods succeeds on a leader master.
+  // 2) Method fails for a reason that is not related to network
+  //    errors, timeouts, or leadership issues.
+  // 3) 'deadline' (if initialized) elapses.
+  //
+  // If 'num_attempts' is not NULL, it will be incremented on every
+  // attempt (successful or not) to call 'func'.
+  //
+  // NOTE: 'rpc_timeout' is a per-call timeout, while 'deadline' is a
+  // per operation deadline. If 'deadline' is not initialized, 'func' is
+  // retried forever.
+  template<class ReqClass, class RespClass>
+  Status SyncLeaderMasterRpc(
+      const MonoDelta& rpc_timeout,
+      const MonoTime& deadline,
+      KuduClient* client,
+      const ReqClass& req,
+      RespClass* resp,
+      int* num_attempts,
+      const boost::function<Status(master::MasterServiceProxy*,
+                                   const ReqClass&, RespClass*,
+                                   rpc::RpcController*)>& func);
 
   std::tr1::shared_ptr<rpc::Messenger> messenger_;
   gscoped_ptr<DnsResolver> dns_resolver_;

@@ -68,47 +68,6 @@ using internal::Batcher;
 using internal::ErrorCollector;
 using internal::MetaCache;
 
-// Retry helper, takes a function like: Status funcName(const MonoTime& deadline, bool *retry, ...)
-// The function should set the retry flag (default true) if the function should
-// be retried again. On retry == false the return status of the function will be
-// returned to the caller, otherwise a Status::Timeout() will be returned.
-// If the deadline is already expired, no attempt will be made.
-static Status RetryFunc(const MonoTime& deadline,
-                        const string& retry_msg,
-                        const string& timeout_msg,
-                        const boost::function<Status(const MonoTime&, bool*)>& func) {
-  MonoTime now = MonoTime::Now(MonoTime::FINE);
-  if (!now.ComesBefore(deadline)) {
-    return Status::TimedOut(timeout_msg);
-  }
-
-  int64_t wait_time = 1000;
-  while (1) {
-    MonoTime stime = now;
-    bool retry = true;
-    Status s = func(deadline, &retry);
-    if (!retry) {
-      return s;
-    }
-
-    now = MonoTime::Now(MonoTime::FINE);
-    if (!now.ComesBefore(deadline)) {
-      break;
-    }
-
-    VLOG(1) << retry_msg << " status=" << s.ToString();
-    int64_t timeout_usec = deadline.GetDeltaSince(now).ToNanoseconds() -
-                           now.GetDeltaSince(stime).ToNanoseconds();
-    if (timeout_usec > 0) {
-      wait_time = std::min(wait_time * 5 / 4, timeout_usec);
-      usleep(wait_time);
-      now = MonoTime::Now(MonoTime::FINE);
-    }
-  }
-
-  return Status::TimedOut(timeout_msg);
-}
-
 KuduClientBuilder::KuduClientBuilder() {
   data_.reset(new KuduClientBuilder::Data());
 }
@@ -181,7 +140,7 @@ Status KuduClient::IsCreateTableInProgress(const string& table_name,
                                            bool *create_in_progress) {
   MonoTime deadline = MonoTime::Now(MonoTime::FINE);
   deadline.AddDelta(default_admin_operation_timeout());
-  return data_->IsCreateTableInProgress(table_name, deadline, create_in_progress);
+  return data_->IsCreateTableInProgress(this, table_name, deadline, create_in_progress);
 }
 
 Status KuduClient::DeleteTable(const string& table_name) {
@@ -255,6 +214,10 @@ const MonoDelta& KuduClient::default_admin_operation_timeout() const {
   return data_->default_admin_operation_timeout_;
 }
 
+const MonoDelta& KuduClient::default_select_master_timeout() const {
+  return data_->default_select_master_timeout_;
+}
+
 ////////////////////////////////////////////////////////////
 // KuduTableCreator
 ////////////////////////////////////////////////////////////
@@ -304,17 +267,8 @@ Status KuduTableCreator::Create() {
     return Status::InvalidArgument("Missing schema");
   }
 
-  CreateTableRequestPB req;
-  CreateTableResponsePB resp;
-  RpcController rpc;
-  MonoDelta timeout = data_->timeout_.Initialized() ?
-    data_->timeout_ :
-    data_->client_->default_admin_operation_timeout();
-  MonoTime deadline = MonoTime::Now(MonoTime::FINE);
-  deadline.AddDelta(timeout);
-  rpc.set_timeout(timeout);
-
   // Build request.
+  CreateTableRequestPB req;
   req.set_name(data_->table_name_);
   if (data_->num_replicas_ >= 1) {
     req.set_num_replicas(data_->num_replicas_);
@@ -325,21 +279,25 @@ Status KuduTableCreator::Create() {
     req.add_pre_split_keys(key);
   }
 
-  // Send it.
-  RETURN_NOT_OK(data_->client_->data_->master_proxy_->CreateTable(req, &resp, &rpc));
-  if (resp.has_error()) {
-    // TODO: if already exist and in progress spin
-    return StatusFromPB(resp.error().status());
+  // If no custom timeout is specified, keep re-trying forever.
+  MonoTime deadline;
+  if (data_->timeout_.Initialized()) {
+    deadline = MonoTime::Now(MonoTime::FINE);
+    deadline.AddDelta(data_->timeout_);
   }
+
+  RETURN_NOT_OK_PREPEND(data_->client_->data_->CreateTable(data_->client_,
+                                                           req,
+                                                           *data_->schema_,
+                                                           deadline),
+                        strings::Substitute("Error creating table $0 on the master",
+                                            data_->table_name_));
 
   // Spin until the table is fully created, if requested.
   if (data_->wait_) {
-    RETURN_NOT_OK(RetryFunc(deadline,
-                            "Waiting on Create Table to be completed",
-                            "Timeout out waiting for Table Creation",
-                            boost::bind(&KuduClient::Data::IsCreateTableInProgress,
-                                        data_->client_->data_.get(),
-                                        data_->table_name_, _1, _2)));
+    RETURN_NOT_OK(data_->client_->data_->WaitForCreateTableToFinish(data_->client_,
+                                                                    data_->table_name_,
+                                                                    deadline));
   }
 
   return Status::OK();
@@ -643,12 +601,7 @@ Status KuduTableAlterer::Alter() {
   if (data_->wait_) {
     string alter_name = data_->alter_steps_.has_new_table_name() ?
         data_->alter_steps_.new_table_name() : data_->alter_steps_.table().table_name();
-    RETURN_NOT_OK(RetryFunc(deadline,
-                            "Waiting on Alter Table to be completed",
-                            "Timeout out waiting for AlterTable",
-                            boost::bind(&KuduClient::Data::IsAlterTableInProgress,
-                                        data_->client_->data_.get(),
-                                        alter_name, _1, _2)));
+    RETURN_NOT_OK(data_->client_->data_->WaitForAlterTableToFinish(alter_name, deadline));
   }
 
   return Status::OK();
