@@ -432,7 +432,7 @@ QuorumPeerPB::Role CatalogManager::Role() const {
 
 void CatalogManager::Shutdown() {
   {
-    boost::shared_lock<LockType> l(lock_);
+    boost::lock_guard<simple_spinlock> l(state_lock_);
     if (state_ == kClosing) {
       VLOG(2) << "CatalogManager already shut down";
       return;
