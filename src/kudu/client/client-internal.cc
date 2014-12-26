@@ -312,7 +312,8 @@ void GetTableSchemaRpc::SendRpcCb(const Status& status) {
       client_schema->Reset(server_schema.columns(), server_schema.num_key_columns());
       out_schema_->schema_.swap(client_schema);
     }
-  } else {
+  }
+  if (!new_status.ok()) {
     LOG(WARNING) << ToString() << " failed: " << new_status.ToString();
   }
   user_cb_.Run(new_status);
