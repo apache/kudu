@@ -140,8 +140,11 @@ class DeltaTracker {
   // strictly less than num_rows().
   int64_t num_rows() const { return num_rows_; }
 
-  // Get the delta MemStore's size in bytes
+  // Get the delta MemStore's size in bytes, including pre-allocation.
   size_t DeltaMemStoreSize() const;
+
+  // Returns true if the DMS has no entries. This doesn't rely on the size.
+  bool DeltaMemStoreEmpty() const;
 
   // Return the number of redo delta stores, not including the DeltaMemStore.
   size_t CountRedoDeltaStores() const;

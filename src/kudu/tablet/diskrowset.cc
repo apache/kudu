@@ -588,6 +588,11 @@ size_t DiskRowSet::DeltaMemStoreSize() const {
   return delta_tracker_->DeltaMemStoreSize();
 }
 
+bool DiskRowSet::DeltaMemStoreEmpty() const {
+  CHECK(open_);
+  return delta_tracker_->DeltaMemStoreEmpty();
+}
+
 size_t DiskRowSet::CountDeltaStores() const {
   CHECK(open_);
   return delta_tracker_->CountRedoDeltaStores();

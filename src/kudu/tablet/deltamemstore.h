@@ -58,6 +58,10 @@ class DeltaMemStore : public DeltaStore,
     return tree_.count();
   }
 
+  bool Empty() const {
+    return tree_.empty();
+  }
+
   // Dump a debug version of the tree to the logs. This is not thread-safe, so
   // is only really useful in unit tests.
   void DebugPrint() const;

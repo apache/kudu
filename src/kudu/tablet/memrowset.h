@@ -301,6 +301,8 @@ class MemRowSet : public RowSet,
 
   size_t DeltaMemStoreSize() const OVERRIDE { return 0; }
 
+  bool DeltaMemStoreEmpty() const OVERRIDE { return true; }
+
   size_t CountDeltaStores() const OVERRIDE { return 0; }
 
   Status FlushDeltas() OVERRIDE { return Status::OK(); }

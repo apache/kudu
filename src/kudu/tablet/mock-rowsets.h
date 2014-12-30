@@ -82,6 +82,11 @@ class MockRowSet : public RowSet {
     return 0;
   }
 
+  virtual bool DeltaMemStoreEmpty() const OVERRIDE {
+    LOG(FATAL) << "Unimplemented";
+    return 0;
+  }
+
   virtual size_t CountDeltaStores() const OVERRIDE {
     LOG(FATAL) << "Unimplemented";
     return 0;

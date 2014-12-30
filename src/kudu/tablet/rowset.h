@@ -113,6 +113,8 @@ class RowSet {
   // Get the size of the delta's MemStore
   virtual size_t DeltaMemStoreSize() const = 0;
 
+  virtual bool DeltaMemStoreEmpty() const = 0;
+
   // Return the number of separate delta stores in the rowset,
   // not including the DeltaMemStore.
   virtual size_t CountDeltaStores() const = 0;
@@ -282,6 +284,8 @@ class DuplicatingRowSet : public RowSet {
   }
 
   size_t DeltaMemStoreSize() const OVERRIDE { return 0; }
+
+  bool DeltaMemStoreEmpty() const OVERRIDE { return true; }
 
   size_t CountDeltaStores() const OVERRIDE { return 0; }
 

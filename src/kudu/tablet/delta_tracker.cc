@@ -472,6 +472,11 @@ size_t DeltaTracker::DeltaMemStoreSize() const {
   return dms_->memory_footprint();
 }
 
+bool DeltaTracker::DeltaMemStoreEmpty() const {
+  boost::shared_lock<boost::shared_mutex> lock(component_lock_);
+  return dms_->Empty();
+}
+
 size_t DeltaTracker::CountRedoDeltaStores() const {
   boost::shared_lock<boost::shared_mutex> lock(component_lock_);
   return redo_delta_stores_.size();

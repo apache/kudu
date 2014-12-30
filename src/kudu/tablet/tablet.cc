@@ -736,6 +736,33 @@ int32_t Tablet::CurrentMrsIdForTests() const {
   return components_->memrowset->mrs_id();
 }
 
+enum {
+  kFlushDueToTimeMs = 120 * 1000
+};
+
+// Common method for MRS and DMS flush. Sets the performance improvement based on the anchored ram
+// if it's over the threshold, else it will set it based on how long it has been since the last
+// flush.
+static void SetPerfImprovementForFlush(MaintenanceOpStats* stats,
+                                       double elapsed_ms, bool is_empty) {
+  if (stats->ram_anchored > FLAGS_flush_threshold_mb * 1024 * 1024) {
+    // If we're over the user-specified flush threshold, then consider the perf
+    // improvement to be 1 for every extra MB.  This produces perf_improvement results
+    // which are much higher than any compaction would produce, and means that, when
+    // there is an MRS over threshold, a flush will almost always be selected instead of
+    // a compaction.  That's not necessarily a good thing, but in the absense of better
+    // heuristics, it will do for now.
+    int extra_mb = stats->ram_anchored / 1024 / 1024;
+    stats->perf_improvement = extra_mb;
+  } else if (!is_empty && elapsed_ms > kFlushDueToTimeMs) {
+    // Even if we aren't over the threshold, consider flushing if we haven't flushed
+    // in a long time. But, don't give it a large perf_improvement score. We should
+    // only do this if we really don't have much else to do.
+    double extra_millis = elapsed_ms - 60 * 1000;
+    stats->perf_improvement = std::min(600000.0 / extra_millis, 0.05);
+  }
+}
+
 // Maintenance op for MRS flush.
 //
 class FlushMRSOp : public MaintenanceOp {
@@ -759,24 +786,9 @@ class FlushMRSOp : public MaintenanceOp {
     stats->ts_anchored_secs = 0;
     // TODO: use workload statistics here to find out how "hot" the tablet has
     // been in the last 5 minutes.
-
-    if (stats->ram_anchored > FLAGS_flush_threshold_mb * 1024 * 1024) {
-      // If we're over the user-specified flush threshold, then consider the perf
-      // improvement to be 1 for every extra MB.  This produces perf_improvement results
-      // which are much higher than any compaction would produce, and means that, when
-      // there is an MRS over threshold, a flush will almost always be selected instead of
-      // a compaction.  That's not necessarily a good thing, but in the absense of better
-      // heuristics, it will do for now.
-      int extra_mb = stats->ram_anchored / 1024 / 1024;
-      stats->perf_improvement = extra_mb;
-    } else if (!tablet_->MemRowSetEmpty() &&
-               time_since_flush_.elapsed().wall_millis() > kFlushDueToTimeMs) {
-      // Even if we aren't over the threshold, consider flushing if we haven't flushed
-      // in a long time. But, don't give it a large perf_improvement score. We should
-      // only do this if we really don't have much else to do.
-      double extra_millis = time_since_flush_.elapsed().wall_millis() - 60 * 1000;
-      stats->perf_improvement = std::min(600000.0 / extra_millis, 0.05);
-    }
+    SetPerfImprovementForFlush(stats,
+                               time_since_flush_.elapsed().wall_millis(),
+                               tablet_->MemRowSetEmpty());
   }
 
   virtual bool Prepare() OVERRIDE {
@@ -807,9 +819,7 @@ class FlushMRSOp : public MaintenanceOp {
   }
 
  private:
-  enum {
-    kFlushDueToTimeMs = 120 * 1000
-  };
+
 
   // Lock protecting time_since_flush_
   mutable simple_spinlock lock_;
@@ -887,19 +897,21 @@ class FlushDeltaMemStoresOp : public MaintenanceOp {
   explicit FlushDeltaMemStoresOp(Tablet* tablet)
     : MaintenanceOp(StringPrintf("FlushDeltaMemStoresOp(%s)",
                                  tablet->tablet_id().c_str())),
-      tablet_(tablet)
-  { }
+      tablet_(tablet) {
+    time_since_flush_.start();
+  }
 
   virtual void UpdateStats(MaintenanceOpStats* stats) OVERRIDE {
+    boost::lock_guard<simple_spinlock> l(lock_);
     size_t dms_size = tablet_->DeltaMemStoresSize();
-    uint64_t threshold = FLAGS_flush_threshold_mb * 1024LLU * 1024LLU;
-    if (dms_size < threshold) {
-      stats->perf_improvement = 0;
-    } else {
-      stats->perf_improvement = (2.0f * dms_size) / threshold;
-    }
     stats->ram_anchored = dms_size;
+    stats->runnable = true;
     stats->ts_anchored_secs = 0;
+
+    SetPerfImprovementForFlush(stats,
+                               time_since_flush_.elapsed().wall_millis(),
+                               tablet_->DeltaMemRowSetEmpty());
+
   }
 
   virtual bool Prepare() OVERRIDE {
@@ -909,6 +921,10 @@ class FlushDeltaMemStoresOp : public MaintenanceOp {
   virtual void Perform() OVERRIDE {
     WARN_NOT_OK(tablet_->FlushBiggestDMS(),
                 Substitute("Failed to flush biggest DMS on $0", tablet_->tablet_id()));
+    {
+      boost::lock_guard<simple_spinlock> l(lock_);
+      time_since_flush_.start();
+    }
   }
 
   virtual Histogram* DurationHistogram() OVERRIDE {
@@ -921,6 +937,8 @@ class FlushDeltaMemStoresOp : public MaintenanceOp {
 
  private:
   Tablet *const tablet_;
+  mutable simple_spinlock lock_;
+  Stopwatch time_since_flush_;
 };
 
 Status Tablet::PickRowSetsToCompact(RowSetsInCompaction *picked,
@@ -1429,6 +1447,19 @@ size_t Tablet::DeltaMemStoresSize() const {
   }
 
   return ret;
+}
+
+bool Tablet::DeltaMemRowSetEmpty() const {
+  scoped_refptr<TabletComponents> comps;
+  GetComponents(&comps);
+
+  BOOST_FOREACH(const shared_ptr<RowSet> &rowset, comps->rowsets->all_rowsets()) {
+    if (!rowset->DeltaMemStoreEmpty()) {
+      return false;
+    }
+  }
+
+  return true;
 }
 
 Status Tablet::FlushBiggestDMS() {

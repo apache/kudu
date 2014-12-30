@@ -287,6 +287,8 @@ class DiskRowSet : public RowSet {
 
   size_t DeltaMemStoreSize() const OVERRIDE;
 
+  bool DeltaMemStoreEmpty() const OVERRIDE;
+
   size_t CountDeltaStores() const OVERRIDE;
 
   Status MajorCompactDeltaStores(const ColumnIndexes& col_indexes);

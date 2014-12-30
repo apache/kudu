@@ -234,6 +234,9 @@ class Tablet {
   // Get the total size of all the DMS
   size_t DeltaMemStoresSize() const;
 
+  // Same as MemRowSetEmpty(), but for the DMS.
+  bool DeltaMemRowSetEmpty() const;
+
   // Flush only the biggest DMS
   Status FlushBiggestDMS();
 
