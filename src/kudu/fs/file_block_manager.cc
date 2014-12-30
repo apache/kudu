@@ -19,7 +19,14 @@ using std::tr1::shared_ptr;
 using std::vector;
 using strings::Substitute;
 
-DEFINE_bool(block_coalesce_close, true,
+// The default value is optimized for the case where:
+// 1. the cfile blocks are colocated with the WALs.
+// 2. The underlying hardware is a spinning disk.
+// 3. The underlying filesystem is either XFS or EXT4.
+// 4. cfile_do_on_finish is 'close' (see cfile/cfile_writer.cc).
+//
+// When all conditions hold, this value ensures low latency for WAL writes.
+DEFINE_bool(block_coalesce_close, false,
             "Coalesce synchronization of data during CloseBlocks()");
 DECLARE_bool(enable_data_block_fsync);
 

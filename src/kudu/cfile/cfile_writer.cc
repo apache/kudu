@@ -26,8 +26,17 @@ using std::string;
 DEFINE_int32(cfile_default_block_size, 256*1024, "The default block size to use in cfiles");
 DEFINE_string(cfile_default_compression_codec, "none",
               "Default cfile block compression codec.");
-DEFINE_bool(cfile_flush_block_on_finish, true,
-            "Asynchronously flush a written block when finished");
+
+// The default value is optimized for the case where:
+// 1. the cfile blocks are colocated with the WALs.
+// 2. The underlying hardware is a spinning disk.
+// 3. The underlying filesystem is either XFS or EXT4.
+// 4. block_coalesce_close is false (see fs/file_block_manager.cc).
+//
+// When all conditions hold, this value ensures low latency for WAL writes.
+DEFINE_string(cfile_do_on_finish, "close",
+              "What to do to cfile blocks when writing is finished. "
+              "Possible values are 'close', 'flush', or 'nothing'.");
 
 namespace kudu {
 namespace cfile {
@@ -199,11 +208,18 @@ Status CFileWriter::FinishAndReleaseBlock(ScopedWritableBlockCloser* closer) {
 
   RETURN_NOT_OK(block_->Append(footer_str));
 
-  // Done with this block, tell the kernel to start flushing dirty data.
-  if (FLAGS_cfile_flush_block_on_finish) {
+  // Done with this block.
+  if (FLAGS_cfile_do_on_finish == "flush") {
     RETURN_NOT_OK(block_->FlushDataAsync());
+    closer->AddBlock(block_.Pass());
+  } else if (FLAGS_cfile_do_on_finish == "close") {
+    RETURN_NOT_OK(block_->Close());
+  } else if (FLAGS_cfile_do_on_finish == "nothing") {
+    closer->AddBlock(block_.Pass());
+  } else {
+    LOG(FATAL) << "Unknown value for cfile_do_on_finish: "
+               << FLAGS_cfile_do_on_finish;
   }
-  closer->AddBlock(block_.Pass());
   return Status::OK();
 }
 

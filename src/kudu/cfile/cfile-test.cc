@@ -18,7 +18,7 @@
 #include "kudu/util/test_macros.h"
 #include "kudu/util/stopwatch.h"
 
-DECLARE_bool(cfile_flush_block_on_finish);
+DECLARE_string(cfile_do_on_finish);
 
 namespace kudu {
 namespace cfile {
@@ -531,9 +531,18 @@ TEST_F(TestCFile, TestReleaseBlock) {
   ASSERT_STATUS_OK(w.Start());
   fs::ScopedWritableBlockCloser closer;
   ASSERT_STATUS_OK(w.FinishAndReleaseBlock(&closer));
-  ASSERT_EQ(1, closer.blocks().size());
-  ASSERT_EQ(FLAGS_cfile_flush_block_on_finish ?
-      WritableBlock::FLUSHING : WritableBlock::DIRTY, closer.blocks()[0]->state());
+  if (FLAGS_cfile_do_on_finish == "flush") {
+    ASSERT_EQ(1, closer.blocks().size());
+    ASSERT_EQ(WritableBlock::FLUSHING, closer.blocks()[0]->state());
+  } else if (FLAGS_cfile_do_on_finish == "close") {
+    ASSERT_EQ(0, closer.blocks().size());
+  } else if (FLAGS_cfile_do_on_finish == "nothing") {
+    ASSERT_EQ(1, closer.blocks().size());
+    ASSERT_EQ(WritableBlock::DIRTY, closer.blocks()[0]->state());
+  } else {
+    LOG(FATAL) << "Unknown value for cfile_do_on_finish: "
+               << FLAGS_cfile_do_on_finish;
+  }
   ASSERT_STATUS_OK(closer.CloseBlocks());
   ASSERT_EQ(0, closer.blocks().size());
 }
