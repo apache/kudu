@@ -97,6 +97,9 @@ class LinkedListTester {
   // responsible for an equal fraction of the uint64 key space.
   std::vector<std::string> GenerateSplitKeys(const client::KuduSchema& schema);
 
+  // Generate a vector of ints which form the split keys.
+  std::vector<uint64_t> GenerateSplitInts();
+
   void DumpInsertHistogram(bool print_flags);
 
  protected:
@@ -220,7 +223,8 @@ class ScopedRowUpdater {
 // verification step on the data.
 class LinkedListVerifier {
  public:
-  LinkedListVerifier(int num_chains, bool enable_mutation, int64_t expected);
+  LinkedListVerifier(int num_chains, bool enable_mutation, int64_t expected,
+                     const std::vector<uint64_t>& split_key_ints);
 
   // Start the scan timer. The duration between starting the scan and verifying
   // the data is logged in the VerifyData() step, so this should be called
@@ -234,9 +238,13 @@ class LinkedListVerifier {
   Status VerifyData(int64_t* verified_count);
 
  private:
-  int num_chains_;
-  int64_t expected_;
-  bool enable_mutation_;
+  // Print a summary of the broken links to the log.
+  void SummarizeBrokenLinks(const std::vector<uint64_t>& broken_links);
+
+  const int num_chains_;
+  const int64_t expected_;
+  const bool enable_mutation_;
+  const std::vector<uint64_t> split_key_ints_;
   std::vector<uint64_t> seen_key_;
   std::vector<uint64_t> seen_link_to_;
   int errors_;
@@ -250,16 +258,25 @@ class LinkedListVerifier {
 std::vector<string> LinkedListTester::GenerateSplitKeys(const client::KuduSchema& schema) {
   client::KuduEncodedKeyBuilder key_builder(schema);
   gscoped_ptr<client::KuduEncodedKey> key;
+  std::vector<uint64_t> split_ints = GenerateSplitInts();
   std::vector<string> split_keys;
-  uint64_t increment = kuint64max / num_tablets_;
-  for (uint64_t i = 1; i < num_tablets_; i++) {
-    uint64_t val = i * increment;
+  BOOST_FOREACH(uint64_t val, split_ints) {
     key_builder.Reset();
     key_builder.AddColumnKey(&val);
     key.reset(key_builder.BuildEncodedKey());
     split_keys.push_back(key->ToString());
   }
   return split_keys;
+}
+
+std::vector<uint64_t> LinkedListTester::GenerateSplitInts() {
+  vector<uint64_t> ret;
+  ret.reserve(num_tablets_ - 1);
+  uint64_t increment = kuint64max / num_tablets_;
+  for (uint64_t i = 1; i < num_tablets_; i++) {
+    ret.push_back(i * increment);
+  }
+  return ret;
 }
 
 Status LinkedListTester::CreateLinkedListTable() {
@@ -384,7 +401,8 @@ Status LinkedListTester::VerifyLinkedListRemote(int64_t expected, int64_t* verif
   RETURN_NOT_OK_PREPEND(scanner.SetProjection(&verify_projection_), "Bad projection");
   RETURN_NOT_OK_PREPEND(scanner.Open(), "Couldn't open scanner");
 
-  LinkedListVerifier verifier(num_chains_, enable_mutation_, expected);
+  LinkedListVerifier verifier(num_chains_, enable_mutation_, expected,
+                              GenerateSplitInts());
   verifier.StartScanTimer();
 
   std::vector<client::KuduRowResult> rows;
@@ -410,7 +428,8 @@ Status LinkedListTester::VerifyLinkedListLocal(const tablet::Tablet* tablet,
                                                int64_t expected,
                                                int64_t* verified_count) {
   DCHECK(tablet != NULL);
-  LinkedListVerifier verifier(num_chains_, enable_mutation_, expected);
+  LinkedListVerifier verifier(num_chains_, enable_mutation_, expected,
+                              GenerateSplitInts());
   verifier.StartScanTimer();
 
   const shared_ptr<Schema>& tablet_schema = tablet->schema();
@@ -485,10 +504,12 @@ Status LinkedListTester::WaitAndVerify(int seconds_to_run, int64_t expected) {
 // LinkedListVerifier
 /////////////////////////////////////////////////////////////
 
-LinkedListVerifier::LinkedListVerifier(int num_chains, bool enable_mutation, int64_t expected)
+LinkedListVerifier::LinkedListVerifier(int num_chains, bool enable_mutation, int64_t expected,
+                                       const std::vector<uint64_t>& split_key_ints)
   : num_chains_(num_chains),
     expected_(expected),
     enable_mutation_(enable_mutation),
+    split_key_ints_(split_key_ints),
     errors_(0) {
   seen_key_.reserve(expected);
   seen_link_to_.reserve(expected);
@@ -512,6 +533,37 @@ void LinkedListVerifier::RegisterResult(uint64_t key, uint64_t link, bool update
   }
 }
 
+void LinkedListVerifier::SummarizeBrokenLinks(const std::vector<uint64_t>& broken_links) {
+  std::vector<int64_t> errors_by_tablet(split_key_ints_.size() + 1);
+
+  int n_logged = 0;
+  const int kMaxToLog = 100;
+
+  BOOST_FOREACH(uint64_t broken, broken_links) {
+    int tablet = std::upper_bound(split_key_ints_.begin(),
+                                  split_key_ints_.end(),
+                                  broken) - split_key_ints_.begin();
+    DCHECK_GE(tablet, 0);
+    DCHECK_LT(tablet, errors_by_tablet.size());
+    errors_by_tablet[tablet]++;
+
+    if (n_logged < kMaxToLog) {
+      LOG(ERROR) << "Entry " << broken << " was linked to but not present";
+      n_logged++;
+      if (n_logged == kMaxToLog) {
+        LOG(ERROR) << "... no more broken links will be logged";
+      }
+    }
+  }
+
+  // Summarize the broken links by which tablet they fell into.
+  if (!broken_links.empty()) {
+    for (int tablet = 0; tablet < errors_by_tablet.size(); tablet++) {
+      LOG(ERROR) << "Error count for tablet #" << tablet << ": " << errors_by_tablet[tablet];
+    }
+  }
+}
+
 Status LinkedListVerifier::VerifyData(int64_t* verified_count) {
   *verified_count = seen_key_.size();
   LOG(INFO) << "Done collecting results (" << (*verified_count) << " rows in "
@@ -527,10 +579,8 @@ Status LinkedListVerifier::VerifyData(int64_t* verified_count) {
   VerifyNoDuplicateEntries(seen_link_to_, &errors_, "Seen link to row multiple times");
   // Verify that every key that was linked to was present
   std::vector<uint64_t> broken_links = STLSetDifference(seen_link_to_, seen_key_);
-  BOOST_FOREACH(uint64_t broken, broken_links) {
-    LOG(ERROR) << "Entry " << broken << " was linked to but not present";
-    errors_++;
-  }
+  errors_ += broken_links.size();
+  SummarizeBrokenLinks(broken_links);
 
   // Verify that only the expected number of keys were seen but not linked to.
   // Only the last "batch" should have this characteristic.
