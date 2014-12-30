@@ -45,7 +45,7 @@ class RemoteKsckTest : public KuduTest {
     mini_cluster_.reset(new MiniCluster(env_.get(), opts));
     ASSERT_OK(mini_cluster_->Start());
 
-    master_rpc_addr_ = mini_cluster_->mini_master()->bound_rpc_addr().ToString();
+    master_rpc_addr_ = mini_cluster_->mini_master()->bound_rpc_addr_str();
 
     // Connect to the cluster.
     ASSERT_OK(client::KuduClientBuilder()

@@ -247,7 +247,7 @@ int main(int argc, char **argv) {
     options.data_root = FLAGS_mini_cluster_base_dir;
     cluster.reset(new kudu::MiniCluster(env.get(), options));
     CHECK_OK(cluster->StartSync());
-    master_address = cluster->mini_master()->bound_rpc_addr().ToString();
+    master_address = cluster->mini_master()->bound_rpc_addr_str();
   } else {
     master_address = FLAGS_master_address;
   }

@@ -40,7 +40,7 @@ class RpcLineItemDAOTest : public KuduTest {
     const char *kTableName = "tpch1";
 
     // Create the table and Connect to it.
-    string master_address(cluster_->mini_master()->bound_rpc_addr().ToString());
+    string master_address(cluster_->mini_master()->bound_rpc_addr_str());
     dao_.reset(new kudu::RpcLineItemDAO(master_address, kTableName, 5));
     dao_->Init();
   }

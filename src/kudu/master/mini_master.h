@@ -54,6 +54,8 @@ class MiniMaster {
   // Return UUID of this mini master.
   std::string permanent_uuid() const;
 
+  std::string bound_rpc_addr_str() const;
+
  private:
   Status StartDistributedMasterOnPorts(uint16_t rpc_port, uint16_t web_port,
                                        const std::vector<uint16_t>& quorum_ports);

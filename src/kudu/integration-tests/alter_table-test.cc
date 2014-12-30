@@ -79,7 +79,7 @@ class AlterTableTest : public KuduTest {
     ASSERT_STATUS_OK(cluster_->WaitForTabletServerCount(1));
 
     CHECK_OK(KuduClientBuilder()
-             .add_master_server_addr(cluster_->mini_master()->bound_rpc_addr().ToString())
+             .add_master_server_addr(cluster_->mini_master()->bound_rpc_addr_str())
              .Build(&client_));
 
     // Add a table, make sure it reports itself.

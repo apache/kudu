@@ -122,5 +122,9 @@ std::string MiniMaster::permanent_uuid() const {
   return DCHECK_NOTNULL(master_->fs_manager())->uuid();
 }
 
+std::string MiniMaster::bound_rpc_addr_str() const {
+  return bound_rpc_addr().ToString();
+}
+
 } // namespace master
 } // namespace kudu

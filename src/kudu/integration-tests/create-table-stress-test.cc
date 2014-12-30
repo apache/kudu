@@ -61,7 +61,7 @@ class CreateTableStressTest : public KuduTest {
     ASSERT_STATUS_OK(cluster_->Start());
 
     ASSERT_STATUS_OK(KuduClientBuilder()
-                     .add_master_server_addr(cluster_->mini_master()->bound_rpc_addr().ToString())
+                     .add_master_server_addr(cluster_->mini_master()->bound_rpc_addr_str())
                      .Build(&client_));
   }
 

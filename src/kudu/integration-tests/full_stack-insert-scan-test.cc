@@ -151,7 +151,7 @@ class FullStackInsertScanTest : public KuduTest {
     cluster_.reset(new MiniCluster(env_.get(), MiniClusterOptions()));
     ASSERT_OK(cluster_->Start());
     client_builder_.add_master_server_addr(
-        cluster_->mini_master()->bound_rpc_addr().ToString());
+        cluster_->mini_master()->bound_rpc_addr_str());
   }
 
   // Adds newly generated client's session and table pointers to arrays at id

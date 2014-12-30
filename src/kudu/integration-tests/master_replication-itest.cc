@@ -83,7 +83,7 @@ class MasterReplicationTest : public KuduTest {
 
   void ListMasterServerAddrs(vector<string>* out) {
     for (int i = 0; i < num_masters_; i++) {
-      out->push_back(cluster_->mini_master(i)->bound_rpc_addr().ToString());
+      out->push_back(cluster_->mini_master(i)->bound_rpc_addr_str());
     }
   }
 
@@ -91,7 +91,7 @@ class MasterReplicationTest : public KuduTest {
     KuduClientBuilder builder;
     for (int i = 0; i < num_masters_; i++) {
       if (!cluster_->mini_master(i)->master()->IsShutdown()) {
-        builder.add_master_server_addr(cluster_->mini_master(i)->bound_rpc_addr().ToString());
+        builder.add_master_server_addr(cluster_->mini_master(i)->bound_rpc_addr_str());
       }
     }
     return builder.Build(out);
