@@ -36,6 +36,8 @@ using consensus::ReplicateMsg;
 using env_util::ReadFully;
 using strings::Substitute;
 
+const int LogReader::kNoSizeLimit = -1;
+
 Status LogReader::Open(FsManager *fs_manager,
                        const scoped_refptr<LogIndex>& index,
                        const string& tablet_oid,
@@ -196,23 +198,47 @@ scoped_refptr<ReadableLogSegment> LogReader::GetSegmentBySequenceNumber(int64_t 
   return segments_[relative];
 }
 
+Status LogReader::ReadBatchUsingIndexEntry(const LogIndexEntry& index_entry,
+                                           faststring* tmp_buf,
+                                           gscoped_ptr<LogEntryBatchPB>* batch) const {
+  const int index = index_entry.op_id.index();
+
+  scoped_refptr<ReadableLogSegment> segment = GetSegmentBySequenceNumber(
+    index_entry.segment_sequence_number);
+  if (PREDICT_FALSE(!segment)) {
+    return Status::NotFound(Substitute("Segment $0 which contained index $1 has been GCed",
+                                       index_entry.segment_sequence_number,
+                                       index));
+  }
+
+  CHECK_GT(index_entry.offset_in_segment, 0);
+  uint64_t offset = index_entry.offset_in_segment;
+  RETURN_NOT_OK_PREPEND(segment->ReadEntryHeaderAndBatch(&offset, tmp_buf, batch),
+                        Substitute("Failed to read LogEntry for index $0 from log segment "
+                                   "$1 offset $2",
+                                   index,
+                                   index_entry.segment_sequence_number,
+                                   index_entry.offset_in_segment));
+  return Status::OK();
+}
+
 Status LogReader::ReadAllReplicateEntries(const int64_t starting_at,
                                           const int64_t up_to,
+                                          int64_t max_bytes_to_read,
                                           vector<ReplicateMsg*>* replicates) const {
   DCHECK_GT(starting_at, 0);
   DCHECK_GE(up_to, starting_at);
   DCHECK(log_index_) << "Require an index to random-read logs";
 
-  int64_t num_entries = up_to - starting_at + 1;
-  // Pre-reserve space in our result array. We'll fill in the messages as we go,
-  // letting later messages replace earlier (they may have been appended by later
-  // leaders).
-  vector<ReplicateMsg*> replicates_tmp(num_entries);
+  vector<ReplicateMsg*> replicates_tmp;
   ElementDeleter d(&replicates_tmp);
   LogIndexEntry prev_index_entry;
 
+  int64_t total_size = 0;
+  bool limit_exceeded = false;
   faststring tmp_buf;
-  for (int index = starting_at; index <= up_to; index++) {
+  gscoped_ptr<LogEntryBatchPB> batch;
+  for (int index = starting_at; index <= up_to && !limit_exceeded; index++) {
     LogIndexEntry index_entry;
     RETURN_NOT_OK_PREPEND(log_index_->GetEntry(index, &index_entry),
                           Substitute("Failed to read log index for op $0", index));
@@ -221,74 +247,52 @@ Status LogReader::ReadAllReplicateEntries(const int64_t starting_at,
     // it's likely that this index entry points to the same batch as the previous
     // one. If that's the case, we've already read this REPLICATE and we can
     // skip reading the batch again.
-    if (index != starting_at &&
-        (index_entry.segment_sequence_number == prev_index_entry.segment_sequence_number &&
-         index_entry.offset_in_segment == prev_index_entry.offset_in_segment)) {
-      // Sanity check that we already read it.
-      DCHECK(replicates_tmp[index - starting_at] != NULL);
-      continue;
+    if (index == starting_at ||
+        index_entry.segment_sequence_number != prev_index_entry.segment_sequence_number ||
+        index_entry.offset_in_segment != prev_index_entry.offset_in_segment) {
+      RETURN_NOT_OK(ReadBatchUsingIndexEntry(index_entry, &tmp_buf, &batch));
+
+      // Sanity-check the property that a batch should only have increasing indexes.
+      int64_t prev_index = 0;
+      for (int i = 0; i < batch->entry_size(); ++i) {
+        LogEntryPB* entry = batch->mutable_entry(i);
+        if (!entry->has_replicate()) continue;
+        int64_t this_index = entry->replicate().id().index();
+        CHECK_GT(this_index, prev_index)
+          << "Expected that an entry batch should only include increasing log indexes: "
+          << index_entry.ToString()
+          << "\nBatch: " << batch->DebugString();
+        prev_index = this_index;
+      }
     }
 
-    scoped_refptr<ReadableLogSegment> segment = GetSegmentBySequenceNumber(
-      index_entry.segment_sequence_number);
-    if (PREDICT_FALSE(!segment)) {
-      return Status::NotFound(Substitute("Segment $0 which contained index $1 has been GCed",
-                                         index_entry.segment_sequence_number,
-                                         index));
-    }
-
-    gscoped_ptr<LogEntryBatchPB> batch;
-    CHECK_GT(index_entry.offset_in_segment, 0);
-    uint64_t offset = index_entry.offset_in_segment;
-    RETURN_NOT_OK_PREPEND(segment->ReadEntryHeaderAndBatch(&offset, &tmp_buf, &batch),
-                          Substitute("Failed to read LogEntry for index $0 from log segment "
-                                     "$1 offset $2",
-                                     index,
-                                     index_entry.segment_sequence_number,
-                                     index_entry.offset_in_segment));
-
-    for (size_t i = 0; i < batch->entry_size(); ++i) {
+    bool found = false;
+    for (int i = 0; i < batch->entry_size(); ++i) {
       LogEntryPB* entry = batch->mutable_entry(i);
       if (!entry->has_replicate()) {
         continue;
       }
 
-      int64_t repl_index = entry->replicate().id().index();
-      if (repl_index < starting_at) {
-        // We don't care about replicates before our range.
-        continue;
-      }
-      if (repl_index > up_to) {
-        // Ignore anything coming after our target range. We can't
-        // break here, because we may have a replaced operation with
-        // an earlier index which comes later in the log.
+      if (entry->replicate().id().index() != index) {
         continue;
       }
 
-      // Compute the index in our output array.
-      int64_t relative_idx = repl_index - starting_at;
-      DCHECK_LT(relative_idx, replicates_tmp.size());
-      DCHECK_GE(relative_idx, 0);
-
-      // We may be replacing an earlier replicate with the same ID, in which case
-      // we need to delete it.
-      delete replicates_tmp[relative_idx];
-      replicates_tmp[relative_idx] = entry->release_replicate();
+      int64_t space_required = entry->replicate().SpaceUsed();
+      if (replicates_tmp.empty() ||
+          max_bytes_to_read <= 0 ||
+          total_size + space_required < max_bytes_to_read) {
+        total_size += space_required;
+        replicates_tmp.push_back(entry->release_replicate());
+      } else {
+        limit_exceeded = true;
+      }
+      found = true;
+      break;
     }
+    CHECK(found) << "Incorrect index entry didn't yield expected log entry: "
+                 << index_entry.ToString();
 
     prev_index_entry = index_entry;
-  }
-
-  // Sanity check that all of the ops we asked for are present.
-  int found_count = 0;
-  BOOST_FOREACH(ReplicateMsg* msg, replicates_tmp) {
-    if (PREDICT_FALSE(msg == NULL)) {
-      return Status::Corruption(
-        Substitute("Could not find operations $0 through $1 in the log (missing op $2)",
-                   starting_at, up_to, starting_at + found_count));
-    } else {
-      found_count++;
-    }
   }
 
   replicates->swap(replicates_tmp);

@@ -18,6 +18,7 @@ namespace kudu {
 namespace log {
 class Log;
 class LogIndex;
+class LogIndexEntry;
 
 // Reads a set of segments from a given path. Segment headers and footers
 // are read and parsed, but entries are not.
@@ -58,11 +59,17 @@ class LogReader {
   // Reads all ReplicateMsgs from 'starting_at' to 'up_to' both inclusive.
   // The caller takes ownership of the returned ReplicateMsg objects.
   //
+  // Will attempt to read no more than 'max_bytes_to_read', unless it is set to
+  // LogReader::kNoSizeLimit. If the size limit would prevent reading any operations at
+  // all, then will read exactly one operation.
+  //
   // Requires that a LogIndex was passed into LogReader::Open().
   Status ReadAllReplicateEntries(
       const int64_t starting_at,
       const int64_t up_to,
+      int64_t max_bytes_to_read,
       std::vector<consensus::ReplicateMsg*>* replicates) const;
+  static const int kNoSizeLimit;
 
   // Returns the number of segments.
   const int num_segments() const;
@@ -113,6 +120,13 @@ class LogReader {
   // and that the last segment has no footer, meaning it is currently being
   // written to.
   void UpdateLastSegmentOffset(uint64_t readable_to_offset);
+
+  // Read the LogEntryBatch pointed to by the provided index entry.
+  // 'tmp_buf' is used as scratch space to avoid extra allocation.
+  Status ReadBatchUsingIndexEntry(const LogIndexEntry& index_entry,
+                                  faststring* tmp_buf,
+                                  gscoped_ptr<LogEntryBatchPB>* batch) const;
+
 
   LogReader(FsManager *fs_manager,
             const scoped_refptr<LogIndex>& index,

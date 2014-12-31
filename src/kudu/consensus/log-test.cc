@@ -436,7 +436,8 @@ TEST_F(LogTest, TestGCWithLogRunning) {
   {
     vector<ReplicateMsg*> repls;
     ElementDeleter d(&repls);
-    Status s = log_->GetLogReader()->ReadAllReplicateEntries(1, 2, &repls);
+    Status s = log_->GetLogReader()->ReadAllReplicateEntries(
+      1, 2, LogReader::kNoSizeLimit, &repls);
     ASSERT_TRUE(s.IsNotFound()) << s.ToString();
   }
 
@@ -795,16 +796,43 @@ TEST_F(LogTest, TestReadLogWithReplacedReplicates) {
     for (int random_read = 0; random_read < kNumRandomReads; random_read++) {
       int start_index = RandInRange(&rng, gc_index, max_repl_index - 1);
       int end_index = RandInRange(&rng, start_index, max_repl_index);
-      SCOPED_TRACE(Substitute("Reading $0-$1", start_index, end_index));
-      vector<ReplicateMsg*> repls;
-      ElementDeleter d(&repls);
-      ASSERT_OK(reader->ReadAllReplicateEntries(start_index, end_index, &repls));
-      ASSERT_EQ(end_index - start_index + 1, repls.size());
-      int expected_index = start_index;
-      BOOST_FOREACH(const ReplicateMsg* repl, repls) {
-        ASSERT_EQ(expected_index, repl->id().index());
-        ASSERT_EQ(terms_by_index[expected_index], repl->id().term());
-        expected_index++;
+      {
+        SCOPED_TRACE(Substitute("Reading $0-$1", start_index, end_index));
+        vector<ReplicateMsg*> repls;
+        ElementDeleter d(&repls);
+        ASSERT_OK(reader->ReadAllReplicateEntries(
+                    start_index, end_index, LogReader::kNoSizeLimit, &repls));
+        ASSERT_EQ(end_index - start_index + 1, repls.size());
+        int expected_index = start_index;
+        BOOST_FOREACH(const ReplicateMsg* repl, repls) {
+          ASSERT_EQ(expected_index, repl->id().index());
+          ASSERT_EQ(terms_by_index[expected_index], repl->id().term());
+          expected_index++;
+        }
+      }
+
+      // Test a size-limited read.
+      int size_limit = RandInRange(&rng, 1, 1000);
+      {
+        SCOPED_TRACE(Substitute("Reading $0-$1 with size limit $2",
+                                start_index, end_index, size_limit));
+        vector<ReplicateMsg*> repls;
+        ElementDeleter d(&repls);
+        ASSERT_OK(reader->ReadAllReplicateEntries(start_index, end_index, size_limit, &repls));
+        ASSERT_LE(repls.size(), end_index - start_index + 1);
+        int total_size = 0;
+        int expected_index = start_index;
+        BOOST_FOREACH(const ReplicateMsg* repl, repls) {
+          ASSERT_EQ(expected_index, repl->id().index());
+          ASSERT_EQ(terms_by_index[expected_index], repl->id().term());
+          expected_index++;
+          total_size += repl->SpaceUsed();
+        }
+        if (total_size > size_limit) {
+          ASSERT_EQ(1, repls.size());
+        } else {
+          ASSERT_LE(total_size, size_limit);
+        }
       }
     }
 
