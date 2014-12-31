@@ -36,6 +36,7 @@
 #include "kudu/tablet/transactions/alter_schema_transaction.h"
 #include "kudu/tablet/transactions/change_config_transaction.h"
 #include "kudu/tablet/transactions/write_transaction.h"
+#include "kudu/util/debug/trace_event.h"
 #include "kudu/util/path_util.h"
 #include "kudu/util/locks.h"
 #include "kudu/util/logging.h"
@@ -307,6 +308,8 @@ Status BootstrapTablet(const scoped_refptr<TabletMetadata>& meta,
                        scoped_refptr<log::Log>* rebuilt_log,
                        const scoped_refptr<log::LogAnchorRegistry>& log_anchor_registry,
                        ConsensusBootstrapInfo* consensus_info) {
+  TRACE_EVENT1("tablet", "BootstrapTablet",
+               "tablet_id", meta->oid());
   TabletBootstrap bootstrap(meta, clock, metric_context, listener, log_anchor_registry);
   RETURN_NOT_OK(bootstrap.Bootstrap(rebuilt_tablet, rebuilt_log, consensus_info));
   // This is necessary since OpenNewLog() initially disables sync.

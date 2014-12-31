@@ -35,6 +35,7 @@
 #include "kudu/util/coding.h"
 #include "kudu/util/coding-inl.h"
 #include "kudu/util/crc.h"
+#include "kudu/util/debug/trace_event.h"
 #include "kudu/util/env.h"
 #include "kudu/util/env_util.h"
 #include "kudu/util/path_util.h"
@@ -587,6 +588,10 @@ Status ReadPBContainerFromPath(Env* env, const std::string& path, Message* msg) 
 Status WritePBContainerToPath(Env* env, const std::string& path,
                               const Message& msg,
                               SyncMode sync) {
+  TRACE_EVENT2("io", "WritePBContainerToPath",
+               "path", path,
+               "msg_type", msg.GetTypeName());
+
   const string tmp_template = path + kTmpTemplateSuffix;
   string tmp_path;
 

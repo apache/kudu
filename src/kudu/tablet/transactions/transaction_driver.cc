@@ -8,6 +8,7 @@
 #include "kudu/tablet/tablet_peer.h"
 #include "kudu/tablet/transactions/transaction_tracker.h"
 #include "kudu/util/debug-util.h"
+#include "kudu/util/debug/trace_event.h"
 #include "kudu/util/logging.h"
 #include "kudu/util/task_executor.h"
 #include "kudu/util/threadpool.h"
@@ -111,6 +112,7 @@ string TransactionDriver::ToStringUnlocked() const {
 
 Status TransactionDriver::ExecuteAsync() {
   VLOG_WITH_PREFIX_LK(4) << "ExecuteAsync()";
+  TRACE_EVENT_FLOW_BEGIN0("txn", "ExecuteAsync", this);
   ADOPT_TRACE(trace());
 
   Status s;
@@ -134,6 +136,7 @@ Status TransactionDriver::ExecuteAsync() {
 }
 
 void TransactionDriver::PrepareAndStartTask() {
+  TRACE_EVENT_FLOW_END0("txn", "PrepareAndStartTask", this);
   Status prepare_status = PrepareAndStart();
   if (PREDICT_FALSE(!prepare_status.ok())) {
     HandleFailure(prepare_status);
@@ -141,6 +144,7 @@ void TransactionDriver::PrepareAndStartTask() {
 }
 
 Status TransactionDriver::PrepareAndStart() {
+  TRACE_EVENT1("txn", "PrepareAndStart", "txn", this);
   VLOG_WITH_PREFIX_LK(4) << "PrepareAndStart()";
   // Actually prepare and start the transaction.
   prepare_physical_timestamp_ = GetMonoTimeMicros();
@@ -323,10 +327,12 @@ Status TransactionDriver::ApplyAsync() {
     }
   }
 
+  TRACE_EVENT_FLOW_BEGIN0("txn", "ApplyTask", this);
   return apply_pool_->SubmitClosure(Bind(&TransactionDriver::ApplyTask, Unretained(this)));
 }
 
 void TransactionDriver::ApplyTask() {
+  TRACE_EVENT_FLOW_END0("txn", "ApplyTask", this);
   ADOPT_TRACE(trace());
 
   {
@@ -360,7 +366,10 @@ void TransactionDriver::ApplyTask() {
     }
 
     transaction_->PreCommit();
-    CHECK_OK(log_->AsyncAppendCommit(commit_msg.Pass(), Bind(DoNothingStatusCB)));
+    {
+      TRACE_EVENT1("txn", "AsyncAppendCommit", "txn", this);
+      CHECK_OK(log_->AsyncAppendCommit(commit_msg.Pass(), Bind(DoNothingStatusCB)));
+    }
     Finalize();
   }
 }

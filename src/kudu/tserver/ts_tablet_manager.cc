@@ -29,6 +29,7 @@
 #include "kudu/tablet/tablet_metadata.h"
 #include "kudu/tablet/tablet_peer.h"
 #include "kudu/tserver/tablet_server.h"
+#include "kudu/util/debug/trace_event.h"
 #include "kudu/util/env.h"
 #include "kudu/util/env_util.h"
 #include "kudu/util/metrics.h"
@@ -300,6 +301,8 @@ Status TSTabletManager::OpenTabletMeta(const string& tablet_id,
 
 void TSTabletManager::OpenTablet(const scoped_refptr<TabletMetadata>& meta) {
   string tablet_id = meta->oid();
+  TRACE_EVENT1("tserver", "TSTabletManager::OpenTablet",
+               "tablet_id", tablet_id);
 
   scoped_refptr<TabletPeer> tablet_peer;
   CHECK(LookupTablet(tablet_id, &tablet_peer))

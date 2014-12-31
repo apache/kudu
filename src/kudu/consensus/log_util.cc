@@ -23,6 +23,7 @@
 #include "kudu/util/coding.h"
 #include "kudu/util/coding-inl.h"
 #include "kudu/util/crc.h"
+#include "kudu/util/debug/trace_event.h"
 #include "kudu/util/env_util.h"
 #include "kudu/util/pb_util.h"
 
@@ -164,6 +165,9 @@ void ReadableLogSegment::UpdateReadableToOffset(uint64_t readable_to_offset) {
 }
 
 Status ReadableLogSegment::RebuildFooterByScanning() {
+  TRACE_EVENT1("log", "ReadableLogSegment::RebuildFooterByScanning",
+               "path", path_);
+
   DCHECK(!footer_.IsInitialized());
   vector<LogEntryPB*> entries;
   ElementDeleter deleter(&entries);
@@ -373,6 +377,9 @@ Status ReadableLogSegment::ParseFooterMagicAndFooterLength(const Slice &data,
 
 Status ReadableLogSegment::ReadEntries(vector<LogEntryPB*>* entries,
                                        int64_t* end_offset) {
+  TRACE_EVENT1("log", "ReadableLogSegment::ReadEntries",
+               "path", path_);
+
   vector<int64_t> recent_offsets(4, -1);
   int batches_read = 0;
 
@@ -465,6 +472,8 @@ Status ReadableLogSegment::ReadEntries(vector<LogEntryPB*>* entries,
 }
 
 Status ReadableLogSegment::ScanForValidEntryHeaders(int64_t offset, bool* has_valid_entries) {
+  TRACE_EVENT1("log", "ReadableLogSegment::ScanForValidEntryHeaders",
+               "path", path_);
   LOG(INFO) << "Scanning " << path_ << " for valid entry headers "
             << "following offset " << offset << "...";
   *has_valid_entries = false;
@@ -643,6 +652,8 @@ Status WritableLogSegment::WriteHeaderAndOpen(const LogSegmentHeaderPB& new_head
 }
 
 Status WritableLogSegment::WriteFooterAndClose(const LogSegmentFooterPB& footer) {
+  TRACE_EVENT1("log", "WritableLogSegment::WriteFooterAndClose",
+               "path", path_);
   DCHECK(IsHeaderWritten());
   DCHECK(!IsFooterWritten());
   DCHECK(footer.IsInitialized()) << footer.InitializationErrorString();

@@ -11,6 +11,7 @@
 #include "kudu/consensus/quorum_util.h"
 #include "kudu/server/metadata.h"
 #include "kudu/server/clock.h"
+#include "kudu/util/debug/trace_event.h"
 #include "kudu/util/trace.h"
 
 namespace kudu {
@@ -41,6 +42,8 @@ LocalConsensus::LocalConsensus(const ConsensusOptions& options,
 }
 
 Status LocalConsensus::Start(const ConsensusBootstrapInfo& info) {
+  TRACE_EVENT0("consensus", "LocalConsensus::Start");
+
   CHECK_EQ(state_, kInitializing);
 
   CHECK(info.orphaned_replicates.empty())
@@ -90,6 +93,7 @@ Status LocalConsensus::Start(const ConsensusBootstrapInfo& info) {
 }
 
 Status LocalConsensus::Replicate(ConsensusRound* round) {
+  TRACE_EVENT0("consensus", "LocalConsensus::Replicate");
   DCHECK_GE(state_, kConfiguring);
 
   consensus::ReplicateMsg* msg = round->replicate_msg();

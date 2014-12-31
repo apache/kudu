@@ -18,6 +18,7 @@
 #include "kudu/tablet/tablet_peer.h"
 #include "kudu/tablet/tablet_metrics.h"
 #include "kudu/tserver/tserver.pb.h"
+#include "kudu/util/debug/trace_event.h"
 #include "kudu/util/trace.h"
 
 namespace kudu {
@@ -47,6 +48,7 @@ void WriteTransaction::NewReplicateMsg(gscoped_ptr<ReplicateMsg>* replicate_msg)
 }
 
 Status WriteTransaction::Prepare() {
+  TRACE_EVENT0("txn", "WriteTransaction::Prepare");
   TRACE("PREPARE: Starting");
 
   // Decode everything first so that we give up if something major is wrong.
@@ -78,6 +80,7 @@ Status WriteTransaction::Prepare() {
 }
 
 Status WriteTransaction::Start() {
+  TRACE_EVENT0("txn", "WriteTransaction::Start");
   TRACE("Start()");
   state_->tablet_peer()->tablet()->StartTransaction(state_.get());
   TRACE("Timestamp: $0", state_->tablet_peer()->clock()->Stringify(state_->timestamp()));
@@ -87,6 +90,7 @@ Status WriteTransaction::Start() {
 // FIXME: Since this is called as a void in a thread-pool callback,
 // it seems pointless to return a Status!
 Status WriteTransaction::Apply(gscoped_ptr<CommitMsg>* commit_msg) {
+  TRACE_EVENT0("txn", "WriteTransaction::Apply");
   TRACE("APPLY: Starting");
 
   Tablet* tablet = state()->tablet_peer()->tablet();
@@ -117,6 +121,7 @@ Status WriteTransaction::Apply(gscoped_ptr<CommitMsg>* commit_msg) {
 }
 
 void WriteTransaction::PreCommit() {
+  TRACE_EVENT0("txn", "WriteTransaction::PreCommit");
   TRACE("PRECOMMIT: Releasing row and schema locks");
   // Perform early lock release after we've applied all changes
   state()->release_row_locks();
@@ -124,6 +129,7 @@ void WriteTransaction::PreCommit() {
 }
 
 void WriteTransaction::Finish(TransactionResult result) {
+  TRACE_EVENT0("txn", "WriteTransaction::Finish");
   if (PREDICT_FALSE(result == Transaction::ABORTED)) {
     TRACE("FINISH: aborting transaction");
     state()->Abort();

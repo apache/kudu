@@ -13,6 +13,7 @@
 #include "kudu/rpc/rpc_introspection.pb.h"
 #include "kudu/rpc/rpc_sidecar.h"
 #include "kudu/rpc/serialization.h"
+#include "kudu/util/debug/trace_event.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/trace.h"
 
@@ -40,6 +41,8 @@ InboundCall::InboundCall(Connection* conn)
 InboundCall::~InboundCall() {}
 
 Status InboundCall::ParseFrom(gscoped_ptr<InboundTransfer> transfer) {
+  TRACE_EVENT_FLOW_BEGIN0("rpc", "InboundCall", this);
+  TRACE_EVENT0("rpc", "InboundCall::ParseFrom");
   RETURN_NOT_OK(serialization::ParseMessage(transfer->data(), &header_, &serialized_request_));
 
   // Adopt the service/method info from the header as soon as it's available.
@@ -58,11 +61,13 @@ Status InboundCall::ParseFrom(gscoped_ptr<InboundTransfer> transfer) {
 }
 
 void InboundCall::RespondSuccess(const MessageLite& response) {
+  TRACE_EVENT0("rpc", "InboundCall::RespondSuccess");
   Respond(response, true);
 }
 
 void InboundCall::RespondFailure(ErrorStatusPB::RpcErrorCodePB error_code,
                                  const Status& status) {
+  TRACE_EVENT0("rpc", "InboundCall::RespondFailure");
   ErrorStatusPB err;
   err.set_message(status.ToString());
   err.set_code(error_code);
@@ -93,12 +98,15 @@ void InboundCall::ApplicationErrorToPB(int error_ext_id, const std::string& mess
 
 void InboundCall::Respond(const MessageLite& response,
                           bool is_success) {
+  TRACE_EVENT_FLOW_END0("rpc", "InboundCall", this);
   Status s = SerializeResponseBuffer(response, is_success);
   if (PREDICT_FALSE(!s.ok())) {
     // TODO: test error case, serialize error response instead
     LOG(DFATAL) << "Unable to serialize response: " << s.ToString();
   }
 
+  TRACE_EVENT_ASYNC_END1("rpc", "InboundCall", this,
+                         "method", remote_method_.method_name());
   TRACE_TO(trace_, "Queueing $0 response", is_success ? "success" : "failure");
 
   LogTrace();
@@ -129,6 +137,7 @@ Status InboundCall::SerializeResponseBuffer(const MessageLite& response,
 }
 
 void InboundCall::SerializeResponseTo(vector<Slice>* slices) const {
+  TRACE_EVENT0("rpc", "InboundCall::SerializeResponseTo");
   CHECK_GT(response_hdr_buf_.size(), 0);
   CHECK_GT(response_msg_buf_.size(), 0);
   slices->reserve(slices->size() + 2 + sidecars_.size());
@@ -210,6 +219,7 @@ Trace* InboundCall::trace() {
 }
 
 void InboundCall::RecordCallReceived() {
+  TRACE_EVENT_ASYNC_BEGIN0("rpc", "InboundCall", this);
   DCHECK(!timing_.time_received.Initialized());  // Protect against multiple calls.
   timing_.time_received = MonoTime::Now(MonoTime::FINE);
 }

@@ -13,6 +13,7 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/server/metadata.h"
 #include "kudu/tablet/rowset_metadata.h"
+#include "kudu/util/debug/trace_event.h"
 #include "kudu/util/pb_util.h"
 #include "kudu/util/status.h"
 #include "kudu/util/trace.h"
@@ -102,6 +103,8 @@ Status TabletMetadata::OpenMasterBlock(Env* env,
 
 Status TabletMetadata::PersistMasterBlock(FsManager* fs_manager,
                                           const TabletMasterBlockPB& pb) {
+  TRACE_EVENT1("tablet", "TabletMetadata::PersistMasterBlock",
+               "tablet_id", pb.tablet_id());
   string path = fs_manager->GetMasterBlockPath(pb.tablet_id());
   return pb_util::WritePBContainerToPath(fs_manager->env(), path, pb,
       FLAGS_enable_data_block_fsync ? pb_util::SYNC : pb_util::NO_SYNC);
@@ -147,6 +150,9 @@ TabletMetadata::TabletMetadata(FsManager *fs_manager, const TabletMasterBlockPB&
 }
 
 Status TabletMetadata::LoadFromDisk() {
+  TRACE_EVENT1("tablet", "TabletMetadata::LoadFromDisk",
+               "tablet_id", oid());
+
   CHECK_EQ(state_, kNotLoadedYet);
   TabletSuperBlockPB superblock;
   RETURN_NOT_OK(ReadSuperBlock(&superblock));
@@ -319,6 +325,9 @@ Status TabletMetadata::UnPinFlush() {
 }
 
 Status TabletMetadata::Flush() {
+  TRACE_EVENT1("tablet", "TabletMetadata::Flush",
+               "tablet_id", oid());
+
   MutexLock l_flush(flush_lock_);
 
   TabletSuperBlockPB pb;

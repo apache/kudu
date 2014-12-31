@@ -30,6 +30,7 @@
 #include "kudu/tserver/ts_tablet_manager.h"
 #include "kudu/tserver/tserver.pb.h"
 #include "kudu/util/crc.h"
+#include "kudu/util/debug/trace_event.h"
 #include "kudu/util/faststring.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/status.h"
@@ -421,6 +422,8 @@ void TabletServiceAdminImpl::AlterSchema(const AlterSchemaRequestPB* req,
 void TabletServiceAdminImpl::CreateTablet(const CreateTabletRequestPB* req,
                                           CreateTabletResponsePB* resp,
                                           rpc::RpcContext* context) {
+  TRACE_EVENT1("tserver", "CreateTablet",
+               "tablet_id", req->tablet_id());
   LOG(INFO) << "Processing CreateTablet for tablet " << req->tablet_id()
             << " (table=" << req->table_name()
             << " [id=" << req->table_id() << "]), range=[\""
@@ -492,6 +495,8 @@ void TabletServiceAdminImpl::DeleteTablet(const DeleteTabletRequestPB* req,
 void TabletServiceImpl::Write(const WriteRequestPB* req,
                               WriteResponsePB* resp,
                               rpc::RpcContext* context) {
+  TRACE_EVENT1("tserver", "TabletServiceImpl::Write",
+               "tablet_id", req->tablet_id());
   DVLOG(3) << "Received Write RPC: " << req->DebugString();
 
   scoped_refptr<TabletPeer> tablet_peer;
@@ -704,6 +709,7 @@ void ConsensusServiceImpl::GetCommittedQuorum(const consensus::GetCommittedQuoru
 void TabletServiceImpl::Scan(const ScanRequestPB* req,
                              ScanResponsePB* resp,
                              rpc::RpcContext* context) {
+  TRACE_EVENT0("tserver", "TabletServiceImpl::Scan");
   // Validate the request: user must pass a new_scan_request or
   // a scanner ID, but not both.
   if (PREDICT_FALSE(req->has_scanner_id() &&
@@ -1034,6 +1040,8 @@ Status TabletServiceImpl::HandleNewScanRequest(TabletPeer* tablet_peer,
   DCHECK(error_code != NULL);
   DCHECK(req->has_new_scan_request());
   const NewScanRequestPB& scan_pb = req->new_scan_request();
+  TRACE_EVENT1("tserver", "TabletServiceImpl::HandleNewScanRequest",
+               "tablet_id", scan_pb.tablet_id());
 
   const shared_ptr<Schema> tablet_schema(tablet_peer->tablet()->schema());
 
@@ -1091,31 +1099,31 @@ Status TabletServiceImpl::HandleNewScanRequest(TabletPeer* tablet_peer,
     scanner->set_client_projection_schema(orig_projection.Pass());
   }
 
-  TRACE("Creating iterator");
-
+  gscoped_ptr<RowwiseIterator> iter;
   // Preset the error code for when creating the iterator on the tablet fails
   TabletServerErrorPB::Code tmp_error_code = TabletServerErrorPB::MISMATCHED_SCHEMA;
 
-  gscoped_ptr<RowwiseIterator> iter;
-  switch (scan_pb.read_mode()) {
-    case READ_LATEST: {
-      s = tablet_peer->tablet()->NewRowIterator(projection, &iter);
-      break;
-    }
-    case READ_AT_SNAPSHOT: {
-      s = HandleScanAtSnapshot(scan_pb, projection, tablet_peer, &iter, snap_timestamp);
-      if (!s.ok()) {
-        tmp_error_code = TabletServerErrorPB::INVALID_SNAPSHOT;
+  {
+    TRACE("Creating iterator");
+    TRACE_EVENT0("tserver", "Create iterator");
+
+    switch (scan_pb.read_mode()) {
+      case READ_LATEST: {
+        s = tablet_peer->tablet()->NewRowIterator(projection, &iter);
+        break;
       }
-      break;
-    }
-    default: {
-      s = Status::IllegalState("Unsupported read mode");
+      case READ_AT_SNAPSHOT: {
+        s = HandleScanAtSnapshot(scan_pb, projection, tablet_peer, &iter, snap_timestamp);
+        if (!s.ok()) {
+          tmp_error_code = TabletServerErrorPB::INVALID_SNAPSHOT;
+        }
+      }
+        TRACE("Iterator created");
     }
   }
-  TRACE("Iterator created");
 
   if (PREDICT_TRUE(s.ok())) {
+    TRACE_EVENT0("tserver", "iter->Init");
     s = iter->Init(spec.get());
   }
 
@@ -1166,6 +1174,8 @@ Status TabletServiceImpl::HandleContinueScanRequest(const ScanRequestPB* req,
                                                     bool* has_more_results,
                                                     TabletServerErrorPB::Code* error_code) {
   DCHECK(req->has_scanner_id());
+  TRACE_EVENT1("tserver", "TabletServiceImpl::HandleContinueScanRequest",
+               "scanner_id", req->scanner_id());
 
   // TODO: need some kind of concurrency control on these scanner objects
   // in case multiple RPCs hit the same scanner at the same time. Probably

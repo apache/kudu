@@ -43,6 +43,7 @@
 #include "kudu/tablet/transactions/alter_schema_transaction.h"
 #include "kudu/tablet/transactions/write_transaction.h"
 #include "kudu/util/bloom_filter.h"
+#include "kudu/util/debug/trace_event.h"
 #include "kudu/util/env.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/locks.h"
@@ -138,6 +139,7 @@ Tablet::~Tablet() {
 }
 
 Status Tablet::Open() {
+  TRACE_EVENT0("tablet", "Tablet::Open");
   boost::lock_guard<rw_spinlock> lock(component_lock_);
   CHECK(!open_) << "already open";
   CHECK(schema_->has_column_ids());
@@ -205,6 +207,8 @@ Status Tablet::NewRowIterator(const Schema &projection,
 
 Status Tablet::DecodeWriteOperations(const Schema* client_schema,
                                      WriteTransactionState* tx_state) {
+  TRACE_EVENT0("tablet", "Tablet::DecodeWriteOperations");
+
   DCHECK_EQ(tx_state->row_ops().size(), 0);
 
   // Acquire the schema lock in shared mode, so that the schema doesn't
@@ -237,8 +241,9 @@ Status Tablet::DecodeWriteOperations(const Schema* client_schema,
 }
 
 Status Tablet::AcquireRowLocks(WriteTransactionState* tx_state) {
+  TRACE_EVENT1("tablet", "Tablet::AcquireRowLocks",
+               "num_locks", tx_state->row_ops().size());
   TRACE("PREPARE: Acquiring locks for $0 operations", tx_state->row_ops().size());
-
   BOOST_FOREACH(RowOp* op, *tx_state->mutable_row_ops()) {
     RETURN_NOT_OK(AcquireLockForOp(tx_state, op));
   }
@@ -507,11 +512,13 @@ Status Tablet::DoMajorDeltaCompaction(const ColumnIndexes& column_indexes,
 }
 
 Status Tablet::Flush() {
+  TRACE_EVENT1("tablet", "Tablet::Flush", "id", tablet_id());
   boost::lock_guard<Semaphore> lock(rowsets_flush_sem_);
   return FlushUnlocked();
 }
 
 Status Tablet::FlushUnlocked() {
+  TRACE_EVENT0("tablet", "Tablet::FlushUnlocked");
   RowSetsInCompaction input;
   shared_ptr<MemRowSet> old_mrs;
   shared_ptr<Schema> old_schema;

@@ -17,6 +17,7 @@
 #include "kudu/server/logical_clock.h"
 #include "kudu/tablet/mvcc.h"
 #include "kudu/util/countdown_latch.h"
+#include "kudu/util/debug/trace_event.h"
 #include "kudu/util/stopwatch.h"
 
 namespace kudu { namespace tablet {
@@ -246,6 +247,8 @@ void MvccManager::AdjustCleanTime() {
 }
 
 void MvccManager::WaitUntilAllCommitted(Timestamp ts) const {
+  TRACE_EVENT1("tablet", "MvccManager::WaitUntilAllCommitted",
+               "ts", ts.ToUint64());
   CountDownLatch latch(1);
   WaitingState waiting_state;
   {
@@ -285,6 +288,7 @@ void MvccManager::WaitForCleanSnapshot(MvccSnapshot* snap) const {
 }
 
 void MvccManager::WaitForAllInFlightToCommit() const {
+  TRACE_EVENT0("tablet", "MvccManager::WaitForAllInFlightToCommit");
   Timestamp wait_for;
 
   {

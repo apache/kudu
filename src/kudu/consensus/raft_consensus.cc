@@ -20,6 +20,7 @@
 #include "kudu/gutil/stl_util.h"
 #include "kudu/server/clock.h"
 #include "kudu/server/metadata.h"
+#include "kudu/util/debug/trace_event.h"
 #include "kudu/util/failure_detector.h"
 #include "kudu/util/logging.h"
 #include "kudu/util/random_util.h"
@@ -278,7 +279,9 @@ Status RaftConsensus::EmulateElection() {
 }
 
 Status RaftConsensus::StartElection() {
-
+  TRACE_EVENT2("consensus", "RaftConsensus::StartElection",
+               "peer", peer_uuid(),
+               "tablet", tablet_id());
   scoped_refptr<LeaderElection> election;
   {
     ReplicaState::UniqueLock lock;
@@ -368,6 +371,9 @@ Status RaftConsensus::ChangeConfigUnlocked() {
 }
 
 Status RaftConsensus::BecomeLeaderUnlocked() {
+  TRACE_EVENT2("consensus", "RaftConsensus::BecomeLeaderUnlocked",
+               "peer", peer_uuid(),
+               "tablet", tablet_id());
   LOG_WITH_PREFIX(INFO) << "Becoming Leader. State: " << state_->ToStringUnlocked();
 
   // Disable FD while we are leader.
@@ -751,6 +757,9 @@ Status RaftConsensus::CheckLeaderRequestUnlocked(const ConsensusRequestPB* reque
 
 Status RaftConsensus::UpdateReplica(const ConsensusRequestPB* request,
                                     ConsensusResponsePB* response) {
+  TRACE_EVENT2("consensus", "RaftConsensus::UpdateReplica",
+               "peer", peer_uuid(),
+               "tablet", tablet_id());
   Synchronizer log_synchronizer;
   StatusCallback sync_status_cb = log_synchronizer.AsStatusCallback();
 
@@ -961,6 +970,7 @@ Status RaftConsensus::UpdateReplica(const ConsensusRequestPB* request,
     // Note that this is safe because dist consensus now only supports a single outstanding
     // request at a time and this way we can allow commits to proceed while we wait.
     TRACE("Waiting on the replicates to finish logging");
+    TRACE_EVENT0("consensus", "Wait for log");
     Status s;
     do {
       s = log_synchronizer.WaitFor(
@@ -1002,6 +1012,9 @@ void RaftConsensus::FillConsensusResponseError(ConsensusResponsePB* response,
 }
 
 Status RaftConsensus::RequestVote(const VoteRequestPB* request, VoteResponsePB* response) {
+  TRACE_EVENT2("consensus", "RaftConsensus::RequestVote",
+               "peer", peer_uuid(),
+               "tablet", tablet_id());
   // We must acquire the update lock in order to ensure that this vote action
   // takes place between requests.
   // Lock ordering: The update lock must be acquired before the ReplicaState lock.

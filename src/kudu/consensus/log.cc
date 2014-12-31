@@ -18,6 +18,7 @@
 #include "kudu/gutil/walltime.h"
 #include "kudu/util/coding.h"
 #include "kudu/util/countdown_latch.h"
+#include "kudu/util/debug/trace_event.h"
 #include "kudu/util/env_util.h"
 #include "kudu/util/kernel_stack_watchdog.h"
 #include "kudu/util/logging.h"
@@ -116,12 +117,14 @@ void Log::AppendThread::RunThread() {
     if (log_->metrics_) {
       log_->metrics_->entry_batches_per_group->Increment(entry_batches.size());
     }
+    TRACE_EVENT1("log", "batch", "batch_size", entry_batches.size());
 
     SCOPED_LATENCY_METRIC(log_->metrics_, group_commit_latency);
 
     bool is_all_commits = true;
     BOOST_FOREACH(LogEntryBatch* entry_batch, entry_batches) {
       entry_batch->WaitForReady();
+      TRACE_EVENT_FLOW_END0("log", "Batch", entry_batch);
       Status s = log_->DoAppend(entry_batch);
       if (PREDICT_FALSE(!s.ok())) {
         LOG(ERROR) << "Error appending to the log: " << s.ToString();
@@ -153,6 +156,7 @@ void Log::AppendThread::RunThread() {
         }
       }
     } else {
+      TRACE_EVENT0("log", "Callbacks");
       VLOG(2) << "Synchronized " << entry_batches.size() << " entry batches";
       SCOPED_WATCH_STACK(100);
       BOOST_FOREACH(LogEntryBatch* entry_batch, entry_batches) {
@@ -336,6 +340,7 @@ Status Log::RollOver() {
 Status Log::Reserve(LogEntryTypePB type,
                     gscoped_ptr<LogEntryBatchPB> entry_batch,
                     LogEntryBatch** reserved_entry) {
+  TRACE_EVENT0("log", "Log::Reserve");
   DCHECK(reserved_entry != NULL);
   {
     boost::shared_lock<rw_spinlock> read_lock(state_lock_.get_lock());
@@ -368,6 +373,7 @@ Status Log::Reserve(LogEntryTypePB type,
 }
 
 Status Log::AsyncAppend(LogEntryBatch* entry_batch, const StatusCallback& callback) {
+  TRACE_EVENT0("log", "Log::AsyncAppend");
   {
     boost::shared_lock<rw_spinlock> read_lock(state_lock_.get_lock());
     CHECK_EQ(kLogWriting, log_state_);
@@ -376,6 +382,7 @@ Status Log::AsyncAppend(LogEntryBatch* entry_batch, const StatusCallback& callba
   RETURN_NOT_OK(entry_batch->Serialize());
   entry_batch->set_callback(callback);
   TRACE("Serialized $0 byte log entry", entry_batch->total_size_bytes());
+  TRACE_EVENT_FLOW_BEGIN0("log", "Batch", entry_batch);
   entry_batch->MarkReady();
 
   return Status::OK();
@@ -399,7 +406,6 @@ Status Log::AsyncAppendReplicates(const vector<ReplicateRefPtr>& msgs,
 
 Status Log::AsyncAppendCommit(gscoped_ptr<consensus::CommitMsg> commit_msg,
                               const StatusCallback& callback) {
-
   gscoped_ptr<LogEntryBatchPB> batch(new LogEntryBatchPB);
   LogEntryPB* entry = batch->add_entry();
   entry->set_type(COMMIT);
@@ -540,6 +546,7 @@ FsManager* Log::GetFsManager() {
 }
 
 Status Log::Sync() {
+  TRACE_EVENT0("log", "Sync");
   SCOPED_LATENCY_METRIC(metrics_, sync_latency);
 
   if (PREDICT_FALSE(FLAGS_log_inject_latency)) {
@@ -751,6 +758,7 @@ Status Log::Close() {
 }
 
 Status Log::PreAllocateNewSegment() {
+  TRACE_EVENT1("log", "PreAllocateNewSegment", "file", next_segment_path_);
   CHECK_EQ(allocation_state(), kAllocationInProgress);
 
   WritableFileOptions opts;

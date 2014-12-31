@@ -18,6 +18,7 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/tablet/mvcc.h"
 #include "kudu/util/countdown_latch.h"
+#include "kudu/util/debug/trace_event.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/stopwatch.h"
 #include "kudu/util/thread.h"
@@ -214,6 +215,8 @@ void MaintenanceManager::RunSchedulerThread() {
 }
 
 MaintenanceOp* MaintenanceManager::FindBestOp() {
+  TRACE_EVENT0("maintenance", "MaintenanceManager::FindBestOp");
+
   if (!FLAGS_enable_maintenance_manager) {
     VLOG(1) << "Maintenance manager is disabled. Doing nothing";
     return NULL;
@@ -307,6 +310,8 @@ void MaintenanceManager::LaunchOp(MaintenanceOp* op) {
   MonoTime start_time(MonoTime::Now(MonoTime::FINE));
   op->RunningGauge()->Increment();
   LOG_TIMING(INFO, Substitute("running $0", op->name())) {
+    TRACE_EVENT1("maintenance", "MaintenanceManager::LaunchOp",
+                 "name", op->name());
     op->Perform();
   }
   op->RunningGauge()->Decrement();
