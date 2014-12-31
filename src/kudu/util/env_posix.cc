@@ -43,6 +43,11 @@
 #define FALLOC_FL_PUNCH_HOLE  0x02 /* de-allocates range */
 #endif
 
+// See KUDU-588 for details.
+DEFINE_bool(writable_file_use_fsync, false,
+            "Use fsync(2) instead of fdatasync(2) for synchronizing dirty "
+            "data to disk.");
+
 using base::subtle::Atomic64;
 using base::subtle::Barrier_AtomicIncrement;
 using strings::Substitute;
@@ -82,6 +87,19 @@ static Status IOError(const std::string& context, int err_number) {
       return Status::NotSupported(context, ErrnoToString(err_number), err_number);
   }
   return Status::IOError(context, ErrnoToString(err_number), err_number);
+}
+
+static Status DoSync(int fd, const string& filename) {
+  if (FLAGS_writable_file_use_fsync) {
+    if (fsync(fd) < 0) {
+      return IOError(filename, errno);
+    }
+  } else {
+    if (fdatasync(fd) < 0) {
+      return IOError(filename, errno);
+    }
+  }
+  return Status::OK();
 }
 
 class PosixSequentialFile: public SequentialFile {
@@ -408,14 +426,11 @@ class PosixMmapFile : public WritableFile {
   }
 
   virtual Status Sync() OVERRIDE {
-    Status s;
-
     if (pending_sync_) {
       // Some unmapped data was not synced, sync the entire file.
       pending_sync_ = false;
-      if (fdatasync(fd_) < 0) {
-        s = IOError(filename_, errno);
-      } else if (base_ != NULL) {
+      RETURN_NOT_OK(DoSync(fd_, filename_));
+      if (base_ != NULL) {
         // If there's no mapped region, last_sync_ is irrelevant (it's
         // relative to the current region).
         last_sync_ = dst_;
@@ -429,13 +444,13 @@ class PosixMmapFile : public WritableFile {
       size_t p1 = TruncateToPageBoundary(last_sync_ - base_);
       size_t p2 = TruncateToPageBoundary(dst_ - base_ - 1);
       if (msync(base_ + p1, p2 - p1 + page_size_, MS_SYNC) < 0) {
-        s = IOError(filename_, errno);
+        return IOError(filename_, errno);
       } else {
         last_sync_ = dst_;
       }
     }
 
-    return s;
+    return Status::OK();
   }
 
   virtual Status SyncParentDir() OVERRIDE {
@@ -471,7 +486,7 @@ class PosixWritableFile : public WritableFile {
         sync_on_close_(sync_on_close),
         filesize_(file_size),
         pre_allocated_size_(0),
-        pending_sync_type_(NONE) {
+        pending_sync_(false) {
   }
 
   ~PosixWritableFile() {
@@ -495,12 +510,7 @@ class PosixWritableFile : public WritableFile {
       s = DoWritev(data_vector, i, n);
     }
 
-    if (PREDICT_FALSE(filesize_ > pre_allocated_size_)) {
-      pending_sync_type_ = FSYNC;
-    } else {
-      pending_sync_type_ = FDATASYNC;
-    }
-
+    pending_sync_ = true;
     return s;
   }
 
@@ -524,11 +534,11 @@ class PosixWritableFile : public WritableFile {
     Status s;
 
     // If we've allocated more space than we used, truncate to the
-    // actual size of the file and perform fsync().
+    // actual size of the file and perform Sync().
     if (filesize_ < pre_allocated_size_) {
       if (ftruncate(fd_, filesize_) < 0) {
         s = IOError(filename_, errno);
-        pending_sync_type_ = FSYNC;
+        pending_sync_ = true;
       }
     }
 
@@ -569,17 +579,11 @@ class PosixWritableFile : public WritableFile {
 
   virtual Status Sync() OVERRIDE {
     LOG_SLOW_EXECUTION(WARNING, 1000, Substitute("sync call for $0", filename_)) {
-      if (pending_sync_type_ == FSYNC) {
-        if (fsync(fd_) < 0) {
-          return IOError(filename_, errno);
-        }
-      } else if (pending_sync_type_ == FDATASYNC) {
-        if (fdatasync(fd_) <  0) {
-          return IOError(filename_, errno);
-        }
+      if (pending_sync_) {
+        pending_sync_ = false;
+        RETURN_NOT_OK(DoSync(fd_, filename_));
       }
     }
-    pending_sync_type_ = NONE;
     return Status::OK();
   }
 
@@ -642,12 +646,7 @@ class PosixWritableFile : public WritableFile {
   uint64_t filesize_;
   uint64_t pre_allocated_size_;
 
-  enum SyncType {
-    NONE,
-    FSYNC,
-    FDATASYNC
-  };
-  SyncType pending_sync_type_;
+  bool pending_sync_;
 };
 
 static int LockOrUnlock(int fd, bool lock) {
