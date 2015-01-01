@@ -1,21 +1,13 @@
 // Copyright (c) 2014, Cloudera, inc.
 // Confidential Cloudera Information: Covered by NDA.
 
-#include <gflags/gflags.h>
-#include <iostream>
+#include <algorithm>
+#include <boost/foreach.hpp>
 #include <vector>
 
-#include <stdio.h>
-#include <unistd.h>
-#include <stdlib.h>
-#include <sys/types.h>
-#include <sys/time.h>
-#include <sys/stat.h>
-#include <time.h>
 #include <fcntl.h>
-#include <errno.h>
-#include <string.h>
 
+#include <gflags/gflags.h>
 #include <glog/logging.h>
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/stl_util.h"
@@ -49,8 +41,6 @@ DEFINE_bool(fdatasync_at_end, true,
 DEFINE_bool(page_align_wal_writes, false,
             "write to the fake WAL with exactly 4KB writes to never cross pages");
 
-using std::cout;
-using std::endl;
 using std::string;
 
 namespace kudu {
@@ -152,8 +142,17 @@ void WalHiccupBenchmarker::Run() {
   vector<double> total_time;
   total_time.resize(num_setups);
 
+  vector<uint32_t> setups;
+  setups.reserve(num_setups);
+  for (uint32_t setup = 0; setup < num_setups; setup++) {
+    setups.push_back(setup);
+  }
+
   for (int round = 0; round < FLAGS_num_rounds; round++) {
-    for (uint32_t setup = 0; setup < num_setups; setup++) {
+    // Randomize the order of setups in each round.
+    std::random_shuffle(setups.begin(), setups.end());
+
+    BOOST_FOREACH(uint32_t setup, setups) {
       SetFlags(setup);
       if (!FLAGS_fdatasync_each_file && !FLAGS_fdatasync_at_end) {
         // Skip non-durable configuration
@@ -177,9 +176,12 @@ void WalHiccupBenchmarker::Run() {
       s.stop();
       total_time[setup] += s.elapsed().wall_seconds();
     }
+    LOG(INFO) << "----------------------------------------------------------------------";
+    LOG(INFO) << "Ran " << setups.size() << " setups";
+    LOG(INFO) << "----------------------------------------------------------------------";
   }
 
-  for (uint32_t setup = 0; setup < num_setups; setup++) {
+  BOOST_FOREACH(uint32_t setup, setups) {
     SetFlags(setup);
     if (!FLAGS_fdatasync_each_file && !FLAGS_fdatasync_at_end) {
       // Skip non-durable configuration
