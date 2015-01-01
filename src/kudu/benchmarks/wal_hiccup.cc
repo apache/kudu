@@ -90,6 +90,7 @@ void WalHiccupBenchmarker::WALThread() {
     MicrosecondsInt64 st = GetCurrentTimeMicros();
     size_t num_bytes = FLAGS_page_align_wal_writes ? sizeof(buf) : sizeof(buf) - 1;
     PCHECK(write(fd, buf, num_bytes) == num_bytes);
+    PCHECK(fdatasync(fd) == 0);
     MicrosecondsInt64 et = GetCurrentTimeMicros();
     MicrosecondsInt64 value = et - st;
     cur_histo_->IncrementWithExpectedInterval(value, FLAGS_wal_interval_us);
