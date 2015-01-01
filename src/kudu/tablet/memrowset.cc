@@ -32,7 +32,7 @@ using log::LogAnchorRegistry;
 using std::pair;
 using strings::Substitute;
 
-static const int kInitialArenaSize = 1536*1024;
+static const int kInitialArenaSize = 16;
 static const int kMaxArenaBufferSize = 8*1024*1024;
 
 bool MRSRow::IsGhost() const {

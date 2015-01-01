@@ -24,7 +24,7 @@ using strings::Substitute;
 // DeltaMemStore implementation
 ////////////////////////////////////////////////////////////
 
-static const int kInitialArenaSize = 1024*1024;
+static const int kInitialArenaSize = 16;
 static const int kMaxArenaBufferSize = 5*1024*1024;
 
 namespace {
