@@ -215,6 +215,46 @@ class TabletBootstrap {
 
   gscoped_ptr<ConsensusMetadata> cmeta_;
 
+  // Statistics on the replay of entries in the log.
+  struct Stats {
+    Stats()
+      : ops_read(0),
+        ops_overwritten(0),
+        ops_committed(0),
+        inserts_seen(0),
+        inserts_ignored(0),
+        mutations_seen(0),
+        mutations_ignored(0),
+        orphaned_commits(0) {
+    }
+
+    string ToString() const {
+      return Substitute("ops{read=$0 overwritten=$1 applied=$2} "
+                        "inserts{seen=$3 ignored=$4} "
+                        "mutations{seen=$5 ignored=$6} "
+                        "orphaned_commits=$7",
+                        ops_read, ops_overwritten, ops_committed,
+                        inserts_seen, inserts_ignored,
+                        mutations_seen, mutations_ignored,
+                        orphaned_commits);
+    }
+
+    // Number of REPLICATE messages read from the log
+    int ops_read;
+    // Number of REPLICATE messages which were overwritten by later entries.
+    int ops_overwritten;
+    // Number of REPLICATE messages for which a matching COMMIT was found.
+    int ops_committed;
+
+    // Number inserts/mutations seen and ignored.
+    int inserts_seen, inserts_ignored;
+    int mutations_seen, mutations_ignored;
+
+    // Number of COMMIT messages for which a corresponding REPLICATE was not found.
+    int orphaned_commits;
+  };
+  Stats stats_;
+
   DISALLOW_COPY_AND_ASSIGN(TabletBootstrap);
 };
 
@@ -637,6 +677,8 @@ Status TabletBootstrap::HandleEntry(ReplayState* state, LogEntryPB* entry) {
 
 // Takes ownership of 'replicate_entry' on OK status.
 Status TabletBootstrap::HandleReplicateMessage(ReplayState* state, LogEntryPB* replicate_entry) {
+  stats_.ops_read++;
+
   RETURN_NOT_OK(state->CheckSequentialReplicateId(replicate_entry->replicate()));
 
   // Append the replicate message to the log as is
@@ -664,6 +706,7 @@ Status TabletBootstrap::HandleReplicateMessage(ReplayState* state, LogEntryPB* r
     while (iter != state->pending_replicates.end()) {
       delete (*iter).second;
       state->pending_replicates.erase(iter++);
+      stats_.ops_overwritten++;
     }
 
     InsertOrDie(&state->pending_replicates, index, replicate_entry);
@@ -684,6 +727,7 @@ Status TabletBootstrap::HandleCommitMessage(ReplayState* state, LogEntryPB* comm
   if (state->pending_replicates.empty() ||
       (*state->pending_replicates.begin()).first > committed_op_id.index()) {
     RETURN_NOT_OK(CheckOrphanedCommitAlreadyFlushed(commit_entry->commit()));
+    stats_.orphaned_commits++;
     delete commit_entry;
     return Status::OK();
   }
@@ -699,7 +743,7 @@ Status TabletBootstrap::HandleCommitMessage(ReplayState* state, LogEntryPB* comm
     return Status::OK();
   }
 
-  // ... if it does we apply it and all the commits that immediately follow in the sequence.
+  // ... if it does, we apply it and all the commits that immediately follow in the sequence.
   OpId last_applied = commit_entry->commit().commited_op_id();
   RETURN_NOT_OK(ApplyCommitMessage(state, commit_entry));
   delete commit_entry;
@@ -776,7 +820,9 @@ Status TabletBootstrap::ApplyCommitMessage(ReplayState* state, LogEntryPB* commi
       return Status::Corruption(error_msg);
     }
     RETURN_NOT_OK(HandleEntryPair(pending_replicate_entry.get(), commit_entry));
+    stats_.ops_committed++;
   } else {
+    stats_.orphaned_commits++;
     RETURN_NOT_OK(CheckOrphanedCommitAlreadyFlushed(commit_entry->commit()));
   }
 
@@ -898,8 +944,11 @@ Status TabletBootstrap::PlaySegments(ConsensusBootstrapInfo* consensus_info) {
     // TODO: could be more granular here and log during the segments as well,
     // plus give info about number of MB processed, but this is better than
     // nothing.
-    listener_->StatusMessage(Substitute("Bootstrap replayed $0/$1 log segments.",
-                                        segment_count + 1, log_reader_->num_segments()));
+    listener_->StatusMessage(Substitute("Bootstrap replayed $0/$1 log segments. "
+                                        "Stats: $2. Pending: $3 replicates",
+                                        segment_count + 1, log_reader_->num_segments(),
+                                        stats_.ToString(),
+                                        state.pending_replicates.size()));
     segment_count++;
   }
 
@@ -1106,10 +1155,12 @@ Status TabletBootstrap::FilterAndApplyOperations(WriteTransactionState* tx_state
     // Check if it should be filtered out because it's already flushed.
     switch (op->decoded_op.type) {
       case RowOperationsPB::INSERT:
+        stats_.inserts_seen++;
         RETURN_NOT_OK(FilterInsert(tx_state, op, op_result));
         break;
       case RowOperationsPB::UPDATE:
       case RowOperationsPB::DELETE:
+        stats_.mutations_seen++;
         RETURN_NOT_OK(FilterMutate(tx_state, op, op_result));
         break;
       default:
@@ -1159,6 +1210,7 @@ Status TabletBootstrap::FilterInsert(WriteTransactionState* tx_state,
     }
 
     op->SetFailed(Status::AlreadyPresent("Row to insert was already flushed."));
+    stats_.inserts_ignored++;
   }
   return Status::OK();
 }
@@ -1195,6 +1247,7 @@ Status TabletBootstrap::FilterMutate(WriteTransactionState* tx_state,
   if (num_unflushed_stores == 0) {
     // The mutation was fully flushed.
     op->SetFailed(Status::AlreadyPresent("Update was already flushed."));
+    stats_.mutations_ignored++;
     return Status::OK();
   }
 
