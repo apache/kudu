@@ -124,7 +124,7 @@ public class DeadlineTracker {
   }
 
   public String toString() {
-    StringBuffer buf = new StringBuffer("DeadlineTracker(timout=");
+    StringBuffer buf = new StringBuffer("DeadlineTracker(timeout=");
     buf.append(deadline);
     buf.append(", elapsed=").append(stopwatch.elapsedMillis());
     buf.append(")");

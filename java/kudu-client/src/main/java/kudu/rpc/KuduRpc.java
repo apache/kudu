@@ -221,6 +221,7 @@ public abstract class KuduRpc<R> {
     }
     buf.append(", attempt=").append(attempt);
     buf.append(", ").append(deadlineTracker);
+    buf.append(", ").append(deferred);
     buf.append(')');
     return buf.toString();
   }

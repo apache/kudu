@@ -512,7 +512,7 @@ public class IntegrationTestBigLinkedList extends Configured implements Tool {
                 throw new IOException(dge);
               }
             } catch (Exception e) {
-              throw new IOException("Couldn't flush the head row", e);
+              throw new IOException("Couldn't flush the head row, " + insert, e);
             }
 
             first = null;
