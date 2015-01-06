@@ -125,6 +125,8 @@ TEST_F(LinkedListTest, TestLoadAndVerify) {
     FLAGS_seconds_to_run = AllowSlowTests() ? kDefaultRunTimeSlow : kDefaultRunTimeFast;
   }
 
+  PeriodicWebUIChecker checker(*cluster_.get(), MonoDelta::FromSeconds(1));
+
   bool can_kill_ts = FLAGS_num_tablet_servers > 1 && FLAGS_num_replicas > 2;
 
   int64_t written = 0;
@@ -171,7 +173,7 @@ TEST_F(LinkedListTest, TestLoadAndVerify) {
   }
 
   ASSERT_NO_FATAL_FAILURE(RestartCluster());
-  // Sleep a little bit, so that the tablet is proably in bootstrapping state.
+  // Sleep a little bit, so that the tablet is probably in bootstrapping state.
   usleep(100 * 1000);
 
   // Restart while bootstrapping
@@ -180,7 +182,7 @@ TEST_F(LinkedListTest, TestLoadAndVerify) {
   ASSERT_OK(tester_->WaitAndVerify(FLAGS_seconds_to_run, written));
 
   // Dump the performance info at the very end, so it's easy to read. On a failed
-  // test, we don't care about this stuff anwyay.
+  // test, we don't care about this stuff anyway.
   tester_->DumpInsertHistogram(true);
 }
 

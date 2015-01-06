@@ -128,7 +128,7 @@ class ExternalMiniCluster {
   // master, return the single master or NULL if the master is not
   // started. Exits with a CHECK failure if there are multiple
   // masters.
-  ExternalMaster* master() {
+  ExternalMaster* master() const {
     CHECK_EQ(masters_.size(), 1)
         << "master() should not be used with multiple masters, use leader_master() instead.";
     return master(0);
@@ -136,12 +136,12 @@ class ExternalMiniCluster {
 
   // Return master at 'idx' or NULL if the master at 'idx' has not
   // been started.
-  ExternalMaster* master(int idx) {
+  ExternalMaster* master(int idx) const {
     CHECK_LT(idx, masters_.size());
     return masters_[idx].get();
   }
 
-  ExternalTabletServer* tablet_server(int idx) {
+  ExternalTabletServer* tablet_server(int idx) const {
     CHECK_LT(idx, tablet_servers_.size());
     return tablet_servers_[idx].get();
   }

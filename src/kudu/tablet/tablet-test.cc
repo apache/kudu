@@ -1,6 +1,7 @@
 // Copyright (c) 2012, Cloudera, inc.
 // Confidential Cloudera Information: Covered by NDA.
 
+#include <boost/assign/list_of.hpp>
 #include <glog/logging.h>
 #include <time.h>
 
@@ -841,6 +842,23 @@ TYPED_TEST(TestTablet, TestCompactionWithConcurrentMutation) {
     out_it++;
     exp_it++;
   }
+}
+
+// Test that metrics behave properly during tablet initialization
+TYPED_TEST(TestTablet, TestMetricsInit) {
+  // Create a tablet, but do not open it
+  this->CreateTestTablet();
+  MetricRegistry* registry = this->harness()->metrics_registry();
+  std::stringstream out;
+  JsonWriter writer(&out);
+  ASSERT_STATUS_OK(registry->WriteAsJson(&writer,
+                   boost::assign::list_of("*"),
+                   vector<string>()));
+  // Open tablet, should still work
+  this->harness()->Open();
+  ASSERT_STATUS_OK(registry->WriteAsJson(&writer,
+                   boost::assign::list_of("*"),
+                   vector<string>()));
 }
 
 } // namespace tablet

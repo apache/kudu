@@ -20,7 +20,9 @@
 #include "kudu/gutil/walltime.h"
 #include "kudu/integration-tests/external_mini_cluster.h"
 #include "kudu/tablet/tablet.h"
+#include "kudu/util/atomic.h"
 #include "kudu/util/blocking_queue.h"
+#include "kudu/util/curl_util.h"
 #include "kudu/util/hdr_histogram.h"
 #include "kudu/util/random.h"
 #include "kudu/util/stopwatch.h"
@@ -217,6 +219,87 @@ class ScopedRowUpdater {
   client::KuduTable* table_;
   BlockingQueue<uint64_t> to_update_;
   scoped_refptr<Thread> updater_;
+};
+
+// A thread that periodically checks tablet and master web pages during the
+// linked list test.
+class PeriodicWebUIChecker {
+ public:
+
+  PeriodicWebUIChecker(const ExternalMiniCluster& cluster, const MonoDelta& period)
+    : period_(period),
+      is_running_(true) {
+    // List of master and ts web pages to fetch
+    vector<std::string> master_pages, ts_pages;
+
+    master_pages.push_back("/jsonmetricz");
+    master_pages.push_back("/masterz");
+    master_pages.push_back("/tablez");
+    master_pages.push_back("/tablet-servers");
+
+    ts_pages.push_back("/jsonmetricz");
+    ts_pages.push_back("/tablets");
+
+    // Generate list of urls for each master and tablet server
+    for (int i = 0; i < cluster.num_masters(); i++) {
+      BOOST_FOREACH(std::string page, master_pages) {
+        urls_.push_back(strings::Substitute(
+            "http://$0$1",
+            cluster.master(i)->bound_http_hostport().ToString(),
+            page));
+      }
+    }
+    for (int i = 0; i < cluster.num_tablet_servers(); i++) {
+      BOOST_FOREACH(std::string page, ts_pages) {
+        urls_.push_back(strings::Substitute(
+            "http://$0$1",
+            cluster.tablet_server(i)->bound_http_hostport().ToString(),
+            page));
+      }
+    }
+    CHECK_OK(Thread::Create("linked_list-test", "checker",
+                            &PeriodicWebUIChecker::CheckThread, this, &checker_));
+  }
+
+  ~PeriodicWebUIChecker() {
+    LOG(INFO) << "Shutting down curl thread";
+    is_running_.Store(false);
+    if (checker_) {
+      checker_->Join();
+    }
+  }
+
+ private:
+  void CheckThread() {
+    EasyCurl curl;
+    faststring dst;
+    LOG(INFO) << "Curl thread will poll the following URLs every " << period_.ToMilliseconds()
+        << " ms: ";
+    BOOST_FOREACH(std::string url, urls_) {
+      LOG(INFO) << url;
+    }
+    for (int count = 0; is_running_.Load(); count++) {
+      const std::string &url = urls_[count % urls_.size()];
+      LOG(INFO) << "Curling URL " << url;
+      const MonoTime start = MonoTime::Now(MonoTime::FINE);
+      Status status = curl.FetchURL(url, &dst);
+      if (status.ok()) {
+        CHECK_GT(dst.length(), 0);
+      }
+      // Sleep until the next period
+      const MonoTime end = MonoTime::Now(MonoTime::FINE);
+      const int64_t elapsed_us = end.GetDeltaSince(start).ToMicroseconds();
+      const int64_t sleep_us = period_.ToMicroseconds() - elapsed_us;
+      if (sleep_us > 0) {
+        usleep(sleep_us);
+      }
+    }
+  }
+
+  const MonoDelta period_;
+  AtomicBool is_running_;
+  scoped_refptr<Thread> checker_;
+  vector<std::string> urls_;
 };
 
 // Helper class to hold results from a linked list scan and perform the

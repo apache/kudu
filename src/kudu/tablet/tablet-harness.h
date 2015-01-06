@@ -43,7 +43,7 @@ class TabletHarness {
       schema_(schema) {
   }
 
-  Status Open(bool first_time) {
+  Status Create(bool first_time) {
     TabletMasterBlockPB master_block;
     master_block.set_table_id("KuduTableTestId");
     master_block.set_tablet_id(options_.tablet_id);
@@ -81,6 +81,10 @@ class TabletHarness {
                              clock_,
                              metrics_.get(),
                              new log::LogAnchorRegistry()));
+    return Status::OK();
+  }
+
+  Status Open() {
     RETURN_NOT_OK(tablet_->Open());
     return Status::OK();
   }
@@ -95,6 +99,10 @@ class TabletHarness {
 
   FsManager* fs_manager() {
     return fs_manager_.get();
+  }
+
+  MetricRegistry* metrics_registry() {
+    return metrics_registry_.get();
   }
 
  private:

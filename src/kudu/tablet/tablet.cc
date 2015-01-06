@@ -1415,7 +1415,10 @@ size_t Tablet::MemRowSetSize() const {
   scoped_refptr<TabletComponents> comps;
   GetComponents(&comps);
 
-  return comps->memrowset->memory_footprint();
+  if (comps) {
+    return comps->memrowset->memory_footprint();
+  }
+  return 0;
 }
 
 bool Tablet::MemRowSetEmpty() const {

@@ -20,8 +20,6 @@
 #include "kudu/util/test_util.h"
 
 DECLARE_bool(enable_data_block_fsync);
-DEFINE_bool(tablet_test_enable_metrics, false,
-            "Enable metrics collection in tablet-tests");
 
 namespace kudu {
 namespace tablet {
@@ -47,13 +45,18 @@ class KuduTabletTest : public KuduTest {
     SetUpTestTablet();
   }
 
-  void SetUpTestTablet(const string& root_dir = "") {
+  void CreateTestTablet(const string& root_dir = "") {
     string dir = root_dir.empty() ? test_dir_ : root_dir;
     TabletHarness::Options opts(dir);
-    opts.enable_metrics = FLAGS_tablet_test_enable_metrics;
+    opts.enable_metrics = true;
     bool first_time = harness_ == NULL;
     harness_.reset(new TabletHarness(schema_, opts));
-    ASSERT_OK(harness_->Open(first_time));
+    ASSERT_OK(harness_->Create(first_time));
+  }
+
+  void SetUpTestTablet(const string& root_dir = "") {
+    CreateTestTablet(root_dir);
+    ASSERT_OK(harness_->Open());
   }
 
   void TabletReOpen(const string& root_dir = "") {
