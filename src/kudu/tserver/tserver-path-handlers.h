@@ -44,6 +44,8 @@ class TabletServerPathHandlers {
                               std::stringstream* output);
   void HandleTabletSVGPage(const Webserver::WebRequest& req,
                            std::stringstream* output);
+  void HandleLogAnchorsPage(const Webserver::WebRequest& req,
+                            std::stringstream* output);
   void HandleConsensusStatusPage(const Webserver::WebRequest& req,
                                  std::stringstream* output);
   void HandleDashboardsPage(const Webserver::WebRequest& req,

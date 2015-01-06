@@ -15,6 +15,7 @@
 #include "kudu/gutil/strings/numbers.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/server/webui_util.h"
+#include "kudu/consensus/log_anchor_registry.h"
 #include "kudu/tablet/maintenance_manager.h"
 #include "kudu/tablet/tablet.pb.h"
 #include "kudu/tablet/tablet_bootstrap.h"
@@ -71,6 +72,10 @@ Status TabletServerPathHandlers::Register(Webserver* server) {
     boost::bind(&TabletServerPathHandlers::HandleConsensusStatusPage, this, _1, _2),
     true /* styled */, false /* is_on_nav_bar */);
   server->RegisterPathHandler(
+    "/log-anchorz", "",
+    boost::bind(&TabletServerPathHandlers::HandleLogAnchorsPage, this, _1, _2),
+    true /* styled */, false /* is_on_nav_bar */);
+  server->RegisterPathHandler(
     "/dashboards", "Dashboards",
     boost::bind(&TabletServerPathHandlers::HandleDashboardsPage, this, _1, _2),
     true /* styled */, true /* is_on_nav_bar */);
@@ -81,7 +86,6 @@ Status TabletServerPathHandlers::Register(Webserver* server) {
 
   return Status::OK();
 }
-
 
 void TabletServerPathHandlers::HandleTransactionsPage(const Webserver::WebRequest& req,
                                                       std::stringstream* output) {
@@ -301,17 +305,27 @@ void TabletServerPathHandlers::HandleTabletPage(const Webserver::WebRequest& req
   shared_ptr<Schema> schema(peer->tablet()->schema());
   HtmlOutputSchemaTable(*schema.get(), output);
 
+  *output << "<h2>Other Tablet Info Pages</h2>" << endl;
+
   // List of links to various tablet-specific info pages
   *output << "<ul>";
+
   // Link to output svg of current DiskRowSet layout over keyspace.
   *output << "<li>" << Substitute("<a href=\"/tablet-rowsetlayout-svg?id=$0\">$1</a>",
                                   UrlEncodeToString(tablet_id),
                                   "Rowset Layout Diagram")
           << "</li>" << endl;
+
   // Link to consensus status page.
   *output << "<li>" << Substitute("<a href=\"/tablet-consensus-status?id=$0\">$1</a>",
                                   UrlEncodeToString(tablet_id),
                                   "Consensus Status")
+          << "</li>" << endl;
+
+  // Log anchors info page.
+  *output << "<li>" << Substitute("<a href=\"/log-anchorz?id=$0\">$1</a>",
+                                  UrlEncodeToString(tablet_id),
+                                  "Tablet Log Anchors")
           << "</li>" << endl;
 
   // End list
@@ -328,6 +342,19 @@ void TabletServerPathHandlers::HandleTabletSVGPage(const Webserver::WebRequest& 
           << TabletLink(id) << "</h1>\n";
   peer->tablet()->PrintRSLayout(output);
 
+}
+
+void TabletServerPathHandlers::HandleLogAnchorsPage(const Webserver::WebRequest& req,
+                                                    std::stringstream* output) {
+  string tablet_id;
+  scoped_refptr<TabletPeer> peer;
+  if (!LoadTablet(tserver_, req, &tablet_id, &peer, output)) return;
+
+  *output << "<h1>Log Anchors for Tablet " << EscapeForHtmlToString(tablet_id) << "</h1>"
+          << std::endl;
+
+  string dump = peer->tablet()->log_anchor_registry()->DumpAnchorInfo();
+  *output << "<pre>" << EscapeForHtmlToString(dump) << "</pre>" << std::endl;
 }
 
 void TabletServerPathHandlers::HandleConsensusStatusPage(const Webserver::WebRequest& req,
