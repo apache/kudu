@@ -44,7 +44,8 @@ struct DMSTreeTraits : public btree::BTreeTraits {
 class DeltaMemStore : public DeltaStore,
                       public std::tr1::enable_shared_from_this<DeltaMemStore> {
  public:
-  DeltaMemStore(int64_t id, const Schema &schema, log::LogAnchorRegistry* log_anchor_registry,
+  DeltaMemStore(int64_t id, int64_t rs_id, const Schema &schema,
+                log::LogAnchorRegistry* log_anchor_registry,
                 MemTracker* parent_tracker = NULL);
 
   // Update the given row in the database.
@@ -114,7 +115,8 @@ class DeltaMemStore : public DeltaStore,
     return tree_;
   }
 
-  const int64_t id_;
+  const int64_t id_;    // DeltaMemStore ID.
+  const int64_t rs_id_; // Rowset ID.
   Schema schema_;
 
   std::tr1::shared_ptr<MemTracker> mem_tracker_;

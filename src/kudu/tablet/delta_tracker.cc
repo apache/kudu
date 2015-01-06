@@ -89,6 +89,7 @@ Status DeltaTracker::Open() {
 
   // the id of the first DeltaMemStore is the max id of the current ones +1
   dms_.reset(new DeltaMemStore(rowset_metadata_->last_durable_redo_dms_id() + 1,
+                               rowset_metadata_->id(),
                                schema_,
                                log_anchor_registry_,
                                parent_tracker_));
@@ -411,8 +412,8 @@ Status DeltaTracker::Flush(MetadataFlushType flush_type) {
 
     // Swap the DeltaMemStore to use the new schema
     old_dms = dms_;
-    dms_.reset(new DeltaMemStore(old_dms->id() + 1, schema_, log_anchor_registry_,
-                                 parent_tracker_));
+    dms_.reset(new DeltaMemStore(old_dms->id() + 1, rowset_metadata_->id(), schema_,
+                                 log_anchor_registry_, parent_tracker_));
 
     if (count == 0) {
       // No need to flush if there are no deltas.

@@ -41,17 +41,19 @@ shared_ptr<MemTracker> CreateMemTrackerForDMS(int64_t id,
 } // anonymous namespace
 
 DeltaMemStore::DeltaMemStore(int64_t id,
+                             int64_t rs_id,
                              const Schema &schema,
                              LogAnchorRegistry* log_anchor_registry,
                              MemTracker* parent_tracker)
   : id_(id),
+    rs_id_(rs_id),
     schema_(schema),
     mem_tracker_(CreateMemTrackerForDMS(id, parent_tracker)),
     allocator_(new MemoryTrackingBufferAllocator(HeapBufferAllocator::Get(), mem_tracker_)),
     arena_(new ThreadSafeMemoryTrackingArena(kInitialArenaSize, kMaxArenaBufferSize,
                                              allocator_)),
     tree_(arena_),
-    anchorer_(log_anchor_registry, Substitute("DeltaMemStore-$0", id_)) {
+    anchorer_(log_anchor_registry, Substitute("Rowset-$0/DeltaMemStore-$1", rs_id_, id_)) {
   CHECK(schema.has_column_ids());
 }
 
