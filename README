@@ -59,7 +59,7 @@ thirdparty/build-thirdparty.sh. When built, that will yield an incomplete but
 otherwise working LLVM 3.4. Then, using the CC/CXX environment variables as
 above, remove the aforementioned flag and rebuild LLVM using itself.
 
-Building kudu
+Building kudu and running tests
 ------------------------------------------------------------
 
 # Add <root of kudu tree>/thirdparty/installed/bin to your $PATH
@@ -74,6 +74,16 @@ The build artifacts, including the test binaries, will be stored in
 'build/latest/', which itself is a symlink to either build/debug or
 build/release.
 
+Individual tests can be run by directly invoking the test binaries in
+'build/latest'. Since Kudu uses the Google C++ Test Framework (gtest),
+specific test cases can be run with gtest flags:
+
+# List all the tests within a test binary, then run a single test
+$ ./build/latest/test-tablet --gtest_list_tests
+$ ./build/latest/test-tablet --gtest_filter=TestTablet/9.TestFlush
+
+gtest also allows more complex filtering patterns. See the upstream
+documentation for more details.
 
 Running tests with the clang AddressSanitizer enabled
 ------------------------------------------------------------
