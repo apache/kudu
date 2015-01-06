@@ -48,10 +48,10 @@ void AsyncLogReader::ReadEntriesAsync(int64_t starting_at,
   }
 
   vector<ReplicateMsg*> replicates;
-  Status s = log_reader_->ReadAllReplicateEntries(starting_at,
-                                                  up_to,
-                                                  LogReader::kNoSizeLimit,
-                                                  &replicates);
+  Status s = log_reader_->ReadReplicatesInRange(starting_at,
+                                                up_to,
+                                                LogReader::kNoSizeLimit,
+                                                &replicates);
   callback.Run(starting_at, s, replicates);
 
   {

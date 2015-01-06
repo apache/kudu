@@ -222,10 +222,10 @@ Status LogReader::ReadBatchUsingIndexEntry(const LogIndexEntry& index_entry,
   return Status::OK();
 }
 
-Status LogReader::ReadAllReplicateEntries(const int64_t starting_at,
-                                          const int64_t up_to,
-                                          int64_t max_bytes_to_read,
-                                          vector<ReplicateMsg*>* replicates) const {
+Status LogReader::ReadReplicatesInRange(const int64_t starting_at,
+                                        const int64_t up_to,
+                                        int64_t max_bytes_to_read,
+                                        vector<ReplicateMsg*>* replicates) const {
   DCHECK_GT(starting_at, 0);
   DCHECK_GE(up_to, starting_at);
   DCHECK(log_index_) << "Require an index to random-read logs";

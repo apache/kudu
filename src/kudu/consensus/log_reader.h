@@ -30,7 +30,7 @@ class LogReader {
   // Opens a LogReader on the default tablet log directory, and sets
   // 'reader' to the newly created LogReader.
   //
-  // 'index' may be NULL, but if it is, ReadAllReplicateEntries() may not
+  // 'index' may be NULL, but if it is, ReadReplicatesInRange() may not
   // be used.
   static Status Open(FsManager *fs_manager,
                      const scoped_refptr<LogIndex>& index,
@@ -64,7 +64,7 @@ class LogReader {
   // all, then will read exactly one operation.
   //
   // Requires that a LogIndex was passed into LogReader::Open().
-  Status ReadAllReplicateEntries(
+  Status ReadReplicatesInRange(
       const int64_t starting_at,
       const int64_t up_to,
       int64_t max_bytes_to_read,

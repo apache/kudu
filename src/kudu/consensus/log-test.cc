@@ -436,7 +436,7 @@ TEST_F(LogTest, TestGCWithLogRunning) {
   {
     vector<ReplicateMsg*> repls;
     ElementDeleter d(&repls);
-    Status s = log_->GetLogReader()->ReadAllReplicateEntries(
+    Status s = log_->GetLogReader()->ReadReplicatesInRange(
       1, 2, LogReader::kNoSizeLimit, &repls);
     ASSERT_TRUE(s.IsNotFound()) << s.ToString();
   }
@@ -800,7 +800,7 @@ TEST_F(LogTest, TestReadLogWithReplacedReplicates) {
         SCOPED_TRACE(Substitute("Reading $0-$1", start_index, end_index));
         vector<ReplicateMsg*> repls;
         ElementDeleter d(&repls);
-        ASSERT_OK(reader->ReadAllReplicateEntries(
+        ASSERT_OK(reader->ReadReplicatesInRange(
                     start_index, end_index, LogReader::kNoSizeLimit, &repls));
         ASSERT_EQ(end_index - start_index + 1, repls.size());
         int expected_index = start_index;
@@ -818,7 +818,7 @@ TEST_F(LogTest, TestReadLogWithReplacedReplicates) {
                                 start_index, end_index, size_limit));
         vector<ReplicateMsg*> repls;
         ElementDeleter d(&repls);
-        ASSERT_OK(reader->ReadAllReplicateEntries(start_index, end_index, size_limit, &repls));
+        ASSERT_OK(reader->ReadReplicatesInRange(start_index, end_index, size_limit, &repls));
         ASSERT_LE(repls.size(), end_index - start_index + 1);
         int total_size = 0;
         int expected_index = start_index;
