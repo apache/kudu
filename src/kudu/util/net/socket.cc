@@ -348,7 +348,7 @@ Status Socket::BlockingWrite(const uint8_t *buf, size_t buflen, size_t *nwritten
     int32_t num_to_write = buflen - tot_written;
     MonoDelta timeout = deadline.GetDeltaSince(MonoTime::Now(MonoTime::FINE));
     if (PREDICT_FALSE(timeout.ToNanoseconds() <= 0)) {
-      return Status::NetworkError("BlockingWrite timed out");
+      return Status::TimedOut("BlockingWrite timed out");
     }
     RETURN_NOT_OK(SetSendTimeout(timeout));
     Status s = Write(buf, num_to_write, &inc_num_written);
@@ -403,14 +403,13 @@ Status Socket::Recv(uint8_t *buf, int32_t amt, int32_t *nread) {
 Status Socket::BlockingRecv(uint8_t *buf, size_t amt, size_t *nread, const MonoTime& deadline) {
   DCHECK_LE(amt, std::numeric_limits<int32_t>::max()) << "Reads > INT32_MAX not supported";
   DCHECK(nread);
-
   size_t tot_read = 0;
   while (tot_read < amt) {
     int32_t inc_num_read = 0;
     int32_t num_to_read = amt - tot_read;
     MonoDelta timeout = deadline.GetDeltaSince(MonoTime::Now(MonoTime::FINE));
     if (PREDICT_FALSE(timeout.ToNanoseconds() <= 0)) {
-      return Status::NetworkError("BlockingRecv timed out");
+      return Status::TimedOut("");
     }
     RETURN_NOT_OK(SetRecvTimeout(timeout));
     Status s = Recv(buf, num_to_read, &inc_num_read);

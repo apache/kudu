@@ -161,7 +161,7 @@ static void RunTimeoutNegotiationClient(Socket* sock) {
   deadline.AddDelta(MonoDelta::FromMilliseconds(-100L));
   sasl_client.set_deadline(deadline);
   Status s = sasl_client.Negotiate();
-  ASSERT_TRUE(s.IsNetworkError()) << "Expected timeout! Got: " << s.ToString();
+  ASSERT_TRUE(s.IsTimedOut()) << "Expected timeout! Got: " << s.ToString();
   CHECK_OK(sock->Shutdown(true, true));
 }
 
@@ -180,7 +180,7 @@ static void RunTimeoutNegotiationServer(Socket* sock) {
   deadline.AddDelta(MonoDelta::FromMilliseconds(-100L));
   sasl_server.set_deadline(deadline);
   Status s = sasl_server.Negotiate();
-  ASSERT_TRUE(s.IsNetworkError()) << "Expected timeout! Got: " << s.ToString();
+  ASSERT_TRUE(s.IsTimedOut()) << "Expected timeout! Got: " << s.ToString();
   CHECK_OK(sock->Close());
 }
 

@@ -230,7 +230,7 @@ TEST_F(TestRpc, TestCallTimeout) {
   Proxy p(client_messenger, server_addr, GenericCalculatorService::static_service_name());
 
   // Test a very short timeout - we expect this will time out while the
-  // call is still in the send queue. This was triggering ASAN failures
+  // call is still trying to connect, or in the send queue. This was triggering ASAN failures
   // before.
   ASSERT_NO_FATAL_FAILURE(DoTestExpectTimeout(p, MonoDelta::FromNanoseconds(1)));
 
