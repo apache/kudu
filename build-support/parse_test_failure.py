@@ -53,7 +53,7 @@ def remove_glog_lines(lines):
 def record_error(errors, name, error):
   errors.setdefault(name, []).append(error)
 
-def extract_failure_summary(log_text):
+def extract_failures(log_text):
   cur_test_case = None
   tests_seen = set()
   tests_seen_in_order = list()
@@ -125,6 +125,24 @@ def extract_failure_summary(log_text):
 
   return (tests_seen_in_order, errors_by_test)
 
+# Return failure summary formatted as text.
+def text_failure_summary(tests, errors_by_test):
+  msg = ''
+  for test_name in tests:
+    if test_name not in errors_by_test:
+      continue
+    for error in errors_by_test[test_name]:
+      if msg: msg += "\n"
+      msg += "%s: %s\n" % (test_name, error)
+  return msg
+
+# Parse log lines and return failure summary formatted as text.
+#
+# This helper function is part of a public API called from test_result_server.py
+def extract_failure_summary(log_text):
+  (tests, errors_by_test) = extract_failures(log_text)
+  return text_failure_summary(tests, errors_by_test)
+
 # Print failure summary based on desired output format.
 # 'tests' is a list of all tests run (in order), not just the failed ones.
 # This allows us to print the test results in the order they were run.
@@ -132,13 +150,7 @@ def extract_failure_summary(log_text):
 def print_failure_summary(tests, errors_by_test, is_xml):
   # Plain text dump.
   if not is_xml:
-    for test_name in tests:
-      if test_name not in errors_by_test:
-        continue
-      for error in errors_by_test[test_name]:
-        sys.stdout.write("%s: " % test_name)
-        print error
-        print
+    sys.stdout.write(text_failure_summary(tests, errors_by_test))
 
   # Fake a JUnit report file.
   else:
@@ -192,7 +204,7 @@ def main():
   args = parser.parse_args()
 
   log_text = sys.stdin.read(MAX_MEMORY)
-  (tests, errors_by_test) = extract_failure_summary(log_text)
+  (tests, errors_by_test) = extract_failures(log_text)
   print_failure_summary(tests, errors_by_test, args.xml)
 
 if __name__ == "__main__":
