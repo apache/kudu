@@ -24,7 +24,11 @@ TEST_F(LogAnchorRegistryTest, TestUpdateRegistration) {
   LogAnchor anchor;
   const int64_t kInitialIndex = 12345;
 
+  ASSERT_FALSE(anchor.is_registered);
+  ASSERT_FALSE(anchor.when_registered.Initialized());
   reg->Register(kInitialIndex, test_name, &anchor);
+  ASSERT_TRUE(anchor.is_registered);
+  ASSERT_TRUE(anchor.when_registered.Initialized());
   ASSERT_STATUS_OK(reg->UpdateRegistration(kInitialIndex + 1, test_name, &anchor));
   ASSERT_STATUS_OK(reg->Unregister(&anchor));
 }
@@ -72,6 +76,8 @@ TEST_F(LogAnchorRegistryTest, TestOrderedEarliestOpId) {
   reg->Register(3, test_name, &anchors[1]);
   reg->Register(1, test_name, &anchors[2]);
   reg->Register(4, test_name, &anchors[3]);
+
+  ASSERT_STR_CONTAINS(reg->DumpAnchorInfo(), "LogAnchor[index=1");
 
   int64_t anchor_idx = -1;
   ASSERT_STATUS_OK(reg->GetEarliestRegisteredLogIndex(&anchor_idx));

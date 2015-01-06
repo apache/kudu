@@ -19,7 +19,10 @@ class OpId;
 // Minimum possible term.
 extern const int64_t kMinimumTerm;
 
-// Index indicating a log index that will never occur naturally.
+// Minimum possible log index.
+extern const int64_t kMinimumOpIdIndex;
+
+// Log index that is lower than the minimum index (and so will never occur).
 extern const int64_t kInvalidOpIdIndex;
 
 // Returns true iff left == right.

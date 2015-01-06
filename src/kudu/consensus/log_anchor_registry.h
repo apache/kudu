@@ -10,12 +10,13 @@
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/util/locks.h"
+#include "kudu/util/monotime.h"
 #include "kudu/util/status.h"
 
 namespace kudu {
 namespace log {
 
-class LogAnchor;
+struct LogAnchor;
 
 // This class allows callers to register their interest in (anchor) a particular
 // log index. The primary use case for this is to prevent the deletion of segments of
@@ -45,8 +46,9 @@ class LogAnchorRegistry : public RefCountedThreadSafe<LogAnchorRegistry> {
   // Note: anchor must be the original pointer passed to Register().
   Status Unregister(LogAnchor* anchor);
 
-  // Returns true if passed anchor is currently registered.
-  bool IsRegistered(LogAnchor* anchor) const;
+  // Release the anchor on a log index if it is registered.
+  // Otherwise, do nothing.
+  Status UnregisterIfAnchored(LogAnchor* anchor);
 
   // Query the registry to find the earliest anchored log index in the registry.
   // Returns Status::NotFound if no anchors are currently active.
@@ -55,6 +57,9 @@ class LogAnchorRegistry : public RefCountedThreadSafe<LogAnchorRegistry> {
   // Simply returns the number of active anchors for use in debugging / tests.
   // This is _not_ a constant-time operation.
   size_t GetAnchorCountForTests() const;
+
+  // Dumps information about registered anchors to a string.
+  std::string DumpAnchorInfo() const;
 
  private:
   friend class RefCountedThreadSafe<LogAnchorRegistry>;
@@ -74,19 +79,31 @@ class LogAnchorRegistry : public RefCountedThreadSafe<LogAnchorRegistry> {
   DISALLOW_COPY_AND_ASSIGN(LogAnchorRegistry);
 };
 
-// An opaque class that helps us keep track of anchors.
-class LogAnchor {
+// A simple struct that allows us to keep track of which log segments we want
+// to anchor (prevent log GC on).
+struct LogAnchor {
  public:
   LogAnchor();
   ~LogAnchor();
 
  private:
   FRIEND_TEST(LogTest, TestGCWithLogRunning);
+  FRIEND_TEST(LogAnchorRegistryTest, TestUpdateRegistration);
   friend class LogAnchorRegistry;
 
-  int64_t log_index;
-  std::string owner;
+  // Whether any log index is currently registered with this anchor.
   bool is_registered;
+
+  // When this anchor was last registered or updated.
+  MonoTime when_registered;
+
+  // The index of the log entry we are anchoring on.
+  int64_t log_index;
+
+  // An arbitrary string containing details of the subsystem holding the
+  // anchor, and any relevant information about it that should be displayed in
+  // the log or the web UI.
+  std::string owner;
 
   DISALLOW_COPY_AND_ASSIGN(LogAnchor);
 };
@@ -110,7 +127,7 @@ class MinLogIndexAnchorer {
   Status ReleaseAnchor();
 
  private:
-  scoped_refptr<LogAnchorRegistry> const registry_;
+  const scoped_refptr<LogAnchorRegistry> registry_;
   const std::string owner_;
   LogAnchor anchor_;
 

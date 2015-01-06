@@ -348,10 +348,7 @@ Status RemoteBootstrapSession::FindLogSegment(uint64_t segment_seqno,
 
 Status RemoteBootstrapSession::UnregisterAnchorIfNeededUnlocked() {
   LogAnchorRegistry* registry = tablet_peer_->tablet()->log_anchor_registry();
-  if (registry->IsRegistered(&log_anchor_)) {
-    RETURN_NOT_OK(registry->Unregister(&log_anchor_));
-  }
-  return Status::OK();
+  return registry->UnregisterIfAnchored(&log_anchor_);
 }
 
 } // namespace tserver

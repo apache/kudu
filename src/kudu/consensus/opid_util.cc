@@ -15,6 +15,7 @@ namespace kudu {
 namespace consensus {
 
 const int64_t kMinimumTerm = 0;
+const int64_t kMinimumOpIdIndex = 0;
 const int64_t kInvalidOpIdIndex = -1;
 
 int OpIdCompare(const OpId& first, const OpId& second) {
