@@ -112,7 +112,7 @@ class DeltaFileReader : public DeltaStore,
 
   const BlockId& block_id() const { return block_id_; }
 
-  virtual const DeltaStats& delta_stats() const OVERRIDE { return *delta_stats_; }
+  const DeltaStats& delta_stats() const { return *delta_stats_; }
 
   virtual std::string ToString() const OVERRIDE {
     return reader_->ToString();

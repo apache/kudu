@@ -373,7 +373,8 @@ Status DeltaTracker::FlushDMS(DeltaMemStore* dms,
                         Substitute("Unable to start writing to delta block $0",
                                    block_id.ToString()));
 
-  RETURN_NOT_OK(dms->FlushToFile(&dfw));
+  gscoped_ptr<DeltaStats> stats;
+  RETURN_NOT_OK(dms->FlushToFile(&dfw, &stats));
   RETURN_NOT_OK(dfw.Finish());
   LOG(INFO) << "Flushed delta block: " << block_id.ToString();
   VLOG(1) << "Delta block " << block_id.ToString() << " schema: " << dms->schema().ToString();

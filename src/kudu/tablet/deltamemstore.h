@@ -66,7 +66,10 @@ class DeltaMemStore : public DeltaStore,
   // is only really useful in unit tests.
   void DebugPrint() const;
 
-  Status FlushToFile(DeltaFileWriter *dfw);
+  // Flush the DMS to the given file writer.
+  // Returns statistics in *stats.
+  Status FlushToFile(DeltaFileWriter *dfw,
+                     gscoped_ptr<DeltaStats>* stats);
 
   // Create an iterator for applying deltas from this DMS.
   //
@@ -92,8 +95,6 @@ class DeltaMemStore : public DeltaStore,
   }
 
   const int64_t id() const { return id_; }
-
-  virtual const DeltaStats& delta_stats() const OVERRIDE { return delta_stats_; }
 
   typedef btree::CBTree<DMSTreeTraits> DMSTree;
   typedef btree::CBTreeIterator<DMSTreeTraits> DMSTreeIter;
@@ -123,8 +124,6 @@ class DeltaMemStore : public DeltaStore,
 
   // Concurrent B-Tree storing <key index> -> RowChangeList
   DMSTree tree_;
-
-  DeltaStats delta_stats_;
 
   log::MinLogIndexAnchorer anchorer_;
 

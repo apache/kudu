@@ -139,10 +139,11 @@ TEST_F(TestDeltaMemStore, TestUpdateCount) {
   ASSERT_STATUS_OK(fs_manager_->CreateNewBlock(&block));
   DeltaFileWriter dfw(schema_, block.Pass());
   ASSERT_STATUS_OK(dfw.Start());
-  dms_->FlushToFile(&dfw);
+  gscoped_ptr<DeltaStats> stats;
+  dms_->FlushToFile(&dfw, &stats);
 
-  ASSERT_EQ(n_rows / 2, dms_->delta_stats().update_count(kIntColumn));
-  ASSERT_EQ(n_rows / 4, dms_->delta_stats().update_count(kStringColumn));
+  ASSERT_EQ(n_rows / 2, stats->update_count(kIntColumn));
+  ASSERT_EQ(n_rows / 4, stats->update_count(kStringColumn));
 }
 
 TEST_F(TestDeltaMemStore, TestDMSSparseUpdates) {

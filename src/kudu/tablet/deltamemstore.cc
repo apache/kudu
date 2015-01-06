@@ -51,7 +51,6 @@ DeltaMemStore::DeltaMemStore(int64_t id,
     arena_(new ThreadSafeMemoryTrackingArena(kInitialArenaSize, kMaxArenaBufferSize,
                                              allocator_)),
     tree_(arena_),
-    delta_stats_(schema_.num_columns()),
     anchorer_(log_anchor_registry, Substitute("DeltaMemStore-$0", id_)) {
   CHECK(schema.has_column_ids());
 }
@@ -84,7 +83,10 @@ Status DeltaMemStore::Update(Timestamp timestamp,
   return Status::OK();
 }
 
-Status DeltaMemStore::FlushToFile(DeltaFileWriter *dfw) {
+Status DeltaMemStore::FlushToFile(DeltaFileWriter *dfw,
+                                  gscoped_ptr<DeltaStats>* stats_ret) {
+  gscoped_ptr<DeltaStats> stats(new DeltaStats(schema_.num_columns()));
+
   gscoped_ptr<DMSTreeIter> iter(tree_.NewIterator());
   iter->SeekToStart();
   while (iter->IsValid()) {
@@ -97,10 +99,12 @@ Status DeltaMemStore::FlushToFile(DeltaFileWriter *dfw) {
 
     RowChangeList rcl(val);
     RETURN_NOT_OK_PREPEND(dfw->AppendDelta<REDO>(key, rcl), "Failed to append delta");
-    delta_stats_.UpdateStats(key.timestamp(), schema_, rcl);
+    stats->UpdateStats(key.timestamp(), schema_, rcl);
     iter->Next();
   }
-  RETURN_NOT_OK(dfw->WriteDeltaStats(delta_stats_));
+  RETURN_NOT_OK(dfw->WriteDeltaStats(*stats));
+
+  stats_ret->swap(stats);
   return Status::OK();
 }
 
