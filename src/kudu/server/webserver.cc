@@ -191,7 +191,7 @@ Status Webserver::Start() {
     if (!bound_addresses_str.empty()) {
       bound_addresses_str += ", ";
     }
-    StrAppend(&bound_addresses_str, addr.ToString());
+    bound_addresses_str += "http://" + addr.ToString() + "/";
   }
 
   LOG(INFO) << "Webserver started. Bound to: " << bound_addresses_str;
