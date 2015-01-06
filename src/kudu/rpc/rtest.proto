@@ -37,13 +37,14 @@ message SleepResponsePB {
 }
 
 message SendTwoStringsRequestPB {
+  required uint32 random_seed = 1;
+  required uint64 size1 = 2;
+  required uint64 size2 = 3;
 }
 
 message SendTwoStringsResponsePB {
-  required uint64 expected_size1 = 2;
-  required uint32 sidecar1 = 3;
-  required uint64 expected_size2 = 5;
-  required uint32 sidecar2 = 6;
+  required uint32 sidecar1 = 1;
+  required uint32 sidecar2 = 2;
 }
 
 message EchoRequestPB {

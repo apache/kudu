@@ -124,27 +124,28 @@ void OutboundTransfer::Abort(const Status &status) {
 Status OutboundTransfer::SendBuffer(Socket &socket) {
   CHECK_LT(cur_slice_idx_, n_payload_slices_);
 
-  struct iovec iovec[n_payload_slices_ - cur_slice_idx_];
-  int iov_next = 0;
-  int offset_in_slice = cur_offset_in_slice_;
-  for (int i = cur_slice_idx_; i < n_payload_slices_; i++) {
-    Slice &slice = payload_slices_[i];
-    iovec[iov_next].iov_base = slice.mutable_data() + offset_in_slice;
-    iovec[iov_next].iov_len = slice.size() - offset_in_slice;
+  int n_iovecs = n_payload_slices_ - cur_slice_idx_;
+  struct iovec iovec[n_iovecs];
+  {
+    int offset_in_slice = cur_offset_in_slice_;
+    for (int i = 0; i < n_iovecs; i++) {
+      Slice &slice = payload_slices_[cur_slice_idx_ + i];
+      iovec[i].iov_base = slice.mutable_data() + offset_in_slice;
+      iovec[i].iov_len = slice.size() - offset_in_slice;
 
-    offset_in_slice = 0;
-    iov_next++;
+      offset_in_slice = 0;
+    }
   }
 
   int32_t written;
-  Status status = socket.Writev(iovec, iov_next, &written);
+  Status status = socket.Writev(iovec, n_iovecs, &written);
   RETURN_ON_ERROR_OR_SOCKET_NOT_READY(status);
 
   // Adjust our accounting of current writer position.
-  offset_in_slice = cur_offset_in_slice_;
   for (int i = cur_slice_idx_; i < n_payload_slices_; i++) {
     Slice &slice = payload_slices_[i];
-    int rem_in_slice = slice.size() - offset_in_slice;
+    int rem_in_slice = slice.size() - cur_offset_in_slice_;
+    DCHECK_GE(rem_in_slice, 0);
 
     if (written >= rem_in_slice) {
       // Used up this entire slice, advance to the next slice.

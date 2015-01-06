@@ -22,6 +22,8 @@
 #include "kudu/rpc/service_pool.h"
 #include "kudu/util/faststring.h"
 #include "kudu/util/net/sockaddr.h"
+#include "kudu/util/random.h"
+#include "kudu/util/random_util.h"
 #include "kudu/util/stopwatch.h"
 #include "kudu/util/test_util.h"
 #include "kudu/util/trace.h"
@@ -91,7 +93,6 @@ class GenericCalculatorService : public ServiceIf {
     AddRequestPB req;
     if (!req.ParseFromArray(param.data(), param.size())) {
       LOG(FATAL) << "couldn't parse: " << param.ToDebugString();
-      // TODO: respond error
     }
 
     AddResponsePB resp;
@@ -100,16 +101,25 @@ class GenericCalculatorService : public ServiceIf {
   }
 
   void DoSendTwoStrings(InboundCall* incoming) {
+    Slice param(incoming->serialized_request());
+    SendTwoStringsRequestPB req;
+    if (!req.ParseFromArray(param.data(), param.size())) {
+      LOG(FATAL) << "couldn't parse: " << param.ToDebugString();
+    }
+
     gscoped_ptr<faststring> first(new faststring);
     gscoped_ptr<faststring> second(new faststring);
-    first->append(kFirstString);
-    second->append(kSecondString);
+
+    Random r(req.random_seed());
+    first->resize(req.size1());
+    RandomString(first->data(), req.size1(), &r);
+
+    second->resize(req.size2());
+    RandomString(second->data(), req.size2(), &r);
 
     SendTwoStringsResponsePB resp;
-    resp.set_expected_size1(first->size());
     resp.set_sidecar1(incoming->AddRpcSidecar(
         make_gscoped_ptr(new RpcSidecar(first.Pass()))));
-    resp.set_expected_size2(second->size());
     resp.set_sidecar2(incoming->AddRpcSidecar(
         make_gscoped_ptr(new RpcSidecar(second.Pass()))));
 
@@ -271,20 +281,34 @@ class RpcTestBase : public KuduTest {
     return Status::OK();
   }
 
-  void DoTestSidecar(const Proxy &p) {
+  void DoTestSidecar(const Proxy &p, int size1, int size2) {
+    const uint32_t kSeed = 12345;
+
     SendTwoStringsRequestPB req;
+    req.set_size1(size1);
+    req.set_size2(size2);
+    req.set_random_seed(kSeed);
+
     SendTwoStringsResponsePB resp;
     RpcController controller;
     controller.set_timeout(MonoDelta::FromMilliseconds(10000));
     CHECK_OK(p.SyncRequest(GenericCalculatorService::kSendTwoStringsMethodName,
                            req, &resp, &controller));
 
-    Slice first = GetSidecarPointer(controller, resp.sidecar1(), resp.expected_size1());
-    Slice second = GetSidecarPointer(controller, resp.sidecar2(), resp.expected_size2());
-    CHECK_EQ(0, first.compare(GenericCalculatorService::kFirstString));
-    CHECK_EQ(0, second.compare(GenericCalculatorService::kSecondString));
-  }
+    Slice first = GetSidecarPointer(controller, resp.sidecar1(), size1);
+    Slice second = GetSidecarPointer(controller, resp.sidecar2(), size2);
 
+    Random rng(kSeed);
+    faststring expected;
+
+    expected.resize(size1);
+    RandomString(expected.data(), size1, &rng);
+    CHECK_EQ(0, first.compare(Slice(expected)));
+
+    expected.resize(size2);
+    RandomString(expected.data(), size2, &rng);
+    CHECK_EQ(0, second.compare(Slice(expected)));
+  }
 
   void DoTestExpectTimeout(const Proxy &p, const MonoDelta &timeout) {
     SleepRequestPB req;

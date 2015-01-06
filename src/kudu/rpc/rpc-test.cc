@@ -196,7 +196,12 @@ TEST_F(TestRpc, TestRpcSidecar) {
   shared_ptr<Messenger> client_messenger(CreateMessenger("Client"));
   Proxy p(client_messenger, server_addr, GenericCalculatorService::static_service_name());
 
-  DoTestSidecar(p);
+  // Test some small sidecars
+  DoTestSidecar(p, 123, 456);
+
+  // Test some larger sidecars to verify that we properly handle the case where
+  // we can't write the whole response to the socket in a single call.
+  DoTestSidecar(p, 3000 * 1024, 2000 * 1024);
 }
 
 // Test that timeouts are properly handled.
