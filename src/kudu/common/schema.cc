@@ -262,9 +262,9 @@ string Schema::ToString() const {
     }
   }
 
-  return StrCat("Schema [",
-                JoinStrings(col_strs, ", "),
-                "]");
+  return StrCat("Schema [\n\t",
+                JoinStrings(col_strs, ",\n\t"),
+                "\n]");
 }
 
 Status Schema::DecodeRowKey(Slice encoded_key,

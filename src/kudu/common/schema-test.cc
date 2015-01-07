@@ -55,9 +55,12 @@ TEST(TestSchema, TestSchema) {
   ASSERT_EQ(0, schema.column_offset(0));
   ASSERT_EQ(sizeof(Slice), schema.column_offset(1));
 
-  EXPECT_EQ("Schema [key[string NOT NULL], "
-            "uint32val[uint32 NULLABLE], "
-            "int32val[int32 NOT NULL]]", schema.ToString());
+  EXPECT_EQ("Schema [\n"
+            "\tkey[string NOT NULL],\n"
+            "\tuint32val[uint32 NULLABLE],\n"
+            "\tint32val[int32 NOT NULL]\n"
+            "]",
+            schema.ToString());
   EXPECT_EQ("key[string NOT NULL]", schema.column(0).ToString());
   EXPECT_EQ("uint32 NULLABLE", schema.column(1).TypeToString());
 }
@@ -353,7 +356,11 @@ TEST(TestSchema, TestCreatePartialSchema) {
     partial_cols.push_back(3);
 
     ASSERT_STATUS_OK(schema.CreatePartialSchema(partial_cols, &old_to_new, &partial_schema));
-    ASSERT_EQ("Schema [col1[string NOT NULL], col2[string NOT NULL], col4[string NOT NULL]]",
+    ASSERT_EQ("Schema [\n"
+              "\tcol1[string NOT NULL],\n"
+              "\tcol2[string NOT NULL],\n"
+              "\tcol4[string NOT NULL]\n"
+              "]",
               partial_schema.ToString());
     ASSERT_EQ(old_to_new[0], 0);
     ASSERT_EQ(old_to_new[1], 1);
@@ -368,7 +375,11 @@ TEST(TestSchema, TestCreatePartialSchema) {
      partial_cols.push_back(3);
      partial_cols.push_back(4);
      ASSERT_STATUS_OK(schema.CreatePartialSchema(partial_cols, &old_to_new, &partial_schema));
-     ASSERT_EQ("Schema [col3[string NOT NULL], col4[string NOT NULL], col5[string NOT NULL]]",
+     ASSERT_EQ("Schema [\n"
+               "\tcol3[string NOT NULL],\n"
+               "\tcol4[string NOT NULL],\n"
+               "\tcol5[string NOT NULL]\n"
+               "]",
                partial_schema.ToString());
      ASSERT_EQ(old_to_new[2], 0);
      ASSERT_EQ(old_to_new[3], 1);
