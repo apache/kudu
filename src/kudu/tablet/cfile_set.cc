@@ -396,25 +396,6 @@ Status CFileSet::Iterator::PushdownRangeScanPredicate(ScanSpec *spec) {
   return Status::OK();
 }
 
-Status CFileSet::Iterator::SeekToOrdinal(rowid_t ord_idx) {
-  DCHECK(initted_);
-  if (ord_idx < row_count_) {
-    BOOST_FOREACH(ColumnIterator* col_iter, col_iters_) {
-      RETURN_NOT_OK(col_iter->SeekToOrdinal(ord_idx));
-    }
-  } else {
-    DCHECK_EQ(ord_idx, row_count_);
-    // Seeking CFileIterator to EOF causes a NotFound error here.
-    // TODO: consider allowing CFileIterator to seek exactly to EOF.
-  }
-  cur_idx_ = ord_idx;
-
-  Unprepare();
-
-  return Status::OK();
-}
-
-
 void CFileSet::Iterator::Unprepare() {
   prepared_count_ = 0;
   cols_prepared_.assign(col_iters_.size(), false);

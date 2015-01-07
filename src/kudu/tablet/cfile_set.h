@@ -172,7 +172,6 @@ class CFileSet::Iterator : public ColumnwiseIterator {
   // store it in member fields.
   Status PushdownRangeScanPredicate(ScanSpec *spec);
 
-  Status SeekToOrdinal(rowid_t ord_idx);
   void Unprepare();
 
   // Prepare the given column if not already prepared.
