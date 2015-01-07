@@ -28,6 +28,7 @@ struct RowOp {
   void SetFailed(const Status& s);
   void SetInsertSucceeded(int mrs_id);
   void SetMutateSucceeded(gscoped_ptr<OperationResultPB> result);
+  void SetAlreadyFlushed();
 
   bool has_row_lock() const {
     return row_lock.acquired();

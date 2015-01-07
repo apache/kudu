@@ -1139,16 +1139,18 @@ Status TabletBootstrap::FilterAndApplyOperations(WriteTransactionState* tx_state
                                                  const TxResultPB& orig_result) {
   int32_t op_idx = 0;
   BOOST_FOREACH(RowOp* op, *tx_state->mutable_row_ops()) {
-    const OperationResultPB& op_result = orig_result.ops(op_idx++);
+    const OperationResultPB& orig_op_result = orig_result.ops(op_idx++);
+
     // check if the operation failed in the original transaction
-    if (PREDICT_FALSE(op_result.has_failed_status())) {
+    if (PREDICT_FALSE(orig_op_result.has_failed_status())) {
+      Status status = StatusFromPB(orig_op_result.failed_status());
       if (VLOG_IS_ON(1)) {
         VLOG(1) << "Skipping operation that originally resulted in error. OpId: "
                 << tx_state->op_id().DebugString() << " op index: "
                 << op_idx - 1 << " original error: "
-                << op_result.failed_status().DebugString();
+                << status.ToString();
       }
-      op->SetFailed(Status::RuntimeError("Row operation failed previously."));
+      op->SetFailed(status);
       continue;
     }
 
@@ -1156,12 +1158,24 @@ Status TabletBootstrap::FilterAndApplyOperations(WriteTransactionState* tx_state
     switch (op->decoded_op.type) {
       case RowOperationsPB::INSERT:
         stats_.inserts_seen++;
-        RETURN_NOT_OK(FilterInsert(tx_state, op, op_result));
+        if (!orig_op_result.flushed()) {
+          RETURN_NOT_OK(FilterInsert(tx_state, op, orig_op_result));
+        } else {
+          op->SetAlreadyFlushed();
+          stats_.inserts_ignored++;
+          continue;
+        }
         break;
       case RowOperationsPB::UPDATE:
       case RowOperationsPB::DELETE:
         stats_.mutations_seen++;
-        RETURN_NOT_OK(FilterMutate(tx_state, op, op_result));
+        if (!orig_op_result.flushed()) {
+          RETURN_NOT_OK(FilterMutate(tx_state, op, orig_op_result));
+        } else {
+          op->SetAlreadyFlushed();
+          stats_.mutations_ignored++;
+          continue;
+        }
         break;
       default:
         LOG(FATAL) << "Bad op type: " << op->decoded_op.type;
@@ -1209,7 +1223,7 @@ Status TabletBootstrap::FilterInsert(WriteTransactionState* tx_state,
               << " latest durable mrs id: " << tablet_->metadata()->last_durable_mrs_id();
     }
 
-    op->SetFailed(Status::AlreadyPresent("Row to insert was already flushed."));
+    op->SetAlreadyFlushed();
     stats_.inserts_ignored++;
   }
   return Status::OK();

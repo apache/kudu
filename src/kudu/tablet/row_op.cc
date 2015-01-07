@@ -36,5 +36,11 @@ string RowOp::ToString(const Schema& schema) const {
   return decoded_op.ToString(schema);
 }
 
+void RowOp::SetAlreadyFlushed() {
+  DCHECK(!result) << result->DebugString();
+  result.reset(new OperationResultPB());
+  result->set_flushed(true);
+}
+
 } // namespace tablet
 } // namespace kudu
