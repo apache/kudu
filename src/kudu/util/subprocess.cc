@@ -221,6 +221,14 @@ Status Subprocess::Start() {
     return Status::RuntimeError("Unable to fork", ErrnoToString(errno), errno);
   }
   if (ret == 0) { // We are the child
+    // Send the child a SIGTERM when the parent dies. This is done as early
+    // as possible in the child's life to prevent any orphaning whatsoever
+    // (e.g. from KUDU-402).
+    //
+    // TODO: prctl(PR_SET_PDEATHSIG) is Linux-specific, look into portable ways
+    // to prevent orphans when parent is killed.
+    prctl(PR_SET_PDEATHSIG, SIGTERM);
+
     // stdin
     if (fd_state_[STDIN_FILENO] == PIPED) {
       PCHECK(dup2(child_stdin[0], STDIN_FILENO) == STDIN_FILENO);
@@ -251,10 +259,6 @@ Status Subprocess::Start() {
     }
 
     CloseNonStandardFDs(fd_dir);
-
-    // TODO: prctl(PR_SET_PDEATHSIG) is Linux-specific, look into portable ways
-    // to prevent orphans when parent is killed.
-    prctl(PR_SET_PDEATHSIG, SIGINT);
 
     execvp(program_.c_str(), &argv_ptrs[0]);
     PLOG(WARNING) << "Couldn't exec";
