@@ -206,8 +206,7 @@ class RaftConsensusQuorumTest : public KuduTest {
   }
 
   Status AppendDummyMessage(int peer_idx,
-                            gscoped_ptr<ConsensusRound>* round,
-                            shared_ptr<LatchCallback>* req_commit_clbk = NULL) {
+                            gscoped_ptr<ConsensusRound>* round) {
     gscoped_ptr<ReplicateMsg> msg(new ReplicateMsg());
     msg->set_op_type(NO_OP);
     msg->mutable_noop_request();
@@ -215,24 +214,32 @@ class RaftConsensusQuorumTest : public KuduTest {
     // here we just add them to the autorelease pool.
     CommitContinuationLatchCallback* continuation = pool_.Add(new CommitContinuationLatchCallback);
 
-    shared_ptr<LatchCallback> commit_clbk(new LatchCallback);
-    if (req_commit_clbk != NULL) {
-      *req_commit_clbk = commit_clbk;
-    }
-
     scoped_refptr<RaftConsensus> peer;
     CHECK_OK(peers_->GetPeerByIdx(peer_idx, &peer));
-    round->reset(peer->NewRound(msg.Pass(), continuation, commit_clbk));
+    round->reset(peer->NewRound(msg.Pass(), continuation));
     RETURN_NOT_OK_PREPEND(peer->Replicate(round->get()),
                           Substitute("Unable to replicate to peer $0", peer_idx));
     return Status::OK();
   }
 
-  Status CommitDummyMessage(ConsensusRound* round) {
+  static void FireSharedSynchronizer(const shared_ptr<Synchronizer>& sync, const Status& s) {
+    sync->StatusCB(s);
+  }
+
+  Status CommitDummyMessage(ConsensusRound* round,
+                            shared_ptr<Synchronizer>* commit_sync = NULL) {
+    StatusCallback commit_callback;
+    if (commit_sync != NULL) {
+      commit_sync->reset(new Synchronizer());
+      commit_callback = Bind(&FireSharedSynchronizer, *commit_sync);
+    } else {
+      commit_callback = Bind(&DoNothingStatusCB);
+    }
+
     gscoped_ptr<CommitMsg> msg(new CommitMsg());
     msg->set_op_type(NO_OP);
     msg->set_timestamp(clock_->Now().ToUint64());
-    round->Commit(msg.Pass());
+    round->Commit(msg.Pass(), commit_callback);
     return Status::OK();
   }
 
@@ -327,14 +334,14 @@ class RaftConsensusQuorumTest : public KuduTest {
                                    CommitMode commit_mode,
                                    OpId* last_op_id,
                                    vector<ConsensusRound*>* rounds,
-                                   shared_ptr<LatchCallback>* commit_clbk = NULL) {
+                                   shared_ptr<Synchronizer>* commit_sync = NULL) {
     for (int i = 0; i < seq_size; i++) {
       gscoped_ptr<ConsensusRound> round;
-      ASSERT_STATUS_OK(AppendDummyMessage(leader_idx, &round, commit_clbk));
+      ASSERT_STATUS_OK(AppendDummyMessage(leader_idx, &round));
       ASSERT_STATUS_OK(WaitForReplicate(round.get()));
       last_op_id->CopyFrom(round->id());
       if (commit_mode == COMMIT_ONE_BY_ONE) {
-        CommitDummyMessage(round.get());
+        CommitDummyMessage(round.get(), commit_sync);
       }
       rounds->push_back(round.release());
     }
@@ -531,17 +538,17 @@ TEST_F(RaftConsensusQuorumTest, TestFollowersReplicateAndCommitMessage) {
   OpId last_op_id;
   vector<ConsensusRound*> rounds;
   ElementDeleter deleter(&rounds);
-  shared_ptr<LatchCallback> commit_clbk;
+  shared_ptr<Synchronizer> commit_sync;
   REPLICATE_SEQUENCE_OF_MESSAGES(1,
                                  kLeaderidx,
                                  WAIT_FOR_ALL_REPLICAS,
                                  DONT_COMMIT,
                                  &last_op_id,
                                  &rounds,
-                                 &commit_clbk);
+                                 &commit_sync);
 
   // Commit the operation
-  ASSERT_STATUS_OK(CommitDummyMessage(rounds[0]));
+  ASSERT_STATUS_OK(CommitDummyMessage(rounds[0], &commit_sync));
 
   // Wait for everyone to commit the operations.
 
@@ -552,7 +559,7 @@ TEST_F(RaftConsensusQuorumTest, TestFollowersReplicateAndCommitMessage) {
   // on the leader when the commit callback is triggered.
   // We thus wait for the commit callback to trigger, ensuring durability
   // on the leader and then for the commits to be present on the replicas.
-  ASSERT_STATUS_OK(commit_clbk.get()->Wait());
+  ASSERT_STATUS_OK(commit_sync->Wait());
   WaitForCommitIfNotAlreadyPresent(last_op_id, kFollower0Idx, kLeaderidx);
   WaitForCommitIfNotAlreadyPresent(last_op_id, kFollower1Idx, kLeaderidx);
   VerifyLogs(2, 0, 1);
@@ -574,7 +581,7 @@ TEST_F(RaftConsensusQuorumTest, TestFollowersReplicateAndCommitSequence) {
   OpId last_op_id;
   vector<ConsensusRound*> rounds;
   ElementDeleter deleter(&rounds);
-  shared_ptr<LatchCallback> commit_clbk;
+  shared_ptr<Synchronizer> commit_sync;
 
   REPLICATE_SEQUENCE_OF_MESSAGES(seq_size,
                                  kLeaderidx,
@@ -582,16 +589,16 @@ TEST_F(RaftConsensusQuorumTest, TestFollowersReplicateAndCommitSequence) {
                                  DONT_COMMIT,
                                  &last_op_id,
                                  &rounds,
-                                 &commit_clbk);
+                                 &commit_sync);
 
   // Commit the operations, but wait for the replicates to finish first
   BOOST_FOREACH(ConsensusRound* round, rounds) {
-    ASSERT_STATUS_OK(CommitDummyMessage(round));
+    ASSERT_STATUS_OK(CommitDummyMessage(round, &commit_sync));
   }
 
   // See comment at the end of TestFollowersReplicateAndCommitMessage
   // for an explanation on this waiting sequence.
-  ASSERT_STATUS_OK(commit_clbk.get()->Wait());
+  ASSERT_STATUS_OK(commit_sync->Wait());
   WaitForCommitIfNotAlreadyPresent(last_op_id, kFollower0Idx, kLeaderidx);
   WaitForCommitIfNotAlreadyPresent(last_op_id, kFollower1Idx, kLeaderidx);
   VerifyLogs(2, 0, 1);
@@ -726,10 +733,10 @@ TEST_F(RaftConsensusQuorumTest, TestReplicasHandleCommunicationErrors) {
   // replica proxies.
   vector<ConsensusRound*> contexts;
   ElementDeleter deleter(&contexts);
-  shared_ptr<LatchCallback> commit_clbk;
+  shared_ptr<Synchronizer> commit_sync;
   for (int i = 0; i < 100; i++) {
     gscoped_ptr<ConsensusRound> round;
-    ASSERT_STATUS_OK(AppendDummyMessage(kLeaderidx, &round, &commit_clbk));
+    ASSERT_STATUS_OK(AppendDummyMessage(kLeaderidx, &round));
     ConsensusRound* round_ptr = round.get();
     last_op_id.CopyFrom(round->id());
     contexts.push_back(round.release());
@@ -742,7 +749,7 @@ TEST_F(RaftConsensusQuorumTest, TestReplicasHandleCommunicationErrors) {
     }
 
     ASSERT_OK(WaitForReplicate(round_ptr));
-    ASSERT_STATUS_OK(CommitDummyMessage(round_ptr));
+    ASSERT_STATUS_OK(CommitDummyMessage(round_ptr, &commit_sync));
   }
 
   // Assert last operation was correctly replicated and committed.
@@ -751,7 +758,7 @@ TEST_F(RaftConsensusQuorumTest, TestReplicasHandleCommunicationErrors) {
 
   // See comment at the end of TestFollowersReplicateAndCommitMessage
   // for an explanation on this waiting sequence.
-  ASSERT_STATUS_OK(commit_clbk.get()->Wait());
+  ASSERT_STATUS_OK(commit_sync->Wait());
   WaitForCommitIfNotAlreadyPresent(last_op_id, kFollower0Idx, kLeaderidx);
   WaitForCommitIfNotAlreadyPresent(last_op_id, kFollower1Idx, kLeaderidx);
   VerifyLogs(2, 0, 1);
@@ -821,7 +828,7 @@ TEST_F(RaftConsensusQuorumTest, TestLeaderElectionWithQuiescedQuorum) {
   ASSERT_STATUS_OK(BuildAndStartQuorum(kInitialQuorumSize));
 
   OpId last_op_id;
-  shared_ptr<LatchCallback> last_commit_clbk;
+  shared_ptr<Synchronizer> last_commit_sync;
   vector<ConsensusRound*> rounds;
   ElementDeleter deleter(&rounds);
 
@@ -835,10 +842,10 @@ TEST_F(RaftConsensusQuorumTest, TestLeaderElectionWithQuiescedQuorum) {
                                    COMMIT_ONE_BY_ONE,
                                    &last_op_id,
                                    &rounds,
-                                   &last_commit_clbk);
+                                   &last_commit_sync);
 
     // Make sure the last operation is committed everywhere
-    ASSERT_STATUS_OK(last_commit_clbk.get()->Wait());
+    ASSERT_STATUS_OK(last_commit_sync->Wait());
     for (int i = 0; i < current_quorum_size - 1; i++) {
       WaitForCommitIfNotAlreadyPresent(last_op_id, i, current_quorum_size - 1);
     }
@@ -868,10 +875,10 @@ TEST_F(RaftConsensusQuorumTest, TestLeaderElectionWithQuiescedQuorum) {
                                    COMMIT_ONE_BY_ONE,
                                    &last_op_id,
                                    &rounds,
-                                   &last_commit_clbk);
+                                   &last_commit_sync);
 
     // Make sure the last operation is committed everywhere
-    ASSERT_STATUS_OK(last_commit_clbk.get()->Wait());
+    ASSERT_STATUS_OK(last_commit_sync->Wait());
     for (int i = 0; i < current_quorum_size - 2; i++) {
       WaitForCommitIfNotAlreadyPresent(last_op_id, i, current_quorum_size - 2);
     }
@@ -885,7 +892,7 @@ TEST_F(RaftConsensusQuorumTest, TestReplicasEnforceTheLogMatchingProperty) {
   ASSERT_STATUS_OK(BuildAndStartQuorum(3));
 
   OpId last_op_id;
-  shared_ptr<LatchCallback> last_commit_clbk;
+  shared_ptr<Synchronizer> last_commit_sync;
   vector<ConsensusRound*> rounds;
   ElementDeleter deleter(&rounds);
   REPLICATE_SEQUENCE_OF_MESSAGES(10,
@@ -894,10 +901,10 @@ TEST_F(RaftConsensusQuorumTest, TestReplicasEnforceTheLogMatchingProperty) {
                                  COMMIT_ONE_BY_ONE,
                                  &last_op_id,
                                  &rounds,
-                                 &last_commit_clbk);
+                                 &last_commit_sync);
 
   // Make sure the last operation is committed everywhere
-  ASSERT_STATUS_OK(last_commit_clbk->Wait());
+  ASSERT_STATUS_OK(last_commit_sync->Wait());
   WaitForCommitIfNotAlreadyPresent(last_op_id, 0, 2);
   WaitForCommitIfNotAlreadyPresent(last_op_id, 1, 2);
 
@@ -948,7 +955,7 @@ TEST_F(RaftConsensusQuorumTest, TestRequestVote) {
   ASSERT_STATUS_OK(BuildAndStartQuorum(3));
 
   OpId last_op_id;
-  shared_ptr<LatchCallback> last_commit_clbk;
+  shared_ptr<Synchronizer> last_commit_sync;
   vector<ConsensusRound*> rounds;
   ElementDeleter deleter(&rounds);
   REPLICATE_SEQUENCE_OF_MESSAGES(10,
@@ -957,10 +964,10 @@ TEST_F(RaftConsensusQuorumTest, TestRequestVote) {
                                  COMMIT_ONE_BY_ONE,
                                  &last_op_id,
                                  &rounds,
-                                 &last_commit_clbk);
+                                 &last_commit_sync);
 
   // Make sure the last operation is committed everywhere
-  ASSERT_STATUS_OK(last_commit_clbk->Wait());
+  ASSERT_STATUS_OK(last_commit_sync->Wait());
   WaitForCommitIfNotAlreadyPresent(last_op_id, 0, 2);
   WaitForCommitIfNotAlreadyPresent(last_op_id, 1, 2);
 

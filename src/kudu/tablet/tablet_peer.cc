@@ -410,7 +410,6 @@ Status TabletPeer::StartReplicaTransaction(gscoped_ptr<ConsensusRound> round) {
   NewReplicaTransactionDriver(transaction, &driver);
   // FIXME: Bare ptr is a hack for a ref-counted object.
   state->consensus_round()->SetReplicaCommitContinuation(driver.get());
-  state->consensus_round()->SetCommitCallback(driver->commit_finished_callback());
 
   RETURN_NOT_OK(driver->ExecuteAsync());
   return Status::OK();

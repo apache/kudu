@@ -105,8 +105,7 @@ class Consensus : public RefCountedThreadSafe<Consensus> {
   // increase the reference count for the provided callbacks.
   ConsensusRound* NewRound(
       gscoped_ptr<ReplicateMsg> replicate_msg,
-      ConsensusCommitContinuation* commit_continuation,
-      const std::tr1::shared_ptr<FutureCallback>& commit_callback);
+      ConsensusCommitContinuation* commit_continuation);
 
   // Called by a quorum client to replicate an entry to the state machine.
   //
@@ -308,8 +307,7 @@ class ConsensusRound {
   // callbacks prior to initiating the consensus round.
   ConsensusRound(Consensus* consensus,
                  gscoped_ptr<ReplicateMsg> replicate_msg,
-                 ConsensusCommitContinuation* commit_continuation,
-                 const std::tr1::shared_ptr<FutureCallback>& commit_callback);
+                 ConsensusCommitContinuation* commit_continuation);
 
   // Ctor used for follower/learner transactions. These transactions do not use the
   // replicate callback and the commit callback is set later, after the transaction
@@ -331,20 +329,8 @@ class ConsensusRound {
     return replicate_msg_->get()->id();
   }
 
-  Status Commit(gscoped_ptr<CommitMsg> commit);
-
-  void SetCommitCallback(const std::tr1::shared_ptr<FutureCallback>& commit_clbk) {
-    commit_callback_ = commit_clbk;
-  }
-
-  const std::tr1::shared_ptr<FutureCallback>& commit_callback() {
-    return commit_callback_;
-  }
-
-  void release_commit_callback(std::tr1::shared_ptr<FutureCallback>* ret) {
-    ret->swap(commit_callback_);
-    commit_callback_.reset();
-  }
+  Status Commit(gscoped_ptr<CommitMsg> commit,
+                const StatusCallback& callback);
 
   void SetReplicaCommitContinuation(ConsensusCommitContinuation* continuation) {
     continuation_ = continuation;
@@ -362,9 +348,6 @@ class ConsensusRound {
   // The continuation that will be called once the transaction is
   // deemed committed/aborted by consensus.
   ConsensusCommitContinuation* continuation_;
-  // The callback that is called once the commit phase of this consensus
-  // round is finished.
-  std::tr1::shared_ptr<FutureCallback> commit_callback_;
 };
 
 class Consensus::ConsensusFaultHooks {

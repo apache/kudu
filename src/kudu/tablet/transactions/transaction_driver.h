@@ -110,8 +110,6 @@ class TransactionDriver : public RefCountedThreadSafe<TransactionDriver>,
   // see comment in the interface for an important TODO.
   virtual void ReplicationFinished(const Status& status) OVERRIDE;
 
-  virtual const std::tr1::shared_ptr<FutureCallback>& commit_finished_callback();
-
   virtual std::string ToString() const;
 
   virtual std::string ToStringUnlocked() const;
@@ -153,6 +151,8 @@ class TransactionDriver : public RefCountedThreadSafe<TransactionDriver>,
   // requested consistency mode.
   Status CommitWait();
 
+  void CommitCallback(const Status& s);
+
   // Handle a failure in any of the stages of the operation.
   // In some cases, this will end the operation and call its callback.
   // In others, where we can't recover, this will FATAL.
@@ -168,7 +168,6 @@ class TransactionDriver : public RefCountedThreadSafe<TransactionDriver>,
 
   TransactionTracker* txn_tracker_;
   consensus::Consensus* consensus_;
-  std::tr1::shared_ptr<FutureCallback> commit_finished_callback_;
   ThreadPool* prepare_pool_;
   ThreadPool* apply_pool_;
 

@@ -35,10 +35,6 @@ TransactionDriver::TransactionDriver(TransactionTracker *txn_tracker,
                                      ThreadPool* apply_pool)
     : txn_tracker_(txn_tracker),
       consensus_(consensus),
-      commit_finished_callback_(
-          new BoundFunctionCallback(
-              boost::bind(&TransactionDriver::Finalize, this),
-              boost::bind(&TransactionDriver::HandleFailure, this, _1))),
       prepare_pool_(prepare_pool),
       apply_pool_(apply_pool),
       trace_(new Trace()),
@@ -80,11 +76,6 @@ TransactionState* TransactionDriver::mutable_state() {
 
 Transaction::TransactionType TransactionDriver::tx_type() const {
   return transaction_->tx_type();
-}
-
-const std::tr1::shared_ptr<FutureCallback>& TransactionDriver::commit_finished_callback() {
-  boost::lock_guard<simple_spinlock> lock(lock_);
-  return commit_finished_callback_;
 }
 
 string TransactionDriver::ToString() const {
@@ -142,8 +133,7 @@ Status TransactionDriver::PrepareAndStart() {
 
       gscoped_ptr<ConsensusRound> round(consensus_->NewRound(
                                           replicate_msg.Pass(),
-                                          this,
-                                          commit_finished_callback_));
+                                          this));
 
       {
         boost::lock_guard<simple_spinlock> lock(lock_);
@@ -344,11 +334,21 @@ Status TransactionDriver::ApplyAndTriggerCommit() {
     }
 
     transaction_->PreCommit();
-    CHECK_OK(mutable_state()->consensus_round()->Commit(commit_msg.Pass()));
+    CHECK_OK(mutable_state()->consensus_round()->Commit(commit_msg.Pass(),
+                                                        Bind(&TransactionDriver::CommitCallback,
+                                                             this)));
     transaction_->PostCommit();
   }
 
   return Status::OK();
+}
+
+void TransactionDriver::CommitCallback(const Status& s) {
+  if (s.ok()) {
+    Finalize();
+  } else {
+    HandleFailure(s);
+  }
 }
 
 Status TransactionDriver::CommitWait() {

@@ -577,10 +577,6 @@ class TestDriver : public ConsensusCommitContinuation {
     delete this;
   }
 
-  void Fatal(const Status& status) {
-    LOG(FATAL) << "TestDriver aborted with status: " << status.ToString();
-  }
-
   gscoped_ptr<ConsensusRound> round_;
 
  private:
@@ -590,7 +586,13 @@ class TestDriver : public ConsensusCommitContinuation {
   void Apply() {
     gscoped_ptr<CommitMsg> msg(new CommitMsg);
     msg->set_op_type(round_->replicate_msg()->op_type());
-    CHECK_OK(round_->Commit(msg.Pass()));
+    CHECK_OK(round_->Commit(msg.Pass(),
+                            Bind(&TestDriver::CommitCallback, Unretained(this))));
+  }
+
+  void CommitCallback(const Status& s) {
+    CHECK_OK(s);
+    Cleanup();
   }
 
   ThreadPool* pool_;
@@ -600,10 +602,10 @@ class TestDriver : public ConsensusCommitContinuation {
 // testing RaftConsensusState. Does not actually support running transactions.
 class MockTransactionFactory : public ReplicaTransactionFactory {
  public:
-  virtual Status StartReplicaTransaction(gscoped_ptr<ConsensusRound> context) OVERRIDE {
-    return StartReplicaTransactionMock(context.release());
+  virtual Status StartReplicaTransaction(gscoped_ptr<ConsensusRound> round) OVERRIDE {
+    return StartReplicaTransactionMock(round.release());
   }
-  MOCK_METHOD1(StartReplicaTransactionMock, Status(ConsensusRound* context));
+  MOCK_METHOD1(StartReplicaTransactionMock, Status(ConsensusRound* round));
 };
 
 // A transaction factory for tests, usually this is implemented by TabletPeer.
@@ -617,13 +619,9 @@ class TestTransactionFactory : public ReplicaTransactionFactory {
     consensus_ = consensus;
   }
 
-  Status StartReplicaTransaction(gscoped_ptr<ConsensusRound> context) OVERRIDE {
-    TestDriver* txn = new TestDriver(pool_.get(), context.Pass());
+  Status StartReplicaTransaction(gscoped_ptr<ConsensusRound> round) OVERRIDE {
+    TestDriver* txn = new TestDriver(pool_.get(), round.Pass());
     txn->round_->SetReplicaCommitContinuation(txn);
-    std::tr1::shared_ptr<FutureCallback> commit_clbk(
-        new BoundFunctionCallback(boost::bind(&TestDriver::Cleanup, txn),
-                                  boost::bind(&TestDriver::Fatal, txn, _1)));
-    txn->round_->SetCommitCallback(commit_clbk);
     return Status::OK();
   }
 

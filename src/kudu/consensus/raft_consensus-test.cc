@@ -13,6 +13,7 @@
 #include "kudu/fs/fs_manager.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/server/logical_clock.h"
+#include "kudu/util/async_util.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
@@ -172,9 +173,6 @@ class RaftConsensusTest : public KuduTest {
   }
 
   Status StartReplicaTransaction(ConsensusRound* round) {
-    shared_ptr<LatchCallback> commit_callback(new LatchCallback());
-    commit_callbacks_.push_back(commit_callback);
-    round->SetCommitCallback(commit_callback);
     rounds_.push_back(round);
     SetContinuationIfEnabled(round);
     return Status::OK();
@@ -190,12 +188,9 @@ class RaftConsensusTest : public KuduTest {
   }
 
   ConsensusRound* CreateRound(gscoped_ptr<ReplicateMsg> replicate) {
-    shared_ptr<LatchCallback> commit_callback(new LatchCallback());
-    commit_callbacks_.push_back(commit_callback);
     ConsensusRound* round = new ConsensusRound(consensus_.get(),
                                                replicate.Pass(),
-                                               NULL,
-                                               commit_callback);
+                                               NULL);
     rounds_.push_back(round);
     return round;
   }
@@ -213,7 +208,10 @@ class RaftConsensusTest : public KuduTest {
     // Need to commit, otherwise consensus will wait for these to finish.
     gscoped_ptr<CommitMsg> commit(new CommitMsg);
     commit->set_op_type(round->replicate_msg()->op_type());
-    CHECK_OK(round->Commit(commit.Pass()));
+
+    commit_syncs_.push_back(new Synchronizer());
+    CHECK_OK(round->Commit(commit.Pass(),
+                           commit_syncs_.back()->AsStatusCallback()));
   }
 
   void CommitRemainingRounds() {
@@ -224,9 +222,10 @@ class RaftConsensusTest : public KuduTest {
 
   ~RaftConsensusTest() {
     // Wait for all rounds to be done.
-    BOOST_FOREACH(const shared_ptr<LatchCallback>& callback, commit_callbacks_) {
-      callback->Wait();
+    BOOST_FOREACH(Synchronizer* callback, commit_syncs_) {
+      CHECK_OK(callback->Wait());
     }
+    STLDeleteElements(&commit_syncs_);
     STLDeleteElements(&rounds_);
     STLDeleteElements(&continuations_);
   }
@@ -245,7 +244,7 @@ class RaftConsensusTest : public KuduTest {
   scoped_refptr<RaftConsensus> consensus_;
 
   vector<ConsensusRound*> rounds_;
-  vector<shared_ptr<LatchCallback> > commit_callbacks_;
+  vector<Synchronizer*> commit_syncs_;
 
   // Mocks.
   // NOTE: both 'queue_' and 'peer_manager_' belong to 'consensus_' and may be deleted before
@@ -516,7 +515,6 @@ TEST_F(RaftConsensusTest, TestAbortOperations) {
 
   vector<ConsensusRound*> aborted_rounds_copy;
   aborted_rounds_copy.assign(rounds_.begin() + 5, rounds_.end());
-  commit_callbacks_.clear();
 
   // We expect 12 continuations to have been fired.
   // 5 OK's for the 2.1-2.5 ops
