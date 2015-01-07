@@ -174,7 +174,7 @@ class DelayablePeerProxy : public TestPeerProxy {
     WARN_NOT_OK(TestPeerProxy::Respond(method), "Error while responding.");
   }
 
-  virtual Status Respond(Method method) {
+  virtual Status Respond(Method method) OVERRIDE {
     latch_.Wait();   // Wait until strictly after peer would have responded.
     return TestPeerProxy::Respond(method);
   }

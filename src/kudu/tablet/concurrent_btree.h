@@ -24,7 +24,6 @@
 #ifndef KUDU_TABLET_CONCURRENT_BTREE_H
 #define KUDU_TABLET_CONCURRENT_BTREE_H
 
-#include <boost/static_assert.hpp>
 #include <boost/smart_ptr/detail/yield_k.hpp>
 #include <boost/utility/binary.hpp>
 #include <algorithm>
@@ -218,7 +217,7 @@ struct VersionField {
   static AtomicVersion SetLockBit(AtomicVersion v, int lock) {
     DCHECK(lock == 0 || lock == 1);
     v = v & ~BTREE_LOCK_MASK;
-    BOOST_STATIC_ASSERT(sizeof(AtomicVersion) == 8);
+    COMPILE_ASSERT(sizeof(AtomicVersion) == 8, must_use_64bit_version);
     v |= (uint64_t)lock << BTREE_LOCK_BIT;
     return v;
   }

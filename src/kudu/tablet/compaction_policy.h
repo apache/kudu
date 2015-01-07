@@ -67,7 +67,7 @@ class BudgetedCompactionPolicy : public CompactionPolicy {
   virtual Status PickRowSets(const RowSetTree &tree,
                              std::tr1::unordered_set<RowSet*>* picked,
                              double* quality,
-                             std::vector<std::string>* log);
+                             std::vector<std::string>* log) OVERRIDE;
 
   virtual uint64_t target_rowset_size() const OVERRIDE;
 
