@@ -144,18 +144,12 @@ Status KuduClient::IsCreateTableInProgress(const string& table_name,
 }
 
 Status KuduClient::DeleteTable(const string& table_name) {
-  DeleteTableRequestPB req;
-  DeleteTableResponsePB resp;
-  RpcController rpc;
+  MonoTime deadline = MonoTime::Now(MonoTime::FINE);
 
-  req.mutable_table()->set_table_name(table_name);
-  rpc.set_timeout(default_admin_operation_timeout());
-  RETURN_NOT_OK(data_->master_proxy_->DeleteTable(req, &resp, &rpc));
-  if (resp.has_error()) {
-    return StatusFromPB(resp.error().status());
-  }
-
-  return Status::OK();
+  // TODO: Add client rpc timeout and add per operation timeouts
+  // for this and other operations.
+  deadline.AddDelta(default_select_master_timeout());
+  return data_->DeleteTable(this, table_name, deadline);
 }
 
 gscoped_ptr<KuduTableAlterer> KuduClient::NewTableAlterer() {

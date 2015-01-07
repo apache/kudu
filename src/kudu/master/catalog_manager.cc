@@ -594,7 +594,7 @@ Status CatalogManager::CreateTable(const CreateTableRequestPB* req,
   }
   TRACE("Wrote tablets to system table");
 
-  // f. Update the on-disk table state to "running" (point of no return).
+  // f. Update the on-disk table state to "running".
   table->mutable_metadata()->mutable_dirty()->pb.set_state(SysTablesEntryPB::kTableStateRunning);
   s = sys_catalog_->AddTable(table.get());
   if (!s.ok()) {
@@ -759,11 +759,14 @@ Status CatalogManager::DeleteTable(const DeleteTableRequestPB* req,
   l.mutable_data()->set_state(SysTablesEntryPB::kTableStateRemoved,
                               Substitute("Deleted at ts=$0", GetCurrentTimeMicros()));
 
-  // 3. Update sys-catalog with the removed table state (point of no return).
+  // 3. Update sys-catalog with the removed table state.
   Status s = sys_catalog_->UpdateTable(table.get());
   if (!s.ok()) {
-    PANIC_RPC(rpc, Substitute("An error occurred while updating sys tables: $0",
-                              s.ToString()));
+    // The mutation will be aborted when 'l' exits the scope on early return.
+    s = s.CloneAndPrepend(Substitute("An error occurred while updating sys tables: $0",
+                                     s.ToString()));
+    LOG(WARNING) << s.ToString();
+    return s;
   }
 
   // 4. Remove it from the by-name map
@@ -945,7 +948,7 @@ Status CatalogManager::AlterTable(const AlterTableRequestPB* req,
                               l.mutable_data()->pb.version(),
                               GetCurrentTimeMicros()));
 
-  // 5. Update sys-catalog with the new table schema (point of no return!)
+  // 5. Update sys-catalog with the new table schema.
   TRACE("Updating metadata on disk");
   Status s = sys_catalog_->UpdateTable(table.get());
   if (!s.ok()) {

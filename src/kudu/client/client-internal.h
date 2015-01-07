@@ -58,6 +58,10 @@ class KuduClient::Data {
                                     const std::string& table_name,
                                     const MonoTime& deadline);
 
+  Status DeleteTable(KuduClient* client,
+                     const std::string& table_name,
+                     const MonoTime& deadline);
+
   Status IsAlterTableInProgress(const std::string& table_name,
                                 const MonoTime& deadline,
                                 bool *alter_in_progress);

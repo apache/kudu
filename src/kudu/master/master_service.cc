@@ -252,6 +252,16 @@ void MasterServiceImpl::DeleteTable(const DeleteTableRequestPB* req,
 
   Status s = server_->catalog_manager()->DeleteTable(req, resp, rpc);
   if (!s.ok() && !resp->has_error()) {
+    if (s.IsIllegalState()) {
+      // TODO: This is a bit of a hack, as right now there's no way to
+      // propagate why a write to a quorum has failed. However, since
+      // we use Status::IllegalState() to indicate the situation where
+      // a write was issued on a node that is no longer the leader,
+      // this suffices until we distinguish this cause of write
+      // failure more explicitly.
+      RespondNoLongerLeader(resp, rpc);
+      return;
+    }
     StatusToPB(s, resp->mutable_error()->mutable_status());
   }
   rpc->RespondSuccess();

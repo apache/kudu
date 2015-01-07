@@ -28,6 +28,8 @@ namespace kudu {
 
 using master::CreateTableRequestPB;
 using master::CreateTableResponsePB;
+using master::DeleteTableRequestPB;
+using master::DeleteTableResponsePB;
 using master::GetLeaderMasterRpc;
 using master::GetTableSchemaRequestPB;
 using master::GetTableSchemaResponsePB;
@@ -267,6 +269,8 @@ Status KuduClient::Data::IsCreateTableInProgress(KuduClient* client,
   IsCreateTableDoneResponsePB resp;
   req.mutable_table()->set_table_name(table_name);
 
+  // TODO: Add client rpc timeout and use 'default_admin_operation_timeout_' as
+  // the default timeout for all admin operations.
   Status s =
       SyncLeaderMasterRpc<IsCreateTableDoneRequestPB, IsCreateTableDoneResponsePB>(
           default_admin_operation_timeout_,
@@ -296,6 +300,30 @@ Status KuduClient::Data::WaitForCreateTableToFinish(KuduClient* client,
                    "Timeout out waiting for Table Creation",
                    boost::bind(&KuduClient::Data::IsCreateTableInProgress,
                                this, client, table_name, _1, _2));
+}
+
+Status KuduClient::Data::DeleteTable(KuduClient* client,
+                                     const string& table_name,
+                                     const MonoTime& deadline) {
+  DeleteTableRequestPB req;
+  DeleteTableResponsePB resp;
+  int attempts;
+
+  req.mutable_table()->set_table_name(table_name);
+  Status s = SyncLeaderMasterRpc<DeleteTableRequestPB, DeleteTableResponsePB>(
+      default_admin_operation_timeout_, deadline, client, req, &resp,
+      &attempts, &MasterServiceProxy::DeleteTable);
+  RETURN_NOT_OK(s);
+  if (resp.has_error()) {
+    if (resp.error().code() == MasterErrorPB::TABLE_NOT_FOUND && attempts > 0) {
+      // A prior attempt to delete the table has succeeded, but
+      // appeared as a failure to the client due to, e.g., an I/O or
+      // network issue.
+      return Status::OK();
+    }
+    return StatusFromPB(resp.error().status());
+  }
+  return Status::OK();
 }
 
 

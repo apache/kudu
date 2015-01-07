@@ -172,5 +172,31 @@ TEST_F(MasterFailoverTest, DISABLED_TestPauseAfterCreateTableIssued) {
   ASSERT_OK(OpenTableAndScanner(table_id));
 }
 
+// Test the scenario where we create a table, pause the leader master,
+// and then issue the DeleteTable call: DeleteTable should go to the newly
+// elected leader master and succeed.
+TEST_F(MasterFailoverTest, TestDeleteTableSync) {
+  if (!AllowSlowTests()) {
+    LOG(INFO) << "This test can only be run in slow mode.";
+    return;
+  }
+
+  int leader_idx;
+
+  ASSERT_OK(cluster_->GetLeaderMasterIndex(&leader_idx));
+
+  string table_name = "testDeleteTableSync";
+  ASSERT_OK(CreateTable(table_name, kWaitForCreate));
+
+  LOG(INFO) << "Pausing leader master";
+  cluster_->master(leader_idx)->Pause();
+  ScopedResumeExternalDaemon resume_daemon(cluster_->master(leader_idx));
+
+  ASSERT_OK(client_->DeleteTable(table_name));
+  scoped_refptr<KuduTable> table;
+  Status s = client_->OpenTable(table_name, &table);
+  ASSERT_TRUE(s.IsNotFound());
+}
+
 } // namespace client
 } // namespace kudu
