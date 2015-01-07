@@ -149,11 +149,6 @@ Status LocalConsensus::RequestVote(const VoteRequestPB* request,
   return Status::NotSupported("LocalConsensus does not support RequestVote() calls.");
 }
 
-Status LocalConsensus::Commit(gscoped_ptr<CommitMsg> commit,
-                              const StatusCallback& cb) {
-  return log_->AsyncAppendCommit(commit.Pass(), cb);
-}
-
 metadata::QuorumPB LocalConsensus::Quorum() const {
   boost::lock_guard<simple_spinlock> lock(lock_);
   return cmeta_->pb().committed_quorum();

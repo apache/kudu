@@ -43,11 +43,6 @@ ConsensusRound::ConsensusRound(Consensus* consensus,
   DCHECK_NOTNULL(replicate_msg_.get());
 }
 
-Status ConsensusRound::Commit(gscoped_ptr<CommitMsg> commit, const StatusCallback& callback) {
-  commit->mutable_commited_op_id()->CopyFrom(replicate_msg_->get()->id());
-  return consensus_->Commit(commit.Pass(), callback);
-}
-
 void ConsensusRound::NotifyReplicationFinished(const Status& status) {
   if (PREDICT_TRUE(continuation_)) {
     continuation_->ReplicationFinished(status);
@@ -76,8 +71,6 @@ Status Consensus::ExecuteHook(HookPoint point) {
       case Consensus::POST_CONFIG_CHANGE: return fault_hooks_->PostConfigChange();
       case Consensus::PRE_REPLICATE: return fault_hooks_->PreReplicate();
       case Consensus::POST_REPLICATE: return fault_hooks_->PostReplicate();
-      case Consensus::PRE_COMMIT: return fault_hooks_->PreCommit();
-      case Consensus::POST_COMMIT: return fault_hooks_->PostCommit();
       case Consensus::PRE_UPDATE: return fault_hooks_->PreUpdate();
       case Consensus::POST_UPDATE: return fault_hooks_->PostUpdate();
       case Consensus::PRE_SHUTDOWN: return fault_hooks_->PreShutdown();

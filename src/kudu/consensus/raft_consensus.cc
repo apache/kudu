@@ -496,23 +496,6 @@ void RaftConsensus::NotifyTermChange(uint64_t term) {
   WARN_NOT_OK(HandleTermAdvanceUnlocked(term), "Couldn't advance consensus term.");
 }
 
-Status RaftConsensus::Commit(gscoped_ptr<CommitMsg> commit,
-                             const StatusCallback& cb) {
-  DCHECK(commit->has_commited_op_id());
-  OpId committed_op_id = commit->commited_op_id();
-
-  VLOG_WITH_PREFIX_LK(1) << "Appending COMMIT " << committed_op_id;
-
-  RETURN_NOT_OK(ExecuteHook(PRE_COMMIT));
-  RETURN_NOT_OK(log_->AsyncAppendCommit(commit.Pass(), cb));
-
-  ReplicaState::UniqueLock lock;
-  RETURN_NOT_OK(state_->LockForCommit(&lock));
-  state_->UpdateCommittedOpIdUnlocked(committed_op_id);
-  RETURN_NOT_OK(ExecuteHook(POST_COMMIT));
-  return Status::OK();
-}
-
 Status RaftConsensus::Update(const ConsensusRequestPB* request,
                              ConsensusResponsePB* response) {
   RETURN_NOT_OK(ExecuteHook(PRE_UPDATE));
@@ -1007,7 +990,6 @@ void RaftConsensus::Shutdown() {
   queue_->Close();
 
   CHECK_OK(state_->CancelPendingTransactions());
-  CHECK_OK(state_->WaitForOustandingApplies());
 
   {
     ReplicaState::UniqueLock lock;

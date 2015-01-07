@@ -73,11 +73,6 @@ class LocalConsensus : public Consensus {
 
   virtual Status RequestVote(const VoteRequestPB* request,
                              VoteResponsePB* response) OVERRIDE;
-
- protected:
-  virtual Status Commit(gscoped_ptr<CommitMsg> commit,
-                        const StatusCallback& cb) OVERRIDE;
-
  private:
 
   const std::string peer_uuid_;

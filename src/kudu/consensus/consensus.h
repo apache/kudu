@@ -123,12 +123,6 @@ class Consensus : public RefCountedThreadSafe<Consensus> {
   //             |                                     |
   //     3a)     |  +------ update commitIndex ------->|
   //             |                                     |
-  //     4)   -->| Commit(commit_msg, commit_callback) |
-  //             |                                     |
-  //     5)      +--+                                  |
-  //             |<-+ commit to local log              |
-  //             |                                     |
-  //     6)    <----+ commit_callback.Run()            |
   //
   // 1) Caller calls Replicate(), method returns immediately to the caller and
   //    runs asynchronously.
@@ -142,15 +136,6 @@ class Consensus : public RefCountedThreadSafe<Consensus> {
   //
   // 3a) The leader asynchronously notifies other members of the quorum of the new
   //     commit index, which tells them to apply the operation.
-  //
-  // 4) Caller calls Consensus::Commit(), passing the CommitMsg which is needed for
-  //    local recovery.
-  //
-  // 5) Consensus asynchronously writes the CommitMsg to the local log and cleans up
-  //    any state related to this operation.
-  //
-  // 6) Once the commit has been written to the log, the commit callback is triggered,
-  //    which can clean up the operation.
   //
   // This method can only be called on the leader, i.e. role() == LEADER
   virtual Status Replicate(ConsensusRound* context) = 0;
@@ -215,7 +200,6 @@ class Consensus : public RefCountedThreadSafe<Consensus> {
   virtual Status GetLastReceivedOpId(OpId* id) { return Status::NotFound("Not implemented."); }
 
  protected:
-  friend class ConsensusRound;
   friend class RefCountedThreadSafe<Consensus>;
   friend class tablet::ChangeConfigTransaction;
   friend class tablet::TabletPeer;
@@ -223,11 +207,6 @@ class Consensus : public RefCountedThreadSafe<Consensus> {
 
   // This class is refcounted.
   virtual ~Consensus() {}
-
-  // Called by Consensus context to complete the commit of a consensus
-  // round.
-  virtual Status Commit(gscoped_ptr<CommitMsg> commit_msg,
-                        const StatusCallback& cb) = 0;
 
   // Fault hooks for tests. In production code this will always be null.
   std::tr1::shared_ptr<ConsensusFaultHooks> fault_hooks_;
@@ -295,9 +274,9 @@ class ConsensusCommitContinuation {
 //   the replica waits for the corresponding Prepare() to finish (if it has
 //   not completed yet) and then proceeds to trigger the Apply().
 //
-// - Once Apply() completes the ReplicaTransactionFactory will call Commit()
-//   on 'context' triggering the replica side commit message to be stored
-//   on stable storage and the replica transaction to finish.
+// - Once Apply() completes the ReplicaTransactionFactory is responsible for logging
+//   a CommitMsg to the log to ensure that the operation can be properly restored
+//   on a restart.
 class ReplicaTransactionFactory {
  public:
   virtual Status StartReplicaTransaction(gscoped_ptr<ConsensusRound> context) = 0;
@@ -335,9 +314,6 @@ class ConsensusRound {
     return replicate_msg_->get()->id();
   }
 
-  Status Commit(gscoped_ptr<CommitMsg> commit,
-                const StatusCallback& callback);
-
   void SetReplicaCommitContinuation(ConsensusCommitContinuation* continuation) {
     continuation_ = continuation;
   }
@@ -364,8 +340,6 @@ class Consensus::ConsensusFaultHooks {
   virtual Status PostConfigChange() { return Status::OK(); }
   virtual Status PreReplicate() { return Status::OK(); }
   virtual Status PostReplicate() { return Status::OK(); }
-  virtual Status PreCommit() { return Status::OK(); }
-  virtual Status PostCommit() { return Status::OK(); }
   virtual Status PreUpdate() { return Status::OK(); }
   virtual Status PostUpdate() { return Status::OK(); }
   virtual Status PreShutdown() { return Status::OK(); }

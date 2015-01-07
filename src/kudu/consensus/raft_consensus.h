@@ -124,10 +124,6 @@ class RaftConsensus : public Consensus,
 
   virtual Status GetLastReceivedOpId(OpId* id) OVERRIDE;
 
- protected:
-  virtual Status Commit(gscoped_ptr<CommitMsg> commit,
-                        const StatusCallback& cb) OVERRIDE;
-
  private:
   friend class ReplicaState;
   friend class RaftConsensusQuorumTest;

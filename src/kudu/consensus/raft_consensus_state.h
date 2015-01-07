@@ -282,8 +282,6 @@ class ReplicaState {
   // Returns the last received op id. This must be called under the lock.
   const OpId& GetLastReceivedOpIdUnlocked() const;
 
-  void UpdateCommittedOpIdUnlocked(const OpId& committed_op_id);
-
   // Updates the last committed operation including removing it from the pending commits.
   //
   // 'commit_op_id' refers to the OpId of the actual commit operation, whereas
@@ -354,14 +352,6 @@ class ReplicaState {
   // received a replicate message from the leader but have yet to be committed.
   // The key is the index of the replicate operation.
   IndexToRoundMap pending_txns_;
-
-  // Set that tracks the outstanding applies that are being executed asynchronously.
-  //
-  // These operations have been replicated and committed by consensus, but not yet
-  // completed on the local replica.
-  //
-  // The key is the index of the operation being applied.
-  OutstandingCommits in_flight_commits_;
 
   // When we receive a message from a remote peer telling us to start a transaction, we use
   // this factory to start it.

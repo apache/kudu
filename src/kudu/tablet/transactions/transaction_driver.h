@@ -14,6 +14,11 @@
 
 namespace kudu {
 class ThreadPool;
+
+namespace log {
+class Log;
+} // namespace log
+
 namespace tablet {
 class TransactionTracker;
 
@@ -78,6 +83,7 @@ class TransactionDriver : public RefCountedThreadSafe<TransactionDriver>,
  public:
   TransactionDriver(TransactionTracker* txn_tracker,
                     consensus::Consensus* consensus,
+                    log::Log* log,
                     ThreadPool* prepare_pool,
                     ThreadPool* apply_pool);
 
@@ -168,6 +174,7 @@ class TransactionDriver : public RefCountedThreadSafe<TransactionDriver>,
 
   TransactionTracker* txn_tracker_;
   consensus::Consensus* consensus_;
+  log::Log* log_;
   ThreadPool* prepare_pool_;
   ThreadPool* apply_pool_;
 

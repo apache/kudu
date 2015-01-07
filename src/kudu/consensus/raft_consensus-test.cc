@@ -204,28 +204,8 @@ class RaftConsensusTest : public KuduTest {
     return round;
   }
 
-  void CommitRound(ConsensusRound* round) {
-    // Need to commit, otherwise consensus will wait for these to finish.
-    gscoped_ptr<CommitMsg> commit(new CommitMsg);
-    commit->set_op_type(round->replicate_msg()->op_type());
-
-    commit_syncs_.push_back(new Synchronizer());
-    CHECK_OK(round->Commit(commit.Pass(),
-                           commit_syncs_.back()->AsStatusCallback()));
-  }
-
-  void CommitRemainingRounds() {
-    BOOST_FOREACH(ConsensusRound* round, rounds_) {
-      CommitRound(round);
-    }
-  }
-
   ~RaftConsensusTest() {
     // Wait for all rounds to be done.
-    BOOST_FOREACH(Synchronizer* callback, commit_syncs_) {
-      CHECK_OK(callback->Wait());
-    }
-    STLDeleteElements(&commit_syncs_);
     STLDeleteElements(&rounds_);
     STLDeleteElements(&continuations_);
   }
@@ -244,7 +224,6 @@ class RaftConsensusTest : public KuduTest {
   scoped_refptr<RaftConsensus> consensus_;
 
   vector<ConsensusRound*> rounds_;
-  vector<Synchronizer*> commit_syncs_;
 
   // Mocks.
   // NOTE: both 'queue_' and 'peer_manager_' belong to 'consensus_' and may be deleted before
@@ -282,7 +261,6 @@ TEST_F(RaftConsensusTest, TestCommittedIndexWhenInSameTerm) {
   // Commit the first config round, created on Start();
   OpId committed_index;
   consensus_->UpdateMajorityReplicated(rounds_[0]->id(), &committed_index);
-  CommitRound(rounds_[0]);
 
   ASSERT_OPID_EQ(rounds_[0]->id(), committed_index);
 
@@ -293,8 +271,6 @@ TEST_F(RaftConsensusTest, TestCommittedIndexWhenInSameTerm) {
     // committed index should move accordingly.
     consensus_->UpdateMajorityReplicated(round->id(), &committed_index);
     ASSERT_OPID_EQ(round->id(), committed_index);
-
-    CommitRound(round);
   }
 }
 
@@ -318,7 +294,6 @@ TEST_F(RaftConsensusTest, TestCommittedIndexWhenTermsChange) {
 
   OpId committed_index;
   consensus_->UpdateMajorityReplicated(rounds_[0]->id(), &committed_index);
-  CommitRound(rounds_[0]);
   ASSERT_OPID_EQ(rounds_[0]->id(), committed_index);
 
   // Append another round in the current term (besides the original config round).
@@ -340,10 +315,6 @@ TEST_F(RaftConsensusTest, TestCommittedIndexWhenTermsChange) {
   // commit index to the id of the last change config.
   consensus_->UpdateMajorityReplicated(last_config_round->id(), &committed_index);
   ASSERT_OPID_EQ(last_config_round->id(), committed_index);
-  // Since these became "consensus committed" before changing the actual
-  // txn commitment order shouldn't matter.
-  CommitRound(last_config_round);
-  CommitRound(round);
 }
 
 // Tests that consensus is able to handle pending operations. It tests this in two ways:
@@ -437,7 +408,6 @@ TEST_F(RaftConsensusTest, TestPendingTransactions) {
                                        &committed_index);
 
   ASSERT_OPID_EQ(committed_index, cc_round_id);
-  CommitRemainingRounds();
 }
 
 // Tests the case where a a leader is elected and pushed a sequence of
@@ -571,8 +541,6 @@ TEST_F(RaftConsensusTest, TestAbortOperations) {
     Status expected_status = FindOrDie(expected, actual_entry.first);
     ASSERT_EQ(expected_status.CodeAsString(), actual_entry.second.CodeAsString());
   }
-
-  CommitRemainingRounds();
 }
 
 }  // namespace consensus

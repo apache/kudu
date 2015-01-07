@@ -15,6 +15,7 @@
 #include "kudu/consensus/consensus.h"
 #include "kudu/consensus/consensus_peers.h"
 #include "kudu/consensus/consensus_queue.h"
+#include "kudu/consensus/log.h"
 #include "kudu/consensus/raft_consensus.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/strings/substitute.h"
@@ -35,6 +36,7 @@
 namespace kudu {
 namespace consensus {
 
+using log::Log;
 using metadata::QuorumPB;
 using metadata::QuorumPeerPB;
 using strings::Substitute;
@@ -548,13 +550,10 @@ class LocalTestPeerProxyFactory : public PeerProxyFactory {
 // work.
 class TestDriver : public ConsensusCommitContinuation {
  public:
-  explicit TestDriver(ThreadPool* pool)
-      : pool_(pool) {
-  }
-
-  TestDriver(ThreadPool* pool, gscoped_ptr<ConsensusRound> round)
+  TestDriver(ThreadPool* pool, Log* log, gscoped_ptr<ConsensusRound> round)
       : round_(round.Pass()),
-        pool_(pool) {
+        pool_(pool),
+        log_(log) {
   }
 
   void SetRound(gscoped_ptr<ConsensusRound> round) {
@@ -586,8 +585,9 @@ class TestDriver : public ConsensusCommitContinuation {
   void Apply() {
     gscoped_ptr<CommitMsg> msg(new CommitMsg);
     msg->set_op_type(round_->replicate_msg()->op_type());
-    CHECK_OK(round_->Commit(msg.Pass(),
-                            Bind(&TestDriver::CommitCallback, Unretained(this))));
+    msg->mutable_commited_op_id()->CopyFrom(round_->id());
+    CHECK_OK(log_->AsyncAppendCommit(msg.Pass(),
+                                     Bind(&TestDriver::CommitCallback, Unretained(this))));
   }
 
   void CommitCallback(const Status& s) {
@@ -596,6 +596,7 @@ class TestDriver : public ConsensusCommitContinuation {
   }
 
   ThreadPool* pool_;
+  Log* log_;
 };
 
 // Fake ReplicaTransactionFactory that allows for instantiating and unit
@@ -611,7 +612,9 @@ class MockTransactionFactory : public ReplicaTransactionFactory {
 // A transaction factory for tests, usually this is implemented by TabletPeer.
 class TestTransactionFactory : public ReplicaTransactionFactory {
  public:
-  TestTransactionFactory() : consensus_(NULL) {
+  explicit TestTransactionFactory(Log* log) : consensus_(NULL),
+                                              log_(log) {
+
     CHECK_OK(ThreadPoolBuilder("test-txn-factory").set_max_threads(1).Build(&pool_));
   }
 
@@ -620,7 +623,7 @@ class TestTransactionFactory : public ReplicaTransactionFactory {
   }
 
   Status StartReplicaTransaction(gscoped_ptr<ConsensusRound> round) OVERRIDE {
-    TestDriver* txn = new TestDriver(pool_.get(), round.Pass());
+    TestDriver* txn = new TestDriver(pool_.get(), log_, round.Pass());
     txn->round_->SetReplicaCommitContinuation(txn);
     return Status::OK();
   }
@@ -645,6 +648,7 @@ class TestTransactionFactory : public ReplicaTransactionFactory {
  private:
   gscoped_ptr<ThreadPool> pool_;
   Consensus* consensus_;
+  Log* log_;
 };
 
 // Consensus fault hooks impl. that simply counts the number of calls to
@@ -661,8 +665,6 @@ class CounterHooks : public Consensus::ConsensusFaultHooks {
         post_config_change_calls_(0),
         pre_replicate_calls_(0),
         post_replicate_calls_(0),
-        pre_commit_calls_(0),
-        post_commit_calls_(0),
         pre_update_calls_(0),
         post_update_calls_(0),
         pre_shutdown_calls_(0),
@@ -708,20 +710,6 @@ class CounterHooks : public Consensus::ConsensusFaultHooks {
     if (current_hook_.get()) RETURN_NOT_OK(current_hook_->PostReplicate());
     boost::lock_guard<simple_spinlock> lock(lock_);
     post_replicate_calls_++;
-    return Status::OK();
-  }
-
-  virtual Status PreCommit() OVERRIDE {
-    if (current_hook_.get()) RETURN_NOT_OK(current_hook_->PreCommit());
-    boost::lock_guard<simple_spinlock> lock(lock_);
-    pre_commit_calls_++;
-    return Status::OK();
-  }
-
-  virtual Status PostCommit() OVERRIDE {
-    if (current_hook_.get()) RETURN_NOT_OK(current_hook_->PostCommit());
-    boost::lock_guard<simple_spinlock> lock(lock_);
-    post_commit_calls_++;
     return Status::OK();
   }
 
@@ -783,16 +771,6 @@ class CounterHooks : public Consensus::ConsensusFaultHooks {
     return post_replicate_calls_;
   }
 
-  int num_pre_commit_calls() {
-    boost::lock_guard<simple_spinlock> lock(lock_);
-    return pre_commit_calls_;
-  }
-
-  int num_post_commit_calls() {
-    boost::lock_guard<simple_spinlock> lock(lock_);
-    return post_commit_calls_;
-  }
-
   int num_pre_update_calls() {
     boost::lock_guard<simple_spinlock> lock(lock_);
     return pre_update_calls_;
@@ -821,8 +799,6 @@ class CounterHooks : public Consensus::ConsensusFaultHooks {
   int post_config_change_calls_;
   int pre_replicate_calls_;
   int post_replicate_calls_;
-  int pre_commit_calls_;
-  int post_commit_calls_;
   int pre_update_calls_;
   int post_update_calls_;
   int pre_shutdown_calls_;

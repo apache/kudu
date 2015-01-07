@@ -420,6 +420,7 @@ void TabletPeer::NewLeaderTransactionDriver(Transaction* transaction,
   scoped_refptr<TransactionDriver> ret = new TransactionDriver(
     &txn_tracker_,
     consensus_.get(),
+    log_.get(),
     prepare_pool_.get(),
     leader_apply_pool_);
   ret->Init(transaction, consensus::LEADER);
@@ -431,6 +432,7 @@ void TabletPeer::NewReplicaTransactionDriver(Transaction* transaction,
   scoped_refptr<TransactionDriver> ret = new TransactionDriver(
     &txn_tracker_,
     consensus_.get(),
+    log_.get(),
     prepare_pool_.get(),
     leader_apply_pool_);
   ret->Init(transaction, consensus::REPLICA);

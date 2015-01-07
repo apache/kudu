@@ -367,40 +367,11 @@ Status ReplicaState::CancelPendingTransactions() {
          iter != pending_txns_.end(); iter++) {
       ConsensusRound* round = (*iter).second;
       // We cancel only transactions whose applies have not yet been triggered.
-      if (in_flight_commits_.count((*iter).first) == 0) {
-        LOG_WITH_PREFIX(INFO) << "Aborting transaction as it isn't in flight: "
-            << (*iter).second->replicate_msg()->ShortDebugString();
-        round->NotifyReplicationFinished(Status::Aborted("Transaction aborted"));
-      } else {
-        // In this case we can't assume that the ConsensusRound for the pending transaction
-        // is still live. The commit callback might have already been triggered and the
-        // ConsensusRound deleted on transaction cleanup.
-        LOG_WITH_PREFIX(INFO) << "Skipping txn abort as the apply already in flight for op index: "
-            << (*iter).first;
-      }
+      LOG_WITH_PREFIX(INFO) << "Aborting transaction as it isn't in flight: "
+                            << (*iter).second->replicate_msg()->ShortDebugString();
+      round->NotifyReplicationFinished(Status::Aborted("Transaction aborted"));
     }
   }
-  return Status::OK();
-}
-
-Status ReplicaState::WaitForOustandingApplies() {
-  {
-    UniqueLock lock(&update_lock_);
-    if (state_ != kShuttingDown) {
-      return Status::IllegalState("Can only wait for pending commits on kShuttingDown state.");
-    }
-    LOG_WITH_PREFIX(INFO) << "Waiting on " << in_flight_commits_.size()
-                          << " commits in progress...";
-  }
-  for (int wait_attempt = 0; ; wait_attempt++) {
-    UniqueLock lock(&update_lock_);
-    if (in_flight_commits_.empty()) {
-      return Status::OK();
-    }
-    usleep(std::min(10000, wait_attempt * 1000));
-  }
-
-  LOG_WITH_PREFIX_LK(INFO) << "All local commits completed.";
   return Status::OK();
 }
 
@@ -534,14 +505,16 @@ Status ReplicaState::AdvanceCommittedIndexUnlocked(const OpId& committed_index) 
   IndexToRoundMap::iterator iter = pending_txns_.upper_bound(last_committed_index_.index());
   // Stop at the operation after the last one we must commit.
   IndexToRoundMap::iterator end_iter = pending_txns_.upper_bound(committed_index.index());
+  CHECK(iter != pending_txns_.end());
 
   VLOG_WITH_PREFIX(1) << "Last triggered apply was: "
       <<  last_committed_index_.ShortDebugString()
       << " Starting to apply from log index: " << (*iter).first;
 
-  for (; iter != end_iter; iter++) {
+  while (iter != end_iter) {
     ConsensusRound* round = DCHECK_NOTNULL((*iter).second);
-    InsertOrDie(&in_flight_commits_, round->id().index());
+
+    pending_txns_.erase(iter++);
 
     // If we're committing a change config op, persist the new quorum first
     if (PREDICT_FALSE(round->replicate_msg()->op_type() == CHANGE_CONFIG_OP)) {
@@ -578,15 +551,6 @@ void ReplicaState::UpdateLastReceivedOpIdUnlocked(const OpId& op_id) {
 const OpId& ReplicaState::GetLastReceivedOpIdUnlocked() const {
   DCHECK(update_lock_.is_locked());
   return received_op_id_;
-}
-
-void ReplicaState::UpdateCommittedOpIdUnlocked(const OpId& committed_op_id) {
-  DCHECK(update_lock_.is_locked());
-  CHECK_EQ(in_flight_commits_.erase(committed_op_id.index()), 1)
-    << "Trying to mark " << committed_op_id.ShortDebugString() << " as committed, but not "
-    << "in the in-flight set";
-  CHECK(EraseKeyReturnValuePtr(&pending_txns_, committed_op_id.index()))
-    << "Couldn't remove " << committed_op_id.ShortDebugString() << " from the pending set";
 }
 
 void ReplicaState::NewIdUnlocked(OpId* id) {
@@ -651,9 +615,6 @@ string ReplicaState::ToStringUnlocked() const {
   SubstituteAndAppend(&ret, "Watermarks: {Received: $0 Committed: $1}\n",
                       received_op_id_.ShortDebugString(),
                       last_committed_index_.ShortDebugString());
-
-  SubstituteAndAppend(&ret, "Num. outstanding commits: $0 IsLocked: $1",
-                      in_flight_commits_.size(), update_lock_.is_locked());
   return ret;
 }
 

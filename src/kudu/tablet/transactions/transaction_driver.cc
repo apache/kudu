@@ -22,6 +22,7 @@ using consensus::ConsensusRound;
 using consensus::ReplicateMsg;
 using consensus::CommitMsg;
 using consensus::DriverType;
+using log::Log;
 using std::tr1::shared_ptr;
 
 
@@ -31,10 +32,12 @@ using std::tr1::shared_ptr;
 
 TransactionDriver::TransactionDriver(TransactionTracker *txn_tracker,
                                      Consensus* consensus,
+                                     Log* log,
                                      ThreadPool* prepare_pool,
                                      ThreadPool* apply_pool)
     : txn_tracker_(txn_tracker),
       consensus_(consensus),
+      log_(log),
       prepare_pool_(prepare_pool),
       apply_pool_(apply_pool),
       trace_(new Trace()),
@@ -319,6 +322,8 @@ Status TransactionDriver::ApplyAndTriggerCommit() {
   {
     gscoped_ptr<CommitMsg> commit_msg;
     CHECK_OK(transaction_->Apply(&commit_msg));
+    commit_msg->mutable_commited_op_id()->CopyFrom(op_id_copy_);
+
     // If the client requested COMMIT_WAIT as the external consistency mode
     // calculate the latest that the prepare timestamp could be and wait
     // until now.earliest > prepare_latest. Only after this are the locks
@@ -334,9 +339,9 @@ Status TransactionDriver::ApplyAndTriggerCommit() {
     }
 
     transaction_->PreCommit();
-    CHECK_OK(mutable_state()->consensus_round()->Commit(commit_msg.Pass(),
-                                                        Bind(&TransactionDriver::CommitCallback,
-                                                             this)));
+    CHECK_OK(log_->AsyncAppendCommit(commit_msg.Pass(),
+                                     Bind(&TransactionDriver::CommitCallback,
+                                          this)));
     transaction_->PostCommit();
   }
 
