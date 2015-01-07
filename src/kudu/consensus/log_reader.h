@@ -18,7 +18,7 @@ namespace kudu {
 namespace log {
 class Log;
 class LogIndex;
-class LogIndexEntry;
+struct LogIndexEntry;
 
 // Reads a set of segments from a given path. Segment headers and footers
 // are read and parsed, but entries are not.
