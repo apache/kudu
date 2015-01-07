@@ -29,10 +29,7 @@ brief outline of important points follows here, for quick reference:
 - The WAL index is an absolute index into the log. If two logs contain an entry
   with the same index and term, then the logs are identical in all entries
   up through the given index. This is called the Log Matching property
-  (RAFT sec 5.3). TODO: The current Kudu WAL impl restarts the index for each
-  term, which differs from the RAFT spec. We plan to change it to the spec'ed
-  behavior, but we believe the current implementation does still enforce the
-  Log Matching property, so that work is not a high priority.
+  (abbreviated "LMP" in some parts of the code).
 
 The following pieces of state are durable (updated before responding to RPCs):
 
@@ -41,39 +38,50 @@ The following pieces of state are durable (updated before responding to RPCs):
 - votedFor: candidate that received this replica's vote for the current term,
   or null if none.
 
-Appending to the log:
+The WAL is implemented by log.cc. currentTerm and votedFor are part of the
+ConsensusMetadataPB which is implemented in consensus_meta.cc.
 
-Replicas implement an RPC method called AppendEntries in RAFT that allows a
-leader to replicate a log entry to the follower. Only a leader may call this
-RPC method, and a follower will only accept an AppendEntries call with a term
-equal to or higher than its currentTerm. See RAFT figure 2 for details.
+
+Appending to the log:
+------------------------------
+
+Replicas implement an RPC method called UpdateConsensus which allows a
+leader to replicate a batch of log entries to the follower. Only a
+leader may call this RPC method, and a follower will only accept an
+UpdateConsensus call with a term equal to or higher than its
+currentTerm.
+[Raft calls this RPC AppendEntries(). See Raft figure 2 for details.]
+
 
 Leader election:
+------------------------------
 
-Replicas also implement an RPC method called RequestVote in RAFT, which is
+Replicas also implement an RPC method called RequestConsensusVote, which is
 invoked by candidates to gather votes (RAFT sec 5.2). See RAFT figure 2 for
 details.
 
-Cluster membership changes:
-
+Quorum membership changes:
+------------------------------
 A two-phase joint consensus protocol is used for making cluster membership
 changes, including changing members of the quorum or the size of the majority.
 See RAFT section 6 and figure 11 for details.
 
-Leader election modifications
------------------------------
+NOTE: membership changes are not yet implemented in Kudu.
+
+
+Leader election modifications (future work)
+---------------------------------------------
 
 The Kudu leader election protocol proceeds exactly as specified in the extended
 version of the RAFT paper [1], sections 5.2 - 5.3, with the following
 exceptions:
 
-- The AppendEntries() RPC method in RAFT is called UpdateConsensus().
-  TODO: Consider renaming this method to match the spec in the paper.
-
 - Timestamps issued by quorum leaders must be disjoint, as specified in the
   Google Spanner paper [2] in section 4.1.1 and Appendix A. Therefore, when a
   new leader is elected, the leader must do a "commit-wait" style pause before
   replicating new writes.
+
+  NOTE: this is not yet implemented. See KUDU-430.
 
 - To force acceptance of a particular node as leader (for load-balancing
   purposes by the Master), the tablet may be quiesced until the specified node
@@ -81,6 +89,8 @@ exceptions:
   an election. Since other nodes are prohibited from becoming candidates during
   this time, either this target node will win the election or the attempt to
   force this configuration will time out and fail.
+
+  NOTE: this is not implemented!
 
 - To prevent "flapping" in the case of a flaky connection, an additional step is
   added to the leader election protocol. If a node detects that the quorum
@@ -90,6 +100,9 @@ exceptions:
   the node itself) responds that the leader appears to have failed, the node
   becomes a candidate and starts an election. If not, the node backs off and
   retries again later, without updating its currentTerm field.
+
+  NOTE: not yet implemented (KUDU-562)
+
 
 Corner cases and other notes
 ----------------------------
@@ -102,7 +115,7 @@ Various parts of RAFT are subtle and worth mentioning explicitly:
 - The current term is passed with every RPC request and response, and if any
   replica sees a request or response higher than its currentTerm, it steps down
   (if the leader) and updates its own currentTerm to match. This is the reason
-  for our addition of the anti-flapping modification to the leader election
+  for our planned addition of the anti-flapping modification to the leader election
   protocol noted above.
 
 - As mentioned in the RAFT paper (sec 5.4.2), as well as the CSAIL DSRG blog [3]

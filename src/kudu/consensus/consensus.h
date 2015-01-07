@@ -113,38 +113,44 @@ class Consensus : public RefCountedThreadSafe<Consensus> {
   //
   //           Leader                               Quorum
   //             +                                     +
-  //     1) Req->| Append()                            |
+  //     1) Req->| Replicate()                         |
   //             |                                     |
   //     2)      +-------------replicate-------------->|
   //             |<---------------ACK------------------+
   //             |                                     |
   //     3)      +--+                                  |
-  //           <----+ round.replicate_callback()         |
+  //           <----+ round.NotifyReplicationFinished()|
   //             |                                     |
-  //     4)   -->| Commit()                            |
+  //     3a)     |  +------ update commitIndex ------->|
+  //             |                                     |
+  //     4)   -->| Commit(commit_msg, commit_callback) |
   //             |                                     |
   //     5)      +--+                                  |
-  //             |<-+ commit                           |
+  //             |<-+ commit to local log              |
   //             |                                     |
-  //     6)      +--+ round.commit_callback()            |
-  //        Res<----+                                  |
-  //             |                                     |
-  //             |                                     |
-  //     7)      +--------------commit---------------->|
+  //     6)    <----+ commit_callback.Run()            |
   //
-  // 1) Caller calls Append(), method returns immediately to the caller and
-  // runs asynchronously.
+  // 1) Caller calls Replicate(), method returns immediately to the caller and
+  //    runs asynchronously.
+  //
   // 2) Leader replicates the entry to the quorum using the consensus
-  // algorithm, proceeds as soon as a majority of the quorum acknowledges the
-  // entry.
-  // 3) Leader defers to the caller through ReplicateCallback.onReplicate()
-  // call, performs no additional action.
-  // 4) Caller calls ReplicateCallback.Commit(), triggering the Leader to
-  // proceed.
-  // 5) Leader executes commit locally.
-  // 6) CommitCallback.onCommit() gets called completing execution from the
-  // client's perspective.
-  // 7) Leader eventually sends commit message to the quorum.
+  //    algorithm, proceeds as soon as a majority of the quorum acknowledges the
+  //    entry.
+  //
+  // 3) Leader defers to the caller by calling ConsensusRound::NotifyReplicationFinished,
+  //    which calls the ReplicaCommitContinuation.
+  //
+  // 3a) The leader asynchronously notifies other members of the quorum of the new
+  //     commit index, which tells them to apply the operation.
+  //
+  // 4) Caller calls Consensus::Commit(), passing the CommitMsg which is needed for
+  //    local recovery.
+  //
+  // 5) Consensus asynchronously writes the CommitMsg to the local log and cleans up
+  //    any state related to this operation.
+  //
+  // 6) Once the commit has been written to the log, the commit callback is triggered,
+  //    which can clean up the operation.
   //
   // This method can only be called on the leader, i.e. role() == LEADER
   virtual Status Replicate(ConsensusRound* context) = 0;
