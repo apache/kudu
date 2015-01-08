@@ -419,18 +419,6 @@ endfunction()
 set(THIRDPARTY_PREFIX ${CMAKE_SOURCE_DIR}/thirdparty/installed)
 set(CMAKE_PREFIX_PATH ${THIRDPARTY_PREFIX})
 
-## Boost
-### Workaround for http://stackoverflow.com/questions/9948375/cmake-find-package-succeeds-but-returns-wrong-path
-set(Boost_NO_BOOST_CMAKE ON)
-
-if ("${KUDU_LINK}" STREQUAL "s")
-  set(Boost_USE_STATIC_LIBS ON)
-endif()
-
-find_package(Boost COMPONENTS system thread REQUIRED)
-include_directories(SYSTEM ${Boost_INCLUDE_DIR} )
-set(KUDU_BASE_LIBS ${KUDU_BASE_LIBS} ${Boost_LIBRARIES})
-
 ## Cyrus SASL
 find_package(CyrusSASL REQUIRED)
 include_directories(SYSTEM ${CYRUS_SASL_INCLUDE_DIR})
@@ -568,6 +556,26 @@ endif()
 message(STATUS "Found LLVM ${LLVM_PACKAGE_VERSION}")
 message(STATUS "Using LLVMConfig.cmake in: ${LLVM_DIR}")
 link_directories(${LLVM_LIBRARY_DIRS})
+
+
+## Boost
+# It's important that Boost come last in the list of packages, because it's the only
+# dependency that we don't currently bundle in thirdparty/. If we put this earlier
+# in list, then we might end up with /usr/local/include taking precedence over
+# thirdparty/installed/include and pulling in the wrong version of other dependencies
+# that might be installed in the system.
+
+### Workaround for http://stackoverflow.com/questions/9948375/cmake-find-package-succeeds-but-returns-wrong-path
+set(Boost_NO_BOOST_CMAKE ON)
+
+if ("${KUDU_LINK}" STREQUAL "s")
+  set(Boost_USE_STATIC_LIBS ON)
+endif()
+
+find_package(Boost COMPONENTS system thread REQUIRED)
+include_directories(SYSTEM ${Boost_INCLUDE_DIR} )
+set(KUDU_BASE_LIBS ${KUDU_BASE_LIBS} ${Boost_LIBRARIES})
+
 
 ############################################################
 # Linker setup
