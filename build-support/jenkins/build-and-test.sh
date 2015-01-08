@@ -119,15 +119,41 @@ THIRDPARTY_BIN=$(pwd)/thirdparty/installed/bin
 export PATH=$THIRDPARTY_BIN:$PATH
 export PPROF_PATH=$(pwd)/thirdparty/installed/bin/pprof
 
+# Find the newest version of clang in the PATH and store it in CHOSEN_CLANG.
+# This is useful when the clang in THIRDPARTY_BIN is older than another
+# clang on the system and the latter provides additional runtime
+# functionality (i.e. TSAN).
+#
+# sort -V does an excellent job of sorting by version strings, though it
+# means we must aggregate all the clang candidates up front.
+declare -a ALL_CLANGS
+for CLANG in $(which -a clang); do
+  CLANG_VERSION=$($CLANG -v |& \
+                  grep "clang version" | \
+                  sed -e 's/.*clang version \([0-9\.]\+\).*/\1/')
+  ALL_CLANGS+=($CLANG:$CLANG_VERSION)
+done
+ALL_CLANGS_STR=$(IFS=$'\n'; echo "${ALL_CLANGS[*]}")
+echo "Begin clang candidates"
+if [ -n "$ALL_CLANGS_STR" ]; then
+  echo "$ALL_CLANGS_STR"
+fi
+echo "End clang candidates"
+CHOSEN_CLANG=$(echo "$ALL_CLANGS_STR" | sort -t ':' -k 2,2 -V | tail -1 | cut -d ':' -f 1)
+if [ -n "$CHOSEN_CLANG" ]; then
+  echo "Selected $CHOSEN_CLANG as the highest version of clang"
+else
+  echo "Could not find clang in the system"
+  exit 1
+fi
+
 # Configure the build
 if [ "$BUILD_TYPE" = "ASAN" ]; then
-  # NB: passing just "clang++" below causes an infinite loop, see
-  # http://www.cmake.org/pipermail/cmake/2012-December/053071.html
-  CC=$THIRDPARTY_BIN/clang CXX=$THIRDPARTY_BIN/clang++ \
+  CC=$CHOSEN_CLANG CXX=$CHOSEN_CLANG++ \
    cmake -DKUDU_USE_ASAN=1 -DKUDU_USE_UBSAN=1 .
   BUILD_TYPE=fastdebug
 elif [ "$BUILD_TYPE" = "TSAN" ]; then
-  CC=$THIRDPARTY_BIN/clang CXX=$THIRDPARTY_BIN/clang++ \
+  CC=$CHOSEN_CLANG CXX=$CHOSEN_CLANG++ \
    cmake -DKUDU_USE_TSAN=1 .
   BUILD_TYPE=fastdebug
   EXTRA_TEST_FLAGS="$EXTRA_TEST_FLAGS -LE no_tsan"
@@ -157,7 +183,7 @@ elif [ "$BUILD_TYPE" = "CLIENT" ]; then
   # such that unexpected symbols are included in the client library.
   #
   # See KUDU-455 for details.
-  CC=$THIRDPARTY_BIN/clang CXX=$THIRDPARTY_BIN/clang++ \
+  CC=$CHOSEN_CLANG CXX=$CHOSEN_CLANG++ \
     cmake -DKUDU_EXPORTED_CLIENT=1 .
 fi
 
