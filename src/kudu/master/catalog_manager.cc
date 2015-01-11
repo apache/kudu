@@ -316,6 +316,25 @@ string RequestorString(RpcContext* rpc) {
   }
 }
 
+// If 's' indicates that the node is no longer the leader, setup
+// Service::UnavailableError as the error, set NOT_THE_LEADER as the
+// error code and return true.
+template<class RespClass>
+void CheckIfNoLongerLeaderAndSetupError(Status s, RespClass* resp) {
+  // TODO (KUDU-591): This is a bit of a hack, as right now
+  // there's no way to propagate why a write to a quorum has
+  // failed. However, since we use Status::IllegalState() to
+  // indicate the situation where a write was issued on a node
+  // that is no longer the leader, this suffices until we
+  // distinguish this cause of write failure more explicitly.
+  if (s.IsIllegalState()) {
+    Status new_status = Status::ServiceUnavailable(
+        "operation requested can only be executed on a leader master, but this"
+        " master is no longer the leader", s.ToString());
+    SetupError(resp->mutable_error(), MasterErrorPB::NOT_THE_LEADER, new_status);
+  }
+}
+
 } // anonymous namespace
 
 CatalogManager::CatalogManager(Master *master)
@@ -590,6 +609,7 @@ Status CatalogManager::CreateTable(const CreateTableRequestPB* req,
                                      s.ToString()));
     LOG(WARNING) << s.ToString();
     AbortTableCreation(table.get(), tablets);
+    CheckIfNoLongerLeaderAndSetupError(s, resp);
     return s;
   }
   TRACE("Wrote tablets to system table");
@@ -602,6 +622,7 @@ Status CatalogManager::CreateTable(const CreateTableRequestPB* req,
                                      s.ToString()));
     LOG(WARNING) << s.ToString();
     AbortTableCreation(table.get(), tablets);
+    CheckIfNoLongerLeaderAndSetupError(s, resp);
     return s;
   }
   TRACE("Wrote table to system table");
@@ -766,6 +787,7 @@ Status CatalogManager::DeleteTable(const DeleteTableRequestPB* req,
     s = s.CloneAndPrepend(Substitute("An error occurred while updating sys tables: $0",
                                      s.ToString()));
     LOG(WARNING) << s.ToString();
+    CheckIfNoLongerLeaderAndSetupError(s, resp);
     return s;
   }
 

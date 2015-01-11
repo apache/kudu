@@ -43,7 +43,7 @@ message MasterErrorPB {
   }
 
   // The error code.
-  required Code code = 1 [ default = UNKNOWN_ERROR ];
+  required Code code = 1;
 
   // The Status object for the error. This will include a textual
   // message that may be more useful to present in log messages, etc,

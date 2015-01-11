@@ -64,14 +64,15 @@ bool CheckLeaderAndCatalogManagerInitializedOrRespond(Master* master,
                       CheckIsLeaderOrRespond(master, resp, rpc));
 }
 
+// If 's' is not OK and 'resp' has no application specific error set,
+// set the error field of 'resp' to match 's' and set the code to
+// UNKNOWN_ERROR.
 template<class RespClass>
-void RespondNoLongerLeader(RespClass* resp, rpc::RpcContext* rpc) {
-  SetupErrorAndRespond(
-      resp->mutable_error(),
-      Status::ServiceUnavailable("operation requested can only be executed on a leader"
-                                 "master, but this master is no longer a leader"),
-      MasterErrorPB::NOT_THE_LEADER,
-      rpc);
+void CheckRespErrorOrSetUnknown(const Status& s, RespClass* resp) {
+  if (PREDICT_FALSE(!s.ok() && !resp->has_error())) {
+    StatusToPB(s, resp->mutable_error()->mutable_status());
+    resp->mutable_error()->set_code(MasterErrorPB::UNKNOWN_ERROR);
+  }
 }
 
 } // anonymous namespace
@@ -212,34 +213,19 @@ void MasterServiceImpl::CreateTable(const CreateTableRequestPB* req,
   }
 
   Status s = server_->catalog_manager()->CreateTable(req, resp, rpc);
-  if (!s.ok() && !resp->has_error()) {
-    if (s.IsIllegalState()) {
-      // TODO: This is a bit of a hack, as right now there's no way to
-      // propagate why a write to a quorum has failed. However, since
-      // we use Status::IllegalState() to indicate the situation where
-      // a write was issued on a node that is no longer the leader,
-      // this suffices until we distinguish this cause of write
-      // failure more explicitly.
-      RespondNoLongerLeader(resp, rpc);
-      return;
-    } else {
-      StatusToPB(s, resp->mutable_error()->mutable_status());
-    }
-  }
+  CheckRespErrorOrSetUnknown(s, resp);
   rpc->RespondSuccess();
 }
 
 void MasterServiceImpl::IsCreateTableDone(const IsCreateTableDoneRequestPB* req,
-                                           IsCreateTableDoneResponsePB* resp,
+                                          IsCreateTableDoneResponsePB* resp,
                                           rpc::RpcContext* rpc) {
   if (!CheckLeaderAndCatalogManagerInitializedOrRespond(server_, resp, rpc)) {
     return;
   }
 
   Status s = server_->catalog_manager()->IsCreateTableDone(req, resp);
-  if (!s.ok() && !resp->has_error()) {
-    StatusToPB(s, resp->mutable_error()->mutable_status());
-  }
+  CheckRespErrorOrSetUnknown(s, resp);
   rpc->RespondSuccess();
 }
 
@@ -251,19 +237,7 @@ void MasterServiceImpl::DeleteTable(const DeleteTableRequestPB* req,
   }
 
   Status s = server_->catalog_manager()->DeleteTable(req, resp, rpc);
-  if (!s.ok() && !resp->has_error()) {
-    if (s.IsIllegalState()) {
-      // TODO: This is a bit of a hack, as right now there's no way to
-      // propagate why a write to a quorum has failed. However, since
-      // we use Status::IllegalState() to indicate the situation where
-      // a write was issued on a node that is no longer the leader,
-      // this suffices until we distinguish this cause of write
-      // failure more explicitly.
-      RespondNoLongerLeader(resp, rpc);
-      return;
-    }
-    StatusToPB(s, resp->mutable_error()->mutable_status());
-  }
+  CheckRespErrorOrSetUnknown(s, resp);
   rpc->RespondSuccess();
 }
 
@@ -275,9 +249,7 @@ void MasterServiceImpl::AlterTable(const AlterTableRequestPB* req,
   }
 
   Status s = server_->catalog_manager()->AlterTable(req, resp, rpc);
-  if (!s.ok() && !resp->has_error()) {
-    StatusToPB(s, resp->mutable_error()->mutable_status());
-  }
+  CheckRespErrorOrSetUnknown(s, resp);
   rpc->RespondSuccess();
 }
 
@@ -289,9 +261,7 @@ void MasterServiceImpl::IsAlterTableDone(const IsAlterTableDoneRequestPB* req,
   }
 
   Status s = server_->catalog_manager()->IsAlterTableDone(req, resp, rpc);
-  if (!s.ok() && !resp->has_error()) {
-    StatusToPB(s, resp->mutable_error()->mutable_status());
-  }
+  CheckRespErrorOrSetUnknown(s, resp);
   rpc->RespondSuccess();
 }
 
@@ -303,9 +273,7 @@ void MasterServiceImpl::ListTables(const ListTablesRequestPB* req,
   }
 
   Status s = server_->catalog_manager()->ListTables(req, resp);
-  if (!s.ok() && !resp->has_error()) {
-    StatusToPB(s, resp->mutable_error()->mutable_status());
-  }
+  CheckRespErrorOrSetUnknown(s, resp);
   rpc->RespondSuccess();
 }
 
@@ -317,9 +285,7 @@ void MasterServiceImpl::GetTableLocations(const GetTableLocationsRequestPB* req,
   }
 
   Status s = server_->catalog_manager()->GetTableLocations(req, resp);
-  if (!s.ok() && !resp->has_error()) {
-    StatusToPB(s, resp->mutable_error()->mutable_status());
-  }
+  CheckRespErrorOrSetUnknown(s, resp);
   rpc->RespondSuccess();
 }
 
@@ -331,9 +297,7 @@ void MasterServiceImpl::GetTableSchema(const GetTableSchemaRequestPB* req,
   }
 
   Status s = server_->catalog_manager()->GetTableSchema(req, resp);
-  if (!s.ok() && !resp->has_error()) {
-    StatusToPB(s, resp->mutable_error()->mutable_status());
-  }
+  CheckRespErrorOrSetUnknown(s, resp);
   rpc->RespondSuccess();
 }
 
@@ -362,6 +326,7 @@ void MasterServiceImpl::ListMasters(const ListMastersRequestPB* req,
   Status s = server_->ListMasters(&masters);
   if (!s.ok()) {
     StatusToPB(s, resp->mutable_error());
+    resp->mutable_error()->set_code(AppStatusPB::UNKNOWN_ERROR);
   } else {
     BOOST_FOREACH(const ServerEntryPB& master, masters) {
       resp->add_masters()->CopyFrom(master);
@@ -379,9 +344,7 @@ void MasterServiceImpl::GetMasterRegistration(const GetMasterRegistrationRequest
     return;
   }
   Status s = server_->GetMasterRegistration(resp->mutable_registration());
-  if (!s.ok()) {
-    StatusToPB(s, resp->mutable_error()->mutable_status());
-  }
+  CheckRespErrorOrSetUnknown(s, resp);
   resp->set_role(server_->catalog_manager()->Role());
   rpc->RespondSuccess();
 }
