@@ -201,7 +201,7 @@ void TabletServerPathHandlers::HandleTabletsPage(const Webserver::WebRequest& re
         EscapeForHtmlToString(start_key), // $2
         EscapeForHtmlToString(end_key), // $3
         state, n_bytes, // $4, $5
-        QuorumPBToHtml(peer->Quorum()), // $6
+        peer->consensus() == NULL ? "" : QuorumPBToHtml(peer->Quorum()), // $6
         EscapeForHtmlToString(status.last_status())); // $7
   }
   *output << "</table>\n";
