@@ -116,6 +116,14 @@ class ExternalMiniCluster {
   // to use multiple masters.
   ExternalMaster* leader_master() { return master(0); }
 
+  // Perform an RPC to determine the leader of the external mini
+  // cluster.  Set 'index' to the leader master's index (for calls to
+  // to master() below).
+  //
+  // NOTE: if a leader election occurs after this method is executed,
+  // the last result may not be valid.
+  Status GetLeaderMasterIndex(int* idx);
+
   // If this cluster is configured for a single non-distributed
   // master, return the single master or NULL if the master is not
   // started. Exits with a CHECK failure if there are multiple

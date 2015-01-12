@@ -14,8 +14,10 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/strings/util.h"
 #include "kudu/master/master.proxy.h"
+#include "kudu/master/master_rpc.h"
 #include "kudu/server/server_base.pb.h"
 #include "kudu/rpc/messenger.h"
+#include "kudu/util/async_util.h"
 #include "kudu/util/env.h"
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/path_util.h"
@@ -27,6 +29,7 @@
 using std::string;
 using std::tr1::shared_ptr;
 using strings::Substitute;
+using kudu::master::GetLeaderMasterRpc;
 using kudu::master::MasterServiceProxy;
 using kudu::server::ServerStatusPB;
 
@@ -269,6 +272,41 @@ Status ExternalMiniCluster::WaitForTabletServerCount(int count, const MonoDelta&
     }
     usleep(1 * 1000); // 1ms
   }
+}
+
+Status ExternalMiniCluster::GetLeaderMasterIndex(int* idx) {
+  scoped_refptr<GetLeaderMasterRpc> rpc;
+  Synchronizer sync;
+  vector<Sockaddr> addrs;
+  HostPort leader_master_hp;
+  MonoTime deadline = MonoTime::Now(MonoTime::FINE);
+  deadline.AddDelta(MonoDelta::FromSeconds(5));
+
+  BOOST_FOREACH(const scoped_refptr<ExternalMaster>& master, masters_) {
+    addrs.push_back(master->bound_rpc_addr());
+  }
+  rpc.reset(new GetLeaderMasterRpc(sync.AsStatusCallback(),
+                                   addrs,
+                                   deadline,
+                                   messenger_,
+                                   &leader_master_hp));
+  rpc->SendRpc();
+  RETURN_NOT_OK(sync.Wait());
+  bool found = false;
+  for (int i = 0; i < masters_.size(); i++) {
+    if (masters_[i]->bound_rpc_hostport().port() == leader_master_hp.port()) {
+      found = true;
+      *idx = i;
+      break;
+    }
+  }
+  if (!found) {
+    // There is never a situation where shis should happen, so it's
+    // better to exit with a FATAL log message right away vs. return a
+    // Status::IllegalState().
+    LOG(FATAL) << "Leader master is not in masters_";
+  }
+  return Status::OK();
 }
 
 shared_ptr<MasterServiceProxy> ExternalMiniCluster::master_proxy() {
