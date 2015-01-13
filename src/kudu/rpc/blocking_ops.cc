@@ -10,8 +10,10 @@
 #include <google/protobuf/message_lite.h>
 
 #include "kudu/gutil/endian.h"
+#include "kudu/gutil/strings/substitute.h"
 #include "kudu/rpc/constants.h"
 #include "kudu/rpc/serialization.h"
+#include "kudu/rpc/transfer.h"
 #include "kudu/util/faststring.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/sockaddr.h"
@@ -71,16 +73,28 @@ Status ReceiveFramedMessageBlocking(Socket* sock, faststring* recv_buf,
 
   RETURN_NOT_OK(EnsureBlockingMode(sock));
 
+  // Read the message prefix, which specifies the length of the payload.
   recv_buf->clear();
   recv_buf->resize(kMsgLengthPrefixLength);
   size_t recvd = 0;
   RETURN_NOT_OK(sock->BlockingRecv(recv_buf->data(), kMsgLengthPrefixLength, &recvd, deadline));
-  uint32_t total_len = NetworkByteOrder::Load32(recv_buf->data());
+  uint32_t payload_len = NetworkByteOrder::Load32(recv_buf->data());
 
+  // Verify that the payload size isn't out of bounds.
+  // This can happen because of network corruption, or a naughty client.
+  if (PREDICT_FALSE(payload_len > FLAGS_rpc_max_message_size)) {
+    return Status::IOError(
+        strings::Substitute(
+            "Received invalid message of size $0 which exceeds"
+            " the rpc_max_message_size of $1 bytes",
+            payload_len, FLAGS_rpc_max_message_size));
+  }
+
+  // Read the message payload.
   recvd = 0;
-  recv_buf->resize(total_len + kMsgLengthPrefixLength);
+  recv_buf->resize(payload_len + kMsgLengthPrefixLength);
   RETURN_NOT_OK(sock->BlockingRecv(recv_buf->data() + kMsgLengthPrefixLength,
-                total_len, &recvd, deadline));
+                payload_len, &recvd, deadline));
   RETURN_NOT_OK(serialization::ParseMessage(Slice(*recv_buf), header, param_buf));
   return Status::OK();
 }
