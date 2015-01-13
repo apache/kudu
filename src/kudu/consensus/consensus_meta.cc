@@ -17,8 +17,6 @@ using metadata::QuorumPB;
 using std::string;
 using strings::Substitute;
 
-static const char* kConsensusMetadataMagicNumber = "kconmeta";
-
 Status ConsensusMetadata::Create(FsManager* fs_manager,
                                  const string& tablet_id,
                                  QuorumPB& quorum,
@@ -38,7 +36,6 @@ Status ConsensusMetadata::Load(FsManager* fs_manager,
   gscoped_ptr<ConsensusMetadata> cmeta(new ConsensusMetadata(fs_manager, tablet_id));
   RETURN_NOT_OK(pb_util::ReadPBContainerFromPath(fs_manager->env(),
                                         fs_manager->GetConsensusMetadataPath(tablet_id),
-                                        kConsensusMetadataMagicNumber,
                                         cmeta->mutable_pb()));
   cmeta_out->swap(cmeta);
   return Status::OK();
@@ -63,7 +60,7 @@ Status ConsensusMetadata::Flush() {
 
   string meta_file_path = fs_manager_->GetConsensusMetadataPath(tablet_id_);
   RETURN_NOT_OK_PREPEND(pb_util::WritePBContainerToPath(
-      fs_manager_->env(), meta_file_path, kConsensusMetadataMagicNumber, pb_,
+      fs_manager_->env(), meta_file_path, pb_,
       // We use FLAGS_log_force_fsync_all here because the consensus metadata is
       // essentially an extension of the primary durability mechanism of the
       // consensus subsystem: the WAL. Using the same flag ensures that the WAL

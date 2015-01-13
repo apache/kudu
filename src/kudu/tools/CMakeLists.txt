@@ -61,6 +61,11 @@ target_link_libraries(kudu-ksck
   ksck
 )
 
+add_executable(kudu-pbc-dump pbc-dump.cc)
+target_link_libraries(kudu-pbc-dump
+  ${LINK_LIBS}
+)
+
 set(KUDU_TEST_LINK_LIBS
   ksck
   integration-tests

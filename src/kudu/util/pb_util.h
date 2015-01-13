@@ -13,7 +13,9 @@
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/util/faststring.h"
 
-namespace google { namespace protobuf {
+namespace google {
+namespace protobuf {
+class FileDescriptorProto;
 class MessageLite;
 class Message;
 }
@@ -103,6 +105,11 @@ void TruncateFields(google::protobuf::Message* message, int max_len);
 //
 //           Included to ensure validity of the data on-disk.
 //
+// Every container must have at least one protobuf message: the
+// supplemental header. It includes additional container-level information.
+// See pb_util.proto for details. As a containerized PB message, the header
+// is protected by a CRC32C checksum like any other message.
+//
 //
 // It is worth describing the kinds of errors that can be detected by the
 // protobuf container and the kinds that cannot.
@@ -152,12 +159,15 @@ class WritablePBContainerFile {
   // Closes the container if not already closed.
   ~WritablePBContainerFile();
 
-  // Writes the magic number and container version to the container.
-  Status Init(const char* magic);
+  // Writes the header information to the container.
+  //
+  // 'msg' need not be populated; its type is used to "lock" the container
+  // to a particular protobuf message type in Append().
+  Status Init(const google::protobuf::Message& msg);
 
   // Writes a protobuf message to the container, beginning with its size
   // and ending with its CRC32 checksum.
-  Status Append(const MessageLite& msg);
+  Status Append(const google::protobuf::Message& msg);
 
   // Asynchronously flushes all dirty container data to the filesystem.
   Status Flush();
@@ -192,16 +202,23 @@ class ReadablePBContainerFile {
   // Closes the file if not already closed.
   ~ReadablePBContainerFile();
 
-  // Reads the magic number and container version from the container and
-  // validates them.
-  Status Init(const char* magic);
+  // Reads the header information from the container and validates it.
+  Status Init();
 
   // Reads a protobuf message from the container, validating its size and
   // data using a CRC32 checksum.
-  Status ReadNextPB(MessageLite* msg);
+  Status ReadNextPB(google::protobuf::Message* msg);
 
   // Closes the container.
   Status Close();
+
+  // Expected PB type and schema for each message to be read.
+  //
+  // Only valid after a successful call to Init().
+  const std::string& pb_type() const { return pb_type_; }
+  const google::protobuf::FileDescriptorProto* proto() const {
+    return proto_.get();
+  }
 
  private:
   enum EofOK {
@@ -220,20 +237,24 @@ class ReadablePBContainerFile {
 
   size_t offset_;
 
+  // The fully-qualified PB type name of the messages in the container.
+  std::string pb_type_;
+
+  // Wrapped in a gscoped_ptr so that clients need not include PB headers.
+  gscoped_ptr<google::protobuf::FileDescriptorProto> proto_;
+
   gscoped_ptr<RandomAccessFile> reader_;
 };
 
 // Convenience functions for protobuf containers holding just one record.
 
-// Load a "containerized" protobuf, including magic number, size, and checksum,
-// from the given path.
+// Load a "containerized" protobuf from the given path.
 Status ReadPBContainerFromPath(Env* env, const std::string& path,
-                               const char* magic, MessageLite* msg);
+                               google::protobuf::Message* msg);
 
-// Serialize a "containerized" protobuf, including magic number, size, and
-// checksum, to the given path.
+// Serialize a "containerized" protobuf to the given path.
 Status WritePBContainerToPath(Env* env, const std::string& path,
-                              const char* magic, const MessageLite& msg,
+                              const google::protobuf::Message& msg,
                               SyncMode sync);
 
 } // namespace pb_util

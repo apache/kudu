@@ -69,12 +69,15 @@ function(KRPC_GENERATE SRCS HDRS)
       OUTPUT "${SERVICE_CC}" "${SERVICE_H}" "${PROXY_CC}" "${PROXY_H}"
              "${PROTO_CC_OUT}" "${PROTO_H_OUT}"
       COMMAND  ${PROTOBUF_PROTOC_EXECUTABLE}
-      ARGS --plugin=$<TARGET_FILE:protoc-gen-krpc>
-           --plugin=$<TARGET_FILE:protoc-gen-insertions>
+      ARGS --plugin $<TARGET_FILE:protoc-gen-krpc>
+           --plugin $<TARGET_FILE:protoc-gen-insertions>
            --cpp_out ${ARG_BINARY_ROOT}
            --krpc_out ${ARG_BINARY_ROOT}
            --insertions_out ${ARG_BINARY_ROOT}
-           --proto_path ${ARG_SOURCE_ROOT} ${EXTRA_PROTO_PATH_ARGS} ${ABS_FIL}
+           --proto_path ${ARG_SOURCE_ROOT}
+           # Used to find built-in .proto files (e.g. FileDescriptorProto)
+           --proto_path ${PROTOBUF_INCLUDE_DIR}
+           ${EXTRA_PROTO_PATH_ARGS} ${ABS_FIL}
       DEPENDS ${ABS_FIL} protoc-gen-krpc protoc-gen-insertions
       COMMENT "Running protocol buffer compiler with KRPC plugin on ${FIL}"
       VERBATIM)

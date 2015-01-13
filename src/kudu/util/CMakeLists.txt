@@ -14,6 +14,18 @@ target_link_libraries(histogram_proto
   protobuf)
 
 #######################################
+# pb_util_proto
+#######################################
+
+PROTOBUF_GENERATE_CPP(PB_UTIL_PROTO_SRCS PB_UTIL_PROTO_HDRS
+  SOURCE_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../..
+  BINARY_ROOT ${CMAKE_CURRENT_BINARY_DIR}/../..
+  PROTO_FILES pb_util.proto)
+add_library(pb_util_proto ${PB_UTIL_PROTO_SRCS} ${PB_UTIL_PROTO_HDRS})
+target_link_libraries(pb_util_proto
+  protobuf)
+
+#######################################
 # kudu_util
 #######################################
 
@@ -85,6 +97,7 @@ target_link_libraries(kudu_util
   crcutil
   gutil
   histogram_proto
+  pb_util_proto
   protobuf
   glog
   rt)

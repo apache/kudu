@@ -5,7 +5,7 @@
 
 #include <boost/foreach.hpp>
 #include <glog/logging.h>
-#include <google/protobuf/message_lite.h>
+#include <google/protobuf/message.h>
 #include <iostream>
 #include <tr1/memory>
 
@@ -31,7 +31,7 @@ DEFINE_bool(enable_data_block_fsync, true,
 DEFINE_string(block_manager, "file", "Which block manager to use for storage. "
               "The only valid option is 'file'.");
 
-using google::protobuf::MessageLite;
+using google::protobuf::Message;
 using strings::Substitute;
 using std::tr1::shared_ptr;
 using kudu::fs::CreateBlockOptions;
@@ -51,8 +51,6 @@ const char *FsManager::kMasterBlockDirName = "master-blocks";
 const char *FsManager::kDataDirName = "data";
 const char *FsManager::kCorruptedSuffix = ".corrupted";
 const char *FsManager::kInstanceMetadataFileName = "instance";
-const char *FsManager::kInstanceMetadataMagicNumber = "kuduinst";
-const char *FsManager::kTabletSuperBlockMagicNumber = "ksuprblk";
 const char *FsManager::kConsensusMetadataDirName = "consensus-meta";
 
 FsManager::FsManager(Env *env, const string& root_path)
@@ -76,7 +74,7 @@ void FsManager::InitBlockManager() {
 Status FsManager::Open() {
   gscoped_ptr<InstanceMetadataPB> pb(new InstanceMetadataPB);
   RETURN_NOT_OK(pb_util::ReadPBContainerFromPath(env_, GetInstanceMetadataPath(),
-                                                 kInstanceMetadataMagicNumber, pb.get()));
+                                                 pb.get()));
   metadata_.reset(pb.release());
   RETURN_NOT_OK(block_manager_->Open());
   LOG(INFO) << "Opened local filesystem: " << root_path_
@@ -125,7 +123,7 @@ Status FsManager::CreateAndWriteInstanceMetadata() {
 
   // The instance metadata is written effectively once per TS, so the
   // durability cost is negligible.
-  RETURN_NOT_OK(pb_util::WritePBContainerToPath(env_, path, kInstanceMetadataMagicNumber,
+  RETURN_NOT_OK(pb_util::WritePBContainerToPath(env_, path,
                                                 new_instance, pb_util::SYNC));
   LOG(INFO) << "Generated new instance metadata in path " << path << ":\n"
             << new_instance.DebugString();
@@ -294,22 +292,22 @@ Status FsManager::CreateBlockDir(const BlockId& block_id) {
 //
 // TODO: Route through BlockManager, but that means potentially supporting block renaming.
 
-Status FsManager::WriteMetadataBlock(const BlockId& block_id, const MessageLite& msg) {
+Status FsManager::WriteMetadataBlock(const BlockId& block_id, const Message& msg) {
   RETURN_NOT_OK(CreateBlockDir(block_id));
   VLOG(1) << "Writing Metadata Block: " << block_id.ToString();
 
   // Write the new metadata file
   shared_ptr<WritableFile> wfile;
   string path = GetBlockPath(block_id);
-  return pb_util::WritePBContainerToPath(env_, path, kTabletSuperBlockMagicNumber, msg,
+  return pb_util::WritePBContainerToPath(env_, path, msg,
       FLAGS_enable_data_block_fsync ? pb_util::SYNC : pb_util::NO_SYNC);
 }
 
-Status FsManager::ReadMetadataBlock(const BlockId& block_id, MessageLite *msg) {
+Status FsManager::ReadMetadataBlock(const BlockId& block_id, Message* msg) {
   VLOG(1) << "Reading Metadata Block " << block_id.ToString();
 
   string path = GetBlockPath(block_id);
-  Status s = pb_util::ReadPBContainerFromPath(env_, path, kTabletSuperBlockMagicNumber, msg);
+  Status s = pb_util::ReadPBContainerFromPath(env_, path, msg);
   if (s.IsNotFound()) {
     return s;
   }

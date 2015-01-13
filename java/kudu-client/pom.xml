@@ -78,6 +78,11 @@
                     <checkStaleness>true</checkStaleness>
                     <protoSourceRoot>${project.basedir}/../../src</protoSourceRoot>
                     <protocExecutable>${project.basedir}/dev-support/build-proto.sh</protocExecutable>
+                    <additionalProtoPathElements>
+                      <additionalProtoPathElement>
+                        ${project.basedir}/../../thirdparty/installed/include
+                      </additionalProtoPathElement>
+                    </additionalProtoPathElements>
                 </configuration>
                 <executions>
                     <execution>

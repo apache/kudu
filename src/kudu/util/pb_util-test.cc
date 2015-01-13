@@ -28,7 +28,6 @@ using std::vector;
 using internal::WritableFileOutputStream;
 
 static const char* kTestFileName = "pb_container.meta";
-static const char* kTestMagic = "testcont";
 static const char* kTestKeyvalName = "my-key";
 static const int kTestKeyvalValue = 1;
 
@@ -56,7 +55,7 @@ Status TestPBUtil::CreateKnownGoodContainerFile(SyncMode sync) {
   ProtoContainerTestPB test_pb;
   test_pb.set_name(kTestKeyvalName);
   test_pb.set_value(kTestKeyvalValue);
-  return WritePBContainerToPath(env_.get(), path_, kTestMagic, test_pb, sync);
+  return WritePBContainerToPath(env_.get(), path_, test_pb, sync);
 }
 
 Status TestPBUtil::BitFlipFileByteRange(const string& path, uint64_t offset, uint64_t length) {
@@ -145,7 +144,7 @@ TEST_F(TestPBUtil, TestPBContainerSimple) {
 
     // Read it back, should validate and contain the expected values.
     ProtoContainerTestPB test_pb;
-    ASSERT_OK(ReadPBContainerFromPath(env_.get(), path_, kTestMagic, &test_pb));
+    ASSERT_OK(ReadPBContainerFromPath(env_.get(), path_, &test_pb));
     ASSERT_EQ(kTestKeyvalName, test_pb.name());
     ASSERT_EQ(kTestKeyvalValue, test_pb.value());
 
@@ -158,7 +157,7 @@ TEST_F(TestPBUtil, TestPBContainerSimple) {
 TEST_F(TestPBUtil, TestPBContainerCorruption) {
   // Test that we indicate when the file does not exist.
   ProtoContainerTestPB test_pb;
-  Status s = ReadPBContainerFromPath(env_.get(), path_, kTestMagic, &test_pb);
+  Status s = ReadPBContainerFromPath(env_.get(), path_, &test_pb);
   ASSERT_TRUE(s.IsNotFound()) << "Should not be found: " << path_ << ": " << s.ToString();
 
   // Test that an empty file looks like corruption.
@@ -168,7 +167,7 @@ TEST_F(TestPBUtil, TestPBContainerCorruption) {
     ASSERT_OK(env_->NewWritableFile(path_, &file));
     ASSERT_OK(file->Close());
   }
-  s = ReadPBContainerFromPath(env_.get(), path_, kTestMagic, &test_pb);
+  s = ReadPBContainerFromPath(env_.get(), path_, &test_pb);
   ASSERT_TRUE(s.IsCorruption()) << "Should be zero length: " << path_ << ": " << s.ToString();
   ASSERT_STR_CONTAINS(s.ToString(), "File size not large enough to be valid");
 
@@ -181,21 +180,21 @@ TEST_F(TestPBUtil, TestPBContainerCorruption) {
     PLOG(ERROR) << "truncate() of file " << path_ << " failed";
     FAIL();
   }
-  s = ReadPBContainerFromPath(env_.get(), path_, kTestMagic, &test_pb);
+  s = ReadPBContainerFromPath(env_.get(), path_, &test_pb);
   ASSERT_TRUE(s.IsCorruption()) << "Should be incorrect size: " << path_ << ": " << s.ToString();
   ASSERT_STR_CONTAINS(s.ToString(), "File size not large enough to be valid");
 
   // Test corrupted magic.
   ASSERT_OK(CreateKnownGoodContainerFile());
   ASSERT_OK(BitFlipFileByteRange(path_, 0, 2));
-  s = ReadPBContainerFromPath(env_.get(), path_, kTestMagic, &test_pb);
+  s = ReadPBContainerFromPath(env_.get(), path_, &test_pb);
   ASSERT_TRUE(s.IsCorruption()) << "Should have invalid magic: " << path_ << ": " << s.ToString();
   ASSERT_STR_CONTAINS(s.ToString(), "Invalid magic number");
 
   // Test corrupted version.
   ASSERT_OK(CreateKnownGoodContainerFile());
   ASSERT_OK(BitFlipFileByteRange(path_, 8, 2));
-  s = ReadPBContainerFromPath(env_.get(), path_, kTestMagic, &test_pb);
+  s = ReadPBContainerFromPath(env_.get(), path_, &test_pb);
   ASSERT_TRUE(s.IsNotSupported()) << "Should have unsupported version number: " << path_ << ": "
                                   << s.ToString();
   ASSERT_STR_CONTAINS(s.ToString(), "we only support version 1");
@@ -203,14 +202,14 @@ TEST_F(TestPBUtil, TestPBContainerCorruption) {
   // Test corrupted size.
   ASSERT_OK(CreateKnownGoodContainerFile());
   ASSERT_OK(BitFlipFileByteRange(path_, 12, 2));
-  s = ReadPBContainerFromPath(env_.get(), path_, kTestMagic, &test_pb);
+  s = ReadPBContainerFromPath(env_.get(), path_, &test_pb);
   ASSERT_TRUE(s.IsCorruption()) << "Should be incorrect size: " << path_ << ": " << s.ToString();
   ASSERT_STR_CONTAINS(s.ToString(), "File size not large enough to be valid");
 
   // Test corrupted data (looks like bad checksum).
   ASSERT_OK(CreateKnownGoodContainerFile());
   ASSERT_OK(BitFlipFileByteRange(path_, 16, 2));
-  s = ReadPBContainerFromPath(env_.get(), path_, kTestMagic, &test_pb);
+  s = ReadPBContainerFromPath(env_.get(), path_, &test_pb);
   ASSERT_TRUE(s.IsCorruption()) << "Should be incorrect checksum: " << path_ << ": "
                                 << s.ToString();
   ASSERT_STR_CONTAINS(s.ToString(), "Incorrect checksum");
@@ -218,7 +217,7 @@ TEST_F(TestPBUtil, TestPBContainerCorruption) {
   // Test corrupted checksum.
   ASSERT_OK(CreateKnownGoodContainerFile());
   ASSERT_OK(BitFlipFileByteRange(path_, known_good_size - 4, 2));
-  s = ReadPBContainerFromPath(env_.get(), path_, kTestMagic, &test_pb);
+  s = ReadPBContainerFromPath(env_.get(), path_, &test_pb);
   ASSERT_TRUE(s.IsCorruption()) << "Should be incorrect checksum: " << path_ << ": "
                                 << s.ToString();
   ASSERT_STR_CONTAINS(s.ToString(), "Incorrect checksum");
@@ -232,7 +231,7 @@ TEST_F(TestPBUtil, TestMultipleMessages) {
   gscoped_ptr<WritableFile> writer;
   ASSERT_OK(env_->NewWritableFile(path_, &writer));
   WritablePBContainerFile pb_writer(writer.Pass());
-  ASSERT_OK(pb_writer.Init(kTestMagic));
+  ASSERT_OK(pb_writer.Init(pb));
 
   for (int i = 0; i < 10; i++) {
     pb.set_value(i);
@@ -244,7 +243,7 @@ TEST_F(TestPBUtil, TestMultipleMessages) {
   gscoped_ptr<RandomAccessFile> reader;
   ASSERT_OK(env_->NewRandomAccessFile(path_, &reader));
   ReadablePBContainerFile pb_reader(reader.Pass());
-  ASSERT_OK(pb_reader.Init(kTestMagic));
+  ASSERT_OK(pb_reader.Init());
   for (int i = 0;; i++) {
     ProtoContainerTestPB read_pb;
     Status s = pb_reader.ReadNextPB(&read_pb);
@@ -275,8 +274,8 @@ TEST_F(TestPBUtil, TestInterleavedReadWrite) {
   ReadablePBContainerFile pb_reader(reader.Pass());
 
   // Write the header (writer) and validate it (reader).
-  ASSERT_OK(pb_writer.Init(kTestMagic));
-  ASSERT_OK(pb_reader.Init(kTestMagic));
+  ASSERT_OK(pb_writer.Init(pb));
+  ASSERT_OK(pb_reader.Init());
 
   for (int i = 0; i < 10; i++) {
     // Write a message and read it back.

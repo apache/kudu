@@ -17,7 +17,7 @@ DECLARE_bool(enable_data_block_fsync);
 
 namespace google {
 namespace protobuf {
-class MessageLite;
+class Message;
 } // namespace protobuf
 } // namespace google
 
@@ -97,9 +97,9 @@ class FsManager {
   // ==========================================================================
 
   Status WriteMetadataBlock(const BlockId& block_id,
-                            const google::protobuf::MessageLite& msg);
+                            const google::protobuf::Message& msg);
   Status ReadMetadataBlock(const BlockId& block_id,
-                           google::protobuf::MessageLite *msg);
+                           google::protobuf::Message *msg);
 
   // ==========================================================================
   //  on-disk path

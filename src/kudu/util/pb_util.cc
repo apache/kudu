@@ -31,10 +31,12 @@
 #include "kudu/util/env.h"
 #include "kudu/util/env_util.h"
 #include "kudu/util/path_util.h"
+#include "kudu/util/pb_util.pb.h"
 #include "kudu/util/pb_util-internal.h"
 #include "kudu/util/status.h"
 
 using google::protobuf::FieldDescriptor;
+using google::protobuf::FileDescriptorProto;
 using google::protobuf::Message;
 using google::protobuf::MessageLite;
 using google::protobuf::Reflection;
@@ -51,11 +53,15 @@ static const char* const kTmpTemplateSuffix = ".tmp.XXXXXX";
 
 // Protobuf container constants.
 static const int kPBContainerVersion = 1;
+static const char kPBContainerMagic[] = "kuducntr";
 static const int kPBContainerMagicLen = 8;
 static const int kPBContainerHeaderLen =
     // magic number + version
     kPBContainerMagicLen + sizeof(uint32_t);
 static const int kPBContainerChecksumLen = sizeof(uint32_t);
+
+COMPILE_ASSERT((arraysize(kPBContainerMagic) - 1) == kPBContainerMagicLen,
+               kPBContainerMagic_does_not_match_expected_length);
 
 namespace kudu {
 namespace pb_util {
@@ -232,17 +238,14 @@ WritablePBContainerFile::~WritablePBContainerFile() {
   WARN_NOT_OK(Close(), "Could not Close() when destroying file");
 }
 
-Status WritablePBContainerFile::Init(const char* magic) {
+Status WritablePBContainerFile::Init(const Message& msg) {
   DCHECK(!closed_);
-
-  DCHECK_EQ(kPBContainerMagicLen, strlen(magic))
-      << "Magic number string incorrect length";
 
   faststring buf;
   buf.resize(kPBContainerHeaderLen);
 
   // Serialize the magic.
-  strings::memcpy_inlined(buf.data(), magic, kPBContainerMagicLen);
+  strings::memcpy_inlined(buf.data(), kPBContainerMagic, kPBContainerMagicLen);
   size_t offset = kPBContainerMagicLen;
 
   // Serialize the version.
@@ -252,12 +255,20 @@ Status WritablePBContainerFile::Init(const char* magic) {
   // Write the serialized buffer to the file.
   DCHECK_EQ(kPBContainerHeaderLen, offset)
     << "Serialized unexpected number of total bytes";
-  RETURN_NOT_OK_PREPEND(writer_->Append(buf), "Failed to Append() header to file");
+  RETURN_NOT_OK_PREPEND(writer_->Append(buf),
+                        "Failed to Append() header to file");
+
+  // Write the supplemental header to the file.
+  ContainerSupHeaderPB sup_header;
+  msg.GetDescriptor()->file()->CopyTo(sup_header.mutable_proto());
+  sup_header.set_pb_type(msg.GetTypeName());
+  RETURN_NOT_OK_PREPEND(Append(sup_header),
+                        "Failed to Append() supplemental header to file");
 
   return Status::OK();
 }
 
-Status WritablePBContainerFile::Append(const MessageLite& msg) {
+Status WritablePBContainerFile::Append(const Message& msg) {
   DCHECK(!closed_);
 
   DCHECK(msg.IsInitialized()) << InitializationErrorMessage("serialize", msg);
@@ -325,9 +336,7 @@ ReadablePBContainerFile::~ReadablePBContainerFile() {
   WARN_NOT_OK(Close(), "Could not Close() when destroying file");
 }
 
-Status ReadablePBContainerFile::Init(const char* magic) {
-  DCHECK_EQ(kPBContainerMagicLen, strlen(magic)) << "Magic number string incorrect length";
-
+Status ReadablePBContainerFile::Init() {
   // Read header data.
   Slice header;
   gscoped_ptr<uint8_t[]> scratch;
@@ -336,11 +345,11 @@ Status ReadablePBContainerFile::Init(const char* magic) {
                                    reader_->ToString()));
 
   // Validate magic number.
-  if (PREDICT_FALSE(!strings::memeq(magic, header.data(), kPBContainerMagicLen))) {
+  if (PREDICT_FALSE(!strings::memeq(kPBContainerMagic, header.data(), kPBContainerMagicLen))) {
     string file_magic(reinterpret_cast<const char*>(header.data()), kPBContainerMagicLen);
     return Status::Corruption("Invalid magic number",
                               Substitute("Expected: $0, found: $1",
-                                         Utf8SafeCEscape(magic),
+                                         Utf8SafeCEscape(kPBContainerMagic),
                                          Utf8SafeCEscape(file_magic)));
   }
 
@@ -353,10 +362,18 @@ Status ReadablePBContainerFile::Init(const char* magic) {
                    version, kPBContainerVersion));
   }
 
+  // Read the supplemental header.
+  ContainerSupHeaderPB sup_header;
+  RETURN_NOT_OK_PREPEND(ReadNextPB(&sup_header), Substitute(
+      "Could not read supplemental header from proto container file $0",
+      reader_->ToString()));
+  proto_.reset(sup_header.release_proto());
+  pb_type_ = sup_header.pb_type();
+
   return Status::OK();
 }
 
-Status ReadablePBContainerFile::ReadNextPB(MessageLite* msg) {
+Status ReadablePBContainerFile::ReadNextPB(Message* msg) {
   // Read the size from the file. EOF here is acceptable: it means we're
   // out of PB entries.
   Slice size;
@@ -397,6 +414,11 @@ Status ReadablePBContainerFile::ReadNextPB(MessageLite* msg) {
   }
 
   // The checksum is correct. Time to decode the body.
+  //
+  // We could compare pb_type_ against msg.GetTypeName(), but:
+  // 1. pb_type_ is not available when reading the supplemental header,
+  // 2. ParseFromArray() should fail if the data cannot be parsed into the
+  //    provided message type.
   if (PREDICT_FALSE(!msg->ParseFromArray(body.data(), body.size()))) {
     return Status::IOError("Unable to parse PB from path", reader_->ToString());
   }
@@ -450,19 +472,18 @@ Status ReadablePBContainerFile::ValidateAndRead(size_t length, EofOK eofOK,
 }
 
 
-Status ReadPBContainerFromPath(Env* env, const std::string& path,
-                               const char* magic, MessageLite* msg) {
+Status ReadPBContainerFromPath(Env* env, const std::string& path, Message* msg) {
   gscoped_ptr<RandomAccessFile> file;
   RETURN_NOT_OK(env->NewRandomAccessFile(path, &file));
 
   ReadablePBContainerFile pb_file(file.Pass());
-  RETURN_NOT_OK(pb_file.Init(magic));
+  RETURN_NOT_OK(pb_file.Init());
   RETURN_NOT_OK(pb_file.ReadNextPB(msg));
   return pb_file.Close();
 }
 
 Status WritePBContainerToPath(Env* env, const std::string& path,
-                              const char* magic, const MessageLite& msg,
+                              const Message& msg,
                               SyncMode sync) {
   const string tmp_template = path + kTmpTemplateSuffix;
   string tmp_path;
@@ -472,7 +493,7 @@ Status WritePBContainerToPath(Env* env, const std::string& path,
   env_util::ScopedFileDeleter tmp_deleter(env, tmp_path);
 
   WritablePBContainerFile pb_file(file.Pass());
-  RETURN_NOT_OK(pb_file.Init(magic));
+  RETURN_NOT_OK(pb_file.Init(msg));
   RETURN_NOT_OK(pb_file.Append(msg));
   if (sync == pb_util::SYNC) {
     RETURN_NOT_OK(pb_file.Sync());
