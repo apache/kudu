@@ -268,7 +268,8 @@ Status MemRowSet::CheckRowPresent(const RowSetKeyProbe &probe, bool *present,
 void MemRowSet::SlowMutators() {
   if (FLAGS_memrowset_throttle_mb == 0) return;
 
-  ssize_t over_mem = memory_footprint() - FLAGS_memrowset_throttle_mb * 1024 * 1024;
+  ssize_t over_mem = static_cast<int64_t>(memory_footprint()) -
+    static_cast<int64_t>(FLAGS_memrowset_throttle_mb) * 1024 * 1024;
   if (over_mem > 0) {
     if (!has_logged_throttling_ &&
         base::subtle::NoBarrier_AtomicExchange(&has_logged_throttling_, 1) == 0) {
