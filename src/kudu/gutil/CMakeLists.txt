@@ -47,3 +47,5 @@ set_target_properties(gutil PROPERTIES
   COMPILE_FLAGS "-funsigned-char -Wno-deprecated -Wno-char-subscripts")
 
 set(GUTIL_LIBS gutil)
+
+add_kudu_test(strings/string_util-test)

@@ -179,6 +179,14 @@ inline bool HasSuffixString(const StringPiece& str,
   return str.ends_with(suffix);
 }
 
+// Returns true if the string passed in matches the pattern. The pattern
+// string can contain wildcards like * and ?
+// The backslash character (\) is an escape character for * and ?
+// We limit the patterns to having a max of 16 * or ? characters.
+// ? matches 0 or 1 character, while * matches 0 or more characters.
+bool MatchPattern(const StringPiece& string,
+                  const StringPiece& pattern);
+
 // Returns where suffix begins in str, or NULL if str doesn't end with suffix.
 inline char* strsuffix(char* str, const char* suffix) {
   const int lenstr = strlen(str);
@@ -336,6 +344,18 @@ inline char* safestrncpy(char* dest, const char* src, size_t n) {
   dest[n-1] = '\0';
   return dest;
 }
+
+namespace strings {
+
+// BSD-style safe and consistent string copy functions.
+// Copies |src| to |dst|, where |dst_size| is the total allocated size of |dst|.
+// Copies at most |dst_size|-1 characters, and always NULL terminates |dst|, as
+// long as |dst_size| is not 0.  Returns the length of |src| in characters.
+// If the return value is >= dst_size, then the output was truncated.
+// NOTE: All sizes are in number of characters, NOT in bytes.
+size_t strlcpy(char* dst, const char* src, size_t dst_size);
+
+} // namespace strings
 
 // Replaces the first occurrence (if replace_all is false) or all occurrences
 // (if replace_all is true) of oldsub in s with newsub. In the second version,

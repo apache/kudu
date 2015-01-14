@@ -50,11 +50,28 @@ WallTime WallTime_Now();
 
 typedef int64 MicrosecondsInt64;
 
+namespace walltime_internal {
+inline MicrosecondsInt64 GetClockTimeMicros(clockid_t clock) {
+  timespec ts;
+  clock_gettime(clock, &ts);
+  return ts.tv_sec * 1000000 + ts.tv_nsec / 1000;
+}
+} // namespace walltime_internal
+
 // Returns the time since the Epoch measured in microseconds.
 inline MicrosecondsInt64 GetCurrentTimeMicros() {
-  timespec ts;
-  clock_gettime(CLOCK_REALTIME, &ts);
-  return ts.tv_sec * 1000000 + ts.tv_nsec / 1000;
+  return walltime_internal::GetClockTimeMicros(CLOCK_REALTIME);
+}
+
+// Returns the time since some arbitrary reference point, measured in microseconds.
+// Guaranteed to be monotonic (and therefore useful for measuring intervals)
+inline MicrosecondsInt64 GetMonoTimeMicros() {
+  return walltime_internal::GetClockTimeMicros(CLOCK_MONOTONIC);
+}
+
+// Returns the time spent in user CPU on the current thread, measured in microseconds.
+inline MicrosecondsInt64 GetThreadCpuTimeMicros() {
+  return walltime_internal::GetClockTimeMicros(CLOCK_THREAD_CPUTIME_ID);
 }
 
 // A CycleClock yields the value of a cycle counter that increments at a rate
