@@ -1,7 +1,7 @@
 // Copyright (c) 2013, Cloudera, inc.
 // Confidential Cloudera Information: Covered by NDA.
-#ifndef KUDU_TSERVER_MAINTENANCE_MANAGER_H
-#define KUDU_TSERVER_MAINTENANCE_MANAGER_H
+#ifndef KUDU_TABLET_MAINTENANCE_MANAGER_H
+#define KUDU_TABLET_MAINTENANCE_MANAGER_H
 
 #include "kudu/gutil/macros.h"
 #include "kudu/tablet/mvcc.h"
