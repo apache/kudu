@@ -352,6 +352,11 @@ Status ThreadJoiner::Join() {
                                              waited_ms, thread_->name_));
 }
 
+void Thread::CallAtExit(const Closure& cb) {
+  CHECK_EQ(Thread::current_thread(), this);
+  exit_callbacks_.push_back(cb);
+}
+
 Thread::~Thread() {
   if (joinable_) {
     int ret = pthread_detach(thread_);
@@ -399,7 +404,7 @@ Status Thread::StartThread(const std::string& category, const std::string& name,
 
 void* Thread::SuperviseThread(void* arg) {
   Thread* t = static_cast<Thread*>(arg);
-  int64_t system_tid = syscall(SYS_gettid);
+  int64_t system_tid = PlatformThreadId();
   if (system_tid == -1) {
     string error_msg = ErrnoToString(errno);
     KLOG_EVERY_N(INFO, 100) << "Could not determine thread ID: " << error_msg;
@@ -441,6 +446,10 @@ void* Thread::SuperviseThread(void* arg) {
 
 void Thread::FinishThread(void* arg) {
   Thread* t = static_cast<Thread*>(arg);
+
+  BOOST_FOREACH(Closure& c, t->exit_callbacks_) {
+    c.Run();
+  }
 
   // We're here either because of the explicit pthread_cleanup_pop() in
   // SuperviseThread() or through pthread_exit(). In either case,

@@ -4,8 +4,12 @@
 #include "kudu/util/thread.h"
 
 #include <gtest/gtest.h>
+#include <string>
+
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/util/test_util.h"
+
+using std::string;
 
 namespace kudu {
 
@@ -61,6 +65,28 @@ TEST_F(ThreadTest, TestDoubleJoinIsNoOp) {
   ThreadJoiner joiner(holder.get());
   ASSERT_STATUS_OK(joiner.Join());
   ASSERT_STATUS_OK(joiner.Join());
+}
+
+
+namespace {
+
+void ExitHandler(string* s, const char* to_append) {
+  *s += to_append;
+}
+
+void CallAtExitThread(string* s) {
+  Thread::current_thread()->CallAtExit(Bind(&ExitHandler, s, Unretained("hello 1, ")));
+  Thread::current_thread()->CallAtExit(Bind(&ExitHandler, s, Unretained("hello 2")));
+}
+
+} // anonymous namespace
+
+TEST_F(ThreadTest, TestCallOnExit) {
+  scoped_refptr<Thread> holder;
+  string s;
+  ASSERT_STATUS_OK(Thread::Create("test", "TestCallOnExit", CallAtExitThread, &s, &holder));
+  holder->Join();
+  ASSERT_EQ("hello 1, hello 2", s);
 }
 
 } // namespace kudu

@@ -10,6 +10,9 @@
 #include <boost/function.hpp>
 #include <pthread.h>
 #include <string>
+#include <sys/syscall.h>
+#include <sys/types.h>
+#include <vector>
 
 #include "kudu/gutil/atomicops.h"
 #include "kudu/gutil/ref_counted.h"
@@ -160,6 +163,16 @@ class Thread : public RefCountedThreadSafe<Thread> {
   // will be unregistered with the ThreadMgr and will not appear in the debug UI.
   void Join() { ThreadJoiner(this).Join(); }
 
+  // Call the given Closure on the thread before it exits. The closures are executed
+  // in the order they are added.
+  //
+  // NOTE: This must only be called on the currently executing thread, to avoid having
+  // to reason about complicated races (eg registering a callback on an already-dead
+  // thread).
+  //
+  // This callback is guaranteed to be called except in the case of a process crash.
+  void CallAtExit(const Closure& cb);
+
   // The thread ID assigned to this thread by the operating system. If the OS does not
   // support retrieving the tid, returns Thread::INVALID_TID.
   int64_t tid() const { return tid_; }
@@ -167,8 +180,25 @@ class Thread : public RefCountedThreadSafe<Thread> {
   const std::string& name() const { return name_; }
   const std::string& category() const { return category_; }
 
-  // The current thread of execution, or NULL if the current thread isn't a Thread.
+  // The current thread of execution, or NULL if the current thread isn't a kudu::Thread.
   static Thread* current_thread() { return tls_; }
+
+  // Return a unique identifier assigned by the platform for this thread. Note that
+  // this is a static method and thus can be used on any thread, including the main
+  // thread of the process. This is in contrast to Thread::tid() which is at least as fast,
+  // but only works on kudu::Threads.
+  //
+  // In general, this should be used when a value is required that is unique to a thread
+  // and must work on any thread including the main process thread.
+  //
+  // NOTE: this is _not_ the TID, but rather a unique value assigned by the pthread library.
+  // So, this value should not be presented to the user in log messages, etc.
+  static int64_t PlatformThreadId() {
+    // This cast is a little bit ugly, and not likely to be portable, but
+    // it is significantly faster than calling syscall(SYS_gettid). In particular,
+    // this speeds up some code paths in the tracing implementation.
+    return static_cast<int64_t>(pthread_self());
+  }
 
   // Emulates boost::thread and detaches.
   ~Thread();
@@ -223,6 +253,8 @@ class Thread : public RefCountedThreadSafe<Thread> {
   // Thread local pointer to the current thread of execution. Will be NULL if the current
   // thread is not a Thread.
   static __thread Thread* tls_;
+
+  std::vector<Closure> exit_callbacks_;
 
   // Starts the thread running SuperviseThread(), and returns once that thread has
   // initialised and its TID has been read. Waits for notification from the started
