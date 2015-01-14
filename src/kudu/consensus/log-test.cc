@@ -57,12 +57,16 @@ class LogTest : public LogTestBase {
                                     OpId* op_id, vector<LogAnchor*>* anchors) {
     CHECK(op_id->IsInitialized());
     for (int i = 0; i < num_total_segments - 1; i++) {
-      CreateAndRegisterNewAnchor(op_id->index(), anchors);
+      if (anchors) {
+        CreateAndRegisterNewAnchor(op_id->index(), anchors);
+      }
       RETURN_NOT_OK(AppendNoOps(op_id, num_ops_per_segment));
       RETURN_NOT_OK(RollLog());
     }
 
-    CreateAndRegisterNewAnchor(op_id->index(), anchors);
+    if (anchors) {
+      CreateAndRegisterNewAnchor(op_id->index(), anchors);
+    }
     RETURN_NOT_OK(AppendNoOps(op_id, num_ops_per_segment));
     return Status::OK();
   }
@@ -145,6 +149,17 @@ TEST_F(LogTest, TestMultipleEntriesInABatch) {
     // The second entry should be at the same offset as the first entry
     // since they were written in the same batch.
     ASSERT_EQ(second_offset, offset);
+  }
+
+  // Test LookupOpId
+  {
+    OpId loaded_op;
+    ASSERT_OK(log_->GetLogReader()->LookupOpId(1, &loaded_op));
+    ASSERT_EQ("1.1", OpIdToString(loaded_op));
+    ASSERT_OK(log_->GetLogReader()->LookupOpId(2, &loaded_op));
+    ASSERT_EQ("1.2", OpIdToString(loaded_op));
+    Status s = log_->GetLogReader()->LookupOpId(3, &loaded_op);
+    ASSERT_TRUE(s.IsNotFound()) << "unexpected status: " << s.ToString();
   }
 
   ASSERT_STATUS_OK(log_->Close());
@@ -448,6 +463,47 @@ TEST_F(LogTest, TestGCWithLogRunning) {
   for (int i = 3; i < kNumTotalSegments; i++) {
     ASSERT_STATUS_OK(log_anchor_registry_->Unregister(anchors[i]));
   }
+}
+
+// Test that, when we are set to retain a given number of log segments,
+// we also retain any relevant log index chunks, even if those operations
+// are not necessary for recovery.
+TEST_F(LogTest, TestGCOfIndexChunks) {
+  FLAGS_log_min_segments_to_retain = 4;
+  BuildLog();
+
+  // Append some segments which cross from one index chunk into another.
+  // 999990-999994        \___the first index
+  // 999995-999999        /   chunk points to these
+  // 1000000-100004       \
+  // 1000005-100009        | the second index chunk points to these
+  // 1000010-<still open> /
+  const int kNumTotalSegments = 5;
+  const int kNumOpsPerSegment = 5;
+  OpId op_id = MakeOpId(1, 999990);
+  ASSERT_STATUS_OK(AppendMultiSegmentSequence(kNumTotalSegments, kNumOpsPerSegment,
+                                              &op_id, NULL));
+
+  // Run a GC on an op in the second index chunk. We should remove only the
+  // earliest segment, because we are set to retain 4.
+  int num_gced_segments = 0;
+  ASSERT_OK(log_->GC(1000006, &num_gced_segments));
+  ASSERT_EQ(1, num_gced_segments);
+
+  // And we should still be able to read ops in the retained segment, even though
+  // the GC index was higher.
+  OpId loaded_op;
+  ASSERT_OK(log_->GetLogReader()->LookupOpId(999995, &loaded_op));
+  ASSERT_EQ("1.999995", OpIdToString(loaded_op));
+
+  // If we drop the retention count down to 1, we can now GC, and the log index
+  // chunk should also be GCed.
+  FLAGS_log_min_segments_to_retain = 1;
+  ASSERT_OK(log_->GC(1000003, &num_gced_segments));
+  ASSERT_EQ(1, num_gced_segments);
+
+  Status s = log_->GetLogReader()->LookupOpId(999995, &loaded_op);
+  ASSERT_TRUE(s.IsNotFound()) << "unexpected status: " << s.ToString();
 }
 
 // Tests that we can append FLUSH_MARKER messages to the log queue to make sure

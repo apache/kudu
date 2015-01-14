@@ -574,7 +574,7 @@ Status Log::GetLastEntryOpId(consensus::OpId* op_id) const {
 Status Log::GC(int64_t min_op_idx, int32_t* num_gced) {
   CHECK_GE(min_op_idx, 0);
 
-  VLOG(1) << "Running Log GC on " << log_dir_;
+  VLOG(1) << "Running Log GC on " << log_dir_ << ": retaining ops >= " << min_op_idx;
   VLOG_TIMING(1, "Log GC") {
     SegmentSequence segments_to_delete;
 
@@ -610,12 +610,18 @@ Status Log::GC(int64_t min_op_idx, int32_t* num_gced) {
     // Now that they are no longer referenced by the Log, delete the files.
     *num_gced = 0;
     BOOST_FOREACH(const scoped_refptr<ReadableLogSegment>& segment, segments_to_delete) {
-      LOG(INFO) << "Deleting Log file in path: " << segment->path();
+      LOG(INFO) << "Deleting log segment in path: " << segment->path()
+                << " (GCed ops < " << min_op_idx << ")";
       RETURN_NOT_OK(fs_manager_->env()->DeleteFile(segment->path()));
       (*num_gced)++;
     }
 
-    log_index_->GC(min_op_idx);
+    // Determine the minimum remaining replicate index in order to properly GC
+    // the index chunks.
+    int64_t min_remaining_op_idx = reader_->GetMinReplicateIndex();
+    if (min_remaining_op_idx > 0) {
+      log_index_->GC(min_remaining_op_idx);
+    }
   }
   return Status::OK();
 }

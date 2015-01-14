@@ -48,6 +48,10 @@ class LogReader {
   Status GetSegmentPrefixNotIncluding(int64_t index,
                                       SegmentSequence* segments) const;
 
+  // Return the minimum replicate index that is retained in the currently available
+  // logs. May return -1 if no replicates have been logged.
+  int64_t GetMinReplicateIndex() const;
+
   // Return a readable segment with the given sequence number, or NULL if it
   // cannot be found (e.g. if it has already been GCed).
   scoped_refptr<ReadableLogSegment> GetSegmentBySequenceNumber(int64_t seq) const;
@@ -70,6 +74,10 @@ class LogReader {
       int64_t max_bytes_to_read,
       std::vector<consensus::ReplicateMsg*>* replicates) const;
   static const int kNoSizeLimit;
+
+  // Look up the OpId for the given operation index.
+  // Returns a bad Status if the log index fails to load (eg. due to an IO error).
+  Status LookupOpId(int64_t op_index, consensus::OpId* op_id) const;
 
   // Returns the number of segments.
   const int num_segments() const;

@@ -180,6 +180,21 @@ Status LogReader::GetSegmentPrefixNotIncluding(int64_t index,
   return Status::OK();
 }
 
+int64_t LogReader::GetMinReplicateIndex() const {
+  boost::lock_guard<simple_spinlock> lock(lock_);
+  int64_t min_remaining_op_idx = -1;
+
+  BOOST_FOREACH(const scoped_refptr<ReadableLogSegment>& segment, segments_) {
+    if (!segment->HasFooter()) continue;
+    if (!segment->footer().has_min_replicate_index()) continue;
+    if (min_remaining_op_idx == -1 ||
+        segment->footer().min_replicate_index() < min_remaining_op_idx) {
+      min_remaining_op_idx = segment->footer().min_replicate_index();
+    }
+  }
+  return min_remaining_op_idx;
+}
+
 scoped_refptr<ReadableLogSegment> LogReader::GetSegmentBySequenceNumber(int64_t seq) const {
   boost::lock_guard<simple_spinlock> lock(lock_);
   if (segments_.empty()) {
@@ -299,6 +314,14 @@ Status LogReader::ReadReplicatesInRange(const int64_t starting_at,
   return Status::OK();
 }
 
+Status LogReader::LookupOpId(int64_t op_index, OpId* op_id) const {
+  LogIndexEntry index_entry;
+  RETURN_NOT_OK_PREPEND(log_index_->GetEntry(op_index, &index_entry),
+                        strings::Substitute("Failed to read log index for op $0", op_index));
+  *op_id = index_entry.op_id;
+  return Status::OK();
+}
+
 Status LogReader::GetSegmentsSnapshot(SegmentSequence* segments) const {
   boost::lock_guard<simple_spinlock> lock(lock_);
   CHECK_EQ(state_, kLogReaderReading);
@@ -320,7 +343,8 @@ Status LogReader::TrimSegmentsUpToAndIncluding(uint64_t segment_sequence_number)
     }
     break;
   }
-  LOG(INFO) << "Removed " << num_deleted_segments << " from log reader.";
+  LOG(INFO) << "T " << tablet_oid_ << ": removed " << num_deleted_segments
+            << " log segments from log reader";
   return Status::OK();
 }
 
