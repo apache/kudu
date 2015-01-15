@@ -17,103 +17,19 @@
 namespace kudu {
 
 class Env;
-class RandomAccessFile;
 class WritableFile;
 
 namespace fs {
+
+namespace internal {
+class FileWritableBlock;
+} // namespace internal
 
 // A file-backed block storage implementation.
 //
 // This is a naive block implementation which maps each block to its own
 // file on disk. To prevent the block directory from becoming too large,
 // blocks are aggregated into a 3-level directory hierarchy.
-
-// A file-backed block that has been opened for writing.
-class FileWritableBlock : public WritableBlock {
- public:
-  virtual ~FileWritableBlock();
-
-  virtual Status Close() OVERRIDE;
-
-  virtual Status Abort() OVERRIDE;
-
-  virtual BlockManager* block_manager() const OVERRIDE;
-
-  virtual const BlockId& id() const OVERRIDE;
-
-  virtual Status Append(const Slice& data) OVERRIDE;
-
-  virtual Status FlushDataAsync() OVERRIDE;
-
-  virtual size_t BytesAppended() const OVERRIDE;
-
-  virtual State state() const OVERRIDE;
-
- private:
-  enum SyncMode {
-    SYNC,
-    NO_SYNC
-  };
-
-  friend class FileBlockManager;
-
-  FileWritableBlock(FileBlockManager* block_manager,
-                    const BlockId& block_id,
-                    const std::tr1::shared_ptr<WritableFile>& writer);
-
-  // Close the block, optionally synchronizing dirty data and metadata.
-  Status Close(SyncMode mode);
-
-  // Back pointer to the block manager.
-  //
-  // Should remain alive for the lifetime of this block.
-  FileBlockManager* block_manager_;
-
-  // The block's identifier.
-  const BlockId block_id_;
-
-  // The underlying opened file backing this block.
-  std::tr1::shared_ptr<WritableFile> writer_;
-
-  State state_;
-
-  // The number of bytes successfully appended to the block.
-  size_t bytes_appended_;
-
-  DISALLOW_COPY_AND_ASSIGN(FileWritableBlock);
-};
-
-// A file-backed block that has been opened for reading.
-class FileReadableBlock : public ReadableBlock {
- public:
-  virtual ~FileReadableBlock();
-
-  virtual Status Close() OVERRIDE;
-
-  virtual const BlockId& id() const OVERRIDE;
-
-  virtual Status Size(size_t* sz) const OVERRIDE;
-
-  virtual Status Read(uint64_t offset, size_t length,
-                      Slice* result, uint8_t* scratch) const OVERRIDE;
-
- private:
-  friend class FileBlockManager;
-
-  FileReadableBlock(const BlockId& block_id,
-                    const std::tr1::shared_ptr<RandomAccessFile>& reader);
-
-  // The block's identifier.
-  const BlockId block_id_;
-
-  // The underlying opened file backing this block.
-  std::tr1::shared_ptr<RandomAccessFile> reader_;
-
-  // Whether this block has been closed.
-  bool closed_;
-
-  DISALLOW_COPY_AND_ASSIGN(FileReadableBlock);
-};
 
 // The file-backed block manager.
 class FileBlockManager : public BlockManager {
@@ -150,7 +66,7 @@ class FileBlockManager : public BlockManager {
   virtual Status CloseBlocks(const std::vector<WritableBlock*>& blocks) OVERRIDE;
 
  private:
-  friend class FileWritableBlock;
+  friend class internal::FileWritableBlock;
 
   // Creates the parent directory hierarchy for the block with the given id.
   Status CreateBlockDir(const BlockId& block_id, std::vector<std::string>* created_dirs);

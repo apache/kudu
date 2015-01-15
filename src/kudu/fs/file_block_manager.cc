@@ -32,10 +32,64 @@ DECLARE_bool(enable_data_block_fsync);
 
 namespace kudu {
 namespace fs {
+namespace internal {
 
 ////////////////////////////////////////////////////////////
 // FileWritableBlock
 ////////////////////////////////////////////////////////////
+
+// A file-backed block that has been opened for writing.
+class FileWritableBlock : public WritableBlock {
+ public:
+  FileWritableBlock(FileBlockManager* block_manager,
+                    const BlockId& block_id,
+                    const std::tr1::shared_ptr<WritableFile>& writer);
+
+  virtual ~FileWritableBlock();
+
+  virtual Status Close() OVERRIDE;
+
+  virtual Status Abort() OVERRIDE;
+
+  virtual BlockManager* block_manager() const OVERRIDE;
+
+  virtual const BlockId& id() const OVERRIDE;
+
+  virtual Status Append(const Slice& data) OVERRIDE;
+
+  virtual Status FlushDataAsync() OVERRIDE;
+
+  virtual size_t BytesAppended() const OVERRIDE;
+
+  virtual State state() const OVERRIDE;
+
+ private:
+  enum SyncMode {
+    SYNC,
+    NO_SYNC
+  };
+
+  // Close the block, optionally synchronizing dirty data and metadata.
+  Status Close(SyncMode mode);
+
+  // Back pointer to the block manager.
+  //
+  // Should remain alive for the lifetime of this block.
+  FileBlockManager* block_manager_;
+
+  // The block's identifier.
+  const BlockId block_id_;
+
+  // The underlying opened file backing this block.
+  std::tr1::shared_ptr<WritableFile> writer_;
+
+  State state_;
+
+  // The number of bytes successfully appended to the block.
+  size_t bytes_appended_;
+
+  DISALLOW_COPY_AND_ASSIGN(FileWritableBlock);
+};
 
 FileWritableBlock::FileWritableBlock(FileBlockManager* block_manager,
                                      const BlockId& block_id,
@@ -130,6 +184,36 @@ Status FileWritableBlock::Close(SyncMode mode) {
 // FileReadableBlock
 ////////////////////////////////////////////////////////////
 
+// A file-backed block that has been opened for reading.
+class FileReadableBlock : public ReadableBlock {
+ public:
+  FileReadableBlock(const BlockId& block_id,
+                    const std::tr1::shared_ptr<RandomAccessFile>& reader);
+
+  virtual ~FileReadableBlock();
+
+  virtual Status Close() OVERRIDE;
+
+  virtual const BlockId& id() const OVERRIDE;
+
+  virtual Status Size(size_t* sz) const OVERRIDE;
+
+  virtual Status Read(uint64_t offset, size_t length,
+                      Slice* result, uint8_t* scratch) const OVERRIDE;
+
+ private:
+  // The block's identifier.
+  const BlockId block_id_;
+
+  // The underlying opened file backing this block.
+  std::tr1::shared_ptr<RandomAccessFile> reader_;
+
+  // Whether this block has been closed.
+  bool closed_;
+
+  DISALLOW_COPY_AND_ASSIGN(FileReadableBlock);
+};
+
 FileReadableBlock::FileReadableBlock(const BlockId& block_id,
                                      const shared_ptr<RandomAccessFile>& reader) :
   block_id_(block_id),
@@ -167,6 +251,8 @@ Status FileReadableBlock::Read(uint64_t offset, size_t length,
 
   return env_util::ReadFully(reader_.get(), offset, length, result, scratch);
 }
+
+} // namespace internal
 
 ////////////////////////////////////////////////////////////
 // FileBlockManager
@@ -273,7 +359,7 @@ void FileBlockManager::CreateBlock(const BlockId& block_id,
     dirty_dirs_.insert(DirName(path));
   }
 
-  block->reset(new FileWritableBlock(this, block_id, writer));
+  block->reset(new internal::FileWritableBlock(this, block_id, writer));
 }
 
 FileBlockManager::FileBlockManager(Env* env,
@@ -351,7 +437,7 @@ Status FileBlockManager::OpenBlock(const BlockId& block_id,
 
   shared_ptr<RandomAccessFile> reader;
   RETURN_NOT_OK(env_util::OpenFileForRandom(env_, path, &reader));
-  block->reset(new FileReadableBlock(block_id, reader));
+  block->reset(new internal::FileReadableBlock(block_id, reader));
   return Status::OK();
 }
 
