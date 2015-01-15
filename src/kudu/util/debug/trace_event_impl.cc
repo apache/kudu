@@ -1771,7 +1771,7 @@ TraceEventHandle TraceLog::AddTraceEventWithThreadIdAndTimestamp(
   MicrosecondsInt64 thread_now = GetThreadCpuTimeMicros();
 
   PerThreadInfo* thr_info = thread_local_info_;
-  if (!thr_info) {
+  if (PREDICT_FALSE(!thr_info)) {
     thr_info = SetupThreadLocalBuffer();
   }
 
@@ -1789,7 +1789,7 @@ TraceEventHandle TraceLog::AddTraceEventWithThreadIdAndTimestamp(
         reinterpret_cast<AtomicWord*>(&thr_info->event_buffer_)));
 
   // If there is no current buffer, create one for this event.
-  if (!thread_local_event_buffer) {
+  if (PREDICT_FALSE(!thread_local_event_buffer)) {
     thread_local_event_buffer = new ThreadLocalEventBuffer(this);
 
     base::subtle::NoBarrier_Store(
@@ -1807,8 +1807,8 @@ TraceEventHandle TraceLog::AddTraceEventWithThreadIdAndTimestamp(
       // call (if any), but don't bother if the new name is empty. Note this will
       // not detect a thread name change within the same char* buffer address: we
       // favor common case performance over corner case correctness.
-      if (new_name != g_current_thread_name &&
-          new_name && *new_name) {
+      if (PREDICT_FALSE(new_name != g_current_thread_name &&
+                        new_name && *new_name)) {
         g_current_thread_name = new_name;
 
         SpinLockHolder thread_info_lock(&thread_info_lock_);
@@ -1860,11 +1860,11 @@ TraceEventHandle TraceLog::AddTraceEventWithThreadIdAndTimestamp(
     }
   }
 
-  if (console_message.size())
+  if (PREDICT_FALSE(console_message.size()))
     LOG(ERROR) << console_message;
 
-  if (reinterpret_cast<const unsigned char*>(base::subtle::NoBarrier_Load(
-      &watch_category_)) == category_group_enabled) {
+  if (PREDICT_FALSE(reinterpret_cast<const unsigned char*>(
+                      base::subtle::NoBarrier_Load(&watch_category_)) == category_group_enabled)) {
     bool event_name_matches;
     WatchEventCallback watch_event_callback_copy;
     {
@@ -1878,7 +1878,7 @@ TraceEventHandle TraceLog::AddTraceEventWithThreadIdAndTimestamp(
     }
   }
 
-  if (*category_group_enabled & ENABLED_FOR_EVENT_CALLBACK) {
+  if (PREDICT_FALSE(*category_group_enabled & ENABLED_FOR_EVENT_CALLBACK)) {
     EventCallback event_callback = reinterpret_cast<EventCallback>(
       base::subtle::NoBarrier_Load(&event_callback_));
     if (event_callback) {
