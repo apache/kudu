@@ -164,7 +164,7 @@ void DumpLog(const string &tserver_root_path, const string& tablet_oid) {
   Env *env = Env::Default();
   gscoped_ptr<LogReader> reader;
   FsManager fs_manager(env, tserver_root_path);
-  CHECK_OK(LogReader::Open(&fs_manager, scoped_refptr<LogIndex>(), tablet_oid, &reader));
+  CHECK_OK(LogReader::Open(&fs_manager, scoped_refptr<LogIndex>(), tablet_oid, NULL, &reader));
 
   SegmentSequence segments;
   CHECK_OK(reader->GetSegmentsSnapshot(&segments));

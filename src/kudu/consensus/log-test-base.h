@@ -26,6 +26,7 @@
 #include "kudu/gutil/strings/util.h"
 #include "kudu/tserver/tserver.pb.h"
 #include "kudu/util/env_util.h"
+#include "kudu/util/metrics.h"
 #include "kudu/util/path_util.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
@@ -105,6 +106,8 @@ class LogTestBase : public KuduTest {
     KuduTest::SetUp();
     current_index_ = 1;
     fs_manager_.reset(new FsManager(env_.get(), test_dir_));
+    metric_registry_.reset(new MetricRegistry());
+    metric_context_.reset(new MetricContext(metric_registry_.get(), "log-test-base"));
     ASSERT_OK(fs_manager_->CreateInitialFileSystemLayout());
     ASSERT_OK(fs_manager_->Open());
   }
@@ -119,7 +122,7 @@ class LogTestBase : public KuduTest {
                        fs_manager_.get(),
                        kTestTablet,
                        schema_,
-                       NULL,
+                       metric_context_.get(),
                        &log_));
   }
 
@@ -294,6 +297,8 @@ class LogTestBase : public KuduTest {
  protected:
   const Schema schema_;
   gscoped_ptr<FsManager> fs_manager_;
+  gscoped_ptr<MetricRegistry> metric_registry_;
+  gscoped_ptr<MetricContext> metric_context_;
   gscoped_ptr<Log> log_;
   uint32_t current_index_;
   LogOptions options_;

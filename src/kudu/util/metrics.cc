@@ -509,4 +509,16 @@ double Histogram::MeanValueForTests() const {
   return histogram_->MeanValue();
 }
 
+ScopedLatencyMetric::ScopedLatencyMetric(Histogram* latency_hist)
+  : latency_hist_(latency_hist),
+    time_started_(MonoTime::Now(MonoTime::FINE)) {
+}
+
+ScopedLatencyMetric::~ScopedLatencyMetric() {
+  MonoTime time_now = MonoTime::Now(MonoTime::FINE);
+  if (latency_hist_ != NULL) {
+    latency_hist_->Increment(time_now.GetDeltaSince(time_started_).ToMicroseconds());
+  }
+}
+
 } // namespace kudu

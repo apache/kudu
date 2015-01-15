@@ -9,6 +9,7 @@
 #include <utility>
 #include <vector>
 
+#include "kudu/consensus/log_metrics.h"
 #include "kudu/consensus/log_util.h"
 #include "kudu/consensus/opid_util.h"
 #include "kudu/fs/fs_manager.h"
@@ -35,12 +36,14 @@ class LogReader {
   static Status Open(FsManager *fs_manager,
                      const scoped_refptr<LogIndex>& index,
                      const std::string& tablet_oid,
+                     MetricContext *parent_metric_context,
                      gscoped_ptr<LogReader> *reader);
 
   // Opens a LogReader on a specific tablet log recovery directory, and sets
   // 'reader' to the newly created LogReader.
   static Status OpenFromRecoveryDir(FsManager *fs_manager,
                                     const std::string& tablet_oid,
+                                    MetricContext *parent_metric_context,
                                     gscoped_ptr<LogReader> *reader);
 
   // Returns the biggest prefix of segments, from the current sequence, guaranteed
@@ -98,6 +101,7 @@ class LogReader {
 
  private:
   FRIEND_TEST(LogTest, TestLogReader);
+  FRIEND_TEST(LogTest, TestReadLogWithReplacedReplicates);
   friend class Log;
   friend class LogTest;
 
@@ -150,7 +154,8 @@ class LogReader {
 
   LogReader(FsManager *fs_manager,
             const scoped_refptr<LogIndex>& index,
-            const std::string& tablet_name);
+            const std::string& tablet_name,
+            MetricContext *parent_metric_context);
 
   // Reads the headers of all segments in 'path_'.
   Status Init(const std::string& path_);
@@ -161,6 +166,12 @@ class LogReader {
   FsManager *fs_manager_;
   const scoped_refptr<LogIndex> log_index_;
   const std::string tablet_oid_;
+
+  // Metrics
+  gscoped_ptr<MetricContext> metric_context_;
+  Counter *bytes_read;
+  Counter *entries_read;
+  Histogram *read_batch_latency;
 
   // The sequence of all current log segments in increasing sequence number
   // order.

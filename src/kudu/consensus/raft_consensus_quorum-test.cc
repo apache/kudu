@@ -370,6 +370,7 @@ class RaftConsensusQuorumTest : public KuduTest {
     ASSERT_STATUS_OK(log::LogReader::Open(fs_managers_[idx],
                                           scoped_refptr<log::LogIndex>(),
                                           kTestTablet,
+                                          &metric_context_,
                                           &log_reader));
     vector<LogEntryPB*> ret;
     ElementDeleter deleter(&ret);

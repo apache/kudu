@@ -241,7 +241,7 @@ void LogTest::DoCorruptionTest(CorruptionType type, int offset,
   gscoped_ptr<LogReader> reader;
   ASSERT_OK(LogReader::Open(fs_manager_.get(),
                             make_scoped_refptr(new LogIndex(log_->log_dir_)),
-                            kTestTablet, &reader));
+                            kTestTablet, NULL, &reader));
   ASSERT_EQ(1, reader->num_segments());
 
   SegmentSequence segments;
@@ -632,7 +632,8 @@ TEST_F(LogTest, TestWriteManyBatches) {
 TEST_F(LogTest, TestLogReader) {
   LogReader reader(fs_manager_.get(),
                    scoped_refptr<LogIndex>(),
-                   kTestTablet);
+                   kTestTablet,
+                   NULL);
   reader.InitEmptyReaderForTests();
   ASSERT_STATUS_OK(AppendNewEmptySegmentToReader(2, 10, &reader));
   ASSERT_STATUS_OK(AppendNewEmptySegmentToReader(3, 20, &reader));
@@ -867,6 +868,13 @@ TEST_F(LogTest, TestReadLogWithReplacedReplicates) {
         }
       }
 
+      int64_t bytes_read = log_->reader_->bytes_read->value();
+      int64_t entries_read = log_->reader_->entries_read->value();
+      int64_t read_batch_count = log_->reader_->read_batch_latency->TotalCountForTests();
+      EXPECT_GT(log_->reader_->bytes_read->value(), 0);
+      EXPECT_GT(log_->reader_->entries_read->value(), 0);
+      EXPECT_GT(log_->reader_->read_batch_latency->TotalCountForTests(), 0);
+
       // Test a size-limited read.
       int size_limit = RandInRange(&rng, 1, 1000);
       {
@@ -890,6 +898,10 @@ TEST_F(LogTest, TestReadLogWithReplacedReplicates) {
           ASSERT_LE(total_size, size_limit);
         }
       }
+
+      EXPECT_GT(log_->reader_->bytes_read->value(), bytes_read);
+      EXPECT_GT(log_->reader_->entries_read->value(), entries_read);
+      EXPECT_GT(log_->reader_->read_batch_latency->TotalCountForTests(), read_batch_count);
     }
 
     int num_gced = 0;

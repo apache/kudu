@@ -452,6 +452,7 @@ Status TabletBootstrap::FetchLogSegments(bool* needs_recovery) {
   // Open the reader.
   RETURN_NOT_OK_PREPEND(LogReader::OpenFromRecoveryDir(tablet_->metadata()->fs_manager(),
                                                        tablet_->metadata()->oid(),
+                                                       metric_context_,
                                                        &log_reader_),
                         "Could not open LogReader. Reason");
   return Status::OK();

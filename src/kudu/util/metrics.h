@@ -104,6 +104,7 @@
 #include "kudu/util/atomic.h"
 #include "kudu/util/jsonwriter.h"
 #include "kudu/util/locks.h"
+#include "kudu/util/monotime.h"
 #include "kudu/util/status.h"
 
 // Convenience macros.
@@ -626,6 +627,17 @@ class Histogram : public Metric {
   const MetricUnit::Type unit_;
   const std::string description_;
   DISALLOW_COPY_AND_ASSIGN(Histogram);
+};
+
+// Measures a duration while in scope. Adds this duration to specified histogram on destruction.
+class ScopedLatencyMetric {
+ public:
+  explicit ScopedLatencyMetric(Histogram* latency_hist);
+  ~ScopedLatencyMetric();
+
+ private:
+  Histogram* latency_hist_;
+  MonoTime time_started_;
 };
 
 } // namespace kudu

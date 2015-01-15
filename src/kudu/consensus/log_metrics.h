@@ -28,16 +28,6 @@ struct LogMetrics {
   Histogram* entry_batches_per_group;
 };
 
-class ScopedLatencyMetric {
- public:
-  explicit ScopedLatencyMetric(Histogram* latency_hist);
-  ~ScopedLatencyMetric();
-
- private:
-  Histogram* latency_hist_;
-  MonoTime time_started_;
-};
-
 // TODO extract and generalize this for all histogram metrics
 #define SCOPED_LATENCY_METRIC(_mtx, _h) \
   ScopedLatencyMetric _h##_metric(_mtx ? _mtx->_h : NULL)

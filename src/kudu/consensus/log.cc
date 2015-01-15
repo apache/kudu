@@ -236,6 +236,7 @@ Status Log::Init() {
   RETURN_NOT_OK(LogReader::Open(fs_manager_,
                                 log_index_,
                                 tablet_id_,
+                                metric_context_.get(),
                                 &reader_));
 
   // The case where we are continuing an existing log.

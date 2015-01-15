@@ -213,6 +213,7 @@ class Log {
   friend class LogTest;
   friend class LogTestBase;
   FRIEND_TEST(LogTest, TestMultipleEntriesInABatch);
+  FRIEND_TEST(LogTest, TestReadLogWithReplacedReplicates);
   FRIEND_TEST(LogTest, TestWriteAndReadToAndFromInProgressSegment);
 
   class AppendThread;
