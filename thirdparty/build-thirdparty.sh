@@ -44,6 +44,7 @@ else
       "crcutil")    F_CRCUTIL=1 ;;
       "libunwind")  F_LIBUNWIND=1 ;;
       "llvm")       F_LLVM=1 ;;
+      "trace-viewer") F_TRACE_VIEWER=1 ;;
       *)            echo "Unknown module: $arg"; exit 1 ;;
     esac
   done
@@ -273,6 +274,12 @@ if [ -n "$F_ALL" -o -n "$F_LLVM" ]; then
   fi
 
   make -j$PARALLEL install
+fi
+
+# Build trace-viewer (by copying it into www/)
+if [ -n "$F_ALL" -o -n "$F_TRACE_VIEWER" ]; then
+  echo Installing trace-viewer into the www directory
+  cp -a $TRACE_VIEWER_DIR/* $TP_DIR/../www/
 fi
 
 # Remove any old thirdparty deps which hung around from previous versions

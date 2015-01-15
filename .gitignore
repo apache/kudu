@@ -48,3 +48,6 @@ nbproject/
 .project
 .cproject
 .csettings/
+
+# WWW dependencies which are not checked in directly
+www/tracing.*

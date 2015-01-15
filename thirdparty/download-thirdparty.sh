@@ -181,5 +181,9 @@ if [ ! -d $LLVM_DIR ]; then
   echo
 fi
 
+if [ ! -d $TRACE_VIEWER_DIR ]; then
+  fetch_and_expand kudu-trace-viewer-${TRACE_VIEWER_VERSION}.tar.gz
+fi
+
 echo "---------------"
 echo "Thirdparty dependencies downloaded successfully"

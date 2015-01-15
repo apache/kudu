@@ -86,3 +86,12 @@ LIBUNWIND_DIR=$TP_DIR/libunwind-${LIBUNWIND_VERSION}
 LLVM_VERSION=3.4.2
 LLVM_DIR=$TP_DIR/llvm-${LLVM_VERSION}.src
 LLVM_BUILD=$TP_DIR/llvm-${LLVM_VERSION}.build
+
+# Our trace-viewer repository is separate since it's quite large and
+# shouldn't change frequently. We upload the built artifacts (HTML/JS)
+# when we need to roll to a new revision.
+#
+# The source can be found at https://github.com/cloudera/kudu-trace-viewer
+# and built with "kudu-build.sh" included within the repository.
+TRACE_VIEWER_VERSION=f0f132051837fba4e57c8a7603331aa9c90151f4
+TRACE_VIEWER_DIR=$TP_DIR/kudu-trace-viewer-${TRACE_VIEWER_VERSION}
