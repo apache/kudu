@@ -38,9 +38,9 @@ struct MaintenanceOpStats {
   // should be fairly accurate.  May be 0.
   uint64_t ram_anchored;
 
-  // The age of the oldest transaction id (in milliseconds) that not doing this
-  // operation keeps around.  May be 0.
-  int32_t ts_anchored_secs;
+  // The approximate amount of memory that not doing this operation keeps us from GCing from
+  // the logs. May be 0.
+  int32_t logs_retained_mb;
 
   // The estimated performance improvement-- how good it is to do this on some
   // absolute scale (yet TBD).
@@ -131,7 +131,6 @@ class MaintenanceManager : public std::tr1::enable_shared_from_this<MaintenanceM
     int32_t num_threads;
     int32_t polling_interval_ms;
     int64_t memory_limit;
-    int32_t max_ts_anchored_secs;
     uint32_t history_size;
   };
 
@@ -154,6 +153,7 @@ class MaintenanceManager : public std::tr1::enable_shared_from_this<MaintenanceM
   static const Options DEFAULT_OPTIONS;
 
  private:
+  FRIEND_TEST(MaintenanceManagerTest, TestLogRetentionPrioritization);
   typedef std::map<MaintenanceOp*, MaintenanceOpStats,
           MaintenanceOpComparator> OpMapTy;
 
@@ -179,7 +179,6 @@ class MaintenanceManager : public std::tr1::enable_shared_from_this<MaintenanceM
   uint64_t running_ops_;
   int32_t polling_interval_ms_;
   int64_t memory_limit_;
-  int32_t max_ts_anchored_secs_;
   // Vector used as a circular buffer for recently completed ops. Elements need to be added at
   // the completed_ops_count_ % the vector's size and then the count needs to be incremented.
   std::vector<CompletedOp> completed_ops_;

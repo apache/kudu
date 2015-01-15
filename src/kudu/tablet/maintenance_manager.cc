@@ -38,9 +38,6 @@ DEFINE_int32(maintenance_manager_polling_interval_ms, 250,
 DEFINE_int64(maintenance_manager_memory_limit, 0,
        "Maximum amount of memory this daemon should use.  0 for "
        "autosizing based on the total system memory.");
-DEFINE_int64(maintenance_manager_max_ts_anchored_secs, 0,
-       "We will try not to let entries sit in the write-ahead log for "
-       "longer than this interval in milliseconds.");
 DEFINE_int32(maintenance_manager_history_size, 8,
        "Number of completed operations the manager is keeping track of.");
 DEFINE_bool(enable_maintenance_manager, true,
@@ -59,7 +56,7 @@ MaintenanceOpStats::MaintenanceOpStats() {
 void MaintenanceOpStats::Clear() {
   runnable = false;
   ram_anchored = 0;
-  ts_anchored_secs = 0;
+  logs_retained_mb = 0;
   perf_improvement = 0;
 }
 
@@ -83,7 +80,6 @@ const MaintenanceManager::Options MaintenanceManager::DEFAULT_OPTIONS = {
   0,
   0,
   0,
-  0,
 };
 
 MaintenanceManager::MaintenanceManager(const Options& options)
@@ -97,9 +93,6 @@ MaintenanceManager::MaintenanceManager(const Options& options)
           options.polling_interval_ms),
     memory_limit_(options.memory_limit <= 0 ?
           FLAGS_maintenance_manager_memory_limit : options.memory_limit),
-    max_ts_anchored_secs_(options.max_ts_anchored_secs <= 0 ?
-          FLAGS_maintenance_manager_max_ts_anchored_secs :
-          options.max_ts_anchored_secs),
     completed_ops_count_(0) {
   CHECK_OK(ThreadPoolBuilder("MaintenanceMgr").set_min_threads(num_threads_)
                .set_max_threads(num_threads_).Build(&thread_pool_));
@@ -241,8 +234,9 @@ MaintenanceOp* MaintenanceManager::FindBestOp() {
   uint64_t mem_total = 0;
   uint64_t most_mem_anchored = 0;
   MaintenanceOp* most_mem_anchored_op = NULL;
-  int32_t ts_anchored_secs = 0;
-  MaintenanceOp* ts_anchored_secs_op = NULL;
+  int32_t most_logs_retained_mb = 0;
+  int32_t most_logs_retained_mb_ram_anchored = 0;
+  MaintenanceOp* most_logs_retained_mb_op = NULL;
   double best_perf_improvement = 0;
   MaintenanceOp* best_perf_improvement_op = NULL;
   BOOST_FOREACH(OpMapTy::value_type &val, ops_) {
@@ -258,9 +252,14 @@ MaintenanceOp* MaintenanceManager::FindBestOp() {
         most_mem_anchored_op = op;
         most_mem_anchored = stats.ram_anchored;
       }
-      if (stats.ts_anchored_secs > ts_anchored_secs) {
-        ts_anchored_secs_op = op;
-        ts_anchored_secs = stats.ts_anchored_secs;
+      // We prioritize ops that can free more logs, but when it's the same we pick the one that
+      // also frees up the most memory.
+      if (stats.logs_retained_mb > most_logs_retained_mb ||
+          (stats.logs_retained_mb == most_logs_retained_mb &&
+           stats.ram_anchored > most_logs_retained_mb_ram_anchored)) {
+        most_logs_retained_mb_op = op;
+        most_logs_retained_mb = stats.logs_retained_mb;
+        most_logs_retained_mb_ram_anchored = stats.ram_anchored;
       }
       if ((!best_perf_improvement_op) ||
           (stats.perf_improvement > best_perf_improvement)) {
@@ -274,12 +273,12 @@ MaintenanceOp* MaintenanceManager::FindBestOp() {
   if (mem_total > mem_target_) {
     if (!most_mem_anchored_op) {
       LOG(INFO) << "mem_total is at " << mem_total << ", whereas we are "
-              << "targetting " << mem_target_ << ".  However, there are "
+              << "targeting " << mem_target_ << ".  However, there are "
               << "no ops currently runnable which would free memory. ";
       return NULL;
     }
     VLOG(1) << "mem_total is at " << mem_total << ", whereas we are "
-            << "targetting " << mem_target_ << ".  Running the op "
+            << "targeting " << mem_target_ << ".  Running the op "
             << "which anchors the most memory: "
             << most_mem_anchored_op->name();
     return most_mem_anchored_op;
@@ -292,13 +291,13 @@ MaintenanceOp* MaintenanceManager::FindBestOp() {
             << "high in the future.";
     return NULL;
   }
-  if (ts_anchored_secs > max_ts_anchored_secs_) {
-    CHECK_NOTNULL(ts_anchored_secs_op);
-    VLOG(1) << "Performing " << ts_anchored_secs_op->name() << ", "
-               << "because it anchors a transaction ID which is "
-               << ts_anchored_secs << "ms old, and "
-               << "max_ts_anchored_secs_ = " << max_ts_anchored_secs_;
-    return ts_anchored_secs_op;
+  if (most_logs_retained_mb_op) {
+    if (most_logs_retained_mb > 0) {
+      VLOG(1) << "Performing " << most_logs_retained_mb_op->name() << ", "
+                 << "because it can free up more logs "
+                 << "at " << most_logs_retained_mb << "MB";
+      return most_logs_retained_mb_op;
+    }
   }
   if (best_perf_improvement_op) {
     if (best_perf_improvement > 0) {
@@ -377,7 +376,7 @@ void MaintenanceManager::GetMaintenanceManagerStatusDump(MaintenanceManagerStatu
     op_pb->set_running(op->running());
     op_pb->set_runnable(stat.runnable);
     op_pb->set_ram_anchored_bytes(stat.ram_anchored);
-    op_pb->set_ts_anchored_secs(stat.ts_anchored_secs);
+    op_pb->set_ts_anchored_secs(stat.logs_retained_mb);
     op_pb->set_perf_improvement(stat.perf_improvement);
 
     if (best_op == op) {

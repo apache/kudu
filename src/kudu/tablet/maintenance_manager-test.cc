@@ -10,6 +10,7 @@
 #include "kudu/tablet/tablet.pb.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/test_macros.h"
+#include "kudu/util/test_util.h"
 #include "kudu/util/thread.h"
 
 using std::tr1::shared_ptr;
@@ -23,17 +24,30 @@ METRIC_DEFINE_histogram(duration_histogram, kudu::MetricUnit::kSeconds, "", 6000
 
 namespace kudu {
 
+const int kHistorySize = 4;
+
+class MaintenanceManagerTest : public KuduTest {
+ public:
+  MaintenanceManagerTest() {
+    MaintenanceManager::Options options;
+    options.num_threads = 2;
+    options.polling_interval_ms = 1;
+    options.memory_limit = 1000;
+    options.history_size = kHistorySize;
+    manager_.reset(new MaintenanceManager(options));
+    manager_->Init();
+  }
+  ~MaintenanceManagerTest() {
+    manager_->Shutdown();
+  }
+
+ protected:
+  shared_ptr<MaintenanceManager> manager_;
+};
+
 // Just create the MaintenanceManager and then shut it down, to make sure
 // there are no race conditions there.
-TEST(MaintenanceManagerTest, TestCreateAndShutdown) {
-  MaintenanceManager::Options options;
-  options.num_threads = 2;
-  options.polling_interval_ms = 1;
-  options.memory_limit = 1000;
-  options.max_ts_anchored_secs = 1000;
-  shared_ptr<MaintenanceManager> manager(new MaintenanceManager(options));
-  ASSERT_STATUS_OK(manager->Init());
-  manager->Shutdown();
+TEST_F(MaintenanceManagerTest, TestCreateAndShutdown) {
 }
 
 enum TestMaintenanceOpState {
@@ -50,7 +64,7 @@ class TestMaintenanceOp : public MaintenanceOp {
     : MaintenanceOp(name),
       state_(state),
       ram_anchored_(500),
-      ts_anchored_ms_(0),
+      logs_retained_mb_(0),
       perf_improvement_(0),
       metric_ctx_(&metric_registry_, "test"),
       duration_histogram_(METRIC_duration_histogram.Instantiate(metric_ctx_)),
@@ -82,7 +96,7 @@ class TestMaintenanceOp : public MaintenanceOp {
     boost::lock_guard<boost::mutex> guard(lock_);
     stats->runnable = (state_ == OP_RUNNABLE);
     stats->ram_anchored = ram_anchored_;
-    stats->ts_anchored_secs = ts_anchored_ms_;
+    stats->logs_retained_mb = logs_retained_mb_;
     stats->perf_improvement = perf_improvement_;
   }
 
@@ -123,9 +137,9 @@ class TestMaintenanceOp : public MaintenanceOp {
     ram_anchored_ = ram_anchored;
   }
 
-  void set_ts_anchored_secs(uint64_t ts_anchored_secs) {
+  void set_logs_retained_mb_(uint64_t logs_retained_mb) {
     boost::lock_guard<boost::mutex> guard(lock_);
-    ts_anchored_ms_ = ts_anchored_secs;
+    logs_retained_mb_ = logs_retained_mb;
   }
 
   void set_perf_improvement(uint64_t perf_improvement) {
@@ -146,7 +160,7 @@ class TestMaintenanceOp : public MaintenanceOp {
   boost::condition_variable state_change_cond_;
   enum TestMaintenanceOpState state_;
   uint64_t ram_anchored_;
-  uint64_t ts_anchored_ms_;
+  uint64_t logs_retained_mb_;
   uint64_t perf_improvement_;
   MetricRegistry metric_registry_;
   MetricContext metric_ctx_;
@@ -157,39 +171,25 @@ class TestMaintenanceOp : public MaintenanceOp {
 // Create an op and wait for it to start running.  Unregister it while it is
 // running and verify that UnregisterOp waits for it to finish before
 // proceeding.
-TEST(MaintenanceManagerTest, TestRegisterUnregister) {
-  MaintenanceManager::Options options;
-  options.num_threads = 2;
-  options.polling_interval_ms = 1;
-  options.memory_limit = 1;
-  options.max_ts_anchored_secs = 1000;
-  shared_ptr<MaintenanceManager> manager(new MaintenanceManager(options));
-  ASSERT_STATUS_OK(manager->Init());
+TEST_F(MaintenanceManagerTest, TestRegisterUnregister) {
   TestMaintenanceOp op1("1", OP_DISABLED);
-  manager->RegisterOp(&op1);
+  op1.set_ram_anchored(1001);
+  manager_->RegisterOp(&op1);
   scoped_refptr<kudu::Thread> thread;
   CHECK_OK(Thread::Create("TestThread", "TestRegisterUnregister",
         boost::bind(&TestMaintenanceOp::Enable, &op1), &thread));
   op1.WaitForState(OP_FINISHED);
-  manager->UnregisterOp(&op1);
+  manager_->UnregisterOp(&op1);
   ThreadJoiner(thread.get()).Join();
-  manager->Shutdown();
 }
 
 // Test that we'll run an operation that doesn't improve performance when memory
 // pressure gets high.
-TEST(MaintenanceManagerTest, TestMemoryPressure) {
-  MaintenanceManager::Options options;
-  options.num_threads = 2;
-  options.polling_interval_ms = 1;
-  options.memory_limit = 1000;
-  options.max_ts_anchored_secs = 1000;
-  shared_ptr<MaintenanceManager> manager(new MaintenanceManager(options));
-  ASSERT_STATUS_OK(manager->Init());
+TEST_F(MaintenanceManagerTest, TestMemoryPressure) {
   TestMaintenanceOp op("op", OP_RUNNABLE);
   op.set_perf_improvement(0);
   op.set_ram_anchored(100);
-  manager->RegisterOp(&op);
+  manager_->RegisterOp(&op);
 
   // At first, we don't want to run this, since there is no perf_improvement.
   CHECK_EQ(false, op.WaitForStateWithTimeout(OP_FINISHED, 20));
@@ -199,43 +199,60 @@ TEST(MaintenanceManagerTest, TestMemoryPressure) {
   CHECK_OK(Thread::Create("TestThread", "MaintenanceManagerTest",
       boost::bind(&TestMaintenanceOp::set_ram_anchored, &op, 1100), &thread));
   op.WaitForState(OP_FINISHED);
-  manager->UnregisterOp(&op);
+  manager_->UnregisterOp(&op);
   ThreadJoiner(thread.get()).Join();
-  manager->Shutdown();
+}
+
+// Test that ops are prioritized correctly when we add log retention.
+TEST_F(MaintenanceManagerTest, TestLogRetentionPrioritization) {
+  manager_->Shutdown();
+
+  TestMaintenanceOp op1("op1", OP_RUNNABLE);
+  op1.set_perf_improvement(0);
+  op1.set_ram_anchored(100);
+  op1.set_logs_retained_mb_(100);
+  manager_->RegisterOp(&op1);
+
+  MaintenanceOp* best_op = manager_->FindBestOp();
+  ASSERT_EQ(&op1, best_op);
+
+  TestMaintenanceOp op2("op2", OP_RUNNABLE);
+  op2.set_perf_improvement(0);
+  op2.set_ram_anchored(200);
+  op2.set_logs_retained_mb_(100);
+  manager_->RegisterOp(&op2);
+
+  best_op = manager_->FindBestOp();
+  ASSERT_EQ(&op2, best_op);
+
+  manager_->UnregisterOp(&op2);
+
+  best_op = manager_->FindBestOp();
+  ASSERT_EQ(&op1, best_op);
+
+  manager_->UnregisterOp(&op1);
 }
 
 // Test adding operations and make sure that the history of recently completed operations
 // is correct in that it wraps around and doesn't grow.
-TEST(MaintenanceManagerTest, TestCompletedOpsHistory) {
-  int history_size = 4;
-  MaintenanceManager::Options options;
-  options.num_threads = 2;
-  options.polling_interval_ms = 1;
-  options.memory_limit = 1000;
-  options.max_ts_anchored_secs = 1000;
-  options.history_size = history_size;
-
-  shared_ptr<MaintenanceManager> manager(new MaintenanceManager(options));
-  ASSERT_STATUS_OK(manager->Init());
-
+TEST_F(MaintenanceManagerTest, TestCompletedOpsHistory) {
   for (int i = 0; i < 5; i++) {
     string name = Substitute("op$0", i);
     TestMaintenanceOp op(name, OP_RUNNABLE);
     op.set_perf_improvement(1);
     op.set_ram_anchored(100);
-    manager->RegisterOp(&op);
+    manager_->RegisterOp(&op);
 
     CHECK_EQ(true, op.WaitForStateWithTimeout(OP_FINISHED, 200));
-    manager->UnregisterOp(&op);
+    manager_->UnregisterOp(&op);
 
     MaintenanceManagerStatusPB status_pb;
-    manager->GetMaintenanceManagerStatusDump(&status_pb);
+    manager_->GetMaintenanceManagerStatusDump(&status_pb);
     // The size should be at most the history_size.
-    ASSERT_GE(history_size, status_pb.completed_operations_size());
+    ASSERT_GE(kHistorySize, status_pb.completed_operations_size());
     // See that we have the right name, even if we wrap around.
     ASSERT_EQ(name, status_pb.completed_operations(i % 4).name());
   }
-  manager->Shutdown();
 }
 
 } // namespace kudu

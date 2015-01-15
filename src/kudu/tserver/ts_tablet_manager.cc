@@ -630,7 +630,7 @@ class LogGCOp : public MaintenanceOp {
 
   virtual void UpdateStats(MaintenanceOpStats* stats) OVERRIDE {
     stats->ram_anchored = 0;
-    stats->ts_anchored_secs = 0;
+    stats->logs_retained_mb = 0;
     stats->runnable = sem_.GetValue() == 1;
     double elapsed_ms = time_since_last_run_.elapsed().wall_millis();
     if (elapsed_ms > FLAGS_log_gc_sleep_delay_ms) {

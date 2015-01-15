@@ -773,7 +773,7 @@ class FlushMRSOp : public MaintenanceOp {
     }
     stats->ram_anchored = tablet_->MemRowSetSize();
     // TODO: add a field to MemRowSet storing how old a timestamp it contains
-    stats->ts_anchored_secs = 0;
+    stats->logs_retained_mb = 0;
     // TODO: use workload statistics here to find out how "hot" the tablet has
     // been in the last 5 minutes.
     SetPerfImprovementForFlush(stats,
@@ -896,7 +896,7 @@ class FlushDeltaMemStoresOp : public MaintenanceOp {
     size_t dms_size = tablet_->DeltaMemStoresSize();
     stats->ram_anchored = dms_size;
     stats->runnable = true;
-    stats->ts_anchored_secs = 0;
+    stats->logs_retained_mb = 0;
 
     SetPerfImprovementForFlush(stats,
                                time_since_flush_.elapsed().wall_millis(),
