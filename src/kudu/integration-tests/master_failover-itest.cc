@@ -32,8 +32,6 @@ using client::KuduSchema;
 using client::KuduTable;
 using std::tr1::shared_ptr;
 
-const char * const kTableId1 = "testMasterFailover-1";
-
 class MasterFailoverTest : public KuduTest {
  public:
   enum CreateTableMode {
