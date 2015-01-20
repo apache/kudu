@@ -15,6 +15,7 @@
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/gutil/sysinfo.h"
 #include "kudu/master/master.h"
 #include "kudu/master/master_rpc.h"
 #include "kudu/master/master.pb.h"
@@ -65,7 +66,7 @@ static Status RetryFunc(const MonoTime& deadline,
     return Status::TimedOut(timeout_msg);
   }
 
-  int64_t wait_time = 1000;
+  int64_t wait_time = 1;
   while (1) {
     MonoTime stime = now;
     bool retry = true;
@@ -82,14 +83,15 @@ static Status RetryFunc(const MonoTime& deadline,
     }
 
     VLOG(1) << retry_msg << " status=" << s.ToString();
-    int64_t timeout_usec = std::numeric_limits<uint64_t>::max();
+    int64_t timeout_millis = std::numeric_limits<uint64_t>::max();
     if (deadline.Initialized()) {
-      timeout_usec = deadline.GetDeltaSince(now).ToNanoseconds() -
-                     now.GetDeltaSince(stime).ToNanoseconds();
+      timeout_millis = deadline.GetDeltaSince(now).ToMilliseconds() -
+                     now.GetDeltaSince(stime).ToMilliseconds();
     }
-    if (timeout_usec > 0) {
-      wait_time = std::min(wait_time * 5 / 4, timeout_usec);
-      usleep(wait_time);
+    if (timeout_millis > 0) {
+      wait_time = std::min(wait_time * 5 / 4, timeout_millis);
+      VLOG(1) << "Waiting for " << wait_time << " ms before retrying...";
+      base::SleepForMilliseconds(wait_time);
       now = MonoTime::Now(MonoTime::FINE);
     }
   }

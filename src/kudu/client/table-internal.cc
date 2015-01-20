@@ -8,6 +8,7 @@
 #include "kudu/client/client-internal.h"
 #include "kudu/common/wire_protocol.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/gutil/sysinfo.h"
 #include "kudu/master/master.pb.h"
 #include "kudu/master/master.proxy.h"
 #include "kudu/rpc/rpc_controller.h"
@@ -105,7 +106,7 @@ Status KuduTable::Data::Open() {
     }
 
     /* TODO: Use exponential backoff instead */
-    usleep(100000);
+    base::SleepForMilliseconds(100);
   }
 
   VLOG(1) << "Open Table " << name_ << ", found " << resp.tablet_locations_size() << " tablets";

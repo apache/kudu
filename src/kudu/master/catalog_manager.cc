@@ -43,6 +43,7 @@
 #include "kudu/gutil/strings/escaping.h"
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/gutil/sysinfo.h"
 #include "kudu/gutil/walltime.h"
 #include "kudu/master/master.h"
 #include "kudu/master/master.pb.h"
@@ -2519,7 +2520,7 @@ void TableInfo::AbortTasks() {
 }
 
 void TableInfo::WaitTasksCompletion() {
-  int wait_time = 250;
+  int wait_time = 5;
   while (1) {
     {
       boost::lock_guard<simple_spinlock> l(lock_);
@@ -2527,8 +2528,8 @@ void TableInfo::WaitTasksCompletion() {
         break;
       }
     }
-    usleep(wait_time);
-    wait_time = std::min(wait_time * 5 / 4, 1000000);
+    base::SleepForMilliseconds(wait_time);
+    wait_time = std::min(wait_time * 5 / 4, 10000);
   }
 }
 
