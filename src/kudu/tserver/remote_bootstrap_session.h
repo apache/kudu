@@ -125,14 +125,16 @@ class RemoteBootstrapSession : public RefCountedThreadSafe<RemoteBootstrapSessio
 
   ~RemoteBootstrapSession();
 
-  // Close the specified block file for read.
-  // If it is not open, return an error.
-  Status CloseBlock(const BlockId& block_id);
+  // Look up cached block information.
+  Status FindBlock(const BlockId& block_id,
+                   ImmutableReadableBlockInfo** block_info,
+                   RemoteBootstrapErrorPB::Code* error_code);
 
-  // Open block or look up cached block info.
-  Status FindOrOpenBlock(const BlockId& block_id,
-                         ImmutableReadableBlockInfo** block_info,
-                         RemoteBootstrapErrorPB::Code* error_code);
+  // Look up cached block information, opening the block anew if it wasn't
+  // in the cache.
+  Status FindOrOpenBlockUnlocked(const BlockId& block_id,
+                                 ImmutableReadableBlockInfo** block_info,
+                                 RemoteBootstrapErrorPB::Code* error_code);
 
   // Look up log segment in cache or log segment map.
   Status FindLogSegment(uint64_t segment_seqno,

@@ -40,8 +40,11 @@ using metadata::QuorumPeerPB;
 using rpc::Messenger;
 using rpc::MessengerBuilder;
 using strings::Substitute;
-using tablet::TabletPeer;
+using tablet::ColumnDataPB;
 using tablet::KuduTabletTest;
+using tablet::RowSetDataPB;
+using tablet::TabletPeer;
+using tablet::TabletSuperBlockPB;
 using tablet::WriteTransactionState;
 
 class RemoteBootstrapTest : public KuduTabletTest {
@@ -189,7 +192,7 @@ TEST_F(RemoteBootstrapTest, TestSuperBlocksEqual) {
   faststring tablet_buf;
 
   {
-    const tablet::TabletSuperBlockPB& session_superblock = session_->tablet_superblock();
+    const TabletSuperBlockPB& session_superblock = session_->tablet_superblock();
     int size = session_superblock.ByteSize();
     session_buf.resize(size);
     uint8_t* session_dst = session_buf.data();
@@ -197,7 +200,7 @@ TEST_F(RemoteBootstrapTest, TestSuperBlocksEqual) {
   }
 
   {
-    tablet::TabletSuperBlockPB tablet_superblock;
+    TabletSuperBlockPB tablet_superblock;
     ASSERT_STATUS_OK(tablet()->metadata()->ToSuperBlock(&tablet_superblock));
     int size = tablet_superblock.ByteSize();
     tablet_buf.resize(size);
@@ -213,12 +216,12 @@ TEST_F(RemoteBootstrapTest, TestSuperBlocksEqual) {
 // Test fetching all files from tablet server, ensure the checksums for each
 // chunk and the total file sizes match.
 TEST_F(RemoteBootstrapTest, TestBlocksEqual) {
-  tablet::TabletSuperBlockPB tablet_superblock;
+  TabletSuperBlockPB tablet_superblock;
   ASSERT_STATUS_OK(tablet()->metadata()->ToSuperBlock(&tablet_superblock));
   for (int i = 0; i < tablet_superblock.rowsets_size(); i++) {
-    const tablet::RowSetDataPB& rowset = tablet_superblock.rowsets(i);
+    const RowSetDataPB& rowset = tablet_superblock.rowsets(i);
     for (int j = 0; j < rowset.columns_size(); j++) {
-      const tablet::ColumnDataPB& column = rowset.columns(j);
+      const ColumnDataPB& column = rowset.columns(j);
       const BlockIdPB& block_id_pb = column.block();
       BlockId block_id = BlockId::FromPB(block_id_pb);
 
@@ -253,35 +256,39 @@ TEST_F(RemoteBootstrapTest, TestBlocksEqual) {
   }
 }
 
-// Ensure that reading the last chunk of a block file closes the fd.
-TEST_F(RemoteBootstrapTest, TestBlockFileClosedOnLastRead) {
-  tablet::TabletSuperBlockPB tablet_superblock;
-  ASSERT_STATUS_OK(tablet()->metadata()->ToSuperBlock(&tablet_superblock));
-  const tablet::RowSetDataPB& rowset = tablet_superblock.rowsets(0);
-  const tablet::ColumnDataPB& column = rowset.columns(0);
-  const BlockIdPB& block_id_pb = column.block();
-  BlockId block_id = BlockId::FromPB(block_id_pb);
+// Ensure that blocks are still readable through the open session even
+// after they've been deleted.
+TEST_F(RemoteBootstrapTest, TestBlocksAreFetchableAfterBeingDeleted) {
+  TabletSuperBlockPB tablet_superblock;
+  ASSERT_OK(tablet()->metadata()->ToSuperBlock(&tablet_superblock));
 
-  gscoped_ptr<ReadableBlock> tablet_block;
-  ASSERT_STATUS_OK(fs_manager()->OpenBlock(block_id, &tablet_block));
-  uint64_t block_size = 0;
-  ASSERT_STATUS_OK(tablet_block->Size(&block_size));
+  // Gather all the blocks.
+  vector<BlockId> data_blocks;
+  BOOST_FOREACH(const RowSetDataPB& rowset, tablet_superblock.rowsets()) {
+    if (rowset.has_bloom_block()) {
+      data_blocks.push_back(BlockId::FromPB(rowset.bloom_block()));
+    }
+    if (rowset.has_adhoc_index_block()) {
+      data_blocks.push_back(BlockId::FromPB(rowset.adhoc_index_block()));
+    }
+    BOOST_FOREACH(const ColumnDataPB& column, rowset.columns()) {
+      data_blocks.push_back(BlockId::FromPB(column.block()));
+    }
+  }
 
-  // Grab data in several chunks.
-  int64_t max_chunk_size = block_size / 5;
-  uint64_t offset = 0;
-  while (offset < block_size) {
+  // Delete them.
+  BOOST_FOREACH(const BlockId& block_id, data_blocks) {
+    ASSERT_OK(fs_manager()->DeleteBlock(block_id));
+  }
+
+  // Read them back.
+  BOOST_FOREACH(const BlockId& block_id, data_blocks) {
+    ASSERT_TRUE(session_->IsBlockOpenForTests(block_id));
     string data;
     RemoteBootstrapErrorPB::Code error_code;
     int64_t piece_size;
-    ASSERT_STATUS_OK(session_->GetBlockPiece(block_id, offset, max_chunk_size,
-                     &data, &piece_size, &error_code));
-    offset += data.size();
-    if (offset < piece_size) {
-      ASSERT_TRUE(session_->IsBlockOpenForTests(block_id));
-    } else {
-      ASSERT_FALSE(session_->IsBlockOpenForTests(block_id));
-    }
+    ASSERT_OK(session_->GetBlockPiece(block_id, 0, 0,
+                                      &data, &piece_size, &error_code));
   }
 }
 

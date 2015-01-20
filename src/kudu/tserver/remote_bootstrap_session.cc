@@ -23,6 +23,8 @@ using consensus::OpId;
 using consensus::MinimumOpId;
 using fs::ReadableBlock;
 using log::LogAnchorRegistry;
+using tablet::ColumnDataPB;
+using tablet::RowSetDataPB;
 using tablet::TabletMetadata;
 using tablet::TabletSuperBlockPB;
 using std::tr1::shared_ptr;
@@ -62,7 +64,28 @@ Status RemoteBootstrapSession::Init() {
   const TabletMetadata* metadata = tablet_peer_->shared_tablet()->metadata();
   RETURN_NOT_OK_PREPEND(metadata->ToSuperBlock(&tablet_superblock_),
                         Substitute("Unable to access superblock for tablet $0", tablet_id));
-  // TODO: Anchor blocks once block GC is implemented. See KUDU-452.
+
+  // Anchor the data blocks by opening them and adding them to the cache.
+  //
+  // All subsequent requests should reuse the opened blocks.
+  vector<BlockIdPB> data_blocks;
+  BOOST_FOREACH(const RowSetDataPB& rowset, tablet_superblock().rowsets()) {
+    if (rowset.has_bloom_block()) {
+      data_blocks.push_back(rowset.bloom_block());
+    }
+    if (rowset.has_adhoc_index_block()) {
+      data_blocks.push_back(rowset.adhoc_index_block());
+    }
+    BOOST_FOREACH(const ColumnDataPB& column, rowset.columns()) {
+      data_blocks.push_back(column.block());
+    }
+  }
+  BOOST_FOREACH(const BlockIdPB& block_id, data_blocks) {
+    ImmutableReadableBlockInfo* block_info;
+    RemoteBootstrapErrorPB::Code code;
+    RETURN_NOT_OK(FindOrOpenBlockUnlocked(
+        BlockId::FromPB(block_id), &block_info, &code));
+  }
 
   // Look up the log segments. To avoid races, we do a 2-phase thing where we
   // first anchor all the logs, get a list of the logs available, and then
@@ -200,24 +223,16 @@ Status RemoteBootstrapSession::GetBlockPiece(const BlockId& block_id,
                                              string* data, int64_t* block_file_size,
                                              RemoteBootstrapErrorPB::Code* error_code) {
   ImmutableReadableBlockInfo* block_info;
-  RETURN_NOT_OK(FindOrOpenBlock(block_id, &block_info, error_code));
+  RETURN_NOT_OK(FindBlock(block_id, &block_info, error_code));
 
   RETURN_NOT_OK(ReadFileChunkToBuf(block_info, offset, client_maxlen,
                                    Substitute("block $0", block_id.ToString()),
                                    data, block_file_size, error_code));
 
-  // Eagerly close the block file if we just read the last byte.
-  // This optimizes for the sequential-read case by freeing resources.
-  if (offset + data->size() == block_info->size) {
-    Status s = CloseBlock(block_id);
-    if (!s.ok()) {
-      // Since we allow parallel readers to read the same block, this may race
-      // and the close may fail.
-      VLOG(1) << Substitute("Remote bootstrap: Closing block after read failed with code $0: $1",
-                            RemoteBootstrapErrorPB::Code_Name(*error_code),
-                            s.ToString());
-    }
-  }
+  // Note: We do not eagerly close the block, as doing so may delete the
+  // underlying data if this was its last reader and it had been previously
+  // marked for deletion. This would be a problem for parallel readers in
+  // the same session; they would not be able to find the block.
 
   return Status::OK();
 }
@@ -241,17 +256,6 @@ Status RemoteBootstrapSession::GetLogSegmentPiece(uint64_t segment_seqno,
 bool RemoteBootstrapSession::IsBlockOpenForTests(const BlockId& block_id) const {
   boost::lock_guard<simple_spinlock> l(session_lock_);
   return ContainsKey(blocks_, block_id);
-}
-
-Status RemoteBootstrapSession::CloseBlock(const BlockId& block_id) {
-  boost::lock_guard<simple_spinlock> l(session_lock_);
-  ImmutableReadableBlockInfo* block_info = EraseKeyReturnValuePtr(&blocks_, block_id);
-  if (!block_info) {
-    return Status::NotFound("Block is not open", block_id.ToString());
-  } else {
-    delete block_info;
-    return Status::OK();
-  }
 }
 
 // Add a file to the cache and populate the given ImmutableRandomAcccessFileInfo
@@ -282,10 +286,23 @@ static Status AddToCacheUnlocked(Collection* const cache,
   return Status::OK();
 }
 
-Status RemoteBootstrapSession::FindOrOpenBlock(const BlockId& block_id,
-                                               ImmutableReadableBlockInfo** block_info,
-                                               RemoteBootstrapErrorPB::Code* error_code) {
+Status RemoteBootstrapSession::FindBlock(const BlockId& block_id,
+                                         ImmutableReadableBlockInfo** block_info,
+                                         RemoteBootstrapErrorPB::Code* error_code) {
+  Status s;
   boost::lock_guard<simple_spinlock> l(session_lock_);
+  if (!FindCopy(blocks_, block_id, block_info)) {
+    *error_code = RemoteBootstrapErrorPB::BLOCK_NOT_FOUND;
+    s = Status::NotFound("Block not found", block_id.ToString());
+  }
+  return s;
+}
+
+Status RemoteBootstrapSession::FindOrOpenBlockUnlocked(const BlockId& block_id,
+                                                       ImmutableReadableBlockInfo** block_info,
+                                                       RemoteBootstrapErrorPB::Code* error_code) {
+  DCHECK(session_lock_.is_locked());
+
   if (FindCopy(blocks_, block_id, block_info)) {
     return Status::OK();
   }
