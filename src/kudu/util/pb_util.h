@@ -10,12 +10,15 @@
 
 #include <string>
 
+#include <gtest/gtest_prod.h>
+
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/util/faststring.h"
 
 namespace google {
 namespace protobuf {
-class FileDescriptorProto;
+class FileDescriptor;
+class FileDescriptorSet;
 class MessageLite;
 class Message;
 }
@@ -184,6 +187,16 @@ class WritablePBContainerFile {
   Status Close();
 
  private:
+  FRIEND_TEST(TestPBUtil, TestPopulateDescriptorSet);
+
+  // Write the protobuf schemas belonging to 'desc' and all of its
+  // dependencies to 'output'.
+  //
+  // Schemas are written in dependency order (i.e. if A depends on B which
+  // depends on C, the order is C, B, A).
+  static void PopulateDescriptorSet(const google::protobuf::FileDescriptor* desc,
+                                    google::protobuf::FileDescriptorSet* output);
+
   bool closed_;
 
   gscoped_ptr<WritableFile> writer_;
@@ -209,6 +222,10 @@ class ReadablePBContainerFile {
   // data using a CRC32 checksum.
   Status ReadNextPB(google::protobuf::Message* msg);
 
+  // Dumps any unread protobuf messages in the container to 'os'. Each
+  // message's DebugString() method is invoked to produce its textual form.
+  Status Dump(std::ostream* os);
+
   // Closes the container.
   Status Close();
 
@@ -216,8 +233,8 @@ class ReadablePBContainerFile {
   //
   // Only valid after a successful call to Init().
   const std::string& pb_type() const { return pb_type_; }
-  const google::protobuf::FileDescriptorProto* proto() const {
-    return proto_.get();
+  const google::protobuf::FileDescriptorSet* protos() const {
+    return protos_.get();
   }
 
  private:
@@ -241,7 +258,7 @@ class ReadablePBContainerFile {
   std::string pb_type_;
 
   // Wrapped in a gscoped_ptr so that clients need not include PB headers.
-  gscoped_ptr<google::protobuf::FileDescriptorProto> proto_;
+  gscoped_ptr<google::protobuf::FileDescriptorSet> protos_;
 
   gscoped_ptr<RandomAccessFile> reader_;
 };

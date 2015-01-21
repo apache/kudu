@@ -1,14 +1,17 @@
 // Copyright (c) 2013, Cloudera,inc.
 // Confidential Cloudera Information: Covered by NDA.
 
+#include <sys/types.h>
+#include <unistd.h>
+
+#include <string>
+#include <tr1/memory>
+#include <vector>
+
 #include <boost/assign.hpp>
 #include <boost/foreach.hpp>
+#include <google/protobuf/descriptor.pb.h>
 #include <gtest/gtest.h>
-#include <string>
-#include <sys/types.h>
-#include <tr1/memory>
-#include <unistd.h>
-#include <vector>
 
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/util/env_util.h"
@@ -16,12 +19,16 @@
 #include "kudu/util/pb_util.h"
 #include "kudu/util/pb_util-internal.h"
 #include "kudu/util/proto_container_test.pb.h"
+#include "kudu/util/proto_container_test2.pb.h"
+#include "kudu/util/proto_container_test3.pb.h"
 #include "kudu/util/status.h"
 #include "kudu/util/test_util.h"
 
 namespace kudu {
 namespace pb_util {
 
+using google::protobuf::FileDescriptorSet;
+using std::ostringstream;
 using std::string;
 using std::tr1::shared_ptr;
 using std::vector;
@@ -291,6 +298,87 @@ TEST_F(TestPBUtil, TestInterleavedReadWrite) {
   // After closing the writer, the reader should be out of data.
   ASSERT_OK(pb_writer.Close());
   ASSERT_TRUE(pb_reader.ReadNextPB(NULL).IsEndOfFile());
+  ASSERT_OK(pb_reader.Close());
+}
+
+TEST_F(TestPBUtil, TestPopulateDescriptorSet) {
+  {
+    // No dependencies --> just one proto.
+    ProtoContainerTestPB pb;
+    FileDescriptorSet protos;
+    WritablePBContainerFile::PopulateDescriptorSet(
+        pb.GetDescriptor()->file(), &protos);
+    ASSERT_EQ(1, protos.file_size());
+  }
+  {
+    // One direct dependency --> two protos.
+    ProtoContainerTest2PB pb;
+    FileDescriptorSet protos;
+    WritablePBContainerFile::PopulateDescriptorSet(
+        pb.GetDescriptor()->file(), &protos);
+    ASSERT_EQ(2, protos.file_size());
+  }
+  {
+    // One direct and one indirect dependency --> three protos.
+    ProtoContainerTest3PB pb;
+    FileDescriptorSet protos;
+    WritablePBContainerFile::PopulateDescriptorSet(
+        pb.GetDescriptor()->file(), &protos);
+    ASSERT_EQ(3, protos.file_size());
+  }
+}
+
+TEST_F(TestPBUtil, TestDumpPBContainer) {
+  const char* kExpectedOutput=
+      "Message 0\n"
+      "-------\n"
+      "record_one {\n"
+      "  name: \"foo\"\n"
+      "  value: 0\n"
+      "}\n"
+      "record_two {\n"
+      "  record {\n"
+      "    name: \"foo\"\n"
+      "    value: 0\n"
+      "  }\n"
+      "}\n"
+      "\n"
+      "Message 1\n"
+      "-------\n"
+      "record_one {\n"
+      "  name: \"foo\"\n"
+      "  value: 1\n"
+      "}\n"
+      "record_two {\n"
+      "  record {\n"
+      "    name: \"foo\"\n"
+      "    value: 2\n"
+      "  }\n"
+      "}\n\n";
+
+  ProtoContainerTest3PB pb;
+  pb.mutable_record_one()->set_name("foo");
+  pb.mutable_record_two()->mutable_record()->set_name("foo");
+
+  gscoped_ptr<WritableFile> writer;
+  ASSERT_OK(env_->NewWritableFile(path_, &writer));
+  WritablePBContainerFile pb_writer(writer.Pass());
+  ASSERT_OK(pb_writer.Init(pb));
+
+  for (int i = 0; i < 2; i++) {
+    pb.mutable_record_one()->set_value(i);
+    pb.mutable_record_two()->mutable_record()->set_value(i*2);
+    ASSERT_OK(pb_writer.Append(pb));
+  }
+  ASSERT_OK(pb_writer.Close());
+
+  gscoped_ptr<RandomAccessFile> reader;
+  ASSERT_OK(env_->NewRandomAccessFile(path_, &reader));
+  ReadablePBContainerFile pb_reader(reader.Pass());
+  ASSERT_OK(pb_reader.Init());
+  ostringstream oss;
+  ASSERT_OK(pb_reader.Dump(&oss));
+  ASSERT_STREQ(kExpectedOutput, oss.str().c_str());
   ASSERT_OK(pb_reader.Close());
 }
 

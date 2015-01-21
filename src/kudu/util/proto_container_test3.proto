@@ -1,0 +1,18 @@
+// Copyright (c) 2015 Cloudera, Inc.
+// Confidential Cloudera Information: Covered by NDA.
+package kudu;
+
+// Dependency chain:
+//
+// this file --> proto_container_test.proto
+//           --> proto_container_test2.proto --> proto_container_test.proto
+
+import "kudu/util/proto_container_test.proto";
+import "kudu/util/proto_container_test2.proto";
+
+// Arbitrary protobuf has two PB dependencies.
+// dependency.
+message ProtoContainerTest3PB {
+  required kudu.ProtoContainerTestPB record_one = 1;
+  required kudu.ProtoContainerTest2PB record_two = 2;
+}

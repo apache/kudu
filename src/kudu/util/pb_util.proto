@@ -11,9 +11,12 @@ import "google/protobuf/descriptor.proto";
 // Supplemental protobuf container header, after the main header (see
 // pb_util.h for details).
 message ContainerSupHeaderPB {
-  // The PB schema for the messages expected in this container. This
-  // represents an entire .proto file; it's not just for a single message.
-  required google.protobuf.FileDescriptorProto proto = 1;
+  // The protobuf schema for the messages expected in this container.
+  //
+  // This schema is complete, that is, it includes all of its dependencies
+  // (i.e. other schemas defined in .proto files imported by this schema's
+  // .proto file).
+  required google.protobuf.FileDescriptorSet protos = 1;
 
   // The PB message type expected in each data entry in this container. Must
   // be fully qualified (i.e. kudu.tablet.TabletMasterBlockPB).

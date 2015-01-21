@@ -10,18 +10,25 @@
 
 #include "kudu/util/pb_util.h"
 
+#include <deque>
+#include <string>
+#include <tr1/memory>
+#include <tr1/unordered_set>
+#include <vector>
+
 #include <boost/foreach.hpp>
 #include <glog/logging.h>
 #include <google/protobuf/descriptor.h>
+#include <google/protobuf/descriptor.pb.h>
+#include <google/protobuf/descriptor_database.h>
+#include <google/protobuf/dynamic_message.h>
 #include <google/protobuf/io/zero_copy_stream.h>
 #include <google/protobuf/message_lite.h>
 #include <google/protobuf/message.h>
-#include <string>
-#include <tr1/memory>
-#include <vector>
 
 #include "kudu/gutil/bind.h"
 #include "kudu/gutil/callback.h"
+#include "kudu/gutil/map-util.h"
 #include "kudu/gutil/strings/escaping.h"
 #include "kudu/gutil/strings/fastmem.h"
 #include "kudu/gutil/strings/substitute.h"
@@ -35,16 +42,25 @@
 #include "kudu/util/pb_util-internal.h"
 #include "kudu/util/status.h"
 
+using google::protobuf::Descriptor;
+using google::protobuf::DescriptorPool;
+using google::protobuf::DynamicMessageFactory;
 using google::protobuf::FieldDescriptor;
+using google::protobuf::FileDescriptor;
 using google::protobuf::FileDescriptorProto;
+using google::protobuf::FileDescriptorSet;
 using google::protobuf::Message;
 using google::protobuf::MessageLite;
 using google::protobuf::Reflection;
+using google::protobuf::SimpleDescriptorDatabase;
 using kudu::crc::Crc;
 using kudu::pb_util::internal::SequentialFileFileInputStream;
 using kudu::pb_util::internal::WritableFileOutputStream;
+using std::deque;
+using std::endl;
 using std::string;
 using std::tr1::shared_ptr;
+using std::tr1::unordered_set;
 using std::vector;
 using strings::Substitute;
 using strings::Utf8SafeCEscape;
@@ -260,7 +276,8 @@ Status WritablePBContainerFile::Init(const Message& msg) {
 
   // Write the supplemental header to the file.
   ContainerSupHeaderPB sup_header;
-  msg.GetDescriptor()->file()->CopyTo(sup_header.mutable_proto());
+  PopulateDescriptorSet(msg.GetDescriptor()->file(),
+                        sup_header.mutable_protos());
   sup_header.set_pb_type(msg.GetTypeName());
   RETURN_NOT_OK_PREPEND(Append(sup_header),
                         "Failed to Append() supplemental header to file");
@@ -327,6 +344,40 @@ Status WritablePBContainerFile::Close() {
   return Status::OK();
 }
 
+void WritablePBContainerFile::PopulateDescriptorSet(
+    const FileDescriptor* desc, FileDescriptorSet* output) {
+  FileDescriptorSet all_descs;
+
+  // Tracks all schemas that have been added to 'unemitted' at one point
+  // or another. Is a superset of 'unemitted' and only ever grows.
+  unordered_set<const FileDescriptor*> processed;
+
+  // Tracks all remaining unemitted schemas.
+  deque<const FileDescriptor*> unemitted;
+
+  InsertOrDie(&processed, desc);
+  unemitted.push_front(desc);
+  while (!unemitted.empty()) {
+    const FileDescriptor* proto = unemitted.front();
+
+    // The current schema is emitted iff we've processed (i.e. emitted) all
+    // of its dependencies.
+    bool emit = true;
+    for (int i = 0; i < proto->dependency_count(); i++) {
+      const FileDescriptor* dep = proto->dependency(i);
+      if (InsertIfNotPresent(&processed, dep)) {
+        unemitted.push_front(dep);
+        emit = false;
+      }
+    }
+    if (emit) {
+      unemitted.pop_front();
+      proto->CopyTo(all_descs.mutable_file()->Add());
+    }
+  }
+  all_descs.Swap(output);
+}
+
 ReadablePBContainerFile::ReadablePBContainerFile(gscoped_ptr<RandomAccessFile> reader)
   : offset_(0),
     reader_(reader.Pass()) {
@@ -367,7 +418,7 @@ Status ReadablePBContainerFile::Init() {
   RETURN_NOT_OK_PREPEND(ReadNextPB(&sup_header), Substitute(
       "Could not read supplemental header from proto container file $0",
       reader_->ToString()));
-  proto_.reset(sup_header.release_proto());
+  protos_.reset(sup_header.release_protos());
   pb_type_ = sup_header.pb_type();
 
   return Status::OK();
@@ -424,6 +475,51 @@ Status ReadablePBContainerFile::ReadNextPB(Message* msg) {
   }
 
   return Status::OK();
+}
+
+Status ReadablePBContainerFile::Dump(ostream* os) {
+  // Use the embedded protobuf information from the container file to
+  // create the appropriate kind of protobuf Message.
+  //
+  // Loading the schemas into a DescriptorDatabase (and not directly into
+  // a DescriptorPool) defers resolution until FindMessageTypeByName()
+  // below, allowing for schemas to be loaded in any order.
+  SimpleDescriptorDatabase db;
+  for (int i = 0; i < protos()->file_size(); i++) {
+    if (!db.Add(protos()->file(i))) {
+      return Status::Corruption("Descriptor not loaded", Substitute(
+          "Could not load descriptor for PB type $0 referenced in container file",
+          pb_type()));
+    }
+  }
+  DescriptorPool pool(&db);
+  const Descriptor* desc = pool.FindMessageTypeByName(pb_type());
+  if (!desc) {
+    return Status::NotFound("Descriptor not found", Substitute(
+        "Could not find descriptor for PB type $0 referenced in container file",
+        pb_type()));
+  }
+  DynamicMessageFactory factory;
+  const Message* prototype = factory.GetPrototype(desc);
+  if (!prototype) {
+    return Status::NotSupported("Descriptor not supported", Substitute(
+        "Descriptor $0 referenced in container file not supported",
+        pb_type()));
+  }
+  gscoped_ptr<Message> msg(prototype->New());
+
+  // Dump each message in the container file.
+  int count = 0;
+  Status s;
+  for (s = ReadNextPB(msg.get());
+      s.ok();
+      s = ReadNextPB(msg.get())) {
+    *os << "Message " << count << endl;
+    *os << "-------" << endl;
+    *os << msg->DebugString() << endl;
+    count++;
+  }
+  return s.IsEndOfFile() ? s.OK() : s;
 }
 
 Status ReadablePBContainerFile::Close() {

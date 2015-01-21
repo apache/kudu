@@ -222,7 +222,10 @@ target_link_libraries(jsonwriter-test
 PROTOBUF_GENERATE_CPP(PROTO_CONTAINER_TEST_PROTO_SRCS PROTO_CONTAINER_TEST_PROTO_HDRS
   SOURCE_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../..
   BINARY_ROOT ${CMAKE_CURRENT_BINARY_DIR}/../..
-  PROTO_FILES proto_container_test.proto)
+  PROTO_FILES
+    proto_container_test.proto
+    proto_container_test2.proto
+    proto_container_test3.proto)
 add_library(proto_container_test_proto
   ${PROTO_CONTAINER_TEST_PROTO_SRCS}
   ${PROTO_CONTAINER_TEST_PROTO_HDRS})
