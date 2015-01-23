@@ -77,7 +77,7 @@ reads from earlier than that point in history).
 MVCC Mutations in MemRowSet
 ============================================================
 
-In order to support MVCC in the MemRowSet, each row is tagged with the timstamp which
+In order to support MVCC in the MemRowSet, each row is tagged with the timestamp which
 inserted the row. Additionally, the row contains a singly linked list containing any further
 mutations that were made to the row after its insertion, each tagged with the mutation's
 timestamp:
@@ -106,8 +106,8 @@ timestamp:
 In traditional database terms, one can think of the mutation list forming a sort of
 "REDO log" containing all changes which affect this row.
 
-Any reader traversing the MemRowSet must then apply the following logic to read the
-correct snapshot of the row:
+Any reader traversing the MemRowSet needs to apply these mutations to read the correct
+snapshot of the row, via the following logic:
 
 - If row.insertion_timestamp is not committed in scanner's MVCC snapshot, skip the row
   (it was not yet inserted when the scanner's snapshot was made).
@@ -118,7 +118,6 @@ correct snapshot of the row:
     mutated at the time of the snapshot).
   - if the mutation indicates a DELETE, mark the row as deleted in the output buffer
     of the scanner by zeroing its bit in the scanner's selection vector.
-
 
 Note that "mutation" in this case can be one of three types:
 - UPDATE: changes the value of one or more columns
@@ -189,14 +188,14 @@ When the MemRowSet fills up, a Flush occurs, which persists the data to disk.
 +-------------+-  +--------------+    +--------------+
 
 When the data is flushed, it is stored as a set of CFiles (see src/kudu/cfile/README).
-Each of the rows in the data is addressable by a sequential "row ID", which is
+Each of the rows in the data is addressable by a sequential "rowid", which is
 dense, immutable, and unique within this DiskRowSet. For example, if a given
 DiskRowSet contains 5 rows, then they will be assigned rowid 0 through 4, in
 order of ascending key. Within a different DiskRowSet, there will be different
 rows with the same rowids.
 
-Reads may map between primary keys (user-visible) and row IDs (internal) using an index
-structure. In the case that the primary key is not compound, the key structure is
+Reads may map between primary keys (user-visible) and rowids (internal) using an index
+structure. In the case that the primary key is a simple key, the key structure is
 embedded within the primary key column's cfile. Otherwise, a separate index cfile
 stores the encoded compound key and provides a similar function.
 
@@ -303,7 +302,7 @@ key search which verified that the key is present in the RowSet). The
 mutation can then enter an in-memory structure called the DeltaMemStore.
 
 The DeltaMemStore is an in-memory concurrent BTree keyed by a composite key of the
-numeric row index and the mutating timestamp. At read time, these mutations
+rowid and the mutating timestamp. At read time, these mutations
 are processed in the same manner as the mutations for newly inserted data.
 
 When the Delta MemStore grows too large, it performs a flush to an
@@ -317,14 +316,15 @@ The DeltaFiles contain the same type of information as the Delta MemStore,
 but compacted to a dense on-disk serialized format. Because these delta files
 contain records of transactions that need to be re-applied to the base data
 in order to bring rows up-to-date, they are called "REDO" files, and the
-mutations contained are called "REDO" records.
+mutations contained are called "REDO" records. Similar to data resident in the
+MemRowSet, REDO mutations need to be applied to read newer versions of the data.
 
 A given row may have delta information in multiple delta structures. In that
 case, the deltas are applied sequentially, with later modifications winning
 over earlier modifications.
 
 Note that the mutation tracking structure for a given row does not
-necessarily include the entirety of the row. If only a single column of many
+necessarily include the entirety of the row. If only a single column of a row
 is updated, then the mutation structure will only include the updated column.
 This allows for fast updates of small columns without the overhead of reading
 or re-writing larger columns (an advantage compared to the MVCC techniques used
@@ -340,7 +340,7 @@ In summary, each DiskRowSet consists of three logical components:
 | UNDO records | <---  | base data | ---> | REDO records |
 +--------------+       +-----------+      +--------------+
 
-Base data:    the columnar data for the RowSet, at the time the RowSet was Flushed
+Base data:    the columnar data for the RowSet, at the time the RowSet was flushed
 
 UNDO records: historical data which needs to be processed to rollback rows to
               points in time prior to the RowSet flush.
@@ -577,7 +577,7 @@ Comparison to BigTable approach
 
 This design differs from the approach used in BigTable in a few key ways:
 
-1) A given key is only present at at most one RowSet in the tablet.
+1) A given key is only present in at most one RowSet in the tablet.
 
 In BigTable, a key may be present in several different SSTables. An entire
 Tablet in BigTable looks more like the RowSet in Kudu -- any read of a key
@@ -597,7 +597,7 @@ are distinct operations: inserts must go into the MemRowSet, whereas
 mutations (delete/update) must go into the DeltaMemStore in the specific RowSet
 containing that key. This has performance impacts as follows:
 
-  a) Inserts must determine that they are in fact new keys
+  a) Inserts must determine that they are in fact new keys.
 
   This results in a bloom filter query against all present RowSets. If
   any RowSet indicates a possible match, then a seek must be performed
@@ -611,7 +611,7 @@ containing that key. This has performance impacts as follows:
   application), then the blocks corresponding to those keys are likely to
   be kept in the data block cache due to their frequent usage.
 
-  b) Updates must determine which RowSet they correspond to
+  b) Updates must determine which RowSet they correspond to.
 
   Similar to above, this results in a bloom filter query against
   all RowSets, as well as a primary key lookup against any matching RowSets.
@@ -623,14 +623,15 @@ existing row. Similarly, an UPDATE of a row which does not exist can give
 a key violation error, indicating that no rows were updated. These semantics
 are not generally provided by BigTable-like systems.
 
-2) Mutation merges are performed on numeric rowids rather than arbitrary keys
+2) Mutation applications of data on disk are performed on numeric rowids rather than
+   arbitrary keys.
 
 In order to reconcile a key on disk with its potentially-mutated form,
 BigTable performs a merge based on the row's key. These keys may be arbitrarily
 long strings, so comparison can be expensive. Additionally, even if the
 key column is not needed to service a query (e.g an aggregate computation),
 the key column must be read off disk and processed, which causes extra IO.
-Given the compound keys often used in BigTable applications, the key size
+Given that composite keys are often used in BigTable applications, the key size
 may dwarf the size of the column of interest by an order of magnitude, especially
 if the queried column is stored in a dense encoding.
 
@@ -646,7 +647,7 @@ need not consult the key except perhaps to determine scan boundaries.
 As an example, consider the query:
  > SELECT SUM(cpu_usage) FROM timeseries WHERE machine = 'foo.cloudera.com'
    AND unix_time BETWEEN 1349658729 AND 1352250720;
- ... given a compound primary key (host, unix_time)
+ ... given a composite primary key (host, unix_time)
 
 This may be evaluated in Kudu with the following pseudo-code:
   sum = 0
