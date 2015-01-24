@@ -101,7 +101,7 @@ Status Ksck::CheckTablesConsistency() {
   int bad_tables_count = 0;
   BOOST_FOREACH(const shared_ptr<KsckTable> &table, cluster_->tables()) {
     if (!VerifyTableWithTimeout(table,
-                                MonoDelta::FromSeconds(1),
+                                MonoDelta::FromSeconds(2),
                                 MonoDelta::FromMilliseconds(100))) {
       bad_tables_count++;
     }

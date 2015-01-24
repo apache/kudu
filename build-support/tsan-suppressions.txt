@@ -20,7 +20,12 @@ race:*::protobuf_AssignDescriptorsOnce
 
 # libunwind uses some double-checked locking which isn't perfectly safe.
 # Reported at http://savannah.nongnu.org/bugs/index.php?42677
-race:_ULx86_64_local_addr_space_init
+#
+# With TSAN in clang 3.5, it's the init() function that's flagged as a data
+# race (not local_addr_space_init()), due to the former calling sigfillset()
+# on an unprotected global variable. Given that init() invokes
+# local_addr_space_init(), suppressing init() suppresses both races.
+race:_ULx86_64_init
 
 # libev uses some lock-free synchronization, but doesn't have TSAN annotations.
 # See http://lists.schmorp.de/pipermail/libev/2013q2/002178.html or KUDU-366
