@@ -3,10 +3,14 @@
 package kudu.rpc;
 
 import com.google.common.base.Stopwatch;
+import com.google.common.collect.Lists;
+import com.google.common.net.HostAndPort;
 import com.stumbleupon.async.Callback;
 import com.stumbleupon.async.Deferred;
 import kudu.ColumnSchema;
 import kudu.Schema;
+import kudu.metadata.Metadata;
+import kudu.util.NetUtil;
 import org.junit.AfterClass;
 import org.junit.BeforeClass;
 import org.slf4j.Logger;
@@ -33,22 +37,43 @@ public class BaseKuduTest {
 
   private static final String MASTER_ADDRESS = "masterAddress";
   private static final String MASTER_PORT = "masterPort";
-  private static final String FLAGS_PATH = "flagsPath";
+
+  private static final String MASTER_QUORUM = "masterQuorum";
+  private static final int DEFAULT_MASTER_RPC_PORT = 7051;
+
+  private static final String FLAGS_PATH_PROP = "flagsPath";
   private static final String BASE_DIR_PATH = "baseDirPath";
   private static final String START_CLUSTER = "startCluster";
+  private static final String NUM_MASTERS_PROP = "NUM_MASTERS";
 
-  // TS ports will be assigned starting with this one.
-  private static final int TS_PORT_START = 64030;
-  private static String masterAddress;
-  private static int masterPort;
-  private static String masterAddressAndPort;
+  // TS and Master ports will be assigned starting with this one.
+  private static final int PORT_START = 64030;
+
+
+  // Comma separate describing the master addresses and ports.
+  protected static String masterQuorum;
+  protected static List<HostAndPort> masterHostPorts;
 
   protected static final int DEFAULT_SLEEP = 50000;
   protected static final int NUM_TABLET_SERVERS = 3;
+  protected static final int DEFAULT_NUM_MASTERS = 3;
+
   static final List<Thread> PROCESS_INPUT_PRINTERS = new ArrayList<Thread>();
-  static Process master;
+
+  // Number of masters that will be started for this test if we're starting
+  // a cluster.
+  protected static final int NUM_MASTERS =
+      Integer.getInteger(NUM_MASTERS_PROP, DEFAULT_NUM_MASTERS);
+
+  // Map of ports to master servers.
+  static final Map<Integer, Process> MASTERS = new ConcurrentHashMap<Integer, Process>(NUM_MASTERS);
+
   // Map of ports to tablet servers.
-  static Map<Integer, Process> tabletServers;
+  static final Map<Integer, Process> TABLET_SERVERS =
+      new ConcurrentHashMap<Integer, Process>(NUM_TABLET_SERVERS);
+
+  private static final String FLAGS_PATH = System.getProperty(FLAGS_PATH_PROP);
+
   protected static KuduClient client;
   protected static Schema basicSchema = getBasicSchema();
   protected static boolean startCluster;
@@ -58,39 +83,87 @@ public class BaseKuduTest {
   @BeforeClass
   public static void setUpBeforeClass() throws Exception {
     // the following props are set via kudu-client's pom
-    masterAddress = System.getProperty(MASTER_ADDRESS);
-    masterPort = Integer.parseInt(System.getProperty(MASTER_PORT));
-    masterAddressAndPort = masterAddress + ":" + masterPort;
-    String flagsPath = System.getProperty(FLAGS_PATH);
+
     String baseDirPath = System.getProperty(BASE_DIR_PATH);
     startCluster = Boolean.parseBoolean(System.getProperty(START_CLUSTER));
 
     if (startCluster) {
-      tabletServers = new ConcurrentHashMap<Integer, Process>(NUM_TABLET_SERVERS);
-      String flagFileOpt = "--flagfile=" + flagsPath;
       long now = System.currentTimeMillis();
 
-      String[] masterCmdLine = {"kudu-master", flagFileOpt, "--master_base_dir=" + baseDirPath
-        + "/master-" + now, "--use_hybrid_clock=true", "--max_clock_sync_error_usec=10000000"};
-      master = configureAndStartProcess(masterCmdLine);
-
-      int port = TS_PORT_START;
+      int port = startMasters(PORT_START, NUM_MASTERS, baseDirPath);
       for (int i = 0; i < NUM_TABLET_SERVERS; i++) {
         port = TestUtils.findFreePort(port);
-        String[] tsCmdLine = {"kudu-tablet_server", flagFileOpt,
+        String[] tsCmdLine = {"kudu-tablet_server", "--flagfile=" + FLAGS_PATH,
             "--tablet_server_base_dir=" + baseDirPath + "/ts-" + i + "-" + now,
-            "--tablet_server_rpc_bind_addresses=0.0.0.0:" + port,
+            "--tablet_server_master_addrs=" + masterQuorum,
+            "--tablet_server_rpc_bind_addresses=127.0.0.1:" + port,
             "--use_hybrid_clock=true",
             "--max_clock_sync_error_usec=10000000"};
-        tabletServers.put(port, configureAndStartProcess(tsCmdLine));
+        TABLET_SERVERS.put(port, configureAndStartProcess(tsCmdLine));
         port++;
       }
+    } else {
+      masterQuorum = System.getProperty(MASTER_QUORUM,
+          System.getProperty(MASTER_ADDRESS) + ":" + Integer.getInteger(MASTER_PORT));
+      masterHostPorts = NetUtil.parseStrings(masterQuorum, DEFAULT_MASTER_RPC_PORT);
     }
+    client = new KuduClient(masterHostPorts);
+    if (!waitForTabletServers(NUM_TABLET_SERVERS)) {
+      fail("Couldn't get " + NUM_MASTERS + " tablet servers running, aborting");
+    }
+  }
 
-    client = new KuduClient(masterAddress, masterPort);
-    if (!waitForTabletServers(3)) {
-      fail("Couldn't even get a TS running, aborting");
+  /**
+   * Start the specified number of master servers with ports starting from a specified
+   * number. Finds free web and RPC ports up front for all of the masters first, then
+   * starts them on those ports, populating 'masters' map.
+   * @param masterStartPort The starting of the port range for the masters.
+   * @param numMasters Number of masters to start.
+   * @param baseDirPath Kudu base directory.
+   * @return Next free port.
+   * @throws Exception If we are unable to start the masters.
+   */
+  static int startMasters(int masterStartPort, int numMasters,
+                          String baseDirPath) throws Exception {
+    // Get the list of web and RPC ports to use for the master quorum:
+    // request NUM_MASTERS * 2 free ports as we want to also reserve the web
+    // ports for the quorum.
+    List<Integer> ports = TestUtils.findFreePorts(masterStartPort, numMasters * 2);
+    int lastFreePort = ports.get(ports.size() - 1);
+    List<Integer> masterRpcPorts = Lists.newArrayListWithCapacity(numMasters);
+    List<Integer> masterWebPorts = Lists.newArrayListWithCapacity(numMasters);
+    masterHostPorts = Lists.newArrayListWithCapacity(numMasters);
+    for (int i = 0; i < numMasters * 2; i++) {
+      if (i % 2 == 0) {
+        masterRpcPorts.add(ports.get(i));
+        masterHostPorts.add(HostAndPort.fromParts("127.0.0.1", ports.get(i)));
+      } else {
+        masterWebPorts.add(ports.get(i));
+      }
     }
+    masterQuorum = NetUtil.hostsAndPortsToString(masterHostPorts);
+    for (int i = 0; i < numMasters; i++) {
+      long now = System.currentTimeMillis();
+      // The web port must be reserved in the call to findFreePorts above and specified
+      // to avoid the scenario where:
+      // 1) findFreePorts finds RPC ports a, b, c for the 3 masters.
+      // 2) start master 1 with RPC port and let it bind to any (specified as 0) web port.
+      // 3) master 1 happens to bind to port b for the web port, as master 2 hasn't been
+      // started yet and findFreePort(s) is "check-time-of-use" (it does not reserve the
+      // ports, only checks that when it was last called, these ports could be used).
+      List<String> masterCmdLine = Lists.newArrayList("kudu-master", "--flagfile=" + FLAGS_PATH,
+          "--master_base_dir=" + baseDirPath + "/master-" + i + "-" + now,
+          "--use_hybrid_clock=true",
+          "--master_rpc_bind_addresses=127.0.0.1:" + masterRpcPorts.get(i),
+          "--master_web_port=" + masterWebPorts.get(i),
+          "--max_clock_sync_error_usec=10000000");
+      if (numMasters > 1) {
+        masterCmdLine.add("--master_quorum=" + masterQuorum);
+      }
+      MASTERS.put(masterRpcPorts.get(i),
+          configureAndStartProcess(masterCmdLine.toArray(new String[masterCmdLine.size()])));
+    }
+    return lastFreePort + 1;
   }
 
   /**
@@ -171,10 +244,11 @@ public class BaseKuduTest {
         }
       } finally {
         if (startCluster) {
-          if (master != null) {
-            master.destroy();
+          for (Iterator<Process> masterIter = MASTERS.values().iterator(); masterIter.hasNext(); ) {
+            masterIter.next().destroy();
+            masterIter.remove();
           }
-          for (Iterator<Process> tsIter = tabletServers.values().iterator(); tsIter.hasNext(); ) {
+          for (Iterator<Process> tsIter = TABLET_SERVERS.values().iterator(); tsIter.hasNext(); ) {
             tsIter.next().destroy();
             tsIter.remove();
           }
@@ -203,8 +277,8 @@ public class BaseKuduTest {
       fail("Timed out");
     }
     if (gotError.get()) {
-      fail("Got error during table creation, is the Kudu master running at " +
-          masterAddress + ":" + masterPort + "?");
+      fail("Got error during table creation, is the Kudu master quorum running at " +
+          masterQuorum + "?");
     }
     tableNames.add(tableName);
   }
@@ -337,7 +411,7 @@ public class BaseKuduTest {
     }
 
     Integer port = leader.getRpcHostPort().getPort();
-    Process ts = tabletServers.get(port);
+    Process ts = TABLET_SERVERS.get(port);
     if (ts == null) {
       // The TS is already dead, good.
       return;
@@ -345,19 +419,58 @@ public class BaseKuduTest {
     LOG.info("Killing server at port " + port);
     ts.destroy();
     ts.waitFor();
-    tabletServers.remove(port);
+    TABLET_SERVERS.remove(port);
   }
 
-  protected static int getMasterPort() {
-    return masterPort;
+  /**
+   * Helper method to easily kill the leader of the master quorum.
+   *
+   * This method is thread-safe.
+   * @throws Exception If there is an error finding or killing the leader master.
+   */
+  protected static void killMasterLeader() throws Exception {
+    Stopwatch sw = new Stopwatch().start();
+    HostAndPort leaderHostPort = null;
+    List<GetMasterRegistrationResponse> responses = Lists.newArrayListWithCapacity(NUM_MASTERS);
+    while (leaderHostPort == null && sw.elapsedMillis() < DEFAULT_SLEEP) {
+      // TODO: Have client return this information to us directly.
+      for (HostAndPort masterHostPort : masterHostPorts) {
+        TabletClient masterClient = client.newMasterClient(masterHostPort);
+        try {
+          Deferred<GetMasterRegistrationResponse> d = client.getMasterRegistration(masterClient);
+          GetMasterRegistrationResponse r = d.join(DEFAULT_SLEEP);
+          responses.add(r);
+          if (r.getRole().equals(Metadata.QuorumPeerPB.Role.LEADER)) {
+            leaderHostPort = masterHostPort;
+            break;
+          }
+        } catch (Exception e) {
+          LOG.info(e.getMessage(), e);
+        }
+      }
+    }
+    if (leaderHostPort == null) {
+      fail("No leader master was been elected. Received responses: " + responses.toString());
+    }
+    Integer port = leaderHostPort.getPort();
+    Process master = MASTERS.get(port);
+    if (master == null) {
+      // The master is already dead, good.
+      return;
+    }
+    LOG.info("Killing master at port " + port);
+    master.destroy();
+    master.waitFor();
+    MASTERS.remove(port);
   }
 
-  protected static String getMasterAddress() {
-    return masterAddress;
-  }
-
-  protected static String getMasterAddressAndPort() {
-    return masterAddressAndPort;
+  /**
+   * Return the comma-separated list of "host:port" pairs that describes the master
+   * quorum for this cluster.
+   * @return The master quorum string.
+   */
+  protected static String getMasterQuorum() {
+    return masterQuorum;
   }
 
   /**

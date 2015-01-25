@@ -32,8 +32,8 @@ import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Objects;
 import com.google.common.collect.ComparisonChain;
 import com.google.common.collect.Lists;
+import com.google.common.net.HostAndPort;
 import com.google.protobuf.ByteString;
-import com.google.protobuf.ZeroCopyLiteralByteString;
 import kudu.ColumnSchema;
 import kudu.Common;
 import kudu.Schema;
@@ -41,6 +41,7 @@ import kudu.master.Master;
 import com.stumbleupon.async.Callback;
 import com.stumbleupon.async.Deferred;
 import kudu.metadata.Metadata;
+import kudu.util.NetUtil;
 import kudu.util.Slice;
 import org.jboss.netty.channel.ChannelEvent;
 import org.jboss.netty.channel.ChannelStateEvent;
@@ -182,8 +183,7 @@ public class KuduClient {
   // a table name.
   static final String MASTER_TABLE_HACK =  "~~~masterTableHack~~~";
   final KuduTable masterTableHack;
-  private final String masterAddress;
-  private final int masterPort;
+  private final List<HostAndPort> masterAddresses;
   // END OF HACK
 
   private final HashedWheelTimer timer = new HashedWheelTimer(20, MILLISECONDS);
@@ -213,27 +213,30 @@ public class KuduClient {
   private volatile boolean closed;
 
   /**
-   * Create a new client that connects to the specified master
-   * Doesn't block and won't throw an exception if the master doesn't exist
-   * @param address master's address
-   * @param port master's port
+   * Create a new client that connects to masters specified by a comma-separated
+   * list.
+   * Doesn't block and won't throw an exception if the masters don't exist.
+   * @param masterQuorum Comma-separated list of "host:port" pairs of the masters
    */
-  public KuduClient(final String address, int port) {
-    this(address, port, defaultChannelFactory());
+  public KuduClient(final String masterQuorum) {
+    this(NetUtil.parseStrings(masterQuorum, 0));
+  }
+
+  public KuduClient(final List<HostAndPort> masterAddresses) {
+    this(masterAddresses, defaultChannelFactory());
   }
 
   /**
-   * Create a new client that connects to the specified master
-   * Doesn't block and won't throw an exception if the master doesn't exist
-   * @param address master's address
-   * @param port master's port
-   * @param channelFactory
+   * Create a new client that connects to the specified masters.
+   * Doesn't block and won't throw an exception if the masters don't exist.
+   * @param masterAddresses masters' addresses
+   * @param channelFactory socket channel factory for this client; can be
+   *                       configured to specify a custom connection timeout
    */
-  public KuduClient(final String address, int port,
+  public KuduClient(final List<HostAndPort> masterAddresses,
                     final ClientSocketChannelFactory channelFactory) {
     this.channelFactory = channelFactory;
-    this.masterAddress = address;
-    this.masterPort = port;
+    this.masterAddresses = masterAddresses;
     this.masterTableHack = new KuduTable(this, MASTER_TABLE_HACK,
        new Schema(new ArrayList<ColumnSchema>(0)));
   }
@@ -861,14 +864,10 @@ public class KuduClient {
         rowkey, table);
     final Deferred<Master.GetTableLocationsResponsePB> d;
 
-    // If we know this is going to the master, there's currently nothing we can lookup to find it.
-    // Instead, we use our already-known location and hope the master's going to be there. Else,
-    // this will get retried like any other RPC.
+    // If we know this is going to the master, check the master quorum (as specified by
+    // 'masterAddresses' field) to determine and cache the current leader.
     if (isMasterTable(table)) {
-      Master.GetTableLocationsResponsePB.Builder responseBuilder = Master
-          .GetTableLocationsResponsePB.newBuilder();
-      responseBuilder.addTabletLocations(getMasterTableLocationPB());
-      d = Deferred.fromResult(responseBuilder.build());
+      d = getMasterTableLocationsPB();
     } else {
       d = sendRpcToTablet(rpc);
     }
@@ -879,24 +878,114 @@ public class KuduClient {
     return d;
   }
 
-  private Master.TabletLocationsPB.Builder getMasterTableLocationPB() {
-    Master.TabletLocationsPB.Builder locationBuilder = Master.TabletLocationsPB.newBuilder();
-    locationBuilder.setStartKey(ByteString.copyFromUtf8(""));
-    locationBuilder.setEndKey(ByteString.copyFromUtf8(""));
-    locationBuilder.setTabletId(ByteString.copyFromUtf8(MASTER_TABLE_HACK));
-    locationBuilder.setStale(false);
-    Master.TabletLocationsPB.ReplicaPB.Builder replicaBuilder = Master.TabletLocationsPB
-        .ReplicaPB.newBuilder();
-    replicaBuilder.setRole(Metadata.QuorumPeerPB.Role.LEADER);
-    Master.TSInfoPB.Builder tsInfoBuilder = Master.TSInfoPB.newBuilder();
-    Common.HostPortPB.Builder hostPortBuilder = Common.HostPortPB.newBuilder();
-    hostPortBuilder.setHost(masterAddress);
-    hostPortBuilder.setPort(masterPort);
-    tsInfoBuilder.addRpcAddresses(hostPortBuilder);
-    tsInfoBuilder.setPermanentUuid(ByteString.copyFromUtf8(MASTER_TABLE_HACK));
-    replicaBuilder.setTsInfo(tsInfoBuilder);
-    locationBuilder.addReplicas(replicaBuilder);
-    return locationBuilder;
+  /**
+   * Update the master quorum: send RPCs to all quorum members, use the returned data to
+   * fill a {@link kudu.master.Master.GetTableLocationsResponsePB} object.
+   * @return A Deferred object for the most recent configuration for the master quorum.
+   */
+  Deferred<Master.GetTableLocationsResponsePB> getMasterTableLocationsPB() {
+    ArrayList<Deferred<GetMasterRegistrationResponse>> deferreds =
+        Lists.newArrayListWithCapacity(masterAddresses.size());
+    for (HostAndPort hostAndPort : masterAddresses) {
+
+      Deferred<GetMasterRegistrationResponse> d;
+      try {
+        // Note: we need to create a client for that host first, as there's a
+        // chicken and egg problem: since there is no source of truth beyond
+        // the master, the only way to get information about a master host is
+        // by making an RPC to that host.
+        TabletClient clientForHostAndPort = newMasterClient(hostAndPort);
+        d = getMasterRegistration(clientForHostAndPort);
+      } catch (Exception e) {
+        LOG.warn("Error creating a TabletClient for " + hostAndPort.toString(), e);
+        d = Deferred.fromError(e);
+      }
+      d = d.addCallbacks(new GetMasterRegistrationCB<GetMasterRegistrationResponse>(hostAndPort),
+          new GetMasterRegistrationCB<Exception>(hostAndPort));
+      deferreds.add(d);
+    }
+    // TODO: Don't use group: pass a Deferred<GetTableLocationsResponsePB> in to this
+    // method, pass it into to GetMasterRegistrationCB's constructor, and then have
+    // GetMasterRegistrationCB set the deferred once a leader has been found (or return
+    // an exception if we received responses/exception from all of the masters, but no
+    // leader was found).
+    return Deferred.group(deferreds).addCallback(new GetMasterRegistrationGroupCB());
+  }
+
+  /**
+   * Pass through callback to allow grouping deferred GetMasterRegistrationResponses:
+   * if there's an error in a response, returns a null.
+   * @param <T> Either an exception type or GetMasterRegistrationResponse
+   */
+  final class GetMasterRegistrationCB<T> implements Callback<GetMasterRegistrationResponse, T> {
+    final HostAndPort hostAndPort;
+
+    public GetMasterRegistrationCB(HostAndPort hostAndPort) {
+      this.hostAndPort = hostAndPort;
+    }
+
+    @Override
+    public GetMasterRegistrationResponse call(T arg) throws Exception {
+      if (arg instanceof Exception) {
+        Exception e = (Exception) arg;
+        LOG.warn("Encountered an error getting registration from " + hostAndPort, e);
+        return null;
+      } else {
+        return (GetMasterRegistrationResponse) arg;
+      }
+    }
+
+    @Override
+    public String toString() {
+      return "get master registration for " + hostAndPort.toString();
+    }
+  }
+
+  /**
+   * Converts a list of {@link kudu.rpc.GetMasterRegistrationResponse} objects to a
+   * single {@link kudu.master.Master.GetTableLocationsRequestPB} object containing all
+   * of the master replicas.
+   */
+  final class GetMasterRegistrationGroupCB implements Callback<Master.GetTableLocationsResponsePB,
+      ArrayList<GetMasterRegistrationResponse>> {
+
+    @Override
+    public Master.GetTableLocationsResponsePB call(
+        ArrayList<GetMasterRegistrationResponse> responses) throws Exception {
+      Master.TabletLocationsPB.Builder locationBuilder = Master.TabletLocationsPB.newBuilder();
+      locationBuilder.setStartKey(ByteString.copyFromUtf8(""));
+      locationBuilder.setEndKey(ByteString.copyFromUtf8(""));
+      locationBuilder.setTabletId(ByteString.copyFromUtf8(MASTER_TABLE_HACK));
+      locationBuilder.setStale(false);
+      boolean leaderFound = false;
+      for (GetMasterRegistrationResponse r : responses) {
+        if (r == null) {
+          continue;
+        }
+        Master.TabletLocationsPB.ReplicaPB.Builder replicaBuilder = Master.TabletLocationsPB
+            .ReplicaPB.newBuilder();
+        replicaBuilder.setRole(r.getRole());
+        Master.TSInfoPB.Builder tsInfoBuilder = Master.TSInfoPB.newBuilder();
+        tsInfoBuilder.addRpcAddresses(r.getServerRegistration().getRpcAddresses(0));
+        tsInfoBuilder.setPermanentUuid(r.getInstanceId().getPermanentUuid());
+        replicaBuilder.setTsInfo(tsInfoBuilder);
+        if (r.getRole().equals(Metadata.QuorumPeerPB.Role.LEADER)) {
+          leaderFound = true;
+          locationBuilder.addReplicas(0, replicaBuilder);
+        } else {
+          locationBuilder.addReplicas(replicaBuilder);
+        }
+      }
+      if (!leaderFound) {
+        LOG.info("No leader master found among responses: " + responses.toString());
+      }
+      return Master.GetTableLocationsResponsePB.newBuilder().addTabletLocations(
+          locationBuilder.build()).build();
+    }
+
+    public String toString() {
+      return "get registration information for all masters.";
+    }
   }
 
   /**
@@ -1127,8 +1216,11 @@ public class KuduClient {
       return null;
     }
 
-    // We currently only have one master.
+    // We currently only have one master tablet.
     if (tableName.equals(MASTER_TABLE_HACK)) {
+      if (tablets.firstEntry() == null) {
+        return null;
+      }
       return tablets.firstEntry().getValue();
     }
 
@@ -1150,7 +1242,32 @@ public class KuduClient {
     return tabletPair.getValue();
   }
 
-  private TabletClient newClient(String uuid, final String host, final int port, boolean
+  /**
+   * Retrieve the master registration (see {@link kudu.rpc.GetMasterRegistrationResponse}
+   * for a replica.
+   * @param masterClient An initialized client for the master replica.
+   * @return A Deferred object for the master replica's current registration.
+   */
+  Deferred<GetMasterRegistrationResponse> getMasterRegistration(TabletClient masterClient) {
+    GetMasterRegistrationRequest rpc = new GetMasterRegistrationRequest(masterTableHack);
+    Deferred<GetMasterRegistrationResponse> d = rpc.getDeferred();
+    masterClient.sendRpc(rpc);
+    return d;
+  }
+
+  /**
+   * If a live client already exists for the specified master server, returns that client;
+   * otherwise, creates a new client for the specified master server.
+   * @param masterHostPort The RPC host and port for the master server.
+   * @return A live and initialized client for the specified master server.
+   * @throws Exception If we are unable to create a client.
+   */
+  TabletClient newMasterClient(HostAndPort masterHostPort) throws Exception {
+    return newClient(MASTER_TABLE_HACK + masterHostPort.toString(),
+        masterHostPort.getHostText(), masterHostPort.getPort(), true);
+  }
+
+  TabletClient newClient(String uuid, final String host, final int port, boolean
       isMasterTable) {
     final String hostport = host + ':' + port;
     TabletClient client;

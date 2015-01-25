@@ -11,11 +11,11 @@ abstract class KuduRpcResponse {
 
   /**
    * Constructor with information common to all RPCs.
-   * @param ellapsedMillis Time in milliseconds since RPC creation to now.
+   * @param elapsedMillis Time in milliseconds since RPC creation to now.
    * @param tsUUID A string that contains the UUID of the server that answered the RPC.
    */
-  KuduRpcResponse(long ellapsedMillis, String tsUUID) {
-    this.elapsedMillis = ellapsedMillis;
+  KuduRpcResponse(long elapsedMillis, String tsUUID) {
+    this.elapsedMillis = elapsedMillis;
     this.tsUUID = tsUUID;
   }
 

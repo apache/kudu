@@ -22,10 +22,10 @@ public class RpcBenchmark {
 
   private static final long DEFAULT_SLEEP = 5000;
 
-  private static void test(String address, int port) throws Exception {
+  private static void test(String masterQuorum) throws Exception {
     KuduClient client = null;
     try {
-      client = new KuduClient(address, port);
+      client = new KuduClient(masterQuorum);
       Schema schema = Tpch1Schema.getTpch1Schema();
       String tableName = "tpch1";
       Deferred<CreateTableResponse> create = client.createTable(tableName, schema);
@@ -112,15 +112,13 @@ public class RpcBenchmark {
   }
 
   public static void main(String[] args) throws Exception {
-    String address = "127.0.0.1";
-    int port = 7051;
-    if (args.length == 2) {
-      address = args[0];
-      port = Integer.parseInt(args[1]);
+    String masterQuorum = "127.0.0.1:7051";
+    if (args.length == 1) {
+      masterQuorum = args[0];
     } else if (args.length != 0) {
-      System.out.println("Usage: RpcTest [master_address master_rpc_port]");
+      System.out.println("Usage: RpcTest [master_quorum]");
     }
-    test(address, port);
+    test(masterQuorum);
     System.exit(0);
   }
 }

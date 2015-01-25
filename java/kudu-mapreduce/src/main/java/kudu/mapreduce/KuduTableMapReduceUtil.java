@@ -68,14 +68,15 @@ public class KuduTableMapReduceUtil {
   public static void initTableOutputFormat(Job job, String table,
                                            boolean addDependencies) throws IOException {
     CommandLineParser parser = new CommandLineParser(job.getConfiguration());
-    initTableOutputFormat(job, parser.getMasterAddress(), table, parser.getOperationTimeoutMs(),
+    initTableOutputFormat(job, parser.getMasterQuorum(), table, parser.getOperationTimeoutMs(),
         addDependencies);
   }
 
   /**
    * Sets up the required configurations and classes to write to Kudu.
    * @param job a job to configure
-   * @param masterAddress a string containing the master's hostname and port separated by a colon
+   * @param masterQuorum a string containing the masters' "hostname:port" pairs separated by
+   *                     commas
    * @param table a string that contains the name of the table to write to
    * @param operationTimeoutMs a long that represents the timeout for operations to complete
    * @param addDependencies whether the job should add the Kudu dependencies to the distributed
@@ -83,7 +84,7 @@ public class KuduTableMapReduceUtil {
    * @throws IOException If addDependencies is enabled and a problem is encountered reading
    * files on the filesystem
    */
-  public static void initTableOutputFormat(Job job, String masterAddress,
+  public static void initTableOutputFormat(Job job, String masterQuorum,
                                            String table, long operationTimeoutMs,
                                            boolean addDependencies) throws IOException {
     job.setOutputFormatClass(KuduTableOutputFormat.class);
@@ -91,7 +92,7 @@ public class KuduTableMapReduceUtil {
     job.setOutputValueClass(Operation.class);
 
     Configuration conf = job.getConfiguration();
-    conf.set(KuduTableOutputFormat.MASTER_ADDRESS_KEY, masterAddress);
+    conf.set(KuduTableOutputFormat.MASTER_QUORUM_KEY, masterQuorum);
     conf.set(KuduTableOutputFormat.OUTPUT_TABLE_KEY, table);
     conf.setLong(KuduTableOutputFormat.OPERATION_TIMEOUT_MS_KEY, operationTimeoutMs);
     if (addDependencies) {
@@ -114,14 +115,14 @@ public class KuduTableMapReduceUtil {
   public static void initTableInputFormat(Job job, String table, String columnProjection,
                                           boolean addDependencies) throws IOException {
     CommandLineParser parser = new CommandLineParser(job.getConfiguration());
-    initTableInputFormat(job, parser.getMasterAddress(), table, parser.getOperationTimeoutMs(),
+    initTableInputFormat(job, parser.getMasterQuorum(), table, parser.getOperationTimeoutMs(),
         columnProjection, addDependencies);
   }
 
   /**
    * Sets up the required configurations and classes to read from Kudu.
    * @param job a job to configure
-   * @param masterAddress a string containing the master's hostname and port separated by a colon
+   * @param masterQuorum a comma-separated list of masters' hosts and ports
    * @param table a string that contains the name of the table to read from
    * @param operationTimeoutMs a long that represents the timeout for operations to complete
    * @param columnProjection a string containing a comma-separated list of columns to read.
@@ -131,13 +132,13 @@ public class KuduTableMapReduceUtil {
    * @throws IOException If addDependencies is enabled and a problem is encountered reading
    * files on the filesystem
    */
-  public static void initTableInputFormat(Job job, String masterAddress, String table,
+  public static void initTableInputFormat(Job job, String masterQuorum, String table,
                                           long operationTimeoutMs, String columnProjection,
                                           boolean addDependencies) throws IOException {
     job.setInputFormatClass(KuduTableInputFormat.class);
 
     Configuration conf = job.getConfiguration();
-    conf.set(KuduTableInputFormat.MASTER_ADDRESS_KEY, masterAddress);
+    conf.set(KuduTableInputFormat.MASTER_QUORUM_KEY, masterQuorum);
     conf.set(KuduTableInputFormat.INPUT_TABLE_KEY, table);
     conf.setLong(KuduTableInputFormat.OPERATION_TIMEOUT_MS_KEY, operationTimeoutMs);
     if (columnProjection != null) {
@@ -162,12 +163,11 @@ public class KuduTableMapReduceUtil {
 
   /**
    * Utility method to parse the master address out and create a KuduClient
-   * @param masterAddress host and port
+   * @param masterQuorum Comma-separated list of master quorum addresses.
    * @return a KuduClient
    */
-  static KuduClient connect(String masterAddress) {
-    HostAndPort hp = HostAndPort.fromString(masterAddress);
-    return new KuduClient(hp.getHostText(), hp.getPort());
+  static KuduClient connect(String masterQuorum) {
+    return new KuduClient(masterQuorum);
   }
 
   /**

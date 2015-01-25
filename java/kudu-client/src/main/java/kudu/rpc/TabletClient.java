@@ -397,8 +397,13 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
       } else if (decoded.getSecond() instanceof Master.MasterErrorPB) {
         Master.MasterErrorPB error = (Master.MasterErrorPB) decoded.getSecond();
         if (error.getStatus().getCode() != WireProtocol.AppStatusPB.ErrorCode.OK) {
-          exception = new MasterErrorException(error);
-          decoded = null;
+          exception = dispatchMasterErrorOrReturnException(rpc, error);
+          if (exception == null) {
+            // Exception was taken care of.
+            return null;
+          } else {
+            decoded = null;
+          }
         }
       }
     }
@@ -441,6 +446,27 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
     } else if (code == WireProtocol.AppStatusPB.ErrorCode.ILLEGAL_STATE ||
         code == WireProtocol.AppStatusPB.ErrorCode.ABORTED) {
       kuduClient.handleNotLeader(rpc, ex, this);
+    } else {
+      return ex;
+    }
+    return null;
+  }
+
+  /**
+   * Provides different handling for various kinds of master errors: re-uses the
+   * mechanisms already in place for handling tablet server errors as much as possible.
+   * @param rpc The original RPC call that triggered the error.
+   * @param error The error the master sent.
+   * @return An exception if we couldn't dispatch the error, or null.
+   */
+  private Exception dispatchMasterErrorOrReturnException(KuduRpc rpc,
+                                                         Master.MasterErrorPB error) {
+    WireProtocol.AppStatusPB.ErrorCode code = error.getStatus().getCode();
+    MasterErrorException ex = new MasterErrorException(error);
+    if (error.getCode() == Master.MasterErrorPB.Code.NOT_THE_LEADER) {
+      kuduClient.handleNotLeader(rpc, ex, this);
+    } else if (code == WireProtocol.AppStatusPB.ErrorCode.SERVICE_UNAVAILABLE) {
+      kuduClient.handleRetryableError(rpc, ex);
     } else {
       return ex;
     }

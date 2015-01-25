@@ -61,7 +61,7 @@ public class TestImportCsv extends BaseKuduTest {
     }
     sb.deleteCharAt(sb.length() - 1);
     String[] args = new String[] {
-        "-D" + CommandLineParser.MASTER_ADDRESS_KEY + "=" + getMasterAddressAndPort(),
+        "-D" + CommandLineParser.MASTER_QUORUM_KEY + "=" + getMasterQuorum(),
         sb.toString(), TABLE_NAME, data.toString()};
 
     GenericOptionsParser parser = new GenericOptionsParser(conf, args);

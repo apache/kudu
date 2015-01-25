@@ -4,10 +4,13 @@ package kudu.rpc;
 
 import com.google.common.base.Joiner;
 import com.google.common.collect.ImmutableSet;
+import com.google.common.collect.Lists;
+import com.google.common.collect.Sets;
 
 import java.io.IOException;
 import java.lang.reflect.Field;
 import java.net.ServerSocket;
+import java.util.List;
 import java.util.Set;
 
 /**
@@ -40,6 +43,25 @@ public class TestUtils {
       return i;
     }
     throw new IOException("Ran out of ports.");
+  }
+
+  /**
+   * Finds a specified number of parts, starting with one passed. Keep in mind the
+   * time-of-check-time-of-use nature of this method.
+   * @see {@link #findFreePort(int)}
+   * @param startPort First port to be probed.
+   * @param numPorts Number of ports to reserve.
+   * @return A list of currently usable ports.
+   * @throws IOException IOE Is thrown if we can't close a socket we tried to open or if run
+   * out of ports to try.
+   */
+  public static List<Integer> findFreePorts(int startPort, int numPorts) throws IOException {
+    List<Integer> ports = Lists.newArrayListWithCapacity(numPorts);
+    for (int i = 0; i < numPorts; i++) {
+      startPort = findFreePort(startPort);
+      ports.add(startPort++);
+    }
+    return ports;
   }
 
   /**

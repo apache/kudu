@@ -1,4 +1,3 @@
---tablet_server_master_addrs=127.0.0.1:64000
 --tablet_server_web_port=0
 --max_message_size=67108864
 
@@ -8,5 +7,3 @@
 --enable_data_block_fsync=false
 --enable_leader_failure_detection=true
 
---master_rpc_bind_addresses=0.0.0.0:64000
---master_web_port=0

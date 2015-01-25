@@ -59,7 +59,7 @@ public class TestInputFormatJob extends BaseKuduTest {
     job.setMapperClass(mapperClass);
     job.setNumReduceTasks(0);
     job.setOutputFormatClass(NullOutputFormat.class);
-    KuduTableMapReduceUtil.initTableInputFormat(job, getMasterAddressAndPort(), TABLE_NAME,
+    KuduTableMapReduceUtil.initTableInputFormat(job, getMasterQuorum(), TABLE_NAME,
         DEFAULT_SLEEP, basicSchema.getColumn(0).getName(), false);
 
     assertTrue("Test job did not end properly", job.waitForCompletion(true));

@@ -304,6 +304,13 @@ public class TestKuduSession extends BaseKuduTest {
   public static void submitAlterAndCheck(AlterTableBuilder atb,
                                          String tableToAlter, String tableToCheck) throws
       Exception {
+    // TODO: Right now we're no longer running this test by default, as the default is to
+    // start 3 masters. Once multi-master alter table is implemented remove this.
+    if (masterHostPorts.size() > 1) {
+      LOG.info("Alter table is not yet supported with multiple masters. Specify " +
+          "-DnumMasters=1 on the command line to start a single-master cluster to run this test.");
+      return;
+    }
     Deferred<AlterTableResponse> alterDeffered = client.alterTable(tableToAlter, atb);
     alterDeffered.join(DEFAULT_SLEEP);
     boolean done  = client.syncWaitOnAlterCompletion(tableToCheck, DEFAULT_SLEEP);
