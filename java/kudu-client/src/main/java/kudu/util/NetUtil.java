@@ -2,6 +2,8 @@
 // Confidential Cloudera Information: Covered by NDA.
 package kudu.util;
 
+import com.google.common.base.Functions;
+import com.google.common.base.Joiner;
 import com.google.common.base.Splitter;
 import com.google.common.collect.Iterables;
 import com.google.common.collect.Lists;
@@ -13,6 +15,17 @@ import java.util.List;
  * Networking related methods.
  */
 public class NetUtil {
+
+  /**
+   * Convert a list of {@link HostAndPort} objects to a comma separate string.
+   * The inverse of {@link #parseStrings(String, int)}.
+   *
+   * @param hostsAndPorts A list of {@link HostAndPort} objects.
+   * @return Comma separate list of "host:port" pairs.
+   */
+  public static String hostsAndPortsToString(List<HostAndPort> hostsAndPorts) {
+    return Joiner.on(",").join(Lists.transform(hostsAndPorts, Functions.toStringFunction()));
+  }
 
   /**
    * Parse a "host:port" pair into a {@link HostAndPort} object. If there is no
@@ -31,6 +44,7 @@ public class NetUtil {
    * Parse a comma separated list of "host:port" pairs into a list of
    * {@link HostAndPort} objects. If no port is specified for an entry in
    * the comma separated list, then a default port is used.
+   * The inverse of {@link #hostsAndPortsToString(List)}.
    *
    * @param commaSepAddrs The comma separated list of "host:port" pairs.
    * @param defaultPort   The default port to use if no port is specified.

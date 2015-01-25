@@ -5,6 +5,7 @@ package kudu.util;
 import com.google.common.net.HostAndPort;
 import org.junit.Test;
 
+import java.util.Arrays;
 import java.util.List;
 
 import static org.junit.Assert.assertArrayEquals;
@@ -45,5 +46,14 @@ public class TestNetUtil {
                            HostAndPort.fromParts("10.0.0.1", 5555),
                            HostAndPort.fromParts("127.0.0.1", 7777) }
     );
+  }
+
+  @Test
+  public void testHostsAndPortsToString() {
+    List<HostAndPort> hostsAndPorts = Arrays.asList(
+        HostAndPort.fromParts("127.0.0.1", 1111),
+        HostAndPort.fromParts("1.2.3.4.5", 0)
+    );
+    assertEquals(NetUtil.hostsAndPortsToString(hostsAndPorts), "127.0.0.1:1111,1.2.3.4.5:0");
   }
 }
