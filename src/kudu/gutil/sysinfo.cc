@@ -76,17 +76,17 @@ namespace base {
 static double cpuinfo_cycles_per_second = 1.0;  // 0.0 might be dangerous
 static int cpuinfo_num_cpus = 1;  // Conservative guess
 
-void SleepForMilliseconds(int milliseconds) {
-#ifdef PLATFORM_WINDOWS
-  _sleep(milliseconds);   // Windows's _sleep takes milliseconds argument
-#else
-  // Sleep for a few milliseconds
+void SleepForNanoseconds(int nanoseconds) {
+  // Sleep for nanosecond duration
   struct timespec sleep_time;
-  sleep_time.tv_sec = milliseconds / 1000;
-  sleep_time.tv_nsec = (milliseconds % 1000) * 1000000;
+  sleep_time.tv_sec = nanoseconds / 1000 / 1000 / 1000;
+  sleep_time.tv_nsec = (nanoseconds % (1000 * 1000 * 1000));
   while (nanosleep(&sleep_time, &sleep_time) != 0 && errno == EINTR)
     ;  // Ignore signals and wait for the full interval to elapse.
-#endif
+}
+
+void SleepForMilliseconds(int milliseconds) {
+  SleepForNanoseconds(milliseconds * 1000 * 1000);
 }
 
 // Helper function estimates cycles/sec by observing cycles elapsed during

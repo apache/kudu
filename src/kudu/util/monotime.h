@@ -106,6 +106,14 @@ class MonoTime {
   double ToSeconds() const;
   uint64_t nanos_;
 };
+
+// Sleep for a MonoDelta duration.
+//
+// This is preferred over sleep(3), usleep(3), and nanosleep(3). It's less prone to mixups with
+// units since it uses a MonoDelta. It also ignores EINTR, so will reliably sleep at least the
+// MonoDelta duration.
+void SleepFor(const MonoDelta& delta);
+
 } // namespace kudu
 
 #endif

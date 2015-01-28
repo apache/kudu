@@ -11,6 +11,7 @@
 #include <glog/logging.h>
 
 #include "kudu/gutil/stringprintf.h"
+#include "kudu/gutil/sysinfo.h"
 #include "kudu/util/monotime.h"
 
 namespace kudu {
@@ -216,6 +217,10 @@ double MonoTime::ToSeconds() const {
   double d(nanos_);
   d /= MonoTime::kNanosecondsPerSecond;
   return d;
+}
+
+void SleepFor(const MonoDelta& delta) {
+  base::SleepForNanoseconds(delta.ToNanoseconds());
 }
 
 } // namespace kudu

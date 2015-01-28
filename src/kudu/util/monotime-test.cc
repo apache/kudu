@@ -145,6 +145,15 @@ static void DoTestMonoTimePerf(MonoTime::Granularity granularity) {
         << max_delta.ToString() << " seconds.";
 }
 
+TEST(TestMonoTime, TestSleepFor) {
+  MonoTime start = MonoTime::Now(MonoTime::FINE);
+  MonoDelta sleep = MonoDelta::FromMilliseconds(100);
+  SleepFor(sleep);
+  MonoTime end = MonoTime::Now(MonoTime::FINE);
+  MonoDelta actualSleep = end.GetDeltaSince(start);
+  ASSERT_GE(actualSleep.ToNanoseconds(), sleep.ToNanoseconds());
+}
+
 TEST(TestMonoTimePerf, TestMonoTimePerfCoarse) {
   alarm(360);
   DoTestMonoTimePerf(MonoTime::COARSE);
