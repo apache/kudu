@@ -15,7 +15,7 @@ namespace kudu {
 class Arena;
 class ColumnBlockCell;
 
-// A block of data all belonging to a single column.  The column data
+// A block of data all belonging to a single column.
 // This is simply a view into a buffer - it does not have any associated
 // storage in and of itself. It does, however, maintain its type
 // information, which can be used for extra type safety in debug mode.

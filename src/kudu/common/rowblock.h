@@ -100,7 +100,7 @@ class SelectionVector {
   gscoped_array<uint8_t> bitmap_;
 };
 
-
+// A block of decoded rows.
 // Wrapper around a buffer, which keeps the buffer's size, associated arena,
 // and schema. Provides convenience accessors for indexing by row, column, etc.
 //
