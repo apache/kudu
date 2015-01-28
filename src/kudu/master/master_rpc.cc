@@ -122,11 +122,8 @@ string GetLeaderMasterRpc::ToString() const {
 }
 
 void GetLeaderMasterRpc::SendRpc() {
+  lock_guard<simple_spinlock> l(&lock_);
   for (int i = 0; i < addrs_.size(); i++) {
-    lock_guard<simple_spinlock> l(&lock_);
-    if (completed_) {
-      return;
-    }
     GetMasterRegistrationRpc* rpc = new GetMasterRegistrationRpc(
         Bind(&GetLeaderMasterRpc::GetMasterRegistrationRpcCbForNode,
              this, ConstRef(responses_[i])),
