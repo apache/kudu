@@ -57,7 +57,7 @@ const char* kTestTablet = "TestTablet";
 
 Status WaitUntilLeaderForTests(RaftConsensus* raft) {
   while (raft->GetActiveRole() != QuorumPeerPB::LEADER) {
-    usleep(10000); // 10ms.
+    SleepFor(MonoDelta::FromMilliseconds(10));
   }
   return Status::OK();
 }
@@ -266,7 +266,7 @@ class RaftConsensusQuorumTest : public KuduTest {
           return;
         }
       }
-      usleep(1000);
+      SleepFor(MonoDelta::FromMilliseconds(1));
     }
   }
 
@@ -287,7 +287,7 @@ class RaftConsensusQuorumTest : public KuduTest {
           return;
         }
       }
-      usleep(1000);
+      SleepFor(MonoDelta::FromMilliseconds(1));
     }
 
     LOG(ERROR) << "Max timeout attempts reached while waiting for commit: "
@@ -807,7 +807,7 @@ TEST_F(RaftConsensusQuorumTest, TestLeaderHeartbeats) {
 
   // Now wait for about 4 times the hearbeat period the counters
   // should have increased 3/4 times.
-  usleep(FLAGS_leader_heartbeat_interval_ms * 4 * 1000);
+  SleepFor(MonoDelta::FromMilliseconds(FLAGS_leader_heartbeat_interval_ms * 4));
 
   int repl0_final_count = counter_hook_rpl0->num_pre_update_calls();
   int repl1_final_count = counter_hook_rpl1->num_pre_update_calls();

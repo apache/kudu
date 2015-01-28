@@ -25,6 +25,7 @@
 
 #include "kudu/server/webserver.h"
 #include "kudu/util/logging.h"
+#include "kudu/util/monotime.h"
 
 DECLARE_string(heap_profile_dir);
 
@@ -67,7 +68,7 @@ static void PprofHeapHandler(const Webserver::WebRequest& req, stringstream* out
 
   HeapProfilerStart(FLAGS_heap_profile_dir.c_str());
   // Sleep to allow for some samples to be collected.
-  sleep(seconds);
+  SleepFor(MonoDelta::FromSeconds(seconds));
   const char* profile = GetHeapProfile();
   HeapProfilerStop();
   (*output) << profile;
@@ -91,7 +92,7 @@ static void PprofCpuProfileHandler(const Webserver::WebRequest& req, stringstrea
   // Build a temporary file name that is hopefully unique.
   tmp_prof_file_name << "/tmp/kudu_cpu_profile." << getpid() << "." << rand();
   ProfilerStart(tmp_prof_file_name.str().c_str());
-  sleep(seconds);
+  SleepFor(MonoDelta::FromSeconds(seconds));
   ProfilerStop();
   ifstream prof_file(tmp_prof_file_name.str().c_str(), std::ios::in);
   if (!prof_file.is_open()) {

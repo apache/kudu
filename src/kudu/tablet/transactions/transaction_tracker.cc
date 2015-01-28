@@ -13,6 +13,7 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/tablet/transactions/transaction_driver.h"
 #include "kudu/util/metrics.h"
+#include "kudu/util/monotime.h"
 
 namespace kudu {
 namespace tablet {
@@ -126,7 +127,7 @@ void TransactionTracker::WaitForAllToFinish() {
     BOOST_FOREACH(scoped_refptr<TransactionDriver> driver, txns) {
       LOG(INFO) << driver->ToString();
     }
-    usleep(wait_time);
+    SleepFor(MonoDelta::FromMicroseconds(wait_time));
     MonoDelta diff = MonoTime::Now(MonoTime::FINE).GetDeltaSince(start_time);
     int64_t waited_ms = diff.ToMilliseconds();
     if (waited_ms / complain_ms > num_complaints) {

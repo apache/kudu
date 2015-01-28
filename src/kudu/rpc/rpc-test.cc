@@ -155,7 +155,7 @@ TEST_F(TestRpc, TestConnectionKeepalive) {
 
   ASSERT_STATUS_OK(DoTestSyncCall(p, GenericCalculatorService::kAddMethodName));
 
-  usleep(5000); // 5ms
+  SleepFor(MonoDelta::FromMilliseconds(5));
 
   ReactorMetrics metrics;
   ASSERT_STATUS_OK(server_messenger_->reactors_[0]->GetMetrics(&metrics));
@@ -166,7 +166,7 @@ TEST_F(TestRpc, TestConnectionKeepalive) {
   ASSERT_EQ(0, metrics.num_server_connections_) << "Client should have 0 server connections";
   ASSERT_EQ(1, metrics.num_client_connections_) << "Client should have 1 client connections";
 
-  usleep(100000); // 100ms
+  SleepFor(MonoDelta::FromMilliseconds(100));
 
   // After sleeping, the keepalive timer should have closed both sides of
   // the connection.

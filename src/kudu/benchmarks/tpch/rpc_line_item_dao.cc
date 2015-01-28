@@ -15,9 +15,10 @@
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/stl_util.h"
-#include "kudu/util/status.h"
-#include "kudu/util/locks.h"
 #include "kudu/util/coding.h"
+#include "kudu/util/locks.h"
+#include "kudu/util/monotime.h"
+#include "kudu/util/status.h"
 
 using std::tr1::shared_ptr;
 
@@ -97,7 +98,7 @@ void RpcLineItemDAO::Init() {
   }
 
   session_ = client_->NewSession();
-  session_->SetTimeoutMillis(timeout_);
+  session_->SetTimeoutMillis(timeout_.ToMilliseconds());
   CHECK_OK(session_->SetFlushMode(KuduSession::MANUAL_FLUSH));
 }
 
@@ -145,7 +146,8 @@ bool RpcLineItemDAO::ShouldAddKey(const KuduPartialRow &row) {
 void RpcLineItemDAO::FinishWriting() {
   CHECK_OK(session_->Flush());
   while (base::subtle::NoBarrier_Load(&semaphore_)) {
-    usleep(timeout_ * 10); // 1/100th of timeout
+    // 1/100th of timeout
+    SleepFor(MonoDelta::FromNanoseconds(timeout_.ToNanoseconds() / 100));
   }
 }
 
@@ -188,7 +190,7 @@ RpcLineItemDAO::RpcLineItemDAO(const string& master_address,
                                const int batch_size,
                                const int mstimeout)
   : master_address_(master_address), table_name_(table_name),
-    timeout_(mstimeout), batch_max_(batch_size), batch_size_(0) {
+    timeout_(MonoDelta::FromMilliseconds(mstimeout)), batch_max_(batch_size), batch_size_(0) {
   base::subtle::NoBarrier_Store(&semaphore_, 0);
 }
 

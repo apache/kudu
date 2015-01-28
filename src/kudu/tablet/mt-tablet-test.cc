@@ -398,7 +398,7 @@ TYPED_TEST(MultiThreadedTabletTest, DeleteAndReinsert) {
   sw.start();
   while (sw.elapsed().wall < runtime_seconds * NANOS_PER_SECOND &&
          !this->HasFatalFailure()) {
-    usleep(5000);
+    SleepFor(MonoDelta::FromMicroseconds(5000));
   }
 
   // This is sort of a hack -- the flusher thread stops when it sees this

@@ -438,7 +438,7 @@ TEST_F(RemoteBootstrapServiceTest, TestSessionTimeout) {
     if (!resp.session_is_active()) {
       break;
     }
-    usleep(1000); // 1 ms
+    SleepFor(MonoDelta::FromMilliseconds(1)); // 1 ms
   } while (MonoTime::Now(MonoTime::FINE).GetDeltaSince(start_time).ToSeconds() < 10);
 
   ASSERT_FALSE(resp.session_is_active()) << "Remote bootstrap session did not time out!";

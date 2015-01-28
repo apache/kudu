@@ -176,7 +176,7 @@ MiniMaster* MiniCluster::leader_mini_master() {
         return master;
       }
     }
-    usleep(1 * 1000); // 1 ms
+    SleepFor(MonoDelta::FromMilliseconds(1));
   }
   LOG(ERROR) << "No leader master elected after " << kMasterLeaderElectionWaitTimeSeconds
              << " seconds.";
@@ -240,7 +240,7 @@ Status MiniCluster::WaitForReplicaCount(const string& tablet_id,
       return Status::OK();
     }
 
-    usleep(1 * 1000); // 1ms
+    SleepFor(MonoDelta::FromMilliseconds(1));
   }
   return Status::TimedOut(Substitute("Tablet $0 never reached expected replica count $1",
                                      tablet_id, expected_count));
@@ -279,7 +279,7 @@ Status MiniCluster::WaitForTabletServerCount(int count,
         return Status::OK();
       }
     }
-    usleep(1 * 1000); // 1ms
+    SleepFor(MonoDelta::FromMilliseconds(1));
   }
   return Status::TimedOut(Substitute("$0 TS(s) never registered with master", count));
 }

@@ -147,7 +147,7 @@ static int DemoMain(int argc, char** argv) {
   }
 
   while (true) {
-    sleep(60);
+    SleepFor(MonoDelta::FromSeconds(60));
   }
   return 0;
 }

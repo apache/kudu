@@ -113,9 +113,9 @@ TEST_F(RWCLockTest, TestCorrectBehavior) {
   }
 
   if (AllowSlowTests()) {
-    sleep(1);
+    SleepFor(MonoDelta::FromSeconds(1));
   } else {
-    usleep(100 * 1000);
+    SleepFor(MonoDelta::FromMilliseconds(100));
   }
 
   Release_Store(&state.stop, 1);

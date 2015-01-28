@@ -77,7 +77,7 @@ TEST_F(FailureDetectorTest, TestDetectsFailure) {
     ASSERT_OK(detector->MessageFrom(kNodeName, MonoTime::Now(MonoTime::FINE)));
 
     // We sleep for a fraction of heartbeat period, to minimize test flakiness.
-    usleep((kExpectedHeartbeatPeriodMillis / kUpdatesPerPeriod) * 1000);
+    SleepFor(MonoDelta::FromMilliseconds(kExpectedHeartbeatPeriodMillis / kUpdatesPerPeriod));
 
     // The latch shouldn't have counted down, since the node's been reporting that
     // it's still alive.

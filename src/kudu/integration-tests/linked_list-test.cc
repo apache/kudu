@@ -174,7 +174,7 @@ TEST_F(LinkedListTest, TestLoadAndVerify) {
 
   ASSERT_NO_FATAL_FAILURE(RestartCluster());
   // Sleep a little bit, so that the tablet is probably in bootstrapping state.
-  usleep(100 * 1000);
+  SleepFor(MonoDelta::FromMilliseconds(100));
 
   // Restart while bootstrapping
   ASSERT_NO_FATAL_FAILURE(RestartCluster());

@@ -82,7 +82,7 @@ TEST_F(ResettableHeartbeaterTest, TestResetHeartbeats) {
   for (int i = 0; i < kNumResetSlicesPerPeriod * 2; i++) {
     heartbeater_->Reset();
     ASSERT_EQ(kNumHeartbeats, latch_.count()); // Ensure we haven't counted down, yet.
-    usleep(kResetPeriodMillis * 1000);
+    SleepFor(MonoDelta::FromMilliseconds(kResetPeriodMillis));
   }
   WaitForCountDown();
   ASSERT_STATUS_OK(heartbeater_->Stop());

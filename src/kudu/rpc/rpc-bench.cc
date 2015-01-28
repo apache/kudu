@@ -91,7 +91,7 @@ TEST_F(RpcBench, BenchmarkCalls) {
     threads.push_back(thr);
   }
 
-  sleep(AllowSlowTests() ? 10 : 1);
+  SleepFor(MonoDelta::FromSeconds(AllowSlowTests() ? 10 : 1));
   Release_Store(&should_run_, false);
 
   int total_reqs = 0;

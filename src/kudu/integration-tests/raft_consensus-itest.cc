@@ -188,7 +188,7 @@ class RaftConsensusITest : public TabletServerIntegrationTestBase {
 
     int counter = 0;
     while (true) {
-      usleep(10000 * counter);
+      SleepFor(MonoDelta::FromMilliseconds(10 * counter));
       vector<string> leader_results;
       vector<string> replica_results;
 
@@ -313,7 +313,7 @@ class RaftConsensusITest : public TabletServerIntegrationTestBase {
       // Additionally only cause timeouts at all 50% of the time, otherwise sleep.
       double val = (rand() * 1.0) / RAND_MAX;
       if (val < 0.5) {
-        usleep(sleep_time_usec);
+        SleepFor(MonoDelta::FromMicroseconds(sleep_time_usec));
         continue;
       }
 
@@ -321,7 +321,7 @@ class RaftConsensusITest : public TabletServerIntegrationTestBase {
       LOG_IF(INFO, sleep_time_usec > 0.0)
           << "Delay injector thread for TS " << tablet_server->instance_id().permanent_uuid()
           << " SIGSTOPped the ts, sleeping for " << sleep_time_usec << " usec...";
-      usleep(sleep_time_usec);
+      SleepFor(MonoDelta::FromMicroseconds(sleep_time_usec));
       ASSERT_OK(tablet_server->Resume());
     }
   }
@@ -340,7 +340,7 @@ class RaftConsensusITest : public TabletServerIntegrationTestBase {
 
     BOOST_FOREACH(TServerDetails* ts, followers) {
       CHECK_OK(ts->external_ts->Pause());
-      usleep(100 * 1000); // 100 ms
+      SleepFor(MonoDelta::FromMilliseconds(100));
     }
 
     // When all are paused also pause or kill the current leader. Since we've waited a bit
@@ -647,7 +647,7 @@ TEST_F(RaftConsensusITest, TestInsertWhenTheQueueIsFull) {
       if (failure_counter++ == 1000) {
         FAIL() << "Wasn't able to write to the tablet.";
       }
-      usleep(100 * 1000);
+      SleepFor(MonoDelta::FromMilliseconds(100));
       continue;
     }
     ASSERT_OK(s);

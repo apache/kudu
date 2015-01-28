@@ -159,7 +159,7 @@ TEST(TestThreadPool, TestRace) {
     l.Wait();
     // Sleeping a different amount in each iteration makes it more likely to hit
     // the bug.
-    usleep(i);
+    SleepFor(MonoDelta::FromMicroseconds(i));
   }
 }
 

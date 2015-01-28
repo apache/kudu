@@ -93,7 +93,7 @@ class ConsensusPeersTest : public KuduTest {
       if (consensus_->IsMajorityReplicated(index)) {
         return;
       }
-      usleep(1000 * i);
+      SleepFor(MonoDelta::FromMilliseconds(i));
     }
     FAIL() << "Never replicated index " << index << " on a majority";
   }
@@ -187,7 +187,7 @@ TEST_F(ConsensusPeersTest, TestRemotePeers) {
   // when we add the next one remote_peer2 might find the next message
   // in the queue and will replicate it, which is not what we want.
   while (!OpIdEquals(message_queue_->GetAllReplicatedIndexForTests(), first)) {
-    usleep(1000);
+    SleepFor(MonoDelta::FromMilliseconds(1));
   }
 
   // Now append another message to the queue
@@ -195,7 +195,7 @@ TEST_F(ConsensusPeersTest, TestRemotePeers) {
 
   // We should not see it replicated, even after 10ms,
   // since only the local peer replicates the message.
-  usleep(10 * 1000);
+  SleepFor(MonoDelta::FromMilliseconds(10));
   ASSERT_FALSE(consensus_->IsMajorityReplicated(2));
 
   // Signal one of the two remote peers.

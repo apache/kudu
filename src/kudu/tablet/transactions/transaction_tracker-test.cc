@@ -100,7 +100,7 @@ void TransactionTrackerTest::RunTransactionsThread(CountDownLatch* finish_latch)
 
   // Sleep a tiny bit to give the main thread a chance to get into the
   // WaitForAllToFinish() call.
-  usleep(1000);
+  SleepFor(MonoDelta::FromMilliseconds(1));
 
   // Finish all the transactions
   BOOST_FOREACH(const scoped_refptr<TransactionDriver>& driver, drivers) {
@@ -119,7 +119,7 @@ TEST_F(TransactionTrackerTest, TestWaitForAllToFinish) {
 
   // Wait for the txns to start.
   while (tracker_.GetNumPendingForTests() == 0) {
-    usleep(1000);
+    SleepFor(MonoDelta::FromMilliseconds(1));
   }
 
   // Allow the thread to proceed, and then wait for it to abort all the

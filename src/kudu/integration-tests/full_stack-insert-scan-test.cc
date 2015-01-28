@@ -51,7 +51,7 @@ DEFINE_int32(rows_per_batch, -1, "Number of rows per client batch");
 
 // Perf-related FLAGS_perf_stat
 DEFINE_bool(perf_record_scan, false, "Call \"perf record --call-graph\" "
-            "for the durantion of the scan, disabled by default");
+            "for the duration of the scan, disabled by default");
 DEFINE_bool(perf_stat_scan, false, "Print \"perf stat\" results during"
             "scan to stdout, disabled by default");
 DEFINE_bool(perf_fp_flag, false, "Only applicable with --perf_record_scan,"

@@ -93,10 +93,9 @@ class LogCacheTest : public KuduTest {
                                   std::vector<ReplicateRefPtr>* messages,
                                   OpId* preceding_op) {
     Status s;
-    int sleep_for = 0;
+    int sleep_for_ms = 0;
     do {
-      usleep(sleep_for);
-      sleep_for += 1000;
+      SleepFor(MonoDelta::FromMilliseconds(sleep_for_ms++));
       s = cache_->ReadOps(after_op_index, max_size_bytes, messages, preceding_op);
     } while (s.IsIncomplete());
     return s;
@@ -109,7 +108,7 @@ class LogCacheTest : public KuduTest {
       if (count == expected) {
         break;
       }
-      usleep(10000);
+      SleepFor(MonoDelta::FromMilliseconds(10));
     }
     ASSERT_EQ(expected, count);
   }

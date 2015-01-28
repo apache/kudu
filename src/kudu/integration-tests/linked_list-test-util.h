@@ -24,6 +24,7 @@
 #include "kudu/util/blocking_queue.h"
 #include "kudu/util/curl_util.h"
 #include "kudu/util/hdr_histogram.h"
+#include "kudu/util/monotime.h"
 #include "kudu/util/random.h"
 #include "kudu/util/stopwatch.h"
 #include "kudu/util/thread.h"
@@ -288,10 +289,10 @@ class PeriodicWebUIChecker {
       }
       // Sleep until the next period
       const MonoTime end = MonoTime::Now(MonoTime::FINE);
-      const int64_t elapsed_us = end.GetDeltaSince(start).ToMicroseconds();
-      const int64_t sleep_us = period_.ToMicroseconds() - elapsed_us;
-      if (sleep_us > 0) {
-        usleep(sleep_us);
+      const MonoDelta elapsed = end.GetDeltaSince(start);
+      const int64_t sleep_ns = period_.ToNanoseconds() - elapsed.ToNanoseconds();
+      if (sleep_ns > 0) {
+        SleepFor(MonoDelta::FromNanoseconds(sleep_ns));
       }
     }
   }
@@ -576,7 +577,7 @@ Status LinkedListTester::WaitAndVerify(int seconds_to_run, int64_t expected) {
       }
 
       // Sleep and retry until timeout.
-      usleep(20*1000);
+      SleepFor(MonoDelta::FromMilliseconds(20));
     }
   } while (!s.ok());
 

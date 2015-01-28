@@ -87,7 +87,7 @@ TEST_F(MultiThreadedRpcTest, TestShutdownDuringService) {
       GenericCalculatorService::kAddMethodName, &statuses[i], &threads[i]));
   }
 
-  usleep(50000); // 50ms
+  SleepFor(MonoDelta::FromMilliseconds(50));
 
   // Shut down server.
   ASSERT_STATUS_OK(server_messenger_->UnregisterService(service_name_));
@@ -118,7 +118,7 @@ TEST_F(MultiThreadedRpcTest, TestShutdownClientWhileCallsPending) {
   // call gets submitted to the messenger before shutdown, but the negotiation won't have
   // started yet. In a debug build this fails about half the time without the bug fix.
   // See KUDU-104.
-  usleep(10);
+  SleepFor(MonoDelta::FromMicroseconds(10));
   client_messenger->Shutdown();
   client_messenger.reset();
 
@@ -257,7 +257,7 @@ TEST_F(MultiThreadedRpcTest, TestShutdownWithIncomingConnections) {
   Counter* conns_accepted =
     METRIC_rpc_connections_accepted.Instantiate(*server_messenger_->metric_context());
   while (conns_accepted->value() == 0) {
-    usleep(100);
+    SleepFor(MonoDelta::FromMicroseconds(100));
   }
 
   // Shutdown while there are still new connections appearing.

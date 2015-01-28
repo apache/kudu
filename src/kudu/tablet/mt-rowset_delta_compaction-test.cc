@@ -62,7 +62,7 @@ class TestMultiThreadedRowSetDeltaCompaction : public TestRowSet {
       if (rs->CountDeltaStores() < 5) {
         CHECK_OK(rs->FlushDeltas());
       } else {
-        usleep(10 * 1000);
+        SleepFor(MonoDelta::FromMilliseconds(10));
       }
     }
   }
@@ -165,7 +165,7 @@ class TestMultiThreadedRowSetDeltaCompaction : public TestRowSet {
     ASSERT_STATUS_OK(OpenTestRowSet(&rs));
 
     StartThreads(rs.get());
-    sleep(FLAGS_num_seconds_per_thread);
+    SleepFor(MonoDelta::FromSeconds(FLAGS_num_seconds_per_thread));
     base::subtle::NoBarrier_Store(&should_run_, 0);
     ASSERT_NO_FATAL_FAILURE(JoinThreads());
 

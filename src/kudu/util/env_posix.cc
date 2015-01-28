@@ -30,6 +30,7 @@
 #include "kudu/util/env.h"
 #include "kudu/util/errno.h"
 #include "kudu/util/logging.h"
+#include "kudu/util/monotime.h"
 #include "kudu/util/path_util.h"
 #include "kudu/util/slice.h"
 #include "kudu/util/stopwatch.h"
@@ -978,7 +979,7 @@ class PosixEnv : public Env {
   }
 
   virtual void SleepForMicroseconds(int micros) OVERRIDE {
-    usleep(micros);
+    SleepFor(MonoDelta::FromMicroseconds(micros));
   }
 
   virtual Status GetExecutablePath(string* path) OVERRIDE {

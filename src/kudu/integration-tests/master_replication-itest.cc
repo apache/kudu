@@ -75,7 +75,7 @@ class MasterReplicationTest : public KuduTest {
   // This method is meant to be run in a separate thread.
   void StartClusterDelayed(int64_t micros) {
     LOG(INFO) << "Sleeping for "  << micros << " micro seconds...";
-    usleep(micros);
+    SleepFor(MonoDelta::FromMicroseconds(micros));
     LOG(INFO) << "Attempting to start the cluster...";
     CHECK_OK(cluster_->Start());
     CHECK_OK(cluster_->WaitForTabletServerCount(kNumTabletServerReplicas));

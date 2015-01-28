@@ -9,6 +9,7 @@
 #include "kudu/server/hybrid_clock.h"
 #include "kudu/server/logical_clock.h"
 #include "kudu/tablet/mvcc.h"
+#include "kudu/util/monotime.h"
 #include "kudu/util/test_util.h"
 
 DECLARE_int32(max_clock_sync_error_usec);
@@ -390,12 +391,12 @@ TEST_F(MvccTest, TestWaitUntilAllCommitted_SnapAtTimestampWithInFlights) {
 
   // Commit tx 1 - thread should still wait.
   mgr.CommitTransaction(tx1);
-  usleep(1000);
+  SleepFor(MonoDelta::FromMilliseconds(1));
   ASSERT_FALSE(HasResultSnapshot());
 
   // Commit tx 3 - thread should still wait.
   mgr.CommitTransaction(tx3);
-  usleep(1000);
+  SleepFor(MonoDelta::FromMilliseconds(1));
   ASSERT_FALSE(HasResultSnapshot());
 
   // Commit tx 2 - thread can now continue

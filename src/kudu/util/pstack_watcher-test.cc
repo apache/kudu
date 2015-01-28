@@ -54,7 +54,7 @@ TEST(TestPstackWatcher, TestPstackWatcherRunning) {
     PCHECK(out_fp.get());
     PstackWatcher watcher(MonoDelta::FromMilliseconds(500));
     while (watcher.IsRunning()) {
-      usleep(1000);
+      SleepFor(MonoDelta::FromMilliseconds(1));
     }
   }
   CHECK_ERR(dup2(old_stdout, STDOUT_FILENO));

@@ -81,7 +81,7 @@ TEST_F(MtHdrHistogramTest, ConcurrentCopyWhileWritingTest) {
   ElementDeleter deleter(&snapshots);
   for (int i = 0; i < kNumCopies; i++) {
     snapshots.push_back(new HdrHistogram(hist));
-    usleep(100);
+    SleepFor(MonoDelta::FromMicroseconds(100));
   }
   for (int i = 0; i < kNumCopies; i++) {
     snapshots[i]->MeanValue(); // Will crash if underlying iterator is inconsistent.

@@ -270,7 +270,7 @@ Status ExternalMiniCluster::WaitForTabletServerCount(int count, const MonoDelta&
         return Status::OK();
       }
     }
-    usleep(1 * 1000); // 1ms
+    SleepFor(MonoDelta::FromMilliseconds(1));
   }
 }
 
@@ -391,7 +391,7 @@ Status ExternalDaemon::StartProcess(const vector<string>& user_flags) {
       success = true;
       break;
     }
-    usleep(10 * 1000);
+    SleepFor(MonoDelta::FromMilliseconds(10));
     int rc;
     Status s = p->WaitNoBlock(&rc);
     if (s.IsTimedOut()) {

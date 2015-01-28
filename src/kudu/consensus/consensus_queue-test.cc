@@ -123,7 +123,7 @@ class ConsensusQueueTest : public KuduTest {
       if (leader.log_tail.index() >= index) {
         break;
       }
-      usleep(10 * 1000);
+      SleepFor(MonoDelta::FromMilliseconds(10));
     }
   }
 
@@ -178,7 +178,7 @@ TEST_F(ConsensusQueueTest, TestStartTrackingAfterStart) {
   // likely evicted and so will have to be loaded from disk.
   while (request.ops_size() == 0) {
     ASSERT_OK(queue_->RequestForPeer(kPeerUuid, &request));
-    usleep(10 * 1000); // 10 msecs
+    SleepFor(MonoDelta::FromMilliseconds(10));
   }
   ASSERT_EQ(50, request.ops_size());
 
@@ -288,7 +288,7 @@ TEST_F(ConsensusQueueTest, TestPeersDontAckBeyondWatermarks) {
   // load operations for the new peer. We spin until it does.
   while (request.ops_size() == 0) {
     ASSERT_OK(queue_->RequestForPeer(kPeerUuid, &request));
-    usleep(10 * 1000); // 10 msecs
+    SleepFor(MonoDelta::FromMilliseconds(10));
   }
   ASSERT_EQ(50, request.ops_size());
 
@@ -485,7 +485,7 @@ TEST_F(ConsensusQueueTest, TestQueueLoadsOperationsForPeer) {
       queue_->ResponseFromPeer(request.ops(request.ops_size() - 1).id() ,
                                response, &more_pending);
     }
-    usleep(10);
+    SleepFor(MonoDelta::FromMicroseconds(10));
   }
 
   ASSERT_EQ(request.ops_size(), expected_count);
@@ -590,7 +590,7 @@ TEST_F(ConsensusQueueTest, TestQueueHandlesOperationOverwriting) {
     } else {
       break;
     }
-    usleep(10);
+    SleepFor(MonoDelta::FromMicroseconds(10));
   }
 
   // Once the operations are loaded from disk we should get a request that contains

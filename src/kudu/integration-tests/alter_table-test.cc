@@ -124,7 +124,7 @@ class AlterTableTest : public KuduTest {
         return Status::OK();
       }
 
-      usleep(wait_time);
+      SleepFor(MonoDelta::FromMicroseconds(wait_time));
       wait_time = std::min(wait_time * 5 / 4, 1000000);
     }
 
@@ -312,7 +312,7 @@ TEST_F(AlterTableTest, TestRestartTSDuringAlter) {
 
   // Restart the TS while alter is running
   for (int i = 0; i < 3; i++) {
-    usleep(500);
+    SleepFor(MonoDelta::FromMicroseconds(500));
     RestartTabletServer();
   }
 
@@ -506,7 +506,7 @@ void AlterTableTest::UpdaterThread() {
     uint32_t max = inserted_idx_.Load();
     if (max == 0) {
       // Inserter hasn't inserted anything yet, so we have nothing to update.
-      usleep(100);
+      SleepFor(MonoDelta::FromMicroseconds(100));
       continue;
     }
     // Endian-swap the key to match the way the InserterThread generates
@@ -579,7 +579,7 @@ TEST_F(AlterTableTest, DISABLED_TestAlterUnderWriteLoad) {
       // In slow test mode, let more writes accumulate in between
       // alters, so that we get enough writes to cause flushes,
       // compactions, etc.
-      sleep(3);
+      SleepFor(MonoDelta::FromSeconds(3));
     }
 
     ASSERT_STATUS_OK(AddNewU32Column(kTableName,

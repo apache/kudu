@@ -75,8 +75,9 @@ void WalHiccupBenchmarker::WALThread() {
   PCHECK(fd >= 0) << "open() failed";
   char buf[4096];
   memset(buf, 0xFF, sizeof(buf));
+  const MonoDelta sleepDelta = MonoDelta::FromMicroseconds(FLAGS_wal_interval_us);
   while (finished_.count() > 0) {
-    usleep(FLAGS_wal_interval_us);
+    SleepFor(sleepDelta);
     MicrosecondsInt64 st = GetCurrentTimeMicros();
     size_t num_bytes = FLAGS_page_align_wal_writes ? sizeof(buf) : sizeof(buf) - 1;
     PCHECK(write(fd, buf, num_bytes) == num_bytes);

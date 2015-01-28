@@ -74,7 +74,7 @@ class BlockManagerStressTest : public KuduTest {
   void RunTest(int secs) {
     LOG(INFO) << "Starting all threads";
     this->StartThreads();
-    usleep(secs * 1000000);
+    SleepFor(MonoDelta::FromSeconds(secs));
     LOG(INFO) << "Stopping all threads";
     this->StopThreads();
     this->JoinThreads();

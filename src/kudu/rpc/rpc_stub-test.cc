@@ -182,9 +182,9 @@ TEST_F(RpcStubTest, TestCallWithMissingPBFieldClientSide) {
   Atomic32 callback_count = 0;
   p.AddAsync(req, &resp, &controller, boost::bind(&DoIncrement, &callback_count));
   while (NoBarrier_Load(&callback_count) == 0) {
-    usleep(10);
+    SleepFor(MonoDelta::FromMicroseconds(10));
   }
-  usleep(100);
+  SleepFor(MonoDelta::FromMicroseconds(100));
   ASSERT_EQ(1, NoBarrier_Load(&callback_count));
   ASSERT_STR_CONTAINS(controller.status().ToString(),
                       "Invalid argument: RPC argument missing required fields: y");
@@ -342,7 +342,7 @@ TEST_F(RpcStubTest, TestDumpCallsInFlight) {
         dump_resp.inbound_connections(0).calls_in_flight_size() > 0) {
       break;
     }
-    usleep(1000);
+    SleepFor(MonoDelta::FromMilliseconds(1));
   }
 
   LOG(INFO) << "server messenger: " << dump_resp.DebugString();
@@ -388,7 +388,7 @@ TEST_F(RpcStubTest, TestCallbackClearedAfterRunning) {
   // bit, since the deref is happening on another thread. If the other thread gets
   // descheduled directly after calling our callback, we'd fail without these sleeps.
   for (int i = 0; i < 100 && !my_refptr->HasOneRef(); i++) {
-    usleep(1000);
+    SleepFor(MonoDelta::FromMilliseconds(1));
   }
   ASSERT_TRUE(my_refptr->HasOneRef());
 }

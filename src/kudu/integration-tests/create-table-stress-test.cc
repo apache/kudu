@@ -121,7 +121,7 @@ TEST_F(CreateTableStressTest, RestartMasterDuringCreation) {
   ASSERT_NO_FATAL_FAILURE(CreateBigTable(table_name, FLAGS_num_test_tablets));
 
   for (int i = 0; i < 3; i++) {
-    usleep(500);
+    SleepFor(MonoDelta::FromMicroseconds(500));
     LOG(INFO) << "Restarting master...";
     ASSERT_STATUS_OK(cluster_->mini_master()->Restart());
     LOG(INFO) << "Master restarted.";

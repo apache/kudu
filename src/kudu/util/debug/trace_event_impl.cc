@@ -894,9 +894,9 @@ TraceSamplingThread::~TraceSamplingThread() {
 
 void TraceSamplingThread::ThreadMain() {
   thread_running_ = true;
-  const int kSamplingFrequencyMicroseconds = 1000;
+  const MonoDelta sleepDelta = MonoDelta::FromMicroseconds(1000);
   while (!cancellation_flag_.Load()) {
-    usleep(kSamplingFrequencyMicroseconds);
+    SleepFor(sleepDelta);
     GetSamples();
   }
 }

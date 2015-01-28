@@ -224,7 +224,7 @@ TEST_F(TraceTest, TestStartAndStopCollection) {
     tl->SetEnabled(CategoryFilter(CategoryFilter::kDefaultCategoryFilterString),
                    TraceLog::RECORDING_MODE,
                    TraceLog::RECORD_CONTINUOUSLY);
-    usleep(100 * 1000);
+    SleepFor(MonoDelta::FromMilliseconds(100));
     tl->SetDisabled();
     string trace_json = TraceResultBuffer::FlushTraceLogToString();
     ASSERT_GT(ParseAndReturnEventCount(trace_json), 0);
@@ -253,7 +253,7 @@ TEST_F(TraceTest, TestChromeSampling) {
         TRACE_EVENT_SET_SAMPLING_STATE("test", "state-2");
         break;
     }
-    usleep(1000);
+    SleepFor(MonoDelta::FromMilliseconds(1));
   }
   tl->SetDisabled();
   string trace_json = TraceResultBuffer::FlushTraceLogToString();

@@ -186,7 +186,7 @@ static void TestThreadLocalCounters(CounterRegistry* registry, const int num_thr
   for (int i = 0; i < 2; i++) {
     Iterate(registry, num_threads);
     LOG(INFO) << "--";
-    usleep(1);
+    SleepFor(MonoDelta::FromMicroseconds(1));
   }
 
   // Wait until they're done and assure they sum up properly.

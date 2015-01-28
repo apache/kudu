@@ -16,6 +16,7 @@
 #include "kudu/gutil/atomicops.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/util/locks.h"
+#include "kudu/util/monotime.h"
 
 namespace kudu {
 
@@ -49,7 +50,7 @@ class RpcLineItemDAO {
   std::set<std::pair<uint32_t, uint32_t> > orders_in_request_;
   const std::string master_address_;
   const std::string table_name_;
-  const int timeout_;
+  const MonoDelta timeout_;
   const int batch_max_;
   int batch_size_;
   Atomic32 semaphore_;

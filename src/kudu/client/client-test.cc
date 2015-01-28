@@ -337,7 +337,7 @@ class ClientTest : public KuduTest {
         attempts++;
         int64_t sleep_usec = 10000 * attempts;
         LOG(INFO) << "Waiting " << (sleep_usec/1000) << "ms for service availability...";
-        usleep(sleep_usec);
+        SleepFor(MonoDelta::FromMicroseconds(sleep_usec));
       }
     } while (s.IsServiceUnavailable() && attempts < 100);
     CHECK_OK(s);
@@ -353,7 +353,7 @@ class ClientTest : public KuduTest {
       // this retry logic.
       if (s.IsServiceUnavailable() && attempts < 20) {
         attempts++;
-        usleep(100 * 1000); // 100 ms
+        SleepFor(MonoDelta::FromMilliseconds(100));
         continue;
       }
       CHECK_OK(s);
@@ -852,7 +852,7 @@ static void AssertScannersDisappear(const tserver::ScannerManager* manager) {
       return;
     }
     // Sleep 2ms on first few times through, then longer on later iterations.
-    usleep(i < 10 ? 2000 : 20000);
+    SleepFor(MonoDelta::FromMilliseconds(i < 10 ? 2 : 20));
   }
   FAIL() << "Waited too long for the scanner to close";
 }
@@ -1130,7 +1130,7 @@ void ClientTest::DoApplyWithoutFlushTest(int sleep_micros) {
   shared_ptr<KuduSession> session = client_->NewSession();
   ASSERT_STATUS_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
   ASSERT_STATUS_OK(ApplyInsertToSession(session.get(), client_table_, 1, 1, "x"));
-  usleep(sleep_micros);
+  SleepFor(MonoDelta::FromMicroseconds(sleep_micros));
   session.reset(); // should not crash!
 
   // Should have no rows.
@@ -1446,7 +1446,7 @@ TEST_F(ClientTest, TestDeleteTable) {
     scoped_refptr<TabletPeer> tablet_peer;
     tablet_found = cluster_->mini_tablet_server(0)->server()->tablet_manager()->LookupTablet(
                       tablet_id, &tablet_peer);
-    usleep(wait_time);
+    SleepFor(MonoDelta::FromMicroseconds(wait_time));
     wait_time = std::min(wait_time * 5 / 4, 1000000);
   }
   ASSERT_FALSE(tablet_found);
@@ -1501,7 +1501,7 @@ TEST_F(ClientTest, TestStaleLocations) {
     if (!locs_pb.stale()) {
       break;
     }
-    usleep(wait_time);
+    SleepFor(MonoDelta::FromMicroseconds(wait_time));
     wait_time = std::min(wait_time * 5 / 4, 1000000);
   }
   ASSERT_FALSE(locs_pb.stale());
@@ -1588,7 +1588,7 @@ TEST_F(ClientTest, TestReplicatedMultiTabletTableFailover) {
       LOG(INFO) << "Only found " << num_rows << " rows on try "
                 << tries << ", retrying";
       ASSERT_LE(tries, kNumTries);
-      usleep(10000 * tries); // sleep a bit more with each attempt.
+      SleepFor(MonoDelta::FromMilliseconds(10 * tries)); // sleep a bit more with each attempt.
     }
   }
 }
@@ -1617,7 +1617,7 @@ TEST_F(ClientTest, TestReplicatedTabletWritesWithLeaderElection) {
   // propagate the writes to the followers. We can remove this once the
   // followers run a leader election on their own and handle advancing
   // the commit index.
-  usleep(1500 * 1000);
+  SleepFor(MonoDelta::FromMilliseconds(1500));
 
   // Find the leader replica
   Synchronizer sync;
@@ -1687,7 +1687,7 @@ TEST_F(ClientTest, TestReplicatedTabletWritesWithLeaderElection) {
   // propagate the writes to the followers. We can remove this once the
   // followers run a leader election on their own and handle advancing
   // the commit index.
-  usleep(1500 * 1000);
+  SleepFor(MonoDelta::FromMilliseconds(1500));
 
   LOG(INFO) << "Counting rows...";
   ASSERT_EQ(2 * kNumRowsToWrite, CountRowsFromClient(table.get(),

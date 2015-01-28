@@ -32,7 +32,7 @@ static int MasterMain(int argc, char** argv) {
 
   LOG(INFO) << "Master server successfully started.";
   while (true) {
-    sleep(60);
+    SleepFor(MonoDelta::FromSeconds(60));
   }
 
   return 0;

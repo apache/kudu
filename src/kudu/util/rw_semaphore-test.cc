@@ -7,6 +7,7 @@
 #include <boost/thread/locks.hpp>
 #include <vector>
 
+#include "kudu/util/monotime.h"
 #include "kudu/util/rw_semaphore.h"
 
 using boost::thread;
@@ -59,7 +60,7 @@ TEST(RWSemaphoreTest, TestBasicOperation) {
   }
 
   // Let them contend for a short amount of time.
-  usleep(50 * 1000);
+  SleepFor(MonoDelta::FromMilliseconds(50));
 
   // Signal them to stop.
   {

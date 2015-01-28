@@ -178,7 +178,7 @@ class TabletServerIntegrationTestBase : public TabletServerTest {
           LOG(WARNING)<< "Couldn't find the leader and/or replicas. Location: "
               << location.ShortDebugString();
           replicas_missing = true;
-          sleep(1);
+          SleepFor(MonoDelta::FromSeconds(1));
           num_retries++;
           break;
         }
@@ -259,7 +259,7 @@ class TabletServerIntegrationTestBase : public TabletServerTest {
         return Status::OK();
       }
       attempts++;
-      usleep(100 * attempts * 1000);
+      SleepFor(MonoDelta::FromMilliseconds(100 * attempts));
     }
     return Status::NotFound("Leader replica not found");
   }

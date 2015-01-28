@@ -129,7 +129,7 @@ bool Ksck::VerifyTableWithTimeout(const shared_ptr<KsckTable>& table,
     if (deadline.ComesBefore(MonoTime::Now(MonoTime::COARSE))) {
       return false;
     }
-    usleep(retry_interval.ToMicroseconds());
+    SleepFor(retry_interval);
   }
   return true;
 }

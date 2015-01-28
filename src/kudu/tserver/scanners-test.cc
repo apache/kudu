@@ -48,7 +48,7 @@ TEST(ScannerTest, TestExpire) {
   SharedScanner s1, s2;
   mgr.NewScanner("", "", &s1);
   mgr.NewScanner("", "", &s2);
-  usleep(200000);
+  SleepFor(MonoDelta::FromMilliseconds(200));
   s2->UpdateAccessTime();
   mgr.RemoveExpiredScanners();
   ASSERT_EQ(1, mgr.CountActiveScanners());

@@ -140,7 +140,7 @@ class GenericCalculatorService : public ServiceIf {
     }
 
     LOG(INFO) << "got call: " << req.ShortDebugString();
-    usleep(req.sleep_micros());
+    SleepFor(MonoDelta::FromMicroseconds(req.sleep_micros()));
     SleepResponsePB resp;
     incoming->RespondSuccess(resp);
   }
@@ -213,7 +213,7 @@ class CalculatorService : public CalculatorServiceIf {
  private:
   void DoSleep(const SleepRequestPB *req,
                RpcContext *context) {
-    usleep(req->sleep_micros());
+    SleepFor(MonoDelta::FromMicroseconds(req->sleep_micros()));
     context->RespondSuccess();
   }
 
