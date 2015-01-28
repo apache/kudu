@@ -278,7 +278,7 @@ class TabletServerTest : public KuduTest {
       }
       vector<const uint8_t*> rows;
       ASSERT_STATUS_OK(ExtractRowsFromRowBlockPB(projection, *rrpb,
-                                                 &rows, &direct, indirect));
+                                                 indirect, &direct, &rows));
       VLOG(1) << "Round trip got " << rows.size() << " rows";
       BOOST_FOREACH(const uint8_t* row_ptr, rows) {
         ConstContiguousRow row(&projection, row_ptr);

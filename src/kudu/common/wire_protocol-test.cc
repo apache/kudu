@@ -187,8 +187,8 @@ TEST_F(WireProtocolTest, TestColumnarRowBlockToPB) {
   // as the one we put in.
   vector<const uint8_t*> row_ptrs;
   Slice direct_sidecar = direct;
-  ASSERT_STATUS_OK(ExtractRowsFromRowBlockPB(schema_, pb, &row_ptrs,
-                                             &direct_sidecar, indirect));
+  ASSERT_STATUS_OK(ExtractRowsFromRowBlockPB(schema_, pb, indirect,
+                                             &direct_sidecar, &row_ptrs));
   ASSERT_EQ(block.nrows(), row_ptrs.size());
   for (int i = 0; i < block.nrows(); ++i) {
     ConstContiguousRow row_roundtripped(&schema_, row_ptrs[i]);
@@ -228,14 +228,14 @@ TEST_F(WireProtocolTest, TestInvalidRowBlock) {
   const char* shortstr = "x";
   pb.set_num_rows(1);
   Slice direct = shortstr;
-  Status s = ExtractRowsFromRowBlockPB(schema, pb, &row_ptrs, &direct, Slice());
+  Status s = ExtractRowsFromRowBlockPB(schema, pb, Slice(), &direct, &row_ptrs);
   ASSERT_STR_CONTAINS(s.ToString(), "Corruption: Row block has 1 bytes of data");
 
   // Bad pointer into indirect data.
   shortstr = "xxxxxxxxxxxxxxxx";
   pb.set_num_rows(1);
   direct = Slice(shortstr);
-  s = ExtractRowsFromRowBlockPB(schema, pb, &row_ptrs, &direct, Slice());
+  s = ExtractRowsFromRowBlockPB(schema, pb, Slice(), &direct, &row_ptrs);
   ASSERT_STR_CONTAINS(s.ToString(),
                       "Corruption: Row #0 contained bad indirect slice");
 }

@@ -205,7 +205,7 @@ Status KuduScanner::Data::ExtractRows(vector<KuduRowResult>* rows) {
     }
   }
 
-  RETURN_NOT_OK(RewriteRowBlockPB(*projection_, *rowblock_pb, &direct, indirect));
+  RETURN_NOT_OK(RewriteRowBlockPointers(*projection_, *rowblock_pb, indirect, &direct));
 
   int n_rows = rowblock_pb->num_rows();
   if (PREDICT_FALSE(n_rows == 0)) {

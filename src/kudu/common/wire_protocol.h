@@ -79,8 +79,8 @@ Status SchemaToColumnPBsWithoutIds(
 // Encode the given row block into the provided protobuf and data buffers.
 //
 // All data (both direct and indirect) for each selected row in the RowBlock is
-// copied into the protobuf. The original data may be destroyed safely
-// after this returns.
+// copied into the protobuf and faststrings.
+// The original data may be destroyed safely after this returns.
 //
 // This only converts those rows whose selection vector entry is true.
 // If 'client_projection_schema' is not NULL, then only columns specified in
@@ -93,11 +93,11 @@ void SerializeRowBlock(const RowBlock& block, RowwiseRowBlockPB* rowblock_pb,
 
 // Rewrites the data pointed-to by row data slice 'row_data_slice' by replacing
 // relative indirect data pointers with absolute ones in 'indirect_data_slice'.
-// Updates 'rowblock_pb' with the appropriate number of rows accordingly.
+// At the time of this writing, this rewriting is only done for STRING types.
 //
 // Returns a bad Status if the provided data is invalid or corrupt.
-Status RewriteRowBlockPB(const Schema& schema, const RowwiseRowBlockPB& rowblock_pb,
-                         Slice* row_data_slice, const Slice& indirect_data_slice);
+Status RewriteRowBlockPointers(const Schema& schema, const RowwiseRowBlockPB& rowblock_pb,
+                               const Slice& indirect_data_slice, Slice* row_data_slice);
 
 // Extract the rows stored in this protobuf, which must have exactly the
 // given Schema. This Schema may be obtained using ColumnPBsToSchema.
@@ -116,8 +116,9 @@ Status RewriteRowBlockPB(const Schema& schema, const RowwiseRowBlockPB& rowblock
 // Returns a bad Status if the provided data is invalid or corrupt.
 Status ExtractRowsFromRowBlockPB(const Schema& schema,
                                  const RowwiseRowBlockPB& rowblock_pb,
-                                 std::vector<const uint8_t*>* rows,
-                                 Slice* rows_data, const Slice& indirect_data);
+                                 const Slice& indirect_data,
+                                 Slice* rows_data,
+                                 std::vector<const uint8_t*>* rows);
 
 // Set 'leader_hostport' to the host/port of the leader server if one
 // can be found in 'entries'.

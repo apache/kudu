@@ -288,8 +288,8 @@ Status SchemaToColumnPBs(const Schema& schema,
 // Because we use a faststring here, ASAN tests become unbearably slow
 // with the extra verifications.
 ATTRIBUTE_NO_ADDRESS_SAFETY_ANALYSIS
-Status RewriteRowBlockPB(const Schema& schema, const RowwiseRowBlockPB& rowblock_pb,
-                         Slice* row_data_slice, const Slice& indirect_data_slice) {
+Status RewriteRowBlockPointers(const Schema& schema, const RowwiseRowBlockPB& rowblock_pb,
+                               const Slice& indirect_data_slice, Slice* row_data_slice) {
   // TODO: cheating here so we can rewrite the request as it arrived and
   // change any indirect data pointers back to "real" pointers instead of
   // on-the-wire pointers. Maybe the RPC layer should give us a non-const
@@ -325,6 +325,8 @@ Status RewriteRowBlockPB(const Schema& schema, const RowwiseRowBlockPB& rowblock
         // with the actual pointer into indir_data
         Slice *slice = reinterpret_cast<Slice *>(dst_cell);
         size_t offset_in_indirect = reinterpret_cast<uintptr_t>(slice->data());
+
+        // Ensure the updated pointer is within the bounds of the indirect data.
         bool overflowed = false;
         size_t max_offset = AddWithOverflowCheck(offset_in_indirect, slice->size(), &overflowed);
         if (PREDICT_FALSE(overflowed || max_offset > indirect_data_slice.size())) {
@@ -348,9 +350,10 @@ Status RewriteRowBlockPB(const Schema& schema, const RowwiseRowBlockPB& rowblock
 
 Status ExtractRowsFromRowBlockPB(const Schema& schema,
                                  const RowwiseRowBlockPB& rowblock_pb,
-                                 vector<const uint8_t*>* rows,
-                                 Slice* rows_data, const Slice& indirect_data) {
-  RETURN_NOT_OK(RewriteRowBlockPB(schema, rowblock_pb, rows_data, indirect_data));
+                                 const Slice& indirect_data,
+                                 Slice* rows_data,
+                                 vector<const uint8_t*>* rows) {
+  RETURN_NOT_OK(RewriteRowBlockPointers(schema, rowblock_pb, indirect_data, rows_data));
 
   int n_rows = rowblock_pb.num_rows();
   if (PREDICT_FALSE(n_rows == 0)) {
