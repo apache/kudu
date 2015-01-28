@@ -231,8 +231,18 @@ int main(int argc, const char **argv) {
     .bind("decl");
   ErrorPrinter<Decl> ref_member_printer("Reference-typed member", "decl", true);
 
+  // Disallow calls to sleep, usleep, and nanosleep.
+  // SleepFor(MonoDelta) should be used instead, as it is not prone to
+  // unit conversion errors, and also ignores EINTR so will safely sleep
+  // at least the requested duration.
+  StatementMatcher sleep_matcher =
+    callExpr(callee(namedDecl(matchesName("(nano|u)?sleep")))).bind("sleep_expr");
+  ErrorPrinter<Stmt> sleep_printer("sleep, usleep or nanosleep call", "sleep_expr", true);
+
   MatchFinder finder;
   finder.addMatcher(ignored_status_matcher, &ignored_status_printer);
   finder.addMatcher(ref_member_matcher, &ref_member_printer);
+  finder.addMatcher(sleep_matcher, &sleep_printer);
+
   return Tool.run(newFrontendActionFactory(&finder));
 }
