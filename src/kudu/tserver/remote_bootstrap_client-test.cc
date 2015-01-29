@@ -78,10 +78,13 @@ TEST_F(RemoteBootstrapClientTest, TestDownloadBlock) {
   ASSERT_TRUE(s.IsNotFound()) << "Expected block not found: " << s.ToString();
 
   // Check that the client downloaded the block and verification passed.
-  ASSERT_OK(client_->DownloadBlock(block_id));
+  BlockId new_block_id;
+  ASSERT_OK(client_->DownloadBlock(block_id, &new_block_id));
 
   // Ensure it placed the block where we expected it to.
-  ASSERT_OK(ReadLocalBlockFile(fs_manager_.get(), block_id, &scratch, &slice));
+  s = ReadLocalBlockFile(fs_manager_.get(), block_id, &scratch, &slice);
+  ASSERT_TRUE(s.IsNotFound()) << "Expected block not found: " << s.ToString();
+  ASSERT_OK(ReadLocalBlockFile(fs_manager_.get(), new_block_id, &scratch, &slice));
   ASSERT_OK(client_->EndRemoteBootstrapSession());
 }
 
@@ -143,6 +146,71 @@ TEST_F(RemoteBootstrapClientTest, TestVerifyData) {
   ASSERT_TRUE(s.IsCorruption()) << "Invalid checksum expected: " << s.ToString();
   ASSERT_STR_CONTAINS(s.ToString(), "CRC32 does not match");
   LOG(INFO) << "Expected error returned: " << s.ToString();
+}
+
+namespace {
+
+vector<BlockId> GetAllSortedBlocks(const tablet::TabletSuperBlockPB& sb) {
+  vector<BlockId> data_blocks;
+
+  BOOST_FOREACH(const tablet::RowSetDataPB& rowset, sb.rowsets()) {
+    BOOST_FOREACH(const tablet::DeltaDataPB& redo, rowset.redo_deltas()) {
+      data_blocks.push_back(BlockId::FromPB(redo.block()));
+    }
+    BOOST_FOREACH(const tablet::DeltaDataPB& undo, rowset.undo_deltas()) {
+      data_blocks.push_back(BlockId::FromPB(undo.block()));
+    }
+    BOOST_FOREACH(const tablet::ColumnDataPB& column, rowset.columns()) {
+      data_blocks.push_back(BlockId::FromPB(column.block()));
+    }
+    if (rowset.has_bloom_block()) {
+      data_blocks.push_back(BlockId::FromPB(rowset.bloom_block()));
+    }
+    if (rowset.has_adhoc_index_block()) {
+      data_blocks.push_back(BlockId::FromPB(rowset.adhoc_index_block()));
+    }
+  }
+
+  std::sort(data_blocks.begin(), data_blocks.end(), BlockIdCompare());
+  return data_blocks;
+}
+
+} // anonymous namespace
+
+TEST_F(RemoteBootstrapClientTest, TestDownloadAllBlocks) {
+  // Download all the blocks.
+  ASSERT_OK(client_->BeginRemoteBootstrapSession(GetTabletId(),
+                                                 tablet_peer_->Quorum(), NULL));
+  ASSERT_OK(client_->DownloadBlocks());
+  ASSERT_OK(client_->EndRemoteBootstrapSession());
+
+  // Verify that the new superblock reflects the changes in block IDs.
+  //
+  // As long as block IDs are generated with UUIDs or something equally
+  // unique, there's no danger of a block in the new superblock somehow
+  // being assigned the same ID as a block in the existing superblock.
+  vector<BlockId> old_data_blocks = GetAllSortedBlocks(*client_->superblock_.get());
+  vector<BlockId> new_data_blocks = GetAllSortedBlocks(*client_->new_superblock_.get());
+  vector<BlockId> result;
+  std::set_intersection(old_data_blocks.begin(), old_data_blocks.end(),
+                        new_data_blocks.begin(), new_data_blocks.end(),
+                        std::back_inserter(result), BlockIdCompare());
+  ASSERT_TRUE(result.empty());
+  ASSERT_EQ(old_data_blocks.size(), new_data_blocks.size());
+
+  // Verify that the old blocks aren't found. We're using a different
+  // FsManager than 'tablet_peer', so the only way an old block could end
+  // up in ours is due to a remote bootstrap client bug.
+  BOOST_FOREACH(const BlockId& block_id, old_data_blocks) {
+    gscoped_ptr<fs::ReadableBlock> block;
+    Status s = fs_manager_->OpenBlock(block_id, &block);
+    ASSERT_TRUE(s.IsNotFound()) << "Expected block not found: " << s.ToString();
+  }
+  // And the new blocks are all present.
+  BOOST_FOREACH(const BlockId& block_id, new_data_blocks) {
+    gscoped_ptr<fs::ReadableBlock> block;
+    ASSERT_OK(fs_manager_->OpenBlock(block_id, &block));
+  }
 }
 
 } // namespace tserver

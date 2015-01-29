@@ -23,6 +23,7 @@ using consensus::OpId;
 using consensus::MinimumOpId;
 using fs::ReadableBlock;
 using log::LogAnchorRegistry;
+using tablet::DeltaDataPB;
 using tablet::ColumnDataPB;
 using tablet::RowSetDataPB;
 using tablet::TabletMetadata;
@@ -70,19 +71,27 @@ Status RemoteBootstrapSession::Init() {
   // All subsequent requests should reuse the opened blocks.
   vector<BlockIdPB> data_blocks;
   BOOST_FOREACH(const RowSetDataPB& rowset, tablet_superblock().rowsets()) {
+    BOOST_FOREACH(const ColumnDataPB& column, rowset.columns()) {
+      data_blocks.push_back(column.block());
+    }
+    BOOST_FOREACH(const DeltaDataPB& redo, rowset.redo_deltas()) {
+      data_blocks.push_back(redo.block());
+    }
+    BOOST_FOREACH(const DeltaDataPB& undo, rowset.undo_deltas()) {
+      data_blocks.push_back(undo.block());
+    }
     if (rowset.has_bloom_block()) {
       data_blocks.push_back(rowset.bloom_block());
     }
     if (rowset.has_adhoc_index_block()) {
       data_blocks.push_back(rowset.adhoc_index_block());
     }
-    BOOST_FOREACH(const ColumnDataPB& column, rowset.columns()) {
-      data_blocks.push_back(column.block());
-    }
   }
   BOOST_FOREACH(const BlockIdPB& block_id, data_blocks) {
     ImmutableReadableBlockInfo* block_info;
     RemoteBootstrapErrorPB::Code code;
+    LOG(INFO) << "Opening block " << block_id.DebugString();
+
     RETURN_NOT_OK(FindOrOpenBlockUnlocked(
         BlockId::FromPB(block_id), &block_info, &code));
   }

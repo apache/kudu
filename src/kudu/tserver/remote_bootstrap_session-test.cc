@@ -41,6 +41,7 @@ using rpc::Messenger;
 using rpc::MessengerBuilder;
 using strings::Substitute;
 using tablet::ColumnDataPB;
+using tablet::DeltaDataPB;
 using tablet::KuduTabletTest;
 using tablet::RowSetDataPB;
 using tablet::TabletPeer;
@@ -265,14 +266,20 @@ TEST_F(RemoteBootstrapTest, TestBlocksAreFetchableAfterBeingDeleted) {
   // Gather all the blocks.
   vector<BlockId> data_blocks;
   BOOST_FOREACH(const RowSetDataPB& rowset, tablet_superblock.rowsets()) {
+    BOOST_FOREACH(const DeltaDataPB& redo, rowset.redo_deltas()) {
+      data_blocks.push_back(BlockId::FromPB(redo.block()));
+    }
+    BOOST_FOREACH(const DeltaDataPB& undo, rowset.undo_deltas()) {
+      data_blocks.push_back(BlockId::FromPB(undo.block()));
+    }
+    BOOST_FOREACH(const ColumnDataPB& column, rowset.columns()) {
+      data_blocks.push_back(BlockId::FromPB(column.block()));
+    }
     if (rowset.has_bloom_block()) {
       data_blocks.push_back(BlockId::FromPB(rowset.bloom_block()));
     }
     if (rowset.has_adhoc_index_block()) {
       data_blocks.push_back(BlockId::FromPB(rowset.adhoc_index_block()));
-    }
-    BOOST_FOREACH(const ColumnDataPB& column, rowset.columns()) {
-      data_blocks.push_back(BlockId::FromPB(column.block()));
     }
   }
 

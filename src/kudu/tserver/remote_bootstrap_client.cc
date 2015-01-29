@@ -80,7 +80,7 @@ Status RemoteBootstrapClient::RunRemoteBootstrap(TabletMetadata* meta,
   // superblock is in a valid state to bootstrap from.
   LOG(INFO) << "Tablet " << tablet_id_ << " remote bootstrap complete. Replacing superblock.";
   UpdateStatusMessage("Replacing tablet superblock");
-  RETURN_NOT_OK(meta->ReplaceSuperBlock(*superblock_));
+  RETURN_NOT_OK(meta->ReplaceSuperBlock(*new_superblock_));
 
   // Note: Ending the remote bootstrap session releases anchors on the remote.
   RETURN_NOT_OK(EndRemoteBootstrapSession());
@@ -250,37 +250,50 @@ Status RemoteBootstrapClient::DownloadWALs() {
 Status RemoteBootstrapClient::DownloadBlocks() {
   CHECK_EQ(kSessionStarted, state_);
 
-  // Collect all the block ids.
-  vector<BlockId> blocks_to_copy;
+  // Count up the total number of blocks to download.
+  int num_blocks = 0;
   BOOST_FOREACH(const RowSetDataPB& rowset, superblock_->rowsets()) {
-    BOOST_FOREACH(const ColumnDataPB& col, rowset.columns()) {
-      blocks_to_copy.push_back(BlockId::FromPB(col.block()));
-    }
-    BOOST_FOREACH(const DeltaDataPB& redo, rowset.redo_deltas()) {
-      blocks_to_copy.push_back(BlockId::FromPB(redo.block()));
-    }
-    BOOST_FOREACH(const DeltaDataPB& undo, rowset.undo_deltas()) {
-      blocks_to_copy.push_back(BlockId::FromPB(undo.block()));
-    }
+    num_blocks += rowset.columns_size();
+    num_blocks += rowset.redo_deltas_size();
+    num_blocks += rowset.undo_deltas_size();
     if (rowset.has_bloom_block()) {
-      blocks_to_copy.push_back(BlockId::FromPB(rowset.bloom_block()));
+      num_blocks++;
     }
     if (rowset.has_adhoc_index_block()) {
-      blocks_to_copy.push_back(BlockId::FromPB(rowset.adhoc_index_block()));
+      num_blocks++;
     }
   }
 
-  // Download all the blocks.
-  int num_blocks = blocks_to_copy.size();
-  LOG(INFO) << "Starting download of " << num_blocks << " data blocks...";
+  // Download each block, writing the new block IDs into the new superblock
+  // as each block downloads.
+  gscoped_ptr<TabletSuperBlockPB> new_sb(new TabletSuperBlockPB());
+  new_sb->CopyFrom(*superblock_);
   int block_count = 0;
-  BOOST_FOREACH(const BlockId& block_id, blocks_to_copy) {
-    UpdateStatusMessage(Substitute("Downloading block $0 ($1/$2)",
-                                   block_id.ToString(), ++block_count, num_blocks));
-    RETURN_NOT_OK_PREPEND(DownloadBlock(block_id),
-        "Unable to download block with id " + block_id.ToString());
+  LOG(INFO) << "Starting download of " << num_blocks << " data blocks...";
+  BOOST_FOREACH(RowSetDataPB& rowset, *new_sb->mutable_rowsets()) {
+    BOOST_FOREACH(ColumnDataPB& col, *rowset.mutable_columns()) {
+      RETURN_NOT_OK(DownloadAndRewriteBlock(col.mutable_block(),
+                                            &block_count, num_blocks));
+    }
+    BOOST_FOREACH(DeltaDataPB& redo, *rowset.mutable_redo_deltas()) {
+      RETURN_NOT_OK(DownloadAndRewriteBlock(redo.mutable_block(),
+                                            &block_count, num_blocks));
+    }
+    BOOST_FOREACH(DeltaDataPB& undo, *rowset.mutable_undo_deltas()) {
+      RETURN_NOT_OK(DownloadAndRewriteBlock(undo.mutable_block(),
+                                            &block_count, num_blocks));
+    }
+    if (rowset.has_bloom_block()) {
+      RETURN_NOT_OK(DownloadAndRewriteBlock(rowset.mutable_bloom_block(),
+                                            &block_count, num_blocks));
+    }
+    if (rowset.has_adhoc_index_block()) {
+      RETURN_NOT_OK(DownloadAndRewriteBlock(rowset.mutable_adhoc_index_block(),
+                                            &block_count, num_blocks));
+    }
   }
 
+  new_superblock_.swap(new_sb);
   return Status::OK();
 }
 
@@ -302,18 +315,37 @@ Status RemoteBootstrapClient::DownloadWAL(uint64_t wal_segment_seqno) {
   return Status::OK();
 }
 
-Status RemoteBootstrapClient::DownloadBlock(const BlockId& block_id) {
-  VLOG(1) << "Downloading block with block_id " << block_id.ToString();
-  DataIdPB data_id;
-  data_id.set_type(DataIdPB::BLOCK);
-  block_id.CopyToPB(data_id.mutable_block_id());
+Status RemoteBootstrapClient::DownloadAndRewriteBlock(BlockIdPB* block_id,
+                                                      int* block_count, int num_blocks) {
+  BlockId old_block_id(BlockId::FromPB(*block_id));
+  UpdateStatusMessage(Substitute("Downloading block $0 ($1/$2)",
+                                 old_block_id.ToString(), *block_count,
+                                 num_blocks));
+  BlockId new_block_id;
+  RETURN_NOT_OK_PREPEND(DownloadBlock(old_block_id, &new_block_id),
+      "Unable to download block with id " + old_block_id.ToString());
+
+  new_block_id.CopyToPB(block_id);
+  (*block_count)++;
+  return Status::OK();
+}
+
+Status RemoteBootstrapClient::DownloadBlock(const BlockId& old_block_id,
+                                            BlockId* new_block_id) {
+  VLOG(1) << "Downloading block with block_id " << old_block_id.ToString();
 
   gscoped_ptr<WritableBlock> block;
-  RETURN_NOT_OK_PREPEND(fs_manager_->CreateBlockWithId(block_id, &block),
+  RETURN_NOT_OK_PREPEND(fs_manager_->CreateNewBlock(&block),
                         "Unable to create new block");
 
+  DataIdPB data_id;
+  data_id.set_type(DataIdPB::BLOCK);
+  old_block_id.CopyToPB(data_id.mutable_block_id());
   RETURN_NOT_OK_PREPEND(DownloadFile(data_id, block.get()),
-                        Substitute("Unable to download block $0", block_id.ToString()));
+                        Substitute("Unable to download block $0",
+                                   old_block_id.ToString()));
+
+  *new_block_id = block->id();
   return Status::OK();
 }
 

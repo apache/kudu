@@ -17,6 +17,7 @@
 namespace kudu {
 
 class BlockId;
+class BlockIdPB;
 class FsManager;
 
 namespace consensus {
@@ -74,6 +75,7 @@ class RemoteBootstrapClient {
   FRIEND_TEST(RemoteBootstrapClientTest, TestDownloadBlock);
   FRIEND_TEST(RemoteBootstrapClientTest, TestVerifyData);
   FRIEND_TEST(RemoteBootstrapClientTest, TestDownloadWalSegment);
+  FRIEND_TEST(RemoteBootstrapClientTest, TestDownloadAllBlocks);
 
   // Whether a remote boostrap session has been started or not.
   enum State {
@@ -116,12 +118,24 @@ class RemoteBootstrapClient {
   Status DownloadWAL(uint64_t wal_segment_seqno);
 
   // Download all blocks belonging to a tablet sequentially.
-  // Does not replace the superblock.
+  //
+  // Blocks are given new IDs upon creation. On success, 'new_superblock_'
+  // is populated to reflect the new block IDs and should be used in lieu
+  // of 'superblock_' henceforth.
   Status DownloadBlocks();
+
+  // Download the block specified by 'block_id'.
+  //
+  // On success:
+  // - 'block_id' is set to the new ID of the downloaded block.
+  // - 'block_count' is incremented.
+  Status DownloadAndRewriteBlock(BlockIdPB* block_id, int* block_count, int num_blocks);
 
   // Download a single block.
   // Data block is opened with options so that it will fsync() on close.
-  Status DownloadBlock(const BlockId& block_id);
+  //
+  // On success, 'new_block_id' is set to the new ID of the downloaded block.
+  Status DownloadBlock(const BlockId& old_block_id, BlockId* new_block_id);
 
   // Download a single remote file. The block and WAL implementations delegate
   // to this method when downloading files.
@@ -150,6 +164,7 @@ class RemoteBootstrapClient {
   std::string session_id_;
   uint64_t session_idle_timeout_millis_;
   gscoped_ptr<tablet::TabletSuperBlockPB> superblock_;
+  gscoped_ptr<tablet::TabletSuperBlockPB> new_superblock_;
   std::vector<uint64_t> wal_seqnos_;
 
   DISALLOW_COPY_AND_ASSIGN(RemoteBootstrapClient);

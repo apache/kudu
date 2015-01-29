@@ -49,6 +49,7 @@ class BlockId {
   friend class fs::FileBlockManager;
   friend class FsManager;
   friend struct BlockIdHash;
+  friend struct BlockIdCompare;
 
   // Used for on-disk partition
   std::string hash0() const;
@@ -66,6 +67,12 @@ std::ostream& operator<<(std::ostream& o, const BlockId& block_id);
 struct BlockIdHash {
   size_t operator()(const BlockId& block_id) const {
     return block_id.hash();
+  }
+};
+
+struct BlockIdCompare {
+  bool operator()(const BlockId& first, const BlockId& second) const {
+    return first.id_ < second.id_;
   }
 };
 
