@@ -2,6 +2,7 @@
 // Confidential Cloudera Information: Covered by NDA.
 package kudu.rpc;
 
+import com.google.common.net.HostAndPort;
 import com.google.protobuf.ByteString;
 import com.google.protobuf.ZeroCopyLiteralByteString;
 import kudu.ColumnSchema;
@@ -115,5 +116,28 @@ public class ProtobufHelper {
       default:
         throw new IllegalArgumentException("This type is unknown: " + type);
     }
+  }
+
+  /**
+   * Convert a {@link com.google.common.net.HostAndPort} to {@link kudu.Common.HostPortPB}
+   * protobuf message for serialization.
+   * @param hostAndPort The host and port object. Both host and port must be specified.
+   * @return An initialized HostPortPB object.
+   */
+  public static Common.HostPortPB hostAndPortToPB(HostAndPort hostAndPort) {
+    return Common.HostPortPB.newBuilder()
+        .setHost(hostAndPort.getHostText())
+        .setPort(hostAndPort.getPort())
+        .build();
+  }
+
+  /**
+   * Convert a {@link kudu.Common.HostPortPB} to {@link com.google.common.net.HostAndPort}.
+   * @param hostPortPB The fully initialized HostPortPB object. Must have both host and port
+   *                   specified.
+   * @return An initialized initialized HostAndPort object.
+   */
+  public static HostAndPort hostAndPortFromPB(Common.HostPortPB hostPortPB) {
+    return HostAndPort.fromParts(hostPortPB.getHost(), hostPortPB.getPort());
   }
 }

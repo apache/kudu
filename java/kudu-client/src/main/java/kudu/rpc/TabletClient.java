@@ -465,7 +465,10 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
     MasterErrorException ex = new MasterErrorException(error);
     if (error.getCode() == Master.MasterErrorPB.Code.NOT_THE_LEADER) {
       kuduClient.handleNotLeader(rpc, ex, this);
-    } else if (code == WireProtocol.AppStatusPB.ErrorCode.SERVICE_UNAVAILABLE) {
+    } else if (code == WireProtocol.AppStatusPB.ErrorCode.SERVICE_UNAVAILABLE &&
+        (!(rpc instanceof GetMasterRegistrationRequest))) {
+      // TODO: This is a crutch until we either don't have to retry RPCs going to the
+      // same server or use retry policies.
       kuduClient.handleRetryableError(rpc, ex);
     } else {
       return ex;

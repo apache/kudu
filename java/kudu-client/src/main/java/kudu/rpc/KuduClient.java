@@ -33,7 +33,6 @@ import com.google.common.base.Objects;
 import com.google.common.collect.ComparisonChain;
 import com.google.common.collect.Lists;
 import com.google.common.net.HostAndPort;
-import com.google.protobuf.ByteString;
 import kudu.ColumnSchema;
 import kudu.Common;
 import kudu.Schema;
@@ -41,6 +40,7 @@ import kudu.master.Master;
 import com.stumbleupon.async.Callback;
 import com.stumbleupon.async.Deferred;
 import kudu.metadata.Metadata;
+import kudu.util.AsyncUtil;
 import kudu.util.NetUtil;
 import kudu.util.Slice;
 import org.jboss.netty.channel.ChannelEvent;
@@ -619,20 +619,24 @@ public class KuduClient {
     }
     Callback<Deferred<R>, Master.GetTableLocationsResponsePB> cb = new RetryRpcCB<R,
         Master.GetTableLocationsResponsePB>(request);
+    Callback<Deferred<R>, Exception> eb = new RetryRpcErrback<R>(request);
     Deferred<Master.GetTableLocationsResponsePB> returnedD = locateTablet(tableName, rowkey);
-    // not adding an errback, if we failed locating the tablet we just throw
-    return returnedD.addCallbackDeferring(cb);
+    return AsyncUtil.addCallbacksDeferring(returnedD, cb, eb);
   }
 
   /**
    * Callback used to retry a RPC after another query finished, like looking up where that RPC
    * should go.
+   * <p>
+   * Use {@code AsyncUtil.addCallbacksDeferring} to add this as the callback and
+   * {@link kudu.rpc.KuduClient.RetryRpcErrback} as the "errback" to the {@code Deferred}
+   * returned by {@link #locateTablet(String, byte[])}.
    * @param <R> RPC's return type.
    * @param <D> Previous query's return type, which we don't use, but need to specify in order to
    *           tie it all together.
    */
   final class RetryRpcCB<R, D> implements Callback<Deferred<R>, D> {
-    final KuduRpc<R> request;
+    private final KuduRpc<R> request;
     RetryRpcCB(KuduRpc<R> request) {
       this.request = request;
     }
@@ -641,6 +645,45 @@ public class KuduClient {
     }
     public String toString() {
       return "retry RPC";
+    }
+  }
+
+  /**
+   * "Errback" used to delayed-retry a RPC if it fails due to no leader master being found.
+   * Other exceptions are passed through to be handled by the caller.
+   * <p>
+   * Use {@code AsyncUtil.addCallbacksDeferring} to add this as the "errback" and
+   * {@link RetryRpcCB} as the callback to the {@code Deferred} returned by
+   * {@link #locateTablet(String, byte[])}.
+   * @see #delayedSendRpcToTablet(KuduRpc, KuduException)
+   * @param <R> The type of the original RPC.
+   */
+  final class RetryRpcErrback<R> implements Callback<Deferred<R>, Exception> {
+    private final KuduRpc<R> request;
+
+    public RetryRpcErrback(KuduRpc<R> request) {
+      this.request = request;
+    }
+
+    @Override
+    public Deferred<R> call(Exception arg) {
+      if (arg instanceof NoLeaderMasterFoundException) {
+        // If we could not find the leader master, try looking up the leader master
+        // again.
+        Deferred<R> d = request.getDeferred();
+        // TODO: Handle the situation when multiple in-flight RPCs are queued waiting
+        // for the leader master to be determine (either after a failure or at initialization
+        // time). This could re-use some of the existing piping in place for non-master tablets.
+        delayedSendRpcToTablet(request, (NoLeaderMasterFoundException) arg);
+        return d;
+      }
+      // Pass all other exceptions through.
+      return Deferred.fromError(arg);
+    }
+
+    @Override
+    public String toString() {
+      return "retry RPC after error";
     }
   }
 
@@ -881,13 +924,14 @@ public class KuduClient {
   /**
    * Update the master quorum: send RPCs to all quorum members, use the returned data to
    * fill a {@link kudu.master.Master.GetTableLocationsResponsePB} object.
-   * @return A Deferred object for the most recent configuration for the master quorum.
+   * @return An initialized Deferred object to hold the response.
    */
   Deferred<Master.GetTableLocationsResponsePB> getMasterTableLocationsPB() {
-    ArrayList<Deferred<GetMasterRegistrationResponse>> deferreds =
-        Lists.newArrayListWithCapacity(masterAddresses.size());
+    final Deferred<Master.GetTableLocationsResponsePB> responseD =
+        new Deferred<Master.GetTableLocationsResponsePB>();
+    final GetMasterRegistrationReceived received =
+        new GetMasterRegistrationReceived(masterAddresses, responseD);
     for (HostAndPort hostAndPort : masterAddresses) {
-
       Deferred<GetMasterRegistrationResponse> d;
       try {
         // Note: we need to create a client for that host first, as there's a
@@ -900,93 +944,11 @@ public class KuduClient {
         LOG.warn("Error creating a TabletClient for " + hostAndPort.toString(), e);
         d = Deferred.fromError(e);
       }
-      d = d.addCallbacks(new GetMasterRegistrationCB<GetMasterRegistrationResponse>(hostAndPort),
-          new GetMasterRegistrationCB<Exception>(hostAndPort));
-      deferreds.add(d);
+      d.addCallbacks(received.callbackForNode(hostAndPort), received.errbackForNode(hostAndPort));
     }
-    // TODO: Don't use group: pass a Deferred<GetTableLocationsResponsePB> in to this
-    // method, pass it into to GetMasterRegistrationCB's constructor, and then have
-    // GetMasterRegistrationCB set the deferred once a leader has been found (or return
-    // an exception if we received responses/exception from all of the masters, but no
-    // leader was found).
-    return Deferred.group(deferreds).addCallback(new GetMasterRegistrationGroupCB());
+    return responseD;
   }
 
-  /**
-   * Pass through callback to allow grouping deferred GetMasterRegistrationResponses:
-   * if there's an error in a response, returns a null.
-   * @param <T> Either an exception type or GetMasterRegistrationResponse
-   */
-  final class GetMasterRegistrationCB<T> implements Callback<GetMasterRegistrationResponse, T> {
-    final HostAndPort hostAndPort;
-
-    public GetMasterRegistrationCB(HostAndPort hostAndPort) {
-      this.hostAndPort = hostAndPort;
-    }
-
-    @Override
-    public GetMasterRegistrationResponse call(T arg) throws Exception {
-      if (arg instanceof Exception) {
-        Exception e = (Exception) arg;
-        LOG.warn("Encountered an error getting registration from " + hostAndPort, e);
-        return null;
-      } else {
-        return (GetMasterRegistrationResponse) arg;
-      }
-    }
-
-    @Override
-    public String toString() {
-      return "get master registration for " + hostAndPort.toString();
-    }
-  }
-
-  /**
-   * Converts a list of {@link kudu.rpc.GetMasterRegistrationResponse} objects to a
-   * single {@link kudu.master.Master.GetTableLocationsRequestPB} object containing all
-   * of the master replicas.
-   */
-  final class GetMasterRegistrationGroupCB implements Callback<Master.GetTableLocationsResponsePB,
-      ArrayList<GetMasterRegistrationResponse>> {
-
-    @Override
-    public Master.GetTableLocationsResponsePB call(
-        ArrayList<GetMasterRegistrationResponse> responses) throws Exception {
-      Master.TabletLocationsPB.Builder locationBuilder = Master.TabletLocationsPB.newBuilder();
-      locationBuilder.setStartKey(ByteString.copyFromUtf8(""));
-      locationBuilder.setEndKey(ByteString.copyFromUtf8(""));
-      locationBuilder.setTabletId(ByteString.copyFromUtf8(MASTER_TABLE_HACK));
-      locationBuilder.setStale(false);
-      boolean leaderFound = false;
-      for (GetMasterRegistrationResponse r : responses) {
-        if (r == null) {
-          continue;
-        }
-        Master.TabletLocationsPB.ReplicaPB.Builder replicaBuilder = Master.TabletLocationsPB
-            .ReplicaPB.newBuilder();
-        replicaBuilder.setRole(r.getRole());
-        Master.TSInfoPB.Builder tsInfoBuilder = Master.TSInfoPB.newBuilder();
-        tsInfoBuilder.addRpcAddresses(r.getServerRegistration().getRpcAddresses(0));
-        tsInfoBuilder.setPermanentUuid(r.getInstanceId().getPermanentUuid());
-        replicaBuilder.setTsInfo(tsInfoBuilder);
-        if (r.getRole().equals(Metadata.QuorumPeerPB.Role.LEADER)) {
-          leaderFound = true;
-          locationBuilder.addReplicas(0, replicaBuilder);
-        } else {
-          locationBuilder.addReplicas(replicaBuilder);
-        }
-      }
-      if (!leaderFound) {
-        LOG.info("No leader master found among responses: " + responses.toString());
-      }
-      return Master.GetTableLocationsResponsePB.newBuilder().addTabletLocations(
-          locationBuilder.build()).build();
-    }
-
-    public String toString() {
-      return "get registration information for all masters.";
-    }
-  }
 
   /**
    * Get all or some tablets for a given table. This may query the master multiple times if there

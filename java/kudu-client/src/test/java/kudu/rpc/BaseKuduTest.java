@@ -9,7 +9,7 @@ import com.stumbleupon.async.Callback;
 import com.stumbleupon.async.Deferred;
 import kudu.ColumnSchema;
 import kudu.Schema;
-import kudu.metadata.Metadata;
+import kudu.master.Master;
 import kudu.util.NetUtil;
 import org.junit.AfterClass;
 import org.junit.BeforeClass;
@@ -429,39 +429,39 @@ public class BaseKuduTest {
    * @throws Exception If there is an error finding or killing the leader master.
    */
   protected static void killMasterLeader() throws Exception {
-    Stopwatch sw = new Stopwatch().start();
-    HostAndPort leaderHostPort = null;
-    List<GetMasterRegistrationResponse> responses = Lists.newArrayListWithCapacity(NUM_MASTERS);
-    while (leaderHostPort == null && sw.elapsedMillis() < DEFAULT_SLEEP) {
-      // TODO: Have client return this information to us directly.
-      for (HostAndPort masterHostPort : masterHostPorts) {
-        TabletClient masterClient = client.newMasterClient(masterHostPort);
-        try {
-          Deferred<GetMasterRegistrationResponse> d = client.getMasterRegistration(masterClient);
-          GetMasterRegistrationResponse r = d.join(DEFAULT_SLEEP);
-          responses.add(r);
-          if (r.getRole().equals(Metadata.QuorumPeerPB.Role.LEADER)) {
-            leaderHostPort = masterHostPort;
-            break;
-          }
-        } catch (Exception e) {
-          LOG.info(e.getMessage(), e);
-        }
-      }
-    }
-    if (leaderHostPort == null) {
-      fail("No leader master was been elected. Received responses: " + responses.toString());
-    }
-    Integer port = leaderHostPort.getPort();
-    Process master = MASTERS.get(port);
+    int leaderPort = findLeaderMasterPort();
+    Process master = MASTERS.get(leaderPort);
     if (master == null) {
       // The master is already dead, good.
       return;
     }
-    LOG.info("Killing master at port " + port);
+    LOG.info("Killing master at port " + leaderPort);
     master.destroy();
     master.waitFor();
-    MASTERS.remove(port);
+    MASTERS.remove(leaderPort);
+  }
+
+  /**
+   * Find the port of the leader master in order to retrieve it from the port to process map.
+   * @return The port of the leader master.
+   * @throws Exception If we are unable to find the leader master.
+   */
+  protected static int findLeaderMasterPort() throws Exception {
+    Stopwatch sw = new Stopwatch().start();
+    int leaderPort = -1;
+    while (leaderPort == -1 && sw.elapsedMillis() < DEFAULT_SLEEP) {
+      Deferred<Master.GetTableLocationsResponsePB> masterLocD = client.getMasterTableLocationsPB();
+      Master.GetTableLocationsResponsePB r = masterLocD.join(DEFAULT_SLEEP);
+      leaderPort = r.getTabletLocations(0)
+          .getReplicas(0)
+          .getTsInfo()
+          .getRpcAddresses(0)
+          .getPort();
+    }
+    if (leaderPort == -1) {
+      fail("No leader master found after " + DEFAULT_SLEEP + " ms.");
+    }
+    return leaderPort;
   }
 
   /**
