@@ -157,26 +157,11 @@ class BlockManager {
   // ensure that it reaches disk.
   //
   // Does not modify 'block' on error.
-  virtual Status CreateAnonymousBlock(const CreateBlockOptions& opts,
+  virtual Status CreateBlock(const CreateBlockOptions& opts,
                                       gscoped_ptr<WritableBlock>* block) = 0;
 
   // Like the above but uses default options.
-  virtual Status CreateAnonymousBlock(gscoped_ptr<WritableBlock>* block) = 0;
-
-  // Creates a new block using the provided options and opens it for
-  // writing. The block's ID must be provided by the caller.
-  //
-  // Does not guarantee the durability of the block; it must be closed to
-  // ensure that it reaches disk.
-  //
-  // Does not modify 'block' on error.
-  virtual Status CreateNamedBlock(const CreateBlockOptions& opts,
-                                  const BlockId& block_id,
-                                  gscoped_ptr<WritableBlock>* block) = 0;
-
-  // Like the above but uses default options.
-  virtual Status CreateNamedBlock(const BlockId& block_id,
-                                  gscoped_ptr<WritableBlock>* block) = 0;
+  virtual Status CreateBlock(gscoped_ptr<WritableBlock>* block) = 0;
 
   // Opens an existing block for reading.
   //

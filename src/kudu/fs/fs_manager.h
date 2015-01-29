@@ -76,12 +76,6 @@ class FsManager {
   // Block will be synced on close.
   Status CreateNewBlock(gscoped_ptr<fs::WritableBlock>* block);
 
-  // Creates a new block with a predetermined ID.
-  //
-  // Block will be synced on close.
-  Status CreateBlockWithId(const BlockId& block_id,
-                           gscoped_ptr<fs::WritableBlock>* block);
-
   Status OpenBlock(const BlockId& block_id,
                    gscoped_ptr<fs::ReadableBlock>* block);
 

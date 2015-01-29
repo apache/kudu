@@ -828,18 +828,9 @@ Status LogBlockManager::Open() {
   return Status::OK();
 }
 
-Status LogBlockManager::CreateAnonymousBlock(const CreateBlockOptions& opts,
-                                             gscoped_ptr<WritableBlock>* block) {
-  return CreateNamedBlock(opts, BlockId(), block);
-}
 
-Status LogBlockManager::CreateAnonymousBlock(gscoped_ptr<WritableBlock>* block) {
-  return CreateAnonymousBlock(CreateBlockOptions(), block);
-}
-
-Status LogBlockManager::CreateNamedBlock(const CreateBlockOptions& opts,
-                                         const BlockId& block_id,
-                                         gscoped_ptr<WritableBlock>* block) {
+Status LogBlockManager::CreateBlock(const CreateBlockOptions& opts,
+                                    gscoped_ptr<WritableBlock>* block) {
   // Find a free container. If one cannot be found, create a new one.
   //
   // TODO: should we cap the number of outstanding containers and force
@@ -856,20 +847,11 @@ Status LogBlockManager::CreateNamedBlock(const CreateBlockOptions& opts,
     }
   }
 
+  // Generate a free block ID.
   BlockId new_block_id;
-  if (block_id.IsNull()) {
-    // Generate a free block ID.
-    do {
-      new_block_id.SetId(oid_generator()->Next());
-    } while (!TryUseBlockId(new_block_id));
-  } else {
-    // Use the one provided.
-    new_block_id = block_id;
-    if (!TryUseBlockId(new_block_id)) {
-      MakeContainerAvailable(container);
-      return Status::AlreadyPresent("Block already present", new_block_id.ToString());
-    }
-  }
+  do {
+    new_block_id.SetId(oid_generator()->Next());
+  } while (!TryUseBlockId(new_block_id));
 
   block->reset(new internal::LogWritableBlock(container,
                                               new_block_id,
@@ -879,9 +861,8 @@ Status LogBlockManager::CreateNamedBlock(const CreateBlockOptions& opts,
   return Status::OK();
 }
 
-Status LogBlockManager::CreateNamedBlock(const BlockId& block_id,
-                                         gscoped_ptr<WritableBlock>* block) {
-  return CreateNamedBlock(CreateBlockOptions(), block_id, block);
+Status LogBlockManager::CreateBlock(gscoped_ptr<WritableBlock>* block) {
+  return CreateBlock(CreateBlockOptions(), block);
 }
 
 Status LogBlockManager::OpenBlock(const BlockId& block_id,

@@ -37,8 +37,7 @@ class TestDeltaFile : public ::testing::Test {
   TestDeltaFile() :
     env_(NewMemEnv(Env::Default())),
     schema_(CreateSchema()),
-    arena_(1024, 1024),
-    kTestBlock("test-block-id") {
+    arena_(1024, 1024) {
   }
 
  public:
@@ -56,7 +55,8 @@ class TestDeltaFile : public ::testing::Test {
 
   void WriteTestFile(int min_timestamp = 0, int max_timestamp = 0) {
     gscoped_ptr<WritableBlock> block;
-    ASSERT_STATUS_OK(fs_manager_->CreateBlockWithId(kTestBlock, &block));
+    ASSERT_STATUS_OK(fs_manager_->CreateNewBlock(&block));
+    test_block_ = block->id();
     DeltaFileWriter dfw(schema_, block.Pass());
     ASSERT_STATUS_OK(dfw.Start());
 
@@ -118,7 +118,7 @@ class TestDeltaFile : public ::testing::Test {
 
   void VerifyTestFile() {
     shared_ptr<DeltaFileReader> reader;
-    ASSERT_STATUS_OK(OpenDeltaFileReader(kTestBlock, &reader));
+    ASSERT_STATUS_OK(OpenDeltaFileReader(test_block_, &reader));
     ASSERT_EQ(((FLAGS_last_row_to_update - FLAGS_first_row_to_update) / 2) + 1,
               reader->delta_stats().update_count(0));
     ASSERT_EQ(0, reader->delta_stats().delete_count());
@@ -172,14 +172,14 @@ class TestDeltaFile : public ::testing::Test {
   gscoped_ptr<FsManager> fs_manager_;
   Schema schema_;
   Arena arena_;
-  const BlockId kTestBlock;
+  BlockId test_block_;
 };
 
 TEST_F(TestDeltaFile, TestDumpDeltaFileIterator) {
   WriteTestFile();
 
   gscoped_ptr<DeltaIterator> it;
-  Status s = OpenDeltaFileIterator(kTestBlock, &it);
+  Status s = OpenDeltaFileIterator(test_block_, &it);
   if (s.IsNotFound()) {
     FAIL() << "Iterator fell outside of the range of an include-all snapshot";
   }
@@ -200,7 +200,7 @@ TEST_F(TestDeltaFile, TestDumpDeltaFileIterator) {
 TEST_F(TestDeltaFile, TestWriteDeltaFileIteratorToFile) {
   WriteTestFile();
   gscoped_ptr<DeltaIterator> it;
-  Status s = OpenDeltaFileIterator(kTestBlock, &it);
+  Status s = OpenDeltaFileIterator(test_block_, &it);
   if (s.IsNotFound()) {
     FAIL() << "Iterator fell outside of the range of an include-all snapshot";
   }
@@ -253,7 +253,7 @@ TEST_F(TestDeltaFile, TestCollectMutations) {
 
   {
     gscoped_ptr<DeltaIterator> it;
-    Status s = OpenDeltaFileIterator(kTestBlock, &it);
+    Status s = OpenDeltaFileIterator(test_block_, &it);
     if (s.IsNotFound()) {
       FAIL() << "Iterator fell outside of the range of an include-all snapshot";
     }
@@ -291,7 +291,7 @@ TEST_F(TestDeltaFile, TestCollectMutations) {
 TEST_F(TestDeltaFile, TestSkipsDeltasOutOfRange) {
   WriteTestFile(10, 20);
   shared_ptr<DeltaFileReader> reader;
-  ASSERT_STATUS_OK(OpenDeltaFileReader(kTestBlock, &reader));
+  ASSERT_STATUS_OK(OpenDeltaFileReader(test_block_, &reader));
 
   gscoped_ptr<DeltaIterator> iter;
 

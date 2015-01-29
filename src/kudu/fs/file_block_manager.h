@@ -46,17 +46,10 @@ class FileBlockManager : public BlockManager {
 
   virtual Status Open() OVERRIDE;
 
-  virtual Status CreateAnonymousBlock(const CreateBlockOptions& opts,
-                                      gscoped_ptr<WritableBlock>* block) OVERRIDE;
+  virtual Status CreateBlock(const CreateBlockOptions& opts,
+                             gscoped_ptr<WritableBlock>* block) OVERRIDE;
 
-  virtual Status CreateAnonymousBlock(gscoped_ptr<WritableBlock>* block) OVERRIDE;
-
-  virtual Status CreateNamedBlock(const CreateBlockOptions& opts,
-                                  const BlockId& block_id,
-                                  gscoped_ptr<WritableBlock>* block) OVERRIDE;
-
-  virtual Status CreateNamedBlock(const BlockId& block_id,
-                                  gscoped_ptr<WritableBlock>* block) OVERRIDE;
+  virtual Status CreateBlock(gscoped_ptr<WritableBlock>* block) OVERRIDE;
 
   virtual Status OpenBlock(const BlockId& block_id,
                            gscoped_ptr<ReadableBlock>* block) OVERRIDE;
@@ -81,13 +74,6 @@ class FileBlockManager : public BlockManager {
 
   // Synchronizes the metadata for a block with the given id.
   Status SyncMetadata(const BlockId& block_id);
-
-  // Creates a new block.
-  void CreateBlock(const BlockId& block_id, const std::string& path,
-                   const std::vector<std::string>& created_dirs,
-                   const std::tr1::shared_ptr<WritableFile>& writer,
-                   const CreateBlockOptions& opts,
-                   gscoped_ptr<WritableBlock>* block);
 
   Env* env() const { return env_; }
 

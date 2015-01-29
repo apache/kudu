@@ -44,11 +44,8 @@ TYPED_TEST_CASE(BlockManagerTest, BlockManagers);
 // Test the entire lifecycle of a block.
 TYPED_TEST(BlockManagerTest, EndToEndTest) {
   // Create a block.
-  BlockId b("asdfasdf");
-  ASSERT_TRUE(this->bm_->OpenBlock(b, NULL).IsNotFound());
   gscoped_ptr<WritableBlock> written_block;
-  ASSERT_OK(this->bm_->CreateNamedBlock(b, &written_block));
-  ASSERT_EQ(b, written_block->id());
+  ASSERT_OK(this->bm_->CreateBlock(&written_block));
 
   // Write some data to it.
   string test_data = "test data";
@@ -66,24 +63,7 @@ TYPED_TEST(BlockManagerTest, EndToEndTest) {
   ASSERT_OK(read_block->Read(0, test_data.length(), &data, scratch.get()));
   ASSERT_EQ(test_data, data);
 
-  // Try to create the block again. It should fail.
-  ASSERT_TRUE(this->bm_->CreateNamedBlock(written_block->id(), NULL)
-              .IsAlreadyPresent());
-
   // Delete the block.
-  ASSERT_OK(this->bm_->DeleteBlock(written_block->id()));
-  ASSERT_TRUE(this->bm_->OpenBlock(written_block->id(), NULL)
-              .IsNotFound());
-}
-
-// Create and delete an anonymous block.
-TYPED_TEST(BlockManagerTest, AnonymousBlockTest) {
-  gscoped_ptr<WritableBlock> written_block;
-  gscoped_ptr<ReadableBlock> read_block;
-
-  ASSERT_OK(this->bm_->CreateAnonymousBlock(&written_block));
-  ASSERT_OK(written_block->Close());
-  ASSERT_OK(this->bm_->OpenBlock(written_block->id(), &read_block));
   ASSERT_OK(this->bm_->DeleteBlock(written_block->id()));
   ASSERT_TRUE(this->bm_->OpenBlock(written_block->id(), NULL)
               .IsNotFound());
@@ -94,7 +74,7 @@ TYPED_TEST(BlockManagerTest, AnonymousBlockTest) {
 TYPED_TEST(BlockManagerTest, ReadAfterDeleteTest) {
   // Write a new block.
   gscoped_ptr<WritableBlock> written_block;
-  ASSERT_OK(this->bm_->CreateAnonymousBlock(&written_block));
+  ASSERT_OK(this->bm_->CreateBlock(&written_block));
   string test_data = "test data";
   ASSERT_OK(written_block->Append(test_data));
   ASSERT_OK(written_block->Close());
@@ -116,7 +96,7 @@ TYPED_TEST(BlockManagerTest, ReadAfterDeleteTest) {
 TYPED_TEST(BlockManagerTest, CloseTwiceTest) {
   // Create a new block and close it repeatedly.
   gscoped_ptr<WritableBlock> written_block;
-  ASSERT_OK(this->bm_->CreateAnonymousBlock(&written_block));
+  ASSERT_OK(this->bm_->CreateBlock(&written_block));
   ASSERT_OK(written_block->Close());
   ASSERT_OK(written_block->Close());
 
@@ -139,7 +119,7 @@ TYPED_TEST(BlockManagerTest, CloseManyBlocksTest) {
   for (int i = 0; i < FLAGS_num_blocks_close; i++) {
     // Create a block.
     gscoped_ptr<WritableBlock> written_block;
-    ASSERT_OK(this->bm_->CreateAnonymousBlock(&written_block));
+    ASSERT_OK(this->bm_->CreateBlock(&written_block));
 
     // Write 64k bytes of random data into it.
     uint8_t data[65536];
@@ -160,7 +140,7 @@ TYPED_TEST(BlockManagerTest, CloseManyBlocksTest) {
 // it doesn't break anything.
 TYPED_TEST(BlockManagerTest, FlushDataAsyncTest) {
   gscoped_ptr<WritableBlock> written_block;
-  ASSERT_OK(this->bm_->CreateAnonymousBlock(&written_block));
+  ASSERT_OK(this->bm_->CreateBlock(&written_block));
   string test_data = "test data";
   ASSERT_OK(written_block->Append(test_data));
   ASSERT_OK(written_block->FlushDataAsync());
@@ -170,7 +150,7 @@ TYPED_TEST(BlockManagerTest, WritableBlockStateTest) {
   gscoped_ptr<WritableBlock> written_block;
 
   // Common flow: CLEAN->DIRTY->CLOSED.
-  ASSERT_OK(this->bm_->CreateAnonymousBlock(&written_block));
+  ASSERT_OK(this->bm_->CreateBlock(&written_block));
   ASSERT_EQ(WritableBlock::CLEAN, written_block->state());
   string test_data = "test data";
   ASSERT_OK(written_block->Append(test_data));
@@ -181,7 +161,7 @@ TYPED_TEST(BlockManagerTest, WritableBlockStateTest) {
   ASSERT_EQ(WritableBlock::CLOSED, written_block->state());
 
   // Test FLUSHING->CLOSED transition.
-  ASSERT_OK(this->bm_->CreateAnonymousBlock(&written_block));
+  ASSERT_OK(this->bm_->CreateBlock(&written_block));
   ASSERT_OK(written_block->Append(test_data));
   ASSERT_OK(written_block->FlushDataAsync());
   ASSERT_EQ(WritableBlock::FLUSHING, written_block->state());
@@ -189,17 +169,17 @@ TYPED_TEST(BlockManagerTest, WritableBlockStateTest) {
   ASSERT_EQ(WritableBlock::CLOSED, written_block->state());
 
   // Test CLEAN->CLOSED transition.
-  ASSERT_OK(this->bm_->CreateAnonymousBlock(&written_block));
+  ASSERT_OK(this->bm_->CreateBlock(&written_block));
   ASSERT_OK(written_block->Close());
   ASSERT_EQ(WritableBlock::CLOSED, written_block->state());
 
   // Test FlushDataAsync() no-op.
-  ASSERT_OK(this->bm_->CreateAnonymousBlock(&written_block));
+  ASSERT_OK(this->bm_->CreateBlock(&written_block));
   ASSERT_OK(written_block->FlushDataAsync());
   ASSERT_EQ(WritableBlock::FLUSHING, written_block->state());
 
   // Test DIRTY->CLOSED transition.
-  ASSERT_OK(this->bm_->CreateAnonymousBlock(&written_block));
+  ASSERT_OK(this->bm_->CreateBlock(&written_block));
   ASSERT_OK(written_block->Append(test_data));
   ASSERT_OK(written_block->Close());
   ASSERT_EQ(WritableBlock::CLOSED, written_block->state());
@@ -207,7 +187,7 @@ TYPED_TEST(BlockManagerTest, WritableBlockStateTest) {
 
 TYPED_TEST(BlockManagerTest, AbortTest) {
   gscoped_ptr<WritableBlock> written_block;
-  ASSERT_OK(this->bm_->CreateAnonymousBlock(&written_block));
+  ASSERT_OK(this->bm_->CreateBlock(&written_block));
   string test_data = "test data";
   ASSERT_OK(written_block->Append(test_data));
   ASSERT_OK(written_block->Abort());
@@ -215,7 +195,7 @@ TYPED_TEST(BlockManagerTest, AbortTest) {
   ASSERT_TRUE(this->bm_->OpenBlock(written_block->id(), NULL)
               .IsNotFound());
 
-  ASSERT_OK(this->bm_->CreateAnonymousBlock(&written_block));
+  ASSERT_OK(this->bm_->CreateBlock(&written_block));
   ASSERT_OK(written_block->Append(test_data));
   ASSERT_OK(written_block->FlushDataAsync());
   ASSERT_OK(written_block->Abort());
@@ -232,13 +212,13 @@ TYPED_TEST(BlockManagerTest, PersistenceTest) {
   gscoped_ptr<WritableBlock> written_block1;
   gscoped_ptr<WritableBlock> written_block2;
   gscoped_ptr<WritableBlock> written_block3;
-  ASSERT_OK(this->bm_->CreateAnonymousBlock(&written_block1));
+  ASSERT_OK(this->bm_->CreateBlock(&written_block1));
   ASSERT_OK(written_block1->Close());
-  ASSERT_OK(this->bm_->CreateAnonymousBlock(&written_block2));
+  ASSERT_OK(this->bm_->CreateBlock(&written_block2));
   string test_data = "test data";
   ASSERT_OK(written_block2->Append(test_data));
   ASSERT_OK(written_block2->Close());
-  ASSERT_OK(this->bm_->CreateAnonymousBlock(&written_block3));
+  ASSERT_OK(this->bm_->CreateBlock(&written_block3));
   ASSERT_OK(written_block3->Append(test_data));
   ASSERT_OK(written_block3->Close());
   ASSERT_OK(this->bm_->DeleteBlock(written_block3->id()));

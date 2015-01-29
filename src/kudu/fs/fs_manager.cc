@@ -218,11 +218,7 @@ BlockId FsManager::GenerateBlockId() {
 }
 
 Status FsManager::CreateNewBlock(gscoped_ptr<WritableBlock>* block) {
-  return block_manager_->CreateAnonymousBlock(block);
-}
-
-Status FsManager::CreateBlockWithId(const BlockId& block_id, gscoped_ptr<WritableBlock>* block) {
-  return block_manager_->CreateNamedBlock(block_id, block);
+  return block_manager_->CreateBlock(block);
 }
 
 Status FsManager::OpenBlock(const BlockId& block_id, gscoped_ptr<ReadableBlock>* block) {

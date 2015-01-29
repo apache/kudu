@@ -166,7 +166,7 @@ void BlockManagerStressTest<T>::WriterThread() {
     // Create the blocks and write out the PRNG seeds.
     for (int i = 0; i < FLAGS_block_group_size; i++) {
       gscoped_ptr<WritableBlock> block;
-      CHECK_OK(bm_->CreateAnonymousBlock(&block));
+      CHECK_OK(bm_->CreateBlock(&block));
 
       const uint32_t seed = rand.Next() + 1;
       Slice seed_slice(reinterpret_cast<const uint8_t*>(&seed), sizeof(seed));

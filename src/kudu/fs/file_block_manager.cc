@@ -331,28 +331,6 @@ Status FileBlockManager::SyncMetadata(const BlockId& block_id) {
   return Status::OK();
 }
 
-void FileBlockManager::CreateBlock(const BlockId& block_id,
-                                   const string& path,
-                                   const vector<string>& created_dirs,
-                                   const shared_ptr<WritableFile>& writer,
-                                   const CreateBlockOptions& opts,
-                                   gscoped_ptr<WritableBlock>* block) {
-  VLOG(1) << "Creating new block " << block_id.ToString() << " at " << path;
-
-  {
-    // Update dirty_dirs_ with those provided as well as the block's
-    // directory, which may not have been created but is definitely dirty
-    // (because we added a file to it).
-    lock_guard<simple_spinlock> l(&lock_);
-    BOOST_FOREACH(const string& created, created_dirs) {
-      dirty_dirs_.insert(created);
-    }
-    dirty_dirs_.insert(DirName(path));
-  }
-
-  block->reset(new internal::FileWritableBlock(this, block_id, writer));
-}
-
 FileBlockManager::FileBlockManager(Env* env,
                                    const string& root_path) :
   env_(env),
@@ -371,8 +349,8 @@ Status FileBlockManager::Open() {
       Substitute("FileBlockManager at $0 not found", root_path_));
 }
 
-Status FileBlockManager::CreateAnonymousBlock(const CreateBlockOptions& opts,
-                                              gscoped_ptr<WritableBlock>* block) {
+Status FileBlockManager::CreateBlock(const CreateBlockOptions& opts,
+                                     gscoped_ptr<WritableBlock>* block) {
   string path;
   vector<string> created_dirs;
   Status s;
@@ -390,35 +368,24 @@ Status FileBlockManager::CreateAnonymousBlock(const CreateBlockOptions& opts,
     s = env_util::OpenFileForWrite(wr_opts, env_, path, &writer);
   } while (PREDICT_FALSE(s.IsAlreadyPresent()));
   if (s.ok()) {
-    CreateBlock(block_id, path, created_dirs, writer, opts, block);
+    VLOG(1) << "Creating new block " << block_id.ToString() << " at " << path;
+    {
+      // Update dirty_dirs_ with those provided as well as the block's
+      // directory, which may not have been created but is definitely dirty
+      // (because we added a file to it).
+      lock_guard<simple_spinlock> l(&lock_);
+      BOOST_FOREACH(const string& created, created_dirs) {
+        dirty_dirs_.insert(created);
+      }
+      dirty_dirs_.insert(DirName(path));
+    }
+    block->reset(new internal::FileWritableBlock(this, block_id, writer));
   }
   return s;
 }
 
-Status FileBlockManager::CreateAnonymousBlock(gscoped_ptr<WritableBlock>* block) {
-  return CreateAnonymousBlock(CreateBlockOptions(), block);
-}
-
-Status FileBlockManager::CreateNamedBlock(const CreateBlockOptions& opts,
-                                          const BlockId& block_id,
-                                          gscoped_ptr<WritableBlock>* block) {
-  string path = GetBlockPath(block_id);
-  VLOG(1) << "Creating new block with predetermined id "
-          << block_id.ToString() << " at " << path;
-
-  vector<string> created_dirs;
-  RETURN_NOT_OK(CreateBlockDir(block_id, &created_dirs));
-  shared_ptr<WritableFile> writer;
-  WritableFileOptions wr_opts;
-  wr_opts.mode = WritableFileOptions::CREATE_NON_EXISTING;
-  RETURN_NOT_OK(env_util::OpenFileForWrite(wr_opts, env_, path, &writer));
-  CreateBlock(block_id, path, created_dirs, writer, opts, block);
-  return Status::OK();
-}
-
-Status FileBlockManager::CreateNamedBlock(const BlockId& block_id,
-                                          gscoped_ptr<WritableBlock>* block) {
-  return CreateNamedBlock(CreateBlockOptions(), block_id, block);
+Status FileBlockManager::CreateBlock(gscoped_ptr<WritableBlock>* block) {
+  return CreateBlock(CreateBlockOptions(), block);
 }
 
 Status FileBlockManager::OpenBlock(const BlockId& block_id,
