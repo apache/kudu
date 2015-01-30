@@ -4,6 +4,7 @@
 #include "kudu/tools/ksck_remote.h"
 
 #include "kudu/common/wire_protocol.h"
+#include "kudu/gutil/map-util.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/net/sockaddr.h"
@@ -59,8 +60,7 @@ Status RemoteKsckMaster::Connect() {
   return proxy_->Ping(req, &resp, &rpc);
 }
 
-Status RemoteKsckMaster::RetrieveTabletServersList(
-    vector<shared_ptr<KsckTabletServer> >* tablet_servers) {
+Status RemoteKsckMaster::RetrieveTabletServers(TSMap* tablet_servers) {
   master::ListTabletServersRequestPB req;
   master::ListTabletServersResponsePB resp;
   RpcController rpc;
@@ -71,8 +71,9 @@ Status RemoteKsckMaster::RetrieveTabletServersList(
   BOOST_FOREACH(const master::ListTabletServersResponsePB_Entry& e, resp.servers()) {
     HostPortPB addr = e.registration().rpc_addresses(0);
     HostPort hp(addr.host(), addr.port());
-    tablet_servers->push_back(shared_ptr<KsckTabletServer>(
-        new RemoteKsckTabletServer(e.instance_id().permanent_uuid(), hp.ToString())));
+    shared_ptr<KsckTabletServer> ts(
+        new RemoteKsckTabletServer(e.instance_id().permanent_uuid(), hp.ToString()));
+    InsertOrDie(tablet_servers, ts->uuid(), ts);
   }
   return Status::OK();
 }

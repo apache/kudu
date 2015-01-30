@@ -3,8 +3,11 @@
 
 #include <boost/lexical_cast.hpp>
 #include <boost/assign/list_of.hpp>
+#include <boost/foreach.hpp>
 #include <gtest/gtest.h>
 
+#include "kudu/gutil/strings/substitute.h"
+#include "kudu/gutil/map-util.h"
 #include "kudu/tools/ksck.h"
 #include "kudu/util/test_util.h"
 
@@ -13,6 +16,7 @@ namespace tools {
 
 using std::tr1::shared_ptr;
 using std::tr1::static_pointer_cast;
+using std::tr1::unordered_map;
 using std::string;
 using std::vector;
 
@@ -41,9 +45,8 @@ class MockKsckMaster : public KsckMaster {
     return connect_status_;
   }
 
-  virtual Status RetrieveTabletServersList(
-      vector<shared_ptr<KsckTabletServer> >* tablet_servers) OVERRIDE {
-    tablet_servers->assign(tablet_servers_.begin(), tablet_servers_.end());
+  virtual Status RetrieveTabletServers(TSMap* tablet_servers) OVERRIDE {
+    *tablet_servers = tablet_servers_;
     return Status::OK();
   }
 
@@ -58,33 +61,32 @@ class MockKsckMaster : public KsckMaster {
 
   // Public because the unit tests mutate these variables directly.
   Status connect_status_;
-  vector<shared_ptr<KsckTabletServer> > tablet_servers_;
+  TSMap tablet_servers_;
   vector<shared_ptr<KsckTable> > tables_;
 };
 
 class KsckTest : public KuduTest {
  public:
-  virtual void SetUp() OVERRIDE {
-    KuduTest::SetUp();
-    master_.reset(new MockKsckMaster());
-    cluster_.reset(new KsckCluster(static_pointer_cast<KsckMaster>(master_)));
-    ksck_.reset(new Ksck(cluster_));
-
-    vector<shared_ptr<KsckTabletServer> > tablet_servers;
+  KsckTest()
+      : master_(new MockKsckMaster()),
+        cluster_(new KsckCluster(static_pointer_cast<KsckMaster>(master_))),
+        ksck_(new Ksck(cluster_)) {
+    unordered_map<string, shared_ptr<KsckTabletServer> > tablet_servers;
     for (int i = 0; i < 3; i++) {
-      shared_ptr<MockKsckTabletServer> ts(new MockKsckTabletServer(boost::lexical_cast<string>(i)));
-      tablet_servers.push_back(ts);
+      string name = strings::Substitute("$0", i);
+      shared_ptr<MockKsckTabletServer> ts(new MockKsckTabletServer(name));
+      InsertOrDie(&tablet_servers, ts->uuid(), ts);
     }
     master_->tablet_servers_.swap(tablet_servers);
   }
 
-  ~KsckTest() { }
-
  protected:
   void CreateDefaultAssignmentPlan(int tablets_count) {
-    int ts_count = master_->tablet_servers_.size();
-    for (int i = 0; i < tablets_count; i++) {
-      assignment_plan_.push_back(master_->tablet_servers_[i % ts_count]->uuid());
+    while (tablets_count > 0) {
+      BOOST_FOREACH(const KsckMaster::TSMap::value_type& entry, master_->tablet_servers_) {
+        if (tablets_count-- == 0) return;
+        assignment_plan_.push_back(entry.second->uuid());
+      }
     }
   }
 
@@ -178,7 +180,8 @@ TEST_F(KsckTest, TestTabletServersOk) {
 TEST_F(KsckTest, TestBadTabletServer) {
   ASSERT_OK(ksck_->CheckMasterRunning());
   Status error = Status::NetworkError("Network failure");
-  static_pointer_cast<MockKsckTabletServer>(master_->tablet_servers_[1])->connect_status_ = error;
+  static_pointer_cast<MockKsckTabletServer>(master_->tablet_servers_.begin()->second)
+      ->connect_status_ = error;
   ASSERT_TRUE(ksck_->CheckTabletServersRunning().IsNetworkError());
 }
 

@@ -8,6 +8,7 @@
 
 #include <string>
 #include <tr1/memory>
+#include <tr1/unordered_map>
 #include <vector>
 
 #include "kudu/util/status.h"
@@ -128,16 +129,19 @@ class KsckTabletServer {
 // Class that must be extended to represent a master.
 class KsckMaster {
  public:
+  // Map of KsckTabletServer objects keyed by tablet server permanent_uuid.
+  typedef std::tr1::unordered_map<std::string, std::tr1::shared_ptr<KsckTabletServer> > TSMap;
+
   KsckMaster() { }
   virtual ~KsckMaster() { }
 
   // Connects to the configured Master.
   virtual Status Connect() = 0;
 
-  // Gets the list of Tablet Servers from the Master and stores it in the passed vector.
-  // tablet_servers is only modified if this method returns OK.
-  virtual Status RetrieveTabletServersList(
-      std::vector<std::tr1::shared_ptr<KsckTabletServer> >* tablet_servers) = 0;
+  // Gets the list of Tablet Servers from the Master and stores it in the passed
+  // map, which is keyed on server permanent_uuid.
+  // 'tablet_servers' is only modified if this method returns OK.
+  virtual Status RetrieveTabletServers(TSMap* tablet_servers) = 0;
 
   // Gets the list of tables from the Master and stores it in the passed vector.
   // tables is only modified if this method returns OK.
@@ -161,7 +165,7 @@ class KsckCluster {
   ~KsckCluster();
 
   // Gets the list of tablet servers from the Master.
-  Status RetrieveTabletServersList();
+  Status RetrieveTabletServers();
 
   // Gets the list of tables from the Master.
   Status RetrieveTablesList();
@@ -172,7 +176,8 @@ class KsckCluster {
     return master_;
   }
 
-  const std::vector<std::tr1::shared_ptr<KsckTabletServer> >& tablet_servers() {
+  const std::tr1::unordered_map<std::string,
+                                std::tr1::shared_ptr<KsckTabletServer> >& tablet_servers() {
     return tablet_servers_;
   }
 
@@ -182,7 +187,7 @@ class KsckCluster {
 
  private:
   const std::tr1::shared_ptr<KsckMaster> master_;
-  std::vector<std::tr1::shared_ptr<KsckTabletServer> > tablet_servers_;
+  std::tr1::unordered_map<std::string, std::tr1::shared_ptr<KsckTabletServer> > tablet_servers_;
   std::vector<std::tr1::shared_ptr<KsckTable> > tables_;
   DISALLOW_COPY_AND_ASSIGN(KsckCluster);
 };

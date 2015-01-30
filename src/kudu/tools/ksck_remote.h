@@ -43,8 +43,7 @@ class RemoteKsckMaster : public KsckMaster {
 
   virtual Status Connect() OVERRIDE;
 
-  virtual Status RetrieveTabletServersList(
-      std::vector<std::tr1::shared_ptr<KsckTabletServer> >* tablet_servers) OVERRIDE;
+  virtual Status RetrieveTabletServers(TSMap* tablet_servers) OVERRIDE;
 
   virtual Status RetrieveTablesList(std::vector<std::tr1::shared_ptr<KsckTable> >* tables) OVERRIDE;
 

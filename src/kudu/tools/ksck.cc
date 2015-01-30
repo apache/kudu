@@ -19,8 +19,8 @@ using strings::Substitute;
 KsckCluster::~KsckCluster() {
 }
 
-Status KsckCluster::RetrieveTabletServersList() {
-  return master_->RetrieveTabletServersList(&tablet_servers_);
+Status KsckCluster::RetrieveTabletServers() {
+  return master_->RetrieveTabletServers(&tablet_servers_);
 }
 
 Status KsckCluster::RetrieveTablesList() {
@@ -47,7 +47,7 @@ Status Ksck::CheckMasterRunning() {
 
 Status Ksck::CheckTabletServersRunning() {
   VLOG(1) << "Getting the Tablet Servers list";
-  RETURN_NOT_OK(cluster_->RetrieveTabletServersList());
+  RETURN_NOT_OK(cluster_->RetrieveTabletServers());
   int servers_count = cluster_->tablet_servers().size();
   VLOG(1) << Substitute("List of $0 Tablet Servers retrieved", servers_count);
 
@@ -58,8 +58,8 @@ Status Ksck::CheckTabletServersRunning() {
 
   int bad_servers = 0;
   VLOG(1) << "Connecting to all the Tablet Servers";
-  BOOST_FOREACH(const shared_ptr<KsckTabletServer>& ts, cluster_->tablet_servers()) {
-    Status s = ConnectToTabletServer(ts);
+  BOOST_FOREACH(const KsckMaster::TSMap::value_type& entry, cluster_->tablet_servers()) {
+    Status s = ConnectToTabletServer(entry.second);
     if (!s.ok()) {
       bad_servers++;
     }
