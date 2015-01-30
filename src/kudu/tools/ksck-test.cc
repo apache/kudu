@@ -22,12 +22,12 @@ class MockKsckTabletServer : public KsckTabletServer {
       : KsckTabletServer(uuid),
         connect_status_(Status::OK()) {
   }
-  virtual ~MockKsckTabletServer() { }
 
   virtual Status Connect() OVERRIDE {
     return connect_status_;
   }
 
+  // Public because the unit tests mutate this variable directly.
   Status connect_status_;
 };
 
@@ -36,20 +36,19 @@ class MockKsckMaster : public KsckMaster {
   MockKsckMaster()
       : connect_status_(Status::OK()) {
   }
-  virtual ~MockKsckMaster() { }
 
   virtual Status Connect() OVERRIDE {
     return connect_status_;
   }
 
   virtual Status RetrieveTabletServersList(
-      vector<shared_ptr<KsckTabletServer> >& tablet_servers) OVERRIDE {
-    tablet_servers.assign(tablet_servers_.begin(), tablet_servers_.end());
+      vector<shared_ptr<KsckTabletServer> >* tablet_servers) OVERRIDE {
+    tablet_servers->assign(tablet_servers_.begin(), tablet_servers_.end());
     return Status::OK();
   }
 
-  virtual Status RetrieveTablesList(vector<shared_ptr<KsckTable> >& tables) OVERRIDE {
-    tables.assign(tables_.begin(), tables_.end());
+  virtual Status RetrieveTablesList(vector<shared_ptr<KsckTable> >* tables) OVERRIDE {
+    tables->assign(tables_.begin(), tables_.end());
     return Status::OK();
   }
 
@@ -57,6 +56,7 @@ class MockKsckMaster : public KsckMaster {
     return Status::OK();
   }
 
+  // Public because the unit tests mutate these variables directly.
   Status connect_status_;
   vector<shared_ptr<KsckTabletServer> > tablet_servers_;
   vector<shared_ptr<KsckTable> > tables_;

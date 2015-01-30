@@ -60,23 +60,24 @@ Status RemoteKsckMaster::Connect() {
 }
 
 Status RemoteKsckMaster::RetrieveTabletServersList(
-    vector<shared_ptr<KsckTabletServer> >& tablet_servers) {
+    vector<shared_ptr<KsckTabletServer> >* tablet_servers) {
   master::ListTabletServersRequestPB req;
   master::ListTabletServersResponsePB resp;
   RpcController rpc;
 
   rpc.set_timeout(GetDefaultTimeout());
   RETURN_NOT_OK(proxy_->ListTabletServers(req, &resp, &rpc));
+  tablet_servers->clear();
   BOOST_FOREACH(const master::ListTabletServersResponsePB_Entry& e, resp.servers()) {
     HostPortPB addr = e.registration().rpc_addresses(0);
     HostPort hp(addr.host(), addr.port());
-    tablet_servers.push_back(shared_ptr<KsckTabletServer>(
+    tablet_servers->push_back(shared_ptr<KsckTabletServer>(
         new RemoteKsckTabletServer(e.instance_id().permanent_uuid(), hp.ToString())));
   }
   return Status::OK();
 }
 
-Status RemoteKsckMaster::RetrieveTablesList(vector<shared_ptr<KsckTable> >& tables) {
+Status RemoteKsckMaster::RetrieveTablesList(vector<shared_ptr<KsckTable> >* tables) {
   master::ListTablesRequestPB req;
   master::ListTablesResponsePB resp;
   RpcController rpc;
@@ -91,7 +92,7 @@ Status RemoteKsckMaster::RetrieveTablesList(vector<shared_ptr<KsckTable> >& tabl
     shared_ptr<KsckTable> table(new KsckTable(info.name(), num_replicas));
     tables_temp.push_back(table);
   }
-  tables.assign(tables_temp.begin(), tables_temp.end());
+  tables->assign(tables_temp.begin(), tables_temp.end());
   return Status::OK();
 }
 

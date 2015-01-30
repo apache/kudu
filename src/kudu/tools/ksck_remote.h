@@ -24,7 +24,6 @@ class RemoteKsckTabletServer : public KsckTabletServer {
       : KsckTabletServer(uuid),
         address_(address) {
   }
-  virtual ~RemoteKsckTabletServer() { }
 
   virtual Status Connect() OVERRIDE;
 
@@ -45,11 +44,11 @@ class RemoteKsckMaster : public KsckMaster {
   virtual Status Connect() OVERRIDE;
 
   virtual Status RetrieveTabletServersList(
-      std::vector<std::tr1::shared_ptr<KsckTabletServer> > &tablet_servers) OVERRIDE;
+      std::vector<std::tr1::shared_ptr<KsckTabletServer> >* tablet_servers) OVERRIDE;
 
-  virtual Status RetrieveTablesList(std::vector<std::tr1::shared_ptr<KsckTable> > &tables) OVERRIDE;
+  virtual Status RetrieveTablesList(std::vector<std::tr1::shared_ptr<KsckTable> >* tables) OVERRIDE;
 
-  virtual Status RetrieveTabletsList(const std::tr1::shared_ptr<KsckTable> &table) OVERRIDE;
+  virtual Status RetrieveTabletsList(const std::tr1::shared_ptr<KsckTable>& table) OVERRIDE;
 
  private:
   Status GetNumReplicasForTable(const std::string& table_name, int* num_replicas);

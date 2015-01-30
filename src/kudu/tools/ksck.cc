@@ -20,11 +20,11 @@ KsckCluster::~KsckCluster() {
 }
 
 Status KsckCluster::RetrieveTabletServersList() {
-  return master_->RetrieveTabletServersList(tablet_servers_);
+  return master_->RetrieveTabletServersList(&tablet_servers_);
 }
 
 Status KsckCluster::RetrieveTablesList() {
-  return master_->RetrieveTablesList(tables_);
+  return master_->RetrieveTablesList(&tables_);
 }
 
 Status KsckCluster::RetrieveTabletsList(const shared_ptr<KsckTable>& table) {

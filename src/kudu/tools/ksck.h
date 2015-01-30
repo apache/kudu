@@ -137,12 +137,12 @@ class KsckMaster {
   // Gets the list of Tablet Servers from the Master and stores it in the passed vector.
   // tablet_servers is only modified if this method returns OK.
   virtual Status RetrieveTabletServersList(
-      std::vector<std::tr1::shared_ptr<KsckTabletServer> >& tablet_servers) = 0;
+      std::vector<std::tr1::shared_ptr<KsckTabletServer> >* tablet_servers) = 0;
 
   // Gets the list of tables from the Master and stores it in the passed vector.
   // tables is only modified if this method returns OK.
   virtual Status RetrieveTablesList(
-      std::vector<std::tr1::shared_ptr<KsckTable> >& tables) = 0;
+      std::vector<std::tr1::shared_ptr<KsckTable> >* tables) = 0;
 
   // Gets the list of tablets for the specified table and stores the list in it.
   // The table's tablet list is only modified if this method returns OK.
