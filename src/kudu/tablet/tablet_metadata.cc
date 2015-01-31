@@ -333,29 +333,16 @@ Status TabletMetadata::ReplaceSuperBlock(const TabletSuperBlockPB &pb) {
 
 Status TabletMetadata::ReplaceSuperBlockUnlocked(const TabletSuperBlockPB &pb) {
   flush_lock_.AssertAcquired();
-  // Flush
+  // Write out and replace one of the two superblocks.
+  //
+  // When writing out the first superblock, it's OK to retain the second
+  // (stale) one. While opening the tablet, the superblock with the latest
+  // sequence number will be loaded and the other one will be ignored.
   BlockId a_blk(master_block_.block_a());
   BlockId b_blk(master_block_.block_b());
-  if (sblk_sequence_ & 1) {
-    TRACE("Writing metadata block");
-    RETURN_NOT_OK(fs_manager_->WriteMetadataBlock(a_blk, pb));
-    TRACE("Deleting old metadata block");
-    Status s = fs_manager_->DeleteBlock(b_blk);
-    if (!s.ok() && !s.IsNotFound()) {
-      WARN_NOT_OK(s, "Unable to delete old metadata block " + b_blk.ToString()
-                  + " for tablet " + oid());
-    }
-  } else {
-    TRACE("Writing metadata block");
-    RETURN_NOT_OK(fs_manager_->WriteMetadataBlock(b_blk, pb));
-    TRACE("Deleting old metadata block");
-    Status s = fs_manager_->DeleteBlock(a_blk);
-    if (!s.ok() && !s.IsNotFound()) {
-      WARN_NOT_OK(s, "Unable to delete old metadata block " + a_blk.ToString()
-                  + " for tablet " + oid());
-    }
-  }
-
+  TRACE("Writing metadata block");
+  RETURN_NOT_OK(fs_manager_->WriteMetadataBlock(
+      sblk_sequence_ & 1 ? a_blk : b_blk, pb));
   sblk_sequence_++;
   return Status::OK();
 }
