@@ -195,6 +195,24 @@ int64_t LogReader::GetMinReplicateIndex() const {
   return min_remaining_op_idx;
 }
 
+void LogReader::GetMaxIndexesToSegmentSizeMap(int64_t min_op_idx, int32_t segments_count,
+                                              std::map<int64_t, int64_t>*
+                                              max_idx_to_segment_size) const {
+  DCHECK_GE(segments_count, 0);
+  BOOST_FOREACH(const scoped_refptr<ReadableLogSegment>& segment, segments_) {
+    if (max_idx_to_segment_size->size() == segments_count) {
+      break;
+    }
+    DCHECK(segment->HasFooter());
+    if (segment->footer().max_replicate_index() < min_op_idx) {
+      // This means we found a log we can GC. Adjust the expected number of logs.
+      segments_count--;
+      continue;
+    }
+    (*max_idx_to_segment_size)[segment->footer().max_replicate_index()] = segment->file_size();
+  }
+}
+
 scoped_refptr<ReadableLogSegment> LogReader::GetSegmentBySequenceNumber(int64_t seq) const {
   boost::lock_guard<simple_spinlock> lock(lock_);
   if (segments_.empty()) {

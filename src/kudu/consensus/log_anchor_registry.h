@@ -126,12 +126,15 @@ class MinLogIndexAnchorer {
   // If no minimum is known (no anchor registered), returns OK.
   Status ReleaseAnchor();
 
+  // Returns the first recorded log index, kInvalidOpIdIndex if there's none.
+  int64_t minimum_log_index() const;
+
  private:
   const scoped_refptr<LogAnchorRegistry> registry_;
   const std::string owner_;
   LogAnchor anchor_;
 
-  // The index currently anchored, or -1 if no anchor has yet been registered.
+  // The index currently anchored, or kInvalidOpIdIndex if no anchor has yet been registered.
   int64_t minimum_log_index_;
   mutable simple_spinlock lock_;
 

@@ -593,6 +593,10 @@ Status Log::GC(int64_t min_op_idx, int32_t* num_gced) {
                 << "retention requirement. Only GCing "
                 << max_to_delete << "/" << reader_->num_segments();
         segments_to_delete.resize(max_to_delete);
+      } else if (segments_to_delete.size() < max_to_delete) {
+        int extra_segments = max_to_delete - segments_to_delete.size();
+        VLOG(1) << tablet_id_ << " has too many log segments, need to GC "
+                << extra_segments << " more. ";
       }
 
       if (segments_to_delete.size() == 0) {
@@ -624,6 +628,23 @@ Status Log::GC(int64_t min_op_idx, int32_t* num_gced) {
     }
   }
   return Status::OK();
+}
+
+void Log::GetMaxIndexesToSegmentSizeMap(int64_t min_op_idx,
+                                        std::map<int64_t, int64_t>* max_idx_to_segment_size)
+                                        const {
+  if (min_op_idx == 0) {
+    return;
+  }
+  boost::shared_lock<rw_spinlock> read_lock(state_lock_.get_lock());
+  CHECK_EQ(kLogWriting, log_state_);
+  // We want to retain segments so we're only asking the extra ones.
+  int segments_count = std::max(reader_->num_segments() - FLAGS_log_min_segments_to_retain, 0);
+  if (segments_count == 0) {
+    return;
+  }
+  reader_->GetMaxIndexesToSegmentSizeMap(min_op_idx, segments_count,
+                                         max_idx_to_segment_size);
 }
 
 LogReader* Log::GetLogReader() const {

@@ -158,5 +158,10 @@ Status MinLogIndexAnchorer::ReleaseAnchor() {
   return Status::OK(); // If there were no inserts, return OK.
 }
 
+int64_t MinLogIndexAnchorer::minimum_log_index() const {
+  boost::lock_guard<simple_spinlock> l(lock_);
+  return minimum_log_index_;
+}
+
 } // namespace log
 } // namespace kudu

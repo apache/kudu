@@ -5,6 +5,7 @@
 #define KUDU_CONSENSUS_LOG_H_
 
 #include <boost/thread/shared_mutex.hpp>
+#include <map>
 #include <string>
 #include <vector>
 
@@ -179,6 +180,14 @@ class Log {
   //
   // This method is thread-safe.
   Status GC(int64_t min_op_idx, int* num_gced);
+
+  // Returns a map of log index -> segment size, of all the segments that currently cannot be GCed
+  // because in-memory structures have anchors in them.
+  //
+  // 'min_op_idx' is the minimum operation index to start looking from, meaning that we skip the
+  // segment that contains it and then start recording segments.
+  void GetMaxIndexesToSegmentSizeMap(int64_t min_op_idx,
+                                     std::map<int64_t, int64_t>* max_idx_to_segment_size) const;
 
   // Returns the file system location of the currently active WAL segment.
   const std::string& ActiveSegmentPathForTests() const {
