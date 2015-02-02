@@ -40,6 +40,12 @@ Status HostPortFromPB(const HostPortPB& host_port_pb, HostPort* host_port);
 // list and logs a message in verbose mode.
 Status SockaddrFromHostPort(const HostPort& host_port, Sockaddr* addr);
 
+// Adds addresses in 'addrs' to 'pbs'. If an address is a wildcard
+// (e.g., "0.0.0.0"), then the local machine's hostname is used in
+// its place.
+Status AddHostPortPBs(const std::vector<Sockaddr>& addrs,
+                      google::protobuf::RepeatedPtrField<HostPortPB>* pbs);
+
 // Convert the specified schema to protobuf.
 Status SchemaToPB(const Schema& schema, SchemaPB *pb);
 

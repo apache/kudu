@@ -162,6 +162,20 @@ Status SockaddrFromHostPort(const HostPort& host_port, Sockaddr* addr) {
   return Status::OK();
 }
 
+Status AddHostPortPBs(const vector<Sockaddr>& addrs,
+                      RepeatedPtrField<HostPortPB>* pbs) {
+  BOOST_FOREACH(const Sockaddr& addr, addrs) {
+    HostPortPB* pb = pbs->Add();
+    if (addr.IsWildcard()) {
+      RETURN_NOT_OK(GetHostname(pb->mutable_host()));
+    } else {
+      pb->set_host(addr.host());
+    }
+    pb->set_port(addr.port());
+  }
+  return Status::OK();
+}
+
 Status SchemaToPB(const Schema& schema, SchemaPB *pb) {
   pb->Clear();
   return SchemaToColumnPBs(schema, pb->mutable_columns());

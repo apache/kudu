@@ -138,16 +138,10 @@ void Master::Shutdown() {
 Status Master::GetMasterRegistration(ServerRegistrationPB* reg) const {
   vector<Sockaddr> rpc_addrs;
   rpc_server()->GetBoundAddresses(&rpc_addrs);
-  BOOST_FOREACH(const Sockaddr& rpc_addr, rpc_addrs) {
-    HostPortPB* rpc_host_port = reg->add_rpc_addresses();
-    RETURN_NOT_OK(HostPortToPB(HostPort(rpc_addr), rpc_host_port));
-  }
+  RETURN_NOT_OK(AddHostPortPBs(rpc_addrs, reg->mutable_rpc_addresses()));
   vector<Sockaddr> http_addrs;
   web_server()->GetBoundAddresses(&http_addrs);
-  BOOST_FOREACH(const Sockaddr& http_addr, http_addrs) {
-    HostPortPB* http_host_port = reg->add_http_addresses();
-    RETURN_NOT_OK(HostPortToPB(HostPort(http_addr), http_host_port));
-  }
+  RETURN_NOT_OK(AddHostPortPBs(http_addrs, reg->mutable_http_addresses()));
   return Status::OK();
 }
 
