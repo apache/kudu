@@ -975,8 +975,18 @@ Status CatalogManager::AlterTable(const AlterTableRequestPB* req,
   TRACE("Updating metadata on disk");
   Status s = sys_catalog_->UpdateTable(table.get());
   if (!s.ok()) {
-    PANIC_RPC(rpc, Substitute("An error occurred while updating sys tables: $0",
-                              s.ToString()));
+    s = s.CloneAndPrepend(
+        Substitute("An error occurred while updating sys-catalog tables entry: $0",
+                   s.ToString()));
+    LOG(WARNING) << s.ToString();
+    if (req->has_new_table_name()) {
+      boost::lock_guard<LockType> catalog_lock(lock_);
+      CHECK_EQ(table_names_map_.erase(req->new_table_name()), 1);
+    }
+    CheckIfNoLongerLeaderAndSetupError(s, resp);
+    // TableMetadaLock follows RAII paradigm: when it leaves scope,
+    // 'l' will be unlocked, and the mutation will be aborted.
+    return s;
   }
 
   // 6. Remove the old name

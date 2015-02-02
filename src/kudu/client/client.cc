@@ -160,7 +160,7 @@ Status KuduClient::IsAlterTableInProgress(const string& table_name,
                                           bool *alter_in_progress) {
   MonoTime deadline = MonoTime::Now(MonoTime::FINE);
   deadline.AddDelta(default_admin_operation_timeout());
-  return data_->IsAlterTableInProgress(table_name, deadline, alter_in_progress);
+  return data_->IsAlterTableInProgress(this, table_name, deadline, alter_in_progress);
 }
 
 Status KuduClient::GetTableSchema(const string& table_name,
@@ -578,24 +578,17 @@ Status KuduTableAlterer::Alter() {
     return data_->status_;
   }
 
-  AlterTableResponsePB resp;
-  RpcController rpc;
-
   MonoDelta timeout = data_->timeout_.Initialized() ?
     data_->timeout_ :
     data_->client_->default_admin_operation_timeout();
   MonoTime deadline = MonoTime::Now(MonoTime::FINE);
   deadline.AddDelta(timeout);
-  rpc.set_timeout(timeout);
-  RETURN_NOT_OK(data_->client_->data_->master_proxy_->AlterTable(data_->alter_steps_, &resp, &rpc));
-  if (resp.has_error()) {
-    return StatusFromPB(resp.error().status());
-  }
-
+  RETURN_NOT_OK(data_->client_->data_->AlterTable(data_->client_, data_->alter_steps_, deadline));
   if (data_->wait_) {
     string alter_name = data_->alter_steps_.has_new_table_name() ?
         data_->alter_steps_.new_table_name() : data_->alter_steps_.table().table_name();
-    RETURN_NOT_OK(data_->client_->data_->WaitForAlterTableToFinish(alter_name, deadline));
+    RETURN_NOT_OK(data_->client_->data_->WaitForAlterTableToFinish(
+        data_->client_, alter_name, deadline));
   }
 
   return Status::OK();

@@ -17,6 +17,7 @@ class DnsResolver;
 class HostPort;
 
 namespace master {
+class AlterTableRequestPB;
 class CreateTableRequestPB;
 class GetLeaderMasterRpc;
 class MasterServiceProxy;
@@ -62,11 +63,17 @@ class KuduClient::Data {
                      const std::string& table_name,
                      const MonoTime& deadline);
 
-  Status IsAlterTableInProgress(const std::string& table_name,
+  Status AlterTable(KuduClient* client,
+                    const master::AlterTableRequestPB& alter_steps,
+                    const MonoTime& deadline);
+
+  Status IsAlterTableInProgress(KuduClient* client,
+                                const std::string& table_name,
                                 const MonoTime& deadline,
                                 bool *alter_in_progress);
 
-  Status WaitForAlterTableToFinish(const std::string& alter_name,
+  Status WaitForAlterTableToFinish(KuduClient* client,
+                                   const std::string& alter_name,
                                    const MonoTime& deadline);
 
   Status GetTableSchema(KuduClient* client,

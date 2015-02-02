@@ -93,6 +93,14 @@ class MasterFailoverTest : public KuduTest {
         .Create();
   }
 
+  Status RenameTable(const std::string& table_name_orig, const std::string& table_name_new) {
+    return client_->NewTableAlterer()->table_name(table_name_orig)
+        .rename_table(table_name_new)
+        .timeout(MonoDelta::FromSeconds(90))
+        .wait(true)
+        .Alter();
+  }
+
   // Test that we can get the table location information from the
   // master and then open scanners on the tablet server. This involves
   // sending RPCs to both the master and the tablet servers and
@@ -193,6 +201,39 @@ TEST_F(MasterFailoverTest, TestDeleteTableSync) {
   ASSERT_OK(client_->DeleteTable(table_name));
   scoped_refptr<KuduTable> table;
   Status s = client_->OpenTable(table_name, &table);
+  ASSERT_TRUE(s.IsNotFound());
+}
+
+// Test the scenario where we create a table, pause the leader master,
+// and then issue the AlterTable call renaming a table: AlterTable
+// should go to the newly elected leader master and succeed, renaming
+// the table.
+//
+// TODO: Add an equivalent async test. Add a test for adding and/or
+// renaming a column in a table.
+TEST_F(MasterFailoverTest, TestRenameTableSync) {
+  if (!AllowSlowTests()) {
+    LOG(INFO) << "This test can only be run in slow mode.";
+    return;
+  }
+
+  int leader_idx;
+
+  ASSERT_OK(cluster_->GetLeaderMasterIndex(&leader_idx));
+
+  string table_name_orig = "testAlterTableSync";
+  ASSERT_OK(CreateTable(table_name_orig, kWaitForCreate));
+
+  LOG(INFO) << "Pausing leader master";
+  cluster_->master(leader_idx)->Pause();
+  ScopedResumeExternalDaemon resume_daemon(cluster_->master(leader_idx));
+
+  string table_name_new = "testAlterTableSyncRenamed";
+  ASSERT_OK(RenameTable(table_name_orig, table_name_new));
+  scoped_refptr<KuduTable> table;
+  ASSERT_OK(client_->OpenTable(table_name_new, &table));
+
+  Status s = client_->OpenTable(table_name_orig, &table);
   ASSERT_TRUE(s.IsNotFound());
 }
 

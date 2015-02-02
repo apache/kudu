@@ -17,7 +17,7 @@ class KuduTableAlterer::Data {
   explicit Data(KuduClient* client);
   ~Data();
 
-  const KuduClient* client_;
+  KuduClient* client_;
 
   Status status_;
 

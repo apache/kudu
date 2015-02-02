@@ -27,6 +27,8 @@
 
 namespace kudu {
 
+using master::AlterTableRequestPB;
+using master::AlterTableResponsePB;
 using master::CreateTableRequestPB;
 using master::CreateTableResponsePB;
 using master::DeleteTableRequestPB;
@@ -328,8 +330,33 @@ Status KuduClient::Data::DeleteTable(KuduClient* client,
   return Status::OK();
 }
 
+Status KuduClient::Data::AlterTable(KuduClient* client,
+                                    const AlterTableRequestPB& alter_steps,
+                                    const MonoTime& deadline) {
+  AlterTableResponsePB resp;
+  Status s =
+      SyncLeaderMasterRpc<AlterTableRequestPB, AlterTableResponsePB>(
+          default_admin_operation_timeout_,
+          deadline,
+          client,
+          alter_steps,
+          &resp,
+          NULL,
+          &MasterServiceProxy::AlterTable);
+  RETURN_NOT_OK(s);
+  // TODO: Consider the situation where the request is sent to the
+  // server, gets executed on the server and written to the server,
+  // but is seen as failed by the client, and is then retried (in which
+  // case the retry will fail due to original table being removed, a
+  // column being already added, etc...)
+  if (resp.has_error()) {
+    return StatusFromPB(resp.error().status());
+  }
+  return Status::OK();
+}
 
-Status KuduClient::Data::IsAlterTableInProgress(const string& table_name,
+Status KuduClient::Data::IsAlterTableInProgress(KuduClient* client,
+                                                const string& table_name,
                                                 const MonoTime& deadline,
                                                 bool *alter_in_progress) {
   IsAlterTableDoneRequestPB req;
@@ -338,7 +365,15 @@ Status KuduClient::Data::IsAlterTableInProgress(const string& table_name,
 
   req.mutable_table()->set_table_name(table_name);
   rpc.set_timeout(deadline.GetDeltaSince(MonoTime::Now(MonoTime::FINE)));
-  RETURN_NOT_OK(master_proxy_->IsAlterTableDone(req, &resp, &rpc));
+  Status s =
+      SyncLeaderMasterRpc<IsAlterTableDoneRequestPB, IsAlterTableDoneResponsePB>(
+          default_admin_operation_timeout_,
+          deadline,
+          client,
+          req,
+          &resp,
+          NULL,
+          &MasterServiceProxy::IsAlterTableDone);
   if (resp.has_error()) {
     return StatusFromPB(resp.error().status());
   }
@@ -347,14 +382,15 @@ Status KuduClient::Data::IsAlterTableInProgress(const string& table_name,
   return Status::OK();
 }
 
-Status KuduClient::Data::WaitForAlterTableToFinish(const string& alter_name,
+Status KuduClient::Data::WaitForAlterTableToFinish(KuduClient* client,
+                                                   const string& alter_name,
                                                    const MonoTime& deadline) {
   return RetryFunc(deadline,
                    "Waiting on Alter Table to be completed",
                    "Timeout out waiting for AlterTable",
                    boost::bind(&KuduClient::Data::IsAlterTableInProgress,
                                this,
-                               alter_name, _1, _2));
+                               client, alter_name, _1, _2));
 }
 
 Status KuduClient::Data::InitLocalHostNames() {
