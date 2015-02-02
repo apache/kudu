@@ -96,12 +96,14 @@ class GetLeaderMasterRpc : public rpc::Rpc,
 
   virtual void SendRpcCb(const Status& status) OVERRIDE;
 
-  // Invoked when a response comes back from a Master.
+  // Invoked when a response comes back from a Master with address
+  // 'node_addr'.
   //
   // Invokes SendRpcCb if the response indicates that the specified
   // master is a leader, or if responses have been received from all
   // of the Masters.
-  void GetMasterRegistrationRpcCbForNode(const ServerEntryPB& resp,
+  void GetMasterRegistrationRpcCbForNode(const Sockaddr& node_addr,
+                                         const ServerEntryPB& resp,
                                          const Status& status);
 
   StatusCallback user_cb_;

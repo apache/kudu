@@ -126,7 +126,7 @@ void GetLeaderMasterRpc::SendRpc() {
   for (int i = 0; i < addrs_.size(); i++) {
     GetMasterRegistrationRpc* rpc = new GetMasterRegistrationRpc(
         Bind(&GetLeaderMasterRpc::GetMasterRegistrationRpcCbForNode,
-             this, ConstRef(responses_[i])),
+             this, ConstRef(addrs_[i]), ConstRef(responses_[i])),
         addrs_[i],
         retrier().deadline(),
         retrier().messenger(),
@@ -157,7 +157,8 @@ void GetLeaderMasterRpc::SendRpcCb(const Status& status) {
   user_cb_.Run(status);
 }
 
-void GetLeaderMasterRpc::GetMasterRegistrationRpcCbForNode(const ServerEntryPB& resp,
+void GetLeaderMasterRpc::GetMasterRegistrationRpcCbForNode(const Sockaddr& node_addr,
+                                                           const ServerEntryPB& resp,
                                                            const Status& status) {
   // TODO: handle the situation where one Master is partitioned from
   // the rest of the Master quorum, all are reachable by the client,
@@ -185,9 +186,7 @@ void GetLeaderMasterRpc::GetMasterRegistrationRpcCbForNode(const ServerEntryPB& 
         new_status = Status::NotFound("no leader found: " + ToString());
       } else {
         // We've found a leader.
-        new_status = HostPortFromPB(
-            resp.registration().rpc_addresses(0),
-            leader_master_);
+        *leader_master_ = HostPort(node_addr);
       }
     }
     --pending_responses_;
