@@ -20,6 +20,7 @@
 #include "kudu/tablet/delta_key.h"
 #include "kudu/tablet/rowset_metadata.h"
 #include "kudu/tablet/rowset.h"
+#include "kudu/util/atomic.h"
 #include "kudu/util/bloom_filter.h"
 #include "kudu/util/locks.h"
 
@@ -288,6 +289,8 @@ class DiskRowSet : public RowSet {
   size_t DeltaMemStoreSize() const OVERRIDE;
 
   bool DeltaMemStoreEmpty() const OVERRIDE;
+
+  int64_t MinUnflushedLogIndex() const OVERRIDE;
 
   size_t CountDeltaStores() const OVERRIDE;
 

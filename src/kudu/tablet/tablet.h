@@ -4,6 +4,7 @@
 #define KUDU_TABLET_TABLET_H
 
 #include <iosfwd>
+#include <map>
 #include <string>
 #include <vector>
 
@@ -62,6 +63,7 @@ class WriteTransactionState;
 
 class Tablet {
  public:
+  typedef std::map<int64_t, int64_t> MaxIdxToSegmentMap;
   friend class CompactRowSetsOp;
   friend class FlushMRSOp;
 
@@ -223,6 +225,9 @@ class Tablet {
   // This method takes a read lock on component_lock_ and is thread-safe.
   bool MemRowSetEmpty() const;
 
+  // Returns the size in bytes for the MRS's log retention.
+  size_t MemRowSetLogRetentionSize(const MaxIdxToSegmentMap& max_idx_to_segment_size) const;
+
   // Estimate the total on-disk size of this tablet, in bytes.
   size_t EstimateOnDiskSize() const;
 
@@ -231,6 +236,14 @@ class Tablet {
 
   // Same as MemRowSetEmpty(), but for the DMS.
   bool DeltaMemRowSetEmpty() const;
+
+  // Fills in the in-memory size and retention size in bytes for the DMS with the
+  // highest retention.
+  void GetInfoForBestDMSToFlush(const MaxIdxToSegmentMap& max_idx_to_segment_size,
+                                int64_t* mem_size, int64_t* retention_size) const;
+
+  // Flushes the DMS with the highest retention.
+  Status FlushDMSWithHighestRetention(const MaxIdxToSegmentMap& max_idx_to_segment_size) const;
 
   // Flush only the biggest DMS
   Status FlushBiggestDMS();
@@ -323,6 +336,7 @@ class Tablet {
 
  private:
   friend class Iterator;
+  FRIEND_TEST(TestTablet, TestGetLogRetentionSizeForIndex);
 
   Status FlushUnlocked();
 
@@ -407,6 +421,13 @@ class Tablet {
                                  Schema *mapped_projection) const;
 
   Status CheckRowInTablet(const tablet::RowSetKeyProbe& probe) const;
+
+  // Helper method to find the rowset that has the DMS with the highest retention.
+  shared_ptr<RowSet> FindBestDMSToFlush(const MaxIdxToSegmentMap& max_idx_to_segment_size) const;
+
+  // Helper method to find how many bytes this index retains.
+  static int64_t GetLogRetentionSizeForIndex(int64_t min_log_index,
+                                             const MaxIdxToSegmentMap& max_idx_to_segment_size);
 
   // Lock protecting schema_ and key_schema_.
   //

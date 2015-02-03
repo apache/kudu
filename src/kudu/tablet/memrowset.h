@@ -303,6 +303,10 @@ class MemRowSet : public RowSet,
 
   bool DeltaMemStoreEmpty() const OVERRIDE { return true; }
 
+  int64_t MinUnflushedLogIndex() const OVERRIDE {
+    return anchorer_.minimum_log_index();
+  }
+
   size_t CountDeltaStores() const OVERRIDE { return 0; }
 
   Status FlushDeltas() OVERRIDE { return Status::OK(); }

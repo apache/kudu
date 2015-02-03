@@ -593,6 +593,11 @@ bool DiskRowSet::DeltaMemStoreEmpty() const {
   return delta_tracker_->DeltaMemStoreEmpty();
 }
 
+int64_t DiskRowSet::MinUnflushedLogIndex() const {
+  CHECK(open_);
+  return delta_tracker_->MinUnflushedLogIndex();
+}
+
 size_t DiskRowSet::CountDeltaStores() const {
   CHECK(open_);
   return delta_tracker_->CountRedoDeltaStores();

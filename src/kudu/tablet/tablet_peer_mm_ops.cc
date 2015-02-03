@@ -4,6 +4,7 @@
 #include "kudu/tablet/tablet_peer_mm_ops.h"
 
 #include <algorithm>
+#include <map>
 #include <string>
 
 #include <gflags/gflags.h>
@@ -59,7 +60,14 @@ void FlushMRSOp::UpdateStats(MaintenanceOpStats* stats) {
     stats->runnable = lock.try_lock();
   }
   stats->ram_anchored = tablet_peer_->tablet()->MemRowSetSize();
-  stats->logs_retained_mb = 0;
+
+  int64_t min_log_index;
+  tablet_peer_->GetEarliestNeededLogIndex(&min_log_index);
+  std::map<int64_t, int64_t> max_idx_to_segment_size;
+  tablet_peer_->log()->GetMaxIndexesToSegmentSizeMap(min_log_index, &max_idx_to_segment_size);
+  stats->logs_retained_mb =
+      tablet_peer_->tablet()->MemRowSetLogRetentionSize(max_idx_to_segment_size) / 1024 / 1024;
+
   // TODO: use workload statistics here to find out how "hot" the tablet has
   // been in the last 5 minutes.
   SetPerfImprovementForFlush(stats,
@@ -100,10 +108,19 @@ AtomicGauge<uint32_t>* FlushMRSOp::RunningGauge() {
 
 void FlushDeltaMemStoresOp::UpdateStats(MaintenanceOpStats* stats) {
   boost::lock_guard<simple_spinlock> l(lock_);
-  size_t dms_size = tablet_peer_->tablet()->DeltaMemStoresSize();
+  int64_t dms_size;
+  int64_t retention_size;
+  int64_t min_log_index;
+  std::map<int64_t, int64_t> max_idx_to_segment_size;
+
+  tablet_peer_->GetEarliestNeededLogIndex(&min_log_index);
+  tablet_peer_->log()->GetMaxIndexesToSegmentSizeMap(min_log_index, &max_idx_to_segment_size);
+  tablet_peer_->tablet()->GetInfoForBestDMSToFlush(max_idx_to_segment_size,
+                                                   &dms_size, &retention_size);
+
   stats->ram_anchored = dms_size;
   stats->runnable = true;
-  stats->logs_retained_mb = 0;
+  stats->logs_retained_mb = retention_size / 1024 / 1024;
 
   SetPerfImprovementForFlush(stats,
                              time_since_flush_.elapsed().wall_millis(),
@@ -112,9 +129,14 @@ void FlushDeltaMemStoresOp::UpdateStats(MaintenanceOpStats* stats) {
 }
 
 void FlushDeltaMemStoresOp::Perform() {
-  WARN_NOT_OK(tablet_peer_->tablet()->FlushBiggestDMS(),
-              Substitute("Failed to flush biggest DMS on $0",
-                         tablet_peer_->tablet()->tablet_id()));
+  int64_t min_log_index;
+  std::map<int64_t, int64_t> max_idx_to_segment_size;
+
+  tablet_peer_->GetEarliestNeededLogIndex(&min_log_index);
+  tablet_peer_->log()->GetMaxIndexesToSegmentSizeMap(min_log_index, &max_idx_to_segment_size);
+  WARN_NOT_OK(tablet_peer_->tablet()->FlushDMSWithHighestRetention(max_idx_to_segment_size),
+                  Substitute("Failed to flush DMS on $0",
+                             tablet_peer_->tablet()->tablet_id()));
   {
     boost::lock_guard<simple_spinlock> l(lock_);
     time_since_flush_.start();

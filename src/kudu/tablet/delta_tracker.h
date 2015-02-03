@@ -146,6 +146,9 @@ class DeltaTracker {
   // Returns true if the DMS has no entries. This doesn't rely on the size.
   bool DeltaMemStoreEmpty() const;
 
+  // Get the minimum log index for this tracker's DMS, -1 if it wasn't set.
+  int64_t MinUnflushedLogIndex() const;
+
   // Return the number of redo delta stores, not including the DeltaMemStore.
   size_t CountRedoDeltaStores() const;
 

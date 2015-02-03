@@ -40,6 +40,7 @@ struct MaintenanceOpStats {
 
   // The approximate amount of memory that not doing this operation keeps us from GCing from
   // the logs. May be 0.
+  // TODO bytes and int64.
   int32_t logs_retained_mb;
 
   // The estimated performance improvement-- how good it is to do this on some

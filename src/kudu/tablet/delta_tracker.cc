@@ -479,6 +479,11 @@ bool DeltaTracker::DeltaMemStoreEmpty() const {
   return dms_->Empty();
 }
 
+int64_t DeltaTracker::MinUnflushedLogIndex() const {
+  boost::shared_lock<boost::shared_mutex> lock(component_lock_);
+  return dms_->MinLogIndex();
+}
+
 size_t DeltaTracker::CountRedoDeltaStores() const {
   boost::shared_lock<boost::shared_mutex> lock(component_lock_);
   return redo_delta_stores_.size();

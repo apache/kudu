@@ -633,9 +633,6 @@ Status Log::GC(int64_t min_op_idx, int32_t* num_gced) {
 void Log::GetMaxIndexesToSegmentSizeMap(int64_t min_op_idx,
                                         std::map<int64_t, int64_t>* max_idx_to_segment_size)
                                         const {
-  if (min_op_idx == 0) {
-    return;
-  }
   boost::shared_lock<rw_spinlock> read_lock(state_lock_.get_lock());
   CHECK_EQ(kLogWriting, log_state_);
   // We want to retain segments so we're only asking the extra ones.

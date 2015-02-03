@@ -11,6 +11,7 @@
 #include <ostream>
 #include <tr1/memory>
 #include <tr1/unordered_set>
+#include <utility>
 #include <vector>
 
 #include "kudu/cfile/cfile_writer.h"
@@ -1267,6 +1268,14 @@ bool Tablet::MemRowSetEmpty() const {
   return comps->memrowset->empty();
 }
 
+size_t Tablet::MemRowSetLogRetentionSize(const MaxIdxToSegmentMap& max_idx_to_segment_size) const {
+  scoped_refptr<TabletComponents> comps;
+  GetComponents(&comps);
+
+  return GetLogRetentionSizeForIndex(comps->memrowset->MinUnflushedLogIndex(),
+                                     max_idx_to_segment_size);
+}
+
 size_t Tablet::EstimateOnDiskSize() const {
   scoped_refptr<TabletComponents> comps;
   GetComponents(&comps);
@@ -1302,6 +1311,66 @@ bool Tablet::DeltaMemRowSetEmpty() const {
   }
 
   return true;
+}
+
+void Tablet::GetInfoForBestDMSToFlush(const MaxIdxToSegmentMap& max_idx_to_segment_size,
+                                      int64_t* mem_size, int64_t* retention_size) const {
+  shared_ptr<RowSet> rowset = FindBestDMSToFlush(max_idx_to_segment_size);
+
+  if (rowset) {
+    *retention_size = GetLogRetentionSizeForIndex(rowset->MinUnflushedLogIndex(),
+                                            max_idx_to_segment_size);
+    *mem_size = rowset->DeltaMemStoreSize();
+  } else {
+    *retention_size = 0;
+    *mem_size = 0;
+  }
+}
+
+Status Tablet::FlushDMSWithHighestRetention(const MaxIdxToSegmentMap&
+                                            max_idx_to_segment_size) const {
+  shared_ptr<RowSet> rowset = FindBestDMSToFlush(max_idx_to_segment_size);
+  if (rowset) {
+    return rowset->FlushDeltas();
+  }
+  return Status::OK();
+}
+
+shared_ptr<RowSet> Tablet::FindBestDMSToFlush(const MaxIdxToSegmentMap&
+                                              max_idx_to_segment_size) const {
+  scoped_refptr<TabletComponents> comps;
+  GetComponents(&comps);
+  int64_t mem_size = 0;
+  int64_t retention_size = 0;
+  shared_ptr<RowSet> best_dms;
+  BOOST_FOREACH(const shared_ptr<RowSet> &rowset, comps->rowsets->all_rowsets()) {
+    int64_t size = GetLogRetentionSizeForIndex(rowset->MinUnflushedLogIndex(),
+                                               max_idx_to_segment_size);
+    if (size > retention_size) {
+      if (rowset->DeltaMemStoreSize() > mem_size) {
+        mem_size = rowset->DeltaMemStoreSize();
+        retention_size = size;
+        best_dms = rowset;
+      }
+    }
+  }
+  return best_dms;
+}
+
+
+int64_t Tablet::GetLogRetentionSizeForIndex(int64_t min_log_index,
+                                            const MaxIdxToSegmentMap& max_idx_to_segment_size) {
+  if (max_idx_to_segment_size.size() == 0 || min_log_index == -1) {
+    return 0;
+  }
+  int64_t total_size = 0;
+  BOOST_FOREACH(const MaxIdxToSegmentMap::value_type& entry, max_idx_to_segment_size) {
+    if (min_log_index > entry.first) {
+      continue; // We're not in this segment, probably someone else is retaining it.
+    }
+    total_size += entry.second;
+  }
+  return total_size;
 }
 
 Status Tablet::FlushBiggestDMS() {

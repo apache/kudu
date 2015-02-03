@@ -115,6 +115,9 @@ class RowSet {
 
   virtual bool DeltaMemStoreEmpty() const = 0;
 
+  // Get the minimum log index corresponding to unflushed data in this row set.
+  virtual int64_t MinUnflushedLogIndex() const = 0;
+
   // Return the number of separate delta stores in the rowset,
   // not including the DeltaMemStore.
   virtual size_t CountDeltaStores() const = 0;
@@ -288,6 +291,8 @@ class DuplicatingRowSet : public RowSet {
   bool DeltaMemStoreEmpty() const OVERRIDE { return true; }
 
   size_t CountDeltaStores() const OVERRIDE { return 0; }
+
+  int64_t MinUnflushedLogIndex() const OVERRIDE { return -1; }
 
   Status FlushDeltas() OVERRIDE {
     // It's important that DuplicatingRowSet does not FlushDeltas. This prevents

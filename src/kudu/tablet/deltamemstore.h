@@ -108,6 +108,11 @@ class DeltaMemStore : public DeltaStore,
     return "DMS";
   }
 
+  // Get the minimum log index for this DMS, -1 if it wasn't set.
+  int64_t MinLogIndex() const {
+    return anchorer_.minimum_log_index();
+  }
+
  private:
   friend class DMSIterator;
 

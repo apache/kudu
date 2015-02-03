@@ -87,6 +87,11 @@ class MockRowSet : public RowSet {
     return 0;
   }
 
+  virtual int64_t MinUnflushedLogIndex() const OVERRIDE {
+    LOG(FATAL) << "Unimplemented";
+    return -1;
+  }
+
   virtual size_t CountDeltaStores() const OVERRIDE {
     LOG(FATAL) << "Unimplemented";
     return 0;
