@@ -32,9 +32,10 @@ DEFINE_int32(heartbeat_interval_ms, 1000,
              "Interval at which the TS heartbeats to the master. "
              "(Advanced option)");
 
-enum {
-  kMaxConsecutiveFastHeartbeats = 3
-};
+DEFINE_int32(max_consecutive_failed_heartbeats, 3,
+             "Maximum number of consecutive heartbeat failures until "
+             "TS backs off to the normal heartbeat interval, rather than retrying."
+             "(Advanced option)");
 
 using google::protobuf::RepeatedPtrField;
 using kudu::HostPortPB;
@@ -243,12 +244,12 @@ Status Heartbeater::Thread::SetupRegistration(master::TSRegistrationPB* reg) {
 int Heartbeater::Thread::GetMinimumHeartbeatMillis() const {
   // If we've failed a few heartbeats in a row, back off to the normal
   // interval, rather than retrying in a loop.
-  if (consecutive_failed_heartbeats_ == kMaxConsecutiveFastHeartbeats) {
+  if (consecutive_failed_heartbeats_ == FLAGS_max_consecutive_failed_heartbeats) {
     LOG(WARNING) << "Failed " << consecutive_failed_heartbeats_  <<" heartbeats "
                  << "in a row: no longer allowing fast heartbeat attempts.";
   }
 
-  return consecutive_failed_heartbeats_ > kMaxConsecutiveFastHeartbeats ?
+  return consecutive_failed_heartbeats_ > FLAGS_max_consecutive_failed_heartbeats ?
     FLAGS_heartbeat_interval_ms : 0;
 }
 
@@ -356,7 +357,7 @@ void Heartbeater::Thread::RunThread() {
         // refused) and there's more than one master available, try
         // determining the leader master again.
         if (s.IsNetworkError() ||
-            consecutive_failed_heartbeats_ == kMaxConsecutiveFastHeartbeats) {
+            consecutive_failed_heartbeats_ == FLAGS_max_consecutive_failed_heartbeats) {
           proxy_.reset();
         }
       }

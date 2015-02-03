@@ -44,15 +44,20 @@ class MasterFailoverTest : public KuduTest {
     opts_.num_masters = num_masters_ = opts_.master_rpc_ports.size();
     opts_.num_tablet_servers = kNumTabletServerReplicas;
 
-    // Reduce various below as to make the detection of leader master
-    // failures (specifically, failures as result of long pauses) more
-    // rapid.
+    // Reduce various timeouts below as to make the detection of
+    // leader master failures (specifically, failures as result of
+    // long pauses) more rapid.
 
     // Set max missed heartbeats periods to 1.0 (down from 3.0).
     opts_.extra_master_flags.push_back("--leader_failure_max_missed_heartbeat_periods=1.0");
 
-    // Set the TS->master heartbeat timeout to 2.5 seconds (down from 15 seconds).
-    opts_.extra_tserver_flags.push_back("--heartbeat_rpc_timeout_ms=2500");
+    // Set the TS->master heartbeat timeout to 1 second (down from 15 seconds).
+    opts_.extra_tserver_flags.push_back("--heartbeat_rpc_timeout_ms=1000");
+    // Allow one TS heartbeat failure before retrying with back-off (down from 3).
+    opts_.extra_tserver_flags.push_back("--max_consecutive_failed_heartbeats=1");
+    // Wait for 500 ms after 'max_consecutive_failed_heartbeats'
+    // before trying again (down from 1 second).
+    opts_.extra_tserver_flags.push_back("--heartbeat_interval_ms=500");
   }
 
   virtual void SetUp() OVERRIDE {
