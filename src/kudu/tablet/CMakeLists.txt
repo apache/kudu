@@ -5,6 +5,7 @@ set(TABLET_SRCS
   tablet.cc
   tablet_bootstrap.cc
   tablet_metrics.cc
+  tablet_peer_mm_ops.cc
   tablet_peer.cc
   transactions/transaction.cc
   transactions/alter_schema_transaction.cc

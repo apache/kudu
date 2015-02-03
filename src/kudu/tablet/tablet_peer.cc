@@ -20,14 +20,16 @@
 #include "kudu/consensus/quorum_util.h"
 #include "kudu/consensus/raft_consensus.h"
 #include "kudu/gutil/mathlimits.h"
+#include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/sysinfo.h"
 #include "kudu/tablet/transactions/transaction_driver.h"
 #include "kudu/tablet/transactions/alter_schema_transaction.h"
 #include "kudu/tablet/transactions/change_config_transaction.h"
 #include "kudu/tablet/transactions/write_transaction.h"
-#include "kudu/tablet/tablet_metrics.h"
 #include "kudu/tablet/tablet_bootstrap.h"
+#include "kudu/tablet/tablet_metrics.h"
+#include "kudu/tablet/tablet_peer_mm_ops.h"
 #include "kudu/tablet/tablet.pb.h"
 #include "kudu/util/logging.h"
 #include "kudu/util/metrics.h"
@@ -79,6 +81,7 @@ TabletPeer::TabletPeer(const scoped_refptr<TabletMetadata>& meta,
 }
 
 TabletPeer::~TabletPeer() {
+  UnregisterMaintenanceOps();
   boost::lock_guard<simple_spinlock> lock(lock_);
   CHECK_EQ(state_, SHUTDOWN);
 }
@@ -437,6 +440,27 @@ void TabletPeer::NewReplicaTransactionDriver(Transaction* transaction,
     leader_apply_pool_);
   ret->Init(transaction, consensus::REPLICA);
   driver->swap(ret);
+}
+
+void TabletPeer::RegisterMaintenanceOps(MaintenanceManager* maint_mgr) {
+  DCHECK(maintenance_ops_.empty());
+
+  gscoped_ptr<MaintenanceOp> mrs_flush_op(new FlushMRSOp(this));
+  maint_mgr->RegisterOp(mrs_flush_op.get());
+  maintenance_ops_.push_back(mrs_flush_op.release());
+
+  gscoped_ptr<MaintenanceOp> dms_flush_op(new FlushDeltaMemStoresOp(this));
+  maint_mgr->RegisterOp(dms_flush_op.get());
+  maintenance_ops_.push_back(dms_flush_op.release());
+
+  tablet_->RegisterMaintenanceOps(maint_mgr);
+}
+
+void TabletPeer::UnregisterMaintenanceOps() {
+  BOOST_FOREACH(MaintenanceOp* op, maintenance_ops_) {
+    op->Unregister();
+  }
+  STLDeleteElements(&maintenance_ops_);
 }
 
 }  // namespace tablet

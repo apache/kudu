@@ -370,8 +370,7 @@ void TSTabletManager::OpenTablet(const scoped_refptr<TabletMetadata>& meta) {
       return;
     }
 
-    tablet_peer->tablet()->RegisterMaintenanceOps(
-                server_->maintenance_manager());
+    tablet_peer->RegisterMaintenanceOps(server_->maintenance_manager());
     // tablet_peer state changed to RUNNING, mark the tablet dirty
     {
       boost::lock_guard<rw_spinlock> lock(lock_);

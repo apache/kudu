@@ -58,10 +58,6 @@ DEFINE_int32(tablet_compaction_budget_mb, 128,
              "Budget for a single compaction, if the 'budget' compaction "
              "algorithm is selected");
 
-DEFINE_int32(flush_threshold_mb, 64,
-             "Size at which MemRowSet flushes are triggered. "
-             "A MRS can still flush below this threshold if it if hasn't flushed in a while");
-
 METRIC_DEFINE_gauge_uint64(memrowset_size, kudu::MetricUnit::kBytes,
                            "Size of this tablet's memrowset");
 
@@ -726,98 +722,6 @@ int32_t Tablet::CurrentMrsIdForTests() const {
   return components_->memrowset->mrs_id();
 }
 
-enum {
-  kFlushDueToTimeMs = 120 * 1000
-};
-
-// Common method for MRS and DMS flush. Sets the performance improvement based on the anchored ram
-// if it's over the threshold, else it will set it based on how long it has been since the last
-// flush.
-static void SetPerfImprovementForFlush(MaintenanceOpStats* stats,
-                                       double elapsed_ms, bool is_empty) {
-  if (stats->ram_anchored > FLAGS_flush_threshold_mb * 1024 * 1024) {
-    // If we're over the user-specified flush threshold, then consider the perf
-    // improvement to be 1 for every extra MB.  This produces perf_improvement results
-    // which are much higher than any compaction would produce, and means that, when
-    // there is an MRS over threshold, a flush will almost always be selected instead of
-    // a compaction.  That's not necessarily a good thing, but in the absense of better
-    // heuristics, it will do for now.
-    int extra_mb = stats->ram_anchored / 1024 / 1024;
-    stats->perf_improvement = extra_mb;
-  } else if (!is_empty && elapsed_ms > kFlushDueToTimeMs) {
-    // Even if we aren't over the threshold, consider flushing if we haven't flushed
-    // in a long time. But, don't give it a large perf_improvement score. We should
-    // only do this if we really don't have much else to do.
-    double extra_millis = elapsed_ms - 60 * 1000;
-    stats->perf_improvement = std::min(600000.0 / extra_millis, 0.05);
-  }
-}
-
-// Maintenance op for MRS flush.
-//
-class FlushMRSOp : public MaintenanceOp {
- public:
-  explicit FlushMRSOp(Tablet* tablet)
-    : MaintenanceOp(StringPrintf("FlushMRSOp(%s)", tablet->tablet_id().c_str())),
-      tablet_(tablet) {
-    time_since_flush_.start();
-  }
-
-  virtual void UpdateStats(MaintenanceOpStats* stats) OVERRIDE {
-    boost::lock_guard<simple_spinlock> l(lock_);
-
-    {
-      boost::unique_lock<Semaphore> lock(tablet_->rowsets_flush_sem_,
-                                         boost::defer_lock);
-      stats->runnable = lock.try_lock();
-    }
-    stats->ram_anchored = tablet_->MemRowSetSize();
-    // TODO: add a field to MemRowSet storing how old a timestamp it contains
-    stats->logs_retained_mb = 0;
-    // TODO: use workload statistics here to find out how "hot" the tablet has
-    // been in the last 5 minutes.
-    SetPerfImprovementForFlush(stats,
-                               time_since_flush_.elapsed().wall_millis(),
-                               tablet_->MemRowSetEmpty());
-  }
-
-  virtual bool Prepare() OVERRIDE {
-    // Try to acquire the rowsets_flush_sem_.  If we can't, the Prepare step
-    // fails.  This also implies that only one instance of FlushMRSOp can be
-    // running at once.
-    return tablet_->rowsets_flush_sem_.try_lock();
-  }
-
-  virtual void Perform() OVERRIDE {
-    CHECK(!tablet_->rowsets_flush_sem_.try_lock());
-
-    tablet_->FlushUnlocked();
-
-    {
-      boost::lock_guard<simple_spinlock> l(lock_);
-      time_since_flush_.start();
-    }
-    tablet_->rowsets_flush_sem_.unlock();
-  }
-
-  virtual Histogram* DurationHistogram() OVERRIDE {
-    return tablet_->metrics()->flush_mrs_duration;
-  }
-
-  virtual AtomicGauge<uint32_t>* RunningGauge() OVERRIDE {
-    return tablet_->metrics()->flush_mrs_running;
-  }
-
- private:
-
-
-  // Lock protecting time_since_flush_
-  mutable simple_spinlock lock_;
-  Stopwatch time_since_flush_;
-
-  Tablet *const tablet_;
-};
-
 // MaintenanceOp for rowset compaction.
 //
 // This periodically invokes the tablet's CompactionPolicy to select a compaction.  The
@@ -880,55 +784,6 @@ class CompactRowSetsOp : public MaintenanceOp {
   MaintenanceOpStats prev_stats_;
 
   Tablet * const tablet_;
-};
-
-class FlushDeltaMemStoresOp : public MaintenanceOp {
- public:
-  explicit FlushDeltaMemStoresOp(Tablet* tablet)
-    : MaintenanceOp(StringPrintf("FlushDeltaMemStoresOp(%s)",
-                                 tablet->tablet_id().c_str())),
-      tablet_(tablet) {
-    time_since_flush_.start();
-  }
-
-  virtual void UpdateStats(MaintenanceOpStats* stats) OVERRIDE {
-    boost::lock_guard<simple_spinlock> l(lock_);
-    size_t dms_size = tablet_->DeltaMemStoresSize();
-    stats->ram_anchored = dms_size;
-    stats->runnable = true;
-    stats->logs_retained_mb = 0;
-
-    SetPerfImprovementForFlush(stats,
-                               time_since_flush_.elapsed().wall_millis(),
-                               tablet_->DeltaMemRowSetEmpty());
-
-  }
-
-  virtual bool Prepare() OVERRIDE {
-    return true;
-  }
-
-  virtual void Perform() OVERRIDE {
-    WARN_NOT_OK(tablet_->FlushBiggestDMS(),
-                Substitute("Failed to flush biggest DMS on $0", tablet_->tablet_id()));
-    {
-      boost::lock_guard<simple_spinlock> l(lock_);
-      time_since_flush_.start();
-    }
-  }
-
-  virtual Histogram* DurationHistogram() OVERRIDE {
-    return tablet_->metrics()->flush_dms_duration;
-  }
-
-  virtual AtomicGauge<uint32_t>* RunningGauge() OVERRIDE {
-    return tablet_->metrics()->flush_dms_running;
-  }
-
- private:
-  Tablet *const tablet_;
-  mutable simple_spinlock lock_;
-  Stopwatch time_since_flush_;
 };
 
 Status Tablet::PickRowSetsToCompact(RowSetsInCompaction *picked,
@@ -1023,17 +878,11 @@ bool Tablet::IsTabletFileName(const std::string& fname) {
 }
 
 void Tablet::RegisterMaintenanceOps(MaintenanceManager* maint_mgr) {
-  gscoped_ptr<MaintenanceOp> mrs_flush_op(new FlushMRSOp(this));
-  maint_mgr->RegisterOp(mrs_flush_op.get());
-  maintenance_ops_.push_back(mrs_flush_op.release());
+  DCHECK(maintenance_ops_.empty());
 
   gscoped_ptr<MaintenanceOp> rs_compact_op(new CompactRowSetsOp(this));
   maint_mgr->RegisterOp(rs_compact_op.get());
   maintenance_ops_.push_back(rs_compact_op.release());
-
-  gscoped_ptr<MaintenanceOp> dms_flush_op(new FlushDeltaMemStoresOp(this));
-  maint_mgr->RegisterOp(dms_flush_op.get());
-  maintenance_ops_.push_back(dms_flush_op.release());
 }
 
 void Tablet::UnregisterMaintenanceOps() {

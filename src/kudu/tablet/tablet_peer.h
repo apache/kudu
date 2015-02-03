@@ -26,6 +26,9 @@ namespace tserver {
 class CatchUpServiceTest;
 }
 
+class MaintenanceManager;
+class MaintenanceOp;
+
 namespace tablet {
 class ChangeConfigTransactionState;
 class LeaderTransactionDriver;
@@ -200,6 +203,14 @@ class TabletPeer : public RefCountedThreadSafe<TabletPeer>,
   // Tells the tablet's log to garbage collect.
   Status RunLogGC();
 
+  // Register the maintenance ops associated with this peer's tablet, also invokes
+  // Tablet::RegisterMaintenanceOps().
+  void RegisterMaintenanceOps(MaintenanceManager* maintenance_manager);
+
+  // Unregister the maintenance ops associated with this peer's tablet.
+  // This method is not thread safe.
+  void UnregisterMaintenanceOps();
+
  private:
   friend class RefCountedThreadSafe<TabletPeer>;
   friend class TabletPeerTest;
@@ -260,6 +271,10 @@ class TabletPeer : public RefCountedThreadSafe<TabletPeer>,
   // ChangeConfigTransactions obtain this lock on prepare and release it on
   // apply.
   mutable Semaphore config_sem_;
+
+  // List of maintenance operations for the tablet that need information that only the peer
+  // can provide.
+  std::vector<MaintenanceOp*> maintenance_ops_;
 
   DISALLOW_COPY_AND_ASSIGN(TabletPeer);
 };
