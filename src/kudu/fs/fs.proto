@@ -21,6 +21,17 @@ message InstanceMetadataPB {
   // TODO: add a "node type" (TS/Master?)
 }
 
+// A filesystem instance can contain multiple paths. One of these structures
+// is persisted in each path when the filesystem instance is created.
+message PathInstanceMetadataPB {
+  // Assigned when the filesystem instance is first formatted. Uniquely
+  // identifies the path within the filesystem instance.
+  required bytes uuid = 1;
+
+  // Textual representation of the block manager that formatted this path.
+  required string block_manager_type = 2;
+}
+
 message BlockIdPB {
   required string id = 1;
 }

@@ -12,3 +12,11 @@
 // When all conditions hold, this value ensures low latency for WAL writes.
 DEFINE_bool(block_coalesce_close, false,
             "Coalesce synchronization of data during CloseBlocks()");
+
+namespace kudu {
+namespace fs {
+
+const char* BlockManager::kInstanceMetadataFileName = "block_manager_instance";
+
+} // namespace fs
+} // namespace kudu

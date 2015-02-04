@@ -4,6 +4,7 @@
 #ifndef KUDU_FS_FILE_BLOCK_MANAGER_H
 #define KUDU_FS_FILE_BLOCK_MANAGER_H
 
+#include <map>
 #include <string>
 #include <tr1/memory>
 #include <tr1/unordered_set>
@@ -22,6 +23,7 @@ class WritableFile;
 namespace fs {
 
 namespace internal {
+class FileBlockLocation;
 class FileWritableBlock;
 } // namespace internal
 
@@ -30,6 +32,17 @@ class FileWritableBlock;
 // This is a naive block implementation which maps each block to its own
 // file on disk. To prevent the block directory from becoming too large,
 // blocks are aggregated into a 3-level directory hierarchy.
+//
+// The block manager can take advantage of multiple filesystem paths. A
+// small metadata file containing a UUID is persisted in each path. A block
+// written to a given path will be assigned an ID that includes that path's
+// UUID. The ID is resolved back into a filesystem path when the block is
+// opened for reading.
+//
+// When creating blocks, the block manager will round robin through the
+// available filesystem paths.
+//
+// TODO: Support path-based block placement hints.
 
 // The file-backed block manager.
 class FileBlockManager : public BlockManager {
@@ -38,7 +51,7 @@ class FileBlockManager : public BlockManager {
   // Creates a new in-memory instance of a FileBlockManager.
   //
   // 'env' should remain alive for the lifetime of the block manager.
-  FileBlockManager(Env* env, const std::string& root_path);
+  FileBlockManager(Env* env, const std::vector<std::string>& root_paths);
 
   virtual ~FileBlockManager();
 
@@ -59,39 +72,45 @@ class FileBlockManager : public BlockManager {
   virtual Status CloseBlocks(const std::vector<WritableBlock*>& blocks) OVERRIDE;
 
  private:
+  friend class internal::FileBlockLocation;
   friend class internal::FileWritableBlock;
 
-  // Creates the parent directory hierarchy for the block with the given id.
-  Status CreateBlockDir(const BlockId& block_id, std::vector<std::string>* created_dirs);
-
-  // Returns the path to a block with the given id.
-  std::string GetBlockPath(const BlockId& block_id) const;
-
-  // Creates a directory if it's not already present.
-  //
-  // On error, does not set 'created'.
-  Status CreateDirIfMissing(const std::string& path, bool* created = NULL);
-
   // Synchronizes the metadata for a block with the given id.
-  Status SyncMetadata(const BlockId& block_id);
+  Status SyncMetadata(const internal::FileBlockLocation& block_id);
+
+  // Look up a root path by its UUID in 'root_paths_by_uuid_'.
+  //
+  // On success, overwrites 'root_path' with the root path.
+  bool FindRootPath(const std::string& root_path_uuid,
+                    std::string* root_path) const;
 
   Env* env() const { return env_; }
 
-  // Protects 'dirty_dirs_'.
+  // For manipulating files.
+  Env* env_;
+
+  // Filesystem paths where all block directories are found.
+  const std::vector<std::string> root_paths_;
+
+  // Maps path UUIDs to filesystem paths.
+  //
+  // There's no need to synchronize access to the map as it is only written
+  // to during Create() and Open(); all subsequent accesses are reads.
+  typedef std::map<std::string, std::string> PathMap;
+  PathMap root_paths_by_uuid_;
+
+  // For generating block IDs.
+  ObjectIdGenerator oid_generator_;
+
+  // Protects 'dirty_dirs_' and 'next_root_path_'.
   mutable simple_spinlock lock_;
 
   // Tracks the block directories which are dirty from block creation. This
   // lets us perform some simple coalescing when synchronizing metadata.
   std::tr1::unordered_set<std::string> dirty_dirs_;
 
-  // For manipulating files.
-  Env* env_;
-
-  // Filesystem path where all block directories are found.
-  const std::string root_path_;
-
-  // For generating block IDs.
-  ObjectIdGenerator oid_generator_;
+  // Points to the filesystem path to be used when creating the next block.
+  PathMap::iterator next_root_path_;
 
   DISALLOW_COPY_AND_ASSIGN(FileBlockManager);
 };

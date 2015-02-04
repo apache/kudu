@@ -140,7 +140,8 @@ class BlockManager {
  public:
   virtual ~BlockManager() {}
 
-  // Creates a new on-disk representation for this block manager.
+  // Creates a new on-disk representation for this block manager. Must be
+  // followed up with a call to Open() to use the block manager.
   //
   // Returns an error if one already exists or cannot be created.
   virtual Status Create() = 0;
@@ -182,6 +183,9 @@ class BlockManager {
   //
   // On success, guarantees that outstanding data is durable.
   virtual Status CloseBlocks(const std::vector<WritableBlock*>& blocks) = 0;
+
+ protected:
+  static const char* kInstanceMetadataFileName;
 };
 
 // Closes a group of blocks.

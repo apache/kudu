@@ -8,6 +8,7 @@
 
 #include "kudu/fs/file_block_manager.h"
 #include "kudu/fs/log_block_manager.h"
+#include "kudu/gutil/strings/split.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/util/atomic.h"
@@ -25,6 +26,9 @@ DEFINE_int32(block_group_bytes, 64 * 1024,
              "Total amount of data (in bytes) to write per block group");
 DEFINE_int32(num_bytes_per_write, 64,
              "Number of bytes to write at a time");
+DEFINE_string(block_manager_paths, "", "Comma-separated list of paths to "
+              "use for block storage. If empty, will use the default unit "
+              "test path");
 
 using std::string;
 using std::vector;
@@ -59,7 +63,7 @@ class BlockManagerStressTest : public KuduTest {
   BlockManagerStressTest() :
     rand_seed_(SeedRandom()),
     stop_latch_(1),
-    bm_(new T(env_.get(), GetTestPath("bm"))),
+    bm_(CreateBlockManager()),
     total_blocks_written_(0),
     total_bytes_written_(0),
     total_blocks_read_(0),
@@ -69,6 +73,31 @@ class BlockManagerStressTest : public KuduTest {
 
   virtual void SetUp() OVERRIDE {
     CHECK_OK(bm_->Create());
+    CHECK_OK(bm_->Open());
+  }
+
+  virtual void TearDown() OVERRIDE {
+    // If non-standard paths were provided we need to delete them in
+    // between test runs.
+    if (!FLAGS_block_manager_paths.empty()) {
+      vector<string> paths = strings::Split(FLAGS_block_manager_paths, ",",
+                                            strings::SkipEmpty());
+      BOOST_FOREACH(const string& path, paths) {
+        WARN_NOT_OK(env_->DeleteRecursively(path),
+                    Substitute("Couldn't recursively delete $0", path));
+      }
+    }
+  }
+
+  BlockManager* CreateBlockManager() {
+    vector<string> paths;
+    if (FLAGS_block_manager_paths.empty()) {
+      paths.push_back(GetTestDataDirectory());
+    } else {
+      paths = strings::Split(FLAGS_block_manager_paths, ",",
+                             strings::SkipEmpty());
+    }
+    return new T(env_.get(), paths);
   }
 
   void RunTest(int secs) {
@@ -338,8 +367,7 @@ TYPED_TEST(BlockManagerStressTest, StressTest) {
   LOG(INFO) << "Running on fresh block manager";
   this->RunTest(FLAGS_test_duration_secs / 2);
   LOG(INFO) << "Running on populated block manager";
-  this->bm_.reset(new TypeParam(this->env_.get(),
-                                this->GetTestPath("bm")));
+  this->bm_.reset(this->CreateBlockManager());
   ASSERT_OK(this->bm_->Open());
   this->RunTest(FLAGS_test_duration_secs / 2);
 

@@ -6,6 +6,7 @@
 #include <boost/foreach.hpp>
 
 #include "kudu/fs/block_id-inl.h"
+#include "kudu/fs/block_manager_util.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/strings/strcat.h"
 #include "kudu/gutil/strings/strip.h"
@@ -790,9 +791,13 @@ Status LogReadableBlock::Read(uint64_t offset, size_t length,
 // LogBlockManager
 ////////////////////////////////////////////////////////////
 
-LogBlockManager::LogBlockManager(Env* env, const string& root_path)
+static const char* kBlockManagerType = "log";
+
+LogBlockManager::LogBlockManager(Env* env, const vector<string>& root_paths)
   : env_(env),
-    root_path_(root_path) {
+    root_paths_(root_paths),
+    root_paths_idx_(0) {
+  DCHECK_GT(root_paths.size(), 0);
 }
 
 LogBlockManager::~LogBlockManager() {
@@ -800,29 +805,52 @@ LogBlockManager::~LogBlockManager() {
 }
 
 Status LogBlockManager::Create() {
-    return env_->CreateDir(root_path_);
+  BOOST_FOREACH(const string& root_path, root_paths_) {
+    Status s = env_->CreateDir(root_path);
+    if (!s.ok() && !s.IsAlreadyPresent()) {
+      return s;
+    }
+
+    string instance_filename = JoinPathSegments(
+        root_path, kInstanceMetadataFileName);
+
+    PathInstanceMetadataFile metadata(env_, kBlockManagerType,
+                                      instance_filename);
+    RETURN_NOT_OK_PREPEND(metadata.Create(), instance_filename);
+  }
+  return Status::OK();
 }
 
 Status LogBlockManager::Open() {
-  if (!env_->FileExists(root_path_)) {
-    return Status::NotFound(Substitute("LogBlockManager at $0 not found",
-                                       root_path_));
-  }
-
-  vector<string> children;
-  RETURN_NOT_OK(env_->GetChildren(root_path_, &children));
-
-  BOOST_FOREACH(const string& child, children) {
-    string id;
-    if (!TryStripSuffixString(child, LogBlockContainer::kMetadataFileSuffix, &id)) {
-      continue;
+  BOOST_FOREACH(const string& root_path, root_paths_) {
+    if (!env_->FileExists(root_path)) {
+      return Status::NotFound(Substitute("LogBlockManager at $0 not found",
+                                         root_path));
     }
-    gscoped_ptr<LogBlockContainer> container;
-    RETURN_NOT_OK(LogBlockContainer::Open(this, root_path_, id, &container));
-    {
-      lock_guard<simple_spinlock> l(&lock_);
-      AddNewContainerUnlocked(container.get());
-      MakeContainerAvailableUnlocked(container.release());
+
+    string instance_filename = JoinPathSegments(
+        root_path, kInstanceMetadataFileName);
+    PathInstanceMetadataPB new_instance;
+    PathInstanceMetadataFile metadata(env_, kBlockManagerType,
+                                      instance_filename);
+    RETURN_NOT_OK_PREPEND(metadata.Open(&new_instance), instance_filename);
+
+    vector<string> children;
+    RETURN_NOT_OK_PREPEND(env_->GetChildren(root_path, &children), root_path);
+
+    BOOST_FOREACH(const string& child, children) {
+      string id;
+      if (!TryStripSuffixString(child, LogBlockContainer::kMetadataFileSuffix, &id)) {
+        continue;
+      }
+      gscoped_ptr<LogBlockContainer> container;
+      RETURN_NOT_OK_PREPEND(LogBlockContainer::Open(this, root_path, id, &container),
+                            root_path);
+      {
+        lock_guard<simple_spinlock> l(&lock_);
+        AddNewContainerUnlocked(container.get());
+        MakeContainerAvailableUnlocked(container.release());
+      }
     }
   }
   return Status::OK();
@@ -837,12 +865,22 @@ Status LogBlockManager::CreateBlock(const CreateBlockOptions& opts,
   // callers to block if we've reached it?
   LogBlockContainer* container = GetAvailableContainer();
   if (!container) {
+    // Round robin through the root paths to select where the next
+    // container should live.
+    int32 old_idx;
+    int32 new_idx;
+    do {
+      old_idx = root_paths_idx_.Load();
+      new_idx = (old_idx + 1) % root_paths_.size();
+    } while (!root_paths_idx_.CompareAndSwap(old_idx, new_idx));
+    string root_path = root_paths_[old_idx];
+
     gscoped_ptr<LogBlockContainer> new_container;
-    RETURN_NOT_OK(LogBlockContainer::Create(this, root_path_, &new_container));
+    RETURN_NOT_OK(LogBlockContainer::Create(this, root_path, &new_container));
     container = new_container.release();
     {
       lock_guard<simple_spinlock> l(&lock_);
-      dirty_dirs_.insert(root_path_);
+      dirty_dirs_.insert(root_path);
       AddNewContainerUnlocked(container);
     }
   }

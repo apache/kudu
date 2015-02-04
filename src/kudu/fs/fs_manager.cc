@@ -4,6 +4,7 @@
 #include "kudu/fs/fs_manager.h"
 
 #include <boost/foreach.hpp>
+#include <boost/assign/list_of.hpp>
 #include <glog/logging.h>
 #include <google/protobuf/message.h>
 #include <iostream>
@@ -67,9 +68,10 @@ FsManager::~FsManager() {
 
 void FsManager::InitBlockManager() {
   if (FLAGS_block_manager == "file") {
-    block_manager_.reset(new FileBlockManager(env_, GetDataRootDir()));
+    block_manager_.reset(new FileBlockManager(env_,
+                                              boost::assign::list_of(GetDataRootDir())));
   } else if (FLAGS_block_manager == "log") {
-    block_manager_.reset(new LogBlockManager(env_, GetDataRootDir()));
+    block_manager_.reset(new LogBlockManager(env_, boost::assign::list_of(GetDataRootDir())));
   } else {
     LOG(FATAL) << "Invalid block manager: " << FLAGS_block_manager;
   }

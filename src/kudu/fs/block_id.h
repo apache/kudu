@@ -16,7 +16,9 @@ namespace kudu {
 class BlockIdPB;
 
 namespace fs {
-class FileBlockManager;
+namespace internal {
+class FileBlockLocation;
+} // namespace internal
 } // namespace fs
 
 class BlockId {
@@ -46,8 +48,12 @@ class BlockId {
   static BlockId FromPB(const BlockIdPB& pb);
 
  private:
-  friend class fs::FileBlockManager;
+  friend class fs::internal::FileBlockLocation;
+
+  // TODO: only the FileBlockManager should care about hashing. Need to
+  // handle metadata blocks differently.
   friend class FsManager;
+
   friend struct BlockIdHash;
   friend struct BlockIdCompare;
 

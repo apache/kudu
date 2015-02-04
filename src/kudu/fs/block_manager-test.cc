@@ -1,14 +1,21 @@
 // Copyright (c) 2014, Cloudera, inc.
 // Confidential Cloudera Information: Covered by NDA.
 
+#include <boost/assign/list_of.hpp>
+#include <boost/foreach.hpp>
+
 #include "kudu/fs/file_block_manager.h"
 #include "kudu/fs/log_block_manager.h"
+#include "kudu/gutil/map-util.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/util/path_util.h"
+#include "kudu/util/pb_util.h"
 #include "kudu/util/random.h"
 #include "kudu/util/stopwatch.h"
 #include "kudu/util/test_util.h"
 
+using boost::assign::list_of;
 using std::string;
 using std::vector;
 using strings::Substitute;
@@ -26,16 +33,85 @@ template <typename T>
 class BlockManagerTest : public KuduTest {
  public:
   BlockManagerTest() :
-    bm_(new T(env_.get(), GetTestPath("bm"))) {
+    bm_(CreateBlockManager(list_of(GetTestDataDirectory()))) {
   }
 
   virtual void SetUp() OVERRIDE {
-    CHECK_OK(this->bm_->Create());
+    CHECK_OK(bm_->Create());
+    CHECK_OK(bm_->Open());
   }
 
  protected:
+  BlockManager* CreateBlockManager(const vector<string>& paths) {
+    return new T(env_.get(), paths);
+  }
+
+  void RunMultipathTest(const vector<string>& paths);
+
   gscoped_ptr<BlockManager> bm_;
 };
+
+template <>
+void BlockManagerTest<FileBlockManager>::RunMultipathTest(const vector<string>& paths) {
+  // Ensure that each path has an instance file and that it's well-formed.
+  BOOST_FOREACH(const string& path, paths) {
+    vector<string> children;
+    ASSERT_OK(env_->GetChildren(path, &children));
+    ASSERT_EQ(3, children.size());
+    BOOST_FOREACH(const string& child, children) {
+      if (child == "." || child == "..") {
+        continue;
+      }
+      PathInstanceMetadataPB instance;
+      ASSERT_OK(pb_util::ReadPBContainerFromPath(env_.get(),
+                                                 JoinPathSegments(path, child),
+                                                 &instance));
+    }
+  }
+
+  // Write ten blocks.
+  const char* kTestData = "test data";
+  for (int i = 0; i < 10; i++) {
+    gscoped_ptr<WritableBlock> written_block;
+    ASSERT_OK(bm_->CreateBlock(&written_block));
+    ASSERT_OK(written_block->Append(kTestData));
+    ASSERT_OK(written_block->Close());
+  }
+
+  // Each path should now have some additional block subdirectories. We
+  // can't know for sure exactly how many (depends on the block IDs
+  // generated), but this ensures that at least some change were made.
+  BOOST_FOREACH(const string& path, paths) {
+    vector<string> children;
+    ASSERT_OK(env_->GetChildren(path, &children));
+    ASSERT_GT(children.size(), 3);
+  }
+}
+
+template <>
+void BlockManagerTest<LogBlockManager>::RunMultipathTest(const vector<string>& paths) {
+  // Write (3 * numPaths * 2) blocks, in groups of (numPaths * 2). That should
+  // yield two containers per path.
+  const char* kTestData = "test data";
+  for (int i = 0; i < 3; i++) {
+    ScopedWritableBlockCloser closer;
+    for (int j = 0; j < paths.size() * 2; j++) {
+      gscoped_ptr<WritableBlock> block;
+      ASSERT_OK(bm_->CreateBlock(&block));
+      ASSERT_OK(block->Append(kTestData));
+      closer.AddBlock(block.Pass());
+    }
+    ASSERT_OK(closer.CloseBlocks());
+  }
+
+  // Verify the results: 7 children = dot, dotdot, instance file, and two
+  // containers (two files per container).
+  BOOST_FOREACH(const string& path, paths) {
+    vector<string> children;
+    ASSERT_OK(env_->GetChildren(path, &children));
+    ASSERT_EQ(children.size(), 7);
+  }
+}
 
 // What kinds of BlockManagers are supported?
 typedef ::testing::Types<FileBlockManager, LogBlockManager> BlockManagers;
@@ -223,24 +299,23 @@ TYPED_TEST(BlockManagerTest, PersistenceTest) {
   ASSERT_OK(written_block3->Close());
   ASSERT_OK(this->bm_->DeleteBlock(written_block3->id()));
 
-  // Some block managers must be closed to fully synchronize their contents
-  // to disk (e.g. log_block_manager uses PosixMmapFiles for containers,
-  // which must be closed to be trimmed).
-  this->bm_.reset();
-
   // Reopen the block manager. This may read block metadata from disk.
-  gscoped_ptr<TypeParam> new_block_manager(new TypeParam(this->env_.get(),
-                                                         this->GetTestPath("bm")));
-  ASSERT_OK(new_block_manager->Open());
+  //
+  // Note that some block managers must be closed to fully synchronize
+  // their contents to disk (e.g. log_block_manager uses PosixMmapFiles
+  // for containers, which must be closed to be trimmed).
+  this->bm_.reset(this->CreateBlockManager(list_of(GetTestDataDirectory())));
+
+  ASSERT_OK(this->bm_->Open());
 
   // Test that the state of all three blocks is properly reflected.
   gscoped_ptr<ReadableBlock> read_block;
-  ASSERT_OK(new_block_manager->OpenBlock(written_block1->id(), &read_block));
+  ASSERT_OK(this->bm_->OpenBlock(written_block1->id(), &read_block));
   size_t sz;
   ASSERT_OK(read_block->Size(&sz));
   ASSERT_EQ(0, sz);
   ASSERT_OK(read_block->Close());
-  ASSERT_OK(new_block_manager->OpenBlock(written_block2->id(), &read_block));
+  ASSERT_OK(this->bm_->OpenBlock(written_block2->id(), &read_block));
   ASSERT_OK(read_block->Size(&sz));
   ASSERT_EQ(test_data.length(), sz);
   Slice data;
@@ -248,8 +323,21 @@ TYPED_TEST(BlockManagerTest, PersistenceTest) {
   ASSERT_OK(read_block->Read(0, test_data.length(), &data, scratch.get()));
   ASSERT_EQ(test_data, data);
   ASSERT_OK(read_block->Close());
-  ASSERT_TRUE(new_block_manager->OpenBlock(written_block3->id(), NULL)
+  ASSERT_TRUE(this->bm_->OpenBlock(written_block3->id(), NULL)
               .IsNotFound());
+}
+
+TYPED_TEST(BlockManagerTest, MultiPathTest) {
+  // Recreate the block manager with three paths.
+  vector<string> paths;
+  for (int i = 0; i < 3; i++) {
+    paths.push_back(this->GetTestPath(Substitute("path$0", i)));
+  }
+  this->bm_.reset(this->CreateBlockManager(paths));
+  ASSERT_OK(this->bm_->Create());
+  ASSERT_OK(this->bm_->Open());
+
+  this->RunMultipathTest(paths);
 }
 
 } // namespace fs

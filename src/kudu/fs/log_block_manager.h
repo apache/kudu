@@ -15,6 +15,7 @@
 #include "kudu/fs/fs.pb.h"
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/ref_counted.h"
+#include "kudu/util/atomic.h"
 #include "kudu/util/oid_generator.h"
 
 namespace kudu {
@@ -125,7 +126,7 @@ class LogBlockContainer;
 // The log-backed block manager.
 class LogBlockManager : public BlockManager {
  public:
-  LogBlockManager(Env* env, const std::string& root_path);
+  LogBlockManager(Env* env, const std::vector<std::string>& root_paths);
 
   virtual ~LogBlockManager();
 
@@ -230,8 +231,11 @@ class LogBlockManager : public BlockManager {
   // For manipulating files.
   Env* env_;
 
-  // Filesystem path where all block directories are found.
-  const std::string root_path_;
+  // Filesystem paths where all block directories are found.
+  const std::vector<std::string> root_paths_;
+
+  // Index of 'root_paths_' for the next created block.
+  AtomicInt<int32> root_paths_idx_;
 
   // For generating block IDs and container names.
   ObjectIdGenerator oid_generator_;
