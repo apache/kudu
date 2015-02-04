@@ -106,6 +106,7 @@
 #include "kudu/util/locks.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/status.h"
+#include "kudu/util/striped64.h"
 
 // Convenience macros.
 #define METRIC_DEFINE_counter(name, unit, desc) \
@@ -565,7 +566,7 @@ class Counter : public Metric {
 
   explicit Counter(const CounterPrototype& proto);
 
-  AtomicInt<int64_t> value_;
+  LongAdder value_;
   const MetricUnit::Type unit_;
   const std::string description_;
   DISALLOW_COPY_AND_ASSIGN(Counter);

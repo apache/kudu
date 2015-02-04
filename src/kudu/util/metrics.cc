@@ -364,13 +364,12 @@ Counter* CounterPrototype::Instantiate(const MetricContext& context) {
 }
 
 Counter::Counter(const CounterPrototype& proto)
-  : value_(0),
-    unit_(proto.unit()),
+  : unit_(proto.unit()),
     description_(proto.description()) {
 }
 
 int64_t Counter::value() const {
-  return value_.Load(kMemOrderNoBarrier);
+  return value_.Value();
 }
 
 void Counter::Increment() {
@@ -378,7 +377,7 @@ void Counter::Increment() {
 }
 
 void Counter::IncrementBy(int64_t amount) {
-  value_.IncrementBy(amount, kMemOrderNoBarrier);
+  value_.IncrementBy(amount);
 }
 
 Status Counter::WriteAsJson(const string& name,
