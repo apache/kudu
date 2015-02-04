@@ -277,16 +277,6 @@ void Tablet::StartTransaction(WriteTransactionState* tx_state) {
   tx_state->set_tablet_components(components_);
 }
 
-void Tablet::StartTransactionAtTimestamp(WriteTransactionState* tx_state,
-                                         Timestamp timestamp) {
-  boost::shared_lock<rw_spinlock> lock(component_lock_);
-
-  gscoped_ptr<ScopedTransaction> mvcc_tx;
-  mvcc_tx.reset(new ScopedTransaction(&mvcc_, timestamp));
-  tx_state->set_mvcc_tx(mvcc_tx.Pass());
-  tx_state->set_tablet_components(components_);
-}
-
 Status Tablet::InsertUnlocked(WriteTransactionState *tx_state,
                               RowOp* insert) {
   const TabletComponents* comps = DCHECK_NOTNULL(tx_state->tablet_components());

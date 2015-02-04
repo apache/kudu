@@ -134,11 +134,6 @@ class Tablet {
   // it's not the first thing in a transaction!
   void StartTransaction(WriteTransactionState* tx_state);
 
-  // Same as the method above, but starts the transaction at a specified timestamp
-  // instead of acquiring one from the clock.
-  void StartTransactionAtTimestamp(WriteTransactionState* tx_state,
-                                   Timestamp timestamp);
-
   // Insert a new row into the tablet.
   //
   // The provided 'data' slice should have length equivalent to this
