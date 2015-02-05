@@ -177,9 +177,15 @@ build_kudu() {
 run_benchmarks() {
 
   # run mt-tablet-tests 0 through 9
-  ./build/latest/mt-tablet-test --gtest_filter=\*DoTestAllAtOnce\* --num_counter_threads=0 \
-    --flush_threshold_mb=32 --memrowset_throttle_mb=256 --num_slowreader_threads=0 \
-    --flusher_backoff=1.0 --flusher_initial_frequency_ms=1000 --inserts_per_thread=1000000 \
+  ./build/latest/mt-tablet-test \
+    --gtest_filter=\*DoTestAllAtOnce\* \
+    --num_counter_threads=0 \
+    --tablet_test_flush_threshold_mb=32 \
+    --memrowset_throttle_mb=256 \
+    --num_slowreader_threads=0 \
+    --flusher_backoff=1.0 \
+    --flusher_initial_frequency_ms=1000 \
+    --inserts_per_thread=1000000 \
     &> $LOGDIR/${MT_TABLET_TEST}.log
 
   # run rpc-bench test 5 times. 10 seconds per run
