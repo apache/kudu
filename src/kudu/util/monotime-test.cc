@@ -9,6 +9,8 @@
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
+#include "kudu/util/test_util.h"
+
 namespace kudu {
 
 TEST(TestMonoTime, TestMonotonicity) {
@@ -148,6 +150,22 @@ static void DoTestMonoTimePerf(MonoTime::Granularity granularity) {
 TEST(TestMonoTime, TestSleepFor) {
   MonoTime start = MonoTime::Now(MonoTime::FINE);
   MonoDelta sleep = MonoDelta::FromMilliseconds(100);
+  SleepFor(sleep);
+  MonoTime end = MonoTime::Now(MonoTime::FINE);
+  MonoDelta actualSleep = end.GetDeltaSince(start);
+  ASSERT_GE(actualSleep.ToNanoseconds(), sleep.ToNanoseconds());
+}
+
+TEST(TestMonoTime, TestSleepForOverflow) {
+  if (!AllowSlowTests()) {
+    LOG(INFO) << "Skipping test because it sleeps for ~4s";
+    return;
+  }
+
+  // This quantity (~4s sleep) overflows a 32-bit integer such that
+  // the value becomes 0.
+  MonoTime start = MonoTime::Now(MonoTime::FINE);
+  MonoDelta sleep = MonoDelta::FromNanoseconds(1L << 32);
   SleepFor(sleep);
   MonoTime end = MonoTime::Now(MonoTime::FINE);
   MonoDelta actualSleep = end.GetDeltaSince(start);

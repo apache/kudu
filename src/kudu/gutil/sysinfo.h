@@ -35,8 +35,8 @@ namespace base {
 
 extern int NumCPUs();
 
-void SleepForNanoseconds(int nanoseconds);
-void SleepForMilliseconds(int milliseconds);
+void SleepForNanoseconds(int64_t nanoseconds);
+void SleepForMilliseconds(int64_t milliseconds);
 
 // processor cycles per second of each processor.  Thread-safe.
 extern double CyclesPerSecond(void);

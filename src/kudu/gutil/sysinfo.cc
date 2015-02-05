@@ -76,7 +76,7 @@ namespace base {
 static double cpuinfo_cycles_per_second = 1.0;  // 0.0 might be dangerous
 static int cpuinfo_num_cpus = 1;  // Conservative guess
 
-void SleepForNanoseconds(int nanoseconds) {
+void SleepForNanoseconds(int64_t nanoseconds) {
   // Sleep for nanosecond duration
   struct timespec sleep_time;
   sleep_time.tv_sec = nanoseconds / 1000 / 1000 / 1000;
@@ -85,7 +85,7 @@ void SleepForNanoseconds(int nanoseconds) {
     ;  // Ignore signals and wait for the full interval to elapse.
 }
 
-void SleepForMilliseconds(int milliseconds) {
+void SleepForMilliseconds(int64_t milliseconds) {
   SleepForNanoseconds(milliseconds * 1000 * 1000);
 }
 
