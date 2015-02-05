@@ -533,6 +533,27 @@ Status Log::Sync() {
   return Status::OK();
 }
 
+Status Log::GetSegmentsToGCUnlocked(int64_t min_op_idx, SegmentSequence* segments_to_gc) const {
+  // Find the prefix of segments in the segment sequence that is guaranteed not to include
+  // 'min_op_idx'.
+  RETURN_NOT_OK(reader_->GetSegmentPrefixNotIncluding(min_op_idx, segments_to_gc));
+
+  int max_to_delete = std::max(reader_->num_segments() - FLAGS_log_min_segments_to_retain, 0);
+  if (segments_to_gc->size() > max_to_delete) {
+    VLOG(1) << "GCing " << segments_to_gc->size() << " in " << log_dir_
+        << " would not leave enough remaining segments to satisfy minimum "
+        << "retention requirement. Only GCing "
+        << max_to_delete << "/" << reader_->num_segments();
+    segments_to_gc->resize(max_to_delete);
+  } else if (segments_to_gc->size() < max_to_delete) {
+    int extra_segments = max_to_delete - segments_to_gc->size();
+    VLOG(1) << tablet_id_ << " has too many log segments, need to GC "
+        << extra_segments << " more. ";
+  }
+  return Status::OK();
+
+}
+
 Status Log::Append(LogEntryPB* phys_entry) {
   gscoped_ptr<LogEntryBatchPB> entry_batch_pb(new LogEntryBatchPB);
   entry_batch_pb->mutable_entry()->AddAllocated(phys_entry);
@@ -583,33 +604,17 @@ Status Log::GC(int64_t min_op_idx, int32_t* num_gced) {
       boost::lock_guard<percpu_rwlock> l(state_lock_);
       CHECK_EQ(kLogWriting, log_state_);
 
-      // Find the prefix of segments in the segment sequence that is guaranteed not to include
-      // 'min_op_idx'.
-      RETURN_NOT_OK(reader_->GetSegmentPrefixNotIncluding(min_op_idx, &segments_to_delete));
-
-      int max_to_delete = std::max(reader_->num_segments() - FLAGS_log_min_segments_to_retain, 0);
-      if (segments_to_delete.size() > max_to_delete) {
-        VLOG(1) << "GCing " << segments_to_delete.size() << " in " << log_dir_
-                << " would not leave enough remaining segments to satisfy minimum "
-                << "retention requirement. Only GCing "
-                << max_to_delete << "/" << reader_->num_segments();
-        segments_to_delete.resize(max_to_delete);
-      } else if (segments_to_delete.size() < max_to_delete) {
-        int extra_segments = max_to_delete - segments_to_delete.size();
-        VLOG(1) << tablet_id_ << " has too many log segments, need to GC "
-                << extra_segments << " more. ";
-      }
+      GetSegmentsToGCUnlocked(min_op_idx, &segments_to_delete);
 
       if (segments_to_delete.size() == 0) {
         VLOG(1) << "No segments to delete.";
         *num_gced = 0;
         return Status::OK();
       }
-
       // Trim the prefix of segments from the reader so that they are no longer
       // referenced by the log.
-      reader_->TrimSegmentsUpToAndIncluding(
-          segments_to_delete[segments_to_delete.size() - 1]->header().sequence_number());
+      RETURN_NOT_OK(reader_->TrimSegmentsUpToAndIncluding(
+          segments_to_delete[segments_to_delete.size() - 1]->header().sequence_number()));
     }
 
     // Now that they are no longer referenced by the Log, delete the files.
@@ -627,6 +632,25 @@ Status Log::GC(int64_t min_op_idx, int32_t* num_gced) {
     if (min_remaining_op_idx > 0) {
       log_index_->GC(min_remaining_op_idx);
     }
+  }
+  return Status::OK();
+}
+
+Status Log::GetGCableDataSize(int64_t min_op_idx, int64_t* total_size) const {
+  CHECK_GE(min_op_idx, 0);
+  SegmentSequence segments_to_delete;
+  *total_size = 0;
+  {
+    boost::shared_lock<rw_spinlock> read_lock(state_lock_.get_lock());
+    CHECK_EQ(kLogWriting, log_state_);
+    GetSegmentsToGCUnlocked(min_op_idx, &segments_to_delete);
+
+    if (segments_to_delete.size() == 0) {
+      return Status::OK();
+    }
+  }
+  BOOST_FOREACH(const scoped_refptr<ReadableLogSegment>& segment, segments_to_delete) {
+    *total_size += segment->file_size();
   }
   return Status::OK();
 }

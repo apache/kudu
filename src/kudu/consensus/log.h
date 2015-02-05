@@ -181,6 +181,9 @@ class Log {
   // This method is thread-safe.
   Status GC(int64_t min_op_idx, int* num_gced);
 
+  // Computes the amount of bytes that would have been GC'd if Log::GC had been called.
+  Status GetGCableDataSize(int64_t min_op_idx, int64_t* total_size) const;
+
   // Returns a map of log index -> segment size, of all the segments that currently cannot be GCed
   // because in-memory structures have anchors in them.
   //
@@ -286,6 +289,9 @@ class Log {
 
   Status Sync();
 
+  // Helper method to get the segment sequence to GC based on the provided min_op_idx.
+  Status GetSegmentsToGCUnlocked(int64_t min_op_idx, SegmentSequence* segments_to_gc) const;
+
   LogEntryBatchQueue* entry_queue() {
     return &entry_batch_queue_;
   }
@@ -320,8 +326,7 @@ class Log {
   // The path for the next allocated segment.
   std::string next_segment_path_;
 
-  // Lock to protect modifications to previous_segments_ and
-  // log_state_.
+  // Lock to protect mutations to log_state_ and other shared state variables.
   mutable percpu_rwlock state_lock_;
 
   LogState log_state_;

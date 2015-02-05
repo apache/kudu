@@ -74,9 +74,8 @@ class FlushDeltaMemStoresOp : public MaintenanceOp {
   TabletPeer *const tablet_peer_;
 };
 
-// Maintenance task that runs log GC. Will wait at least log_gc_sleep_delay_ms
-// between each run and after that the performance improvement is of 1 for each second elapsed after
-// the original delay.
+// Maintenance task that runs log GC. Reports log retention that represents the amount of data
+// that can be GC'd.
 //
 // Only one LogGC op can run at a time.
 class LogGCOp : public MaintenanceOp {
@@ -95,7 +94,6 @@ class LogGCOp : public MaintenanceOp {
 
  private:
   TabletPeer *const tablet_peer_;
-  Stopwatch time_since_last_run_;
   Histogram* log_gc_duration_;
   AtomicGauge<uint32_t>* log_gc_running_;
   mutable Semaphore sem_;

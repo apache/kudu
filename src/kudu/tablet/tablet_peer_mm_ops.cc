@@ -171,19 +171,19 @@ LogGCOp::LogGCOp(TabletPeer* tablet_peer)
                                                      *tablet_peer->tablet()->GetMetricContext())),
       log_gc_running_(AtomicGauge<uint32_t>::Instantiate(METRIC_log_gc_running,
                                                      *tablet_peer->tablet()->GetMetricContext())),
-      sem_(1) {
-  time_since_last_run_.start();
-}
+      sem_(1) {}
 
 void LogGCOp::UpdateStats(MaintenanceOpStats* stats) {
+  int64_t min_log_index;
+  int64_t retention_size;
+
+  tablet_peer_->GetEarliestNeededLogIndex(&min_log_index);
+  CHECK_OK(tablet_peer_->log()->GetGCableDataSize(min_log_index, &retention_size));
+
+  stats->logs_retained_mb = retention_size / 1024 / 1024;
+
   stats->ram_anchored = 0;
-  stats->logs_retained_mb = 0;
   stats->runnable = sem_.GetValue() == 1;
-  double elapsed_ms = time_since_last_run_.elapsed().wall_millis();
-  if (elapsed_ms > FLAGS_log_gc_sleep_delay_ms) {
-    double extra_millis = elapsed_ms - FLAGS_log_gc_sleep_delay_ms;
-    stats->perf_improvement = std::max(extra_millis / 1000, 0.05);
-  }
 }
 
 bool LogGCOp::Prepare() {
@@ -194,7 +194,6 @@ void LogGCOp::Perform() {
   CHECK(!sem_.try_lock());
 
   tablet_peer_->RunLogGC();
-  time_since_last_run_.start();
 
   sem_.unlock();
 }
