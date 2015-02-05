@@ -12,10 +12,19 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/tablet/maintenance_manager.h"
 #include "kudu/tablet/tablet_metrics.h"
+#include "kudu/util/metrics.h"
 
 DEFINE_int32(flush_threshold_mb, 64,
              "Size at which MemRowSet flushes are triggered. "
              "A MRS can still flush below this threshold if it if hasn't flushed in a while");
+DEFINE_int32(log_gc_sleep_delay_ms, 10000,
+    "Minimum number of milliseconds that the maintenance manager will wait between log GC runs.");
+
+METRIC_DEFINE_gauge_uint32(log_gc_running, kudu::MetricUnit::kMaintenanceOperations,
+                           "Number of log GC operations currently running.");
+METRIC_DEFINE_histogram(log_gc_duration, kudu::MetricUnit::kSeconds,
+                        "Seconds spent garbage collecting the logs.", 60000000LU, 2);
+
 
 namespace kudu {
 namespace tablet {
@@ -149,6 +158,53 @@ Histogram* FlushDeltaMemStoresOp::DurationHistogram() {
 
 AtomicGauge<uint32_t>* FlushDeltaMemStoresOp::RunningGauge() {
   return tablet_peer_->tablet()->metrics()->flush_dms_running;
+}
+
+//
+// LogGCOp.
+//
+
+LogGCOp::LogGCOp(TabletPeer* tablet_peer)
+    : MaintenanceOp(StringPrintf("LogGCOp(%s)", tablet_peer->tablet()->tablet_id().c_str())),
+      tablet_peer_(tablet_peer),
+      log_gc_duration_(METRIC_log_gc_duration.Instantiate(
+                                                     *tablet_peer->tablet()->GetMetricContext())),
+      log_gc_running_(AtomicGauge<uint32_t>::Instantiate(METRIC_log_gc_running,
+                                                     *tablet_peer->tablet()->GetMetricContext())),
+      sem_(1) {
+  time_since_last_run_.start();
+}
+
+void LogGCOp::UpdateStats(MaintenanceOpStats* stats) {
+  stats->ram_anchored = 0;
+  stats->logs_retained_mb = 0;
+  stats->runnable = sem_.GetValue() == 1;
+  double elapsed_ms = time_since_last_run_.elapsed().wall_millis();
+  if (elapsed_ms > FLAGS_log_gc_sleep_delay_ms) {
+    double extra_millis = elapsed_ms - FLAGS_log_gc_sleep_delay_ms;
+    stats->perf_improvement = std::max(extra_millis / 1000, 0.05);
+  }
+}
+
+bool LogGCOp::Prepare() {
+  return sem_.try_lock();
+}
+
+void LogGCOp::Perform() {
+  CHECK(!sem_.try_lock());
+
+  tablet_peer_->RunLogGC();
+  time_since_last_run_.start();
+
+  sem_.unlock();
+}
+
+Histogram* LogGCOp::DurationHistogram() {
+  return log_gc_duration_;
+}
+
+AtomicGauge<uint32_t>* LogGCOp::RunningGauge() {
+  return log_gc_running_;
 }
 
 }  // namespace tablet

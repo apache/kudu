@@ -459,6 +459,10 @@ void TabletPeer::RegisterMaintenanceOps(MaintenanceManager* maint_mgr) {
   maint_mgr->RegisterOp(dms_flush_op.get());
   maintenance_ops_.push_back(dms_flush_op.release());
 
+  gscoped_ptr<MaintenanceOp> log_gc(new LogGCOp(this));
+  maint_mgr->RegisterOp(log_gc.get());
+  maintenance_ops_.push_back(log_gc.release());
+
   tablet_->RegisterMaintenanceOps(maint_mgr);
 }
 

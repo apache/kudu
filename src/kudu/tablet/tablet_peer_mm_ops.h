@@ -74,6 +74,33 @@ class FlushDeltaMemStoresOp : public MaintenanceOp {
   TabletPeer *const tablet_peer_;
 };
 
+// Maintenance task that runs log GC. Will wait at least log_gc_sleep_delay_ms
+// between each run and after that the performance improvement is of 1 for each second elapsed after
+// the original delay.
+//
+// Only one LogGC op can run at a time.
+class LogGCOp : public MaintenanceOp {
+ public:
+  explicit LogGCOp(TabletPeer* tablet_peer);
+
+  virtual void UpdateStats(MaintenanceOpStats* stats) OVERRIDE;
+
+  virtual bool Prepare() OVERRIDE;
+
+  virtual void Perform() OVERRIDE;
+
+  virtual Histogram* DurationHistogram() OVERRIDE;
+
+  virtual AtomicGauge<uint32_t>* RunningGauge() OVERRIDE;
+
+ private:
+  TabletPeer *const tablet_peer_;
+  Stopwatch time_since_last_run_;
+  Histogram* log_gc_duration_;
+  AtomicGauge<uint32_t>* log_gc_running_;
+  mutable Semaphore sem_;
+};
+
 } // namespace tablet
 } // namespace kudu
 
