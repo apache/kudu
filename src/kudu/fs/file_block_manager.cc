@@ -402,11 +402,13 @@ Status FileBlockManager::OpenBlock(const BlockId& block_id,
 Status FileBlockManager::DeleteBlock(const BlockId& block_id) {
   string path = GetBlockPath(block_id);
   RETURN_NOT_OK(env_->DeleteFile(path));
-  if (FLAGS_enable_data_block_fsync) {
-    WARN_NOT_OK(env_->SyncDir(DirName(path)),
-                "Failed to sync parent directory when deleting block");
-  }
 
+  // We don't bother fsyncing the parent directory as there's nothing to be
+  // gained by ensuring that the deletion is made durable. Even if we did
+  // fsync it, we'd need to account for garbage at startup time (in the
+  // event that we crashed just before the fsync), and with such accounting
+  // fsync-as-you-delete is unnecessary.
+  //
   // The block's directory hierarchy is left behind. We could prune it if
   // it's empty, but that's racy and leaving it isn't much overhead.
 
