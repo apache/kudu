@@ -198,7 +198,6 @@ if [ -n "$F_ALL" -o -n "$F_CURL" ]; then
     --disable-ldap \
     --disable-ldaps \
     --disable-rtsp \
-    --disable-proxy \
     --disable-dict \
     --disable-telnet \
     --disable-tftp \
