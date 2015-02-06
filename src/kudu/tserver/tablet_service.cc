@@ -128,30 +128,13 @@ static void RespondGenericError(const string& doing_what,
 
 // A transaction completion callback that responds to the client when transactions
 // complete and sets the client error if there is one to set.
-// TODO find a way to avoid passing specific responses (templating is worse as
-// is pb reflection)
+template<class Response>
 class RpcTransactionCompletionCallback : public TransactionCompletionCallback {
  public:
   RpcTransactionCompletionCallback(rpc::RpcContext* context,
-                                   WriteResponsePB* w_resp)
+                                   Response* response)
  : context_(context),
-   w_resp_(w_resp),
-   as_resp_(NULL),
-   cc_resp_(NULL) {}
-
-  RpcTransactionCompletionCallback(rpc::RpcContext* context,
-                                   AlterSchemaResponsePB* as_resp)
-  : context_(context),
-    w_resp_(NULL),
-    as_resp_(as_resp),
-    cc_resp_(NULL) {}
-
-  RpcTransactionCompletionCallback(rpc::RpcContext* context,
-                                   ChangeConfigResponsePB* cc_resp)
-  : context_(context),
-    w_resp_(NULL),
-    as_resp_(NULL),
-    cc_resp_(cc_resp) {}
+   response_(response) {}
 
   virtual void TransactionCompleted() OVERRIDE {
     if (!status_.ok()) {
@@ -164,17 +147,11 @@ class RpcTransactionCompletionCallback : public TransactionCompletionCallback {
  private:
 
   TabletServerErrorPB* get_error() {
-    if (w_resp_)
-      return w_resp_->mutable_error();
-    if (as_resp_)
-      return as_resp_->mutable_error();
-    return cc_resp_->mutable_error();
+    return response_->mutable_error();
   }
 
   rpc::RpcContext* context_;
-  WriteResponsePB* w_resp_;
-  AlterSchemaResponsePB* as_resp_;
-  ChangeConfigResponsePB* cc_resp_;
+  Response* response_;
 };
 
 TabletServiceImpl::TabletServiceImpl(TabletServer* server)
@@ -255,7 +232,7 @@ void TabletServiceAdminImpl::AlterSchema(const AlterSchemaRequestPB* req,
     new AlterSchemaTransactionState(tablet_peer.get(), req, resp);
 
   tx_state->set_completion_callback(gscoped_ptr<TransactionCompletionCallback>(
-      new RpcTransactionCompletionCallback(context, resp)).Pass());
+      new RpcTransactionCompletionCallback<AlterSchemaResponsePB>(context, resp)).Pass());
 
   // Submit the alter schema op. The RPC will be responded to asynchronously.
   Status s = tablet_peer->SubmitAlterSchema(tx_state);
@@ -354,8 +331,8 @@ void TabletServiceImpl::Write(const WriteRequestPB* req,
       Status s = Status::ServiceUnavailable("The configured clock does not support the"
           " required consistency mode.");
       SetupErrorAndRespond(resp->mutable_error(), s,
-                                 TabletServerErrorPB::UNKNOWN_ERROR,
-                                 context);
+                           TabletServerErrorPB::UNKNOWN_ERROR,
+                           context);
       return;
     }
   }
@@ -386,7 +363,7 @@ void TabletServiceImpl::Write(const WriteRequestPB* req,
   }
 
   state->set_completion_callback(gscoped_ptr<TransactionCompletionCallback>(
-      new RpcTransactionCompletionCallback(context, resp)).Pass());
+      new RpcTransactionCompletionCallback<WriteResponsePB>(context, resp)).Pass());
 
   // Submit the write. The RPC will be responded to asynchronously.
   Status s = tablet_peer->SubmitWrite(state);
@@ -424,7 +401,7 @@ void ConsensusServiceImpl::ChangeConfig(const consensus::ChangeConfigRequestPB* 
     new ChangeConfigTransactionState(tablet_peer.get(), req, resp);
 
   tx_state->set_completion_callback(gscoped_ptr<TransactionCompletionCallback>(
-      new RpcTransactionCompletionCallback(context, resp)).Pass());
+      new RpcTransactionCompletionCallback<ChangeConfigResponsePB>(context, resp)).Pass());
 
   // Submit the change config op. The RPC will be responded to asynchronously.
   Status s = tablet_peer->SubmitChangeConfig(tx_state);
