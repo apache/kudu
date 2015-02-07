@@ -154,6 +154,72 @@ class RpcTransactionCompletionCallback : public TransactionCompletionCallback {
   Response* response_;
 };
 
+// Generic interface to handle scan results.
+class ScanResultCollector {
+ public:
+  virtual void HandleRowBlock(const Schema* client_projection_schema,
+                              const RowBlock& row_block) = 0;
+
+  // Returns number of times HandleRowBlock() was called.
+  virtual int BlocksProcessed() const = 0;
+
+  // Returns number of bytes processed.
+  virtual int64_t BytesRead() const = 0;
+};
+
+// Copies the scan result to the given row block PB and data buffers.
+//
+// This implementation is used in the common case where a client is running
+// a scan and the data needs to be returned to the client.
+//
+// (This is in contrast to some other ScanResultCollector implementation that
+// might do an aggregation or gather some other types of statistics via a
+// server-side scan and thus never need to return the actual data.)
+class ScanResultCopier : public ScanResultCollector {
+ public:
+  ScanResultCopier(RowwiseRowBlockPB* rowblock_pb, faststring* rows_data, faststring* indirect_data)
+      : rowblock_pb_(DCHECK_NOTNULL(rowblock_pb)),
+        rows_data_(DCHECK_NOTNULL(rows_data)),
+        indirect_data_(DCHECK_NOTNULL(indirect_data)),
+        blocks_processed_(0) {
+  }
+
+  virtual void HandleRowBlock(const Schema* client_projection_schema,
+                              const RowBlock& row_block) OVERRIDE {
+    blocks_processed_++;
+    SerializeRowBlock(row_block, rowblock_pb_, client_projection_schema,
+                      rows_data_, indirect_data_);
+  }
+
+  virtual int BlocksProcessed() const { return blocks_processed_; }
+
+  // Returns number of bytes buffered to return.
+  virtual int64_t BytesRead() const OVERRIDE {
+    return rows_data_->size() + indirect_data_->size();
+  }
+
+ private:
+  RowwiseRowBlockPB* const rowblock_pb_;
+  faststring* const rows_data_;
+  faststring* const indirect_data_;
+  int blocks_processed_;
+
+  DISALLOW_COPY_AND_ASSIGN(ScanResultCopier);
+};
+
+// Return the batch size to use for a given request, after clamping
+// the user-requested request within the server-side allowable range.
+// This is only a hint, really more of a threshold since returned bytes
+// may exceed this limit, but hopefully only by a little bit.
+static size_t GetMaxBatchSizeBytesHint(const ScanRequestPB* req) {
+  if (!req->has_batch_size_bytes()) {
+    return FLAGS_tablet_server_default_scan_batch_size_bytes;
+  }
+
+  return std::min(req->batch_size_bytes(),
+                  implicit_cast<uint32_t>(FLAGS_tablet_server_max_scan_batch_size_bytes));
+}
+
 TabletServiceImpl::TabletServiceImpl(TabletServer* server)
   : TabletServerServiceIf(server->metric_context()),
     server_(server),
@@ -161,7 +227,6 @@ TabletServiceImpl::TabletServiceImpl(TabletServer* server)
                                             server_->tablet_manager(),
                                             server_->metric_context())) {
 }
-
 
 void TabletServiceImpl::Ping(const PingRequestPB* req,
                              PingResponsePB* resp,
@@ -173,7 +238,6 @@ TabletServiceAdminImpl::TabletServiceAdminImpl(TabletServer* server)
   : TabletServerAdminServiceIf(server->metric_context()),
     server_(server) {
 }
-
 
 void TabletServiceAdminImpl::AlterSchema(const AlterSchemaRequestPB* req,
                                          AlterSchemaResponsePB* resp,
@@ -533,18 +597,77 @@ void TabletServiceImpl::Scan(const ScanRequestPB* req,
   if (PREDICT_FALSE(req->has_scanner_id() &&
                     req->has_new_scan_request())) {
     context->RespondFailure(Status::InvalidArgument(
-                              "Must not pass both a scanner_id and new_scan_request"));
+                            "Must not pass both a scanner_id and new_scan_request"));
     return;
   }
 
+  size_t batch_size_bytes = GetMaxBatchSizeBytesHint(req);
+  gscoped_ptr<faststring> rows_data(new faststring(batch_size_bytes * 11 / 10));
+  gscoped_ptr<faststring> indirect_data(new faststring());
+  RowwiseRowBlockPB data;
+  ScanResultCopier collector(&data, rows_data.get(), indirect_data.get());
+
+  bool has_more_results = false;
+  TabletServerErrorPB::Code error_code;
   if (req->has_new_scan_request()) {
-    HandleNewScanRequest(req, resp, context);
+    const NewScanRequestPB& scan_pb = req->new_scan_request();
+    scoped_refptr<TabletPeer> tablet_peer;
+    if (!LookupTabletOrRespond(server_->tablet_manager(), scan_pb.tablet_id(), resp, context,
+                              &tablet_peer)) {
+      return;
+    }
+    string scanner_id;
+    Timestamp scan_timestamp;
+    Status s = HandleNewScanRequest(tablet_peer.get(), req, context->requestor_string(),
+                                    &collector, &scanner_id, &scan_timestamp, &has_more_results,
+                                    &error_code);
+    if (PREDICT_FALSE(!s.ok())) {
+      SetupErrorAndRespond(resp->mutable_error(), s, error_code, context);
+      return;
+    }
+    resp->set_scanner_id(scanner_id);
+    if (scan_timestamp != Timestamp::kInvalidTimestamp) {
+      resp->set_snap_timestamp(scan_timestamp.ToUint64());
+    }
   } else if (req->has_scanner_id()) {
-    HandleContinueScanRequest(req, resp, context);
+    Status s = HandleContinueScanRequest(req, &collector, &has_more_results, &error_code);
+    if (PREDICT_FALSE(!s.ok())) {
+      SetupErrorAndRespond(resp->mutable_error(), s, error_code, context);
+      return;
+    }
   } else {
     context->RespondFailure(Status::InvalidArgument(
                               "Must pass either a scanner_id or new_scan_request"));
   }
+  resp->set_has_more_results(has_more_results);
+
+  if (collector.BlocksProcessed() > 0) {
+    resp->mutable_data()->CopyFrom(data);
+
+    // Add sidecar data to context and record the returned indices.
+    int rows_idx;
+    Status s = context->AddRpcSidecar(make_gscoped_ptr(
+        new rpc::RpcSidecar(rows_data.Pass())), &rows_idx);
+    if (!s.ok()) {
+      RespondGenericError("Scan request main row data issue", resp->mutable_error(), s, context);
+      return;
+    }
+    resp->mutable_data()->set_rows_sidecar(rows_idx);
+
+    // Add indirect data as a sidecar, if applicable.
+    if (indirect_data->size() > 0) {
+      int indirect_idx;
+      s = context->AddRpcSidecar(make_gscoped_ptr(
+          new rpc::RpcSidecar(indirect_data.Pass())), &indirect_idx);
+      if (!s.ok()) {
+        RespondGenericError("Scan request indirect data issue", resp->mutable_error(), s, context);
+        return;
+      }
+      resp->mutable_data()->set_indirect_data_sidecar(indirect_idx);
+    }
+  }
+
+  context->RespondSuccess();
 }
 
 void TabletServiceImpl::ListTablets(const ListTabletsRequestPB* req,
@@ -712,35 +835,25 @@ static Status SetupScanSpec(const NewScanRequestPB& scan_pb,
   return Status::OK();
 }
 
-// Return the batch size to use for a given request, after clamping
-// the user-requested request within the server-side allowable range.
-static size_t GetBatchSizeBytes(const ScanRequestPB* req) {
-  if (!req->has_batch_size_bytes()) {
-    return FLAGS_tablet_server_default_scan_batch_size_bytes;
-  }
-
-  return std::min(req->batch_size_bytes(),
-                  implicit_cast<uint32_t>(FLAGS_tablet_server_max_scan_batch_size_bytes));
-}
-
 // Start a new scan.
-void TabletServiceImpl::HandleNewScanRequest(const ScanRequestPB* req,
-                                             ScanResponsePB* resp,
-                                             rpc::RpcContext* context) {
+Status TabletServiceImpl::HandleNewScanRequest(TabletPeer* tablet_peer,
+                                               const ScanRequestPB* req,
+                                               const std::string& requestor_string,
+                                               ScanResultCollector* result_collector,
+                                               std::string* scanner_id,
+                                               Timestamp* snap_timestamp,
+                                               bool* has_more_results,
+                                               TabletServerErrorPB::Code* error_code) {
+  DCHECK(result_collector != NULL);
+  DCHECK(error_code != NULL);
   DCHECK(req->has_new_scan_request());
-
   const NewScanRequestPB& scan_pb = req->new_scan_request();
-  scoped_refptr<TabletPeer> tablet_peer;
-  if (!LookupTabletOrRespond(server_->tablet_manager(), scan_pb.tablet_id(), resp, context,
-                             &tablet_peer)) {
-    return;
-  }
 
   const shared_ptr<Schema> tablet_schema(tablet_peer->tablet()->schema());
 
   SharedScanner scanner;
   server_->scanner_manager()->NewScanner(tablet_peer->tablet_id(),
-                                         context->requestor_string(),
+                                         requestor_string,
                                          &scanner);
 
   // If we early-exit out of this function, automatically unregister
@@ -752,28 +865,21 @@ void TabletServiceImpl::HandleNewScanRequest(const ScanRequestPB* req,
   Schema projection;
   Status s = ColumnPBsToSchema(scan_pb.projected_columns(), &projection);
   if (PREDICT_FALSE(!s.ok())) {
-    SetupErrorAndRespond(resp->mutable_error(), s,
-                         TabletServerErrorPB::INVALID_SCHEMA,
-                         context);
-    return;
+    *error_code = TabletServerErrorPB::INVALID_SCHEMA;
+    return s;
   }
 
   if (projection.has_column_ids()) {
-    s = Status::InvalidArgument("User requests should not have Column IDs");
-    SetupErrorAndRespond(resp->mutable_error(), s,
-                         TabletServerErrorPB::INVALID_SCHEMA,
-                         context);
-    return;
+    *error_code = TabletServerErrorPB::INVALID_SCHEMA;
+    return Status::InvalidArgument("User requests should not have Column IDs");
   }
 
   gscoped_ptr<ScanSpec> spec(new ScanSpec);
   vector<ColumnSchema> missing_cols;
   s = SetupScanSpec(scan_pb, *tablet_schema, projection, &missing_cols, &spec, scanner);
   if (PREDICT_FALSE(!s.ok())) {
-    SetupErrorAndRespond(resp->mutable_error(), s,
-                         TabletServerErrorPB::INVALID_SCAN_SPEC,
-                         context);
-    return;
+    *error_code = TabletServerErrorPB::INVALID_SCAN_SPEC;
+    return s;
   }
 
   // Fix for KUDU-15: if predicate columns are missing from the projection,
@@ -791,8 +897,9 @@ void TabletServiceImpl::HandleNewScanRequest(const ScanRequestPB* req,
   }
 
   TRACE("Creating iterator");
-  // preset the error code for when creating the iterator on the tablet fails
-  TabletServerErrorPB::Code error_code = TabletServerErrorPB::MISMATCHED_SCHEMA;
+
+  // Preset the error code for when creating the iterator on the tablet fails
+  TabletServerErrorPB::Code tmp_error_code = TabletServerErrorPB::MISMATCHED_SCHEMA;
 
   gscoped_ptr<RowwiseIterator> iter;
   switch (scan_pb.read_mode()) {
@@ -801,9 +908,9 @@ void TabletServiceImpl::HandleNewScanRequest(const ScanRequestPB* req,
       break;
     }
     case READ_AT_SNAPSHOT: {
-      s = HandleScanAtSnapshot(&iter, resp, scan_pb, projection, tablet_peer);
+      s = HandleScanAtSnapshot(&iter, scan_pb, projection, tablet_peer, snap_timestamp);
       if (!s.ok()) {
-        error_code = TabletServerErrorPB::INVALID_SNAPSHOT;
+        tmp_error_code = TabletServerErrorPB::INVALID_SNAPSHOT;
       }
       break;
     }
@@ -823,47 +930,45 @@ void TabletServiceImpl::HandleNewScanRequest(const ScanRequestPB* req,
     // An invalid projection returns InvalidArgument above.
     // TODO: would be nice if we threaded these more specific
     // error codes throughout Kudu.
-    SetupErrorAndRespond(resp->mutable_error(), s,
-                         error_code,
-                         context);
-    return;
+    *error_code = tmp_error_code;
+    return s;
   } else if (PREDICT_FALSE(!s.ok())) {
-    RespondGenericError("Error setting up scanner", resp->mutable_error(), s, context);
-    return;
+    LOG(WARNING) << "Error setting up scanner with request " << req->ShortDebugString();
+    *error_code = TabletServerErrorPB::UNKNOWN_ERROR;
+    return s;
   }
 
-  bool has_more = iter->HasNext();
-  TRACE("has_more: $0", has_more);
-  resp->set_has_more_results(has_more);
-  if (!has_more) {
+  *has_more_results = iter->HasNext();
+  TRACE("has_more: $0", *has_more_results);
+  if (!*has_more_results) {
     // If there are no more rows, we can short circuit some work and respond immediately.
-    context->RespondSuccess();
-    return;
+    return Status::OK();
   }
 
   scanner->Init(iter.Pass(), spec.Pass());
   unreg_scanner.Cancel();
-  resp->set_scanner_id(scanner->id());
+  *scanner_id = scanner->id();
 
   VLOG(1) << "Started scanner " << scanner->id() << ": " << scanner->iter()->ToString();
 
-  size_t batch_size_bytes = GetBatchSizeBytes(req);
+  size_t batch_size_bytes = GetMaxBatchSizeBytesHint(req);
   if (batch_size_bytes > 0) {
     TRACE("Continuing scan request");
     // TODO: instead of copying the pb, instead split HandleContinueScanRequest
     // and call the second half directly
     ScanRequestPB continue_req(*req);
     continue_req.set_scanner_id(scanner->id());
-    HandleContinueScanRequest(&continue_req, resp, context);
-  } else {
-    context->RespondSuccess();
+    RETURN_NOT_OK(HandleContinueScanRequest(&continue_req, result_collector, has_more_results,
+                                            error_code));
   }
+  return Status::OK();
 }
 
 // Continue an existing scan request.
-void TabletServiceImpl::HandleContinueScanRequest(const ScanRequestPB* req,
-                                                  ScanResponsePB* resp,
-                                                  rpc::RpcContext* context) {
+Status TabletServiceImpl::HandleContinueScanRequest(const ScanRequestPB* req,
+                                                    ScanResultCollector* result_collector,
+                                                    bool* has_more_results,
+                                                    TabletServerErrorPB::Code* error_code) {
   DCHECK(req->has_scanner_id());
 
   // TODO: need some kind of concurrency control on these scanner objects
@@ -871,24 +976,21 @@ void TabletServiceImpl::HandleContinueScanRequest(const ScanRequestPB* req,
   // just a trylock and fail the RPC if it contends.
   SharedScanner scanner;
   if (!server_->scanner_manager()->LookupScanner(req->scanner_id(), &scanner)) {
-    SetupErrorAndRespond(resp->mutable_error(),
-                         Status::NotFound("Scanner not found"),
-                         TabletServerErrorPB::SCANNER_EXPIRED, context);
-    return;
+    *error_code = TabletServerErrorPB::SCANNER_EXPIRED;
+    return Status::NotFound("Scanner not found");
   }
   VLOG(2) << "Found existing scanner " << scanner->id() << " for request: "
           << req->ShortDebugString();
   TRACE("Found scanner $0", scanner->id());
 
-  size_t batch_size_bytes = GetBatchSizeBytes(req);
+  size_t batch_size_bytes = GetMaxBatchSizeBytesHint(req);
 
   if (batch_size_bytes == 0 && req->close_scanner()) {
-    resp->set_has_more_results(false);
+    *has_more_results = false;
     bool success = server_->scanner_manager()->UnregisterScanner(req->scanner_id());
     LOG_IF(WARNING, !success) << "Scanner " << scanner->id() <<
       " not removed successfully from scanner manager. May be a bug.";
-    context->RespondSuccess();
-    return;
+    return Status::OK();
   }
 
   // TODO: check the call_seq_id!
@@ -904,9 +1006,6 @@ void TabletServiceImpl::HandleContinueScanRequest(const ScanRequestPB* req,
   RowBlock block(scanner->iter()->schema(),
                  FLAGS_tablet_server_scan_batch_size_rows, &arena);
 
-  gscoped_ptr<faststring> rows_data(new faststring(batch_size_bytes * 11 / 10));
-  gscoped_ptr<faststring> indirect_data(new faststring());
-
   // TODO: in the future, use the client timeout to set a budget. For now,
   // just use a half second, which should be plenty to amortize call overhead.
   int budget_ms = 500;
@@ -916,18 +1015,16 @@ void TabletServiceImpl::HandleContinueScanRequest(const ScanRequestPB* req,
   while (iter->HasNext()) {
     Status s = iter->NextBlock(&block);
     if (PREDICT_FALSE(!s.ok())) {
-      RespondGenericError("copying rows from internal iterator",
-                          resp->mutable_error(), s, context);
-      return;
+      LOG(WARNING) << "Copying rows from internal iterator for request " << req->ShortDebugString();
+      *error_code = TabletServerErrorPB::UNKNOWN_ERROR;
+      return s;
     }
 
     if (PREDICT_TRUE(block.nrows() > 0)) {
-      SerializeRowBlock(block, resp->mutable_data(),
-                        scanner->client_projection_schema(),
-                        rows_data.get(), indirect_data.get());
+      result_collector->HandleRowBlock(scanner->client_projection_schema(), block);
     }
 
-    size_t response_size = rows_data->size() + indirect_data->size();
+    int64_t response_size = result_collector->BytesRead();
 
     if (VLOG_IS_ON(2)) {
       // This may be fairly expensive if row block size is small
@@ -946,48 +1043,23 @@ void TabletServiceImpl::HandleContinueScanRequest(const ScanRequestPB* req,
     }
   }
 
-  // Add sidecar data to context and record the returned indices.
-  {
-    int rows_idx;
-    Status s = context->AddRpcSidecar(make_gscoped_ptr(
-        new rpc::RpcSidecar(rows_data.Pass())), &rows_idx);
-    if (!s.ok()) {
-      RespondGenericError("Scan request main row data issue",
-                          resp->mutable_error(), s, context);
-      return;
-    }
-    resp->mutable_data()->set_rows_sidecar(rows_idx);
-  }
-  if (indirect_data->size() > 0) {
-    int indirect_idx;
-    Status s = context->AddRpcSidecar(make_gscoped_ptr(
-        new rpc::RpcSidecar(indirect_data.Pass())), &indirect_idx);
-    if (!s.ok()) {
-      RespondGenericError("Scan request indirect data issue",
-                          resp->mutable_error(), s, context);
-      return;
-    }
-    resp->mutable_data()->set_indirect_data_sidecar(indirect_idx);
-  }
-
   scanner->UpdateAccessTime();
-  bool has_more = !req->close_scanner() && iter->HasNext();
-  resp->set_has_more_results(has_more);
-  if (!has_more) {
+  *has_more_results = !req->close_scanner() && iter->HasNext();
+  if (!*has_more_results) {
     VLOG(2) << "Scanner " << scanner->id() << " complete: removing...";
     bool success = server_->scanner_manager()->UnregisterScanner(req->scanner_id());
     LOG_IF(WARNING, !success) << "Scanner " << scanner->id() <<
       " not removed successfully from scanner manager. May be a bug.";
   }
 
-  context->RespondSuccess();
+  return Status::OK();
 }
 
 Status TabletServiceImpl::HandleScanAtSnapshot(gscoped_ptr<RowwiseIterator>* iter,
-                                               ScanResponsePB* resp,
                                                const NewScanRequestPB& scan_pb,
                                                const Schema& projection,
-                                               const scoped_refptr<TabletPeer>& tablet_peer) {
+                                               const scoped_refptr<TabletPeer>& tablet_peer,
+                                               Timestamp* snap_timestamp) {
 
   // TODO check against the earliest boundary (i.e. how early can we go) right
   // now we're keeping all undos/redos forever!
@@ -1004,17 +1076,17 @@ Status TabletServiceImpl::HandleScanAtSnapshot(gscoped_ptr<RowwiseIterator>* ite
   }
 
   Timestamp now = server_->clock()->Now();
-  Timestamp snap_timestamp;
+  Timestamp tmp_snap_timestamp;
 
   // If the client provided no snapshot timestamp we take the current clock
   // time as the snapshot timestamp.
   if (!scan_pb.has_snap_timestamp()) {
-    snap_timestamp = now;
+    tmp_snap_timestamp = now;
   // ... else we use the client provided one, but make sure it is less than
   // or equal to the current clock read.
   } else {
-    snap_timestamp.FromUint64(scan_pb.snap_timestamp());
-    if (snap_timestamp.CompareTo(now) > 0) {
+    tmp_snap_timestamp.FromUint64(scan_pb.snap_timestamp());
+    if (tmp_snap_timestamp.CompareTo(now) > 0) {
       return Status::InvalidArgument("Snapshot time in the future");
     }
   }
@@ -1024,13 +1096,13 @@ Status TabletServiceImpl::HandleScanAtSnapshot(gscoped_ptr<RowwiseIterator>* ite
   // Wait for the in-flights in the snapshot to be finished
   TRACE("Waiting for operations in snapshot to commit");
   MonoTime before = MonoTime::Now(MonoTime::FINE);
-  tablet_peer->tablet()->mvcc_manager()->WaitForCleanSnapshotAtTimestamp(snap_timestamp, &snap);
+  tablet_peer->tablet()->mvcc_manager()->WaitForCleanSnapshotAtTimestamp(tmp_snap_timestamp, &snap);
   uint64_t duration_usec = MonoTime::Now(MonoTime::FINE).GetDeltaSince(before).ToMicroseconds();
   tablet_peer->tablet()->metrics()->snapshot_scan_inflight_wait_duration->Increment(duration_usec);
   TRACE("All operations in snapshot committed. Waited for $0 microseconds", duration_usec);
 
   RETURN_NOT_OK(tablet_peer->tablet()->NewRowIterator(projection, snap, iter));
-  resp->set_snap_timestamp(snap_timestamp.ToUint64());
+  *snap_timestamp = tmp_snap_timestamp;
   return Status::OK();
 }
 

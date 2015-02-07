@@ -15,6 +15,7 @@ namespace kudu {
 class RowwiseIterator;
 class Schema;
 class Status;
+class Timestamp;
 
 namespace tablet {
 class TabletPeer;
@@ -24,8 +25,9 @@ class TransactionState;
 namespace tserver {
 
 class RemoteBootstrapServiceIf;
-class TabletServer;
+class ScanResultCollector;
 class TabletPeerLookupIf;
+class TabletServer;
 
 class TabletServiceImpl : public TabletServerServiceIf {
  public:
@@ -67,19 +69,25 @@ class TabletServiceImpl : public TabletServerServiceIf {
   virtual void Shutdown() OVERRIDE;
 
  private:
-  void HandleNewScanRequest(const ScanRequestPB* req,
-                            ScanResponsePB* resp,
-                            rpc::RpcContext* context);
+  Status HandleNewScanRequest(tablet::TabletPeer* tablet_peer,
+                              const ScanRequestPB* req,
+                              const std::string& requestor_string,
+                              ScanResultCollector* result_collector,
+                              std::string* scanner_id,
+                              Timestamp* snap_timestamp,
+                              bool* has_more_results,
+                              TabletServerErrorPB::Code* error_code);
 
-  void HandleContinueScanRequest(const ScanRequestPB* req,
-                                 ScanResponsePB* resp,
-                                 rpc::RpcContext* context);
+  Status HandleContinueScanRequest(const ScanRequestPB* req,
+                                   ScanResultCollector* result_collector,
+                                   bool* has_more_results,
+                                   TabletServerErrorPB::Code* error_code);
 
   Status HandleScanAtSnapshot(gscoped_ptr<RowwiseIterator>* iter,
-                              ScanResponsePB* resp,
                               const NewScanRequestPB& scan_pb,
                               const Schema& projection,
-                              const scoped_refptr<tablet::TabletPeer>& tablet_peer);
+                              const scoped_refptr<tablet::TabletPeer>& tablet_peer,
+                              Timestamp* snap_timestamp);
 
   TabletServer* server_;
   gscoped_ptr<RemoteBootstrapServiceIf> remote_bootstrap_service_;
