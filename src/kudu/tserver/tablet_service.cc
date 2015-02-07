@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "kudu/common/iterator.h"
+#include "kudu/common/schema.h"
 #include "kudu/common/wire_protocol.h"
 #include "kudu/consensus/consensus.h"
 #include "kudu/gutil/casts.h"
@@ -28,6 +29,7 @@
 #include "kudu/tserver/tablet_server.h"
 #include "kudu/tserver/ts_tablet_manager.h"
 #include "kudu/tserver/tserver.pb.h"
+#include "kudu/util/crc.h"
 #include "kudu/util/faststring.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/status.h"
@@ -205,6 +207,79 @@ class ScanResultCopier : public ScanResultCollector {
   int blocks_processed_;
 
   DISALLOW_COPY_AND_ASSIGN(ScanResultCopier);
+};
+
+// Calculates a CRC32C for the given row.
+// Also returns number of bytes read in out param.
+static uint32_t CalcRowCrc32(const Schema& projection, const RowBlockRow& row,
+                             crc::Crc* crc, size_t* bytes_read) {
+  *bytes_read = 0;
+  uint64_t row_crc = 0;
+  for (size_t j = 0; j < projection.num_columns(); j++) {
+    uint32_t col_index = static_cast<uint32_t>(j);  // For the CRC.
+    crc->Compute(&col_index, sizeof(col_index), &row_crc, NULL);
+    ColumnBlockCell cell = row.cell(j);
+    if (cell.is_nullable()) {
+      uint8_t is_defined = cell.is_null() ? 0 : 1;
+      crc->Compute(&is_defined, sizeof(is_defined), &row_crc, NULL);
+      if (!is_defined) continue;
+    }
+    if (cell.type() == STRING) {
+      const Slice* data = reinterpret_cast<const Slice *>(cell.ptr());
+      crc->Compute(data->data(), data->size(), &row_crc, NULL);
+      *bytes_read += data->size();
+    } else {
+      crc->Compute(cell.ptr(), cell.size(), &row_crc, NULL);
+      *bytes_read += cell.size();
+    }
+  }
+
+  return static_cast<uint32_t>(row_crc); // CRC32 only uses the lower 32 bits.
+}
+
+// Checksums the scan result.
+class ScanResultChecksummer : public ScanResultCollector {
+ public:
+  ScanResultChecksummer()
+      : crc_(crc::GetCrc32cInstance()),
+        agg_checksum_(0),
+        blocks_processed_(0) {
+  }
+
+  virtual void HandleRowBlock(const Schema* client_projection_schema,
+                              const RowBlock& row_block) OVERRIDE {
+    blocks_processed_++;
+    if (!client_projection_schema) {
+      client_projection_schema = &row_block.schema();
+    }
+
+    size_t nrows = row_block.nrows();
+    for (size_t i = 0; i < nrows; i++) {
+      if (!row_block.selection_vector()->IsRowSelected(i)) continue;
+      size_t bytes_read;
+      uint32_t row_crc = CalcRowCrc32(*client_projection_schema, row_block.row(i), crc_,
+                                      &bytes_read);
+      agg_checksum_ += row_crc;
+      bytes_read_ += bytes_read;
+    }
+  }
+
+  virtual int BlocksProcessed() const { return blocks_processed_; }
+
+  // Returns number of bytes scanned.
+  virtual int64_t BytesRead() const OVERRIDE { return bytes_read_; }
+
+  // Accessors for initializing / setting the checksum.
+  void set_agg_checksum(uint64_t value) { agg_checksum_ = value; }
+  uint64_t agg_checksum() const { return agg_checksum_; }
+
+ private:
+  crc::Crc* const crc_;
+  uint64_t agg_checksum_;
+  int64_t bytes_read_;
+  int blocks_processed_;
+
+  DISALLOW_COPY_AND_ASSIGN(ScanResultChecksummer);
 };
 
 // Return the batch size to use for a given request, after clamping
@@ -638,6 +713,7 @@ void TabletServiceImpl::Scan(const ScanRequestPB* req,
   } else {
     context->RespondFailure(Status::InvalidArgument(
                               "Must pass either a scanner_id or new_scan_request"));
+    return;
   }
   resp->set_has_more_results(has_more_results);
 
@@ -682,6 +758,72 @@ void TabletServiceImpl::ListTablets(const ListTabletsRequestPB* req,
     CHECK_OK(SchemaToPB(peer->status_listener()->schema(),
                         status->mutable_schema()));
   }
+  context->RespondSuccess();
+}
+
+void TabletServiceImpl::Checksum(const ChecksumRequestPB* req,
+                                 ChecksumResponsePB* resp,
+                                 rpc::RpcContext* context) {
+  VLOG(1) << "Full request: " << req->DebugString();
+
+  // Validate the request: user must pass a new_scan_request or
+  // a scanner ID, but not both.
+  if (PREDICT_FALSE(req->has_new_request() &&
+                    req->has_continue_request())) {
+    context->RespondFailure(Status::InvalidArgument(
+                            "Must not pass both a scanner_id and new_scan_request"));
+    return;
+  }
+
+  // Convert ChecksumRequestPB to a ScanRequestPB.
+  ScanRequestPB scan_req;
+  if (req->has_call_seq_id()) scan_req.set_call_seq_id(req->call_seq_id());
+  if (req->has_batch_size_bytes()) scan_req.set_batch_size_bytes(req->batch_size_bytes());
+  if (req->has_close_scanner()) scan_req.set_close_scanner(req->close_scanner());
+
+  ScanResultChecksummer collector;
+  bool has_more = false;
+  TabletServerErrorPB::Code error_code;
+  if (req->has_new_request()) {
+    scan_req.mutable_new_scan_request()->CopyFrom(req->new_request());
+    const NewScanRequestPB& new_req = req->new_request();
+    scoped_refptr<TabletPeer> tablet_peer;
+    if (!LookupTabletOrRespond(server_->tablet_manager(), new_req.tablet_id(), resp, context,
+                              &tablet_peer)) {
+      return;
+    }
+
+    string scanner_id;
+    Timestamp snap_timestamp;
+    Status s = HandleNewScanRequest(tablet_peer.get(), &scan_req, context->requestor_string(),
+                                    &collector, &scanner_id, &snap_timestamp, &has_more,
+                                    &error_code);
+    if (PREDICT_FALSE(!s.ok())) {
+      SetupErrorAndRespond(resp->mutable_error(), s, error_code, context);
+      return;
+    }
+    resp->set_scanner_id(scanner_id);
+    if (snap_timestamp != Timestamp::kInvalidTimestamp) {
+      resp->set_snap_timestamp(snap_timestamp.ToUint64());
+    }
+  } else if (req->has_continue_request()) {
+    const ContinueChecksumRequestPB& continue_req = req->continue_request();
+    collector.set_agg_checksum(continue_req.previous_checksum());
+    scan_req.set_scanner_id(continue_req.scanner_id());
+    Status s = HandleContinueScanRequest(&scan_req, &collector, &has_more, &error_code);
+    if (PREDICT_FALSE(!s.ok())) {
+      SetupErrorAndRespond(resp->mutable_error(), s, error_code, context);
+      return;
+    }
+  } else {
+    context->RespondFailure(Status::InvalidArgument(
+                            "Must pass either new_request or continue_request"));
+    return;
+  }
+
+  resp->set_checksum(collector.agg_checksum());
+  resp->set_has_more_results(has_more);
+
   context->RespondSuccess();
 }
 

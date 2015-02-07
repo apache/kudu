@@ -6,6 +6,7 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/master/master.pb.h"
 #include "kudu/server/hybrid_clock.h"
+#include "kudu/util/crc.h"
 #include "kudu/util/curl_util.h"
 
 using std::string;
@@ -30,6 +31,8 @@ DEFINE_int32(single_threaded_insert_latency_bench_warmup_rows, 100,
 DEFINE_int32(single_threaded_insert_latency_bench_insert_rows, 1000,
              "Number of rows to insert in the testing phase of the single threaded"
              " tablet server insert latency micro-benchmark");
+
+DECLARE_int32(tablet_server_scan_batch_size_rows);
 
 // Declare these metrics prototypes for simpler unit testing of their behavior.
 METRIC_DECLARE_counter(rows_inserted);
@@ -1653,6 +1656,99 @@ TEST_F(TabletServerTest, TestWriteOutOfBounds) {
     data->Clear();
     controller.Reset();
   }
+}
+
+static uint32_t CalcTestRowChecksum(int32_t key, uint8_t string_field_defined = true) {
+  crc::Crc* crc = crc::GetCrc32cInstance();
+  uint64_t row_crc = 0;
+
+  string strval = strings::Substitute("original$0", key);
+  uint32_t index = 0;
+  crc->Compute(&index, sizeof(index), &row_crc, NULL);
+  crc->Compute(&key, sizeof(int32_t), &row_crc, NULL);
+
+  index = 1;
+  crc->Compute(&index, sizeof(index), &row_crc, NULL);
+  crc->Compute(&key, sizeof(int32_t), &row_crc, NULL);
+
+  index = 2;
+  crc->Compute(&index, sizeof(index), &row_crc, NULL);
+  crc->Compute(&string_field_defined, sizeof(string_field_defined), &row_crc, NULL);
+  if (string_field_defined) {
+    crc->Compute(strval.c_str(), strval.size(), &row_crc, NULL);
+  }
+  return static_cast<uint32_t>(row_crc);
+}
+
+// Simple test to check that our checksum scans work as expected.
+TEST_F(TabletServerTest, TestChecksumScan) {
+  uint64_t total_crc = 0;
+
+  ChecksumRequestPB req;
+  req.mutable_new_request()->set_tablet_id(kTabletId);
+  req.mutable_new_request()->set_read_mode(READ_LATEST);
+  ASSERT_OK(SchemaToColumnPBsWithoutIds(schema_,
+                                        req.mutable_new_request()->mutable_projected_columns()));
+  ChecksumRequestPB new_req = req;  // Cache "new" request.
+
+  ChecksumResponsePB resp;
+  RpcController controller;
+  ASSERT_STATUS_OK(proxy_->Checksum(req, &resp, &controller));
+
+  // No rows.
+  ASSERT_EQ(total_crc, resp.checksum());
+  ASSERT_FALSE(resp.has_more_results());
+
+  // First row.
+  int32_t key = 1;
+  InsertTestRowsRemote(0, key, 1);
+  controller.Reset();
+  ASSERT_STATUS_OK(proxy_->Checksum(req, &resp, &controller));
+  total_crc += CalcTestRowChecksum(key);
+  uint64_t first_crc = total_crc; // Cache first record checksum.
+
+  ASSERT_FALSE(resp.has_error()) << resp.error().DebugString();
+  ASSERT_EQ(total_crc, resp.checksum());
+  ASSERT_FALSE(resp.has_more_results());
+
+  // Second row (null string field).
+  key = 2;
+  InsertTestRowsRemote(0, key, 1, 1, NULL, kTabletId, NULL, NULL, false);
+  controller.Reset();
+  ASSERT_STATUS_OK(proxy_->Checksum(req, &resp, &controller));
+  total_crc += CalcTestRowChecksum(key, false);
+
+  ASSERT_FALSE(resp.has_error()) << resp.error().DebugString();
+  ASSERT_EQ(total_crc, resp.checksum());
+  ASSERT_FALSE(resp.has_more_results());
+
+  // Now test the same thing, but with a scan requiring 2 passes (one per row).
+  FLAGS_tablet_server_scan_batch_size_rows = 1;
+  req.set_batch_size_bytes(1);
+  controller.Reset();
+  ASSERT_STATUS_OK(proxy_->Checksum(req, &resp, &controller));
+  string scanner_id = resp.scanner_id();
+  ASSERT_TRUE(resp.has_more_results());
+  uint64_t agg_checksum = resp.checksum();
+
+  // Second row.
+  req.clear_new_request();
+  req.mutable_continue_request()->set_scanner_id(scanner_id);
+  req.mutable_continue_request()->set_previous_checksum(agg_checksum);
+  controller.Reset();
+  ASSERT_STATUS_OK(proxy_->Checksum(req, &resp, &controller));
+  ASSERT_EQ(total_crc, resp.checksum());
+  ASSERT_FALSE(resp.has_more_results());
+
+  // Finally, delete row 2, so we're back to the row 1 checksum.
+  ASSERT_NO_FATAL_FAILURE(DeleteTestRowsRemote(key, 1));
+  FLAGS_tablet_server_scan_batch_size_rows = 100;
+  req = new_req;
+  controller.Reset();
+  ASSERT_STATUS_OK(proxy_->Checksum(req, &resp, &controller));
+  ASSERT_NE(total_crc, resp.checksum());
+  ASSERT_EQ(first_crc, resp.checksum());
+  ASSERT_FALSE(resp.has_more_results());
 }
 
 } // namespace tserver

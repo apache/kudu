@@ -180,7 +180,8 @@ class TabletServerTestBase : public KuduTest {
                             TabletServerServiceProxy* proxy = NULL,
                             string tablet_id = kTabletId,
                             vector<uint64_t>* write_timestamps_collector = NULL,
-                            TimeSeries *ts = NULL) {
+                            TimeSeries *ts = NULL,
+                            bool string_field_defined = true) {
 
     if (!proxy) {
       proxy = proxy_.get();
@@ -212,8 +213,13 @@ class TabletServerTestBase : public KuduTest {
       uint64_t last_row_in_batch = first_row_in_batch + count / num_batches;
 
       for (int j = first_row_in_batch; j < last_row_in_batch; j++) {
-        AddTestRowToPB(RowOperationsPB::INSERT, schema_, j, j,
-                       strings::Substitute("original$0", j), data);
+        string str_val = strings::Substitute("original$0", j);
+        const char* cstr_val = str_val.c_str();
+        if (!string_field_defined) {
+          cstr_val = NULL;
+        }
+        AddTestRowWithNullableStringToPB(RowOperationsPB::INSERT, schema_, j, j,
+                                         cstr_val, data);
       }
       CHECK_OK(DCHECK_NOTNULL(proxy)->Write(req, &resp, &controller));
       if (write_timestamps_collector) {
@@ -236,6 +242,33 @@ class TabletServerTestBase : public KuduTest {
     if (ts) {
       ts->AddValue(static_cast<double>(inserted_since_last_report));
     }
+  }
+
+  // Delete specified test row range.
+  void DeleteTestRowsRemote(uint64_t first_row,
+                            uint64_t count,
+                            TabletServerServiceProxy* proxy = NULL,
+                            string tablet_id = kTabletId) {
+    if (!proxy) {
+      proxy = proxy_.get();
+    }
+
+    WriteRequestPB req;
+    WriteResponsePB resp;
+    rpc::RpcController controller;
+
+    req.set_tablet_id(tablet_id);
+    ASSERT_OK(SchemaToPB(schema_, req.mutable_schema()));
+
+    RowOperationsPB* ops = req.mutable_row_operations();
+    for (uint64_t rowid = first_row; rowid < first_row + count; rowid++) {
+      AddTestKeyToPB(RowOperationsPB::DELETE, schema_, rowid, ops);
+    }
+
+    SCOPED_TRACE(req.DebugString());
+    ASSERT_OK(proxy_->Write(req, &resp, &controller));
+    SCOPED_TRACE(resp.DebugString());
+    ASSERT_FALSE(resp.has_error()) << resp.ShortDebugString();
   }
 
   void BuildTestRow(int index, KuduPartialRow* row) {

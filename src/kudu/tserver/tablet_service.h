@@ -48,6 +48,10 @@ class TabletServiceImpl : public TabletServerServiceIf {
                            ListTabletsResponsePB* resp,
                            rpc::RpcContext* context) OVERRIDE;
 
+  virtual void Checksum(const ChecksumRequestPB* req,
+                        ChecksumResponsePB* resp,
+                        rpc::RpcContext* context) OVERRIDE;
+
   // TODO: Move this to its own service once we put in service multiplexing support
   // in the RPC protocol.
   virtual void BeginRemoteBootstrapSession(const BeginRemoteBootstrapSessionRequestPB* req,

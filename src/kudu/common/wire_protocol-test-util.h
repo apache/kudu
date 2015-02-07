@@ -23,19 +23,30 @@ Schema GetSimpleTestSchema() {
       1);
 }
 
+void AddTestRowWithNullableStringToPB(RowOperationsPB::Type op_type,
+                                      const Schema& schema,
+                                      uint32_t key,
+                                      uint32_t int_val,
+                                      const char* string_val,
+                                      RowOperationsPB* ops) {
+  DCHECK(schema.initialized());
+  KuduPartialRow row(&schema);
+  CHECK_OK(row.SetUInt32("key", key));
+  CHECK_OK(row.SetUInt32("int_val", int_val));
+  if (string_val) {
+    CHECK_OK(row.SetStringCopy("string_val", string_val));
+  }
+  RowOperationsPBEncoder enc(ops);
+  enc.Add(op_type, row);
+}
+
 void AddTestRowToPB(RowOperationsPB::Type op_type,
                     const Schema& schema,
                     uint32_t key,
                     uint32_t int_val,
                     const string& string_val,
                     RowOperationsPB* ops) {
-  DCHECK(schema.initialized());
-  KuduPartialRow row(&schema);
-  CHECK_OK(row.SetUInt32("key", key));
-  CHECK_OK(row.SetUInt32("int_val", int_val));
-  CHECK_OK(row.SetStringCopy("string_val", string_val));
-  RowOperationsPBEncoder enc(ops);
-  enc.Add(op_type, row);
+  AddTestRowWithNullableStringToPB(op_type, schema, key, int_val, string_val.c_str(), ops);
 }
 
 void AddTestKeyToPB(RowOperationsPB::Type op_type,
