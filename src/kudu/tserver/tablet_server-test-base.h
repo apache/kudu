@@ -97,18 +97,18 @@ class TabletServerTestBase : public KuduTest {
     mini_server_.reset(new MiniTabletServer(GetTestPath("TabletServerTest-fsroot"), 0));
     mini_server_->options()->master_addresses.clear();
     mini_server_->options()->master_addresses.push_back(HostPort("255.255.255.255", 1));
-    ASSERT_STATUS_OK(mini_server_->Start());
+    CHECK_OK(mini_server_->Start());
 
     // Set up a tablet inside the server.
-    ASSERT_STATUS_OK(mini_server_->AddTestTablet(kTableId, kTabletId, schema_));
-    ASSERT_TRUE(mini_server_->server()->tablet_manager()->LookupTablet(kTabletId, &tablet_peer_));
+    CHECK_OK(mini_server_->AddTestTablet(kTableId, kTabletId, schema_));
+    CHECK(mini_server_->server()->tablet_manager()->LookupTablet(kTabletId, &tablet_peer_));
 
     // Creating a tablet is async, we wait here instead of having to handle errors later.
-    ASSERT_STATUS_OK(WaitForTabletRunning(kTabletId));
+    CHECK_OK(WaitForTabletRunning(kTabletId));
 
     // Connect to it.
-    ASSERT_NO_FATAL_FAILURE(CreateClientProxies(mini_server_->bound_rpc_addr(),
-                                                &proxy_, &admin_proxy_, &consensus_proxy_));
+    CHECK_OK(CreateClientProxies(mini_server_->bound_rpc_addr(),
+                                 &proxy_, &admin_proxy_, &consensus_proxy_));
   }
 
   Status WaitForTabletRunning(const char *tablet_id) {

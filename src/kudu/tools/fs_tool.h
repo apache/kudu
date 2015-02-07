@@ -48,7 +48,9 @@ class FsTool {
     MAXIMUM = 2,
   };
 
-  FsTool(const std::string& base_dir, DetailLevel detail_level);
+  FsTool(const std::string& wal_dir,
+         const std::vector<std::string>& data_dirs,
+         DetailLevel detail_level);
   ~FsTool();
 
   Status Init();
@@ -136,7 +138,8 @@ class FsTool {
                          std::tr1::shared_ptr<RandomAccessFile>* block_reader);
 
   bool initialized_;
-  const std::string base_dir_;
+  const std::string wal_dir_;
+  const std::vector<std::string> data_dirs_;
   const DetailLevel detail_level_;
   gscoped_ptr<FsManager> fs_manager_;
 };

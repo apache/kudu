@@ -5,6 +5,7 @@
 #define KUDU_FS_FS_MANAGER_H
 
 #include <iosfwd>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -48,8 +49,9 @@ class FsManager {
   static const char *kWalFileNamePrefix;
   static const char *kWalsRecoveryDirSuffix;
 
-  FsManager(Env *env, const std::string& root_path);
-
+  FsManager(Env* env, const std::string& root_path);
+  FsManager(Env* env, const std::string& wal_path,
+            const std::vector<std::string>& data_paths);
   ~FsManager();
 
   // Initialize and load the basic filesystem metadata.
@@ -59,8 +61,10 @@ class FsManager {
   Status Open();
 
   // Create the initial filesystem layout.
-  // This has no effect if the layout is already initialized.
+  //
+  // Returns an error if the file system is already initialized.
   Status CreateInitialFileSystemLayout();
+
   void DumpFileSystemTree(std::ostream& out);
 
   // Return the UUID persisted in the local filesystem. If Open()
@@ -98,18 +102,14 @@ class FsManager {
   // ==========================================================================
   //  on-disk path
   // ==========================================================================
-  const std::string& GetRootDir() const {
-    return root_path_;
-  }
-
   std::string GetDataRootDir() const {
-    return JoinPathSegments(GetRootDir(), kDataDirName);
+    return JoinPathSegments(metadata_fs_root_, kDataDirName);
   }
 
   std::string GetBlockPath(const BlockId& block_id) const;
 
   std::string GetWalsRootDir() const {
-    return JoinPathSegments(root_path_, kWalDirName);
+    return JoinPathSegments(wal_fs_root_, kWalDirName);
   }
 
   std::string GetTabletWalDir(const std::string& tablet_id) const {
@@ -128,11 +128,11 @@ class FsManager {
   std::string GetMasterBlockPath(const std::string& tablet_id) const;
 
   // Return the path where InstanceMetadataPB is stored.
-  std::string GetInstanceMetadataPath() const;
+  std::string GetInstanceMetadataPath(const std::string& root) const;
 
   // Return the directory where the consensus metadata is stored.
   std::string GetConsensusMetadataDir() const {
-    return JoinPathSegments(root_path_, kConsensusMetadataDirName);
+    return JoinPathSegments(metadata_fs_root_, kConsensusMetadataDirName);
   }
 
   // Return the path where ConsensusMetadataPB is stored.
@@ -165,6 +165,12 @@ class FsManager {
   }
 
  private:
+  // Initialize and sanitize the filesystem roots.
+  //
+  // Does not actually perform any on-disk operations.
+  void InitRoots(const std::string& wal_fs_root,
+                 const std::vector<std::string>& data_fs_roots);
+
   // Select and create an instance of the appropriate block manager.
   //
   // Does not actually perform any on-disk operations.
@@ -173,9 +179,17 @@ class FsManager {
   // Creates the parent directory hierarchy to contain the given block id.
   Status CreateBlockDir(const BlockId& block_id);
 
-  // Create a new InstanceMetadataPB and save it to the filesystem.
+  // Create a new InstanceMetadataPB.
+  void CreateInstanceMetadata(InstanceMetadataPB* metadata);
+
+  // Save a InstanceMetadataPB to the filesystem.
   // Does not mutate the current state of the fsmanager.
-  Status CreateAndWriteInstanceMetadata();
+  Status WriteInstanceMetadata(const InstanceMetadataPB& metadata,
+                               const std::string& root);
+
+  // Returns all of the filesystem root directories under management,
+  // omitting any duplicates.
+  std::vector<std::string> GetAllFilesystemRoots() const;
 
   // ==========================================================================
   //  file-system helpers
@@ -195,7 +209,9 @@ class FsManager {
   static const char *kConsensusMetadataDirName;
 
   Env *env_;
-  std::string root_path_;
+  std::string wal_fs_root_;
+  std::string metadata_fs_root_;
+  std::vector<std::string> data_fs_roots_;
 
   ObjectIdGenerator oid_generator_;
 

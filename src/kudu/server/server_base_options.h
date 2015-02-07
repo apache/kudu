@@ -4,6 +4,7 @@
 #define KUDU_SERVER_SERVER_BASE_OPTIONS_H
 
 #include <string>
+#include <vector>
 
 #include "kudu/server/webserver_options.h"
 #include "kudu/server/rpc_server.h"
@@ -20,7 +21,8 @@ namespace server {
 struct ServerBaseOptions {
   Env* env;
 
-  std::string base_dir;
+  std::string wal_dir;
+  std::vector<std::string> data_dirs;
   RpcServerOptions rpc_opts;
   WebserverOptions webserver_opts;
 

@@ -14,11 +14,11 @@ mkdir -p $LOG_DIR
 
 case $PROC_NAME in
 kudu-master)
-  DATA_DIR_OPTION=--master_base_dir=$DATA_DIR
+  DATA_DIR_OPTION="--master_wal_dir=$DATA_DIR --master_data_dirs=$DATA_DIR"
   MASTER_ADDRESS_OPT=--master_rpc_bind_addresses
   ;;
 kudu-tablet_server)
-  DATA_DIR_OPTION=--tablet_server_base_dir=$DATA_DIR
+  DATA_DIR_OPTION="--tablet_server_wal_dir=$DATA_DIR --tablet_server_data_dirs=$DATA_DIR"
   MASTER_ADDRESS_OPT=--tablet_server_master_addrs
   ;;
 *)

@@ -79,7 +79,7 @@
                         <masterAddress>localhost</masterAddress>
                         <masterPort>64000</masterPort>
                         <flagsPath>../test-resources/flags</flagsPath>
-                        <baseDirPath>target/testdata</baseDirPath>
+                        <baseDirPath>${basedir}/target/testdata</baseDirPath>
                         <startCluster>true</startCluster>
                     </systemPropertyVariables>
                     <argLine>-enableassertions -Xmx1900m -XX:MaxPermSize=100m

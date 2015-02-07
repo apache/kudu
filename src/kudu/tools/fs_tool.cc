@@ -68,9 +68,12 @@ string IndentString(const string& s, int indent) {
 }
 } // anonymous namespace
 
-FsTool::FsTool(const string& base_dir, DetailLevel detail_level)
+FsTool::FsTool(const string& wal_dir,
+               const vector<string>& data_dirs,
+               DetailLevel detail_level)
     : initialized_(false),
-      base_dir_(base_dir),
+      wal_dir_(wal_dir),
+      data_dirs_(data_dirs),
       detail_level_(detail_level) {
 }
 
@@ -80,15 +83,10 @@ FsTool::~FsTool() {
 Status FsTool::Init() {
   CHECK(!initialized_) << "Already initialized";
 
-  fs_manager_.reset(new FsManager(Env::Default(), base_dir_));
-
-  if (!fs_manager_->Exists(base_dir_)) {
-    return Status::NotFound("base directory does not exist", base_dir_);
-  }
+  fs_manager_.reset(new FsManager(Env::Default(), wal_dir_, data_dirs_));
   RETURN_NOT_OK(fs_manager_->Open());
 
-  LOG(INFO)
-      << "Opened file system in " << base_dir_ << ", uuid: " << fs_manager_->uuid();
+  LOG(INFO) << "Opened file system with uuid: " << fs_manager_->uuid();
 
   initialized_ = true;
   return Status::OK();
@@ -107,7 +105,7 @@ Status FsTool::ListAllLogSegments() {
   string wals_dir = fs_manager_->GetWalsRootDir();
   if (!fs_manager_->Exists(wals_dir)) {
     return Status::Corruption(Substitute("root log directory '$0' does not exist under '$1'",
-                                         wals_dir, base_dir_));
+                                         wals_dir, wal_dir_));
   }
 
   std::cout << "Root log directory: " << wals_dir << std::endl;
@@ -137,8 +135,8 @@ Status FsTool::ListLogSegmentsForTablet(const string& tablet_id) {
 
   string tablet_wal_dir = fs_manager_->GetTabletWalDir(tablet_id);
   if (!fs_manager_->Exists(tablet_wal_dir)) {
-    return Status::NotFound(Substitute("tablet '$0' has no logs in base dir '$1'",
-                                       tablet_id, base_dir_));
+    return Status::NotFound(Substitute("tablet '$0' has no logs in wals dir '$1'",
+                                       tablet_id, wal_dir_));
   }
   std::cout << "Tablet WAL dir found: " << tablet_wal_dir << std::endl;
   RETURN_NOT_OK(ListSegmentsInDir(tablet_wal_dir));
@@ -153,8 +151,8 @@ Status FsTool::ListLogSegmentsForTablet(const string& tablet_id) {
 Status FsTool::GetTabletsInMasterBlockDir(vector<string>* tablets) {
   string master_block_dir = fs_manager_->GetMasterBlockDir();
   if (!fs_manager_->Exists(master_block_dir)) {
-    return Status::NotFound(Substitute("no tablet master block (expected path: '$0') in dir '$1'",
-                                       master_block_dir, base_dir_));
+    return Status::NotFound(Substitute("no master block dir (expected path: '$0')",
+                                       master_block_dir));
   }
   std::cout << "Tablets in master block directory " << master_block_dir << ":" << std::endl;
   vector<string> children;
@@ -282,8 +280,8 @@ Status FsTool::GetMasterBlockPath(const string& tablet_id,
                                   string* master_block_path) {
   string path = fs_manager_->GetMasterBlockPath(tablet_id);
   if (!fs_manager_->Exists(path)) {
-    return Status::NotFound(Substitute("master block for tablet '$0' not found in '$1'",
-                                       tablet_id, base_dir_));
+    return Status::NotFound(Substitute("master block for tablet '$0' not found "
+        "(expected path: '$1')", tablet_id, path));
   }
 
   *master_block_path = path;
@@ -459,8 +457,7 @@ Status FsTool::DumpCFileBlock(const std::string& block_id_str,
                               int indent) {
   BlockId block_id(block_id_str);
   if (!fs_manager_->BlockExists(block_id)) {
-    return Status::NotFound(Substitute("block '$0' does not exist under '$1'",
-                                       block_id_str, base_dir_));
+    return Status::NotFound(Substitute("block '$0' does not exist", block_id_str));
   }
   return DumpCFileBlockInternal(block_id, opts, indent);
 }

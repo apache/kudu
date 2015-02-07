@@ -5,20 +5,25 @@
 
 #include "kudu/tools/fs_tool.h"
 
-#include <boost/assign/list_of.hpp>
-#include <boost/foreach.hpp>
-#include <gflags/gflags.h>
-#include <glog/logging.h>
 #include <iostream>
 #include <sstream>
 #include <tr1/memory>
 #include <vector>
 
+#include <boost/assign/list_of.hpp>
+#include <boost/foreach.hpp>
+#include <gflags/gflags.h>
+#include <glog/logging.h>
+
 #include "kudu/gutil/strings/numbers.h"
+#include "kudu/gutil/strings/split.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/logging.h"
 
-DEFINE_string(base_dir, "/tmp/demo-tablets", "Base directory for local files");
+DEFINE_string(wal_dir, "/tmp/demo-tablets",
+              "Directory of log segments");
+DEFINE_string(data_dirs, "/tmp/demo-tablets",
+              "Comma-separated list of directories for data blocks");
 DEFINE_int32(nrows, 0, "Number of rows to dump");
 
 /*
@@ -64,7 +69,7 @@ const vector<CommandHandler> kCommandHandlers = boost::assign::list_of
     (CommandHandler(DUMP_ROWSET, "dump_rowset",
                     "Dump a rowset (requires a tablet id and an index)"))
     (CommandHandler(DUMP_CFILE_BLOCK, "dump_block",
-                    "Dump a cfile block (requires a block id"))
+                    "Dump a cfile block (requires a block id)"))
     (CommandHandler(PRINT_TABLET_META, "print_meta",
                     "Print a tablet metadata (requires a tablet id)"))
     (CommandHandler(PRINT_UUID, "print_uuid",
@@ -72,7 +77,8 @@ const vector<CommandHandler> kCommandHandlers = boost::assign::list_of
 
 void PrintUsageToStream(const std::string& prog_name, std::ostream* out) {
   *out << "Usage: " << prog_name
-       << " [-headers_only] [-nrows <num rows>] -base_dir <dir> <command> <options> "
+       << " [-headers_only] [-nrows <num rows>] "
+       << "-wal_dir <dir> -data_dirs <dirs> <command> <options> "
        << std::endl << std::endl;
   *out << "Commands: " << std::endl;
   BOOST_FOREACH(const CommandHandler& handler, kCommandHandlers) {
@@ -109,8 +115,8 @@ static int FsDumpToolMain(int argc, char** argv) {
   google::ParseCommandLineFlags(&argc, &argv, true);
   InitGoogleLoggingSafe(argv[0]);
 
-  if (FLAGS_base_dir == "") {
-    Usage(argv[0], "'-base_dir' is required");
+  if (FLAGS_wal_dir.empty() || FLAGS_data_dirs.empty()) {
+    Usage(argv[0], "'-wal_dir' and '-data_dirs' are required");
     return 2;
   }
 
@@ -119,7 +125,8 @@ static int FsDumpToolMain(int argc, char** argv) {
     return 2;
   }
 
-  FsTool fs_tool(FLAGS_base_dir,
+  FsTool fs_tool(FLAGS_wal_dir,
+                 strings::Split(FLAGS_data_dirs, ",", strings::SkipEmpty()),
                  FLAGS_headers_only ? FsTool::HEADERS_ONLY : FsTool::MAXIMUM);
   CHECK_OK(fs_tool.Init());
 

@@ -5,18 +5,23 @@
 
 #include <gflags/gflags.h>
 
+#include "kudu/gutil/strings/split.h"
 #include "kudu/master/master.h"
 #include "kudu/util/env.h"
 
 namespace kudu {
 namespace master {
 
-DEFINE_string(master_base_dir, "/tmp/kudu-master",
-              "Base directory for kudu master server");
+DEFINE_string(master_wal_dir, "/tmp/kudu-master",
+              "Directory where the Master will place its write-ahead logs. "
+              "May be the same as --master_data_dirs");
+DEFINE_string(master_data_dirs, "/tmp/kudu-master",
+              "Comma-separated list of directories where the Master will "
+              "place its data blocks");
 
 DEFINE_string(master_rpc_bind_addresses, "0.0.0.0:7051",
-             "Comma-separated list of addresses for the Tablet Server"
-              " to bind to for RPC connections");
+              "Comma-separated list of addresses for the Master to bind "
+              "to for RPC connections");
 
 DEFINE_string(master_quorum, "",
               "Comma-separated list of all the RPC addresses for Master quorum."
@@ -40,7 +45,9 @@ MasterOptions::MasterOptions() {
   // The rest of the web server options are not overridable on a per-tablet-server
   // basis.
 
-  base_dir = FLAGS_master_base_dir;
+  wal_dir = FLAGS_master_wal_dir;
+  data_dirs = strings::Split(FLAGS_master_data_dirs, ",",
+                             strings::SkipEmpty());
 
   env = Env::Default();
 

@@ -93,8 +93,10 @@ public class BaseKuduTest {
       int port = startMasters(PORT_START, NUM_MASTERS, baseDirPath);
       for (int i = 0; i < NUM_TABLET_SERVERS; i++) {
         port = TestUtils.findFreePort(port);
+        String dataDirPath = baseDirPath + "/ts-" + i + "-" + now;
         String[] tsCmdLine = {"kudu-tablet_server", "--flagfile=" + FLAGS_PATH,
-            "--tablet_server_base_dir=" + baseDirPath + "/ts-" + i + "-" + now,
+            "--tablet_server_wal_dir=" + dataDirPath,
+            "--tablet_server_data_dirs=" + dataDirPath,
             "--tablet_server_master_addrs=" + masterQuorum,
             "--tablet_server_rpc_bind_addresses=127.0.0.1:" + port,
             "--use_hybrid_clock=true",
@@ -144,6 +146,7 @@ public class BaseKuduTest {
     masterQuorum = NetUtil.hostsAndPortsToString(masterHostPorts);
     for (int i = 0; i < numMasters; i++) {
       long now = System.currentTimeMillis();
+      String dataDirPath = baseDirPath + "/master-" + i + "-" + now;
       // The web port must be reserved in the call to findFreePorts above and specified
       // to avoid the scenario where:
       // 1) findFreePorts finds RPC ports a, b, c for the 3 masters.
@@ -152,7 +155,8 @@ public class BaseKuduTest {
       // started yet and findFreePort(s) is "check-time-of-use" (it does not reserve the
       // ports, only checks that when it was last called, these ports could be used).
       List<String> masterCmdLine = Lists.newArrayList("kudu-master", "--flagfile=" + FLAGS_PATH,
-          "--master_base_dir=" + baseDirPath + "/master-" + i + "-" + now,
+          "--master_wal_dir=" + dataDirPath,
+          "--master_data_dirs=" + dataDirPath,
           "--use_hybrid_clock=true",
           "--master_rpc_bind_addresses=127.0.0.1:" + masterRpcPorts.get(i),
           "--master_web_port=" + masterWebPorts.get(i),

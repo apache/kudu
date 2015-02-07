@@ -51,12 +51,12 @@ class KuduTabletTest : public KuduTest {
     opts.enable_metrics = true;
     bool first_time = harness_ == NULL;
     harness_.reset(new TabletHarness(schema_, opts));
-    ASSERT_OK(harness_->Create(first_time));
+    CHECK_OK(harness_->Create(first_time));
   }
 
   void SetUpTestTablet(const string& root_dir = "") {
     CreateTestTablet(root_dir);
-    ASSERT_OK(harness_->Open());
+    CHECK_OK(harness_->Open());
   }
 
   void TabletReOpen(const string& root_dir = "") {

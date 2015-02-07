@@ -5,19 +5,25 @@
 
 #include "kudu/tools/fs_tool.h"
 
-#include <boost/assign/list_of.hpp>
-#include <boost/foreach.hpp>
-#include <glog/logging.h>
-#include <gflags/gflags.h>
+#include <iostream>
 #include <sstream>
 #include <tr1/memory>
-#include <iostream>
 #include <vector>
 
+#include <boost/assign/list_of.hpp>
+#include <boost/foreach.hpp>
+#include <gflags/gflags.h>
+#include <glog/logging.h>
+
+#include "kudu/gutil/strings/split.h"
 #include "kudu/util/logging.h"
 
-DEFINE_string(base_dir, "/tmp/demo-tablets", "Base directory for local files");
-DEFINE_bool(verbose, false, "Print additional information (e.g., log segment headers)");
+DEFINE_string(wal_dir, "/tmp/demo-tablets",
+              "Directory of log segments");
+DEFINE_string(data_dirs, "/tmp/demo-tablets",
+              "Comma-separated list of directories for data blocks");
+DEFINE_bool(verbose, false,
+            "Print additional information (e.g., log segment headers)");
 
 namespace kudu {
 namespace tools {
@@ -58,7 +64,8 @@ const vector<CommandHandler> kCommandHandlers = boost::assign::list_of
                     "List block for tablet (optionally accepts a tablet id)."));
 
 void PrintUsageToStream(const string& prog_name, std::ostream* out) {
-  *out << "Usage: " << prog_name << " [-verbose] -base_dir <dir> <command> [option] "
+  *out << "Usage: " << prog_name << " [-verbose] "
+       << "-wal_dir <dir> -data_dirs <dirs> <command> [option] "
        << std::endl << std::endl
        << "Commands: " << std::endl;
   BOOST_FOREACH(const CommandHandler& handler, kCommandHandlers) {
@@ -97,8 +104,8 @@ static int FsListToolMain(int argc, char** argv) {
   google::ParseCommandLineFlags(&argc, &argv, true);
   InitGoogleLoggingSafe(argv[0]);
 
-  if (FLAGS_base_dir == "") {
-    Usage(argv[0], "'-base_dir' is required");
+  if (FLAGS_wal_dir.empty() || FLAGS_data_dirs.empty()) {
+    Usage(argv[0], "'-wal_dir' and '-data_dirs' are required");
     return 2;
   }
 
@@ -107,10 +114,10 @@ static int FsListToolMain(int argc, char** argv) {
     return 2;
   }
 
-  FsTool fs_tool(FLAGS_base_dir,
+  FsTool fs_tool(FLAGS_wal_dir,
+                 strings::Split(FLAGS_data_dirs, ",", strings::SkipEmpty()),
                  FLAGS_verbose ? FsTool::HEADERS_ONLY : FsTool::MINIMUM);
-  CHECK_OK_PREPEND(fs_tool.Init(),
-                   "Error initializing file system tool for in: " + FLAGS_base_dir);
+  CHECK_OK_PREPEND(fs_tool.Init(), "Error initializing file system tool");
 
   switch (cmd) {
     case FS_TREE: {

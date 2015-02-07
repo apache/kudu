@@ -6,6 +6,7 @@
 #include <glog/logging.h>
 #include <gflags/gflags.h>
 
+#include "kudu/gutil/strings/split.h"
 #include "kudu/master/master.h"
 #include "kudu/tserver/tablet_server.h"
 #include "kudu/util/env.h"
@@ -13,8 +14,12 @@
 namespace kudu {
 namespace tserver {
 
-DEFINE_string(tablet_server_base_dir, "/tmp/demo-tablets",
-              "Base directory for single-tablet demo server");
+DEFINE_string(tablet_server_wal_dir, "/tmp/demo-tablets",
+              "Directory where the Tablet Server will place its "
+              "write-ahead logs. May be the same as --tablet_server_data_dirs");
+DEFINE_string(tablet_server_data_dirs, "/tmp/demo-tablets",
+              "Comma-separated list of directories where the Tablet "
+              "Server will place its data blocks");
 
 DEFINE_string(tablet_server_rpc_bind_addresses, "0.0.0.0:7050",
              "Comma-separated list of addresses for the Tablet Server"
@@ -42,7 +47,9 @@ TabletServerOptions::TabletServerOptions() {
   // The rest of the web server options are not overridable on a per-tablet-server
   // basis.
 
-  base_dir = FLAGS_tablet_server_base_dir;
+  wal_dir = FLAGS_tablet_server_wal_dir;
+  data_dirs = strings::Split(FLAGS_tablet_server_data_dirs, ",",
+                             strings::SkipEmpty());
 
   Status s = HostPort::ParseStrings(FLAGS_tablet_server_master_addrs,
                                     master::Master::kDefaultPort,

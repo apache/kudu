@@ -1,11 +1,13 @@
 // Copyright (c) 2013, Cloudera, inc.
 // Confidential Cloudera Information: Covered by NDA.
 
+#include <boost/assign/list_of.hpp>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
 #include "kudu/fs/block_manager.h"
 #include "kudu/fs/fs_manager.h"
+#include "kudu/gutil/strings/util.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
@@ -54,6 +56,23 @@ TEST_F(FsManagerTestBase, TestBaseOperations) {
   TestReadWriteDataFile(Slice("test1"));
 
   fs_manager()->DumpFileSystemTree(std::cout);
+}
+
+TEST_F(FsManagerTestBase, TestWhitespaceInPaths) {
+  gscoped_ptr<FsManager> new_fs_manager(new FsManager(env_.get(),
+                                                      "  /foo\n\t"));
+  ASSERT_TRUE(HasPrefixString(new_fs_manager->GetDataRootDir(), "/foo/"));
+  ASSERT_TRUE(HasPrefixString(new_fs_manager->GetWalsRootDir(), "/foo/"));
+}
+
+TEST_F(FsManagerTestBase, TestMultiplePaths) {
+  string wal_path = GetTestPath("a");
+  vector<string> data_paths = boost::assign::list_of(
+      GetTestPath("a"))(GetTestPath("b"))(GetTestPath("c"));
+  gscoped_ptr<FsManager> new_fs_manager(new FsManager(env_.get(),
+                                                      wal_path, data_paths));
+  ASSERT_OK(new_fs_manager->CreateInitialFileSystemLayout());
+  ASSERT_OK(new_fs_manager->Open());
 }
 
 } // namespace kudu
