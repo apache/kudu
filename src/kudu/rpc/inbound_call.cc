@@ -61,18 +61,22 @@ void InboundCall::RespondFailure(ErrorStatusPB::RpcErrorCodePB error_code,
 void InboundCall::RespondApplicationError(int error_ext_id, const std::string& message,
                                           const MessageLite& app_error_pb) {
   ErrorStatusPB err;
-  err.set_message(message);
+  ApplicationErrorToPB(error_ext_id, message, app_error_pb, &err);
+  Respond(err, false);
+}
 
+void InboundCall::ApplicationErrorToPB(int error_ext_id, const std::string& message,
+                                       const google::protobuf::MessageLite& app_error_pb,
+                                       ErrorStatusPB* err) {
+  err->set_message(message);
   const FieldDescriptor* app_error_field =
-    err.GetReflection()->FindKnownExtensionByNumber(error_ext_id);
+    err->GetReflection()->FindKnownExtensionByNumber(error_ext_id);
   if (app_error_field != NULL) {
-    err.GetReflection()->MutableMessage(&err, app_error_field)->CheckTypeAndMergeFrom(app_error_pb);
+    err->GetReflection()->MutableMessage(err, app_error_field)->CheckTypeAndMergeFrom(app_error_pb);
   } else {
     LOG(DFATAL) << "Unable to find application error extension ID " << error_ext_id
                 << " (message=" << message << ")";
   }
-
-  Respond(err, false);
 }
 
 void InboundCall::Respond(const MessageLite& response,

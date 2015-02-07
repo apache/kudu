@@ -97,6 +97,12 @@ class InboundCall {
   void RespondApplicationError(int error_ext_id, const std::string& message,
                                const google::protobuf::MessageLite& app_error_pb);
 
+  // Convert an application error extension to an ErrorStatusPB.
+  // These ErrorStatusPB objects are what are returned in application error responses.
+  static void ApplicationErrorToPB(int error_ext_id, const std::string& message,
+                                   const google::protobuf::MessageLite& app_error_pb,
+                                   ErrorStatusPB* err);
+
   // Serialize the response packet for the finished call.
   // The resulting slices refer to memory in this object.
   void SerializeResponseTo(std::vector<Slice>* slices) const;
