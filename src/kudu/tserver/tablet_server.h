@@ -73,7 +73,7 @@ class TabletServer : public server::ServerBase {
   }
 
  private:
-  friend class TabletServerTest;
+  friend class TabletServerTestBase;
 
   Status ValidateMasterAddressResolution() const;
 

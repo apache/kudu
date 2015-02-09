@@ -42,7 +42,7 @@ using strings::Substitute;
 static const int kMaxRetries = 20;
 
 // A base for tablet server integration tests.
-class TabletServerIntegrationTestBase : public TabletServerTest {
+class TabletServerIntegrationTestBase : public TabletServerTestBase {
  public:
 
   TabletServerIntegrationTestBase() : random_(SeedRandom()) {}
@@ -66,7 +66,7 @@ class TabletServerIntegrationTestBase : public TabletServerTest {
   typedef std::tr1::unordered_map<string, TServerDetails*> TabletServerMap;
 
   void SetUp() OVERRIDE {
-    TabletServerTest::SetUp();
+    TabletServerTestBase::SetUp();
   }
 
   void AddExtraFlags(const string& flags_str, vector<string>* flags) {

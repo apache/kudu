@@ -53,11 +53,11 @@ DECLARE_int32(heartbeat_rpc_timeout_ms);
 namespace kudu {
 namespace tserver {
 
-class TabletServerTest : public KuduTest {
+class TabletServerTestBase : public KuduTest {
  public:
   typedef pair<uint32_t, uint32_t> KeyValue;
 
-  TabletServerTest()
+  TabletServerTestBase()
     : schema_(GetSimpleTestSchema()),
       ts_test_metric_context_(&ts_test_metric_registry_, "ts_server-test") {
 
@@ -89,8 +89,6 @@ class TabletServerTest : public KuduTest {
 
     key_schema_ = schema_.CreateKeyProjection();
     rb_.reset(new RowBuilder(schema_));
-
-    StartTabletServer();
   }
 
   virtual void StartTabletServer() {
@@ -410,8 +408,8 @@ class TabletServerTest : public KuduTest {
   void* shared_region_;
 };
 
-const char* TabletServerTest::kTableId = "TestTable";
-const char* TabletServerTest::kTabletId = "TestTablet";
+const char* TabletServerTestBase::kTableId = "TestTable";
+const char* TabletServerTestBase::kTabletId = "TestTablet";
 
 } // namespace tserver
 } // namespace kudu

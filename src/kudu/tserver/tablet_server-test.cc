@@ -39,6 +39,15 @@ METRIC_DECLARE_counter(rows_deleted);
 namespace kudu {
 namespace tserver {
 
+class TabletServerTest : public TabletServerTestBase {
+ public:
+  // Starts the tablet server, override to start it later.
+  virtual void SetUp() OVERRIDE {
+    TabletServerTestBase::SetUp();
+    StartTabletServer();
+  }
+};
+
 TEST_F(TabletServerTest, TestPingServer) {
   // Ping the server.
   PingRequestPB req;

@@ -13,7 +13,7 @@ DECLARE_bool(enable_maintenance_manager);
 namespace kudu {
 namespace tserver {
 
-class TSStressTest : public TabletServerTest {
+class TSStressTest : public TabletServerTestBase {
  public:
   TSStressTest()
     : start_latch_(FLAGS_num_inserter_threads) {
@@ -29,7 +29,8 @@ class TSStressTest : public TabletServerTest {
   }
 
   virtual void SetUp() OVERRIDE {
-    TabletServerTest::SetUp();
+    TabletServerTestBase::SetUp();
+    StartTabletServer();
     HistogramPrototype hist_proto("insert-latency",
                                   MetricUnit::kMicroseconds,
                                   "Insert latency seen on client",

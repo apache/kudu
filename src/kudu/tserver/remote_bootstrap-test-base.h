@@ -22,10 +22,11 @@ namespace tserver {
 
 using consensus::MinimumOpId;
 
-class RemoteBootstrapTest : public TabletServerTest {
+class RemoteBootstrapTest : public TabletServerTestBase {
  public:
   virtual void SetUp() OVERRIDE {
-    TabletServerTest::SetUp();
+    TabletServerTestBase::SetUp();
+    StartTabletServer();
     // Prevent logs from being deleted out from under us until / unless we want
     // to test that we are anchoring correctly. Since GenerateTestData() does a
     // Flush(), Log GC is allowed to eat the logs before we get around to
@@ -37,7 +38,7 @@ class RemoteBootstrapTest : public TabletServerTest {
 
   virtual void TearDown() OVERRIDE {
     ASSERT_OK(tablet_peer_->tablet()->log_anchor_registry()->Unregister(&anchor_));
-    TabletServerTest::TearDown();
+    TabletServerTestBase::TearDown();
   }
 
  protected:
