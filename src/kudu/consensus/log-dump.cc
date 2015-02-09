@@ -65,7 +65,8 @@ void PrintIdOnly(const LogEntryPB& entry) {
   switch (entry.type()) {
     case log::REPLICATE:
     {
-      cout << entry.replicate().id().term() << "." << entry.replicate().id().index() << "\t";
+      cout << entry.replicate().id().term() << "." << entry.replicate().id().index()
+           << "@" << entry.replicate().timestamp() << "\t";
       cout << "REPLICATE "
            << OperationType_Name(entry.replicate().op_type());
       break;
