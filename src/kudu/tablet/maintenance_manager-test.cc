@@ -64,7 +64,7 @@ class TestMaintenanceOp : public MaintenanceOp {
     : MaintenanceOp(name),
       state_(state),
       ram_anchored_(500),
-      logs_retained_mb_(0),
+      logs_retained_bytes_(0),
       perf_improvement_(0),
       metric_ctx_(&metric_registry_, "test"),
       duration_histogram_(METRIC_duration_histogram.Instantiate(metric_ctx_)),
@@ -96,7 +96,7 @@ class TestMaintenanceOp : public MaintenanceOp {
     boost::lock_guard<boost::mutex> guard(lock_);
     stats->runnable = (state_ == OP_RUNNABLE);
     stats->ram_anchored = ram_anchored_;
-    stats->logs_retained_mb = logs_retained_mb_;
+    stats->logs_retained_bytes = logs_retained_bytes_;
     stats->perf_improvement = perf_improvement_;
   }
 
@@ -137,9 +137,9 @@ class TestMaintenanceOp : public MaintenanceOp {
     ram_anchored_ = ram_anchored;
   }
 
-  void set_logs_retained_mb_(uint64_t logs_retained_mb) {
+  void set_logs_retained_bytes(uint64_t logs_retained_bytes) {
     boost::lock_guard<boost::mutex> guard(lock_);
-    logs_retained_mb_ = logs_retained_mb;
+    logs_retained_bytes_ = logs_retained_bytes;
   }
 
   void set_perf_improvement(uint64_t perf_improvement) {
@@ -160,7 +160,7 @@ class TestMaintenanceOp : public MaintenanceOp {
   boost::condition_variable state_change_cond_;
   enum TestMaintenanceOpState state_;
   uint64_t ram_anchored_;
-  uint64_t logs_retained_mb_;
+  uint64_t logs_retained_bytes_;
   uint64_t perf_improvement_;
   MetricRegistry metric_registry_;
   MetricContext metric_ctx_;
@@ -210,7 +210,7 @@ TEST_F(MaintenanceManagerTest, TestLogRetentionPrioritization) {
   TestMaintenanceOp op1("op1", OP_RUNNABLE);
   op1.set_perf_improvement(0);
   op1.set_ram_anchored(100);
-  op1.set_logs_retained_mb_(100);
+  op1.set_logs_retained_bytes(100);
   manager_->RegisterOp(&op1);
 
   MaintenanceOp* best_op = manager_->FindBestOp();
@@ -219,7 +219,7 @@ TEST_F(MaintenanceManagerTest, TestLogRetentionPrioritization) {
   TestMaintenanceOp op2("op2", OP_RUNNABLE);
   op2.set_perf_improvement(0);
   op2.set_ram_anchored(200);
-  op2.set_logs_retained_mb_(100);
+  op2.set_logs_retained_bytes(100);
   manager_->RegisterOp(&op2);
 
   best_op = manager_->FindBestOp();

@@ -73,7 +73,7 @@ message MaintenanceManagerStatusPB {
     required uint32 running = 2;
     required bool runnable = 3;
     required uint64 ram_anchored_bytes = 4;
-    required int32 ts_anchored_secs = 5;
+    required int64 logs_retained_bytes = 5;
     required double perf_improvement = 6;
   }
 

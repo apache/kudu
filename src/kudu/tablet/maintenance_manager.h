@@ -38,10 +38,9 @@ struct MaintenanceOpStats {
   // should be fairly accurate.  May be 0.
   uint64_t ram_anchored;
 
-  // The approximate amount of memory that not doing this operation keeps us from GCing from
+  // The approximate amount of disk space that not doing this operation keeps us from GCing from
   // the logs. May be 0.
-  // TODO bytes and int64.
-  int32_t logs_retained_mb;
+  int64_t logs_retained_bytes;
 
   // The estimated performance improvement-- how good it is to do this on some
   // absolute scale (yet TBD).

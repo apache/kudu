@@ -74,8 +74,8 @@ void FlushMRSOp::UpdateStats(MaintenanceOpStats* stats) {
   tablet_peer_->GetEarliestNeededLogIndex(&min_log_index);
   std::map<int64_t, int64_t> max_idx_to_segment_size;
   tablet_peer_->log()->GetMaxIndexesToSegmentSizeMap(min_log_index, &max_idx_to_segment_size);
-  stats->logs_retained_mb =
-      tablet_peer_->tablet()->MemRowSetLogRetentionSize(max_idx_to_segment_size) / 1024 / 1024;
+  stats->logs_retained_bytes =
+      tablet_peer_->tablet()->MemRowSetLogRetentionSize(max_idx_to_segment_size);
 
   // TODO: use workload statistics here to find out how "hot" the tablet has
   // been in the last 5 minutes.
@@ -129,7 +129,7 @@ void FlushDeltaMemStoresOp::UpdateStats(MaintenanceOpStats* stats) {
 
   stats->ram_anchored = dms_size;
   stats->runnable = true;
-  stats->logs_retained_mb = retention_size / 1024 / 1024;
+  stats->logs_retained_bytes = retention_size;
 
   SetPerfImprovementForFlush(stats,
                              time_since_flush_.elapsed().wall_millis(),
@@ -180,7 +180,7 @@ void LogGCOp::UpdateStats(MaintenanceOpStats* stats) {
   tablet_peer_->GetEarliestNeededLogIndex(&min_log_index);
   CHECK_OK(tablet_peer_->log()->GetGCableDataSize(min_log_index, &retention_size));
 
-  stats->logs_retained_mb = retention_size / 1024 / 1024;
+  stats->logs_retained_bytes = retention_size;
 
   stats->ram_anchored = 0;
   stats->runnable = sem_.GetValue() == 1;
