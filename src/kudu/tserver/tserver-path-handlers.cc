@@ -465,14 +465,6 @@ void TabletServerPathHandlers::HandleMaintenanceManagerPage(const Webserver::Web
   MaintenanceManagerStatusPB pb;
   manager->GetMaintenanceManagerStatusDump(&pb);
 
-  *output << "<h3>Best maintenance operation to run: ";
-  if (pb.has_best_op()) {
-    *output << EscapeForHtmlToString(pb.best_op().name());
-  } else {
-    *output << "None";
-  }
-  *output << "</h3>\n";
-
   int ops_count = pb.registered_operations_size();
 
   *output << "<h3>Running operations</h3>\n";
@@ -502,13 +494,14 @@ void TabletServerPathHandlers::HandleMaintenanceManagerPage(const Webserver::Web
 
   *output << "<h3>Non-running operations</h3>\n";
   *output << "<table class='table table-striped'>\n";
-  *output << "  <tr><th>Name</th><th>RAM anchored</th></tr>\n";
+  *output << "  <tr><th>Name</th><th>RAM anchored</th><th>Logs retained</th></tr>\n";
   for (int i = 0; i < ops_count; i++) {
     MaintenanceManagerStatusPB_MaintenanceOpPB op_pb = pb.registered_operations(i);
     if (op_pb.running() == 0) {
-      *output <<  Substitute("<tr><td>$0</td><td>$1</td></tr>\n",
+      *output <<  Substitute("<tr><td>$0</td><td>$1</td><td>$2</td></tr>\n",
                              EscapeForHtmlToString(op_pb.name()),
-                             HumanReadableNumBytes::ToString(op_pb.ram_anchored_bytes()));
+                             HumanReadableNumBytes::ToString(op_pb.ram_anchored_bytes()),
+                             HumanReadableNumBytes::ToString(op_pb.logs_retained_bytes()));
     }
   }
   *output << "</table>\n";
