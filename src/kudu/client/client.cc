@@ -632,13 +632,23 @@ Status KuduScanner::SetReadMode(ReadMode read_mode) {
   return Status::OK();
 }
 
-Status KuduScanner::SetSnapshot(uint64_t snapshot_timestamp_micros) {
+Status KuduScanner::SetSnapshotMicros(uint64_t snapshot_timestamp_micros) {
   if (data_->open_) {
     return Status::IllegalState("Snapshot timestamp must be set before Open()");
   }
   // Shift the HT timestamp bits to get well-formed HT timestamp with the logical
   // bits zeroed out.
   data_->snapshot_timestamp_ = snapshot_timestamp_micros << kHtTimestampBitsToShift;
+  return Status::OK();
+}
+
+Status KuduScanner::SetSnapshotRaw(uint64_t snapshot_timestamp) {
+  if (data_->open_) {
+    return Status::IllegalState("Snapshot timestamp must be set before Open()");
+  }
+  // Shift the HT timestamp bits to get well-formed HT timestamp with the logical
+  // bits zeroed out.
+  data_->snapshot_timestamp_ = snapshot_timestamp;
   return Status::OK();
 }
 

@@ -746,8 +746,13 @@ class KUDU_EXPORT KuduScanner {
   // Sets the ReadMode. Default is READ_LATEST.
   Status SetReadMode(ReadMode read_mode) WARN_UNUSED_RESULT;
 
-  // Sets the snapshot timestamp for scans in READ_AT_SNAPSHOT mode.
-  Status SetSnapshot(uint64_t snapshot_timestamp_micros) WARN_UNUSED_RESULT;
+  // Sets the snapshot timestamp, in microseconds since the epoch, for scans in
+  // READ_AT_SNAPSHOT mode.
+  Status SetSnapshotMicros(uint64_t snapshot_timestamp_micros) WARN_UNUSED_RESULT;
+
+  // Sets the snapshot timestamp in raw encoded form (i.e. as returned by a
+  // previous call to a server), for scans in READ_AT_SNAPSHOT mode.
+  Status SetSnapshotRaw(uint64_t snapshot_timestamp_micros) WARN_UNUSED_RESULT;
 
   // Sets the maximum time that Open() and NextBatch() are allowed to take.
   Status SetTimeoutMillis(int millis);

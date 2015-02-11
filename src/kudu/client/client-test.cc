@@ -508,7 +508,7 @@ TEST_F(ClientTest, TestScanAtSnapshot) {
   // Now close the scanner and perform a scan at 'ts'
   scanner.Close();
   ASSERT_STATUS_OK(scanner.SetReadMode(KuduScanner::READ_AT_SNAPSHOT));
-  ASSERT_STATUS_OK(scanner.SetSnapshot(ts));
+  ASSERT_STATUS_OK(scanner.SetSnapshotMicros(ts));
   ASSERT_STATUS_OK(scanner.Open());
 
   sum = 0;
