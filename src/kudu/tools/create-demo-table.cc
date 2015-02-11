@@ -40,7 +40,11 @@ static const char* const kYCSBTabletId = "ycsb";
 namespace kudu {
 
 void PrintUsage(char** argv) {
-  std::cerr << "usage: " << argv[0] << " <table name>" << std::endl;
+  std::cerr << "usage: " << argv[0] << " "
+            << kTwitterTabletId << "|"
+            << kTPCH1TabletId << "|"
+            << kYCSBTabletId
+            << std::endl;
 }
 
 string LoadFile(const string& path) {
