@@ -149,48 +149,71 @@ Status RowSetMetadata::CommitUndoDeltaDataBlock(const BlockId& block_id) {
   return Status::OK();
 }
 
-Status RowSetMetadata::CommitUpdate(const RowSetMetadataUpdate& update,
-                                    vector<BlockId>* removed_blocks) {
+Status RowSetMetadata::CommitUpdate(const RowSetMetadataUpdate& update) {
   vector<BlockId> removed;
-  boost::lock_guard<LockType> l(deltas_lock_);
+  {
+    boost::lock_guard<LockType> l(deltas_lock_);
 
-  BOOST_FOREACH(const RowSetMetadataUpdate::ReplaceDeltaBlocks rep, update.replace_redo_blocks_) {
-    CHECK(!rep.to_remove.empty());
+    BOOST_FOREACH(const RowSetMetadataUpdate::ReplaceDeltaBlocks rep,
+                  update.replace_redo_blocks_) {
+      CHECK(!rep.to_remove.empty());
 
-    vector<BlockId>::iterator start_it =
-      std::find(redo_delta_blocks_.begin(), redo_delta_blocks_.end(), rep.to_remove[0]);
+      vector<BlockId>::iterator start_it =
+          std::find(redo_delta_blocks_.begin(),
+                    redo_delta_blocks_.end(), rep.to_remove[0]);
 
-    vector<BlockId>::iterator end_it = start_it;
-    BOOST_FOREACH(const BlockId& b, rep.to_remove) {
-      if (end_it == redo_delta_blocks_.end() || *end_it != b) {
-        return Status::InvalidArgument(
-          Substitute("Cannot find subsequence <$0> in <$1>",
-                     BlockId::JoinStrings(rep.to_remove),
-                     BlockId::JoinStrings(redo_delta_blocks_)));
+      vector<BlockId>::iterator end_it = start_it;
+      BOOST_FOREACH(const BlockId& b, rep.to_remove) {
+        if (end_it == redo_delta_blocks_.end() || *end_it != b) {
+          return Status::InvalidArgument(
+              Substitute("Cannot find subsequence <$0> in <$1>",
+                         BlockId::JoinStrings(rep.to_remove),
+                         BlockId::JoinStrings(redo_delta_blocks_)));
+        }
+        ++end_it;
       }
-      ++end_it;
+
+      removed.insert(removed.end(), start_it, end_it);
+      redo_delta_blocks_.erase(start_it, end_it);
+      redo_delta_blocks_.insert(start_it, rep.to_add.begin(), rep.to_add.end());
     }
 
-    removed.insert(removed.end(), start_it, end_it);
-    redo_delta_blocks_.erase(start_it, end_it);
-    redo_delta_blocks_.insert(start_it, rep.to_add.begin(), rep.to_add.end());
+    // Add new redo blocks
+    BOOST_FOREACH(const BlockId& b, update.new_redo_blocks_) {
+      redo_delta_blocks_.push_back(b);
+    }
+
+    typedef std::pair<int, BlockId> IntBlockPair;
+    BOOST_FOREACH(const IntBlockPair& e, update.cols_to_replace_) {
+      CHECK_LT(e.first, column_blocks_.size());
+      BlockId& old = column_blocks_[e.first];
+      removed.push_back(old);
+      old = e.second;
+    }
   }
 
-  // Add new redo blocks
-  BOOST_FOREACH(const BlockId& b, update.new_redo_blocks_) {
-    redo_delta_blocks_.push_back(b);
+  // Should only be NULL in tests.
+  if (tablet_metadata()) {
+    tablet_metadata()->AddOrphanedBlocks(removed);
   }
-
-  typedef std::pair<int, BlockId> IntBlockPair;
-  BOOST_FOREACH(const IntBlockPair& e, update.cols_to_replace_) {
-    CHECK_LT(e.first, column_blocks_.size());
-    BlockId& old = column_blocks_[e.first];
-    removed.push_back(old);
-    old = e.second;
-  }
-
-  *removed_blocks = removed;
   return Status::OK();
+}
+
+vector<BlockId> RowSetMetadata::GetAllBlocks() {
+  vector<BlockId> blocks;
+  if (!adhoc_index_block_.IsNull()) {
+    blocks.push_back(adhoc_index_block_);
+  }
+  if (!bloom_block_.IsNull()) {
+    blocks.push_back(bloom_block_);
+  }
+  blocks.insert(blocks.end(),
+                column_blocks_.begin(), column_blocks_.end());
+  blocks.insert(blocks.end(),
+                undo_delta_blocks_.begin(), undo_delta_blocks_.end());
+  blocks.insert(blocks.end(),
+                redo_delta_blocks_.begin(), redo_delta_blocks_.end());
+  return blocks;
 }
 
 RowSetMetadataUpdate::RowSetMetadataUpdate() {

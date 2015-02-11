@@ -79,6 +79,13 @@ message TabletSuperBlockPB {
 
   // The last known remote bootstrap state of the tablet.
   required TabletBootstrapStatePB remote_bootstrap_state = 10;
+
+  // Blocks that became orphans after flushing this superblock. In other
+  // words, the set difference of the blocks belonging to the previous
+  // superblock and this one.
+  //
+  // It's always safe to delete the blocks found here.
+  repeated BlockIdPB orphaned_blocks = 11;
 }
 
 // The enum of tablet states.

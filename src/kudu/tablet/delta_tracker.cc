@@ -218,8 +218,7 @@ Status DeltaTracker::CompactStores(int start_idx, int end_idx) {
   update.ReplaceRedoDeltaBlocks(compacted_blocks, list_of(new_block_id));
   // TODO: need to have some error handling here -- if we somehow can't persist the
   // metadata, do we end up losing data on recovery?
-  vector<BlockId> removed_blocks;
-  CHECK_OK(rowset_metadata_->CommitUpdate(update, &removed_blocks));
+  CHECK_OK(rowset_metadata_->CommitUpdate(update));
 
   Status s = rowset_metadata_->Flush();
   if (!s.ok()) {
@@ -230,15 +229,6 @@ Status DeltaTracker::CompactStores(int start_idx, int end_idx) {
     return s;
   }
 
-  // If the flush succeeded, delete the now orphaned blocks.
-  s = fs->DeleteBlocks(removed_blocks);
-  if (PREDICT_TRUE(s.ok())) {
-    LOG(INFO) << "Deleted " << removed_blocks.size() << " orphaned blocks "
-              << "after minor delta compaction";
-  } else {
-    LOG(WARNING) << "Failed to delete orphaned blocks after minor delta "
-                 << "compaction: " << s.ToString();
-  }
   return Status::OK();
 }
 

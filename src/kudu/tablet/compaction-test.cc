@@ -8,11 +8,13 @@
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
+#include "kudu/common/partial_row.h"
 #include "kudu/consensus/log_anchor_registry.h"
 #include "kudu/consensus/opid_util.h"
 #include "kudu/gutil/strings/util.h"
 #include "kudu/server/logical_clock.h"
 #include "kudu/tablet/compaction.h"
+#include "kudu/tablet/local_tablet_writer.h"
 #include "kudu/tablet/tablet-test-util.h"
 #include "kudu/util/stopwatch.h"
 #include "kudu/util/test_util.h"
@@ -328,6 +330,13 @@ class TestCompaction : public KuduRowSetTest {
     }
   }
 
+  Status GetDataDiskSpace(uint64_t* bytes_used) {
+    *bytes_used = 0;
+    return env_->Walk(fs_manager()->GetDataRootDir(),
+                      Env::PRE_ORDER, Bind(&TestCompaction::GetDataDiskSpaceCb,
+                                           Unretained(this), bytes_used));
+  }
+
  protected:
   OpId op_id_;
 
@@ -336,6 +345,18 @@ class TestCompaction : public KuduRowSetTest {
   MvccManager mvcc_;
 
   scoped_refptr<LogAnchorRegistry> log_anchor_registry_;
+
+ private:
+
+  Status GetDataDiskSpaceCb(uint64_t* bytes_used,
+                            Env::FileType type,
+                            const string& dirname, const string& basename) {
+    uint64_t file_bytes_used = 0;
+    RETURN_NOT_OK(env_->GetFileSizeOnDisk(
+        JoinPathSegments(dirname, basename), &file_bytes_used));
+    *bytes_used += file_bytes_used;
+    return Status::OK();
+  }
 };
 
 TEST_F(TestCompaction, TestMemRowSetInput) {
@@ -634,6 +655,39 @@ TEST_F(TestCompaction, BenchmarkMergeWithOverlap) {
   ASSERT_NO_FATAL_FAILURE(DoBenchmark<true>());
 }
 #endif
+
+TEST_F(TestCompaction, TestCompactionFreesDiskSpace) {
+  {
+    // We must force the LocalTabletWriter out of scope before measuring
+    // disk space usage. Otherwise some deleted blocks are kept open for
+    // reading and aren't properly deallocated by the block manager.
+    LocalTabletWriter writer(tablet().get(), &client_schema());
+    KuduPartialRow row(&client_schema());
+
+    for (int i = 0; i < 3; i++) {
+      for (int j = 0; j < 10; j++) {
+        int val = (i * 10) + j;
+        ASSERT_OK(row.SetStringCopy("key", strings::Substitute("hello $0", val)));
+        ASSERT_OK(row.SetUInt32("val", val));
+        ASSERT_OK(writer.Insert(row));
+      }
+      ASSERT_OK(tablet()->Flush());
+    }
+  }
+
+  uint64_t bytes_before;
+  ASSERT_NO_FATAL_FAILURE(GetDataDiskSpace(&bytes_before));
+
+  ASSERT_OK(tablet()->Compact(Tablet::FORCE_COMPACT_ALL));
+
+  uint64_t bytes_after;
+  ASSERT_NO_FATAL_FAILURE(GetDataDiskSpace(&bytes_after));
+
+  LOG(INFO) << "Data disk space before compaction: " << bytes_before;
+  LOG(INFO) << "Data disk space after compaction: " << bytes_after;
+  ASSERT_GT(bytes_before, bytes_after) <<
+      "Compaction did not reduce data block disk space usage";
+}
 
 } // namespace tablet
 } // namespace kudu

@@ -85,9 +85,6 @@ class FsManager {
 
   Status DeleteBlock(const BlockId& block_id);
 
-  // Tries to delete all blocks in 'block_ids', returning the first failure.
-  Status DeleteBlocks(const std::vector<BlockId>& block_ids);
-
   bool BlockExists(const BlockId& block_id) const;
 
   // ==========================================================================

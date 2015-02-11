@@ -132,9 +132,10 @@ class RowSetMetadata {
 
   // Atomically commit a set of changes to this object.
   //
-  // Writes the IDs of all blocks that were removed to 'removed_blocks'.
-  Status CommitUpdate(const RowSetMetadataUpdate& update,
-                      std::vector<BlockId>* removed_blocks);
+  // On success, calls TabletMetadata::AddOrphanedBlocks() on the removed blocks.
+  Status CommitUpdate(const RowSetMetadataUpdate& update);
+
+  std::vector<BlockId> GetAllBlocks();
 
  private:
   explicit RowSetMetadata(TabletMetadata *tablet_metadata)

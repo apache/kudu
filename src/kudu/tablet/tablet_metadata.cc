@@ -148,41 +148,56 @@ Status TabletMetadata::LoadFromDisk() {
   RETURN_NOT_OK(ReadSuperBlock(&superblock));
   VLOG(1) << "Loaded tablet superblock " << superblock.DebugString();
 
-  RETURN_NOT_OK_PREPEND(LoadFromSuperBlockUnlocked(superblock),
+  RETURN_NOT_OK_PREPEND(LoadFromSuperBlock(superblock),
                         "Failed to load data from superblock protobuf");
-
   state_ = kInitialized;
   return Status::OK();
 }
 
-Status TabletMetadata::LoadFromSuperBlockUnlocked(const TabletSuperBlockPB& superblock) {
-  // Verify that the tablet id matches with the one in the protobuf
-  if (superblock.oid() != master_block_.tablet_id()) {
-    return Status::Corruption("Expected id=" + master_block_.tablet_id() +
-                              " found " + superblock.oid(),
-                              superblock.DebugString());
+Status TabletMetadata::LoadFromSuperBlock(const TabletSuperBlockPB& superblock) {
+  {
+    boost::lock_guard<LockType> l(data_lock_);
+
+    // Verify that the tablet id matches with the one in the protobuf
+    if (superblock.oid() != master_block_.tablet_id()) {
+      return Status::Corruption("Expected id=" + master_block_.tablet_id() +
+                                " found " + superblock.oid(),
+                                superblock.DebugString());
+    }
+
+    sblk_sequence_ = superblock.sequence() + 1;
+    start_key_ = superblock.start_key();
+    end_key_ = superblock.end_key();
+    last_durable_mrs_id_ = superblock.last_durable_mrs_id();
+
+    table_name_ = superblock.table_name();
+    schema_version_ = superblock.schema_version();
+    RETURN_NOT_OK_PREPEND(SchemaFromPB(superblock.schema(), &schema_),
+                          "Failed to parse Schema from superblock " +
+                          superblock.ShortDebugString());
+    DCHECK(schema_.has_column_ids());
+
+    remote_bootstrap_state_ = superblock.remote_bootstrap_state();
+
+    BOOST_FOREACH(const RowSetDataPB& rowset_pb, superblock.rowsets()) {
+      gscoped_ptr<RowSetMetadata> rowset_meta;
+      RETURN_NOT_OK(RowSetMetadata::Load(this, rowset_pb, &rowset_meta));
+      next_rowset_idx_ = std::max(next_rowset_idx_, rowset_meta->id() + 1);
+      rowsets_.push_back(shared_ptr<RowSetMetadata>(rowset_meta.release()));
+    }
+
+    {
+      vector<BlockId> blocks;
+      BOOST_FOREACH(const BlockIdPB& block_pb, superblock.orphaned_blocks()) {
+        blocks.push_back(BlockId::FromPB(block_pb));
+      }
+      AddOrphanedBlocksUnlocked(blocks);
+    }
   }
 
-  sblk_sequence_ = superblock.sequence() + 1;
-  start_key_ = superblock.start_key();
-  end_key_ = superblock.end_key();
-  last_durable_mrs_id_ = superblock.last_durable_mrs_id();
-
-  table_name_ = superblock.table_name();
-  schema_version_ = superblock.schema_version();
-  RETURN_NOT_OK_PREPEND(SchemaFromPB(superblock.schema(), &schema_),
-                        "Failed to parse Schema from superblock " +
-                        superblock.ShortDebugString());
-  DCHECK(schema_.has_column_ids());
-
-  remote_bootstrap_state_ = superblock.remote_bootstrap_state();
-
-  BOOST_FOREACH(const RowSetDataPB& rowset_pb, superblock.rowsets()) {
-    gscoped_ptr<RowSetMetadata> rowset_meta;
-    RETURN_NOT_OK(RowSetMetadata::Load(this, rowset_pb, &rowset_meta));
-    next_rowset_idx_ = std::max(next_rowset_idx_, rowset_meta->id() + 1);
-    rowsets_.push_back(shared_ptr<RowSetMetadata>(rowset_meta.release()));
-  }
+  // Now is a good time to clean up any orphaned blocks that may have been
+  // left behind from a crash just after replacing the superblock.
+  DeleteOrphanedBlocks();
 
   return Status::OK();
 }
@@ -233,15 +248,6 @@ Status TabletMetadata::ReadSuperBlock(TabletSuperBlockPB *pb) {
 }
 
 Status TabletMetadata::UpdateAndFlush(const RowSetMetadataIds& to_remove,
-                                      const RowSetMetadataVector& to_add) {
-  {
-    boost::lock_guard<LockType> l(data_lock_);
-    RETURN_NOT_OK(UpdateUnlocked(to_remove, to_add, last_durable_mrs_id_));
-  }
-  return Flush();
-}
-
-Status TabletMetadata::UpdateAndFlush(const RowSetMetadataIds& to_remove,
                                       const RowSetMetadataVector& to_add,
                                       int64_t last_durable_mrs_id) {
   {
@@ -249,6 +255,46 @@ Status TabletMetadata::UpdateAndFlush(const RowSetMetadataIds& to_remove,
     RETURN_NOT_OK(UpdateUnlocked(to_remove, to_add, last_durable_mrs_id));
   }
   return Flush();
+}
+
+void TabletMetadata::AddOrphanedBlocks(const vector<BlockId>& blocks) {
+  boost::lock_guard<LockType> l(data_lock_);
+  AddOrphanedBlocksUnlocked(blocks);
+}
+
+void TabletMetadata::AddOrphanedBlocksUnlocked(const vector<BlockId>& blocks) {
+  DCHECK(data_lock_.is_locked());
+  orphaned_blocks_.insert(orphaned_blocks_.end(),
+                          blocks.begin(), blocks.end());
+}
+
+void TabletMetadata::DeleteOrphanedBlocks() {
+  vector<BlockId> blocks;
+  {
+    boost::lock_guard<LockType> l(data_lock_);
+    blocks.swap(orphaned_blocks_);
+  }
+  vector<BlockId> failed;
+  Status first_failure;
+  BOOST_FOREACH(const BlockId& b, blocks) {
+    Status s = fs_manager()->DeleteBlock(b);
+    if (s.IsNotFound()) {
+      continue;
+    }
+    WARN_NOT_OK(s, Substitute("Could not delete block $0", b.ToString()));
+    if (!s.ok()) {
+      failed.push_back(b);
+      if (first_failure.ok()) {
+        first_failure = s;
+      }
+    }
+  }
+
+  if (!first_failure.ok()) {
+    AddOrphanedBlocks(failed);
+    LOG(WARNING) << "Could not delete " << failed.size() <<
+                    " blocks. First failure: " << first_failure.ToString();
+  }
 }
 
 void TabletMetadata::PinFlush() {
@@ -295,13 +341,16 @@ Status TabletMetadata::UpdateUnlocked(
     int64_t last_durable_mrs_id) {
   DCHECK(data_lock_.is_locked());
   CHECK_NE(state_, kNotLoadedYet);
-  DCHECK_GE(last_durable_mrs_id, last_durable_mrs_id_);
-  last_durable_mrs_id_ = last_durable_mrs_id;
+  if (last_durable_mrs_id != kNoMrsFlushed) {
+    DCHECK_GE(last_durable_mrs_id, last_durable_mrs_id_);
+    last_durable_mrs_id_ = last_durable_mrs_id;
+  }
 
   RowSetMetadataVector new_rowsets = rowsets_;
   RowSetMetadataVector::iterator it = new_rowsets.begin();
   while (it != new_rowsets.end()) {
     if (ContainsKey(to_remove, (*it)->id())) {
+      AddOrphanedBlocksUnlocked((*it)->GetAllBlocks());
       it = new_rowsets.erase(it);
     } else {
       it++;
@@ -323,11 +372,9 @@ Status TabletMetadata::ReplaceSuperBlock(const TabletSuperBlockPB &pb) {
     RETURN_NOT_OK_PREPEND(ReplaceSuperBlockUnlocked(pb), "Unable to replace superblock");
   }
 
-  {
-    boost::lock_guard<LockType> l(data_lock_);
-    RETURN_NOT_OK_PREPEND(LoadFromSuperBlockUnlocked(pb),
-                          "Failed to load data from superblock protobuf");
-  }
+  RETURN_NOT_OK_PREPEND(LoadFromSuperBlock(pb),
+                        "Failed to load data from superblock protobuf");
+
   return Status::OK();
 }
 
@@ -344,6 +391,13 @@ Status TabletMetadata::ReplaceSuperBlockUnlocked(const TabletSuperBlockPB &pb) {
   RETURN_NOT_OK(fs_manager_->WriteMetadataBlock(
       sblk_sequence_ & 1 ? a_blk : b_blk, pb));
   sblk_sequence_++;
+
+  // Now that the superblock is written, try to delete the orphaned blocks.
+  //
+  // If we crash just before the deletion, we'll retry when reloading from
+  // disk; the orphaned blocks were persisted as part of the superblock.
+  DeleteOrphanedBlocks();
+
   return Status::OK();
 }
 
@@ -375,6 +429,10 @@ Status TabletMetadata::ToSuperBlockUnlocked(TabletSuperBlockPB* super_block,
                         "Couldn't serialize schema into superblock");
 
   pb.set_remote_bootstrap_state(remote_bootstrap_state_);
+
+  BOOST_FOREACH(const BlockId& block_id, orphaned_blocks_) {
+    block_id.CopyToPB(pb.mutable_orphaned_blocks()->Add());
+  }
 
   super_block->Swap(&pb);
   return Status::OK();

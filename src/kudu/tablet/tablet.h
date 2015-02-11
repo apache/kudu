@@ -391,9 +391,6 @@ class Tablet {
   void AtomicSwapRowSetsUnlocked(const RowSetVector &to_remove,
                                  const RowSetVector &to_add);
 
-  // Delete the underlying storage for the input layers in a compaction.
-  Status DeleteCompactionInputs(const RowSetsInCompaction &input);
-
   void GetComponents(scoped_refptr<TabletComponents>* comps) const {
     boost::shared_lock<rw_spinlock> lock(component_lock_);
     *comps = components_;

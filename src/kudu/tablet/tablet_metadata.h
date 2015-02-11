@@ -132,14 +132,21 @@ class TabletMetadata : public RefCountedThreadSafe<TabletMetadata> {
 
   Status Flush();
 
-  // Updates the metadata adding 'to_add' rowsets, removing 'to_remove' rowsets
-  // and updating the last durable MemRowSet.
-  Status UpdateAndFlush(const RowSetMetadataIds& to_remove,
-                        const RowSetMetadataVector& to_add);
-
+  // Updates the metadata in the following ways:
+  // 1. Adds rowsets from 'to_add'.
+  // 2. Removes rowsets from 'to_remove'.
+  // 3. Adds orphaned blocks from 'to_remove'.
+  // 4. Updates the last durable MRS ID from 'last_durable_mrs_id',
+  //    assuming it's not kNoMrsFlushed.
+  static const int64_t kNoMrsFlushed = -1;
   Status UpdateAndFlush(const RowSetMetadataIds& to_remove,
                         const RowSetMetadataVector& to_add,
                         int64_t last_durable_mrs_id);
+
+  // Adds the blocks referenced by 'block_ids' to 'orphaned_blocks'. They
+  // are deleted from disk (and the list cleared) in a call to
+  // DeleteOrphanedBlocks().
+  void AddOrphanedBlocks(const std::vector<BlockId>& block_ids);
 
   // Create a new RowSetMetadata for this tablet.
   // Does not add the new rowset to the list of rowsets. Use one of the Update()
@@ -193,23 +200,31 @@ class TabletMetadata : public RefCountedThreadSafe<TabletMetadata> {
   Status LoadFromDisk();
 
   // Update state of metadata to that of the given superblock PB.
-  // Requires data_lock_.
-  Status LoadFromSuperBlockUnlocked(const TabletSuperBlockPB& superblock);
+  Status LoadFromSuperBlock(const TabletSuperBlockPB& superblock);
 
   Status ReadSuperBlock(TabletSuperBlockPB *pb);
 
   // Fully replace superblock.
-  // Calling thread must hold flush_lock_.
+  // Requires 'flush_lock_'.
   Status ReplaceSuperBlockUnlocked(const TabletSuperBlockPB &pb);
 
-  // Requires data_lock_.
+  // Requires 'data_lock_'.
   Status UpdateUnlocked(const RowSetMetadataIds& to_remove,
                         const RowSetMetadataVector& to_add,
                         int64_t last_durable_mrs_id);
 
-  // Requires data_lock_.
+  // Requires 'data_lock_'.
   Status ToSuperBlockUnlocked(TabletSuperBlockPB* super_block,
                               const RowSetMetadataVector& rowsets) const;
+
+  // Requires 'data_lock_'.
+  void AddOrphanedBlocksUnlocked(const std::vector<BlockId>& block_ids);
+
+  // Deletes all blocks found in 'orphaned_blocks_'. Those deleted (or not
+  // found) will be removed from the list.
+  //
+  // Failures are logged, but are not fatal.
+  void DeleteOrphanedBlocks();
 
   enum State {
     kNotLoadedYet,
@@ -223,7 +238,7 @@ class TabletMetadata : public RefCountedThreadSafe<TabletMetadata> {
   mutable LockType data_lock_;
 
   // Lock protecting flushing the data to disk.
-  // If taken together with data_lock_, must be acquired first.
+  // If taken together with 'data_lock_', must be acquired first.
   mutable Mutex flush_lock_;
 
   std::string start_key_;
@@ -242,6 +257,9 @@ class TabletMetadata : public RefCountedThreadSafe<TabletMetadata> {
   Schema schema_;
   uint32_t schema_version_;
   std::string table_name_;
+
+  // Protected by 'data_lock_'.
+  std::vector<BlockId> orphaned_blocks_;
 
   // The current state of remote bootstrap for the tablet.
   TabletBootstrapStatePB remote_bootstrap_state_;
