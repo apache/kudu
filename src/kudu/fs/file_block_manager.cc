@@ -337,11 +337,12 @@ Status FileWritableBlock::Close(SyncMode mode) {
 
   Status sync;
   if (mode == SYNC &&
-      (state_ == CLEAN || state_ == DIRTY || state_ == FLUSHING) &&
-      FLAGS_enable_data_block_fsync) {
+      (state_ == CLEAN || state_ == DIRTY || state_ == FLUSHING)) {
     // Safer to synchronize data first, then metadata.
     VLOG(3) << "Syncing block " << id();
-    sync = writer_->Sync();
+    if (FLAGS_enable_data_block_fsync) {
+      sync = writer_->Sync();
+    }
     if (sync.ok()) {
       sync = block_manager_->SyncMetadata(location_);
     }
@@ -448,8 +449,10 @@ Status FileBlockManager::SyncMetadata(const internal::FileBlockLocation& locatio
   }
 
   // Sync them.
-  BOOST_FOREACH(const string& s, to_sync) {
-    RETURN_NOT_OK(env_->SyncDir(s));
+  if (FLAGS_enable_data_block_fsync) {
+    BOOST_FOREACH(const string& s, to_sync) {
+      RETURN_NOT_OK(env_->SyncDir(s));
+    }
   }
   return Status::OK();
 }

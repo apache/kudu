@@ -113,8 +113,8 @@ class TabletHarness {
 
   scoped_refptr<server::Clock> clock_;
   Schema schema_;
-  std::tr1::shared_ptr<Tablet> tablet_;
   gscoped_ptr<FsManager> fs_manager_;
+  std::tr1::shared_ptr<Tablet> tablet_;
 };
 
 } // namespace tablet

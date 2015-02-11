@@ -393,13 +393,19 @@ Status LogBlockContainer::FlushMetadata() {
 }
 
 Status LogBlockContainer::SyncData() {
-  lock_guard<Mutex> l(&data_writer_lock_);
-  return data_writer_->Sync();
+  if (FLAGS_enable_data_block_fsync) {
+    lock_guard<Mutex> l(&data_writer_lock_);
+    return data_writer_->Sync();
+  }
+  return Status::OK();
 }
 
 Status LogBlockContainer::SyncMetadata() {
-  lock_guard<Mutex> l(&metadata_pb_writer_lock_);
-  return metadata_pb_writer_->Sync();
+  if (FLAGS_enable_data_block_fsync) {
+    lock_guard<Mutex> l(&metadata_pb_writer_lock_);
+    return metadata_pb_writer_->Sync();
+  }
+  return Status::OK();
 }
 
 void LogBlockContainer::UpdateBytesWritten(int64_t more_bytes) {
@@ -674,8 +680,7 @@ Status LogWritableBlock::DoClose(SyncMode mode) {
     }
 
     if (mode == SYNC &&
-        (state_ == CLEAN || state_ == DIRTY || state_ == FLUSHING) &&
-        FLAGS_enable_data_block_fsync) {
+        (state_ == CLEAN || state_ == DIRTY || state_ == FLUSHING)) {
       VLOG(3) << "Syncing block " << id();
 
       // TODO: Sync just this block's dirty data.
@@ -936,9 +941,7 @@ Status LogBlockManager::DeleteBlock(const BlockId& block_id) {
   block_id.CopyToPB(record.mutable_block_id());
   record.set_op_type(DELETE);
   RETURN_NOT_OK(lb->container()->AppendMetadata(record));
-  if (FLAGS_enable_data_block_fsync) {
-    RETURN_NOT_OK(lb->container()->SyncMetadata());
-  }
+  RETURN_NOT_OK(lb->container()->SyncMetadata());
 
   return Status::OK();
 }
@@ -997,7 +1000,7 @@ Status LogBlockManager::SyncContainer(const LogBlockContainer& container) {
     to_sync = dirty_dirs_.erase(container.dir());
   }
 
-  if (to_sync) {
+  if (to_sync && FLAGS_enable_data_block_fsync) {
     s = env_->SyncDir(container.dir());
 
     // If SyncDir fails, the container directory must be restored to
