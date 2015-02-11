@@ -76,6 +76,8 @@ class ScannerManager {
   void RemoveExpiredScanners();
 
  private:
+  FRIEND_TEST(ScannerTest, TestExpire);
+
   typedef std::pair<std::string, SharedScanner> ScannerMapEntry;
 
   // Periodically call RemoveExpiredScanners().

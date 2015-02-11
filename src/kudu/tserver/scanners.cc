@@ -128,6 +128,9 @@ void ScannerManager::RemoveExpiredScanners() {
                 << time_live.ToMicroseconds() << " us of inactivity, which is > TTL ("
                 << scanner_ttl_.ToMicroseconds() << " us).";
       it = scanners_by_id_.erase(it);
+      if (metrics_) {
+        metrics_->scanners_expired_since_start->Increment();
+      }
     } else {
       ++it;
     }

@@ -5,6 +5,8 @@
 #include <vector>
 
 #include <gtest/gtest.h>
+#include "kudu/tserver/scanner_metrics.h"
+#include "kudu/util/metrics.h"
 #include "kudu/util/test_util.h"
 
 DECLARE_int32(tablet_server_scanner_ttl_millis);
@@ -44,7 +46,9 @@ TEST(ScannersTest, TestManager) {
 
 TEST(ScannerTest, TestExpire) {
   FLAGS_tablet_server_scanner_ttl_millis = 100;
-  ScannerManager mgr(NULL);
+  MetricRegistry registry;
+  MetricContext context(&registry, "scanners-test_TestExpire");
+  ScannerManager mgr(&context);
   SharedScanner s1, s2;
   mgr.NewScanner("", "", &s1);
   mgr.NewScanner("", "", &s2);
@@ -52,6 +56,7 @@ TEST(ScannerTest, TestExpire) {
   s2->UpdateAccessTime();
   mgr.RemoveExpiredScanners();
   ASSERT_EQ(1, mgr.CountActiveScanners());
+  ASSERT_EQ(1, mgr.metrics_->scanners_expired_since_start->value());
   vector<SharedScanner> active_scanners;
   mgr.ListScanners(&active_scanners);
   ASSERT_EQ(s2->id(), active_scanners[0]->id());
