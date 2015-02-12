@@ -63,12 +63,13 @@ void Striped64::RetryUpdate(int64_t x, Rehash contention) {
   // These are predicated on successful CAS operations, which is why it's all wrapped in an
   // infinite retry loop.
   while (true) {
-    if (num_cells_ > 0) {
+    int32_t n = base::subtle::Acquire_Load(&num_cells_);
+    if (n > 0) {
       if (contention == kRehash) {
         // CAS failed already, rehash before trying to increment.
         contention = kNoRehash;
       } else {
-        Cell *cell = &(cells_[(num_cells_ - 1) & h]);
+        Cell *cell = &(cells_[(n - 1) & h]);
         int64_t v = cell->value_.Load();
         if (cell->CompareAndSwap(v, Fn(v, x))) {
           // Successfully CAS'd the corresponding cell, done.
@@ -79,11 +80,12 @@ void Striped64::RetryUpdate(int64_t x, Rehash contention) {
       h ^= h << 13;
       h ^= h >> 17;
       h ^= h << 5;
-    } else if (num_cells_ == 0 && CasBusy()) {
+    } else if (n == 0 && CasBusy()) {
       // We think table hasn't been initialized yet, try to do so.
       // Recheck preconditions, someone else might have init'd in the meantime.
-      if (num_cells_ == 0) {
-        size_t n = 1;
+      n = base::subtle::Acquire_Load(&num_cells_);
+      if (n == 0) {
+        n = 1;
         // Calculate the size. Nearest power of two >= NCPU.
         // Also handle a negative NCPU, can happen if sysconf name is unknown
         while (kNumCpus > n) {
@@ -112,8 +114,9 @@ void Striped64::RetryUpdate(int64_t x, Rehash contention) {
 }
 
 void Striped64::InternalReset(int64_t initialValue) {
+  const int32_t n = base::subtle::Acquire_Load(&num_cells_);
   base_.value_.Store(initialValue);
-  for (int i = 0; i < num_cells_; i++) {
+  for (int i = 0; i < n; i++) {
     cells_[i].value_.Store(initialValue);
   }
 }
