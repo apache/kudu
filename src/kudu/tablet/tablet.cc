@@ -59,6 +59,16 @@ DEFINE_int32(tablet_compaction_budget_mb, 128,
              "Budget for a single compaction, if the 'budget' compaction "
              "algorithm is selected");
 
+DEFINE_int32(tablet_bloom_block_size, 4096,
+             "Block size of the bloom filters used for tablet keys. "
+             "(Advanced option)");
+
+DEFINE_double(tablet_bloom_target_fp_rate, 0.01f,
+              "Target false-positive rate (between 0 and 1) to size tablet key bloom filters. "
+              "A lower false positive rate may reduce the number of disk seeks required "
+              "in heavy insert workloads, at the expense of more space and RAM "
+              "required for bloom filters. (Advanced option)");
+
 METRIC_DEFINE_gauge_uint64(memrowset_size, kudu::MetricUnit::kBytes,
                            "Size of this tablet's memrowset");
 
@@ -168,8 +178,8 @@ Status Tablet::GetMappedReadProjection(const Schema& projection,
 }
 
 BloomFilterSizing Tablet::bloom_sizing() const {
-  // TODO: make this configurable
-  return BloomFilterSizing::BySizeAndFPRate(64*1024, 0.01f);
+  return BloomFilterSizing::BySizeAndFPRate(FLAGS_tablet_bloom_block_size,
+                                            FLAGS_tablet_bloom_target_fp_rate);
 }
 
 Status Tablet::NewRowIterator(const Schema &projection,
