@@ -85,7 +85,7 @@ class LinkedListTester {
                         int64_t* written_count);
 
   // Run the verify step on a table with RPCs.
-  Status VerifyLinkedListRemote(int64_t expected, int64_t* verified_count);
+  Status VerifyLinkedListRemote(int64_t expected, int64_t* verified_count, bool log_errors);
 
   // Run the verify step on a specific tablet.
   Status VerifyLinkedListLocal(const tablet::Tablet* tablet,
@@ -319,7 +319,7 @@ class LinkedListVerifier {
   void RegisterResult(uint64_t key, uint64_t link, bool updated);
 
   // Run the common verify step once the scanned data is stored.
-  Status VerifyData(int64_t* verified_count);
+  Status VerifyData(int64_t* verified_count, bool log_errors);
 
  private:
   // Print a summary of the broken links to the log.
@@ -477,7 +477,8 @@ static void VerifyNoDuplicateEntries(const std::vector<uint64_t>& ints, int* err
   }
 }
 
-Status LinkedListTester::VerifyLinkedListRemote(int64_t expected, int64_t* verified_count) {
+Status LinkedListTester::VerifyLinkedListRemote(int64_t expected, int64_t* verified_count,
+                                                bool log_errors) {
   scoped_refptr<client::KuduTable> table;
   RETURN_NOT_OK(client_->OpenTable(table_name_, &table));
 
@@ -505,7 +506,7 @@ Status LinkedListTester::VerifyLinkedListRemote(int64_t expected, int64_t* verif
     rows.clear();
   }
 
-  return verifier.VerifyData(verified_count);
+  return verifier.VerifyData(verified_count, log_errors);
 }
 
 Status LinkedListTester::VerifyLinkedListLocal(const tablet::Tablet* tablet,
@@ -542,7 +543,7 @@ Status LinkedListTester::VerifyLinkedListLocal(const tablet::Tablet* tablet,
     }
   }
 
-  return verifier.VerifyData(verified_count);
+  return verifier.VerifyData(verified_count, true);
 }
 
 Status LinkedListTester::WaitAndVerify(int seconds_to_run, int64_t expected) {
@@ -553,7 +554,12 @@ Status LinkedListTester::WaitAndVerify(int seconds_to_run, int64_t expected) {
 
   Status s;
   do {
-    s = VerifyLinkedListRemote(expected, &seen);
+    // We'll give the tablets 5 seconds to start up regardless of how long we
+    // inserted for. There's some fixed cost startup time, especially when
+    // replication is enabled.
+    const int kBaseTimeToWaitSecs = 5;
+    bool last_attempt = sw.elapsed().wall_seconds() > kBaseTimeToWaitSecs + seconds_to_run;
+    s = VerifyLinkedListRemote(expected, &seen, last_attempt);
 
     // TODO: when we enable hybridtime consistency for the scans,
     // then we should not allow !s.ok() here. But, with READ_LATEST
@@ -562,14 +568,10 @@ Status LinkedListTester::WaitAndVerify(int seconds_to_run, int64_t expected) {
     // in the chain.
 
     if (!s.ok()) {
-      // We'll give the tablets 5 seconds to start up regardless of how long we
-      // inserted for. There's some fixed cost startup time, especially when
-      // replication is enabled.
-      const int kBaseTimeToWaitSecs = 5;
 
       LOG(INFO) << "Table not yet ready: " << seen << "/" << expected << " rows"
                 << " (status: " << s.ToString() << ")";
-      if (sw.elapsed().wall_seconds() > kBaseTimeToWaitSecs + seconds_to_run) {
+      if (last_attempt) {
         // We'll give it an equal amount of time to re-load the data as it took
         // to write it in. Typically it completes much faster than that.
         return Status::TimedOut("Timed out waiting for table to be accessible again",
@@ -580,6 +582,8 @@ Status LinkedListTester::WaitAndVerify(int seconds_to_run, int64_t expected) {
       SleepFor(MonoDelta::FromMilliseconds(20));
     }
   } while (!s.ok());
+
+  LOG(INFO) << "Successfully verified " << expected << " rows";
 
   return Status::OK();
 }
@@ -648,15 +652,15 @@ void LinkedListVerifier::SummarizeBrokenLinks(const std::vector<uint64_t>& broke
   }
 }
 
-Status LinkedListVerifier::VerifyData(int64_t* verified_count) {
+Status LinkedListVerifier::VerifyData(int64_t* verified_count, bool log_errors) {
   *verified_count = seen_key_.size();
   LOG(INFO) << "Done collecting results (" << (*verified_count) << " rows in "
             << scan_timer_.elapsed().wall_millis() << "ms)";
 
-  LOG(INFO) << "Sorting results before verification of linked list structure...";
+  VLOG(1) << "Sorting results before verification of linked list structure...";
   std::sort(seen_key_.begin(), seen_key_.end());
   std::sort(seen_link_to_.begin(), seen_link_to_.end());
-  LOG(INFO) << "Done sorting";
+  VLOG(1) << "Done sorting";
 
   // Verify that no key was seen multiple times or linked to multiple times
   VerifyNoDuplicateEntries(seen_key_, &errors_, "Seen row key multiple times");
@@ -664,14 +668,17 @@ Status LinkedListVerifier::VerifyData(int64_t* verified_count) {
   // Verify that every key that was linked to was present
   std::vector<uint64_t> broken_links = STLSetDifference(seen_link_to_, seen_key_);
   errors_ += broken_links.size();
-  SummarizeBrokenLinks(broken_links);
+  if (log_errors) {
+    SummarizeBrokenLinks(broken_links);
+  }
 
   // Verify that only the expected number of keys were seen but not linked to.
   // Only the last "batch" should have this characteristic.
   std::vector<uint64_t> not_linked_to = STLSetDifference(seen_key_, seen_link_to_);
   if (not_linked_to.size() != num_chains_) {
-    LOG(ERROR) << "Had " << not_linked_to.size() << " entries which were seen but not"
-               << " linked to. Expected only " << num_chains_;
+    LOG_IF(ERROR, log_errors)
+      << "Had " << not_linked_to.size() << " entries which were seen but not"
+      << " linked to. Expected only " << num_chains_;
     errors_++;
   }
 
