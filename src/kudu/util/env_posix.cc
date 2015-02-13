@@ -24,8 +24,13 @@
 #include <limits.h>
 
 #include <deque>
+#include <tr1/unordered_set>
+#include <vector>
 
 #include "kudu/gutil/atomicops.h"
+#include "kudu/gutil/bind.h"
+#include "kudu/gutil/callback.h"
+#include "kudu/gutil/map-util.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/env.h"
 #include "kudu/util/errno.h"
@@ -51,6 +56,9 @@ DEFINE_bool(writable_file_use_fsync, false,
 
 using base::subtle::Atomic64;
 using base::subtle::Barrier_AtomicIncrement;
+using std::tr1::unordered_set;
+using std::deque;
+using std::vector;
 using strings::Substitute;
 
 static __thread uint64_t thread_local_id;
@@ -820,67 +828,9 @@ class PosixEnv : public Env {
     return Status::OK();
   }
 
-
   virtual Status DeleteRecursively(const std::string &name) OVERRIDE {
-    // Some sanity checks
-    CHECK_NE(name, "/");
-    CHECK_NE(name, "./");
-    CHECK_NE(name, ".");
-    CHECK_NE(name, "");
-
-    // FTS requires a non-const copy of the name. strdup it and free() when
-    // we leave scope.
-    gscoped_ptr<char, FreeDeleter> name_dup(strdup(name.c_str()));
-    char *(paths[]) = { name_dup.get(), NULL };
-
-    // FTS_NOCHDIR is important here to make this thread-safe.
-    gscoped_ptr<FTS, FtsCloser> tree(
-      fts_open(paths, FTS_PHYSICAL | FTS_XDEV | FTS_NOCHDIR, NULL));
-    if (!tree.get()) {
-      return IOError(name, errno);
-    }
-
-    FTSENT *ent = NULL;
-    bool had_errors = false;
-    while ((ent = fts_read(tree.get())) != NULL) {
-      Status s;
-      switch (ent->fts_info) {
-        case FTS_D: // Directory in pre-order
-          break;
-        case FTS_DP: // Directory in post-order
-          s = DeleteDir(ent->fts_accpath);
-          if (!s.ok()) {
-            LOG(WARNING) << "Couldn't delete " << ent->fts_path << ": " << s.ToString();
-            had_errors = true;
-          }
-          break;
-        case FTS_F:         // A regular file
-        case FTS_SL:        // A symbolic link
-        case FTS_SLNONE:    // A broken symbolic link
-        case FTS_DEFAULT:   // Unknown type of file
-          s = DeleteFile(ent->fts_accpath);
-          if (!s.ok()) {
-            LOG(WARNING) << "Couldn't delete file " << ent->fts_path << ": " << s.ToString();
-            had_errors = true;
-          }
-          break;
-        case FTS_ERR:
-          LOG(WARNING) << "Unable to access file " << ent->fts_path << " for deletion: "
-                       << strerror(ent->fts_errno);
-          had_errors = true;
-          break;
-
-        default:
-          LOG(WARNING) << "Unable to access file " << ent->fts_path << " for deletion (code "
-                       << ent->fts_info << ")";
-          break;
-      }
-    }
-
-    if (had_errors) {
-      return Status::IOError(name, "One or more errors occurred");
-    }
-    return Status::OK();
+    return Walk(name, POST_ORDER, Bind(&PosixEnv::DeleteRecursivelyCb,
+                                       Unretained(this)));
   }
 
   virtual Status GetFileSize(const std::string& fname, uint64_t* size) OVERRIDE {
@@ -1001,6 +951,84 @@ class PosixEnv : public Env {
     return Status::OK();
   }
 
+  virtual Status IsDirectory(const string& path, bool* is_dir) OVERRIDE {
+    Status s;
+    struct stat sbuf;
+    if (stat(path.c_str(), &sbuf) != 0) {
+      s = IOError(path, errno);
+    } else {
+      *is_dir = S_ISDIR(sbuf.st_mode);
+    }
+    return s;
+  }
+
+  virtual Status Walk(const string& root, DirectoryOrder order, const WalkCallback& cb) OVERRIDE {
+    // Some sanity checks
+    CHECK_NE(root, "/");
+    CHECK_NE(root, "./");
+    CHECK_NE(root, ".");
+    CHECK_NE(root, "");
+
+    // FTS requires a non-const copy of the name. strdup it and free() when
+    // we leave scope.
+    gscoped_ptr<char, FreeDeleter> name_dup(strdup(root.c_str()));
+    char *(paths[]) = { name_dup.get(), NULL };
+
+    // FTS_NOCHDIR is important here to make this thread-safe.
+    gscoped_ptr<FTS, FtsCloser> tree(
+        fts_open(paths, FTS_PHYSICAL | FTS_XDEV | FTS_NOCHDIR, NULL));
+    if (!tree.get()) {
+      return IOError(root, errno);
+    }
+
+    FTSENT *ent = NULL;
+    bool had_errors = false;
+    while ((ent = fts_read(tree.get())) != NULL) {
+      bool doCb = false;
+      FileType type = DIRECTORY_TYPE;
+      switch (ent->fts_info) {
+        case FTS_D:         // Directory in pre-order
+          if (order == PRE_ORDER) {
+            doCb = true;
+          }
+          break;
+        case FTS_DP:        // Directory in post-order
+          if (order == POST_ORDER) {
+            doCb = true;
+          }
+          break;
+        case FTS_F:         // A regular file
+        case FTS_SL:        // A symbolic link
+        case FTS_SLNONE:    // A broken symbolic link
+        case FTS_DEFAULT:   // Unknown type of file
+          doCb = true;
+          type = FILE_TYPE;
+          break;
+
+        case FTS_ERR:
+          LOG(WARNING) << "Unable to access file " << ent->fts_path
+                       << " during walk: " << strerror(ent->fts_errno);
+          had_errors = true;
+          break;
+
+        default:
+          LOG(WARNING) << "Unable to access file " << ent->fts_path
+                       << " during walk (code " << ent->fts_info << ")";
+          break;
+      }
+      if (doCb) {
+        if (!cb.Run(type, DirName(ent->fts_path), ent->fts_name).ok()) {
+          had_errors = true;
+        }
+      }
+    }
+
+    if (had_errors) {
+      return Status::IOError(root, "One or more errors occurred");
+    }
+    return Status::OK();
+  }
+
  private:
   // gscoped_ptr Deleter implementation for fts_close
   struct FtsCloser {
@@ -1023,6 +1051,25 @@ class PosixEnv : public Env {
       result->reset(new PosixWritableFile(fname, fd, file_size, opts.sync_on_close));
     }
     return Status::OK();
+  }
+
+
+  Status DeleteRecursivelyCb(FileType type, const string& dirname, const string& basename) {
+    string full_path = JoinPathSegments(dirname, basename);
+    Status s;
+    switch (type) {
+      case FILE_TYPE:
+        s = DeleteFile(full_path);
+        WARN_NOT_OK(s, "Could not delete file");
+        return s;
+      case DIRECTORY_TYPE:
+        s = DeleteDir(full_path);
+        WARN_NOT_OK(s, "Could not delete directory");
+        return s;
+      default:
+        LOG(FATAL) << "Unknown file type: " << type;
+        return Status::OK();
+    }
   }
 
   size_t page_size_;

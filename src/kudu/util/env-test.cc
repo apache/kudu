@@ -12,6 +12,7 @@
 #include <gtest/gtest.h>
 #include <boost/foreach.hpp>
 
+#include "kudu/gutil/bind.h"
 #include "kudu/gutil/strings/util.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/path_util.h"
@@ -35,6 +36,7 @@ namespace kudu {
 
 using std::string;
 using std::tr1::shared_ptr;
+using std::vector;
 
 static const uint32_t kOneMb = 1024 * 1024;
 
@@ -519,6 +521,105 @@ TEST_F(TestEnv, TestReopen) {
   ASSERT_NO_FATAL_FAILURE(DoTestReopen(opts));
   opts.mmap_file = false;
   ASSERT_NO_FATAL_FAILURE(DoTestReopen(opts));
+}
+
+TEST_F(TestEnv, TestIsDirectory) {
+  string dir = GetTestPath("a_directory");
+  ASSERT_OK(env_->CreateDir(dir));
+  bool is_dir;
+  ASSERT_OK(env_->IsDirectory(dir, &is_dir));
+  ASSERT_TRUE(is_dir);
+
+  string not_dir = GetTestPath("not_a_directory");
+  gscoped_ptr<WritableFile> writer;
+  ASSERT_OK(env_->NewWritableFile(not_dir, &writer));
+  ASSERT_OK(env_->IsDirectory(not_dir, &is_dir));
+  ASSERT_FALSE(is_dir);
+}
+
+static Status TestWalkCb(vector<string>* actual,
+                         Env::FileType type,
+                         const string& dirname, const string& basename) {
+  VLOG(1) << type << ":" << dirname << ":" << basename;
+  actual->push_back(JoinPathSegments(dirname, basename));
+  return Status::OK();
+}
+
+static Status CreateDir(Env* env, const string& name, vector<string>* created) {
+  RETURN_NOT_OK(env->CreateDir(name));
+  created->push_back(name);
+  return Status::OK();
+}
+
+static Status CreateFile(Env* env, const string& name, vector<string>* created) {
+  gscoped_ptr<WritableFile> writer;
+  RETURN_NOT_OK(env->NewWritableFile(name, &writer));
+  created->push_back(writer->ToString());
+  return Status::OK();
+}
+
+TEST_F(TestEnv, TestWalk) {
+  // We test with this tree:
+  //
+  // /root/
+  // /root/file_1
+  // /root/file_2
+  // /root/dir_a/file_1
+  // /root/dir_a/file_2
+  // /root/dir_b/file_1
+  // /root/dir_b/file_2
+  // /root/dir_b/dir_c/file_1
+  // /root/dir_b/dir_c/file_2
+  string root = GetTestPath("root");
+  string subdir_a = JoinPathSegments(root, "dir_a");
+  string subdir_b = JoinPathSegments(root, "dir_b");
+  string subdir_c = JoinPathSegments(subdir_b, "dir_c");
+  string file_one = "file_1";
+  string file_two = "file_2";
+  vector<string> expected;
+  ASSERT_OK(CreateDir(env_.get(), root, &expected));
+  ASSERT_OK(CreateFile(env_.get(), JoinPathSegments(root, file_one), &expected));
+  ASSERT_OK(CreateFile(env_.get(), JoinPathSegments(root, file_two), &expected));
+  ASSERT_OK(CreateDir(env_.get(), subdir_a, &expected));
+  ASSERT_OK(CreateFile(env_.get(), JoinPathSegments(subdir_a, file_one), &expected));
+  ASSERT_OK(CreateFile(env_.get(), JoinPathSegments(subdir_a, file_two), &expected));
+  ASSERT_OK(CreateDir(env_.get(), subdir_b, &expected));
+  ASSERT_OK(CreateFile(env_.get(), JoinPathSegments(subdir_b, file_one), &expected));
+  ASSERT_OK(CreateFile(env_.get(), JoinPathSegments(subdir_b, file_two), &expected));
+  ASSERT_OK(CreateDir(env_.get(), subdir_c, &expected));
+  ASSERT_OK(CreateFile(env_.get(), JoinPathSegments(subdir_c, file_one), &expected));
+  ASSERT_OK(CreateFile(env_.get(), JoinPathSegments(subdir_c, file_two), &expected));
+
+  // Do the walk.
+  //
+  // Sadly, tr1/unordered_set doesn't implement equality operators, so we
+  // compare sorted vectors instead.
+  vector<string> actual;
+  ASSERT_OK(env_->Walk(root, Env::PRE_ORDER, Bind(&TestWalkCb, &actual)));
+  sort(expected.begin(), expected.end());
+  sort(actual.begin(), actual.end());
+  ASSERT_EQ(expected, actual);
+}
+
+static Status TestWalkErrorCb(int* num_calls,
+                              Env::FileType type,
+                              const string& dirname, const string& basename) {
+  (*num_calls)++;
+  return Status::Aborted("Returning abort status");
+}
+
+TEST_F(TestEnv, TestWalkCbReturnsError) {
+  string new_dir = GetTestPath("foo");
+  string new_file = "myfile";
+  ASSERT_OK(env_->CreateDir(new_dir));
+  gscoped_ptr<WritableFile> writer;
+  ASSERT_OK(env_->NewWritableFile(JoinPathSegments(new_dir, new_file), &writer));
+  int num_calls = 0;
+  ASSERT_TRUE(env_->Walk(new_dir, Env::PRE_ORDER,
+                         Bind(&TestWalkErrorCb, &num_calls)).IsIOError());
+
+  // Once for the directory and once for the file inside it.
+  ASSERT_EQ(2, num_calls);
 }
 
 }  // namespace kudu

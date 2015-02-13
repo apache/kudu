@@ -494,6 +494,12 @@ class InMemoryEnv : public EnvWrapper {
     return Status::OK();
   }
 
+  virtual Status Walk(const std::string& root,
+                      DirectoryOrder order,
+                      const WalkCallback& cb) OVERRIDE {
+    LOG(FATAL) << "Not implemented";
+  }
+
  private:
   void DeleteFileInternal(const std::string& fname) {
     if (!ContainsKey(file_map_, fname)) {

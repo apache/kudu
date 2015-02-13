@@ -19,6 +19,7 @@
 #include <string>
 #include <vector>
 
+#include "kudu/gutil/callback_forward.h"
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/util/status.h"
 
@@ -177,6 +178,41 @@ class Env {
   // Return the full path of the currently running executable.
   virtual Status GetExecutablePath(std::string* path) = 0;
 
+  // Checks if the file is a directory. Returns an error if it doesn't
+  // exist, otherwise writes true or false into 'is_dir' appropriately.
+  virtual Status IsDirectory(const std::string& path, bool* is_dir) = 0;
+
+  // The kind of file found during a walk. Note that symbolic links are
+  // reported as FILE_TYPE.
+  enum FileType {
+    DIRECTORY_TYPE,
+    FILE_TYPE,
+  };
+
+  // Called for each file/directory in the walk.
+  //
+  // The first argument is the type of file.
+  // The second is the dirname of the file.
+  // The third is the basename of the file.
+  //
+  // Returning an error won't halt the walk, but it will cause it to return
+  // with an error status when it's done.
+  typedef Callback<Status(FileType,const std::string&, const std::string&)> WalkCallback;
+
+  // Whether to walk directories in pre-order or post-order.
+  enum DirectoryOrder {
+    PRE_ORDER,
+    POST_ORDER,
+  };
+
+  // Walk the filesystem subtree from 'root' down, invoking 'cb' for each
+  // file or directory found, including 'root'.
+  //
+  // The walk will not cross filesystem boundaries. It won't change the
+  // working directory, nor will it follow symbolic links.
+  virtual Status Walk(const std::string& root,
+                      DirectoryOrder order,
+                      const WalkCallback& cb) = 0;
  private:
   // No copying allowed
   Env(const Env&);
@@ -435,6 +471,14 @@ class EnvWrapper : public Env {
   }
   Status GetExecutablePath(std::string* path) OVERRIDE {
     return target_->GetExecutablePath(path);
+  }
+  Status IsDirectory(const std::string& path, bool* is_dir) OVERRIDE {
+    return target_->IsDirectory(path, is_dir);
+  }
+  Status Walk(const std::string& root,
+              DirectoryOrder order,
+              const WalkCallback& cb) OVERRIDE {
+    return target_->Walk(root, order, cb);
   }
  private:
   Env* target_;
