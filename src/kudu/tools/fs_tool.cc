@@ -353,11 +353,10 @@ Status FsTool::ListBlocksInRowSet(const Schema& schema,
   return Status::OK();
 }
 
-Status FsTool::DumpTablet(const std::string& tablet_id,
-                          const DumpOptions& opts,
-                          int indent) {
+Status FsTool::DumpTabletBlocks(const std::string& tablet_id,
+                                const DumpOptions& opts,
+                                int indent) {
   DCHECK(initialized_);
-
   string master_block_path;
   RETURN_NOT_OK(GetMasterBlockPath(tablet_id, &master_block_path));
 
@@ -378,7 +377,21 @@ Status FsTool::DumpTablet(const std::string& tablet_id,
               << std::endl << Indent(indent) << kSeparatorLine;
     RETURN_NOT_OK(DumpRowSetInternal(meta->schema(), rs_meta, opts, indent + 2));
   }
+  return Status::OK();
+}
 
+Status FsTool::DumpTabletData(const std::string& tablet_id) {
+  DCHECK(initialized_);
+  string master_block_path;
+  RETURN_NOT_OK(GetMasterBlockPath(tablet_id, &master_block_path));
+
+  scoped_refptr<TabletMetadata> meta;
+  RETURN_NOT_OK(LoadTabletMetadata(master_block_path, tablet_id, &meta));
+
+  scoped_refptr<log::LogAnchorRegistry> reg(new log::LogAnchorRegistry());
+  Tablet t(meta, scoped_refptr<server::Clock>(NULL), NULL, reg.get());
+  RETURN_NOT_OK_PREPEND(t.Open(), "Couldn't open tablet");
+  RETURN_NOT_OK_PREPEND(t.DebugDump(), "Couldn't dump tablet");
   return Status::OK();
 }
 

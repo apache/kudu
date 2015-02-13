@@ -80,10 +80,17 @@ class FsTool {
   Status PrintTabletMeta(const std::string& tablet_id,
                          int indent);
 
-  // Dumps all of the rowset in tablet. See also: DumpRowSet().
-  Status DumpTablet(const std::string& tablet_id,
+  // Dumps the blocks that make up a tablet, rowset by rowset. This ends up
+  // outputting on a column-by-column basis, as close as possible to the raw
+  // storage. See also: DumpRowSet().
+  Status DumpTabletBlocks(const std::string& tablet_id,
                     const DumpOptions& opts,
                     int indent);
+
+  // Dump the data stored in a tablet. The output here is much more readable
+  // than DumpTabletBlocks, since it reconstructs rows and associates undo/redo deltas
+  // with those rows.
+  Status DumpTabletData(const std::string& tablet_id);
 
   // Dumps column blocks, all types of delta blocks for a given
   // rowset.

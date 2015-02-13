@@ -45,7 +45,8 @@ using strings::Substitute;
 namespace {
 
 enum CommandType {
-  DUMP_TABLET,
+  DUMP_TABLET_BLOCKS,
+  DUMP_TABLET_DATA,
   DUMP_ROWSET,
   DUMP_CFILE_BLOCK,
   PRINT_TABLET_META,
@@ -65,7 +66,10 @@ struct CommandHandler {
 };
 
 const vector<CommandHandler> kCommandHandlers = boost::assign::list_of
-    (CommandHandler(DUMP_TABLET, "dump_tablet", "Dump a tablet (requires a tablet id)"))
+    (CommandHandler(DUMP_TABLET_DATA, "dump_tablet_data",
+                    "Dump a tablet's data (requires a tablet id)"))
+    (CommandHandler(DUMP_TABLET_BLOCKS, "dump_tablet_blocks",
+                    "Dump a tablet's constituent blocks (requires a tablet id)"))
     (CommandHandler(DUMP_ROWSET, "dump_rowset",
                     "Dump a rowset (requires a tablet id and an index)"))
     (CommandHandler(DUMP_CFILE_BLOCK, "dump_block",
@@ -136,7 +140,9 @@ static int FsDumpToolMain(int argc, char** argv) {
   opts.nrows = FLAGS_nrows;
 
   switch (cmd) {
-    case DUMP_TABLET: {
+    case DUMP_TABLET_DATA:
+    case DUMP_TABLET_BLOCKS:
+    {
       if (argc < 3) {
         Usage(argv[0],
               Substitute("dump_tablet requires tablet id: $0 "
@@ -144,9 +150,14 @@ static int FsDumpToolMain(int argc, char** argv) {
                          argv[0]));
         return 2;
       }
-      CHECK_OK(fs_tool.DumpTablet(argv[2], opts, 0));
+      if (cmd == DUMP_TABLET_DATA) {
+        CHECK_OK(fs_tool.DumpTabletData(argv[2]));
+      } else if (cmd == DUMP_TABLET_BLOCKS) {
+        CHECK_OK(fs_tool.DumpTabletBlocks(argv[2], opts, 0));
+      }
       break;
     }
+
     case DUMP_ROWSET: {
       if (argc < 4) {
         Usage(argv[0],
