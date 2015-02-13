@@ -86,6 +86,10 @@ class LinkedListTest : public tserver::TabletServerIntegrationTestBase {
       // Set the flush threshold low so that we have a mix of flushed and unflushed
       // operations in the WAL, when we bootstrap.
       ts_flags.push_back("--flush_threshold_mb=1");
+      // Set the compaction budget to be low so that we get multiple passes of compaction
+      // instead of selecting all of the rowsets in a single compaction of the whole
+      // tablet.
+      ts_flags.push_back("--tablet_compaction_budget_mb=4");
       // Set the size of the WAL segments low so that some can be GC'd.
       ts_flags.push_back("--log_segment_size_mb=1");
     }
@@ -171,6 +175,14 @@ TEST_F(LinkedListTest, TestLoadAndVerify) {
   // initially after a restart. TODO: Scanner should support its own retries in this circumstance.
   // Remove this loop once client is more fleshed out.
   ASSERT_OK(tester_->WaitAndVerify(FLAGS_seconds_to_run, written));
+
+  // In slow tests mode, we'll wait for a little bit to allow time for the tablet to
+  // compact. This is a regression test for bugs where compaction post-bootstrap
+  // could cause data loss.
+  if (AllowSlowTests()) {
+    SleepFor(MonoDelta::FromSeconds(10));
+    ASSERT_OK(tester_->WaitAndVerify(FLAGS_seconds_to_run, written));
+  }
   ASSERT_OK(CheckTabletServersAreAlive(tablet_servers_.size()));
 
   // Check post-replication state with a downed TS.

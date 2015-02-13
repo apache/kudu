@@ -258,31 +258,38 @@ Status DeltaFileReader::ReadDeltaStats() {
   return Status::OK();
 }
 
+bool DeltaFileReader::IsRelevantForSnapshot(const MvccSnapshot& snap) const {
+  if (delta_type_ == REDO) {
+    return snap.MayHaveCommittedTransactionsAtOrAfter(delta_stats_->min_timestamp());
+  }
+  if (delta_type_ == UNDO) {
+    return snap.MayHaveUncommittedTransactionsAtOrBefore(delta_stats_->max_timestamp());
+  }
+  LOG(DFATAL) << "Cannot reach here";
+  return false;
+}
+
 Status DeltaFileReader::NewDeltaIterator(const Schema *projection,
                                          const MvccSnapshot &snap,
                                          DeltaIterator** iterator) const {
-  if (delta_type_ == REDO &&
-      snap.MayHaveCommittedTransactionsAtOrAfter(delta_stats_->min_timestamp())) {
-    VLOG(2) << "REDO Delta " << ToString()
-            << " has min ts " << delta_stats_->min_timestamp().ToString()
-            << ": can't cull " << snap.ToString();
+  if (IsRelevantForSnapshot(snap)) {
+    if (delta_type_ == REDO) {
+      VLOG(2) << "REDO Delta " << ToString()
+              << " has min ts " << delta_stats_->min_timestamp().ToString()
+              << ": can't cull " << snap.ToString();
+    } else {
+      VLOG(2) << "UNDO Delta " << ToString()
+              << " has max ts " << delta_stats_->max_timestamp().ToString()
+              << ": can't cull " << snap.ToString();
+    }
     *iterator = new DeltaFileIterator(shared_from_this(), projection, snap, delta_type_);
     return Status::OK();
   } else {
-    VLOG(2) << "Culling REDO delta " << ToString() << " for " << snap.ToString();
+    VLOG(2) << "Culling "
+            << ((delta_type_ == REDO) ? "REDO":"UNDO")
+            << " delta " << ToString() << " for " << snap.ToString();
+    return Status::NotFound("MvccSnapshot outside the range of this delta.");
   }
-  if (delta_type_ == UNDO &&
-      snap.MayHaveUncommittedTransactionsAtOrBefore(delta_stats_->max_timestamp())) {
-    VLOG(2) << "UNDO Delta " << ToString()
-            << " has max ts " << delta_stats_->max_timestamp().ToString()
-            << ": can't cull " << snap.ToString();
-    *iterator = new DeltaFileIterator(shared_from_this(), projection, snap, delta_type_);
-    return Status::OK();
-  } else {
-    VLOG(2) << "Culling UNDO delta " << ToString() << " for " << snap.ToString();
-  }
-
-  return Status::NotFound("MvccSnapshot outside the range of this delta.");
 }
 
 Status DeltaFileReader::CheckRowDeleted(rowid_t row_idx, bool *deleted) const {

@@ -497,6 +497,12 @@ CompactionInput *CompactionInput::Create(const DiskRowSet &rowset,
                                          const Schema* projection,
                                          const MvccSnapshot &snap) {
   CHECK(projection->has_column_ids());
+
+  // Assertion which checks for an earlier bug where the compaction snapshot
+  // chosen was too early. This resulted in UNDO files being mistakenly identified
+  // as REDO files and corruption ensued.
+  rowset.delta_tracker_->CheckSnapshotComesAfterAllUndos(snap);
+
   shared_ptr<ColumnwiseIterator> base_cwise(rowset.base_data_->NewIterator(projection));
   gscoped_ptr<RowwiseIterator> base_iter(new MaterializingIterator(base_cwise));
   // Creates a DeltaIteratorMerger that will only include part of the redo deltas,

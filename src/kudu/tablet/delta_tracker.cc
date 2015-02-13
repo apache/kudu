@@ -264,6 +264,22 @@ void DeltaTracker::CollectStores(vector<shared_ptr<DeltaStore> > *deltas) const 
   deltas->push_back(dms_);
 }
 
+void DeltaTracker::CheckSnapshotComesAfterAllUndos(const MvccSnapshot& snap) const {
+  std::vector<shared_ptr<DeltaStore> > undos;
+  {
+    boost::lock_guard<boost::shared_mutex> lock(component_lock_);
+    undos = undo_delta_stores_;
+  }
+  BOOST_FOREACH(const shared_ptr<DeltaStore>& undo, undos) {
+    DeltaFileReader* dfr = down_cast<DeltaFileReader*>(undo.get());
+
+    CHECK(!dfr->IsRelevantForSnapshot(snap))
+      << "Invalid snapshot " << snap.ToString()
+      << " does not come after undo file " << undo->ToString()
+      << " with stats: " << dfr->delta_stats().ToString();
+  }
+}
+
 shared_ptr<DeltaIterator> DeltaTracker::NewDeltaIterator(const Schema* schema,
                                                          const MvccSnapshot &snap) const {
   std::vector<shared_ptr<DeltaStore> > stores;

@@ -118,6 +118,10 @@ class DeltaFileReader : public DeltaStore,
     return reader_->ToString();
   }
 
+  // Returns true if this delta file may include any deltas which need to be
+  // applied when scanning the given snapshot.
+  bool IsRelevantForSnapshot(const MvccSnapshot& snap) const;
+
  private:
   friend class DeltaFileIterator;
 

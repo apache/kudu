@@ -83,6 +83,12 @@ class DeltaTracker {
     DeltaType type,
     std::vector<std::tr1::shared_ptr<DeltaStore> >* included_stores) const;
 
+  // CHECKs that the given snapshot includes all of the UNDO stores in this
+  // delta tracker. If this is not the case, crashes the process. This is
+  // used as an assertion during compaction, where we always expect the
+  // compaction snapshot to be in the future relative to any UNDOs.
+  void CheckSnapshotComesAfterAllUndos(const MvccSnapshot& snap) const;
+
   Status Open();
 
   // Flushes the current DeltaMemStore and replaces it with a new one.
