@@ -15,6 +15,9 @@
 #include "kudu/tserver/tserver_service.proxy.h"
 
 namespace kudu {
+
+class Schema;
+
 namespace tools {
 
 // This implementation connects to a Tablet Server via RPC.
@@ -32,6 +35,14 @@ class RemoteKsckTabletServer : public KsckTabletServer {
   virtual Status Connect() OVERRIDE;
 
   virtual bool IsConnected() const OVERRIDE;
+
+  virtual Status RunTabletChecksumScanAsync(const std::string& tablet_id,
+                                            const Schema& schema,
+                                            ChecksumResultReporter* reporter) OVERRIDE;
+
+  virtual const std::string& address() const OVERRIDE {
+    return address_;
+  }
 
  private:
   const std::string address_;
@@ -60,7 +71,8 @@ class RemoteKsckMaster : public KsckMaster {
   virtual Status RetrieveTabletsList(const std::tr1::shared_ptr<KsckTable>& table) OVERRIDE;
 
  private:
-  Status GetNumReplicasForTable(const std::string& table_name, int* num_replicas);
+  Status GetTableInfo(const std::string& table_name, Schema* schema, int* num_replicas);
+
   // Used to get a batch of tablets from the master, passing a pointer to the seen last key that
   // will be used as the new start key. The last_key is updated to point at the new last key
   // that came in the batch.

@@ -9,8 +9,12 @@
 #include <string>
 #include <tr1/memory>
 #include <tr1/unordered_map>
+#include <utility>
 #include <vector>
 
+#include "kudu/common/schema.h"
+#include "kudu/util/countdown_latch.h"
+#include "kudu/util/locks.h"
 #include "kudu/util/status.h"
 
 namespace kudu {
@@ -73,13 +77,18 @@ class KsckTablet {
 // Representation of a table. Composed of tablets.
 class KsckTable {
  public:
-  KsckTable(const std::string& name, int num_replicas)
+  KsckTable(const std::string& name, const Schema& schema, int num_replicas)
       : name_(name),
+        schema_(schema),
         num_replicas_(num_replicas) {
   }
 
   const std::string& name() const {
     return name_;
+  }
+
+  const Schema& schema() const {
+    return schema_;
   }
 
   int num_replicas() const {
@@ -96,9 +105,57 @@ class KsckTable {
 
  private:
   const std::string name_;
+  const Schema schema_;
   const int num_replicas_;
   std::vector<std::tr1::shared_ptr<KsckTablet> > tablets_;
   DISALLOW_COPY_AND_ASSIGN(KsckTable);
+};
+
+// Class to act as a collector of scan results.
+// Provides thread-safe accessors to update and read a hash table of results.
+class ChecksumResultReporter {
+ public:
+  typedef std::pair<Status, uint64_t> ResultPair;
+  typedef std::tr1::unordered_map<std::string, ResultPair> ReplicaResultMap;
+  typedef std::tr1::unordered_map<std::string, ReplicaResultMap> TabletResultMap;
+
+  // Initialize reporter with the number of replicas being queried.
+  explicit ChecksumResultReporter(int num_tablet_replicas);
+
+  // Write an entry to the result map indicating a response from the remote.
+  void ReportResult(const std::string& tablet_id, const std::string& replica_uuid,
+                    uint64_t checksum) {
+    HandleResponse(tablet_id, replica_uuid, Status::OK(), checksum);
+  }
+
+  // Write an entry to the result map indicating a some error from the remote.
+  void ReportError(const std::string& tablet_id, const std::string& replica_uuid,
+                   const Status& status) {
+    HandleResponse(tablet_id, replica_uuid, status, 0);
+  }
+
+  // Blocks until either the number of results plus errors reported equals
+  // num_tablet_replicas (from the constructor), or until the timeout expires,
+  // whichever comes first.
+  // Returns false if the timeout expired before all responses came in.
+  // Otherwise, returns true.
+  bool WaitFor(const MonoDelta& timeout) const { return responses_.WaitFor(timeout); }
+
+  // Returns true iff all replicas have reported in.
+  bool AllReported() const { return responses_.count() == 0; }
+
+  // Get reported results.
+  TabletResultMap checksums() const;
+
+ private:
+  // Report either a success or error response.
+  void HandleResponse(const std::string& tablet_id, const std::string& replica_uuid,
+                      const Status& status, uint64_t checksum);
+
+  CountDownLatch responses_;
+  mutable simple_spinlock lock_; // Protects 'checksums_'.
+  // checksums_ is an unordered_map of { tablet_id : { replica_uuid : checksum } }.
+  TabletResultMap checksums_;
 };
 
 // The following two classes must be extended in order to communicate with their respective
@@ -126,9 +183,19 @@ class KsckTabletServer {
     return Connect();
   }
 
-  const std::string& uuid() const {
+  // Run a checksum scan on the associated hosted tablet.
+  // If the returned Status == OK, the handler is guaranteed to eventually
+  // call back to one of the reporter's methods.
+  // Otherwise, the reporter will not be called (you should do this yourself).
+  virtual Status RunTabletChecksumScanAsync(const std::string& tablet_id,
+                                            const Schema& schema,
+                                            ChecksumResultReporter* reporter) = 0;
+
+  virtual const std::string& uuid() const {
     return uuid_;
   }
+
+  virtual const std::string& address() const = 0;
 
  private:
   const std::string uuid_;
@@ -182,7 +249,7 @@ class KsckCluster {
   }
   ~KsckCluster();
 
-  // Fecthes list of tables, tablets, and tablet servers from the master and
+  // Fetches list of tables, tablets, and tablet servers from the master and
   // populates the full list in cluster_->tables().
   Status FetchTableAndTabletInfo();
 
@@ -241,6 +308,18 @@ class Ksck {
   // and a leader.
   // Must first call FetchTableAndTabletInfo().
   Status CheckTablesConsistency();
+
+  // Verifies data checksums on all tablets by doing a scan of the database on each replica.
+  // If tables is not empty, checks only the named tables.
+  // If tablets is not empty, checks only the specified tablets.
+  // If both are specified, takes the intersection.
+  // If both are empty, all tables and tablets are checked.
+  // timeout specifies the maximum total time that the method will wait for
+  // results to come back from all replicas.
+  // Must first call FetchTableAndTabletInfo().
+  Status ChecksumData(const std::vector<std::string>& tables,
+                      const std::vector<std::string>& tablets,
+                      const MonoDelta& timeout);
 
   // Verifies that the assignments reported by the master are the same reported by the
   // Tablet Servers.

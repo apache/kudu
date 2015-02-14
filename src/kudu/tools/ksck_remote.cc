@@ -3,6 +3,7 @@
 
 #include "kudu/tools/ksck_remote.h"
 
+#include "kudu/common/schema.h"
 #include "kudu/common/wire_protocol.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/strings/substitute.h"
@@ -46,6 +47,146 @@ bool RemoteKsckTabletServer::IsConnected() const {
   return last_connect_status_.ok();
 }
 
+class ChecksumStepper;
+
+// Simple class to act as a callback in order to collate results from parallel
+// checksum scans.
+class ChecksumCallbackHandler {
+ public:
+  explicit ChecksumCallbackHandler(ChecksumStepper* const stepper)
+      : stepper(DCHECK_NOTNULL(stepper)) {
+  }
+
+  // Invoked by an RPC completion callback. Simply calls back into the stepper.
+  // Then the call to the stepper returns, deletes 'this'.
+  void Run();
+
+ private:
+  ChecksumStepper* const stepper;
+};
+
+// Simple class to have a "conversation" over multiple requests to a server
+// to carry out a multi-part checksum scan.
+// If any errors or timeouts are encountered, the checksum operation fails.
+// After the ChecksumStepper reports its results to the reporter, it deletes itself.
+class ChecksumStepper {
+ public:
+  ChecksumStepper(const string& tablet_id,
+                  const Schema& schema,
+                  const string& server_uuid,
+                  ChecksumResultReporter* reporter,
+                  const shared_ptr<tserver::TabletServerServiceProxy>& proxy)
+      : schema_(schema),
+        tablet_id_(tablet_id),
+        server_uuid_(server_uuid),
+        reporter_(DCHECK_NOTNULL(reporter)),
+        proxy_(proxy),
+        call_seq_id_(0),
+        checksum_(0) {
+  }
+
+  Status Start() {
+    RETURN_NOT_OK(SchemaToColumnPBsWithoutIds(schema_, &cols_));
+    SendRequest(kNewRequest);
+    return Status::OK();
+  }
+
+  void HandleResponse() {
+    gscoped_ptr<ChecksumStepper> deleter(this);
+    Status s = rpc_.status();
+    if (s.ok() && resp_.has_error()) {
+      s = StatusFromPB(resp_.error().status());
+    }
+    if (!s.ok()) {
+      reporter_->ReportError(tablet_id_, server_uuid_, s);
+      return; // Deletes 'this'.
+    }
+
+    DCHECK(resp_.has_checksum());
+    checksum_ = resp_.checksum();
+
+    // Report back with results.
+    if (!resp_.has_more_results()) {
+      reporter_->ReportResult(tablet_id_, server_uuid_, checksum_);
+      return; // Deletes 'this'.
+    }
+
+    // We're not done scanning yet. Fetch the next chunk.
+    if (resp_.has_scanner_id()) {
+      scanner_id_ = resp_.scanner_id();
+    }
+    SendRequest(kContinueRequest);
+    ignore_result(deleter.release()); // We have more work to do.
+  }
+
+ private:
+  enum RequestType {
+    kNewRequest,
+    kContinueRequest
+  };
+
+  void SendRequest(RequestType type) {
+    switch (type) {
+      case kNewRequest: {
+        req_.set_call_seq_id(call_seq_id_);
+        req_.mutable_new_request()->mutable_projected_columns()->CopyFrom(cols_);
+        req_.mutable_new_request()->set_tablet_id(tablet_id_);
+        rpc_.set_timeout(GetDefaultTimeout());
+        break;
+      }
+      case kContinueRequest: {
+        req_.Clear();
+        resp_.Clear();
+        rpc_.Reset();
+
+        req_.set_call_seq_id(++call_seq_id_);
+        DCHECK(!scanner_id_.empty());
+        req_.mutable_continue_request()->set_scanner_id(scanner_id_);
+        req_.mutable_continue_request()->set_previous_checksum(checksum_);
+        break;
+      }
+      default:
+        LOG(FATAL) << "Unknown type";
+        break;
+    }
+    gscoped_ptr<ChecksumCallbackHandler> handler(new ChecksumCallbackHandler(this));
+    rpc::ResponseCallback cb = boost::bind(&ChecksumCallbackHandler::Run, handler.get());
+    proxy_->ChecksumAsync(req_, &resp_, &rpc_, cb);
+    ignore_result(handler.release());
+  }
+
+  const Schema schema_;
+  google::protobuf::RepeatedPtrField<ColumnSchemaPB> cols_;
+
+  const string tablet_id_;
+  const string server_uuid_;
+  ChecksumResultReporter* const reporter_;
+  const shared_ptr<tserver::TabletServerServiceProxy> proxy_;
+
+  uint32_t call_seq_id_;
+  string scanner_id_;
+  uint64_t checksum_;
+  tserver::ChecksumRequestPB req_;
+  tserver::ChecksumResponsePB resp_;
+  RpcController rpc_;
+};
+
+
+void ChecksumCallbackHandler::Run() {
+  stepper->HandleResponse();
+  delete this;
+}
+
+Status RemoteKsckTabletServer::RunTabletChecksumScanAsync(const string& tablet_id,
+                                                          const Schema& schema,
+                                                          ChecksumResultReporter* reporter) {
+  RETURN_NOT_OK(EnsureConnected());
+  gscoped_ptr<ChecksumStepper> stepper(
+      new ChecksumStepper(tablet_id, schema, uuid(), reporter, proxy_));
+  RETURN_NOT_OK(stepper->Start());
+  ignore_result(stepper.release()); // Deletes self on callback.
+  return Status::OK();
+}
 
 Status RemoteKsckMaster::Connect() {
   vector<Sockaddr> addrs;
@@ -96,9 +237,10 @@ Status RemoteKsckMaster::RetrieveTablesList(vector<shared_ptr<KsckTable> >* tabl
   }
   vector<shared_ptr<KsckTable> > tables_temp;
   BOOST_FOREACH(const master::ListTablesResponsePB_TableInfo& info, resp.tables()) {
+    Schema schema;
     int num_replicas;
-    RETURN_NOT_OK(GetNumReplicasForTable(info.name(), &num_replicas));
-    shared_ptr<KsckTable> table(new KsckTable(info.name(), num_replicas));
+    RETURN_NOT_OK(GetTableInfo(info.name(), &schema, &num_replicas));
+    shared_ptr<KsckTable> table(new KsckTable(info.name(), schema, num_replicas));
     tables_temp.push_back(table);
   }
   tables->assign(tables_temp.begin(), tables_temp.end());
@@ -156,7 +298,7 @@ Status RemoteKsckMaster::GetTabletsBatch(const string& table_name,
   return Status::OK();
 }
 
-Status RemoteKsckMaster::GetNumReplicasForTable(const string& table_name, int* num_replicas) {
+Status RemoteKsckMaster::GetTableInfo(const string& table_name, Schema* schema, int* num_replicas) {
   master::GetTableSchemaRequestPB req;
   master::GetTableSchemaResponsePB resp;
   RpcController rpc;
@@ -166,6 +308,7 @@ Status RemoteKsckMaster::GetNumReplicasForTable(const string& table_name, int* n
   rpc.set_timeout(GetDefaultTimeout());
   RETURN_NOT_OK(proxy_->GetTableSchema(req, &resp, &rpc));
 
+  RETURN_NOT_OK(SchemaFromPB(resp.schema(), schema));
   *num_replicas = resp.num_replicas();
   return Status::OK();
 }

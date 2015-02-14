@@ -24,7 +24,8 @@ class MockKsckTabletServer : public KsckTabletServer {
  public:
   explicit MockKsckTabletServer(const string& uuid)
       : KsckTabletServer(uuid),
-        connect_status_(Status::OK()) {
+        connect_status_(Status::OK()),
+        address_("<mock>") {
   }
 
   virtual Status Connect() OVERRIDE {
@@ -34,8 +35,23 @@ class MockKsckTabletServer : public KsckTabletServer {
   virtual bool IsConnected() const OVERRIDE {
     return connect_status_.ok();
   }
+
+  virtual Status RunTabletChecksumScanAsync(const std::string& tablet_id,
+                                            const Schema& schema,
+                                            ChecksumResultReporter* reporter) OVERRIDE {
+    reporter->ReportResult(tablet_id, uuid(), 0);
+    return Status::OK();
+  }
+
+  virtual const std::string& address() const OVERRIDE {
+    return address_;
+  }
+
   // Public because the unit tests mutate this variable directly.
   Status connect_status_;
+
+ private:
+  const string address_;
 };
 
 class MockKsckMaster : public KsckMaster {
@@ -132,7 +148,7 @@ class KsckTest : public KuduTest {
 
   void CreateAndAddTable(vector<shared_ptr<KsckTablet> > tablets,
                          const string& name, int num_replicas) {
-    shared_ptr<KsckTable> table(new KsckTable(name, num_replicas));
+    shared_ptr<KsckTable> table(new KsckTable(name, Schema(), num_replicas));
     table->set_tablets(tablets);
 
     vector<shared_ptr<KsckTable> > tables = boost::assign::list_of(table);

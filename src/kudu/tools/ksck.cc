@@ -3,17 +3,27 @@
 
 #include <boost/foreach.hpp>
 #include <glog/logging.h>
+#include <iostream>
+#include <tr1/unordered_set>
 
 #include "kudu/tools/ksck.h"
 
+#include "kudu/gutil/map-util.h"
+#include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/util/locks.h"
 #include "kudu/util/monotime.h"
+#include "kudu/util/shared_ptr_util.h"
 
 namespace kudu {
 namespace tools {
 
+using std::cerr;
+using std::cout;
+using std::endl;
 using std::string;
 using std::tr1::shared_ptr;
+using std::tr1::unordered_map;
 using strings::Substitute;
 
 KsckCluster::~KsckCluster() {
@@ -126,6 +136,140 @@ Status Ksck::CheckTablesConsistency() {
                                bad_tables_count, tables_count);
     return Status::Corruption(Substitute("$0 tables are bad", bad_tables_count));
   }
+}
+
+ChecksumResultReporter::ChecksumResultReporter(int num_tablet_replicas)
+    : responses_(num_tablet_replicas) {
+}
+
+void ChecksumResultReporter::HandleResponse(const string& tablet_id,
+                                            const string& replica_uuid,
+                                            const Status& status,
+                                            uint64_t checksum) {
+  lock_guard<simple_spinlock> guard(&lock_);
+  unordered_map<string, ResultPair>& replica_results =
+      LookupOrInsert(&checksums_, tablet_id, unordered_map<string, ResultPair>());
+  InsertOrDie(&replica_results, replica_uuid, ResultPair(status, checksum));
+  responses_.CountDown();
+}
+
+ChecksumResultReporter::TabletResultMap ChecksumResultReporter::checksums() const {
+  lock_guard<simple_spinlock> guard(&lock_);
+  return checksums_;
+}
+
+Status Ksck::ChecksumData(const vector<string>& tables,
+                          const vector<string>& tablets,
+                          const MonoDelta& timeout) {
+  const unordered_set<string> tables_filter(tables.begin(), tables.end());
+  const unordered_set<string> tablets_filter(tablets.begin(), tablets.end());
+
+  typedef unordered_map<shared_ptr<KsckTablet>, shared_ptr<KsckTable>,
+                        SharedPtrHashFunctor<KsckTablet> > TabletTableMap;
+  TabletTableMap tablet_table_map;
+
+  int num_tablet_replicas = 0;
+  BOOST_FOREACH(const shared_ptr<KsckTable>& table, cluster_->tables()) {
+    VLOG(1) << "Table: " << table->name();
+    if (!tables_filter.empty() && !ContainsKey(tables_filter, table->name())) continue;
+    BOOST_FOREACH(const shared_ptr<KsckTablet>& tablet, table->tablets()) {
+      VLOG(1) << "Tablet: " << tablet->id();
+      if (!tablets_filter.empty() && !ContainsKey(tablets_filter, tablet->id())) continue;
+      InsertOrDie(&tablet_table_map, tablet, table);
+      num_tablet_replicas += tablet->replicas().size();
+    }
+  }
+  if (num_tablet_replicas == 0) {
+    string msg = "No tablet replicas found.";
+    if (!tables.empty() || !tablets.empty()) {
+      msg += " Filter: ";
+      if (!tables.empty()) {
+        msg += "tables=" + JoinStrings(tables, ",") + ".";
+      }
+      if (!tablets.empty()) {
+        msg += "tablets=" + JoinStrings(tablets, ",") + ".";
+      }
+
+    }
+    return Status::NotFound(msg);
+  }
+  ChecksumResultReporter reporter(num_tablet_replicas);
+
+  // Kick off the scans in parallel.
+  // TODO: Add some way to throttle requests on big clusters.
+  BOOST_FOREACH(const TabletTableMap::value_type& entry, tablet_table_map) {
+    const shared_ptr<KsckTablet>& tablet = entry.first;
+    const shared_ptr<KsckTable>& table = entry.second;
+    BOOST_FOREACH(const shared_ptr<KsckTabletReplica>& replica, tablet->replicas()) {
+      const shared_ptr<KsckTabletServer>& ts =
+          FindOrDie(cluster_->tablet_servers(), replica->ts_uuid());
+      Status s = ts->RunTabletChecksumScanAsync(tablet->id(), table->schema(), &reporter);
+      if (!s.ok()) {
+        reporter.ReportError(tablet->id(), replica->ts_uuid(), s);
+      }
+    }
+  }
+
+  if (!reporter.WaitFor(timeout)) {
+    LOG(WARNING) << "Checksum scan did not complete within the timeout of " << timeout.ToString();
+  }
+  ChecksumResultReporter::TabletResultMap checksums = reporter.checksums();
+
+  int num_errors = 0;
+  int num_mismatches = 0;
+  int num_results = 0;
+  BOOST_FOREACH(const shared_ptr<KsckTable>& table, cluster_->tables()) {
+    bool printed_table_name = false;
+    BOOST_FOREACH(const shared_ptr<KsckTablet>& tablet, table->tablets()) {
+      if (ContainsKey(checksums, tablet->id())) {
+        if (!printed_table_name) {
+          printed_table_name = true;
+          cout << "-----------------------" << endl;
+          cout << table->name() << endl;
+          cout << "-----------------------" << endl;
+        }
+        bool seen_first_replica = false;
+        uint64_t first_checksum = 0;
+
+        BOOST_FOREACH(const ChecksumResultReporter::ReplicaResultMap::value_type& r,
+                      FindOrDie(checksums, tablet->id())) {
+          const string& replica_uuid = r.first;
+
+          shared_ptr<KsckTabletServer> ts = FindOrDie(cluster_->tablet_servers(), replica_uuid);
+          const ChecksumResultReporter::ResultPair& result = r.second;
+          const Status& status = result.first;
+          uint64_t checksum = result.second;
+          string status_str = (status.ok()) ? Substitute("Checksum: $0", checksum)
+                                            : Substitute("Error: $0", status.ToString());
+          cout << Substitute("T $0 P $1 ($2): $3", tablet->id(), ts->uuid(), ts->address(),
+                                                   status_str) << endl;
+          if (!status.ok()) {
+            num_errors++;
+          } else if (!seen_first_replica) {
+            seen_first_replica = true;
+            first_checksum = checksum;
+          } else if (checksum != first_checksum) {
+            num_mismatches++;
+            cerr << ">> Mismatch found in table " << table->name()
+                 << " tablet " << tablet->id() << endl;
+          }
+          num_results++;
+        }
+      }
+    }
+    if (printed_table_name) cout << endl;
+  }
+  if (num_results != num_tablet_replicas) {
+    return Status::NotFound("Did not get results for all expected replicas");
+  }
+  if (num_mismatches != 0) {
+    return Status::Corruption(Substitute("$0 checksum mismatches were detected", num_mismatches));
+  }
+  if (num_errors != 0) {
+    return Status::Aborted(Substitute("$0 errors were detected", num_errors));
+  }
+
+  return Status::OK();
 }
 
 bool Ksck::VerifyTableWithTimeout(const shared_ptr<KsckTable>& table,
