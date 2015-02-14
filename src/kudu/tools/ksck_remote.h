@@ -20,28 +20,38 @@ namespace tools {
 // This implementation connects to a Tablet Server via RPC.
 class RemoteKsckTabletServer : public KsckTabletServer {
  public:
-  RemoteKsckTabletServer(const std::string& uuid, const std::string& address)
+  RemoteKsckTabletServer(const std::string& uuid,
+                         const std::string& address,
+                         const std::tr1::shared_ptr<rpc::Messenger>& messenger)
       : KsckTabletServer(uuid),
-        address_(address) {
+        address_(address),
+        messenger_(messenger),
+        last_connect_status_(Status::Uninitialized("Must call Connect()")) {
   }
 
   virtual Status Connect() OVERRIDE;
 
+  virtual bool IsConnected() const OVERRIDE;
+
  private:
   const std::string address_;
-  std::tr1::shared_ptr<rpc::Messenger> messenger_;
+  const std::tr1::shared_ptr<rpc::Messenger> messenger_;
   std::tr1::shared_ptr<tserver::TabletServerServiceProxy> proxy_;
+  Status last_connect_status_;
 };
 
 // This implementation connects to a Master via RPC.
 class RemoteKsckMaster : public KsckMaster {
  public:
   explicit RemoteKsckMaster(const std::string& address)
-      : address_(address) {
+      : address_(address),
+        last_connect_status_(Status::Uninitialized("Must call Connect()")) {
   }
   virtual ~RemoteKsckMaster() { }
 
   virtual Status Connect() OVERRIDE;
+
+  virtual bool IsConnected() const OVERRIDE;
 
   virtual Status RetrieveTabletServers(TSMap* tablet_servers) OVERRIDE;
 
@@ -56,9 +66,11 @@ class RemoteKsckMaster : public KsckMaster {
   // that came in the batch.
   Status GetTabletsBatch(const std::string& table_name, std::string* last_key,
     std::vector<std::tr1::shared_ptr<KsckTablet> >& tablets, bool* more_tablets);
+
   const std::string address_;
   std::tr1::shared_ptr<rpc::Messenger> messenger_;
   std::tr1::shared_ptr<master::MasterServiceProxy> proxy_;
+  Status last_connect_status_;
 };
 
 } // namespace tools

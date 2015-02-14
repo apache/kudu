@@ -117,6 +117,15 @@ class KsckTabletServer {
   // Connects to the configured Tablet Server.
   virtual Status Connect() = 0;
 
+  // Returns true iff Connect() has been called and was successful.
+  virtual bool IsConnected() const = 0;
+
+  // Calls Connect() unless IsConnected() returns true. Helper method.
+  virtual Status EnsureConnected() {
+    if (IsConnected()) return Status::OK();
+    return Connect();
+  }
+
   const std::string& uuid() const {
     return uuid_;
   }
@@ -137,6 +146,15 @@ class KsckMaster {
 
   // Connects to the configured Master.
   virtual Status Connect() = 0;
+
+  // Returns true iff Connect() has been called and was successful.
+  virtual bool IsConnected() const = 0;
+
+  // Calls Connect() unless IsConnected() returns true. Helper method.
+  virtual Status EnsureConnected() {
+    if (IsConnected()) return Status::OK();
+    return Connect();
+  }
 
   // Gets the list of Tablet Servers from the Master and stores it in the passed
   // map, which is keyed on server permanent_uuid.
@@ -164,13 +182,9 @@ class KsckCluster {
   }
   ~KsckCluster();
 
-  // Gets the list of tablet servers from the Master.
-  Status RetrieveTabletServers();
-
-  // Gets the list of tables from the Master.
-  Status RetrieveTablesList();
-
-  Status RetrieveTabletsList(const std::tr1::shared_ptr<KsckTable>& table);
+  // Fecthes list of tables, tablets, and tablet servers from the master and
+  // populates the full list in cluster_->tables().
+  Status FetchTableAndTabletInfo();
 
   const std::tr1::shared_ptr<KsckMaster>& master() {
     return master_;
@@ -186,6 +200,15 @@ class KsckCluster {
   }
 
  private:
+  // Gets the list of tablet servers from the Master.
+  Status RetrieveTabletServers();
+
+  // Gets the list of tables from the Master.
+  Status RetrieveTablesList();
+
+  // Fetch the list of tablets for the given table from the Master.
+  Status RetrieveTabletsList(const std::tr1::shared_ptr<KsckTable>& table);
+
   const std::tr1::shared_ptr<KsckMaster> master_;
   std::tr1::unordered_map<std::string, std::tr1::shared_ptr<KsckTabletServer> > tablet_servers_;
   std::vector<std::tr1::shared_ptr<KsckTable> > tables_;
@@ -198,26 +221,30 @@ class Ksck {
   explicit Ksck(const std::tr1::shared_ptr<KsckCluster>& cluster)
       : cluster_(cluster) {
   }
-  ~Ksck();
+  ~Ksck() {}
 
   // Verifies that it can connect to the Master.
   Status CheckMasterRunning();
 
+  // Populates all the cluster table and tablet info from the Master.
+  Status FetchTableAndTabletInfo();
+
   // Verifies that it can connect to all the Tablet Servers reported by the master.
-  // Depends on: CheckMasterRunning().
+  // Must first call FetchTableAndTabletInfo().
   Status CheckTabletServersRunning();
 
   // Establishes a connection with the specified Tablet Server.
+  // Must first call FetchTableAndTabletInfo().
   Status ConnectToTabletServer(const std::tr1::shared_ptr<KsckTabletServer>& ts);
 
   // Verifies that all the tables have contiguous tablets and that each tablet has enough replicas
   // and a leader.
-  // Depends on: CheckMasterRunning().
+  // Must first call FetchTableAndTabletInfo().
   Status CheckTablesConsistency();
 
   // Verifies that the assignments reported by the master are the same reported by the
   // Tablet Servers.
-  // Depends on: CheckTablesConsistency().
+  // Must first call FetchTableAndTabletInfo().
   Status CheckAssignments();
 
  private:

@@ -19,19 +19,30 @@ using strings::Substitute;
 KsckCluster::~KsckCluster() {
 }
 
+Status KsckCluster::FetchTableAndTabletInfo() {
+  RETURN_NOT_OK(RetrieveTablesList());
+  RETURN_NOT_OK(RetrieveTabletServers());
+  BOOST_FOREACH(const shared_ptr<KsckTable>& table, tables()) {
+    RETURN_NOT_OK(RetrieveTabletsList(table));
+  }
+  return Status::OK();
+}
+
+// Gets the list of tablet servers from the Master.
 Status KsckCluster::RetrieveTabletServers() {
+  RETURN_NOT_OK(master_->EnsureConnected());
   return master_->RetrieveTabletServers(&tablet_servers_);
 }
 
+// Gets the list of tables from the Master.
 Status KsckCluster::RetrieveTablesList() {
+  RETURN_NOT_OK(master_->EnsureConnected());
   return master_->RetrieveTablesList(&tables_);
 }
 
 Status KsckCluster::RetrieveTabletsList(const shared_ptr<KsckTable>& table) {
+  RETURN_NOT_OK(master_->EnsureConnected());
   return master_->RetrieveTabletsList(table);
-}
-
-Ksck::~Ksck() {
 }
 
 Status Ksck::CheckMasterRunning() {
@@ -45,15 +56,17 @@ Status Ksck::CheckMasterRunning() {
   return s;
 }
 
+Status Ksck::FetchTableAndTabletInfo() {
+  return cluster_->FetchTableAndTabletInfo();
+}
+
 Status Ksck::CheckTabletServersRunning() {
   VLOG(1) << "Getting the Tablet Servers list";
-  RETURN_NOT_OK(cluster_->RetrieveTabletServers());
   int servers_count = cluster_->tablet_servers().size();
   VLOG(1) << Substitute("List of $0 Tablet Servers retrieved", servers_count);
 
   if (servers_count == 0) {
-    LOG(WARNING) << "The Master reports 0 Tablet Servers";
-    return Status::OK();
+    return Status::NotFound("No tablet servers found");
   }
 
   int bad_servers = 0;
@@ -88,7 +101,6 @@ Status Ksck::ConnectToTabletServer(const shared_ptr<KsckTabletServer>& ts) {
 
 Status Ksck::CheckTablesConsistency() {
   VLOG(1) << "Getting the tables list";
-  RETURN_NOT_OK(cluster_->RetrieveTablesList());
   int tables_count = cluster_->tables().size();
   VLOG(1) << Substitute("List of $0 tables retrieved", tables_count);
 
@@ -136,13 +148,6 @@ bool Ksck::VerifyTableWithTimeout(const shared_ptr<KsckTable>& table,
 
 bool Ksck::VerifyTable(const shared_ptr<KsckTable>& table) {
   bool good_table = true;
-  VLOG(1) << "Getting the tablets' metadata for table " << table->name();
-  Status s = cluster_->RetrieveTabletsList(table);
-  if (!s.ok()) {
-    LOG(WARNING) << Substitute("Couldn't get the list of tablets for table $0 because: $1",
-                               table->name(), s.ToString());
-    return false;
-  }
   vector<shared_ptr<KsckTablet> > tablets = table->tablets();
   int tablets_count = tablets.size();
   if (tablets_count == 0) {

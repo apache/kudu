@@ -9,6 +9,7 @@
 #include "kudu/integration-tests/mini_cluster.h"
 #include "kudu/master/mini_master.h"
 #include "kudu/tools/ksck_remote.h"
+#include "kudu/util/monotime.h"
 #include "kudu/util/test_util.h"
 
 DECLARE_int32(heartbeat_interval_ms);
@@ -22,6 +23,8 @@ using std::tr1::shared_ptr;
 using std::vector;
 using std::string;
 
+static const char *kTableName = "ksck-test-table";
+
 class RemoteKsckTest : public KuduTest {
  public:
   RemoteKsckTest()
@@ -29,9 +32,6 @@ class RemoteKsckTest : public KuduTest {
               (KuduColumnSchema("key", KuduColumnSchema::UINT32))
               (KuduColumnSchema("int_val", KuduColumnSchema::UINT32)),
               1) {
-  }
-
-  ~RemoteKsckTest() {
   }
 
   virtual void SetUp() OVERRIDE {
@@ -89,7 +89,6 @@ class RemoteKsckTest : public KuduTest {
   }
 
 
-  static const char *kTableName;
   shared_ptr<Ksck> ksck_;
 
  private:
@@ -102,21 +101,27 @@ class RemoteKsckTest : public KuduTest {
   shared_ptr<KsckCluster> cluster_;
 };
 
-const char *RemoteKsckTest::kTableName = "ksck-test-table";
-
 TEST_F(RemoteKsckTest, TestMasterOk) {
   ASSERT_OK(ksck_->CheckMasterRunning());
 }
 
 TEST_F(RemoteKsckTest, TestTabletServersOk) {
-  ASSERT_OK(ksck_->CheckMasterRunning());
+  ASSERT_OK(ksck_->FetchTableAndTabletInfo());
   ASSERT_OK(ksck_->CheckTabletServersRunning());
 }
 
-TEST_F(RemoteKsckTest, TestTableOk) {
-  ASSERT_OK(ksck_->CheckMasterRunning());
-  ASSERT_OK(ksck_->CheckTabletServersRunning());
-  ASSERT_OK(ksck_->CheckTablesConsistency());
+TEST_F(RemoteKsckTest, TestTableConsistency) {
+  Status s;
+  // We may have to sleep and loop because it takes some time for the
+  // tablet leader be elected and to report back to the Master.
+  for (int i = 1; i <= 10; i++) {
+    LOG(INFO) << "Consistency check attempt " << i << "...";
+    SleepFor(MonoDelta::FromMilliseconds(700));
+    ASSERT_OK(ksck_->FetchTableAndTabletInfo());
+    s = ksck_->CheckTablesConsistency();
+    if (s.ok()) break;
+  }
+  ASSERT_OK(s);
 }
 
 } // namespace tools

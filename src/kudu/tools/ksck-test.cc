@@ -31,6 +31,9 @@ class MockKsckTabletServer : public KsckTabletServer {
     return connect_status_;
   }
 
+  virtual bool IsConnected() const OVERRIDE {
+    return connect_status_.ok();
+  }
   // Public because the unit tests mutate this variable directly.
   Status connect_status_;
 };
@@ -43,6 +46,10 @@ class MockKsckMaster : public KsckMaster {
 
   virtual Status Connect() OVERRIDE {
     return connect_status_;
+  }
+
+  virtual bool IsConnected() const OVERRIDE {
+    return connect_status_.ok();
   }
 
   virtual Status RetrieveTabletServers(TSMap* tablet_servers) OVERRIDE {
@@ -174,6 +181,7 @@ TEST_F(KsckTest, TestMasterUnavailable) {
 
 TEST_F(KsckTest, TestTabletServersOk) {
   ASSERT_OK(ksck_->CheckMasterRunning());
+  ASSERT_OK(ksck_->FetchTableAndTabletInfo());
   ASSERT_OK(ksck_->CheckTabletServersRunning());
 }
 
@@ -182,11 +190,14 @@ TEST_F(KsckTest, TestBadTabletServer) {
   Status error = Status::NetworkError("Network failure");
   static_pointer_cast<MockKsckTabletServer>(master_->tablet_servers_.begin()->second)
       ->connect_status_ = error;
-  ASSERT_TRUE(ksck_->CheckTabletServersRunning().IsNetworkError());
+  ASSERT_OK(ksck_->FetchTableAndTabletInfo());
+  Status s = ksck_->CheckTabletServersRunning();
+  ASSERT_TRUE(s.IsNetworkError()) << "Status returned: " << s.ToString();
 }
 
 TEST_F(KsckTest, TestZeroTableCheck) {
   ASSERT_OK(ksck_->CheckMasterRunning());
+  ASSERT_OK(ksck_->FetchTableAndTabletInfo());
   ASSERT_OK(ksck_->CheckTabletServersRunning());
   ASSERT_OK(ksck_->CheckTablesConsistency());
 }
@@ -194,6 +205,7 @@ TEST_F(KsckTest, TestZeroTableCheck) {
 TEST_F(KsckTest, TestOneTableCheck) {
   CreateOneTableOneTablet();
   ASSERT_OK(ksck_->CheckMasterRunning());
+  ASSERT_OK(ksck_->FetchTableAndTabletInfo());
   ASSERT_OK(ksck_->CheckTabletServersRunning());
   ASSERT_OK(ksck_->CheckTablesConsistency());
 }
@@ -201,6 +213,7 @@ TEST_F(KsckTest, TestOneTableCheck) {
 TEST_F(KsckTest, TestOneSmallReplicatedTable) {
   CreateOneSmallReplicatedTable();
   ASSERT_OK(ksck_->CheckMasterRunning());
+  ASSERT_OK(ksck_->FetchTableAndTabletInfo());
   ASSERT_OK(ksck_->CheckTabletServersRunning());
   ASSERT_OK(ksck_->CheckTablesConsistency());
 }
@@ -208,6 +221,7 @@ TEST_F(KsckTest, TestOneSmallReplicatedTable) {
 TEST_F(KsckTest, TestOneOneTabletBrokenTable) {
   CreateOneOneTabletReplicatedBrokenTable();
   ASSERT_OK(ksck_->CheckMasterRunning());
+  ASSERT_OK(ksck_->FetchTableAndTabletInfo());
   ASSERT_OK(ksck_->CheckTabletServersRunning());
   ASSERT_TRUE(ksck_->CheckTablesConsistency().IsCorruption());
 }

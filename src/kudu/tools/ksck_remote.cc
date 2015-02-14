@@ -32,16 +32,18 @@ MonoDelta GetDefaultTimeout() {
 Status RemoteKsckTabletServer::Connect() {
   vector<Sockaddr> addrs;
   RETURN_NOT_OK(ParseAddressList(address_, tserver::TabletServer::kDefaultPort, &addrs));
-
-  MessengerBuilder builder(kMessengerName);
-  RETURN_NOT_OK(builder.Build(&messenger_));
   proxy_.reset(new tserver::TabletServerServiceProxy(messenger_, addrs[0]));
 
   tserver::PingRequestPB req;
   tserver::PingResponsePB resp;
   RpcController rpc;
   rpc.set_timeout(GetDefaultTimeout());
-  return proxy_->Ping(req, &resp, &rpc);
+  last_connect_status_ = proxy_->Ping(req, &resp, &rpc);
+  return last_connect_status_;
+}
+
+bool RemoteKsckTabletServer::IsConnected() const {
+  return last_connect_status_.ok();
 }
 
 
@@ -60,6 +62,10 @@ Status RemoteKsckMaster::Connect() {
   return proxy_->Ping(req, &resp, &rpc);
 }
 
+bool RemoteKsckMaster::IsConnected() const {
+  return last_connect_status_.ok();
+}
+
 Status RemoteKsckMaster::RetrieveTabletServers(TSMap* tablet_servers) {
   master::ListTabletServersRequestPB req;
   master::ListTabletServersResponsePB resp;
@@ -72,7 +78,7 @@ Status RemoteKsckMaster::RetrieveTabletServers(TSMap* tablet_servers) {
     HostPortPB addr = e.registration().rpc_addresses(0);
     HostPort hp(addr.host(), addr.port());
     shared_ptr<KsckTabletServer> ts(
-        new RemoteKsckTabletServer(e.instance_id().permanent_uuid(), hp.ToString()));
+        new RemoteKsckTabletServer(e.instance_id().permanent_uuid(), hp.ToString(), messenger_));
     InsertOrDie(tablet_servers, ts->uuid(), ts);
   }
   return Status::OK();
@@ -85,7 +91,9 @@ Status RemoteKsckMaster::RetrieveTablesList(vector<shared_ptr<KsckTable> >* tabl
 
   rpc.set_timeout(GetDefaultTimeout());
   RETURN_NOT_OK(proxy_->ListTables(req, &resp, &rpc));
-  // TODO check resp.error
+  if (resp.has_error()) {
+    return StatusFromPB(resp.error().status());
+  }
   vector<shared_ptr<KsckTable> > tables_temp;
   BOOST_FOREACH(const master::ListTablesResponsePB_TableInfo& info, resp.tables()) {
     int num_replicas;
@@ -109,8 +117,10 @@ Status RemoteKsckMaster::RetrieveTabletsList(const shared_ptr<KsckTable>& table)
   return Status::OK();
 }
 
-Status RemoteKsckMaster::GetTabletsBatch(const string& table_name, string* last_key,
-   vector<shared_ptr<KsckTablet> >& tablets, bool* more_tablets) {
+Status RemoteKsckMaster::GetTabletsBatch(const string& table_name,
+                                         string* last_key,
+                                         vector<shared_ptr<KsckTablet> >& tablets,
+                                         bool* more_tablets) {
   master::GetTableLocationsRequestPB req;
   master::GetTableLocationsResponsePB resp;
   RpcController rpc;
