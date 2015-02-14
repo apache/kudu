@@ -21,10 +21,29 @@ namespace tools {
 using std::cerr;
 using std::cout;
 using std::endl;
+using std::ostream;
 using std::string;
 using std::tr1::shared_ptr;
 using std::tr1::unordered_map;
 using strings::Substitute;
+
+// Print an informational message to cerr.
+static ostream& Info() {
+  cerr << "INFO: ";
+  return cerr;
+}
+
+// Print a warning message to cerr.
+static ostream& Warn() {
+  cerr << "WARNING: ";
+  return cerr;
+}
+
+// Print an error message to cerr.
+static ostream& Error() {
+  cerr << "ERROR: ";
+  return cerr;
+}
 
 KsckCluster::~KsckCluster() {
 }
@@ -59,9 +78,7 @@ Status Ksck::CheckMasterRunning() {
   VLOG(1) << "Connecting to the Master";
   Status s = cluster_->master()->Connect();
   if (s.ok()) {
-    LOG(INFO) << "Connected to the Master";
-  } else {
-    LOG(ERROR) << "Unable to connect to the Master: " << s.ToString();
+    Info() << "Connected to the Master" << endl;
   }
   return s;
 }
@@ -88,11 +105,11 @@ Status Ksck::CheckTabletServersRunning() {
     }
   }
   if (bad_servers == 0) {
-    LOG(INFO) << Substitute("Connected to all $0 Tablet Servers", servers_count);
+    Info() << Substitute("Connected to all $0 Tablet Servers", servers_count) << endl;
     return Status::OK();
   } else {
-    LOG(WARNING) << Substitute("Connected to $0 Tablet Servers, $1 weren't reachable",
-                               servers_count - bad_servers, bad_servers);
+    Warn() << Substitute("Connected to $0 Tablet Servers, $1 weren't reachable",
+                         servers_count - bad_servers, bad_servers) << endl;
     return Status::NetworkError("Not all Tablet Servers are reachable");
   }
 }
@@ -103,8 +120,8 @@ Status Ksck::ConnectToTabletServer(const shared_ptr<KsckTabletServer>& ts) {
   if (s.ok()) {
     VLOG(1) << "Connected to Tablet Server: " << ts->uuid();
   } else {
-    LOG(WARNING) << Substitute("Unable to connect to Tablet Server $0 because $1",
-                               ts->uuid(), s.ToString());
+    Warn() << Substitute("Unable to connect to Tablet Server $0 because $1",
+                         ts->uuid(), s.ToString()) << endl;
   }
   return s;
 }
@@ -115,7 +132,7 @@ Status Ksck::CheckTablesConsistency() {
   VLOG(1) << Substitute("List of $0 tables retrieved", tables_count);
 
   if (tables_count == 0) {
-    LOG(INFO) << "The cluster doesn't have any tables";
+    Info() << "The cluster doesn't have any tables" << endl;
     return Status::OK();
   }
 
@@ -129,11 +146,11 @@ Status Ksck::CheckTablesConsistency() {
     }
   }
   if (bad_tables_count == 0) {
-    LOG(INFO) << Substitute("The metadata for $0 tables is HEALTHY", tables_count);
+    Info() << Substitute("The metadata for $0 tables is HEALTHY", tables_count) << endl;
     return Status::OK();
   } else {
-    LOG(WARNING) << Substitute("$0 out of $1 tables are not in a healthy state",
-                               bad_tables_count, tables_count);
+    Warn() << Substitute("$0 out of $1 tables are not in a healthy state",
+                         bad_tables_count, tables_count) << endl;
     return Status::Corruption(Substitute("$0 tables are bad", bad_tables_count));
   }
 }
@@ -211,7 +228,7 @@ Status Ksck::ChecksumData(const vector<string>& tables,
   }
 
   if (!reporter.WaitFor(timeout)) {
-    LOG(WARNING) << "Checksum scan did not complete within the timeout of " << timeout.ToString();
+    Warn() << "Checksum scan did not complete within the timeout of " << timeout.ToString() << endl;
   }
   ChecksumResultReporter::TabletResultMap checksums = reporter.checksums();
 
@@ -250,8 +267,8 @@ Status Ksck::ChecksumData(const vector<string>& tables,
             first_checksum = checksum;
           } else if (checksum != first_checksum) {
             num_mismatches++;
-            cerr << ">> Mismatch found in table " << table->name()
-                 << " tablet " << tablet->id() << endl;
+            Error() << ">> Mismatch found in table " << table->name()
+                    << " tablet " << tablet->id() << endl;
           }
           num_results++;
         }
@@ -295,7 +312,7 @@ bool Ksck::VerifyTable(const shared_ptr<KsckTable>& table) {
   vector<shared_ptr<KsckTablet> > tablets = table->tablets();
   int tablets_count = tablets.size();
   if (tablets_count == 0) {
-    LOG(WARNING) << Substitute("Table $0 has 0 tablets", table->name());
+    Warn() << Substitute("Table $0 has 0 tablets", table->name()) << endl;
     return false;
   }
   int table_num_replicas = table->num_replicas();
@@ -309,9 +326,9 @@ bool Ksck::VerifyTable(const shared_ptr<KsckTable>& table) {
     }
   }
   if (bad_tablets_count == 0) {
-    VLOG(1) << Substitute("Table $0 is HEALTHY", table->name());
+    Info() << Substitute("Table $0 is HEALTHY", table->name()) << endl;
   } else {
-    LOG(WARNING) << Substitute("Table $0 has $1 bad tablets", table->name(), bad_tablets_count);
+    Warn() << Substitute("Table $0 has $1 bad tablets", table->name(), bad_tablets_count) << endl;
     good_table = false;
   }
   return good_table;
@@ -321,8 +338,8 @@ bool Ksck::VerifyTablet(const shared_ptr<KsckTablet>& tablet, int table_num_repl
   vector<shared_ptr<KsckTabletReplica> > replicas = tablet->replicas();
   bool good_tablet = true;
   if (replicas.size() != table_num_replicas) {
-    LOG(WARNING) << Substitute("Tablet $0 is missing $1 replicas",
-                               tablet->id(), table_num_replicas - replicas.size());
+    Warn() << Substitute("Tablet $0 is missing $1 replicas",
+                         tablet->id(), table_num_replicas - replicas.size()) << endl;
     good_tablet = false;
   }
   int leaders_count = 0;
@@ -337,7 +354,7 @@ bool Ksck::VerifyTablet(const shared_ptr<KsckTablet>& tablet, int table_num_repl
     }
   }
   if (leaders_count == 0) {
-    LOG(WARNING) << Substitute("Tablet $0 doesn't have a leader", tablet->id());
+    Warn() << Substitute("Tablet $0 doesn't have a leader", tablet->id()) << endl;
     good_tablet = false;
   }
   VLOG(1) << Substitute("Tablet $0 has $1 leader and $2 followers",

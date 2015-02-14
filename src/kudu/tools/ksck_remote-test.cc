@@ -113,7 +113,7 @@ TEST_F(RemoteKsckTest, TestTabletServersOk) {
 TEST_F(RemoteKsckTest, TestTableConsistency) {
   Status s;
   // We may have to sleep and loop because it takes some time for the
-  // tablet leader be elected and to report back to the Master.
+  // tablet leader to be elected and report back to the Master.
   for (int i = 1; i <= 10; i++) {
     LOG(INFO) << "Consistency check attempt " << i << "...";
     SleepFor(MonoDelta::FromMilliseconds(700));

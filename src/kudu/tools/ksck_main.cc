@@ -5,15 +5,18 @@
 // on the default RPC port. It verifies that all the reported Tablet Servers are running and that
 // the tablets are in a consistent state.
 
+#include <glog/logging.h>
+#include <google/gflags.h>
 #include <iostream>
 
 #include "kudu/gutil/strings/split.h"
+#include "kudu/gutil/strings/substitute.h"
 #include "kudu/tools/ksck_remote.h"
 
 #define PUSH_PREPEND_NOT_OK(s, statuses, msg) do { \
   ::kudu::Status _s = (s); \
   if (PREDICT_FALSE(!_s.ok())) { \
-    statuses.push_back(string(msg) + ": " + _s.ToString()); \
+    statuses->push_back(string(msg) + ": " + _s.ToString()); \
   } \
 } while (0);
 
@@ -21,6 +24,7 @@ using std::cerr;
 using std::cout;
 using std::endl;
 using std::tr1::shared_ptr;
+using strings::Substitute;
 
 DEFINE_string(master_address, "localhost",
               "Address of master server to run against");
@@ -42,36 +46,31 @@ DEFINE_string(tablets, "",
 namespace kudu {
 namespace tools {
 
-void PrintUsage(char** argv) {
-  cerr << "usage: " << argv[0] << " [--master_address=<address>]"
-       << " [--checksum_scan [--tables table1,table2] [--tablets tablet1,tablet2]"
-       << " [--checksum_timeout_sec TIMEOUT] ]"
-       << endl
-       << "The tool defaults to running against a local Master." << endl
-       << "Using --vmodule=ksck=1 gives more details at runtime." << endl;
+static string GetKsckUsage(const char* progname) {
+  string msg = Substitute("Usage: $0\n", progname);
+  msg += "The tool defaults to running against a local Master.\n";
+  msg += "Using --vmodule=ksck=1 gives more details at runtime.\n";
+  return msg;
 }
 
-bool IsOkElseLog(const Status& s) {
-  if (!s.ok()) {
-    LOG(WARNING) << s.ToString();
-  }
-  return s.ok();
-}
-
-static int KsckMain(int argc, char** argv) {
+// Run ksck.
+// Error information is appended to the provided vector.
+// If the vector is empty upon completion, ksck ran successfully.
+static void RunKsck(vector<string>* error_messages) {
   shared_ptr<KsckMaster> master(new RemoteKsckMaster(FLAGS_master_address));
   shared_ptr<KsckCluster> cluster(new KsckCluster(master));
   shared_ptr<Ksck> ksck(new Ksck(cluster));
-  vector<string> error_messages;
-  if (!IsOkElseLog(ksck->CheckMasterRunning())) {
-    // If we couldn't connect to the Master it might just be that the wrong address was given
-    // so we print the usage.
-    PrintUsage(argv);
-    return 1;
-  }
-  if (!IsOkElseLog(ksck->FetchTableAndTabletInfo())) {
-    return 1;
-  }
+
+  // This is required for everything below.
+  PUSH_PREPEND_NOT_OK(ksck->CheckMasterRunning(), error_messages,
+                      "Master aliveness check error");
+  if (!error_messages->empty()) return;
+
+  // This is also required for everything below.
+  PUSH_PREPEND_NOT_OK(ksck->FetchTableAndTabletInfo(), error_messages,
+                      "Error fetching the cluster metadata from the Master server");
+  if (!error_messages->empty()) return;
+
   PUSH_PREPEND_NOT_OK(ksck->CheckTabletServersRunning(), error_messages,
                       "Tablet server aliveness check error");
 
@@ -87,6 +86,19 @@ static int KsckMain(int argc, char** argv) {
         error_messages,
         "Checksum scan error");
   }
+}
+
+} // namespace tools
+} // namespace kudu
+
+int main(int argc, char** argv) {
+  google::InitGoogleLogging(argv[0]);
+  google::SetUsageMessage(kudu::tools::GetKsckUsage(argv[0]));
+  google::ParseCommandLineFlags(&argc, &argv, true);
+  FLAGS_logtostderr = true;
+
+  vector<string> error_messages;
+  kudu::tools::RunKsck(&error_messages);
 
   // All good.
   if (error_messages.empty()) {
@@ -104,14 +116,4 @@ static int KsckMain(int argc, char** argv) {
   cerr << endl;
   cerr << "FAILED" << endl;
   return 1;
-}
-
-} // namespace tools
-} // namespace kudu
-
-int main(int argc, char** argv) {
-  google::InitGoogleLogging(argv[0]);
-  google::ParseCommandLineFlags(&argc, &argv, true);
-  FLAGS_logtostderr = true;
-  return kudu::tools::KsckMain(argc, argv);
 }
