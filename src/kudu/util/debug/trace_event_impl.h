@@ -609,8 +609,9 @@ class BASE_EXPORT TraceLog {
                                        OptionalAutoLock* lock);
 
   void ConvertTraceEventsToTraceFormat(gscoped_ptr<TraceBuffer> logged_events,
-      const TraceLog::OutputCallback& flush_output_callback);
-  void FinishFlush(int generation);
+                                       const OutputCallback& flush_output_callback);
+  void FinishFlush(int generation,
+                   const OutputCallback& flush_output_callback);
 
   // Called when a thread which has registered trace events is about to exit.
   void ThreadExiting();
@@ -682,11 +683,16 @@ class BASE_EXPORT TraceLog {
   struct PerThreadInfo {
     ThreadLocalEventBuffer* event_buffer_;
     base::subtle::Atomic32 is_in_trace_event_;
+
+    // Atomically take the event_buffer_ member, setting it to NULL.
+    // Returns the old value of the member.
+    ThreadLocalEventBuffer* AtomicTakeBuffer();
   };
   static __thread PerThreadInfo* thread_local_info_;
 
-  // Protected by lock_.
+  Mutex active_threads_lock_;
   // Map of PID -> PerThreadInfo
+  // Protected by active_threads_lock_.
   typedef std::tr1::unordered_map<int64_t, PerThreadInfo*> ActiveThreadMap;
   ActiveThreadMap active_threads_;
 
@@ -695,8 +701,10 @@ class BASE_EXPORT TraceLog {
   gscoped_ptr<TraceBufferChunk> thread_shared_chunk_;
   size_t thread_shared_chunk_index_;
 
-  // Set when asynchronous Flush is in progress.
-  OutputCallback flush_output_callback_;
+  // The generation is incremented whenever tracing is enabled, and incremented
+  // again when the buffers are flushed. This ensures that trace events logged
+  // for a previous tracing session do not get accidentally flushed in the
+  // next tracing session.
   AtomicWord generation_;
 
   DISALLOW_COPY_AND_ASSIGN(TraceLog);

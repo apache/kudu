@@ -412,6 +412,13 @@ class MarkFlagInScope {
 };
 }  // anonymous namespace
 
+TraceLog::ThreadLocalEventBuffer* TraceLog::PerThreadInfo::AtomicTakeBuffer() {
+  return reinterpret_cast<TraceLog::ThreadLocalEventBuffer*>(
+    base::subtle::Acquire_AtomicExchange(
+      reinterpret_cast<AtomicWord*>(&event_buffer_),
+      0));
+}
+
 void TraceBufferChunk::Reset(uint32 new_seq) {
   for (size_t i = 0; i < next_free_; ++i)
     chunk_[i].Reset();
@@ -1560,14 +1567,9 @@ void TraceLog::Flush(const TraceLog::OutputCallback& cb) {
 
   int generation = this->generation();
   {
-    SpinLockHolder lock(&lock_);
-    flush_output_callback_ = cb;
-
-    if (thread_shared_chunk_) {
-      logged_events_->ReturnChunk(thread_shared_chunk_index_,
-                                  thread_shared_chunk_.Pass());
-    }
-
+    // Holding the active threads lock ensures that no thread will exit and
+    // delete its own PerThreadInfo object.
+    MutexLock l(active_threads_lock_);
     BOOST_FOREACH(const ActiveThreadMap::value_type& entry, active_threads_) {
       int64_t tid = entry.first;
       PerThreadInfo* thr_info = entry.second;
@@ -1575,11 +1577,7 @@ void TraceLog::Flush(const TraceLog::OutputCallback& cb) {
       // Swap out their buffer from their thread-local data.
       // After this, any _future_ trace calls on that thread will create a new buffer
       // and not use the one we obtain here.
-      ThreadLocalEventBuffer* buf =
-        reinterpret_cast<ThreadLocalEventBuffer*>(
-          base::subtle::Acquire_AtomicExchange(
-            reinterpret_cast<AtomicWord*>(&thr_info->event_buffer_),
-            0));
+      ThreadLocalEventBuffer* buf = thr_info->AtomicTakeBuffer();
 
       // If this thread hasn't traced anything since our last
       // flush, we can skip it.
@@ -1589,15 +1587,33 @@ void TraceLog::Flush(const TraceLog::OutputCallback& cb) {
 
       // The buffer may still be in use by that thread if they're in a call. Sleep until
       // they aren't, so we can flush/delete their old buffer.
+      //
+      // It's important that we do not hold 'lock_' here, because otherwise we can get a
+      // deadlock: a thread may be in the middle of a trace event (is_in_trace_event_ ==
+      // true) and waiting to take lock_, while we are holding the lock and waiting for it
+      // to not be in the trace event.
       while (base::subtle::Acquire_Load(&thr_info->is_in_trace_event_)) {
         sched_yield();
       }
-      buf->Flush(tid);
+
+      {
+        SpinLockHolder lock(&lock_);
+        buf->Flush(tid);
+      }
       delete buf;
     }
   }
 
-  FinishFlush(generation);
+  {
+    SpinLockHolder lock(&lock_);
+
+    if (thread_shared_chunk_) {
+      logged_events_->ReturnChunk(thread_shared_chunk_index_,
+                                  thread_shared_chunk_.Pass());
+    }
+  }
+
+  FinishFlush(generation, cb);
 }
 
 void TraceLog::ConvertTraceEventsToTraceFormat(
@@ -1631,9 +1647,9 @@ void TraceLog::ConvertTraceEventsToTraceFormat(
   } while (has_more_events);
 }
 
-void TraceLog::FinishFlush(int generation) {
+void TraceLog::FinishFlush(int generation,
+                           const TraceLog::OutputCallback& flush_output_callback) {
   gscoped_ptr<TraceBuffer> previous_logged_events;
-  OutputCallback flush_output_callback;
 
   if (!CheckGeneration(generation))
     return;
@@ -1643,9 +1659,6 @@ void TraceLog::FinishFlush(int generation) {
 
     previous_logged_events.swap(logged_events_);
     UseNextTraceBuffer();
-
-    flush_output_callback = flush_output_callback_;
-    flush_output_callback_.Reset();
   }
 
   ConvertTraceEventsToTraceFormat(previous_logged_events.Pass(),
@@ -1718,7 +1731,7 @@ TraceLog::PerThreadInfo* TraceLog::SetupThreadLocalBuffer() {
   }
 
   {
-    SpinLockHolder lock(&lock_);
+    MutexLock lock(active_threads_lock_);
     InsertOrDie(&active_threads_, cur_tid, thr_info);
   }
   return thr_info;
@@ -1732,16 +1745,21 @@ void TraceLog::ThreadExiting() {
 
   int64_t cur_tid = Thread::PlatformThreadId();
 
-  {
+  // Flush our own buffer back to the central event buffer.
+  // We do the atomic exchange because a flusher thread may
+  // also be trying to flush us at the same time, and we need to avoid
+  // conflict.
+  ThreadLocalEventBuffer* buf = thr_info->AtomicTakeBuffer();
+  if (buf) {
     SpinLockHolder lock(&lock_);
-    active_threads_.erase(cur_tid);
-
-    if (thr_info->event_buffer_) {
-      thr_info->event_buffer_->Flush(Thread::PlatformThreadId());
-      delete thr_info->event_buffer_;
-    }
+    buf->Flush(Thread::PlatformThreadId());
   }
+  delete buf;
 
+  {
+    MutexLock lock(active_threads_lock_);
+    active_threads_.erase(cur_tid);
+  }
   delete thr_info;
 }
 

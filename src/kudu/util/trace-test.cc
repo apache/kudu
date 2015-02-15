@@ -203,9 +203,9 @@ TEST_F(TraceTest, TestWideSpan) {
   ASSERT_EQ(1001, ParseAndReturnEventCount(trace_json));
 }
 
-// Generate trace events once every 100us until 'latch' fires.
+// Generate trace events continuously until 'latch' fires.
 void GenerateTracesUntilLatch(CountDownLatch* latch) {
-  while (!latch->WaitFor(MonoDelta::FromMicroseconds(100))) {
+  while (latch->count()) {
     TRACE_EVENT0("test", "GenerateTracesUntilLatch");
   }
 }
@@ -220,11 +220,12 @@ TEST_F(TraceTest, TestStartAndStopCollection) {
   scoped_refptr<Thread> t;
   CHECK_OK(Thread::Create("test", "gen-traces", &GenerateTracesUntilLatch, &latch, &t));
 
-  for (int i = 0; i < 3; i++) {
+  const int num_flushes = AllowSlowTests() ? 50 : 3;
+  for (int i = 0; i < num_flushes; i++) {
     tl->SetEnabled(CategoryFilter(CategoryFilter::kDefaultCategoryFilterString),
                    TraceLog::RECORDING_MODE,
                    TraceLog::RECORD_CONTINUOUSLY);
-    SleepFor(MonoDelta::FromMilliseconds(100));
+    SleepFor(MonoDelta::FromMilliseconds(10));
     tl->SetDisabled();
     string trace_json = TraceResultBuffer::FlushTraceLogToString();
     ASSERT_GT(ParseAndReturnEventCount(trace_json), 0);
