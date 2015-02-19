@@ -70,9 +70,6 @@ class Transaction {
   // Builds the ReplicateMsg for this transaction.
   virtual void NewReplicateMsg(gscoped_ptr<consensus::ReplicateMsg>* replicate_msg) = 0;
 
-  // Builds a commit abort message for this transaction.
-  virtual void NewCommitAbortMessage(gscoped_ptr<consensus::CommitMsg>* commit_msg) = 0;
-
   // Executes the prepare phase of this transaction, the actual actions
   // of this phase depend on the transaction type, but usually are limited
   // to what can be done without actually changing data structures and without

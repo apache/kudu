@@ -20,7 +20,6 @@ using boost::bind;
 using boost::shared_lock;
 using consensus::ReplicateMsg;
 using consensus::CommitMsg;
-using consensus::OP_ABORT;
 using consensus::CHANGE_CONFIG_OP;
 using consensus::DriverType;
 using metadata::QuorumPB;
@@ -92,11 +91,6 @@ Status ChangeConfigTransaction::Start() {
   }
   TRACE("START. Timestamp: $0", server::HybridClock::GetPhysicalValueMicros(state_->timestamp()));
   return Status::OK();
-}
-
-void ChangeConfigTransaction::NewCommitAbortMessage(gscoped_ptr<CommitMsg>* commit_msg) {
-  commit_msg->reset(new CommitMsg());
-  (*commit_msg)->set_op_type(OP_ABORT);
 }
 
 Status ChangeConfigTransaction::Apply(gscoped_ptr<CommitMsg>* commit_msg) {

@@ -60,7 +60,6 @@ using consensus::OpIdToString;
 using consensus::ReplicateMsg;
 using consensus::ALTER_SCHEMA_OP;
 using consensus::CHANGE_CONFIG_OP;
-using consensus::OP_ABORT;
 using consensus::WRITE_OP;
 using log::Log;
 using log::LogEntryPB;
@@ -653,7 +652,7 @@ struct ReplayState {
   // All other operations with lower IDs are also committed.
   OpId committed_op_id;
 
-  // REPLICATE log entries whose corresponding COMMIT/ABORT record has
+  // REPLICATE log entries whose corresponding COMMIT record has
   // not yet been seen. Keyed by index.
   OpIndexToEntryMap pending_replicates;
 
@@ -728,7 +727,7 @@ Status TabletBootstrap::HandleReplicateMessage(ReplayState* state, LogEntryPB* r
 Status TabletBootstrap::HandleCommitMessage(ReplayState* state, LogEntryPB* commit_entry) {
   DCHECK(commit_entry->has_commit()) << "Not a commit message: " << commit_entry->DebugString();
 
-  // Match up the COMMIT/ABORT record with the original entry that it's applied to.
+  // Match up the COMMIT record with the original entry that it's applied to.
   const OpId& committed_op_id = commit_entry->commit().commited_op_id();
   state->UpdateCommittedOpId(committed_op_id);
 
@@ -846,15 +845,6 @@ Status TabletBootstrap::HandleEntryPair(LogEntryPB* replicate_entry, LogEntryPB*
   const CommitMsg& commit = commit_entry->commit();
 
   switch (commit.op_type()) {
-    case OP_ABORT:
-      // aborted write, log and continue
-      if (VLOG_IS_ON(1)) {
-        VLOG(1) << "Skipping replicate message because it was originally aborted."
-                << " OpId: " << commit.commited_op_id().DebugString();
-      }
-      // return here so we don't update the clock as OP_ABORT's have invalid timestamps.
-      return Status::OK();
-
     case WRITE_OP:
       // successful write, play it into the tablet, filtering flushed entries
       RETURN_NOT_OK_PREPEND(PlayWriteRequest(replicate_entry->mutable_replicate(),

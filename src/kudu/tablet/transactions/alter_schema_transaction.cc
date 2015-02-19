@@ -21,7 +21,6 @@ using boost::bind;
 using boost::shared_lock;
 using consensus::ReplicateMsg;
 using consensus::CommitMsg;
-using consensus::OP_ABORT;
 using consensus::ALTER_SCHEMA_OP;
 using consensus::DriverType;
 using strings::Substitute;
@@ -88,11 +87,6 @@ Status AlterSchemaTransaction::Start() {
   }
   TRACE("START. Timestamp: $0", server::HybridClock::GetPhysicalValueMicros(state_->timestamp()));
   return Status::OK();
-}
-
-void AlterSchemaTransaction::NewCommitAbortMessage(gscoped_ptr<CommitMsg>* commit_msg) {
-  commit_msg->reset(new CommitMsg());
-  (*commit_msg)->set_op_type(OP_ABORT);
 }
 
 Status AlterSchemaTransaction::Apply(gscoped_ptr<CommitMsg>* commit_msg) {

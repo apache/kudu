@@ -101,7 +101,6 @@ message ConsensusMetadataPB {
 // at least one round of the consensus algorithm.
 enum OperationType {
   NO_OP = 1;
-  OP_ABORT = 2;
   WRITE_OP = 3;
   ALTER_SCHEMA_OP = 4;
   CHANGE_CONFIG_OP = 5;

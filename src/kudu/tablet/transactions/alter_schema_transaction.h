@@ -112,8 +112,6 @@ class AlterSchemaTransaction : public Transaction {
   // Starts the AlterSchemaTransaction by assigning it a timestamp.
   virtual Status Start() OVERRIDE;
 
-  virtual void NewCommitAbortMessage(gscoped_ptr<consensus::CommitMsg>* commit_msg) OVERRIDE;
-
   // Executes an Apply for the alter schema transaction
   virtual Status Apply(gscoped_ptr<consensus::CommitMsg>* commit_msg) OVERRIDE;
 

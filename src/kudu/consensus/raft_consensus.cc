@@ -728,10 +728,9 @@ Status RaftConsensus::UpdateReplica(const ConsensusRequestPB* request,
   //   won't hurt.
   // - Prepares depend on factors external to consensus (the transaction drivers and
   //   the tablet peer) so if for some reason they cannot be enqueued we must know
-  //   before we try write them to the WAL. Once enqueued, prepares that fail for
-  //   some reason (like an error while decoding a write) will have a corresponding
-  //   OP_ABORT commit message, so we are not concerned about having written them to
-  //   the wal.
+  //   before we try write them to the WAL. Once enqueued, we assume that prepare will
+  //   always succeed on a replica transaction (because the leader already prepared them
+  //   successfully, and thus we know they are valid).
   // - The prepares corresponding to every operation that was logged must be in-flight
   //   first. This because should we need to abort certain transactions (say a new leader
   //   says they are not committed) we need to have those prepares in-flight so that

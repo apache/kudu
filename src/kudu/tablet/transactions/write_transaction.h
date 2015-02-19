@@ -185,8 +185,6 @@ class WriteTransaction : public Transaction {
 
   void NewReplicateMsg(gscoped_ptr<consensus::ReplicateMsg>* replicate_msg) OVERRIDE;
 
-  virtual void NewCommitAbortMessage(gscoped_ptr<consensus::CommitMsg>* commit_msg) OVERRIDE;
-
   // Executes a Prepare for a write transaction
   //
   // Decodes the operations in the request PB and acquires row locks for each of the

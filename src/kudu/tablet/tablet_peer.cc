@@ -50,7 +50,6 @@ using consensus::OpId;
 using consensus::RaftConsensus;
 using consensus::CHANGE_CONFIG_OP;
 using consensus::WRITE_OP;
-using consensus::OP_ABORT;
 using log::Log;
 using log::LogAnchorRegistry;
 using metadata::QuorumPB;

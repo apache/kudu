@@ -94,8 +94,6 @@ class ChangeConfigTransaction : public Transaction {
   // Starts the ChangeConfigTransaction by assigning it a timestamp.
   virtual Status Start() OVERRIDE;
 
-  virtual void NewCommitAbortMessage(gscoped_ptr<consensus::CommitMsg>* commit_msg) OVERRIDE;
-
   // Executes an Apply for the change config transaction.
   virtual Status Apply(gscoped_ptr<consensus::CommitMsg>* commit_msg) OVERRIDE;
 

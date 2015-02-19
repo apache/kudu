@@ -28,7 +28,6 @@ using boost::shared_lock;
 using consensus::ReplicateMsg;
 using consensus::CommitMsg;
 using consensus::DriverType;
-using consensus::OP_ABORT;
 using consensus::WRITE_OP;
 using tserver::TabletServerErrorPB;
 using tserver::WriteRequestPB;
@@ -45,11 +44,6 @@ void WriteTransaction::NewReplicateMsg(gscoped_ptr<ReplicateMsg>* replicate_msg)
   replicate_msg->reset(new ReplicateMsg);
   (*replicate_msg)->set_op_type(WRITE_OP);
   (*replicate_msg)->mutable_write_request()->CopyFrom(*state()->request());
-}
-
-void WriteTransaction::NewCommitAbortMessage(gscoped_ptr<CommitMsg>* commit_msg) {
-  commit_msg->reset(new CommitMsg());
-  (*commit_msg)->set_op_type(OP_ABORT);
 }
 
 Status WriteTransaction::Prepare() {
