@@ -13,6 +13,7 @@ set(TABLET_SRCS
   transactions/transaction_driver.cc
   transactions/transaction_tracker.cc
   transactions/write_transaction.cc
+  transaction_order_verifier.cc
   cfile_set.cc
   compaction.cc
   compaction_policy.cc

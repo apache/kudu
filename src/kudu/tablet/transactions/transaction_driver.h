@@ -8,6 +8,7 @@
 
 #include "kudu/consensus/consensus.h"
 #include "kudu/gutil/ref_counted.h"
+#include "kudu/gutil/walltime.h"
 #include "kudu/tablet/transactions/transaction.h"
 #include "kudu/util/status.h"
 #include "kudu/util/trace.h"
@@ -20,6 +21,7 @@ class Log;
 } // namespace log
 
 namespace tablet {
+class TransactionOrderVerifier;
 class TransactionTracker;
 
 // Base class for transaction drivers.
@@ -85,7 +87,8 @@ class TransactionDriver : public RefCountedThreadSafe<TransactionDriver>,
                     consensus::Consensus* consensus,
                     log::Log* log,
                     ThreadPool* prepare_pool,
-                    ThreadPool* apply_pool);
+                    ThreadPool* apply_pool,
+                    TransactionOrderVerifier* order_verifier);
 
   // Perform any non-constructor initialization. Sets the transaction
   // that will be executed.
@@ -203,6 +206,7 @@ class TransactionDriver : public RefCountedThreadSafe<TransactionDriver>,
   log::Log* log_;
   ThreadPool* prepare_pool_;
   ThreadPool* apply_pool_;
+  TransactionOrderVerifier* order_verifier_;
 
   Status transaction_status_;
 
@@ -231,6 +235,10 @@ class TransactionDriver : public RefCountedThreadSafe<TransactionDriver>,
 
   ReplicationState replication_state_;
   PrepareState prepare_state_;
+
+  // The system monotonic time when the operation was prepared.
+  // This is used for debugging only, not any actual operation ordering.
+  MicrosecondsInt64 prepare_physical_timestamp_;
 
   DISALLOW_COPY_AND_ASSIGN(TransactionDriver);
 };

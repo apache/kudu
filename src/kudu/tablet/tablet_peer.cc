@@ -431,7 +431,8 @@ void TabletPeer::NewLeaderTransactionDriver(Transaction* transaction,
     consensus_.get(),
     log_.get(),
     prepare_pool_.get(),
-    leader_apply_pool_);
+    leader_apply_pool_,
+    &txn_order_verifier_);
   ret->Init(transaction, consensus::LEADER);
   driver->swap(ret);
 }
@@ -443,7 +444,8 @@ void TabletPeer::NewReplicaTransactionDriver(Transaction* transaction,
     consensus_.get(),
     log_.get(),
     prepare_pool_.get(),
-    leader_apply_pool_);
+    leader_apply_pool_,
+    &txn_order_verifier_);
   ret->Init(transaction, consensus::REPLICA);
   driver->swap(ret);
 }

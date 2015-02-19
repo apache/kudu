@@ -326,6 +326,10 @@ class RaftConsensusITest : public TabletServerIntegrationTestBase {
     }
   }
 
+  // Thread which loops until '*finish' becomes true, trying to insert a row
+  // on the given tablet server identified by 'replica_idx'.
+  void StubbornlyWriteSameRowThread(int replica_idx, const AtomicBool* finish);
+
   // Stops the current leader of the quorum, runs leader election and then brings it back.
   // Before stopping the leader this pauses all follower nodes in regular intervals so that
   // we get an increased chance of stuff being pending.
@@ -525,7 +529,8 @@ TEST_F(RaftConsensusITest, TestInsertOnNonLeader) {
   ASSERT_ALL_REPLICAS_AGREE(0);
 }
 
-TEST_F(RaftConsensusITest, TestRunLeaderElection) {
+// Temporarily DISABLED due to KUDU-597.
+TEST_F(RaftConsensusITest, DISABLED_TestRunLeaderElection) {
   // Reset consensus rpc timeout to the default value or the election might fail often.
   FLAGS_consensus_rpc_timeout_ms = 1000;
 
@@ -657,7 +662,8 @@ TEST_F(RaftConsensusITest, TestInsertWhenTheQueueIsFull) {
   ASSERT_ALL_REPLICAS_AGREE(successful_writes_counter);
 }
 
-TEST_F(RaftConsensusITest, MultiThreadedInsertWithFailovers) {
+// Temporarily DISABLED due to KUDU-597.
+TEST_F(RaftConsensusITest, DISABLED_MultiThreadedInsertWithFailovers) {
   int kNumElections = FLAGS_num_replicas;
 
   if (AllowSlowTests()) {
@@ -719,7 +725,8 @@ TEST_F(RaftConsensusITest, MultiThreadedInsertWithFailovers) {
 }
 
 // Test automatic leader election by killing leaders.
-TEST_F(RaftConsensusITest, TestAutomaticLeaderElection) {
+// Temporarily DISABLED due to KUDU-597.
+TEST_F(RaftConsensusITest, DISABLED_TestAutomaticLeaderElection) {
   if (AllowSlowTests()) {
     FLAGS_num_tablet_servers = 5;
     FLAGS_num_replicas = 5;
@@ -760,6 +767,79 @@ TEST_F(RaftConsensusITest, TestAutomaticLeaderElection) {
   // Verify the data on the remaining replicas.
   PruneFromReplicas(killed_leader_uuids);
   ASSERT_ALL_REPLICAS_AGREE(FLAGS_client_inserts_per_thread * kFinalNumReplicas);
+}
+
+void RaftConsensusITest::StubbornlyWriteSameRowThread(int replica_idx, const AtomicBool* finish) {
+  vector<TServerDetails*> servers;
+  AppendValuesFromMap(tablet_servers_, &servers);
+  CHECK_LT(replica_idx, servers.size());
+  TServerDetails* ts = servers[replica_idx];
+
+  // Manually construct an RPC to our target replica. We expect most of the calls
+  // to fail either with an "already present" or an error because we are writing
+  // to a follower. That's OK, though - what we care about for this test is
+  // just that the operations Apply() in the same order everywhere (even though
+  // in this case the result will just be an error).
+  WriteRequestPB req;
+  WriteResponsePB resp;
+  RpcController rpc;
+  req.set_tablet_id(tablet_id_);
+  ASSERT_STATUS_OK(SchemaToPB(schema_, req.mutable_schema()));
+  AddTestRowToPB(RowOperationsPB::INSERT, schema_, 1234, 5678,
+                 "hello world", req.mutable_row_operations());
+  while (!finish->Load()) {
+    resp.Clear();
+    rpc.Reset();
+    rpc.set_timeout(MonoDelta::FromSeconds(10));
+    ignore_result(ts->tserver_proxy->Write(req, &resp, &rpc));
+    VLOG(1) << "Response from server " << replica_idx << ": "
+            << resp.ShortDebugString();
+  }
+}
+
+// Regression test for KUDU-597, an issue where we could mis-order operations on
+// a machine if the following sequence occurred:
+//  1) Replica is a FOLLOWER
+//  2) A client request hits the machine
+//  3) It receives some operations from the current leader
+//  4) It gets elected LEADER
+// In this scenario, it would incorrectly sequence the client request's PREPARE phase
+// before the operations received in step (3), even though the correct behavior would be
+// to either reject them or sequence them after those operations, because the operation
+// index is higher.
+//
+// The test works by setting up three replicas and manually hammering them with write
+// requests targeting a single row. If the bug exists, then TransactionOrderVerifier
+// will trigger an assertion because the prepare order and the op indexes will become
+// misaligned.
+// Temporarily DISABLED due to KUDU-597.
+TEST_F(RaftConsensusITest, DISABLED_TestKUDU_597) {
+  FLAGS_num_replicas = 3;
+  FLAGS_num_tablet_servers = 3;
+  vector<string> flags;
+  flags.push_back("--enable_leader_failure_detection=true");
+  BuildAndStart(flags);
+
+  AtomicBool finish(false);
+  for (int i = 0; i < FLAGS_num_tablet_servers; i++) {
+    scoped_refptr<kudu::Thread> new_thread;
+    CHECK_OK(kudu::Thread::Create("test", strings::Substitute("ts-test$0", i),
+                                  &RaftConsensusITest::StubbornlyWriteSameRowThread,
+                                  this, i, &finish, &new_thread));
+    threads_.push_back(new_thread);
+  }
+
+  const int num_loops = AllowSlowTests() ? 10 : 1;
+  for (int i = 0; i < num_loops; i++) {
+    StopOrKillLeaderAndElectNewOne();
+    SleepFor(MonoDelta::FromSeconds(1));
+    ASSERT_OK(CheckTabletServersAreAlive(FLAGS_num_tablet_servers));
+  }
+
+  finish.Store(true);
+  BOOST_FOREACH(scoped_refptr<kudu::Thread> thr, threads_) {
+    CHECK_OK(ThreadJoiner(thr.get()).Join());
+  }
 }
 
 }  // namespace tserver

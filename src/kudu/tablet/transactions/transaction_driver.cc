@@ -34,12 +34,14 @@ TransactionDriver::TransactionDriver(TransactionTracker *txn_tracker,
                                      Consensus* consensus,
                                      Log* log,
                                      ThreadPool* prepare_pool,
-                                     ThreadPool* apply_pool)
+                                     ThreadPool* apply_pool,
+                                     TransactionOrderVerifier* order_verifier)
     : txn_tracker_(txn_tracker),
       consensus_(consensus),
       log_(log),
       prepare_pool_(prepare_pool),
       apply_pool_(apply_pool),
+      order_verifier_(order_verifier),
       trace_(new Trace()),
       start_time_(MonoTime::Now(MonoTime::FINE)),
       replication_state_(NOT_REPLICATING),
@@ -123,6 +125,7 @@ void TransactionDriver::PrepareAndStartTask() {
 Status TransactionDriver::PrepareAndStart() {
   VLOG_WITH_PREFIX_LK(4) << "PrepareAndStart()";
   // Actually prepare and start the transaction.
+  prepare_physical_timestamp_ = GetMonoTimeMicros();
   RETURN_NOT_OK(transaction_->Prepare());
 
   // TODO: use the already-provided timestamp if there is one
@@ -275,13 +278,13 @@ void TransactionDriver::Abort(const Status& status) {
 }
 
 Status TransactionDriver::ApplyAsync() {
-
-  Status txn_status_copy;
   {
     boost::lock_guard<simple_spinlock> lock(lock_);
     DCHECK_EQ(prepare_state_, PREPARED);
     if (transaction_status_.ok()) {
       DCHECK_EQ(replication_state_, REPLICATED);
+      order_verifier_->CheckApply(op_id_copy_.index(),
+                                  prepare_physical_timestamp_);
     } else {
       DCHECK_EQ(replication_state_, REPLICATION_FAILED);
       DCHECK(!transaction_status_.ok());

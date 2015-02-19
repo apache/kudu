@@ -63,6 +63,7 @@ TEST_F(TransactionTrackerTest, TestGetPending) {
                                                                 NULL,
                                                                 NULL,
                                                                 NULL,
+                                                                NULL,
                                                                 NULL));
   driver->Init(new NoOpTransaction(new NoOpTransactionState), consensus::LEADER);
 
@@ -86,6 +87,7 @@ void TransactionTrackerTest::RunTransactionsThread(CountDownLatch* finish_latch)
   vector<scoped_refptr<TransactionDriver> > drivers;
   for (int i = 0; i < kNumTransactions; i++) {
     scoped_refptr<TransactionDriver> driver(new TransactionDriver(&tracker_,
+                                                                  NULL,
                                                                   NULL,
                                                                   NULL,
                                                                   NULL,

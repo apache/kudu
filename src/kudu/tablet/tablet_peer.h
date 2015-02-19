@@ -11,6 +11,7 @@
 #include "kudu/consensus/log.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/tablet/tablet.h"
+#include "kudu/tablet/transaction_order_verifier.h"
 #include "kudu/tablet/transactions/transaction_tracker.h"
 #include "kudu/util/countdown_latch.h"
 #include "kudu/util/metrics.h"
@@ -233,6 +234,7 @@ class TabletPeer : public RefCountedThreadSafe<TabletPeer>,
   TabletStatePB state_;
   Status error_;
   TransactionTracker txn_tracker_;
+  TransactionOrderVerifier txn_order_verifier_;
   gscoped_ptr<log::Log> log_;
   std::tr1::shared_ptr<Tablet> tablet_;
   std::tr1::shared_ptr<rpc::Messenger> messenger_;
