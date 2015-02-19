@@ -210,7 +210,7 @@ Status Ksck::ChecksumData(const vector<string>& tables,
     }
     return Status::NotFound(msg);
   }
-  ChecksumResultReporter reporter(num_tablet_replicas);
+  shared_ptr<ChecksumResultReporter> reporter(new ChecksumResultReporter(num_tablet_replicas));
 
   // Kick off the scans in parallel.
   // TODO: Add some way to throttle requests on big clusters.
@@ -220,18 +220,18 @@ Status Ksck::ChecksumData(const vector<string>& tables,
     BOOST_FOREACH(const shared_ptr<KsckTabletReplica>& replica, tablet->replicas()) {
       const shared_ptr<KsckTabletServer>& ts =
           FindOrDie(cluster_->tablet_servers(), replica->ts_uuid());
-      Status s = ts->RunTabletChecksumScanAsync(tablet->id(), table->schema(), &reporter);
+      Status s = ts->RunTabletChecksumScanAsync(tablet->id(), table->schema(), reporter);
       if (!s.ok()) {
-        reporter.ReportError(tablet->id(), replica->ts_uuid(), s);
+        reporter->ReportError(tablet->id(), replica->ts_uuid(), s);
       }
     }
   }
 
   bool timed_out = false;
-  if (!reporter.WaitFor(timeout)) {
+  if (!reporter->WaitFor(timeout)) {
     timed_out = true;
   }
-  ChecksumResultReporter::TabletResultMap checksums = reporter.checksums();
+  ChecksumResultReporter::TabletResultMap checksums = reporter->checksums();
 
   int num_errors = 0;
   int num_mismatches = 0;

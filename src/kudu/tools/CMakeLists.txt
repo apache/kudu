@@ -15,12 +15,18 @@ set(LINK_LIBS
   ${KUDU_BASE_LIBS}
 )
 
+add_library(kudu_tools_util
+  data_gen_util.cc)
+target_link_libraries(kudu_tools_util
+  ${LINK_LIBS})
+
 add_executable(create-demo-table create-demo-table.cc)
 target_link_libraries(create-demo-table
   ${LINK_LIBS})
 
 add_executable(insert-generated-rows insert-generated-rows.cc)
 target_link_libraries(insert-generated-rows
+  kudu_tools_util
   ${LINK_LIBS})
 
 add_executable(kudu-ts-cli ts-cli.cc)
@@ -68,6 +74,7 @@ target_link_libraries(kudu-pbc-dump
 
 set(KUDU_TEST_LINK_LIBS
   ksck
+  kudu_tools_util
   integration-tests
   ${KUDU_MIN_TEST_LIBS})
 ADD_KUDU_TEST(ksck-test)

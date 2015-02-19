@@ -38,7 +38,7 @@ void ExplicitBatchingExample() {
     // The insert should return immediately after moving the insert
     // into the appropriate buffers. This always returns OK unless the
     // Insert itself is invalid (eg missing a key column).
-    CHECK_OK(session->Apply(&ins));
+    CHECK_OK(session->Apply(ins.Pass()));
   }
 
   // Update a row.

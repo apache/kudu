@@ -74,15 +74,17 @@ class ChecksumStepper {
   ChecksumStepper(const string& tablet_id,
                   const Schema& schema,
                   const string& server_uuid,
-                  ChecksumResultReporter* reporter,
+                  const shared_ptr<ChecksumResultReporter>& reporter,
                   const shared_ptr<tserver::TabletServerServiceProxy>& proxy)
       : schema_(schema),
         tablet_id_(tablet_id),
         server_uuid_(server_uuid),
-        reporter_(DCHECK_NOTNULL(reporter)),
+        reporter_(reporter),
         proxy_(proxy),
         call_seq_id_(0),
         checksum_(0) {
+    DCHECK(reporter_);
+    DCHECK(proxy_);
   }
 
   Status Start() {
@@ -160,7 +162,7 @@ class ChecksumStepper {
 
   const string tablet_id_;
   const string server_uuid_;
-  ChecksumResultReporter* const reporter_;
+  const shared_ptr<ChecksumResultReporter> reporter_;
   const shared_ptr<tserver::TabletServerServiceProxy> proxy_;
 
   uint32_t call_seq_id_;
@@ -177,9 +179,10 @@ void ChecksumCallbackHandler::Run() {
   delete this;
 }
 
-Status RemoteKsckTabletServer::RunTabletChecksumScanAsync(const string& tablet_id,
-                                                          const Schema& schema,
-                                                          ChecksumResultReporter* reporter) {
+Status RemoteKsckTabletServer::RunTabletChecksumScanAsync(
+        const string& tablet_id,
+        const Schema& schema,
+        const shared_ptr<ChecksumResultReporter>& reporter) {
   RETURN_NOT_OK(EnsureConnected());
   gscoped_ptr<ChecksumStepper> stepper(
       new ChecksumStepper(tablet_id, schema, uuid(), reporter, proxy_));

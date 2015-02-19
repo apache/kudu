@@ -36,9 +36,10 @@ class MockKsckTabletServer : public KsckTabletServer {
     return connect_status_.ok();
   }
 
-  virtual Status RunTabletChecksumScanAsync(const std::string& tablet_id,
-                                            const Schema& schema,
-                                            ChecksumResultReporter* reporter) OVERRIDE {
+  virtual Status RunTabletChecksumScanAsync(
+                  const std::string& tablet_id,
+                  const Schema& schema,
+                  const shared_ptr<ChecksumResultReporter>& reporter) OVERRIDE {
     reporter->ReportResult(tablet_id, uuid(), 0);
     return Status::OK();
   }

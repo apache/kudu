@@ -36,9 +36,10 @@ class RemoteKsckTabletServer : public KsckTabletServer {
 
   virtual bool IsConnected() const OVERRIDE;
 
-  virtual Status RunTabletChecksumScanAsync(const std::string& tablet_id,
-                                            const Schema& schema,
-                                            ChecksumResultReporter* reporter) OVERRIDE;
+  virtual Status RunTabletChecksumScanAsync(
+                  const std::string& tablet_id,
+                  const Schema& schema,
+                  const std::tr1::shared_ptr<ChecksumResultReporter>& reporter) OVERRIDE;
 
   virtual const std::string& address() const OVERRIDE {
     return address_;

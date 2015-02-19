@@ -187,9 +187,10 @@ class KsckTabletServer {
   // If the returned Status == OK, the handler is guaranteed to eventually
   // call back to one of the reporter's methods.
   // Otherwise, the reporter will not be called (you should do this yourself).
-  virtual Status RunTabletChecksumScanAsync(const std::string& tablet_id,
-                                            const Schema& schema,
-                                            ChecksumResultReporter* reporter) = 0;
+  virtual Status RunTabletChecksumScanAsync(
+                  const std::string& tablet_id,
+                  const Schema& schema,
+                  const std::tr1::shared_ptr<ChecksumResultReporter>& reporter) = 0;
 
   virtual const std::string& uuid() const {
     return uuid_;
