@@ -227,8 +227,9 @@ Status Ksck::ChecksumData(const vector<string>& tables,
     }
   }
 
+  bool timed_out = false;
   if (!reporter.WaitFor(timeout)) {
-    Warn() << "Checksum scan did not complete within the timeout of " << timeout.ToString() << endl;
+    timed_out = true;
   }
   ChecksumResultReporter::TabletResultMap checksums = reporter.checksums();
 
@@ -277,7 +278,11 @@ Status Ksck::ChecksumData(const vector<string>& tables,
     if (printed_table_name) cout << endl;
   }
   if (num_results != num_tablet_replicas) {
-    return Status::NotFound("Did not get results for all expected replicas");
+    CHECK(timed_out) << Substitute("Unexpected error: only got $0 out of $1 replica results",
+                                   num_results, num_tablet_replicas);
+    return Status::TimedOut(Substitute("Checksum scan did not complete within the timeout of $0: "
+                                       "Received results for $1 out of $2 expected replicas",
+                                       timeout.ToString(), num_results, num_tablet_replicas));
   }
   if (num_mismatches != 0) {
     return Status::Corruption(Substitute("$0 checksum mismatches were detected", num_mismatches));

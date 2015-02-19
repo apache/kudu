@@ -33,7 +33,8 @@ DEFINE_bool(checksum_scan, false,
             "Perform a checksum scan on data in the cluster");
 
 DEFINE_int32(checksum_timeout_sec, 120,
-             "Maximum total time that we will wait for a checksum scan to complete");
+             "Maximum total seconds that we will wait for a checksum scan to "
+             "complete before timing out.");
 
 DEFINE_string(tables, "",
               "Tables to check (comma-separated list of names). "
