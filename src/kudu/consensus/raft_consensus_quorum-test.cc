@@ -216,7 +216,7 @@ class RaftConsensusQuorumTest : public KuduTest {
 
     scoped_refptr<RaftConsensus> peer;
     CHECK_OK(peers_->GetPeerByIdx(peer_idx, &peer));
-    round->reset(peer->NewRound(msg.Pass(), continuation));
+    *round = peer->NewRound(msg.Pass(), continuation);
     RETURN_NOT_OK_PREPEND(peer->Replicate(round->get()),
                           Substitute("Unable to replicate to peer $0", peer_idx));
     return Status::OK();

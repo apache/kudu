@@ -243,9 +243,6 @@ class ReplicaState {
 
   const ConsensusOptions& GetOptions() const;
 
-  // Enqueues a Prepare() in the ReplicaTransactionFactory.
-  Status EnqueuePrepareUnlocked(gscoped_ptr<ConsensusRound> context);
-
   // Returns the operations that are not consensus committed.
   Status GetUncommittedPendingOperationsUnlocked(std::vector<ConsensusRound*>* ops);
 

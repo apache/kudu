@@ -49,9 +49,10 @@ void ConsensusRound::NotifyReplicationFinished(const Status& status) {
   }
 }
 
-ConsensusRound* Consensus::NewRound(gscoped_ptr<ReplicateMsg> replicate_msg,
-                                    ConsensusCommitContinuation* commit_continuation) {
-  return new ConsensusRound(this, replicate_msg.Pass(), commit_continuation);
+gscoped_ptr<ConsensusRound> Consensus::NewRound(
+    gscoped_ptr<ReplicateMsg> replicate_msg,
+    ConsensusCommitContinuation* commit_continuation) {
+  return make_gscoped_ptr(new ConsensusRound(this, replicate_msg.Pass(), commit_continuation));
 }
 
 void Consensus::SetFaultHooks(const std::tr1::shared_ptr<ConsensusFaultHooks>& hooks) {

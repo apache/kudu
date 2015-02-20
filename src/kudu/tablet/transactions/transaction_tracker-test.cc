@@ -32,7 +32,7 @@ class TransactionTrackerTest : public KuduTest {
     }
 
     virtual void NewReplicateMsg(gscoped_ptr<consensus::ReplicateMsg>* replicate_msg) OVERRIDE {
-      LOG(FATAL) << "Unimplemented for tests";
+      replicate_msg->reset(new consensus::ReplicateMsg());
     }
 
     // Builds a commit abort message for this transaction.

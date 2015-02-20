@@ -103,7 +103,7 @@ class Consensus : public RefCountedThreadSafe<Consensus> {
   // structures required for a consensus round, such as the ReplicateMsg
   // (and later on the CommitMsg). ConsensusRound will also point to and
   // increase the reference count for the provided callbacks.
-  ConsensusRound* NewRound(
+  gscoped_ptr<ConsensusRound> NewRound(
       gscoped_ptr<ReplicateMsg> replicate_msg,
       ConsensusCommitContinuation* commit_continuation);
 

@@ -59,6 +59,14 @@ void TransactionDriver::Init(Transaction* transaction,
     op_id_copy_ = transaction->state()->op_id();
     DCHECK(op_id_copy_.IsInitialized());
     replication_state_ = REPLICATING;
+  } else {
+    DCHECK_EQ(type, consensus::LEADER);
+    gscoped_ptr<ReplicateMsg> replicate_msg;
+    transaction_->NewReplicateMsg(&replicate_msg);
+    if (consensus_) { // sometimes NULL in tests
+      mutable_state()->set_consensus_round(
+        consensus_->NewRound(replicate_msg.Pass(), this));
+    }
   }
 
   txn_tracker_->Add(this);
@@ -131,20 +139,12 @@ Status TransactionDriver::PrepareAndStart() {
     {
       VLOG_WITH_PREFIX_LK(4) << "Triggering consensus repl";
       // Trigger the consensus replication.
-      gscoped_ptr<ReplicateMsg> replicate_msg;
-      transaction_->NewReplicateMsg(&replicate_msg);
-
-      gscoped_ptr<ConsensusRound> round(consensus_->NewRound(
-                                          replicate_msg.Pass(),
-                                          this));
 
       {
         boost::lock_guard<simple_spinlock> lock(lock_);
         replication_state_ = REPLICATING;
       }
-      ConsensusRound* round_ptr = round.get();
-      mutable_state()->set_consensus_round(round.Pass());
-      Status s = consensus_->Replicate(round_ptr);
+      Status s = consensus_->Replicate(mutable_state()->consensus_round());
 
       if (PREDICT_FALSE(!s.ok())) {
         boost::lock_guard<simple_spinlock> lock(lock_);
