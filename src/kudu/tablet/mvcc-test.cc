@@ -14,15 +14,17 @@
 
 DECLARE_int32(max_clock_sync_error_usec);
 
-namespace kudu { namespace tablet {
+namespace kudu {
+namespace tablet {
 
 using server::Clock;
 using server::HybridClock;
 
 class MvccTest : public KuduTest {
  public:
-  MvccTest() :
-    clock_(server::LogicalClock::CreateStartingAt(Timestamp::kInitialTimestamp)) {
+  MvccTest()
+      : clock_(
+          server::LogicalClock::CreateStartingAt(Timestamp::kInitialTimestamp)) {
     // Increase clock sync tolerance so test doesn't fail on jenkins.
     FLAGS_max_clock_sync_error_usec = 10 * 1000 * 1000;
   }
@@ -101,7 +103,8 @@ TEST_F(MvccTest, TestMvccMultipleInFlight) {
   // State should show 2 as committed, 1 as uncommitted.
   mgr.TakeSnapshot(&snap);
   ASSERT_EQ("MvccSnapshot[committed="
-            "{T|T < 1 or (T in {2})}]", snap.ToString());
+            "{T|T < 1 or (T in {2})}]",
+            snap.ToString());
   ASSERT_FALSE(snap.IsCommitted(t1));
   ASSERT_TRUE(snap.IsCommitted(t2));
 
@@ -112,7 +115,8 @@ TEST_F(MvccTest, TestMvccMultipleInFlight) {
   // State should show 2 as committed, 1 and 4 as uncommitted.
   mgr.TakeSnapshot(&snap);
   ASSERT_EQ("MvccSnapshot[committed="
-            "{T|T < 1 or (T in {2})}]", snap.ToString());
+            "{T|T < 1 or (T in {2})}]",
+            snap.ToString());
   ASSERT_FALSE(snap.IsCommitted(t1));
   ASSERT_TRUE(snap.IsCommitted(t2));
   ASSERT_FALSE(snap.IsCommitted(t3));
@@ -123,7 +127,8 @@ TEST_F(MvccTest, TestMvccMultipleInFlight) {
   // 2 and 3 committed
   mgr.TakeSnapshot(&snap);
   ASSERT_EQ("MvccSnapshot[committed="
-            "{T|T < 1 or (T in {2,3})}]", snap.ToString());
+            "{T|T < 1 or (T in {2,3})}]",
+            snap.ToString());
   ASSERT_FALSE(snap.IsCommitted(t1));
   ASSERT_TRUE(snap.IsCommitted(t2));
   ASSERT_TRUE(snap.IsCommitted(t3));
@@ -263,14 +268,20 @@ TEST_F(MvccTest, TestMayHaveCommittedTransactionsAtOrAfter) {
   ASSERT_FALSE(snap.MayHaveCommittedTransactionsAtOrAfter(Timestamp(15)));
 
   // Test for "all committed" snapshot
-  MvccSnapshot all_committed = MvccSnapshot::CreateSnapshotIncludingAllTransactions();
-  ASSERT_TRUE(all_committed.MayHaveCommittedTransactionsAtOrAfter(Timestamp(1)));
-  ASSERT_TRUE(all_committed.MayHaveCommittedTransactionsAtOrAfter(Timestamp(12345)));
+  MvccSnapshot all_committed =
+      MvccSnapshot::CreateSnapshotIncludingAllTransactions();
+  ASSERT_TRUE(
+      all_committed.MayHaveCommittedTransactionsAtOrAfter(Timestamp(1)));
+  ASSERT_TRUE(
+      all_committed.MayHaveCommittedTransactionsAtOrAfter(Timestamp(12345)));
 
   // And "none committed" snapshot
-  MvccSnapshot none_committed = MvccSnapshot::CreateSnapshotIncludingNoTransactions();
-  ASSERT_FALSE(none_committed.MayHaveCommittedTransactionsAtOrAfter(Timestamp(1)));
-  ASSERT_FALSE(none_committed.MayHaveCommittedTransactionsAtOrAfter(Timestamp(12345)));
+  MvccSnapshot none_committed =
+      MvccSnapshot::CreateSnapshotIncludingNoTransactions();
+  ASSERT_FALSE(
+      none_committed.MayHaveCommittedTransactionsAtOrAfter(Timestamp(1)));
+  ASSERT_FALSE(
+      none_committed.MayHaveCommittedTransactionsAtOrAfter(Timestamp(12345)));
 
   // Test for a "clean" snapshot
   MvccSnapshot clean_snap(Timestamp(10));
@@ -293,19 +304,28 @@ TEST_F(MvccTest, TestMayHaveUncommittedTransactionsBefore) {
   ASSERT_TRUE(snap.MayHaveUncommittedTransactionsAtOrBefore(Timestamp(15)));
 
   // Test for "all committed" snapshot
-  MvccSnapshot all_committed = MvccSnapshot::CreateSnapshotIncludingAllTransactions();
-  ASSERT_FALSE(all_committed.MayHaveUncommittedTransactionsAtOrBefore(Timestamp(1)));
-  ASSERT_FALSE(all_committed.MayHaveUncommittedTransactionsAtOrBefore(Timestamp(12345)));
+  MvccSnapshot all_committed =
+      MvccSnapshot::CreateSnapshotIncludingAllTransactions();
+  ASSERT_FALSE(
+      all_committed.MayHaveUncommittedTransactionsAtOrBefore(Timestamp(1)));
+  ASSERT_FALSE(
+      all_committed.MayHaveUncommittedTransactionsAtOrBefore(Timestamp(12345)));
 
   // And "none committed" snapshot
-  MvccSnapshot none_committed = MvccSnapshot::CreateSnapshotIncludingNoTransactions();
-  ASSERT_TRUE(none_committed.MayHaveUncommittedTransactionsAtOrBefore(Timestamp(1)));
-  ASSERT_TRUE(none_committed.MayHaveUncommittedTransactionsAtOrBefore(Timestamp(12345)));
+  MvccSnapshot none_committed =
+      MvccSnapshot::CreateSnapshotIncludingNoTransactions();
+  ASSERT_TRUE(
+      none_committed.MayHaveUncommittedTransactionsAtOrBefore(Timestamp(1)));
+  ASSERT_TRUE(
+      none_committed.MayHaveUncommittedTransactionsAtOrBefore(
+          Timestamp(12345)));
 
   // Test for a "clean" snapshot
   MvccSnapshot clean_snap(Timestamp(10));
-  ASSERT_FALSE(clean_snap.MayHaveUncommittedTransactionsAtOrBefore(Timestamp(9)));
-  ASSERT_TRUE(clean_snap.MayHaveUncommittedTransactionsAtOrBefore(Timestamp(10)));
+  ASSERT_FALSE(
+      clean_snap.MayHaveUncommittedTransactionsAtOrBefore(Timestamp(9)));
+  ASSERT_TRUE(
+      clean_snap.MayHaveUncommittedTransactionsAtOrBefore(Timestamp(10)));
 }
 
 TEST_F(MvccTest, TestAreAllTransactionsCommitted) {
@@ -343,10 +363,8 @@ TEST_F(MvccTest, TestAreAllTransactionsCommitted) {
 
 TEST_F(MvccTest, TestWaitUntilAllCommitted_SnapWithNoInflights) {
   MvccManager mgr(clock_.get());
-  boost::thread waiting_thread = boost::thread(&MvccTest::WaitForSnapshotAtTSThread,
-                                               this,
-                                               &mgr,
-                                               clock_->Now());
+  boost::thread waiting_thread = boost::thread(
+      &MvccTest::WaitForSnapshotAtTSThread, this, &mgr, clock_->Now());
 
   // join immediately.
   waiting_thread.join();
@@ -360,10 +378,8 @@ TEST_F(MvccTest, TestWaitUntilAllCommitted_SnapWithInFlights) {
   Timestamp tx1 = mgr.StartTransaction();
   Timestamp tx2 = mgr.StartTransaction();
 
-  boost::thread waiting_thread = boost::thread(&MvccTest::WaitForSnapshotAtTSThread,
-                                               this,
-                                               &mgr,
-                                               clock_->Now());
+  boost::thread waiting_thread = boost::thread(
+      &MvccTest::WaitForSnapshotAtTSThread, this, &mgr, clock_->Now());
 
   ASSERT_FALSE(HasResultSnapshot());
   mgr.CommitTransaction(tx1);
@@ -383,10 +399,8 @@ TEST_F(MvccTest, TestWaitUntilAllCommitted_SnapAtTimestampWithInFlights) {
   Timestamp tx3 = mgr.StartTransaction();
 
   // Start a thread waiting for transactions with ts <= 2 to commit
-  boost::thread waiting_thread = boost::thread(&MvccTest::WaitForSnapshotAtTSThread,
-                                               this,
-                                               &mgr,
-                                               tx2);
+  boost::thread waiting_thread = boost::thread(
+      &MvccTest::WaitForSnapshotAtTSThread, this, &mgr, tx2);
   ASSERT_FALSE(HasResultSnapshot());
 
   // Commit tx 1 - thread should still wait.
@@ -405,5 +419,5 @@ TEST_F(MvccTest, TestWaitUntilAllCommitted_SnapAtTimestampWithInFlights) {
   ASSERT_TRUE(HasResultSnapshot());
 }
 
-} // namespace tablet
-} // namespace kudu
+}  // namespace tablet
+}  // namespace kudu

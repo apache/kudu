@@ -391,7 +391,11 @@ Status FsTool::DumpTabletData(const std::string& tablet_id) {
   scoped_refptr<log::LogAnchorRegistry> reg(new log::LogAnchorRegistry());
   Tablet t(meta, scoped_refptr<server::Clock>(NULL), NULL, reg.get());
   RETURN_NOT_OK_PREPEND(t.Open(), "Couldn't open tablet");
-  RETURN_NOT_OK_PREPEND(t.DebugDump(), "Couldn't dump tablet");
+  vector<string> lines;
+  RETURN_NOT_OK_PREPEND(t.DebugDump(&lines), "Couldn't dump tablet");
+  BOOST_FOREACH(const string& line, lines) {
+    std::cout << line << std::endl;
+  }
   return Status::OK();
 }
 
@@ -420,8 +424,10 @@ Status FsTool::DumpRowSetInternal(const Schema& schema,
                                   const shared_ptr<RowSetMetadata>& rs_meta,
                                   const DumpOptions& opts,
                                   int indent) {
+  tablet::RowSetDataPB pb;
+  rs_meta->ToProtobuf(&pb);
 
-  std::cout << Indent(indent) << "RowSet metadata: " << rs_meta->ToString() << std::endl
+  std::cout << Indent(indent) << "RowSet metadata: " << pb.DebugString() << std::endl
             << std::endl;
 
   for (size_t col_idx = 0; col_idx < schema.num_columns(); ++col_idx) {
@@ -430,6 +436,7 @@ Status FsTool::DumpRowSetInternal(const Schema& schema,
       std::cout << Indent(indent) << "Dumping column block " << block << " for column "
                 << schema.column(col_idx).ToString() << ":" << std::endl;
       std::cout << Indent(indent) << kSeparatorLine;
+      if (opts.metadata_only) continue;
       RETURN_NOT_OK(DumpCFileBlockInternal(block, opts, indent));
     } else {
       std::cout << Indent(indent) << "No column data blocks for column "
@@ -446,7 +453,8 @@ Status FsTool::DumpRowSetInternal(const Schema& schema,
                                               block,
                                               tablet::UNDO,
                                               opts,
-                                              indent));
+                                              indent,
+                                              opts.metadata_only));
     std::cout << std::endl;
   }
 
@@ -458,7 +466,8 @@ Status FsTool::DumpRowSetInternal(const Schema& schema,
                                               block,
                                               tablet::REDO,
                                               opts,
-                                              indent));
+                                              indent,
+                                              opts.metadata_only));
     std::cout << std::endl;
   }
 
@@ -507,7 +516,8 @@ Status FsTool::DumpDeltaCFileBlockInternal(const Schema& schema,
                                            const BlockId& block_id,
                                            DeltaType delta_type,
                                            const DumpOptions& opts,
-                                           int indent) {
+                                           int indent,
+                                           bool metadata_only) {
   // Open the delta reader
   gscoped_ptr<ReadableBlock> readable_block;
   RETURN_NOT_OK(fs_manager_->OpenBlock(block_id, &readable_block));
@@ -516,6 +526,13 @@ Status FsTool::DumpDeltaCFileBlockInternal(const Schema& schema,
                                       block_id,
                                       &delta_reader,
                                       delta_type));
+
+  std::cout << Indent(indent) << "Delta stats: " << delta_reader->delta_stats().ToString()
+      << std::endl;
+  if (metadata_only) {
+    return Status::OK();
+  }
+
   // Create the delta iterator.
   // TODO: see if it's worth re-factoring NewDeltaIterator to return a
   // gscoped_ptr that can then be released if we need a raw or shared

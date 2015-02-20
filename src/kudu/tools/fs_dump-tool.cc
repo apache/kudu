@@ -25,6 +25,8 @@ DEFINE_string(wal_dir, "/tmp/demo-tablets",
 DEFINE_string(data_dirs, "/tmp/demo-tablets",
               "Comma-separated list of directories for data blocks");
 DEFINE_int32(nrows, 0, "Number of rows to dump");
+DEFINE_bool(metadata_only, false, "Whether just to dump the block metadata, "
+                                  "when printing blocks.");
 
 /*
   TODO: support specifying start and end keys
@@ -138,6 +140,7 @@ static int FsDumpToolMain(int argc, char** argv) {
   // opts.start_key = FLAGS_start_key;
   // opts.end_key = FLAGS_end_key;
   opts.nrows = FLAGS_nrows;
+  opts.metadata_only = FLAGS_metadata_only;
 
   switch (cmd) {
     case DUMP_TABLET_DATA:

@@ -33,9 +33,13 @@ struct DumpOptions {
   std::string start_key;
   std::string end_key;
   size_t nrows;
+  bool metadata_only;
 
   DumpOptions()
-      : start_key(""), end_key(""), nrows(0) {
+      : start_key(""),
+        end_key(""),
+        nrows(0),
+        metadata_only(false) {
   }
 };
 
@@ -134,7 +138,8 @@ class FsTool {
                                      const BlockId& block_id,
                                      tablet::DeltaType delta_type,
                                      const DumpOptions& opts,
-                                     int indent);
+                                     int indent,
+                                     bool metadata_only);
 
   Status PrintTabletMetaInternal(const std::string& master_block_path,
                                  const std::string& tablet_id,
