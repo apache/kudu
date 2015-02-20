@@ -298,7 +298,7 @@ void TabletPeer::GetTabletStatusPB(TabletStatusPB* status_pb_out) const {
 }
 
 Status TabletPeer::RunLogGC() {
-  if (!CheckRunning().ok() || consensus_ready_latch_.count() > 0) {
+  if (!CheckRunning().ok()) {
     return Status::OK();
   }
   int64_t min_log_index;
