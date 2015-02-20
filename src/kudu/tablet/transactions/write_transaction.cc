@@ -54,7 +54,6 @@ void WriteTransaction::NewCommitAbortMessage(gscoped_ptr<CommitMsg>* commit_msg)
     if (state()->has_timestamp()) {
       (*commit_msg)->set_timestamp(state()->timestamp().ToUint64());
     }
-    (*commit_msg)->mutable_write_response()->CopyFrom(*state_->response());
   }
 }
 
@@ -127,11 +126,8 @@ Status WriteTransaction::Apply(gscoped_ptr<CommitMsg>* commit_msg) {
   (*commit_msg)->set_timestamp(state()->timestamp().ToUint64());
 
   // If this is a leader side transaction set the timestamp on the response
-  // TODO(todd): can we consolidate this code into the driver? we seem to be
-  // quite inconsistent whether we do this or not in the other transaction types.
   if (type() == consensus::LEADER) {
     state()->response()->set_write_timestamp(state()->timestamp().ToUint64());
-    (*commit_msg)->mutable_write_response()->CopyFrom(*state()->response());
   }
   return Status::OK();
 }
