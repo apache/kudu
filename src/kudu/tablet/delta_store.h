@@ -49,6 +49,9 @@ class DeltaStore {
   // Set *deleted to true if the latest update for the given row is a deletion.
   virtual Status CheckRowDeleted(rowid_t row_idx, bool *deleted) const = 0;
 
+  // Get the store's estimated size in bytes.
+  virtual uint64_t EstimateSize() const = 0;
+
   virtual const Schema& schema() const = 0;
 
   virtual std::string ToString() const = 0;

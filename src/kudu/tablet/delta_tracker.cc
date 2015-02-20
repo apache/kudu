@@ -354,7 +354,7 @@ Status DeltaTracker::CheckRowDeleted(rowid_t row_idx, bool *deleted,
   }
 
   // Then check backwards through the list of trackers.
-  BOOST_REVERSE_FOREACH(const shared_ptr<DeltaStore> &ds, redo_delta_stores_) {
+  BOOST_REVERSE_FOREACH(const shared_ptr<DeltaStore>& ds, redo_delta_stores_) {
     stats->deltas_consulted++;
     RETURN_NOT_OK(ds->CheckRowDeleted(row_idx, deleted));
     if (*deleted) {
@@ -493,6 +493,15 @@ int64_t DeltaTracker::MinUnflushedLogIndex() const {
 size_t DeltaTracker::CountRedoDeltaStores() const {
   boost::shared_lock<boost::shared_mutex> lock(component_lock_);
   return redo_delta_stores_.size();
+}
+
+uint64_t DeltaTracker::EstimateOnDiskSize() const {
+  boost::shared_lock<boost::shared_mutex> lock(component_lock_);
+  uint64_t size = 0;
+  BOOST_FOREACH(const shared_ptr<DeltaStore>& ds, redo_delta_stores_) {
+    size += ds->EstimateSize();
+  }
+  return size;
 }
 
 const Schema& DeltaTracker::schema() const {

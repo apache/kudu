@@ -566,11 +566,22 @@ Status DiskRowSet::GetBounds(Slice *min_encoded_key,
   return base_data_->GetBounds(min_encoded_key, max_encoded_key);
 }
 
-uint64_t DiskRowSet::EstimateOnDiskSize() const {
+uint64_t DiskRowSet::EstimateBaseDataDiskSize() const {
   CHECK(open_);
-  // TODO: should probably add the delta trackers as well.
   boost::shared_lock<rw_spinlock> lock(component_lock_.get_lock());
   return base_data_->EstimateOnDiskSize();
+}
+
+uint64_t DiskRowSet::EstimateDeltaDiskSize() const {
+  CHECK(open_);
+  boost::shared_lock<rw_spinlock> lock(component_lock_.get_lock());
+  return delta_tracker_->EstimateOnDiskSize();
+}
+
+uint64_t DiskRowSet::EstimateOnDiskSize() const {
+  CHECK(open_);
+  boost::shared_lock<rw_spinlock> lock(component_lock_.get_lock());
+  return base_data_->EstimateOnDiskSize() + delta_tracker_->EstimateOnDiskSize();
 }
 
 size_t DiskRowSet::DeltaMemStoreSize() const {

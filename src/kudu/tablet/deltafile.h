@@ -106,6 +106,8 @@ class DeltaFileReader : public DeltaStore,
   // See DeltaStore::CheckRowDeleted
   virtual Status CheckRowDeleted(rowid_t row_idx, bool *deleted) const OVERRIDE;
 
+  virtual uint64_t EstimateSize() const;
+
   virtual const Schema &schema() const OVERRIDE {
     return schema_;
   }

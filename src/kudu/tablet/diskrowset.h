@@ -283,7 +283,14 @@ class DiskRowSet : public RowSet {
   virtual Status GetBounds(Slice *min_encoded_key,
                            Slice *max_encoded_key) const OVERRIDE;
 
-  // Estimate the number of bytes on-disk
+  // Estimate the number of bytes on-disk for the base data.
+  uint64_t EstimateBaseDataDiskSize() const;
+
+  // Estimate the number of bytes on-disk for the delta stores.
+  uint64_t EstimateDeltaDiskSize() const;
+
+  // Estimate the total number of bytes on-disk, excluding the bloom files and the ad hoc index.
+  // TODO Offer a version that has the real total disk space usage.
   uint64_t EstimateOnDiskSize() const OVERRIDE;
 
   size_t DeltaMemStoreSize() const OVERRIDE;

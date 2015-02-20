@@ -158,6 +158,8 @@ class DeltaTracker {
   // Return the number of redo delta stores, not including the DeltaMemStore.
   size_t CountRedoDeltaStores() const;
 
+  uint64_t EstimateOnDiskSize() const;
+
   const Schema& schema() const;
 
   boost::mutex* compact_flush_lock() {

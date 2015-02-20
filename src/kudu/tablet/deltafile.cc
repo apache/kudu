@@ -321,6 +321,10 @@ Status DeltaFileReader::CheckRowDeleted(rowid_t row_idx, bool *deleted) const {
   return Status::OK();
 }
 
+uint64_t DeltaFileReader::EstimateSize() const {
+  return reader_->file_size();
+}
+
 
 ////////////////////////////////////////////////////////////
 // DeltaFileIterator
