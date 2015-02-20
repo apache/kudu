@@ -352,9 +352,19 @@ class TestCompaction : public KuduRowSetTest {
                             Env::FileType type,
                             const string& dirname, const string& basename) {
     uint64_t file_bytes_used = 0;
-    RETURN_NOT_OK(env_->GetFileSizeOnDisk(
-        JoinPathSegments(dirname, basename), &file_bytes_used));
-    *bytes_used += file_bytes_used;
+    switch (type) {
+      case Env::FILE_TYPE:
+        RETURN_NOT_OK(env_->GetFileSizeOnDisk(
+            JoinPathSegments(dirname, basename), &file_bytes_used));
+        *bytes_used += file_bytes_used;
+        break;
+      case Env::DIRECTORY_TYPE:
+        // Ignore directory space consumption; it varies from filesystem to
+        // filesystem and isn't interesting for this test.
+        break;
+      default:
+        LOG(FATAL) << "Unknown file type: " << type;
+    }
     return Status::OK();
   }
 };
