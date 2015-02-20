@@ -106,6 +106,8 @@ Status ServerBase::Init() {
 
   Status s = fs_manager_->Open();
   if (s.IsNotFound()) {
+    LOG(INFO) << "Could not load existing FS layout: " << s.ToString();
+    LOG(INFO) << "Creating new FS layout";
     is_first_run_ = true;
     RETURN_NOT_OK_PREPEND(fs_manager_->CreateInitialFileSystemLayout(),
                           "Could not create new FS layout");
