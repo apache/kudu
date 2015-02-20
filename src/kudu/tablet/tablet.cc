@@ -874,11 +874,9 @@ Status Tablet::DoCompactionOrFlush(const Schema& schema,
   const char *op_name =
         (mrs_being_flushed == TabletMetadata::kNoMrsFlushed) ? "Compaction" : "Flush";
 
-  LOG(INFO) << op_name << ": entering phase 1 (flushing snapshot)";
-
   MvccSnapshot flush_snap(mvcc_);
-
-  VLOG(1) << "Flushing with MVCC snapshot: " << flush_snap.ToString();
+  LOG(INFO) << op_name << ": entering phase 1 (flushing snapshot). Phase 1 snapshot: "
+      << flush_snap.ToString();
 
   if (common_hooks_) {
     RETURN_NOT_OK_PREPEND(common_hooks_->PostTakeMvccSnapshot(),
