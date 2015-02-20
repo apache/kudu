@@ -83,7 +83,9 @@ class RaftConsensus : public Consensus,
   // being shut down).
   void ReportFailureDetected(const std::string& name, const Status& msg);
 
-  virtual Status Replicate(ConsensusRound* context) OVERRIDE;
+  virtual Status Replicate(ConsensusRound* round) OVERRIDE;
+
+  virtual Status CheckLeadershipAndBindTerm(ConsensusRound* round) OVERRIDE;
 
   virtual Status Update(const ConsensusRequestPB* request,
                         ConsensusResponsePB* response) OVERRIDE;

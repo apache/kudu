@@ -32,14 +32,16 @@ ConsensusRound::ConsensusRound(Consensus* consensus,
                                ConsensusCommitContinuation* commit_continuation)
     : consensus_(consensus),
       replicate_msg_(new RefCountedReplicate(replicate_msg.release())),
-      continuation_(commit_continuation) {
+      continuation_(commit_continuation),
+      bound_term_(-1) {
 }
 
 ConsensusRound::ConsensusRound(Consensus* consensus,
                                const ReplicateRefPtr& replicate_msg)
     : consensus_(consensus),
       replicate_msg_(replicate_msg),
-      continuation_(NULL) {
+      continuation_(NULL),
+      bound_term_(-1) {
   DCHECK_NOTNULL(replicate_msg_.get());
 }
 
@@ -47,6 +49,17 @@ void ConsensusRound::NotifyReplicationFinished(const Status& status) {
   if (PREDICT_TRUE(continuation_)) {
     continuation_->ReplicationFinished(status);
   }
+}
+
+Status ConsensusRound::CheckBoundTerm(int64_t current_term) const {
+  if (PREDICT_FALSE(bound_term_ != -1 &&
+                    bound_term_ != current_term)) {
+    return Status::Aborted(
+      strings::Substitute(
+        "Transaction submitted in term $0 cannot be replicated in term $1",
+        bound_term_, current_term));
+  }
+  return Status::OK();
 }
 
 gscoped_ptr<ConsensusRound> Consensus::NewRound(

@@ -138,7 +138,17 @@ class Consensus : public RefCountedThreadSafe<Consensus> {
   //     commit index, which tells them to apply the operation.
   //
   // This method can only be called on the leader, i.e. role() == LEADER
-  virtual Status Replicate(ConsensusRound* context) = 0;
+  virtual Status Replicate(ConsensusRound* round) = 0;
+
+  // Ensures that the consensus implementation is currently acting as LEADER,
+  // and thus is allowed to submit operations to be prepared before they are
+  // replicated. To avoid a time-of-check-to-time-of-use (TOCTOU) race, the
+  // implementation also stores the current term inside the round's "bound_term"
+  // member. When we eventually are about to replicate the transaction, we verify
+  // that the term has not changed in the meantime.
+  virtual Status CheckLeadershipAndBindTerm(ConsensusRound* round) {
+    return Status::OK();
+  }
 
   // Messages sent from LEADER to FOLLOWERS and LEARNERS to update their
   // state machines. This is equivalent to "AppendEntries()" in Raft
@@ -321,6 +331,24 @@ class ConsensusRound {
   // If a continuation was set, notifies it that the round has been replicated.
   void NotifyReplicationFinished(const Status& status);
 
+  // Binds this round such that it may not be eventually executed in any term
+  // other than 'term'.
+  // See CheckBoundTerm().
+  void BindToTerm(int64_t term) {
+    DCHECK_EQ(bound_term_, -1);
+    bound_term_ = term;
+  }
+
+  // Check for a rare race in which an operation is submitted to the LEADER in some term,
+  // then before the operation is prepared, the replica loses its leadership, receives
+  // more operations as a FOLLOWER, and then regains its leadership. We detect this case
+  // by setting the ConsensusRound's "bound term" when it is first submitted to the
+  // PREPARE queue, and validate that the term is still the same when we have finished
+  // preparing it. See KUDU-597 for details.
+  //
+  // If this round has not been bound to any term, this is a no-op.
+  Status CheckBoundTerm(int64_t current_term) const;
+
  private:
   friend class RaftConsensusQuorumTest;
   Consensus* consensus_;
@@ -330,6 +358,13 @@ class ConsensusRound {
   // The continuation that will be called once the transaction is
   // deemed committed/aborted by consensus.
   ConsensusCommitContinuation* continuation_;
+
+  // The leader term that this round was submitted in. CheckBoundTerm()
+  // ensures that, when it is eventually replicated, the term has not
+  // changed in the meantime.
+  //
+  // Set to -1 if no term has been bound.
+  int64_t bound_term_;
 };
 
 class Consensus::ConsensusFaultHooks {

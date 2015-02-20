@@ -529,8 +529,7 @@ TEST_F(RaftConsensusITest, TestInsertOnNonLeader) {
   ASSERT_ALL_REPLICAS_AGREE(0);
 }
 
-// Temporarily DISABLED due to KUDU-597.
-TEST_F(RaftConsensusITest, DISABLED_TestRunLeaderElection) {
+TEST_F(RaftConsensusITest, TestRunLeaderElection) {
   // Reset consensus rpc timeout to the default value or the election might fail often.
   FLAGS_consensus_rpc_timeout_ms = 1000;
 
@@ -662,8 +661,7 @@ TEST_F(RaftConsensusITest, TestInsertWhenTheQueueIsFull) {
   ASSERT_ALL_REPLICAS_AGREE(successful_writes_counter);
 }
 
-// Temporarily DISABLED due to KUDU-597.
-TEST_F(RaftConsensusITest, DISABLED_MultiThreadedInsertWithFailovers) {
+TEST_F(RaftConsensusITest, MultiThreadedInsertWithFailovers) {
   int kNumElections = FLAGS_num_replicas;
 
   if (AllowSlowTests()) {
@@ -725,8 +723,7 @@ TEST_F(RaftConsensusITest, DISABLED_MultiThreadedInsertWithFailovers) {
 }
 
 // Test automatic leader election by killing leaders.
-// Temporarily DISABLED due to KUDU-597.
-TEST_F(RaftConsensusITest, DISABLED_TestAutomaticLeaderElection) {
+TEST_F(RaftConsensusITest, TestAutomaticLeaderElection) {
   if (AllowSlowTests()) {
     FLAGS_num_tablet_servers = 5;
     FLAGS_num_replicas = 5;
@@ -812,8 +809,7 @@ void RaftConsensusITest::StubbornlyWriteSameRowThread(int replica_idx, const Ato
 // requests targeting a single row. If the bug exists, then TransactionOrderVerifier
 // will trigger an assertion because the prepare order and the op indexes will become
 // misaligned.
-// Temporarily DISABLED due to KUDU-597.
-TEST_F(RaftConsensusITest, DISABLED_TestKUDU_597) {
+TEST_F(RaftConsensusITest, TestKUDU_597) {
   FLAGS_num_replicas = 3;
   FLAGS_num_tablet_servers = 3;
   vector<string> flags;

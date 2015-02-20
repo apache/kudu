@@ -110,8 +110,24 @@ string TransactionDriver::ToStringUnlocked() const {
 Status TransactionDriver::ExecuteAsync() {
   VLOG_WITH_PREFIX_LK(4) << "ExecuteAsync()";
   ADOPT_TRACE(trace());
-  RETURN_NOT_OK(prepare_pool_->SubmitClosure(
-                  Bind(&TransactionDriver::PrepareAndStartTask, Unretained(this))));
+
+  Status s;
+  if (replication_state_ == NOT_REPLICATING) {
+    // We're a leader transaction. Before submitting, check that we are the leader and
+    // determine the current term.
+    s = consensus_->CheckLeadershipAndBindTerm(mutable_state()->consensus_round());
+  }
+
+  if (s.ok()) {
+    s = prepare_pool_->SubmitClosure(
+      Bind(&TransactionDriver::PrepareAndStartTask, Unretained(this)));
+  }
+
+  if (!s.ok()) {
+    HandleFailure(s);
+  }
+
+  // TODO: make this return void
   return Status::OK();
 }
 

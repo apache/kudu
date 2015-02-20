@@ -418,12 +418,20 @@ Status RaftConsensus::Replicate(ConsensusRound* round) {
   {
     ReplicaState::UniqueLock lock;
     RETURN_NOT_OK(state_->LockForReplicate(&lock, *round->replicate_msg()));
+    RETURN_NOT_OK(round->CheckBoundTerm(state_->GetCurrentTermUnlocked()));
     RETURN_NOT_OK(AppendNewRoundToQueueUnlocked(round));
   }
 
   peer_manager_->SignalRequest();
 
   RETURN_NOT_OK(ExecuteHook(POST_REPLICATE));
+  return Status::OK();
+}
+
+Status RaftConsensus::CheckLeadershipAndBindTerm(ConsensusRound* round) {
+  ReplicaState::UniqueLock lock;
+  RETURN_NOT_OK(state_->LockForReplicate(&lock, *round->replicate_msg()));
+  round->BindToTerm(state_->GetCurrentTermUnlocked());
   return Status::OK();
 }
 
