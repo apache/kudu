@@ -9,6 +9,10 @@
 #include "kudu/gutil/atomicops.h"
 #include "kudu/gutil/macros.h"
 
+#ifndef NDEBUG
+#include "kudu/util/thread.h"
+#endif // NDEBUG
+
 namespace kudu {
 
 // Read-Write semaphore. 32bit uint that contains the number of readers.
@@ -99,12 +103,20 @@ class rw_semaphore {
     }
 
     WaitPendingReaders();
+#ifndef NDEBUG
+    writer_tid_ = Thread::PlatformThreadId();
+#endif // NDEBUG
   }
 
   void unlock() {
     // I expect to be the only writer
     DCHECK_EQ(base::subtle::NoBarrier_Load(&state_), kWriteFlag);
-    // reset: no writers/no readers
+
+#ifndef NDEBUG
+    writer_tid_ = -1; // Invalid tid.
+#endif // NDEBUG
+
+    // Reset: no writers & no readers.
     Release_Store(&state_, 0);
   }
 
@@ -134,6 +146,9 @@ class rw_semaphore {
 
  private:
   volatile Atomic32 state_;
+#ifndef NDEBUG
+  int64_t writer_tid_;
+#endif // NDEBUG
 };
 
 } // namespace kudu
