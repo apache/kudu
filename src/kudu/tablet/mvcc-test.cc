@@ -322,10 +322,19 @@ TEST_F(MvccTest, TestMayHaveUncommittedTransactionsBefore) {
 
   // Test for a "clean" snapshot
   MvccSnapshot clean_snap(Timestamp(10));
-  ASSERT_FALSE(
-      clean_snap.MayHaveUncommittedTransactionsAtOrBefore(Timestamp(9)));
-  ASSERT_TRUE(
-      clean_snap.MayHaveUncommittedTransactionsAtOrBefore(Timestamp(10)));
+  ASSERT_FALSE(clean_snap.MayHaveUncommittedTransactionsAtOrBefore(Timestamp(9)));
+  ASSERT_TRUE(clean_snap.MayHaveUncommittedTransactionsAtOrBefore(Timestamp(10)));
+
+  // Test for the case where we have a single transaction in flight. Since this is
+  // also the earliest transaction, all_committed_before_ is equal to the txn's
+  // ts, but when it gets committed we can't advance all_committed_before_ past it
+  // because there is no other transaction to advance it to. In this case we should
+  // still report that there can't be any uncommitted transactions before.
+  MvccSnapshot snap2;
+  snap2.all_committed_before_ = Timestamp(10);
+  snap2.committed_timestamps_.push_back(10);
+
+  ASSERT_FALSE(snap2.MayHaveUncommittedTransactionsAtOrBefore(Timestamp(10)));
 }
 
 TEST_F(MvccTest, TestAreAllTransactionsCommitted) {

@@ -337,7 +337,12 @@ bool MvccSnapshot::MayHaveCommittedTransactionsAtOrAfter(const Timestamp& timest
 }
 
 bool MvccSnapshot::MayHaveUncommittedTransactionsAtOrBefore(const Timestamp& timestamp) const {
-  return timestamp.CompareTo(all_committed_before_) >= 0;
+  // The snapshot may have uncommitted transactions before 'timestamp' if:
+  // - 'all_committed_before_' comes before 'timestamp'
+  // - 'all_committed_before_' is precisely 'timestamp' but 'timestamp' isn't in the
+  //   committed set.
+  return timestamp.CompareTo(all_committed_before_) > 0 ||
+      (timestamp.CompareTo(all_committed_before_) == 0 && !IsCommittedFallback(timestamp));
 }
 
 std::string MvccSnapshot::ToString() const {
