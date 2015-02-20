@@ -134,6 +134,27 @@ class TransactionDriver : public RefCountedThreadSafe<TransactionDriver>,
 
  private:
   friend class RefCountedThreadSafe<TransactionDriver>;
+  enum ReplicationState {
+    // The operation has not yet been sent to consensus for replication
+    NOT_REPLICATING,
+
+    // Replication has been triggered (either because we are the leader and triggered it,
+    // or because we are a follower and we started this operation in response to a
+    // leader's call)
+    REPLICATING,
+
+    // Replication has failed, and we are certain that no other may have received the
+    // operation (ie we failed before even sending the request off of our node).
+    REPLICATION_FAILED,
+
+    // Replication has succeeded.
+    REPLICATED
+  };
+
+  enum PrepareState {
+    NOT_PREPARED,
+    PREPARED
+  };
 
   ~TransactionDriver() {}
 
@@ -172,6 +193,11 @@ class TransactionDriver : public RefCountedThreadSafe<TransactionDriver>,
   // this driver.
   TransactionState* mutable_state();
 
+  // Return a short string indicating where the transaction currently is in the
+  // state machine.
+  static std::string StateString(ReplicationState repl_state,
+                                 PrepareState prep_state);
+
   TransactionTracker* txn_tracker_;
   consensus::Consensus* consensus_;
   log::Log* log_;
@@ -201,32 +227,9 @@ class TransactionDriver : public RefCountedThreadSafe<TransactionDriver>,
   // Trace object for tracing any transactions started by this driver.
   scoped_refptr<Trace> trace_;
 
- private:
-
   const MonoTime start_time_;
 
-  enum ReplicationState {
-    // The operation has not yet been sent to consensus for replication
-    NOT_REPLICATING,
-
-    // Replication has been triggered (either because we are the leader and triggered it,
-    // or because we are a follower and we started this operation in response to a
-    // leader's call)
-    REPLICATING,
-
-    // Replication has failed, and we are certain that no other may have received the
-    // operation (ie we failed before even sending the request off of our node).
-    REPLICATION_FAILED,
-
-    // Replication has succeeded.
-    REPLICATED
-  };
   ReplicationState replication_state_;
-
-  enum PrepareState {
-    NOT_PREPARED,
-    PREPARED
-  };
   PrepareState prepare_state_;
 
   DISALLOW_COPY_AND_ASSIGN(TransactionDriver);

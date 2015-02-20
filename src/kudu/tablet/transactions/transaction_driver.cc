@@ -95,7 +95,13 @@ string TransactionDriver::ToString() const {
 }
 
 string TransactionDriver::ToStringUnlocked() const {
-  return transaction_ != NULL ? transaction_->ToString() : "";
+  string ret = StateString(replication_state_, prepare_state_);
+  if (transaction_ != NULL) {
+    ret += " " + transaction_->ToString();
+  } else {
+    ret += "[unknown txn]";
+  }
+  return ret;
 }
 
 
@@ -377,21 +383,11 @@ void TransactionDriver::Finalize() {
   txn_tracker_->Release(this);
 }
 
-std::string TransactionDriver::LogPrefix() const {
 
-  ReplicationState repl_state_copy;
-  PrepareState prep_state_copy;
-  string ts_string;
-
-  {
-    boost::lock_guard<simple_spinlock> lock(lock_);
-    repl_state_copy = replication_state_;
-    prep_state_copy = prepare_state_;
-    ts_string = state()->has_timestamp() ? state()->timestamp().ToString() : "No timestamp";
-  }
-
+std::string TransactionDriver::StateString(ReplicationState repl_state,
+                                           PrepareState prep_state) {
   string state_str;
-  switch (repl_state_copy) {
+  switch (repl_state) {
     case NOT_REPLICATING:
       StrAppend(&state_str, "NR-"); // For Not Replicating
       break;
@@ -405,9 +401,9 @@ std::string TransactionDriver::LogPrefix() const {
       StrAppend(&state_str, "RD-"); // For Replication Done
       break;
     default:
-      LOG(DFATAL) << "Unexpected replication state: " << replication_state_;
+      LOG(DFATAL) << "Unexpected replication state: " << repl_state;
   }
-  switch (prep_state_copy) {
+  switch (prep_state) {
     case PREPARED:
       StrAppend(&state_str, "P");
       break;
@@ -415,9 +411,25 @@ std::string TransactionDriver::LogPrefix() const {
       StrAppend(&state_str, "NP");
       break;
     default:
-      LOG(DFATAL) << "Unexpected prepare state: " << prepare_state_;
+      LOG(DFATAL) << "Unexpected prepare state: " << prep_state;
+  }
+  return state_str;
+}
+
+std::string TransactionDriver::LogPrefix() const {
+
+  ReplicationState repl_state_copy;
+  PrepareState prep_state_copy;
+  string ts_string;
+
+  {
+    boost::lock_guard<simple_spinlock> lock(lock_);
+    repl_state_copy = replication_state_;
+    prep_state_copy = prepare_state_;
+    ts_string = state()->has_timestamp() ? state()->timestamp().ToString() : "No timestamp";
   }
 
+  string state_str = StateString(repl_state_copy, prep_state_copy);
   // We use the tablet and the peer (T, P) to identify ts and tablet and the timestamp (Ts) to
   // (help) identify the transaction. The state string (S) describes the state of the transaction.
   return strings::Substitute("T $0 P $1 S $2 Ts $3: ",
