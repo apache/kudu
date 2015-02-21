@@ -3,6 +3,7 @@
 // All rights reserved.
 #include "kudu/tablet/delta_stats.h"
 
+#include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/bitmap.h"
 
 namespace kudu {
@@ -69,6 +70,12 @@ Status DeltaStats::UpdateStats(const Timestamp& timestamp,
   }
 
   return Status::OK();
+}
+
+string DeltaStats::ToString() const {
+  return strings::Substitute("ts range=[$0, $1]",
+                             min_timestamp_.ToString(),
+                             max_timestamp_.ToString());
 }
 
 } // namespace tablet

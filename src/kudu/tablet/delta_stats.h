@@ -79,6 +79,8 @@ class DeltaStats {
     min_timestamp_ = timestamp;
   }
 
+  std::string ToString() const;
+
  private:
   std::vector<uint64_t> update_counts_;
   uint64_t delete_count_;
