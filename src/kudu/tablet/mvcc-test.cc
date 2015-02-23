@@ -428,5 +428,35 @@ TEST_F(MvccTest, TestWaitUntilAllCommitted_SnapAtTimestampWithInFlights) {
   ASSERT_TRUE(HasResultSnapshot());
 }
 
-}  // namespace tablet
-}  // namespace kudu
+// Test that if we abort a transaction we don't advance the safe time and don't
+// add the transaction to the committed set.
+TEST_F(MvccTest, TestTxnAbort) {
+
+  MvccManager mgr(clock_.get());
+
+  // Transactions with timestamps 1 through 3
+  Timestamp tx1 = mgr.StartTransaction();
+  Timestamp tx2 = mgr.StartTransaction();
+  Timestamp tx3 = mgr.StartTransaction();
+
+  // Now abort tx1, this shouldn't move the clean time and the transaction
+  // shouldn't be reported as committed.
+  mgr.AbortTransaction(tx1);
+  ASSERT_EQ(mgr.GetCleanTimestamp().CompareTo(Timestamp::kInitialTimestamp), 0);
+  ASSERT_FALSE(mgr.cur_snap_.IsCommitted(tx1));
+
+  // Committing tx3 shouldn't advance the clean time since it is not the earliest
+  // in-flight, but it should advance 'no_new_transactions_at_or_before_', the "safe"
+  // time, to 3.
+  mgr.CommitTransaction(tx3);
+  ASSERT_TRUE(mgr.cur_snap_.IsCommitted(tx3));
+  ASSERT_EQ(mgr.no_new_transactions_at_or_before_.CompareTo(tx3), 0);
+
+  // Committing tx2 should advance the clean time to 3.
+  mgr.CommitTransaction(tx2);
+  ASSERT_TRUE(mgr.cur_snap_.IsCommitted(tx2));
+  ASSERT_EQ(mgr.GetCleanTimestamp().CompareTo(tx3), 0);
+}
+
+} // namespace tablet
+} // namespace kudu

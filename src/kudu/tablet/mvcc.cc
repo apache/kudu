@@ -117,6 +117,21 @@ void MvccManager::CommitTransaction(Timestamp timestamp) {
   }
 }
 
+void MvccManager::AbortTransaction(Timestamp timestamp) {
+  boost::lock_guard<LockType> l(lock_);
+
+  // Remove from our in-flight list.
+  CHECK_EQ(timestamps_in_flight_.erase(timestamp.value()), 1)
+    << "Trying to abort timestamp which isn't in the in-flight set: "
+    << timestamp.ToString();
+
+  // If we're aborting the earliest transaction that was in flight,
+  // update our cached value.
+  if (earliest_in_flight_.CompareTo(timestamp) == 0) {
+    AdvanceEarliestInFlightTimestamp();
+  }
+}
+
 void MvccManager::OfflineCommitTransaction(Timestamp timestamp) {
   boost::lock_guard<LockType> l(lock_);
 
@@ -145,12 +160,16 @@ void MvccManager::CommitTransactionUnlocked(Timestamp timestamp,
   // If we're committing the earliest transaction that was in flight,
   // update our cached value.
   if (*was_earliest_in_flight) {
-    if (timestamps_in_flight_.empty()) {
-      earliest_in_flight_ = Timestamp::kMax;
-    } else {
-      earliest_in_flight_ = Timestamp(*std::min_element(timestamps_in_flight_.begin(),
-                                                        timestamps_in_flight_.end()));
-    }
+    AdvanceEarliestInFlightTimestamp();
+  }
+}
+
+void MvccManager::AdvanceEarliestInFlightTimestamp() {
+  if (timestamps_in_flight_.empty()) {
+    earliest_in_flight_ = Timestamp::kMax;
+  } else {
+    earliest_in_flight_ = Timestamp(*std::min_element(timestamps_in_flight_.begin(),
+                                                      timestamps_in_flight_.end()));
   }
 }
 
@@ -396,7 +415,7 @@ void MvccSnapshot::AddCommittedTimestamp(Timestamp timestamp) {
 // ScopedTransaction
 ////////////////////////////////////////////////////////////
 ScopedTransaction::ScopedTransaction(MvccManager *mgr, TimestampAssignmentType assignment_type)
-  : committed_(false),
+  : done_(false),
     manager_(DCHECK_NOTNULL(mgr)),
     assignment_type_(assignment_type) {
 
@@ -417,7 +436,7 @@ ScopedTransaction::ScopedTransaction(MvccManager *mgr, TimestampAssignmentType a
 }
 
 ScopedTransaction::ScopedTransaction(MvccManager *mgr, Timestamp timestamp)
-  : committed_(false),
+  : done_(false),
     manager_(DCHECK_NOTNULL(mgr)),
     assignment_type_(PRE_ASSIGNED),
     timestamp_(timestamp) {
@@ -425,7 +444,7 @@ ScopedTransaction::ScopedTransaction(MvccManager *mgr, Timestamp timestamp)
 }
 
 ScopedTransaction::~ScopedTransaction() {
-  if (!committed_) {
+  if (!done_) {
     Commit();
   }
 }
@@ -446,7 +465,12 @@ void ScopedTransaction::Commit() {
     }
   }
 
-  committed_ = true;
+  done_ = true;
+}
+
+void ScopedTransaction::Abort() {
+  manager_->AbortTransaction(timestamp_);
+  done_ = true;
 }
 
 

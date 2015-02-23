@@ -180,6 +180,17 @@ class MvccManager {
   // when possible.
   void CommitTransaction(Timestamp timestamp);
 
+  // Abort the given transaction.
+  //
+  // If the transaction is not currently in-flight, this will trigger an
+  // assertion error. It is an error to abort the same transaction more
+  // than once.
+  //
+  // This makes sure that the transaction with 'timestamp' is removed from
+  // the in-flight set but without advancing the safe time since a new
+  // transaction with a lower timestamp might be executed later.
+  void AbortTransaction(Timestamp timestamp);
+
   // Same as commit transaction but does not advance 'all_committed_before_'.
   // Used for bootstrap and delayed processing in FOLLOWERS/LEARNERS.
   void OfflineCommitTransaction(Timestamp timestamp);
@@ -242,6 +253,7 @@ class MvccManager {
  private:
   friend class MvccTest;
   FRIEND_TEST(MvccTest, TestAreAllTransactionsCommitted);
+  FRIEND_TEST(MvccTest, TestTxnAbort);
 
   bool InitTransactionUnlocked(const Timestamp& timestamp);
 
@@ -264,7 +276,15 @@ class MvccManager {
   void CommitTransactionUnlocked(Timestamp timestamp,
                                  bool* was_earliest);
 
+  // Adjusts the clean time, i.e. the timestamp such that all transactions with
+  // lower timestamps are committed or aborted, based on which transactions are
+  // currently in flight and on what is the latest value of 'no_new_transactions_at_or_before_'.
   void AdjustCleanTime();
+
+  // Advances the earliest in-flight timestamp, based on which transactions are
+  // currently in-flight. Usually called when the previous earliest transaction
+  // commits or aborts.
+  void AdvanceEarliestInFlightTimestamp();
 
   typedef simple_spinlock LockType;
   mutable LockType lock_;
@@ -330,8 +350,11 @@ class ScopedTransaction {
   // Commit the in-flight transaction.
   void Commit();
 
+  // Abort the in-flight transaction.
+  void Abort();
+
  private:
-  bool committed_;
+  bool done_;
   MvccManager * const manager_;
   TimestampAssignmentType assignment_type_;
   Timestamp timestamp_;
