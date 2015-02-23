@@ -70,7 +70,7 @@ class AlterSchemaTransactionState : public TransactionState {
   void ReleaseSchemaLock();
 
   // Note: request_ and response_ are set to NULL after this method returns.
-  void commit() {
+  void Finish() {
     // Make the request NULL since after this transaction commits
     // the request may be deleted at any moment.
     request_ = NULL;
@@ -118,7 +118,7 @@ class AlterSchemaTransaction : public Transaction {
   virtual Status Apply(gscoped_ptr<consensus::CommitMsg>* commit_msg) OVERRIDE;
 
   // Actually commits the transaction.
-  virtual void Finish() OVERRIDE;
+  virtual void Finish(TransactionResult result) OVERRIDE;
 
   virtual std::string ToString() const OVERRIDE;
 

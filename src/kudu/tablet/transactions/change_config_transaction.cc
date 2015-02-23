@@ -42,7 +42,7 @@ string ChangeConfigTransactionState::ToString() const {
                     request_ == NULL ? "(none)" : request_->ShortDebugString());
 }
 
-void ChangeConfigTransactionState::commit() {
+void ChangeConfigTransactionState::Finish() {
   release_config_sem();
   // Make the request NULL since after this transaction commits
   // the request may be deleted at any moment.
@@ -105,7 +105,14 @@ Status ChangeConfigTransaction::Apply(gscoped_ptr<CommitMsg>* commit_msg) {
   return Status::OK();
 }
 
-void ChangeConfigTransaction::Finish() {
+void ChangeConfigTransaction::Finish(TransactionResult result) {
+  if (PREDICT_FALSE(result == Transaction::ABORTED)) {
+    TRACE("Change config transaction aborted.");
+    state()->Finish();
+    return;
+  }
+
+  DCHECK_EQ(result, Transaction::COMMITTED);
   // Now that all of the changes have been applied and the commit is durable
   // make the changes visible to readers.
   TRACE("APPLY CHANGE CONFIG: apply finished");
@@ -131,7 +138,7 @@ void ChangeConfigTransaction::Finish() {
 
   QuorumPeerPB::Role new_role = consensus::GetRoleInQuorum(uuid, new_quorum);
   state_->tablet_peer()->ConsensusStateChanged(new_role);
-  state()->commit();
+  state()->Finish();
 }
 
 string ChangeConfigTransaction::ToString() const {

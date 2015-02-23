@@ -49,6 +49,11 @@ class Transaction {
     TRACE_TXNS = 1
   };
 
+  enum TransactionResult {
+    COMMITTED,
+    ABORTED
+  };
+
   Transaction(TransactionState* state, consensus::DriverType type, TransactionType tx_type);
 
   // Returns the TransactionState for this transaction.
@@ -107,11 +112,11 @@ class Transaction {
   virtual void PostCommit() {}
 
   // Executed after the transaction has been committed to consensus and the
-  // commit has been made durable.
-  // Implementations are expected to perform cleanup on this method but should
-  // not depend on the transaction having completed successfully as this is
-  // also called when transactions fail.
-  virtual void Finish() {}
+  // commit has been made durable, or if the transaction was aborted.
+  // Implementations are expected to perform cleanup on this method.
+  // 'result' will be either COMMITTED or ABORTED, letting implementations
+  // know what was the final status of the transaction.
+  virtual void Finish(TransactionResult result) {}
 
   // Each implementation should have its own ToString() method.
   virtual std::string ToString() const = 0;

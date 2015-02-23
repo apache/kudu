@@ -219,7 +219,7 @@ void TransactionDriver::HandleFailure(const Status& s) {
     {
       VLOG_WITH_PREFIX_LK(1) << "Transaction " << ToString() << " failed prior to "
           "replication success: " << s.ToString();
-      transaction_->Finish();
+      transaction_->Finish(Transaction::ABORTED);
       mutable_state()->completion_callback()->set_error(transaction_status_);
       mutable_state()->completion_callback()->TransactionCompleted();
       txn_tracker_->Release(this);
@@ -397,7 +397,7 @@ void TransactionDriver::Finalize() {
   // object while we still hold the lock.
   scoped_refptr<TransactionDriver> ref(this);
   boost::lock_guard<simple_spinlock> lock(lock_);
-  transaction_->Finish();
+  transaction_->Finish(Transaction::COMMITTED);
   mutable_state()->completion_callback()->TransactionCompleted();
   txn_tracker_->Release(this);
 }

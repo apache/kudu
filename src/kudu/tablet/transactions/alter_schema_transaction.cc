@@ -107,11 +107,19 @@ Status AlterSchemaTransaction::Apply(gscoped_ptr<CommitMsg>* commit_msg) {
   return Status::OK();
 }
 
-void AlterSchemaTransaction::Finish() {
+void AlterSchemaTransaction::Finish(TransactionResult result) {
+  if (PREDICT_FALSE(result == Transaction::ABORTED)) {
+    TRACE("AlterSchemaCommitCallback: transaction aborted");
+    state()->Finish();
+    return;
+  }
+
+
+  DCHECK_EQ(result, Transaction::COMMITTED);
   // Now that all of the changes have been applied and the commit is durable
   // make the changes visible to readers.
   TRACE("AlterSchemaCommitCallback: making edits visible");
-  state()->commit();
+  state()->Finish();
 }
 
 string AlterSchemaTransaction::ToString() const {

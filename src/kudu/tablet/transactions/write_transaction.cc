@@ -139,11 +139,18 @@ void WriteTransaction::PreCommit() {
   state()->ReleaseSchemaLock();
 }
 
-void WriteTransaction::Finish() {
+void WriteTransaction::Finish(TransactionResult result) {
+  if (PREDICT_FALSE(result == Transaction::ABORTED)) {
+    TRACE("FINISH: aborting transaction");
+    state()->Abort();
+    return;
+  }
+
+  DCHECK_EQ(result, Transaction::COMMITTED);
   // Now that all of the changes have been applied and the commit is durable
   // make the changes visible to readers.
   TRACE("FINISH: making edits visible");
-  state()->commit();
+  state()->Commit();
 
   TabletMetrics* metrics = state_->tablet_peer()->tablet()->metrics();
   if (metrics) {
@@ -224,17 +231,28 @@ void WriteTransactionState::ReleaseSchemaLock() {
   TRACE("Released schema lock");
 }
 
-void WriteTransactionState::commit() {
+void WriteTransactionState::Abort() {
   if (mvcc_tx_.get() != NULL) {
-    // commit the transaction
-    mvcc_tx_->Commit();
+    // Abort the transaction.
+    mvcc_tx_->Abort();
   }
   mvcc_tx_.reset();
 
-  // TODO: do we really need to release here, given that we also release in
-  // WriteTransaction::PreCommit()?
   release_row_locks();
   ReleaseSchemaLock();
+
+  // Make the request NULL since after this transaction commits
+  // the request may be deleted at any moment.
+  request_ = NULL;
+  response_ = NULL;
+}
+
+void WriteTransactionState::Commit() {
+  if (mvcc_tx_.get() != NULL) {
+    // Commit the transaction.
+    mvcc_tx_->Commit();
+  }
+  mvcc_tx_.reset();
 
   // Make the request NULL since after this transaction commits
   // the request may be deleted at any moment.
@@ -279,7 +297,8 @@ WriteTransactionState::~WriteTransactionState() {
 }
 
 void WriteTransactionState::Reset() {
-  commit();
+  // We likely shouldn't Commit() here. See KUDU-625.
+  Commit();
   STLDeleteElements(&row_ops_);
   tx_metrics_.Reset();
   timestamp_ = Timestamp::kInvalidTimestamp;

@@ -86,7 +86,7 @@ class KuduTabletTest : public KuduTest {
     AlterSchemaTransactionState tx_state(&req);
     ASSERT_STATUS_OK(tablet()->CreatePreparedAlterSchema(&tx_state, &schema));
     ASSERT_STATUS_OK(tablet()->AlterSchema(&tx_state));
-    tx_state.commit();
+    tx_state.Finish();
   }
 
   const std::tr1::shared_ptr<Tablet>& tablet() const {

@@ -61,7 +61,11 @@ class LocalTabletWriter {
     tx_state_->mutable_op_id()->CopyFrom(consensus::MaximumOpId());
     tablet_->ApplyRowOperations(tx_state_.get());
 
-    tx_state_->commit();
+    tx_state_->Commit();
+
+    tx_state_->release_row_locks();
+    tx_state_->ReleaseSchemaLock();
+
     // return the status of last op
     if (last_op_result().has_failed_status()) {
       return StatusFromPB(last_op_result().failed_status());

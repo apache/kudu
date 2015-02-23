@@ -116,9 +116,14 @@ class WriteTransactionState : public TransactionState {
   // Commits the Mvcc transaction and releases the component lock. After
   // this method is called all the inserts and mutations will become
   // visible to other transactions.
+  // Only one of Commit() or Abort() should be called.
   //
   // Note: request_ and response_ are set to NULL after this method returns.
-  void commit();
+  void Commit();
+
+  // Aborts the mvcc transaction and releases the component lock.
+  // Only one of Commit() or Abort() should be called.
+  void Abort();
 
   // Returns all the prepared row writes for this transaction. Usually called
   // on the apply phase to actually make changes to the tablet.
@@ -215,8 +220,9 @@ class WriteTransaction : public Transaction {
   // Releases the row locks (Early Lock Release).
   virtual void PreCommit() OVERRIDE;
 
-  // Actually commits the mvcc transaction and updates the metrics.
-  virtual void Finish() OVERRIDE;
+  // If result == COMMITTED, commits the mvcc transaction and updates
+  // the metrics, if result == ABORTED aborts the mvcc transaction.
+  virtual void Finish(TransactionResult result) OVERRIDE;
 
   virtual std::string ToString() const OVERRIDE;
 

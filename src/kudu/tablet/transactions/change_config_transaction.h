@@ -59,12 +59,12 @@ class ChangeConfigTransactionState : public TransactionState {
   }
 
   // Note: request_ and response_ are set to NULL after this method returns.
-  void commit();
+  void Finish();
 
   virtual std::string ToString() const OVERRIDE;
 
   ~ChangeConfigTransactionState() {
-    release_config_sem();
+    Finish();
   }
 
  private:
@@ -100,7 +100,7 @@ class ChangeConfigTransaction : public Transaction {
   virtual Status Apply(gscoped_ptr<consensus::CommitMsg>* commit_msg) OVERRIDE;
 
   // Actually commits the transaction.
-  virtual void Finish() OVERRIDE;
+  virtual void Finish(TransactionResult result) OVERRIDE;
 
   virtual std::string ToString() const OVERRIDE;
 
