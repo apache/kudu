@@ -232,7 +232,7 @@ class MvccManager {
 
   // Returns the earliest possible timestamp for an uncommitted transaction.
   // All timestamps before this one are guaranteed to be committed.
-  Timestamp GetSafeTimestamp() const;
+  Timestamp GetCleanTimestamp() const;
 
   // Return the timestamps of all currently in-flight transactions.
   void GetInFlightTransactionTimestamps(std::vector<Timestamp>* timestamps) const;
@@ -264,7 +264,7 @@ class MvccManager {
   void CommitTransactionUnlocked(Timestamp timestamp,
                                  bool* was_earliest);
 
-  void AdjustSafeTime(Timestamp safe_time);
+  void AdjustCleanTime();
 
   typedef simple_spinlock LockType;
   mutable LockType lock_;
@@ -273,6 +273,11 @@ class MvccManager {
 
   // The set of timestamps corresponding to currently in-flight transactions.
   std::tr1::unordered_set<Timestamp::val_type> timestamps_in_flight_;
+
+  // A transaction ID below which all transactions are either committed or in-flight,
+  // meaning no new transactions will be started with a timestamp that is equal
+  // to or lower than this one.
+  Timestamp no_new_transactions_at_or_before_;
 
   // The minimum timestamp in timestamps_in_flight_, or Timestamp::kMax
   // if that set is empty. This is cached in order to avoid having to iterate

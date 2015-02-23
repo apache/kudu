@@ -385,11 +385,11 @@ TEST_F(TestCompaction, TestMemRowSetInput) {
   ASSERT_EQ(10, out.size());
   ASSERT_EQ("(string key=hello 00000000, uint32 val=0, uint32 nullable_val=0) "
       "Undos: [@1(DELETE)] "
-      "Redos: [@21(SET val=1, nullable_val=1), @41(SET val=2, nullable_val=NULL)]",
+      "Redos: [@11(SET val=1, nullable_val=1), @21(SET val=2, nullable_val=NULL)]",
             out[0]);
   ASSERT_EQ("(string key=hello 00000090, uint32 val=9, uint32 nullable_val=NULL) "
-      "Undos: [@19(DELETE)] "
-      "Redos: [@39(SET val=1, nullable_val=1), @59(SET val=2, nullable_val=NULL)]",
+      "Undos: [@10(DELETE)] "
+      "Redos: [@20(SET val=1, nullable_val=1), @30(SET val=2, nullable_val=NULL)]",
             out[9]);
 }
 
@@ -419,18 +419,18 @@ TEST_F(TestCompaction, TestRowSetInput) {
   EXPECT_EQ("(string key=hello 00000000, uint32 val=0, uint32 nullable_val=0) "
             "Undos: [@1(DELETE)] "
             "Redos: ["
-            "@21(SET val=1, nullable_val=1), "
-            "@41(SET val=2, nullable_val=NULL), "
-            "@61(SET val=3, nullable_val=3), "
-            "@81(SET val=4, nullable_val=NULL)]",
+            "@11(SET val=1, nullable_val=1), "
+            "@21(SET val=2, nullable_val=NULL), "
+            "@31(SET val=3, nullable_val=3), "
+            "@41(SET val=4, nullable_val=NULL)]",
             out[0]);
   EXPECT_EQ("(string key=hello 00000090, uint32 val=9, uint32 nullable_val=NULL) "
-            "Undos: [@19(DELETE)] "
+            "Undos: [@10(DELETE)] "
             "Redos: ["
-            "@39(SET val=1, nullable_val=1), "
-            "@59(SET val=2, nullable_val=NULL), "
-            "@79(SET val=3, nullable_val=3), "
-            "@99(SET val=4, nullable_val=NULL)]",
+            "@20(SET val=1, nullable_val=1), "
+            "@30(SET val=2, nullable_val=NULL), "
+            "@40(SET val=3, nullable_val=3), "
+            "@50(SET val=4, nullable_val=NULL)]",
             out[9]);
 }
 
@@ -488,10 +488,10 @@ TEST_F(TestCompaction, TestDuplicatedGhostRowsDontSurviveCompaction) {
   IterateInput(input.get(), &out);
   ASSERT_EQ(out.size(), 10);
   EXPECT_EQ("(string key=hello 00000000, uint32 val=2, uint32 nullable_val=NULL) "
-      "Undos: [@121(SET val=0, nullable_val=0), @101(DELETE)] "
+      "Undos: [@61(SET val=0, nullable_val=0), @51(DELETE)] "
       "Redos: []", out[0]);
   EXPECT_EQ("(string key=hello 00000090, uint32 val=2, uint32 nullable_val=NULL) "
-      "Undos: [@139(SET val=9, nullable_val=NULL), @119(DELETE)] "
+      "Undos: [@70(SET val=9, nullable_val=NULL), @60(DELETE)] "
       "Redos: []", out[9]);
 }
 
@@ -534,9 +534,9 @@ TEST_F(TestCompaction, TestOneToOne) {
   IterateInput(input.get(), &out);
   ASSERT_EQ(1000, out.size());
   EXPECT_EQ("(string key=hello 00000000, uint32 val=1, uint32 nullable_val=1) "
-      "Undos: [@2001(SET val=0, nullable_val=0), @1(DELETE)] "
-      "Redos: [@4001(SET val=2, nullable_val=NULL), "
-              "@6001(SET val=3, nullable_val=3)]", out[0]);
+      "Undos: [@1001(SET val=0, nullable_val=0), @1(DELETE)] "
+      "Redos: [@2001(SET val=2, nullable_val=NULL), "
+              "@3001(SET val=3, nullable_val=3)]", out[0]);
 
   // And compact (1 input to 1 output)
   MvccSnapshot snap3(mvcc_);
@@ -636,11 +636,10 @@ TEST_F(TestCompaction, TestMergeMRS) {
   vector<string> out;
   IterateInput(input.get(), &out);
   ASSERT_EQ(out.size(), 20);
-  EXPECT_EQ(out[0],
-            "(string key=hello 00000000, uint32 val=0, uint32 nullable_val=0) "
-            "Undos: [@1(DELETE)] Redos: []");
-  EXPECT_EQ(out[19], "(string key=hello 00000091, uint32 val=9, uint32 nullable_val=NULL) "
-            "Undos: [@39(DELETE)] Redos: []");
+  EXPECT_EQ("(string key=hello 00000000, uint32 val=0, uint32 nullable_val=0) "
+            "Undos: [@1(DELETE)] Redos: []", out[0]);
+  EXPECT_EQ("(string key=hello 00000091, uint32 val=9, uint32 nullable_val=NULL) "
+            "Undos: [@20(DELETE)] Redos: []", out[19]);
 }
 
 #ifdef NDEBUG

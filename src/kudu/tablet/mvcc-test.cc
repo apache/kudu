@@ -75,7 +75,7 @@ TEST_F(MvccTest, TestMvccBasic) {
 
   // State should show 0 as committed, 1 as uncommitted.
   mgr.TakeSnapshot(&snap);
-  ASSERT_EQ("MvccSnapshot[committed={T|T < 2}]", snap.ToString());
+  ASSERT_EQ("MvccSnapshot[committed={T|T < 1 or (T in {1})}]", snap.ToString());
   ASSERT_TRUE(snap.IsCommitted(Timestamp(1)));
   ASSERT_FALSE(snap.IsCommitted(Timestamp(2)));
 }
@@ -138,7 +138,7 @@ TEST_F(MvccTest, TestMvccMultipleInFlight) {
 
   // all committed
   mgr.TakeSnapshot(&snap);
-  ASSERT_EQ("MvccSnapshot[committed={T|T < 4}]", snap.ToString());
+  ASSERT_EQ("MvccSnapshot[committed={T|T < 3 or (T in {3})}]", snap.ToString());
   ASSERT_TRUE(snap.IsCommitted(t1));
   ASSERT_TRUE(snap.IsCommitted(t2));
   ASSERT_TRUE(snap.IsCommitted(t3));
@@ -193,7 +193,7 @@ TEST_F(MvccTest, TestOfflineTransactions) {
   // now start a transaction in the "past"
   ASSERT_STATUS_OK(mgr.StartTransactionAtTimestamp(Timestamp(50)));
 
-  ASSERT_EQ(mgr.GetSafeTimestamp().CompareTo(Timestamp::kInitialTimestamp), 0);
+  ASSERT_EQ(mgr.GetCleanTimestamp().CompareTo(Timestamp::kInitialTimestamp), 0);
 
   // and committing this transaction "offline" this
   // should not advance the MvccManager 'all_committed_before_'
@@ -212,7 +212,7 @@ TEST_F(MvccTest, TestOfflineTransactions) {
   // Now advance the watermark to the last committed transaction.
   mgr.OfflineAdjustSafeTime(Timestamp(50));
 
-  ASSERT_EQ(mgr.GetSafeTimestamp().CompareTo(Timestamp(50)), 0);
+  ASSERT_EQ(mgr.GetCleanTimestamp().CompareTo(Timestamp(50)), 0);
 
   MvccSnapshot snap2;
   mgr.TakeSnapshot(&snap2);

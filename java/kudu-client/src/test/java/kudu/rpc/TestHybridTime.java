@@ -124,7 +124,7 @@ public class TestHybridTime extends BaseKuduTest {
     long snapTime = physicalAndLogicalToHTTimestamp(previousPhysicalValue, 0);
     assertEquals(1, scanAtSnapshot(snapTime));
     snapTime = physicalAndLogicalToHTTimestamp(previousPhysicalValue, 5);
-    assertEquals(3, scanAtSnapshot(snapTime));
+    assertEquals(4, scanAtSnapshot(snapTime));
     // Our last snap time needs to one one into the future w.r.t. the last write's timestamp
     // for us to be able to get all rows, but the snap timestamp can't be bigger than the prop.
     // timestamp so we increase both.

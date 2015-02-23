@@ -22,7 +22,8 @@
 namespace kudu { namespace tablet {
 
 MvccManager::MvccManager(const scoped_refptr<server::Clock>& clock)
-  : earliest_in_flight_(Timestamp::kMax),
+  : no_new_transactions_at_or_before_(Timestamp::kMin),
+    earliest_in_flight_(Timestamp::kMax),
     clock_(clock) {
   cur_snap_.all_committed_before_ = Timestamp::kInitialTimestamp;
   cur_snap_.none_committed_at_or_after_ = Timestamp::kInitialTimestamp;
@@ -79,7 +80,7 @@ bool MvccManager::InitTransactionUnlocked(const Timestamp& timestamp) {
   // Ensure that we didn't mark the given timestamp as "safe" in between
   // acquiring the time and taking the lock. This allows us to acquire timestamps
   // outside of the MVCC lock.
-  if (PREDICT_FALSE(cur_snap_.all_committed_before_.CompareTo(timestamp) > 0)) {
+  if (PREDICT_FALSE(no_new_transactions_at_or_before_.CompareTo(timestamp) >= 0)) {
     return false;
   }
   // Since transactions only commit once they are in the past, and new
@@ -103,10 +104,16 @@ void MvccManager::CommitTransaction(Timestamp timestamp) {
   bool was_earliest = false;
   CommitTransactionUnlocked(timestamp, &was_earliest);
 
+  // No more transactions will start with a ts that is lower than or equal
+  // to 'timestamp', so we adjust the snapshot accordingly.
+  if (no_new_transactions_at_or_before_.CompareTo(timestamp) < 0) {
+    no_new_transactions_at_or_before_ = timestamp;
+  }
+
   if (was_earliest) {
-    // This is an 'online' commit so adjust the 'all_committed_before_' watermark
-    // up to clock_->Now().
-    AdjustSafeTime(clock_->Now());
+    // If this transaction was the earliest in-flight, we might have to adjust
+    // the "clean" timestamp.
+    AdjustCleanTime();
   }
 }
 
@@ -149,7 +156,14 @@ void MvccManager::CommitTransactionUnlocked(Timestamp timestamp,
 
 void MvccManager::OfflineAdjustSafeTime(Timestamp safe_time) {
   boost::lock_guard<LockType> l(lock_);
-  AdjustSafeTime(safe_time);
+
+  // No more transactions will start with a ts that is lower than or equal
+  // to 'safe_time', so we adjust the snapshot accordingly.
+  if (no_new_transactions_at_or_before_.CompareTo(safe_time) < 0) {
+    no_new_transactions_at_or_before_ = safe_time;
+  }
+
+  AdjustCleanTime();
 }
 
 // Remove any elements from 'v' which are < the given watermark.
@@ -164,26 +178,25 @@ static void FilterTimestamps(std::vector<Timestamp::val_type>* v,
   v->resize(j);
 }
 
-void MvccManager::AdjustSafeTime(Timestamp safe_time) {
-
+void MvccManager::AdjustCleanTime() {
   // There are two possibilities:
   //
-  // 1) We still have an in-flight transaction earlier than 'safe_time'.
+  // 1) We still have an in-flight transaction earlier than 'no_new_transactions_at_or_before_'.
   //    In this case, we update the watermark to that transaction's timestamp.
   //
-  // 2) There are no in-flight transactions earlier than 'safe_time'.
+  // 2) There are no in-flight transactions earlier than 'no_new_transactions_at_or_before_'.
   //    (There may still be in-flight transactions with future timestamps due to
   //    commit-wait transactions which start in the future). In this case, we update
-  //    the watermark to 'safe_time', since we know that no new transactions can start
-  //    with an earlier timestamp.
+  //    the watermark to 'no_new_transactions_at_or_before_', since we know that no new
+  //    transactions can start with an earlier timestamp.
   //
   // In either case, we have to add the newly committed ts only if it remains higher
   // than the new watermark.
 
-  if (earliest_in_flight_.CompareTo(safe_time) < 0) {
+  if (earliest_in_flight_.CompareTo(no_new_transactions_at_or_before_) < 0) {
     cur_snap_.all_committed_before_ = earliest_in_flight_;
   } else {
-    cur_snap_.all_committed_before_ = safe_time;
+    cur_snap_.all_committed_before_ = no_new_transactions_at_or_before_;
   }
 
   // Filter out any committed timestamps that now fall below the watermark
@@ -276,7 +289,7 @@ int MvccManager::CountTransactionsInFlight() const {
   return timestamps_in_flight_.size();
 }
 
-Timestamp MvccManager::GetSafeTimestamp() const {
+Timestamp MvccManager::GetCleanTimestamp() const {
   boost::lock_guard<LockType> l(lock_);
   return cur_snap_.all_committed_before_;
 }
