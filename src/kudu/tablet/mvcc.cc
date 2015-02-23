@@ -110,11 +110,6 @@ void MvccManager::CommitTransaction(Timestamp timestamp) {
   }
 }
 
-Timestamp MvccManager::GetSafeTime() {
-  boost::lock_guard<LockType> l(lock_);
-  return cur_snap_.all_committed_before_;
-}
-
 void MvccManager::OfflineCommitTransaction(Timestamp timestamp) {
   boost::lock_guard<LockType> l(lock_);
 
