@@ -16,16 +16,9 @@
 // To verify, the table is scanned, and we ensure that every key is linked to
 // either zero or one times, and no link_to refers to a missing key.
 
-#include <boost/assign/list_of.hpp>
-#include <boost/foreach.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
-#include <iostream>
-#include <tr1/memory>
-#include <tr1/unordered_map>
-#include <utility>
-#include <vector>
 
 #include "kudu/client/client.h"
 #include "kudu/client/encoded_key.h"
@@ -78,20 +71,23 @@ class LinkedListTest : public tserver::TabletServerIntegrationTestBase {
   }
 
   void BuildAndStart() {
-    vector<string> flags;
-    flags.push_back("--skip_remove_old_recovery_dir");
-    flags.push_back("--tablet_server_rpc_bind_addresses=127.0.0.1:705${index}");
-    flags.push_back("--enable_leader_failure_detection=true");
+    vector<string> common_flags;
+
+    common_flags.push_back("--skip_remove_old_recovery_dir");
+    common_flags.push_back("--enable_leader_failure_detection=true");
+
+    vector<string> ts_flags(common_flags);
+    ts_flags.push_back("--tablet_server_rpc_bind_addresses=127.0.0.1:705${index}");
 
     if (AllowSlowTests()) {
       // Set the flush threshold low so that we have a mix of flushed and unflushed
       // operations in the WAL, when we bootstrap.
-      flags.push_back("--flush_threshold_mb=1");
+      ts_flags.push_back("--flush_threshold_mb=1");
       // Set the size of the WAL segments low so that some can be GC'd.
-      flags.push_back("--log_segment_size_mb=1");
+      ts_flags.push_back("--log_segment_size_mb=1");
     }
 
-    CreateCluster("linked-list-cluster", flags);
+    CreateCluster("linked-list-cluster", ts_flags, common_flags);
     ResetClientAndTester();
     ASSERT_STATUS_OK(tester_->CreateLinkedListTable());
     WaitForTSAndQuorum();

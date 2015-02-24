@@ -73,11 +73,11 @@ class RaftConsensusITest : public TabletServerIntegrationTestBase {
     FLAGS_consensus_rpc_timeout_ms = kConsensusRpcTimeoutForTests;
   }
 
-  // Starts an external cluster with 'num_replicas'. The caller can pass
-  // 'non_default_flags' to specify non-default values the flags used
-  // to configure the external daemons.
-  void BuildAndStart(const vector<std::string>& non_default_flags) {
-    CreateCluster("raft_consensus-itest-cluster", non_default_flags);
+  // Starts an external cluster with a single tablet and a number of replicas equal
+  // to 'FLAGS_num_replicas'. The caller can pass 'ts_flags' to specify non-default
+  // flags to pass to the tablet servers.
+  void BuildAndStart(const vector<std::string>& ts_flags) {
+    CreateCluster("raft_consensus-itest-cluster", ts_flags, vector<std::string>());
     CreateClient(&client_);
     CreateTable();
     WaitForTSAndQuorum();

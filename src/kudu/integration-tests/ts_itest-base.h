@@ -80,7 +80,8 @@ class TabletServerIntegrationTestBase : public TabletServerTestBase {
   }
 
   void CreateCluster(const string& data_root_path,
-                     const vector<std::string>& non_default_flags) {
+                     const vector<std::string>& non_default_ts_flags,
+                     const vector<std::string>& non_default_master_flags) {
 
     LOG(INFO) << "Starting cluster with:";
     LOG(INFO) << "--------------";
@@ -92,16 +93,20 @@ class TabletServerIntegrationTestBase : public TabletServerTestBase {
     opts.num_tablet_servers = FLAGS_num_tablet_servers;
     opts.data_root = GetTestPath(data_root_path);
 
-    // If the caller passed no flags use the default ones.
-    if (non_default_flags.empty()) {
+    // If the caller passed no flags use the default ones, where we stress consensus by setting
+    // low timeouts and frequent cache misses.
+    if (non_default_ts_flags.empty()) {
       opts.extra_tserver_flags.push_back("--log_cache_size_soft_limit_mb=5");
       opts.extra_tserver_flags.push_back("--log_cache_size_hard_limit_mb=10");
       opts.extra_tserver_flags.push_back(strings::Substitute("--consensus_rpc_timeout_ms=$0",
                                                              FLAGS_consensus_rpc_timeout_ms));
     } else {
-      BOOST_FOREACH(const std::string& flag, non_default_flags) {
+      BOOST_FOREACH(const std::string& flag, non_default_ts_flags) {
         opts.extra_tserver_flags.push_back(flag);
       }
+    }
+    BOOST_FOREACH(const std::string& flag, non_default_master_flags) {
+      opts.extra_master_flags.push_back(flag);
     }
 
     AddExtraFlags(FLAGS_ts_flags, &opts.extra_tserver_flags);

@@ -89,7 +89,7 @@ class ClientTest : public KuduTest {
     // Use the hybrid clock for client tests
     FLAGS_use_hybrid_clock = true;
 
-    // increase the max error tolerance, for tests, to 10 seconds.
+    // Increase the max error tolerance, for tests, to 10 seconds.
     FLAGS_max_clock_sync_error_usec = 10000000;
 
     // Start minicluster and wait for tablet servers to connect to master.

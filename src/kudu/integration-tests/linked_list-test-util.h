@@ -568,7 +568,6 @@ Status LinkedListTester::WaitAndVerify(int seconds_to_run, int64_t expected) {
     // in the chain.
 
     if (!s.ok()) {
-
       LOG(INFO) << "Table not yet ready: " << seen << "/" << expected << " rows"
                 << " (status: " << s.ToString() << ")";
       if (last_attempt) {
