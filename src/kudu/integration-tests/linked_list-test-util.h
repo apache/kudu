@@ -575,7 +575,16 @@ Status LinkedListTester::VerifyLinkedListRemote(uint64_t snapshot_timestamp,
       bool updated;
       RETURN_NOT_OK(row.GetUInt64(0, &key));
       RETURN_NOT_OK(row.GetUInt64(1, &link));
-      RETURN_NOT_OK(row.GetBool(2, &updated));
+
+      // For non-snapshot reads we also verify that all rows were updated. We don't
+      // for snapshot reads as updates are performed by their own thread. This means
+      // that there is no guarantee that, for any snapshot timestamp that comes before
+      // all writes are completed, all rows will be updated.
+      if (snapshot_timestamp == kNoSnapshot) {
+        RETURN_NOT_OK(row.GetBool(2, &updated));
+      } else {
+        updated = enable_mutation_;
+      }
 
       verifier.RegisterResult(key, link, updated);
     }

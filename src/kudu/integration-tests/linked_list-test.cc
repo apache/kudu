@@ -45,7 +45,7 @@ DEFINE_int32(seconds_to_run, 1, "Number of seconds for which to run the test");
 
 DEFINE_int32(num_chains, 50, "Number of parallel chains to generate");
 DEFINE_int32(num_tablets, 3, "Number of tablets over which to split the data");
-DEFINE_bool(enable_mutation, false, "Enable periodic mutation of inserted rows");
+DEFINE_bool(enable_mutation, true, "Enable periodic mutation of inserted rows");
 DEFINE_int32(num_snapshots, 3, "Number of snapshots to verify across replicas and reboots.");
 
 DEFINE_bool(stress_flush_compact, false,
