@@ -549,6 +549,11 @@ Status CatalogManager::CreateTable(const CreateTableRequestPB* req,
     SetupError(resp->mutable_error(), MasterErrorPB::INVALID_SCHEMA, s);
     return s;
   }
+  if (PREDICT_FALSE(schema.num_key_columns() <= 0)) {
+    Status s = Status::InvalidArgument("Must specify at least one key column");
+    SetupError(resp->mutable_error(), MasterErrorPB::INVALID_SCHEMA, s);
+        return s;
+  }
   schema = schema.CopyWithColumnIds();
 
   int max_tablets = FLAGS_max_create_tablets_per_ts * master_->ts_manager()->GetCount();

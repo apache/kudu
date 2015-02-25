@@ -102,6 +102,11 @@ Status Schema::Reset(const vector<ColumnSchema>& cols,
       "Bad schema", "More key columns than columns");
   }
 
+  if (PREDICT_FALSE(key_columns < 0)) {
+    return Status::InvalidArgument(
+      "Bad schema", "Cannot specify a negative number of key columns");
+  }
+
   if (PREDICT_FALSE(!ids.empty() && ids.size() != cols_.size())) {
     return Status::InvalidArgument("Bad schema",
       "The number of ids does not match with the number of columns");

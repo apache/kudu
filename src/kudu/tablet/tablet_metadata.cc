@@ -128,6 +128,7 @@ TabletMetadata::TabletMetadata(FsManager *fs_manager,
     num_flush_pins_(0),
     needs_flush_(false) {
   CHECK(schema_.has_column_ids());
+  CHECK_GT(schema_.num_key_columns(), 0);
 }
 
 TabletMetadata::~TabletMetadata() {
