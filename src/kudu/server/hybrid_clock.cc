@@ -369,8 +369,8 @@ Timestamp HybridClock::TimestampFromMicrosecondsAndLogicalValue(
 }
 
 Timestamp HybridClock::AddPhysicalTimeToTimestamp(const Timestamp& original,
-                                                  int64_t micros_to_add) {
-  uint64_t new_physical = GetPhysicalValueMicros(original) + micros_to_add;
+                                                  const MonoDelta& to_add) {
+  uint64_t new_physical = GetPhysicalValueMicros(original) + to_add.ToMicroseconds();
   uint64_t old_logical = GetLogicalValue(original);
   return TimestampFromMicrosecondsAndLogicalValue(new_physical, old_logical);
 }

@@ -97,7 +97,7 @@ class HybridClock : public Clock {
   // Creates a new timestamp whose physical time is GetPhysicalValue(original) +
   // 'micros_to_add' and which retains the same logical value.
   static Timestamp AddPhysicalTimeToTimestamp(const Timestamp& original,
-                                              int64_t micros_to_add);
+                                              const MonoDelta& to_add);
 
   // Outputs a string containing the physical and logical values of the timestamp,
   // separated.
