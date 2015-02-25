@@ -484,7 +484,7 @@ TEST_F(ClientTest, TestScanAtSnapshot) {
 
   // get the time from the server and transform to micros disregarding any
   // logical values (we shouldn't have any with a single server anyway);
-  int64_t ts = server::HybridClock::GetPhysicalValue(
+  int64_t ts = server::HybridClock::GetPhysicalValueMicros(
       cluster_->mini_tablet_server(0)->server()->clock()->Now());
 
   // Insert the second half of the rows

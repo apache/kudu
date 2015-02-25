@@ -37,13 +37,14 @@ TEST_F(HybridClockTest, TestNow_ValuesIncreaseMonotonically) {
   const Timestamp now1 = clock_->Now();
   const Timestamp now2 = clock_->Now();
   ASSERT_GE(HybridClock::GetLogicalValue(now1), HybridClock::GetLogicalValue(now2));
-  ASSERT_GE(HybridClock::GetPhysicalValue(now1), HybridClock::GetPhysicalValue(now1));
+  ASSERT_GE(HybridClock::GetPhysicalValueMicros(now1),
+            HybridClock::GetPhysicalValueMicros(now1));
 }
 
 // Tests the clock updates with the incoming value if it is higher.
 TEST_F(HybridClockTest, TestUpdate_LogicalValueIncreasesByAmount) {
   Timestamp now = clock_->Now();
-  uint64_t now_micros = HybridClock::GetPhysicalValue(now);
+  uint64_t now_micros = HybridClock::GetPhysicalValueMicros(now);
 
   // increase the logical value
   uint64_t logical = HybridClock::GetLogicalValue(now);
@@ -60,7 +61,8 @@ TEST_F(HybridClockTest, TestUpdate_LogicalValueIncreasesByAmount) {
 
   Timestamp now2 = clock_->Now();
   ASSERT_EQ(logical + 1, HybridClock::GetLogicalValue(now2));
-  ASSERT_EQ(HybridClock::GetPhysicalValue(now) + 200000, HybridClock::GetPhysicalValue(now2));
+  ASSERT_EQ(HybridClock::GetPhysicalValueMicros(now) + 200000,
+            HybridClock::GetPhysicalValueMicros(now2));
 }
 
 // Test that the incoming event is in the past, i.e. less than now - max_error
@@ -129,7 +131,7 @@ TEST_F(HybridClockTest, TestIsAfter) {
   // handles "IsAfter" properly even when it's running in
   // "logical" mode.
   Timestamp now_increased = HybridClock::TimestampFromMicroseconds(
-    HybridClock::GetPhysicalValue(ts1) + 1 * 1000 * 1000);
+    HybridClock::GetPhysicalValueMicros(ts1) + 1 * 1000 * 1000);
   ASSERT_STATUS_OK(clock_->Update(now_increased));
   Timestamp ts2 = clock_->Now();
 

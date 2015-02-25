@@ -141,7 +141,7 @@ Timestamp HybridClock::NowLatest() {
   boost::lock_guard<simple_spinlock> lock(lock_);
   NowWithError(&now, &error);
 
-  uint64_t now_latest = GetPhysicalValue(now) + error;
+  uint64_t now_latest = GetPhysicalValueMicros(now) + error;
   uint64_t now_logical = GetLogicalValue(now);
 
   return TimestampFromMicrosecondsAndLogicalValue(now_latest, now_logical);
@@ -213,9 +213,9 @@ Status HybridClock::Update(const Timestamp& to_update) {
   boost::lock_guard<simple_spinlock> lock(lock_);
   if (PREDICT_TRUE(now.CompareTo(to_update) > 0)) return Status::OK();
 
-  uint64_t to_update_physical = GetPhysicalValue(to_update);
+  uint64_t to_update_physical = GetPhysicalValueMicros(to_update);
   uint64_t to_update_logical = GetLogicalValue(to_update);
-  uint64_t now_physical = GetPhysicalValue(now);
+  uint64_t now_physical = GetPhysicalValueMicros(now);
 
   // we won't update our clock if to_update is more than 'max_clock_sync_error_usec'
   // into the future as it might have been corrupted or originated from an out-of-sync
@@ -242,8 +242,8 @@ Status HybridClock::WaitUntilAfter(const Timestamp& then_latest) {
   }
 
   // "unshift" the timestamps so that we can measure actual time
-  uint64_t now_usec = GetPhysicalValue(now);
-  uint64_t then_latest_usec = GetPhysicalValue(then_latest);
+  uint64_t now_usec = GetPhysicalValueMicros(now);
+  uint64_t then_latest_usec = GetPhysicalValueMicros(then_latest);
 
   uint64_t now_earliest_usec = now_usec - error;
 
@@ -343,9 +343,7 @@ void HybridClock::RegisterMetrics(MetricRegistry* registry) {
 }
 
 string HybridClock::Stringify(Timestamp timestamp) {
-  return Substitute("P: $0 msecs, L: $1",
-                    GetPhysicalValue(timestamp),
-                    GetLogicalValue(timestamp));
+  return StringifyTimestamp(timestamp);
 }
 
 uint64_t HybridClock::GetTimeUsecs(ntptimeval* timeval) {
@@ -356,7 +354,7 @@ uint64_t HybridClock::GetLogicalValue(const Timestamp& timestamp) {
   return timestamp.value() & kLogicalBitMask;
 }
 
-uint64_t HybridClock::GetPhysicalValue(const Timestamp& timestamp) {
+uint64_t HybridClock::GetPhysicalValueMicros(const Timestamp& timestamp) {
   return timestamp.value() >> kBitsToShift;
 }
 
@@ -372,9 +370,15 @@ Timestamp HybridClock::TimestampFromMicrosecondsAndLogicalValue(
 
 Timestamp HybridClock::AddPhysicalTimeToTimestamp(const Timestamp& original,
                                                   int64_t micros_to_add) {
-  uint64_t new_physical = GetPhysicalValue(original) + micros_to_add;
+  uint64_t new_physical = GetPhysicalValueMicros(original) + micros_to_add;
   uint64_t old_logical = GetLogicalValue(original);
   return TimestampFromMicrosecondsAndLogicalValue(new_physical, old_logical);
+}
+
+string HybridClock::StringifyTimestamp(const Timestamp& timestamp) {
+  return Substitute("P: $0 usec, L: $1",
+                    GetPhysicalValueMicros(timestamp),
+                    GetLogicalValue(timestamp));
 }
 
 

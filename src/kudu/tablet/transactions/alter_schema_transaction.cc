@@ -84,7 +84,7 @@ Status AlterSchemaTransaction::Prepare() {
 
 Status AlterSchemaTransaction::Start() {
   state_->set_timestamp(state_->tablet_peer()->clock()->Now());
-  TRACE("START. Timestamp: $0", server::HybridClock::GetPhysicalValue(state_->timestamp()));
+  TRACE("START. Timestamp: $0", server::HybridClock::GetPhysicalValueMicros(state_->timestamp()));
   return Status::OK();
 }
 

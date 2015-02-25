@@ -84,8 +84,8 @@ class HybridClock : public Clock {
   // Returns the logical value embedded in 'timestamp'
   static uint64_t GetLogicalValue(const Timestamp& timestamp);
 
-  // Returns the physical value embedded in 'timestamp'
-  static uint64_t GetPhysicalValue(const Timestamp& timestamp);
+  // Returns the physical value embedded in 'timestamp', in microseconds.
+  static uint64_t GetPhysicalValueMicros(const Timestamp& timestamp);
 
   // Obtains a new Timestamp with the logical value zeroed out.
   static Timestamp TimestampFromMicroseconds(uint64_t micros);
@@ -98,6 +98,11 @@ class HybridClock : public Clock {
   // 'micros_to_add' and which retains the same logical value.
   static Timestamp AddPhysicalTimeToTimestamp(const Timestamp& original,
                                               int64_t micros_to_add);
+
+  // Outputs a string containing the physical and logical values of the timestamp,
+  // separated.
+  static std::string StringifyTimestamp(const Timestamp& timestamp);
+
  private:
   uint64_t GetTimeUsecs(ntptimeval* timeval);
 

@@ -87,7 +87,7 @@ Status ChangeConfigTransaction::Prepare() {
 Status ChangeConfigTransaction::Start() {
   // now that we've acquired the semaphore, set the transaction timestamp
   state_->set_timestamp(state_->tablet_peer()->clock()->Now());
-  TRACE("START. Timestamp: $0", server::HybridClock::GetPhysicalValue(state_->timestamp()));
+  TRACE("START. Timestamp: $0", server::HybridClock::GetPhysicalValueMicros(state_->timestamp()));
   return Status::OK();
 }
 

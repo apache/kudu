@@ -197,7 +197,7 @@ TEST_F(TabletServerTest, TestExternalConsistencyModes_ClientPropagated) {
   // sure this timestamp will still be in the future when it reaches the
   // server.
   current = HybridClock::TimestampFromMicroseconds(
-      HybridClock::GetPhysicalValue(current) + 5000000);
+      HybridClock::GetPhysicalValueMicros(current) + 5000000);
 
   // Send an actual row insert.
   ASSERT_STATUS_OK(SchemaToPB(schema_, req.mutable_schema()));
@@ -220,8 +220,8 @@ TEST_F(TabletServerTest, TestExternalConsistencyModes_ClientPropagated) {
   // its clock with the client's value.
   Timestamp write_timestamp(resp.write_timestamp());
 
-  ASSERT_EQ(HybridClock::GetPhysicalValue(current),
-            HybridClock::GetPhysicalValue(write_timestamp));
+  ASSERT_EQ(HybridClock::GetPhysicalValueMicros(current),
+            HybridClock::GetPhysicalValueMicros(write_timestamp));
 
   ASSERT_EQ(HybridClock::GetLogicalValue(current) + 1,
             HybridClock::GetLogicalValue(write_timestamp));
@@ -248,7 +248,7 @@ TEST_F(TabletServerTest, TestExternalConsistencyModes_CommitWait) {
   uint64_t error_before;
   hclock->NowWithError(&now_before, &error_before);
 
-  uint64_t now_before_usec = HybridClock::GetPhysicalValue(now_before);
+  uint64_t now_before_usec = HybridClock::GetPhysicalValueMicros(now_before);
   LOG(INFO) << "Submitting write with commit wait at: " << now_before_usec << " us +- "
       << error_before << " us";
 
@@ -278,12 +278,12 @@ TEST_F(TabletServerTest, TestExternalConsistencyModes_CommitWait) {
 
   Timestamp write_timestamp(resp.write_timestamp());
 
-  uint64_t write_took = HybridClock::GetPhysicalValue(now_after) -
-      HybridClock::GetPhysicalValue(now_before);
+  uint64_t write_took = HybridClock::GetPhysicalValueMicros(now_after) -
+      HybridClock::GetPhysicalValueMicros(now_before);
 
-  LOG(INFO) << "Write applied at: " << HybridClock::GetPhysicalValue(write_timestamp) << " us "
-      << " current time: " << HybridClock::GetPhysicalValue(now_after) << " write took: "
-      << write_took << " us";
+  LOG(INFO) << "Write applied at: " << HybridClock::GetPhysicalValueMicros(write_timestamp)
+      << " us, current time: " << HybridClock::GetPhysicalValueMicros(now_after)
+      << " us, write took: " << write_took << " us";
 
   ASSERT_GT(write_timestamp.value(), now_before.value());
 
@@ -950,7 +950,7 @@ TEST_F(TabletServerTest, TestSnapshotScan_SnapshotInTheFutureFails) {
   // increment the write timestamp by 5 secs, the server will definitely consider
   // this in the future.
   read_timestamp = HybridClock::TimestampFromMicroseconds(
-      HybridClock::GetPhysicalValue(read_timestamp) + 5000000);
+      HybridClock::GetPhysicalValueMicros(read_timestamp) + 5000000);
   scan->set_snap_timestamp(read_timestamp.ToUint64());
 
   // Send the call
@@ -988,12 +988,12 @@ TEST_F(TabletServerTest, TestSnapshotScan_SnapshotInTheFutureWithPropagatedTimes
   // increment the write timestamp by 5 secs, the server will definitely consider
   // this in the future.
   read_timestamp = HybridClock::TimestampFromMicroseconds(
-      HybridClock::GetPhysicalValue(read_timestamp) + 5000000);
+      HybridClock::GetPhysicalValueMicros(read_timestamp) + 5000000);
   scan->set_snap_timestamp(read_timestamp.ToUint64());
 
   // send a propagated timestamp that is an additional 100 msecs into the future.
   Timestamp propagated_timestamp = HybridClock::TimestampFromMicroseconds(
-      HybridClock::GetPhysicalValue(read_timestamp) + 100000);
+      HybridClock::GetPhysicalValueMicros(read_timestamp) + 100000);
   scan->set_propagated_timestamp(propagated_timestamp.ToUint64());
 
   // Send the call
@@ -1009,8 +1009,8 @@ TEST_F(TabletServerTest, TestSnapshotScan_SnapshotInTheFutureWithPropagatedTimes
   // logical time (due to various calls to clock.Now() when processing the request).
   Timestamp now = mini_server_->server()->clock()->Now();
 
-  ASSERT_EQ(HybridClock::GetPhysicalValue(propagated_timestamp),
-            HybridClock::GetPhysicalValue(now));
+  ASSERT_EQ(HybridClock::GetPhysicalValueMicros(propagated_timestamp),
+            HybridClock::GetPhysicalValueMicros(now));
 
   ASSERT_GT(HybridClock::GetLogicalValue(now),
             HybridClock::GetLogicalValue(propagated_timestamp));
@@ -1046,13 +1046,13 @@ TEST_F(TabletServerTest, TestSnapshotScan__SnapshotInTheFutureBeyondPropagatedTi
   // increment the write timestamp by 5 secs, the server will definitely consider
   // this in the future.
   read_timestamp = HybridClock::TimestampFromMicroseconds(
-      HybridClock::GetPhysicalValue(read_timestamp) + 5000000);
+      HybridClock::GetPhysicalValueMicros(read_timestamp) + 5000000);
   scan->set_snap_timestamp(read_timestamp.ToUint64());
 
   // send a propagated timestamp that is an less than the read timestamp (but still
   // in the future as far the server is concerned).
   Timestamp propagated_timestamp = HybridClock::TimestampFromMicroseconds(
-      HybridClock::GetPhysicalValue(read_timestamp) - 100000);
+      HybridClock::GetPhysicalValueMicros(read_timestamp) - 100000);
   scan->set_propagated_timestamp(propagated_timestamp.ToUint64());
 
   // Send the call
