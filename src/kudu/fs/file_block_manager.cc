@@ -12,6 +12,7 @@
 #include "kudu/fs/fs.pb.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/util/atomic.h"
 #include "kudu/util/env.h"
 #include "kudu/util/env_util.h"
 #include "kudu/util/path_util.h"
@@ -390,21 +391,30 @@ class FileReadableBlock : public ReadableBlock {
   // The underlying opened file backing this block.
   shared_ptr<RandomAccessFile> reader_;
 
+  // Whether or not this block has been closed. Close() is thread-safe, so
+  // this must be an atomic primitive.
+  AtomicBool closed_;
+
   DISALLOW_COPY_AND_ASSIGN(FileReadableBlock);
 };
 
 FileReadableBlock::FileReadableBlock(const BlockId& block_id,
                                      const shared_ptr<RandomAccessFile>& reader) :
   block_id_(block_id),
-  reader_(reader) {
+  reader_(reader),
+  closed_(false) {
 }
 
 FileReadableBlock::~FileReadableBlock() {
-  Close();
+  WARN_NOT_OK(Close(), Substitute("Failed to close block $0",
+                                  id().ToString()));
 }
 
 Status FileReadableBlock::Close() {
-  reader_.reset();
+  if (closed_.CompareAndSwap(false, true)) {
+    reader_.reset();
+  }
+
   return Status::OK();
 }
 
@@ -413,14 +423,14 @@ const BlockId& FileReadableBlock::id() const {
 }
 
 Status FileReadableBlock::Size(size_t* sz) const {
-  DCHECK(reader_);
+  DCHECK(!closed_.Load());
 
   return reader_->Size(sz);
 }
 
 Status FileReadableBlock::Read(uint64_t offset, size_t length,
                                Slice* result, uint8_t* scratch) const {
-  DCHECK(reader_);
+  DCHECK(!closed_.Load());
 
   return env_util::ReadFully(reader_.get(), offset, length, result, scratch);
 }

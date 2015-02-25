@@ -594,7 +594,7 @@ LogWritableBlock::LogWritableBlock(LogBlockContainer* container,
 
 LogWritableBlock::~LogWritableBlock() {
   WARN_NOT_OK(Close(), Substitute("Failed to close block $0",
-                                  block_id_.ToString()));
+                                  id().ToString()));
 }
 
 Status LogWritableBlock::Close() {
@@ -606,7 +606,7 @@ Status LogWritableBlock::Abort() {
 
   // DoClose() has unlocked the container; it may be locked by someone else.
   // But block_manager_ is immutable, so this is safe.
-  return container_->block_manager()->DeleteBlock(block_id_);
+  return container_->block_manager()->DeleteBlock(id());
 }
 
 const BlockId& LogWritableBlock::id() const {
@@ -698,7 +698,7 @@ Status LogWritableBlock::DoClose(SyncMode mode) {
 
 Status LogWritableBlock::AppendMetadata() {
   BlockRecordPB record;
-  block_id_.CopyToPB(record.mutable_block_id());
+  id().CopyToPB(record.mutable_block_id());
   record.set_op_type(CREATE);
   record.set_offset(block_offset_);
   record.set_length(block_length_);
@@ -729,15 +729,15 @@ class LogReadableBlock : public ReadableBlock {
                       Slice* result, uint8_t* scratch) const OVERRIDE;
 
  private:
-
   // The owning container. Must outlive this block.
   LogBlockContainer* container_;
 
   // A reference to this block's metadata.
   scoped_refptr<internal::LogBlock> log_block_;
 
-  // Whether the block has been closed.
-  bool closed_;
+  // Whether or not this block has been closed. Close() is thread-safe, so
+  // this must be an atomic primitive.
+  AtomicBool closed_;
 
   DISALLOW_COPY_AND_ASSIGN(LogReadableBlock);
 };
@@ -750,15 +750,15 @@ LogReadableBlock::LogReadableBlock(LogBlockContainer* container,
 }
 
 LogReadableBlock::~LogReadableBlock() {
-  Close();
+  WARN_NOT_OK(Close(), Substitute("Failed to close block $0",
+                                  id().ToString()));
 }
 
 Status LogReadableBlock::Close() {
-  if (closed_) {
-    return Status::OK();
+  if (closed_.CompareAndSwap(false, true)) {
+    log_block_.reset();
   }
 
-  closed_ = true;
   return Status::OK();
 }
 
@@ -767,7 +767,7 @@ const BlockId& LogReadableBlock::id() const {
 }
 
 Status LogReadableBlock::Size(size_t* sz) const {
-  DCHECK(!closed_);
+  DCHECK(!closed_.Load());
 
   *sz = log_block_->length();
   return Status::OK();
@@ -775,7 +775,7 @@ Status LogReadableBlock::Size(size_t* sz) const {
 
 Status LogReadableBlock::Read(uint64_t offset, size_t length,
                               Slice* result, uint8_t* scratch) const {
-  DCHECK(!closed_);
+  DCHECK(!closed_.Load());
 
   uint64_t read_offset = log_block_->offset() + offset;
   if (log_block_->length() < offset + length) {

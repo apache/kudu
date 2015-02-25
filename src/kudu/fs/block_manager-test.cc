@@ -14,6 +14,7 @@
 #include "kudu/util/random.h"
 #include "kudu/util/stopwatch.h"
 #include "kudu/util/test_util.h"
+#include "kudu/util/thread.h"
 
 using boost::assign::list_of;
 using std::string;
@@ -338,6 +339,31 @@ TYPED_TEST(BlockManagerTest, MultiPathTest) {
   ASSERT_OK(this->bm_->Open());
 
   this->RunMultipathTest(paths);
+}
+
+static void CloseHelper(ReadableBlock* block) {
+  CHECK_OK(block->Close());
+}
+
+// Tests that ReadableBlock::Close() is thread-safe and idempotent.
+TYPED_TEST(BlockManagerTest, ConcurrentCloseReadableBlockTest) {
+  gscoped_ptr<WritableBlock> writer;
+  ASSERT_OK(this->bm_->CreateBlock(&writer));
+  ASSERT_OK(writer->Close());
+
+  gscoped_ptr<ReadableBlock> reader;
+  ASSERT_OK(this->bm_->OpenBlock(writer->id(), &reader));
+
+  vector<scoped_refptr<Thread> > threads;
+  for (int i = 0; i < 100; i++) {
+    scoped_refptr<Thread> t;
+    ASSERT_OK(Thread::Create("test", Substitute("t$0", i),
+                             &CloseHelper, reader.get(), &t));
+    threads.push_back(t);
+  }
+  BOOST_FOREACH(const scoped_refptr<Thread>& t, threads) {
+    t->Join();
+  }
 }
 
 } // namespace fs
