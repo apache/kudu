@@ -26,8 +26,8 @@ struct HashCode {
 class Cell {
  public:
   Cell();
-  inline bool CompareAndSwap(int64_t cmp, int64_t value) {
-    return value_.CompareAndSwap(cmp, value);
+  inline bool CompareAndSet(int64_t cmp, int64_t value) {
+    return value_.CompareAndSet(cmp, value);
   }
 
   // Padding advice from Herb Sutter:
@@ -94,10 +94,10 @@ class Striped64 {
   };
 
   // CAS the base field.
-  bool CasBase(int64_t cmp, int64_t val) { return base_.CompareAndSwap(cmp, val); }
+  bool CasBase(int64_t cmp, int64_t val) { return base_.CompareAndSet(cmp, val); }
 
   // CAS the busy field from 0 to 1 to acquire the lock.
-  bool CasBusy() { return busy_.CompareAndSwap(0, 1); }
+  bool CasBusy() { return busy_.CompareAndSet(0, 1); }
 
   // Computes the function of the current and new value. Used in RetryUpdate.
   virtual int64_t Fn(int64_t current_value, int64_t new_value) = 0;

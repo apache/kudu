@@ -755,7 +755,7 @@ LogReadableBlock::~LogReadableBlock() {
 }
 
 Status LogReadableBlock::Close() {
-  if (closed_.CompareAndSwap(false, true)) {
+  if (closed_.CompareAndSet(false, true)) {
     log_block_.reset();
   }
 
@@ -877,7 +877,7 @@ Status LogBlockManager::CreateBlock(const CreateBlockOptions& opts,
     do {
       old_idx = root_paths_idx_.Load();
       new_idx = (old_idx + 1) % root_paths_.size();
-    } while (!root_paths_idx_.CompareAndSwap(old_idx, new_idx));
+    } while (!root_paths_idx_.CompareAndSet(old_idx, new_idx));
     string root_path = root_paths_[old_idx];
 
     gscoped_ptr<LogBlockContainer> new_container;

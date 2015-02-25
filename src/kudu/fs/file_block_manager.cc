@@ -411,7 +411,7 @@ FileReadableBlock::~FileReadableBlock() {
 }
 
 Status FileReadableBlock::Close() {
-  if (closed_.CompareAndSwap(false, true)) {
+  if (closed_.CompareAndSet(false, true)) {
     reader_.reset();
   }
 

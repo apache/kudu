@@ -467,7 +467,7 @@ class HighWaterMark : public AtomicGauge<T> {
       if (new_val > max) {
         return false;
       }
-      if (PREDICT_TRUE(current_value_.CompareAndSwap(static_cast<int64_t>(old_val),
+      if (PREDICT_TRUE(current_value_.CompareAndSet(static_cast<int64_t>(old_val),
                                                      static_cast<int64_t>(new_val),
                                                      kMemOrderNoBarrier))) {
         UpdateMax(new_val);

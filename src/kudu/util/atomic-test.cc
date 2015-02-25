@@ -26,9 +26,9 @@ TEST(Atomic, BasicOps) {
     EXPECT_EQ(0, i.Load(mem_order));
     i.Store(2, mem_order);
     EXPECT_EQ(2, i.Load(mem_order));
-    EXPECT_TRUE(i.CompareAndSwap(2, 5, mem_order));
+    EXPECT_TRUE(i.CompareAndSet(2, 5, mem_order));
     EXPECT_EQ(5, i.Load(mem_order));
-    EXPECT_EQ(5, i.CompareAndSwapVal(5, 7, mem_order));
+    EXPECT_EQ(5, i.CompareAndSwap(5, 7, mem_order));
     i.StoreMax(8, mem_order);
     EXPECT_EQ(8, i.Load(mem_order));
     i.StoreMax(7, mem_order);
@@ -58,10 +58,10 @@ TEST(Atomic, AtomicBool) {
     EXPECT_EQ(false, b.Load(mem_order));
     b.Store(true, mem_order);
     EXPECT_EQ(true, b.Load(mem_order));
-    EXPECT_TRUE(b.CompareAndSwap(true, false, mem_order));
+    EXPECT_TRUE(b.CompareAndSet(true, false, mem_order));
     EXPECT_EQ(false, b.Load(mem_order));
-    EXPECT_FALSE(b.CompareAndSwap(true, false, mem_order));
-    EXPECT_EQ(false, b.CompareAndSwapVal(false, true, mem_order));
+    EXPECT_FALSE(b.CompareAndSet(true, false, mem_order));
+    EXPECT_EQ(false, b.CompareAndSwap(false, true, mem_order));
     EXPECT_EQ(true, b.Load(mem_order));
     EXPECT_EQ(true, b.Exchange(false, mem_order));
     EXPECT_EQ(false, b.Load(mem_order));

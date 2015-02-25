@@ -71,7 +71,7 @@ void Striped64::RetryUpdate(int64_t x, Rehash contention) {
       } else {
         Cell *cell = &(cells_[(n - 1) & h]);
         int64_t v = cell->value_.Load();
-        if (cell->CompareAndSwap(v, Fn(v, x))) {
+        if (cell->CompareAndSet(v, Fn(v, x))) {
           // Successfully CAS'd the corresponding cell, done.
           break;
         }
@@ -131,13 +131,13 @@ void LongAdder::IncrementBy(int64_t x) {
     DCHECK_EQ(0, reinterpret_cast<const uintptr_t>(cell) & (sizeof(Cell) - 1))
         << " unaligned Cell not allowed for Striped64" << std::endl;
     const int64_t old = cell->value_.Load();
-    if (!cell->CompareAndSwap(old, old + x)) {
+    if (!cell->CompareAndSet(old, old + x)) {
       // When we hit a hash table contention, signal RetryUpdate to rehash.
       RetryUpdate(x, kRehash);
     }
   } else {
     int64_t b = base_.value_.Load();
-    if (!base_.CompareAndSwap(b, b + x)) {
+    if (!base_.CompareAndSet(b, b + x)) {
       // Attempt to initialize the table. No need to rehash since the contention was for the
       // base counter, not the hash table.
       RetryUpdate(x, kNoRehash);

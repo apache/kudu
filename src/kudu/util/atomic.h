@@ -62,7 +62,7 @@ class AtomicInt {
   // otherwise.
   //
   // Does not support 'kMemOrderBarrier'.
-  bool CompareAndSwap(T expected_val, T new_value, MemoryOrder mem_order = kMemOrderNoBarrier);
+  bool CompareAndSet(T expected_val, T new_value, MemoryOrder mem_order = kMemOrderNoBarrier);
 
   // Iff the underlying value is equal to 'expected_val', sets the
   // underlying value to 'new_value' and returns
@@ -70,7 +70,7 @@ class AtomicInt {
   // value.
   //
   // Does not support 'kMemOrderBarrier'.
-  T CompareAndSwapVal(T expected_val, T new_value, MemoryOrder mem_order = kMemOrderNoBarrier);
+  T CompareAndSwap(T expected_val, T new_value, MemoryOrder mem_order = kMemOrderNoBarrier);
 
   // Sets the underlying value to 'new_value' iff 'new_value' is
   // greater than the current underlying value.
@@ -134,11 +134,11 @@ class AtomicBool {
   void Store(bool n, MemoryOrder m = kMemOrderNoBarrier) {
     underlying_.Store(static_cast<int32_t>(n), m);
   }
+  bool CompareAndSet(bool e, bool n, MemoryOrder m = kMemOrderNoBarrier) {
+    return underlying_.CompareAndSet(static_cast<int32_t>(e), static_cast<int32_t>(n), m);
+  }
   bool CompareAndSwap(bool e, bool n, MemoryOrder m = kMemOrderNoBarrier) {
     return underlying_.CompareAndSwap(static_cast<int32_t>(e), static_cast<int32_t>(n), m);
-  }
-  bool CompareAndSwapVal(bool e, bool n, MemoryOrder m = kMemOrderNoBarrier) {
-    return underlying_.CompareAndSwapVal(static_cast<int32_t>(e), static_cast<int32_t>(n), m);
   }
   bool Exchange(bool n, MemoryOrder m = kMemOrderNoBarrier) {
     return underlying_.Exchange(static_cast<int32_t>(n), m);
@@ -192,19 +192,19 @@ inline void AtomicInt<T>::Store(T new_value, MemoryOrder mem_order) {
 }
 
 template<typename T>
-inline bool AtomicInt<T>::CompareAndSwap(T expected_val, T new_val, MemoryOrder mem_order) {
-  return CompareAndSwapVal(expected_val, new_val, mem_order) == expected_val;
+inline bool AtomicInt<T>::CompareAndSet(T expected_val, T new_val, MemoryOrder mem_order) {
+  return CompareAndSwap(expected_val, new_val, mem_order) == expected_val;
 }
 
 template<typename T>
-inline T AtomicInt<T>::CompareAndSwapVal(T expected_val, T new_val, MemoryOrder mem_order) {
+inline T AtomicInt<T>::CompareAndSwap(T expected_val, T new_val, MemoryOrder mem_order) {
   switch (mem_order) {
     case kMemOrderNoBarrier: {
       return base::subtle::NoBarrier_CompareAndSwap(
           &value_, expected_val, new_val);
     }
     case kMemOrderBarrier: {
-      FatalMemOrderNotSupported("CompareAndSwap/CompareAndSwapVal");
+      FatalMemOrderNotSupported("CompareAndSwap/CompareAndSwap");
       break;
     }
     case kMemOrderAcquire: {
@@ -275,7 +275,7 @@ inline void AtomicInt<T>::StoreMax(T new_value, MemoryOrder mem_order) {
   T old_value = Load(mem_order);
   while (true) {
     T max_value = std::max(old_value, new_value);
-    T prev_value = CompareAndSwapVal(old_value, max_value, mem_order);
+    T prev_value = CompareAndSwap(old_value, max_value, mem_order);
     if (PREDICT_TRUE(old_value == prev_value)) {
       break;
     }
@@ -288,7 +288,7 @@ inline void AtomicInt<T>::StoreMin(T new_value, MemoryOrder mem_order) {
   T old_value = Load(mem_order);
   while (true) {
     T min_value = std::min(old_value, new_value);
-    T prev_value = CompareAndSwapVal(old_value, min_value, mem_order);
+    T prev_value = CompareAndSwap(old_value, min_value, mem_order);
     if (PREDICT_TRUE(old_value == prev_value)) {
       break;
     }
