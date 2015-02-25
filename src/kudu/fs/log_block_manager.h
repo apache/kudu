@@ -175,11 +175,6 @@ class LogBlockManager : public BlockManager {
   // sync more than is necessary (using 'dirty_dirs_').
   Status SyncContainer(const internal::LogBlockContainer& container);
 
-  // Update in-memory data structures based on a block record loaded from
-  // a container.
-  void ProcessBlockRecord(internal::LogBlockContainer* container,
-                          const BlockRecordPB& record);
-
   // Attempts to claim 'block_id' for use in a new WritableBlock.
   //
   // Returns true if the given block ID was not in use (and marks it as in

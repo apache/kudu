@@ -9,6 +9,7 @@
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/gutil/strings/util.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/path_util.h"
 #include "kudu/util/pb_util.h"
@@ -28,6 +29,7 @@ using strings::Substitute;
 DEFINE_int32(num_blocks_close, 500,
              "Number of blocks to simultaneously close in CloseManyBlocksTest");
 
+DECLARE_uint64(log_container_preallocate_bytes);
 DECLARE_uint64(log_container_max_size);
 
 namespace kudu {
@@ -54,6 +56,8 @@ class BlockManagerTest : public KuduTest {
   void RunMultipathTest(const vector<string>& paths);
 
   void RunLogMetricsTest();
+
+  void RunLogContainerPreallocationTest();
 
   gscoped_ptr<BlockManager> bm_;
 };
@@ -205,6 +209,51 @@ void BlockManagerTest<LogBlockManager>::RunLogMetricsTest() {
       new_registry.UnsafeMetricsMapForTests(), 9 * 1024, 10, 10, 10));
 }
 
+template <>
+void BlockManagerTest<FileBlockManager>::RunLogContainerPreallocationTest() {
+  LOG(INFO) << "Test skipped; wrong block manager";
+}
+
+template <>
+void BlockManagerTest<LogBlockManager>::RunLogContainerPreallocationTest() {
+  // Create a block with some test data. This should also trigger
+  // preallocation of the container, provided it's supported by the kernel.
+  gscoped_ptr<WritableBlock> written_block;
+  ASSERT_OK(this->bm_->CreateBlock(&written_block));
+  ASSERT_OK(written_block->Close());
+
+  // Now reopen the block manager and create another block. More
+  // preallocation, but it should be from the end of the previous block,
+  // not from the end of the file.
+  this->bm_.reset(this->CreateBlockManager(NULL, list_of(GetTestDataDirectory())));
+  ASSERT_OK(this->bm_->Open());
+  ASSERT_OK(this->bm_->CreateBlock(&written_block));
+  ASSERT_OK(written_block->Close());
+
+  // dot, dotdot, test metadata, instance file, and one container file pair.
+  vector<string> children;
+  ASSERT_OK(this->env_->GetChildren(GetTestDataDirectory(), &children));
+  ASSERT_EQ(6, children.size());
+
+  // If preallocation was done from the end of the file (rather than the
+  // end of the previous block), the file's size would be twice the
+  // preallocation amount. That would be wrong.
+  //
+  // Instead, we expect the size to either be 0 (preallocation isn't
+  // supported) or equal to the preallocation amount.
+  bool found = false;
+  BOOST_FOREACH(const string& child, children) {
+    if (HasSuffixString(child, ".data")) {
+      found = true;
+      uint64_t size;
+      ASSERT_OK(this->env_->GetFileSizeOnDisk(
+          JoinPathSegments(GetTestDataDirectory(), child), &size));
+      ASSERT_TRUE(size == 0 || size == FLAGS_log_container_preallocate_bytes);
+    }
+  }
+  ASSERT_TRUE(found);
+}
+
 // What kinds of BlockManagers are supported?
 typedef ::testing::Types<FileBlockManager, LogBlockManager> BlockManagers;
 TYPED_TEST_CASE(BlockManagerTest, BlockManagers);
@@ -280,6 +329,10 @@ TYPED_TEST(BlockManagerTest, CloseManyBlocksTest) {
     LOG(INFO) << "Not running in slow-tests mode";
     return;
   }
+
+  // Disable preallocation for this test as it creates many containers.
+  FLAGS_log_container_preallocate_bytes = 0;
+
   Random rand(SeedRandom());
   vector<WritableBlock*> dirty_blocks;
   ElementDeleter deleter(&dirty_blocks);
@@ -526,6 +579,10 @@ TYPED_TEST(BlockManagerTest, MetricsTest) {
 
 TYPED_TEST(BlockManagerTest, LogMetricsTest) {
   ASSERT_NO_FATAL_FAILURE(this->RunLogMetricsTest());
+}
+
+TYPED_TEST(BlockManagerTest, LogContainerPreallocationTest) {
+  ASSERT_NO_FATAL_FAILURE(this->RunLogContainerPreallocationTest());
 }
 
 } // namespace fs

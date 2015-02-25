@@ -24,6 +24,10 @@
 DEFINE_uint64(log_container_max_size, 10LU * 1024 * 1024 * 1024,
               "Maximum size (soft) of a log container");
 
+DEFINE_uint64(log_container_preallocate_bytes, 32LU * 1024 * 1024,
+              "Number of bytes to preallocate in a log container when "
+              "creating new blocks. Set to 0 to disable preallocation");
+
 DECLARE_bool(enable_data_block_fsync);
 
 using std::tr1::unordered_set;
@@ -178,13 +182,6 @@ class LogBlockContainer {
   // beginning from the position where the last written block ended.
   Status Preallocate(size_t length);
 
-  // Updates 'total_bytes_written_', marking this container as full if
-  // needed. Should only be called when a block is fully written, as it
-  // will round up the container data file's position.
-  //
-  // This function is thread unsafe.
-  void UpdateBytesWritten(int64_t more_bytes);
-
   // Simple accessors.
   std::string dir() const { return DirName(path_); }
   const std::string& ToString() const { return path_; }
@@ -217,9 +214,22 @@ class LogBlockContainer {
                     gscoped_ptr<WritablePBContainerFile> metadata_writer,
                     gscoped_ptr<RWFile> data_file);
 
+  // Updates 'total_bytes_written_', marking this container as full if
+  // needed. Should only be called when a block is fully written, as it
+  // will round up the container data file's position.
+  //
+  // This function is thread unsafe.
+  void UpdateBytesWritten(int64_t more_bytes);
+
   // Reads the container's metadata from disk, creating LogBlocks as needed
   // and populating the block manager's in-memory maps.
   Status LoadContainer();
+
+  // Parse a block record and use it to update in-memory maps. It is an
+  // error if a record lives beyond 'data_file_size', which is the
+  // container file's actual size.
+  void ProcessBlockRecord(const BlockRecordPB& record,
+                          uint64_t data_file_size);
 
   // The owning block manager. Must outlive the container itself.
   LogBlockManager* const block_manager_;
@@ -281,15 +291,6 @@ Status LogBlockContainer::Create(LogBlockManager* block_manager,
   WritableFileOptions wr_opts;
   wr_opts.mode = Env::CREATE_NON_EXISTING;
 
-  // When running on XFS and using PosixMmapFile for data files, the reader
-  // threads in block_manager-stress-test sometimes read garbage out of the
-  // container. It's some kind of interaction between mmap-based writing
-  // and the fallocate(2) performed during block deletion.
-  //
-  // TODO: until we figure it out, we cannot safely use mmap-based writes.
-  // See KUDU-596 for more details.
-  wr_opts.mmap_file = false;
-
   // Repeat in the event of a container id collision (unlikely).
   //
   // When looping, we delete any created-and-orphaned files.
@@ -336,13 +337,10 @@ Status LogBlockContainer::Open(LogBlockManager* block_manager,
   string common_path = JoinPathSegments(dir, id);
 
   // Open the existing metadata and data files for writing.
-  //
-  // The comment in Create() explains why we're not using mmap-based writes.
   string metadata_path = StrCat(common_path, kMetadataFileSuffix);
   gscoped_ptr<WritableFile> metadata_writer;
   WritableFileOptions wr_opts;
   wr_opts.mode = Env::OPEN_EXISTING;
-  wr_opts.mmap_file = false;
   RETURN_NOT_OK(block_manager->env()->NewWritableFile(wr_opts,
                                                       metadata_path,
                                                       &metadata_writer));
@@ -358,8 +356,6 @@ Status LogBlockContainer::Open(LogBlockManager* block_manager,
   RETURN_NOT_OK(block_manager->env()->NewRWFile(rw_opts,
                                                 data_path,
                                                 &data_file));
-  uint64_t existing_data_size;
-  RETURN_NOT_OK(data_file->Size(&existing_data_size));
 
   // Create the in-memory container and populate it.
   gscoped_ptr<LogBlockContainer> open_container(new LogBlockContainer(block_manager,
@@ -367,7 +363,6 @@ Status LogBlockContainer::Open(LogBlockManager* block_manager,
                                                                       common_path,
                                                                       metadata_pb_writer.Pass(),
                                                                       data_file.Pass()));
-  open_container->UpdateBytesWritten(existing_data_size);
   RETURN_NOT_OK(open_container->LoadContainer());
 
   VLOG(1) << "Opened log block container " << open_container->ToString();
@@ -381,6 +376,9 @@ Status LogBlockContainer::LoadContainer() {
   RETURN_NOT_OK(block_manager()->env()->NewRandomAccessFile(metadata_path, &metadata_reader));
   ReadablePBContainerFile pb_reader(metadata_reader.Pass());
   RETURN_NOT_OK(pb_reader.Init());
+
+  uint64_t data_file_size;
+  RETURN_NOT_OK(data_file_->Size(&data_file_size));
   Status read_status;
   while (true) {
     BlockRecordPB record;
@@ -388,12 +386,57 @@ Status LogBlockContainer::LoadContainer() {
     if (!read_status.ok()) {
       break;
     }
-    block_manager()->ProcessBlockRecord(this, record);
+    ProcessBlockRecord(record, data_file_size);
   }
   Status close_status = pb_reader.Close();
   return !read_status.IsEndOfFile() ? read_status : close_status;
 }
 
+void LogBlockContainer::ProcessBlockRecord(const BlockRecordPB& record,
+                                           uint64_t data_file_size) {
+  BlockId block_id(BlockId::FromPB(record.block_id()));
+  switch (record.op_type()) {
+    case CREATE: {
+      if (!record.has_offset() ||
+          !record.has_length() ||
+          record.offset() < 0  ||
+          record.length() < 0  ||
+          record.offset() + record.length() > data_file_size) {
+        LOG(FATAL) << "Found malformed block record: "
+                   << record.DebugString();
+      }
+      if (!block_manager()->AddLogBlock(this, block_id,
+                                        record.offset(), record.length())) {
+        LOG(FATAL) << "Found already existent block record: "
+                   << record.DebugString();
+      }
+
+      VLOG(2) << Substitute("Found CREATE block $0 at offset $1 with length $2",
+                            block_id.ToString(),
+                            record.offset(), record.length());
+
+      // This block must be included in the container's logical size, even
+      // if it has since been deleted. This helps satisfy one of our
+      // invariants: once a container byte range has been used, it may
+      // never be reused in the future.
+      //
+      // If we ignored deleted blocks, we would end up reusing the space
+      // belonging to the last deleted block in the container.
+      UpdateBytesWritten(record.length());
+      break;
+    }
+    case DELETE:
+      if (!block_manager()->RemoveLogBlock(block_id)) {
+        LOG(FATAL) << "Found already non-existent block record: "
+                   << record.DebugString();
+      }
+      VLOG(2) << Substitute("Found DELETE block $0", block_id.ToString());
+      break;
+    default:
+      LOG(FATAL) << "Found unknown op type in block record: "
+                 << record.DebugString();
+  }
+}
 
 Status LogBlockContainer::FinishBlock(const Status& s, WritableBlock* block) {
   ScopedFinisher finisher(this);
@@ -1014,6 +1057,13 @@ Status LogBlockManager::CreateBlock(const CreateBlockOptions& opts,
     }
   }
 
+  // By preallocating with each CreateBlock(), we're effectively
+  // maintaining a rolling buffer of preallocated data just ahead of where
+  // the next write will fall.
+  if (FLAGS_log_container_preallocate_bytes) {
+    RETURN_NOT_OK(container->Preallocate(FLAGS_log_container_preallocate_bytes));
+  }
+
   // Generate a free block ID.
   BlockId new_block_id;
   do {
@@ -1146,46 +1196,6 @@ Status LogBlockManager::SyncContainer(const LogBlockContainer& container) {
     }
   }
   return s;
-}
-
-void LogBlockManager::ProcessBlockRecord(LogBlockContainer* container,
-                                         const BlockRecordPB& record) {
-  BlockId block_id(BlockId::FromPB(record.block_id()));
-  switch (record.op_type()) {
-    case CREATE: {
-      if (!record.has_offset() ||
-          !record.has_length() ||
-          record.offset() < 0  ||
-          record.length() < 0  ||
-          record.offset() + record.length() > container->total_bytes_written()) {
-        LOG(FATAL) << "Found malformed block record: "
-                   << record.DebugString();
-        break;
-      }
-      if (!AddLogBlock(container, block_id,
-                       record.offset(), record.length())) {
-        LOG(FATAL) << "Found already existent block record: "
-                   << record.DebugString();
-        break;
-      }
-      VLOG(2) << Substitute("Found CREATE block $0 at offset $1 with length $2",
-                            block_id.ToString(),
-                            record.offset(), record.length());
-      break;
-    }
-    case DELETE:
-      if (!RemoveLogBlock(block_id)) {
-        LOG(FATAL) << "Found already non-existent block record: "
-                   << record.DebugString();
-        break;
-      }
-      VLOG(2) << Substitute("Found DELETE block $0", block_id.ToString());
-      break;
-    default:
-      LOG(FATAL) << "Found unknown op type in block record: "
-                 << record.DebugString();
-      break;
-  }
 }
 
 bool LogBlockManager::TryUseBlockId(const BlockId& block_id) {
