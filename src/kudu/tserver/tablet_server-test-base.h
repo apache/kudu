@@ -318,10 +318,18 @@ class TabletServerTestBase : public KuduTest {
     } while (resp.has_more_results());
   }
 
-  Status ShutdownAndRebuildTablet() {
+  void ShutdownTablet() {
     if (mini_server_.get()) {
+      // The tablet peer must be destroyed before the TS, otherwise data
+      // blocks may be destroyed after their owning block manager.
+      tablet_peer_.reset();
       mini_server_->Shutdown();
+      mini_server_.reset();
     }
+  }
+
+  Status ShutdownAndRebuildTablet() {
+    ShutdownTablet();
 
     // Start server.
     mini_server_.reset(new MiniTabletServer(GetTestPath("TabletServerTest-fsroot"), 0));

@@ -705,11 +705,13 @@ TEST_F(TabletServerTest, TestKUDU_176_RecoveryAfterMajorDeltaCompaction) {
   ANFF(VerifyRows(schema_, boost::assign::list_of(KeyValue(1, 2))));
 
   // Major compact deltas.
-  vector<shared_ptr<tablet::RowSet> > rsets;
-  tablet_peer_->tablet()->GetRowSetsForTests(&rsets);
-  ASSERT_STATUS_OK(tablet_peer_->tablet()->DoMajorDeltaCompaction(
-                     boost::assign::list_of(1)(2),
-                     rsets[0]));
+  {
+    vector<shared_ptr<tablet::RowSet> > rsets;
+    tablet_peer_->tablet()->GetRowSetsForTests(&rsets);
+    ASSERT_STATUS_OK(tablet_peer_->tablet()->DoMajorDeltaCompaction(
+                       boost::assign::list_of(1)(2),
+                       rsets[0]));
+  }
 
   // Verify that data is still the same.
   ANFF(VerifyRows(schema_, boost::assign::list_of(KeyValue(1, 2))));
@@ -737,12 +739,13 @@ TEST_F(TabletServerTest, TestKUDU_177_RecoveryOfDMSEditsAfterMajorDeltaCompactio
 
   // Major compact deltas. This doesn't include the DMS, but the old
   // DMS should "move over" to the output of the delta compaction.
-  vector<shared_ptr<tablet::RowSet> > rsets;
-  tablet_peer_->tablet()->GetRowSetsForTests(&rsets);
-  ASSERT_STATUS_OK(tablet_peer_->tablet()->DoMajorDeltaCompaction(
-                     boost::assign::list_of(1)(2),
-                     rsets[0]));
-
+  {
+    vector<shared_ptr<tablet::RowSet> > rsets;
+    tablet_peer_->tablet()->GetRowSetsForTests(&rsets);
+    ASSERT_STATUS_OK(tablet_peer_->tablet()->DoMajorDeltaCompaction(
+                       boost::assign::list_of(1)(2),
+                       rsets[0]));
+  }
   // Verify that data is still the same.
   ANFF(VerifyRows(schema_, boost::assign::list_of(KeyValue(1, 3))));
 
@@ -755,9 +758,13 @@ TEST_F(TabletServerTest, TestClientGetsErrorBackWhenRecoveryFailed) {
   ANFF(InsertTestRowsRemote(0, 1, 7));
 
   ASSERT_STATUS_OK(tablet_peer_->tablet()->Flush());
-  mini_server_->Shutdown();
 
-  ASSERT_STATUS_OK(log::CorruptLogFile(env_.get(), tablet_peer_->log(),
+  // Save the log path before shutting down the tablet (and destroying
+  // the tablet peer).
+  string log_path = tablet_peer_->log()->ActiveSegmentPathForTests();
+  ShutdownTablet();
+
+  ASSERT_STATUS_OK(log::CorruptLogFile(env_.get(), log_path,
                                        log::FLIP_BYTE, 300));
 
   ASSERT_FALSE(ShutdownAndRebuildTablet().ok());

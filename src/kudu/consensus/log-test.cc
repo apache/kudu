@@ -234,7 +234,8 @@ void LogTest::DoCorruptionTest(CorruptionType type, int offset,
   ASSERT_STATUS_OK(log_->Close());
 
   // Corrupt the log as specified.
-  ASSERT_STATUS_OK(CorruptLogFile(env_.get(), log_.get(), type, offset));
+  ASSERT_STATUS_OK(CorruptLogFile(
+      env_.get(), log_->ActiveSegmentPathForTests(), type, offset));
 
   // Open a new reader -- we don't reuse the existing LogReader from log_
   // because it has a cached header.

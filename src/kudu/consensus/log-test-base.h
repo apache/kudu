@@ -334,8 +334,8 @@ enum CorruptionType {
   FLIP_BYTE
 };
 
-Status CorruptLogFile(Env* env, Log* log, CorruptionType type, int corruption_offset) {
-  const string log_path = log->ActiveSegmentPathForTests();
+Status CorruptLogFile(Env* env, const string& log_path,
+                      CorruptionType type, int corruption_offset) {
   faststring buf;
   RETURN_NOT_OK_PREPEND(ReadFileToString(env, log_path, &buf),
                         "Couldn't read log");
