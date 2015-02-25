@@ -17,6 +17,7 @@
 #include <vector>
 
 #include "kudu/gutil/atomicops.h"
+#include "kudu/gutil/dynamic_annotations.h"
 #include "kudu/gutil/mathlimits.h"
 #include "kudu/gutil/once.h"
 #include "kudu/gutil/strings/substitute.h"
@@ -188,22 +189,46 @@ uint64_t ThreadMgr::ReadNumCurrentThreads() {
 
 void ThreadMgr::AddThread(const pthread_t& pthread_id, const string& name,
     const string& category, int64_t tid) {
-  MutexLock l(lock_);
-  thread_categories_[category][pthread_id] = ThreadDescriptor(category, name, tid);
-  if (metrics_enabled_) {
-    current_num_threads_metric_++;
-    total_threads_metric_++;
+  // These annotations cause TSAN to ignore the synchronization on lock_
+  // without causing the subsequent mutations to be treated as data races
+  // in and of themselves (that's what IGNORE_READS_AND_WRITES does).
+  //
+  // Why do we need them here and in SuperviseThread()? TSAN operates by
+  // observing synchronization events and using them to establish "happens
+  // before" relationships between threads. Where these relationships are
+  // not built, shared state access constitutes a data race. The
+  // synchronization events here, in RemoveThread(), and in
+  // SuperviseThread() may cause TSAN to establish a "happens before"
+  // relationship between thread functors, ignoring potential data races.
+  // The annotations prevent this from happening.
+  ANNOTATE_IGNORE_SYNC_BEGIN();
+  ANNOTATE_IGNORE_READS_AND_WRITES_BEGIN();
+  {
+    MutexLock l(lock_);
+    thread_categories_[category][pthread_id] = ThreadDescriptor(category, name, tid);
+    if (metrics_enabled_) {
+      current_num_threads_metric_++;
+      total_threads_metric_++;
+    }
   }
+  ANNOTATE_IGNORE_SYNC_END();
+  ANNOTATE_IGNORE_READS_AND_WRITES_END();
 }
 
 void ThreadMgr::RemoveThread(const pthread_t& pthread_id, const string& category) {
-  MutexLock l(lock_);
-  ThreadCategoryMap::iterator category_it = thread_categories_.find(category);
-  DCHECK(category_it != thread_categories_.end());
-  category_it->second.erase(pthread_id);
-  if (metrics_enabled_) {
-    current_num_threads_metric_--;
+  ANNOTATE_IGNORE_SYNC_BEGIN();
+  ANNOTATE_IGNORE_READS_AND_WRITES_BEGIN();
+  {
+    MutexLock l(lock_);
+    ThreadCategoryMap::iterator category_it = thread_categories_.find(category);
+    DCHECK(category_it != thread_categories_.end());
+    category_it->second.erase(pthread_id);
+    if (metrics_enabled_) {
+      current_num_threads_metric_--;
+    }
   }
+  ANNOTATE_IGNORE_SYNC_END();
+  ANNOTATE_IGNORE_READS_AND_WRITES_END();
 }
 
 void ThreadMgr::PrintThreadCategoryRows(const ThreadCategory& category,
@@ -413,7 +438,9 @@ void* Thread::SuperviseThread(void* arg) {
 
   // Take an additional reference to the thread manager, which we'll need below.
   GoogleOnceInit(&once, &InitThreading);
+  ANNOTATE_IGNORE_SYNC_BEGIN();
   shared_ptr<ThreadMgr> thread_mgr_ref = thread_manager;
+  ANNOTATE_IGNORE_SYNC_END();
 
   // Set up the TLS.
   //
