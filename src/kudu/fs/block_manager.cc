@@ -17,6 +17,7 @@ namespace kudu {
 namespace fs {
 
 const char* BlockManager::kInstanceMetadataFileName = "block_manager_instance";
+const char* BlockManager::kMetricContextName = "block_manager";
 
 } // namespace fs
 } // namespace kudu

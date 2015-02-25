@@ -9,6 +9,7 @@
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/util/metrics.h"
 #include "kudu/util/path_util.h"
 #include "kudu/util/pb_util.h"
 #include "kudu/util/random.h"
@@ -34,7 +35,7 @@ template <typename T>
 class BlockManagerTest : public KuduTest {
  public:
   BlockManagerTest() :
-    bm_(CreateBlockManager(list_of(GetTestDataDirectory()))) {
+    bm_(CreateBlockManager(NULL, list_of(GetTestDataDirectory()))) {
   }
 
   virtual void SetUp() OVERRIDE {
@@ -43,8 +44,9 @@ class BlockManagerTest : public KuduTest {
   }
 
  protected:
-  BlockManager* CreateBlockManager(const vector<string>& paths) {
-    return new T(env_.get(), paths);
+  BlockManager* CreateBlockManager(MetricContext* parent_metric_context,
+                                   const vector<string>& paths) {
+    return new T(env_.get(), parent_metric_context, paths);
   }
 
   void RunMultipathTest(const vector<string>& paths);
@@ -305,7 +307,7 @@ TYPED_TEST(BlockManagerTest, PersistenceTest) {
   // Note that some block managers must be closed to fully synchronize
   // their contents to disk (e.g. log_block_manager uses PosixMmapFiles
   // for containers, which must be closed to be trimmed).
-  this->bm_.reset(this->CreateBlockManager(list_of(GetTestDataDirectory())));
+  this->bm_.reset(this->CreateBlockManager(NULL, list_of(GetTestDataDirectory())));
 
   ASSERT_OK(this->bm_->Open());
 
@@ -334,7 +336,7 @@ TYPED_TEST(BlockManagerTest, MultiPathTest) {
   for (int i = 0; i < 3; i++) {
     paths.push_back(this->GetTestPath(Substitute("path$0", i)));
   }
-  this->bm_.reset(this->CreateBlockManager(paths));
+  this->bm_.reset(this->CreateBlockManager(NULL, paths));
   ASSERT_OK(this->bm_->Create());
   ASSERT_OK(this->bm_->Open());
 
@@ -363,6 +365,73 @@ TYPED_TEST(BlockManagerTest, ConcurrentCloseReadableBlockTest) {
   }
   BOOST_FOREACH(const scoped_refptr<Thread>& t, threads) {
     t->Join();
+  }
+}
+
+static void CheckMetrics(const MetricRegistry::UnorderedMetricMap& metrics,
+                         int blocks_open_reading, int blocks_open_writing,
+                         int total_readable_blocks, int total_writable_blocks,
+                         int total_bytes_read, int total_bytes_written) {
+  ASSERT_EQ(blocks_open_reading, down_cast<AtomicGauge<uint64_t>*>(
+      FindOrDie(metrics, "test.block_manager.blocks_open_reading"))->value());
+  ASSERT_EQ(blocks_open_writing, down_cast<AtomicGauge<uint64_t>*>(
+      FindOrDie(metrics, "test.block_manager.blocks_open_writing"))->value());
+  ASSERT_EQ(total_readable_blocks, down_cast<Counter*>(
+      FindOrDie(metrics, "test.block_manager.total_readable_blocks"))->value());
+  ASSERT_EQ(total_writable_blocks, down_cast<Counter*>(
+      FindOrDie(metrics, "test.block_manager.total_writable_blocks"))->value());
+  ASSERT_EQ(total_bytes_read, down_cast<Counter*>(
+      FindOrDie(metrics, "test.block_manager.total_bytes_read"))->value());
+  ASSERT_EQ(total_bytes_written, down_cast<Counter*>(
+      FindOrDie(metrics, "test.block_manager.total_bytes_written"))->value());
+}
+
+TYPED_TEST(BlockManagerTest, MetricsTest) {
+  const string kTestData = "test data";
+  MetricRegistry registry;
+  MetricContext context(&registry, "test");
+  this->bm_.reset(this->CreateBlockManager(&context, list_of(GetTestDataDirectory())));
+  ASSERT_OK(this->bm_->Open());
+  ASSERT_NO_FATAL_FAILURE(CheckMetrics(
+      registry.UnsafeMetricsMapForTests(), 0, 0, 0, 0, 0, 0));
+
+  for (int i = 0; i < 3; i++) {
+    gscoped_ptr<WritableBlock> writer;
+    gscoped_ptr<ReadableBlock> reader;
+
+    // An open writer. Also reflected in total_writable_blocks.
+    ASSERT_OK(this->bm_->CreateBlock(&writer));
+    ASSERT_NO_FATAL_FAILURE(CheckMetrics(
+        registry.UnsafeMetricsMapForTests(), 0, 1, i, i + 1,
+        i * kTestData.length(), i * kTestData.length()));
+
+    // Block is no longer opened for writing, but its data
+    // is now reflected in total_bytes_written.
+    ASSERT_OK(writer->Append(kTestData));
+    ASSERT_OK(writer->Close());
+    ASSERT_NO_FATAL_FAILURE(CheckMetrics(
+        registry.UnsafeMetricsMapForTests(), 0, 0, i, i + 1,
+        i * kTestData.length(), (i + 1) * kTestData.length()));
+
+    // An open reader.
+    ASSERT_OK(this->bm_->OpenBlock(writer->id(), &reader));
+    ASSERT_NO_FATAL_FAILURE(CheckMetrics(
+        registry.UnsafeMetricsMapForTests(), 1, 0, i + 1, i + 1,
+        i * kTestData.length(), (i + 1) * kTestData.length()));
+
+    // The read is reflected in total_bytes_read.
+    Slice data;
+    gscoped_ptr<uint8_t[]> scratch(new uint8_t[kTestData.length()]);
+    ASSERT_OK(reader->Read(0, kTestData.length(), &data, scratch.get()));
+    ASSERT_NO_FATAL_FAILURE(CheckMetrics(
+        registry.UnsafeMetricsMapForTests(), 1, 0, i + 1, i + 1,
+        (i + 1) * kTestData.length(), (i + 1) * kTestData.length()));
+
+    // The reader is now gone.
+    ASSERT_OK(reader->Close());
+    ASSERT_NO_FATAL_FAILURE(CheckMetrics(
+        registry.UnsafeMetricsMapForTests(), 0, 0, i + 1, i + 1,
+        (i + 1) * kTestData.length(), (i + 1) * kTestData.length()));
   }
 }
 

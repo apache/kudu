@@ -11,6 +11,7 @@ add_library(fs_proto ${FS_PROTO_SRCS} ${FS_PROTO_HDRS})
 add_library(kudu_fs
   block_id.cc
   block_manager.cc
+  block_manager_metrics.cc
   block_manager_util.cc
   file_block_manager.cc
   fs_manager.cc

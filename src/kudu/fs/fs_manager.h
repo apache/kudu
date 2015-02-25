@@ -24,6 +24,8 @@ class Message;
 
 namespace kudu {
 
+class MetricContext;
+
 namespace fs {
 class BlockManager;
 class ReadableBlock;
@@ -50,7 +52,8 @@ class FsManager {
   static const char *kWalsRecoveryDirSuffix;
 
   FsManager(Env* env, const std::string& root_path);
-  FsManager(Env* env, const std::string& wal_path,
+  FsManager(Env* env, MetricContext* parent_metric_context,
+            const std::string& wal_path,
             const std::vector<std::string>& data_paths);
   ~FsManager();
 
@@ -171,7 +174,7 @@ class FsManager {
   // Select and create an instance of the appropriate block manager.
   //
   // Does not actually perform any on-disk operations.
-  void InitBlockManager();
+  void InitBlockManager(MetricContext* parent_metric_context);
 
   // Creates the parent directory hierarchy to contain the given block id.
   Status CreateBlockDir(const BlockId& block_id);

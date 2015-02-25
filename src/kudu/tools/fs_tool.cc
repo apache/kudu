@@ -83,7 +83,7 @@ FsTool::~FsTool() {
 Status FsTool::Init() {
   CHECK(!initialized_) << "Already initialized";
 
-  fs_manager_.reset(new FsManager(Env::Default(), wal_dir_, data_dirs_));
+  fs_manager_.reset(new FsManager(Env::Default(), NULL, wal_dir_, data_dirs_));
   RETURN_NOT_OK(fs_manager_->Open());
 
   LOG(INFO) << "Opened file system with uuid: " << fs_manager_->uuid();

@@ -69,7 +69,7 @@ TEST_F(FsManagerTestBase, TestMultiplePaths) {
   string wal_path = GetTestPath("a");
   vector<string> data_paths = boost::assign::list_of(
       GetTestPath("a"))(GetTestPath("b"))(GetTestPath("c"));
-  gscoped_ptr<FsManager> new_fs_manager(new FsManager(env_.get(),
+  gscoped_ptr<FsManager> new_fs_manager(new FsManager(env_.get(), NULL,
                                                       wal_path, data_paths));
   ASSERT_OK(new_fs_manager->CreateInitialFileSystemLayout());
   ASSERT_OK(new_fs_manager->Open());

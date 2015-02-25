@@ -21,12 +21,15 @@
 namespace kudu {
 
 class Env;
+class MetricContext;
 
 namespace fs {
 
 namespace internal {
 class LogBlock;
 class LogBlockContainer;
+
+struct BlockManagerMetrics;
 } // namespace internal
 
 // A log-backed (i.e. sequentially allocated file) block storage
@@ -126,7 +129,8 @@ class LogBlockContainer;
 // The log-backed block manager.
 class LogBlockManager : public BlockManager {
  public:
-  LogBlockManager(Env* env, const std::vector<std::string>& root_paths);
+  LogBlockManager(Env* env, MetricContext* parent_metric_context,
+                  const std::vector<std::string>& root_paths);
 
   virtual ~LogBlockManager();
 
@@ -239,6 +243,12 @@ class LogBlockManager : public BlockManager {
 
   // For generating block IDs and container names.
   ObjectIdGenerator oid_generator_;
+
+  // Metric context and container for the block manager.
+  //
+  // May be null if instantiated without metrics.
+  gscoped_ptr<MetricContext> metric_ctx_;
+  gscoped_ptr<internal::BlockManagerMetrics> metrics_;
 
   DISALLOW_COPY_AND_ASSIGN(LogBlockManager);
 };

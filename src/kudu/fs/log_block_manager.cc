@@ -6,13 +6,16 @@
 #include <boost/foreach.hpp>
 
 #include "kudu/fs/block_id-inl.h"
+#include "kudu/fs/block_manager_metrics.h"
 #include "kudu/fs/block_manager_util.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/strings/strcat.h"
 #include "kudu/gutil/strings/strip.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/util/atomic.h"
 #include "kudu/util/env.h"
 #include "kudu/util/env_util.h"
+#include "kudu/util/metrics.h"
 #include "kudu/util/mutex.h"
 #include "kudu/util/path_util.h"
 #include "kudu/util/pb_util.h"
@@ -135,6 +138,7 @@ class LogBlockContainer {
   bool full() const {
     return total_bytes_written_ >=  FLAGS_log_container_max_size;
   }
+  BlockManagerMetrics* metrics() { return metrics_; }
 
  private:
   // RAII-style class for finishing containers in FinishBlock().
@@ -182,6 +186,10 @@ class LogBlockContainer {
   // The amount of data written thus far in the container.
   int64_t total_bytes_written_;
 
+  // The metrics. Not owned by the log container; it has the same lifespan
+  // as the block manager.
+  BlockManagerMetrics* metrics_;
+
   DISALLOW_COPY_AND_ASSIGN(LogBlockContainer);
 };
 
@@ -198,7 +206,8 @@ LogBlockContainer::LogBlockContainer(LogBlockManager* block_manager,
     metadata_pb_writer_(metadata_writer.Pass()),
     data_writer_(data_writer.Pass()),
     data_reader_(data_reader.Pass()),
-    total_bytes_written_(0) {
+    total_bytes_written_(0),
+    metrics_(block_manager->metrics_.get()) {
 }
 
 Status LogBlockContainer::Create(LogBlockManager* block_manager,
@@ -590,6 +599,10 @@ LogWritableBlock::LogWritableBlock(LogBlockContainer* container,
     block_length_(0),
     state_(CLEAN) {
   DCHECK_GE(block_offset, 0);
+  if (container->metrics()) {
+    container->metrics()->blocks_open_writing->Increment();
+    container->metrics()->total_writable_blocks->Increment();
+  }
 }
 
 LogWritableBlock::~LogWritableBlock() {
@@ -690,6 +703,11 @@ Status LogWritableBlock::DoClose(SyncMode mode) {
       // TODO: Sync just this block's dirty metadata.
       s = container_->SyncMetadata();
       RETURN_NOT_OK(s);
+
+      if (container_->metrics()) {
+        container_->metrics()->blocks_open_writing->Decrement();
+        container_->metrics()->total_bytes_written->IncrementBy(BytesAppended());
+      }
     }
   }
 
@@ -747,6 +765,10 @@ LogReadableBlock::LogReadableBlock(LogBlockContainer* container,
   : container_(container),
     log_block_(log_block),
     closed_(false) {
+  if (container_->metrics()) {
+    container_->metrics()->blocks_open_reading->Increment();
+    container_->metrics()->total_readable_blocks->Increment();
+  }
 }
 
 LogReadableBlock::~LogReadableBlock() {
@@ -757,6 +779,9 @@ LogReadableBlock::~LogReadableBlock() {
 Status LogReadableBlock::Close() {
   if (closed_.CompareAndSet(false, true)) {
     log_block_.reset();
+    if (container_->metrics()) {
+      container_->metrics()->blocks_open_reading->Decrement();
+    }
   }
 
   return Status::OK();
@@ -786,8 +811,13 @@ Status LogReadableBlock::Read(uint64_t offset, size_t length,
                                       log_block_->offset(),
                                       log_block_->offset() + log_block_->length()));
   }
-  return env_util::ReadFully(container_->data_reader(), read_offset, length,
-                             result, scratch);
+  RETURN_NOT_OK(env_util::ReadFully(container_->data_reader(), read_offset, length,
+                                    result, scratch));
+
+  if (container_->metrics()) {
+    container_->metrics()->total_bytes_read->IncrementBy(length);
+  }
+  return Status::OK();
 }
 
 } // namespace internal
@@ -798,11 +828,17 @@ Status LogReadableBlock::Read(uint64_t offset, size_t length,
 
 static const char* kBlockManagerType = "log";
 
-LogBlockManager::LogBlockManager(Env* env, const vector<string>& root_paths)
+LogBlockManager::LogBlockManager(Env* env,
+                                 MetricContext* parent_metric_context,
+                                 const vector<string>& root_paths)
   : env_(env),
     root_paths_(root_paths),
     root_paths_idx_(0) {
   DCHECK_GT(root_paths.size(), 0);
+  if (parent_metric_context) {
+    metric_ctx_.reset((new MetricContext(*parent_metric_context, kMetricContextName)));
+    metrics_.reset(new internal::BlockManagerMetrics(*metric_ctx_.get()));
+  }
 }
 
 LogBlockManager::~LogBlockManager() {

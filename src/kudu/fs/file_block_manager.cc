@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "kudu/fs/block_id-inl.h"
+#include "kudu/fs/block_manager_metrics.h"
 #include "kudu/fs/block_manager_util.h"
 #include "kudu/fs/fs.pb.h"
 #include "kudu/gutil/map-util.h"
@@ -15,6 +16,7 @@
 #include "kudu/util/atomic.h"
 #include "kudu/util/env.h"
 #include "kudu/util/env_util.h"
+#include "kudu/util/metrics.h"
 #include "kudu/util/path_util.h"
 #include "kudu/util/status.h"
 
@@ -277,6 +279,10 @@ FileWritableBlock::FileWritableBlock(FileBlockManager* block_manager,
   writer_(writer),
   state_(CLEAN),
   bytes_appended_(0) {
+  if (block_manager_->metrics_) {
+    block_manager_->metrics_->blocks_open_writing->Increment();
+    block_manager_->metrics_->total_writable_blocks->Increment();
+  }
 }
 
 FileWritableBlock::~FileWritableBlock() {
@@ -354,6 +360,10 @@ Status FileWritableBlock::Close(SyncMode mode) {
 
   state_ = CLOSED;
   writer_.reset();
+  if (block_manager_->metrics_) {
+    block_manager_->metrics_->blocks_open_writing->Decrement();
+    block_manager_->metrics_->total_bytes_written->IncrementBy(BytesAppended());
+  }
 
   // Prefer the result of Close() to that of Sync().
   return !close.ok() ? close : sync;
@@ -370,7 +380,8 @@ Status FileWritableBlock::Close(SyncMode mode) {
 // embed a FileBlockLocation, using the simpler BlockId instead.
 class FileReadableBlock : public ReadableBlock {
  public:
-  FileReadableBlock(const BlockId& block_id,
+  FileReadableBlock(const FileBlockManager* block_manager,
+                    const BlockId& block_id,
                     const shared_ptr<RandomAccessFile>& reader);
 
   virtual ~FileReadableBlock();
@@ -385,6 +396,9 @@ class FileReadableBlock : public ReadableBlock {
                       Slice* result, uint8_t* scratch) const OVERRIDE;
 
  private:
+  // Back pointer to the owning block manager.
+  const FileBlockManager* block_manager_;
+
   // The block's identifier.
   const BlockId block_id_;
 
@@ -398,11 +412,17 @@ class FileReadableBlock : public ReadableBlock {
   DISALLOW_COPY_AND_ASSIGN(FileReadableBlock);
 };
 
-FileReadableBlock::FileReadableBlock(const BlockId& block_id,
+FileReadableBlock::FileReadableBlock(const FileBlockManager* block_manager,
+                                     const BlockId& block_id,
                                      const shared_ptr<RandomAccessFile>& reader) :
+  block_manager_(block_manager),
   block_id_(block_id),
   reader_(reader),
   closed_(false) {
+  if (block_manager_->metrics_) {
+    block_manager_->metrics_->blocks_open_reading->Increment();
+    block_manager_->metrics_->total_readable_blocks->Increment();
+  }
 }
 
 FileReadableBlock::~FileReadableBlock() {
@@ -413,6 +433,9 @@ FileReadableBlock::~FileReadableBlock() {
 Status FileReadableBlock::Close() {
   if (closed_.CompareAndSet(false, true)) {
     reader_.reset();
+    if (block_manager_->metrics_) {
+      block_manager_->metrics_->blocks_open_reading->Decrement();
+    }
   }
 
   return Status::OK();
@@ -432,7 +455,12 @@ Status FileReadableBlock::Read(uint64_t offset, size_t length,
                                Slice* result, uint8_t* scratch) const {
   DCHECK(!closed_.Load());
 
-  return env_util::ReadFully(reader_.get(), offset, length, result, scratch);
+  RETURN_NOT_OK(env_util::ReadFully(reader_.get(), offset, length, result, scratch));
+  if (block_manager_->metrics_) {
+    block_manager_->metrics_->total_bytes_read->IncrementBy(length);
+  }
+
+  return Status::OK();
 }
 
 } // namespace internal
@@ -473,10 +501,15 @@ bool FileBlockManager::FindRootPath(const string& root_path_uuid,
 }
 
 FileBlockManager::FileBlockManager(Env* env,
+                                   MetricContext* parent_metric_context,
                                    const vector<string>& root_paths)
   : env_(env),
     root_paths_(root_paths) {
   DCHECK_GT(root_paths.size(), 0);
+  if (parent_metric_context) {
+    metric_ctx_.reset(new MetricContext(*parent_metric_context, kMetricContextName));
+    metrics_.reset(new internal::BlockManagerMetrics(*metric_ctx_.get()));
+  }
 }
 
 FileBlockManager::~FileBlockManager() {
@@ -579,7 +612,7 @@ Status FileBlockManager::OpenBlock(const BlockId& block_id,
 
   shared_ptr<RandomAccessFile> reader;
   RETURN_NOT_OK(env_util::OpenFileForRandom(env_, path, &reader));
-  block->reset(new internal::FileReadableBlock(location.full_block_id(), reader));
+  block->reset(new internal::FileReadableBlock(this, location.full_block_id(), reader));
   return Status::OK();
 }
 

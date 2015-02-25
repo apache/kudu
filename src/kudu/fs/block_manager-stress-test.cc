@@ -97,7 +97,7 @@ class BlockManagerStressTest : public KuduTest {
       paths = strings::Split(FLAGS_block_manager_paths, ",",
                              strings::SkipEmpty());
     }
-    return new T(env_.get(), paths);
+    return new T(env_.get(), NULL, paths);
   }
 
   void RunTest(int secs) {

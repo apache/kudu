@@ -62,14 +62,15 @@ const char *FsManager::kConsensusMetadataDirName = "consensus-meta";
 FsManager::FsManager(Env* env, const string& root_path)
   : env_(env) {
   InitRoots(root_path, boost::assign::list_of(root_path));
-  InitBlockManager();
+  InitBlockManager(NULL);
 }
 
-FsManager::FsManager(Env* env, const string& wal_path,
-          const vector<string>& data_paths)
+FsManager::FsManager(Env* env, MetricContext* parent_metric_context,
+                     const string& wal_path,
+                     const vector<string>& data_paths)
   : env_(env) {
   InitRoots(wal_path, data_paths);
-  InitBlockManager();
+  InitBlockManager(parent_metric_context);
 }
 
 FsManager::~FsManager() {
@@ -96,7 +97,7 @@ void FsManager::InitRoots(const string& wal_fs_root,
   metadata_fs_root_ = data_fs_roots_[0];
 }
 
-void FsManager::InitBlockManager() {
+void FsManager::InitBlockManager(MetricContext* parent_metric_context) {
   // Add the data subdirectory to each data root.
   vector<string> data_paths;
   BOOST_FOREACH(const string& data_fs_root, data_fs_roots_) {
@@ -104,9 +105,9 @@ void FsManager::InitBlockManager() {
   }
 
   if (FLAGS_block_manager == "file") {
-    block_manager_.reset(new FileBlockManager(env_, data_paths));
+    block_manager_.reset(new FileBlockManager(env_, parent_metric_context, data_paths));
   } else if (FLAGS_block_manager == "log") {
-    block_manager_.reset(new LogBlockManager(env_, data_paths));
+    block_manager_.reset(new LogBlockManager(env_, parent_metric_context, data_paths));
   } else {
     LOG(FATAL) << "Invalid block manager: " << FLAGS_block_manager;
   }
