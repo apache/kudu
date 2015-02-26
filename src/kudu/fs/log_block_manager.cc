@@ -40,6 +40,51 @@ namespace fs {
 namespace internal {
 
 ////////////////////////////////////////////////////////////
+// LogBlockManagerMetrics
+////////////////////////////////////////////////////////////
+
+// Metrics container associated with the log block manager.
+//
+// Includes implementation-agnostic metrics as well as some that are
+// specific to the log block manager.
+struct LogBlockManagerMetrics {
+  explicit LogBlockManagerMetrics(const MetricContext& metric_ctx);
+
+  // Implementation-agnostic metrics.
+  BlockManagerMetrics generic_metrics;
+
+  AtomicGauge<uint64_t>* bytes_under_management;
+  AtomicGauge<uint64_t>* blocks_under_management;
+
+  Counter* total_containers;
+  Counter* total_full_containers;
+};
+
+METRIC_DEFINE_gauge_uint64(bytes_under_management, kudu::MetricUnit::kBytes,
+                           "Number of bytes of data blocks currently under management");
+
+METRIC_DEFINE_gauge_uint64(blocks_under_management, kudu::MetricUnit::kBlocks,
+                           "Number of data blocks currently under management");
+
+METRIC_DEFINE_counter(total_containers, kudu::MetricUnit::kLogBlockContainers,
+                      "Number of log block containers");
+
+METRIC_DEFINE_counter(total_full_containers, kudu::MetricUnit::kLogBlockContainers,
+                      "Number of full log block containers");
+
+#define MINIT(x) x(METRIC_##x.Instantiate(metric_ctx))
+#define GINIT(x) x(AtomicGauge<uint64_t>::Instantiate(METRIC_##x, metric_ctx))
+LogBlockManagerMetrics::LogBlockManagerMetrics(const MetricContext& metric_ctx)
+  : generic_metrics(metric_ctx),
+    GINIT(bytes_under_management),
+    GINIT(blocks_under_management),
+    MINIT(total_containers),
+    MINIT(total_full_containers) {
+}
+#undef GINIT
+#undef MINIT
+
+////////////////////////////////////////////////////////////
 // LogBlockContainer
 ////////////////////////////////////////////////////////////
 
@@ -138,7 +183,7 @@ class LogBlockContainer {
   bool full() const {
     return total_bytes_written_ >=  FLAGS_log_container_max_size;
   }
-  BlockManagerMetrics* metrics() { return metrics_; }
+  const LogBlockManagerMetrics* metrics() { return metrics_; }
 
  private:
   // RAII-style class for finishing containers in FinishBlock().
@@ -188,7 +233,7 @@ class LogBlockContainer {
 
   // The metrics. Not owned by the log container; it has the same lifespan
   // as the block manager.
-  BlockManagerMetrics* metrics_;
+  const LogBlockManagerMetrics* metrics_;
 
   DISALLOW_COPY_AND_ASSIGN(LogBlockContainer);
 };
@@ -207,7 +252,7 @@ LogBlockContainer::LogBlockContainer(LogBlockManager* block_manager,
     data_writer_(data_writer.Pass()),
     data_reader_(data_reader.Pass()),
     total_bytes_written_(0),
-    metrics_(block_manager->metrics_.get()) {
+    metrics_(block_manager->metrics()) {
 }
 
 Status LogBlockContainer::Create(LogBlockManager* block_manager,
@@ -363,6 +408,9 @@ Status LogBlockContainer::FinishBlock(const Status& s, WritableBlock* block) {
   CHECK(block_manager()->AddLogBlock(this, block->id(),
                                      total_bytes_written_, block->BytesAppended()));
   UpdateBytesWritten(block->BytesAppended());
+  if (full() && block_manager()->metrics()) {
+    block_manager()->metrics()->total_full_containers->Increment();
+  }
   return Status::OK();
 }
 
@@ -600,8 +648,8 @@ LogWritableBlock::LogWritableBlock(LogBlockContainer* container,
     state_(CLEAN) {
   DCHECK_GE(block_offset, 0);
   if (container->metrics()) {
-    container->metrics()->blocks_open_writing->Increment();
-    container->metrics()->total_writable_blocks->Increment();
+    container->metrics()->generic_metrics.blocks_open_writing->Increment();
+    container->metrics()->generic_metrics.total_writable_blocks->Increment();
   }
 }
 
@@ -705,8 +753,9 @@ Status LogWritableBlock::DoClose(SyncMode mode) {
       RETURN_NOT_OK(s);
 
       if (container_->metrics()) {
-        container_->metrics()->blocks_open_writing->Decrement();
-        container_->metrics()->total_bytes_written->IncrementBy(BytesAppended());
+        container_->metrics()->generic_metrics.blocks_open_writing->Decrement();
+        container_->metrics()->generic_metrics.total_bytes_written->IncrementBy(
+            BytesAppended());
       }
     }
   }
@@ -766,8 +815,8 @@ LogReadableBlock::LogReadableBlock(LogBlockContainer* container,
     log_block_(log_block),
     closed_(false) {
   if (container_->metrics()) {
-    container_->metrics()->blocks_open_reading->Increment();
-    container_->metrics()->total_readable_blocks->Increment();
+    container_->metrics()->generic_metrics.blocks_open_reading->Increment();
+    container_->metrics()->generic_metrics.total_readable_blocks->Increment();
   }
 }
 
@@ -780,7 +829,7 @@ Status LogReadableBlock::Close() {
   if (closed_.CompareAndSet(false, true)) {
     log_block_.reset();
     if (container_->metrics()) {
-      container_->metrics()->blocks_open_reading->Decrement();
+      container_->metrics()->generic_metrics.blocks_open_reading->Decrement();
     }
   }
 
@@ -815,7 +864,7 @@ Status LogReadableBlock::Read(uint64_t offset, size_t length,
                                     result, scratch));
 
   if (container_->metrics()) {
-    container_->metrics()->total_bytes_read->IncrementBy(length);
+    container_->metrics()->generic_metrics.total_bytes_read->IncrementBy(length);
   }
   return Status::OK();
 }
@@ -837,7 +886,7 @@ LogBlockManager::LogBlockManager(Env* env,
   DCHECK_GT(root_paths.size(), 0);
   if (parent_metric_context) {
     metric_ctx_.reset((new MetricContext(*parent_metric_context, kMetricContextName)));
-    metrics_.reset(new internal::BlockManagerMetrics(*metric_ctx_.get()));
+    metrics_.reset(new internal::LogBlockManagerMetrics(*metric_ctx_.get()));
   }
 }
 
@@ -1003,6 +1052,12 @@ Status LogBlockManager::CloseBlocks(const std::vector<WritableBlock*>& blocks) {
 void LogBlockManager::AddNewContainerUnlocked(LogBlockContainer* container) {
   DCHECK(lock_.is_locked());
   all_containers_.push_back(container);
+  if (metrics()) {
+    metrics()->total_containers->Increment();
+    if (container->full()) {
+      metrics()->total_full_containers->Increment();
+    }
+  }
 }
 
 LogBlockContainer* LogBlockManager::GetAvailableContainer() {
@@ -1105,20 +1160,34 @@ bool LogBlockManager::TryUseBlockId(const BlockId& block_id) {
 bool LogBlockManager::AddLogBlock(LogBlockContainer* container, const BlockId& block_id,
                                   int64_t offset, int64_t length) {
   scoped_refptr<LogBlock> lb(new LogBlock(container, block_id, offset, length));
-  lock_guard<simple_spinlock> l(&lock_);
-  if (!InsertIfNotPresent(&blocks_by_block_id_, block_id, lb)) {
-    return false;
-  }
+  {
+    lock_guard<simple_spinlock> l(&lock_);
+    if (!InsertIfNotPresent(&blocks_by_block_id_, block_id, lb)) {
+      return false;
+    }
 
-  // There may already be an entry in open_block_ids_ (e.g. we just
-  // finished writing out a block).
-  open_block_ids_.erase(block_id);
+    // There may already be an entry in open_block_ids_ (e.g. we just
+    // finished writing out a block).
+    open_block_ids_.erase(block_id);
+  }
+  if (metrics()) {
+    metrics()->blocks_under_management->Increment();
+    metrics()->bytes_under_management->IncrementBy(length);
+  }
   return true;
 }
 
 scoped_refptr<LogBlock> LogBlockManager::RemoveLogBlock(const BlockId& block_id) {
-  lock_guard<simple_spinlock> l(&lock_);
-  return EraseKeyReturnValuePtr(&blocks_by_block_id_, block_id);
+  scoped_refptr<LogBlock> result;
+  {
+    lock_guard<simple_spinlock> l(&lock_);
+    result = EraseKeyReturnValuePtr(&blocks_by_block_id_, block_id);
+  }
+  if (result && metrics()) {
+    metrics()->blocks_under_management->Decrement();
+    metrics()->bytes_under_management->DecrementBy(result->length());
+  }
+  return result;
 }
 
 } // namespace fs

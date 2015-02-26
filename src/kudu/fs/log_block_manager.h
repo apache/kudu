@@ -29,7 +29,7 @@ namespace internal {
 class LogBlock;
 class LogBlockContainer;
 
-struct BlockManagerMetrics;
+struct LogBlockManagerMetrics;
 } // namespace internal
 
 // A log-backed (i.e. sequentially allocated file) block storage
@@ -201,6 +201,8 @@ class LogBlockManager : public BlockManager {
 
   Env* env() const { return env_; }
 
+  const internal::LogBlockManagerMetrics* metrics() const { return metrics_.get(); }
+
   // Protects the block map, container structures, and 'dirty_dirs'.
   simple_spinlock lock_;
 
@@ -248,7 +250,7 @@ class LogBlockManager : public BlockManager {
   //
   // May be null if instantiated without metrics.
   gscoped_ptr<MetricContext> metric_ctx_;
-  gscoped_ptr<internal::BlockManagerMetrics> metrics_;
+  gscoped_ptr<internal::LogBlockManagerMetrics> metrics_;
 
   DISALLOW_COPY_AND_ASSIGN(LogBlockManager);
 };

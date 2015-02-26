@@ -65,6 +65,8 @@ const char* MetricUnit::Name(Type unit) {
       return "operations";
     case kBlocks:
       return "blocks";
+    case kLogBlockContainers:
+      return "log block containers";
     default:
       return "UNKNOWN UNIT";
   }

@@ -28,6 +28,8 @@ using strings::Substitute;
 DEFINE_int32(num_blocks_close, 333,
              "Number of blocks to simultaneously close in CloseManyBlocksTest");
 
+DECLARE_uint64(log_container_max_size);
+
 namespace kudu {
 namespace fs {
 
@@ -50,6 +52,8 @@ class BlockManagerTest : public KuduTest {
   }
 
   void RunMultipathTest(const vector<string>& paths);
+
+  void RunLogMetricsTest();
 
   gscoped_ptr<BlockManager> bm_;
 };
@@ -114,6 +118,91 @@ void BlockManagerTest<LogBlockManager>::RunMultipathTest(const vector<string>& p
     ASSERT_OK(env_->GetChildren(path, &children));
     ASSERT_EQ(children.size(), 7);
   }
+}
+
+template <>
+void BlockManagerTest<FileBlockManager>::RunLogMetricsTest() {
+  LOG(INFO) << "Test skipped; wrong block manager";
+}
+
+static void CheckLogMetrics(const MetricRegistry::UnorderedMetricMap& metrics,
+                            int bytes_under_management, int blocks_under_management,
+                            int total_containers, int total_full_containers) {
+    ASSERT_EQ(bytes_under_management, down_cast<AtomicGauge<uint64_t>*>(
+        FindOrDie(metrics, "test.block_manager.bytes_under_management"))->value());
+    ASSERT_EQ(blocks_under_management, down_cast<AtomicGauge<uint64_t>*>(
+        FindOrDie(metrics, "test.block_manager.blocks_under_management"))->value());
+    ASSERT_EQ(total_containers, down_cast<Counter*>(
+        FindOrDie(metrics, "test.block_manager.total_containers"))->value());
+    ASSERT_EQ(total_full_containers, down_cast<Counter*>(
+        FindOrDie(metrics, "test.block_manager.total_full_containers"))->value());
+}
+
+template <>
+void BlockManagerTest<LogBlockManager>::RunLogMetricsTest() {
+  MetricRegistry registry;
+  MetricContext context(&registry, "test");
+  this->bm_.reset(this->CreateBlockManager(&context, list_of(GetTestDataDirectory())));
+  ASSERT_OK(this->bm_->Open());
+  ASSERT_NO_FATAL_FAILURE(CheckLogMetrics(
+      registry.UnsafeMetricsMapForTests(), 0, 0, 0, 0));
+
+  // Lower the max container size so that we can more easily test full
+  // container metrics.
+  FLAGS_log_container_max_size = 1024;
+
+  // One block --> one container.
+  gscoped_ptr<WritableBlock> writer;
+  ASSERT_OK(this->bm_->CreateBlock(&writer));
+  ASSERT_NO_FATAL_FAILURE(CheckLogMetrics(
+      registry.UnsafeMetricsMapForTests(), 0, 0, 1, 0));
+
+  // And when the block is closed, it becomes "under management".
+  ASSERT_OK(writer->Close());
+  ASSERT_NO_FATAL_FAILURE(CheckLogMetrics(
+      registry.UnsafeMetricsMapForTests(), 0, 1, 1, 0));
+
+  // Create 10 blocks concurrently. We reuse the existing container and
+  // create 9 new ones. All of them get filled.
+  BlockId saved_id;
+  {
+    Random rand(SeedRandom());
+    ScopedWritableBlockCloser closer;
+    for (int i = 0; i < 10; i++) {
+      gscoped_ptr<WritableBlock> b;
+      ASSERT_OK(this->bm_->CreateBlock(&b));
+      if (saved_id.IsNull()) {
+        saved_id = b->id();
+      }
+      uint8_t data[1024];
+      for (int i = 0; i < sizeof(data); i += sizeof(uint32_t)) {
+        data[i] = rand.Next();
+      }
+      b->Append(Slice(data, sizeof(data)));
+      closer.AddBlock(b.Pass());
+    }
+    ASSERT_NO_FATAL_FAILURE(CheckLogMetrics(
+        registry.UnsafeMetricsMapForTests(), 0, 1, 10, 0));
+
+    // Only when the blocks are closed are the containers considered full.
+    ASSERT_OK(closer.CloseBlocks());
+    ASSERT_NO_FATAL_FAILURE(CheckLogMetrics(
+        registry.UnsafeMetricsMapForTests(), 10 * 1024, 11, 10, 10));
+  }
+
+  // Reopen the block manager and test the metrics. They're all based on
+  // persistent information so they should be the same.
+  MetricRegistry new_registry;
+  MetricContext new_context(&new_registry, "test");
+  this->bm_.reset(this->CreateBlockManager(&new_context, list_of(GetTestDataDirectory())));
+  ASSERT_OK(this->bm_->Open());
+  ASSERT_NO_FATAL_FAILURE(CheckLogMetrics(
+      new_registry.UnsafeMetricsMapForTests(), 10 * 1024, 11, 10, 10));
+
+  // Delete a block. Its contents should no longer be under management.
+  ASSERT_OK(this->bm_->DeleteBlock(saved_id));
+  ASSERT_NO_FATAL_FAILURE(CheckLogMetrics(
+      new_registry.UnsafeMetricsMapForTests(), 9 * 1024, 10, 10, 10));
 }
 
 // What kinds of BlockManagers are supported?
@@ -340,7 +429,7 @@ TYPED_TEST(BlockManagerTest, MultiPathTest) {
   ASSERT_OK(this->bm_->Create());
   ASSERT_OK(this->bm_->Open());
 
-  this->RunMultipathTest(paths);
+  ASSERT_NO_FATAL_FAILURE(this->RunMultipathTest(paths));
 }
 
 static void CloseHelper(ReadableBlock* block) {
@@ -433,6 +522,10 @@ TYPED_TEST(BlockManagerTest, MetricsTest) {
         registry.UnsafeMetricsMapForTests(), 0, 0, i + 1, i + 1,
         (i + 1) * kTestData.length(), (i + 1) * kTestData.length()));
   }
+}
+
+TYPED_TEST(BlockManagerTest, LogMetricsTest) {
+  ASSERT_NO_FATAL_FAILURE(this->RunLogMetricsTest());
 }
 
 } // namespace fs
