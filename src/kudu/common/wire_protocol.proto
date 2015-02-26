@@ -114,17 +114,11 @@ message ColumnBlockPB {
 message RowwiseRowBlockPB {
   repeated ColumnSchemaPB schema = 1;
 
-  // TODO: the number of key columns doesn't actually make sense
-  // in the context of row-blocks, since we may ask to scan a projection
-  // which doesn't include the key, or the columns in the projection may
-  // be in a different order. Will remove this field in a later commit.
-  optional int32 num_key_columns = 2;
-
   // The number of rows in the block. This can typically be calculated
   // by dividing rows.size() by the width of the row, but in the case that
   // the client is scanning an empty projection (i.e a COUNT(*)), this
   // field is the only way to determine how many rows were returned.
-  optional int32 num_rows = 3 [ default = 0 ];
+  optional int32 num_rows = 2 [ default = 0 ];
 
 
   // Sidecar index for the row data.
@@ -143,10 +137,10 @@ message RowwiseRowBlockPB {
   //
   // See rpc/rpc_sidecar.h for more information on where the data is
   // actually stored.
-  optional int32 rows_sidecar = 4;
+  optional int32 rows_sidecar = 3;
 
   // See ColumnBlockPB.indirect_data.
-  optional int32 indirect_data_sidecar = 5;
+  optional int32 indirect_data_sidecar = 4;
 }
 
 // A set of operations (INSERT, UPDATE, or DELETE) to apply to a table.
