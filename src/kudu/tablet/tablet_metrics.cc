@@ -72,6 +72,10 @@ METRIC_DEFINE_gauge_uint32(flush_mrs_running, kudu::MetricUnit::kMaintenanceOper
 METRIC_DEFINE_gauge_uint32(compact_rs_running, kudu::MetricUnit::kMaintenanceOperations,
   "Number of RS compactions currently running.");
 
+METRIC_DEFINE_gauge_uint32(delta_minor_compact_rs_running,
+  kudu::MetricUnit::kMaintenanceOperations,
+  "Number of delta minor compactions currently running.");
+
 METRIC_DEFINE_histogram(flush_dms_duration, kudu::MetricUnit::kSeconds,
   "Seconds spent flushing delta MRS.", 60000000LU, 2);
 
@@ -80,6 +84,9 @@ METRIC_DEFINE_histogram(flush_mrs_duration, kudu::MetricUnit::kSeconds,
 
 METRIC_DEFINE_histogram(compact_rs_duration, kudu::MetricUnit::kSeconds,
   "Seconds spent compacting RS.", 60000000LU, 2);
+
+METRIC_DEFINE_histogram(delta_minor_compact_rs_duration, kudu::MetricUnit::kSeconds,
+  "Seconds spent minor delta compacting.", 60000000LU, 2);
 
 using strings::Substitute;
 
@@ -110,9 +117,11 @@ TabletMetrics::TabletMetrics(const MetricContext& metric_ctx)
     GINIT(flush_dms_running),
     GINIT(flush_mrs_running),
     GINIT(compact_rs_running),
+    GINIT(delta_minor_compact_rs_running),
     MINIT(flush_dms_duration),
     MINIT(flush_mrs_duration),
-    MINIT(compact_rs_duration) {
+    MINIT(compact_rs_duration),
+    MINIT(delta_minor_compact_rs_duration) {
 }
 #undef MINIT
 #undef GINIT

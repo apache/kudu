@@ -299,7 +299,9 @@ class DiskRowSet : public RowSet {
 
   int64_t MinUnflushedLogIndex() const OVERRIDE;
 
-  size_t CountDeltaStores() const OVERRIDE;
+  size_t CountDeltaStores() const;
+
+  double DeltaStoresCompactionPerfImprovementScore() const OVERRIDE;
 
   Status MajorCompactDeltaStores(const ColumnIndexes& col_indexes);
 

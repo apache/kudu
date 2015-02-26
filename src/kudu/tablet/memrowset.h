@@ -307,7 +307,7 @@ class MemRowSet : public RowSet,
     return anchorer_.minimum_log_index();
   }
 
-  size_t CountDeltaStores() const OVERRIDE { return 0; }
+  double DeltaStoresCompactionPerfImprovementScore() const OVERRIDE { return 0; }
 
   Status FlushDeltas() OVERRIDE { return Status::OK(); }
 

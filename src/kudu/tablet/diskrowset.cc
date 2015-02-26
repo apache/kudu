@@ -25,6 +25,14 @@
 #include "kudu/util/locks.h"
 #include "kudu/util/status.h"
 
+DEFINE_int32(tablet_delta_store_minor_compact_soft_min, 3,
+             "How many delta stores are required before considering compacting them "
+             "(Advanced option)");
+
+DEFINE_int32(tablet_delta_store_minor_compact_hard_min, 100,
+             "How many delta stores are required before forcing a compaction "
+             "(Advanced option)");
+
 namespace kudu {
 namespace tablet {
 
@@ -581,7 +589,7 @@ uint64_t DiskRowSet::EstimateDeltaDiskSize() const {
 uint64_t DiskRowSet::EstimateOnDiskSize() const {
   CHECK(open_);
   boost::shared_lock<rw_spinlock> lock(component_lock_.get_lock());
-  return base_data_->EstimateOnDiskSize() + delta_tracker_->EstimateOnDiskSize();
+  return EstimateBaseDataDiskSize() + EstimateDeltaDiskSize();
 }
 
 size_t DiskRowSet::DeltaMemStoreSize() const {
@@ -602,6 +610,23 @@ int64_t DiskRowSet::MinUnflushedLogIndex() const {
 size_t DiskRowSet::CountDeltaStores() const {
   CHECK(open_);
   return delta_tracker_->CountRedoDeltaStores();
+}
+
+// In this implementation, the returned improvement score is 1 if we have too many delta stores,
+// 0 if we don't have enough, or it will be the result of sizeof(deltas)/sizeof(base data).
+// This heuristic makes it so that we don't try to compact a big base data file with tiny delta
+// files, unless we have nothing better to do.
+double DiskRowSet::DeltaStoresCompactionPerfImprovementScore() const {
+  CHECK(open_);
+  double perf_improv = 0;
+  uint64_t base_data_size = EstimateBaseDataDiskSize();
+  size_t store_count = CountDeltaStores();
+  if (store_count >= FLAGS_tablet_delta_store_minor_compact_hard_min) {
+    perf_improv = 1;
+  } else if (base_data_size > 0 && store_count >= FLAGS_tablet_delta_store_minor_compact_soft_min) {
+    perf_improv = static_cast<double>(EstimateDeltaDiskSize()) / base_data_size;
+  }
+  return perf_improv;
 }
 
 Status DiskRowSet::AlterSchema(const Schema& schema) {

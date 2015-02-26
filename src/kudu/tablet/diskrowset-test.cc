@@ -22,6 +22,8 @@
 
 DEFINE_double(update_fraction, 0.1f, "fraction of rows to update");
 DECLARE_int32(cfile_default_block_size);
+DECLARE_int32(tablet_delta_store_minor_compact_soft_min);
+DECLARE_int32(tablet_delta_store_minor_compact_hard_min);
 
 namespace kudu {
 namespace tablet {
@@ -439,17 +441,30 @@ TEST_F(TestRowSet, TestMakeDeltaIteratorMergerUnlocked) {
 }
 
 TEST_F(TestRowSet, TestCompactStores) {
+  // With these settings, the perf improvement will be 0 until we have two files, at which point
+  // it will be the expected ratio, then with three files we get the maximum improvement.
+  FLAGS_tablet_delta_store_minor_compact_soft_min = 2;
+  FLAGS_tablet_delta_store_minor_compact_hard_min = 3;
+
   WriteTestRowSet();
   shared_ptr<DiskRowSet> rs;
   ASSERT_STATUS_OK(OpenTestRowSet(&rs));
+  ASSERT_EQ(0, rs->DeltaStoresCompactionPerfImprovementScore());
 
   // Generate 3 deltafiles
   UpdateExistingRows(rs.get(), FLAGS_update_fraction, NULL);
   ASSERT_STATUS_OK(rs->FlushDeltas());
+  ASSERT_EQ(0, rs->DeltaStoresCompactionPerfImprovementScore());
+
   UpdateExistingRows(rs.get(), FLAGS_update_fraction, NULL);
   ASSERT_STATUS_OK(rs->FlushDeltas());
+  double perf_improvement = rs->DeltaStoresCompactionPerfImprovementScore();
+  ASSERT_LT(0, perf_improvement);
+  ASSERT_GT(1, perf_improvement);
+
   UpdateExistingRows(rs.get(), FLAGS_update_fraction, NULL);
   ASSERT_STATUS_OK(rs->FlushDeltas());
+  ASSERT_EQ(1, rs->DeltaStoresCompactionPerfImprovementScore());
 
   // Compact the deltafiles
   DeltaTracker *dt = rs->delta_tracker();
@@ -460,6 +475,7 @@ TEST_F(TestRowSet, TestCompactStores) {
   num_stores = dt->redo_delta_stores_.size();
   VLOG(1) << "Number of stores after compaction: " << num_stores;
   ASSERT_EQ(1,  num_stores);
+  ASSERT_EQ(0, rs->DeltaStoresCompactionPerfImprovementScore());
 
   // Verify that the resulting deltafile is valid
   vector<shared_ptr<DeltaStore> > compacted_stores;

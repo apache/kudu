@@ -92,7 +92,7 @@ class MockRowSet : public RowSet {
     return -1;
   }
 
-  virtual size_t CountDeltaStores() const OVERRIDE {
+  virtual double DeltaStoresCompactionPerfImprovementScore() const OVERRIDE {
     LOG(FATAL) << "Unimplemented";
     return 0;
   }

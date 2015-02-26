@@ -16,6 +16,8 @@
 #include "kudu/util/test_graph.h"
 #include "kudu/util/thread.h"
 
+DECLARE_int32(tablet_delta_store_minor_compact_soft_min);
+DECLARE_int32(tablet_delta_store_minor_compact_hard_min);
 DEFINE_int32(num_insert_threads, 8, "Number of inserting threads to launch");
 DEFINE_int32(num_counter_threads, 8, "Number of counting threads to launch");
 DEFINE_int32(num_summer_threads, 1, "Number of summing threads to launch");
@@ -23,7 +25,9 @@ DEFINE_int32(num_updater_threads, 1, "Number of updating threads to launch");
 DEFINE_int32(num_slowreader_threads, 1, "Number of 'slow' reader threads to launch");
 DEFINE_int32(num_flush_threads, 1, "Number of flusher reader threads to launch");
 DEFINE_int32(num_compact_threads, 1, "Number of compactor threads to launch");
-
+DEFINE_int32(num_flush_delta_threads, 1, "Number of delta flusher reader threads to launch");
+DEFINE_int32(num_minor_compact_deltas_threads, 1,
+             "Number of delta minor compactor threads to launch");
 
 DEFINE_int64(inserts_per_thread, 1000,
              "Number of rows inserted by each inserter thread");
@@ -262,6 +266,26 @@ class MultiThreadedTabletTest : public TabletTestBase<SETUP> {
     }
   }
 
+  void FlushDeltasThread(int tid) {
+    int wait_time = 100;
+    while (running_insert_count_.count() > 0) {
+      CHECK_OK(tablet()->FlushBiggestDMS());
+
+      // Wait, unless the inserters are all done.
+      running_insert_count_.WaitFor(MonoDelta::FromMilliseconds(wait_time));
+    }
+  }
+
+  void MinorCompactDeltas(int tid) {
+    int wait_time = 100;
+    while (running_insert_count_.count() > 0) {
+      CHECK_OK(tablet()->MinorCompactWorstDeltas());
+
+      // Wait, unless the inserters are all done.
+      running_insert_count_.WaitFor(MonoDelta::FromMilliseconds(wait_time));
+    }
+  }
+
   void CompactThread(int tid) {
     int wait_time = 100;
     while (running_insert_count_.count() > 0) {
@@ -366,6 +390,8 @@ TYPED_TEST(MultiThreadedTabletTest, DoTestAllAtOnce) {
   this->StartThreads(FLAGS_num_summer_threads, &TestFixture::SummerThread);
   this->StartThreads(FLAGS_num_flush_threads, &TestFixture::FlushThread);
   this->StartThreads(FLAGS_num_compact_threads, &TestFixture::CompactThread);
+  this->StartThreads(FLAGS_num_flush_delta_threads, &TestFixture::FlushDeltasThread);
+  this->StartThreads(FLAGS_num_minor_compact_deltas_threads, &TestFixture::MinorCompactDeltas);
   this->StartThreads(FLAGS_num_slowreader_threads, &TestFixture::SlowReaderThread);
   this->StartThreads(FLAGS_num_updater_threads, &TestFixture::UpdateThread);
   this->JoinThreads();
@@ -387,8 +413,12 @@ TYPED_TEST(MultiThreadedTabletTest, DeleteAndReinsert) {
   google::FlagSaver saver;
   FLAGS_flusher_backoff = 1.0f;
   FLAGS_flusher_initial_frequency_ms = 1;
+  FLAGS_tablet_delta_store_minor_compact_soft_min = 2;
+  FLAGS_tablet_delta_store_minor_compact_hard_min = 4;
   this->StartThreads(FLAGS_num_flush_threads, &TestFixture::FlushThread);
   this->StartThreads(FLAGS_num_compact_threads, &TestFixture::CompactThread);
+  this->StartThreads(FLAGS_num_flush_delta_threads, &TestFixture::FlushDeltasThread);
+  this->StartThreads(FLAGS_num_minor_compact_deltas_threads, &TestFixture::MinorCompactDeltas);
   this->StartThreads(10, &TestFixture::DeleteAndReinsertCycleThread);
   this->StartThreads(10, &TestFixture::StubbornlyUpdateSameRowThread);
 

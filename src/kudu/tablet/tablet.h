@@ -252,6 +252,10 @@ class Tablet {
   // issues a minor delta compaction.
   Status MinorCompactWorstDeltas();
 
+  // Get the highest performance improvement that would come from compacting the delta stores
+  // of one of the rowsets. Can be 0, in which case the rowset isn't set.
+  double GetPerfImprovementForBestDeltaMinorCompact(shared_ptr<RowSet>* rs) const;
+
   // Return the current number of rowsets in the tablet.
   size_t num_rowsets() const;
 

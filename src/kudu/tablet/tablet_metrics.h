@@ -51,10 +51,12 @@ struct TabletMetrics {
   AtomicGauge<uint32_t>* flush_dms_running;
   AtomicGauge<uint32_t>* flush_mrs_running;
   AtomicGauge<uint32_t>* compact_rs_running;
+  AtomicGauge<uint32_t>* delta_minor_compact_rs_running;
 
   Histogram* flush_dms_duration;
   Histogram* flush_mrs_duration;
   Histogram* compact_rs_duration;
+  Histogram* delta_minor_compact_rs_duration;
 };
 
 class ProbeStatsSubmitter {

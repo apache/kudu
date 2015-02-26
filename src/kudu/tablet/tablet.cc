@@ -757,6 +757,47 @@ class CompactRowSetsOp : public MaintenanceOp {
   Tablet * const tablet_;
 };
 
+
+// MaintenanceOp to run minor compaction on delta stores.
+//
+// There is only one MinorDeltaCompactionOp per tablet, so it picks the RowSet that needs the most
+// work. The RS we end up compacting in Perform() can be different than the one reported in
+// UpdateStats, we just pick the worst each time.
+class MinorDeltaCompactionOp : public MaintenanceOp {
+ public:
+  explicit MinorDeltaCompactionOp(Tablet* tablet)
+    : MaintenanceOp(Substitute("MinorDeltaCompactionOp($0)", tablet->tablet_id())),
+      tablet_(tablet) {
+  }
+
+  virtual void UpdateStats(MaintenanceOpStats* stats) OVERRIDE {
+    shared_ptr<RowSet> rs;
+    double perf_improv = tablet_->GetPerfImprovementForBestDeltaMinorCompact(&rs);
+    stats->perf_improvement = perf_improv;
+    stats->runnable = perf_improv > 0;
+  }
+
+  virtual bool Prepare() OVERRIDE {
+    return true;
+  }
+
+  virtual void Perform() OVERRIDE {
+    WARN_NOT_OK(tablet_->MinorCompactWorstDeltas(),
+                Substitute("Minor delta compaction failed on $0", tablet_->tablet_id()));
+  }
+
+  virtual Histogram* DurationHistogram() OVERRIDE {
+    return tablet_->metrics()->delta_minor_compact_rs_duration;
+  }
+
+  virtual AtomicGauge<uint32_t>* RunningGauge() OVERRIDE {
+    return tablet_->metrics()->delta_minor_compact_rs_running;
+  }
+
+ private:
+  Tablet * const tablet_;
+};
+
 Status Tablet::PickRowSetsToCompact(RowSetsInCompaction *picked,
                                     CompactFlags flags) const {
   // Grab a local reference to the current RowSetTree. This is to avoid
@@ -854,6 +895,10 @@ void Tablet::RegisterMaintenanceOps(MaintenanceManager* maint_mgr) {
   gscoped_ptr<MaintenanceOp> rs_compact_op(new CompactRowSetsOp(this));
   maint_mgr->RegisterOp(rs_compact_op.get());
   maintenance_ops_.push_back(rs_compact_op.release());
+
+  gscoped_ptr<MaintenanceOp> delta_compact_op(new MinorDeltaCompactionOp(this));
+  maint_mgr->RegisterOp(delta_compact_op.get());
+  maintenance_ops_.push_back(delta_compact_op.release());
 }
 
 void Tablet::UnregisterMaintenanceOps() {
@@ -1346,24 +1391,33 @@ Status Tablet::FlushBiggestDMS() {
 }
 
 Status Tablet::MinorCompactWorstDeltas() {
-  scoped_refptr<TabletComponents> comps;
-  GetComponents(&comps);
+  shared_ptr<RowSet> rs;
+  double perf_improv = GetPerfImprovementForBestDeltaMinorCompact(&rs);
 
-  int worst_delta_count = -1;
-  shared_ptr<RowSet> worst_rs;
-  BOOST_FOREACH(const shared_ptr<RowSet> &rowset, comps->rowsets->all_rowsets()) {
-    int count = rowset->CountDeltaStores();
-    if (count > worst_delta_count) {
-      worst_rs = rowset;
-      worst_delta_count = count;
-    }
-  }
-
-  if (worst_delta_count > 1) {
-    RETURN_NOT_OK_PREPEND(worst_rs->MinorCompactDeltaStores(),
-                          "Failed minor delta compaction on " + worst_rs->ToString());
+  if (rs) {
+    DCHECK(perf_improv != 0);
+    RETURN_NOT_OK_PREPEND(rs->MinorCompactDeltaStores(),
+                          "Failed minor delta compaction on " + rs->ToString());
   }
   return Status::OK();
+}
+
+double Tablet::GetPerfImprovementForBestDeltaMinorCompact(shared_ptr<RowSet>* rs) const {
+  scoped_refptr<TabletComponents> comps;
+  GetComponents(&comps);
+  double worst_delta_perf = 0;
+  shared_ptr<RowSet> worst_rs;
+  BOOST_FOREACH(const shared_ptr<RowSet> &rowset, comps->rowsets->all_rowsets()) {
+    double perf_improv = rowset->DeltaStoresCompactionPerfImprovementScore();
+    if (perf_improv > worst_delta_perf) {
+      worst_rs = rowset;
+      worst_delta_perf = perf_improv;
+    }
+  }
+  if (worst_delta_perf > 0) {
+    *rs = worst_rs;
+  }
+  return worst_delta_perf;
 }
 
 size_t Tablet::num_rowsets() const {
