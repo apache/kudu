@@ -17,6 +17,7 @@
 #include "kudu/consensus/log_util.h"
 #include "kudu/consensus/opid_util.h"
 #include "kudu/gutil/ref_counted.h"
+#include "kudu/gutil/threading/thread_restrictions.h"
 #include "kudu/util/locks.h"
 #include "kudu/util/status.h"
 
@@ -133,6 +134,9 @@ class PeerMessageQueue {
   // Returns OK unless the message could not be added to the queue for some
   // reason (e.g. the queue reached max size).
   // If it returns OK the queue takes ownership of 'msg'.
+  //
+  // This is thread-safe against all of the read methods, but not thread-safe
+  // with concurrent Append calls.
   virtual Status AppendOperation(const ReplicateRefPtr& msg);
 
   // Appends a vector of messages to be replicated to the quorum.
@@ -140,6 +144,9 @@ class PeerMessageQueue {
   // reason (e.g. the queue reached max size), calls 'log_append_callback' when
   // the messages are durable in the local Log.
   // If it returns OK the queue takes ownership of 'msgs'.
+  //
+  // This is thread-safe against all of the read methods, but not thread-safe
+  // with concurrent Append calls.
   virtual Status AppendOperations(const std::vector<ReplicateRefPtr>& msgs,
                                   const StatusCallback& log_append_callback);
 
@@ -334,6 +341,11 @@ class PeerMessageQueue {
   // The currently tracked peers.
   PeersMap peers_map_;
   mutable simple_spinlock queue_lock_; // TODO: rename
+
+  // We assume that we never have multiple threads racing to append to the queue.
+  // This fake mutex adds some extra assurance that this implementation property
+  // doesn't change.
+  DFAKE_MUTEX(append_fake_lock_);
 
   LogCache log_cache_;
 

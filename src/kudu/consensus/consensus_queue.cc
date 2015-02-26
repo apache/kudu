@@ -191,6 +191,7 @@ Status PeerMessageQueue::AppendOperation(const ReplicateRefPtr& msg) {
 Status PeerMessageQueue::AppendOperations(const vector<ReplicateRefPtr>& msgs,
                                           const StatusCallback& log_append_callback) {
 
+  DFAKE_SCOPED_LOCK(append_fake_lock_);
   boost::unique_lock<simple_spinlock> lock(queue_lock_);
 
   OpId last_id = msgs.back()->get()->id();
@@ -199,12 +200,16 @@ Status PeerMessageQueue::AppendOperations(const vector<ReplicateRefPtr>& msgs,
     queue_state_.current_term = last_id.term();
   }
 
+  // Unlock ourselves during Append to prevent a deadlock: it's possible that
+  // the log buffer is full, in which case AppendOperations would block. However,
+  // for the log buffer to empty, it may need to call LocalPeerAppendFinished()
+  // which also needs queue_lock_.
+  lock.unlock();
   if (!log_cache_.AppendOperations(msgs,
                                    Bind(&PeerMessageQueue::LocalPeerAppendFinished,
                                         Unretained(this),
                                         last_id,
                                         log_append_callback))) {
-    lock.unlock();
     if (PREDICT_FALSE((VLOG_IS_ON(2) || FLAGS_consensus_dump_queue_on_full))) {
       LOG_WITH_PREFIX(INFO) << "Queue Full. Can't Append: " << msgs.size()  << ". Dumping State:";
       log_cache_.DumpToLog();
@@ -212,6 +217,7 @@ Status PeerMessageQueue::AppendOperations(const vector<ReplicateRefPtr>& msgs,
     return Status::ServiceUnavailable("Cannot append replicate message. Queue is full.");
   }
 
+  lock.lock();
   queue_state_.last_appended = last_id;
   UpdateMetrics();
 
