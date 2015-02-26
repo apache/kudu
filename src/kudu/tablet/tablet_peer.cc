@@ -376,7 +376,11 @@ void TabletPeer::GetEarliestNeededLogIndex(int64_t* min_index) const {
   txn_tracker_.GetPendingTransactions(&pending_transactions);
   BOOST_FOREACH(const scoped_refptr<TransactionDriver>& driver, pending_transactions) {
     OpId tx_op_id = driver->GetOpId();
-    *min_index = std::min(*min_index, tx_op_id.index());
+    // A transaction which doesn't have an opid hasn't been submitted for replication yet and
+    // thus has no need to anchor the log.
+    if (tx_op_id.IsInitialized()) {
+      *min_index = std::min(*min_index, tx_op_id.index());
+    }
   }
 }
 
