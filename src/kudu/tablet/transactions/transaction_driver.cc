@@ -308,6 +308,11 @@ Status TransactionDriver::ApplyAsync() {
       DCHECK_EQ(replication_state_, REPLICATED);
       order_verifier_->CheckApply(op_id_copy_.index(),
                                   prepare_physical_timestamp_);
+      // Now that the transaction is committed in consensus advance the safe time.
+      if (transaction_->state()->external_consistency_mode() != COMMIT_WAIT) {
+        transaction_->state()->tablet_peer()->tablet()->mvcc_manager()->
+            OfflineAdjustSafeTime(transaction_->state()->timestamp());
+      }
     } else {
       DCHECK_EQ(replication_state_, REPLICATION_FAILED);
       DCHECK(!transaction_status_.ok());
