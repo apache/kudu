@@ -47,7 +47,8 @@ Master::Master(const MasterOptions& opts)
     ts_manager_(new TSManager()),
     catalog_manager_(new CatalogManager(this)),
     path_handlers_(new MasterPathHandlers(this)),
-    opts_(opts) {
+    opts_(opts),
+    maintenance_manager_(new MaintenanceManager(MaintenanceManager::DEFAULT_OPTIONS)) {
 }
 
 Master::~Master() {
@@ -83,6 +84,8 @@ Status Master::Start() {
 
 Status Master::StartAsync() {
   CHECK_EQ(kInitialized, state_);
+
+  RETURN_NOT_OK(maintenance_manager_->Init());
 
   gscoped_ptr<ServiceIf> impl(new MasterServiceImpl(this));
   gscoped_ptr<ServiceIf> consensus_service(new ConsensusServiceImpl(metric_context(),
@@ -128,6 +131,7 @@ void Master::Shutdown() {
   if (state_ == kRunning) {
     string name = ToString();
     LOG(INFO) << name << " shutting down...";
+    maintenance_manager_->Shutdown();
     ServerBase::Shutdown();
     catalog_manager_->Shutdown();
     LOG(INFO) << name << " shutdown complete.";

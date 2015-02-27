@@ -12,12 +12,14 @@
 #include "kudu/master/master_options.h"
 #include "kudu/master/master.pb.h"
 #include "kudu/server/server_base.h"
+#include "kudu/tablet/maintenance_manager.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/promise.h"
 #include "kudu/util/status.h"
 
 namespace kudu {
 
+class MaintenanceManager;
 class RpcServer;
 struct RpcServerOptions;
 class ServerEntryPB;
@@ -75,6 +77,10 @@ class Master : public server::ServerBase {
     return state_ == kStopped;
   }
 
+  MaintenanceManager* maintenance_manager() {
+    return maintenance_manager_.get();
+  }
+
  private:
   friend class MasterTest;
 
@@ -101,6 +107,9 @@ class Master : public server::ServerBase {
   Promise<Status> init_status_;
 
   MasterOptions opts_;
+
+  // The maintenance manager for this master.
+  std::tr1::shared_ptr<MaintenanceManager> maintenance_manager_;
 
   DISALLOW_COPY_AND_ASSIGN(Master);
 };

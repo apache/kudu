@@ -246,6 +246,8 @@ Status SysCatalogTable::SetupTablet(const scoped_refptr<tablet::TabletMetadata>&
   RETURN_NOT_OK_PREPEND(tablet_peer_->Start(consensus_info),
                         "Failed to Start() TabletPeer");
 
+  tablet_peer_->RegisterMaintenanceOps(master_->maintenance_manager());
+
   shared_ptr<Schema> schema(tablet->schema());
   schema_ = SchemaBuilder(*schema.get()).BuildWithoutIds();
   key_schema_ = schema_.CreateKeyProjection();
