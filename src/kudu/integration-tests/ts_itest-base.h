@@ -8,6 +8,7 @@
 #include <utility>
 #include <vector>
 
+#include "kudu/consensus/consensus.pb.h"
 #include "kudu/consensus/quorum_util.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/split.h"
@@ -29,6 +30,7 @@ DEFINE_int32(num_replicas, 3, "Number of replicas per tablet server");
 namespace kudu {
 namespace tserver {
 
+using consensus::OpId;
 using master::GetTableLocationsRequestPB;
 using master::GetTableLocationsResponsePB;
 using master::TabletLocationsPB;
@@ -312,7 +314,7 @@ class TabletServerIntegrationTestBase : public TabletServerTestBase {
         FAIL() << " Reached max. retries while looking up the quorum.";
       }
 
-      Status status = cluster_->WaitForTabletServerCount(FLAGS_num_replicas,
+      Status status = cluster_->WaitForTabletServerCount(FLAGS_num_tablet_servers,
                                                          MonoDelta::FromSeconds(5));
       if (status.IsTimedOut()) {
         LOG(WARNING)<< "Timeout waiting for all replicas to be online, retrying...";
@@ -364,23 +366,42 @@ class TabletServerIntegrationTestBase : public TabletServerTestBase {
     }
   }
 
-  // Returns the index of the replica who is farthest ahead.
-  int GetFurthestAheadReplicaIdx(const string& tablet_id, const vector<TServerDetails*>& replicas) {
+  // Gets a vector containing the latest OpId for each of the given replicas.
+  // Returns a bad Status if any replica cannot be reached.
+  Status GetLastOpIdForEachReplica(const string& tablet_id,
+                                   const vector<TServerDetails*>& replicas,
+                                   vector<OpId>* op_ids) {
     consensus::GetLastOpIdRequestPB opid_req;
     consensus::GetLastOpIdResponsePB opid_resp;
     opid_req.set_tablet_id(tablet_id);
     RpcController controller;
 
-    uint64 max_index = 0;
-    int max_replica_index = -1;
-
-    for (int i = 0; i < replicas.size(); i++) {
+    op_ids->clear();
+    BOOST_FOREACH(TServerDetails* ts, replicas) {
       controller.Reset();
+      controller.set_timeout(MonoDelta::FromSeconds(3));
       opid_resp.Clear();
       opid_req.set_tablet_id(tablet_id);
-      CHECK_OK(replicas[i]->consensus_proxy->GetLastOpId(opid_req, &opid_resp, &controller));
-      if (opid_resp.opid().index() > max_index) {
-        max_index = opid_resp.opid().index();
+      RETURN_NOT_OK_PREPEND(
+        ts->consensus_proxy->GetLastOpId(opid_req, &opid_resp, &controller),
+        Substitute("Failed to fetch last op id from $0", ts->instance_id.ShortDebugString()));
+      op_ids->push_back(opid_resp.opid());
+    }
+
+    return Status::OK();
+  }
+
+  // Return the index within 'replicas' for the replica which is farthest ahead.
+  int64_t GetFurthestAheadReplicaIdx(const string& tablet_id,
+                                     const vector<TServerDetails*>& replicas) {
+    vector<OpId> op_ids;
+    CHECK_OK(GetLastOpIdForEachReplica(tablet_id, replicas, &op_ids));
+
+    uint64 max_index = 0;
+    int max_replica_index = -1;
+    for (int i = 0; i < op_ids.size(); i++) {
+      if (op_ids[i].index() > max_index) {
+        max_index = op_ids[i].index();
         max_replica_index = i;
       }
     }

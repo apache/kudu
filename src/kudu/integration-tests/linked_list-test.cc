@@ -18,6 +18,7 @@
 
 #include <gflags/gflags.h>
 #include <glog/logging.h>
+#include <glog/stl_logging.h>
 #include <gtest/gtest.h>
 
 #include "kudu/client/client.h"
@@ -40,17 +41,17 @@ using kudu::client::KuduClientBuilder;
 using kudu::client::KuduSchema;
 using std::tr1::shared_ptr;
 
-DEFINE_int32(seconds_to_run, 0, "Number of seconds for which to run the test "
-             "(default 0 autoselects based on test mode)");
-enum {
-  kDefaultRunTimeSlow = 30,
-  kDefaultRunTimeFast = 1
-};
+DEFINE_int32(seconds_to_run, 1, "Number of seconds for which to run the test");
 
 DEFINE_int32(num_chains, 50, "Number of parallel chains to generate");
 DEFINE_int32(num_tablets, 3, "Number of tablets over which to split the data");
 DEFINE_bool(enable_mutation, false, "Enable periodic mutation of inserted rows");
 DEFINE_int32(num_snapshots, 3, "Number of snapshots to verify across replicas and reboots.");
+
+DEFINE_bool(stress_flush_compact, false,
+            "Flush and compact way more aggressively to try to find bugs");
+DEFINE_bool(stress_wal_gc, false,
+            "Set WAL segment size small so that logs will be GCed during the test");
 
 namespace kudu {
 
@@ -67,8 +68,6 @@ class LinkedListTest : public tserver::TabletServerIntegrationTestBase {
     LOG(INFO) << FLAGS_num_tablets << " tablets";
     LOG(INFO) << "Mutations " << (FLAGS_enable_mutation ? "on" : "off");
     LOG(INFO) << "--------------";
-
-    BuildAndStart();
   }
 
   void BuildAndStart() {
@@ -82,7 +81,7 @@ class LinkedListTest : public tserver::TabletServerIntegrationTestBase {
     vector<string> ts_flags(common_flags);
     ts_flags.push_back("--tablet_server_rpc_bind_addresses=127.0.0.1:705${index}");
 
-    if (AllowSlowTests()) {
+    if (FLAGS_stress_flush_compact) {
       // Set the flush threshold low so that we have a mix of flushed and unflushed
       // operations in the WAL, when we bootstrap.
       ts_flags.push_back("--flush_threshold_mb=1");
@@ -90,6 +89,8 @@ class LinkedListTest : public tserver::TabletServerIntegrationTestBase {
       // instead of selecting all of the rowsets in a single compaction of the whole
       // tablet.
       ts_flags.push_back("--tablet_compaction_budget_mb=4");
+    }
+    if (FLAGS_stress_wal_gc) {
       // Set the size of the WAL segments low so that some can be GC'd.
       ts_flags.push_back("--log_segment_size_mb=1");
     }
@@ -117,6 +118,14 @@ class LinkedListTest : public tserver::TabletServerIntegrationTestBase {
     ResetClientAndTester();
   }
 
+  // Wait until all of the servers have converged on the same log index.
+  // The converged index must be at least equal to 'minimum_index'.
+  //
+  // Requires that all servers are running. FAIL()s the test if the indexes
+  // do not converge within the given timeout.
+  void WaitForServersToAgree(const MonoDelta& timeout,
+                             int64_t minimum_index);
+
  protected:
   void AddExtraFlags(const string& flags_str, vector<string>* flags) {
     if (flags_str.empty()) {
@@ -133,9 +142,10 @@ class LinkedListTest : public tserver::TabletServerIntegrationTestBase {
 };
 
 TEST_F(LinkedListTest, TestLoadAndVerify) {
-  if (FLAGS_seconds_to_run == 0) {
-    FLAGS_seconds_to_run = AllowSlowTests() ? kDefaultRunTimeSlow : kDefaultRunTimeFast;
-  }
+  OverrideFlagForSlowTests("seconds_to_run", "30");
+  OverrideFlagForSlowTests("stress_flush_compact", "true");
+  OverrideFlagForSlowTests("stress_wal_gc", "true");
+  ASSERT_NO_FATAL_FAILURE(BuildAndStart());
 
   PeriodicWebUIChecker checker(*cluster_.get(), MonoDelta::FromSeconds(1));
 
@@ -210,6 +220,78 @@ TEST_F(LinkedListTest, TestLoadAndVerify) {
   // Dump the performance info at the very end, so it's easy to read. On a failed
   // test, we don't care about this stuff anyway.
   tester_->DumpInsertHistogram(true);
+}
+
+void LinkedListTest::WaitForServersToAgree(const MonoDelta& timeout,
+                                           int64_t minimum_index) {
+  MonoTime now = MonoTime::Now(MonoTime::COARSE);
+  MonoTime deadline = now;
+  deadline.AddDelta(timeout);
+
+  for (int i = 1; now.ComesBefore(deadline); i++) {
+    string tablet_id = tablet_replicas_.begin()->first;
+    vector<TServerDetails*> servers;
+    AppendValuesFromMap(tablet_servers_, &servers);
+    vector<consensus::OpId> ids;
+    ASSERT_OK(GetLastOpIdForEachReplica(tablet_id, servers, &ids));
+
+    if (ids[0].index() == ids[1].index() &&
+        ids[1].index() == ids[2].index()) {
+      ASSERT_GE(ids[0].index(), minimum_index)
+        << "Log indexes converged, but did not reach expected minimum value";
+      return;
+    } else {
+      LOG(INFO) << "Not converged yet: " << ids;
+      SleepFor(MonoDelta::FromMilliseconds(std::min(i * 100, 1000)));
+    }
+
+    now = MonoTime::Now(MonoTime::COARSE);
+  }
+  FAIL() << "Servers never converged";
+}
+
+// This test loads the linked list while one of the servers is down.
+// Once the loading is complete, the server is started back up and
+// we wait for it to catch up. Then we shut down the other two servers
+// and verify that the data is correct on the server which caught up.
+TEST_F(LinkedListTest, TestLoadWhileOneServerDownAndVerify) {
+  OverrideFlagForSlowTests("seconds_to_run", "30");
+
+  if (!FLAGS_ts_flags.empty()) {
+    FLAGS_ts_flags += " ";
+  }
+
+  // TODO: once the log cache has been refactored to support these
+  // new configs, uncomment the following:
+  //  FLAGS_ts_flags += "--log_cache_size_limit_mb=2";
+  //  FLAGS_ts_flags += " --global_log_cache_size_limit_mb=4";
+
+  FLAGS_num_tablet_servers = 3;
+  FLAGS_num_tablets = 1;
+  ASSERT_NO_FATAL_FAILURE(BuildAndStart());
+
+  // Load the data with one of the three servers down.
+  cluster_->tablet_server(0)->Shutdown();
+
+  int64_t written = 0;
+  ASSERT_STATUS_OK(tester_->LoadLinkedList(MonoDelta::FromSeconds(FLAGS_seconds_to_run),
+                                           FLAGS_num_snapshots,
+                                           &written));
+
+  // Start back up the server that missed all of the data being loaded. It should be
+  // able to stream the data back from the other server which is still up.
+  ASSERT_OK(cluster_->tablet_server(0)->Restart());
+
+  // We assume that the servers should converge in about the same speed as we inserted
+  // the data. We'll also add an extra 5 seconds to account for startup/bootstrap time.
+  int timeout_secs = FLAGS_seconds_to_run + 5;
+  ASSERT_NO_FATAL_FAILURE(WaitForServersToAgree(
+                            MonoDelta::FromSeconds(timeout_secs),
+                            written / FLAGS_num_chains));
+
+  cluster_->tablet_server(1)->Shutdown();
+  cluster_->tablet_server(2)->Shutdown();
+  ASSERT_OK(tester_->WaitAndVerify(FLAGS_seconds_to_run, written));
 }
 
 } // namespace kudu
