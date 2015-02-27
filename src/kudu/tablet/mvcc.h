@@ -254,6 +254,7 @@ class MvccManager {
   friend class MvccTest;
   FRIEND_TEST(MvccTest, TestAreAllTransactionsCommitted);
   FRIEND_TEST(MvccTest, TestTxnAbort);
+  FRIEND_TEST(MvccTest, TestCleanTimeCoalescingOnOfflineTransactions);
 
   bool InitTransactionUnlocked(const Timestamp& timestamp);
 

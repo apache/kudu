@@ -458,5 +458,20 @@ TEST_F(MvccTest, TestTxnAbort) {
   ASSERT_EQ(mgr.GetCleanTimestamp().CompareTo(tx3), 0);
 }
 
+// This tests for a bug we were observing, where a clean snapshot would not
+// coalesce to the latest timestamp, for offline transactions.
+TEST_F(MvccTest, TestCleanTimeCoalescingOnOfflineTransactions) {
+
+  MvccManager mgr(clock_.get());
+  clock_->Update(Timestamp(20));
+
+  CHECK_OK(mgr.StartTransactionAtTimestamp(Timestamp(10)));
+  CHECK_OK(mgr.StartTransactionAtTimestamp(Timestamp(15)));
+  mgr.OfflineAdjustSafeTime(Timestamp(15));
+  mgr.OfflineCommitTransaction(Timestamp(15));
+  mgr.OfflineCommitTransaction(Timestamp(10));
+  ASSERT_EQ(mgr.cur_snap_.ToString(), "MvccSnapshot[committed={T|T < 15 or (T in {15})}]");
+}
+
 } // namespace tablet
 } // namespace kudu

@@ -140,6 +140,13 @@ void MvccManager::OfflineCommitTransaction(Timestamp timestamp) {
   // be done with a separate OfflineAdjustCurSnap() call.
   bool was_earliest = false;
   CommitTransactionUnlocked(timestamp, &was_earliest);
+
+  if (was_earliest
+      && no_new_transactions_at_or_before_.CompareTo(timestamp) >= 0) {
+    // If this transaction was the earliest in-flight, we might have to adjust
+    // the "clean" timestamp.
+    AdjustCleanTime();
+  }
 }
 
 void MvccManager::CommitTransactionUnlocked(Timestamp timestamp,
