@@ -102,7 +102,7 @@ public class KuduTableMapReduceUtil {
 
   /**
    * Sets up the required configurations and classes to read from Kudu. The generic options to
-   * connect to the cluster are used, see {#CommandLineParser}.
+   * connect to the cluster are used, see {#CommandLineParser}. Block caching is disabled.
    * @param job a job to configure
    * @param table a string that contains the name of the table to read from
    * @param columnProjection a string containing a comma-separated list of columns to read.
@@ -116,7 +116,7 @@ public class KuduTableMapReduceUtil {
                                           boolean addDependencies) throws IOException {
     CommandLineParser parser = new CommandLineParser(job.getConfiguration());
     initTableInputFormat(job, parser.getMasterQuorum(), table, parser.getOperationTimeoutMs(),
-        columnProjection, addDependencies);
+        columnProjection, false, addDependencies);
   }
 
   /**
@@ -127,6 +127,7 @@ public class KuduTableMapReduceUtil {
    * @param operationTimeoutMs a long that represents the timeout for operations to complete
    * @param columnProjection a string containing a comma-separated list of columns to read.
    *                         It can be null in which case we read empty rows
+   * @param cacheBlocks whether the job should use scanners that cache blocks.
    * @param addDependencies whether the job should add the Kudu dependencies to the distributed
    *                        cache
    * @throws IOException If addDependencies is enabled and a problem is encountered reading
@@ -134,13 +135,14 @@ public class KuduTableMapReduceUtil {
    */
   public static void initTableInputFormat(Job job, String masterQuorum, String table,
                                           long operationTimeoutMs, String columnProjection,
-                                          boolean addDependencies) throws IOException {
+                                          boolean cacheBlocks, boolean addDependencies) throws IOException {
     job.setInputFormatClass(KuduTableInputFormat.class);
 
     Configuration conf = job.getConfiguration();
     conf.set(KuduTableInputFormat.MASTER_QUORUM_KEY, masterQuorum);
     conf.set(KuduTableInputFormat.INPUT_TABLE_KEY, table);
     conf.setLong(KuduTableInputFormat.OPERATION_TIMEOUT_MS_KEY, operationTimeoutMs);
+    conf.setBoolean(KuduTableInputFormat.SCAN_CACHE_BLOCKS, cacheBlocks);
     if (columnProjection != null) {
       conf.set(KuduTableInputFormat.COLUMN_PROJECTION_KEY, columnProjection);
     }

@@ -79,13 +79,16 @@ public class KuduTableInputFormat extends InputFormat<NullWritable, RowResult>
   /** Job parameter that specifies the input table. */
   static final String INPUT_TABLE_KEY = "kudu.mapreduce.input.table";
 
-  /** Job parameter that specifies where the masters are */
+  /** Job parameter that specifies if the scanner should cache blocks or not (default: false). */
+  static final String SCAN_CACHE_BLOCKS = "kudu.mapreduce.input.scan.cache.blocks";
+
+  /** Job parameter that specifies where the masters are. */
   static final String MASTER_QUORUM_KEY = "kudu.mapreduce.master.address";
 
-  /** Job parameter that specifies how long we wait for operations to complete */
+  /** Job parameter that specifies how long we wait for operations to complete (default: 10s). */
   static final String OPERATION_TIMEOUT_MS_KEY = "kudu.mapreduce.operation.timeout.ms";
 
-  /** Job parameter that specifies the address for the name server */
+  /** Job parameter that specifies the address for the name server. */
   static final String NAME_SERVER_KEY = "kudu.mapreduce.name.server";
 
   /**
@@ -107,6 +110,7 @@ public class KuduTableInputFormat extends InputFormat<NullWritable, RowResult>
   private long operationTimeoutMs;
   private String nameServer;
   private Schema querySchema;
+  private boolean cacheBlocks;
 
   @Override
   public List<InputSplit> getSplits(JobContext jobContext)
@@ -219,8 +223,9 @@ public class KuduTableInputFormat extends InputFormat<NullWritable, RowResult>
 
     String tableName = conf.get(INPUT_TABLE_KEY);
     String masterQuorum = conf.get(MASTER_QUORUM_KEY);
-    this.operationTimeoutMs = this.conf.getLong(OPERATION_TIMEOUT_MS_KEY, 10000);
+    this.operationTimeoutMs = conf.getLong(OPERATION_TIMEOUT_MS_KEY, 10000);
     this.nameServer = conf.get(NAME_SERVER_KEY);
+    this.cacheBlocks = conf.getBoolean(SCAN_CACHE_BLOCKS, false);
 
     this.client = KuduTableMapReduceUtil.connect(masterQuorum);
     Deferred<KuduTable> d = client.openTable(tableName);
@@ -375,6 +380,7 @@ public class KuduTableInputFormat extends InputFormat<NullWritable, RowResult>
       scanner = client.newScanner(table, querySchema);
       scanner.setEncodedStartKey(split.getStartKey());
       scanner.setEncodedEndKey(split.getEndKey());
+      scanner.setCacheBlocks(cacheBlocks);
 
       // Calling this now to set iterator.
       tryRefreshIterator();
