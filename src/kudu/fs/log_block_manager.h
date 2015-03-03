@@ -85,6 +85,11 @@ struct LogBlockManagerMetrics;
 // locations of various blocks. Each entry in the map consumes ~64 bytes,
 // putting the memory overhead at ~610 MB for 10 million blocks.
 //
+// New blocks are placed on a filesystem block boundary, and the size of
+// hole punch requests is rounded up to the nearest filesystem block size.
+// Taken together, this guarantees that hole punching can actually reclaim
+// disk space (instead of just zeroing the block's bytes on disk).
+//
 // Design trade-offs
 // -----------------
 // In general, log-backed block storage is optimized for sustained reads
@@ -239,6 +244,10 @@ class LogBlockManager : public BlockManager {
 
   // Index of 'root_paths_' for the next created block.
   AtomicInt<int32> root_paths_idx_;
+
+  // Maps root paths to instance metadata files found in each root path.
+  typedef std::tr1::unordered_map<std::string, PathInstanceMetadataPB*> InstanceMap;
+  InstanceMap instances_by_root_path_;
 
   // For generating block IDs and container names.
   ObjectIdGenerator oid_generator_;

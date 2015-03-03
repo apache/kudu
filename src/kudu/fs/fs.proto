@@ -30,6 +30,11 @@ message PathInstanceMetadataPB {
 
   // Textual representation of the block manager that formatted this path.
   required string block_manager_type = 2;
+
+  // Block size on the filesystem where this instance was created. If the
+  // instance (and its data) are ever copied to another location, the block
+  // size in that location must be the same.
+  required uint64 filesystem_block_size_bytes = 3;
 }
 
 message BlockIdPB {

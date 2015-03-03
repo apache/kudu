@@ -12,6 +12,7 @@
 #include "kudu/gutil/strings/strcat.h"
 #include "kudu/gutil/strings/strip.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/util/alignment.h"
 #include "kudu/util/atomic.h"
 #include "kudu/util/env.h"
 #include "kudu/util/metrics.h"
@@ -103,6 +104,7 @@ class LogBlockContainer {
 
   // Creates a new block container in 'dir'.
   static Status Create(LogBlockManager* block_manager,
+                       PathInstanceMetadataPB* instance,
                        const std::string& dir,
                        gscoped_ptr<LogBlockContainer>* container);
 
@@ -111,6 +113,7 @@ class LogBlockContainer {
   // Every container is comprised of two files: "<dir>/<id>.data" and
   // "<dir>/<id>.metadata". Together, 'dir' and 'id' fully describe both files.
   static Status Open(LogBlockManager* block_manager,
+                     PathInstanceMetadataPB* instance,
                      const std::string& dir,
                      const std::string& id,
                      gscoped_ptr<LogBlockContainer>* container);
@@ -176,7 +179,8 @@ class LogBlockContainer {
   Status Preallocate(size_t length);
 
   // Updates 'total_bytes_written_', marking this container as full if
-  // needed.
+  // needed. Should only be called when a block is fully written, as it
+  // will round up the container data file's position.
   //
   // This function is thread unsafe.
   void UpdateBytesWritten(int64_t more_bytes);
@@ -189,7 +193,8 @@ class LogBlockContainer {
   bool full() const {
     return total_bytes_written_ >=  FLAGS_log_container_max_size;
   }
-  const LogBlockManagerMetrics* metrics() { return metrics_; }
+  const LogBlockManagerMetrics* metrics() const { return metrics_; }
+  const PathInstanceMetadataPB* instance() const { return instance_; }
 
  private:
   // RAII-style class for finishing containers in FinishBlock().
@@ -207,6 +212,7 @@ class LogBlockContainer {
   };
 
   LogBlockContainer(LogBlockManager* block_manager,
+                    PathInstanceMetadataPB* instance,
                     const std::string& path,
                     gscoped_ptr<WritablePBContainerFile> metadata_writer,
                     gscoped_ptr<RWFile> data_file);
@@ -216,7 +222,7 @@ class LogBlockContainer {
   Status LoadContainer();
 
   // The owning block manager. Must outlive the container itself.
-  LogBlockManager* block_manager_;
+  LogBlockManager* const block_manager_;
 
   // The path to the container's files. Equivalent to "<dir>/<id>" (see the
   // container constructor).
@@ -239,6 +245,8 @@ class LogBlockContainer {
   // as the block manager.
   const LogBlockManagerMetrics* metrics_;
 
+  const PathInstanceMetadataPB* instance_;
+
   DISALLOW_COPY_AND_ASSIGN(LogBlockContainer);
 };
 
@@ -246,6 +254,7 @@ const std::string LogBlockContainer::kMetadataFileSuffix(".metadata");
 const std::string LogBlockContainer::kDataFileSuffix(".data");
 
 LogBlockContainer::LogBlockContainer(LogBlockManager* block_manager,
+                                     PathInstanceMetadataPB* instance,
                                      const string& path,
                                      gscoped_ptr<WritablePBContainerFile> metadata_writer,
                                      gscoped_ptr<RWFile> data_file)
@@ -254,10 +263,12 @@ LogBlockContainer::LogBlockContainer(LogBlockManager* block_manager,
     metadata_pb_writer_(metadata_writer.Pass()),
     data_file_(data_file.Pass()),
     total_bytes_written_(0),
-    metrics_(block_manager->metrics()) {
+    metrics_(block_manager->metrics()),
+    instance_(instance) {
 }
 
 Status LogBlockContainer::Create(LogBlockManager* block_manager,
+                                 PathInstanceMetadataPB* instance,
                                  const string& dir,
                                  gscoped_ptr<LogBlockContainer>* container) {
   string common_path;
@@ -306,7 +317,9 @@ Status LogBlockContainer::Create(LogBlockManager* block_manager,
     gscoped_ptr<WritablePBContainerFile> metadata_pb_writer(
         new WritablePBContainerFile(metadata_writer.Pass()));
     RETURN_NOT_OK(metadata_pb_writer->Init(BlockRecordPB()));
-    container->reset(new LogBlockContainer(block_manager, common_path,
+    container->reset(new LogBlockContainer(block_manager,
+                                           instance,
+                                           common_path,
                                            metadata_pb_writer.Pass(),
                                            data_file.Pass()));
     VLOG(1) << "Created log block container " << (*container)->ToString();
@@ -317,6 +330,7 @@ Status LogBlockContainer::Create(LogBlockManager* block_manager,
 }
 
 Status LogBlockContainer::Open(LogBlockManager* block_manager,
+                               PathInstanceMetadataPB* instance,
                                const string& dir, const string& id,
                                gscoped_ptr<LogBlockContainer>* container) {
   string common_path = JoinPathSegments(dir, id);
@@ -349,6 +363,7 @@ Status LogBlockContainer::Open(LogBlockManager* block_manager,
 
   // Create the in-memory container and populate it.
   gscoped_ptr<LogBlockContainer> open_container(new LogBlockContainer(block_manager,
+                                                                      instance,
                                                                       common_path,
                                                                       metadata_pb_writer.Pass(),
                                                                       data_file.Pass()));
@@ -396,7 +411,7 @@ Status LogBlockContainer::FinishBlock(const Status& s, WritableBlock* block) {
   RETURN_NOT_OK(block_manager()->SyncContainer(*this));
 
   CHECK(block_manager()->AddLogBlock(this, block->id(),
-                                     total_bytes_written_, block->BytesAppended()));
+                                     total_bytes_written(), block->BytesAppended()));
   UpdateBytesWritten(block->BytesAppended());
   if (full() && block_manager()->metrics()) {
     block_manager()->metrics()->total_full_containers->Increment();
@@ -408,10 +423,19 @@ Status LogBlockContainer::DeleteBlock(int64_t offset, int64_t length) {
   DCHECK_GE(offset, 0);
   DCHECK_GE(length, 0);
 
+  // Guaranteed by UpdateBytesWritten().
+  DCHECK_EQ(0, offset % instance()->filesystem_block_size_bytes());
+
   // It is invalid to punch a zero-size hole.
   if (length) {
     lock_guard<Mutex> l(&data_writer_lock_);
-    return data_file_->PunchHole(offset, length);
+    // Round up to the nearest filesystem block so that the kernel will
+    // actually reclaim disk space.
+    //
+    // It's OK if we exceed the file's total size; the kernel will truncate
+    // our request.
+    return data_file_->PunchHole(offset, KUDU_ALIGN_UP(
+        length, instance()->filesystem_block_size_bytes()));
   }
   return Status::OK();
 }
@@ -471,7 +495,12 @@ Status LogBlockContainer::Preallocate(size_t length) {
 void LogBlockContainer::UpdateBytesWritten(int64_t more_bytes) {
   DCHECK_GE(more_bytes, 0);
 
-  total_bytes_written_ += more_bytes;
+  // The number of bytes is rounded up to the nearest filesystem block so
+  // that each Kudu block is guaranteed to be on a filesystem block
+  // boundary. This guarantees that the disk space can be reclaimed when
+  // the block is deleted.
+  total_bytes_written_ += KUDU_ALIGN_UP(more_bytes,
+                                        instance()->filesystem_block_size_bytes());
   if (full()) {
     VLOG(1) << "Container " << ToString() << " with size "
             << total_bytes_written_ << " is now full, max size is "
@@ -650,6 +679,7 @@ LogWritableBlock::LogWritableBlock(LogBlockContainer* container,
     block_length_(0),
     state_(CLEAN) {
   DCHECK_GE(block_offset, 0);
+  DCHECK_EQ(0, block_offset % container->instance()->filesystem_block_size_bytes());
   if (container->metrics()) {
     container->metrics()->generic_metrics.blocks_open_writing->Increment();
     container->metrics()->generic_metrics.total_writable_blocks->Increment();
@@ -894,6 +924,7 @@ LogBlockManager::LogBlockManager(Env* env,
 
 LogBlockManager::~LogBlockManager() {
   STLDeleteElements(&all_containers_);
+  STLDeleteValues(&instances_by_root_path_);
 }
 
 Status LogBlockManager::Create() {
@@ -922,10 +953,10 @@ Status LogBlockManager::Open() {
 
     string instance_filename = JoinPathSegments(
         root_path, kInstanceMetadataFileName);
-    PathInstanceMetadataPB new_instance;
+    gscoped_ptr<PathInstanceMetadataPB> new_instance(new PathInstanceMetadataPB());
     PathInstanceMetadataFile metadata(env_, kBlockManagerType,
                                       instance_filename);
-    RETURN_NOT_OK_PREPEND(metadata.Open(&new_instance), instance_filename);
+    RETURN_NOT_OK_PREPEND(metadata.Open(new_instance.get()), instance_filename);
 
     vector<string> children;
     RETURN_NOT_OK_PREPEND(env_->GetChildren(root_path, &children), root_path);
@@ -936,7 +967,8 @@ Status LogBlockManager::Open() {
         continue;
       }
       gscoped_ptr<LogBlockContainer> container;
-      RETURN_NOT_OK_PREPEND(LogBlockContainer::Open(this, root_path, id, &container),
+      RETURN_NOT_OK_PREPEND(LogBlockContainer::Open(this, new_instance.get(),
+                                                    root_path, id, &container),
                             root_path);
       {
         lock_guard<simple_spinlock> l(&lock_);
@@ -944,6 +976,8 @@ Status LogBlockManager::Open() {
         MakeContainerAvailableUnlocked(container.release());
       }
     }
+
+    InsertOrDie(&instances_by_root_path_, root_path, new_instance.release());
   }
   return Status::OK();
 }
@@ -967,8 +1001,11 @@ Status LogBlockManager::CreateBlock(const CreateBlockOptions& opts,
     } while (!root_paths_idx_.CompareAndSet(old_idx, new_idx));
     string root_path = root_paths_[old_idx];
 
+    // Guaranteed by LogBlockManager::Open().
+    PathInstanceMetadataPB* instance = FindOrDie(instances_by_root_path_, root_path);
+
     gscoped_ptr<LogBlockContainer> new_container;
-    RETURN_NOT_OK(LogBlockContainer::Create(this, root_path, &new_container));
+    RETURN_NOT_OK(LogBlockContainer::Create(this, instance, root_path, &new_container));
     container = new_container.release();
     {
       lock_guard<simple_spinlock> l(&lock_);
