@@ -134,6 +134,10 @@ class Env {
   // of space consumed by the file, not the user-facing file size.
   virtual Status GetFileSizeOnDisk(const std::string& fname, uint64_t* file_size) = 0;
 
+  // Store the block size of the filesystem where fname resides in
+  // *block_size. fname must exist but it may be a file or a directory.
+  virtual Status GetBlockSize(const std::string& fname, uint64_t* block_size) = 0;
+
   // Rename file src to target.
   virtual Status RenameFile(const std::string& src,
                             const std::string& target) = 0;
@@ -449,6 +453,9 @@ class EnvWrapper : public Env {
   }
   Status GetFileSizeOnDisk(const std::string& f, uint64_t* s) OVERRIDE {
     return target_->GetFileSizeOnDisk(f, s);
+  }
+  Status GetBlockSize(const std::string& f, uint64_t* s) OVERRIDE {
+    return target_->GetBlockSize(f, s);
   }
   Status RenameFile(const std::string& s, const std::string& t) OVERRIDE {
     return target_->RenameFile(s, t);

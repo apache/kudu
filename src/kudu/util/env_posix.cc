@@ -837,7 +837,6 @@ class PosixEnv : public Env {
     Status s;
     struct stat sbuf;
     if (stat(fname.c_str(), &sbuf) != 0) {
-      *size = 0;
       s = IOError(fname, errno);
     } else {
       *size = sbuf.st_size;
@@ -849,7 +848,6 @@ class PosixEnv : public Env {
     Status s;
     struct stat sbuf;
     if (stat(fname.c_str(), &sbuf) != 0) {
-      *size = 0;
       s = IOError(fname, errno);
     } else {
       // From stat(2):
@@ -858,6 +856,17 @@ class PosixEnv : public Env {
       //   the file, 512-byte units. (This may be smaller than st_size/512
       //   when the file has holes.)
       *size = sbuf.st_blocks * 512;
+    }
+    return s;
+  }
+
+  virtual Status GetBlockSize(const string& fname, uint64_t* block_size) OVERRIDE {
+    Status s;
+    struct stat sbuf;
+    if (stat(fname.c_str(), &sbuf) != 0) {
+      s = IOError(fname, errno);
+    } else {
+      *block_size = sbuf.st_blksize;
     }
     return s;
   }

@@ -466,6 +466,12 @@ class InMemoryEnv : public EnvWrapper {
     return GetFileSize(fname, file_size);
   }
 
+  virtual Status GetBlockSize(const string& fname, uint64_t* block_size) OVERRIDE {
+    // The default for ext3/ext4 filesystems.
+    *block_size = 4096;
+    return Status::OK();
+  }
+
   virtual Status RenameFile(const std::string& src,
                             const std::string& target) OVERRIDE {
     MutexLock lock(mutex_);

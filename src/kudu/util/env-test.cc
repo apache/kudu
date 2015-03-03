@@ -622,4 +622,22 @@ TEST_F(TestEnv, TestWalkCbReturnsError) {
   ASSERT_EQ(2, num_calls);
 }
 
+TEST_F(TestEnv, TestGetBlockSize) {
+  uint64_t block_size;
+
+  // Does not exist.
+  ASSERT_TRUE(env_->GetBlockSize("does_not_exist", &block_size).IsNotFound());
+
+  // Try with a directory.
+  ASSERT_OK(env_->GetBlockSize(".", &block_size));
+  ASSERT_GT(block_size, 0);
+
+  // Try with a file.
+  string path = GetTestPath("foo");
+  gscoped_ptr<WritableFile> writer;
+  ASSERT_OK(env_->NewWritableFile(path, &writer));
+  ASSERT_OK(env_->GetBlockSize(path, &block_size));
+  ASSERT_GT(block_size, 0);
+}
+
 }  // namespace kudu
