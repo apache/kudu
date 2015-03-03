@@ -131,7 +131,6 @@ const string RowSetMetadata::ToString() const {
 
 void RowSetMetadata::SetColumnDataBlocks(const std::vector<BlockId>& blocks) {
   CHECK_EQ(blocks.size(), schema_.num_columns());
-  boost::lock_guard<LockType> l(deltas_lock_);
   column_blocks_ = blocks;
 }
 
@@ -209,6 +208,8 @@ vector<BlockId> RowSetMetadata::GetAllBlocks() {
   }
   blocks.insert(blocks.end(),
                 column_blocks_.begin(), column_blocks_.end());
+
+  boost::lock_guard<LockType> l(deltas_lock_);
   blocks.insert(blocks.end(),
                 undo_delta_blocks_.begin(), undo_delta_blocks_.end());
   blocks.insert(blocks.end(),
