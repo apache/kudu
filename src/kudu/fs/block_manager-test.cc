@@ -22,10 +22,10 @@ using std::string;
 using std::vector;
 using strings::Substitute;
 
-// LogBlockManager opens three files per container, and CloseManyBlocksTest
+// LogBlockManager opens two files per container, and CloseManyBlocksTest
 // uses one container for each block. To simplify testing (i.e. no need to
 // raise the ulimit on open files), the default is kept low.
-DEFINE_int32(num_blocks_close, 333,
+DEFINE_int32(num_blocks_close, 500,
              "Number of blocks to simultaneously close in CloseManyBlocksTest");
 
 DECLARE_uint64(log_container_max_size);

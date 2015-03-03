@@ -14,7 +14,6 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/atomic.h"
 #include "kudu/util/env.h"
-#include "kudu/util/env_util.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/mutex.h"
 #include "kudu/util/path_util.h"
@@ -93,7 +92,7 @@ LogBlockManagerMetrics::LogBlockManagerMetrics(const MetricContext& metric_ctx)
 // A container may only be used to write one WritableBlock at a given time.
 // However, existing blocks may be deleted concurrently. As such, almost
 // all container functions must be reentrant, even if the container itself
-// is logically thread unsafe (i.e. multiple clients calling AppendData()
+// is logically thread unsafe (i.e. multiple clients calling WriteData()
 // concurrently will produce nonsensical container data). Thread unsafe
 // functions are marked explicitly.
 class LogBlockContainer {
@@ -133,10 +132,14 @@ class LogBlockContainer {
   // The on-disk effects of this call are made durable only after SyncData().
   Status DeleteBlock(int64_t offset, int64_t length);
 
-  // Appends 'data' to this container's data file.
+  // Writes 'data' to this container's data file at offset 'offset'.
   //
   // The on-disk effects of this call are made durable only after SyncData().
-  Status AppendData(const Slice& data);
+  Status WriteData(int64_t offset, const Slice& data);
+
+  // See RWFile::Read().
+  Status ReadData(int64_t offset, size_t length,
+                  Slice* result, uint8_t* scratch) const;
 
   // Appends 'pb' to this container's metadata file.
   //
@@ -168,6 +171,10 @@ class LogBlockContainer {
   // TODO: Add support to synchronize just a range.
   Status SyncMetadata();
 
+  // Ensure that 'length' bytes are preallocated in this container,
+  // beginning from the position where the last written block ended.
+  Status Preallocate(size_t length);
+
   // Updates 'total_bytes_written_', marking this container as full if
   // needed.
   //
@@ -178,7 +185,6 @@ class LogBlockContainer {
   std::string dir() const { return DirName(path_); }
   const std::string& ToString() const { return path_; }
   LogBlockManager* block_manager() const { return block_manager_; }
-  RandomAccessFile* data_reader() const { return data_reader_.get(); }
   int64_t total_bytes_written() const { return total_bytes_written_; }
   bool full() const {
     return total_bytes_written_ >=  FLAGS_log_container_max_size;
@@ -203,8 +209,7 @@ class LogBlockContainer {
   LogBlockContainer(LogBlockManager* block_manager,
                     const std::string& path,
                     gscoped_ptr<WritablePBContainerFile> metadata_writer,
-                    gscoped_ptr<WritableFile> data_writer,
-                    gscoped_ptr<RandomAccessFile> data_reader);
+                    gscoped_ptr<RWFile> data_file);
 
   // Reads the container's metadata from disk, creating LogBlocks as needed
   // and populating the block manager's in-memory maps.
@@ -224,9 +229,8 @@ class LogBlockContainer {
   // avoid contention in cases where only one writer is needed.
   gscoped_ptr<WritablePBContainerFile> metadata_pb_writer_;
   Mutex metadata_pb_writer_lock_;
-  gscoped_ptr<WritableFile> data_writer_;
   Mutex data_writer_lock_;
-  gscoped_ptr<RandomAccessFile> data_reader_;
+  gscoped_ptr<RWFile> data_file_;
 
   // The amount of data written thus far in the container.
   int64_t total_bytes_written_;
@@ -244,13 +248,11 @@ const std::string LogBlockContainer::kDataFileSuffix(".data");
 LogBlockContainer::LogBlockContainer(LogBlockManager* block_manager,
                                      const string& path,
                                      gscoped_ptr<WritablePBContainerFile> metadata_writer,
-                                     gscoped_ptr<WritableFile> data_writer,
-                                     gscoped_ptr<RandomAccessFile> data_reader)
+                                     gscoped_ptr<RWFile> data_file)
   : block_manager_(block_manager),
     path_(path),
     metadata_pb_writer_(metadata_writer.Pass()),
-    data_writer_(data_writer.Pass()),
-    data_reader_(data_reader.Pass()),
+    data_file_(data_file.Pass()),
     total_bytes_written_(0),
     metrics_(block_manager->metrics()) {
 }
@@ -264,7 +266,7 @@ Status LogBlockContainer::Create(LogBlockManager* block_manager,
   Status metadata_status;
   Status data_status;
   gscoped_ptr<WritableFile> metadata_writer;
-  gscoped_ptr<WritableFile> data_writer;
+  gscoped_ptr<RWFile> data_file;
   WritableFileOptions wr_opts;
   wr_opts.mode = Env::CREATE_NON_EXISTING;
 
@@ -289,30 +291,24 @@ Status LogBlockContainer::Create(LogBlockManager* block_manager,
     metadata_status = block_manager->env()->NewWritableFile(wr_opts,
                                                             metadata_path,
                                                             &metadata_writer);
-    if (data_writer) {
+    if (data_file) {
       block_manager->env()->DeleteFile(data_path);
     }
     data_path = StrCat(common_path, kDataFileSuffix);
-    data_status = block_manager->env()->NewWritableFile(wr_opts,
-                                                        data_path,
-                                                        &data_writer);
+    RWFileOptions rw_opts;
+    rw_opts.mode = Env::CREATE_NON_EXISTING;
+    data_status = block_manager->env()->NewRWFile(rw_opts,
+                                                  data_path,
+                                                  &data_file);
   } while (PREDICT_FALSE(metadata_status.IsAlreadyPresent() ||
                          data_status.IsAlreadyPresent()));
   if (metadata_status.ok() && data_status.ok()) {
     gscoped_ptr<WritablePBContainerFile> metadata_pb_writer(
         new WritablePBContainerFile(metadata_writer.Pass()));
     RETURN_NOT_OK(metadata_pb_writer->Init(BlockRecordPB()));
-
-    // The data file may increase in size as more blocks as written, so we
-    // cannot use mmapped-files (which assume that the file is immutable).
-    gscoped_ptr<RandomAccessFile> reader;
-    RandomAccessFileOptions rd_opts;
-    rd_opts.mmap_file = false;
-    RETURN_NOT_OK(block_manager->env()->NewRandomAccessFile(rd_opts, data_path, &reader));
     container->reset(new LogBlockContainer(block_manager, common_path,
                                            metadata_pb_writer.Pass(),
-                                           data_writer.Pass(),
-                                           reader.Pass()));
+                                           data_file.Pass()));
     VLOG(1) << "Created log block container " << (*container)->ToString();
   }
 
@@ -342,26 +338,20 @@ Status LogBlockContainer::Open(LogBlockManager* block_manager,
   // existing pb container (that should already have a valid header).
 
   string data_path = StrCat(common_path, kDataFileSuffix);
-  gscoped_ptr<WritableFile> data_writer;
-  RETURN_NOT_OK(block_manager->env()->NewWritableFile(wr_opts,
-                                                      data_path,
-                                                      &data_writer));
-  int64_t existing_data_size = data_writer->Size();
-
-  // Open the existing data file for reading.
-  //
-  // The comment in Create() explains why we're not using mmap-based reads.
-  gscoped_ptr<RandomAccessFile> reader;
-  RandomAccessFileOptions rd_opts;
-  rd_opts.mmap_file = false;
-  RETURN_NOT_OK(block_manager->env()->NewRandomAccessFile(rd_opts, data_path, &reader));
+  gscoped_ptr<RWFile> data_file;
+  RWFileOptions rw_opts;
+  rw_opts.mode = Env::OPEN_EXISTING;
+  RETURN_NOT_OK(block_manager->env()->NewRWFile(rw_opts,
+                                                data_path,
+                                                &data_file));
+  uint64_t existing_data_size;
+  RETURN_NOT_OK(data_file->Size(&existing_data_size));
 
   // Create the in-memory container and populate it.
   gscoped_ptr<LogBlockContainer> open_container(new LogBlockContainer(block_manager,
                                                                       common_path,
                                                                       metadata_pb_writer.Pass(),
-                                                                      data_writer.Pass(),
-                                                                      reader.Pass()));
+                                                                      data_file.Pass()));
   open_container->UpdateBytesWritten(existing_data_size);
   RETURN_NOT_OK(open_container->LoadContainer());
 
@@ -421,14 +411,23 @@ Status LogBlockContainer::DeleteBlock(int64_t offset, int64_t length) {
   // It is invalid to punch a zero-size hole.
   if (length) {
     lock_guard<Mutex> l(&data_writer_lock_);
-    return data_writer_->PunchHole(offset, length);
+    return data_file_->PunchHole(offset, length);
   }
   return Status::OK();
 }
 
-Status LogBlockContainer::AppendData(const Slice& data) {
+Status LogBlockContainer::WriteData(int64_t offset, const Slice& data) {
+  DCHECK_GE(offset, 0);
+
   lock_guard<Mutex> l(&data_writer_lock_);
-  return data_writer_->Append(data);
+  return data_file_->Write(offset, data);
+}
+
+Status LogBlockContainer::ReadData(int64_t offset, size_t length,
+                                   Slice* result, uint8_t* scratch) const {
+  DCHECK_GE(offset, 0);
+
+  return data_file_->Read(offset, length, result, scratch);
 }
 
 Status LogBlockContainer::AppendMetadata(const BlockRecordPB& pb) {
@@ -441,7 +440,7 @@ Status LogBlockContainer::FlushData(int64_t offset, int64_t length) {
   DCHECK_GE(length, 0);
 
   lock_guard<Mutex> l(&data_writer_lock_);
-  return data_writer_->FlushRange(WritableFile::FLUSH_ASYNC, offset, length);
+  return data_file_->Flush(RWFile::FLUSH_ASYNC, offset, length);
 }
 
 Status LogBlockContainer::FlushMetadata() {
@@ -452,7 +451,7 @@ Status LogBlockContainer::FlushMetadata() {
 Status LogBlockContainer::SyncData() {
   if (FLAGS_enable_data_block_fsync) {
     lock_guard<Mutex> l(&data_writer_lock_);
-    return data_writer_->Sync();
+    return data_file_->Sync();
   }
   return Status::OK();
 }
@@ -463,6 +462,10 @@ Status LogBlockContainer::SyncMetadata() {
     return metadata_pb_writer_->Sync();
   }
   return Status::OK();
+}
+
+Status LogBlockContainer::Preallocate(size_t length) {
+  return data_file_->PreAllocate(total_bytes_written(), length);
 }
 
 void LogBlockContainer::UpdateBytesWritten(int64_t more_bytes) {
@@ -685,7 +688,7 @@ Status LogWritableBlock::Append(const Slice& data) {
   // The metadata change is deferred to Close() or FlushDataAsync(),
   // whichever comes first. We can't do it now because the block's
   // length is still in flux.
-  RETURN_NOT_OK(container_->AppendData(data));
+  RETURN_NOT_OK(container_->WriteData(block_offset_ + block_length_, data));
 
   block_length_ += data.size();
   state_ = DIRTY;
@@ -860,8 +863,7 @@ Status LogReadableBlock::Read(uint64_t offset, size_t length,
                                       log_block_->offset(),
                                       log_block_->offset() + log_block_->length()));
   }
-  RETURN_NOT_OK(env_util::ReadFully(container_->data_reader(), read_offset, length,
-                                    result, scratch));
+  RETURN_NOT_OK(container_->ReadData(read_offset, length, result, scratch));
 
   if (container_->metrics()) {
     container_->metrics()->generic_metrics.total_bytes_read->IncrementBy(length);

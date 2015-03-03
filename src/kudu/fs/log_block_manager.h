@@ -118,9 +118,6 @@ struct LogBlockManagerMetrics;
 //   groups of blocks (i.e. an entire column).
 // - Unlock containers on FlushDataAsync() so that the workflow in
 //   BlockManagerTest::CloseManyBlocksTest can use just one container.
-// - Reduce the number of open files per container by using an O_RDWR file
-//   abstraction instead of separate readable/writable files.
-// - Implement multi-disk support.
 // - Implement failure recovery (i.e. metadata truncation and other
 //   similarly recoverable errors).
 // - Evaluate and implement a solution for data integrity (e.g. per-block
