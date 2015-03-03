@@ -636,23 +636,22 @@ Status Log::GC(int64_t min_op_idx, int32_t* num_gced) {
   return Status::OK();
 }
 
-Status Log::GetGCableDataSize(int64_t min_op_idx, int64_t* total_size) const {
+void Log::GetGCableDataSize(int64_t min_op_idx, int64_t* total_size) const {
   CHECK_GE(min_op_idx, 0);
   SegmentSequence segments_to_delete;
   *total_size = 0;
   {
     boost::shared_lock<rw_spinlock> read_lock(state_lock_.get_lock());
     CHECK_EQ(kLogWriting, log_state_);
-    GetSegmentsToGCUnlocked(min_op_idx, &segments_to_delete);
+    Status s = GetSegmentsToGCUnlocked(min_op_idx, &segments_to_delete);
 
-    if (segments_to_delete.size() == 0) {
-      return Status::OK();
+    if (!s.ok() || segments_to_delete.size() == 0) {
+      return;
     }
   }
   BOOST_FOREACH(const scoped_refptr<ReadableLogSegment>& segment, segments_to_delete) {
     *total_size += segment->file_size();
   }
-  return Status::OK();
 }
 
 void Log::GetMaxIndexesToSegmentSizeMap(int64_t min_op_idx,

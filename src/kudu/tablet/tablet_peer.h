@@ -4,6 +4,7 @@
 #ifndef KUDU_TABLET_TABLET_PEER_H_
 #define KUDU_TABLET_TABLET_PEER_H_
 
+#include <map>
 #include <string>
 #include <vector>
 
@@ -51,6 +52,7 @@ typedef boost::function<void(TabletPeer*)> MarkDirtyCallback;
 class TabletPeer : public RefCountedThreadSafe<TabletPeer>,
                    public consensus::ReplicaTransactionFactory {
  public:
+  typedef std::map<int64_t, int64_t> MaxIdxToSegmentSizeMap;
 
   TabletPeer(const scoped_refptr<TabletMetadata>& meta,
              ThreadPool* leader_apply_pool,
@@ -176,6 +178,17 @@ class TabletPeer : public RefCountedThreadSafe<TabletPeer>,
   // Returns the minimum known log index that is in-memory or in-flight.
   // Used for selection of log segments to delete during Log GC.
   void GetEarliestNeededLogIndex(int64_t* log_index) const;
+
+  // Returns a map of log index -> segment size, of all the segments that currently cannot be GCed
+  // because in-memory structures have anchors in them.
+  //
+  // Returns a non-ok status if the tablet isn't running.
+  Status GetMaxIndexesToSegmentSizeMap(MaxIdxToSegmentSizeMap* idx_size_map) const;
+
+  // Returns the amount of bytes that would be GC'd if RunLogGC() was called.
+  //
+  // Returns a non-ok status if the tablet isn't running.
+  Status GetGCableDataSize(int64_t* retention_size) const;
 
   // Return a pointer to the Log.
   // The Log is owned by TabletPeer and will be destroyed with TabletPeer.

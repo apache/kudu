@@ -383,6 +383,22 @@ void TabletPeer::GetEarliestNeededLogIndex(int64_t* min_index) const {
   }
 }
 
+Status TabletPeer::GetMaxIndexesToSegmentSizeMap(MaxIdxToSegmentSizeMap* idx_size_map) const {
+  RETURN_NOT_OK(CheckRunning());
+  int64_t min_op_idx;
+  GetEarliestNeededLogIndex(&min_op_idx);
+  log_->GetMaxIndexesToSegmentSizeMap(min_op_idx, idx_size_map);
+  return Status::OK();
+}
+
+Status TabletPeer::GetGCableDataSize(int64_t* retention_size) const {
+  RETURN_NOT_OK(CheckRunning());
+  int64_t min_op_idx;
+  GetEarliestNeededLogIndex(&min_op_idx);
+  log_->GetGCableDataSize(min_op_idx, retention_size);
+  return Status::OK();
+}
+
 Status TabletPeer::StartReplicaTransaction(gscoped_ptr<ConsensusRound> round) {
   RETURN_NOT_OK(CheckRunning());
 

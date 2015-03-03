@@ -29,6 +29,7 @@ METRIC_DEFINE_histogram(log_gc_duration, kudu::MetricUnit::kSeconds,
 namespace kudu {
 namespace tablet {
 
+using std::map;
 using strings::Substitute;
 
 const int64_t kFlushDueToTimeMs = 120 * 1000;
@@ -63,17 +64,18 @@ static void SetPerfImprovementForFlush(MaintenanceOpStats* stats,
 void FlushMRSOp::UpdateStats(MaintenanceOpStats* stats) {
   boost::lock_guard<simple_spinlock> l(lock_);
 
+  map<int64_t, int64_t> max_idx_to_segment_size;
+  if (!tablet_peer_->GetMaxIndexesToSegmentSizeMap(&max_idx_to_segment_size).ok()) {
+    return;
+  }
+
   {
     boost::unique_lock<Semaphore> lock(tablet_peer_->tablet()->rowsets_flush_sem_,
                                        boost::defer_lock);
     stats->runnable = lock.try_lock();
   }
-  stats->ram_anchored = tablet_peer_->tablet()->MemRowSetSize();
 
-  int64_t min_log_index;
-  tablet_peer_->GetEarliestNeededLogIndex(&min_log_index);
-  std::map<int64_t, int64_t> max_idx_to_segment_size;
-  tablet_peer_->log()->GetMaxIndexesToSegmentSizeMap(min_log_index, &max_idx_to_segment_size);
+  stats->ram_anchored = tablet_peer_->tablet()->MemRowSetSize();
   stats->logs_retained_bytes =
       tablet_peer_->tablet()->MemRowSetLogRetentionSize(max_idx_to_segment_size);
 
@@ -119,11 +121,10 @@ void FlushDeltaMemStoresOp::UpdateStats(MaintenanceOpStats* stats) {
   boost::lock_guard<simple_spinlock> l(lock_);
   int64_t dms_size;
   int64_t retention_size;
-  int64_t min_log_index;
-  std::map<int64_t, int64_t> max_idx_to_segment_size;
-
-  tablet_peer_->GetEarliestNeededLogIndex(&min_log_index);
-  tablet_peer_->log()->GetMaxIndexesToSegmentSizeMap(min_log_index, &max_idx_to_segment_size);
+  map<int64_t, int64_t> max_idx_to_segment_size;
+  if (!tablet_peer_->GetMaxIndexesToSegmentSizeMap(&max_idx_to_segment_size).ok()) {
+    return;
+  }
   tablet_peer_->tablet()->GetInfoForBestDMSToFlush(max_idx_to_segment_size,
                                                    &dms_size, &retention_size);
 
@@ -138,11 +139,11 @@ void FlushDeltaMemStoresOp::UpdateStats(MaintenanceOpStats* stats) {
 }
 
 void FlushDeltaMemStoresOp::Perform() {
-  int64_t min_log_index;
-  std::map<int64_t, int64_t> max_idx_to_segment_size;
-
-  tablet_peer_->GetEarliestNeededLogIndex(&min_log_index);
-  tablet_peer_->log()->GetMaxIndexesToSegmentSizeMap(min_log_index, &max_idx_to_segment_size);
+  map<int64_t, int64_t> max_idx_to_segment_size;
+  if (!tablet_peer_->GetMaxIndexesToSegmentSizeMap(&max_idx_to_segment_size).ok()) {
+    LOG(WARNING) << "Won't flush deltas since tablet shutting down: " << tablet_peer_->tablet_id();
+    return;
+  }
   WARN_NOT_OK(tablet_peer_->tablet()->FlushDMSWithHighestRetention(max_idx_to_segment_size),
                   Substitute("Failed to flush DMS on $0",
                              tablet_peer_->tablet()->tablet_id()));
@@ -174,11 +175,11 @@ LogGCOp::LogGCOp(TabletPeer* tablet_peer)
       sem_(1) {}
 
 void LogGCOp::UpdateStats(MaintenanceOpStats* stats) {
-  int64_t min_log_index;
   int64_t retention_size;
 
-  tablet_peer_->GetEarliestNeededLogIndex(&min_log_index);
-  CHECK_OK(tablet_peer_->log()->GetGCableDataSize(min_log_index, &retention_size));
+  if (!tablet_peer_->GetGCableDataSize(&retention_size).ok()) {
+    return;
+  }
 
   stats->logs_retained_bytes = retention_size;
 
