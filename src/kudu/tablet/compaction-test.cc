@@ -37,6 +37,7 @@ using consensus::OpId;
 using log::LogAnchorRegistry;
 
 static const char *kRowKeyFormat = "hello %08d";
+static const size_t kLargeRollThreshold = 1024 * 1024 * 1024; // 1GB
 
 class TestCompaction : public KuduRowSetTest {
  public:
@@ -166,23 +167,34 @@ class TestCompaction : public KuduRowSetTest {
     ASSERT_STATUS_OK(DebugDumpCompactionInput(input, out));
   }
 
-  void DoFlush(CompactionInput *input, const Schema& projection, const MvccSnapshot &snap,
-               shared_ptr<RowSetMetadata>* rowset_meta) {
+  // Flush the given CompactionInput 'input' to disk with the given snapshot.
+  // If 'result_rowsets' is not NULL, reopens the resulting rowset(s) and appends
+  // them to the vector.
+  void DoFlushAndReopen(
+      CompactionInput *input, const Schema& projection, const MvccSnapshot &snap,
+      int64_t roll_threshold, vector<shared_ptr<DiskRowSet> >* result_rowsets) {
     // Flush with a large roll threshold so we only write a single file.
     // This simplifies the test so we always need to reopen only a single rowset.
-    const size_t kRollThreshold = 1024 * 1024 * 1024; // 1GB
     RollingDiskRowSetWriter rsw(tablet()->metadata(), projection,
                                 BloomFilterSizing::BySizeAndFPRate(32*1024, 0.01f),
-                                kRollThreshold);
+                                roll_threshold);
     ASSERT_STATUS_OK(rsw.Open());
     ASSERT_STATUS_OK(FlushCompactionInput(input, snap, &rsw));
     ASSERT_STATUS_OK(rsw.Finish());
+
     vector<shared_ptr<RowSetMetadata> > metas;
     rsw.GetWrittenRowSetMetadata(&metas);
-    ASSERT_EQ(1, metas.size());
-    ASSERT_TRUE(metas[0]->HasBloomDataBlockForTests());
-    if (rowset_meta) {
-      *rowset_meta = metas[0];
+    ASSERT_GE(metas.size(), 1);
+    BOOST_FOREACH(const shared_ptr<RowSetMetadata>& meta, metas) {
+      ASSERT_TRUE(meta->HasBloomDataBlockForTests());
+    }
+    if (result_rowsets) {
+      // Re-open the outputs
+      BOOST_FOREACH(const shared_ptr<RowSetMetadata>& meta, metas) {
+        shared_ptr<DiskRowSet> rs;
+        ASSERT_STATUS_OK(DiskRowSet::Open(meta, log_anchor_registry_.get(), &rs));
+        result_rowsets->push_back(rs);
+      }
     }
   }
 
@@ -198,30 +210,48 @@ class TestCompaction : public KuduRowSetTest {
     return compact_input.Pass();
   }
 
-  void DoCompact(const vector<shared_ptr<DiskRowSet> >& rowsets, const Schema& projection,
-                 shared_ptr<RowSetMetadata>* rowset_meta = NULL) {
+  // Compacts a set of DRSs.
+  // If 'result_rowsets' is not NULL, reopens the resulting rowset(s) and appends
+  // them to the vector.
+  void CompactAndReopen(const vector<shared_ptr<DiskRowSet> >& rowsets,
+                        const Schema& projection, int64_t roll_threshold,
+                        vector<shared_ptr<DiskRowSet> >* result_rowsets) {
     MvccSnapshot merge_snap(mvcc_);
     gscoped_ptr<CompactionInput> compact_input(BuildCompactionInput(merge_snap, rowsets,
                                                                     projection));
-    DoFlush(compact_input.get(), projection, merge_snap, rowset_meta);
+    DoFlushAndReopen(compact_input.get(), projection, merge_snap, roll_threshold,
+                     result_rowsets);
   }
 
-  // Compacts a set of DRSs together and returns the first of the output rowsets.
-  void CompactAndReopen(const vector<shared_ptr<DiskRowSet> >& rowsets,
-                        const Schema& projection,
-                        shared_ptr<DiskRowSet> *rs) {
-    shared_ptr<RowSetMetadata> rowset_meta;
-    DoCompact(rowsets, projection, &rowset_meta);
-    ASSERT_STATUS_OK(DiskRowSet::Open(rowset_meta, log_anchor_registry_.get(), rs));
+  // Same as above, but sets a high roll threshold so it only produces a single output.
+  void CompactAndReopenNoRoll(const vector<shared_ptr<DiskRowSet> >& input_rowsets,
+                              const Schema& projection,
+                              shared_ptr<DiskRowSet>* result_rs) {
+    vector<shared_ptr<DiskRowSet> > result_rowsets;
+    CompactAndReopen(input_rowsets, projection, kLargeRollThreshold, &result_rowsets);
+    ASSERT_EQ(1, result_rowsets.size());
+    *result_rs = result_rowsets[0];
   }
 
-  void FlushAndReopen(const MemRowSet& mrs, shared_ptr<DiskRowSet> *rs, const Schema& projection) {
+  // Flush an MRS to disk.
+  // If 'result_rowsets' is not NULL, reopens the resulting rowset(s) and appends
+  // them to the vector.
+  void FlushMRSAndReopen(const MemRowSet& mrs, const Schema& projection,
+                         int64_t roll_threshold,
+                         vector<shared_ptr<DiskRowSet> >* result_rowsets) {
     MvccSnapshot snap(mvcc_);
-    shared_ptr<RowSetMetadata> rowset_meta;
+    vector<shared_ptr<RowSetMetadata> > rowset_metas;
     gscoped_ptr<CompactionInput> input(CompactionInput::Create(mrs, &projection, snap));
-    DoFlush(input.get(), projection, snap, &rowset_meta);
-    // Re-open it
-    ASSERT_STATUS_OK(DiskRowSet::Open(rowset_meta, log_anchor_registry_.get(), rs));
+    DoFlushAndReopen(input.get(), projection, snap, roll_threshold, result_rowsets);
+  }
+
+  // Same as above, but sets a high roll threshold so it only produces a single output.
+  void FlushMRSAndReopenNoRoll(const MemRowSet& mrs, const Schema& projection,
+                            shared_ptr<DiskRowSet>* result_rs) {
+    vector<shared_ptr<DiskRowSet> > rowsets;
+    FlushMRSAndReopen(mrs, projection, kLargeRollThreshold, &rowsets);
+    ASSERT_EQ(1, rowsets.size());
+    *result_rs = rowsets[0];
   }
 
   // Test compaction where each of the input rowsets has
@@ -240,7 +270,7 @@ class TestCompaction : public KuduRowSetTest {
 
       // Flush it to disk and re-open it.
       shared_ptr<DiskRowSet> rs;
-      FlushAndReopen(*mrs, &rs, schema);
+      FlushMRSAndReopenNoRoll(*mrs, schema, &rs);
       ASSERT_NO_FATAL_FAILURE();
       rowsets.push_back(rs);
 
@@ -250,14 +280,11 @@ class TestCompaction : public KuduRowSetTest {
     }
 
     // Merge them.
-    shared_ptr<RowSetMetadata> meta;
-    ASSERT_NO_FATAL_FAILURE(DoCompact(rowsets, projection, &meta));
+    shared_ptr<DiskRowSet> result_rs;
+    ASSERT_NO_FATAL_FAILURE(CompactAndReopenNoRoll(rowsets, projection, &result_rs));
 
     // Verify the resulting compaction output has the right number
     // of rows.
-    shared_ptr<DiskRowSet> result_rs;
-    ASSERT_STATUS_OK(DiskRowSet::Open(meta, log_anchor_registry_.get(), &result_rs));
-
     rowid_t count = 0;
     ASSERT_STATUS_OK(result_rs->CountRows(&count));
     ASSERT_EQ(1000 * schemas.size(), count);
@@ -290,7 +317,7 @@ class TestCompaction : public KuduRowSetTest {
           InsertRow(mrs.get(), row_key, n);
         }
         shared_ptr<DiskRowSet> rs;
-        FlushAndReopen(*mrs, &rs, schema_);
+        FlushMRSAndReopenNoRoll(*mrs, schema_, &rs);
         ASSERT_NO_FATAL_FAILURE();
         rowsets.push_back(rs);
       }
@@ -399,7 +426,7 @@ TEST_F(TestCompaction, TestRowSetInput) {
   {
     shared_ptr<MemRowSet> mrs(new MemRowSet(0, schema_, log_anchor_registry_.get()));
     InsertRows(mrs.get(), 10, 0);
-    FlushAndReopen(*mrs, &rs, schema_);
+    FlushMRSAndReopenNoRoll(*mrs, schema_, &rs);
     ASSERT_NO_FATAL_FAILURE();
   }
 
@@ -441,7 +468,7 @@ TEST_F(TestCompaction, TestDuplicatedGhostRowsDontSurviveCompaction) {
   {
     shared_ptr<MemRowSet> mrs(new MemRowSet(0, schema_, log_anchor_registry_.get()));
     InsertRows(mrs.get(), 10, 0);
-    FlushAndReopen(*mrs, &rs1, schema_);
+    FlushMRSAndReopenNoRoll(*mrs, schema_, &rs1);
     ASSERT_NO_FATAL_FAILURE();
   }
   // Now delete the rows, this will make the rs report them as deleted and
@@ -453,7 +480,7 @@ TEST_F(TestCompaction, TestDuplicatedGhostRowsDontSurviveCompaction) {
     shared_ptr<MemRowSet> mrs(new MemRowSet(1, schema_, log_anchor_registry_.get()));
     InsertRows(mrs.get(), 10, 0);
     UpdateRows(mrs.get(), 10, 0, 1);
-    FlushAndReopen(*mrs, &rs2, schema_);
+    FlushMRSAndReopenNoRoll(*mrs, schema_, &rs2);
     ASSERT_NO_FATAL_FAILURE();
   }
   DeleteRows(rs2.get(), 10, 0);
@@ -463,7 +490,7 @@ TEST_F(TestCompaction, TestDuplicatedGhostRowsDontSurviveCompaction) {
     shared_ptr<MemRowSet> mrs(new MemRowSet(1, schema_, log_anchor_registry_.get()));
     InsertRows(mrs.get(), 10, 0);
     UpdateRows(mrs.get(), 10, 0, 2);
-    FlushAndReopen(*mrs, &rs3, schema_);
+    FlushMRSAndReopenNoRoll(*mrs, schema_, &rs3);
     ASSERT_NO_FATAL_FAILURE();
   }
 
@@ -478,7 +505,7 @@ TEST_F(TestCompaction, TestDuplicatedGhostRowsDontSurviveCompaction) {
   std::random_shuffle(all_rss.begin(), all_rss.end());
 
   // Now compact all the drs and make sure we don't get duplicated keys on the output
-  CompactAndReopen(all_rss, schema_, &result);
+  CompactAndReopenNoRoll(all_rss, schema_, &result);
 
   gscoped_ptr<CompactionInput> input(
       CompactionInput::Create(*result,
@@ -507,7 +534,7 @@ TEST_F(TestCompaction, TestOneToOne) {
 
   // Flush it to disk and re-open.
   shared_ptr<DiskRowSet> rs;
-  FlushAndReopen(*mrs, &rs, schema_);
+  FlushMRSAndReopenNoRoll(*mrs, schema_, &rs);
   ASSERT_NO_FATAL_FAILURE();
 
   // Update the rows with some updates that weren't in the snapshot.
@@ -541,8 +568,7 @@ TEST_F(TestCompaction, TestOneToOne) {
   // And compact (1 input to 1 output)
   MvccSnapshot snap3(mvcc_);
   gscoped_ptr<CompactionInput> compact_input(CompactionInput::Create(*rs, &schema_, snap3));
-  shared_ptr<RowSetMetadata> rowset_compact_meta;
-  DoFlush(compact_input.get(), schema_, snap3, &rowset_compact_meta);
+  DoFlushAndReopen(compact_input.get(), schema_, snap3, kLargeRollThreshold, NULL);
 }
 
 // Test merging two row sets and the second one has updates, KUDU-102
@@ -553,14 +579,14 @@ TEST_F(TestCompaction, TestKUDU102) {
   shared_ptr<MemRowSet> mrs(new MemRowSet(0, schema_, log_anchor_registry_.get()));
   InsertRows(mrs.get(), 10, 0);
   shared_ptr<DiskRowSet> rs;
-  FlushAndReopen(*mrs, &rs, schema_);
+  FlushMRSAndReopenNoRoll(*mrs, schema_, &rs);
   ASSERT_NO_FATAL_FAILURE();
 
   shared_ptr<MemRowSet> mrs_b(new MemRowSet(1, schema_, log_anchor_registry_.get()));
   InsertRows(mrs_b.get(), 10, 100);
   MvccSnapshot snap(mvcc_);
   shared_ptr<DiskRowSet> rs_b;
-  FlushAndReopen(*mrs_b, &rs_b, schema_);
+  FlushMRSAndReopenNoRoll(*mrs_b, schema_, &rs_b);
   ASSERT_NO_FATAL_FAILURE();
 
   // Update all the rows in the second row set
