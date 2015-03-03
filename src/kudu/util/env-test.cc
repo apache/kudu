@@ -282,32 +282,6 @@ class TestEnv : public KuduTest {
     }
   }
 
-  void DoTestHolePunch(const WritableFileOptions& opts) {
-    LOG(INFO) << "Testing PunchHole() with mmap "
-              << (opts.mmap_file ? "enabled" : "disabled");
-
-    string test_path = GetTestPath("test_env_wf");
-    shared_ptr<WritableFile> file;
-    ASSERT_STATUS_OK(env_util::OpenFileForWrite(opts, env_.get(), test_path, &file));
-
-    // Write 1 MB. The size and size-on-disk both agree.
-    uint8_t scratch[kOneMb];
-    Slice slice(scratch, kOneMb);
-    ASSERT_STATUS_OK(file->Append(slice));
-    ASSERT_STATUS_OK(file->Sync());
-    ASSERT_EQ(kOneMb, file->Size());
-    uint64_t size_on_disk;
-    ASSERT_STATUS_OK(env_->GetFileSizeOnDisk(test_path, &size_on_disk));
-    ASSERT_EQ(kOneMb, size_on_disk);
-
-    // Punch some data out at byte marker 4096. Now the two sizes diverge.
-    uint64_t punch_amount = 4096 * 4;
-    ASSERT_STATUS_OK(file->PunchHole(4096, punch_amount));
-    ASSERT_EQ(kOneMb, file->Size());
-    ASSERT_STATUS_OK(env_->GetFileSizeOnDisk(test_path, &size_on_disk));
-    ASSERT_EQ(kOneMb - punch_amount, size_on_disk);
-  }
-
   void DoTestReopen(const WritableFileOptions& opts) {
     LOG(INFO) << "Testing reopening behavior with mmap "
               << (opts.mmap_file ? "enabled" : "disabled");
@@ -385,11 +359,29 @@ TEST_F(TestEnv, TestHolePunch) {
     LOG(INFO) << "hole punching not supported, skipping test";
     return;
   }
-  WritableFileOptions opts;
-  opts.mmap_file = true;
-  ASSERT_NO_FATAL_FAILURE(DoTestHolePunch(opts));
-  opts.mmap_file = false;
-  ASSERT_NO_FATAL_FAILURE(DoTestHolePunch(opts));
+  string test_path = GetTestPath("test_env_wf");
+  gscoped_ptr<RWFile> file;
+  ASSERT_STATUS_OK(env_->NewRWFile(test_path, &file));
+
+  // Write 1 MB. The size and size-on-disk both agree.
+  uint8_t scratch[kOneMb];
+  Slice slice(scratch, kOneMb);
+  ASSERT_STATUS_OK(file->Write(0, slice));
+  ASSERT_STATUS_OK(file->Sync());
+  uint64_t sz;
+  ASSERT_OK(file->Size(&sz));
+  ASSERT_EQ(kOneMb, sz);
+  uint64_t size_on_disk;
+  ASSERT_STATUS_OK(env_->GetFileSizeOnDisk(test_path, &size_on_disk));
+  ASSERT_EQ(kOneMb, size_on_disk);
+
+  // Punch some data out at byte marker 4096. Now the two sizes diverge.
+  uint64_t punch_amount = 4096 * 4;
+  ASSERT_STATUS_OK(file->PunchHole(4096, punch_amount));
+  ASSERT_OK(file->Size(&sz));
+  ASSERT_EQ(kOneMb, sz);
+  ASSERT_STATUS_OK(env_->GetFileSizeOnDisk(test_path, &size_on_disk));
+  ASSERT_EQ(kOneMb - punch_amount, size_on_disk);
 }
 
 class ShortReadRandomAccessFile : public RandomAccessFile {
@@ -417,7 +409,7 @@ class ShortReadRandomAccessFile : public RandomAccessFile {
     return wrapped_->Size(size);
   }
 
-  virtual string ToString() const OVERRIDE { return wrapped_->ToString(); }
+  virtual const string& filename() const OVERRIDE { return wrapped_->filename(); }
 
  private:
   const shared_ptr<RandomAccessFile> wrapped_;
@@ -554,7 +546,7 @@ static Status CreateDir(Env* env, const string& name, vector<string>* created) {
 static Status CreateFile(Env* env, const string& name, vector<string>* created) {
   gscoped_ptr<WritableFile> writer;
   RETURN_NOT_OK(env->NewWritableFile(name, &writer));
-  created->push_back(writer->ToString());
+  created->push_back(writer->filename());
   return Status::OK();
 }
 

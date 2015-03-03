@@ -393,7 +393,7 @@ Status ReadablePBContainerFile::Init() {
   gscoped_ptr<uint8_t[]> scratch;
   RETURN_NOT_OK_PREPEND(ValidateAndRead(kPBContainerHeaderLen, EOF_NOT_OK, &header, &scratch),
                         Substitute("Could not read header for proto container file $0",
-                                   reader_->ToString()));
+                                   reader_->filename()));
 
   // Validate magic number.
   if (PREDICT_FALSE(!strings::memeq(kPBContainerMagic, header.data(), kPBContainerMagicLen))) {
@@ -417,7 +417,7 @@ Status ReadablePBContainerFile::Init() {
   ContainerSupHeaderPB sup_header;
   RETURN_NOT_OK_PREPEND(ReadNextPB(&sup_header), Substitute(
       "Could not read supplemental header from proto container file $0",
-      reader_->ToString()));
+      reader_->filename()));
   protos_.reset(sup_header.release_protos());
   pb_type_ = sup_header.pb_type();
 
@@ -431,7 +431,7 @@ Status ReadablePBContainerFile::ReadNextPB(Message* msg) {
   gscoped_ptr<uint8_t[]> size_scratch;
   RETURN_NOT_OK_PREPEND(ValidateAndRead(sizeof(uint32_t), EOF_OK, &size, &size_scratch),
                         Substitute("Could not read data size from proto container file $0",
-                                   reader_->ToString()));
+                                   reader_->filename()));
   uint32_t data_size = DecodeFixed32(size.data());
 
   // Read body into buffer for checksum & parsing.
@@ -439,7 +439,7 @@ Status ReadablePBContainerFile::ReadNextPB(Message* msg) {
   gscoped_ptr<uint8_t[]> body_scratch;
   RETURN_NOT_OK_PREPEND(ValidateAndRead(data_size, EOF_NOT_OK, &body, &body_scratch),
                         Substitute("Could not read body from proto container file $0",
-                                   reader_->ToString()));
+                                   reader_->filename()));
 
   // Read checksum.
   uint32_t expected_checksum = 0;
@@ -449,7 +449,7 @@ Status ReadablePBContainerFile::ReadNextPB(Message* msg) {
     RETURN_NOT_OK_PREPEND(ValidateAndRead(kPBContainerChecksumLen, EOF_NOT_OK,
                                           &encoded_checksum, &encoded_checksum_scratch),
                           Substitute("Could not read checksum from proto container file $0",
-                                     reader_->ToString()));
+                                     reader_->filename()));
     expected_checksum = DecodeFixed32(encoded_checksum.data());
   }
 
@@ -461,7 +461,7 @@ Status ReadablePBContainerFile::ReadNextPB(Message* msg) {
   crc32c->Compute(body.data(), body.size(), &actual_checksum);
   if (PREDICT_FALSE(actual_checksum != expected_checksum)) {
     return Status::Corruption(Substitute("Incorrect checksum of file $0: actually $1, expected $2",
-                                         reader_->ToString(), actual_checksum, expected_checksum));
+                                         reader_->filename(), actual_checksum, expected_checksum));
   }
 
   // The checksum is correct. Time to decode the body.
@@ -471,7 +471,7 @@ Status ReadablePBContainerFile::ReadNextPB(Message* msg) {
   // 2. ParseFromArray() should fail if the data cannot be parsed into the
   //    provided message type.
   if (PREDICT_FALSE(!msg->ParseFromArray(body.data(), body.size()))) {
-    return Status::IOError("Unable to parse PB from path", reader_->ToString());
+    return Status::IOError("Unable to parse PB from path", reader_->filename());
   }
 
   return Status::OK();
@@ -542,7 +542,7 @@ Status ReadablePBContainerFile::ValidateAndRead(size_t length, EofOK eofOK,
                                   Substitute("Proto container file $0: "
                                       "tried to read $0 bytes at offset "
                                       "$1 but file size is only $2",
-                                      reader_->ToString(), length,
+                                      reader_->filename(), length,
                                       offset_, file_size));
       default:
         LOG(FATAL) << "Unknown value for eofOK: " << eofOK;
@@ -558,7 +558,7 @@ Status ReadablePBContainerFile::ValidateAndRead(size_t length, EofOK eofOK,
   if (PREDICT_FALSE(s.size() < length)) {
     return Status::Corruption("Unexpected short read", Substitute(
         "Proto container file $0: tried to read $1 bytes; got $2 bytes",
-        reader_->ToString(), length, s.size()));
+        reader_->filename(), length, s.size()));
   }
 
   *result = s;

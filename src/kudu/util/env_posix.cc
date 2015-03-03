@@ -165,7 +165,7 @@ class PosixSequentialFile: public SequentialFile {
     return Status::OK();
   }
 
-  virtual string ToString() const OVERRIDE { return filename_; }
+  virtual const string& filename() const OVERRIDE { return filename_; }
 };
 
 // pread() based random-access
@@ -200,7 +200,7 @@ class PosixRandomAccessFile: public RandomAccessFile {
     return Status::OK();
   }
 
-  virtual string ToString() const OVERRIDE { return filename_; }
+  virtual const string& filename() const OVERRIDE { return filename_; }
 };
 
 // mmap() based random-access
@@ -235,7 +235,7 @@ class PosixMmapReadableFile: public RandomAccessFile {
     return Status::OK();
   }
 
-  virtual string ToString() const OVERRIDE { return filename_; }
+  virtual const string& filename() const OVERRIDE { return filename_; }
 };
 
 // We preallocate up to an extra megabyte and use memcpy to append new
@@ -442,15 +442,11 @@ class PosixMmapFile : public WritableFile {
   }
 
   virtual Status Flush(FlushMode mode) OVERRIDE {
-    return FlushRange(mode, 0, 0);
-  }
-
-  virtual Status FlushRange(FlushMode mode, uint64_t offset, uint64_t length) OVERRIDE {
     int flags = SYNC_FILE_RANGE_WRITE;
     if (mode == FLUSH_SYNC) {
       flags |= SYNC_FILE_RANGE_WAIT_AFTER;
     }
-    if (sync_file_range(fd_, offset, length, flags) < 0) {
+    if (sync_file_range(fd_, 0, 0, flags) < 0) {
       return IOError(filename_, errno);
     }
     return Status::OK();
@@ -484,22 +480,11 @@ class PosixMmapFile : public WritableFile {
     return Status::OK();
   }
 
-  virtual Status SyncParentDir() OVERRIDE {
-    return Env::Default()->SyncDir(DirName(filename_));
-  }
-
   virtual uint64_t Size() const OVERRIDE {
     return filesize_ + (dst_ - start_);
   }
 
-  virtual string ToString() const OVERRIDE { return filename_; }
-
-  virtual Status PunchHole(uint64_t offset, uint64_t length) OVERRIDE {
-    if (fallocate(fd_, FALLOC_FL_PUNCH_HOLE | FALLOC_FL_KEEP_SIZE, offset, length) < 0) {
-      return IOError(filename_, errno);
-    }
-    return Status::OK();
-  }
+  virtual const string& filename() const OVERRIDE { return filename_; }
 };
 
 // Use non-memory mapped POSIX files to write data to a file.
@@ -594,15 +579,11 @@ class PosixWritableFile : public WritableFile {
   }
 
   virtual Status Flush(FlushMode mode) OVERRIDE {
-    return FlushRange(mode, 0, 0);
-  }
-
-  virtual Status FlushRange(FlushMode mode, uint64_t offset, uint64_t length) OVERRIDE {
     int flags = SYNC_FILE_RANGE_WRITE;
     if (mode == FLUSH_SYNC) {
       flags |= SYNC_FILE_RANGE_WAIT_AFTER;
     }
-    if (sync_file_range(fd_, offset, length, flags) < 0) {
+    if (sync_file_range(fd_, 0, 0, flags) < 0) {
       return IOError(filename_, errno);
     }
     return Status::OK();
@@ -618,22 +599,11 @@ class PosixWritableFile : public WritableFile {
     return Status::OK();
   }
 
-  virtual Status SyncParentDir() OVERRIDE {
-    return Env::Default()->SyncDir(DirName(filename_));
-  }
-
   virtual uint64_t Size() const OVERRIDE {
     return filesize_;
   }
 
-  virtual string ToString() const OVERRIDE { return filename_; }
-
-  virtual Status PunchHole(uint64_t offset, uint64_t length) OVERRIDE {
-    if (fallocate(fd_, FALLOC_FL_PUNCH_HOLE | FALLOC_FL_KEEP_SIZE, offset, length) < 0) {
-      return IOError(filename_, errno);
-    }
-    return Status::OK();
-  }
+  virtual const string& filename() const OVERRIDE { return filename_; }
 
  private:
 
@@ -774,7 +744,7 @@ class PosixRWFile : public RWFile {
   }
 
   virtual Status Sync() OVERRIDE {
-    LOG_SLOW_EXECUTION(WARNING, 1000, Substitute("sync call for $0", ToString())) {
+    LOG_SLOW_EXECUTION(WARNING, 1000, Substitute("sync call for $0", filename())) {
       if (pending_sync_) {
         pending_sync_ = false;
         RETURN_NOT_OK(DoSync(fd_, filename_));
@@ -812,7 +782,7 @@ class PosixRWFile : public RWFile {
     return Status::OK();
   }
 
-  virtual string ToString() const OVERRIDE {
+  virtual const string& filename() const OVERRIDE {
     return filename_;
   }
 

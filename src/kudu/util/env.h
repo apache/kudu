@@ -276,8 +276,8 @@ class SequentialFile {
   // REQUIRES: External synchronization
   virtual Status Skip(uint64_t n) = 0;
 
-  // Returns a string representation of the file suitable for debugging.
-  virtual std::string ToString() const = 0;
+  // Returns the filename provided when the SequentialFile was constructed.
+  virtual const std::string& filename() const = 0;
 };
 
 // A file abstraction for randomly reading the contents of a file.
@@ -301,8 +301,8 @@ class RandomAccessFile {
   // Returns the size of the file
   virtual Status Size(uint64_t *size) const = 0;
 
-  // Returns a string representation of the file suitable for debugging.
-  virtual std::string ToString() const = 0;
+  // Returns the filename provided when the RandomAccessFile was constructed.
+  virtual const std::string& filename() const = 0;
 };
 
 // Creation-time options for WritableFile
@@ -334,10 +334,6 @@ struct RandomAccessFileOptions {
 // A file abstraction for sequential writing.  The implementation
 // must provide buffering since callers may append small fragments
 // at a time to the file.
-//
-// Note that some methods (e.g. FlushRange) aren't truly sequential in
-// nature, but it's simpler to include them than to create a new
-// (mostly duplicated) non-sequential writable file abstraction.
 class WritableFile {
  public:
   enum FlushMode {
@@ -371,25 +367,13 @@ class WritableFile {
   // return a meaningful status.
   virtual Status Flush(FlushMode mode) = 0;
 
-  // Like Flush() but for a specific byte range in the file. If 'length' is
-  // 0, all bytes from 'offset' to the end of the file are flushed.
-  virtual Status FlushRange(FlushMode mode, uint64_t offset, uint64_t length) = 0;
-
   virtual Status Sync() = 0;
-
-  virtual Status SyncParentDir() = 0;
 
   virtual uint64_t Size() const = 0;
 
-  // Returns a string representation of the file suitable for debugging.
-  virtual std::string ToString() const = 0;
+  // Returns the filename provided when the WritableFile was constructed.
+  virtual const std::string& filename() const = 0;
 
-  // Deallocates space from the file, effectively "punching a hole" in it.
-  // The space will be reclaimed by the filesystem and reads to that range
-  // will return zeroes. Useful for making whole files sparse.
-  //
-  // Filesystems that don't implement this will return an error.
-  virtual Status PunchHole(uint64_t offset, uint64_t length) = 0;
  private:
   // No copying allowed
   WritableFile(const WritableFile&);
@@ -478,8 +462,8 @@ class RWFile {
   // Retrieves the file's size.
   virtual Status Size(uint64_t* size) const = 0;
 
-  // Returns a string representation of the file suitable for debugging.
-  virtual std::string ToString() const = 0;
+  // Returns the filename provided when the RWFile was constructed.
+  virtual const std::string& filename() const = 0;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(RWFile);

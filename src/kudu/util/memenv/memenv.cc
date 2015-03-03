@@ -36,7 +36,11 @@ class FileState {
  public:
   // FileStates are reference counted. The initial reference count is zero
   // and the caller must call Ref() at least once.
-  FileState() : refs_(0), size_(0) {}
+  explicit FileState(const string& filename)
+  : refs_(0),
+    size_(0),
+    filename_(filename) {
+  }
 
   // Increase the reference count.
   void Ref() {
@@ -146,6 +150,8 @@ class FileState {
     return Status::OK();
   }
 
+  const string& filename() const { return filename_; }
+
  private:
   // Private since only Unref() should be used to delete it.
   ~FileState() {
@@ -167,6 +173,8 @@ class FileState {
   // to writable files.
   vector<uint8_t*> blocks_;
   uint64_t size_;
+
+  string filename_;
 
   enum { kBlockSize = 8 * 1024 };
 };
@@ -201,8 +209,8 @@ class SequentialFileImpl : public SequentialFile {
     return Status::OK();
   }
 
-  virtual string ToString() const OVERRIDE {
-    return "in-memory sequential file";
+  virtual const string& filename() const OVERRIDE {
+    return file_->filename();
   }
 
  private:
@@ -230,8 +238,8 @@ class RandomAccessFileImpl : public RandomAccessFile {
     return Status::OK();
   }
 
-  virtual string ToString() const OVERRIDE {
-    return "in-memory random access file";
+  virtual const string& filename() const OVERRIDE {
+    return file_->filename();
   }
 
  private:
@@ -269,21 +277,13 @@ class WritableFileImpl : public WritableFile {
 
   virtual Status Flush(FlushMode mode) OVERRIDE { return Status::OK(); }
 
-  virtual Status FlushRange(FlushMode mode, uint64_t offset, uint64_t length) OVERRIDE {
-    return Status::OK();
-  }
-
   virtual Status Sync() OVERRIDE { return Status::OK(); }
-
-  virtual Status SyncParentDir() OVERRIDE { return Status::OK(); }
 
   virtual uint64_t Size() const OVERRIDE { return file_->Size(); }
 
-  virtual string ToString() const OVERRIDE {
-    return "in-memory writable file";
+  virtual const string& filename() const OVERRIDE {
+    return file_->filename();
   }
-
-  virtual Status PunchHole(uint64_t offset, uint64_t length) OVERRIDE { return Status::OK(); }
 
  private:
   FileState* file_;
@@ -345,8 +345,8 @@ class RWFileImpl : public RWFile {
     return Status::OK();
   }
 
-  virtual string ToString() const OVERRIDE {
-    return "in-memory read-write file";
+  virtual const string& filename() const OVERRIDE {
+    return file_->filename();
   }
 
  private:
@@ -579,7 +579,7 @@ class InMemoryEnv : public EnvWrapper {
   // Create new internal representation of a writable file.
   void CreateAndRegisterNewWritableFileUnlocked(const string& path,
                                                 gscoped_ptr<WritableFile>* result) {
-    FileState* file = new FileState();
+    FileState* file = new FileState(path);
     file->Ref();
     file_map_[path] = file;
     result->reset(new WritableFileImpl(file));
@@ -609,7 +609,7 @@ class InMemoryEnv : public EnvWrapper {
       return Status::IOError(fname, "File not found");
     }
 
-    FileState* file = new FileState();
+    FileState* file = new FileState(fname);
     file->Ref();
     file_map_[fname] = file;
     result->reset(new T(file));
