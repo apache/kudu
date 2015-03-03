@@ -20,6 +20,9 @@ RandomAccessFile::~RandomAccessFile() {
 WritableFile::~WritableFile() {
 }
 
+RWFile::~RWFile() {
+}
+
 FileLock::~FileLock() {
 }
 

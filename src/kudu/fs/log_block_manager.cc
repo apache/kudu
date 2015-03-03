@@ -266,7 +266,7 @@ Status LogBlockContainer::Create(LogBlockManager* block_manager,
   gscoped_ptr<WritableFile> metadata_writer;
   gscoped_ptr<WritableFile> data_writer;
   WritableFileOptions wr_opts;
-  wr_opts.mode = WritableFileOptions::CREATE_NON_EXISTING;
+  wr_opts.mode = Env::CREATE_NON_EXISTING;
 
   // When running on XFS and using PosixMmapFile for data files, the reader
   // threads in block_manager-stress-test sometimes read garbage out of the
@@ -331,7 +331,7 @@ Status LogBlockContainer::Open(LogBlockManager* block_manager,
   string metadata_path = StrCat(common_path, kMetadataFileSuffix);
   gscoped_ptr<WritableFile> metadata_writer;
   WritableFileOptions wr_opts;
-  wr_opts.mode = WritableFileOptions::OPEN_EXISTING;
+  wr_opts.mode = Env::OPEN_EXISTING;
   wr_opts.mmap_file = false;
   RETURN_NOT_OK(block_manager->env()->NewWritableFile(wr_opts,
                                                       metadata_path,

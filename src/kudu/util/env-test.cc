@@ -326,7 +326,7 @@ class TestEnv : public KuduTest {
 
     // Reopen it and append to it.
     WritableFileOptions reopen_opts = opts;
-    reopen_opts.mode = WritableFileOptions::OPEN_EXISTING;
+    reopen_opts.mode = Env::OPEN_EXISTING;
     ASSERT_OK(env_util::OpenFileForWrite(reopen_opts,
                                          env_.get(), test_path, &writer));
     ASSERT_EQ(first.length(), writer->Size());
@@ -509,7 +509,7 @@ TEST_F(TestEnv, TestOverwrite) {
 
   // File exists, try to overwrite (and fail).
   WritableFileOptions opts;
-  opts.mode = WritableFileOptions::CREATE_NON_EXISTING;
+  opts.mode = Env::CREATE_NON_EXISTING;
   Status s = env_util::OpenFileForWrite(opts,
                                         env_.get(), test_path, &writer);
   ASSERT_TRUE(s.IsAlreadyPresent());
@@ -638,6 +638,49 @@ TEST_F(TestEnv, TestGetBlockSize) {
   ASSERT_OK(env_->NewWritableFile(path, &writer));
   ASSERT_OK(env_->GetBlockSize(path, &block_size));
   ASSERT_GT(block_size, 0);
+}
+
+TEST_F(TestEnv, TestRWFile) {
+  // Create the file.
+  gscoped_ptr<RWFile> file;
+  ASSERT_OK(env_->NewRWFile(GetTestPath("foo"), &file));
+
+  // Append to it.
+  string kTestData = "abcde";
+  ASSERT_OK(file->Write(0, kTestData));
+
+  // Read from it.
+  Slice result;
+  gscoped_ptr<uint8_t[]> scratch(new uint8_t[kTestData.length()]);
+  ASSERT_OK(file->Read(0, kTestData.length(), &result, scratch.get()));
+  ASSERT_EQ(result, kTestData);
+  uint64_t sz;
+  ASSERT_OK(file->Size(&sz));
+  ASSERT_EQ(kTestData.length(), sz);
+
+  // Write past the end of the file and rewrite some of the interior.
+  ASSERT_OK(file->Write(kTestData.length() * 2, kTestData));
+  ASSERT_OK(file->Write(kTestData.length(), kTestData));
+  ASSERT_OK(file->Write(1, kTestData));
+  string kNewTestData = "aabcdebcdeabcde";
+  gscoped_ptr<uint8_t[]> scratch2(new uint8_t[kNewTestData.length()]);
+  ASSERT_OK(file->Read(0, kNewTestData.length(), &result, scratch2.get()));
+
+  // Retest.
+  ASSERT_EQ(result, kNewTestData);
+  ASSERT_OK(file->Size(&sz));
+  ASSERT_EQ(kNewTestData.length(), sz);
+
+  // Make sure we can't overwrite it.
+  RWFileOptions opts;
+  opts.mode = Env::CREATE_NON_EXISTING;
+  ASSERT_TRUE(env_->NewRWFile(opts, GetTestPath("foo"), &file).IsAlreadyPresent());
+
+  // Reopen it without truncating the existing data.
+  opts.mode = Env::OPEN_EXISTING;
+  ASSERT_OK(env_->NewRWFile(opts, GetTestPath("foo"), &file));
+  ASSERT_OK(file->Read(0, kNewTestData.length(), &result, scratch2.get()));
+  ASSERT_EQ(result, kNewTestData);
 }
 
 }  // namespace kudu

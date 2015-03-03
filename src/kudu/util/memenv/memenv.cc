@@ -289,6 +289,70 @@ class WritableFileImpl : public WritableFile {
   FileState* file_;
 };
 
+class RWFileImpl : public RWFile {
+ public:
+  explicit RWFileImpl(FileState* file) : file_(file) {
+    file_->Ref();
+  }
+
+  ~RWFileImpl() {
+    file_->Unref();
+  }
+
+  virtual Status Read(uint64_t offset, size_t length,
+                      Slice* result, uint8_t* scratch) const OVERRIDE {
+    return file_->Read(offset, length, result, scratch);
+  }
+
+  virtual Status Write(uint64_t offset, const Slice& data) OVERRIDE {
+    uint64_t file_size = file_->Size();
+    // TODO: Modify FileState to allow rewriting.
+    if (offset < file_size) {
+      return Status::NotSupported(
+          "In-memory RW file does not support random writing");
+    } else if (offset > file_size) {
+      // Fill in the space between with zeroes.
+      uint8_t zeroes[offset - file_size];
+      memset(zeroes, 0, sizeof(zeroes));
+      Slice s(zeroes, sizeof(zeroes));
+      RETURN_NOT_OK(file_->Append(s));
+    }
+    return file_->Append(data);
+  }
+
+  virtual Status PreAllocate(uint64_t offset, size_t length) OVERRIDE {
+    return Status::OK();
+  }
+
+  virtual Status PunchHole(uint64_t offset, size_t length) OVERRIDE {
+    return Status::OK();
+  }
+
+  virtual Status Flush(FlushMode mode, uint64_t offset, size_t length) OVERRIDE {
+    return Status::OK();
+  }
+
+  virtual Status Sync() OVERRIDE {
+    return Status::OK();
+  }
+
+  virtual Status Close() OVERRIDE {
+    return Status::OK();
+  }
+
+  virtual Status Size(uint64_t* size) const OVERRIDE {
+    *size = file_->Size();
+    return Status::OK();
+  }
+
+  virtual string ToString() const OVERRIDE {
+    return "in-memory read-write file";
+  }
+
+ private:
+  FileState* file_;
+};
+
 class InMemoryEnv : public EnvWrapper {
  public:
   explicit InMemoryEnv(Env* base_env) : EnvWrapper(base_env) { }
@@ -331,33 +395,29 @@ class InMemoryEnv : public EnvWrapper {
   virtual Status NewWritableFile(const WritableFileOptions& opts,
                                  const std::string& fname,
                                  gscoped_ptr<WritableFile>* result) OVERRIDE {
-    MutexLock lock(mutex_);
-    if (ContainsKey(file_map_, fname)) {
-      switch (opts.mode) {
-        case WritableFileOptions::CREATE_IF_NON_EXISTING_TRUNCATE:
-          DeleteFileInternal(fname);
-          break; // creates a new file below
-        case WritableFileOptions::CREATE_NON_EXISTING:
-          return Status::AlreadyPresent(fname, "File already exists");
-        case WritableFileOptions::OPEN_EXISTING:
-          result->reset(new WritableFileImpl(file_map_[fname]));
-          return Status::OK();
-        default:
-          return Status::NotSupported(Substitute("Unknown create mode $0",
-                                                 opts.mode));
-      }
-    } else if (opts.mode == WritableFileOptions::OPEN_EXISTING) {
-      return Status::IOError(fname, "File not found");
-    }
-
-    CreateAndRegisterNewWritableFileUnlocked(fname, result);
-
+    gscoped_ptr<WritableFileImpl> wf;
+    RETURN_NOT_OK(CreateAndRegisterNewFile(fname, opts.mode, &wf));
+    result->reset(wf.release());
     return Status::OK();
   }
 
   virtual Status NewWritableFile(const std::string& fname,
                                  gscoped_ptr<WritableFile>* result) OVERRIDE {
     return NewWritableFile(WritableFileOptions(), fname, result);
+  }
+
+  virtual Status NewRWFile(const RWFileOptions& opts,
+                           const string& fname,
+                           gscoped_ptr<RWFile>* result) OVERRIDE {
+    gscoped_ptr<RWFileImpl> rwf;
+    RETURN_NOT_OK(CreateAndRegisterNewFile(fname, opts.mode, &rwf));
+    result->reset(rwf.release());
+    return Status::OK();
+  }
+
+  virtual Status NewRWFile(const string& fname,
+                           gscoped_ptr<RWFile>* result) OVERRIDE {
+    return NewRWFile(RWFileOptions(), fname, result);
   }
 
   virtual Status NewTempWritableFile(const WritableFileOptions& opts,
@@ -516,13 +576,44 @@ class InMemoryEnv : public EnvWrapper {
     file_map_.erase(fname);
   }
 
-  // Create new internal representation of a file
+  // Create new internal representation of a writable file.
   void CreateAndRegisterNewWritableFileUnlocked(const string& path,
                                                 gscoped_ptr<WritableFile>* result) {
-      FileState* file = new FileState();
-      file->Ref();
-      file_map_[path] = file;
-      result->reset(new WritableFileImpl(file));
+    FileState* file = new FileState();
+    file->Ref();
+    file_map_[path] = file;
+    result->reset(new WritableFileImpl(file));
+  }
+
+  // Create new internal representation of a file.
+  template <typename T>
+  Status CreateAndRegisterNewFile(const string& fname,
+                                  CreateMode mode,
+                                  gscoped_ptr<T>* result) {
+    MutexLock lock(mutex_);
+    if (ContainsKey(file_map_, fname)) {
+      switch (mode) {
+        case CREATE_IF_NON_EXISTING_TRUNCATE:
+          DeleteFileInternal(fname);
+          break; // creates a new file below
+        case CREATE_NON_EXISTING:
+          return Status::AlreadyPresent(fname, "File already exists");
+        case OPEN_EXISTING:
+          result->reset(new T(file_map_[fname]));
+          return Status::OK();
+        default:
+          return Status::NotSupported(Substitute("Unknown create mode $0",
+                                                 mode));
+      }
+    } else if (mode == OPEN_EXISTING) {
+      return Status::IOError(fname, "File not found");
+    }
+
+    FileState* file = new FileState();
+    file->Ref();
+    file_map_[fname] = file;
+    result->reset(new T(file));
+    return Status::OK();
   }
 
   // Map from filenames to FileState objects, representing a simple file system.

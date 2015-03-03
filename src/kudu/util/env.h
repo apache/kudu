@@ -27,15 +27,30 @@ namespace kudu {
 
 class FileLock;
 class RandomAccessFile;
+class RWFile;
 class SequentialFile;
 class Slice;
 class WritableFile;
 
 struct RandomAccessFileOptions;
+struct RWFileOptions;
 struct WritableFileOptions;
 
 class Env {
  public:
+  // Governs if/how the file is created.
+  //
+  // enum value                      | file exists       | file does not exist
+  // --------------------------------+-------------------+--------------------
+  // CREATE_IF_NON_EXISTING_TRUNCATE | opens + truncates | creates
+  // CREATE_NON_EXISTING             | fails             | creates
+  // OPEN_EXISTING                   | opens             | fails
+  enum CreateMode {
+    CREATE_IF_NON_EXISTING_TRUNCATE,
+    CREATE_NON_EXISTING,
+    OPEN_EXISTING
+  };
+
   Env() { }
   virtual ~Env();
 
@@ -99,6 +114,19 @@ class Env {
                                      const std::string& name_template,
                                      std::string* created_filename,
                                      gscoped_ptr<WritableFile>* result) = 0;
+
+  // Creates a new readable and writable file. If a file with the same name
+  // already exists on disk, it is deleted.
+  //
+  // Some of the methods of the new file may be accessed concurrently,
+  // while others are only safe for access by one thread at a time.
+  virtual Status NewRWFile(const std::string& fname,
+                           gscoped_ptr<RWFile>* result) = 0;
+
+  // Like the previous NewRWFile, but allows options to be specified.
+  virtual Status NewRWFile(const RWFileOptions& opts,
+                           const std::string& fname,
+                           gscoped_ptr<RWFile>* result) = 0;
 
   // Returns true iff the named file exists.
   virtual bool FileExists(const std::string& fname) = 0;
@@ -279,20 +307,6 @@ class RandomAccessFile {
 
 // Creation-time options for WritableFile
 struct WritableFileOptions {
-
-  // Governs if/how the file is created.
-  //
-  // enum value                      | file exists       | file does not exist
-  // --------------------------------+-------------------+--------------------
-  // CREATE_IF_NON_EXISTING_TRUNCATE | opens + truncates | creates
-  // CREATE_NON_EXISTING             | fails             | creates
-  // OPEN_EXISTING                   | opens             | fails
-  enum CreateMode {
-    CREATE_IF_NON_EXISTING_TRUNCATE,
-    CREATE_NON_EXISTING,
-    OPEN_EXISTING
-  };
-
   // Use memory-mapped I/O if supported.
   bool mmap_file;
 
@@ -300,12 +314,12 @@ struct WritableFileOptions {
   bool sync_on_close;
 
   // See CreateMode for details.
-  CreateMode mode;
+  Env::CreateMode mode;
 
   WritableFileOptions()
     : mmap_file(true),
       sync_on_close(false),
-      mode(CREATE_IF_NON_EXISTING_TRUNCATE) { }
+      mode(Env::CREATE_IF_NON_EXISTING_TRUNCATE) { }
 };
 
 // Options specified when a file is opened for random access.
@@ -382,6 +396,94 @@ class WritableFile {
   void operator=(const WritableFile&);
 };
 
+// Creation-time options for RWFile
+struct RWFileOptions {
+  // Call Sync() during Close().
+  bool sync_on_close;
+
+  // See CreateMode for details.
+  Env::CreateMode mode;
+
+  RWFileOptions()
+    : sync_on_close(false),
+      mode(Env::CREATE_IF_NON_EXISTING_TRUNCATE) { }
+};
+
+// A file abstraction for both reading and writing. No notion of a built-in
+// file offset is ever used; instead, all operations must provide an
+// explicit offset.
+//
+// All "read" operations are safe for concurrent use by multiple threads,
+// but "write" operations must be externally synchronized.
+class RWFile {
+ public:
+  enum FlushMode {
+    FLUSH_SYNC,
+    FLUSH_ASYNC
+  };
+
+  RWFile() {
+  }
+
+  virtual ~RWFile();
+
+  // Read exactly 'length' bytes from the file starting at 'offset'.
+  // 'scratch[0..length-1]' may be written by this routine. Sets '*result'
+  // to the data that was read. May set '*result' to point at data in
+  // 'scratch[0..length-1]', which must be live when '*result' is used.
+  // If an error was encountered, returns a non-OK status.
+  //
+  // In the event of a "short read" (fewer bytes read than were requested),
+  // an IOError is returned.
+  //
+  // Safe for concurrent use by multiple threads.
+  virtual Status Read(uint64_t offset, size_t length,
+                      Slice* result, uint8_t* scratch) const = 0;
+
+  // Writes 'data' to the file position given by 'offset'.
+  virtual Status Write(uint64_t offset, const Slice& data) = 0;
+
+  // Preallocates 'length' bytes for the file in the underlying filesystem
+  // beginning at 'offset'. It is safe to preallocate the same range
+  // repeatedly; this is an idempotent operation.
+  //
+  // In no case is the file truncated by this operation.
+  virtual Status PreAllocate(uint64_t offset, size_t length) = 0;
+
+  // Deallocates space given by 'offset' and length' from the file,
+  // effectively "punching a hole" in it. The space will be reclaimed by
+  // the filesystem and reads to that range will return zeroes. Useful
+  // for making whole files sparse.
+  //
+  // Filesystems that don't implement this will return an error.
+  virtual Status PunchHole(uint64_t offset, size_t length) = 0;
+
+  // Flushes the range of dirty data (not metadata) given by 'offset' and
+  // 'length' to disk. If length is 0, all bytes from 'offset' to the end
+  // of the file are flushed.
+  //
+  // If the flush mode is synchronous, will wait for flush to finish and
+  // return a meaningful status.
+  virtual Status Flush(FlushMode mode, uint64_t offset, size_t length) = 0;
+
+  // Synchronously flushes all dirty file data and metadata to disk. Upon
+  // returning successfully, all previously issued file changes have been
+  // made durable.
+  virtual Status Sync() = 0;
+
+  // Closes the file, optionally calling Sync() on it if the file was
+  // created with the sync_on_close option enabled.
+  virtual Status Close() = 0;
+
+  // Retrieves the file's size.
+  virtual Status Size(uint64_t* size) const = 0;
+
+  // Returns a string representation of the file suitable for debugging.
+  virtual std::string ToString() const = 0;
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(RWFile);
+};
 
 // Identifies a locked file.
 class FileLock {
@@ -438,6 +540,14 @@ class EnvWrapper : public Env {
   Status NewTempWritableFile(const WritableFileOptions& o, const std::string& t,
                              std::string* f, gscoped_ptr<WritableFile>* r) OVERRIDE {
     return target_->NewTempWritableFile(o, t, f, r);
+  }
+  Status NewRWFile(const std::string& f, gscoped_ptr<RWFile>* r) OVERRIDE {
+    return target_->NewRWFile(f, r);
+  }
+  Status NewRWFile(const RWFileOptions& o,
+                   const std::string& f,
+                   gscoped_ptr<RWFile>* r) OVERRIDE {
+    return target_->NewRWFile(o, f, r);
   }
   bool FileExists(const std::string& f) OVERRIDE { return target_->FileExists(f); }
   Status GetChildren(const std::string& dir, std::vector<std::string>* r) OVERRIDE {

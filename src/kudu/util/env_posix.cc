@@ -111,6 +111,28 @@ static Status DoSync(int fd, const string& filename) {
   return Status::OK();
 }
 
+static Status DoOpen(const string& filename, Env::CreateMode mode, int* fd) {
+  int flags = O_RDWR;
+  switch (mode) {
+    case Env::CREATE_IF_NON_EXISTING_TRUNCATE:
+      flags |= O_CREAT | O_TRUNC;
+      break;
+    case Env::CREATE_NON_EXISTING:
+      flags |= O_CREAT | O_EXCL;
+      break;
+    case Env::OPEN_EXISTING:
+      break;
+    default:
+      return Status::NotSupported(Substitute("Unknown create mode $0", mode));
+  }
+  const int f = open(filename.c_str(), flags, 0644);
+  if (f < 0) {
+    return IOError(filename, errno);
+  }
+  *fd = f;
+  return Status::OK();
+}
+
 class PosixSequentialFile: public SequentialFile {
  private:
   std::string filename_;
@@ -129,7 +151,7 @@ class PosixSequentialFile: public SequentialFile {
       if (feof(file_)) {
         // We leave status as ok if we hit the end of the file
       } else {
-        // A partial read with an error: return a non-ok status
+        // A partial read with an error: return a non-ok status.
         s = IOError(filename_, errno);
       }
     }
@@ -163,7 +185,7 @@ class PosixRandomAccessFile: public RandomAccessFile {
     ssize_t r = pread(fd_, scratch, n, static_cast<off_t>(offset));
     *result = Slice(scratch, (r < 0) ? 0 : r);
     if (r < 0) {
-      // An error: return a non-ok status
+      // An error: return a non-ok status.
       s = IOError(filename_, errno);
     }
     return s;
@@ -658,6 +680,149 @@ class PosixWritableFile : public WritableFile {
   bool pending_sync_;
 };
 
+class PosixRWFile : public RWFile {
+// is not employed.
+ public:
+  PosixRWFile(const string& fname,
+              int fd,
+              bool sync_on_close)
+  : filename_(fname),
+    fd_(fd),
+    sync_on_close_(sync_on_close),
+    pending_sync_(false) {
+  }
+
+  ~PosixRWFile() {
+    if (fd_ >= 0) {
+      WARN_NOT_OK(Close(), "Failed to close " + filename_);
+    }
+  }
+
+  virtual Status Read(uint64_t offset, size_t length,
+                      Slice* result, uint8_t* scratch) const OVERRIDE {
+    int rem = length;
+    uint8_t* dst = scratch;
+    while (rem > 0) {
+      ssize_t r = pread(fd_, dst, rem, offset);
+      if (r < 0) {
+        // An error: return a non-ok status.
+        return IOError(filename_, errno);
+      }
+      Slice this_result(dst, r);
+      DCHECK_LE(this_result.size(), rem);
+      if (this_result.size() == 0) {
+        // EOF
+        return Status::IOError(Substitute("EOF trying to read $0 bytes at offset $1",
+                                          length, offset));
+      }
+      dst += this_result.size();
+      rem -= this_result.size();
+      offset += this_result.size();
+    }
+    DCHECK_EQ(0, rem);
+    *result = Slice(scratch, length);
+    return Status::OK();
+  }
+
+  virtual Status Write(uint64_t offset, const Slice& data) OVERRIDE {
+    ssize_t written = pwrite(fd_, data.data(), data.size(), offset);
+
+    if (PREDICT_FALSE(written == -1)) {
+      int err = errno;
+      return IOError("pwrite error", err);
+    }
+
+    if (PREDICT_FALSE(written != data.size())) {
+      return Status::IOError(
+          Substitute("pwrite error: expected to write $0 bytes, wrote $1 bytes instead",
+                     data.size(), written));
+    }
+
+    pending_sync_ = true;
+    return Status::OK();
+  }
+
+  virtual Status PreAllocate(uint64_t offset, size_t length) OVERRIDE {
+    if (fallocate(fd_, 0, offset, length) < 0) {
+      if (errno == EOPNOTSUPP) {
+        KLOG_FIRST_N(WARNING, 1) << "The filesystem does not support fallocate().";
+      } else if (errno == ENOSYS) {
+        KLOG_FIRST_N(WARNING, 1) << "The kernel does not implement fallocate().";
+      } else {
+        return IOError(filename_, errno);
+      }
+    }
+    return Status::OK();
+  }
+
+  virtual Status PunchHole(uint64_t offset, size_t length) OVERRIDE {
+    if (fallocate(fd_, FALLOC_FL_PUNCH_HOLE | FALLOC_FL_KEEP_SIZE, offset, length) < 0) {
+      return IOError(filename_, errno);
+    }
+    return Status::OK();
+  }
+
+  virtual Status Flush(FlushMode mode, uint64_t offset, size_t length) OVERRIDE {
+    int flags = SYNC_FILE_RANGE_WRITE;
+    if (mode == FLUSH_SYNC) {
+      flags |= SYNC_FILE_RANGE_WAIT_AFTER;
+    }
+    if (sync_file_range(fd_, offset, length, flags) < 0) {
+      return IOError(filename_, errno);
+    }
+    return Status::OK();
+  }
+
+  virtual Status Sync() OVERRIDE {
+    LOG_SLOW_EXECUTION(WARNING, 1000, Substitute("sync call for $0", ToString())) {
+      if (pending_sync_) {
+        pending_sync_ = false;
+        RETURN_NOT_OK(DoSync(fd_, filename_));
+      }
+    }
+    return Status::OK();
+  }
+
+  virtual Status Close() OVERRIDE {
+    Status s;
+
+    if (sync_on_close_) {
+      s = Sync();
+      if (!s.ok()) {
+        LOG(ERROR) << "Unable to Sync " << filename_ << ": " << s.ToString();
+      }
+    }
+
+    if (close(fd_) < 0) {
+      if (s.ok()) {
+        s = IOError(filename_, errno);
+      }
+    }
+
+    fd_ = -1;
+    return s;
+  }
+
+  virtual Status Size(uint64_t* size) const OVERRIDE {
+    struct stat st;
+    if (fstat(fd_, &st) == -1) {
+      return IOError(filename_, errno);
+    }
+    *size = st.st_size;
+    return Status::OK();
+  }
+
+  virtual string ToString() const OVERRIDE {
+    return filename_;
+  }
+
+ private:
+  const std::string filename_;
+  int fd_;
+  bool sync_on_close_;
+  bool pending_sync_;
+};
+
 static int LockOrUnlock(int fd, bool lock) {
   errno = 0;
   struct flock f;
@@ -737,23 +902,8 @@ class PosixEnv : public Env {
   virtual Status NewWritableFile(const WritableFileOptions& opts,
                                  const std::string& fname,
                                  gscoped_ptr<WritableFile>* result) OVERRIDE {
-    int flags = O_RDWR;
-    switch (opts.mode) {
-      case WritableFileOptions::CREATE_IF_NON_EXISTING_TRUNCATE:
-        flags |= O_CREAT | O_TRUNC;
-        break;
-      case WritableFileOptions::CREATE_NON_EXISTING:
-        flags |= O_CREAT | O_EXCL;
-        break;
-      case WritableFileOptions::OPEN_EXISTING:
-        break;
-      default:
-        return Status::NotSupported(Substitute("Unknown create mode $0", opts.mode));
-    }
-    const int fd = open(fname.c_str(), flags, 0644);
-    if (fd < 0) {
-      return IOError(fname, errno);
-    }
+    int fd;
+    RETURN_NOT_OK(DoOpen(fname, opts.mode, &fd));
     return InstantiateNewWritableFile(fname, fd, opts, result);
   }
 
@@ -770,6 +920,20 @@ class PosixEnv : public Env {
     }
     *created_filename = fname.get();
     return InstantiateNewWritableFile(*created_filename, fd, opts, result);
+  }
+
+  virtual Status NewRWFile(const string& fname,
+                           gscoped_ptr<RWFile>* result) OVERRIDE {
+    return NewRWFile(RWFileOptions(), fname, result);
+  }
+
+  virtual Status NewRWFile(const RWFileOptions& opts,
+                           const string& fname,
+                           gscoped_ptr<RWFile>* result) OVERRIDE {
+    int fd;
+    RETURN_NOT_OK(DoOpen(fname, opts.mode, &fd));
+    result->reset(new PosixRWFile(fname, fd, opts.sync_on_close));
+    return Status::OK();
   }
 
   virtual bool FileExists(const std::string& fname) OVERRIDE {
@@ -1051,7 +1215,7 @@ class PosixEnv : public Env {
                                     const WritableFileOptions& opts,
                                     gscoped_ptr<WritableFile>* result) {
     uint64_t file_size = 0;
-    if (opts.mode == WritableFileOptions::OPEN_EXISTING) {
+    if (opts.mode == OPEN_EXISTING) {
       RETURN_NOT_OK(GetFileSize(fname, &file_size));
     }
     if (opts.mmap_file) {
@@ -1061,7 +1225,6 @@ class PosixEnv : public Env {
     }
     return Status::OK();
   }
-
 
   Status DeleteRecursivelyCb(FileType type, const string& dirname, const string& basename) {
     string full_path = JoinPathSegments(dirname, basename);

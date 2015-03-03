@@ -579,7 +579,7 @@ Status FileBlockManager::CreateBlock(const CreateBlockOptions& opts,
     path = location.GetFullPath();
     RETURN_NOT_OK_PREPEND(location.CreateBlockDir(env_, &created_dirs), path);
     WritableFileOptions wr_opts;
-    wr_opts.mode = WritableFileOptions::CREATE_NON_EXISTING;
+    wr_opts.mode = Env::CREATE_NON_EXISTING;
     s = env_util::OpenFileForWrite(wr_opts, env_, path, &writer);
   } while (PREDICT_FALSE(s.IsAlreadyPresent()));
   if (s.ok()) {

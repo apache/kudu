@@ -210,7 +210,7 @@ TEST_F(MemEnvTest, Overwrite) {
 
   // File exists, try to overwrite (and fail).
   WritableFileOptions opts;
-  opts.mode = WritableFileOptions::CREATE_NON_EXISTING;
+  opts.mode = Env::CREATE_NON_EXISTING;
   Status s = env_util::OpenFileForWrite(opts,
                                         env_, "some file", &writer);
   ASSERT_TRUE(s.IsAlreadyPresent());
@@ -229,7 +229,7 @@ TEST_F(MemEnvTest, Reopen) {
 
   // Reopen it and append to it.
   WritableFileOptions reopen_opts;
-  reopen_opts.mode = WritableFileOptions::OPEN_EXISTING;
+  reopen_opts.mode = Env::OPEN_EXISTING;
   ASSERT_OK(env_util::OpenFileForWrite(reopen_opts,
                                        env_, "some file", &writer));
   ASSERT_EQ(first.length(), writer->Size());
@@ -278,6 +278,36 @@ TEST_F(MemEnvTest, TempFile) {
   BOOST_FOREACH(const string& p, paths) {
     ASSERT_OK(env_->DeleteFile(p));
   }
+}
+
+TEST_F(MemEnvTest, TestRWFile) {
+  // Create the file.
+  gscoped_ptr<RWFile> file;
+  ASSERT_OK(env_->NewRWFile("foo", &file));
+
+  // Append to it.
+  string kTestData = "abcdefghijklmno";
+  ASSERT_OK(file->Write(0, kTestData));
+
+  // Read from it.
+  Slice result;
+  gscoped_ptr<uint8_t[]> scratch(new uint8_t[kTestData.length()]);
+  ASSERT_OK(file->Read(0, kTestData.length(), &result, scratch.get()));
+  ASSERT_EQ(result, kTestData);
+
+  // Try to rewrite; it shouldn't work.
+  ASSERT_TRUE(file->Write(0, kTestData).IsNotSupported());
+
+  // Make sure we can't overwrite it.
+  RWFileOptions opts;
+  opts.mode = Env::CREATE_NON_EXISTING;
+  ASSERT_TRUE(env_->NewRWFile(opts, "foo", &file).IsAlreadyPresent());
+
+  // Reopen it without truncating the existing data.
+  opts.mode = Env::OPEN_EXISTING;
+  ASSERT_OK(env_->NewRWFile(opts, "foo", &file));
+  ASSERT_OK(file->Read(0, kTestData.length(), &result, scratch.get()));
+  ASSERT_EQ(result, kTestData);
 }
 
 }  // namespace kudu
