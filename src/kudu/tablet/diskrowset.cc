@@ -240,7 +240,7 @@ RollingDiskRowSetWriter::RollingDiskRowSetWriter(TabletMetadata* tablet_metadata
     bloom_sizing_(bloom_sizing),
     target_rowset_size_(target_rowset_size),
     row_idx_in_cur_drs_(0),
-    output_index_(0),
+    can_roll_(false),
     written_count_(0),
     written_size_(0) {
   CHECK(schema.has_column_ids());
@@ -276,23 +276,28 @@ Status RollingDiskRowSetWriter::RollWriter() {
   cur_redo_delta_stats.reset(new DeltaStats(schema_.num_columns()));
 
   row_idx_in_cur_drs_ = 0;
+  can_roll_ = false;
 
   RETURN_NOT_OK(cur_undo_writer_->Start());
   return cur_redo_writer_->Start();
 }
 
-Status RollingDiskRowSetWriter::AppendBlock(const RowBlock &block) {
+Status RollingDiskRowSetWriter::RollIfNecessary() {
   DCHECK_EQ(state_, kStarted);
-  if (cur_writer_->written_size() > target_rowset_size_) {
+  if (can_roll_ && cur_writer_->written_size() > target_rowset_size_) {
     RETURN_NOT_OK(RollWriter());
   }
+  return Status::OK();
+}
 
+Status RollingDiskRowSetWriter::AppendBlock(const RowBlock &block) {
+  DCHECK_EQ(state_, kStarted);
   RETURN_NOT_OK(cur_writer_->AppendBlock(block));
 
   written_count_ += block.nrows();
 
   row_idx_in_cur_drs_ += block.nrows();
-
+  can_roll_ = true;
   return Status::OK();
 }
 
@@ -320,6 +325,8 @@ Status RollingDiskRowSetWriter::AppendDeltas(rowid_t row_idx_in_block,
                                              rowid_t* row_idx,
                                              DeltaFileWriter* writer,
                                              DeltaStats* delta_stats) {
+  can_roll_ = false;
+
   *row_idx = row_idx_in_cur_drs_ + row_idx_in_block;
   for (const Mutation *mut = delta_head; mut != NULL; mut = mut->next()) {
     DeltaKey undo_key(*row_idx, mut->timestamp());

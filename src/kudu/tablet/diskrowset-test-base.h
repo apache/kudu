@@ -88,6 +88,7 @@ class TestRowSet : public KuduRowSetTest {
       char buf[256];
       RowBuilder rb(schema_);
       for (int i = 0; i < n_rows; i++) {
+        CHECK_OK(writer->RollIfNecessary());
         rb.Reset();
         FormatKey(i, buf, sizeof(buf));
         rb.AddString(Slice(buf));

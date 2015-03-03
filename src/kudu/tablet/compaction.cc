@@ -709,6 +709,8 @@ Status FlushCompactionInput(CompactionInput* input,
 
     int n = 0;
     BOOST_FOREACH(const CompactionInputRow &input_row, rows) {
+      RETURN_NOT_OK(out->RollIfNecessary());
+
       const Schema* schema = input_row.row.schema();
       DCHECK_SCHEMA_EQ(*schema, out->schema());
       DCHECK(schema->has_column_ids());
@@ -718,8 +720,8 @@ Status FlushCompactionInput(CompactionInput* input,
 
       DVLOG(2) << "Input Row: " << dst_row.schema()->DebugRow(dst_row) <<
         " RowId: " << input_row.row.row_index() <<
-        " Redo Mutations: " << Mutation::StringifyMutationList(*schema, input_row.redo_head) <<
-        " Undo Mutations: " << Mutation::StringifyMutationList(*schema, input_row.undo_head);
+        " Undo Mutations: " << Mutation::StringifyMutationList(*schema, input_row.undo_head) <<
+        " Redo Mutations: " << Mutation::StringifyMutationList(*schema, input_row.redo_head);
 
       // Collect the new UNDO/REDO mutations.
       Mutation* new_undos_head = NULL;
@@ -743,9 +745,16 @@ Status FlushCompactionInput(CompactionInput* input,
       }
 
       rowid_t index_in_current_drs_;
-      if (new_undos_head != NULL) {
-        out->AppendUndoDeltas(dst_row.row_index(), new_undos_head, &index_in_current_drs_);
-      }
+
+      // We should always have UNDO deltas, until we implement delta GC. For now,
+      // this is a convenient assertion to catch bugs like KUDU-632.
+      CHECK(new_undos_head != NULL) <<
+        "Writing an output row with no UNDOs: "
+        "Input Row: " << dst_row.schema()->DebugRow(dst_row) <<
+        " RowId: " << input_row.row.row_index() <<
+        " Undo Mutations: " << Mutation::StringifyMutationList(*schema, input_row.undo_head) <<
+        " Redo Mutations: " << Mutation::StringifyMutationList(*schema, input_row.redo_head);
+      out->AppendUndoDeltas(dst_row.row_index(), new_undos_head, &index_in_current_drs_);
 
       if (new_redos_head != NULL) {
         out->AppendRedoDeltas(dst_row.row_index(), new_redos_head, &index_in_current_drs_);
@@ -753,8 +762,8 @@ Status FlushCompactionInput(CompactionInput* input,
 
       DVLOG(2) << "Output Row: " << dst_row.schema()->DebugRow(dst_row) <<
           " RowId: " << index_in_current_drs_
-          << " Redo Mutations: " << Mutation::StringifyMutationList(*schema, new_redos_head)
-          << " Undo Mutations: " << Mutation::StringifyMutationList(*schema, new_undos_head);
+          << " Undo Mutations: " << Mutation::StringifyMutationList(*schema, new_undos_head)
+          << " Redo Mutations: " << Mutation::StringifyMutationList(*schema, new_redos_head);
 
       n++;
       if (n == block.nrows()) {

@@ -71,6 +71,10 @@ class DiskRowSetWriter {
   // Closes the CFiles, releasing the underlying blocks to 'closer'.
   Status FinishAndReleaseBlocks(fs::ScopedWritableBlockCloser* closer);
 
+  // The base DiskRowSetWriter never rolls. This method is necessary for tests
+  // which are templatized on the writer type.
+  Status RollIfNecessary() { return Status::OK(); }
+
   rowid_t written_count() const {
     CHECK(finished_);
     return written_count_;
@@ -113,6 +117,8 @@ class DiskRowSetWriter {
 // Wrapper around DiskRowSetWriter which "rolls" to a new DiskRowSet after
 // a certain amount of data has been written. Each output rowset is suffixed
 // with ".N" where N starts at 0 and increases as new rowsets are generated.
+//
+// See AppendBlock(...) for important usage information.
 class RollingDiskRowSetWriter {
  public:
   // Create a new rolling writer. The given 'tablet_metadata' must stay valid
@@ -129,6 +135,11 @@ class RollingDiskRowSetWriter {
   // The block is written to all column writers as well as the bloom filter,
   // if configured.
   // Rows must be appended in ascending order.
+  //
+  // NOTE: data must be appended in a particular order: for each set of rows
+  // you must append deltas using the APIs below *before* appending the block
+  // of rows that they correspond to. This ensures that the output delta files
+  // and data files are aligned.
   Status AppendBlock(const RowBlock &block);
 
   // Appends a sequence of REDO deltas for the same row to the current
@@ -146,6 +157,13 @@ class RollingDiskRowSetWriter {
   Status AppendUndoDeltas(rowid_t row_idx_in_next_block,
                           Mutation* undo_deltas,
                           rowid_t* row_idx_in_drs);
+
+  // Try to roll the output, if we've passed the configured threshold. This will
+  // only roll if called immediately after an AppendBlock() call. The implementation
+  // of AppendBlock() doesn't call it automatically, because it doesn't know if there
+  // is any more data to be appended. It is safe to call this in other circumstances --
+  // it will be ignored if it is not a good time to roll.
+  Status RollIfNecessary();
 
   Status Finish();
 
@@ -196,8 +214,9 @@ class RollingDiskRowSetWriter {
 
   uint64_t row_idx_in_cur_drs_;
 
-  // The index for the next output.
-  int output_index_;
+  // True when we are allowed to roll. We can only roll when the delta writers
+  // and data writers are aligned (i.e. just after we've appended a new block of data).
+  bool can_roll_;
 
   // RowSetMetadata objects for diskrowsets which have been successfully
   // written out.

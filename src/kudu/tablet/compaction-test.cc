@@ -38,6 +38,7 @@ using log::LogAnchorRegistry;
 
 static const char *kRowKeyFormat = "hello %08d";
 static const size_t kLargeRollThreshold = 1024 * 1024 * 1024; // 1GB
+static const size_t kSmallRollThreshold = 1024; // 1KB
 
 class TestCompaction : public KuduRowSetTest {
  public:
@@ -418,6 +419,33 @@ TEST_F(TestCompaction, TestMemRowSetInput) {
       "Undos: [@10(DELETE)] "
       "Redos: [@20(SET val=1, nullable_val=1), @30(SET val=2, nullable_val=NULL)]",
             out[9]);
+}
+
+TEST_F(TestCompaction, TestFlushMRSWithRolling) {
+  // Create a memrowset with enough rows so that, when we flush with a small
+  // roll threshold, we'll end up creating multiple DiskRowSets.
+  shared_ptr<MemRowSet> mrs(new MemRowSet(0, schema_, log_anchor_registry_.get()));
+  InsertRows(mrs.get(), 30000, 0);
+
+  vector<shared_ptr<DiskRowSet> > rowsets;
+  FlushMRSAndReopen(*mrs, schema_, kSmallRollThreshold, &rowsets);
+  ASSERT_GT(rowsets.size(), 1);
+
+  vector<string> rows;
+  rows.reserve(30000 / 2);
+  rowsets[0]->DebugDump(&rows);
+  EXPECT_EQ("(string key=hello 00000000, uint32 val=0, uint32 nullable_val=0) "
+            "Undos: [@1(DELETE)] Redos: []",
+            rows[0]);
+
+  rows.clear();
+  rowsets[1]->DebugDump(&rows);
+  EXPECT_EQ("(string key=hello 00154700, uint32 val=15470, uint32 nullable_val=15470) "
+            "Undos: [@15471(DELETE)] Redos: []",
+            rows[0]);
+  EXPECT_EQ("(string key=hello 00154710, uint32 val=15471, uint32 nullable_val=NULL) "
+            "Undos: [@15472(DELETE)] Redos: []",
+            rows[1]);
 }
 
 TEST_F(TestCompaction, TestRowSetInput) {
