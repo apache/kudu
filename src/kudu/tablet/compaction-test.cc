@@ -29,6 +29,7 @@ DEFINE_int32(merge_benchmark_num_rowsets, 3,
              "Number of rowsets as input to the merge");
 DEFINE_int32(merge_benchmark_num_rows_per_rowset, 500000,
              "Number of rowsets as input to the merge");
+DECLARE_bool(enable_data_block_fsync);
 
 namespace kudu {
 namespace tablet {
@@ -720,6 +721,18 @@ TEST_F(TestCompaction, BenchmarkMergeWithOverlap) {
 #endif
 
 TEST_F(TestCompaction, TestCompactionFreesDiskSpace) {
+  // On RHEL 6.4 with an ext4 filesystem mounted as ext3, it was observed
+  // that freshly created files report st_blocks=0 via stat(2) for several
+  // seconds. This appears to be some buggy interaction with ext4 delalloc.
+  //
+  // Enabling data block fsync appears to work around the problem. We do
+  // that here and not for all tests because:
+  // 1. fsync is expensive, and
+  // 2. This is the only test that cares about disk space usage and can't
+  //    explicitly fsync() after writing new files.
+
+  FLAGS_enable_data_block_fsync = true;
+
   {
     // We must force the LocalTabletWriter out of scope before measuring
     // disk space usage. Otherwise some deleted blocks are kept open for
