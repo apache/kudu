@@ -1054,7 +1054,7 @@ Status TabletServiceImpl::HandleNewScanRequest(TabletPeer* tablet_peer,
       break;
     }
     case READ_AT_SNAPSHOT: {
-      s = HandleScanAtSnapshot(&iter, scan_pb, projection, tablet_peer, snap_timestamp);
+      s = HandleScanAtSnapshot(scan_pb, projection, tablet_peer, &iter, snap_timestamp);
       if (!s.ok()) {
         tmp_error_code = TabletServerErrorPB::INVALID_SNAPSHOT;
       }
@@ -1201,10 +1201,10 @@ Status TabletServiceImpl::HandleContinueScanRequest(const ScanRequestPB* req,
   return Status::OK();
 }
 
-Status TabletServiceImpl::HandleScanAtSnapshot(gscoped_ptr<RowwiseIterator>* iter,
-                                               const NewScanRequestPB& scan_pb,
+Status TabletServiceImpl::HandleScanAtSnapshot(const NewScanRequestPB& scan_pb,
                                                const Schema& projection,
                                                const scoped_refptr<TabletPeer>& tablet_peer,
+                                               gscoped_ptr<RowwiseIterator>* iter,
                                                Timestamp* snap_timestamp) {
 
   // TODO check against the earliest boundary (i.e. how early can we go) right

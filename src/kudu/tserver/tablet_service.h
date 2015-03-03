@@ -87,10 +87,10 @@ class TabletServiceImpl : public TabletServerServiceIf {
                                    bool* has_more_results,
                                    TabletServerErrorPB::Code* error_code);
 
-  Status HandleScanAtSnapshot(gscoped_ptr<RowwiseIterator>* iter,
-                              const NewScanRequestPB& scan_pb,
+  Status HandleScanAtSnapshot(const NewScanRequestPB& scan_pb,
                               const Schema& projection,
                               const scoped_refptr<tablet::TabletPeer>& tablet_peer,
+                              gscoped_ptr<RowwiseIterator>* iter,
                               Timestamp* snap_timestamp);
 
   TabletServer* server_;
