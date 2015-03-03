@@ -113,6 +113,7 @@ class RaftConsensusTest : public KuduTest {
     // monitors and pretty much everything else.
     fs_manager_.reset(new FsManager(env_.get(), test_path));
     CHECK_OK(fs_manager_->CreateInitialFileSystemLayout());
+    CHECK_OK(fs_manager_->Open());
     CHECK_OK(Log::Open(LogOptions(),
                        fs_manager_.get(),
                        kTestTablet,
@@ -139,9 +140,11 @@ class RaftConsensusTest : public KuduTest {
 
     gscoped_ptr<PeerProxyFactory> proxy_factory(new LocalTestPeerProxyFactory(NULL));
 
+    string peer_uuid = Substitute("peer-$0", num_peers - 1);
+
     gscoped_ptr<ConsensusMetadata> cmeta;
-    CHECK_OK(ConsensusMetadata::Create(fs_manager_.get(), kTestTablet, quorum_,
-                                       initial_term, &cmeta));
+    CHECK_OK(ConsensusMetadata::Create(fs_manager_.get(), kTestTablet, peer_uuid,
+                                       quorum_, initial_term, &cmeta));
 
     gscoped_ptr<ThreadPool> thread_pool;
     CHECK_OK(ThreadPoolBuilder("raft-pool") .Build(&thread_pool));
@@ -153,7 +156,7 @@ class RaftConsensusTest : public KuduTest {
                                        gscoped_ptr<PeerManager>(peer_manager_),
                                        thread_pool.Pass(),
                                        metric_entity_,
-                                       Substitute("peer-$0", num_peers - 1),
+                                       peer_uuid,
                                        clock_,
                                        txn_factory_.get(),
                                        log_.get(),
@@ -483,10 +486,10 @@ TEST_F(RaftConsensusTest, TestAbortOperations) {
   ChangeConfigRequestPB* cc_req = cc_msg->mutable_change_config_request();
   cc_req->set_tablet_id(kTestTablet);
 
-  // Build a change config request with the roles reversed.
+  // Build a change config request.
+  // Being sent from peer-0 is enough for peer-1 to recognize peer-0 as leader.
   BuildQuorumPBForTests(2, cc_req->mutable_old_config());
   BuildQuorumPBForTests(2, cc_req->mutable_new_config());
-  cc_req->mutable_new_config()->set_leader_uuid(PEER_0_UUID);
 
   // Overwrite another 4 of the original rounds for a total of 5 overwrites.
   for (int i = 7; i < 10; i++) {

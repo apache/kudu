@@ -59,7 +59,9 @@ class LocalConsensus : public Consensus {
     return options_.tablet_id;
   }
 
-  virtual QuorumPB Quorum() const OVERRIDE;
+  virtual ConsensusStatePB CommittedConsensusState() const OVERRIDE;
+
+  virtual QuorumPB CommittedQuorum() const OVERRIDE;
 
   virtual void Shutdown() OVERRIDE;
 

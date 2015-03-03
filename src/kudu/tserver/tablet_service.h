@@ -120,16 +120,16 @@ class ConsensusServiceImpl : public consensus::ConsensusServiceIf {
                                rpc::RpcContext* context) OVERRIDE;
 
   virtual void RunLeaderElection(const consensus::RunLeaderElectionRequestPB* req,
-                              consensus::RunLeaderElectionResponsePB* resp,
-                              rpc::RpcContext* context) OVERRIDE;
+                                 consensus::RunLeaderElectionResponsePB* resp,
+                                 rpc::RpcContext* context) OVERRIDE;
 
   virtual void GetLastOpId(const consensus::GetLastOpIdRequestPB *req,
                            consensus::GetLastOpIdResponsePB *resp,
                            rpc::RpcContext *context) OVERRIDE;
 
-  virtual void GetCommittedQuorum(const consensus::GetCommittedQuorumRequestPB *req,
-                                  consensus::GetCommittedQuorumResponsePB *resp,
-                                  rpc::RpcContext *context) OVERRIDE;
+  virtual void GetConsensusState(const consensus::GetConsensusStateRequestPB *req,
+                                 consensus::GetConsensusStateResponsePB *resp,
+                                 rpc::RpcContext *context) OVERRIDE;
 
  private:
   TabletPeerLookupIf* tablet_manager_;

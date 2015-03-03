@@ -103,7 +103,9 @@ class RaftConsensus : public Consensus,
 
   virtual std::string tablet_id() const OVERRIDE;
 
-  virtual QuorumPB Quorum() const OVERRIDE;
+  virtual ConsensusStatePB CommittedConsensusState() const OVERRIDE;
+
+  virtual QuorumPB CommittedQuorum() const OVERRIDE;
 
   virtual void DumpStatusHtml(std::ostream& out) const OVERRIDE;
 

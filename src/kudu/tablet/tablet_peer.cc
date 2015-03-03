@@ -108,9 +108,10 @@ Status TabletPeer::Init(const shared_ptr<Tablet>& tablet,
     TRACE("Creating consensus instance");
 
     gscoped_ptr<ConsensusMetadata> cmeta;
-    RETURN_NOT_OK(ConsensusMetadata::Load(meta_->fs_manager(), tablet_id_, &cmeta));
+    RETURN_NOT_OK(ConsensusMetadata::Load(meta_->fs_manager(), tablet_id_,
+                                          meta_->fs_manager()->uuid(), &cmeta));
 
-    if (cmeta->pb().committed_quorum().local()) {
+    if (cmeta->committed_quorum().local()) {
       consensus_.reset(new LocalConsensus(options,
                                           cmeta.Pass(),
                                           meta_->fs_manager()->uuid(),
@@ -148,7 +149,7 @@ Status TabletPeer::Start(const ConsensusBootstrapInfo& bootstrap_info) {
 
   VLOG(2) << "T " << tablet_id() << " P " << consensus_->peer_uuid() << ": Peer starting";
 
-  VLOG(2) << "Quorum before starting: " << consensus_->Quorum().DebugString();
+  VLOG(2) << "Quorum before starting: " << consensus_->CommittedQuorum().DebugString();
 
   // TODO we likely should only change the state after starting consensus
   // but if we do that a lot of tests fail. We can't include Consensus::Start()
@@ -168,7 +169,7 @@ Status TabletPeer::Start(const ConsensusBootstrapInfo& bootstrap_info) {
 
 const consensus::QuorumPB TabletPeer::Quorum() const {
   CHECK(consensus_) << "consensus is null";
-  return consensus_->Quorum();
+  return consensus_->CommittedQuorum();
 }
 
 void TabletPeer::ConsensusStateChanged(consensus::QuorumPeerPB::Role new_role) {
@@ -274,7 +275,7 @@ Status TabletPeer::SubmitChangeConfig(ChangeConfigTransactionState *state) {
   RETURN_NOT_OK(CheckRunning());
 
   if (!state->old_quorum().IsInitialized()) {
-    RETURN_NOT_OK(state->set_old_quorum(consensus_->Quorum()));
+    RETURN_NOT_OK(state->set_old_quorum(consensus_->CommittedQuorum()));
     DCHECK(state->old_quorum().IsInitialized());
   }
   gscoped_ptr<ChangeConfigTransaction> transaction(

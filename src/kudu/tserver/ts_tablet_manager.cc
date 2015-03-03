@@ -47,6 +47,7 @@ namespace kudu {
 namespace tserver {
 
 using consensus::ConsensusMetadata;
+using consensus::ConsensusStatePB;
 using consensus::QuorumPB;
 using consensus::QuorumPeerPB;
 using log::Log;
@@ -219,8 +220,8 @@ Status TSTabletManager::CreateNewTablet(const string& table_id,
   // We must persist the consensus metadata to disk before starting a new
   // tablet's TabletPeer and Consensus implementation.
   gscoped_ptr<ConsensusMetadata> cmeta;
-  RETURN_NOT_OK_PREPEND(ConsensusMetadata::Create(fs_manager_, tablet_id, quorum,
-                                                  consensus::kMinimumTerm, &cmeta),
+  RETURN_NOT_OK_PREPEND(ConsensusMetadata::Create(fs_manager_, tablet_id, fs_manager_->uuid(),
+                                                  quorum, consensus::kMinimumTerm, &cmeta),
                         "Unable to create new ConsensusMeta for tablet " + tablet_id);
 
   scoped_refptr<TabletPeer> new_peer(
@@ -448,6 +449,11 @@ void TSTabletManager::MarkTabletDirty(const std::string& tablet_id) {
   MarkDirtyUnlocked(tablet_id);
 }
 
+int TSTabletManager::GetNumDirtyTabletsForTests() const {
+  boost::lock_guard<rw_spinlock> lock(lock_);
+  return dirty_tablets_.size();
+}
+
 void TSTabletManager::MarkDirtyUnlocked(const std::string& tablet_id) {
   TabletReportState* state = FindOrNull(dirty_tablets_, tablet_id);
   if (state != NULL) {
@@ -472,14 +478,10 @@ void TSTabletManager::CreateReportedTabletPB(const string& tablet_id,
     StatusToPB(tablet_peer->error(), error_status);
   }
 
-  // We cannot call role() until after consensus is initialized.
+  // We cannot get consensus state information until after Consensus is initialized.
   if (tablet_peer->consensus()) {
-    QuorumPB quorum = tablet_peer->Quorum();
-    reported_tablet->set_role(consensus::GetRoleInQuorum(server_->instance_pb().permanent_uuid(),
-                                                         quorum));
-    reported_tablet->mutable_quorum()->CopyFrom(quorum);
-  } else {
-    reported_tablet->set_role(QuorumPeerPB::NON_PARTICIPANT);
+    *reported_tablet->mutable_committed_consensus_state() =
+        tablet_peer->consensus()->CommittedConsensusState();
   }
 
   if (tablet_peer->tablet() != NULL) {

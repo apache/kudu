@@ -93,11 +93,13 @@ Status SysCatalogTable::Load(FsManager *fs_manager) {
 
     string tablet_id = metadata->tablet_id();
     gscoped_ptr<ConsensusMetadata> cmeta;
-    RETURN_NOT_OK_PREPEND(ConsensusMetadata::Load(fs_manager, tablet_id, &cmeta),
+    RETURN_NOT_OK_PREPEND(ConsensusMetadata::Load(fs_manager, tablet_id,
+                                                  fs_manager->uuid(), &cmeta),
                           "Unable to load consensus metadata for tablet " + tablet_id);
 
-    RETURN_NOT_OK(SetupDistributedQuorum(master_->opts(),
-                                         cmeta->mutable_pb()->mutable_committed_quorum()));
+    QuorumPB quorum;
+    RETURN_NOT_OK(SetupDistributedQuorum(master_->opts(), &quorum));
+    cmeta->set_committed_quorum(quorum);
     RETURN_NOT_OK_PREPEND(cmeta->Flush(),
                           "Unable to persist consensus metadata for tablet " + tablet_id);
   }
@@ -131,8 +133,8 @@ Status SysCatalogTable::CreateNew(FsManager *fs_manager) {
 
   string tablet_id = metadata->tablet_id();
   gscoped_ptr<ConsensusMetadata> cmeta;
-  RETURN_NOT_OK_PREPEND(ConsensusMetadata::Create(fs_manager, tablet_id, quorum,
-                                                  consensus::kMinimumTerm, &cmeta),
+  RETURN_NOT_OK_PREPEND(ConsensusMetadata::Create(fs_manager, tablet_id, fs_manager->uuid(),
+                                                  quorum, consensus::kMinimumTerm, &cmeta),
                         "Unable to persist consensus metadata for tablet " + tablet_id);
 
   return SetupTablet(metadata);
@@ -189,7 +191,7 @@ Status SysCatalogTable::SetupDistributedQuorum(const MasterOptions& options,
 
 void SysCatalogTable::SysCatalogStateChanged(const std::string& tablet_id) {
   CHECK_EQ(tablet_peer_->tablet_id(), tablet_id);
-  QuorumPB quorum = tablet_peer_->consensus()->Quorum();
+  QuorumPB quorum = tablet_peer_->consensus()->CommittedQuorum();
   LOG_WITH_PREFIX(INFO) << " SysCatalogTable state changed. New quorum config:"
                         << quorum.ShortDebugString();
   QuorumPeerPB::Role new_role = tablet_peer_->consensus()->role();

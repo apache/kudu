@@ -41,7 +41,8 @@ class RaftConsensusStateTest : public KuduTest {
     quorum_.set_opid_index(kInvalidOpIdIndex);
 
     gscoped_ptr<ConsensusMetadata> cmeta;
-    ASSERT_OK(ConsensusMetadata::Create(&fs_manager_, kTabletId, quorum_, kMinimumTerm, &cmeta));
+    ASSERT_OK(ConsensusMetadata::Create(&fs_manager_, kTabletId, fs_manager_.uuid(),
+                                        quorum_, kMinimumTerm, &cmeta));
     state_.reset(new ReplicaState(ConsensusOptions(), fs_manager_.uuid(), cmeta.Pass(),
                                   txn_factory_.get()));
 
@@ -93,47 +94,6 @@ TEST_F(RaftConsensusStateTest, TestPersistentWrites) {
   quorum_.set_opid_index(2);
   ASSERT_OK(state_->SetCommittedQuorumUnlocked(quorum_));
   ASSERT_EQ(2, state_->GetCommittedQuorumUnlocked().opid_index());
-}
-
-TEST_F(RaftConsensusStateTest, TestQuorumState) {
-  vector<string> uuids = list_of("a")("b")("c")("d")("e");
-  QuorumPB quorum;
-  BOOST_FOREACH(const string& uuid, uuids) {
-    QuorumPeerPB* peer = quorum.add_peers();
-    peer->set_permanent_uuid(uuid);
-    peer->set_member_type(QuorumPeerPB::VOTER);
-  }
-
-  // No leader.
-  gscoped_ptr<QuorumState> state = QuorumState::Build(quorum, "a");
-  ASSERT_EQ(QuorumPeerPB::FOLLOWER, state->role);
-  ASSERT_EQ("", state->leader_uuid);
-  ASSERT_EQ(5, state->voting_peers.size());
-  ASSERT_EQ(3, state->majority_size);
-
-  // Self leader.
-  quorum.set_leader_uuid("a");
-  state = QuorumState::Build(quorum, "a");
-  ASSERT_EQ(QuorumPeerPB::LEADER, state->role);
-  ASSERT_EQ("a", state->leader_uuid);
-  ASSERT_EQ(5, state->voting_peers.size());
-  ASSERT_EQ(3, state->majority_size);
-
-  // Add another VOTER. Quorum size of 6, majority of 4.
-  QuorumPeerPB* new_peer = quorum.add_peers();
-  new_peer->set_permanent_uuid("f");
-  new_peer->set_member_type(QuorumPeerPB::VOTER);
-  state = QuorumState::Build(quorum, "a");
-  ASSERT_EQ(6, state->voting_peers.size());
-  ASSERT_EQ(4, state->majority_size);
-
-  // Add a LEARNER. Nothing should have changed from above.
-  new_peer = quorum.add_peers();
-  new_peer->set_permanent_uuid("g");
-  new_peer->set_member_type(QuorumPeerPB::NON_VOTER);
-  state = QuorumState::Build(quorum, "a");
-  ASSERT_EQ(6, state->voting_peers.size());
-  ASSERT_EQ(4, state->majority_size);
 }
 
 }  // namespace consensus

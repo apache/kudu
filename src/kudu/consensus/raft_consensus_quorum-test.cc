@@ -99,8 +99,9 @@ class RaftConsensusQuorumTest : public KuduTest {
                                             parent_mem_tracker,
                                             test_path,
                                             boost::assign::list_of(test_path));
-      fs_managers_.push_back(fs_manager);
       RETURN_NOT_OK(fs_manager->CreateInitialFileSystemLayout());
+      RETURN_NOT_OK(fs_manager->Open());
+      fs_managers_.push_back(fs_manager);
 
       scoped_refptr<Log> log;
       RETURN_NOT_OK(Log::Open(LogOptions(),
@@ -122,12 +123,11 @@ class RaftConsensusQuorumTest : public KuduTest {
 
       TestTransactionFactory* txn_factory = new TestTransactionFactory(logs_[i].get());
 
-      gscoped_ptr<ConsensusMetadata> cmeta;
-      CHECK_OK(ConsensusMetadata::Create(fs_managers_[i], kTestTablet, quorum_,
-                                         kMinimumTerm, &cmeta));
-
-
       string peer_uuid = Substitute("peer-$0", i);
+
+      gscoped_ptr<ConsensusMetadata> cmeta;
+      CHECK_OK(ConsensusMetadata::Create(fs_managers_[i], kTestTablet, peer_uuid, quorum_,
+                                         kMinimumTerm, &cmeta));
 
       gscoped_ptr<PeerMessageQueue> queue(new PeerMessageQueue(metric_entity_,
                                                                logs_[i],
@@ -493,23 +493,24 @@ class RaftConsensusQuorumTest : public KuduTest {
 
   // Read the ConsensusMetadata for the given peer from disk.
   gscoped_ptr<ConsensusMetadata> ReadConsensusMetadataFromDisk(int peer_index) {
+    string peer_uuid = Substitute("peer-$0", peer_index);
     gscoped_ptr<ConsensusMetadata> cmeta;
-    CHECK_OK(ConsensusMetadata::Load(fs_managers_[peer_index], kTestTablet, &cmeta));
+    CHECK_OK(ConsensusMetadata::Load(fs_managers_[peer_index], kTestTablet, peer_uuid, &cmeta));
     return cmeta.Pass();
   }
 
   // Assert that the durable term == term and that the peer that got the vote == voted_for.
   void AssertDurableTermAndVote(int peer_index, uint64_t term, const std::string& voted_for) {
     gscoped_ptr<ConsensusMetadata> cmeta = ReadConsensusMetadataFromDisk(peer_index);
-    ASSERT_EQ(term, cmeta->pb().current_term());
-    ASSERT_EQ(voted_for, cmeta->pb().voted_for());
+    ASSERT_EQ(term, cmeta->current_term());
+    ASSERT_EQ(voted_for, cmeta->voted_for());
   }
 
   // Assert that the durable term == term and that the peer has not yet voted.
   void AssertDurableTermWithoutVote(int peer_index, uint64_t term) {
     gscoped_ptr<ConsensusMetadata> cmeta = ReadConsensusMetadataFromDisk(peer_index);
-    ASSERT_EQ(term, cmeta->pb().current_term());
-    ASSERT_FALSE(cmeta->pb().has_voted_for());
+    ASSERT_EQ(term, cmeta->current_term());
+    ASSERT_FALSE(cmeta->has_voted_for());
   }
 
   ~RaftConsensusQuorumTest() {

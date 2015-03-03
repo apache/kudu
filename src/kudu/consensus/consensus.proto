@@ -314,13 +314,13 @@ message GetLastOpIdResponsePB {
   optional tserver.TabletServerErrorPB error = 2;
 }
 
-message GetCommittedQuorumRequestPB {
-  // the id of the tablet
+message GetConsensusStateRequestPB {
+  // The id of the tablet.
   required bytes tablet_id = 1;
 }
 
-message GetCommittedQuorumResponsePB {
-  optional QuorumPB quorum = 1;
+message GetConsensusStateResponsePB {
+  optional ConsensusStatePB cstate = 1;
     // A generic error message (such as tablet not found).
   optional tserver.TabletServerErrorPB error = 2;
 }
@@ -338,5 +338,6 @@ service ConsensusService {
 
   rpc GetLastOpId(GetLastOpIdRequestPB) returns (GetLastOpIdResponsePB);
 
-  rpc GetCommittedQuorum(GetCommittedQuorumRequestPB) returns (GetCommittedQuorumResponsePB);
+  // Returns the committed Consensus state.
+  rpc GetConsensusState(GetConsensusStateRequestPB) returns (GetConsensusStateResponsePB);
 }

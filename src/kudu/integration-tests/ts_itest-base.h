@@ -156,17 +156,19 @@ class TabletServerIntegrationTestBase : public TabletServerTestBase {
   // Status::NotFound() if the replica is not part of the quorum or is dead.
   // Status::IllegalState() if the replica is live but not the leader.
   Status GetReplicaStatusAndCheckIfLeader(const string& tablet_id, TServerDetails* replica) {
-    consensus::GetCommittedQuorumRequestPB req;
-    consensus::GetCommittedQuorumResponsePB resp;
+    consensus::GetConsensusStateRequestPB req;
+    consensus::GetConsensusStateResponsePB resp;
     RpcController controller;
     controller.set_timeout(MonoDelta::FromMilliseconds(100));
     req.set_tablet_id(tablet_id);
-    if (!replica->consensus_proxy->GetCommittedQuorum(req, &resp, &controller).ok() ||
+    if (!replica->consensus_proxy->GetConsensusState(req, &resp, &controller).ok() ||
         resp.has_error()) {
-      VLOG(1) << "Error getting quorum from replica: " << replica->instance_id.permanent_uuid();
+      VLOG(1) << "Error getting consensus state from replica: "
+              << replica->instance_id.permanent_uuid();
       return Status::NotFound("Error connecting to replica");
     }
-    if (consensus::IsQuorumLeader(replica->instance_id.permanent_uuid(), resp.quorum())) {
+    const string& replica_uuid = replica->instance_id.permanent_uuid();
+    if (resp.cstate().has_leader_uuid() && resp.cstate().leader_uuid() == replica_uuid) {
       return Status::OK();
     }
     VLOG(1) << "Replica not leader of quorum: " << replica->instance_id.permanent_uuid();

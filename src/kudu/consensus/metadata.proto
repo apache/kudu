@@ -59,9 +59,45 @@ message QuorumPB {
 
   // The set of peers in the quorum.
   repeated QuorumPeerPB peers = 3;
+}
 
-  // The UUID of the quorum leader (if any leader is known).
-  optional string leader_uuid = 4;
+// Represents a snapshot of a quorum at a given moment in time.
+message ConsensusStatePB {
+  // A quorum is always guaranteed to have a known term.
+  required int64 current_term = 1;
+
+  // There may not always be a leader of a quorum at any given time.
+  //
+  // The node that the local peer considers to be leader changes based on rules
+  // defined in the Raft specification. Roughly, this corresponds either to
+  // being elected leader (in the case that the local peer is the leader), or
+  // when an update is accepted from another node, which basically just amounts
+  // to a term check on the UpdateConsensus() RPC request.
+  //
+  // Whenever the local peer sees a new term, the leader flag is cleared until
+  // a new leader is acknowledged based on the above critera. Simply casting a
+  // vote for a peer is not sufficient to assume that that peer has won the
+  // election, so we do not update this field based on our vote.
+  //
+  // The leader listed here, if any, should always be a member of 'quorum', and
+  // the term that the node is leader of _must_ equal the term listed above in
+  // the 'current_term' field. The Master will use the combination of current
+  // term and leader uuid to determine when to update its cache of the current
+  // leader for client lookup purposes.
+  //
+  // There is a corner case in Raft where a node may be elected leader of a
+  // pending (uncommitted) quorum. In such a case, if the leader of the pending
+  // quorum is not a member of the committed quorum, and it is the committed
+  // quorum that is being reported, then the leader_uuid field should be
+  // cleared by the process filling in the ConsensusStatePB object.
+  optional string leader_uuid = 2;
+
+  // The quorum members. In some contexts, this will be the committed quorum,
+  // which will always have quorum.opid_index set. In other contexts, this may
+  // a "pending" quorum, which is active but in the process of being committed.
+  // In any case, initial quorum membership is set on tablet start, so this
+  // field should always be present.
+  required QuorumPB quorum = 3;
 }
 
 // This PB is used to serialize all of the persistent state needed for
@@ -88,7 +124,7 @@ message ConsensusMetadataPB {
   //
   // If a follower receives a RequestConsensusVote() RPC with an earlier term,
   // the vote is denied.
-  required uint64 current_term = 2;
+  required int64 current_term = 2;
 
   // Permanent UUID of the candidate voted for in 'current_term', or not present
   // if no vote was made in the current term.

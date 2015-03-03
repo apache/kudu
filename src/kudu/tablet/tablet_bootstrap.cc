@@ -364,7 +364,8 @@ Status TabletBootstrap::Bootstrap(shared_ptr<Tablet>* rebuilt_tablet,
   // Replay requires a valid Consensus metadata file to exist in order to
   // compare the committed quorum seqno with the log entries and also to persist
   // committed but unpersisted changes.
-  RETURN_NOT_OK_PREPEND(ConsensusMetadata::Load(meta_->fs_manager(), tablet_id, &cmeta_),
+  RETURN_NOT_OK_PREPEND(ConsensusMetadata::Load(meta_->fs_manager(), tablet_id,
+                                                meta_->fs_manager()->uuid(), &cmeta_),
                         "Unable to load Consensus metadata");
 
   // Make sure we don't try to locally bootstrap a tablet that was in the middle
@@ -1130,14 +1131,14 @@ Status TabletBootstrap::PlayChangeConfigRequest(ReplicateMsg* replicate_msg,
   ChangeConfigRequestPB* change_config = replicate_msg->mutable_change_config_request();
   QuorumPB quorum = change_config->new_config();
 
-  int64_t cmeta_opid_index =  cmeta_->pb().committed_quorum().opid_index();
+  int64_t cmeta_opid_index =  cmeta_->committed_quorum().opid_index();
   if (replicate_msg->id().index() > cmeta_opid_index) {
     DCHECK(!quorum.has_opid_index());
     quorum.set_opid_index(replicate_msg->id().index());
     VLOG(1) << "WAL replay found quorum configuration with log index " << quorum.opid_index()
             << " that is greater than the committed quorum's index " << cmeta_opid_index
             << ". Applying this configuration change.";
-    cmeta_->mutable_pb()->mutable_committed_quorum()->CopyFrom(quorum);
+    cmeta_->set_committed_quorum(quorum);
     // We flush once at the end of bootstrap.
   } else {
     VLOG(1) << "WAL replay found quorum configuration with log index "

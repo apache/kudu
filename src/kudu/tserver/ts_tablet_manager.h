@@ -139,6 +139,9 @@ class TSTabletManager : public tserver::TabletPeerLookupIf {
   // changes.
   void MarkTabletDirty(const std::string& tablet_id);
 
+  // Returns the number of tablets in the "dirty" map, for use by unit tests.
+  int GetNumDirtyTabletsForTests() const;
+
   Status RunAllLogGC();
 
  private:

@@ -34,6 +34,7 @@ DEFINE_int32(remote_bootstrap_begin_session_timeout_ms, 10000,
 namespace kudu {
 namespace tserver {
 
+using consensus::ConsensusStatePB;
 using consensus::OpId;
 using consensus::QuorumPB;
 using consensus::QuorumPeerPB;
@@ -62,7 +63,7 @@ RemoteBootstrapClient::RemoteBootstrapClient(FsManager* fs_manager,
 }
 
 Status RemoteBootstrapClient::RunRemoteBootstrap(TabletMetadata* meta,
-                                                 const QuorumPB& quorum,
+                                                 const ConsensusStatePB& cstate,
                                                  TabletStatusListener* status_listener) {
   DCHECK(meta != NULL);
 
@@ -70,7 +71,7 @@ Status RemoteBootstrapClient::RunRemoteBootstrap(TabletMetadata* meta,
   const string& tablet_id = meta->tablet_id();
 
   // Download all the files (serially, for now, but in parallel in the future).
-  RETURN_NOT_OK(BeginRemoteBootstrapSession(tablet_id, quorum, status_listener));
+  RETURN_NOT_OK(BeginRemoteBootstrapSession(tablet_id, cstate, status_listener));
   RETURN_NOT_OK(DownloadWALs());
   RETURN_NOT_OK(DownloadBlocks());
 
@@ -87,11 +88,11 @@ Status RemoteBootstrapClient::RunRemoteBootstrap(TabletMetadata* meta,
   return Status::OK();
 }
 
-Status RemoteBootstrapClient::ExtractLeaderFromQuorum(const consensus::QuorumPB& quorum,
-                                                      consensus::QuorumPeerPB* leader) {
-  BOOST_FOREACH(const QuorumPeerPB& peer, quorum.peers()) {
-    if (!quorum.has_leader_uuid()) break;
-    if (peer.permanent_uuid() == quorum.leader_uuid()) {
+Status RemoteBootstrapClient::ExtractLeaderFromQuorum(const ConsensusStatePB& cstate,
+                                                      QuorumPeerPB* leader) {
+  BOOST_FOREACH(const QuorumPeerPB& peer, cstate.quorum().peers()) {
+    if (!cstate.has_leader_uuid() || cstate.leader_uuid().empty()) break;
+    if (peer.permanent_uuid() == cstate.leader_uuid()) {
       leader->CopyFrom(peer);
       return Status::OK();
     }
@@ -129,7 +130,7 @@ void RemoteBootstrapClient::UpdateStatusMessage(const string& message) {
 }
 
 Status RemoteBootstrapClient::BeginRemoteBootstrapSession(const std::string& tablet_id,
-                                                          const consensus::QuorumPB& quorum,
+                                                          const ConsensusStatePB& cstate,
                                                           TabletStatusListener* status_listener) {
   CHECK_EQ(kNoSession, state_);
 
@@ -142,9 +143,9 @@ Status RemoteBootstrapClient::BeginRemoteBootstrapSession(const std::string& tab
   // TODO: Support looking up quorum info from Master and also redirecting
   // from follower to quorum leader in the future.
   QuorumPeerPB leader;
-  RETURN_NOT_OK_PREPEND(ExtractLeaderFromQuorum(quorum, &leader),
+  RETURN_NOT_OK_PREPEND(ExtractLeaderFromQuorum(cstate, &leader),
                         "Cannot find leader tablet in quorum to remotely bootstrap from: " +
-                        quorum.ShortDebugString());
+                        cstate.ShortDebugString());
   if (!leader.has_last_known_addr()) {
     return Status::InvalidArgument("Unknown address for quorum leader", leader.ShortDebugString());
   }
@@ -176,7 +177,7 @@ Status RemoteBootstrapClient::BeginRemoteBootstrapSession(const std::string& tab
 
   // TODO: Support retrying based on updated info from Master or quorum.
   if (resp.superblock().remote_bootstrap_state() != tablet::REMOTE_BOOTSTRAP_DONE) {
-    Status s = Status::IllegalState("Leader of quorum (" + quorum.ShortDebugString() + ")" +
+    Status s = Status::IllegalState("Leader of quorum (" + cstate.ShortDebugString() + ")" +
                                     " is currently remotely bootstrapping itself!",
                                     resp.superblock().ShortDebugString());
     LOG(WARNING) << s.ToString();

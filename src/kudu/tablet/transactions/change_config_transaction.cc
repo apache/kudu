@@ -132,7 +132,11 @@ void ChangeConfigTransaction::Finish(TransactionResult result) {
             << "Changed from: " << state_->old_quorum().ShortDebugString() << std::endl
             << "Changed to: " << new_quorum.ShortDebugString();
 
-  QuorumPeerPB::Role new_role = consensus::GetRoleInQuorum(uuid, new_quorum);
+  QuorumPeerPB::Role new_role = consensus::QuorumPeerPB::NON_PARTICIPANT;
+  if (consensus::IsQuorumVoter(uuid, new_quorum)) {
+    // TODO: This is a little hack that will go away when we remove cc txns.
+    new_role = QuorumPeerPB::FOLLOWER;
+  }
   state_->tablet_peer()->ConsensusStateChanged(new_role);
   state()->Finish();
 }

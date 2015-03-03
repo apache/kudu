@@ -58,7 +58,7 @@ Status LocalConsensus::Start(const ConsensusBootstrapInfo& info) {
   {
     boost::lock_guard<simple_spinlock> lock(lock_);
 
-    const QuorumPB& initial_quorum = cmeta_->pb().committed_quorum();
+    const QuorumPB& initial_quorum = cmeta_->committed_quorum();
     CHECK(initial_quorum.local()) << "Local consensus must be passed a local quorum";
     RETURN_NOT_OK_PREPEND(VerifyQuorum(initial_quorum, COMMITTED_QUORUM),
                           "Invalid quorum found in LocalConsensus::Start()");
@@ -69,7 +69,7 @@ Status LocalConsensus::Start(const ConsensusBootstrapInfo& info) {
     new_quorum->CopyFrom(initial_quorum);
     new_quorum->clear_opid_index();
     CHECK(new_quorum->peers(0).has_permanent_uuid()) << new_quorum->ShortDebugString();
-    new_quorum->set_leader_uuid(new_quorum->peers(0).permanent_uuid());
+    cmeta_->set_leader_uuid(new_quorum->peers(0).permanent_uuid());
 
     ReplicateMsg* replicate = new ReplicateMsg;
     replicate->set_op_type(CHANGE_CONFIG_OP);
@@ -132,7 +132,7 @@ Status LocalConsensus::Replicate(const scoped_refptr<ConsensusRound>& round) {
       QuorumPB new_quorum = round->replicate_msg()->change_config_request().new_config();
       DCHECK(!new_quorum.has_opid_index());
       new_quorum.set_opid_index(round->replicate_msg()->id().index());
-      cmeta_->mutable_pb()->mutable_committed_quorum()->CopyFrom(new_quorum);
+      cmeta_->set_committed_quorum(new_quorum);
       CHECK_OK(cmeta_->Flush());
     }
   }
@@ -163,9 +163,14 @@ void LocalConsensus::MarkDirty() {
   mark_dirty_clbk_.Run();
 }
 
-QuorumPB LocalConsensus::Quorum() const {
+ConsensusStatePB LocalConsensus::CommittedConsensusState() const {
   boost::lock_guard<simple_spinlock> lock(lock_);
-  return cmeta_->pb().committed_quorum();
+  return cmeta_->ToConsensusStatePB(ConsensusMetadata::COMMITTED);
+}
+
+QuorumPB LocalConsensus::CommittedQuorum() const {
+  boost::lock_guard<simple_spinlock> lock(lock_);
+  return cmeta_->committed_quorum();
 }
 
 void LocalConsensus::Shutdown() {

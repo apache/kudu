@@ -34,17 +34,31 @@ bool IsQuorumVoter(const std::string& uuid, const QuorumPB& quorum) {
   return false;
 }
 
-bool IsQuorumLeader(const std::string& uuid, const QuorumPB& quorum) {
-  if (!quorum.has_leader_uuid()) return false;
-  return quorum.leader_uuid() == uuid;
+int CountVoters(const QuorumPB& quorum) {
+  int voters = 0;
+  BOOST_FOREACH(const QuorumPeerPB& peer, quorum.peers()) {
+    if (peer.member_type() == QuorumPeerPB::VOTER) {
+      voters++;
+    }
+  }
+  return voters;
 }
 
-QuorumPeerPB::Role GetRoleInQuorum(const std::string& permanent_uuid,
-                                   const QuorumPB& quorum) {
-  if (quorum.has_leader_uuid() && quorum.leader_uuid() == permanent_uuid) {
-    return QuorumPeerPB::LEADER;
+int MajoritySize(int num_voters) {
+  DCHECK_GE(num_voters, 1);
+  return (num_voters / 2) + 1;
+}
+
+QuorumPeerPB::Role GetConsensusRole(const std::string& permanent_uuid,
+                                    const ConsensusStatePB& cstate) {
+  if (cstate.leader_uuid() == permanent_uuid) {
+    if (IsQuorumVoter(permanent_uuid, cstate.quorum())) {
+      return QuorumPeerPB::LEADER;
+    }
+    return QuorumPeerPB::NON_PARTICIPANT;
   }
-  BOOST_FOREACH(const QuorumPeerPB& peer, quorum.peers()) {
+
+  BOOST_FOREACH(const QuorumPeerPB& peer, cstate.quorum().peers()) {
     if (peer.permanent_uuid() == permanent_uuid) {
       switch (peer.member_type()) {
         case QuorumPeerPB::VOTER:
@@ -104,8 +118,6 @@ Status VerifyQuorum(const QuorumPB& quorum, QuorumPBType type) {
     return Status::OK();
   }
 
-  bool has_leader = quorum.has_leader_uuid() && !quorum.leader_uuid().empty();
-  bool leader_in_quorum = false;
   BOOST_FOREACH(const QuorumPeerPB& peer, quorum.peers()) {
     if (!peer.has_permanent_uuid() || peer.permanent_uuid() == "") {
       return Status::IllegalState(Substitute("One peer didn't have an uuid or had the empty"
@@ -134,24 +146,26 @@ Status VerifyQuorum(const QuorumPB& quorum, QuorumPBType type) {
               "Peer: $0 is a NON_VOTER, but this isn't supported yet. Quorum: $1",
               peer.permanent_uuid(), quorum.ShortDebugString()));
     }
-    if (has_leader && peer.permanent_uuid() == quorum.leader_uuid()) {
-      if (peer.member_type() == QuorumPeerPB::VOTER) {
-        leader_in_quorum = true;
-      } else {
-        return Status::IllegalState(
-            Substitute(
-                "Peer: $0 is listed as LEADER and NON_VOTER! Quorum: $1",
-                peer.permanent_uuid(), quorum.ShortDebugString()));
-      }
-    }
   }
 
-  // Ensure the leader, if set, is a voter in the quorum.
-  if (has_leader && !leader_in_quorum) {
-        return Status::IllegalState(
-            Substitute(
-                "Leader with UUID $0 is missing from the quorum! Quorum: $1",
-                quorum.leader_uuid(), quorum.ShortDebugString()));
+  return Status::OK();
+}
+
+Status VerifyConsensusState(const ConsensusStatePB& cstate, QuorumPBType type) {
+  if (!cstate.has_current_term()) {
+    return Status::IllegalState("ConsensusStatePB missing current_term", cstate.ShortDebugString());
+  }
+  if (!cstate.has_quorum()) {
+    return Status::IllegalState("ConsensusStatePB missing quorum", cstate.ShortDebugString());
+  }
+  RETURN_NOT_OK(VerifyQuorum(cstate.quorum(), type));
+
+  if (cstate.has_leader_uuid() && !cstate.leader_uuid().empty()) {
+    if (!IsQuorumVoter(cstate.leader_uuid(), cstate.quorum())) {
+      return Status::IllegalState(
+          Substitute("Leader with UUID $0 is not a VOTER in the quorum! Consensus state: $1",
+                     cstate.leader_uuid(), cstate.ShortDebugString()));
+    }
   }
 
   return Status::OK();

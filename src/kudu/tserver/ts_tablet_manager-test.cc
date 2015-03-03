@@ -120,14 +120,19 @@ static void AssertReportHasUpdatedTablet(const TabletReportPB& report,
   BOOST_FOREACH(ReportedTabletPB reported_tablet, report.updated_tablets()) {
     if (reported_tablet.tablet_id() == tablet_id) {
       found_tablet = true;
-      ASSERT_TRUE(reported_tablet.has_quorum());
-      ASSERT_EQ(1, reported_tablet.quorum().opid_index());
-      ASSERT_EQ(1, reported_tablet.quorum().peers_size());
-      ASSERT_TRUE(reported_tablet.quorum().has_leader_uuid()) << reported_tablet.ShortDebugString();
-      ASSERT_TRUE(reported_tablet.quorum().peers(0).has_permanent_uuid())
+      ASSERT_TRUE(reported_tablet.has_committed_consensus_state());
+      ASSERT_TRUE(reported_tablet.committed_consensus_state().has_current_term())
           << reported_tablet.ShortDebugString();
-      ASSERT_EQ(reported_tablet.quorum().peers(0).permanent_uuid(),
-                reported_tablet.quorum().leader_uuid())
+      ASSERT_TRUE(reported_tablet.committed_consensus_state().has_leader_uuid())
+          << reported_tablet.ShortDebugString();
+      ASSERT_TRUE(reported_tablet.committed_consensus_state().has_quorum());
+      const QuorumPB& committed_quorum = reported_tablet.committed_consensus_state().quorum();
+      ASSERT_EQ(1, committed_quorum.opid_index());
+      ASSERT_EQ(1, committed_quorum.peers_size());
+      ASSERT_TRUE(committed_quorum.peers(0).has_permanent_uuid())
+          << reported_tablet.ShortDebugString();
+      ASSERT_EQ(committed_quorum.peers(0).permanent_uuid(),
+                reported_tablet.committed_consensus_state().leader_uuid())
           << reported_tablet.ShortDebugString();
     }
   }

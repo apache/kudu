@@ -39,8 +39,6 @@ namespace consensus {
 
 class ConsensusCommitContinuation;
 class ConsensusRound;
-class QuorumPB;
-class QuorumPeerPB;
 class ReplicaTransactionFactory;
 
 typedef uint64_t ConsensusTerm;
@@ -191,9 +189,11 @@ class Consensus : public RefCountedThreadSafe<Consensus> {
   // Returns the id of the tablet whose updates this consensus instance helps coordinate.
   virtual std::string tablet_id() const = 0;
 
-  // Returns the current configuration of the quorum.
-  // NOTE: Returns a copy, thus should not be used in a tight loop.
-  virtual QuorumPB Quorum() const = 0;
+  // Returns a copy of the committed state of the Consensus system.
+  virtual ConsensusStatePB CommittedConsensusState() const = 0;
+
+  // Returns a copy of the current committed Consensus quorum.
+  virtual QuorumPB CommittedQuorum() const = 0;
 
   virtual void DumpStatusHtml(std::ostream& out) const = 0;
 

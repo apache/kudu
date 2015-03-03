@@ -21,6 +21,7 @@ class BlockIdPB;
 class FsManager;
 
 namespace consensus {
+class ConsensusStatePB;
 class QuorumPB;
 class QuorumPeerPB;
 } // namespace consensus
@@ -61,7 +62,7 @@ class RemoteBootstrapClient {
   // Runs a "full" remote bootstrap, copying the physical layout of a tablet
   // from the leader of the specified quorum.
   Status RunRemoteBootstrap(tablet::TabletMetadata* meta,
-                            const consensus::QuorumPB& quorum,
+                            const consensus::ConsensusStatePB& cstate,
                             tablet::TabletStatusListener* status_listener);
 
  private:
@@ -78,7 +79,7 @@ class RemoteBootstrapClient {
   };
 
   // Return the leader of the quorum, or Status::NotFound() on error.
-  static Status ExtractLeaderFromQuorum(const consensus::QuorumPB& quorum,
+  static Status ExtractLeaderFromQuorum(const consensus::ConsensusStatePB& cstate,
                                         consensus::QuorumPeerPB* leader);
 
   // Extract the embedded Status message from the given ErrorStatusPB.
@@ -97,7 +98,7 @@ class RemoteBootstrapClient {
   //
   // 'status_listener' may be passed as NULL.
   Status BeginRemoteBootstrapSession(const std::string& tablet_id,
-                                     const consensus::QuorumPB& quorum,
+                                     const consensus::ConsensusStatePB& cstate,
                                      tablet::TabletStatusListener* status_listener);
 
   // End the remote bootstrap session.

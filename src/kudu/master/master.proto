@@ -84,9 +84,8 @@ message SysTabletsEntryPB {
   required bytes start_key = 1;
   required bytes end_key   = 2;
 
-  // the last quorum configuration, reported to the master.
-  // when the tablet is in "preparing" state (not assigned yet) the quorum is not set.
-  optional consensus.QuorumPB quorum = 3;
+  // The latest committed quorum consensus configuration reported to the Master.
+  optional consensus.ConsensusStatePB committed_consensus_state = 3;
 
   // Debug state for the tablet
   required State state = 4;
@@ -153,14 +152,14 @@ message TSRegistrationPB {
 message ReportedTabletPB {
   required bytes tablet_id = 1;
   required tablet.TabletStatePB state = 2;
-  required consensus.QuorumPeerPB.Role role = 3;
 
-  // The quorum serving the tablet.
-  // This is only set if role == LEADER.
-  optional consensus.QuorumPB quorum = 4;
+  // The latest _committed_ consensus state.
+  // This will be missing if the tablet is not in a RUNNING state
+  // (i.e. if it is BOOTSTRAPPING).
+  optional consensus.ConsensusStatePB committed_consensus_state = 3;
 
-  optional AppStatusPB error = 5;
-  optional uint32 schema_version = 6;
+  optional AppStatusPB error = 4;
+  optional uint32 schema_version = 5;
 }
 
 // Sent by the tablet server to report the set of tablets hosted by that TS.

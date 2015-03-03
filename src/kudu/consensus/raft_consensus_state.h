@@ -32,39 +32,6 @@ class Messenger;
 
 namespace consensus {
 
-// Immutable cached state of a quorum, including lists of voting peers,
-// current role, and other information.
-// Instantiate using the static Build() method below.
-struct QuorumState {
-  // Build an immutable QuorumState object, given a quorum and the UUID of the
-  // current node. The object does not retain a reference to either quorum or
-  // self_uuid.
-  static gscoped_ptr<QuorumState> Build(const QuorumPB& quorum,
-                                        const std::string& self_uuid);
-
-  // The acting role of the current replica in the quorum.
-  const QuorumPeerPB::Role role;
-
-  // The UUID of the leader. This may be the same as the local peer, and
-  // changes over time (but not for the lifetime of this object).
-  const std::string leader_uuid;
-
-  // The UUIDs for the current set of peers whose votes/acks count towards
-  // majority.
-  const std::tr1::unordered_set<std::string> voting_peers;
-
-  // Current size of the quorum majority.
-  // Number of "yes" votes it takes to get elected.
-  const int majority_size;
-
- private:
-  // Private constructor called by static Build method.
-  QuorumState(QuorumPeerPB::Role role,
-              const std::string& leader_uuid,
-              const std::tr1::unordered_set<std::string>& voting_peers,
-              int majority_size);
-};
-
 // Class that coordinates access to the replica state (independently of Role).
 // This has a 1-1 relationship with RaftConsensus and is essentially responsible for
 // keeping state and checking if state changes are viable.
@@ -170,14 +137,16 @@ class ReplicaState {
   // finishes.
   Status ShutdownUnlocked() WARN_UNUSED_RESULT;
 
-  // Returns a const reference to the currently active quorum state, which may
-  // correspond to a quorum pending commit in the case of a leader currently
-  // pushing a config change round.
-  // The returned reference is only valid while the lock is held.
-  const QuorumState& GetActiveQuorumStateUnlocked() const;
+  // Return current consensus state summary.
+  ConsensusStatePB ConsensusStateUnlocked(ConsensusMetadata::ConfigType type) const {
+    return cmeta_->ToConsensusStatePB(type);
+  }
 
-  // Returns true if pending_quorum_ is non-null, indicating that there is a
-  // quorum change currently in-flight but not yet committed.
+  // Returns the currently active quorum role.
+  QuorumPeerPB::Role GetActiveRoleUnlocked() const;
+
+  // Returns true if there is a quorum change currently in-flight but not yet
+  // committed.
   bool IsQuorumChangePendingUnlocked() const;
 
   // Returns true if an operation is in this replica's log, namely:
@@ -220,6 +189,12 @@ class ReplicaState {
 
   // Returns the term set in the last config change round.
   const uint64_t GetCurrentTermUnlocked() const;
+
+  // Accessors for the leader of the current term.
+  void SetLeaderUuidUnlocked(const std::string& uuid) const;
+  const std::string& GetLeaderUuidUnlocked() const;
+  bool HasLeaderUnlocked() const { return !GetLeaderUuidUnlocked().empty(); }
+  void ClearLeaderUnlocked() { SetLeaderUuidUnlocked(""); }
 
   // Return whether this peer has voted in the current term.
   const bool HasVotedCurrentTermUnlocked() const;
@@ -325,23 +300,12 @@ class ReplicaState {
   ReplicaState::State state() const;
 
  private:
-  // Helper method to update the active quorum state for peers, etc.
-  void ResetActiveQuorumStateUnlocked(const QuorumPB& quorum);
-
-  mutable simple_spinlock update_lock_;
-
   const ConsensusOptions options_;
 
   // The UUID of the local peer.
   const std::string peer_uuid_;
 
-  // Cache of the current active quorum state. May refer to either the pending
-  // or committed quorum. This can be tested by checking whether pending_quorum_
-  // is NULL.
-  gscoped_ptr<QuorumState> active_quorum_state_;
-
-  // Quorum used by the peers when there is a pending config change operation.
-  gscoped_ptr<QuorumPB> pending_quorum_;
+  mutable simple_spinlock update_lock_;
 
   // Consensus metadata persistence object.
   gscoped_ptr<ConsensusMetadata> cmeta_;
@@ -366,7 +330,6 @@ class ReplicaState {
   // The id of the Apply that was last triggered when the last message from the leader
   // was received. Initialized to MinimumOpId().
   OpId last_committed_index_;
-
 
   State state_;
 };

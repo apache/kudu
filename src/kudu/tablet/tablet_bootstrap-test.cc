@@ -111,6 +111,7 @@ class BootstrapTest : public LogTestBase {
 
     gscoped_ptr<ConsensusMetadata> cmeta;
     RETURN_NOT_OK_PREPEND(ConsensusMetadata::Create(meta->fs_manager(), meta->tablet_id(),
+                                                    meta->fs_manager()->uuid(),
                                                     quorum, kMinimumTerm, &cmeta),
                           "Unable to create consensus metadata");
 

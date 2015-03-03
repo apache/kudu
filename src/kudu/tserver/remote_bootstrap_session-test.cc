@@ -95,13 +95,14 @@ class RemoteBootstrapTest : public KuduTabletTest {
     quorum.set_local(true);
     QuorumPeerPB quorum_peer;
     quorum_peer.set_permanent_uuid(fs_manager()->uuid());
+    quorum_peer.set_member_type(QuorumPeerPB::VOTER);
     quorum.add_peers()->CopyFrom(quorum_peer);
     quorum.set_opid_index(consensus::kInvalidOpIdIndex);
 
     gscoped_ptr<ConsensusMetadata> cmeta;
     CHECK_OK(ConsensusMetadata::Create(tablet()->metadata()->fs_manager(),
-                                       tablet()->tablet_id(), quorum,
-                                       consensus::kMinimumTerm, &cmeta));
+                                       tablet()->tablet_id(), fs_manager()->uuid(),
+                                       quorum, consensus::kMinimumTerm, &cmeta));
 
     shared_ptr<Messenger> messenger;
     MessengerBuilder mbuilder(CURRENT_TEST_NAME());

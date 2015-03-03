@@ -1777,55 +1777,6 @@ TEST_F(TabletServerTest, TestChangeConfiguration) {
                                             (KeyValue(7, 7)));
 }
 
-// Test that when a change config. transaction changes the tablet state, such as the
-// quorum role, the tablet manager gets notified and includes that information in the next
-// tablet report.
-TEST_F(TabletServerTest, TestChangeConfiguration_TsTabletManagerReportsNewRoles) {
-  ChangeConfigRequestPB req;
-  ChangeConfigResponsePB resp;
-  RpcController rpc;
-
-  req.set_tablet_id(kTabletId);
-
-  QuorumPB* new_quorum = req.mutable_new_config();
-  new_quorum->set_local(true);
-  new_quorum->clear_opid_index();
-  QuorumPeerPB* peer = new_quorum->add_peers();
-  peer->set_member_type(QuorumPeerPB::VOTER);
-  peer->set_permanent_uuid(mini_server_->server()->instance_pb().permanent_uuid());
-  SeedRandom();
-
-  // loop and send multiple config. change requests where we change the
-  // role of the peer. TSTabletManager should acknowledge the role changes.
-  for (int i = 0; i < 10; i++) {
-    SCOPED_TRACE(Substitute("Iter: $0", i));
-    bool leader = false;
-    if (rand() % 2 == 0) {
-      leader = true;
-      new_quorum->set_leader_uuid(peer->permanent_uuid());
-    } else {
-      new_quorum->clear_leader_uuid();
-    }
-    SCOPED_TRACE("Request: " + req.ShortDebugString());
-    ASSERT_OK(consensus_proxy_->ChangeConfig(req, &resp, &rpc));
-    SCOPED_TRACE("Response: " + resp.ShortDebugString());
-    ASSERT_FALSE(resp.has_error());
-    rpc.Reset();
-    // Now check that the tablet report reports the correct role
-    kudu::master::TabletReportPB report;
-    mini_server_->server()->tablet_manager()->GenerateIncrementalTabletReport(&report);
-    ASSERT_EQ(report.updated_tablets_size(), 1) << report.ShortDebugString();
-    kudu::master::ReportedTabletPB tablet_report = report.updated_tablets(0);
-    if (leader) {
-      ASSERT_EQ(QuorumPeerPB::LEADER, tablet_report.role())
-          << "Tablet report: " << report.ShortDebugString();
-    } else {
-      ASSERT_EQ(QuorumPeerPB::FOLLOWER, tablet_report.role())
-          << "Tablet report: " << report.ShortDebugString();
-    }
-  }
-}
-
 TEST_F(TabletServerTest, TestInsertLatencyMicroBenchmark) {
   METRIC_DEFINE_entity(test);
   METRIC_DEFINE_histogram(test, insert_latency,

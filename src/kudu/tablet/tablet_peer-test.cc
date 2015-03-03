@@ -100,7 +100,9 @@ class TabletPeerTest : public KuduTabletTest {
 
     gscoped_ptr<ConsensusMetadata> cmeta;
     ASSERT_OK(ConsensusMetadata::Create(tablet()->metadata()->fs_manager(),
-                                        tablet()->tablet_id(), quorum,
+                                        tablet()->tablet_id(),
+                                        tablet()->metadata()->fs_manager()->uuid(),
+                                        quorum,
                                         consensus::kMinimumTerm, &cmeta));
 
     scoped_refptr<Log> log;

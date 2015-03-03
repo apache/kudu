@@ -44,6 +44,12 @@ bool AllowSlowTests();
 // Override the given gflag to the new value, only in the case that
 // slow tests are enabled and the user hasn't otherwise overridden
 // it on the command line.
+// Example usage:
+//
+// OverrideFlagForSlowTests(
+//     "client_inserts_per_thread",
+//     strings::Substitute("$0", FLAGS_client_inserts_per_thread * 100));
+//
 void OverrideFlagForSlowTests(const std::string& flag_name,
                               const std::string& new_value);
 

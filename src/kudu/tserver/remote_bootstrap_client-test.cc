@@ -59,15 +59,19 @@ Status RemoteBootstrapClientTest::CompareFileContents(const string& path1, const
 
 // Basic begin / end remote bootstrap session.
 TEST_F(RemoteBootstrapClientTest, TestBeginEndSession) {
-  ASSERT_OK(client_->BeginRemoteBootstrapSession(GetTabletId(),
-                                                 tablet_peer_->Quorum(), NULL));
+  ASSERT_OK(client_->
+      BeginRemoteBootstrapSession(GetTabletId(),
+                                  tablet_peer_->consensus()->CommittedConsensusState(),
+                                  NULL));
   ASSERT_OK(client_->EndRemoteBootstrapSession());
 }
 
 // Basic data block download unit test.
 TEST_F(RemoteBootstrapClientTest, TestDownloadBlock) {
-  ASSERT_OK(client_->BeginRemoteBootstrapSession(GetTabletId(),
-                                                 tablet_peer_->Quorum(), NULL));
+  ASSERT_OK(client_->
+      BeginRemoteBootstrapSession(GetTabletId(),
+                                  tablet_peer_->consensus()->CommittedConsensusState(),
+                                  NULL));
   BlockId block_id = FirstColumnBlockId(*client_->superblock_);
   Slice slice;
   faststring scratch;
@@ -92,8 +96,10 @@ TEST_F(RemoteBootstrapClientTest, TestDownloadBlock) {
 TEST_F(RemoteBootstrapClientTest, TestDownloadWalSegment) {
   ASSERT_OK(fs_manager_->CreateDirIfMissing(fs_manager_->GetTabletWalDir(GetTabletId())));
 
-  ASSERT_OK(client_->BeginRemoteBootstrapSession(GetTabletId(),
-                                                 tablet_peer_->Quorum(), NULL));
+  ASSERT_OK(client_->
+      BeginRemoteBootstrapSession(GetTabletId(),
+                                  tablet_peer_->consensus()->CommittedConsensusState(),
+                                  NULL));
   uint64_t seqno = client_->wal_seqnos_[0];
   string path = fs_manager_->GetWalSegmentFileName(GetTabletId(), seqno);
 
@@ -179,8 +185,10 @@ vector<BlockId> GetAllSortedBlocks(const tablet::TabletSuperBlockPB& sb) {
 
 TEST_F(RemoteBootstrapClientTest, TestDownloadAllBlocks) {
   // Download all the blocks.
-  ASSERT_OK(client_->BeginRemoteBootstrapSession(GetTabletId(),
-                                                 tablet_peer_->Quorum(), NULL));
+  ASSERT_OK(client_->
+      BeginRemoteBootstrapSession(GetTabletId(),
+                                  tablet_peer_->consensus()->CommittedConsensusState(),
+                                  NULL));
   ASSERT_OK(client_->DownloadBlocks());
   ASSERT_OK(client_->EndRemoteBootstrapSession());
 

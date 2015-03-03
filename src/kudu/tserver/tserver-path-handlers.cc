@@ -26,9 +26,8 @@
 #include "kudu/tserver/ts_tablet_manager.h"
 #include "kudu/util/url-coding.h"
 
-using kudu::consensus::GetRoleInQuorum;
-using kudu::consensus::IsQuorumLeader;
-using kudu::consensus::QuorumPB;
+using kudu::consensus::GetConsensusRole;
+using kudu::consensus::ConsensusStatePB;
 using kudu::consensus::QuorumPeerPB;
 using kudu::consensus::TransactionStatusPB;
 using kudu::tablet::MaintenanceManagerStatusPB;
@@ -203,7 +202,8 @@ void TabletServerPathHandlers::HandleTabletsPage(const Webserver::WebRequest& re
         EscapeForHtmlToString(start_key), // $2
         EscapeForHtmlToString(end_key), // $3
         state, n_bytes, // $4, $5
-        peer->consensus() == NULL ? "" : QuorumPBToHtml(peer->Quorum()), // $6
+        peer->consensus() == NULL ? "" : ConsensusStatePBToHtml(
+                                             peer->consensus()->CommittedConsensusState()), // $6
         EscapeForHtmlToString(status.last_status())); // $7
   }
   *output << "</table>\n";
@@ -219,25 +219,25 @@ bool CompareByMemberType(const QuorumPeerPB& a, const QuorumPeerPB& b) {
 
 } // anonymous namespace
 
-string TabletServerPathHandlers::QuorumPBToHtml(const QuorumPB& quorum) const {
+string TabletServerPathHandlers::ConsensusStatePBToHtml(const ConsensusStatePB& cstate) const {
   std::stringstream html;
 
   html << "<ul>\n";
   std::vector<QuorumPeerPB> sorted_peers;
-  sorted_peers.assign(quorum.peers().begin(), quorum.peers().end());
+  sorted_peers.assign(cstate.quorum().peers().begin(), cstate.quorum().peers().end());
   std::sort(sorted_peers.begin(), sorted_peers.end(), &CompareByMemberType);
   BOOST_FOREACH(const QuorumPeerPB& peer, sorted_peers) {
     string peer_addr_or_uuid =
         peer.has_last_known_addr() ? peer.last_known_addr().host() : peer.permanent_uuid();
     peer_addr_or_uuid = EscapeForHtmlToString(peer_addr_or_uuid);
-    if (IsQuorumLeader(peer.permanent_uuid(), quorum)) {
+    if (peer.permanent_uuid() == cstate.leader_uuid()) {
         html << Substitute("  <li><b>LEADER: $0</b></li>\n",
                            peer_addr_or_uuid);
     } else {
         html << Substitute(" <li>$0: $1</li>\n",
-                           QuorumPeerPB::Role_Name(GetRoleInQuorum(peer.permanent_uuid(), quorum)),
+                           QuorumPeerPB::Role_Name(GetConsensusRole(peer.permanent_uuid(), cstate)),
                            peer_addr_or_uuid);
-      }
+    }
   }
   html << "</ul>\n";
   return html.str();
