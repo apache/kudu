@@ -84,6 +84,12 @@ endif(NOT CMAKE_BUILD_TYPE)
 
 string (TOUPPER ${CMAKE_BUILD_TYPE} CMAKE_BUILD_TYPE)
 
+# Alias RELEASE as RELWITHDEBINFO and MINSIZEREL. These are common CMake
+# release type names and this provides compatibility with the CLion IDE.
+if ("${CMAKE_BUILD_TYPE}" STREQUAL "RELWITHDEBINFO" OR "${CMAKE_BUILD_TYPE}" STREQUAL "MINSIZEREL")
+  set(CMAKE_BUILD_TYPE RELEASE)
+endif ()
+
 # Set compile flags based on the build type.
 message("Configured for ${CMAKE_BUILD_TYPE} build (set with cmake -DCMAKE_BUILD_TYPE={release,debug,...})")
 if ("${CMAKE_BUILD_TYPE}" STREQUAL "DEBUG")
