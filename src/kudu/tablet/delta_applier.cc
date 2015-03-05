@@ -19,7 +19,8 @@ namespace tablet {
 DeltaApplier::DeltaApplier(const shared_ptr<CFileSet::Iterator>& base_iter,
                            const shared_ptr<DeltaIterator>& delta_iter)
   : base_iter_(base_iter),
-    delta_iter_(delta_iter) {
+    delta_iter_(delta_iter),
+    first_prepare_(true) {
 }
 
 DeltaApplier::~DeltaApplier() {
@@ -28,7 +29,6 @@ DeltaApplier::~DeltaApplier() {
 Status DeltaApplier::Init(ScanSpec *spec) {
   RETURN_NOT_OK(base_iter_->Init(spec));
   RETURN_NOT_OK(delta_iter_->Init(spec));
-  RETURN_NOT_OK(delta_iter_->SeekToOrdinal(base_iter_->cur_ordinal_idx()));
   return Status::OK();
 }
 
@@ -56,6 +56,13 @@ bool DeltaApplier::HasNext() const {
 }
 
 Status DeltaApplier::PrepareBatch(size_t *nrows) {
+  // The initial seek is deferred from Init() into the first PrepareBatch()
+  // because it requires a loaded delta file, and we don't want to require
+  // that at Init() time.
+  if (first_prepare_) {
+    RETURN_NOT_OK(delta_iter_->SeekToOrdinal(base_iter_->cur_ordinal_idx()));
+    first_prepare_ = false;
+  }
   RETURN_NOT_OK(base_iter_->PrepareBatch(nrows));
   RETURN_NOT_OK(delta_iter_->PrepareBatch(*nrows));
   return Status::OK();
@@ -66,11 +73,14 @@ Status DeltaApplier::FinishBatch() {
 }
 
 Status DeltaApplier::InitializeSelectionVector(SelectionVector *sel_vec) {
+  DCHECK(!first_prepare_) << "PrepareBatch() must be called at least once";
   RETURN_NOT_OK(base_iter_->InitializeSelectionVector(sel_vec));
   return delta_iter_->ApplyDeletes(sel_vec);
 }
 
 Status DeltaApplier::MaterializeColumn(size_t col_idx, ColumnBlock *dst) {
+  DCHECK(!first_prepare_) << "PrepareBatch() must be called at least once";
+
   // Copy the base data.
   RETURN_NOT_OK(base_iter_->MaterializeColumn(col_idx, dst));
 

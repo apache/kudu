@@ -263,6 +263,7 @@ class DeltaFileIterator : public DeltaIterator {
   uint32_t prepared_count_;
   bool prepared_;
   bool exhausted_;
+  bool initted_;
 
   // After PrepareBatch(), the set of delta blocks in the delta file
   // which correspond to prepared_block_.

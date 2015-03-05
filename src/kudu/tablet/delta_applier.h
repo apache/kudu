@@ -62,6 +62,8 @@ class DeltaApplier : public ColumnwiseIterator {
 
   std::tr1::shared_ptr<CFileSet::Iterator> base_iter_;
   std::tr1::shared_ptr<DeltaIterator> delta_iter_;
+
+  bool first_prepare_;
 };
 
 } // namespace tablet

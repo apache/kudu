@@ -342,12 +342,13 @@ DeltaFileIterator::DeltaFileIterator(const shared_ptr<const DeltaFileReader>& df
   prepared_count_(0),
   prepared_(false),
   exhausted_(false),
+  initted_(false),
   delta_type_(delta_type),
   cache_blocks_(CFileReader::CACHE_BLOCK)
 {}
 
 Status DeltaFileIterator::Init(ScanSpec *spec) {
-  CHECK(index_iter_.get() == NULL) << "Already initted";
+  DCHECK(!initted_) << "Already initted";
 
   if (spec) {
     cache_blocks_ = spec->cache_blocks() ? CFileReader::CACHE_BLOCK :
@@ -355,16 +356,18 @@ Status DeltaFileIterator::Init(ScanSpec *spec) {
   }
 
   RETURN_NOT_OK(projector_.Init());
-
-  BlockPointer validx_root = cfile_reader_->validx_root();
-  index_iter_.reset(
-    IndexTreeIterator::Create(cfile_reader_.get(), STRING, validx_root));
-
+  initted_ = true;
   return Status::OK();
 }
 
 Status DeltaFileIterator::SeekToOrdinal(rowid_t idx) {
-  CHECK(index_iter_.get() != NULL) << "Must call Init()";
+  DCHECK(initted_) << "Must call Init()";
+
+  // Create the index tree iterator if we haven't already done so.
+  if (!index_iter_) {
+    index_iter_.reset(IndexTreeIterator::Create(
+        cfile_reader_.get(), STRING, cfile_reader_->validx_root()));
+  }
 
   tmp_buf_.clear();
   DeltaKey(idx, Timestamp(0)).EncodeTo(&tmp_buf_);
@@ -390,7 +393,8 @@ Status DeltaFileIterator::SeekToOrdinal(rowid_t idx) {
 }
 
 Status DeltaFileIterator::ReadCurrentBlockOntoQueue() {
-  DCHECK(index_iter_ != NULL);
+  DCHECK(initted_) << "Must call Init()";
+  DCHECK(index_iter_) << "Must call SeekToOrdinal()";
 
   gscoped_ptr<PreparedDeltaBlock> pdb(new PreparedDeltaBlock());
   BlockPointer dblk_ptr = index_iter_->GetCurrentBlockPointer();
@@ -418,6 +422,8 @@ Status DeltaFileIterator::ReadCurrentBlockOntoQueue() {
 }
 
 Status DeltaFileIterator::GetFirstRowIndexInCurrentBlock(rowid_t *idx) {
+  DCHECK(index_iter_) << "Must call SeekToOrdinal()";
+
   Slice index_entry = index_iter_->GetCurrentKey();
   DeltaKey k;
   RETURN_NOT_OK(k.DecodeFrom(&index_entry));
@@ -442,7 +448,9 @@ string DeltaFileIterator::PreparedDeltaBlock::ToString() const {
 }
 
 Status DeltaFileIterator::PrepareBatch(size_t nrows) {
-  CHECK(index_iter_.get() != NULL) << "Must call Init()";
+  DCHECK(initted_) << "Must call Init()";
+  DCHECK(index_iter_) << "Must call SeekToOrdinal()";
+
   CHECK_GT(nrows, 0);
 
   rowid_t start_row = prepared_idx_ + prepared_count_;
