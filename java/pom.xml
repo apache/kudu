@@ -34,7 +34,7 @@
         <slf4j.version>1.6.1</slf4j.version>
         <maven.assembly.version>2.2.1</maven.assembly.version>
         <protoc.version>0.1.10</protoc.version>
-        <hadoop.version>2.3.0-cdh5.0.0</hadoop.version>
+        <hadoop.version>2.5.0-cdh5.3.2</hadoop.version>
     </properties>
 
     <modules>
