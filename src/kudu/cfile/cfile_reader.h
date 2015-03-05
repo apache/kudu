@@ -264,8 +264,6 @@ class DefaultColumnValueIterator : public ColumnIterator {
 class CFileIterator : public ColumnIterator {
  public:
   CFileIterator(const CFileReader *reader,
-                const BlockPointer *posidx_root,
-                const BlockPointer *validx_root,
                 CFileReader::CacheControl cache_control);
 
   // Seek to the first entry in the file. This works for both

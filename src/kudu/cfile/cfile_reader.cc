@@ -254,18 +254,7 @@ bool CFileReader::GetMetadataEntry(const string &key, string *val) {
 }
 
 Status CFileReader::NewIterator(CFileIterator **iter, CacheControl cache_control) const {
-  gscoped_ptr<BlockPointer> posidx_root;
-  if (footer_->has_posidx_info()) {
-    posidx_root.reset(new BlockPointer(footer_->posidx_info().root_block()));
-  }
-
-  // If there is a value index in the file, pass it to the iterator
-  gscoped_ptr<BlockPointer> validx_root;
-  if (footer_->has_validx_info()) {
-    validx_root.reset(new BlockPointer(footer_->validx_info().root_block()));
-  }
-
-  *iter = new CFileIterator(this, posidx_root.get(), validx_root.get(), cache_control);
+  *iter = new CFileIterator(this, cache_control);
   return Status::OK();
 }
 
@@ -316,8 +305,6 @@ Status DefaultColumnValueIterator::FinishBatch() {
 // Iterator
 ////////////////////////////////////////////////////////////
 CFileIterator::CFileIterator(const CFileReader *reader,
-                             const BlockPointer *posidx_root,
-                             const BlockPointer *validx_root,
                              CFileReader::CacheControl cache_control)
   : reader_(reader),
     seeked_(NULL),
@@ -325,15 +312,6 @@ CFileIterator::CFileIterator(const CFileReader *reader,
     cache_control_(cache_control),
     last_prepare_idx_(-1),
     last_prepare_count_(-1) {
-  if (posidx_root != NULL) {
-    posidx_iter_.reset(IndexTreeIterator::Create(
-                         reader, UINT32, *posidx_root));
-  }
-
-  if (validx_root != NULL) {
-    validx_iter_.reset(IndexTreeIterator::Create(
-                         reader, reader->type_info()->type(), *validx_root));
-  }
 }
 
 Status CFileIterator::SeekToOrdinal(rowid_t ord_idx) {
@@ -472,6 +450,17 @@ Status CFileIterator::SeekAtOrAfter(const EncodedKey &key,
 }
 
 void CFileIterator::Unseek() {
+  // Create the index tree iterators if we haven't already done so.
+  if (!posidx_iter_ && reader_->footer().has_posidx_info()) {
+    BlockPointer bp(reader_->footer().posidx_info().root_block());
+    posidx_iter_.reset(IndexTreeIterator::Create(reader_, UINT32, bp));
+  }
+  if (!validx_iter_ && reader_->footer().has_validx_info()) {
+    BlockPointer bp(reader_->footer().validx_info().root_block());
+    validx_iter_.reset(IndexTreeIterator::Create(reader_,
+                                                 reader_->type_info()->type(), bp));
+  }
+
   seeked_ = NULL;
   BOOST_FOREACH(PreparedBlock *pb, prepared_blocks_) {
     prepared_block_pool_.Destroy(pb);
