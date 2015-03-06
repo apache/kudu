@@ -168,7 +168,31 @@ class ScanResultCollector {
 
   // Returns number of bytes processed.
   virtual int64_t BytesRead() const = 0;
+
+  // Returns the encoded last row processed.
+  virtual const faststring& encoded_last_row() const = 0;
 };
+
+namespace {
+
+// Given a RowBlock, set encoded_last_row to the encoded key of the last selected row
+// in the RowBlock. If no row is selected, encoded_last_row is not set.
+void SetLastRow(const RowBlock& row_block, faststring* encoded_last_row) {
+  // Find the last selected row and save its encoded key.
+  const SelectionVector* sel = row_block.selection_vector();
+  if (sel->AnySelected()) {
+    for (int i = sel->nrows() - 1; i >= 0; i--) {
+      if (sel->IsRowSelected(i)) {
+        RowBlockRow last_row = row_block.row(i);
+        const Schema* schema = last_row.schema();
+        schema->EncodeComparableKey(last_row, encoded_last_row);
+        break;
+      }
+    }
+  }
+}
+
+}  // namespace
 
 // Copies the scan result to the given row block PB and data buffers.
 //
@@ -192,6 +216,7 @@ class ScanResultCopier : public ScanResultCollector {
     blocks_processed_++;
     SerializeRowBlock(row_block, rowblock_pb_, client_projection_schema,
                       rows_data_, indirect_data_);
+    SetLastRow(row_block, &encoded_last_row_);
   }
 
   virtual int BlocksProcessed() const { return blocks_processed_; }
@@ -201,11 +226,16 @@ class ScanResultCopier : public ScanResultCollector {
     return rows_data_->size() + indirect_data_->size();
   }
 
+  virtual const faststring& encoded_last_row() const OVERRIDE {
+    return encoded_last_row_;
+  }
+
  private:
   RowwiseRowBlockPB* const rowblock_pb_;
   faststring* const rows_data_;
   faststring* const indirect_data_;
   int blocks_processed_;
+  faststring encoded_last_row_;
 
   DISALLOW_COPY_AND_ASSIGN(ScanResultCopier);
 };
@@ -244,6 +274,7 @@ class ScanResultChecksummer : public ScanResultCollector {
   ScanResultChecksummer()
       : crc_(crc::GetCrc32cInstance()),
         agg_checksum_(0),
+        bytes_read_(0),
         blocks_processed_(0) {
   }
 
@@ -263,12 +294,16 @@ class ScanResultChecksummer : public ScanResultCollector {
       agg_checksum_ += row_crc;
       bytes_read_ += bytes_read;
     }
+    // Find the last selected row and save its encoded key.
+    SetLastRow(row_block, &encoded_last_row_);
   }
 
   virtual int BlocksProcessed() const { return blocks_processed_; }
 
   // Returns number of bytes scanned.
   virtual int64_t BytesRead() const OVERRIDE { return bytes_read_; }
+
+  virtual const faststring& encoded_last_row() const OVERRIDE { return encoded_last_row_; }
 
   // Accessors for initializing / setting the checksum.
   void set_agg_checksum(uint64_t value) { agg_checksum_ = value; }
@@ -279,6 +314,7 @@ class ScanResultChecksummer : public ScanResultCollector {
   uint64_t agg_checksum_;
   int64_t bytes_read_;
   int blocks_processed_;
+  faststring encoded_last_row_;
 
   DISALLOW_COPY_AND_ASSIGN(ScanResultChecksummer);
 };
@@ -718,6 +754,7 @@ void TabletServiceImpl::Scan(const ScanRequestPB* req,
   }
   resp->set_has_more_results(has_more_results);
 
+  DVLOG(2) << "Blocks processed: " << collector.BlocksProcessed();
   if (collector.BlocksProcessed() > 0) {
     resp->mutable_data()->CopyFrom(data);
 
@@ -741,6 +778,14 @@ void TabletServiceImpl::Scan(const ScanRequestPB* req,
         return;
       }
       resp->mutable_data()->set_indirect_data_sidecar(indirect_idx);
+    }
+
+    // Set the last row found by the collector.
+    // We could have an empty batch if all the remaining rows are filtered by the predicate,
+    // in which case do not set the last row.
+    const faststring& last = collector.encoded_last_row();
+    if (last.length() > 0) {
+      resp->set_encoded_last_row_key(last.ToString());
     }
   }
 
@@ -882,6 +927,21 @@ static Status DecodeEncodedKeyRange(const NewScanRequestPB& scan_pb,
                           "Invalid scan stop key");
   }
 
+  if (scan_pb.order_by_primary_key() && scan_pb.has_encoded_last_row_key()) {
+    if (start) {
+      return Status::InvalidArgument("Cannot specify both a start key and a last key");
+    }
+    // Set the start key to the last key from a previous scan result.
+    // Need to trim this key at the end, to prevent including it multiple times.
+    RETURN_NOT_OK_PREPEND(EncodedKey::DecodeEncodedString(
+                            tablet_schema, scanner->arena(),
+                            scan_pb.encoded_last_row_key(), &start),
+                          "Invalid scan last key");
+    // Increment the last key, so we don't return the last row again.
+    RETURN_NOT_OK_PREPEND(EncodedKey::IncrementEncodedKey(tablet_schema, &start),
+                          "Invalid scan last key");
+  }
+
   if (start) {
     spec->SetLowerBoundKey(start.get());
     scanner->autorelease_pool()->Add(start.release());
@@ -944,6 +1004,17 @@ static Status SetupScanSpec(const NewScanRequestPB& scan_pb,
     ret->set_cache_blocks(scan_pb.cache_blocks());
   }
 
+  // When doing an ordered scan, we need to include the key columns to be able to encode
+  // the last row key for the scan response.
+  if (scan_pb.order_by_primary_key() &&
+      projection.num_key_columns() != tablet_schema.num_key_columns()) {
+    for (int i = 0; i < tablet_schema.num_key_columns(); i++) {
+      const ColumnSchema &col = tablet_schema.column(i);
+      if (projection.find_column(col.name()) == -1) {
+        missing_cols->push_back(col);
+      }
+    }
+  }
   // Then any encoded key range predicates.
   RETURN_NOT_OK(DecodeEncodedKeyRange(scan_pb, tablet_schema, scanner, ret.get()));
 
@@ -988,6 +1059,15 @@ Status TabletServiceImpl::HandleNewScanRequest(TabletPeer* tablet_peer,
   if (projection.has_column_ids()) {
     *error_code = TabletServerErrorPB::INVALID_SCHEMA;
     return Status::InvalidArgument("User requests should not have Column IDs");
+  }
+
+  if (scan_pb.order_by_primary_key()) {
+    // Ordered scans must be at a snapshot so that we perform a serializable read (which can be
+    // resumed). Otherwise, this would be read committed isolation, which is not resumable.
+    if (scan_pb.read_mode() != READ_AT_SNAPSHOT) {
+      *error_code = TabletServerErrorPB::INVALID_SNAPSHOT;
+          return Status::InvalidArgument("Cannot do an ordered scan that is not a snapshot read");
+    }
   }
 
   gscoped_ptr<ScanSpec> spec(new ScanSpec);
@@ -1217,7 +1297,10 @@ Status TabletServiceImpl::HandleScanAtSnapshot(const NewScanRequestPB& scan_pb,
   tablet_peer->tablet()->metrics()->snapshot_scan_inflight_wait_duration->Increment(duration_usec);
   TRACE("All operations in snapshot committed. Waited for $0 microseconds", duration_usec);
 
-  RETURN_NOT_OK(tablet_peer->tablet()->NewRowIterator(projection, snap, iter));
+  tablet::Tablet::OrderMode order =
+      scan_pb.order_by_primary_key() ? tablet::Tablet::ORDERED : tablet::Tablet::UNORDERED;
+  RETURN_NOT_OK(tablet_peer->tablet()->NewRowIterator(projection, snap,
+                                                      order, iter));
   *snap_timestamp = tmp_snap_timestamp;
   return Status::OK();
 }

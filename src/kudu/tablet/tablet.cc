@@ -184,18 +184,19 @@ Status Tablet::NewRowIterator(const Schema &projection,
                               gscoped_ptr<RowwiseIterator> *iter) const {
   // Yield current rows.
   MvccSnapshot snap(mvcc_);
-  return NewRowIterator(projection, snap, iter);
+  return NewRowIterator(projection, snap, Tablet::UNORDERED, iter);
 }
 
 
 Status Tablet::NewRowIterator(const Schema &projection,
                               const MvccSnapshot &snap,
+                              const OrderMode order,
                               gscoped_ptr<RowwiseIterator> *iter) const {
   if (metrics_) {
     metrics_->scans_started->Increment();
   }
   VLOG(2) << "Created new Iterator under snap: " << snap.ToString();
-  iter->reset(new Iterator(this, projection, snap));
+  iter->reset(new Iterator(this, projection, snap, order));
   return Status::OK();
 }
 
@@ -1463,10 +1464,12 @@ void Tablet::PrintRSLayout(ostream* o) {
 
 Tablet::Iterator::Iterator(const Tablet *tablet,
                            const Schema &projection,
-                           const MvccSnapshot &snap)
+                           const MvccSnapshot &snap,
+                           const OrderMode order)
     : tablet_(tablet),
       projection_(projection),
       snap_(snap),
+      order_(order),
       encoder_(&tablet_->key_schema()) {
 }
 
@@ -1486,7 +1489,17 @@ Status Tablet::Iterator::Init(ScanSpec *spec) {
 
   RETURN_NOT_OK(tablet_->CaptureConsistentIterators(
       &projection_, snap_, spec, &iters));
-  iter_.reset(new UnionIterator(iters));
+
+  switch (order_) {
+    case ORDERED:
+      iter_.reset(new MergeIterator(projection_, iters));
+      break;
+    case UNORDERED:
+    default:
+      iter_.reset(new UnionIterator(iters));
+      break;
+  }
+
   RETURN_NOT_OK(iter_->Init(spec));
   return Status::OK();
 }

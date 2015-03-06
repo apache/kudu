@@ -48,6 +48,23 @@ Status EncodedKey::DecodeEncodedString(const Schema& schema,
   return Status::OK();
 }
 
+Status EncodedKey::IncrementEncodedKey(const Schema& tablet_schema, gscoped_ptr<EncodedKey> *key) {
+  EncodedKey* key_ptr = key->get();
+  DCHECK_EQ(key_ptr->num_key_columns(), tablet_schema.num_key_columns());
+  // Make a new builder out of the contents key.
+  EncodedKeyBuilder kb(&tablet_schema);
+  for (int i = 0; i < tablet_schema.num_key_columns(); i++) {
+    kb.AddColumnKey(key_ptr->raw_keys()[i]);
+  }
+  // Set the key to its next greater successor.
+  gscoped_ptr<EncodedKey> successor(kb.BuildSuccessorEncodedKey());
+  if (!successor) {
+    return Status::IllegalState("No lexicographically greater key exists");
+  }
+  key->swap(successor);
+  return Status::OK();
+}
+
 string EncodedKey::Stringify(const Schema &schema) const {
   if (num_key_cols_ == 1) {
     return schema.column(0).Stringify(raw_keys_.front());

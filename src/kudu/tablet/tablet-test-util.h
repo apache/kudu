@@ -155,6 +155,7 @@ static inline void CollectRowsForSnapshots(Tablet* tablet,
     gscoped_ptr<RowwiseIterator> iter;
     ASSERT_STATUS_OK(tablet->NewRowIterator(schema,
                                             snapshot,
+                                            Tablet::UNORDERED,
                                             &iter));
     ASSERT_STATUS_OK(iter->Init(NULL));
     vector<string>* collector = new vector<string>();
@@ -179,6 +180,7 @@ static inline void VerifySnapshotsHaveSameResult(Tablet* tablet,
     gscoped_ptr<RowwiseIterator> iter;
     ASSERT_STATUS_OK(tablet->NewRowIterator(schema,
                                             snapshot,
+                                            Tablet::UNORDERED,
                                             &iter));
     ASSERT_STATUS_OK(iter->Init(NULL));
     vector<string> collector;

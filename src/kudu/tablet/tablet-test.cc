@@ -384,6 +384,57 @@ TYPED_TEST(TestTablet, TestRowIteratorSimple) {
   ASSERT_FALSE(iter->HasNext());
 }
 
+TYPED_TEST(TestTablet, TestRowIteratorOrdered) {
+  // Create interleaved keys in each rowset, so they are clearly not in order
+  const int kNumRows = 128;
+  const int kNumBatches = 4;
+  LOG(INFO) << "Schema: " << this->schema_.ToString();
+  LocalTabletWriter writer(this->tablet().get(), &this->client_schema_);
+  for (int i = 0; i < kNumBatches; i++) {
+    ASSERT_OK(this->tablet()->Flush());
+    for (int j = 0; j < kNumRows; j++) {
+      if (j % kNumBatches == i) {
+        LOG(INFO) << "Inserting row " << j;
+        CHECK_OK(this->InsertTestRow(&writer, 654321+j, j));
+      }
+    }
+  }
+
+  MvccSnapshot snap(*this->tablet()->mvcc_manager());
+  // Iterate through with a few different block sizes.
+  for (int numBlocks = 1; numBlocks < 5; numBlocks*=2) {
+    const int rowsPerBlock = kNumRows / numBlocks;
+    // Make a new ordered iterator for the current snapshot.
+    gscoped_ptr<RowwiseIterator> iter;
+
+    ASSERT_OK(this->tablet()->NewRowIterator(this->client_schema_, snap, Tablet::ORDERED, &iter));
+    ASSERT_OK(iter->Init(NULL));
+
+    // Iterate the tablet collecting rows.
+    vector<shared_ptr<faststring> > rows;
+    for (int i = 0; i < numBlocks; i++) {
+      RowBlock block(this->schema_, rowsPerBlock, &this->arena_);
+      ASSERT_TRUE(iter->HasNext());
+      ASSERT_OK(iter->NextBlock(&block));
+      ASSERT_EQ(rowsPerBlock, block.nrows()) << "unexpected number of rows returned";
+      for (int j = 0; j < rowsPerBlock; j++) {
+        RowBlockRow row = block.row(j);
+        shared_ptr<faststring> encoded(new faststring());
+        this->client_schema_.EncodeComparableKey(row, encoded.get());
+        rows.push_back(encoded);
+      }
+    }
+    // Verify the collected rows, checking that they are sorted.
+    for (int j = 1; j < rows.size(); j++) {
+      // Use the schema for comparison, since this test is run with different schemas.
+      ASSERT_LT((*rows[j-1]).ToString(), (*rows[j]).ToString());
+    }
+    ASSERT_FALSE(iter->HasNext());
+    ASSERT_EQ(kNumRows, rows.size());
+  }
+}
+
+
 template<class SETUP>
 bool TestSetupExpectsNulls(uint32_t key_idx) {
   return false;

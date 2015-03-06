@@ -1004,6 +1004,86 @@ TEST_F(TabletServerTest, TestSnapshotScan_OpenScanner) {
 }
 
 
+// Test retrying a snapshot scan using last_row.
+TEST_F(TabletServerTest, TestSnapshotScan_LastRow) {
+  const int num_rows = AllowSlowTests() ? 1000 : 100;
+  const int num_batches = AllowSlowTests() ? 10 : 5;
+  const int batch_size = num_rows / num_batches;
+
+  // Generate some interleaved rows
+  for (int i = 0; i < batch_size; i++) {
+    ASSERT_STATUS_OK(tablet_peer_->tablet()->Flush());
+    for (int j = 0; j < num_rows; j++) {
+      if (j % batch_size == i) {
+        InsertTestRowsDirect(j, 1);
+      }
+    }
+  }
+
+  // Remove all the key columns from the projection.
+  // This makes sure the scanner adds them in for sorting but removes them before returning
+  // to the client.
+  SchemaBuilder sb(schema_);
+  for (int i = 0; i < schema_.num_key_columns(); i++) {
+    sb.RemoveColumn(schema_.column(i).name());
+  }
+  const Schema& projection = sb.BuildWithoutIds();
+
+  // Scan the whole tablet with a few different batch sizes.
+  for (int i = 1; i < 10000; i *= 2) {
+    ScanResponsePB resp;
+    ScanRequestPB req;
+    RpcController rpc;
+
+    // Set up a new snapshot scan without a specified timestamp.
+    NewScanRequestPB* scan = req.mutable_new_scan_request();
+    scan->set_tablet_id(kTabletId);
+    ASSERT_STATUS_OK(SchemaToColumnPBs(projection, scan->mutable_projected_columns()));
+    req.set_call_seq_id(0);
+    scan->set_read_mode(READ_AT_SNAPSHOT);
+    scan->set_order_by_primary_key(true);
+
+    // Send the call
+    {
+      SCOPED_TRACE(req.DebugString());
+      req.set_batch_size_bytes(0); // so it won't return data right away
+      ASSERT_STATUS_OK(proxy_->Scan(req, &resp, &rpc));
+      SCOPED_TRACE(resp.DebugString());
+      ASSERT_FALSE(resp.has_error());
+    }
+
+    vector<string> results;
+    do {
+      rpc.Reset();
+      // Send the call.
+      {
+        SCOPED_TRACE(req.DebugString());
+        req.set_batch_size_bytes(i);
+        ASSERT_STATUS_OK(proxy_->Scan(req, &resp, &rpc));
+        SCOPED_TRACE(resp.DebugString());
+        ASSERT_FALSE(resp.has_error());
+      }
+      // Save the rows into 'results' vector.
+      StringifyRowsFromResponse(projection, rpc, resp, &results);
+      // Retry the scan, setting the last_row_key and snapshot based on the response.
+      scan->set_encoded_last_row_key(resp.encoded_last_row_key());
+      scan->set_snap_timestamp(resp.snap_timestamp());
+    } while (resp.has_more_results());
+
+    ASSERT_EQ(num_rows, results.size());
+
+    // Verify that we get the rows back in order.
+    KuduPartialRow row(&projection);
+    for (int j = 0; j < num_rows; j++) {
+      ASSERT_OK(row.SetUInt32(0, j * 2));
+      ASSERT_OK(row.SetStringCopy(1, StringPrintf("hello %d", j)));
+      string expected = "(" + row.ToString() + ")";
+      ASSERT_EQ(expected, results[j]);
+    }
+  }
+}
+
+
 // Tests that a read in the future succeeds if a propagated_timestamp (that is even
 // further in the future) follows along. Also tests that the clock was updated so
 // that no writes will ever have a timestamp post this snapshot.

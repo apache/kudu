@@ -168,9 +168,16 @@ class Tablet {
   Status NewRowIterator(const Schema &projection,
                         gscoped_ptr<RowwiseIterator> *iter) const;
 
+  // Whether the iterator should return results in order.
+  enum OrderMode {
+    UNORDERED = 0,
+    ORDERED = 1
+  };
+
   // Create a new row iterator for some historical snapshot.
   Status NewRowIterator(const Schema &projection,
                         const MvccSnapshot &snap,
+                        const OrderMode order,
                         gscoped_ptr<RowwiseIterator> *iter) const;
 
   // Flush the current MemRowSet for this tablet to disk. This swaps
@@ -561,12 +568,14 @@ class Tablet::Iterator : public RowwiseIterator {
 
   Iterator(const Tablet *tablet,
            const Schema &projection,
-           const MvccSnapshot &snap);
+           const MvccSnapshot &snap,
+           const OrderMode order);
 
   const Tablet *tablet_;
   Schema projection_;
   const MvccSnapshot snap_;
-  gscoped_ptr<UnionIterator> iter_;
+  const OrderMode order_;
+  gscoped_ptr<RowwiseIterator> iter_;
   RangePredicateEncoder encoder_;
 };
 

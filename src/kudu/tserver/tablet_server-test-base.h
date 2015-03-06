@@ -272,9 +272,9 @@ class TabletServerTestBase : public KuduTest {
   }
 
   void BuildTestRow(int index, KuduPartialRow* row) {
-    CHECK_OK(row->SetUInt32(0, index));
-    CHECK_OK(row->SetUInt32(1, index * 2));
-    CHECK_OK(row->SetStringCopy(2, StringPrintf("hello %d", index)));
+    ASSERT_OK(row->SetUInt32(0, index));
+    ASSERT_OK(row->SetUInt32(1, index * 2));
+    ASSERT_OK(row->SetStringCopy(2, StringPrintf("hello %d", index)));
   }
 
   void DrainScannerToStrings(const string& scanner_id,
@@ -300,22 +300,29 @@ class TabletServerTestBase : public KuduTest {
       SCOPED_TRACE(resp.DebugString());
       ASSERT_FALSE(resp.has_error());
 
-      RowwiseRowBlockPB* rrpb = resp.mutable_data();
-      Slice direct, indirect; // sidecar data buffers
-      ASSERT_OK(rpc.GetSidecar(rrpb->rows_sidecar(), &direct));
-      if (rrpb->has_indirect_data_sidecar()) {
-        ASSERT_OK(rpc.GetSidecar(rrpb->indirect_data_sidecar(),
-                                 &indirect));
-      }
-      vector<const uint8_t*> rows;
-      ASSERT_STATUS_OK(ExtractRowsFromRowBlockPB(projection, *rrpb,
-                                                 indirect, &direct, &rows));
-      VLOG(1) << "Round trip got " << rows.size() << " rows";
-      BOOST_FOREACH(const uint8_t* row_ptr, rows) {
-        ConstContiguousRow row(&projection, row_ptr);
-        results->push_back(projection.DebugRow(row));
-      }
+      StringifyRowsFromResponse(projection, rpc, resp, results);
     } while (resp.has_more_results());
+  }
+
+  void StringifyRowsFromResponse(const Schema& projection,
+                                 const rpc::RpcController& rpc,
+                                 ScanResponsePB& resp,
+                                 vector<string>* results) {
+    RowwiseRowBlockPB* rrpb = resp.mutable_data();
+    Slice direct, indirect; // sidecar data buffers
+    ASSERT_OK(rpc.GetSidecar(rrpb->rows_sidecar(), &direct));
+    if (rrpb->has_indirect_data_sidecar()) {
+      ASSERT_OK(rpc.GetSidecar(rrpb->indirect_data_sidecar(),
+                               &indirect));
+    }
+    vector<const uint8_t*> rows;
+    ASSERT_STATUS_OK(ExtractRowsFromRowBlockPB(projection, *rrpb,
+                                               indirect, &direct, &rows));
+    VLOG(1) << "Round trip got " << rows.size() << " rows";
+    BOOST_FOREACH(const uint8_t* row_ptr, rows) {
+      ConstContiguousRow row(&projection, row_ptr);
+      results->push_back(projection.DebugRow(row));
+    }
   }
 
   void ShutdownTablet() {

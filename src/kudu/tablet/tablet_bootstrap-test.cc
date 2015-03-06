@@ -131,7 +131,7 @@ class BootstrapTest : public LogTestBase {
     // see the bootstrapped operation. This is likely due to KUDU-138 -- perhaps
     // we aren't properly setting up the clock after bootstrap.
     MvccSnapshot snap = MvccSnapshot::CreateSnapshotIncludingAllTransactions();
-    ASSERT_STATUS_OK(tablet->NewRowIterator(schema_, snap, &iter));
+    ASSERT_STATUS_OK(tablet->NewRowIterator(schema_, snap, Tablet::UNORDERED, &iter));
     ASSERT_STATUS_OK(iter->Init(NULL));
     ASSERT_STATUS_OK(IterateToStringList(iter.get(), results));
     BOOST_FOREACH(const string& result, *results) {

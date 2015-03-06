@@ -197,8 +197,12 @@ message NewScanRequestPB {
   // Disable this to lower cache churn when doing large scans.
   optional bool cache_blocks = 10 [default = true];
 
-  // TODO: add some field which requests ordered results (which has
-  // the side effect of being able to be fault-tolerant)
+  // Whether to order the returned rows by primary key.
+  // This is used for scanner fault-tolerance.
+  optional bool order_by_primary_key = 11 [default = false];
+
+  // If retrying a scan, the last key returned in the previous scan response.
+  optional bytes encoded_last_row_key = 12;
 }
 
 // A scan request. Initially, it should specify a scan. Later on, you
@@ -266,4 +270,8 @@ message ScanResponsePB {
   // in the first response (i.e. the response to the request that had
   // 'new_scan_request' set) and only for READ_AT_SNAPSHOT scans.
   optional fixed64 snap_timestamp = 6;
+
+  // If this is a fault-tolerant scanner, this is set to the
+  // primary key of the last row returned in the response.
+  optional bytes encoded_last_row_key = 7;
 }

@@ -33,6 +33,10 @@ class EncodedKey {
                                     const Slice& encoded,
                                     gscoped_ptr<EncodedKey> *result);
 
+  // Given an EncodedKey, increment it to the next lexicographically greater EncodedKey.
+  static Status IncrementEncodedKey(const Schema& tablet_schema,
+                                    gscoped_ptr<EncodedKey>* key);
+
   const Slice &encoded_key() const { return encoded_key_; }
 
   const vector<const void *> &raw_keys() const { return raw_keys_; }
