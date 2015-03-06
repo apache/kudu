@@ -29,65 +29,84 @@ using std::tr1::shared_ptr;
 // TODO: size by bytes, not # rows
 static const int kMergeRowBuffer = 1000;
 
+// MergeIterState wraps a RowwiseIterator for use by the MergeIterator.
+// Importantly, it also filters out unselected rows from the wrapped RowwiseIterator,
+// such that all returned rows are valid.
 class MergeIterState {
  public:
   explicit MergeIterState(const shared_ptr<RowwiseIterator> &iter) :
     iter_(iter),
     arena_(1024, 256*1024),
     read_block_(iter->schema(), kMergeRowBuffer, &arena_),
-    cur_row_(0),
-    valid_rows_(0)
+    next_row_idx_(0),
+    num_advanced_(0),
+    num_valid_(0)
   {}
 
   const RowBlockRow& next_row() {
-    DCHECK_LT(cur_row_, valid_rows_);
+    DCHECK_LT(num_advanced_, num_valid_);
     return next_row_;
   }
 
   Status Advance() {
-    cur_row_++;
+    num_advanced_++;
     if (IsBlockExhausted()) {
       arena_.Reset();
       return PullNextBlock();
     } else {
-      // TODO: Manually advancing next_row_ptr_ is some 20% faster
-      // than calling row_ptr(cur_row_), since it avoids an expensive multiplication
-      // in the inner loop.
-      next_row_.Reset(&read_block_, cur_row_);
-
+      // Seek to the next selected row.
+      SelectionVector *selection = read_block_.selection_vector();
+      for (++next_row_idx_; next_row_idx_ < read_block_.nrows(); next_row_idx_++) {
+        if (selection->IsRowSelected(next_row_idx_)) {
+          next_row_.Reset(&read_block_, next_row_idx_);
+          break;
+        }
+      }
+      DCHECK_NE(next_row_idx_, read_block_.nrows()+1) << "No selected rows found!";
       return Status::OK();
     }
   }
 
   bool IsBlockExhausted() const {
-    return cur_row_ == valid_rows_;
+    return num_advanced_ == num_valid_;
   }
 
   bool IsFullyExhausted() const {
-    return valid_rows_ == 0;
+    return num_valid_ == 0;
   }
 
   Status PullNextBlock() {
-    CHECK_EQ(cur_row_, valid_rows_)
+    CHECK_EQ(num_advanced_, num_valid_)
       << "should not pull next block until current block is exhausted";
 
     if (!iter_->HasNext()) {
       // Fully exhausted
-      cur_row_ = 0;
-      valid_rows_ = 0;
+      num_advanced_ = 0;
+      num_valid_ = 0;
       return Status::OK();
     }
 
     RETURN_NOT_OK(iter_->NextBlock(&read_block_));
-    cur_row_ = 0;
-    // TODO: do we need valid_rows_ or can we just use read_block_.nrows()?
-    valid_rows_ = read_block_.nrows();
-    next_row_.Reset(&read_block_, 0);
+    num_advanced_ = 0;
+    // Honor the selection vector of the read_block_, since not all rows are necessarily selected.
+    SelectionVector *selection = read_block_.selection_vector();
+    DCHECK_EQ(selection->nrows(), read_block_.nrows());
+    DCHECK_LE(selection->CountSelected(), read_block_.nrows());
+    num_valid_ = selection->CountSelected();
+    VLOG(2) << selection->CountSelected() << "/" << read_block_.nrows() << " rows selected";
+    // Seek next_row_ to the first selected row.
+    for (next_row_idx_ = 0; next_row_idx_ < read_block_.nrows(); next_row_idx_++) {
+      if (selection->IsRowSelected(next_row_idx_)) {
+        next_row_.Reset(&read_block_, next_row_idx_);
+        break;
+      }
+    }
+    DCHECK_NE(next_row_idx_, read_block_.nrows()+1) << "No selected rows found!";
     return Status::OK();
   }
 
   size_t remaining_in_block() const {
-    return valid_rows_ - cur_row_;
+    return num_valid_ - num_advanced_;
   }
 
   const shared_ptr<RowwiseIterator>& iter() const {
@@ -97,9 +116,14 @@ class MergeIterState {
   shared_ptr<RowwiseIterator> iter_;
   Arena arena_;
   RowBlock read_block_;
+  // The row currently pointed to by the iterator.
   RowBlockRow next_row_;
-  size_t cur_row_;
-  size_t valid_rows_;
+  // Row index of next_row_ in read_block_.
+  size_t next_row_idx_;
+  // Number of rows we've advanced past in the current RowBlock.
+  size_t num_advanced_;
+  // Number of valid (selected) rows in the current RowBlock.
+  size_t num_valid_;
 };
 
 
@@ -137,6 +161,10 @@ Status MergeIterator::Init(ScanSpec *spec) {
 
   initted_ = true;
   return Status::OK();
+}
+
+bool MergeIterator::HasNext() const {
+   return !iters_.empty();
 }
 
 Status MergeIterator::InitSubIterators(ScanSpec *spec) {
@@ -181,6 +209,9 @@ void MergeIterator::PrepareBatch(RowBlock* dst) {
 // and such around the comparisons. A simple experiment indicated there's some
 // 2x to be gained.
 Status MergeIterator::MaterializeBlock(RowBlock *dst) {
+  // Initialize the selection vector.
+  // MergeIterState only returns selected rows.
+  dst->selection_vector()->SetAllTrue();
   for (size_t dst_row_idx = 0; dst_row_idx < dst->nrows(); dst_row_idx++) {
     RowBlockRow dst_row = dst->row(dst_row_idx);
 

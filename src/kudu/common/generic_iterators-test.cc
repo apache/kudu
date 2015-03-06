@@ -13,6 +13,7 @@
 #include "kudu/common/scan_spec.h"
 #include "kudu/common/schema.h"
 #include "kudu/gutil/casts.h"
+#include "kudu/gutil/mathlimits.h"
 #include "kudu/util/stopwatch.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
@@ -109,11 +110,28 @@ TEST(TestMergeIterator, TestMergeEmpty) {
   ASSERT_FALSE(merger.HasNext());
 }
 
-TEST(TestMergeIterator, TestMerge) {
+
+class TestIntRangePredicate {
+ public:
+  TestIntRangePredicate(uint32_t lower, uint32_t upper) :
+    lower_(lower),
+    upper_(upper),
+    pred_(kIntSchema.column(0), &lower_, &upper_) {}
+
+  uint32_t lower_, upper_;
+  ColumnRangePredicate pred_;
+};
+
+void TestMerge(const TestIntRangePredicate &predicate) {
   vector<shared_ptr<RowwiseIterator> > to_merge;
   vector<uint32_t> ints;
   vector<uint32_t> all_ints;
   all_ints.reserve(FLAGS_num_rows * FLAGS_num_lists);
+
+  // Setup predicate exclusion
+  ScanSpec spec;
+  spec.AddPredicate(predicate.pred_);
+  LOG(INFO) << "Predicate: " << predicate.pred_.ToString();
 
   for (int i = 0; i < FLAGS_num_lists; i++) {
     ints.clear();
@@ -123,7 +141,10 @@ TEST(TestMergeIterator, TestMerge) {
     for (int j = 0; j < FLAGS_num_rows; j++) {
       entry += rand() % 5;
       ints.push_back(entry);
-      all_ints.push_back(entry);
+      // Evaluate the predicate before pushing to all_ints
+      if (entry >= predicate.lower_ && entry <= predicate.upper_) {
+        all_ints.push_back(entry);
+      }
     }
 
     shared_ptr<RowwiseIterator> iter(
@@ -132,15 +153,16 @@ TEST(TestMergeIterator, TestMerge) {
     to_merge.push_back(iter);
   }
 
+  VLOG(1) << "Predicate expects " << all_ints.size() << " results";
+
   LOG_TIMING(INFO, "std::sort the expected results") {
     std::sort(all_ints.begin(), all_ints.end());
   }
 
-
   for (int trial = 0; trial < FLAGS_num_iters; trial++) {
     LOG_TIMING(INFO, "Iterate merged lists") {
       MergeIterator merger(kIntSchema, to_merge);
-      ASSERT_STATUS_OK(merger.Init(NULL));
+      ASSERT_STATUS_OK(merger.Init(&spec));
 
       RowBlock dst(kIntSchema, 100, NULL);
       size_t total_idx = 0;
@@ -151,6 +173,8 @@ TEST(TestMergeIterator, TestMerge) {
 
         for (int i = 0; i < dst.nrows(); i++) {
           uint32_t this_row = *kIntSchema.ExtractColumnFromRow<UINT32>(dst.row(i), 0);
+          ASSERT_GE(this_row, predicate.lower_) << "Yielded integer excluded by predicate";
+          ASSERT_LE(this_row, predicate.upper_) << "Yielded integer excluded by predicate";
           if (all_ints[total_idx] != this_row) {
             ASSERT_EQ(all_ints[total_idx], this_row) <<
               "Yielded out of order at idx " << total_idx;
@@ -162,17 +186,16 @@ TEST(TestMergeIterator, TestMerge) {
   }
 }
 
-class TestIntRangePredicate {
- public:
-  TestIntRangePredicate(uint32_t lower, uint32_t upper) :
-    lower_(lower),
-    upper_(upper),
-    pred_(kIntSchema.column(0), &lower_, &upper_)
-  {}
+TEST(TestMergeIterator, TestMerge) {
+  TestIntRangePredicate predicate(0, MathLimits<uint32_t>::kMax);
+  TestMerge(predicate);
+}
 
-  uint32_t lower_, upper_;
-  ColumnRangePredicate pred_;
-};
+
+TEST(TestMergeIterator, TestPredicate) {
+  TestIntRangePredicate predicate(0, FLAGS_num_rows / 5);
+  TestMerge(predicate);
+}
 
 // Test that the MaterializingIterator properly evaluates predicates when they apply
 // to single columns.
@@ -180,7 +203,7 @@ TEST(TestMaterializingIterator, TestMaterializingPredicatePushdown) {
   ScanSpec spec;
   TestIntRangePredicate pred1(20, 29);
   spec.AddPredicate(pred1.pred_);
-  LOG(INFO) << "pred: " << pred1.pred_.ToString();
+  LOG(INFO) << "Predicate: " << pred1.pred_.ToString();
 
   vector<uint32> ints;
   for (int i = 0; i < 100; i++) {
@@ -212,7 +235,7 @@ TEST(TestPredicateEvaluatingIterator, TestPredicateEvaluation) {
   ScanSpec spec;
   TestIntRangePredicate pred1(20, 29);
   spec.AddPredicate(pred1.pred_);
-  LOG(INFO) << "pred: " << pred1.pred_.ToString();
+  LOG(INFO) << "Predicate: " << pred1.pred_.ToString();
 
   vector<uint32> ints;
   for (int i = 0; i < 100; i++) {

@@ -37,9 +37,7 @@ class MergeIterator : public RowwiseIterator {
   // The passed-in iterators should be already initialized.
   Status Init(ScanSpec *spec) OVERRIDE;
 
-  virtual bool HasNext() const OVERRIDE {
-    return !iters_.empty();
-  }
+  virtual bool HasNext() const OVERRIDE;
 
   virtual string ToString() const OVERRIDE;
 
