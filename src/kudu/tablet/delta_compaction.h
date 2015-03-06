@@ -61,8 +61,16 @@ class MajorDeltaCompaction {
  private:
   std::string ColumnNamesToString() const;
 
-  Status OpenNewColumns();
-  Status OpenNewDeltaBlock();
+  // Opens a writer for the base data.
+  Status OpenBaseDataWriter();
+
+  // Opens a writer for the delta files, won't be called if we don't need to write
+  // back deltas.
+  Status OpenDeltaFileWriter();
+
+  // Reads the current base data, applies the deltas, and then writes the new base data.
+  // A new delta file is written if not all columns were selected for compaction and some
+  // deltas need to be written back into a delta file.
   Status FlushRowSetAndDeltas();
 
   FsManager* const fs_manager_;
@@ -93,8 +101,9 @@ class MajorDeltaCompaction {
   const shared_ptr<DeltaIterator> delta_iter_;
 
   // Outputs:
-  gscoped_ptr<MultiColumnWriter> col_writer_;
-  gscoped_ptr<DeltaFileWriter> delta_writer_;
+  gscoped_ptr<MultiColumnWriter> base_data_writer_;
+  // The following two may not be initialized if we don't need to write a delta file.
+  gscoped_ptr<DeltaFileWriter> new_delta_writer_;
   BlockId new_delta_block_;
 
   size_t nrows_;

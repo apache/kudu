@@ -3,7 +3,6 @@
 
 #include "kudu/tablet/delta_compaction.h"
 
-#include <boost/assign/list_of.hpp>
 #include <string>
 #include <vector>
 #include <algorithm>
@@ -72,12 +71,12 @@ string MajorDeltaCompaction::ColumnNamesToString() const {
 Status MajorDeltaCompaction::FlushRowSetAndDeltas() {
   CHECK_EQ(state_, kInitialized);
 
-  shared_ptr<CFileSet::Iterator> cfileset_iter(base_data_->NewIterator(&partial_schema_));
+  shared_ptr<CFileSet::Iterator> old_base_data_iter(base_data_->NewIterator(&partial_schema_));
 
   ScanSpec spec;
   spec.set_cache_blocks(false);
   RETURN_NOT_OK_PREPEND(
-      cfileset_iter->Init(&spec),
+      old_base_data_iter->Init(&spec),
       "Unable to open iterator for specified columns (" + partial_schema_.ToString() + ")");
 
   RETURN_NOT_OK(delta_iter_->Init(&spec));
@@ -88,46 +87,55 @@ Status MajorDeltaCompaction::FlushRowSetAndDeltas() {
 
   DVLOG(1) << "Applying deltas and rewriting columns (" << partial_schema_.ToString() << ")";
   DeltaStats stats(base_schema_.num_columns());
-  // Iterate over the rows
-  // For each iteration:
-  // - apply the deltas for each column
-  // - append deltas for other columns to 'dfw'
-  while (cfileset_iter->HasNext()) {
+  while (old_base_data_iter->HasNext()) {
+    // 1) Get the next batch of base data.
     size_t n = block.row_capacity();
     arena.Reset();
-    RETURN_NOT_OK(cfileset_iter->PrepareBatch(&n));
-
+    RETURN_NOT_OK(old_base_data_iter->PrepareBatch(&n));
     block.Resize(n);
     nrows_ += n;
 
+    // 2) Apply the deltas.
     RETURN_NOT_OK(delta_iter_->PrepareBatch(n));
     BOOST_FOREACH(size_t col_idx, column_indexes_) {
       size_t new_idx = old_to_new_[col_idx];
       ColumnBlock col_block(block.column_block(new_idx));
-      RETURN_NOT_OK(cfileset_iter->MaterializeColumn(new_idx, &col_block));
+      RETURN_NOT_OK(old_base_data_iter->MaterializeColumn(new_idx, &col_block));
 
       // TODO: should this be IDs? indexes? check this with alter.
       RETURN_NOT_OK(delta_iter_->ApplyUpdates(col_idx, &col_block));
     }
-    RETURN_NOT_OK(col_writer_->AppendBlock(block));
 
+    // 3) Write the new base data.
+    RETURN_NOT_OK(base_data_writer_->AppendBlock(block));
+
+    // 4) Remove the columns that we're compacting from the delta flush.
     arena.Reset();
     vector<DeltaKeyAndUpdate> out;
     RETURN_NOT_OK(delta_iter_->FilterColumnsAndAppend(column_indexes_, &out, &arena));
+
+    // We only create a new delta file if we need to.
+    if (!out.empty() && !new_delta_writer_) {
+      RETURN_NOT_OK(OpenDeltaFileWriter());
+    }
+
+    // 5) Write the deltas we're not compacting back into a delta file.
     BOOST_FOREACH(const DeltaKeyAndUpdate& key_and_update, out) {
       RowChangeList update(key_and_update.cell);
-      RETURN_NOT_OK_PREPEND(delta_writer_->AppendDelta<REDO>(key_and_update.key, update),
+      RETURN_NOT_OK_PREPEND(new_delta_writer_->AppendDelta<REDO>(key_and_update.key, update),
                             "Failed to append a delta");
       WARN_NOT_OK(stats.UpdateStats(key_and_update.key.timestamp(), base_schema_, update),
                   "Failed to update stats");
     }
     deltas_written_ += out.size();
-    RETURN_NOT_OK(cfileset_iter->FinishBatch());
+    RETURN_NOT_OK(old_base_data_iter->FinishBatch());
   }
 
-  RETURN_NOT_OK(col_writer_->Finish());
-  RETURN_NOT_OK(delta_writer_->WriteDeltaStats(stats));
-  RETURN_NOT_OK(delta_writer_->Finish());
+  RETURN_NOT_OK(base_data_writer_->Finish());
+  if (deltas_written_ > 0) {
+    RETURN_NOT_OK(new_delta_writer_->WriteDeltaStats(stats));
+    RETURN_NOT_OK(new_delta_writer_->Finish());
+  }
 
   DVLOG(1) << "Applied all outstanding deltas for columns "
            << partial_schema_.ToString()
@@ -139,22 +147,22 @@ Status MajorDeltaCompaction::FlushRowSetAndDeltas() {
   return Status::OK();
 }
 
-Status MajorDeltaCompaction::OpenNewColumns() {
-  CHECK(!col_writer_);
+Status MajorDeltaCompaction::OpenBaseDataWriter() {
+  CHECK(!base_data_writer_);
 
   gscoped_ptr<MultiColumnWriter> w(new MultiColumnWriter(fs_manager_, &partial_schema_));
   RETURN_NOT_OK(w->Open());
-  col_writer_.swap(w);
+  base_data_writer_.swap(w);
   return Status::OK();
 }
 
-Status MajorDeltaCompaction::OpenNewDeltaBlock() {
+Status MajorDeltaCompaction::OpenDeltaFileWriter() {
   gscoped_ptr<WritableBlock> block;
   RETURN_NOT_OK_PREPEND(fs_manager_->CreateNewBlock(&block),
                         "Unable to create delta output block");
   new_delta_block_ = block->id();
-  delta_writer_.reset(new DeltaFileWriter(base_schema_, block.Pass()));
-  return delta_writer_->Start();
+  new_delta_writer_.reset(new DeltaFileWriter(base_schema_, block.Pass()));
+  return new_delta_writer_->Start();
 }
 
 Status MajorDeltaCompaction::Compact() {
@@ -164,8 +172,8 @@ Status MajorDeltaCompaction::Compact() {
   RETURN_NOT_OK(base_schema_.CreatePartialSchema(column_indexes_,
                                                  &old_to_new_,
                                                  &partial_schema_));
-  RETURN_NOT_OK(OpenNewColumns());
-  RETURN_NOT_OK(OpenNewDeltaBlock());
+  // We defer on calling OpenNewDeltaBlock since we might not need to flush.
+  RETURN_NOT_OK(OpenBaseDataWriter());
   RETURN_NOT_OK(FlushRowSetAndDeltas());
   LOG(INFO) << "Finished major delta compaction of columns " <<
       ColumnNamesToString();
@@ -192,7 +200,7 @@ Status MajorDeltaCompaction::CreateMetadataUpdate(
                                  new_delta_blocks);
 
   // Replace old column blocks with new ones
-  vector<BlockId> new_column_blocks = col_writer_->FlushedBlocks();
+  vector<BlockId> new_column_blocks = base_data_writer_->FlushedBlocks();
   CHECK_EQ(new_column_blocks.size(), column_indexes_.size());
 
   for (int i = 0; i < column_indexes_.size(); i++) {
@@ -204,8 +212,14 @@ Status MajorDeltaCompaction::CreateMetadataUpdate(
 
 Status MajorDeltaCompaction::UpdateDeltaTracker(DeltaTracker* tracker) {
   CHECK_EQ(state_, kFinished);
+  vector<BlockId> new_delta_blocks;
+  // We created a new delta block only if we had deltas to write back. We still need to update
+  // the tracker so that it removes the included_stores_.
+  if (deltas_written_ > 0) {
+    new_delta_blocks.push_back(new_delta_block_);
+  }
   return tracker->AtomicUpdateStores(included_stores_,
-                                     boost::assign::list_of(new_delta_block_),
+                                     new_delta_blocks,
                                      REDO);
 }
 

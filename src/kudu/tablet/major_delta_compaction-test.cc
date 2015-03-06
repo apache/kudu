@@ -145,9 +145,13 @@ TEST_F(TestMajorDeltaCompaction, TestCompact) {
 
   shared_ptr<RowSet> rs = all_rowsets.front();
 
+  vector<size_t> cols_to_compact = boost::assign::list_of(1) (3) (4);
+
   // We'll run a few rounds of update/compact to make sure
   // that we don't get into some funny state (regression test for
   // an earlier bug).
+  // We first compact all the columns, then for each other round we do one less,
+  // so that we test a few combinations.
   for (int i = 0; i < 3; i++) {
     SCOPED_TRACE(Substitute("Update/compact round $0", i));
     // Update the even rows and verify.
@@ -163,10 +167,11 @@ TEST_F(TestMajorDeltaCompaction, TestCompact) {
     ASSERT_STATUS_OK(tablet()->FlushBiggestDMS());
     ASSERT_NO_FATAL_FAILURE(VerifyData());
 
-    // Compact two columns, data should stay the same.
+    // Major compact some columns.
     vector<size_t> cols;
-    cols.push_back(1);
-    cols.push_back(3);
+    for (int col_index = 0; col_index < cols_to_compact.size() - i; col_index++) {
+      cols.push_back(cols_to_compact[col_index]);
+    }
     ASSERT_STATUS_OK(tablet()->DoMajorDeltaCompaction(cols, rs));
 
     ASSERT_NO_FATAL_FAILURE(VerifyData());
