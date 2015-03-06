@@ -296,7 +296,7 @@ Status RaftConsensus::StartElection() {
 
     // Initialize the VoteCounter.
     QuorumState quorum_state = state_->GetActiveQuorumStateUnlocked();
-    gscoped_ptr<VoteCounter> counter(new VoteCounter(quorum_state.quorum_size,
+    gscoped_ptr<VoteCounter> counter(new VoteCounter(quorum_state.voting_peers.size(),
                                                      quorum_state.majority_size));
     // Vote for ourselves.
     RETURN_NOT_OK(state_->SetVotedForCurrentTermUnlocked(state_->GetPeerUuid()));

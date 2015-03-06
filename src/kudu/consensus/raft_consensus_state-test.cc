@@ -2,7 +2,10 @@
 // Confidential Cloudera Information: Covered by NDA.
 #include "kudu/consensus/raft_consensus_state.h"
 
+#include <boost/assign/list_of.hpp>
+#include <boost/foreach.hpp>
 #include <gtest/gtest.h>
+#include <vector>
 
 #include "kudu/consensus/consensus.pb.h"
 #include "kudu/consensus/consensus_meta.h"
@@ -14,7 +17,10 @@
 namespace kudu {
 namespace consensus {
 
+using boost::assign::list_of;
 using metadata::QuorumPB;
+using metadata::QuorumPeerPB;
+using std::vector;
 
 // TODO: Share a test harness with ConsensusMetadataTest?
 const char* kTabletId = "TestTablet";
@@ -89,6 +95,55 @@ TEST_F(RaftConsensusStateTest, TestPersistentWrites) {
   quorum_.set_opid_index(2);
   ASSERT_OK(state_->SetCommittedQuorumUnlocked(quorum_));
   ASSERT_EQ(2, state_->GetCommittedQuorumUnlocked().opid_index());
+}
+
+TEST_F(RaftConsensusStateTest, TestQuorumState) {
+  vector<string> uuids = list_of("a")("b")("c")("d")("e");
+  QuorumPB quorum;
+  BOOST_FOREACH(const string& uuid, uuids) {
+    QuorumPeerPB* peer = quorum.add_peers();
+    peer->set_permanent_uuid(uuid);
+    peer->set_role(QuorumPeerPB::FOLLOWER);
+  }
+
+  // No leader.
+  gscoped_ptr<QuorumState> state = QuorumState::Build(quorum, "a");
+  ASSERT_EQ(QuorumPeerPB::FOLLOWER, state->role);
+  ASSERT_EQ("", state->leader_uuid);
+  ASSERT_EQ(5, state->voting_peers.size());
+  ASSERT_EQ(3, state->majority_size);
+
+  // Self leader.
+  quorum.mutable_peers(0)->set_role(QuorumPeerPB::LEADER);
+  state = QuorumState::Build(quorum, "a");
+  ASSERT_EQ(QuorumPeerPB::LEADER, state->role);
+  ASSERT_EQ("a", state->leader_uuid);
+  ASSERT_EQ(5, state->voting_peers.size());
+  ASSERT_EQ(3, state->majority_size);
+
+  // Self candidate.
+  quorum.mutable_peers(0)->set_role(QuorumPeerPB::CANDIDATE);
+  state = QuorumState::Build(quorum, "a");
+  ASSERT_EQ(QuorumPeerPB::CANDIDATE, state->role);
+  ASSERT_EQ("", state->leader_uuid);
+  ASSERT_EQ(5, state->voting_peers.size());
+  ASSERT_EQ(3, state->majority_size);
+
+  // Add another FOLLOWER. Quorum size of 6, majority of 4.
+  QuorumPeerPB* new_peer = quorum.add_peers();
+  new_peer->set_permanent_uuid("f");
+  new_peer->set_role(QuorumPeerPB::FOLLOWER);
+  state = QuorumState::Build(quorum, "a");
+  ASSERT_EQ(6, state->voting_peers.size());
+  ASSERT_EQ(4, state->majority_size);
+
+  // Add a LEARNER. Nothing should have changed from above.
+  new_peer = quorum.add_peers();
+  new_peer->set_permanent_uuid("g");
+  new_peer->set_role(QuorumPeerPB::LEARNER);
+  state = QuorumState::Build(quorum, "a");
+  ASSERT_EQ(6, state->voting_peers.size());
+  ASSERT_EQ(4, state->majority_size);
 }
 
 }  // namespace consensus

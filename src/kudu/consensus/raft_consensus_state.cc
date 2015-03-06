@@ -41,37 +41,28 @@ gscoped_ptr<QuorumState> QuorumState::Build(const QuorumPB& quorum, const string
     if (peer_pb.permanent_uuid() == self_uuid) {
       role = peer_pb.role();
     }
-    if (peer_pb.role() == QuorumPeerPB::LEADER ||
-        peer_pb.role() == QuorumPeerPB::FOLLOWER) {
+    if (IsVotingRole(peer_pb.role())) {
       voting_peers.insert(peer_pb.permanent_uuid());
     }
     if (peer_pb.role() == QuorumPeerPB::LEADER) {
       leader_uuid = peer_pb.permanent_uuid();
     }
-
   }
 
-  // TODO: Calculating the majority from the number of peers can cause problems
-  // without joint consensus. We should add a configuration parameter to
-  // QuorumPB defining what constitutes the majority.
   int majority_size = (voting_peers.size() / 2) + 1;
-  int quorum_size = quorum.peers_size();
 
-  gscoped_ptr<QuorumState> state(new QuorumState(role, leader_uuid, voting_peers,
-                                                 majority_size, quorum_size));
+  gscoped_ptr<QuorumState> state(new QuorumState(role, leader_uuid, voting_peers, majority_size));
   return state.Pass();
 }
 
 QuorumState::QuorumState(metadata::QuorumPeerPB::Role role,
                          const std::string& leader_uuid,
                          const std::tr1::unordered_set<std::string>& voting_peers,
-                         int majority_size,
-                         int quorum_size)
+                         int majority_size)
   : role(role),
     leader_uuid(leader_uuid),
     voting_peers(voting_peers),
-    majority_size(majority_size),
-    quorum_size(quorum_size) {
+    majority_size(majority_size) {
 }
 
 //////////////////////////////////////////////////

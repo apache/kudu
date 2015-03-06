@@ -162,8 +162,9 @@ LeaderElection::LeaderElection(const metadata::QuorumPB& quorum,
   // Ensure that existing votes + future votes add up to the expected total.
   CHECK_EQ(vote_counter_->GetTotalVotesCounted() + follower_uuids_.size(),
            vote_counter_->GetTotalExpectedVotes())
-      << "Expected different number of followers. Follower UUIDs: "
-      << JoinStringsIterator(follower_uuids_.begin(), follower_uuids_.end(), ", ");
+      << "Expected different number of followers. Follower UUIDs: ["
+      << JoinStringsIterator(follower_uuids_.begin(), follower_uuids_.end(), ", ")
+      << "]; Quorum: {" << quorum.ShortDebugString() << "}";
 }
 
 LeaderElection::~LeaderElection() {
