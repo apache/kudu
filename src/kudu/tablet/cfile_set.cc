@@ -135,7 +135,7 @@ Status CFileSet::LoadMinMaxKeys() {
   return Status::OK();
 }
 
-CFileReader *CFileSet::key_index_reader() {
+CFileReader* CFileSet::key_index_reader() const {
   return ad_hoc_idx_reader_ ? ad_hoc_idx_reader_.get() : readers_[0].get();
 }
 
@@ -156,8 +156,7 @@ CFileSet::Iterator *CFileSet::NewIterator(const Schema *projection) const {
 }
 
 Status CFileSet::CountRows(rowid_t *count) const {
-  const shared_ptr<cfile::CFileReader> &reader = readers_[0];
-  return reader->CountRows(count);
+  return key_index_reader()->CountRows(count);
 }
 
 Status CFileSet::GetBounds(Slice *min_encoded_key,

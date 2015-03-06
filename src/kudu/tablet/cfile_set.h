@@ -92,7 +92,7 @@ class CFileSet : public std::tr1::enable_shared_from_this<CFileSet> {
 
   // Return the CFileReader responsible for reading the key index.
   // (the ad-hoc reader for composite keys, otherwise the key column reader)
-  CFileReader *key_index_reader();
+  CFileReader* key_index_reader() const;
 
   shared_ptr<RowSetMetadata> rowset_metadata_;
 

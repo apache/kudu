@@ -79,12 +79,12 @@ class CFileReader {
   bool GetMetadataEntry(const string &key, string *val);
 
   uint64_t file_size() const {
+    DCHECK_EQ(state_, kInitialized);
     return file_size_;
   }
 
   DataType data_type() const {
-    CHECK_EQ(state_, kInitialized);
-    return footer_->data_type();
+    return footer().data_type();
   }
 
   const TypeInfo *type_info() const {
@@ -102,10 +102,12 @@ class CFileReader {
   }
 
   const CFileHeaderPB &header() const {
+    DCHECK_EQ(state_, kInitialized);
     return *DCHECK_NOTNULL(header_.get());
   }
 
   const CFileFooterPB &footer() const {
+    DCHECK_EQ(state_, kInitialized);
     return *DCHECK_NOTNULL(footer_.get());
   }
 
@@ -118,17 +120,17 @@ class CFileReader {
   // delta files can probably be done more cleanly.
 
   // Return true if there is a position-based index on this file.
-  bool has_posidx() const { return footer_->has_posidx_info(); }
+  bool has_posidx() const { return footer().has_posidx_info(); }
   BlockPointer posidx_root() const {
     DCHECK(has_posidx());
-    return BlockPointer(footer_->posidx_info().root_block());
+    return BlockPointer(footer().posidx_info().root_block());
   }
 
   // Return true if there is a value-based index on this file.
-  bool has_validx() const { return footer_->has_validx_info(); }
+  bool has_validx() const { return footer().has_validx_info(); }
   BlockPointer validx_root() const {
     DCHECK(has_validx());
-    return BlockPointer(footer_->validx_info().root_block());
+    return BlockPointer(footer().validx_info().root_block());
   }
 
   std::string ToString() const { return block_->id().ToString(); }

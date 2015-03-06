@@ -231,20 +231,18 @@ Status CFileReader::ReadBlock(const BlockPointer &ptr, CacheControl cache_contro
 }
 
 Status CFileReader::CountRows(rowid_t *count) const {
-  CHECK_EQ(state_, kInitialized);
-  *count = footer_->num_values();
+  *count = footer().num_values();
   return Status::OK();
 }
 
 bool CFileReader::GetMetadataEntry(const string &key, string *val) {
-  CHECK_EQ(state_, kInitialized);
-  BOOST_FOREACH(const FileMetadataPairPB &pair, header_->metadata()) {
+  BOOST_FOREACH(const FileMetadataPairPB &pair, header().metadata()) {
     if (pair.key() == key) {
       *val = pair.value();
       return true;
     }
   }
-  BOOST_FOREACH(const FileMetadataPairPB &pair, footer_->metadata()) {
+  BOOST_FOREACH(const FileMetadataPairPB &pair, footer().metadata()) {
     if (pair.key() == key) {
       *val = pair.value();
       return true;
@@ -410,9 +408,9 @@ Status CFileIterator::SeekToFirst() {
 
 Status CFileIterator::SeekAtOrAfter(const EncodedKey &key,
                                     bool *exact_match) {
+  Unseek();
   DCHECK_EQ(reader_->is_nullable(), false);
 
-  Unseek();
   if (PREDICT_FALSE(validx_iter_ == NULL)) {
     return Status::NotSupported("no value index present");
   }

@@ -123,9 +123,6 @@ Status BloomFileReader::Open(gscoped_ptr<ReadableBlock> block,
                              gscoped_ptr<BloomFileReader> *reader) {
   gscoped_ptr<CFileReader> cf_reader;
   RETURN_NOT_OK(CFileReader::Open(block.Pass(), ReaderOptions(), &cf_reader));
-  if (cf_reader->is_compressed()) {
-    return Status::Corruption("Unexpected compression for bloom file");
-  }
 
   gscoped_ptr<BloomFileReader> bf_reader(new BloomFileReader(cf_reader.release()));
   RETURN_NOT_OK(bf_reader->Init());
@@ -140,9 +137,13 @@ BloomFileReader::BloomFileReader(CFileReader *reader)
 
 Status BloomFileReader::Init() {
   // The CFileReader is already initialized at this point.
+  if (reader_->is_compressed()) {
+    return Status::Corruption("bloom file is compressed (compression not supported)",
+                              reader_->ToString());
+  }
   if (!reader_->has_validx()) {
-    // TODO: include path!
-    return Status::Corruption("bloom file missing value index");
+    return Status::Corruption("bloom file missing value index",
+                              reader_->ToString());
   }
 
   BlockPointer validx_root = reader_->validx_root();
