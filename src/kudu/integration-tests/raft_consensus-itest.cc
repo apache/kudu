@@ -1,10 +1,11 @@
 // Copyright (c) 2013, Cloudera, inc.
 // Confidential Cloudera Information: Covered by NDA.
 
-#include <gflags/gflags.h>
-#include <gtest/gtest.h>
 #include <boost/foreach.hpp>
 #include <boost/assign/list_of.hpp>
+#include <gflags/gflags.h>
+#include <gtest/gtest.h>
+#include <glog/stl_logging.h>
 #include <tr1/unordered_set>
 
 #include "kudu/client/client.h"
@@ -34,6 +35,10 @@ DECLARE_int32(consensus_rpc_timeout_ms);
 namespace kudu {
 namespace tserver {
 
+using consensus::ConsensusResponsePB;
+using consensus::ConsensusRequestPB;
+using consensus::MakeOpId;
+using consensus::ReplicateMsg;
 using client::FromInternalCompressionType;
 using client::FromInternalDataType;
 using client::FromInternalEncodingType;
@@ -158,6 +163,30 @@ class RaftConsensusITest : public TabletServerIntegrationTestBase {
 
     std::sort(results->begin(), results->end());
   }
+
+  // Scan the given replica in a loop until the number of rows
+  // is 'expected_count'. If it takes more than 10 seconds, then
+  // fails the test.
+  void WaitForRowCount(TabletServerServiceProxy* replica_proxy,
+                       int expected_count,
+                       vector<string>* results) {
+    MonoTime deadline = MonoTime::Now(MonoTime::COARSE);
+    deadline.AddDelta(MonoDelta::FromSeconds(10));
+    while (MonoTime::Now(MonoTime::COARSE).ComesBefore(deadline)) {
+      results->clear();
+      ScanReplica(replica_proxy, results);
+      if (results->size() == expected_count) {
+        return;
+      }
+    }
+    FAIL() << "Did not reach expected row count " << expected_count
+           << ": rows: " << *results;
+  }
+
+
+  // Add an Insert operation to the given consensus request.
+  // The row to be inserted is generated based on the OpId.
+  void AddOp(const OpId& id, ConsensusRequestPB* req);
 
   string DumpToString(TServerDetails* leader,
                       const vector<string>& leader_results,
@@ -835,6 +864,132 @@ TEST_F(RaftConsensusITest, TestKUDU_597) {
   finish.Store(true);
   BOOST_FOREACH(scoped_refptr<kudu::Thread> thr, threads_) {
     CHECK_OK(ThreadJoiner(thr.get()).Join());
+  }
+}
+
+void RaftConsensusITest::AddOp(const OpId& id, ConsensusRequestPB* req) {
+  ReplicateMsg* msg = req->add_ops();
+  msg->mutable_id()->CopyFrom(id);
+  msg->set_timestamp(id.index());
+  msg->set_op_type(consensus::WRITE_OP);
+  WriteRequestPB* write_req = msg->mutable_write_request();
+  CHECK_OK(SchemaToPB(schema_, write_req->mutable_schema()));
+  write_req->set_tablet_id(tablet_id_);
+  int key = id.index() * 10000 + id.term();
+  AddTestRowToPB(RowOperationsPB::INSERT, schema_, key, id.term(),
+                 id.ShortDebugString(), write_req->mutable_row_operations());
+}
+
+// Regression test for KUDU-644:
+// Triggers some complicated scenarios on the replica involving aborting and
+// replacing transactions.
+// DISABLED until the bug is fixed.
+TEST_F(RaftConsensusITest, DISABLED_TestReplicaBehaviorViaRPC) {
+  FLAGS_num_replicas = 3;
+  FLAGS_num_tablet_servers = 3;
+  vector<string> flags;
+  flags.push_back("--enable_leader_failure_detection=false");
+  BuildAndStart(flags);
+
+  // Kill all the servers but one.
+  TServerDetails *replica_ts;
+  {
+    vector<TServerDetails*> tservers;
+    AppendValuesFromMap(tablet_servers_, &tservers);
+    CHECK_EQ(3, tservers.size());
+
+    replica_ts = tservers[0];
+    tservers[1]->external_ts->Shutdown();
+    tservers[2]->external_ts->Shutdown();
+  }
+
+  LOG(INFO) << "================================== Cluster setup complete.";
+
+  consensus::ConsensusServiceProxy* c_proxy = CHECK_NOTNULL(replica_ts->consensus_proxy.get());
+
+  ConsensusRequestPB req;
+  ConsensusResponsePB resp;
+  RpcController rpc;
+
+  // Send a simple request with no ops.
+  req.set_tablet_id(tablet_id_);
+  req.set_caller_uuid("fake_caller");
+  req.set_caller_term(2);
+  req.mutable_committed_index()->CopyFrom(MakeOpId(1, 1));
+  req.mutable_preceding_id()->CopyFrom(MakeOpId(1, 1));
+
+  ASSERT_OK(c_proxy->UpdateConsensus(req, &resp, &rpc));
+  ASSERT_FALSE(resp.has_error()) << resp.DebugString();
+
+  // Send some operations, but don't advance the commit index.
+  // They should not commit.
+  AddOp(MakeOpId(2, 2), &req);
+  AddOp(MakeOpId(2, 3), &req);
+  AddOp(MakeOpId(2, 4), &req);
+  rpc.Reset();
+  ASSERT_OK(c_proxy->UpdateConsensus(req, &resp, &rpc));
+  ASSERT_FALSE(resp.has_error()) << resp.DebugString();
+
+  // We shouldn't read anything yet, because the ops should be pending.
+  {
+    vector<string> results;
+    ScanReplica(replica_ts->tserver_proxy.get(), &results);
+    ASSERT_EQ(0, results.size()) << results;
+  }
+
+  // Now send some more ops, and commit the earlier ones.
+  req.mutable_committed_index()->CopyFrom(MakeOpId(2, 4));
+  req.mutable_preceding_id()->CopyFrom(MakeOpId(2, 4));
+  req.clear_ops();
+  AddOp(MakeOpId(2, 5), &req);
+  AddOp(MakeOpId(2, 6), &req);
+  rpc.Reset();
+  ASSERT_OK(c_proxy->UpdateConsensus(req, &resp, &rpc));
+  ASSERT_FALSE(resp.has_error()) << resp.DebugString();
+
+  // Verify they are committed.
+  {
+    vector<string> results;
+    WaitForRowCount(replica_ts->tserver_proxy.get(), 3, &results);
+    ASSERT_STR_CONTAINS(results[0], "term: 2 index: 2");
+    ASSERT_STR_CONTAINS(results[1], "term: 2 index: 3");
+    ASSERT_STR_CONTAINS(results[2], "term: 2 index: 4");
+  }
+
+  int leader_term = 2;
+  const int kNumTerms = AllowSlowTests() ? 10000 : 100;
+  while (leader_term < kNumTerms) {
+    leader_term++;
+    // Now pretend to be a new leader (term 3) and replace the earlier ops
+    // without committing the new replacements.
+    req.set_caller_term(leader_term);
+    req.set_caller_uuid("new_leader");
+    req.mutable_preceding_id()->CopyFrom(MakeOpId(2, 4));
+    req.clear_ops();
+    AddOp(MakeOpId(leader_term, 5), &req);
+    AddOp(MakeOpId(leader_term, 6), &req);
+    rpc.Reset();
+    ASSERT_OK(c_proxy->UpdateConsensus(req, &resp, &rpc));
+    ASSERT_FALSE(resp.has_error()) << resp.DebugString();
+  }
+
+  // Send an empty request from the newest term which should commit
+  // the earlier ops.
+  {
+    req.mutable_committed_index()->CopyFrom(MakeOpId(leader_term, 6));
+    req.clear_ops();
+    rpc.Reset();
+    ASSERT_OK(c_proxy->UpdateConsensus(req, &resp, &rpc));
+    ASSERT_FALSE(resp.has_error()) << resp.DebugString();
+  }
+
+  // Verify the new rows are committed.
+  {
+    vector<string> results;
+    WaitForRowCount(replica_ts->tserver_proxy.get(), 5, &results);
+    SCOPED_TRACE(results);
+    ASSERT_STR_CONTAINS(results[3], Substitute("term: $0 index: 5", leader_term));
+    ASSERT_STR_CONTAINS(results[4], Substitute("term: $0 index: 6", leader_term));
   }
 }
 
