@@ -169,13 +169,10 @@ class TransactionDriver : public RefCountedThreadSafe<TransactionDriver>,
 
   // Submits ApplyTask to the apply pool.
   Status ApplyAsync();
-  // Task for running Apply(). If Apply() fails, delegates to
-  // HandleFailure().
-  void ApplyTask();
 
   // Calls Transaction::Apply() followed by Consensus::Commit() with the
   // results from the Apply().
-  Status ApplyAndTriggerCommit();
+  void ApplyTask();
 
   // Sleeps until the transaction is allowed to commit based on the
   // requested consistency mode.

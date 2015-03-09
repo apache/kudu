@@ -192,14 +192,15 @@ Status TransactionDriver::PrepareAndStart() {
       // Already replicating - nothing to trigger
       break;
     }
+    case REPLICATION_FAILED:
+      DCHECK(!transaction_status_.ok());
+      FALLTHROUGH_INTENDED;
     case REPLICATED:
     {
       // We can move on to apply.
+      // Note that ApplyAsync() will handle the error status in the
+      // REPLICATION_FAILED case.
       return ApplyAsync();
-    }
-    case REPLICATION_FAILED: {
-      DCHECK(!transaction_status_.ok());
-      HandleFailure(transaction_status_);
     }
   }
 
@@ -302,7 +303,7 @@ void TransactionDriver::Abort(const Status& status) {
 
 Status TransactionDriver::ApplyAsync() {
   {
-    boost::lock_guard<simple_spinlock> lock(lock_);
+    boost::unique_lock<simple_spinlock> lock(lock_);
     DCHECK_EQ(prepare_state_, PREPARED);
     if (transaction_status_.ok()) {
       DCHECK_EQ(replication_state_, REPLICATED);
@@ -316,6 +317,9 @@ Status TransactionDriver::ApplyAsync() {
     } else {
       DCHECK_EQ(replication_state_, REPLICATION_FAILED);
       DCHECK(!transaction_status_.ok());
+      lock.unlock();
+      HandleFailure(transaction_status_);
+      return Status::OK();
     }
   }
 
@@ -323,28 +327,7 @@ Status TransactionDriver::ApplyAsync() {
 }
 
 void TransactionDriver::ApplyTask() {
-  Status s = ApplyAndTriggerCommit();
-  if (!s.ok()) {
-    HandleFailure(s);
-  }
-}
-
-Status TransactionDriver::ApplyAndTriggerCommit() {
   ADOPT_TRACE(trace());
-
-  Status txn_status_copy;
-
-  {
-    boost::lock_guard<simple_spinlock> lock(lock_);
-    txn_status_copy = transaction_status_;
-  }
-
-  if (!txn_status_copy.ok()) {
-    HandleFailure(txn_status_copy);
-    // We return Status::OK() anyways as this was not a failure to submit
-    // the Apply(), likely someone called Abort();
-    return Status::OK();
-  }
 
   {
     boost::lock_guard<simple_spinlock> lock(lock_);
@@ -382,8 +365,6 @@ Status TransactionDriver::ApplyAndTriggerCommit() {
                                           this)));
     transaction_->PostCommit();
   }
-
-  return Status::OK();
 }
 
 void TransactionDriver::SetResponseTimestamp(TransactionState* transaction_state,

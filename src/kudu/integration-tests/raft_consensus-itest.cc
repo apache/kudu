@@ -883,8 +883,7 @@ void RaftConsensusITest::AddOp(const OpId& id, ConsensusRequestPB* req) {
 // Regression test for KUDU-644:
 // Triggers some complicated scenarios on the replica involving aborting and
 // replacing transactions.
-// DISABLED until the bug is fixed.
-TEST_F(RaftConsensusITest, DISABLED_TestReplicaBehaviorViaRPC) {
+TEST_F(RaftConsensusITest, TestReplicaBehaviorViaRPC) {
   FLAGS_num_replicas = 3;
   FLAGS_num_tablet_servers = 3;
   vector<string> flags;
