@@ -1,12 +1,5 @@
 // Copyright 2014 Cloudera inc.
 // Confidential Cloudera Information: Covered by NDA.
-
-// Requires that the location of the precompiled.ll file is defined
-#ifndef KUDU_CODEGEN_MODULE_BUILDER_PRECOMPILED_LL
-#error "KUDU_CODEGEN_MODULE_BUILDER_PRECOMPILED_LL should be defined to " \
-  "the location of the LLVM IR file for kudu/codegen/precompiled.cc"
-#endif
-
 #include "kudu/codegen/module_builder.h"
 
 #include <cstdlib>
@@ -29,13 +22,13 @@
 #include <llvm/IR/Type.h>
 #include <llvm/IR/DerivedTypes.h>
 #include <llvm/IRReader/IRReader.h>
+#include <llvm/Support/MemoryBuffer.h>
 #include <llvm/Support/SourceMgr.h>
 #include <llvm/Support/raw_os_ostream.h>
 #include <llvm/Transforms/IPO.h>
 #include <llvm/Transforms/IPO/PassManagerBuilder.h>
 
 #include "kudu/gutil/macros.h"
-#include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/status.h"
 
 #ifndef CODEGEN_MODULE_BUILDER_DO_OPTIMIZATIONS
@@ -69,6 +62,13 @@ using std::ostream;
 using std::string;
 using std::stringstream;
 using std::vector;
+
+// These symbols are the beginning and end of the precompiled IR code
+// which is linked into this library. Taking the address of them results
+// in a pointer to the beginning or end of the IR code itself. The IR
+// code is precompiled and converted to an ELF object in CMakeLists.txt.
+extern "C" char _binary_precompiled_ll_start;
+extern "C" char _binary_precompiled_ll_end;
 
 namespace kudu {
 namespace codegen {
@@ -105,14 +105,6 @@ bool ModuleContains(const Module& m, const Function* fptr) {
 
 } // anonymous namespace
 
-const char* const ModuleBuilder::kKuduIRFile =
-  KUDU_CODEGEN_MODULE_BUILDER_PRECOMPILED_LL;
-
-static std::string GetDefaultIRFileLocation() {
-  char* kudu_home = getenv("KUDU_HOME");
-  return kudu_home ? strings::Substitute("$0/precompiled.ll", kudu_home) : "";
-}
-
 ModuleBuilder::ModuleBuilder()
   : state_(kUninitialized),
     context_(new LLVMContext()),
@@ -122,27 +114,22 @@ ModuleBuilder::~ModuleBuilder() {}
 
 Status ModuleBuilder::Init() {
   CHECK_EQ(state_, kUninitialized) << "Cannot Init() twice";
-  // Parse IR file
+
+  llvm::StringRef ir_data(&_binary_precompiled_ll_start,
+                          &_binary_precompiled_ll_end - &_binary_precompiled_ll_start);
+  DCHECK_GT(ir_data.size(), 0) << "IR not properly linked";
+
+  // Parse IR.
   SMDiagnostic err;
-  string ir_location = kKuduIRFile;
-  module_.reset(llvm::ParseIRFile(kKuduIRFile, err, *context_));
-  // We first try to find it next to the binaries. This is normally the case for dev environments.
-  // If this fails, we look under KUDU_HOME.
+  gscoped_ptr<llvm::MemoryBuffer> ir_buf(
+    llvm::MemoryBuffer::getMemBuffer(ir_data, "", false));
+  module_.reset(llvm::ParseIR(ir_buf.release(), err, *context_));
   if (!module_) {
-    ir_location = GetDefaultIRFileLocation();
-    module_.reset(llvm::ParseIRFile(GetDefaultIRFileLocation(), err, *context_));
-    if (!module_) {
-      return Status::ConfigurationError("Could not parse IR file",
-                                        ToString(err));
-    }
+    return Status::ConfigurationError("Could not parse IR", ToString(err));
   }
-  VLOG(3) << "Successfully parsed IR file at " << ir_location << ":\n"
-          << ToString(*module_);
+  VLOG(3) << "Successfully parsed IR:\n" << ToString(*module_);
 
-  // TODO: consider loading this module once and then just copying it
-  // from memory. If this strategy is used it may be worth trying to
-  // reduce the .ll file size.
-
+  // TODO: consider parsing this module once instead of on each invocation.
   state_ = kBuilding;
   return Status::OK();
 }

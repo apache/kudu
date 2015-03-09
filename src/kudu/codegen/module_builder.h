@@ -59,8 +59,7 @@ class ModuleBuilder {
   // Deletes own module and context if they have not been compiled.
   ~ModuleBuilder();
 
-  // Inits a new module with parsed precompiled data from the
-  // precompiled.ll file.
+  // Inits a new module with parsed precompiled IR from precompiled.cc.
   // TODO: with multiple *.ll files, each file should be loaded on demand
   Status Init();
 
@@ -122,11 +121,6 @@ class ModuleBuilder {
   // JITFutures. The pointers are valid so long as the futures_ vector's
   // elements have valid llvm::Function* values.
   std::vector<const char*> GetFunctionNames() const;
-
-  // Absolute path to .ll file
-  // TODO this should not be source-code dependent but rather configured
-  // at runtime.
-  static const char* const kKuduIRFile;
 
   MBState state_;
   std::vector<JITFuture> futures_;

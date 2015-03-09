@@ -64,9 +64,11 @@ endif()
 #######################################
 
 ## Create .ll file for precompiled functions (and their dependencies)
+set(PRECOMPILED_LL_FILENAME precompiled.ll)
 set(CLANG_EXEC ${THIRDPARTY_PREFIX}/bin/clang++)
 set(IR_SOURCE ${CMAKE_CURRENT_SOURCE_DIR}/precompiled.cc)
-set(IR_OUTPUT ${BUILD_OUTPUT_ROOT_DIRECTORY}precompiled.ll)
+set(IR_OUTPUT ${BUILD_OUTPUT_ROOT_DIRECTORY}${PRECOMPILED_LL_FILENAME})
+set(IR_OUTPUT_ELF ${IR_OUTPUT}.o)
 # Retrieve all includes directories needed for precompilation
 set(IR_INCLUDES
   -I ${CMAKE_SOURCE_DIR}/src
@@ -106,14 +108,32 @@ add_custom_command(
   # target, a step that is necessary to dynamically generate the header file.
   DEPENDS ${IR_SOURCE} kudu_common_proto
   IMPLICIT_DEPENDS ${IR_SOURCE})
-add_custom_target(create-ir DEPENDS ${IR_OUTPUT})
-add_dependencies(codegen create-ir)
 
-## Define the location of the .ll file
-# TODO: may have to reconsider how to make the ModuleBuilder aware of where
-# the precompiled file is located once installation details are fleshed out.
-# Perhaps use a command line flag?
-add_definitions(-DKUDU_CODEGEN_MODULE_BUILDER_PRECOMPILED_LL="${IR_OUTPUT}")
+# Use 'ld' to create an ELF wrapper around the precompiled IR. This creates
+# an elf file which exposes the following symbols:
+#   extern char _binary_precompiled_ll_start;
+#   extern char _binary_precompiled_ll_end;
+# which point to the beginning and end of the IR data, respectively.
+# See http://stackoverflow.com/questions/4158900/embedding-resources-in-executable-using-gcc
+add_custom_command(
+  OUTPUT ${IR_OUTPUT_ELF}
+  COMMAND ld -r -b binary -o ${IR_OUTPUT_ELF} ${PRECOMPILED_LL_FILENAME}
+  DEPENDS ${IR_OUTPUT}
+  # Have to set the working directory and use a non-absolute path so that the
+  # generated symbol name is consistent. Otherwise, the symbol name would
+  # depend on the build directory.
+  WORKING_DIRECTORY ${BUILD_OUTPUT_ROOT_DIRECTORY}
+)
+
+# Link the generated IR into an archive, and make the codegen library
+# include it.
+add_library(codegen_ir STATIC ${IR_OUTPUT_ELF})
+target_link_libraries(codegen codegen_ir)
+
+# We have to explicitly set the linkage language for the library since
+# it doesn't have any source files. CMake needs this in order to know
+# how to link it.
+set_target_properties(codegen_ir PROPERTIES LINKER_LANGUAGE C)
 
 #######################################
 # Unit tests
