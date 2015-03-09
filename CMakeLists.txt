@@ -324,8 +324,11 @@ if ("${KUDU_GENERATE_COVERAGE}")
 endif()
 
 # set compile output directory
-string (TOLOWER ${CMAKE_BUILD_TYPE} CMAKE_BUILD_TYPE_LOWERCASE)
-set(BUILD_OUTPUT_ROOT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/build/${CMAKE_BUILD_TYPE_LOWERCASE}/")
+string (TOLOWER ${CMAKE_BUILD_TYPE} BUILD_SUBDIR_NAME)
+if(KUDU_EXPORTED_CLIENT)
+  set(BUILD_SUBDIR_NAME "${BUILD_SUBDIR_NAME}-client")
+endif()
+set(BUILD_OUTPUT_ROOT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/build/${BUILD_SUBDIR_NAME}/")
 
 # Link build/latest to the current build directory, to avoid developers
 # accidentally running the latest debug build when in fact they're building
