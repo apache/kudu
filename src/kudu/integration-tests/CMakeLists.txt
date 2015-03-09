@@ -41,3 +41,4 @@ ADD_KUDU_TEST(linked_list-test RESOURCE_LOCK "master-rpc-ports")
 # Some tests have additional dependencies
 set(KUDU_TEST_LINK_LIBS kudu_client ${KUDU_TEST_LINK_LIBS})
 ADD_KUDU_TEST(full_stack-insert-scan-test)
+ADD_KUDU_TEST(update_scan_delta_compact-test)
