@@ -4,8 +4,6 @@
 #include "kudu/tablet/maintenance_manager.h"
 
 #include <boost/foreach.hpp>
-#include <boost/thread/mutex.hpp>
-#include <boost/thread/thread.hpp>
 #include <errno.h>
 #include <set>
 #include <stdint.h>
@@ -85,6 +83,7 @@ const MaintenanceManager::Options MaintenanceManager::DEFAULT_OPTIONS = {
 MaintenanceManager::MaintenanceManager(const Options& options)
   : num_threads_(options.num_threads <= 0 ?
       FLAGS_maintenance_manager_num_threads : options.num_threads),
+    cond_(&lock_),
     shutdown_(false),
     mem_target_(0),
     running_ops_(0),
@@ -118,12 +117,12 @@ Status MaintenanceManager::Init() {
 
 void MaintenanceManager::Shutdown() {
   {
-    boost::lock_guard<boost::mutex> guard(lock_);
+    lock_guard<Mutex> guard(&lock_);
     if (shutdown_) {
       return;
     }
     shutdown_ = true;
-    cond_.notify_all();
+    cond_.Broadcast();
   }
   if (monitor_thread_.get()) {
     CHECK_OK(ThreadJoiner(monitor_thread_.get()).Join());
@@ -133,7 +132,7 @@ void MaintenanceManager::Shutdown() {
 }
 
 void MaintenanceManager::RegisterOp(MaintenanceOp* op) {
-  boost::lock_guard<boost::mutex> guard(lock_);
+  lock_guard<Mutex> guard(&lock_);
   CHECK(!op->manager_.get()) << "Tried to register " << op->name()
           << ", but it was already registered.";
   pair<OpMapTy::iterator, bool> val
@@ -142,12 +141,13 @@ void MaintenanceManager::RegisterOp(MaintenanceOp* op) {
       << "Tried to register " << op->name()
       << ", but it already exists in ops_.";
   op->manager_ = shared_from_this();
+  op->cond_.reset(new ConditionVariable(&lock_));
   VLOG(1) << "Registered " << op->name();
 }
 
 void MaintenanceManager::UnregisterOp(MaintenanceOp* op) {
   {
-    boost::unique_lock<boost::mutex> guard(lock_);
+    lock_guard<Mutex> guard(&lock_);
     CHECK(op->manager_.get() == this) << "Tried to unregister " << op->name()
           << ", but it is not currently registered with this maintenance manager.";
     OpMapTy::iterator iter = ops_.find(op);
@@ -159,7 +159,7 @@ void MaintenanceManager::UnregisterOp(MaintenanceOp* op) {
             << "we can unregister it.";
     }
     while (iter->first->running_ > 0) {
-      op->cond_.wait(guard);
+      op->cond_->Wait();
       iter = ops_.find(op);
       CHECK(iter != ops_.end()) << "Tried to unregister " << op->name()
           << ", but another thread unregistered it while we were "
@@ -168,33 +168,27 @@ void MaintenanceManager::UnregisterOp(MaintenanceOp* op) {
     ops_.erase(iter);
   }
   LOG(INFO) << "Unregistered op " << op->name();
+  op->cond_.reset();
   // Remove the op's shared_ptr reference to us.  This might 'delete this'.
   op->manager_.reset();
 }
 
 void MaintenanceManager::RunSchedulerThread() {
-  boost::posix_time::milliseconds
-        polling_interval(polling_interval_ms_);
+  MonoDelta polling_interval = MonoDelta::FromMilliseconds(polling_interval_ms_);
 
-  boost::unique_lock<boost::mutex> guard(lock_);
-  boost::system_time cur_time;
-  next_schedule_time_ = boost::get_system_time() + polling_interval;
+  unique_lock<Mutex> guard(&lock_);
   while (true) {
     // Loop until we are shutting down or it is time to run another op.
-    do {
-      cond_.timed_wait(guard, next_schedule_time_);
-      if (shutdown_) {
-        VLOG(1) << "Shutting down maintenance manager.";
-        return;
-      }
-      cur_time = boost::get_system_time();
-    } while (cur_time < next_schedule_time_);
+    cond_.TimedWait(polling_interval);
+    if (shutdown_) {
+      VLOG(1) << "Shutting down maintenance manager.";
+      return;
+    }
 
     // Find the best op.
     MaintenanceOp* op = FindBestOp();
     if (!op) {
       VLOG(2) << "No maintenance operations look worth doing.";
-      next_schedule_time_ = cur_time + polling_interval;
       continue;
     }
 
@@ -208,7 +202,7 @@ void MaintenanceManager::RunSchedulerThread() {
       LOG(INFO) << "Prepare failed for " << op->name()
                 << ".  Re-running scheduler.";
       op->running_--;
-      op->cond_.notify_one();
+      op->cond_->Signal();
       continue;
     }
 
@@ -216,7 +210,6 @@ void MaintenanceManager::RunSchedulerThread() {
     Status s = thread_pool_->SubmitFunc(boost::bind(
           &MaintenanceManager::LaunchOp, this, op));
     CHECK(s.ok());
-    next_schedule_time_ = cur_time + polling_interval;
   }
 }
 
@@ -319,7 +312,7 @@ void MaintenanceManager::LaunchOp(MaintenanceOp* op) {
   op->RunningGauge()->Decrement();
   MonoTime end_time(MonoTime::Now(MonoTime::FINE));
   MonoDelta delta(end_time.GetDeltaSince(start_time));
-  boost::lock_guard<boost::mutex> guard(lock_);
+  lock_guard<Mutex> guard(&lock_);
 
   int duration = delta.ToSeconds();
 
@@ -333,7 +326,7 @@ void MaintenanceManager::LaunchOp(MaintenanceOp* op) {
 
   running_ops_--;
   op->running_--;
-  op->cond_.notify_one();
+  op->cond_->Signal();
 }
 
 Status MaintenanceManager::CalculateMemTarget(uint64_t* mem_target) {
@@ -366,7 +359,7 @@ Status MaintenanceManager::CalculateMemTotal(uint64_t* total) {
 
 void MaintenanceManager::GetMaintenanceManagerStatusDump(MaintenanceManagerStatusPB* out_pb) {
   DCHECK(out_pb != NULL);
-  boost::lock_guard<boost::mutex> guard(lock_);
+  lock_guard<Mutex> guard(&lock_);
   MaintenanceOp* best_op = FindBestOp();
   BOOST_FOREACH(MaintenanceManager::OpMapTy::value_type& val, ops_) {
     MaintenanceManagerStatusPB_MaintenanceOpPB* op_pb = out_pb->add_registered_operations();

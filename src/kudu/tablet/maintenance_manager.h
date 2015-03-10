@@ -3,22 +3,23 @@
 #ifndef KUDU_TABLET_MAINTENANCE_MANAGER_H
 #define KUDU_TABLET_MAINTENANCE_MANAGER_H
 
+#include <stdint.h>
+
+#include <map>
+#include <set>
+#include <string>
+#include <tr1/memory>
+#include <vector>
+
 #include "kudu/gutil/macros.h"
 #include "kudu/tablet/mvcc.h"
 #include "kudu/tablet/tablet.pb.h"
+#include "kudu/util/condition_variable.h"
 #include "kudu/util/monotime.h"
+#include "kudu/util/mutex.h"
 #include "kudu/util/countdown_latch.h"
 #include "kudu/util/thread.h"
 #include "kudu/util/threadpool.h"
-
-#include <boost/thread/condition_variable.hpp>
-#include <boost/thread/mutex.hpp>
-#include <vector>
-#include <map>
-#include <set>
-#include <stdint.h>
-#include <string>
-#include <tr1/memory>
 
 namespace kudu {
 
@@ -100,7 +101,10 @@ class MaintenanceOp {
   uint32_t running_;
 
   // Condition variable which the UnregisterOp function can wait on.
-  boost::condition_variable cond_;
+  //
+  // Note: 'cond_' is used with the MaintenanceManager's mutex. As such,
+  // it only exists when the op is registered.
+  gscoped_ptr<ConditionVariable> cond_;
 
   // The MaintenanceManager with which this op is registered, or null
   // if it is not registered.
@@ -169,11 +173,10 @@ class MaintenanceManager : public std::tr1::enable_shared_from_this<MaintenanceM
 
   const int32_t num_threads_;
   OpMapTy ops_; // registered operations
-  boost::mutex lock_;
+  Mutex lock_;
   scoped_refptr<kudu::Thread> monitor_thread_;
   gscoped_ptr<ThreadPool> thread_pool_;
-  boost::system_time next_schedule_time_;
-  boost::condition_variable cond_;
+  ConditionVariable cond_;
   bool shutdown_;
   uint64_t mem_target_;
   uint64_t running_ops_;

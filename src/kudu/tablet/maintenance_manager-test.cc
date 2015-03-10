@@ -62,6 +62,7 @@ class TestMaintenanceOp : public MaintenanceOp {
   TestMaintenanceOp(const std::string& name,
                     TestMaintenanceOpState state)
     : MaintenanceOp(name),
+      state_change_cond_(&lock_),
       state_(state),
       ram_anchored_(500),
       logs_retained_bytes_(0),
@@ -74,26 +75,26 @@ class TestMaintenanceOp : public MaintenanceOp {
   }
 
   virtual bool Prepare() OVERRIDE {
-    boost::lock_guard<boost::mutex> guard(lock_);
+    lock_guard<Mutex> guard(&lock_);
     if (state_ != OP_RUNNABLE) {
       return false;
     }
     state_ = OP_RUNNING;
-    state_change_cond_.notify_all();
+    state_change_cond_.Broadcast();
     DLOG(INFO) << "Prepared op " << name();
     return true;
   }
 
   virtual void Perform() OVERRIDE {
     DLOG(INFO) << "Performing op " << name();
-    boost::unique_lock<boost::mutex> guard(lock_);
+    lock_guard<Mutex> guard(&lock_);
     CHECK_EQ(OP_RUNNING, state_);
     state_ = OP_FINISHED;
-    state_change_cond_.notify_all();
+    state_change_cond_.Broadcast();
   }
 
   virtual void UpdateStats(MaintenanceOpStats* stats) OVERRIDE {
-    boost::lock_guard<boost::mutex> guard(lock_);
+    lock_guard<Mutex> guard(&lock_);
     stats->runnable = (state_ == OP_RUNNABLE);
     stats->ram_anchored = ram_anchored_;
     stats->logs_retained_bytes = logs_retained_bytes_;
@@ -101,49 +102,47 @@ class TestMaintenanceOp : public MaintenanceOp {
   }
 
   void Enable() {
-    boost::unique_lock<boost::mutex> guard(lock_);
+    lock_guard<Mutex> guard(&lock_);
     DCHECK((state_ == OP_DISABLED) || (state_ == OP_FINISHED));
     state_ = OP_RUNNABLE;
-    state_change_cond_.notify_all();
+    state_change_cond_.Broadcast();
   }
 
   void WaitForState(TestMaintenanceOpState state) {
-    boost::unique_lock<boost::mutex> guard(lock_);
+    lock_guard<Mutex> guard(&lock_);
     while (true) {
       if (state_ == state) {
         return;
       }
-      state_change_cond_.wait(guard);
+      state_change_cond_.Wait();
     }
   }
 
   bool WaitForStateWithTimeout(TestMaintenanceOpState state, int ms) {
-    boost::unique_lock<boost::mutex> guard(lock_);
-    boost::system_time stop_time = boost::get_system_time() +
-      boost::posix_time::milliseconds(ms);
+    MonoDelta to_wait = MonoDelta::FromMilliseconds(ms);
+    lock_guard<Mutex> guard(&lock_);
     while (true) {
       if (state_ == state) {
         return true;
       }
-      if (boost::get_system_time() > stop_time) {
+      if (!state_change_cond_.TimedWait(to_wait)) {
         return false;
       }
-      state_change_cond_.timed_wait(guard, stop_time);
     }
   }
 
   void set_ram_anchored(uint64_t ram_anchored) {
-    boost::lock_guard<boost::mutex> guard(lock_);
+    lock_guard<Mutex> guard(&lock_);
     ram_anchored_ = ram_anchored;
   }
 
   void set_logs_retained_bytes(uint64_t logs_retained_bytes) {
-    boost::lock_guard<boost::mutex> guard(lock_);
+    lock_guard<Mutex> guard(&lock_);
     logs_retained_bytes_ = logs_retained_bytes;
   }
 
   void set_perf_improvement(uint64_t perf_improvement) {
-    boost::lock_guard<boost::mutex> guard(lock_);
+    lock_guard<Mutex> guard(&lock_);
     perf_improvement_ = perf_improvement;
   }
 
@@ -156,8 +155,8 @@ class TestMaintenanceOp : public MaintenanceOp {
   }
 
  private:
-  boost::mutex lock_;
-  boost::condition_variable state_change_cond_;
+  Mutex lock_;
+  ConditionVariable state_change_cond_;
   enum TestMaintenanceOpState state_;
   uint64_t ram_anchored_;
   uint64_t logs_retained_bytes_;
