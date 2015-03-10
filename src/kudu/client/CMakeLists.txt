@@ -144,11 +144,6 @@ if (KUDU_EXPORTED_CLIENT)
     ../util/status_callback.h
     DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/kudu/util)
 
-  # Headers: gtest (thirdparty)
-  install(FILES
-    ${GTEST_INCLUDE_DIR}/gtest/gtest_prod.h
-    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/gtest)
-
   # Client sample code.
   #
   # Can't use CMAKE_INSTALL_DOCDIR because we don't ever call project().
