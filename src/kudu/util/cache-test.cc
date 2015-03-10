@@ -46,9 +46,9 @@ class CacheTest : public ::testing::Test {
   MetricRegistry metric_registry_;
 
   CacheTest()
-    : cache_(NewLRUCache(kCacheSize)) {
+    : cache_(NewLRUCache(kCacheSize, "cache_test")) {
     current_ = this;
-    CHECK(MemTracker::FindTracker("sharded_lru_cache", &mem_tracker_));
+    CHECK(MemTracker::FindTracker("cache_test-sharded_lru_cache", &mem_tracker_));
     MetricContext metric_ctx(&metric_registry_, "test");
     cache_->SetMetrics(metric_ctx);
   }

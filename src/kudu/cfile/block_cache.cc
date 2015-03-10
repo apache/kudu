@@ -34,11 +34,12 @@ struct CacheKey {
 } PACKED;
 
 BlockCache::BlockCache()
-  : cache_(CHECK_NOTNULL(NewLRUCache(FLAGS_block_cache_capacity_mb * 1024 * 1024))) {
+  : cache_(CHECK_NOTNULL(NewLRUCache(FLAGS_block_cache_capacity_mb * 1024 * 1024,
+                                     "block_cache"))) {
 }
 
 BlockCache::BlockCache(size_t capacity)
-  : cache_(CHECK_NOTNULL(NewLRUCache(capacity))) {
+  : cache_(CHECK_NOTNULL(NewLRUCache(capacity, "block_cache"))) {
 }
 
 BlockCache *BlockCache::GetSingleton() {

@@ -8,16 +8,20 @@
 #include <boost/foreach.hpp>
 #include <glog/logging.h>
 #include <stdlib.h>
+#include <string>
 #include <tr1/memory>
 #include <vector>
 
+#include "kudu/gutil/atomic_refcount.h"
 #include "kudu/gutil/hash/city.h"
 #include "kudu/gutil/stl_util.h"
+#include "kudu/gutil/strings/substitute.h"
+#include "kudu/util/atomic.h"
 #include "kudu/util/cache.h"
 #include "kudu/util/cache_metrics.h"
 #include "kudu/util/mem_tracker.h"
 #include "kudu/util/pthread_spinlock.h"
-#include "kudu/gutil/atomic_refcount.h"
+
 
 namespace kudu {
 
@@ -381,9 +385,10 @@ class ShardedLRUCache : public Cache {
   }
 
  public:
-  explicit ShardedLRUCache(size_t capacity)
-      : mem_tracker_(MemTracker::CreateTracker(-1, "sharded_lru_cache", NULL)),
-        last_id_(0) {
+  explicit ShardedLRUCache(size_t capacity, const string& id)
+      : last_id_(0) {
+
+    mem_tracker_ = MemTracker::CreateTracker(-1, strings::Substitute("$0-sharded_lru_cache", id));
     const size_t per_shard = (capacity + (kNumShards - 1)) / kNumShards;
     for (int s = 0; s < kNumShards; s++) {
       gscoped_ptr<LRUCache> shard(new LRUCache(mem_tracker_.get()));
@@ -431,8 +436,8 @@ class ShardedLRUCache : public Cache {
 
 }  // end anonymous namespace
 
-Cache* NewLRUCache(size_t capacity) {
-  return new ShardedLRUCache(capacity);
+Cache* NewLRUCache(size_t capacity, const string& id) {
+  return new ShardedLRUCache(capacity, id);
 }
 
 }  // namespace kudu

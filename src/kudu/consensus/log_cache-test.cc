@@ -257,8 +257,7 @@ TEST_F(LogCacheTest, TestGlobalMemoryLimit) {
   const string kParentTrackerId = "TestGlobalMemoryLimit";
   shared_ptr<MemTracker> parent_tracker = MemTracker::CreateTracker(
     FLAGS_log_cache_size_limit_mb * 1024 * 1024,
-    kParentTrackerId,
-    NULL);
+    kParentTrackerId);
 
   ASSERT_TRUE(parent_tracker.get() != NULL);
 

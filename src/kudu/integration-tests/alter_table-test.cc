@@ -108,10 +108,10 @@ class AlterTableTest : public KuduTest {
     if (cluster_->mini_tablet_server(0)->server() != NULL) {
       cluster_->mini_tablet_server(0)->Shutdown();
     }
+    tablet_peer_.reset();
 
     ASSERT_STATUS_OK(cluster_->mini_tablet_server(0)->Start());
     ASSERT_STATUS_OK(cluster_->mini_tablet_server(0)->WaitStarted());
-
     tablet_peer_ = LookupTabletPeer();
   }
 

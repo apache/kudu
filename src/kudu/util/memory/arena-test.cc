@@ -88,8 +88,36 @@ TEST(TestArena, TestAlignment) {
   }
 }
 
+// MemTrackers update their ancestors when consuming and releasing memory to compute
+// usage totals. However, the lifetimes of parent and child trackers can be different.
+// Validate that child trackers can still correctly update their parent stats even when
+// the parents go out of scope.
+TEST(TestArena, TestMemoryTrackerParentReferences) {
+  // Set up a parent and child MemTracker.
+  const string parent_id = "parent-id";
+  const string child_id = "child-id";
+  shared_ptr<MemTracker> child_tracker;
+  {
+    shared_ptr<MemTracker> parent_tracker = MemTracker::CreateTracker(1024, parent_id);
+    child_tracker = MemTracker::CreateTracker(-1, child_id, parent_id);
+    // Parent falls out of scope here. Should still be owned by the child.
+  }
+  shared_ptr<MemoryTrackingBufferAllocator> allocator(
+      new MemoryTrackingBufferAllocator(HeapBufferAllocator::Get(), child_tracker));
+  MemoryTrackingArena arena(256, 1024, allocator);
+
+  // Try some child operations.
+  ASSERT_EQ(256, child_tracker->consumption());
+  void *allocated = arena.AllocateBytes(256);
+  ASSERT_TRUE(allocated);
+  ASSERT_EQ(256, child_tracker->consumption());
+  allocated = arena.AllocateBytes(256);
+  ASSERT_TRUE(allocated);
+  ASSERT_EQ(768, child_tracker->consumption());
+}
+
 TEST(TestArena, TestMemoryTrackingDontEnforce) {
-  shared_ptr<MemTracker> mem_tracker = MemTracker::CreateTracker(1024, "arena-test-tracker", NULL);
+  shared_ptr<MemTracker> mem_tracker = MemTracker::CreateTracker(1024, "arena-test-tracker");
   shared_ptr<MemoryTrackingBufferAllocator> allocator(
       new MemoryTrackingBufferAllocator(HeapBufferAllocator::Get(), mem_tracker));
   MemoryTrackingArena arena(256, 1024, allocator);
@@ -118,7 +146,7 @@ TEST(TestArena, TestMemoryTrackingDontEnforce) {
 }
 
 TEST(TestArena, TestMemoryTrackingEnforced) {
-  shared_ptr<MemTracker> mem_tracker = MemTracker::CreateTracker(1024, "arena-test-tracker", NULL);
+  shared_ptr<MemTracker> mem_tracker = MemTracker::CreateTracker(1024, "arena-test-tracker");
   shared_ptr<MemoryTrackingBufferAllocator> allocator(
       new MemoryTrackingBufferAllocator(HeapBufferAllocator::Get(), mem_tracker,
                                         // enforce limit

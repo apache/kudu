@@ -34,8 +34,9 @@ shared_ptr<MemTracker> CreateMemTrackerForDMS(int64_t id,
   string mem_tracker_id = Substitute("DeltaMemStore-$0", id);
   if (parent_tracker != NULL) {
     mem_tracker_id = Substitute("$0-$1", parent_tracker->id(), mem_tracker_id);
+    return MemTracker::CreateTracker(-1, mem_tracker_id, parent_tracker->id());
   }
-  return MemTracker::CreateTracker(-1, mem_tracker_id, parent_tracker);
+  return MemTracker::CreateTracker(-1, mem_tracker_id);
 }
 
 } // anonymous namespace

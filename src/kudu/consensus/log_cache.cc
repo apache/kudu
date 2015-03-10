@@ -67,13 +67,12 @@ LogCache::LogCache(const MetricContext& metric_ctx,
   // If no tracker is registered for kConsensusQueueMemTrackerId,
   // create one using the global limit.
   parent_tracker_ = MemTracker::FindOrCreateTracker(global_max_ops_size_bytes,
-                                                    parent_tracker_id,
-                                                    NULL);
+                                                    parent_tracker_id);
 
   // And create a child tracker with the per-tablet limit.
   tracker_ = MemTracker::CreateTracker(max_ops_size_bytes,
                                        Substitute("$0-$1", parent_tracker_id, metric_ctx.prefix()),
-                                       parent_tracker_.get());
+                                       parent_tracker_->id());
 
   // Put a fake message at index 0, since this simplifies a lot of our
   // code paths elsewhere.

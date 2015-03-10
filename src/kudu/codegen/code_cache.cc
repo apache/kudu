@@ -14,7 +14,7 @@ namespace kudu {
 namespace codegen {
 
 CodeCache::CodeCache(size_t capacity)
-  : cache_(NewLRUCache(capacity)) {}
+  : cache_(NewLRUCache(capacity, "code_cache")) {}
 
 CodeCache::~CodeCache() {}
 

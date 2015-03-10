@@ -970,6 +970,40 @@ TEST_F(TabletServerTest, TestSnapshotScan_SnapshotInTheFutureFails) {
   }
 }
 
+
+// Test tserver shutdown with an active scanner open.
+TEST_F(TabletServerTest, TestSnapshotScan_OpenScanner) {
+  vector<uint64_t> write_timestamps_collector;
+  // Write and flush and write, so we have some rows in MRS and DRS
+  InsertTestRowsRemote(0, 0, 100, 2, NULL, kTabletId, &write_timestamps_collector);
+  ASSERT_STATUS_OK(tablet_peer_->tablet()->Flush());
+  InsertTestRowsRemote(0, 100, 100, 2, NULL, kTabletId, &write_timestamps_collector);
+
+  ScanRequestPB req;
+  ScanResponsePB resp;
+  RpcController rpc;
+
+  // Set up a new request with no predicates, all columns.
+  const Schema& projection = schema_;
+  NewScanRequestPB* scan = req.mutable_new_scan_request();
+  scan->set_tablet_id(kTabletId);
+  ASSERT_STATUS_OK(SchemaToColumnPBs(projection, scan->mutable_projected_columns()));
+  req.set_call_seq_id(0);
+  req.set_batch_size_bytes(0);
+  scan->set_read_mode(READ_AT_SNAPSHOT);
+
+  // Send the call
+  {
+    SCOPED_TRACE(req.DebugString());
+    ASSERT_STATUS_OK(proxy_->Scan(req, &resp, &rpc));
+    SCOPED_TRACE(resp.DebugString());
+    ASSERT_FALSE(resp.has_error());
+  }
+  // Intentionally do not drain the scanner at the end, to leave it open.
+  // This tests tablet server shutdown with an active scanner.
+}
+
+
 // Tests that a read in the future succeeds if a propagated_timestamp (that is even
 // further in the future) follows along. Also tests that the clock was updated so
 // that no writes will ever have a timestamp post this snapshot.

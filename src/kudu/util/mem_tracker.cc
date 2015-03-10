@@ -7,6 +7,7 @@
 #include <gperftools/malloc_extension.h>
 #include <limits>
 
+#include "kudu/gutil/map-util.h"
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/human_readable.h"
 #include "kudu/gutil/strings/substitute.h"
@@ -41,12 +42,15 @@ void InitiateHighWaterMark(const string& id,
 
 } // anonymous namespace
 
+// Sentinel value used for overloading MemTracker::CreateTracker with no parent_id.
+const char MemTracker::NO_PARENT[] = "!!!NO_PARENT!!!";
+
 shared_ptr<MemTracker> MemTracker::CreateTracker(int64_t byte_limit,
                                                  const string& id,
-                                                 MemTracker* parent) {
+                                                 const string& parent_id) {
   shared_ptr<MemTracker> tracker(new MemTracker(byte_limit,
                                                 id,
-                                                parent));
+                                                parent_id));
   AddToTrackerMap(id, tracker);
   return tracker;
 }
@@ -62,18 +66,18 @@ shared_ptr<MemTracker> MemTracker::CreateTracker(FunctionGauge<uint64_t>* consum
 }
 
 MemTracker::MemTracker(int64_t byte_limit, const string& id,
-                       MemTracker* parent)
+                       const string& parent_id)
     : limit_(byte_limit),
       id_(id),
       descr_(Substitute("memory consumption for $0", id)),
-      parent_(parent),
       consumption_metric_(NULL),
       auto_unregister_(false),
       enable_logging_(false),
       log_stack_(false) {
   InitiateHighWaterMark(id_, descr_, &consumption_);
-  if (parent != NULL) {
-    parent->AddChildTracker(this);
+  if (parent_id != NO_PARENT) {
+    CHECK(FindTracker(parent_id, &parent_)) << " id " << id << " parent_id " << parent_id;
+    parent_->AddChildTracker(this);
   }
   Init();
 }
@@ -83,7 +87,6 @@ MemTracker::MemTracker(FunctionGauge<uint64_t>* consumption_metric,
   : limit_(byte_limit),
     id_(id),
     descr_(Substitute("memory consumption for $0", id)),
-    parent_(NULL),
     consumption_metric_(consumption_metric),
     auto_unregister_(false),
     enable_logging_(false),
@@ -104,7 +107,7 @@ MemTracker::~MemTracker() {
 }
 
 void MemTracker::UnregisterFromParent() {
-  DCHECK(parent_ != NULL);
+  DCHECK(parent_.get());
   MutexLock l(parent_->child_trackers_lock_);
   parent_->child_trackers_.erase(child_tracker_it_);
   child_tracker_it_ = parent_->child_trackers_.end();
@@ -113,6 +116,11 @@ void MemTracker::UnregisterFromParent() {
 void MemTracker::AddToTrackerMap(const string& id, const shared_ptr<MemTracker>& tracker) {
   MutexLock l(static_mem_trackers_lock_);
   id_to_mem_trackers_[id] = tracker;
+}
+
+bool MemTracker::FindTracker(const string& id) {
+  MutexLock l(static_mem_trackers_lock_);
+  return ContainsKey(id_to_mem_trackers_, id);
 }
 
 bool MemTracker::FindTracker(const string& id, shared_ptr<MemTracker>* tracker) {
@@ -127,13 +135,13 @@ bool MemTracker::FindTracker(const string& id, shared_ptr<MemTracker>* tracker) 
 
 shared_ptr<MemTracker> MemTracker::FindOrCreateTracker(int64_t byte_limit,
                                                        const std::string& id,
-                                                       MemTracker* parent) {
+                                                       const std::string& parent_id) {
   MutexLock l(static_mem_trackers_lock_);
   TrackerMap::iterator it = id_to_mem_trackers_.find(id);
   if (it != id_to_mem_trackers_.end()) {
     return it->second.lock();
   }
-  shared_ptr<MemTracker> ret(new MemTracker(byte_limit, id, parent));
+  shared_ptr<MemTracker> ret(new MemTracker(byte_limit, id, parent_id));
   id_to_mem_trackers_[id] = ret;
   return ret;
 }
@@ -149,7 +157,7 @@ void MemTracker::ListTrackers(vector<shared_ptr<MemTracker> >* trackers) {
 
 void MemTracker::UpdateConsumption() {
   DCHECK(consumption_metric_ != NULL);
-  DCHECK(parent_ == NULL);
+  DCHECK(parent_.get() == NULL);
   consumption_->set_value(consumption_metric_->value());
 }
 
@@ -196,16 +204,17 @@ bool MemTracker::TryConsume(int64_t bytes) {
   // Walk the tracker tree top-down, to avoid expanding a limit on a child whose parent
   // won't accommodate the change.
   for (i = all_trackers_.size() - 1; i >= 0; --i) {
-    if (all_trackers_[i]->limit_ < 0) {
-      all_trackers_[i]->consumption_->IncrementBy(bytes);
+    MemTracker *tracker = all_trackers_[i];
+    if (tracker->limit_ < 0) {
+      tracker->consumption_->IncrementBy(bytes);
     } else {
-      if (!all_trackers_[i]->consumption_->TryIncrementBy(bytes, all_trackers_[i]->limit_)) {
+      if (!tracker->consumption_->TryIncrementBy(bytes, tracker->limit_)) {
         // One of the trackers failed, attempt to GC memory or expand our limit. If that
         // succeeds, TryUpdate() again. Bail if either fails.
-        if (!all_trackers_[i]->GcMemory(all_trackers_[i]->limit_ - bytes) ||
-            all_trackers_[i]->ExpandLimit(bytes)) {
-          if (!all_trackers_[i]->consumption_->TryIncrementBy(
-                  bytes, all_trackers_[i]->limit_)) {
+        if (!tracker->GcMemory(tracker->limit_ - bytes) ||
+            tracker->ExpandLimit(bytes)) {
+          if (!tracker->consumption_->TryIncrementBy(
+                  bytes, tracker->limit_)) {
             break;
           }
         } else {
@@ -360,12 +369,18 @@ std::string MemTracker::LogUsage(const std::string& prefix) const {
 }
 
 void MemTracker::Init() {
+  // populate ancestor_trackers_
+  shared_ptr<MemTracker> ancestor = parent_;
+  while (ancestor.get()) {
+    ancestor_trackers_.push_back(ancestor);
+    ancestor = ancestor->parent_;
+  }
   // populate all_trackers_ and limit_trackers_
   MemTracker* tracker = this;
-  while (tracker != NULL) {
+  while (tracker) {
     all_trackers_.push_back(tracker);
     if (tracker->has_limit()) limit_trackers_.push_back(tracker);
-    tracker = tracker->parent_;
+    tracker = tracker->parent_.get();
   }
   DCHECK_GT(all_trackers_.size(), 0);
   DCHECK_EQ(all_trackers_[0], this);
