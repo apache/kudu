@@ -936,6 +936,17 @@ TEST_F(RaftConsensusITest, TestReplicaBehaviorViaRPC) {
     ASSERT_EQ(0, results.size()) << results;
   }
 
+  // Send op 2.6, but set preceding OpId to 2.4. This is an invalid
+  // request, and the replica should reject it.
+  req.mutable_preceding_id()->CopyFrom(MakeOpId(2, 4));
+  req.clear_ops();
+  AddOp(MakeOpId(2, 6), &req);
+  rpc.Reset();
+  ASSERT_OK(c_proxy->UpdateConsensus(req, &resp, &rpc));
+  ASSERT_TRUE(resp.has_error()) << resp.DebugString();
+  ASSERT_EQ(resp.error().status().message(),
+            "Preceding OpId 2.4 doesn't fall before first OpId 2.6");
+
   // Now send some more ops, and commit the earlier ones.
   req.mutable_committed_index()->CopyFrom(MakeOpId(2, 4));
   req.mutable_preceding_id()->CopyFrom(MakeOpId(2, 4));

@@ -668,6 +668,16 @@ Status RaftConsensus::CheckLeaderRequestUnlocked(const ConsensusRequestPB* reque
     return Status::OK();
   }
 
+  // Verify that the preceding_opid has an index which actually precedes the ops
+  // being sent
+  if (request->ops_size() > 0 &&
+      request->preceding_id().index() != request->ops(0).id().index() - 1) {
+    return Status::InvalidArgument(
+      Substitute("Preceding OpId $0 doesn't fall before first OpId $1",
+                 OpIdToString(request->preceding_id()),
+                 OpIdToString(request->ops(0).id())));
+  }
+
   DeduplicateLeaderRequestUnlocked(request, deduped_req);
 
   RETURN_NOT_OK(EnforceLogMatchingPropertyMatchesUnlocked(*deduped_req, response));
