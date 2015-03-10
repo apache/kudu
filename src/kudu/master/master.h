@@ -12,7 +12,6 @@
 #include "kudu/master/master_options.h"
 #include "kudu/master/master.pb.h"
 #include "kudu/server/server_base.h"
-#include "kudu/tablet/maintenance_manager.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/promise.h"
 #include "kudu/util/status.h"
