@@ -5,7 +5,7 @@
 #include "kudu/rpc/negotiation.h"
 
 #include <sys/time.h>
-#include <sys/select.h>
+#include <poll.h>
 
 #include <string>
 
@@ -90,10 +90,10 @@ static Status RecvConnectionContext(Connection* conn, const MonoTime& deadline) 
 // Wait for the client connection to be established and become ready for writing.
 static Status WaitForClientConnect(Connection* conn, const MonoTime& deadline) {
   int fd = conn->socket()->GetFd();
-  fd_set writefds;
-  FD_ZERO(&writefds);
-  FD_SET(fd, &writefds);
-  int nfds = fd + 1;
+  struct pollfd poll_fd;
+  poll_fd.fd = fd;
+  poll_fd.events = POLLOUT;
+  poll_fd.revents = 0;
 
   MonoTime now;
   MonoDelta remaining;
@@ -107,14 +107,14 @@ static Status WaitForClientConnect(Connection* conn, const MonoTime& deadline) {
       return Status::TimedOut("Timeout exceeded waiting to connect");
     }
     remaining.ToTimeSpec(&ts);
-    int ready = pselect(nfds, NULL, &writefds, NULL, &ts, NULL);
+    int ready = ppoll(&poll_fd, 1, &ts, NULL);
     if (ready == -1) {
       int err = errno;
       if (err == EINTR) {
         // We were interrupted by a signal, let's go again.
         continue;
       } else {
-        return Status::NetworkError("Error from select() while waiting to connect",
+        return Status::NetworkError("Error from ppoll() while waiting to connect",
             ErrnoToString(err), err);
       }
     } else if (ready == 0) {

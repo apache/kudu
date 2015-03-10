@@ -14,6 +14,7 @@
 #include "kudu/gutil/strings/join.h"
 #include "kudu/rpc/serialization.h"
 #include "kudu/util/countdown_latch.h"
+#include "kudu/util/env.h"
 #include "kudu/util/test_util.h"
 
 using std::string;
@@ -135,6 +136,42 @@ TEST_F(TestRpc, TestWrongService) {
   ASSERT_STR_CONTAINS(s.ToString(),
                       "Service unavailable: service WrongServiceName "
                       "not registered on TestServer");
+}
+
+namespace {
+int GetOpenFileLimit() {
+  struct rlimit limit;
+  PCHECK(getrlimit(RLIMIT_NOFILE, &limit) == 0);
+  return limit.rlim_cur;
+}
+} // anonymous namespace
+
+// Test that we can still make RPC connections even if many fds are in use.
+// This is a regression test for KUDU-650.
+TEST_F(TestRpc, TestHighFDs) {
+  // This test can only run if ulimit is set high.
+  const int kNumFakeFiles = 3500;
+  const int kMinUlimit = kNumFakeFiles + 100;
+  if (GetOpenFileLimit() < kMinUlimit) {
+    LOG(INFO) << "Test skipped: must increase ulimit -n to at least " << kMinUlimit;
+    return;
+  }
+
+  // Open a bunch of fds just to increase our fd count.
+  vector<RandomAccessFile*> fake_files;
+  ElementDeleter d(&fake_files);
+  for (int i = 0; i < kNumFakeFiles; i++) {
+    gscoped_ptr<RandomAccessFile> f;
+    CHECK_OK(Env::Default()->NewRandomAccessFile("/dev/zero", &f));
+    fake_files.push_back(f.release());
+  }
+
+  // Set up server and client, and verify we can make a successful call.
+  Sockaddr server_addr;
+  StartTestServer(&server_addr);
+  shared_ptr<Messenger> client_messenger(CreateMessenger("Client"));
+  Proxy p(client_messenger, server_addr, GenericCalculatorService::static_service_name());
+  ASSERT_STATUS_OK(DoTestSyncCall(p, GenericCalculatorService::kAddMethodName));
 }
 
 // Test that connections are kept alive between calls.
