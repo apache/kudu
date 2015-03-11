@@ -1,8 +1,10 @@
-Copyright (c) 2014, Cloudera, inc.
-Confidential Cloudera Information: Covered by NDA.
+// Copyright (c) 2014, Cloudera, inc.
+// Confidential Cloudera Information: Covered by NDA.
+= Kudu Developer Documentation
 
-System Requirements
-------------------------------------------------------------
+== Building Kudu
+
+=== System Requirements
 The following dependencies are necessary to build kudu:
 
 - autoconf
@@ -26,157 +28,217 @@ The following dependencies are necessary to build kudu:
 Earlier versions of each of these may work, but have not recently
 been tested.
 
-Download and build thirdparty dependencies
-------------------------------------------------------------
+=== Download and build thirdparty dependencies
+
+Kudu depends on a number of third-party libraries and tools. In order to ensure
+that developers have consistent versions of these libraries, the Kudu repository
+includes scripts to automatically download and build these dependencies,
+installing them into a source-tree-local install prefix.
+
+To download, build, and install the thirdparty dependencies, you can issue the
+following command:
+
+[source,bash]
+----
 $ thirdparty/build-if-necessary.sh
+----
 
-This downloads and builds the thirdparty dependencies and installs them into
-thirdparty/installed/. The script is also invoked by cmake, so new thirdparty
+When this command completes, the dependencies will be installed in
+_thirdparty/installed/_. If you are looking to manually run the protobuf compiler `protoc`,
+the `pprof` tool, etc, you can find these in _thirdparty/installed/bin/_
+
+NOTE: The _build-if-necessary.sh_ script requires that it be run from within a git
+repository in order to determine if the dependencies have changed. If you are building
+from a source tarball, you must manually run the download and build steps yourself.
+
+=== Automatic rebuilding of dependencies
+
+The script is also invoked by cmake, so new thirdparty
 dependencies added by other developers will be downloaded and built
-automatically in subsequent builds. To disable the automatic invocation of
-build-if-necessary.sh, set the NO_REBUILD_THIRDPARTY environment variable:
+automatically in subsequent builds if necessary.
 
+To disable the automatic invocation of build-if-necessary.sh, set the
+`NO_REBUILD_THIRDPARTY` environment variable:
+
+[source,bash]
+----
 $ NO_REBUILD_THIRDPARTY=1 cmake .
+----
 
-If you are looking to manually run the protobuf compiler, the pprof tool,
-etc, you can find these in thirdparty/installed/bin/
+This can be particularly useful when trying to run tools like `git bisect`
+between two commits which may have different dependencies.
 
-Notes on building thirdparty with gcc 4.4 (eg on RHEL6)
------------------------------------------------------------------------------
+
+.Building thirdparty with gcc 4.4 (eg on RHEL6)
+[NOTE]
+====
 The LLVM thirdparty dependency will not build properly with gcc 4.4, which is
-the version of gcc shipped with RHEL6. On machines with the Cloudera
-toolchain, you can use LLVM 3.3 from the toolchain to bootstrap the thirdparty
-LLVM:
+the version of gcc shipped with RHEL6. If your machine has a newer compiler such as
+LLVM 3.3 available, you can use that compiler to bootstrap the thirdparty LLVM:
 
+[source,bash]
+----
 $ export CC=/REPLACE/WITH/YOUR/PATH/llvm-3.3/bin/clang
 $ export CXX=/REPLACE/WITH/YOUR/PATH/llvm-3.3/bin/clang++
 $ thirdparty/build-if-necessary.sh
+----
 
 If you don't have access to a newer compiler, you can build LLVM twice, once
 without the gcc 4.4 incompatible code, and once with. Add the flag
--DLLVM_EXTERNAL_COMPILER_RT_BUILD=OFF to the cmake invocation for LLVM in
-thirdparty/build-thirdparty.sh. When built, that will yield an incomplete but
-otherwise working LLVM 3.4. Then, using the CC/CXX environment variables as
+`-DLLVM_EXTERNAL_COMPILER_RT_BUILD=OFF` to the cmake invocation for LLVM in
+_thirdparty/build-thirdparty.sh_. When built, that will yield an incomplete but
+otherwise working LLVM 3.4. Then, using the `CC`/`CXX` environment variables as
 above, remove the aforementioned flag and rebuild LLVM using itself.
+====
 
-Building kudu and running tests
-------------------------------------------------------------
 
+=== Building Kudu itself
+
+
+[source,bash]
+----
 # Add <root of kudu tree>/thirdparty/installed/bin to your $PATH
 # before other parts of $PATH that may contain cmake, such as /usr/bin
-# e.g. "export PATH=$HOME/git/kudu/thirdparty/installed/bin:$PATH"
+# For exmple: "export PATH=$HOME/git/kudu/thirdparty/installed/bin:$PATH"
 # if using bash
 $ cmake .
-$ make -j4
-$ make test  # or, to run tests in parallel, ctest -j8 (for 8-way parallelism)
+$ make -j8  # or whatever level of parallelism your machine can handle
+----
 
 The build artifacts, including the test binaries, will be stored in
-'build/latest/', which itself is a symlink to either build/debug or
-build/release.
+_build/latest/_, which itself is a symlink to a build-type specific
+directory such as _build/debug_ or _build/release_.
+
+== Running unit/functional tests
+
+To run the Kudu unit tests, you can use the `ctest` command from within the
+root of the Kudu repository:
+
+[source,bash]
+----
+$ ctest -j8
+----
+
+This command will report any tests that failed, and the test logs will be
+written to _build/test-logs_.
 
 Individual tests can be run by directly invoking the test binaries in
-'build/latest'. Since Kudu uses the Google C++ Test Framework (gtest),
+_build/latest_. Since Kudu uses the Google C++ Test Framework (gtest),
 specific test cases can be run with gtest flags:
 
+[source,bash]
+----
 # List all the tests within a test binary, then run a single test
-$ ./build/latest/test-tablet --gtest_list_tests
-$ ./build/latest/test-tablet --gtest_filter=TestTablet/9.TestFlush
+$ ./build/latest/tablet-test --gtest_list_tests
+$ ./build/latest/tablet-test --gtest_filter=TestTablet/9.TestFlush
+----
 
 gtest also allows more complex filtering patterns. See the upstream
 documentation for more details.
 
-Running tests with the clang AddressSanitizer enabled
-------------------------------------------------------------
+=== Running tests with the clang AddressSanitizer enabled
+
 
 AddressSanitizer is a nice clang feature which can detect many types of memory
 errors. The Jenkins setup for kudu runs these tests automatically on a regular
 basis, but if you make large changes it can be a good idea to run it locally
-before pushing. To do so, you'll need a local install of clang.
+before pushing. To do so, you'll need to build using `clang`:
 
+[source,bash]
+----
 $ rm -Rf CMakeCache.txt CMakeFiles/
-$ CC=clang CXX=clang++ cmake -DKUDU_USE_ASAN=1 .   # or whatever your path to clang++
-$ make -j
+$ CC=$(pwd)/thirdparty/installed/bin/clang \
+  CXX=$(pwd)/thirdparty/installed/bin/clang++ \
+  cmake -DKUDU_USE_ASAN=1 .
+$ make -j8
 $ make test
+----
 
 The tests will run significantly slower than without ASAN enabled, and if any
 memory error occurs, the test that triggered it will fail. You can then use a
 command like:
 
-$ build/latest/failing-test 2>&1 | asan_symbolize.py | c++filt | less
 
-to get a proper symbolized stack trace. The asan_symbolize program can be found
-in the llvm source distribution:
-https://llvm.org/svn/llvm-project/compiler-rt/trunk/lib/asan/scripts/asan_symbolize.py
+[source,bash]
+----
+$ build/latest/failing-test 2>&1 | thirdparty/asan_symbolize.py | c++filt | less
+----
 
-For more information on AddressSanitizer, please see:
-  http://clang.llvm.org/docs/AddressSanitizer.html
+to get a proper symbolized stack trace.
 
+NOTE: For more information on AddressSanitizer, please see the
+http://clang.llvm.org/docs/AddressSanitizer.html[ASAN web page].
 
-Running tests with the clang Undefined Behavior Sanitizer (UBSAN) enabled
-------------------------------------------------------------
+=== Running tests with the clang Undefined Behavior Sanitizer (UBSAN) enabled
+
 
 Similar to the above, you can use a special set of clang flags to enable the Undefined
 Behavior Sanitizer. This will generate errors on certain pieces of code which may
 not themselves crash but rely on behavior which isn't defined by the C++ standard
-(and thus are likely bugs).
-
-You'll need at least clang 3.3 to use this feature.
-
-$ rm -Rf CMakeCache.txt CMakeFiles/
-$ CC=clang CXX=clang++ cmake -DKUDU_USE_UBSAN=1 .   # or whatever your path to clang++
-$ make -j
-$ make test
+(and thus are likely bugs). To enable UBSAN, follow the same directions as for
+ASAN above, but pass the `-DKUDU_USE_UBSAN=1` flag to the `cmake` invocation.
 
 In order to get a stack trace from UBSan, you can use gdb on the failing test, and
 set a breakpoint as follows:
 
+----
 (gdb) b __ubsan::Diag::~Diag
+----
 
-Then, when the breakpoint fires, gather a backtrace as usual using 'bt'.
+Then, when the breakpoint fires, gather a backtrace as usual using the `bt` command.
 
+=== Running tests with the tcmalloc memory leak checker enabled
 
-Running tests with the tcmalloc memory leak checker enabled
-------------------------------------------------------------
 
 You can also run the tests with a tcmalloc feature that prints an error message
 and aborts if it detects memory leaks in your program.
 
+[source,bash]
+----
 $ rm -Rf CMakeCache.txt CMakeFiles/
 $ cmake .
 $ make -j
 $ # Note: LP_BIND_NOW=1 required below, see: https://code.google.com/p/gperftools/issues/detail?id=497
 $ PPROF_PATH=thirdparty/installed/bin/pprof HEAPCHECK=normal LD_BIND_NOW=1 ctest -j8
+----
 
-For more information on the heap checker, please see:
+NOTE: For more information on the heap checker, please see:
   http://google-perftools.googlecode.com/svn/trunk/doc/heap_checker.html
 
 NOTE: The AddressSanitizer doesn't play nice with tcmalloc, so sadly the
-HEAPCHECK environment has no effect if you have enabled ASAN.
+HEAPCHECK environment has no effect if you have enabled ASAN. However, recent
+versions of ASAN will also detect leaks, so the tcmalloc leak checker is of
+limited utility.
 
+=== Running tests with ThreadSanitizer enabled
 
-Running tests with ThreadSanitizer enabled
-------------------------------------------------------------
-NOTE: this requires a relatively recent version of clang++, and may also require
-a relatively recent version of libstdc++ on your system. It seems to work reasonably
+NOTE: this requires a relatively recent version of clang\+\+, and may also require
+a relatively recent version of libstdc\+\+ on your system. It seems to work reasonably
 well on Ubuntu 13.10, but YMMV.
 
-$ rm -Rf CMakeCache.txt CMakeFiles/
-$ CC=clang CXX=clang++ cmake . -DKUDU_USE_TSAN=1
-$ make -j
-$ ctest -j8
+ThreadSanitizer (TSAN) is a clang feature which can detect improperly synchronized access to data
+along with many other threading bugs. To enable TSAN, pass `-DKUDU_USE_TSAN=1` to the `cmake`
+invocation, recompile, and run tests.
 
-Note that we rely on a list of runtime suppressions in build-support/tsan-suppressions.txt.
-If you simply run a unit test like build/latest/foo-test, you won't get these suppressions.
+. Enabling TSAN supressions while running tests
+[NOTE]
+====
+Note that we rely on a list of runtime suppressions in _build-support/tsan-suppressions.txt_.
+If you simply run a unit test like _build/latest/foo-test_, you won't get these suppressions.
 Instead, use a command like:
 
+[source,bash]
+----
 $ ctest -R foo-test
+----
 
-and then view the logs in build/test-logs/
+...and then view the logs in _build/test-logs/_
 
 In order for all of the suppressions to work, you need libraries with debug
-symbols installed, particularly for libstdc++. On Ubuntu 13.10, the package
-libstdc++6-4.8-dbg is needed for tsan builds to pass. It's not a bad idea to
+symbols installed, particularly for libstdc\+\+. On Ubuntu 13.10, the package
+libstdc++6-4.8-dbg is needed for TSAN builds to pass. It's not a bad idea to
 install debug symbol packages for libboost, libc, and cyrus-sasl as well.
+====
 
 TSAN may truncate a few lines of the stack trace when reporting where the error
 is. This can be bewildering. It's documented for TSANv1 here:
@@ -185,112 +247,122 @@ It is not mentioned in the documentation for TSANv2, but has been observed.
 In order to find out what is _really_ happening, set a breakpoint on the TSAN
 report in GDB using the following incantation:
 
-gdb -ex 'set disable-randomization off' -ex 'b __tsan::PrintReport' ./some-test
+[source,bash]
+----
+$ gdb -ex 'set disable-randomization off' -ex 'b __tsan::PrintReport' ./some-test
+----
 
 
-Generating code coverage reports
-------------------------------------------------------------
+=== Generating code coverage reports
+
 
 In order to generate a code coverage report, you must build with gcc (not clang)
 and use the following flags:
 
+[source,bash]
+----
 $ cmake -DKUDU_GENERATE_COVERAGE=1 .
-$ make clean
 $ make -j4
 $ ctest -j4
+----
 
 This will generate the code coverage files with extensions .gcno and .gcda. You can then
-use a tool like lcov or gcovr to visualize the results. For example, using gcovr:
+use a tool like `lcov` or `gcovr` to visualize the results. For example, using gcovr:
 
+[source,bash]
+----
 $ mkdir cov_html
 $ ./thirdparty/gcovr-3.0/scripts/gcovr -r src/
+----
 
-Or using lcov (which seems to produce better HTML output):
+Or using `lcov` (which seems to produce better HTML output):
 
+[source,bash]
+----
 $ lcov  --capture --directory src --output-file coverage.info
 $ genhtml coverage.info --output-directory out
+----
 
+=== Running lint checks
 
-Running lint checks
-------------------------------------------------------------
 
 Kudu uses cpplint.py from Google to enforce coding style guidelines. You can run the
-lint checks via cmake using the 'lint' target:
+lint checks via cmake using the `ilint` target:
 
-$ make lint
-
-This may take quite some time, as it scans every file in the source tree. For local
-development, it's often more convenient to only check the files which you've modified.
-For this you can use the 'ilint' target:
-
+[source,bash]
+----
 $ make ilint
+----
 
 This will scan any file which is dirty in your working tree, or changed since the last
-gerrit-integrated upstream change in your git log.
+gerrit-integrated upstream change in your git log. If you really want to do a full
+scan of the source tree, you may use the `lint` target instead.
 
+== Improving build times
 
-Improving build times
-------------------------------------------------------------
+=== Caching build output
 
-The kudu build is compatible with ccache. Simply install your distro's ccache package,
-prepend /usr/lib/ccache to your PATH, and watch your object files get cached. Link
+The kudu build is compatible with ccache. Simply install your distro's _ccache_ package,
+prepend _/usr/lib/ccache_ to your `PATH`, and watch your object files get cached. Link
 times won't be affected, but you will see a noticeable improvement in compilation
 times. You may also want to increase the size of your cache using "ccache -M new_size".
 
+=== Improving linker speed
 
 One of the major time sinks in the Kudu build is linking. GNU ld is historically
-quite slow at linking large C++ applications. The alternative linker 'gold' is much
-better at it. It's part of the binutils package in modern distros (try binutils-gold
-in older ones). To enable it, simply repoint the /usr/bin/ld symlink from ld.bfd to
-ld.gold.
+quite slow at linking large C++ applications. The alternative linker `gold` is much
+better at it. It's part of the `binutils` package in modern distros (try `binutils-gold`
+in older ones). To enable it, simply repoint the _/usr/bin/ld_ symlink from `ld.bfd` to
+`ld.gold`.
 
 Note that gold doesn't handle weak symbol overrides properly (see
-https://sourceware.org/bugzilla/show_bug.cgi?id=16979 for details). As such, it cannot
-be used with shared objects (see below) because it'll cause tcmalloc's alternative
-malloc implementation to be ignored.
+https://sourceware.org/bugzilla/show_bug.cgi?id=16979[this bug report] for details).
+As such, it cannot be used with shared objects (see below) because it'll cause
+tcmalloc's alternative malloc implementation to be ignored.
 
+=== Building Kudu with dynamic linking
 
 Kudu can be built into shared objects, which, when used with ccache, can result in a
-dramatic build time improvement in the steady state (i.e. when the build tree is clean
-but all object files will be served from ccache). By default, debug and fastdebug will
+dramatic build time improvement in the steady state. Even after a `make clean` in the build
+tree, all object files can be served from ccache. By default, `debug` and `fastdebug` will
 use dynamic linking, while other build types will use static linking. To enable
 dynamic linking explicitly, run:
 
+[source,bash]
+----
 $ cmake -DKUDU_LINK=dynamic .
+----
 
 Subsequent builds will create shared objects instead of archives and use them when
-linking the kudu binaries and unit tests. The full range of options for KUDU_LINK are
-"static", "dynamic", and "auto". The default is "auto" and only the first letter
+linking the kudu binaries and unit tests. The full range of options for `KUDU_LINK` are
+`static`, `dynamic`, and `auto`. The default is `auto` and only the first letter
 matters for the purpose of matching.
 
-Note that dynamic linking is incompatible with ASAN and static linking is incompatible
+NOTE: Dynamic linking is incompatible with ASAN and static linking is incompatible
 with TSAN.
 
 
-Developing Kudu in Eclipse
-------------------------------------------------------------
+== Developing Kudu in Eclipse
 
 Eclipse can be used as an IDE for Kudu. To generate Eclipse project files, run:
 
+[source,bash]
+----
 $ rm -rf CMakeCache.txt CMakeFiles/
 $ cmake -G "Eclipse CDT4 - Unix Makefiles" .
+----
 
-It's critical that CMakeCache.txt be removed prior to running the generator,
+It's critical that _CMakeCache.txt_ be removed prior to running the generator,
 otherwise the extra Eclipse generator logic (the CMakeFindEclipseCDT4.make module)
 won't run and standard system includes will be missing from the generated project.
-At the time of writing, the CMake version in the thirdparty tree (2.8.10.2) is too old
-to be used to generate Eclipse projects when the default compiler is clang. This was
-filed as a cmake bug (http://public.kitware.com/Bug/view.php?id=13823) and is fixed in
-version 2.8.11. That said, it's fine to generate the project files with gcc and go on
-to build Kudu with clang.
 
-By default, the Eclipse CDT indexer will index everything under the kudu/ source tree.
-It tends to choke on certain complicated source files within the thirdparty/llvm.
+By default, the Eclipse CDT indexer will index everything under the _kudu/_ source tree.
+It tends to choke on certain complicated source files within _thirdparty/llvm_.
 In some versions of CDT, the indexer will generate an error and stop indexing. In
 others, it'll spin forever.
 
-Either way, thirdparty/llvm must be excluded from indexing. An easy way to do this is
-to exclude all the unnecessary source trees from within thirdparty/ (all we need are
+Either way, _thirdparty/llvm_ must be excluded from indexing. An easy way to do this is
+to exclude all the unnecessary source trees from within _thirdparty/_ (all we need are
 the installed headers). To do this, right click on the project in the Project Explorer
 and select Properties. In the dialog box, select "C/C++ Project Paths", select the
 Source tab, highlight "Exclusion filter: (None)", and click "Edit...". In the new
@@ -299,8 +371,8 @@ thirdparty except for gmock and installed. Click OK all the way out and rebuild 
 project index by right clicking the project in the Project Explorer and selecting
 Index --> Rebuild.
 
-With these exclusions, the only false positives (i.e. red squigglies) that CDT
-presents appear to be in atomicops functions (e.g. NoBarrier_CompareAndSwap).
+With these exclusions, the only false positives (shown as "red squigglies") that CDT
+presents appear to be in atomicops functions (`NoBarrier_CompareAndSwap` for example).
 
 Another Eclipse annoyance stems from the "[Targets]" linked resource that Eclipse
 generates for each unit test. These are probably used for building within Eclipse,
@@ -310,10 +382,9 @@ once via a target and once via the raw source file. To fix this, simply delete t
 on writing code, though it may affect your ability to build from within Eclipse.
 
 
-Building on OSX
-------------------------------------------------------------
+== Building on OSX
 
-It's currently only possible to run "cmake ." on OSX, which will build all the third
+It's currently only possible to run `cmake .` on OSX, which will build all the third
 party libraries. Building Kudu itself isn't supported.
 
 Requirements:
