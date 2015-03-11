@@ -353,7 +353,7 @@ void TabletServerPathHandlers::HandleLogAnchorsPage(const Webserver::WebRequest&
   *output << "<h1>Log Anchors for Tablet " << EscapeForHtmlToString(tablet_id) << "</h1>"
           << std::endl;
 
-  string dump = peer->tablet()->log_anchor_registry()->DumpAnchorInfo();
+  string dump = peer->log_anchor_registry()->DumpAnchorInfo();
   *output << "<pre>" << EscapeForHtmlToString(dump) << "</pre>" << std::endl;
 }
 

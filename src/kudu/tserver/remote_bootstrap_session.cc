@@ -100,10 +100,9 @@ Status RemoteBootstrapSession::Init() {
   // first anchor all the logs, get a list of the logs available, and then
   // atomically re-anchor on the minimum OpId in that set.
   // TODO: Implement one-shot anchoring through the Log API. See KUDU-284.
-  LogAnchorRegistry* registry = tablet_peer_->tablet()->log_anchor_registry();
   string anchor_owner_token = Substitute("RemoteBootstrap-$0", session_id_);
-
-  registry->Register(MinimumOpId().index(), anchor_owner_token, &log_anchor_);
+  tablet_peer_->log_anchor_registry()->Register(
+      MinimumOpId().index(), anchor_owner_token, &log_anchor_);
 
   // Get the current segments from the log.
   RETURN_NOT_OK(tablet_peer_->log()->GetLogReader()->GetSegmentsSnapshot(&log_segments_));
@@ -125,10 +124,11 @@ Status RemoteBootstrapSession::Init() {
     int64_t min_repl_index = log_segments_[0]->footer().min_replicate_index();
     CHECK_GT(min_repl_index, 0);
     // Anchor on the earliest id found in the segments
-    RETURN_NOT_OK(registry->UpdateRegistration(min_repl_index, anchor_owner_token, &log_anchor_));
+    RETURN_NOT_OK(tablet_peer_->log_anchor_registry()->UpdateRegistration(
+        min_repl_index, anchor_owner_token, &log_anchor_));
   } else {
     // No log segments returned, so no log anchors needed.
-    RETURN_NOT_OK(registry->Unregister(&log_anchor_));
+    RETURN_NOT_OK(tablet_peer_->log_anchor_registry()->Unregister(&log_anchor_));
   }
 
   return Status::OK();
@@ -373,8 +373,7 @@ Status RemoteBootstrapSession::FindLogSegment(uint64_t segment_seqno,
 }
 
 Status RemoteBootstrapSession::UnregisterAnchorIfNeededUnlocked() {
-  LogAnchorRegistry* registry = tablet_peer_->tablet()->log_anchor_registry();
-  return registry->UnregisterIfAnchored(&log_anchor_);
+  return tablet_peer_->log_anchor_registry()->UnregisterIfAnchored(&log_anchor_);
 }
 
 } // namespace tserver

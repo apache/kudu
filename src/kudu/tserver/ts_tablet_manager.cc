@@ -15,7 +15,6 @@
 #include "kudu/common/wire_protocol.h"
 #include "kudu/consensus/consensus_meta.h"
 #include "kudu/consensus/log.h"
-#include "kudu/consensus/log_anchor_registry.h"
 #include "kudu/consensus/opid_util.h"
 #include "kudu/consensus/quorum_util.h"
 #include "kudu/fs/fs_manager.h"
@@ -48,7 +47,6 @@ namespace tserver {
 
 using consensus::ConsensusMetadata;
 using log::Log;
-using log::LogAnchorRegistry;
 using master::ReportedTabletPB;
 using master::TabletReportPB;
 using metadata::QuorumPB;
@@ -309,7 +307,6 @@ void TSTabletManager::OpenTablet(const scoped_refptr<TabletMetadata>& meta) {
 
   shared_ptr<Tablet> tablet;
   gscoped_ptr<Log> log;
-  scoped_refptr<LogAnchorRegistry> log_anchor_registry;
 
   LOG(INFO) << "Bootstrapping tablet: " << tablet_id;
   TRACE("Bootstrapping tablet");
@@ -325,7 +322,7 @@ void TSTabletManager::OpenTablet(const scoped_refptr<TabletMetadata>& meta) {
                         tablet_peer->status_listener(),
                         &tablet,
                         &log,
-                        &log_anchor_registry,
+                        tablet_peer->log_anchor_registry(),
                         &bootstrap_info);
     if (!s.ok()) {
       LOG(ERROR) << "Tablet failed to bootstrap: "

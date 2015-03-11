@@ -13,7 +13,6 @@
 #include "kudu/common/wire_protocol.h"
 #include "kudu/consensus/consensus_meta.h"
 #include "kudu/consensus/consensus_peers.h"
-#include "kudu/consensus/log_anchor_registry.h"
 #include "kudu/consensus/opid_util.h"
 #include "kudu/consensus/quorum_util.h"
 #include "kudu/fs/fs_manager.h"
@@ -213,7 +212,6 @@ void SysCatalogTable::SysCatalogStateChanged(TabletPeer* tablet_peer) {
 Status SysCatalogTable::SetupTablet(const scoped_refptr<tablet::TabletMetadata>& metadata) {
   shared_ptr<Tablet> tablet;
   gscoped_ptr<Log> log;
-  scoped_refptr<LogAnchorRegistry> log_anchor_registry;
 
   // TODO: handle crash mid-creation of tablet? do we ever end up with a
   // partially created tablet here?
@@ -230,7 +228,7 @@ Status SysCatalogTable::SetupTablet(const scoped_refptr<tablet::TabletMetadata>&
                                 tablet_peer_->status_listener(),
                                 &tablet,
                                 &log,
-                                &log_anchor_registry,
+                                tablet_peer_->log_anchor_registry(),
                                 &consensus_info));
 
   // TODO: Do we have a setSplittable(false) or something from the outside is

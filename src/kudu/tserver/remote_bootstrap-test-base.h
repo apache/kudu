@@ -31,13 +31,13 @@ class RemoteBootstrapTest : public TabletServerTestBase {
     // to test that we are anchoring correctly. Since GenerateTestData() does a
     // Flush(), Log GC is allowed to eat the logs before we get around to
     // starting a remote bootstrap session.
-    tablet_peer_->tablet()->log_anchor_registry()->Register(
+    tablet_peer_->log_anchor_registry()->Register(
       MinimumOpId().index(), CURRENT_TEST_NAME(), &anchor_);
     ASSERT_NO_FATAL_FAILURE(GenerateTestData());
   }
 
   virtual void TearDown() OVERRIDE {
-    ASSERT_OK(tablet_peer_->tablet()->log_anchor_registry()->Unregister(&anchor_));
+    ASSERT_OK(tablet_peer_->log_anchor_registry()->Unregister(&anchor_));
     TabletServerTestBase::TearDown();
   }
 

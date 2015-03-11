@@ -7,6 +7,7 @@
 
 #include "kudu/common/iterator.h"
 #include "kudu/consensus/consensus_meta.h"
+#include "kudu/consensus/log_anchor_registry.h"
 #include "kudu/consensus/log_util.h"
 #include "kudu/consensus/opid_util.h"
 #include "kudu/consensus/consensus-test-util.h"
@@ -36,8 +37,8 @@ using consensus::kMinimumTerm;
 using consensus::MakeOpId;
 using consensus::OpId;
 using log::Log;
-using log::LogTestBase;
 using log::LogAnchorRegistry;
+using log::LogTestBase;
 using log::ReadableLogSegment;
 using server::Clock;
 using server::LogicalClock;
@@ -83,8 +84,8 @@ class BootstrapTest : public LogTestBase {
                                   shared_ptr<Tablet>* tablet,
                                   ConsensusBootstrapInfo* boot_info) {
     gscoped_ptr<Log> new_log;
-    scoped_refptr<LogAnchorRegistry> new_anchor_registry;
     gscoped_ptr<TabletStatusListener> listener(new TabletStatusListener(meta));
+    scoped_refptr<LogAnchorRegistry> log_anchor_registry(new LogAnchorRegistry());
 
     // Now attempt to recover the log
     RETURN_NOT_OK(BootstrapTablet(
@@ -94,7 +95,7 @@ class BootstrapTest : public LogTestBase {
         listener.get(),
         tablet,
         &new_log,
-        &new_anchor_registry,
+        log_anchor_registry,
         boot_info));
     log_.reset(new_log.release());
 

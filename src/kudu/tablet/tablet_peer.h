@@ -20,6 +20,10 @@
 
 namespace kudu {
 
+namespace log {
+class LogAnchorRegistry;
+}
+
 namespace rpc {
 class Messenger;
 }
@@ -200,6 +204,10 @@ class TabletPeer : public RefCountedThreadSafe<TabletPeer>,
     return clock_.get();
   }
 
+  const scoped_refptr<log::LogAnchorRegistry>& log_anchor_registry() const {
+    return log_anchor_registry_;
+  }
+
   // Returns the tablet_id of the tablet managed by this TabletPeer.
   // Returns the correct tablet_id even if the underlying tablet is not available
   // yet.
@@ -277,6 +285,8 @@ class TabletPeer : public RefCountedThreadSafe<TabletPeer>,
   CountDownLatch consensus_ready_latch_;
 
   scoped_refptr<server::Clock> clock_;
+
+  scoped_refptr<log::LogAnchorRegistry> log_anchor_registry_;
 
   // Function to mark this TabletPeer's tablet as dirty in the TSTabletManager.
   MarkDirtyCallback mark_dirty_clbk_;

@@ -74,6 +74,7 @@ TabletPeer::TabletPeer(const scoped_refptr<TabletMetadata>& meta,
     // prepare executor has a single thread as prepare must be done in order
     // of submission
     consensus_ready_latch_(1),
+    log_anchor_registry_(new LogAnchorRegistry()),
     mark_dirty_clbk_(mark_dirty_clbk),
     config_sem_(1) {
   CHECK_OK(ThreadPoolBuilder("prepare").set_max_threads(1).Build(&prepare_pool_));
@@ -362,7 +363,7 @@ void TabletPeer::GetEarliestNeededLogIndex(int64_t* min_index) const {
   // Returns OK if minimum known, NotFound if no anchors are registered.
   {
     int64_t min_anchor_index;
-    Status s = tablet_->log_anchor_registry()->GetEarliestRegisteredLogIndex(&min_anchor_index);
+    Status s = log_anchor_registry_->GetEarliestRegisteredLogIndex(&min_anchor_index);
     if (PREDICT_FALSE(!s.ok())) {
       DCHECK(s.IsNotFound()) << "Unexpected error calling LogAnchorRegistry: " << s.ToString();
     } else {
