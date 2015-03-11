@@ -103,12 +103,11 @@ class RaftConsensusTest : public KuduTest {
   virtual void SetUp() OVERRIDE {
     LogOptions options;
     string test_path = GetTestPath("test-peer-root");
-    env_->CreateDir(test_path);
 
     // TODO mock the Log too, since we're gonna mock the queue
     // monitors and pretty much everything else.
     fs_manager_.reset(new FsManager(env_.get(), test_path));
-
+    CHECK_OK(fs_manager_->CreateInitialFileSystemLayout());
     CHECK_OK(Log::Open(LogOptions(),
                        fs_manager_.get(),
                        kTestTablet,

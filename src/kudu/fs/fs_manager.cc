@@ -4,12 +4,14 @@
 #include "kudu/fs/fs_manager.h"
 
 #include <iostream>
+#include <map>
 #include <tr1/memory>
 #include <tr1/unordered_set>
 
 #include <boost/foreach.hpp>
 #include <boost/assign/list_of.hpp>
 #include <glog/logging.h>
+#include <glog/stl_logging.h>
 #include <google/protobuf/message.h>
 
 #include "kudu/fs/block_id.h"
@@ -17,6 +19,7 @@
 #include "kudu/fs/file_block_manager.h"
 #include "kudu/fs/log_block_manager.h"
 #include "kudu/fs/fs.pb.h"
+#include "kudu/gutil/map-util.h"
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/numbers.h"
 #include "kudu/gutil/strings/strip.h"
@@ -37,6 +40,7 @@ DEFINE_string(block_manager, "file", "Which block manager to use for storage. "
 
 using google::protobuf::Message;
 using strings::Substitute;
+using std::map;
 using std::tr1::shared_ptr;
 using std::tr1::unordered_set;
 using kudu::fs::CreateBlockOptions;
@@ -60,62 +64,100 @@ const char *FsManager::kInstanceMetadataFileName = "instance";
 const char *FsManager::kConsensusMetadataDirName = "consensus-meta";
 
 FsManager::FsManager(Env* env, const string& root_path)
-  : env_(env) {
-  InitRoots(root_path, boost::assign::list_of(root_path));
-  InitBlockManager(NULL);
+  : env_(env),
+    wal_fs_root_(root_path),
+    data_fs_roots_(boost::assign::list_of(root_path).convert_to_container<vector<string> >()),
+    parent_metric_context_(NULL),
+    initted_(false) {
 }
 
 FsManager::FsManager(Env* env, MetricContext* parent_metric_context,
                      const string& wal_path,
                      const vector<string>& data_paths)
-  : env_(env) {
-  InitRoots(wal_path, data_paths);
-  InitBlockManager(parent_metric_context);
+  : env_(env),
+    wal_fs_root_(wal_path),
+    data_fs_roots_(data_paths),
+    parent_metric_context_(parent_metric_context),
+    initted_(false) {
 }
 
 FsManager::~FsManager() {
 }
 
-void FsManager::InitRoots(const string& wal_fs_root,
-                          const vector<string>& data_fs_roots) {
-  {
-    string wal_fs_root_copy = wal_fs_root;
-    StripWhiteSpace(&wal_fs_root_copy);
-    CHECK(!wal_fs_root_copy.empty());
-    CHECK_EQ('/', wal_fs_root_copy[0]);
-    wal_fs_root_ = wal_fs_root_copy;
+Status FsManager::Init() {
+  if (initted_) {
+    return Status::OK();
   }
 
-  CHECK(!data_fs_roots.empty());
-  BOOST_FOREACH(const string& data_fs_root, data_fs_roots) {
-    string data_fs_root_copy = data_fs_root;
-    StripWhiteSpace(&data_fs_root_copy);
-    CHECK(!data_fs_root_copy.empty());
-    CHECK_EQ('/', data_fs_root_copy[0]);
-    data_fs_roots_.push_back(data_fs_root_copy);
+  // Deduplicate all of the roots.
+  set<string> all_roots;
+  all_roots.insert(wal_fs_root_);
+  BOOST_FOREACH(const string& data_fs_root, data_fs_roots_) {
+    all_roots.insert(data_fs_root);
   }
-  metadata_fs_root_ = data_fs_roots_[0];
+
+  // Build a map of original root --> canonicalized root, sanitizing each
+  // root a bit as we go.
+  typedef map<string, string> RootMap;
+  RootMap canonicalized_roots;
+  BOOST_FOREACH(const string& root, all_roots) {
+    if (root.empty()) {
+      return Status::IOError("Empty string provided for filesystem root");
+    }
+    if (root[0] != '/') {
+      return Status::IOError(
+          Substitute("Relative path $0 provided for filesystem root", root));
+    }
+    {
+      string root_copy = root;
+      StripWhiteSpace(&root_copy);
+      if (root != root_copy) {
+        return Status::IOError(
+                  Substitute("Filesystem root $0 contains illegal whitespace", root));
+      }
+    }
+
+    // Strip the basename when canonicalizing, as it may not exist. The
+    // dirname, however, must exist.
+    string canonicalized;
+    RETURN_NOT_OK(env_->Canonicalize(DirName(root), &canonicalized));
+    canonicalized = JoinPathSegments(canonicalized, BaseName(root));
+    InsertOrDie(&canonicalized_roots, root, canonicalized);
+  }
+
+  // All done, use the map to set the canonicalized state.
+  canonicalized_wal_fs_root_ = FindOrDie(canonicalized_roots, wal_fs_root_);
+  canonicalized_metadata_fs_root_ = FindOrDie(canonicalized_roots, data_fs_roots_[0]);
+  BOOST_FOREACH(const string& data_fs_root, data_fs_roots_) {
+    canonicalized_data_fs_roots_.insert(FindOrDie(canonicalized_roots, data_fs_root));
+  }
+  BOOST_FOREACH(const RootMap::value_type& e, canonicalized_roots) {
+    canonicalized_all_fs_roots_.insert(e.second);
+  }
+
+  if (VLOG_IS_ON(1)) {
+    VLOG(1) << "WAL root: " << canonicalized_wal_fs_root_;
+    VLOG(1) << "Metadata root: " << canonicalized_metadata_fs_root_;
+    VLOG(1) << "Data roots: " << canonicalized_data_fs_roots_;
+    VLOG(1) << "All roots: " << canonicalized_all_fs_roots_;
+  }
+  initted_ = true;
+  return Status::OK();
 }
 
-void FsManager::InitBlockManager(MetricContext* parent_metric_context) {
-  // Add the data subdirectory to each data root.
-  vector<string> data_paths;
-  BOOST_FOREACH(const string& data_fs_root, data_fs_roots_) {
-    data_paths.push_back(JoinPathSegments(data_fs_root, kDataDirName));
-  }
-
+void FsManager::InitBlockManager() {
   if (FLAGS_block_manager == "file") {
-    block_manager_.reset(new FileBlockManager(env_, parent_metric_context, data_paths));
+    block_manager_.reset(new FileBlockManager(env_, parent_metric_context_, GetDataRootDirs()));
   } else if (FLAGS_block_manager == "log") {
-    block_manager_.reset(new LogBlockManager(env_, parent_metric_context, data_paths));
+    block_manager_.reset(new LogBlockManager(env_, parent_metric_context_, GetDataRootDirs()));
   } else {
     LOG(FATAL) << "Invalid block manager: " << FLAGS_block_manager;
   }
 }
 
 Status FsManager::Open() {
-  vector<string> roots(GetAllFilesystemRoots());
-  BOOST_FOREACH(const string& root, roots) {
+  RETURN_NOT_OK(Init());
+  BOOST_FOREACH(const string& root, canonicalized_all_fs_roots_) {
     gscoped_ptr<InstanceMetadataPB> pb(new InstanceMetadataPB);
     RETURN_NOT_OK(pb_util::ReadPBContainerFromPath(env_, GetInstanceMetadataPath(root),
                                                    pb.get()));
@@ -128,14 +170,15 @@ Status FsManager::Open() {
     }
   }
 
+  InitBlockManager();
   RETURN_NOT_OK(block_manager_->Open());
-  LOG(INFO) << "Opened local filesystem: " << JoinStrings(roots, ",")
+  LOG(INFO) << "Opened local filesystem: " << JoinStrings(canonicalized_all_fs_roots_, ",")
             << std::endl << metadata_->DebugString();
   return Status::OK();
 }
 
 Status FsManager::CreateInitialFileSystemLayout() {
-  vector<string> roots = GetAllFilesystemRoots();
+  RETURN_NOT_OK(Init());
 
   // Initialize each root dir.
   //
@@ -143,7 +186,7 @@ Status FsManager::CreateInitialFileSystemLayout() {
   // metadata. However, no subdirectories should exist.
   InstanceMetadataPB metadata;
   CreateInstanceMetadata(&metadata);
-  BOOST_FOREACH(const string& root, roots) {
+  BOOST_FOREACH(const string& root, canonicalized_all_fs_roots_) {
     RETURN_NOT_OK_PREPEND(CreateDirIfMissing(root),
                           "Unable to create FSManager root");
 
@@ -167,6 +210,7 @@ Status FsManager::CreateInitialFileSystemLayout() {
   RETURN_NOT_OK_PREPEND(env_->CreateDir(GetConsensusMetadataDir()),
                         "Unable to create consensus metadata directory");
 
+  InitBlockManager();
   RETURN_NOT_OK_PREPEND(block_manager_->Create(), "Unable to create block manager");
   return Status::OK();
 }
@@ -196,17 +240,19 @@ Status FsManager::WriteInstanceMetadata(const InstanceMetadataPB& metadata,
   return Status::OK();
 }
 
-std::vector<std::string> FsManager::GetAllFilesystemRoots() const {
-  std::set<std::string> deduplicated_roots;
-  deduplicated_roots.insert(wal_fs_root_);
-  deduplicated_roots.insert(metadata_fs_root_);
-  deduplicated_roots.insert(data_fs_roots_.begin(), data_fs_roots_.end());
-  return std::vector<std::string>(deduplicated_roots.begin(),
-                                  deduplicated_roots.end());
-}
-
 const string& FsManager::uuid() const {
   return CHECK_NOTNULL(metadata_.get())->uuid();
+}
+
+vector<string> FsManager::GetDataRootDirs() const {
+  DCHECK(initted_);
+
+  // Add the data subdirectory to each data root.
+  std::vector<std::string> data_paths;
+  BOOST_FOREACH(const string& data_fs_root, canonicalized_data_fs_roots_) {
+    data_paths.push_back(JoinPathSegments(data_fs_root, kDataDirName));
+  }
+  return data_paths;
 }
 
 string FsManager::GetBlockPath(const BlockId& block_id) const {
@@ -220,7 +266,8 @@ string FsManager::GetBlockPath(const BlockId& block_id) const {
 }
 
 string FsManager::GetMasterBlockDir() const {
-  return JoinPathSegments(metadata_fs_root_, kMasterBlockDirName);
+  DCHECK(initted_);
+  return JoinPathSegments(canonicalized_metadata_fs_root_, kMasterBlockDirName);
 }
 
 string FsManager::GetMasterBlockPath(const string& tablet_id) const {
@@ -251,8 +298,9 @@ string FsManager::GetWalSegmentFileName(const string& tablet_id,
 // ==========================================================================
 
 void FsManager::DumpFileSystemTree(ostream& out) {
-  vector<string> roots = GetAllFilesystemRoots();
-  BOOST_FOREACH(const string& root, roots) {
+  DCHECK(initted_);
+
+  BOOST_FOREACH(const string& root, canonicalized_all_fs_roots_) {
     out << "File-System Root: " << root << std::endl;
 
     std::vector<string> objects;

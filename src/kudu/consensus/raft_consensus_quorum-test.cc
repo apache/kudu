@@ -104,9 +104,9 @@ class RaftConsensusQuorumTest : public KuduTest {
     for (int i = 0; i < quorum_.peers_size(); i++) {
       LogOptions options;
       string test_path = GetTestPath(Substitute("peer-$0-root", i));
-      env_->CreateDir(test_path);
       FsManager* fs_manager = new FsManager(env_.get(), test_path);
       fs_managers_.push_back(fs_manager);
+      RETURN_NOT_OK(fs_manager->CreateInitialFileSystemLayout());
 
       gscoped_ptr<Log> log;
       RETURN_NOT_OK(Log::Open(options,

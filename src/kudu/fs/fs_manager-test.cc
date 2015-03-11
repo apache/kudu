@@ -11,6 +11,8 @@
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
+using boost::assign::list_of;
+
 namespace kudu {
 
 class FsManagerTestBase : public KuduTest {
@@ -58,21 +60,39 @@ TEST_F(FsManagerTestBase, TestBaseOperations) {
   fs_manager()->DumpFileSystemTree(std::cout);
 }
 
-TEST_F(FsManagerTestBase, TestWhitespaceInPaths) {
-  gscoped_ptr<FsManager> new_fs_manager(new FsManager(env_.get(),
-                                                      "  /foo\n\t"));
-  ASSERT_TRUE(HasPrefixString(new_fs_manager->GetDataRootDir(), "/foo/"));
-  ASSERT_TRUE(HasPrefixString(new_fs_manager->GetWalsRootDir(), "/foo/"));
+TEST_F(FsManagerTestBase, TestIllegalPaths) {
+  vector<string> illegal = list_of("")("asdf")("/foo\n\t");
+  BOOST_FOREACH(const string& path, illegal) {
+    gscoped_ptr<FsManager> new_fs_manager(new FsManager(env_.get(), path));
+    ASSERT_TRUE(new_fs_manager->CreateInitialFileSystemLayout().IsIOError());
+  }
 }
 
 TEST_F(FsManagerTestBase, TestMultiplePaths) {
   string wal_path = GetTestPath("a");
-  vector<string> data_paths = boost::assign::list_of(
+  vector<string> data_paths = list_of(
       GetTestPath("a"))(GetTestPath("b"))(GetTestPath("c"));
   gscoped_ptr<FsManager> new_fs_manager(new FsManager(env_.get(), NULL,
                                                       wal_path, data_paths));
   ASSERT_OK(new_fs_manager->CreateInitialFileSystemLayout());
   ASSERT_OK(new_fs_manager->Open());
+}
+
+TEST_F(FsManagerTestBase, TestMatchingPathsWithMismatchedSlashes) {
+  string wal_path = GetTestPath("foo");
+  vector<string> data_paths = list_of(wal_path + "/");
+  gscoped_ptr<FsManager> new_fs_manager(new FsManager(env_.get(), NULL,
+                                                      wal_path, data_paths));
+  ASSERT_OK(new_fs_manager->CreateInitialFileSystemLayout());
+}
+
+TEST_F(FsManagerTestBase, TestDuplicatePaths) {
+  string path = GetTestPath("foo");
+  gscoped_ptr<FsManager> new_fs_manager(new FsManager(env_.get(), NULL,
+                                                      path, list_of(path)(path)(path)));
+  ASSERT_OK(new_fs_manager->CreateInitialFileSystemLayout());
+  ASSERT_EQ(list_of(JoinPathSegments(path, new_fs_manager->kDataDirName)),
+            new_fs_manager->GetDataRootDirs());
 }
 
 } // namespace kudu

@@ -9,6 +9,8 @@
 #include <string>
 #include <vector>
 
+#include <gtest/gtest_prod.h>
+
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/util/env.h"
 #include "kudu/util/oid_generator.h"
@@ -103,13 +105,17 @@ class FsManager {
   //  on-disk path
   // ==========================================================================
   std::string GetDataRootDir() const {
-    return JoinPathSegments(metadata_fs_root_, kDataDirName);
+    DCHECK(initted_);
+    return JoinPathSegments(canonicalized_metadata_fs_root_, kDataDirName);
   }
+
+  std::vector<std::string> GetDataRootDirs() const;
 
   std::string GetBlockPath(const BlockId& block_id) const;
 
   std::string GetWalsRootDir() const {
-    return JoinPathSegments(wal_fs_root_, kWalDirName);
+    DCHECK(initted_);
+    return JoinPathSegments(canonicalized_wal_fs_root_, kWalDirName);
   }
 
   std::string GetTabletWalDir(const std::string& tablet_id) const {
@@ -132,7 +138,8 @@ class FsManager {
 
   // Return the directory where the consensus metadata is stored.
   std::string GetConsensusMetadataDir() const {
-    return JoinPathSegments(metadata_fs_root_, kConsensusMetadataDirName);
+    DCHECK(initted_);
+    return JoinPathSegments(canonicalized_metadata_fs_root_, kConsensusMetadataDirName);
   }
 
   // Return the path where ConsensusMetadataPB is stored.
@@ -165,16 +172,15 @@ class FsManager {
   }
 
  private:
-  // Initialize and sanitize the filesystem roots.
-  //
-  // Does not actually perform any on-disk operations.
-  void InitRoots(const std::string& wal_fs_root,
-                 const std::vector<std::string>& data_fs_roots);
+  FRIEND_TEST(FsManagerTestBase, TestDuplicatePaths);
+
+  // Initializes, sanitizes, and canonicalizes the filesystem roots.
+  Status Init();
 
   // Select and create an instance of the appropriate block manager.
   //
   // Does not actually perform any on-disk operations.
-  void InitBlockManager(MetricContext* parent_metric_context);
+  void InitBlockManager();
 
   // Creates the parent directory hierarchy to contain the given block id.
   Status CreateBlockDir(const BlockId& block_id);
@@ -186,10 +192,6 @@ class FsManager {
   // Does not mutate the current state of the fsmanager.
   Status WriteInstanceMetadata(const InstanceMetadataPB& metadata,
                                const std::string& root);
-
-  // Returns all of the filesystem root directories under management,
-  // omitting any duplicates.
-  std::vector<std::string> GetAllFilesystemRoots() const;
 
   // ==========================================================================
   //  file-system helpers
@@ -209,15 +211,31 @@ class FsManager {
   static const char *kConsensusMetadataDirName;
 
   Env *env_;
-  std::string wal_fs_root_;
-  std::string metadata_fs_root_;
-  std::vector<std::string> data_fs_roots_;
+
+  // These roots are the constructor input verbatim. None of them are used
+  // as-is; they are first canonicalized during Init().
+  const std::string wal_fs_root_;
+  const std::vector<std::string> data_fs_roots_;
+
+  MetricContext* parent_metric_context_;
+
+  // Canonicalized forms of 'wal_fs_root_ and 'data_fs_roots_'. Constructed
+  // during Init().
+  //
+  // - The first data root is used as the metadata root.
+  // - Common roots in the collections have been deduplicated.
+  std::string canonicalized_wal_fs_root_;
+  std::string canonicalized_metadata_fs_root_;
+  std::set<std::string> canonicalized_data_fs_roots_;
+  std::set<std::string> canonicalized_all_fs_roots_;
 
   ObjectIdGenerator oid_generator_;
 
   gscoped_ptr<InstanceMetadataPB> metadata_;
 
   gscoped_ptr<fs::BlockManager> block_manager_;
+
+  bool initted_;
 
   DISALLOW_COPY_AND_ASSIGN(FsManager);
 };
