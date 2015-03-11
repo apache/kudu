@@ -10,6 +10,7 @@
 
 #include <glog/logging.h>
 #include <gtest/gtest.h>
+#include <boost/assign/list_of.hpp>
 #include <boost/foreach.hpp>
 
 #include "kudu/gutil/bind.h"
@@ -673,6 +674,26 @@ TEST_F(TestEnv, TestRWFile) {
   ASSERT_OK(env_->NewRWFile(opts, GetTestPath("foo"), &file));
   ASSERT_OK(file->Read(0, kNewTestData.length(), &result, scratch2.get()));
   ASSERT_EQ(result, kNewTestData);
+}
+
+TEST_F(TestEnv, TestCanonicalize) {
+  vector<string> synonyms = boost::assign::list_of
+      (GetTestPath("."))
+      (GetTestPath("./."))
+      (GetTestPath(".//./"));
+  BOOST_FOREACH(const string& synonym, synonyms) {
+    string result;
+    ASSERT_OK(env_->Canonicalize(synonym, &result));
+    ASSERT_EQ(test_dir_, result);
+  }
+
+  string dir = GetTestPath("some_dir");
+  ASSERT_OK(env_->CreateDir(dir));
+  string result;
+  ASSERT_OK(env_->Canonicalize(dir + "/", &result));
+  ASSERT_EQ(dir, result);
+
+  ASSERT_TRUE(env_->Canonicalize(dir + "/bar", NULL).IsNotFound());
 }
 
 }  // namespace kudu

@@ -566,6 +566,11 @@ class InMemoryEnv : public EnvWrapper {
     LOG(FATAL) << "Not implemented";
   }
 
+  virtual Status Canonicalize(const string& path, string* result) OVERRIDE {
+    *result = path;
+    return Status::OK();
+  }
+
  private:
   void DeleteFileInternal(const std::string& fname) {
     if (!ContainsKey(file_map_, fname)) {

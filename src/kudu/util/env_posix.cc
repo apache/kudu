@@ -1172,6 +1172,15 @@ class PosixEnv : public Env {
     return Status::OK();
   }
 
+  virtual Status Canonicalize(const string& path, string* result) OVERRIDE {
+    gscoped_ptr<char[], FreeDeleter> r(realpath(path.c_str(), NULL));
+    if (!r) {
+      return IOError(path, errno);
+    }
+    *result = string(r.get());
+    return Status::OK();
+  }
+
  private:
   // gscoped_ptr Deleter implementation for fts_close
   struct FtsCloser {

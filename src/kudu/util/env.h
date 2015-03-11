@@ -245,6 +245,15 @@ class Env {
   virtual Status Walk(const std::string& root,
                       DirectoryOrder order,
                       const WalkCallback& cb) = 0;
+
+  // Canonicalize 'path' by applying the following conversions:
+  // - Converts a relative path into an absolute one using the cwd.
+  // - Converts '.' and '..' references.
+  // - Resolves all symbolic links.
+  //
+  // All directory entries in 'path' must exist on the filesystem.
+  virtual Status Canonicalize(const std::string& path, std::string* result) = 0;
+
  private:
   // No copying allowed
   Env(const Env&);
@@ -580,6 +589,9 @@ class EnvWrapper : public Env {
               DirectoryOrder order,
               const WalkCallback& cb) OVERRIDE {
     return target_->Walk(root, order, cb);
+  }
+  Status Canonicalize(const std::string& path, std::string* result) OVERRIDE {
+    return target_->Canonicalize(path, result);
   }
  private:
   Env* target_;
