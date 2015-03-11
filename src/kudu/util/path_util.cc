@@ -3,8 +3,13 @@
 
 #include "kudu/util/path_util.h"
 
+// Use the POSIX version of dirname(3).
+#include <libgen.h>
+
 #include <glog/logging.h>
 #include <string>
+
+#include "kudu/gutil/gscoped_ptr.h"
 
 using std::string;
 
@@ -23,22 +28,14 @@ std::string JoinPathSegments(const std::string &a,
   }
 }
 
-std::string DirName(const std::string& path) {
-  size_t last_slash = path.rfind('/');
-  if (last_slash == string::npos) {
-    return ".";
-  } else {
-    return path.substr(0, last_slash);
-  }
+string DirName(const string& path) {
+  gscoped_ptr<char[], FreeDeleter> path_copy(strdup(path.c_str()));
+  return dirname(path_copy.get());
 }
 
-std::string BaseName(const std::string& path) {
-  size_t last_slash = path.rfind('/');
-  if (last_slash == string::npos) {
-    return path;
-  } else {
-    return path.substr(last_slash + 1);
-  }
+string BaseName(const string& path) {
+  gscoped_ptr<char[], FreeDeleter> path_copy(strdup(path.c_str()));
+  return basename(path_copy.get());
 }
 
 } // namespace kudu
