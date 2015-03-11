@@ -64,10 +64,9 @@ endif()
 #######################################
 
 ## Create .ll file for precompiled functions (and their dependencies)
-set(PRECOMPILED_LL_FILENAME precompiled.ll)
 set(CLANG_EXEC ${THIRDPARTY_PREFIX}/bin/clang++)
 set(IR_SOURCE ${CMAKE_CURRENT_SOURCE_DIR}/precompiled.cc)
-set(IR_OUTPUT ${BUILD_OUTPUT_ROOT_DIRECTORY}${PRECOMPILED_LL_FILENAME})
+set(IR_OUTPUT ${BUILD_OUTPUT_ROOT_DIRECTORY}/precompiled.ll)
 set(IR_OUTPUT_ELF ${IR_OUTPUT}.o)
 # Retrieve all includes directories needed for precompilation
 set(IR_INCLUDES
@@ -117,12 +116,9 @@ add_custom_command(
 # See http://stackoverflow.com/questions/4158900/embedding-resources-in-executable-using-gcc
 add_custom_command(
   OUTPUT ${IR_OUTPUT_ELF}
-  COMMAND ld -r -b binary -o ${IR_OUTPUT_ELF} ${PRECOMPILED_LL_FILENAME}
+  COMMAND ${CMAKE_SOURCE_DIR}/build-support/embed-data-in-elf.sh
+          ${IR_OUTPUT} ${IR_OUTPUT_ELF}
   DEPENDS ${IR_OUTPUT}
-  # Have to set the working directory and use a non-absolute path so that the
-  # generated symbol name is consistent. Otherwise, the symbol name would
-  # depend on the build directory.
-  WORKING_DIRECTORY ${BUILD_OUTPUT_ROOT_DIRECTORY}
 )
 
 # Link the generated IR into an archive, and make the codegen library

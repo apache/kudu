@@ -115,14 +115,20 @@ ModuleBuilder::~ModuleBuilder() {}
 Status ModuleBuilder::Init() {
   CHECK_EQ(state_, kUninitialized) << "Cannot Init() twice";
 
-  llvm::StringRef ir_data(&_binary_precompiled_ll_start,
-                          &_binary_precompiled_ll_end - &_binary_precompiled_ll_start);
+  const char* ir_data_buf = &_binary_precompiled_ll_start;
+  ptrdiff_t ir_data_len = &_binary_precompiled_ll_end - &_binary_precompiled_ll_start;
+  llvm::StringRef ir_data(ir_data_buf, ir_data_len);
   DCHECK_GT(ir_data.size(), 0) << "IR not properly linked";
+
+  // Even though the LLVM API takes an explicit length for the input IR,
+  // it appears to actually depend on NULL termination. We assert for it
+  // here because otherwise we end up with very strange LLVM errors which
+  // are tough to debug.
+  DCHECK_EQ('\0', ir_data_buf[ir_data_len - 1]) << "IR not properly NULL-terminated";
 
   // Parse IR.
   SMDiagnostic err;
-  gscoped_ptr<llvm::MemoryBuffer> ir_buf(
-    llvm::MemoryBuffer::getMemBuffer(ir_data, "", false));
+  gscoped_ptr<llvm::MemoryBuffer> ir_buf(llvm::MemoryBuffer::getMemBuffer(ir_data));
   module_.reset(llvm::ParseIR(ir_buf.release(), err, *context_));
   if (!module_) {
     return Status::ConfigurationError("Could not parse IR", ToString(err));
