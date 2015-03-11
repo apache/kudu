@@ -540,7 +540,7 @@ Status RaftConsensus::StartReplicaTransactionUnlocked(const ReplicateRefPtr& msg
   return state_->AddPendingOperation(round_ptr);
 }
 
-void RaftConsensus::DeduplicateLeaderRequestUnlocked(const ConsensusRequestPB* rpc_req,
+void RaftConsensus::DeduplicateLeaderRequestUnlocked(ConsensusRequestPB* rpc_req,
                                                      LeaderRequest* deduplicated_req) {
   const OpId& last_committed = state_->GetCommittedOpIdUnlocked();
 
@@ -549,15 +549,12 @@ void RaftConsensus::DeduplicateLeaderRequestUnlocked(const ConsensusRequestPB* r
 
   int64_t dedup_up_to_index = state_->GetLastReceivedOpIdUnlocked().index();
 
-  ConsensusRequestPB* mutable_req = const_cast<ConsensusRequestPB*>(rpc_req);
-
-  int first_idx_kept = -1;
-  int last_idx_kept = -1;
+  deduplicated_req->first_message_idx = -1;
 
   // In this loop we discard duplicates and advance the leader's preceding id
   // accordingly.
   for (int i = 0; i < rpc_req->ops_size(); i++) {
-    ReplicateMsg* leader_msg = mutable_req->mutable_ops(i);
+    ReplicateMsg* leader_msg = rpc_req->mutable_ops(i);
 
     if (leader_msg->id().index() <= last_committed.index()) {
       VLOG_WITH_PREFIX(2) << "Skipping op id " << leader_msg->id().ShortDebugString()
@@ -586,18 +583,10 @@ void RaftConsensus::DeduplicateLeaderRequestUnlocked(const ConsensusRequestPB* r
       dedup_up_to_index = leader_msg->id().index();
     }
 
-    if (first_idx_kept == - 1) {
-      first_idx_kept = i;
+    if (deduplicated_req->first_message_idx == - 1) {
+      deduplicated_req->first_message_idx = i;
     }
     deduplicated_req->messages.push_back(make_scoped_refptr_replicate(leader_msg));
-    last_idx_kept = i;
-  }
-
-  // We take ownership of the deduped ops.
-  if (!deduplicated_req->messages.empty()) {
-    mutable_req->mutable_ops()->ExtractSubrange(first_idx_kept,
-                                                last_idx_kept - first_idx_kept + 1,
-                                                NULL);
   }
 }
 
@@ -610,6 +599,7 @@ Status RaftConsensus::HandleLeaderRequestTermUnlocked(const ConsensusRequestPB* 
     if (request->caller_term() < state_->GetCurrentTermUnlocked()) {
       string msg = Substitute("Rejecting Update request from peer $0 for earlier term $1. "
                               "Current term is $2. Ops: $3",
+
                               request->caller_uuid(),
                               request->caller_term(),
                               state_->GetCurrentTermUnlocked(),
@@ -662,23 +652,46 @@ Status RaftConsensus::CheckLeaderRequestUnlocked(const ConsensusRequestPB* reque
                                                  ConsensusResponsePB* response,
                                                  LeaderRequest* deduped_req) {
 
+  ConsensusRequestPB* mutable_req = const_cast<ConsensusRequestPB*>(request);
+  DeduplicateLeaderRequestUnlocked(mutable_req, deduped_req);
+
+  // This is an additional check for KUDU-639 that makes sure the message's index
+  // and term are in the right sequence in the request, after we've deduplicated
+  // them. We do this before we change any of the internal state.
+  //
+  // TODO move this to raft_consensus-state or whatever we transform that into.
+  // We should be able to do this check for each append, but right now the way
+  // we initialize raft_consensus-state is preventing us from doing so.
+  Status s;
+  const OpId* prev = deduped_req->preceding_opid;
+  BOOST_FOREACH(const ReplicateRefPtr& message, deduped_req->messages) {
+    s = ReplicaState::CheckOpInSequence(*prev, message->get()->id());
+    if (PREDICT_FALSE(!s.ok())) {
+      LOG(ERROR) << "Leader request contained out-of-sequence messages. Status: "
+          << s.ToString() << ". Leader Request: " << request->ShortDebugString();
+      break;
+    }
+    prev = &message->get()->id();
+  }
+
+  // We only release the messages from the request after the above check so that
+  // that we can print the original request, if it fails.
+  if (!deduped_req->messages.empty()) {
+    // We take ownership of the deduped ops.
+    DCHECK_GE(deduped_req->first_message_idx, 0);
+    mutable_req->mutable_ops()->ExtractSubrange(
+        deduped_req->first_message_idx,
+        deduped_req->messages.size(),
+        NULL);
+  }
+
+  RETURN_NOT_OK(s);
+
   RETURN_NOT_OK(HandleLeaderRequestTermUnlocked(request, response));
 
   if (response->status().has_error()) {
     return Status::OK();
   }
-
-  // Verify that the preceding_opid has an index which actually precedes the ops
-  // being sent
-  if (request->ops_size() > 0 &&
-      request->preceding_id().index() != request->ops(0).id().index() - 1) {
-    return Status::InvalidArgument(
-      Substitute("Preceding OpId $0 doesn't fall before first OpId $1",
-                 OpIdToString(request->preceding_id()),
-                 OpIdToString(request->ops(0).id())));
-  }
-
-  DeduplicateLeaderRequestUnlocked(request, deduped_req);
 
   RETURN_NOT_OK(EnforceLogMatchingPropertyMatchesUnlocked(*deduped_req, response));
 

@@ -511,8 +511,15 @@ Status ReplicaState::AdvanceCommittedIndexUnlocked(const OpId& committed_index) 
       <<  last_committed_index_.ShortDebugString()
       << " Starting to apply from log index: " << (*iter).first;
 
+  OpId prev_id = last_committed_index_;
+
   while (iter != end_iter) {
     ConsensusRound* round = DCHECK_NOTNULL((*iter).second);
+    const OpId& current_id = round->id();
+
+    if (PREDICT_TRUE(!OpIdEquals(prev_id, MinimumOpId()))) {
+      CHECK_OK(CheckOpInSequence(prev_id, current_id));
+    }
 
     pending_txns_.erase(iter++);
 
@@ -521,15 +528,15 @@ Status ReplicaState::AdvanceCommittedIndexUnlocked(const OpId& committed_index) 
       DCHECK(round->replicate_msg()->change_config_request().has_new_config());
       QuorumPB new_quorum = round->replicate_msg()->change_config_request().new_config();
       DCHECK(!new_quorum.has_opid_index());
-      new_quorum.set_opid_index(round->replicate_msg()->id().index());
+      new_quorum.set_opid_index(current_id.index());
       CHECK_OK(SetCommittedQuorumUnlocked(new_quorum));
     }
 
+    prev_id.CopyFrom(round->id());
     round->NotifyReplicationFinished(Status::OK());
   }
 
   last_committed_index_.CopyFrom(committed_index);
-
   return Status::OK();
 }
 
@@ -621,6 +628,18 @@ string ReplicaState::ToStringUnlocked() const {
 void ReplicaState::ResetActiveQuorumStateUnlocked(const metadata::QuorumPB& quorum) {
   DCHECK(update_lock_.is_locked());
   active_quorum_state_ = QuorumState::Build(quorum, peer_uuid_).Pass();
+}
+
+Status ReplicaState::CheckOpInSequence(const OpId& previous, const OpId& current) {
+  if (current.term() < previous.term()) {
+    return Status::Corruption(Substitute("New operation's term is not >= than the previous "
+        "op's term. Current: $0. Previous: $1", OpIdToString(current), OpIdToString(previous)));
+  }
+  if (current.index() != previous.index() + 1) {
+    return Status::Corruption(Substitute("New operation's index does not follow the previous"
+        " op's index. Current: $0. Previous: $1", OpIdToString(current), OpIdToString(previous)));
+  }
+  return Status::OK();
 }
 
 }  // namespace consensus

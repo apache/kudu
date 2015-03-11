@@ -912,12 +912,28 @@ TEST_F(RaftConsensusITest, TestReplicaBehaviorViaRPC) {
   ASSERT_OK(c_proxy->UpdateConsensus(req, &resp, &rpc));
   ASSERT_TRUE(resp.has_error()) << resp.DebugString();
   ASSERT_EQ(resp.error().status().message(),
-            "Preceding OpId 2.4 doesn't fall before first OpId 2.6");
+            "New operation's index does not follow the previous op's index. "
+            "Current: 2.6. Previous: 2.4");
 
+  resp.Clear();
+  req.clear_ops();
+  // Send ops 3.5 and 2.6, then commit up to index 6, the replica
+  // should fail.
+  req.mutable_preceding_id()->CopyFrom(MakeOpId(2, 4));
+  AddOp(MakeOpId(3, 5), &req);
+  AddOp(MakeOpId(2, 6), &req);
+  rpc.Reset();
+  ASSERT_OK(c_proxy->UpdateConsensus(req, &resp, &rpc));
+  ASSERT_TRUE(resp.has_error()) << resp.DebugString();
+  ASSERT_EQ(resp.error().status().message(),
+            "New operation's term is not >= than the previous op's term."
+            " Current: 2.6. Previous: 3.5");
+
+  resp.Clear();
+  req.clear_ops();
   // Now send some more ops, and commit the earlier ones.
   req.mutable_committed_index()->CopyFrom(MakeOpId(2, 4));
   req.mutable_preceding_id()->CopyFrom(MakeOpId(2, 4));
-  req.clear_ops();
   AddOp(MakeOpId(2, 5), &req);
   AddOp(MakeOpId(2, 6), &req);
   rpc.Reset();
@@ -933,6 +949,8 @@ TEST_F(RaftConsensusITest, TestReplicaBehaviorViaRPC) {
     ASSERT_STR_CONTAINS(results[2], "term: 2 index: 4");
   }
 
+  resp.Clear();
+  req.clear_ops();
   int leader_term = 2;
   const int kNumTerms = AllowSlowTests() ? 10000 : 100;
   while (leader_term < kNumTerms) {
@@ -947,7 +965,8 @@ TEST_F(RaftConsensusITest, TestReplicaBehaviorViaRPC) {
     AddOp(MakeOpId(leader_term, 6), &req);
     rpc.Reset();
     ASSERT_OK(c_proxy->UpdateConsensus(req, &resp, &rpc));
-    ASSERT_FALSE(resp.has_error()) << resp.DebugString();
+    ASSERT_FALSE(resp.has_error()) << "Req: " << req.ShortDebugString()
+        << " Resp: " << resp.DebugString();
   }
 
   // Send an empty request from the newest term which should commit

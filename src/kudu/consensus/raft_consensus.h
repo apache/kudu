@@ -136,6 +136,9 @@ class RaftConsensus : public Consensus,
     std::string leader_uuid;
     const OpId* preceding_opid;
     std::vector<ReplicateRefPtr> messages;
+    // The positional index of the first message selected to be appended, in the
+    // original leader's request message sequence.
+    int64_t first_message_idx;
   };
 
   std::string LogPrefixUnlocked();
@@ -178,7 +181,7 @@ class RaftConsensus : public Consensus,
   // haven't appended to our log yet.
   // On return 'deduplicated_req' is instantiated with only the new messages
   // and the correct preceding id.
-  void DeduplicateLeaderRequestUnlocked(const ConsensusRequestPB* rpc_req,
+  void DeduplicateLeaderRequestUnlocked(ConsensusRequestPB* rpc_req,
                                         LeaderRequest* deduplicated_req);
 
   // Handles a request from a leader, refusing the request if the term is lower than

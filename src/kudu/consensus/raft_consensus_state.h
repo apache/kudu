@@ -315,6 +315,10 @@ class ReplicaState {
   std::string LogPrefix();
   std::string LogPrefixUnlocked() const;
 
+  // Checks that 'current' correctly follows 'previous'. Specifically it checks
+  // that the term is the same or higher and that the index is sequential.
+  static Status CheckOpInSequence(const OpId& previous, const OpId& current);
+
   // Return the current state of this object.
   // The update_lock_ must be held.
   ReplicaState::State state() const;
