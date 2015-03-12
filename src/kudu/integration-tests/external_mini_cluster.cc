@@ -10,6 +10,7 @@
 
 #include "kudu/client/client.h"
 #include "kudu/common/wire_protocol.h"
+#include "kudu/gutil/mathlimits.h"
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/strings/util.h"
@@ -42,7 +43,8 @@ static double kTabletServerRegistrationTimeoutSeconds = 10.0;
 
 ExternalMiniClusterOptions::ExternalMiniClusterOptions()
     : num_masters(1),
-      num_tablet_servers(1) {
+      num_tablet_servers(1),
+      bind_to_unique_loopback_addresses(true) {
 }
 
 ExternalMiniClusterOptions::~ExternalMiniClusterOptions() {
@@ -215,6 +217,16 @@ Status ExternalMiniCluster::StartDistributedMasters() {
   return Status::OK();
 }
 
+string ExternalMiniCluster::GetBindIpForTabletServer(int index) const {
+  if (opts_.bind_to_unique_loopback_addresses) {
+    pid_t p = getpid();
+    CHECK_LE(p, MathLimits<uint16_t>::kMax) << "Cannot run on systems with >16-bit pid";
+    return Substitute("127.$0.$1.$2", p >> 8, p & 0xff, index);
+  } else {
+    return "127.0.0.1";
+  }
+}
+
 Status ExternalMiniCluster::AddTabletServer() {
   CHECK(leader_master() != NULL)
       << "Must have started at least 1 master before adding tablet servers";
@@ -226,8 +238,10 @@ Status ExternalMiniCluster::AddTabletServer() {
   for (int i = 0; i < num_masters(); i++) {
     master_hostports.push_back(DCHECK_NOTNULL(master(i))->bound_rpc_hostport());
   }
+
   scoped_refptr<ExternalTabletServer> ts =
     new ExternalTabletServer(exe, GetDataPath(Substitute("ts-$0", idx)),
+                             GetBindIpForTabletServer(idx),
                              master_hostports,
                              SubstituteInFlags(opts_.extra_tserver_flags, idx));
   RETURN_NOT_OK(ts->Start());
@@ -544,10 +558,12 @@ Status ExternalMaster::Restart() {
 
 ExternalTabletServer::ExternalTabletServer(const string& exe,
                                            const string& data_dir,
+                                           const string& bind_host,
                                            const vector<HostPort>& master_addrs,
                                            const vector<string>& extra_flags)
   : ExternalDaemon(exe, data_dir, extra_flags),
-    master_addrs_(HostPort::ToCommaSeparatedString(master_addrs)) {
+    master_addrs_(HostPort::ToCommaSeparatedString(master_addrs)),
+    bind_host_(bind_host) {
 }
 
 ExternalTabletServer::~ExternalTabletServer() {
@@ -557,7 +573,10 @@ Status ExternalTabletServer::Start() {
   vector<string> flags;
   flags.push_back("--tablet_server_wal_dir=" + data_dir_);
   flags.push_back("--tablet_server_data_dirs=" + data_dir_);
-  flags.push_back("--tablet_server_rpc_bind_addresses=127.0.0.1:0");
+  flags.push_back(Substitute("--tablet_server_rpc_bind_addresses=$0:0",
+                             bind_host_));
+  flags.push_back(Substitute("--local_ip_for_outbound_sockets=$0",
+                             bind_host_));
   flags.push_back("--tablet_server_web_port=0");
   flags.push_back("--tablet_server_master_addrs=" + master_addrs_);
   RETURN_NOT_OK(StartProcess(flags));
@@ -573,6 +592,8 @@ Status ExternalTabletServer::Restart() {
   flags.push_back("--tablet_server_wal_dir=" + data_dir_);
   flags.push_back("--tablet_server_data_dirs=" + data_dir_);
   flags.push_back("--tablet_server_rpc_bind_addresses=" + bound_rpc_.ToString());
+  flags.push_back(Substitute("--local_ip_for_outbound_sockets=$0",
+                             bind_host_));
   flags.push_back(Substitute("--tablet_server_web_port=$0", bound_http_.port()));
   flags.push_back("--tablet_server_master_addrs=" + master_addrs_);
   RETURN_NOT_OK(StartProcess(flags));

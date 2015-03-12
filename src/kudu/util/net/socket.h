@@ -72,6 +72,9 @@ class Socket {
   // Call getpeername to get the address of the connected peer.
   Status GetPeerAddress(Sockaddr *cur_addr) const;
 
+  // Call bind() to bind the socket to a given address.
+  Status Bind(const Sockaddr& bind_addr);
+
   // Call accept(2) to get a new connection.
   Status Accept(Socket *new_conn, Sockaddr *remote, int flags);
 
@@ -105,6 +108,10 @@ class Socket {
  private:
   // Called internally from SetSend/RecvTimeout().
   Status SetTimeout(int opt, std::string optname, const MonoDelta& timeout);
+
+  // Bind the socket to a local address before making an outbound connection,
+  // based on the value of FLAGS_local_ip_for_outbound_sockets.
+  Status BindForOutgoingConnection();
 
   int fd_;
 

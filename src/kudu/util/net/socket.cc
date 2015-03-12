@@ -18,9 +18,15 @@
 
 #include "kudu/gutil/basictypes.h"
 #include "kudu/gutil/stringprintf.h"
+#include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/errno.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/sockaddr.h"
+
+DEFINE_string(local_ip_for_outbound_sockets, "",
+              "IP to bind to when making outgoing socket connections. "
+              "This must be an IP address of the form A.B.C.D, not a hostname. "
+              "Advanced parameter, subject to change.");
 
 namespace kudu {
 
@@ -192,8 +198,6 @@ Status Socket::SetRecvTimeout(const MonoDelta& timeout) {
 Status Socket::BindAndListen(const Sockaddr &sockaddr,
                              int listenQueueSize) {
   int err;
-  struct sockaddr_in addr = sockaddr.addr();
-
   int yes = 1;
   if (setsockopt(fd_, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(yes)) == -1) {
     err = errno;
@@ -201,14 +205,7 @@ Status Socket::BindAndListen(const Sockaddr &sockaddr,
                                 ErrnoToString(err), Slice(), err);
   }
 
-  DCHECK_GE(fd_, 0);
-  if (bind(fd_, (struct sockaddr*) &addr, sizeof(addr))) {
-    err = errno;
-    return Status::NetworkError(
-        StringPrintf("error binding socket to %s: %s",
-            sockaddr.ToString().c_str(), ErrnoToString(err).c_str()),
-        Slice(), err);
-  }
+  RETURN_NOT_OK(Bind(sockaddr));
   if (listen(fd_, listenQueueSize)) {
     err = errno;
     return Status::NetworkError(
@@ -245,6 +242,21 @@ Status Socket::GetPeerAddress(Sockaddr *cur_addr) const {
   return Status::OK();
 }
 
+Status Socket::Bind(const Sockaddr& bind_addr) {
+  struct sockaddr_in addr = bind_addr.addr();
+
+  DCHECK_GE(fd_, 0);
+  if (PREDICT_FALSE(bind(fd_, (struct sockaddr*) &addr, sizeof(addr)))) {
+    int err = errno;
+    return Status::NetworkError(
+      strings::Substitute("error binding socket to $0: $1",
+                          bind_addr.ToString(), ErrnoToString(err)),
+      Slice(), err);
+  }
+
+  return Status::OK();
+}
+
 Status Socket::Accept(Socket *new_conn, Sockaddr *remote, int flags) {
   struct sockaddr_in addr;
   socklen_t olen = sizeof(addr);
@@ -266,7 +278,22 @@ Status Socket::Accept(Socket *new_conn, Sockaddr *remote, int flags) {
   return Status::OK();
 }
 
+Status Socket::BindForOutgoingConnection() {
+  Sockaddr bind_host;
+  Status s = bind_host.ParseString(FLAGS_local_ip_for_outbound_sockets, 0);
+  CHECK(s.ok() && bind_host.port() == 0)
+    << "Invalid local IP set for 'local_ip_for_outbound_sockets': '"
+    << FLAGS_local_ip_for_outbound_sockets << "': " << s.ToString();
+
+  RETURN_NOT_OK(Bind(bind_host));
+  return Status::OK();
+}
+
 Status Socket::Connect(const Sockaddr &remote) {
+  if (PREDICT_FALSE(!FLAGS_local_ip_for_outbound_sockets.empty())) {
+    RETURN_NOT_OK(BindForOutgoingConnection());
+  }
+
   struct sockaddr_in addr;
   memcpy(&addr, &remote.addr(), sizeof(sockaddr_in));
   DCHECK_GE(fd_, 0);

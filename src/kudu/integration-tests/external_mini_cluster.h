@@ -53,6 +53,28 @@ struct ExternalMiniClusterOptions {
   // Default: "", which auto-generates a unique path for this cluster.
   std::string data_root;
 
+  // If true, binds each tablet server to a different loopback address.
+  // This affects the server's RPC server, and also forces the server to
+  // only use this IP address for outgoing socket connections as well.
+  // This allows the use of iptables on the localhost to simulate network
+  // partitions.
+  //
+  // The addressed used are 127.<A>.<B>.<C> where:
+  // - <A,B> are the high and low bytes of the pid of the process running the
+  //   minicluster (not the daemon itself).
+  // - <C> is the index of the server within this minicluster.
+  //
+  // This requires that the system is set up such that processes may bind
+  // to any IP address in the localhost netblock (127.0.0.0/8). This seems
+  // to be the case on common Linux distributions. You can verify by running
+  // 'ip addr | grep 127.0.0.1' and checking that the address is listed as
+  // '127.0.0.1/8'.
+  //
+  // NOTE: this does not currently affect the HTTP server.
+  //
+  // Default: true
+  bool bind_to_unique_loopback_addresses;
+
   // The path where the kudu daemons should be run from.
   // Default: "", which uses the same path as the currently running executable.
   // This works for unit tests, since they all end up in build/latest/.
@@ -107,6 +129,11 @@ class ExternalMiniCluster {
   // 'mode'.
   // Currently, this uses SIGKILL on each daemon for a non-graceful shutdown.
   void Shutdown(NodeSelectionMode mode = ALL);
+
+  // Return the IP address that the tablet server with the given index will bind to.
+  // If options.bind_to_unique_loopback_addresses is false, this will be 127.0.0.1
+  // Otherwise, it is another IP in the local netblock.
+  std::string GetBindIpForTabletServer(int index) const;
 
   // Return a pointer to the running leader master. This may be NULL
   // if the cluster is not started.
@@ -290,6 +317,7 @@ class ExternalMaster : public ExternalDaemon {
 class ExternalTabletServer : public ExternalDaemon {
  public:
   ExternalTabletServer(const std::string& exe, const std::string& data_dir,
+                       const std::string& bind_host,
                        const std::vector<HostPort>& master_addrs,
                        const std::vector<std::string>& extra_flags);
 
@@ -302,6 +330,7 @@ class ExternalTabletServer : public ExternalDaemon {
 
  private:
   const std::string master_addrs_;
+  const std::string bind_host_;
 
   friend class RefCountedThreadSafe<ExternalTabletServer>;
   virtual ~ExternalTabletServer();

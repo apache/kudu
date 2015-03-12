@@ -6,10 +6,12 @@
 #include <arpa/inet.h>
 #include <stdio.h>
 #include <string.h>
+#include <string>
 
 #include "kudu/gutil/endian.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/stringprintf.h"
+#include "kudu/util/net/net_util.h"
 
 namespace kudu {
 
@@ -24,6 +26,17 @@ Sockaddr::Sockaddr() {
 
 Sockaddr::Sockaddr(const struct sockaddr_in& addr) {
   memcpy(&addr_, &addr, sizeof(struct sockaddr_in));
+}
+
+Status Sockaddr::ParseString(const std::string& s, uint16_t default_port) {
+  HostPort hp;
+  RETURN_NOT_OK(hp.ParseString(s, default_port));
+
+  if (inet_pton(AF_INET, hp.host().c_str(), &addr_.sin_addr) != 1) {
+    return Status::InvalidArgument("Invalid IP address", hp.host());
+  }
+  addr_.sin_port = hp.port();
+  return Status::OK();
 }
 
 Sockaddr& Sockaddr::operator=(const struct sockaddr_in &addr) {

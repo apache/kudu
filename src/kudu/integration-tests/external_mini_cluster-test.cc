@@ -4,9 +4,12 @@
 #include <boost/assign/list_of.hpp>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
+#include <sys/types.h>
+#include <unistd.h>
 #include <vector>
 
 #include "kudu/integration-tests/external_mini_cluster.h"
+#include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/strings/util.h"
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/test_util.h"
@@ -51,7 +54,9 @@ TEST_F(EMCTest, TestBasicOperation) {
     SCOPED_TRACE(i);
     ExternalTabletServer* ts = CHECK_NOTNULL(cluster.tablet_server(i));
     HostPort ts_rpc = ts->bound_rpc_hostport();
-    EXPECT_TRUE(HasPrefixString(ts_rpc.ToString(), "127.0.0.1:")) << ts_rpc.ToString();
+    string expected_prefix = strings::Substitute("$0:", cluster.GetBindIpForTabletServer(i));
+    EXPECT_NE(expected_prefix, "127.0.0.1") << "Should bind to unique per-server hosts";
+    EXPECT_TRUE(HasPrefixString(ts_rpc.ToString(), expected_prefix)) << ts_rpc.ToString();
 
     HostPort ts_http = ts->bound_http_hostport();
     EXPECT_TRUE(HasPrefixString(ts_http.ToString(), "127.0.0.1:")) << ts_http.ToString();

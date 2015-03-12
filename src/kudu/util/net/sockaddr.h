@@ -8,6 +8,8 @@
 #include <string>
 #include <tr1/functional_hash.h>
 
+#include "kudu/util/status.h"
+
 namespace kudu {
 
 ///
@@ -21,6 +23,13 @@ class Sockaddr {
  public:
   Sockaddr();
   explicit Sockaddr(const struct sockaddr_in &addr);
+
+  // Parse a string IP address of the form "A.B.C.D:port", storing the result
+  // in this Sockaddr object. If no ':port' is specified, uses 'default_port'.
+  // Note that this function will not handle resolving hostnames.
+  //
+  // Returns a bad Status if the input is malformed.
+  Status ParseString(const std::string& s, uint16_t default_port);
 
   Sockaddr& operator=(const struct sockaddr_in &addr);
 
