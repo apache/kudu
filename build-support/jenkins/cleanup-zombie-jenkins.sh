@@ -40,9 +40,9 @@ for pid in $JENKINS_PIDS; do
   build_id=$(echo $build_env | cut -d= -f2)
   if [ "$build_id" != "$CURRENT_BUILD" ]; then
     echo "Killing zombie process $pid (from build $build_id)"
-    ps -fww -p $pid
+    ps -fww -p $pid || :
     if [ -z "$DRY_RUN" ]; then
-      kill -9 $pid
+      kill -9 $pid || :
     fi
     echo ----------
   else
