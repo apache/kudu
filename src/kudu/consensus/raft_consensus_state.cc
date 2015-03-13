@@ -87,6 +87,8 @@ ReplicaState::ReplicaState(const ConsensusOptions& options,
     cmeta_(cmeta.Pass()),
     next_index_(0),
     txn_factory_(txn_factory),
+    received_op_id_(MinimumOpId()),
+    last_committed_index_(MinimumOpId()),
     state_(kInitialized) {
   CHECK(cmeta_) << "ConsensusMeta passed as NULL";
   UniqueLock l(&update_lock_);
@@ -106,7 +108,6 @@ Status ReplicaState::StartUnlocked(const OpId& last_id_in_wal) {
 
   next_index_ = last_id_in_wal.index() + 1;
   received_op_id_.CopyFrom(last_id_in_wal);
-  last_committed_index_.CopyFrom(MinimumOpId());
 
   state_ = kRunning;
   return Status::OK();

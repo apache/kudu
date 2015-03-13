@@ -546,5 +546,13 @@ TEST_F(RaftConsensusTest, TestAbortOperations) {
   }
 }
 
+TEST_F(RaftConsensusTest, TestReceivedIdIsInittedBeforeStart) {
+  SetUpConsensus(QuorumPeerPB::FOLLOWER);
+  OpId opid;
+  ASSERT_OK(consensus_->GetLastReceivedOpId(&opid));
+  ASSERT_TRUE(opid.IsInitialized());
+  ASSERT_OPID_EQ(opid, MinimumOpId());
+}
+
 }  // namespace consensus
 }  // namespace kudu
