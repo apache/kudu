@@ -104,12 +104,6 @@ class Connection : public RefCountedThreadSafe<Connection> {
   // The address of the remote end of the connection.
   const Sockaddr &remote() const { return remote_; }
 
-  // Set the name of the service which should process this request.
-  void set_service_name(const std::string &service_name);
-
-  // Get the name of the service which should process this request.
-  const std::string service_name() const { return service_name_; }
-
   // Set the user credentials which should be used to log in.
   void set_user_credentials(const UserCredentials &user_credentials);
 
@@ -215,9 +209,6 @@ class Connection : public RefCountedThreadSafe<Connection> {
 
   // The remote address we're talking to.
   const Sockaddr remote_;
-
-  // The name of the service operating on this connection.
-  std::string service_name_;
 
   // The credentials of the user operating on this connection (if a client user).
   UserCredentials user_credentials_;

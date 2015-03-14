@@ -159,7 +159,8 @@ TEST_F(RpcStubTest, TestCallWithInvalidParam) {
   Status s = p.SyncRequest("Add", req, &resp, &controller);
   ASSERT_TRUE(s.IsRemoteError()) << "Bad status: " << s.ToString();
   ASSERT_STR_CONTAINS(s.ToString(),
-                      "Invalid argument: Invalid parameter for call Add: y");
+                      "Invalid argument: Invalid parameter for call "
+                      "kudu.rpc_test.CalculatorService.Add: y");
 }
 
 // Wrapper around AtomicIncrement, since AtomicIncrement returns the 'old'
@@ -329,7 +330,8 @@ TEST_F(RpcStubTest, TestDumpCallsInFlight) {
   LOG(INFO) << "client messenger: " << dump_resp.DebugString();
   ASSERT_EQ(1, dump_resp.outbound_connections_size());
   ASSERT_EQ(1, dump_resp.outbound_connections(0).calls_in_flight_size());
-  ASSERT_EQ("Sleep", dump_resp.outbound_connections(0).calls_in_flight(0).header().method_name());
+  ASSERT_EQ("Sleep", dump_resp.outbound_connections(0).calls_in_flight(0).
+                        header().remote_method().method_name());
   ASSERT_GT(dump_resp.outbound_connections(0).calls_in_flight(0).micros_elapsed(), 0);
 
   // And the server messenger.
@@ -348,7 +350,8 @@ TEST_F(RpcStubTest, TestDumpCallsInFlight) {
   LOG(INFO) << "server messenger: " << dump_resp.DebugString();
   ASSERT_EQ(1, dump_resp.inbound_connections_size());
   ASSERT_EQ(1, dump_resp.inbound_connections(0).calls_in_flight_size());
-  ASSERT_EQ("Sleep", dump_resp.inbound_connections(0).calls_in_flight(0).header().method_name());
+  ASSERT_EQ("Sleep", dump_resp.inbound_connections(0).calls_in_flight(0).
+                        header().remote_method().method_name());
   ASSERT_GT(dump_resp.inbound_connections(0).calls_in_flight(0).micros_elapsed(), 0);
   ASSERT_STR_CONTAINS(dump_resp.inbound_connections(0).calls_in_flight(0).trace_buffer(),
                       "Inserting onto call queue");

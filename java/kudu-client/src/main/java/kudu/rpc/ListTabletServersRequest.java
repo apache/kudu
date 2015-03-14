@@ -25,6 +25,9 @@ public class ListTabletServersRequest extends KuduRpc<ListTabletServersResponse>
   }
 
   @Override
+  String serviceName() { return MASTER_SERVICE_NAME; }
+
+  @Override
   String method() {
     return "ListTabletServers";
   }

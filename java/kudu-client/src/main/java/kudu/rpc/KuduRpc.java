@@ -37,10 +37,6 @@ import org.jboss.netty.buffer.ChannelBuffer;
 import org.jboss.netty.buffer.ChannelBuffers;
 
 import java.io.IOException;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.Iterator;
-import java.util.List;
 
 import static kudu.rpc.ExternalConsistencyMode.NO_CONSISTENCY;
 
@@ -60,6 +56,10 @@ import static kudu.rpc.ExternalConsistencyMode.NO_CONSISTENCY;
  * holding a reference to) the byte array, which is frequently the case.
  */
 public abstract class KuduRpc<R> {
+
+  // Service names.
+  protected static final String MASTER_SERVICE_NAME = "kudu.master.MasterService";
+  protected static final String TABLET_SERVER_SERVICE_NAME = "kudu.tserver.TabletServerService";
 
   public interface HasKey {
     /**
@@ -109,6 +109,11 @@ public abstract class KuduRpc<R> {
    * package can use this as a base class.
    */
   abstract ChannelBuffer serialize(Message header);
+
+  /**
+   * Package private way of getting the name of the RPC service.
+   */
+  abstract String serviceName();
 
   /**
    * Package private way of getting the name of the RPC method.

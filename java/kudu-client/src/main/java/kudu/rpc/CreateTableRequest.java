@@ -36,6 +36,9 @@ class CreateTableRequest extends KuduRpc<CreateTableResponse> {
   }
 
   @Override
+  String serviceName() { return MASTER_SERVICE_NAME; }
+
+  @Override
   String method() {
     return CREATE_TABLE;
   }

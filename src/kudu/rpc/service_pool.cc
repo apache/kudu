@@ -103,7 +103,7 @@ Status ServicePool::QueueInboundCall(gscoped_ptr<InboundCall> call) {
     string err_msg =
         Substitute("$0 request on $1 from $2 dropped due to backpressure. "
         "The service queue is full; it has $3 items.",
-        c->method_name(),
+        c->remote_method().method_name(),
         service_->service_name(),
         c->remote_address().ToString(),
         service_queue_.max_size());

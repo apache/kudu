@@ -14,6 +14,7 @@
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/ref_counted.h"
+#include "kudu/rpc/remote_method.h"
 #include "kudu/rpc/rpc_header.pb.h"
 #include "kudu/rpc/transfer.h"
 #include "kudu/util/faststring.h"
@@ -65,16 +66,12 @@ class InboundCall {
     return serialized_request_;
   }
 
-  const std::string &method_name() const {
-    return header_.method_name();
+  const RemoteMethod& remote_method() const {
+    return remote_method_;
   }
 
   const int32_t call_id() const {
     return header_.call_id();
-  }
-
-  const std::string &service_name() const {
-    return service_name_;
   }
 
   // Serializes 'response' into the InboundCall's internal buffer, and marks
@@ -192,7 +189,8 @@ class InboundCall {
   InboundCallTiming timing_;
 
   // Proto service this calls belongs to. Used for routing.
-  std::string service_name_;
+  // This field is filled in when the inbound request header is parsed.
+  RemoteMethod remote_method_;
 
   DISALLOW_COPY_AND_ASSIGN(InboundCall);
 };

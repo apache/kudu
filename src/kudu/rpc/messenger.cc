@@ -186,10 +186,11 @@ void Messenger::QueueOutboundCall(const shared_ptr<OutboundCall> &call) {
 
 void Messenger::QueueInboundCall(gscoped_ptr<InboundCall> call) {
   shared_lock<rw_spinlock> guard(&lock_.get_lock());
-  scoped_refptr<RpcService>* service = FindOrNull(rpc_services_, call->service_name());
-  if (!service) {
+  scoped_refptr<RpcService>* service = FindOrNull(rpc_services_,
+                                                  call->remote_method().service_name());
+  if (PREDICT_FALSE(!service)) {
     Status s =  Status::ServiceUnavailable(Substitute("service $0 not registered on $1",
-                                                      call->service_name(), name_));
+                                                      call->remote_method().service_name(), name_));
     LOG(INFO) << s.ToString();
     call.release()->RespondFailure(ErrorStatusPB::ERROR_NO_SUCH_SERVICE, s);
     return;

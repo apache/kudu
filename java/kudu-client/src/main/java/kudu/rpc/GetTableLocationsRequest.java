@@ -29,6 +29,9 @@ class GetTableLocationsRequest extends KuduRpc<Master.GetTableLocationsResponseP
   }
 
   @Override
+  String serviceName() { return MASTER_SERVICE_NAME; }
+
+  @Override
   String method() {
     return "GetTableLocations";
   }

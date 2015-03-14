@@ -92,6 +92,7 @@ class Proxy {
   const UserCredentials& user_credentials() const { return conn_id_.user_credentials(); }
 
  private:
+  const std::string service_name_;
   std::tr1::shared_ptr<Messenger> messenger_;
   ConnectionId conn_id_;
   mutable Atomic32 is_started_;

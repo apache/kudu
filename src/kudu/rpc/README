@@ -319,7 +319,23 @@ token=<challenge response> } -----------------> |
                                        |        | { GOTO (4) above
                                        |        |
 
+Connection Context:
+
+Once the SASL negotiation is complete, before the first request, the client
+sends the server a size-delimited ConnectionContextPB, which the server does
+not respond to. It is then free to make regular RPC requests. Instead of using
+a per-connection service name that comes through the ConnectionContext (Hadoop
+does this), Kudu uses a per-request service name that is included in each
+RequestHeader PB. See rpc_header.proto for more details.
+
+RPC Request framing:
+
+Each RPC request is prefixed with a size-delimited RPC header. See
+rpc_header.proto for more details.
+
+-------------------------------------------------------------------------------
 Appendix. Hadoop RPC wire format.
+-------------------------------------------------------------------------------
 
 While Kudu is aiming for near-compatibility with the Hadoop RPC V9 mechanism, we have
 intentionally modified or removed message protobufs and/or protobuf fields which were

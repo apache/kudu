@@ -32,6 +32,7 @@ add_library(krpc
     negotiation.cc
     proxy.cc
     reactor.cc
+    remote_method.cc
     rpc.cc
     rpc_context.cc
     rpc_controller.cc

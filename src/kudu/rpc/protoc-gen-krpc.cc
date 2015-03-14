@@ -419,6 +419,7 @@ class CodeGenerator : public ::google::protobuf::compiler::CodeGenerator {
       "#include <glog/logging.h>\n"
       "\n"
       "#include \"kudu/rpc/inbound_call.h\"\n"
+      "#include \"kudu/rpc/remote_method.h\"\n"
       "#include \"kudu/rpc/rpc_context.h\"\n"
       "#include \"kudu/rpc/service_if.h\"\n"
       "#include \"kudu/util/metrics.h\"\n"
@@ -472,7 +473,7 @@ class CodeGenerator : public ::google::protobuf::compiler::CodeGenerator {
         subs->PushMethod(method);
 
         Print(printer, *subs,
-        "    if (call->method_name() == \"$rpc_name$\") {\n"
+        "    if (call->remote_method().method_name() == \"$rpc_name$\") {\n"
         "      $request$ *req = new $request$;\n"
         "      if (PREDICT_FALSE(!ParseParam(call, req))) {\n"
         "        delete req;\n"

@@ -32,6 +32,9 @@ public class GetTableSchemaRequest extends KuduRpc<GetTableSchemaResponse> {
   }
 
   @Override
+  String serviceName() { return MASTER_SERVICE_NAME; }
+
+  @Override
   String method() {
     return GET_TABLE_SCHEMA;
   }

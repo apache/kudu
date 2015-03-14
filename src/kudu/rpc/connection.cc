@@ -352,10 +352,6 @@ void Connection::QueueResponseForCall(gscoped_ptr<InboundCall> call) {
   reactor_thread_->reactor()->ScheduleReactorTask(task);
 }
 
-void Connection::set_service_name(const string &service_name) {
-  service_name_ = service_name;
-}
-
 void Connection::set_user_credentials(const UserCredentials &user_credentials) {
   user_credentials_.CopyFrom(user_credentials);
 }

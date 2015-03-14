@@ -15,6 +15,7 @@
 
 #include "kudu/rpc/outbound_call.h"
 #include "kudu/rpc/messenger.h"
+#include "kudu/rpc/remote_method.h"
 #include "kudu/rpc/response_callback.h"
 #include "kudu/rpc/rpc_header.pb.h"
 #include "kudu/util/net/sockaddr.h"
@@ -33,22 +34,22 @@ namespace rpc {
 Proxy::Proxy(const std::tr1::shared_ptr<Messenger>& messenger,
              const Sockaddr& remote,
              const string& service_name)
-  : messenger_(messenger),
+  : service_name_(service_name),
+    messenger_(messenger),
     is_started_(false) {
   CHECK(messenger != NULL);
-  DCHECK(!service_name.empty()) << "Proxy service name must not be blank";
+  DCHECK(!service_name_.empty()) << "Proxy service name must not be blank";
 
   // By default, we set the real user to the currently logged-in user.
   // Effective user and password remain blank.
   string real_user;
   Status s = GetLoggedInUser(&real_user);
   if (!s.ok()) {
-    LOG(WARNING) << "Proxy for " << service_name << ": Unable to get logged-in user name: "
+    LOG(WARNING) << "Proxy for " << service_name_ << ": Unable to get logged-in user name: "
         << s.ToString() << " before connecting to remote: " << remote.ToString();
   }
 
   conn_id_.set_remote(remote);
-  conn_id_.set_service_name(service_name);
   conn_id_.mutable_user_credentials()->set_real_user(real_user);
 }
 
@@ -62,7 +63,8 @@ void Proxy::AsyncRequest(const string& method,
                          const ResponseCallback& callback) const {
   CHECK(controller->call_.get() == NULL) << "Controller should be reset";
   base::subtle::NoBarrier_Store(&is_started_, true);
-  OutboundCall* call = new OutboundCall(conn_id_, method, response, controller, callback);
+  RemoteMethod remote_method(service_name_, method);
+  OutboundCall* call = new OutboundCall(conn_id_, remote_method, response, controller, callback);
   controller->call_.reset(call);
   Status s = call->SetRequestParam(req);
   if (PREDICT_FALSE(!s.ok())) {

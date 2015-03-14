@@ -16,6 +16,7 @@
 #include "kudu/rpc/rtest.pb.h"
 #include "kudu/rpc/rtest.proxy.h"
 #include "kudu/rpc/rtest.service.h"
+#include "kudu/rpc/remote_method.h"
 #include "kudu/rpc/rpc_context.h"
 #include "kudu/rpc/rpc_sidecar.h"
 #include "kudu/rpc/service_if.h"
@@ -72,11 +73,11 @@ class GenericCalculatorService : public ServiceIf {
   }
 
   virtual void Handle(InboundCall *incoming) OVERRIDE {
-    if (incoming->method_name() == kAddMethodName) {
+    if (incoming->remote_method().method_name() == kAddMethodName) {
       DoAdd(incoming);
-    } else if (incoming->method_name() == kSleepMethodName) {
+    } else if (incoming->remote_method().method_name() == kSleepMethodName) {
       DoSleep(incoming);
-    } else if (incoming->method_name() == kSendTwoStringsMethodName) {
+    } else if (incoming->remote_method().method_name() == kSendTwoStringsMethodName) {
       DoSendTwoStrings(incoming);
     } else {
       incoming->RespondFailure(ErrorStatusPB::ERROR_NO_SUCH_METHOD,

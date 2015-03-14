@@ -28,6 +28,9 @@ public class GetMasterRegistrationRequest extends KuduRpc<GetMasterRegistrationR
   }
 
   @Override
+  String serviceName() { return MASTER_SERVICE_NAME; }
+
+  @Override
   String method() {
     return GET_MASTER_REGISTRATION;
   }

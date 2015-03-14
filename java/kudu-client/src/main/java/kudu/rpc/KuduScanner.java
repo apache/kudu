@@ -662,6 +662,9 @@ public final class KuduScanner {
     }
 
     @Override
+    String serviceName() { return TABLET_SERVER_SERVICE_NAME; }
+
+    @Override
     String method() {
       return "Scan";
     }

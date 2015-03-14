@@ -20,6 +20,9 @@ class IsCreateTableDoneRequest extends KuduRpc<Master.IsCreateTableDoneResponseP
   }
 
   @Override
+  String serviceName() { return MASTER_SERVICE_NAME; }
+
+  @Override
   String method() {
     return "IsCreateTableDone";
   }

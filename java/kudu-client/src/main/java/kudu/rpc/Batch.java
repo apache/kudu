@@ -37,6 +37,9 @@ class Batch extends KuduRpc<OperationResponse> implements KuduRpc.HasKey {
   }
 
   @Override
+  String serviceName() { return TABLET_SERVER_SERVICE_NAME; }
+
+  @Override
   String method() {
     return Operation.METHOD;
   }

@@ -32,6 +32,9 @@ class DeleteTableRequest extends KuduRpc<DeleteTableResponse> {
   }
 
   @Override
+  String serviceName() { return MASTER_SERVICE_NAME; }
+
+  @Override
   String method() {
     return DELETE_TABLE;
   }

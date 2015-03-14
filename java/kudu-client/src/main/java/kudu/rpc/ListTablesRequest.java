@@ -31,6 +31,9 @@ class ListTablesRequest extends KuduRpc<ListTablesResponse> {
   }
 
   @Override
+  String serviceName() { return MASTER_SERVICE_NAME; }
+
+  @Override
   String method() {
     return "ListTables";
   }

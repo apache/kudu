@@ -14,6 +14,7 @@
 #include "kudu/gutil/macros.h"
 #include "kudu/rpc/constants.h"
 #include "kudu/rpc/rpc_header.pb.h"
+#include "kudu/rpc/remote_method.h"
 #include "kudu/rpc/response_callback.h"
 #include "kudu/rpc/transfer.h"
 #include "kudu/util/locks.h"
@@ -31,11 +32,11 @@ class Message;
 namespace kudu {
 namespace rpc {
 
-class RpcCallInProgressPB;
-class DumpRunningRpcsRequestPB;
 class CallResponse;
 class Connection;
+class DumpRunningRpcsRequestPB;
 class InboundTransfer;
+class RpcCallInProgressPB;
 class RpcController;
 
 // Client-side user credentials, such as a user's username & password.
@@ -92,16 +93,11 @@ class ConnectionId {
   ConnectionId(const ConnectionId& other);
 
   // Convenience constructor.
-  ConnectionId(const Sockaddr& remote, const std::string& service_name,
-               const UserCredentials& user_credentials);
+  ConnectionId(const Sockaddr& remote, const UserCredentials& user_credentials);
 
   // The remote address.
   void set_remote(const Sockaddr& remote);
   const Sockaddr& remote() const { return remote_; }
-
-  // The identifying name of the RPC service.
-  void set_service_name(const std::string& service_name);
-  const std::string& service_name() const { return service_name_; }
 
   // The credentials of the user associated with this connection, if any.
   void set_user_credentials(const UserCredentials& user_credentials);
@@ -120,7 +116,6 @@ class ConnectionId {
  private:
   // Remember to update HashCode() and Equals() when new fields are added.
   Sockaddr remote_;
-  std::string service_name_;
   UserCredentials user_credentials_;
 
   // Implementation of CopyFrom that can be shared with copy constructor.
@@ -153,7 +148,7 @@ class OutboundCall {
  public:
 
   OutboundCall(const ConnectionId& conn_id,
-               const std::string& method,
+               const RemoteMethod& remote_method,
                google::protobuf::Message* response_storage,
                RpcController* controller,
                const ResponseCallback& callback);
@@ -210,7 +205,7 @@ class OutboundCall {
   ////////////////////////////////////////////////////////////
 
   const ConnectionId& conn_id() const { return conn_id_; }
-  const std::string& method() const { return header_.method_name(); }
+  const RemoteMethod& remote_method() const { return remote_method_; }
   const ResponseCallback &callback() const { return callback_; }
   RpcController* controller() { return controller_; }
   const RpcController* controller() const { return controller_; }
@@ -274,6 +269,9 @@ class OutboundCall {
   // Parts of this (eg the call ID) are only assigned once this call has been
   // passed to the reactor thread and assigned a connection.
   RequestHeader header_;
+
+  // The remote method being called.
+  RemoteMethod remote_method_;
 
   ConnectionId conn_id_;
   ResponseCallback callback_;

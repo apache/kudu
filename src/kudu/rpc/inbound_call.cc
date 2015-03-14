@@ -8,6 +8,7 @@
 #include <tr1/memory>
 #include <vector>
 
+#include "kudu/gutil/strings/substitute.h"
 #include "kudu/rpc/connection.h"
 #include "kudu/rpc/rpc_introspection.pb.h"
 #include "kudu/rpc/rpc_sidecar.h"
@@ -21,6 +22,7 @@ using google::protobuf::MessageLite;
 using google::protobuf::io::CodedOutputStream;
 using std::tr1::shared_ptr;
 using std::vector;
+using strings::Substitute;
 
 DEFINE_bool(rpc_dump_all_traces, false,
             "If true, dump all RPC traces at INFO level");
@@ -31,8 +33,7 @@ namespace rpc {
 InboundCall::InboundCall(Connection* conn)
   : conn_(conn),
     sidecars_deleter_(&sidecars_),
-    trace_(new Trace),
-    service_name_(conn_->service_name()) {
+    trace_(new Trace) {
   RecordCallReceived();
 }
 
@@ -40,7 +41,18 @@ InboundCall::~InboundCall() {}
 
 Status InboundCall::ParseFrom(gscoped_ptr<InboundTransfer> transfer) {
   RETURN_NOT_OK(serialization::ParseMessage(transfer->data(), &header_, &serialized_request_));
-  // retain the buffer that we have a view into
+
+  // Adopt the service/method info from the header as soon as it's available.
+  if (PREDICT_FALSE(!header_.has_remote_method())) {
+    return Status::Corruption("Non-connection context request header must specify remote_method");
+  }
+  if (PREDICT_FALSE(!header_.remote_method().IsInitialized())) {
+    return Status::Corruption("remote_method in request header is not initialized",
+                              header_.remote_method().InitializationErrorString());
+  }
+  remote_method_.FromPB(header_.remote_method());
+
+  // Retain the buffer that we have a view into.
   transfer_.swap(transfer);
   return Status::OK();
 }
@@ -140,8 +152,9 @@ Status InboundCall::AddRpcSidecar(gscoped_ptr<RpcSidecar> car, int* idx) {
 }
 
 string InboundCall::ToString() const {
-  return StringPrintf("Call %s from %s (request call id %d)", method_name().c_str(),
-                      conn_->remote().ToString().c_str(),
+  return Substitute("Call %s from %s (request call id %d)",
+                      remote_method_.ToString(),
+                      conn_->remote().ToString(),
                       header_.call_id());
 }
 

@@ -27,11 +27,12 @@ using google::protobuf::io::CodedOutputStream;
 ///
 
 OutboundCall::OutboundCall(const ConnectionId& conn_id,
-                           const string& method,
+                           const RemoteMethod& remote_method,
                            google::protobuf::Message* response_storage,
                            RpcController* controller,
                            const ResponseCallback& callback)
   : state_(READY),
+    remote_method_(remote_method),
     conn_id_(conn_id),
     callback_(callback),
     controller_(DCHECK_NOTNULL(controller)),
@@ -39,8 +40,8 @@ OutboundCall::OutboundCall(const ConnectionId& conn_id,
   DVLOG(4) << "OutboundCall " << this << " constructed with state_: " << StateName(state_)
            << " and RPC timeout: "
            << (controller->timeout().Initialized() ? controller->timeout().ToString() : "none");
-  header_.set_method_name(method);
   header_.set_call_id(kInvalidCallId);
+  remote_method.ToPB(header_.mutable_remote_method());
   start_time_ = MonoTime::Now(MonoTime::FINE);
 }
 
@@ -242,8 +243,7 @@ bool OutboundCall::IsFinished() const {
 }
 
 string OutboundCall::ToString() const {
-  return Substitute("RPC call $0 -> $1",
-                      method(), conn_id_.ToString());
+  return Substitute("RPC call $0 -> $1", remote_method_.ToString(), conn_id_.ToString());
 }
 
 void OutboundCall::DumpPB(const DumpRunningRpcsRequestPB& req,
@@ -325,19 +325,13 @@ ConnectionId::ConnectionId(const ConnectionId& other) {
   DoCopyFrom(other);
 }
 
-ConnectionId::ConnectionId(const Sockaddr& remote, const string& service_name,
-                           const UserCredentials& user_credentials) {
+ConnectionId::ConnectionId(const Sockaddr& remote, const UserCredentials& user_credentials) {
   remote_ = remote;
-  service_name_ = service_name;
   user_credentials_.CopyFrom(user_credentials);
 }
 
 void ConnectionId::set_remote(const Sockaddr& remote) {
   remote_ = remote;
-}
-
-void ConnectionId::set_service_name(const string& service_name) {
-  service_name_ = service_name;
 }
 
 void ConnectionId::set_user_credentials(const UserCredentials& user_credentials) {
@@ -350,28 +344,25 @@ void ConnectionId::CopyFrom(const ConnectionId& other) {
 
 string ConnectionId::ToString() const {
   // Does not print the password.
-  return StringPrintf("{remote=%s, service_name=%s, user_credentials=%s}",
-      remote_.ToString().c_str(), service_name_.c_str(),
+  return StringPrintf("{remote=%s, user_credentials=%s}",
+      remote_.ToString().c_str(),
       user_credentials_.ToString().c_str());
 }
 
 void ConnectionId::DoCopyFrom(const ConnectionId& other) {
   remote_ = other.remote_;
-  service_name_ = other.service_name_;
   user_credentials_.CopyFrom(other.user_credentials_);
 }
 
 size_t ConnectionId::HashCode() const {
   size_t seed = 0;
   boost::hash_combine(seed, remote_.HashCode());
-  boost::hash_combine(seed, service_name_);
   boost::hash_combine(seed, user_credentials_.HashCode());
   return seed;
 }
 
 bool ConnectionId::Equals(const ConnectionId& other) const {
   return (remote() == other.remote()
-       && service_name() == other.service_name()
        && user_credentials().Equals(other.user_credentials()));
 }
 

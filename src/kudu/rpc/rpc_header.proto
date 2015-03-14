@@ -95,11 +95,6 @@ message ConnectionContextPB {
   // UserInfo beyond what is determined as part of security handshake
   // at connection time (kerberos, tokens etc).
   optional UserInformationPB user_info = 2;
-
-  // Service name for the RPC layer.
-  // The client created a proxy with this service name.
-  // Example: kudu.rpc_test.CalculatorService
-  required string service_name = 3;
 }
 
 // Message type passed back & forth for the SASL negotiation.
@@ -130,6 +125,16 @@ message SaslMessagePB {
   repeated SaslAuth auths  = 4;
 }
 
+message RemoteMethodPB {
+  // Service name for the RPC layer.
+  // The client created a proxy with this service name.
+  // Example: kudu.rpc_test.CalculatorService
+  required string service_name = 1;
+
+  // Name of the RPC method.
+  required string method_name = 2;
+};
+
 // The header for the RPC request frame.
 message RequestHeader {
   //optional RpcKindPB rpc_kind = 1;  // From Hadoop. Not applicable to Kudu.
@@ -151,8 +156,9 @@ message RequestHeader {
   // Retry count, 1 means this is the first retry. From Hadoop. Not supported in Kudu.
   //optional sint32 retry_count = 5 [default = -1];
 
-  // Name of the RPC method. Not used for "connection setup" calls.
-  optional string method_name = 6;
+  // RPC method being invoked.
+  // Not used for "connection setup" calls.
+  optional RemoteMethodPB remote_method = 6;
 
   /**
    * From Hadoop. Hadoop's explanation below:

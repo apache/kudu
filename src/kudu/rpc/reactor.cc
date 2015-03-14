@@ -196,7 +196,7 @@ void ReactorThread::AssignOutboundCall(const shared_ptr<OutboundCall> &call) {
   const MonoDelta &timeout = call->controller()->timeout();
   MonoTime deadline;
   if (!timeout.Initialized()) {
-    LOG(WARNING) << "Client call " << call->method()
+    LOG(WARNING) << "Client call " << call->remote_method().ToString()
                  << " has no timeout set for connection id: "
                  << call->conn_id().ToString();
     deadline = MonoTime::Max();
@@ -321,7 +321,6 @@ Status ReactorThread::FindOrStartConnection(const ConnectionId &conn_id,
 
   // Register the new connection in our map.
   *conn = new Connection(this, conn_id.remote(), sock.Release(), Connection::CLIENT);
-  (*conn)->set_service_name(conn_id.service_name());
   (*conn)->set_user_credentials(conn_id.user_credentials());
 
   // Kick off blocking client connection negotiation.
@@ -353,14 +352,6 @@ void ReactorThread::CompleteConnectionNegotiation(const scoped_refptr<Connection
   DCHECK(IsCurrentThread());
   if (PREDICT_FALSE(!status.ok())) {
     DestroyConnection(conn.get(), status);
-    return;
-  }
-
-  // Ensure we set the service name from the ConnectionContextPB
-  if (PREDICT_FALSE(conn->service_name().empty())) {
-    Status s = Status::IllegalState("Failed to set connection service name!");
-    LOG(DFATAL) << "Unexpected connection negotiation error: " << s.ToString();
-    DestroyConnection(conn.get(), s);
     return;
   }
 
@@ -415,7 +406,7 @@ void ReactorThread::DestroyConnection(Connection *conn,
 
   // Unlink connection from lists.
   if (conn->direction() == Connection::CLIENT) {
-    ConnectionId conn_id(conn->remote(), conn->service_name(), conn->user_credentials());
+    ConnectionId conn_id(conn->remote(), conn->user_credentials());
     conn_map_t::iterator it = client_conns_.find(conn_id);
     CHECK(it != client_conns_.end()) << "Couldn't find connection " << conn->ToString();
     client_conns_.erase(it);

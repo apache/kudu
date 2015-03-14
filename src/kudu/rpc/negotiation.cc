@@ -34,7 +34,6 @@ static Status SendConnectionContext(Connection* conn, const MonoTime& deadline) 
   header.set_call_id(kConnectionContextCallId);
 
   ConnectionContextPB conn_context;
-  conn_context.set_service_name(conn->service_name());
   conn_context.mutable_user_info()->set_effective_user(conn->user_credentials().effective_user());
   conn_context.mutable_user_info()->set_real_user(conn->user_credentials().real_user());
 
@@ -64,7 +63,6 @@ static Status RecvConnectionContext(Connection* conn, const MonoTime& deadline) 
   }
 
   // Update the fields of our Connection object from the ConnectionContextPB.
-  conn->set_service_name(conn_context.service_name());
   if (conn_context.has_user_info()) {
     // Validate real user against SASL impl.
     if (conn->sasl_server().negotiated_mechanism() == SaslMechanism::PLAIN) {

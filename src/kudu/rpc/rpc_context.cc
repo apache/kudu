@@ -26,7 +26,7 @@ RpcContext::RpcContext(InboundCall *call,
     request_pb_(request_pb),
     response_pb_(response_pb),
     metrics_(metrics) {
-  VLOG(4) << call_->service_name() << ": Received RPC request for "
+  VLOG(4) << call_->remote_method().service_name() << ": Received RPC request for "
           << call_->ToString() << ":" << std::endl << request_pb_->DebugString();
 }
 
@@ -35,7 +35,7 @@ RpcContext::~RpcContext() {
 
 void RpcContext::RespondSuccess() {
   call_->RecordHandlingCompleted(metrics_.handler_latency);
-  VLOG(4) << call_->service_name() << ": Sending RPC success response for "
+  VLOG(4) << call_->remote_method().service_name() << ": Sending RPC success response for "
           << call_->ToString() << ":" << std::endl << request_pb_->DebugString();
   call_->RespondSuccess(*response_pb_);
   delete this;
@@ -43,7 +43,7 @@ void RpcContext::RespondSuccess() {
 
 void RpcContext::RespondFailure(const Status &status) {
   call_->RecordHandlingCompleted(metrics_.handler_latency);
-  VLOG(4) << call_->service_name() << ": Sending RPC failure response for "
+  VLOG(4) << call_->remote_method().service_name() << ": Sending RPC failure response for "
           << call_->ToString() << ": " << status.ToString();
   call_->RespondFailure(ErrorStatusPB::ERROR_APPLICATION,
                         status);
@@ -56,7 +56,7 @@ void RpcContext::RespondApplicationError(int error_ext_id, const std::string& me
   if (VLOG_IS_ON(4)) {
     ErrorStatusPB err;
     InboundCall::ApplicationErrorToPB(error_ext_id, message, app_error_pb, &err);
-    VLOG(4) << call_->service_name() << ": Sending application error response for "
+    VLOG(4) << call_->remote_method().service_name() << ": Sending application error response for "
             << call_->ToString() << ":" << std::endl << err.DebugString();
   }
   call_->RespondApplicationError(error_ext_id, message, app_error_pb);

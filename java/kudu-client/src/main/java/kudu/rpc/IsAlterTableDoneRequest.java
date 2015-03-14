@@ -33,6 +33,9 @@ class IsAlterTableDoneRequest extends KuduRpc<IsAlterTableDoneResponsePB> {
   }
 
   @Override
+  String serviceName() { return MASTER_SERVICE_NAME; }
+
+  @Override
   String method() {
     return IS_ALTER_TABLE_DONE;
   }

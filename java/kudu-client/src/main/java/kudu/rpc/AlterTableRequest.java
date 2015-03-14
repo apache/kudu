@@ -33,6 +33,9 @@ class AlterTableRequest extends KuduRpc<AlterTableResponse> {
   }
 
   @Override
+  String serviceName() { return MASTER_SERVICE_NAME; }
+
+  @Override
   String method() {
     return ALTER_TABLE;
   }
