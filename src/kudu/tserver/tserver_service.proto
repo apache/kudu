@@ -20,19 +20,6 @@ service TabletServerService {
   // function.
   rpc Checksum(ChecksumRequestPB)
       returns (ChecksumResponsePB);
-
-  // TODO: Remove once we have multi-service support in RPC. Duplicates RemoteBootstrapService.
-  rpc BeginRemoteBootstrapSession(BeginRemoteBootstrapSessionRequestPB)
-      returns (BeginRemoteBootstrapSessionResponsePB);
-
-  rpc CheckSessionActive(CheckRemoteBootstrapSessionActiveRequestPB)
-      returns (CheckRemoteBootstrapSessionActiveResponsePB);
-
-  rpc FetchData(FetchDataRequestPB)
-      returns (FetchDataResponsePB);
-
-  rpc EndRemoteBootstrapSession(EndRemoteBootstrapSessionRequestPB)
-      returns (EndRemoteBootstrapSessionResponsePB);
 }
 
 message ChecksumRequestPB {

@@ -47,6 +47,12 @@ class RemoteBootstrapServiceTest : public RemoteBootstrapTest {
   }
 
  protected:
+  void SetUp() OVERRIDE {
+    RemoteBootstrapTest::SetUp();
+    remote_bootstrap_proxy_.reset(
+        new RemoteBootstrapServiceProxy(client_messenger_, mini_server_->bound_rpc_addr()));
+  }
+
   Status DoBeginRemoteBootstrapSession(const string& tablet_id,
                                        const string& requestor_uuid,
                                        BeginRemoteBootstrapSessionResponsePB* resp,
@@ -55,8 +61,8 @@ class RemoteBootstrapServiceTest : public RemoteBootstrapTest {
     BeginRemoteBootstrapSessionRequestPB req;
     req.set_tablet_id(tablet_id);
     req.set_requestor_uuid(requestor_uuid);
-    return UnwindRemoteError(proxy_->BeginRemoteBootstrapSession(req, resp, controller),
-                             controller);
+    return UnwindRemoteError(
+        remote_bootstrap_proxy_->BeginRemoteBootstrapSession(req, resp, controller), controller);
   }
 
   Status DoBeginValidRemoteBootstrapSession(string* session_id,
@@ -85,7 +91,8 @@ class RemoteBootstrapServiceTest : public RemoteBootstrapTest {
     controller->set_timeout(MonoDelta::FromSeconds(1.0));
     CheckRemoteBootstrapSessionActiveRequestPB req;
     req.set_session_id(session_id);
-    return UnwindRemoteError(proxy_->CheckSessionActive(req, resp, controller), controller);
+    return UnwindRemoteError(
+        remote_bootstrap_proxy_->CheckSessionActive(req, resp, controller), controller);
   }
 
   Status DoFetchData(const string& session_id, const DataIdPB& data_id,
@@ -102,7 +109,8 @@ class RemoteBootstrapServiceTest : public RemoteBootstrapTest {
     if (max_length) {
       req.set_max_length(*max_length);
     }
-    return UnwindRemoteError(proxy_->FetchData(req, resp, controller), controller);
+    return UnwindRemoteError(
+        remote_bootstrap_proxy_->FetchData(req, resp, controller), controller);
   }
 
   Status DoEndRemoteBootstrapSession(const string& session_id, bool is_success,
@@ -116,7 +124,8 @@ class RemoteBootstrapServiceTest : public RemoteBootstrapTest {
     if (error_msg) {
       StatusToPB(*error_msg, req.mutable_error());
     }
-    return UnwindRemoteError(proxy_->EndRemoteBootstrapSession(req, resp, controller), controller);
+    return UnwindRemoteError(
+        remote_bootstrap_proxy_->EndRemoteBootstrapSession(req, resp, controller), controller);
   }
 
   // Decode the remote error into a Status object.
@@ -157,6 +166,8 @@ class RemoteBootstrapServiceTest : public RemoteBootstrapTest {
     block_id.CopyToPB(data_id.mutable_block_id());
     return data_id;
   }
+
+  gscoped_ptr<RemoteBootstrapServiceProxy> remote_bootstrap_proxy_;
 };
 
 // Test beginning and ending a remote bootstrap session.

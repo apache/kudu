@@ -74,7 +74,7 @@ class RaftConsensusITest : public TabletServerIntegrationTestBase {
   }
 
   virtual void SetUp() OVERRIDE {
-    KuduTest::SetUp();
+    TabletServerIntegrationTestBase::SetUp();
     FLAGS_consensus_rpc_timeout_ms = kConsensusRpcTimeoutForTests;
   }
 

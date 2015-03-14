@@ -18,8 +18,8 @@
 #include "kudu/tablet/tablet_bootstrap.h"
 #include "kudu/tablet/tablet_peer.h"
 #include "kudu/tserver/remote_bootstrap.pb.h"
+#include "kudu/tserver/remote_bootstrap.proxy.h"
 #include "kudu/tserver/tablet_server.h"
-#include "kudu/tserver/tserver_service.proxy.h"
 #include "kudu/util/crc.h"
 #include "kudu/util/env.h"
 #include "kudu/util/net/net_util.h"
@@ -158,7 +158,7 @@ Status RemoteBootstrapClient::BeginRemoteBootstrapSession(const std::string& tab
   UpdateStatusMessage("Beginning remote bootstrap session with leader " + host_port.ToString());
 
   // Set up an RPC proxy for the RemoteBootstrapService.
-  proxy_.reset(new TabletServerServiceProxy(messenger_, addr));
+  proxy_.reset(new RemoteBootstrapServiceProxy(messenger_, addr));
 
   BeginRemoteBootstrapSessionRequestPB req;
   req.set_requestor_uuid(permanent_uuid_);

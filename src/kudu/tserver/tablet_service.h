@@ -24,7 +24,6 @@ class TransactionState;
 
 namespace tserver {
 
-class RemoteBootstrapServiceIf;
 class ScanResultCollector;
 class TabletPeerLookupIf;
 class TabletServer;
@@ -52,24 +51,6 @@ class TabletServiceImpl : public TabletServerServiceIf {
                         ChecksumResponsePB* resp,
                         rpc::RpcContext* context) OVERRIDE;
 
-  // TODO: Move this to its own service once we put in service multiplexing support
-  // in the RPC protocol.
-  virtual void BeginRemoteBootstrapSession(const BeginRemoteBootstrapSessionRequestPB* req,
-                                   BeginRemoteBootstrapSessionResponsePB* resp,
-                                   rpc::RpcContext* context) OVERRIDE;
-
-  virtual void CheckSessionActive(const CheckRemoteBootstrapSessionActiveRequestPB* req,
-                                  CheckRemoteBootstrapSessionActiveResponsePB* resp,
-                                  rpc::RpcContext* context) OVERRIDE;
-
-  virtual void FetchData(const FetchDataRequestPB* req,
-                         FetchDataResponsePB* resp,
-                         rpc::RpcContext* context) OVERRIDE;
-
-  virtual void EndRemoteBootstrapSession(const EndRemoteBootstrapSessionRequestPB* req,
-                                 EndRemoteBootstrapSessionResponsePB* resp,
-                                 rpc::RpcContext* context) OVERRIDE;
-
   virtual void Shutdown() OVERRIDE;
 
  private:
@@ -94,7 +75,6 @@ class TabletServiceImpl : public TabletServerServiceIf {
                               Timestamp* snap_timestamp);
 
   TabletServer* server_;
-  gscoped_ptr<RemoteBootstrapServiceIf> remote_bootstrap_service_;
 };
 
 class TabletServiceAdminImpl : public TabletServerAdminServiceIf {

@@ -62,7 +62,7 @@ class TabletServerIntegrationTestBase : public TabletServerTestBase {
                         instance_id.permanent_uuid(),
                         registration.rpc_addresses(0).ShortDebugString());
     }
-   };
+  };
 
   typedef std::tr1::unordered_multimap<string, TServerDetails*> TabletReplicaMap;
   typedef std::tr1::unordered_map<string, TServerDetails*> TabletServerMap;

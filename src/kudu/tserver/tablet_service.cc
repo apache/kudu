@@ -298,10 +298,7 @@ static size_t GetMaxBatchSizeBytesHint(const ScanRequestPB* req) {
 
 TabletServiceImpl::TabletServiceImpl(TabletServer* server)
   : TabletServerServiceIf(server->metric_context()),
-    server_(server),
-    remote_bootstrap_service_(new RemoteBootstrapServiceImpl(server_->fs_manager(),
-                                            server_->tablet_manager(),
-                                            server_->metric_context())) {
+    server_(server) {
 }
 
 void TabletServiceImpl::Ping(const PingRequestPB* req,
@@ -831,34 +828,7 @@ void TabletServiceImpl::Checksum(const ChecksumRequestPB* req,
   context->RespondSuccess();
 }
 
-// TODO: Get rid of this dispatching once we have support for multiple RPC
-// services multiplexed on a single port. See KUDU-256.
-void TabletServiceImpl::BeginRemoteBootstrapSession(const BeginRemoteBootstrapSessionRequestPB* req,
-                                                    BeginRemoteBootstrapSessionResponsePB* resp,
-                                                    rpc::RpcContext* context) {
-  remote_bootstrap_service_->BeginRemoteBootstrapSession(req, resp, context);
-}
-
-void TabletServiceImpl::CheckSessionActive(const CheckRemoteBootstrapSessionActiveRequestPB* req,
-                                           CheckRemoteBootstrapSessionActiveResponsePB* resp,
-                                           rpc::RpcContext* context) {
-  remote_bootstrap_service_->CheckSessionActive(req, resp, context);
-}
-
-void TabletServiceImpl::FetchData(const FetchDataRequestPB* req,
-                                  FetchDataResponsePB* resp,
-                                  rpc::RpcContext* context) {
-  remote_bootstrap_service_->FetchData(req, resp, context);
-}
-
-void TabletServiceImpl::EndRemoteBootstrapSession(const EndRemoteBootstrapSessionRequestPB* req,
-                                                  EndRemoteBootstrapSessionResponsePB* resp,
-                                                  rpc::RpcContext* context) {
-  remote_bootstrap_service_->EndRemoteBootstrapSession(req, resp, context);
-}
-
 void TabletServiceImpl::Shutdown() {
-  remote_bootstrap_service_->Shutdown();
 }
 
 // Extract a void* pointer suitable for use in a ColumnRangePredicate from the

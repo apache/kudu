@@ -20,10 +20,6 @@ class BlockId;
 class BlockIdPB;
 class FsManager;
 
-namespace consensus {
-class OpId;
-} // namespace consensus
-
 namespace metadata {
 class QuorumPB;
 class QuorumPeerPB;
@@ -36,7 +32,6 @@ class RpcController;
 } // namespace rpc
 
 namespace tablet {
-class TabletMasterBlockPB;
 class TabletMetadata;
 class TabletStatusListener;
 class TabletSuperBlockPB;
@@ -45,8 +40,7 @@ class TabletSuperBlockPB;
 namespace tserver {
 class DataIdPB;
 class DataChunkPB;
-class TabletServer;
-class TabletServerServiceProxy;
+class RemoteBootstrapServiceProxy;
 
 // Client class for using remote bootstrap to copy a tablet from another host.
 // This class is not thread-safe.
@@ -160,7 +154,7 @@ class RemoteBootstrapClient {
   // Session-specific data items.
   std::string tablet_id_;
   tablet::TabletStatusListener* status_listener_;
-  std::tr1::shared_ptr<TabletServerServiceProxy> proxy_;
+  std::tr1::shared_ptr<RemoteBootstrapServiceProxy> proxy_;
   std::string session_id_;
   uint64_t session_idle_timeout_millis_;
   gscoped_ptr<tablet::TabletSuperBlockPB> superblock_;

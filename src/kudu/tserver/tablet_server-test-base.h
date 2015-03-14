@@ -31,6 +31,7 @@
 #include "kudu/tablet/tablet.h"
 #include "kudu/tablet/tablet_peer.h"
 #include "kudu/tserver/mini_tablet_server.h"
+#include "kudu/tserver/remote_bootstrap.proxy.h"
 #include "kudu/tserver/tablet_server.h"
 #include "kudu/tserver/ts_tablet_manager.h"
 #include "kudu/tserver/tserver_admin.proxy.h"
@@ -89,6 +90,9 @@ class TabletServerTestBase : public KuduTest {
 
     key_schema_ = schema_.CreateKeyProjection();
     rb_.reset(new RowBuilder(schema_));
+
+    rpc::MessengerBuilder bld("Client");
+    ASSERT_OK(bld.Build(&client_messenger_));
   }
 
   virtual void StartTabletServer() {
@@ -107,8 +111,7 @@ class TabletServerTestBase : public KuduTest {
     CHECK_OK(WaitForTabletRunning(kTabletId));
 
     // Connect to it.
-    CHECK_OK(CreateClientProxies(mini_server_->bound_rpc_addr(),
-                                 &proxy_, &admin_proxy_, &consensus_proxy_));
+    CHECK_OK(ResetClientProxies());
   }
 
   Status WaitForTabletRunning(const char *tablet_id) {
@@ -143,13 +146,14 @@ class TabletServerTestBase : public KuduTest {
     }
   }
 
+  Status ResetClientProxies() {
+    return CreateClientProxies(mini_server_->bound_rpc_addr(),
+                               &proxy_, &admin_proxy_, &consensus_proxy_);
+  }
+
   Status CreateClientProxies(const Sockaddr &addr, gscoped_ptr<TabletServerServiceProxy>* proxy,
                              gscoped_ptr<TabletServerAdminServiceProxy>* admin_proxy,
                              gscoped_ptr<consensus::ConsensusServiceProxy>* consensus_proxy) {
-    if (!client_messenger_) {
-      rpc::MessengerBuilder bld("Client");
-      RETURN_NOT_OK(bld.Build(&client_messenger_));
-    }
     proxy->reset(new TabletServerServiceProxy(client_messenger_, addr));
     admin_proxy->reset(new TabletServerAdminServiceProxy(client_messenger_, addr));
     consensus_proxy->reset(new consensus::ConsensusServiceProxy(client_messenger_, addr));
@@ -343,8 +347,7 @@ class TabletServerTestBase : public KuduTest {
       return Status::NotFound("Tablet was not found");
     }
     // Connect to it.
-    RETURN_NOT_OK(CreateClientProxies(mini_server_->bound_rpc_addr(),
-                                      &proxy_, &admin_proxy_, &consensus_proxy_));
+    RETURN_NOT_OK(ResetClientProxies());
 
     // Opening a tablet is async, we wait here instead of having to handle errors later.
     RETURN_NOT_OK(WaitForTabletRunning(kTabletId));

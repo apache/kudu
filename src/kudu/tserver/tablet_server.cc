@@ -19,7 +19,7 @@
 #include "kudu/tserver/tablet_service.h"
 #include "kudu/tserver/ts_tablet_manager.h"
 #include "kudu/tserver/tserver-path-handlers.h"
-#include "kudu/tserver/remote_bootstrap.service.h"
+#include "kudu/tserver/remote_bootstrap_service.h"
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/status.h"
@@ -99,10 +99,13 @@ Status TabletServer::Start() {
   gscoped_ptr<ServiceIf> admin_service(new TabletServiceAdminImpl(this));
   gscoped_ptr<ServiceIf> consensus_service(new ConsensusServiceImpl(metric_context(),
                                                                     tablet_manager_.get()));
+  gscoped_ptr<ServiceIf> remote_bootstrap_service(
+      new RemoteBootstrapServiceImpl(fs_manager_.get(), tablet_manager_.get(), metric_context()));
 
   RETURN_NOT_OK(ServerBase::RegisterService(ts_service.Pass()));
   RETURN_NOT_OK(ServerBase::RegisterService(admin_service.Pass()));
   RETURN_NOT_OK(ServerBase::RegisterService(consensus_service.Pass()));
+  RETURN_NOT_OK(ServerBase::RegisterService(remote_bootstrap_service.Pass()));
   RETURN_NOT_OK(ServerBase::Start());
 
   RETURN_NOT_OK(heartbeater_->Start());
