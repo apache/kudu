@@ -17,6 +17,13 @@ typedef Callback<void(const Status& status)> StatusCallback;
 // is needed.
 extern void DoNothingStatusCB(const Status& status);
 
+// A closure (callback without arguments) that returns a Status indicating
+// whether it was successful or not.
+typedef Callback<Status(void)> StatusClosure;
+
+// To be used when setting a StatusClosure is optional.
+extern Status DoNothingStatusClosure();
+
 } // namespace kudu
 
 #endif
