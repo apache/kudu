@@ -10,11 +10,13 @@
 
 #include "kudu/common/schema.h"
 #include "kudu/fs/fs_manager.h"
+#include "kudu/gutil/callback.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/tablet/metadata.pb.h"
 #include "kudu/util/mutex.h"
 #include "kudu/util/status.h"
+#include "kudu/util/status_callback.h"
 
 namespace kudu {
 namespace tablet {
@@ -161,6 +163,8 @@ class TabletMetadata : public RefCountedThreadSafe<TabletMetadata> {
 
   void SetLastDurableMrsIdForTests(int64_t mrs_id) { last_durable_mrs_id_ = mrs_id; }
 
+  void SetPreFlushCallback(StatusClosure callback) { pre_flush_callback_ = callback; }
+
   // Sets *super_block to the serialized form of the current metadata.
   Status ToSuperBlock(TabletSuperBlockPB* super_block) const;
 
@@ -272,6 +276,10 @@ class TabletMetadata : public RefCountedThreadSafe<TabletMetadata> {
   // then next UnPinFlush will call Flush() again to ensure the
   // metadata is persisted.
   bool needs_flush_;
+
+  // A callback that, if set, is called before this metadata is flushed
+  // to disk.
+  StatusClosure pre_flush_callback_;
 
   DISALLOW_COPY_AND_ASSIGN(TabletMetadata);
 };

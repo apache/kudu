@@ -427,6 +427,7 @@ Status TabletBootstrap::Bootstrap(shared_ptr<Tablet>* rebuilt_tablet,
 Status TabletBootstrap::FinishBootstrap(const std::string& message,
                                         scoped_refptr<log::Log>* rebuilt_log,
                                         shared_ptr<Tablet>* rebuilt_tablet) {
+  meta_->SetPreFlushCallback(Bind(&Log::WaitUntilAllFlushed, log_));
   RETURN_NOT_OK(tablet_->metadata()->UnPinFlush());
   listener_->StatusMessage(message);
   rebuilt_tablet->reset(tablet_.release());

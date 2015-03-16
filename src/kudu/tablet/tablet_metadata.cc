@@ -8,6 +8,7 @@
 
 #include "kudu/common/wire_protocol.h"
 #include "kudu/gutil/atomicops.h"
+#include "kudu/gutil/bind.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/server/metadata.h"
@@ -126,7 +127,8 @@ TabletMetadata::TabletMetadata(FsManager *fs_manager,
     table_name_(table_name),
     remote_bootstrap_state_(remote_bootstrap_state),
     num_flush_pins_(0),
-    needs_flush_(false) {
+    needs_flush_(false),
+    pre_flush_callback_(Bind(DoNothingStatusClosure)) {
   CHECK(schema_.has_column_ids());
   CHECK_GT(schema_.num_key_columns(), 0);
 }
@@ -140,7 +142,8 @@ TabletMetadata::TabletMetadata(FsManager *fs_manager, const TabletMasterBlockPB&
     master_block_(master_block),
     next_rowset_idx_(0),
     num_flush_pins_(0),
-    needs_flush_(false) {
+    needs_flush_(false),
+    pre_flush_callback_(Bind(DoNothingStatusClosure)) {
 }
 
 Status TabletMetadata::LoadFromDisk() {
@@ -331,6 +334,7 @@ Status TabletMetadata::Flush() {
 
     RETURN_NOT_OK(ToSuperBlockUnlocked(&pb, rowsets_));
   }
+  pre_flush_callback_.Run();
   RETURN_NOT_OK(ReplaceSuperBlockUnlocked(pb));
   TRACE("Metadata flushed");
   return Status::OK();

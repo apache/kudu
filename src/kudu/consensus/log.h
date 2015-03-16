@@ -118,10 +118,6 @@ class Log : public RefCountedThreadSafe<Log> {
 
   // Blocks the current thread until all the entries in the log queue
   // are flushed.
-  //
-  // NOTE: if there are any COMMIT messages which are still waiting for
-  // their REPLICATE messages to get appended, they will *not* be waited
-  // upon.
   Status WaitUntilAllFlushed();
 
   // Kick off an asynchronous task that pre-allocates a new
