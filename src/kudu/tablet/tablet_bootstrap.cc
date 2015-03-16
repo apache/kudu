@@ -125,6 +125,11 @@ class TabletBootstrap {
   // The directory is expected to be clean.
   Status OpenNewLog();
 
+  // Finishes bootstrap, setting 'rebuilt_log' and 'rebuilt_tablet'.
+  Status FinishBootstrap(const std::string& message,
+                         scoped_refptr<log::Log>* rebuilt_log,
+                         shared_ptr<Tablet>* rebuilt_tablet);
+
   // Checks if a previous attempt at a recovery has been made: if so,
   // sets 'needs_recovery' to true.  Otherwise, moves the log segments
   // present in the tablet's log dir into the log recovery directory.
@@ -384,10 +389,9 @@ Status TabletBootstrap::Bootstrap(shared_ptr<Tablet>* rebuilt_tablet,
     LOG(INFO) << "No previous blocks or log segments found for tablet: " << tablet_id
         << " creating new one.";
     RETURN_NOT_OK_PREPEND(OpenNewLog(), "Failed to open new log");
-    RETURN_NOT_OK(tablet_->metadata()->UnPinFlush());
-    listener_->StatusMessage("No bootstrap required, opened a new log");
-    rebuilt_tablet->reset(tablet_.release());
-    rebuilt_log->swap(log_);
+    RETURN_NOT_OK(FinishBootstrap("No bootstrap required, opened a new log",
+                                  rebuilt_log,
+                                  rebuilt_tablet));
     consensus_info->last_id = consensus::MinimumOpId();
     consensus_info->last_committed_id = consensus::MinimumOpId();
     return Status::OK();
@@ -414,12 +418,19 @@ Status TabletBootstrap::Bootstrap(shared_ptr<Tablet>* rebuilt_tablet,
   // Flush the consensus metadata once at the end to persist our changes, if any.
   cmeta_->Flush();
 
-  RETURN_NOT_OK(tablet_->metadata()->UnPinFlush());
   RETURN_NOT_OK(RemoveRecoveryDir());
-  listener_->StatusMessage("Bootstrap complete.");
+  RETURN_NOT_OK(FinishBootstrap("Bootstrap complete.", rebuilt_log, rebuilt_tablet));
+
+  return Status::OK();
+}
+
+Status TabletBootstrap::FinishBootstrap(const std::string& message,
+                                        scoped_refptr<log::Log>* rebuilt_log,
+                                        shared_ptr<Tablet>* rebuilt_tablet) {
+  RETURN_NOT_OK(tablet_->metadata()->UnPinFlush());
+  listener_->StatusMessage(message);
   rebuilt_tablet->reset(tablet_.release());
   rebuilt_log->swap(log_);
-
   return Status::OK();
 }
 
