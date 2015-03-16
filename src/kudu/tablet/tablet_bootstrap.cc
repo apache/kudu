@@ -98,7 +98,7 @@ class TabletBootstrap {
   // in other replicas).
   // A successful call will yield the rebuilt tablet and the rebuilt log.
   Status Bootstrap(std::tr1::shared_ptr<Tablet>* rebuilt_tablet,
-                   gscoped_ptr<log::Log>* rebuilt_log,
+                   scoped_refptr<Log>* rebuilt_log,
                    ConsensusBootstrapInfo* results);
 
  private:
@@ -209,7 +209,7 @@ class TabletBootstrap {
   TabletStatusListener* listener_;
   gscoped_ptr<tablet::Tablet> tablet_;
   const scoped_refptr<log::LogAnchorRegistry> log_anchor_registry_;
-  gscoped_ptr<log::Log> log_;
+  scoped_refptr<log::Log> log_;
   gscoped_ptr<log::LogReader> log_reader_;
 
   Arena arena_;
@@ -298,7 +298,7 @@ Status BootstrapTablet(const scoped_refptr<TabletMetadata>& meta,
                        MetricContext* metric_context,
                        TabletStatusListener* listener,
                        std::tr1::shared_ptr<tablet::Tablet>* rebuilt_tablet,
-                       gscoped_ptr<log::Log>* rebuilt_log,
+                       scoped_refptr<log::Log>* rebuilt_log,
                        const scoped_refptr<log::LogAnchorRegistry>& log_anchor_registry,
                        ConsensusBootstrapInfo* consensus_info) {
   TabletBootstrap bootstrap(meta, clock, metric_context, listener, log_anchor_registry);
@@ -340,7 +340,7 @@ TabletBootstrap::TabletBootstrap(const scoped_refptr<TabletMetadata>& meta,
 }
 
 Status TabletBootstrap::Bootstrap(shared_ptr<Tablet>* rebuilt_tablet,
-                                  gscoped_ptr<Log>* rebuilt_log,
+                                  scoped_refptr<Log>* rebuilt_log,
                                   ConsensusBootstrapInfo* consensus_info) {
   string tablet_id = meta_->oid();
 
@@ -387,7 +387,7 @@ Status TabletBootstrap::Bootstrap(shared_ptr<Tablet>* rebuilt_tablet,
     RETURN_NOT_OK(tablet_->metadata()->UnPinFlush());
     listener_->StatusMessage("No bootstrap required, opened a new log");
     rebuilt_tablet->reset(tablet_.release());
-    rebuilt_log->reset(log_.release());
+    rebuilt_log->swap(log_);
     consensus_info->last_id = consensus::MinimumOpId();
     consensus_info->last_committed_id = consensus::MinimumOpId();
     return Status::OK();
@@ -418,7 +418,7 @@ Status TabletBootstrap::Bootstrap(shared_ptr<Tablet>* rebuilt_tablet,
   RETURN_NOT_OK(RemoveRecoveryDir());
   listener_->StatusMessage("Bootstrap complete.");
   rebuilt_tablet->reset(tablet_.release());
-  rebuilt_log->reset(log_.release());
+  rebuilt_log->swap(log_);
 
   return Status::OK();
 }

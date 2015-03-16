@@ -55,7 +55,7 @@ class RaftConsensus : public Consensus,
     const scoped_refptr<server::Clock>& clock,
     ReplicaTransactionFactory* txn_factory,
     const std::tr1::shared_ptr<rpc::Messenger>& messenger,
-    log::Log* log);
+    const scoped_refptr<log::Log>& log);
 
   RaftConsensus(const ConsensusOptions& options,
                 gscoped_ptr<ConsensusMetadata> cmeta,
@@ -66,7 +66,7 @@ class RaftConsensus : public Consensus,
                 const std::string& peer_uuid,
                 const scoped_refptr<server::Clock>& clock,
                 ReplicaTransactionFactory* txn_factory,
-                log::Log* log);
+                const scoped_refptr<log::Log>& log);
 
   virtual ~RaftConsensus();
 
@@ -306,7 +306,7 @@ class RaftConsensus : public Consensus,
   // Handle when the term has advanced beyond the current term.
   Status HandleTermAdvanceUnlocked(ConsensusTerm new_term);
 
-  log::Log* log_;
+  scoped_refptr<log::Log> log_;
   scoped_refptr<server::Clock> clock_;
   gscoped_ptr<PeerProxyFactory> peer_proxy_factory_;
 

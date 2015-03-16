@@ -211,7 +211,7 @@ void SysCatalogTable::SysCatalogStateChanged(TabletPeer* tablet_peer) {
 
 Status SysCatalogTable::SetupTablet(const scoped_refptr<tablet::TabletMetadata>& metadata) {
   shared_ptr<Tablet> tablet;
-  gscoped_ptr<Log> log;
+  scoped_refptr<Log> log;
 
   // TODO: handle crash mid-creation of tablet? do we ever end up with a
   // partially created tablet here?
@@ -237,7 +237,7 @@ Status SysCatalogTable::SetupTablet(const scoped_refptr<tablet::TabletMetadata>&
   RETURN_NOT_OK_PREPEND(tablet_peer_->Init(tablet,
                                            scoped_refptr<server::Clock>(master_->clock()),
                                            master_->messenger(),
-                                           log.Pass(),
+                                           log,
                                            *tablet->GetMetricContext()),
                         "Failed to Init() TabletPeer");
 

@@ -5,6 +5,7 @@
 
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
+#include "kudu/gutil/ref_counted.h"
 #include "kudu/util/locks.h"
 #include "kudu/util/status.h"
 
@@ -39,7 +40,7 @@ class PeerManager {
                   const std::string local_uuid,
                   PeerProxyFactory* peer_proxy_factory,
                   PeerMessageQueue* queue,
-                  log::Log* log);
+                  const scoped_refptr<log::Log>& log);
 
   virtual ~PeerManager();
 
@@ -61,7 +62,7 @@ class PeerManager {
   PeerProxyFactory* peer_proxy_factory_;
   PeerMessageQueue* queue_;
   gscoped_ptr<ThreadPool> thread_pool_;
-  log::Log* log_;
+  scoped_refptr<log::Log> log_;
   PeersMap peers_;
   mutable simple_spinlock lock_;
 

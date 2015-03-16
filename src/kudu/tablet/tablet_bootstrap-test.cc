@@ -83,7 +83,6 @@ class BootstrapTest : public LogTestBase {
   Status RunBootstrapOnTestTablet(const scoped_refptr<TabletMetadata>& meta,
                                   shared_ptr<Tablet>* tablet,
                                   ConsensusBootstrapInfo* boot_info) {
-    gscoped_ptr<Log> new_log;
     gscoped_ptr<TabletStatusListener> listener(new TabletStatusListener(meta));
     scoped_refptr<LogAnchorRegistry> log_anchor_registry(new LogAnchorRegistry());
 
@@ -94,10 +93,9 @@ class BootstrapTest : public LogTestBase {
         NULL,
         listener.get(),
         tablet,
-        &new_log,
+        &log_,
         log_anchor_registry,
         boot_info));
-    log_.reset(new_log.release());
 
     return Status::OK();
   }

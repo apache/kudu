@@ -318,7 +318,7 @@ class LogTestBase : public KuduTest {
   gscoped_ptr<FsManager> fs_manager_;
   gscoped_ptr<MetricRegistry> metric_registry_;
   gscoped_ptr<MetricContext> metric_context_;
-  gscoped_ptr<Log> log_;
+  scoped_refptr<Log> log_;
   uint32_t current_index_;
   LogOptions options_;
   // Reusable entries vector that deletes the entries on destruction.

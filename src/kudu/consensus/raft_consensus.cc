@@ -75,7 +75,7 @@ scoped_refptr<RaftConsensus> RaftConsensus::Create(
     const scoped_refptr<server::Clock>& clock,
     ReplicaTransactionFactory* txn_factory,
     const std::tr1::shared_ptr<rpc::Messenger>& messenger,
-    log::Log* log) {
+    const scoped_refptr<log::Log>& log) {
   gscoped_ptr<consensus::PeerProxyFactory> rpc_factory(
     new RpcPeerProxyFactory(messenger));
 
@@ -117,8 +117,8 @@ RaftConsensus::RaftConsensus(const ConsensusOptions& options,
                              const std::string& peer_uuid,
                              const scoped_refptr<server::Clock>& clock,
                              ReplicaTransactionFactory* txn_factory,
-                             log::Log* log)
-    : log_(DCHECK_NOTNULL(log)),
+                             const scoped_refptr<log::Log>& log)
+    : log_(log),
       clock_(clock),
       peer_proxy_factory_(proxy_factory.Pass()),
       peer_manager_(peer_manager.Pass()),
@@ -130,6 +130,7 @@ RaftConsensus::RaftConsensus(const ConsensusOptions& options,
           MonoDelta::FromMilliseconds(
               FLAGS_leader_heartbeat_interval_ms *
               FLAGS_leader_failure_max_missed_heartbeat_periods))) {
+  DCHECK_NOTNULL(log_.get());
   state_.reset(new ReplicaState(options,
                                 peer_uuid,
                                 cmeta.Pass(),

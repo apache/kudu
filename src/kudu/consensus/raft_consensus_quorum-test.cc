@@ -108,15 +108,14 @@ class RaftConsensusQuorumTest : public KuduTest {
       fs_managers_.push_back(fs_manager);
       RETURN_NOT_OK(fs_manager->CreateInitialFileSystemLayout());
 
-      gscoped_ptr<Log> log;
+      scoped_refptr<Log> log;
       RETURN_NOT_OK(Log::Open(options,
                               fs_manager,
                               kTestTablet,
                               schema_,
                               NULL,
                               &log));
-      Log* log_ptr = log.release();
-      logs_.push_back(log_ptr);
+      logs_.push_back(log.get());
     }
     return Status::OK();
   }
@@ -127,7 +126,7 @@ class RaftConsensusQuorumTest : public KuduTest {
       LocalTestPeerProxyFactory* proxy_factory = new LocalTestPeerProxyFactory(peers_.get());
       proxy_factories.push_back(proxy_factory);
 
-      TestTransactionFactory* txn_factory = new TestTransactionFactory(logs_[i]);
+      TestTransactionFactory* txn_factory = new TestTransactionFactory(logs_[i].get());
 
       gscoped_ptr<ConsensusMetadata> cmeta;
       CHECK_OK(ConsensusMetadata::Create(fs_managers_[i], kTestTablet, quorum_,
@@ -363,7 +362,7 @@ class RaftConsensusQuorumTest : public KuduTest {
     }
   }
 
-  void GatherLogEntries(int idx, Log* log, vector<LogEntryPB* >* entries) {
+  void GatherLogEntries(int idx, const scoped_refptr<Log>& log, vector<LogEntryPB* >* entries) {
     ASSERT_STATUS_OK(log->WaitUntilAllFlushed());
     log->Close();
     gscoped_ptr<LogReader> log_reader;
@@ -509,7 +508,9 @@ class RaftConsensusQuorumTest : public KuduTest {
   ~RaftConsensusQuorumTest() {
     peers_->Clear();
     STLDeleteElements(&txn_factories_);
-    STLDeleteElements(&logs_);
+    // We need to clear the logs before deleting the fs_managers_ or we'll
+    // get a SIGSEGV when closing the logs.
+    logs_.clear();
     STLDeleteElements(&fs_managers_);
   }
 
@@ -518,7 +519,7 @@ class RaftConsensusQuorumTest : public KuduTest {
   QuorumPB quorum_;
   OpId initial_id_;
   vector<FsManager*> fs_managers_;
-  vector<Log*> logs_;
+  vector<scoped_refptr<Log> > logs_;
   gscoped_ptr<TestPeerMapManager> peers_;
   vector<TestTransactionFactory*> txn_factories_;
   scoped_refptr<server::Clock> clock_;

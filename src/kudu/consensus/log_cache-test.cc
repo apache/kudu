@@ -96,7 +96,7 @@ class LogCacheTest : public KuduTest {
   MetricContext metric_context_;
   gscoped_ptr<FsManager> fs_manager_;
   gscoped_ptr<LogCache> cache_;
-  gscoped_ptr<log::Log> log_;
+  scoped_refptr<log::Log> log_;
   scoped_refptr<server::Clock> clock_;
 };
 

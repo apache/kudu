@@ -187,20 +187,20 @@ Status Log::Open(const LogOptions &options,
                  const std::string& tablet_id,
                  const Schema& schema,
                  MetricContext* parent_metrics_context,
-                 gscoped_ptr<Log> *log) {
+                 scoped_refptr<Log>* log) {
 
   RETURN_NOT_OK(fs_manager->CreateDirIfMissing(fs_manager->GetWalsRootDir()));
   string tablet_wal_path = fs_manager->GetTabletWalDir(tablet_id);
   RETURN_NOT_OK(fs_manager->CreateDirIfMissing(tablet_wal_path));
 
-  gscoped_ptr<Log> new_log(new Log(options,
-                                   fs_manager,
-                                   tablet_wal_path,
-                                   tablet_id,
-                                   schema,
-                                   parent_metrics_context));
+  scoped_refptr<Log> new_log(new Log(options,
+                                     fs_manager,
+                                     tablet_wal_path,
+                                     tablet_id,
+                                     schema,
+                                     parent_metrics_context));
   RETURN_NOT_OK(new_log->Init());
-  log->reset(new_log.release());
+  log->swap(new_log);
   return Status::OK();
 }
 

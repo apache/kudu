@@ -21,7 +21,7 @@ PeerManager::PeerManager(const std::string tablet_id,
                          const std::string local_uuid,
                          PeerProxyFactory* peer_proxy_factory,
                          PeerMessageQueue* queue,
-                         Log* log)
+                         const scoped_refptr<log::Log>& log)
     : tablet_id_(tablet_id),
       local_uuid_(local_uuid),
       peer_proxy_factory_(peer_proxy_factory),

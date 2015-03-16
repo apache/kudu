@@ -63,7 +63,7 @@ typedef BlockingQueue<LogEntryBatch*, LogEntryBatchLogicalSize> LogEntryBatchQue
 // Note: The Log needs to be Close()d before any log-writing class is
 // destroyed, otherwise the Log might hold references to these classes
 // to execute the callbacks after each write.
-class Log {
+class Log : public RefCountedThreadSafe<Log> {
  public:
   class LogFaultHooks;
 
@@ -77,7 +77,7 @@ class Log {
                      const std::string& tablet_id,
                      const Schema& schema,
                      MetricContext* parent_metric_context,
-                     gscoped_ptr<Log> *log);
+                     scoped_refptr<Log> *log);
 
   ~Log();
 

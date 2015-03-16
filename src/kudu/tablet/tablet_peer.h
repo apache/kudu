@@ -69,7 +69,7 @@ class TabletPeer : public RefCountedThreadSafe<TabletPeer>,
   Status Init(const std::tr1::shared_ptr<tablet::Tablet>& tablet,
               const scoped_refptr<server::Clock>& clock,
               const std::tr1::shared_ptr<rpc::Messenger>& messenger,
-              gscoped_ptr<log::Log> log,
+              const scoped_refptr<log::Log>& log,
               const MetricContext& metric_ctx);
 
   // Starts the TabletPeer, making it available for Write()s. If this
@@ -256,7 +256,7 @@ class TabletPeer : public RefCountedThreadSafe<TabletPeer>,
   Status error_;
   TransactionTracker txn_tracker_;
   TransactionOrderVerifier txn_order_verifier_;
-  gscoped_ptr<log::Log> log_;
+  scoped_refptr<log::Log> log_;
   std::tr1::shared_ptr<Tablet> tablet_;
   std::tr1::shared_ptr<rpc::Messenger> messenger_;
   scoped_refptr<consensus::Consensus> consensus_;

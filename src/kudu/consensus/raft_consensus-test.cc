@@ -216,7 +216,7 @@ class RaftConsensusTest : public KuduTest {
   QuorumPB quorum_;
   OpId initial_id_;
   gscoped_ptr<FsManager> fs_manager_;
-  gscoped_ptr<Log> log_;
+  scoped_refptr<Log> log_;
   gscoped_ptr<PeerProxyFactory> proxy_factory_;
   scoped_refptr<server::Clock> clock_;
   MetricRegistry metric_registry_;

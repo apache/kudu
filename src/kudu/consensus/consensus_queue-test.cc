@@ -155,7 +155,7 @@ class ConsensusQueueTest : public KuduTest {
   gscoped_ptr<FsManager> fs_manager_;
   MetricRegistry metric_registry_;
   MetricContext metric_context_;
-  gscoped_ptr<log::Log> log_;
+  scoped_refptr<log::Log> log_;
   gscoped_ptr<PeerMessageQueue> queue_;
   scoped_refptr<log::LogAnchorRegistry> registry_;
   scoped_refptr<server::Clock> clock_;

@@ -98,7 +98,7 @@ class PeerMessageQueue {
   };
 
   PeerMessageQueue(const MetricContext& metric_ctx,
-                   log::Log* log,
+                   const scoped_refptr<log::Log>& log,
                    const std::string& local_uuid,
                    const std::string& tablet_id,
                    const std::string& parent_tracker_id = kConsensusQueueParentTrackerId);

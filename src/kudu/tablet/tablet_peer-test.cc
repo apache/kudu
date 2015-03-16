@@ -101,12 +101,12 @@ class TabletPeerTest : public KuduTabletTest {
                                         tablet()->tablet_id(), quorum,
                                         consensus::kMinimumTerm, &cmeta));
 
-    gscoped_ptr<Log> log;
+    scoped_refptr<Log> log;
     ASSERT_STATUS_OK(Log::Open(LogOptions(), fs_manager(), tablet()->tablet_id(),
                                *tablet()->schema(),
                                metric_ctx_.get(), &log));
 
-    ASSERT_STATUS_OK(tablet_peer_->Init(tablet(), clock(), messenger_, log.Pass(), *metric_ctx_));
+    ASSERT_STATUS_OK(tablet_peer_->Init(tablet(), clock(), messenger_, log, *metric_ctx_));
   }
 
   Status StartPeer(const ConsensusBootstrapInfo& info) {

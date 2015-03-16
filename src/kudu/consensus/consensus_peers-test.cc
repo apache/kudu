@@ -113,7 +113,7 @@ class ConsensusPeersTest : public KuduTest {
   MetricRegistry metric_registry_;
   MetricContext metric_context_;
   gscoped_ptr<FsManager> fs_manager_;
-  gscoped_ptr<Log> log_;
+  scoped_refptr<Log> log_;
   gscoped_ptr<PeerMessageQueue> message_queue_;
   const Schema schema_;
   LogOptions options_;

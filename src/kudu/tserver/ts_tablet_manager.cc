@@ -306,7 +306,7 @@ void TSTabletManager::OpenTablet(const scoped_refptr<TabletMetadata>& meta) {
       << "Tablet not registered prior to OpenTabletAsync call: " << tablet_id;
 
   shared_ptr<Tablet> tablet;
-  gscoped_ptr<Log> log;
+  scoped_refptr<Log> log;
 
   LOG(INFO) << "Bootstrapping tablet: " << tablet_id;
   TRACE("Bootstrapping tablet");
@@ -338,7 +338,7 @@ void TSTabletManager::OpenTablet(const scoped_refptr<TabletMetadata>& meta) {
     s =  tablet_peer->Init(tablet,
                            scoped_refptr<server::Clock>(server_->clock()),
                            server_->messenger(),
-                           log.Pass(),
+                           log,
                            *tablet->GetMetricContext());
 
     if (!s.ok()) {

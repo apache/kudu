@@ -44,7 +44,7 @@ extern const char kLogCacheTrackerId[];
 class LogCache {
  public:
   LogCache(const MetricContext& metric_ctx,
-           log::Log* log,
+           const scoped_refptr<log::Log>& log,
            const std::string& local_uuid,
            const std::string& tablet_id,
            const std::string& parent_tracker_id = kLogCacheTrackerId);
@@ -147,7 +147,7 @@ class LogCache {
                    const StatusCallback& user_callback,
                    const Status& log_status);
 
-  log::Log* const log_;
+  scoped_refptr<log::Log> const log_;
 
   // The UUID of the local peer.
   const std::string local_uuid_;

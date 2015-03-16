@@ -89,7 +89,7 @@ TabletPeer::~TabletPeer() {
 Status TabletPeer::Init(const shared_ptr<Tablet>& tablet,
                         const scoped_refptr<server::Clock>& clock,
                         const shared_ptr<Messenger>& messenger,
-                        gscoped_ptr<Log> log,
+                        const scoped_refptr<Log>& log,
                         const MetricContext& metric_ctx) {
 
   DCHECK(tablet) << "A TabletPeer must be provided with a Tablet";
@@ -101,7 +101,7 @@ Status TabletPeer::Init(const shared_ptr<Tablet>& tablet,
     tablet_ = tablet;
     clock_ = clock;
     messenger_ = messenger;
-    log_.reset(log.release());
+    log_ = log;
 
     ConsensusOptions options;
     options.tablet_id = meta_->oid();

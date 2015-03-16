@@ -82,7 +82,7 @@ Status BootstrapTablet(const scoped_refptr<TabletMetadata>& meta,
                        MetricContext* metric_context,
                        TabletStatusListener* status_listener,
                        std::tr1::shared_ptr<Tablet>* rebuilt_tablet,
-                       gscoped_ptr<log::Log>* rebuilt_log,
+                       scoped_refptr<log::Log>* rebuilt_log,
                        const scoped_refptr<log::LogAnchorRegistry>& log_anchor_registry,
                        consensus::ConsensusBootstrapInfo* consensus_info);
 

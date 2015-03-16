@@ -74,7 +74,7 @@ class RemoteBootstrapTest : public KuduTabletTest {
 
  protected:
   void SetUpTabletPeer() {
-    gscoped_ptr<Log> log;
+    scoped_refptr<Log> log;
     CHECK_OK(Log::Open(LogOptions(), fs_manager(), tablet()->tablet_id(),
                        *tablet()->schema(),
                        NULL, &log));
@@ -105,7 +105,7 @@ class RemoteBootstrapTest : public KuduTabletTest {
     mbuilder.Build(&messenger);
 
     log_anchor_registry_.reset(new LogAnchorRegistry());
-    CHECK_OK(tablet_peer_->Init(tablet(), clock(), messenger, log.Pass(), metric_ctx));
+    CHECK_OK(tablet_peer_->Init(tablet(), clock(), messenger, log, metric_ctx));
     consensus::ConsensusBootstrapInfo boot_info;
     CHECK_OK(tablet_peer_->Start(boot_info));
 
