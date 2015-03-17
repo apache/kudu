@@ -1,0 +1,318 @@
+[[quickstart]]
+= Kudu Quickstart
+:author: Kudu Team
+:email: kudu@cloudera.com
+:imagesdir: ./images
+:toc: left
+:toclevels: 3
+:doctype: book
+:backend: html5
+:sectlinks:
+:experimental:
+
+This quickstart guides you through getting, installing, and starting a three-
+node Kudu cluster, putting some data into it, and reading some data from it,
+without going into details. For more in-depth information, see
+<<installation>>.
+
+.Quickstart Overview
+
+. First, if you have not done so, you need to <<qs_build_kudu,build Kudu>> on
+each host.
+. Next, <<qs_start_masters,start the masters>> and
+<<qs_start_tablet_servers,start the tablet servers>>.
+. Finally, <<qs_twitter_firehose,load some data>> into tables and
+<<qs_access_web_ui,have a look around>>.
+
+== Prerequisites
+
+* Three or more virtual or physical hosts
+** on the same local network
+** running a supported OS
+** root access
+_ Access to the internet
+
+NOTE: Unless otherwise specified, these instructions are the same for RHEL,
+Centos, Ubuntu, or Debian.
+
+[[qs_build_kudu]]
+== Build Kudu on Each Host
+
+. Install the prerequisite libraries, if they are not installed:
++
+[source,bash]
+.RHEL / Centos:
+----
+$ sudo yum install boost-thread boost-devel cmake libcurl-devel \
+liboauth liboauth-devel libgsasl libgsasl-devel libssl-devel \
+llvm-devel clang
+----
++
+[source,bash]
+.Ubuntu / Debian:
+----
+$ sudo apt-get install git autoconf automake libboost-thread-dev \
+cmake curl gcc g++ liboauth-dev libssl-dev libsasl2-dev libtool ntp
+----
+
+. Create an unprivileged Kudu user and change to the new user.
++
+[source,bash]
+----
+$ sudo useradd -m kudu
+$ su - kudu
+----
+
+. *RHEL 6.4 / Centos 6.4*: Obtain LLVM 3.3 or newer. No RHEL 6.4 RPM is
+available, but you can get a precompiled binary from
+http://llvm.org/releases/download.html. Download and extract it to a location
+within the `kudu` user's home directory. Set the CC and CXX environment
+variables to point to the new LLVM. This does not need to be persistent, as it
+is only used to build Kudu.
++
+[source,bash]
+----
+$ wget http://llvm.org/releases/3.3/clang+llvm-3.3-x86_64-fedora18.tar.bz2
+$ tar xjvf clang+llvm-3.3-x86_64-fedora18.tar.bz2
+$ export CC=$(pwd)/clang+llvm-3.3-x86_64-fedora18/bin/clang
+$ export CXX=$(pwd)/clang+llvm-3.3-x86_64-fedora18/bin/clang++
+----
+
+. Clone the Git repository and change to the new `kudu` directory.
++
+[source,bash]
+----
+$ git clone http://github.mtv.cloudera.com/CDH/kudu
+$ cd kudu
+----
+
+. Run the script to build any missing third-party requirements.
++
+[source,bash]
+----
+$ thirdparty/build-if-necessary.sh
+----
+
+. Build Kudu.
++
+[source,bash]
+----
+cmake . -DCMAKE_BUILD_TYPE=release
+make -j4
+----
+
+. Optional: Run unit tests.
++
+[source,bash]
+----
+ctest -j4
+----
+
+.RHEL / Centos Build Script
+====
+This script provides an overview of the procedure to build Kudu on RHEL or
+Centos, and can be used as the basis for an automated deployment scenario.
+
+[source,bash]
+----
+#!/bin/bash
+# Run as root
+useradd -m kudu
+yum -y install boost-thread boost-devel cmake libcurl-devel liboauth \
+liboauth-devel libgsasl libgsasl-devel libssl-devel llvm-devel clang
+su - kudu
+wget http://llvm.org/releases/3.3/clang+llvm-3.3-x86_64-fedora18.tar.bz2
+tar xjvf clang+llvm-3.3-x86_64-fedora18.tar.bz2
+export CC=$(pwd)/clang+llvm-3.3-x86_64-fedora18/bin/clang
+export CXX=$(pwd)/clang+llvm-3.3-x86_64-fedora18/bin/clang++
+git clone http://github.sf.cloudera.com/CDH/kudu
+cd kudu
+thirdparty/build-if-necessary.sh
+cmake .
+make -j4
+make test
+----
+====
+
+.Ubuntu / Debian Build Script
+====
+This script provides an overview of the procedure to build Kudu on RHEL or
+Centos, and can be used as the basis for an automated deployment scenario.
+
+[source,bash]
+----
+#!/bin/bash
+# Run as root
+useradd -m kudu
+apt-get -y install git autoconf automake libboost-thread-dev cmake curl \
+gcc g++ liboauth-dev libssl-dev libsasl2-dev libtool ntp
+su - kudu
+git clone http://github.sf.cloudera.com/CDH/kudu
+cd kudu
+thirdparty/build-if-necessary.sh
+cmake .
+make -j4
+make test
+----
+====
+
+[[qs_start_masters]]
+== Start Masters
+
+On an odd number of hosts (typically 3 or
+5), start master processes. The first master started will be the leader. If
+this master disappears, another master will take over.
+
+WARNING: Multi-master is not fully tested, and running many masters is not recommended.
+
+.How Many Masters?
+- If you run three masters and one fails, the other two can continue. If it was
+  the leader that failed, one of the other masters can become the leader.
+- If you run two masters and one fails, the other master cannot achieve a
+  quorum to become leader. With no lead master, your cluster will not function
+  correctly.
+- You must have an odd number of masters, to avoid a "split brain" scenario
+  where half the masters are on either side of the partition and neither side
+  has the majority.
+
+You can start the master in the foreground for testing or in the background as
+a daemon. Each master will start regardless of the status of the other masters
+in the quorum.
+
+[source,bash]
+----
+# Start in foreground
+$ KUDU_HOME=$(pwd) ./build/latest/kudu-master \
+--master_quorum=<ip_of_master_1>,<ip_of_master_2>,<ip_of_master_3> \
+--logtostderr --default_num_replicas=3
+
+# Or start in background
+$ KUDU_HOME=$(pwd) ./build/latest/kudu-master \
+--master_quorum=<ip_of_master_1>,<ip_of_master_2>,<ip_of_master_3> \
+--default_num_replicas=3 &
+----
+
+[[qs_start_tablet_servers]]
+== Start Tablet Servers
+
+In a production environment, you would not run masters and tablet servers on
+the same host. For a proof of concept or in a testing environment, it is your
+decision. Regardless, start each tablet server, providing it with the list of
+masters it should communicate with. Run enough tablet servers so that you would
+still have a quorum if one fails.
+
+.How Many Tablet Servers?
+- If you run three tablet servers and one fails, the other two can continue. If
+  it was the leader that failed, one of the other tablet servers can become the
+  leader.
+- If you run two tablet servers and one fails, the other tablet server cannot
+  achieve a quorum to become leader. With no leader, no writes can occur.
+- You must have an odd number of tablet servers, to avoid a "split brain"
+  scenario where half the tablet servers are on either side of the partition
+  and neither side has the majority.
+
+You can start a tablet server in the foreground for testing or in the
+background as a daemon.
+
+[source,bash]
+----
+# Start in foreground
+$ KUDU_HOME=$(pwd) ./build/latest/kudu-tablet_server --logtostderr \
+--tablet_server_master_addrs=<ip_of_master_1>,<ip_of_master_2>,<ip_of_master_3>
+
+# Or start in background
+$ KUDU_HOME=$(pwd) ./build/latest/kudu-tablet_server --logtostderr \
+--tablet_server_master_addrs=<ip_of_master_1>,<ip_of_master_2>,<ip_of_master_3>  &
+----
+
+[[qs_twitter_firehose]]
+== Load Data From the Twitter Firehose
+
+Kudu ships with an example application, `ingest_firehose`, which creates a
+table called `demo- table` and populates it with data from the Twitter firehose
+into a Kudu table. The following example runs `ingest_firehose` in the
+foreground. After you run it, if you are running the masters or tablet servers
+in the foreground, you can watch their logs to see the activity triggered by
+the data ingestion. You can also access the logs using the Web UI.
+
+[source,bash]
+----
+$ KUDU_HOME=$(pwd)  ./build/latest/ingest_firehose --logtostderr \
+ --twitter_firehose_sink=rpc --v=1
+----
+
+To stop running `ingest_firehose`, interrupt it with Ctrl-C.
+
+[[qs_access_web_ui]]
+== Access the Web UIs
+
+Each of the masters and tablet servers exposes a Web UI. By default, the web UI
+binds to port `8051` for masters, and `8050` for tablet servers, on interface
+`0.0.0.0`.
+
+From any host's Web UI, you can access the Web UIs for each other master and
+tablet server, as well as logs, memory reports, and a JSON dump of metrics.
+Explore the Web UIs to get an idea of what you might find.
+
+== Retrieve Some Data
+
+`kudu-ts-cli` is a utility that connects to a tablet server and allows you to
+perform operations. The default operation is list_tablets.
+
+- Connect to the tablet server running on localhost and run `list_tablets`.
++
+[source,bash]
+----
+$ ./build/latest/kudu-ts-cli
+
+I0316 19:02:58.703493 29652 ts-cli.cc:114] Connected to localhost
+Tablet id: f2fe6e35f0e84ae3bf7ce45fe63fe6fb
+State: RUNNING
+Table name: twitter
+Start key: <start of table>
+End key: <end of table>
+Estimated on disk size: 42.01M
+Schema: Schema [
+  10:tweet_id[uint64 NOT NULL],
+  11:text[string NOT NULL],
+  12:source[string NOT NULL],
+  13:created_at[string NOT NULL],
+  14:user_id[uint64 NOT NULL],
+  15:user_name[string NOT NULL],
+  16:user_description[string NOT NULL],
+  17:user_location[string NOT NULL],
+  18:user_followers_count[uint32 NOT NULL],
+  19:user_friends_count[uint32 NOT NULL],
+  20:user_image_url[string NOT NULL]
+]
+----
+
+- Connect to the tablet server on host `kudu.example.com` and run
+  `are_tablets_running`.
++
+[source,bash]
+----
+$ ./build/latest/kudu-ts-cli --tserver_address=kudu.example.com \
+-op=are_tablets_running
+
+I0316 18:52:05.561096 29638 ts-cli.cc:114] Connected to kudu.example.com
+All tablets are running
+----
+
+== Test Fault Tolerance
+
+If you are running at least three masters and at least three tablet servers are
+serving each tablet, you can stop any master or tablet server and the Kudu
+cluster will recover. If all masters disappear, tablet servers will continue to
+serve cached data. If enough tablet servers disappear to prevent write
+consensus, writes to that tablet will fail.
+
+To stop a process running in the foreground, interrupt it with Ctrl-C.
+Otherwise, kill the process using operating system utilities. Monitor the log
+files and the Web UIs to see what happens when a failure is detected, and what
+happens when a new master or tablet server joins the cluster.
+
+== Next Steps
+- Read about <<installation>>.
+- Read about <<configuration>>.
+- Read about querying data and the structure of data in Kudu.
