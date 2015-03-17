@@ -1,0 +1,199 @@
+[[installation]]
+= Installing Kudu
+:author: Kudu Team
+:imagesdir: ./images
+:toc: left
+:toclevels: 3
+:doctype: book
+:backend: html5
+:sectlinks:
+:experimental:
+
+== Prerequisites and Requirements
+.Hardware
+- Either the Cloudera Live image (for a proof of concept or testing), *OR*
+- A Cloudera Manager or CDH cluster which meets these requirements:
+  - A host to run the Kudu master. // TODO multi-master
+  - One or more hosts to run Kudu tablet servers. Production clusters need at least
+  three tablet servers.
+  - Adequate storage to hold your data.
+
+.Operating System
+- An operating system and version supported by Cloudera
+
+== Install Using Parcels
+If you use Cloudera Manager, the easiest way to install Kudu is to use parcels. First,
+add the parcel repository to Cloudera Manager. Then distribute Kudu to your cluster.
+Here is the procedure in detail.
+
+//  tag::quickstart_parcels[]
+. Obtain the Custom Service Descriptor (CSD) from
+http://golden.jenkins.sf.cloudera.com/job/Kudu-CSD/6/artifact/java/kudu-csd/target/KUDU-0.1.0.jar
+and copy it to `/opt/cloudera/csd` on your Cloudera Manager server. // TODO: CHANGE TO EXTERNAL
+. Restart the Cloudera Manager service so that it can detect the CSD, by issuing the
+command `service cloudera-scm-server restart` on the Cloudera Manager Server host.
+. In Cloudera Manager, go to Hosts > Parcels. Find `KUDU` in the list, and click Download.
+. When the download is complete, select your cluster from the *Locations* selector,
+and click *Distribute*.
+. Go to the cluster where you want to install Kudu. Click *Actions > Add
+a Service*. Select *Kudu* from the list, and click *Continue*.
+. Select a host to be the master and one or more hosts to be tablet servers. A
+host can act as both a master and a tablet server, but this may cause performance
+problems on a large cluster.
+. After selecting hosts, click *Continue*. The Kudu service is started.
+. Go to the Kudu service to monitor its status and administer it.
+// end::quickstart_parcels[]
+
+== Install Using Packages
+To install Kudu using packages, first install the appropriate repository for your
+operating system or download the individual packages you want to install, then install
+the packages on each host using your operating system's package management system.
+
+.Kudu Package Locations
+|===
+| OS  | Repository  | Individual Packages
+
+| RHEL | link:http://repos.jenkins.cloudera.com/kudu-nightly/redhat/5/x86_64/kudu/cloudera-kudu.repo[RHEL 5] or link:http://repos.jenkins.cloudera.com/kudu-nightly/redhat/6/x86_64/kudu/cloudera-kudu.repo[RHEL 6] |  link:http://repos.jenkins.cloudera.com/kudu-nightly/redhat/5/x86_64/kudu/0.1.0/RPMS/x86_64/[RHEL 5] or link:http://repos.jenkins.cloudera.com/kudu-nightly/redhat/6/x86_64/kudu/0.1.0/RPMS/x86_64/[RHEL 6]
+| SLES | link:http://repos.jenkins.cloudera.com/kudu-nightly/sles/11/x86_64/kudu/cloudera-kudu.repo[SLES 11]  |   TBD
+| Ubuntu | link:http://repos.jenkins.cloudera.com/kudu-nightly/ubuntu/precise/amd64/kudu/cloudera.list[Precise] or link:http://repos.jenkins.cloudera.com/kudu-nightly/ubuntu/trusty/amd64/kudu/cloudera.list[Trusty] |  TBD
+| Debian | link:http://repos.jenkins.cloudera.com/kudu-nightly/debian/wheezy/amd64/kudu/cloudera.list[Wheezy] | TBD
+|===
+
+.Install On RHEL or SLES Hosts
+. If using a Yum repository, use the following commands to install all Kudu packages or a single Kudu package on a given host.
+----
+sudo yum install kudu                         # Installs all Kudu packages
+sudo yum install kudu-master                  # Installs the Kudu master
+sudo yum install kudu-tablet-server           # Installs the Kudu tablet server
+sudo yum install kudu-client                  # Installs the Kudu client utilities
+sudo yum install kudu-client-devel            # Installs Kudu client API libraries
+----
+. If using individual RPMs, first download them, then use the command `sudo rpm -ivh <RPM to install>`, using the list above as a reference of the contents of the different RPMs.
+. To start, stop, or restart services, use commands in the format `sudo service <service_name> <start|stop|restart>`.
+
+.Install On Ubuntu or Debian Hosts
+. If using an Ubuntu or Debian repository, use the following commands to install all Kudu packages or a single Kudu package on a given host.
+----
+sudo apt-get install kudu                    # Installs all Kudu packages
+sudo apt-get install kudu-dbg                # Installs Kudu debugging information
+sudo apt-get install kudu-master             # Installs the Kudu master
+sudo apt-get install kudu-tablet-server      # Installs the Kudu tablet server
+sudo apt-get install libkuduclient           # Installs the Kudu client
+sudo apt-get install libkuduclient-dev       # Installs Kudu client API libraries
+----
+. If using individual DEBs, first download them, then use the command `sudo dpkg -i <DEB to install>`, using the list above as a reference of the contents of the different DEBs.
+. To start, stop, or restart services, use commands in the format `sudo service <service_name> <start|stop|restart>`.
+
+== Build From Source
+If installing Kudu using parcels or packages does not provide the flexibility you need, you can build Kudu from source.
+
+=== RHEL or CentOS
+. Install the prerequisite libraries, if they are not installed:
++
+----
+$ sudo yum install boost-thread boost-devel liboauth liboauth-devel \
+libgsasl libgsasl-devel libssl-devel
+----
+
+. Clone the Git repository and change to the new `kudu` directory.
++
+[source,bash]
+----
+$ git clone http://github.mtv.cloudera.com/CDH/kudu
+$ cd kudu
+----
+
+. Run the script to build any missing third-party requirements.
++
+[source,bash]
+----
+$ thirdparty/build-if-necessary.sh
+----
+
+. Build Kudu, using the utilities installed in the previous step.
++
+[source,bash]
+----
+thirdparty/installed/bin/cmake . -DCMAKE_BUILD_TYPE=release
+make -j4
+----
+
+.RHEL / Centos Build Script
+====
+This script provides an overview of the procedure to build Kudu on a
+newly-installed RHEL or Centos host, and can be used as the basis for an
+automated deployment scenario.
+
+[source,bash]
+----
+#!/bin/bash
+
+sudo yum -y install boost-thread boost-devel liboauth liboauth-devel \
+libgsasl libgsasl-devel libssl-devel
+wget http://llvm.org/releases/3.3/clang+llvm-3.3-x86_64-fedora18.tar.bz2
+tar xjvf clang+llvm-3.3-x86_64-fedora18.tar.bz2
+export CC=$(pwd)/clang+llvm-3.3-x86_64-fedora18/bin/clang
+export CXX=$(pwd)/clang+llvm-3.3-x86_64-fedora18/bin/clang++
+git clone http://github.sf.cloudera.com/CDH/kudu
+cd kudu
+thirdparty/build-if-necessary.sh
+thirdparty/installed/bin/cmake .
+make -j4
+----
+====
+
+=== Ubuntu or Debian
+
+. Install the prerequisite libraries, if they are not installed:
++
+----
+$ sudo apt-get install git autoconf automake libboost-thread-dev \
+curl gcc g++ liboauth-dev libssl-dev libsasl2-dev libtool ntp
+----
+
+. Clone the Git repository and change to the new `kudu` directory.
++
+[source,bash]
+----
+$ git clone http://github.mtv.cloudera.com/CDH/kudu
+$ cd kudu
+----
+
+. Run the script to build any missing third-party requirements.
++
+[source,bash]
+----
+$ thirdparty/build-if-necessary.sh
+----
+
+. Build Kudu, using the utilities installed in the previous step.
++
+[source,bash]
+----
+thirdparty/installed/bin/cmake . -DCMAKE_BUILD_TYPE=release
+make -j4
+----
+
+.Ubuntu / Debian Build Script
+====
+This script provides an overview of the procedure to build Kudu on RHEL or
+Centos, and can be used as the basis for an automated deployment scenario.
+
+[source,bash]
+----
+#!/bin/bash
+
+apt-get -y install git autoconf automake libboost-thread-dev curl \
+gcc g++ liboauth-dev libssl-dev libsasl2-dev libtool ntp
+git clone http://github.sf.cloudera.com/CDH/kudu
+cd kudu
+thirdparty/build-if-necessary.sh
+thirdparty/installed/bin/cmake .
+make -j4
+----
+====
+
+== Next Steps
+- Read about <<configuration>>.
+- Read about <<administration>>.
+

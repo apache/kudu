@@ -1,0 +1,127 @@
+[[configuration]]
+= Configuring Kudu
+:author: Kudu Team
+:imagesdir: ./images
+:toc: left
+:toclevels: 3
+:doctype: book
+:backend: html5
+:sectlinks:
+:experimental:
+
+== Configure Kudu Using Cloudera Manager
+These instructions apply to clusters managed by Cloudera Manager. Do
+not use the command-line instructions unless you do not use Cloudera Manager.
+
+Cloudera Manager exposes several configuration options for Kudu. In addition, advanced
+configuration snippets are available for more complex customization.
+
+// TODO Pull this from the build??
+
+|===
+| Option        | Configuration Name | Description
+
+|Master Address | server.address |Overrides the address where the Master will listen for connections.
+|Default Number of Replicas| default_num_replicas| Default number of replicas for each tablet. The
+default for this setting is 3.
+|System User|  | The user that this service's processes should run as. The
+default for this setting is `kudu`.
+|System Group |  | The group that this service's processes should run as. The
+default for this setting is `kudu`.
+|Kudu Service Environment Advanced Configuration Snippet (Safety Valve) | | For
+advanced use only, key-value pairs (one on each line) to be inserted into a role's
+environment. Applies to configurations of all roles in this service except client
+configuration.
+|Automatically Restart Process | | When set, this role's process is automatically
+(and transparently) restarted in the event of an unexpected failure. The default
+for this setting is `Master Default Group, Tablet Server Default Group`.
+|Master Environment Advanced Configuration Snippet (Safety Valve) |  | For
+advanced use only, key-value pairs (one on each line) to be inserted into a
+role's environment. Applies to configurations of this role except client configuration.
+|Tablet Server Environment Advanced Configuration Snippet (Safety Valve) |  | For
+advanced use only, key-value pairs (one on each line) to be inserted into a role's
+environment. Applies to configurations of this role except client configuration.
+|Master Log Directory | `log_dir` | The log directory for log files of the role
+Master. The default for this setting is `/var/log/kudu`.
+|Tablet Server Log Directory | `log_dir` | The log directory for log files of the
+role Tablet Server.
+|===
+
+In addition, several alert and health check options specific to Cloudera Manager are
+available.
+
+
+== Configure Kudu Using the Command Line
+If you do not use Cloudera Manager to manage your CDH cluster, use these instructions.
+Otherwise, use Cloudera Manager to ensure that your configuration is saved correctly.
+
+=== Configuration Basics
+To configure the behavior of each Kudu process, you can pass command-line flags when
+you start it, or read those options from configuration files by passing them using
+one or more `--flagfile=<file>` options. You can even include the
+`--flagfile` option within your configuration file to include other files.
+
+You can place options for masters and tablet servers into the same configuration
+file, and each will ignore options that do not apply.
+
+Flags can be prefixed with either one or two `-` characters. This
+documentation standardizes on two: `--example_flag`.
+
+=== Discovering Configuration Options
+Only the most common configuration options are documented here. To see all
+configuration flags for a given executable, run it with the `--help` option.
+Take care when configuring undocumented flags, as not every possible
+configuration has been tested, and undocumented options are not guaranteed to be
+maintained in future releases.
+
+=== Configuring Masters
+To see all available configuration options for the `kudu-master` executable, run it
+with the `--help` option:
+----
+$ kudu-master --help
+----
+
+.Supported Configuration Flags for Kudu Masters
+|===
+| Flag      | Valid Options     | Default     | Description
+
+// TODO commented out for the beta|--master_addresses | string | localhost |  Comma-separated list of all the RPC
+// addresses for Master quorum. If not specified, assumes a standalone Master.
+|--master_data_dirs | string | /tmp/kudu-master | Comma-separated list of
+directories where the Master will place its data blocks.
+|--master_wal_dir | string | /tmp/kudu-master | The directory where the Master will
+place its write-ahead logs. May be the same as _one of_ the directories listed in
+`--master_data_dirs`.
+|--block_cache_capacity_mb | integer | 512 | block cache capacity in MB
+|===
+
+For the full list of flags for masters, see <<master_configuration_reference>>.
+
+=== Configuring Tablet Servers
+To see all available configuration options for the `kudu-tablet_server` executable,
+run it with the `--help` option:
+----
+$ kudu-tablet_server --help
+----
+
+.Supported Configuration Flags for Kudu Tablet Servers
+|===
+| Flag      | Valid Options     | Default     | Description
+
+|--tablet_server_data_dirs | string | `/tmp/demo-tablets` | Comma-separated list
+of directories where the Tablet Server will place its data blocks.
+|--tablet_server_master_addrs | string | `127.0.0.1:7051` |  Comma separated
+addresses of the masters which the tablet server should connect to. The masters
+do not read this flag.
+|===
+
+For the full list of flags for tablet servers, see <<tablet_server_configuration_reference>>.
+
+=== Configuring the Kudu Web Interface
+The Kudu web interface is available on each Master at port 8051 and each Tablet
+Server at port 8050.
+
+
+== Next Steps
+- Read about <<administration>>.
+- Read about the <<api,Client API>>.

@@ -1,0 +1,17 @@
+[[administration]]
+= Kudu Administration
+:author: Kudu Team
+:imagesdir: ./images
+:toc: left
+:toclevels: 3
+:doctype: book
+:backend: html5
+:sectlinks:
+:experimental:
+
+== TBD Administration Tasks
+
+== Next Steps
+- Read about <<configuration>>.
+
+
