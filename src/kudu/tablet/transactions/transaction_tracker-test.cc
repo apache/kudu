@@ -60,7 +60,8 @@ TEST_F(TransactionTrackerTest, TestGetPending) {
                                                                 NULL,
                                                                 NULL,
                                                                 NULL));
-  driver->Init(new NoOpTransaction(new NoOpTransactionState), consensus::LEADER);
+  gscoped_ptr<NoOpTransaction> tx(new NoOpTransaction(new NoOpTransactionState));
+  driver->Init(tx.PassAs<Transaction>(), consensus::LEADER);
 
   ASSERT_EQ(1, tracker_.GetNumPendingForTests());
 
@@ -87,7 +88,8 @@ void TransactionTrackerTest::RunTransactionsThread(CountDownLatch* finish_latch)
                                                                   NULL,
                                                                   NULL,
                                                                   NULL));
-    driver->Init(new NoOpTransaction(new NoOpTransactionState), consensus::LEADER);
+    gscoped_ptr<NoOpTransaction> tx(new NoOpTransaction(new NoOpTransactionState));
+    driver->Init(tx.PassAs<Transaction>(), consensus::LEADER);
 
     drivers.push_back(driver);
   }

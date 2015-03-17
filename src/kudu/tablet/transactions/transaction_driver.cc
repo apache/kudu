@@ -53,14 +53,14 @@ TransactionDriver::TransactionDriver(TransactionTracker *txn_tracker,
   }
 }
 
-void TransactionDriver::Init(Transaction* transaction,
+void TransactionDriver::Init(gscoped_ptr<Transaction> transaction,
                              DriverType type) {
   boost::lock_guard<simple_spinlock> lock(lock_);
-  transaction_.reset(transaction);
+  transaction_ = transaction.Pass();
 
   if (type == consensus::REPLICA) {
     boost::lock_guard<simple_spinlock> lock(opid_lock_);
-    op_id_copy_ = transaction->state()->op_id();
+    op_id_copy_ = transaction_->state()->op_id();
     DCHECK(op_id_copy_.IsInitialized());
     replication_state_ = REPLICATING;
   } else {

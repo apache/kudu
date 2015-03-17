@@ -435,12 +435,12 @@ TEST_F(TabletPeerTest, TestActiveTransactionPreventsLogGC) {
     tx_state->set_completion_callback(gscoped_ptr<TransactionCompletionCallback>(
           new LatchTransactionCompletionCallback<WriteResponsePB>(&rpc_latch, resp.get())).Pass());
 
-    DelayedApplyTransaction* transaction = new DelayedApplyTransaction(&apply_started,
-                                                                       &apply_continue,
-                                                                       tx_state);
+    gscoped_ptr<DelayedApplyTransaction> transaction(new DelayedApplyTransaction(&apply_started,
+                                                                                 &apply_continue,
+                                                                                 tx_state));
 
     scoped_refptr<TransactionDriver> driver;
-    tablet_peer_->NewLeaderTransactionDriver(transaction, &driver);
+    tablet_peer_->NewLeaderTransactionDriver(transaction.PassAs<Transaction>(), &driver);
 
     ASSERT_STATUS_OK(driver->ExecuteAsync());
     apply_started.Wait();

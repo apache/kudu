@@ -83,6 +83,8 @@ class TransactionDriver : public RefCountedThreadSafe<TransactionDriver>,
                           public consensus::ConsensusCommitContinuation {
 
  public:
+  // Construct TransactionDriver. TransactionDriver does not take ownership
+  // of any of the objects pointed to in the constructor's arguments.
   TransactionDriver(TransactionTracker* txn_tracker,
                     consensus::Consensus* consensus,
                     log::Log* log,
@@ -92,7 +94,7 @@ class TransactionDriver : public RefCountedThreadSafe<TransactionDriver>,
 
   // Perform any non-constructor initialization. Sets the transaction
   // that will be executed.
-  virtual void Init(Transaction* transaction,
+  virtual void Init(gscoped_ptr<Transaction> transaction,
                     consensus::DriverType driver);
 
   // Returns the OpId of the transaction being executed or an uninitialized
@@ -202,12 +204,12 @@ class TransactionDriver : public RefCountedThreadSafe<TransactionDriver>,
   void SetResponseTimestamp(TransactionState* transaction_state,
                             const Timestamp& timestamp);
 
-  TransactionTracker* txn_tracker_;
-  consensus::Consensus* consensus_;
-  log::Log* log_;
-  ThreadPool* prepare_pool_;
-  ThreadPool* apply_pool_;
-  TransactionOrderVerifier* order_verifier_;
+  TransactionTracker* const txn_tracker_;
+  consensus::Consensus* const consensus_;
+  log::Log* const log_;
+  ThreadPool* const prepare_pool_;
+  ThreadPool* const apply_pool_;
+  TransactionOrderVerifier* const order_verifier_;
 
   Status transaction_status_;
 
