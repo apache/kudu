@@ -108,6 +108,8 @@ typename ArenaBase<THREADSAFE>::Component* ArenaBase<THREADSAFE>::NewComponent(
   CHECK_EQ(reinterpret_cast<uintptr_t>(buffer->data()) & (16 - 1), 0)
     << "Components should be 16-byte aligned: " << buffer->data();
 
+  ASAN_POISON_MEMORY_REGION(buffer->data(), buffer->size());
+
   return new Component(buffer);
 }
 

@@ -28,10 +28,12 @@
 #include <new>
 #include <vector>
 
+#include "kudu/gutil/dynamic_annotations.h"
 #include "kudu/gutil/logging-inl.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/util/alignment.h"
+#include "kudu/util/locks.h"
 #include "kudu/util/memory/memory.h"
 #include "kudu/util/slice.h"
 
@@ -45,12 +47,14 @@ template<bool THREADSAFE> struct ArenaTraits;
 template <> struct ArenaTraits<true> {
   typedef Atomic32 offset_type;
   typedef Mutex mutex_type;
+  typedef simple_spinlock spinlock_type;
 };
 
 template <> struct ArenaTraits<false> {
   typedef uint32_t offset_type;
   // For non-threadsafe, we don't need any real locking.
   typedef boost::signals2::dummy_mutex mutex_type;
+  typedef boost::signals2::dummy_mutex spinlock_type;
 };
 
 // A helper class for storing variable-length blobs (e.g. strings). Once a blob
@@ -335,13 +339,28 @@ class ArenaBase<THREADSAFE>::Component {
   uint8_t *AllocateBytesAligned(const size_t size, const size_t alignment);
 
   size_t size() const { return size_; }
-  void Reset() { offset_ = 0; }
+  void Reset() {
+    ASAN_POISON_MEMORY_REGION(data_, size_);
+    offset_ = 0;
+  }
 
  private:
+  // Mark the given range unpoisoned in ASAN.
+  // This is a no-op in a non-ASAN build.
+  void AsanUnpoison(const void* addr, size_t size);
+
   gscoped_ptr<Buffer> buffer_;
   uint8_t* const data_;
   typename ArenaTraits<THREADSAFE>::offset_type offset_;
   const size_t size_;
+
+#ifdef ADDRESS_SANITIZER
+  // Lock used around unpoisoning memory when ASAN is enabled.
+  // ASAN does not support concurrent unpoison calls that may overlap a particular
+  // memory word (8 bytes).
+  typedef typename ArenaTraits<THREADSAFE>::spinlock_type spinlock_type;
+  spinlock_type asan_lock_;
+#endif
   DISALLOW_COPY_AND_ASSIGN(Component);
 };
 
@@ -365,6 +384,7 @@ inline uint8_t *ArenaBase<true>::Component::AllocateBytesAligned(
   if (PREDICT_TRUE(new_offset <= size_)) {
     bool success = Acquire_CompareAndSwap(&offset_, offset, new_offset) == offset;
     if (PREDICT_TRUE(success)) {
+      AsanUnpoison(data_ + aligned, size);
       return data_ + aligned;
     } else {
       // Raced with another allocator
@@ -387,6 +407,7 @@ inline uint8_t *ArenaBase<false>::Component::AllocateBytesAligned(
   size_t save_offset = offset_;
   offset_ = aligned + size;
   if (PREDICT_TRUE(offset_ <= size_)) {
+    AsanUnpoison(data_ + aligned, size);
     return destination;
   } else {
     offset_ = save_offset;
@@ -394,6 +415,13 @@ inline uint8_t *ArenaBase<false>::Component::AllocateBytesAligned(
   }
 }
 
+template <bool THREADSAFE>
+inline void ArenaBase<THREADSAFE>::Component::AsanUnpoison(const void* addr, size_t size) {
+#ifdef ADDRESS_SANITIZER
+  lock_guard<spinlock_type> l(&asan_lock_);
+  ASAN_UNPOISON_MEMORY_REGION(addr, size);
+#endif
+}
 
 // Fast-path allocation should get inlined, and fall-back
 // to non-inline function call for allocation failure

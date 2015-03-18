@@ -84,16 +84,28 @@ endforeach()
 # Get flags related to actually compiling the source
 set(IR_FLAGS
   -S -emit-llvm
+  -DIR_BUILD
   ${CMAKE_CXX_FLAGS}
   ${PREFIXED_IR_PP_DEFS}
   -Wno-c++11-extensions # OVERRIDE macro conflicts with c++11 override
   ${IR_INCLUDES})
 separate_arguments(IR_FLAGS)
-# Scrub ASAN from precompiled functions
-# The runtime linker for MCJIT fails to find asan functions referenced by
-# codegenned code that's generated with a module precompiled with the below
-# flags.
-list(REMOVE_ITEM IR_FLAGS "-fsanitize=address" "-DADDRESS_SANITIZER")
+
+# Avoid enabling ASAN in the precompiled IR.
+#
+# This avoids an issue when the main code is compiled with a different version
+# of LLVM than we are using for JIT, and ASAN is enabled. In that case,
+# the IR code will try to call __asan_init_v<X> while our runtime code will
+# only have defined __asan_init_v<Y> (where X != Y).
+#
+# Disabling -fsanitize-address will prevent the instrumentation, so it doesn't
+# try to link against these symbols.
+#
+# NOTE: we leave "-DADDRESS_SANITIZER" because this enables ASAN annotations
+# from dynamic_annotations.h. These annotations are just extern function
+# declarations which will link fine against the ASAN in our executable, even
+# if the JIT code is not instrumented.
+list(REMOVE_ITEM IR_FLAGS "-fsanitize=address")
 
 # We need a library which depends on the IR source, because CMake+Ninja
 # doesn't support IMPLICIT_DEPENDS in ADD_CUSTOM_COMMAND.

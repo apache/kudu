@@ -26,6 +26,16 @@
 #include "kudu/util/bitmap.h"
 #include "kudu/util/memory/arena.h"
 
+// Even though this file is only needed for IR purposes, we need to check for
+// IR_BUILD because we use a fake static library target to workaround a cmake
+// dependencies bug. See 'ir_fake_target' in CMakeLists.txt.
+#ifdef IR_BUILD
+// Workaround for an MCJIT deficiency where we see a link error when trying
+// to load the JITted library. See the following LLVM bug and suggested workaround.
+// https://llvm.org/bugs/show_bug.cgi?id=18062
+extern "C" void *__dso_handle __attribute__((__visibility__("hidden"))) = NULL;
+#endif
+
 namespace kudu {
 
 // Returns whether copy was successful (fails iff slice relocation fails,

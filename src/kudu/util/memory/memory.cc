@@ -64,10 +64,13 @@ void OverwriteWithPattern(char* p, size_t len, StringPiece pattern) {
 #endif
 
 Buffer::~Buffer() {
-#ifndef NDEBUG
+#if !defined(NDEBUG) && !defined(ADDRESS_SANITIZER)
   // "unrolling" the string "BAD" makes for a much more efficient
   // OverwriteWithPattern call in debug mode, so we can keep this
   // useful bit of code without tests going slower!
+  //
+  // In ASAN mode, we don't bother with this, because when we free the memory, ASAN will
+  // prevent us from accessing it anyway.
   OverwriteWithPattern(reinterpret_cast<char*>(data_), size_,
                        "BADBADBADBADBADBADBADBADBADBADBAD"
                        "BADBADBADBADBADBADBADBADBADBADBAD"
