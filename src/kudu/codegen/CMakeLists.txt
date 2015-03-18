@@ -71,7 +71,9 @@ set(IR_OUTPUT_ELF ${IR_OUTPUT}.o)
 # Retrieve all includes directories needed for precompilation
 set(IR_INCLUDES
   -I ${CMAKE_SOURCE_DIR}/src
-  -I ${GLOG_INCLUDE_DIR})
+  -I ${GLOG_INCLUDE_DIR}
+  -I ${GTEST_INCLUDE_DIR})
+
 # Get preprocessing definitions, which enable directives for glog and gtest
 get_directory_property(IR_PP_DEFINITIONS
   DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
@@ -93,20 +95,26 @@ separate_arguments(IR_FLAGS)
 # flags.
 list(REMOVE_ITEM IR_FLAGS "-fsanitize=address" "-DADDRESS_SANITIZER")
 
+# We need a library which depends on the IR source, because CMake+Ninja
+# doesn't support IMPLICIT_DEPENDS in ADD_CUSTOM_COMMAND.
+#
+# Using a fake target like this allows us to pick up the dependencies
+# of precompiled.ll, and then we make the IR generation depend on the fake
+# target. We end up doing one extra compilation, but that's better than
+# having stale IR.
+#
+# See: http://www.cmake.org/Bug/bug_relationship_graph.php?bug_id=13234
+add_library(ir_fake_target ${IR_SOURCE})
+# The IR uses protobufs from kudu_common, so we have to generate that code first.
+target_link_libraries(ir_fake_target kudu_common_proto)
+
 add_custom_command(
   OUTPUT ${IR_OUTPUT}
   COMMAND ${CLANG_EXEC}
     ${IR_FLAGS}
     ${IR_SOURCE}
     -o ${IR_OUTPUT}
-  # We require an explicit dependency on kudu_common_proto because
-  # the IR source file relies on certain headers from kudu/common,
-  # which in turn indirectly rely on kudu/common/common.pb.h.
-  # IMPLICIT_DEPENDS performs a static file scan and thus isn't able
-  # to resolve common.pb.h against the appropriate protoc-based cmake
-  # target, a step that is necessary to dynamically generate the header file.
-  DEPENDS ${IR_SOURCE} kudu_common_proto
-  IMPLICIT_DEPENDS ${IR_SOURCE})
+  DEPENDS ir_fake_target)
 
 # Use 'ld' to create an ELF wrapper around the precompiled IR. This creates
 # an elf file which exposes the following symbols:
