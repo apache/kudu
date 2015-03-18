@@ -313,11 +313,12 @@ Status RowOperationsPBDecoder::DecodeInsert(const uint8_t* prototype_row_storage
     if (BitmapTest(client_isset_map, client_col_idx)) {
       // If the client provided a value for this column, copy it.
 
-      // Copy null-ness. Even if it's non-nullable, this is safe to do.
-      // The null flag will be ignored.
-      bool client_set_to_null = client_schema_->has_nullables() &&
+      // Copy null-ness, if the server side column is nullable.
+      bool client_set_to_null = col.is_nullable() &&
         BitmapTest(client_null_map, client_col_idx);
-      tablet_row.set_null(tablet_col_idx, client_set_to_null);
+      if (col.is_nullable()) {
+        tablet_row.set_null(tablet_col_idx, client_set_to_null);
+      }
       // Copy the value if it's not null
       if (!client_set_to_null) {
         RETURN_NOT_OK(ReadColumn(col, tablet_row.mutable_cell_ptr(tablet_col_idx)));
@@ -414,9 +415,11 @@ Status RowOperationsPBDecoder::DecodeUpdateOrDelete(const ClientServerMapping& m
           RETURN_NOT_OK(ReadColumn(col, scratch));
           val_to_add = scratch;
         } else {
-          // TODO: should check client trying to set NULL on a non-nullable field.
-          // this might fail.
-          DCHECK(col.is_nullable());
+
+          if (PREDICT_FALSE(!col.is_nullable())) {
+            return Status::InvalidArgument("NULL value not allowed for non-nullable column",
+                                           col.ToString());
+          }
           val_to_add = NULL;
         }
         rcl_encoder.AddColumnUpdate(tablet_schema_->column_id(tablet_col_idx), val_to_add);

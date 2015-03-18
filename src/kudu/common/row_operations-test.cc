@@ -8,7 +8,11 @@
 #include "kudu/common/partial_row.h"
 #include "kudu/common/row_operations.h"
 #include "kudu/common/schema.h"
+#include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/test_util.h"
+
+using strings::Substitute;
+using strings::SubstituteAndAppend;
 
 namespace kudu {
 
@@ -26,8 +30,12 @@ class RowOperationsTest : public KuduTest {
     schema_without_ids_ = builder.BuildWithoutIds();
   }
  protected:
-  void CheckDecodeDoesntCrash(const RowOperationsPB& pb);
-  void DoFuzzTest(const KuduPartialRow& row);
+  void CheckDecodeDoesntCrash(const Schema& client_schema,
+                              const Schema& server_schema,
+                              const RowOperationsPB& pb);
+  void DoFuzzTest(const Schema& server_schema,
+                  const KuduPartialRow& row,
+                  int n_random_changes);
 
   Schema schema_;
   Schema schema_without_ids_;
@@ -54,54 +62,224 @@ static void DoRandomMutation(string* s) {
   }
 }
 
-void RowOperationsTest::CheckDecodeDoesntCrash(const RowOperationsPB& pb) {
+void RowOperationsTest::CheckDecodeDoesntCrash(const Schema& client_schema,
+                                               const Schema& server_schema,
+                                               const RowOperationsPB& pb) {
   arena_.Reset();
-  RowOperationsPBDecoder decoder(&pb, &schema_without_ids_, &schema_, &arena_);
+  RowOperationsPBDecoder decoder(&pb, &client_schema, &server_schema, &arena_);
   vector<DecodedRowOperation> ops;
   Status s = decoder.DecodeOperations(&ops);
   if (s.ok() && !ops.empty()) {
     // If we got an OK result, then we should be able to stringify without
     // crashing. This ensures that any indirect data (eg strings) gets
     // set correctly.
-    ignore_result(ops[0].ToString(schema_));
+    ignore_result(ops[0].ToString(server_schema));
   }
   // Bad Status is OK -- we expect corruptions here.
 }
 
-void RowOperationsTest::DoFuzzTest(const KuduPartialRow& row) {
-  RowOperationsPB pb;
-  RowOperationsPBEncoder enc(&pb);
-  enc.Add(RowOperationsPB::INSERT, row);
+void RowOperationsTest::DoFuzzTest(const Schema& server_schema,
+                                   const KuduPartialRow& row,
+                                   int n_random_changes) {
+  for (int operation = 0; operation < 3; operation++) {
+    RowOperationsPB pb;
+    RowOperationsPBEncoder enc(&pb);
 
-  RowOperationsPB mutated;
+    switch (operation) {
+      case 0:
+        enc.Add(RowOperationsPB::INSERT, row);
+        break;
+      case 1:
+        enc.Add(RowOperationsPB::UPDATE, row);
+        break;
+      case 2:
+        enc.Add(RowOperationsPB::DELETE, row);
+        break;
+    }
 
-  // Check all possible truncations of the protobuf 'rows' field.
-  for (int i = 0; i < pb.rows().size(); i++) {
-    mutated.CopyFrom(pb);
-    mutated.mutable_rows()->resize(i);
-    CheckDecodeDoesntCrash(mutated);
-  }
+    const Schema* client_schema = row.schema();
 
-  // Check random byte changes in the 'rows' field.
-  const int n_iters = AllowSlowTests() ? 10000 : 1000;
-  for (int i = 0; i < n_iters; i++) {
-    mutated.CopyFrom(pb);
-    DoRandomMutation(mutated.mutable_rows());
-    CheckDecodeDoesntCrash(mutated);
+    // Check that the un-mutated row doesn't crash.
+    CheckDecodeDoesntCrash(*client_schema, server_schema, pb);
+
+    RowOperationsPB mutated;
+
+    // Check all possible truncations of the protobuf 'rows' field.
+    for (int i = 0; i < pb.rows().size(); i++) {
+      mutated.CopyFrom(pb);
+      mutated.mutable_rows()->resize(i);
+      CheckDecodeDoesntCrash(*client_schema, server_schema, mutated);
+    }
+
+    // Check bit flips of every bit in the first three bytes, which are
+    // particularly interesting, since they contain the null/isset
+    // bitmaps.
+    for (int bit = 0; bit < 8 * 3; bit++) {
+      int byte_idx = bit / 8;
+      int bit_idx = bit % 8;
+      int mask = 1 << bit_idx;
+
+      (*mutated.mutable_rows())[byte_idx] ^= mask;
+      CheckDecodeDoesntCrash(*client_schema, server_schema, mutated);
+      (*mutated.mutable_rows())[byte_idx] ^= mask;
+    }
+
+    // Check random byte changes in the 'rows' field.
+    for (int i = 0; i < n_random_changes; i++) {
+      mutated.CopyFrom(pb);
+      DoRandomMutation(mutated.mutable_rows());
+      CheckDecodeDoesntCrash(*client_schema, server_schema, mutated);
+    }
   }
 }
-
 
 // Test that, even if the protobuf is corrupt in some way, we do not
 // crash. These protobufs are provided by clients, so we want to make sure
 // a malicious client can't crash the server.
 TEST_F(RowOperationsTest, FuzzTest) {
-  KuduPartialRow row(&schema_);
+  const int n_iters = AllowSlowTests() ? 10000 : 1000;
+
+  KuduPartialRow row(&schema_without_ids_);
   EXPECT_OK(row.SetUInt32("int_val", 54321));
   EXPECT_OK(row.SetStringCopy("string_val", "hello world"));
-  DoFuzzTest(row);
+  DoFuzzTest(schema_, row, n_iters);
   EXPECT_OK(row.SetNull("string_val"));
-  DoFuzzTest(row);
+  DoFuzzTest(schema_, row, n_iters);
+}
+
+// Add the given column, but with some probability change the type
+// and nullability.
+void AddFuzzedColumn(SchemaBuilder* builder,
+                     const string& name,
+                     DataType default_type) {
+  DataType rand_types[] = {UINT32, UINT64, STRING};
+  DataType t = default_type;
+  if (random() % 3 == 0) {
+    t = rand_types[random() % arraysize(rand_types)];
+  }
+  bool nullable = random() & 1;
+  CHECK_OK(builder->AddColumn(name, t, nullable, NULL, NULL));
+}
+
+// Generate a randomized schema, where some columns might be missing,
+// and types/nullability are randomized. We weight towards not making
+// too many changes so that it's likely we generate compatible client
+// and server schemas.
+Schema GenRandomSchema(bool with_ids) {
+  SchemaBuilder builder;
+  if (random() % 5 != 0) {
+    AddFuzzedColumn(&builder, "c1", UINT32);
+  }
+  if (random() % 5 != 0) {
+    AddFuzzedColumn(&builder, "c2", UINT32);
+  }
+  if (random() % 5 != 0 || !builder.is_valid()) {
+    AddFuzzedColumn(&builder, "c3", STRING);
+  }
+
+  return with_ids ? builder.Build() : builder.BuildWithoutIds();
+}
+
+namespace {
+
+struct FailingCase {
+  Schema* client_schema;
+  Schema* server_schema;
+  KuduPartialRow* row;
+};
+FailingCase g_failing_case;
+
+// ASAN callback which will dump the case which caused a failure.
+void DumpFailingCase() {
+  LOG(INFO) << "Failed on the following case:";
+  LOG(INFO) << "Client schema:\n" << g_failing_case.client_schema->ToString();
+  LOG(INFO) << "Server schema:\n" << g_failing_case.server_schema->ToString();
+  LOG(INFO) << "Row: " << g_failing_case.row->ToString();
+}
+
+void GlogFailure() {
+  DumpFailingCase();
+  abort();
+}
+
+} // anonymous namespace
+
+// Fuzz test which generates random pairs of client/server schemas, with
+// random mutations like adding an extra column, removing a column, changing
+// types, and changing nullability.
+TEST_F(RowOperationsTest, SchemaFuzz) {
+  const int n_iters = AllowSlowTests() ? 10000 : 10;
+  for (int i = 0; i < n_iters; i++) {
+    // Generate a random client and server schema pair.
+    Schema client_schema = GenRandomSchema(false);
+    Schema server_schema = GenRandomSchema(true);
+    KuduPartialRow row(&client_schema);
+
+    // On a crash or ASAN failure, dump the case information to the log so we
+    // can write a more specific repro.
+    g_failing_case.client_schema = &client_schema;
+    g_failing_case.server_schema = &server_schema;
+    g_failing_case.row = &row;
+    ASAN_SET_DEATH_CALLBACK(&DumpFailingCase);
+    google::InstallFailureFunction(&GlogFailure);
+
+    for (int i = 0; i < client_schema.num_columns(); i++) {
+      if (client_schema.column(i).is_nullable() &&
+          random() % 3 == 0) {
+        CHECK_OK(row.SetNull(i));
+        continue;
+      }
+      switch (client_schema.column(i).type_info()->type()) {
+        case UINT32:
+          CHECK_OK(row.SetUInt32(i, 12345));
+          break;
+        case UINT64:
+          CHECK_OK(row.SetUInt64(i, 12345678));
+          break;
+        case STRING:
+          CHECK_OK(row.SetStringCopy(i, "hello"));
+          break;
+        default:
+          LOG(FATAL);
+      }
+    }
+
+    DoFuzzTest(server_schema, row, 100);
+    ASAN_SET_DEATH_CALLBACK(NULL);
+    google::InstallFailureFunction(&abort);
+  }
+}
+
+// One case from SchemaFuzz which failed previously.
+TEST_F(RowOperationsTest, TestFuzz1) {
+  SchemaBuilder client_schema_builder;
+  client_schema_builder.AddColumn("c1", UINT32, false, NULL, NULL);
+  client_schema_builder.AddColumn("c2", STRING, false, NULL, NULL);
+  Schema client_schema = client_schema_builder.BuildWithoutIds();
+  SchemaBuilder server_schema_builder;
+  server_schema_builder.AddColumn("c1", UINT32, false, NULL, NULL);
+  server_schema_builder.AddColumn("c2", STRING, false, NULL, NULL);
+  Schema server_schema = server_schema_builder.Build();
+  KuduPartialRow row(&client_schema);
+  CHECK_OK(row.SetUInt32(0, 12345));
+  CHECK_OK(row.SetStringCopy(1, "hello"));
+  DoFuzzTest(server_schema, row, 100);
+}
+
+// Another case from SchemaFuzz which failed previously.
+TEST_F(RowOperationsTest, TestFuzz2) {
+  SchemaBuilder client_schema_builder;
+  client_schema_builder.AddColumn("c1", STRING, true, NULL, NULL);
+  client_schema_builder.AddColumn("c2", STRING, false, NULL, NULL);
+  Schema client_schema = client_schema_builder.BuildWithoutIds();
+  SchemaBuilder server_schema_builder;
+  server_schema_builder.AddColumn("c1", STRING, true, NULL, NULL);
+  server_schema_builder.AddColumn("c2", STRING, false, NULL, NULL);
+  Schema server_schema = server_schema_builder.Build();
+  KuduPartialRow row(&client_schema);
+  CHECK_OK(row.SetNull(0));
+  CHECK_OK(row.SetStringCopy(1, "hello"));
+  DoFuzzTest(server_schema, row, 100);
 }
 
 namespace {
