@@ -103,14 +103,11 @@ class Transaction {
   // Default implementation does nothing.
   virtual void PreCommit() {}
 
-  // Executed after the transaction has both been applied and submitted to
-  // to consensus, but before we have confirmation the commit is durable.
-  // Unused for the moment, needed to implement KUDU-120.
-  virtual void PostCommit() {}
-
-  // Executed after the transaction has been committed to consensus and the
-  // commit has been made durable, or if the transaction was aborted.
-  // Implementations are expected to perform cleanup on this method.
+  // Executed after the transaction has been applied and the commit message has
+  // been appended to the log (though it might not be durable yet), or if the
+  // transaction was aborted.
+  // Implementations are expected to perform cleanup on this method, the driver
+  // will reply to the client after this method call returns.
   // 'result' will be either COMMITTED or ABORTED, letting implementations
   // know what was the final status of the transaction.
   virtual void Finish(TransactionResult result) {}

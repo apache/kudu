@@ -179,6 +179,11 @@ class TabletPeerTest : public KuduTabletTest {
         << "\nReq:\n" << req.DebugString() << "Resp:\n" << resp->DebugString();
 
     // Roll the log after each write.
+    // Usually the append thread does the roll and no additional sync is required. However in
+    // this test the thread that is appending is not the same thread that is rolling the log
+    // so we must make sure the Log's queue is flushed before we roll or we might have a race
+    // between the appender thread and the thread executing the test.
+    CHECK_OK(tablet_peer->log_->WaitUntilAllFlushed());
     CHECK_OK(tablet_peer->log_->AllocateSegmentAndRollOver());
     return Status::OK();
   }

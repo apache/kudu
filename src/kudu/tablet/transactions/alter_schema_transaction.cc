@@ -112,7 +112,7 @@ void AlterSchemaTransaction::Finish(TransactionResult result) {
   DCHECK_EQ(result, Transaction::COMMITTED);
   // Now that all of the changes have been applied and the commit is durable
   // make the changes visible to readers.
-  TRACE("AlterSchemaCommitCallback: making edits visible");
+  TRACE("AlterSchemaCommitCallback: making alter schema visible");
   state()->Finish();
 }
 

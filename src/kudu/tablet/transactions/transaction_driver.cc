@@ -360,10 +360,8 @@ void TransactionDriver::ApplyTask() {
     }
 
     transaction_->PreCommit();
-    CHECK_OK(log_->AsyncAppendCommit(commit_msg.Pass(),
-                                     Bind(&TransactionDriver::CommitCallback,
-                                          this)));
-    transaction_->PostCommit();
+    CHECK_OK(log_->AsyncAppendCommit(commit_msg.Pass(), Bind(DoNothingStatusCB)));
+    Finalize();
   }
 }
 
@@ -374,14 +372,6 @@ void TransactionDriver::SetResponseTimestamp(TransactionState* transaction_state
     const google::protobuf::FieldDescriptor* ts_field =
         response->GetDescriptor()->FindFieldByName(kTimestampFieldName);
     response->GetReflection()->SetUInt64(response, ts_field, timestamp.ToUint64());
-  }
-}
-
-void TransactionDriver::CommitCallback(const Status& s) {
-  if (s.ok()) {
-    Finalize();
-  } else {
-    HandleFailure(s);
   }
 }
 
