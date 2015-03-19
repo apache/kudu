@@ -205,7 +205,9 @@ class Log : public RefCountedThreadSafe<Log> {
   // Returns this Log's FsManager.
   FsManager* GetFsManager();
 
-  void SetLogFaultHooksForTests(const std::tr1::shared_ptr<LogFaultHooks> &hooks);
+  void SetLogFaultHooksForTests(const std::tr1::shared_ptr<LogFaultHooks> &hooks) {
+    log_hooks_ = hooks;
+  }
 
   // Set the schema for the _next_ log segment.
   //
