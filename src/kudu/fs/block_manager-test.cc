@@ -446,21 +446,20 @@ TYPED_TEST(BlockManagerTest, PersistenceTest) {
 
   // Reopen the block manager. This may read block metadata from disk.
   //
-  // Note that some block managers must be closed to fully synchronize
-  // their contents to disk (e.g. log_block_manager uses PosixMmapFiles
-  // for containers, which must be closed to be trimmed).
-  this->bm_.reset(this->CreateBlockManager(NULL, list_of(GetTestDataDirectory())));
-
-  ASSERT_OK(this->bm_->Open());
+  // The existing block manager is left open, which proxies for the process
+  // having crashed without cleanly shutting down the block manager. The
+  // on-disk metadata should still be clean.
+  gscoped_ptr<BlockManager> new_bm(this->CreateBlockManager(NULL, list_of(GetTestDataDirectory())));
+  ASSERT_OK(new_bm->Open());
 
   // Test that the state of all three blocks is properly reflected.
   gscoped_ptr<ReadableBlock> read_block;
-  ASSERT_OK(this->bm_->OpenBlock(written_block1->id(), &read_block));
+  ASSERT_OK(new_bm->OpenBlock(written_block1->id(), &read_block));
   size_t sz;
   ASSERT_OK(read_block->Size(&sz));
   ASSERT_EQ(0, sz);
   ASSERT_OK(read_block->Close());
-  ASSERT_OK(this->bm_->OpenBlock(written_block2->id(), &read_block));
+  ASSERT_OK(new_bm->OpenBlock(written_block2->id(), &read_block));
   ASSERT_OK(read_block->Size(&sz));
   ASSERT_EQ(test_data.length(), sz);
   Slice data;
@@ -468,7 +467,7 @@ TYPED_TEST(BlockManagerTest, PersistenceTest) {
   ASSERT_OK(read_block->Read(0, test_data.length(), &data, scratch.get()));
   ASSERT_EQ(test_data, data);
   ASSERT_OK(read_block->Close());
-  ASSERT_TRUE(this->bm_->OpenBlock(written_block3->id(), NULL)
+  ASSERT_TRUE(new_bm->OpenBlock(written_block3->id(), NULL)
               .IsNotFound());
 }
 

@@ -425,6 +425,8 @@ Status ReadablePBContainerFile::Init() {
 }
 
 Status ReadablePBContainerFile::ReadNextPB(Message* msg) {
+  VLOG(1) << "Reading PB from offset $0 " << offset_;
+
   // Read the size from the file. EOF here is acceptable: it means we're
   // out of PB entries.
   Slice size;

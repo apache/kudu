@@ -539,13 +539,11 @@ Status ReadableLogSegment::ReadEntryHeader(uint64_t *offset, EntryHeader* header
   RETURN_NOT_OK_PREPEND(ReadFully(readable_file().get(), *offset, kEntryHeaderSize,
                                   &slice, scratch),
                         "Could not read entry header");
-  CHECK(slice.size() == kEntryHeaderSize);
-  *offset += kEntryHeaderSize;
 
   if (PREDICT_FALSE(!DecodeEntryHeader(slice, header))) {
     return Status::Corruption("CRC mismatch in log header");
   }
-
+  *offset += slice.size();
   return Status::OK();
 }
 
@@ -604,7 +602,7 @@ Status ReadableLogSegment::ReadEntryBatch(uint64_t *offset,
   if (!s.ok()) return Status::Corruption(Substitute("Could parse PB. Cause: $0",
                                                     s.ToString()));
 
-  *offset += header.msg_length;
+  *offset += entry_batch_slice.size();
   entry_batch->reset(read_entry_batch.release());
   return Status::OK();
 }
