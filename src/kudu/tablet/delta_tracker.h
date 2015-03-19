@@ -130,7 +130,7 @@ class DeltaTracker {
   Status CompactStores(int start_idx, int end_idx);
 
   // Replace the subsequence of stores that matches 'stores_to_replace' with
-  // delta file readers correpsonding to 'new_delta_blocks', which may be empty.
+  // delta file readers corresponding to 'new_delta_blocks', which may be empty.
   Status AtomicUpdateStores(const SharedDeltaStoreVector& stores_to_replace,
                             const std::vector<BlockId>& new_delta_blocks,
                             DeltaType type);
@@ -231,9 +231,9 @@ class DeltaTracker {
 
   // The current DeltaMemStore into which updates should be written.
   shared_ptr<DeltaMemStore> dms_;
-  // The set of tracked REDO delta stores
+  // The set of tracked REDO delta stores, in increasing timestamp order.
   SharedDeltaStoreVector redo_delta_stores_;
-  // The set of tracked UNDO delta stores
+  // The set of tracked UNDO delta stores, in decreasing timestamp order.
   SharedDeltaStoreVector undo_delta_stores_;
 
   // read-write lock protecting dms_ and {redo,undo}_delta_stores_.

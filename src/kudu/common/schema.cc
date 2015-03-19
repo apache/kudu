@@ -176,13 +176,17 @@ Status Schema::CreatePartialSchema(const vector<size_t>& col_indexes,
   }
   size_t new_idx = 0;
   vector<ColumnSchema> cols_to_include;
+  std::vector<size_t> ids;
   BOOST_FOREACH(size_t col_idx, col_indexes) {
     cols_to_include.push_back(column(col_idx));
+    if (has_column_ids()) {
+      ids.push_back(column_id(col_idx));
+    }
     if (old_to_new != NULL) {
       (*old_to_new)[col_idx] = new_idx++;
     }
   }
-  RETURN_NOT_OK(out->Reset(cols_to_include, has_all_key_columns ? num_key_columns() : 0));
+  RETURN_NOT_OK(out->Reset(cols_to_include, ids, has_all_key_columns ? num_key_columns() : 0));
   return Status::OK();
 }
 

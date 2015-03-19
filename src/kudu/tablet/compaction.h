@@ -94,16 +94,36 @@ class RowSetsInCompaction {
   LockVector locks_;
 };
 
-
 // One row yielded by CompactionInput::PrepareBlock.
 struct CompactionInputRow {
   // The compaction input base row.
   RowBlockRow row;
   // The current redo head for this row, may be null if the base row has no mutations.
   const Mutation* redo_head;
-  // The current undo head for this row, may be null if all undos were garbage collected..
+  // The current undo head for this row, may be null if all undos were garbage collected.
   const Mutation* undo_head;
 };
+
+// Function shared by flushes, compactions and major delta compactions. Applies all the REDO
+// mutations from 'src_row' to the 'dst_row', and generates the related UNDO mutations. Some
+// handling depends on the nature of the operation being performed:
+//  - Flush: Applies all the REDOs to all the columns.
+//  - Compaction: Applies all the REDOs to all the columns.
+//  - Major delta compaction: Applies only the REDOs that have corresponding columns in the schema
+//                            belonging to 'dst_row'. Those that don't belong to that schema are
+//                            ignored.
+//
+// Currently, 'is_garbage_collected' is always false (KUDU-236).
+Status ApplyMutationsAndGenerateUndos(const MvccSnapshot& snap,
+                                      const CompactionInputRow& src_row,
+                                      const Schema* base_schema,
+                                      Mutation** new_undo_head,
+                                      Mutation** new_redo_head,
+                                      Arena* arena,
+                                      RowBlockRow* dst_row,
+                                      bool* is_garbage_collected,
+                                      uint64_t* num_rows_history_truncated);
+
 
 // Iterate through this compaction input, flushing all rows to the given RollingDiskRowSetWriter.
 // The 'snap' argument should match the MvccSnapshot used to create the compaction input.

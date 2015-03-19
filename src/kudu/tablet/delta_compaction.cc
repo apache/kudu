@@ -9,6 +9,7 @@
 #include <tr1/unordered_map>
 #include <tr1/unordered_set>
 
+#include "kudu/common/generic_iterators.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/substitute.h"
@@ -16,6 +17,7 @@
 #include "kudu/common/columnblock.h"
 #include "kudu/cfile/cfile_reader.h"
 #include "kudu/tablet/cfile_set.h"
+#include "kudu/tablet/compaction.h"
 #include "kudu/tablet/delta_key.h"
 #include "kudu/tablet/deltamemstore.h"
 #include "kudu/tablet/multi_column_writer.h"
@@ -51,8 +53,8 @@ MajorDeltaCompaction::MajorDeltaCompaction(FsManager* fs_manager,
     base_data_(base_data),
     included_stores_(included_stores),
     delta_iter_(delta_iter),
-    nrows_(0),
-    deltas_written_(0),
+    redo_delta_mutations_written_(0),
+    undo_delta_mutations_written_(0),
     state_(kInitialized) {
   CHECK(!col_indexes.empty());
 }
@@ -71,12 +73,13 @@ string MajorDeltaCompaction::ColumnNamesToString() const {
 Status MajorDeltaCompaction::FlushRowSetAndDeltas() {
   CHECK_EQ(state_, kInitialized);
 
-  shared_ptr<CFileSet::Iterator> old_base_data_iter(base_data_->NewIterator(&partial_schema_));
+  shared_ptr<ColumnwiseIterator> old_base_data_cwise(base_data_->NewIterator(&partial_schema_));
+  gscoped_ptr<RowwiseIterator> old_base_data_rwise(new MaterializingIterator(old_base_data_cwise));
 
   ScanSpec spec;
   spec.set_cache_blocks(false);
   RETURN_NOT_OK_PREPEND(
-      old_base_data_iter->Init(&spec),
+      old_base_data_rwise->Init(&spec),
       "Unable to open iterator for specified columns (" + partial_schema_.ToString() + ")");
 
   RETURN_NOT_OK(delta_iter_->Init(&spec));
@@ -86,62 +89,118 @@ Status MajorDeltaCompaction::FlushRowSetAndDeltas() {
   RowBlock block(partial_schema_, kRowsPerBlock, &arena);
 
   DVLOG(1) << "Applying deltas and rewriting columns (" << partial_schema_.ToString() << ")";
-  DeltaStats stats(base_schema_.num_columns());
-  while (old_base_data_iter->HasNext()) {
-    // 1) Get the next batch of base data.
-    size_t n = block.row_capacity();
+  DeltaStats redo_stats(base_schema_.num_columns());
+  DeltaStats undo_stats(base_schema_.num_columns());
+  uint64_t num_rows_history_truncated = 0;
+  size_t nrows = 0;
+  // We know that we're reading everything from disk so we're including all transactions.
+  MvccSnapshot snap = MvccSnapshot::CreateSnapshotIncludingAllTransactions();
+  while (old_base_data_rwise->HasNext()) {
+
+    // 1) Get the next batch of base data for the columns we're compacting.
     arena.Reset();
-    RETURN_NOT_OK(old_base_data_iter->PrepareBatch(&n));
-    block.Resize(n);
-    nrows_ += n;
+    RETURN_NOT_OK(old_base_data_rwise->NextBlock(&block));
+    size_t n = block.nrows();
 
-    // 2) Apply the deltas.
+    // 2) Fetch all the REDO mutations.
+    vector<Mutation *> redo_mutation_block(kRowsPerBlock, reinterpret_cast<Mutation *>(NULL));
     RETURN_NOT_OK(delta_iter_->PrepareBatch(n));
-    BOOST_FOREACH(size_t col_idx, column_indexes_) {
-      size_t new_idx = old_to_new_[col_idx];
-      ColumnBlock col_block(block.column_block(new_idx));
-      RETURN_NOT_OK(old_base_data_iter->MaterializeColumn(new_idx, &col_block));
+    RETURN_NOT_OK(delta_iter_->CollectMutations(&redo_mutation_block, block.arena()));
 
-      // TODO: should this be IDs? indexes? check this with alter.
-      RETURN_NOT_OK(delta_iter_->ApplyUpdates(col_idx, &col_block));
+    // 3) Apply new UNDO mutations for the current block. The REDO mutations are picked up
+    //    at step 6).
+    vector<CompactionInputRow> input_rows;
+    input_rows.resize(block.nrows());
+    for (int i = 0; i < block.nrows(); i++) {
+      CompactionInputRow &input_row = input_rows.at(i);
+      input_row.row.Reset(&block, i);
+      input_row.redo_head = redo_mutation_block[i];
+      input_row.undo_head = NULL;
+
+      RowBlockRow dst_row = block.row(i);
+      RETURN_NOT_OK(CopyRow(input_row.row, &dst_row, reinterpret_cast<Arena*>(NULL)));
+
+      Mutation* new_undos_head = NULL;
+      // We're ignoring the result from new_redos_head because we'll find them later at step 5).
+      Mutation* new_redos_head = NULL;
+
+      bool is_garbage_collected;
+
+      RETURN_NOT_OK(ApplyMutationsAndGenerateUndos(snap,
+                                                   input_row,
+                                                   &base_schema_,
+                                                   &new_undos_head,
+                                                   &new_redos_head,
+                                                   &arena,
+                                                   &dst_row,
+                                                   &is_garbage_collected,
+                                                   &num_rows_history_truncated));
+
+      VLOG(2) << "Output Row: " << dst_row.schema()->DebugRow(dst_row)
+        << " Undo Mutations: " << Mutation::StringifyMutationList(partial_schema_, new_undos_head)
+        << " Redo Mutations: " << Mutation::StringifyMutationList(partial_schema_, new_redos_head);
+
+      // We only create a new undo delta file if we need to.
+      if (new_undos_head != NULL && !new_undo_delta_writer_) {
+        RETURN_NOT_OK(OpenUndoDeltaFileWriter());
+      }
+      for (const Mutation *mut = new_undos_head; mut != NULL; mut = mut->next()) {
+        DeltaKey undo_key(nrows + dst_row.row_index(), mut->timestamp());
+        RETURN_NOT_OK(new_undo_delta_writer_->AppendDelta<UNDO>(undo_key, mut->changelist()));
+        undo_stats.UpdateStats(mut->timestamp(), base_schema_, mut->changelist());
+        undo_delta_mutations_written_++;
+      }
     }
 
-    // 3) Write the new base data.
+    // 4) Write the new base data.
     RETURN_NOT_OK(base_data_writer_->AppendBlock(block));
 
-    // 4) Remove the columns that we're compacting from the delta flush.
+    // 5) Remove the columns that we're compacting from the delta flush, but keep all the
+    //    delete mutations.
     arena.Reset();
     vector<DeltaKeyAndUpdate> out;
-    RETURN_NOT_OK(delta_iter_->FilterColumnsAndAppend(column_indexes_, &out, &arena));
+    vector<size_t> col_ids;
+    BOOST_FOREACH(size_t idx, column_indexes_) {
+      col_ids.push_back(base_schema_.column_id(idx));
+    }
+    RETURN_NOT_OK(delta_iter_->FilterColumnsAndAppend(col_ids, &out, &arena));
 
-    // We only create a new delta file if we need to.
-    if (!out.empty() && !new_delta_writer_) {
-      RETURN_NOT_OK(OpenDeltaFileWriter());
+    // We only create a new redo delta file if we need to.
+    if (!out.empty() && !new_redo_delta_writer_) {
+      RETURN_NOT_OK(OpenRedoDeltaFileWriter());
     }
 
-    // 5) Write the deltas we're not compacting back into a delta file.
+    // 6) Write the deltas we're not compacting back into a delta file.
     BOOST_FOREACH(const DeltaKeyAndUpdate& key_and_update, out) {
       RowChangeList update(key_and_update.cell);
-      RETURN_NOT_OK_PREPEND(new_delta_writer_->AppendDelta<REDO>(key_and_update.key, update),
+      RETURN_NOT_OK_PREPEND(new_redo_delta_writer_->AppendDelta<REDO>(key_and_update.key, update),
                             "Failed to append a delta");
-      WARN_NOT_OK(stats.UpdateStats(key_and_update.key.timestamp(), base_schema_, update),
+      WARN_NOT_OK(redo_stats.UpdateStats(key_and_update.key.timestamp(), base_schema_, update),
                   "Failed to update stats");
     }
-    deltas_written_ += out.size();
-    RETURN_NOT_OK(old_base_data_iter->FinishBatch());
+    redo_delta_mutations_written_ += out.size();
+    nrows += n;
   }
 
   RETURN_NOT_OK(base_data_writer_->Finish());
-  if (deltas_written_ > 0) {
-    RETURN_NOT_OK(new_delta_writer_->WriteDeltaStats(stats));
-    RETURN_NOT_OK(new_delta_writer_->Finish());
+
+  if (redo_delta_mutations_written_ > 0) {
+    RETURN_NOT_OK(new_redo_delta_writer_->WriteDeltaStats(redo_stats));
+    RETURN_NOT_OK(new_redo_delta_writer_->Finish());
+  }
+
+  if (undo_delta_mutations_written_ > 0) {
+    RETURN_NOT_OK(new_undo_delta_writer_->WriteDeltaStats(undo_stats));
+    RETURN_NOT_OK(new_undo_delta_writer_->Finish());
   }
 
   DVLOG(1) << "Applied all outstanding deltas for columns "
            << partial_schema_.ToString()
            << ", and flushed the resulting rowsets and a total of "
-           << deltas_written_
-           << " deltas to disk.";
+           << redo_delta_mutations_written_
+           << " REDO delta mutations and "
+           << undo_delta_mutations_written_
+           << " UNDO delta mutations to disk.";
 
   state_ = kFinished;
   return Status::OK();
@@ -156,13 +215,22 @@ Status MajorDeltaCompaction::OpenBaseDataWriter() {
   return Status::OK();
 }
 
-Status MajorDeltaCompaction::OpenDeltaFileWriter() {
+Status MajorDeltaCompaction::OpenRedoDeltaFileWriter() {
   gscoped_ptr<WritableBlock> block;
   RETURN_NOT_OK_PREPEND(fs_manager_->CreateNewBlock(&block),
-                        "Unable to create delta output block");
-  new_delta_block_ = block->id();
-  new_delta_writer_.reset(new DeltaFileWriter(base_schema_, block.Pass()));
-  return new_delta_writer_->Start();
+                        "Unable to create REDO delta output block");
+  new_redo_delta_block_ = block->id();
+  new_redo_delta_writer_.reset(new DeltaFileWriter(base_schema_, block.Pass()));
+  return new_redo_delta_writer_->Start();
+}
+
+Status MajorDeltaCompaction::OpenUndoDeltaFileWriter() {
+  gscoped_ptr<WritableBlock> block;
+  RETURN_NOT_OK_PREPEND(fs_manager_->CreateNewBlock(&block),
+                        "Unable to create UNDO delta output block");
+  new_undo_delta_block_ = block->id();
+  new_undo_delta_writer_.reset(new DeltaFileWriter(base_schema_, block.Pass()));
+  return new_undo_delta_writer_->Start();
 }
 
 Status MajorDeltaCompaction::Compact() {
@@ -192,12 +260,16 @@ Status MajorDeltaCompaction::CreateMetadataUpdate(
   }
 
   vector<BlockId> new_delta_blocks;
-  if (deltas_written_ > 0) {
-    new_delta_blocks.push_back(new_delta_block_);
+  if (redo_delta_mutations_written_ > 0) {
+    new_delta_blocks.push_back(new_redo_delta_block_);
   }
 
   update->ReplaceRedoDeltaBlocks(compacted_delta_blocks,
                                  new_delta_blocks);
+
+  if (undo_delta_mutations_written_ > 0) {
+    update->SetNewUndoBlock(new_undo_delta_block_);
+  }
 
   // Replace old column blocks with new ones
   vector<BlockId> new_column_blocks = base_data_writer_->FlushedBlocks();
@@ -210,17 +282,32 @@ Status MajorDeltaCompaction::CreateMetadataUpdate(
   return Status::OK();
 }
 
+// We're called under diskrowset's component_lock_ and delta_tracker's compact_flush_lock_
+// so both AtomicUpdateStores calls can be done separately and still be seen as one atomic
+// operation.
 Status MajorDeltaCompaction::UpdateDeltaTracker(DeltaTracker* tracker) {
   CHECK_EQ(state_, kFinished);
   vector<BlockId> new_delta_blocks;
   // We created a new delta block only if we had deltas to write back. We still need to update
   // the tracker so that it removes the included_stores_.
-  if (deltas_written_ > 0) {
-    new_delta_blocks.push_back(new_delta_block_);
+  if (redo_delta_mutations_written_ > 0) {
+    new_delta_blocks.push_back(new_redo_delta_block_);
   }
-  return tracker->AtomicUpdateStores(included_stores_,
-                                     new_delta_blocks,
-                                     REDO);
+  RETURN_NOT_OK(tracker->AtomicUpdateStores(included_stores_,
+                                            new_delta_blocks,
+                                            REDO));
+
+  // We only call AtomicUpdateStores() if we wrote UNDOs, we're not removing stores so we don't
+  // need to call it otherwise.
+  if (undo_delta_mutations_written_ > 0) {
+    vector<BlockId> new_undo_blocks;
+    new_undo_blocks.push_back(new_undo_delta_block_);
+    return tracker->AtomicUpdateStores(SharedDeltaStoreVector(),
+                                       new_undo_blocks,
+                                       UNDO);
+  } else {
+    return Status::OK();
+  }
 }
 
 } // namespace tablet

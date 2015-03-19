@@ -182,6 +182,11 @@ Status RowSetMetadata::CommitUpdate(const RowSetMetadataUpdate& update) {
       redo_delta_blocks_.push_back(b);
     }
 
+    if (!update.new_undo_block_.IsNull()) {
+      // Front-loading to keep the UNDO files in their natural order.
+      undo_delta_blocks_.insert(undo_delta_blocks_.begin(), update.new_undo_block_);
+    }
+
     typedef std::pair<int, BlockId> IntBlockPair;
     BOOST_FOREACH(const IntBlockPair& e, update.cols_to_replace_) {
       CHECK_LT(e.first, column_blocks_.size());
@@ -232,6 +237,11 @@ RowSetMetadataUpdate& RowSetMetadataUpdate::ReplaceRedoDeltaBlocks(
 
   ReplaceDeltaBlocks rdb = { to_remove, to_add };
   replace_redo_blocks_.push_back(rdb);
+  return *this;
+}
+
+RowSetMetadataUpdate& RowSetMetadataUpdate::SetNewUndoBlock(const BlockId& undo_block) {
+  new_undo_block_ = undo_block;
   return *this;
 }
 

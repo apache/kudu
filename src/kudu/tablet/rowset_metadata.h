@@ -204,6 +204,10 @@ class RowSetMetadataUpdate {
 
   RowSetMetadataUpdate& ReplaceColumnBlock(int col_idx, const BlockId& block_id);
 
+  // Add a new UNDO delta block to the list of UNDO files.
+  // We'll need to replace them instead when we start GCing.
+  RowSetMetadataUpdate& SetNewUndoBlock(const BlockId& undo_block);
+
  private:
   friend class RowSetMetadata;
   std::tr1::unordered_map<int, BlockId> cols_to_replace_;
@@ -214,6 +218,7 @@ class RowSetMetadataUpdate {
     std::vector<BlockId> to_add;
   };
   std::vector<ReplaceDeltaBlocks> replace_redo_blocks_;
+  BlockId new_undo_block_;
 
   DISALLOW_COPY_AND_ASSIGN(RowSetMetadataUpdate);
 };

@@ -130,7 +130,7 @@ Status DeltaFileWriter::AppendDelta<REDO>(
   // Sanity check insertion order in debug mode.
   if (has_appended_) {
     DCHECK(last_key_.CompareTo<REDO>(key) < 0)
-      << "must insert deltas in sorted order: "
+      << "must insert redo deltas in sorted order (ascending key, then ascending ts): "
       << "got key " << key.ToString() << " after "
       << last_key_.ToString();
   }
@@ -149,7 +149,7 @@ Status DeltaFileWriter::AppendDelta<UNDO>(
   // Sanity check insertion order in debug mode.
   if (has_appended_) {
     DCHECK(last_key_.CompareTo<UNDO>(key) < 0)
-      << "must insert deltas in sorted order: "
+      << "must insert undo deltas in sorted order (ascending key, then descending ts): "
       << "got key " << key.ToString() << " after "
       << last_key_.ToString();
   }
@@ -770,7 +770,7 @@ struct FilterAndAppendVisitor {
     RowChangeListEncoder enc(&dfi->dfr_->schema(), &buf);
     RETURN_NOT_OK(
         RowChangeListDecoder::RemoveColumnsFromChangeList(RowChangeList(deltas),
-                                                          column_indexes,
+                                                          col_ids,
                                                           dfi->dfr_->schema(),
                                                           &enc));
     if (enc.is_initialized()) {
@@ -786,7 +786,7 @@ struct FilterAndAppendVisitor {
   }
 
   const DeltaFileIterator* dfi;
-  const ColumnIndexes& column_indexes;
+  const ColumnIndexes& col_ids;
   vector<DeltaKeyAndUpdate>* out;
   Arena* arena;
 };

@@ -164,9 +164,11 @@ Status RowChangeListDecoder::ProjectUpdate(const DeltaProjector& projector,
   return Status::OK();
 }
 
-Status RowChangeListDecoder::ApplyRowUpdate(RowBlockRow *dst_row, Arena *arena,
-                                            RowChangeListEncoder* undo_encoder) {
-  DCHECK(schema_->Equals(*dst_row->schema()));
+Status RowChangeListDecoder::ApplyRowUpdate(bool ignore_col_not_found, RowBlockRow *dst_row,
+                                            Arena *arena, RowChangeListEncoder* undo_encoder) {
+  if (!ignore_col_not_found) {
+    DCHECK(schema_->Equals(*dst_row->schema()));
+  }
 
   while (HasNext()) {
     size_t updated_col_id = 0xdeadbeef; // avoid un-initialized usage warning
@@ -174,9 +176,16 @@ Status RowChangeListDecoder::ApplyRowUpdate(RowBlockRow *dst_row, Arena *arena,
     RETURN_NOT_OK(DecodeNext(&updated_col_id, &new_val));
 
     int dst_idx = dst_row->schema()->find_column_by_id(updated_col_id);
-    // TODO: I think this assertion may be invalid in some alter-table scenarios.
+    // TODO: This check may be invalid in some alter-table scenarios.
     // As we expand test coverage for alter-table, it might fail and need some fixing.
-    CHECK_NE(dst_idx, static_cast<int>(Schema::kColumnNotFound));
+    if (dst_idx == Schema::kColumnNotFound) {
+      if (ignore_col_not_found) {
+        continue;
+      } else {
+        LOG(FATAL) << "Cannot apply update for column " << updated_col_id
+                   << ", verify the row's schema: " << dst_row->schema()->ToString();
+      }
+    }
 
     SimpleConstCell src(&schema_->column_by_id(updated_col_id), new_val);
 
@@ -217,7 +226,7 @@ Status RowChangeListDecoder::ApplyToOneColumn(size_t row_idx, ColumnBlock* dst_c
 }
 
 Status RowChangeListDecoder::RemoveColumnsFromChangeList(const RowChangeList& src,
-                                                         const std::vector<size_t>& column_indexes,
+                                                         const std::vector<size_t>& col_ids,
                                                          const Schema &schema,
                                                          RowChangeListEncoder* out) {
   RowChangeListDecoder decoder(&schema, src);
@@ -231,7 +240,7 @@ Status RowChangeListDecoder::RemoveColumnsFromChangeList(const RowChangeList& sr
       size_t col_id = 0xdeadbeef;
       const void *col_val = NULL;
       RETURN_NOT_OK(decoder.DecodeNext(&col_id, &col_val));
-      if (!std::binary_search(column_indexes.begin(), column_indexes.end(), col_id)) {
+      if (!std::binary_search(col_ids.begin(), col_ids.end(), col_id)) {
         out->AddColumnUpdate(col_id, col_val);
       }
     }

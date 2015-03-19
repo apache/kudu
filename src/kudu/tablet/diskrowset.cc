@@ -477,7 +477,7 @@ Status DiskRowSet::MajorCompactDeltaStores(const ColumnIndexes& col_indexes) {
   RETURN_NOT_OK(new_base->Open());
   {
     boost::lock_guard<percpu_rwlock> lock(component_lock_);
-    compaction->UpdateDeltaTracker(delta_tracker_.get());
+    RETURN_NOT_OK(compaction->UpdateDeltaTracker(delta_tracker_.get()));
     base_data_.reset(new_base.release());
   }
 

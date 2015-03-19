@@ -145,27 +145,31 @@ Status DeltaTracker::AtomicUpdateStores(const SharedDeltaStoreVector& to_remove,
                         "Unable to open delta blocks");
 
   boost::lock_guard<boost::shared_mutex> lock(component_lock_);
-  CHECK(!to_remove.empty());
-
   SharedDeltaStoreVector* stores_to_update =
-    type == REDO ? &redo_delta_stores_ : &undo_delta_stores_;
+      type == REDO ? &redo_delta_stores_ : &undo_delta_stores_;
+  SharedDeltaStoreVector::iterator start_it;
+  // TODO this is hacky, we do this because UNDOs don't currently get replaced and we need to
+  // front-load them. When we start GCing UNDO files (KUDU-236) we'll need to be able to atomically
+  // replace them too, and in their right order.
+  if (!to_remove.empty()) {
+    start_it =
+        std::find(stores_to_update->begin(), stores_to_update->end(), to_remove[0]);
 
-  SharedDeltaStoreVector::iterator start_it =
-    std::find(stores_to_update->begin(), stores_to_update->end(), to_remove[0]);
-
-  SharedDeltaStoreVector::iterator end_it = start_it;
-  BOOST_FOREACH(const shared_ptr<DeltaStore>& ds, to_remove) {
-    if (end_it == stores_to_update->end() || *end_it != ds) {
-      return Status::InvalidArgument(
-        strings::Substitute("Cannot find deltastore sequence <$0> in <$1>",
-                            JoinDeltaStoreStrings(to_remove),
-                            JoinDeltaStoreStrings(*stores_to_update)));
+    SharedDeltaStoreVector::iterator end_it = start_it;
+    BOOST_FOREACH(const shared_ptr<DeltaStore>& ds, to_remove) {
+      if (end_it == stores_to_update->end() || *end_it != ds) {
+        return Status::InvalidArgument(
+            strings::Substitute("Cannot find deltastore sequence <$0> in <$1>",
+                                JoinDeltaStoreStrings(to_remove),
+                                JoinDeltaStoreStrings(*stores_to_update)));
+      }
+      ++end_it;
     }
-    ++end_it;
+    // Remove the old stores
+    stores_to_update->erase(start_it, end_it);
+  } else {
+    start_it = stores_to_update->begin();
   }
-
-  // Remove the old stores
-  stores_to_update->erase(start_it, end_it);
 
   // Insert the new store
   stores_to_update->insert(start_it, new_stores.begin(), new_stores.end());

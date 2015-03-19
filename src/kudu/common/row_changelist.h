@@ -124,6 +124,10 @@ class RowChangeListEncoder {
     return type_ != RowChangeList::kUninitialized;
   }
 
+  bool is_empty() {
+    return dst_->size() == 0;
+  }
+
  private:
   void SetType(RowChangeList::ChangeType type) {
     DCHECK_EQ(type_, RowChangeList::kUninitialized);
@@ -200,9 +204,14 @@ class RowChangeListDecoder {
     return Status::OK();
   }
 
-  // Applies this changes in this decoder to the specified row and saves the old
+  // Applies changes in this decoder to the specified row and saves the old
   // state of the row into the undo_encoder.
-  Status ApplyRowUpdate(RowBlockRow *dst_row, Arena *arena, RowChangeListEncoder* undo_encoder);
+  //
+  // Setting 'ignore_col_not_found' true means that updates belonging to columns that don't
+  // exist in 'dst_row' will be ignored. Useful when reading delta stores in conjunction with
+  // only a subset of the base data columns, since deltas are stored rowwise.
+  Status ApplyRowUpdate(bool ignore_col_not_found, RowBlockRow *dst_row,
+                        Arena *arena, RowChangeListEncoder* undo_encoder);
 
   // This method is used by MemRowSet, DeltaMemStore and DeltaFile.
   Status ApplyToOneColumn(size_t row_idx, ColumnBlock* dst_col, size_t col_idx, Arena *arena);

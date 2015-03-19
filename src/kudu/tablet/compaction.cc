@@ -1,6 +1,8 @@
 // Copyright (c) 2013, Cloudera, inc.
 // Confidential Cloudera Information: Covered by NDA.
 
+#include "kudu/tablet/compaction.h"
+
 #include <glog/logging.h>
 #include <deque>
 #include <string>
@@ -13,7 +15,6 @@
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/tablet/cfile_set.h"
-#include "kudu/tablet/compaction.h"
 #include "kudu/tablet/delta_store.h"
 #include "kudu/tablet/delta_tracker.h"
 #include "kudu/tablet/diskrowset.h"
@@ -563,29 +564,41 @@ void RowSetsInCompaction::DumpToLog() const {
   }
 }
 
-static Status ApplyMutationsAndGenerateUndos(const MvccSnapshot& snap,
-                                             const CompactionInputRow& src_row,
-                                             Mutation** new_undo_head,
-                                             Mutation** new_redo_head,
-                                             Arena* arena,
-                                             RowBlockRow* dst_row,
-                                             bool* is_garbage_collected,
-                                             uint64_t* num_rows_history_truncated) {
 
-  // TODO actually perform garbage collection
+Status ApplyMutationsAndGenerateUndos(const MvccSnapshot& snap,
+                                      const CompactionInputRow& src_row,
+                                      const Schema* base_schema,
+                                      Mutation** new_undo_head,
+                                      Mutation** new_redo_head,
+                                      Arena* arena,
+                                      RowBlockRow* dst_row,
+                                      bool* is_garbage_collected,
+                                      uint64_t* num_rows_history_truncated) {
+
+  bool ignore_some_columns = false;
+  const Schema* dst_schema = NULL;
+  if (base_schema->Equals(*dst_row->schema())) {
+    dst_schema = base_schema;
+  } else {
+    DVLOG(2) << "Detecting that we're major compacting row id: " << src_row.row.row_index();
+    ignore_some_columns = true;
+    dst_schema = dst_row->schema();
+  }
+
+  // TODO actually perform garbage collection (KUDU-236).
   // Right now we persist all mutations.
   *is_garbage_collected = false;
 
-  const Schema* schema = dst_row->schema();
+
   bool is_deleted = false;
 
   #define ERROR_LOG_CONTEXT \
-    "Row: " << schema->DebugRow(*dst_row) << \
-    " Redo Mutations: " << Mutation::StringifyMutationList(*schema, src_row.redo_head) << \
-    " Undo Mutations: " << Mutation::StringifyMutationList(*schema, src_row.undo_head)
+    "Row: " << dst_schema->DebugRow(*dst_row) << \
+    " Redo Mutations: " << Mutation::StringifyMutationList(*dst_schema, src_row.redo_head) << \
+    " Undo Mutations: " << Mutation::StringifyMutationList(*dst_schema, src_row.undo_head)
 
   faststring dst;
-  RowChangeListEncoder undo_encoder(schema, &dst);
+  RowChangeListEncoder undo_encoder(dst_schema, &dst);
 
   // Const cast this away here since we're ever only going to point to it
   // which doesn't actually mutate it and having Mutation::set_next()
@@ -605,9 +618,10 @@ static Status ApplyMutationsAndGenerateUndos(const MvccSnapshot& snap,
     undo_encoder.Reset();
 
     Mutation* current_undo;
-    DVLOG(3) << "  @" << redo_mut->timestamp() << ": " << redo_mut->changelist().ToString(*schema);
+    DVLOG(3) << "  @" << redo_mut->timestamp() << ": "
+             << redo_mut->changelist().ToString(*base_schema);
 
-    RowChangeListDecoder redo_decoder(schema, redo_mut->changelist());
+    RowChangeListDecoder redo_decoder(base_schema, redo_mut->changelist());
     Status s = redo_decoder.Init();
     if (PREDICT_FALSE(!s.ok())) {
       LOG(ERROR) << "Unable to decode changelist. " << ERROR_LOG_CONTEXT;
@@ -617,10 +631,19 @@ static Status ApplyMutationsAndGenerateUndos(const MvccSnapshot& snap,
     if (redo_decoder.is_update()) {
       DCHECK(!is_deleted) << "Got UPDATE for deleted row. " << ERROR_LOG_CONTEXT;
 
-      s = redo_decoder.ApplyRowUpdate(dst_row, reinterpret_cast<Arena *>(NULL), &undo_encoder);
+      s = redo_decoder.ApplyRowUpdate(ignore_some_columns, dst_row,
+                                      reinterpret_cast<Arena *>(NULL), &undo_encoder);
       if (PREDICT_FALSE(!s.ok())) {
         LOG(ERROR) << "Unable to apply update/create undo. " << ERROR_LOG_CONTEXT;
         return s;
+      }
+
+      // We're not outputting UNDOs when all the changes were meant for columns that we're not
+      // major compacting. We'll write them back into a REDO file.
+      if (undo_encoder.is_empty()) {
+        DCHECK(ignore_some_columns) << "We're not ignoring columns but the undo_encoder "
+                                    << "came back empty. " << ERROR_LOG_CONTEXT;
+        continue;
       }
 
       // create the UNDO mutation in the provided arena.
@@ -645,7 +668,7 @@ static Status ApplyMutationsAndGenerateUndos(const MvccSnapshot& snap,
         // clears the whole row history before it.
 
         // Copy the reinserted row over.
-        ConstContiguousRow reinserted(schema, redo_decoder.reinserted_row_slice().data());
+        ConstContiguousRow reinserted(dst_schema, redo_decoder.reinserted_row_slice().data());
         // No need to copy into an arena -- can refer to the mutation's arena.
         Arena* null_arena = NULL;
         RETURN_NOT_OK(CopyRow(reinserted, dst_row, null_arena));
@@ -730,6 +753,7 @@ Status FlushCompactionInput(CompactionInput* input,
       bool is_garbage_collected;
       RETURN_NOT_OK(ApplyMutationsAndGenerateUndos(snap,
                                                    input_row,
+                                                   schema,
                                                    &new_undos_head,
                                                    &new_redos_head,
                                                    input->PreparedBlockArena(),
