@@ -160,10 +160,6 @@ class TabletServerTestBase : public KuduTest {
     return Status::OK();
   }
 
- protected:
-  static const char* kTableId;
-  static const char* kTabletId;
-
   // Inserts 'num_rows' test rows directly into the tablet (i.e not via RPC)
   void InsertTestRowsDirect(uint64_t start_row, uint64_t num_rows) {
     tablet::LocalTabletWriter writer(tablet_peer_->tablet(), &schema_);
@@ -433,6 +429,9 @@ class TabletServerTestBase : public KuduTest {
     }
   }
 
+ protected:
+  static const char* kTableId;
+  static const char* kTabletId;
 
   const Schema schema_;
   Schema key_schema_;
