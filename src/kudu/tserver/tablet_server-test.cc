@@ -1792,5 +1792,106 @@ TEST_F(TabletServerTest, TestChecksumScan) {
   ASSERT_FALSE(resp.has_more_results());
 }
 
+class DelayFsyncLogHook : public log::Log::LogFaultHooks {
+ public:
+  DelayFsyncLogHook() : log_latch1_(1), test_latch1_(1) {}
+
+  virtual Status PostAppend() {
+    test_latch1_.CountDown();
+    log_latch1_.Wait();
+    log_latch1_.Reset(1);
+    return Status::OK();
+  }
+
+  void Continue() {
+    test_latch1_.Wait();
+    log_latch1_.CountDown();
+  }
+
+ private:
+  CountDownLatch log_latch1_;
+  CountDownLatch test_latch1_;
+};
+
+namespace {
+
+void DeleteOneRowAsync(TabletServerTest* test) {
+  test->DeleteTestRowsRemote(10, 1);
+}
+
+void CompactAsync(Tablet* tablet, CountDownLatch* flush_done_latch) {
+  CHECK_OK(tablet->Compact(Tablet::FORCE_COMPACT_ALL));
+  flush_done_latch->CountDown();
+}
+
+} // namespace
+
+// Tests that in flight transactions are committed and that commit messages
+// are durable before a compaction is allowed to flush the tablet metadata.
+//
+// This test is in preparation for KUDU-120 and should pass before and after
+// it, but was also confirmed to fail if the pre-conditions it tests for
+// fail. That is if KUDU-120 is implemented without these pre-requisites
+// this test is confirmed to fail.
+TEST_F(TabletServerTest, TestKudu120PreRequisites) {
+
+  // Insert a few rows...
+  InsertTestRowsRemote(0, 0, 10);
+  // ... now flush ...
+  ASSERT_OK(tablet_peer_->tablet()->Flush());
+  // ... insert a few rows...
+  InsertTestRowsRemote(0, 10, 10);
+  // ... and flush again so that we have two disk row sets.
+  ASSERT_OK(tablet_peer_->tablet()->Flush());
+
+  // Add a hook so that we can make the log wait right after an append
+  // (before the callback is triggered).
+  log::Log* log = tablet_peer_->log();
+  shared_ptr<DelayFsyncLogHook> log_hook(new DelayFsyncLogHook);
+  log->SetLogFaultHooksForTests(log_hook);
+
+  // Now start a transaction (delete) and stop just before commit.
+  scoped_refptr<kudu::Thread> thread1;
+  CHECK_OK(kudu::Thread::Create("DeleteThread", "DeleteThread",
+                                DeleteOneRowAsync, this, &thread1));
+
+  // Wait for the replicate message to arrive and continue.
+  log_hook->Continue();
+  // Wait a few msecs to make sure that the transaction is
+  // trying to commit.
+  usleep(100* 1000); // 100 msecs
+
+  // Now start a compaction before letting the commit message go through.
+  scoped_refptr<kudu::Thread> flush_thread;
+  CountDownLatch flush_done_latch(1);
+  CHECK_OK(kudu::Thread::Create("CompactThread", "CompactThread",
+                                CompactAsync,
+                                tablet_peer_->tablet(),
+                                &flush_done_latch,
+                                &flush_thread));
+
+  // At this point we have both a compaction and a transaction going on.
+  // If we allow the transaction to return before the commit message is
+  // durable (KUDU-120) that means that the mvcc transaction will no longer
+  // be in flight at this moment, nonetheless since we're blocking the WAL
+  // and not allowing the commit message to go through, the compaction should
+  // be forced to wait.
+  //
+  // We are thus testing two conditions:
+  // - That in-flight transactions are committed.
+  // - That commit messages for transactions that were in flight are durable.
+  //
+  // If these pre-conditions are not met, i.e. if the compaction is not forced
+  // to wait here for the conditions to be true, then the below assertion
+  // will fail, since the transaction's commit write callback will only
+  // return when we allow it (in log_hook->Continue());
+  CHECK(!flush_done_latch.WaitFor(MonoDelta::FromMilliseconds(300)));
+
+  // Now let the rest go through.
+  log_hook->Continue();
+  log_hook->Continue();
+  flush_done_latch.Wait();
+}
+
 } // namespace tserver
 } // namespace kudu
