@@ -176,27 +176,30 @@ else()
   add_definitions("-DKUDU_STATIC_DEFINE")
 endif()
 
-# Sanity check sanitizers; ASAN and TSAN imply static and dynamic linking
-# respectively, so we can't use both at once.
+# Clang does not support using ASAN and TSAN simultaneously.
 if ("${KUDU_USE_ASAN}" AND "${KUDU_USE_TSAN}")
   message(SEND_ERROR "Can only enable one of ASAN or TSAN at a time")
 endif()
 
 # Flag to enable clang address sanitizer
-# This will only build if clang is the chosen compiler
+# This will only build if clang or a recent enough gcc is the chosen compiler
 if (${KUDU_USE_ASAN})
   if(NOT (("${COMPILER_FAMILY}" STREQUAL "clang") OR
           ("${COMPILER_FAMILY}" STREQUAL "gcc" AND "${COMPILER_VERSION}" VERSION_GREATER "4.8")))
     message(SEND_ERROR "Cannot use ASAN without clang or gcc >= 4.8")
   endif()
 
-  # Ensure static linking is on -- otherwise can run into llvm bug #56393:
-  # http://www.mail-archive.com/gcc-bugs@gcc.gnu.org/msg386467.html
-  if("${KUDU_LINK}" STREQUAL "a")
-    message("Using static linking for ASAN")
-    set(KUDU_LINK "s")
-  elseif("${KUDU_LINK}" STREQUAL "d")
-    message(SEND_ERROR "Cannot use ASAN with dynamic linking")
+  # If UBSAN is also enabled, and we're on clang < 3.5, ensure static linking is
+  # enabled. Otherwise, we run into https://llvm.org/bugs/show_bug.cgi?id=18211
+  if("${KUDU_USE_UBSAN}" AND
+      "${COMPILER_FAMILY}" STREQUAL "clang" AND
+      "${COMPILER_VERSION}" VERSION_LESS "3.5")
+    if("${KUDU_LINK}" STREQUAL "a")
+      message("Using static linking for ASAN+UBSAN build")
+      set(KUDU_LINK "s")
+    elseif("${KUDU_LINK}" STREQUAL "d")
+      message(SEND_ERROR "Cannot use dynamic linking when ASAN and UBSAN are both enabled")
+    endif()
   endif()
   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsanitize=address -DADDRESS_SANITIZER")
 endif()
