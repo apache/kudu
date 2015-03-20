@@ -106,6 +106,7 @@ void Log::AppendThread::RunThread() {
 
     SCOPED_LATENCY_METRIC(log_->metrics_, group_commit_latency);
 
+    bool is_all_commits = true;
     BOOST_FOREACH(LogEntryBatch* entry_batch, entry_batches) {
       entry_batch->WaitForReady();
       Status s = log_->DoAppend(entry_batch);
@@ -121,9 +122,15 @@ void Log::AppendThread::RunThread() {
           entry_batch->callback().Run(s);
         }
       }
+      if (is_all_commits && entry_batch->type_ != COMMIT) {
+        is_all_commits = false;
+      }
     }
 
-    Status s = log_->Sync();
+    Status s;
+    if (!is_all_commits) {
+      s = log_->Sync();
+    }
     if (PREDICT_FALSE(!s.ok())) {
       LOG(ERROR) << "Error syncing log" << s.ToString();
       DLOG(FATAL) << "Aborting: " << s.ToString();
