@@ -499,5 +499,20 @@ void TabletPeer::UnregisterMaintenanceOps() {
   STLDeleteElements(&maintenance_ops_);
 }
 
+Status FlushInflightsToLogCallback::WaitForInflightsAndFlushLog() {
+  VLOG(1) << "T " << tablet_->metadata()->oid()
+      <<  ": Waiting for in-flight transactions to commit.";
+  LOG_SLOW_EXECUTION(WARNING, 200, "Committing in-flights took a long time.") {
+    tablet_->mvcc_manager()->WaitForAllInFlightToCommit();
+  }
+  VLOG(1) << "T " << tablet_->metadata()->oid()
+      << ": Waiting for the log queue to be flushed.";
+  LOG_SLOW_EXECUTION(WARNING, 200, "Flushing the Log queue took a long time.") {
+    RETURN_NOT_OK(log_->WaitUntilAllFlushed());
+  }
+  return Status::OK();
+}
+
+
 }  // namespace tablet
 }  // namespace kudu

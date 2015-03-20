@@ -32,6 +32,7 @@
 #include "kudu/tablet/lock_manager.h"
 #include "kudu/tablet/row_op.h"
 #include "kudu/tablet/tablet.h"
+#include "kudu/tablet/tablet_peer.h"
 #include "kudu/tablet/transactions/alter_schema_transaction.h"
 #include "kudu/tablet/transactions/change_config_transaction.h"
 #include "kudu/tablet/transactions/write_transaction.h"
@@ -427,7 +428,15 @@ Status TabletBootstrap::Bootstrap(shared_ptr<Tablet>* rebuilt_tablet,
 Status TabletBootstrap::FinishBootstrap(const std::string& message,
                                         scoped_refptr<log::Log>* rebuilt_log,
                                         shared_ptr<Tablet>* rebuilt_tablet) {
-  meta_->SetPreFlushCallback(Bind(&Log::WaitUntilAllFlushed, log_));
+  // Add a callback to TabletMetadata that makes sure that each time we flush the metadata
+  // we also wait for in-flights to finish and for their wal entry to be fsynced.
+  // This might be a bit conservative in some situations but it will prevent us from
+  // ever flushing the metadata referring to tablet data blocks containing data whose
+  // commit entries are not durable, a pre-requisite for recovery.
+  meta_->SetPreFlushCallback(
+      Bind(&FlushInflightsToLogCallback::WaitForInflightsAndFlushLog,
+           make_scoped_refptr(new FlushInflightsToLogCallback(tablet_.get(),
+                                                              log_))));
   RETURN_NOT_OK(tablet_->metadata()->UnPinFlush());
   listener_->StatusMessage(message);
   rebuilt_tablet->reset(tablet_.release());
