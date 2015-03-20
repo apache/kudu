@@ -1703,6 +1703,8 @@ TEST_F(TabletServerTest, TestInsertLatencyMicroBenchmark) {
   uint64_t max_rows = AllowSlowTests() ?
       FLAGS_single_threaded_insert_latency_bench_insert_rows : 100;
 
+  MonoTime start = MonoTime::Now(MonoTime::FINE);
+
   for (int i = warmup; i < warmup + max_rows; i++) {
     MonoTime before = MonoTime::Now(MonoTime::FINE);
     InsertTestRowsRemote(0, i, 1);
@@ -1711,11 +1713,15 @@ TEST_F(TabletServerTest, TestInsertLatencyMicroBenchmark) {
     histogram->Increment(delta.ToMicroseconds());
   }
 
+  MonoTime end = MonoTime::Now(MonoTime::FINE);
+  double throughput = ((max_rows - warmup) * 1.0) / end.GetDeltaSince(start).ToSeconds();
+
   // Generate the JSON.
   std::stringstream out;
   JsonWriter writer(&out);
   ASSERT_STATUS_OK(histogram->WriteAsJson("ts-insert-latency", &writer, NORMAL));
 
+  LOG(INFO) << "Throughput: " << throughput << " rows/sec.";
   LOG(INFO) << out.str();
 }
 
