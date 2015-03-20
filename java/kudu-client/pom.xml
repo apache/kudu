@@ -83,6 +83,9 @@
                         ${project.basedir}/../../thirdparty/installed/include
                       </additionalProtoPathElement>
                     </additionalProtoPathElements>
+                    <excludes>
+                      <exclude>**/*test*.proto</exclude>
+                    </excludes>
                 </configuration>
                 <executions>
                     <execution>
@@ -92,6 +95,34 @@
                         <phase>generate-sources</phase>
                     </execution>
                 </executions>
+            </plugin>
+            <plugin>
+              <groupId>org.apache.maven.plugins</groupId>
+              <artifactId>maven-clean-plugin</artifactId>
+              <version>2.5</version>
+              <executions>
+                <execution>
+                  <id>delete-test-protos</id>
+                  <!-- maven-protoc-plugin copies proto files as part of the
+                       default-resources execution in the process-resources
+                       phase. -->
+                  <phase>process-resources</phase>
+                  <goals>
+                    <goal>clean</goal>
+                  </goals>
+                  <configuration>
+                    <excludeDefaultDirectories>true</excludeDefaultDirectories>
+                    <filesets>
+                      <fileset>
+                        <directory>${project.build.directory}/classes</directory>
+                        <includes>
+                          <include>**/*test*.proto</include>
+                        </includes>
+                      </fileset>
+                    </filesets>
+                  </configuration>
+                </execution>
+              </executions>
             </plugin>
             <plugin>
               <groupId>org.apache.maven.plugins</groupId>
