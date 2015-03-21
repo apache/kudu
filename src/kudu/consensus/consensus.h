@@ -259,10 +259,6 @@ class ConsensusCommitContinuation {
   // the operation should be aborted.
   virtual void ReplicationFinished(const Status& status) = 0;
 
-  StatusCallback AsStatusCallback() {
-    return Bind(&ConsensusCommitContinuation::ReplicationFinished, Unretained(this));
-  }
-
   virtual ~ConsensusCommitContinuation() {}
 };
 
