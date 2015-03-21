@@ -55,9 +55,9 @@ target_link_libraries(tablet_proto
   metadata_proto
   kudu_common)
 
-set(TABLET_SRCS ${TABLET_SRCS} ${TABLET_PROTO_SRCS})
 add_library(tablet ${TABLET_SRCS})
 target_link_libraries(tablet
+  tablet_proto
   codegen
   kudu_common
   cfile

@@ -40,7 +40,7 @@ set(LOG_SRCS
   log_metrics.cc
 )
 
-add_library(log ${LOG_SRCS} ${LOG_PROTO_SRCS})
+add_library(log ${LOG_SRCS})
 target_link_libraries(log
   server_common
   gutil
