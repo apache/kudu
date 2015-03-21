@@ -11,12 +11,10 @@
 
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/util/locks.h"
+#include "kudu/util/metrics.h"
 #include "kudu/tablet/transactions/transaction.h"
 
 namespace kudu {
-
-class MetricContext;
-
 namespace tablet {
 class TransactionDriver;
 
@@ -82,6 +80,8 @@ class TransactionTracker {
                           ScopedRefPtrEqualToFunctor<TransactionDriver> > pending_txns_;
 
   TransactionsInFlight txns_in_flight_;
+
+  FunctionGaugeDetacher metric_detacher_;
 
   DISALLOW_COPY_AND_ASSIGN(TransactionTracker);
 };

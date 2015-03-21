@@ -7,6 +7,7 @@
 #include <string>
 
 #include "kudu/server/clock.h"
+#include "kudu/util/metrics.h"
 #include "kudu/util/status.h"
 
 namespace kudu {
@@ -61,6 +62,8 @@ class LogicalClock : public Clock {
   uint64_t NowForMetrics();
 
   base::subtle::Atomic64 now_;
+
+  FunctionGaugeDetacher metric_detacher_;
 };
 
 }  // namespace server

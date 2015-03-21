@@ -22,6 +22,7 @@
 #include "kudu/tablet/mvcc.h"
 #include "kudu/tablet/rowset.h"
 #include "kudu/util/locks.h"
+#include "kudu/util/metrics.h"
 #include "kudu/util/semaphore.h"
 #include "kudu/util/slice.h"
 #include "kudu/util/status.h"
@@ -482,6 +483,7 @@ class Tablet {
 
   gscoped_ptr<MetricContext> metric_context_;
   gscoped_ptr<TabletMetrics> metrics_;
+  FunctionGaugeDetacher metric_detacher_;
 
   int64_t next_mrs_id_;
 

@@ -167,9 +167,9 @@ Status ThreadMgr::StartInstrumentation(MetricRegistry* metric, WebCallbackRegist
   // TODO: These metrics should be expressed as counters but their lifecycles
   // are tough to define because ThreadMgr is a singleton.
   METRIC_total_threads.InstantiateFunctionGauge(ctx,
-      bind(&ThreadMgr::ReadNumTotalThreads, this));
+      Bind(&ThreadMgr::ReadNumTotalThreads, Unretained(this)));
   METRIC_current_num_threads.InstantiateFunctionGauge(ctx,
-      bind(&ThreadMgr::ReadNumCurrentThreads, this));
+      Bind(&ThreadMgr::ReadNumCurrentThreads, Unretained(this)));
 
   WebCallbackRegistry::PathHandlerCallback thread_callback =
       bind<void>(mem_fn(&ThreadMgr::ThreadPathHandler), this, _1, _2);

@@ -123,7 +123,8 @@ Tablet::Tablet(const scoped_refptr<TabletMetadata>& metadata,
                                             Substitute("tablet.tablet-$0", tablet_id())));
     metrics_.reset(new TabletMetrics(*metric_context_));
     METRIC_memrowset_size.InstantiateFunctionGauge(
-        *metric_context_, boost::bind(&Tablet::MemRowSetSize, this));
+      *metric_context_, Bind(&Tablet::MemRowSetSize, Unretained(this)))
+      ->AutoDetach(&metric_detacher_);
   }
 }
 

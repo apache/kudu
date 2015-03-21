@@ -141,13 +141,21 @@ void TransactionTracker::WaitForAllToFinish() {
 
 void TransactionTracker::StartInstrumentation(const MetricContext& metric_context) {
   METRIC_all_transactions_inflight.InstantiateFunctionGauge(
-      metric_context, bind(&TransactionTracker::NumAllTransactionsInFlight, this));
+    metric_context, Bind(&TransactionTracker::NumAllTransactionsInFlight,
+                         Unretained(this)))
+    ->AutoDetach(&metric_detacher_);
   METRIC_write_transactions_inflight.InstantiateFunctionGauge(
-      metric_context, bind(&TransactionTracker::NumWriteTransactionsInFlight, this));
+    metric_context, Bind(&TransactionTracker::NumWriteTransactionsInFlight,
+                         Unretained(this)))
+    ->AutoDetach(&metric_detacher_);
   METRIC_alter_schema_transactions_inflight.InstantiateFunctionGauge(
-      metric_context, bind(&TransactionTracker::NumAlterSchemaTransactionsInFlight, this));
+    metric_context, Bind(&TransactionTracker::NumAlterSchemaTransactionsInFlight,
+                         Unretained(this)))
+    ->AutoDetach(&metric_detacher_);
   METRIC_change_config_transactions_inflight.InstantiateFunctionGauge(
-      metric_context, bind(&TransactionTracker::NumChangeConfigTransactionsInFlight, this));
+    metric_context, Bind(&TransactionTracker::NumChangeConfigTransactionsInFlight,
+                         Unretained(this)))
+    ->AutoDetach(&metric_detacher_);
 }
 
 uint64_t TransactionTracker::NumAllTransactionsInFlight() const {

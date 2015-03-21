@@ -93,13 +93,14 @@
 /////////////////////////////////////////////////////
 
 #include <algorithm>
-#include <boost/function.hpp>
 #include <string>
 #include <tr1/unordered_map>
 #include <vector>
 
 #include <gtest/gtest_prod.h>
 
+#include "kudu/gutil/bind.h"
+#include "kudu/gutil/callback.h"
 #include "kudu/gutil/casts.h"
 #include "kudu/util/atomic.h"
 #include "kudu/util/jsonwriter.h"
@@ -156,6 +157,8 @@ namespace kudu {
 class Counter;
 class CounterPrototype;
 
+template<typename T>
+class FunctionGauge;
 class Gauge;
 template<typename T>
 class GaugePrototype;
@@ -255,9 +258,9 @@ class MetricRegistry {
                            const T& initial_value);
 
   template<typename T>
-  Gauge* FindOrCreateFunctionGauge(const std::string& name,
-                                   const GaugePrototype<T>& proto,
-                                   const boost::function<T()>& function);
+  FunctionGauge<T>* FindOrCreateFunctionGauge(const std::string& name,
+                                              const GaugePrototype<T>& proto,
+                                              const Callback<T()>& function);
 
   Histogram* FindOrCreateHistogram(const std::string& name,
                                    const HistogramPrototype& proto);
@@ -286,9 +289,9 @@ class MetricRegistry {
                      const T& initial_value);
 
   template<typename T>
-  Gauge* CreateFunctionGauge(const std::string& name,
-                             const GaugePrototype<T>& proto,
-                             const boost::function<T()>& function);
+  FunctionGauge<T>* CreateFunctionGauge(const std::string& name,
+                                        const GaugePrototype<T>& proto,
+                                        const Callback<T()>& function);
 
   UnorderedMetricMap metrics_;
   mutable simple_spinlock lock_;
@@ -343,8 +346,8 @@ class GaugePrototype {
   }
 
   // Instantiate a gauge that is backed by the given callback.
-  Gauge* InstantiateFunctionGauge(const MetricContext& context,
-                                  const boost::function<T()>& function) const {
+  FunctionGauge<T>* InstantiateFunctionGauge(const MetricContext& context,
+                                             const Callback<T()>& function) const {
     return context.metrics()->FindOrCreateFunctionGauge(
         context.prefix() + "." + name(), *this, function);
   }
@@ -501,23 +504,124 @@ class HighWaterMark : public AtomicGauge<T> {
   AtomicInt<int64_t> current_value_;
 };
 
+// Utility class to automatically detach FunctionGauges when a class destructs.
+//
+// Because FunctionGauges typically access class instance state, it's important to ensure
+// that they are detached before the class destructs. One approach is to make all
+// FunctionGauge instances be members of the class, and then call gauge_->Detach() in your
+// class's destructor. However, it's easy to forget to do this, which would lead to
+// heap-use-after-free bugs. This type of bug is easy to miss in unit tests because the
+// tests don't always poll metrics. Using a FunctionGaugeDetacher member instead makes
+// the detaching automatic and thus less error-prone.
+//
+// Example usage:
+//
+// METRIC_define_gauge_int64(my_metric, MetricUnit::kCount, "My metric docs");
+// class MyClassWithMetrics {
+//  public:
+//   MyClassWithMetrics(const MetricContext& ctx) {
+//     METRIC_my_metric.InstantiateFunctionGauge(ctx,
+//       Bind(&MyClassWithMetrics::ComputeMyMetric, Unretained(this)))
+//       ->AutoDetach(&metric_detacher_);
+//   }
+//   ~MyClassWithMetrics() {
+//   }
+//
+//   private:
+//    int64_t ComputeMyMetric() {
+//      // Compute some metric based on instance state.
+//    }
+//    FunctionGaugeDetacher metric_detacher_;
+// };
+class FunctionGaugeDetacher {
+ public:
+  FunctionGaugeDetacher();
+  ~FunctionGaugeDetacher();
+
+ private:
+  template<typename T>
+  friend class FunctionGauge;
+
+  void OnDestructor(const Closure& c) {
+    callbacks_.push_back(c);
+  }
+
+  std::vector<Closure> callbacks_;
+
+  DISALLOW_COPY_AND_ASSIGN(FunctionGaugeDetacher);
+};
+
+
 // A Gauge that calls back to a function to get its value.
+//
+// This metric type should be used in cases where it is difficult to keep a running
+// measure of a metric, but instead would like to compute the metric value whenever it is
+// requested by a user.
+//
+// The lifecycle should be carefully considered when using a FunctionGauge. In particular,
+// the bound function needs to always be safe to run -- so if it references a particular
+// non-singleton class instance, the instance must out-live the function. Typically,
+// the easiest way to ensure this is to use a FunctionGaugeDetacher (see above).
 template <typename T>
 class FunctionGauge : public Gauge {
  public:
   FunctionGauge(const GaugePrototype<T>& proto,
-                const boost::function<T()>& function)
+                const Callback<T()>& function)
     : Gauge(proto.unit(), proto.description()),
       function_(function) {
   }
   T value() const {
-    return function_();
+    lock_guard<simple_spinlock> l(&lock_);
+    return function_.Run();
   }
+
   virtual void WriteValue(JsonWriter* writer) const OVERRIDE {
     writer->Value(value());
   }
+
+  // Reset this FunctionGauge to return a specific value.
+  // This should be used during destruction. If you want a settable
+  // Gauge, use a normal Gauge instead of a FunctionGauge.
+  void DetachToConstant(T v) {
+    lock_guard<simple_spinlock> l(&lock_);
+    function_ = Bind(&FunctionGauge::Return, v);
+  }
+
+  // Get the current value of the gauge, and detach so that it continues to return this
+  // value in perpetuity.
+  void DetachToCurrentValue() {
+    T last_value = value();
+    DetachToConstant(last_value);
+  }
+
+  // Automatically detach this gauge when the given 'detacher' destructs.
+  // After detaching, the metric will return 'value' in perpetuity.
+  void AutoDetach(FunctionGaugeDetacher* detacher, T value = T()) {
+    detacher->OnDestructor(Bind(&FunctionGauge<T>::DetachToConstant,
+                                Unretained(this), value));
+  }
+
+  // Automatically detach this gauge when the given 'detacher' destructs.
+  // After detaching, the metric will return whatever its value was at the
+  // time of detaching.
+  //
+  // Note that, when using this method, you should be sure that the FunctionGaugeDetacher
+  // is destructed before any objects which are required by the gauge implementation.
+  // In typical usage (see the FunctionGaugeDetacher class documentation) this means you
+  // should declare the detacher member after all other class members that might be
+  // accessed by the gauge function implementation.
+  void AutoDetachToLastValue(FunctionGaugeDetacher* detacher) {
+    detacher->OnDestructor(Bind(&FunctionGauge<T>::DetachToCurrentValue,
+                                Unretained(this)));
+  }
+
  private:
-  boost::function<T()> function_;
+  static T Return(T v) {
+    return v;
+  }
+
+  mutable simple_spinlock lock_;
+  Callback<T()> function_;
   DISALLOW_COPY_AND_ASSIGN(FunctionGauge);
 };
 

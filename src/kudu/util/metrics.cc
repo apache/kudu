@@ -149,9 +149,9 @@ Gauge* MetricRegistry::CreateGauge(const std::string& name,
 }
 
 template<typename T>
-Gauge* MetricRegistry::CreateFunctionGauge(const std::string& name,
+FunctionGauge<T>* MetricRegistry::CreateFunctionGauge(const std::string& name,
                                            const GaugePrototype<T>& proto,
-                                           const boost::function<T()>& function) {
+                                           const Callback<T()>& function) {
   return new FunctionGauge<T>(proto, function);
 }
 
@@ -169,27 +169,24 @@ Gauge* MetricRegistry::FindOrCreateGauge(const std::string& name,
 }
 
 // Explicit instantiation.
-template Gauge* MetricRegistry::FindOrCreateGauge<bool>(
-    const std::string&, const GaugePrototype<bool>&, const bool&);
-template Gauge* MetricRegistry::FindOrCreateGauge<int32_t>(
-    const std::string&, const GaugePrototype<int32_t>&, const int32_t&);
-template Gauge* MetricRegistry::FindOrCreateGauge<uint32_t>(
-    const std::string&, const GaugePrototype<uint32_t>&, const uint32_t&);
-template Gauge* MetricRegistry::FindOrCreateGauge<int64_t>(
-    const std::string&, const GaugePrototype<int64_t>&, const int64_t&);
-template Gauge* MetricRegistry::FindOrCreateGauge<uint64_t>(
-    const std::string&, const GaugePrototype<uint64_t>&, const uint64_t&);
-template Gauge* MetricRegistry::FindOrCreateGauge<double>(
-    const std::string&, const GaugePrototype<double>&, const double&);
-template Gauge* MetricRegistry::FindOrCreateGauge<string>(
-    const std::string&, const GaugePrototype<string>&, const string&);
+#define INSTANTIATE(T)                                       \
+  template Gauge* MetricRegistry::FindOrCreateGauge<T>(      \
+    const std::string&, const GaugePrototype<T>&, const T&);
+INSTANTIATE(bool);
+INSTANTIATE(int32_t);
+INSTANTIATE(uint32_t);
+INSTANTIATE(int64_t);
+INSTANTIATE(uint64_t);
+INSTANTIATE(double);
+INSTANTIATE(string);
+#undef INSTANTIATE
 
 template<typename T>
-Gauge* MetricRegistry::FindOrCreateFunctionGauge(const std::string& name,
-                                                 const GaugePrototype<T>& proto,
-                                                 const boost::function<T()>& function) {
+FunctionGauge<T>* MetricRegistry::FindOrCreateFunctionGauge(const std::string& name,
+                                                            const GaugePrototype<T>& proto,
+                                                            const Callback<T()>& function) {
   lock_guard<simple_spinlock> l(&lock_);
-  Gauge* gauge = FindMetricUnlocked<Gauge>(name, MetricType::kGauge);
+  FunctionGauge<T>* gauge = FindMetricUnlocked<FunctionGauge<T> >(name, MetricType::kGauge);
   if (!gauge) {
     gauge = CreateFunctionGauge(name, proto, function);
     InsertOrDie(&metrics_, name, gauge);
@@ -198,20 +195,17 @@ Gauge* MetricRegistry::FindOrCreateFunctionGauge(const std::string& name,
 }
 
 // Explicit instantiation.
-template Gauge* MetricRegistry::FindOrCreateFunctionGauge<bool>(
-    const std::string&, const GaugePrototype<bool>&, const boost::function<bool()>&);
-template Gauge* MetricRegistry::FindOrCreateFunctionGauge<int32_t>(
-    const std::string&, const GaugePrototype<int32_t>&, const boost::function<int32_t()>&);
-template Gauge* MetricRegistry::FindOrCreateFunctionGauge<uint32_t>(
-    const std::string&, const GaugePrototype<uint32_t>&, const boost::function<uint32_t()>&);
-template Gauge* MetricRegistry::FindOrCreateFunctionGauge<int64_t>(
-    const std::string&, const GaugePrototype<int64_t>&, const boost::function<int64_t()>&);
-template Gauge* MetricRegistry::FindOrCreateFunctionGauge<uint64_t>(
-    const std::string&, const GaugePrototype<uint64_t>&, const boost::function<uint64_t()>&);
-template Gauge* MetricRegistry::FindOrCreateFunctionGauge<double>(
-    const std::string&, const GaugePrototype<double>&, const boost::function<double()>&);
-template Gauge* MetricRegistry::FindOrCreateFunctionGauge<string>(
-    const std::string&, const GaugePrototype<string>&, const boost::function<string()>&);
+#define INSTANTIATE(T)                                                        \
+  template FunctionGauge<T>* MetricRegistry::FindOrCreateFunctionGauge<T>(    \
+      const std::string&, const GaugePrototype<T>&, const Callback<T()>&);
+INSTANTIATE(bool);
+INSTANTIATE(int32_t);
+INSTANTIATE(uint32_t);
+INSTANTIATE(int64_t);
+INSTANTIATE(uint64_t);
+INSTANTIATE(double);
+INSTANTIATE(string);
+#undef INSTANTIATE
 
 Histogram* MetricRegistry::FindOrCreateHistogram(const std::string& name,
                                                  const HistogramPrototype& proto) {
@@ -222,6 +216,16 @@ Histogram* MetricRegistry::FindOrCreateHistogram(const std::string& name,
     InsertOrDie(&metrics_, name, histogram);
   }
   return histogram;
+}
+
+
+FunctionGaugeDetacher::FunctionGaugeDetacher() {
+}
+
+FunctionGaugeDetacher::~FunctionGaugeDetacher() {
+  BOOST_FOREACH(const Closure& c, callbacks_) {
+    c.Run();
+  }
 }
 
 namespace {

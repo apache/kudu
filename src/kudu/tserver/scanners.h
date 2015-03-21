@@ -17,6 +17,7 @@
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/util/auto_release_pool.h"
 #include "kudu/util/memory/arena.h"
+#include "kudu/util/metrics.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/oid_generator.h"
 
@@ -112,6 +113,8 @@ class ScannerManager {
 
   // Thread to remove expired scanners.
   scoped_refptr<kudu::Thread> removal_thread_;
+
+  FunctionGaugeDetacher metric_detacher_;
 
   DISALLOW_COPY_AND_ASSIGN(ScannerManager);
 };

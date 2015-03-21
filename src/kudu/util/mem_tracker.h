@@ -3,7 +3,7 @@
 #ifndef KUDU_UTIL_MEM_TRACKER_H
 #define KUDU_UTIL_MEM_TRACKER_H
 
-#include <boost/functional.hpp>
+#include <boost/function.hpp>
 #include <list>
 #include <stdint.h>
 #include <string>

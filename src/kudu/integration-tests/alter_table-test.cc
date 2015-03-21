@@ -94,6 +94,7 @@ class AlterTableTest : public KuduTest {
   }
 
   virtual void TearDown() OVERRIDE {
+    tablet_peer_.reset();
     cluster_->Shutdown();
   }
 
@@ -104,11 +105,19 @@ class AlterTableTest : public KuduTest {
     return peers[0];
   }
 
-  void RestartTabletServer() {
+  void ShutdownTS() {
+    // Drop the tablet_peer_ reference since the tablet peer becomes invalid once
+    // we shut down the server. Additionally, if we hold onto the reference,
+    // we'll end up calling the destructor from the test code instead of the
+    // normal location, which can cause crashes, etc.
+    tablet_peer_.reset();
     if (cluster_->mini_tablet_server(0)->server() != NULL) {
       cluster_->mini_tablet_server(0)->Shutdown();
     }
-    tablet_peer_.reset();
+  }
+
+  void RestartTabletServer() {
+    ShutdownTS();
 
     ASSERT_STATUS_OK(cluster_->mini_tablet_server(0)->Start());
     ASSERT_STATUS_OK(cluster_->mini_tablet_server(0)->WaitStarted());
@@ -254,8 +263,7 @@ TEST_F(AlterTableTest, TestAddNotNullableColumnWithoutDefaults) {
 TEST_F(AlterTableTest, TestAlterOnTSRestart) {
   ASSERT_EQ(0, tablet_peer_->tablet()->metadata()->schema_version());
 
-  // Shutdown the TS
-  cluster_->mini_tablet_server(0)->Shutdown();
+  ShutdownTS();
 
   // Send the Alter request
   {
@@ -282,8 +290,7 @@ TEST_F(AlterTableTest, TestAlterOnTSRestart) {
 TEST_F(AlterTableTest, TestShutdownWithPendingTasks) {
   ASSERT_EQ(0, tablet_peer_->tablet()->metadata()->schema_version());
 
-  // Shutdown the TS
-  cluster_->mini_tablet_server(0)->Shutdown();
+  ShutdownTS();
 
   // Send the Alter request
   {

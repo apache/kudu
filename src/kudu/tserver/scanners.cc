@@ -37,7 +37,9 @@ ScannerManager::ScannerManager(MetricContext* parent_metric_context)
                                             "tserver.scanners"));
     metrics_.reset(new ScannerMetrics(*metric_context_));
     METRIC_active_scanners.InstantiateFunctionGauge(
-        *metric_context_, boost::bind(&ScannerManager::CountActiveScanners, this));
+        *metric_context_, Bind(&ScannerManager::CountActiveScanners,
+                               Unretained(this)))
+      ->AutoDetach(&metric_detacher_);
   }
 }
 

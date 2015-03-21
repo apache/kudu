@@ -2,13 +2,13 @@
 // Confidential Cloudera Information: Covered by NDA.
 
 #include <algorithm>
-#include <boost/bind.hpp>
 #include <boost/thread/locks.hpp>
 #include <glog/logging.h>
 #include <sys/timex.h>
 
 #include "kudu/server/hybrid_clock.h"
 
+#include "kudu/gutil/bind.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/errno.h"
 #include "kudu/util/metrics.h"
@@ -336,10 +336,12 @@ void HybridClock::RegisterMetrics(MetricRegistry* registry) {
   MetricContext ctx(registry, "clock");
   METRIC_clock_timestamp.InstantiateFunctionGauge(
       ctx,
-      boost::bind(&HybridClock::NowForMetrics, this));
+      Bind(&HybridClock::NowForMetrics, Unretained(this)))
+    ->AutoDetachToLastValue(&metric_detacher_);
   METRIC_clock_error.InstantiateFunctionGauge(
       ctx,
-      boost::bind(&HybridClock::ErrorForMetrics, this));
+      Bind(&HybridClock::ErrorForMetrics, Unretained(this)))
+    ->AutoDetachToLastValue(&metric_detacher_);
 }
 
 string HybridClock::Stringify(Timestamp timestamp) {

@@ -1525,6 +1525,18 @@ TEST_F(TabletServerTest, TestDeleteTablet) {
   // Verify that the tablet exists
   ASSERT_TRUE(mini_server_->server()->tablet_manager()->LookupTablet(kTabletId, &tablet));
 
+  // Put some data in the tablet. We flush and insert more rows to ensure that
+  // there is data both in the MRS and on disk.
+  ASSERT_NO_FATAL_FAILURE(InsertTestRowsRemote(0, 1, 1));
+  ASSERT_STATUS_OK(tablet_peer_->tablet()->Flush());
+  ASSERT_NO_FATAL_FAILURE(InsertTestRowsRemote(0, 2, 1));
+
+  // Drop any local references to the tablet from within this test,
+  // so that when we delete it on the server, it's not held alive
+  // by the test code.
+  tablet_peer_.reset();
+  tablet.reset();
+
   DeleteTabletRequestPB req;
   DeleteTabletResponsePB resp;
   RpcController rpc;
@@ -1541,6 +1553,14 @@ TEST_F(TabletServerTest, TestDeleteTablet) {
 
   // Verify that the tablet is removed from the tablet map
   ASSERT_FALSE(mini_server_->server()->tablet_manager()->LookupTablet(kTabletId, &tablet));
+
+  // Verify that fetching metrics doesn't crash. Regression test for KUDU-638.
+  EasyCurl c;
+  faststring buf;
+  ASSERT_STATUS_OK(c.FetchURL(strings::Substitute(
+                                "http://$0/jsonmetricz",
+                                mini_server_->bound_http_addr().ToString()),
+                              &buf));
 
   // TODO: Verify that the data was trashed
 }

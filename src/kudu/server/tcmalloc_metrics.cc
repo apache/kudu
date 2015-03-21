@@ -63,17 +63,17 @@ static size_t GetTCMallocPropValue(const char* prop) {
 void RegisterMetrics(MetricRegistry* registry) {
   MetricContext ctx(registry, "tcmalloc");
   METRIC_generic_current_allocated_bytes.InstantiateFunctionGauge(ctx,
-      boost::bind(GetTCMallocPropValue, "generic.current_allocated_bytes"));
+      Bind(GetTCMallocPropValue, Unretained("generic.current_allocated_bytes")));
   METRIC_generic_heap_size.InstantiateFunctionGauge(ctx,
-      boost::bind(GetTCMallocPropValue, "generic.heap_size"));
+      Bind(GetTCMallocPropValue, Unretained("generic.heap_size")));
   METRIC_tcmalloc_pageheap_free_bytes.InstantiateFunctionGauge(ctx,
-      boost::bind(GetTCMallocPropValue, "tcmalloc.pageheap_free_bytes"));
+      Bind(GetTCMallocPropValue, Unretained("tcmalloc.pageheap_free_bytes")));
   METRIC_tcmalloc_pageheap_unmapped_bytes.InstantiateFunctionGauge(ctx,
-      boost::bind(GetTCMallocPropValue, "tcmalloc.pageheap_unmapped_bytes"));
+      Bind(GetTCMallocPropValue, Unretained("tcmalloc.pageheap_unmapped_bytes")));
   METRIC_tcmalloc_max_total_thread_cache_bytes.InstantiateFunctionGauge(ctx,
-      boost::bind(GetTCMallocPropValue, "tcmalloc.max_total_thread_cache_bytes"));
+      Bind(GetTCMallocPropValue, Unretained("tcmalloc.max_total_thread_cache_bytes")));
   METRIC_tcmalloc_current_total_thread_cache_bytes.InstantiateFunctionGauge(ctx,
-      boost::bind(GetTCMallocPropValue, "tcmalloc.current_total_thread_cache_bytes"));
+      Bind(GetTCMallocPropValue, Unretained("tcmalloc.current_total_thread_cache_bytes")));
 }
 
 } // namespace tcmalloc

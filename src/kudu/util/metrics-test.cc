@@ -6,6 +6,7 @@
 #include <string>
 #include <vector>
 
+#include "kudu/gutil/bind.h"
 #include "kudu/util/hdr_histogram.h"
 #include "kudu/util/jsonwriter.h"
 #include "kudu/util/metrics.h"
@@ -65,17 +66,74 @@ TEST_F(MetricsTest, HighWaterMarkTest) {
 
 METRIC_DEFINE_gauge_int64(test_func_gauge, MetricUnit::kBytes, "Test Gauge 2");
 
-static int64_t MyFunction() {
-  return 12345;
+static int64_t MyFunction(int* metric_val) {
+  return (*metric_val)++;
 }
 
 TEST_F(MetricsTest, SimpleFunctionGaugeTest) {
   MetricRegistry registry;
   MetricContext context(&registry, "test");
-  FunctionGauge<int64_t>* gauge = down_cast< FunctionGauge<int64_t>* >(
-      METRIC_test_func_gauge.InstantiateFunctionGauge(context, MyFunction));
+  int metric_val = 1000;
+  FunctionGauge<int64_t>* gauge =
+    METRIC_test_func_gauge.InstantiateFunctionGauge(
+      context, Bind(&MyFunction, Unretained(&metric_val)));
+
+  ASSERT_EQ(1000, gauge->value());
+  ASSERT_EQ(1001, gauge->value());
+
+  gauge->DetachToCurrentValue();
+  // After detaching, it should continue to return the same constant value.
+  ASSERT_EQ(1002, gauge->value());
+  ASSERT_EQ(1002, gauge->value());
+
+  // Test resetting to a constant.
+  gauge->DetachToConstant(2);
+  ASSERT_EQ(2, gauge->value());
+}
+
+TEST_F(MetricsTest, AutoDetachToLastValue) {
+  MetricRegistry registry;
+  MetricContext context(&registry, "test");
+
+  int metric_val = 1000;
+  FunctionGauge<int64_t>* gauge =
+    METRIC_test_func_gauge.InstantiateFunctionGauge(
+      context, Bind(&MyFunction, Unretained(&metric_val)));
+
+  ASSERT_EQ(1000, gauge->value());
+  ASSERT_EQ(1001, gauge->value());
+  {
+    FunctionGaugeDetacher detacher;
+    gauge->AutoDetachToLastValue(&detacher);
+    ASSERT_EQ(1002, gauge->value());
+    ASSERT_EQ(1003, gauge->value());
+  }
+
+  ASSERT_EQ(1004, gauge->value());
+  ASSERT_EQ(1004, gauge->value());
+}
+
+TEST_F(MetricsTest, AutoDetachToConstant) {
+  MetricRegistry registry;
+  MetricContext context(&registry, "test");
+
+  int metric_val = 1000;
+  FunctionGauge<int64_t>* gauge =
+    METRIC_test_func_gauge.InstantiateFunctionGauge(
+      context, Bind(&MyFunction, Unretained(&metric_val)));
+
+  ASSERT_EQ(1000, gauge->value());
+  ASSERT_EQ(1001, gauge->value());
+  {
+    FunctionGaugeDetacher detacher;
+    gauge->AutoDetach(&detacher, 12345);
+    ASSERT_EQ(1002, gauge->value());
+    ASSERT_EQ(1003, gauge->value());
+  }
+
   ASSERT_EQ(12345, gauge->value());
 }
+
 
 METRIC_DEFINE_histogram(test_hist, MetricUnit::kMilliseconds, "foo", 1000000, 3);
 

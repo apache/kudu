@@ -9,6 +9,7 @@
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/server/clock.h"
 #include "kudu/util/locks.h"
+#include "kudu/util/metrics.h"
 #include "kudu/util/status.h"
 
 struct ntptimeval;
@@ -142,6 +143,11 @@ class HybridClock : public Clock {
   };
 
   State state_;
+
+  // Clock metrics are set to detach to their last value. This means
+  // that, during our destructor, we'll need to access other class members
+  // declared above this. Hence, this member must be declared last.
+  FunctionGaugeDetacher metric_detacher_;
 };
 
 }  // namespace server

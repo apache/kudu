@@ -1,11 +1,10 @@
 // Copyright (c) 2013, Cloudera, inc.
 // Confidential Cloudera Information: Covered by NDA.
 
-#include <boost/bind.hpp>
-
 #include "kudu/server/logical_clock.h"
 
 #include "kudu/gutil/atomicops.h"
+#include "kudu/gutil/bind.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/status.h"
@@ -70,7 +69,8 @@ void LogicalClock::RegisterMetrics(MetricRegistry* registry) {
   MetricContext ctx(registry, "clock");
   METRIC_clock_timestamp.InstantiateFunctionGauge(
       ctx,
-      boost::bind(&LogicalClock::NowForMetrics, this));
+      Bind(&LogicalClock::NowForMetrics, Unretained(this)))
+    ->AutoDetachToLastValue(&metric_detacher_);
 }
 
 string LogicalClock::Stringify(Timestamp timestamp) {
